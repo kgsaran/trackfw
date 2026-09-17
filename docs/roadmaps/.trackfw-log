@@ -317,3 +317,4 @@
 2026-09-16 18:04  ROADMAP-2026-09-16-run-capture-le-stdout-e-stderr-em-sequencia-e-trava-o-job-ate-o-timeout-em-vez-de-reprovar.md  backlog → wip
 2026-09-17 08:37  ROADMAP-2026-09-16-run-capture-le-stdout-e-stderr-em-sequencia-e-trava-o-job-ate-o-timeout-em-vez-de-reprovar.md  wip → done
 2026-09-17 08:49  ROADMAP-2026-09-17-sync-enumera-req-por-caminho-literal-ignora-req-dir-e-escreve-no-provedor-de-pm.md  backlog → wip
+2026-09-17 08:48  ROADMAP-2026-09-17-gate-escreve-na-arvore-que-audita-e-a-guarda-existente-nao-cobre-o-culpado.md  backlog → wip

@@ -57,6 +57,51 @@ Parecer escrito em `docs/portabilidade/2026-09-17-threat-model-sync-req-dir.md`.
 **Achado principal (bloqueante para Wave 1):** `ResolveREQFiles` não contém o caminho — não existe chamada a `isOutsideCWD` no enumerador. O fix em AC1 como redigido substituiria um literal seguro-por-acidente por uma leitura-fora-da-árvore para qualquer `req_dir: ../../`. O vetor concreto: `req_dir: ../trackfw/docs/req` no worktree sync publica os REQs do projeto principal no Linear/Jira do projeto sync. AC1 precisa de emenda ou AC7 novo exigindo contenção com `EvalSymlinks` antes de chamar `resolveREQFiles`.  
 **Outros achados:** (a) `jira_base_url` no mesmo `trackfw.yaml` permite redirecionar POSTs autenticados — pré-existente, fora de escopo desta REQ; (b) `config.Load()` é `once.Do` — AC2 pode medir cache do default em vez do `req_dir` injetado sem `config.Reset()`; (c) `isStatusOpen` reduz a superfície do traversal a arquivos com `| Status: Open`; (d) `scripts/check-referential-integrity.sh:10` tem o mesmo literal fora do escopo do AC5; (e) AC4 é arquitetura, não mecânico.  
 **Não commitado** (role não tem autoridade Git). Parecer entregue ao arquiteto via handback.
+## Sessão 2026-09-17 — Ares (fix/gate-escreve-na-arvore — ML-1A-bis: absolutizar GO_BIN em check-tty-detection.sh) — CONCLUÍDO (aguarda commit do arquiteto)
+
+**Início:** 2026-09-17 | Branch: `fix/gate-escreve-na-arvore`
+**Tarefa (correção de auditoria):** GO_BIN relativo passado pelo caller deixava de resolver após `(cd "$WORK/project")` introduzido pelo ML-1A — exit 127, asserção passava sem medir nada.
+**Varredura realizada:** 18 gates em Cenário 18 auditados para mesmo padrão. 17 já tinham normalização (`if [[ "$GO_BIN" != /* ]]` ou `case /*`). check-thirdparty-parity.sh usa variante `case` — confirmado normalizado. Único ausente: check-tty-detection.sh.
+**Correção aplicada:** `scripts/check-tty-detection.sh` — inserido bloco `if [[ "$GO_BIN" != /* ]]; then GO_BIN="$(pwd)/$GO_BIN"; fi` entre atribuição padrão e guarda `-x`, seguindo padrão canônico de check-rules-parity.sh.
+**O que a correção afirma:** com GO_BIN relativo (`bin/trackfw`), o binário é executado (exit 0, não 127); com GO_BIN apontando para inexistente, a guarda da linha 25 reprova nomeando o caminho.
+**O que a faria reprovar:** qualquer `cd` antes da normalização, ou guard checando o relativo antes de absolutizar — exatamente o bug corrigido.
+**Falsificação:**
+- A: `GO_BIN=bin/trackfw bash scripts/check-tty-detection.sh` → saiu com exit 0 (antes: 127)
+- B: `GO_BIN=/nonexistent/trackfw bash scripts/check-tty-detection.sh` → `Go binary not found/executable`, RC=1
+- C: `env -u FORCE_COLOR make quality` → RC=0; `git status --porcelain` mostra apenas `M docs/agents-working-context.md`, `M scripts/check-gates-falsify.sh`, `M scripts/check-tty-detection.sh` (sem trackfw.yaml)
+**Build:** `go build ./...` RC=0
+
+---
+
+## Sessão 2026-09-17 — Ares (fix/gate-escreve-na-arvore — ML-1A: isolar cwd e enumerar cobertura da guarda) — CONCLUÍDO (aguarda auditoria do arquiteto)
+
+**Início:** 2026-09-17 | Branch: `fix/gate-escreve-na-arvore` | Roadmap: `ROADMAP-2026-09-17-gate-escreve-na-arvore-que-audita-e-a-guarda-existente-nao-cobre-o-culpado.md` ML-1A
+**Tarefa:** AC1 — isolamento de cwd em `check-tty-detection.sh:43`; AC2 — enumerar check-*.sh em tempo de execução no Cenário 18 (opt-out); AC3 — comparação de conteúdo via OID de árvore (worktree cópia limpa); AC4 — varredura de gates com init/discover/update; AC5 — destino do GEMINI.md.
+**Árvore ao início:** `M trackfw.yaml` (modificado pelo gate culpado antes da correção — não alterado nem commitado).
+**Implementação:**
+- AC1: `scripts/check-tty-detection.sh:43` — `HOME="$WORK/home" "$GO_BIN" init ...` → `(cd "$WORK/project" && HOME="$WORK/home" "$GO_BIN" init ...)`. Gate continua passando (init não trava); árvore não muda.
+- AC2/AC3: Cenário 18 de `scripts/check-gates-falsify.sh` reescrito: lista fixa substituída por `find "$ROOT_DIR/scripts" -maxdepth 1 -name 'check-*.sh'` em tempo de execução + grep de fonte (`\bGO_BIN\b|bin/trackfw`); exclusões opt-out com motivo obrigatório; worktree cópia limpa + OID via `git write-tree`.
+- AC4: 6 gates invocam init/discover/update; exatamente 1 (check-tty-detection.sh:43) carecia de isolamento de cwd. Confirmado por leitura direta das linhas de invocação de cada gate.
+- AC5: GEMINI.md mantido. Justificativa: artefato legítimo de instruções de governança para sessões Gemini CLI; mesmo papel do CLAUDE.md; nenhum consumidor automático existe, mas isso não difere do CLAUDE.md em ambientes sem CI; nova guarda (Cenário 18 corrigido) detectará qualquer reescrita acidental futura. Divergência de conteúdo vs CLAUDE.md é #376 (fora do escopo desta REQ).
+**Falsificação:**
+- Direção A (nova guarda detecta bug antigo): OID baseline 2e44dc7a ≠ OID pós-execução c8ae5977 → trackfw.yaml identificado como mutado.
+- Direção B (código corrigido passa): OID baseline 6e037b38 = OID pós-execução 6e037b38 → sem mutação.
+- Contra-braço (guarda antiga não detecta de árvore suja): before_porcelain == after_porcelain == "M trackfw.yaml" mesmo após reescrita de conteúdo (generated date 2026-09-16 → 2026-09-17).
+**Gates e validações:** `go build ./...` OK; `go test ./...` todos verdes; `check-orphan-gates.sh` OK; `check-tty-detection.sh` OK; `bash -n` ambos os scripts OK. `trackfw validate` 156 violations pré-existentes (esperado — trackfw.yaml modificado pelo bug antes da correção).
+
+---
+
+## Sessão 2026-09-17 — Hades (fix/gate-escreve-na-arvore — ML-0A: threat model Wave 0) — EM ANDAMENTO
+
+**Início:** 2026-09-17 | Branch: `fix/gate-escreve-na-arvore` | Roadmap: `ROADMAP-2026-09-17-gate-escreve-na-arvore-que-audita-e-a-guarda-existente-nao-cobre-o-culpado.md` ML-0A
+**Tarefa:** Parecer de ameaça (Wave 0) para a superfície `check-tty-detection.sh:43` que roda `trackfw init` sem isolar cwd. Cinco vetores: indução por PR, inversão de política, limites da guarda `git status --porcelain`, introdução/execução de arquivo, e precedente do ML-6I. Entregável: `docs/portabilidade/2026-09-17-threat-model-gate-escreve-na-arvore.md`.
+**Medições realizadas:**
+- `git diff trackfw.yaml`: confirma sobreescrita com defaults mínimos — perde `governance_mode: lenient`, `ci`, `forge`, bloco de versão de modelo por tier (ADR-2026-08-21), e 12 outras chaves.
+- CI binary provenance: `quality.yml:786` faz `go build -o bin/trackfw ./cmd/trackfw` antes de `make parity-rest` (linha 826) — binário compilado do branch do PR; PR que modifica `scaffold.go` pode escrever conteúdo escolhido durante a própria execução do gate em CI.
+- Scripts gerados (`trackfw-validate.sh`, `trackfw-git-branch-guard.sh`, `trackfw-credential-guard.sh`) são IDÊNTICOS aos commitados — dano de escrita de scripts já ocorreu e foi commitado anteriormente.
+- `core.fileMode = true` — mudanças de modo são rastreadas; sem relevância aqui pois scripts já estão como 0755 commitados.
+- Achado novo: guarda `git status --porcelain` é cega ao conteúdo; se `before_status` já contém `M trackfw.yaml` (run local de `make parity` sequencial), `after_status = before_status` mascarando mutações reais. AC3 precisa de pré-condição de árvore limpa.
+**Concluído:** parecer escrito em `docs/portabilidade/2026-09-17-threat-model-gate-escreve-na-arvore.md`. Medições adicionais: guarda cega ao conteúdo confirmada diretamente (append a arquivo dirty → porcelain idêntico); `trackfw validate` RC=0 com 156 violations (confirma comportamento três-camadas); parity-rest: build confirma que make parity-rest em CI compila do branch do PR; todos os 5 scripts gerados IDÊNTICOS ao commitado; .gitattributes rastreado. Emenda bloqueante a AC3 (pré-condição de árvore limpa) identificada. Vetores não fechados pelos ACs nomeados explicitamente (R4: injeção via scaffold.go em CI; R5: --brownfield intencional; R6: AC3 sem pré-condição). Não commitado per instrução do orquestrador.
 
 ---
 

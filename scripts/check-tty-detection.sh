@@ -22,6 +22,16 @@ export PYTHONIOENCODING=utf-8
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 GO_BIN="${GO_BIN:-$ROOT/bin/trackfw}"
 
+if [[ "$GO_BIN" != /* ]]; then
+  # Absolutize relative GO_BIN before any cd (AC1-bis — REQ #366).
+  # The -x guard below confirms the path is reachable from the caller's cwd;
+  # absolutizing here ensures it stays reachable inside the (cd "$WORK/project")
+  # subshell on line ~45. Without this, a relative bin/trackfw resolves in the
+  # caller's cwd but silently becomes "not found" (exit 127) after the cd —
+  # defeating the guard that runs before it.
+  GO_BIN="$(pwd)/$GO_BIN"
+fi
+
 if [[ ! -x "$GO_BIN" ]]; then
   echo "check-tty-detection: Go binary not found/executable at $GO_BIN" >&2
   exit 1
@@ -40,7 +50,9 @@ trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/project" "$WORK/home"
 
 set +e
-HOME="$WORK/home" "$GO_BIN" init --ai-tools gemini >/dev/null 2>&1 </dev/null
+# AC1 (REQ #366): isola cwd em $WORK/project para que trackfw init não
+# escreva na raiz do repositório. HOME já era isolado; o cwd não era.
+(cd "$WORK/project" && HOME="$WORK/home" "$GO_BIN" init --ai-tools gemini >/dev/null 2>&1 </dev/null)
 go_exit=$?
 set -e
 
