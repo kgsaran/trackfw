@@ -154,7 +154,7 @@ repositório; o gate atual o exige. Não declare nenhum dos dois atendido com o 
       Medido por Zeus: `doctor` → 1 `scaffold-divergent`, nenhum para `trackfw-validate.yml`.
 - [x] AC8 — `bash scripts/check-ci-workflow-pin-parity.sh` sai 0 com 16 cenários; ambos os braços (`consumer-version-pin`, `producer-no-go-install`) verificados
 - [x] nomes de jobs em `.github/workflows/trackfw-validate.yml` inalterados (`governance-go-install`)
-- [ ] AC5 — 🔴 **REPROVADO na auditoria; movido para o ML-1B.** O ML-1A satisfez a redação anterior
+- [x] AC5 — **fechado no ML-1D** (cadeia ML-1B → ML-1C → ML-1D). Registro do reprovado original: 🔴 **REPROVADO na auditoria; movido para o ML-1B.** O ML-1A satisfez a redação anterior
       ("não usa `go install …@v`") e deixou a classe aberta: `.github/workflows/trackfw-gate.yml`
       obtém o binário por `install.sh` do release, e o required check `governance-install-script`
       valida o binário **publicado**, não o código do PR. O `doctor` continua reportando
