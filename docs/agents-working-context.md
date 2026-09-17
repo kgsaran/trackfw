@@ -2,6 +2,21 @@
 
 ---
 
+## Sessão 2026-09-17 — Hades (fix/gerador-aplica-o-template-de-consumidor — ML-0A: Wave 0 threat model REQ #376) — CONCLUÍDO (aguarda commit do arquiteto)
+
+**Início:** 2026-09-17 | Branch: `fix/gerador-aplica-o-template-de-consumidor`
+**Tarefa:** Produzir o parecer de ameaça da Wave 0 (ML-0A) para a REQ do gerador que aplica template de consumidor ao produtor. Parecer, não correção. Entregável: `docs/portabilidade/2026-09-17-threat-model-gerador-produtor-consumidor.md`.
+**Resultado:**
+- Parecer escrito em `docs/portabilidade/2026-09-17-threat-model-gerador-produtor-consumidor.md`. Gate Wave 0 passou.
+- Achado crítico novo: `governance_mode: lenient` permanente (sem `lenient_until`) no `trackfw.yaml` faz `trackfw validate` sair 0 para toda violation. Domina Vetores 1 e 4. Ambos `governance-go-install` e `governance-install-script` são exit-0 por construção, independente do binário ou de qualquer regra.
+- Achado estrutural: `check-ci-workflow-pin-parity.sh` quebra com o template correto (produtor sem `go install @v`). ML-1A deve incluir atualização do script (AC4).
+- `governance-install-script` usa `TRACKFW_VERSION: "8.0.0"` — binário pinado, não floating.
+- CI nunca chama `trackfw update` ou `trackfw discover` — Vetor 2 fecha.
+- `go.mod` como sinal é confiável — Vetor 3 fecha.
+- Terceiro sítio da família #366/#376: `governance_mode: lenient` permanente (4A) e `rules: {regra: off}` (4B) — nenhum coberto por este roadmap, precisam de REQ própria.
+
+---
+
 ## Sessão 2026-09-17 — Apolo (fix/sync-enumera-req — ML-1A-quinquies: GetwdFn volta a ser não-exportada; testes migram para package validator) — EM ANDAMENTO
 
 **Início:** 2026-09-17 | Branch: `fix/sync-enumera-req`
@@ -37713,3 +37728,8 @@ pré-requisito hard de ML-3A.
 **Padrões que pedem mecanismo, não mais ênfase:** (1) cinco agentes escreveram na árvore errada apesar da proibição em negrito; (2) agente marcando o próprio ML como ✅ remove a auditoria do caminho; (3) todo merge em paralelo colide em `agents-working-context.md`, `.trackfw-log` e `vault/notes/index.md` — e uma dessas resoluções (rename `wip/`→`done/` generalizado pelo git) **mentiria sem parecer**.
 
 **Abertos:** #364 (sinal do ratchet sem destino) · #376 (`doctor` prescreve `trackfw update`, que reintroduz o defeito) · #258, #268 (resto), #273, #277, #290, #307, #308, #353, #363.
+
+### 2026-09-17 — Zeus — Wave 0 do #376 auditada; issue #387 aberta
+- Parecer de ameaças (`hades-tf`) em `docs/portabilidade/2026-09-17-threat-model-gerador-produtor-consumidor.md`; gate da Wave 0 RC=0.
+- Verifiquei dois achados no código: (a) `check_discover_pin` reprova a correção → virou **AC8** da REQ, bloqueante do ML-1A; (b) `governance_mode: lenient` torna `governance-go-install` e `governance-install-script` exit-0 por construção → **causa distinta**, issue **#387**.
+- Wave 1 (`apolo-tf`) liberada com o AC8 no escopo. Dois dos oito required checks não bloqueiam até o #387 ser tratado — o aceite se apoia em `doctor` (AC7), pin-parity corrigido (AC8) e `quality`.

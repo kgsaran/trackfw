@@ -103,6 +103,17 @@ lendo o diff; nenhum gate acusou.
 - [ ] **AC7** — Depois da correção, `trackfw doctor` na raiz deste repositório **não** reporta
       `scaffold-divergent` para `.github/workflows/trackfw-validate.yml`. É a medição que fecha o
       issue; qualquer outra é indireta.
+- [ ] **AC8** — 🔴 **Bloqueante, descoberto na Wave 0 e verificado no script.**
+      `scripts/check-ci-workflow-pin-parity.sh` **reprova a correção do AC1**: a função
+      `check_discover_pin` exige literalmente `@v<versão>` no template do `discover` e recusa qualquer
+      variante sem ele. Um template de produtor que compila do fonte **não contém** essa string, logo
+      o gate falha — e o gate é obrigatório no `quality`.
+      **O gate tem de passar a distinguir os dois contextos, na mesma entrega do AC1**: exigir
+      `@v<versão>` no template **de consumidor** (que é onde a pinagem importa, e é o que a
+      REQ-2026-08-28 AC8 protege) e exigir a **ausência** de `go install` no template **de produtor**.
+      Sem isto, o AC1 e o AC5 são mutuamente inconsistentes: o AC5 proíbe `go install @v` nos
+      workflows deste repositório e o gate atual o exige.
+      ⚠️ Nem o AC1 nem o AC5 podem ser declarados atendidos com este gate intocado.
 
 ## Negative Scope
 

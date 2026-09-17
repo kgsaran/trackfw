@@ -48,6 +48,26 @@ grep -qiE "residual|nao consegui|não consegui|indetermin" "$P" \
 echo "OK [wave0/threat-model-gerador]: parecer presente e cobre os quatro eixos"
 ```
 
+**Status da Wave 0:** ✅ **Auditada em 2026-09-17** — parecer em
+`docs/portabilidade/2026-09-17-threat-model-gerador-produtor-consumidor.md`, gate acima executado
+com RC=0. Dois achados do parecer foram **verificados por mim, no código**, não aceitos de palavra:
+
+| achado | verificação minha | destino |
+|---|---|---|
+| Sítio 5 — `check-ci-workflow-pin-parity.sh` reprova a correção | `check_discover_pin` (l. 144-156) exige `grep -qF "@v${expected}"` e falha sem ele | **AC8 da REQ** — entra no ML-1A |
+| `governance_mode: lenient` zera os dois required checks de governança | `trackfw validate` → RC=0 com 171 avisos e 0 violações; `validator.go` move todas as violations para warnings incondicionalmente | **causa distinta → issue #387** |
+
+🔴 **Por que o segundo não entra nesta REQ:** pela Regra Dura de Causa Raiz, mesma causa fica na mesma
+REQ — e esta causa **é outra**. Aqui o defeito é o **gerador** não distinguir produtor de consumidor;
+lá é o **`trackfw.yaml`, editável pelo PR, governar a severidade da verificação desse mesmo PR**.
+Corrigir o gerador não fecha o #387, e corrigir o #387 não fecha este. O teste da regra
+("se eu corrigir esta causa, exatamente estas falhas fecham — e nenhuma outra") separa os dois.
+
+⚠️ **Consequência operacional para o ML-1A:** dois dos oito required checks
+(`governance-go-install`, `governance-install-script`) **não podem reprovar** enquanto o #387 não for
+tratado. A validação desta wave **não pode se apoiar neles** — o aceite é o `doctor` (AC7), o
+`check-ci-workflow-pin-parity.sh` corrigido (AC8) e o `quality`.
+
 ---
 
 ## Wave 1 — Correção
@@ -64,6 +84,17 @@ do builder (`discover.go:276`, `update.go:1976`, `scaffold_doctor.go:269`) têm 
 **A medição que fecha:** `trackfw doctor` na raiz deste repositório deixa de reportar
 `scaffold-divergent` para `.github/workflows/trackfw-validate.yml` (AC7). Qualquer outra evidência é
 indireta.
+
+🔴 **Cobre também o AC8, acrescentado pela auditoria da Wave 0 — e ele é bloqueante.**
+`scripts/check-ci-workflow-pin-parity.sh` exige hoje `@v<versão>` no template do `discover`
+(`check_discover_pin`, l. 144-156). Um template de produtor que compila do fonte não tem essa string:
+**o gate reprova a própria correção**, e ele roda no `quality`. Entregar o AC1 sem o AC8 deixa o PR
+vermelho por construção.
+O gate passa a exigir `@v<versão>` no template **de consumidor** e a **ausência** de `go install` no
+template **de produtor** — os dois braços, no mesmo ML.
+
+⚠️ **Sem o AC8, o AC1 e o AC5 se contradizem:** o AC5 proíbe `go install …@v` nos workflows deste
+repositório; o gate atual o exige. Não declare nenhum dos dois atendido com o script intocado.
 
 ---
 
@@ -83,7 +114,7 @@ REQ: docs/req/REQ-2026-09-17-gerador-aplica-o-template-de-consumidor-ao-proprio-
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model for this roadmap
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (auditado em 2026-09-17 — ver veredito na Wave 0 acima)
 **Files affected:**
 **Actions:**
 1. Enumeration completeness — is the list of surfaces in this roadmap complete? Name what is missing, or show the list is closed. Do not limit the search to the files already named by the REQ — before declaring the list closed, search the repository for other places that emit the same artifact or the same pattern (for example, grep for the literal the final artifact contains).
