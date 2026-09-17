@@ -183,6 +183,21 @@ e **declare o fallback** quando não der para derivar.
 **Status:** ⬜ Pendente · **Papel:** `apolo-tf`
 Cobre **AC2**, **AC3**, **AC4** e o braço (a) do **AC8**.
 
+**Ação 0 — defeito achado por mim na auditoria do ML-1B, barato e do mesmo arquivo:**
+`deriveOriginDefaultBranch` filtra `line == "origin/HEAD"`, **mas esse valor nunca aparece**. O
+`%(refname:short)` de `refs/remotes/origin/HEAD` é **`origin`**, não `origin/HEAD` — medido:
+
+```
+$ git for-each-ref --format='%(refname) -> %(refname:short)' refs/remotes/origin/
+refs/remotes/origin/HEAD -> origin
+```
+
+Consequência: num repositório com `origin/HEAD` definido e branch default de nome incomum
+(`trunk`, `develop`), a lista fica com 2 entradas, o braço "ref único inequívoco" não dispara e a
+derivação **falha fechada sem necessidade**. Direção segura — não é bypass —, mas é falso-positivo.
+Corrija o filtro para `origin` e **acrescente um teste** que prove a derivação de branch único com
+`origin/HEAD` presente. Nenhum gate atual pega isto.
+
 **Ações — a 1 é pré-requisito das demais:**
 1. 🔴 **Rotear `req_roadmap_lifecycle` por `applyRuleTagged`**, com default `error`.
    Hoje `validator.go:787` anexa direto a `warnings` e `ruleSeverity()` nunca é consultado: a regra
@@ -196,6 +211,7 @@ Cobre **AC2**, **AC3**, **AC4** e o braço (a) do **AC8**.
    vivos, não ausência histórica. Calibrar: as 8 ativas entram, as 169 não.
 
 **Critérios de aceite:**
+- [ ] Ação 0 — filtro `origin/HEAD` corrigido para `origin`, com teste de branch único
 - [ ] `req_roadmap_lifecycle` roteado; `rules: {req_roadmap_lifecycle: error}` passa a ter efeito
 - [ ] AC2 nos dois sítios, com teto de horizonte
 - [ ] AC3 — `discover` e `init` param de divergir
