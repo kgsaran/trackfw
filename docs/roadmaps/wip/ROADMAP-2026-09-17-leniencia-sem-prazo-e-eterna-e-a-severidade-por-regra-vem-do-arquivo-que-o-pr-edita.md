@@ -7,8 +7,10 @@ date: 2026-09-17
 
 > Created: 2026-09-17 | Status: wip
 
-**Issue:** #387 · **REQ:** `docs/req/REQ-2026-09-17-leniencia-sem-prazo-e-eterna-e-a-severidade-por-regra-vem-do-arquivo-que-o-pr-edita.md`
-**ADR:** `docs/adr/ADR-2026-09-17-severidade-da-validacao-nao-pode-vir-de-fonte-que-o-objeto-verificado-controla.md`
+REQ: docs/req/REQ-2026-09-17-leniencia-sem-prazo-e-eterna-e-a-severidade-por-regra-vem-do-arquivo-que-o-pr-edita.md
+ADR: docs/adr/ADR-2026-09-17-severidade-da-validacao-nao-pode-vir-de-fonte-que-o-objeto-verificado-controla.md
+
+**Issue:** #387
 **Parecer da Wave 0:** `docs/portabilidade/2026-09-17-threat-model-severidade-da-validacao.md`
 
 ## Diagnóstico
