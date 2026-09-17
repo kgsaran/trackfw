@@ -342,10 +342,10 @@ Cobre **AC6**, **AC7**, **AC9**, **AC10**.
    onboardado por `discover`. ⚠️ Não proponha número de versão.
 
 **Critérios de aceite:**
-- [ ] AC6 — saída colada, mostrando as 8 e nenhuma histórica
-- [ ] AC7 — as 8 corrigidas; `validate` RC=0 por consistência
-- [ ] AC9 — nota no topo da seção do CHANGELOG
-- [ ] AC10 — `doctor`, `make quality`, `--scope dw`, 8 required checks verdes; nenhum job renomeado
+- [x] AC6 — saída colada, mostrando as 8 e nenhuma histórica
+- [x] AC7 — as 8 corrigidas; `validate` RC=0 por consistência
+- [x] AC9 — nota no topo da seção do CHANGELOG
+- [x] AC10 — `doctor`, `make quality`, `--scope dw`, 8 required checks verdes; nenhum job renomeado
 
 **Comandos de validação:**
 ```bash
@@ -360,3 +360,22 @@ make quality ; echo "RC=$?"
 ## Legenda de status
 
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
+
+
+**Auditoria de Zeus (2026-09-17) — medido por mim:**
+
+`validate` RC=**0 por consistência**, 168 warnings, **0 violações**. `make quality` RC=0,
+`doctor` sem `scaffold-divergent`, `--scope dw` RC=0.
+
+Conferi as 8 uma a uma contra a realidade: a REQ-2026-09-03 continua **Open** porque o roadmap
+dela está em `blocked/` — trabalho bloqueado, não concluído; as outras sete viraram `Done` e têm
+roadmap em `done/`. Nenhuma foi fechada por conveniência.
+
+🔴 **Corrigi um artefato que a entrega apenas declarou:** `ROADMAP-2026-09-16-run-capture`
+estava em `done/` carregando o scaffold intocado do `roadmap new` — dois MLs `⬜ Pendente` e o
+gate placeholder `exit 1`. Terceira ocorrência do padrão hoje; nenhuma regra do `validate` pega.
+
+**Decisão que o executor tomou e eu aceito, com ressalva:** `lenient_until: 2027-12-31` são ~15
+meses. É consequência lógica da decisão de KG de não saldar as 168 históricas — 30 dias as faria
+bloquear em outubro. Dentro do teto de 730 dias. ⚠️ Mas é prazo longo, e este projeto tem
+histórico de exceção temporária que vira permanente: **vale revisitar antes de 2027**.
