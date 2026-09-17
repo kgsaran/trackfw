@@ -280,6 +280,17 @@ func ParseRulesFromContent(content string) map[string]string {
 	return cfg.Rules
 }
 
+// ParseDirsFromContent parses req_dir, roadmap_dir, and adr_dirs from an arbitrary YAML string
+// (e.g. a git-ref blob obtained via `git show origin/main:./trackfw.yaml`, not the CWD file
+// Load() reads). Missing keys fall back to defaults() so that a trackfw.yaml that only sets
+// rules: still returns canonical dir paths rather than empty strings.
+// Used by ML-2B (scope-redirect guard) to compare origin/main's dir config against disk.
+func ParseDirsFromContent(content string) (reqDir, roadmapDir string, adrDirs []string) {
+	cfg := defaults()
+	parse(content, &cfg)
+	return cfg.REQDir, cfg.RoadmapDir, cfg.ADRDirs
+}
+
 // ReadAgentConventions reads the `agent_conventions` key directly out of <cwd>/trackfw.yaml,
 // bypassing the Load() singleton — same isolation pattern as ParseRulesFromContent, needed here
 // because generators (agentfiles.go) inject rules into agent files for a given cwd that is not

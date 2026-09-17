@@ -287,12 +287,22 @@ const (
 	originAnchorOK                                          // fully loaded — stricter of origin/main vs disk wins
 )
 
+// originMainAnchorDirs holds the parsed governance directory paths from origin/main's
+// trackfw.yaml. Used by ML-2B (scope-redirect guard) to compare against disk dirs.
+// Non-nil only when state == originAnchorOK.
+type originMainAnchorDirs struct {
+	reqDir     string
+	roadmapDir string
+	adrDirs    []string
+}
+
 // originMainAnchor holds the result of a single loadOriginMainAnchor() call. Set at the top of
 // ValidateUnfiltered() and validateUnfilteredTagged(); read by ruleSeverity(). Not goroutine-safe
 // (acceptable: trackfw is a CLI tool, one validate call at a time).
 type originMainAnchor struct {
 	state originMainAnchorState
-	rules map[string]string // non-nil only when state == originAnchorOK
+	rules map[string]string     // non-nil only when state == originAnchorOK
+	dirs  *originMainAnchorDirs // non-nil only when state == originAnchorOK; ML-2B scope-redirect guard
 }
 
 // currentOriginMain is the package-level anchor result, set at the top of each Validate* call.
@@ -392,14 +402,22 @@ func originMainTrackfwYAML() (content string, state originMainAnchorState) {
 
 // loadOriginMainAnchor reads origin/main:./trackfw.yaml and returns the anchor result to be
 // stored in currentOriginMain at the top of each Validate* call.
+// ML-2B: also parses req_dir/roadmap_dir/adr_dirs into anchor.dirs so that scopeRedirectViolations
+// can compare them against the disk config without a second git-show call.
 func loadOriginMainAnchor() originMainAnchor {
 	content, state := originMainTrackfwYAML()
 	if state != originAnchorOK {
 		return originMainAnchor{state: state}
 	}
+	reqDir, roadmapDir, adrDirs := config.ParseDirsFromContent(content)
 	return originMainAnchor{
 		state: originAnchorOK,
 		rules: config.ParseRulesFromContent(content),
+		dirs: &originMainAnchorDirs{
+			reqDir:     reqDir,
+			roadmapDir: roadmapDir,
+			adrDirs:    adrDirs,
+		},
 	}
 }
 

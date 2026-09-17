@@ -2,6 +2,27 @@
 
 ---
 
+## Sessão 2026-09-17 (continuação 3) — Apolo (fix/leniencia-sem-prazo — ML-2B: terceiro interruptor, repontar caminhos zera governança) — CONCLUÍDO (aguarda commit do arquiteto)
+
+**Início:** 2026-09-17 | Branch: `fix/leniencia-sem-prazo`
+**Tarefa:** ML-2B — fechar AC5 e AC8(c): detectar repontar req_dir/roadmap_dir/adr_dirs para diretório existente e vazio.
+**Direção escolhida:** (a) ancorar o escopo em origin/main, reutilizando o maquinário ML-1A.
+**Decisão de refinamento (advisor):** disparar violação somente quando disco ≠ âncora E dir do disco tem zero artefatos (não "qualquer mudança"), para não bloquear restructures legítimas.
+**Arquivos modificados:**
+- `internal/config/config.go`: adicionado `ParseDirsFromContent`
+- `internal/validator/validator_credential_guard_integrity.go`: adicionado `originMainAnchorDirs`, campo `dirs` em `originMainAnchor`, atualizado `loadOriginMainAnchor`
+- `internal/validator/validator.go`: adicionado `scopeRedirectViolations`, `hasMDFilesInRoadmapDir`, `stringSlicesSameSet`; injetado chamada em `ValidateUnfiltered` e `validateUnfilteredTagged`
+- `internal/validator/validator_scope_anchor_test.go`: novo, 12 testes
+- `docs/roadmaps/wip/ROADMAP-*.md`: ML-2B marcado Concluído
+**Gates:**
+- `go build ./...` RC=0
+- `go test ./...` RC=0 (12 novos testes PASS)
+- `make quality` RC=0 (212 OK, 0 FAIL, guarda de conjunto OK)
+- `./bin/trackfw doctor` → "no mismatches found"
+- `./bin/trackfw validate` → sem "scope redirect" neste repo (âncoras batem)
+
+---
+
 ## Sessão 2026-09-17 (continuação 2) — Apolo (fix/leniencia-sem-prazo — ML-2A: corretivo pós-revisão — contra-braço executável AC8(a)) — CONCLUÍDO (aguarda commit do arquiteto)
 
 **Início:** 2026-09-17 | Branch: `fix/leniencia-sem-prazo`
@@ -37913,3 +37934,9 @@ Implementação completa. Evidências: `go build ./...` RC=0 · `make test` 15/1
 - `make quality` **RC=0**; `doctor` sem `scaffold-divergent`.
 - Na primeira tentativa minha medição deu 176 violações: o `replace` do Python pegou a **linha de comentário** `# governance_mode: lenient` em vez da diretiva. Sexto caso do instrumento que mente nesta sessão — refeito mirando a linha 4.
 - `wip_has_req` caiu de 1 para 0 porque eu consertei o marcador `REQ:` do roadmap no commit b1b1e482 — explica a queda de 177 para 176.
+
+### 2026-09-17 — Zeus — ML-2B REPROVADO: o guard cai com um arquivo de fachada
+- Direção certa (ancorar escopo em `origin/main`, reusando o maquinário do ML-1A) e **fica**. O defeito é o discriminante: `len(files) == 0` — só reprova diretório **vazio**.
+- 🔴 Medi com repositório real e `origin/main` fetchado: baseline com 3 violações de `docs/req/REQ-quebrada.md`; repontando `req_dir` para um diretório com **um** arquivo de fachada, **as 3 somem e nenhum `scope redirect` é emitido**. Uma linha derrota o guard.
+- O vazio é o sintoma; o ataque é **deixar de enxergar artefato que antes se enxergava**. ML-2C troca o discriminante para **perda de cobertura**, com contra-braço obrigatório: reestruturação que move os arquivos junto não pode reprovar.
+- `make quality` RC=0 na minha execução — o código é sadio, o critério é que estava errado.

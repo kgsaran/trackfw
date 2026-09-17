@@ -259,6 +259,114 @@ func diskRuleSeverity(name string) string {
 	return "error"
 }
 
+// scopeRedirectViolations implements the ML-2B scope-redirect guard (AC5 and AC8(c) of
+// REQ-2026-09-17-leniencia-sem-prazo).
+//
+// Direction (a) — anchor the configured scope in origin/main, same machinery as ML-1A for
+// severity: the only safe source for "what scope should governance cover" is the version of
+// trackfw.yaml that already passed review (origin/main). A PR can change req_dir/roadmap_dir/
+// adr_dirs to any directory — but if the new directory has zero governance artifacts, the
+// validation engine scans nothing and reports nothing, silently zeroing governance even in strict
+// mode. This is "the third interruptor" described in ADR-2026-09-17 Adendo item 2.
+//
+// Why not direction (b) ("detect emptying alone"):
+// Emptiness alone cannot discriminate between a legitimate new project bootstrapping an empty
+// governance tree (no origin → state != originAnchorOK → no baseline → no violation) and an
+// attacker's PR pointing validate at an empty dir (origin/main has content → comparison detects
+// the redirect → violation). Direction (a) reuses the six-state machine already written for
+// ML-1A without adding a second detection path.
+//
+// State mapping (mirrors the rule-severity map in ruleSeverity()):
+//   - originAnchorOK: compare origin/main dirs vs disk dirs; redirect to empty → violation.
+//   - originAnchorRefUnreadable: no violation — dirs have no built-in default to compare against
+//     (unlike rules: which have credentialGuardDefaultSeverity). Same reasoning as ML-1B Defect 3:
+//     anchor unavailable is a configuration signal, not a blocking failure.
+//   - all other states (noGit, noRemote, fileAbsent): comparison not possible → no violation.
+//
+// Violations are appended DIRECTLY (not via applyRule/applyRuleTagged) so they cannot be silenced
+// by rules: {<name>: off} in the same PR — that would be interruptor #2 wearing a different hat.
+func scopeRedirectViolations(diskCfg *config.ProjectConfig) []string {
+	if currentOriginMain.state != originAnchorOK || currentOriginMain.dirs == nil {
+		return nil
+	}
+	anchor := currentOriginMain.dirs
+	var out []string
+
+	// req_dir: single path comparison — violation when path changed AND disk dir is empty.
+	if filepath.Clean(diskCfg.REQDir) != filepath.Clean(anchor.reqDir) {
+		files, _ := resolveREQFiles(*diskCfg)
+		if len(files) == 0 {
+			out = append(out, fmt.Sprintf(
+				"scope redirect: req_dir changed from %q (origin/main) to %q (disk) — "+
+					"the new directory has no REQ files; a PR cannot redirect governance scope to an empty directory. "+
+					"Revert the path change or populate the new directory before submitting.",
+				anchor.reqDir, diskCfg.REQDir))
+		}
+	}
+
+	// roadmap_dir: single path comparison — violation when path changed AND disk dir is empty.
+	if filepath.Clean(diskCfg.RoadmapDir) != filepath.Clean(anchor.roadmapDir) {
+		if !hasMDFilesInRoadmapDir(diskCfg) {
+			out = append(out, fmt.Sprintf(
+				"scope redirect: roadmap_dir changed from %q (origin/main) to %q (disk) — "+
+					"the new directory has no roadmap files; a PR cannot redirect governance scope to an empty directory. "+
+					"Revert the path change or populate the new directory before submitting.",
+				anchor.roadmapDir, diskCfg.RoadmapDir))
+		}
+	}
+
+	// adr_dirs: set comparison — per-entry violation for each disk entry NOT in anchor set that is empty.
+	anchorADRSet := make(map[string]bool, len(anchor.adrDirs))
+	for _, d := range anchor.adrDirs {
+		anchorADRSet[filepath.Clean(d)] = true
+	}
+	for _, d := range diskCfg.ADRDirs {
+		if !anchorADRSet[filepath.Clean(d)] {
+			if len(ListMDFiles(d)) == 0 {
+				out = append(out, fmt.Sprintf(
+					"scope redirect: adr_dirs entry %q is new (not in origin/main) and has no ADR files — "+
+						"a PR cannot redirect governance scope to an empty directory. "+
+						"Revert the path change or populate the new directory before submitting.",
+					d))
+			}
+		}
+	}
+
+	return out
+}
+
+// hasMDFilesInRoadmapDir returns true if roadmap_dir contains at least one .md file
+// across all state subdirectories (backlog/wip/done/etc.), respecting roadmap_namespacing.
+func hasMDFilesInRoadmapDir(diskCfg *config.ProjectConfig) bool {
+	for _, state := range reqLayoutStates {
+		for _, dir := range resolveStateDirs(*diskCfg, state) {
+			entries, _ := listDir(dir)
+			if len(entries) > 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// stringSlicesSameSet returns true if a and b contain the same elements after filepath.Clean,
+// ignoring order and duplicates. Used by tests to compare adr_dirs sets.
+func stringSlicesSameSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	setA := make(map[string]bool, len(a))
+	for _, s := range a {
+		setA[filepath.Clean(s)] = true
+	}
+	for _, s := range b {
+		if !setA[filepath.Clean(s)] {
+			return false
+		}
+	}
+	return true
+}
+
 // applyRule distribui msgs conforme severidade da regra.
 // "off" → silencioso; "warning" → warnings; default ("error") → violations.
 func applyRule(ruleName string, msgs []string, violations, warnings *[]string) {
@@ -510,6 +618,12 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	}
 
 	cfg := config.Load()
+
+	// ML-2B: scope-redirect guard — detect req_dir/roadmap_dir/adr_dirs redirected to empty dirs.
+	// Direct append (not via applyRule) so rules: {<name>: off} in the same PR cannot silence it.
+	for _, msg := range scopeRedirectViolations(&cfg) {
+		violations = append(violations, msg)
+	}
 
 	// ML-1B (Defect 3): when anchor is unavailable, emit a violation for each rule that the user
 	// EXPLICITLY set in trackfw.yaml's rules: block AND whose explicit value is lower than its
@@ -844,6 +958,11 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 	}
 
 	cfg := config.Load()
+
+	// ML-2B: scope-redirect guard — mirrors ValidateUnfiltered. Rule: "" (direct, not via applyRuleTagged).
+	for _, msg := range scopeRedirectViolations(&cfg) {
+		violations = append(violations, TaggedMsg{Rule: "", Msg: msg})
+	}
 
 	// ML-1B (Defect 3): per-rule weakening violations when anchor unavailable — mirrors ValidateUnfiltered.
 	if currentOriginMain.state == originAnchorRefUnreadable {

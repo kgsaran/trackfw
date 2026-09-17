@@ -239,7 +239,7 @@ Calibração exata: **zero** regra histórica vazou para violations. `make quali
 históricas, e o carve-out é uma lista **nomeada**; item sem nome não pode pertencer a ela.
 
 ### ML-2B — o terceiro interruptor: repontar caminhos zera a governança
-**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Status:** ❌ REPROVADO na auditoria de Zeus (2026-09-17) — direção certa, discriminante errado (vazio em vez de perda de cobertura) → ML-2C · **Papel:** `apolo-tf`
 Cobre **AC5** e o braço (c) do **AC8**. Dependência: **ML-2A auditado** (mesmo arquivo).
 
 **Medido na Wave 0 e por mim:** `governance_mode: strict`, `req_dir`/`roadmap_dir`/`adr_dirs`
@@ -262,6 +262,52 @@ RC=0.
 
 ---
 
+
+### ML-2C — corretivo do ML-2B: o discriminante é perda de cobertura, não vazio
+**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+Aberto pela auditoria do ML-2B em 2026-09-17. **Fecha o AC5 de verdade.**
+
+O ML-2B está certo na direção (ancorar o escopo em `origin/main`, reusando o maquinário do ML-1A) e
+**fica**. O defeito é o **discriminante**: `scopeRedirectViolations` só reprova quando o diretório
+novo tem **zero** artefatos (`validator.go:298`, `:309`, `:325` — `len(files) == 0`).
+
+**Medido por mim, com repositório real e `origin/main` fetchado:**
+
+| passo | resultado |
+|---|---|
+| baseline, caminhos iguais ao `origin/main` | 3 violações, todas de `docs/req/REQ-quebrada.md` |
+| `req_dir` repontado para `fachada/req` com **um** arquivo dentro | **as 3 somem**, e **nenhum `scope redirect` é emitido** |
+
+Um arquivo de fachada custa uma linha e derrota o guard inteiro. O AC5 exige que *"um PR que só
+repontar caminhos não consiga zerar a contagem"* — e ele consegue.
+
+🔴 **O vazio é o sintoma, não o ataque.** O ataque é **deixar de enxergar artefato que antes se
+enxergava**. Diretório vazio é apenas o caso em que isso acontece de forma mais grosseira.
+
+**Ação — trocar o discriminante:**
+1. Comparar a **cobertura**: o conjunto de artefatos de governança visíveis sob a config **ancorada**
+   (`origin/main`) contra o visível sob a config **do disco**. Artefato que existia em `origin/main`
+   dentro do escopo ancorado e **deixou de estar em qualquer escopo do disco** ⇒ violação,
+   **nomeando os artefatos perdidos** (ou os primeiros N, com a contagem total).
+2. **Reestruturação legítima continua passando**, e este é o contra-braço que decide: mover
+   `docs/req/` para `requisicoes/` **levando os arquivos junto** não perde cobertura. Compare por
+   **identidade do artefato** (basename, ou conteúdo), não por caminho — senão toda renomeação de
+   pasta vira violação e ninguém mais reorganiza nada.
+3. Manter o comportamento já estabelecido para os outros dois estados: **sem `origin`** ⇒ silencioso;
+   **âncora ilegível** ⇒ warning, sem violação de redirect. Não regrida isso.
+4. Reavaliar a lacuna que o ML-2B declarou (`adr_dirs: []` explicitamente vazio): sob o discriminante
+   de cobertura ela provavelmente **fecha sozinha** — se os ADRs saíam do escopo, houve perda. Meça e
+   diga.
+
+**Critérios de aceite:**
+- [ ] 🔴 Fixture do arquiteto fecha: `req_dir` repontado para diretório com **um arquivo de fachada**
+      ⇒ **violação**, nomeando o artefato que deixou de ser visto
+- [ ] Repontar para diretório **vazio** continua reprovando (não regredir o ML-2B)
+- [ ] 🔴 Contra-braço: reestruturação legítima **com os arquivos movidos junto** ⇒ **não reprova**
+- [ ] Projeto novo sem `origin` ⇒ silencioso · âncora ilegível ⇒ warning, sem violação de redirect
+- [ ] Veredito medido sobre `adr_dirs: []`
+- [ ] `go build ./...`, `make test`, **`make quality` RC=0**, `doctor` sem `scaffold-divergent`
+- [ ] Reconciliação: uma frase por teste novo ou alterado
 ## Wave 3 — Postura deste repositório
 > Dependências: **Wave 2 auditada.**
 
