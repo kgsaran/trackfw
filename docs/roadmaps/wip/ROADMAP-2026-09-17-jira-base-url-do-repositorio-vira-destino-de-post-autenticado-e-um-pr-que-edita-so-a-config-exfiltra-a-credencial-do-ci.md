@@ -14,7 +14,34 @@ squad: ""
 > Dependências: nenhuma. 🔴 **Auditada antes de qualquer wave de implementação.**
 
 ### ML-0A — reproduzir em laboratório e enumerar a classe
-**Status:** ⬜ Pendente · **Papel:** `hades-tf`
+**Status:** ✅ Concluído e auditado pelo arquiteto (2026-09-17)
+
+**Parecer:** `docs/portabilidade/2026-09-17-threat-model-jira-base-url.md`
+
+**Vetor primário reproduzido** contra listener em `127.0.0.1`, com credencial falsa e token redigido:
+o POST chegou em `/rest/api/3/issue` com `Authorization: Basic <REDACTED>` no destino configurado
+pelo `trackfw.yaml`.
+
+**Raio medido = 1 chave, 1 comando.** `jira_base_url` é a única chave que influencia **destino** de
+requisição autenticada; `jira_email` e `jira_token` são credencial, `jira_project` é conteúdo. Linear
+tem endpoint fixo; `doctor --remote`, `release tag` e `ship` passam por `gh` com forge validado
+contra allowlist; `thirdparty fetch` já valida. Scripts não leem `trackfw.yaml` para montar URL.
+**O remédio é cirúrgico, não de classe** — era esta a pergunta que decidia a forma da REQ.
+
+🔴 **O parecer derrubou o meu AC2.** Eu exigia "nenhum passo extra" para o uso legítimo. A combinação
+**vulnerável** (`token` do ambiente + `base_url` da config) é **a mesma de boa prática** — quem
+hospeda Jira próprio commita a URL e mantém o token fora do repositório —, e não há sinal que
+distinga config confiável de config alterada por PR. AC2 reescrito **por combinação**, com o passo
+extra confinado à única linha perigosa.
+
+**Correção de rumo dentro do próprio parecer, e ela aumenta a confiança no resto:** a primeira versão
+afirmava exfiltração por redirect cross-domain. Medindo com hostnames diferentes, o `Authorization`
+**não** é preservado — o stdlib do Go o remove (`shouldCopyHeaderOnRedirect`). O agente **removeu a
+afirmação** em vez de mantê-la. Sobra o caso estreito de mesmo hostname com porta diferente, onde o
+header sobrevive.
+
+**Decisão minha sobre AC3:** incluir `CheckRedirect`. O resíduo é estreito, mas o padrão já existe em
+`internal/thirdparty/fetch.go:57` — reutilizar custa pouco e não inventar nada é o ponto.
 
 Esta Wave 0 **não é re-análise** — o mecanismo já está verificado no código. É **medição**, porque a
 escolha entre os remédios depende de duas coisas que ainda não sabemos.

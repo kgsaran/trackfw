@@ -37551,3 +37551,34 @@ pré-requisito hard de ML-3A.
 **Erros do arquiteto, registrados:** piso fixo em gate que roda em shards; triagem por cruzamento de caminhos superestimando o que a v8 apagou; medição em `zsh` sem word-splitting; `git add -A` varrendo config corrompida; critério de aceite medindo texto de saída em vez do artefato; `Fecha #372` em português no corpo do PR. Três deles foram instrumento de medição mentindo — `zsh`, `| tail` e `ls` com alias.
 
 **Pendente:** `trackfw branch prune` (worktrees `trackfw-nul` e `trackfw-triagem` com branches provavelmente integradas, mais um worktree `prunable` em `/private/var/folders`).
+
+---
+
+## Sessão 2026-09-17 — Hades (Wave 0 / ML-0A — jira_base_url threat model)
+
+**Início:** 2026-09-17 | Branch: `fix/jira-base-url` | Roadmap: ROADMAP-2026-09-17-jira-base-url-do-repositorio-vira-destino-de-post-autenticado-e-um-pr-que-edita-so-a-config-exfiltra-a-credencial-do-ci.md
+**Tarefa:** ML-0A — reproduzir a exfiltração de credencial via `jira_base_url` em laboratório local, enumerar o raio da classe, confirmar precedência, e recomendar direção com custo de compatibilidade.
+**Em andamento:** escrevendo parecer em `docs/portabilidade/2026-09-17-threat-model-jira-base-url.md`.
+
+**Concluído:** 2026-09-17
+- Reprodução verificada por execução: listener em `127.0.0.1:18080`, programa que replica `jira.go:100-109` com token falso, `Authorization: Basic <REDACTED>` chegou ao listener.
+- Raio enumerado: **1 chave** (`jira_base_url`) influencia destino de requisição autenticada. `jira_email`, `jira_project` — conteúdo/credencial, não destino. Linear: endpoint hardcoded, imune. `thirdparty fetch`: sem credencial, com `url.Parse`. `doctor --remote`, `release`, `ship`: delegam ao `gh` CLI, não montam URL a partir de config.
+- Precedência confirmada: config-antes-de-env para todas as 4 chaves Jira (`jira.go:29-44`). Nenhum precedente interno de ordem inversa em `internal/sync/`.
+- Recomendação: **Direção 1** (separar origem de credencial e destino quando token vem de env) + **AC3** (url.Parse + https obrigatório). Direção 1 preserva o caso self-hosted sem passo extra. Direção 2 (allowlist fora da árvore) é mais forte mas quebra AC2. Direção 3 (aviso TTY) não é barreira.
+- Residual declarado: (a) par `(config token, config base_url)` em repositório compartilhado — fora do escopo; (b) usuários legítimos com par `(config base_url, env token)` — breaking change silenciosa; (c) redirects para host diferente — não cobertos por `url.Parse` sozinho.
+- Gate `wave0/threat-model-jira` passou sem credencial vazada.
+- Artefato: `docs/portabilidade/2026-09-17-threat-model-jira-base-url.md`
+
+**Correção após revisão do advisor (2026-09-17):**
+- Primeira versão usou programa de réplica manual (`repro.go`) em vez do binário real.
+- Versão final: reprodução com `bin/trackfw sync --to=jira` real, ambiente de teste isolado fora do worktree, `JIRA_TOKEN` exclusivamente no ambiente, `jira_base_url` no `trackfw.yaml`.
+- Redirect confirmado por execução: `Authorization` forwarded ao host final após 302 — AC3 precisa de `CheckRedirect`, não só `url.Parse` + https.
+- `scripts/` varrido: nenhum `curl`/`wget` com URL de config + credencial.
+- `configForge` traçado: validado contra allowlist `{github,gitlab,bitbucket,azure}` em `forge/resolve.go:57`; não vira URL.
+- Gate passou. Artefato final: `docs/portabilidade/2026-09-17-threat-model-jira-base-url.md`
+
+**Correção após segunda revisão do advisor (contexto retomado 2026-09-17):**
+- O Teste B do redirect (localhost:18081 → 127.0.0.1:18082, hostnames distintos) confirmou que Go's `shouldCopyHeaderOnRedirect` STRIP o `Authorization` em redirects cross-hostname — inclusive entre dois endereços loopback com strings distintas.
+- Conclusão corrigida no parecer: a stdlib Go já cobre o vetor cross-hostname (ex: `jira.empresa.com` → `attacker.com`). O gap confirmado é mais estreito: redirect para o mesmo hostname em porta diferente (Teste A).
+- `attacker.com` removido do exemplo em §5; AC3 reformulado: `url.Parse` + https cobre cross-hostname; decisão sobre `CheckRedirect` para same-hostname-port-change fica com o arquiteto antes de ML-1A.
+- Gate passou novamente sem credencial vazada.

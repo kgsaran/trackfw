@@ -71,12 +71,48 @@ junto sem que ninguém confirme**. A correção tem de separar essas duas coisas
       vem do ambiente.** A regra precisa ser escrita de forma que um PR que edite só o `trackfw.yaml`
       **não** consiga mudar para onde uma credencial de CI é enviada. A forma (precedência invertida,
       exigência de par, allowlist fora da árvore) é decisão do ML — o invariante é este.
-- [ ] **AC2** — Uso legítimo de Jira self-hosted **continua funcionando**, sem passo extra para quem
-      já tem `jira_base_url` e `jira_token` na mesma origem. 🔴 Uma correção que quebre esse caso será
-      revertida e o defeito volta — a compatibilidade é parte do remédio, não concessão.
+- [ ] **AC2** — 🔴 **Reescrito após a Wave 0: como eu tinha redigido, este AC era impossível de
+      satisfazer.**
+
+      Eu exigia "nenhum passo extra" para o uso legítimo. A Wave 0 mostrou que a combinação
+      **vulnerável** — `token` do ambiente + `base_url` da config — é **a mesma combinação de boa
+      prática**: quem hospeda Jira próprio commita a URL (que não é segredo) e mantém o token fora do
+      repositório. Não existe sinal que distinga "config confiável" de "config alterada por um PR":
+      a origem é idêntica nos dois casos.
+
+      Portanto o AC passa a ser **por combinação**, e o passo extra fica confinado à única que é
+      perigosa:
+
+      | `base_url` | `token` | Comportamento exigido |
+      |---|---|---|
+      | config | config | funciona, **sem passo extra** — segredo e destino já compartilham confiança |
+      | env | env | funciona, **sem passo extra** — nenhum dos dois vem do repositório |
+      | **config** | **env** | 🔴 **recusa por padrão**, com erro que diga exatamente o que fazer |
+      | env | config | funciona — o destino não vem do repositório |
+
+      A recusa da linha crítica é liberável por **opt-in explícito fora da árvore** (variável de
+      ambiente), porque o ato de defini-la é uma decisão de quem controla o CI — não de quem abre o
+      PR. Um usuário afetado paga **uma linha, uma vez**; um atacante não ganha nada editando o
+      repositório.
+
+      🔴 A mensagem de recusa é parte do AC, não cortesia: ela precisa nomear as duas origens em
+      conflito e a variável que libera. Uma recusa que não ensina a saída vira issue de suporte e
+      depois um `--force` genérico.
 - [ ] **AC3** — `jira_base_url` é **validado** antes de virar destino: `url.Parse`, esquema exigido
       (`https`, com exceção declarada para `http` apenas se houver decisão explícita), e recusa
       **nomeada** para valor que não seja URL absoluta. Concatenação de string deixa de ser a forma.
+
+      **Decisão do arquiteto após a Wave 0 — incluir `CheckRedirect`.** A Wave 0 mediu duas formas de
+      redirect e elas têm vereditos distintos: hostname diferente ⇒ o próprio stdlib do Go remove o
+      `Authorization` (`shouldCopyHeaderOnRedirect`), então **não há vetor**; mesmo hostname com porta
+      diferente ⇒ o header **é preservado**, e aí há.
+
+      O resíduo é estreito, mas o custo de fechá-lo é baixo **e o padrão já existe neste repositório**:
+      `internal/thirdparty/fetch.go:57` faz `url.Parse` + exige `https` + revalida o esquema no
+      `CheckRedirect`. Reutilize-o em vez de inventar — e, se divergir, declare por quê.
+
+      ⚠️ Decidir se um redirect `http`→`https` no **mesmo host** deve ser permitido é parte deste AC;
+      a Wave 0 não testou esse caminho e o deixou declarado.
 - [ ] **AC4** — Falsificação em duas direções: (a) `jira_base_url` apontando para host diferente do
       esperado, com token vindo do ambiente ⇒ **recusa nomeada, nenhuma requisição emitida**; (b) o
       caso legítimo self-hosted ⇒ requisição emitida para o host configurado.
