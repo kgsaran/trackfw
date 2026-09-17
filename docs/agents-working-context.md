@@ -37582,3 +37582,21 @@ pré-requisito hard de ML-3A.
 - Conclusão corrigida no parecer: a stdlib Go já cobre o vetor cross-hostname (ex: `jira.empresa.com` → `attacker.com`). O gap confirmado é mais estreito: redirect para o mesmo hostname em porta diferente (Teste A).
 - `attacker.com` removido do exemplo em §5; AC3 reformulado: `url.Parse` + https cobre cross-hostname; decisão sobre `CheckRedirect` para same-hostname-port-change fica com o arquiteto antes de ML-1A.
 - Gate passou novamente sem credencial vazada.
+
+---
+
+## Sessão 2026-09-17 — Apolo (Wave 1 / ML-1A — jira_base_url fix)
+
+**Início:** 2026-09-17 | Branch: `fix/jira-base-url` | Roadmap: ROADMAP-2026-09-17-jira-base-url-do-repositorio-vira-destino-de-post-autenticado-e-um-pr-que-edita-so-a-config-exfiltra-a-credencial-do-ci.md
+**Tarefa:** ML-1A — implementar AC1-AC7: separar origem de destino e credencial, validar URL (url.Parse + https + CheckRedirect), gate anti-reintrodução.
+**Em andamento:** escrevendo `internal/sync/jira.go`, `internal/sync/jira_security_test.go`, `scripts/check-jira-url-concat.sh`.
+
+**Concluído:** 2026-09-17
+- `internal/sync/jira.go`: `newJiraClientFromSources` (núcleo testável), `validateJiraURL` (url.Parse + https), `jiraNormalizeHost` (normaliza porta implícita), `newJiraHTTPClient` (CheckRedirect: rejeita não-https e host diferente), `CreateIssue` usa `url.JoinPath` em vez de concatenação.
+- `internal/sync/jira_security_test.go`: AC2 (5 linhas da tabela), opt-in, YAML-não-desbloqueia (AC1 invariant), AC3 (6 braços de URL validation), AC3 CheckRedirect (5 braços unitários + 1 wired TLS end-to-end), contra-braço (opt-in com request real).
+- `scripts/check-jira-url-concat.sh`: AC7 anti-reintrodução, 3 braços de self-test, wired em parity-rest do Makefile.
+- `vault/notes/jira-base-url-config-env-exfiltration-2026-09-17.md`: nota sobre o padrão e o mecanismo.
+- `go build ./...` → RC=0. `go test ./...` → RC=0 (todos os pacotes). `env -u FORCE_COLOR make quality` → RC=0, 212 OK, 0 FAIL. `trackfw validate` → RC=0, 169 warnings pré-existentes.
+- **Nome da variável opt-in:** `TRACKFW_JIRA_ALLOW_MIXED_ORIGIN` — prefixo TRACKFW_ evita colisão com variáveis do vendedor; nomeia a combinação específica, não um skip genérico.
+- **http→https no mesmo host:** inacessível porque validateJiraURL exige https na URL inicial; qualquer downgrade é bloqueado pelo check de esquema no CheckRedirect.
+- **Reutilização de fetch.go:** padrão url.Parse + https + CheckRedirect seguido; CheckRedirect aqui vai além (compara host:porta normalizado, não só esquema).

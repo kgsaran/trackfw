@@ -84,7 +84,28 @@ echo "OK [wave0/threat-model-jira]: parecer presente, reproduz em local e sem cr
 > Dependências: **Wave 0 auditada.** A direção escolhida sai do parecer, não desta linha.
 
 ### ML-1A — separar destino de credencial, validar a URL e fechar a classe
-**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Status:** ✅ Concluído — auditado pelo arquiteto (2026-09-17)
+
+**O ponto que sustenta a correção, verificado por mim:** o opt-in
+`TRACKFW_JIRA_ALLOW_MIXED_ORIGIN` é lido **só** por `os.Getenv` — não existe chave de config
+correspondente, então um `trackfw.yaml` hostil **não tem como destravar**. Há teste dedicado
+(`TestNewJiraClient_AC2_YAMLCannotUnlockOptIn`). É o que separa uma guarda de uma sugestão: a saída
+de emergência é estruturalmente inalcançável de dentro do repositório.
+
+**Mensagem de recusa** — auditada porque eu a declarei parte do AC: nomeia as duas origens em
+conflito (`trackfw.yaml` e `JIRA_TOKEN`), explica **por que** recusa (um PR que edita só a config
+redirecionaria a credencial) e indica a saída dizendo explicitamente *"not in trackfw.yaml"*. Recusa
+que não ensina a saída vira issue de suporte e depois um `--force` genérico.
+
+**`CheckRedirect`** foi além do padrão do `fetch.go`: além do esquema, compara o host normalizado —
+com porta implícita preenchida, para não acusar `https://h:443` como diferente de `https://h`. Fecha
+o caso medido na Wave 0 (mesmo hostname, porta diferente), que era o único vetor real de redirect.
+
+**`http`→`https` no mesmo host:** inalcançável por construção — a URL inicial já exige `https`, então
+o cliente nunca emite requisição `http`. Decisão registrada em vez de deixada em aberto.
+
+**Contra-braços presentes:** com o opt-in definido a combinação `(config, env)` volta a funcionar **e
+emite a requisição** — provando que o cenário discrimina, e não que o teste apenas observa um erro.
 Cobre AC1 a AC7.
 
 ---
