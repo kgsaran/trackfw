@@ -2,6 +2,40 @@
 
 ---
 
+## Sessão 2026-09-17 — Ares (fix/gate-escreve-na-arvore — ML-1A-bis: absolutizar GO_BIN em check-tty-detection.sh) — CONCLUÍDO (aguarda commit do arquiteto)
+
+**Início:** 2026-09-17 | Branch: `fix/gate-escreve-na-arvore`
+**Tarefa (correção de auditoria):** GO_BIN relativo passado pelo caller deixava de resolver após `(cd "$WORK/project")` introduzido pelo ML-1A — exit 127, asserção passava sem medir nada.
+**Varredura realizada:** 18 gates em Cenário 18 auditados para mesmo padrão. 17 já tinham normalização (`if [[ "$GO_BIN" != /* ]]` ou `case /*`). check-thirdparty-parity.sh usa variante `case` — confirmado normalizado. Único ausente: check-tty-detection.sh.
+**Correção aplicada:** `scripts/check-tty-detection.sh` — inserido bloco `if [[ "$GO_BIN" != /* ]]; then GO_BIN="$(pwd)/$GO_BIN"; fi` entre atribuição padrão e guarda `-x`, seguindo padrão canônico de check-rules-parity.sh.
+**O que a correção afirma:** com GO_BIN relativo (`bin/trackfw`), o binário é executado (exit 0, não 127); com GO_BIN apontando para inexistente, a guarda da linha 25 reprova nomeando o caminho.
+**O que a faria reprovar:** qualquer `cd` antes da normalização, ou guard checando o relativo antes de absolutizar — exatamente o bug corrigido.
+**Falsificação:**
+- A: `GO_BIN=bin/trackfw bash scripts/check-tty-detection.sh` → saiu com exit 0 (antes: 127)
+- B: `GO_BIN=/nonexistent/trackfw bash scripts/check-tty-detection.sh` → `Go binary not found/executable`, RC=1
+- C: `env -u FORCE_COLOR make quality` → RC=0; `git status --porcelain` mostra apenas `M docs/agents-working-context.md`, `M scripts/check-gates-falsify.sh`, `M scripts/check-tty-detection.sh` (sem trackfw.yaml)
+**Build:** `go build ./...` RC=0
+
+---
+
+## Sessão 2026-09-17 — Ares (fix/gate-escreve-na-arvore — ML-1A: isolar cwd e enumerar cobertura da guarda) — CONCLUÍDO (aguarda auditoria do arquiteto)
+
+**Início:** 2026-09-17 | Branch: `fix/gate-escreve-na-arvore` | Roadmap: `ROADMAP-2026-09-17-gate-escreve-na-arvore-que-audita-e-a-guarda-existente-nao-cobre-o-culpado.md` ML-1A
+**Tarefa:** AC1 — isolamento de cwd em `check-tty-detection.sh:43`; AC2 — enumerar check-*.sh em tempo de execução no Cenário 18 (opt-out); AC3 — comparação de conteúdo via OID de árvore (worktree cópia limpa); AC4 — varredura de gates com init/discover/update; AC5 — destino do GEMINI.md.
+**Árvore ao início:** `M trackfw.yaml` (modificado pelo gate culpado antes da correção — não alterado nem commitado).
+**Implementação:**
+- AC1: `scripts/check-tty-detection.sh:43` — `HOME="$WORK/home" "$GO_BIN" init ...` → `(cd "$WORK/project" && HOME="$WORK/home" "$GO_BIN" init ...)`. Gate continua passando (init não trava); árvore não muda.
+- AC2/AC3: Cenário 18 de `scripts/check-gates-falsify.sh` reescrito: lista fixa substituída por `find "$ROOT_DIR/scripts" -maxdepth 1 -name 'check-*.sh'` em tempo de execução + grep de fonte (`\bGO_BIN\b|bin/trackfw`); exclusões opt-out com motivo obrigatório; worktree cópia limpa + OID via `git write-tree`.
+- AC4: 6 gates invocam init/discover/update; exatamente 1 (check-tty-detection.sh:43) carecia de isolamento de cwd. Confirmado por leitura direta das linhas de invocação de cada gate.
+- AC5: GEMINI.md mantido. Justificativa: artefato legítimo de instruções de governança para sessões Gemini CLI; mesmo papel do CLAUDE.md; nenhum consumidor automático existe, mas isso não difere do CLAUDE.md em ambientes sem CI; nova guarda (Cenário 18 corrigido) detectará qualquer reescrita acidental futura. Divergência de conteúdo vs CLAUDE.md é #376 (fora do escopo desta REQ).
+**Falsificação:**
+- Direção A (nova guarda detecta bug antigo): OID baseline 2e44dc7a ≠ OID pós-execução c8ae5977 → trackfw.yaml identificado como mutado.
+- Direção B (código corrigido passa): OID baseline 6e037b38 = OID pós-execução 6e037b38 → sem mutação.
+- Contra-braço (guarda antiga não detecta de árvore suja): before_porcelain == after_porcelain == "M trackfw.yaml" mesmo após reescrita de conteúdo (generated date 2026-09-16 → 2026-09-17).
+**Gates e validações:** `go build ./...` OK; `go test ./...` todos verdes; `check-orphan-gates.sh` OK; `check-tty-detection.sh` OK; `bash -n` ambos os scripts OK. `trackfw validate` 156 violations pré-existentes (esperado — trackfw.yaml modificado pelo bug antes da correção).
+
+---
+
 ## Sessão 2026-09-17 — Hades (fix/gate-escreve-na-arvore — ML-0A: threat model Wave 0) — EM ANDAMENTO
 
 **Início:** 2026-09-17 | Branch: `fix/gate-escreve-na-arvore` | Roadmap: `ROADMAP-2026-09-17-gate-escreve-na-arvore-que-audita-e-a-guarda-existente-nao-cobre-o-culpado.md` ML-0A

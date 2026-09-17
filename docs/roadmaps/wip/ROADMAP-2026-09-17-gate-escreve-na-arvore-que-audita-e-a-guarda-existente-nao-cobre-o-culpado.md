@@ -76,7 +76,7 @@ partida de arvore comprovadamente limpa. Residuais R4, R5 e R6 nomeados na REQ.
 > Dependências: **Wave 0 auditada.**
 
 ### ML-1A — isolar o `cwd` e enumerar a cobertura da guarda
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado pelo arquiteto (2026-09-17), com uma correção de auditoria
 **Papel:** `ares-tf`
 Cobre AC1, AC2, AC3 (emendado), AC4 e AC5.
 
@@ -85,3 +85,47 @@ status; e a falsificacao parte de arvore comprovadamente limpa, falhando nomeada
 🔴 **R6:** se a correcao do AC2 for outra lista — ainda que gerada —, o defeito de fundo continua.
 
 ---
+
+---
+
+### Auditoria do arquiteto — 2026-09-17
+
+**Aprovado no mérito.** A cobertura deixou de ser lista: o Cenário 18 usa `find` **na execução** e
+decide o escopo **lendo o fonte de cada gate** (`GO_BIN|bin/trackfw`). É classificação, não
+enumeração de nomes — um gate novo nasce **dentro** da cobertura sem ninguém editar nada. Fecha o R6,
+que era a armadilha nomeada: o ML-6I de julho errou exatamente por codificar "os gates hoje
+conhecidos como limpos". As duas exclusões vêm com motivo escrito ao lado.
+
+A guarda passou a comparar **OID de árvore** (`git write-tree` sobre cópia limpa) em vez de
+`--porcelain`. O contra-braço mostra a guarda antiga imprimindo `OK` enquanto o `trackfw.yaml` era
+sobrescrito — a vacuidade que a Wave 0 mediu.
+
+**Verificado no artefato, não no relatório:** restaurei o `trackfw.yaml`, rodei o gate corrigido, e a
+árvore ficou limpa. `make quality` RC=0, e `trackfw.yaml` **não** aparece no `git status` ao final.
+
+🔴 **Uma correção de auditoria (ML-1A-bis), porque o remédio introduziu vacuidade nova.** O
+`(cd "$WORK/project" && …)` fez o `GO_BIN` **relativo** deixar de resolver:
+
+```
+saiu com exit 127 — nao travou
+```
+
+`127` é "comando não encontrado". O gate existe para provar que o binário **não trava** sem TTY — e
+um binário que **não existe** também não trava. O relatório original chamou o exit code de
+"irrelevante"; não é: é a assinatura de que o objeto medido não foi executado. Pior, a guarda `-x` da
+linha 25 já protegia contra isso, mas roda **antes** do `cd` — o `cd` a derrotou.
+
+Impacto medido antes de dimensionar: `FALSIFY_GO_BIN` e o default do gate são absolutos, então CI e
+`make quality` **não** quebravam. Era fragilidade latente. Corrigido normalizando `GO_BIN` antes da
+guarda, no padrão que **17 dos 18** gates do Cenário 18 já usavam — o `check-tty-detection.sh` era o
+único sem, o que é coerente com ele ser o único culpado.
+
+**Falsificação reproduzida por mim:** `GO_BIN` relativo → `exit 0` (binário executa); `GO_BIN`
+inexistente → recusa nomeada com `RC=1`, medido **sem pipe**, porque `| tail` devolve o `$?` do
+`tail`.
+
+**AC5 — `GEMINI.md`: mantido.** Não há consumidor automatizado, mas o arquivo cumpre para o Gemini CLI
+o mesmo papel que o `CLAUDE.md` cumpre para o Claude Code. E, com a guarda nova, qualquer reescrita
+acidental futura muda o OID e é pega — o arquivo rastreado virou ativo, não passivo. A divergência de
+conteúdo em relação ao `CLAUDE.md` é o mecanismo do #376, com REQ própria.
+
