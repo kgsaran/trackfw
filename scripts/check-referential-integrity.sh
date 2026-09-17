@@ -1,13 +1,30 @@
 #!/usr/bin/env bash
 # Verifica que refs canônicas de frontmatter em REQs apontam para arquivos existentes.
+# Lê req_dir de trackfw.yaml (fallback: docs/req) — corrige o literal hardcoded que ignorava
+# a configuração (REQ-2026-09-17-sync-enumera-req-por-caminho-literal-ignora-req-dir-e-escreve-no-provedor-de-pm.md, AC5).
 set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$ROOT_DIR"
 
+# Extrai req_dir de trackfw.yaml. Usa awk para o caso mais comum (chave simples com ou sem aspas).
+# Fallback para docs/req quando o arquivo não existe ou a chave está ausente.
+REQ_DIR="docs/req"
+if [[ -f "$ROOT_DIR/trackfw.yaml" ]]; then
+  _VAL=$(awk '/^req_dir[[:space:]]*:/ {
+    sub(/^req_dir[[:space:]]*:[[:space:]]*/, "")
+    gsub(/^["'"'"']|["'"'"']$/, "")
+    gsub(/[[:space:]]*$/, "")
+    print; exit
+  }' "$ROOT_DIR/trackfw.yaml")
+  [[ -n "$_VAL" ]] && REQ_DIR="$_VAL"
+fi
+
 status=0
 
-for req in docs/req/*.md; do
+# Enumera REQs no layout flat e por subdiretório (depth ≤ 2 cobre by_agent e por-estado).
+# Se REQ_DIR não existe, a iteração é vazia e o script finaliza com "Referential integrity OK".
+while IFS= read -r req; do
   [[ -f "$req" ]] || continue
   in_frontmatter=0
   seen_frontmatter=0
@@ -45,7 +62,7 @@ for req in docs/req/*.md; do
         ;;
     esac
   done < "$req"
-done
+done < <(find "$ROOT_DIR/$REQ_DIR" -maxdepth 2 -name "*.md" 2>/dev/null | sort)
 
 if [[ $status -ne 0 ]]; then
   exit "$status"

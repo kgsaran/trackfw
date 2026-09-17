@@ -61,7 +61,10 @@ func newRoadmapNewCmd() *cobra.Command {
 			// Lista pelo ponto único de leitura de REQ (ADR-2026-09-03, D3/D4): em by_agent o glob
 			// flat não enxergava nenhuma REQ e o wizard oferecia uma lista vazia.
 			roadmapCfg := config.Load()
-			reqFiles := validator.ResolveREQFiles(roadmapCfg)
+			reqFiles, err := validator.ResolveREQFiles(roadmapCfg)
+			if err != nil {
+				return fmt.Errorf("roadmap new: resolve REQ files: %w", err)
+			}
 			var selectedREQ string
 
 			isTTY := cbterm.IsTerminal(uintptr(os.Stdin.Fd()))
