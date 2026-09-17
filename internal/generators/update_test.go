@@ -2157,7 +2157,7 @@ func TestUpdateCiWorkflowRefreshesDiscoverWorkflowWhenPresent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != BuildDiscoverGitHubActionsWorkflowContent() {
+	if string(got) != BuildDiscoverGitHubActionsWorkflowContent(false) {
 		t.Fatalf("trackfw-validate.yml was not refreshed to the current template:\n%s", got)
 	}
 
@@ -2460,5 +2460,40 @@ func TestUpdateNeverWritesThroughDanglingSymlinkAtDiscoverWorkflowPath(t *testin
 
 	if _, err := os.Lstat(danglingTarget); !os.IsNotExist(err) {
 		t.Fatalf("dangling-symlink arbitrary write: %s was created outside the project (stat err=%v)", danglingTarget, err)
+	}
+}
+
+// TestRefreshDiscoverWorkflow_ProducerContext affirms ML-1A AC2: all three sites that
+// write trackfw-validate.yml use IsProducerGoMod to select the correct template arm.
+// This test covers the `update` site (refreshDiscoverGitHubActionsWorkflowIfPresent):
+// a stale workflow on a producer-mode repo is refreshed to the producer template, not
+// the consumer template.
+func TestRefreshDiscoverWorkflow_ProducerContext(t *testing.T) {
+	root := t.TempDir()
+	// Producer go.mod
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module github.com/kgsaran/trackfw\n\ngo 1.22\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Pre-create a stale workflow file (consumer template) so refresh runs.
+	wfPath := filepath.Join(root, DiscoverGitHubActionsWorkflowPath)
+	if err := os.MkdirAll(filepath.Dir(wfPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stale := BuildDiscoverGitHubActionsWorkflowContent(false) // consumer template
+	if err := os.WriteFile(wfPath, []byte(stale), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := refreshDiscoverGitHubActionsWorkflowIfPresent(root); err != nil {
+		t.Fatalf("refreshDiscoverGitHubActionsWorkflowIfPresent: %v", err)
+	}
+
+	got, err := os.ReadFile(wfPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := BuildDiscoverGitHubActionsWorkflowContent(true) // producer template
+	if string(got) != want {
+		t.Errorf("producer context: trackfw-validate.yml not refreshed to producer template.\ngot:\n%s\nwant:\n%s", got, want)
 	}
 }
