@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-16
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-16-run-capture-le-stdout-e-stderr-em-sequencia-e-trava-o-job-ate-o-timeout-em-vez-de-reprovar.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-16-run-capture-le-stdout-e-stderr-em-sequencia-e-trava-o-job-ate-o-timeout-em-vez-de-reprovar.md"
 ---
 
 # REQ: run-capture le stdout e stderr em sequencia e trava o job ate o timeout em vez de reprovar
@@ -27,5 +27,5 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-16-run-capture-le-stdout-e-stderr-em-sequencia-e-trava-o-job-ate-o-timeout-em-vez-de-reprovar.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-09-16-run-capture-le-stdout-e-stderr-em-sequencia-e-trava-o-job-ate-o-timeout-em-vez-de-reprovar.md
 <!-- Reference the roadmap that implements this requirement -->

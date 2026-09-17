@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-16
 req: "docs/req/REQ-2026-09-16-run-capture-le-stdout-e-stderr-em-sequencia-e-trava-o-job-ate-o-timeout-em-vez-de-reprovar.md"
 squad: ""
@@ -7,7 +7,32 @@ squad: ""
 
 # Roadmap: run-capture le stdout e stderr em sequencia e trava o job ate o timeout em vez de reprovar
 
-> Created: 2026-09-16 | Status: wip
+> Created: 2026-09-16 | Status: done
+
+## Resultado — concluído em 2026-09-17 (PR #377, issue #372)
+
+**Causa:** `scripts/windows-repro/run.ps1`, `Run-Capture` redirecionava os dois fluxos e os lia **em
+sequência** com `ReadToEnd()` síncrono — o deadlock que a documentação da .NET descreve: o pai
+bloqueia lendo stdout até o fim enquanto o filho bloqueia escrevendo num buffer de stderr cheio.
+
+**Efeito, pior que uma falha:** o job saía `cancelled`, não `failure`. O veredito sumia, os itens já
+executados não apareciam no sumário, e 20 min de runner iam embora sem diagnóstico. Um verificador
+que emudece é pior que o defeito que ele deveria verificar.
+
+**Correção:** as duas tasks `ReadToEndAsync()` são emitidas **antes** de esperar qualquer uma.
+Duas armadilhas evitadas, com o motivo escrito no código:
+1. o `WaitForExit()` final é **sem prazo** — a sobrecarga com argumento não espera a drenagem dos
+   pipes redirecionados e trocaria deadlock por **truncamento silencioso**;
+2. timeout interno de 18 min, **abaixo** dos `timeout-minutes: 20` do job — um filho travado por
+   outro motivo passa a produzir diagnóstico nomeado em vez de cancelamento mudo.
+
+**Falsificação em Windows real, nas duas direções:** deadlock reproduzido a **8 KB** de stderr com a
+versão antiga; depois, **256 KB em stdout e stderr simultâneos** retornam completos com `exit=42`
+preservado. Reproduzir antes era a exigência — sem isso não se sabe que corrigiu, sabe-se que mudou.
+
+**Crédito:** relatado por consumidor externo (Lourival), com o gatilho isolado (gate de cobertura
+reprovando), a objeção *"é problema do fork"* antecipada e respondida, e o efeito de perda de
+veredito nomeado. Os 15 sítios de chamada não mudaram — o objeto retornado é idêntico.
 
 ## Context
 <!-- What problem does this roadmap solve? Link the REQ. -->
