@@ -2,6 +2,97 @@
 
 ---
 
+## Sessão 2026-09-17 — Apolo (fix/sync-enumera-req — ML-1A-quinquies: GetwdFn volta a ser não-exportada; testes migram para package validator) — EM ANDAMENTO
+
+**Início:** 2026-09-17 | Branch: `fix/sync-enumera-req`
+**Tarefa:** Auditoria do ML-1A-quater recusou `var GetwdFn` exportada em `internal/validator` — um símbolo exportado mutável que desliga a contenção contradiz o objetivo da REQ. Correção: tornar `getwdFn` não-exportado e migrar os dois testes fail-closed para `package validator`.
+**Correção:**
+- `internal/validator/validator.go`: `GetwdFn` → `getwdFn` (não exportado); comentário atualizado.
+- `internal/validator/validator_req_contained_test.go` (NOVO, `package validator`): dois testes migrados de `internal/sync/sync_test.go` que injetam `getwdFn` diretamente — `TestCheckREQDirContained_GetWdFails_FailClosed` (Direção A) e `TestCheckREQDirContained_EvalSymlinksCWDFails_FailClosed` (Direção B).
+- `internal/sync/sync_test.go`: removidos os dois testes fail-closed e o import de `validator` (não mais necessário).
+**Falsificação:** ambos os testes PASS, sem SKIP. Superfície pública inalterada (`git diff HEAD -- internal/validator/` sem símbolo exportado novo).
+**Build:** `go build ./...` RC=0 | `go test ./...` todos verdes | `env -u FORCE_COLOR make quality` RC=0 (212 OK, 0 FAIL).
+
+---
+
+## Sessão 2026-09-17 — Apolo (fix/sync-enumera-req — ML-1A-quinquies: GetwdFn volta a ser não-exportada; testes migram para package validator) — CONCLUÍDO (aguarda commit do arquiteto)
+
+---
+
+## Sessão 2026-09-17 — Apolo (fix/sync-enumera-req — ML-1A-quater: teste fail-closed Windows-portável via injeção de GetwdFn) — CONCLUÍDO (aguarda commit do arquiteto)
+
+**Início:** 2026-09-17 | Branch: `fix/sync-enumera-req`
+**Tarefa:** `TestSyncToProvider_GetWdFails_FailClosed_ML1Abis` falhava no Windows porque `os.RemoveAll(CWD)` é bloqueado pelo SO (The process cannot access the file because it is being used by another process). O ratchet `windows-full-suites` acusou `+1 NOVO` no PR #382.
+**Correção:**
+- `internal/validator/validator.go`: adicionado `var GetwdFn func() (string, error) = os.Getwd` antes de `checkREQDirContained`; a função agora usa `GetwdFn()` em vez de `os.Getwd()` diretamente.
+- `internal/sync/sync_test.go`: adicionado import de `validator`. Ambos os testes reescritos com injeção direta:
+  - `TestSyncToProvider_GetWdFails_FailClosed_ML1Abis` (Direção A): injeta `validator.GetwdFn` retornando erro; determinístico em todas as plataformas. O `t.Skip` e o bloco `os.Chdir+RemoveAll` foram removidos.
+  - `TestSyncToProvider_EvalSymlinksCWDFails_ML1Abis` (Direção B): removido skip incondicional; injeta `validator.GetwdFn` retornando caminho inexistente para forçar falha de `EvalSymlinks`; exercita o segundo ramo fail-closed em todas as plataformas.
+**Varredura de portabilidade dos testes escritos neste ML:**
+  - `TestSyncToProvider_GetWdFails_FailClosed_ML1Abis`: portável (injeção pura, sem syscall).
+  - `TestSyncToProvider_EvalSymlinksCWDFails_ML1Abis`: portável (injeção pura; `EvalSymlinks` em caminho inexistente falha em todas as plataformas).
+  - `TestSyncToProvider_REQDirSymlink_AC7`: usa `symlinkOrSkip` (guarda nomeada). CI Windows confirmou: PASS (não skip) — runner tem Developer Mode.
+  - `TestSyncToProvider_REQDirParentTraversal_AC7`, `TestSyncToProvider_REQDirAbsolutePath_AC7`: path arithmetic pura; portáveis.
+**Decisão de design:** `GetwdFn` exportado (não unexported via export_test.go) porque o teste está em `package sync` e `export_test.go` do pacote `validator` não é visível fora dele. Escolha declarada no relatório.
+**Build:** `go build ./...` RC=0 | `go test ./...` todos verdes | `env -u FORCE_COLOR make quality` RC=0 (212 OK, 0 FAIL).
+
+---
+
+## Sessão 2026-09-17 — Apolo (fix/sync-enumera-req — ML-1A-ter: correção de auditoria — guarda de symlink no AC7) — CONCLUÍDO (aguarda commit do arquiteto)
+
+**Início:** 2026-09-17 | Branch: `fix/sync-enumera-req`
+**Tarefa:** Corrigir a guarda de `os.Symlink` no `TestSyncToProvider_REQDirSymlink_AC7` que tratava qualquer erro como "sem privilégio" e pulava o teste — silenciando falhas reais (disco cheio, caminho inválido, bug no teste). Gate `check-symlink-privilege-guard` reprovava em `internal/sync/sync_test.go:448`.
+**Correção:**
+- Criado `internal/sync/symlink_helper_test.go` — cópia do padrão canônico de `internal/discover/symlink_helper_test.go`: helper `symlinkOrSkip` + `isSymlinkPrivilegeError`. Distinção correta: sem privilégio (WinError 1314 ou `os.IsPermission`) → skip; qualquer outro erro → `t.Fatalf`.
+- `internal/sync/sync_test.go:448` — guarda manual `if err := os.Symlink(...) { t.Skipf(...) }` substituída por `if !symlinkOrSkip(t, outside, symlinkPath) { return }`.
+- Varredura: nenhum outro `os.Symlink`/`syscall.Mkfifo` sem guarda em `internal/sync/`.
+**O que a correção afirma:** a guarda do AC7 distingue "sem privilégio" de erro real; em macOS/Linux o teste **executa** (não pula), porque `os.Symlink` não exige privilégio especial.
+**Evidência de execução (não skip):** `go test ./internal/sync/... -run TestSyncToProvider_REQDirSymlink_AC7 -v` → `--- PASS: TestSyncToProvider_REQDirSymlink_AC7 (0.00s)` sem linha `SKIP`.
+**Build:** `go build ./...` RC=0 | `go test ./...` todos verdes | `env -u FORCE_COLOR make quality` RC=0 (212 OK, 0 FAIL).
+
+---
+
+## Sessão 2026-09-17 — Apolo (fix/sync-enumera-req — ML-1A-bis: correção de auditoria — fail-closed em checkREQDirContained) — ENCERRADO
+
+**Início:** 2026-09-17 | Branch: `fix/sync-enumera-req` | Roadmap: ML-1A-bis (correção pós-auditoria)
+**Tarefa:** Corrigir dois caminhos fail-open em `checkREQDirContained`: (1) `os.Getwd()` falhando retornava nil; (2) `EvalSymlinks(cwd)` falhando usava fallback lexical. Ambos viram recusa com diagnóstico nomeado.
+**Concluído:**
+- `internal/validator/validator.go` linha ~2398: comentário e código atualizados. `os.Getwd()` falha → erro nomeado "não foi possível resolver o diretório de trabalho". `EvalSymlinks(cwd)` falha → erro nomeado com menção a EvalSymlinks.
+- `internal/sync/sync_test.go`: `TestSyncToProvider_GetWdFails_FailClosed_ML1Abis` (direção A) passa — remove CWD após chdir, verifica recusa + create não chamado. `TestSyncToProvider_EvalSymlinksCWDFails_ML1Abis` (direção B) documentado como inalcançável portavelmente (t.Skip com justificativa).
+- `go build ./...` RC=0. `go test ./...` RC=0 (todos os packages). `check-req-path-literals.sh` e `check-orphan-gates.sh` OK.
+- Varredura: único `return nil // fail open` no codebase era a linha 2401 — corrigida. Outros "fail-open" são em generators (fail-open para HOME não-resolvível é correto) e comentários históricos.
+**Não commitado** (role não tem autoridade Git). Microbatch entregue ao arquiteto via handback.
+
+---
+
+## Sessão 2026-09-17 — Apolo (fix/sync-enumera-req — ML-1A: Wave 1 — AC1-AC7 + AC5 gate) — ENCERRADO
+
+**Início:** 2026-09-17 | Branch: `fix/sync-enumera-req` | Roadmap: `ROADMAP-2026-09-17-sync-enumera-req-por-caminho-literal-ignora-req-dir-e-escreve-no-provedor-de-pm.md` ML-1A
+**Tarefa:** Corrigir `internal/sync/sync.go:43` (glob literal → `validator.ResolveREQFiles`). Adicionar contenção de caminho em `ResolveREQFiles` via `EvalSymlinks` (AC7). Alterar assinatura de `ResolveREQFiles` para `([]string, error)`. Criar gate AC5. Corrigir `scripts/check-referential-integrity.sh:10`.
+**Concluído:**
+- `internal/sync/sync.go`: `syncToProvider` usa `validator.ResolveREQFiles(cfg)` (AC1). `ErrNoREQsFound` struct com `REQDir` verbatim (AC6). Sem chamadas de rede em testes (AC4).
+- `internal/validator/validator.go`: `ResolveREQFiles` assinatura `([]string, error)`. `checkREQDirContained` + `resolvePhysical` adicionados (AC7). Todos os 11 callers internos atualizados.
+- `internal/validator/validator_traceid.go`: atualizado para novo retorno.
+- `internal/generators/roadmap.go`, `req.go`, `context.go`: atualizados.
+- `internal/commands/sync.go`: handler `*ErrNoREQsFound` (exit 0, mensagem verbatim). `internal/commands/roadmap.go`: atualizado.
+- `scripts/check-referential-integrity.sh`: extrai `req_dir` do `trackfw.yaml` via awk; fallback `docs/req` (AC5 / Regra Dura).
+- `scripts/check-req-path-literals.sh`: gate AC5 novo; registrado no Makefile e em `check-orphan-gates`.
+- `internal/sync/sync_test.go`: 6 novos testes (AC2, AC3, AC4, AC6, AC7×3) com reconciliação de frase por teste.
+- `internal/validator/validator_req_layout_test.go`, `validator_test.go`, `internal/generators/req_test.go`: atualizados para nova assinatura; `chdir(t, dir)` adicionado onde necessário para contenção de caminho.
+- `go test ./...` RC=0 (24 testes em `internal/sync`, todos os packages verdes). Build RC=0. Gates check-req-path-literals, check-referential-integrity e check-orphan-gates todos OK.
+**Não commitado** (role não tem autoridade Git). Microbatch entregue ao arquiteto via handback.
+
+---
+
+## Sessão 2026-09-17 — Hades (fix/sync-enumera-req — ML-0A: Wave 0 threat model) — ENCERRADO
+
+**Início:** 2026-09-17 | Branch: `fix/sync-enumera-req` | Roadmap: `ROADMAP-2026-09-17-sync-enumera-req-por-caminho-literal-ignora-req-dir-e-escreve-no-provedor-de-pm.md` ML-0A  
+**Tarefa:** Parecer Wave 0 para o roadmap que corrige `internal/sync/sync.go:43` (glob literal `docs/req/*.md` ignora `req_dir`). Cinco vetores investigados: vazamento por alvo errado; escrita autenticada; caminho hostil via `cfg.REQDir`; mensagem AC6; verificabilidade do AC4.  
+**Concluído:**  
+Parecer escrito em `docs/portabilidade/2026-09-17-threat-model-sync-req-dir.md`. Quatro seções entregues: completude da enumeração, modelo de ameaça, alvos de falsificação em ambas as direções, residual declarado.  
+**Achado principal (bloqueante para Wave 1):** `ResolveREQFiles` não contém o caminho — não existe chamada a `isOutsideCWD` no enumerador. O fix em AC1 como redigido substituiria um literal seguro-por-acidente por uma leitura-fora-da-árvore para qualquer `req_dir: ../../`. O vetor concreto: `req_dir: ../trackfw/docs/req` no worktree sync publica os REQs do projeto principal no Linear/Jira do projeto sync. AC1 precisa de emenda ou AC7 novo exigindo contenção com `EvalSymlinks` antes de chamar `resolveREQFiles`.  
+**Outros achados:** (a) `jira_base_url` no mesmo `trackfw.yaml` permite redirecionar POSTs autenticados — pré-existente, fora de escopo desta REQ; (b) `config.Load()` é `once.Do` — AC2 pode medir cache do default em vez do `req_dir` injetado sem `config.Reset()`; (c) `isStatusOpen` reduz a superfície do traversal a arquivos com `| Status: Open`; (d) `scripts/check-referential-integrity.sh:10` tem o mesmo literal fora do escopo do AC5; (e) AC4 é arquitetura, não mecânico.  
+**Não commitado** (role não tem autoridade Git). Parecer entregue ao arquiteto via handback.
 ## Sessão 2026-09-17 — Ares (fix/gate-escreve-na-arvore — ML-1A-bis: absolutizar GO_BIN em check-tty-detection.sh) — CONCLUÍDO (aguarda commit do arquiteto)
 
 **Início:** 2026-09-17 | Branch: `fix/gate-escreve-na-arvore`

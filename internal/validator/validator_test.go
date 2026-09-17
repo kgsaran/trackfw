@@ -614,6 +614,7 @@ func TestGetStatus_Empty(t *testing.T) {
 // TestResolveREQFilesByAgent — resolveREQFiles deve encontrar arquivos em req_dir/<agente>/<estado>/ quando by_agent.
 func TestResolveREQFilesByAgent(t *testing.T) {
 	dir := t.TempDir()
+	chdir(t, dir)
 	writeFile(t, dir, "docs/requisicoes/claude/wip/REQ-001.md", `---
 req_id: RID-1
 ---
@@ -625,7 +626,7 @@ req_id: RID-1
 		Agents:             []string{"claude"},
 	}
 
-	files := resolveREQFiles(cfg)
+	files, _ := resolveREQFiles(cfg)
 	if len(files) != 1 {
 		t.Fatalf("esperado 1 arquivo, obteve %d: %v", len(files), files)
 	}
@@ -637,6 +638,7 @@ req_id: RID-1
 // TestTraceIdREQByAgent — par REQ+Roadmap com mesmo req_id em estrutura by_agent não deve gerar traceid_orphan_roadmap.
 func TestTraceIdREQByAgent(t *testing.T) {
 	dir := t.TempDir()
+	chdir(t, dir)
 	// REQ em req_dir/claude/wip/
 	writeFile(t, dir, "docs/requisicoes/claude/wip/REQ-001.md", `---
 req_id: RID-1

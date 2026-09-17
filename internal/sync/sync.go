@@ -2,10 +2,13 @@ package sync
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
+
+	"github.com/kgsaran/trackfw/internal/config"
+	"github.com/kgsaran/trackfw/internal/validator"
 )
 
 // SyncResult representa o resultado do sync de uma REQ.
@@ -14,6 +17,23 @@ type SyncResult struct {
 	IssueID string
 	Skipped bool  // true se já tinha issue vinculado ou status != Open
 	Error   error
+}
+
+// ErrNoREQsFound é retornado por SyncToLinear/SyncToJira quando a resolução produz zero arquivos.
+// Carrega REQDir verbatim (sem expansão) para que o chamador possa imprimir a mensagem de
+// diagnóstico sem vazar caminhos absolutos em logs de CI (AC6).
+type ErrNoREQsFound struct {
+	REQDir string // valor verbatim de cfg.REQDir, nunca expandido
+}
+
+func (e *ErrNoREQsFound) Error() string {
+	return fmt.Sprintf("sync: no REQ files found in req_dir %q — check req_dir in trackfw.yaml", e.REQDir)
+}
+
+// IsErrNoREQsFound reporta se err é um *ErrNoREQsFound.
+func IsErrNoREQsFound(err error) bool {
+	var target *ErrNoREQsFound
+	return errors.As(err, &target)
 }
 
 // SyncToLinear lê todos os REQs Open sem linear_issue, cria issues no Linear e atualiza o frontmatter.
@@ -39,10 +59,22 @@ func SyncToJira() ([]SyncResult, error) {
 }
 
 // syncToProvider é a lógica central — recebe uma função create e o campo de frontmatter a injetar.
+// Resolução de arquivos pelo ponto único (validator.ResolveREQFiles), honrando req_dir e
+// roadmap_namespacing: by_agent (AC1). Contenção de caminho em ResolveREQFiles protege contra
+// travessia de req_dir para fora da árvore do projeto (AC7).
 func syncToProvider(create func(string, string) (string, error), issueField string) ([]SyncResult, error) {
-	files, err := filepath.Glob("docs/req/*.md")
+	cfg := config.Load()
+
+	// AC1: usa o ponto único de resolução (validator.ResolveREQFiles), que honra req_dir e by_agent.
+	// AC7: ResolveREQFiles verifica contenção via EvalSymlinks antes de retornar.
+	files, err := validator.ResolveREQFiles(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("sync: glob docs/req/*.md: %w", err)
+		return nil, fmt.Errorf("sync: resolve REQ files: %w", err)
+	}
+
+	// AC6: zero REQs → recusa nomeada com req_dir VERBATIM, nunca lista vazia silenciosa.
+	if len(files) == 0 {
+		return nil, &ErrNoREQsFound{REQDir: cfg.REQDir}
 	}
 
 	var results []SyncResult
