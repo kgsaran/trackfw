@@ -27,7 +27,7 @@ ADR: docs/adr/ADR-2026-09-17-severidade-da-validacao-nao-pode-vir-de-fonte-que-o
 | 3 | 🔴 `req_dir`/`roadmap_dir`/`adr_dirs` para diretório vazio | zera a governança **mesmo em `strict`** |
 
 Composição das 177: **8 contradições ativas** (6 `req_roadmap_lifecycle`, 2 `ref_targets_exist`),
-**169 ausências históricas**. As 8 são de 11 a 17/09 e foram produzidas por nós.
+**168 ausências históricas**. As 8 são de 11 a 17/09 e foram produzidas por nós.
 
 ---
 
@@ -208,7 +208,7 @@ Corrija o filtro para `origin` e **acrescente um teste** que prove a derivação
    zero. O teto vai **escrito no código e na mensagem de erro**.
 3. **AC3** — `discover` escreve `lenient_until` com o **mesmo** default do `init` (`scaffold.go:735`).
 4. **AC4** — carve-out nomeado e fechado, critério escrito no código: contradição entre artefatos
-   vivos, não ausência histórica. Calibrar: as 8 ativas entram, as 169 não.
+   vivos, não ausência histórica. Calibrar: as 8 ativas entram, as 168 não.
 
 **Critérios de aceite:**
 - [x] Ação 0 — filtro `origin/HEAD` corrigido para `origin`, com teste de branch único
@@ -235,7 +235,7 @@ Calibração exata: **zero** regra histórica vazou para violations. `make quali
 `doctor` sem `scaffold-divergent`.
 
 **Decisão de desenho que o agente expôs e eu valido:** violação **sem tag de regra**
-(`frontmatter_presence`, `Rule: ""`) vai para warnings sob lenient. Correto — é uma das 169
+(`frontmatter_presence`, `Rule: ""`) vai para warnings sob lenient. Correto — é uma das 168
 históricas, e o carve-out é uma lista **nomeada**; item sem nome não pode pertencer a ela.
 
 ### ML-2B — o terceiro interruptor: repontar caminhos zera a governança
@@ -330,12 +330,12 @@ basenames. Filtro de ancestral estrito, com teste próprio.
 > Dependências: **Wave 2 auditada.**
 
 ### ML-3A — nosso trackfw.yaml, a medição que fecha e a nota de comportamento
-**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Status:** ✅ Concluído · **Papel:** `apolo-tf`
 Cobre **AC6**, **AC7**, **AC9**, **AC10**.
 
 **Ações:**
 1. **AC6** — `lenient_until` no `trackfw.yaml`. 🔴 **Medição que fecha a REQ:** `validate` sai **≠ 0**
-   apontando **exatamente** as 8 ativas — **e não as 169 históricas**. Se reprovar históricas, o
+   apontando **exatamente** as 8 ativas — **e não as 168 históricas**. Se reprovar históricas, o
    carve-out está largo e volta ao ML-2A.
 2. **AC7** — corrigir as 8; `validate` volta a 0 **por consistência**, não por leniência.
 3. **AC9** — CHANGELOG com nota **no topo da seção**: mudança de comportamento para todo consumidor

@@ -53,7 +53,7 @@ Estado atual desta árvore: `trackfw validate` → **177 warnings, exit 0**. `go
 | 1 | `wip_acceptance` | ausência histórica |
 | 1 | *(sem rule)* | `frontmatter_presence`, `validator.go:2307`, fora de `applyRuleTagged` |
 
-**8 ativas, 169 históricas.** As 8 são de 11 a 17/09 e **foram produzidas por nós**.
+**8 ativas, 168 históricas.** As 8 são de 11 a 17/09 e **foram produzidas por nós**.
 ⚠️ A última linha importa: um warning **sem tag de regra** não pode ser endereçado por chave
 `rules:` nenhuma.
 
@@ -106,7 +106,7 @@ mas os pontos de entrada divergem: `init` brownfield escreve `lenient_until` (`s
       um PR que só repontar caminhos **não** consiga zerar a contagem.
       Com contra-braço: repositório legitimamente vazio (projeto novo) **não** pode reprovar por isso.
 - [ ] **AC6** — `trackfw.yaml` deste repositório recebe `lenient_until`. **Medição que fecha a REQ:**
-      `trackfw validate` sai **≠ 0** apontando **exatamente** as 8 ativas — **e não as 169
+      `trackfw validate` sai **≠ 0** apontando **exatamente** as 8 ativas — **e não as 168
       históricas**. Se reprovar as históricas, o carve-out está largo demais.
 - [ ] **AC7** — As 8 ativas corrigidas; `validate` volta a 0 **por consistência**, não por leniência.
 - [ ] **AC8** — Falsificação em duas direções com contra-braço, por interruptor:
@@ -123,7 +123,7 @@ mas os pontos de entrada divergem: `init` brownfield escreve `lenient_until` (`s
 
 ## Negative Scope
 
-- ❌ **Não** saldar as 169 pendências históricas. Ficam sob `lenient` com prazo escrito, como dívida
+- ❌ **Não** saldar as 168 pendências históricas. Ficam sob `lenient` com prazo escrito, como dívida
   com data. Decisão de KG, 2026-09-17.
 - ❌ **Não** alterar `.github/required-status-checks.txt` nem branch protection (`D = R = W = 8`).
 - ❌ **Não** renomear job de workflow.

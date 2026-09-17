@@ -1,5 +1,5 @@
 ---
-status: Open
+status: Done
 date: 2026-09-17
 author: ""
 adr: ""
@@ -8,7 +8,7 @@ roadmap: "docs/roadmaps/done/ROADMAP-2026-09-17-jira-base-url-do-repositorio-vir
 
 # REQ: jira_base_url do repositorio vira destino de post autenticado e um PR que edita so a config exfiltra a credencial do ci
 
-> Date: 2026-09-17 | Status: Open
+> Date: 2026-09-17 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 

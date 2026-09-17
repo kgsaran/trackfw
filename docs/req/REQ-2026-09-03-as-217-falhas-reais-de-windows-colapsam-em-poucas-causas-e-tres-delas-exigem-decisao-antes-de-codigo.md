@@ -118,7 +118,7 @@ ADR:
 <!-- As 3 acima. -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz.md
+Roadmap: docs/roadmaps/blocked/ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz.md
 
 
 ---

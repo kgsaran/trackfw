@@ -34,48 +34,26 @@ preservado. Reproduzir antes era a exigência — sem isso não se sabe que corr
 reprovando), a objeção *"é problema do fork"* antecipada e respondida, e o efeito de perda de
 veredito nomeado. Os 15 sítios de chamada não mudaram — o objeto retornado é idêntico.
 
-## Context
-<!-- What problem does this roadmap solve? Link the REQ. -->
-REQ: docs/req/REQ-2026-09-16-run-capture-le-stdout-e-stderr-em-sequencia-e-trava-o-job-ate-o-timeout-em-vez-de-reprovar.md
+## Contexto
 
-## Acceptance Criteria
-<!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
-- [ ]
-- [ ]
+REQ: `docs/req/REQ-2026-09-16-run-capture-le-stdout-e-stderr-em-sequencia-e-trava-o-job-ate-o-timeout-em-vez-de-reprovar.md`
+Issue: #372 · PR: #377
 
-## Status Legend
+## Nota do arquiteto — 2026-09-17
+
+🔴 **Este roadmap continha, até hoje, o scaffold intocado do `trackfw roadmap new`** abaixo do
+resultado: um `ML-0A` e um `ML-1A` em `⬜ Pendente`, com o gate placeholder `exit 1`, **dentro de um
+roadmap em `done/`**. O trabalho real foi entregue no PR #377 e está descrito na seção *Resultado*
+acima; o scaffold nunca foi preenchido nem executado.
+
+Removido aqui porque um roadmap concluído que carrega microlotes pendentes afirma duas coisas
+contraditórias ao mesmo tempo, e a que engana é a que diz "done".
+
+**Terceira ocorrência do mesmo padrão em 2026-09-17** — o scaffold do `roadmap new` sobrevive por
+baixo do conteúdo escrito à mão e chega a `done/`. As outras duas foram o roadmap do #376 (scaffold
+duplicado, com dois `ML-1A`) e este. Nenhuma regra do `validate` e nenhum `barrier` pega: o `barrier`
+só roda sob demanda, por wave. Registrado como issue própria.
+
+## Legenda de status
+
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
-
-## Wave 0 — Threat Model
-> Dependencies: none. Blocks all implementation.
-
-### ML-0A — Threat model for this roadmap
-**Status:** ⬜ Pendente
-**Files affected:**
-**Actions:**
-1. Enumeration completeness — is the list of surfaces in this roadmap complete? Name what is missing, or show the list is closed. Do not limit the search to the files already named by the REQ — before declaring the list closed, search the repository for other places that emit the same artifact or the same pattern (for example, grep for the literal the final artifact contains).
-2. Threat model — who empties this Wave 0 without breaking any written rule, and how?
-3. Falsification targets in both directions — for each surface, what breaks when the behavior regresses, and what breaks when it regresses the opposite way?
-4. Declared residual — what this design accepts not covering.
-**Acceptance criteria:**
-- [ ] The four sections above answered with evidence, not a one-line assertion
-- [ ] No implementation line written for this ML
-
-**Gates da wave:**
-```bash
-# Wave 0 gate — replace this placeholder with a project-specific check before
-# marking ML-0A done. Do not remove the gate; replace its command (AC13).
-exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli-parity.md
-```
-
-## Wave 1 — <name> (parallel MLs)
-> Dependencies: none
-
-### ML-1A — run-capture le stdout e stderr em sequencia e trava o job ate o timeout em vez de reprovar
-**Status:** ⬜ Pendente
-**Files affected:**
-**Actions:**
-**Acceptance criteria:**
-- [ ] build passes
-- [ ] tests green
-- [ ] validate passes

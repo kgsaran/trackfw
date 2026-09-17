@@ -1,5 +1,5 @@
 ---
-status: Open
+status: Done
 date: 2026-09-17
 author: ""
 adr: ""
@@ -8,7 +8,7 @@ roadmap: "docs/roadmaps/done/ROADMAP-2026-09-17-gate-escreve-na-arvore-que-audit
 
 # REQ: gate escreve na arvore que audita e a guarda existente nao cobre o culpado
 
-> Date: 2026-09-17 | Status: Open
+> Date: 2026-09-17 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 

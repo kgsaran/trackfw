@@ -2,6 +2,30 @@
 
 ---
 
+## Sessão 2026-09-17 (continuação 5) — Apolo (fix/leniencia-sem-prazo — ML-3A: postura do repositório, medição AC6, correção das 8, CHANGELOG) — CONCLUÍDO (aguarda auditoria do arquiteto)
+
+**Início:** 2026-09-17 | Branch: `fix/leniencia-sem-prazo`
+**Tarefa:** ML-3A — AC6: lenient_until no trackfw.yaml + medição das 8 violações; AC7: corrigir as 8; AC9: nota no CHANGELOG; AC10: gates.
+**Resultado:**
+- AC6: `lenient_until: "2027-12-31"` em trackfw.yaml → validate --json: violations:8, warnings:168, mode:lenient, exit_code:1 (antes, sem lenient_until: strict, 176 violations)
+- AC7: 8 violações corrigidas pelo conteúdo → validate RC=0 (0 violations, 168 warnings) por consistência
+- AC9: `## [Unreleased]` com nota de breaking change no topo do CHANGELOG.md
+- AC10: go build RC=0 | make test RC=0 | doctor OK | --scope dw RC=0 | make quality RC=0 (212 OK, 0 FAIL)
+**Arquivos modificados:**
+- `trackfw.yaml`: `lenient_until: "2027-12-31"` adicionado após `governance_mode: lenient` (linha 4, não o comentário)
+- `docs/req/REQ-2026-09-03-...`: link de roadmap wip/ → blocked/
+- `docs/req/REQ-2026-09-05-...`: link wip/ → done/ + status: Open → Done
+- `docs/req/REQ-2026-09-11-...`: status: Open → Done
+- `docs/req/REQ-2026-09-16-run-capture-...`: status: Open → Done (justificado por #372 CLOSED)
+- `docs/req/REQ-2026-09-17-gate-escreve-...`: status: Open → Done
+- `docs/req/REQ-2026-09-17-gerador-aplica-...`: status: Open → Done
+- `docs/req/REQ-2026-09-17-jira-base-url-...`: status: Open → Done
+- `docs/req/REQ-2026-09-17-sync-enumera-...`: status: Open → Done
+- `CHANGELOG.md`: `## [Unreleased]` com nota de breaking change no topo
+- `docs/roadmaps/wip/ROADMAP-...leniencia-sem-prazo...md`: ML-3A marcado Concluído
+
+---
+
 ## Sessão 2026-09-17 (continuação 4) — Apolo (fix/leniencia-sem-prazo — ML-2C: hardening pós-auditoria: filtro de ancestral + ref guard + ExpandPath) — CONCLUÍDO (aguarda auditoria do arquiteto)
 
 **Início:** 2026-09-17 | Branch: `fix/leniencia-sem-prazo`
@@ -37984,3 +38008,10 @@ Implementação completa. Evidências: `go build ./...` RC=0 · `make test` 15/1
 - Curva de custo do atacante nos três MLs: diretório vazio (1 linha) → fachada com outro nome (1 arquivo) → N homônimos válidos + vínculos.
 - O executor achou sozinho um bloqueador que eu não tinha visto: `roadmap_dir: .` fazia o walk absorver os arquivos originais e derrotava a própria união de basenames.
 - `trackfw barrier --wave 2 --trust-local-gates`: passed (4/4).
+
+### 2026-09-17 — Zeus — ML-3A auditado; Wave 3 e a REQ do #387 fechadas
+- `validate` RC=**0 por consistência**, 168 warnings, **0 violações** — as 8 contradições ativas corrigidas pelo conteúdo, não por afrouxamento. `make quality` RC=0, `doctor` limpo, `--scope dw` RC=0.
+- Conferi as 8 uma a uma contra a realidade: REQ-2026-09-03 fica **Open** (roadmap em `blocked/`, trabalho bloqueado); as outras 7 viram `Done` e têm roadmap em `done/`.
+- 🔴 **Corrigi eu mesmo um artefato que o ML-3A apenas declarou:** `ROADMAP-2026-09-16-run-capture` estava em `done/` carregando o scaffold intocado do `roadmap new` — dois MLs `⬜ Pendente` e o gate placeholder `exit 1`. Roadmap concluído com microlotes pendentes afirma duas coisas contraditórias, e a que engana é a que diz "done".
+- **Terceira ocorrência do mesmo padrão hoje** (as outras: scaffold duplicado no roadmap do #376). Nenhuma regra do `validate` pega, e o `barrier` só roda sob demanda por wave. Vai virar issue.
+- Off-by-one corrigido em REQ/roadmap/ADR: são **168** históricas, não 169 — a diferença é o `wip_has_req` que eu mesmo fechei ao consertar o marcador `REQ:`.

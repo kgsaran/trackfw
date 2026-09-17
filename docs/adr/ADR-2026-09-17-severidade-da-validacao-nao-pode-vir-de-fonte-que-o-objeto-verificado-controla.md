@@ -80,7 +80,7 @@ estão na lista de credential-guard — troca-se um buraco por outro.
 ### Postura deste repositório
 
 Carve-out estrutural + prazo declarado. As regras da decisão 2 passam a bloquear imediatamente; as
-169 pendências históricas (122 `req_has_adr`, 36 `req_has_roadmap`, 8 `adr_orphan`, 1 `wip_has_req`, 1 `wip_acceptance`, 1 sem tag de regra) permanecem sob `lenient` com
+168 pendências históricas (122 `req_has_adr`, 36 `req_has_roadmap`, 8 `adr_orphan`, 1 `wip_has_req`, 1 `wip_acceptance`, 1 sem tag de regra) permanecem sob `lenient` com
 `lenient_until` **escrito**. Justificativa: das 177 pendências, **8 são inconsistência ativa e
 recente** — 6 REQs abertas cujo roadmap já está em `done/`, datadas de 11 a 17/09, **todas produzidas
 por nós**, incluindo a do trabalho fechado hoje. O `lenient` está escondendo defeito que estamos
@@ -104,7 +104,7 @@ criando agora, não só dívida de junho.
   para esta ADR.
 - O carve-out é uma exceção a mais na configuração, e exceção tende a virar permanente. Mitigado por
   ser **lista nomeada e fechada**, com critério escrito de pertencimento.
-- As 169 pendências históricas continuam invisíveis até o prazo. Registrado como dívida com data.
+- As 168 pendências históricas continuam invisíveis até o prazo. Registrado como dívida com data.
 
 ## Alternatives Considered
 
@@ -116,7 +116,7 @@ criando agora, não só dívida de junho.
   gentil, mas exige carregar um estado intermediário e lembrar de fechá-lo — e este projeto tem
   histórico documentado de exceção temporária que virou permanente, sendo o próprio `lenient` deste
   repositório o exemplo (comentário diz "durante onboarding"; o onboarding terminou há meses).
-- **Sair do `lenient` de vez**, saldando as 177. Rejeitado por custo/benefício: 169 são dívida
+- **Sair do `lenient` de vez**, saldando as 176. Rejeitado por custo/benefício: 168 são dívida
   histórica de escrita, não de código, e consumiriam a sessão sem entregar produto. O carve-out
   captura os 8 casos que importam agora.
 - **Manter como está.** Rejeitado: dois required checks que não podem reprovar são pior que dois

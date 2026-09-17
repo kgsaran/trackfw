@@ -2,6 +2,7 @@
 # governance_mode: lenient permite validação não-bloqueante durante onboarding
 
 governance_mode: lenient
+lenient_until: "2027-12-31"
 
 adr_dirs:
   - docs/adr
