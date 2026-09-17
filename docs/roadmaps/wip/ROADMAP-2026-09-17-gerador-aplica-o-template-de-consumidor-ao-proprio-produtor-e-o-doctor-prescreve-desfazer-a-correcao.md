@@ -14,7 +14,7 @@ squad: ""
 > Dependências: nenhuma. 🔴 **Auditada antes de qualquer wave de implementação.**
 
 ### ML-0A — o que um PR consegue esconder quando a validação roda o binário publicado
-**Status:** ⬜ Pendente · **Papel:** `hades-tf`
+**Status:** ✅ Concluído (auditado por Zeus em 2026-09-17) · **Papel:** `hades-tf`
 
 O enquadramento deste issue foi "falso-positivo do doctor". A pergunta de segurança é outra e é mais
 séria: **o `governance-go-install` é required e, hoje, valida com o binário publicado.**
@@ -35,6 +35,15 @@ séria: **o `governance-go-install` é required e, hoje, valida com o binário p
 
 **Aceite:** parecer com os vetores enumerados e, por vetor, veredito (fecha / mitiga / não toca) com
 evidência de leitura. 🔴 Vetor não fechado entra **nomeado**. Seção final sobre o que ficou em aberto.
+
+**Critérios de aceite:**
+- [x] Parecer entregue em `docs/portabilidade/2026-09-17-threat-model-gerador-produtor-consumidor.md`
+- [x] Os quatro eixos respondidos com evidência de leitura, não asserção de uma linha
+- [x] Vetores não fechados nomeados, com residual declarado em seção própria
+- [x] Nenhuma linha de implementação escrita neste ML
+- [x] Gate da wave 0 executado por Zeus com RC=0
+- [x] Dois achados verificados por Zeus no código, não aceitos de palavra (ver tabela abaixo)
+
 
 **Gates da wave 0:**
 ```bash
@@ -74,7 +83,7 @@ tratado. A validação desta wave **não pode se apoiar neles** — o aceite é 
 > Dependências: **Wave 0 auditada.**
 
 ### ML-1A — gerador distingue produtor de consumidor, e o doctor compara contra o template certo
-**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
 Cobre AC1 a AC7.
 
 🔴 **O AC1 sozinho não fecha o issue.** Sem o AC2, o `doctor` continua acusando o arquivo correto como
@@ -96,50 +105,70 @@ template **de produtor** — os dois braços, no mesmo ML.
 ⚠️ **Sem o AC8, o AC1 e o AC5 se contradizem:** o AC5 proíbe `go install …@v` nos workflows deste
 repositório; o gate atual o exige. Não declare nenhum dos dois atendido com o script intocado.
 
----
 
-## Context
-<!-- What problem does this roadmap solve? Link the REQ. -->
-REQ: docs/req/REQ-2026-09-17-gerador-aplica-o-template-de-consumidor-ao-proprio-produtor-e-o-doctor-prescreve-desfazer-a-correcao.md
+**Arquivos afetados:**
+- `internal/generators/scaffold_doctor.go` (builder, l. 53; comparação com o disco, l. 269)
+- `internal/discover/discover.go` (l. 276 — escreve o workflow)
+- `internal/generators/update.go` (l. 1976 — reescreve o workflow)
+- `scripts/check-ci-workflow-pin-parity.sh` (`check_discover_pin` l. 144-156 **e** `dump_go`)
+- `.github/workflows/trackfw-validate.yml` — 🔴 **o arquivo commitado, regenerado** (ver Ação 5)
+- testes em `internal/generators/` e `internal/discover/`
 
-## Acceptance Criteria
-<!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
-- [ ]
-- [ ]
+**Ações:**
+1. **AC1** — o builder passa a receber o contexto (produtor vs. consumidor). Sinal: o `go.mod` do
+   alvo declarar `module github.com/kgsaran/trackfw`. Produtor compila do fonte; consumidor mantém
+   a instalação a partir do release **inalterada**.
+2. **AC2** — os três consumidores do builder (`discover.go:276`, `update.go:1976`,
+   `scaffold_doctor.go:269`) passam o mesmo contexto. Se o `doctor` comparar contra o template do
+   outro contexto, o falso-positivo apenas troca de sinal.
+3. **AC3/AC4** — versão do Go e versões das actions deixam de ser literais desalinhados.
+4. **AC8** — `check-ci-workflow-pin-parity.sh` passa a verificar **os dois braços**: exige a pinagem
+   `@v<versão>` no template **de consumidor** e exige a **ausência** de instalação por release no
+   template **de produtor**.
+   ⚠️ **`dump_go` escreve `zz_dump_ci_workflow_pin_parity_test.go` chamando
+   `BuildDiscoverGitHubActionsWorkflowContent` por nome e aridade.** Ao acrescentar o parâmetro de
+   contexto (Ação 1), esse teste gerado **para de compilar** — e a falha lê como "gate instável", não
+   como escopo faltando. Atualize `dump_go` na mesma entrega, emitindo os dois contextos e afirmando
+   cada braço separadamente.
+5. 🔴 **Regenerar e commitar `.github/workflows/trackfw-validate.yml`.** Mudar o builder **não** muda
+   o arquivo em disco: sem este passo o `doctor` continua reportando `scaffold-divergent`, agora pelo
+   motivo espelhado, e o **AC7 não fecha**. Restrição: os **nomes dos jobs** dentro do arquivo
+   permanecem byte a byte idênticos — nome de job é contrato com o `required_status_checks`, e
+   renomear deixa todo PR pendente para sempre (escopo negativo da REQ).
+6. **AC6** — falsificação nas duas direções, com contra-braço: a versão sem a correção produz o mesmo
+   template **nos dois** fixtures. Pela Regra Dura de Reconciliação, cada teste novo vem acompanhado
+   da frase que diz qual conclusão deste ML ele afirma.
 
-## Status Legend
-⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
+**Critérios de aceite:**
+- [ ] AC1 — fixture cujo `go.mod` é o do trackfw gera template que compila do fonte
+- [ ] AC2 — os três consumidores concordam quanto ao contexto
+- [ ] AC3/AC4 — versão do Go e das actions alinhadas, sem literal desatualizado
+- [ ] AC6 — as duas direções falsificadas, com contra-braço demonstrado
+- [ ] AC7 — `trackfw doctor` na raiz **não** reporta `scaffold-divergent` para
+      `.github/workflows/trackfw-validate.yml` · **é a medição que fecha o issue**
+- [ ] AC8 — `bash scripts/check-ci-workflow-pin-parity.sh` sai 0 com os dois braços verificados
+- [ ] nomes de jobs em `.github/workflows/trackfw-validate.yml` inalterados
+- [ ] `go build ./...`, `make test` e `make quality` verdes
 
-## Wave 0 — Threat Model
-> Dependencies: none. Blocks all implementation.
+⚠️ **Não se apoie em `governance-go-install` nem em `governance-install-script` como evidência de
+nada:** ambos são exit-0 por construção enquanto o `governance_mode: lenient` vigorar (issue #387).
 
-### ML-0A — Threat model for this roadmap
-**Status:** ✅ Concluído (auditado em 2026-09-17 — ver veredito na Wave 0 acima)
-**Files affected:**
-**Actions:**
-1. Enumeration completeness — is the list of surfaces in this roadmap complete? Name what is missing, or show the list is closed. Do not limit the search to the files already named by the REQ — before declaring the list closed, search the repository for other places that emit the same artifact or the same pattern (for example, grep for the literal the final artifact contains).
-2. Threat model — who empties this Wave 0 without breaking any written rule, and how?
-3. Falsification targets in both directions — for each surface, what breaks when the behavior regresses, and what breaks when it regresses the opposite way?
-4. Declared residual — what this design accepts not covering.
-**Acceptance criteria:**
-- [ ] The four sections above answered with evidence, not a one-line assertion
-- [ ] No implementation line written for this ML
-
-**Gates da wave:**
+**Comandos de validação:**
 ```bash
-# Wave 0 gate — replace this placeholder with a project-specific check before
-# marking ML-0A done. Do not remove the gate; replace its command (AC13).
-scripts/check-orphan-gates.sh
+go build ./...
+make test
+bash scripts/check-ci-workflow-pin-parity.sh
+./bin/trackfw doctor 2>&1 | grep -i "scaffold-divergent" && echo "FAIL: AC7 nao fechou" || echo "OK AC7"
+make quality
 ```
 
-## Wave 1 — <name> (parallel MLs)
-> Dependencies: none
+---
 
-### ML-1A — gerador aplica o template de consumidor ao proprio produtor e o doctor prescreve desfazer a correcao
-**Status:** ⬜ Pendente
-**Files affected:**
-**Actions:**
-**Acceptance criteria:**
-- [ ] build passes
-- [ ] tests green
-- [ ] validate passes
+## Contexto
+
+REQ: `docs/req/REQ-2026-09-17-gerador-aplica-o-template-de-consumidor-ao-proprio-produtor-e-o-doctor-prescreve-desfazer-a-correcao.md`
+Issue: #376 · Causa separada descoberta na Wave 0: #387
+
+## Legenda de status
+
+⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
