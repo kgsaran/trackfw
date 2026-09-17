@@ -1423,44 +1423,130 @@ assert_fails_with "barrier/blocked-not-detected" \
   env BARRIER_SELFTEST_BREAK=1 GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-barrier.sh"
 
 # ---------------------------------------------------------------------------
-# Cenário 18 — não-mutação: os gates que invocam CLIs reais (agents install,
-# init, update, barrier) não alteram a árvore de trabalho do repositório
-# quando rodados a partir da raiz — exatamente como `make quality`/`make
-# parity` já fazem.
+# Cenário 18 (AC1/AC2/AC3 — REQ #366) — não-mutação: nenhum gate que invoca
+# o binário trackfw pode escrever no working tree do repositório.
 #
-# Objetivo (ML-6I): o bug corrigido em install_claude_agents() de
-# check-update-parity.sh (ver
-# vault/notes/update-parity-gate-writes-real-claude-md-2026-07-29.md) fazia
-# o gate passar — `exit 0`, todas as scenarios "OK" — enquanto injetava o
-# bloco trackfw:rules no CLAUDE.md do próprio repositório. "Gate verde" não
-# provava "repositório intocado"; esta prova fecha esse buraco de forma
-# automática em vez de depender de um agente lembrar de rodar `git status`
-# manualmente. Captura `git status --porcelain` antes/depois de rodar,
-# a partir de ROOT_DIR, os gates que exercitam CLIs reais (não os que operam
-# só sobre cópias isoladas em $WORK) e reprova se houver qualquer diferença.
+# Histórico: ML-6I (2026-07-29) criou esta guarda com uma lista fixa de 4
+# gates. check-tty-detection.sh nunca foi adicionado à lista e era culpado
+# da mutação que a guarda existia para detectar.
+#
+# AC2 — cobertura por enumeração (opt-out), não por lista fixa:
+#   1. Enumera todos os scripts/check-*.sh em tempo de execução via find.
+#   2. Filtra: executa apenas os que invocam o binário (contêm \bGO_BIN\b
+#      ou bin/trackfw) — classificação automática por leitura do código-fonte.
+#   3. Aplica lista de exclusões declaradas (opt-out) — cada exclusão exige
+#      motivo explícito separado por '|'; ausência de motivo falha a guarda.
+#   4. Um gate novo que invoca o binário entra na cobertura por construção,
+#      sem ninguém editar nada.
+#   🔴 R6: se a cobertura for outra lista — ainda que gerada — o defeito
+#      de fundo continua. A enumeração acontece na execução.
+#
+# AC3 — detecção de conteúdo via OID de árvore (worktree cópia limpa):
+#   1. Copia o repositório para um worktree temporário (sem .git) e inicia
+#      um repositório git com commit de baseline — árvore limpa por construção.
+#   2. Executa cada gate na cópia (ROOT resolves dentro da cópia; GO_BIN
+#      aponta para o binário real $FALSIFY_GO_BIN).
+#   3. Após cada gate: git add -A && write-tree → OID de conteúdo.
+#   4. Divergência de OID → mutação de conteúdo detectada, gate nomeado.
+#   Razão: git status --porcelain reporta estado, não conteúdo. Se a árvore
+#   já estiver suja antes da medição (como no run local de make parity), a
+#   saída é byte-idêntica antes e depois de nova escrita — a guarda antiga
+#   seria satisfeita vacuamente. O OID fecha esse buraco.
 # ---------------------------------------------------------------------------
-GATES_MUTATION_CHECK=(
-  scripts/check-update-parity.sh
-  scripts/check-barrier.sh
-  scripts/check-slash-parity.sh
-  scripts/check-rules-parity.sh
+
+# Exclusões declaradas (opt-out) — formato obrigatório: "basename.sh|motivo"
+_MUTATION_EXCLUSIONS=(
+  "check-gates-falsify.sh|circular: este script é o executor do cenário de mutação; incluí-lo causaria recursão infinita"
+  "check-falsify-shard-coverage.sh|requer três argumentos posicionais e artefatos de shard baixados de CI; invocação sem esses pré-requisitos falha por configuração, não por mutação"
 )
 
-before_status=$(cd "$ROOT_DIR" && git status --porcelain)
-for gate in "${GATES_MUTATION_CHECK[@]}"; do
-  if ! (cd "$ROOT_DIR" && GO_BIN="$FALSIFY_GO_BIN" bash "$gate") >"$WORK/mutation-check.$(basename "$gate").log" 2>&1; then
-    echo "FAIL [falsify/no-repo-mutation]: $gate saiu != 0 rodando limpo (não corrompido) — não é possível provar não-mutação" >&2
-    sed 's/^/    /' "$WORK/mutation-check.$(basename "$gate").log" >&2
+# Valida formato das exclusões — uma entrada mal formada falha a guarda
+for _excl_entry in "${_MUTATION_EXCLUSIONS[@]}"; do
+  if [[ "$_excl_entry" != *"|"* ]]; then
+    echo "FAIL [falsify/no-repo-mutation]: exclusão mal formada (falta '|' separando nome de motivo): '$_excl_entry'" >&2
+    falsify_fail_point
+  fi
+  _excl_reason="${_excl_entry#*|}"
+  if [[ -z "${_excl_reason//[[:space:]]/}" ]]; then
+    echo "FAIL [falsify/no-repo-mutation]: motivo de exclusão vazio: '$_excl_entry'" >&2
     falsify_fail_point
   fi
 done
-after_status=$(cd "$ROOT_DIR" && git status --porcelain)
 
-if [[ "$before_status" != "$after_status" ]]; then
-  echo "FAIL [falsify/no-repo-mutation]: rodar os gates a partir da raiz alterou a árvore de trabalho do repositório" >&2
-  diff <(echo "$before_status") <(echo "$after_status") >&2 || true
+# Monta conjunto de exclusões para lookup O(1)
+declare -A _MUT_EXCL=()
+for _excl_entry in "${_MUTATION_EXCLUSIONS[@]}"; do
+  _MUT_EXCL["${_excl_entry%%|*}"]=1
+done
+
+# Enumeração em tempo de execução — opt-out: todos check-*.sh, exceto os declarados
+_MUTATION_CANDIDATES=()
+while IFS= read -r _gate_path; do
+  _bname="$(basename "$_gate_path")"
+  # Aplica exclusões declaradas
+  [[ "${_MUT_EXCL[$_bname]+set}" == "set" ]] && continue
+  # Classifica: invoca o binário trackfw? (GO_BIN ou bin/trackfw no fonte)
+  if grep -qE '\bGO_BIN\b|bin/trackfw' "$_gate_path" 2>/dev/null; then
+    _MUTATION_CANDIDATES+=("$_gate_path")
+  fi
+done < <(find "$ROOT_DIR/scripts" -maxdepth 1 -name 'check-*.sh' | sort)
+
+# Guarda de vacuidade — enumeração zero é defeito de cobertura
+if [[ ${#_MUTATION_CANDIDATES[@]} -eq 0 ]]; then
+  echo "FAIL [falsify/no-repo-mutation]: enumeração em tempo de execução retornou zero gates — cobertura vazia é defeito" >&2
   falsify_fail_point
 fi
+
+# Cria worktree limpo para a medição de mutação (AC3 — worktree próprio com checkout limpo)
+_MUTATION_COPY="$WORK/mutation-clean"
+mkdir -p "$_MUTATION_COPY"
+cp -R "$ROOT_DIR/." "$_MUTATION_COPY/"
+rm -rf "$_MUTATION_COPY/.git"
+git -C "$_MUTATION_COPY" init -q
+git -C "$_MUTATION_COPY" -c user.email="mutation-check@localhost" \
+    -c user.name="Mutation Check" add -A 2>/dev/null
+git -C "$_MUTATION_COPY" -c user.email="mutation-check@localhost" \
+    -c user.name="Mutation Check" commit -q -m "mutation-check-baseline"
+
+# Verifica worktree limpo (deve ser sempre por construção — guarda de robustez interna)
+_initial_porcelain=$(git -C "$_MUTATION_COPY" status --porcelain)
+if [[ -n "$_initial_porcelain" ]]; then
+  echo "FAIL [falsify/no-repo-mutation]: worktree de medição não ficou limpo após commit de baseline — erro interno:" >&2
+  echo "$_initial_porcelain" >&2
+  falsify_fail_point
+fi
+
+# OID de referência da árvore limpa (conteúdo, não apenas status)
+_baseline_oid=$(git -C "$_MUTATION_COPY" write-tree)
+
+for _gate_path in "${_MUTATION_CANDIDATES[@]}"; do
+  _bname="$(basename "$_gate_path")"
+  _log="$WORK/mutation-check.$_bname.log"
+
+  _gate_exit=0
+  (cd "$_MUTATION_COPY" && GO_BIN="$FALSIFY_GO_BIN" bash "scripts/$_bname") \
+    >"$_log" 2>&1 || _gate_exit=$?
+
+  # Computa OID após execução — git add -A captura modificações e arquivos novos não gitignored
+  git -C "$_MUTATION_COPY" add -A 2>/dev/null
+  _after_oid=$(git -C "$_MUTATION_COPY" write-tree)
+
+  if [[ "$_after_oid" != "$_baseline_oid" ]]; then
+    echo "FAIL [falsify/no-repo-mutation]: $_bname alterou o conteúdo da árvore do repositório:" >&2
+    git -C "$_MUTATION_COPY" diff HEAD >&2
+    # Restaura worktree para não contaminar medição do gate seguinte (enumerate mode)
+    git -C "$_MUTATION_COPY" checkout -q -- . 2>/dev/null || true
+    git -C "$_MUTATION_COPY" clean -qfd 2>/dev/null || true
+    git -C "$_MUTATION_COPY" reset -q HEAD 2>/dev/null || true
+    falsify_fail_point
+  elif [[ "$_gate_exit" -ne 0 ]]; then
+    # Gate falhou mas não mutou a árvore — reporta para diagnóstico; não é falha de mutação
+    # (make parity-rest já captura falhas de gate individualmente)
+    echo "WARN [falsify/no-repo-mutation]: $_bname saiu com rc=$_gate_exit mas não alterou a árvore" >&2
+    sed 's/^/    /' "$_log" >&2
+  fi
+done
+
 falsify_count_success
 echo "OK   [falsify/no-repo-mutation]"
 
