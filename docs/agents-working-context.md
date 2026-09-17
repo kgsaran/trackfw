@@ -37483,3 +37483,23 @@ pré-requisito hard de ML-3A.
 - Direção B: `Run-Capture-New` retornou Stdout/Stderr/ExitCode completos: 1KB stderr PASS, 64KB stderr PASS, 256KB stdout + 256KB stderr PASS, saída vazia exit 7 PASS, stdout simples PASS.
 **Verificações:** `go build ./...` RC=0. `go test ./...` RC=0 (todos os pacotes). `env -u FORCE_COLOR make quality` RC=0 (212 OK, 0 FAIL). `pwsh parse` RC=0.
 **ALERTA:** `trackfw.yaml` pode aparecer modificado após `make quality` — issue #366 conhecida. Não commitado.
+
+---
+
+## Sessão 2026-09-16/17 — Zeus (v8.0.0 GA e ciclo de issues pós-lançamento)
+
+**Encerrado:** 2026-09-17 | Branch: `chore/fechar-roadmap-run-capture`
+
+**v8.0.0 lançada.** Três canais verificados: GitHub (`/releases/latest` → `v8.0.0`, `prerelease=false`), npm (`latest → 8.0.0`), PyPI, Homebrew. Corrida de release inteiramente verde, incluindo `verify-channels`. −137.887 linhas.
+
+**Percurso:** rc1 (defeituosa, serviu como `latest` por 3 dias) → rc2 (primeira árvore sem as reimplementações; release falhou por fiação, tag recriada) → rc3 (existia para provar o `verify-channels` corrigido; `all npm packages live after 92s`) → GA.
+
+**Defeitos achados por auditoria, não por gate verde:** falsify imprimindo sucesso e saindo com 1; `prerelease` ausente no goreleaser; `install.sh` entregando amd64 em ARM64 (passou no critério porque binário emulado responde `--version` igual ao nativo); gate reescrevendo o `trackfw.yaml` e derrubando o CI três camadas adiante.
+
+**Issues:** #372 fechado (deadlock do `Run-Capture`, relatado por consumidor externo, reproduzido a 8 KB antes de corrigir) · #359 e #362 fechados na revalidação · #364, #366, #376 abertos por nós · #363, #307, #268 e #258 revalidados com medição nova.
+
+**Achados que mudaram remédios:** a guarda do #366 **já existia** (Cenário 18, desde 07/29) e estava verde porque o allowlist tem 4 gates e exclui o culpado — o remédio é enumerar, não criar. No #376, medi que o `trackfw doctor` acusa o workflow correto como divergente e **prescreve `trackfw update`**, que reintroduz o defeito. No #258, `gh run rerun` também não resolve: o payload do evento vem congelado.
+
+**Erros do arquiteto, registrados:** piso fixo em gate que roda em shards; triagem por cruzamento de caminhos superestimando o que a v8 apagou; medição em `zsh` sem word-splitting; `git add -A` varrendo config corrompida; critério de aceite medindo texto de saída em vez do artefato; `Fecha #372` em português no corpo do PR. Três deles foram instrumento de medição mentindo — `zsh`, `| tail` e `ls` com alias.
+
+**Pendente:** `trackfw branch prune` (worktrees `trackfw-nul` e `trackfw-triagem` com branches provavelmente integradas, mais um worktree `prunable` em `/private/var/folders`).
