@@ -32,6 +32,7 @@ parity-rest: build
 	python3 scripts/check-workflow-yaml.py
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-validate-rule-pins.sh
 	scripts/check-referential-integrity.sh
+	scripts/check-req-path-literals.sh
 	scripts/check-parity-contract-coverage.sh
 	scripts/check-static-assets.sh
 	scripts/check-integration-assets.sh

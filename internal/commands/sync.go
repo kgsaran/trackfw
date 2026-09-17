@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -42,11 +43,18 @@ Credentials can be set via env vars or in trackfw.yaml:
 			}
 
 			if err != nil {
+				// AC6: zero REQs → mensagem com req_dir verbatim, exit 0 (não é um erro).
+				var noREQ *sync.ErrNoREQsFound
+				if errors.As(err, &noREQ) {
+					fmt.Printf("No REQs found in req_dir %q\n", noREQ.REQDir)
+					return nil
+				}
 				return err
 			}
 
 			if len(results) == 0 {
-				fmt.Println("No REQs found in docs/req/")
+				// Todos os REQs foram skipped (nenhum estava Open ou todos já tinham issue).
+				fmt.Println("No new REQs to sync (all skipped)")
 				return nil
 			}
 

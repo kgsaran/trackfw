@@ -34,6 +34,7 @@ func basenames(paths []string) []string {
 // exclusão mútua. Era o defeito da REQ-2026-08-30: o leitor escolhia só req_dir/<agente>/<estado>/.
 func TestResolveREQFilesUniaoDos4Layouts(t *testing.T) {
 	dir := t.TempDir()
+	chdir(t, dir)
 	reqDir := filepath.Join(dir, "docs/req")
 	writeREQ(t, filepath.Join(reqDir, "REQ-flat.md"))                    // (1) flat legado
 	writeREQ(t, filepath.Join(reqDir, "backlog", "REQ-estado.md"))       // (2) por-estado legado
@@ -46,7 +47,8 @@ func TestResolveREQFilesUniaoDos4Layouts(t *testing.T) {
 		Agents:             []string{"claude"},
 	}
 
-	got := basenames(ResolveREQFiles(cfg))
+	resolved, _ := ResolveREQFiles(cfg)
+	got := basenames(resolved)
 	want := map[string]bool{
 		"REQ-flat.md": false, "REQ-estado.md": false,
 		"REQ-canonico.md": false, "REQ-legado.md": false,
@@ -73,6 +75,7 @@ func TestResolveREQFilesUniaoDos4Layouts(t *testing.T) {
 // deduplicação, a mesma REQ apareceria duas vezes e cada violação sairia em dobro.
 func TestResolveREQFilesDeduplicaEstadoEAgente(t *testing.T) {
 	dir := t.TempDir()
+	chdir(t, dir)
 	reqDir := filepath.Join(dir, "docs/req")
 	writeREQ(t, filepath.Join(reqDir, "backlog", "REQ-uma-so.md"))
 
@@ -82,7 +85,7 @@ func TestResolveREQFilesDeduplicaEstadoEAgente(t *testing.T) {
 		Agents:             []string{"claude"},
 	}
 
-	got := ResolveREQFiles(cfg)
+	got, _ := ResolveREQFiles(cfg)
 	if len(got) != 1 {
 		t.Fatalf("esperado 1 arquivo (deduplicado), obteve %d: %v", len(got), got)
 	}
@@ -102,6 +105,7 @@ func TestREQWriteDirEstaContidoNaUniao(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
+			chdir(t, dir)
 			cfg := config.ProjectConfig{
 				REQDir:             filepath.Join(dir, "docs/req"),
 				RoadmapNamespacing: tc.namespacing,
@@ -114,7 +118,8 @@ func TestREQWriteDirEstaContidoNaUniao(t *testing.T) {
 			writeREQ(t, filepath.Join(writeDir, "REQ-nova.md"))
 
 			found := false
-			for _, p := range ResolveREQFiles(cfg) {
+			resolved, _ := ResolveREQFiles(cfg)
+			for _, p := range resolved {
 				if filepath.Base(p) == "REQ-nova.md" {
 					found = true
 				}
@@ -132,6 +137,7 @@ func TestREQWriteDirEstaContidoNaUniao(t *testing.T) {
 // do caso com agents: declarada, e por isso testado separadamente.
 func TestREQWriteDirDefaultEstaContidoNaUniao(t *testing.T) {
 	dir := t.TempDir()
+	chdir(t, dir)
 	cfg := config.ProjectConfig{
 		REQDir:             filepath.Join(dir, "docs/req"),
 		RoadmapNamespacing: config.NamespacingByAgent,
@@ -139,7 +145,8 @@ func TestREQWriteDirDefaultEstaContidoNaUniao(t *testing.T) {
 	writeDir := REQWriteDir(cfg, "")
 	writeREQ(t, filepath.Join(writeDir, "REQ-nova.md"))
 
-	got := basenames(ResolveREQFiles(cfg))
+	resolved2, _ := ResolveREQFiles(cfg)
+	got := basenames(resolved2)
 	if len(got) != 1 || got[0] != "REQ-nova.md" {
 		t.Fatalf("REQ criada em %s não foi encontrada pelo resolvedor: %v", writeDir, got)
 	}
