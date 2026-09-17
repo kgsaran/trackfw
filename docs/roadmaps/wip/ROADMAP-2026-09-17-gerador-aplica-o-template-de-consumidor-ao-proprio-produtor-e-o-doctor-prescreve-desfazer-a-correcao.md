@@ -300,7 +300,7 @@ make quality ; echo "RC=$?"
 ---
 
 ### ML-1C — corretivo: o gate do AC5 aprova a classe que deveria reprovar
-**Status:** ✅ Concluído (auditoria pendente com Zeus) · **Papel:** `apolo-tf`
+**Status:** ✅ Concluído (auditado por Zeus em 2026-09-17: classe fechada por prova positiva; sobrou bypass por job → ML-1D) · **Papel:** `apolo-tf`
 Aberto pela auditoria do ML-1B em 2026-09-17. **Bloqueia o fechamento do AC5.**
 
 O ML-1B entregou `scripts/check-ci-workflow-binary-provenance.sh`, e ele é um **teste de regressão
@@ -377,6 +377,70 @@ em `CHECKED == 0`.
 **Erro do arquiteto registrado:** o handoff do ML-1B mandou rodar `make check-required-checks`, alvo
 que **não existe** no Makefile. O braço correto sem credencial de mantenedor é
 `python3 scripts/check-required-status-checks.py --scope dw`, que o ML-1B rodou com RC=0 (D\W=∅).
+
+---
+
+### ML-1D — corretivo: o gate do AC5 é por arquivo, e um job pode contornar o outro
+**Status:** ✅ Concluído (auditado por Zeus em 2026-09-17 — **AC5 fecha aqui**) · **Papel:** `apolo-tf`
+Aberto pela auditoria do ML-1C em 2026-09-17. **Último item aberto do AC5.**
+
+O ML-1C fechou a classe por **prova positiva** — e isso funcionou: os quatro mecanismos que o gate
+anterior aprovava (npm, pip, brew, `download-artifact`) passaram a reprovar, nomeando o arquivo.
+Mas a prova positiva é buscada **no arquivo inteiro**, e um workflow tem vários jobs.
+
+**Medido por Zeus, em fixture:**
+
+```yaml
+name: split
+jobs:
+  build-something-else:
+    steps:
+      - run: go build -o /tmp/x ./cmd/trackfw      # prova positiva, em job que não valida
+  governance:
+    steps:
+      - run: npm install -g trackfw                 # binário publicado
+      - run: trackfw validate                       # valida com ele
+```
+```
+$ SKIP_COUNTER_ARMS=1 bash scripts/check-ci-workflow-binary-provenance.sh /tmp/jobtest
+RC=0
+```
+
+**Passa.** O `go build` de um job satisfaz o requisito do outro. Não é cenário rebuscado: workflows
+multi-job são a norma neste repositório — o `quality.yml` sozinho deriva 45 checks.
+
+**Ações:**
+1. O gate passa a **isolar o bloco do job que contém `trackfw validate`** e exigir a prova positiva
+   **dentro desse bloco**. 🔴 **Implemente em Python**, não em `bash`: o repositório já usa
+   `python3` em `scripts/check-required-status-checks.py`, e recortar bloco de YAML por indentação
+   em `bash` é frágil exatamente onde precisa ser exato. Se houver PyYAML disponível use-o; caso
+   contrário, um recorte por indentação de topo em Python continua mais seguro que em `bash`.
+2. **Contra-braço novo:** o fixture `split.yml` acima tem de **reprovar**, nomeando o arquivo **e o
+   job**. Os seis contra-braços do ML-1C continuam passando como estão.
+3. **Contra-braço na direção oposta, obrigatório:** um workflow multi-job em que o job que valida
+   **tenha** o `go build` no próprio bloco, e outro job não tenha nada, precisa **aprovar**. Sem
+   isso, a correção pode ficar uniformemente vermelha e ninguém nota.
+4. Revalidar os oito workflows commitados. `trackfw-gate.yml` e `trackfw-validate.yml` têm um job só
+   e devem continuar aprovando — se algum reprovar, **relate antes de mexer no gate**.
+
+**Critérios de aceite:**
+- [x] `split.yml` reprova, nomeando arquivo e job — `w-split.yml (job: governance)` no output
+- [x] Multi-job legítimo (prova no job que valida) aprova — `good-multijob` aprovado
+- [x] Os 6 contra-braços do ML-1C continuam com o mesmo veredito (5 reprovam nomeando o arquivo, 1 aprova)
+- [x] Os 8 workflows reais revalidados; `trackfw-gate.yml` e `trackfw-validate.yml` aprovam; demais 6 fora do escopo (não executam `trackfw validate`)
+- [x] Reconciliação: uma frase por cenário novo — ver seção abaixo
+- [x] `go build ./...` RC=0; `make test` RC=0 (15/15); `make quality` RC=0 (212 OK, 0 FAIL); `doctor | grep -c scaffold-divergent` = 0 (RC=1 do grep); `--scope dw` RC=0
+
+**Ponto de entrada:** `scripts/check-ci-workflow-binary-provenance.sh` continua sendo o entry point para o Makefile (target `parity-rest`). O wrapper bash delega para `scripts/check-ci-workflow-binary-provenance.py` (implementação completa em Python com PyYAML). O Makefile não foi alterado. O `export PYTHONIOENCODING=utf-8` foi adicionado ao wrapper conforme gate `check-output-encoding-declared.sh`.
+
+**Veredito sobre os 8 workflows reais:**
+- `trackfw-gate.yml`: APROVADO (job único `governance-install-script`, tem `go build ./cmd/trackfw`)
+- `trackfw-validate.yml`: APROVADO (job único `governance-go-install`, tem `go build ./cmd/trackfw`)
+- Demais 6 (`check-annotations`, `deploy-docs`, `quality`, `release`, `windows-census`, `windows-probe`): fora do escopo (não executam `trackfw validate`) — contagem = 2, vacuidade guardada
+
+**Reconciliação por cenário novo (Regra Dura de Reconciliação):**
+- `w-split.yml` (bad-split): o gate isolado por job reprova o job `governance` porque o `go build` está em `build-something-else`, não no bloco do job que executa `trackfw validate` — a prova positiva num job não satisfaz o requisito de outro job.
+- `w-multijob.yml` (good-multijob): a correção não é uniformemente vermelha — um workflow multi-job em que o job `governance` tem `go build .../cmd/trackfw` no próprio bloco, e o job `build-release` não tem nada relacionado, aprova; prova no job correto é suficiente.
 ## Contexto
 
 REQ: `docs/req/REQ-2026-09-17-gerador-aplica-o-template-de-consumidor-ao-proprio-produtor-e-o-doctor-prescreve-desfazer-a-correcao.md`

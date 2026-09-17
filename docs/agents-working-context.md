@@ -37789,3 +37789,18 @@ Implementação completa. Evidências: `go build ./...` RC=0 · `make test` 15/1
 - Reexecutei meus próprios fixtures do ML-1B contra o gate reescrito: npm, pip, brew, `download-artifact` e o `.yaml` **reprovam todos**, nomeando o arquivo. `good-source` aprova — o gate não é uniformemente vermelho.
 - `doctor`: **no mismatches found** (0 `scaffold-divergent`). `--scope dw` RC=0. `go build ./...` RC=0.
 - 🔴 **Residual medido por mim, ainda aberto:** o gate é **por arquivo**, não por job. Um workflow em que o job A faça `go build .../cmd/trackfw` e o job B rode `npm install -g trackfw` + `trackfw validate` **passa com RC=0**. Medido em fixture. Decisão de escopo pendente com KG.
+
+### 2026-09-17 — Apolo — ML-1D: isolamento por job no gate AC5
+- Iniciando ML-1D: reescrever `scripts/check-ci-workflow-binary-provenance.sh` em Python com isolamento por job; adicionar contra-braços `split` e `multi-job-legit`; revalidar 8 workflows reais e 6 contra-braços do ML-1C.
+
+### 2026-09-17 — Apolo — ML-1D concluído: gate AC5 isolado por job
+- Criado `scripts/check-ci-workflow-binary-provenance.py` (Python/PyYAML) com isolamento por job. O `.sh` virou thin wrapper (mantém entry point do Makefile, acrescenta `export PYTHONIOENCODING=utf-8`).
+- 8 contra-braços: 5 bad originais (npm/pip/brew/artifact/yaml), 1 good original, `bad-split` (reprova nomeando job), `good-multijob` (aprova com prova no job correto).
+- `go build` RC=0, `make test` RC=0, `make quality` RC=0 (212 OK, 0 FAIL), `doctor` = 0 scaffold-divergent, `--scope dw` RC=0.
+- Roadmap ML-1D marcado ✅; auditoria pendente com Zeus.
+
+### 2026-09-17 — Zeus — ML-1D auditado: AC5 fecha, REQ do #376 completa
+- Verifiquei eu mesmo: `split.yml` (job A compila, job B instala por npm e valida) **reprova nomeando arquivo e job**, RC=1. Os 4 fixtures de canal do ML-1B continuam reprovando. O repositório real passa com 2 workflows e 8 contra-braços.
+- Sem PyYAML o gate **falha fechado** (`exit 2`, motivo nomeado). O `parity-other-gates` do `quality.yml` instala PyYAML na linha 825 e roda `make parity-rest` na 826 — a dependência está coberta no job certo.
+- `make quality` RC=0 · `doctor`: no mismatches found · `--scope dw` RC=0 · `go build ./...` RC=0.
+- **AC1-AC8 fechados.** Roadmap fica em `wip` até o merge.
