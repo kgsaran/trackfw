@@ -1973,7 +1973,7 @@ func refreshDiscoverGitHubActionsWorkflowIfPresent(root string) error {
 		fmt.Fprintf(os.Stderr, "aviso: %s é um symlink; trackfw update não escreve através de symlinks — arquivo não foi tocado\n", DiscoverGitHubActionsWorkflowPath)
 		return nil
 	}
-	return os.WriteFile(path, []byte(BuildDiscoverGitHubActionsWorkflowContent()), 0o644)
+	return os.WriteFile(path, []byte(BuildDiscoverGitHubActionsWorkflowContent(IsProducerGoMod(root))), 0o644)
 }
 
 // UpdateProject evaluates (and, unless DryRun, applies) every declared
