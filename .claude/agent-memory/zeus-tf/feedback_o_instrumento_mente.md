@@ -20,6 +20,14 @@ O `zsh` **não** faz word-splitting de variável não citada: a lista inteira vi
 casou, e tudo saiu "ausente". O `$?` depois de um pipe é do **último** comando, não do script. E o
 `ls` desta máquina tem alias que injeta um caractere antes do nome.
 
+**Quarta ocorrência (2026-09-17), e a mais traiçoeira:** um laço para apagar branches integradas
+devolveu `apagadas: 0` e **nenhuma linha de diagnóstico**. Causa: `git rev-parse @{upstream}` sai com
+**rc=128 justamente quando o remoto sumiu** — ou seja, o comando falha exatamente no caso que eu
+queria detectar, e o `|| continue` engoliu todas as 22 branches. O certo é
+`git for-each-ref --format='%(refname:short)|%(upstream:track)'`, onde remoto apagado vem como
+`[gone]` em vez de erro. 🔴 **Zero também é um resultado uniforme** — a regra da unanimidade vale
+para "nada aconteceu", não só para "tudo deu igual".
+
 🔴 O sinal comum é **unanimidade**: quando todo item de um corpus recebe o mesmo veredito, o teste
 provavelmente está quebrado. Foi assim nos três. Em 2026-09-12 essa mesma classe (o `zsh`) apagou uma
 branch com trabalho não integrado.
