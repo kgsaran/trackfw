@@ -410,6 +410,15 @@ dois casos.
 
 ## Não rode `make parity-rest` na raiz deste fork
 
+> ✅ **Resolvido em 2026-09-17 pelo [#381](https://github.com/kgsaran/trackfw/pull/381) do upstream,
+> que fecha a #366.** O `check-tty-detection.sh` passou a rodar o `init` dentro da fixture, e a guarda
+> do `check-gates-falsify.sh` deixou a lista fixa de 4 gates: agora cobre todos, classificados, e
+> compara conteúdo. **Medido por efeito neste fork**, em dois worktrees de `cd7d492` com o mesmo
+> `bin/trackfw`: o script antigo reescreveu `trackfw.yaml` (+19 −23), `CLAUDE.md`, `GEMINI.md`,
+> `.claude/settings.json`, `.codex/hooks.json`, `.gemini/settings.json` e criou `vault/`; o do #381
+> não tocou em nada. A seção abaixo fica como registro.
+
+
 🔴 Enquanto a [#366](https://github.com/kgsaran/trackfw/issues/366) do upstream estiver aberta, um gate
 do `parity-rest` **reescreve o `trackfw.yaml` real**. O mantenedor isolou por bissecção:
 `scripts/check-tty-detection.sh` roda `"$GO_BIN" init --ai-tools gemini` no **cwd**, sem `cd` para a
