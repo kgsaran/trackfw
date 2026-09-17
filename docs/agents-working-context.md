@@ -37691,3 +37691,25 @@ pré-requisito hard de ML-3A.
 - **Nome da variável opt-in:** `TRACKFW_JIRA_ALLOW_MIXED_ORIGIN` — prefixo TRACKFW_ evita colisão com variáveis do vendedor; nomeia a combinação específica, não um skip genérico.
 - **http→https no mesmo host:** inacessível porque validateJiraURL exige https na URL inicial; qualquer downgrade é bloqueado pelo check de esquema no CheckRedirect.
 - **Reutilização de fetch.go:** padrão url.Parse + https + CheckRedirect seguido; CheckRedirect aqui vai além (compara host:porta normalizado, não só esquema).
+
+---
+
+## Sessão 2026-09-17 — Zeus (encerramento: v8.0.0 no ar e três REQs de segurança/governança fechadas)
+
+**Encerrado:** 2026-09-17
+
+**Entregue hoje:** v8.0.0 GA publicada e verificada nos três canais · #366 (gate escrevia na árvore que audita) · #268 AC3 (`sync` enumerava REQ por caminho literal) · #380 (`jira_base_url` redirecionava credencial de CI). Roadmaps em `wip`: 0.
+
+**A tese que as três frentes confirmaram, e é o aprendizado do dia:** em todas, **o defeito estava no remédio**, não no código a corrigir — e só a Wave 0 pegou, porque o remédio ainda não existia para gate nenhum testar.
+
+- #366: a guarda proposta seria satisfeita **vacuamente** — `git status --porcelain` é cego a conteúdo em path já sujo, e o gate culpado roda antes dela na mesma árvore.
+- #268: a correção **abriria travessia de caminho** — o `Glob` literal defeituoso era *acidentalmente imune* por ignorar a config.
+- #380: o AC2 que eu escrevi era **impossível de satisfazer** — a combinação vulnerável é a mesma de boa prática.
+
+**Família recorrente das correções de auditoria — verificação que passa sem medir:** fail-open num controle de contenção · teste tratando qualquer erro como falta de privilégio e pulando · `exit 127` porque o binário não existia (*um binário que não existe também não trava*) · seam exportado permitindo desligar a contenção, protegido só por comentário · `os.Chdir`+`RemoveAll` morrendo no próprio `Fatalf` no Windows.
+
+**Erros meus, medidos:** três foram **o instrumento mentindo** — `zsh` sem word-splitting, `$?` do `tail`, `ls` com alias. Nota de memória criada. Mais: piso fixo em gate que roda em shards; triagem por cruzamento de caminhos superestimando o que a v8 apagou; `git add -A` varrendo config corrompida; `Fecha #N` em português no corpo do PR.
+
+**Padrões que pedem mecanismo, não mais ênfase:** (1) cinco agentes escreveram na árvore errada apesar da proibição em negrito; (2) agente marcando o próprio ML como ✅ remove a auditoria do caminho; (3) todo merge em paralelo colide em `agents-working-context.md`, `.trackfw-log` e `vault/notes/index.md` — e uma dessas resoluções (rename `wip/`→`done/` generalizado pelo git) **mentiria sem parecer**.
+
+**Abertos:** #364 (sinal do ratchet sem destino) · #376 (`doctor` prescreve `trackfw update`, que reintroduz o defeito) · #258, #268 (resto), #273, #277, #290, #307, #308, #353, #363.
