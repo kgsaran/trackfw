@@ -2382,6 +2382,13 @@ func isOutsideCWD(path string) bool {
 	return strings.HasPrefix(rel, "..") || filepath.IsAbs(rel)
 }
 
+// getwdFn is the function used to obtain the current working directory inside
+// checkREQDirContained. It defaults to os.Getwd and may be overridden in
+// internal tests (package validator) to inject a controlled failure without
+// relying on OS-specific filesystem tricks (e.g. removing the CWD, which
+// Windows prevents while the directory is in use).
+var getwdFn func() (string, error) = os.Getwd
+
 // checkREQDirContained verifica se req_dir está contido dentro do diretório raiz do projeto (CWD).
 // Usa EvalSymlinks em ambos os lados para não ser enganado por symlinks — um symlink em
 // docs/req apontando para fora da árvore passa numa verificação lexical mas é recusado aqui.
@@ -2397,7 +2404,7 @@ func isOutsideCWD(path string) bool {
 // EvalSymlinks do CWD falhou), o erro é retornado com diagnóstico nomeado. Um controle de
 // contenção que não pode medir contenção não deve reportar "contido".
 func checkREQDirContained(reqDir string) error {
-	cwd, err := os.Getwd()
+	cwd, err := getwdFn()
 	if err != nil {
 		return fmt.Errorf("não foi possível resolver o diretório de trabalho — contenção de req_dir não pode ser verificada: %w", err)
 	}
