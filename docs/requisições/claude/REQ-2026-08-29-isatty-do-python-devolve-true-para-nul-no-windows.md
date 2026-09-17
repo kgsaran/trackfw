@@ -3,7 +3,7 @@ status: Open
 date: 2026-08-29
 author: claude
 adr: "docs/adr/ADR-2026-09-05-windows-e-plataforma-de-primeira-classe-e-o-defeito-se-mede-nela-nao-se-contorna.md"
-roadmap: "docs/roadmaps/claude\backlog\ROADMAP-2026-08-29-isatty-do-python-devolve-true-para-nul-no-windows.md"
+roadmap: "docs/roadmaps/claude/backlog/ROADMAP-2026-08-29-isatty-do-python-devolve-true-para-nul-no-windows.md"
 ---
 
 # REQ: isatty do Python devolve True para NUL no Windows

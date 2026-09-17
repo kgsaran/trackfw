@@ -3,7 +3,7 @@ status: Open
 date: 2026-08-29
 author: claude
 adr: docs/adr/ADR-2026-08-29-adotar-upstream-como-base.md
-roadmap: "docs/roadmaps/claude\backlog\ROADMAP-2026-08-29-atualizar-para-a-upstream-main-com-o-fix-de-symlink.md"
+roadmap: "docs/roadmaps/claude/backlog/ROADMAP-2026-08-29-atualizar-para-a-upstream-main-com-o-fix-de-symlink.md"
 ---
 
 # REQ: Atualizar para a upstream main com o fix de symlink
