@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-12
 req: "docs/req/REQ-2026-09-12-v8-um-binario-muitos-canais-casquinha-npm-e-wheels-de-plataforma-substituem-as-reimplementacoes-node-e-python.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: v8 — um binário, muitos canais
 
-> Created: 2026-09-12 | Reescrito: 2026-09-12 | Status: wip
+> Created: 2026-09-12 | Reescrito: 2026-09-12 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-09-12-v8-um-binario-muitos-canais-casquinha-npm-e-wheels-de-plataforma-substituem-as-reimplementacoes-node-e-python.md

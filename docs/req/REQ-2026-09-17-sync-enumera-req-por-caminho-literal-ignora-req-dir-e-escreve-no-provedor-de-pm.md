@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-17
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-17-sync-enumera-req-por-caminho-literal-ignora-req-dir-e-escreve-no-provedor-de-pm.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-17-sync-enumera-req-por-caminho-literal-ignora-req-dir-e-escreve-no-provedor-de-pm.md"
 ---
 
 # REQ: sync enumera REQ por caminho literal ignora req_dir e escreve no provedor de PM
@@ -115,6 +115,6 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-17-sync-enumera-req-por-caminho-literal-ignora-req-dir-e-escreve-no-provedor-de-pm.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-09-17-sync-enumera-req-por-caminho-literal-ignora-req-dir-e-escreve-no-provedor-de-pm.md
 <!-- Reference the roadmap that implements this requirement -->
 Roadmap: 
