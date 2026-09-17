@@ -37733,3 +37733,15 @@ pré-requisito hard de ML-3A.
 - Parecer de ameaças (`hades-tf`) em `docs/portabilidade/2026-09-17-threat-model-gerador-produtor-consumidor.md`; gate da Wave 0 RC=0.
 - Verifiquei dois achados no código: (a) `check_discover_pin` reprova a correção → virou **AC8** da REQ, bloqueante do ML-1A; (b) `governance_mode: lenient` torna `governance-go-install` e `governance-install-script` exit-0 por construção → **causa distinta**, issue **#387**.
 - Wave 1 (`apolo-tf`) liberada com o AC8 no escopo. Dois dos oito required checks não bloqueiam até o #387 ser tratado — o aceite se apoia em `doctor` (AC7), pin-parity corrigido (AC8) e `quality`.
+
+### 2026-09-17 — Apolo — ML-1A · início da implementação (#376)
+Branch: `fix/gerador-aplica-o-template-de-consumidor`. Tarefa: tornar `BuildDiscoverGitHubActionsWorkflowContent` sensível ao contexto produtor/consumidor via `IsProducerGoMod`; atualizar os três sítios consumidores; corrigir `check-ci-workflow-pin-parity.sh` (AC8 bloqueante); regenerar `.github/workflows/trackfw-validate.yml`; adicionar testes (AC1/AC2/AC6 com contra-braço).
+
+### 2026-09-17 — Apolo — ML-1A · entrega para auditoria do arquiteto (#376)
+Implementação completa. Evidências: `go build ./...` RC=0 · `make test` 15/15 pacotes verdes · `bash scripts/check-ci-workflow-pin-parity.sh` RC=0 (16 cenários) · `./bin/trackfw doctor` sem `scaffold-divergent` para `trackfw-validate.yml` (AC7) · `make quality` RC=0. Achado colateral: `.github/workflows/trackfw-gate.yml` diverge do builder apenas em `TRACKFW_VERSION: "8.0.0"` vs `"8.0.1"` (pin de versão, mecanismo `install.sh` inalterado) — causa distinta de #376, reportado ao arquiteto como achado separado. Status do ML-1A mantido como 🔄 Em andamento até auditoria do arquiteto.
+
+### 2026-09-17 — Zeus — auditoria do ML-1A: AC5 reprovado, ML-1B aberto na mesma REQ
+- AC1-AC4, AC6, AC7, AC8 atendidos e medidos por mim. AC7 fecha: `doctor` não reporta `scaffold-divergent` para `.github/workflows/trackfw-validate.yml`.
+- 🔴 **AC5 reprovado.** Foi satisfeito ao pé da letra ("não usa `go install …@v`") com a classe aberta: `.github/workflows/trackfw-gate.yml` obtém o binário por `install.sh` do release, e o required check `governance-install-script` valida o binário **publicado**, não o código do PR. `doctor` ainda reporta 1 `scaffold-divergent` para esse arquivo, com `remedy: trackfw update`.
+- Causa: `buildGitHubActionsWorkflowContent` (`scaffold.go`) é o **segundo builder** e não tem braço de produtor. Mesmo mecanismo do #376 → **ML-1B na mesma REQ, mesmo PR** (Regra Dura de Causa Raiz).
+- AC5 reescrito na REQ: nomeia a **procedência do binário**, não o comando. Exige gate novo sobre os workflows **commitados** — o pin-parity só vê o template.

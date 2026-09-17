@@ -94,9 +94,18 @@ lendo o diff; nenhum gate acusou.
 - [ ] **AC4** — As versões das actions no template deixam de regredir. E o
       `check-ci-workflow-pin-parity.sh` passa a detectar **retrocesso**, não só ausência de pin —
       hoje ele é verde diante de uma regressão `v7` → `v4`.
-- [ ] **AC5** — 🔴 Gate: nenhum workflow **deste repositório** obtém o binário do trackfw por
-      `go install …@v<versão>`. Fecha a classe sem depender de alguém reparar no diff, que foi o que
-      aconteceu desta vez.
+- [ ] **AC5** — 🔴 **Reescrito na auditoria do ML-1A (2026-09-17). A redação anterior nomeava o
+      mecanismo, não a classe, e foi satisfeita ao pé da letra com a classe aberta.**
+      Redação anterior: *"nenhum workflow deste repositório obtém o binário do trackfw por
+      `go install …@v<versão>`"*. Um segundo sítio obtém o binário por **`install.sh` do release**, o
+      que não é `go install` e passava.
+      Redação vigente: **nenhum workflow deste repositório valida com um binário do trackfw que não
+      seja compilado do código do próprio PR** — qualquer que seja o mecanismo de obtenção
+      (`go install …@v`, `curl …/releases/latest/download/install.sh | sh`, download de artefato,
+      imagem pré-construída). O que define a classe é a **procedência do binário**, não o comando.
+      **Gate exigido:** varredura dos workflows **commitados** em `.github/workflows/*.yml` deste
+      repositório. O `check-ci-workflow-pin-parity.sh` verifica o **template** que o builder emite,
+      não o arquivo em disco — e foi por isso que o sítio sobreviveu.
 - [ ] **AC6** — Falsificação em duas direções: num fixture cujo `go.mod` é o do trackfw, o gerado
       compila do fonte; num fixture de consumidor, instala do release. 🔴 **Com contra-braço:** a
       versão sem a correção produz `go install` **nos dois** — provando que o cenário discrimina.

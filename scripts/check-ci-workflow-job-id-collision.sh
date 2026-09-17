@@ -45,8 +45,11 @@ assert_count "Go: trackfw-gate.yml usa $GATE_ID" \
   "internal/generators/scaffold.go" "$GATE_ID:" 1
 
 # --- trackfw-validate.yml (BuildDiscoverGitHubActionsWorkflowContent) — Go only ----
+# 2 occurrences expected: BuildDiscoverGitHubActionsWorkflowContent(isProducer bool) has
+# two template branches (producer and consumer), each containing the same job id.
+# The id must be identical in both branches — it is a required_status_checks contract.
 assert_count "Go: trackfw-validate.yml usa $VALIDATE_ID" \
-  "internal/generators/scaffold_doctor.go" "$VALIDATE_ID:" 1
+  "internal/generators/scaffold_doctor.go" "$VALIDATE_ID:" 2
 
 # --- Anti-regressao: o id antigo colidente nao pode reaparecer nos geradores Go.
 # npm/src/ e pypi/trackfw/ removidos em ML-3A (v8). ---

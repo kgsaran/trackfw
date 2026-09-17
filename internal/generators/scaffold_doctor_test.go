@@ -3,6 +3,7 @@ package generators
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/kgsaran/trackfw/internal/integrations"
@@ -290,5 +291,206 @@ func TestWindowsPlatformGuard_ValidateScript(t *testing.T) {
 	finding := checkValidateScriptArtifact(p, "scripts/trackfw-validate.sh", cfg)
 	if finding != nil {
 		t.Errorf("expected no finding on Windows (mode check suppressed), got: %+v", finding)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Tests for IsProducerGoMod and BuildDiscoverGitHubActionsWorkflowContent
+// (REQ-2026-09-17, AC1/AC2/AC3/AC6).
+// ---------------------------------------------------------------------------
+
+// TestIsProducerGoMod verifies that the go.mod signal correctly identifies the
+// producer repo and a consumer project. Affirms ML-1A AC1: the discriminant is
+// the go.mod declaration, not a hard-coded path or an exception list.
+func TestIsProducerGoMod(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string // go.mod content; "" means no go.mod
+		want    bool
+	}{
+		{
+			name:    "trackfw producer module",
+			content: "module github.com/kgsaran/trackfw\n\ngo 1.25.2\n",
+			want:    true,
+		},
+		{
+			name:    "consumer module",
+			content: "module example.com/myapp\n\ngo 1.22\n",
+			want:    false,
+		},
+		{
+			name:    "module that requires trackfw but is not the producer",
+			content: "module example.com/myapp\n\ngo 1.22\n\nrequire (\n\tgithub.com/kgsaran/trackfw v8.0.0\n)\n",
+			want:    false,
+		},
+		{
+			name:    "missing go.mod",
+			content: "",
+			want:    false,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if tc.content != "" {
+				if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(tc.content), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got := IsProducerGoMod(dir)
+			if got != tc.want {
+				t.Errorf("IsProducerGoMod = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestBuildDiscoverGitHubActionsWorkflowContent_Templates verifies that the producer
+// template compiles from source and the consumer template installs from release,
+// including the counter-arm required by AC6: before the fix both contexts returned the
+// same consumer template (go install unconditionally), so the two templates must differ
+// and each must contain exactly the expected install mechanism.
+//
+// Affirms ML-1A AC1 (producer compiles from source), AC3/AC4 (consumer uses updated
+// actions and go-version), and AC6 counter-arm (templates differ — fix has effect).
+func TestBuildDiscoverGitHubActionsWorkflowContent_Templates(t *testing.T) {
+	producer := BuildDiscoverGitHubActionsWorkflowContent(true)
+	consumer := BuildDiscoverGitHubActionsWorkflowContent(false)
+
+	// AC1: producer must compile from source. Use "- run: go install" to check the
+	// run step precisely — the YAML comment in the producer template mentions "go install"
+	// in the warning text but must not appear as an executable step.
+	if strings.Contains(producer, "- run: go install") {
+		t.Error("producer template must not have a 'run: go install' step — must compile from source")
+	}
+	if !strings.Contains(producer, "- run: go build") {
+		t.Error("producer template must contain a 'run: go build' step")
+	}
+	if !strings.Contains(producer, "go-version-file: go.mod") {
+		t.Error("producer template must use go-version-file: go.mod (AC3)")
+	}
+
+	// AC1: consumer must install from release.
+	if strings.Contains(consumer, "- run: go build") {
+		t.Error("consumer template must not have a 'run: go build' step")
+	}
+	if !strings.Contains(consumer, "- run: go install") {
+		t.Error("consumer template must contain a 'run: go install' step")
+	}
+	if !strings.Contains(consumer, "@v") {
+		t.Error("consumer template must pin the version with @v<version> (AC8)")
+	}
+
+	// AC3/AC4: both templates must use @v7 for actions.
+	for _, tmpl := range []struct {
+		name    string
+		content string
+	}{{"producer", producer}, {"consumer", consumer}} {
+		if !strings.Contains(tmpl.content, "actions/checkout@v7") {
+			t.Errorf("%s template: expected actions/checkout@v7 (AC4 regression guard)", tmpl.name)
+		}
+		if !strings.Contains(tmpl.content, "actions/setup-go@v7") {
+			t.Errorf("%s template: expected actions/setup-go@v7 (AC4 regression guard)", tmpl.name)
+		}
+	}
+
+	// AC6 counter-arm: the two templates must differ — if they were the same (as before
+	// the fix, when both returned the consumer template with go install), the go.mod
+	// signal has no effect. Both had "- run: go install" before the fix.
+	if producer == consumer {
+		t.Error("counter-arm failed: producer and consumer templates are identical — the go.mod discriminant has no effect (simulates pre-fix state where both returned go install)")
+	}
+	// The pre-fix (counter-arm): both templates previously had "- run: go install".
+	// After the fix: only the consumer has it.
+	if !strings.Contains(consumer, "- run: go install") {
+		t.Error("counter-arm: consumer template must have '- run: go install' (as both did before the fix)")
+	}
+	if strings.Contains(producer, "- run: go install") {
+		t.Error("counter-arm: producer template must not have '- run: go install' (this is the fix)")
+	}
+}
+
+// TestRunScaffoldDoctor_DiscoverWorkflow_ProducerContext_Clean proves AC2 for the
+// doctor call site (scaffold_doctor.go:269): when the go.mod declares this module,
+// RunScaffoldDoctor compares against the producer template — a file matching that
+// template is reported clean and does not trigger the false-positive that caused #376.
+//
+// Affirms ML-1A AC2: the doctor call site passes the correct context and the previously
+// broken comparison (producer repo always reported scaffold-divergent) is resolved.
+func TestRunScaffoldDoctor_DiscoverWorkflow_ProducerContext_Clean(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteGoMod(t, dir, "github.com/kgsaran/trackfw")
+	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte("backend: go\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wfDir := filepath.Join(dir, ".github", "workflows")
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Write the producer template as the current disk content.
+	producerContent := BuildDiscoverGitHubActionsWorkflowContent(true)
+	if err := os.WriteFile(filepath.Join(wfDir, "trackfw-validate.yml"), []byte(producerContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	findings, err := RunScaffoldDoctor(dir)
+	if err != nil {
+		t.Fatalf("RunScaffoldDoctor error: %v", err)
+	}
+	for _, f := range findings {
+		if f.Destination == DiscoverGitHubActionsWorkflowPath {
+			t.Errorf("expected no finding for producer fixture with producer template, got: %+v", f)
+		}
+	}
+}
+
+// TestRunScaffoldDoctor_DiscoverWorkflow_WrongContext_Divergent proves AC2: when the
+// disk content uses the wrong template for the context (consumer template in a producer
+// repo), the doctor reports scaffold-divergent — the false positive of the old code
+// becomes the correct positive of the fixed code for the opposite mismatch.
+//
+// Affirms ML-1A AC2: all three call sites must agree on the context; a mismatch between
+// what the builder emits and what lives on disk is correctly detected in both directions.
+func TestRunScaffoldDoctor_DiscoverWorkflow_WrongContext_Divergent(t *testing.T) {
+	dir := t.TempDir()
+	mustWriteGoMod(t, dir, "github.com/kgsaran/trackfw")
+	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte("backend: go\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wfDir := filepath.Join(dir, ".github", "workflows")
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Write the CONSUMER template in a producer fixture — this is the pre-fix scenario.
+	consumerContent := BuildDiscoverGitHubActionsWorkflowContent(false)
+	if err := os.WriteFile(filepath.Join(wfDir, "trackfw-validate.yml"), []byte(consumerContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	findings, err := RunScaffoldDoctor(dir)
+	if err != nil {
+		t.Fatalf("RunScaffoldDoctor error: %v", err)
+	}
+	found := false
+	for _, f := range findings {
+		if f.Destination == DiscoverGitHubActionsWorkflowPath {
+			found = true
+			if f.FindingKind != integrations.DoctorScaffoldDivergent {
+				t.Errorf("expected DoctorScaffoldDivergent, got %v", f.FindingKind)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("expected scaffold-divergent for consumer template in producer fixture, got none: %+v", findings)
+	}
+}
+
+// mustWriteGoMod is a test helper that writes a minimal go.mod with the given module
+// path to the given directory.
+func mustWriteGoMod(t *testing.T, dir, modulePath string) {
+	t.Helper()
+	content := "module " + modulePath + "\n\ngo 1.25.2\n"
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }

@@ -86,7 +86,10 @@ func TestZZDumpCIWorkflowPinParity(t *testing.T) {
 	if err := os.WriteFile("$dest/gl_go.yml", []byte(buildGitLabCIWorkflowContent(Config{})), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile("$dest/dv_go.yml", []byte(BuildDiscoverGitHubActionsWorkflowContent()), 0644); err != nil {
+	if err := os.WriteFile("$dest/dv_go_consumer.yml", []byte(BuildDiscoverGitHubActionsWorkflowContent(false)), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile("$dest/dv_go_producer.yml", []byte(BuildDiscoverGitHubActionsWorkflowContent(true)), 0644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -142,6 +145,7 @@ check_gitlab_timeout() {
 }
 
 # check_discover_pin FILE EXPECTED
+# Verifies the consumer discover template pins go install to @v<expected>.
 check_discover_pin() {
   local file=$1 expected=$2
   if grep -qF '@latest' "$file"; then
@@ -152,6 +156,46 @@ check_discover_pin() {
     echo "go install não contém @v${expected} pinada"
     return 1
   fi
+  return 0
+}
+
+# check_producer_no_go_install FILE
+# Verifies the producer discover template compiles from source (no 'run: go install' step).
+# Uses "run: go install" (without leading dash) so YAML comments that mention go install
+# in the warning text are not mistaken for an executable step.
+check_producer_no_go_install() {
+  local file=$1
+  if grep -qFe 'run: go install' "$file"; then
+    echo "template de produtor contém 'run: go install' — deve compilar do fonte"
+    return 1
+  fi
+  if ! grep -qFe 'run: go build' "$file"; then
+    echo "template de produtor não contém 'run: go build'"
+    return 1
+  fi
+  return 0
+}
+
+# check_action_pins FILE MIN_VERSION
+# Verifies that actions/checkout and actions/setup-go in FILE use @vN where N >= MIN_VERSION.
+# Detects action version regression (AC4).
+check_action_pins() {
+  local file=$1 min=$2
+  for action in "actions/checkout" "actions/setup-go"; do
+    local rv
+    # `|| true` prevents set -euo pipefail from aborting when grep finds no match —
+    # the caller gets rv="" and the -z check below emits the "pin não encontrado" message
+    # instead of an opaque pipeline failure (distinguishes "not found" from "grep failed").
+    rv=$(grep -m1 "uses: ${action}@v" "$file" | sed -n 's/.*@v\([0-9]*\).*/\1/p') || true
+    if [ -z "$rv" ]; then
+      echo "${action} pin não encontrado em $file"
+      return 1
+    fi
+    if [ "$rv" -lt "$min" ]; then
+      echo "${action}@v${rv} é inferior ao mínimo esperado @v${min}"
+      return 1
+    fi
+  done
   return 0
 }
 
@@ -171,11 +215,14 @@ RUN1="$WORK/run1"
 mkdir -p "$RUN1"
 dump_go "$RUN1"
 
-run_check "pin-parity/github-actions/version-pin"    check_version_pin "$RUN1/gh_go.yml" "$GO_VERSION"
-run_check "pin-parity/gitlab-ci/version-pin"         check_version_pin "$RUN1/gl_go.yml" "$GO_VERSION"
-run_check "pin-parity/github-actions/timeout-minutes" check_timeout_minutes "$RUN1/gh_go.yml"
-run_check "pin-parity/gitlab-ci/timeout"             check_gitlab_timeout "$RUN1/gl_go.yml"
-run_check "pin-parity/discover-workflow/version-pin" check_discover_pin "$RUN1/dv_go.yml" "$GO_VERSION"
+run_check "pin-parity/github-actions/version-pin"              check_version_pin "$RUN1/gh_go.yml" "$GO_VERSION"
+run_check "pin-parity/gitlab-ci/version-pin"                   check_version_pin "$RUN1/gl_go.yml" "$GO_VERSION"
+run_check "pin-parity/github-actions/timeout-minutes"          check_timeout_minutes "$RUN1/gh_go.yml"
+run_check "pin-parity/gitlab-ci/timeout"                       check_gitlab_timeout "$RUN1/gl_go.yml"
+run_check "pin-parity/discover-workflow/consumer-version-pin"  check_discover_pin "$RUN1/dv_go_consumer.yml" "$GO_VERSION"
+run_check "pin-parity/discover-workflow/producer-no-go-install" check_producer_no_go_install "$RUN1/dv_go_producer.yml"
+run_check "pin-parity/discover-workflow/consumer-action-pins"  check_action_pins "$RUN1/dv_go_consumer.yml" 7
+run_check "pin-parity/discover-workflow/producer-action-pins"  check_action_pins "$RUN1/dv_go_producer.yml" 7
 
 # ---------------------------------------------------------------------------
 # Idempotência — dump uma segunda vez; os 3 arquivos têm que sair byte-idênticos.
@@ -186,7 +233,7 @@ dump_go "$RUN2"
 
 idempotent_check() {
   local f
-  for f in gh_go.yml gl_go.yml dv_go.yml; do
+  for f in gh_go.yml gl_go.yml dv_go_consumer.yml dv_go_producer.yml; do
     if ! diff -q "$RUN1/$f" "$RUN2/$f" >/dev/null 2>&1; then
       echo "arquivo $f diverge entre a 1a e a 2a execução do gate sobre o mesmo commit"
       return 1
@@ -231,12 +278,26 @@ rm -f "$FALS/gl-no-timeout.yml.bak"
 assert_check_fails "falsify/gitlab-ci/missing-timeout" "timeout: 10 minutes ausente" \
   check_gitlab_timeout "$FALS/gl-no-timeout.yml"
 
-# (5) @latest no lugar de @v<versão> → reprova.
-cp "$RUN1/dv_go.yml" "$FALS/dv-latest.yml"
-sed -i.bak "s/@v${GO_VERSION}/@latest/" "$FALS/dv-latest.yml"
-rm -f "$FALS/dv-latest.yml.bak"
-assert_check_fails "falsify/discover-workflow/latest-not-pinned" "go install usa @latest" \
-  check_discover_pin "$FALS/dv-latest.yml" "$GO_VERSION"
+# (5) @latest no lugar de @v<versão> no template de consumidor → reprova.
+cp "$RUN1/dv_go_consumer.yml" "$FALS/dv-consumer-latest.yml"
+sed -i.bak "s/@v${GO_VERSION}/@latest/" "$FALS/dv-consumer-latest.yml"
+rm -f "$FALS/dv-consumer-latest.yml.bak"
+assert_check_fails "falsify/discover-workflow/consumer-latest-not-pinned" "go install usa @latest" \
+  check_discover_pin "$FALS/dv-consumer-latest.yml" "$GO_VERSION"
+
+# (6) 'go install' injetado no template de produtor → reprova (AC5/AC8).
+cp "$RUN1/dv_go_producer.yml" "$FALS/dv-producer-go-install.yml"
+sed -i.bak "s|go build -o /usr/local/bin/trackfw ./cmd/trackfw|go install github.com/kgsaran/trackfw/cmd/trackfw@v${GO_VERSION}|" "$FALS/dv-producer-go-install.yml"
+rm -f "$FALS/dv-producer-go-install.yml.bak"
+assert_check_fails "falsify/discover-workflow/producer-has-go-install" "template de produtor contém 'run: go install'" \
+  check_producer_no_go_install "$FALS/dv-producer-go-install.yml"
+
+# (7) regressão de versão de action no template de consumidor → reprova (AC4).
+cp "$RUN1/dv_go_consumer.yml" "$FALS/dv-consumer-action-regression.yml"
+sed -i.bak "s|actions/checkout@v7|actions/checkout@v4|" "$FALS/dv-consumer-action-regression.yml"
+rm -f "$FALS/dv-consumer-action-regression.yml.bak"
+assert_check_fails "falsify/discover-workflow/consumer-action-regression" "actions/checkout@v4 é inferior" \
+  check_action_pins "$FALS/dv-consumer-action-regression.yml" 7
 
 # ---------------------------------------------------------------------------
 # Guarda de vacuidade.

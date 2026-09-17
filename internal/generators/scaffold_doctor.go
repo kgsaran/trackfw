@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strings"
 
 	"github.com/kgsaran/trackfw/internal/integrations"
 	"github.com/kgsaran/trackfw/internal/version"
@@ -36,34 +37,77 @@ const DiscoverGitHubActionsWorkflowPath = ".github/workflows/trackfw-validate.ym
 // internal/discover already imports internal/generators, and internal/generators must
 // never import internal/discover (that would be circular).
 //
-// NOT version-independent (ADR-2026-08-28, REQ-2026-08-28 AC6/AC7): the `go install
-// .../cmd/trackfw@vX.Y.Z` step pins the second install mechanism (`go install ...@latest`)
-// to internal/version.Version, the version of the binary that generated/updated the
-// project — mirroring the install.sh pin already applied to buildGitHubActionsWorkflowContent
-// (trackfw-gate.yml) in scaffold.go. Scaffold doctor calls this to compare disk content
-// against the current template (AC10/AC11).
+// isProducer selects between two template variants (REQ-2026-09-17, AC1):
 //
-// Job id is `governance-go-install` (ML-1A, ROADMAP-2026-09-01) — was `governance`,
-// colliding with the job id in buildGitHubActionsWorkflowContent (trackfw-gate.yml,
-// scaffold.go), which produced two identically-named check-runs on any PR of a project
-// with both workflows installed. See the doc comment there for the full rationale; the
-// two ids are named after the install mechanism (`go install` here vs install.sh
-// there), not the workflow file, since that's what the reader of
-// required_status_checks needs to know.
-func BuildDiscoverGitHubActionsWorkflowContent() string {
+//   - isProducer=true (go.mod declares module github.com/kgsaran/trackfw): the workflow
+//     compiles trackfw from the PR's own source. Using go install ...@vX here would
+//     validate with the already-published binary — a PR that broke trackfw validate would
+//     pass because the verifier never sees the change. Job-id governance-go-install is a
+//     required_status_checks contract — renaming it leaves every PR pending forever.
+//
+//   - isProducer=false (consumer project): installs the pinned release via go install.
+//     Actions are pinned to @v7; go-version "1.25" matches the module floor (go.mod:
+//     go 1.25.2); GOTOOLCHAIN handles any sub-patch downloads (AC3/AC4).
+//
+// NOT version-independent (ADR-2026-08-28, REQ-2026-08-28 AC6/AC7): the consumer
+// `go install .../cmd/trackfw@vX.Y.Z` step pins to internal/version.Version. Scaffold
+// doctor calls this to compare disk content against the current template (AC10/AC11).
+//
+// Job id `governance-go-install` (ML-1A, ROADMAP-2026-09-01): named after the install
+// mechanism in the consumer template; kept identical in the producer template because
+// the id is a required_status_checks contract, not a description of the step.
+func BuildDiscoverGitHubActionsWorkflowContent(isProducer bool) string {
+	if isProducer {
+		return `name: trackfw validate
+on: [push, pull_request]
+jobs:
+  governance-go-install:
+    runs-on: ubuntu-latest
+    steps:
+      # Producer template: compile from the PR's own source. Installing from the
+      # published release would validate the already-published binary, so a PR that
+      # broke trackfw validate would pass. Job-id governance-go-install is a
+      # required_status_checks contract — do not rename.
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: go build -o /usr/local/bin/trackfw ./cmd/trackfw
+      - run: trackfw validate
+`
+	}
 	return `name: trackfw validate
 on: [push, pull_request]
 jobs:
   governance-go-install:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
-          go-version: "1.22"
+          go-version: "1.25"
       - run: go install github.com/kgsaran/trackfw/cmd/trackfw@v` + version.Version + `
       - run: trackfw validate
 `
+}
+
+// IsProducerGoMod reports whether the go.mod at projectRoot declares this module
+// (module github.com/kgsaran/trackfw). The check is line-wise and trims whitespace
+// to handle CRLF checkouts on Windows — bytes.Contains with a trailing "\n" gives a
+// false negative on CRLF line endings, which would misclassify the producer repo as
+// a consumer on Windows-only and produce flaky CI. The "module " prefix is preserved
+// to exclude require/replace lines that could also name this module.
+func IsProducerGoMod(projectRoot string) bool {
+	data, err := os.ReadFile(filepath.Join(projectRoot, "go.mod"))
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.TrimSpace(line) == "module github.com/kgsaran/trackfw" {
+			return true
+		}
+	}
+	return false
 }
 
 // pythonValidateScriptForm is the byte-exact content Python's `trackfw init` and
@@ -266,7 +310,7 @@ func RunScaffoldDoctor(projectRoot string) ([]integrations.DoctorFinding, error)
 	// `ci:` key — a project can have discover's workflow without cfg.CI ever being set.
 	discoverWorkflowPath := filepath.Join(projectRoot, DiscoverGitHubActionsWorkflowPath)
 	if _, err := os.Stat(discoverWorkflowPath); err == nil {
-		f := checkScaffoldArtifact(discoverWorkflowPath, DiscoverGitHubActionsWorkflowPath, []byte(BuildDiscoverGitHubActionsWorkflowContent()), true, false)
+		f := checkScaffoldArtifact(discoverWorkflowPath, DiscoverGitHubActionsWorkflowPath, []byte(BuildDiscoverGitHubActionsWorkflowContent(IsProducerGoMod(projectRoot))), true, false)
 		if f != nil {
 			findings = append(findings, *f)
 		}

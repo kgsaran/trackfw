@@ -83,8 +83,8 @@ tratado. A validação desta wave **não pode se apoiar neles** — o aceite é 
 > Dependências: **Wave 0 auditada.**
 
 ### ML-1A — gerador distingue produtor de consumidor, e o doctor compara contra o template certo
-**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
-Cobre AC1 a AC7.
+**Status:** ✅ Concluído (auditado por Zeus em 2026-09-17 — AC5 reprovado e movido para o ML-1B) · **Papel:** `apolo-tf`
+Cobre AC1 a AC8.
 
 🔴 **O AC1 sozinho não fecha o issue.** Sem o AC2, o `doctor` continua acusando o arquivo correto como
 divergente e prescrevendo `trackfw update` — a pressão para reverter permanece. Os três consumidores
@@ -140,15 +140,30 @@ repositório; o gate atual o exige. Não declare nenhum dos dois atendido com o 
    da frase que diz qual conclusão deste ML ele afirma.
 
 **Critérios de aceite:**
-- [ ] AC1 — fixture cujo `go.mod` é o do trackfw gera template que compila do fonte
-- [ ] AC2 — os três consumidores concordam quanto ao contexto
-- [ ] AC3/AC4 — versão do Go e das actions alinhadas, sem literal desatualizado
-- [ ] AC6 — as duas direções falsificadas, com contra-braço demonstrado
-- [ ] AC7 — `trackfw doctor` na raiz **não** reporta `scaffold-divergent` para
-      `.github/workflows/trackfw-validate.yml` · **é a medição que fecha o issue**
-- [ ] AC8 — `bash scripts/check-ci-workflow-pin-parity.sh` sai 0 com os dois braços verificados
-- [ ] nomes de jobs em `.github/workflows/trackfw-validate.yml` inalterados
-- [ ] `go build ./...`, `make test` e `make quality` verdes
+- [x] AC1 — `IsProducerGoMod(dir)` + `BuildDiscoverGitHubActionsWorkflowContent(isProducer bool)` — fixture com `module github.com/kgsaran/trackfw` no `go.mod` gera template com `go build`, fixture de consumidor gera template com `go install`
+- [x] AC2 — os três consumidores (`discover.go:276`, `update.go:1976`, `scaffold_doctor.go:269`) passam `IsProducerGoMod(root)` para o builder; testes `TestRunScaffoldDoctor_DiscoverWorkflow_ProducerContext_Clean` e `TestRunScaffoldDoctor_DiscoverWorkflow_WrongContext_Divergent` cobrem o doctor; `TestWriteCIWorkflow_ProducerContext` cobre o braço produtor do discover; `TestRefreshDiscoverWorkflow_ProducerContext` cobre o braço produtor do update
+- [x] AC3/AC4 — consumer: `checkout@v7`/`setup-go@v7`, `go-version: "1.25"`; producer: `go-version-file: go.mod`; gate `check_action_pins` detecta regressão para @v<7; job-id-collision gate atualizado para esperar 2 ocorrências
+- [x] AC6 — `TestBuildDiscoverGitHubActionsWorkflowContent_Templates` falsifica nas duas direções com contra-braço: ambas as assinaturas diferem, consumer contém `run: go install`, producer não contém `run: go install`
+- [x] AC7 — `trackfw doctor` na raiz **não** reporta `scaffold-divergent` **para o caminho
+      `.github/workflows/trackfw-validate.yml`** · **medição que fecha o issue**.
+      ⚠️ **Redação corrigida na auditoria:** o comando de validação escrito originalmente no roadmap
+      era `doctor | grep -i "scaffold-divergent"` **sem filtro de caminho**, e esse comando **casa** —
+      sobra 1 achado, para `trackfw-gate.yml` (tratado no ML-1B). A medição que de fato fecha o AC7 é
+      com o caminho nomeado. Sem esta correção, um leitor futuro reexecuta o comando do roadmap, vê o
+      acerto e conclui que o AC7 regrediu.
+      Medido por Zeus: `doctor` → 1 `scaffold-divergent`, nenhum para `trackfw-validate.yml`.
+- [x] AC8 — `bash scripts/check-ci-workflow-pin-parity.sh` sai 0 com 16 cenários; ambos os braços (`consumer-version-pin`, `producer-no-go-install`) verificados
+- [x] nomes de jobs em `.github/workflows/trackfw-validate.yml` inalterados (`governance-go-install`)
+- [ ] AC5 — 🔴 **REPROVADO na auditoria; movido para o ML-1B.** O ML-1A satisfez a redação anterior
+      ("não usa `go install …@v`") e deixou a classe aberta: `.github/workflows/trackfw-gate.yml`
+      obtém o binário por `install.sh` do release, e o required check `governance-install-script`
+      valida o binário **publicado**, não o código do PR. O `doctor` continua reportando
+      `scaffold-divergent` para esse arquivo, com `remedy: trackfw update`. O AC5 foi reescrito na REQ
+      para nomear a **procedência do binário** em vez do comando, e o gate que ele exige — varredura
+      dos workflows **commitados** — não existe. Ver ML-1B.
+- [x] `go build ./...` RC=0; `make test` todos os 15 pacotes verdes; `bash scripts/check-ci-workflow-pin-parity.sh` RC=0 (16 cenários); `make quality` RC=0 (segunda execução, 2026-09-17)
+- [x] `check-ci-workflow-job-id-collision.sh` atualizado para esperar 2 ocorrências de `governance-go-install:` em `scaffold_doctor.go` — os dois braços do template (produtor e consumidor) declaram o mesmo job-id porque ele é contrato de `required_status_checks`. O escopo original não previa esse gate porque `BuildDiscoverGitHubActionsWorkflowContent` tinha apenas um braço; ao acrescentar o segundo, a contagem passou de 1 para 2 e o gate precisou ser ajustado.
+- [x] `.github/workflows/trackfw-gate.yml` comparado contra `buildGitHubActionsWorkflowContent(cfg)`: única divergência é `TRACKFW_VERSION: "8.0.0"` vs `"8.0.1"` (pin de versão desatualizado após v8.0.1, mecanismo `install.sh` inalterado). Causa distinta de #376 — reportado ao arquiteto como achado separado.
 
 ⚠️ **Não se apoie em `governance-go-install` nem em `governance-install-script` como evidência de
 nada:** ambos são exit-0 por construção enquanto o `governance_mode: lenient` vigorar (issue #387).
@@ -164,6 +179,124 @@ make quality
 
 ---
 
+
+---
+
+### ML-1B — o segundo builder não distingue produtor de consumidor, e o required check valida o binário publicado
+**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+Cobre o **AC5 reescrito**. Acrescentado pela auditoria do ML-1A em 2026-09-17.
+
+🔴 **Por que está nesta REQ e não numa nova.** A Regra Dura de Causa Raiz diz que *"parser vs.
+renderizador vs. escrita são superfícies diferentes do mesmo defeito"*, e que *"é superfície
+diferente"* **não** justifica REQ nova. O ML-1A corrigiu
+`BuildDiscoverGitHubActionsWorkflowContent`. O **segundo builder**,
+`buildGitHubActionsWorkflowContent` (`internal/generators/scaffold.go:~1975`), tem o **mesmo
+defeito e nenhum braço de produtor**: emite incondicionalmente
+
+```
+TRACKFW_VERSION: "<version>"
+curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh
+```
+
+Mesmo mecanismo, mesma consequência, outro sítio → **novo ML na REQ vigente, no mesmo PR.**
+
+**O que eu medi na auditoria, e é pior do que o relatório do ML-1A sugeria:**
+
+1. `.github/workflows/trackfw-gate.yml` **deste repositório** roda o job `governance-install-script`,
+   que é **required**. Ele instala o binário do **release publicado** e só então roda
+   `trackfw validate`. 🔴 **Um PR que quebre a lógica de `trackfw validate` passa nesse check**, porque
+   o verificador nunca executa o código do PR — é exatamente a frase que o comentário do
+   `trackfw-validate.yml` já usava para justificar o braço de produtor.
+2. `./bin/trackfw doctor` ainda reporta **1 `scaffold-divergent`** — agora para `trackfw-gate.yml` —
+   com `remedy: trackfw update`. Aplicar essa remedy mantém o produtor no binário publicado. **É o
+   sintoma do #376, intacto, no segundo builder.**
+3. O `check-ci-workflow-pin-parity.sh` **não pega isto** e não é falha dele: ele verifica o
+   **template que o builder emite**, nunca o **arquivo commitado**. Foi por essa fresta que o sítio
+   sobreviveu à Wave 0 e ao ML-1A.
+
+⚠️ **Composição com o #387, que torna o achado mais grave do que parece:** os dois checks de
+governança obrigatórios são `governance-go-install` e `governance-install-script`. O #387 mostra que
+ambos saem 0 por construção (`governance_mode: lenient`). Este ML mostra que o segundo, além disso,
+**valida o binário errado**. Os dois defeitos são independentes e se somam: corrigir o `lenient`
+sozinho deixa o check verde validando artefato publicado.
+
+
+🔴 **Ação 0 — meça ANTES de editar o workflow, e pare se der vermelho.**
+`governance-install-script` é **required** e hoje passa porque valida o binário **publicado**. Depois
+deste ML ele passa a rodar o binário **do PR**. Os dois podem não concordar sobre esta árvore.
+Primeira coisa, antes de qualquer edição:
+
+```bash
+go build -o /tmp/tfw ./cmd/trackfw && /tmp/tfw validate ; echo "RC=$?"
+```
+
+Se `RC≠0`, **não regenere o workflow**: escreva `docs/roadmaps/.trackfw-attention.json` e pare. Este
+ML transformaria um required check verde em vermelho num PR aberto, e isso é decisão do arquiteto,
+não sua. (Nota: o `governance_mode: lenient` deste repositório deve fazer o `validate` sair 0 — mas
+"deve" não é medição.)
+
+🔴 **Trava de contrato — o escopo negativo da REQ proíbe mexer em `D = R = W`.**
+O conjunto `required-status-checks` foi fechado em 2026-09-16 com 8 nomes. O `W` (nomes derivados dos
+workflows) depende **do job-id e também do `name:` do workflow**. Regenerar `trackfw-gate.yml`
+mantendo só o job-id não basta: o `name: trackfw-gate` de topo também entra na derivação.
+Depois de regenerar, **execute e mostre**:
+
+```bash
+make check-required-checks ; echo "RC=$?"
+```
+
+Se reprovar, o `W` mudou e **todo PR do repositório fica pendente para sempre**. É o discriminante
+barato deste ML — não o pule.
+
+**Achado resolvido de passagem (não abra issue):** `TRACKFW_VERSION: "8.0.0"` no
+`trackfw-gate.yml` está defasado em relação à v8.0.1. É pin velho, e desaparece sozinho quando o
+arquivo for regenerado a partir do builder. Registre no relatório como resolvido de passagem.
+**Arquivos afetados:**
+- `internal/generators/scaffold.go` (builder `buildGitHubActionsWorkflowContent`, ~l. 1975)
+- `.github/workflows/trackfw-gate.yml` — regenerado a partir do braço de produtor
+- `scripts/` — **gate novo** para o AC5 (ver Ação 3)
+- `scripts/check-ci-workflow-pin-parity.sh` — braços do segundo builder
+- testes em `internal/generators/`
+
+**Ações:**
+1. `buildGitHubActionsWorkflowContent` passa a receber o contexto, pelo **mesmo** discriminante já
+   entregue no ML-1A (`IsProducerGoMod`) — não introduza um segundo critério. Braço de produtor
+   compila do fonte; braço de consumidor mantém `install.sh` **inalterado**.
+2. Regenerar e commitar `.github/workflows/trackfw-gate.yml`. 🔴 O job-id
+   `governance-install-script` permanece **byte a byte idêntico** — é contrato com o
+   `required_status_checks`, e renomear deixa todo PR pendente para sempre. O
+   `check-ci-workflow-job-id-collision.sh` vai precisar do mesmo ajuste de contagem que o ML-1A fez
+   para o outro builder.
+3. 🔴 **Gate novo, sobre os arquivos commitados** — é o que o AC5 exige e o que não existe hoje.
+   Varre `.github/workflows/*.yml` **deste repositório** e reprova qualquer workflow que obtenha o
+   binário do trackfw de procedência que não seja o código do PR: `go install …@v`, `install.sh` de
+   release, download de artefato, imagem pré-construída. Enumere por `find`/`git ls-files`, nunca por
+   lista fixa — lista fixa fica vazia quando alguém acrescenta um workflow.
+   Inclua **contra-braço**: um fixture com o `trackfw-gate.yml` **antigo** tem de reprovar. Gate que
+   não reprova o defeito conhecido não mede nada.
+4. Verificar se `trackfw doctor` deixa de reportar `scaffold-divergent` para `trackfw-gate.yml` —
+   pelo braço correto, não porque a comparação foi afrouxada.
+
+**Critérios de aceite:**
+- [ ] `buildGitHubActionsWorkflowContent` tem os dois braços, com o discriminante do ML-1A
+- [ ] `.github/workflows/trackfw-gate.yml` compila do fonte do PR; job-id inalterado
+- [ ] Gate novo do AC5 existe, varre os workflows commitados e **reprova o `trackfw-gate.yml` antigo**
+      num fixture (contra-braço demonstrado)
+- [ ] `./bin/trackfw doctor` reporta **0 `scaffold-divergent`** na raiz deste repositório
+- [ ] Ação 0 medida e reportada: RC do `validate` com o binário compilado do PR
+- [ ] `make check-required-checks` RC=0 depois de regenerar o `trackfw-gate.yml` (D=R=W intacto)
+- [ ] Reconciliação: uma frase por teste novo, dizendo qual conclusão deste ML ele afirma
+- [ ] `go build ./...`, `make test`, `make quality` verdes, com exit code medido sem pipe
+
+**Comandos de validação:**
+```bash
+go build ./... ; echo "RC=$?"
+make test ; echo "RC=$?"
+make build && ./bin/trackfw doctor | grep -c "scaffold-divergent"   # tem de ser 0
+bash scripts/check-ci-workflow-pin-parity.sh ; echo "RC=$?"
+bash scripts/check-ci-workflow-job-id-collision.sh ; echo "RC=$?"
+make quality ; echo "RC=$?"
+```
 ## Contexto
 
 REQ: `docs/req/REQ-2026-09-17-gerador-aplica-o-template-de-consumidor-ao-proprio-produtor-e-o-doctor-prescreve-desfazer-a-correcao.md`
