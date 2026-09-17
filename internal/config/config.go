@@ -16,6 +16,18 @@ import (
 const (
 	NamespacingFlat    = "flat"
 	NamespacingByAgent = "by_agent"
+
+	// LenientDefaultDays is the default number of days added to today when writing
+	// lenient_until in trackfw init (brownfield) and trackfw discover. Both sites must use
+	// this constant so the contract stays consistent.
+	LenientDefaultDays = 30
+
+	// LenientHorizonDays is the maximum number of days from the evaluation instant that
+	// lenient_until may sit in the future. A date further than this (e.g. 9999-12-31) is
+	// indistinguishable from "lenient forever" and is treated the same as absent — strict.
+	// Rationale: 730 days (≈2 years) is long enough for any realistic transition period and
+	// forces an explicit renewal decision before the mode can run indefinitely.
+	LenientHorizonDays = 730
 )
 
 // ProjectConfig holds all configurable paths and governance settings read from trackfw.yaml.

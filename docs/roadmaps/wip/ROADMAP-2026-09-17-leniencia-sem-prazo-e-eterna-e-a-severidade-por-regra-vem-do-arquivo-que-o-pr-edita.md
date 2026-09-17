@@ -180,7 +180,7 @@ e **declare o fallback** quando não der para derivar.
 > Dependências: **Wave 1 auditada.** Os dois MLs tocam `validator.go` — **sequenciais, não paralelos.**
 
 ### ML-2A — leniência exige prazo com teto, e o carve-out estrutural
-**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Status:** ✅ Concluído · **Papel:** `apolo-tf`
 Cobre **AC2**, **AC3**, **AC4** e o braço (a) do **AC8**.
 
 **Ação 0 — defeito achado por mim na auditoria do ML-1B, barato e do mesmo arquivo:**
@@ -211,14 +211,32 @@ Corrija o filtro para `origin` e **acrescente um teste** que prove a derivação
    vivos, não ausência histórica. Calibrar: as 8 ativas entram, as 169 não.
 
 **Critérios de aceite:**
-- [ ] Ação 0 — filtro `origin/HEAD` corrigido para `origin`, com teste de branch único
-- [ ] `req_roadmap_lifecycle` roteado; `rules: {req_roadmap_lifecycle: error}` passa a ter efeito
-- [ ] AC2 nos dois sítios, com teto de horizonte
-- [ ] AC3 — `discover` e `init` param de divergir
-- [ ] AC4 — lista fechada, critério no código
-- [ ] AC8 (a) com contra-braço: a versão sem a correção trata "sem prazo" como leniente
-- [ ] Reconciliação: uma frase por teste novo
-- [ ] `go build ./...`, `make test`, `make quality` — RC sem pipe
+- [x] Ação 0 — filtro `origin/HEAD` corrigido para `origin`, com teste de branch único
+- [x] `req_roadmap_lifecycle` roteado; `rules: {req_roadmap_lifecycle: error}` passa a ter efeito
+- [x] AC2 nos dois sítios, com teto de horizonte
+- [x] AC3 — `discover` e `init` param de divergir
+- [x] AC4 — lista fechada, critério no código
+- [x] AC8 (a) com contra-braço: a versão sem a correção trata "sem prazo" como leniente
+- [x] Reconciliação: uma frase por teste novo
+- [x] `go build ./...`, `make test`, `make quality` — RC sem pipe
+
+**Auditoria de Zeus (2026-09-17) — medido nesta árvore, não aceito do relatório:**
+
+Com `lenient_until: 2027-06-01` aplicado temporariamente ao `trackfw.yaml` (restaurado byte a byte
+em seguida), `validate --json` devolveu **exatamente**:
+
+```
+violations: 8   warnings: 168
+  VIOL    6  req_roadmap_lifecycle
+  VIOL    2  ref_targets_exist
+```
+
+Calibração exata: **zero** regra histórica vazou para violations. `make quality` **RC=0**,
+`doctor` sem `scaffold-divergent`.
+
+**Decisão de desenho que o agente expôs e eu valido:** violação **sem tag de regra**
+(`frontmatter_presence`, `Rule: ""`) vai para warnings sob lenient. Correto — é uma das 169
+históricas, e o carve-out é uma lista **nomeada**; item sem nome não pode pertencer a ela.
 
 ### ML-2B — o terceiro interruptor: repontar caminhos zera a governança
 **Status:** ⬜ Pendente · **Papel:** `apolo-tf`

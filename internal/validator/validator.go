@@ -295,6 +295,36 @@ func applyRuleTagged(ruleName string, msgs []string, violations, warnings *[]Tag
 	}
 }
 
+// lenientCarveoutRules is the named, closed set of rules that lenient mode never silences.
+// Criterion: the rule detects a contradiction between live artifacts (not a historical absence).
+// These rules signal active inconsistency in the governance chain — suppressing them defeats
+// the purpose of governance even during a transition period.
+//
+// Calibration (2026-09-17): req_roadmap_lifecycle + ref_targets_exist = 8 active violations
+// in this repo / 0 historical. All other rules = 0 active / 169 historical.
+// A rule is added here only when its violations cannot be historical debt.
+var lenientCarveoutRules = map[string]bool{
+	"req_roadmap_lifecycle": true,
+	"ref_targets_exist":     true,
+}
+
+// applyLenientWithCarveout moves non-carve-out violations to warnings (lenient mode) while
+// keeping carve-out violations as violations. Rules in lenientCarveoutRules detect contradictions
+// between live artifacts and must not be silenced during lenient transitions.
+// Violations tagged with Rule "" (e.g. frontmatter_presence) are not in the carve-out and move
+// to warnings — this is correct because they represent structural gaps, not live contradictions.
+func applyLenientWithCarveout(violations, warnings []TaggedMsg) ([]TaggedMsg, []TaggedMsg) {
+	var kept []TaggedMsg
+	for _, v := range violations {
+		if lenientCarveoutRules[v.Rule] {
+			kept = append(kept, v)
+		} else {
+			warnings = append(warnings, v)
+		}
+	}
+	return kept, warnings
+}
+
 // WIPConfig armazena configuração de WIP limit derivada do config.ProjectConfig já carregado.
 type WIPConfig struct {
 	Limit   int  // default 1
@@ -405,23 +435,52 @@ func governanceModeFrom(cfg config.ProjectConfig) GovernanceMode {
 	return gm
 }
 
-// IsLenient retorna true se o projeto está em modo lenient e o prazo ainda não expirou.
-func IsLenient() bool {
-	gm := governanceModeFrom(config.Load())
-	if gm.Mode != "lenient" {
+// isLenientFor is the pure, clock-injectable core of the leniency check. It is the single
+// place where all three rejection reasons live:
+//
+//   1. mode is not "lenient"
+//   2. lenient_until is absent (zero time) — treats no-deadline as strict (AC2 fix;
+//      pre-fix behaviour was to return true here — that was the bug closed by ML-2A)
+//   3. lenient_until is in the past (deadline expired)
+//   4. lenient_until is more than LenientHorizonDays days from now — treated the same
+//      as absent (AC2 ceiling; prevents 9999-12-31 from granting forever-leniency)
+//
+// IsLenient() is the thin, config-reading wrapper around this function.
+// Tests should call isLenientFor() directly to avoid clock flake.
+func isLenientFor(mode string, until time.Time, now time.Time) bool {
+	if mode != "lenient" {
 		return false
 	}
-	if gm.LenientUntil.IsZero() {
-		return true
+	if until.IsZero() {
+		// AC2: absent lenient_until → strict. Pre-fix: this path returned true (bug).
+		return false
 	}
-	return time.Now().Before(gm.LenientUntil)
+	horizon := now.AddDate(0, 0, config.LenientHorizonDays)
+	if !until.Before(horizon) {
+		// AC2 ceiling: date is at or beyond the horizon — treated same as absent.
+		return false
+	}
+	return now.Before(until)
+}
+
+// IsLenient retorna true se o projeto está em modo lenient e o prazo está dentro do horizonte
+// permitido (config.LenientHorizonDays dias a partir de agora) e ainda não expirou.
+// Ausência de lenient_until → strict (não é mais leniente para sempre).
+func IsLenient() bool {
+	gm := governanceModeFrom(config.Load())
+	return isLenientFor(gm.Mode, gm.LenientUntil, time.Now())
 }
 
 // LenientUntilDate retorna a data de expiração do modo lenient formatada em "2006-01-02".
-// Retorna string vazia se o modo não for lenient ou a data não estiver definida.
+// Retorna string vazia se o modo não for lenient, a data não estiver definida ou estiver além
+// do horizonte permitido (config.LenientHorizonDays dias).
 func LenientUntilDate() string {
 	gm := governanceModeFrom(config.Load())
 	if gm.Mode != "lenient" || gm.LenientUntil.IsZero() {
+		return ""
+	}
+	horizon := time.Now().AddDate(0, 0, config.LenientHorizonDays)
+	if !gm.LenientUntil.Before(horizon) {
 		return ""
 	}
 	return gm.LenientUntil.Format("2006-01-02")
@@ -548,7 +607,9 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	if e != nil {
 		return nil, nil, e
 	}
-	warnings = append(warnings, reqLifecycleWarnings...)
+	// Ação 1: route through applyRule so that rules: {req_roadmap_lifecycle: error}
+	// can promote this to a violation. Pre-fix: direct append to warnings bypassed ruleSeverity.
+	applyRule("req_roadmap_lifecycle", reqLifecycleWarnings, &violations, &warnings)
 
 	coherenceWarnings, e := validateFolderStatusCoherence()
 	if e != nil {
@@ -688,14 +749,15 @@ func Validate() (violations []string, warnings []string, err error) {
 		return nil, nil, err
 	}
 
+	// AC2/AC4: apply lenient carve-out in the tagged domain BEFORE untagging, so that
+	// lenientCarveoutRules can be matched by rule name. Non-carve-out violations become warnings;
+	// carve-out violations (req_roadmap_lifecycle, ref_targets_exist) remain violations.
+	if IsLenient() {
+		taggedViolations, taggedWarnings = applyLenientWithCarveout(taggedViolations, taggedWarnings)
+	}
+
 	violations = untagMsgs(taggedViolations)
 	warnings = untagMsgs(taggedWarnings)
-
-	// Modo lenient: mover violations para warnings, exit code 0
-	if IsLenient() {
-		warnings = append(warnings, violations...)
-		violations = nil
-	}
 
 	return
 }
@@ -879,9 +941,10 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 	if e != nil {
 		return nil, nil, e
 	}
-	for _, m := range reqLifecycleWarnings {
-		warnings = append(warnings, TaggedMsg{Rule: "req_roadmap_lifecycle", Msg: m})
-	}
+	// Ação 1 (tagged site): route through applyRuleTagged so that rules:
+	// {req_roadmap_lifecycle: error} can promote to violation. Pre-fix: manual append to
+	// warnings bypassed ruleSeverity — the rule could never become a violation under any config.
+	applyRuleTagged("req_roadmap_lifecycle", reqLifecycleWarnings, &violations, &warnings)
 
 	coherenceWarnings, e := validateFolderStatusCoherence()
 	if e != nil {
@@ -1034,10 +1097,10 @@ func ValidateTagged() (violations []TaggedMsg, warnings []TaggedMsg, err error) 
 		return nil, nil, err
 	}
 
-	// Modo lenient: mover violations para warnings, exit code 0.
+	// AC2/AC4: apply lenient carve-out. Carve-out violations remain violations;
+	// non-carve-out violations become warnings; exit code 0 only if no carve-out violations.
 	if IsLenient() {
-		warnings = append(warnings, violations...)
-		violations = nil
+		violations, warnings = applyLenientWithCarveout(violations, warnings)
 	}
 
 	return

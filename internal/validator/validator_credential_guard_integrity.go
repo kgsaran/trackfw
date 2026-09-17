@@ -329,7 +329,11 @@ func deriveOriginDefaultBranch() (refName string, ok bool) {
 	var branches []string
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		line = strings.TrimSpace(line)
-		if line == "" || line == "origin/HEAD" {
+		// Filter both the short form ("origin", output of %(refname:short) for
+		// refs/remotes/origin/HEAD) and the long form ("origin/HEAD", kept as a guard
+		// against git version variation). Neither is a real branch — both are the HEAD
+		// pointer written by `git clone` and should not be counted as branch candidates.
+		if line == "" || line == "origin" || line == "origin/HEAD" {
 			continue
 		}
 		branches = append(branches, line)

@@ -480,6 +480,36 @@ func TestGenerateYAML(t *testing.T) {
 	}
 }
 
+// TestGenerateYAML_LenientUntilPresent verifies that GenerateYAML writes lenient_until
+// with a future date matching the config.LenientDefaultDays default (AC3).
+// Reconciliação: este teste prova que trackfw discover e trackfw init (brownfield) usam o mesmo
+// prazo default (config.LenientDefaultDays dias) — a ausência de lenient_until em projetos
+// descobertos pelo discover é o defeito que o AC3 corrige.
+func TestGenerateYAML_LenientUntilPresent(t *testing.T) {
+	r := DiscoveryResult{
+		ADRDirs:            []string{"docs/adr"},
+		REQDir:             "docs/req",
+		RoadmapDir:         "docs/roadmaps",
+		RoadmapNamespacing: "flat",
+		HookFramework:      "none",
+		CISystem:           "none",
+	}
+	yaml := GenerateYAML(r)
+
+	// AC3: lenient_until must be present in the output.
+	if !containsStr(yaml, "lenient_until:") {
+		t.Errorf("expected 'lenient_until:' key in GenerateYAML output (AC3), got:\n%s", yaml)
+	}
+
+	// lenient_until must appear immediately after governance_mode: lenient.
+	gmIdx := findSubstr(yaml, "governance_mode: lenient")
+	luIdx := findSubstr(yaml, "lenient_until:")
+	if gmIdx < 0 || luIdx < 0 || luIdx <= gmIdx {
+		t.Errorf("lenient_until: must appear after governance_mode: lenient "+
+			"(gmIdx=%d, luIdx=%d)", gmIdx, luIdx)
+	}
+}
+
 // TestInstallLefthook_SemPackageJSON — projeto sem package.json → lefthook.yml criado
 func TestInstallLefthook_SemPackageJSON(t *testing.T) {
 	dir := t.TempDir()

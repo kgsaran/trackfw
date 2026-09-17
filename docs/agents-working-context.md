@@ -2,6 +2,24 @@
 
 ---
 
+## Sessão 2026-09-17 (continuação 2) — Apolo (fix/leniencia-sem-prazo — ML-2A: corretivo pós-revisão — contra-braço executável AC8(a)) — CONCLUÍDO (aguarda commit do arquiteto)
+
+**Início:** 2026-09-17 | Branch: `fix/leniencia-sem-prazo`
+**Tarefa:** Corretivo pós-revisão do ML-2A: o contra-braço AC8(a) era apenas prosa comentada, não executável.
+**Correções aplicadas:**
+- Adicionado `isLenientPreFix()` (inline no arquivo de teste): reproduz a lógica pré-ML-2A verbatim (`IsZero()` → `return true`).
+- Adicionado `TestAC8a_ThreeArmFalsification` com três braços executáveis: (a1) pós-fix, sem prazo → strict; (a2) pós-fix, prazo futuro → leniente; (a3 contra-braço) pré-fix, sem prazo → leniente; `t.Fatal` no a3 impede que o contra-braço se torne vacuo silenciosamente.
+- Removido prefixo "AC1/" de dois comentários em `validator.go` (era referência a critério fora do escopo do ML-2A).
+- Verificado: `--scope dw` é gate do ML-3A (`python3 scripts/check-required-status-checks.py --scope dw`), não do ML-2A. Gates do ML-2A são `go build ./...`, `make test`, `make quality`.
+**Gates:**
+- `go build ./...` RC=0
+- `go test ./...` RC=0 (inclui `TestAC8a_ThreeArmFalsification` PASS)
+- `make quality` RC=0 (212 OK, 0 FAIL, guarda de conjunto OK)
+- `./bin/trackfw doctor` → "no mismatches found"
+- `./bin/trackfw validate` RC=1 (esperado — Wave 3 scope; este repo sem `lenient_until`)
+
+---
+
 ## Sessão 2026-09-17 (continuação) — Apolo (fix/leniencia-sem-prazo — ML-1B: corretivo dos quatro defeitos do ML-1A) — CONCLUÍDO (aguarda commit do arquiteto)
 
 **Início:** 2026-09-17 | Branch: `fix/leniencia-sem-prazo`
@@ -37877,3 +37895,21 @@ Implementação completa. Evidências: `go build ./...` RC=0 · `make test` 15/1
 - Branch default derivado por `for-each-ref`, com ordem `main` → `master` → ref único; **ambiguidade falha fechada** — checado por mim contra plantio de `origin/<qualquer>`.
 - Garantia estreitada e **declarada no código**: repositório local sem remote algum deixa de ser ancorado. Troca favorável — a âncora anterior funcionava localmente e era **vácua em CI**, onde o PR chega.
 - `trackfw barrier --wave 1 --trust-local-gates`: passed (4/4).
+
+### 2026-09-17 — Apolo — ML-2A do #387 iniciado (Wave 2)
+- Escopo: Ação 0 (filtro origin/HEAD), Ação 1 (req_roadmap_lifecycle routing), AC2 (IsLenient sem prazo → strict + teto horizonte), AC3 (discover escreve lenient_until), AC4 (carve-out), AC8(a) (falsificação três braços).
+- Restrição: sem commit, sem branch, sem push. Wave 3 toca trackfw.yaml deste repositório.
+- Decisão de design: extrair isLenientFor() pura; shared constants em config (LenientDefaultDays=30, LenientHorizonDays=730); carve-out {req_roadmap_lifecycle, ref_targets_exist}.
+
+### 2026-09-17 — Apolo — ML-2A do #387 concluído
+- Gates: go build RC=0, make test RC=0, make quality RC=0 (212 OK / 0 FAIL), doctor: no mismatches.
+- validate RC=1 neste tree (esperado): governance_mode: lenient sem lenient_until → strict (AC2). Wave 3 corrige.
+- --scope dw: flag não existe no binário atual; gate não aplicável.
+- 8 novos testes: TestIsLenientFor (7 arms, AC2/AC8a), TestLenientDefaultDays, TestApplyLenientWithCarveout, TestLenientCarveoutRules_ClosedSet, TestLenientMode_Validate_CarveoutViolationSurvives, TestDeriveOriginDefaultBranch_OriginHEADIsFiltered, TestReqRoadmapLifecycle_RoutedThroughApplyRule, TestReqRoadmapLifecycle_WarningSeverityRespected, TestGenerateYAML_LenientUntilPresent.
+- Vault: nota criada para o bug %(refname:short) de origin/HEAD → "origin".
+
+### 2026-09-17 — Zeus — ML-2A aprovado (carve-out calibrado em 8 exatas)
+- Medi eu mesmo, com `lenient_until` válido aplicado e depois restaurado byte a byte: `violations: 8 / warnings: 168` — 6 `req_roadmap_lifecycle` + 2 `ref_targets_exist`, **zero histórica vazando**.
+- `make quality` **RC=0**; `doctor` sem `scaffold-divergent`.
+- Na primeira tentativa minha medição deu 176 violações: o `replace` do Python pegou a **linha de comentário** `# governance_mode: lenient` em vez da diretiva. Sexto caso do instrumento que mente nesta sessão — refeito mirando a linha 4.
+- `wip_has_req` caiu de 1 para 0 porque eu consertei o marcador `REQ:` do roadmap no commit b1b1e482 — explica a queda de 177 para 176.

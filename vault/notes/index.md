@@ -4,6 +4,7 @@
 
 ## Índice
 
+- [git-for-each-ref-origin-head-short-e-origin-nao-origin-head-2026-09-17](git-for-each-ref-origin-head-short-e-origin-nao-origin-head-2026-09-17.md) — `%(refname:short)` de `refs/remotes/origin/HEAD` emite `"origin"` (não `"origin/HEAD"`); filtro errado fazia `deriveOriginDefaultBranch` falhar em repos com origin/HEAD + único branch não-main
 - [config-defaults-vs-credential-guard-defaults-divergence-2026-09-17](config-defaults-vs-credential-guard-defaults-divergence-2026-09-17.md) — `config.Load().Rules` injeta defaults do pacote (`stale_wip:"warning"` etc.) que `credentialGuardDefaultSeverity` desconhece → falso-positivo de weakening; usar `config.ParseRulesFromContent()` para "o que o usuário escreveu" vs `config.Load()` para "configuração efetiva"
 - [origin-main-anchor-pkg-var-stale-state-2026-09-17](origin-main-anchor-pkg-var-stale-state-2026-09-17.md) — `currentOriginMain` (var de pacote do anchor origin/main) fica stale entre testes que chamam `ruleSeverity()` direto; padrão: `t.Cleanup(func() { currentOriginMain = originMainAnchor{} })` + `currentOriginMain = loadOriginMainAnchor()` antes de chamadas diretas
 - [gate-lista-proibida-aprova-por-omissao-e-glob-yml-perde-yaml-2026-09-17](gate-lista-proibida-aprova-por-omissao-e-glob-yml-perde-yaml-2026-09-17.md) — gate de lista proibida aprova qualquer mecanismo não listado por omissão; `*.yml` não casa `*.yaml`; fix: lógica invertida (prova positiva de `go build .../cmd/trackfw`) + enumeração dupla
