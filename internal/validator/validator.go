@@ -960,7 +960,7 @@ func inventoryBlock(cfg config.ProjectConfig) string {
 		adrCount += len(walkADRFilePaths(adrDir))
 	}
 
-	reqFiles := resolveREQFiles(cfg)
+	reqFiles, _ := resolveREQFiles(cfg) // inventory: err → 0 counts, safe
 	var reqOpen, reqDone, reqClosed, reqOther int
 	for _, p := range reqFiles {
 		content, err := readRegularFile(p)
@@ -1600,10 +1600,13 @@ func REQWriteDir(cfg config.ProjectConfig, agent string) string {
 // mesmos paths do caso <estado>/*.md. Sem o conjunto `seen`, toda REQ em layout por-estado seria
 // contada duas vezes e cada violação apareceria em duplicata. Não resolver isso filtrando nomes de
 // estado da lista de agentes: um agente legitimamente chamado "done" existiria e sumiria.
-func ResolveREQFiles(cfg config.ProjectConfig) []string {
+func ResolveREQFiles(cfg config.ProjectConfig) ([]string, error) {
 	reqDir := cfg.REQDir
 	if reqDir == "" {
-		return nil
+		return nil, nil
+	}
+	if err := checkREQDirContained(reqDir); err != nil {
+		return nil, err
 	}
 
 	seen := make(map[string]bool)
@@ -1713,12 +1716,12 @@ func ResolveREQFiles(cfg config.ProjectConfig) []string {
 	// Ordem determinística e igual nos 3 CLIs — a ordem de varredura é agent-major e não seria
 	// estável entre runtimes (readdir do Node não é ordenado).
 	sort.Strings(files)
-	return files
+	return files, nil
 }
 
 // resolveREQFiles é o alias interno do ponto único ResolveREQFiles — mantido para os consumidores
 // dentro do pacote. NÃO reimplementar a descoberta aqui (D4).
-func resolveREQFiles(cfg config.ProjectConfig) []string {
+func resolveREQFiles(cfg config.ProjectConfig) ([]string, error) {
 	return ResolveREQFiles(cfg)
 }
 
@@ -1744,7 +1747,10 @@ func validateWIPHasREQ() ([]string, error) {
 
 func validateREQsHaveADR() ([]string, error) {
 	cfg := config.Load()
-	files := resolveREQFiles(cfg)
+	files, err := resolveREQFiles(cfg)
+	if err != nil {
+		return []string{err.Error()}, nil
+	}
 
 	var violations []string
 	for _, path := range files {
@@ -1791,7 +1797,10 @@ func validateBlockedHasREQ() ([]string, error) {
 // campo lowercase "roadmap:" do frontmatter.
 func validateREQsHaveRoadmap() ([]string, error) {
 	cfg := config.Load()
-	files := resolveREQFiles(cfg)
+	files, err := resolveREQFiles(cfg)
+	if err != nil {
+		return []string{err.Error()}, nil
+	}
 
 	var violations []string
 	for _, path := range files {
@@ -1814,7 +1823,10 @@ func validateREQsHaveRoadmap() ([]string, error) {
 // divergência real de basename).
 func validateREQRoadmapSync() ([]string, error) {
 	cfg := config.Load()
-	files := resolveREQFiles(cfg)
+	files, err := resolveREQFiles(cfg)
+	if err != nil {
+		return []string{err.Error()}, nil
+	}
 
 	var warnings []string
 	for _, path := range files {
@@ -1874,7 +1886,11 @@ func validateADRsAreReferenced() ([]string, error) {
 		}
 	}
 
-	reqPaths := resolveREQFiles(cfg)
+	reqPaths, err := resolveREQFiles(cfg)
+	if err != nil {
+		violations = append(violations, err.Error())
+		return violations, nil
+	}
 	var allREQContent strings.Builder
 	for _, p := range reqPaths {
 		b, ok := readFileForRule("adr_orphan", p, &violations)
@@ -2036,7 +2052,10 @@ func parseTransitionLogLine(line string) (time.Time, string, string, bool) {
 // (Draft ou Proposed) que a bloqueiam. Somente REQs com Status: Open são incluídas.
 func blockedREQs() (map[string][]string, error) {
 	cfg := config.Load()
-	files := resolveREQFiles(cfg)
+	files, err := resolveREQFiles(cfg)
+	if err != nil {
+		return nil, err
+	}
 
 	result := make(map[string][]string)
 	for _, reqPath := range files {
@@ -2071,7 +2090,10 @@ func blockedREQs() (map[string][]string, error) {
 // anterior a Proposed — ADRs criados por `adr new` (o caminho normal) não eram detectados.
 func validateREQsNotBlockedByDraftADRs() ([]string, error) {
 	cfg := config.Load()
-	entries := resolveREQFiles(cfg)
+	entries, err := resolveREQFiles(cfg)
+	if err != nil {
+		return []string{err.Error()}, nil
+	}
 
 	var violations []string
 	for _, path := range entries {
@@ -2288,7 +2310,11 @@ func validateFrontmatterPresence() []string {
 	}
 
 	// REQs — usa resolveREQFiles para suportar namespacing by_agent
-	reqFiles := resolveREQFiles(cfg)
+	reqFiles, err := resolveREQFiles(cfg)
+	if err != nil {
+		violations = append(violations, err.Error())
+		return violations
+	}
 	for _, f := range reqFiles {
 		content, ok := readFileForRule("frontmatter_presence", f, &violations)
 		if !ok {
@@ -2354,6 +2380,77 @@ func isOutsideCWD(path string) bool {
 		return true
 	}
 	return strings.HasPrefix(rel, "..") || filepath.IsAbs(rel)
+}
+
+// checkREQDirContained verifica se req_dir está contido dentro do diretório raiz do projeto (CWD).
+// Usa EvalSymlinks em ambos os lados para não ser enganado por symlinks — um symlink em
+// docs/req apontando para fora da árvore passa numa verificação lexical mas é recusado aqui.
+//
+// 🔴 NÃO reutiliza isOutsideCWD: aquela função é lexical (sem EvalSymlinks). isOutsideCWD
+// continua lexical para o seu uso na regra adr_orphan, que está fora do escopo desta correção
+// (AC7 — REQ-2026-09-17-sync-enumera-req-por-caminho-literal-ignora-req-dir-e-escreve-no-provedor-de-pm.md).
+//
+// Retorna erro com req_dir VERBATIM (sem expansão) para que o chamador possa imprimir a
+// mensagem de diagnóstico sem vazar caminhos absolutos em logs de CI.
+//
+// Falha fechada: se não for possível estabelecer a raiz do projeto (Getwd falhou ou
+// EvalSymlinks do CWD falhou), o erro é retornado com diagnóstico nomeado. Um controle de
+// contenção que não pode medir contenção não deve reportar "contido".
+func checkREQDirContained(reqDir string) error {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("não foi possível resolver o diretório de trabalho — contenção de req_dir não pode ser verificada: %w", err)
+	}
+	physCWD, err := filepath.EvalSymlinks(cwd)
+	if err != nil {
+		return fmt.Errorf("não foi possível resolver o diretório de trabalho fisicamente (EvalSymlinks falhou) — contenção de req_dir não pode ser verificada: %w", err)
+	}
+
+	expanded := config.ExpandPath(reqDir)
+	var absReqDir string
+	if filepath.IsAbs(expanded) {
+		absReqDir = filepath.Clean(expanded)
+	} else {
+		absReqDir = filepath.Join(physCWD, expanded)
+	}
+
+	physReqDir := resolvePhysical(absReqDir)
+
+	rel, err := filepath.Rel(physCWD, physReqDir)
+	if err != nil {
+		return fmt.Errorf("req_dir %q resolves outside project root — path traversal refused", reqDir)
+	}
+	if strings.HasPrefix(rel, "..") || filepath.IsAbs(rel) {
+		return fmt.Errorf("req_dir %q resolves outside project root — path traversal refused", reqDir)
+	}
+	return nil
+}
+
+// resolvePhysical resolve um caminho para seu caminho físico real usando filepath.EvalSymlinks.
+// Para caminhos que não existem, sobe ao ancestral mais profundo que existe, resolve esse
+// ancestral fisicamente e reanexa o sufixo lexicamente.
+// Isso permite que req_dir aponte para um diretório ainda não criado sem ser erroneamente
+// recusado pela contenção.
+func resolvePhysical(p string) string {
+	resolved, err := filepath.EvalSymlinks(p)
+	if err == nil {
+		return resolved
+	}
+	// O caminho não existe: sobe ao ancestral mais profundo que existe.
+	dir := p
+	var suffix []string
+	for {
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return p // chegou na raiz sem sucesso; retorna verbatim
+		}
+		if resolved, err := filepath.EvalSymlinks(parent); err == nil {
+			parts := append([]string{resolved}, suffix...)
+			return filepath.Join(parts...)
+		}
+		suffix = append([]string{filepath.Base(dir)}, suffix...)
+		dir = parent
+	}
 }
 
 // walkADRFilePaths retorna os caminhos completos de todos os arquivos .md encontrados recursivamente em adrDir.
@@ -2484,7 +2581,11 @@ func validateRefTargetsExist() ([]string, error) {
 		}
 	}
 
-	reqFiles := resolveREQFiles(cfg)
+	reqFiles, err := resolveREQFiles(cfg)
+	if err != nil {
+		warnings = append(warnings, err.Error())
+		return warnings, nil
+	}
 	for _, reqPath := range reqFiles {
 		content, ok := readFileForRule("ref_targets_exist", reqPath, &warnings)
 		if !ok {
@@ -2647,7 +2748,11 @@ func resolveRoadmapRefStatus(cfg config.ProjectConfig, ref string) (resolved []s
 func validateREQRoadmapLifecycle() ([]string, error) {
 	cfg := config.Load()
 	var warnings []string
-	for _, reqPath := range resolveREQFiles(cfg) {
+	reqPaths, err := resolveREQFiles(cfg)
+	if err != nil {
+		return []string{err.Error()}, nil
+	}
+	for _, reqPath := range reqPaths {
 		content, ok := readFileForRule("req_roadmap_lifecycle", reqPath, &warnings)
 		if !ok {
 			continue
@@ -2713,7 +2818,10 @@ func reqStatusIsDone(content string) bool {
 // (ADR-2026-08-01-nocao-canonica-de-adr-nao-aceito...).
 func validateADRAcceptedWhenREQDone() ([]string, error) {
 	cfg := config.Load()
-	files := resolveREQFiles(cfg)
+	files, err := resolveREQFiles(cfg)
+	if err != nil {
+		return []string{err.Error()}, nil
+	}
 
 	var violations []string
 	for _, path := range files {

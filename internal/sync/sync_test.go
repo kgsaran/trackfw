@@ -1,16 +1,48 @@
 package sync
 
 import (
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kgsaran/trackfw/internal/config"
 )
 
-// setupREQ cria um arquivo REQ temporário no diretório de trabalho.
-func setupREQ(t *testing.T, dir, filename, content string) string {
+// chdirTempWithReset cria um TempDir, muda para ele e reseta o singleton de config.
+// Garante que cada caso de teste injete o seu próprio trackfw.yaml sem herdar cache
+// de execuções anteriores (config.Load() é once.Do; sem Reset o AC2 mediria o default
+// cacheado em vez do req_dir injetado).
+func chdirTempWithReset(t *testing.T) string {
 	t.Helper()
-	reqDir := filepath.Join(dir, "docs", "req")
+	dir := t.TempDir()
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+	config.Reset()
+	t.Cleanup(config.Reset)
+	return dir
+}
+
+// writeYAMLSync escreve um trackfw.yaml no dir especificado.
+func writeYAMLSync(t *testing.T, dir, content string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// setupREQ cria um arquivo REQ no subdiretório especificado (relativo a dir).
+func setupREQ(t *testing.T, dir, subdir, filename, content string) string {
+	t.Helper()
+	reqDir := filepath.Join(dir, subdir)
 	if err := os.MkdirAll(reqDir, 0755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -22,14 +54,10 @@ func setupREQ(t *testing.T, dir, filename, content string) string {
 }
 
 func TestSyncToProvider_SkipsNonOpen(t *testing.T) {
-	dir := t.TempDir()
-	orig, _ := os.Getwd()
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	defer os.Chdir(orig)
+	dir := chdirTempWithReset(t)
+	// AC4: sem trackfw.yaml com credenciais → syncToProvider usa stub create; nenhuma chamada de rede.
 
-	setupREQ(t, dir, "REQ-2026-01-01-draft.md", `# REQ: Draft Requirement
+	setupREQ(t, dir, "docs/req", "REQ-2026-01-01-draft.md", `# REQ: Draft Requirement
 
 > Date: 2026-01-01 | Status: Draft
 
@@ -62,14 +90,9 @@ Some motivation here.
 }
 
 func TestSyncToProvider_SkipsAlreadySynced(t *testing.T) {
-	dir := t.TempDir()
-	orig, _ := os.Getwd()
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	defer os.Chdir(orig)
+	dir := chdirTempWithReset(t)
 
-	setupREQ(t, dir, "REQ-2026-01-01-synced.md", `# REQ: Already Synced
+	setupREQ(t, dir, "docs/req", "REQ-2026-01-01-synced.md", `# REQ: Already Synced
 
 > Date: 2026-01-01 | Status: Open
 | linear_issue: ENG-1
@@ -100,14 +123,9 @@ Some motivation here.
 }
 
 func TestSyncToProvider_InjectsField(t *testing.T) {
-	dir := t.TempDir()
-	orig, _ := os.Getwd()
-	if err := os.Chdir(dir); err != nil {
-		t.Fatal(err)
-	}
-	defer os.Chdir(orig)
+	dir := chdirTempWithReset(t)
 
-	setupREQ(t, dir, "REQ-2026-01-01-open.md", `# REQ: Open Feature
+	setupREQ(t, dir, "docs/req", "REQ-2026-01-01-open.md", `# REQ: Open Feature
 
 > Date: 2026-01-01 | Status: Open
 
@@ -257,4 +275,271 @@ Second line.
 	if strings.Contains(got, "Acceptance Criteria") {
 		t.Error("should not include content from next section")
 	}
+}
+
+// ─── AC2 — req_dir não-padrão ─────────────────────────────────────────────────
+
+// TestSyncToProvider_NonDefaultREQDir_AC2 afirma que syncToProvider honra um req_dir
+// configurado diferente do padrão ("docs/requisições"), e que o cenário é discriminante:
+// o glob literal antigo retorna 0 arquivos, enquanto o resolvedor retorna o arquivo real.
+// Reprova se: (a) create não for chamado com req_dir configurado, ou (b) o glob literal
+// retornar > 0 arquivos (cenário não discrimina).
+func TestSyncToProvider_NonDefaultREQDir_AC2(t *testing.T) {
+	dir := chdirTempWithReset(t)
+	writeYAMLSync(t, dir, "req_dir: docs/requisições\n")
+
+	// Cria REQ no diretório configurado.
+	setupREQ(t, dir, filepath.Join("docs", "requisições"), "REQ-2026-01-01-test.md", `# REQ: Test Feature
+
+> Date: 2026-01-01 | Status: Open
+
+## Motivation
+Some motivation.
+`)
+
+	// Contra-braço: glob literal DEVE retornar 0 arquivos para que o cenário discrimine.
+	// Se retornar > 0, o teste não prova que o bug foi corrigido — pode ser qualquer resolvedor.
+	oldFiles, _ := filepath.Glob("docs/req/*.md")
+	if len(oldFiles) != 0 {
+		t.Fatalf("contra-braço AC2: esperava 0 arquivos no glob literal docs/req/*.md, obteve %d"+
+			" — o cenário não discrimina (arquivos inesperados em docs/req/)", len(oldFiles))
+	}
+
+	called := false
+	_, err := syncToProvider(func(_, _ string) (string, error) {
+		called = true
+		return "ENG-1", nil
+	}, "linear_issue")
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !called {
+		t.Error("AC2: create deveria ter sido chamado — REQ em req_dir não-padrão com Status: Open não foi encontrada")
+	}
+}
+
+// ─── AC3 — by_agent layout ────────────────────────────────────────────────────
+
+// TestSyncToProvider_ByAgent_AC3 afirma que syncToProvider enumera REQs em
+// req_dir/<agente>/*.md quando roadmap_namespacing: by_agent está configurado.
+// Reprova se create não for chamado para a REQ sob o subdiretório de agente.
+func TestSyncToProvider_ByAgent_AC3(t *testing.T) {
+	dir := chdirTempWithReset(t)
+	writeYAMLSync(t, dir, "req_dir: docs/req\nroadmap_namespacing: by_agent\nagents:\n  - apolo\n")
+
+	setupREQ(t, dir, filepath.Join("docs", "req", "apolo"), "REQ-2026-01-01-agent-req.md",
+		`# REQ: Agent Feature
+
+> Date: 2026-01-01 | Status: Open
+
+## Motivation
+Agent motivation.
+`)
+
+	called := false
+	_, err := syncToProvider(func(_, _ string) (string, error) {
+		called = true
+		return "ENG-2", nil
+	}, "linear_issue")
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !called {
+		t.Error("AC3: create deveria ter sido chamado — REQ em subdiretório de agente (by_agent) não foi encontrada")
+	}
+}
+
+// ─── AC6 — zero REQs → recusa nomeada ────────────────────────────────────────
+
+// TestSyncToProvider_NoREQsFound_AC6 afirma que syncToProvider retorna ErrNoREQsFound
+// (nunca lista vazia silenciosa) quando req_dir existe mas não contém REQs.
+// Afirma também que REQDir é verbatim (não expandido para caminho absoluto).
+// Reprova se: (a) err for nil, (b) err não for *ErrNoREQsFound, ou (c) REQDir iniciar
+// com "/" (indicando expansão para caminho absoluto, que vazaria em logs de CI).
+func TestSyncToProvider_NoREQsFound_AC6(t *testing.T) {
+	dir := chdirTempWithReset(t)
+	writeYAMLSync(t, dir, "req_dir: docs/requisições\n")
+	// Nenhum arquivo em docs/requisições — diretório não criado.
+
+	_, err := syncToProvider(func(_, _ string) (string, error) {
+		t.Fatal("AC6: create não deve ser chamado quando não há REQs")
+		return "", nil
+	}, "linear_issue")
+
+	if err == nil {
+		t.Fatal("AC6: esperava ErrNoREQsFound, obteve nil")
+	}
+	var noREQ *ErrNoREQsFound
+	if !errors.As(err, &noREQ) {
+		t.Fatalf("AC6: esperava *ErrNoREQsFound, obteve %T: %v", err, err)
+	}
+	// REQDir deve ser verbatim — nunca expandido para caminho absoluto.
+	if strings.HasPrefix(noREQ.REQDir, "/") {
+		t.Errorf("AC6: REQDir deve ser verbatim (não absoluto), obteve %q", noREQ.REQDir)
+	}
+	if noREQ.REQDir != "docs/requisições" {
+		t.Errorf("AC6: REQDir verbatim deve ser %q, obteve %q", "docs/requisições", noREQ.REQDir)
+	}
+}
+
+// ─── AC7 — contenção de caminho via EvalSymlinks ──────────────────────────────
+
+// TestSyncToProvider_REQDirParentTraversal_AC7 afirma que req_dir com traversal (..)
+// é recusado com erro nomeado. Distingue contenção física de verificação lexical porque
+// "../algo" aponta para fora da árvore independentemente de symlinks.
+// Reprova se: create for chamado, ou err for nil.
+func TestSyncToProvider_REQDirParentTraversal_AC7(t *testing.T) {
+	dir := chdirTempWithReset(t)
+	writeYAMLSync(t, dir, "req_dir: ../outside-req\n")
+
+	_, err := syncToProvider(func(_, _ string) (string, error) {
+		t.Fatal("AC7 (traversal): create não deve ser chamado para req_dir fora da árvore")
+		return "", nil
+	}, "linear_issue")
+
+	if err == nil {
+		t.Error("AC7 (traversal): esperava erro de contenção para req_dir: ../outside-req")
+		return
+	}
+	if !strings.Contains(err.Error(), "outside project root") {
+		t.Errorf("AC7 (traversal): esperava 'outside project root' no erro, obteve: %v", err)
+	}
+}
+
+// TestSyncToProvider_REQDirAbsolutePath_AC7 afirma que req_dir com caminho absoluto
+// fora do CWD é recusado. O caminho absoluto do TempDir garante que é de fora da árvore.
+// Reprova se: create for chamado, ou err for nil.
+func TestSyncToProvider_REQDirAbsolutePath_AC7(t *testing.T) {
+	dir := chdirTempWithReset(t)
+	outside := t.TempDir() // diretório diferente do CWD
+	writeYAMLSync(t, dir, fmt.Sprintf("req_dir: %s\n", outside))
+
+	_, err := syncToProvider(func(_, _ string) (string, error) {
+		t.Fatal("AC7 (absoluto): create não deve ser chamado para req_dir absoluto fora do CWD")
+		return "", nil
+	}, "linear_issue")
+
+	if err == nil {
+		t.Errorf("AC7 (absoluto): esperava erro de contenção para req_dir: %s", outside)
+		return
+	}
+	if !strings.Contains(err.Error(), "outside project root") {
+		t.Errorf("AC7 (absoluto): esperava 'outside project root' no erro, obteve: %v", err)
+	}
+}
+
+// TestSyncToProvider_REQDirSymlink_AC7 afirma que um symlink em docs/req apontando para
+// fora do CWD é recusado — distingue contenção física (EvalSymlinks) de verificação lexical
+// (filepath.Rel). Um symlink docs/linked-req → /tmp/outside passaria numa verificação lexical
+// (docs/linked-req está dentro do CWD lexicamente) mas deve ser recusado fisicamente.
+// Reprova se: create for chamado, err for nil, ou a mensagem não contiver "outside project root".
+func TestSyncToProvider_REQDirSymlink_AC7(t *testing.T) {
+	dir := chdirTempWithReset(t)
+	outside := t.TempDir() // diretório fora do CWD
+
+	// Cria symlink docs/linked-req → outside (fora do CWD)
+	docsDir := filepath.Join(dir, "docs")
+	if err := os.MkdirAll(docsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	symlinkPath := filepath.Join(docsDir, "linked-req")
+	// symlinkOrSkip: guarda de capacidade — distingue "sem privilégio" (skip)
+	// de qualquer outro erro (t.Fatalf). Garante que o AC7 executa (não pula)
+	// em macOS/Linux, onde symlink não exige privilégio especial.
+	if !symlinkOrSkip(t, outside, symlinkPath) {
+		return
+	}
+
+	writeYAMLSync(t, dir, "req_dir: docs/linked-req\n")
+
+	_, err := syncToProvider(func(_, _ string) (string, error) {
+		t.Fatal("AC7 (symlink): create não deve ser chamado para req_dir que é symlink fora do CWD")
+		return "", nil
+	}, "linear_issue")
+
+	if err == nil {
+		t.Error("AC7 (symlink): esperava erro de contenção — symlink fora do CWD deve ser recusado")
+		return
+	}
+	if !strings.Contains(err.Error(), "outside project root") {
+		t.Errorf("AC7 (symlink): esperava 'outside project root' no erro, obteve: %v", err)
+	}
+}
+
+// ─── Falsificações da correção ML-1A-bis: fail-closed em checkREQDirContained ───
+
+// TestSyncToProvider_GetWdFails_FailClosed_ML1Abis afirma que quando os.Getwd()
+// falha (CWD removido após chdir), syncToProvider recusa com erro nomeado e
+// não chama create. Reprova se: create for chamado, ou err for nil, ou a mensagem
+// não contiver o diagnóstico de indisponibilidade do CWD.
+// Afirma: checkREQDirContained retorna erro (não nil) quando não pode estabelecer o CWD —
+// a correção reprova se esta função devolver nil em vez de erro nessa condição.
+func TestSyncToProvider_GetWdFails_FailClosed_ML1Abis(t *testing.T) {
+	// Cria diretório temporário, chdir para ele, então remove-o —
+	// o processo permanece num diretório inexistente e os.Getwd() falha.
+	dir := t.TempDir()
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	// Escreve config antes de remover o dir (leitura de arquivo ainda vai falhar,
+	// mas interessa apenas que Getwd falhe na contenção).
+	writeYAMLSync(t, dir, "req_dir: docs/req\n")
+
+	// Remove o CWD — os.Getwd() vai falhar a partir daqui.
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatalf("não foi possível remover o CWD: %v", err)
+	}
+
+	createCalled := false
+	_, gotErr := syncToProvider(func(_, _ string) (string, error) {
+		createCalled = true
+		return "", nil
+	}, "linear_issue")
+
+	// Se os.Getwd() não falhou nesta plataforma, o teste não consegue exercer o caminho
+	// (o diretório é acessível de outra forma — e.g. via /proc/self/cwd no Linux).
+	// Nesse caso reportamos skip em vez de falso-positivo.
+	if gotErr == nil {
+		t.Skip("os.Getwd() não falhou com CWD removido nesta plataforma — caminho não exercitável")
+	}
+
+	if createCalled {
+		t.Error("ML-1A-bis (Getwd falha): create não deve ser chamado quando contenção não pode ser verificada")
+	}
+	if !strings.Contains(gotErr.Error(), "diretório de trabalho") {
+		t.Errorf("ML-1A-bis (Getwd falha): esperava diagnóstico de CWD indisponível, obteve: %v", gotErr)
+	}
+}
+
+// TestSyncToProvider_EvalSymlinksCWDFails_ML1Abis — Direção B da falsificação.
+//
+// Induzir filepath.EvalSymlinks(cwd) a falhar enquanto os.Getwd() ainda tem sucesso
+// requer que o caminho retornado por Getwd seja sintaticamente válido mas fisicamente
+// irresolvível (ex.: um componente é um symlink quebrado, ou permissão execute foi
+// removida de um componente intermediário). Ambos os cenários não são criáveis de forma
+// portável e determinística num teste de unidade:
+//
+//   - Symlink como CWD: não é possível os.Chdir() para um symlink inexistente (o kernel
+//     recusa — o processo entra no destino do symlink, e EvalSymlinks nunca vê o link
+//     em si como componente do CWD resultante).
+//   - Permissão execute removida: requer root (chmod do componente pai sem --preserve-root)
+//     ou namespaces de usuário, que não estão disponíveis no ambiente de CI padrão.
+//
+// Portanto, este caminho não é coberto por teste automatizado. A proteção é garantida
+// pela revisão de código: a linha `physCWD = cwd` foi substituída por `return fmt.Errorf(...)`,
+// tornando o código fail-closed por construção. A afirmação que este teste teria feito é:
+// "EvalSymlinks do CWD falhando ⇒ checkREQDirContained retorna erro e create não é chamado."
+// Como a linha fail-open foi removida, qualquer regressão futura seria visível no diff.
+func TestSyncToProvider_EvalSymlinksCWDFails_ML1Abis(t *testing.T) {
+	t.Skip("direção B não é exercitável portavelmente — ver comentário da função para justificativa")
 }

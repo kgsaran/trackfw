@@ -396,7 +396,7 @@ func TestListREQs_ByState(t *testing.T) {
 	}
 
 	cfg := config.Load()
-	files := listREQFiles(cfg)
+	files, _ := listREQFiles(cfg)
 	found := false
 	for _, f := range files {
 		if filepath.Base(f) == "REQ-x.md" {
@@ -432,7 +432,7 @@ func TestListREQs_ByAgent(t *testing.T) {
 	}
 
 	cfg := config.Load()
-	files := listREQFiles(cfg)
+	files, _ := listREQFiles(cfg)
 	found := false
 	for _, f := range files {
 		if filepath.Base(f) == "REQ-y.md" {

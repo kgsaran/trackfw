@@ -131,7 +131,7 @@ Roadmap: %s
 // ponto único de leitura do validador (validator.ResolveREQFiles — ADR-2026-09-03, D3/D4), o mesmo
 // consumido pelas regras de validate. Duas noções de layout no mesmo runtime foram a causa do
 // defeito da REQ-2026-08-30 (escritor flat, leitor <agente>/<estado>/, campo <agente>/).
-func listREQFiles(cfg config.ProjectConfig) []string {
+func listREQFiles(cfg config.ProjectConfig) ([]string, error) {
 	return validator.ResolveREQFiles(cfg)
 }
 
@@ -139,7 +139,10 @@ func listREQFiles(cfg config.ProjectConfig) []string {
 // imprimindo filename e status. Retorna nil se não houver arquivos.
 func ListREQs() error {
 	cfg := config.Load()
-	matches := listREQFiles(cfg)
+	matches, err := listREQFiles(cfg)
+	if err != nil {
+		return fmt.Errorf("list REQs: %w", err)
+	}
 	if len(matches) == 0 {
 		fmt.Printf("No REQs found in %s\n", cfg.REQDir)
 		return nil
@@ -384,7 +387,11 @@ func MoveREQ(name, status string) error {
 // findREQ busca por uma REQ cujo basename contenha name (case-insensitive), varrendo
 // os 3 layouts suportados via listREQFiles (ordem: flat → por-estado → by_agent).
 func findREQ(name string, cfg config.ProjectConfig) (string, error) {
-	for _, path := range listREQFiles(cfg) {
+	files, err := listREQFiles(cfg)
+	if err != nil {
+		return "", fmt.Errorf("findREQ: %w", err)
+	}
+	for _, path := range files {
 		if containsIgnoreCase(filepath.Base(path), name) {
 			return path, nil
 		}

@@ -2,6 +2,52 @@
 
 ---
 
+## Sessão 2026-09-17 — Apolo (fix/sync-enumera-req — ML-1A-ter: correção de auditoria — guarda de symlink no AC7) — CONCLUÍDO (aguarda commit do arquiteto)
+
+**Início:** 2026-09-17 | Branch: `fix/sync-enumera-req`
+**Tarefa:** Corrigir a guarda de `os.Symlink` no `TestSyncToProvider_REQDirSymlink_AC7` que tratava qualquer erro como "sem privilégio" e pulava o teste — silenciando falhas reais (disco cheio, caminho inválido, bug no teste). Gate `check-symlink-privilege-guard` reprovava em `internal/sync/sync_test.go:448`.
+**Correção:**
+- Criado `internal/sync/symlink_helper_test.go` — cópia do padrão canônico de `internal/discover/symlink_helper_test.go`: helper `symlinkOrSkip` + `isSymlinkPrivilegeError`. Distinção correta: sem privilégio (WinError 1314 ou `os.IsPermission`) → skip; qualquer outro erro → `t.Fatalf`.
+- `internal/sync/sync_test.go:448` — guarda manual `if err := os.Symlink(...) { t.Skipf(...) }` substituída por `if !symlinkOrSkip(t, outside, symlinkPath) { return }`.
+- Varredura: nenhum outro `os.Symlink`/`syscall.Mkfifo` sem guarda em `internal/sync/`.
+**O que a correção afirma:** a guarda do AC7 distingue "sem privilégio" de erro real; em macOS/Linux o teste **executa** (não pula), porque `os.Symlink` não exige privilégio especial.
+**Evidência de execução (não skip):** `go test ./internal/sync/... -run TestSyncToProvider_REQDirSymlink_AC7 -v` → `--- PASS: TestSyncToProvider_REQDirSymlink_AC7 (0.00s)` sem linha `SKIP`.
+**Build:** `go build ./...` RC=0 | `go test ./...` todos verdes | `env -u FORCE_COLOR make quality` RC=0 (212 OK, 0 FAIL).
+
+---
+
+## Sessão 2026-09-17 — Apolo (fix/sync-enumera-req — ML-1A-bis: correção de auditoria — fail-closed em checkREQDirContained) — ENCERRADO
+
+**Início:** 2026-09-17 | Branch: `fix/sync-enumera-req` | Roadmap: ML-1A-bis (correção pós-auditoria)
+**Tarefa:** Corrigir dois caminhos fail-open em `checkREQDirContained`: (1) `os.Getwd()` falhando retornava nil; (2) `EvalSymlinks(cwd)` falhando usava fallback lexical. Ambos viram recusa com diagnóstico nomeado.
+**Concluído:**
+- `internal/validator/validator.go` linha ~2398: comentário e código atualizados. `os.Getwd()` falha → erro nomeado "não foi possível resolver o diretório de trabalho". `EvalSymlinks(cwd)` falha → erro nomeado com menção a EvalSymlinks.
+- `internal/sync/sync_test.go`: `TestSyncToProvider_GetWdFails_FailClosed_ML1Abis` (direção A) passa — remove CWD após chdir, verifica recusa + create não chamado. `TestSyncToProvider_EvalSymlinksCWDFails_ML1Abis` (direção B) documentado como inalcançável portavelmente (t.Skip com justificativa).
+- `go build ./...` RC=0. `go test ./...` RC=0 (todos os packages). `check-req-path-literals.sh` e `check-orphan-gates.sh` OK.
+- Varredura: único `return nil // fail open` no codebase era a linha 2401 — corrigida. Outros "fail-open" são em generators (fail-open para HOME não-resolvível é correto) e comentários históricos.
+**Não commitado** (role não tem autoridade Git). Microbatch entregue ao arquiteto via handback.
+
+---
+
+## Sessão 2026-09-17 — Apolo (fix/sync-enumera-req — ML-1A: Wave 1 — AC1-AC7 + AC5 gate) — ENCERRADO
+
+**Início:** 2026-09-17 | Branch: `fix/sync-enumera-req` | Roadmap: `ROADMAP-2026-09-17-sync-enumera-req-por-caminho-literal-ignora-req-dir-e-escreve-no-provedor-de-pm.md` ML-1A
+**Tarefa:** Corrigir `internal/sync/sync.go:43` (glob literal → `validator.ResolveREQFiles`). Adicionar contenção de caminho em `ResolveREQFiles` via `EvalSymlinks` (AC7). Alterar assinatura de `ResolveREQFiles` para `([]string, error)`. Criar gate AC5. Corrigir `scripts/check-referential-integrity.sh:10`.
+**Concluído:**
+- `internal/sync/sync.go`: `syncToProvider` usa `validator.ResolveREQFiles(cfg)` (AC1). `ErrNoREQsFound` struct com `REQDir` verbatim (AC6). Sem chamadas de rede em testes (AC4).
+- `internal/validator/validator.go`: `ResolveREQFiles` assinatura `([]string, error)`. `checkREQDirContained` + `resolvePhysical` adicionados (AC7). Todos os 11 callers internos atualizados.
+- `internal/validator/validator_traceid.go`: atualizado para novo retorno.
+- `internal/generators/roadmap.go`, `req.go`, `context.go`: atualizados.
+- `internal/commands/sync.go`: handler `*ErrNoREQsFound` (exit 0, mensagem verbatim). `internal/commands/roadmap.go`: atualizado.
+- `scripts/check-referential-integrity.sh`: extrai `req_dir` do `trackfw.yaml` via awk; fallback `docs/req` (AC5 / Regra Dura).
+- `scripts/check-req-path-literals.sh`: gate AC5 novo; registrado no Makefile e em `check-orphan-gates`.
+- `internal/sync/sync_test.go`: 6 novos testes (AC2, AC3, AC4, AC6, AC7×3) com reconciliação de frase por teste.
+- `internal/validator/validator_req_layout_test.go`, `validator_test.go`, `internal/generators/req_test.go`: atualizados para nova assinatura; `chdir(t, dir)` adicionado onde necessário para contenção de caminho.
+- `go test ./...` RC=0 (24 testes em `internal/sync`, todos os packages verdes). Build RC=0. Gates check-req-path-literals, check-referential-integrity e check-orphan-gates todos OK.
+**Não commitado** (role não tem autoridade Git). Microbatch entregue ao arquiteto via handback.
+
+---
+
 ## Sessão 2026-09-17 — Hades (fix/sync-enumera-req — ML-0A: Wave 0 threat model) — ENCERRADO
 
 **Início:** 2026-09-17 | Branch: `fix/sync-enumera-req` | Roadmap: `ROADMAP-2026-09-17-sync-enumera-req-por-caminho-literal-ignora-req-dir-e-escreve-no-provedor-de-pm.md` ML-0A  

@@ -58,8 +58,8 @@ diferente, não se corrige aqui.
 > Dependências: **Wave 0 auditada.**
 
 ### ML-1A — resolver pelo ponto único, com falsificação em `req_dir` não-padrão e `by_agent`
-**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
-Cobre AC1 a AC6.
+**Status:** ✅ Concluído · **Papel:** `apolo-tf`
+Cobre AC1 a AC7. Implementado em 2026-09-17.
 
 ---
 
@@ -108,3 +108,38 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 - [ ] build passes
 - [ ] tests green
 - [ ] validate passes
+
+---
+
+### Auditoria do arquiteto — 2026-09-17
+
+**Aprovado, com duas correções de auditoria.**
+
+**Mérito:** contenção no ponto único com resolução **física** (`EvalSymlinks` + ancestral-walking
+para caminho ainda inexistente); assinatura `([]string, error)` propagada nos 11 callers, de modo que
+nenhum recebe caminho não contido em silêncio; e uma decisão não pedida que melhora o AC4 —
+`syncToProvider` recebe `create` injetável, tornando "nenhum teste toca a rede" verificável **por
+construção** em vez de por promessa.
+
+🔴 **Correção 1 (ML-1A-bis) — fail-open num controle de contenção.** `checkREQDirContained` tinha duas
+portas que desligavam a própria proteção: `os.Getwd()` falhando devolvia `nil` (declarado como
+deliberado), e `EvalSymlinks` falhando caía para o caminho não resolvido — voltando à comparação
+**lexical**, que é exatamente a distinção que o AC7 existe para garantir. Num comando que publica em
+serviço externo autenticado, o fail-open **é** o exploit que a Wave 0 descreveu. Ambos viraram recusa
+nomeada, dizendo qual verificação não pôde ser feita. Varredura por outros fail-open: 1 ocorrência, a
+própria.
+
+🔴 **Correção 2 (ML-1A-ter) — o teste do AC7 podia passar por skip silencioso.** `make quality`
+reprovou (`sync_test.go:448`, guarda de capacidade ausente). A guarda manual tratava **qualquer** erro
+como "sem privilégio" e pulava. É o mesmo modo de falha do dia: passar sem medir. E era o teste do
+**AC7** — o braço que distingue contenção física de lexical. Trocado pelo helper canônico, que separa
+sem-privilégio (skip) de outro erro (falha).
+
+**Verificado por mim, no artefato:** `TestSyncToProvider_REQDirSymlink_AC7` → `PASS`, **sem SKIP**;
+`make quality` → RC=0, `8 chunks, 212 OK, 0 FAIL`; fail-closed confirmado por leitura — o único
+`return nil` restante é o do caso efetivamente contido.
+
+**Nota de processo:** o ML-1A marcou o próprio status como ✅ no roadmap, contra instrução explícita.
+Status de ML é do arquiteto; agente marcar o próprio trabalho como concluído remove a auditoria do
+caminho — e estas duas correções são a prova de que ela pega coisa.
+

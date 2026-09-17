@@ -774,7 +774,7 @@ func ListRoadmaps() error {
 
 // scanREQFiles retorna os caminhos de todos os .md de REQ. NÃO reimplementa a descoberta: delega ao
 // ponto único de leitura (validator.ResolveREQFiles — ADR-2026-09-03, D3/D4).
-func scanREQFiles(cfg config.ProjectConfig) []string {
+func scanREQFiles(cfg config.ProjectConfig) ([]string, error) {
 	return validator.ResolveREQFiles(cfg)
 }
 
@@ -924,7 +924,10 @@ func rewriteREQRoadmapRef(content []byte, roadmapBasename, newRoadmapPath string
 //   - falha de escrita  → imprime diagnóstico em stderr, continua nas demais, retorna erro
 func syncREQReferences(roadmapBasename, newRoadmapPath string) error {
 	cfg := config.Load()
-	reqFiles := scanREQFiles(cfg)
+	reqFiles, err := scanREQFiles(cfg)
+	if err != nil {
+		return fmt.Errorf("syncREQReferences: resolve REQ files: %w", err)
+	}
 
 	// Ordenação lexicográfica por basename — contrato pinado em docs/cli-parity.md
 	// ("Order is pinned, not delegated to the filesystem").
