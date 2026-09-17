@@ -4,6 +4,7 @@
 
 ## Índice
 
+- [jira-base-url-config-env-exfiltration-2026-09-17](jira-base-url-config-env-exfiltration-2026-09-17.md) — config URL + env token = combinação indistinguível de uso legítimo mas permite exfiltração; recusa por combinação, opt-in por env var; redirect cross-hostname seguro (stdlib strippa Authorization), same-host-porta-diferente inseguro (CheckRedirect fecha)
 - [chdir-removeall-nao-forca-getwd-falhar-no-windows-2026-09-17](chdir-removeall-nao-forca-getwd-falhar-no-windows-2026-09-17.md) — `os.RemoveAll(CWD)` falha no Windows (SO bloqueia); use `GetwdFn` injetável em vez de truque de filesystem; `EvalSymlinks` em caminho inexistente falha portavelmente em todas as plataformas
 
 - [falsify-success-counter-subshell-misplacement-2026-09-16](falsify-success-counter-subshell-misplacement-2026-09-16.md) — mensagem de sucesso deslocada (linha 6272 de 6641) mentia sobre resultado; contador "183" hardcoded; fix: arquivo `$FALSIFY_SUCCESS_TALLY` + 65 pontos instrumentados; falsificações A (mensagem suprimida) e B (contador -1) provadas

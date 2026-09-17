@@ -47,6 +47,10 @@ parity-rest: build
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-serve-address-parity.sh
 	scripts/check-serve-browser-security.sh
 	scripts/check-serve-api-file-security.sh
+	# ML-1A (REQ-2026-09-17-jira-base-url-*): AC7 anti-reintroduction gate — no authenticated
+	# URL built by string concatenation from a config-derived field in internal/**/*.go.
+	scripts/check-jira-url-concat.sh --self-test
+	scripts/check-jira-url-concat.sh
 	scripts/check-raw-read-ban.sh
 	# ML-1B (ROADMAP-2026-09-11-o-ciclo-testa-onde-funciona): toda criacao de
 	# symlink/fifo em arquivo de teste passa por guarda de capacidade (nao por
