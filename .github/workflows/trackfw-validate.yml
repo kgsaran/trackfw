@@ -4,6 +4,12 @@ jobs:
   governance-go-install:
     runs-on: ubuntu-latest
     steps:
+      # ESTE repositorio e o produtor do trackfw, nao um consumidor: o binario
+      # tem de vir do CODIGO DO PR, nunca do release publicado. Com
+      # `go install ...@v8.0.0` o check validaria com o binario ja publicado e
+      # um PR que quebrasse `trackfw validate` passaria — o verificador deixaria
+      # de ver a mudanca que deveria verificar. Revertido apos `trackfw update
+      # harness` (v8.0.0) aplicar aqui o template de consumidor.
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
