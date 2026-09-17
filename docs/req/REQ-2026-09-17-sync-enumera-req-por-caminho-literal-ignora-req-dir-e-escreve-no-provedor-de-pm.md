@@ -57,11 +57,48 @@ menos necessária.
       dry-run ou provedor de mentira. Um teste que cria issue de verdade para provar que o sync
       funciona seria o próprio defeito, encenado.
 - [ ] **AC5** — Gate que impeça a reintrodução: nenhum caminho de REQ ou roadmap literal em
-      `internal/**` fora do resolvedor. Se a forma literal for legítima em algum sítio, ele é
-      declarado com motivo.
+      `internal/**` fora do resolvedor. 🔴 O gate precisa de **allowlist explícita** para os sítios
+      legítimos que o parecer enumerou — `config.go` (default), `configure.go` (prompt do wizard),
+      `scaffold.go`, `help.go`, `discover.go` —, senão ele reprova código correto e é desligado na
+      primeira semana. Exclusão sem motivo escrito não vale.
+      **Escopo ampliado pela Regra Dura de Causa Raiz:** `scripts/check-referential-integrity.sh:10`
+      tem a mesma forma (`for req in docs/req/*.md`) e a mesma causa — entra aqui, não em REQ futura.
 - [ ] **AC6** — Comportamento definido e escrito para o caso em que a resolução devolve **0 REQ**: o
       `sync` deve **dizer que não achou nada** em vez de seguir em silêncio. Hoje o silêncio é o que
-      transforma má configuração em escrita errada.
+      transforma má configuração em escrita errada. 🔴 A mensagem imprime `cfg.REQDir` **verbatim**,
+      nunca `filepath.Abs` — um `req_dir: /home/alice/empresa/docs` expandido vaza caminho de sistema
+      em log de CI, que costuma ser público. Armazenar verbatim é *safe by construction*; expandir na
+      mensagem desfaz isso.
+
+- [ ] **AC7** — 🔴 **Contenção de caminho, introduzida pelo parecer de Wave 0 (bloqueante).**
+      `ResolveREQFiles` (`internal/validator/validator.go:1603`) usa `reqDir := cfg.REQDir` **verbatim**,
+      sem nenhuma chamada de contenção — verificado: zero ocorrências de `isOutsideCWD` no corpo da
+      função. O `Glob` literal de hoje é **acidentalmente imune**, porque ignora `cfg.REQDir` por
+      inteiro. **Trocá-lo por resolução configurável introduz travessia de caminho num comando que
+      publica em serviço externo.**
+
+      Exploit concreto com o layout atual desta máquina: `req_dir: ../trackfw/docs/req` no worktree
+      `trackfw-sync` publicaria as REQs do projeto principal no Linear/Jira configurado aqui.
+
+      **Decisão arquitetural (minha, 2026-09-17): a contenção vai em `ResolveREQFiles`, não num
+      wrapper do `sync` nem no `config.Load()`.** Motivo: a REQ inteira existe para levar os
+      consumidores ao **ponto único**. Um ponto único que resolve caminho sem conter é uma armadilha
+      pior que a duplicação — o próximo consumidor herda o buraco sem saber que existe. No
+      `config.Load()` a validação atingiria todo comando, inclusive os que não leem REQ, e uma
+      configuração legítima quebraria longe da causa.
+
+      🔴 **A contenção usa `EvalSymlinks`, não `filepath.Rel` lexical.** `isOutsideCWD` existe mas
+      compara lexicamente: um symlink em `docs/req` apontando para fora **passa** na verificação.
+      Precedente medido neste projeto:
+      `REQ-2026-09-11-serve-api-file-valida-o-caminho-lexico-e-abre-o-fisico-symlink-em-docs-req-le-qualquer-arquivo`.
+
+      Caminho fora da raiz do projeto após resolução física ⇒ **recusa nomeada**, nunca lista vazia
+      silenciosa — lista vazia é indistinguível de "não há REQ" e cairia no AC6 como se fosse
+      configuração inocente.
+
+      ⚠️ `ResolveREQFiles` hoje devolve `[]string` sem erro. Mudar a assinatura afeta os demais
+      chamadores; o ML de implementação decide a forma, mas **nenhum chamador pode receber caminho
+      não contido em silêncio**.
 
 ## Negative Scope
 

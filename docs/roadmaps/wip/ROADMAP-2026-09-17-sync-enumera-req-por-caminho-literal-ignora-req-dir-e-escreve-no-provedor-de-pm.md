@@ -14,7 +14,30 @@ squad: ""
 > Dependências: nenhuma. 🔴 **Auditada antes de qualquer wave de implementação.**
 
 ### ML-0A — o que um enumerador errado permite quando o consumidor escreve fora
-**Status:** ⬜ Pendente · **Papel:** `hades-tf`
+**Status:** ✅ Concluído e auditado pelo arquiteto (2026-09-17)
+
+**Parecer:** `docs/portabilidade/2026-09-17-threat-model-sync-req-dir.md`
+
+🔴 **Achado bloqueante, e é a justificativa de a Wave 0 existir:** `ResolveREQFiles`
+(`validator.go:1603`) usa `reqDir := cfg.REQDir` **verbatim** — verifiquei: zero chamadas de
+contenção no corpo da função. O `Glob` literal defeituoso é **acidentalmente imune** à travessia
+porque ignora `cfg.REQDir`; a correção a **introduziria**, num comando que publica em serviço
+externo. Corrigir sem contenção trocaria "lê os arquivos errados" por "lê fora da árvore e publica".
+
+Emendei a REQ: **AC7 novo** (contenção com `EvalSymlinks`, não `Rel` lexical — `isOutsideCWD` existe
+mas compara lexicamente e um symlink passa; precedente medido na REQ do `serve --api file`),
+**AC6** passa a exigir `cfg.REQDir` verbatim na mensagem, **AC5** ganha allowlist e absorve
+`check-referential-integrity.sh:10` pela Regra Dura, **AC4** passa a exigir `config.Reset()` — sem
+ele o `once.Do` do `config.Load()` faz a falsificação medir o cache do default e passar sem afirmar
+nada.
+
+**Decisão arquitetural minha:** a contenção vai em `ResolveREQFiles`, não em wrapper do `sync` nem no
+`config.Load()`. Um ponto único que resolve caminho sem conter é pior que a duplicação — o próximo
+consumidor herda o buraco sem saber que existe.
+
+**Fora de escopo, com issue própria:** `jira_base_url` vive no mesmo `trackfw.yaml` e um valor hostil
+redireciona POST autenticado com `Authorization: Basic` para host do atacante. Pré-existente, causa
+diferente, não se corrige aqui.
 
 - O `sync` leva **conteúdo de REQ** para um provedor externo. Com o caminho errado, que conteúdo
   pode vazar para o projeto de PM errado — e o id injetado de volta marca arquivo alheio como

@@ -2,6 +2,18 @@
 
 ---
 
+## Sessão 2026-09-17 — Hades (fix/sync-enumera-req — ML-0A: Wave 0 threat model) — ENCERRADO
+
+**Início:** 2026-09-17 | Branch: `fix/sync-enumera-req` | Roadmap: `ROADMAP-2026-09-17-sync-enumera-req-por-caminho-literal-ignora-req-dir-e-escreve-no-provedor-de-pm.md` ML-0A  
+**Tarefa:** Parecer Wave 0 para o roadmap que corrige `internal/sync/sync.go:43` (glob literal `docs/req/*.md` ignora `req_dir`). Cinco vetores investigados: vazamento por alvo errado; escrita autenticada; caminho hostil via `cfg.REQDir`; mensagem AC6; verificabilidade do AC4.  
+**Concluído:**  
+Parecer escrito em `docs/portabilidade/2026-09-17-threat-model-sync-req-dir.md`. Quatro seções entregues: completude da enumeração, modelo de ameaça, alvos de falsificação em ambas as direções, residual declarado.  
+**Achado principal (bloqueante para Wave 1):** `ResolveREQFiles` não contém o caminho — não existe chamada a `isOutsideCWD` no enumerador. O fix em AC1 como redigido substituiria um literal seguro-por-acidente por uma leitura-fora-da-árvore para qualquer `req_dir: ../../`. O vetor concreto: `req_dir: ../trackfw/docs/req` no worktree sync publica os REQs do projeto principal no Linear/Jira do projeto sync. AC1 precisa de emenda ou AC7 novo exigindo contenção com `EvalSymlinks` antes de chamar `resolveREQFiles`.  
+**Outros achados:** (a) `jira_base_url` no mesmo `trackfw.yaml` permite redirecionar POSTs autenticados — pré-existente, fora de escopo desta REQ; (b) `config.Load()` é `once.Do` — AC2 pode medir cache do default em vez do `req_dir` injetado sem `config.Reset()`; (c) `isStatusOpen` reduz a superfície do traversal a arquivos com `| Status: Open`; (d) `scripts/check-referential-integrity.sh:10` tem o mesmo literal fora do escopo do AC5; (e) AC4 é arquitetura, não mecânico.  
+**Não commitado** (role não tem autoridade Git). Parecer entregue ao arquiteto via handback.
+
+---
+
 ## Sessão 2026-09-16 — Ares (fix/um-binario-muitos — ML-4I-bis: install.sh entrega amd64 em ARM64 Windows) — ENCERRADO
 
 **Início:** 2026-09-16 | Branch: `fix/um-binario-muitos` | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-4I-bis
