@@ -4,6 +4,8 @@
 
 ## Índice
 
+- [gate-lista-proibida-aprova-por-omissao-e-glob-yml-perde-yaml-2026-09-17](gate-lista-proibida-aprova-por-omissao-e-glob-yml-perde-yaml-2026-09-17.md) — gate de lista proibida aprova qualquer mecanismo não listado por omissão; `*.yml` não casa `*.yaml`; fix: lógica invertida (prova positiva de `go build .../cmd/trackfw`) + enumeração dupla
+
 - [jira-base-url-config-env-exfiltration-2026-09-17](jira-base-url-config-env-exfiltration-2026-09-17.md) — config URL + env token = combinação indistinguível de uso legítimo mas permite exfiltração; recusa por combinação, opt-in por env var; redirect cross-hostname seguro (stdlib strippa Authorization), same-host-porta-diferente inseguro (CheckRedirect fecha)
 - [chdir-removeall-nao-forca-getwd-falhar-no-windows-2026-09-17](chdir-removeall-nao-forca-getwd-falhar-no-windows-2026-09-17.md) — `os.RemoveAll(CWD)` falha no Windows (SO bloqueia); use `GetwdFn` injetável em vez de truque de filesystem; `EvalSymlinks` em caminho inexistente falha portavelmente em todas as plataformas
 

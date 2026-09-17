@@ -37768,3 +37768,24 @@ Implementação completa. Evidências: `go build ./...` RC=0 · `make test` 15/1
 - 🔴 **Gate `check-ci-workflow-binary-provenance.sh` reprovado.** Em fixtures, aprova 4 workflows que validam com binário publicado via npm, pip, brew e `download-artifact` — os três canais da v8 mais o mecanismo que o AC5 nomeia. É lista de proibidos, não prova positiva de procedência.
 - Segundo achado: `git ls-files '*.yml'` não casa `.yaml`; enumeração caiu de 4 para 3 em silêncio.
 - **Erro meu:** o handoff mandou rodar `make check-required-checks`, alvo inexistente. O braço correto é `check-required-status-checks.py --scope dw`.
+
+### 2026-09-17 — Apolo — ML-1C: corretivo do gate AC5 (início)
+- Leitura: roadmap (ML-1C), REQ (AC5 reescrito), `scripts/check-ci-workflow-binary-provenance.sh`, workflows commitados, `scaffold.go` (buildGitLabCIWorkflowContent).
+- Escopo: inverter lógica do gate (lista proibida → prova positiva de `go build`), adicionar `.yaml`, cinco fixtures de contra-braço + um fixture passante, declarar residuais (GitLab + `trackfw doctor/status`).
+- Medição GitLab: `git ls-files '.gitlab-ci*'` vazio; caminho do arquivo é `.gitlab-ci-trackfw.yml` (scaffold.go:1947), não `.gitlab-ci.yml` como o handoff sugeria. Inerte → residual nomeado.
+
+### 2026-09-17 — Apolo — ML-1C: corretivo do gate AC5 (conclusão, aguardando auditoria)
+- Gate `scripts/check-ci-workflow-binary-provenance.sh` reescrito com lógica invertida: prova positiva de `go build .../cmd/trackfw` em vez de lista de padrões proibidos.
+- Enumeração: `*.yml` e `*.yaml`; contagem vs. total de arquivos gera aviso se extensão inesperada.
+- Seis fixtures de contra-braço em git repos isolados (`SKIP_COUNTER_ARMS=1`): 5 reprovam (npm, pip, brew, artifact, `.yaml`) nomeando o arquivo; 1 aprova (go build do fonte), provando que o gate não é uniformemente vermelho.
+- Veredito sobre os 8 workflows reais: `trackfw-gate.yml` e `trackfw-validate.yml` aprovados (ambos têm `go build`); os outros 6 fora do escopo (não executam `trackfw validate`).
+- Veredito GitLab: `buildGitLabCIWorkflowContent` (`scaffold.go:2021`) emite `install.sh | sh`; arquivo `.gitlab-ci-trackfw.yml` não commitado (`git ls-files '.gitlab-ci*'` vazio) — **residual nomeado**. Nota: handoff mencionava `.gitlab-ci.yml`, mas constante no código é `.gitlab-ci-trackfw.yml` (scaffold.go:1947) — medição prevalece.
+- Residual de escopo: workflows com `trackfw doctor`/`status` mas sem `trackfw validate` estão fora do escopo — decisão explícita, declarada no script.
+- Medições: `go build ./...` RC=0; `make test` RC=0 (15 pacotes); `./bin/trackfw doctor | grep -c scaffold-divergent` = 0; `python3 scripts/check-required-status-checks.py --scope dw` RC=0 (D\W=∅); `bash scripts/check-ci-workflow-binary-provenance.sh` RC=0 (2 workflows verificados, 6 contra-braços OK); `make quality` RC=0 (212 OK, 0 FAIL).
+- Vault: nota `gate-lista-proibida-aprova-por-omissao-e-glob-yml-perde-yaml-2026-09-17.md` criada e linkada no index.
+- Status ML-1C: ✅ (aguarda auditoria do arquiteto).
+
+### 2026-09-17 — Zeus — auditoria do ML-1C: classe fechada; sobra bypass por job
+- Reexecutei meus próprios fixtures do ML-1B contra o gate reescrito: npm, pip, brew, `download-artifact` e o `.yaml` **reprovam todos**, nomeando o arquivo. `good-source` aprova — o gate não é uniformemente vermelho.
+- `doctor`: **no mismatches found** (0 `scaffold-divergent`). `--scope dw` RC=0. `go build ./...` RC=0.
+- 🔴 **Residual medido por mim, ainda aberto:** o gate é **por arquivo**, não por job. Um workflow em que o job A faça `go build .../cmd/trackfw` e o job B rode `npm install -g trackfw` + `trackfw validate` **passa com RC=0**. Medido em fixture. Decisão de escopo pendente com KG.

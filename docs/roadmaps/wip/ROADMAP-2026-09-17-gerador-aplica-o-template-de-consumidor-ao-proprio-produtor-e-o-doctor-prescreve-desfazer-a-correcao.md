@@ -183,7 +183,7 @@ make quality
 ---
 
 ### ML-1B — o segundo builder não distingue produtor de consumidor, e o required check valida o binário publicado
-**Status:** 🔄 Em andamento (auditado por Zeus em 2026-09-17: builder, workflow e D=R=W aprovados; **gate do AC5 reprovado → ML-1C**) · **Papel:** `apolo-tf`
+**Status:** ✅ Concluído (auditado por Zeus em 2026-09-17: builder, workflow e D=R=W aprovados; gate do AC5 reprovado → corrigido no ML-1C) · **Papel:** `apolo-tf`
 Cobre o **AC5 reescrito**. Acrescentado pela auditoria do ML-1A em 2026-09-17.
 
 🔴 **Por que está nesta REQ e não numa nova.** A Regra Dura de Causa Raiz diz que *"parser vs.
@@ -300,7 +300,7 @@ make quality ; echo "RC=$?"
 ---
 
 ### ML-1C — corretivo: o gate do AC5 aprova a classe que deveria reprovar
-**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Status:** ✅ Concluído (auditoria pendente com Zeus) · **Papel:** `apolo-tf`
 Aberto pela auditoria do ML-1B em 2026-09-17. **Bloqueia o fechamento do AC5.**
 
 O ML-1B entregou `scripts/check-ci-workflow-binary-provenance.sh`, e ele é um **teste de regressão
@@ -345,12 +345,34 @@ em `CHECKED == 0`.
    Se inerte, **residual nomeado**; se o gate novo o cobrir de graça, cobrir.
 
 **Critérios de aceite:**
-- [ ] `*.yaml` enumerado; fixture `.yaml` com binário publicado reprova
-- [ ] Lógica invertida: prova positiva de compilação do fonte exigida
-- [ ] Os quatro fixtures (npm, pip, brew, artefato) reprovam, nomeando o arquivo
-- [ ] Residual de escopo declarado no roadmap
-- [ ] Veredito sobre o sítio do GitLab escrito, com medição
-- [ ] `go build ./...`, `make test`, `make quality`, `doctor` (0 `scaffold-divergent`) — RC medido sem pipe
+- [x] `*.yaml` enumerado; fixture `w-yaml.yaml` com `install.sh | sh` reprova nomeando o arquivo
+- [x] Lógica invertida: prova positiva de compilação do fonte exigida (`go build .../cmd/trackfw`); qualquer mecanismo sem esta prova reprova por omissão
+- [x] Os quatro fixtures (npm, pip, brew, artefato) reprovam, nomeando o arquivo; fixture `good-source` aprovado (gate não é uniformemente vermelho)
+- [x] Residual de escopo declarado no script e no roadmap: (1) `trackfw doctor/status` com binário publicado está fora do escopo; (2) GitLab CI inerte — ver abaixo
+- [x] Veredito sobre o sítio do GitLab: `buildGitLabCIWorkflowContent` (`scaffold.go:2021`) emite `install.sh | sh` sem braço de produtor. Medição: `git ls-files '.gitlab-ci*'` retorna vazio — o arquivo `.gitlab-ci-trackfw.yml` (`GitLabCIWorkflowPath`, `scaffold.go:1947`) não está commitado neste repositório em 2026-09-17. Nota: o handoff mencionava `.gitlab-ci.yml` mas a constante no código é `.gitlab-ci-trackfw.yml` — a medição prevalece. Decisão: **residual nomeado** — o gate não cobre `.github/workflows/`-externo; cobertura de template é responsabilidade do `check-ci-workflow-pin-parity.sh` ou de gate dedicado se o arquivo vier a ser commitado.
+- [x] `go build ./...` RC=0; `make test` RC=0 (15/15 pacotes); `make quality` RC=0 (212 OK, 0 FAIL); `./bin/trackfw doctor | grep -c scaffold-divergent` = 0 (RC=1 do grep confirma nenhuma ocorrência)
+- [x] `python3 scripts/check-required-status-checks.py --scope dw` RC=0 (D\W=∅ — D=8, W=45)
+
+**Veredito do gate sobre os oito workflows reais:**
+- `trackfw-gate.yml`: APROVADO (tem `go build -o /usr/local/bin/trackfw ./cmd/trackfw`)
+- `trackfw-validate.yml`: APROVADO (tem `go build -o /usr/local/bin/trackfw ./cmd/trackfw`)
+- Demais 6 (`check-annotations`, `deploy-docs`, `quality`, `release`, `windows-census`, `windows-probe`): fora do escopo (não executam `trackfw validate`)
+
+**Veredito do gate sobre os cinco fixtures de contra-braço (nomeando o arquivo):**
+- `w-npm.yml` (npm install-g): REPROVADO nomeando `.github/workflows/w-npm.yml`
+- `w-pip.yml` (pip install): REPROVADO nomeando `.github/workflows/w-pip.yml`
+- `w-brew.yml` (brew install): REPROVADO nomeando `.github/workflows/w-brew.yml`
+- `w-artifact.yml` (download-artifact): REPROVADO nomeando `.github/workflows/w-artifact.yml`
+- `w-yaml.yaml` (.yaml + install.sh): REPROVADO nomeando `.github/workflows/w-yaml.yaml`
+- `w-source.yml` (go build do fonte): APROVADO (gate não é uniformemente vermelho)
+
+**Reconciliação por cenário novo (Regra Dura de Reconciliação):**
+- `w-npm.yml`: o gate invertido reprova npm install-g porque nenhum passo `go build .../cmd/trackfw` existe — npm distribui binário publicado.
+- `w-pip.yml`: o gate invertido reprova pip install porque nenhum passo `go build .../cmd/trackfw` existe — pip distribui binário publicado.
+- `w-brew.yml`: o gate invertido reprova brew install porque nenhum passo `go build .../cmd/trackfw` existe — brew distribui binário publicado.
+- `w-artifact.yml`: o gate invertido reprova download-artifact porque nenhum passo `go build .../cmd/trackfw` existe — artefato pré-construído é binário publicado.
+- `w-yaml.yaml`: a enumeração cobre `*.yaml`; este fixture prova que um arquivo `.yaml` com binário publicado é detectado — o ML-1B silenciosamente ignorava `.yaml`.
+- `w-source.yml`: o gate invertido não é uniformemente vermelho — um workflow que compila do fonte é verificado e não sinalizado.
 
 **Erro do arquiteto registrado:** o handoff do ML-1B mandou rodar `make check-required-checks`, alvo
 que **não existe** no Makefile. O braço correto sem credencial de mantenedor é
