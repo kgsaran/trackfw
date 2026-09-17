@@ -273,7 +273,7 @@ func writeCIWorkflow(rootDir string) error {
 		// idempotente — não sobrescreve
 		return nil
 	}
-	content := generators.BuildDiscoverGitHubActionsWorkflowContent()
+	content := generators.BuildDiscoverGitHubActionsWorkflowContent(generators.IsProducerGoMod(rootDir))
 	if err := os.WriteFile(dest, []byte(content), 0644); err != nil {
 		return fmt.Errorf("writing CI workflow: %w", err)
 	}

@@ -833,9 +833,35 @@ func TestWriteCIWorkflow_MatchesGeneratorTemplateByteForByte(t *testing.T) {
 		t.Fatalf("trackfw-validate.yml not found: %v", err)
 	}
 
-	want := generators.BuildDiscoverGitHubActionsWorkflowContent()
+	want := generators.BuildDiscoverGitHubActionsWorkflowContent(false)
 	if string(content) != want {
-		t.Errorf("trackfw-validate.yml diverges from generators.BuildDiscoverGitHubActionsWorkflowContent:\ngot:\n%s\nwant:\n%s", content, want)
+		t.Errorf("trackfw-validate.yml diverges from generators.BuildDiscoverGitHubActionsWorkflowContent(false):\ngot:\n%s\nwant:\n%s", content, want)
+	}
+}
+
+// TestWriteCIWorkflow_ProducerContext affirms ML-1A AC2: all three sites that write
+// trackfw-validate.yml use IsProducerGoMod to select the correct template arm. This
+// test covers the `discover` site (writeCIWorkflow): a producer-mode repo receives the
+// producer template (go build, no go install) when the workflow file is first written.
+func TestWriteCIWorkflow_ProducerContext(t *testing.T) {
+	dir := t.TempDir()
+	// Write a producer go.mod so IsProducerGoMod returns true.
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module github.com/kgsaran/trackfw\n\ngo 1.22\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := writeCIWorkflow(dir); err != nil {
+		t.Fatalf("writeCIWorkflow: %v", err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(dir, ".github", "workflows", "trackfw-validate.yml"))
+	if err != nil {
+		t.Fatalf("trackfw-validate.yml not found: %v", err)
+	}
+
+	want := generators.BuildDiscoverGitHubActionsWorkflowContent(true)
+	if string(content) != want {
+		t.Errorf("producer context: writeCIWorkflow wrote consumer template instead of producer template.\ngot:\n%s\nwant:\n%s", content, want)
 	}
 }
 
@@ -844,10 +870,10 @@ func TestWriteCIWorkflow_MatchesGeneratorTemplateByteForByte(t *testing.T) {
 // the other way" side of the AC10/AC11 falsification pair from ROADMAP-2026-08-28
 // section 3 (a template that changes on every run would make doctor noisy forever).
 func TestWriteCIWorkflow_IdempotentSameBinary(t *testing.T) {
-	first := generators.BuildDiscoverGitHubActionsWorkflowContent()
-	second := generators.BuildDiscoverGitHubActionsWorkflowContent()
+	first := generators.BuildDiscoverGitHubActionsWorkflowContent(false)
+	second := generators.BuildDiscoverGitHubActionsWorkflowContent(false)
 	if first != second {
-		t.Errorf("BuildDiscoverGitHubActionsWorkflowContent is not idempotent across calls:\nfirst:\n%s\nsecond:\n%s", first, second)
+		t.Errorf("BuildDiscoverGitHubActionsWorkflowContent(false) is not idempotent across calls:\nfirst:\n%s\nsecond:\n%s", first, second)
 	}
 }
 
