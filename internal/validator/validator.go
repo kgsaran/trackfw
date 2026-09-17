@@ -194,21 +194,51 @@ var ruleDefaults = map[string]string{
 }
 
 // ruleSeverity retorna a severidade configurada para a regra.
-// Prioridade: trackfw.yaml rules: > ruleDefaults > "error".
+// Prioridade (quando anchor disponível): stricter-of(origin/main, disk) > ruleDefaults > "error".
+// Prioridade (quando anchor ausente/inaplicável): trackfw.yaml rules: > ruleDefaults > "error".
 //
-// ADR-2026-08-12-severidade-das-regras-de-credential-guard-resolvida-pela-mais-estrita-entre-head-
-// e-disco: the 3 credential-guard rules in credentialGuardAnchoredRules resolve severity
-// DIFFERENTLY from every other rule handled here — they compare HEAD against disk and take the
-// mais estrita (stricter) of the two, instead of reading disk alone. This is deliberate, not a
-// bug: those 3 rules can otherwise be silenced by the very same uncommitted edit they exist to
-// catch (`rules: credential_guard_mode_downgrade: off` in trackfw.yaml, never committed). See
-// credentialGuardRuleSeverity in validator_credential_guard_integrity.go for the mechanism. Every
-// other rule name falls straight through to diskRuleSeverity, byte-identical to before this ADR.
+// ADR-2026-09-17 ML-1A: ancoragem generalizada de origin/main para TODAS as regras, via
+// currentOriginMain (set at top of each Validate* call by loadOriginMainAnchor). Substitui o
+// padrão HEAD-vs-disco anterior (ADR-2026-08-12), que era vácuo em CI (HEAD == disco para edições
+// commitadas, medido na Wave 0).
+//
+// Quatro estados de currentOriginMain — regras de comportamento:
+//
+//   originAnchorNotSet / originAnchorNoGit / originAnchorNoRemote / originAnchorFileAbsent:
+//     disk only — diskRuleSeverity, idêntico ao comportamento pré-ADR-2026-08-12 para todas as
+//     ~38 regras. "Not set" é o valor zero, válido fora de Validate* (e.g. testes que chamam
+//     ruleSeverity diretamente).
+//
+//   originAnchorRefUnreadable:
+//     FAIL CLOSED — ignora o bloco rules: do disco inteiramente, retorna o default built-in da
+//     regra (credentialGuardDefaultSeverity). Previne bypass via `rules: {<regra>: off}` commitado
+//     quando o âncora não pode ser verificada. Uma única mensagem de violação é emitida no topo de
+//     ValidateUnfiltered / validateUnfilteredTagged — não aqui, para evitar N mensagens.
+//
+//   originAnchorOK:
+//     stricter-wins — stricter of(origin/main severity, disk severity). A mais estrita vence;
+//     subir a severidade no disco É respeitado (o critério é "mais estrita vence", não
+//     "origin/main sempre vence").
 func ruleSeverity(name string) string {
-	if credentialGuardAnchoredRules[name] {
-		return credentialGuardRuleSeverity(name)
+	switch currentOriginMain.state {
+	case originAnchorRefUnreadable:
+		// Fail closed: ignore disk's rules: block, return the rule's built-in default.
+		return credentialGuardDefaultSeverity(name)
+	case originAnchorOK:
+		diskSev := diskRuleSeverity(name)
+		mainSev, ok := currentOriginMain.rules[name]
+		if !ok {
+			// Rule absent in origin/main's rules: block — use built-in default, which is
+			// already the strictest value diskRuleSeverity would fall back to, so disk can
+			// only equal or lose this comparison, never win it against the default alone.
+			mainSev = credentialGuardDefaultSeverity(name)
+		}
+		return credentialGuardStricterSeverity(mainSev, diskSev)
+	default:
+		// originAnchorNotSet, originAnchorNoGit, originAnchorNoRemote, originAnchorFileAbsent:
+		// disk only — same as pre-ADR-2026-08-12 for all rules.
+		return diskRuleSeverity(name)
 	}
-	return diskRuleSeverity(name)
 }
 
 // diskRuleSeverity is the ordinary, disk-only resolution used by every rule except the 3
@@ -397,6 +427,23 @@ func LenientUntilDate() string {
 // ValidateUnfiltered executa todas as validações sem filtro de baseline nem modo lenient.
 // Use para criar snapshots de baseline ou quando você quer o quadro completo.
 func ValidateUnfiltered() (violations []string, warnings []string, err error) {
+	// ML-1A (ROADMAP-2026-09-17): load origin/main severity anchor once per validate call.
+	// ruleSeverity() reads currentOriginMain without taking a lock — acceptable because trackfw
+	// is a CLI tool (one validate call per process). Must be set BEFORE config.Load() so that any
+	// diskRuleSeverity call during the first applyRule already sees the correct anchor state.
+	currentOriginMain = loadOriginMainAnchor()
+	switch currentOriginMain.state {
+	case originAnchorRefUnreadable:
+		// Fail closed: emit a single named violation (not per-rule to avoid N identical messages).
+		// ruleSeverity() will return credentialGuardDefaultSeverity() for all rules in this state,
+		// so disk's `rules: {<name>: off}` has no effect.
+		violations = append(violations, originMainRefUnreadableMessage())
+	case originAnchorFileAbsent:
+		// Informational: trackfw.yaml absent in origin/main — normal for a PR that adds the file.
+		// DISTINCT message from originAnchorRefUnreadable (two-states-one-observable prevention).
+		warnings = append(warnings, originMainFileAbsentMessage())
+	}
+
 	cfg := config.Load()
 
 	wipViolations, e := validateWIPHasREQ()
@@ -697,6 +744,20 @@ func untagMsgs(tagged []TaggedMsg) []string {
 // validateUnfilteredTagged é a versão interna de ValidateUnfiltered que retorna TaggedMsg.
 // Regras sem applyRuleTagged (diretas) ficam com Rule="" — comportamento intencional.
 func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, err error) {
+	// ML-1A (ROADMAP-2026-09-17): load origin/main severity anchor once per validate call.
+	// Mirrors the same block in ValidateUnfiltered — both are entry points into the validation
+	// engine (ValidateUnfiltered is called directly, validateUnfilteredTagged by Validate and
+	// ValidateTagged). If they were called in the same process, the second call overwrites
+	// currentOriginMain — acceptable because the anchor result is deterministic for a given CWD.
+	currentOriginMain = loadOriginMainAnchor()
+	const anchorRule = "origin_main_anchor"
+	switch currentOriginMain.state {
+	case originAnchorRefUnreadable:
+		violations = append(violations, TaggedMsg{Rule: anchorRule, Msg: originMainRefUnreadableMessage()})
+	case originAnchorFileAbsent:
+		warnings = append(warnings, TaggedMsg{Rule: anchorRule, Msg: originMainFileAbsentMessage()})
+	}
+
 	cfg := config.Load()
 
 	wipViolations, e := validateWIPHasREQ()

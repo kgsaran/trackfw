@@ -2,6 +2,22 @@
 
 ---
 
+## Sessão 2026-09-17 — Apolo (fix/leniencia-sem-prazo — ML-1A: severidade ancorada em origin/main + fetch nos workflows) — CONCLUÍDO (aguarda commit do arquiteto)
+
+**Início:** 2026-09-17 | Branch: `fix/leniencia-sem-prazo`
+**Tarefa:** ML-1A da REQ #387 — generalizar ancoragem de severidade de 3 regras para TODAS as regras usando `origin/main`, adicionar fetch step nos dois workflows de governança, fail-closed quando `origin/main` ilegível.
+**Arquivos:** `internal/validator/validator_credential_guard_integrity.go`, `internal/validator/validator.go`, `.github/workflows/trackfw-gate.yml`, `.github/workflows/trackfw-validate.yml`, `internal/validator/validator_origin_main_severity_test.go` (novo).
+**Resultado:**
+- `originMainAnchorState` (6 estados) + `currentOriginMain` (var de pacote) + `loadOriginMainAnchor()` + `originMainTrackfwYAML()` implementados.
+- `ruleSeverity()` generalizado: compara origin/main vs disco para TODAS as regras; stricter-wins; fail-closed quando ref ilegível.
+- Fetch step adicionado nos dois workflows de governança (qualidade.yml:545-570 como precedente).
+- 8 testes novos no `validator_origin_main_severity_test.go`.
+- Regressão em `TestCredentialGuardModeDowngrade_ConfiguravelViaRules` corrigida (initOriginMain + cleanup de var de pacote).
+- `TestRuleSeverity_ZeroDeltaParaRegrasNaoGuard` e `TestCredentialGuardRuleSeverity_SemHead_CaiNoDisco` corrigidos (loadOriginMainAnchor explícito antes de ruleSeverity() direto).
+- `go test ./...` RC=0 | `go build ./...` RC=0 | `go vet ./...` RC=0 | `trackfw validate` RC=0 | `check-required-status-checks.py --scope dw` RC=0.
+
+---
+
 ## Sessão 2026-09-17 — Hades (fix/leniencia-sem-prazo — ML-0A: Wave 0 threat model REQ #387) — CONCLUÍDO (aguarda commit do arquiteto)
 
 **Início:** 2026-09-17 | Branch: `fix/leniencia-sem-prazo`
@@ -37835,3 +37851,11 @@ Implementação completa. Evidências: `go build ./...` RC=0 · `make test` 15/1
 - Corpus corrigido: **177** (via `--json`), não 172 — 8 ativas, 169 históricas. Uma delas não tem tag de regra, então nenhuma chave `rules:` a endereça.
 - `lenient_until: 9999-12-31` derrotava o AC2 a custo zero → AC2 ganhou teto de horizonte.
 - Barreira da Wave 0: passed (4/4).
+
+### 2026-09-17 — Zeus — ML-1A do #387 REPROVADO na auditoria (4 defeitos), ML-1B aberto
+- O desenho central está certo e fica: ancorar em `origin/main`, stricter-wins, três braços no workflow.
+- 🔴 `make quality` **RC=2** — o ML foi marcado ✅ sem esperar o gate. Quebrou `falsify/credential-guard-anchoring-combined-edit`, que é a **prova de uma garantia de segurança existente**.
+- 🔴 `doctor`: **2 scaffold-divergent** — regressão do #376 fechado hoje. O fetch foi para o disco e não para os **builders**, então `trackfw update` o desfaz.
+- 🔴 Consumidor com remote `origin` e sem ref `origin/main` (checkout raso) → violação, **RC=1**. A ADR autorizou mudar comportamento de quem usa `lenient` sem prazo, não reprovar quem nunca configurou nada.
+- 🔴 `origin/main` com nome de branch fixo — consumidor com `master`/`trunk` nunca passa.
+- Direção que dei ao corretivo: âncora indisponível ⇒ defaults embutidos + warning; **violação só quando o disco efetivamente enfraquece** alguma regra.
