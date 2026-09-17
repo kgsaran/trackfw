@@ -1,5 +1,7 @@
 Execute o seguinte comando bash: `trackfw req new "$ARGUMENTS"`
 
+⚠️ Em projetos com `roadmap_namespacing: by_agent` e 2+ agentes, use: `trackfw req new --agent <seu-agente> "$ARGUMENTS"`
+
 Se o comando falhar com `trackfw: command not found` ou similar, informe ao usuário:
 
 ```
