@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-17
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-17-gate-escreve-na-arvore-que-audita-e-a-guarda-existente-nao-cobre-o-culpado.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-17-gate-escreve-na-arvore-que-audita-e-a-guarda-existente-nao-cobre-o-culpado.md"
 ---
 
 # REQ: gate escreve na arvore que audita e a guarda existente nao cobre o culpado
@@ -136,6 +136,6 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-17-gate-escreve-na-arvore-que-audita-e-a-guarda-existente-nao-cobre-o-culpado.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-09-17-gate-escreve-na-arvore-que-audita-e-a-guarda-existente-nao-cobre-o-culpado.md
 <!-- Reference the roadmap that implements this requirement -->
 Roadmap: 

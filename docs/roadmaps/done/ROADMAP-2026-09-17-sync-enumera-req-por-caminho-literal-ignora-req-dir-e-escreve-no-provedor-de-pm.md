@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-17
 req: "docs/req/REQ-2026-09-17-sync-enumera-req-por-caminho-literal-ignora-req-dir-e-escreve-no-provedor-de-pm.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: sync enumera REQ por caminho literal ignora req_dir e escreve no provedor de PM
 
-> Created: 2026-09-17 | Status: wip
+> Created: 2026-09-17 | Status: done
 
 
 ## Wave 0 — Threat model

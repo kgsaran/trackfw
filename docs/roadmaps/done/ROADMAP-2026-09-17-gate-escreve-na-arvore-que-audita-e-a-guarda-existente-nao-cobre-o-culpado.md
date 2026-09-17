@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-17
 req: "docs/req/REQ-2026-09-17-gate-escreve-na-arvore-que-audita-e-a-guarda-existente-nao-cobre-o-culpado.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: gate escreve na arvore que audita e a guarda existente nao cobre o culpado
 
-> Created: 2026-09-17 | Status: wip
+> Created: 2026-09-17 | Status: done
 
 
 ## Context
