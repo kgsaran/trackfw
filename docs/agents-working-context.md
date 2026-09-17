@@ -37804,3 +37804,8 @@ Implementação completa. Evidências: `go build ./...` RC=0 · `make test` 15/1
 - Sem PyYAML o gate **falha fechado** (`exit 2`, motivo nomeado). O `parity-other-gates` do `quality.yml` instala PyYAML na linha 825 e roda `make parity-rest` na 826 — a dependência está coberta no job certo.
 - `make quality` RC=0 · `doctor`: no mismatches found · `--scope dw` RC=0 · `go build ./...` RC=0.
 - **AC1-AC8 fechados.** Roadmap fica em `wip` até o merge.
+
+### 2026-09-17 — Zeus — #376 mergeado (PR #388), roadmap fechado
+- PR #388 mergeado; issue #376 fechada automaticamente às 18:17Z. Roadmap movido para `done`.
+- Entregue: os dois builders distinguem produtor de consumidor, e os dois required checks de governança (`governance-go-install`, `governance-install-script`) compilam o trackfw do código do PR em vez de baixar o binário publicado.
+- 🔴 **Continua aberto, causa distinta: #387** — `governance_mode: lenient` faz esses mesmos dois checks saírem 0 incondicionalmente. Este PR consertou *qual binário* eles executam; falta *poderem bloquear*.

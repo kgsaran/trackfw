@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-17
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-17-gerador-aplica-o-template-de-consumidor-ao-proprio-produtor-e-o-doctor-prescreve-desfazer-a-correcao.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-17-gerador-aplica-o-template-de-consumidor-ao-proprio-produtor-e-o-doctor-prescreve-desfazer-a-correcao.md"
 ---
 
 # REQ: gerador aplica o template de consumidor ao proprio produtor e o doctor prescreve desfazer a correcao
@@ -142,6 +142,6 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-17-gerador-aplica-o-template-de-consumidor-ao-proprio-produtor-e-o-doctor-prescreve-desfazer-a-correcao.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-09-17-gerador-aplica-o-template-de-consumidor-ao-proprio-produtor-e-o-doctor-prescreve-desfazer-a-correcao.md
 <!-- Reference the roadmap that implements this requirement -->
 Roadmap: 
