@@ -2,6 +2,27 @@
 
 ---
 
+## Sessão 2026-09-17 (continuação 4) — Apolo (fix/leniencia-sem-prazo — ML-2C: hardening pós-auditoria: filtro de ancestral + ref guard + ExpandPath) — CONCLUÍDO (aguarda auditoria do arquiteto)
+
+**Início:** 2026-09-17 | Branch: `fix/leniencia-sem-prazo`
+**Tarefa:** ML-2C hardening — quatro correções encontradas pelo advisor após entrega do ML-2C principal.
+**Correções:**
+1. Filtro de ancestral em `mdBasenamesOnDisk`: roots que são ancestrais estritos de qualquer anchor dir são excluídos do disk-union; derrota o ataque `roadmap_dir: .` que antes permitia que WalkDir(`.`) atingisse os arquivos originais (docs/req/*) e falsificasse o baseline.
+2. Guard para `ref == ""` em `scopeRedirectViolations`: saída explícita em vez de comparação silenciosa com zero basenames.
+3. `config.ExpandPath` aplicado a cada root em `mdBasenamesOnDisk`: garante que paths `~/...` em `adr_dirs` sejam expandidos antes do walk.
+4. Novo teste `TestScopeAnchor_BroadRootDefeatsGuard_Reprova` (arm 5): `roadmap_dir: .` + `req_dir: fachada/req` → violação detectada corretamente.
+**Arquivos modificados:**
+- `internal/validator/validator.go`: `scopeRedirectViolations` (ref guard, allAnchorDirs, nova assinatura mdBasenamesOnDisk), `mdBasenamesOnDisk` (assinatura nova, ExpandPath, filtro ancestral)
+- `internal/validator/validator_scope_anchor_test.go`: novo `TestScopeAnchor_BroadRootDefeatsGuard_Reprova`
+**Gates:**
+- `go build ./...` RC=0
+- `go test ./...` RC=0 (15 pacotes, 0 FAIL; `TestScopeAnchor_BroadRootDefeatsGuard_Reprova` PASS)
+- `make quality` RC=0 (212 OK, 0 FAIL, guarda de conjunto OK)
+- `./bin/trackfw doctor` → "no mismatches found"
+- `./bin/trackfw validate 2>&1 | grep -c "scope redirect"` → 0 (nenhum falso-positivo neste repo)
+
+---
+
 ## Sessão 2026-09-17 (continuação 3) — Apolo (fix/leniencia-sem-prazo — ML-2B: terceiro interruptor, repontar caminhos zera governança) — CONCLUÍDO (aguarda commit do arquiteto)
 
 **Início:** 2026-09-17 | Branch: `fix/leniencia-sem-prazo`
@@ -37940,3 +37961,26 @@ Implementação completa. Evidências: `go build ./...` RC=0 · `make test` 15/1
 - 🔴 Medi com repositório real e `origin/main` fetchado: baseline com 3 violações de `docs/req/REQ-quebrada.md`; repontando `req_dir` para um diretório com **um** arquivo de fachada, **as 3 somem e nenhum `scope redirect` é emitido**. Uma linha derrota o guard.
 - O vazio é o sintoma; o ataque é **deixar de enxergar artefato que antes se enxergava**. ML-2C troca o discriminante para **perda de cobertura**, com contra-braço obrigatório: reestruturação que move os arquivos junto não pode reprovar.
 - `make quality` RC=0 na minha execução — o código é sadio, o critério é que estava errado.
+
+### 2026-09-17 — Apolo — ML-2C do #387 iniciado
+- Escopo: corretivo do ML-2B — trocar discriminante de `len(files)==0` para perda de cobertura baseada em git-tree.
+- Bypass confirmado com fixture: repontar req_dir para fachada com arquivo diferente → 0 scope redirect violations, violações originais somem.
+- Design: baseline = git ls-tree de origin/main (não disco); disk-side = union de TODOS os scopes disk. Ref armazenada em originMainAnchor.ref.
+- Restrição: sem commit, sem branch, sem push.
+
+### 2026-09-17 — Apolo — ML-2C do #387 concluído (aguardando auditoria)
+- Gates: `go build ./...` RC=0; `make test` RC=0 (15 packages ok, 0 FAIL); `make quality` RC=0 (212 OK / 0 FAIL); `doctor`: no mismatches found.
+- Discriminante trocado: `len(files)==0` → cobertura por git-tree. Baseline = `git ls-tree -r --name-only <ref> -- <anchorDir>`. Disk-side = union de todos os scopes disk (REQDir ∪ RoadmapDir ∪ ADRDirs).
+- `ref` armazenado em `originMainAnchor.ref`; derivado uma segunda vez em `loadOriginMainAnchor` (safe: CLI single-call, refs não mudam).
+- Novos helpers: `mdBasenamesInGitTree`, `mdBasenamesOnDisk`, `scopeLostArtifacts`, `formatLostArtifacts`.
+- `hasMDFilesInRoadmapDir` mantida (não exportada, mas compilada com Go; pode ser removida em follow-up se necessário — só era chamada por scopeRedirectViolations antigo).
+- 7 novos testes + 3 testes atualizados com artefatos commitados em origin/main.
+- adr_dirs: [] fecha sozinho — medido e confirmado (TestScopeAnchor_AdrDirsVazioExplicito_Reprova passa).
+- Caso narrow declarado no comentário de código: PR que deleta artefato E muda path no mesmo commit dispara; remedy: manter paths ou aceitar violação nomeada via baseline.
+
+### 2026-09-17 — Zeus — ML-2C aprovado, Wave 2 do #387 fechada
+- Meu fixture de fachada agora **reprova**, nomeando o artefato perdido. `make quality` **RC=0**, `doctor` limpo, e **0** `scope redirect` neste repositório — sem falso-positivo.
+- 🔴 **Residual medido e nomeado na REQ:** fachada de **mesmo basename** e integralmente válida zera a contagem (`RC=0`). Fora de escopo por custo: deixou de ser "só repontar caminhos" e passou a exigir um artefato forjado e válido **por** artefato real, com ADR e roadmap existentes.
+- Curva de custo do atacante nos três MLs: diretório vazio (1 linha) → fachada com outro nome (1 arquivo) → N homônimos válidos + vínculos.
+- O executor achou sozinho um bloqueador que eu não tinha visto: `roadmap_dir: .` fazia o walk absorver os arquivos originais e derrotava a própria união de basenames.
+- `trackfw barrier --wave 2 --trust-local-gates`: passed (4/4).

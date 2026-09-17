@@ -302,7 +302,8 @@ type originMainAnchorDirs struct {
 type originMainAnchor struct {
 	state originMainAnchorState
 	rules map[string]string     // non-nil only when state == originAnchorOK
-	dirs  *originMainAnchorDirs // non-nil only when state == originAnchorOK; ML-2B scope-redirect guard
+	dirs  *originMainAnchorDirs // non-nil only when state == originAnchorOK; ML-2B/ML-2C scope-redirect guard
+	ref   string                // e.g. "origin/main"; non-empty only when state == originAnchorOK; ML-2C git-tree baseline
 }
 
 // currentOriginMain is the package-level anchor result, set at the top of each Validate* call.
@@ -409,9 +410,14 @@ func loadOriginMainAnchor() originMainAnchor {
 	if state != originAnchorOK {
 		return originMainAnchor{state: state}
 	}
+	// ref is guaranteed readable here because state == originAnchorOK (originMainTrackfwYAML
+	// already used it to read the file). A second call is safe: the git refs do not change
+	// within a single CLI invocation.
+	ref, _ := deriveOriginDefaultBranch()
 	reqDir, roadmapDir, adrDirs := config.ParseDirsFromContent(content)
 	return originMainAnchor{
 		state: originAnchorOK,
+		ref:   ref,
 		rules: config.ParseRulesFromContent(content),
 		dirs: &originMainAnchorDirs{
 			reqDir:     reqDir,

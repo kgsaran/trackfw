@@ -239,7 +239,7 @@ Calibração exata: **zero** regra histórica vazou para violations. `make quali
 históricas, e o carve-out é uma lista **nomeada**; item sem nome não pode pertencer a ela.
 
 ### ML-2B — o terceiro interruptor: repontar caminhos zera a governança
-**Status:** ❌ REPROVADO na auditoria de Zeus (2026-09-17) — direção certa, discriminante errado (vazio em vez de perda de cobertura) → ML-2C · **Papel:** `apolo-tf`
+**Status:** ✅ Concluído **via corretivo ML-2C** — a primeira entrega foi REPROVADA por mim (discriminante `len(files) == 0`); o AC5 fecha com as duas somadas · **Papel:** `apolo-tf`
 Cobre **AC5** e o braço (c) do **AC8**. Dependência: **ML-2A auditado** (mesmo arquivo).
 
 **Medido na Wave 0 e por mim:** `governance_mode: strict`, `req_dir`/`roadmap_dir`/`adr_dirs`
@@ -254,17 +254,17 @@ RC=0.
    **não** pode reprovar por isso. Sem este braço a correção quebra todo `trackfw init`.
 
 **Critérios de aceite:**
-- [ ] Repontar para vazio reprova, nomeando o caminho
-- [ ] Projeto novo legítimo não reprova (contra-braço demonstrado)
-- [ ] Decisão de abordagem escrita no código
-- [ ] Reconciliação: uma frase por teste novo
-- [ ] `go build ./...`, `make test`, `make quality` — RC sem pipe
+- [x] Repontar para vazio reprova, nomeando o caminho
+- [x] Projeto novo legítimo não reprova (contra-braço demonstrado)
+- [x] Decisão de abordagem escrita no código
+- [x] Reconciliação: uma frase por teste novo
+- [x] `go build ./...`, `make test`, `make quality` — RC sem pipe
 
 ---
 
 
 ### ML-2C — corretivo do ML-2B: o discriminante é perda de cobertura, não vazio
-**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Status:** ✅ Concluído (auditado por Zeus em 2026-09-17) · **Papel:** `apolo-tf`
 Aberto pela auditoria do ML-2B em 2026-09-17. **Fecha o AC5 de verdade.**
 
 O ML-2B está certo na direção (ancorar o escopo em `origin/main`, reusando o maquinário do ML-1A) e
@@ -300,14 +300,32 @@ enxergava**. Diretório vazio é apenas o caso em que isso acontece de forma mai
    diga.
 
 **Critérios de aceite:**
-- [ ] 🔴 Fixture do arquiteto fecha: `req_dir` repontado para diretório com **um arquivo de fachada**
+- [x] 🔴 Fixture do arquiteto fecha: `req_dir` repontado para diretório com **um arquivo de fachada**
       ⇒ **violação**, nomeando o artefato que deixou de ser visto
-- [ ] Repontar para diretório **vazio** continua reprovando (não regredir o ML-2B)
-- [ ] 🔴 Contra-braço: reestruturação legítima **com os arquivos movidos junto** ⇒ **não reprova**
-- [ ] Projeto novo sem `origin` ⇒ silencioso · âncora ilegível ⇒ warning, sem violação de redirect
-- [ ] Veredito medido sobre `adr_dirs: []`
-- [ ] `go build ./...`, `make test`, **`make quality` RC=0**, `doctor` sem `scaffold-divergent`
-- [ ] Reconciliação: uma frase por teste novo ou alterado
+- [x] Repontar para diretório **vazio** continua reprovando (não regredir o ML-2B)
+- [x] 🔴 Contra-braço: reestruturação legítima **com os arquivos movidos junto** ⇒ **não reprova**
+- [x] Projeto novo sem `origin` ⇒ silencioso · âncora ilegível ⇒ warning, sem violação de redirect
+- [x] Veredito medido sobre `adr_dirs: []`
+- [x] `go build ./...`, `make test`, **`make quality` RC=0**, `doctor` sem `scaffold-divergent`
+- [x] Reconciliação: uma frase por teste novo ou alterado
+
+**Auditoria de Zeus (2026-09-17) — medido por mim, não aceito do relatório:**
+
+Rodei o meu próprio fixture de fachada: agora **reprova**, nomeando o artefato perdido —
+*"1 artifact(s) committed in origin/main ... no longer visible ...: REQ-quebrada.md"*.
+`make quality` **RC=0**, `doctor` sem `scaffold-divergent`, e **0** `scope redirect` neste
+repositório — sem falso-positivo.
+
+🔴 **Residual que medi e que fica NOMEADO na REQ:** fachada de **mesmo basename** e
+integralmente válida zera a contagem (`RC=0`). Fora de escopo por custo, não por esquecimento —
+deixou de ser "só repontar caminhos" e passou a exigir um artefato forjado e válido **por**
+artefato real, com ADR e roadmap existentes. A curva de custo do atacante ao longo dos três
+microlotes: diretório vazio (1 linha) → fachada com outro nome (1 arquivo) → **N homônimos
+válidos + vínculos**.
+
+**Crédito ao executor:** ele achou e fechou sozinho um bloqueador que eu não tinha visto —
+`roadmap_dir: .` fazia o *walk* absorver os arquivos originais e derrotava a própria união de
+basenames. Filtro de ancestral estrito, com teste próprio.
 ## Wave 3 — Postura deste repositório
 > Dependências: **Wave 2 auditada.**
 

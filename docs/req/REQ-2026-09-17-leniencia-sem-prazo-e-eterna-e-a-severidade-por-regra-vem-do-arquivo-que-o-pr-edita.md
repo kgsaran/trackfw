@@ -138,6 +138,18 @@ mas os pontos de entrada divergem: `init` brownfield escreve `lenient_until` (`s
 - ❌ **Manoplas comportamentais** (`stale_wip_days`, `wip_limit`) mudam o que conta como violação sem
   mexer em severidade. Fora: são parâmetros de política, e capturá-los exigiria decidir um valor
   canônico por projeto — escopo próprio.
+- ❌ 🔴 **Falsificação de artefato homônimo** (medido por mim em 2026-09-17, ML-2C). O guard de escopo
+  compara **identidade do artefato por basename**. Um PR que reponte `req_dir` **e** plante, no destino,
+  um arquivo de **mesmo basename** e **integralmente válido** zera a contagem: medi baseline com 2
+  violações → `RC=0, violações 0`.
+  Fora de escopo, e o motivo é o custo, não o esquecimento: o ataque deixou de ser "só repontar
+  caminhos" — que é o que o AC5 exige fechar — e passou a exigir **um artefato forjado e válido por
+  artefato real** (122 REQs neste repositório), cada um com ADR e roadmap existentes para não reprovar
+  por conta própria. É um diff grande e conspícuo, não uma linha de config.
+  A curva de custo do atacante ao longo dos três microlotes: diretório vazio (1 linha) → fachada com
+  outro nome (1 arquivo) → **N artefatos homônimos válidos + seus vínculos**. Fechar por conteúdo
+  quebraria o contra-braço que importa: edição legítima de uma REQ durante um PR de reestruturação
+  viraria falso-positivo.
 - ❌ **`req_roadmap_sync` como braço de falso-negativo.** Pelo critério da ADR pertenceria ao
   carve-out (detecta contradição entre dois campos vivos), mas tem **zero ocorrências hoje**, então
   não entra na calibração. Fora por não ser calibrável agora; nomeado para não voltar como surpresa.

@@ -259,94 +259,204 @@ func diskRuleSeverity(name string) string {
 	return "error"
 }
 
-// scopeRedirectViolations implements the ML-2B scope-redirect guard (AC5 and AC8(c) of
-// REQ-2026-09-17-leniencia-sem-prazo).
+// scopeRedirectViolations implements the ML-2C scope-redirect guard (AC5 and AC8(c) of
+// REQ-2026-09-17-leniencia-sem-prazo). ML-2C replaces the ML-2B discriminant ("disk dir is
+// empty") with "coverage loss": artifacts committed in origin/main under the anchor path that
+// are no longer visible in any disk governance scope.
 //
-// Direction (a) — anchor the configured scope in origin/main, same machinery as ML-1A for
-// severity: the only safe source for "what scope should governance cover" is the version of
-// trackfw.yaml that already passed review (origin/main). A PR can change req_dir/roadmap_dir/
-// adr_dirs to any directory — but if the new directory has zero governance artifacts, the
-// validation engine scans nothing and reports nothing, silently zeroing governance even in strict
-// mode. This is "the third interruptor" described in ADR-2026-09-17 Adendo item 2.
+// Why coverage loss instead of emptiness (ML-2B finding):
+// An attacker can create a facade file in the redirected directory (one line, any name) to
+// defeat an emptiness check. The correct signal is: did a PR make previously-committed
+// governance artifacts invisible to the validation engine? That question can only be answered
+// by comparing against the git tree, not the working tree at the anchor path.
 //
-// Why not direction (b) ("detect emptying alone"):
-// Emptiness alone cannot discriminate between a legitimate new project bootstrapping an empty
-// governance tree (no origin → state != originAnchorOK → no baseline → no violation) and an
-// attacker's PR pointing validate at an empty dir (origin/main has content → comparison detects
-// the redirect → violation). Direction (a) reuses the six-state machine already written for
-// ML-1A without adding a second detection path.
+// Baseline — git tree, not disk at anchor path:
+// mdBasenamesInGitTree(ref, anchorDir) reads origin/main's committed files via
+// `git ls-tree -r --name-only <ref> -- <dir>`. This is the only source that survives
+// "delete-and-redirect": an attacker who removes the original files from disk AND creates a
+// facade still loses — origin/main still lists the deleted basenames.
 //
-// State mapping (mirrors the rule-severity map in ruleSeverity()):
-//   - originAnchorOK: compare origin/main dirs vs disk dirs; redirect to empty → violation.
-//   - originAnchorRefUnreadable: no violation — dirs have no built-in default to compare against
-//     (unlike rules: which have credentialGuardDefaultSeverity). Same reasoning as ML-1B Defect 3:
-//     anchor unavailable is a configuration signal, not a blocking failure.
-//   - all other states (noGit, noRemote, fileAbsent): comparison not possible → no violation.
+// Disk side — union of ALL disk governance scopes:
+// A legitimate restructuring (e.g. merging docs/req and docs/adr into docs/governance/) must
+// not fire. The test is "visible anywhere in governance", not "visible at the new path of the
+// same kind". Union of diskCfg.REQDir ∪ diskCfg.RoadmapDir ∪ diskCfg.ADRDirs provides this.
 //
-// Violations are appended DIRECTLY (not via applyRule/applyRuleTagged) so they cannot be silenced
-// by rules: {<name>: off} in the same PR — that would be interruptor #2 wearing a different hat.
+// Known narrow case (declared here, not hidden):
+// A PR that legitimately DELETES an artifact AND changes paths in the same commit will fire.
+// The violation names the deleted artifact; the remedy is either "don't rename dirs when also
+// deleting artifacts" or "accept the named violation via baseline".
+//
+// State mapping (unchanged from ML-1A/ML-2B):
+//   - originAnchorOK: compare git-tree basenames vs disk union; lost basenames → violation.
+//   - all other states: no baseline → no violation.
+//
+// Violations are appended DIRECTLY (not via applyRule/applyRuleTagged) so they cannot be
+// silenced by rules: {<name>: off} in the same PR.
 func scopeRedirectViolations(diskCfg *config.ProjectConfig) []string {
 	if currentOriginMain.state != originAnchorOK || currentOriginMain.dirs == nil {
 		return nil
 	}
 	anchor := currentOriginMain.dirs
+	ref := currentOriginMain.ref
+
+	// Item 4 (ML-2C hardening): ref must be non-empty to run git ls-tree. This path is
+	// theoretically unreachable (state == originAnchorOK guarantees deriveOriginDefaultBranch
+	// returned ok == true), but an explicit guard prevents silent pass-through if invariants
+	// ever change — empty ref would silently produce zero anchor basenames, passing every check.
+	if ref == "" {
+		return nil
+	}
+
+	// Collect all anchor governance dirs: used to filter the disk-side union (see below).
+	allAnchorDirs := []string{anchor.reqDir, anchor.roadmapDir}
+	allAnchorDirs = append(allAnchorDirs, anchor.adrDirs...)
+
+	// Build the disk-side union once: every .md file visible in any disk governance scope.
+	// Roots that are strict ancestors of any anchor dir are EXCLUDED from the walk — see
+	// mdBasenamesOnDisk for the rationale (defends against roadmap_dir: . and similar).
+	diskUnionRoots := make([]string, 0, 2+len(diskCfg.ADRDirs))
+	diskUnionRoots = append(diskUnionRoots, diskCfg.REQDir, diskCfg.RoadmapDir)
+	diskUnionRoots = append(diskUnionRoots, diskCfg.ADRDirs...)
+	diskBasenames := mdBasenamesOnDisk(diskUnionRoots, allAnchorDirs)
+
+	const maxNamed = 5 // max artifact names per violation message; report count for the rest
 	var out []string
 
-	// req_dir: single path comparison — violation when path changed AND disk dir is empty.
+	// req_dir: check coverage when the configured path changed.
 	if filepath.Clean(diskCfg.REQDir) != filepath.Clean(anchor.reqDir) {
-		files, _ := resolveREQFiles(*diskCfg)
-		if len(files) == 0 {
+		anchorBasenames := mdBasenamesInGitTree(ref, anchor.reqDir)
+		if lost := scopeLostArtifacts(anchorBasenames, diskBasenames); len(lost) > 0 {
+			named, suffix := formatLostArtifacts(lost, maxNamed)
 			out = append(out, fmt.Sprintf(
 				"scope redirect: req_dir changed from %q (origin/main) to %q (disk) — "+
-					"the new directory has no REQ files; a PR cannot redirect governance scope to an empty directory. "+
-					"Revert the path change or populate the new directory before submitting.",
-				anchor.reqDir, diskCfg.REQDir))
+					"%d artifact(s) committed in origin/main under the original path are no "+
+					"longer visible in any governance directory on disk: %s%s. "+
+					"Move the artifacts to the new path before changing req_dir, "+
+					"or revert the path change.",
+				anchor.reqDir, diskCfg.REQDir, len(lost), named, suffix))
 		}
 	}
 
-	// roadmap_dir: single path comparison — violation when path changed AND disk dir is empty.
+	// roadmap_dir: check coverage when the configured path changed.
 	if filepath.Clean(diskCfg.RoadmapDir) != filepath.Clean(anchor.roadmapDir) {
-		if !hasMDFilesInRoadmapDir(diskCfg) {
+		anchorBasenames := mdBasenamesInGitTree(ref, anchor.roadmapDir)
+		if lost := scopeLostArtifacts(anchorBasenames, diskBasenames); len(lost) > 0 {
+			named, suffix := formatLostArtifacts(lost, maxNamed)
 			out = append(out, fmt.Sprintf(
 				"scope redirect: roadmap_dir changed from %q (origin/main) to %q (disk) — "+
-					"the new directory has no roadmap files; a PR cannot redirect governance scope to an empty directory. "+
-					"Revert the path change or populate the new directory before submitting.",
-				anchor.roadmapDir, diskCfg.RoadmapDir))
+					"%d artifact(s) committed in origin/main under the original path are no "+
+					"longer visible in any governance directory on disk: %s%s. "+
+					"Move the artifacts to the new path before changing roadmap_dir, "+
+					"or revert the path change.",
+				anchor.roadmapDir, diskCfg.RoadmapDir, len(lost), named, suffix))
 		}
 	}
 
-	// adr_dirs: set comparison — per-entry violation for each disk entry NOT in anchor set that is empty.
-	anchorADRSet := make(map[string]bool, len(anchor.adrDirs))
-	for _, d := range anchor.adrDirs {
-		anchorADRSet[filepath.Clean(d)] = true
-	}
-	for _, d := range diskCfg.ADRDirs {
-		if !anchorADRSet[filepath.Clean(d)] {
-			if len(ListMDFiles(d)) == 0 {
-				out = append(out, fmt.Sprintf(
-					"scope redirect: adr_dirs entry %q is new (not in origin/main) and has no ADR files — "+
-						"a PR cannot redirect governance scope to an empty directory. "+
-						"Revert the path change or populate the new directory before submitting.",
-					d))
+	// adr_dirs: check coverage when the set of configured paths changed.
+	if !stringSlicesSameSet(anchor.adrDirs, diskCfg.ADRDirs) {
+		anchorBasenames := make(map[string]bool)
+		for _, d := range anchor.adrDirs {
+			for k := range mdBasenamesInGitTree(ref, d) {
+				anchorBasenames[k] = true
 			}
+		}
+		if lost := scopeLostArtifacts(anchorBasenames, diskBasenames); len(lost) > 0 {
+			named, suffix := formatLostArtifacts(lost, maxNamed)
+			out = append(out, fmt.Sprintf(
+				"scope redirect: adr_dirs changed from %v (origin/main) to %v (disk) — "+
+					"%d artifact(s) committed in origin/main under the original paths are no "+
+					"longer visible in any governance directory on disk: %s%s. "+
+					"Move the artifacts to the new paths before changing adr_dirs, "+
+					"or revert the path change.",
+				anchor.adrDirs, diskCfg.ADRDirs, len(lost), named, suffix))
 		}
 	}
 
 	return out
 }
 
-// hasMDFilesInRoadmapDir returns true if roadmap_dir contains at least one .md file
-// across all state subdirectories (backlog/wip/done/etc.), respecting roadmap_namespacing.
-func hasMDFilesInRoadmapDir(diskCfg *config.ProjectConfig) bool {
-	for _, state := range reqLayoutStates {
-		for _, dir := range resolveStateDirs(*diskCfg, state) {
-			entries, _ := listDir(dir)
-			if len(entries) > 0 {
-				return true
-			}
+// mdBasenamesInGitTree returns the set of .md file basenames committed in the given git ref
+// under the given directory prefix. Uses the same gitCommand wrapper as originMainTrackfwYAML.
+// Returns an empty (non-nil) set on error so callers can do set subtraction safely.
+func mdBasenamesInGitTree(ref, dirPrefix string) map[string]bool {
+	out, err := gitCommand(".", "ls-tree", "-r", "--name-only", ref, "--", dirPrefix).Output()
+	set := make(map[string]bool)
+	if err != nil {
+		return set
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if filepath.Ext(line) == ".md" {
+			set[filepath.Base(line)] = true
 		}
 	}
-	return false
+	return set
+}
+
+// mdBasenamesOnDisk returns the union of .md file basenames found by recursively walking the
+// provided root directories on the local disk. Missing or unreadable directories are skipped.
+//
+// Roots are expanded via config.ExpandPath (handles ~/... prefixes in adr_dirs).
+//
+// Ancestor filter (ML-2C hardening): a disk root that is a STRICT ancestor of any anchor dir
+// is excluded from the walk. Without this, an attacker who sets `roadmap_dir: .` causes
+// WalkDir(".") to reach the original governance files (docs/req/*, etc.), making all anchor
+// basenames appear "visible" in the disk union and defeating the coverage-loss check entirely.
+// The filter uses strict ancestry (rel != "." prevents excluding roots equal to anchor dirs).
+func mdBasenamesOnDisk(roots []string, anchorDirs []string) map[string]bool {
+	set := make(map[string]bool)
+	for _, root := range roots {
+		expanded := config.ExpandPath(root)
+		eClean := filepath.Clean(expanded)
+		// Exclude roots that are strict ancestors of any anchor dir.
+		isStrictAncestor := false
+		for _, aDir := range anchorDirs {
+			aClean := filepath.Clean(config.ExpandPath(aDir))
+			rel, err := filepath.Rel(eClean, aClean)
+			if err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
+				isStrictAncestor = true
+				break
+			}
+		}
+		if isStrictAncestor {
+			continue
+		}
+		_ = filepath.WalkDir(expanded, func(_ string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil
+			}
+			if filepath.Ext(d.Name()) == ".md" {
+				set[d.Name()] = true
+			}
+			return nil
+		})
+	}
+	return set
+}
+
+// scopeLostArtifacts returns basenames present in anchorSet but absent from diskSet,
+// as a sorted slice for deterministic violation messages.
+func scopeLostArtifacts(anchorSet, diskSet map[string]bool) []string {
+	var lost []string
+	for name := range anchorSet {
+		if !diskSet[name] {
+			lost = append(lost, name)
+		}
+	}
+	sort.Strings(lost)
+	return lost
+}
+
+// formatLostArtifacts formats the first max names from lost into a comma-separated string,
+// appending a " (and N more)" suffix when len(lost) > max.
+func formatLostArtifacts(lost []string, max int) (named, suffix string) {
+	if len(lost) <= max {
+		return strings.Join(lost, ", "), ""
+	}
+	return strings.Join(lost[:max], ", "), fmt.Sprintf(" (and %d more)", len(lost)-max)
 }
 
 // stringSlicesSameSet returns true if a and b contain the same elements after filepath.Clean,
