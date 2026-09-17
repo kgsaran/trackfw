@@ -57,7 +57,11 @@ func GetContext(format string) error {
 	// própria árvore (flat, ou <agente>/<estado>/ em by_agent) e não enxergava o layout canônico
 	// req_dir/<agente>/*.md — a mesma divergência escritor/leitor da REQ-2026-08-30.
 	var reqs []ContextEntry
-	for _, full := range validator.ResolveREQFiles(cfg) {
+	reqFilesCtx, err := validator.ResolveREQFiles(cfg)
+	if err != nil {
+		return fmt.Errorf("context: resolve REQ files: %w", err)
+	}
+	for _, full := range reqFilesCtx {
 		content, _ := os.ReadFile(full)
 		status := extractFrontmatterField(string(content), "status")
 		if status == "" {

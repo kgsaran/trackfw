@@ -153,7 +153,12 @@ func validateTraceId(cfg config.ProjectConfig) (violations []string, warnings []
 	// e ficava vácua exatamente nos layouts que o resolvedor passou a cobrir — traceid é uma das
 	// regras que a ADR exige que deixem de enxergar zero REQs em by_agent. Corrigir só
 	// resolveREQFiles não a alcançaria, porque ela recebia um DIRETÓRIO, não a lista resolvida.
-	reqEntries := collectTraceIdEntriesFromFiles(ResolveREQFiles(cfg), traceField, &warnings)
+	reqFiles, err := ResolveREQFiles(cfg)
+	if err != nil {
+		warnings = append(warnings, err.Error())
+		reqFiles = nil
+	}
+	reqEntries := collectTraceIdEntriesFromFiles(reqFiles, traceField, &warnings)
 	// Indexar Roadmaps — usa by_agent quando configurado
 	var roadmapEntries []traceIdEntry
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
