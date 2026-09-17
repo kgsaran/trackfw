@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-17
 req: "docs/req/REQ-2026-09-17-jira-base-url-do-repositorio-vira-destino-de-post-autenticado-e-um-pr-que-edita-so-a-config-exfiltra-a-credencial-do-ci.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: jira_base_url do repositorio vira destino de post autenticado e um PR que edita so a config exfiltra a credencial do ci
 
-> Created: 2026-09-17 | Status: wip
+> Created: 2026-09-17 | Status: done
 
 
 ## Wave 0 — Medir o exploit e o raio, antes de escolher o remédio
