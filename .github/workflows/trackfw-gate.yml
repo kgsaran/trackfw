@@ -7,14 +7,15 @@ jobs:
   governance-install-script:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    env:
-      TRACKFW_VERSION: "8.0.0"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - name: Install trackfw
-        run: |
-          curl -sSfL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Build trackfw from source
+        run: go build -o /usr/local/bin/trackfw ./cmd/trackfw
 
       - name: Governance gate
         run: trackfw validate

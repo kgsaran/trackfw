@@ -63,6 +63,7 @@ parity-rest: build
 	scripts/check-install-checksum.sh
 	scripts/check-ci-workflow-pin-parity.sh
 	scripts/check-ci-workflow-job-id-collision.sh
+	scripts/check-ci-workflow-binary-provenance.sh
 	# ML-3C: REESCREVER — Partes B e C (pins comportamentais do barrier) preservadas.
 	# Apenas as invocações cross-runtime node/py da Parte A foram removidas.
 	GO_BIN=$(BUILD_DIR)/$(BINARY) HASH_CMD_BIN="$(HASH_CMD)" scripts/check-roadmap-barrier-contract.sh

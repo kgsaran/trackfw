@@ -37745,3 +37745,26 @@ Implementação completa. Evidências: `go build ./...` RC=0 · `make test` 15/1
 - 🔴 **AC5 reprovado.** Foi satisfeito ao pé da letra ("não usa `go install …@v`") com a classe aberta: `.github/workflows/trackfw-gate.yml` obtém o binário por `install.sh` do release, e o required check `governance-install-script` valida o binário **publicado**, não o código do PR. `doctor` ainda reporta 1 `scaffold-divergent` para esse arquivo, com `remedy: trackfw update`.
 - Causa: `buildGitHubActionsWorkflowContent` (`scaffold.go`) é o **segundo builder** e não tem braço de produtor. Mesmo mecanismo do #376 → **ML-1B na mesma REQ, mesmo PR** (Regra Dura de Causa Raiz).
 - AC5 reescrito na REQ: nomeia a **procedência do binário**, não o comando. Exige gate novo sobre os workflows **commitados** — o pin-parity só vê o template.
+
+### 2026-09-17 — Apolo — ML-1B: segundo builder com braço de produtor + AC5 gate (início)
+- Retomada de sessão anterior compactada. Ação 0 RC=0 já medido (governance_mode: lenient, authorizado a editar).
+- Escopo: `buildGitHubActionsWorkflowContent` em scaffold.go (novo braço isProducer), regenerar trackfw-gate.yml, gate AC5, atualizar parity/collision scripts, adicionar testes.
+- Dois call sites do builder: scaffold.go:2023 e scaffold_doctor.go:289. update.go NÃO chama este builder.
+
+### 2026-09-17 — Apolo — ML-1B: segundo builder com braço de produtor + AC5 gate (conclusão, aguardando auditoria)
+- `buildGitHubActionsWorkflowContent(isProducer bool)` implementado em scaffold.go — braço produtor compila do fonte, braço consumidor instala via install.sh com TRACKFW_VERSION pinada.
+- scaffold_doctor.go:289 e generateGitHubActionsWorkflow passam `IsProducerGoMod` como discriminante.
+- `.github/workflows/trackfw-gate.yml` regenerado a partir do braço de produtor (go build; actions/checkout@v7; setup-go@v7; go-version-file: go.mod). TRACKFW_VERSION 8.0.0 desapareceu por exclusão (produtor não tem env block). job-id `governance-install-script` e `name: trackfw-gate` byte-idênticos.
+- `scripts/check-ci-workflow-binary-provenance.sh` criado (AC5 gate) — varre git ls-files, vacuidade guardada, contra-braço com fixture reprova install.sh, 2 workflows verificados.
+- Makefile: `check-ci-workflow-binary-provenance.sh` adicionado ao target `parity-rest`.
+- `check-ci-workflow-pin-parity.sh` atualizado: `gh_go_consumer.yml`/`gh_go_producer.yml`, 2 novas funções (check_checkout_pin, check_gate_producer_no_install), 21 cenários OK.
+- `check-ci-workflow-job-id-collision.sh`: contagem `governance-install-script:` em scaffold.go 1→2, 7 checks OK.
+- Novos testes: `TestBuildGitHubActionsWorkflowContent_ProducerContext` e `TestBuildGitHubActionsWorkflowContent_ConsumerContext`, ambos com contra-braço.
+- Medições: Ação 0 RC=0; doctor RC=0 "no mismatches found"; go test RC=0; make quality RC=0; --scope dw RC=0 D\W=∅.
+- Status ML-1B: 🔄 (aguarda auditoria do arquiteto para ✅).
+
+### 2026-09-17 — Zeus — auditoria do ML-1B: gate do AC5 reprovado, ML-1C aberto
+- Aprovados e medidos por mim: Ação 0 (`validate` do binário do PR RC=0), `name:`/job-id inalterados, D\W=∅, `doctor` sem `scaffold-divergent`, os dois braços do segundo builder.
+- 🔴 **Gate `check-ci-workflow-binary-provenance.sh` reprovado.** Em fixtures, aprova 4 workflows que validam com binário publicado via npm, pip, brew e `download-artifact` — os três canais da v8 mais o mecanismo que o AC5 nomeia. É lista de proibidos, não prova positiva de procedência.
+- Segundo achado: `git ls-files '*.yml'` não casa `.yaml`; enumeração caiu de 4 para 3 em silêncio.
+- **Erro meu:** o handoff mandou rodar `make check-required-checks`, alvo inexistente. O braço correto é `check-required-status-checks.py --scope dw`.

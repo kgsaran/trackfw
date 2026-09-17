@@ -10,10 +10,11 @@ import (
 )
 
 // TestBuildGitHubActionsWorkflowContent_PinsCurrentVersion verifies AC6/AC7: the
-// generated GitHub Actions workflow embeds internal/version.Version in the
-// governance job, not a literal string, alongside timeout-minutes: 10.
+// consumer branch of the generated GitHub Actions workflow embeds
+// internal/version.Version in the governance job, not a literal string, alongside
+// timeout-minutes: 10.
 func TestBuildGitHubActionsWorkflowContent_PinsCurrentVersion(t *testing.T) {
-	content := buildGitHubActionsWorkflowContent(Config{})
+	content := buildGitHubActionsWorkflowContent(false)
 
 	want := `TRACKFW_VERSION: "` + version.Version + `"`
 	if !strings.Contains(content, want) {
@@ -53,11 +54,11 @@ func TestCIWorkflowVersionPin_NotHardcoded(t *testing.T) {
 	defer func() { version.Version = orig }()
 
 	version.Version = "1.2.3"
-	ghOne := buildGitHubActionsWorkflowContent(Config{})
+	ghOne := buildGitHubActionsWorkflowContent(false)
 	glOne := buildGitLabCIWorkflowContent(Config{})
 
 	version.Version = "9.9.9"
-	ghTwo := buildGitHubActionsWorkflowContent(Config{})
+	ghTwo := buildGitHubActionsWorkflowContent(false)
 	glTwo := buildGitLabCIWorkflowContent(Config{})
 
 	if !strings.Contains(ghOne, `TRACKFW_VERSION: "1.2.3"`) {
@@ -129,7 +130,7 @@ func setupCIWorkflowArtifact(t *testing.T, ci string) (fullPath, relPath, conten
 	switch ci {
 	case "github-actions":
 		relPath = GitHubActionsWorkflowPath
-		content = buildGitHubActionsWorkflowContent(Config{})
+		content = buildGitHubActionsWorkflowContent(false) // consumer context: temp dir is not trackfw repo
 	case "gitlab-ci":
 		relPath = GitLabCIWorkflowPath
 		content = buildGitLabCIWorkflowContent(Config{})
@@ -221,7 +222,7 @@ func TestRunScaffoldDoctor_CIWorkflow_EndToEnd(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(fullPath), 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	content := buildGitHubActionsWorkflowContent(Config{})
+	content := buildGitHubActionsWorkflowContent(false) // consumer context: temp dir is not trackfw repo
 	if err := os.WriteFile(fullPath, []byte(content), 0o644); err != nil {
 		t.Fatalf("writing workflow: %v", err)
 	}
@@ -264,16 +265,90 @@ func TestRunScaffoldDoctor_CIWorkflow_EndToEnd(t *testing.T) {
 // TestCIWorkflowGeneration_Idempotent proves AC of idempotency: generating the same
 // workflow twice with the same binary produces byte-identical content — no
 // nondeterminism (e.g. timestamps, map ordering) sneaks into the pinned template.
+// Both producer and consumer branches are tested.
 func TestCIWorkflowGeneration_Idempotent(t *testing.T) {
-	first := buildGitHubActionsWorkflowContent(Config{})
-	second := buildGitHubActionsWorkflowContent(Config{})
+	first := buildGitHubActionsWorkflowContent(false)
+	second := buildGitHubActionsWorkflowContent(false)
 	if first != second {
-		t.Fatalf("buildGitHubActionsWorkflowContent is not idempotent:\nfirst:\n%s\nsecond:\n%s", first, second)
+		t.Fatalf("buildGitHubActionsWorkflowContent(consumer) is not idempotent:\nfirst:\n%s\nsecond:\n%s", first, second)
+	}
+
+	firstP := buildGitHubActionsWorkflowContent(true)
+	secondP := buildGitHubActionsWorkflowContent(true)
+	if firstP != secondP {
+		t.Fatalf("buildGitHubActionsWorkflowContent(producer) is not idempotent:\nfirst:\n%s\nsecond:\n%s", firstP, secondP)
 	}
 
 	firstGL := buildGitLabCIWorkflowContent(Config{})
 	secondGL := buildGitLabCIWorkflowContent(Config{})
 	if firstGL != secondGL {
 		t.Fatalf("buildGitLabCIWorkflowContent is not idempotent:\nfirst:\n%s\nsecond:\n%s", firstGL, secondGL)
+	}
+}
+
+// TestBuildGitHubActionsWorkflowContent_ProducerContext verifies ML-1B conclusion:
+// buildGitHubActionsWorkflowContent(true) emits `go build` instead of `install.sh | sh`,
+// compiling trackfw from the PR's source code rather than the published binary.
+// Counter-arm: buildGitHubActionsWorkflowContent(false) does NOT contain `go build`,
+// proving the discriminant separates the two contexts.
+func TestBuildGitHubActionsWorkflowContent_ProducerContext(t *testing.T) {
+	producer := buildGitHubActionsWorkflowContent(true)
+
+	// Required content
+	if !strings.Contains(producer, "run: go build -o /usr/local/bin/trackfw ./cmd/trackfw") {
+		t.Errorf("producer template missing 'go build -o /usr/local/bin/trackfw ./cmd/trackfw'\ngot:\n%s", producer)
+	}
+	if !strings.Contains(producer, "uses: actions/setup-go@v7") {
+		t.Errorf("producer template missing 'uses: actions/setup-go@v7'\ngot:\n%s", producer)
+	}
+	if !strings.Contains(producer, "go-version-file: go.mod") {
+		t.Errorf("producer template missing 'go-version-file: go.mod'\ngot:\n%s", producer)
+	}
+	if !strings.Contains(producer, "timeout-minutes: 10") {
+		t.Errorf("producer template missing 'timeout-minutes: 10'\ngot:\n%s", producer)
+	}
+	// Must NOT install from published release
+	if strings.Contains(producer, "install.sh") {
+		t.Errorf("producer template must not contain 'install.sh' (published release binary)\ngot:\n%s", producer)
+	}
+	if strings.Contains(producer, "TRACKFW_VERSION") {
+		t.Errorf("producer template must not contain 'TRACKFW_VERSION' (no published binary to pin)\ngot:\n%s", producer)
+	}
+
+	// Counter-arm: consumer does not have go build (proves discriminant is necessary)
+	consumer := buildGitHubActionsWorkflowContent(false)
+	if strings.Contains(consumer, "run: go build") {
+		t.Errorf("counter-arm failed: consumer template must not contain 'run: go build'; the discriminant isProducer=false must route to install.sh\ngot:\n%s", consumer)
+	}
+}
+
+// TestBuildGitHubActionsWorkflowContent_ConsumerContext verifies ML-1B conclusion:
+// buildGitHubActionsWorkflowContent(false) emits `install.sh | sh` with TRACKFW_VERSION
+// pinned to the current binary version, obtaining the published trackfw binary.
+// Counter-arm: buildGitHubActionsWorkflowContent(true) does NOT contain `install.sh`,
+// proving the discriminant separates the two contexts.
+func TestBuildGitHubActionsWorkflowContent_ConsumerContext(t *testing.T) {
+	consumer := buildGitHubActionsWorkflowContent(false)
+
+	// Required content
+	if !strings.Contains(consumer, "install.sh") {
+		t.Errorf("consumer template missing 'install.sh'\ngot:\n%s", consumer)
+	}
+	want := `TRACKFW_VERSION: "` + version.Version + `"`
+	if !strings.Contains(consumer, want) {
+		t.Errorf("consumer template missing %q\ngot:\n%s", want, consumer)
+	}
+	if !strings.Contains(consumer, "timeout-minutes: 10") {
+		t.Errorf("consumer template missing 'timeout-minutes: 10'\ngot:\n%s", consumer)
+	}
+	// Consumer must NOT compile from source
+	if strings.Contains(consumer, "run: go build") {
+		t.Errorf("consumer template must not contain 'run: go build' (consumer installs published binary)\ngot:\n%s", consumer)
+	}
+
+	// Counter-arm: producer does not have install.sh (proves discriminant is necessary)
+	producer := buildGitHubActionsWorkflowContent(true)
+	if strings.Contains(producer, "install.sh") {
+		t.Errorf("counter-arm failed: producer template must not contain 'install.sh'; the discriminant isProducer=true must route to go build\ngot:\n%s", producer)
 	}
 }

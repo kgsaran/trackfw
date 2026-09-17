@@ -286,7 +286,7 @@ func RunScaffoldDoctor(projectRoot string) ([]integrations.DoctorFinding, error)
 	case "github-actions":
 		relPath := GitHubActionsWorkflowPath
 		path := filepath.Join(projectRoot, relPath)
-		f := checkScaffoldArtifact(path, relPath, []byte(buildGitHubActionsWorkflowContent(cfg)), true, false)
+		f := checkScaffoldArtifact(path, relPath, []byte(buildGitHubActionsWorkflowContent(IsProducerGoMod(projectRoot))), true, false)
 		if f != nil {
 			findings = append(findings, *f)
 		}

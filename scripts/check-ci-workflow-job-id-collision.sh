@@ -41,8 +41,11 @@ VALIDATE_ID="governance-go-install"
 OLD_ID_LINE="  governance:"
 
 # --- trackfw-gate.yml (buildGitHubActionsWorkflowContent) — Go only ---------------
+# 2 occurrences expected: buildGitHubActionsWorkflowContent(isProducer bool) has two
+# template branches (producer and consumer), each containing the same job id.
+# The id must be identical in both branches — it is a required_status_checks contract.
 assert_count "Go: trackfw-gate.yml usa $GATE_ID" \
-  "internal/generators/scaffold.go" "$GATE_ID:" 1
+  "internal/generators/scaffold.go" "$GATE_ID:" 2
 
 # --- trackfw-validate.yml (BuildDiscoverGitHubActionsWorkflowContent) — Go only ----
 # 2 occurrences expected: BuildDiscoverGitHubActionsWorkflowContent(isProducer bool) has
@@ -97,7 +100,8 @@ else
 fi
 
 # --- Guarda de vacuidade ---
-# 2 assert_count (job IDs Go) + 2 assert_count (anti-regression Go) + 1 (ID equality) + 2 (falsify) = 7
+# 2 assert_count (job IDs Go — GATE_ID now expects 2 occurrences, VALIDATE_ID expects 2)
+# + 2 assert_count (anti-regression Go) + 1 (ID equality) + 2 (falsify) = 7
 expected=7
 if [[ "$checked" -ne "$expected" ]]; then
   echo "check-ci-workflow-job-id-collision: vacuidade — esperava checar $expected assinaturas, checou $checked" >&2
