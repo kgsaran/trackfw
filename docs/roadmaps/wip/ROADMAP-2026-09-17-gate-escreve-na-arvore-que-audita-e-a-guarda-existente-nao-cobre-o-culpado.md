@@ -10,11 +10,23 @@ squad: ""
 > Created: 2026-09-17 | Status: wip
 
 
+## Context
+<!-- What problem does this roadmap solve? Link the REQ. -->
+REQ: docs/req/REQ-2026-09-17-gate-escreve-na-arvore-que-audita-e-a-guarda-existente-nao-cobre-o-culpado.md
+
+## Acceptance Criteria
+<!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
+- [ ]
+- [ ]
+
+## Status Legend
+⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
+
 ## Wave 0 — Threat model
 > Dependências: nenhuma. 🔴 **Auditada antes de qualquer wave de implementação.**
 
 ### ML-0A — superfície de ataque de um gate que escreve na árvore auditada
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído e auditado pelo arquiteto (2026-09-17)
 **Papel:** `hades-tf`
 
 A pergunta não é "o gate sujou o arquivo": é **o que um gate com escrita na árvore auditada permite**.
@@ -35,6 +47,29 @@ Pontos a cobrir:
 proposta na REQ o fecha, o mitiga ou não o toca. 🔴 Vetor que a correção **não** fecha tem de estar
 nomeado — um parecer que só confirma o plano não mediu nada.
 
+**Gates da wave 0:**
+```bash
+# O parecer existe e responde as cinco perguntas — nao um arquivo vazio.
+P=docs/portabilidade/2026-09-17-threat-model-gate-escreve-na-arvore.md
+test -s "$P" || { echo "FAIL: parecer ausente ou vazio: $P"; exit 1; }
+for termo in "guarda" "governance_mode" "GEMINI.md" "ML-6I"; do
+  grep -qi -- "$termo" "$P" || { echo "FAIL: parecer nao cobre: $termo"; exit 1; }
+done
+# A exigencia e DECLARAR a incerteza; a grafia varia entre agentes ("Residual
+# Declarado" vs "o que nao consegui determinar"). Casar literal aqui mediria a
+# palavra, nao a propriedade — foi o que este gate fez na primeira versao.
+grep -qiE "residual|nao consegui|não consegui|indetermin" "$P" \
+  || { echo "FAIL: parecer nao declara o que ficou em aberto"; exit 1; }
+echo "OK [wave0/threat-model]: parecer presente e cobre os cinco eixos"
+```
+
+**Resultado auditado:** 🔴 o achado bloqueante foi que a guarda proposta seria satisfeita
+**vacuamente**: `git status --porcelain` reporta estado, nao conteudo, e num path ja sujo a saida e
+byte-identica antes e depois de nova escrita. Reproduzi no arquivo real. Localmente o `parity-rest`
+(que contem o gate culpado) roda **antes** do `parity-falsify`, entao o Cenario 18 tiraria o *before*
+de uma arvore ja suja pelo proprio dano. O AC3 foi emendado para exigir comparacao **com conteudo** e
+partida de arvore comprovadamente limpa. Residuais R4, R5 e R6 nomeados na REQ.
+
 ---
 
 ## Wave 1 — Correção
@@ -43,52 +78,10 @@ nomeado — um parecer que só confirma o plano não mediu nada.
 ### ML-1A — isolar o `cwd` e enumerar a cobertura da guarda
 **Status:** ⬜ Pendente
 **Papel:** `ares-tf`
-Cobre AC1, AC2, AC3, AC4 e AC5.
+Cobre AC1, AC2, AC3 (emendado), AC4 e AC5.
+
+🔴 **Entrada obrigatoria da Wave 0:** a guarda precisa comparar **conteudo**, nao so o codigo de
+status; e a falsificacao parte de arvore comprovadamente limpa, falhando nomeada se nao estiver.
+🔴 **R6:** se a correcao do AC2 for outra lista — ainda que gerada —, o defeito de fundo continua.
 
 ---
-
-## Context
-<!-- What problem does this roadmap solve? Link the REQ. -->
-REQ: docs/req/REQ-2026-09-17-gate-escreve-na-arvore-que-audita-e-a-guarda-existente-nao-cobre-o-culpado.md
-
-## Acceptance Criteria
-<!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
-- [ ]
-- [ ]
-
-## Status Legend
-⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
-
-## Wave 0 — Threat Model
-> Dependencies: none. Blocks all implementation.
-
-### ML-0A — Threat model for this roadmap
-**Status:** ⬜ Pendente
-**Files affected:**
-**Actions:**
-1. Enumeration completeness — is the list of surfaces in this roadmap complete? Name what is missing, or show the list is closed. Do not limit the search to the files already named by the REQ — before declaring the list closed, search the repository for other places that emit the same artifact or the same pattern (for example, grep for the literal the final artifact contains).
-2. Threat model — who empties this Wave 0 without breaking any written rule, and how?
-3. Falsification targets in both directions — for each surface, what breaks when the behavior regresses, and what breaks when it regresses the opposite way?
-4. Declared residual — what this design accepts not covering.
-**Acceptance criteria:**
-- [ ] The four sections above answered with evidence, not a one-line assertion
-- [ ] No implementation line written for this ML
-
-**Gates da wave:**
-```bash
-# Wave 0 gate — replace this placeholder with a project-specific check before
-# marking ML-0A done. Do not remove the gate; replace its command (AC13).
-exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli-parity.md
-```
-
-## Wave 1 — <name> (parallel MLs)
-> Dependencies: none
-
-### ML-1A — gate escreve na arvore que audita e a guarda existente nao cobre o culpado
-**Status:** ⬜ Pendente
-**Files affected:**
-**Actions:**
-**Acceptance criteria:**
-- [ ] build passes
-- [ ] tests green
-- [ ] validate passes

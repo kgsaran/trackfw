@@ -2,6 +2,20 @@
 
 ---
 
+## Sessão 2026-09-17 — Hades (fix/gate-escreve-na-arvore — ML-0A: threat model Wave 0) — EM ANDAMENTO
+
+**Início:** 2026-09-17 | Branch: `fix/gate-escreve-na-arvore` | Roadmap: `ROADMAP-2026-09-17-gate-escreve-na-arvore-que-audita-e-a-guarda-existente-nao-cobre-o-culpado.md` ML-0A
+**Tarefa:** Parecer de ameaça (Wave 0) para a superfície `check-tty-detection.sh:43` que roda `trackfw init` sem isolar cwd. Cinco vetores: indução por PR, inversão de política, limites da guarda `git status --porcelain`, introdução/execução de arquivo, e precedente do ML-6I. Entregável: `docs/portabilidade/2026-09-17-threat-model-gate-escreve-na-arvore.md`.
+**Medições realizadas:**
+- `git diff trackfw.yaml`: confirma sobreescrita com defaults mínimos — perde `governance_mode: lenient`, `ci`, `forge`, bloco de versão de modelo por tier (ADR-2026-08-21), e 12 outras chaves.
+- CI binary provenance: `quality.yml:786` faz `go build -o bin/trackfw ./cmd/trackfw` antes de `make parity-rest` (linha 826) — binário compilado do branch do PR; PR que modifica `scaffold.go` pode escrever conteúdo escolhido durante a própria execução do gate em CI.
+- Scripts gerados (`trackfw-validate.sh`, `trackfw-git-branch-guard.sh`, `trackfw-credential-guard.sh`) são IDÊNTICOS aos commitados — dano de escrita de scripts já ocorreu e foi commitado anteriormente.
+- `core.fileMode = true` — mudanças de modo são rastreadas; sem relevância aqui pois scripts já estão como 0755 commitados.
+- Achado novo: guarda `git status --porcelain` é cega ao conteúdo; se `before_status` já contém `M trackfw.yaml` (run local de `make parity` sequencial), `after_status = before_status` mascarando mutações reais. AC3 precisa de pré-condição de árvore limpa.
+**Concluído:** parecer escrito em `docs/portabilidade/2026-09-17-threat-model-gate-escreve-na-arvore.md`. Medições adicionais: guarda cega ao conteúdo confirmada diretamente (append a arquivo dirty → porcelain idêntico); `trackfw validate` RC=0 com 156 violations (confirma comportamento três-camadas); parity-rest: build confirma que make parity-rest em CI compila do branch do PR; todos os 5 scripts gerados IDÊNTICOS ao commitado; .gitattributes rastreado. Emenda bloqueante a AC3 (pré-condição de árvore limpa) identificada. Vetores não fechados pelos ACs nomeados explicitamente (R4: injeção via scaffold.go em CI; R5: --brownfield intencional; R6: AC3 sem pré-condição). Não commitado per instrução do orquestrador.
+
+---
+
 ## Sessão 2026-09-16 — Ares (fix/um-binario-muitos — ML-4I-bis: install.sh entrega amd64 em ARM64 Windows) — ENCERRADO
 
 **Início:** 2026-09-16 | Branch: `fix/um-binario-muitos` | Roadmap: `ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` ML-4I-bis

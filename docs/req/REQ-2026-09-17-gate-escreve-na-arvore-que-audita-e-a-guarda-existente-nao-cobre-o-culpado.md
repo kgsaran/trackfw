@@ -67,11 +67,59 @@ do defeito original: assumir por omissão em vez de falhar nomeando.
       motivo por item, nunca por omissão.
 - [ ] **AC3** — Falsificação: um gate propositalmente sujo é **reprovado** pela guarda, e o mesmo
       gate limpo passa. Sem isso não se sabe se a guarda mede.
+
+      🔴 **Emendado após a Wave 0 — a guarda como estava seria satisfeita vacuamente.**
+      `git status --porcelain` reporta **estado, não conteúdo**. Num path que já está sujo, a saída é
+      byte-idêntica antes e depois de nova escrita. Reproduzido pelo arquiteto no arquivo real:
+
+      ```
+      before: [ M docs/agents-working-context.md]
+      after : [ M docs/agents-working-context.md]
+      ```
+
+      Localmente `make parity` roda `parity-rest` **antes** de `parity-falsify` no mesmo worktree, e
+      é o `parity-rest` que contém o gate culpado. Logo o Cenário 18 tira o *before* de uma árvore
+      **já suja pelo próprio dano** e conclui que nada mudou. Em CI não ocorre porque os jobs têm
+      checkout independente — mas essa garantia é **acidental, não invariante**.
+
+      Duas exigências independentes, porque uma sozinha não basta:
+      1. **A comparação inclui conteúdo**, não só o código de status — digest de `git diff HEAD` (ou
+         equivalente) junto do `--porcelain`. Uma guarda que não vê conteúdo não mede mutação.
+      2. **A falsificação parte de árvore comprovadamente limpa** — `git status --porcelain` vazio
+         verificado antes de começar, ou worktree próprio com checkout limpo. Se a árvore não estiver
+         limpa, o cenário **falha nomeando**, em vez de medir de um ponto de partida contaminado.
 - [ ] **AC4** — 🔴 Varredura dos demais gates que invocam `init`/`discover`/`update`: quantos sujavam
       a árvore antes desta REQ? O número entra no relatório. Se algum além do
       `check-tty-detection.sh` sujar, é **mesma causa, mesma REQ** — corrige aqui.
 - [ ] **AC5** — O `GEMINI.md` da raiz tem destino decidido e escrito: ou é artefato legítimo do
       projeto, ou sai. Hoje ele está rastreado por acidente (entrou no commit `4c8f1b04`).
+
+
+## Residuais nomeados pela Wave 0 (fora dos ACs, registrados para não sumirem)
+
+- **R4 — execução de código do PR durante o próprio CI.** `make parity-rest` depende de `build`
+  (`Makefile:27`), que compila `bin/trackfw` a partir do código do PR. Um PR que altere
+  `internal/generators/scaffold.go` executa **a sua própria versão** do `Scaffold()` durante a
+  rodada, sem isolamento de `cwd`. É visível no diff — não é encoberto —, mas nenhum AC desta REQ o
+  cobre, e a correção de `cwd` num único gate não o fecha.
+- **R5 — inversão intencional de política por um token.** Acrescentar `--brownfield` à linha 43 do
+  `check-tty-detection.sh` produziria `governance_mode: lenient` a três camadas do efeito. O AC1
+  fecha o caminho **acidental**; o intencional segue coberto só por revisão humana.
+- **R6 — a lição do precedente.** O ML-6I (2026-07-29) codificou *"os gates hoje conhecidos como
+  limpos"* em vez de eliminar a propriedade que permite um gate novo nascer fora da cobertura. O AC2
+  conserta o mecanismo para os gates **existentes**; não há garantia contínua para gates **futuros**.
+  🔴 Se a correção do AC2 for outra lista — ainda que gerada — o R6 continua aberto e esta REQ terá
+  repetido o erro que documenta.
+
+### Medições da Wave 0 que valem registro
+
+- Seis gates invocam `init`/`discover`/`update`; **exatamente um** não isola o `cwd`. A contagem da
+  REQ estava correta.
+- O `init` escreve na raiz: `trackfw.yaml`, `CLAUDE.md`, `GEMINI.md`, `.claude/commands/*.md` e cinco
+  scripts em `scripts/` (0755). **Os cinco scripts gerados são idênticos aos commitados** — ou seja,
+  sobrescrita já aconteceu antes e foi commitada sem ninguém notar.
+- Com o `trackfw.yaml` sobrescrito, `trackfw validate` sai **RC=0 com 156 violações** — a confirmação
+  direta do comportamento de três camadas que motivou esta REQ.
 
 ## Negative Scope
 
