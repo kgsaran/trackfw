@@ -18,9 +18,9 @@ Um roadmap que diz `done` carregando microlote `⬜ Pendente` afirma duas coisas
 que engana é a que diz "done". O registro passa a dar a aparência tranquilizadora de correção.
 
 Três ocorrências em 2026-09-17, nenhuma detectada por gate. Medido no corpus em 2026-09-18:
-**32 de 192** roadmaps em `done/` têm ML não concluído pelo predicado canônico
-(`StatusIsComplete`) — 27 pelo recorte estreito `⬜`/`🔄`, mais 5 com status fora do vocabulário;
-**4** têm o gate placeholder `exit 1` intacto.
+**27 de 192** roadmaps em `done/` têm ML não concluído pelo predicado canônico (`StatusIsComplete`),
+mais **4** que o `ParseWaves` rejeita por rótulo de wave com maiúscula; **4** têm o gate placeholder
+`exit 1` intacto.
 
 A causa não é a ausência de um check: é que **"este ML está concluído?" é reimplementada por
 consumidor** — `barrier` (correto, por token), `serve` (`Contains("✅")`, sem máscara de cerca), e
@@ -37,24 +37,36 @@ ciclo de import.
       waves de todos os roadmaps de `done/` + `wip/`. O baseline é capturado **antes** de qualquer
       edição, num arquivo versionado sob `scripts/` ou no diretório de evidência do ML. Divergência
       em qualquer arquivo reprova o ML.
-- [ ] **AC3 — 🔴 Predicado reconciliado contra 32/160, com o predicado canônico.**
-      O predicado é `roadmapdoc.StatusIsComplete` — **não** um teste por `⬜`/`🔄`. Aplicado aos 192
-      roadmaps de `done/`, retorna "não concluído" para **32** e "concluído" para 160.
-      **Correção de uma contradição minha, apontada pela Wave 0:** eu escrevi "exatamente os 27" —
-      número que vem de medir `⬜`/`🔄`, um predicado *diferente* do que o próprio AC nomeia. A
-      diferença são **5** roadmaps com status fora do vocabulário (`pending`, `PENDENTE`,
-      `ABANDONADO`, `❌`, `🚫`). Estreitar o predicado para `⬜`/`🔄` faria o AC passar excluindo
-      `pending` em silêncio — que é o valor que o AC5 existe para eliminar.
+- [ ] **AC3 — 🔴 Predicado reconciliado contra 27/161, com o predicado canônico.**
+      O predicado é `roadmapdoc.StatusIsComplete`. Aplicado aos 192 roadmaps de `done/`: **27** com ML
+      não concluído, **161** limpos, **4** que o `ParseWaves` **rejeita** (ver AC3-ter).
+      🔴 **Correção de um erro meu, não do executor.** Eu havia escrito 32 aqui, aceitando o número do
+      parecer da Wave 0 **sem reproduzi-lo**, e ainda registrei isso como se eu tivesse corrigido uma
+      contradição minha. Medi depois, com o pacote extraído, contra o corpus intocado desta branch
+      (`git diff main...HEAD -- docs/roadmaps/done/` → **0 arquivos**): o número canônico é **27** — o
+      mesmo do recorte `⬜`/`🔄`. Os tokens não-conclusão distribuem-se assim: `⬜` 101, `🔄` 5,
+      `ABANDONADO` 1, `❌` 1, `➡️` 1, sem linha de status 1 — os "5 extras" caem em arquivos que **já**
+      continham `⬜`, por isso não somam arquivo novo. A explicação de "corpus drift" oferecida no
+      relatório do ML-1A é **falsa**: `done/` não mudou um byte nesta branch.
       Braços nomeados, ambos obrigatórios:
       (a) **positivo** — fixture congelado em `internal/roadmapdoc/testdata/`, cópia byte a byte de
-      `docs/roadmaps/done/ROADMAP-2026-09-17-sync-enumera-req-por-caminho-literal-ignora-req-dir-e-escreve-no-provedor-de-pm.md`
-      (2 MLs, ambos `⬜ Pendente`, em `done/`) → **tem** de dar "não concluído";
-      (b) **contra-braço** — o roadmap do #387 em `done/` (7 MLs, 7 concluídos) → **tem** de dar
-      "concluído".
-      🔴 O fixture é **congelado em `testdata/`, não lido do corpus vivo**, porque o ML-4A limpa
-      exatamente esse arquivo. O braço que eu havia escrito antes apontava para
-      `ROADMAP-2026-09-16-run-capture`, que **eu mesmo já tinha limpado em 2026-09-17** — tem 0 MLs,
-      e teria calibrado o predicado para não detectar nada.
+      `ROADMAP-2026-09-17-sync-enumera-req-por-caminho-literal...` (2 MLs, ambos `⬜ Pendente`);
+      (b) **contra-braço** — fixture congelado do roadmap do #387 (7 MLs, 7 concluídos).
+      🔴 Fixtures **congelados em `testdata/`**, nunca lidos do corpus vivo: o ML-4A limpa o original.
+- [ ] **AC3-ter — 🔴 `ParseWaves` rejeita 4 roadmaps reais, e o `barrier` falha neles hoje.**
+      Achado do ML-1A, confirmado por mim. `WaveLabelRe` é `^\d+(?:-[a-z0-9]+)?$` — **minúsculas
+      apenas**. Quatro roadmaps usam o rótulo `3-Py` (P maiúsculo) e o parser os rejeita por inteiro:
+      `ROADMAP-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw`,
+      `ROADMAP-2026-08-16-serve-amarra-em-loopback-por-padrao...`,
+      `ROADMAP-2026-09-01-caminho-dentro-de-artefato-versionado-usa-sempre-barra`,
+      `trackfw-update-command-2026-06-18`.
+      Mesma causa desta REQ — dialeto do roadmap que o verificador não aceita —, logo entra aqui e
+      **não** vira REQ nova (Regra Dura de Causa Raiz).
+      Decisão: `WaveLabelRe` passa a aceitar o sufixo **insensível a caixa**; o erro de parse deixa de
+      ser silencioso e passa a ser **nomeado**. Contra-braço: rótulo genuinamente inválido
+      (ex.: `## Wave abc`) continua rejeitado.
+      🔴 Enquanto isso não fecha, **erro de `ParseWaves` conta como "tem ML não concluído"**
+      (fail-safe): 27 + 4 = **31** arquivos bloqueariam a transição. Nunca falhe aberto aqui.
 - [ ] **AC3-bis — Três categorias de status, decididas.** O vocabulário distingue:
       **concluído** (`✅`, `done`, `Concluído`, `CONCLUIDO`) → libera;
       **encerrado sem conclusão** (`ABANDONADO`, `🚫 Abandonado`, `❌ Cancelado`) → **libera**, com o
@@ -109,10 +121,10 @@ ciclo de import.
 ## Negative scope — o que esta REQ NÃO faz
 
 - ❌ **Regra do `validate` sobre roadmap em `done/` com ML pendente.** Rejeitada pela decisão 7 da
-  ADR, com o número que a rejeita: **32 dos 192** acenderiam de imediato, e fechar isso exigiria
+  ADR, com o número que a rejeita: **27 dos 192** acenderiam de imediato (31 com o fail-safe de parse), e fechar isso exigiria
   baseline ou carve-out — o mecanismo que a campanha do #387 acabou de provar ser a superfície de
   ataque.
-- ❌ **Sanar retroativamente os 32 roadmaps de `done/`.** Risco desproporcional; nomeado e aceito.
+- ❌ **Sanar retroativamente os 27 roadmaps de `done/`.** Risco desproporcional; nomeado e aceito.
 - ❌ **Exigir `## Wave 0` retroativamente em `done/`.** **154 dos 192** acenderiam; a convenção só
   existe desde agosto. Ver AC7-bis para a forma sensível ao estado que foi adotada no lugar.
 - ❌ **Remover o placeholder do `roadmap new`** (direção 3 do issue). Barrada pela `ADR-2026-07-31`,

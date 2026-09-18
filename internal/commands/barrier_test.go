@@ -25,8 +25,8 @@ func TestParseWaves_SingleWave(t *testing.T) {
 	if len(waves) != 1 {
 		t.Fatalf("expected 1 wave, got %d", len(waves))
 	}
-	if waves[0].label != "1" {
-		t.Fatalf("expected wave label \"1\", got %q", waves[0].label)
+	if waves[0].Label != "1" {
+		t.Fatalf("expected wave label \"1\", got %q", waves[0].Label)
 	}
 }
 
@@ -48,12 +48,12 @@ func TestParseWaves_MultipleWavesEndAtNextH2(t *testing.T) {
 	if len(waves) != 2 {
 		t.Fatalf("expected 2 waves, got %d", len(waves))
 	}
-	if waves[0].label != "1" || waves[1].label != "2" {
+	if waves[0].Label != "1" || waves[1].Label != "2" {
 		t.Fatalf("unexpected wave labels: %+v", waves)
 	}
 	// Wave 1 block must end exactly where the "## Wave 2" heading starts.
-	if lines[waves[0].end] != "## Wave 2 — Bar" {
-		t.Fatalf("expected wave 1 to end at 'Wave 2' heading, got %q", lines[waves[0].end])
+	if lines[waves[0].End] != "## Wave 2 — Bar" {
+		t.Fatalf("expected wave 1 to end at 'Wave 2' heading, got %q", lines[waves[0].End])
 	}
 }
 
@@ -83,8 +83,8 @@ func TestParseWaves_BisSuffix(t *testing.T) {
 	if len(waves) != 1 {
 		t.Fatalf("expected 1 wave, got %d", len(waves))
 	}
-	if waves[0].label != "2-bis" {
-		t.Fatalf("expected label \"2-bis\", got %q", waves[0].label)
+	if waves[0].Label != "2-bis" {
+		t.Fatalf("expected label \"2-bis\", got %q", waves[0].Label)
 	}
 }
 
@@ -106,15 +106,15 @@ func TestParseWaves_LabelIdentityDistinct(t *testing.T) {
 	if len(waves) != 2 {
 		t.Fatalf("expected 2 waves (distinct labels), got %d: %+v", len(waves), waves)
 	}
-	if waves[0].label != "2" {
-		t.Fatalf("expected first label \"2\", got %q", waves[0].label)
+	if waves[0].Label != "2" {
+		t.Fatalf("expected first label \"2\", got %q", waves[0].Label)
 	}
-	if waves[1].label != "2-bis" {
-		t.Fatalf("expected second label \"2-bis\", got %q", waves[1].label)
+	if waves[1].Label != "2-bis" {
+		t.Fatalf("expected second label \"2-bis\", got %q", waves[1].Label)
 	}
 	// Wave 2 block must end exactly where "## Wave 2-bis" starts.
-	if lines[waves[0].end] != "## Wave 2-bis — Corrective Wave" {
-		t.Fatalf("expected wave 2 to end at 'Wave 2-bis' heading, got %q", lines[waves[0].end])
+	if lines[waves[0].End] != "## Wave 2-bis — Corrective Wave" {
+		t.Fatalf("expected wave 2 to end at 'Wave 2-bis' heading, got %q", lines[waves[0].End])
 	}
 }
 
@@ -131,7 +131,7 @@ func TestParseMLs_MultipleMLsInWave(t *testing.T) {
 	if len(mls) != 2 {
 		t.Fatalf("expected 2 MLs, got %d", len(mls))
 	}
-	if mls[0].id != "ML-1A" || mls[1].id != "ML-1B" {
+	if mls[0].ID != "ML-1A" || mls[1].ID != "ML-1B" {
 		t.Fatalf("unexpected ML ids: %+v", mls)
 	}
 }
@@ -325,8 +325,8 @@ func TestFenceAwareness_MLHeadingInsideFenceIsNotPhantomML(t *testing.T) {
 	if len(mls) != 1 {
 		t.Fatalf("expected 1 ML (the fenced ML-9Z must not be detected), got %d: %+v", len(mls), mls)
 	}
-	if mls[0].id != "ML-1A" {
-		t.Fatalf("expected the single ML to be ML-1A, got %q", mls[0].id)
+	if mls[0].ID != "ML-1A" {
+		t.Fatalf("expected the single ML to be ML-1A, got %q", mls[0].ID)
 	}
 }
 

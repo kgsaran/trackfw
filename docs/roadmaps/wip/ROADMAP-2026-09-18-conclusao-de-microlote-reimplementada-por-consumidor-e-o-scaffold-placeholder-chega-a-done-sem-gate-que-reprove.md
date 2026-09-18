@@ -24,8 +24,8 @@ está preso em `package commands`, inalcançável pelo `validator` por ciclo de 
 | medida | valor |
 |---|---|
 | roadmaps em `done/` | 192 |
-| ...com ML não concluído (`StatusIsComplete`, canônico) | **32 (17%)** → base da rejeição da direção 1 |
-| ...pelo recorte estreito `⬜`/`🔄` | 27 |
+| ...com ML não concluído (`StatusIsComplete`, canônico) | **27 (14%)** → base da rejeição da direção 1 |
+| ...rejeitados por `ParseWaves` (rótulo `3-Py`, maiúscula) | **4** → total com fail-safe: 31 |
 | ...com `## Wave 0` | **38** → por isso a exigência de Wave 0 NÃO retroage |
 | ...com gate placeholder `exit 1` intacto | **4** |
 | ...com rótulo de Wave/ML duplicado | **4** (+1 em `blocked/`) |
@@ -53,7 +53,7 @@ são **pré-v8** — não copiar delas.
 
 ## Acceptance Criteria
 
-- [ ] AC1 pacote folha sem ciclo · AC2 identidade byte-a-byte do `barrier` · AC3 predicado reconciliado 27/165
+- [ ] AC1 pacote folha sem ciclo · AC2 identidade byte-a-byte do `barrier` · AC3 predicado reconciliado **27**/161 · **AC3-ter `WaveLabelRe` insensível a caixa**
 - [ ] AC4 `serve` converge · AC5 `scaffold` converge **antes** do gate · AC6 `move done` recusa nomeando
 - [ ] AC7 gate por **perda de cobertura** · **AC7-bis tier 1b (renomear heading)** · AC8 rótulo duplicado · AC8-bis não cobra em `backlog`
 - [ ] AC8-ter os 6 sítios de `done/` corrigidos · AC9 `os.WriteFile` propaga erro · AC10 gates verdes · AC11 reconciliação
@@ -102,7 +102,7 @@ grep -q "Residual declarado" docs/portabilidade/2026-09-18-threat-model-scaffold
 > Dependências: Wave 0 auditada. **ML-1A é sequencial consigo mesmo: o baseline vem antes da edição.**
 
 ### ML-1A — extrair o parser para `internal/roadmapdoc`, provando não-regressão
-**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
+**Status:** ✅ Concluído **na extração**, mas com corretivo obrigatório no ML-1B — o teste de baseline lê o corpus vivo · **Papel:** `apolo-tf`
 **Files affected:**
 - **cria** `internal/roadmapdoc/roadmapdoc.go` + `internal/roadmapdoc/roadmapdoc_test.go`
 - `internal/commands/barrier.go` (passa a importar; remove as funções movidas)
@@ -128,6 +128,33 @@ grep -q "Residual declarado" docs/portabilidade/2026-09-18-threat-model-scaffold
 - [ ] `make test` RC=0 · `make quality` RC=0
 - [ ] **Uma frase por teste novo** declarando qual conclusão deste ML ele afirma (AC11)
 **Comandos de validação:** `go build ./... && make test && make quality`
+
+### ML-1B — corretivo do ML-1A: o teste de baseline não pode ler o corpus vivo
+**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Files affected:** `internal/roadmapdoc/compare_baseline_test.go`, `internal/roadmapdoc/testdata/`,
+`internal/roadmapdoc/roadmapdoc.go` (AC3-ter), `internal/roadmapdoc/roadmapdoc_test.go`
+**Contexto da reprovação parcial:** a extração está correta e **fica** — auditei o AC1 (zero import de
+`commands`/`validator`; o pacote só importa stdlib e `golang.org/x/text`), o AC2 (ver abaixo) e o AC3.
+O defeito é o `TestParsingMatchesBaseline`: ele compara um baseline **congelado** contra o **corpus
+vivo**. Eu editei uma linha de status do próprio roadmap desta REQ e o `make test` passou de RC=0 a
+RC=2 em minutos. O ML-3A e o ML-4A tocam roadmaps por definição — o teste quebraria neles também.
+🔴 É o mesmo defeito que o AC3 já evitava com fixture congelado; o congelamento foi aplicado aos
+fixtures do predicado e **não** ao teste de baseline.
+**Actions:**
+1. Congelar em `testdata/` as cópias dos roadmaps que o baseline cobre, **ou** gravar no baseline o
+   hash de cada arquivo e pular — **contando e reportando** — os que divergirem. Nunca pular em
+   silêncio: um teste que ignora o que mudou não afirma nada.
+2. **AC3-ter:** `WaveLabelRe` passa a aceitar o sufixo **insensível a caixa**, e o erro de `ParseWaves`
+   deixa de ser silencioso. Os 4 roadmaps com `## Wave 3-Py` passam a parsear.
+   Contra-braço: `## Wave abc` continua rejeitado.
+3. Erro de `ParseWaves` **conta como pendência** (fail-safe) em qualquer predicado de gate. Nunca
+   falhe aberto.
+**Acceptance criteria:**
+- [ ] Editar a linha de status de um roadmap qualquer do corpus **não** quebra `make test`
+- [ ] Os 4 roadmaps de `## Wave 3-Py` parseiam; `## Wave abc` continua rejeitado (contra-braço)
+- [ ] O teste **reporta** quantos arquivos pulou e por quê — zero pulos silenciosos
+- [ ] `make test` RC=0 · `make quality` RC=0
+- [ ] Uma frase por teste novo declarando o que ele afirma (AC11)
 
 ---
 

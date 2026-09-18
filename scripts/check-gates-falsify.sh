@@ -5900,10 +5900,10 @@ cp "$ROOT_DIR/go.mod" "$T97/go.mod"
 cp "$ROOT_DIR/go.sum" "$T97/go.sum"
 
 sed 's/intVal < 0 {/intVal < 1 {/' \
-  "$ROOT_DIR/internal/commands/barrier.go" > "$T97/internal/commands/barrier.go"
+  "$ROOT_DIR/internal/roadmapdoc/roadmapdoc.go" > "$T97/internal/roadmapdoc/roadmapdoc.go"
 
-if cmp -s "$ROOT_DIR/internal/commands/barrier.go" "$T97/internal/commands/barrier.go"; then
-  echo "FAIL [falsify/setup-s167]: sed nao alterou barrier.go -- padrao nao encontrado; prova P4 invalida" >&2
+if cmp -s "$ROOT_DIR/internal/roadmapdoc/roadmapdoc.go" "$T97/internal/roadmapdoc/roadmapdoc.go"; then
+  echo "FAIL [falsify/setup-s167]: sed nao alterou roadmapdoc.go -- padrao nao encontrado; prova P4 invalida" >&2
   falsify_fail_point
 fi
 
