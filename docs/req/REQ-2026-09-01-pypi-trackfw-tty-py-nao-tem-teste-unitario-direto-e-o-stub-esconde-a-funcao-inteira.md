@@ -1,5 +1,5 @@
 ---
-status: Open
+status: Superseded
 date: 2026-09-01
 author: "zeus-tf"
 adr: ""
@@ -8,7 +8,7 @@ roadmap: ""
 
 # REQ: `pypi/trackfw/tty.py` não tem teste unitário direto e o stub esconde a função inteira
 
-> Date: 2026-09-01 | Status: Open
+> Date: 2026-09-01 | Status: Superseded
 
 ## Motivation
 
@@ -52,3 +52,12 @@ ADR: <!-- nenhum. Cobertura de teste. -->
 ## Linked Roadmap
 
 Roadmap:
+
+## Fechamento — triagem de 2026-09-18
+
+**Veredito:** Superseded. **Motivo medido:** alvo removido pela v8: pypi/trackfw/tty.py deletado em 2eae0a44
+
+Fechada na triagem por evidência das REQs abertas (`docs/triagem-reqs-abertas-2026-09-18.md`),
+executada a pedido do KG. Esta triagem é o **AC12 da `REQ-2026-09-12-v8-um-binario-muitos-canais`**
+e os **AC10-AC12** da REQ irmã, que pediam classificar as REQs abertas e fechar aquelas cuja causa a
+v8 removeu — e que nunca haviam sido executados.

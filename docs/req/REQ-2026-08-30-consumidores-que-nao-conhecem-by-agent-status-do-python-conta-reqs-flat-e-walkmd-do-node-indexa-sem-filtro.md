@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Superseded
 date: 2026-08-30
 author: "trackfw_architect (Zeus)"
 adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-10-consumidores-que-nao-conhecem-by-agent-status-do-python-conta-reqs-flat-e-walkmd-do-node-indexa-sem-filtro.md"
+roadmap: "docs/roadmaps/abandoned/ROADMAP-2026-09-10-consumidores-que-nao-conhecem-by-agent-status-do-python-conta-reqs-flat-e-walkmd-do-node-indexa-sem-filtro.md"
 ---
 
 # REQ: Consumidores que não conhecem `by_agent` — `status` do Python conta REQs flat, e `walkMd` do Node indexa sem filtro
 
-> Date: 2026-08-30 | Status: Open
+> Date: 2026-08-30 | Status: Superseded
 
 ## Motivation
 
@@ -84,4 +84,12 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-10-consumidores-que-nao-conhecem-by-agent-status-do-python-conta-reqs-flat-e-walkmd-do-node-indexa-sem-filtro.md`
+Roadmap: `docs/roadmaps/abandoned/ROADMAP-2026-09-10-consumidores-que-nao-conhecem-by-agent-status-do-python-conta-reqs-flat-e-walkmd-do-node-indexa-sem-filtro.md`
+## Fechamento — triagem de 2026-09-18
+
+**Veredito:** Superseded. **Motivo medido:** AC1/AC2 sem alvo apos a v8; AC3 (sitio Go) corrigido em internal/sync/sync.go:62,68; issue #268 CLOSED
+
+Fechada na triagem por evidência das REQs abertas (`docs/triagem-reqs-abertas-2026-09-18.md`),
+executada a pedido do KG. Esta triagem é o **AC12 da `REQ-2026-09-12-v8-um-binario-muitos-canais`**
+e os **AC10-AC12** da REQ irmã, que pediam classificar as REQs abertas e fechar aquelas cuja causa a
+v8 removeu — e que nunca haviam sido executados.

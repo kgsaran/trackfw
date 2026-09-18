@@ -1,5 +1,5 @@
 ---
-status: Open
+status: Done
 date: 2026-09-12
 author: ""
 adr: ""
@@ -8,7 +8,7 @@ roadmap: ""
 
 # REQ: byte NUL literal no fonte torna o arquivo invisível à busca, e já produziu duas REQs com evidência falsa
 
-> Date: 2026-09-12 | Status: Open
+> Date: 2026-09-12 | Status: Done
 
 ## Motivação
 
@@ -125,3 +125,12 @@ desta causa, e já estão registradas como parciais na REQ de triagem — não s
 
 ## Linked ADR
 ADR: <!-- não requer: correção de grafia de fonte, sem decisão de arquitetura -->
+
+## Fechamento — triagem de 2026-09-18
+
+**Veredito:** Done. **Motivo medido:** corrigida: gate scripts/check-no-literal-nul-in-source.sh examina 328 arquivos com 0 violacoes
+
+Fechada na triagem por evidência das REQs abertas (`docs/triagem-reqs-abertas-2026-09-18.md`),
+executada a pedido do KG. Esta triagem é o **AC12 da `REQ-2026-09-12-v8-um-binario-muitos-canais`**
+e os **AC10-AC12** da REQ irmã, que pediam classificar as REQs abertas e fechar aquelas cuja causa a
+v8 removeu — e que nunca haviam sido executados.

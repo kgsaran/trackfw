@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: abandoned
 date: 2026-09-10
 req: "docs/req/REQ-2026-09-05-validate-unfiltered-do-python-devolve-lista-de-tipo-misto-e-o-consumidor-estoura.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: validate_unfiltered do Python devolve lista de tipo misto e o consumidor estoura
 
-> Created: 2026-09-10 | Status: backlog
+> Created: 2026-09-10 | Status: abandoned
 
 ## Context
 <!-- Derived from REQ: REQ-2026-09-05-validate-unfiltered-do-python-devolve-lista-de-tipo-misto-e-o-consumidor-estoura.md -->
