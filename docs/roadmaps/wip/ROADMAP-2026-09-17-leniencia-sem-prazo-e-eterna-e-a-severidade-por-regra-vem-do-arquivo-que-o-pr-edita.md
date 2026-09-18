@@ -26,7 +26,9 @@ ADR: docs/adr/ADR-2026-09-17-severidade-da-validacao-nao-pode-vir-de-fonte-que-o
 | 2 | `rules: {<regra>: off}` | `validator.go:207-212` → `diskRuleSeverity` (`:218`) |
 | 3 | 🔴 `req_dir`/`roadmap_dir`/`adr_dirs` para diretório vazio | zera a governança **mesmo em `strict`** |
 
-Composição das 177: **8 contradições ativas** (6 `req_roadmap_lifecycle`, 2 `ref_targets_exist`),
+Composição — medida **depois** de b1b1e482, que restaurou o marcador `REQ:` deste roadmap, fechou um
+`wip_has_req` e levou o total de 177 para **176**: **8 contradições ativas**
+(6 `req_roadmap_lifecycle`, 2 `ref_targets_exist`),
 **168 ausências históricas**. As 8 são de 11 a 17/09 e foram produzidas por nós.
 
 ---

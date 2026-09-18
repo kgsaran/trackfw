@@ -20,3 +20,4 @@
 - [Palavra-chave de fechamento é em inglês](project_palavra_chave_de_fechamento_e_em_ingles.md) — "Fecha #N" não fecha; e o gate que checa isso é driblado por `Fecha **#N**` (markdown quebra a adjacência)
 - [O instrumento mente](feedback_o_instrumento_mente.md) — zsh sem word-splitting, `$?` do pipe e `ls` com alias; unanimidade num corpus é sinal de teste quebrado
 - [Ao publicar rc, verificar os três canais](feedback_rc_verificar_os_tres_canais.md) — GitHub erra por default (goreleaser `prerelease` ausente); npm/PyPI acertam sozinhos
+- [Fechamento de REQ é pós-merge](project_fechamento_e_pos_merge.md) — push tem hard gate de roadmap em wip/; e o marcador `Roadmap:` da REQ precisa iniciar a linha
