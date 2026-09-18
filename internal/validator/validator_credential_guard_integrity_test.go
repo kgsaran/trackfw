@@ -495,9 +495,14 @@ func TestCredentialGuardModeDowngrade_ConfiguravelViaRules(t *testing.T) {
 		// HEAD só tem mode: block — SEM rules:. Disco rebaixa mode E desliga a regra na MESMA
 		// edição, nunca commitada. Isto é o ataque combinado que o ADR existe para fechar.
 		commitTrackfwYAML(t, dir, "credential_guard:\n  mode: block\n")
+		// origin/main com trackfw.yaml vazio (sem rules:) → credentialGuardDefaultSeverity retorna
+		// "error" para credential_guard_mode_downgrade → stricter-wins impede o rebaixamento para
+		// "warning" do disco → violation dispara.
+		initOriginMain(t, dir, "")
 		writeFile(t, dir, "trackfw.yaml", "credential_guard:\n  mode: warn\nrules:\n  credential_guard_mode_downgrade: warning\n")
 		chdir(t, dir)
 		t.Cleanup(config.Reset)
+		t.Cleanup(func() { currentOriginMain = originMainAnchor{} })
 
 		violations, warnings, err := ValidateUnfiltered()
 		if err != nil {
@@ -512,9 +517,13 @@ func TestCredentialGuardModeDowngrade_ConfiguravelViaRules(t *testing.T) {
 		dir := t.TempDir()
 		initGitRepo(t, dir, "main")
 		commitTrackfwYAML(t, dir, "credential_guard:\n  mode: block\n")
+		// origin/main com trackfw.yaml vazio (sem rules:) → credentialGuardDefaultSeverity retorna
+		// "error" → stricter-wins impede o silenciamento via "off" do disco → violation dispara.
+		initOriginMain(t, dir, "")
 		writeFile(t, dir, "trackfw.yaml", "credential_guard:\n  mode: warn\nrules:\n  credential_guard_mode_downgrade: off\n")
 		chdir(t, dir)
 		t.Cleanup(config.Reset)
+		t.Cleanup(func() { currentOriginMain = originMainAnchor{} })
 
 		violations, warnings, err := ValidateUnfiltered()
 		if err != nil {
@@ -533,13 +542,18 @@ func TestCredentialGuardModeDowngrade_ConfiguravelViaRules(t *testing.T) {
 func TestRuleSeverity_ZeroDeltaParaRegrasNaoGuard(t *testing.T) {
 	dir := t.TempDir()
 	initGitRepo(t, dir, "main")
-	// HEAD não tem rules: nenhuma — se o HEAD estivesse (erroneamente) sendo consultado para
-	// wip_limit, o valor "warning" do disco abaixo teria que ceder para o default "error" do
-	// HEAD ausente, exatamente como credential_guard_mode_downgrade faria. Provamos que NÃO cede.
+	// Repositório sem remote "origin" — originAnchorNoRemote → disk-only (silent).
+	// Provamos que wip_limit e adr_orphan resolvem puramente pelo disco, sem qualquer
+	// ancoragem em origin/main (que aqui não existe).
 	commitTrackfwYAML(t, dir, "")
 	writeFile(t, dir, "trackfw.yaml", "rules:\n  wip_limit: warning\n  adr_orphan: off\n")
 	chdir(t, dir)
 	t.Cleanup(config.Reset)
+	t.Cleanup(func() { currentOriginMain = originMainAnchor{} })
+
+	// currentOriginMain é var de pacote — pode estar stale de teste anterior.
+	// Recarregar explicitamente aqui, como ValidateUnfiltered() faz no início de cada chamada.
+	currentOriginMain = loadOriginMainAnchor()
 
 	if got := ruleSeverity("wip_limit"); got != "warning" {
 		t.Errorf("wip_limit deveria resolver puramente pelo disco (warning), obteve: %q", got)
@@ -558,13 +572,18 @@ func TestRuleSeverity_ZeroDeltaParaRegrasNaoGuard(t *testing.T) {
 // regras de credential-guard cai no disco puro — mesmo comportamento de antes do ADR.
 func TestCredentialGuardRuleSeverity_SemHead_CaiNoDisco(t *testing.T) {
 	dir := t.TempDir()
-	chdir(t, dir) // nem sequer é git worktree
+	chdir(t, dir) // nem sequer é git worktree → originAnchorNoGit → disk-only
 	t.Cleanup(config.Reset)
+	t.Cleanup(func() { currentOriginMain = originMainAnchor{} })
 
 	writeFile(t, dir, "trackfw.yaml", "rules:\n  credential_guard_mode_downgrade: warning\n")
 
+	// currentOriginMain é var de pacote — recarregar explicitamente para refletir o dir atual,
+	// como ValidateUnfiltered() faz no início de cada chamada.
+	currentOriginMain = loadOriginMainAnchor()
+
 	if got := ruleSeverity("credential_guard_mode_downgrade"); got != "warning" {
-		t.Errorf("sem HEAD, deveria cair no disco puro (warning), obteve: %q", got)
+		t.Errorf("sem git worktree, deveria cair no disco puro (warning), obteve: %q", got)
 	}
 }
 

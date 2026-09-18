@@ -1984,6 +1984,37 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: ML-1A (severity anchor) — fetch origin/main for trackfw validate
+        # ROADMAP-2026-09-17-leniencia-sem-prazo, ML-1A.
+        # Without this step, actions/checkout@v7 on pull_request events only fetches the PR's
+        # merge commit — origin/main is never written as a local ref. trackfw validate would then
+        # see originAnchorRefUnreadable and fail closed (all rules at built-in defaults, disk
+        # rules: block ignored). This fetch makes origin/main available so the severity anchor
+        # (stricter-of-origin/main-vs-disk) can work as designed.
+        #
+        # Refspec is config-independent (bare branch name writes only FETCH_HEAD).
+        # Cost: 0.09 s measured (1 commit + tree, < 1 MB). fetch-depth: 0 rejected (too costly).
+        # Precedent: quality.yml:545-570 (same refspec, same three-branch discrimination).
+        #
+        # Three-branch discrimination (two-states-one-observable prevention):
+        #   Braço 1 — ref absent (fetch failed): ::error:: annotation; trackfw validate will emit
+        #             severity-anchor violation (fail closed via Go code).
+        #   Braço 2 — ref present, file absent: ::warning:: annotation; disk-only severities.
+        #   Braço 3 — ref and file present: anchor active.
+        #
+        # This step always exits 0 so that trackfw validate always runs (and emits the fail-closed
+        # violation if needed). The CI failure surface is trackfw validate, not this fetch step.
+        run: |
+          FETCH_EXIT=0
+          git fetch --depth=1 --no-tags origin "+refs/heads/main:refs/remotes/origin/main" 2>&1 || FETCH_EXIT=$?
+          if ! git rev-parse --verify origin/main > /dev/null 2>&1; then
+            echo "::error::ML-1A (anchor): origin/main unavailable after fetch (fetch_exit=${FETCH_EXIT}) — trackfw validate will emit severity-anchor violation (fail closed)"
+          elif [ -z "$(git ls-tree origin/main -- ./trackfw.yaml 2>/dev/null)" ]; then
+            echo "::warning::ML-1A (anchor): trackfw.yaml absent in origin/main — rule severity resolved from disk only (expected for a PR that adds the file for the first time)"
+          else
+            echo "ML-1A (anchor): origin/main:./trackfw.yaml present — severity anchor active"
+          fi
+
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
