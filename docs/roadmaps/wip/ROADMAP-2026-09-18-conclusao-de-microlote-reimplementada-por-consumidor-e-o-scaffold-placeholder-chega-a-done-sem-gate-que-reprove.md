@@ -130,7 +130,7 @@ grep -q "Residual declarado" docs/portabilidade/2026-09-18-threat-model-scaffold
 **Comandos de validação:** `go build ./... && make test && make quality`
 
 ### ML-1B — corretivo do ML-1A: o teste de baseline não pode ler o corpus vivo
-**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
 **Files affected:** `internal/roadmapdoc/compare_baseline_test.go`, `internal/roadmapdoc/testdata/`,
 `internal/roadmapdoc/roadmapdoc.go` (AC3-ter), `internal/roadmapdoc/roadmapdoc_test.go`
 **Contexto da reprovação parcial:** a extração está correta e **fica** — auditei o AC1 (zero import de
