@@ -1,11 +1,11 @@
 ---
-status: wip
+status: done
 date: 2026-09-17
 ---
 
 # Roadmap: leniência sem prazo é eterna, e a severidade por regra vem do arquivo que o PR edita
 
-> Created: 2026-09-17 | Status: wip
+> Created: 2026-09-17 | Status: done
 
 REQ: docs/req/REQ-2026-09-17-leniencia-sem-prazo-e-eterna-e-a-severidade-por-regra-vem-do-arquivo-que-o-pr-edita.md
 ADR: docs/adr/ADR-2026-09-17-severidade-da-validacao-nao-pode-vir-de-fonte-que-o-objeto-verificado-controla.md
