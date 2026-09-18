@@ -168,3 +168,7 @@ mas os pontos de entrada divergem: `init` brownfield escreve `lenient_until` (`s
 ## Linked ADR
 
 ADR: `docs/adr/ADR-2026-09-17-severidade-da-validacao-nao-pode-vir-de-fonte-que-o-objeto-verificado-controla.md`
+
+## Linked Roadmap
+
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-17-leniencia-sem-prazo-e-eterna-e-a-severidade-por-regra-vem-do-arquivo-que-o-pr-edita.md`
