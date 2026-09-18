@@ -189,7 +189,21 @@ func parseMLProgressFull(path string) mlProgressResult {
 			case roadmapdoc.StatusComplete:
 				res.done++
 			case roadmapdoc.StatusTerminated:
-				// Abandoned/cancelled ML — deliberately excluded from active/next.
+				// Terminated ML (ABANDONADO / 🚫 Abandonado / ❌ Cancelado): counts toward done so
+				// that the board progress ratio reaches 100% when all MLs are resolved.
+				//
+				// Rationale (ADR-2026-09-18, decisão 9): explicit termination is a recorded decision,
+				// not an omission — it releases the roadmap just as completion does. Option (b) was
+				// chosen over (a) — removing terminated MLs from total — because the board label
+				// "${done}/${total}" (app.js:231) shows both values to the user; "2/2" preserves the
+				// audit record that two MLs were declared and both accounted for, whereas "1/1" would
+				// silently hide the terminated ML from the count.
+				//
+				// Before this fix: total=2, done=1 for a 1✅+1ABANDONADO roadmap → progress bar
+				// stuck at 50% forever, never turned green.
+				// After this fix:  total=2, done=2 → pct=100% → green bar, label "2/2".
+				res.done++
+				// Deliberately excluded from activeML/nextML: a terminated ML is not work in flight.
 			default: // StatusPending (covers ⬜, 🔄, ❌ Bloqueado, and anything else)
 				fields := strings.Fields(marker)
 				if len(fields) == 0 {

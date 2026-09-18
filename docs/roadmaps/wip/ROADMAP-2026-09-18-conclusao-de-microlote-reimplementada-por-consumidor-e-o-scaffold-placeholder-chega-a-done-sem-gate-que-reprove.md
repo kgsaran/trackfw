@@ -215,7 +215,7 @@ falha real posterior** — motivo pelo qual o arquiteto roda o gate por conta pr
 > `git add -A` já commitou lixo nesta REQ.
 
 ### ML-2A — `serve` deixa de decidir por substring
-**Status:** ✅ Concluído **na refatoração**, com corretivo no ML-2C — ML terminado infla o `total` do board
+**Status:** ✅ Concluído **com o corretivo ML-2C** — o AC4 fecha com as duas entregas somadas
 **Files affected:** `internal/serve/api_board.go` (137-168) + teste
 **Actions:**
 1. `parseMLProgress` passa a usar `internal/roadmapdoc`: `fenceMask` + `parseMLs` + `mlStatusMarker`
@@ -455,7 +455,7 @@ cega o `barrier` em 2 roadmaps reais). O remédio correto satisfaz os dois:
 - [ ] Uma frase por teste novo (AC11)
 
 ### ML-2C — corretivo do ML-2A: ML terminado infla o `total` do board
-**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
+**Status:** ✅ Concluído (auditado por Zeus em 2026-09-18: sonda própria confirma 2/2 e o contra-braço 1/2)
 **Files affected:** `internal/serve/api_board.go`, `internal/serve/api_board_test.go` — **só estes**
 **Contexto:** a refatoração do ML-2A está **aprovada e fica** — os dois defeitos da `ADR-2026-08-29`
 saíram, `roadmapdoc` é usado, e o teste de cerca falsifica o comportamento antigo (`done=1` → `done=0`).

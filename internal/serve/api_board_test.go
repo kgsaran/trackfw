@@ -324,6 +324,92 @@ func TestParseMLProgress_AllDone(t *testing.T) {
 	}
 }
 
+// TestParseMLProgress_TerminatedCountsAsDone — falsificação do defeito ML-2C:
+// um ML com status ABANDONADO bloqueava o progresso (total=2, done=1) porque StatusTerminated não
+// incrementava done, mas o ML continuava contando em total.
+//
+// AC11: este teste afirma que StatusTerminated incrementa done (opção b: "resolved" = complete OR
+// terminated), de forma que 1✅ + 1ABANDONADO → total=2, done=2, pct=100%.
+//
+// Before evidence (code before this fix):
+//
+//	--- FAIL: TestParseMLProgress_TerminatedCountsAsDone (0.00s)
+//	    api_board_test.go:NNN: done: esperado 2, obteve 1 (ABANDONADO não incrementava done)
+//	    api_board_test.go:NNN: total: esperado 2, obteve 2
+//	(progresso: 1/2 = 50%, barra nunca ficava verde)
+func TestParseMLProgress_TerminatedCountsAsDone(t *testing.T) {
+	content := "# Roadmap Terminated Test\n\n" +
+		"## Wave 1 — Backend\n\n" +
+		"### ML-1A — Criar endpoint\n" +
+		"**Status:** ✅ Concluído\n\n" +
+		"### ML-1B — Abordagem descartada\n" +
+		"**Status:** ABANDONADO — decidido em 2026-09-01\n"
+
+	f, err := os.CreateTemp("", "roadmap-terminated-*.md")
+	if err != nil {
+		t.Fatalf("CreateTemp: %v", err)
+	}
+	defer os.Remove(f.Name())
+	if _, err := f.WriteString(content); err != nil {
+		t.Fatalf("WriteString: %v", err)
+	}
+	f.Close()
+
+	total, done, activeML, nextML := parseMLProgress(f.Name())
+
+	// Before the fix: done=1 (ABANDONADO não incrementava done), total=2 → 1/2, barra presa em 50%.
+	// After the fix: done=2 (terminated = resolved), total=2 → 2/2, pct=100%, barra verde.
+	if total != 2 {
+		t.Errorf("total: esperado 2, obteve %d", total)
+	}
+	if done != 2 {
+		t.Errorf("done: esperado 2, obteve %d (ABANDONADO deve contar como resolvido)", done)
+	}
+	if activeML != "" {
+		t.Errorf("activeML: esperado vazio (ML terminado não é trabalho em andamento), obteve %q", activeML)
+	}
+	if nextML != "" {
+		t.Errorf("nextML: esperado vazio (ML terminado não é trabalho pendente), obteve %q", nextML)
+	}
+}
+
+// TestParseMLProgress_BlockedIsNotResolved — contra-braço do ML-2C:
+// um ML com status ❌ Bloqueado é pendência, não encerramento — o roadmap NÃO pode aparecer
+// completo enquanto houver MLs bloqueados.
+//
+// AC11: este teste afirma que StatusPending (incluindo ❌ Bloqueado) NÃO incrementa done, de forma
+// que 1✅ + 1❌ Bloqueado → total=2, done=1, pct=50% (não 100%), garantindo que o defeito não foi
+// resolvido afrouxando demais a condição de "resolvido".
+func TestParseMLProgress_BlockedIsNotResolved(t *testing.T) {
+	content := "# Roadmap Blocked Test\n\n" +
+		"## Wave 1 — Backend\n\n" +
+		"### ML-1A — Criar endpoint\n" +
+		"**Status:** ✅ Concluído\n\n" +
+		"### ML-1B — Aguardando dependência\n" +
+		"**Status:** ❌ Bloqueado — aguardando aprovação\n"
+
+	f, err := os.CreateTemp("", "roadmap-blocked-*.md")
+	if err != nil {
+		t.Fatalf("CreateTemp: %v", err)
+	}
+	defer os.Remove(f.Name())
+	if _, err := f.WriteString(content); err != nil {
+		t.Fatalf("WriteString: %v", err)
+	}
+	f.Close()
+
+	total, done, _, _ := parseMLProgress(f.Name())
+
+	// ❌ Bloqueado é pendência (StatusPending), não encerramento (StatusTerminated).
+	// O roadmap NÃO pode aparecer completo enquanto houver ML bloqueado.
+	if total != 2 {
+		t.Errorf("total: esperado 2, obteve %d", total)
+	}
+	if done != 1 {
+		t.Errorf("done: esperado 1, obteve %d (❌ Bloqueado não pode contar como resolvido)", done)
+	}
+}
+
 // TestBoardHandler_EmptyBoard — dir existe mas está vazio: JSON com colunas vazias, sem erro.
 func TestBoardHandler_EmptyBoard(t *testing.T) {
 	base := t.TempDir()
