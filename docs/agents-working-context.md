@@ -2,6 +2,20 @@
 
 ---
 
+## Sessão 2026-09-18 (continuação 10) — Apolo (fix/scaffold-placeholder-chega-a-done — ML-4D: discriminant hasAnyNonPendingML) — CONCLUÍDO
+
+**Início:** 2026-09-18 | Branch: `fix/scaffold-placeholder-chega-a-done`
+**Tarefa:** ML-4D (REQ #392) — corrigir regressão "ciclo limpo": `trackfw init && roadmap new && roadmap move wip && validate → RC=1`. Discriminant: `Wave0HasPlaceholderOrMissingGate` só dispara quando `hasAnyNonPendingML(data)` retorna true.
+**Resultado:** `go build ./...` RC=0 · `go test ./...` RC=0 · `make quality` RC=0 · 641 OK · 0 FAIL
+**Arquivos editados:**
+- `internal/roadmapdoc/roadmapdoc.go`: `Wave0HasPlaceholderOrMissingGate` agora chama `hasAnyNonPendingML(data)` em cada arm que retornava `true`; nova função `hasAnyNonPendingML` (fail-closed: `!found` → true; malformed waves → true).
+- `internal/roadmapdoc/roadmapdoc_test.go`: ArmD (all MLs pending → false) e ArmE (one non-pending → true).
+- `internal/validator/validator_test.go`: FreshScaffoldNotCharged e WorkStartedFiresWithPlaceholder; AC11 reconciliation atualizado.
+- `scripts/check-gates-falsify.sh`: revertido `sed "s/^exit 1  #/exit 0  #/"` de `ROADMAP_CYCLE_SCRIPT_FROM_REQ` — cenário 25 passa sem workaround porque `validate` retorna RC=0 para roadmap fresco (todas as MLs pendentes).
+**S11 medido:** sabotaged binary (intVal < 1) → `OK [barrier/wave-label/wave-zero-accepted/go]` — gap confirmado. S11 aceita exit 1, sabotagem invisível a TODOS os cenários de check-barrier.sh (incluindo S1 two-wave-flow/wave1-passed). Resíduo declarado no relatório ao arquiteto.
+
+---
+
 ## Sessão 2026-09-18 (continuação 9) — Apolo (fix/scaffold-placeholder-chega-a-done — ML-4C: conclusão) — CONCLUÍDO
 
 **Início:** 2026-09-18 | Branch: `fix/scaffold-placeholder-chega-a-done`

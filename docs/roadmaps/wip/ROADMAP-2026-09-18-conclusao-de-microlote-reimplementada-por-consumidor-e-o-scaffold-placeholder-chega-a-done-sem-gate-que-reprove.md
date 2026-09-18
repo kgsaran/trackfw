@@ -659,7 +659,7 @@ pretendido da promoção (Wave 0 é obrigatória por ADR desde agosto e a regra 
 - [ ] Uma frase por teste novo (AC11)
 
 ### ML-4D — corretivo do ML-4C: o discriminante está escrito no próprio template
-**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
+**Status:** ✅ Concluído (auditado por Zeus: ciclo limpo confirmado por sonda própria — `roadmap_gate_coverage` **não** dispara; o `sed` foi revertido)
 **Files affected:** `internal/roadmapdoc/roadmapdoc.go`, `internal/validator/validator_roadmap_gates.go`,
 `scripts/check-gates-falsify.sh`, testes correspondentes
 
@@ -721,3 +721,38 @@ cobertura em qualquer estado, e não quebra o fluxo oficial.
 - [ ] Resposta medida sobre o S11 do cenário 167
 - [ ] `make quality` RC=0 **até o fim** (~641 OK) · `go test ./...` RC=0 · `validate` RC=0
 - [ ] Uma frase por teste novo (AC11)
+
+### ML-4E — corretivo: fechamos a cobertura do S11 com as nossas próprias mudanças
+**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Files affected:** `scripts/check-barrier.sh` (ou `scripts/check-gates-falsify.sh`, onde couber o cenário)
+
+**Achado do ML-4D, medido e reportado com honestidade por ele** — e é dele o mérito de ter ido medir
+em vez de afirmar:
+
+> Binário sabotado com `intVal < 1` em `roadmapdoc.go` → `check-barrier.sh` reporta
+> **"All scenarios passed"**. O S11 (`barrier/wave-label/wave-zero-accepted/go`) aceita exit 0 **ou** 1,
+> então a sabotagem passa; e o S1 não a vê porque seu fixture não tem Wave 0.
+> **Nenhum cenário atual detecta `intVal < 1`.**
+
+🔴 **O gap foi criado por nós, nesta REQ.** O **ML-1E** e o **ML-4C** acrescentaram `## Wave 0` a todos
+os fixtures do `check-barrier.sh` — mudança correta em si —, e com isso o cenário que provava
+*"`--wave 0` é aceito, não rejeitado com exit 2"* deixou de exercer o boundary.
+
+O executor recomendou **"REQ dedicada futura"**. **Recusado:** a Regra Dura de Causa Raiz é explícita
+— *"achado de mesma causa é tratado na MESMA REQ; nunca vira REQ nova"*, e *"'está fora do escopo
+declarado' — se a causa é a mesma, o escopo estava estreito demais"*. Nós quebramos a cobertura; nós
+a restauramos, no mesmo PR.
+**Actions:**
+1. Acrescentar cenário de falsificação que **prove que `ParseWaves` aceita `## Wave 0`** — isto é, que
+   uma Wave 0 bem formada **não** é classificada como malformada.
+2. 🔴 **Validar o cenário contra o binário sabotado:** com `sed 's/intVal < 0 {/intVal < 1 {/'` em
+   `roadmapdoc.go`, o novo cenário tem de **FALHAR**. Um cenário de falsificação que passa com o
+   binário sabotado não prova nada — é o defeito que ele acabou de medir.
+3. Verificar se o S11 deve ser **estreitado** (hoje aceita exit 0 **ou** 1): se o contrato é que
+   `--wave 0` seja aceito, exit 1 por *wave malformada* não deveria satisfazê-lo. Meça antes de mudar.
+**Acceptance criteria:**
+- [ ] 🔴 Com o binário sabotado (`intVal < 1`), `check-barrier.sh` **FALHA** — demonstre as duas
+      execuções (binário correto passa, sabotado falha)
+- [ ] Com o binário correto, todos os cenários passam
+- [ ] `make quality` RC=0 até o fim (~641 OK)
+- [ ] Uma frase por cenário novo (AC11)

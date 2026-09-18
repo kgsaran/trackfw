@@ -1707,8 +1707,6 @@ ROADMAP_CYCLE_SCRIPT_FROM_REQ='
   "$@" roadmap new --from-req docs/req/REQ-flag-source.md >/dev/null
   name=$(basename "$(find docs/roadmaps/backlog -name "*.md")")
   "$@" roadmap move "$name" wip >/dev/null
-  roadmap_file="docs/roadmaps/wip/$name"
-  sed "s/^exit 1  #/exit 0  #/" "$roadmap_file" > "$roadmap_file.tmp" && mv "$roadmap_file.tmp" "$roadmap_file"
   exec "$@" validate
 '
 
