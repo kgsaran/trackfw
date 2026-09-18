@@ -140,8 +140,47 @@ nos 228 brutos; PoCs só em macOS.
 (não versionado, criado pela PoC do `update harness`). Apagado, não commitado.
 
 ## Wave 1 — A correção
-> Dependências: Wave 0 completa. **O particionamento em MLs só é decidível depois da enumeração** —
-> escrever os MLs agora seria escopo inventado. Preenchido ao fechar o ML-0A.
+> Dependências: Wave 0 completa e auditada (gate verde, verificado em 2026-09-18).
+> 🔴 **A enumeração da Wave 0 é de 2026-08-31, PRÉ-v8.** Os 187 sítios incluem Node e Python, que
+> deixaram de existir no commit `2eae0a44`. Medição minha de 2026-09-18 no Go: **102 ocorrências de
+> `os.WriteFile`/`os.Create`/`os.Rename` em 19 arquivos** de `internal/`. Revalidar é a primeira
+> ação do ML-1A — **não** reusar o número antigo.
+
+### ML-1A — extrair a contenção para ponto único e revalidar a enumeração pós-v8
+**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Files affected:** cria/estende um pacote folha (avaliar `internal/pathanchor`, que já existe),
+`internal/integrations/manager.go` (passa a consumir o extraído), testes correspondentes
+**Actions:**
+1. 🔴 **Revalidar a enumeração no Go**, com o método que o AC1 exige: varrer **primitivos de escrita**
+   (`os.WriteFile`, `os.Create`, `os.OpenFile`, `os.Rename`, `os.MkdirAll`), **não** `ModeSymlink` —
+   o `grep` por `ModeSymlink` é cego justamente para quem não checa nada, que é a população em risco.
+   Classificar cada sítio em: **(a)** escreve sob `root` controlável pelo usuário · **(b)** escreve em
+   caminho fixo · **(c)** já protegido. Reportar a tabela.
+2. **Extrair** `rejectSymlinks` e `beneath` de `internal/integrations/manager.go:755-777` para o pacote
+   folha. 🔴 **Extração, não reescrita** — a semântica é a que já está em produção na classe (c). O
+   `manager.go` passa a consumir o extraído; o comportamento dele **não pode mudar**.
+3. Garantir que o pacote folha **não importe** `internal/commands` nem `internal/validator` (ciclo).
+**Acceptance criteria:**
+- [ ] Tabela de enumeração revalidada, com o comando que a produziu e a classificação (a)/(b)/(c)
+- [ ] 🔴 **Não-regressão do `manager`:** os testes de `internal/integrations` continuam verdes **sem
+      alteração de fixture**; se algum precisar mudar, **pare e relate** — seria mudança de semântica
+- [ ] Pacote folha sem importar `commands`/`validator`
+- [ ] `go build ./...` RC=0 · `go test ./...` RC=0
+- [ ] Uma frase por teste novo (AC11)
+
+### ML-1B..1D — aplicação por família
+**Status:** ⬜ Pendente (particionamento sai do ML-1A)
+As famílias da Wave 0, **a reconfirmar pós-v8** no ML-1A, em ordem de gravidade medida:
+1. 🔴 **`update harness`** — escopo **global** (`$HOME/.claude`, `.codex`, `.gemini`, ...). A PoC da
+   Wave 0 escreveu `SKILL.md` **fora do `$HOME`** com `updated=1 failed=0`, sem aviso. É o pior caso:
+   o dano sai do projeto e atinge o ambiente do usuário.
+2. **geradores de artefato** (`req new`, `roadmap new`, `adr new`, `note new`) — a PoC gravou a REQ
+   inteiramente fora da árvore, `exit 0`, sem aviso.
+3. **geradores de hook/script** (credential-guard, git-branch-guard, husky, lefthook, `init`) — é o
+   caminho do `discover --init` que **eu reproduzi** em 2026-09-18: 6 arquivos fora da árvore.
+4. **diversos** (`sync`, `metrics`, `configure`, quarantine) — inclui o `roadmap move` do **AC9**,
+   absorvido da REQ irmã.
+🔴 Cada ML aplica o **braço (b) da ADR** (operação legítima continua funcionando) além do braço (a).
 
 ## Wave 2 — Gate falsificável
 > Dependências: Wave 1 completa. `artemis-tf`. Detalhado após a Wave 1.

@@ -55,20 +55,47 @@ Varredura por primitivos de escrita (`os.WriteFile`, `os.Rename`, `MkdirAll`) em
 
 ## Decision
 
-### 1. O predicado é **resolver-e-afirmar-contenção**, não detectar symlink
+### 1. 🔴 O predicado adotado é o que o projeto **já tem e já provou** — não se reinventa
 
-Antes de escrever em caminho derivado de `root`: **resolver o destino** (`filepath.EvalSymlinks` ou
-equivalente no diretório-pai já materializado) e **afirmar que o resultado está sob a raiz real do
-projeto**. Recusar caso contrário.
+`internal/integrations/manager.go:759`, `rejectSymlinks(root, filename)`:
 
-🔴 **Detectar `ModeSymlink` é a condição estreita demais** que a `ADR-2026-08-22` nomeia: a lista de
-formas a detectar nunca fecha — symlink de folha, de ancestral, junction do Windows, hardlink,
-bind mount, `..` em caminho não normalizado. **Contenção é um predicado**; detecção de link é uma
-lista de literais.
+```go
+current := filename
+for {
+    info, err := os.Lstat(current)
+    if err == nil && info.Mode()&os.ModeSymlink != 0 { return fmt.Errorf("refusing symlink path %q", current) }
+    if err != nil && !os.IsNotExist(err) { return err }
+    if current == root { return nil }
+    parent := filepath.Dir(current)
+    if parent == current || !beneath(root, current) { return fmt.Errorf("path %q escapes root", filename) }
+    current = parent
+}
+```
 
-### 2. A verificação vive num ponto único, não copiada por sítio
+Ele faz **as duas coisas**: caminha **todos** os ancestrais até `root` com `Lstat` — fechando o buraco
+do "só a folha" — **e** afirma contenção (`beneath`, via `filepath.Rel`) a cada passo, fechando
+travessia por `..`.
 
-A função de contenção mora num pacote alcançável por todos os sítios de escrita. 🔴 Copiar o teste
+**Retificação da primeira redação desta ADR:** eu havia escrito *"resolver com `EvalSymlinks` e afirmar
+contenção; detectar `ModeSymlink` é condição estreita demais"*. Ao ler a implementação de referência,
+duas coisas ficaram claras:
+
+1. **Recusar é mais seguro que resolver.** `EvalSymlinks` + contenção *aceitaria* um symlink que
+   resolve para dentro da árvore, e abriria janela de **TOCTOU** entre resolver e escrever.
+   `rejectSymlinks` não resolve: recusa link em qualquer nível.
+2. **A crítica de "lista de literais" não se aplica aqui.** `ModeSymlink` num laço sobre **todos** os
+   ancestrais, somado a `beneath`, é predicado — não catálogo de formas. Junction do Windows e `..`
+   já estão cobertos.
+
+🔴 **Escrever a ADR contra a implementação existente teria mandado reimplementá-la pior** — o erro que
+o `CLAUDE.md` nomeia como o mais caro desta categoria, e que o ML-3B do #392 cometeu há poucas horas
+ao reescrever `readFileForRule` à mão.
+
+### 2. A verificação é **extraída** para um ponto único, não copiada por sítio
+
+`rejectSymlinks` e `beneath` saem de `internal/integrations` para um pacote folha alcançável por todos
+os sítios de escrita — provavelmente junto de `internal/pathanchor`, que já existe. **Extração, não
+reescrita**: a semântica é a que já está em produção na classe (c). 🔴 Copiar o teste
 por sítio é o defeito que a REQ do **#392** acabou de fechar em outra superfície — quatro dialetos de
 "este ML está concluído?" que discordavam. Não repetir a forma em outra superfície na semana seguinte.
 
@@ -98,15 +125,17 @@ de REQs abertas passa a ser parte do protocolo, não cortesia.
 
 **Positivas**
 - Fecha escrita arbitrária fora do projeto, que é a classe mais grave medida no corpus hoje.
-- O predicado cobre formas que ninguém enumerou — junction, hardlink, `..` não normalizado — porque
-  afirma o destino em vez de catalogar a origem.
+- O predicado cobre formas que ninguém enumerou — junction do Windows, `..` não normalizado — porque
+  **caminha todos os ancestrais** e afirma contenção a cada passo, em vez de catalogar formas de link.
 - Um ponto único de verificação, em vez de uma guarda por sítio que diverge com o tempo.
 
 **Negativas / aceitas**
 - Toca muitos sítios de escrita; o risco de falso-positivo é real, e por isso o braço **(b)** é
   inegociável em cada um.
-- `EvalSymlinks` custa syscalls. Aceito: escrita de arquivo já é I/O, e a verificação é por operação,
-  não por byte.
-- Projetos que hoje **dependem** de um symlink legítimo (ex.: `scripts/` apontando para um diretório
-  compartilhado) passam a ser recusados. **Precisa ser medido na Wave 0** e, se real, tratado com uma
-  saída explícita — nunca com afrouxamento silencioso do predicado.
+- Um `Lstat` por ancestral custa syscalls. Aceito: escrita de arquivo já é I/O, a verificação é por
+  operação (não por byte), e a classe (c) já paga esse custo em produção sem queixa.
+- 🔴 **Recusar é estritamente mais estrito que resolver:** um symlink que aponta para **dentro** da
+  árvore também passa a ser recusado. Projetos que dependam disso — `scripts/` apontando para um
+  diretório compartilhado, por exemplo — quebram. É o preço de fechar o TOCTOU, e a classe (c) já o
+  cobra hoje sem incidente relatado. Se aparecer caso legítimo, a saída é **explícita e nomeada**,
+  nunca afrouxamento silencioso do predicado.
