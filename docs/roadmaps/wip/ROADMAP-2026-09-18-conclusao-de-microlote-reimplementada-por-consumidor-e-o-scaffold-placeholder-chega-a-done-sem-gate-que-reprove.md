@@ -102,7 +102,7 @@ grep -q "Residual declarado" docs/portabilidade/2026-09-18-threat-model-scaffold
 > Dependências: Wave 0 auditada. **ML-1A é sequencial consigo mesmo: o baseline vem antes da edição.**
 
 ### ML-1A — extrair o parser para `internal/roadmapdoc`, provando não-regressão
-**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
 **Files affected:**
 - **cria** `internal/roadmapdoc/roadmapdoc.go` + `internal/roadmapdoc/roadmapdoc_test.go`
 - `internal/commands/barrier.go` (passa a importar; remove as funções movidas)
