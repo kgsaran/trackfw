@@ -1,5 +1,5 @@
 ---
-status: Open
+status: Done
 date: 2026-09-11
 author: ""
 adr: ""
@@ -8,7 +8,7 @@ roadmap: "docs/roadmaps/done/ROADMAP-2026-09-11-o-ciclo-testa-onde-funciona-falt
 
 # REQ: o ciclo testa onde funciona: faltam cp1252, Windows sem privilegio e consumidor novo
 
-> Date: 2026-09-11 | Status: Open
+> Date: 2026-09-11 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 

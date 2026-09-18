@@ -87,7 +87,7 @@ ADR: <!-- nenhum: os três têm mecanismo provado e nenhuma decisão de arquitet
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-05-fechar-os-tres-defeitos-mecanicos-dos-issues-do-consumidor-externo.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-09-05-fechar-os-tres-defeitos-mecanicos-dos-issues-do-consumidor-externo.md
 
 
 ---

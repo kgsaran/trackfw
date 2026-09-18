@@ -1127,6 +1127,45 @@ s50_commit_fixture() {
   )
 }
 
+# ML-1B (Defect 1) — variante de s50_commit_fixture que também configura um
+# origin/main. Usada pelos Cenários 51 e 54, onde o ataque combinado
+# (mode: warn + rules: off, ambos só em disco) precisa ser detectado mesmo
+# com o `rules: off` tentando silenciar a regra.
+#
+# Sem origin, ruleSeverity cai em diskRuleSeverity → "off" → silencia. Com
+# origin/main apontando para o commit (que NÃO tem rules: off), stricter-wins
+# retorna "error" → a regra dispara. O bare-repo é criado em mktemp -d (fora
+# de $dest e $ROOT_DIR) para não contaminar git status do repositório raiz
+# (Cenário 18) nem contar nos objetos do fixture descartável.
+#
+# O que se perdeu (garantia anterior, agora mais estreita):
+#   Sob credentialGuardRuleSeverity() (pré-ML-1A), um repositório git local
+#   SEM remote "origin" ainda detectava a edição combinada, pois a âncora era
+#   HEAD, sempre disponível. Com o novo modelo (origin/main), um repositório
+#   sem origin cai em originAnchorNoRemote → disk-only → "off" silencia.
+#   A garantia sobrevive em CI (fetch step presente), mas não em desenvolvimento
+#   local sem remote configurado. Estender stricter(default,disk) para
+#   originAnchorNoRemote foi avaliado e rejeitado: silenciaria todo projeto
+#   local com `rules: {x: off}` legítimo, reproduzindo o mesmo over-reach que
+#   o Defeito 3 existe para corrigir.
+s5x_commit_fixture_with_origin() {
+  local dest=$1 yaml_content=$2 commit_msg=$3
+  s50_commit_fixture "$dest" "$yaml_content" "$commit_msg"
+  local bare_origin
+  bare_origin="$(mktemp -d)"
+  (
+    cd "$bare_origin"
+    git init -q --bare
+    git config core.hooksPath /dev/null
+  )
+  (
+    cd "$dest"
+    git remote add origin "file://$bare_origin"
+    git push -q origin "HEAD:main"
+    git fetch -q --depth=1 --no-tags origin "+refs/heads/main:refs/remotes/origin/main"
+  )
+}
+
 s68_write_project() {
   local dest=$1 rule=$2 severity=$3
   scaffold_adr_req_project "$dest"
@@ -3332,7 +3371,10 @@ assert_lacks_pattern "credential-guard-mode-downgrade/non-vacuity" \
 S51_BAD_HEAD="$(s50_yaml_content block)"
 
 T51_BAD="$WORK/s51-combined-uncommitted"
-s50_commit_fixture "$T51_BAD" "$S51_BAD_HEAD" \
+# ML-1B (Defect 1): usa s5x_commit_fixture_with_origin para que origin/main
+# aponte para o commit (sem rules: off) — stricter-wins retorna "error" e a
+# edição combinada é detectada mesmo com `rules: off` só em disco.
+s5x_commit_fixture_with_origin "$T51_BAD" "$S51_BAD_HEAD" \
   "trackfw.yaml with credential_guard.mode: block"
 s50_yaml_content warn off > "$T51_BAD/trackfw.yaml"
 
@@ -3349,9 +3391,11 @@ assert_fails_with "credential-guard-anchoring-combined-edit/detected" \
 # se o "off" estava commitado — o resultado muda de "reportado" para
 # "silenciado" SÓ por causa dessa variável, isolando exatamente o que o M4
 # promete: desligar continua possível, mas só via commit (rastro
-# auditável), nunca por edição de disco sozinha. -------------------------
+# auditável), nunca por edição de disco sozinha.
+# ML-1B: também usa s5x_commit_fixture_with_origin para que origin/main
+# carregue o rules: off commitado — stricter(off, off) = off → silencia. --
 T51_OFF_COMMITTED="$WORK/s51-combined-off-committed"
-s50_commit_fixture "$T51_OFF_COMMITTED" "$(s50_yaml_content block off)" \
+s5x_commit_fixture_with_origin "$T51_OFF_COMMITTED" "$(s50_yaml_content block off)" \
   "trackfw.yaml with credential_guard.mode: block and rules: credential_guard_mode_downgrade: off"
 s50_yaml_content warn off > "$T51_OFF_COMMITTED/trackfw.yaml"
 
@@ -3634,7 +3678,10 @@ assert_lacks_pattern "credential-guard-anchoring-non-regression/filename-uniquen
 S54_HEAD="$(s50_yaml_content block)"
 
 T54="$WORK/s54-git-env-bypass"
-s50_commit_fixture "$T54" "$S54_HEAD" \
+# ML-1B (Defect 1): mesmo motivo do Cenário 51 — sem origin/main, disk "off"
+# silenciaria a regra e os dois braços de bypass (GIT_DIR e GIT_CONFIG_COUNT)
+# não reportariam S50_MSG, tornando as provas vácuas.
+s5x_commit_fixture_with_origin "$T54" "$S54_HEAD" \
   "trackfw.yaml with credential_guard.mode: block"
 s50_yaml_content warn off > "$T54/trackfw.yaml"
 

@@ -194,21 +194,54 @@ var ruleDefaults = map[string]string{
 }
 
 // ruleSeverity retorna a severidade configurada para a regra.
-// Prioridade: trackfw.yaml rules: > ruleDefaults > "error".
+// Prioridade (quando anchor disponível): stricter-of(origin/main, disk) > ruleDefaults > "error".
+// Prioridade (quando anchor ausente/inaplicável): trackfw.yaml rules: > ruleDefaults > "error".
 //
-// ADR-2026-08-12-severidade-das-regras-de-credential-guard-resolvida-pela-mais-estrita-entre-head-
-// e-disco: the 3 credential-guard rules in credentialGuardAnchoredRules resolve severity
-// DIFFERENTLY from every other rule handled here — they compare HEAD against disk and take the
-// mais estrita (stricter) of the two, instead of reading disk alone. This is deliberate, not a
-// bug: those 3 rules can otherwise be silenced by the very same uncommitted edit they exist to
-// catch (`rules: credential_guard_mode_downgrade: off` in trackfw.yaml, never committed). See
-// credentialGuardRuleSeverity in validator_credential_guard_integrity.go for the mechanism. Every
-// other rule name falls straight through to diskRuleSeverity, byte-identical to before this ADR.
+// ADR-2026-09-17 ML-1A: ancoragem generalizada de origin/main para TODAS as regras, via
+// currentOriginMain (set at top of each Validate* call by loadOriginMainAnchor). Substitui o
+// padrão HEAD-vs-disco anterior (ADR-2026-08-12), que era vácuo em CI (HEAD == disco para edições
+// commitadas, medido na Wave 0).
+//
+// Quatro estados de currentOriginMain — regras de comportamento:
+//
+//   originAnchorNotSet / originAnchorNoGit / originAnchorNoRemote / originAnchorFileAbsent:
+//     disk only — diskRuleSeverity, idêntico ao comportamento pré-ADR-2026-08-12 para todas as
+//     ~38 regras. "Not set" é o valor zero, válido fora de Validate* (e.g. testes que chamam
+//     ruleSeverity diretamente).
+//
+//   originAnchorRefUnreadable:
+//     FAIL CLOSED — ignora o bloco rules: do disco inteiramente, retorna o default built-in da
+//     regra (credentialGuardDefaultSeverity). Previne bypass via `rules: {<regra>: off}` commitado
+//     quando o âncora não pode ser verificada. Uma única mensagem de violação é emitida no topo de
+//     ValidateUnfiltered / validateUnfilteredTagged — não aqui, para evitar N mensagens.
+//
+//   originAnchorOK:
+//     stricter-wins — stricter of(origin/main severity, disk severity). A mais estrita vence;
+//     subir a severidade no disco É respeitado (o critério é "mais estrita vence", não
+//     "origin/main sempre vence").
 func ruleSeverity(name string) string {
-	if credentialGuardAnchoredRules[name] {
-		return credentialGuardRuleSeverity(name)
+	switch currentOriginMain.state {
+	case originAnchorRefUnreadable:
+		// ML-1B (Defect 3): return stricter of built-in default and disk (not default-only).
+		// Disk can strengthen (raise severity above default), but cannot weaken below default.
+		// This allows a repo to escalate a rule from "warning" to "error" even when the anchor
+		// is absent, while still preventing bypass via `rules: {<name>: off}` in the same commit.
+		return credentialGuardStricterSeverity(credentialGuardDefaultSeverity(name), diskRuleSeverity(name))
+	case originAnchorOK:
+		diskSev := diskRuleSeverity(name)
+		mainSev, ok := currentOriginMain.rules[name]
+		if !ok {
+			// Rule absent in origin/main's rules: block — use built-in default, which is
+			// already the strictest value diskRuleSeverity would fall back to, so disk can
+			// only equal or lose this comparison, never win it against the default alone.
+			mainSev = credentialGuardDefaultSeverity(name)
+		}
+		return credentialGuardStricterSeverity(mainSev, diskSev)
+	default:
+		// originAnchorNotSet, originAnchorNoGit, originAnchorNoRemote, originAnchorFileAbsent:
+		// disk only — same as pre-ADR-2026-08-12 for all rules.
+		return diskRuleSeverity(name)
 	}
-	return diskRuleSeverity(name)
 }
 
 // diskRuleSeverity is the ordinary, disk-only resolution used by every rule except the 3
@@ -224,6 +257,224 @@ func diskRuleSeverity(name string) string {
 		return d
 	}
 	return "error"
+}
+
+// scopeRedirectViolations implements the ML-2C scope-redirect guard (AC5 and AC8(c) of
+// REQ-2026-09-17-leniencia-sem-prazo). ML-2C replaces the ML-2B discriminant ("disk dir is
+// empty") with "coverage loss": artifacts committed in origin/main under the anchor path that
+// are no longer visible in any disk governance scope.
+//
+// Why coverage loss instead of emptiness (ML-2B finding):
+// An attacker can create a facade file in the redirected directory (one line, any name) to
+// defeat an emptiness check. The correct signal is: did a PR make previously-committed
+// governance artifacts invisible to the validation engine? That question can only be answered
+// by comparing against the git tree, not the working tree at the anchor path.
+//
+// Baseline — git tree, not disk at anchor path:
+// mdBasenamesInGitTree(ref, anchorDir) reads origin/main's committed files via
+// `git ls-tree -r --name-only <ref> -- <dir>`. This is the only source that survives
+// "delete-and-redirect": an attacker who removes the original files from disk AND creates a
+// facade still loses — origin/main still lists the deleted basenames.
+//
+// Disk side — union of ALL disk governance scopes:
+// A legitimate restructuring (e.g. merging docs/req and docs/adr into docs/governance/) must
+// not fire. The test is "visible anywhere in governance", not "visible at the new path of the
+// same kind". Union of diskCfg.REQDir ∪ diskCfg.RoadmapDir ∪ diskCfg.ADRDirs provides this.
+//
+// Known narrow case (declared here, not hidden):
+// A PR that legitimately DELETES an artifact AND changes paths in the same commit will fire.
+// The violation names the deleted artifact; the remedy is either "don't rename dirs when also
+// deleting artifacts" or "accept the named violation via baseline".
+//
+// State mapping (unchanged from ML-1A/ML-2B):
+//   - originAnchorOK: compare git-tree basenames vs disk union; lost basenames → violation.
+//   - all other states: no baseline → no violation.
+//
+// Violations are appended DIRECTLY (not via applyRule/applyRuleTagged) so they cannot be
+// silenced by rules: {<name>: off} in the same PR.
+func scopeRedirectViolations(diskCfg *config.ProjectConfig) []string {
+	if currentOriginMain.state != originAnchorOK || currentOriginMain.dirs == nil {
+		return nil
+	}
+	anchor := currentOriginMain.dirs
+	ref := currentOriginMain.ref
+
+	// Item 4 (ML-2C hardening): ref must be non-empty to run git ls-tree. This path is
+	// theoretically unreachable (state == originAnchorOK guarantees deriveOriginDefaultBranch
+	// returned ok == true), but an explicit guard prevents silent pass-through if invariants
+	// ever change — empty ref would silently produce zero anchor basenames, passing every check.
+	if ref == "" {
+		return nil
+	}
+
+	// Collect all anchor governance dirs: used to filter the disk-side union (see below).
+	allAnchorDirs := []string{anchor.reqDir, anchor.roadmapDir}
+	allAnchorDirs = append(allAnchorDirs, anchor.adrDirs...)
+
+	// Build the disk-side union once: every .md file visible in any disk governance scope.
+	// Roots that are strict ancestors of any anchor dir are EXCLUDED from the walk — see
+	// mdBasenamesOnDisk for the rationale (defends against roadmap_dir: . and similar).
+	diskUnionRoots := make([]string, 0, 2+len(diskCfg.ADRDirs))
+	diskUnionRoots = append(diskUnionRoots, diskCfg.REQDir, diskCfg.RoadmapDir)
+	diskUnionRoots = append(diskUnionRoots, diskCfg.ADRDirs...)
+	diskBasenames := mdBasenamesOnDisk(diskUnionRoots, allAnchorDirs)
+
+	const maxNamed = 5 // max artifact names per violation message; report count for the rest
+	var out []string
+
+	// req_dir: check coverage when the configured path changed.
+	if filepath.Clean(diskCfg.REQDir) != filepath.Clean(anchor.reqDir) {
+		anchorBasenames := mdBasenamesInGitTree(ref, anchor.reqDir)
+		if lost := scopeLostArtifacts(anchorBasenames, diskBasenames); len(lost) > 0 {
+			named, suffix := formatLostArtifacts(lost, maxNamed)
+			out = append(out, fmt.Sprintf(
+				"scope redirect: req_dir changed from %q (origin/main) to %q (disk) — "+
+					"%d artifact(s) committed in origin/main under the original path are no "+
+					"longer visible in any governance directory on disk: %s%s. "+
+					"Move the artifacts to the new path before changing req_dir, "+
+					"or revert the path change.",
+				anchor.reqDir, diskCfg.REQDir, len(lost), named, suffix))
+		}
+	}
+
+	// roadmap_dir: check coverage when the configured path changed.
+	if filepath.Clean(diskCfg.RoadmapDir) != filepath.Clean(anchor.roadmapDir) {
+		anchorBasenames := mdBasenamesInGitTree(ref, anchor.roadmapDir)
+		if lost := scopeLostArtifacts(anchorBasenames, diskBasenames); len(lost) > 0 {
+			named, suffix := formatLostArtifacts(lost, maxNamed)
+			out = append(out, fmt.Sprintf(
+				"scope redirect: roadmap_dir changed from %q (origin/main) to %q (disk) — "+
+					"%d artifact(s) committed in origin/main under the original path are no "+
+					"longer visible in any governance directory on disk: %s%s. "+
+					"Move the artifacts to the new path before changing roadmap_dir, "+
+					"or revert the path change.",
+				anchor.roadmapDir, diskCfg.RoadmapDir, len(lost), named, suffix))
+		}
+	}
+
+	// adr_dirs: check coverage when the set of configured paths changed.
+	if !stringSlicesSameSet(anchor.adrDirs, diskCfg.ADRDirs) {
+		anchorBasenames := make(map[string]bool)
+		for _, d := range anchor.adrDirs {
+			for k := range mdBasenamesInGitTree(ref, d) {
+				anchorBasenames[k] = true
+			}
+		}
+		if lost := scopeLostArtifacts(anchorBasenames, diskBasenames); len(lost) > 0 {
+			named, suffix := formatLostArtifacts(lost, maxNamed)
+			out = append(out, fmt.Sprintf(
+				"scope redirect: adr_dirs changed from %v (origin/main) to %v (disk) — "+
+					"%d artifact(s) committed in origin/main under the original paths are no "+
+					"longer visible in any governance directory on disk: %s%s. "+
+					"Move the artifacts to the new paths before changing adr_dirs, "+
+					"or revert the path change.",
+				anchor.adrDirs, diskCfg.ADRDirs, len(lost), named, suffix))
+		}
+	}
+
+	return out
+}
+
+// mdBasenamesInGitTree returns the set of .md file basenames committed in the given git ref
+// under the given directory prefix. Uses the same gitCommand wrapper as originMainTrackfwYAML.
+// Returns an empty (non-nil) set on error so callers can do set subtraction safely.
+func mdBasenamesInGitTree(ref, dirPrefix string) map[string]bool {
+	out, err := gitCommand(".", "ls-tree", "-r", "--name-only", ref, "--", dirPrefix).Output()
+	set := make(map[string]bool)
+	if err != nil {
+		return set
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if filepath.Ext(line) == ".md" {
+			set[filepath.Base(line)] = true
+		}
+	}
+	return set
+}
+
+// mdBasenamesOnDisk returns the union of .md file basenames found by recursively walking the
+// provided root directories on the local disk. Missing or unreadable directories are skipped.
+//
+// Roots are expanded via config.ExpandPath (handles ~/... prefixes in adr_dirs).
+//
+// Ancestor filter (ML-2C hardening): a disk root that is a STRICT ancestor of any anchor dir
+// is excluded from the walk. Without this, an attacker who sets `roadmap_dir: .` causes
+// WalkDir(".") to reach the original governance files (docs/req/*, etc.), making all anchor
+// basenames appear "visible" in the disk union and defeating the coverage-loss check entirely.
+// The filter uses strict ancestry (rel != "." prevents excluding roots equal to anchor dirs).
+func mdBasenamesOnDisk(roots []string, anchorDirs []string) map[string]bool {
+	set := make(map[string]bool)
+	for _, root := range roots {
+		expanded := config.ExpandPath(root)
+		eClean := filepath.Clean(expanded)
+		// Exclude roots that are strict ancestors of any anchor dir.
+		isStrictAncestor := false
+		for _, aDir := range anchorDirs {
+			aClean := filepath.Clean(config.ExpandPath(aDir))
+			rel, err := filepath.Rel(eClean, aClean)
+			if err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
+				isStrictAncestor = true
+				break
+			}
+		}
+		if isStrictAncestor {
+			continue
+		}
+		_ = filepath.WalkDir(expanded, func(_ string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil
+			}
+			if filepath.Ext(d.Name()) == ".md" {
+				set[d.Name()] = true
+			}
+			return nil
+		})
+	}
+	return set
+}
+
+// scopeLostArtifacts returns basenames present in anchorSet but absent from diskSet,
+// as a sorted slice for deterministic violation messages.
+func scopeLostArtifacts(anchorSet, diskSet map[string]bool) []string {
+	var lost []string
+	for name := range anchorSet {
+		if !diskSet[name] {
+			lost = append(lost, name)
+		}
+	}
+	sort.Strings(lost)
+	return lost
+}
+
+// formatLostArtifacts formats the first max names from lost into a comma-separated string,
+// appending a " (and N more)" suffix when len(lost) > max.
+func formatLostArtifacts(lost []string, max int) (named, suffix string) {
+	if len(lost) <= max {
+		return strings.Join(lost, ", "), ""
+	}
+	return strings.Join(lost[:max], ", "), fmt.Sprintf(" (and %d more)", len(lost)-max)
+}
+
+// stringSlicesSameSet returns true if a and b contain the same elements after filepath.Clean,
+// ignoring order and duplicates. Used by tests to compare adr_dirs sets.
+func stringSlicesSameSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	setA := make(map[string]bool, len(a))
+	for _, s := range a {
+		setA[filepath.Clean(s)] = true
+	}
+	for _, s := range b {
+		if !setA[filepath.Clean(s)] {
+			return false
+		}
+	}
+	return true
 }
 
 // applyRule distribui msgs conforme severidade da regra.
@@ -260,6 +511,36 @@ func applyRuleTagged(ruleName string, msgs []string, violations, warnings *[]Tag
 	default:
 		*violations = append(*violations, tagged...)
 	}
+}
+
+// lenientCarveoutRules is the named, closed set of rules that lenient mode never silences.
+// Criterion: the rule detects a contradiction between live artifacts (not a historical absence).
+// These rules signal active inconsistency in the governance chain — suppressing them defeats
+// the purpose of governance even during a transition period.
+//
+// Calibration (2026-09-17): req_roadmap_lifecycle + ref_targets_exist = 8 active violations
+// in this repo / 0 historical. All other rules = 0 active / 169 historical.
+// A rule is added here only when its violations cannot be historical debt.
+var lenientCarveoutRules = map[string]bool{
+	"req_roadmap_lifecycle": true,
+	"ref_targets_exist":     true,
+}
+
+// applyLenientWithCarveout moves non-carve-out violations to warnings (lenient mode) while
+// keeping carve-out violations as violations. Rules in lenientCarveoutRules detect contradictions
+// between live artifacts and must not be silenced during lenient transitions.
+// Violations tagged with Rule "" (e.g. frontmatter_presence) are not in the carve-out and move
+// to warnings — this is correct because they represent structural gaps, not live contradictions.
+func applyLenientWithCarveout(violations, warnings []TaggedMsg) ([]TaggedMsg, []TaggedMsg) {
+	var kept []TaggedMsg
+	for _, v := range violations {
+		if lenientCarveoutRules[v.Rule] {
+			kept = append(kept, v)
+		} else {
+			warnings = append(warnings, v)
+		}
+	}
+	return kept, warnings
 }
 
 // WIPConfig armazena configuração de WIP limit derivada do config.ProjectConfig já carregado.
@@ -372,23 +653,52 @@ func governanceModeFrom(cfg config.ProjectConfig) GovernanceMode {
 	return gm
 }
 
-// IsLenient retorna true se o projeto está em modo lenient e o prazo ainda não expirou.
-func IsLenient() bool {
-	gm := governanceModeFrom(config.Load())
-	if gm.Mode != "lenient" {
+// isLenientFor is the pure, clock-injectable core of the leniency check. It is the single
+// place where all three rejection reasons live:
+//
+//   1. mode is not "lenient"
+//   2. lenient_until is absent (zero time) — treats no-deadline as strict (AC2 fix;
+//      pre-fix behaviour was to return true here — that was the bug closed by ML-2A)
+//   3. lenient_until is in the past (deadline expired)
+//   4. lenient_until is more than LenientHorizonDays days from now — treated the same
+//      as absent (AC2 ceiling; prevents 9999-12-31 from granting forever-leniency)
+//
+// IsLenient() is the thin, config-reading wrapper around this function.
+// Tests should call isLenientFor() directly to avoid clock flake.
+func isLenientFor(mode string, until time.Time, now time.Time) bool {
+	if mode != "lenient" {
 		return false
 	}
-	if gm.LenientUntil.IsZero() {
-		return true
+	if until.IsZero() {
+		// AC2: absent lenient_until → strict. Pre-fix: this path returned true (bug).
+		return false
 	}
-	return time.Now().Before(gm.LenientUntil)
+	horizon := now.AddDate(0, 0, config.LenientHorizonDays)
+	if !until.Before(horizon) {
+		// AC2 ceiling: date is at or beyond the horizon — treated same as absent.
+		return false
+	}
+	return now.Before(until)
+}
+
+// IsLenient retorna true se o projeto está em modo lenient e o prazo está dentro do horizonte
+// permitido (config.LenientHorizonDays dias a partir de agora) e ainda não expirou.
+// Ausência de lenient_until → strict (não é mais leniente para sempre).
+func IsLenient() bool {
+	gm := governanceModeFrom(config.Load())
+	return isLenientFor(gm.Mode, gm.LenientUntil, time.Now())
 }
 
 // LenientUntilDate retorna a data de expiração do modo lenient formatada em "2006-01-02".
-// Retorna string vazia se o modo não for lenient ou a data não estiver definida.
+// Retorna string vazia se o modo não for lenient, a data não estiver definida ou estiver além
+// do horizonte permitido (config.LenientHorizonDays dias).
 func LenientUntilDate() string {
 	gm := governanceModeFrom(config.Load())
 	if gm.Mode != "lenient" || gm.LenientUntil.IsZero() {
+		return ""
+	}
+	horizon := time.Now().AddDate(0, 0, config.LenientHorizonDays)
+	if !gm.LenientUntil.Before(horizon) {
 		return ""
 	}
 	return gm.LenientUntil.Format("2006-01-02")
@@ -397,7 +707,49 @@ func LenientUntilDate() string {
 // ValidateUnfiltered executa todas as validações sem filtro de baseline nem modo lenient.
 // Use para criar snapshots de baseline ou quando você quer o quadro completo.
 func ValidateUnfiltered() (violations []string, warnings []string, err error) {
+	// ML-1A (ROADMAP-2026-09-17): load origin/main severity anchor once per validate call.
+	// ruleSeverity() reads currentOriginMain without taking a lock — acceptable because trackfw
+	// is a CLI tool (one validate call per process). Must be set BEFORE config.Load() so that any
+	// diskRuleSeverity call during the first applyRule already sees the correct anchor state.
+	currentOriginMain = loadOriginMainAnchor()
+	switch currentOriginMain.state {
+	case originAnchorRefUnreadable:
+		// ML-1B (Defect 3): changed from unconditional violation to warning.
+		// Anchor unavailable is a configuration signal, not a blocking failure for repos that
+		// never touch rules:. Bypass is still closed: ruleSeverity() returns stricter(default,disk)
+		// for all rules in this state, so disk's `rules: {<name>: off}` cannot lower any rule
+		// below its built-in default. A per-rule violation is emitted below for each rule that
+		// the disk explicitly weakens below default (guarantees observable even with no findings).
+		warnings = append(warnings, originMainRefUnreadableMessage())
+	case originAnchorFileAbsent:
+		// Informational: trackfw.yaml absent in origin/main — normal for a PR that adds the file.
+		// DISTINCT message from originAnchorRefUnreadable (two-states-one-observable prevention).
+		warnings = append(warnings, originMainFileAbsentMessage())
+	}
+
 	cfg := config.Load()
+
+	// ML-2B: scope-redirect guard — detect req_dir/roadmap_dir/adr_dirs redirected to empty dirs.
+	// Direct append (not via applyRule) so rules: {<name>: off} in the same PR cannot silence it.
+	for _, msg := range scopeRedirectViolations(&cfg) {
+		violations = append(violations, msg)
+	}
+
+	// ML-1B (Defect 3): when anchor is unavailable, emit a violation for each rule that the user
+	// EXPLICITLY set in trackfw.yaml's rules: block AND whose explicit value is lower than its
+	// built-in default. Uses ParseRulesFromContent (not cfg.Rules) to read only explicitly-set
+	// rules — cfg.Rules includes config-package defaults (e.g. stale_wip:"warning") which would
+	// produce false positives if the user never touched those rules.
+	if currentOriginMain.state == originAnchorRefUnreadable {
+		if rawContent, readErr := readRegularFile("trackfw.yaml"); readErr == nil {
+			for ruleName, diskSev := range config.ParseRulesFromContent(string(rawContent)) {
+				defSev := credentialGuardDefaultSeverity(ruleName)
+				if credentialGuardSeverityRank(diskSev) < credentialGuardSeverityRank(defSev) {
+					violations = append(violations, originMainAnchorWeakeningMessage(ruleName, diskSev, defSev))
+				}
+			}
+		}
+	}
 
 	wipViolations, e := validateWIPHasREQ()
 	if e != nil {
@@ -479,7 +831,9 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	if e != nil {
 		return nil, nil, e
 	}
-	warnings = append(warnings, reqLifecycleWarnings...)
+	// Ação 1: route through applyRule so that rules: {req_roadmap_lifecycle: error}
+	// can promote this to a violation. Pre-fix: direct append to warnings bypassed ruleSeverity.
+	applyRule("req_roadmap_lifecycle", reqLifecycleWarnings, &violations, &warnings)
 
 	coherenceWarnings, e := validateFolderStatusCoherence()
 	if e != nil {
@@ -619,14 +973,15 @@ func Validate() (violations []string, warnings []string, err error) {
 		return nil, nil, err
 	}
 
+	// AC2/AC4: apply lenient carve-out in the tagged domain BEFORE untagging, so that
+	// lenientCarveoutRules can be matched by rule name. Non-carve-out violations become warnings;
+	// carve-out violations (req_roadmap_lifecycle, ref_targets_exist) remain violations.
+	if IsLenient() {
+		taggedViolations, taggedWarnings = applyLenientWithCarveout(taggedViolations, taggedWarnings)
+	}
+
 	violations = untagMsgs(taggedViolations)
 	warnings = untagMsgs(taggedWarnings)
-
-	// Modo lenient: mover violations para warnings, exit code 0
-	if IsLenient() {
-		warnings = append(warnings, violations...)
-		violations = nil
-	}
 
 	return
 }
@@ -697,7 +1052,39 @@ func untagMsgs(tagged []TaggedMsg) []string {
 // validateUnfilteredTagged é a versão interna de ValidateUnfiltered que retorna TaggedMsg.
 // Regras sem applyRuleTagged (diretas) ficam com Rule="" — comportamento intencional.
 func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, err error) {
+	// ML-1A (ROADMAP-2026-09-17): load origin/main severity anchor once per validate call.
+	// Mirrors the same block in ValidateUnfiltered — both are entry points into the validation
+	// engine (ValidateUnfiltered is called directly, validateUnfilteredTagged by Validate and
+	// ValidateTagged). If they were called in the same process, the second call overwrites
+	// currentOriginMain — acceptable because the anchor result is deterministic for a given CWD.
+	currentOriginMain = loadOriginMainAnchor()
+	const anchorRule = "origin_main_anchor"
+	switch currentOriginMain.state {
+	case originAnchorRefUnreadable:
+		// ML-1B (Defect 3): warning, not violation — mirrors ValidateUnfiltered change.
+		warnings = append(warnings, TaggedMsg{Rule: anchorRule, Msg: originMainRefUnreadableMessage()})
+	case originAnchorFileAbsent:
+		warnings = append(warnings, TaggedMsg{Rule: anchorRule, Msg: originMainFileAbsentMessage()})
+	}
+
 	cfg := config.Load()
+
+	// ML-2B: scope-redirect guard — mirrors ValidateUnfiltered. Rule: "" (direct, not via applyRuleTagged).
+	for _, msg := range scopeRedirectViolations(&cfg) {
+		violations = append(violations, TaggedMsg{Rule: "", Msg: msg})
+	}
+
+	// ML-1B (Defect 3): per-rule weakening violations when anchor unavailable — mirrors ValidateUnfiltered.
+	if currentOriginMain.state == originAnchorRefUnreadable {
+		if rawContent, readErr := readRegularFile("trackfw.yaml"); readErr == nil {
+			for ruleName, diskSev := range config.ParseRulesFromContent(string(rawContent)) {
+				defSev := credentialGuardDefaultSeverity(ruleName)
+				if credentialGuardSeverityRank(diskSev) < credentialGuardSeverityRank(defSev) {
+					violations = append(violations, TaggedMsg{Rule: anchorRule, Msg: originMainAnchorWeakeningMessage(ruleName, diskSev, defSev)})
+				}
+			}
+		}
+	}
 
 	wipViolations, e := validateWIPHasREQ()
 	if e != nil {
@@ -783,9 +1170,10 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 	if e != nil {
 		return nil, nil, e
 	}
-	for _, m := range reqLifecycleWarnings {
-		warnings = append(warnings, TaggedMsg{Rule: "req_roadmap_lifecycle", Msg: m})
-	}
+	// Ação 1 (tagged site): route through applyRuleTagged so that rules:
+	// {req_roadmap_lifecycle: error} can promote to violation. Pre-fix: manual append to
+	// warnings bypassed ruleSeverity — the rule could never become a violation under any config.
+	applyRuleTagged("req_roadmap_lifecycle", reqLifecycleWarnings, &violations, &warnings)
 
 	coherenceWarnings, e := validateFolderStatusCoherence()
 	if e != nil {
@@ -938,10 +1326,10 @@ func ValidateTagged() (violations []TaggedMsg, warnings []TaggedMsg, err error) 
 		return nil, nil, err
 	}
 
-	// Modo lenient: mover violations para warnings, exit code 0.
+	// AC2/AC4: apply lenient carve-out. Carve-out violations remain violations;
+	// non-carve-out violations become warnings; exit code 0 only if no carve-out violations.
 	if IsLenient() {
-		warnings = append(warnings, violations...)
-		violations = nil
+		violations, warnings = applyLenientWithCarveout(violations, warnings)
 	}
 
 	return

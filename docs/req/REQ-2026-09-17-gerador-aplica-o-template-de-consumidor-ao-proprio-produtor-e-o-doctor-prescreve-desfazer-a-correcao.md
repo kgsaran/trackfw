@@ -1,5 +1,5 @@
 ---
-status: Open
+status: Done
 date: 2026-09-17
 author: ""
 adr: ""
@@ -8,7 +8,7 @@ roadmap: "docs/roadmaps/done/ROADMAP-2026-09-17-gerador-aplica-o-template-de-con
 
 # REQ: gerador aplica o template de consumidor ao proprio produtor e o doctor prescreve desfazer a correcao
 
-> Date: 2026-09-17 | Status: Open
+> Date: 2026-09-17 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 

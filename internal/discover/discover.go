@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/forge"
 	"github.com/kgsaran/trackfw/internal/generators"
 )
@@ -494,9 +495,15 @@ func calcScore(r DiscoveryResult) int {
 func GenerateYAML(r DiscoveryResult) string {
 	var sb strings.Builder
 	sb.WriteString("# trackfw configuration — gerado por trackfw discover\n")
-	sb.WriteString("# governance_mode: lenient permite validação não-bloqueante durante onboarding\n\n")
+	// AC3: lenient_until is mandatory when governance_mode is lenient.
+	// Absence is treated as strict (same as init brownfield). Default: config.LenientDefaultDays
+	// days from discover run — matches the default written by `trackfw init` brownfield.
+	sb.WriteString("# governance_mode: lenient permite validação não-bloqueante durante onboarding\n")
+	sb.WriteString("# lenient_until: prazo obrigatório; ausência reverte para strict automaticamente\n\n")
 
-	sb.WriteString("governance_mode: lenient\n\n")
+	lenientUntil := time.Now().AddDate(0, 0, config.LenientDefaultDays).Format("2006-01-02")
+	sb.WriteString("governance_mode: lenient\n")
+	sb.WriteString(fmt.Sprintf("lenient_until: %s\n\n", lenientUntil))
 
 	if len(r.ADRDirs) > 0 {
 		sb.WriteString("adr_dirs:\n")

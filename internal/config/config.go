@@ -16,6 +16,18 @@ import (
 const (
 	NamespacingFlat    = "flat"
 	NamespacingByAgent = "by_agent"
+
+	// LenientDefaultDays is the default number of days added to today when writing
+	// lenient_until in trackfw init (brownfield) and trackfw discover. Both sites must use
+	// this constant so the contract stays consistent.
+	LenientDefaultDays = 30
+
+	// LenientHorizonDays is the maximum number of days from the evaluation instant that
+	// lenient_until may sit in the future. A date further than this (e.g. 9999-12-31) is
+	// indistinguishable from "lenient forever" and is treated the same as absent — strict.
+	// Rationale: 730 days (≈2 years) is long enough for any realistic transition period and
+	// forces an explicit renewal decision before the mode can run indefinitely.
+	LenientHorizonDays = 730
 )
 
 // ProjectConfig holds all configurable paths and governance settings read from trackfw.yaml.
@@ -266,6 +278,17 @@ func ParseRulesFromContent(content string) map[string]string {
 	cfg := ProjectConfig{Rules: make(map[string]string)}
 	parse(content, &cfg)
 	return cfg.Rules
+}
+
+// ParseDirsFromContent parses req_dir, roadmap_dir, and adr_dirs from an arbitrary YAML string
+// (e.g. a git-ref blob obtained via `git show origin/main:./trackfw.yaml`, not the CWD file
+// Load() reads). Missing keys fall back to defaults() so that a trackfw.yaml that only sets
+// rules: still returns canonical dir paths rather than empty strings.
+// Used by ML-2B (scope-redirect guard) to compare origin/main's dir config against disk.
+func ParseDirsFromContent(content string) (reqDir, roadmapDir string, adrDirs []string) {
+	cfg := defaults()
+	parse(content, &cfg)
+	return cfg.REQDir, cfg.RoadmapDir, cfg.ADRDirs
 }
 
 // ReadAgentConventions reads the `agent_conventions` key directly out of <cwd>/trackfw.yaml,

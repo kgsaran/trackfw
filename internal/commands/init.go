@@ -363,7 +363,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 	}
 	if brownfield {
 		cfg.BrownfieldMode = true
-		cfg.LenientUntil = time.Now().AddDate(0, 0, 30)
+		cfg.LenientUntil = time.Now().AddDate(0, 0, config.LenientDefaultDays)
 	}
 
 	if err := generators.Scaffold(cfg); err != nil {

@@ -76,9 +76,9 @@ var configDocs = []configKeyDoc{
 		Key:         "lenient_until",
 		Type:        "date (YYYY-MM-DD)",
 		Default:     `""`,
-		Description: "Data até quando o modo lenient está ativo.",
-		Example:     `lenient_until: 2026-12-31`,
-		Impact:      "Após a data, o modo volta a strict automaticamente.",
+		Description: "Prazo obrigatório do modo lenient. Ausência ou data além de 730 dias no futuro reverte para strict (teto de horizonte: nenhuma janela lenient pode ultrapassar ~2 anos sem renovação explícita).",
+		Example:     `lenient_until: 2027-03-31`,
+		Impact:      "Sem prazo = strict. Após a data = strict. Regras de carve-out (req_roadmap_lifecycle, ref_targets_exist) nunca são silenciadas pelo modo lenient.",
 	},
 	{
 		Key:         "wip_limit",

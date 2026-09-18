@@ -1,5 +1,5 @@
 ---
-status: Open
+status: Done
 date: 2026-09-17
 author: ""
 adr: ""
@@ -8,7 +8,7 @@ roadmap: "docs/roadmaps/done/ROADMAP-2026-09-17-sync-enumera-req-por-caminho-lit
 
 # REQ: sync enumera REQ por caminho literal ignora req_dir e escreve no provedor de PM
 
-> Date: 2026-09-17 | Status: Open
+> Date: 2026-09-17 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 

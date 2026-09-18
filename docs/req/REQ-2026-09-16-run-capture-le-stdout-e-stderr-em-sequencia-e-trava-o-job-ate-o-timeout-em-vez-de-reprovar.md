@@ -1,5 +1,5 @@
 ---
-status: Open
+status: Done
 date: 2026-09-16
 author: ""
 adr: ""
@@ -8,7 +8,7 @@ roadmap: "docs/roadmaps/done/ROADMAP-2026-09-16-run-capture-le-stdout-e-stderr-e
 
 # REQ: run-capture le stdout e stderr em sequencia e trava o job ate o timeout em vez de reprovar
 
-> Date: 2026-09-16 | Status: Open
+> Date: 2026-09-16 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
