@@ -991,7 +991,8 @@ func TestMoveRoadmap_ByAgent_BetweenNamespaces_StillWorks(t *testing.T) {
 		t.Fatalf("mkdir zeus/wip: %v", err)
 	}
 	const rm = "ROADMAP-shared.md"
-	if err := os.WriteFile("docs/roadmaps/zeus/wip/"+rm, []byte("# shared"), 0644); err != nil {
+	// Wave 0 added (ML-4B, REQ #392): MoveRoadmap("done") requires ## Wave 0.
+	if err := os.WriteFile("docs/roadmaps/zeus/wip/"+rm, []byte("# shared\n\n## Wave 0 — Threat Model\n"), 0644); err != nil {
 		t.Fatalf("escrever roadmap: %v", err)
 	}
 

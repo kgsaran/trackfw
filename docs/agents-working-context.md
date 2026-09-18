@@ -2,6 +2,30 @@
 
 ---
 
+## Sessão 2026-09-18 (continuação 7) — Apolo (fix/scaffold-placeholder-chega-a-done — ML-4B: corretivo do ML-4A + AC7-bis na transição) — CONCLUÍDO
+
+**Início:** 2026-09-18 | Branch: `fix/scaffold-placeholder-chega-a-done`
+**Tarefa:** ML-4B (REQ #392) — (1) reverter gates echo em 4 roadmaps done/ e 2 blocked/; (2) reverter Wave 0 fabricada em blocked/triagem-medida; (3) estreitar roadmap_wave0_required e roadmap_gate_coverage para wip/ apenas; (4) ligar HasWave0 em MoveRoadmap("done"); (5) novos testes AC7-bis; (6) corrigir counter-arm tests que eram vacuosos.
+
+**Resultado:**
+- 6 roadmaps revertidos (4 done/, 2 blocked/): echo gates removidos, Wave 0 fabricada removida, exit 1 placeholder restaurado onde aplicável.
+- `internal/validator/validator_roadmap_gates.go`: dois loops separados — wave0_required+gate_coverage limitados a wip/; duplicate_label em wip+blocked.
+- `internal/generators/roadmap.go`: `HasWave0` check adicionado ao `if state == "done"` — combina com pending MLs em erro único (total count + lista).
+- `internal/generators/roadmap_move_test.go`: 8 fixtures de done-transition atualizados com `## Wave 0 — Threat Model`.
+- `internal/generators/roadmap_ml_gate_test.go`: 4 fixtures de success-path atualizados + 3 novos testes AC7-bis (Falsification, CounterArm, Fuga).
+- `internal/generators/roadmap_test.go`: 1 fixture ByAgent atualizado.
+- `internal/validator/validator_test.go`: 3 counter-arm tests corrigidos para escanear violations+warnings (não apenas warnings); 1 novo blocked/ counter-arm; AC7-bis reconciliation entries atualizados.
+
+**Gates:**
+- `go build ./...` RC=0
+- `go test ./...` RC=0 (todos os 20 pacotes verdes)
+- `bin/trackfw validate` RC=0 · nenhuma ocorrência de `roadmap_wave0_required`, `roadmap_gate_coverage`, `roadmap_duplicate_label` na saída
+- `git diff main...HEAD -- docs/roadmaps/ | grep '^+.*echo "Wave'` → vazio (nenhum gate echo inserido)
+
+**ML-4B status:** ✅ Concluído — aguarda commit do arquiteto.
+
+---
+
 ## Sessão 2026-09-18 (continuação 6) — Apolo (fix/scaffold-placeholder-chega-a-done — ML-3C: corretivo leitura crua em validator_roadmap_gates.go) — CONCLUÍDO
 
 **Início:** 2026-09-18 | Branch: `fix/scaffold-placeholder-chega-a-done`
@@ -38442,3 +38466,17 @@ Implementação completa. Evidências: `go build ./...` RC=0 · `make test` 15/1
 - `git diff | grep '^[-+].*Status' | grep '⬜→✅\|🔄→✅'`: vazio (0 transições proibidas)
 
 **Entregando ao trackfw_architect para auditoria e commit.**
+
+---
+## apolo-tf — ML-4B iniciado — 2026-09-18
+
+**REQ:** #392 | **Roadmap:** ROADMAP-2026-09-18-conclusao-de-microlote...md | **ML:** ML-4B (corretivo do ML-4A)
+
+**Escopo:**
+1. Reverter 6 gates `echo` (4 em done/, 2 em blocked/)
+2. Reverter Wave 0 fabricada em blocked/ROADMAP-2026-09-12-triagem-medida...md
+3. Estreitar `roadmap_wave0_required` e `roadmap_gate_coverage` para `wip/` apenas (manter `roadmap_duplicate_label` em wip+blocked)
+4. Ligar AC7-bis na transição: `MoveRoadmap(..., "done")` recusa sem `## Wave 0`
+5. Novos testes: falsificação Wave0 na transição, fuga wip→blocked→done
+
+**Em andamento...**

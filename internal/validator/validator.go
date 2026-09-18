@@ -947,9 +947,11 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	hiddenNamespaceMsgs := hiddenNamespaceWarnings()
 	applyRule("agent_namespace_hidden", hiddenNamespaceMsgs, &violations, &warnings)
 
-	// ML-3B (REQ #392): gate coverage (AC7), Wave 0 required (AC7-bis), duplicate labels (AC8).
-	// State-sensitive: wip and blocked only — backlog/analyzing are not charged (ADR-2026-09-18
-	// decision 6-bis); done/ is not reévaluated retroactively (decision 7/8).
+	// ML-3B/ML-4B (REQ #392): gate coverage (AC7), Wave 0 required (AC7-bis), duplicate labels (AC8).
+	// wave0_required + gate_coverage: wip/ only (ML-4B narrowed from wip+blocked — see
+	// validator_roadmap_gates.go header for the retroactivity argument).
+	// duplicate_label: wip/ + blocked/ (structural error, not convention-age-sensitive).
+	// None applies to backlog/analyzing (decision 6-bis) or done/ (decision 7/8).
 	wave0Msgs, gateMsgs, dupMsgs := validateRoadmapGatesCoverage()
 	applyRule("roadmap_wave0_required", wave0Msgs, &violations, &warnings)
 	applyRule("roadmap_gate_coverage", gateMsgs, &violations, &warnings)
@@ -1298,8 +1300,7 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 	hiddenNamespaceMsgsT := hiddenNamespaceWarnings()
 	applyRuleTagged("agent_namespace_hidden", hiddenNamespaceMsgsT, &violations, &warnings)
 
-	// ML-3B (REQ #392): gate coverage (AC7), Wave 0 required (AC7-bis), duplicate labels (AC8).
-	// Mirror of the ValidateUnfiltered block above — same order, same rules.
+	// ML-3B/ML-4B (REQ #392): mirror of ValidateUnfiltered block — same rules, same order.
 	// 🔴 Forgetting this Tagged site makes the rules vanish from --json without a compile error.
 	wave0MsgsT, gateMsgsT, dupMsgsT := validateRoadmapGatesCoverage()
 	applyRuleTagged("roadmap_wave0_required", wave0MsgsT, &violations, &warnings)

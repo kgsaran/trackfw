@@ -2445,13 +2445,20 @@ func TestValidateRoadmapGateCoverage_AC7_RealGate(t *testing.T) {
 	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-real-gate.md", roadmapWithWave0RealGate)
 	chdir(t, dir)
 
-	_, warnings, err := Validate()
+	// roadmap_gate_coverage is at error severity (absent from ruleDefaults — falls through to
+	// violations, not warnings).  Scan both slices so this test cannot be vacuous.
+	violations, warnings, err := Validate()
 	if err != nil {
 		t.Fatalf("Validate() error: %v", err)
 	}
+	for _, v := range violations {
+		if strings.Contains(v, "placeholder or absent") && strings.Contains(v, "ROADMAP-real-gate") {
+			t.Errorf("roadmap_gate_coverage false alarm on real gate (violations): %q", v)
+		}
+	}
 	for _, w := range warnings {
 		if strings.Contains(w, "placeholder or absent") && strings.Contains(w, "ROADMAP-real-gate") {
-			t.Errorf("roadmap_gate_coverage false alarm on real gate: %q", w)
+			t.Errorf("roadmap_gate_coverage false alarm on real gate (warnings): %q", w)
 		}
 	}
 }
@@ -2492,13 +2499,20 @@ status: done
 	writeFile(t, dir, "docs/roadmaps/done/ROADMAP-done-no-wave0.md", doneNoWave0)
 	chdir(t, dir)
 
-	_, warnings, err := Validate()
+	// roadmap_wave0_required is at error severity (absent from ruleDefaults — falls through to
+	// violations, not warnings).  Scan both slices so this test cannot be vacuous.
+	violations, warnings, err := Validate()
 	if err != nil {
 		t.Fatalf("Validate() error: %v", err)
 	}
+	for _, v := range violations {
+		if strings.Contains(v, "Wave 0") && strings.Contains(v, "ROADMAP-done-no-wave0") {
+			t.Errorf("roadmap_wave0_required false alarm on done/ roadmap (violations): %q", v)
+		}
+	}
 	for _, w := range warnings {
 		if strings.Contains(w, "Wave 0") && strings.Contains(w, "ROADMAP-done-no-wave0") {
-			t.Errorf("roadmap_wave0_required false alarm on done/ roadmap: %q", w)
+			t.Errorf("roadmap_wave0_required false alarm on done/ roadmap (warnings): %q", w)
 		}
 	}
 }
@@ -2542,14 +2556,61 @@ status: backlog
 	writeFile(t, dir, "docs/roadmaps/backlog/ROADMAP-backlog-placeholder.md", backlogWithPlaceholder)
 	chdir(t, dir)
 
-	_, warnings, err := Validate()
+	// roadmap_gate_coverage and roadmap_wave0_required are at error severity (absent from
+	// ruleDefaults); scan both violations and warnings to avoid a vacuous counter-arm.
+	violations, warnings, err := Validate()
 	if err != nil {
 		t.Fatalf("Validate() error: %v", err)
+	}
+	for _, v := range violations {
+		if (strings.Contains(v, "placeholder or absent") || strings.Contains(v, "Wave 0")) &&
+			strings.Contains(v, "ROADMAP-backlog-placeholder") {
+			t.Errorf("AC8-bis: false alarm on backlog/ roadmap (violations): %q", v)
+		}
 	}
 	for _, w := range warnings {
 		if (strings.Contains(w, "placeholder or absent") || strings.Contains(w, "Wave 0")) &&
 			strings.Contains(w, "ROADMAP-backlog-placeholder") {
-			t.Errorf("AC8-bis: false alarm on backlog/ roadmap with legitimate placeholder: %q", w)
+			t.Errorf("AC8-bis: false alarm on backlog/ roadmap (warnings): %q", w)
+		}
+	}
+}
+
+// TestValidateRoadmapGateCoverage_AC7bis_BlockedNotCharged asserts CONCLUSION: a
+// blocked/ roadmap without ## Wave 0 does NOT trigger roadmap_wave0_required.
+// Retroactivity argument: same as done/ — blocked/ roadmaps may pre-date the
+// Wave 0 convention (ADR-2026-09-18 decision 8 + ML-4B narrowing; see
+// validator_roadmap_gates.go header for the measured 1-roadmap justification).
+func TestValidateRoadmapGateCoverage_AC7bis_BlockedNotCharged(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/roadmaps/wip", "docs/roadmaps/backlog", "docs/roadmaps/blocked",
+		"docs/roadmaps/done", "docs/roadmaps/analyzing", "docs/req", "docs/adr")
+	writeFile(t, dir, "trackfw.yaml", minimalTrackfwYaml)
+	const blockedNoWave0 = `---
+status: blocked
+---
+# Roadmap: Blocked No Wave 0
+
+## Wave 1 — Implementation
+
+### ML-1A — Work
+**Status:** ❌ Bloqueado
+`
+	writeFile(t, dir, "docs/roadmaps/blocked/ROADMAP-blocked-no-wave0.md", blockedNoWave0)
+	chdir(t, dir)
+
+	violations, warnings, err := Validate()
+	if err != nil {
+		t.Fatalf("Validate() error: %v", err)
+	}
+	for _, v := range violations {
+		if strings.Contains(v, "Wave 0") && strings.Contains(v, "ROADMAP-blocked-no-wave0") {
+			t.Errorf("roadmap_wave0_required false alarm on blocked/ roadmap (violations): %q", v)
+		}
+	}
+	for _, w := range warnings {
+		if strings.Contains(w, "Wave 0") && strings.Contains(w, "ROADMAP-blocked-no-wave0") {
+			t.Errorf("roadmap_wave0_required false alarm on blocked/ roadmap (warnings): %q", w)
 		}
 	}
 }

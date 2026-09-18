@@ -632,6 +632,14 @@ func MoveRoadmap(name, state string) error {
 	// unfinished MLs.  The gate fires before os.MkdirAll so a refused transition
 	// does not leave an empty done/ directory behind.
 	//
+	// AC7-bis (REQ #392 ML-4B): also refuse when ## Wave 0 heading is absent.
+	// The validator's roadmap_wave0_required fires at validate time for wip/; this
+	// gate closes the escape of removing Wave 0 after moving to blocked and then
+	// moving to done (the "fuga" documented in ADR-2026-09-18 decision 8).
+	//
+	// Both blockers are collected before emitting any error so the user sees all
+	// problems in one refusal (same format: label + context per blocker).
+	//
 	// state is already validated against roadmapValidStateNames above: any non-canonical
 	// spelling (e.g. "Done") would have returned an error before reaching this point.
 	// The literal compare "done" is therefore safe — it is not a normalisation step.
@@ -639,11 +647,25 @@ func MoveRoadmap(name, state string) error {
 		rawContent, readErr := os.ReadFile(src)
 		if readErr != nil {
 			// Fail closed: cannot verify completeness without reading the file.
-			return fmt.Errorf("cannot verify ML completeness for done transition: %w", readErr)
+			return fmt.Errorf("cannot verify readiness for done transition: %w", readErr)
 		}
-		if blockers := pendingMLsForDone(string(rawContent)); len(blockers) > 0 {
+		content := string(rawContent)
+		blockers := pendingMLsForDone(content)
+
+		// AC7-bis: missing Wave 0 heading is a blocker.  Collect as a pseudo-entry
+		// so the refusal message names it alongside any pending MLs.
+		missingWave0 := !roadmapdoc.HasWave0(content)
+
+		if len(blockers) > 0 || missingWave0 {
+			totalCount := len(blockers)
+			if missingWave0 {
+				totalCount++
+			}
 			var b strings.Builder
-			fmt.Fprintf(&b, "cannot move %q to done: %d unfinished ML(s):", filepath.Base(src), len(blockers))
+			fmt.Fprintf(&b, "cannot move %q to done: %d blocker(s):", filepath.Base(src), totalCount)
+			if missingWave0 {
+				fmt.Fprintf(&b, "\n  missing ## Wave 0 heading (AC7-bis, ADR-2026-09-18 decision 8)")
+			}
 			for _, entry := range blockers {
 				fmt.Fprintf(&b, "\n  %s (line %d)", entry.label, entry.line)
 			}

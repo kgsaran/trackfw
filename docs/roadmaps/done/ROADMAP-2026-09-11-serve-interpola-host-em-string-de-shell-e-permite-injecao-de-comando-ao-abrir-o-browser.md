@@ -44,13 +44,6 @@ Go não abre browser; ausência de superfície é divergência intencional docum
 **Residual declarado:**
 - Windows `cmd /c start "" url` re-parseia metacaracteres de `cmd.exe` mesmo via argv. Contenção: AC4 (isValidHost rejeita hosts com metacaracteres).
 
-**Gates da wave:**
-```bash
-# Wave 0 threat model was incorporated into the architect handoff (see ML-0A body above).
-# No separate automation gate was defined; the enumeration is documented inline.
-echo "Wave 0 threat model accepted: surfaces enumerated and residual declared"
-```
-
 ## Wave 1 — Implementation
 > Dependencies: Wave 0 completa
 

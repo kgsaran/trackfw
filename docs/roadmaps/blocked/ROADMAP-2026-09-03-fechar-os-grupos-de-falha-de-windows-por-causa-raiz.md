@@ -237,13 +237,6 @@ um que decora.
 
 **Verificação que só o CI fecha:** a contagem Python cair de 101 para ~51.
 
-**Gates da wave:**
-```bash
-# Wave 0 ML-0A was completed 2026-09-04; no automation gate was defined at the time.
-# Audit evidence is in docs/qualidade/2026-09-04-grupo-b-bash-do-python-em-windows.md.
-echo "Wave 0 ML-0A audit: accepted 2026-09-04 (mecanismo reduzido a 2 hipóteses)"
-```
-
 ## Wave 1 — As três decisões (arquiteto, sequenciais, NÃO paralelizam)
 > Dependências: nenhuma. Não esperam a Wave 0.
 

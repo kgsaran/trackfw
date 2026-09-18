@@ -52,12 +52,6 @@ diferente, não se corrige aqui.
 **Aceite:** parecer com os vetores enumerados e, por vetor, se a correção fecha, mitiga ou não toca.
 🔴 Vetor não fechado tem de estar nomeado.
 
-**Gates da wave:**
-```bash
-# Wave 0 ML-0A audit accepted 2026-09-17; see docs/portabilidade/2026-09-17-threat-model-sync-req-dir.md
-echo "Wave 0 ML-0A audit: accepted 2026-09-17 (ResolveREQFiles contenção e raio de sync medidos)"
-```
-
 ---
 
 ## Wave 1 — Correção

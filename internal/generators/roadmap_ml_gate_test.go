@@ -83,7 +83,8 @@ func TestMoveRoadmapDone_PendingML_Refuses_ML3A(t *testing.T) {
 // the done gate without error.  Without this arm, the gate could be an
 // unconditional block that breaks all legitimate transitions.
 func TestMoveRoadmapDone_AllComplete_Moves_ML3A(t *testing.T) {
-	const content = "---\nstatus: wip\ndate: 2026-09-18\n---\n\n# Roadmap: complete test\n\n## Wave 1 — Done\n\n### ML-1A — finished\n**Status:** ✅ Concluído\n"
+	// Wave 0 added (ML-4B, REQ #392): MoveRoadmap("done") requires ## Wave 0.
+	const content = "---\nstatus: wip\ndate: 2026-09-18\n---\n\n# Roadmap: complete test\n\n## Wave 0 — Threat Model\n\n## Wave 1 — Done\n\n### ML-1A — finished\n**Status:** ✅ Concluído\n"
 	const name = "ROADMAP-complete-ml.md"
 
 	dir := setupMoveML(t, name, content)
@@ -104,7 +105,8 @@ func TestMoveRoadmapDone_AllComplete_Moves_ML3A(t *testing.T) {
 // **Status:** is ABANDONADO (StatusTerminated) is treated as explicitly closed
 // and does NOT block the transition to done (ADR 2026-09-18 decision 9).
 func TestMoveRoadmapDone_AbandonadoReleases_ML3A(t *testing.T) {
-	const content = "---\nstatus: wip\n---\n\n# Roadmap: abandonado test\n\n## Wave 1 — Closed\n\n### ML-1A — abandoned\n**Status:** ABANDONADO\n"
+	// Wave 0 added (ML-4B, REQ #392): MoveRoadmap("done") requires ## Wave 0.
+	const content = "---\nstatus: wip\n---\n\n# Roadmap: abandonado test\n\n## Wave 0 — Threat Model\n\n## Wave 1 — Closed\n\n### ML-1A — abandoned\n**Status:** ABANDONADO\n"
 	const name = "ROADMAP-abandonado-ml.md"
 
 	dir := setupMoveML(t, name, content)
@@ -124,7 +126,8 @@ func TestMoveRoadmapDone_AbandonadoReleases_ML3A(t *testing.T) {
 // second token, not just the first.
 func TestMoveRoadmapDone_CanceladoReleases_ML3A(t *testing.T) {
 	// ❌ Cancelado → Terminated → releases
-	const contentCancelado = "---\nstatus: wip\n---\n\n# Roadmap: cancelado test\n\n## Wave 1 — Cancelled\n\n### ML-1A — cancelled\n**Status:** ❌ Cancelado\n"
+	// Wave 0 added (ML-4B, REQ #392): MoveRoadmap("done") requires ## Wave 0.
+	const contentCancelado = "---\nstatus: wip\n---\n\n# Roadmap: cancelado test\n\n## Wave 0 — Threat Model\n\n## Wave 1 — Cancelled\n\n### ML-1A — cancelled\n**Status:** ❌ Cancelado\n"
 	const nameCancelado = "ROADMAP-cancelado-ml.md"
 
 	dir := setupMoveML(t, nameCancelado, contentCancelado)
@@ -199,7 +202,8 @@ func TestMoveRoadmapDone_WriteFailurePropagated_ML3A(t *testing.T) {
 	}
 
 	// All MLs complete so the new done-gate passes before reaching the write.
-	const content = "---\nstatus: wip\ndate: 2026-09-18\n---\n\n# Roadmap: write-fail test\n\n## Wave 1 — Complete\n\n### ML-1A — done\n**Status:** ✅ Concluído\n"
+	// Wave 0 added (ML-4B, REQ #392): MoveRoadmap("done") requires ## Wave 0.
+	const content = "---\nstatus: wip\ndate: 2026-09-18\n---\n\n# Roadmap: write-fail test\n\n## Wave 0 — Threat Model\n\n## Wave 1 — Complete\n\n### ML-1A — done\n**Status:** ✅ Concluído\n"
 	const name = "ROADMAP-write-fail.md"
 
 	dir := t.TempDir()
@@ -340,5 +344,86 @@ func TestMoveRoadmapWip_PendingML_NotGated_ML3A(t *testing.T) {
 
 	if err := MoveRoadmap(name, "wip"); err != nil {
 		t.Fatalf("Moving to wip with pending MLs should NOT be gated, but got: %v", err)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC7-bis (ML-4B, REQ #392): HasWave0 check in MoveRoadmap done transition
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestMoveRoadmapDone_AC7bis_Falsification_ML4B asserts CONCLUSION: a roadmap
+// with all MLs ✅ Concluído but WITHOUT a ## Wave 0 heading is refused at the
+// done transition.  This is the falsification arm: before ML-4B the check did
+// not exist (grep -c HasWave0 internal/generators/roadmap.go == 0), so this
+// test would have passed; after ML-4B it must fail.
+func TestMoveRoadmapDone_AC7bis_Falsification_ML4B(t *testing.T) {
+	const content = "---\nstatus: wip\ndate: 2026-09-18\n---\n\n# Roadmap: no-wave0 test\n\n## Wave 1 — Done\n\n### ML-1A — finished\n**Status:** ✅ Concluído\n"
+	const name = "ROADMAP-no-wave0-done.md"
+
+	setupMoveML(t, name, content)
+
+	err := MoveRoadmap(name, "done")
+	if err == nil {
+		t.Fatal("MoveRoadmap(..., \"done\") must refuse when ## Wave 0 is absent (AC7-bis), but returned nil")
+	}
+	if !strings.Contains(err.Error(), "Wave 0") {
+		t.Errorf("refusal message should reference Wave 0; got: %q", err.Error())
+	}
+	// File must NOT have moved.
+	if _, statErr := os.Stat(filepath.Join("docs", "roadmaps", "done", name)); statErr == nil {
+		t.Error("roadmap was moved to done/ despite missing Wave 0 heading — gate fired too late")
+	}
+}
+
+// TestMoveRoadmapDone_AC7bis_CounterArm_ML4B asserts CONCLUSION: a roadmap with
+// all MLs ✅ Concluído AND a ## Wave 0 heading IS allowed through the done
+// transition.  Without this arm, the Wave 0 check could be an unconditional block.
+func TestMoveRoadmapDone_AC7bis_CounterArm_ML4B(t *testing.T) {
+	const content = "---\nstatus: wip\ndate: 2026-09-18\n---\n\n# Roadmap: wave0 counter-arm\n\n## Wave 0 — Threat Model\n\n## Wave 1 — Done\n\n### ML-1A — finished\n**Status:** ✅ Concluído\n"
+	const name = "ROADMAP-wave0-counter-arm.md"
+
+	dir := setupMoveML(t, name, content)
+
+	if err := MoveRoadmap(name, "done"); err != nil {
+		t.Fatalf("MoveRoadmap should succeed when Wave 0 is present and all MLs are done, got: %v", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "docs", "roadmaps", "done", name)); statErr != nil {
+		t.Errorf("roadmap not found in done/ after successful move: %v", statErr)
+	}
+}
+
+// TestMoveRoadmapDone_AC7bis_Fuga_ML4B asserts CONCLUSION: moving a roadmap from
+// blocked/ (where Wave 0 is not checked by the validator) directly to done/ is
+// still refused when ## Wave 0 is absent.  This closes the escape route (fuga):
+// wip → remove Wave 0 → move to blocked → move to done.
+// The done transition gate fires regardless of the source state.
+func TestMoveRoadmapDone_AC7bis_Fuga_ML4B(t *testing.T) {
+	const name = "ROADMAP-fuga-wave0.md"
+	// Roadmap without Wave 0, all MLs Concluído — placed directly in blocked/.
+	const content = "---\nstatus: blocked\ndate: 2026-09-18\n---\n\n# Roadmap: fuga test\n\n## Wave 1 — Done\n\n### ML-1A — finished\n**Status:** ✅ Concluído\n"
+
+	dir := t.TempDir()
+	chdirADR(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	blocked := filepath.Join(dir, "docs", "roadmaps", "blocked")
+	if err := os.MkdirAll(blocked, 0755); err != nil {
+		t.Fatalf("mkdir blocked: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(blocked, name), []byte(content), 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	err := MoveRoadmap(name, "done")
+	if err == nil {
+		t.Fatal("MoveRoadmap(..., \"done\") from blocked/ must refuse when Wave 0 is absent (fuga closed), but returned nil")
+	}
+	if !strings.Contains(err.Error(), "Wave 0") {
+		t.Errorf("refusal should reference Wave 0; got: %q", err.Error())
+	}
+	// File must remain in blocked/.
+	if _, statErr := os.Stat(filepath.Join(dir, "docs", "roadmaps", "done", name)); statErr == nil {
+		t.Error("roadmap was moved to done/ from blocked/ despite missing Wave 0 — fuga not closed")
 	}
 }

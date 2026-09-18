@@ -561,7 +561,7 @@ explícito é uma decisão registrada, não um esquecimento"*.
 - [ ] Uma frase por teste novo (AC11)
 
 ### ML-4B — corretivo do ML-4A: desfazer a conformidade forjada e ligar o AC7-bis na transição
-**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
+**Status:** ✅ Concluído **no corretivo** (auditado por Zeus: fuga fechada em sandbox real), com o ML-4C fechando o efeito colateral da promoção sobre uma fixture de script
 **Files affected:** os roadmaps de `done/` e `blocked/` tocados pelo ML-4A,
 `internal/validator/validator_roadmap_gates.go`, `internal/generators/roadmap.go`,
 `internal/generators/roadmap_ml_gate_test.go`, `internal/validator/validator_test.go`
@@ -614,4 +614,46 @@ Sem isso, estreitar a regra para `wip/` abre a fuga: **`wip` → apagar Wave 0 �
 - [ ] 🔴 **`MoveRoadmap` recusa `done` sem `## Wave 0`**, com teste de falsificação (passa antes, reprova depois) e contra-braço (roadmap com Wave 0 move)
 - [ ] 🔴 **Fuga fechada:** teste que demonstra que `wip` → apagar Wave 0 → `blocked` → `done` **não** passa
 - [ ] `trackfw validate` RC=0 · `go build ./...` RC=0 · `go test ./...` RC=0
+- [ ] Uma frase por teste novo (AC11)
+
+### ML-4C — corretivo do ML-4B: a promoção a `error` reprova uma fixture do `check-barrier.sh`
+**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
+**Files affected:** `scripts/check-barrier.sh`, `docs/adr/ADR-2026-09-18-...md`, `docs/cli-parity.md`
+**Contexto:** o ML-4B está **auditado e aprovado** — reverti nada: os 6 `echo` sumiram
+(`git diff main -- docs/roadmaps/ | grep -c '^+.*echo "Wave 0'` → **0**), a Wave 0 fabricada foi
+removida (**0** linhas adicionadas no `triagem-medida`), e a **fuga está fechada**, provada por sonda
+minha em sandbox real:
+```
+blocked/ sem Wave 0, todos MLs ✅  → Error: missing ## Wave 0 heading (AC7-bis, decision 8)
+blocked/ com Wave 0,  todos MLs ✅  → ✓ moved
+```
+Ele ainda achou um defeito que era meu por omissão: `TestValidateRoadmapGateCoverage_AC7_RealGate` e
+outros dois escaneavam **apenas `warnings`** — com a regra promovida a `error`, eram **vácuos**.
+
+🔴 **A barreira final reprovou em 26 de ~640:**
+```
+FAIL [barrier/two-wave-flow/wave1-passed]: expected exit 0 for Wave 1, got 1
+```
+A fixture de `scripts/check-barrier.sh` (~linha 185) cria um roadmap em **`wip/`** com `## Wave 1` e
+`## Wave 2` e **sem Wave 0**. Com `roadmap_wave0_required` em `error`, o check `validate` **dentro**
+do `barrier` bloqueia. **O gate está certo; a fixture é que precede a política.**
+
+🔴 **Decisão do arquiteto — isto é ruptura intencional e precisa estar declarada.** Um consumidor com
+roadmap em `wip/` sem `## Wave 0` passa a ter `validate` **e** `barrier` reprovando. É o efeito
+pretendido da promoção (Wave 0 é obrigatória por ADR desde agosto e a regra só cobra em `wip/`), mas
+**não pode ser descoberto pelo consumidor no meio de um release**.
+**Actions:**
+1. Acrescentar `## Wave 0` à fixture `two-wave-flow` de `scripts/check-barrier.sh`. É correção
+   legítima: a fixture testa **fluxo de duas waves**, não ausência de Wave 0. 🔴 Não relaxe a regra
+   para a fixture passar.
+2. Varrer `scripts/` por **outras** fixtures que criem roadmap em `wip/` sem Wave 0 — não pare na
+   primeira. A barreira abortou em 26; pode haver mais adiante.
+3. **Declarar a ruptura** numa seção de *breaking change* na `ADR-2026-09-18` e em `docs/cli-parity.md`:
+   quem tem roadmap em `wip/` sem `## Wave 0` verá `validate` e `barrier` reprovarem; o remédio é
+   acrescentar a Wave 0, não afrouxar a regra.
+**Acceptance criteria:**
+- [ ] `make quality` RC=0, **executado até o fim** — a contagem tem de voltar a ~640, não parar em 26
+- [ ] Nenhuma regra afrouxada para a fixture passar
+- [ ] Ruptura declarada na ADR **e** no `cli-parity.md`
+- [ ] Outras fixtures afetadas, se houver, nomeadas no relatório
 - [ ] Uma frase por teste novo (AC11)
