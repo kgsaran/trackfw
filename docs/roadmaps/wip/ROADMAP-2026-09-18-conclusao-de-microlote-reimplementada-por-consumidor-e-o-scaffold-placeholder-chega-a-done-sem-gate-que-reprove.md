@@ -157,7 +157,7 @@ fixtures do predicado e **não** ao teste de baseline.
 - [ ] Uma frase por teste novo declarando o que ele afirma (AC11)
 
 ### ML-1C — corretivo do ML-1B: o pin de vereditos do corpus não foi atualizado
-**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
 **Files affected:** `scripts/testdata/roadmap-barrier-corpus-verdicts.tsv`, e o script que o pina
 (`scripts/check-roadmap-barrier-contract.sh` ou equivalente — localize; não presuma o nome)
 **Contexto da reprovação:** o ML-1B está correto no que entregou — auditei o congelamento do corpus
