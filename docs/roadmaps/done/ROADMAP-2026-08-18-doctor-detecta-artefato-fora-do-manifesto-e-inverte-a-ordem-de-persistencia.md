@@ -236,7 +236,7 @@ de fato — o que rebaixaria adulteração a acidente. **Veredito explícito; bl
 
 ---
 
-### ML-3A — auditoria da barreira: ressalva **aceita**, e ela reprova o AC1
+#### ML-3A — auditoria da barreira: ressalva **aceita**, e ela reprova o AC1
 
 Veredito do `hades-tf`: **APROVADO COM RESSALVAS** — `docs/seguranca/2026-08-18-revisao-do-doctor-e-da-inversao.md`.
 Nota de vault: `vault/notes/doctor-classifydoctor-silences-tampering-when-manifest-entry-removed-2026-08-19.md`.

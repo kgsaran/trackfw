@@ -231,7 +231,7 @@ Este design aceita explicitamente não cobrir:
 - [x] As quatro seções respondidas com evidência, não asserção de uma linha
 - [x] Nenhuma linha de implementação escrita neste ML
 
-**Gate da wave:**
+**Gates da wave:**
 ```bash
 # Gate ML-0A — Fechamento da enumeração de sítios de inferência por substring.
 # Falha se um sítio DESAPARECER (função removida ou renomeada) sem que o ML

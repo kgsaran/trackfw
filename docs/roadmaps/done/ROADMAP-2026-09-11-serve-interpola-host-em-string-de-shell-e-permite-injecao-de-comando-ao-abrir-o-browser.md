@@ -235,7 +235,7 @@ usuário"*. 🔴 **O argumento é tecnicamente errado** — o vault de 2026-08-2
 terceiro é exatamente o vetor de RCE do `barrier`. O sítio é pré-existente e fora do escopo desta
 REQ; o trust-check fechado hoje pode protegê-lo, mas **isso precisa ser dito, não presumido**.
 
-### ML-NOVO — 🔴 Gate que existe e ninguém invoca: a TERCEIRA instância do dia
+#### ML-NOVO — 🔴 Gate que existe e ninguém invoca: a TERCEIRA instância do dia
 **Status:** ✅ Concluído · **Agente:** `ares-tf` · **classe, não instância**
 
 **Descoberto ao abrir o PR seguinte**, por um aviso do `trackfw push` sobre outra branch.

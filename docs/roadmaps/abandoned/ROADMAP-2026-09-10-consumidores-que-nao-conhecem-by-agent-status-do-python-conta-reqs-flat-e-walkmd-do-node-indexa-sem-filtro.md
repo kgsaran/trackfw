@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: abandoned
 date: 2026-09-10
 req: "docs/req/REQ-2026-08-30-consumidores-que-nao-conhecem-by-agent-status-do-python-conta-reqs-flat-e-walkmd-do-node-indexa-sem-filtro.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: Consumidores que não conhecem `by_agent` — `status` do Python conta REQs flat, e `walkMd` do Node indexa sem filtro
 
-> Created: 2026-09-10 | Status: backlog
+> Created: 2026-09-10 | Status: abandoned
 
 ## Context
 <!-- Derived from REQ: REQ-2026-08-30-consumidores-que-nao-conhecem-by-agent-status-do-python-conta-reqs-flat-e-walkmd-do-node-indexa-sem-filtro.md -->

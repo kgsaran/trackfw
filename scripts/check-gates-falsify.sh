@@ -869,6 +869,17 @@ REQ: $req_rel
 
 ## Acceptance Criteria
 - [x] feito
+
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model for this fixture
+**Status:** ✅
+**Gates da wave:**
+\`\`\`bash
+exit 0
+\`\`\`
+**Critérios de aceite:**
+- [x] threat model complete
 EOF
 }
 
@@ -1602,15 +1613,21 @@ echo "OK   [falsify/no-repo-mutation]"
 #
 # BARRIER_BIS_SELFTEST_BREAK=1 ativa o seam dedicado em check-barrier.sh:
 # o Cenário 9 escreve uma fixture válida (sem o heading malformado), fazendo
-# todos os runtimes retornar exit 0. A asserção espera exit 2 → falha com o
-# diagnóstico explícito abaixo — provando que o cenário tem poder de reprovação
-# sobre a classe de defeito de early-break.
+# o barrier retornar exit 0. A asserção ML-1E (exit 1, wave_headings blocked)
+# falha com o diagnóstico explícito abaixo — provando que o cenário tem poder
+# de reprovação sobre a classe de defeito de early-break.
+#
+# Diagnóstico atualizado por ML-1E (REQ #392): antes da ML-1E o Cenário 9
+# esperava exit 0 e usava uma guarda de vacuidade de stderr para detectar
+# ausência do warning; após ML-1E o cenário espera exit 1 (wave_headings
+# blocked), então a falha é "expected exit 1 (blocked: wave_headings check),
+# got 0; stderr:" — mais direta e independente de stderr.
 #
 # Nota: o seam corrompe a FIXTURE, nunca a asserção (mesmo padrão que
 # BARRIER_SELFTEST_BREAK do Cenário 13) — não é uma mudança tautológica.
 # ---------------------------------------------------------------------------
 assert_fails_with "barrier/early-break-after-target-not-detected" \
-  'FAIL [barrier/wave-label/malformed-after-target/go]: expected exit 2 for after-position malformed heading, got 0' \
+  'FAIL [barrier/wave-label/malformed-after-target/go]: expected exit 1 (blocked: wave_headings check), got 0; stderr:' \
   env BARRIER_BIS_SELFTEST_BREAK=1 GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-barrier.sh"
 
 
@@ -5879,18 +5896,22 @@ assert_fails_with "release-tag-parity/refs-replace-bypass-false-negative" \
   env GO_BIN="$T88C_GO_BIN" bash "$ROOT_DIR/scripts/check-release-tag-parity.sh"
 
 # ---------------------------------------------------------------------------
-# Cenario 167 -- Direcao B (AC9, mesmo roadmap, ML-2A): `barrier --wave 0`
-#                volta a ser recusado (regressao do lower bound de
-#                parseWaves, internal/commands/barrier.go, mesma classe
-#                revertida pelo ML-1A -- "0" volta a contar como malformado).
-#                Prova que o cenario 11 invertido de check-barrier.sh
-#                (barrier/wave-label/wave-zero-accepted) e load-bearing: sem
-#                a correcao de ML-1A, o fixture com "## Wave 0" reprova.
+# Cenario 167 -- Direcao B (AC9, mesmo roadmap, ML-2A): parseWaves do
+#                lower bound volta a tratar "0" como malformado (regressao
+#                de internal/roadmapdoc/roadmapdoc.go, intVal < 0 ->
+#                intVal < 1).
+#
+# ML-4C (REQ #392): todos os fixtures de check-barrier.sh ganharam Wave 0.
+# O ponto de deteccao mudou: S1 (--wave 1 com Wave 0 no fixture) falha
+# primeiro -- wave_headings fica bloqueado porque Wave 0 e malformada,
+# barrier sai com 1 e stderr contem "malformed wave heading". O padrao do
+# assert_fails_with foi atualizado para corresponder a este novo ponto.
+# (O ponto anterior era S11/--wave 0 -> exit 2; Cenario 168 continua
+# cobrindo o segundo guarda em barrier.go com o mesmo padrao antigo.)
 #
 # Sabotagem Go-only (mesmo padrao dos Cenarios 164/165): so parseWaves e
-# exercitado pelo fixture do Cenario 11 (a validacao do FLAG em
-# newBarrierCmd nao entra em jogo porque o fixture chama `--wave 0`, que
-# passa a validacao do flag e so tropeca ao ler o cabecalho do roadmap).
+# exercitado -- a validacao do FLAG em newBarrierCmd nao entra em jogo
+# (coberta pelo Cenario 168, que usa waveInt < 1 em barrier.go).
 # ---------------------------------------------------------------------------
 T97="$WORK/s167"
 mkdir -p "$T97/cmd" "$T97/internal"
@@ -5900,10 +5921,10 @@ cp "$ROOT_DIR/go.mod" "$T97/go.mod"
 cp "$ROOT_DIR/go.sum" "$T97/go.sum"
 
 sed 's/intVal < 0 {/intVal < 1 {/' \
-  "$ROOT_DIR/internal/commands/barrier.go" > "$T97/internal/commands/barrier.go"
+  "$ROOT_DIR/internal/roadmapdoc/roadmapdoc.go" > "$T97/internal/roadmapdoc/roadmapdoc.go"
 
-if cmp -s "$ROOT_DIR/internal/commands/barrier.go" "$T97/internal/commands/barrier.go"; then
-  echo "FAIL [falsify/setup-s167]: sed nao alterou barrier.go -- padrao nao encontrado; prova P4 invalida" >&2
+if cmp -s "$ROOT_DIR/internal/roadmapdoc/roadmapdoc.go" "$T97/internal/roadmapdoc/roadmapdoc.go"; then
+  echo "FAIL [falsify/setup-s167]: sed nao alterou roadmapdoc.go -- padrao nao encontrado; prova P4 invalida" >&2
   falsify_fail_point
 fi
 
@@ -5921,7 +5942,7 @@ falsify_count_success
 echo "OK   [falsify/barrier/wave-zero-rejected-again-baseline]"
 
 assert_fails_with "barrier/wave-zero-rejected-again-detected" \
-  "expected exit 0 or 1 (never 2" \
+  "malformed wave heading" \
   env GO_BIN="$T97_BIN" bash "$ROOT_DIR/scripts/check-barrier.sh"
 
 # ---------------------------------------------------------------------------

@@ -80,6 +80,19 @@ apenas nomes de apresentação e não alteram o papel.
     Gramática do rótulo: `<inteiro>[-<sufixo>]`, sufixo `[a-z0-9]+`. `--wave` aceita o rótulo
     verbatim. Rótulos são identidades distintas: `--wave 2` **não** casa com `Wave 2-bis`.
 
+    **Emenda ML-1B (2026-09-18, REQ #392):** o sufixo passa a ser aceito **insensível a caixa**,
+    alargando de `[a-z0-9]+` para `[a-zA-Z0-9]+`. Quatro roadmaps com `## Wave 3-Py` que eram
+    rejeitados por inteiro passam a parsear corretamente. Motivo: mesma causa da decisão 11 desta
+    ADR — dialeto que o verificador não aceitava. Gramática atualizada: `[a-zA-Z0-9]+`.
+
+    **Emenda ML-1D (2026-09-18, REQ #392):** o hífen antes do sufixo torna-se **opcional**. Dois
+    roadmaps reais usavam `## Wave 1b` (sufixo sem hífen) e permaneciam invisíveis mesmo após a
+    emenda ML-1B. `WaveLabelRe` passa de `^\d+(?:-[a-zA-Z0-9]+)?$` para
+    `^\d+(?:-?[a-zA-Z0-9]+)?$`. `SplitWaveLabel("1b")` devolve `(1,"b")`, idêntico a
+    `SplitWaveLabel("1-b")`; portanto `CompareWaveLabels("1b","1-b") == 0` e `--wave 1-b` resolve
+    `## Wave 1b`. Rótulos puramente alfabéticos (`reaberta`) continuam inválidos — prefixo inteiro
+    (`^\d+`) obrigatório. Gramática final: `^\d+(?:-?[a-zA-Z0-9]+)?$`.
+
 16. **Heading fora da gramática continua abortando o documento inteiro — é feature, não defeito.**
     Durante a análise da emenda 15 considerou-se escopar o erro à wave solicitada, tornando as
     demais headings malformadas inócuas. **Rejeitado.** Ignorar silenciosamente uma heading
@@ -87,6 +100,24 @@ apenas nomes de apresentação e não alteram o papel.
     produziria barrier verde sobre trabalho não verificado. É a mesma vacuidade que a decisão 13
     proíbe — um ML "passar por não ter o que falhar". O parser não pode escolher entre "ignorar o que
     não entende" e "reprovar"; deve reprovar alto.
+
+    **Emenda ML-1E (2026-09-18, REQ #392) — princípio preservado, remédio corrigido:** o remédio
+    original ("abortar o documento inteiro") produzia o defeito que a própria decisão pretendia
+    evitar: dois roadmaps reais (`convergencia-do-harness` e `serve-amarra`) com `## Wave 1b`
+    ficavam **completamente invisíveis** ao `barrier --wave N` para qualquer `N` válido, pois o
+    documento inteiro era descartado. Trabalho não auditado — mas por razão oposta ao cenário do
+    `## Wave X`: não por ignorar, mas por descartar tudo.
+
+    O princípio ("reprovar alto", nunca verde sobre trabalho não auditado) **está preservado e é
+    inviolável**. O que muda é o remédio: heading malformada vira um **check próprio** (`wave_headings`)
+    que entra no veredito e **bloqueia**. As waves válidas continuam sendo avaliadas — a cegueira
+    não volta. O documento inteiro recebe veredito `blocked`, não `exit 2`, e cada heading
+    malformada é nomeada com linha e token tanto em stderr quanto no campo `failures` do check.
+
+    Resumo da propriedade preservada: `barrier` nunca emite `status: "passed"` enquanto houver
+    heading malformada no documento. A diferença em relação ao remédio anterior é que as waves
+    válidas *também* são avaliadas — o usuário sabe quais passaram e quais falharam, e nenhuma
+    delas escapa à auditoria por estar no mesmo documento que uma heading com typo.
 
 ## Consequências
 

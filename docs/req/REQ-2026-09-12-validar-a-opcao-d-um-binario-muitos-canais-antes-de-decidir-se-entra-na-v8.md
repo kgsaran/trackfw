@@ -1,5 +1,5 @@
 ---
-status: Open
+status: Done
 date: 2026-09-12
 author: ""
 adr: ""
@@ -8,7 +8,7 @@ roadmap: ""
 
 # REQ: validar a opção D — um binário, muitos canais — antes de decidir se entra na v8
 
-> Date: 2026-09-12 | Status: Open
+> Date: 2026-09-12 | Status: Done
 
 ## Contexto
 
@@ -104,3 +104,12 @@ no CHANGELOG**, não surpresa.
 
 ## Linked ADR
 ADR: docs/adr/ADR-2026-09-12-estrategia-de-distribuicao-o-custo-da-paridade-tripla-e-quem-ela-atende.md
+
+## Fechamento — triagem de 2026-09-18
+
+**Veredito:** Done. **Motivo medido:** entregue: a decisao foi tomada e a v8 foi lancada
+
+Fechada na triagem por evidência das REQs abertas (`docs/triagem-reqs-abertas-2026-09-18.md`),
+executada a pedido do KG. Esta triagem é o **AC12 da `REQ-2026-09-12-v8-um-binario-muitos-canais`**
+e os **AC10-AC12** da REQ irmã, que pediam classificar as REQs abertas e fechar aquelas cuja causa a
+v8 removeu — e que nunca haviam sido executados.

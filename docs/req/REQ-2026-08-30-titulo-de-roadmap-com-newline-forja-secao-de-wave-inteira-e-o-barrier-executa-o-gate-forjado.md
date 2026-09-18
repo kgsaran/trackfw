@@ -1,5 +1,5 @@
 ---
-status: Open
+status: Done
 date: 2026-08-30
 author: "trackfw_architect (Zeus)"
 adr: ""
@@ -8,7 +8,7 @@ roadmap: ""
 
 # REQ: Título de roadmap com newline forja seção de wave inteira, e o `barrier` executa o gate forjado
 
-> Date: 2026-08-30 | Status: Open
+> Date: 2026-08-30 | Status: Done
 
 ## Motivation
 
@@ -59,3 +59,12 @@ ADR:
 
 ## Linked Roadmap
 Roadmap:
+
+## Fechamento — triagem de 2026-09-18
+
+**Veredito:** Done. **Motivo medido:** corrigida pela ADR-2026-08-23: roadmap new responde "title must be a single line"
+
+Fechada na triagem por evidência das REQs abertas (`docs/triagem-reqs-abertas-2026-09-18.md`),
+executada a pedido do KG. Esta triagem é o **AC12 da `REQ-2026-09-12-v8-um-binario-muitos-canais`**
+e os **AC10-AC12** da REQ irmã, que pediam classificar as REQs abertas e fechar aquelas cuja causa a
+v8 removeu — e que nunca haviam sido executados.

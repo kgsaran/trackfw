@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Superseded
 date: 2026-09-05
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-10-validate-unfiltered-do-python-devolve-lista-de-tipo-misto-e-o-consumidor-estoura.md"
+roadmap: "docs/roadmaps/abandoned/ROADMAP-2026-09-10-validate-unfiltered-do-python-devolve-lista-de-tipo-misto-e-o-consumidor-estoura.md"
 ---
 
 # REQ: validate_unfiltered do Python devolve lista de tipo misto e o consumidor estoura
 
-> Date: 2026-09-05 | Status: Open
+> Date: 2026-09-05 | Status: Superseded
 | Linear Issue: 
 | Jira Issue: 
 
@@ -70,4 +70,12 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-10-validate-unfiltered-do-python-devolve-lista-de-tipo-misto-e-o-consumidor-estoura.md`
+Roadmap: `docs/roadmaps/abandoned/ROADMAP-2026-09-10-validate-unfiltered-do-python-devolve-lista-de-tipo-misto-e-o-consumidor-estoura.md`
+## Fechamento — triagem de 2026-09-18
+
+**Veredito:** Superseded. **Motivo medido:** alvo removido pela v8; issue #261 CLOSED
+
+Fechada na triagem por evidência das REQs abertas (`docs/triagem-reqs-abertas-2026-09-18.md`),
+executada a pedido do KG. Esta triagem é o **AC12 da `REQ-2026-09-12-v8-um-binario-muitos-canais`**
+e os **AC10-AC12** da REQ irmã, que pediam classificar as REQs abertas e fechar aquelas cuja causa a
+v8 removeu — e que nunca haviam sido executados.
