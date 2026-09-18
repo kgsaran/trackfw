@@ -762,11 +762,17 @@ func TestSplitWaveLabel(t *testing.T) {
 
 // TestParseWaves_MalformedHeadingIsCascadeIsolated_ML1D proves that a malformed wave
 // heading (`## Wave X — ...`) is isolated: the valid wave before it is still evaluatable
-// via --wave 1 (exit 0, not exit 2), and the malformed heading is reported to stderr.
+// via --wave 1 (NOT exit 2), and the malformed heading enters the wave_headings check,
+// which blocks the overall verdict.
 //
-// AC11 (ML-1D): --wave 1 on a document that also contains "## Wave X" exits 0 (passed),
-// not 2 — cascade isolation allows the valid wave to be evaluated while the malformed
-// one is reported by name to stderr, reversing ADR-2026-07-29 decision 16.
+// AC11 (ML-1D): parseWaves returns a valid WaveBlock for Wave 1 AND a MalformedWave for
+// Wave X — the cascade isolation happens at parse level, not at verdict level.
+//
+// AC11 (ML-1E): --wave 1 on a document that also contains "## Wave X" exits 1 (blocked
+// via wave_headings check), not 2 — cascade isolation at parse level keeps all waves
+// evaluated; the wave_headings check preserves the "reprovar alto" principle from
+// ADR-2026-07-29 decision 16. The remedy changed (check that blocks, not document abort)
+// but the principle is preserved: no "passed" verdict over a document with unaudited content.
 func TestParseWaves_MalformedHeadingIsCascadeIsolated_ML1D(t *testing.T) {
 	// Build a multi-wave roadmap where Wave 1 is fully green and Wave X is malformed.
 	// Line positions are fixed so we can assert the pinned stderr warning.
@@ -827,17 +833,26 @@ func TestParseWaves_MalformedHeadingIsCascadeIsolated_ML1D(t *testing.T) {
 		t.Fatalf("write roadmap: %v", err)
 	}
 
-	// Counter-braço: --wave 1 passes (Wave 1 is green).
+	// ML-1E: --wave 1 is now exit 1 (blocked) because wave_headings check blocks on ## Wave X.
+	// Wave 1 itself is still EVALUATED (not skipped by cascade isolation at parse level),
+	// but the wave_headings check in the verdict prevents a "passed" result.
 	// --trust-local-gates is needed because the temp dir is not a git repo.
 	stdout, stderr, code := runBarrierCLI(t, dir, "ROADMAP-malformed-cascade", "--wave", "1", "--trust-local-gates")
-	if code != 0 {
-		t.Fatalf("expected exit 0 (Wave 1 is green, cascade isolated), got %d\nstdout: %s\nstderr: %s",
+	if code != 1 {
+		t.Fatalf("expected exit 1 (blocked: wave_headings check), got %d\nstdout: %s\nstderr: %s",
 			code, stdout, stderr)
 	}
-	// The malformed heading must still be reported to stderr (named, with line number).
-	wantStderr := "trackfw barrier: malformed wave heading at line 16: \"X\" is not a valid wave label\n"
-	if stderr != wantStderr {
-		t.Fatalf("stderr mismatch:\nwant: %q\ngot:  %q", wantStderr, stderr)
+	// Wave 1 content checks must still be evaluated (not cascade-aborted).
+	if !strings.Contains(stdout, "mls_complete") {
+		t.Fatalf("expected mls_complete check in output (wave 1 must still be evaluated), got: %s", stdout)
+	}
+	// The malformed heading must be reported to both stderr and the wave_headings check.
+	wantStderrFrag := "trackfw barrier: malformed wave heading at line 16: \"X\" is not a valid wave label"
+	if !strings.Contains(stderr, wantStderrFrag) {
+		t.Fatalf("expected stderr to contain malformed wave warning, got: %q", stderr)
+	}
+	if !strings.Contains(stdout, "wave_headings") {
+		t.Fatalf("expected wave_headings check in output, got: %s", stdout)
 	}
 
 	// Additional check: --wave X is rejected at the flag-validation level (same WaveLabelRe),

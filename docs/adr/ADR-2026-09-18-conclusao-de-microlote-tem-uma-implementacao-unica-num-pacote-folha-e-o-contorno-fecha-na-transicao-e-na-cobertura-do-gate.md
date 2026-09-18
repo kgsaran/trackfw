@@ -263,28 +263,44 @@ ML); os dois com `reaberta` permanecem inválidos e são corrigidos no ML-4A.
 
 ### 12. Cascade isolation: heading malformada não aborta o documento inteiro
 
-**Revoga ADR-2026-07-29 decisão 16** ("heading fora da gramática continua abortando o documento
-inteiro — é feature, não defeito").
+**Emenda ADR-2026-07-29 decisão 16** (princípio preservado, remédio corrigido — ML-1D/ML-1E,
+REQ #392).
 
 A decisão 16 foi tomada com base na premissa de que isolar o erro tornaria os MLs da wave
-malformada "invisíveis". A emenda ML-1D mede que essa premissa é parcialmente falsa:
+malformada "invisíveis". A emenda ML-1D mediu que essa premissa é parcialmente falsa para as
+waves válidas; a emenda ML-1E corrigiu o remédio para que o princípio da decisão 16 seja
+integralmente preservado:
+
+**O que o ML-1D fez (mantido):**
 
 - `## Wave X` ainda é um `## ` heading — o parser de fim-de-bloco
   (`strings.HasPrefix(lines[j], "## ")`) detecta-o corretamente e termina a wave anterior.
   As waves válidas antes e depois não são corrompidas.
 - `ParseWaves` passa a devolver `([]WaveBlock, []MalformedWave)` em vez de `([]WaveBlock, error)`.
   Cada heading inválida gera um `MalformedWave{Line, Token}` e o parse continua.
-- O `barrier` imprime cada `MalformedWave.Error()` em stderr e **não aborta** (exit 0/1 conforme
-  as waves válidas; o exit 2 reservado para erros de uso como flag inválida).
-- MLs dentro de uma wave malformada são **fail-safe fechados**: `HasUnfinishedMLs` ainda os vê
-  (retorna `true` se houver ao menos um `MalformedWave`) — sem vacuidade.
 - `--wave X` ainda é rejeitado em exit 2 na validação de flag, muito antes de chegar ao parser.
 
-A razão concreta da revogação: dois roadmaps reais (`convergencia-do-harness` e `serve-amarra`)
-estavam completamente invisíveis ao `barrier --wave N` para qualquer `N` válido porque contêm
-`## Wave 1b`. O comportamento anterior produzia o defeito que a decisão 16 pretendia evitar:
-trabalho não auditado, só que por razão oposta — não por ignorar o malformado, mas por descartar
-o documento inteiro por causa dele.
+**O que o ML-1E adicionou (corretivo obrigatório):**
+
+O ML-1D imprimia cada `MalformedWave.Error()` em `stderr` **mas não entrava em nenhum check**.
+O veredito dependia só de `mls_complete`/`acceptance_evidence`/`gates`/`validate`. Resultado:
+`barrier --wave 1` podia emitir `status: "passed"` mesmo que o documento contivesse `## Wave X`
+com MLs `⬜ Pendente` — exatamente o cenário que a decisão 16 proibia.
+
+O ML-1E adiciona um **check `wave_headings`** (primeiro na lista de checks) que:
+- É `"blocked"` quando há headings malformadas, nomeando linha e token no campo `failures`.
+- É `"passed"` quando o documento não tem headings malformadas.
+- Entra no veredito final: `status: "blocked"` enquanto houver heading malformada.
+- As waves válidas **continuam sendo avaliadas** — a cegueira não volta.
+
+**Propriedade preservada da decisão 16:** o `barrier` nunca emite `status: "passed"` enquanto
+houver heading malformada no documento. O princípio ("reprovar alto") é inviolável. O remédio
+mudou de "abortar o documento (exit 2)" para "check que bloqueia (exit 1)".
+
+**Razão da mudança de remédio:** o remédio original cegava o `barrier` em 2 roadmaps reais
+(`convergencia-do-harness` e `serve-amarra`) com `## Wave 1b`. O documento inteiro era
+descartado por exit 2, e nenhuma wave — nem as válidas — era avaliada. Trabalho não auditado,
+por razão oposta: não por ignorar o malformado, mas por descartar tudo com ele.
 
 ## Consequences
 

@@ -361,14 +361,16 @@ type WaveBlock struct {
 
 // MalformedWave records a wave heading whose label token failed grammar validation.
 // ParseWaves returns these instead of aborting: the wave is isolated (not included in the
-// returned WaveBlock slice), but parsing continues for the rest of the document (ML-1D,
-// REQ #392 — supersedes ADR-2026-07-29 decision 16). The MalformedWave implements error
-// so callers can format warnings uniformly (e.g. "trackfw barrier: " + mw.Error()).
+// returned WaveBlock slice), but parsing continues for the rest of the document (ML-1D/ML-1E,
+// REQ #392 — emends ADR-2026-07-29 decision 16). The MalformedWave implements error so
+// callers can format messages uniformly (e.g. "trackfw barrier: " + mw.Error()).
 //
-// 🔴 Residual (ML-1D): any MLs contained inside a malformed-label wave block are
-// unreachable by wave-scoped barrier calls — their label cannot be passed to --wave and
-// the wave is not returned as a WaveBlock. They are only covered by HasUnfinishedMLs,
-// which returns true whenever len(malformed) > 0 (fail-safe closed).
+// The barrier translates every MalformedWave into a failure entry in the wave_headings check
+// (ML-1E, REQ #392). This ensures no "passed" verdict is emitted while the document contains
+// an unaudited wave — preserving ADR-2026-07-29 decision 16's principle ("reprovar alto") while
+// allowing the valid waves to continue being evaluated (remedy change: check that blocks, not
+// document abort). MLs inside malformed waves are also covered by HasUnfinishedMLs, which
+// returns true whenever len(malformed) > 0 (fail-safe closed, belt-and-suspenders).
 type MalformedWave struct {
 	Line  int    // 1-based line number of the ## Wave heading
 	Token string // the literal label token that failed grammar validation
@@ -393,17 +395,16 @@ type MLBlock struct {
 
 // ParseWaves splits the roadmap into wave blocks (rule 1).
 //
-// Malformed headings are ISOLATED, not aborted (ML-1D, REQ #392 — supersedes ADR-2026-07-29
+// Malformed headings are ISOLATED, not aborted (ML-1D/ML-1E, REQ #392 — emends ADR-2026-07-29
 // decision 16). Each invalid label is recorded in the returned []MalformedWave slice and
-// parsing continues for the rest of the document. The safe basis for this reversal is that
-// every "## Wave …" heading is an H2; the block-end scan (strings.HasPrefix(lines[j], "## "))
-// still closes the preceding valid wave at the malformed heading, so valid-wave boundaries
-// are never corrupted by an invalid neighbor.
+// parsing continues for the rest of the document. The safe basis is that every "## Wave …"
+// heading is an H2; the block-end scan (strings.HasPrefix(lines[j], "## ")) still closes the
+// preceding valid wave at the malformed heading, so valid-wave boundaries are never corrupted.
 //
-// 🔴 Never fail open: malformed waves are NOT added to the WaveBlock slice. Any MLs inside a
-// malformed-label wave are unreachable by wave-scoped barrier calls and only covered by the
-// HasUnfinishedMLs fail-safe (len(malformed) > 0 → return true). This is a named residual,
-// documented in the MalformedWave doc comment.
+// 🔴 Never fail open: malformed waves are NOT added to the WaveBlock slice. The barrier
+// translates each MalformedWave into a failure in the wave_headings check (ML-1E), blocking
+// the overall verdict. HasUnfinishedMLs also returns true whenever len(malformed) > 0 as a
+// belt-and-suspenders fail-safe.
 func ParseWaves(lines []string) ([]WaveBlock, []MalformedWave) {
 	var waves []WaveBlock
 	var malformed []MalformedWave

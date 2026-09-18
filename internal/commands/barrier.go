@@ -65,11 +65,12 @@ func newBarrierCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "barrier <roadmap> --wave <n>",
-		Short: "Deterministic wave-release barrier (mls_complete, acceptance_evidence, gates, validate)",
-		Long: `trackfw barrier evaluates a single wave of a roadmap against four built-in,
-stack-agnostic checks: every ML in the wave is complete, every ML has met acceptance
-evidence, every gate command declared by the wave exits 0, and 'trackfw validate' reports
-zero violations. It never invents a gate and never assumes a build tool.`,
+		Short: "Deterministic wave-release barrier (wave_headings, mls_complete, acceptance_evidence, gates, validate)",
+		Long: `trackfw barrier evaluates a single wave of a roadmap against five built-in,
+stack-agnostic checks: the document has no malformed wave headings, every ML in the wave
+is complete, every ML has met acceptance evidence, every gate command declared by the wave
+exits 0, and 'trackfw validate' reports zero violations. It never invents a gate and never
+assumes a build tool.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cmd.SilenceUsage = true
@@ -437,14 +438,27 @@ func runBarrier(cmd *cobra.Command, roadmapArg string, waveLabel string, jsonOut
 	fenced := fenceMask(lines)
 
 	waves, malformed := parseWaves(lines)
-	// Report each malformed wave heading to stderr but do NOT abort: valid waves in the
-	// same document are still evaluated (ML-1D, REQ #392 — cascade isolation).
-	// 🔴 Malformed waves are not added to the WaveBlock slice; any --wave lookup for an
-	// invalid token will fail at the flag-validation step (same WaveLabelRe, barrier.go:83).
-	// MLs inside malformed waves are unreachable by wave-scoped barrier calls and are only
-	// covered by HasUnfinishedMLs (fail-safe). Named residual — ML-1D, REQ #392.
+	// Report each malformed wave heading to stderr AND record in the wave_headings check
+	// (ML-1E, REQ #392). The stderr warning is kept so that users without --json also see
+	// the problem immediately; the check entry ensures the verdict is never "passed" while
+	// any malformed heading exists (ADR-2026-07-29 decision 16, as emended: principle
+	// "reprovar alto" preserved; remedy changed from "abort document" to "check that blocks").
 	for _, mw := range malformed {
 		fmt.Fprintf(cmd.ErrOrStderr(), "trackfw barrier: %s\n", mw.Error())
+	}
+
+	// ── check: wave_headings ─────────────────────────────────────────────────
+	// Every heading that matched the broad wave detector but failed the strict label grammar
+	// is a failure. An empty document (no malformed headings) passes.
+	whCheck := barrierCheck{Name: "wave_headings", Evidence: []string{}, Failures: []string{}}
+	if len(malformed) == 0 {
+		whCheck.Status = "passed"
+	} else {
+		whCheck.Status = "blocked"
+		for _, mw := range malformed {
+			whCheck.Failures = append(whCheck.Failures,
+				fmt.Sprintf("line %d: %q is not a valid wave label", mw.Line, mw.Token))
+		}
 	}
 
 	var target *waveBlock
@@ -568,7 +582,7 @@ func runBarrier(cmd *cobra.Command, roadmapArg string, waveLabel string, jsonOut
 		}
 	}
 
-	checks := []barrierCheck{mlsCheck, accCheck, gatesCheck, validateCheck}
+	checks := []barrierCheck{whCheck, mlsCheck, accCheck, gatesCheck, validateCheck}
 	overallStatus := "passed"
 	failures := []string{}
 	for _, c := range checks {

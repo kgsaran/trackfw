@@ -1941,9 +1941,10 @@ The third message was added when the wave label grammar was introduced. Before t
 **unpinned, and all three runtimes diverged**: Go said `%q is not a valid wave number`, Python said
 `number {token!r} is not parseable`, and Node.js dumped the whole line without naming the cause at
 all. `<token>` is the captured label, **never** the whole line — a caller must be able to tell which
-token was rejected. `<n>` is 1-based. Note: after ML-1D (REQ #392) this message is a **warning**
-emitted to `stderr` only (cascade isolation — no longer triggers exit 2; the barrier continues and
-evaluates valid waves normally). The message format is unchanged; only the abort semantics changed.
+token was rejected. `<n>` is 1-based. After ML-1D (REQ #392) this message is a **warning** emitted
+to `stderr` (cascade isolation — no longer triggers exit 2). After ML-1E (REQ #392) the same
+information also appears in the `wave_headings` check failures in the `--json` output, and the
+overall verdict is `"blocked"` (exit 1) rather than `"passed"`. The message format is unchanged.
 
 The fourth message — an invalid `--wave` **argument**, as opposed to a malformed heading in the file —
 was pinned for the same reason, one round later. Leaving it unpinned produced three texts again:
@@ -2002,15 +2003,20 @@ already cited in commit messages. Observed in the roadmap
 `install-pula-artefato-desatualizado-em-vez-de-abortar` (PR #86): the cross-audit of Wave 2 required a
 convergence wave, and the barrier rejected **all four waves** with `malformed wave heading`.
 
-**A heading outside this grammar is isolated, not aborting (ML-1D, REQ #392).** ADR-2026-07-29
-decision 16 previously required aborting the entire document (exit 2). That decision was reversed
-by ADR-2026-09-18 decision 12: `ParseWaves` now collects each malformed heading as a `MalformedWave`
-entry and continues parsing. The barrier prints each malformed-wave warning to `stderr` and evaluates
-the valid waves normally — exit 0/1 based on the wave result, never exit 2 for a parse warning.
+**A heading outside this grammar is isolated, not aborting (ML-1D/ML-1E, REQ #392).** ADR-2026-07-29
+decision 16 previously required aborting the entire document (exit 2). That decision was emended by
+ADR-2026-09-18 decision 12: `ParseWaves` now collects each malformed heading as a `MalformedWave`
+entry and continues parsing. The barrier: (a) prints each malformed-wave warning to `stderr`; (b)
+records each malformed heading as a failure in the `wave_headings` check; (c) evaluates the valid
+waves normally. The `wave_headings` check is blocked whenever malformed headings exist, so the
+overall result is never `"passed"` — exit 1, not exit 2.
 
-MLs inside malformed waves are **fail-safe closed**: `HasUnfinishedMLs` counts any `MalformedWave`
-as unfinished work, so there is no vacuous pass. `--wave X` still exits 2 — that is the invalid
-`--wave` **argument** rejection at flag-validation time, not a parse event. See ADR decision 12.
+MLs inside malformed waves are **fail-safe closed** at two levels: (1) the `wave_headings` check
+is `blocked` whenever any `MalformedWave` exists, preventing a `status: "passed"` verdict; and
+(2) `HasUnfinishedMLs` counts any `MalformedWave` as unfinished work — belt-and-suspenders.
+`--wave X` still exits 2 — that is the invalid `--wave` **argument** rejection at
+flag-validation time, not a parse event. See ADR-2026-07-29 decision 16 emenda ML-1E and
+ADR-2026-09-18 decision 12.
 
 #### Detection is a full pre-pass — pinned
 
@@ -2419,6 +2425,7 @@ Evaluated in this fixed order; the run continues through all checks so the repor
 
 | `name` | Passes when |
 |---|---|
+| `wave_headings` | Every `## Wave` heading in the document has a valid label (no malformed headings) |
 | `mls_complete` | Wave contains ≥ 1 ML and every ML satisfies rule 3 |
 | `acceptance_evidence` | Every ML in the wave satisfies rule 4 |
 | `gates` | Every command from rule 5 exits 0 |
@@ -2440,6 +2447,12 @@ shelling out to a `trackfw` binary that may not be on `PATH`.
   "started_at": "2026-07-29T10:30:00Z",
   "finished_at": "2026-07-29T10:30:04Z",
   "checks": [
+    {
+      "name": "wave_headings",
+      "status": "passed",
+      "evidence": [],
+      "failures": []
+    },
     {
       "name": "mls_complete",
       "status": "passed",
@@ -2475,6 +2488,7 @@ so that a diff of two runtimes' JSON output for the same fixture is empty:
 
 | Check | `evidence` entry | `failures` entry |
 |---|---|---|
+| `wave_headings` | _(none — passed means empty)_ | `line <n>: "<token>" is not a valid wave label` |
 | `mls_complete` | `<ML-id>: ✅` | `<ML-id>: not complete (status: <marker or "missing">)` |
 | `acceptance_evidence` | `<ML-id>: <n> criteria met` | `<ML-id>: <n> unmet acceptance criteria` or `<ML-id>: no acceptance block` |
 | `gates` | `<command>: exit 0` | `<command>: exit <code>` |

@@ -2,6 +2,32 @@
 
 ---
 
+## Sessão 2026-09-18 (continuação 5) — Apolo (fix/scaffold-placeholder-chega-a-done — ML-1E: wave_headings check + correção assert_fails_with) — CONCLUÍDO
+
+**Início:** 2026-09-18 | Branch: `fix/scaffold-placeholder-chega-a-done`
+**Tarefa:** ML-1E (REQ #392) — corretivo do ML-1D: heading malformada entra no veredito como check `wave_headings` (bloqueia); waves válidas continuam sendo avaliadas.
+
+**Resultado:**
+- `internal/commands/barrier.go`: check `wave_headings` adicionado como primeiro check no slice; status `blocked` quando `len(malformed) > 0`, com linha e token em `Failures[]`. `Short`/`Long` atualizados: "five built-in".
+- `internal/commands/barrier_contract_test.go`: `wantOrder` atualizado para 5 elementos; dois novos testes (`TestBarrierContract_WaveHeadingsMalformadaBloqueiaVeredito`, `TestBarrierContract_SemHeadingMalformadaNaoIntroduceFalsoPositivo`) com AC11.
+- `internal/commands/barrier_test.go`: `TestParseWaves_MalformedHeadingIsCascadeIsolated_ML1D` atualizado para exit 1 e AC11 ML-1E.
+- `internal/roadmapdoc/roadmapdoc.go`: comentários de `MalformedWave` e `ParseWaves` atualizados.
+- `docs/adr/ADR-2026-07-29-...md`: decisões 15 e 16 emendadas (ML-1B, ML-1D, ML-1E).
+- `docs/adr/ADR-2026-09-18-...md`: decisão 12 corrigida de "Revoga" para "Emenda".
+- `docs/cli-parity.md`: tabela de checks, JSON example, formato de failures, descrição da cascata atualizados.
+- `scripts/check-barrier.sh`: Cenários 8/9 atualizados para exit 1/blocked; comentários de seam atualizados (ML-1E).
+- `scripts/check-gates-falsify.sh`: Cenário 19 `assert_fails_with` diagnóstico atualizado do antigo "stderr is empty — vacuity guard" para "expected exit 1 (blocked: wave_headings check), got 0; stderr:" (ML-1E mudou o exit code check para antes do vacuity guard).
+
+**Gates:**
+- `go build ./...` RC=0
+- `go test ./...` RC=0 (todos os pacotes ok)
+- `make quality` RC=0 — 629 OK / 0 FAIL (segunda execução após fix do assert_fails_with)
+- `trackfw validate` RC=0 — 166 warnings em lenient mode (pré-existentes, não relacionados ao ML-1E)
+
+**ML-1E status:** ✅ Concluído — roadmap atualizado.
+
+---
+
 ## Sessão 2026-09-18 (continuação 4) — Apolo (fix/scaffold-placeholder-chega-a-done — ML-1D: confirmação terceira execução make quality) — CONCLUÍDO
 
 **Início:** 2026-09-18 | Branch: `fix/scaffold-placeholder-chega-a-done`
@@ -38220,3 +38246,19 @@ Implementação completa. Evidências: `go build ./...` RC=0 · `make test` 15/1
 - **Por que os agentes apareciam vivos:** a notificação de tarefa dispara quando o agente para *sem filhos de background vivos*. Os loops órfãos eram esses filhos. Ao matá-los, o agente do ML-1A notificou "finished" de novo — confirmando o diagnóstico.
 - 🔴 **Achado colateral: `internal/roadmapdoc/testdata/barrier-recapture.txt` foi commitado** (em `9c7af7fd`), truncado em 316 de ~2180 linhas, e **nenhum teste ou script o referencia** — `grep -rn "barrier-recapture" internal/ scripts/` → vazio. É resíduo de uma recaptura interrompida que entrou no repositório junto com trabalho legítimo. Removido.
 - **Lição:** um `git add -A` de subagente varre o que estiver na árvore, inclusive arquivo temporário de meio de execução. O `testdata/` é o lugar mais fácil de esconder lixo, porque ninguém estranha um `.txt` grande ali.
+
+### 2026-09-18 — apolo-tf — ML-1E iniciado
+- Executando ML-1E: check `wave_headings` no barrier para heading malformada
+- Lido: ADR-2026-07-29 (decisões 13, 15, 16), ADR-2026-09-18 (decisão 12), scripts/check-roadmap-barrier-contract.sh, barrier.go, barrier_contract_test.go, cli-parity.md
+- Plano: (1) teste de falsificação, (2) implementar wave_headings check, (3) atualizar wantOrder, (4) limpar comentários residuais, (5) emendar ADRs, (6) cli-parity.md, (7) verificar pin
+
+### 2026-09-18 — Zeus — ML-1E APROVADO; Wave 1 do #392 fechada (ML-1A a ML-1E)
+- 🔴 **Falsificação da vacuidade provada por mim**, rodando os **dois binários sobre o mesmo documento** (uma `## Wave 1` sadia e completa + uma `## Wave X` malformada escondendo um ML `⬜`):
+  - **ML-1D:** checks `[mls_complete, acceptance_evidence, gates, validate]` → veredito **PASSED** (ignorando `validate`, que bloqueia no sandbox por falta de governança). É a vacuidade da decisão 16.
+  - **ML-1E:** checks `[wave_headings, mls_complete, acceptance_evidence, gates, validate]` → **blocked**, nomeando `line 9: "X" is not a valid wave label`.
+  - Precisei neutralizar o `validate` na leitura — sem isso os dois casos ficariam indistinguíveis. O relatório não trouxe as duas execuções; fiz.
+- **Cegueira não voltou:** `barrier <convergencia-harness> --wave 2` **avalia** a wave 2 (blocked por `acceptance_evidence`, motivo legítimo — não mais `exit 2`). E `wave_headings → passed` ali, porque o ML-1D tornou `1b` um rótulo **válido**: não há mais heading malformada nesse arquivo. Coerente ponta a ponta.
+- **Contra-braço:** documento sadio → `wave_headings passed`, `failures: []`. O check não introduz falso-positivo.
+- **`make quality` rodado por mim: 640 OK / 0 FAIL**, guarda de conjunto OK. O relatório dizia 629 — 🔴 comparei os **conjuntos de rótulos**, não as contagens: **636 únicos em ambas as execuções**, e a única diferença é um caminho de diretório temporário aleatório na mesma linha. **Zero cobertura perdida.** Contagem menor no relatório era artefato da execução dele, não suíte truncada.
+- **Alegação do pin verificada, não aceita de palavra:** varri os 144 arquivos do snapshot — **0 headings malformadas**. O check novo não muda veredito nenhum ali; o pin de fato não precisava mudar.
+- **Emenda da ADR-2026-07-29 ficou melhor do que eu formulei:** preserva o princípio explicitamente (*"reprovar alto... está preservado e é inviolável"*), nomeia os 2 roadmaps que o remédio antigo cegava, e enuncia a invariante — *"`barrier` nunca emite `status: passed` enquanto houver heading malformada"*. Decisões 15 e 16 emendadas; decisão 12 da ADR de hoje corrigida de "revoga" para "emenda".

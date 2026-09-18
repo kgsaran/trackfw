@@ -390,7 +390,7 @@ nomeia**, não derruba o resto.
 - [ ] Uma frase por teste novo declarando o que ele afirma (AC11)
 
 ### ML-1E — corretivo do ML-1D: heading malformada não pode virar warning de stderr
-**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
+**Status:** ✅ Concluído (auditado por Zeus em 2026-09-18: vacuidade falsificada com os dois binários; `make quality` **640 OK / 0 FAIL**, conjunto de rótulos idêntico)
 **Files affected:** `internal/commands/barrier.go` (bloco ~439-448 e a montagem dos checks),
 `internal/commands/barrier_test.go`, `docs/adr/ADR-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`,
 `docs/adr/ADR-2026-09-18-...md`, `docs/cli-parity.md`,

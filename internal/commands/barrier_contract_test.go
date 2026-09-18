@@ -531,7 +531,7 @@ func TestBarrierContract_JSONDeterministico(t *testing.T) {
 		gateCommands:  []string{"true"},
 	})
 
-	wantOrder := []string{"mls_complete", "acceptance_evidence", "gates", "validate"}
+	wantOrder := []string{"wave_headings", "mls_complete", "acceptance_evidence", "gates", "validate"}
 
 	for run := 0; run < 2; run++ {
 		// --trust-local-gates: temp dir fixture; test exercises JSON structure, not trust check.
@@ -566,5 +566,156 @@ func TestBarrierContract_JSONDeterministico(t *testing.T) {
 		if doc.Failures == nil {
 			t.Fatalf("run %d: top-level failures must never be null", run)
 		}
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// 9 — wave_headings_malformada_bloqueia_veredito (ML-1E falsification, REQ #392)
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestBarrierContract_WaveHeadingsMalformadaBloqueiaVeredito is the ML-1E vacuity
+// falsification test: a document with a fully complete ## Wave 1 AND a malformed
+// ## Wave X that hides a ⬜ Pendente ML must NOT produce a "passed" verdict when
+// barrier is called with --wave 1.
+//
+// AC11 (ML-1E): this test asserts the core conclusion of ML-1E — a malformed wave
+// heading in a document produces a blocked overall verdict via the wave_headings check,
+// even when the requested wave itself is fully complete.
+//
+// Before the fix (ML-1D state): barrier --wave 1 returns "passed" because malformed
+// headings only emit a stderr warning and do not enter any check. This test FAILS
+// against the ML-1D code, demonstrating the vacuity.
+func TestBarrierContract_WaveHeadingsMalformadaBloqueiaVeredito(t *testing.T) {
+	// Build a roadmap with:
+	//   - ## Wave 1: complete ML with all criteria met (mls_complete + acceptance_evidence green)
+	//   - ## Wave X: malformed label, contains a ⬜ Pendente ML — hidden from wave-scoped calls
+	roadmap := strings.Join([]string{
+		"# Roadmap: ML-1E Vacuity Falsification",
+		"",
+		"REQ: REQ-2026-07-29-barrier-fixture",
+		"",
+		"## Acceptance Criteria",
+		"- [x] fixture roadmap-level criterion",
+		"",
+		"## Wave 1 — Valid Wave",
+		"> Dependências: nenhuma",
+		"",
+		"**Gates da wave:**",
+		"```bash",
+		"true",
+		"```",
+		"",
+		"### ML-1A — Valid ML",
+		"**Status:** ✅",
+		"**Critérios de aceite:**",
+		"- [x] criterion met",
+		"",
+		"## Wave X — Malformed Wave With Pending ML",
+		"",
+		"### ML-X1 — Hidden Pending ML",
+		"**Status:** ⬜ Pendente",
+		"**Critérios de aceite:**",
+		"- [ ] criterion not met",
+		"",
+	}, "\n")
+
+	dir := t.TempDir()
+	for _, d := range []string{
+		"docs/roadmaps/wip", "docs/roadmaps/backlog", "docs/roadmaps/blocked",
+		"docs/roadmaps/done", "docs/roadmaps/abandoned", "docs/req", "docs/adr",
+	} {
+		if err := os.MkdirAll(filepath.Join(dir, d), 0755); err != nil {
+			t.Fatalf("mkdirs: %v", err)
+		}
+	}
+	roadmapPath := filepath.Join(dir, "docs/roadmaps/wip/ROADMAP-barrier-fixture-ml1e.md")
+	if err := os.WriteFile(roadmapPath, []byte(roadmap), 0644); err != nil {
+		t.Fatalf("write roadmap: %v", err)
+	}
+
+	stdout, stderr, code := runBarrierCLI(t, dir, "ROADMAP-barrier-fixture-ml1e",
+		"--wave", "1", "--json", "--trust-local-gates")
+
+	// Must exit 1 (blocked) because ## Wave X is malformed.
+	if code != 1 {
+		t.Fatalf("expected exit 1 (blocked), got %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+
+	var doc barrierResultDoc
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &doc); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %s", err, stdout)
+	}
+	if doc.Status != "blocked" {
+		t.Fatalf("expected status=blocked, got %q\nstdout: %s\nstderr: %s", doc.Status, stdout, stderr)
+	}
+
+	// wave_headings check must be present and blocked.
+	var whCheck *barrierCheckDoc
+	for i := range doc.Checks {
+		if doc.Checks[i].Name == "wave_headings" {
+			whCheck = &doc.Checks[i]
+		}
+	}
+	if whCheck == nil {
+		t.Fatalf("expected a 'wave_headings' check in the result document, got checks: %v", doc.Checks)
+	}
+	if whCheck.Status != "blocked" {
+		t.Fatalf("expected wave_headings.status=blocked, got %q", whCheck.Status)
+	}
+	if len(whCheck.Failures) == 0 {
+		t.Fatal("expected wave_headings.failures to be non-empty (must name the malformed heading)")
+	}
+	// Failure must name the malformed token 'X' and include the line number.
+	foundToken := false
+	for _, f := range whCheck.Failures {
+		if strings.Contains(f, `"X"`) || strings.Contains(f, "\"X\"") || strings.Contains(f, "X") {
+			foundToken = true
+		}
+	}
+	if !foundToken {
+		t.Fatalf("expected wave_headings.failures to name the malformed token 'X', got: %v", whCheck.Failures)
+	}
+}
+
+// TestBarrierContract_SemHeadingMalformadaNaoIntroduceFalsoPositivo is the ML-1E
+// contra-braço: a document with no malformed wave headings and everything complete
+// must still produce a "passed" verdict. The wave_headings check must not introduce
+// false positives on clean documents.
+//
+// AC11 (ML-1E): this test asserts that wave_headings is "passed" when no malformed
+// headings exist — the check does not affect clean barriers.
+func TestBarrierContract_SemHeadingMalformadaNaoIntroduceFalsoPositivo(t *testing.T) {
+	dir, _ := setupBarrierFixture(t, barrierFixtureConfig{
+		linkedREQ:     true,
+		mlStatus:      "✅",
+		criteriaLines: []string{"- [x] criterion met"},
+		gateCommands:  []string{"true"},
+	})
+
+	stdout, stderr, code := runBarrierCLI(t, dir, "ROADMAP-barrier-fixture",
+		"--wave", "1", "--json", "--trust-local-gates")
+
+	if code != 0 {
+		t.Fatalf("expected exit 0 (passed), got %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	var doc barrierResultDoc
+	if err := json.Unmarshal([]byte(strings.TrimSpace(stdout)), &doc); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %s", err, stdout)
+	}
+	if doc.Status != "passed" {
+		t.Fatalf("expected status=passed, got %q (wave_headings check must not introduce false positive)\nstdout: %s", doc.Status, stdout)
+	}
+	// wave_headings check must be present and passed.
+	var whCheck *barrierCheckDoc
+	for i := range doc.Checks {
+		if doc.Checks[i].Name == "wave_headings" {
+			whCheck = &doc.Checks[i]
+		}
+	}
+	if whCheck == nil {
+		t.Fatalf("expected a 'wave_headings' check in result, got checks: %v", doc.Checks)
+	}
+	if whCheck.Status != "passed" {
+		t.Fatalf("expected wave_headings.status=passed for clean document, got %q", whCheck.Status)
 	}
 }

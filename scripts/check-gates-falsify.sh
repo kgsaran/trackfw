@@ -1602,15 +1602,21 @@ echo "OK   [falsify/no-repo-mutation]"
 #
 # BARRIER_BIS_SELFTEST_BREAK=1 ativa o seam dedicado em check-barrier.sh:
 # o Cenário 9 escreve uma fixture válida (sem o heading malformado), fazendo
-# todos os runtimes retornar exit 0. A asserção espera exit 2 → falha com o
-# diagnóstico explícito abaixo — provando que o cenário tem poder de reprovação
-# sobre a classe de defeito de early-break.
+# o barrier retornar exit 0. A asserção ML-1E (exit 1, wave_headings blocked)
+# falha com o diagnóstico explícito abaixo — provando que o cenário tem poder
+# de reprovação sobre a classe de defeito de early-break.
+#
+# Diagnóstico atualizado por ML-1E (REQ #392): antes da ML-1E o Cenário 9
+# esperava exit 0 e usava uma guarda de vacuidade de stderr para detectar
+# ausência do warning; após ML-1E o cenário espera exit 1 (wave_headings
+# blocked), então a falha é "expected exit 1 (blocked: wave_headings check),
+# got 0; stderr:" — mais direta e independente de stderr.
 #
 # Nota: o seam corrompe a FIXTURE, nunca a asserção (mesmo padrão que
 # BARRIER_SELFTEST_BREAK do Cenário 13) — não é uma mudança tautológica.
 # ---------------------------------------------------------------------------
 assert_fails_with "barrier/early-break-after-target-not-detected" \
-  'FAIL [barrier/wave-label/malformed-after-target/go]: stderr is empty — vacuity guard: malformed-wave warning must appear on stderr' \
+  'FAIL [barrier/wave-label/malformed-after-target/go]: expected exit 1 (blocked: wave_headings check), got 0; stderr:' \
   env BARRIER_BIS_SELFTEST_BREAK=1 GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-barrier.sh"
 
 
