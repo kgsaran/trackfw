@@ -354,7 +354,7 @@ nomeia — *reimplementar uma capacidade do produto pior do que ela é*.
 - [ ] Uma frase por teste novo, se houver (AC11)
 
 ### ML-4A — sanear os sítios medidos E promover a severidade a `error`
-**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
+**Status:** ❌ **REPROVADO parcialmente** — o saneamento de scaffold e a promoção ficam; os gates `echo` e a Wave 0 fabricada são conformidade forjada, e o AC7-bis nunca foi ligado na transição. Fecha no ML-4B
 **Files affected:** em `docs/roadmaps/done/` — `ROADMAP-2026-08-18-doctor-detecta-artefato-fora-do-manifesto...`,
 `ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness...`,
 `ROADMAP-2026-09-10-barrier-executa-gate-de-roadmap-nao-confiavel...`,
@@ -558,4 +558,60 @@ explícito é uma decisão registrada, não um esquecimento"*.
 - [ ] Contra-braço: **`❌ Bloqueado` continua pendente** — é pendência, não encerramento (decisão 9).
       Roadmap com ML bloqueado **não** pode aparecer completo.
 - [ ] `go build ./...` RC=0 · `go test ./internal/serve/` RC=0
+- [ ] Uma frase por teste novo (AC11)
+
+### ML-4B — corretivo do ML-4A: desfazer a conformidade forjada e ligar o AC7-bis na transição
+**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Files affected:** os roadmaps de `done/` e `blocked/` tocados pelo ML-4A,
+`internal/validator/validator_roadmap_gates.go`, `internal/generators/roadmap.go`,
+`internal/generators/roadmap_ml_gate_test.go`, `internal/validator/validator_test.go`
+
+**O que FICA do ML-4A** (auditado por mim): a remoção do **scaffold duplicado** — as 4 linhas
+`**Status:** ⬜ Pendente` removidas são do template (`ML-0A — Threat model for this roadmap` e
+`ML-1A — <título>`), não MLs reais; o rebaixamento `### ML-XX` → `####` em **subseções de auditoria**
+que falavam *sobre* um ML e herdaram nível de heading errado (correção semântica, não contorno);
+o typo `**Gate da wave:**` → plural; e a promoção das 3 regras removendo as entradas de
+`ruleDefaults`. Nenhuma transição `⬜ → ✅`.
+
+🔴 **Três defeitos, e a causa dos dois primeiros é instrução minha.**
+
+**(1) Gates `echo` são mais fracos do que o que substituíram.** Medido:
+```
+antes: exit 1  → ✓ gates: blocked
+depois: echo   → ✓ gates: passed
+```
+Troquei um gate que **falha fechado** por um que **sempre passa** — e em roadmaps de `done/`, que
+**regra nenhuma acusava** (a assimetria da decisão 8). Minha instrução mandou *"registre no bloco em
+vez de apagá-lo"*, e isso produziu o padrão do ML-2B do #387 invertido.
+
+**(2) Wave 0 fabricada.** `ROADMAP-2026-09-12-triagem-medida` foi bloqueado por ADR **antes** de
+chegar à Wave 0. Escrever uma retroativamente, com `❌ Bloqueado` e prosa explicando que não foi
+executada, é **conformidade forjada** — a mesma forma da "fachada integralmente válida" que o #387
+nomeou como tier aberto. O argumento que exclui `done/` transfere: a convenção é **posterior** ao
+artefato, e `blocked/` significa trabalho **parado**, possivelmente antes da Wave 0.
+
+**(3) 🔴 O AC7-bis nunca foi ligado na transição.** Medido: `grep -c "HasWave0"
+internal/generators/roadmap.go` → **0**. O ML-3B escreveu que *"a metade da transição é escopo do
+ML-3A"*; o ML-3A entregou dez testes, **nenhum sobre Wave 0**. Ninguém pegou. É o padrão **A1** da
+auditoria externa de 2026-09-05 que o `CLAUDE.md` nomeia — AC declarado satisfeito sem implementação.
+Sem isso, estreitar a regra para `wip/` abre a fuga: **`wip` → apagar Wave 0 → `blocked` → `done`**.
+
+**Actions:**
+1. **Reverter os gates `echo`** nos roadmaps de `done/`. Em `done/`, o saneamento é **só** remoção de
+   scaffold duplicado — o bloco de gates pertence ao scaffold de onde veio: sai com ele, ou fica
+   intocado. **Não autore gate em roadmap fechado.**
+2. **Reverter a Wave 0 inserida** em `ROADMAP-2026-09-12-triagem-medida`.
+3. **Estreitar `roadmap_wave0_required` para `wip/` apenas** — não cobra em `blocked/`, pelo mesmo
+   argumento que exclui `done/`. Ajustar testes.
+4. **Ligar o AC7-bis na transição:** `MoveRoadmap(..., "done")` recusa quando falta `## Wave 0`,
+   usando `roadmapdoc.HasWave0`. É isso que fecha a fuga do item 3.
+5. Reavaliar `roadmap_gate_coverage` em `blocked/`: se um roadmap bloqueado antes da convenção for
+   acusado, aplique o mesmo raciocínio — **meça antes de decidir**, e escreva a medição.
+**Acceptance criteria:**
+- [ ] 🔴 Nenhum gate `echo` remanescente: `git diff main...HEAD -- docs/roadmaps/ | grep '^+.*echo'` → **vazio**
+- [ ] A Wave 0 fabricada foi revertida; `git diff` do arquivo não insere seção nova
+- [ ] `roadmap_wave0_required` cobra **só** em `wip/`; teste de contra-braço com roadmap em `blocked/`
+- [ ] 🔴 **`MoveRoadmap` recusa `done` sem `## Wave 0`**, com teste de falsificação (passa antes, reprova depois) e contra-braço (roadmap com Wave 0 move)
+- [ ] 🔴 **Fuga fechada:** teste que demonstra que `wip` → apagar Wave 0 → `blocked` → `done` **não** passa
+- [ ] `trackfw validate` RC=0 · `go build ./...` RC=0 · `go test ./...` RC=0
 - [ ] Uma frase por teste novo (AC11)
