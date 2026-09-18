@@ -561,7 +561,7 @@ explícito é uma decisão registrada, não um esquecimento"*.
 - [ ] Uma frase por teste novo (AC11)
 
 ### ML-4B — corretivo do ML-4A: desfazer a conformidade forjada e ligar o AC7-bis na transição
-**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
 **Files affected:** os roadmaps de `done/` e `blocked/` tocados pelo ML-4A,
 `internal/validator/validator_roadmap_gates.go`, `internal/generators/roadmap.go`,
 `internal/generators/roadmap_ml_gate_test.go`, `internal/validator/validator_test.go`
