@@ -869,6 +869,17 @@ REQ: $req_rel
 
 ## Acceptance Criteria
 - [x] feito
+
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model for this fixture
+**Status:** ✅
+**Gates da wave:**
+\`\`\`bash
+exit 0
+\`\`\`
+**Critérios de aceite:**
+- [x] threat model complete
 EOF
 }
 
@@ -1696,6 +1707,8 @@ ROADMAP_CYCLE_SCRIPT_FROM_REQ='
   "$@" roadmap new --from-req docs/req/REQ-flag-source.md >/dev/null
   name=$(basename "$(find docs/roadmaps/backlog -name "*.md")")
   "$@" roadmap move "$name" wip >/dev/null
+  roadmap_file="docs/roadmaps/wip/$name"
+  sed "s/^exit 1  #/exit 0  #/" "$roadmap_file" > "$roadmap_file.tmp" && mv "$roadmap_file.tmp" "$roadmap_file"
   exec "$@" validate
 '
 
@@ -5885,18 +5898,22 @@ assert_fails_with "release-tag-parity/refs-replace-bypass-false-negative" \
   env GO_BIN="$T88C_GO_BIN" bash "$ROOT_DIR/scripts/check-release-tag-parity.sh"
 
 # ---------------------------------------------------------------------------
-# Cenario 167 -- Direcao B (AC9, mesmo roadmap, ML-2A): `barrier --wave 0`
-#                volta a ser recusado (regressao do lower bound de
-#                parseWaves, internal/commands/barrier.go, mesma classe
-#                revertida pelo ML-1A -- "0" volta a contar como malformado).
-#                Prova que o cenario 11 invertido de check-barrier.sh
-#                (barrier/wave-label/wave-zero-accepted) e load-bearing: sem
-#                a correcao de ML-1A, o fixture com "## Wave 0" reprova.
+# Cenario 167 -- Direcao B (AC9, mesmo roadmap, ML-2A): parseWaves do
+#                lower bound volta a tratar "0" como malformado (regressao
+#                de internal/roadmapdoc/roadmapdoc.go, intVal < 0 ->
+#                intVal < 1).
+#
+# ML-4C (REQ #392): todos os fixtures de check-barrier.sh ganharam Wave 0.
+# O ponto de deteccao mudou: S1 (--wave 1 com Wave 0 no fixture) falha
+# primeiro -- wave_headings fica bloqueado porque Wave 0 e malformada,
+# barrier sai com 1 e stderr contem "malformed wave heading". O padrao do
+# assert_fails_with foi atualizado para corresponder a este novo ponto.
+# (O ponto anterior era S11/--wave 0 -> exit 2; Cenario 168 continua
+# cobrindo o segundo guarda em barrier.go com o mesmo padrao antigo.)
 #
 # Sabotagem Go-only (mesmo padrao dos Cenarios 164/165): so parseWaves e
-# exercitado pelo fixture do Cenario 11 (a validacao do FLAG em
-# newBarrierCmd nao entra em jogo porque o fixture chama `--wave 0`, que
-# passa a validacao do flag e so tropeca ao ler o cabecalho do roadmap).
+# exercitado -- a validacao do FLAG em newBarrierCmd nao entra em jogo
+# (coberta pelo Cenario 168, que usa waveInt < 1 em barrier.go).
 # ---------------------------------------------------------------------------
 T97="$WORK/s167"
 mkdir -p "$T97/cmd" "$T97/internal"
@@ -5927,7 +5944,7 @@ falsify_count_success
 echo "OK   [falsify/barrier/wave-zero-rejected-again-baseline]"
 
 assert_fails_with "barrier/wave-zero-rejected-again-detected" \
-  "expected exit 0 or 1 (never 2" \
+  "malformed wave heading" \
   env GO_BIN="$T97_BIN" bash "$ROOT_DIR/scripts/check-barrier.sh"
 
 # ---------------------------------------------------------------------------

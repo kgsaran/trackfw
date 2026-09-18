@@ -191,6 +191,17 @@ write_two_wave_roadmap() {
     echo "## Acceptance Criteria"
     echo "- [x] fixture roadmap-level criterion"
     echo
+    echo "## Wave 0 — Threat Model"
+    echo
+    echo "### ML-0A — Threat model for this fixture"
+    echo "**Status:** ✅"
+    echo "**Gates da wave:**"
+    echo '```bash'
+    echo "exit 0"
+    echo '```'
+    echo "**Critérios de aceite:**"
+    echo "- [x] threat model complete"
+    echo
     echo "## Wave 1 — Fixture Wave One"
     echo "> Dependências: nenhuma"
     echo
@@ -277,6 +288,17 @@ REQ: REQ-2026-07-29-barrier-fixture
 ## Acceptance Criteria
 - [x] fixture roadmap-level criterion
 
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model for this fixture
+**Status:** ✅
+**Gates da wave:**
+```bash
+exit 0
+```
+**Critérios de aceite:**
+- [x] threat model complete
+
 ## Wave 1 — Fixture Wave
 > Dependências: nenhuma
 
@@ -302,6 +324,17 @@ REQ: REQ-2026-07-29-barrier-fixture
 
 ## Acceptance Criteria
 - [x] fixture roadmap-level criterion
+
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model for this fixture
+**Status:** ✅
+**Gates da wave:**
+```bash
+exit 0
+```
+**Critérios de aceite:**
+- [x] threat model complete
 
 ## Wave 1 — Fixture Wave
 > Dependências: nenhuma
@@ -329,6 +362,17 @@ REQ: REQ-2026-07-29-barrier-fixture
 
 ## Acceptance Criteria
 - [x] fixture roadmap-level criterion
+
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model for this fixture
+**Status:** ✅
+**Gates da wave:**
+```bash
+exit 0
+```
+**Critérios de aceite:**
+- [x] threat model complete
 
 ## Wave 1 — Fixture Wave
 > Dependências: nenhuma
@@ -358,6 +402,17 @@ cat >"$S3D/docs/roadmaps/wip/ROADMAP-barrier-fixture.md" <<'EOF'
 
 ## Acceptance Criteria
 - [x] fixture roadmap-level criterion
+
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model for this fixture
+**Status:** ✅
+**Gates da wave:**
+```bash
+exit 0
+```
+**Critérios de aceite:**
+- [x] threat model complete
 
 ## Wave 1 — Fixture Wave
 > Dependências: nenhuma
@@ -392,6 +447,17 @@ REQ: REQ-2026-07-29-barrier-fixture
 
 ## Acceptance Criteria
 - [x] fixture roadmap-level criterion
+
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model for this fixture
+**Status:** ✅
+**Gates da wave:**
+\`\`\`bash
+exit 0
+\`\`\`
+**Critérios de aceite:**
+- [x] threat model complete
 
 ## Wave 1 — Fixture Wave
 > Dependências: nenhuma
@@ -430,6 +496,17 @@ REQ: REQ-2026-07-29-barrier-fixture
 
 ## Acceptance Criteria
 - [x] fixture roadmap-level criterion
+
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model for this fixture
+**Status:** ✅
+**Gates da wave:**
+```bash
+exit 0
+```
+**Critérios de aceite:**
+- [x] threat model complete
 
 ## Wave 1 — Fixture Wave
 > Dependências: nenhuma
@@ -499,6 +576,17 @@ REQ: REQ-2026-07-29-barrier-fixture
 
 ## Acceptance Criteria
 - [x] fixture roadmap-level criterion
+
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model for this fixture
+**Status:** ✅
+**Gates da wave:**
+```bash
+exit 0
+```
+**Critérios de aceite:**
+- [x] threat model complete
 
 ## Wave 1 — Fixture Wave
 > Dependências: nenhuma
@@ -600,6 +688,17 @@ REQ: REQ-2026-07-29-barrier-fixture
 **Critérios de aceite:**
 - [x] done
 
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model for this fixture
+**Status:** ✅
+**Gates da wave:**
+```bash
+exit 0
+```
+**Critérios de aceite:**
+- [x] threat model complete
+
 ## Wave 1 — Fixture Wave
 
 ### ML-1A — Fixture ML
@@ -608,6 +707,7 @@ REQ: REQ-2026-07-29-barrier-fixture
 - [x] done
 EOF
 # ## Wave X is at line 8 in the file above (REQ + AC block prepended — ML-1D).
+# ## Wave 0 is inserted between Wave X and Wave 1 (ML-4C); Wave X stays at line 8.
 WANT8='trackfw barrier: malformed wave heading at line 8: "X" is not a valid wave label'
 for runtime in go; do  # ML-3A (v8): node py removidos
   run_barrier "$runtime" "$S8" ROADMAP-barrier-fixture --wave 1 --trust-local-gates
@@ -651,6 +751,8 @@ ROADMAP9="$S9/docs/roadmaps/wip/ROADMAP-barrier-fixture.md"
 if [[ "$BIS_SELFTEST_BREAK" == "1" ]]; then
   # Seam active: omit the malformed heading so stderr is empty.
   # The vacuity guard fails → falsification proof for Cenário 19.
+  # ML-4C: Wave 0 added so roadmap_wave0_required passes; validate does not block;
+  # barrier exits 0 → [[ $BARRIER_EXIT -eq 1 ]] fails → Cenário 19 fires correctly.
   cat >"$ROADMAP9" <<'EOF'
 # Roadmap: Barrier After Fixture (seam: no malformed heading)
 
@@ -658,6 +760,17 @@ REQ: REQ-2026-07-29-barrier-fixture
 
 ## Acceptance Criteria
 - [x] fixture roadmap-level criterion
+
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model for this fixture
+**Status:** ✅
+**Gates da wave:**
+```bash
+exit 0
+```
+**Critérios de aceite:**
+- [x] threat model complete
 
 ## Wave 1 — Fixture Wave
 
@@ -674,7 +787,8 @@ REQ: REQ-2026-07-29-barrier-fixture
 - [x] done
 EOF
 else
-  # Normal: Wave X heading at line 15 (after the target Wave 1 block, with REQ + AC — ML-1D).
+  # Normal: Wave X heading at line 26 (after Wave 0 + Wave 1 block, with REQ + AC — ML-1D/ML-4C).
+  # ML-4C: Wave 0 inserted before Wave 1 → Wave X shifts from line 15 to line 26.
   cat >"$ROADMAP9" <<'EOF'
 # Roadmap: Barrier After Fixture
 
@@ -682,6 +796,17 @@ REQ: REQ-2026-07-29-barrier-fixture
 
 ## Acceptance Criteria
 - [x] fixture roadmap-level criterion
+
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model for this fixture
+**Status:** ✅
+**Gates da wave:**
+```bash
+exit 0
+```
+**Critérios de aceite:**
+- [x] threat model complete
 
 ## Wave 1 — Fixture Wave
 
@@ -698,8 +823,8 @@ REQ: REQ-2026-07-29-barrier-fixture
 - [x] done
 EOF
 fi
-# ## Wave X is at line 15 in the normal fixture above (REQ + AC block prepended — ML-1D).
-WANT9='trackfw barrier: malformed wave heading at line 15: "X" is not a valid wave label'
+# ML-4C: Wave 0 inserted before Wave 1 → ## Wave X now at line 26 (was line 15 pre-ML-4C).
+WANT9='trackfw barrier: malformed wave heading at line 26: "X" is not a valid wave label'
 for runtime in go; do  # ML-3A (v8): node py removidos
   run_barrier "$runtime" "$S9" ROADMAP-barrier-fixture --wave 1 --trust-local-gates
   # ML-1E: exit 1 (blocked via wave_headings check); wave 1 is still EVALUATED.
@@ -727,6 +852,17 @@ REQ: REQ-2026-07-29-barrier-fixture
 
 ## Acceptance Criteria
 - [x] fixture roadmap-level criterion
+
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model for this fixture
+**Status:** ✅
+**Gates da wave:**
+```bash
+exit 0
+```
+**Critérios de aceite:**
+- [x] threat model complete
 
 ## Wave 1 — Fixture Wave One
 
@@ -965,6 +1101,17 @@ YAML
   # Write the roadmap with a gate that creates the sentinel
   cat >"$dest/docs/roadmaps/wip/ROADMAP-trust-fixture.md" <<EOF
 # Roadmap: Trust Fixture
+
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model for this fixture
+**Status:** ✅
+**Gates da wave:**
+\`\`\`bash
+exit 0
+\`\`\`
+**Critérios de aceite:**
+- [x] threat model complete
 
 ## Wave 1 — Fixture Wave
 

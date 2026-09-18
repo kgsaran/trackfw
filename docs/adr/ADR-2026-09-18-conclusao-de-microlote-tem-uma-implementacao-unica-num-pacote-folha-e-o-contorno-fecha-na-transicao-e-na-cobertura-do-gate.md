@@ -342,3 +342,28 @@ apenas o escopo declarado estreito:
 - **`_ = os.WriteFile` em `roadmap.go:581-585`**, que engole falha da sincronização de `status:`.
   Está **dentro** da função que a decisão 3 modifica. Entra nesta REQ por proximidade e por ser
   falha-aberta na mesma transição — decidido explicitamente, não por omissão.
+
+## Breaking Change — ML-4B/ML-4C: `roadmap_wave0_required` promovido a `error`
+
+**O que mudou (ML-4B, REQ #392):** a regra `roadmap_wave0_required` passou de ausente dos
+`ruleDefaults` (tratada como `warning` implícito) para `error` explícito. Roadmaps em `wip/` **sem
+`## Wave 0`** agora fazem `trackfw validate` falhar com exit 1.
+
+**Efeito em cascata sobre `trackfw barrier`:** o `barrier` executa `validate` como último check
+(após `wave_headings`, `mls_complete`, `acceptance_evidence`, `gates`). Com `roadmap_wave0_required`
+em `error`, qualquer roadmap em `wip/` sem `## Wave 0` — ainda que Wave 1 esteja 100% verde — faz
+o `barrier` sair com exit 1 (check `validate` blocked).
+
+**Remédio:** adicionar `## Wave 0 — Threat Model` ao roadmap, com um gate real (não `exit 1`
+placeholder). O gate `exit 0` é válido para fixtures de teste; projetos reais devem substituí-lo
+por um check de threat model concreto.
+
+**O que NÃO se deve fazer:** relaxar a regra (editar `ruleDefaults`, `trackfw.yaml` ou a
+severidade). O template `roadmap new` já emite `## Wave 0` com gate `exit 1` (placeholder
+falha-fechado); a ruptura afeta apenas roadmaps criados antes do ML-4B ou que omitiram Wave 0
+propositalmente.
+
+**Corretivo de fixtures (ML-4C):** todos os fixtures de `scripts/check-barrier.sh` que criavam
+roadmaps em `wip/` sem `## Wave 0` foram atualizados para incluí-la com gate `exit 0`. A fixture S9
+(malformed heading AFTER target) teve `WANT9` atualizado de `"line 15"` para `"line 26"` porque a
+inserção de Wave 0 desloca o heading malformado 11 linhas abaixo.

@@ -2434,6 +2434,14 @@ Evaluated in this fixed order; the run continues through all checks so the repor
 `trackfw validate` is invoked in-process (Go/Node/Python each call their own validator), not by
 shelling out to a `trackfw` binary that may not be on `PATH`.
 
+**Breaking change — ML-4B/ML-4C (REQ #392, 2026-09-18):** `roadmap_wave0_required` was promoted
+to `error` severity. A roadmap in `wip/` without `## Wave 0` now causes `validate` to report ≥ 1
+violation, which makes the `validate` check `blocked` and the overall `barrier` exit 1 — even if
+all other checks (`wave_headings`, `mls_complete`, `acceptance_evidence`, `gates`) pass. Remedy:
+add `## Wave 0 — Threat Model` with a real gate (not `exit 1` placeholder) before any
+implementation wave. The `roadmap new` template already emits `## Wave 0` with an `exit 1`
+placeholder gate (fails-closed until replaced). See ADR-2026-09-18 breaking-change section.
+
 ### JSON document
 
 <!-- trackfw-contract: gate=scripts/check-barrier.sh partial=o cenário 6 usa uma fixture 100% verde (todos os checks passed) e prova só que os 3 runtimes concordam ENTRE SI byte a byte; não afirma os textos pinados de evidence/failures ("<ML-id>: <n> criteria met", "<command>: exit 0") contra um valor esperado — grep por "criteria met"/"exit 0'" no script não retorna asserção correspondente, e nenhum cenário deste gate produz um failures[] não-vazio para comparar -->
