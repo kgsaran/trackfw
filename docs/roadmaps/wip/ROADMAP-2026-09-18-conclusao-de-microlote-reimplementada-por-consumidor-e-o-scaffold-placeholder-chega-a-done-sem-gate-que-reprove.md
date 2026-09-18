@@ -723,7 +723,7 @@ cobertura em qualquer estado, e não quebra o fluxo oficial.
 - [ ] Uma frase por teste novo (AC11)
 
 ### ML-4E — corretivo: fechamos a cobertura do S11 com as nossas próprias mudanças
-**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
 **Files affected:** `scripts/check-barrier.sh` (ou `scripts/check-gates-falsify.sh`, onde couber o cenário)
 
 **Achado do ML-4D, medido e reportado com honestidade por ele** — e é dele o mérito de ter ido medir
