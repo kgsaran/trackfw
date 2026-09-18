@@ -38525,3 +38525,23 @@ trackfw init && roadmap new "..." && roadmap move <n> wip && trackfw validate
 - 🔴 **O achado maior veio de fora do cruzamento: 23 das 30 órfãs mencionam Node/Python/3-CLIs — runtimes que a v8 ELIMINOU.** Calibrei o filtro numa amostra de 4: três têm 7-11 menções (centrais), uma tem **0** no corpo (falso-positivo do título). Portanto **23 é indicador, não veredito** — mas o sinal é forte, e explica por que o saldo não cede: boa parte do backlog descreve um produto que deixou de existir.
 - 🔴 **E a própria `REQ-2026-09-12-v8-um-binario-muitos-canais` está `Open`** — apesar de a v8 estar entregue e medida por mim hoje (`npm/src` não existe, `pypi/trackfw/generators` sem `.py` versionado).
 - **Recomendação registrada:** antes de priorizar as 30, uma passada de triagem barata em três braços — (a) o runtime que a REQ descreve ainda existe? (b) o defeito ainda reproduz? (c) há issue fechado correspondente? A do `titulo-newline` custou 30 s para falsificar; a do symlink, 30 s para confirmar que vive. É trabalho de horas, não de sprints, e converte um backlog opaco em lista curta de defeitos reais.
+
+---
+**Apolo-tf — INÍCIO** 2026-09-18
+**ML:** ML-4D — corretivo do ML-4C: o discriminante está escrito no próprio template
+**REQ:** #392 — scaffold-placeholder-chega-a-done
+**Branch:** fix/scaffold-placeholder-chega-a-done
+**Objetivo:**
+- Implementar predicado em `roadmapdoc.go`: `Wave0HasPlaceholderOrMissingGate` só dispara quando ao menos um ML não está pendente
+- Reverter `sed` de `ROADMAP_CYCLE_SCRIPT_FROM_REQ` em `check-gates-falsify.sh` (~linha 1711)
+- Verificar se `write_roadmap_link_target_fixture` Wave 0 precisa ficar (sim — AC7-bis)
+- Medir S11 do cenário 167 com binário sabotado
+- Rodar `make quality` até o fim e confirmar RC=0
+
+### 2026-09-18 — Zeus — triagem das órfãs: lote 2 entregue, e dois erros meus corrigidos
+- 🔴 **Erro meu 1 — o número estava errado.** Meu script contava órfã quem não tinha `^Roadmap:` **no corpo**, ignorando o campo `roadmap:` do **frontmatter**. Refeito lendo as duas formas: **24 órfãs**, não 30/31. Sete REQs declaram o roadmap só no frontmatter.
+- 🔴 **Erro meu 2 — transcrição.** Ao montar o prompt do lote 2, inseri `validate-unfiltered-do-python` e `consumidores-que-nao-conhecem`, que **não estavam** na lista de órfãs (peguei-as do cruzamento de issues anterior e misturei). Não houve perda de cobertura — as 14 órfãs reais da faixa foram triadas —, mas duas não-órfãs foram triadas de bônus. O agente detectou a inconsistência sozinho e reportou; se tivesse apenas obedecido, o erro ficaria.
+- **Lote 2 (16 REQs): 5 OBSOLETA · 11 VIVE · 0 INCERTA.** O zero em INCERTA está **justificado, não forçado**: nas duas de Windows (21, 23) o braço de código é medível aqui e mostra trabalho não feito (`ls scripts/ | grep ps1` → vazio), então o VIVE se sustenta sem depender de Windows. Ele nomeou por AC o que **não** mediu — #16 AC2, #21 AC5-AC7, #23 AC2-AC5 — e ofereceu o rótulo conservador para as três.
+- **Reproduções diretas, as mais acionáveis:** **#20** `check-referential-integrity.sh` sobre `docs/` vazio → `OK`, `rc=0` (quinto gate vácuo do projeto); **#22** `git add -A` passa no guard com rc=0 enquanto `git push` é negado com rc=2; **#19** `validate --json` devolve **zero** achados de guard com e sem `hooks.PreToolUse` — remover a entrada é invisível; **#26** `branch.go:124` roda `git checkout -b` do HEAD, sem `--from`, sem fetch.
+- 🔴 **Achado que fecha um ciclo:** o **AC12 da REQ da v8** (`#29`) e os **AC10-AC12** da `#30` pedem *"classificar as REQs e issues abertos em desaparece / barateia / indiferente e fechar os que a causa removeu"*. **Esse AC nunca foi executado — e é literalmente esta triagem.** Fechar as duas sem registrar o vínculo perderia a rastreabilidade. Colide também com os AC1-AC3 da `#28`: mesmo entregável descrito em duas REQs.
+- **Dois roadmaps mortos em `backlog/`:** `ROADMAP-2026-09-10-validate-unfiltered-...` e `ROADMAP-2026-09-10-consumidores-...` descrevem MLs sobre `pypi/trackfw/` e `npm/src/` — caminhos que não existem mais. Aparecem em `trackfw status` como trabalho pendente inexecutável.

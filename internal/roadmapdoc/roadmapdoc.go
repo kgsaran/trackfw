@@ -653,20 +653,35 @@ func ParseGates(lines []string, waveStart, waveEnd int) ([]string, error) {
 // ────────────────────────────────────────────────────────────────────────────
 
 // Wave0HasPlaceholderOrMissingGate returns true when Wave 0 (if present) has no
-// real gate command: either its **Gates da wave:** block is absent/empty, or all
-// commands in it start with "exit 1" (the placeholder the template emits).
+// real gate command AND at least one ML in the document has moved past the pending
+// state (StatusCategory != StatusPending).
 //
-// This is the predicate for AC7 (REQ #392, ML-3B). The discriminant is
+// This is the predicate for AC7 (REQ #392, ML-3B/ML-4D). The discriminant is
 // "the wave lost the gate the template gave it", NOT "the placeholder text is
 // present" — ParseGates treats a wave with no block as zero gates (legal), so the
 // naïve discriminant (is "exit 1" in the block?) would pass after the entire block
 // is deleted. This predicate closes that gap: both "block deleted" and "block present
 // with only exit 1" are violations.
 //
-// Three arms (AC7):
-//   (a) exit 1 intacto       → returns true  (violation)
-//   (b) block deleted        → returns true  (violation — len(cmds)==0)
-//   (c) real gate command    → returns false (no violation)
+// The additional ML-status condition (ML-4D, REQ #392) closes the ADR-2026-07-31
+// regression: `roadmap new` emits "exit 1" by design (fail closed until ML-0A
+// replaces it), and `branch_has_wip_roadmap` requires moving to wip before
+// creating a branch. A freshly scaffolded roadmap therefore lands in wip with
+// all MLs ⬜ Pendente and a placeholder gate — that state is LEGITIMATE and must
+// NOT trigger a violation. The placeholder only becomes a violation once work has
+// started (at least one ML is no longer pending), because at that point ML-0A
+// should already have been executed and replaced the gate.
+//
+// Four arms (AC7 + ML-4D discriminant):
+//   (a) exit 1 intacto + work started       → returns true  (violation)
+//   (b) block deleted + work started        → returns true  (violation — len(cmds)==0)
+//   (c) real gate command                   → returns false (no violation, any ML state)
+//   (d) placeholder/absent, all MLs pending → returns false (fresh scaffold, legitimate)
+//
+// Fail-closed on ML status: an ML with no **Status:** line is treated as non-pending
+// (same as HasUnfinishedMLs) so that stripping status lines cannot silence the gate.
+// Fail-closed on malformed waves: if ParseWaves returns malformed waves, their MLs
+// cannot be inspected and the function behaves as if work has started.
 //
 // Precondition: Wave 0 must be present; call HasWave0 first or check the return
 // value of ParseWaves. If Wave 0 is absent, this function returns false — that is
@@ -681,12 +696,13 @@ func Wave0HasPlaceholderOrMissingGate(data string) bool {
 		cmds, err := ParseGates(lines, w.Start, w.End)
 		if err != nil {
 			// Malformed gates block — treat as placeholder (fail closed).
-			return true
+			// Still check ML status: placeholder is only a violation if work started.
+			return hasAnyNonPendingML(data)
 		}
 		if len(cmds) == 0 {
 			// No **Gates da wave:** block, or block present but empty (all comments).
 			// Both cases mean the gate the template gave has been lost.
-			return true
+			return hasAnyNonPendingML(data)
 		}
 		for _, cmd := range cmds {
 			if !strings.HasPrefix(cmd, "exit 1") {
@@ -695,9 +711,45 @@ func Wave0HasPlaceholderOrMissingGate(data string) bool {
 			}
 		}
 		// Every command starts with "exit 1" — all are placeholder variants.
-		return true
+		// Only a violation if work has started (ML-4D discriminant).
+		return hasAnyNonPendingML(data)
 	}
 	// Wave 0 not found in this document.  AC7-bis handles the absence.
+	return false
+}
+
+// hasAnyNonPendingML returns true if at least one ML in the document has a
+// StatusCategory other than StatusPending (i.e., work has been started or completed).
+//
+// Fail-closed on missing status: an ML with no **Status:** line is treated as
+// non-pending — stripping status lines must not silence the gate check.
+// Fail-closed on malformed waves: ParseWaves may return malformed waves whose MLs
+// cannot be inspected; the function returns true conservatively in that case.
+//
+// Used by Wave0HasPlaceholderOrMissingGate (ML-4D, REQ #392) to distinguish a
+// freshly scaffolded roadmap (all MLs ⬜ Pendente — placeholder gate is legitimate)
+// from one where work has started (placeholder gate is a violation).
+func hasAnyNonPendingML(data string) bool {
+	lines := SplitRoadmapLines(data)
+	fenced := FenceMask(lines)
+	waves, malformed := ParseWaves(lines)
+	if len(malformed) > 0 {
+		// Cannot inspect MLs inside malformed waves; assume non-pending (fail closed).
+		return true
+	}
+	for _, wave := range waves {
+		mls := ParseMLs(lines, fenced, wave.Start, wave.End)
+		for _, ml := range mls {
+			marker, found := MLStatusMarker(lines, fenced, ml)
+			if !found {
+				// No **Status:** line — treat as non-pending (fail closed).
+				return true
+			}
+			if StatusCategory(marker) != StatusPending {
+				return true
+			}
+		}
+	}
 	return false
 }
 

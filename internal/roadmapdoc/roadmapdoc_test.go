@@ -540,18 +540,18 @@ func TestParseWaves_CascadeIsolated(t *testing.T) {
 // AC7, AC7-bis, AC8 tests (ML-3B, REQ #392)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// AC11 reconciliation for ML-3B tests (one sentence per test):
+// AC11 reconciliation for ML-3B/ML-4D tests (one sentence per test):
 //
 //   TestWave0HasPlaceholderOrMissingGate_ArmA_ExitOneIntact
 //     Affirms: Wave0HasPlaceholderOrMissingGate returns true when Wave 0's gate block
-//     contains only "exit 1  # placeholder gate" — the canonical template placeholder
-//     prevents the transition (AC7 arm a).
+//     contains only "exit 1  # placeholder gate" AND at least one ML is non-pending —
+//     the canonical template placeholder with started work prevents the transition (AC7 arm a).
 //
 //   TestWave0HasPlaceholderOrMissingGate_ArmB_BlockDeleted
 //     Affirms: Wave0HasPlaceholderOrMissingGate returns true when Wave 0 has a
-//     ## Wave 0 heading but no **Gates da wave:** block at all — the naïve discriminant
-//     ("is exit 1 present?") would pass here; the correct discriminant ("lost the gate
-//     the template gave") catches it (AC7 arm b, the gap that kills the naïve check).
+//     ## Wave 0 heading but no **Gates da wave:** block at all AND work has started —
+//     the naïve discriminant ("is exit 1 present?") would pass here; the correct
+//     discriminant ("lost the gate the template gave") catches it (AC7 arm b).
 //
 //   TestWave0HasPlaceholderOrMissingGate_ArmC_RealGate
 //     Affirms: Wave0HasPlaceholderOrMissingGate returns false when Wave 0's gate block
@@ -647,6 +647,68 @@ func TestWave0HasPlaceholderOrMissingGate_ArmC_RealGate(t *testing.T) {
 
 	if Wave0HasPlaceholderOrMissingGate(content) {
 		t.Fatal("Wave0HasPlaceholderOrMissingGate = true for real gate command, want false (AC7 arm c counter-arm)")
+	}
+}
+
+// TestWave0HasPlaceholderOrMissingGate_ArmD_AllMLsPending affirms: when Wave 0
+// has an exit 1 placeholder gate but ALL MLs in the document are ⬜ Pendente,
+// Wave0HasPlaceholderOrMissingGate returns false — the placeholder is legitimate
+// for a freshly scaffolded roadmap where ML-0A has not yet been worked (ML-4D
+// discriminant, REQ #392: "ciclo limpo" case: roadmap new → move to wip → validate).
+func TestWave0HasPlaceholderOrMissingGate_ArmD_AllMLsPending(t *testing.T) {
+	content := strings.Join([]string{
+		"# Roadmap: Fresh Scaffold",
+		"",
+		"## Wave 0 — Threat Model",
+		"",
+		"### ML-0A — Threat model",
+		"**Status:** ⬜ Pendente",
+		"",
+		"**Gates da wave:**",
+		"```bash",
+		"exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli-parity.md",
+		"```",
+		"",
+		"## Wave 1 — Implementation",
+		"",
+		"### ML-1A — First task",
+		"**Status:** ⬜ Pendente",
+	}, "\n")
+
+	if Wave0HasPlaceholderOrMissingGate(content) {
+		t.Fatal("Wave0HasPlaceholderOrMissingGate = true for fresh scaffold with all MLs pending, want false " +
+			"(ML-4D discriminant: placeholder gate is legitimate while no ML has moved past pending)")
+	}
+}
+
+// TestWave0HasPlaceholderOrMissingGate_ArmE_OneNonPendingML affirms: when Wave 0
+// has an exit 1 placeholder gate AND at least one ML is non-pending (✅ Concluído),
+// Wave0HasPlaceholderOrMissingGate returns true — work has started and ML-0A should
+// have replaced the gate by now (ML-4D discriminant, REQ #392: counter-arm proving
+// the early-return did not disable the rule for roadmaps with started work).
+func TestWave0HasPlaceholderOrMissingGate_ArmE_OneNonPendingML(t *testing.T) {
+	content := strings.Join([]string{
+		"# Roadmap: Work Started",
+		"",
+		"## Wave 0 — Threat Model",
+		"",
+		"### ML-0A — Threat model",
+		"**Status:** ⬜ Pendente",
+		"",
+		"**Gates da wave:**",
+		"```bash",
+		"exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli-parity.md",
+		"```",
+		"",
+		"## Wave 1 — Implementation",
+		"",
+		"### ML-1A — First task",
+		"**Status:** ✅ Concluído",
+	}, "\n")
+
+	if !Wave0HasPlaceholderOrMissingGate(content) {
+		t.Fatal("Wave0HasPlaceholderOrMissingGate = false when ML-1A is complete and Wave 0 gate is placeholder, want true " +
+			"(ML-4D contra-braço: the rule still fires when work has started)")
 	}
 }
 
