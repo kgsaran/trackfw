@@ -38262,3 +38262,32 @@ Implementação completa. Evidências: `go build ./...` RC=0 · `make test` 15/1
 - **`make quality` rodado por mim: 640 OK / 0 FAIL**, guarda de conjunto OK. O relatório dizia 629 — 🔴 comparei os **conjuntos de rótulos**, não as contagens: **636 únicos em ambas as execuções**, e a única diferença é um caminho de diretório temporário aleatório na mesma linha. **Zero cobertura perdida.** Contagem menor no relatório era artefato da execução dele, não suíte truncada.
 - **Alegação do pin verificada, não aceita de palavra:** varri os 144 arquivos do snapshot — **0 headings malformadas**. O check novo não muda veredito nenhum ali; o pin de fato não precisava mudar.
 - **Emenda da ADR-2026-07-29 ficou melhor do que eu formulei:** preserva o princípio explicitamente (*"reprovar alto... está preservado e é inviolável"*), nomeia os 2 roadmaps que o remédio antigo cegava, e enuncia a invariante — *"`barrier` nunca emite `status: passed` enquanto houver heading malformada"*. Decisões 15 e 16 emendadas; decisão 12 da ADR de hoje corrigida de "revoga" para "emenda".
+
+### 2026-09-18 — afrodite-tf — ML-2B iniciado
+- Executando ML-2B: corrigir `scaffold.go` — `**Status:** pending` → `**Status:** ⬜ Pendente` + teste de contrato
+- Lido: `internal/generators/scaffold.go`, `.claude/commands/trackfw/roadmap.md`, `internal/roadmapdoc/roadmapdoc.go`, `internal/generators/roadmap.go`, `internal/generators/scaffold_test.go`
+- Escopo estrito: `internal/generators/scaffold.go`, `.claude/commands/trackfw/roadmap.md`, `internal/generators/scaffold_test.go`
+
+### 2026-09-18 — afrodite-tf — ML-2B CONCLUÍDO
+- **Fix:** substituído `**Status:** pending` por `**Status:** ⬜ Pendente` em `scaffold.go` linha 354
+- **Arquivo versionado:** `.claude/commands/trackfw/roadmap.md` atualizado de forma idêntica (linha 36)
+- **Varredura completa:** 6 ocorrências de `Status:**` na prosa — todas canônicas (⬜ Pendente, 🔄 Em andamento, ✅ Concluído) ou em backtick spans de instrução que não são ML status lines
+- **Teste de contrato:** `TestScaffoldStatusVocabularyMatchesGenerator` adicionado em `scaffold_test.go` — extrai marcadores do `roadmap.md` gerado via `StatusLineRe` (unmasked), deriva tokens de pendência permitidos do `wave0Block` (mesmo package), classifica via `roadmapdoc.StatusIsComplete`
+- **Build:** `go build ./...` RC=0
+- **Testes:** `go test ./internal/generators/` RC=0 (todos passam, incluindo o novo)
+- **`trackfw doctor`:** 1 finding `scaffold-divergent` em `.claude/commands/trackfw/roadmap.md` — esperado porque o binário instalado (v8.0.1) ainda gera o template antigo (`pending`); desaparece após `make build && make install`
+
+### 2026-09-18 — apolo-tf — ML-2A iniciado
+- Executando ML-2A: corrigir `parseMLProgress` em `internal/serve/api_board.go` — usar `internal/roadmapdoc` em vez de `strings.Contains(✅)` + `strings.HasPrefix(### ML-)`
+- Lido: `internal/serve/api_board.go`, `internal/serve/api_board_test.go`, `internal/roadmapdoc/roadmapdoc.go`, roadmap e REQ do issue #392
+
+### 2026-09-18 — apolo-tf — ML-2A CONCLUÍDO
+- **Defeito removido:** `strings.HasPrefix(trimmed, "### ML-")` e `strings.Contains(trimmed, "✅")` eliminados de `parseMLProgress`
+- **Nova implementação:** `parseMLProgressFull` usa `roadmapdoc.SplitRoadmapLines` + `FenceMask` + `ParseWaves` + `ParseMLs` + `MLStatusMarker` + `StatusCategory` — mesmo dialeto do barrier (ADR-2026-08-29)
+- **Campo novo:** `MalformedWaves int \`json:"malformed_waves,omitempty"\`` adicionado a `boardItem` — consumidor JSON pode ver quando contagem está incompleta
+- **Tratamento de wave malformada:** MLs dentro de waves com label inválida não são contados; count em `malformed_waves` torna isso não-silencioso
+- **Tratamento de MLs fora de wave blocks:** medido 0 em wip (crítico), 12 em blocked, 47 em done (roadmaps antigos sem estrutura de wave)
+- **Testes novos:** `TestParseMLProgress_FenceDoesNotCountAsComplete`, `TestParseMLProgress_CheckmarkNotFirstToken`, `TestParseMLProgress_AllDone`
+- **Evidência before/after:** antes: done=1 (✅ em cerca); depois: done=0
+- **Build:** `go build ./...` RC=0 · **Tests:** `go test ./internal/serve/` RC=0 · `go test ./...` RC=0
+- **`trackfw validate`:** apenas warnings (lenient mode), zero erros

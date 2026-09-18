@@ -215,7 +215,7 @@ falha real posterior** — motivo pelo qual o arquiteto roda o gate por conta pr
 > `git add -A` já commitou lixo nesta REQ.
 
 ### ML-2A — `serve` deixa de decidir por substring
-**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
+**Status:** ✅ Concluído **na refatoração**, com corretivo no ML-2C — ML terminado infla o `total` do board
 **Files affected:** `internal/serve/api_board.go` (137-168) + teste
 **Actions:**
 1. `parseMLProgress` passa a usar `internal/roadmapdoc`: `fenceMask` + `parseMLs` + `mlStatusMarker`
@@ -229,7 +229,7 @@ falha real posterior** — motivo pelo qual o arquiteto roda o gate por conta pr
 - [ ] Uma frase por teste novo declarando o que ele afirma (AC11)
 
 ### ML-2B — `scaffold` ensina o vocabulário que o verificador aceita
-**Status:** 🔄 Em andamento · **Papel:** `afrodite-tf`
+**Status:** ✅ Concluído (auditado por Zeus em 2026-09-18: `pending` zerado em `scaffold.go` **e** em `.claude/commands/trackfw/roadmap.md`)
 **Files affected:** `internal/generators/scaffold.go` (350-384) + teste
 **Actions:**
 1. Trocar `**Status:** pending` (scaffold.go:354) pelo valor que o gerador escreve —
@@ -452,4 +452,35 @@ cega o `barrier` em 2 roadmaps reais). O remédio correto satisfaz os dois:
 - [ ] `ADR-2026-07-29` emendada nas decisões 15 **e** 16
 - [ ] Diff do pin append puro; zero remoções
 - [ ] `go build ./...` RC=0 · `make test` RC=0 · `make quality` RC=0 até o fim
+- [ ] Uma frase por teste novo (AC11)
+
+### ML-2C — corretivo do ML-2A: ML terminado infla o `total` do board
+**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
+**Files affected:** `internal/serve/api_board.go`, `internal/serve/api_board_test.go` — **só estes**
+**Contexto:** a refatoração do ML-2A está **aprovada e fica** — os dois defeitos da `ADR-2026-08-29`
+saíram, `roadmapdoc` é usado, e o teste de cerca falsifica o comportamento antigo (`done=1` → `done=0`).
+O executor ainda declarou residuais que eu quero ver escritos: assimetria de VS16, "primeiro
+`**Status:**` vence", e MLs fora de wave medidos por estado (**wip=0**, que é o que importa ao board).
+
+🔴 **O defeito, medido por sonda minha:** `StatusTerminated` não incrementa `done`, mas o ML **continua
+contando em `total`** (`api_board.go:179`).
+```
+roadmap com ML-1A ✅ Concluído + ML-1B ABANDONADO
+→ total=2 done=1 → o board mostra 1/2, para sempre
+```
+Nunca chega a 100%, e exibe como pendente algo **encerrado por decisão**. Contradiz a **decisão 9 da
+`ADR-2026-09-18`**, que eu mesmo escrevi: *"encerrado sem conclusão → **libera**... encerramento
+explícito é uma decisão registrada, não um esquecimento"*.
+**Actions:**
+1. Escolher e justificar: **(a)** ML terminado sai do `total`; ou **(b)** conta como resolvido em
+   `done`. Decidir **lendo o consumidor do JSON** — se o board exibe `done/total` como contagem de MLs
+   reais, (b) preserva o registro de que o ML existiu; se o total é só denominador de progresso, (a)
+   basta.
+2. Implementar, com o motivo em comentário no código.
+**Acceptance criteria:**
+- [ ] 🔴 Teste que **falsifica o atual**: `1 ✅ + 1 ABANDONADO` hoje dá `1/2`; depois dá progresso
+      completo. Demonstrar as **duas execuções**.
+- [ ] Contra-braço: **`❌ Bloqueado` continua pendente** — é pendência, não encerramento (decisão 9).
+      Roadmap com ML bloqueado **não** pode aparecer completo.
+- [ ] `go build ./...` RC=0 · `go test ./internal/serve/` RC=0
 - [ ] Uma frase por teste novo (AC11)

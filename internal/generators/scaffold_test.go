@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kgsaran/trackfw/internal/roadmapdoc"
 )
 
 // TestInstallSkills_CriaSlashCommandsESkillGlobal — verifica que InstallSkills cria
@@ -439,5 +441,81 @@ func TestAttentionScripts_FallbackWithoutJQ(t *testing.T) {
 	}
 	if payload.Message != "Testing fallback without jq" {
 		t.Errorf("Message esperada 'Testing fallback without jq', obteve %q", payload.Message)
+	}
+}
+
+// TestScaffoldStatusVocabularyMatchesGenerator — ML-2B (AC-ML-2B, AC11)
+//
+// Affirms that every **Status:** value the scaffold template teaches is a value
+// the roadmap generator emits — the defect being that "pending" was not.
+//
+// AC11 sentence: this test affirms that the scaffold's **Status:** markers use
+// exactly the pending vocabulary that wave0Block (the roadmap generator) emits,
+// so a roadmap produced by the slash command arrives with the same first tokens
+// that roadmapdoc.StatusIsComplete and the barrier already recognise.
+func TestScaffoldStatusVocabularyMatchesGenerator(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	_ = os.Chdir(dir)
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	if err := generateClaudeCommands(); err != nil {
+		t.Fatalf("generateClaudeCommands() erro: %v", err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(".claude", "commands", "trackfw", "roadmap.md"))
+	if err != nil {
+		t.Fatalf("roadmap.md não encontrado: %v", err)
+	}
+
+	// Extract **Status:** markers from the generated roadmap.md.
+	// The markers live inside an indented markdown code block, so we trim leading
+	// whitespace before applying StatusLineRe.
+	// Intentionally UNMASKED (inverse of MLStatusMarker): we want markers inside
+	// the scaffold template fence, not ML bodies of live roadmaps.
+	// Lines like "edite `**Status:** ⬜ Pendente` →" do NOT start with **Status:**
+	// after trimming, so StatusLineRe (anchored at ^) will not match them.
+	var scaffoldMarkers []string
+	for _, line := range strings.Split(string(content), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if m := roadmapdoc.StatusLineRe.FindStringSubmatch(trimmed); m != nil {
+			scaffoldMarkers = append(scaffoldMarkers, strings.TrimSpace(m[1]))
+		}
+	}
+	if len(scaffoldMarkers) == 0 {
+		t.Fatal("no **Status:** markers found in generated roadmap.md — extraction is broken")
+	}
+
+	// Derive allowed pending first-tokens from wave0Block (the roadmap generator's output,
+	// same package). This set grows automatically if the generator adds new vocabulary;
+	// no literals are hardcoded here.
+	generatorPendingTokens := map[string]bool{}
+	for _, line := range strings.Split(wave0Block, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if m := roadmapdoc.StatusLineRe.FindStringSubmatch(trimmed); m != nil {
+			marker := strings.TrimSpace(m[1])
+			if !roadmapdoc.StatusIsComplete(marker) {
+				if fields := strings.Fields(marker); len(fields) > 0 {
+					generatorPendingTokens[fields[0]] = true
+				}
+			}
+		}
+	}
+
+	// Validate: every scaffold marker must be either complete (passes StatusIsComplete)
+	// or use a pending first-token that the roadmap generator emits.
+	for _, marker := range scaffoldMarkers {
+		if roadmapdoc.StatusIsComplete(marker) {
+			continue
+		}
+		fields := strings.Fields(marker)
+		if len(fields) == 0 {
+			t.Errorf("scaffold has empty **Status:** marker")
+			continue
+		}
+		if !generatorPendingTokens[fields[0]] {
+			t.Errorf("scaffold teaches **Status:** %q (first token %q) which the roadmap "+
+				"generator does not emit; allowed pending tokens: %v", marker, fields[0], generatorPendingTokens)
+		}
 	}
 }

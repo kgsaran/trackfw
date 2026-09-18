@@ -208,6 +208,122 @@ func TestParseMLProgress_AllPending(t *testing.T) {
 	}
 }
 
+// TestParseMLProgress_FenceDoesNotCountAsComplete — falsificação do defeito: um ✅ dentro de um
+// bloco de código não pode ser contado como ML concluído.
+//
+// AC11: Este teste afirma que a implementação usa a máscara de cerca (FenceMask) ao avaliar
+// status, de modo que um ✅ documentado num bloco de código não conta como conclusão de ML.
+//
+// "Before" evidence (current code, before the fix):
+//
+//	--- FAIL: TestParseMLProgress_FenceDoesNotCountAsComplete (0.00s)
+//	    api_board_test.go:NNN: done: esperado 0, obteve 1 (✅ dentro de cerca contou indevidamente)
+func TestParseMLProgress_FenceDoesNotCountAsComplete(t *testing.T) {
+	content := "# Roadmap Fence Test\n\n" +
+		"## Wave 1 — Backend\n\n" +
+		"### ML-1A — Verificar gates\n" +
+		"**Status:** ⬜ Pendente\n\n" +
+		"Exemplo de status concluído (dentro de cerca de código — NÃO é status real):\n\n" +
+		"```\n" +
+		"**Status:** ✅ Concluído\n" +
+		"```\n"
+
+	f, err := os.CreateTemp("", "roadmap-fence-*.md")
+	if err != nil {
+		t.Fatalf("CreateTemp: %v", err)
+	}
+	defer os.Remove(f.Name())
+	if _, err := f.WriteString(content); err != nil {
+		t.Fatalf("WriteString: %v", err)
+	}
+	f.Close()
+
+	total, done, _, nextML := parseMLProgress(f.Name())
+
+	if total != 1 {
+		t.Errorf("total: esperado 1, obteve %d", total)
+	}
+	// O defeito atual: strings.Contains(marker, "✅") dentro da cerca → done=1 (incorreto).
+	// Após o fix (máscara de cerca + primeiro token): done=0.
+	if done != 0 {
+		t.Errorf("done: esperado 0, obteve %d (✅ dentro de cerca contou indevidamente)", done)
+	}
+	if nextML == "" {
+		t.Errorf("nextML: esperado preenchido (ML pendente), obteve vazio")
+	}
+}
+
+// TestParseMLProgress_CheckmarkNotFirstToken — falsificação: ✅ no meio da linha (não como
+// primeiro token do marcador) não conta como ML concluído.
+//
+// AC11: Este teste afirma que a avaliação usa primeiro token, não substring.
+func TestParseMLProgress_CheckmarkNotFirstToken(t *testing.T) {
+	content := "# Roadmap Token Test\n\n" +
+		"## Wave 1 — Backend\n\n" +
+		"### ML-1A — Status ambíguo\n" +
+		"**Status:** ⬜ Pendente ✅\n"
+
+	f, err := os.CreateTemp("", "roadmap-token-*.md")
+	if err != nil {
+		t.Fatalf("CreateTemp: %v", err)
+	}
+	defer os.Remove(f.Name())
+	if _, err := f.WriteString(content); err != nil {
+		t.Fatalf("WriteString: %v", err)
+	}
+	f.Close()
+
+	total, done, _, _ := parseMLProgress(f.Name())
+
+	if total != 1 {
+		t.Errorf("total: esperado 1, obteve %d", total)
+	}
+	// O defeito atual: strings.Contains(marker, "✅") → done=1 (incorreto).
+	// Após o fix (primeiro token): done=0, pois o primeiro token é ⬜.
+	if done != 0 {
+		t.Errorf("done: esperado 0, obteve %d (✅ não-primeiro-token contou indevidamente)", done)
+	}
+}
+
+// TestParseMLProgress_AllDone — contra-braço: roadmap com todos os MLs concluídos corretamente
+// conta done == total.
+//
+// AC11: Este teste afirma que MLs com marcador ✅ como primeiro token continuam sendo contados
+// como concluídos (não-regressão).
+func TestParseMLProgress_AllDone(t *testing.T) {
+	content := "# Roadmap Concluído\n\n" +
+		"## Wave 1 — Backend\n\n" +
+		"### ML-1A — Criar endpoint\n" +
+		"**Status:** ✅ Concluído\n\n" +
+		"### ML-1B — Adicionar testes\n" +
+		"**Status:** ✅ Concluído\n"
+
+	f, err := os.CreateTemp("", "roadmap-alldone-*.md")
+	if err != nil {
+		t.Fatalf("CreateTemp: %v", err)
+	}
+	defer os.Remove(f.Name())
+	if _, err := f.WriteString(content); err != nil {
+		t.Fatalf("WriteString: %v", err)
+	}
+	f.Close()
+
+	total, done, activeML, nextML := parseMLProgress(f.Name())
+
+	if total != 2 {
+		t.Errorf("total: esperado 2, obteve %d", total)
+	}
+	if done != 2 {
+		t.Errorf("done: esperado 2, obteve %d (todos MLs concluídos devem ser contados)", done)
+	}
+	if activeML != "" {
+		t.Errorf("activeML: esperado vazio, obteve %q", activeML)
+	}
+	if nextML != "" {
+		t.Errorf("nextML: esperado vazio, obteve %q", nextML)
+	}
+}
+
 // TestBoardHandler_EmptyBoard — dir existe mas está vazio: JSON com colunas vazias, sem erro.
 func TestBoardHandler_EmptyBoard(t *testing.T) {
 	base := t.TempDir()
