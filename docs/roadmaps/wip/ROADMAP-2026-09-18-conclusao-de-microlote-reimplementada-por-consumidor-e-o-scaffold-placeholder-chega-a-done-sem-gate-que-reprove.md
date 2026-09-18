@@ -354,7 +354,7 @@ nomeia — *reimplementar uma capacidade do produto pior do que ela é*.
 - [ ] Uma frase por teste novo, se houver (AC11)
 
 ### ML-4A — sanear os sítios medidos E promover a severidade a `error`
-**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
 **Files affected:** em `docs/roadmaps/done/` — `ROADMAP-2026-08-18-doctor-detecta-artefato-fora-do-manifesto...`,
 `ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness...`,
 `ROADMAP-2026-09-10-barrier-executa-gate-de-roadmap-nao-confiavel...`,
