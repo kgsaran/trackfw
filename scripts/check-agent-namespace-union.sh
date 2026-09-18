@@ -227,6 +227,17 @@ req: ""
 
 ## Acceptance Criteria
 - [ ] x
+
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model for this fixture
+**Status:** ✅
+**Gates da wave:**
+\`\`\`bash
+exit 0
+\`\`\`
+**Critérios de aceite:**
+- [x] threat model complete
 EOF
 }
 

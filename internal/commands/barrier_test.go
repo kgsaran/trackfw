@@ -18,15 +18,15 @@ import (
 func TestParseWaves_SingleWave(t *testing.T) {
 	content := "# Roadmap\n\n## Wave 1 — Foo\nbody line\n\n### ML-1A — x\n**Status:** ✅\n"
 	lines := strings.Split(content, "\n")
-	waves, uerr := parseWaves(lines)
-	if uerr != nil {
-		t.Fatalf("unexpected usage error: %v", uerr)
+	waves, malformed := parseWaves(lines)
+	if len(malformed) != 0 {
+		t.Fatalf("unexpected malformed waves: %v", malformed)
 	}
 	if len(waves) != 1 {
 		t.Fatalf("expected 1 wave, got %d", len(waves))
 	}
-	if waves[0].label != "1" {
-		t.Fatalf("expected wave label \"1\", got %q", waves[0].label)
+	if waves[0].Label != "1" {
+		t.Fatalf("expected wave label \"1\", got %q", waves[0].Label)
 	}
 }
 
@@ -41,34 +41,44 @@ func TestParseWaves_MultipleWavesEndAtNextH2(t *testing.T) {
 		"content of wave 2",
 	}, "\n")
 	lines := strings.Split(content, "\n")
-	waves, uerr := parseWaves(lines)
-	if uerr != nil {
-		t.Fatalf("unexpected usage error: %v", uerr)
+	waves, malformed := parseWaves(lines)
+	if len(malformed) != 0 {
+		t.Fatalf("unexpected malformed waves: %v", malformed)
 	}
 	if len(waves) != 2 {
 		t.Fatalf("expected 2 waves, got %d", len(waves))
 	}
-	if waves[0].label != "1" || waves[1].label != "2" {
+	if waves[0].Label != "1" || waves[1].Label != "2" {
 		t.Fatalf("unexpected wave labels: %+v", waves)
 	}
 	// Wave 1 block must end exactly where the "## Wave 2" heading starts.
-	if lines[waves[0].end] != "## Wave 2 — Bar" {
-		t.Fatalf("expected wave 1 to end at 'Wave 2' heading, got %q", lines[waves[0].end])
+	if lines[waves[0].End] != "## Wave 2 — Bar" {
+		t.Fatalf("expected wave 1 to end at 'Wave 2' heading, got %q", lines[waves[0].End])
 	}
 }
 
-func TestParseWaves_MalformedLabelIsUsageError(t *testing.T) {
+// TestParseWaves_MalformedLabelIsIsolated verifies that a malformed wave label is
+// reported in the []MalformedWave slice and does NOT abort parsing (ML-1D, REQ #392).
+//
+// AC11 (ML-1D): parseWaves returns a non-empty []MalformedWave for "## Wave x" and an
+// empty []WaveBlock — the malformed wave is isolated and named with its line number,
+// reversing the usage-error abort of ADR-2026-07-29 decision 16.
+func TestParseWaves_MalformedLabelIsIsolated(t *testing.T) {
 	content := "## Wave x — Foo\nbody\n"
 	lines := strings.Split(content, "\n")
-	waves, uerr := parseWaves(lines)
-	if uerr == nil {
-		t.Fatalf("expected usage error for malformed wave label, got waves=%+v", waves)
+	waves, malformed := parseWaves(lines)
+	if len(malformed) == 0 {
+		t.Fatalf("expected malformed entry for label 'x', got waves=%+v", waves)
 	}
-	if !strings.Contains(uerr.Error(), "line 1") {
-		t.Fatalf("expected error to name line 1, got: %s", uerr.Error())
+	if !strings.Contains(malformed[0].Error(), "line 1") {
+		t.Fatalf("expected malformed error to name line 1, got: %s", malformed[0].Error())
 	}
-	if !strings.Contains(uerr.Error(), "wave label") {
-		t.Fatalf("expected error to say \"wave label\", got: %s", uerr.Error())
+	if !strings.Contains(malformed[0].Error(), "wave label") {
+		t.Fatalf("expected malformed error to say \"wave label\", got: %s", malformed[0].Error())
+	}
+	// No valid waves in this single-wave document.
+	if len(waves) != 0 {
+		t.Fatalf("expected 0 valid waves (malformed document), got %d", len(waves))
 	}
 }
 
@@ -76,15 +86,15 @@ func TestParseWaves_MalformedLabelIsUsageError(t *testing.T) {
 func TestParseWaves_BisSuffix(t *testing.T) {
 	content := "## Wave 2-bis — Corrective\nbody\n"
 	lines := strings.Split(content, "\n")
-	waves, uerr := parseWaves(lines)
-	if uerr != nil {
-		t.Fatalf("unexpected usage error for valid label 2-bis: %v", uerr)
+	waves, malformed := parseWaves(lines)
+	if len(malformed) != 0 {
+		t.Fatalf("unexpected malformed waves for valid label 2-bis: %v", malformed)
 	}
 	if len(waves) != 1 {
 		t.Fatalf("expected 1 wave, got %d", len(waves))
 	}
-	if waves[0].label != "2-bis" {
-		t.Fatalf("expected label \"2-bis\", got %q", waves[0].label)
+	if waves[0].Label != "2-bis" {
+		t.Fatalf("expected label \"2-bis\", got %q", waves[0].Label)
 	}
 }
 
@@ -99,22 +109,22 @@ func TestParseWaves_LabelIdentityDistinct(t *testing.T) {
 		"body of wave 2-bis",
 	}, "\n")
 	lines := strings.Split(content, "\n")
-	waves, uerr := parseWaves(lines)
-	if uerr != nil {
-		t.Fatalf("unexpected usage error: %v", uerr)
+	waves, malformed := parseWaves(lines)
+	if len(malformed) != 0 {
+		t.Fatalf("unexpected malformed waves: %v", malformed)
 	}
 	if len(waves) != 2 {
 		t.Fatalf("expected 2 waves (distinct labels), got %d: %+v", len(waves), waves)
 	}
-	if waves[0].label != "2" {
-		t.Fatalf("expected first label \"2\", got %q", waves[0].label)
+	if waves[0].Label != "2" {
+		t.Fatalf("expected first label \"2\", got %q", waves[0].Label)
 	}
-	if waves[1].label != "2-bis" {
-		t.Fatalf("expected second label \"2-bis\", got %q", waves[1].label)
+	if waves[1].Label != "2-bis" {
+		t.Fatalf("expected second label \"2-bis\", got %q", waves[1].Label)
 	}
 	// Wave 2 block must end exactly where "## Wave 2-bis" starts.
-	if lines[waves[0].end] != "## Wave 2-bis — Corrective Wave" {
-		t.Fatalf("expected wave 2 to end at 'Wave 2-bis' heading, got %q", lines[waves[0].end])
+	if lines[waves[0].End] != "## Wave 2-bis — Corrective Wave" {
+		t.Fatalf("expected wave 2 to end at 'Wave 2-bis' heading, got %q", lines[waves[0].End])
 	}
 }
 
@@ -131,7 +141,7 @@ func TestParseMLs_MultipleMLsInWave(t *testing.T) {
 	if len(mls) != 2 {
 		t.Fatalf("expected 2 MLs, got %d", len(mls))
 	}
-	if mls[0].id != "ML-1A" || mls[1].id != "ML-1B" {
+	if mls[0].ID != "ML-1A" || mls[1].ID != "ML-1B" {
 		t.Fatalf("unexpected ML ids: %+v", mls)
 	}
 }
@@ -325,8 +335,8 @@ func TestFenceAwareness_MLHeadingInsideFenceIsNotPhantomML(t *testing.T) {
 	if len(mls) != 1 {
 		t.Fatalf("expected 1 ML (the fenced ML-9Z must not be detected), got %d: %+v", len(mls), mls)
 	}
-	if mls[0].id != "ML-1A" {
-		t.Fatalf("expected the single ML to be ML-1A, got %q", mls[0].id)
+	if mls[0].ID != "ML-1A" {
+		t.Fatalf("expected the single ML to be ML-1A, got %q", mls[0].ID)
 	}
 }
 
@@ -349,6 +359,17 @@ func TestBarrierCLI_EnglishHeaderAndWordStatusPass(t *testing.T) {
 		"",
 		"## Acceptance Criteria",
 		"- [x] fixture roadmap-level criterion",
+		"",
+		"## Wave 0 — Threat model",
+		"> Dependencies: none.",
+		"",
+		"### ML-0A — Threat model for fixture",
+		"**Status:** done",
+		"",
+		"**Gates da wave:**",
+		"```bash",
+		`echo "Wave 0 ML-0A: fixture threat model accepted"`,
+		"```",
 		"",
 		"## Wave 1 — Fixture Wave",
 		"> Dependencies: none",
@@ -743,60 +764,74 @@ func TestSplitWaveLabel(t *testing.T) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Regression: malformed heading aborts ENTIRE document — ADR decision 16.
-// This end-to-end test is the evidence that prevents anyone from "fixing"
-// the abort into a scoped skip for the requested wave.
+// ML-1D: malformed heading is isolated, not abort — reversal of ADR decision 16.
+// ADR-2026-07-29 decision 16 ("heading fora da gramática continua abortando o
+// documento inteiro — é feature, não defeito") is superseded by ML-1D (REQ #392).
+// The previous test `TestParseWaves_MalformedHeadingAbortsEntireDocument_Regression`
+// asserted the OLD abort behaviour and is replaced below.
 // ────────────────────────────────────────────────────────────────────────────
 
-// TestParseWaves_MalformedHeadingAbortsEntireDocument_Regression proves that a
-// malformed wave heading (`## Wave X — ...`) aborts the whole document even when
-// the requested wave (`--wave 1`) is fully green and appears before the bad heading.
-// This is the regression guard for ADR decision 16.
-func TestParseWaves_MalformedHeadingAbortsEntireDocument_Regression(t *testing.T) {
+// TestParseWaves_MalformedHeadingIsCascadeIsolated_ML1D proves that a malformed wave
+// heading (`## Wave X — ...`) is isolated: the valid wave before it is still evaluatable
+// via --wave 1 (NOT exit 2), and the malformed heading enters the wave_headings check,
+// which blocks the overall verdict.
+//
+// AC11 (ML-1D): parseWaves returns a valid WaveBlock for Wave 1 AND a MalformedWave for
+// Wave X — the cascade isolation happens at parse level, not at verdict level.
+//
+// AC11 (ML-1E): --wave 1 on a document that also contains "## Wave X" exits 1 (blocked
+// via wave_headings check), not 2 — cascade isolation at parse level keeps all waves
+// evaluated; the wave_headings check preserves the "reprovar alto" principle from
+// ADR-2026-07-29 decision 16. The remedy changed (check that blocks, not document abort)
+// but the principle is preserved: no "passed" verdict over a document with unaudited content.
+func TestParseWaves_MalformedHeadingIsCascadeIsolated_ML1D(t *testing.T) {
 	// Build a multi-wave roadmap where Wave 1 is fully green and Wave X is malformed.
-	// Line positions are fixed so we can assert the exact pinned error message.
+	// Line positions are fixed so we can assert the pinned stderr warning.
 	content := strings.Join([]string{
-		"# Roadmap: Malformed Wave Regression", // line 1
-		"",                                     // line 2
-		"REQ: REQ-regression-test",             // line 3
-		"",                                     // line 4
-		"## Acceptance Criteria",               // line 5
-		"- [x] fixture criterion",              // line 6
-		"",                                     // line 7
-		"## Wave 1 — Green Wave",               // line 8
-		"> Dependências: nenhuma",              // line 9
-		"",                                     // line 10
-		"### ML-1A — Green ML",                 // line 11
-		"**Status:** ✅ Concluído",              // line 12
-		"**Critérios de aceite:**",             // line 13
-		"- [x] criterion met",                  // line 14
-		"",                                     // line 15
-		"## Wave X — Malformed Label",          // line 16 ← bad heading
-		"> body of malformed wave",             // line 17
-		"",                                     // line 18
-		"### ML-X1 — Irrelevant ML",            // line 19
-		"**Status:** ✅",                        // line 20
-		"**Critérios de aceite:**",             // line 21
-		"- [x] whatever",                       // line 22
+		"# Roadmap: Malformed Wave Cascade Test", // line 1
+		"",                                       // line 2
+		"REQ: REQ-regression-test",               // line 3
+		"",                                       // line 4
+		"## Acceptance Criteria",                 // line 5
+		"- [x] fixture criterion",                // line 6
+		"",                                       // line 7
+		"## Wave 1 — Green Wave",                 // line 8
+		"> Dependências: nenhuma",                // line 9
+		"",                                       // line 10
+		"### ML-1A — Green ML",                   // line 11
+		"**Status:** ✅ Concluído",                // line 12
+		"**Critérios de aceite:**",               // line 13
+		"- [x] criterion met",                    // line 14
+		"",                                       // line 15
+		"## Wave X — Malformed Label",            // line 16 ← bad heading, isolated not aborted
+		"> body of malformed wave",               // line 17
+		"",                                       // line 18
+		"### ML-X1 — Irrelevant ML",              // line 19
+		"**Status:** ✅",                          // line 20
+		"**Critérios de aceite:**",               // line 21
+		"- [x] whatever",                         // line 22
 	}, "\n")
 
+	// Unit-level: parseWaves returns the valid wave AND records the malformed one.
 	lines := strings.Split(content, "\n")
-	waves, uerr := parseWaves(lines)
-	if uerr == nil {
-		t.Fatalf("expected parse error for malformed heading, got %d waves", len(waves))
+	waves, malformed := parseWaves(lines)
+	if len(waves) == 0 {
+		t.Fatalf("parseWaves returned no valid waves — cascade isolation failed")
 	}
-
-	// The error must name the line AND carry the pinned fragment.
+	if len(malformed) == 0 {
+		t.Fatalf("parseWaves returned no malformed entries — malformed heading not reported")
+	}
+	// The malformed entry must name line 16 and carry the pinned fragment.
 	wantFrag := `"X" is not a valid wave label`
-	if !strings.Contains(uerr.Error(), "line 16") {
-		t.Errorf("expected error to name line 16, got: %s", uerr.Error())
+	if !strings.Contains(malformed[0].Error(), "line 16") {
+		t.Errorf("expected malformed error to name line 16, got: %s", malformed[0].Error())
 	}
-	if !strings.Contains(uerr.Error(), wantFrag) {
-		t.Errorf("expected error to contain %q, got: %s", wantFrag, uerr.Error())
+	if !strings.Contains(malformed[0].Error(), wantFrag) {
+		t.Errorf("expected malformed error to contain %q, got: %s", wantFrag, malformed[0].Error())
 	}
 
-	// End-to-end: even requesting --wave 1 (the green wave) must exit 2, not 0.
-	// This is the regression guard that prevents "fix" the abort into a scoped skip.
+	// End-to-end: requesting --wave 1 (the green wave) must exit 0, not 2.
+	// The malformed heading at line 16 must be printed to stderr as a warning, not a fatal error.
 	dir := t.TempDir()
 	for _, d := range []string{"docs/roadmaps/wip", "docs/roadmaps/backlog", "docs/roadmaps/blocked",
 		"docs/roadmaps/done", "docs/roadmaps/abandoned", "docs/req", "docs/adr"} {
@@ -804,20 +839,38 @@ func TestParseWaves_MalformedHeadingAbortsEntireDocument_Regression(t *testing.T
 			t.Fatalf("mkdir: %v", err)
 		}
 	}
-	roadmapPath := filepath.Join(dir, "docs/roadmaps/wip/ROADMAP-malformed-regression.md")
+	roadmapPath := filepath.Join(dir, "docs/roadmaps/wip/ROADMAP-malformed-cascade.md")
 	if err := os.WriteFile(roadmapPath, []byte(content), 0644); err != nil {
 		t.Fatalf("write roadmap: %v", err)
 	}
 
-	stdout, stderr, code := runBarrierCLI(t, dir, "ROADMAP-malformed-regression", "--wave", "1")
-	if code != 2 {
-		t.Fatalf("expected exit 2 (abort on malformed heading), got %d\nstdout: %s\nstderr: %s",
+	// ML-1E: --wave 1 is now exit 1 (blocked) because wave_headings check blocks on ## Wave X.
+	// Wave 1 itself is still EVALUATED (not skipped by cascade isolation at parse level),
+	// but the wave_headings check in the verdict prevents a "passed" result.
+	// --trust-local-gates is needed because the temp dir is not a git repo.
+	stdout, stderr, code := runBarrierCLI(t, dir, "ROADMAP-malformed-cascade", "--wave", "1", "--trust-local-gates")
+	if code != 1 {
+		t.Fatalf("expected exit 1 (blocked: wave_headings check), got %d\nstdout: %s\nstderr: %s",
 			code, stdout, stderr)
 	}
-	// Assert pinned stderr byte-for-byte.
-	wantStderr := "trackfw barrier: malformed wave heading at line 16: \"X\" is not a valid wave label\n"
-	if stderr != wantStderr {
-		t.Fatalf("stderr mismatch:\nwant: %q\ngot:  %q", wantStderr, stderr)
+	// Wave 1 content checks must still be evaluated (not cascade-aborted).
+	if !strings.Contains(stdout, "mls_complete") {
+		t.Fatalf("expected mls_complete check in output (wave 1 must still be evaluated), got: %s", stdout)
+	}
+	// The malformed heading must be reported to both stderr and the wave_headings check.
+	wantStderrFrag := "trackfw barrier: malformed wave heading at line 16: \"X\" is not a valid wave label"
+	if !strings.Contains(stderr, wantStderrFrag) {
+		t.Fatalf("expected stderr to contain malformed wave warning, got: %q", stderr)
+	}
+	if !strings.Contains(stdout, "wave_headings") {
+		t.Fatalf("expected wave_headings check in output, got: %s", stdout)
+	}
+
+	// Additional check: --wave X is rejected at the flag-validation level (same WaveLabelRe),
+	// so the malformed wave cannot be specifically requested and cause "fail open".
+	_, _, codeX := runBarrierCLI(t, dir, "ROADMAP-malformed-cascade", "--wave", "X")
+	if codeX != 2 {
+		t.Fatalf("expected exit 2 for --wave X (rejected by flag regex), got %d", codeX)
 	}
 }
 
@@ -901,8 +954,11 @@ func TestBarrierRegression_Exit2MessagesArePinnedLiterally(t *testing.T) {
 // convention) — it used to be the only label that passed the regex but failed
 // the (then int≥1) guard; parseWaves remains the correct surface to test it on.
 func TestWaveLabelGrammar_ValidAndInvalid(t *testing.T) {
-	valid := []string{"0", "1", "2", "2-bis", "2-hotfix", "10-a2"}
-	invalid := []string{"X", "2-BIS", "-bis", "2-", "2-bis-ter"}
+	// AC3-ter (REQ #392 / ML-1B): "2-BIS" is now VALID — the suffix is accepted
+	// case-insensitively. Moved from invalid to valid. "abc" (no digit prefix)
+	// remains invalid and serves as the counter-test.
+	valid := []string{"0", "1", "2", "2-bis", "2-hotfix", "10-a2", "2-BIS", "3-Py", "3-PY"}
+	invalid := []string{"X", "abc", "-bis", "2-", "2-bis-ter"}
 
 	for _, lbl := range valid {
 		lbl := lbl
@@ -948,11 +1004,13 @@ func TestBarrierRegression_FourthExitTwoMessage(t *testing.T) {
 		criteriaLines: []string{"- [x] build passes"},
 	})
 
-	_, stderr, code := runBarrierCLI(t, dir, "ROADMAP-barrier-fixture", "--wave", "2-BIS")
+	// AC3-ter (REQ #392 / ML-1B): "2-BIS" is now valid (case-insensitive suffix).
+	// Using "abc" (letter-only, no digit prefix) as the genuinely invalid label.
+	_, stderr, code := runBarrierCLI(t, dir, "ROADMAP-barrier-fixture", "--wave", "abc")
 	if code != 2 {
 		t.Fatalf("expected exit 2 for invalid --wave label, got %d; stderr=%s", code, stderr)
 	}
-	want := "trackfw barrier: invalid --wave \"2-BIS\" — not a valid wave label\n"
+	want := "trackfw barrier: invalid --wave \"abc\" — not a valid wave label\n"
 	if stderr != want {
 		t.Fatalf("fourth pinned message mismatch:\nwant: %q\ngot:  %q", want, stderr)
 	}

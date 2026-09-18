@@ -11,6 +11,7 @@ import (
 
 	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/integrations"
+	"github.com/kgsaran/trackfw/internal/roadmapdoc"
 	"github.com/kgsaran/trackfw/internal/validator"
 )
 
@@ -521,6 +522,69 @@ func rewriteRoadmapStatus(source []byte, state string) ([]byte, bool) {
 	return []byte("---\n" + strings.Join(lines, "\n") + rest), true
 }
 
+// pendingMLEntry is an unexported record produced by pendingMLsForDone for each
+// ML (or malformed wave heading) that blocks the done transition.
+type pendingMLEntry struct {
+	label string // e.g. "ML-1A" or "malformed wave heading"
+	line  int    // 1-based line number in the roadmap file
+}
+
+// pendingMLsForDone collects every ML in data that would block a transition to
+// "done" under ADR 2026-09-18 decision 9 (three-category classification):
+//   - StatusPending  → blocks ("⬜", "🔄", "❌ Bloqueado", etc.)
+//   - StatusComplete → releases
+//   - StatusTerminated → releases ("ABANDONADO", "🚫 Abandonado", "❌ Cancelado")
+//
+// Additional fail-safe rules (fail closed, never open):
+//   - Malformed wave headings (ParseWaves len(malformed) > 0) → each becomes a
+//     blocking entry, because the MLs inside are unreachable and unverifiable.
+//   - ML with no **Status:** line → blocking entry.
+//
+// This mirrors HasUnfinishedMLs (roadmapdoc.go) branch-for-branch but accumulates
+// instead of returning early so the refusal message can name every blocker.
+//
+// 🔴 Ownership note (Wave 3, REQ #392): internal/roadmapdoc is owned by ML-3B in
+// this wave.  This collector lives in internal/generators to avoid touching that
+// package during a parallel run.  Consolidating into a roadmapdoc.PendingMLs()
+// helper is a natural follow-up for ML-3B or a later ML.
+func pendingMLsForDone(data string) []pendingMLEntry {
+	lines := roadmapdoc.SplitRoadmapLines(data)
+	fenced := roadmapdoc.FenceMask(lines)
+	waves, malformed := roadmapdoc.ParseWaves(lines)
+
+	var pending []pendingMLEntry
+
+	// Malformed wave headings: each blocks because their MLs are unreachable.
+	for _, mw := range malformed {
+		pending = append(pending, pendingMLEntry{
+			label: fmt.Sprintf("malformed wave heading %q", mw.Token),
+			line:  mw.Line, // already 1-based (ParseWaves stores i+1)
+		})
+	}
+
+	for _, wave := range waves {
+		mls := roadmapdoc.ParseMLs(lines, fenced, wave.Start, wave.End)
+		for _, ml := range mls {
+			marker, found := roadmapdoc.MLStatusMarker(lines, fenced, ml)
+			if !found {
+				// No **Status:** line — fail closed.
+				pending = append(pending, pendingMLEntry{
+					label: ml.ID + " (no **Status:** line)",
+					line:  ml.Start + 1, // ParseMLs stores 0-based index; convert to 1-based
+				})
+				continue
+			}
+			if roadmapdoc.StatusCategory(marker) == roadmapdoc.StatusPending {
+				pending = append(pending, pendingMLEntry{
+					label: ml.ID,
+					line:  ml.Start + 1, // 0-based → 1-based
+				})
+			}
+		}
+	}
+	return pending
+}
+
 func MoveRoadmap(name, state string) error {
 	cfg := config.Load()
 
@@ -564,6 +628,51 @@ func MoveRoadmap(name, state string) error {
 		}
 	}
 
+	// AC6 (REQ #392 ML-3A): refuse the done transition when the roadmap still has
+	// unfinished MLs.  The gate fires before os.MkdirAll so a refused transition
+	// does not leave an empty done/ directory behind.
+	//
+	// AC7-bis (REQ #392 ML-4B): also refuse when ## Wave 0 heading is absent.
+	// The validator's roadmap_wave0_required fires at validate time for wip/; this
+	// gate closes the escape of removing Wave 0 after moving to blocked and then
+	// moving to done (the "fuga" documented in ADR-2026-09-18 decision 8).
+	//
+	// Both blockers are collected before emitting any error so the user sees all
+	// problems in one refusal (same format: label + context per blocker).
+	//
+	// state is already validated against roadmapValidStateNames above: any non-canonical
+	// spelling (e.g. "Done") would have returned an error before reaching this point.
+	// The literal compare "done" is therefore safe — it is not a normalisation step.
+	if state == "done" {
+		rawContent, readErr := os.ReadFile(src)
+		if readErr != nil {
+			// Fail closed: cannot verify completeness without reading the file.
+			return fmt.Errorf("cannot verify readiness for done transition: %w", readErr)
+		}
+		content := string(rawContent)
+		blockers := pendingMLsForDone(content)
+
+		// AC7-bis: missing Wave 0 heading is a blocker.  Collect as a pseudo-entry
+		// so the refusal message names it alongside any pending MLs.
+		missingWave0 := !roadmapdoc.HasWave0(content)
+
+		if len(blockers) > 0 || missingWave0 {
+			totalCount := len(blockers)
+			if missingWave0 {
+				totalCount++
+			}
+			var b strings.Builder
+			fmt.Fprintf(&b, "cannot move %q to done: %d blocker(s):", filepath.Base(src), totalCount)
+			if missingWave0 {
+				fmt.Fprintf(&b, "\n  missing ## Wave 0 heading (AC7-bis, ADR-2026-09-18 decision 8)")
+			}
+			for _, entry := range blockers {
+				fmt.Fprintf(&b, "\n  %s (line %d)", entry.label, entry.line)
+			}
+			return fmt.Errorf("%s", b.String())
+		}
+	}
+
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		return fmt.Errorf("creating target dir: %w", err)
 	}
@@ -578,9 +687,14 @@ func MoveRoadmap(name, state string) error {
 	portableDst := normalizeRefSeparator(dst)
 
 	// Synchronize status: in the frontmatter (and header line in body) to match the new state.
-	if rawContent, readErr := os.ReadFile(dst); readErr == nil {
-		if updated, changed := rewriteRoadmapStatus(rawContent, state); changed {
-			_ = os.WriteFile(dst, updated, 0644)
+	// AC9 (REQ #392 ML-3A): both the read and the write error are propagated — the previous
+	// `if readErr == nil { ... _ = os.WriteFile(...) }` shape silently left the frontmatter
+	// claiming the old state when either call failed ("o frontmatter fica mentindo").
+	if rawContent, readErr := os.ReadFile(dst); readErr != nil {
+		return fmt.Errorf("syncing status in %s: %w", dst, readErr)
+	} else if updated, changed := rewriteRoadmapStatus(rawContent, state); changed {
+		if writeErr := os.WriteFile(dst, updated, 0644); writeErr != nil {
+			return fmt.Errorf("syncing status in %s: %w", dst, writeErr)
 		}
 	}
 

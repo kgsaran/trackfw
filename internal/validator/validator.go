@@ -191,6 +191,8 @@ var ruleDefaults = map[string]string{
 	// (wip→done após roadmap move) não dispara esta regra. Default "warning" porque a divergência
 	// pode ser transitória (frontmatter já atualizado, body ainda com path antigo).
 	"req_roadmap_sync": "warning",
+	// roadmap_wave0_required, roadmap_gate_coverage, roadmap_duplicate_label are absent:
+	// they fall through to "error" (ML-4A, REQ #392 — all pre-existing sítios sanitized).
 }
 
 // ruleSeverity retorna a severidade configurada para a regra.
@@ -945,6 +947,16 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	hiddenNamespaceMsgs := hiddenNamespaceWarnings()
 	applyRule("agent_namespace_hidden", hiddenNamespaceMsgs, &violations, &warnings)
 
+	// ML-3B/ML-4B (REQ #392): gate coverage (AC7), Wave 0 required (AC7-bis), duplicate labels (AC8).
+	// wave0_required + gate_coverage: wip/ only (ML-4B narrowed from wip+blocked — see
+	// validator_roadmap_gates.go header for the retroactivity argument).
+	// duplicate_label: wip/ + blocked/ (structural error, not convention-age-sensitive).
+	// None applies to backlog/analyzing (decision 6-bis) or done/ (decision 7/8).
+	wave0Msgs, gateMsgs, dupMsgs := validateRoadmapGatesCoverage()
+	applyRule("roadmap_wave0_required", wave0Msgs, &violations, &warnings)
+	applyRule("roadmap_gate_coverage", gateMsgs, &violations, &warnings)
+	applyRule("roadmap_duplicate_label", dupMsgs, &violations, &warnings)
+
 	return violations, warnings, nil
 }
 
@@ -1287,6 +1299,13 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 	// (iniciados por ".") — aviso, nunca silêncio total, nunca erro (rule default abaixo).
 	hiddenNamespaceMsgsT := hiddenNamespaceWarnings()
 	applyRuleTagged("agent_namespace_hidden", hiddenNamespaceMsgsT, &violations, &warnings)
+
+	// ML-3B/ML-4B (REQ #392): mirror of ValidateUnfiltered block — same rules, same order.
+	// 🔴 Forgetting this Tagged site makes the rules vanish from --json without a compile error.
+	wave0MsgsT, gateMsgsT, dupMsgsT := validateRoadmapGatesCoverage()
+	applyRuleTagged("roadmap_wave0_required", wave0MsgsT, &violations, &warnings)
+	applyRuleTagged("roadmap_gate_coverage", gateMsgsT, &violations, &warnings)
+	applyRuleTagged("roadmap_duplicate_label", dupMsgsT, &violations, &warnings)
 
 	return violations, warnings, nil
 }

@@ -40,9 +40,10 @@ func readMoved(t *testing.T, dir, state, filename string) string {
 // TestMoveRoadmap_SincronizaStatusDoFrontmatter cobre o bug em que o move deixava
 // o arquivo em done/ ainda declarando status: wip — exatamente a incoerência que a
 // regra folder_status do validator reclama.
+// Wave 0 heading added (ML-4B, REQ #392): MoveRoadmap("done") now requires ## Wave 0.
 func TestMoveRoadmap_SincronizaStatusDoFrontmatter(t *testing.T) {
 	const name = "x.md"
-	src := "---\nname: x\nstatus: wip\ndate: 2026-08-16\n---\n\n# Roadmap: x\n\ncorpo\n"
+	src := "---\nname: x\nstatus: wip\ndate: 2026-08-16\n---\n\n# Roadmap: x\n\ncorpo\n\n## Wave 0 — Threat Model\n"
 	dir := setupMove(t, name, src)
 
 	if err := MoveRoadmap(name, "done"); err != nil {
@@ -50,7 +51,7 @@ func TestMoveRoadmap_SincronizaStatusDoFrontmatter(t *testing.T) {
 	}
 
 	got := readMoved(t, dir, "done", name)
-	want := "---\nname: x\nstatus: done\ndate: 2026-08-16\n---\n\n# Roadmap: x\n\ncorpo\n"
+	want := "---\nname: x\nstatus: done\ndate: 2026-08-16\n---\n\n# Roadmap: x\n\ncorpo\n\n## Wave 0 — Threat Model\n"
 	if got != want {
 		t.Errorf("conteúdo após move:\n got: %q\nwant: %q", got, want)
 	}
@@ -59,9 +60,12 @@ func TestMoveRoadmap_SincronizaStatusDoFrontmatter(t *testing.T) {
 // TestMoveRoadmap_SemFrontmatterNaoModifica garante que um roadmap sem frontmatter
 // sai byte a byte idêntico — inclusive quando o corpo tem uma linha "status:", que
 // uma substituição global corromperia.
+// Wave 0 heading added and ### ML-1 replaced with body prose (ML-4B, REQ #392):
+// MoveRoadmap("done") now requires ## Wave 0; the body "status:" line is preserved
+// by the Wave 0 content, still proving that body status lines are not rewritten.
 func TestMoveRoadmap_SemFrontmatterNaoModifica(t *testing.T) {
 	const name = "y.md"
-	src := "# Roadmap: y\n\n### ML-1\nstatus: pendente\n\ncorpo\n"
+	src := "# Roadmap: y\n\n## Wave 0 — Threat Model\n\nstatus: pendente\n\ncorpo\n"
 	dir := setupMove(t, name, src)
 
 	if err := MoveRoadmap(name, "done"); err != nil {
@@ -75,9 +79,10 @@ func TestMoveRoadmap_SemFrontmatterNaoModifica(t *testing.T) {
 
 // TestMoveRoadmap_FrontmatterSemStatusNaoGanhaCampo — não inventamos a chave.
 // Mesmo contrato do validator, que ignora quem não declara status.
+// Wave 0 heading added (ML-4B, REQ #392): MoveRoadmap("done") requires ## Wave 0.
 func TestMoveRoadmap_FrontmatterSemStatusNaoGanhaCampo(t *testing.T) {
 	const name = "z.md"
-	src := "---\nname: z\ndate: 2026-08-16\n---\n\n# Roadmap: z\n"
+	src := "---\nname: z\ndate: 2026-08-16\n---\n\n# Roadmap: z\n\n## Wave 0 — Threat Model\n"
 	dir := setupMove(t, name, src)
 
 	if err := MoveRoadmap(name, "done"); err != nil {
@@ -112,7 +117,8 @@ func TestMoveRoadmap_StatusNoCorpoNaoEhTocado(t *testing.T) {
 // declarando status: done no frontmatter e Status: wip na linha que o humano lê.
 func TestMoveRoadmap_SincronizaLinhaHumana(t *testing.T) {
 	const name = "h.md"
-	src := "---\nstatus: wip\n---\n\n# Roadmap: h\n\n> Created: 2026-08-16 | Status: wip\n\ncorpo\n"
+	// Wave 0 added (ML-4B, REQ #392): MoveRoadmap("done") requires ## Wave 0.
+	src := "---\nstatus: wip\n---\n\n# Roadmap: h\n\n> Created: 2026-08-16 | Status: wip\n\ncorpo\n\n## Wave 0 — Threat Model\n"
 	dir := setupMove(t, name, src)
 
 	if err := MoveRoadmap(name, "done"); err != nil {
@@ -120,7 +126,7 @@ func TestMoveRoadmap_SincronizaLinhaHumana(t *testing.T) {
 	}
 
 	got := readMoved(t, dir, "done", name)
-	want := "---\nstatus: done\n---\n\n# Roadmap: h\n\n> Created: 2026-08-16 | Status: done\n\ncorpo\n"
+	want := "---\nstatus: done\n---\n\n# Roadmap: h\n\n> Created: 2026-08-16 | Status: done\n\ncorpo\n\n## Wave 0 — Threat Model\n"
 	if got != want {
 		t.Errorf("conteúdo após move:\n got: %q\nwant: %q", got, want)
 	}
@@ -130,7 +136,8 @@ func TestMoveRoadmap_SincronizaLinhaHumana(t *testing.T) {
 // trecho inteiro após o marcador é substituído, então o emoji sai junto.
 func TestMoveRoadmap_LinhaHumanaComEmoji(t *testing.T) {
 	const name = "e.md"
-	src := "---\nstatus: wip\n---\n\n# Roadmap: e\n\n> Criado em: 2026-08-16 | Status: \U0001F504 WIP\n"
+	// Wave 0 added (ML-4B, REQ #392): MoveRoadmap("done") requires ## Wave 0.
+	src := "---\nstatus: wip\n---\n\n# Roadmap: e\n\n> Criado em: 2026-08-16 | Status: \U0001F504 WIP\n\n## Wave 0 — Threat Model\n"
 	dir := setupMove(t, name, src)
 
 	if err := MoveRoadmap(name, "done"); err != nil {
@@ -138,16 +145,17 @@ func TestMoveRoadmap_LinhaHumanaComEmoji(t *testing.T) {
 	}
 
 	got := readMoved(t, dir, "done", name)
-	want := "---\nstatus: done\n---\n\n# Roadmap: e\n\n> Criado em: 2026-08-16 | Status: done\n"
+	want := "---\nstatus: done\n---\n\n# Roadmap: e\n\n> Criado em: 2026-08-16 | Status: done\n\n## Wave 0 — Threat Model\n"
 	if got != want {
 		t.Errorf("conteúdo após move:\n got: %q\nwant: %q", got, want)
 	}
 }
 
 // TestMoveRoadmap_SemLinhaHumanaNaoCria — a linha nunca é inventada.
+// Wave 0 added (ML-4B, REQ #392): MoveRoadmap("done") requires ## Wave 0.
 func TestMoveRoadmap_SemLinhaHumanaNaoCria(t *testing.T) {
 	const name = "s.md"
-	src := "---\nstatus: wip\n---\n\n# Roadmap: s\n\nsem linha de status aqui\n"
+	src := "---\nstatus: wip\n---\n\n# Roadmap: s\n\nsem linha de status aqui\n\n## Wave 0 — Threat Model\n"
 	dir := setupMove(t, name, src)
 
 	if err := MoveRoadmap(name, "done"); err != nil {
@@ -155,7 +163,7 @@ func TestMoveRoadmap_SemLinhaHumanaNaoCria(t *testing.T) {
 	}
 
 	got := readMoved(t, dir, "done", name)
-	want := "---\nstatus: done\n---\n\n# Roadmap: s\n\nsem linha de status aqui\n"
+	want := "---\nstatus: done\n---\n\n# Roadmap: s\n\nsem linha de status aqui\n\n## Wave 0 — Threat Model\n"
 	if got != want {
 		t.Errorf("linha foi criada indevidamente:\n got: %q\nwant: %q", got, want)
 	}
@@ -171,7 +179,8 @@ func TestMoveRoadmap_SemLinhaHumanaNaoCria(t *testing.T) {
 // "---\n" never matched.
 func TestMoveRoadmap_CRLFSourceMatchesLF(t *testing.T) {
 	lfName, crlfName := "lf.md", "crlf.md"
-	lfSrc := "---\nname: x\nstatus: wip\ndate: 2026-08-16\n---\n\n# Roadmap: x\n\n> Criado em: 2026-08-16 | Status: wip\n\ncorpo\n"
+	// Wave 0 added (ML-4B, REQ #392): MoveRoadmap("done") requires ## Wave 0.
+	lfSrc := "---\nname: x\nstatus: wip\ndate: 2026-08-16\n---\n\n# Roadmap: x\n\n> Criado em: 2026-08-16 | Status: wip\n\ncorpo\n\n## Wave 0 — Threat Model\n"
 	crlfSrc := strings.ReplaceAll(lfSrc, "\n", "\r\n")
 
 	lfDir := setupMove(t, lfName, lfSrc)
@@ -204,7 +213,8 @@ func TestMoveRoadmap_CRLFSourceMatchesLF(t *testing.T) {
 // today's behavior for every existing roadmap in this repo does not change.
 func TestMoveRoadmap_LFControlUnchangedByCRLFFix(t *testing.T) {
 	const name = "control.md"
-	src := "---\nname: x\nstatus: wip\n---\n\n# Roadmap: x\n\n> Criado em: 2026-08-16 | Status: wip\n\ncorpo\n"
+	// Wave 0 added (ML-4B, REQ #392): MoveRoadmap("done") requires ## Wave 0.
+	src := "---\nname: x\nstatus: wip\n---\n\n# Roadmap: x\n\n> Criado em: 2026-08-16 | Status: wip\n\ncorpo\n\n## Wave 0 — Threat Model\n"
 	dir := setupMove(t, name, src)
 
 	if err := MoveRoadmap(name, "done"); err != nil {
@@ -212,7 +222,7 @@ func TestMoveRoadmap_LFControlUnchangedByCRLFFix(t *testing.T) {
 	}
 
 	got := readMoved(t, dir, "done", name)
-	want := "---\nname: x\nstatus: done\n---\n\n# Roadmap: x\n\n> Criado em: 2026-08-16 | Status: done\n\ncorpo\n"
+	want := "---\nname: x\nstatus: done\n---\n\n# Roadmap: x\n\n> Criado em: 2026-08-16 | Status: done\n\ncorpo\n\n## Wave 0 — Threat Model\n"
 	if got != want {
 		t.Fatalf("controle POSIX divergiu:\n got: %q\nwant: %q", got, want)
 	}
