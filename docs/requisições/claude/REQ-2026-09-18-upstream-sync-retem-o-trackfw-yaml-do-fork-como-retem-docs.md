@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-18
 author: "claude"
 adr: "docs/adr/ADR-2026-08-29-adotar-upstream-como-base.md"
-roadmap: "docs/roadmaps/claude/wip/ROADMAP-2026-09-18-upstream-sync-retem-o-trackfw-yaml-do-fork-como-retem-docs.md"
+roadmap: "docs/roadmaps/claude/done/ROADMAP-2026-09-18-upstream-sync-retem-o-trackfw-yaml-do-fork-como-retem-docs.md"
 ---
 
 # REQ: upstream-sync retém o trackfw.yaml do fork como retém docs
 
-> Date: 2026-09-18 | Status: Open
+> Date: 2026-09-18 | Status: Done
 
 ## Motivation
 
@@ -28,7 +28,7 @@ upstream mudar o arquivo.
 - [x] **AC2** — quando o upstream muda o arquivo, o sync imprime o diff dele.
 - [x] **AC3** — a falsificação ganha o merge real do #393 como terceiro caso, e um sync sem a
       retenção reprova nele.
-- [ ] **AC4** — o sync do #393 passa com o `validate` igual antes e depois.
+- [x] **AC4** — o sync do #393 passa com o `validate` igual antes e depois.
 
 ## Evidência — 2026-09-18
 
@@ -58,4 +58,6 @@ ADR: docs/adr/ADR-2026-08-29-adotar-upstream-como-base.md
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/claude/wip/ROADMAP-2026-09-18-upstream-sync-retem-o-trackfw-yaml-do-fork-como-retem-docs.md
+Roadmap: docs/roadmaps/claude/done/ROADMAP-2026-09-18-upstream-sync-retem-o-trackfw-yaml-do-fork-como-retem-docs.md
+
+**AC4 — sync real do #393 (2026-09-18).** `upstream-sync.sh` sobre `9651f905`: 22 de produto trazidos, 20 retidos, `trackfw.yaml` retido com o diff do upstream impresso; `validate` 0 antes · 0 depois, e `No violations found` com o binário do #393.

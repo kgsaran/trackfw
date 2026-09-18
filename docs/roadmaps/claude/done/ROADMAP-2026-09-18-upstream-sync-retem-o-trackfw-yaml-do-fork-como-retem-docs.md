@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-18
 req: "docs/requisições/claude/REQ-2026-09-18-upstream-sync-retem-o-trackfw-yaml-do-fork-como-retem-docs.md"
 squad: "claude"
@@ -7,7 +7,7 @@ squad: "claude"
 
 # Roadmap: upstream-sync retém o trackfw.yaml do fork como retém docs
 
-> Created: 2026-09-18 | Status: wip
+> Created: 2026-09-18 | Status: done
 
 ## Context
 
@@ -18,7 +18,7 @@ REQ: docs/requisições/claude/REQ-2026-09-18-upstream-sync-retem-o-trackfw-yaml
 - [x] AC1 — retenção do `trackfw.yaml` provada por efeito
 - [x] AC2 — diff do upstream impresso quando ele muda o arquivo
 - [x] AC3 — terceiro caso na falsificação, com controle
-- [ ] AC4 — sync do #393 com `validate` inalterado
+- [x] AC4 — sync do #393 com `validate` inalterado
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -64,3 +64,5 @@ REQ: docs/requisições/claude/REQ-2026-09-18-upstream-sync-retem-o-trackfw-yaml
 **Frase por teste:** o terceiro caso afirma que o sync retém o `trackfw.yaml` do fork mesmo quando o
 upstream o muda em linhas que colidem com as nossas; o controle afirma que, sem a retenção, o mesmo
 merge não passa.
+
+**AC4 — sync real do #393 (2026-09-18).** `upstream-sync.sh` sobre `9651f905`: 22 de produto trazidos, 20 retidos, `trackfw.yaml` retido com o diff do upstream impresso; `validate` 0 antes · 0 depois, e `No violations found` com o binário do #393.
