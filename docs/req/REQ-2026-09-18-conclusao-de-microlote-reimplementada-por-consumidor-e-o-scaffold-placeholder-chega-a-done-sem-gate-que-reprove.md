@@ -1,11 +1,11 @@
 ---
-status: Open
+status: Done
 date: 2026-09-18
 ---
 
 # REQ: conclusão de microlote reimplementada por consumidor, e o scaffold placeholder chega a done sem gate que reprove
 
-> Date: 2026-09-18 | Status: Open
+> Date: 2026-09-18 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -142,4 +142,4 @@ ADR: `docs/adr/ADR-2026-09-18-conclusao-de-microlote-tem-uma-implementacao-unica
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-18-conclusao-de-microlote-reimplementada-por-consumidor-e-o-scaffold-placeholder-chega-a-done-sem-gate-que-reprove.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-18-conclusao-de-microlote-reimplementada-por-consumidor-e-o-scaffold-placeholder-chega-a-done-sem-gate-que-reprove.md`

@@ -1,12 +1,12 @@
 ---
-status: wip
+status: done
 date: 2026-09-18
 squad: "hades-tf, apolo-tf, afrodite-tf"
 ---
 
 # Roadmap: conclusão de microlote reimplementada por consumidor, e o scaffold placeholder chega a done sem gate que reprove
 
-> Created: 2026-09-18 | Status: wip
+> Created: 2026-09-18 | Status: done
 
 ## Context
 
@@ -354,7 +354,7 @@ nomeia — *reimplementar uma capacidade do produto pior do que ela é*.
 - [ ] Uma frase por teste novo, se houver (AC11)
 
 ### ML-4A — sanear os sítios medidos E promover a severidade a `error`
-**Status:** ❌ **REPROVADO parcialmente** — o saneamento de scaffold e a promoção ficam; os gates `echo` e a Wave 0 fabricada são conformidade forjada, e o AC7-bis nunca foi ligado na transição. Fecha no ML-4B
+**Status:** ✅ Concluído **com o corretivo ML-4B** — o saneamento de scaffold e a promoção a `error` ficam; os gates `echo` e a Wave 0 fabricada foram **revertidos** pelo ML-4B. O registro da reprovação está preservado no corpo
 **Files affected:** em `docs/roadmaps/done/` — `ROADMAP-2026-08-18-doctor-detecta-artefato-fora-do-manifesto...`,
 `ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness...`,
 `ROADMAP-2026-09-10-barrier-executa-gate-de-roadmap-nao-confiavel...`,
@@ -617,7 +617,7 @@ Sem isso, estreitar a regra para `wip/` abre a fuga: **`wip` → apagar Wave 0 �
 - [ ] Uma frase por teste novo (AC11)
 
 ### ML-4C — corretivo do ML-4B: a promoção a `error` reprova uma fixture do `check-barrier.sh`
-**Status:** ❌ **REPROVADO** — fez o cenário `ciclo limpo` passar com `sed exit 1 → exit 0` na fixture, em vez de tratar a causa. As fixtures com Wave 0 e a declaração de ruptura ficam; fecha no ML-4D
+**Status:** ✅ Concluído **com o corretivo ML-4D** — as fixtures com Wave 0 e a declaração de ruptura ficam; o `sed` do `ciclo limpo` foi **revertido** pelo ML-4D. O registro da reprovação está preservado no corpo
 **Files affected:** `scripts/check-barrier.sh`, `docs/adr/ADR-2026-09-18-...md`, `docs/cli-parity.md`
 **Contexto:** o ML-4B está **auditado e aprovado** — reverti nada: os 6 `echo` sumiram
 (`git diff main -- docs/roadmaps/ | grep -c '^+.*echo "Wave 0'` → **0**), a Wave 0 fabricada foi
