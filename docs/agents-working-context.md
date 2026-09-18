@@ -2,6 +2,20 @@
 
 ---
 
+## Sessão 2026-09-18 (continuação 11) — Apolo (fix/scaffold-placeholder-chega-a-done — ML-4E: restaurar cobertura do S11) — CONCLUÍDO
+
+**Início:** 2026-09-18 | Branch: `fix/scaffold-placeholder-chega-a-done`
+**Tarefa:** ML-4E (REQ #392) — restaurar cobertura do S11: adicionar cenário de falsificação que prove que `## Wave 0` NÃO é classificado como malformado; validar contra binário sabotado (`intVal < 1`).
+**Resultado:** `go build ./...` RC=0 · `go test ./...` RC=0 · `make quality` RC=0 · 641 OK · 0 FAIL
+**Achado principal (falsifica premissa do ML-4D):** O binário sabotado (`intVal < 1`) com `GO_BIN` explícito → `FAIL [barrier/two-wave-flow/wave1-passed]` (exit 1 com "malformed wave heading at line 8: '0' is not a valid wave label"). S1 detecta a sabotagem porque seu fixture tem Wave 0 desde ML-4C. O "All scenarios passed" do ML-4D era artefato de vacuidade: `GO_BIN` não estava definido, então check-barrier.sh compilou o binário correto do `$ROOT_DIR`.
+**Arquivos editados:**
+- `scripts/check-barrier.sh`: (1) comentário expandido antes de S11 explicando por que exit 2 é forçado por construção para malformação de Wave 0; (2) nova assertiva `WH_STATUS == "passed"` distingue "exit 1 por veredito" de "exit 1 por malformação"; assertiva é redundante sob a sabotagem (S1 falha primeiro) mas pina o invariante para regressões futuras.
+- `vault/notes/check-barrier-go-bin-vacuity-trap-2026-09-18.md`: nota sobre o trap de vacuidade do `GO_BIN`.
+- `vault/notes/index.md`: link para a nova nota.
+**Cenários 167 e 168 de check-gates-falsify.sh:** já existiam e passam. Coverage já estava restaurada.
+
+---
+
 ## Sessão 2026-09-18 (continuação 10) — Apolo (fix/scaffold-placeholder-chega-a-done — ML-4D: discriminant hasAnyNonPendingML) — CONCLUÍDO
 
 **Início:** 2026-09-18 | Branch: `fix/scaffold-placeholder-chega-a-done`

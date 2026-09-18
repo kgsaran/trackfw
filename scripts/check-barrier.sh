@@ -919,6 +919,22 @@ done
 # field — a check that never ran can still report "passed" trivially
 # (parseGates returns an empty-but-non-nil slice for zero gates, per the
 # threat model, §2.1/§3 F5) and a bare status comparison would not catch it.
+#
+# ML-4E (REQ #392): why exit 0 OR exit 1 (not exit 0 only)?
+# The S11 fixture dir is not a governed repo, so `validate` blocks with
+# "2 violations, 1 warnings" and the barrier exits 1 — a verdict, not a
+# malformation. The wave_headings assertion below distinguishes the two:
+# if exit 1 is a malformation, wave_headings.status would be "blocked";
+# if it is a verdict (validate failed, wave_headings intact), it is "passed".
+# Malformed-Wave-0 → exit 2 is forced by construction: parseWaves appends
+# Wave 0 to `malformed`, never to `waves`; target==nil triggers usageExit(2),
+# so exit 1 from malformation is impossible — exit 2 is caught by the
+# "never 2" assertion above, and the wave_headings assertion is redundant
+# under the sabotage. It pins the "verdict, not malformation" invariant
+# for any future regression that might alter the exit-code path.
+# Cenário 167 of check-gates-falsify.sh provides the falsification proof:
+# intVal<1 in parseWaves → check-barrier.sh fails at S1 with "malformed
+# wave heading" (S1 fixture has Wave 0 since ML-4C).
 # ---------------------------------------------------------------------------
 S11="$WORK/s11-wave-zero"
 common_dirs "$S11"
@@ -942,6 +958,11 @@ for runtime in go; do  # ML-3A (v8): node py removidos
   [[ "$BARRIER_EXIT" -eq 0 || "$BARRIER_EXIT" -eq 1 ]] || fail "barrier/wave-label/wave-zero-accepted/$runtime" "expected exit 0 or 1 (never 2 — a usage/grammar error), got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
   GOT_WAVE=$(get_wave_field "$BARRIER_STDOUT")
   [[ "$GOT_WAVE" == "0" ]] || fail "barrier/wave-label/wave-zero-accepted/$runtime" "expected wave=0, got $GOT_WAVE"
+
+  # ML-4E (REQ #392): distinguish "exit 1 = verdict" from "exit 1 = malformation".
+  # wave_headings must be "passed" — if Wave 0 were malformed, it would be "blocked".
+  WH_STATUS=$(check_field_json "$BARRIER_STDOUT" wave_headings status)
+  [[ "$WH_STATUS" == '"passed"' ]] || fail "barrier/wave-label/wave-zero-accepted/$runtime" "wave_headings status: want \"passed\" (exit 1 here is a validate verdict, not a malformation), got $WH_STATUS; stderr: $BARRIER_STDERR"
 
   MLS_STATUS=$(check_field_json "$BARRIER_STDOUT" mls_complete status)
   [[ "$MLS_STATUS" == '"passed"' ]] || fail "barrier/wave-label/wave-zero-accepted/$runtime" "mls_complete status: want \"passed\", got $MLS_STATUS"

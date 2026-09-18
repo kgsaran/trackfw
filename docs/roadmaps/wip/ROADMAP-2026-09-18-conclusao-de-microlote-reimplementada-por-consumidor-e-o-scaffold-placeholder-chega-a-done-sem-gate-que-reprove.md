@@ -723,7 +723,7 @@ cobertura em qualquer estado, e não quebra o fluxo oficial.
 - [ ] Uma frase por teste novo (AC11)
 
 ### ML-4E — corretivo: fechamos a cobertura do S11 com as nossas próprias mudanças
-**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
+**Status:** ✅ Concluído — e **falsificou a premissa do próprio ML**: não havia gap. Ver retificação abaixo
 **Files affected:** `scripts/check-barrier.sh` (ou `scripts/check-gates-falsify.sh`, onde couber o cenário)
 
 **Achado do ML-4D, medido e reportado com honestidade por ele** — e é dele o mérito de ter ido medir
@@ -756,3 +756,38 @@ a restauramos, no mesmo PR.
 - [ ] Com o binário correto, todos os cenários passam
 - [ ] `make quality` RC=0 até o fim (~641 OK)
 - [ ] Uma frase por cenário novo (AC11)
+
+#### 🔴 Retificação — o "gap do S11" não existia, e eu quase o registrei como fato
+
+O ML-4D reportou que o binário sabotado (`intVal < 1`) passava todo o `check-barrier.sh`. Eu **aceitei
+a medição** e escrevi neste roadmap, com convicção, que *"nós criamos este gap, nesta REQ"*.
+
+**O ML-4E mediu e falsificou.** Reproduzido por mim, independentemente:
+
+```
+GO_BIN=/tmp/.../tw-sab bash scripts/check-barrier.sh
+  → FAIL [barrier/two-wave-flow/wave1-passed]: expected exit 0, got 1;
+    stderr: malformed wave heading at line 8: "0" is not a valid wave label
+
+bash scripts/check-barrier.sh          (binário correto)
+  → All check-barrier.sh scenarios passed.
+```
+
+**Causa do falso achado:** `scripts/check-barrier.sh:57-61` **compila o próprio binário** a partir de
+`$ROOT_DIR` quando `GO_BIN` não está definido. O ML-4D compilou o sabotado em `/tmp` e rodou o script
+**sem `GO_BIN`** — o gate mediu o **código correto**. A sabotagem era invisível porque nunca foi
+executada.
+
+🔴 **Décimo primeiro caso do instrumento que mente nesta sessão, e o mais instrutivo:** enganou um
+executor competente, e **eu quase despachei um ML para corrigir um defeito inexistente**. Se o ML-4E
+tivesse apenas obedecido, teríamos acrescentado cenário redundante e gravado na ADR um gap que nunca
+houve — poluindo o registro com uma falsidade plausível.
+
+**O que o ML-4E entrega, e é legítimo:** a assertiva `wave_headings == "passed"` no S11, que pina o
+invariante *"exit 1 aqui é veredito, não malformação"*; a medição que explica **por que** o S11 tolera
+exit 0 ou 1 (o `validate` bloqueia no fixture, que não é repo governado); a demonstração de que exit 1
+**por malformação de Wave 0 é impossível por construção** (`parseWaves` manda a wave para `malformed`,
+`target` fica `nil`, e o caminho é `usageExit(2)`); e a nota de vault sobre o trap do `GO_BIN`.
+
+**Cenários 167 e 168 já cobriam o boundary** — verificado: ambos verdes, e o 167 já sabota exatamente
+`intVal < 0 → intVal < 1`.
