@@ -254,11 +254,15 @@ exit 0
 ---
 
 ## Wave 3 — Gates (2 MLs em paralelo)
-> Dependências: **Wave 2 completa** — o AC5 exige que o `scaffold` convirja antes do gate, sob pena de
-> todo roadmap autorado pelo slash command nascer bloqueado na transição.
+> Dependências: **Wave 2 completa e auditada** (barreira `make quality` 640 OK / 0 FAIL) — o AC5 exige
+> que o `scaffold` convirja antes do gate, sob pena de todo roadmap autorado pelo slash command nascer
+> bloqueado na transição.
+> 🔴 **Nenhum dos dois roda `make quality`** (corromperiam `bin/trackfw` mutuamente); o arquiteto roda
+> uma vez como barreira. **ML-3A não altera `internal/roadmapdoc/`** — consome o que já existe; se
+> precisar de predicado novo, **para e relata**, porque o ML-3B é o dono do pacote nesta wave.
 
 ### ML-3A — `roadmap move ... done` recusa ML pendente, nomeando
-**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
 **Files affected:** `internal/generators/roadmap.go` (`MoveRoadmap`, 524-605) + teste
 **Actions:**
 1. Antes do `os.Rename` (linha 572), quando o destino é `done`: parsear com `roadmapdoc` e coletar os
@@ -275,7 +279,7 @@ exit 0
 - [ ] Uma frase por teste novo declarando o que ele afirma (AC11)
 
 ### ML-3B — cobertura de gate e rótulo duplicado, sensíveis ao estado
-**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
 **Files affected:** `internal/roadmapdoc/` (predicados novos), `internal/validator/validator.go`
 (**dois** sítios espelhados: `ValidateUnfiltered` ~758-946 **e** `validateUnfilteredTagged`
 ~1093-1289), `internal/validator/validator_test.go`
