@@ -130,7 +130,7 @@ grep -q "Residual declarado" docs/portabilidade/2026-09-18-threat-model-scaffold
 **Comandos de validação:** `go build ./... && make test && make quality`
 
 ### ML-1B — corretivo do ML-1A: o teste de baseline não pode ler o corpus vivo
-**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
+**Status:** ✅ Concluído **no corretivo**, mas `make quality` REPROVA — o pin de corpus não foi atualizado; fecha com o ML-1C
 **Files affected:** `internal/roadmapdoc/compare_baseline_test.go`, `internal/roadmapdoc/testdata/`,
 `internal/roadmapdoc/roadmapdoc.go` (AC3-ter), `internal/roadmapdoc/roadmapdoc_test.go`
 **Contexto da reprovação parcial:** a extração está correta e **fica** — auditei o AC1 (zero import de
@@ -155,6 +155,52 @@ fixtures do predicado e **não** ao teste de baseline.
 - [ ] O teste **reporta** quantos arquivos pulou e por quê — zero pulos silenciosos
 - [ ] `make test` RC=0 · `make quality` RC=0
 - [ ] Uma frase por teste novo declarando o que ele afirma (AC11)
+
+### ML-1C — corretivo do ML-1B: o pin de vereditos do corpus não foi atualizado
+**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Files affected:** `scripts/testdata/roadmap-barrier-corpus-verdicts.tsv`, e o script que o pina
+(`scripts/check-roadmap-barrier-contract.sh` ou equivalente — localize; não presuma o nome)
+**Contexto da reprovação:** o ML-1B está correto no que entregou — auditei o congelamento do corpus
+(sonda com `-count=1` num roadmap real: editar não quebra mais), os skips nomeados com piso de 450, e
+o pin de exit-2 do `barrier`, que foi **preservado e não afrouxado** (`2-BIS` migrou para válido e
+`abc` entrou como o inválido genuíno). O defeito é outro: `make quality` **reprova em 4 cenários**:
+
+```
+FAIL [corpus/exit2-count]: waves malformadas (exit 2): 10, pinado 14
+FAIL [corpus/mls-complete-verdict-counts]: evidence=639 failure=118, pinado failure=113
+FAIL [corpus/acceptance-evidence-verdict-counts]: evidence=314 failure=439, pinado failure=434
+FAIL [corpus/non-reclassification]: hash da tabela mudou; 10 linhas novas (1300a1301,1310)
+```
+
+🔴 **O gate funcionou exatamente como projetado.** `corpus/non-reclassification` existe para pegar
+mudança de comportamento não declarada no corpus, e pegou a nossa.
+
+**Causa, medida por mim e consistente em todos os quatro números:** os 4 roadmaps de `## Wave 3-Py`
+estavam **ausentes do pin** (`grep -c` → **0 linhas cada**, e **0** linhas com wave `3-Py`), porque o
+`ParseWaves` os rejeitava por inteiro. Com o AC3-ter eles passam a parsear e geram vereditos: **+10
+linhas**, **+5** failures em `mls_complete`, **+5** em `acceptance_evidence`, e as waves malformadas
+caem de **14 para 10**. É o efeito **intencional** da decisão 11 da ADR.
+
+**Por que o ML-1B não viu:** o `make quality` dele morreu antes, em `check-serve-address-parity.sh`
+(`declare -A` sob bash 3.2 — falha **ambiental** do PATH dele, não do repositório; o shebang é
+`/usr/bin/env bash` e o bash desta máquina é 5.3). 🔴 **Uma falha ambiental precoce mascarou uma
+falha real posterior** — motivo pelo qual o arquiteto roda o gate por conta própria.
+**Actions:**
+1. Regenerar o pin `scripts/testdata/roadmap-barrier-corpus-verdicts.tsv`.
+2. 🔴 **Auditar o delta linha a linha ANTES de aceitar**: as **10** linhas novas devem pertencer
+   **exclusivamente** aos 4 roadmaps nomeados acima. Qualquer linha que venha de outro arquivo é
+   reclassificação **não** explicada pelo AC3-ter e **reprova** — investigue, não re-gere.
+3. Atualizar os três contadores pinados (exit2=10, mls_complete failure=118,
+   acceptance_evidence failure=439) e o hash, **no mesmo commit** e com o motivo escrito.
+4. Registrar no cabeçalho do `.tsv` (ou no script) **por que** o pin mudou, citando a decisão 11 da
+   ADR — um pin que muda sem rastro é um pin que qualquer um re-gera na próxima falha.
+**Acceptance criteria:**
+- [ ] As 10 linhas novas pertencem **só** aos 4 roadmaps `3-Py` — demonstrado com o diff nomeado
+- [ ] `make quality` RC=0, executado **até o fim** (não aborte na primeira falha ambiental)
+- [ ] Se `check-serve-address-parity.sh` falhar por `declare -A`, **relate como ambiental e siga** —
+      não altere esse script, está fora de escopo desta REQ
+- [ ] O motivo da mudança do pin está escrito no artefato, não só no commit
+- [ ] `make test` RC=0 · Uma frase por teste novo (AC11)
 
 ---
 

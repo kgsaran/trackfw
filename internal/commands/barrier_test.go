@@ -901,8 +901,11 @@ func TestBarrierRegression_Exit2MessagesArePinnedLiterally(t *testing.T) {
 // convention) — it used to be the only label that passed the regex but failed
 // the (then int≥1) guard; parseWaves remains the correct surface to test it on.
 func TestWaveLabelGrammar_ValidAndInvalid(t *testing.T) {
-	valid := []string{"0", "1", "2", "2-bis", "2-hotfix", "10-a2"}
-	invalid := []string{"X", "2-BIS", "-bis", "2-", "2-bis-ter"}
+	// AC3-ter (REQ #392 / ML-1B): "2-BIS" is now VALID — the suffix is accepted
+	// case-insensitively. Moved from invalid to valid. "abc" (no digit prefix)
+	// remains invalid and serves as the counter-test.
+	valid := []string{"0", "1", "2", "2-bis", "2-hotfix", "10-a2", "2-BIS", "3-Py", "3-PY"}
+	invalid := []string{"X", "abc", "-bis", "2-", "2-bis-ter"}
 
 	for _, lbl := range valid {
 		lbl := lbl
@@ -948,11 +951,13 @@ func TestBarrierRegression_FourthExitTwoMessage(t *testing.T) {
 		criteriaLines: []string{"- [x] build passes"},
 	})
 
-	_, stderr, code := runBarrierCLI(t, dir, "ROADMAP-barrier-fixture", "--wave", "2-BIS")
+	// AC3-ter (REQ #392 / ML-1B): "2-BIS" is now valid (case-insensitive suffix).
+	// Using "abc" (letter-only, no digit prefix) as the genuinely invalid label.
+	_, stderr, code := runBarrierCLI(t, dir, "ROADMAP-barrier-fixture", "--wave", "abc")
 	if code != 2 {
 		t.Fatalf("expected exit 2 for invalid --wave label, got %d; stderr=%s", code, stderr)
 	}
-	want := "trackfw barrier: invalid --wave \"2-BIS\" — not a valid wave label\n"
+	want := "trackfw barrier: invalid --wave \"abc\" — not a valid wave label\n"
 	if stderr != want {
 		t.Fatalf("fourth pinned message mismatch:\nwant: %q\ngot:  %q", want, stderr)
 	}

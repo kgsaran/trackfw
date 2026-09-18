@@ -801,9 +801,11 @@ GO_NORM11=$(python3 -c "$STRIP_TS" "$GO_STDOUT11")
 ok "barrier/wave-label/wave-zero-accepted/parity/go-behavioral-pin"
 
 # ---------------------------------------------------------------------------
-# Scenario 12 — --wave 2-BIS is an invalid argument (fourth pinned exit-2
+# Scenario 12 — --wave abc is an invalid argument (fourth pinned exit-2
 # message, cli-parity.md §four-pinned-exit-2-messages). Stderr must be
 # non-empty and byte-identical across all three runtimes.
+# AC3-ter (REQ #392 / ML-1B): "2-BIS" was moved to valid (case-insensitive
+# suffix). "abc" (letter-only, no digit prefix) is the genuinely invalid label.
 # ---------------------------------------------------------------------------
 S12="$WORK/s12-invalid-arg"
 common_dirs "$S12"
@@ -817,16 +819,16 @@ cat >"$S12/docs/roadmaps/wip/ROADMAP-barrier-fixture.md" <<'EOF'
 **Critérios de aceite:**
 - [x] done
 EOF
-WANT12='trackfw barrier: invalid --wave "2-BIS" — not a valid wave label'
+WANT12='trackfw barrier: invalid --wave "abc" — not a valid wave label'
 for runtime in go; do  # ML-3A (v8): node py removidos
-  run_barrier "$runtime" "$S12" ROADMAP-barrier-fixture --wave 2-BIS
+  run_barrier "$runtime" "$S12" ROADMAP-barrier-fixture --wave abc
   [[ "$BARRIER_EXIT" -eq 2 ]] || fail "barrier/wave-label/invalid-arg/$runtime" "expected exit 2, got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
   [[ -n "$BARRIER_STDERR" ]] || fail "barrier/wave-label/invalid-arg/$runtime" "stderr is empty — vacuity guard failed"
   [[ "$BARRIER_STDERR" == "$WANT12"$'\n' || "$BARRIER_STDERR" == "$WANT12" ]] || fail "barrier/wave-label/invalid-arg/$runtime" "stderr mismatch, want [$WANT12], got [$BARRIER_STDERR]"
   ok "barrier/wave-label/invalid-arg/$runtime"
 done
 # Byte-identical parity across runtimes for the fourth exit-2 message.
-run_barrier go "$S12" ROADMAP-barrier-fixture --wave 2-BIS
+run_barrier go "$S12" ROADMAP-barrier-fixture --wave abc
 GO_STDERR4="$BARRIER_STDERR"
 ok "barrier/wave-label/invalid-arg/parity/go-behavioral-pin"
 

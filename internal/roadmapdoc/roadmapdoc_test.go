@@ -1,6 +1,6 @@
 package roadmapdoc
 
-// roadmapdoc_test.go — unit tests for the roadmapdoc leaf package (ML-1A, REQ #392).
+// roadmapdoc_test.go — unit tests for the roadmapdoc leaf package (ML-1A + ML-1B, REQ #392).
 //
 // AC11 reconciliation (one sentence per test asserting which conclusion it affirms):
 //
@@ -36,33 +36,43 @@ package roadmapdoc
 //
 //   TestCorpusMeasurement_ReportOnly
 //     Affirms: documents the current corpus count without asserting a specific number,
-//     because the corpus changes with every ML execution and the architect's measurement
-//     of 32 (roadmap spec) diverges from the current count (see report note below).
-//     This test NEVER fails; it exists to surface the count in the CI log.
+//     because the corpus changes with every ML execution. This test NEVER fails; it exists
+//     to surface the count in the CI log.
 //
-// CORPUS MEASUREMENT NOTE (mandatory per roadmap — "if your count is not 32, STOP and report"):
-//   Three counts were measured:
+//   TestWaveLabelRe_CaseInsensitiveSuffix (ML-1B / AC3-ter)
+//     Affirms: WaveLabelRe accepts "3-Py" (upper-case P suffix) after the case-insensitive
+//     fix, and continues to reject "abc" (no digit prefix) — the counter-test that
+//     ensures the fix does not extend acceptance to genuinely invalid labels.
+//
+//   TestParseWaves_FailSafeIsUnfinished (ML-1B / Ação 3)
+//     Affirms: HasUnfinishedMLs returns true when ParseWaves returns an error — a malformed
+//     wave heading cannot release a done transition (fail-safe closed).
+//
+//   TestCompareWaveLabels_CaseNeutral (ML-1B / AC3-ter)
+//     Affirms: "3-Py" and "3-py" compare as equal by CompareWaveLabels — the ordering of
+//     waves must not depend on the case of the authored suffix.
+//
+// CORPUS MEASUREMENT NOTE (updated by ML-1B):
+//   ML-1A measured three counts (pre-fix):
 //     byStatusIsComplete (ignoring ParseWaves errors): 27
 //     HasUnfinishedMLs (fail-safe: ParseWaves error → unfinished): 30
-//     Architect's baseline: 32
+//     Architect's baseline: 32 (corrected in REQ to 27)
 //
-//   Sources of the 30–27 = 3 gap:
-//     HasUnfinishedMLs treats a malformed wave heading as fail-safe unfinished.
-//     Four roadmaps have wave label "3-Py" (upper-case P), which fails WaveLabelRe
-//     (`[a-z0-9]+`). ParseWaves returns an error and HasUnfinishedMLs returns true for
-//     them; the manual loop ignores the error and counts 0 MLs → false.
-//     Example: trackfw-update-command-2026-06-18.md "## Wave 3-Py — Python..."
+//   ML-1B fixes WaveLabelRe to be case-insensitive. After this fix:
+//   - "3-Py" is a VALID label; ParseWaves no longer errors on trackfw-update-command-2026-06-18.md.
+//   - "## Wave reaberta" (no digit prefix) still fails WaveLabelRe and will cause ParseWaves
+//     to error for ROADMAP-2026-09-01-caminho-dentro-de-artefato-versionado-usa-sempre-barra.md.
+//     That heading was added after the baseline was captured and is not corrected in this ML.
+//   - The 30→27 gap from ML-1A was caused by roadmaps with uppercase suffixes; after this fix,
+//     HasUnfinishedMLs no longer erroneously returns true for those roadmaps.
+//   - The gap between HasUnfinishedMLs and byStatusIsComplete should narrow after this fix.
 //
-//   Sources of the 32–30 = 2 gap:
-//     The architect measured on 2026-09-18 and the corpus is live. The two-unit
-//     difference is attributed to corpus drift (merges and corrections executed
-//     on the same day between the measurement and this implementation). The 5
-//     roadmaps the architect identified as having "status outside vocabulary" (including
-//     one with status "pending") are the expected targets of AC5 (ML-2B); the current
-//     state of those files explains why fewer trigger now.
+//   No specific-number assertion is written; the count is logged only. The count will decrease
+//   further when ML-4A cleans the 6 sítios measured in done/.
 //
-//   No specific-number assertion is written, as the advisor noted the test will break
-//   when ML-4A lands (which is designed to clean 6 of these). The count is logged only.
+//   ML-1A note about "32–30 = 2 gap": the REQ corrected the architect's baseline to 27.
+//   The "2-unit difference attributed to corpus drift" in the original note was incorrect —
+//   the REQ explicitly states the correct number is 27 and that done/ had not changed.
 
 import (
 	"os"
@@ -258,6 +268,75 @@ func TestCorpusMeasurement_ReportOnly(t *testing.T) {
 
 	t.Logf("done/ corpus: total=%d, unfinished(StatusIsComplete)=%d, unfinished(HasUnfinishedMLs)=%d",
 		total, byStatusIsComplete, byThreeCategory)
-	t.Logf("Architect's baseline: 32. HasUnfinishedMLs=%d StatusIsComplete=%d. See CORPUS MEASUREMENT NOTE in this file.",
-		byThreeCategory, byStatusIsComplete)
+	t.Logf("Post-ML-1B note: count may remain 30 — trackfw-update-command has genuine pending MLs (⬜), so fixing WaveLabelRe changes the reason (fail-safe→genuine) but not the result. ROADMAP-2026-09-01 still has '## Wave reaberta' (letter-only label, not fixed by AC3-ter). See CORPUS MEASUREMENT NOTE in this file.")
+}
+
+// ── ML-1B: AC3-ter — WaveLabelRe case-insensitive suffix ──────────────────────
+
+// TestWaveLabelRe_CaseInsensitiveSuffix verifies that the case-insensitive suffix
+// fix accepts real labels like "3-Py" while still rejecting genuinely invalid ones.
+//
+// AC11 (ML-1B): WaveLabelRe accepts "3-Py" after the AC3-ter fix, and continues
+// to reject "abc" (no digit prefix) — the counter-test that proves the regex
+// extension does not accidentally admit all-letter labels.
+func TestWaveLabelRe_CaseInsensitiveSuffix(t *testing.T) {
+	valid := []string{"0", "1", "2-bis", "3", "3-Py", "3-py", "3-PY", "10-Hotfix", "0-A"}
+	invalid := []string{"abc", "reaberta", "-1", "Py", "3-", ""}
+
+	for _, label := range valid {
+		if !WaveLabelRe.MatchString(label) {
+			t.Errorf("WaveLabelRe.MatchString(%q) = false, want true", label)
+		}
+	}
+	for _, label := range invalid {
+		if WaveLabelRe.MatchString(label) {
+			t.Errorf("WaveLabelRe.MatchString(%q) = true, want false (counter-test: invalid label must stay rejected)", label)
+		}
+	}
+}
+
+// TestParseWaves_FailSafeIsUnfinished confirms that a malformed wave heading causes
+// HasUnfinishedMLs to return true (fail-safe closed, Ação 3).
+//
+// AC11 (ML-1B): ParseWaves returns an error for "## Wave abc" (letter-only label);
+// HasUnfinishedMLs propagates this as true — a roadmap with a malformed heading
+// cannot be released to done because its completeness cannot be proven.
+func TestParseWaves_FailSafeIsUnfinished(t *testing.T) {
+	// "## Wave abc" is still invalid after the AC3-ter fix (no digit prefix).
+	content := "# Roadmap\n\n## Wave abc — Invalid heading\n\n### ML-1A — Work\n**Status:** ✅ Concluído\n**Acceptance criteria:**\n- [x] done\n"
+
+	lines := SplitRoadmapLines(content)
+	_, err := ParseWaves(lines)
+	if err == nil {
+		t.Fatal("ParseWaves returned nil error for '## Wave abc', want an error — counter-test: invalid label must stay rejected")
+	}
+
+	if !HasUnfinishedMLs(content) {
+		t.Fatal("HasUnfinishedMLs = false for roadmap with malformed wave heading, want true — fail-safe must treat parse error as unfinished")
+	}
+}
+
+// TestCompareWaveLabels_CaseNeutral verifies that "3-Py" and "3-py" sort as equal,
+// and that the overall ordering is unaffected by suffix casing.
+//
+// AC11 (ML-1B): CompareWaveLabels normalizes the suffix to lower-case before
+// comparison, so "3-Py" == "3-py" in ordering — authors who use mixed-case
+// suffixes get the same sort position as those who use lower-case.
+func TestCompareWaveLabels_CaseNeutral(t *testing.T) {
+	// "3-Py" and "3-py" must compare as equal.
+	if got := CompareWaveLabels("3-Py", "3-py"); got != 0 {
+		t.Errorf("CompareWaveLabels(\"3-Py\", \"3-py\") = %d, want 0 (case-neutral)", got)
+	}
+	if got := CompareWaveLabels("3-py", "3-Py"); got != 0 {
+		t.Errorf("CompareWaveLabels(\"3-py\", \"3-Py\") = %d, want 0 (case-neutral)", got)
+	}
+
+	// Overall ordering must be preserved: "3" < "3-py" < "3-Py" is WRONG after fix;
+	// both "3-py" and "3-Py" must sort the same relative to "3" and "4".
+	if got := CompareWaveLabels("3", "3-Py"); got >= 0 {
+		t.Errorf("CompareWaveLabels(\"3\", \"3-Py\") = %d, want < 0 (no-suffix before with-suffix)", got)
+	}
+	if got := CompareWaveLabels("3-Py", "4"); got >= 0 {
+		t.Errorf("CompareWaveLabels(\"3-Py\", \"4\") = %d, want < 0 (integer part dominates)", got)
+	}
 }

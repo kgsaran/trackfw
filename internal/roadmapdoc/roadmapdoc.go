@@ -30,8 +30,11 @@ var (
 	// The captured token is validated separately by WaveLabelRe before being stored.
 	WaveHeadingRe = regexp.MustCompile(`^## Wave (\S+) `)
 	// WaveLabelRe validates a wave label token in isolation against the grammar pinned in
-	// docs/cli-parity.md ("Wave label grammar"): <integer>[-<suffix>] where suffix is [a-z0-9]+.
-	WaveLabelRe      = regexp.MustCompile(`^\d+(?:-[a-z0-9]+)?$`)
+	// docs/cli-parity.md ("Wave label grammar"): <integer>[-<suffix>] where suffix is [a-zA-Z0-9]+.
+	// AC3-ter (REQ #392 / ML-1B): the suffix is matched case-insensitively so that labels like
+	// "3-Py" (authored with an upper-case P in four real roadmaps) are accepted. The integer
+	// part must still start with a digit — "reaberta" and "abc" remain invalid.
+	WaveLabelRe = regexp.MustCompile(`^\d+(?:-[a-zA-Z0-9]+)?$`)
 	MLHeadingRe      = regexp.MustCompile(`^### (ML-\S+)`)
 	StatusLineRe     = regexp.MustCompile(`^\*\*Status:\*\*(.*)$`)
 	CriteriaHeaderRe = regexp.MustCompile(`^\*\*(?:Acceptance criteria|Crit[eé]rios de aceite):\*\*`)
@@ -416,9 +419,13 @@ func SplitWaveLabel(label string) (integer int, suffix string) {
 // in docs/cli-parity.md (§ "Wave label grammar"):
 //  1. Compare integer parts numerically.
 //  2. On a tie, no-suffix precedes with-suffix.
-//  3. On a tie between two suffixes, compare lexicographically.
+//  3. On a tie between two suffixes, compare lexicographically (case-insensitive).
 //
 // So "2" < "2-bis" < "2-hotfix" < "3". Used where waves must be listed or compared.
+//
+// AC3-ter (REQ #392 / ML-1B): suffixes are lower-cased before comparison so that
+// "3-Py" and "3-py" sort identically — the casing of the authored label must not
+// affect ordering.
 func CompareWaveLabels(a, b string) int {
 	aInt, aSuf := SplitWaveLabel(a)
 	bInt, bSuf := SplitWaveLabel(b)
@@ -428,6 +435,9 @@ func CompareWaveLabels(a, b string) int {
 		}
 		return 1
 	}
+	// Normalize suffix to lower-case before ordering (AC3-ter).
+	aSuf = strings.ToLower(aSuf)
+	bSuf = strings.ToLower(bSuf)
 	// integers equal — no-suffix before with-suffix
 	if aSuf == "" && bSuf != "" {
 		return -1
