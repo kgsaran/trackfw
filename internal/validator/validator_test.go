@@ -2277,17 +2277,30 @@ func TestExtractRefPath_TresREQsReaisDoRepositorio(t *testing.T) {
 // AC11 reconciliation for ML-3B validator tests (one sentence per test):
 //
 //   TestValidateRoadmapGateCoverage_AC7_ExitOneIntact
-//     Affirms: a wip roadmap whose Wave 0 gate is the intact exit 1 placeholder triggers
-//     the roadmap_gate_coverage warning — the existing placeholder blocks the wip state.
+//     Affirms: a wip roadmap whose Wave 0 gate is the intact exit 1 placeholder AND has a
+//     non-pending ML triggers roadmap_gate_coverage — work has started and the placeholder
+//     must be replaced (AC7 arm a with ML-4D discriminant).
 //
 //   TestValidateRoadmapGateCoverage_AC7_BlockDeleted
 //     Affirms: a wip roadmap whose Wave 0 **Gates da wave:** block has been deleted entirely
-//     triggers roadmap_gate_coverage — the naïve discriminant ("is exit 1 present?") would
-//     pass here, proving that the correct discriminant (loss of gate coverage) is necessary.
+//     AND has a non-pending ML triggers roadmap_gate_coverage — the naïve discriminant
+//     ("is exit 1 present?") would pass here, proving that the correct discriminant
+//     (loss of gate coverage) is necessary (AC7 arm b).
 //
 //   TestValidateRoadmapGateCoverage_AC7_RealGate
 //     Affirms: a wip roadmap whose Wave 0 gate contains a real command does NOT trigger
 //     roadmap_gate_coverage — a replaced gate is a correct artifact (AC7 counter-arm).
+//
+//   TestValidateRoadmapGateCoverage_AC7_FreshScaffoldNotCharged
+//     Affirms: a freshly scaffolded wip roadmap (all MLs ⬜ Pendente, Wave 0 gate still
+//     the template exit 1 placeholder) does NOT trigger roadmap_gate_coverage — the
+//     "ciclo limpo" case: roadmap new → move to wip → validate must pass RC=0 because
+//     ML-0A has not yet been worked (ML-4D discriminant, REQ #392).
+//
+//   TestValidateRoadmapGateCoverage_AC7_WorkStartedFiresWithPlaceholder
+//     Affirms: when at least one ML is ✅ Concluído and Wave 0 still has the exit 1
+//     placeholder gate, roadmap_gate_coverage fires — the early-return for all-pending
+//     MLs does not disable the rule for roadmaps where work has started (ML-4D contra-braço).
 //
 //   TestValidateRoadmapGateCoverage_AC7bis_WipMissingWave0
 //     Affirms: a wip roadmap that has no ## Wave 0 heading triggers roadmap_wave0_required —
@@ -2573,6 +2586,102 @@ status: backlog
 			strings.Contains(w, "ROADMAP-backlog-placeholder") {
 			t.Errorf("AC8-bis: false alarm on backlog/ roadmap (warnings): %q", w)
 		}
+	}
+}
+
+// TestValidateRoadmapGateCoverage_AC7_FreshScaffoldNotCharged affirms: a freshly
+// scaffolded wip roadmap (all MLs ⬜ Pendente, Wave 0 gate still the template exit 1
+// placeholder) does NOT trigger roadmap_gate_coverage.  This is the "ciclo limpo"
+// case: roadmap new → roadmap move wip → validate must return RC=0, because ML-0A
+// has not yet been worked and the placeholder is legitimate.  (ML-4D discriminant,
+// REQ #392 — closes the ADR-2026-07-31 regression reintroduced via ML-4C.)
+func TestValidateRoadmapGateCoverage_AC7_FreshScaffoldNotCharged(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/roadmaps/wip", "docs/roadmaps/backlog", "docs/roadmaps/blocked",
+		"docs/roadmaps/done", "docs/roadmaps/analyzing", "docs/req", "docs/adr")
+	writeFile(t, dir, "trackfw.yaml", minimalTrackfwYaml)
+	const freshScaffold = `---
+status: wip
+---
+# Roadmap: Fresh Roadmap
+
+REQ: docs/req/REQ-test.md
+
+## Acceptance Criteria
+- [ ] item 1
+
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model for this roadmap
+**Status:** ⬜ Pendente
+
+**Gates da wave:**
+` + "```bash\n" + `exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli-parity.md
+` + "```\n" + `
+## Wave 1 — Implementation
+
+### ML-1A — First task
+**Status:** ⬜ Pendente
+`
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-fresh-scaffold.md", freshScaffold)
+	chdir(t, dir)
+
+	// roadmap_gate_coverage is at error severity; scan both slices to avoid vacuity.
+	violations, warnings, err := Validate()
+	if err != nil {
+		t.Fatalf("Validate() error: %v", err)
+	}
+	for _, v := range violations {
+		if strings.Contains(v, "placeholder or absent") && strings.Contains(v, "ROADMAP-fresh-scaffold") {
+			t.Errorf("roadmap_gate_coverage false alarm on fresh scaffold with all-pending MLs (violations): %q", v)
+		}
+	}
+	for _, w := range warnings {
+		if strings.Contains(w, "placeholder or absent") && strings.Contains(w, "ROADMAP-fresh-scaffold") {
+			t.Errorf("roadmap_gate_coverage false alarm on fresh scaffold with all-pending MLs (warnings): %q", w)
+		}
+	}
+}
+
+// TestValidateRoadmapGateCoverage_AC7_WorkStartedFiresWithPlaceholder affirms: a wip
+// roadmap where at least one ML has moved past pending (✅ Concluído) AND Wave 0 still
+// has the exit 1 placeholder gate DOES trigger roadmap_gate_coverage.  This is the
+// contra-braço of the ML-4D discriminant: the early-return on all-pending must not
+// disable the rule for roadmaps where work has started.
+func TestValidateRoadmapGateCoverage_AC7_WorkStartedFiresWithPlaceholder(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/roadmaps/wip", "docs/roadmaps/backlog", "docs/roadmaps/blocked",
+		"docs/roadmaps/done", "docs/roadmaps/analyzing", "docs/req", "docs/adr")
+	writeFile(t, dir, "trackfw.yaml", minimalTrackfwYaml)
+	const workStarted = `---
+status: wip
+---
+# Roadmap: Work Started
+
+REQ: docs/req/REQ-test.md
+
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model for this roadmap
+**Status:** ⬜ Pendente
+
+**Gates da wave:**
+` + "```bash\n" + `exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli-parity.md
+` + "```\n" + `
+## Wave 1 — Implementation
+
+### ML-1A — First task (already done)
+**Status:** ✅ Concluído
+`
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-work-started.md", workStarted)
+	chdir(t, dir)
+
+	violations, _, err := Validate()
+	if err != nil {
+		t.Fatalf("Validate() error: %v", err)
+	}
+	if !hasViolation(violations, "placeholder or absent") {
+		t.Errorf("expected roadmap_gate_coverage violation when work has started and gate is still placeholder, got violations: %v", violations)
 	}
 }
 
