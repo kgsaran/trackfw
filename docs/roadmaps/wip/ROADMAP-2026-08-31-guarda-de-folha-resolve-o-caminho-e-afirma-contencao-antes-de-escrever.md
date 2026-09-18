@@ -147,7 +147,7 @@ nos 228 brutos; PoCs só em macOS.
 > ação do ML-1A — **não** reusar o número antigo.
 
 ### ML-1A — extrair a contenção para ponto único e revalidar a enumeração pós-v8
-**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
 **Files affected:** cria/estende um pacote folha (avaliar `internal/pathanchor`, que já existe),
 `internal/integrations/manager.go` (passa a consumir o extraído), testes correspondentes
 **Actions:**
