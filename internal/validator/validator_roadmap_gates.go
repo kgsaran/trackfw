@@ -53,12 +53,11 @@ func validateRoadmapGatesCoverage() (wave0Msgs []string, gateMsgs []string, dupM
 					continue
 				}
 				path := filepath.Join(dir, e.Name())
-				raw, err := os.ReadFile(path)
-				if err != nil {
-					gateMsgs = append(gateMsgs, inspectionDiagnostic("roadmap_gate_coverage", path, err))
+				rawBytes, ok := readFileForRule("roadmap_gate_coverage", path, &gateMsgs)
+				if !ok {
 					continue
 				}
-				data := string(raw)
+				data := string(rawBytes)
 				base := e.Name()
 
 				// AC7-bis: Wave 0 heading must exist.

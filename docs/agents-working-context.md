@@ -2,6 +2,26 @@
 
 ---
 
+## Sessão 2026-09-18 (continuação 6) — Apolo (fix/scaffold-placeholder-chega-a-done — ML-3C: corretivo leitura crua em validator_roadmap_gates.go) — CONCLUÍDO
+
+**Início:** 2026-09-18 | Branch: `fix/scaffold-placeholder-chega-a-done`
+**Tarefa:** ML-3C (REQ #392) — substituir `os.ReadFile` cru na linha 56 de `internal/validator/validator_roadmap_gates.go` por `readFileForRule`, que usa `readRegularFile` e trata arquivos não-regulares (ENOTDIR no Windows).
+
+**Resultado:**
+- `internal/validator/validator_roadmap_gates.go`: linha 56-60 substituída. `os.ReadFile` + tratamento manual → `readFileForRule("roadmap_gate_coverage", path, &gateMsgs)` com retorno `([]byte, bool)` e `continue` no `false`. Import `"os"` mantido (ainda usado por `os.ReadDir`/`os.IsNotExist`).
+
+**Gates:**
+- `/usr/bin/grep -n "os.ReadFile" validator_roadmap_gates.go` → vazio (RC=1)
+- Nenhum `raw-read-allowed:` adicionado (confirmado via grep)
+- `bash scripts/check-raw-read-ban.sh` → `check-raw-read-ban: OK` — 0 raw sites no arquivo
+- `go build ./...` RC=0
+- `go test ./internal/validator/` RC=0 (todos os testes verdes)
+- 7 testes ML-3B continuam verdes: `TestValidateRoadmapGateCoverage_AC7_ExitOneIntact`, `TestValidateRoadmapGateCoverage_AC7_BlockDeleted`, `TestValidateRoadmapGateCoverage_AC7_RealGate`, `TestValidateRoadmapGateCoverage_AC7bis_WipMissingWave0`, `TestValidateRoadmapGateCoverage_AC7bis_DoneNotCharged`, `TestValidateRoadmapGateCoverage_AC8_DuplicateWaveWip`, `TestValidateRoadmapGateCoverage_AC8bis_BacklogNotCharged`
+
+**ML-3C status:** ✅ Concluído — aguarda commit do arquiteto.
+
+---
+
 ## Sessão 2026-09-18 (continuação 5) — Apolo (fix/scaffold-placeholder-chega-a-done — ML-1E: wave_headings check + correção assert_fails_with) — CONCLUÍDO
 
 **Início:** 2026-09-18 | Branch: `fix/scaffold-placeholder-chega-a-done`
@@ -38367,3 +38387,10 @@ Implementação completa. Evidências: `go build ./...` RC=0 · `make test` 15/1
 **ML-3A status:** 🔄 Em andamento (aguarda auditoria do arquiteto)
 
 ---
+
+### 2026-09-18 — Zeus — Wave 3 do #392 FECHADA (ML-3A + ML-3B + ML-3C)
+- **Barreira rodada por mim: `make quality` 641 OK / 0 FAIL**, guarda de conjunto OK. O 641º é o `check-raw-read-ban` sobre o arquivo novo — **0 raw sites em 91 linhas escaneadas**, e a contagem de linhas prova que não passou por vacuidade.
+- **ML-3A aprovado, e a sonda ao vivo é a evidência que vale:** `trackfw roadmap move "conclusao-de-microlote" done` recusou nomeando **4 MLs com linha**. 🔴 **O gate pegou um defeito meu** — eu escrevera o status do ML-1D como `❌ **REPROVADO na cascata**`, cujo primeiro token é `❌` e o segundo `**REPROVADO` (não `cancelado`), logo **pendente**. Corrigi para `✅ Concluído com o corretivo ML-1E`, que é o que de fato ocorreu, e o gate caiu de 4 para 1 pendente (o ML-4A, que falta executar). O discriminante de segundo token está provado no artefato real: `❌ Cancelado` libera, `❌ Bloqueado` bloqueia.
+- **ML-3B reprovado na barreira e fechado pelo ML-3C.** `make quality` abortou em **135 de 640** com `unjustified raw read`. 🔴 **A causa não era falta de comentário:** `validator.go:76` já tinha `readFileForRule`, que faz exatamente o que o ML-3B escreveu à mão, mas via `readRegularFile`, que **trata arquivo não-regular** — cobertura que o `os.ReadFile` cru não tem, num repositório com histórico de `ENOTDIR` no Windows. A reimplementação era **pior**, não só não-conforme. Proibi explicitamente o atalho `raw-read-allowed:` e o ML-3C não o usou (confirmei: 0 ocorrências).
+- **Decisão minha sobre severidade, levada ao ML-4A:** o ML-3B registrou as 3 regras como `warning` escrevendo no código que era *"para não quebrar o AC10 antes do ML-4A limpar"*. **Escolher a severidade que não reprova é funcionalmente um carve-out**, e o precedente é desta sessão: `req_roadmap_sync` é `warning` por default, e foi por isso que o `## Linked Roadmap` ausente do #387 passou despercebido. Vão a **`error`**, com os sítios corrigidos **pelo conteúdo** — sanear primeiro, promover depois, `validate` RC=0 no fim.
+- **9 sítios medidos para o ML-4A:** 6 em `done/` (scaffold residual / gate placeholder) + 3 em `blocked/` que as regras novas acenderam, incluindo `fechar-os-grupos-de-falha-de-windows` com `ML-4A` duplicado (linhas 704/727) e `ML-4B` (709/754). Mais os 2 `## Wave reaberta`, que são a metade de **conteúdo** do AC3-ter.

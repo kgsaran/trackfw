@@ -279,7 +279,7 @@ exit 0
 - [ ] Uma frase por teste novo declarando o que ele afirma (AC11)
 
 ### ML-3B — cobertura de gate e rótulo duplicado, sensíveis ao estado
-**Status:** ❌ **REPROVADO na barreira** — `make quality` FAIL: leitura crua reimplementa `readFileForRule`; fecha no ML-3C
+**Status:** ✅ Concluído **com o corretivo ML-3C** — as 3 regras ficam; a leitura crua foi trocada pela rota existente. AC7/AC7-bis/AC8/AC8-bis fecham com as duas entregas somadas
 **Files affected:** `internal/roadmapdoc/` (predicados novos), `internal/validator/validator.go`
 (**dois** sítios espelhados: `ValidateUnfiltered` ~758-946 **e** `validateUnfilteredTagged`
 ~1093-1289), `internal/validator/validator_test.go`
@@ -320,7 +320,7 @@ exit 0
 > Dependências: Wave 3 completa — sem os predicados não há como provar que chegou a zero.
 
 ### ML-3C — corretivo do ML-3B: usar a rota de leitura que já existe
-**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
+**Status:** ✅ Concluído (auditado por Zeus em 2026-09-18: `check-raw-read-ban` **OK, 0 raw sites, 91 linhas escaneadas** — não vácuo)
 **Files affected:** `internal/validator/validator_roadmap_gates.go` — **só este**
 **Contexto:** as três regras do ML-3B estão **corretas e ficam** — auditei os três braços do AC7 (o
 braço (b), bloco de gates apagado, é o que mata o discriminante ingênuo e reprova), o AC7-bis com
