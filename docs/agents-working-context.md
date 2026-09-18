@@ -38028,3 +38028,9 @@ Implementação completa. Evidências: `go build ./...` RC=0 · `make test` 15/1
 - `validate` RC=0, **166 warnings** — a curva completa da campanha: 177 (diagnóstico) → 176 (marcador `REQ:` do roadmap) → 168 (8 contradições ativas corrigidas pelo conteúdo) → 167 (seção `## Linked Roadmap` da REQ) → 166 (REQ fechada com roadmap em `done/`).
 - ADR permanece `Accepted` — decisão aceita não muda de estado ao fim da implementação.
 - 🔴 **Residual vivo e declarado no PR:** fachada de mesmo basename e integralmente válida ainda zera a contagem. O terceiro interruptor está **encarecido, não fechado** — três tiers, o último aberto.
+
+### 2026-09-18 — Zeus — #392 iniciado: scaffold placeholder sobrevive até `done/`
+- PR #394 mergeado; `main` em `9e472aa4`. Ciclo do #387 encerrado por inteiro.
+- Varredura de issues abertos (§2.0) feita antes de escrever qualquer coisa: **11 abertos, nenhum com o mesmo mecanismo.** Os vizinhos são de outra causa — #277 (corpus do barrier acoplado à governança do repo), #290 (usage na violação), #273 (`branch_has_wip_roadmap`), #258 (gate de palavra-chave). Confirma a leitura do próprio #392: causa distinta do #387, issue própria.
+- 🔴 **Precedente que muda a análise:** a `ADR-2026-08-29` já decidiu o **vocabulário de status que o `barrier` reconhece** — conclusão de ML é por **token**, não substring, e os marcadores aceitos são `✅`/`done`/`Concluído`. Existe portanto definição canônica de "ML concluído" já governada por ADR. Qualquer regra nova tem de **reusar esse tokenizador**, sob pena de criar um terceiro dialeto — que é exatamente o defeito que a `ADR-2026-08-29` e a `ADR-2026-07-31` corrigiram (gerador ↔ verificador em contratos diferentes).
+- Também relevante: `ADR-2026-07-31` registra que a seção consolidada de aceite é **placeholder a preencher por decisão explícita** — logo "placeholder existe" não pode ser, sozinho, o discriminante de violação.
