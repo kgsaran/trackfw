@@ -332,7 +332,7 @@ exit 0
 - [ ] Uma frase por teste novo, se houver (AC11)
 
 ### ML-1D — a gramática de rótulo é estreita demais, e o erro cascateia para o documento inteiro
-**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
 **Files affected:** `internal/roadmapdoc/roadmapdoc.go`, `internal/roadmapdoc/roadmapdoc_test.go`,
 `internal/commands/barrier.go` (lookup do rótulo, ~879), `internal/commands/barrier_test.go`,
 `scripts/testdata/roadmap-barrier-corpus-verdicts.tsv`, `scripts/check-roadmap-barrier-contract.sh`
