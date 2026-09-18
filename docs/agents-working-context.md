@@ -38299,3 +38299,71 @@ Implementação completa. Evidências: `go build ./...` RC=0 · `make test` 15/1
 - **Sonda minha nos dois casos:** `1 ✅ + 1 ABANDONADO → 2/2, completo=true`; `1 ✅ + 1 ❌ Bloqueado → 1/2, completo=false`. O contra-braço está intacto — o defeito não foi resolvido afrouxando a condição.
 - **Residuais que o ML-2A declarou e que eu mantenho registrados:** assimetria de VS16 (`✅️` conta, mas `🔄️`/`⬜️` não preencheriam `activeML`/`nextML`); "primeiro `**Status:**` vence" onde o código antigo usava o último; e MLs fora de bloco de wave medidos **por estado** — `wip=0`, que é o único que importa ao board ao vivo. Campo `malformed_waves` acrescentado ao JSON para que contagem incompleta deixe de ser silenciosa.
 - 🔴 **Lição de orquestração minha:** proibi os dois agentes de editar `docs/agents-working-context.md` e **ambos editaram assim mesmo** — a instrução de papel deles manda registrar ali, e ela vence uma proibição pontual do handoff. Não houve perda (0 linhas removidas, ambos anexaram), mas foi sorte de serem anexações. Em wave paralela: aceitar e verificar, ou dar arquivo distinto a cada um. Proibir não funciona.
+
+---
+
+## Sessão 2026-09-18 (continuação 6) — Apolo (fix/scaffold-placeholder-chega-a-done — ML-3A: gate done + AC9) — INICIADO
+
+**Início:** 2026-09-18 | Branch: `fix/scaffold-placeholder-chega-a-done`
+**Tarefa:** ML-3A — `roadmap move ... done` recusa ML pendente nomeando rótulo e linha; propaga erro de escrita (AC9).
+**Escopo:** `internal/generators/roadmap.go` + novo arquivo de teste. NÃO tocar `internal/roadmapdoc/` nem `internal/validator/`.
+
+**Resultado:**
+- `internal/generators/roadmap.go`: import `roadmapdoc` adicionado; função `pendingMLsForDone` (struct `pendingMLEntry`, coletor de MLs bloqueantes); gate AC6 em `MoveRoadmap` antes de `os.MkdirAll` — recusa `done` nomeando rótulo+linha de cada ML pendente; AC9 — ambos `readErr` e `writeErr` propagados na sincronização de `status:`.
+- `internal/generators/roadmap_ml_gate_test.go`: 10 novos testes com AC11.
+- `internal/generators/roadmap_test.go`: `TestMoveRoadmap_FrontmatterSync_ValidateAfterMove` atualizado — fixture de `NewRoadmap` trocada por roadmap com ML concluído (vide relatório).
+
+**Gates:**
+- `go build ./...` RC=0
+- `go test ./internal/generators/` RC=0 (todos os pacotes ok)
+- `go test ./...` RC=0
+- `grep -n "_ = os.WriteFile" internal/generators/roadmap.go` → só comentário
+
+**ML-3A status:** 🔄 Em andamento (aguarda auditoria do arquiteto)
+
+---
+
+## Sessão 2026-09-18 (continuação 7) — Apolo (fix/scaffold-placeholder-chega-a-done — ML-3B: gate coverage, Wave 0, duplicates) — CONCLUÍDO
+
+**Início:** 2026-09-18 | Branch: `fix/scaffold-placeholder-chega-a-done`
+**Tarefa:** ML-3B — Predicados AC7/AC7-bis/AC8 em `internal/roadmapdoc/` + regras no validator.
+**Escopo:** `internal/roadmapdoc/roadmapdoc.go`, `internal/validator/validator_roadmap_gates.go` (novo), `internal/validator/validator.go` (ruleDefaults + 2 call sites).
+
+**Resultado:**
+- `roadmapdoc.go`: adicionados `Wave0HasPlaceholderOrMissingGate`, `HasWave0`, `DuplicateWaveOrMLLabels`; import `sort` adicionado.
+- `validator_roadmap_gates.go` (novo): `validateRoadmapGatesCoverage()` — checks wip+blocked; retorna 3 slices independentes.
+- `validator.go`: 3 entradas em `ruleDefaults` (warning por default); 3 `applyRule` em `ValidateUnfiltered`; 3 `applyRuleTagged` em `validateUnfilteredTagged` — total 29/29 calls (simétrico).
+- `roadmapdoc_test.go`: 10 novos testes (AC7 3 braços, AC7-bis 3, AC8 4 incluindo fence).
+- `validator_test.go`: 7 novos testes de integração com sensibilidade de estado.
+
+**Corpus acende (warnings, não violations):**
+- `blocked/ROADMAP-2026-09-12-triagem...`: `roadmap_wave0_required` (sem Wave 0)
+- `blocked/ROADMAP-2026-09-03-fechar-os-grupos...`: `roadmap_gate_coverage` (Wave 0 sem bloco de gates) + `roadmap_duplicate_label` (ML-4A e ML-4B duplicados)
+- `blocked/ROADMAP-2026-09-09-req-nasce-orfa...`: `roadmap_gate_coverage` (Wave 0 sem bloco de gates)
+
+**Gates:**
+- `go build ./...` RC=0
+- `go test ./internal/validator/ ./internal/roadmapdoc/` RC=0
+- `trackfw validate --json` contém `roadmap_wave0_required`, `roadmap_gate_coverage`, `roadmap_duplicate_label`
+- `applyRule` = `applyRuleTagged` = 29 calls cada
+
+**ML-3B status:** 🔄 Em andamento (aguarda auditoria do arquiteto)
+
+---
+
+**Correções pós-advisor:**
+- Testes de write-failure: três afirmações duras (arquivo em done/, prefixo "syncing status in", errors.Is(ErrPermission)); ramo ambíguo removido.
+- `setupMoveML` mantida como wrapper documentado (sem dead code).
+- `_ = fmt.Sprintf` em TestMoveRoadmapWip removido; import `fmt` do test file removido.
+- Comentário do `state == "done"` corrigido: mecanismo é rejeição por `roadmapValidStateNames`, não normalização pelo cobra.
+- Trailing newline no erro removida: `\n` movido para início de cada linha do loop.
+- Fixture de `TestMoveRoadmap_FrontmatterSync_ValidateAfterMove` atualizada para usar `NewRoadmap` + patch de `⬜ Pendente → ✅ Concluído`, preservando cobertura do gerador real.
+
+**Gates finais:**
+- `go build ./...` RC=0 · `go vet ./...` RC=0
+- `go test ./...` RC=0 (todos os 16 pacotes ok)
+- `grep -n "_ = os.WriteFile" internal/generators/roadmap.go` → só comentário (linha 669)
+
+**ML-3A status:** 🔄 Em andamento (aguarda auditoria do arquiteto)
+
+---

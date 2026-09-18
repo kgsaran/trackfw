@@ -535,3 +535,254 @@ func TestParseWaves_CascadeIsolated(t *testing.T) {
 		t.Fatal("HasUnfinishedMLs = false for roadmap with malformed wave, want true (fail-safe closed)")
 	}
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AC7, AC7-bis, AC8 tests (ML-3B, REQ #392)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// AC11 reconciliation for ML-3B tests (one sentence per test):
+//
+//   TestWave0HasPlaceholderOrMissingGate_ArmA_ExitOneIntact
+//     Affirms: Wave0HasPlaceholderOrMissingGate returns true when Wave 0's gate block
+//     contains only "exit 1  # placeholder gate" — the canonical template placeholder
+//     prevents the transition (AC7 arm a).
+//
+//   TestWave0HasPlaceholderOrMissingGate_ArmB_BlockDeleted
+//     Affirms: Wave0HasPlaceholderOrMissingGate returns true when Wave 0 has a
+//     ## Wave 0 heading but no **Gates da wave:** block at all — the naïve discriminant
+//     ("is exit 1 present?") would pass here; the correct discriminant ("lost the gate
+//     the template gave") catches it (AC7 arm b, the gap that kills the naïve check).
+//
+//   TestWave0HasPlaceholderOrMissingGate_ArmC_RealGate
+//     Affirms: Wave0HasPlaceholderOrMissingGate returns false when Wave 0's gate block
+//     contains at least one command that does not start with "exit 1" — a real gate
+//     does not trigger the violation (AC7 arm c, counter-arm).
+//
+//   TestHasWave0_Present
+//     Affirms: HasWave0 returns true for a document that contains "## Wave 0 — ..." —
+//     the AC7-bis predicate correctly identifies the Wave 0 heading.
+//
+//   TestHasWave0_Absent
+//     Affirms: HasWave0 returns false for a document that has no ## Wave 0 heading —
+//     the AC7-bis predicate requires a Wave 0 heading to return true.
+//
+//   TestHasWave0_RenamedHeading_MissesDetection (AC7-bis falsification)
+//     Affirms: renaming "## Wave 0 — X" to "## X" (removing the Wave heading entirely)
+//     makes HasWave0 return false — this is the AC7-bis violation the rule catches, and
+//     it is distinct from the gate-coverage check (AC7), as designed.
+//
+//   TestDuplicateWaveOrMLLabels_WaveDuplicate
+//     Affirms: DuplicateWaveOrMLLabels returns a non-empty slice when two "## Wave 0"
+//     headings appear in the same document — the violation that barrier.go:877-882
+//     (break-on-first-match) previously silenced is now named.
+//
+//   TestDuplicateWaveOrMLLabels_MLDuplicate
+//     Affirms: DuplicateWaveOrMLLabels returns a non-empty slice when two "### ML-1A"
+//     headings appear in the document — the same silent-duplicate scenario for ML labels.
+//
+//   TestDuplicateWaveOrMLLabels_NoDuplicate
+//     Affirms: DuplicateWaveOrMLLabels returns an empty slice for a well-formed roadmap
+//     with unique Wave and ML labels — the predicate does not false-alarm on clean input.
+//
+//   TestDuplicateWaveOrMLLabels_FencedExampleIgnored
+//     Affirms: a "## Wave 0" line inside a fenced code block is not counted as a real
+//     Wave heading, so a document with one real ## Wave 0 and one fenced example does
+//     not trigger a duplicate violation (fence-awareness, ADR-2026-08-22).
+
+func TestWave0HasPlaceholderOrMissingGate_ArmA_ExitOneIntact(t *testing.T) {
+	// AC7 arm (a): exit 1 placeholder intact → violation.
+	content := strings.Join([]string{
+		"# Roadmap: Gate Test",
+		"",
+		"## Wave 0 — Threat Model",
+		"",
+		"### ML-0A — Threat model",
+		"**Status:** ✅ Concluído",
+		"",
+		"**Gates da wave:**",
+		"```bash",
+		"exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli-parity.md",
+		"```",
+	}, "\n")
+
+	if !Wave0HasPlaceholderOrMissingGate(content) {
+		t.Fatal("Wave0HasPlaceholderOrMissingGate = false for intact exit 1 placeholder, want true (AC7 arm a)")
+	}
+}
+
+func TestWave0HasPlaceholderOrMissingGate_ArmB_BlockDeleted(t *testing.T) {
+	// AC7 arm (b): **Gates da wave:** block entirely deleted → violation.
+	// This is the gap that kills the naïve discriminant ("is exit 1 present?"):
+	// the naïve check would pass here, but the correct one must reprove.
+	content := strings.Join([]string{
+		"# Roadmap: Gate Test",
+		"",
+		"## Wave 0 — Threat Model",
+		"",
+		"### ML-0A — Threat model",
+		"**Status:** ✅ Concluído",
+		// No **Gates da wave:** block at all.
+	}, "\n")
+
+	if !Wave0HasPlaceholderOrMissingGate(content) {
+		t.Fatal("Wave0HasPlaceholderOrMissingGate = false when **Gates da wave:** block deleted, want true (AC7 arm b)")
+	}
+}
+
+func TestWave0HasPlaceholderOrMissingGate_ArmC_RealGate(t *testing.T) {
+	// AC7 arm (c): gate replaced with a real command → no violation.
+	content := strings.Join([]string{
+		"# Roadmap: Gate Test",
+		"",
+		"## Wave 0 — Threat Model",
+		"",
+		"### ML-0A — Threat model",
+		"**Status:** ✅ Concluído",
+		"",
+		"**Gates da wave:**",
+		"```bash",
+		"test -f docs/portabilidade/threat-model.md || { echo 'missing'; exit 1; }",
+		"```",
+	}, "\n")
+
+	if Wave0HasPlaceholderOrMissingGate(content) {
+		t.Fatal("Wave0HasPlaceholderOrMissingGate = true for real gate command, want false (AC7 arm c counter-arm)")
+	}
+}
+
+func TestHasWave0_Present(t *testing.T) {
+	content := strings.Join([]string{
+		"# Roadmap: Test",
+		"## Wave 0 — Threat Model",
+		"Some content.",
+		"## Wave 1 — Implementation",
+	}, "\n")
+
+	if !HasWave0(content) {
+		t.Fatal("HasWave0 = false for document with ## Wave 0 heading, want true")
+	}
+}
+
+func TestHasWave0_Absent(t *testing.T) {
+	content := strings.Join([]string{
+		"# Roadmap: Test",
+		"## Wave 1 — Implementation",
+		"No Wave 0 here.",
+	}, "\n")
+
+	if HasWave0(content) {
+		t.Fatal("HasWave0 = true for document without ## Wave 0 heading, want false")
+	}
+}
+
+func TestHasWave0_RenamedHeading_MissesDetection(t *testing.T) {
+	// AC7-bis falsification: renaming "## Wave 0 — X" to "## X" removes the Wave
+	// heading from the parser's view — HasWave0 returns false, which is the violation
+	// the AC7-bis rule is designed to catch.
+	contentWithWave0 := "## Wave 0 — Threat Model\nSome ML."
+	contentRenamed := "## Threat Model\nSame content, heading renamed."
+
+	if !HasWave0(contentWithWave0) {
+		t.Fatal("HasWave0 = false for ## Wave 0 heading, want true (test setup)")
+	}
+	if HasWave0(contentRenamed) {
+		t.Fatal("HasWave0 = true after Wave 0 heading renamed away, want false (AC7-bis violation)")
+	}
+}
+
+func TestDuplicateWaveOrMLLabels_WaveDuplicate(t *testing.T) {
+	// AC8: two ## Wave 0 headings → duplicate violation.
+	// Before this change barrier.go:877-882 (break-on-first-match) silently ignored
+	// the second copy; now the duplicate is named.
+	content := strings.Join([]string{
+		"# Roadmap: Duplicate Test",
+		"## Wave 0 — First copy",
+		"### ML-0A — First ML-0A",
+		"**Status:** ✅ Concluído",
+		"## Wave 0 — Second copy (scaffold residual)",
+		"### ML-0A — Second ML-0A",
+		"**Status:** ⬜ Pendente",
+	}, "\n")
+
+	msgs := DuplicateWaveOrMLLabels(content)
+	if len(msgs) == 0 {
+		t.Fatal("DuplicateWaveOrMLLabels = empty for document with two ## Wave 0 headings, want violation")
+	}
+	found := false
+	for _, m := range msgs {
+		if strings.Contains(m, `"0"`) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("DuplicateWaveOrMLLabels msgs %v do not mention Wave label \"0\"", msgs)
+	}
+}
+
+func TestDuplicateWaveOrMLLabels_MLDuplicate(t *testing.T) {
+	// AC8: two ### ML-1A headings → duplicate violation.
+	content := strings.Join([]string{
+		"# Roadmap: Duplicate ML Test",
+		"## Wave 1 — Wave",
+		"### ML-1A — First",
+		"**Status:** ✅ Concluído",
+		"### ML-1A — Second (scaffold residual)",
+		"**Status:** ⬜ Pendente",
+	}, "\n")
+
+	msgs := DuplicateWaveOrMLLabels(content)
+	if len(msgs) == 0 {
+		t.Fatal("DuplicateWaveOrMLLabels = empty for document with two ### ML-1A headings, want violation")
+	}
+	found := false
+	for _, m := range msgs {
+		if strings.Contains(m, "ML-1A") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("DuplicateWaveOrMLLabels msgs %v do not mention ML-1A", msgs)
+	}
+}
+
+func TestDuplicateWaveOrMLLabels_NoDuplicate(t *testing.T) {
+	// AC8 counter-arm: unique labels → no violation.
+	content := strings.Join([]string{
+		"# Roadmap: Clean",
+		"## Wave 0 — Threat Model",
+		"### ML-0A — Threat model",
+		"**Status:** ✅ Concluído",
+		"## Wave 1 — Implementation",
+		"### ML-1A — Implementation",
+		"**Status:** ✅ Concluído",
+	}, "\n")
+
+	msgs := DuplicateWaveOrMLLabels(content)
+	if len(msgs) != 0 {
+		t.Fatalf("DuplicateWaveOrMLLabels = %v for clean roadmap, want empty", msgs)
+	}
+}
+
+func TestDuplicateWaveOrMLLabels_FencedExampleIgnored(t *testing.T) {
+	// Fence-awareness: a "## Wave 0" line inside a fenced code block must not be
+	// counted as a real Wave heading, so the document has only one real Wave 0.
+	content := strings.Join([]string{
+		"# Roadmap: Fence Test",
+		"## Wave 0 — Threat Model",
+		"### ML-0A — Threat model",
+		"**Status:** ✅ Concluído",
+		"",
+		"Here is an example:",
+		"```bash",
+		"## Wave 0 — this is inside a fence and must be ignored",
+		"echo 'not a heading'",
+		"```",
+		"",
+		"No duplicate here.",
+	}, "\n")
+
+	msgs := DuplicateWaveOrMLLabels(content)
+	if len(msgs) != 0 {
+		t.Fatalf("DuplicateWaveOrMLLabels = %v for fenced example, want empty (fence-aware)", msgs)
+	}
+}

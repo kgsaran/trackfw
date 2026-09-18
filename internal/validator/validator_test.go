@@ -2269,3 +2269,287 @@ func TestExtractRefPath_TresREQsReaisDoRepositorio(t *testing.T) {
 		})
 	}
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ML-3B tests: roadmap_gate_coverage, roadmap_wave0_required, roadmap_duplicate_label
+// ─────────────────────────────────────────────────────────────────────────────
+
+// AC11 reconciliation for ML-3B validator tests (one sentence per test):
+//
+//   TestValidateRoadmapGateCoverage_AC7_ExitOneIntact
+//     Affirms: a wip roadmap whose Wave 0 gate is the intact exit 1 placeholder triggers
+//     the roadmap_gate_coverage warning — the existing placeholder blocks the wip state.
+//
+//   TestValidateRoadmapGateCoverage_AC7_BlockDeleted
+//     Affirms: a wip roadmap whose Wave 0 **Gates da wave:** block has been deleted entirely
+//     triggers roadmap_gate_coverage — the naïve discriminant ("is exit 1 present?") would
+//     pass here, proving that the correct discriminant (loss of gate coverage) is necessary.
+//
+//   TestValidateRoadmapGateCoverage_AC7_RealGate
+//     Affirms: a wip roadmap whose Wave 0 gate contains a real command does NOT trigger
+//     roadmap_gate_coverage — a replaced gate is a correct artifact (AC7 counter-arm).
+//
+//   TestValidateRoadmapGateCoverage_AC7bis_WipMissingWave0
+//     Affirms: a wip roadmap that has no ## Wave 0 heading triggers roadmap_wave0_required —
+//     renaming the Wave 0 heading is the AC7-bis tier of the attack surface.
+//
+//   TestValidateRoadmapGateCoverage_AC7bis_DoneNotCharged
+//     Affirms: a done/ roadmap without ## Wave 0 does NOT trigger roadmap_wave0_required —
+//     done/ is not reévaluated (154 of 192 done/ roadmaps pre-date the convention;
+//     ADR-2026-09-18 decision 8 explicitly rejects retroactive charging).
+//
+//   TestValidateRoadmapGateCoverage_AC8_DuplicateWaveWip
+//     Affirms: a wip roadmap with two ## Wave 0 headings triggers roadmap_duplicate_label —
+//     duplicates were silently invisible before; they now fail closed.
+//
+//   TestValidateRoadmapGateCoverage_AC8bis_BacklogNotCharged
+//     Affirms: a backlog/ roadmap carrying the exit 1 placeholder does NOT trigger
+//     roadmap_gate_coverage or roadmap_wave0_required — backlog roadmaps legitimately
+//     carry the scaffold placeholder (ADR-2026-09-18 decision 6-bis).
+
+// minimalTrackfwYaml returns a minimal trackfw.yaml for a test fixture.
+const minimalTrackfwYaml = `roadmap_dir: docs/roadmaps
+req_dir: docs/req
+adr_dirs: [docs/adr]
+`
+
+// roadmapWithWave0RealGate is a minimal roadmap with a real Wave 0 gate.
+const roadmapWithWave0RealGate = `---
+status: wip
+---
+# Roadmap: Gate Test
+
+REQ: docs/req/REQ-test.md
+
+## Status Legend
+⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
+
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model
+**Status:** ✅ Concluído
+
+**Gates da wave:**
+` + "```bash\n" + `test -f docs/evidence.md || { echo 'missing'; exit 1; }
+` + "```\n"
+
+// roadmapWithWave0PlaceholderGate is a minimal roadmap with the exit 1 placeholder intact.
+const roadmapWithWave0PlaceholderGate = `---
+status: wip
+---
+# Roadmap: Gate Test
+
+REQ: docs/req/REQ-test.md
+
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model
+**Status:** ✅ Concluído
+
+**Gates da wave:**
+` + "```bash\n" + `exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli-parity.md
+` + "```\n"
+
+// roadmapWithWave0NoGateBlock is a Wave 0 that had its **Gates da wave:** block deleted.
+const roadmapWithWave0NoGateBlock = `---
+status: wip
+---
+# Roadmap: Gate Test
+
+REQ: docs/req/REQ-test.md
+
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model
+**Status:** ✅ Concluído
+
+`
+
+// roadmapWithNoWave0 is a roadmap without any ## Wave 0 heading.
+const roadmapWithNoWave0 = `---
+status: wip
+---
+# Roadmap: Gate Test
+
+REQ: docs/req/REQ-test.md
+
+## Wave 1 — Implementation
+
+### ML-1A — Work
+**Status:** ✅ Concluído
+`
+
+// roadmapWithDuplicateWave0 is a roadmap with two ## Wave 0 headings.
+const roadmapWithDuplicateWave0 = `---
+status: wip
+---
+# Roadmap: Duplicate Gate Test
+
+REQ: docs/req/REQ-test.md
+
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model
+**Status:** ✅ Concluído
+
+**Gates da wave:**
+` + "```bash\n" + `test -f docs/evidence.md || { echo 'missing'; exit 1; }
+` + "```\n" + `
+
+## Wave 0 — Threat Model (scaffold residual)
+
+### ML-0A — Threat model (copy)
+**Status:** ⬜ Pendente
+`
+
+func TestValidateRoadmapGateCoverage_AC7_ExitOneIntact(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/roadmaps/wip", "docs/roadmaps/backlog", "docs/roadmaps/blocked",
+		"docs/roadmaps/done", "docs/roadmaps/analyzing", "docs/req", "docs/adr")
+	writeFile(t, dir, "trackfw.yaml", minimalTrackfwYaml)
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-gate-placeholder.md", roadmapWithWave0PlaceholderGate)
+	chdir(t, dir)
+
+	_, warnings, err := Validate()
+	if err != nil {
+		t.Fatalf("Validate() error: %v", err)
+	}
+	if !hasWarning(warnings, "roadmap_gate_coverage") && !hasWarning(warnings, "gate_coverage") &&
+		!hasWarning(warnings, "placeholder or absent") {
+		t.Errorf("expected roadmap_gate_coverage warning for exit 1 placeholder, got warnings: %v", warnings)
+	}
+}
+
+func TestValidateRoadmapGateCoverage_AC7_BlockDeleted(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/roadmaps/wip", "docs/roadmaps/backlog", "docs/roadmaps/blocked",
+		"docs/roadmaps/done", "docs/roadmaps/analyzing", "docs/req", "docs/adr")
+	writeFile(t, dir, "trackfw.yaml", minimalTrackfwYaml)
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-gate-deleted.md", roadmapWithWave0NoGateBlock)
+	chdir(t, dir)
+
+	_, warnings, err := Validate()
+	if err != nil {
+		t.Fatalf("Validate() error: %v", err)
+	}
+	if !hasWarning(warnings, "placeholder or absent") {
+		t.Errorf("expected roadmap_gate_coverage warning for deleted gate block, got warnings: %v", warnings)
+	}
+}
+
+func TestValidateRoadmapGateCoverage_AC7_RealGate(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/roadmaps/wip", "docs/roadmaps/backlog", "docs/roadmaps/blocked",
+		"docs/roadmaps/done", "docs/roadmaps/analyzing", "docs/req", "docs/adr")
+	writeFile(t, dir, "trackfw.yaml", minimalTrackfwYaml)
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-real-gate.md", roadmapWithWave0RealGate)
+	chdir(t, dir)
+
+	_, warnings, err := Validate()
+	if err != nil {
+		t.Fatalf("Validate() error: %v", err)
+	}
+	for _, w := range warnings {
+		if strings.Contains(w, "placeholder or absent") && strings.Contains(w, "ROADMAP-real-gate") {
+			t.Errorf("roadmap_gate_coverage false alarm on real gate: %q", w)
+		}
+	}
+}
+
+func TestValidateRoadmapGateCoverage_AC7bis_WipMissingWave0(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/roadmaps/wip", "docs/roadmaps/backlog", "docs/roadmaps/blocked",
+		"docs/roadmaps/done", "docs/roadmaps/analyzing", "docs/req", "docs/adr")
+	writeFile(t, dir, "trackfw.yaml", minimalTrackfwYaml)
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-no-wave0.md", roadmapWithNoWave0)
+	chdir(t, dir)
+
+	_, warnings, err := Validate()
+	if err != nil {
+		t.Fatalf("Validate() error: %v", err)
+	}
+	if !hasWarning(warnings, "Wave 0") {
+		t.Errorf("expected roadmap_wave0_required warning for wip roadmap without Wave 0, got warnings: %v", warnings)
+	}
+}
+
+func TestValidateRoadmapGateCoverage_AC7bis_DoneNotCharged(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/roadmaps/wip", "docs/roadmaps/backlog", "docs/roadmaps/blocked",
+		"docs/roadmaps/done", "docs/roadmaps/analyzing", "docs/req", "docs/adr")
+	writeFile(t, dir, "trackfw.yaml", minimalTrackfwYaml)
+	// done/ roadmap without Wave 0 — must NOT trigger roadmap_wave0_required.
+	const doneNoWave0 = `---
+status: done
+---
+# Roadmap: No Wave 0
+
+## Wave 1 — Implementation
+
+### ML-1A — Work
+**Status:** ✅ Concluído
+`
+	writeFile(t, dir, "docs/roadmaps/done/ROADMAP-done-no-wave0.md", doneNoWave0)
+	chdir(t, dir)
+
+	_, warnings, err := Validate()
+	if err != nil {
+		t.Fatalf("Validate() error: %v", err)
+	}
+	for _, w := range warnings {
+		if strings.Contains(w, "Wave 0") && strings.Contains(w, "ROADMAP-done-no-wave0") {
+			t.Errorf("roadmap_wave0_required false alarm on done/ roadmap: %q", w)
+		}
+	}
+}
+
+func TestValidateRoadmapGateCoverage_AC8_DuplicateWaveWip(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/roadmaps/wip", "docs/roadmaps/backlog", "docs/roadmaps/blocked",
+		"docs/roadmaps/done", "docs/roadmaps/analyzing", "docs/req", "docs/adr")
+	writeFile(t, dir, "trackfw.yaml", minimalTrackfwYaml)
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-dup-wave.md", roadmapWithDuplicateWave0)
+	chdir(t, dir)
+
+	_, warnings, err := Validate()
+	if err != nil {
+		t.Fatalf("Validate() error: %v", err)
+	}
+	if !hasWarning(warnings, "duplicate") {
+		t.Errorf("expected roadmap_duplicate_label warning for duplicate ## Wave 0, got warnings: %v", warnings)
+	}
+}
+
+func TestValidateRoadmapGateCoverage_AC8bis_BacklogNotCharged(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir, "docs/roadmaps/wip", "docs/roadmaps/backlog", "docs/roadmaps/blocked",
+		"docs/roadmaps/done", "docs/roadmaps/analyzing", "docs/req", "docs/adr")
+	writeFile(t, dir, "trackfw.yaml", minimalTrackfwYaml)
+	// backlog/ roadmap with exit 1 placeholder — legitimately unstarted, must NOT fire.
+	const backlogWithPlaceholder = `---
+status: backlog
+---
+# Roadmap: Backlog Gate Test
+
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model
+**Status:** ⬜ Pendente
+
+**Gates da wave:**
+` + "```bash\n" + `exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli-parity.md
+` + "```\n"
+	writeFile(t, dir, "docs/roadmaps/backlog/ROADMAP-backlog-placeholder.md", backlogWithPlaceholder)
+	chdir(t, dir)
+
+	_, warnings, err := Validate()
+	if err != nil {
+		t.Fatalf("Validate() error: %v", err)
+	}
+	for _, w := range warnings {
+		if (strings.Contains(w, "placeholder or absent") || strings.Contains(w, "Wave 0")) &&
+			strings.Contains(w, "ROADMAP-backlog-placeholder") {
+			t.Errorf("AC8-bis: false alarm on backlog/ roadmap with legitimate placeholder: %q", w)
+		}
+	}
+}

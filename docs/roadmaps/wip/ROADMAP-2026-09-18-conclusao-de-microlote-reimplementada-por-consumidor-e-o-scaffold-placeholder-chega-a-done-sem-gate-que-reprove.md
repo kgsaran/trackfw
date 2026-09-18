@@ -262,7 +262,7 @@ exit 0
 > precisar de predicado novo, **para e relata**, porque o ML-3B é o dono do pacote nesta wave.
 
 ### ML-3A — `roadmap move ... done` recusa ML pendente, nomeando
-**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
+**Status:** ✅ Concluído (auditado por Zeus em 2026-09-18: sonda ao vivo — o gate recusa o próprio roadmap desta REQ nomeando 4 MLs com linha)
 **Files affected:** `internal/generators/roadmap.go` (`MoveRoadmap`, 524-605) + teste
 **Actions:**
 1. Antes do `os.Rename` (linha 572), quando o destino é `done`: parsear com `roadmapdoc` e coletar os
@@ -279,7 +279,7 @@ exit 0
 - [ ] Uma frase por teste novo declarando o que ele afirma (AC11)
 
 ### ML-3B — cobertura de gate e rótulo duplicado, sensíveis ao estado
-**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
+**Status:** ❌ **REPROVADO na barreira** — `make quality` FAIL: leitura crua reimplementa `readFileForRule`; fecha no ML-3C
 **Files affected:** `internal/roadmapdoc/` (predicados novos), `internal/validator/validator.go`
 (**dois** sítios espelhados: `ValidateUnfiltered` ~758-946 **e** `validateUnfilteredTagged`
 ~1093-1289), `internal/validator/validator_test.go`
@@ -319,7 +319,41 @@ exit 0
 ## Wave 4 — Sanear os sítios medidos
 > Dependências: Wave 3 completa — sem os predicados não há como provar que chegou a zero.
 
-### ML-4A — corrigir os 6 roadmaps de `done/` com scaffold residual
+### ML-3C — corretivo do ML-3B: usar a rota de leitura que já existe
+**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
+**Files affected:** `internal/validator/validator_roadmap_gates.go` — **só este**
+**Contexto:** as três regras do ML-3B estão **corretas e ficam** — auditei os três braços do AC7 (o
+braço (b), bloco de gates apagado, é o que mata o discriminante ingênuo e reprova), o AC7-bis com
+`done/` fora, o AC8 com as linhas das duplicatas nomeadas (704/727, 709/754), o AC8-bis, e o registro
+espelhado **29/29** em `applyRule`/`applyRuleTagged`.
+
+🔴 **A barreira reprovou**, e a suíte abortou em 135 de 640:
+```
+FAIL [go] unjustified raw read at internal/validator/validator_roadmap_gates.go:56:
+  raw, err := os.ReadFile(path)
+```
+`scripts/check-raw-read-ban.sh` existe desde a REQ do
+`ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio`.
+
+**A causa não é falta de comentário.** `internal/validator/validator.go:76` já tem
+`readFileForRule(rule, path string, msgs *[]string) ([]byte, bool)`, que faz **exatamente** o que o
+ML-3B escreveu à mão — lê e emite `inspectionDiagnostic` no erro — só que através de
+`readRegularFile`, que **trata arquivo não-regular**. O `os.ReadFile` cru não trata.
+Ou seja: a reimplementação é **pior**, não apenas não-conforme. É o erro que o `CLAUDE.md` global
+nomeia — *reimplementar uma capacidade do produto pior do que ela é*.
+**Actions:**
+1. Trocar o `os.ReadFile` + tratamento manual por `readFileForRule("roadmap_gate_coverage", path, &gateMsgs)`.
+2. Conferir se há **outra** leitura crua no arquivo — não pare na linha 56.
+3. ❌ **Não** adicione `raw-read-allowed:` para calar o gate. O marcador existe para casos em que a
+   rota não serve; aqui ela serve.
+**Acceptance criteria:**
+- [ ] `/usr/bin/grep -n "os.ReadFile" internal/validator/validator_roadmap_gates.go` → **vazio**
+- [ ] Nenhum `raw-read-allowed:` acrescentado
+- [ ] `go build ./...` RC=0 · `go test ./internal/validator/` RC=0
+- [ ] Os 7 testes de integração do ML-3B continuam verdes (não-regressão)
+- [ ] Uma frase por teste novo, se houver (AC11)
+
+### ML-4A — sanear os sítios medidos E promover a severidade a `error`
 **Status:** ⬜ Pendente · **Papel:** `apolo-tf`
 **Files affected:** em `docs/roadmaps/done/` — `ROADMAP-2026-08-18-doctor-detecta-artefato-fora-do-manifesto...`,
 `ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness...`,
@@ -336,14 +370,51 @@ exit 0
    está concluído e não houve gate, registrar isso explicitamente no bloco em vez de apagá-lo.
 3. Não alterar status de ML nem marcar nada como concluído — este ML **remove duplicata**, não
    conclui trabalho.
+
+#### 🔴 Decisão do arquiteto sobre a severidade (2026-09-18)
+
+O ML-3B registrou as três regras novas com default **`warning`**, e escreveu o motivo no código:
+*"three blocked/ roadmaps pre-date this rule and would fire immediately as violations (breaking AC10
+before ML-4A cleans them)"*.
+
+**Escolher a severidade que não reprova é funcionalmente um carve-out**, e a REQ do #387 inteira foi
+sobre isso: severidade e leniência são a superfície de ataque. O precedente é desta mesma sessão —
+`req_roadmap_sync` tem default `warning`, e foi **exatamente** por isso que a seção
+`## Linked Roadmap` ausente da REQ do #387 passou despercebida até eu tropeçar nela. Registrei ali
+que era *"lacuna de severidade, não de detecção"*. Repetir o padrão sabendo disso seria pior.
+
+**Decidido:** as três regras vão a **`error`**, e os sítios são **corrigidos pelo conteúdo** neste ML
+— não afrouxados. É o que o ML-3A da REQ do #387 fez com as 8 contradições ativas.
+
+**Ordem obrigatória dentro deste ML:** sanear **primeiro**, promover **depois**, e entregar
+`trackfw validate` **RC=0**. Promover antes deixaria o repositório reprovando no meio do ML.
+
+#### Sítios a sanear — 9 roadmaps
+
+**Em `done/` (6), scaffold residual / gate placeholder:** `ROADMAP-2026-08-18-doctor-detecta-artefato-fora-do-manifesto...`,
+`ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness...`,
+`ROADMAP-2026-09-10-barrier-executa-gate-de-roadmap-nao-confiavel...`,
+`ROADMAP-2026-09-11-serve-interpola-host-em-string-de-shell...`,
+`ROADMAP-2026-09-17-jira-base-url-...`, `ROADMAP-2026-09-17-sync-enumera-req-por-caminho-literal...`
+
+**Em `blocked/` (3), medidos pelas regras novas com o binário já compilado:**
+- `ROADMAP-2026-09-12-triagem-medida-das-reqs-de-paridade...` → sem `## Wave 0`
+- `ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz` → Wave 0 sem bloco de gates **e** `ML-4A` duplicado (linhas 704/727) **e** `ML-4B` duplicado (709/754)
+- `ROADMAP-2026-09-09-req-nasce-orfa-porque-criar-req-e-criar-roadmap...` → Wave 0 sem bloco de gates
+
+**Também:** os 2 roadmaps com `## Wave reaberta` (`ROADMAP-2026-09-01-caminho-dentro-de-artefato-versionado...`
+e o `fechar-os-grupos-de-falha-de-windows`) — renomear o rótulo para `<n>-reaberta`. É a metade de
+**conteúdo** do AC3-ter, cuja metade de **código** o ML-1D já entregou.
+
 **Acceptance criteria:**
+- [ ] 🔴 Saneamento **antes** da promoção; `trackfw validate` **RC=0** ao final, com as 3 regras em `error`
 - [ ] Predicados do ML-3B retornam **zero** em `done/` e em `blocked/`
 - [ ] `git diff` mostra **apenas** remoção de scaffold e substituição de gate — nenhum `⬜ → ✅`
 - [ ] `trackfw validate` sem violação nova · `make quality` RC=0
 - [ ] Uma frase por teste novo, se houver (AC11)
 
 ### ML-1D — a gramática de rótulo é estreita demais, e o erro cascateia para o documento inteiro
-**Status:** ❌ **REPROVADO na cascata** (a gramática fica) — reintroduziu a vacuidade que a `ADR-2026-07-29` decisão 16 rejeitou com argumento; fecha no ML-1E
+**Status:** ✅ Concluído **com o corretivo ML-1E** — a gramática sem hífen, `SplitWaveLabel` e a equivalência de lookup **ficam**; a cascata foi **reprovada** por contrariar a `ADR-2026-07-29` decisão 16, e o AC7-bis fecha com as duas entregas somadas
 **Files affected:** `internal/roadmapdoc/roadmapdoc.go`, `internal/roadmapdoc/roadmapdoc_test.go`,
 `internal/commands/barrier.go` (lookup do rótulo, ~879), `internal/commands/barrier_test.go`,
 `scripts/testdata/roadmap-barrier-corpus-verdicts.tsv`, `scripts/check-roadmap-barrier-contract.sh`

@@ -12,6 +12,7 @@ package roadmapdoc
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -646,6 +647,135 @@ func ParseGates(lines []string, waveStart, waveEnd int) ([]string, error) {
 	}
 	return []string{}, nil
 }
+
+// ────────────────────────────────────────────────────────────────────────────
+// AC7 / AC7-bis / AC8 predicates (ML-3B, REQ #392)
+// ────────────────────────────────────────────────────────────────────────────
+
+// Wave0HasPlaceholderOrMissingGate returns true when Wave 0 (if present) has no
+// real gate command: either its **Gates da wave:** block is absent/empty, or all
+// commands in it start with "exit 1" (the placeholder the template emits).
+//
+// This is the predicate for AC7 (REQ #392, ML-3B). The discriminant is
+// "the wave lost the gate the template gave it", NOT "the placeholder text is
+// present" — ParseGates treats a wave with no block as zero gates (legal), so the
+// naïve discriminant (is "exit 1" in the block?) would pass after the entire block
+// is deleted. This predicate closes that gap: both "block deleted" and "block present
+// with only exit 1" are violations.
+//
+// Three arms (AC7):
+//   (a) exit 1 intacto       → returns true  (violation)
+//   (b) block deleted        → returns true  (violation — len(cmds)==0)
+//   (c) real gate command    → returns false (no violation)
+//
+// Precondition: Wave 0 must be present; call HasWave0 first or check the return
+// value of ParseWaves. If Wave 0 is absent, this function returns false — that is
+// AC7-bis's domain (HasWave0/roadmap_wave0_required).
+func Wave0HasPlaceholderOrMissingGate(data string) bool {
+	lines := SplitRoadmapLines(data)
+	waves, _ := ParseWaves(lines)
+	for _, w := range waves {
+		if w.Label != "0" {
+			continue
+		}
+		cmds, err := ParseGates(lines, w.Start, w.End)
+		if err != nil {
+			// Malformed gates block — treat as placeholder (fail closed).
+			return true
+		}
+		if len(cmds) == 0 {
+			// No **Gates da wave:** block, or block present but empty (all comments).
+			// Both cases mean the gate the template gave has been lost.
+			return true
+		}
+		for _, cmd := range cmds {
+			if !strings.HasPrefix(cmd, "exit 1") {
+				// At least one command is not a bare "exit 1" placeholder.
+				return false
+			}
+		}
+		// Every command starts with "exit 1" — all are placeholder variants.
+		return true
+	}
+	// Wave 0 not found in this document.  AC7-bis handles the absence.
+	return false
+}
+
+// HasWave0 reports whether a roadmap document contains a valid "## Wave 0 …" heading.
+// Used by the AC7-bis validator (REQ #392, ML-3B): wip/blocked roadmaps must have Wave 0.
+//
+// done/ is NOT checked retroactively. Only 38 of 192 done/ roadmaps have ## Wave 0 because
+// the convention only exists since August 2026 (ADR-2026-09-18 decision 8). Checking done/
+// retroactively would fire 154 violations — worse than the 27 ML-pending violations that
+// ADR decision 7 rejected. The asymmetry is deliberate and written here so it is not
+// "corrected" later for appearing inconsistent.
+//
+// Built on ParseWaves so that grammar validation is applied: a heading whose label
+// fails WaveLabelRe goes into MalformedWave and does NOT satisfy this check — the
+// presence of "## Wave 0" inside a fenced code block would require WaveHeadingRe to
+// match the line, which it does (ParseWaves does not apply FenceMask). In practice
+// this project's roadmaps do not embed literal "## Wave 0" headings inside fences,
+// and consistency with the existing ParseWaves contract is more important than
+// closing a theoretical fenced-example edge case here.
+func HasWave0(data string) bool {
+	lines := SplitRoadmapLines(data)
+	waves, _ := ParseWaves(lines)
+	for _, w := range waves {
+		if w.Label == "0" {
+			return true
+		}
+	}
+	return false
+}
+
+// DuplicateWaveOrMLLabels returns one message per duplicate Wave or ML label found
+// in the roadmap document. Two "## Wave 0" headings (or two "### ML-1A" headings) in
+// the same document are a named violation (AC8, REQ #392, ML-3B).
+//
+// Wave and ML headings inside fenced code blocks are ignored (FenceMask) — a roadmap
+// that cites "## Wave 0" as a documentation example must not trigger a false duplicate.
+//
+// Today barrier.go:877-882 does a linear scan with break on the first match, so the
+// second copy of a duplicated label is silently invisible. This predicate closes that
+// ambiguity: duplicate → fail closed, named.
+//
+// Returns a deterministically sorted slice of human-readable violation strings.
+// An empty slice means no duplicates.
+func DuplicateWaveOrMLLabels(data string) []string {
+	lines := SplitRoadmapLines(data)
+	fenced := FenceMask(lines)
+
+	waveSeen := map[string][]int{} // label → 1-based line numbers
+	mlSeen := map[string][]int{}   // id → 1-based line numbers
+
+	for i, line := range lines {
+		if fenced[i] {
+			continue
+		}
+		if m := WaveHeadingRe.FindStringSubmatch(line); m != nil {
+			waveSeen[m[1]] = append(waveSeen[m[1]], i+1)
+		}
+		if m := MLHeadingRe.FindStringSubmatch(line); m != nil {
+			mlSeen[m[1]] = append(mlSeen[m[1]], i+1)
+		}
+	}
+
+	var msgs []string
+	for label, lns := range waveSeen {
+		if len(lns) > 1 {
+			msgs = append(msgs, fmt.Sprintf("duplicate Wave label %q at lines %v", label, lns))
+		}
+	}
+	for id, lns := range mlSeen {
+		if len(lns) > 1 {
+			msgs = append(msgs, fmt.Sprintf("duplicate ML label %q at lines %v", id, lns))
+		}
+	}
+	sort.Strings(msgs)
+	return msgs
+}
+
+// ────────────────────────────────────────────────────────────────────────────
 
 // HasUnfinishedMLs reports whether a roadmap (given as raw file content) has
 // any ML whose status does not satisfy StatusIsComplete and is not Terminated.
