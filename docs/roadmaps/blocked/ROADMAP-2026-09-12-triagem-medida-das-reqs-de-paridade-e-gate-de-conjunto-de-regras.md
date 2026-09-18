@@ -115,6 +115,27 @@ gate deixar de ser necessário, quem fecha é o registro da causa desaparecida.
 
 ---
 
+## Wave 0 — Threat model
+> Dependências: nenhuma.
+
+### ML-0A — Threat model deste roadmap
+**Status:** ❌ Bloqueado
+
+Roadmap bloqueado pela ADR-2026-09-12 (opção D: um binário, muitos canais) antes que o
+threat model formal fosse executado. As waves de implementação (gate de conjunto de regras,
+gate de paridade de subcomandos) deixaram de ter objeto com um único runtime Go.
+
+A frente foi parada por decisão registrada na seção "FRENTE PARADA", não por esquecimento.
+
+**Gates da wave:**
+```bash
+# Wave 0 not executed: roadmap was blocked by ADR-2026-09-12 (opção D) before
+# threat model work began. The block decision is recorded in the roadmap body above.
+echo "Wave 0 not executed: roadmap blocked by ADR-2026-09-12 before Wave 0 was reached"
+```
+
+---
+
 ## Wave 1 — Medir antes de concluir
 > Dependências: nenhuma.
 

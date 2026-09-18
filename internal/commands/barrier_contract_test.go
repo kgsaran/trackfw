@@ -141,6 +141,15 @@ func buildBarrierRoadmap(cfg barrierFixtureConfig) string {
 	// distinto do bloco por-ML usado pela barrier (rule 4).
 	b.WriteString("## Acceptance Criteria\n- [x] fixture roadmap-level criterion\n\n")
 
+	// Wave 0 is required by roadmap_wave0_required (now error). Include a minimal,
+	// completed Wave 0 so the barrier fixture passes validate cleanly.
+	b.WriteString("## Wave 0 — Threat model\n> Dependências: nenhuma.\n\n")
+	b.WriteString("### ML-0A — Threat model for fixture\n")
+	b.WriteString("**Status:** ✅ Concluído\n\n")
+	b.WriteString("**Gates da wave:**\n```bash\n")
+	b.WriteString("echo \"Wave 0 ML-0A: fixture threat model accepted\"\n")
+	b.WriteString("```\n\n")
+
 	b.WriteString("## Wave 1 — Fixture Wave\n> Dependências: nenhuma\n\n")
 	if cfg.gateCommands != nil {
 		b.WriteString("**Gates da wave:**\n```bash\n")

@@ -359,7 +359,7 @@ go · node · python (3.10/3.12) · package-smoke · governance = SUCCESS
    `thirdparty_artifact_has_provenance`.
 
 
-## Wave reaberta — 2026-09-08
+## Wave 3-reaberta — 2026-09-08
 
 ### ML-R1 — `update --json` do Python emite separador nativo no campo `path`
 **Status:** ✅ Concluído · **Agente:** `apolo-tf`

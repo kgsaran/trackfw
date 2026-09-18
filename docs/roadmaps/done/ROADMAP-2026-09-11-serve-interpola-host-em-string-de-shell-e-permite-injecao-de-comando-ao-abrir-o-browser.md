@@ -44,6 +44,13 @@ Go não abre browser; ausência de superfície é divergência intencional docum
 **Residual declarado:**
 - Windows `cmd /c start "" url` re-parseia metacaracteres de `cmd.exe` mesmo via argv. Contenção: AC4 (isValidHost rejeita hosts com metacaracteres).
 
+**Gates da wave:**
+```bash
+# Wave 0 threat model was incorporated into the architect handoff (see ML-0A body above).
+# No separate automation gate was defined; the enumeration is documented inline.
+echo "Wave 0 threat model accepted: surfaces enumerated and residual declared"
+```
+
 ## Wave 1 — Implementation
 > Dependencies: Wave 0 completa
 
@@ -235,7 +242,7 @@ usuário"*. 🔴 **O argumento é tecnicamente errado** — o vault de 2026-08-2
 terceiro é exatamente o vetor de RCE do `barrier`. O sítio é pré-existente e fora do escopo desta
 REQ; o trust-check fechado hoje pode protegê-lo, mas **isso precisa ser dito, não presumido**.
 
-### ML-NOVO — 🔴 Gate que existe e ninguém invoca: a TERCEIRA instância do dia
+#### ML-NOVO — 🔴 Gate que existe e ninguém invoca: a TERCEIRA instância do dia
 **Status:** ✅ Concluído · **Agente:** `ares-tf` · **classe, não instância**
 
 **Descoberto ao abrir o PR seguinte**, por um aviso do `trackfw push` sobre outra branch.

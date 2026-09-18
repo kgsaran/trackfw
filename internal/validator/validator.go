@@ -191,16 +191,8 @@ var ruleDefaults = map[string]string{
 	// (wip→done após roadmap move) não dispara esta regra. Default "warning" porque a divergência
 	// pode ser transitória (frontmatter já atualizado, body ainda com path antigo).
 	"req_roadmap_sync": "warning",
-	// ML-3B (REQ #392, AC7-bis): Wave 0 heading must exist in wip/blocked roadmaps.
-	// Default "warning": three blocked/ roadmaps pre-date this rule and would fire immediately
-	// as violations (breaking AC10 before ML-4A cleans them). Operators may promote to "error".
-	"roadmap_wave0_required": "warning",
-	// ML-3B (REQ #392, AC7): Wave 0 gate must be a real command (not the placeholder exit 1,
-	// not absent). Default "warning" for the same pre-existing corpus reason as above.
-	"roadmap_gate_coverage": "warning",
-	// ML-3B (REQ #392, AC8): duplicate Wave or ML labels are a named violation.
-	// Default "warning": one blocked/ roadmap has duplicates pre-dating this rule.
-	"roadmap_duplicate_label": "warning",
+	// roadmap_wave0_required, roadmap_gate_coverage, roadmap_duplicate_label are absent:
+	// they fall through to "error" (ML-4A, REQ #392 — all pre-existing sítios sanitized).
 }
 
 // ruleSeverity retorna a severidade configurada para a regra.

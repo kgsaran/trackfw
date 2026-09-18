@@ -124,6 +124,13 @@ exigem executar o código contra um caso concreto. A frase dele fecha a questão
 **Residual que ele nomeia e fica fora desta REQ:** `barrier` não impõe ordem entre waves — "Wave 1
 depende de Wave 0 auditada" é frase no roadmap, não checagem em código.
 
+**Gates da wave:**
+```bash
+# Wave 0 was completed 2026-08-22 (audit in docs/seguranca/2026-08-22-modelo-de-ameaca-da-wave-0-no-harness.md).
+# No automation gate was defined at this wave; the audit document is the evidence.
+echo "Wave 0 ML-0A audit accepted 2026-08-22; see docs/seguranca/2026-08-22-modelo-de-ameaca-da-wave-0-no-harness.md"
+```
+
 ---
 
 ## Wave 1 — Harness

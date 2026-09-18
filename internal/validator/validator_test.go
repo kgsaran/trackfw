@@ -2410,13 +2410,13 @@ func TestValidateRoadmapGateCoverage_AC7_ExitOneIntact(t *testing.T) {
 	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-gate-placeholder.md", roadmapWithWave0PlaceholderGate)
 	chdir(t, dir)
 
-	_, warnings, err := Validate()
+	violations, _, err := Validate()
 	if err != nil {
 		t.Fatalf("Validate() error: %v", err)
 	}
-	if !hasWarning(warnings, "roadmap_gate_coverage") && !hasWarning(warnings, "gate_coverage") &&
-		!hasWarning(warnings, "placeholder or absent") {
-		t.Errorf("expected roadmap_gate_coverage warning for exit 1 placeholder, got warnings: %v", warnings)
+	if !hasViolation(violations, "roadmap_gate_coverage") && !hasViolation(violations, "gate_coverage") &&
+		!hasViolation(violations, "placeholder or absent") {
+		t.Errorf("expected roadmap_gate_coverage violation for exit 1 placeholder, got violations: %v", violations)
 	}
 }
 
@@ -2428,12 +2428,12 @@ func TestValidateRoadmapGateCoverage_AC7_BlockDeleted(t *testing.T) {
 	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-gate-deleted.md", roadmapWithWave0NoGateBlock)
 	chdir(t, dir)
 
-	_, warnings, err := Validate()
+	violations, _, err := Validate()
 	if err != nil {
 		t.Fatalf("Validate() error: %v", err)
 	}
-	if !hasWarning(warnings, "placeholder or absent") {
-		t.Errorf("expected roadmap_gate_coverage warning for deleted gate block, got warnings: %v", warnings)
+	if !hasViolation(violations, "placeholder or absent") {
+		t.Errorf("expected roadmap_gate_coverage violation for deleted gate block, got violations: %v", violations)
 	}
 }
 
@@ -2464,12 +2464,12 @@ func TestValidateRoadmapGateCoverage_AC7bis_WipMissingWave0(t *testing.T) {
 	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-no-wave0.md", roadmapWithNoWave0)
 	chdir(t, dir)
 
-	_, warnings, err := Validate()
+	violations, _, err := Validate()
 	if err != nil {
 		t.Fatalf("Validate() error: %v", err)
 	}
-	if !hasWarning(warnings, "Wave 0") {
-		t.Errorf("expected roadmap_wave0_required warning for wip roadmap without Wave 0, got warnings: %v", warnings)
+	if !hasViolation(violations, "Wave 0") {
+		t.Errorf("expected roadmap_wave0_required violation for wip roadmap without Wave 0, got violations: %v", violations)
 	}
 }
 
@@ -2511,12 +2511,12 @@ func TestValidateRoadmapGateCoverage_AC8_DuplicateWaveWip(t *testing.T) {
 	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-dup-wave.md", roadmapWithDuplicateWave0)
 	chdir(t, dir)
 
-	_, warnings, err := Validate()
+	violations, _, err := Validate()
 	if err != nil {
 		t.Fatalf("Validate() error: %v", err)
 	}
-	if !hasWarning(warnings, "duplicate") {
-		t.Errorf("expected roadmap_duplicate_label warning for duplicate ## Wave 0, got warnings: %v", warnings)
+	if !hasViolation(violations, "duplicate") {
+		t.Errorf("expected roadmap_duplicate_label violation for duplicate ## Wave 0, got violations: %v", violations)
 	}
 }
 

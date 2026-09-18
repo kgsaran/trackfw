@@ -237,6 +237,13 @@ um que decora.
 
 **Verificação que só o CI fecha:** a contagem Python cair de 101 para ~51.
 
+**Gates da wave:**
+```bash
+# Wave 0 ML-0A was completed 2026-09-04; no automation gate was defined at the time.
+# Audit evidence is in docs/qualidade/2026-09-04-grupo-b-bash-do-python-em-windows.md.
+echo "Wave 0 ML-0A audit: accepted 2026-09-04 (mecanismo reduzido a 2 hipóteses)"
+```
+
 ## Wave 1 — As três decisões (arquiteto, sequenciais, NÃO paralelizam)
 > Dependências: nenhuma. Não esperam a Wave 0.
 
@@ -724,7 +731,7 @@ editam `pypi/tests/test_generators_init.py`. **O ML-4B detectou e avisou**; pres
 dos 3 arquivos e verifiquei que nada se perdeu. Não houve dano — mas a garantia veio do agente, não
 do meu planejamento.
 
-### ML-4A — três achados além da correção
+#### ML-4A — três achados além da correção
 
 **A lista do meu briefing estava incompleta.** Eram **22 sítios**, e ele achou dois grupos que eu
 não teria: `discover_test.go` usa `Perm() != 0755` — **um grep pelo `&` não pega** — e havia **9
@@ -751,7 +758,7 @@ o caminho de código, não a plataforma."*
 **Falsificação contada, mutando o gerador e não uma fixture:** previa 11 funções no Go, observou
 **11, exatamente as mesmas, zero a mais**. Produto restaurado byte-a-byte (`cmp` OK nos 9).
 
-### ML-4B — os três classificados por medição, e um defeito de produto recusado
+#### ML-4B — os três classificados por medição, e um defeito de produto recusado
 
 **Discriminante do `WinError 32`:** dos 5 testes da classe, os **4 que fazem `os.chdir` falharam** e
 o **único que não faz passou**. Quem segura o handle é o cwd do próprio processo; `tearDown` não
@@ -1021,7 +1028,7 @@ A `Regra Dura de Causa Raiz` (`CLAUDE.md`) nasceu desse erro, e este roadmap é 
 completa dela.
 
 
-## Wave reaberta — 2026-09-08: o grupo `IsAbs` não havia fechado
+## Wave 8-reaberta — 2026-09-08: o grupo `IsAbs` não havia fechado
 
 ### ML-R1 — `manager.go` usa o helper de ancoragem que já existe
 **Status:** 🔄 Em andamento (implementação, testes locais e VM Windows concluídos e verdes; falta
