@@ -2,6 +2,28 @@
 
 ---
 
+## Sessão 2026-09-18 (continuação 2) — Apolo (fix/scaffold-placeholder-chega-a-done — ML-1C: pin de corpus #392) — CONCLUÍDO (aguarda auditoria do arquiteto)
+
+**Início:** 2026-09-18 | Branch: `fix/scaffold-placeholder-chega-a-done`
+**Tarefa:** ML-1C — Atualizar pin de vereditos do corpus após AC3-ter do ML-1B.
+**Resultado:**
+- `scripts/testdata/roadmap-barrier-corpus-verdicts.tsv` regenerado: 1500 → 1510 linhas (+10 novas, 0 removidas, 0 alteradas).
+- Todas as 10 linhas novas pertencem exclusivamente a `trackfw-update-command-2026-06-18.md` (waves 1, 2, 3, 3-Py) — único arquivo do snapshot com wave label uppercase (3-Py) que o ParseWaves antigo rejeitava por inteiro.
+- `scripts/check-roadmap-barrier-contract.sh`: valores pinados atualizados (HASH, EXIT2=10, LINES=1510, MLS_COMPLETE_FAILURE=118, ACCEPTANCE_EVIDENCE_FAILURE=439) + cabeçalho de comentário citando decisão 11 da ADR e issue #392.
+- Gates: `go build ./...` RC=0 · `make test` RC=0 · `make quality` RC=0 (212 OK, 0 FAIL) · `trackfw validate` RC=0 (0 violations).
+- AC11: nenhum teste novo neste ML — sem novas asserções a declarar.
+- ACHADO PARA O ARQUITETO (decisão de escopo obrigatória antes de fechar a REQ):
+  Os 10 exit2 restantes vêm de DOIS arquivos: convergencia-do-harness (waves 1,1b,2,3,4,5) e
+  serve-amarra (waves 1,1b,2,3). Causa: "## Wave 1b" (sem hífen) é rejeitado por WaveLabelRe
+  (`^\d+(?:-[a-zA-Z0-9]+)?$` exige hífen antes da letra). Mesma causa que AC3-ter corrigiu
+  (sufixo de letra rejeitado → ParseWaves falha → arquivo inteiro excluído do corpus).
+  Pela Regra Dura de Causa Raiz, esses 2 sítios são candidatos ao mesmo roadmap. Se incluídos,
+  o pin muda novamente. O comentário desatualizado na linha 523 do check script (dizia
+  "pré-grammar ADR-2026-08-22, não relacionado ao contrato") foi corrigido para refletir isso.
+  O ROADMAP-2026-09-01 não está no snapshot (144 arquivos; corpus/files-count passa em 144).
+
+---
+
 ## Sessão 2026-09-18 (continuação) — Apolo (fix/scaffold-placeholder-chega-a-done — ML-1A: extração roadmapdoc do #392) — CONCLUÍDO (aguarda auditoria do arquiteto)
 
 **Início:** 2026-09-18 | Branch: `fix/scaffold-placeholder-chega-a-done`
@@ -38117,3 +38139,11 @@ Implementação completa. Evidências: `go build ./...` RC=0 · `make test` 15/1
 - **Causa medida e consistente nos quatro números:** os 4 roadmaps de `## Wave 3-Py` estavam **ausentes do pin** (`grep -c` → 0 linhas cada, e 0 linhas com wave `3-Py`) porque o `ParseWaves` os rejeitava. Com o AC3-ter passam a parsear e geram vereditos. É o efeito **intencional** da decisão 11 da ADR — mas o pin precisa ser atualizado **deliberadamente, com o delta auditado**, nunca re-gerado cegamente.
 - 🔴 **O gate `corpus/non-reclassification` funcionou exatamente como projetado:** existe para pegar mudança de comportamento não declarada no corpus, e pegou a nossa.
 - 🔴 **Por que o executor não viu:** o `make quality` dele morreu antes, em `check-serve-address-parity.sh` (`declare -A` sob bash 3.2). Isso é **ambiental do PATH dele** — o shebang é `/usr/bin/env bash` e o bash desta máquina é 5.3, onde passa. **Uma falha ambiental precoce mascarou uma falha real posterior.** É a razão de o arquiteto rodar o gate por conta própria em vez de aceitar o RC do relatório.
+
+### 2026-09-18 — Zeus — ML-1C APROVADO; ML-1D aberto pela Regra Dura de Causa Raiz
+- **`make quality` RC=0 — 640 OK, 0 FAIL**, os quatro cenários de corpus verdes, guarda de conjunto OK. Rodado por mim, não aceito do relatório: a aprovação anterior foi revertida por exatamente este gate.
+- **Diff do pin auditado por mim: append puro.** 10 adicionadas, **0** removidas, **0** alteradas, todas de um único arquivo (`trackfw-update-command-2026-06-18.md`). Nenhum roadmap já pinado foi reclassificado — o que teria reprovado o ML-1A retroativamente.
+- Confirmei que o snapshot de 144 arquivos **não é lacuna**: é congelamento deliberado, com justificativa escrita no script e política de basename que reprova arquivo do snapshot ausente do disco.
+- 🔴 **Cascata confirmada por medição minha, e é pior do que o relatório dizia.** `barrier <convergencia-harness> --wave 2` — rótulo **válido** — sai **EXIT=2** reclamando do `1b` na linha 58. Um rótulo malformado cega o `barrier` sobre o **documento inteiro**. Não são 10 acertos diretos; são 2 arquivos invisíveis por completo. Testei porque a afirmação causal do executor decidia o desenho do ML-1D e a verificação custava uma chamada.
+- 🔴 **Varredura minha amplia o achado:** o executor viu só `1b` (o snapshot tem 144 dos 192+). No corpus inteiro são **4 arquivos em duas formas** — `1b` (gramática, corrige em código) e **`reaberta`** (sem dígito inicial; **conteúdo**, corrige renomeando no ML-4A). A separação preserva o contra-braço que eu mesmo exigi: `abc` e `reaberta` continuam inválidos **como rótulo**. Alargar a gramática para rótulo nomeado não teria resposta para a ordenação em `CompareWaveLabels` — seria alargar a regra para legitimar dois arquivos.
+- **Precedente encontrado e citado no ML-1D:** `ADR-2026-08-22` (formas de hook não reconhecidas) decidiu *"é uma regra, não uma lista de literais"* e nomeia **"condição estreita demais"** como padrão recorrente deste projeto. `WaveLabelRe` já foi alargada uma vez hoje e ainda não cobre `1b` — mesmo padrão. A mesma ADR dá o princípio da cascata: forma não reconhecida se **isola e nomeia**, não derruba o resto. Não há ADR anterior pinando a gramática de wave; o ML-1D **emenda a ADR de hoje**, não contradiz nenhuma.

@@ -157,7 +157,7 @@ fixtures do predicado e **não** ao teste de baseline.
 - [ ] Uma frase por teste novo declarando o que ele afirma (AC11)
 
 ### ML-1C — corretivo do ML-1B: o pin de vereditos do corpus não foi atualizado
-**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
+**Status:** ✅ Concluído (auditado por Zeus em 2026-09-18: `make quality` **640 OK / 0 FAIL**, diff do pin **append puro** 10/0 de um único arquivo)
 **Files affected:** `scripts/testdata/roadmap-barrier-corpus-verdicts.tsv`, e o script que o pina
 (`scripts/check-roadmap-barrier-contract.sh` ou equivalente — localize; não presuma o nome)
 **Contexto da reprovação:** o ML-1B está correto no que entregou — auditei o congelamento do corpus
@@ -330,3 +330,61 @@ exit 0
 - [ ] `git diff` mostra **apenas** remoção de scaffold e substituição de gate — nenhum `⬜ → ✅`
 - [ ] `trackfw validate` sem violação nova · `make quality` RC=0
 - [ ] Uma frase por teste novo, se houver (AC11)
+
+### ML-1D — a gramática de rótulo é estreita demais, e o erro cascateia para o documento inteiro
+**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Files affected:** `internal/roadmapdoc/roadmapdoc.go`, `internal/roadmapdoc/roadmapdoc_test.go`,
+`internal/commands/barrier.go` (lookup do rótulo, ~879), `internal/commands/barrier_test.go`,
+`scripts/testdata/roadmap-barrier-corpus-verdicts.tsv`, `scripts/check-roadmap-barrier-contract.sh`
+
+**Origem:** achado do ML-1C, **ampliado e verificado por mim**. Mesma causa do AC3-ter (gramática de
+rótulo que não cobre o uso real), logo **mesma REQ** pela Regra Dura de Causa Raiz.
+
+🔴 **Defeito 1 — cascata, e é o mais grave.** Medido por mim, não inferido:
+```
+$ trackfw barrier ROADMAP-2026-07-26-convergencia-do-harness... --wave 2
+trackfw barrier: malformed wave heading at line 58: "1b" is not a valid wave label
+EXIT=2
+```
+A wave `2` é **válida**. Um rótulo malformado em **outra** wave cega o `barrier` sobre o **documento
+inteiro**. Não são "10 acertos diretos"; são 2 arquivos invisíveis por completo.
+
+🔴 **Defeito 2 — gramática estreita demais.** Varredura minha em todo o corpus (não só no snapshot de
+144 do gate): **4 arquivos**, em **duas formas**:
+
+| forma | arquivos | natureza | onde corrige |
+|---|---|---|---|
+| `1b` (sufixo sem hífen) | `ROADMAP-2026-07-26-convergencia-do-harness...`, `ROADMAP-2026-08-16-serve-amarra-em-loopback...` | **gramática** | aqui, em código |
+| `reaberta` (sem dígito inicial) | `ROADMAP-2026-09-01-caminho-dentro-de-artefato...`, `blocked/ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows...` | **conteúdo** | ML-4A, renomeando para `<n>-reaberta` |
+
+**Precedente que governa:** `ADR-2026-08-22` (postura do validate diante de formas não reconhecidas)
+decidiu que *"é uma regra, não uma lista de literais"* e nomeia **"condição estreita demais"** como
+padrão recorrente deste projeto. `WaveLabelRe` já foi alargada uma vez hoje (caixa) e ainda não cobre
+`1b` — é o mesmo padrão. A mesma ADR dá o princípio da cascata: forma não reconhecida se **isola e
+nomeia**, não derruba o resto.
+
+**Actions:**
+1. **Parar a cascata.** Rótulo inválido invalida **aquela** wave, não o documento. As demais
+   continuam avaliadas; a inválida é reportada **nomeadamente, com arquivo e linha**.
+2. **Alargar a gramática** para aceitar sufixo alfanumérico **com ou sem hífen** (`1b`, `3-Py`,
+   `10-a2`). 🔴 **Contra-braço inegociável:** rótulo **sem dígito inicial** (`abc`, `reaberta`)
+   **continua inválido**. Não alargue para legitimar 2 arquivos — eles se corrigem como conteúdo.
+3. **`SplitWaveLabel` sem hífen:** verificar que `SplitWaveLabel("1b")` devolve `(1, "b")` e não
+   `(0, "")` nem a string inteira — senão `CompareWaveLabels` ordena `1b` antes de `1`.
+4. **Lookup por igualdade exata** (`barrier.go:~879`: `waves[i].label == waveLabel`): com `1b` e
+   `1-b` ambos válidos e **iguais** sob `CompareWaveLabels`, `--wave 1-b` contra `## Wave 1b` daria
+   "wave not found". **Normalize no lookup ou declare como residual nomeado** — não deixe implícito.
+5. **Atualizar o pin** com a mesma disciplina do ML-1C. Forma esperada **pré-declarada**: `exit2` cai
+   de 10 rumo a 0; linhas são **acrescentadas** para as waves recém-parseáveis de
+   `convergencia-harness` e `serve-amarra`; **zero** linhas preexistentes removidas ou alteradas.
+   🔴 Remoção ou alteração significa roadmap já pinado reclassificado — **reprovaria o ML-1A
+   retroativamente**. Nesse caso **pare e relate**.
+**Acceptance criteria:**
+- [ ] `barrier <convergencia-harness> --wave 2` avalia a wave 2 e **não** sai 2 por causa do `1b`
+- [ ] A wave inválida é reportada nomeadamente, com arquivo e linha
+- [ ] `1b`, `3-Py`, `10-a2` válidos; **`abc` e `reaberta` continuam inválidos** (contra-braço)
+- [ ] `SplitWaveLabel("1b")` = `(1, "b")`; ordenação de `1` antes de `1b` demonstrada em teste
+- [ ] O caso `--wave 1-b` vs `## Wave 1b` está resolvido **ou** declarado como residual nomeado
+- [ ] Diff do pin é **append puro**; zero remoções ou alterações
+- [ ] `go build ./...` RC=0 · `make test` RC=0 · `make quality` RC=0 até o fim
+- [ ] Uma frase por teste novo declarando o que ele afirma (AC11)

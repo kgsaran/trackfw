@@ -1298,6 +1298,16 @@ trackfw-ai-agent-rail-2026-06-13.md	2	acceptance_evidence	failure	ML-2A: 2 unmet
 trackfw-ai-agent-rail-2026-06-13.md	2	mls_complete	evidence	ML-2A: ✅
 trackfw-ai-agent-rail-2026-06-13.md	3	acceptance_evidence	failure	ML-3A: 3 unmet acceptance criteria
 trackfw-ai-agent-rail-2026-06-13.md	3	mls_complete	evidence	ML-3A: ✅
+trackfw-update-command-2026-06-18.md	1	acceptance_evidence	failure	ML-1A: 3 unmet acceptance criteria
+trackfw-update-command-2026-06-18.md	1	acceptance_evidence	failure	ML-1B: 4 unmet acceptance criteria
+trackfw-update-command-2026-06-18.md	1	mls_complete	failure	ML-1A: not complete (status: ⬜ Pendente)
+trackfw-update-command-2026-06-18.md	1	mls_complete	failure	ML-1B: not complete (status: ⬜ Pendente)
+trackfw-update-command-2026-06-18.md	2	acceptance_evidence	failure	ML-2A: 3 unmet acceptance criteria
+trackfw-update-command-2026-06-18.md	2	mls_complete	failure	ML-2A: not complete (status: ⬜ Pendente)
+trackfw-update-command-2026-06-18.md	3	acceptance_evidence	failure	ML-3A: 3 unmet acceptance criteria
+trackfw-update-command-2026-06-18.md	3	mls_complete	failure	ML-3A: not complete (status: ⬜ Pendente)
+trackfw-update-command-2026-06-18.md	3-Py	acceptance_evidence	failure	ML-3B: 3 unmet acceptance criteria
+trackfw-update-command-2026-06-18.md	3-Py	mls_complete	failure	ML-3B: not complete (status: ⬜ Pendente)
 v1.1.0-i18n-wizard-java-2026-06-12.md	1	acceptance_evidence	failure	ML-1A: 3 unmet acceptance criteria
 v1.1.0-i18n-wizard-java-2026-06-12.md	1	acceptance_evidence	failure	ML-1B: 2 unmet acceptance criteria
 v1.1.0-i18n-wizard-java-2026-06-12.md	1	mls_complete	failure	ML-1A: not complete (status: ⬜ Pendente)
