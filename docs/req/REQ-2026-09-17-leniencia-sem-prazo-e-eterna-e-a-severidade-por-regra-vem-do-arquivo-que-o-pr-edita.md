@@ -1,15 +1,15 @@
 ---
-status: Open
+status: Done
 date: 2026-09-17
 ---
 
 # REQ: leniência sem prazo é eterna, e a severidade por regra vem do arquivo que o PR edita
 
-> Date: 2026-09-17 | Status: Open
+> Date: 2026-09-17 | Status: Done
 
 **Issue:** #387
 **ADR:** `docs/adr/ADR-2026-09-17-severidade-da-validacao-nao-pode-vir-de-fonte-que-o-objeto-verificado-controla.md`
-**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-09-17-leniencia-sem-prazo-e-eterna-e-a-severidade-por-regra-vem-do-arquivo-que-o-pr-edita.md`
+**Roadmap:** `docs/roadmaps/done/ROADMAP-2026-09-17-leniencia-sem-prazo-e-eterna-e-a-severidade-por-regra-vem-do-arquivo-que-o-pr-edita.md`
 **Parecer da Wave 0:** `docs/portabilidade/2026-09-17-threat-model-severidade-da-validacao.md`
 
 > 🔴 **Esta REQ foi reescrita em 2026-09-17, depois da auditoria da Wave 0.** A redação original tinha
@@ -171,4 +171,4 @@ ADR: `docs/adr/ADR-2026-09-17-severidade-da-validacao-nao-pode-vir-de-fonte-que-
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-17-leniencia-sem-prazo-e-eterna-e-a-severidade-por-regra-vem-do-arquivo-que-o-pr-edita.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-17-leniencia-sem-prazo-e-eterna-e-a-severidade-por-regra-vem-do-arquivo-que-o-pr-edita.md`
