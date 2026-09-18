@@ -18,8 +18,9 @@ Um roadmap que diz `done` carregando microlote `⬜ Pendente` afirma duas coisas
 que engana é a que diz "done". O registro passa a dar a aparência tranquilizadora de correção.
 
 Três ocorrências em 2026-09-17, nenhuma detectada por gate. Medido no corpus em 2026-09-18:
-**27 de 192** roadmaps em `done/` têm ML não concluído; **4** têm o gate placeholder `exit 1`
-intacto.
+**32 de 192** roadmaps em `done/` têm ML não concluído pelo predicado canônico
+(`StatusIsComplete`) — 27 pelo recorte estreito `⬜`/`🔄`, mais 5 com status fora do vocabulário;
+**4** têm o gate placeholder `exit 1` intacto.
 
 A causa não é a ausência de um check: é que **"este ML está concluído?" é reimplementada por
 consumidor** — `barrier` (correto, por token), `serve` (`Contains("✅")`, sem máscara de cerca), e
@@ -36,13 +37,33 @@ ciclo de import.
       waves de todos os roadmaps de `done/` + `wip/`. O baseline é capturado **antes** de qualquer
       edição, num arquivo versionado sob `scripts/` ou no diretório de evidência do ML. Divergência
       em qualquer arquivo reprova o ML.
-- [ ] **AC3 — 🔴 Predicado reconciliado contra 27/165.** O predicado `ML não concluído` de
-      `roadmapdoc`, aplicado aos 192 roadmaps de `done/`, retorna verdadeiro para **exatamente os 27**
-      que a medição fence-aware independente (AWK) identificou, e falso para os outros 165.
-      Divergência em qualquer direção significa que uma das duas implementações está errada —
-      reconciliar é a medição; convergir é corroboração. Os dois braços nomeados dentro deste AC:
-      `ROADMAP-2026-09-16-run-capture` (ocorrência #2, **tem** de dar verdadeiro) e o roadmap do #387
-      em `done/` (legitimamente concluído, **tem** de dar falso).
+- [ ] **AC3 — 🔴 Predicado reconciliado contra 32/160, com o predicado canônico.**
+      O predicado é `roadmapdoc.StatusIsComplete` — **não** um teste por `⬜`/`🔄`. Aplicado aos 192
+      roadmaps de `done/`, retorna "não concluído" para **32** e "concluído" para 160.
+      **Correção de uma contradição minha, apontada pela Wave 0:** eu escrevi "exatamente os 27" —
+      número que vem de medir `⬜`/`🔄`, um predicado *diferente* do que o próprio AC nomeia. A
+      diferença são **5** roadmaps com status fora do vocabulário (`pending`, `PENDENTE`,
+      `ABANDONADO`, `❌`, `🚫`). Estreitar o predicado para `⬜`/`🔄` faria o AC passar excluindo
+      `pending` em silêncio — que é o valor que o AC5 existe para eliminar.
+      Braços nomeados, ambos obrigatórios:
+      (a) **positivo** — fixture congelado em `internal/roadmapdoc/testdata/`, cópia byte a byte de
+      `docs/roadmaps/done/ROADMAP-2026-09-17-sync-enumera-req-por-caminho-literal-ignora-req-dir-e-escreve-no-provedor-de-pm.md`
+      (2 MLs, ambos `⬜ Pendente`, em `done/`) → **tem** de dar "não concluído";
+      (b) **contra-braço** — o roadmap do #387 em `done/` (7 MLs, 7 concluídos) → **tem** de dar
+      "concluído".
+      🔴 O fixture é **congelado em `testdata/`, não lido do corpus vivo**, porque o ML-4A limpa
+      exatamente esse arquivo. O braço que eu havia escrito antes apontava para
+      `ROADMAP-2026-09-16-run-capture`, que **eu mesmo já tinha limpado em 2026-09-17** — tem 0 MLs,
+      e teria calibrado o predicado para não detectar nada.
+- [ ] **AC3-bis — Três categorias de status, decididas.** O vocabulário distingue:
+      **concluído** (`✅`, `done`, `Concluído`, `CONCLUIDO`) → libera;
+      **encerrado sem conclusão** (`ABANDONADO`, `🚫 Abandonado`, `❌ Cancelado`) → **libera**, com o
+      motivo registrado na linha;
+      **pendente** (`⬜`, `🔄`, `pending`, `PENDENTE`, `❌ Bloqueado`) → **bloqueia**.
+      Justificativa de `❌ Bloqueado` bloquear: um ML bloqueado dentro de um roadmap `done` é
+      exatamente a contradição que esta REQ fecha. Justificativa de abandonado liberar: encerramento
+      explícito é uma decisão registrada, não um esquecimento — e reprová-lo seria o falso-positivo
+      que a `ADR-2026-08-17` nomeia.
 - [ ] **AC4 — `serve` converge.** `parseMLProgress` usa `roadmapdoc`. Teste que falsifica o defeito
       atual: um roadmap com `✅` **dentro de cerca de código** e ML realmente pendente não é contado
       como concluído.
@@ -57,6 +78,16 @@ ciclo de import.
       (a) `exit 1` intacto → **reprova**; (b) **bloco `**Gates da wave:**` inteiramente apagado** →
       **reprova** (este é o braço que mata o discriminante ingênuo, e é a lição do ML-2B do #387);
       (c) gate substituído por comando real → **não reprova**.
+- [ ] **AC7-bis — 🔴 Tier 1b: esconder a wave renomeando o heading.** Achado da Wave 0, não previsto
+      por mim. `waveHeadingRe` é `^## Wave (\S+) ` — renomear `## Wave 0 — Threat Model` para
+      `## Threat Model` (1 linha, mesmo custo do tier anterior) faz a wave **desaparecer do parser**,
+      e o discriminante de cobertura falha **vacuosamente**: não há wave para verificar.
+      🔴 **Decidido com a medição, e a medição proíbe a solução óbvia:** exigir Wave 0 em todo roadmap
+      acenderia **154 dos 192** de `done/` — apenas 38 têm `## Wave 0`, porque a convenção só existe
+      desde agosto. Seria pior que os 27 que a decisão 7 da ADR rejeita.
+      Regra adotada: *roadmap em `wip`/`blocked`, e todo roadmap na transição para `done`, deve ter
+      `## Wave 0`*. **`done/` não é reavaliado.** Custo retroativo medido: `wip` 1/1 ✅, `blocked` 2/3,
+      `analyzing` 1/1 ✅ — **1 arquivo**. A assimetria é deliberada e fica escrita.
 - [ ] **AC8 — Rótulo duplicado falha fechada.** Duas `## Wave 0` ou dois `### ML-1A` no mesmo roadmap
       são violação nomeada. Falsificação: hoje `barrier.go:877-882` faz `break` no primeiro rótulo
       que casa, e a segunda cópia é **invisível** — o teste tem de demonstrar que passava antes e
@@ -78,10 +109,12 @@ ciclo de import.
 ## Negative scope — o que esta REQ NÃO faz
 
 - ❌ **Regra do `validate` sobre roadmap em `done/` com ML pendente.** Rejeitada pela decisão 7 da
-  ADR, com o número que a rejeita: **27 dos 192** acenderiam de imediato, e fechar isso exigiria
+  ADR, com o número que a rejeita: **32 dos 192** acenderiam de imediato, e fechar isso exigiria
   baseline ou carve-out — o mecanismo que a campanha do #387 acabou de provar ser a superfície de
   ataque.
-- ❌ **Sanar retroativamente os 27 roadmaps de `done/`.** Risco desproporcional; nomeado e aceito.
+- ❌ **Sanar retroativamente os 32 roadmaps de `done/`.** Risco desproporcional; nomeado e aceito.
+- ❌ **Exigir `## Wave 0` retroativamente em `done/`.** **154 dos 192** acenderiam; a convenção só
+  existe desde agosto. Ver AC7-bis para a forma sensível ao estado que foi adotada no lugar.
 - ❌ **Remover o placeholder do `roadmap new`** (direção 3 do issue). Barrada pela `ADR-2026-07-31`,
   que decidiu explicitamente que a seção consolidada é placeholder a preencher.
 - ❌ **A seção `## Linked Roadmap` perdida na reescrita manual da REQ do #387.** Causa **diferente**,

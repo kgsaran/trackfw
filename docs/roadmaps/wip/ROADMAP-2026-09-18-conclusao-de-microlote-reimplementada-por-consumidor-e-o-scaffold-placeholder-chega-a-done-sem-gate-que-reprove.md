@@ -24,7 +24,9 @@ está preso em `package commands`, inalcançável pelo `validator` por ciclo de 
 | medida | valor |
 |---|---|
 | roadmaps em `done/` | 192 |
-| ...com ML `⬜`/`🔄` (fence-aware) | **27 (14%)** → base da rejeição da direção 1 |
+| ...com ML não concluído (`StatusIsComplete`, canônico) | **32 (17%)** → base da rejeição da direção 1 |
+| ...pelo recorte estreito `⬜`/`🔄` | 27 |
+| ...com `## Wave 0` | **38** → por isso a exigência de Wave 0 NÃO retroage |
 | ...com gate placeholder `exit 1` intacto | **4** |
 | ...com rótulo de Wave/ML duplicado | **4** (+1 em `blocked/`) |
 | união dos dois últimos em `done/` | **6** → corrigidos nesta REQ |
@@ -53,7 +55,7 @@ são **pré-v8** — não copiar delas.
 
 - [ ] AC1 pacote folha sem ciclo · AC2 identidade byte-a-byte do `barrier` · AC3 predicado reconciliado 27/165
 - [ ] AC4 `serve` converge · AC5 `scaffold` converge **antes** do gate · AC6 `move done` recusa nomeando
-- [ ] AC7 gate por **perda de cobertura** · AC8 rótulo duplicado falha fechada · AC8-bis não cobra em `backlog`
+- [ ] AC7 gate por **perda de cobertura** · **AC7-bis tier 1b (renomear heading)** · AC8 rótulo duplicado · AC8-bis não cobra em `backlog`
 - [ ] AC8-ter os 6 sítios de `done/` corrigidos · AC9 `os.WriteFile` propaga erro · AC10 gates verdes · AC11 reconciliação
 
 ## Status Legend
@@ -65,7 +67,7 @@ são **pré-v8** — não copiar delas.
 > Dependências: nenhuma. **Bloqueia toda wave de implementação.**
 
 ### ML-0A — quem esvazia este gate sem quebrar nenhuma regra escrita
-**Status:** ⬜ Pendente · **Papel:** `hades-tf`
+**Status:** ✅ Concluído (auditado por Zeus em 2026-09-18) · **Papel:** `hades-tf`
 **Files affected:** parecer em `docs/portabilidade/2026-09-18-threat-model-scaffold-residual.md` (somente leitura no restante do repo)
 **Actions:**
 1. **Completude da enumeração.** A lista de sítios que respondem "ML concluído?" está fechada em
@@ -207,7 +209,10 @@ exit 0
    `--json`).
 4. **Sensibilidade ao estado (AC8-bis):** cobra a partir de `wip`; **não** cobra em `backlog` nem
    `analyzing` — 6 roadmaps de `backlog/` carregam o placeholder legitimamente.
-5. Testes de falsificação do AC7, os **três** braços: (a) `exit 1` intacto → reprova;
+5. **AC7-bis (tier 1b):** roadmap em `wip`/`blocked` sem `## Wave 0` é violação; a exigência **não
+   retroage a `done/`** — 154 dos 192 acenderiam. Teste: renomear `## Wave 0 — X` para `## X` num
+   roadmap de `wip` → reprova; o mesmo em `done/` → não reprova.
+6. Testes de falsificação do AC7, os **três** braços: (a) `exit 1` intacto → reprova;
    (b) **bloco de gates inteiramente apagado** → reprova; (c) gate substituído por comando real → não
    reprova. E do AC8: o fixture com duas `## Wave 0` passa hoje (`barrier.go:877-882` faz `break` no
    primeiro rótulo) e reprova depois.

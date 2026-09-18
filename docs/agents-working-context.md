@@ -2,6 +2,23 @@
 
 ---
 
+## Sessão 2026-09-18 — Hades (fix/scaffold-placeholder-chega-a-done — ML-0A: threat model do #392) — CONCLUÍDO (aguarda auditoria do arquiteto)
+
+**Início:** 2026-09-18 | Branch: `fix/scaffold-placeholder-chega-a-done`
+**Tarefa:** ML-0A — Wave 0 threat model para ROADMAP-2026-09-18-conclusao-de-microlote-reimplementada-por-consumidor.
+**Entregável:** `docs/portabilidade/2026-09-18-threat-model-scaffold-residual.md` — escrito e gates verificados.
+**Resultado:**
+- Enumeração: lista de 4 sítios FECHADA. Nenhum quinto sítio encontrado. Sub-especificação descoberta: scaffold.go tem dois comportamentos (ML-0A escreve `pending`; ML-1A+ escreve `⬜ Pendente`). roadmap.go:wave0Block já escreve `⬜ Pendente` corretamente para o path `roadmap new`.
+- Modelo de ameaça: 8 cenários enumerados — C1 (`mv` direto, fechado por AC7), C2 (edição pós-move, residual), C3 (`abandoned → done`, fechado por AC6 se baseado em conteúdo), C4 (primeiro token de conclusão + texto que nega, residual), C5 (status indentado, falso positivo conservador), C6 (cerca de código, fechado por fence-aware), C7 (rótulo duplicado, fechado por AC8), C8 (scaffold `pending` bloqueando AC6, falso positivo fechado por AC5).
+- Falsificação em duas direções por AC6, AC7, AC8 — incluindo a direção de falso positivo que faz o usuário desligar o guard.
+- Curva de custo AC7: 4 tiers. Tier 0 (exit 1) e Tier 1 (apagar bloco) fechados pelo discriminante de cobertura. Tier 2+ (comando trivial) é residual declarado.
+- 7 residuais declarados explicitamente, incluindo o texto literal "Residual declarado".
+- Gates do ML-0A: `test -f` → OK; `grep "Residual declarado"` → OK.
+- ACHADOS PARA O ARQUITETO: (1) AC3's braço positivo run-capture está morto — arquivo já foi limpo antes de a REQ ser criada; substituto é ROADMAP-2026-09-17-sync-enumera-req-por-caminho-literal, com restrição de ordenação antes do ML-4A. (2) AC3 diz "exatamente 27" mas o predicado statusIsComplete retorna 32 — diferença de 5 roadmaps com status fora do vocabulário (pending, ABANDONADO, ❌ Cancelado, 🚫); o caminho mais barato para passar AC3 como escrita é estreitar o predicado e excluir `pending` silenciosamente; escolha binária documentada para o arquiteto.
+- ACHADO NOVO NO AC7: Tier 1b — renomear/apagar o heading `## Wave 0` (custo 1 linha) faz a Wave 0 desaparecer do parser; discriminante de cobertura falha vacuosamente; não estava mapeado nos AC. Precisa de decisão antes do ML-3B.
+
+---
+
 ## Sessão 2026-09-17 (continuação 5) — Apolo (fix/leniencia-sem-prazo — ML-3A: postura do repositório, medição AC6, correção das 8, CHANGELOG) — CONCLUÍDO (aguarda auditoria do arquiteto)
 
 **Início:** 2026-09-17 | Branch: `fix/leniencia-sem-prazo`
@@ -38034,3 +38051,11 @@ Implementação completa. Evidências: `go build ./...` RC=0 · `make test` 15/1
 - Varredura de issues abertos (§2.0) feita antes de escrever qualquer coisa: **11 abertos, nenhum com o mesmo mecanismo.** Os vizinhos são de outra causa — #277 (corpus do barrier acoplado à governança do repo), #290 (usage na violação), #273 (`branch_has_wip_roadmap`), #258 (gate de palavra-chave). Confirma a leitura do próprio #392: causa distinta do #387, issue própria.
 - 🔴 **Precedente que muda a análise:** a `ADR-2026-08-29` já decidiu o **vocabulário de status que o `barrier` reconhece** — conclusão de ML é por **token**, não substring, e os marcadores aceitos são `✅`/`done`/`Concluído`. Existe portanto definição canônica de "ML concluído" já governada por ADR. Qualquer regra nova tem de **reusar esse tokenizador**, sob pena de criar um terceiro dialeto — que é exatamente o defeito que a `ADR-2026-08-29` e a `ADR-2026-07-31` corrigiram (gerador ↔ verificador em contratos diferentes).
 - Também relevante: `ADR-2026-07-31` registra que a seção consolidada de aceite é **placeholder a preencher por decisão explícita** — logo "placeholder existe" não pode ser, sozinho, o discriminante de violação.
+
+### 2026-09-18 — Zeus — Wave 0 do #392 auditada; três correções nos meus próprios artefatos
+- Parecer entregue em `docs/portabilidade/2026-09-18-threat-model-scaffold-residual.md`; gates da wave verdes. Enumeração de sítios **fechada em quatro** — nenhum quinto, confirmado por varredura independente.
+- 🔴 **Achado 1 — braço de teste que nasceu morto, erro meu.** O AC3 apontava `ROADMAP-2026-09-16-run-capture` como braço positivo. Verifiquei: o arquivo tem **0 MLs** — porque **eu mesmo o limpei em 2026-09-17**, durante a auditoria do #387. O implementador calibraria o predicado para não detectar nada. Substituído por fixture **congelado em `testdata/`** (não corpus vivo, porque o ML-4A limpa o original).
+- 🔴 **Achado 2 — contradição interna do meu AC.** Escrevi "exatamente os 27" num AC que nomeia `StatusIsComplete` como predicado. São predicados diferentes: 27 vem de medir `⬜`/`🔄`; o canônico dá **32**. Os 5 de diferença têm status fora do vocabulário — e um deles é `pending`, justamente o valor que o AC5 existe para eliminar. Estreitar o predicado faria o AC passar excluindo o alvo. **Adotado o canônico: 32.** Padrão A2 da Regra Dura de Reconciliação, pego antes do handoff desta vez.
+- 🔴 **Achado 3 — tier 1b que eu não previ.** `waveHeadingRe` é `^## Wave (\S+) `: renomear `## Wave 0 — X` para `## X` faz a wave sumir do parser, e o discriminante de cobertura falha **vacuosamente**. Mesmo custo de uma linha dos tiers anteriores. **A medição proibiu a solução óbvia:** só **38 dos 192** roadmaps de `done/` têm `## Wave 0` — exigir retroativamente acenderia **154**, pior que os 32 que eu rejeitei. Adotada exigência sensível ao estado (`wip`/`blocked` + transição), com `done/` fora. Custo real: 1 arquivo.
+- **Decisão de política minha, registrada:** três categorias de status. `❌ Bloqueado` **bloqueia** a transição (ML bloqueado dentro de roadmap `done` é a contradição que a REQ fecha); `ABANDONADO`/`🚫`/`❌ Cancelado` **libera** (encerramento explícito é decisão registrada, não esquecimento).
+- **Nota de instrumento, oitava da sessão:** o pipeline `sed | cut | sort | uniq -c` que usei para enumerar o vocabulário de status classificou **115 linhas de pendência como conclusão** — a tabela dizia 1044 linhas sem um único `⬜`, enquanto `grep -c` achava 115. Se eu tivesse decidido por ela, teria concluído que não há ML pendente algum em `done/`. Conferido por `/usr/bin/grep` real contra o `grep` desta sessão (que é `ugrep`): nos padrões que importam, **concordam** — 27 e 4 confirmados por dois caminhos.

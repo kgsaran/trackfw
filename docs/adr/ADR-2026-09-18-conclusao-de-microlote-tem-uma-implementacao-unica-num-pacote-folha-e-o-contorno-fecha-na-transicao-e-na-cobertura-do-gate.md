@@ -28,7 +28,10 @@ segue a vida com duas `Wave 0`, dois `ML-1A`, ou microlotes `⬜ Pendente` — e
 
 | medição | valor |
 |---|---|
-| roadmaps em `done/` com pelo menos um ML `⬜`/`🔄` (fence-aware) | **27 (14%)** |
+| roadmaps em `done/` com ML não concluído pelo predicado canônico | **32 (17%)** |
+| ...pelo recorte estreito `⬜`/`🔄` | 27 |
+| ...com status fora do vocabulário (`pending`, `PENDENTE`, `ABANDONADO`, `❌`, `🚫`) | 5 |
+| roadmaps em `done/` com `## Wave 0` | **38 de 192** |
 | roadmaps em `done/` com o gate placeholder `exit 1` intacto | **4** |
 | interseção dos dois | 2 |
 
@@ -112,7 +115,7 @@ transição, e o gate vira incômodo — que é o efeito perverso nomeado pela `
 ### 3. `roadmap move <nome> done` recusa quando há microlote não concluído
 
 O gate vive na **transição**, que é onde a informação existe e onde o custo retroativo é **zero** —
-os 27 roadmaps já em `done/` não são tocados.
+os 32 roadmaps já em `done/` não são tocados.
 
 O predicado é o de `roadmapdoc`: um ML está concluído quando o **primeiro token** do restante da
 linha `**Status:**` pertence ao vocabulário de conclusão. Cercas de código são mascaradas.
@@ -133,6 +136,7 @@ exatamente o mesmo defeito:
 |---|---|---|---|
 | deixar `exit 1` intacto | 0 | reprova | reprova |
 | **apagar o bloco de gates inteiro** | 1 linha | **passa** | reprova |
+| 🔴 **renomear `## Wave 0 — X` para `## X`** (tier 1b, achado da Wave 0) | 1 linha | **passa** | **passa** — falha vacuosamente; fechado pela decisão 8 |
 
 O discriminante é: **a wave perdeu o gate que o template lhe deu**. Vale em **qualquer estado**, não
 só na transição.
@@ -174,7 +178,7 @@ efeito perverso da `ADR-2026-08-17`.
 Em `done/`: 4 com placeholder + 4 com rótulo duplicado, com 2 em comum → **6 arquivos**.
 
 Pela Regra Dura de Causa Raiz, defeito **medido e localizado** se corrige na REQ vigente. Seis
-arquivos é factível. É a diferença qualitativa em relação aos 27 da decisão 7: aqueles são ausência
+arquivos é factível. É a diferença qualitativa em relação aos 32 da decisão 7: aqueles são ausência
 histórica de convenção; estes são **scaffold residual**, que é exatamente o defeito que esta REQ
 fecha. Deixá-los seria fechar a REQ com sítios conhecidos e não corrigidos — o achado A1 da auditoria
 externa de 2026-09-05, que este projeto já pagou uma vez.
@@ -184,13 +188,42 @@ externa de 2026-09-05, que este projeto já pagou uma vez.
 A direção 1 do issue — regra no `validate` que reprova roadmap em `done/` com ML não concluído — é
 **rejeitada nesta ADR**, com o número que a rejeita:
 
-**27 dos 192 roadmaps em `done/` acenderiam de imediato.** Fechar isso exige baseline ou carve-out —
+**32 dos 192 roadmaps em `done/` acenderiam de imediato.** Fechar isso exige baseline ou carve-out —
 e a campanha do #387, mergeada ontem, foi inteiramente sobre o fato de que **o mecanismo de
 afrouxamento é a superfície de ataque**. Construir uma regra cuja única forma de nascer verde é um
 carve-out é devolver o interruptor.
 
 Fica registrado como reconsiderável quando (e se) o corpus histórico for sanado por outra via — mas
 não como dívida desta REQ.
+
+### 8. Wave 0 é exigida por estado, e `done/` não é reavaliado — achado da Wave 0
+
+`waveHeadingRe` é `^## Wave (\S+) `. Renomear `## Wave 0 — Threat Model` para `## Threat Model` faz
+a wave **desaparecer do parser**, e o discriminante da decisão 4 falha **vacuosamente**. É um tier de
+custo idêntico ao de apagar o bloco de gates, e **eu não o havia previsto** — veio do parecer de
+`hades-tf`.
+
+🔴 A medição proíbe a solução óbvia: apenas **38 dos 192** roadmaps de `done/` têm `## Wave 0`, porque
+a convenção só existe desde agosto. Exigi-la retroativamente acenderia **154** — pior que os 32 que a
+decisão 7 rejeita, pelo mesmo raciocínio.
+
+Adotado: a exigência vale em `wip`/`blocked` e na **transição** para `done`; `done/` não é
+reavaliado. Custo retroativo medido: **1 arquivo** (`blocked/`). A assimetria é deliberada, e está
+aqui escrita para que ninguém a "conserte" depois por parecer inconsistente.
+
+### 9. Três categorias de status, não duas
+
+`StatusIsComplete` responde uma pergunta binária, e o corpus tem três situações:
+
+| categoria | valores medidos | efeito na transição para `done` |
+|---|---|---|
+| concluído | `✅`, `done`, `Concluído`, `CONCLUIDO` | libera |
+| encerrado sem conclusão | `ABANDONADO`, `🚫 Abandonado`, `❌ Cancelado` | **libera** |
+| pendente | `⬜`, `🔄`, `pending`, `PENDENTE`, `❌ Bloqueado` | **bloqueia** |
+
+`❌ Bloqueado` bloqueia porque um ML bloqueado dentro de um roadmap `done` é exatamente a contradição
+que esta ADR fecha. Abandonado libera porque encerramento explícito é decisão registrada, não
+esquecimento — reprová-lo seria o falso-positivo da `ADR-2026-08-17`.
 
 ## Consequences
 
@@ -206,7 +239,7 @@ não como dívida desta REQ.
 
 - A extração toca o `barrier`, que é gate de release. Mitigado pelo AC de identidade byte-a-byte da
   saída `--json` sobre todo o corpus, capturado **antes** de qualquer edição.
-- Roadmaps já em `done/` com ML pendente continuam lá. Aceito e nomeado: sanar 27 arquivos
+- Roadmaps já em `done/` com ML pendente continuam lá. Aceito e nomeado: sanar 32 arquivos
   retroativamente é risco desproporcional, e a decisão 7 explica por que a alternativa é pior.
 - A decisão 3 recusa transições que hoje passam. É o ponto — mas depende da decisão 2 ter convergido
   o scaffold antes, sob pena de virar incômodo.
