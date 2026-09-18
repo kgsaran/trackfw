@@ -147,7 +147,7 @@ nos 228 brutos; PoCs só em macOS.
 > ação do ML-1A — **não** reusar o número antigo.
 
 ### ML-1A — extrair a contenção para ponto único e revalidar a enumeração pós-v8
-**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
+**Status:** ✅ Concluído (auditado por Zeus em 2026-09-18: extração sem mudança de fixture, `pathguard` sem ciclo, barreira 630 gates / 0 FAIL)
 **Files affected:** cria/estende um pacote folha (avaliar `internal/pathanchor`, que já existe),
 `internal/integrations/manager.go` (passa a consumir o extraído), testes correspondentes
 **Actions:**
@@ -169,7 +169,40 @@ nos 228 brutos; PoCs só em macOS.
 - [ ] Uma frase por teste novo (AC11)
 
 ### ML-1B..1D — aplicação por família
-**Status:** ⬜ Pendente (particionamento sai do ML-1A)
+**Status:** ⬜ Pendente
+
+#### 🔴 Enumeração revalidada pelo ML-1A, auditada por mim
+
+**160 linhas de chamada em 19 arquivos** — `(a)` em risco **156 linhas / 18 arquivos**, `(b)` fora de
+risco 1, `(c)` já protegido 3. A comparação com os **187** da Wave 0 mede a **remoção de Node e
+Python pela v8**, não redução de risco no Go. Os maiores: `generators/update.go` **53** (escopo
+**global**: `$HOME/.trackfw`, `.claude`, `.codex`, `.gemini`, `.cursor`, `.copilot`, `.kiro`),
+`generators/scaffold.go` **33**, `generators/agentfiles.go` **21**, `discover/discover.go` **13**.
+
+#### 🔴 Dois achados do ML-1A que mudam o ML-1B
+
+**1. Três cópias de `atomicWrite`, só uma protegida.** Confirmado por mim:
+`integrations/manager.go:764` (guarded), `identity/identity.go:88` (**não**), `thirdparty/quarantine.go:141`
+(**não**). Os comentários das duas cópias **declaram** a duplicação — *"Mirrors the pattern used by
+internal/integrations/manager.go"* e *"replicated here rather than imported"*. Mesma causa, mesmo
+roadmap: as três convergem para o `pathguard`.
+
+**2. 🔴 A enumeração por primitivos é necessária mas INSUFICIENTE.** `manifest.go:81` e
+`render.go:722` chamam `atomicWrite` com caminho derivado de `root` **sem** passar por
+`rejectSymlinks` — e **não aparecem** no grep de `os.WriteFile`/`os.Create`/`os.Rename`, porque
+chamam o **wrapper**. Verificado por mim: dos 4 callers de `atomicWrite` em `integrations/`, só os de
+`manager.go:308,374` passam por `resolve()→rejectSymlinks()`.
+**Consequência para o ML-1B:** enumerar também os **wrappers de escrita** e seus callers, não só os
+primitivos. Um sítio protegido por wrapper não-protegido é indistinguível de sítio seguro no grep.
+
+#### Precondição declarada pelo ML-1A
+
+Sítios que escrevem em **caminho relativo puro** — `configure.go:140` (`"trackfw.yaml"`),
+`java.go:63` (`"pom.xml"`), `validator.go:54` (`".trackfw-baseline.json"`) — exigem que o caller
+**resolva um `root` absoluto antes**; passar caminho relativo a `RejectSymlinks` dá "escapes root"
+imediato. **O ML-1B não é inserção mecânica** nesses casos.
+
+Famílias, em ordem de gravidade medida:
 As famílias da Wave 0, **a reconfirmar pós-v8** no ML-1A, em ordem de gravidade medida:
 1. 🔴 **`update harness`** — escopo **global** (`$HOME/.claude`, `.codex`, `.gemini`, ...). A PoC da
    Wave 0 escreveu `SKILL.md` **fora do `$HOME`** com `updated=1 failed=0`, sem aviso. É o pior caso:

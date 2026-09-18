@@ -2,6 +2,22 @@
 
 ---
 
+## Sessão 2026-09-18 (continuação 12) — Apolo (fix/afirma-contencao-antes-de-escrever — ML-1A: extrair contenção para ponto único e revalidar enumeração pós-v8) — CONCLUÍDO
+
+**Início:** 2026-09-18 | Branch: `fix/afirma-contencao-antes-de-escrever`
+**Tarefa:** ML-1A (REQ guarda-de-folha-faz-lstat-so-no-ultimo-componente) — revalidar a enumeração pós-v8, extrair `rejectSymlinks`/`beneath` de `internal/integrations/manager.go` para novo pacote folha `internal/pathguard`.
+**Resultado:** `go build ./...` RC=0 · `go test ./...` RC=0 · `make quality` RC=0 · 630 OK · 0 FAIL
+**Decisão de pacote:** `internal/pathanchor` recusado pelo seu próprio package doc ("This package never governs an actual filesystem traversal, syscall, or path-building step"). Criado `internal/pathguard` (`os.Lstat` + `path/filepath`) — sem importar `internal/commands` nem `internal/validator`.
+**Enumeração pós-v8:** 160 sítios em 19 arquivos (vs 187 pré-v8 que incluía Node/Python). (a) em risco: 156 sítios / 18 arquivos. (b) fora de risco: 1 sítio (os.DevNull). (c) já protegido: 3 sítios (manager.go).
+**Não-regressão do manager:** `go test ./internal/integrations/` verde. `beneath` continua acessível como delegator para os testes white-box de package integrations (manager_test.go:268).
+**Arquivos criados:**
+- `internal/pathguard/pathguard.go`: pacote folha com `Beneath` e `RejectSymlinks` (extração, não reescrita).
+- `internal/pathguard/pathguard_test.go`: 7 testes novos com AC11 (uma frase por teste).
+**Arquivos editados:**
+- `internal/integrations/manager.go`: importa `internal/pathguard`; `beneath` e `rejectSymlinks` viram thin delegators (bodies substituídos por uma linha cada).
+
+---
+
 ## Sessão 2026-09-18 (continuação 11) — Apolo (fix/scaffold-placeholder-chega-a-done — ML-4E: restaurar cobertura do S11) — CONCLUÍDO
 
 **Início:** 2026-09-18 | Branch: `fix/scaffold-placeholder-chega-a-done`
@@ -38598,3 +38614,13 @@ trackfw init && roadmap new "..." && roadmap move <n> wip && trackfw validate
 - **AC5 da REQ atualizado:** paridade entre 3 CLIs está **sem objeto** desde a v8; substituída por consistência **entre sítios de escrita** do Go — que é a que passa a importar, e a que o #392 mostrou ser a que se perde.
 - **Superfície medida por mim:** `os.WriteFile`/`os.Rename`/`MkdirAll` aparecem em **12+ arquivos** de `internal/`. A enumeração real é o ML-0A.
 - Roadmap movido `analyzing` → `wip`.
+
+### 2026-09-18 — Zeus — ML-1A aprovado: `internal/pathguard` nasce por extração
+- **Auditado por mim:** `pathguard` importa **só stdlib** (`fmt`, `os`, `path/filepath`, `strings`), zero import de `commands`/`validator`. **Nenhuma fixture de `internal/integrations` mudou** — o diff é `manager.go` com 8 inserções / 24 deleções, puramente delegação. O executor **preservou os nomes privados** (`beneath`, `rejectSymlinks`) justamente para que os testes white-box não precisassem mudar: ele entendeu o critério de auditoria e desenhou para satisfazê-lo, não para contorná-lo.
+- **Rejeitou `internal/pathanchor` com citação do package doc daquele pacote** — *"never governs an actual filesystem traversal, syscall…"* — e criou `internal/pathguard`. Justificativa correta: `RejectSymlinks` chama `os.Lstat` em laço, que é o outro lado daquela fronteira.
+- **Enumeração revalidada: 160 linhas / 19 arquivos**, sendo **(a) 156 linhas / 18 arquivos**. A diferença para os 187 da Wave 0 mede a **remoção de Node/Python pela v8**, não redução de risco.
+- 🔴 **Dois achados dele que mudam o ML-1B, ambos confirmados por mim:**
+  1. **Três cópias de `atomicWrite`, só a de `manager.go` protegida.** As outras duas — `identity.go:88`, `quarantine.go:141` — **declaram a duplicação nos próprios comentários**. Mesma causa, mesmo roadmap.
+  2. **A enumeração por primitivos é insuficiente.** `manifest.go:81` e `render.go:722` chamam `atomicWrite` com caminho derivado de `root` **sem** `rejectSymlinks`, e **não aparecem** no grep de `os.WriteFile`/`os.Create`/`os.Rename` porque chamam o **wrapper**. Um sítio protegido por wrapper desprotegido é indistinguível de sítio seguro no grep.
+- 🔴 **Ele corrigiu uma métrica minha.** Eu vinha reportando "641 OK" no `make quality`; `^OK ` (com espaço) dá **630**, e as 11 de diferença são linhas `OK:` de outro script. **"641" nunca foi contagem de gates.** Não invalida as barreiras — os sinais reais eram `0 FAIL` e a guarda de conjunto —, mas passo a usar `^OK ` e a citar **630**.
+- Barreira desta entrega: **630 gates / 0 FAIL**, guarda de conjunto OK.
