@@ -205,10 +205,17 @@ falha real posterior** — motivo pelo qual o arquiteto roda o gate por conta pr
 ---
 
 ## Wave 2 — Consumidores convergem (2 MLs em paralelo)
-> Dependências: ML-1A auditado. Arquivos disjuntos entre os dois MLs.
+> Dependências: Wave 1 (ML-1A a ML-1E) auditada. Arquivos disjuntos entre os dois MLs.
+> 🔴 **Nenhum dos dois roda `make quality`.** Medido: `quality → parity → build` escreve
+> `bin/trackfw`, e duas execuções simultâneas na mesma árvore corrompem o binário uma da outra.
+> Cada ML roda `go build ./...` e `go test` do seu pacote; **o arquiteto roda `make quality` uma vez
+> como barreira da wave**, depois dos dois.
+> 🔴 **Nenhum dos dois edita arquivo transversal** (`docs/agents-working-context.md`,
+> `.claude/agent-memory/`) nem executa `git add` — dois agentes na mesma árvore se atropelam, e um
+> `git add -A` já commitou lixo nesta REQ.
 
 ### ML-2A — `serve` deixa de decidir por substring
-**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
 **Files affected:** `internal/serve/api_board.go` (137-168) + teste
 **Actions:**
 1. `parseMLProgress` passa a usar `internal/roadmapdoc`: `fenceMask` + `parseMLs` + `mlStatusMarker`
@@ -222,7 +229,7 @@ falha real posterior** — motivo pelo qual o arquiteto roda o gate por conta pr
 - [ ] Uma frase por teste novo declarando o que ele afirma (AC11)
 
 ### ML-2B — `scaffold` ensina o vocabulário que o verificador aceita
-**Status:** ⬜ Pendente · **Papel:** `afrodite-tf`
+**Status:** 🔄 Em andamento · **Papel:** `afrodite-tf`
 **Files affected:** `internal/generators/scaffold.go` (350-384) + teste
 **Actions:**
 1. Trocar `**Status:** pending` (scaffold.go:354) pelo valor que o gerador escreve —
