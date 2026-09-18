@@ -440,15 +440,21 @@ CORPUS_VERDICTS_PIN="$ROOT_DIR/scripts/testdata/roadmap-barrier-corpus-verdicts.
 # rodar `trackfw barrier <name> --wave <label> --json` em sandbox git com o arquivo em
 # docs/roadmaps/wip/, extrair evidence/failure de mls_complete e acceptance_evidence via
 # python3, juntar num arquivo, `LC_ALL=C sort`, sha256sum → PINNED_CORPUS_HASH.
-PINNED_CORPUS_HASH="f04ee08c5d295bd337e8e0a2bdb670aec0bd16a981d66f56c5517074941e08b5"
+# ML-1D do ROADMAP-2026-09-18 (#392) — WaveLabelRe agora aceita sufixo sem hífen ("1b").
+# convergencia-do-harness (waves 1,1b,2,3,4,5) e serve-amarra (waves 1,1b,2,3) deixam de
+# ser exit2 e geram vereditos. +33 linhas no TSV; exit2 cai de 10 para 0. Os 2 arquivos com
+# "## Wave reaberta" (sufixo alfabético puro) permanecem inválidos — correção no ML-4A.
+# PINNED_CORPUS_FILES/WAVES: inalterados (arquivos já estavam no snapshot; labels já eram
+# extraídos pelo grep — só saíam exit2 antes da correção da gramática).
+PINNED_CORPUS_HASH="a59927ef4bdc340983960f30575c7d76a4ca021c5675b75378fb87abfac51682"
 PINNED_CORPUS_FILES=144
 PINNED_CORPUS_WAVES=432
-PINNED_CORPUS_EXIT2=10
-PINNED_CORPUS_LINES=1510
-PINNED_MLS_COMPLETE_EVIDENCE=639
-PINNED_MLS_COMPLETE_FAILURE=118
-PINNED_ACCEPTANCE_EVIDENCE_EVIDENCE=314
-PINNED_ACCEPTANCE_EVIDENCE_FAILURE=439
+PINNED_CORPUS_EXIT2=0
+PINNED_CORPUS_LINES=1543
+PINNED_MLS_COMPLETE_EVIDENCE=655
+PINNED_MLS_COMPLETE_FAILURE=119
+PINNED_ACCEPTANCE_EVIDENCE_EVIDENCE=317
+PINNED_ACCEPTANCE_EVIDENCE_FAILURE=452
 
 # HASH_CMD_BIN (ML-2E, sítio de mesma causa do parecer hades-tf sobre
 # TRACKFW_FALSIFY_SCRIPT/GEN): env vars não carregam array bash, então o
@@ -531,10 +537,11 @@ elif [[ -n "${CORPUS_FILELIST:-}" ]]; then
       if [[ "$rc" -eq 2 ]]; then
         # Cabeçalho de wave malformado: label rejeitado pelo WaveLabelRe — pinado em
         # PINNED_CORPUS_EXIT2 para que qualquer mudança que resolva (ou introduza) casos
-        # seja notada. 🔴 ML-1C (2026-09-18): o comentário anterior dizia "pré-grammar
-        # ADR-2026-08-22, não relacionado ao contrato" — estava DESATUALIZADO após AC3-ter;
-        # os 10 casos restantes (convergencia + serve-amarra, label "1b" sem hífen) são do
-        # mesmo mecanismo que AC3-ter corrigiu. Decisão de escopo no arquiteto (#392).
+        # seja notada. ML-1D (2026-09-18, REQ #392): WaveLabelRe agora aceita sufixo sem
+        # hífen ("1b"), portanto convergencia-do-harness e serve-amarra deixam de ser
+        # exit2. Os 2 arquivos com "## Wave reaberta" (sufixo alfabético puro sem dígito)
+        # permanecem inválidos mas NÃO estão no snapshot (144 arquivos); PINNED_CORPUS_EXIT2=0.
+        # Correção dos arquivos reaberta: ML-4A.
         CORPUS_EXIT2=$((CORPUS_EXIT2 + 1))
         continue
       fi

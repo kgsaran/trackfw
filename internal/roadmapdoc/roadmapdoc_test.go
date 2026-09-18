@@ -1,6 +1,6 @@
 package roadmapdoc
 
-// roadmapdoc_test.go — unit tests for the roadmapdoc leaf package (ML-1A + ML-1B, REQ #392).
+// roadmapdoc_test.go — unit tests for the roadmapdoc leaf package (ML-1A + ML-1B + ML-1D, REQ #392).
 //
 // AC11 reconciliation (one sentence per test asserting which conclusion it affirms):
 //
@@ -52,6 +52,29 @@ package roadmapdoc
 //     Affirms: "3-Py" and "3-py" compare as equal by CompareWaveLabels — the ordering of
 //     waves must not depend on the case of the authored suffix.
 //
+//   TestSplitWaveLabel_NoHyphen (ML-1D)
+//     Affirms: SplitWaveLabel("1b") returns (1, "b"), not (0, "") — the no-hyphen suffix
+//     form is parsed correctly so that CompareWaveLabels can normalise "1b" and "1-b" to
+//     the same (integer, suffix) pair.
+//
+//   TestSplitWaveLabel_Invariant_PreviouslyValidLabels (ML-1D)
+//     Affirms: for every label form valid before ML-1D (digit-only and digit-hyphen-suffix),
+//     SplitWaveLabel returns the same (integer, suffix) as the old implementation —
+//     no preexisting pin line in the corpus TSV was reclassified by the parser rewrite.
+//
+//   TestCompareWaveLabels_NoHyphenEquivalence (ML-1D)
+//     Affirms: CompareWaveLabels("1b", "1-b") == 0 — the two forms of the same label are
+//     considered equal, so --wave 1-b resolves to a document heading "## Wave 1b".
+//
+//   TestCompareWaveLabels_Ordering_NoHyphenSuffix (ML-1D)
+//     Affirms: "1" < "1b" < "2" in CompareWaveLabels ordering — the no-hyphen form still
+//     sorts between the bare integer and the next integer, matching the hyphen form.
+//
+//   TestParseWaves_CascadeIsolated (ML-1D)
+//     Affirms: a document with a malformed wave label and a valid wave produces a non-empty
+//     []MalformedWave AND a non-empty []WaveBlock — the malformed wave is isolated, not
+//     propagated, proving the cascade-abort behaviour of ADR-2026-07-29 decision 16 is reversed.
+//
 // CORPUS MEASUREMENT NOTE (updated by ML-1B):
 //   ML-1A measured three counts (pre-fix):
 //     byStatusIsComplete (ignoring ParseWaves errors): 27
@@ -77,6 +100,7 @@ package roadmapdoc
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -275,13 +299,21 @@ func TestCorpusMeasurement_ReportOnly(t *testing.T) {
 
 // TestWaveLabelRe_CaseInsensitiveSuffix verifies that the case-insensitive suffix
 // fix accepts real labels like "3-Py" while still rejecting genuinely invalid ones.
+// ML-1D (REQ #392) extends the valid set to include no-hyphen suffixes ("1b", "3b").
 //
-// AC11 (ML-1B): WaveLabelRe accepts "3-Py" after the AC3-ter fix, and continues
-// to reject "abc" (no digit prefix) — the counter-test that proves the regex
-// extension does not accidentally admit all-letter labels.
+// AC11 (ML-1B + ML-1D): WaveLabelRe accepts "3-Py" and "1b" after the grammar fixes,
+// and continues to reject "abc", "reaberta", "X" (no digit prefix) — the counter-tests
+// that prove the extensions do not accidentally admit all-letter labels.
 func TestWaveLabelRe_CaseInsensitiveSuffix(t *testing.T) {
-	valid := []string{"0", "1", "2-bis", "3", "3-Py", "3-py", "3-PY", "10-Hotfix", "0-A"}
-	invalid := []string{"abc", "reaberta", "-1", "Py", "3-", ""}
+	valid := []string{
+		"0", "1", "2-bis", "3", "3-Py", "3-py", "3-PY", "10-Hotfix", "0-A",
+		// ML-1D additions: no-hyphen suffix forms from real roadmaps
+		"1b", "3b", "10a2", "2bis",
+	}
+	invalid := []string{
+		"abc", "reaberta", "-1", "Py", "3-", "",
+		"X", // ML-1D counter-test: single upper-case letter with no digit is invalid
+	}
 
 	for _, label := range valid {
 		if !WaveLabelRe.MatchString(label) {
@@ -298,21 +330,30 @@ func TestWaveLabelRe_CaseInsensitiveSuffix(t *testing.T) {
 // TestParseWaves_FailSafeIsUnfinished confirms that a malformed wave heading causes
 // HasUnfinishedMLs to return true (fail-safe closed, Ação 3).
 //
-// AC11 (ML-1B): ParseWaves returns an error for "## Wave abc" (letter-only label);
-// HasUnfinishedMLs propagates this as true — a roadmap with a malformed heading
-// cannot be released to done because its completeness cannot be proven.
+// AC11 (ML-1B, updated for ML-1D): ParseWaves reports "## Wave abc" (letter-only label)
+// as a MalformedWave; HasUnfinishedMLs propagates this as true — a roadmap with a
+// malformed heading cannot be released to done because completeness cannot be proven.
+// ML-1D changed the return type from ([]WaveBlock, error) to ([]WaveBlock, []MalformedWave)
+// so parsing continues for the rest of the document; the fail-safe is preserved.
 func TestParseWaves_FailSafeIsUnfinished(t *testing.T) {
-	// "## Wave abc" is still invalid after the AC3-ter fix (no digit prefix).
+	// "## Wave abc" is still invalid after the AC3-ter and ML-1D fixes (no digit prefix).
 	content := "# Roadmap\n\n## Wave abc — Invalid heading\n\n### ML-1A — Work\n**Status:** ✅ Concluído\n**Acceptance criteria:**\n- [x] done\n"
 
 	lines := SplitRoadmapLines(content)
-	_, err := ParseWaves(lines)
-	if err == nil {
-		t.Fatal("ParseWaves returned nil error for '## Wave abc', want an error — counter-test: invalid label must stay rejected")
+	_, malformed := ParseWaves(lines)
+	if len(malformed) == 0 {
+		t.Fatal("ParseWaves returned no MalformedWave for '## Wave abc', want one — counter-test: invalid label must stay reported")
+	}
+	// The malformed entry must name the line (line 3, 1-based) and the token.
+	if malformed[0].Token != "abc" {
+		t.Errorf("MalformedWave.Token = %q, want %q", malformed[0].Token, "abc")
+	}
+	if malformed[0].Line != 3 {
+		t.Errorf("MalformedWave.Line = %d, want 3", malformed[0].Line)
 	}
 
 	if !HasUnfinishedMLs(content) {
-		t.Fatal("HasUnfinishedMLs = false for roadmap with malformed wave heading, want true — fail-safe must treat parse error as unfinished")
+		t.Fatal("HasUnfinishedMLs = false for roadmap with malformed wave heading, want true — fail-safe must treat malformed wave as unfinished")
 	}
 }
 
@@ -338,5 +379,159 @@ func TestCompareWaveLabels_CaseNeutral(t *testing.T) {
 	}
 	if got := CompareWaveLabels("3-Py", "4"); got >= 0 {
 		t.Errorf("CompareWaveLabels(\"3-Py\", \"4\") = %d, want < 0 (integer part dominates)", got)
+	}
+}
+
+// ── ML-1D: no-hyphen suffix grammar and cascade isolation ────────────────────
+
+// TestSplitWaveLabel_NoHyphen verifies that SplitWaveLabel correctly parses the
+// no-hyphen suffix form introduced by ML-1D.
+//
+// AC11 (ML-1D): SplitWaveLabel("1b") returns (1, "b"), not (0, "") — the no-hyphen
+// suffix form is split correctly so that CompareWaveLabels can normalise "1b" == "1-b".
+func TestSplitWaveLabel_NoHyphen(t *testing.T) {
+	cases := []struct {
+		label   string
+		wantInt int
+		wantSuf string
+	}{
+		{"1b", 1, "b"},
+		{"3b", 3, "b"},
+		{"10a2", 10, "a2"},
+		{"2bis", 2, "bis"},
+	}
+	for _, c := range cases {
+		gotInt, gotSuf := SplitWaveLabel(c.label)
+		if gotInt != c.wantInt || gotSuf != c.wantSuf {
+			t.Errorf("SplitWaveLabel(%q) = (%d, %q), want (%d, %q)",
+				c.label, gotInt, gotSuf, c.wantInt, c.wantSuf)
+		}
+	}
+}
+
+// TestSplitWaveLabel_Invariant_PreviouslyValidLabels proves that the ML-1D rewrite of
+// SplitWaveLabel does not change the output for any label form valid before ML-1D.
+//
+// AC11 (ML-1D): for digit-only and digit-hyphen-suffix labels, SplitWaveLabel returns
+// the same (integer, suffix) as the original implementation — no preexisting corpus pin
+// line can be reclassified by the parser rewrite.
+func TestSplitWaveLabel_Invariant_PreviouslyValidLabels(t *testing.T) {
+	cases := []struct {
+		label   string
+		wantInt int
+		wantSuf string
+	}{
+		// digit-only
+		{"0", 0, ""},
+		{"1", 1, ""},
+		{"2", 2, ""},
+		{"10", 10, ""},
+		// digit-hyphen-suffix (the form valid before ML-1D)
+		{"2-bis", 2, "bis"},
+		{"3-py", 3, "py"},
+		{"3-Py", 3, "Py"},
+		{"10-a2", 10, "a2"},
+		{"0-A", 0, "A"},
+	}
+	for _, c := range cases {
+		gotInt, gotSuf := SplitWaveLabel(c.label)
+		if gotInt != c.wantInt || gotSuf != c.wantSuf {
+			t.Errorf("SplitWaveLabel(%q) = (%d, %q), want (%d, %q) — invariant: ML-1D must not change pre-existing label parsing",
+				c.label, gotInt, gotSuf, c.wantInt, c.wantSuf)
+		}
+	}
+}
+
+// TestCompareWaveLabels_NoHyphenEquivalence verifies that "1b" and "1-b" compare as equal.
+//
+// AC11 (ML-1D): CompareWaveLabels("1b", "1-b") == 0 — both forms normalise to (1, "b")
+// via SplitWaveLabel, so --wave 1-b resolves a document heading "## Wave 1b" and vice versa.
+func TestCompareWaveLabels_NoHyphenEquivalence(t *testing.T) {
+	if got := CompareWaveLabels("1b", "1-b"); got != 0 {
+		t.Errorf("CompareWaveLabels(\"1b\", \"1-b\") = %d, want 0 (no-hyphen == hyphen form)", got)
+	}
+	if got := CompareWaveLabels("1-b", "1b"); got != 0 {
+		t.Errorf("CompareWaveLabels(\"1-b\", \"1b\") = %d, want 0 (symmetric)", got)
+	}
+	// Additional forms
+	if got := CompareWaveLabels("2bis", "2-bis"); got != 0 {
+		t.Errorf("CompareWaveLabels(\"2bis\", \"2-bis\") = %d, want 0", got)
+	}
+}
+
+// TestCompareWaveLabels_Ordering_NoHyphenSuffix proves that no-hyphen suffix labels sort
+// between the bare integer and the next integer, matching the hyphen-suffix ordering.
+//
+// AC11 (ML-1D): "1" < "1b" < "2" in CompareWaveLabels — the no-hyphen form does not
+// sort before the bare integer (which would break wave ordering), and it sorts before
+// the next integer (consistent with "1" < "1-b" < "2" from the hyphen form).
+func TestCompareWaveLabels_Ordering_NoHyphenSuffix(t *testing.T) {
+	if got := CompareWaveLabels("1", "1b"); got >= 0 {
+		t.Errorf("CompareWaveLabels(\"1\", \"1b\") = %d, want < 0 (bare integer before suffixed)", got)
+	}
+	if got := CompareWaveLabels("1b", "2"); got >= 0 {
+		t.Errorf("CompareWaveLabels(\"1b\", \"2\") = %d, want < 0 (suffixed before next integer)", got)
+	}
+	// Verify "1b" and "1-b" occupy the same position relative to neighbours.
+	if got := CompareWaveLabels("1b", "1-b"); got != 0 {
+		t.Errorf("CompareWaveLabels(\"1b\", \"1-b\") = %d, want 0 (same position)", got)
+	}
+}
+
+// TestParseWaves_CascadeIsolated proves that a document with a malformed wave label
+// and a valid wave returns both a non-empty []MalformedWave and a non-empty []WaveBlock.
+//
+// AC11 (ML-1D): a malformed wave heading is isolated — ParseWaves reports it in
+// []MalformedWave and continues to parse the rest of the document — reversing the
+// cascade-abort behaviour of ADR-2026-07-29 decision 16. The malformed wave is named
+// with its line number; the valid wave is fully available for evaluation.
+func TestParseWaves_CascadeIsolated(t *testing.T) {
+	// Document: Wave 1 is valid and green; Wave reaberta is malformed (no digit prefix).
+	content := strings.Join([]string{
+		"# Roadmap: Cascade Test",
+		"",
+		"## Wave 1 — Valid Wave",
+		"",
+		"### ML-1A — Work",
+		"**Status:** ✅ Concluído",
+		"**Acceptance criteria:**",
+		"- [x] done",
+		"",
+		"## Wave reaberta — Malformed Label",   // line 10
+		"",
+		"### ML-R — Unreachable",
+		"**Status:** ✅",
+	}, "\n")
+
+	lines := SplitRoadmapLines(content)
+	waves, malformed := ParseWaves(lines)
+
+	// At least one valid wave must be returned.
+	if len(waves) == 0 {
+		t.Fatal("ParseWaves returned no valid waves — cascade isolation failed: malformed wave must not abort valid ones")
+	}
+	if waves[0].Label != "1" {
+		t.Errorf("expected first valid wave label \"1\", got %q", waves[0].Label)
+	}
+
+	// Exactly one malformed wave must be reported.
+	if len(malformed) == 0 {
+		t.Fatal("ParseWaves returned no MalformedWave — malformed heading not reported")
+	}
+	if malformed[0].Token != "reaberta" {
+		t.Errorf("MalformedWave.Token = %q, want \"reaberta\"", malformed[0].Token)
+	}
+	// Verify the error message names the line (line 10, 1-based).
+	msg := malformed[0].Error()
+	if !strings.Contains(msg, "line 10") {
+		t.Errorf("MalformedWave.Error() = %q, want it to contain \"line 10\"", msg)
+	}
+	if !strings.Contains(msg, "not a valid wave label") {
+		t.Errorf("MalformedWave.Error() = %q, want it to contain \"not a valid wave label\"", msg)
+	}
+
+	// HasUnfinishedMLs must return true (fail-safe: malformed wave means completeness is unproven).
+	if !HasUnfinishedMLs(content) {
+		t.Fatal("HasUnfinishedMLs = false for roadmap with malformed wave, want true (fail-safe closed)")
 	}
 }

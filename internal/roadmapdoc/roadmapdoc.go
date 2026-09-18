@@ -34,7 +34,10 @@ var (
 	// AC3-ter (REQ #392 / ML-1B): the suffix is matched case-insensitively so that labels like
 	// "3-Py" (authored with an upper-case P in four real roadmaps) are accepted. The integer
 	// part must still start with a digit — "reaberta" and "abc" remain invalid.
-	WaveLabelRe = regexp.MustCompile(`^\d+(?:-[a-zA-Z0-9]+)?$`)
+	// ML-1D (REQ #392): the hyphen before the suffix is now optional — "1b" and "1-b" are both
+	// valid. The integer-part constraint is unchanged: labels like "abc" or "reaberta" (no
+	// leading digit) remain invalid. Counter-example that must still fail: "X", "abc", "reaberta".
+	WaveLabelRe = regexp.MustCompile(`^\d+(?:-?[a-zA-Z0-9]+)?$`)
 	MLHeadingRe      = regexp.MustCompile(`^### (ML-\S+)`)
 	StatusLineRe     = regexp.MustCompile(`^\*\*Status:\*\*(.*)$`)
 	CriteriaHeaderRe = regexp.MustCompile(`^\*\*(?:Acceptance criteria|Crit[eé]rios de aceite):\*\*`)
@@ -349,11 +352,32 @@ func FenceMask(lines []string) []bool {
 // ────────────────────────────────────────────────────────────────────────────
 
 // WaveBlock delimits one "## Wave <label> ..." section: [Start, End) line indices (0-based).
-// Label is the wave label string (e.g. "1", "2-bis") per the grammar in docs/cli-parity.md.
+// Label is the wave label string (e.g. "1", "2-bis", "1b") per the grammar in docs/cli-parity.md.
 type WaveBlock struct {
 	Label string
 	Start int
 	End   int
+}
+
+// MalformedWave records a wave heading whose label token failed grammar validation.
+// ParseWaves returns these instead of aborting: the wave is isolated (not included in the
+// returned WaveBlock slice), but parsing continues for the rest of the document (ML-1D,
+// REQ #392 — supersedes ADR-2026-07-29 decision 16). The MalformedWave implements error
+// so callers can format warnings uniformly (e.g. "trackfw barrier: " + mw.Error()).
+//
+// 🔴 Residual (ML-1D): any MLs contained inside a malformed-label wave block are
+// unreachable by wave-scoped barrier calls — their label cannot be passed to --wave and
+// the wave is not returned as a WaveBlock. They are only covered by HasUnfinishedMLs,
+// which returns true whenever len(malformed) > 0 (fail-safe closed).
+type MalformedWave struct {
+	Line  int    // 1-based line number of the ## Wave heading
+	Token string // the literal label token that failed grammar validation
+}
+
+// Error implements error. Format is the same as the old ParseWaves error so that any
+// tooling that pins the message string continues to work.
+func (m MalformedWave) Error() string {
+	return fmt.Sprintf("malformed wave heading at line %d: \"%s\" is not a valid wave label", m.Line, m.Token)
 }
 
 // MLBlock delimits one "### ML-..." section within a wave: [Start, End) line indices.
@@ -367,11 +391,22 @@ type MLBlock struct {
 // Wave and ML parsing
 // ────────────────────────────────────────────────────────────────────────────
 
-// ParseWaves splits the roadmap into wave blocks (rule 1). Returns an error
-// (never nil on success) when a wave heading's label is outside the grammar (rule 6).
-// A heading outside the grammar aborts the entire document — intentionally (ADR decision 16).
-func ParseWaves(lines []string) ([]WaveBlock, error) {
+// ParseWaves splits the roadmap into wave blocks (rule 1).
+//
+// Malformed headings are ISOLATED, not aborted (ML-1D, REQ #392 — supersedes ADR-2026-07-29
+// decision 16). Each invalid label is recorded in the returned []MalformedWave slice and
+// parsing continues for the rest of the document. The safe basis for this reversal is that
+// every "## Wave …" heading is an H2; the block-end scan (strings.HasPrefix(lines[j], "## "))
+// still closes the preceding valid wave at the malformed heading, so valid-wave boundaries
+// are never corrupted by an invalid neighbor.
+//
+// 🔴 Never fail open: malformed waves are NOT added to the WaveBlock slice. Any MLs inside a
+// malformed-label wave are unreachable by wave-scoped barrier calls and only covered by the
+// HasUnfinishedMLs fail-safe (len(malformed) > 0 → return true). This is a named residual,
+// documented in the MalformedWave doc comment.
+func ParseWaves(lines []string) ([]WaveBlock, []MalformedWave) {
 	var waves []WaveBlock
+	var malformed []MalformedWave
 	n := len(lines)
 	for i := 0; i < n; i++ {
 		m := WaveHeadingRe.FindStringSubmatch(lines[i])
@@ -382,13 +417,15 @@ func ParseWaves(lines []string) ([]WaveBlock, error) {
 		// Validate label against the grammar pinned in docs/cli-parity.md.
 		// Using literal quotes (not %q) so the token is emitted verbatim across runtimes.
 		if !WaveLabelRe.MatchString(token) {
-			return nil, fmt.Errorf("malformed wave heading at line %d: \"%s\" is not a valid wave label", i+1, token)
+			malformed = append(malformed, MalformedWave{Line: i + 1, Token: token})
+			continue
 		}
 		// Integer part must be >= 0 — 0 is a valid wave label (Wave 0 threat-model convention,
 		// docs/cli-parity.md § "Wave label grammar"). Mirrors the flag-validation constraint above.
 		intVal, _ := SplitWaveLabel(token)
 		if intVal < 0 {
-			return nil, fmt.Errorf("malformed wave heading at line %d: \"%s\" is not a valid wave label", i+1, token)
+			malformed = append(malformed, MalformedWave{Line: i + 1, Token: token})
+			continue
 		}
 		end := n
 		for j := i + 1; j < n; j++ {
@@ -399,18 +436,32 @@ func ParseWaves(lines []string) ([]WaveBlock, error) {
 		}
 		waves = append(waves, WaveBlock{Label: token, Start: i, End: end})
 	}
-	return waves, nil
+	return waves, malformed
 }
 
 // SplitWaveLabel splits a valid wave label into its integer and optional suffix parts.
-// For "2-bis" it returns (2, "bis"); for "3" it returns (3, "").
+// For "2-bis" it returns (2, "bis"); for "3" it returns (3, ""); for "1b" it returns (1, "b").
+//
+// ML-1D (REQ #392): the suffix may be attached directly to the integer without a hyphen
+// ("1b") or separated by a hyphen ("1-b"). Both forms are valid per WaveLabelRe after
+// the ML-1D grammar fix. SplitWaveLabel normalises both to (integer, suffix) without the
+// hyphen — so CompareWaveLabels("1b", "1-b") == 0.
+//
 // The label must already be valid per WaveLabelRe; behaviour on invalid input is undefined.
 func SplitWaveLabel(label string) (integer int, suffix string) {
-	if idx := strings.Index(label, "-"); idx >= 0 {
-		integer, _ = strconv.Atoi(label[:idx])
-		suffix = label[idx+1:]
-	} else {
-		integer, _ = strconv.Atoi(label)
+	// Walk past the leading digit run.
+	i := 0
+	for i < len(label) && label[i] >= '0' && label[i] <= '9' {
+		i++
+	}
+	integer, _ = strconv.Atoi(label[:i])
+	if i < len(label) {
+		rest := label[i:]
+		// Strip leading hyphen if present (e.g. "1-b" → rest "-b" → "b").
+		if rest[0] == '-' {
+			rest = rest[1:]
+		}
+		suffix = rest
 	}
 	return
 }
@@ -605,9 +656,11 @@ func ParseGates(lines []string, waveStart, waveEnd int) ([]string, error) {
 func HasUnfinishedMLs(data string) bool {
 	lines := SplitRoadmapLines(data)
 	fenced := FenceMask(lines)
-	waves, err := ParseWaves(lines)
-	if err != nil {
+	waves, malformed := ParseWaves(lines)
+	if len(malformed) > 0 {
 		// Malformed wave heading: treat as having unfinished content (fail safe).
+		// The MLs inside malformed waves are unreachable by wave-scoped barrier calls
+		// and their completeness cannot be proven — so we fail closed.
 		return true
 	}
 	for _, wave := range waves {

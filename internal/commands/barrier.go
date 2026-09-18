@@ -166,12 +166,9 @@ func fenceMask(lines []string) []bool {
 type waveBlock = roadmapdoc.WaveBlock
 type mlBlock = roadmapdoc.MLBlock
 
-func parseWaves(lines []string) ([]waveBlock, *barrierUsageError) {
-	waves, err := roadmapdoc.ParseWaves(lines)
-	if err != nil {
-		return nil, &barrierUsageError{msg: err.Error()}
-	}
-	return waves, nil
+func parseWaves(lines []string) ([]waveBlock, []roadmapdoc.MalformedWave) {
+	waves, malformed := roadmapdoc.ParseWaves(lines)
+	return waves, malformed
 }
 
 func splitWaveLabel(label string) (int, string) {
@@ -439,15 +436,22 @@ func runBarrier(cmd *cobra.Command, roadmapArg string, waveLabel string, jsonOut
 	lines := splitRoadmapLines(string(data))
 	fenced := fenceMask(lines)
 
-	waves, uerr := parseWaves(lines)
-	if uerr != nil {
-		usageExit(cmd, "%s", uerr.Error())
-		return
+	waves, malformed := parseWaves(lines)
+	// Report each malformed wave heading to stderr but do NOT abort: valid waves in the
+	// same document are still evaluated (ML-1D, REQ #392 — cascade isolation).
+	// 🔴 Malformed waves are not added to the WaveBlock slice; any --wave lookup for an
+	// invalid token will fail at the flag-validation step (same WaveLabelRe, barrier.go:83).
+	// MLs inside malformed waves are unreachable by wave-scoped barrier calls and are only
+	// covered by HasUnfinishedMLs (fail-safe). Named residual — ML-1D, REQ #392.
+	for _, mw := range malformed {
+		fmt.Fprintf(cmd.ErrOrStderr(), "trackfw barrier: %s\n", mw.Error())
 	}
 
 	var target *waveBlock
 	for i := range waves {
-		if waves[i].Label == waveLabel {
+		// Use CompareWaveLabels for equality so that "1b" and "1-b" resolve to the same
+		// wave (ML-1D, REQ #392): SplitWaveLabel normalises both to (1, "b") before compare.
+		if roadmapdoc.CompareWaveLabels(waves[i].Label, waveLabel) == 0 {
 			target = &waves[i]
 			break
 		}

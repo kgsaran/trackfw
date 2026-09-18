@@ -4,6 +4,7 @@
 
 ## Índice
 
+- [barrier-cascade-isolation-wave-label-malf-2026-09-18](barrier-cascade-isolation-wave-label-malf-2026-09-18.md) — `ParseWaves` abortava documento inteiro ao encontrar wave malformada (ex: `1b`); 2 roadmaps reais eram invisíveis a `barrier --wave N`; ML-1D revoga ADR-2026-07-29 decisão 16, implementa cascade isolation
 - [git-for-each-ref-origin-head-short-e-origin-nao-origin-head-2026-09-17](git-for-each-ref-origin-head-short-e-origin-nao-origin-head-2026-09-17.md) — `%(refname:short)` de `refs/remotes/origin/HEAD` emite `"origin"` (não `"origin/HEAD"`); filtro errado fazia `deriveOriginDefaultBranch` falhar em repos com origin/HEAD + único branch não-main
 - [config-defaults-vs-credential-guard-defaults-divergence-2026-09-17](config-defaults-vs-credential-guard-defaults-divergence-2026-09-17.md) — `config.Load().Rules` injeta defaults do pacote (`stale_wip:"warning"` etc.) que `credentialGuardDefaultSeverity` desconhece → falso-positivo de weakening; usar `config.ParseRulesFromContent()` para "o que o usuário escreveu" vs `config.Load()` para "configuração efetiva"
 - [origin-main-anchor-pkg-var-stale-state-2026-09-17](origin-main-anchor-pkg-var-stale-state-2026-09-17.md) — `currentOriginMain` (var de pacote do anchor origin/main) fica stale entre testes que chamam `ruleSeverity()` direto; padrão: `t.Cleanup(func() { currentOriginMain = originMainAnchor{} })` + `currentOriginMain = loadOriginMainAnchor()` antes de chamadas diretas

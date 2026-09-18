@@ -332,7 +332,7 @@ exit 0
 - [ ] Uma frase por teste novo, se houver (AC11)
 
 ### ML-1D — a gramática de rótulo é estreita demais, e o erro cascateia para o documento inteiro
-**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
+**Status:** ❌ **REPROVADO na cascata** (a gramática fica) — reintroduziu a vacuidade que a `ADR-2026-07-29` decisão 16 rejeitou com argumento; fecha no ML-1E
 **Files affected:** `internal/roadmapdoc/roadmapdoc.go`, `internal/roadmapdoc/roadmapdoc_test.go`,
 `internal/commands/barrier.go` (lookup do rótulo, ~879), `internal/commands/barrier_test.go`,
 `scripts/testdata/roadmap-barrier-corpus-verdicts.tsv`, `scripts/check-roadmap-barrier-contract.sh`
@@ -388,3 +388,61 @@ nomeia**, não derruba o resto.
 - [ ] Diff do pin é **append puro**; zero remoções ou alterações
 - [ ] `go build ./...` RC=0 · `make test` RC=0 · `make quality` RC=0 até o fim
 - [ ] Uma frase por teste novo declarando o que ele afirma (AC11)
+
+### ML-1E — corretivo do ML-1D: heading malformada não pode virar warning de stderr
+**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Files affected:** `internal/commands/barrier.go` (bloco ~439-448 e a montagem dos checks),
+`internal/commands/barrier_test.go`, `docs/adr/ADR-2026-07-29-barrier-governanca-e-autoridade-do-orquestrador.md`,
+`docs/adr/ADR-2026-09-18-...md`, `docs/cli-parity.md`,
+`scripts/testdata/roadmap-barrier-corpus-verdicts.tsv`, `scripts/check-roadmap-barrier-contract.sh`
+
+🔴 **A falha de origem é do arquiteto, não do executor.** Eu afirmei, no handoff do ML-1D, que *"não
+existe ADR anterior pinando a gramática de rótulo de wave — verificado"*. Verifiquei a **gramática** e
+**não a cascata**. A `ADR-2026-07-29` tem **duas** decisões vivas sobre isto:
+
+- **Decisão 15** pina a gramática: *"sufixo `[a-z0-9]+`"* — que o **ML-1B** alargou para `[a-zA-Z0-9]`
+  **sem emendá-la**, e eu aprovei.
+- **Decisão 16** pina a cascata, e a rejeição do que eu mandei fazer está **escrita lá**:
+  > *"Durante a análise da emenda 15 considerou-se escopar o erro à wave solicitada, tornando as demais
+  > headings malformadas inócuas. **Rejeitado.** Ignorar silenciosamente uma heading malformada faria
+  > os MLs contidos nela deixarem de ser auditados: um typo (`## Wave X — ...`) produziria barrier
+  > verde sobre trabalho não verificado. É a mesma vacuidade que a decisão 13 proíbe."*
+
+O executor **fez o certo** ao declarar a revogação em vez de executá-la em silêncio — foi assim que eu
+descobri.
+
+**O defeito, confirmado no código:** `malformed` é impresso em `cmd.ErrOrStderr()` e **não entra em
+nenhum check**. O veredito continua sendo função de `mls_complete`/`acceptance_evidence`/`gates`/
+`validate`. O comentário do próprio executor admite: *"MLs inside malformed waves are **unreachable**
+by wave-scoped barrier calls... Named residual."* Um typo `## Wave X` esconde MLs pendentes e o
+`barrier` pode sair **passed**. É literalmente o cenário da decisão 16.
+
+**O que FICA do ML-1D** (auditado e aprovado por mim): a gramática sem hífen (`1b`), o
+`SplitWaveLabel("1b") = (1,"b")`, a equivalência `CompareWaveLabels("1b","1-b") == 0` resolvendo o
+lookup, e o pin — **append puro, 33/0**, só dos 2 arquivos esperados.
+
+**Síntese decidida por mim:** a decisão 16 está **certa no princípio** (*"deve reprovar alto"*,
+nunca verde sobre trabalho não auditado) e **errada no remédio** (abortar o documento inteiro, que
+cega o `barrier` em 2 roadmaps reais). O remédio correto satisfaz os dois:
+
+**Actions:**
+1. Heading malformada vira um **check próprio do `barrier`** — `wave_headings` — que entra no
+   veredito e **bloqueia**. Nunca warning só em stderr.
+2. As waves válidas **continuam sendo avaliadas** (a cegueira não volta). O `barrier` avalia tudo,
+   reporta tudo e **não sai verde** enquanto houver heading malformada no documento.
+3. O check nomeia **cada** heading malformada com linha e token, na mesma forma dos outros checks
+   (`evidence`/`failures`), e aparece no `--json`.
+4. **Emendar formalmente a `ADR-2026-07-29`**, nas decisões **15** (gramática alargada pelo ML-1B) e
+   **16** (remédio revisto, princípio preservado), citando #392. 🔴 Contrariar ADR viva sem emenda é
+   o defeito que originou este ML — não o repita ao corrigi-lo.
+5. Atualizar o pin com a disciplina do ML-1C: delta **pré-declarado**, append puro, zero remoções ou
+   alterações; se houver remoção, **pare e relate**.
+**Acceptance criteria:**
+- [ ] 🔴 **Falsificação da vacuidade:** roadmap com `## Wave 1` sadia **e** `## Wave X` escondendo um ML `⬜` → `barrier --wave 1` **NÃO sai passed**. Este teste tem de **falhar** contra o código atual do ML-1D — demonstre as duas execuções.
+- [ ] Contra-braço: roadmap **sem** heading malformada e com tudo concluído → `passed` (o check não introduz falso-positivo)
+- [ ] `barrier <convergencia-harness> --wave 2` **avalia** a wave 2 (a cegueira não volta)
+- [ ] `wave_headings` aparece no `--json` com linha e token de cada heading malformada
+- [ ] `ADR-2026-07-29` emendada nas decisões 15 **e** 16
+- [ ] Diff do pin append puro; zero remoções
+- [ ] `go build ./...` RC=0 · `make test` RC=0 · `make quality` RC=0 até o fim
+- [ ] Uma frase por teste novo (AC11)

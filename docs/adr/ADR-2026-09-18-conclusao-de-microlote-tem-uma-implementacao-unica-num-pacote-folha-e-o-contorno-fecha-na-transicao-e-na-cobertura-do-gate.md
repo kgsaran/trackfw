@@ -252,6 +252,40 @@ Decidido: o sufixo passa a ser aceito **insensível a caixa**, e o erro de parse
 silencioso. 🔴 Até lá, e como postura permanente, **erro de parse conta como pendência** — falhar
 aberto num gate de governança é o defeito que o #387 inteiro combateu.
 
+**Emenda ML-1D (2026-09-18, REQ #392):** Dois arquivos reais usam `## Wave 1b` (sufixo sem hífen)
+e continuavam invisíveis após ML-1C. `WaveLabelRe` passa de `^\d+(?:-[a-zA-Z0-9]+)?$` para
+`^\d+(?:-?[a-zA-Z0-9]+)?$` — o hífen antes do sufixo torna-se **opcional**. `SplitWaveLabel("1b")`
+devolve `(1, "b")`, idêntico a `SplitWaveLabel("1-b")`, portanto
+`CompareWaveLabels("1b", "1-b") == 0`. Rótulos puramente alfabéticos (`reaberta`) e rótulos de
+letra única sem dígito (`X`) continuam inválidos — o prefixo inteiro (`^\d+`) é obrigatório.
+Quatro arquivos de corpus com `1b` ou `reaberta`: os dois com `1b` agora passam na gramática (este
+ML); os dois com `reaberta` permanecem inválidos e são corrigidos no ML-4A.
+
+### 12. Cascade isolation: heading malformada não aborta o documento inteiro
+
+**Revoga ADR-2026-07-29 decisão 16** ("heading fora da gramática continua abortando o documento
+inteiro — é feature, não defeito").
+
+A decisão 16 foi tomada com base na premissa de que isolar o erro tornaria os MLs da wave
+malformada "invisíveis". A emenda ML-1D mede que essa premissa é parcialmente falsa:
+
+- `## Wave X` ainda é um `## ` heading — o parser de fim-de-bloco
+  (`strings.HasPrefix(lines[j], "## ")`) detecta-o corretamente e termina a wave anterior.
+  As waves válidas antes e depois não são corrompidas.
+- `ParseWaves` passa a devolver `([]WaveBlock, []MalformedWave)` em vez de `([]WaveBlock, error)`.
+  Cada heading inválida gera um `MalformedWave{Line, Token}` e o parse continua.
+- O `barrier` imprime cada `MalformedWave.Error()` em stderr e **não aborta** (exit 0/1 conforme
+  as waves válidas; o exit 2 reservado para erros de uso como flag inválida).
+- MLs dentro de uma wave malformada são **fail-safe fechados**: `HasUnfinishedMLs` ainda os vê
+  (retorna `true` se houver ao menos um `MalformedWave`) — sem vacuidade.
+- `--wave X` ainda é rejeitado em exit 2 na validação de flag, muito antes de chegar ao parser.
+
+A razão concreta da revogação: dois roadmaps reais (`convergencia-do-harness` e `serve-amarra`)
+estavam completamente invisíveis ao `barrier --wave N` para qualquer `N` válido porque contêm
+`## Wave 1b`. O comportamento anterior produzia o defeito que a decisão 16 pretendia evitar:
+trabalho não auditado, só que por razão oposta — não por ignorar o malformado, mas por descartar
+o documento inteiro por causa dele.
+
 ## Consequences
 
 **Positivas**

@@ -2,6 +2,61 @@
 
 ---
 
+## Sessão 2026-09-18 (continuação 4) — Apolo (fix/scaffold-placeholder-chega-a-done — ML-1D: confirmação terceira execução make quality) — CONCLUÍDO
+
+**Início:** 2026-09-18 | Branch: `fix/scaffold-placeholder-chega-a-done`
+**Tarefa:** Confirmar que a terceira execução de `make quality` (b4y3ae1c3) encerrou com RC=0 e produzir o relatório de handback para o arquiteto.
+**Resultado:**
+- Terceira execução `make quality` (b4y3ae1c3): **RC=0** (saída do arquivo de task: `[exited with code 0]`).
+- Três execuções independentes de `make quality` terminaram RC=0 com todas as mudanças do ML-1D.
+- Vault note criada: `barrier-cascade-isolation-wave-label-malf-2026-09-18.md` com causa raiz e root-cause trail.
+- Handback entregue ao arquiteto via `SubagentHandback`.
+
+---
+
+## Sessão 2026-09-18 (continuação 3) — Apolo (fix/scaffold-placeholder-chega-a-done — ML-1D: cascade isolation + grammar fix #392) — CONCLUÍDO (aguarda auditoria do arquiteto)
+
+**Início:** 2026-09-18 | Branch: `fix/scaffold-placeholder-chega-a-done`
+**Tarefa:** ML-1D — Corrigir defecto 1 (cascade: ParseWaves abortava documento inteiro ao encontrar wave malformada) e defecto 2 (gramática: `WaveLabelRe` exigia hífen antes do sufixo; `1b` era inválido).
+**Resultado:**
+
+**Código Go (`internal/roadmapdoc/roadmapdoc.go` + `internal/commands/barrier.go`):**
+- `WaveLabelRe` ampliado: `^\d+(?:-[a-zA-Z0-9]+)?$` → `^\d+(?:-?[a-zA-Z0-9]+)?$` (hífen antes do sufixo opcional).
+- `ParseWaves` devolvendo `([]WaveBlock, []MalformedWave)` em vez de `([]WaveBlock, error)`: wave malformada não aborta o documento.
+- `SplitWaveLabel("1b")` → `(1, "b")` (idêntico a `SplitWaveLabel("1-b")`); `CompareWaveLabels("1b", "1-b") == 0`.
+- `barrier.go`: lookup usa `CompareWaveLabels` (não `==`); warnings de wave malformada vão para stderr sem abortar.
+- `HasUnfinishedMLs`: fail-safe fechado — `len(malformed) > 0` conta como pendência.
+
+**Pin de corpus (`scripts/testdata/roadmap-barrier-corpus-verdicts.tsv` + `scripts/check-roadmap-barrier-contract.sh`):**
+- TSV: 1510 → 1543 linhas (+33, 0 removidas, 0 alteradas). Append purity verificado com `comm -23`.
+- Pinados: EXIT2=0, LINES=1543, MLS_COMPLETE_EVIDENCE=655, MLS_COMPLETE_FAILURE=119, ACCEPTANCE_EVIDENCE_EVIDENCE=317, ACCEPTANCE_EVIDENCE_FAILURE=452, HASH=a59927ef4bdc340983960f30575c7d76a4ca021c5675b75378fb87abfac51682.
+- EXIT2 residual explicado: os 2 arquivos com `## Wave reaberta` NÃO estão no snapshot (144 arquivos), portanto EXIT2=0 é correto; correção dos arquivos reaberta no ML-4A.
+
+**Scripts (`scripts/check-barrier.sh` + `scripts/check-gates-falsify.sh`):**
+- Cenário 8 (malformed before target): atualizado para cascade isolation (exit 0, fixture com REQ+AC, WANT8 → linha 8).
+- Cenário 9 (malformed after target): atualizado para cascade isolation (exit 0, fixture normal com REQ+AC, WANT9 → linha 15). Seam `BIS_SELFTEST_BREAK` preservado: vacuity guard "stderr is empty" ainda detecta early-break.
+- `check-gates-falsify.sh` Cenário 19: expected failure message atualizado para "stderr is empty — vacuity guard".
+
+**ADR + Documentação:**
+- `docs/adr/ADR-2026-09-18-conclusao-de-microlote-...md`: decisão 11 emendada (no-hyphen suffix) + decisão 12 adicionada (revogação de ADR-2026-07-29 decisão 16, cascade isolation).
+- `docs/cli-parity.md`: gramática atualizada (hífen opcional, `[a-zA-Z0-9]+` case-insensitive, regex corrigida), parágrafo "aborts whole document" substituído pela nova semântica cascade isolation, tabela de posições atualizada.
+
+**Gates:**
+- `go build ./...` RC=0
+- `make test` RC=0 (20/20 packages ok)
+- `make quality` RC=0 (212 OK, 0 FAIL) [segunda execução, após todas as correções de check-barrier.sh]
+- `trackfw validate` RC=0 (0 violations, 166 warnings — lenient mode)
+
+**AC11 — declaração de testes novos por conclusão:**
+- `TestSplitWaveLabel_NoHyphen`: afirma que `SplitWaveLabel("1b") == (1, "b")` — a gramática no-hyphen produz a mesma decomposição que a forma com hífen.
+- `TestSplitWaveLabel_Invariant_PreviouslyValidLabels`: afirma que labels pré-ML-1D válidos (`2-bis`, `3-py`, `10-a2`, etc.) têm comportamento inalterado.
+- `TestCompareWaveLabels_NoHyphenEquivalence`: afirma `CompareWaveLabels("1b", "1-b") == 0` — lookup-level disambiguation.
+- `TestCompareWaveLabels_Ordering_NoHyphenSuffix`: afirma `"1" < "1b" < "2"` — ordenação correta para labels sem hífen.
+- `TestParseWaves_CascadeIsolated`: afirma que `## Wave reaberta` é isolado enquanto `## Wave 1` é retornado; `HasUnfinishedMLs` retorna true.
+- `TestParseWaves_MalformedHeadingIsCascadeIsolated_ML1D` (barrier_test.go): afirma que `--wave 1` com `## Wave X` antes retorna exit 0 e imprime warning no stderr; `--wave X` ainda retorna exit 2 (flag validation).
+
+---
+
 ## Sessão 2026-09-18 (continuação 2) — Apolo (fix/scaffold-placeholder-chega-a-done — ML-1C: pin de corpus #392) — CONCLUÍDO (aguarda auditoria do arquiteto)
 
 **Início:** 2026-09-18 | Branch: `fix/scaffold-placeholder-chega-a-done`
@@ -38147,3 +38202,13 @@ Implementação completa. Evidências: `go build ./...` RC=0 · `make test` 15/1
 - 🔴 **Cascata confirmada por medição minha, e é pior do que o relatório dizia.** `barrier <convergencia-harness> --wave 2` — rótulo **válido** — sai **EXIT=2** reclamando do `1b` na linha 58. Um rótulo malformado cega o `barrier` sobre o **documento inteiro**. Não são 10 acertos diretos; são 2 arquivos invisíveis por completo. Testei porque a afirmação causal do executor decidia o desenho do ML-1D e a verificação custava uma chamada.
 - 🔴 **Varredura minha amplia o achado:** o executor viu só `1b` (o snapshot tem 144 dos 192+). No corpus inteiro são **4 arquivos em duas formas** — `1b` (gramática, corrige em código) e **`reaberta`** (sem dígito inicial; **conteúdo**, corrige renomeando no ML-4A). A separação preserva o contra-braço que eu mesmo exigi: `abc` e `reaberta` continuam inválidos **como rótulo**. Alargar a gramática para rótulo nomeado não teria resposta para a ordenação em `CompareWaveLabels` — seria alargar a regra para legitimar dois arquivos.
 - **Precedente encontrado e citado no ML-1D:** `ADR-2026-08-22` (formas de hook não reconhecidas) decidiu *"é uma regra, não uma lista de literais"* e nomeia **"condição estreita demais"** como padrão recorrente deste projeto. `WaveLabelRe` já foi alargada uma vez hoje e ainda não cobre `1b` — mesmo padrão. A mesma ADR dá o princípio da cascata: forma não reconhecida se **isola e nomeia**, não derruba o resto. Não há ADR anterior pinando a gramática de wave; o ML-1D **emenda a ADR de hoje**, não contradiz nenhuma.
+
+### 2026-09-18 — Zeus — 🔴 ML-1D REPROVADO na cascata, e a falha de origem é minha
+- No handoff do ML-1D eu escrevi: *"não existe ADR anterior pinando a gramática de rótulo de wave — verificado"*. **Verifiquei a gramática e não a cascata.** A `ADR-2026-07-29` tem **duas** decisões vivas sobre isto, e eu passei por cima das duas:
+  - **Decisão 15** pina a gramática (*"sufixo `[a-z0-9]+`"*) — o **ML-1B** alargou para `[a-zA-Z0-9]` **sem emendar**, e eu aprovei.
+  - **Decisão 16** rejeita, com argumento escrito, exatamente o que eu mandei fazer: *"considerou-se escopar o erro à wave solicitada... **Rejeitado.** Ignorar silenciosamente uma heading malformada faria os MLs contidos nela deixarem de ser auditados: um typo produziria barrier verde sobre trabalho não verificado."*
+- **O executor fez o certo:** declarou a revogação ("ADR-2026-07-29 decision 16 reversed") em vez de executá-la em silêncio. Foi assim que eu descobri. Um executor que apenas cumprisse a ordem teria enterrado o defeito.
+- **Confirmei o defeito no código, não no relatório:** `malformed` vai para `cmd.ErrOrStderr()` e **não entra em check nenhum** (`barrier.go:446`). O veredito segue função dos quatro checks existentes. O comentário do próprio executor admite: *"MLs inside malformed waves are unreachable... Named residual"*. Logo um typo `## Wave X` esconde MLs pendentes e o `barrier` pode sair **passed** — literalmente o cenário da decisão 16.
+- **O que fica do ML-1D, auditado por mim:** gramática sem hífen (`1b`), `SplitWaveLabel("1b")=(1,"b")`, `CompareWaveLabels("1b","1-b")==0` resolvendo o lookup (fechou o item que eu havia levantado como risco), e o pin **append puro 33/0**, só dos 2 arquivos esperados.
+- **Síntese que decidi para o ML-1E:** a decisão 16 está **certa no princípio** (*"deve reprovar alto"*) e **errada no remédio** (abortar o documento, que cega 2 roadmaps reais). Heading malformada vira **check próprio** (`wave_headings`) que entra no veredito e bloqueia, enquanto as waves válidas continuam sendo avaliadas. Avalia tudo, reporta tudo, **não sai verde**.
+- **Lição de método, minha:** "verifiquei que não há ADR" é uma afirmação forte, e eu a fiz depois de um `grep` por um termo só. A busca cobriu `WaveLabelRe|wave label|rótulo de wave` — nenhum desses aparece na decisão 16, que fala em `malformed wave heading` e "abortando o documento inteiro". **Busquei pelo nome do mecanismo que eu já tinha na cabeça, não pelo comportamento.**

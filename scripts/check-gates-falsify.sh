@@ -1610,7 +1610,7 @@ echo "OK   [falsify/no-repo-mutation]"
 # BARRIER_SELFTEST_BREAK do Cenário 13) — não é uma mudança tautológica.
 # ---------------------------------------------------------------------------
 assert_fails_with "barrier/early-break-after-target-not-detected" \
-  'FAIL [barrier/wave-label/malformed-after-target/go]: expected exit 2 for after-position malformed heading, got 0' \
+  'FAIL [barrier/wave-label/malformed-after-target/go]: stderr is empty — vacuity guard: malformed-wave warning must appear on stderr' \
   env BARRIER_BIS_SELFTEST_BREAK=1 GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-barrier.sh"
 
 
