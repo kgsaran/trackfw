@@ -21,3 +21,4 @@
 - [O instrumento mente](feedback_o_instrumento_mente.md) — zsh sem word-splitting, `$?` do pipe e `ls` com alias; unanimidade num corpus é sinal de teste quebrado
 - [Ao publicar rc, verificar os três canais](feedback_rc_verificar_os_tres_canais.md) — GitHub erra por default (goreleaser `prerelease` ausente); npm/PyPI acertam sozinhos
 - [Fechamento de REQ é pós-merge](project_fechamento_e_pos_merge.md) — push tem hard gate de roadmap em wip/; e o marcador `Roadmap:` da REQ precisa iniciar a linha
+- [Processos órfãos de subagente](project_processos_orfaos_de_subagente.md) — loops `until` e `cat` em pipe não drenado seguram o agente como "em execução"; olhe o filho do shell, não a carga

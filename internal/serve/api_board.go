@@ -9,20 +9,22 @@ import (
 	"strings"
 
 	"github.com/kgsaran/trackfw/internal/config"
+	"github.com/kgsaran/trackfw/internal/roadmapdoc"
 	"github.com/kgsaran/trackfw/internal/validator"
 )
 
 // boardItem represents a single roadmap entry on the kanban board.
 type boardItem struct {
-	File     string `json:"file"`
-	Title    string `json:"title"`
-	State    string `json:"state"`
-	Agent    string `json:"agent"`
-	Path     string `json:"path"`
-	MLTotal  int    `json:"ml_total"`
-	MLDone   int    `json:"ml_done"`
-	ActiveML string `json:"active_ml"`
-	NextML   string `json:"next_ml"`
+	File           string `json:"file"`
+	Title          string `json:"title"`
+	State          string `json:"state"`
+	Agent          string `json:"agent"`
+	Path           string `json:"path"`
+	MLTotal        int    `json:"ml_total"`
+	MLDone         int    `json:"ml_done"`
+	ActiveML       string `json:"active_ml"`
+	NextML         string `json:"next_ml"`
+	MalformedWaves int    `json:"malformed_waves,omitempty"`
 }
 
 // boardResponse is the JSON shape returned by GET /api/board.
@@ -113,60 +115,128 @@ func readStateDir(dir, state, agent, rootDir string) []boardItem {
 			relPath = filepath.Join(rootDir, state, e.Name())
 		}
 		relPath = normalizeRefSeparator(relPath)
-		total, done, activeML, nextML := parseMLProgress(fullPath)
+		p := parseMLProgressFull(fullPath)
 		items = append(items, boardItem{
-			File:     e.Name(),
-			Title:    title,
-			State:    state,
-			Agent:    agent,
-			Path:     relPath,
-			MLTotal:  total,
-			MLDone:   done,
-			ActiveML: activeML,
-			NextML:   nextML,
+			File:           e.Name(),
+			Title:          title,
+			State:          state,
+			Agent:          agent,
+			Path:           relPath,
+			MLTotal:        p.total,
+			MLDone:         p.done,
+			ActiveML:       p.activeML,
+			NextML:         p.nextML,
+			MalformedWaves: p.malformedWaves,
 		})
 	}
 	return items
 }
 
-// parseMLProgress scans a roadmap file and returns:
-// - total: number of ML-* sections found
-// - done: number of MLs with status ✅
-// - activeML: "<wave title> · <ml title>" of the first ML with status 🔄, or ""
-// - nextML: "<wave title> · <ml title>" of the first ML with status ⬜ (pending), or ""
-func parseMLProgress(path string) (total, done int, activeML, nextML string) {
+// mlProgressResult holds the parsed progress for a single roadmap file.
+type mlProgressResult struct {
+	total, done, malformedWaves int
+	activeML, nextML            string
+}
+
+// parseMLProgressFull scans a roadmap file using the roadmapdoc leaf package and returns the
+// full progress result including the count of malformed wave headings. It is fence-aware (via
+// roadmapdoc.FenceMask) and uses first-token evaluation (roadmapdoc.StatusIsComplete,
+// roadmapdoc.StatusCategory) — matching the same dialect the barrier uses (ADR-2026-08-29,
+// decision 3).
+//
+// Malformed wave treatment (board is informative, not a gate): waves with invalid labels are
+// counted in MalformedWaves but their MLs are NOT included in Total — roadmapdoc.ParseWaves
+// does not return WaveBlocks for malformed headings, so those MLs are silently excluded from
+// the count. The MalformedWaves field travels with the JSON response so the board consumer
+// can see the count is potentially incomplete.
+//
+// MLs outside any wave block (measured: 0 in wip, 12 in blocked, 47 in done as of 2026-09-18)
+// are also excluded. wip is the only state where count accuracy matters for the live board;
+// wip has zero such MLs. Older roadmaps in done/blocked used a non-wave structure; those are
+// not corrected here.
+//
+// activeML/nextML local detection: the first token of the marker is compared directly to "🔄"
+// and "⬜". The VS16 variant (🔄️/⬜️, U+FE0F suffix) would not match — roadmapdoc strips VS16
+// only for the completion-vocabulary check. Authors using VS16 variants would see empty
+// activeML/nextML; the convention in this project uses the plain codepoints.
+func parseMLProgressFull(path string) mlProgressResult {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return 0, 0, "", ""
+		return mlProgressResult{}
 	}
-	var waveCurrent string
-	var mlTitle string
-	for _, line := range strings.Split(string(data), "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "## ") && strings.Contains(trimmed, "Wave") {
-			waveCurrent = strings.TrimPrefix(trimmed, "## ")
-		} else if strings.HasPrefix(trimmed, "### ML-") {
-			mlTitle = strings.TrimPrefix(trimmed, "### ")
-			total++
-		} else if strings.HasPrefix(trimmed, "**Status:**") {
-			if strings.Contains(trimmed, "✅") {
-				done++
-			} else if strings.Contains(trimmed, "🔄") && activeML == "" {
-				if waveCurrent != "" {
-					activeML = waveCurrent + " · " + mlTitle
-				} else {
-					activeML = mlTitle
+	lines := roadmapdoc.SplitRoadmapLines(string(data))
+	fenced := roadmapdoc.FenceMask(lines)
+	waves, malformed := roadmapdoc.ParseWaves(lines)
+
+	var res mlProgressResult
+	res.malformedWaves = len(malformed)
+
+	for _, wave := range waves {
+		waveTitle := strings.TrimPrefix(lines[wave.Start], "## ")
+		mls := roadmapdoc.ParseMLs(lines, fenced, wave.Start, wave.End)
+		for _, ml := range mls {
+			mlTitle := strings.TrimPrefix(lines[ml.Start], "### ")
+			res.total++
+			marker, found := roadmapdoc.MLStatusMarker(lines, fenced, ml)
+			if !found {
+				// No status line: treat as pending.
+				if res.nextML == "" {
+					res.nextML = waveTitle + " · " + mlTitle
 				}
-			} else if strings.Contains(trimmed, "⬜") && nextML == "" {
-				if waveCurrent != "" {
-					nextML = waveCurrent + " · " + mlTitle
-				} else {
-					nextML = mlTitle
+				continue
+			}
+			switch roadmapdoc.StatusCategory(marker) {
+			case roadmapdoc.StatusComplete:
+				res.done++
+			case roadmapdoc.StatusTerminated:
+				// Terminated ML (ABANDONADO / 🚫 Abandonado / ❌ Cancelado): counts toward done so
+				// that the board progress ratio reaches 100% when all MLs are resolved.
+				//
+				// Rationale (ADR-2026-09-18, decisão 9): explicit termination is a recorded decision,
+				// not an omission — it releases the roadmap just as completion does. Option (b) was
+				// chosen over (a) — removing terminated MLs from total — because the board label
+				// "${done}/${total}" (app.js:231) shows both values to the user; "2/2" preserves the
+				// audit record that two MLs were declared and both accounted for, whereas "1/1" would
+				// silently hide the terminated ML from the count.
+				//
+				// Before this fix: total=2, done=1 for a 1✅+1ABANDONADO roadmap → progress bar
+				// stuck at 50% forever, never turned green.
+				// After this fix:  total=2, done=2 → pct=100% → green bar, label "2/2".
+				res.done++
+				// Deliberately excluded from activeML/nextML: a terminated ML is not work in flight.
+			default: // StatusPending (covers ⬜, 🔄, ❌ Bloqueado, and anything else)
+				fields := strings.Fields(marker)
+				if len(fields) == 0 {
+					break
 				}
+				switch fields[0] {
+				case "🔄":
+					if res.activeML == "" {
+						res.activeML = waveTitle + " · " + mlTitle
+					}
+				case "⬜":
+					if res.nextML == "" {
+						res.nextML = waveTitle + " · " + mlTitle
+					}
+				}
+				// Other pending markers (❌ Bloqueado, etc.) don't populate activeML/nextML.
 			}
 		}
 	}
-	return total, done, activeML, nextML
+	return res
+}
+
+// parseMLProgress scans a roadmap file and returns:
+// - total: number of ML-* sections found inside valid wave blocks
+// - done: number of MLs with status ✅ (first token, fence-aware — ADR-2026-08-29 decision 3)
+// - activeML: "<wave title> · <ml title>" of the first ML with status 🔄, or ""
+// - nextML: "<wave title> · <ml title>" of the first ML with status ⬜ (pending), or ""
+//
+// This is a 4-value wrapper around parseMLProgressFull for callers that do not need the
+// malformed-wave count. readStateDir calls parseMLProgressFull directly.
+func parseMLProgress(path string) (total, done int, activeML, nextML string) {
+	p := parseMLProgressFull(path)
+	return p.total, p.done, p.activeML, p.nextML
 }
 
 // extractTitle reads the first `# ` heading from a markdown file,

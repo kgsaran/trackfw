@@ -1941,7 +1941,10 @@ The third message was added when the wave label grammar was introduced. Before t
 **unpinned, and all three runtimes diverged**: Go said `%q is not a valid wave number`, Python said
 `number {token!r} is not parseable`, and Node.js dumped the whole line without naming the cause at
 all. `<token>` is the captured label, **never** the whole line — a caller must be able to tell which
-token was rejected. `<n>` is 1-based.
+token was rejected. `<n>` is 1-based. After ML-1D (REQ #392) this message is a **warning** emitted
+to `stderr` (cascade isolation — no longer triggers exit 2). After ML-1E (REQ #392) the same
+information also appears in the `wave_headings` check failures in the `--json` output, and the
+overall verdict is `"blocked"` (exit 1) rather than `"passed"`. The message format is unchanged.
 
 The fourth message — an invalid `--wave` **argument**, as opposed to a malformed heading in the file —
 was pinned for the same reason, one round later. Leaving it unpinned produced three texts again:
@@ -1960,22 +1963,27 @@ formatting differences before diffing (Go emits compact JSON, Node.js and Python
 <!-- trackfw-contract: gate=scripts/check-barrier.sh -->
 
 
-A wave label is `<integer>[-<suffix>]`:
+A wave label is `<integer>[[-]<suffix>]`:
 
 | Element | Rule |
 |---|---|
 | Integer part | One or more digits, value ≥ 0. Required. |
-| Suffix | Optional. A single `-` followed by `[a-z0-9]+` — lowercase only. |
+| Suffix | Optional. An optional `-` followed by `[a-zA-Z0-9]+` — case-insensitive. |
 
-Valid: `0`, `1`, `2`, `2-bis`, `2-hotfix`, `10-a2`. `0` is the Wave 0 threat-model convention
-(ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push,
-ML-1A). Invalid: `X`, `2-BIS` (uppercase), `-bis` (no integer), `2-` (empty suffix), `2-bis-ter` (two
-suffixes). Negative integers (`-1`) are already excluded by the regex, which has no sign — the
-`>= 0` bound only rejects a malformed grammar match, it never has a negative integer to reject in
-practice.
+Valid: `0`, `1`, `2`, `2-bis`, `2-hotfix`, `10-a2`, `1b`, `3-Py`. `0` is the Wave 0 threat-model
+convention (ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push,
+ML-1A). Invalid: `X` (no integer part), `abc` (no integer part), `-bis` (no integer), `2-` (empty
+suffix), `2-bis-ter` (two suffixes). Negative integers (`-1`) are already excluded by the regex,
+which has no sign — the `>= 0` bound only rejects a malformed grammar match, it never has a
+negative integer to reject in practice.
 
-Regex, pinned: `^## Wave (\d+(?:-[a-z0-9]+)?) ` — the trailing space is part of rule 1 and is
-preserved.
+**The hyphen before the suffix is optional** (ML-1D, REQ #392): `1b` and `1-b` are both valid and
+compare as equal. `SplitWaveLabel` strips the leading hyphen from the remainder if present, so
+`SplitWaveLabel("1b") == SplitWaveLabel("1-b") == (1, "b")` and `CompareWaveLabels("1b", "1-b") == 0`.
+This means `--wave 1-b` resolves `## Wave 1b` (and vice-versa) in the roadmap.
+
+Regex, pinned: `^## Wave (\d+(?:-?[a-zA-Z0-9]+)?) ` — the trailing space is part of rule 1 and is
+preserved. The strict validator applied to the captured token: `^\d+(?:-?[a-zA-Z0-9]+)?$`.
 
 **Labels are distinct identities.** `--wave 2` matches `## Wave 2 ` and **never** `## Wave 2-bis `.
 There is no prefix or fuzzy matching: a label either matches exactly or it does not.
@@ -1995,12 +2003,20 @@ already cited in commit messages. Observed in the roadmap
 `install-pula-artefato-desatualizado-em-vez-de-abortar` (PR #86): the cross-audit of Wave 2 required a
 convergence wave, and the barrier rejected **all four waves** with `malformed wave heading`.
 
-**A heading outside this grammar still aborts the whole document — intentionally.** Scoping the error
-to the requested wave was considered and **rejected**: silently ignoring a malformed heading would
-leave the MLs inside it **unaudited**, so a typo like `## Wave X — ...` would produce a green barrier
-over unverified work. That is the same vacuity that ADR decision 13 forbids ("an ML must not pass for
-having nothing to fail"), and it would also let a malformed roadmap read as "wave blocked", which ADR
-decision 12 forbids. See ADR decision 16.
+**A heading outside this grammar is isolated, not aborting (ML-1D/ML-1E, REQ #392).** ADR-2026-07-29
+decision 16 previously required aborting the entire document (exit 2). That decision was emended by
+ADR-2026-09-18 decision 12: `ParseWaves` now collects each malformed heading as a `MalformedWave`
+entry and continues parsing. The barrier: (a) prints each malformed-wave warning to `stderr`; (b)
+records each malformed heading as a failure in the `wave_headings` check; (c) evaluates the valid
+waves normally. The `wave_headings` check is blocked whenever malformed headings exist, so the
+overall result is never `"passed"` — exit 1, not exit 2.
+
+MLs inside malformed waves are **fail-safe closed** at two levels: (1) the `wave_headings` check
+is `blocked` whenever any `MalformedWave` exists, preventing a `status: "passed"` verdict; and
+(2) `HasUnfinishedMLs` counts any `MalformedWave` as unfinished work — belt-and-suspenders.
+`--wave X` still exits 2 — that is the invalid `--wave` **argument** rejection at
+flag-validation time, not a parse event. See ADR-2026-07-29 decision 16 emenda ML-1E and
+ADR-2026-09-18 decision 12.
 
 #### Detection is a full pre-pass — pinned
 
@@ -2012,27 +2028,29 @@ Two regexes are required, and **the order of operations matters more than the re
 | Regex | Role |
 |---|---|
 | `^## Wave (\S+) ` | **Broad detector.** Decides "this line is a wave heading". |
-| `^\d+(?:-[a-z0-9]+)?$` | **Strict validator**, applied to the token the broad detector captured. |
+| `^\d+(?:-?[a-zA-Z0-9]+)?$` | **Strict validator**, applied to the token the broad detector captured. |
 
-A line that matches the broad detector but fails the strict validator is a **malformed wave heading**
-and aborts. Without the broad detector, a strict-only regex would simply not match `## Wave X — ...`,
-the line would be treated as "not a wave heading at all", and the abort would silently disappear —
-taking the regression test with it, since the heading would never be seen.
+A line that matches the broad detector but fails the strict validator is a **malformed wave heading**.
+It is recorded as a `MalformedWave` and a warning is emitted to `stderr`; parsing continues (cascade
+isolation, ML-1D). Without the broad detector, a strict-only regex would simply not match
+`## Wave X — ...`, the line would be treated as "not a wave heading at all", and the malformed
+heading would silently disappear — taking the regression test with it, since the heading would
+never be seen.
 
 **The scan must visit every heading in the document before resolving the requested label, and must
-not break early on a match.** This sentence is the contract, not an implementation hint. Both Node.js
-and Python originally broke out of the loop as soon as the requested wave was found, so a malformed
-heading **positioned after** the target wave was never reached: the barrier returned exit 1 `blocked`
-instead of exit 2. Node.js was corrected in its first pass; Python's own regression test only covered
-the "before" position and passed while the bug survived. Measured empirically, not reported:
+not break early on a match.** This sentence is the contract, not an implementation hint. The
+early-break bug class (stopping parse at the target wave) causes malformed headings **after** the
+target to be missed entirely — their stderr warning would be absent. The vacuity guard in
+`check-barrier.sh` Scenario 9 detects this by asserting `stderr` is non-empty. Measured before ML-1D:
 
-| Malformed heading position | Expected | Go | Node.js | Python (before fix) |
-|---|---|---|---|---|
-| Before the target wave | exit 2 | exit 2 | exit 2 | exit 2 |
-| **After** the target wave | **exit 2** | exit 2 | exit 2 | **exit 1 `blocked`** |
+| Malformed heading position | Expected (after ML-1D) | Go |
+|---|---|---|
+| Before the target wave | exit 0/1 (wave evaluated) + stderr warning | exit 0/1 |
+| **After** the target wave | exit 0/1 (wave evaluated) + stderr warning | exit 0/1 |
 
 Any test of this behavior must cover **both positions**. A test at the "before" position alone is
-vacuous with respect to the early-break bug.
+vacuous with respect to the early-break bug (a parser with early-break would still produce the
+before-position warning, so the test would pass while the bug survives).
 
 #### Ordering has no call site — helper is optional
 
@@ -2407,6 +2425,7 @@ Evaluated in this fixed order; the run continues through all checks so the repor
 
 | `name` | Passes when |
 |---|---|
+| `wave_headings` | Every `## Wave` heading in the document has a valid label (no malformed headings) |
 | `mls_complete` | Wave contains ≥ 1 ML and every ML satisfies rule 3 |
 | `acceptance_evidence` | Every ML in the wave satisfies rule 4 |
 | `gates` | Every command from rule 5 exits 0 |
@@ -2414,6 +2433,14 @@ Evaluated in this fixed order; the run continues through all checks so the repor
 
 `trackfw validate` is invoked in-process (Go/Node/Python each call their own validator), not by
 shelling out to a `trackfw` binary that may not be on `PATH`.
+
+**Breaking change — ML-4B/ML-4C (REQ #392, 2026-09-18):** `roadmap_wave0_required` was promoted
+to `error` severity. A roadmap in `wip/` without `## Wave 0` now causes `validate` to report ≥ 1
+violation, which makes the `validate` check `blocked` and the overall `barrier` exit 1 — even if
+all other checks (`wave_headings`, `mls_complete`, `acceptance_evidence`, `gates`) pass. Remedy:
+add `## Wave 0 — Threat Model` with a real gate (not `exit 1` placeholder) before any
+implementation wave. The `roadmap new` template already emits `## Wave 0` with an `exit 1`
+placeholder gate (fails-closed until replaced). See ADR-2026-09-18 breaking-change section.
 
 ### JSON document
 
@@ -2428,6 +2455,12 @@ shelling out to a `trackfw` binary that may not be on `PATH`.
   "started_at": "2026-07-29T10:30:00Z",
   "finished_at": "2026-07-29T10:30:04Z",
   "checks": [
+    {
+      "name": "wave_headings",
+      "status": "passed",
+      "evidence": [],
+      "failures": []
+    },
     {
       "name": "mls_complete",
       "status": "passed",
@@ -2463,6 +2496,7 @@ so that a diff of two runtimes' JSON output for the same fixture is empty:
 
 | Check | `evidence` entry | `failures` entry |
 |---|---|---|
+| `wave_headings` | _(none — passed means empty)_ | `line <n>: "<token>" is not a valid wave label` |
 | `mls_complete` | `<ML-id>: ✅` | `<ML-id>: not complete (status: <marker or "missing">)` |
 | `acceptance_evidence` | `<ML-id>: <n> criteria met` | `<ML-id>: <n> unmet acceptance criteria` or `<ML-id>: no acceptance block` |
 | `gates` | `<command>: exit 0` | `<command>: exit <code>` |

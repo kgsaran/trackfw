@@ -78,11 +78,13 @@ fi
 # ---------------------------------------------------------------------------
 SELFTEST_BREAK="${BARRIER_SELFTEST_BREAK:-0}"
 # Seam for check-gates-falsify.sh Cenário 19 (early-break regression on after position).
-# When BARRIER_BIS_SELFTEST_BREAK=1, scenario 9 writes a fully valid fixture (no malformed
-# heading), so all runtimes return exit 0 while the assertion expects exit 2 — producing the
-# explicit diagnostic the falsify script asserts. This does NOT flip the assertion; it
-# corrupts the fixture (same pattern as BARRIER_SELFTEST_BREAK), proving the scenario is
-# non-vacuous with respect to the class of early-break bug fixed in ML-2D.
+# When BARRIER_BIS_SELFTEST_BREAK=1, scenario 9 writes a fixture WITHOUT the malformed
+# heading, so the barrier exits 0 (all checks pass). ML-1E: the first assertion
+# `[[ "$BARRIER_EXIT" -eq 1 ]]` fires first with "expected exit 1 (blocked: wave_headings
+# check), got 0; stderr:" — proving the scenario is non-vacuous with respect to the
+# early-break class. This does NOT flip the assertion; it corrupts the fixture (same
+# pattern as BARRIER_SELFTEST_BREAK). Updated by ML-1E (REQ #392) which added the
+# wave_headings check (exit 1 when malformed headings exist).
 BIS_SELFTEST_BREAK="${BARRIER_BIS_SELFTEST_BREAK:-0}"
 
 ok() { echo "OK   [$1]"; }
@@ -189,6 +191,17 @@ write_two_wave_roadmap() {
     echo "## Acceptance Criteria"
     echo "- [x] fixture roadmap-level criterion"
     echo
+    echo "## Wave 0 — Threat Model"
+    echo
+    echo "### ML-0A — Threat model for this fixture"
+    echo "**Status:** ✅"
+    echo "**Gates da wave:**"
+    echo '```bash'
+    echo "exit 0"
+    echo '```'
+    echo "**Critérios de aceite:**"
+    echo "- [x] threat model complete"
+    echo
     echo "## Wave 1 — Fixture Wave One"
     echo "> Dependências: nenhuma"
     echo
@@ -259,8 +272,9 @@ fi
 ok "barrier/reexecution-after-fix"
 
 # ---------------------------------------------------------------------------
-# Scenario 3 — each of the four built-in checks blocks in isolation, and this
+# Scenario 3 — each of the five built-in checks blocks in isolation, and this
 # holds across all three runtimes (Go, Node.js, Python) — not just Go.
+# (wave_headings is tested by Scenarios 8 and 9; the four content checks below.)
 # ---------------------------------------------------------------------------
 
 # 3a — mls_complete: ML pending, evidence otherwise complete.
@@ -273,6 +287,17 @@ REQ: REQ-2026-07-29-barrier-fixture
 
 ## Acceptance Criteria
 - [x] fixture roadmap-level criterion
+
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model for this fixture
+**Status:** ✅
+**Gates da wave:**
+```bash
+exit 0
+```
+**Critérios de aceite:**
+- [x] threat model complete
 
 ## Wave 1 — Fixture Wave
 > Dependências: nenhuma
@@ -300,6 +325,17 @@ REQ: REQ-2026-07-29-barrier-fixture
 ## Acceptance Criteria
 - [x] fixture roadmap-level criterion
 
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model for this fixture
+**Status:** ✅
+**Gates da wave:**
+```bash
+exit 0
+```
+**Critérios de aceite:**
+- [x] threat model complete
+
 ## Wave 1 — Fixture Wave
 > Dependências: nenhuma
 
@@ -326,6 +362,17 @@ REQ: REQ-2026-07-29-barrier-fixture
 
 ## Acceptance Criteria
 - [x] fixture roadmap-level criterion
+
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model for this fixture
+**Status:** ✅
+**Gates da wave:**
+```bash
+exit 0
+```
+**Critérios de aceite:**
+- [x] threat model complete
 
 ## Wave 1 — Fixture Wave
 > Dependências: nenhuma
@@ -355,6 +402,17 @@ cat >"$S3D/docs/roadmaps/wip/ROADMAP-barrier-fixture.md" <<'EOF'
 
 ## Acceptance Criteria
 - [x] fixture roadmap-level criterion
+
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model for this fixture
+**Status:** ✅
+**Gates da wave:**
+```bash
+exit 0
+```
+**Critérios de aceite:**
+- [x] threat model complete
 
 ## Wave 1 — Fixture Wave
 > Dependências: nenhuma
@@ -389,6 +447,17 @@ REQ: REQ-2026-07-29-barrier-fixture
 
 ## Acceptance Criteria
 - [x] fixture roadmap-level criterion
+
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model for this fixture
+**Status:** ✅
+**Gates da wave:**
+\`\`\`bash
+exit 0
+\`\`\`
+**Critérios de aceite:**
+- [x] threat model complete
 
 ## Wave 1 — Fixture Wave
 > Dependências: nenhuma
@@ -427,6 +496,17 @@ REQ: REQ-2026-07-29-barrier-fixture
 
 ## Acceptance Criteria
 - [x] fixture roadmap-level criterion
+
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model for this fixture
+**Status:** ✅
+**Gates da wave:**
+```bash
+exit 0
+```
+**Critérios de aceite:**
+- [x] threat model complete
 
 ## Wave 1 — Fixture Wave
 > Dependências: nenhuma
@@ -496,6 +576,17 @@ REQ: REQ-2026-07-29-barrier-fixture
 
 ## Acceptance Criteria
 - [x] fixture roadmap-level criterion
+
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model for this fixture
+**Status:** ✅
+**Gates da wave:**
+```bash
+exit 0
+```
+**Critérios de aceite:**
+- [x] threat model complete
 
 ## Wave 1 — Fixture Wave
 > Dependências: nenhuma
@@ -569,16 +660,26 @@ fi
 ok "barrier/git-authority/architect-has-protocol"
 
 # ---------------------------------------------------------------------------
-# Scenario 8 — malformed heading BEFORE the target wave (third pinned message).
-# All three runtimes must detect the malformed heading in the pre-pass and abort
-# the entire document before even resolving the requested label.
-# Vacuity guard: assert stderr is non-empty before comparing bytes — three empty
-# stderrs would agree trivially and prove nothing.
+# Scenario 8 — malformed heading BEFORE the target wave (cascade isolation, ML-1D/ML-1E).
+# ML-1D (REQ #392) emends ADR-2026-07-29 decision 16: ParseWaves records each malformed
+# heading in []MalformedWave and continues parsing (cascade isolation at parse level).
+# ML-1E (REQ #392) adds the wave_headings check: the barrier:
+#   - prints the malformed-wave warning to stderr
+#   - records the malformed heading in the wave_headings check (blocked)
+#   - evaluates the requested wave normally (never exit 2 for parse error)
+#   - exits 1 (blocked overall via wave_headings check; principle of "reprovar alto" preserved)
+# Vacuity guard: assert stderr is non-empty before comparing bytes — an empty stderr
+# would pass the byte-match trivially and prove nothing about the warning path.
 # ---------------------------------------------------------------------------
 S8="$WORK/s8-malformed-before"
 common_dirs "$S8"
 cat >"$S8/docs/roadmaps/wip/ROADMAP-barrier-fixture.md" <<'EOF'
 # Roadmap: Barrier Before Fixture
+
+REQ: REQ-2026-07-29-barrier-fixture
+
+## Acceptance Criteria
+- [x] fixture roadmap-level criterion
 
 ## Wave X — Bad Heading
 
@@ -587,6 +688,17 @@ cat >"$S8/docs/roadmaps/wip/ROADMAP-barrier-fixture.md" <<'EOF'
 **Critérios de aceite:**
 - [x] done
 
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model for this fixture
+**Status:** ✅
+**Gates da wave:**
+```bash
+exit 0
+```
+**Critérios de aceite:**
+- [x] threat model complete
+
 ## Wave 1 — Fixture Wave
 
 ### ML-1A — Fixture ML
@@ -594,39 +706,53 @@ cat >"$S8/docs/roadmaps/wip/ROADMAP-barrier-fixture.md" <<'EOF'
 **Critérios de aceite:**
 - [x] done
 EOF
-# ## Wave X is at line 3 in the file above.
-WANT8='trackfw barrier: malformed wave heading at line 3: "X" is not a valid wave label'
+# ## Wave X is at line 8 in the file above (REQ + AC block prepended — ML-1D).
+# ## Wave 0 is inserted between Wave X and Wave 1 (ML-4C); Wave X stays at line 8.
+WANT8='trackfw barrier: malformed wave heading at line 8: "X" is not a valid wave label'
 for runtime in go; do  # ML-3A (v8): node py removidos
-  run_barrier "$runtime" "$S8" ROADMAP-barrier-fixture --wave 1
-  [[ "$BARRIER_EXIT" -eq 2 ]] || fail "barrier/wave-label/malformed-before-target/$runtime" "expected exit 2, got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
-  [[ -n "$BARRIER_STDERR" ]] || fail "barrier/wave-label/malformed-before-target/$runtime" "stderr is empty — vacuity guard failed"
+  run_barrier "$runtime" "$S8" ROADMAP-barrier-fixture --wave 1 --trust-local-gates
+  # ML-1E: exit 1 (blocked via wave_headings check); the valid wave is still EVALUATED,
+  # but the overall verdict must never be "passed" when malformed headings exist.
+  [[ "$BARRIER_EXIT" -eq 1 ]] || fail "barrier/wave-label/malformed-before-target/$runtime" "expected exit 1 (blocked: wave_headings check), got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
+  [[ -n "$BARRIER_STDERR" ]] || fail "barrier/wave-label/malformed-before-target/$runtime" "stderr is empty — vacuity guard: malformed-wave warning must appear on stderr"
   [[ "$BARRIER_STDERR" == "$WANT8"$'\n' || "$BARRIER_STDERR" == "$WANT8" ]] || fail "barrier/wave-label/malformed-before-target/$runtime" "stderr mismatch, want [$WANT8], got [$BARRIER_STDERR]"
-  [[ "$BARRIER_STDOUT" != *'"status": "blocked"'* && "$BARRIER_STDOUT" != *'"status":"blocked"'* ]] || fail "barrier/wave-label/malformed-before-target/$runtime" "usage error must never emit a blocked status document"
+  # wave_headings check must be present and blocked in the output.
+  [[ "$BARRIER_STDOUT" == *'wave_headings'* ]] || fail "barrier/wave-label/malformed-before-target/$runtime" "wave_headings check not found in output: $BARRIER_STDOUT"
+  [[ "$BARRIER_STDOUT" == *'result: blocked'* || "$BARRIER_STDOUT" == *'"status": "blocked"'* || "$BARRIER_STDOUT" == *'"status":"blocked"'* ]] || fail "barrier/wave-label/malformed-before-target/$runtime" "expected result blocked, got: $BARRIER_STDOUT"
   ok "barrier/wave-label/malformed-before-target/$runtime"
 done
 
 # ---------------------------------------------------------------------------
-# Scenario 9 — malformed heading AFTER the target wave (early-break regression).
-# Both heading positions together are non-vacuous with respect to the early-break
-# bug class (cli-parity.md §detection-is-a-full-pre-pass, pinned): a pre-pass
-# that stops at the target wave label will miss this heading and exit 0 instead
-# of exit 2. Without testing this position, the scenario is vacuous.
+# Scenario 9 — malformed heading AFTER the target wave (cascade isolation + full-parse
+# coverage, ML-1D/ML-1E).
+# ML-1D (REQ #392) emends ADR-2026-07-29 decision 16: ParseWaves records both heading
+# positions in []MalformedWave (full pre-pass). ML-1E adds the wave_headings check.
+# Both heading positions (before and after target wave) are fully parsed; each invalid
+# label produces a MalformedWave entry that blocks the verdict via wave_headings.
+# This scenario proves that the AFTER-position malformed heading is still parsed
+# (non-vacuous with respect to the early-break class: an implementation that stops
+# parsing after finding the target wave would miss this heading entirely — its warning
+# would be absent from stderr, making the non-empty vacuity guard fail).
 #
 # BARRIER_BIS_SELFTEST_BREAK seam: when active, the fixture is written without the
-# malformed heading (a fully valid document), so all runtimes return exit 0 while
-# the assertion expects exit 2 — producing the explicit "expected exit 2 ... got 0"
-# diagnostic that check-gates-falsify.sh Cenário 19 asserts. The assertion is never
-# changed; only the fixture data changes — same pattern as BARRIER_SELFTEST_BREAK.
+# malformed heading (a fully valid document), so the barrier exits 0 (all passed).
+# ML-1E: the first assertion `[[ "$BARRIER_EXIT" -eq 1 ]]` fails with:
+# "expected exit 1 (blocked: wave_headings check), got 0; stderr:"
+# — proving that Scenario 9 has falsification power over the early-break class.
+# (Cenário 19 of check-gates-falsify.sh asserts this failure message.)
+# The assertion is never changed; only the fixture data changes — same pattern
+# as BARRIER_SELFTEST_BREAK. (ML-1E update: prior diagnostic was the vacuity guard
+# "stderr is empty — vacuity guard: ..."; now the exit code check fires first.)
 # ---------------------------------------------------------------------------
 S9="$WORK/s9-malformed-after"
 common_dirs "$S9"
 ROADMAP9="$S9/docs/roadmaps/wip/ROADMAP-barrier-fixture.md"
 
 if [[ "$BIS_SELFTEST_BREAK" == "1" ]]; then
-  # Seam active: omit the malformed heading so runtimes return exit 0.
-  # REQ + Acceptance Criteria included so the validate check also passes
-  # (exit 0 = all four checks pass), making the assertion for exit 2 fail.
-  # → falsification proof for Cenário 19.
+  # Seam active: omit the malformed heading so stderr is empty.
+  # The vacuity guard fails → falsification proof for Cenário 19.
+  # ML-4C: Wave 0 added so roadmap_wave0_required passes; validate does not block;
+  # barrier exits 0 → [[ $BARRIER_EXIT -eq 1 ]] fails → Cenário 19 fires correctly.
   cat >"$ROADMAP9" <<'EOF'
 # Roadmap: Barrier After Fixture (seam: no malformed heading)
 
@@ -634,6 +760,17 @@ REQ: REQ-2026-07-29-barrier-fixture
 
 ## Acceptance Criteria
 - [x] fixture roadmap-level criterion
+
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model for this fixture
+**Status:** ✅
+**Gates da wave:**
+```bash
+exit 0
+```
+**Critérios de aceite:**
+- [x] threat model complete
 
 ## Wave 1 — Fixture Wave
 
@@ -650,9 +787,26 @@ REQ: REQ-2026-07-29-barrier-fixture
 - [x] done
 EOF
 else
-  # Normal: Wave X heading at line 10 (after the target Wave 1 block).
+  # Normal: Wave X heading at line 26 (after Wave 0 + Wave 1 block, with REQ + AC — ML-1D/ML-4C).
+  # ML-4C: Wave 0 inserted before Wave 1 → Wave X shifts from line 15 to line 26.
   cat >"$ROADMAP9" <<'EOF'
 # Roadmap: Barrier After Fixture
+
+REQ: REQ-2026-07-29-barrier-fixture
+
+## Acceptance Criteria
+- [x] fixture roadmap-level criterion
+
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model for this fixture
+**Status:** ✅
+**Gates da wave:**
+```bash
+exit 0
+```
+**Critérios de aceite:**
+- [x] threat model complete
 
 ## Wave 1 — Fixture Wave
 
@@ -669,14 +823,17 @@ else
 - [x] done
 EOF
 fi
-# ## Wave X is at line 10 in the normal fixture above.
-WANT9='trackfw barrier: malformed wave heading at line 10: "X" is not a valid wave label'
+# ML-4C: Wave 0 inserted before Wave 1 → ## Wave X now at line 26 (was line 15 pre-ML-4C).
+WANT9='trackfw barrier: malformed wave heading at line 26: "X" is not a valid wave label'
 for runtime in go; do  # ML-3A (v8): node py removidos
   run_barrier "$runtime" "$S9" ROADMAP-barrier-fixture --wave 1 --trust-local-gates
-  [[ "$BARRIER_EXIT" -eq 2 ]] || fail "barrier/wave-label/malformed-after-target/$runtime" "expected exit 2 for after-position malformed heading, got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
-  [[ -n "$BARRIER_STDERR" ]] || fail "barrier/wave-label/malformed-after-target/$runtime" "stderr is empty — vacuity guard failed"
+  # ML-1E: exit 1 (blocked via wave_headings check); wave 1 is still EVALUATED.
+  [[ "$BARRIER_EXIT" -eq 1 ]] || fail "barrier/wave-label/malformed-after-target/$runtime" "expected exit 1 (blocked: wave_headings check), got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
+  [[ -n "$BARRIER_STDERR" ]] || fail "barrier/wave-label/malformed-after-target/$runtime" "stderr is empty — vacuity guard: malformed-wave warning must appear on stderr"
   [[ "$BARRIER_STDERR" == "$WANT9"$'\n' || "$BARRIER_STDERR" == "$WANT9" ]] || fail "barrier/wave-label/malformed-after-target/$runtime" "stderr mismatch, want [$WANT9], got [$BARRIER_STDERR]"
-  [[ "$BARRIER_STDOUT" != *'"status": "blocked"'* && "$BARRIER_STDOUT" != *'"status":"blocked"'* ]] || fail "barrier/wave-label/malformed-after-target/$runtime" "usage error must never emit a blocked status document"
+  # wave_headings check must be present and blocked in the output.
+  [[ "$BARRIER_STDOUT" == *'wave_headings'* ]] || fail "barrier/wave-label/malformed-after-target/$runtime" "wave_headings check not found in output: $BARRIER_STDOUT"
+  [[ "$BARRIER_STDOUT" == *'result: blocked'* || "$BARRIER_STDOUT" == *'"status": "blocked"'* || "$BARRIER_STDOUT" == *'"status":"blocked"'* ]] || fail "barrier/wave-label/malformed-after-target/$runtime" "expected result blocked, got: $BARRIER_STDOUT"
   ok "barrier/wave-label/malformed-after-target/$runtime"
 done
 
@@ -695,6 +852,17 @@ REQ: REQ-2026-07-29-barrier-fixture
 
 ## Acceptance Criteria
 - [x] fixture roadmap-level criterion
+
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model for this fixture
+**Status:** ✅
+**Gates da wave:**
+```bash
+exit 0
+```
+**Critérios de aceite:**
+- [x] threat model complete
 
 ## Wave 1 — Fixture Wave One
 
@@ -751,6 +919,22 @@ done
 # field — a check that never ran can still report "passed" trivially
 # (parseGates returns an empty-but-non-nil slice for zero gates, per the
 # threat model, §2.1/§3 F5) and a bare status comparison would not catch it.
+#
+# ML-4E (REQ #392): why exit 0 OR exit 1 (not exit 0 only)?
+# The S11 fixture dir is not a governed repo, so `validate` blocks with
+# "2 violations, 1 warnings" and the barrier exits 1 — a verdict, not a
+# malformation. The wave_headings assertion below distinguishes the two:
+# if exit 1 is a malformation, wave_headings.status would be "blocked";
+# if it is a verdict (validate failed, wave_headings intact), it is "passed".
+# Malformed-Wave-0 → exit 2 is forced by construction: parseWaves appends
+# Wave 0 to `malformed`, never to `waves`; target==nil triggers usageExit(2),
+# so exit 1 from malformation is impossible — exit 2 is caught by the
+# "never 2" assertion above, and the wave_headings assertion is redundant
+# under the sabotage. It pins the "verdict, not malformation" invariant
+# for any future regression that might alter the exit-code path.
+# Cenário 167 of check-gates-falsify.sh provides the falsification proof:
+# intVal<1 in parseWaves → check-barrier.sh fails at S1 with "malformed
+# wave heading" (S1 fixture has Wave 0 since ML-4C).
 # ---------------------------------------------------------------------------
 S11="$WORK/s11-wave-zero"
 common_dirs "$S11"
@@ -774,6 +958,11 @@ for runtime in go; do  # ML-3A (v8): node py removidos
   [[ "$BARRIER_EXIT" -eq 0 || "$BARRIER_EXIT" -eq 1 ]] || fail "barrier/wave-label/wave-zero-accepted/$runtime" "expected exit 0 or 1 (never 2 — a usage/grammar error), got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
   GOT_WAVE=$(get_wave_field "$BARRIER_STDOUT")
   [[ "$GOT_WAVE" == "0" ]] || fail "barrier/wave-label/wave-zero-accepted/$runtime" "expected wave=0, got $GOT_WAVE"
+
+  # ML-4E (REQ #392): distinguish "exit 1 = verdict" from "exit 1 = malformation".
+  # wave_headings must be "passed" — if Wave 0 were malformed, it would be "blocked".
+  WH_STATUS=$(check_field_json "$BARRIER_STDOUT" wave_headings status)
+  [[ "$WH_STATUS" == '"passed"' ]] || fail "barrier/wave-label/wave-zero-accepted/$runtime" "wave_headings status: want \"passed\" (exit 1 here is a validate verdict, not a malformation), got $WH_STATUS; stderr: $BARRIER_STDERR"
 
   MLS_STATUS=$(check_field_json "$BARRIER_STDOUT" mls_complete status)
   [[ "$MLS_STATUS" == '"passed"' ]] || fail "barrier/wave-label/wave-zero-accepted/$runtime" "mls_complete status: want \"passed\", got $MLS_STATUS"
@@ -801,9 +990,11 @@ GO_NORM11=$(python3 -c "$STRIP_TS" "$GO_STDOUT11")
 ok "barrier/wave-label/wave-zero-accepted/parity/go-behavioral-pin"
 
 # ---------------------------------------------------------------------------
-# Scenario 12 — --wave 2-BIS is an invalid argument (fourth pinned exit-2
+# Scenario 12 — --wave abc is an invalid argument (fourth pinned exit-2
 # message, cli-parity.md §four-pinned-exit-2-messages). Stderr must be
 # non-empty and byte-identical across all three runtimes.
+# AC3-ter (REQ #392 / ML-1B): "2-BIS" was moved to valid (case-insensitive
+# suffix). "abc" (letter-only, no digit prefix) is the genuinely invalid label.
 # ---------------------------------------------------------------------------
 S12="$WORK/s12-invalid-arg"
 common_dirs "$S12"
@@ -817,16 +1008,16 @@ cat >"$S12/docs/roadmaps/wip/ROADMAP-barrier-fixture.md" <<'EOF'
 **Critérios de aceite:**
 - [x] done
 EOF
-WANT12='trackfw barrier: invalid --wave "2-BIS" — not a valid wave label'
+WANT12='trackfw barrier: invalid --wave "abc" — not a valid wave label'
 for runtime in go; do  # ML-3A (v8): node py removidos
-  run_barrier "$runtime" "$S12" ROADMAP-barrier-fixture --wave 2-BIS
+  run_barrier "$runtime" "$S12" ROADMAP-barrier-fixture --wave abc
   [[ "$BARRIER_EXIT" -eq 2 ]] || fail "barrier/wave-label/invalid-arg/$runtime" "expected exit 2, got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
   [[ -n "$BARRIER_STDERR" ]] || fail "barrier/wave-label/invalid-arg/$runtime" "stderr is empty — vacuity guard failed"
   [[ "$BARRIER_STDERR" == "$WANT12"$'\n' || "$BARRIER_STDERR" == "$WANT12" ]] || fail "barrier/wave-label/invalid-arg/$runtime" "stderr mismatch, want [$WANT12], got [$BARRIER_STDERR]"
   ok "barrier/wave-label/invalid-arg/$runtime"
 done
 # Byte-identical parity across runtimes for the fourth exit-2 message.
-run_barrier go "$S12" ROADMAP-barrier-fixture --wave 2-BIS
+run_barrier go "$S12" ROADMAP-barrier-fixture --wave abc
 GO_STDERR4="$BARRIER_STDERR"
 ok "barrier/wave-label/invalid-arg/parity/go-behavioral-pin"
 
@@ -931,6 +1122,17 @@ YAML
   # Write the roadmap with a gate that creates the sentinel
   cat >"$dest/docs/roadmaps/wip/ROADMAP-trust-fixture.md" <<EOF
 # Roadmap: Trust Fixture
+
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model for this fixture
+**Status:** ✅
+**Gates da wave:**
+\`\`\`bash
+exit 0
+\`\`\`
+**Critérios de aceite:**
+- [x] threat model complete
 
 ## Wave 1 — Fixture Wave
 

@@ -168,14 +168,36 @@ func TestMoveRoadmap_Valid(t *testing.T) {
 
 // TestMoveRoadmap_FrontmatterSync_ValidateAfterMove — prova P4: nenhum warning folder_status após move.
 // Controle positivo garante que o validador está de fato inspecionando os arquivos.
+//
+// ML-3A (REQ #392): o teste foi atualizado para usar um fixture sem MLs pendentes.
+// A versão anterior chamava NewRoadmap("Validate Test"), que gera ML-0A e ML-1A com
+// **Status:** ⬜ Pendente; o novo gate de done recusa a transição corretamente.
+// O propósito do teste é provar a sincronização do folder_status — irrelevante ao
+// conteúdo de MLs — portanto a fixture usa um roadmap mínimo já completado.
 func TestMoveRoadmap_FrontmatterSync_ValidateAfterMove(t *testing.T) {
 	dir := t.TempDir()
 	chdirRoadmap(t, dir)
 	mkRoadmapDirs(t)
 
-	// Criar e mover um roadmap real: backlog → wip → done
+	// ML-3A (REQ #392): NewRoadmap generates ML-0A + ML-1A with **Status:** ⬜ Pendente;
+	// the new done-gate correctly refuses that scaffold.  We keep NewRoadmap in the loop
+	// to exercise the real generator path, then mark every pending ML as ✅ Concluído
+	// before the done transition.  This preserves the original coverage (real generator
+	// output) while satisfying the gate.
 	if err := NewRoadmap("Validate Test"); err != nil {
 		t.Fatalf("NewRoadmap() erro: %v", err)
+	}
+	matches, err := filepath.Glob("docs/roadmaps/backlog/*.md")
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("glob backlog: err=%v matches=%v", err, matches)
+	}
+	rmBody, err := os.ReadFile(matches[0])
+	if err != nil {
+		t.Fatalf("ReadFile scaffold: %v", err)
+	}
+	completed := strings.ReplaceAll(string(rmBody), "**Status:** ⬜ Pendente", "**Status:** ✅ Concluído")
+	if err := os.WriteFile(matches[0], []byte(completed), 0644); err != nil {
+		t.Fatalf("WriteFile completed: %v", err)
 	}
 	if err := MoveRoadmap("validate-test", "wip"); err != nil {
 		t.Fatalf("MoveRoadmap wip: %v", err)
@@ -969,7 +991,8 @@ func TestMoveRoadmap_ByAgent_BetweenNamespaces_StillWorks(t *testing.T) {
 		t.Fatalf("mkdir zeus/wip: %v", err)
 	}
 	const rm = "ROADMAP-shared.md"
-	if err := os.WriteFile("docs/roadmaps/zeus/wip/"+rm, []byte("# shared"), 0644); err != nil {
+	// Wave 0 added (ML-4B, REQ #392): MoveRoadmap("done") requires ## Wave 0.
+	if err := os.WriteFile("docs/roadmaps/zeus/wip/"+rm, []byte("# shared\n\n## Wave 0 — Threat Model\n"), 0644); err != nil {
 		t.Fatalf("escrever roadmap: %v", err)
 	}
 

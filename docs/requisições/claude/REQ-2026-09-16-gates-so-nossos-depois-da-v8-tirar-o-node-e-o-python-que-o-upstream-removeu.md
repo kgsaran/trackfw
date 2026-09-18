@@ -43,7 +43,8 @@ Já estava previsto: o risco da Wave 3 na pré-condição do agregador foi anota
       [#298](https://github.com/kgsaran/trackfw/issues/298). Não é detector perdido com defeito vivo.
 - [x] **AC3** — `check-slug-inventory.sh` reduzido ao Go e **ainda reprovando** implementação nova ou
       sumida (falsificado nos dois sentidos).
-- [x] **AC4** — os dois instrumentos de predicado de SO com escopo `internal cmd`, **zero** declaração
+- [x] **AC4** — os dois instrumentos de predicado de SO com escopo `internal cmd` (restrito a `.go` em
+      2026-09-18, ML-1D, depois que o #395 pôs testdata `.md` em `internal/`), **zero** declaração
       obsoleta no lint, baseline do `measure` regravado **só depois** de conferir que todo nome que sai
       é de arquivo removido pela v8; as guardas de vacuidade continuam de pé.
 - [x] **AC5** — `local-gates.yml` sem `setup-node`, `setup-python`, `npm ci` e `pip install`, e o job

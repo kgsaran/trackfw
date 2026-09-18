@@ -188,6 +188,29 @@ ROADMAP-2026-07-26-comando-trackfw-ship-agnostico-de-forge.md	3	mls_complete	evi
 ROADMAP-2026-07-26-comando-trackfw-ship-agnostico-de-forge.md	3	mls_complete	evidence	ML-3B: ✅
 ROADMAP-2026-07-26-comando-trackfw-ship-agnostico-de-forge.md	4	acceptance_evidence	failure	ML-4A: 4 unmet acceptance criteria
 ROADMAP-2026-07-26-comando-trackfw-ship-agnostico-de-forge.md	4	mls_complete	evidence	ML-4A: ✅
+ROADMAP-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md	1	mls_complete	failure	wave 1: no ML found
+ROADMAP-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md	1b	acceptance_evidence	failure	ML-1A: 7 unmet acceptance criteria
+ROADMAP-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md	1b	acceptance_evidence	failure	ML-1B: 4 unmet acceptance criteria
+ROADMAP-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md	1b	acceptance_evidence	failure	ML-1C: 4 unmet acceptance criteria
+ROADMAP-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md	1b	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md	1b	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md	1b	mls_complete	evidence	ML-1C: ✅
+ROADMAP-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md	2	acceptance_evidence	failure	ML-2A: 3 unmet acceptance criteria
+ROADMAP-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md	2	acceptance_evidence	failure	ML-2B: 3 unmet acceptance criteria
+ROADMAP-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md	2	mls_complete	evidence	ML-2B: ✅
+ROADMAP-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md	3	acceptance_evidence	failure	ML-3A: 4 unmet acceptance criteria
+ROADMAP-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md	3	acceptance_evidence	failure	ML-3B: 5 unmet acceptance criteria
+ROADMAP-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md	3	mls_complete	evidence	ML-3A: ✅
+ROADMAP-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md	3	mls_complete	evidence	ML-3B: ✅
+ROADMAP-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md	4	acceptance_evidence	failure	ML-4A: 5 unmet acceptance criteria
+ROADMAP-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md	4	acceptance_evidence	failure	ML-4B: 5 unmet acceptance criteria
+ROADMAP-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md	4	mls_complete	evidence	ML-4A: ✅
+ROADMAP-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md	4	mls_complete	evidence	ML-4B: ✅
+ROADMAP-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md	5	acceptance_evidence	failure	ML-5A: 4 unmet acceptance criteria
+ROADMAP-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md	5	acceptance_evidence	failure	ML-5B: 4 unmet acceptance criteria
+ROADMAP-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md	5	mls_complete	evidence	ML-5A: ✅
+ROADMAP-2026-07-26-convergencia-do-harness-pessoal-para-o-trackfw.md	5	mls_complete	evidence	ML-5B: ✅
 ROADMAP-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md	1	acceptance_evidence	evidence	ML-1A: 3 criteria met
 ROADMAP-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md	1	mls_complete	evidence	ML-1A: ✅
 ROADMAP-2026-07-27-bloqueadores-de-release-de-paridade-e-precisao-contratual.md	2	acceptance_evidence	evidence	ML-2A: 3 criteria met
@@ -854,6 +877,16 @@ ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-re
 ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md	5	mls_complete	evidence	ML-4B: ✅
 ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md	6	acceptance_evidence	evidence	ML-4C: 5 criteria met
 ROADMAP-2026-08-16-higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0.md	6	mls_complete	evidence	ML-4C: ✅
+ROADMAP-2026-08-16-serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao.md	1	acceptance_evidence	evidence	ML-1A: 6 criteria met
+ROADMAP-2026-08-16-serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao.md	1	mls_complete	evidence	ML-1A: ✅
+ROADMAP-2026-08-16-serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao.md	1b	acceptance_evidence	evidence	ML-1B: 6 criteria met
+ROADMAP-2026-08-16-serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao.md	1b	acceptance_evidence	failure	ML-1C: no acceptance block
+ROADMAP-2026-08-16-serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao.md	1b	mls_complete	evidence	ML-1B: ✅
+ROADMAP-2026-08-16-serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao.md	1b	mls_complete	evidence	ML-1C: ✅
+ROADMAP-2026-08-16-serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao.md	2	acceptance_evidence	failure	ML-2A: no acceptance block
+ROADMAP-2026-08-16-serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao.md	2	mls_complete	evidence	ML-2A: ✅
+ROADMAP-2026-08-16-serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao.md	3	acceptance_evidence	evidence	ML-3A: 3 criteria met
+ROADMAP-2026-08-16-serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao.md	3	mls_complete	evidence	ML-3A: ✅
 ROADMAP-2026-08-16-trackfw-branch-new-aceita-tipos-chore-e-docs-sem-gate-de-roadmap.md	1	acceptance_evidence	failure	ML-1A: 5 unmet acceptance criteria
 ROADMAP-2026-08-16-trackfw-branch-new-aceita-tipos-chore-e-docs-sem-gate-de-roadmap.md	1	mls_complete	evidence	ML-1A: ✅
 ROADMAP-2026-08-16-trackfw-ship-aceita-branches-chore-e-docs-sem-gate-de-roadmap.md	1	acceptance_evidence	evidence	ML-1A: 4 criteria met
@@ -1298,6 +1331,16 @@ trackfw-ai-agent-rail-2026-06-13.md	2	acceptance_evidence	failure	ML-2A: 2 unmet
 trackfw-ai-agent-rail-2026-06-13.md	2	mls_complete	evidence	ML-2A: ✅
 trackfw-ai-agent-rail-2026-06-13.md	3	acceptance_evidence	failure	ML-3A: 3 unmet acceptance criteria
 trackfw-ai-agent-rail-2026-06-13.md	3	mls_complete	evidence	ML-3A: ✅
+trackfw-update-command-2026-06-18.md	1	acceptance_evidence	failure	ML-1A: 3 unmet acceptance criteria
+trackfw-update-command-2026-06-18.md	1	acceptance_evidence	failure	ML-1B: 4 unmet acceptance criteria
+trackfw-update-command-2026-06-18.md	1	mls_complete	failure	ML-1A: not complete (status: ⬜ Pendente)
+trackfw-update-command-2026-06-18.md	1	mls_complete	failure	ML-1B: not complete (status: ⬜ Pendente)
+trackfw-update-command-2026-06-18.md	2	acceptance_evidence	failure	ML-2A: 3 unmet acceptance criteria
+trackfw-update-command-2026-06-18.md	2	mls_complete	failure	ML-2A: not complete (status: ⬜ Pendente)
+trackfw-update-command-2026-06-18.md	3	acceptance_evidence	failure	ML-3A: 3 unmet acceptance criteria
+trackfw-update-command-2026-06-18.md	3	mls_complete	failure	ML-3A: not complete (status: ⬜ Pendente)
+trackfw-update-command-2026-06-18.md	3-Py	acceptance_evidence	failure	ML-3B: 3 unmet acceptance criteria
+trackfw-update-command-2026-06-18.md	3-Py	mls_complete	failure	ML-3B: not complete (status: ⬜ Pendente)
 v1.1.0-i18n-wizard-java-2026-06-12.md	1	acceptance_evidence	failure	ML-1A: 3 unmet acceptance criteria
 v1.1.0-i18n-wizard-java-2026-06-12.md	1	acceptance_evidence	failure	ML-1B: 2 unmet acceptance criteria
 v1.1.0-i18n-wizard-java-2026-06-12.md	1	mls_complete	failure	ML-1A: not complete (status: ⬜ Pendente)

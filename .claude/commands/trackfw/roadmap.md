@@ -33,7 +33,7 @@ Gere um roadmap de implementação em microlotes para uma REQ do projeto.
    > Dependencies: none. Blocks all implementation.
 
    ### ML-0A — Threat model for this roadmap
-   **Status:** pending
+   **Status:** ⬜ Pendente
    **Files affected:**
    **Actions:**
    1. Enumeration completeness — is the list of surfaces in this roadmap complete? Name what is missing, or show the list is closed. Do not limit the search to the files already named by the REQ — before declaring the list closed, search the repository for other places that emit the same artifact or the same pattern (for example, grep for the literal the final artifact contains).
