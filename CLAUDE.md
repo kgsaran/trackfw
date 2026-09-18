@@ -430,6 +430,18 @@ Aqui o custo é maior que no upstream: o nosso `trackfw.yaml` tem `req_dir: docs
 e pode sair verde por não achar nada. Nenhum gate nosso chama o `parity-rest`; o CI roda num runner
 descartável. Se precisar rodar local, rode num worktree.
 
+## Contorno: `docs/roadmaps/done/.gitkeep` existe só por um teste do upstream
+
+Este fork é `by_agent`: roadmaps ficam em `docs/roadmaps/<agente>/done/`, e o `docs/roadmaps/done/`
+plano não tem conteúdo nosso. Ele existe, com um `.gitkeep` que explica o motivo, porque o
+`TestCorpusMeasurement_ReportOnly` (`internal/roadmapdoc`, #395 do upstream) faz `t.Fatalf` quando o
+diretório não existe — apesar de se declarar "report-only, never fails". Sem a pasta, no CI da PR #147:
+`go` e `windows-full-suites` reprovaram, e `parity-falsify-shard` e `parity-other-gates` foram
+**pulados**. Medido: com a pasta vazia o teste passa e o `validate` segue 0.
+
+Reportado em [#396](https://github.com/kgsaran/trackfw/issues/396). **Remova a pasta quando o upstream
+corrigir o teste** — ela não é governança, e mantê-la depois disso é lixo com cara de estrutura.
+
 ## Gate de layout de REQ (`scripts/check-req-layout.sh`)
 
 A `ADR-2026-09-03` D1 decide que **REQ não tem dimensão de estado** — `backlog`/`wip`/`done` são

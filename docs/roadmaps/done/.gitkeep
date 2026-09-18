@@ -1,0 +1,10 @@
+Contorno do fork, de 2026-09-18. Nao e governanca: este fork e by_agent e os roadmaps
+ficam em docs/roadmaps/<agente>/done/.
+
+Existe so para o TestCorpusMeasurement_ReportOnly (internal/roadmapdoc, #395 do upstream),
+que faz t.Fatalf quando docs/roadmaps/done nao existe, apesar de se declarar
+"report-only, never fails". Sem esta pasta os jobs go e windows-full-suites reprovam e
+parity-falsify-shard e parity-other-gates sao pulados. Medido: com a pasta vazia o teste
+passa e o validate segue 0.
+
+Remover quando o upstream corrigir o teste (issue #396). Ver CLAUDE.md, secao do contorno.
