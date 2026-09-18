@@ -40,7 +40,11 @@ BASELINE="${BASELINE:-$ROOT_DIR/scripts/testdata/os-predicate-sites-baseline.txt
 # predicados de Node e Python continuam na lista: custam nada, e um sitio desses
 # reaparecendo em `internal/` ou `cmd/` seria achado, nao ruido.
 # Ver REQ-2026-09-16-gates-so-nossos-depois-da-v8.
-ESCOPO=(internal cmd)
+# 🔴 E só arquivos .go desde 2026-09-18: o #395 do upstream trouxe 196 roadmaps .md como
+# testdata em internal/roadmapdoc/testdata, e o git grep sobre `internal` passou a contar
+# prosa desses .md como sítio (13 arquivos, 6 "classificações" no primeiro run). Na main
+# anterior, zero sítios fora de .go — a restrição não tira nenhum sítio real.
+ESCOPO=(':(glob)internal/**/*.go' ':(glob)cmd/**/*.go')
 
 # Predicados que a REQ nomeia. Lista literal DE PROPÓSITO: ela é o contrato do
 # AC2, não uma heurística a derivar. Acrescentar um aqui é mudar o escopo da

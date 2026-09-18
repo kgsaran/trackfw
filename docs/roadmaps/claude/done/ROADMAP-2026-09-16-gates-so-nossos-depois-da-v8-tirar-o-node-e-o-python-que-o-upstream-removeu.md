@@ -219,3 +219,30 @@ controle afirma que ela reprova quando a exceção some.
 **Achado do upstream, relatado à parte:** o travamento do `run.ps1:148` existe independente de nós —
 qualquer item cuja saída de erro passe do buffer trava o job até o timeout e aparece como
 `cancelled`, não como falha.
+
+## Wave 4 — O escopo `internal cmd` era largo demais
+
+> Por que o escopo do ML-1B não previa: ele trocou `internal npm/src pypi/trackfw cmd` por
+> `internal cmd` assumindo que ali só havia código. O #395 do upstream (2026-09-18) pôs 196 roadmaps
+> `.md` como testdata em `internal/roadmapdoc/testdata`, e o `git grep` passou a varrê-los.
+
+### ML-1D — lint e measure só em arquivos .go
+**Status:** ✅ Concluído
+**Files affected:** `scripts/check-os-predicate-classification.sh`, `scripts/measure-os-predicate-sites.sh`, `scripts/testdata/os-predicate-sites-baseline.txt`
+**Acceptance criteria:**
+- [x] lint verde sem declarar prosa como sítio; nenhum sítio real perdido; baseline do measure reconciliado
+
+**Evidência — 2026-09-18.** No merge de `f91ca65`, o lint reprovou com 6 "classificações não
+declaradas", todas em 13 arquivos `.md` do corpus — prosa citando `os.IsNotExist`, `filepath.IsAbs`,
+`runtime.GOOS`. Escopo trocado para `':(glob)internal/**/*.go' ':(glob)cmd/**/*.go'`.
+
+| conferência | resultado |
+|---|---|
+| sítios fora de `.go` em `internal cmd` na `main` antes do #395 | **0** — a restrição não tira nenhum sítio real |
+| nomes não-`.go` no baseline do measure | 0 |
+| lint depois | `209 sitios · 117 com teste · 59 D1 · 2 D3 · 25 comentario · 6 D2 em 2 arquivos declarados`, rc=0 |
+| measure contra o baseline de 16/09, por `arquivo:predicado` | 3 pares mudaram, todos em `.go` do upstream: `internal/sync/symlink_helper_test.go:runtime.GOOS` 0→1 (#382), `internal/validator/validator.go:filepath.IsAbs` 1→3 e `internal/validator/validator_roadmap_gates.go:os.IsNotExist` 0→2 (#395). O resto, só número de linha |
+| baseline regravado | 209 sítios; comparação seguinte `novos 0 · sumidos 0` |
+
+Os 2 D2 a mais caem em `validator.go`, arquivo já declarado no baseline do lint (granularidade de
+arquivo, como decidido no ML-1H).
