@@ -383,7 +383,8 @@ git fetch upstream
 scripts/upstream-sync.sh
 ```
 
-O `upstream-sync.sh` mescla, **retém `docs/` e `vault/`** — exceto `docs/cli-parity.md`, que é contrato
+O `upstream-sync.sh` mescla, **retém `docs/`, `vault/` e o `trackfw.yaml`** (este desde 2026-09-18, quando o #393 do
+upstream colidiu com o nosso; o sync imprime o diff dele quando ele muda o arquivo) — exceto `docs/cli-parity.md`, que é contrato
 de produto lido por gate do upstream e vem dele desde 2026-09-16 (nota na `ADR-2026-08-29`) —, prova a
 retenção por efeito, reporta a
 proporção produto/governança e verifica que o `validate` não mexeu. Não commita nem faz push por

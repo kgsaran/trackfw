@@ -5,6 +5,22 @@ Todas as mudanças notáveis deste projeto são documentadas neste arquivo.
 O formato segue [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 e este projeto adere a [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### ⚠️ Mudança de comportamento — `governance_mode: lenient` exige `lenient_until`
+
+**Consumidores onboardados por `trackfw discover`** cujo `trackfw.yaml` declara
+`governance_mode: lenient` **sem** `lenient_until` passam a ser tratados como `strict` a partir
+desta versão.
+
+**Efeito:** `trackfw validate` que antes saía `RC=0` (leniente sem prazo) pode passar a sair `RC≠0`,
+reprovando violações que ficavam silenciosas.
+
+**Remédio em uma linha:** declare um prazo explícito — `lenient_until: "YYYY-MM-DD"` com data dentro
+dos próximos 730 dias — ou remova `governance_mode: lenient` para operar em modo estrito desde já.
+
+---
+
 ## [8.0.1] - 2026-09-17
 
 Duas correções, ambas com efeito em quem já usa a v8. **Patch de propósito:** correção de segurança

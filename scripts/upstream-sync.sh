@@ -38,6 +38,19 @@
 # Ver REQ-2026-09-16-gates-so-nossos-depois-da-v8, ML-3A.
 PRODUTO_EM_DOCS="docs/cli-parity.md"
 
+# ── Governança que mora FORA de docs/ — RETIDA, não trazida ─────────────────────
+# O simétrico da lista acima. trackfw.yaml é a configuração da NOSSA governança
+# (req_dir: docs/requisições, by_agent, três agentes, strict) — a ADR-2026-08-29 já
+# decide que governança é local. Até 2026-09-18 nenhum merge do upstream tinha tocado
+# nele; o #393 acrescentou `lenient_until` ao dele, as linhas colidiram com as nossas,
+# e o sync abortou com "conflito de PRODUTO". Decisão do usuário: reter sempre o nosso.
+#
+# Reter não é ignorar: quando o upstream muda o arquivo, o sync IMPRIME o diff dele,
+# para quem sincroniza decidir se há chave nova que nos interesse. A retenção é provada
+# por efeito junto com docs/.
+# Ver REQ-2026-09-18-upstream-sync-retem-o-trackfw-yaml-do-fork-como-retem-docs.
+GOVERNANCA_FORA_DE_DOCS="trackfw.yaml"
+
 set -euo pipefail
 
 REF="upstream/main"
@@ -135,6 +148,12 @@ git rm -r -q --ignore-unmatch --force docs vault >/dev/null 2>&1 || true
 git checkout "$BASE" -- docs >/dev/null 2>&1 || true
 # vault/ não existe na nossa árvore: fica deletado, que é o estado correto.
 
+# Governança fora de docs/: volta a ser a da BASE. O checkout a partir de um commit
+# também resolve o conflito, se houver — as entradas não mescladas saem do índice.
+for g in $GOVERNANCA_FORA_DE_DOCS; do
+	git checkout "$BASE" -- "$g" >/dev/null 2>&1 || die "não consegui reter $g da base."
+done
+
 # Produto em docs/: volta a ser o do REF. Se o REF não tem o arquivo, ele sai.
 EXCLUI_PRODUTO=()
 for p in $PRODUTO_EM_DOCS; do
@@ -148,11 +167,11 @@ for p in $PRODUTO_EM_DOCS; do
 done
 
 # ── AC2: PROVAR a retenção por efeito, não afirmá-la ─────────────────────────────
-RETENTION_DIFF="$(git diff --cached "$BASE" --stat -- docs vault "${EXCLUI_PRODUTO[@]}")"
+RETENTION_DIFF="$(git diff --cached "$BASE" --stat -- docs vault $GOVERNANCA_FORA_DE_DOCS "${EXCLUI_PRODUTO[@]}")"
 if [ -n "$RETENTION_DIFF" ]; then
 	echo "$RETENTION_DIFF" >&2
 	git merge --abort 2>/dev/null || git reset --hard "$BASE" >/dev/null 2>&1
-	die "RETENÇÃO NÃO PROVADA: docs/ ou vault/ diferem da base. Árvore devolvida."
+	die "RETENÇÃO NÃO PROVADA: docs/, vault/ ou $GOVERNANCA_FORA_DE_DOCS diferem da base. Árvore devolvida."
 fi
 # ...e a exceção prova o lado oposto: o produto em docs/ ficou IGUAL ao do REF.
 TRAZIDO_DIFF="$(git diff --cached "$REF" --stat -- $PRODUTO_EM_DOCS)"
@@ -175,6 +194,15 @@ PRODUCT_N="$(git diff --cached --name-only "$BASE" | wc -l | tr -d ' ')"
 TOTAL_N="$(git diff --name-only "$BASE...$REF" | wc -l | tr -d ' ')"
 GOV_N=$(( TOTAL_N - PRODUCT_N ))
 [ "$GOV_N" -lt 0 ] && GOV_N=0
+
+# O upstream mudou governança que retemos? Mostra o que ficou para trás.
+MUDOU_GOV="$(git diff --name-only "$BASE...$REF" -- $GOVERNANCA_FORA_DE_DOCS)"
+if [ -n "$MUDOU_GOV" ]; then
+	say ""
+	say "  ⚠ o upstream mudou governança que este fork RETÉM ($MUDOU_GOV). O diff dele:"
+	git diff "$BASE...$REF" -- $GOVERNANCA_FORA_DE_DOCS | sed 's/^/      /'
+	say "    Retido o nosso. Se houver chave nova que nos interesse, aplique à mão, em commit próprio."
+fi
 
 say ""
 say "  arquivos de PRODUTO trazidos : $PRODUCT_N"
@@ -209,7 +237,7 @@ ADR-2026-08-29: a governança do upstream não é importada.
   governança retida    $GOV_N  (de $TOTAL_N no merge)
   validate             $VAL_BEFORE antes · ${VAL_AFTER:-n/a} depois
 
-Retenção PROVADA por efeito: git diff --cached $BASE_SHORT -- docs vault saiu vazio,
+Retenção PROVADA por efeito: git diff --cached $BASE_SHORT -- docs vault $GOVERNANCA_FORA_DE_DOCS saiu vazio,
 exceto o produto em docs/ ($PRODUTO_EM_DOCS), provado igual ao de $REF_SHORT.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
