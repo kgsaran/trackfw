@@ -96,6 +96,14 @@ A decisão é do mantenedor deste repositório (2026-09-16): trazer e manter tra
 entrada na lista `PRODUTO_EM_DOCS` do `scripts/upstream-sync.sh` é **um gate do upstream que leia o
 arquivo** — "é documentação de produto" sozinho não basta. O resto de `docs/` continua retido.
 
+## Nota de 2026-09-18 — o `trackfw.yaml` é governança, e fica retido
+
+O `trackfw.yaml` configura a governança **deste** fork e passa a ser retido pelo
+`scripts/upstream-sync.sh`, como `docs/` (lista `GOVERNANCA_FORA_DE_DOCS`). Motivo medido: o #393 do
+upstream mudou o arquivo dele, as linhas colidiram com as nossas e o sync abortou. Quando o upstream
+muda o arquivo, o sync imprime o diff dele para decisão explícita. Decisão do mantenedor deste
+repositório.
+
 ## Alternatives Considered
 
 **Re-fundar sobre a história do upstream**, com a governança local aplicada por cima. Histórico final

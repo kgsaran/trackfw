@@ -45,7 +45,10 @@ fi
 FAILED=0
 
 # base<TAB>ref<TAB>rotulo
-CASES=$'bfeea12\t4f0ad33\tgovernanca pesada (41 arquivos, 4 de produto)\n01086b5\t6b3ba49\tproduto puro (52 arquivos, 42 de produto)'
+# O terceiro caso é o merge REAL que motivou reter o trackfw.yaml (2026-09-18): o #393 do
+# upstream mudou o trackfw.yaml dele, as linhas colidiram com as nossas, e o sync antigo
+# abortava. É o único dos três que toca o arquivo.
+CASES=$'bfeea12\t4f0ad33\tgovernanca pesada (41 arquivos, 4 de produto)\n01086b5\t6b3ba49\tproduto puro (52 arquivos, 42 de produto)\n65cb024b\t9651f905\ttrackfw.yaml em conflito (#393 do upstream)'
 
 cleanup() { git worktree remove --force "$WT" >/dev/null 2>&1 || true; git worktree prune >/dev/null 2>&1 || true; }
 trap cleanup EXIT
@@ -74,17 +77,20 @@ while IFS=$'\t' read -r BASE REF LABEL; do
 	# Produto em docs/ (a mesma lista do sync, lida dele: duas listas divergiriam).
 	PRODUTO_EM_DOCS="$(sed -n 's/^PRODUTO_EM_DOCS="\(.*\)"$/\1/p' "$SYNC")"
 	[ -n "$PRODUTO_EM_DOCS" ] || { echo "  FAIL: nao li PRODUTO_EM_DOCS do upstream-sync.sh"; FAILED=1; continue; }
+	GOV_FORA="$(sed -n 's/^GOVERNANCA_FORA_DE_DOCS="\(.*\)"$/\1/p' "$SYNC")"
+	[ -n "$GOV_FORA" ] || { echo "  FAIL: nao li GOVERNANCA_FORA_DE_DOCS do upstream-sync.sh"; FAILED=1; continue; }
+	GOV_RE="$(printf '%s\n' $GOV_FORA | sed 's/[.]/\\./g' | paste -sd'|' -)"
 
 	# INVARIANTE 1 — nada retido fora de docs/ ou vault/ (nao suprime produto)
-	LEAK="$(printf '%s\n' "$RETAINED" | grep -vE '^(docs/|vault/)' | grep -v '^$' || true)"
+	LEAK="$(printf '%s\n' "$RETAINED" | grep -vE "^(docs/|vault/|($GOV_RE)\$)" | grep -v '^$' || true)"
 	if [ -n "$LEAK" ]; then
 		echo "  FAIL: PRODUTO suprimido:"; printf '%s\n' "$LEAK" | sed 's/^/      /'; FAILED=1
 	else
-		echo "  ok  retido ⊆ docs/ ∪ vault/         ($(printf '%s\n' "$RETAINED" | grep -c . || true) arquivos)"
+		echo "  ok  retido ⊆ docs/ ∪ vault/ ∪ {$GOV_FORA}  ($(printf '%s\n' "$RETAINED" | grep -c . || true) arquivos)"
 	fi
 
 	# INVARIANTE 2 — nada de produto ficou para tras
-	ESPERADO_TRAZIDO="$( { printf '%s\n' "$ALL" | grep -vE '^(docs/|vault/)' || true; for p in $PRODUTO_EM_DOCS; do printf '%s\n' "$ALL" | grep -xF "$p" || true; done; } | sort -u)"
+	ESPERADO_TRAZIDO="$( { printf '%s\n' "$ALL" | grep -vE "^(docs/|vault/|($GOV_RE)\$)" || true; for p in $PRODUTO_EM_DOCS; do printf '%s\n' "$ALL" | grep -xF "$p" || true; done; } | sort -u)"
 	MISSED="$(comm -23 <(printf '%s\n' "$ESPERADO_TRAZIDO") <(printf '%s\n' "$BROUGHT"))"
 	if [ -n "$(printf '%s\n' "$MISSED" | grep -c . || true)" ] && [ -n "$MISSED" ]; then
 		echo "  FAIL: produto NAO trazido:"; printf '%s\n' "$MISSED" | sed 's/^/      /'; FAILED=1
@@ -94,11 +100,11 @@ while IFS=$'\t' read -r BASE REF LABEL; do
 
 	# INVARIANTE 3 — docs/ e vault/ identicos a base, fora o produto em docs/
 	EXCL=(); for p in $PRODUTO_EM_DOCS; do EXCL+=(":(exclude)$p"); done
-	DIFF="$(cd "$WT" && git diff --cached "$BASE" --stat -- docs vault "${EXCL[@]}")"
+	DIFF="$(cd "$WT" && git diff --cached "$BASE" --stat -- docs vault $GOV_FORA "${EXCL[@]}")"
 	if [ -n "$DIFF" ]; then
-		echo "  FAIL: docs/ ou vault/ divergem da base"; FAILED=1
+		echo "  FAIL: docs/, vault/ ou $GOV_FORA divergem da base"; FAILED=1
 	else
-		echo "  ok  docs/ e vault/ identicos a base (fora $PRODUTO_EM_DOCS)"
+		echo "  ok  docs/, vault/ e $GOV_FORA identicos a base (fora $PRODUTO_EM_DOCS)"
 	fi
 
 	# INVARIANTE 4 — produto em docs/ identico ao REF
