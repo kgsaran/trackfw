@@ -617,7 +617,7 @@ Sem isso, estreitar a regra para `wip/` abre a fuga: **`wip` → apagar Wave 0 �
 - [ ] Uma frase por teste novo (AC11)
 
 ### ML-4C — corretivo do ML-4B: a promoção a `error` reprova uma fixture do `check-barrier.sh`
-**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
+**Status:** ❌ **REPROVADO** — fez o cenário `ciclo limpo` passar com `sed exit 1 → exit 0` na fixture, em vez de tratar a causa. As fixtures com Wave 0 e a declaração de ruptura ficam; fecha no ML-4D
 **Files affected:** `scripts/check-barrier.sh`, `docs/adr/ADR-2026-09-18-...md`, `docs/cli-parity.md`
 **Contexto:** o ML-4B está **auditado e aprovado** — reverti nada: os 6 `echo` sumiram
 (`git diff main -- docs/roadmaps/ | grep -c '^+.*echo "Wave 0'` → **0**), a Wave 0 fabricada foi
@@ -656,4 +656,68 @@ pretendido da promoção (Wave 0 é obrigatória por ADR desde agosto e a regra 
 - [ ] Nenhuma regra afrouxada para a fixture passar
 - [ ] Ruptura declarada na ADR **e** no `cli-parity.md`
 - [ ] Outras fixtures afetadas, se houver, nomeadas no relatório
+- [ ] Uma frase por teste novo (AC11)
+
+### ML-4D — corretivo do ML-4C: o discriminante está escrito no próprio template
+**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
+**Files affected:** `internal/roadmapdoc/roadmapdoc.go`, `internal/validator/validator_roadmap_gates.go`,
+`scripts/check-gates-falsify.sh`, testes correspondentes
+
+🔴 **O defeito que o ML-4C mascarou.** Sonda minha, sandbox limpo:
+```
+trackfw init && roadmap new "..." && roadmap move <n> wip && trackfw validate  →  RC=1
+✗ (wip) Wave 0 gate is placeholder or absent
+```
+**O trackfw passa a gerar um roadmap que o próprio trackfw rejeita** — a primeira linha do Context da
+`ADR-2026-07-31`, reintroduzida por outro caminho. A tensão é estrutural: o `roadmap new` emite
+`exit 1` **por design** (falha fechado até ser armado) e o `branch_has_wip_roadmap` **obriga** mover
+para `wip` antes de criar branch.
+
+🔴 **Os gates já detectavam.** Os cenários que quebraram chamam-se **`ciclo limpo`**. O ML-4C os fez
+passar com `sed "s/^exit 1  #/exit 0  #/"` **dentro da fixture** — o que torna o cenário vácuo: ele
+deixa de testar o ciclo limpo. O nome era o aviso.
+
+### O discriminante — está no texto do template, não é invenção
+
+```
+# Wave 0 gate — replace this placeholder with a project-specific check
+# BEFORE MARKING ML-0A DONE.
+```
+
+O produto já declara **quando** o placeholder deixa de ser legítimo. Predicado:
+
+> `roadmap_gate_coverage` dispara quando o gate da Wave 0 é placeholder/ausente **E** ao menos um ML
+> **não** está pendente (`StatusCategory != StatusPending`).
+
+**Medido por mim — separa limpo:**
+
+| caso | MLs não-pendentes | dispara? |
+|---|---|---|
+| roadmap recém-criado (2 MLs, ambos `⬜`) | **0** | **não** → ciclo limpo volta a RC=0 |
+| `blocked/ROADMAP-2026-09-03-fechar-os-grupos` | **28** | **sim** |
+| `blocked/ROADMAP-2026-09-09-req-nasce-orfa` | **2** | **sim** |
+
+🔴 **Por que NÃO mover a regra para a transição** (a saída que parecia óbvia): a **decisão 5 da
+`ADR-2026-09-18`** diz, nas minhas palavras, que *"a decisão 3 é um gate de transição, e a transição
+é opcional — `mv` direto contorna; a decisão 4 vale em qualquer estado e fecha o contorno"*. Movê-la
+para a transição reabriria exatamente esse bypass. Este predicado preserva `error`, preserva a
+cobertura em qualquer estado, e não quebra o fluxo oficial.
+**Actions:**
+1. Implementar o predicado em `roadmapdoc` reusando `StatusCategory` — **não** crie vocabulário novo.
+2. **Reverter o `sed "s/^exit 1  #/exit 0  #/"`** em `ROADMAP_CYCLE_SCRIPT_FROM_REQ`
+   (`scripts/check-gates-falsify.sh` ~1710). Com a causa corrigida o ciclo limpo passa sozinho;
+   manter o `sed` deixaria o cenário vácuo. **Reverter é parte do conserto, não limpeza.**
+3. Verificar se `write_roadmap_link_target_fixture` (~853) ainda precisa da Wave 0 com `exit 0` que o
+   ML-4C acrescentou; se não, reverter também.
+4. 🔴 **Verificar o cenário 167:** o ML-4C mudou o caminho de detecção de **S11** para **S1** e trocou
+   o `assert_fails_with`. Com o binário sabotado (`intVal < 1`), **o S11 ainda falha?** Se só o S1
+   falhar, a prova original (o guard de flag rejeita wave 0) deixou de ser exercida, e a alegação de
+   que o cenário 168 cobre isso é do executor — não verificada. Meça e relate.
+**Acceptance criteria:**
+- [ ] 🔴 **Ciclo limpo RC=0**, sem `sed`: `init && roadmap new && roadmap move wip && validate` em
+      sandbox limpo — demonstre a execução
+- [ ] Os 3 roadmaps de `blocked/` e os sítios de `done/` **continuam** disparando (contra-braço)
+- [ ] O `sed` do `ciclo limpo` foi revertido
+- [ ] Resposta medida sobre o S11 do cenário 167
+- [ ] `make quality` RC=0 **até o fim** (~641 OK) · `go test ./...` RC=0 · `validate` RC=0
 - [ ] Uma frase por teste novo (AC11)
