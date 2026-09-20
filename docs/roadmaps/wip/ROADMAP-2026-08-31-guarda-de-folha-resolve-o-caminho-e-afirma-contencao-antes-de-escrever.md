@@ -248,8 +248,8 @@ folha para reescrever arquivo externo (**AC9**, absorvido da REQ irmã).
 - [ ] `make quality` **630 gates / 0 FAIL** — métrica de falha: `/usr/bin/grep -cE ": FALHA"` → **0**
 - [ ] Uma frase por teste novo (AC11)
 
-### ML-1D — diversos e wrappers
-**Status:** ⬜ Pendente (após o ML-1C)
+### ML-1D — diversos e wrappers (fecha a Wave 1)
+**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
 `configure.go`, `java.go`, `config_agents_register.go`, `metrics.go`, `sync.go`, `validator.go`
 (**caminho relativo puro** — exigem resolver `root` absoluto antes, precondição do ML-1A), e os
 **wrappers** `manifest.go:81` / `render.go:722`, que chamam `atomicWrite` sem contenção e **não
