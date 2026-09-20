@@ -225,7 +225,7 @@ ML criar arquivo.
 - [ ] Uma frase por teste alterado (AC11)
 
 ### ML-1C — geradores de artefato e de hook/script (inclui o **AC9**)
-**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
+**Status:** ✅ Concluído (auditado por Zeus: PoCs 1 e 2 fechadas por execução real, recusa audível, braço (b) íntegro, barreira 630/0)
 **Files affected:** `internal/discover/discover.go` (13), `internal/generators/scaffold.go` (33),
 `internal/generators/req.go` (7), `internal/generators/roadmap.go` (7 — **AC9**),
 `internal/generators/adr.go` (4), `internal/generators/note.go` (4), e os testes correspondentes

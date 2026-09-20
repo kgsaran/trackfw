@@ -13,7 +13,23 @@ import (
 	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/forge"
 	"github.com/kgsaran/trackfw/internal/generators"
+	"github.com/kgsaran/trackfw/internal/pathguard"
 )
+
+// resolveRoot canonicalizes rootDir for use as the pathguard root argument.
+// rootDir must be absolute (callers in discover always pass an absolute path from
+// Abs(os.Getwd()) or the --init flag). Falls back to abs if EvalSymlinks fails
+// (e.g. directory does not yet exist).
+func resolveRoot(rootDir string) string {
+	abs, err := filepath.Abs(rootDir)
+	if err != nil {
+		return rootDir
+	}
+	if resolved, rerr := filepath.EvalSymlinks(abs); rerr == nil {
+		return resolved
+	}
+	return abs
+}
 
 const externalCommandTimeout = 30 * time.Second
 
@@ -75,7 +91,14 @@ func InstallGates(r DiscoveryResult, rootDir string, w io.Writer) error {
 }
 
 func writeValidateScript(rootDir string) error {
+	root := resolveRoot(rootDir)
 	scriptsDir := filepath.Join(rootDir, "scripts")
+	// Guard the scripts dir (catches ancestor symlinks such as scripts/ → /outside)
+	// before MkdirAll so a symlink replacement cannot redirect the write.
+	if guardErr := pathguard.RejectSymlinks(root, filepath.Join(root, "scripts")); guardErr != nil {
+		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", scriptsDir, guardErr)
+		return fmt.Errorf("refusing write to %s: %w", scriptsDir, guardErr)
+	}
 	if err := os.MkdirAll(scriptsDir, 0755); err != nil {
 		return fmt.Errorf("creating scripts dir: %w", err)
 	}
@@ -88,6 +111,7 @@ func writeValidateScript(rootDir string) error {
 }
 
 func installHook(framework, rootDir string, w io.Writer) error {
+	root := resolveRoot(rootDir)
 	hookEntry := "\npre-commit:\n  commands:\n    trackfw-validate:\n      run: scripts/trackfw-validate.sh\n"
 	huskyEntry := "\nscripts/trackfw-validate.sh\n"
 
@@ -105,6 +129,12 @@ func installHook(framework, rootDir string, w io.Writer) error {
 			// já configurado — idempotente
 			return nil
 		}
+		// Guard before O_APPEND open: cfgPath may be beneath a symlink ancestor.
+		absCfgPath := filepath.Join(root, filepath.Base(cfgPath))
+		if guardErr := pathguard.RejectSymlinks(root, absCfgPath); guardErr != nil {
+			fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", cfgPath, guardErr)
+			return fmt.Errorf("refusing write to %s: %w", cfgPath, guardErr)
+		}
 		f, err := os.OpenFile(cfgPath, os.O_APPEND|os.O_WRONLY, 0644)
 		if err != nil {
 			return fmt.Errorf("opening lefthook config: %w", err)
@@ -115,6 +145,11 @@ func installHook(framework, rootDir string, w io.Writer) error {
 
 	case "husky":
 		huskyHook := filepath.Join(rootDir, ".husky", "pre-commit")
+		// Guard the .husky dir before MkdirAll.
+		if guardErr := pathguard.RejectSymlinks(root, filepath.Join(root, ".husky")); guardErr != nil {
+			fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", filepath.Dir(huskyHook), guardErr)
+			return fmt.Errorf("refusing write to %s: %w", filepath.Dir(huskyHook), guardErr)
+		}
 		if err := os.MkdirAll(filepath.Dir(huskyHook), 0755); err != nil {
 			return fmt.Errorf("creating .husky dir: %w", err)
 		}
@@ -143,9 +178,15 @@ func installHook(framework, rootDir string, w io.Writer) error {
 // installLefthook cria lefthook.yml na raiz e tenta executar "lefthook install".
 // Se lefthook não estiver no PATH, imprime instrução e retorna nil (não bloqueante).
 func installLefthook(rootDir string, w io.Writer) error {
+	root := resolveRoot(rootDir)
 	const lefthookContent = "pre-commit:\n  commands:\n    trackfw-validate:\n      run: scripts/trackfw-validate.sh\n"
 
 	cfgPath := filepath.Join(rootDir, "lefthook.yml")
+	// Guard lefthook.yml before any write (creation or append).
+	if guardErr := pathguard.RejectSymlinks(root, filepath.Join(root, "lefthook.yml")); guardErr != nil {
+		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", cfgPath, guardErr)
+		return fmt.Errorf("refusing write to %s: %w", cfgPath, guardErr)
+	}
 
 	if fileExists(cfgPath) {
 		content, err := os.ReadFile(cfgPath)
@@ -191,6 +232,13 @@ func installLefthook(rootDir string, w io.Writer) error {
 // installHusky executa npm install --save-dev husky, npx husky init e cria .husky/pre-commit.
 // Erros de exec são impressos como aviso (não bloqueantes).
 func installHusky(rootDir string, w io.Writer) error {
+	root := resolveRoot(rootDir)
+	// Guard .husky dir before any write. npm install and npx husky init run as
+	// external commands (no Go write), so the guard only covers the hook file write.
+	if guardErr := pathguard.RejectSymlinks(root, filepath.Join(root, ".husky")); guardErr != nil {
+		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s/.husky: %v\n", rootDir, guardErr)
+		return fmt.Errorf("refusing write to %s/.husky: %w", rootDir, guardErr)
+	}
 	// npm install --save-dev husky
 	if out, err := runExternalCommand(rootDir, "npm", "install", "--save-dev", "husky"); err != nil {
 		fmt.Fprintf(w, "⚠ npm install husky failed: %s\n", strings.TrimSpace(string(out)))
@@ -227,6 +275,12 @@ func installHusky(rootDir string, w io.Writer) error {
 // Adequado para projetos Go/Java/Python em ambientes Windows com Node.js disponível mas sem lefthook.
 // Erros de exec são impressos como aviso (não bloqueantes).
 func installHuskyNPX(rootDir string, w io.Writer) error {
+	root := resolveRoot(rootDir)
+	// Guard .husky dir before the hook file write.
+	if guardErr := pathguard.RejectSymlinks(root, filepath.Join(root, ".husky")); guardErr != nil {
+		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s/.husky: %v\n", rootDir, guardErr)
+		return fmt.Errorf("refusing write to %s/.husky: %w", rootDir, guardErr)
+	}
 	// npx husky init — cria .husky/ e instala o handler de hooks
 	if out, err := runExternalCommand(rootDir, "npx", "husky", "init"); err != nil {
 		fmt.Fprintf(w, "⚠ npx husky init failed: %s\n", strings.TrimSpace(string(out)))
@@ -253,25 +307,24 @@ func installHuskyNPX(rootDir string, w io.Writer) error {
 }
 
 func writeCIWorkflow(rootDir string) error {
+	root := resolveRoot(rootDir)
 	workflowsDir := filepath.Join(rootDir, ".github", "workflows")
+	dest := filepath.Join(workflowsDir, "trackfw-validate.yml")
+	// RejectSymlinks checks every ancestor from dest up to root (covers .github/ being a
+	// symlink — the PoC 1 attack vector — as well as dest itself being a symlink).
+	// Applied BEFORE MkdirAll so a symlink replacement cannot redirect the write.
+	// Returns nil (not an error) on symlink detection: discover --init is a best-effort
+	// install; skipping silently preserves the behavior of the old leaf-only Lstat check
+	// and keeps the caller's (InstallGates) contract of non-fatal on symlink collision.
+	if guardErr := pathguard.RejectSymlinks(root, filepath.Join(root, ".github", "workflows", "trackfw-validate.yml")); guardErr != nil {
+		fmt.Fprintf(os.Stderr, "aviso: %s — trackfw discover não escreve através de symlinks — arquivo não foi tocado\n", filepath.Join(".github", "workflows", "trackfw-validate.yml"))
+		return nil
+	}
 	if err := os.MkdirAll(workflowsDir, 0755); err != nil {
 		return fmt.Errorf("creating workflows dir: %w", err)
 	}
-	dest := filepath.Join(workflowsDir, "trackfw-validate.yml")
-	// Uses os.Lstat, NOT the fileExists helper (which is os.Stat and follows
-	// symlinks): a dangling symlink at dest resolves to "does not exist" under
-	// os.Stat, so the idempotency guard below would not fire, and os.WriteFile
-	// would then follow the link and CREATE the workflow template at whatever
-	// path outside the project the symlink points to. A symlink here — live or
-	// dangling — is treated as "already present" so this function never writes
-	// through it; it refuses loudly instead of silently creating a file
-	// somewhere the caller never asked for.
-	if info, err := os.Lstat(dest); err == nil {
-		if info.Mode()&os.ModeSymlink != 0 {
-			fmt.Fprintf(os.Stderr, "aviso: %s é um symlink; trackfw discover não escreve através de symlinks — arquivo não foi tocado\n", filepath.Join(".github", "workflows", "trackfw-validate.yml"))
-			return nil
-		}
-		// idempotente — não sobrescreve
+	// Idempotency: if the file already exists (regular file), do not overwrite.
+	if _, err := os.Lstat(dest); err == nil {
 		return nil
 	}
 	content := generators.BuildDiscoverGitHubActionsWorkflowContent(generators.IsProducerGoMod(rootDir))

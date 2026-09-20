@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/kgsaran/trackfw/internal/pathguard"
 )
 
 const vaultDir = "vault/notes"
@@ -16,6 +18,17 @@ const vaultIndexFile = "vault/notes/index.md"
 // Usa toSlug() existente para derivar o slug do título.
 // Idempotente: se a nota já existir, retorna erro em vez de sobrescrever.
 func NewNote(title string) error {
+	// Guard vault dir before MkdirAll to reject ancestor symlinks.
+	noteRoot, err := projectRoot()
+	if err != nil {
+		return fmt.Errorf("NewNote: %w", err)
+	}
+	absVaultDir := filepath.Join(noteRoot, vaultDir)
+	if guardErr := pathguard.RejectSymlinks(noteRoot, absVaultDir); guardErr != nil {
+		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absVaultDir, guardErr)
+		return fmt.Errorf("refusing write to %s: %w", absVaultDir, guardErr)
+	}
+
 	if err := os.MkdirAll(vaultDir, 0755); err != nil {
 		return fmt.Errorf("criando vault/notes: %w", err)
 	}
@@ -67,6 +80,17 @@ related: []
 // appendNoteToIndex acrescenta uma linha de link para filename no vault/notes/index.md.
 // Cria o index.md se não existir. Se o link já estiver presente, não duplica.
 func appendNoteToIndex(filename string) error {
+	// Guard the index file against ancestor symlinks.
+	// NewNote already guarded vaultDir, so if we're here that check passed.
+	// Guard vaultIndexFile specifically (a symlink at the index itself is a separate vector).
+	if indexRoot, err := projectRoot(); err == nil {
+		absIndex := filepath.Join(indexRoot, vaultIndexFile)
+		if guardErr := pathguard.RejectSymlinks(indexRoot, absIndex); guardErr != nil {
+			fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absIndex, guardErr)
+			return fmt.Errorf("refusing write to %s: %w", absIndex, guardErr)
+		}
+	}
+
 	// Garante que index.md existe
 	if _, err := os.Stat(vaultIndexFile); os.IsNotExist(err) {
 		initial := `# Vault de Conhecimento

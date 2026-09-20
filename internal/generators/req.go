@@ -9,6 +9,7 @@ import (
 
 	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/integrations"
+	"github.com/kgsaran/trackfw/internal/pathguard"
 	"github.com/kgsaran/trackfw/internal/validator"
 )
 
@@ -40,6 +41,18 @@ func NewREQ(content REQContent) error {
 	if reqDir == "" {
 		reqDir = cfg.REQDir
 	}
+	// Guard before MkdirAll: reject ancestor symlinks that could redirect the write
+	// outside the project tree.
+	reqRoot, err := projectRoot()
+	if err != nil {
+		return fmt.Errorf("NewREQ: %w", err)
+	}
+	absReqDir := filepath.Join(reqRoot, reqDir)
+	if guardErr := pathguard.RejectSymlinks(reqRoot, absReqDir); guardErr != nil {
+		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absReqDir, guardErr)
+		return fmt.Errorf("refusing write to %s: %w", absReqDir, guardErr)
+	}
+
 	if err := os.MkdirAll(reqDir, 0755); err != nil {
 		return err
 	}
@@ -316,6 +329,19 @@ func MoveREQ(name, status string) error {
 	if err != nil {
 		return err
 	}
+
+	// Guard path before reading it — a symlink leaf or ancestor could redirect
+	// the read (and later write/remove) outside the project tree.
+	moveRoot, err := projectRoot()
+	if err != nil {
+		return fmt.Errorf("MoveREQ: %w", err)
+	}
+	absPath := filepath.Join(moveRoot, path)
+	if guardErr := pathguard.RejectSymlinks(moveRoot, absPath); guardErr != nil {
+		fmt.Fprintf(os.Stderr, "trackfw: refusing symlink path %s: %v\n", absPath, guardErr)
+		return fmt.Errorf("refusing symlink path %s: %w", absPath, guardErr)
+	}
+
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return fmt.Errorf("reading REQ: %w", err)
@@ -367,10 +393,17 @@ func MoveREQ(name, status string) error {
 		return nil
 	}
 
+	// Guard dst before MkdirAll so a refused destination leaves no empty directory.
+	dst := filepath.Join(targetDir, filepath.Base(path))
+	absDst := filepath.Join(moveRoot, dst)
+	if guardErr := pathguard.RejectSymlinks(moveRoot, absDst); guardErr != nil {
+		fmt.Fprintf(os.Stderr, "trackfw: refusing symlink path %s: %v\n", absDst, guardErr)
+		return fmt.Errorf("refusing symlink path %s: %w", absDst, guardErr)
+	}
+
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		return fmt.Errorf("creating target dir: %w", err)
 	}
-	dst := filepath.Join(targetDir, filepath.Base(path))
 	if err := os.WriteFile(dst, updated, 0644); err != nil {
 		return fmt.Errorf("writing REQ: %w", err)
 	}
@@ -404,6 +437,13 @@ func findREQ(name string, cfg config.ProjectConfig) (string, error) {
 func appendREQTransitionLog(basename, fromState, toState string) {
 	cfg := config.Load()
 	logFile := filepath.Join(cfg.REQDir, ".trackfw-log")
+	// Guard the log file against ancestor symlinks (append-mode: use RejectSymlinks only).
+	if root, err := projectRoot(); err == nil {
+		absLog := filepath.Join(root, logFile)
+		if guardErr := pathguard.RejectSymlinks(root, absLog); guardErr != nil {
+			return
+		}
+	}
 	f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return

@@ -2,14 +2,33 @@ package generators
 
 import (
 	"fmt"
-	"github.com/kgsaran/trackfw/internal/homedir"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/kgsaran/trackfw/internal/homedir"
+	"github.com/kgsaran/trackfw/internal/pathguard"
 	"github.com/kgsaran/trackfw/internal/version"
 )
+
+// projectRoot returns the resolved (EvalSymlinks) absolute path of the current
+// working directory. This is the root argument to pathguard.RejectSymlinks and
+// pathguard.GuardedWrite. On macOS, os.Getwd() may return /tmp/... while
+// EvalSymlinks resolves it to /private/tmp/... — passing the unresolved path as
+// root causes false "escapes root" errors for files that are genuinely inside the
+// project. Falls back to the unresolved cwd if EvalSymlinks fails.
+func projectRoot() (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", fmt.Errorf("projectRoot: %w", err)
+	}
+	resolved, err := filepath.EvalSymlinks(cwd)
+	if err != nil {
+		return cwd, nil // fallback: EvalSymlinks fails on missing dirs in path
+	}
+	return resolved, nil
+}
 
 type Config struct {
 	ProjectType        string // "fullstack" | "frontend" | "backend" | "governance"
@@ -45,8 +64,43 @@ var govDirs = []string{
 	"vault/notes",
 }
 
+// scaffoldRoot resolves a rootDir argument for the exported scaffold functions.
+// When rootDir is "" or ".", it resolves to projectRoot() (EvalSymlinks-canonical).
+// When rootDir is already absolute it is returned as-is after EvalSymlinks.
+func scaffoldRoot(rootDir string) (string, error) {
+	if rootDir == "" || rootDir == "." {
+		return projectRoot()
+	}
+	abs, err := filepath.Abs(rootDir)
+	if err != nil {
+		return "", fmt.Errorf("resolving rootDir: %w", err)
+	}
+	if resolved, rerr := filepath.EvalSymlinks(abs); rerr == nil {
+		return resolved, nil
+	}
+	return abs, nil
+}
+
+// rejectScaffoldPath guards a path inside root before any write or MkdirAll.
+// It calls pathguard.RejectSymlinks and returns a formatted error on failure.
+func rejectScaffoldPath(root, absTarget string) error {
+	if err := pathguard.RejectSymlinks(root, absTarget); err != nil {
+		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absTarget, err)
+		return fmt.Errorf("refusing write to %s: %w", absTarget, err)
+	}
+	return nil
+}
+
 func Scaffold(cfg Config) error {
+	root, err := projectRoot()
+	if err != nil {
+		return fmt.Errorf("Scaffold: %w", err)
+	}
 	for _, dir := range govDirs {
+		absDir := filepath.Join(root, dir)
+		if err := rejectScaffoldPath(root, absDir); err != nil {
+			return err
+		}
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("creating %s: %w", dir, err)
 		}
@@ -150,8 +204,22 @@ func installGlobalSkillInner(force bool) error {
 		return fmt.Errorf("localizando home dir: %w", err)
 	}
 
+	// Guard: resolve home and use it as root for the global skill write.
+	absHome, absErr := filepath.Abs(home)
+	if absErr != nil {
+		return fmt.Errorf("resolving home: %w", absErr)
+	}
+	if resolved, rerr := filepath.EvalSymlinks(absHome); rerr == nil {
+		absHome = resolved
+	}
 	skillPath := GlobalClaudeSkillPath(home)
 	skillDir := filepath.Dir(skillPath)
+	// Derive the resolved skill dir from absHome (already EvalSymlinks-resolved) so the
+	// containment check compares paths in the same namespace (macOS /var → /private/var).
+	absSkillDir := filepath.Join(absHome, ".claude", "skills", "trackfw")
+	if err := rejectScaffoldPath(absHome, absSkillDir); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(skillDir, 0755); err != nil {
 		return fmt.Errorf("creating %s: %w", skillDir, err)
 	}
@@ -655,6 +723,14 @@ Próximo passo: abrir PR com gh pr create
 }
 
 func generateClaudeCommandsInner(force bool) error {
+	ccRoot, ccErr := projectRoot()
+	if ccErr != nil {
+		return fmt.Errorf("generateClaudeCommandsInner: %w", ccErr)
+	}
+	absCommandsDir := filepath.Join(ccRoot, ClaudeCommandsDirPath)
+	if err := rejectScaffoldPath(ccRoot, absCommandsDir); err != nil {
+		return err
+	}
 	dir := ClaudeCommandsDirPath
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("creating %s: %w", dir, err)
@@ -735,6 +811,14 @@ roadmap_namespacing: flat
 		content += fmt.Sprintf("governance_mode: lenient\nlenient_until: %s\n", cfg.LenientUntil.Format("2006-01-02"))
 	}
 
+	root, cfgRootErr := projectRoot()
+	if cfgRootErr != nil {
+		return fmt.Errorf("writeTrackfwConfig: %w", cfgRootErr)
+	}
+	absConfig := filepath.Join(root, "trackfw.yaml")
+	if err := rejectScaffoldPath(root, absConfig); err != nil {
+		return err
+	}
 	if err := os.WriteFile("trackfw.yaml", []byte(content), 0644); err != nil {
 		return fmt.Errorf("writing trackfw.yaml: %w", err)
 	}
@@ -743,6 +827,14 @@ roadmap_namespacing: flat
 }
 
 func generateValidateScript(cfg Config) error {
+	vsRoot, vsErr := projectRoot()
+	if vsErr != nil {
+		return fmt.Errorf("generateValidateScript: %w", vsErr)
+	}
+	absScripts := filepath.Join(vsRoot, "scripts")
+	if err := rejectScaffoldPath(vsRoot, absScripts); err != nil {
+		return err
+	}
 	if err := os.MkdirAll("scripts", 0755); err != nil {
 		return err
 	}
@@ -831,10 +923,15 @@ exit 0
 // comportamento de antes da exportação). O conteúdo gerado é idêntico ao produzido
 // por `trackfw init`.
 func GenerateAttentionScripts(rootDir string) error {
-	if rootDir == "" {
-		rootDir = "."
+	root, err := scaffoldRoot(rootDir)
+	if err != nil {
+		return fmt.Errorf("GenerateAttentionScripts: %w", err)
 	}
+	rootDir = root
 	scriptsDir := filepath.Join(rootDir, "scripts")
+	if err := rejectScaffoldPath(root, scriptsDir); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(scriptsDir, 0755); err != nil {
 		return err
 	}
@@ -881,10 +978,15 @@ func GenerateAttentionScripts(rootDir string) error {
 // alvos de redirecionamento do payload são efêmeros (/dev/null ou um caminho derivado de mktemp,
 // incluindo uma variável atribuída via `VAR=$(mktemp...)` antes do redirecionamento).
 func GenerateCredentialGuardScript(rootDir string) error {
-	if rootDir == "" {
-		rootDir = "."
+	root, err := scaffoldRoot(rootDir)
+	if err != nil {
+		return fmt.Errorf("GenerateCredentialGuardScript: %w", err)
 	}
+	rootDir = root
 	scriptsDir := filepath.Join(rootDir, "scripts")
+	if err := rejectScaffoldPath(root, scriptsDir); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(scriptsDir, 0755); err != nil {
 		return err
 	}
@@ -923,7 +1025,17 @@ func GenerateGlobalCredentialGuardScript(home string) error {
 	if home == "" {
 		return fmt.Errorf("home directory vazio")
 	}
-	scriptsDir := filepath.Join(home, ".trackfw", "scripts")
+	absHome, err := filepath.Abs(home)
+	if err != nil {
+		return fmt.Errorf("resolving home: %w", err)
+	}
+	if resolved, rerr := filepath.EvalSymlinks(absHome); rerr == nil {
+		absHome = resolved
+	}
+	scriptsDir := filepath.Join(absHome, ".trackfw", "scripts")
+	if err := rejectScaffoldPath(absHome, scriptsDir); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(scriptsDir, 0755); err != nil {
 		return err
 	}
@@ -1205,10 +1317,15 @@ const globalCredentialGuardScript = credentialGuardHeader + credentialGuardDetec
 //
 // Mesmo padrão de GenerateCredentialGuardScript: MkdirAll + WriteFile 0755.
 func GenerateGitBranchGuardScript(rootDir string) error {
-	if rootDir == "" {
-		rootDir = "."
+	root, err := scaffoldRoot(rootDir)
+	if err != nil {
+		return fmt.Errorf("GenerateGitBranchGuardScript: %w", err)
 	}
+	rootDir = root
 	scriptsDir := filepath.Join(rootDir, "scripts")
+	if err := rejectScaffoldPath(root, scriptsDir); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(scriptsDir, 0755); err != nil {
 		return err
 	}
@@ -1247,7 +1364,17 @@ func GenerateGlobalGitBranchGuardScript(home string) error {
 	if home == "" {
 		return fmt.Errorf("home directory vazio")
 	}
-	scriptsDir := filepath.Join(home, ".trackfw", "scripts")
+	absHome, err := filepath.Abs(home)
+	if err != nil {
+		return fmt.Errorf("resolving home: %w", err)
+	}
+	if resolved, rerr := filepath.EvalSymlinks(absHome); rerr == nil {
+		absHome = resolved
+	}
+	scriptsDir := filepath.Join(absHome, ".trackfw", "scripts")
+	if err := rejectScaffoldPath(absHome, scriptsDir); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(scriptsDir, 0755); err != nil {
 		return err
 	}
@@ -2073,6 +2200,14 @@ trackfw-gate:
 }
 
 func generateGitHubActionsWorkflow(cfg Config) error {
+	ghRoot, ghErr := projectRoot()
+	if ghErr != nil {
+		return fmt.Errorf("generateGitHubActionsWorkflow: %w", ghErr)
+	}
+	absGHDir := filepath.Join(ghRoot, ".github", "workflows")
+	if err := rejectScaffoldPath(ghRoot, absGHDir); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(".github/workflows", 0755); err != nil {
 		return err
 	}
@@ -2086,6 +2221,14 @@ func generateGitHubActionsWorkflow(cfg Config) error {
 }
 
 func generateGitLabCIWorkflow(cfg Config) error {
+	glRoot, glErr := projectRoot()
+	if glErr != nil {
+		return fmt.Errorf("generateGitLabCIWorkflow: %w", glErr)
+	}
+	absGLCI := filepath.Join(glRoot, GitLabCIWorkflowPath)
+	if err := rejectScaffoldPath(glRoot, absGLCI); err != nil {
+		return err
+	}
 	if err := os.WriteFile(GitLabCIWorkflowPath, []byte(buildGitLabCIWorkflowContent(cfg)), 0644); err != nil {
 		return fmt.Errorf("writing GitLab CI: %w", err)
 	}
@@ -2096,6 +2239,22 @@ func generateGitLabCIWorkflow(cfg Config) error {
 func generateCommitMsgHook(cfg Config) error {
 	if !cfg.RequireReqInCommit {
 		return nil
+	}
+
+	cmhRoot, cmhErr := projectRoot()
+	if cmhErr != nil {
+		return fmt.Errorf("generateCommitMsgHook: %w", cmhErr)
+	}
+	// Guard the hook directory for the configured hook manager.
+	switch cfg.Hooks {
+	case "husky":
+		if err := rejectScaffoldPath(cmhRoot, filepath.Join(cmhRoot, ".husky")); err != nil {
+			return err
+		}
+	case "lefthook":
+		if err := rejectScaffoldPath(cmhRoot, filepath.Join(cmhRoot, ".lefthook", "commit-msg")); err != nil {
+			return err
+		}
 	}
 
 	script := "#!/bin/sh\n" +
@@ -2154,6 +2313,14 @@ func generateGitHooks(cfg Config) error {
 }
 
 func generateHuskyHook() error {
+	hhRoot, hhErr := projectRoot()
+	if hhErr != nil {
+		return fmt.Errorf("generateHuskyHook: %w", hhErr)
+	}
+	absHusky := filepath.Join(hhRoot, ".husky")
+	if err := rejectScaffoldPath(hhRoot, absHusky); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(".husky", 0755); err != nil {
 		return err
 	}
@@ -2169,6 +2336,14 @@ func generateHuskyHook() error {
 // generateVaultIndex cria vault/notes/index.md se ainda não existir.
 // O arquivo é o ponto de entrada do vault de conhecimento do projeto.
 func generateVaultIndex() error {
+	viRoot, viErr := projectRoot()
+	if viErr != nil {
+		return fmt.Errorf("generateVaultIndex: %w", viErr)
+	}
+	absVaultDir := filepath.Join(viRoot, "vault", "notes")
+	if err := rejectScaffoldPath(viRoot, absVaultDir); err != nil {
+		return err
+	}
 	indexPath := filepath.Join("vault", "notes", "index.md")
 	if _, err := os.Stat(indexPath); err == nil {
 		// já existe — idempotente
@@ -2238,6 +2413,14 @@ func hasGitAttributesRule(content string) bool {
 //   - existe sem regra → APPEND do bloco (nunca sobrescreve o arquivo do projeto)
 //   - existe com regra → no-op
 func generateGitAttributes() error {
+	gaRoot, gaErr := projectRoot()
+	if gaErr != nil {
+		return fmt.Errorf("generateGitAttributes: %w", gaErr)
+	}
+	absGitAttr := filepath.Join(gaRoot, ".gitattributes")
+	if err := rejectScaffoldPath(gaRoot, absGitAttr); err != nil {
+		return err
+	}
 	const path = ".gitattributes"
 	existing, err := os.ReadFile(path)
 	if err != nil {
@@ -2271,6 +2454,14 @@ func generateGitAttributes() error {
 }
 
 func generateLefthookHook() error {
+	lhRoot, lhErr := projectRoot()
+	if lhErr != nil {
+		return fmt.Errorf("generateLefthookHook: %w", lhErr)
+	}
+	absLH := filepath.Join(lhRoot, "lefthook.yml")
+	if err := rejectScaffoldPath(lhRoot, absLH); err != nil {
+		return err
+	}
 	content := `pre-commit:
   commands:
     trackfw-validate:

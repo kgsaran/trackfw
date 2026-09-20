@@ -648,3 +648,28 @@ func TestMoveREQ_LogsTransition(t *testing.T) {
 		t.Fatalf("log não registrou a transição esperada, obteve:\n%s", logBody)
 	}
 }
+
+// ─── ML-1C Containment Tests ────────────────────────────────────────────────
+
+// TestNewREQ_SymlinkReqDirRefused asserts that ML-1C containment guards reject
+// NewREQ when docs/req/ is a symlink pointing outside the project root.
+func TestNewREQ_SymlinkReqDirRefused(t *testing.T) {
+	outside := t.TempDir()
+	dir := t.TempDir()
+	chdirREQ(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	if err := os.MkdirAll("docs", 0755); err != nil {
+		t.Fatal(err)
+	}
+	symlinkOrSkip(t, outside, filepath.Join(dir, "docs", "req"))
+
+	err := NewREQ(REQContent{Title: "symlink-test"})
+	if err == nil {
+		t.Fatal("NewREQ() should refuse when docs/req/ is a symlink, got nil")
+	}
+	if _, statErr := os.Stat(filepath.Join(outside, "REQ-")); statErr == nil {
+		t.Error("containment violated: REQ file was written outside the project")
+	}
+}

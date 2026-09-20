@@ -2,6 +2,26 @@
 
 ---
 
+## Sessão 2026-09-20 (continuação 3) — Apolo (fix/afirma-contencao-antes-de-escrever — ML-1C) — CONCLUÍDO
+
+**Início:** 2026-09-20 (continuação da sessão compactada, terceira parte) | Branch: `fix/afirma-contencao-antes-de-escrever`
+**Tarefa:** Aguardar `make quality` e reportar evidências ao arquiteto.
+**Resultado:** `make quality` RC=0 — 630 gates OK, 0 FALHA. `trackfw validate` RC=0. ML-1C marcado ✅ Concluído no roadmap.
+
+---
+
+## Sessão 2026-09-20 (continuação 2) — Apolo (fix/afirma-contencao-antes-de-escrever — ML-1C: geradores de artefato e hook/script, inclui AC9) — CONCLUÍDO
+
+**Início:** 2026-09-20 (continuação de sessão compactada, segunda parte) | Branch: `fix/afirma-contencao-antes-de-escrever`
+**Tarefa:** ML-1C — aplicar `pathguard.RejectSymlinks` a todos os sítios de escrita nos geradores de artefato (`roadmap.go`, `req.go`, `adr.go`, `note.go`, `scaffold.go`) e em `discover.go` (hook/CI installers). AC9: `MoveRoadmap` recusa quando origem ou destino escapa da árvore via symlink.
+**Estado atual:** Implementação concluída. `go build ./...` RC=0. `go test ./...` RC=0 (17 pacotes). `trackfw validate` RC=0 (lenient mode, 166 warnings, 0 violations). `make quality` rodando em background.
+**Arquivos modificados:** `internal/generators/scaffold.go`, `internal/generators/roadmap.go`, `internal/generators/req.go`, `internal/generators/adr.go`, `internal/generators/note.go`, `internal/discover/discover.go`.
+**Testes adicionados:** `scaffold_test.go` (+4), `roadmap_test.go` (+2), `req_test.go` (+1), `note_test.go` (+1), `adr_test.go` (+1), `discover_test.go` (+1). Cada um com one-sentence AC11 assertion.
+**Correção crítica em adr.go:** EvalSymlinks aplicada ANTES do guard (pré-existente) resolvia o symlink para fora da árvore, fazendo Beneath retornar false e `guardRoot = absAdrDir (resolvido) = outside`. Corrigido: guard usa raw abs path; EvalSymlinks movida para DEPOIS do guard.
+**Também corrigido em adr.go `NewADRDraft`:** mesma vulnerabilidade, mesma correção.
+
+---
+
 ## Sessão 2026-09-20 — Apolo (fix/afirma-contencao-antes-de-escrever — ML-1B-bis: guarda de privilégio de symlink em pathguard_test.go) — CONCLUÍDO
 
 **Início:** 2026-09-20 | Branch: `fix/afirma-contencao-antes-de-escrever`
@@ -38679,3 +38699,14 @@ trackfw init && roadmap new "..." && roadmap move <n> wip && trackfw validate
   A ocorrência única no `qC` é exatamente `check-symlink-privilege-guard: FALHA`. **Adotada `": FALHA"`** — dois-pontos e espaço é o formato de saída dos gates; `FALHA` solto pega prosa de comentário e de prova.
 - 🔴 **Décimo terceiro instrumento mentindo, e este eu construí:** meu laço de espera `until ! pgrep -f "make quality"; do sleep 20; done` **nunca terminaria**, porque o próprio comando do laço contém a string `make quality` e o `pgrep -f` **casa a si mesmo**. Auto-referência. Resultado: fiquei 5 horas reportando "ainda rodando" sobre um `make` que havia terminado às **10:40** com 630 gates verdes. O sinal que me denunciou foi o **mtime do log parado há 18.323 s** somado ao filho do processo ser um `sleep` — não o `pgrep`.
 - **Correção de método:** para esperar processo, casar por algo que o próprio laço não contenha (`pgrep -x make`, ou `ps -eo comm | grep -cx make`), e **sempre** cruzar com a idade do log.
+
+### 2026-09-20 — Zeus — ML-1C aprovado (PoCs fechadas), e dois erros meus de auditoria
+- **Barreira limpa: 630 gates / 0 `": FALHA"`**, guarda de conjunto OK.
+- **Verificado por execução real, não pelo relatório:**
+  - **PoC 1 (ancestral):** `.github` e `scripts` como symlink → `discover --init` **não cria nada fora**. Antes gravava 6 arquivos.
+  - **PoC 2 / AC9 (folha):** `roadmap move` com `ROADMAP-isca.md` → symlink **recusa**, e a vítima permanece `PRESERVAR`.
+  - **Recusa audível** (decisão 3 da ADR): stderr `trackfw: refusing write to .../scripts`; stdout `⚠ gates install partial`.
+  - **Braço (b):** fluxo legítimo completo íntegro — `init`, `discover --init` (5 gates instalados), `adr/req/roadmap/note new`, `roadmap move wip`.
+- 🔴 **Erro meu 1 — o `head` truncou a evidência.** Medi o aviso com `2>&1 >/dev/null | head -5` e reportei **"silencioso"**; a linha de recusa vinha depois do corte. **Décimo quarto instrumento mentindo**, de novo construído por mim. Separar `stdout` e `stderr` em arquivos distintos resolveu.
+- 🔴 **Erro meu 2 — reincidência.** Rodei `go build` e as PoCs **durante** a barreira; ela abortou em **188 de 630**, com o log terminando limpo e **sem** `make: *** Error` — assinatura de **interrupção**, não de falha. É exatamente o erro que registrei no ML-4C do #392. Re-rodei sem tocar na árvore: 630/0. **Regra para mim: barreira roda sozinha; nada de build, sonda ou PoC em paralelo.**
+- **Achado do executor que valida a retificação da ADR:** ele encontrou em `adr.go` o anti-padrão **`EvalSymlinks` antes do guard** — o caminho era resolvido para o alvo externo *antes* da checagem, e `Beneath` então comparava o destino consigo mesmo e passava. É exatamente a armadilha que a **primeira redação** da minha ADR teria criado ao mandar "resolver com `EvalSymlinks`". Corrigido movendo o guard para antes.
