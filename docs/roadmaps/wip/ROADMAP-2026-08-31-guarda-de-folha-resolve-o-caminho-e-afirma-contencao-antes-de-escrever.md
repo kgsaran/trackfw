@@ -168,8 +168,29 @@ nos 228 brutos; PoCs só em macOS.
 - [ ] `go build ./...` RC=0 · `go test ./...` RC=0
 - [ ] Uma frase por teste novo (AC11)
 
-### ML-1B..1D — aplicação por família
-**Status:** ⬜ Pendente
+### ML-1B — aplicar a contenção na família de **escopo global** (a mais grave)
+**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
+**Files affected:** `internal/generators/update.go` (53 sítios), `internal/generators/agentfiles.go` (21),
+`internal/identity/identity.go` (3, cópia não-guarded de `atomicWrite`), `internal/thirdparty/quarantine.go`
+(3, idem), e os testes correspondentes
+**Por que esta família primeiro:** é a única cujo dano **sai do projeto e atinge o ambiente do
+usuário**. A PoC da Wave 0 escreveu `SKILL.md` **fora do `$HOME`** com `updated=1 failed=0`, sem aviso.
+**Actions:**
+1. Aplicar `pathguard.RejectSymlinks(root, destino)` antes de cada escrita, com `root` **absoluto**.
+2. **Convergir as duas cópias de `atomicWrite`** (`identity.go:88`, `quarantine.go:141`) para o
+   `pathguard` — os comentários delas já declaram a duplicação.
+3. Recusa **audível** (decisão 3 da ADR): stderr nomeando caminho e motivo. Silêncio aqui vira
+   *"o update não atualizou meu arquivo e não disse nada"*.
+**Acceptance criteria:**
+- [ ] 🔴 **Braço (a):** com ancestral symlink, a escrita é recusada e **nada** é criado fora
+- [ ] 🔴 **Braço (b) — inegociável:** `update harness` legítimo, sem link algum, **continua
+      funcionando** em todos os alvos. Sem este braço, trocamos um buraco por uma quebra
+- [ ] A PoC da Wave 0 (`SKILL.md` fora do `$HOME`) passa a **falhar**
+- [ ] `go build ./...` RC=0 · `go test ./...` RC=0 · `make quality` **630 gates / 0 FAIL**
+- [ ] Uma frase por teste novo (AC11)
+
+### ML-1C..1D — demais famílias
+**Status:** ⬜ Pendente (após o ML-1B)
 
 #### 🔴 Enumeração revalidada pelo ML-1A, auditada por mim
 
