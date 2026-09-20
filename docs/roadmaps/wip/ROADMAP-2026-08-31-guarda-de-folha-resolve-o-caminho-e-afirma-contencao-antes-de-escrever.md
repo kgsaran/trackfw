@@ -190,7 +190,7 @@ usuário**. A PoC da Wave 0 escreveu `SKILL.md` **fora do `$HOME`** com `updated
 - [ ] Uma frase por teste novo (AC11)
 
 ### ML-1B-bis — corretivo: os testes do `pathguard` não usam guarda de capacidade
-**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
 **Files affected:** `internal/pathguard/pathguard_test.go` — **só este**
 **Contexto:** o ML-1B está **aprovado na aplicação** — reproduzi os dois braços por execução real:
 `(a)` `$HOME/.claude` como symlink → `failed=1`, **nada criado fora**; `(b)` `$HOME` limpo →
