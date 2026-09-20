@@ -324,8 +324,13 @@ FALHA — internal/metrics/metrics_guard_test.go:27: symlink/fifo sem guarda de 
 🔴 **Crédito ao executor: ele previu isto no próprio relatório** e recomendou o `git add -N`. Eu
 apliquei e o defeito apareceu.
 **Actions:**
-1. Aplicar `symlinkOrSkip` no sítio, como o **ML-1B-bis** fez em `pathguard_test.go`. **Reuse o
-   helper**, detecção **pela condição** (`IsPermission`/errno `1314`), nunca por `runtime.GOOS`.
+1. 🔴 **A guarda já existe e está correta** — `symlinkOrSkipMetrics` (linha 14) detecta por
+   condição (`IsPermission` + errno `1314`). O que o gate reprova é **posição**: o sítio é o
+   `t.Fatalf("os.Symlink(...)")` da **linha 27**, e o nome da guarda está 13 linhas acima, fora da
+   janela de **±5 linhas** que o gate exige (`check-symlink-privilege-guard.sh`, Decisão 1).
+2. Aplicar **o mesmo corretivo que o executor já usou** em `config_agents_register_test.go`: uma
+   linha de comentário nomeando a guarda imediatamente antes do `t.Fatalf`. **Não reescrever a
+   guarda** nem trocar o predicado.
 **Acceptance criteria:**
 - [ ] `bash scripts/check-symlink-privilege-guard.sh` → **OK com 150 arquivos** (contagem menor = vácuo)
 - [ ] `make quality` **630 gates / 0 `": FALHA"`**, rodado **sozinho** — 🔴 a barreira do arquiteto deu
