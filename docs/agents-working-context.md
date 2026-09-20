@@ -2,6 +2,16 @@
 
 ---
 
+## Sessão 2026-09-20 — Apolo (fix/afirma-contencao-antes-de-escrever — ML-1B-bis: guarda de privilégio de symlink em pathguard_test.go) — CONCLUÍDO
+
+**Início:** 2026-09-20 | Branch: `fix/afirma-contencao-antes-de-escrever`
+**Tarefa:** ML-1B-bis — adicionar `symlinkOrSkip`/`isSymlinkPrivilegeError` em `internal/pathguard/pathguard_test.go` e substituir as duas chamadas nuas de `os.Symlink` (linhas ~70 e ~90) pelo helper, atendendo o gate `check-symlink-privilege-guard`.
+**Resultado:** `check-symlink-privilege-guard` OK (143 arquivos varridos) · `go test ./internal/pathguard/` RC=0 · `make quality` RC=0 (630 `^OK `, 0 `^FAIL|FALHA` reais) · `trackfw validate` RC=0.
+**Helper copiado de:** `internal/validator/symlink_helper_test.go` — detecção pela condição, não por `runtime.GOOS`.
+**Arquivo editado:** `internal/pathguard/pathguard_test.go` — imports adicionados (`errors`, `syscall`), helpers adicionados inline, os.Symlink nuas nas linhas ~70 e ~90 substituídas por `symlinkOrSkip`.
+
+---
+
 ## Sessão 2026-09-20 — Apolo (fix/afirma-contencao-antes-de-escrever — ML-1B: aplicar contenção à família de escopo global) — CONCLUÍDO
 
 **Início:** 2026-09-20 | Branch: `fix/afirma-contencao-antes-de-escrever`
@@ -38654,3 +38664,18 @@ trackfw init && roadmap new "..." && roadmap move <n> wip && trackfw validate
 - 🔴 **Defeito 1 do meu método — barreira vácua para arquivo novo.** `check-symlink-privilege-guard` enumera por **`git ls-files`**. Quando rodei a barreira do ML-1A, `internal/pathguard/` estava **untracked**: o gate varreu **142** arquivos e **não viu** o pacote recém-criado. Depois do commit passou a ver **143** e reprovou os 2 sítios. **Rodar a barreira antes de commitar é vácuo para arquivo novo** em todo gate baseado em `git ls-files`. Correção: `git add -N` antes da barreira sempre que o ML criar arquivo.
 - 🔴 **Defeito 2 do meu método — a métrica de FAIL é cega.** Venho medindo `/usr/bin/grep -cE "^FAIL"`, e esta falha reporta **`check-symlink-privilege-guard: FALHA`** — não começa com `FAIL`. Minha contagem deu **`FAIL=0`** numa barreira que abortou. **Décimo segundo instrumento mentindo nesta campanha.** Passo a usar `-ciE "^FAIL|FALHA"`, e a tratar contagem de gates < 630 como aborto mesmo com FAIL=0 — foi o que me fez olhar.
 - **O defeito material é do ML-1A**, não do ML-1B: os testes do `pathguard` criam symlink sem `symlinkOrSkip`, e o gate existe para impedir *"a décima-primeira instância da issue #315"* — distinguir "sem privilégio" (skip) de "falhou por outro motivo" (fail). ML-1B-bis corrige, reusando um dos dois helpers que já existem no repo.
+
+### 2026-09-20 — Zeus — ML-1B-bis aprovado; e a métrica de falha finalmente medida
+- **Barreira: 630 gates / 0 FAIL**, guarda de conjunto OK. Gate específico: `OK — 143 arquivos verificados, zero sitios desguardados` — a contagem importa, porque **142** era o número que não via o `pathguard`.
+- **Helper copiado fielmente, não reimplementado:** detecção por **condição** (`IsPermission` / errno `1314`); `runtime.GOOS` aparece **só no comentário** que explica o antipadrão, nunca como discriminante. Era o risco real deste ML.
+- 🔴 **A métrica de falha, resolvida por medição comparativa** — rodei as três contra a barreira que **abortou** (`qC`) e a que **passou** (`qD`):
+
+| métrica | qC (abortou) | qD (passou) | veredito |
+|---|---|---|---|
+| `^FAIL` | 0 | 0 | **cega** — foi a que me deu "FAIL=0" num aborto |
+| `^FAIL\|FALHA` | 4 | **6** | **pior que inútil** — quem passou tem *mais* ocorrências |
+| **`": FALHA"`** | **1** | **0** | ✅ **discrimina** |
+
+  A ocorrência única no `qC` é exatamente `check-symlink-privilege-guard: FALHA`. **Adotada `": FALHA"`** — dois-pontos e espaço é o formato de saída dos gates; `FALHA` solto pega prosa de comentário e de prova.
+- 🔴 **Décimo terceiro instrumento mentindo, e este eu construí:** meu laço de espera `until ! pgrep -f "make quality"; do sleep 20; done` **nunca terminaria**, porque o próprio comando do laço contém a string `make quality` e o `pgrep -f` **casa a si mesmo**. Auto-referência. Resultado: fiquei 5 horas reportando "ainda rodando" sobre um `make` que havia terminado às **10:40** com 630 gates verdes. O sinal que me denunciou foi o **mtime do log parado há 18.323 s** somado ao filho do processo ser um `sleep` — não o `pgrep`.
+- **Correção de método:** para esperar processo, casar por algo que o próprio laço não contenha (`pgrep -x make`, ou `ps -eo comm | grep -cx make`), e **sempre** cruzar com a idade do log.

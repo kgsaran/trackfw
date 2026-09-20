@@ -1,8 +1,10 @@
 package pathguard_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 
 	"github.com/kgsaran/trackfw/internal/pathguard"
@@ -67,8 +69,8 @@ func TestRejectSymlinks_SymlinkInLeaf(t *testing.T) {
 		t.Fatal(err)
 	}
 	leaf := filepath.Join(root, "ROADMAP-decoy.md")
-	if err := os.Symlink(target, leaf); err != nil {
-		t.Fatal(err)
+	if !symlinkOrSkip(t, target, leaf) {
+		return
 	}
 	err := pathguard.RejectSymlinks(root, leaf)
 	if err == nil {
@@ -87,8 +89,8 @@ func TestRejectSymlinks_SymlinkInAncestor(t *testing.T) {
 	outside := t.TempDir()
 	// Place the symlink on an intermediate directory inside root.
 	ancestor := filepath.Join(root, "scripts")
-	if err := os.Symlink(outside, ancestor); err != nil {
-		t.Fatal(err)
+	if !symlinkOrSkip(t, outside, ancestor) {
+		return
 	}
 	// The leaf does not exist — simulates creating a new file.
 	leaf := filepath.Join(ancestor, "trackfw-validate.sh")
@@ -127,4 +129,58 @@ func TestRejectSymlinks_PathEscapesRoot(t *testing.T) {
 	if err == nil {
 		t.Error("RejectSymlinks with path outside root: expected error, got nil")
 	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// symlink_helper — guarda de privilégio de symlink para este pacote.
+//
+// Copiado de internal/validator/symlink_helper_test.go (versão referência).
+// Justificativa: símbolos de arquivo _test.go não são importáveis entre
+// pacotes Go — não existe "import de helpers de teste" no Go. Criar um pacote
+// compartilhado internal/testutil exigiria um arquivo não-_test.go (produção),
+// o que está fora do escopo deste ML. Uma cópia por fronteira de pacote é o
+// idioma correto; a lógica deve ser idêntica — qualquer divergência é um bug.
+// ──────────────────────────────────────────────────────────────────────────────
+
+// symlinkOrSkip cria um symlink em link apontando para target. Se a criação
+// falhar por falta do privilégio que o Windows exige (Developer Mode ou
+// processo elevado — WinError 1314, ERROR_PRIVILEGE_NOT_HELD), pula o teste
+// chamador nomeando a garantia não exercitada e devolve false. Qualquer
+// outro erro é um t.Fatalf.
+//
+// A detecção é pela CONDIÇÃO (falha de privilégio), não por runtime.GOOS:
+// num Windows com Developer Mode habilitado, ou em Linux/macOS, os.Symlink
+// tem sucesso e o teste executa normalmente. Isso corrige o antipadrão
+// runtime.GOOS == "windows" → t.Skip, que abandona cobertura mesmo em
+// Windows com Developer Mode.
+func symlinkOrSkip(t *testing.T, target, link string) bool {
+	t.Helper()
+	err := os.Symlink(target, link)
+	if err == nil {
+		return true
+	}
+	if isSymlinkPrivilegeError(err) {
+		t.Skipf(
+			"guarda de symlink não exercitada: criação de symlink exige "+
+				"Developer Mode (ou processo elevado) neste Windows: %v", err,
+		)
+		return false
+	}
+	t.Fatalf("os.Symlink(%q, %q): %v", target, link, err)
+	return false
+}
+
+// isSymlinkPrivilegeError reporta se err é a falha "processo sem privilégio
+// para criar symlink" — WinError 1314 no Windows sem Developer
+// Mode/elevação, ou permission-denied genérico em qualquer plataforma. Não
+// casa por GOOS/plataforma, só pelo erro subjacente.
+func isSymlinkPrivilegeError(err error) bool {
+	if os.IsPermission(err) {
+		return true
+	}
+	var e syscall.Errno
+	if errors.As(err, &e) && e == 1314 {
+		return true
+	}
+	return false
 }
