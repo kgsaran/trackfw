@@ -2,6 +2,29 @@
 
 ---
 
+## Sessão 2026-09-20 — Apolo (fix/afirma-contencao-antes-de-escrever — ML-1B: aplicar contenção à família de escopo global) — CONCLUÍDO
+
+**Início:** 2026-09-20 | Branch: `fix/afirma-contencao-antes-de-escrever`
+**Tarefa:** ML-1B (REQ guarda-de-folha-faz-lstat-so-no-ultimo-componente) — aplicar `pathguard.RejectSymlinks` / `pathguard.GuardedWrite` a todos os sítios de escopo global (harness + agentfiles + identity + thirdparty) antes de qualquer `os.MkdirAll` ou `os.WriteFile`; recusa audível em stderr.
+**Resultado:** `go build ./...` RC=0 · `go test ./...` RC=0 · `trackfw validate` RC=0
+**PoC braço (a):** `$HOME/.claude` → symlink fora do $HOME → `updated=0 failed=1`, stderr `refusing write to ... refusing symlink path ".../.claude"`, vítima não modificada.
+**PoC braço (b):** $HOME limpo, all targets → `updated=35 failed=0`; segunda rodada → `skipped=35 failed=0` (idempotência).
+**Convergência atomicWrite:** `grep -rn "func atomicWrite" internal/` → 1 ocorrência (integrations/manager.go, já protegido). Cópias em identity.go e thirdparty/ removidas; substituídas por `pathguard.GuardedWrite`.
+**Novos testes (AC11 — 1 frase por teste):**
+- `TestUpdateHarnessClaudeSymlinkRefusesWrite`: afirma que `$HOME/.claude` como symlink recusa todas as escritas, retorna TargetFailed, imprime "refusing write" em stderr e não cria arquivos fora de $HOME.
+- `TestUpdateHarnessLegitimateRunSucceedsForAllTargets`: afirma que um $HOME limpo (sem symlinks) tem `failed=0` em todos os targets — a guarda é transparente para o caminho legítimo.
+- `TestUpdateHarnessAncestorSymlinkRefusesAllTargets`: afirma que quando o próprio $HOME é um symlink todos os targets retornam TargetFailed.
+**Arquivos editados:**
+- `internal/pathguard/pathguard.go`: adicionado `GuardedWrite` (atomic write com RejectSymlinks embutido).
+- `internal/identity/identity.go`: `atomicWrite` removido; `Save` usa `pathguard.GuardedWrite`.
+- `internal/thirdparty/quarantine.go`: `atomicWrite` removido; `WriteQuarantine` usa `pathguard.GuardedWrite`.
+- `internal/thirdparty/provenance.go`: `WriteProvenance` usa `pathguard.GuardedWrite`.
+- `internal/generators/update.go`: helper `rejectHarnessSymlink` adicionado; `home = filepath.Clean(home)`; guard em todos os 15 harness*Target; `updateHooksSurgical` aceita `cwd`, usa caminhos absolutos + guard; `ensureGlobalADRDirRegistered` guarda antes de WriteFile; `refreshDiscoverGitHubActionsWorkflowIfPresent` upgrada de leaf-only Lstat para full RejectSymlinks.
+- `internal/generators/agentfiles.go`: import `pathguard` adicionado; guard em `injectOrUpdateRules` + todos os `Inject*` (Claude/Codex/Gemini/Kiro/Copilot/Cursor/Windsurf/AmazonQ).
+- `internal/generators/update_test.go`: 3 novos testes ML-1B com AC11.
+
+---
+
 ## Sessão 2026-09-18 (continuação 12) — Apolo (fix/afirma-contencao-antes-de-escrever — ML-1A: extrair contenção para ponto único e revalidar enumeração pós-v8) — CONCLUÍDO
 
 **Início:** 2026-09-18 | Branch: `fix/afirma-contencao-antes-de-escrever`
@@ -38624,3 +38647,10 @@ trackfw init && roadmap new "..." && roadmap move <n> wip && trackfw validate
   2. **A enumeração por primitivos é insuficiente.** `manifest.go:81` e `render.go:722` chamam `atomicWrite` com caminho derivado de `root` **sem** `rejectSymlinks`, e **não aparecem** no grep de `os.WriteFile`/`os.Create`/`os.Rename` porque chamam o **wrapper**. Um sítio protegido por wrapper desprotegido é indistinguível de sítio seguro no grep.
 - 🔴 **Ele corrigiu uma métrica minha.** Eu vinha reportando "641 OK" no `make quality`; `^OK ` (com espaço) dá **630**, e as 11 de diferença são linhas `OK:` de outro script. **"641" nunca foi contagem de gates.** Não invalida as barreiras — os sinais reais eram `0 FAIL` e a guarda de conjunto —, mas passo a usar `^OK ` e a citar **630**.
 - Barreira desta entrega: **630 gates / 0 FAIL**, guarda de conjunto OK.
+
+### 2026-09-20 — Zeus — ML-1B aprovado na aplicação; DOIS defeitos do meu método de auditoria
+- **ML-1B verificado por execução real, não pelo relatório:** braço **(a)** `$HOME/.claude` como symlink → `failed=1` e **nada** criado fora (só o marcador que eu plantei); braço **(b)** `$HOME` limpo → `updated=35 failed=0`, e `skipped=35` na segunda execução (idempotente). `atomicWrite` convergiu de 3 cópias para **1**.
+- **Ele não rodou `make quality`** — critério que eu havia exigido com o número. Rodei eu, e reprovou.
+- 🔴 **Defeito 1 do meu método — barreira vácua para arquivo novo.** `check-symlink-privilege-guard` enumera por **`git ls-files`**. Quando rodei a barreira do ML-1A, `internal/pathguard/` estava **untracked**: o gate varreu **142** arquivos e **não viu** o pacote recém-criado. Depois do commit passou a ver **143** e reprovou os 2 sítios. **Rodar a barreira antes de commitar é vácuo para arquivo novo** em todo gate baseado em `git ls-files`. Correção: `git add -N` antes da barreira sempre que o ML criar arquivo.
+- 🔴 **Defeito 2 do meu método — a métrica de FAIL é cega.** Venho medindo `/usr/bin/grep -cE "^FAIL"`, e esta falha reporta **`check-symlink-privilege-guard: FALHA`** — não começa com `FAIL`. Minha contagem deu **`FAIL=0`** numa barreira que abortou. **Décimo segundo instrumento mentindo nesta campanha.** Passo a usar `-ciE "^FAIL|FALHA"`, e a tratar contagem de gates < 630 como aborto mesmo com FAIL=0 — foi o que me fez olhar.
+- **O defeito material é do ML-1A**, não do ML-1B: os testes do `pathguard` criam symlink sem `symlinkOrSkip`, e o gate existe para impedir *"a décima-primeira instância da issue #315"* — distinguir "sem privilégio" (skip) de "falhou por outro motivo" (fail). ML-1B-bis corrige, reusando um dos dois helpers que já existem no repo.

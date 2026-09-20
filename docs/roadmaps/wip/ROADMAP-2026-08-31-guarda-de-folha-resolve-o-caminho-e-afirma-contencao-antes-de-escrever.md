@@ -169,7 +169,7 @@ nos 228 brutos; PoCs só em macOS.
 - [ ] Uma frase por teste novo (AC11)
 
 ### ML-1B — aplicar a contenção na família de **escopo global** (a mais grave)
-**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
+**Status:** ✅ Concluído **na aplicação** (PoCs verificadas por mim), com corretivo no ML-1B-bis — a barreira reprova 2 sítios de teste do ML-1A
 **Files affected:** `internal/generators/update.go` (53 sítios), `internal/generators/agentfiles.go` (21),
 `internal/identity/identity.go` (3, cópia não-guarded de `atomicWrite`), `internal/thirdparty/quarantine.go`
 (3, idem), e os testes correspondentes
@@ -188,6 +188,41 @@ usuário**. A PoC da Wave 0 escreveu `SKILL.md` **fora do `$HOME`** com `updated
 - [ ] A PoC da Wave 0 (`SKILL.md` fora do `$HOME`) passa a **falhar**
 - [ ] `go build ./...` RC=0 · `go test ./...` RC=0 · `make quality` **630 gates / 0 FAIL**
 - [ ] Uma frase por teste novo (AC11)
+
+### ML-1B-bis — corretivo: os testes do `pathguard` não usam guarda de capacidade
+**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Files affected:** `internal/pathguard/pathguard_test.go` — **só este**
+**Contexto:** o ML-1B está **aprovado na aplicação** — reproduzi os dois braços por execução real:
+`(a)` `$HOME/.claude` como symlink → `failed=1`, **nada criado fora**; `(b)` `$HOME` limpo →
+`updated=35 failed=0`, e idempotente na segunda execução (`skipped=35`). `atomicWrite` convergiu
+para **1** ocorrência.
+
+🔴 **A barreira reprova**, e o defeito vem do **ML-1A**:
+```
+check-symlink-privilege-guard: FALHA — sitios sem guarda de capacidade:
+  internal/pathguard/pathguard_test.go:70
+  internal/pathguard/pathguard_test.go:90
+```
+O gate existe para impedir *"a décima-primeira instância da issue #315"*: teste que cria symlink deve
+usar `symlinkOrSkip`, para distinguir **"sem privilégio" (skip)** de **"falhou por outro motivo" (fail)**.
+
+🔴 **Por que a barreira do ML-1A não pegou — e a falha é do meu processo.** O gate enumera por
+**`git ls-files`** (`check-symlink-privilege-guard.sh:125-127`). Quando rodei a barreira do ML-1A,
+`internal/pathguard/` estava **untracked** (`?? internal/pathguard/`), então o gate varreu **142**
+arquivos e **não viu** o pacote novo. Depois do commit ele passou a ver **143** e reprovou.
+**Rodar a barreira antes de commitar é vácuo para arquivo novo** em qualquer gate baseado em
+`git ls-files`. Correção de processo: `git add -N` (ou `git add`) **antes** da barreira, sempre que o
+ML criar arquivo.
+**Actions:**
+1. Usar o helper existente — há dois modelos no repo: `internal/discover/symlink_helper_test.go:30` e
+   `internal/validator/symlink_helper_test.go:32`. 🔴 **Reuse, não reescreva.**
+2. Aplicar nos dois sítios (linhas ~70 e ~90).
+**Acceptance criteria:**
+- [ ] `bash scripts/check-symlink-privilege-guard.sh` → OK, com a contagem de arquivos varridos (não vácuo)
+- [ ] `go test ./internal/pathguard/` RC=0
+- [ ] 🔴 `make quality` **630 gates / 0 FAIL**, medido com `/usr/bin/grep -c "^OK "` **e** com
+      `/usr/bin/grep -ciE "^FAIL|FALHA"` → **0**. Ver nota de instrumento abaixo.
+- [ ] Uma frase por teste alterado (AC11)
 
 ### ML-1C..1D — demais famílias
 **Status:** ⬜ Pendente (após o ML-1B)

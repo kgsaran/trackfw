@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/kgsaran/trackfw/internal/pathguard"
 )
 
 // provenanceSchemaVersion is the schema_version written to and required by
@@ -140,7 +142,8 @@ func WriteProvenance(root string, prov Provenance) error {
 		return fmt.Errorf("encode thirdparty provenance: %w", err)
 	}
 	data = append(data, '\n')
-	if err := atomicWrite(ProvenancePath(root), data, 0o600); err != nil {
+	dest := ProvenancePath(root)
+	if err := pathguard.GuardedWrite(filepath.Clean(root), dest, data, 0o600); err != nil {
 		return fmt.Errorf("write thirdparty provenance: %w", err)
 	}
 	return nil

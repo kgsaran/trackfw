@@ -101,3 +101,49 @@ func RejectSymlinks(root, filename string) error {
 		current = parent
 	}
 }
+
+// GuardedWrite applies RejectSymlinks(root, filename) and, if the check
+// passes, writes data to filename atomically: it creates a temporary file in
+// the same directory, writes and syncs it, then renames it into place.
+//
+// This consolidates the private atomicWrite functions that previously lived in
+// internal/identity and internal/thirdparty/quarantine — both packages
+// declared those copies as mirrors of internal/integrations/manager.go's
+// atomicWrite. Centralising here removes three divergent implementations of
+// the same pattern and ensures every caller inherits the containment check
+// for free.
+//
+// root must be the real (fully resolved) parent boundary — the same constraint
+// as RejectSymlinks, which GuardedWrite calls first so that no directory is
+// created before the guard fires.
+func GuardedWrite(root, filename string, data []byte, mode os.FileMode) error {
+	if err := RejectSymlinks(root, filename); err != nil {
+		return err
+	}
+	directory := filepath.Dir(filename)
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return err
+	}
+	temporary, err := os.CreateTemp(directory, ".trackfw-tmp-*")
+	if err != nil {
+		return err
+	}
+	temporaryName := temporary.Name()
+	defer os.Remove(temporaryName) //nolint:errcheck
+	if err := temporary.Chmod(mode); err != nil {
+		temporary.Close() //nolint:errcheck
+		return err
+	}
+	if _, err := temporary.Write(data); err != nil {
+		temporary.Close() //nolint:errcheck
+		return err
+	}
+	if err := temporary.Sync(); err != nil {
+		temporary.Close() //nolint:errcheck
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temporaryName, filename)
+}

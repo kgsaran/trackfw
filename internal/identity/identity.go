@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"github.com/kgsaran/trackfw/internal/pathguard"
 )
 
 // schemaVersion is the current schema version for the identity config file.
@@ -76,42 +78,15 @@ func Save(homeDir string, cfg Config) error {
 	data = append(data, '\n')
 
 	filename := identityPath(homeDir)
-	if err := atomicWrite(filename, data, 0o600); err != nil {
+	// GuardedWrite applies RejectSymlinks(homeDir, filename) before any
+	// filesystem mutation — closing the "symlink in ancestor" write-escape
+	// described in REQ-2026-08-31 / ADR-2026-09-18. It also replaces the
+	// private atomicWrite that previously lived in this file (declared there
+	// as a mirror of internal/integrations/manager.go's atomicWrite).
+	if err := pathguard.GuardedWrite(filepath.Clean(homeDir), filename, data, 0o600); err != nil {
 		return fmt.Errorf("identity: falha ao gravar %s: %w", filename, err)
 	}
 	return nil
-}
-
-// atomicWrite writes data to filename atomically: it creates a temporary
-// file in the same directory, writes and syncs it, then renames it into
-// place. Mirrors the pattern used by internal/integrations/manager.go.
-func atomicWrite(filename string, data []byte, mode os.FileMode) error {
-	directory := filepath.Dir(filename)
-	if err := os.MkdirAll(directory, 0o700); err != nil {
-		return err
-	}
-	temporary, err := os.CreateTemp(directory, ".trackfw-tmp-*")
-	if err != nil {
-		return err
-	}
-	temporaryName := temporary.Name()
-	defer os.Remove(temporaryName)
-	if err := temporary.Chmod(mode); err != nil {
-		temporary.Close()
-		return err
-	}
-	if _, err := temporary.Write(data); err != nil {
-		temporary.Close()
-		return err
-	}
-	if err := temporary.Sync(); err != nil {
-		temporary.Close()
-		return err
-	}
-	if err := temporary.Close(); err != nil {
-		return err
-	}
-	return os.Rename(temporaryName, filename)
 }
 
 // AgentName returns the display name suffixed with "-tf". This is the only
