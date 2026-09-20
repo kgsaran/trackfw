@@ -249,7 +249,7 @@ folha para reescrever arquivo externo (**AC9**, absorvido da REQ irmã).
 - [ ] Uma frase por teste novo (AC11)
 
 ### ML-1D — diversos e wrappers (fecha a Wave 1)
-**Status:** ✅ Concluído **na aplicação**, com corretivo **ML-1D-bis** — o gate de symlink acusa 1 sítio nos testes novos
+**Status:** 🔄 Em andamento — aplicação aprovada; corretivo **ML-1D-bis** pendente (gate de symlink)
 `configure.go`, `java.go`, `config_agents_register.go`, `metrics.go`, `sync.go`, `validator.go`
 (**caminho relativo puro** — exigem resolver `root` absoluto antes, precondição do ML-1A), e os
 **wrappers** `manifest.go:81` / `render.go:722`, que chamam `atomicWrite` sem contenção e **não
@@ -332,7 +332,9 @@ apliquei e o defeito apareceu.
    linha de comentário nomeando a guarda imediatamente antes do `t.Fatalf`. **Não reescrever a
    guarda** nem trocar o predicado.
 **Acceptance criteria:**
-- [ ] `bash scripts/check-symlink-privilege-guard.sh` → **OK com 150 arquivos** (contagem menor = vácuo)
+- [ ] `bash scripts/check-symlink-privilege-guard.sh` → **OK com 150 arquivos** (contagem menor = vácuo).
+      🔴 **Escopo confirmado por mim com a árvore parada: 150 arquivos, exatamente 1 sítio** — só
+      `metrics_guard_test.go:27`. Os outros 6 guard tests passam.
 - [ ] `make quality` **630 gates / 0 `": FALHA"`**, rodado **sozinho** — 🔴 a barreira do arquiteto deu
       **276 gates** porque rodou enquanto um agente ainda editava; resultado descartado
 - [ ] `go test ./internal/metrics/` RC=0
