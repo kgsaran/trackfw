@@ -224,8 +224,36 @@ ML criar arquivo.
       `/usr/bin/grep -ciE "^FAIL|FALHA"` → **0**. Ver nota de instrumento abaixo.
 - [ ] Uma frase por teste alterado (AC11)
 
-### ML-1C..1D — demais famílias
-**Status:** ⬜ Pendente (após o ML-1B)
+### ML-1C — geradores de artefato e de hook/script (inclui o **AC9**)
+**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
+**Files affected:** `internal/discover/discover.go` (13), `internal/generators/scaffold.go` (33),
+`internal/generators/req.go` (7), `internal/generators/roadmap.go` (7 — **AC9**),
+`internal/generators/adr.go` (4), `internal/generators/note.go` (4), e os testes correspondentes
+**Por que esta família agora:** contém as **duas PoCs que eu reproduzi pessoalmente** contra o binário
+da `main` — `discover --init` gravando 6 arquivos fora da árvore, e `roadmap move` seguindo symlink de
+folha para reescrever arquivo externo (**AC9**, absorvido da REQ irmã).
+**Actions:**
+1. Aplicar `pathguard.RejectSymlinks(root, destino)` / `pathguard.GuardedWrite` antes de cada escrita,
+   com `root` **absoluto**.
+2. **AC9:** `MoveRoadmap` recusa quando origem **ou** destino escapa da árvore. 🔴 Atenção ao
+   `os.Rename` — não é só escrita: a **origem** também pode ser symlink.
+3. Recusa audível nomeando caminho e motivo (decisão 3 da ADR).
+**Acceptance criteria:**
+- [ ] 🔴 **PoC 1 fecha:** `.github` e `scripts` como symlink → `discover --init` **recusa**, e **nada**
+      é criado fora. Demonstre antes/depois.
+- [ ] 🔴 **PoC 2 (AC9) fecha:** `ln -s /fora/vitima.md docs/roadmaps/backlog/ROADMAP-isca.md &&
+      roadmap move ROADMAP-isca wip` → **recusa**, e a vítima **não é alterada**.
+- [ ] 🔴 **Braço (b), inegociável:** `discover --init`, `req new`, `roadmap new`, `adr new`,
+      `note new` e `roadmap move` **legítimos continuam funcionando**. Execução real, não só unitário.
+- [ ] `make quality` **630 gates / 0 FAIL** — métrica de falha: `/usr/bin/grep -cE ": FALHA"` → **0**
+- [ ] Uma frase por teste novo (AC11)
+
+### ML-1D — diversos e wrappers
+**Status:** ⬜ Pendente (após o ML-1C)
+`configure.go`, `java.go`, `config_agents_register.go`, `metrics.go`, `sync.go`, `validator.go`
+(**caminho relativo puro** — exigem resolver `root` absoluto antes, precondição do ML-1A), e os
+**wrappers** `manifest.go:81` / `render.go:722`, que chamam `atomicWrite` sem contenção e **não
+aparecem** no grep de primitivos.
 
 #### 🔴 Enumeração revalidada pelo ML-1A, auditada por mim
 
