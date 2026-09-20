@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/kgsaran/trackfw/internal/config"
+	"github.com/kgsaran/trackfw/internal/pathguard"
 	"github.com/kgsaran/trackfw/internal/validator"
 )
 
@@ -77,6 +79,15 @@ func syncToProvider(create func(string, string) (string, error), issueField stri
 		return nil, &ErrNoREQsFound{REQDir: cfg.REQDir}
 	}
 
+	// Resolve project root once for the whole loop. Guard precedes each write.
+	// Root: EvalSymlinks(Getwd()) — macOS /tmp→/private/tmp invariant.
+	syncRoot, syncRootErr := os.Getwd()
+	if syncRootErr == nil {
+		if resolved, resolveErr := filepath.EvalSymlinks(syncRoot); resolveErr == nil {
+			syncRoot = resolved
+		}
+	}
+
 	var results []SyncResult
 	for _, f := range files {
 		content, err := os.ReadFile(f)
@@ -108,6 +119,19 @@ func syncToProvider(create func(string, string) (string, error), issueField stri
 		}
 
 		updated := injectField(text, issueField, issueID)
+		// Guard before write: reject any symlink ancestor between root and the
+		// REQ file path. f may be relative; make it absolute against the root.
+		if syncRootErr == nil {
+			absF := f
+			if !filepath.IsAbs(f) {
+				absF = filepath.Join(syncRoot, f)
+			}
+			if guardErr := pathguard.RejectSymlinks(syncRoot, absF); guardErr != nil {
+				fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absF, guardErr)
+				results = append(results, SyncResult{REQPath: f, Error: fmt.Errorf("refusing write: %w", guardErr)})
+				continue
+			}
+		}
 		if err := os.WriteFile(f, []byte(updated), 0644); err != nil {
 			results = append(results, SyncResult{REQPath: f, Error: fmt.Errorf("write file: %w", err)})
 			continue

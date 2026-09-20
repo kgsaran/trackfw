@@ -3,11 +3,14 @@ package commands
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/huh"
 	"github.com/spf13/cobra"
+
+	"github.com/kgsaran/trackfw/internal/pathguard"
 )
 
 const configureYAMLHeader = "# trackfw.yaml — gerado por trackfw configure\n"
@@ -137,6 +140,21 @@ Gera arquivo esparso: apenas campos que diferem dos defaults são gravados.`,
 				content += strings.Join(lines, "\n") + "\n"
 			}
 
+			// Guard before write: resolve project root from CWD, then reject any
+			// symlink ancestor between root and trackfw.yaml. Guard precedes write
+			// (and any MkdirAll) so a refused destination creates no stray file.
+			// Root: EvalSymlinks(Getwd()) — macOS /tmp→/private/tmp invariant.
+			configureRoot, cwdErr := os.Getwd()
+			if cwdErr == nil {
+				if resolved, resolveErr := filepath.EvalSymlinks(configureRoot); resolveErr == nil {
+					configureRoot = resolved
+				}
+				absYAML := filepath.Join(configureRoot, "trackfw.yaml")
+				if guardErr := pathguard.RejectSymlinks(configureRoot, absYAML); guardErr != nil {
+					fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absYAML, guardErr)
+					return fmt.Errorf("refusing write to trackfw.yaml: %w", guardErr)
+				}
+			}
 			if err := os.WriteFile("trackfw.yaml", []byte(content), 0644); err != nil {
 				return fmt.Errorf("erro ao gravar trackfw.yaml: %w", err)
 			}

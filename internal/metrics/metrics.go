@@ -5,10 +5,13 @@ import (
 	"encoding/csv"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/kgsaran/trackfw/internal/pathguard"
 )
 
 // Transition representa uma entrada do .trackfw-log.
@@ -182,7 +185,35 @@ func Calculate(transitions []Transition) Metrics {
 }
 
 // ExportCSV grava as transições e métricas em um arquivo CSV.
+//
+// Containment guard: when path is relative (or is absolute but contained inside
+// the project root), RejectSymlinks is applied to reject any symlink ancestor
+// between the project root and the destination.
+//
+// Named exception: an absolute path that resolves outside the project root
+// (e.g. /tmp/metrics.csv) is user-directed — the user explicitly chose an
+// external destination. That case is not "derived from root" per
+// ADR-2026-09-18 and is allowed through without a guard.
 func ExportCSV(m Metrics, transitions []Transition, path string) error {
+	// Resolve project root from CWD — macOS /tmp→/private/tmp invariant.
+	if cwd, cwdErr := os.Getwd(); cwdErr == nil {
+		exportRoot := cwd
+		if resolved, resolveErr := filepath.EvalSymlinks(cwd); resolveErr == nil {
+			exportRoot = resolved
+		}
+		absPath := path
+		if !filepath.IsAbs(path) {
+			absPath = filepath.Join(exportRoot, path)
+		}
+		// Guard only paths inside the project root. External absolute paths are a
+		// named exception: user-directed, not derived from root.
+		if pathguard.Beneath(exportRoot, absPath) {
+			if guardErr := pathguard.RejectSymlinks(exportRoot, absPath); guardErr != nil {
+				fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absPath, guardErr)
+				return fmt.Errorf("refusing write to %s: %w", absPath, guardErr)
+			}
+		}
+	}
 	f, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("metrics: criar CSV: %w", err)

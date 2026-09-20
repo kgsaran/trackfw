@@ -13,6 +13,7 @@ import (
 
 	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/integrations"
+	"github.com/kgsaran/trackfw/internal/pathguard"
 )
 
 // BaselineFile representa o conteúdo de .trackfw-baseline.json
@@ -50,6 +51,20 @@ func SaveBaseline(violations, warnings []string) error {
 	data, err := json.MarshalIndent(bf, "", "  ")
 	if err != nil {
 		return err
+	}
+	// Guard before write: baselineFileName is relative to CWD (= project root).
+	// Root: EvalSymlinks(Getwd()) — macOS /tmp→/private/tmp invariant.
+	// Guard precedes WriteFile so a refused destination creates no stray file.
+	if cwd, cwdErr := os.Getwd(); cwdErr == nil {
+		baselineRoot := cwd
+		if resolved, resolveErr := filepath.EvalSymlinks(cwd); resolveErr == nil {
+			baselineRoot = resolved
+		}
+		absBaseline := filepath.Join(baselineRoot, baselineFileName)
+		if guardErr := pathguard.RejectSymlinks(baselineRoot, absBaseline); guardErr != nil {
+			fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absBaseline, guardErr)
+			return fmt.Errorf("refusing write to %s: %w", absBaseline, guardErr)
+		}
 	}
 	return os.WriteFile(baselineFileName, data, 0644)
 }

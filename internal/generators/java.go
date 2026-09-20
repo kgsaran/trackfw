@@ -3,6 +3,9 @@ package generators
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+
+	"github.com/kgsaran/trackfw/internal/pathguard"
 )
 
 func GeneratePomXML(cfg Config) error {
@@ -60,5 +63,16 @@ func GeneratePomXML(cfg Config) error {
 </project>
 `, slug, name, name)
 
+	// Guard before write: pom.xml is written relative to CWD (= project root).
+	// Root: projectRoot() — resolves macOS /tmp→/private/tmp via EvalSymlinks.
+	// Guard precedes WriteFile so a refused destination creates no stray file.
+	javaRoot, rootErr := projectRoot()
+	if rootErr == nil {
+		absPom := filepath.Join(javaRoot, "pom.xml")
+		if guardErr := pathguard.RejectSymlinks(javaRoot, absPom); guardErr != nil {
+			fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absPom, guardErr)
+			return fmt.Errorf("refusing write to pom.xml: %w", guardErr)
+		}
+	}
 	return os.WriteFile("pom.xml", []byte(content), 0644)
 }

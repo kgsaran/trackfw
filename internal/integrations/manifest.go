@@ -78,6 +78,17 @@ func writeManifest(filename string, manifest Manifest) error {
 		return fmt.Errorf("encode integration manifest: %w", err)
 	}
 	data = append(data, '\n')
+	// Guard before atomicWrite: manifestPath always places the file two levels
+	// deep under root (<root>/.trackfw/<name>.json), so root = Dir(Dir(filename))
+	// is deterministic. This catches a symlinked .trackfw/ directory or the leaf
+	// file itself. Limitation: it cannot detect a filename that points entirely
+	// outside any known root (threading root through persistManifests fails because
+	// that function legitimately carries multiple roots — project + $HOME).
+	// Guard precedes atomicWrite so no temp file is created on refusal.
+	manifestRoot := filepath.Dir(filepath.Dir(filename))
+	if guardErr := rejectSymlinks(manifestRoot, filename); guardErr != nil {
+		return fmt.Errorf("write integration manifest: refusing symlink: %w", guardErr)
+	}
 	if err := atomicWrite(filename, data, 0o600); err != nil {
 		return fmt.Errorf("write integration manifest: %w", err)
 	}

@@ -249,7 +249,7 @@ folha para reescrever arquivo externo (**AC9**, absorvido da REQ irmã).
 - [ ] Uma frase por teste novo (AC11)
 
 ### ML-1D — diversos e wrappers (fecha a Wave 1)
-**Status:** 🔄 Em andamento · **Papel:** `apolo-tf`
+**Status:** ✅ Concluído **na aplicação**, com corretivo **ML-1D-bis** — o gate de symlink acusa 1 sítio nos testes novos
 `configure.go`, `java.go`, `config_agents_register.go`, `metrics.go`, `sync.go`, `validator.go`
 (**caminho relativo puro** — exigem resolver `root` absoluto antes, precondição do ML-1A), e os
 **wrappers** `manifest.go:81` / `render.go:722`, que chamam `atomicWrite` sem contenção e **não
@@ -306,3 +306,28 @@ As famílias da Wave 0, **a reconfirmar pós-v8** no ML-1A, em ordem de gravidad
 
 Revisão `hefesto-tf` e `hades-tf`, auditoria do arquiteto, `barrier`. **CI verde**, não só verde
 local — `vault/notes/ambiente-do-dev-e-mais-rico-que-o-do-ci-2026-08-29.md`.
+
+### ML-1D-bis — corretivo: 1 sítio de teste sem guarda de capacidade
+**Status:** ⬜ Pendente · **Papel:** `apolo-tf` · **PRIMEIRO ML DE 2026-09-21**
+**Files affected:** `internal/metrics/metrics_guard_test.go` — **só este**
+**Contexto:** o ML-1D está **aprovado na aplicação** — 9 sítios cobertos (7 de caminho relativo + 2
+wrappers), guard **antes** da escrita com recusa audível, braço (b) verificado por mim
+(`init`, `adr new`, `req new`, `baseline` funcionam), build e testes verdes.
+
+🔴 **O gate reprova 1 sítio**, e só ficou visível depois do `git add -N`:
+```
+check-symlink-privilege-guard: varrendo 150 arquivos de teste...
+FALHA — internal/metrics/metrics_guard_test.go:27: symlink/fifo sem guarda de capacidade
+```
+**Era exatamente a armadilha prevista** — o gate usa `git ls-files`, os 7 guard tests nasceram
+**untracked**, e a barreira do executor passou **sem varrê-los** (143 arquivos em vez de 150).
+🔴 **Crédito ao executor: ele previu isto no próprio relatório** e recomendou o `git add -N`. Eu
+apliquei e o defeito apareceu.
+**Actions:**
+1. Aplicar `symlinkOrSkip` no sítio, como o **ML-1B-bis** fez em `pathguard_test.go`. **Reuse o
+   helper**, detecção **pela condição** (`IsPermission`/errno `1314`), nunca por `runtime.GOOS`.
+**Acceptance criteria:**
+- [ ] `bash scripts/check-symlink-privilege-guard.sh` → **OK com 150 arquivos** (contagem menor = vácuo)
+- [ ] `make quality` **630 gates / 0 `": FALHA"`**, rodado **sozinho** — 🔴 a barreira do arquiteto deu
+      **276 gates** porque rodou enquanto um agente ainda editava; resultado descartado
+- [ ] `go test ./internal/metrics/` RC=0
