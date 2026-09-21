@@ -2,6 +2,24 @@
 
 ---
 
+## 2026-09-21 — Apolo (fix/afirma-contencao-antes-de-escrever — ML-5A) — ENTREGUE (AGUARDANDO AUDITORIA)
+
+**Início:** 2026-09-21 | Branch: `fix/afirma-contencao-antes-de-escrever`
+**Tarefa:** ML-5A — converter fail-open em fail-closed nos 5 sítios onde a guarda está dentro de um `if` e a escrita acontece fora.
+**Resultado:**
+- **Site 1 (validator.go:58):** `getwdFn` seam existente reutilizado. `if cwdErr == nil` virou fail-closed: Getwd() falha → retorna erro com "cannot verify containment", não escreve.
+- **Site 2 (metrics.go:199):** `metricsGetwdFn` seam adicionado. Getwd() falha → retorna erro. Exceção `Beneath` **preservada**: external absolute paths continuam funcionando (provado por execução real com `/tmp/trackfw-ml5a-external.csv`).
+- **Site 3 (configure.go:147):** `configureGetwdFn` seam adicionado. `if cwdErr == nil` virou fail-closed.
+- **Site 4 (config_agents_register.go:133):** `if root != ""` virou fail-closed: root == "" → retorna erro. Callers reais nunca passam `""` (verificado via `integrationsManager()` que valida Getwd antes).
+- **Site 5 (sync.go:84):** `syncGetwdFn` seam adicionado. `syncRootErr != nil` retorna erro antes do loop. Per-write `if syncRootErr == nil` removido (sempre true após o early return). Veredito: quando `syncRootErr != nil`, `syncRoot == ""` e `filepath.Join("", f)` colapsava para `f` relativo, tornando `RejectSymlinks("", f)` inútil — a guarda estava efetivamente ausente.
+- **Marcadores:** todos atualizados para refletir a proteção real (incluindo a exceção nomeada do metrics.go com explicação do Beneath).
+- **Testes load-bearing:** 5 arquivos novos (um por sítio), cada um com injeção via seam ou root == "". Prova dois caminhos por sítio: código antigo → FAIL, código novo → PASS.
+- Build RC=0, `go test ./...` RC=0 (21 pacotes), `check-write-containment` RC=0 (157 sítios), `check-symlink-privilege-guard` RC=0 (158 arquivos).
+- Braço (b): `validate` RC=0, `metrics --export /tmp/...` RC=0 (exceção preservada), `configure` RC=0 (TERM=dumb).
+**Arquivos modificados:** `internal/validator/validator.go`, `internal/metrics/metrics.go`, `internal/commands/configure.go`, `internal/config/config_agents_register.go`, `internal/sync/sync.go`, 5 novos arquivos de teste, roadmap, working-context.
+
+---
+
 ## 2026-09-21 — Ártemis (fix/afirma-contencao-antes-de-escrever — ML-3B) — ENTREGUE (AGUARDANDO AUDITORIA)
 
 **Início:** 2026-09-21 | Branch: `fix/afirma-contencao-antes-de-escrever`
@@ -38913,3 +38931,11 @@ trackfw init && roadmap new "..." && roadmap move <n> wip && trackfw validate
 - 🔴 **Pior achado: `syncREQReferences`** (`roadmap.go`) — marcador presente, **zero** `pathguard` na função inteira. O teste contra o código antigo imprime `✓ synced REQ-...` e a vítima é sobrescrita através do symlink. Corrigido com `projectRoot()` **fail-closed** e guard por arquivo no loop.
 - 🔴 **Corrigi a nota de vault:** a redação anterior dizia que `RejectSymlinks` varre "de `absTarget` para cima", o que induz a crer que a folha não é checada. **É checada** — `current := filename` e o primeiro `os.Lstat` é no próprio arquivo. O gap não é do `pathguard`; é de quem passa o **diretório**. Sem essa correção, a nota teria ensinado o erro oposto a quem a lesse amanhã.
 - **Terceira classe de defeito registrada na nota: guarda fail-OPEN.** `validator.go:58` e `metrics.go:199` (dentro de `if os.Getwd() == nil`), `config_agents_register.go:133` (`if root != ""`). A guarda é pulada em silêncio e a escrita acontece. O padrão certo já está na própria REQ — o `syncREQReferences` corrigido **aborta** quando não consegue verificar.
+
+### 2026-09-21 — Zeus — ML-5A auditado e aprovado; REQ completa em código
+- **Barreira final sozinha: RC=0, 792 `^OK `, 0 `: FALHA`**, guarda de conjunto OK, gate 157/OK, symlink-privilege **158**/OK.
+- 🔴 **`sync.go` era pior do que eu diagnostiquei.** Eu disse "erro de `Getwd` ignorado, investigar". Medido: com `syncRootErr != nil` o bloco era pulado, **e mesmo quando a condição passava** com `syncRoot == ""`, `filepath.Join("", f)` colapsa para `f` relativo e `RejectSymlinks("", f)` é **inócuo**. A guarda não funcionava em nenhum dos dois caminhos.
+- **O executor melhorou a minha receita de teste.** Eu sugeri simular a falha de `os.Getwd()` removendo o diretório corrente — que **não funciona no Windows** e viraria skip. Ele usou *seam* (variável de pacote substituível), e os 5 testes rodam em qualquer plataforma. Os 5 falham contra o código antigo e passam contra o novo.
+- **A exceção que marquei como intocável sobreviveu:** `metrics --export /tmp/...csv` → RC=0, arquivo criado. O marcador foi reescrito para **nomear** a exceção em vez de afirmar proteção incondicional.
+- 🔴 **Corrigi um erro factual do relatório:** ele lista como risco residual *"CI não foi exercido (sem PR aberto)"*. O **PR #397 está aberto desde hoje** e já rodou quatro vezes verde. Risco inexistente.
+- **Verifiquei a referência de ADR que ele pôs no comentário** (`ADR-2026-09-18`): existe, e é a desta REQ. Ressalva menor: há **dois** ADRs com esse prefixo de data, então a citação é ambígua.

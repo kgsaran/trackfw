@@ -13,6 +13,13 @@ import (
 	"github.com/kgsaran/trackfw/internal/validator"
 )
 
+// syncGetwdFn is the function used to obtain the current working directory for
+// the write guard inside SyncREQsWithIssues. It defaults to os.Getwd and may be
+// overridden in tests to inject a controlled failure without relying on OS-specific
+// filesystem tricks (e.g. removing the CWD, which Windows prevents while the
+// directory is in use).
+var syncGetwdFn func() (string, error) = os.Getwd
+
 // SyncResult representa o resultado do sync de uma REQ.
 type SyncResult struct {
 	REQPath string
@@ -81,11 +88,17 @@ func syncToProvider(create func(string, string) (string, error), issueField stri
 
 	// Resolve project root once for the whole loop. Guard precedes each write.
 	// Root: EvalSymlinks(Getwd()) — macOS /tmp→/private/tmp invariant.
-	syncRoot, syncRootErr := os.Getwd()
-	if syncRootErr == nil {
-		if resolved, resolveErr := filepath.EvalSymlinks(syncRoot); resolveErr == nil {
-			syncRoot = resolved
-		}
+	// Fail closed: if Getwd() fails we cannot verify containment for any REQ write,
+	// so we return an error rather than proceeding with an unguarded loop.
+	// (When syncRootErr != nil, syncRoot would be "" and filepath.Join("", f) collapses
+	// to the relative f, making RejectSymlinks("", f) meaningless — the guard was
+	// effectively absent even in the if-block, so an early return is the right fix.)
+	syncRoot, syncRootErr := syncGetwdFn()
+	if syncRootErr != nil {
+		return nil, fmt.Errorf("sync: cannot verify containment: %w", syncRootErr)
+	}
+	if resolved, resolveErr := filepath.EvalSymlinks(syncRoot); resolveErr == nil {
+		syncRoot = resolved
 	}
 
 	var results []SyncResult
@@ -121,18 +134,17 @@ func syncToProvider(create func(string, string) (string, error), issueField stri
 		updated := injectField(text, issueField, issueID)
 		// Guard before write: reject any symlink ancestor between root and the
 		// REQ file path. f may be relative; make it absolute against the root.
-		if syncRootErr == nil {
-			absF := f
-			if !filepath.IsAbs(f) {
-				absF = filepath.Join(syncRoot, f)
-			}
-			if guardErr := pathguard.RejectSymlinks(syncRoot, absF); guardErr != nil {
-				fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absF, guardErr)
-				results = append(results, SyncResult{REQPath: f, Error: fmt.Errorf("refusing write: %w", guardErr)})
-				continue
-			}
+		// syncRoot is guaranteed non-empty here (fail-closed check above).
+		absF := f
+		if !filepath.IsAbs(f) {
+			absF = filepath.Join(syncRoot, f)
 		}
-		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+		if guardErr := pathguard.RejectSymlinks(syncRoot, absF); guardErr != nil {
+			fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absF, guardErr)
+			results = append(results, SyncResult{REQPath: f, Error: fmt.Errorf("refusing write: %w", guardErr)})
+			continue
+		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks above (fail-closed on Getwd error)
 		if err := os.WriteFile(f, []byte(updated), 0644); err != nil {
 			results = append(results, SyncResult{REQPath: f, Error: fmt.Errorf("write file: %w", err)})
 			continue

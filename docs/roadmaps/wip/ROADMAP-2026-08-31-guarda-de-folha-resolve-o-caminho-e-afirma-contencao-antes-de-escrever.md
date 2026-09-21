@@ -1054,7 +1054,7 @@ causa desta REQ** —, e a Regra Dura manda tratar aqui.
 Deixar quatro sítios com o comportamento oposto é inconsistência interna, não escopo novo.
 
 ### ML-5A — converter fail-open em fail-closed
-**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Status:** ✅ Concluído · **Papel:** `apolo-tf`
 **Files affected:** `internal/validator/validator.go`, `internal/metrics/metrics.go`,
 `internal/commands/configure.go`, `internal/config/config_agents_register.go`,
 `internal/sync/sync.go` + testes. **Só isso.**
@@ -1080,6 +1080,25 @@ Esse `if` é **deliberado e documentado**: `metrics export --path /tmp/fora.csv`
 explícita do usuário, não um caminho derivado de `root`. **Mantenha-o.** O que muda é só o
 `os.Getwd()` falhar — aí não dá para decidir nem isso, e o correto é abortar.
 Confundir os dois quebra funcionalidade legítima, que é o **braço (b)** desta REQ.
+
+**Resultado auditado por Zeus em 2026-09-21:**
+🔴 **`sync.go` era pior do que eu diagnostiquei.** Eu classifiquei como "erro de `Getwd` ignorado,
+investigar". A medição do executor: com `syncRootErr != nil`, `syncRoot` ficava `""` e o bloco era
+pulado; **e mesmo quando a condição passava** com `syncRoot == ""`, `filepath.Join("", f)` colapsa
+para o `f` relativo e `pathguard.RejectSymlinks("", f)` é **inócuo**. A guarda não funcionava em
+**nenhum** dos dois caminhos.
+
+**Correção por _seam_** (variável de pacote substituível em teste: `getwdFn`, `metricsGetwdFn`,
+`configureGetwdFn`, `syncGetwdFn`) — melhor que a receita que eu dei no handoff (remover o diretório
+corrente), que **não funciona no Windows** e viraria skip. Com o seam, os 5 testes rodam em qualquer
+plataforma. Os 5 falham contra o código antigo e passam contra o novo.
+
+**A exceção foi preservada**, como exigido: `metrics --export /tmp/trackfw-ml5a-external.csv` → RC=0,
+arquivo criado. O marcador foi reescrito para **nomear** a exceção em vez de afirmar proteção
+incondicional.
+
+**Barreira final, sozinha e com a árvore parada:** RC=0, **792 `^OK `**, **0 `: FALHA`**, guarda de
+conjunto OK, `check-write-containment` 157/OK, `check-symlink-privilege-guard` **158**/OK.
 
 **Acceptance criteria:**
 - [ ] Nos 5 sítios, precondição falha ⇒ **erro retornado**, nada escrito, recusa em stderr

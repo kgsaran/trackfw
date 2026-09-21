@@ -130,12 +130,16 @@ func appendAgentTextual(root, yamlPath string, data []byte, agentName string) er
 	// root is the real project root supplied by the caller (manager.ProjectRoot),
 	// so all ancestors from root to the file are checked — not just Dir(yamlPath).
 	// Guard precedes WriteFile so a refused destination creates no stray file.
-	if root != "" {
-		if guardErr := pathguard.RejectSymlinks(root, yamlPath); guardErr != nil {
-			fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", yamlPath, guardErr)
-			return fmt.Errorf("refusing write to %s: %w", yamlPath, guardErr)
-		}
+	// Fail closed: root == "" means the caller could not resolve the project root;
+	// without it we cannot verify containment, so we refuse the write.
+	if root == "" {
+		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: cannot verify containment: project root unknown\n", yamlPath)
+		return fmt.Errorf("refusing write to %s: cannot verify containment: project root unknown", yamlPath)
 	}
-	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+	if guardErr := pathguard.RejectSymlinks(root, yamlPath); guardErr != nil {
+		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", yamlPath, guardErr)
+		return fmt.Errorf("refusing write to %s: %w", yamlPath, guardErr)
+	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks above (fail-closed when root is empty)
 	return os.WriteFile(yamlPath, []byte(strings.Join(result, "\n")), 0o644)
 }

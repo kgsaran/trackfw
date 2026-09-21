@@ -13,6 +13,13 @@ import (
 	"github.com/kgsaran/trackfw/internal/pathguard"
 )
 
+// configureGetwdFn is the function used to obtain the current working directory
+// inside the configure command's write guard. It defaults to os.Getwd and may be
+// overridden in tests to inject a controlled failure without relying on OS-specific
+// filesystem tricks (e.g. removing the CWD, which Windows prevents while the
+// directory is in use).
+var configureGetwdFn func() (string, error) = os.Getwd
+
 const configureYAMLHeader = "# trackfw.yaml — gerado por trackfw configure\n"
 
 func newConfigureCmd() *cobra.Command {
@@ -144,18 +151,21 @@ Gera arquivo esparso: apenas campos que diferem dos defaults são gravados.`,
 			// symlink ancestor between root and trackfw.yaml. Guard precedes write
 			// (and any MkdirAll) so a refused destination creates no stray file.
 			// Root: EvalSymlinks(Getwd()) — macOS /tmp→/private/tmp invariant.
-			configureRoot, cwdErr := os.Getwd()
-			if cwdErr == nil {
-				if resolved, resolveErr := filepath.EvalSymlinks(configureRoot); resolveErr == nil {
-					configureRoot = resolved
-				}
-				absYAML := filepath.Join(configureRoot, "trackfw.yaml")
-				if guardErr := pathguard.RejectSymlinks(configureRoot, absYAML); guardErr != nil {
-					fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absYAML, guardErr)
-					return fmt.Errorf("refusing write to trackfw.yaml: %w", guardErr)
-				}
+			// Fail closed: if Getwd() fails we cannot verify containment, so we refuse the write.
+			configureRoot, cwdErr := configureGetwdFn()
+			if cwdErr != nil {
+				fmt.Fprintf(os.Stderr, "trackfw: refusing write to trackfw.yaml: cannot verify containment: %v\n", cwdErr)
+				return fmt.Errorf("refusing write to trackfw.yaml: cannot verify containment: %w", cwdErr)
 			}
-			// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+			if resolved, resolveErr := filepath.EvalSymlinks(configureRoot); resolveErr == nil {
+				configureRoot = resolved
+			}
+			absYAML := filepath.Join(configureRoot, "trackfw.yaml")
+			if guardErr := pathguard.RejectSymlinks(configureRoot, absYAML); guardErr != nil {
+				fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absYAML, guardErr)
+				return fmt.Errorf("refusing write to trackfw.yaml: %w", guardErr)
+			}
+			// write-containment-allowed: guarded by pathguard.RejectSymlinks above (fail-closed on Getwd error)
 			if err := os.WriteFile("trackfw.yaml", []byte(content), 0644); err != nil {
 				return fmt.Errorf("erro ao gravar trackfw.yaml: %w", err)
 			}
