@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 
@@ -36,11 +37,13 @@ func isSymlinkPrivilegeErrorCmd(err error) bool {
 	return false
 }
 
-// TestConfigureGuard_SymlinkLeafRefused asserts that the containment guard used by
-// configure.go rejects a write when trackfw.yaml is itself a symlink pointing outside
+// TestConfigureGuard_SymlinkLeafRefused asserts that pathguard.RejectSymlinks
+// refuses a write when trackfw.yaml is itself a symlink pointing outside
 // the project root — braço (a) for type (i) relative-path sites.
 // AC11: RejectSymlinks(root, filepath.Join(root, "trackfw.yaml")) returns a non-nil
-// error when trackfw.yaml is a symlink, confirming the guard fires before any write.
+// error when trackfw.yaml is a symlink, confirming the library guard fires before any write.
+// Note: this test exercises pathguard.RejectSymlinks directly, not configure.go.
+// See TestConfigureCommand_SymlinkLeafRefused for the call-site test.
 func TestConfigureGuard_SymlinkLeafRefused(t *testing.T) {
 	outside := t.TempDir()
 	dir := t.TempDir()
@@ -59,16 +62,73 @@ func TestConfigureGuard_SymlinkLeafRefused(t *testing.T) {
 	}
 }
 
-// TestConfigureGuard_LegitimateWritePasses asserts that the containment guard used by
-// configure.go passes (returns nil) when trackfw.yaml lives under a clean project root
+// TestConfigureGuard_LegitimateWritePasses asserts that pathguard.RejectSymlinks
+// passes (returns nil) when trackfw.yaml lives under a clean project root
 // with no symlinks — braço (b): legitimate operation is not blocked.
 // AC11: RejectSymlinks(root, filepath.Join(root, "trackfw.yaml")) returns nil for a
-// clean path, confirming the guard does not break normal configure execution.
+// clean path, confirming the library guard does not break normal use.
+// Note: this test exercises pathguard.RejectSymlinks directly, not configure.go.
 func TestConfigureGuard_LegitimateWritePasses(t *testing.T) {
 	dir := t.TempDir()
 	absYAML := filepath.Join(dir, "trackfw.yaml")
 	err := pathguard.RejectSymlinks(dir, absYAML)
 	if err != nil {
 		t.Fatalf("RejectSymlinks should pass for clean path, got: %v", err)
+	}
+}
+
+// TestConfigureCommand_SymlinkLeafRefused asserts that configure.go's RunE guard —
+// not the pathguard library directly — fires before os.WriteFile when trackfw.yaml
+// is a symlink pointing outside the project root.
+//
+// Reconciliation sentence (AC11 / Regra Dura de Reconciliação): this test affirms
+// that the guard block inside configure.go's RunE (pathguard.RejectSymlinks +
+// the "refusing write" return path, lines 147-157 of configure.go) fires before
+// os.WriteFile, proven by the outside target appearing when that block is removed.
+//
+// Design note: TERM=dumb makes huh.NewForm use accessible mode (no TTY required —
+// see huh/form.go). The symlink points to a dangling (nonexistent) target so that
+// os.Stat("trackfw.yaml") at configure.go:26 returns an error, skipping the
+// "recreate or cancel" form entirely. In accessible mode the main form reads stdin
+// as empty lines and keeps all default field values; execution reaches the guard.
+func TestConfigureCommand_SymlinkLeafRefused(t *testing.T) {
+	outside := t.TempDir()
+	dir := t.TempDir()
+
+	// dangling symlink: outside target does not exist yet.
+	// os.Stat in configure.go:26 follows symlinks; dangling → stat fails → skips
+	// the "recreate" confirm form, so we go straight to the main form + guard.
+	outsideTarget := filepath.Join(outside, "trackfw.yaml")
+	symlinkOrSkipCmd(t, outsideTarget, filepath.Join(dir, "trackfw.yaml"))
+
+	// TERM=dumb enables huh accessible mode, which works without a terminal.
+	t.Setenv("TERM", "dumb")
+
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	cmd := newConfigureCmd()
+	// Feed empty input so accessible-mode fields get their Go-initialized defaults.
+	cmd.SetIn(strings.NewReader(""))
+
+	execErr := cmd.Execute()
+
+	// The guard must fire and refuse — err must name the refusal explicitly.
+	if execErr == nil {
+		t.Fatal("configure command must return an error when trackfw.yaml is a symlink outside root, got nil")
+	}
+	if !strings.Contains(execErr.Error(), "refusing write") {
+		t.Fatalf("error must mention 'refusing write', got: %v", execErr)
+	}
+
+	// The symlink target outside the project must NOT have been created.
+	if _, statErr := os.Stat(outsideTarget); statErr == nil {
+		t.Error("containment violated: file was written to symlink target outside project root")
 	}
 }

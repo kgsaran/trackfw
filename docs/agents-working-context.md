@@ -2,6 +2,29 @@
 
 ---
 
+## 2026-09-21 — Ártemis (fix/afirma-contencao-antes-de-escrever — ML-3B) — ENTREGUE (AGUARDANDO AUDITORIA)
+
+**Início:** 2026-09-21 | Branch: `fix/afirma-contencao-antes-de-escrever`
+**Tarefa:** ML-3B — endurecer o gate check-write-containment.sh, fechar o seam de bypass da env var, e fazer o teste do `configure` afirmar o call site (não a biblioteca).
+**Resultado:**
+- **Ação 1:** Mensagem de FAIL do gate agora inclui o remédio na mesma linha: `— adicione '// write-containment-allowed: <razão>' na linha acima, ou roteie a escrita por pathguard`.
+- **Ação 2:** `unset WRITE_CONTAINMENT_SCAN_DIR &&` adicionado antes da invocação de produção no Makefile:58. PoC do bypass (WRITE_CONTAINMENT_SCAN_DIR=/tmp/byp2 → RC=0 com 1 sítio) agora dá RC=0 com 157 sítios (o unset faz a prod scan rodar). --self-test inalterado (3/3 OK).
+- **Ação 3:** `TestConfigureCommand_SymlinkLeafRefused` adicionado — invoca `newConfigureCmd().Execute()` com `TERM=dumb` (huh accessible mode, sem TTY) e `trackfw.yaml` como symlink dangling. Prova load-bearing: guarda desabilitada → FAIL "must return an error... got nil"; guarda presente → PASS com "refusing write" no erro. Comentários de `TestConfigureGuard_SymlinkLeafRefused` e `TestConfigureGuard_LegitimateWritePasses` corrigidos para remover over-claim sobre `configure.go`.
+- Build RC=0, `go test ./internal/commands/` RC=0, gate RC=0 (157 sítios), check-symlink-privilege-guard OK (150 arquivos), --self-test 3/3 OK.
+- `configure.go` não foi tocado (git diff vazio).
+**Arquivos modificados:** `scripts/check-write-containment.sh`, `Makefile`, `internal/commands/configure_guard_test.go`, roadmap.
+
+---
+
+## 2026-09-21 — Apolo (fix/afirma-contencao-antes-de-escrever — ML-3A) — ENTREGUE (AGUARDANDO AUDITORIA)
+
+**Início:** 2026-09-21 | Branch: `fix/afirma-contencao-antes-de-escrever`
+**Tarefa:** ML-3A — gap de folha em `internal/generators/scaffold.go`: guardar o ARQUIVO, não o diretório.
+**Resultado:** Classificadas 18 chamadas (+ 1 definição): (A) correto = 4, **(B) defeito = 13** (estimativa do revisor era ~6), (C) só MkdirAll = 1. Corrigidos todos os 13 sítios (B) adicionando `rejectScaffoldPath(root, absFilePath)` antes de cada `os.WriteFile`. Achado extra: `generateCommitMsgHook` lefthook case escreve em `lefthook.yml` (raiz) que estava completamente sem guarda — corrigido. Dois testes novos provam a correção: braço (a) falha no código antigo e passa no novo; braço (b) operação legítima não se quebra. Todos os gates: build RC=0, testes RC=0, check-write-containment RC=0 (157 sítios). NÃO rodou `make quality` — barreira é do arquiteto.
+**Arquivos modificados:** `internal/generators/scaffold.go`, `internal/generators/scaffold_leaf_guard_test.go` (novo), roadmap, working-context.
+
+---
+
 ## 2026-09-21 — Hades — REVISÃO DE SEGURANÇA — barreira final REQ contenção de escrita — ENTREGUE
 
 **Início:** 2026-09-21 | Branch: `fix/afirma-contencao-antes-de-escrever`
@@ -38875,3 +38898,10 @@ trackfw init && roadmap new "..." && roadmap move <n> wip && trackfw validate
 - 🔴 **Corrigi uma classificação do Hefesto:** ele disse que os 9 guards com `filepath.Clean(cwd)` em `agentfiles.go` são "pré-existentes ao PR". Medi: `git show main:internal/generators/agentfiles.go | grep -c RejectSymlinks` → **0**. Nasceram nesta branch. "Pré-existente" era o argumento para adiar; o argumento é falso. Não é defeito (root e target no mesmo namespace), mas o issue nasce com a razão certa.
 - 🔴 **Reproduzi o bypass do gate que o Hades reportou** — mas a primeira tentativa **não** reproduziu (o gate procura `<dir>/internal`, e eu não tinha criado). Só com `internal/` dentro: `RC=0, 1 examinado`, piso pulado. Nenhum workflow define a variável (medido: 0 em `.github/`), CI não exposto. `unset` no Makefile entra no ML-3B.
 - **ML-3A e ML-3B são paralelos** (arquivos disjuntos) e **nenhum dos dois roda `make quality`** — duas barreiras concorrentes é o erro que já abortou runs em 188/630 e 276/630 nesta REQ. A barreira é minha, depois dos dois.
+
+### 2026-09-21 — Zeus — Wave 3 auditada e aprovada; barreira verde
+- **Barreira sozinha, árvore parada, ambos os agentes fora: RC=0, 792 `^OK `, 0 `: FALHA`, 0 `make: ***`**, guarda de conjunto OK, `check-write-containment` 157/OK, `check-symlink-privilege-guard` **151** arquivos/OK, ambos com `self-test: 3/3 braços OK`.
+- 🔴 **A estimativa do revisor foi refutada pela medição: 13 sítios defeituosos, não ~6.** O `hades-tf` estimou ~6 citando 5 linhas; a classificação linha a linha das 18 chamadas achou **13**. Foi por isso que exigi confirmação individual no handoff — aceitar a lista teria deixado 7 defeitos no lugar.
+- 🔴 **Marcador FALSO encontrado, e o gate estava verde por cima dele.** Em `generateCommitMsgHook`, ramo lefthook: `os.WriteFile(lefthook.yml, ...)` com o marcador "guarded by pathguard.RejectSymlinks at the enclosing write site", enquanto a única guarda do bloco cobria `.lefthook/commit-msg` — outro diretório. `lefthook.yml` fica na raiz, fora dela. **Escrita sem guarda nenhuma.**
+- 🔴 **Por que a minha verificação não pegou, e é erro de método meu:** cruzei os 17 arquivos marcados contra uso de `pathguard.` e declarei o risco "marcador carimbo" controlado. O cruzamento era **por arquivo**; o marcador falso vivia num arquivo que usa `pathguard` legitimamente em outros pontos. **Verificação por agregado não falsifica afirmação feita no nível do sítio.** Registrado em `vault/notes/marcador-de-contencao-pode-ser-falso-guarda-de-dir-nao-cobre-a-folha-2026-09-21.md`.
+- **Residual que precisa de decisão:** só `scaffold.go` foi classificado linha a linha. Os outros arquivos com marcador não foram — `generators/update.go` (53), `agentfiles.go` (21), `discover/discover.go` (13), `roadmap.go`/`req.go` (7), `note.go`/`adr.go` (4). Mesma classe de defeito pode existir lá, e o gate não a detecta por construção.

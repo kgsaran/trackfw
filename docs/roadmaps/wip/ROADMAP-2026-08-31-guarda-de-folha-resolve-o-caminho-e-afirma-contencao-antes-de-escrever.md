@@ -664,7 +664,7 @@ corretude.
 > runs em 188/630 e 276/630 nesta REQ. A barreira é do arquiteto, depois dos dois.
 
 ### ML-3A — gap de folha: guardar o ARQUIVO, não o diretório
-**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Status:** ✅ Concluído · **Papel:** `apolo-tf`
 **Files affected:** `internal/generators/scaffold.go` e testes correspondentes. **Só isso.**
 
 🔴 **Achado do `hades-tf`, confirmado por PoC executada por ele.** `installGlobalSkillInner` faz:
@@ -697,17 +697,102 @@ reduz a urgência; **não** dispensa a correção, porque a superfície é públ
    proteger.
 
 **Acceptance criteria:**
-- [ ] Tabela das 19 chamadas classificada, com veredito por linha
-- [ ] Todo sítio que escreve arquivo tem o **arquivo** guardado
-- [ ] Teste de braço (a) que falha **antes** da correção e passa depois — prove rodando contra o
+- [x] Tabela das 19 chamadas classificada, com veredito por linha
+- [x] Todo sítio que escreve arquivo tem o **arquivo** guardado
+- [x] Teste de braço (a) que falha **antes** da correção e passa depois — prove rodando contra o
       código antigo (`git stash`) e o novo
-- [ ] Braço (b): `trackfw init`, `discover --init`, `update harness` continuam funcionando
-- [ ] `go build ./...` RC=0 · `go test ./internal/generators/` RC=0
-- [ ] 🔴 **NÃO rode `make quality`** — a barreira é do arquiteto
-- [ ] Uma frase por teste novo (Regra Dura de Reconciliação)
+- [x] Braço (b): `trackfw init`, `discover --init`, `update harness` continuam funcionando
+- [x] `go build ./...` RC=0 · `go test ./internal/generators/` RC=0
+- [x] 🔴 **NÃO rode `make quality`** — a barreira é do arquiteto
+- [x] Uma frase por teste novo (Regra Dura de Reconciliação)
+
+#### Resultado do ML-3A (apolo-tf, 2026-09-21) — aguardando auditoria do arquiteto
+
+**Tabela de classificação das 18 chamadas + 1 definição:**
+
+| Linha | Função | absTarget guarda | Verdict |
+|-------|--------|-----------------|---------|
+| 86 | definição | — | N/A |
+| 101 | Scaffold | DIRETÓRIO (`govDir`) | **(C)** — só MkdirAll, sem escrita de arquivo |
+| 221 | installGlobalSkillInner | DIRETÓRIO (`absSkillDir`) | **(B) defeito** — corrigido |
+| 734 | generateClaudeCommandsInner | DIRETÓRIO (`absCommandsDir`) | **(B) defeito** — corrigido |
+| 824 | writeTrackfwConfig | ARQUIVO (`absConfig = filepath.Join(root, "trackfw.yaml")`) | **(A) correto** |
+| 841 | generateValidateScript | DIRETÓRIO (`absScripts = filepath.Join(vsRoot, "scripts")`) | **(B) defeito** — corrigido |
+| 940 | GenerateAttentionScripts | DIRETÓRIO (`scriptsDir`) | **(B) defeito** — corrigido (2 arquivos) |
+| 998 | GenerateCredentialGuardScript | DIRETÓRIO (`scriptsDir`) | **(B) defeito** — corrigido |
+| 1049 | GenerateGlobalCredentialGuardScript | DIRETÓRIO (`scriptsDir`) | **(B) defeito** — corrigido |
+| 1341 | GenerateGitBranchGuardScript | DIRETÓRIO (`scriptsDir`) | **(B) defeito** — corrigido |
+| 1392 | GenerateGlobalGitBranchGuardScript | DIRETÓRIO (`scriptsDir`) | **(B) defeito** — corrigido |
+| 2227 | generateGitHubActionsWorkflow | DIRETÓRIO (`absGHDir = filepath.Join(ghRoot, ".github", "workflows")`) | **(B) defeito** — corrigido |
+| 2250 | generateGitLabCIWorkflow | ARQUIVO (`absGLCI = filepath.Join(glRoot, GitLabCIWorkflowPath)`) | **(A) correto** |
+| 2273 | generateCommitMsgHook (husky) | DIRETÓRIO (`filepath.Join(cmhRoot, ".husky")`) | **(B) defeito** — corrigido |
+| 2277 | generateCommitMsgHook (lefthook) | DIRETÓRIO (`filepath.Join(cmhRoot, ".lefthook", "commit-msg")`) | **(B) defeito** — corrigido (2 arquivos: scriptPath E lefthook.yml que está fora do dir guardado) |
+| 2348 | generateHuskyHook | DIRETÓRIO (`absHusky = filepath.Join(hhRoot, ".husky")`) | **(B) defeito** — corrigido |
+| 2373 | generateVaultIndex | DIRETÓRIO (`absVaultDir = filepath.Join(viRoot, "vault", "notes")`) | **(B) defeito** — corrigido |
+| 2451 | generateGitAttributes | ARQUIVO (`absGitAttr = filepath.Join(gaRoot, ".gitattributes")`) | **(A) correto** |
+| 2494 | generateLefthookHook | ARQUIVO (`absLH = filepath.Join(lhRoot, "lefthook.yml")`) | **(A) correto** |
+
+**Contagem:** (A) correto = 4, (B) defeito = 13 (não 6 como o revisor estimou), (C) só MkdirAll = 1.
+
+**Achado extra confirmado:** no caso lefthook de `generateCommitMsgHook` (linha 2277), a guarda cobria `.lefthook/commit-msg` directory, mas dentro da mesma função havia escrita a `lefthook.yml` (arquivo raiz, FORA do diretório guardado). Esse sítio estava completamente sem guarda. Corrigido adicionando guard para `lefthook.yml` também.
+
+**Nota sobre os marcadores `// write-containment-allowed`:** todos os marcadores nos sítios (B) antes da correção afirmavam "guarded by pathguard.RejectSymlinks at the enclosing write site" — essa afirmação era **falsa** para a folha (o guard estava no diretório pai, não na folha). Após a correção, o guard de folha existe e o marcador se torna verdadeiro.
+
+**Evidências:**
+
+```
+$ go build ./...
+BUILD_RC=0
+
+$ go test ./internal/generators/
+GENTEST_RC=0
+
+Teste braço (a) — código ANTIGO (git show HEAD:scaffold.go):
+$ go test ./internal/generators/ -run TestGenerateAttentionScripts_SymlinkLeafRefused -v
+=== RUN   TestGenerateAttentionScripts_SymlinkLeafRefused
+  ✓ scripts/trackfw-attention-signal.sh
+  ✓ scripts/trackfw-attention-cleanup.sh
+    scaffold_leaf_guard_test.go:72: GenerateAttentionScripts() should refuse when signal script leaf is a symlink, got nil
+--- FAIL: TestGenerateAttentionScripts_SymlinkLeafRefused (0.00s)
+FAIL
+OLD_RC=1
+
+Teste braço (a) — código NOVO (após correção):
+$ go test ./internal/generators/ -run TestGenerateAttentionScripts_SymlinkLeafRefused -v
+=== RUN   TestGenerateAttentionScripts_SymlinkLeafRefused
+trackfw: refusing write to /.../scripts/trackfw-attention-signal.sh: refusing symlink path "..."
+--- PASS: TestGenerateAttentionScripts_SymlinkLeafRefused (0.00s)
+PASS
+NEW_RC=0
+
+Braço (b) — execução real:
+$ bin/trackfw init          → RC=0, todos os arquivos criados
+$ bin/trackfw discover --init → RC=0
+$ HOME=/tmp/home-test bin/trackfw update harness --targets claude-skill --install-missing
+  ✓ claude-skill: updated (~/.claude/skills/trackfw/SKILL.md)
+  updated=1 skipped=0 missing=0 failed=0  RC=0
+
+$ bash scripts/check-write-containment.sh → RC=0 (157 sítios OK)
+```
+
+**Regra Dura de Reconciliação — frase por teste novo:**
+- `TestGenerateAttentionScripts_SymlinkLeafRefused`: afirma que o novo guard `rejectScaffoldPath(root, signalPath)` dispara quando `trackfw-attention-signal.sh` é uma symlink para fora do root — prova que a correção da folha é load-bearing (teste falha no código antigo, passa no novo).
+- `TestGenerateAttentionScripts_LeafGuardCleanPass`: afirma que o guard de folha não dispara em árvore limpa sem symlinks — prova que a correção não super-dispara na operação legítima.
+
+**`git status --short`:**
+```
+M  Makefile
+ M docs/agents-working-context.md
+ M docs/roadmaps/wip/ROADMAP-2026-08-31-...md
+ M internal/commands/configure_guard_test.go
+ M internal/generators/scaffold.go
+ A internal/generators/scaffold_leaf_guard_test.go
+ M scripts/check-write-containment.sh
+```
+(Makefile, configure_guard_test.go, check-write-containment.sh são de artemis-tf/ML-3B — não tocados por este ML.)
 
 ### ML-3B — endurecer o gate e fazer o teste do `configure` afirmar o call site
-**Status:** ⬜ Pendente · **Papel:** `artemis-tf`
+**Status:** ✅ Concluído · **Papel:** `artemis-tf`
 **Files affected:** `scripts/check-write-containment.sh`, `Makefile`,
 `internal/commands/configure_guard_test.go`. **Só isso.**
 
@@ -738,15 +823,100 @@ o alvo externo não é modificado. Mantenha o teste existente, mas **corrija o c
 dizer o que ele realmente afirma (a biblioteca, não o call site).
 
 **Acceptance criteria:**
-- [ ] Mensagem de `FAIL` do gate diz o remédio
-- [ ] `unset` no Makefile, e `--self-test` continua `3/3 braços OK`
-- [ ] Teste novo do `configure` **falha** se a guarda de `configure.go` for removida — prove
-- [ ] Comentário do teste antigo corrigido
-- [ ] `bash scripts/check-write-containment.sh` RC=0 com **≥157** sítios (meça sem pipe: `cmd > out
-      2> err; echo $?` — RC depois de `| tail` é do `tail`)
-- [ ] `go test ./internal/commands/` RC=0
-- [ ] 🔴 **NÃO rode `make quality`** — a barreira é do arquiteto
-- [ ] Uma frase por teste novo (Regra Dura de Reconciliação)
+- [x] Mensagem de `FAIL` do gate diz o remédio
+- [x] `unset` no Makefile, e `--self-test` continua `3/3 braços OK`
+- [x] Teste novo do `configure` **falha** se a guarda de `configure.go` for removida — prove
+- [x] Comentário do teste antigo corrigido (dois testes: `TestConfigureGuard_SymlinkLeafRefused` e `TestConfigureGuard_LegitimateWritePasses`)
+- [x] `bash scripts/check-write-containment.sh` RC=0 com **≥157** sítios
+- [x] `go test ./internal/commands/` RC=0
+- [x] 🔴 **NÃO rode `make quality`** — a barreira é do arquiteto
+- [x] Uma frase por teste novo (Regra Dura de Reconciliação)
+
+#### Resultado do ML-3B (artemis-tf, 2026-09-21)
+
+**Ação 1 — mensagem de FAIL com remédio:**
+```
+FAIL [write-containment] unjustified write at internal/x.go:3: func f() { os.WriteFile("a", nil, 0644) } — adicione '// write-containment-allowed: <razão>' na linha acima, ou roteie a escrita por pathguard
+```
+Uma linha por sítio; conteúdo + remédio.
+
+**Ação 2 — unset antes da invocação de produção no Makefile:**
+Makefile linha 58 mudou de `scripts/check-write-containment.sh` para
+`unset WRITE_CONTAINMENT_SCAN_DIR && scripts/check-write-containment.sh`.
+**--self-test não foi afetado** (linha 59 permanece inalterada).
+**PoC do bypass fechado — agora ineficaz:**
+```
+$ WRITE_CONTAINMENT_SCAN_DIR=/tmp/byp2 bash -c 'unset WRITE_CONTAINMENT_SCAN_DIR && bash scripts/check-write-containment.sh'
+check-write-containment: varrendo 106 arquivo(s) de produção Go...
+[... 157 OK lines ...]
+check-write-containment: 157 sítio(s) examinado(s) em 106 arquivo(s)
+check-write-containment: OK — todos os sítios justificados (157 examinados)
+RC=0   ← scaneou a produção, não a fixture
+```
+
+**Ação 3 — teste load-bearing:**
+`TestConfigureCommand_SymlinkLeafRefused` — afirma que o guard block dentro do `RunE` de `configure.go` (linhas 143-157: `pathguard.RejectSymlinks` + retorno de erro) dispara antes do `os.WriteFile`, provado pelo alvo externo ser criado quando o block é removido.
+
+**Prova de load-bearing:**
+Guarda desabilitada (apenas `_ = pathguard.RejectSymlinks(...)`, sem retorno de erro):
+```
+=== RUN   TestConfigureCommand_SymlinkLeafRefused
+trackfw.yaml gravado com 0 campos customizados
+    configure_guard_test.go:124: configure command must return an error when trackfw.yaml is a symlink outside root, got nil
+--- FAIL: TestConfigureCommand_SymlinkLeafRefused (0.00s)
+FAIL
+RC=1   ← FALHA
+```
+Guarda restaurada:
+```
+=== RUN   TestConfigureCommand_SymlinkLeafRefused
+trackfw: refusing write to .../trackfw.yaml: refusing symlink path "..."
+Error: refusing write to trackfw.yaml: refusing symlink path "..."
+--- PASS: TestConfigureCommand_SymlinkLeafRefused (0.00s)
+PASS
+RC=0   ← PASSA
+```
+
+**Comentários corrigidos:**
+- `TestConfigureGuard_SymlinkLeafRefused` — removida afirmação sobre `configure.go`; diz "exercises pathguard.RejectSymlinks directly, not configure.go"
+- `TestConfigureGuard_LegitimateWritePasses` — idem (mesmo over-claim)
+
+**Evidências (2026-09-21, artemis-tf):**
+```
+$ go build ./...
+BUILD_RC=0
+
+$ bash scripts/check-write-containment.sh > out 2> err; echo "RC=$?"
+check-write-containment: 157 sítio(s) examinado(s) em 106 arquivo(s)
+check-write-containment: OK — todos os sítios justificados (157 examinados)
+RC=0
+
+$ bash scripts/check-write-containment.sh --self-test > out 2> err; echo "RC=$?"
+self-test: 3/3 braços OK
+RC=0
+
+$ bash scripts/check-symlink-privilege-guard.sh > out 2> err; echo "RC=$?"
+check-symlink-privilege-guard: varrendo 150 arquivos de teste...
+check-symlink-privilege-guard: OK — 150 arquivos verificados, zero sitios desguardados.
+RC=0
+
+$ TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 2m ./internal/commands/ > out 2> err; echo "RC=$?"
+ok  	github.com/kgsaran/trackfw/internal/commands	16.831s
+RC=0
+
+$ git diff --stat internal/commands/configure.go
+(vazio — configure.go não foi tocado)
+```
+
+**`git status --short` antes de concluir:**
+```
+M Makefile
+ M docs/agents-working-context.md
+ M docs/roadmaps/wip/ROADMAP-...md
+ M internal/commands/configure_guard_test.go
+ M internal/generators/scaffold.go   ← apolo-tf (ML-3A, arquivo disjunto — não é meu)
+ M scripts/check-write-containment.sh
+```
 
 ### Achados aceitos como residual, com a razão (não viram ML)
 | # | achado | por que não vira ML agora |

@@ -55,7 +55,7 @@ parity-rest: build
 	# ML-2A (ROADMAP-2026-08-31-guarda-de-folha-resolve-o-caminho-e-afirma-contencao-antes-de-escrever):
 	# todo sítio de escrita em internal/**/*.go (produção) carrega marcador write-containment-allowed:
 	# ou reprova. Impede reintrodução de escrita desguardada após a Wave 1. Nasce falsificável.
-	scripts/check-write-containment.sh
+	unset WRITE_CONTAINMENT_SCAN_DIR && scripts/check-write-containment.sh
 	scripts/check-write-containment.sh --self-test
 	# ML-1B (ROADMAP-2026-09-11-o-ciclo-testa-onde-funciona): toda criacao de
 	# symlink/fifo em arquivo de teste passa por guarda de capacidade (nao por

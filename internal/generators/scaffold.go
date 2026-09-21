@@ -231,7 +231,15 @@ func installGlobalSkillInner(force bool) error {
 		return nil
 	}
 
-	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+	// Guard the leaf file — rejectScaffoldPath above covers the directory but not the file
+	// itself (RejectSymlinks walks upward from its argument and never descends below it).
+	// If SKILL.md already exists as a symlink pointing outside absHome, os.WriteFile would
+	// follow it silently. Guarding the file catches that case.
+	absSkillPath := filepath.Join(absHome, ".claude", "skills", "trackfw", "SKILL.md")
+	if err := rejectScaffoldPath(absHome, absSkillPath); err != nil {
+		return err
+	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks via rejectScaffoldPath above
 	if err := os.WriteFile(skillPath, GlobalClaudeSkillContent(), 0644); err != nil {
 		return fmt.Errorf("writing SKILL.md: %w", err)
 	}
@@ -749,7 +757,12 @@ func generateClaudeCommandsInner(force bool) error {
 			skipped++
 			continue
 		}
-		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+		// Guard the leaf file — directory guard above does not detect a symlinked filename.
+		absFilePath := filepath.Join(ccRoot, path)
+		if err := rejectScaffoldPath(ccRoot, absFilePath); err != nil {
+			return err
+		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks via rejectScaffoldPath above
 		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 			return fmt.Errorf("writing %s: %w", path, err)
 		}
@@ -848,7 +861,12 @@ func generateValidateScript(cfg Config) error {
 
 	script := buildValidateScript(cfg)
 	path := filepath.Join("scripts", "trackfw-validate.sh")
-	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+	// Guard the leaf file — directory guard above does not detect a symlinked script file.
+	absValidatePath := filepath.Join(vsRoot, path)
+	if err := rejectScaffoldPath(vsRoot, absValidatePath); err != nil {
+		return err
+	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks via rejectScaffoldPath above
 	if err := os.WriteFile(path, []byte(script), 0755); err != nil {
 		return fmt.Errorf("writing validate script: %w", err)
 	}
@@ -946,7 +964,11 @@ func GenerateAttentionScripts(rootDir string) error {
 	}
 
 	signalPath := filepath.Join(scriptsDir, "trackfw-attention-signal.sh")
-	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+	// Guard the leaf file — directory guard above does not detect a symlinked script file.
+	if err := rejectScaffoldPath(root, signalPath); err != nil {
+		return err
+	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks via rejectScaffoldPath above
 	if err := os.WriteFile(signalPath, []byte(attentionSignalScript), 0755); err != nil {
 		return fmt.Errorf("writing attention signal script: %w", err)
 	}
@@ -961,7 +983,11 @@ func GenerateAttentionScripts(rootDir string) error {
 	fmt.Printf("  ✓ %s\n", filepath.Join("scripts", "trackfw-attention-signal.sh"))
 
 	cleanupPath := filepath.Join(scriptsDir, "trackfw-attention-cleanup.sh")
-	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+	// Guard the leaf file — directory guard above does not detect a symlinked script file.
+	if err := rejectScaffoldPath(root, cleanupPath); err != nil {
+		return err
+	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks via rejectScaffoldPath above
 	if err := os.WriteFile(cleanupPath, []byte(attentionCleanupScript), 0755); err != nil {
 		return fmt.Errorf("writing attention cleanup script: %w", err)
 	}
@@ -1004,7 +1030,11 @@ func GenerateCredentialGuardScript(rootDir string) error {
 	}
 
 	path := filepath.Join(scriptsDir, "trackfw-credential-guard.sh")
-	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+	// Guard the leaf file — directory guard above does not detect a symlinked script file.
+	if err := rejectScaffoldPath(root, path); err != nil {
+		return err
+	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks via rejectScaffoldPath above
 	if err := os.WriteFile(path, []byte(credentialGuardScript), 0755); err != nil {
 		return fmt.Errorf("writing credential guard script: %w", err)
 	}
@@ -1055,7 +1085,11 @@ func GenerateGlobalCredentialGuardScript(home string) error {
 	}
 
 	path := filepath.Join(scriptsDir, "trackfw-credential-guard.sh")
-	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+	// Guard the leaf file — directory guard above does not detect a symlinked script file.
+	if err := rejectScaffoldPath(absHome, path); err != nil {
+		return err
+	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks via rejectScaffoldPath above
 	if err := os.WriteFile(path, []byte(globalCredentialGuardScript), 0755); err != nil {
 		return fmt.Errorf("writing global credential guard script: %w", err)
 	}
@@ -1347,7 +1381,11 @@ func GenerateGitBranchGuardScript(rootDir string) error {
 	}
 
 	path := filepath.Join(scriptsDir, "trackfw-git-branch-guard.sh")
-	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+	// Guard the leaf file — directory guard above does not detect a symlinked script file.
+	if err := rejectScaffoldPath(root, path); err != nil {
+		return err
+	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks via rejectScaffoldPath above
 	if err := os.WriteFile(path, []byte(gitBranchGuardScript), 0755); err != nil {
 		return fmt.Errorf("writing git branch guard script: %w", err)
 	}
@@ -1398,7 +1436,11 @@ func GenerateGlobalGitBranchGuardScript(home string) error {
 	}
 
 	path := filepath.Join(scriptsDir, "trackfw-git-branch-guard.sh")
-	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+	// Guard the leaf file — directory guard above does not detect a symlinked script file.
+	if err := rejectScaffoldPath(absHome, path); err != nil {
+		return err
+	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks via rejectScaffoldPath above
 	if err := os.WriteFile(path, []byte(gitBranchGuardScript), 0755); err != nil {
 		return fmt.Errorf("writing global git branch guard script: %w", err)
 	}
@@ -2233,7 +2275,12 @@ func generateGitHubActionsWorkflow(cfg Config) error {
 	}
 
 	path := GitHubActionsWorkflowPath
-	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+	// Guard the leaf file — directory guard above does not detect a symlinked workflow file.
+	absWorkflowPath := filepath.Join(ghRoot, path)
+	if err := rejectScaffoldPath(ghRoot, absWorkflowPath); err != nil {
+		return err
+	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks via rejectScaffoldPath above
 	if err := os.WriteFile(path, []byte(buildGitHubActionsWorkflowContent(IsProducerGoMod("."))), 0644); err != nil {
 		return fmt.Errorf("writing CI workflow: %w", err)
 	}
@@ -2299,7 +2346,11 @@ func generateCommitMsgHook(cfg Config) error {
 			return fmt.Errorf("creating .husky: %w", err)
 		}
 		path := ".husky/commit-msg"
-		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+		// Guard the leaf file — directory guard above does not detect a symlinked hook file.
+		if err := rejectScaffoldPath(cmhRoot, filepath.Join(cmhRoot, path)); err != nil {
+			return err
+		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks via rejectScaffoldPath above
 		if err := os.WriteFile(path, []byte(script), 0755); err != nil {
 			return fmt.Errorf("writing husky commit-msg hook: %w", err)
 		}
@@ -2309,7 +2360,12 @@ func generateCommitMsgHook(cfg Config) error {
 		existing, _ := os.ReadFile(lefthookPath)
 		if !strings.Contains(string(existing), "commit-msg:") {
 			addition := "\ncommit-msg:\n  scripts:\n    \"trackfw-req-check.sh\":\n      runner: sh\n"
-			// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+			// Guard lefthook.yml — distinct from the .lefthook/commit-msg directory guard above;
+			// that guard never walks lefthook.yml (it is at root level, outside the guarded dir).
+			if err := rejectScaffoldPath(cmhRoot, filepath.Join(cmhRoot, lefthookPath)); err != nil {
+				return err
+			}
+			// write-containment-allowed: guarded by pathguard.RejectSymlinks via rejectScaffoldPath above
 			if err := os.WriteFile(lefthookPath, append(existing, []byte(addition)...), 0644); err != nil {
 				return fmt.Errorf("writing lefthook.yml commit-msg section: %w", err)
 			}
@@ -2320,7 +2376,11 @@ func generateCommitMsgHook(cfg Config) error {
 			return fmt.Errorf("creating %s: %w", scriptDir, err)
 		}
 		scriptPath := scriptDir + "/trackfw-req-check.sh"
-		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+		// Guard the leaf script file — directory guard does not detect a symlinked script file.
+		if err := rejectScaffoldPath(cmhRoot, filepath.Join(cmhRoot, scriptPath)); err != nil {
+			return err
+		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks via rejectScaffoldPath above
 		if err := os.WriteFile(scriptPath, []byte(script), 0755); err != nil {
 			return fmt.Errorf("writing lefthook commit-msg script: %w", err)
 		}
@@ -2354,7 +2414,11 @@ func generateHuskyHook() error {
 	}
 	content := "#!/usr/bin/env sh\n. \"$(dirname -- \"$0\")/_/husky.sh\"\n\ntrackfw validate\n"
 	path := ".husky/pre-commit"
-	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+	// Guard the leaf file — directory guard above does not detect a symlinked hook file.
+	if err := rejectScaffoldPath(hhRoot, filepath.Join(hhRoot, path)); err != nil {
+		return err
+	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks via rejectScaffoldPath above
 	if err := os.WriteFile(path, []byte(content), 0755); err != nil {
 		return fmt.Errorf("writing husky hook: %w", err)
 	}
@@ -2390,7 +2454,12 @@ func generateVaultIndex() error {
 - [nome-da-nota-YYYY-MM-DD](nome-da-nota-YYYY-MM-DD.md)
 -->
 `
-	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+	// Guard the leaf file — directory guard above does not detect a symlinked index file.
+	absIndexPath := filepath.Join(viRoot, indexPath)
+	if err := rejectScaffoldPath(viRoot, absIndexPath); err != nil {
+		return err
+	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks via rejectScaffoldPath above
 	if err := os.WriteFile(indexPath, []byte(content), 0644); err != nil {
 		return fmt.Errorf("writing vault/notes/index.md: %w", err)
 	}

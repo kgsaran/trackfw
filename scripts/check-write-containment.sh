@@ -183,7 +183,7 @@ for FILE in "${GO_PROD_FILES[@]}"; do
     if [[ "$JUSTIFIED" -eq 1 ]]; then
       echo "OK   [write-containment] $REL:$LINENUM — justified inline"
     else
-      echo "FAIL [write-containment] unjustified write at $REL:$LINENUM: $(printf '%s' "$CONTENT" | sed 's/^[[:space:]]*//' | cut -c1-120)"
+      echo "FAIL [write-containment] unjustified write at $REL:$LINENUM: $(printf '%s' "$CONTENT" | sed 's/^[[:space:]]*//' | cut -c1-120) — adicione '// write-containment-allowed: <razão>' na linha acima, ou roteie a escrita por pathguard"
       FAIL=1
     fi
   done <<< "$MATCHES"
