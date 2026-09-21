@@ -11,8 +11,21 @@
 
 ### 1. `RejectSymlinks(root, dir)` nunca desce abaixo de `dir`
 
-`pathguard.RejectSymlinks` faz `os.Lstat` em cada componente **de `absTarget` para cima**, até
-`root` inclusive. Se você passa o **diretório** e depois escreve um **arquivo dentro dele**, a folha
+🔴 **Leia esta parte com cuidado — é a distinção que confunde.** `pathguard.RejectSymlinks` começa
+com `current := filename` e faz `os.Lstat` **no próprio `filename` primeiro**, depois sobe pelos
+ancestrais até `root`:
+
+```go
+current := filename
+for {
+    info, err := os.Lstat(current)      // ← a PRIMEIRA iteração é a folha
+    ...
+    current = filepath.Dir(current)
+}
+```
+
+Portanto: **passar o ARQUIVO protege a folha.** O gap não é do `pathguard` — é de quem chama
+passando o **diretório** e depois escreve um arquivo **abaixo** dele, que nunca entra no laço. Se você passa o **diretório** e depois escreve um **arquivo dentro dele**, a folha
 nunca é inspecionada:
 
 ```go
@@ -62,12 +75,45 @@ verificação tem de ser por linha.
 2. Se a guarda cobre o diretório e a escrita é de um arquivo, é defeito.
 3. O padrão correto está em `scaffold.go:824` (`writeTrackfwConfig`): guarda `absConfig`, o arquivo.
 
-## Residual conhecido
+## Resultado da auditoria completa (Wave 4, 2026-09-21)
 
-`scaffold.go` foi classificado linha a linha no ML-3A. **Os demais arquivos com marcador não foram**
-— `generators/update.go` (53 marcadores), `agentfiles.go` (21), `discover/discover.go` (13),
-`roadmap.go`/`req.go` (7 cada), `note.go`/`adr.go` (4 cada). A mesma classe de defeito pode existir
-lá, e o gate não a detecta por construção.
+Todos os 157 marcadores foram classificados. **22 gaps de folha e 7 marcadores falsos**, todos com o
+gate **verde** por cima:
+
+| arquivo | sítios | gap (B) | falso (D) |
+|---|---|---|---|
+| `scaffold.go` | 18 | **13** | 1 (`lefthook.yml`) |
+| `generators/update.go` | 53 | 0 | 5 (`copyPath`) |
+| `agentfiles`/`roadmap`/`req`/`note`/`adr`/`java` | 44 | **5** | 1 (`syncREQReferences`) |
+| `discover/` + marcador único | 24 | **4** | 0 |
+
+🔴 **A taxa não é uniforme.** `scaffold.go` deu 72%; `update.go` — o de **escopo global**, `$HOME` —
+deu **zero**. Extrapolar de um arquivo teria errado nos dois sentidos. **Classifique linha a linha
+ou não afirme nada.**
+
+**O pior caso foi `syncREQReferences`** (`roadmap.go`): marcador presente e **zero** chamadas a
+`pathguard` na função inteira. O teste contra o código antigo imprime `✓ synced REQ-...` e a vítima
+é sobrescrita através do symlink.
+
+## Terceira classe, descoberta na auditoria: guarda fail-OPEN
+
+Nem sempre a guarda está ausente — às vezes ela é **pulada em silêncio**:
+
+```go
+if cwd, cwdErr := os.Getwd(); cwdErr == nil {
+    ...guarda...
+}
+// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+return os.WriteFile(baselineFileName, data, 0644)   // ← executa MESMO se a guarda foi pulada
+```
+
+Sítios: `validator.go:58`, `metrics.go:199` (`os.Getwd()`), `config_agents_register.go:133`
+(`if root != ""`). O marcador é **condicionalmente** verdadeiro — verdadeiro no caminho feliz, falso
+no caminho de erro.
+
+**O padrão correto já existe na própria REQ:** a correção de `syncREQReferences` declara
+*"Fail closed: if projectRoot() fails we cannot verify containment"* e **aborta**. Se a precondição
+da guarda falha, a escrita não acontece.
 
 O fix estrutural é um analisador de AST — ambos os revisores (`hades-tf`, `hefesto-tf`) chegaram a
 essa conclusão de forma independente.

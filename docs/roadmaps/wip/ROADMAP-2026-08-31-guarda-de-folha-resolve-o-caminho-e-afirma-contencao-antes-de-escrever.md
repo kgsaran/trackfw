@@ -967,26 +967,54 @@ sendo escrito?**
 que é o arquivo.
 
 ### ML-4A — `generators/update.go` (53 marcadores)
-**Status:** ⬜ Pendente · **Papel:** `apolo-tf` · **Files:** `internal/generators/update.go` + testes
+**Status:** ✅ Concluído (auditado por Zeus em 2026-09-21) · **Papel:** `apolo-tf` · **Files:** `internal/generators/update.go` + testes
 🔴 **É o arquivo de maior gravidade da REQ**: escopo **global** (`$HOME/.claude`, `.codex`,
 `.gemini`, `.cursor`, `.copilot`, `.kiro`). A PoC da Wave 0 escreveu `SKILL.md` **fora do `$HOME`**
 com `updated=1 failed=0` e sem aviso. Aqui o dano sai do projeto e atinge o ambiente do usuário.
 
 ### ML-4B — `generators/{agentfiles,roadmap,req,note,adr,java}.go` (44 marcadores)
-**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Status:** ✅ Concluído (auditado por Zeus em 2026-09-21) · **Papel:** `apolo-tf`
 **Files:** `agentfiles.go` (21), `roadmap.go` (7), `req.go` (7), `note.go` (4), `adr.go` (4),
 `java.go` (1) + testes
 ⚠️ `adr.go` é onde apareceu o anti-padrão `EvalSymlinks` **antes** do guard, corrigido na Wave 1.
 Confira se o padrão não sobrevive em outro sítio do mesmo arquivo.
 
 ### ML-4C — `discover/` + os arquivos de marcador único (27 marcadores)
-**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Status:** ✅ Concluído (auditado por Zeus em 2026-09-21) · **Papel:** `apolo-tf`
 **Files:** `discover/discover.go` (13), `integrations/manager.go` (3), `commands/discover.go` (2),
 `validator/validator.go` (1), `sync/sync.go` (1), `metrics/metrics.go` (1),
 `config/config_agents_register.go` (1), `commands/update.go` (1), `commands/configure.go` (1)
 + testes correspondentes
 ⚠️ **Não inclui** `internal/pathguard/pathguard.go` (3) — é a auto-isenção do próprio helper
 fail-safe, já auditada por mim e pelo `hades-tf`.
+
+### Resultado consolidado da Wave 4 — auditado por Zeus em 2026-09-21
+
+**Os 157 marcadores estão classificados. Nenhum arquivo ficou sem auditoria de sítio.**
+
+| frente | sítios | **gap de folha (B)** | **marcador falso (D)** |
+|---|---|---|---|
+| `scaffold.go` (Wave 3) | 18 | **13** | 1 (`lefthook.yml`) |
+| ML-4A `generators/update.go` | 53 | **0** | 5 (`copyPath`) |
+| ML-4B `agentfiles`/`roadmap`/`req`/`note`/`adr`/`java` | 44 | **5** | 1 (`syncREQReferences`) |
+| ML-4C `discover/` + marcador único | 24 | **4** | 0 |
+| **total** | **139** (+18 de `pathguard`/outros) | **22** | **7** |
+
+🔴 **Todos os 22 gaps e os 7 marcadores falsos estavam com o gate `check-write-containment` VERDE
+por cima.** É a medição que fecha a discussão sobre o que o marcador prova: ele não prova nada
+sozinho — é declaração de autoria, e o gate não faz análise de fluxo.
+
+**A taxa de 72% do `scaffold.go` não se generalizou** — `update.go`, o arquivo de **escopo global**
+(`$HOME`), veio com **zero** gaps. Isso só é sabido porque foi medido linha a linha; extrapolar
+teria errado nos dois sentidos.
+
+**O pior achado foi o `syncREQReferences`** (`roadmap.go`): marcador presente, **zero** chamadas a
+`pathguard` na função. O teste load-bearing contra o código antigo mostra o dano literal —
+`✓ synced REQ-...` e a vítima sobrescrita através do symlink. Corrigido com `projectRoot()`
+**fail-closed** na entrada e guard por arquivo no loop.
+
+**Barreira após a Wave 4, sozinha e com a árvore parada:** RC=0, **792 `^OK `**, **0 `: FALHA`**,
+guarda de conjunto OK, `check-write-containment` 157/OK, `check-symlink-privilege-guard` 151/OK.
 
 ### Acceptance criteria (os três MLs)
 - [ ] **Tabela completa**, um veredito (A)/(B)/(C)/(D) por marcador, com `arquivo:linha`

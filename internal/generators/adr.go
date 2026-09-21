@@ -54,6 +54,11 @@ func NewADR(content ADRContent, adrDir string) error {
 		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absAdrDir, guardErr)
 		return fmt.Errorf("refusing write to %s: %w", absAdrDir, guardErr)
 	}
+	// Save pre-EvalSymlinks path for the leaf guard below: the leaf guard must
+	// use the raw absolute path (same namespace as guardRoot) rather than the
+	// resolved canonical path, to avoid the EvalSymlinks-before-guard anti-pattern
+	// (Wave 1 fix, ADR-2026-09-18 decision 3).
+	absAdrDirRaw := absAdrDir
 	// EvalSymlinks for canonical path (after guard passes — only for non-symlink paths).
 	if resolved, resolveErr := filepath.EvalSymlinks(absAdrDir); resolveErr == nil {
 		absAdrDir = resolved
@@ -111,6 +116,15 @@ author: ""
 %s
 `, date, content.Title, date, contextSection, decisionSection, consequencesSection, alternativesSection)
 
+	// Leaf guard: the probe guard above covered the ancestor chain up to
+	// absAdrDir; now guard the exact file (using the pre-EvalSymlinks path to
+	// stay in the same namespace as guardRoot) so a symlink leaf pointing
+	// outside root is also caught (ML-4B leaf-gap fix).
+	absLeaf := filepath.Join(absAdrDirRaw, filepath.Base(filename))
+	if guardErr := pathguard.RejectSymlinks(guardRoot, absLeaf); guardErr != nil {
+		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absLeaf, guardErr)
+		return fmt.Errorf("refusing write to %s: %w", absLeaf, guardErr)
+	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.WriteFile(filename, []byte(body), 0644); err != nil {
 		return fmt.Errorf("writing ADR: %w", err)
@@ -242,6 +256,8 @@ func NewADRDraft(slug string, adrDir string) (string, error) {
 		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absAdrDirDraft, guardErr)
 		return "", fmt.Errorf("refusing write to %s: %w", absAdrDirDraft, guardErr)
 	}
+	// Save pre-EvalSymlinks path for the leaf guard below (same reason as NewADR).
+	absAdrDirDraftRaw := absAdrDirDraft
 	// EvalSymlinks after guard passes — for canonical path usage.
 	if resolved, resolveErr := filepath.EvalSymlinks(absAdrDirDraft); resolveErr == nil {
 		absAdrDirDraft = resolved
@@ -292,6 +308,13 @@ author: ""
 <!-- What other options were evaluated and why were they rejected? -->
 `, date, title, date)
 
+	// Leaf guard: same pattern as NewADR — guard the exact file using the
+	// pre-EvalSymlinks path so a symlink leaf is caught (ML-4B leaf-gap fix).
+	absLeafDraft := filepath.Join(absAdrDirDraftRaw, filename)
+	if guardErr := pathguard.RejectSymlinks(draftGuardRoot, absLeafDraft); guardErr != nil {
+		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absLeafDraft, guardErr)
+		return "", fmt.Errorf("refusing write to %s: %w", absLeafDraft, guardErr)
+	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.WriteFile(path, []byte(body), 0644); err != nil {
 		return "", fmt.Errorf("writing ADR draft: %w", err)

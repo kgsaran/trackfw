@@ -133,6 +133,14 @@ ADR: %s
 Roadmap: %s
 `, date, content.Title, statusLine, motivationSection, criteriaSection, linkedADRSection, blockedSection, linkedRoadmapSection)
 
+	// Leaf guard: the directory guard above covered the ancestor chain up to
+	// reqDir; now guard the exact file so a symlink leaf pointing outside root
+	// is also caught (ML-4B leaf-gap fix).
+	absFilename := filepath.Join(reqRoot, filename)
+	if guardErr := pathguard.RejectSymlinks(reqRoot, absFilename); guardErr != nil {
+		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absFilename, guardErr)
+		return fmt.Errorf("refusing write to %s: %w", absFilename, guardErr)
+	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.WriteFile(filename, []byte(body), 0644); err != nil {
 		return fmt.Errorf("writing REQ: %w", err)

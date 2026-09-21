@@ -105,6 +105,13 @@ func writeValidateScript(rootDir string) error {
 	}
 	content := "#!/usr/bin/env bash\nset -euo pipefail\ntrackfw validate\n"
 	dest := filepath.Join(scriptsDir, "trackfw-validate.sh")
+	// Guard the leaf file: the directory guard above (RejectSymlinks on "scripts/") does not
+	// walk below the directory; a symlink placed at the leaf path is caught here.
+	leafDest := filepath.Join(root, "scripts", "trackfw-validate.sh")
+	if guardErr := pathguard.RejectSymlinks(root, leafDest); guardErr != nil {
+		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", dest, guardErr)
+		return fmt.Errorf("refusing write to %s: %w", dest, guardErr)
+	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.WriteFile(dest, []byte(content), 0755); err != nil {
 		return fmt.Errorf("writing validate script: %w", err)
@@ -156,6 +163,12 @@ func installHook(framework, rootDir string, w io.Writer) error {
 		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if err := os.MkdirAll(filepath.Dir(huskyHook), 0755); err != nil {
 			return fmt.Errorf("creating .husky dir: %w", err)
+		}
+		// Guard the leaf file: the directory guard above (RejectSymlinks on ".husky/") does not
+		// walk below the directory; a symlink placed at the leaf path is caught here.
+		if guardErr := pathguard.RejectSymlinks(root, filepath.Join(root, ".husky", "pre-commit")); guardErr != nil {
+			fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", huskyHook, guardErr)
+			return fmt.Errorf("refusing write to %s: %w", huskyHook, guardErr)
 		}
 		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		f, err := os.OpenFile(huskyHook, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0755)
@@ -266,6 +279,12 @@ func installHusky(rootDir string, w io.Writer) error {
 	if err := os.MkdirAll(filepath.Dir(huskyHook), 0755); err != nil {
 		return fmt.Errorf("creating .husky dir: %w", err)
 	}
+	// Guard the leaf file: the directory guard above (RejectSymlinks on ".husky/") does not
+	// walk below the directory; a symlink placed at the leaf path is caught here.
+	if guardErr := pathguard.RejectSymlinks(root, filepath.Join(root, ".husky", "pre-commit")); guardErr != nil {
+		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", huskyHook, guardErr)
+		return fmt.Errorf("refusing write to %s: %w", huskyHook, guardErr)
+	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	f, err := os.OpenFile(huskyHook, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0755)
 	if err != nil {
@@ -303,6 +322,12 @@ func installHuskyNPX(rootDir string, w io.Writer) error {
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.MkdirAll(filepath.Dir(huskyHook), 0755); err != nil {
 		return fmt.Errorf("creating .husky dir: %w", err)
+	}
+	// Guard the leaf file: the directory guard above (RejectSymlinks on ".husky/") does not
+	// walk below the directory; a symlink placed at the leaf path is caught here.
+	if guardErr := pathguard.RejectSymlinks(root, filepath.Join(root, ".husky", "pre-commit")); guardErr != nil {
+		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", huskyHook, guardErr)
+		return fmt.Errorf("refusing write to %s: %w", huskyHook, guardErr)
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	f, err := os.OpenFile(huskyHook, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0755)

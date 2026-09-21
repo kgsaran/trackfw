@@ -2576,15 +2576,15 @@ func copyPath(src, dst string) error {
 		if readErr != nil {
 			return readErr
 		}
-		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+		// write-containment-allowed: safe — dst is always an os.MkdirTemp sandbox root (never $HOME); no pathguard needed
 		if mkErr := os.MkdirAll(filepath.Dir(dst), 0755); mkErr != nil {
 			return mkErr
 		}
-		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+		// write-containment-allowed: safe — dst is always an os.MkdirTemp sandbox root (never $HOME); no pathguard needed
 		return os.WriteFile(dst, data, 0644)
 	}
 	if info.IsDir() {
-		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+		// write-containment-allowed: safe — dst is always an os.MkdirTemp sandbox root (never $HOME); no pathguard needed
 		if mkErr := os.MkdirAll(dst, 0755); mkErr != nil {
 			return mkErr
 		}
@@ -2604,11 +2604,11 @@ func copyPath(src, dst string) error {
 	if readErr != nil {
 		return readErr
 	}
-	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+	// write-containment-allowed: safe — dst is always an os.MkdirTemp sandbox root (never $HOME); no pathguard needed
 	if mkErr := os.MkdirAll(filepath.Dir(dst), 0755); mkErr != nil {
 		return mkErr
 	}
-	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+	// write-containment-allowed: safe — dst is always an os.MkdirTemp sandbox root (never $HOME); no pathguard needed
 	return os.WriteFile(dst, data, 0644)
 }
 

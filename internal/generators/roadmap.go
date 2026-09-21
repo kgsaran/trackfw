@@ -288,6 +288,14 @@ REQ: %s
 `, content.Title)
 	}
 
+	// Leaf guard: the directory guard above covered the ancestor chain up to
+	// backlogDir; now guard the exact file so a symlink leaf pointing outside
+	// root is also caught (ML-4B leaf-gap fix).
+	absFilename := filepath.Join(root, filename)
+	if guardErr := pathguard.RejectSymlinks(root, absFilename); guardErr != nil {
+		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absFilename, guardErr)
+		return fmt.Errorf("refusing write to %s: %w", absFilename, guardErr)
+	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.WriteFile(filename, []byte(body), 0644); err != nil {
 		return fmt.Errorf("writing roadmap: %w", err)
@@ -1095,6 +1103,14 @@ func syncREQReferences(roadmapBasename, newRoadmapPath string) error {
 		return fmt.Errorf("syncREQReferences: resolve REQ files: %w", err)
 	}
 
+	// Guard root for per-file containment checks below (ML-4B: false-marker fix).
+	// Fail closed: if projectRoot() fails we cannot verify containment, so we
+	// return an error rather than proceeding with unguarded writes.
+	syncRoot, syncRootErr := projectRoot()
+	if syncRootErr != nil {
+		return fmt.Errorf("syncREQReferences: %w", syncRootErr)
+	}
+
 	// Ordenação lexicográfica por basename — contrato pinado em docs/cli-parity.md
 	// ("Order is pinned, not delegated to the filesystem").
 	// Desempate por caminho completo para dois agentes com REQ de mesmo basename.
@@ -1137,6 +1153,18 @@ func syncREQReferences(roadmapBasename, newRoadmapPath string) error {
 			continue
 		}
 
+		// Leaf guard (ML-4B false-marker fix): reqPath comes from scanREQFiles
+		// which returns relative paths rooted at cfg.REQDir. Guard the exact
+		// file before writing — a symlink REQ file pointing outside root would
+		// otherwise redirect the sync write without detection.
+		absReqPath := filepath.Join(syncRoot, reqPath)
+		if guardErr := pathguard.RejectSymlinks(syncRoot, absReqPath); guardErr != nil {
+			fmt.Fprintf(os.Stderr, "trackfw roadmap move: refusing symlink path %s: %v\n", reqBase, guardErr)
+			if firstErr == nil {
+				firstErr = guardErr
+			}
+			continue
+		}
 		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if err := os.WriteFile(reqPath, updated, 0644); err != nil {
 			fmt.Fprintf(os.Stderr, "trackfw roadmap move: failed to sync %s: %v\n", reqBase, err)

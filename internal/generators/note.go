@@ -66,6 +66,14 @@ related: []
 <!-- Como foi resolvido ou mitigado? O que deve ser feito? -->
 `, title, date, title)
 
+	// Leaf guard: the directory guard above covered the ancestor chain up to the
+	// directory; now guard the exact file so a symlink leaf (notePath itself
+	// pointing outside root) is also caught (ML-4B leaf-gap fix).
+	absNotePath := filepath.Join(noteRoot, notePath)
+	if guardErr := pathguard.RejectSymlinks(noteRoot, absNotePath); guardErr != nil {
+		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absNotePath, guardErr)
+		return fmt.Errorf("refusing write to %s: %w", absNotePath, guardErr)
+	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.WriteFile(notePath, []byte(body), 0644); err != nil {
 		return fmt.Errorf("escrevendo nota: %w", err)

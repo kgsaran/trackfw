@@ -2651,3 +2651,88 @@ func TestUpdateHarnessAncestorSymlinkRefusesAllTargets(t *testing.T) {
 		}
 	}
 }
+
+// TestUpdateHarnessLeafSymlinkRefusesWrite affirms:
+// ML-4A conclusion: when the leaf file itself ($HOME/.claude/settings.json) is
+// a symlink pointing outside $HOME, the harness target that writes to that
+// path returns TargetFailed, nothing outside $HOME is written, and the
+// refusal is printed to stderr — proving the guard in the harness target
+// functions (e.g. harnessCredentialGuardTargetClaude) is load-bearing at the
+// leaf level, not only at ancestor directories.
+func TestUpdateHarnessLeafSymlinkRefusesWrite(t *testing.T) {
+	// Braço (a): leaf file $HOME/.claude/settings.json → symlink outside $HOME
+	home := t.TempDir()
+	outside := t.TempDir()
+	t.Setenv("HOME", home)
+
+	// Create the parent directory so the symlink can be planted at the leaf.
+	claudeDir := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a victim file outside home that the leaf symlink will point to.
+	victim := filepath.Join(outside, "victim.json")
+	const originalContent = "VICTIM ORIGINAL CONTENT\n"
+	if err := os.WriteFile(victim, []byte(originalContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Plant the symlink AT THE LEAF: $HOME/.claude/settings.json → outside/victim.json
+	symlinkOrSkip(t, victim, filepath.Join(claudeDir, "settings.json"))
+
+	// Capture stderr to verify audible refusal.
+	origStderr := os.Stderr
+	r, w, pipeErr := os.Pipe()
+	if pipeErr != nil {
+		t.Fatal(pipeErr)
+	}
+	os.Stderr = w
+
+	report, err := UpdateHarness(UpdateOptions{
+		Targets:        []string{"claude-credential-guard"},
+		InstallMissing: true,
+	})
+
+	w.Close()
+	os.Stderr = origStderr
+	var stderrBuf strings.Builder
+	if _, err2 := io.Copy(&stderrBuf, r); err2 != nil {
+		t.Fatal(err2)
+	}
+
+	if err != nil {
+		t.Fatalf("UpdateHarness returned unexpected error: %v", err)
+	}
+
+	// The victim outside $HOME must not have been touched.
+	gotContent, readErr := os.ReadFile(victim)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(gotContent) != originalContent {
+		t.Errorf("victim file outside $HOME was modified: got %q, want %q", gotContent, originalContent)
+	}
+
+	// The target must be reported as TargetFailed.
+	if len(report.Targets) == 0 {
+		t.Fatal("UpdateHarness returned no targets")
+	}
+	var found bool
+	for _, tr := range report.Targets {
+		if tr.ID == "claude-credential-guard" {
+			found = true
+			if tr.State != TargetFailed {
+				t.Errorf("claude-credential-guard state = %q, want %q", tr.State, TargetFailed)
+			}
+		}
+	}
+	if !found {
+		t.Error("target claude-credential-guard not present in report")
+	}
+
+	// Refusal must be audible (stderr).
+	if !strings.Contains(stderrBuf.String(), "refusing write") {
+		t.Errorf("expected 'refusing write' on stderr, got: %q", stderrBuf.String())
+	}
+}
