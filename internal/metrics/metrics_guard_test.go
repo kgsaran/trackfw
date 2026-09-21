@@ -24,6 +24,7 @@ func symlinkOrSkipMetrics(t *testing.T, target, link string) {
 	if errors.As(err, &errno) && errno == 1314 {
 		t.Skipf("symlink guard not exercisable: %v", err)
 	}
+	// symlinkOrSkipMetrics: all privilege checks exhausted — this is a real error
 	t.Fatalf("os.Symlink(%q, %q): %v", target, link, err)
 }
 

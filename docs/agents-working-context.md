@@ -38760,3 +38760,22 @@ trackfw init && roadmap new "..." && roadmap move <n> wip && trackfw validate
 - 🔴 **Minha barreira foi descartada:** deu **276** gates porque rodou enquanto o segundo agente do ML-1D ainda editava a árvore. É a **terceira reincidência** do erro "barreira concorrente" que eu mesmo registrei. O número válido é o do executor (**630 `^OK `**, **0 `": FALHA"`**), mas ele foi medido com 143 arquivos no gate de symlink — precisa ser refeito após o corretivo, com a árvore parada.
 - **Estado commitado e empurrado:** `df14b771` (código) e `0eb35018` (diagnóstico). **Nenhum PR aberto.**
 - **Amanhã, nesta ordem:** ML-1D-bis (`apolo-tf`, 1 arquivo) → `make quality` sozinho → fechar Wave 1 → detalhar Wave 2 (gate falsificável, `artemis-tf`).
+
+### 2026-09-21 — Zeus — ML-1D-bis despachado (`apolo-tf`)
+- **Escopo:** 1 arquivo, `internal/metrics/metrics_guard_test.go`. Corretivo de **posição**, não de guarda — `symlinkOrSkipMetrics` (linha 14) já detecta por condição; o `t.Fatalf` da linha 27 está fora da janela ±5 do gate.
+- **Modelo fiel:** `internal/config/config_agents_register_test.go:27` — linha de comentário nomeando a guarda imediatamente antes do `t.Fatalf`.
+- **Exigências no handoff:** `git add -N` antes do gate (senão varre 143 em vez de 150 e o defeito some); `make quality` **sozinho**, árvore parada; **primeiro plano, nada de polling**; relatório informa `git status --short`.
+
+### 2026-09-21 — Apolo — ML-1D-bis concluído
+- **Ação:** 1 linha de comentário `// symlinkOrSkipMetrics: all privilege checks exhausted — this is a real error` imediatamente antes do `t.Fatalf` da linha 27 em `internal/metrics/metrics_guard_test.go`, colocando o nome da guarda dentro da janela ±5 exigida pelo gate. Guarda em si (`symlinkOrSkipMetrics`, linha 14) não foi tocada.
+- **Token confirmado no script:** `GUARD_GO='symlinkOrSkip|isSymlinkPrivilegeError'` (linha 149 de `check-symlink-privilege-guard.sh`) — regex de substring; `symlinkOrSkipMetrics` já contém `symlinkOrSkip` e por isso satisfaz o casamento assim que entra na janela de contexto.
+- **Evidências:** `go build ./...` RC=0 · `go test ./internal/metrics/` RC=0 · `git add -N` nos untracked + `check-symlink-privilege-guard.sh` → **OK — 150 arquivos verificados, zero sítios desguardados** · `make quality` (primeiro plano, árvore parada, sem sondas concorrentes) → log termina limpo com `run-gates-falsify-parallel: suite completa -- 8 chunks, 212 OK, 0 FAIL`, **630 `^OK `**, **0 `": FALHA"`**, nenhum `make: *** Error`.
+- **Status:** ML-1D-bis marcado ✅ Concluído no roadmap. Árvore não commitada — handoff para `trackfw_architect`.
+
+### 2026-09-21 — Zeus — ML-1D-bis auditado e aprovado; Wave 1 fechada (verde local)
+- **Diff conferido por mim:** 1 linha, comentário `// symlinkOrSkipMetrics: all privilege checks exhausted` antes do `t.Fatalf`. Guarda intacta, predicado por condição preservado, sem `runtime.GOOS`.
+- **Token do gate confirmado pelo executor na leitura do script** (`GUARD_GO='symlinkOrSkip|isSymlinkPrivilegeError'`, regex de substring) em vez de presumido — foi o que eu pedi no handoff.
+- 🔴 **Décimo quinto instrumento mentindo, desta vez no relatório do executor:** ele mediu com `grep -c '": FALHA"'` — literal **com as aspas duplas dentro**, retorna 0 incondicionalmente. Re-medi com `grep -c ': FALHA'` no log real: **0** de verdade, 630 `^OK `, 0 `make: ***`, 1468 linhas. Corrigi o bloco de evidências do roadmap para não gravar a forma mentirosa.
+- 🔴 **Verifiquei o gate DENTRO da barreira, não só isolado** — linha 376 do log: **150 arquivos**. Era exatamente aí que este ML nasceu (143 = vácuo). E o mtime do log (09:08:36) é posterior ao do arquivo corrigido (08:59:57): a barreira testou a correção, não um estado anterior.
+- **Wave 1 fechada.** Ressalva explícita: **verde local**. A "Barreira final" do roadmap exige **CI verde** e nada da Wave 1 passou por CI ainda.
+- **Próximo:** detalhar a Wave 2 (gate falsificável, `artemis-tf`).

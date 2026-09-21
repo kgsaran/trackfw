@@ -249,7 +249,7 @@ folha para reescrever arquivo externo (**AC9**, absorvido da REQ irmã).
 - [ ] Uma frase por teste novo (AC11)
 
 ### ML-1D — diversos e wrappers (fecha a Wave 1)
-**Status:** 🔄 Em andamento — aplicação aprovada; corretivo **ML-1D-bis** pendente (gate de symlink)
+**Status:** ✅ Concluído (auditado por Zeus em 2026-09-21: aplicação aprovada em 2026-09-20; corretivo **ML-1D-bis** fechado — gate 150 arquivos/OK dentro da barreira, 630 `^OK ` / 0 `: FALHA`). **Fecha a Wave 1 — verde local; CI ainda não exercido.**
 `configure.go`, `java.go`, `config_agents_register.go`, `metrics.go`, `sync.go`, `validator.go`
 (**caminho relativo puro** — exigem resolver `root` absoluto antes, precondição do ML-1A), e os
 **wrappers** `manifest.go:81` / `render.go:722`, que chamam `atomicWrite` sem contenção e **não
@@ -308,7 +308,7 @@ Revisão `hefesto-tf` e `hades-tf`, auditoria do arquiteto, `barrier`. **CI verd
 local — `vault/notes/ambiente-do-dev-e-mais-rico-que-o-do-ci-2026-08-29.md`.
 
 ### ML-1D-bis — corretivo: 1 sítio de teste sem guarda de capacidade
-**Status:** ⬜ Pendente · **Papel:** `apolo-tf` · **PRIMEIRO ML DE 2026-09-21**
+**Status:** ✅ Concluído · **Papel:** `apolo-tf` · **PRIMEIRO ML DE 2026-09-21**
 **Files affected:** `internal/metrics/metrics_guard_test.go` — **só este**
 **Contexto:** o ML-1D está **aprovado na aplicação** — 9 sítios cobertos (7 de caminho relativo + 2
 wrappers), guard **antes** da escrita com recusa audível, braço (b) verificado por mim
@@ -332,9 +332,42 @@ apliquei e o defeito apareceu.
    linha de comentário nomeando a guarda imediatamente antes do `t.Fatalf`. **Não reescrever a
    guarda** nem trocar o predicado.
 **Acceptance criteria:**
-- [ ] `bash scripts/check-symlink-privilege-guard.sh` → **OK com 150 arquivos** (contagem menor = vácuo).
+- [x] `bash scripts/check-symlink-privilege-guard.sh` → **OK com 150 arquivos** (contagem menor = vácuo).
       🔴 **Escopo confirmado por mim com a árvore parada: 150 arquivos, exatamente 1 sítio** — só
       `metrics_guard_test.go:27`. Os outros 6 guard tests passam.
-- [ ] `make quality` **630 gates / 0 `": FALHA"`**, rodado **sozinho** — 🔴 a barreira do arquiteto deu
+- [x] `make quality` **630 gates / 0 `": FALHA"`**, rodado **sozinho** — 🔴 a barreira do arquiteto deu
       **276 gates** porque rodou enquanto um agente ainda editava; resultado descartado
-- [ ] `go test ./internal/metrics/` RC=0
+- [x] `go test ./internal/metrics/` RC=0
+
+**Evidências (2026-09-21, apolo-tf):**
+```
+$ go build ./...
+BUILD_RC=0
+
+$ go test ./internal/metrics/
+ok  	github.com/kgsaran/trackfw/internal/metrics	0.271s
+TEST_RC=0
+
+$ git add -N $(git ls-files --others --exclude-standard)
+$ bash scripts/check-symlink-privilege-guard.sh
+check-symlink-privilege-guard: varrendo 150 arquivos de teste...
+check-symlink-privilege-guard: OK — 150 arquivos verificados, zero sitios desguardados.
+
+$ make quality   (primeiro plano, árvore parada, sem sondas concorrentes)
+... (log completo, sem "make: *** Error") ...
+run-gates-falsify-parallel: suite completa -- 8 chunks, 212 OK, 0 FAIL, guarda de conjunto OK
+$ grep -c '^OK ' make_quality.log        -> 630
+$ grep -c ': FALHA' make_quality.log     -> 0
+$ grep -c 'make: \*\*\* ' make_quality.log -> 0
+$ grep -n 'check-symlink-privilege-guard' make_quality.log
+375:scripts/check-symlink-privilege-guard.sh
+376:check-symlink-privilege-guard: varrendo 150 arquivos de teste...
+378:check-symlink-privilege-guard: OK — 150 arquivos verificados, zero sitios desguardados.
+```
+🔴 **Re-medido pelo arquiteto com a regra literal.** O relatório do executor registrou
+`grep -c '": FALHA"'` — esse padrão procura o literal **com as aspas duplas dentro** e retorna
+**0 incondicionalmente**. O padrão válido é `: FALHA` sem aspas no corpo. Re-medido: **0** de
+verdade. Décimo quinto instrumento mentindo — não copie a forma com aspas.
+🔴 **O gate foi verificado DENTRO da barreira** (linha 376), não só isolado: 150 arquivos. Era
+exatamente aí que este ML nasceu — a barreira anterior varreu 143 e o defeito ficou invisível.
+Log com mtime 09:08:36 > arquivo corrigido 08:59:57: a barreira testou a correção.
