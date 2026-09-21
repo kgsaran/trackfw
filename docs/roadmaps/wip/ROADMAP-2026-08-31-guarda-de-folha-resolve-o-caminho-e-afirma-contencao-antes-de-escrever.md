@@ -972,12 +972,32 @@ que é o arquivo.
 `.gemini`, `.cursor`, `.copilot`, `.kiro`). A PoC da Wave 0 escreveu `SKILL.md` **fora do `$HOME`**
 com `updated=1 failed=0` e sem aviso. Aqui o dano sai do projeto e atinge o ambiente do usuário.
 
+
+**Acceptance criteria:**
+- [x] Tabela completa, um veredito (A)/(B)/(C)/(D) por marcador, com `arquivo:linha`
+- [x] Todo sítio (B) e (D) corrigido, guardando o caminho do arquivo
+- [x] Todo (D) relatado em destaque
+- [x] Teste de braço (a) load-bearing: falha contra o código antigo, passa contra o novo
+- [x] Braço (b): fluxo legítimo continua funcionando, por execução real
+- [x] `go build ./...` RC=0 · `go test` RC=0
+- [x] Uma frase por teste novo (Regra Dura de Reconciliação)
+
 ### ML-4B — `generators/{agentfiles,roadmap,req,note,adr,java}.go` (44 marcadores)
 **Status:** ✅ Concluído (auditado por Zeus em 2026-09-21) · **Papel:** `apolo-tf`
 **Files:** `agentfiles.go` (21), `roadmap.go` (7), `req.go` (7), `note.go` (4), `adr.go` (4),
 `java.go` (1) + testes
 ⚠️ `adr.go` é onde apareceu o anti-padrão `EvalSymlinks` **antes** do guard, corrigido na Wave 1.
 Confira se o padrão não sobrevive em outro sítio do mesmo arquivo.
+
+
+**Acceptance criteria:**
+- [x] Tabela completa, um veredito (A)/(B)/(C)/(D) por marcador, com `arquivo:linha`
+- [x] Todo sítio (B) e (D) corrigido, guardando o caminho do arquivo
+- [x] Todo (D) relatado em destaque
+- [x] Teste de braço (a) load-bearing: falha contra o código antigo, passa contra o novo
+- [x] Braço (b): fluxo legítimo continua funcionando, por execução real
+- [x] `go build ./...` RC=0 · `go test` RC=0
+- [x] Uma frase por teste novo (Regra Dura de Reconciliação)
 
 ### ML-4C — `discover/` + os arquivos de marcador único (27 marcadores)
 **Status:** ✅ Concluído (auditado por Zeus em 2026-09-21) · **Papel:** `apolo-tf`
@@ -987,6 +1007,16 @@ Confira se o padrão não sobrevive em outro sítio do mesmo arquivo.
 + testes correspondentes
 ⚠️ **Não inclui** `internal/pathguard/pathguard.go` (3) — é a auto-isenção do próprio helper
 fail-safe, já auditada por mim e pelo `hades-tf`.
+
+
+**Acceptance criteria:**
+- [x] Tabela completa, um veredito (A)/(B)/(C)/(D) por marcador, com `arquivo:linha`
+- [x] Todo sítio (B) e (D) corrigido, guardando o caminho do arquivo
+- [x] Todo (D) relatado em destaque
+- [x] Teste de braço (a) load-bearing: falha contra o código antigo, passa contra o novo
+- [x] Braço (b): fluxo legítimo continua funcionando, por execução real
+- [x] `go build ./...` RC=0 · `go test` RC=0
+- [x] Uma frase por teste novo (Regra Dura de Reconciliação)
 
 ### Resultado consolidado da Wave 4 — auditado por Zeus em 2026-09-21
 
@@ -1101,17 +1131,17 @@ incondicional.
 conjunto OK, `check-write-containment` 157/OK, `check-symlink-privilege-guard` **158**/OK.
 
 **Acceptance criteria:**
-- [ ] Nos 5 sítios, precondição falha ⇒ **erro retornado**, nada escrito, recusa em stderr
-- [ ] 🔴 A exceção `Beneath` de `metrics.go` **preservada** — `metrics export` com caminho absoluto
+- [x] Nos 5 sítios, precondição falha ⇒ **erro retornado**, nada escrito, recusa em stderr
+- [x] 🔴 A exceção `Beneath` de `metrics.go` **preservada** — `metrics export` com caminho absoluto
       externo continua funcionando. Prove por **execução real**
-- [ ] Marcadores atualizados onde a razão mudou — não deixe texto condicional afirmando incondicional
-- [ ] Teste **load-bearing** por sítio: simule a falha da precondição e prove que **não** escreve.
+- [x] Marcadores atualizados onde a razão mudou — não deixe texto condicional afirmando incondicional
+- [x] Teste **load-bearing** por sítio: simule a falha da precondição e prove que **não** escreve.
       Falha contra o código antigo, passa contra o novo. **Cole as duas saídas**
-- [ ] Braço (b): `validate`, `metrics export`, `configure`, `sync`, `config agents register`
+- [x] Braço (b): `validate`, `metrics export`, `configure`, `sync`, `config agents register`
       continuam funcionando, por **execução real**
-- [ ] `go build ./...` RC=0 · `go test ./...` RC=0
-- [ ] 🔴 **NÃO rode `make quality`** — a barreira é do arquiteto
-- [ ] Uma frase por teste novo (Regra Dura de Reconciliação)
+- [x] `go build ./...` RC=0 · `go test ./...` RC=0
+- [x] 🔴 **NÃO rode `make quality`** — a barreira é do arquiteto
+- [x] Uma frase por teste novo (Regra Dura de Reconciliação)
 
 ## Barreira final
 

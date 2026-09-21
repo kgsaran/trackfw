@@ -38939,3 +38939,9 @@ trackfw init && roadmap new "..." && roadmap move <n> wip && trackfw validate
 - **A exceção que marquei como intocável sobreviveu:** `metrics --export /tmp/...csv` → RC=0, arquivo criado. O marcador foi reescrito para **nomear** a exceção em vez de afirmar proteção incondicional.
 - 🔴 **Corrigi um erro factual do relatório:** ele lista como risco residual *"CI não foi exercido (sem PR aberto)"*. O **PR #397 está aberto desde hoje** e já rodou quatro vezes verde. Risco inexistente.
 - **Verifiquei a referência de ADR que ele pôs no comentário** (`ADR-2026-09-18`): existe, e é a desta REQ. Ressalva menor: há **dois** ADRs com esse prefixo de data, então a citação é ambígua.
+
+### 2026-09-21 — Zeus — barrier verde nas 5 waves; REQ pronta para merge
+- 🔴 **Quarta PoC vácua minha hoje.** Rodei `metrics --export /tmp/zeus-ext.csv` num projeto recém-criado: **RC=0 e nenhum arquivo**. Quase reportei que a exceção tinha sido quebrada. A saída dizia `No transitions recorded yet` — o comando sai **antes** de chamar `ExportCSV`. Refeito no repo real: **38 KB criados, RC=0, stderr vazio**. A exceção está preservada.
+- **O padrão das minhas 4 PoCs vácuas é sempre o mesmo:** eu monto o cenário, o comando sai com o código que eu esperava, e a conclusão que eu ia tirar estava errada porque **o código nunca chegou no sítio**. Vítima intacta, arquivo ausente, RC=0 — todos ambíguos entre "funcionou" e "não executou". **Antes de concluir, provar que o caminho foi exercido.**
+- **Barrier reprovou waves 4 e 5** por bloco de aceite: os três MLs da Wave 4 não tinham `**Acceptance criteria:**` próprio (eu escrevera um bloco compartilhado, que o parser não atribui a ML nenhum) e o ML-5A tinha 8 ACs não marcados. Corrigido. **Agora: `passed` nas 5 waves.**
+- **CI: 21 checks verdes** no PR #397, quinta rodada.
