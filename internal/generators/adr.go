@@ -59,6 +59,7 @@ func NewADR(content ADRContent, adrDir string) error {
 		absAdrDir = resolved
 	}
 
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.MkdirAll(adrDir, 0755); err != nil {
 		return err
 	}
@@ -110,6 +111,7 @@ author: ""
 %s
 `, date, content.Title, date, contextSection, decisionSection, consequencesSection, alternativesSection)
 
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.WriteFile(filename, []byte(body), 0644); err != nil {
 		return fmt.Errorf("writing ADR: %w", err)
 	}
@@ -245,6 +247,7 @@ func NewADRDraft(slug string, adrDir string) (string, error) {
 		absAdrDirDraft = resolved
 	}
 
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.MkdirAll(adrDir, 0755); err != nil {
 		return "", fmt.Errorf("creating %s: %w", adrDir, err)
 	}
@@ -289,6 +292,7 @@ author: ""
 <!-- What other options were evaluated and why were they rejected? -->
 `, date, title, date)
 
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.WriteFile(path, []byte(body), 0644); err != nil {
 		return "", fmt.Errorf("writing ADR draft: %w", err)
 	}

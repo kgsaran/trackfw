@@ -121,9 +121,11 @@ func GuardedWrite(root, filename string, data []byte, mode os.FileMode) error {
 		return err
 	}
 	directory := filepath.Dir(filename)
+	// write-containment-allowed: GuardedWrite implements the containment helper itself; MkdirAll is always called after RejectSymlinks guard passes
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return err
 	}
+	// write-containment-allowed: GuardedWrite implements the containment helper itself; CreateTemp is always called after RejectSymlinks guard passes
 	temporary, err := os.CreateTemp(directory, ".trackfw-tmp-*")
 	if err != nil {
 		return err
@@ -145,5 +147,6 @@ func GuardedWrite(root, filename string, data []byte, mode os.FileMode) error {
 	if err := temporary.Close(); err != nil {
 		return err
 	}
+	// write-containment-allowed: GuardedWrite implements the containment helper itself; Rename is always called after RejectSymlinks guard passes
 	return os.Rename(temporaryName, filename)
 }

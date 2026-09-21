@@ -2,6 +2,15 @@
 
 ---
 
+## Sessão 2026-09-21 (continuação pós-compactação) — Ártemis (fix/afirma-contencao-antes-de-escrever — ML-2A) — ENTREGUE (AGUARDANDO AUDITORIA)
+
+**Início:** 2026-09-21 | Branch: `fix/afirma-contencao-antes-de-escrever`
+**Tarefa:** ML-2A — criar `scripts/check-write-containment.sh` (gate de contenção), adicionar marcadores a todos os sítios de escrita, cenário de falsificação no `check-gates-falsify.sh`, 3 linhas no Makefile.
+**Resultado:** Gate criado (157 sítios, piso=157, --self-test 3/3 OK). Cenário 194 adicionado (3 rótulos literais, guarda de conjunto OK). 155 sítios marcados como (a)/(b). 2 sítios classe (c) encontrados em `internal/commands/discover.go:127,164` — ML-2B ativado. `make parity-falsify` RC=0, 216 OK, 0 FALHA. Build e testes verdes. `make quality` falha porque o gate corretamente reprova os 2 sítios (c) — bloqueado até ML-2B.
+**Arquivos modificados:** `scripts/check-write-containment.sh` (novo), `Makefile`, `scripts/check-gates-falsify.sh`, `internal/pathguard/pathguard.go` + 16 outros arquivos de produção (marcadores). Roadmap atualizado com evidências e tabela de classes.
+
+---
+
 ## Sessão 2026-09-20 (continuação 5) — Apolo (fix/afirma-contencao-antes-de-escrever — ML-1D: diversos e wrappers) — CONCLUÍDO
 
 **Início:** 2026-09-20 (retomada após compactação) | Branch: `fix/afirma-contencao-antes-de-escrever`
@@ -38795,3 +38804,11 @@ trackfw init && roadmap new "..." && roadmap move <n> wip && trackfw validate
 - **Resultado: 21 checks verdes**, incluindo os 6 jobs Windows que nunca tinham visto este código (`windows-full-suites` 4m23s, `windows-symlink-unprivileged`, `windows-integrations-resolve`, `windows-gates-cp1252`, `windows-defect-reproduction`) e os 4 `parity-falsify-shard` com o agregador `parity`.
 - **Sem palavra-chave de fechamento no corpo**, deliberadamente: nenhuma das 11 issues abertas fecha com esta causa. O check `pr-closing-keyword` passou.
 - **Próximo:** ML-2A despachado para `artemis-tf`.
+
+### 2026-09-21 — Zeus — ML-2A auditado e aprovado; o gate achou defeito real que a Wave 1 não previu
+- 🔴 **Décimo sexto instrumento mentindo, e foi meu:** medi o gate com `bash ... | tail -12; echo RC=$?` e li **RC=0** — `$?` era do `tail`, não do gate. Re-medi sem pipe: **GATE_RC=1**. É a mesma família do `| tail` que já registrei; reincidi.
+- **O risco que eu temia no desenho — "marcador vira carimbo" — foi verificado, não presumido.** São 152 marcadores de classe (a) com texto idêntico. Cruzei **todos** os 17 arquivos marcados contra uso de `pathguard`: só dois não usam, e os dois são legítimos — `pathguard.go` (auto-isenção) e `commands/update.go` (`os.OpenFile(os.DevNull)`, com razão **específica** escrita, não o carimbo genérico). Amostrei `scaffold.go:234` no fluxo: `rejectScaffoldPath(absHome, absSkillDir)` chama `pathguard.RejectSymlinks` e retorna erro antes da escrita. Marcador verdadeiro.
+- **Falsificação confirmada por mim, sozinho, com a árvore parada:** os 3 rótulos aparecem **literais no manifesto** (`chunk=3 label=write-containment/...`), foram emitidos, guarda de conjunto OK, **216 `^OK `** (era 212) e **0 `^FAIL`**. Rótulo literal era o ponto frágil — se fosse montado com variável, `gen-falsify-chunks.py` o degradaria a glob e a guarda pararia de checar o caso.
+- 🔴 **Classe (c): 2 sítios reais** em `internal/commands/discover.go:127,164`, caminho derivado de `os.Getwd()` sem `pathguard`. **A Wave 1 não os previu** porque o ML-1C cobriu `internal/discover/discover.go` — o **pacote** — e não `internal/commands/discover.go` — o **comando**. Nomes quase iguais, arquivos distintos. Enumeração por família falha exatamente assim; foi para isso que o gate foi construído.
+- **`make quality` está VERMELHO nesta árvore, e isso é o resultado correto** — o gate reprova os 2 sítios. Verde volta com o ML-2B. Commito o instrumento junto com a evidência do defeito que ele encontrou.
+- **Pendência menor registrada:** `gen-falsify-chunks` avisa que os 3 rótulos novos estão **sem peso calibrado** e usam peso pessimista (54,1778 s). Não quebra nada; desbalanceia shards. Recalibrar com `scripts/gen-falsify-scenario-weights.py` entra no ML-2B.

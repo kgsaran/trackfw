@@ -239,6 +239,7 @@ func NewRoadmapFromContent(content RoadmapContent) error {
 		return fmt.Errorf("refusing write to %s: %w", absBacklogDir, guardErr)
 	}
 
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.MkdirAll(backlogDir, 0755); err != nil {
 		return err
 	}
@@ -287,6 +288,7 @@ REQ: %s
 `, content.Title)
 	}
 
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.WriteFile(filename, []byte(body), 0644); err != nil {
 		return fmt.Errorf("writing roadmap: %w", err)
 	}
@@ -709,11 +711,13 @@ func MoveRoadmap(name, state string) error {
 		}
 	}
 
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		return fmt.Errorf("creating target dir: %w", err)
 	}
 
 	// dst was already computed and guarded above; use it directly.
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.Rename(src, dst); err != nil {
 		return fmt.Errorf("moving roadmap: %w", err)
 	}
@@ -729,6 +733,7 @@ func MoveRoadmap(name, state string) error {
 	if rawContent, readErr := os.ReadFile(dst); readErr != nil {
 		return fmt.Errorf("syncing status in %s: %w", dst, readErr)
 	} else if updated, changed := rewriteRoadmapStatus(rawContent, state); changed {
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if writeErr := os.WriteFile(dst, updated, 0644); writeErr != nil {
 			return fmt.Errorf("syncing status in %s: %w", dst, writeErr)
 		}
@@ -817,6 +822,7 @@ func appendTransitionLog(basename, fromState, toState string) {
 			return
 		}
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	f, err := os.OpenFile(lp, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return
@@ -1131,6 +1137,7 @@ func syncREQReferences(roadmapBasename, newRoadmapPath string) error {
 			continue
 		}
 
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if err := os.WriteFile(reqPath, updated, 0644); err != nil {
 			fmt.Fprintf(os.Stderr, "trackfw roadmap move: failed to sync %s: %v\n", reqBase, err)
 			if firstErr == nil {

@@ -763,9 +763,11 @@ func rejectSymlinks(root, filename string) error { return pathguard.RejectSymlin
 
 func atomicWrite(filename string, data []byte, mode os.FileMode) error {
 	directory := filepath.Dir(filename)
+	// write-containment-allowed: atomicWrite is called only after caller invokes rejectSymlinks — the guard is at the call site, not inside this helper
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return err
 	}
+	// write-containment-allowed: atomicWrite is called only after caller invokes rejectSymlinks — the guard is at the call site, not inside this helper
 	temporary, err := os.CreateTemp(directory, ".trackfw-tmp-*")
 	if err != nil {
 		return err
@@ -787,6 +789,7 @@ func atomicWrite(filename string, data []byte, mode os.FileMode) error {
 	if err := temporary.Close(); err != nil {
 		return err
 	}
+	// write-containment-allowed: atomicWrite is called only after caller invokes rejectSymlinks — the guard is at the call site, not inside this helper
 	return os.Rename(temporaryName, filename)
 }
 

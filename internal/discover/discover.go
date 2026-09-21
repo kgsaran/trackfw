@@ -99,11 +99,13 @@ func writeValidateScript(rootDir string) error {
 		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", scriptsDir, guardErr)
 		return fmt.Errorf("refusing write to %s: %w", scriptsDir, guardErr)
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.MkdirAll(scriptsDir, 0755); err != nil {
 		return fmt.Errorf("creating scripts dir: %w", err)
 	}
 	content := "#!/usr/bin/env bash\nset -euo pipefail\ntrackfw validate\n"
 	dest := filepath.Join(scriptsDir, "trackfw-validate.sh")
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.WriteFile(dest, []byte(content), 0755); err != nil {
 		return fmt.Errorf("writing validate script: %w", err)
 	}
@@ -135,6 +137,7 @@ func installHook(framework, rootDir string, w io.Writer) error {
 			fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", cfgPath, guardErr)
 			return fmt.Errorf("refusing write to %s: %w", cfgPath, guardErr)
 		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		f, err := os.OpenFile(cfgPath, os.O_APPEND|os.O_WRONLY, 0644)
 		if err != nil {
 			return fmt.Errorf("opening lefthook config: %w", err)
@@ -150,9 +153,11 @@ func installHook(framework, rootDir string, w io.Writer) error {
 			fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", filepath.Dir(huskyHook), guardErr)
 			return fmt.Errorf("refusing write to %s: %w", filepath.Dir(huskyHook), guardErr)
 		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if err := os.MkdirAll(filepath.Dir(huskyHook), 0755); err != nil {
 			return fmt.Errorf("creating .husky dir: %w", err)
 		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		f, err := os.OpenFile(huskyHook, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0755)
 		if err != nil {
 			return fmt.Errorf("opening husky pre-commit: %w", err)
@@ -199,6 +204,7 @@ func installLefthook(rootDir string, w io.Writer) error {
 			return nil
 		}
 		// appenda entrada ao arquivo existente
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		f, err := os.OpenFile(cfgPath, os.O_APPEND|os.O_WRONLY, 0644)
 		if err != nil {
 			return fmt.Errorf("opening lefthook.yml: %w", err)
@@ -209,6 +215,7 @@ func installLefthook(rootDir string, w io.Writer) error {
 		}
 		fmt.Fprintf(w, "✓ trackfw entry appended to lefthook.yml\n")
 	} else {
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if err := os.WriteFile(cfgPath, []byte(lefthookContent), 0644); err != nil {
 			return fmt.Errorf("writing lefthook.yml: %w", err)
 		}
@@ -255,9 +262,11 @@ func installHusky(rootDir string, w io.Writer) error {
 
 	// cria/append .husky/pre-commit com linha do trackfw
 	huskyHook := filepath.Join(rootDir, ".husky", "pre-commit")
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.MkdirAll(filepath.Dir(huskyHook), 0755); err != nil {
 		return fmt.Errorf("creating .husky dir: %w", err)
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	f, err := os.OpenFile(huskyHook, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0755)
 	if err != nil {
 		return fmt.Errorf("opening .husky/pre-commit: %w", err)
@@ -291,9 +300,11 @@ func installHuskyNPX(rootDir string, w io.Writer) error {
 
 	// cria/append .husky/pre-commit com linha do trackfw
 	huskyHook := filepath.Join(rootDir, ".husky", "pre-commit")
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.MkdirAll(filepath.Dir(huskyHook), 0755); err != nil {
 		return fmt.Errorf("creating .husky dir: %w", err)
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	f, err := os.OpenFile(huskyHook, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0755)
 	if err != nil {
 		return fmt.Errorf("opening .husky/pre-commit: %w", err)
@@ -320,6 +331,7 @@ func writeCIWorkflow(rootDir string) error {
 		fmt.Fprintf(os.Stderr, "aviso: %s — trackfw discover não escreve através de symlinks — arquivo não foi tocado\n", filepath.Join(".github", "workflows", "trackfw-validate.yml"))
 		return nil
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.MkdirAll(workflowsDir, 0755); err != nil {
 		return fmt.Errorf("creating workflows dir: %w", err)
 	}
@@ -328,6 +340,7 @@ func writeCIWorkflow(rootDir string) error {
 		return nil
 	}
 	content := generators.BuildDiscoverGitHubActionsWorkflowContent(generators.IsProducerGoMod(rootDir))
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.WriteFile(dest, []byte(content), 0644); err != nil {
 		return fmt.Errorf("writing CI workflow: %w", err)
 	}

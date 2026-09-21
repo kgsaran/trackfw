@@ -53,6 +53,7 @@ func NewREQ(content REQContent) error {
 		return fmt.Errorf("refusing write to %s: %w", absReqDir, guardErr)
 	}
 
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.MkdirAll(reqDir, 0755); err != nil {
 		return err
 	}
@@ -132,6 +133,7 @@ ADR: %s
 Roadmap: %s
 `, date, content.Title, statusLine, motivationSection, criteriaSection, linkedADRSection, blockedSection, linkedRoadmapSection)
 
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.WriteFile(filename, []byte(body), 0644); err != nil {
 		return fmt.Errorf("writing REQ: %w", err)
 	}
@@ -357,6 +359,7 @@ func MoveREQ(name, status string) error {
 
 	// Modo in-place: REQ solta em cfg.REQDir.
 	if parentDir == reqDirClean {
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if err := os.WriteFile(path, updated, 0644); err != nil {
 			return fmt.Errorf("writing REQ: %w", err)
 		}
@@ -386,6 +389,7 @@ func MoveREQ(name, status string) error {
 		logBasename = agent + "/" + filepath.Base(path)
 	default:
 		// Layout não reconhecido — fallback in-place, sem mover.
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if err := os.WriteFile(path, updated, 0644); err != nil {
 			return fmt.Errorf("writing REQ: %w", err)
 		}
@@ -401,9 +405,11 @@ func MoveREQ(name, status string) error {
 		return fmt.Errorf("refusing symlink path %s: %w", absDst, guardErr)
 	}
 
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
 		return fmt.Errorf("creating target dir: %w", err)
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.WriteFile(dst, updated, 0644); err != nil {
 		return fmt.Errorf("writing REQ: %w", err)
 	}
@@ -444,6 +450,7 @@ func appendREQTransitionLog(basename, fromState, toState string) {
 			return
 		}
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return

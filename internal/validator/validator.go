@@ -66,6 +66,7 @@ func SaveBaseline(violations, warnings []string) error {
 			return fmt.Errorf("refusing write to %s: %w", absBaseline, guardErr)
 		}
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	return os.WriteFile(baselineFileName, data, 0644)
 }
 

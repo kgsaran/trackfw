@@ -29,6 +29,7 @@ func NewNote(title string) error {
 		return fmt.Errorf("refusing write to %s: %w", absVaultDir, guardErr)
 	}
 
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.MkdirAll(vaultDir, 0755); err != nil {
 		return fmt.Errorf("criando vault/notes: %w", err)
 	}
@@ -65,6 +66,7 @@ related: []
 <!-- Como foi resolvido ou mitigado? O que deve ser feito? -->
 `, title, date, title)
 
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.WriteFile(notePath, []byte(body), 0644); err != nil {
 		return fmt.Errorf("escrevendo nota: %w", err)
 	}
@@ -100,6 +102,7 @@ func appendNoteToIndex(filename string) error {
 ## Índice
 
 `
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if err := os.WriteFile(vaultIndexFile, []byte(initial), 0644); err != nil {
 			return fmt.Errorf("criando index.md: %w", err)
 		}
@@ -123,6 +126,7 @@ func appendNoteToIndex(filename string) error {
 
 	// Acrescenta linha de link
 	link := fmt.Sprintf("- [%s](%s)\n", nameWithoutExt, filename)
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	f, err := os.OpenFile(vaultIndexFile, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		return fmt.Errorf("abrindo index.md para append: %w", err)

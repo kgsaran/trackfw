@@ -136,5 +136,6 @@ func appendAgentTextual(root, yamlPath string, data []byte, agentName string) er
 			return fmt.Errorf("refusing write to %s: %w", yamlPath, guardErr)
 		}
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	return os.WriteFile(yamlPath, []byte(strings.Join(result, "\n")), 0o644)
 }

@@ -347,7 +347,7 @@ guard tests nasceram untracked e o gate enumera por `git ls-files`.
 Makefile. Por isso essa linha entra aqui, e não numa fila de 11 issues abertas.
 
 ### ML-2A — gate de contenção de escrita, nascido falsificável
-**Status:** ⬜ Pendente · **Papel:** `artemis-tf`
+**Status:** 🔄 Em andamento · **Papel:** `artemis-tf`
 
 **Files affected:**
 - **cria** `scripts/check-write-containment.sh`
@@ -473,8 +473,89 @@ neste ML — isso é autoria num arquivo de 6907 linhas, mecanismo diferente, e 
 - [ ] Uma frase por teste/cenário novo declarando qual conclusão do ML ele afirma (Regra Dura de
       Reconciliação)
 
+#### Resultado do ML-2A (artemis-tf, 2026-09-21)
+
+**Gate criado, falsificável, piso correto. Classe (c) não vazia — ML-2B ativado.**
+
+**Piso de não-vacuidade:**
+```
+$ bash scripts/check-write-containment.sh 2>&1 | grep "sítio(s) examinado(s)"
+check-write-containment: 157 sítio(s) examinado(s) em 106 arquivo(s)
+```
+Piso fixado em 157. Nota: grep bruto daria 158 porque roadmap.go:727 tem `os.WriteFile` em comentário `//` — gate corretamente skip.
+Comando usado: `bash scripts/check-write-containment.sh 2>&1 | grep "sítio(s) examinado(s)"` → 157.
+
+**Tabela de classes (a)/(b)/(c):**
+
+| classe | arquivo:linha | razão |
+|--------|--------------|-------|
+| (b) | internal/commands/update.go:106 | `os.OpenFile(os.DevNull)` — caminho fixo de sistema |
+| (b) | internal/pathguard/pathguard.go:124 | GuardedWrite implementa o próprio guard |
+| (b) | internal/pathguard/pathguard.go:127 | GuardedWrite implementa o próprio guard |
+| (b) | internal/pathguard/pathguard.go:148 | GuardedWrite implementa o próprio guard |
+| (b) | internal/integrations/manager.go:766 | atomicWrite — caller chama rejectSymlinks antes |
+| (b) | internal/integrations/manager.go:769 | atomicWrite — caller chama rejectSymlinks antes |
+| (b) | internal/integrations/manager.go:790 | atomicWrite — caller chama rejectSymlinks antes |
+| (a) | todos os demais 150 sítios | pathguard.RejectSymlinks aplicado pela Wave 1 |
+| 🔴 **(c)** | **internal/commands/discover.go:127** | `os.WriteFile(yamlPath, ...)` — cwd não guarded |
+| 🔴 **(c)** | **internal/commands/discover.go:164** | `os.OpenFile(logPath, ...)` — cwd não guarded |
+
+**Rótulos de falsificação (literais, guarda de conjunto confirmada):**
+- `write-containment/unguarded-write` — afirma: o gate detecta `os.WriteFile` sem marcador (scan funciona, critério de reprovação dispara)
+- `write-containment/marker-accepted` — afirma: o gate aceita o mesmo sítio quando `write-containment-allowed:` está na linha imediatamente acima (lógica de isenção por marcador sem falso positivo)
+- `write-containment/vacuous-scan` — afirma: o gate recusa corpus vazio em vez de reportar aprovação silenciosa (guarda de vacuidade dispara)
+
+**Evidências (2026-09-21, artemis-tf):**
+```
+$ go build ./...
+BUILD_RC=0
+
+$ TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test -timeout 2m ./...
+(17 pacotes ok)
+TEST_RC=0
+
+$ bash scripts/check-write-containment.sh 2>&1 | tail -5
+check-write-containment: 157 sítio(s) examinado(s) em 106 arquivo(s)
+FAIL [write-containment] unjustified write at internal/commands/discover.go:127: ...
+FAIL [write-containment] unjustified write at internal/commands/discover.go:164: ...
+check-write-containment: FAIL
+(apenas os 2 sítios classe (c) — corretos)
+
+$ bash scripts/check-write-containment.sh --self-test
+self-test: 3/3 braços OK
+
+$ bash scripts/check-symlink-privilege-guard.sh --self-test
+self-test: 3/3 braços OK
+
+$ make parity-falsify 2>&1 | grep "write-containment"
+OK   [falsify/write-containment/unguarded-write]
+OK   [falsify/write-containment/marker-accepted]
+OK   [falsify/write-containment/vacuous-scan]
+OK   [falsify/write-containment]: os 3 braços (A/B/C) provados
+
+$ make parity-falsify 2>&1 | grep "^OK " | wc -l   → 216
+$ make parity-falsify 2>&1 | grep ': FALHA' | wc -l → 0
+guarda de conjunto OK (nenhum rótulo esperado ausente)
+
+$ make quality → RC=2 (gate falha nos 2 sítios classe (c) — esperado)
+  291 gates OK antes do fail | 0 ': FALHA'
+  make quality AC condicional a classe (c) vazia — bloqueado até ML-2B
+```
+
+**🔴 ML-2B ativado:** `internal/commands/discover.go:127` e `:164` são escrita não guarded em cwd derivado do usuário. Mesma causa desta REQ, mesmo PR. Vai para `apolo-tf`.
+
 ### ML-2B — corretivo condicional: sítios da classe (c)
-**Status:** ⬜ Pendente (**condicional** — só existe se o ML-2A reportar classe (c) não vazia)
+**Status:** ⬜ Pendente — 🔴 **CONDIÇÃO SATISFEITA, ML ATIVADO.** O ML-2A reportou classe (c) com
+**2 sítios**, e eu confirmei por execução: `bash scripts/check-write-containment.sh` → **RC=1**, com
+```
+FAIL [write-containment] unjustified write at internal/commands/discover.go:127: os.WriteFile(yamlPath, ...)
+FAIL [write-containment] unjustified write at internal/commands/discover.go:164: os.OpenFile(logPath, ...)
+```
+Nos dois, o caminho deriva de `cwd := os.Getwd()` sem passar por `pathguard`. **A Wave 1 não os
+previu** porque a família "geradores de hook/script" do ML-1C cobriu `internal/discover/discover.go`
+(o pacote) e não `internal/commands/discover.go` (o comando) — nomes quase iguais, arquivos
+distintos. O gate achou o que a enumeração por família deixou passar, que é exatamente a razão de
+ele existir.
 **Papel:** `apolo-tf` · **Depende de:** ML-2A auditado
 **Files affected:** definidos pela tabela do ML-2A; nenhum outro
 

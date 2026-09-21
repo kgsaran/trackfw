@@ -138,6 +138,7 @@ func injectOrUpdateRules(filePath, headerIfNew, cwd string) error {
 		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", filePath, guardErr)
 		return guardErr
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
 		return err
 	}
@@ -152,6 +153,7 @@ func injectOrUpdateRules(filePath, headerIfNew, cwd string) error {
 			content += "\n"
 		}
 		content += "\n" + block + "\n"
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		return os.WriteFile(filePath, []byte(content), 0644)
 	}
 	if err != nil {
@@ -167,6 +169,7 @@ func injectOrUpdateRules(filePath, headerIfNew, cwd string) error {
 			content += "\n"
 		}
 		content += "\n" + block + "\n"
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		return os.WriteFile(filePath, []byte(content), 0644)
 	}
 
@@ -175,10 +178,12 @@ func injectOrUpdateRules(filePath, headerIfNew, cwd string) error {
 	if end == -1 {
 		// Malformed (start without end): append fresh block
 		content += "\n" + block + "\n"
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		return os.WriteFile(filePath, []byte(content), 0644)
 	}
 
 	newContent := content[:start] + block + content[end+len(rulesEnd):]
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	return os.WriteFile(filePath, []byte(newContent), 0644)
 }
 
@@ -237,6 +242,7 @@ func InjectClaudeHooks(cwd string) error {
 		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
 		return guardErr
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
@@ -376,6 +382,7 @@ func InjectClaudeHooks(cwd string) error {
 	if err != nil {
 		return err
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	return os.WriteFile(path, append(out, '\n'), 0644)
 }
 
@@ -453,6 +460,7 @@ func InjectCodexHooks(cwd string) error {
 		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
 		return guardErr
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
@@ -557,6 +565,7 @@ func InjectCodexHooks(cwd string) error {
 	if err != nil {
 		return err
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	return os.WriteFile(path, append(out, '\n'), 0644)
 }
 
@@ -604,6 +613,7 @@ func InjectGeminiHooks(cwd string) error {
 		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
 		return guardErr
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
@@ -727,6 +737,7 @@ func InjectGeminiHooks(cwd string) error {
 	if err != nil {
 		return err
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	return os.WriteFile(path, append(out, '\n'), 0644)
 }
 
@@ -785,6 +796,7 @@ func InjectKiroHooks(cwd string) error {
 		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
 		return guardErr
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
@@ -870,6 +882,7 @@ func InjectKiroHooks(cwd string) error {
 	if err != nil {
 		return err
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	return os.WriteFile(path, append(out, '\n'), 0644)
 }
 
@@ -916,6 +929,7 @@ func InjectCopilotHooks(cwd string) error {
 		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
 		return guardErr
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
@@ -1030,6 +1044,7 @@ func InjectCopilotHooks(cwd string) error {
 	if err != nil {
 		return err
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	return os.WriteFile(path, append(out, '\n'), 0644)
 }
 
@@ -1093,6 +1108,7 @@ func InjectCursorHooks(cwd string) error {
 		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
 		return guardErr
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
@@ -1205,6 +1221,7 @@ func InjectCursorHooks(cwd string) error {
 	if err != nil {
 		return err
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	return os.WriteFile(path, append(out, '\n'), 0644)
 }
 
@@ -1341,6 +1358,7 @@ func InjectWindsurfHooks(cwd string) error {
 		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
 		return guardErr
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err
 	}
@@ -1389,6 +1407,7 @@ func InjectWindsurfHooks(cwd string) error {
 	if err != nil {
 		return err
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	return os.WriteFile(path, append(out, '\n'), 0644)
 }
 
@@ -1455,6 +1474,7 @@ func InjectAmazonQHooks(cwd string) error {
 		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
 		return guardErr
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
@@ -1550,6 +1570,7 @@ func InjectAmazonQHooks(cwd string) error {
 	if err != nil {
 		return err
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	return os.WriteFile(path, append(out, '\n'), 0644)
 }
 

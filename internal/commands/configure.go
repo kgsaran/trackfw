@@ -155,6 +155,7 @@ Gera arquivo esparso: apenas campos que diferem dos defaults são gravados.`,
 					return fmt.Errorf("refusing write to trackfw.yaml: %w", guardErr)
 				}
 			}
+			// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 			if err := os.WriteFile("trackfw.yaml", []byte(content), 0644); err != nil {
 				return fmt.Errorf("erro ao gravar trackfw.yaml: %w", err)
 			}

@@ -214,6 +214,7 @@ func ExportCSV(m Metrics, transitions []Transition, path string) error {
 			}
 		}
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	f, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("metrics: criar CSV: %w", err)

@@ -132,6 +132,7 @@ func syncToProvider(create func(string, string) (string, error), issueField stri
 				continue
 			}
 		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if err := os.WriteFile(f, []byte(updated), 0644); err != nil {
 			results = append(results, SyncResult{REQPath: f, Error: fmt.Errorf("write file: %w", err)})
 			continue

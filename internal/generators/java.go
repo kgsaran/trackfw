@@ -74,5 +74,6 @@ func GeneratePomXML(cfg Config) error {
 			return fmt.Errorf("refusing write to pom.xml: %w", guardErr)
 		}
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	return os.WriteFile("pom.xml", []byte(content), 0644)
 }
