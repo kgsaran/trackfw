@@ -927,6 +927,78 @@ M Makefile
 | Q | `rejectScaffoldPath` e `rejectDiscoverPath` byte-idênticos | extrair para `pathguard` — issue, **antes da terceira cópia**. Foi cópia de helper que originou esta REQ |
 | Q | 9 guards novos usam `filepath.Clean(cwd)` em vez de `EvalSymlinks` | 🔴 **o `hefesto-tf` classificou como pré-existente e eu medi que NÃO é** — `git show main:...` dá 0 ocorrências, as 9 nasceram nesta branch. Não é defeito (root e target no mesmo namespace), mas é inconsistência introduzida aqui — issue com a razão corrigida |
 
+## Wave 4 — auditar os 124 marcadores que ninguém classificou
+> Dependências: Wave 3 completa. **Três frentes paralelas, arquivos disjuntos.**
+> 🔴 **Nenhuma das três roda `make quality`** e **nenhuma edita o roadmap** — três agentes no mesmo
+> arquivo é conflito garantido. Eles entregam a tabela no relatório; o arquiteto escreve aqui.
+
+### Por que esta Wave existe — o número que a justifica
+
+O ML-3A classificou linha a linha **um** arquivo, `scaffold.go`: das 18 chamadas de
+`rejectScaffoldPath`, **13 estavam defeituosas** (72%) — guardavam o diretório e escreviam um
+arquivo dentro dele, deixando a folha livre. **O gate estava verde sobre todas.**
+
+E um dos marcadores era **factualmente falso**: `os.WriteFile(lefthook.yml, ...)` declarava
+*"guarded by pathguard.RejectSymlinks at the enclosing write site"* enquanto a única guarda do bloco
+cobria `.lefthook/commit-msg`, outro diretório. Escrita sem guarda nenhuma, gate verde por cima.
+
+**`scaffold.go` foi o único arquivo auditado nesse nível.** Sobram **124 marcadores em 16 arquivos**.
+Se a taxa se repetir, há defeito não descoberto; se não se repetir, custa um ML provar. O que não é
+admissível é fechar a REQ afirmando cobertura que não foi medida — é o achado **A1** da auditoria
+externa de 2026-09-05, que este projeto já pagou uma vez.
+
+🔴 **Por que o gate não pega isto, e nunca vai pegar:** ele é bash puro e **não faz análise de
+fluxo**. O marcador é uma **declaração de autoria**, não uma prova. Ambos os revisores chegaram
+independentemente à mesma conclusão: o fix estrutural é um analisador de AST.
+
+### Critério de classificação — idêntico ao do ML-3A
+
+Para **cada** marcador, ache a guarda que ele cita e responda: **ela cobre o caminho EXATO que está
+sendo escrito?**
+
+- **(A) correto** — a guarda recebe o mesmo caminho do primitivo de escrita.
+- **(B) gap de folha** — a guarda recebe o **diretório** e a escrita é de um **arquivo dentro dele**.
+  `RejectSymlinks` caminha de `absTarget` para **cima** até `root`; **nunca desce**.
+- **(C) sem folha** — o sítio só faz `MkdirAll`. Correto, nada a fazer.
+- **(D) 🔴 MARCADOR FALSO** — a guarda citada não existe, ou cobre outro caminho. Foi o caso do
+  `lefthook.yml`. **Relate em destaque.**
+
+**O padrão correto de referência:** `scaffold.go:824`, `writeTrackfwConfig` — guarda `absConfig`,
+que é o arquivo.
+
+### ML-4A — `generators/update.go` (53 marcadores)
+**Status:** ⬜ Pendente · **Papel:** `apolo-tf` · **Files:** `internal/generators/update.go` + testes
+🔴 **É o arquivo de maior gravidade da REQ**: escopo **global** (`$HOME/.claude`, `.codex`,
+`.gemini`, `.cursor`, `.copilot`, `.kiro`). A PoC da Wave 0 escreveu `SKILL.md` **fora do `$HOME`**
+com `updated=1 failed=0` e sem aviso. Aqui o dano sai do projeto e atinge o ambiente do usuário.
+
+### ML-4B — `generators/{agentfiles,roadmap,req,note,adr,java}.go` (44 marcadores)
+**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Files:** `agentfiles.go` (21), `roadmap.go` (7), `req.go` (7), `note.go` (4), `adr.go` (4),
+`java.go` (1) + testes
+⚠️ `adr.go` é onde apareceu o anti-padrão `EvalSymlinks` **antes** do guard, corrigido na Wave 1.
+Confira se o padrão não sobrevive em outro sítio do mesmo arquivo.
+
+### ML-4C — `discover/` + os arquivos de marcador único (27 marcadores)
+**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Files:** `discover/discover.go` (13), `integrations/manager.go` (3), `commands/discover.go` (2),
+`validator/validator.go` (1), `sync/sync.go` (1), `metrics/metrics.go` (1),
+`config/config_agents_register.go` (1), `commands/update.go` (1), `commands/configure.go` (1)
++ testes correspondentes
+⚠️ **Não inclui** `internal/pathguard/pathguard.go` (3) — é a auto-isenção do próprio helper
+fail-safe, já auditada por mim e pelo `hades-tf`.
+
+### Acceptance criteria (os três MLs)
+- [ ] **Tabela completa**, um veredito (A)/(B)/(C)/(D) por marcador, com `arquivo:linha`
+- [ ] Todo sítio (B) e (D) **corrigido**, guardando o caminho do arquivo
+- [ ] 🔴 Todo (D) **relatado em destaque** — marcador falso é defeito de confiança no instrumento
+- [ ] Teste de braço (a) **load-bearing** por arquivo corrigido: falha contra o código antigo, passa
+      contra o novo. **Cole as duas saídas.** Um teste que passa nos dois não afirma nada
+- [ ] Braço (b): fluxo legítimo do pacote continua funcionando, por **execução real**
+- [ ] `go build ./...` RC=0 · `go test ./<pacote>/` RC=0
+- [ ] 🔴 **NÃO rodar `make quality`** · 🔴 **NÃO editar o roadmap**
+- [ ] Uma frase por teste novo (Regra Dura de Reconciliação)
+
 ## Barreira final
 
 Revisão `hefesto-tf` e `hades-tf`, auditoria do arquiteto, `barrier`. **CI verde**, não só verde
