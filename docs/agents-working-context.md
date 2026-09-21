@@ -38830,3 +38830,8 @@ trackfw init && roadmap new "..." && roadmap move <n> wip && trackfw validate
 - 🔴 **Erro meu no handoff do ML-2B:** proibi adicionar marcador `write-containment-allowed` nos dois sítios. A letra estava errada — o gate não faz análise de fluxo, então **todo** sítio contido precisa de marcador. A proibição real era *marcar em vez de corrigir*. O executor fez o certo: corrigiu **e** marcou.
 - **Achado lateral não absorvido (causa diferente):** na recusa, o `discover` imprime o bloco `Usage:` do cobra junto do erro — mesmo mecanismo do issue **#290**, que descreve isso no `validate`. Vai como comentário no #290, não como ML desta REQ.
 - **Pendência aceita:** `gen-falsify-scenario-weights.py` exige `FALSIFY_TIMING_FILE` de execução de CI; os 3 rótulos novos seguem com peso pessimista (54,1778 s). Desbalanceia shards, não afeta corretude.
+
+### 2026-09-21 — Zeus — Wave 2 verde no CI; REQ pronta para revisão
+- **21 checks verdes, 0 falhas** no PR #397 com os gates novos já dentro da suite — incluindo os 6 jobs Windows e os 4 shards de falsificação. O AC "`make quality` e **CI** verdes" está satisfeito para as duas waves.
+- **Estado:** roadmap permanece em `wip/` — fechamento é pós-merge, e o `push` tem hard gate de roadmap em `wip`. PR segue em **draft**; tirar do draft e merge são decisão do usuário.
+- **Pendente de decisão do usuário:** (1) marcar o PR como ready for review; (2) comentar no issue **#290** que o bloco `Usage:` do cobra também aparece no `discover`, com a saída medida hoje.

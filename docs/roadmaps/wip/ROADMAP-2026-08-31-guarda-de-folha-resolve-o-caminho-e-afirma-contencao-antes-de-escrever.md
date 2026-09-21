@@ -46,7 +46,9 @@ da irmã.
       2026-09-21: **21 checks verdes**, incluindo `windows-full-suites` (4m23s),
       `windows-symlink-unprivileged`, `windows-integrations-resolve`, `windows-gates-cp1252`,
       `windows-defect-reproduction`, os 4 `parity-falsify-shard` e o agregador `parity`.
-      Falta repetir após a Wave 2.
+      **Repetido após a Wave 2 e verde de novo: 21 checks, 0 falhas**, com os gates novos
+      (`check-write-containment` + os 3 braços de falsificação) já dentro da suite.
+      **Barreira local final:** RC=0, 792 `^OK `, 0 `: FALHA`, 1664 linhas, guarda de conjunto OK.
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
