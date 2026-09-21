@@ -1027,6 +1027,73 @@ guarda de conjunto OK, `check-write-containment` 157/OK, `check-symlink-privileg
 - [ ] 🔴 **NÃO rodar `make quality`** · 🔴 **NÃO editar o roadmap**
 - [ ] Uma frase por teste novo (Regra Dura de Reconciliação)
 
+## Wave 5 — guarda fail-OPEN: se não dá para verificar, não escreve
+> Dependências: Wave 4 completa. **ML único, `apolo-tf`.** Achado da minha auditoria do ML-4C.
+
+### O defeito
+
+Nem sempre a guarda está ausente — às vezes ela é **pulada em silêncio**:
+
+```go
+if cwd, cwdErr := os.Getwd(); cwdErr == nil {
+    ...guarda...
+}
+// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+return os.WriteFile(baselineFileName, data, 0644)   // ← executa MESMO se a guarda foi pulada
+```
+
+O marcador é **condicionalmente** verdadeiro: verdadeiro no caminho feliz, falso no caminho de erro.
+Foi o executor do ML-4C que notou, classificou como *"corner case estreito, fora do escopo"* e
+seguiu. **Discordo da conclusão:** é baixa probabilidade, mas é escrita sem contenção — **mesma
+causa desta REQ** —, e a Regra Dura manda tratar aqui.
+
+🔴 **O padrão correto já foi decidido DENTRO desta REQ.** A correção do `syncREQReferences`
+(ML-4B, já commitada) declara:
+> *"Fail closed: if projectRoot() fails we cannot verify containment"* — e **aborta**.
+
+Deixar quatro sítios com o comportamento oposto é inconsistência interna, não escopo novo.
+
+### ML-5A — converter fail-open em fail-closed
+**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Files affected:** `internal/validator/validator.go`, `internal/metrics/metrics.go`,
+`internal/commands/configure.go`, `internal/config/config_agents_register.go`,
+`internal/sync/sync.go` + testes. **Só isso.**
+
+| # | sítio | condição que pula a guarda |
+|---|---|---|
+| 1 | `validator/validator.go:58` | `if cwd, cwdErr := os.Getwd(); cwdErr == nil {` |
+| 2 | `metrics/metrics.go:199` | idem |
+| 3 | `commands/configure.go:147` | `configureRoot, cwdErr := os.Getwd()` + `if cwdErr == nil {` |
+| 4 | `config/config_agents_register.go:133` | `if root != "" {` |
+| 5 | `sync/sync.go:84` | `syncRootErr` é **ignorado** — investigar o que acontece com `syncRoot` vazio |
+
+**Regra a aplicar:** se a precondição da guarda falha, **retorne erro** com recusa audível em
+stderr, no padrão já usado no resto da REQ (`trackfw: refusing write to %s: %v`). Não escreva.
+
+🔴 **EXCEÇÃO QUE NÃO PODE SER TOCADA — leia antes de mexer em `metrics.go`.** Dentro do bloco há:
+```go
+// Guard only paths inside the project root. External absolute paths are a
+// named exception: user-directed, not derived from root.
+if pathguard.Beneath(exportRoot, absPath) {
+```
+Esse `if` é **deliberado e documentado**: `metrics export --path /tmp/fora.csv` é uma escolha
+explícita do usuário, não um caminho derivado de `root`. **Mantenha-o.** O que muda é só o
+`os.Getwd()` falhar — aí não dá para decidir nem isso, e o correto é abortar.
+Confundir os dois quebra funcionalidade legítima, que é o **braço (b)** desta REQ.
+
+**Acceptance criteria:**
+- [ ] Nos 5 sítios, precondição falha ⇒ **erro retornado**, nada escrito, recusa em stderr
+- [ ] 🔴 A exceção `Beneath` de `metrics.go` **preservada** — `metrics export` com caminho absoluto
+      externo continua funcionando. Prove por **execução real**
+- [ ] Marcadores atualizados onde a razão mudou — não deixe texto condicional afirmando incondicional
+- [ ] Teste **load-bearing** por sítio: simule a falha da precondição e prove que **não** escreve.
+      Falha contra o código antigo, passa contra o novo. **Cole as duas saídas**
+- [ ] Braço (b): `validate`, `metrics export`, `configure`, `sync`, `config agents register`
+      continuam funcionando, por **execução real**
+- [ ] `go build ./...` RC=0 · `go test ./...` RC=0
+- [ ] 🔴 **NÃO rode `make quality`** — a barreira é do arquiteto
+- [ ] Uma frase por teste novo (Regra Dura de Reconciliação)
+
 ## Barreira final
 
 Revisão `hefesto-tf` e `hades-tf`, auditoria do arquiteto, `barrier`. **CI verde**, não só verde
