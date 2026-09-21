@@ -25,12 +25,22 @@ da irmã.
 
 ## Acceptance Criteria
 
-- [ ] Enumeração real, pelos primitivos de **escrita** (228 candidatos brutos), não por `ModeSymlink`
-- [ ] Escrita através de ancestral symlink recusada nos 3 CLIs, forma resolver-e-afirmar-contenção
-- [ ] Falsificação nas duas direções, **incluindo o controle** de que operação legítima segue funcionando
-- [ ] Recusa audível em stderr
-- [ ] Paridade exata nos 3 CLIs — aqui a paridade vale normalmente
-- [ ] `make quality` e **CI** verdes
+- [x] Enumeração real, pelos primitivos de **escrita**, não por `ModeSymlink` — feita no ML-1A.
+      🔴 **O número "228 candidatos brutos" desta linha está morto** e foi removido do AC: é de
+      2026-08-31, cobria **três runtimes** (Go + `npm/src` + `pypi/trackfw`) e uma lista de
+      primitivos diferente (`writeFileSync`, `write_text`, `open(...,'w')`). Node e Python deixaram
+      de existir no commit `2eae0a44` (v8). O número vigente é o que o **gate do ML-2A** produzir
+      na primeira execução — medido pela regra, não por `grep` avulso.
+- [x] Escrita através de ancestral symlink recusada, forma resolver-e-afirmar-contenção (Wave 1)
+- [ ] Falsificação nas duas direções, **incluindo o controle** de que operação legítima segue
+      funcionando — parcial: o braço (b) foi verificado **manualmente** por mim em cada ML da
+      Wave 1; falta a forma **executável e permanente**, que é a Wave 2.
+- [x] Recusa audível em stderr (verificado por execução real no ML-1C)
+- [N/A] ~~Paridade exata nos 3 CLIs — aqui a paridade vale normalmente~~ — 🔴 **inaplicável pós-v8.**
+      Este AC é de 2026-08-31. A partir da v8.0.0 existe **uma** implementação, em Go, entregue por
+      três canais; não há mais dois artefatos para manter em paridade. Deixar este AC aberto tornaria
+      a REQ permanentemente infechável; marcá-lo ✅ seria falso. Fica **N/A com a razão inline**.
+- [ ] `make quality` e **CI** verdes — 🔴 **só `make quality` foi exercido.** Ver "Barreira final".
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -300,12 +310,201 @@ As famílias da Wave 0, **a reconfirmar pós-v8** no ML-1A, em ordem de gravidad
 🔴 Cada ML aplica o **braço (b) da ADR** (operação legítima continua funcionando) além do braço (a).
 
 ## Wave 2 — Gate falsificável
-> Dependências: Wave 1 completa. `artemis-tf`. Detalhado após a Wave 1.
+> Dependências: Wave 1 completa (fechada em 2026-09-21). Detalhada nesta data.
+> **Sem paralelismo:** o ML-2B depende do resultado de medição do ML-2A, e ambos tocariam
+> `Makefile` e `scripts/check-gates-falsify.sh`. Sequenciais, e a razão fica escrita.
+
+### Por que esta Wave existe
+
+A Wave 1 corrigiu os sítios **conhecidos em 2026-09**. Nada impede que o sítio 157 nasça amanhã sem
+contenção — e o custo de descobrir isso é o mesmo que esta REQ acabou de pagar. O entregável da
+Wave 2 é o **instrumento que torna a regressão impossível de passar despercebida**.
+
+🔴 **Achado que reorienta o desenho — medido por mim em 2026-09-21:**
+
+```
+$ grep -c "symlink-privilege" scripts/check-gates-falsify.sh        -> 0
+$ grep -n "symlink-privilege" Makefile .github/workflows/*.yml
+Makefile:58:	scripts/check-symlink-privilege-guard.sh                 (invocação NUA)
+```
+
+O `check-symlink-privilege-guard.sh` — o gate de que os ACs dos ML-1B-bis e ML-1D-bis dependeram —
+**não tem um único caso de falsificação**, e o `--self-test` que ele já traz escrito (3 braços
+documentados no cabeçalho) **nunca é invocado**. Outros gates são declarados em **duas** linhas no
+Makefile, com o `--self-test` (`Makefile:46, 52, 75, 81`); este, em uma. Nada ficou vermelho porque
+`check-orphan-gates.sh` exige apenas que o gate tenha **consumidor**, não que seja falsificável.
+
+Ou seja: a Wave 1 foi auditada com um instrumento cuja capacidade de reprovar nunca foi provada.
+E ele **já falhou por vácuo duas vezes nesta campanha** — 143 arquivos em vez de 150, porque os
+guard tests nasceram untracked e o gate enumera por `git ls-files`.
+
+**Verificado antes de escrever esta Wave:** rodei `bash scripts/check-symlink-privilege-guard.sh
+--self-test` → `self-test: 3/3 braços OK`, RC=0. O código existe e funciona; falta **uma linha** no
+Makefile. Por isso essa linha entra aqui, e não numa fila de 11 issues abertas.
+
+### ML-2A — gate de contenção de escrita, nascido falsificável
+**Status:** ⬜ Pendente · **Papel:** `artemis-tf`
+
+**Files affected:**
+- **cria** `scripts/check-write-containment.sh`
+- `Makefile` — **3 linhas** no recipe `parity-rest`
+- `scripts/check-gates-falsify.sh` — 1 bloco `# Cenário` novo
+- `internal/pathguard/pathguard.go` — marcadores de auto-isenção
+- sítios de produção que exijam marcador (lista produzida pelo próprio gate, ver Ação 2)
+
+#### Ação 1 — o gate, no molde do `check-raw-read-ban.sh`
+
+🔴 **Copie a forma de `scripts/check-raw-read-ban.sh` (121 linhas). NÃO copie a forma de
+`check-symlink-privilege-guard.sh`.** A diferença não é estilística:
+
+| | `check-symlink-privilege-guard.sh` | `check-raw-read-ban.sh` |
+|---|---|---|
+| como aceita um sítio | **janela de ±5 linhas** — inferência de proximidade | **marcador explícito** `raw-read-allowed: <razão>` na linha ou na imediatamente acima |
+| pode reprovar código correto? | 🔴 **sim, e reprovou** | não — o marcador é declaração do autor |
+
+O ML-1D-bis inteiro existiu porque `symlinkOrSkipMetrics` estava **certo** — detectava por condição,
+`IsPermission` + errno `1314` — e o gate o reprovou por **geometria**: o nome da guarda estava 13
+linhas acima do sítio, fora da janela. Um ML pago para mover um comentário. **Não reproduza isso.**
+
+O gate deve:
+1. Varrer `internal/**/*.go` **de produção** (excluir `_test.go`) pelos primitivos
+   `os.WriteFile`, `os.Create`, `os.CreateTemp`, `os.OpenFile`, `os.Rename`, `os.MkdirAll`.
+   ⚠️ `os.Create\(` **não** casa `os.CreateTemp(` — inclua os dois explicitamente.
+2. Aceitar um sítio **apenas** se ele carregar o marcador literal `write-containment-allowed:`
+   **seguido de uma razão**, na própria linha ou na imediatamente acima. Sem janela, sem proximidade.
+3. Reprovar todo o resto, nomeando `arquivo:linha`.
+4. **Auto-isenção:** `internal/pathguard/pathguard.go` implementa `GuardedWrite` com
+   `os.MkdirAll` / `os.CreateTemp` / `os.Rename` — é o helper fail-safe e precisa do marcador nos
+   próprios sítios, exatamente como `check-raw-read-ban.sh` faz para o seu.
+
+🔴 **Guarda de não-vacuidade — é o AC que importa.** `check-raw-read-ban.sh` guarda por **piso
+agregado** (`linhas 88, 107-109`: mínimo de 200 linhas varridas, `FAIL ... vacuous-scan guard
+tripped`). Faça o mesmo: **se o gate examinar menos que o piso de sítios, ele REPROVA** com
+`recusando reportar aprovação silenciosa`.
+- O piso **não é 156**. O `156` do relatório de exploração é `grep -n | wc -l` — conta **linhas**
+  que casam, não ocorrências, e não captura `os.CreateTemp(`. **Rode o gate, obtenha o número real,
+  e fixe esse número como piso**, com o comando que o produziu no comentário do script.
+- ⚠️ Se enumerar por `git ls-files`, arquivo **untracked não é varrido** — foi exatamente assim que
+  o gate irmão varreu 143 em vez de 150 e deixou um defeito invisível. Ou enumere pelo filesystem,
+  ou documente `git add -N` como precondição **no próprio texto de erro do gate**.
+
+**Restrições de portabilidade** (issues #307, #353, #363 — três gates cujo ramo Windows não roda em
+CI nenhum, e que quebram por `\r` e por caminho interpolado dentro de código Python):
+- **bash + grep/sed puros.** Sem `python3`, sem `mapfile` de caminho interpolado em código Python.
+- Sem dependência de `docs/` nem de artefato de governança deste repositório — lição do **#277**, em
+  que um gate congelou o corpus do mantenedor e ficou inalcançável para consumidores (108 de 144
+  basenames ausentes num fork). Este gate varre **código do produto**; mantenha assim.
+
+#### Ação 2 — classificar os sítios, e **não mascarar defeito com marcador**
+
+O gate vai reprovar sítios hoje. Classifique cada um:
+- **(a) contido** — já passa por `pathguard` → nada a fazer.
+- **(b) legítimo e fora de escopo de contenção** — ex.: escrita em `os.TempDir()`, caminho fixo não
+  derivado de `root`, arquivo interno do próprio guard → **marcador com a razão escrita**.
+- **(c) 🔴 não contido e não legitimável** → **PARE e relate. NÃO ponha marcador.**
+
+Um marcador em sítio da classe (c) converte um defeito real em aprovação permanente — é o pior
+resultado possível deste ML, pior que o gate não existir. **Entregue a tabela das três classes.**
+
+Se a classe (c) tiver algum sítio, ele é **mesma causa desta REQ** (Regra Dura de Causa Raiz) e vira
+o **ML-2B** abaixo — nunca issue nova, nunca REQ nova.
+
+#### Ação 3 — falsificação, no mesmo ML
+
+Gate e falsificação são **inseparáveis**, por três razões mecânicas:
+- `check-orphan-gates.sh` reprova `check-*.sh` sem consumidor → a linha do Makefile tem de chegar junto;
+- a guarda de conjunto de `scripts/gen-falsify-chunks.py` deriva os rótulos esperados **do texto do
+  próprio chunk** → o Cenário tem de existir para o rótulo existir;
+- ambos editariam `Makefile` → seriam sequenciais de qualquer forma.
+
+Separá-los criaria exatamente o débito que esta Wave existe para eliminar: um gate que roda e não
+pode ser falsificado.
+
+Escreva um bloco `# Cenário NN — check-write-containment.sh: ...` em `scripts/check-gates-falsify.sh`
+(modelo completo e próximo: **linhas 1429-1457**, cenário do `check-referential-integrity`), com no
+mínimo os três braços:
+| rótulo | mutação | veredito esperado |
+|---|---|---|
+| `write-containment/unguarded-write` | fixture com `os.WriteFile` cru, sem marcador | gate **REPROVA** |
+| `write-containment/marker-accepted` | o mesmo sítio **com** o marcador e razão | gate **PASSA** |
+| `write-containment/vacuous-scan` | corpus vazio / abaixo do piso | gate **REPROVA** por vácuo |
+
+🔴 **O rótulo tem de ser string LITERAL, primeiro argumento do helper `assert_*`.** Se for montado
+com variável (`"write-containment/$x"`), `gen-falsify-chunks.py` o degrada a **glob** (só o prefixo
+antes do `$`) e a guarda de conjunto **para de verificar o caso específico**. É a diferença entre
+guarda e decoração.
+
+#### Ação 4 — as 3 linhas do Makefile
+
+No recipe `parity-rest`, no padrão de duas linhas já usado em `Makefile:46, 52, 75, 81`:
+```make
+	scripts/check-write-containment.sh
+	scripts/check-write-containment.sh --self-test
+```
+E **a linha que fecha o débito do gate irmão**, imediatamente após `Makefile:58`:
+```make
+	scripts/check-symlink-privilege-guard.sh --self-test
+```
+🔴 **Já verificado por mim em 2026-09-21:** `bash scripts/check-symlink-privilege-guard.sh
+--self-test` → `self-test: 3/3 braços OK`, RC=0. É acréscimo de linha, não correção de gate.
+**Escopo:** só a linha. **Não** escreva Cenário de falsificação para o `symlink-privilege-guard`
+neste ML — isso é autoria num arquivo de 6907 linhas, mecanismo diferente, e sai como issue.
+
+**Acceptance criteria:**
+- [ ] `scripts/check-write-containment.sh` existe, é bash puro, e **reprova** ao menos um sítio cru
+      numa fixture — provado pelo braço `unguarded-write`
+- [ ] 🔴 O gate **reporta a contagem de sítios examinados** e **reprova abaixo do piso**; o piso está
+      no script com o comando que o produziu. Contagem menor que o piso = vácuo, **não** aprovação
+- [ ] Tabela das classes **(a)/(b)/(c)** entregue. Classe (c) vazia, **ou** relatada sem marcador
+- [ ] 3 rótulos `falsify/write-containment/*` emitidos como **literais**, e a guarda de conjunto do
+      `run-gates-falsify-parallel` não acusa rótulo ausente
+- [ ] `scripts/check-symlink-privilege-guard.sh --self-test` no Makefile → `3/3 braços OK`
+- [ ] `go build ./...` RC=0 · `go test ./...` RC=0
+- [ ] `make quality` rodado **sozinho, árvore parada**: `grep -c '^OK '` **> 630** (o gate novo
+      acrescenta rótulos — número igual a 630 significa que o Cenário não foi colhido) e
+      `grep -c ': FALHA'` → **0**.
+      🔴 Meça com `grep -c ': FALHA'`. **Nunca** `grep -c '": FALHA"'` — esse padrão procura o
+      literal *com as aspas duplas dentro* e retorna **0 incondicionalmente**; foi reportado como
+      evidência no ML-1D-bis e re-medido por mim
+- [ ] Uma frase por teste/cenário novo declarando qual conclusão do ML ele afirma (Regra Dura de
+      Reconciliação)
+
+### ML-2B — corretivo condicional: sítios da classe (c)
+**Status:** ⬜ Pendente (**condicional** — só existe se o ML-2A reportar classe (c) não vazia)
+**Papel:** `apolo-tf` · **Depende de:** ML-2A auditado
+**Files affected:** definidos pela tabela do ML-2A; nenhum outro
+
+Aplicar `pathguard` aos sítios que o gate revelou não contidos. **Mesma causa, mesma REQ, mesmo PR**
+— a Regra Dura é explícita, e é o que impede que o escopo original estreito demais vire backlog.
+Registrar no roadmap **por que** a Wave 1 não os previu.
+
+**Acceptance criteria:**
+- [ ] Todo sítio da classe (c) contido, **sem** marcador de isenção
+- [ ] Braço (b) da ADR: fluxo legítimo (`init`, `discover --init`, `adr/req/roadmap/note new`,
+      `roadmap move`) continua funcionando — verificado por **execução real**, não por teste
+- [ ] `make quality` sozinho: `> 630` `^OK `, `0` `: FALHA`
 
 ## Barreira final
 
 Revisão `hefesto-tf` e `hades-tf`, auditoria do arquiteto, `barrier`. **CI verde**, não só verde
 local — `vault/notes/ambiente-do-dev-e-mais-rico-que-o-do-ci-2026-08-29.md`.
+
+🔴 **Bloqueio conhecido, medido em 2026-09-21 — decisão do usuário, não do arquiteto.**
+`.github/workflows/quality.yml` dispara em:
+```yaml
+on:
+  push:
+    branches: [main]
+  pull_request:
+```
+A branch `fix/afirma-contencao-antes-de-escrever` **não é `main` e não tem PR aberto**. Logo
+**nenhum commit desta REQ passou por CI** — a Wave 1 fechou em **verde local apenas**, e a Wave 2
+seria escrita cega ao comportamento de CI.
+
+Isso não é hipótese: **#307, #353 e #363** são, os três, "o ramo do gate não roda em CI nenhum". É o
+modo de falha que este repositório reproduz. O único caminho para satisfazer o AC "CI verde" é
+**abrir o PR** — e PR é decisão explícita do usuário. Até lá, a Wave 2 pode ser implementada, mas
+**não pode ser declarada concluída**.
 
 ### ML-1D-bis — corretivo: 1 sítio de teste sem guarda de capacidade
 **Status:** ✅ Concluído · **Papel:** `apolo-tf` · **PRIMEIRO ML DE 2026-09-21**
