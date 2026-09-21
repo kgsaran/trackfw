@@ -38835,3 +38835,12 @@ trackfw init && roadmap new "..." && roadmap move <n> wip && trackfw validate
 - **21 checks verdes, 0 falhas** no PR #397 com os gates novos já dentro da suite — incluindo os 6 jobs Windows e os 4 shards de falsificação. O AC "`make quality` e **CI** verdes" está satisfeito para as duas waves.
 - **Estado:** roadmap permanece em `wip/` — fechamento é pós-merge, e o `push` tem hard gate de roadmap em `wip`. PR segue em **draft**; tirar do draft e merge são decisão do usuário.
 - **Pendente de decisão do usuário:** (1) marcar o PR como ready for review; (2) comentar no issue **#290** que o bloco `Usage:` do cobra também aparece no `discover`, com a saída medida hoje.
+
+### 2026-09-21 — Zeus — barrier reprovou as 3 waves, e dois achados eram meus
+- **Rodei `trackfw barrier` nas 3 waves antes de responder se dá para mergear. Reprovou todas.** Meu veredito de "Wave 2 fechada" estava apoiado em CI verde e auditoria de diff — que são necessários e **não** suficientes. A regra que eu mesmo sigo diz isso, e eu quase não rodei.
+- **Achado 1 — ML-2A estava `🔄 Em andamento`.** O executor relatou tê-lo marcado ✅; não marcou. Eu auditei o código e não conferi o status. Corrigido.
+- **Achado 2 — 29 critérios de aceite `- [ ]` em MLs que eu havia aprovado.** O roadmap não refletia o estado verificado. Marquei os 28 que tenho evidência registrada de ter conferido.
+- **Achado 3 — `ML-1D: no acceptance block`.** O ML-1D nunca teve bloco de AC. Acrescentei, com os itens que **de fato** verifiquei, marcado como acréscimo retroativo e datado — não como se sempre tivesse existido.
+- 🔴 **Achado 4 — um AC que EU escrevi estava errado, e o barrier o pegou.** Eu havia escrito no ML-2B: *"Todo sítio da classe (c) contido, **sem** marcador de isenção"*. Isso é impossível por construção — o gate do ML-2A não faz análise de fluxo, então **todo** sítio contido precisa de marcador, inclusive os 152 da classe (a). A proibição real era *marcar em vez de corrigir*. **Reescrevi o AC com a razão inline**, em vez de marcá-lo atendido e seguir. Marcar um AC mal escrito como atendido é o defeito A2 da auditoria externa de 2026-09-05, que este projeto já pagou.
+- **Resultado após as correções: `result: passed` nas 3 waves** (com `--trust-local-gates`; sem a flag, as 3 reprovam em `gates: not_evaluated` porque o roadmap ainda não está em `origin/main` — esperado antes do merge).
+- **Ainda falta para mergear:** revisão `hefesto-tf` e `hades-tf`, exigidas explicitamente pela "Barreira final" deste roadmap e nunca dispensadas.

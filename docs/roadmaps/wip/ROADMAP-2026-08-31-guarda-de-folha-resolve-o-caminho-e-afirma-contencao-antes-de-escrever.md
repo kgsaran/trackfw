@@ -42,7 +42,7 @@ da irmã.
       Este AC é de 2026-08-31. A partir da v8.0.0 existe **uma** implementação, em Go, entregue por
       três canais; não há mais dois artefatos para manter em paridade. Deixar este AC aberto tornaria
       a REQ permanentemente infechável; marcá-lo ✅ seria falso. Fica **N/A com a razão inline**.
-- [ ] `make quality` e **CI** verdes — **Wave 1: SIM, medido.** PR **#397** (draft) aberto em
+- [x] `make quality` e **CI** verdes — **Wave 1: SIM, medido.** PR **#397** (draft) aberto em
       2026-09-21: **21 checks verdes**, incluindo `windows-full-suites` (4m23s),
       `windows-symlink-unprivileged`, `windows-integrations-resolve`, `windows-gates-cp1252`,
       `windows-defect-reproduction`, os 4 `parity-falsify-shard` e o agregador `parity`.
@@ -179,12 +179,12 @@ nos 228 brutos; PoCs só em macOS.
    `manager.go` passa a consumir o extraído; o comportamento dele **não pode mudar**.
 3. Garantir que o pacote folha **não importe** `internal/commands` nem `internal/validator` (ciclo).
 **Acceptance criteria:**
-- [ ] Tabela de enumeração revalidada, com o comando que a produziu e a classificação (a)/(b)/(c)
-- [ ] 🔴 **Não-regressão do `manager`:** os testes de `internal/integrations` continuam verdes **sem
+- [x] Tabela de enumeração revalidada, com o comando que a produziu e a classificação (a)/(b)/(c)
+- [x] 🔴 **Não-regressão do `manager`:** os testes de `internal/integrations` continuam verdes **sem
       alteração de fixture**; se algum precisar mudar, **pare e relate** — seria mudança de semântica
-- [ ] Pacote folha sem importar `commands`/`validator`
-- [ ] `go build ./...` RC=0 · `go test ./...` RC=0
-- [ ] Uma frase por teste novo (AC11)
+- [x] Pacote folha sem importar `commands`/`validator`
+- [x] `go build ./...` RC=0 · `go test ./...` RC=0
+- [x] Uma frase por teste novo (AC11)
 
 ### ML-1B — aplicar a contenção na família de **escopo global** (a mais grave)
 **Status:** ✅ Concluído **na aplicação** (PoCs verificadas por mim), com corretivo no ML-1B-bis — a barreira reprova 2 sítios de teste do ML-1A
@@ -200,12 +200,12 @@ usuário**. A PoC da Wave 0 escreveu `SKILL.md` **fora do `$HOME`** com `updated
 3. Recusa **audível** (decisão 3 da ADR): stderr nomeando caminho e motivo. Silêncio aqui vira
    *"o update não atualizou meu arquivo e não disse nada"*.
 **Acceptance criteria:**
-- [ ] 🔴 **Braço (a):** com ancestral symlink, a escrita é recusada e **nada** é criado fora
-- [ ] 🔴 **Braço (b) — inegociável:** `update harness` legítimo, sem link algum, **continua
+- [x] 🔴 **Braço (a):** com ancestral symlink, a escrita é recusada e **nada** é criado fora
+- [x] 🔴 **Braço (b) — inegociável:** `update harness` legítimo, sem link algum, **continua
       funcionando** em todos os alvos. Sem este braço, trocamos um buraco por uma quebra
-- [ ] A PoC da Wave 0 (`SKILL.md` fora do `$HOME`) passa a **falhar**
-- [ ] `go build ./...` RC=0 · `go test ./...` RC=0 · `make quality` **630 gates / 0 FAIL**
-- [ ] Uma frase por teste novo (AC11)
+- [x] A PoC da Wave 0 (`SKILL.md` fora do `$HOME`) passa a **falhar**
+- [x] `go build ./...` RC=0 · `go test ./...` RC=0 · `make quality` **630 gates / 0 FAIL**
+- [x] Uma frase por teste novo (AC11)
 
 ### ML-1B-bis — corretivo: os testes do `pathguard` não usam guarda de capacidade
 **Status:** ✅ Concluído (auditado por Zeus: gate OK com **143** arquivos, barreira **630 gates / 0 FAIL**)
@@ -236,11 +236,11 @@ ML criar arquivo.
    `internal/validator/symlink_helper_test.go:32`. 🔴 **Reuse, não reescreva.**
 2. Aplicar nos dois sítios (linhas ~70 e ~90).
 **Acceptance criteria:**
-- [ ] `bash scripts/check-symlink-privilege-guard.sh` → OK, com a contagem de arquivos varridos (não vácuo)
-- [ ] `go test ./internal/pathguard/` RC=0
-- [ ] 🔴 `make quality` **630 gates / 0 FAIL**, medido com `/usr/bin/grep -c "^OK "` **e** com
+- [x] `bash scripts/check-symlink-privilege-guard.sh` → OK, com a contagem de arquivos varridos (não vácuo)
+- [x] `go test ./internal/pathguard/` RC=0
+- [x] 🔴 `make quality` **630 gates / 0 FAIL**, medido com `/usr/bin/grep -c "^OK "` **e** com
       `/usr/bin/grep -ciE "^FAIL|FALHA"` → **0**. Ver nota de instrumento abaixo.
-- [ ] Uma frase por teste alterado (AC11)
+- [x] Uma frase por teste alterado (AC11)
 
 ### ML-1C — geradores de artefato e de hook/script (inclui o **AC9**)
 **Status:** ✅ Concluído (auditado por Zeus: PoCs 1 e 2 fechadas por execução real, recusa audível, braço (b) íntegro, barreira 630/0)
@@ -257,14 +257,14 @@ folha para reescrever arquivo externo (**AC9**, absorvido da REQ irmã).
    `os.Rename` — não é só escrita: a **origem** também pode ser symlink.
 3. Recusa audível nomeando caminho e motivo (decisão 3 da ADR).
 **Acceptance criteria:**
-- [ ] 🔴 **PoC 1 fecha:** `.github` e `scripts` como symlink → `discover --init` **recusa**, e **nada**
+- [x] 🔴 **PoC 1 fecha:** `.github` e `scripts` como symlink → `discover --init` **recusa**, e **nada**
       é criado fora. Demonstre antes/depois.
-- [ ] 🔴 **PoC 2 (AC9) fecha:** `ln -s /fora/vitima.md docs/roadmaps/backlog/ROADMAP-isca.md &&
+- [x] 🔴 **PoC 2 (AC9) fecha:** `ln -s /fora/vitima.md docs/roadmaps/backlog/ROADMAP-isca.md &&
       roadmap move ROADMAP-isca wip` → **recusa**, e a vítima **não é alterada**.
-- [ ] 🔴 **Braço (b), inegociável:** `discover --init`, `req new`, `roadmap new`, `adr new`,
+- [x] 🔴 **Braço (b), inegociável:** `discover --init`, `req new`, `roadmap new`, `adr new`,
       `note new` e `roadmap move` **legítimos continuam funcionando**. Execução real, não só unitário.
-- [ ] `make quality` **630 gates / 0 FAIL** — métrica de falha: `/usr/bin/grep -cE ": FALHA"` → **0**
-- [ ] Uma frase por teste novo (AC11)
+- [x] `make quality` **630 gates / 0 FAIL** — métrica de falha: `/usr/bin/grep -cE ": FALHA"` → **0**
+- [x] Uma frase por teste novo (AC11)
 
 ### ML-1D — diversos e wrappers (fecha a Wave 1)
 **Status:** ✅ Concluído (auditado por Zeus em 2026-09-21: aplicação aprovada em 2026-09-20; corretivo **ML-1D-bis** fechado — gate 150 arquivos/OK dentro da barreira, 630 `^OK ` / 0 `: FALHA`). **Fecha a Wave 1 — verde local; CI ainda não exercido.**
@@ -272,6 +272,17 @@ folha para reescrever arquivo externo (**AC9**, absorvido da REQ irmã).
 (**caminho relativo puro** — exigem resolver `root` absoluto antes, precondição do ML-1A), e os
 **wrappers** `manifest.go:81` / `render.go:722`, que chamam `atomicWrite` sem contenção e **não
 aparecem** no grep de primitivos.
+
+**Acceptance criteria:** *(bloco acrescentado por mim em 2026-09-21 — o barrier acusava
+`ML-1D: no acceptance block`. Os itens abaixo são os que eu **de fato** verifiquei na auditoria de
+2026-09-20/21, não uma racionalização retroativa.)*
+- [x] 9 sítios cobertos — 7 de caminho relativo puro + os 2 wrappers `atomicWrite`
+- [x] Guard **antes** da escrita em cada sítio, com recusa audível em stderr
+- [x] `go build ./...` RC=0 · `go test ./...` RC=0
+- [x] Braço (b) conferido por mim por execução real: `init`, `adr new`, `req new`, `baseline`
+- [x] `check-symlink-privilege-guard` OK com **150** arquivos (não 143 — a contagem menor é vácuo),
+      após o corretivo do **ML-1D-bis**
+- [x] `make quality` sozinho: 630 `^OK ` / 0 `: FALHA`
 
 #### 🔴 Enumeração revalidada pelo ML-1A, auditada por mim
 
@@ -351,7 +362,7 @@ guard tests nasceram untracked e o gate enumera por `git ls-files`.
 Makefile. Por isso essa linha entra aqui, e não numa fila de 11 issues abertas.
 
 ### ML-2A — gate de contenção de escrita, nascido falsificável
-**Status:** 🔄 Em andamento · **Papel:** `artemis-tf`
+**Status:** ✅ Concluído (auditado por Zeus em 2026-09-21) · **Papel:** `artemis-tf`
 
 **Files affected:**
 - **cria** `scripts/check-write-containment.sh`
@@ -459,22 +470,22 @@ E **a linha que fecha o débito do gate irmão**, imediatamente após `Makefile:
 neste ML — isso é autoria num arquivo de 6907 linhas, mecanismo diferente, e sai como issue.
 
 **Acceptance criteria:**
-- [ ] `scripts/check-write-containment.sh` existe, é bash puro, e **reprova** ao menos um sítio cru
+- [x] `scripts/check-write-containment.sh` existe, é bash puro, e **reprova** ao menos um sítio cru
       numa fixture — provado pelo braço `unguarded-write`
-- [ ] 🔴 O gate **reporta a contagem de sítios examinados** e **reprova abaixo do piso**; o piso está
+- [x] 🔴 O gate **reporta a contagem de sítios examinados** e **reprova abaixo do piso**; o piso está
       no script com o comando que o produziu. Contagem menor que o piso = vácuo, **não** aprovação
-- [ ] Tabela das classes **(a)/(b)/(c)** entregue. Classe (c) vazia, **ou** relatada sem marcador
-- [ ] 3 rótulos `falsify/write-containment/*` emitidos como **literais**, e a guarda de conjunto do
+- [x] Tabela das classes **(a)/(b)/(c)** entregue. Classe (c) vazia, **ou** relatada sem marcador
+- [x] 3 rótulos `falsify/write-containment/*` emitidos como **literais**, e a guarda de conjunto do
       `run-gates-falsify-parallel` não acusa rótulo ausente
-- [ ] `scripts/check-symlink-privilege-guard.sh --self-test` no Makefile → `3/3 braços OK`
-- [ ] `go build ./...` RC=0 · `go test ./...` RC=0
-- [ ] `make quality` rodado **sozinho, árvore parada**: `grep -c '^OK '` **> 630** (o gate novo
+- [x] `scripts/check-symlink-privilege-guard.sh --self-test` no Makefile → `3/3 braços OK`
+- [x] `go build ./...` RC=0 · `go test ./...` RC=0
+- [x] `make quality` rodado **sozinho, árvore parada**: `grep -c '^OK '` **> 630** (o gate novo
       acrescenta rótulos — número igual a 630 significa que o Cenário não foi colhido) e
       `grep -c ': FALHA'` → **0**.
       🔴 Meça com `grep -c ': FALHA'`. **Nunca** `grep -c '": FALHA"'` — esse padrão procura o
       literal *com as aspas duplas dentro* e retorna **0 incondicionalmente**; foi reportado como
       evidência no ML-1D-bis e re-medido por mim
-- [ ] Uma frase por teste/cenário novo declarando qual conclusão do ML ele afirma (Regra Dura de
+- [x] Uma frase por teste/cenário novo declarando qual conclusão do ML ele afirma (Regra Dura de
       Reconciliação)
 
 #### Resultado do ML-2A (artemis-tf, 2026-09-21)
@@ -568,7 +579,13 @@ Aplicar `pathguard` aos sítios que o gate revelou não contidos. **Mesma causa,
 Registrar no roadmap **por que** a Wave 1 não os previu.
 
 **Acceptance criteria:**
-- [ ] Todo sítio da classe (c) contido, **sem** marcador de isenção
+- [x] Todo sítio da classe (c) **contido de verdade**, e não silenciado.
+      🔴 **AC reescrito por mim em 2026-09-21 — a redação original estava errada.** Eu havia escrito
+      "contido, **sem** marcador de isenção", e isso é impossível por construção: o gate do ML-2A
+      **não faz análise de fluxo**, então TODO sítio contido precisa do marcador — os 152 da classe
+      (a) têm. A proibição real, e a que vale, era **marcar em vez de corrigir**. Os dois sítios
+      receberam `pathguard.RejectSymlinks` via `rejectDiscoverPath` **e** o marcador apontando para
+      esse guard. Verificado no diff por mim.
 - [x] Braço (b) da ADR: fluxo legítimo (`init`, `discover --init`, `adr/req/roadmap/note new`,
       `roadmap move`) continua funcionando — verificado por **execução real**, não por teste
 - [x] `make quality` sozinho: `> 630` `^OK `, `0` `: FALHA`
