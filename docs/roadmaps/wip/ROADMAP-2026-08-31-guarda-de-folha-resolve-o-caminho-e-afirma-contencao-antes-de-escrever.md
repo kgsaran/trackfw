@@ -655,6 +655,108 @@ corretude.
  M internal/commands/discover.go
 ```
 
+## Wave 3 — corretivos da barreira final
+> Dependências: revisões `hades-tf` e `hefesto-tf` concluídas em 2026-09-21, ambas
+> **aprovado com ressalvas**, nenhuma bloqueando o merge. Os achados acionáveis viram ML **nesta
+> REQ e neste PR** — Regra Dura de Causa Raiz: mesma causa, mesma REQ, mesmo PR.
+> **ML-3A e ML-3B tocam arquivos disjuntos e correm em paralelo.**
+> 🔴 **Nenhum dos dois roda `make quality`** — duas barreiras concorrentes é o erro que já abortou
+> runs em 188/630 e 276/630 nesta REQ. A barreira é do arquiteto, depois dos dois.
+
+### ML-3A — gap de folha: guardar o ARQUIVO, não o diretório
+**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Files affected:** `internal/generators/scaffold.go` e testes correspondentes. **Só isso.**
+
+🔴 **Achado do `hades-tf`, confirmado por PoC executada por ele.** `installGlobalSkillInner` faz:
+```go
+rejectScaffoldPath(absHome, absSkillDir)   // guarda o DIRETÓRIO trackfw/
+os.WriteFile(skillPath, ...)               // escreve em trackfw/SKILL.md
+```
+`RejectSymlinks(root, dir)` caminha de `dir` **para cima**, até `root`. **Nunca desce abaixo de
+`dir`.** Se `SKILL.md` já existir como symlink apontando para fora, o `os.WriteFile` escreve
+**através** dele. PoC do Hades: `err=nil`, `✓ ~/.claude/skills/trackfw/SKILL.md` impresso, e a
+vítima **sobrescrita**.
+
+**Alcançabilidade:** não é alcançável pela CLI hoje — nenhum comando cobra chama
+`InstallSkills()`/`ForceInstallSkills()`. É API Go exportada com comportamento incorreto. Isso
+reduz a urgência; **não** dispensa a correção, porque a superfície é pública.
+
+**O padrão correto já existe neste mesmo arquivo:** linha **824**, `writeTrackfwConfig` guarda
+`absConfig = filepath.Join(root, "trackfw.yaml")` — o **arquivo**, não o diretório.
+
+**Actions:**
+1. **Classifique as 19 chamadas de `rejectScaffoldPath`** (linhas 101, 221, 734, 824, 841, 940, 998,
+   1049, 1341, 1392, 2227, 2250, 2273, 2277, 2348, 2373, 2451, 2494) em: **guarda o arquivo que
+   escreve** (correto) · **guarda só o diretório e escreve um arquivo dentro** (defeito) · **só faz
+   `MkdirAll`, não escreve arquivo** (correto — não há folha).
+   🔴 **Entregue a tabela.** O Hades estimou ~6 defeituosos citando 841, 940, 998, 1049, 1341 — 
+   **confirme ou refute cada um**; estimativa não é medição.
+2. Nos defeituosos, guarde **o caminho do arquivo**, mantendo o guard do diretório se ele também
+   escreve lá. Não remova guard existente.
+3. 🔴 **Não "conserte" o que não está quebrado.** Sítio que só faz `MkdirAll` não tem folha a
+   proteger.
+
+**Acceptance criteria:**
+- [ ] Tabela das 19 chamadas classificada, com veredito por linha
+- [ ] Todo sítio que escreve arquivo tem o **arquivo** guardado
+- [ ] Teste de braço (a) que falha **antes** da correção e passa depois — prove rodando contra o
+      código antigo (`git stash`) e o novo
+- [ ] Braço (b): `trackfw init`, `discover --init`, `update harness` continuam funcionando
+- [ ] `go build ./...` RC=0 · `go test ./internal/generators/` RC=0
+- [ ] 🔴 **NÃO rode `make quality`** — a barreira é do arquiteto
+- [ ] Uma frase por teste novo (Regra Dura de Reconciliação)
+
+### ML-3B — endurecer o gate e fazer o teste do `configure` afirmar o call site
+**Status:** ⬜ Pendente · **Papel:** `artemis-tf`
+**Files affected:** `scripts/check-write-containment.sh`, `Makefile`,
+`internal/commands/configure_guard_test.go`. **Só isso.**
+
+**Ação 1 — a mensagem de erro não diz o que fazer** (achado do `hefesto-tf`). Hoje a linha `FAIL`
+mostra arquivo, linha e conteúdo. Acrescente o remédio, algo como:
+`— adicione '// write-containment-allowed: <razão>' na linha acima, ou roteie por pathguard`.
+
+**Ação 2 — o piso é burlável pela env var do self-test** (achado do `hades-tf`, **reproduzido por
+mim**):
+```
+$ WRITE_CONTAINMENT_SCAN_DIR=/tmp/byp2 bash scripts/check-write-containment.sh   # RC=0
+check-write-containment: OK — todos os sítios justificados (1 examinados)
+```
+Com a variável setada, `OVERRIDE_MODE=1` e o piso de 157 é pulado. **Nenhum workflow a define**
+(medido: 0 ocorrências em `.github/`), então o CI não está exposto — mas o seam existe. Adicione
+`unset WRITE_CONTAINMENT_SCAN_DIR` antes da invocação de produção no `Makefile:58`.
+🔴 **Sem quebrar o `--self-test`**, que **precisa** da variável para montar os 3 braços.
+
+**Ação 3 — o teste do `configure` credita o call site sem exercitá-lo.** Em
+`internal/commands/configure_guard_test.go`, `TestConfigureGuard_SymlinkLeafRefused` tem o
+comentário *"configure.go rejects a write when trackfw.yaml is itself a symlink"* e o corpo chama
+**`pathguard.RejectSymlinks` diretamente** — nunca chama `configure.go`. Remover a guarda de
+`configure.go` deixa este teste **verde**.
+🔴 É a **Regra Dura de Reconciliação** na forma exata do achado A1 da auditoria externa de
+2026-09-05: artefato que afirma conclusão que não sustenta.
+Adicione um teste que invoque o **comando `configure`** com `trackfw.yaml` symlinked e verifique que
+o alvo externo não é modificado. Mantenha o teste existente, mas **corrija o comentário** para
+dizer o que ele realmente afirma (a biblioteca, não o call site).
+
+**Acceptance criteria:**
+- [ ] Mensagem de `FAIL` do gate diz o remédio
+- [ ] `unset` no Makefile, e `--self-test` continua `3/3 braços OK`
+- [ ] Teste novo do `configure` **falha** se a guarda de `configure.go` for removida — prove
+- [ ] Comentário do teste antigo corrigido
+- [ ] `bash scripts/check-write-containment.sh` RC=0 com **≥157** sítios (meça sem pipe: `cmd > out
+      2> err; echo $?` — RC depois de `| tail` é do `tail`)
+- [ ] `go test ./internal/commands/` RC=0
+- [ ] 🔴 **NÃO rode `make quality`** — a barreira é do arquiteto
+- [ ] Uma frase por teste novo (Regra Dura de Reconciliação)
+
+### Achados aceitos como residual, com a razão (não viram ML)
+| # | achado | por que não vira ML agora |
+|---|---|---|
+| R1 | **TOCTOU** (Time-Of-Check-To-Time-Of-Use — a janela entre verificar o caminho e escrever nele) entre guard e escrita | CLI local mono-usuário; atacante com processo concorrente já tem acesso direto. Residual já declarado na Wave 0 |
+| R3 | marcador textual não prova guard real | sem solução em bash puro; discriminante por janela foi o que causou o ML-1D-bis. Fix correto é analisador de AST — issue |
+| R5 | `Beneath` sensível a *casing* em APFS | produz **falso-rejeição**, nunca escrita fora da árvore; root e target derivam do mesmo `Join` |
+| Q | `rejectScaffoldPath` e `rejectDiscoverPath` byte-idênticos | extrair para `pathguard` — issue, **antes da terceira cópia**. Foi cópia de helper que originou esta REQ |
+| Q | 9 guards novos usam `filepath.Clean(cwd)` em vez de `EvalSymlinks` | 🔴 **o `hefesto-tf` classificou como pré-existente e eu medi que NÃO é** — `git show main:...` dá 0 ocorrências, as 9 nasceram nesta branch. Não é defeito (root e target no mesmo namespace), mas é inconsistência introduzida aqui — issue com a razão corrigida |
+
 ## Barreira final
 
 Revisão `hefesto-tf` e `hades-tf`, auditoria do arquiteto, `barrier`. **CI verde**, não só verde

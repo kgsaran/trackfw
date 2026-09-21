@@ -2,6 +2,19 @@
 
 ---
 
+## 2026-09-21 — Hades — REVISÃO DE SEGURANÇA — barreira final REQ contenção de escrita — ENTREGUE
+
+**Início:** 2026-09-21 | Branch: `fix/afirma-contencao-antes-de-escrever`
+**Tarefa:** Revisão de segurança final do PR #397 — 5 questões explícitas (TOCTOU, leaf gap, marcador, gate bypass, residual).
+**Resultado:** APROVADO COM RESSALVAS. Entregável: `docs/seguranca/2026-09-21-revisao-contencao-de-escrita.md`.
+- **Caminhos CLI-alcancaveis verificados por PoC:** `trackfw update harness --targets claude-skill` com SKILL.md como symlink (PoC 1, RC=1 vitima intacta) e com diretorio trackfw/ como symlink (PoC 2, RC=1 vitima intacta). A correcao da REQ esta funcionando nos caminhos reachable.
+- **Gap de folha confirmado por PoC:** `installGlobalSkillInner` em `scaffold.go` guarda o DIRETORIO pai mas escreve num ARQUIVO dentro dele. PoC executado: vitima sobrescrita via symlink com exit 0. Porem a funcao nao e CLI-alcancavel (nenhum comando cobra chama `InstallSkills`/`ForceInstallSkills`). Mesma causa → recomendado ML adicional neste roadmap.
+- **Gate bypass via WRITE_CONTAINMENT_SCAN_DIR:** bypass local confirmado (override mode pula o SITE_FLOOR). CI nao e afetado (variavel nao definida nos workflows). Hardening de uma linha sugerida para ML posterior.
+- **TOCTOU, Beneath, marcador:** analisados. Residuais aceitos com razoes documentadas.
+**Arquivos modificados:** `docs/seguranca/2026-09-21-revisao-contencao-de-escrita.md` (novo), `docs/agents-working-context.md`.
+
+---
+
 ## 2026-09-21 — Apolo (fix/afirma-contencao-antes-de-escrever — ML-2B) — ENTREGUE (AGUARDANDO AUDITORIA)
 
 **Início:** 2026-09-21 | Branch: `fix/afirma-contencao-antes-de-escrever`
@@ -38844,3 +38857,21 @@ trackfw init && roadmap new "..." && roadmap move <n> wip && trackfw validate
 - 🔴 **Achado 4 — um AC que EU escrevi estava errado, e o barrier o pegou.** Eu havia escrito no ML-2B: *"Todo sítio da classe (c) contido, **sem** marcador de isenção"*. Isso é impossível por construção — o gate do ML-2A não faz análise de fluxo, então **todo** sítio contido precisa de marcador, inclusive os 152 da classe (a). A proibição real era *marcar em vez de corrigir*. **Reescrevi o AC com a razão inline**, em vez de marcá-lo atendido e seguir. Marcar um AC mal escrito como atendido é o defeito A2 da auditoria externa de 2026-09-05, que este projeto já pagou.
 - **Resultado após as correções: `result: passed` nas 3 waves** (com `--trust-local-gates`; sem a flag, as 3 reprovam em `gates: not_evaluated` porque o roadmap ainda não está em `origin/main` — esperado antes do merge).
 - **Ainda falta para mergear:** revisão `hefesto-tf` e `hades-tf`, exigidas explicitamente pela "Barreira final" deste roadmap e nunca dispensadas.
+
+### 2026-09-21 — hefesto-tf — Revisão de qualidade da barreira final da contenção de escrita
+- **Tarefa:** revisão de qualidade do PR #397 (branch `fix/afirma-contencao-antes-de-escrever`) antes do merge. Entregável: `docs/qualidade/2026-09-21-revisao-contencao-de-escrita.md`.
+- **Veredito: Aprovado com ressalvas.** Nenhum achado bloqueia o merge.
+- **Achado 1 — helpers byte-idênticos:** `rejectScaffoldPath` (generators) e `rejectDiscoverPath` (commands) têm corpo idêntico. O padrão que causou o defeito original está sendo recriado. A extração para `pathguard.RejectAndReport` deve ocorrer antes de um terceiro sítio aparecer. Issue, não bloqueio.
+- **Achado 2 — 148 marcadores genéricos:** texto idêntico "guarded by pathguard.RejectSymlinks at the enclosing write site". Limitação estrutural do bash gate (sem análise de fluxo); o arquiteto verificou que todos os 17 arquivos marcados realmente chamam pathguard. Documentar a limitação explicitamente — não tem solução dentro do modelo atual.
+- **Achado 3 — cwd vs resolvedCwd:** split correto e intencional. `resolvedCwd` é a raiz do pathguard; `cwd` vai para funções que resolvem internamente ou só leem. Risco latente pré-existente: `InjectRulesDetected` usa `filepath.Clean` em vez de `EvalSymlinks` — falso "escapes root" possível no macOS. Issue rastreado.
+- **Achado 4 — gate OK com ressalvas menores:** SITE_FLOOR=157 tem proveniência documentada; P1/P2/P3/P4 satisfeitos; mensagem de erro não orienta correção (mesmo padrão do molde). Adicionar instrução "add `// write-containment-allowed: <reason>`" antes do merge — baixo custo.
+- **Achado 5 — teste fraco:** `TestConfigureGuard_SymlinkLeafRefused` testa `pathguard.RejectSymlinks` diretamente, não a integração em `configure.go`. O gate cobre, mas o teste não é barreira independente. Adicionar teste de integração antes do merge.
+
+### 2026-09-21 — Zeus — revisões de barreira final concluídas; Wave 3 aberta
+- **`hades-tf` e `hefesto-tf`: ambos "aprovado com ressalvas", nenhum bloqueia o merge.** Pareceres em `docs/seguranca/2026-09-21-revisao-contencao-de-escrita.md` e `docs/qualidade/2026-09-21-revisao-contencao-de-escrita.md`.
+- 🔴 **Achado principal (Hades), com PoC: o gap de FOLHA que eu levantei no handoff e não sabia responder.** `installGlobalSkillInner` guarda o **diretório** `trackfw/` e escreve em `trackfw/SKILL.md`. `RejectSymlinks(root, dir)` caminha de `dir` **para cima** — nunca desce abaixo dele. Com `SKILL.md` já sendo symlink, a PoC dele obteve `err=nil`, `✓` impresso e **vítima sobrescrita**. Não é alcançável pela CLI (nenhum comando cobra chama `InstallSkills()`), mas é API Go exportada. **Padrão sistêmico**: ~6 sítios em `scaffold.go`. Vira **ML-3A**, não issue — Regra Dura de Causa Raiz.
+- **O padrão correto já existe no mesmo arquivo** (`scaffold.go:824`, `writeTrackfwConfig` guarda `absConfig`, o arquivo). Então é inconsistência interna, não limitação do `pathguard`.
+- **Achado do Hefesto que eu confirmei e agravei:** `TestConfigureGuard_SymlinkLeafRefused` tem comentário dizendo *"configure.go rejects a write..."* e o corpo chama `pathguard.RejectSymlinks` **direto**. Remover a guarda de `configure.go` deixa o teste verde. É a Regra Dura de Reconciliação na forma exata do achado A1 de 2026-09-05. Vira **ML-3B**.
+- 🔴 **Corrigi uma classificação do Hefesto:** ele disse que os 9 guards com `filepath.Clean(cwd)` em `agentfiles.go` são "pré-existentes ao PR". Medi: `git show main:internal/generators/agentfiles.go | grep -c RejectSymlinks` → **0**. Nasceram nesta branch. "Pré-existente" era o argumento para adiar; o argumento é falso. Não é defeito (root e target no mesmo namespace), mas o issue nasce com a razão certa.
+- 🔴 **Reproduzi o bypass do gate que o Hades reportou** — mas a primeira tentativa **não** reproduziu (o gate procura `<dir>/internal`, e eu não tinha criado). Só com `internal/` dentro: `RC=0, 1 examinado`, piso pulado. Nenhum workflow define a variável (medido: 0 em `.github/`), CI não exposto. `unset` no Makefile entra no ML-3B.
+- **ML-3A e ML-3B são paralelos** (arquivos disjuntos) e **nenhum dos dois roda `make quality`** — duas barreiras concorrentes é o erro que já abortou runs em 188/630 e 276/630 nesta REQ. A barreira é minha, depois dos dois.
