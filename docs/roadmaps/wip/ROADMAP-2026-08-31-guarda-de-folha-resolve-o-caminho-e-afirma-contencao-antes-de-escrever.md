@@ -40,7 +40,11 @@ da irmã.
       Este AC é de 2026-08-31. A partir da v8.0.0 existe **uma** implementação, em Go, entregue por
       três canais; não há mais dois artefatos para manter em paridade. Deixar este AC aberto tornaria
       a REQ permanentemente infechável; marcá-lo ✅ seria falso. Fica **N/A com a razão inline**.
-- [ ] `make quality` e **CI** verdes — 🔴 **só `make quality` foi exercido.** Ver "Barreira final".
+- [ ] `make quality` e **CI** verdes — **Wave 1: SIM, medido.** PR **#397** (draft) aberto em
+      2026-09-21: **21 checks verdes**, incluindo `windows-full-suites` (4m23s),
+      `windows-symlink-unprivileged`, `windows-integrations-resolve`, `windows-gates-cp1252`,
+      `windows-defect-reproduction`, os 4 `parity-falsify-shard` e o agregador `parity`.
+      Falta repetir após a Wave 2.
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado

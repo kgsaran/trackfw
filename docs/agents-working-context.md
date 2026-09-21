@@ -38789,3 +38789,9 @@ trackfw init && roadmap new "..." && roadmap move <n> wip && trackfw validate
 - **Não fixei o piso de não-vacuidade em 156.** Esse número é `grep -n | wc -l` — conta linhas, não ocorrências, e não captura `os.CreateTemp(`. O piso sai da primeira execução do gate.
 - **ACs de topo corrigidos:** "228 candidatos brutos" (pré-v8, três runtimes) removido do AC; "paridade nos 3 CLIs" marcado **N/A com razão inline** — deixá-lo aberto tornaria a REQ infechável, marcá-lo ✅ seria falso.
 - 🔴 **Bloqueio registrado na Barreira final:** `quality.yml` dispara em `push:[main]` e `pull_request`. Esta branch não é `main` e **não tem PR** → nenhum commit desta REQ passou por CI. A Wave 1 fechou em verde local apenas. O AC "CI verde" só é satisfeito abrindo o PR, que é decisão do usuário.
+
+### 2026-09-21 — Zeus — PR #397 aberto (draft) e Wave 1 verde no CI
+- **Motivo de abrir agora, não na barreira final:** `quality.yml` só dispara em `push:[main]` e `pull_request`. Sem PR, a Wave 2 seria escrita cega ao CI — que é literalmente o defeito de #307/#353/#363.
+- **Resultado: 21 checks verdes**, incluindo os 6 jobs Windows que nunca tinham visto este código (`windows-full-suites` 4m23s, `windows-symlink-unprivileged`, `windows-integrations-resolve`, `windows-gates-cp1252`, `windows-defect-reproduction`) e os 4 `parity-falsify-shard` com o agregador `parity`.
+- **Sem palavra-chave de fechamento no corpo**, deliberadamente: nenhuma das 11 issues abertas fecha com esta causa. O check `pr-closing-keyword` passou.
+- **Próximo:** ML-2A despachado para `artemis-tf`.
