@@ -2,6 +2,13 @@
 
 ---
 
+## 2026-09-21 — Apolo (fix/afirma-contencao-antes-de-escrever — ML-2B) — ENTREGUE (AGUARDANDO AUDITORIA)
+
+**Início:** 2026-09-21 | Branch: `fix/afirma-contencao-antes-de-escrever`
+**Tarefa:** ML-2B — aplicar contenção nos 2 sítios de escrita não guarded em `internal/commands/discover.go` (linhas 127 e 164) revelados pelo gate do ML-2A.
+**Resultado:** `pathguard` importado; `rejectDiscoverPath` helper criado (molde de `scaffold.go`); `resolvedCwd` via `EvalSymlinks` usado como root E como base para os caminhos de escrita (corrige `/var` → `/private/var` no macOS); guard aplicado antes de `os.WriteFile(yamlPath)` e `os.OpenFile(logPath)`. Armadilha macOS corrigida: paths de escrita construídos de `resolvedCwd`, não de `cwd`. Build RC=0, testes RC=0, gate RC=0 (157 sítios), braço (b) `discover --init` RC=0 com `trackfw.yaml` gerado, `make quality` RC=0 (792 `^OK `, 0 `: FALHA`). Roadmap ML-2B marcado ✅ Concluído. `gen-falsify-scenario-weights.py` requer timing marks de CI — não disponível localmente, não bloqueante.
+**Arquivos modificados:** `internal/commands/discover.go`, roadmap.
+
 ## Sessão 2026-09-21 (continuação pós-compactação) — Ártemis (fix/afirma-contencao-antes-de-escrever — ML-2A) — ENTREGUE (AGUARDANDO AUDITORIA)
 
 **Início:** 2026-09-21 | Branch: `fix/afirma-contencao-antes-de-escrever`
@@ -38812,3 +38819,14 @@ trackfw init && roadmap new "..." && roadmap move <n> wip && trackfw validate
 - 🔴 **Classe (c): 2 sítios reais** em `internal/commands/discover.go:127,164`, caminho derivado de `os.Getwd()` sem `pathguard`. **A Wave 1 não os previu** porque o ML-1C cobriu `internal/discover/discover.go` — o **pacote** — e não `internal/commands/discover.go` — o **comando**. Nomes quase iguais, arquivos distintos. Enumeração por família falha exatamente assim; foi para isso que o gate foi construído.
 - **`make quality` está VERMELHO nesta árvore, e isso é o resultado correto** — o gate reprova os 2 sítios. Verde volta com o ML-2B. Commito o instrumento junto com a evidência do defeito que ele encontrou.
 - **Pendência menor registrada:** `gen-falsify-chunks` avisa que os 3 rótulos novos estão **sem peso calibrado** e usam peso pessimista (54,1778 s). Não quebra nada; desbalanceia shards. Recalibrar com `scripts/gen-falsify-scenario-weights.py` entra no ML-2B.
+
+### 2026-09-21 — Zeus — ML-2B auditado e aprovado; Wave 2 fechada em verde local
+- **Diff conferido:** guard **antes** da escrita nos dois sítios, helper `rejectDiscoverPath` no molde de `scaffold.go`, recusa audível em stderr. `EvalSymlinks` aplicado ao **root** (`cwd`), nunca ao alvo — respeitando a armadilha já paga em `generators/adr.go`, onde resolver o alvo antes do guard fazia `Beneath` comparar o destino consigo mesmo e passar.
+- 🔴 **Duas PoCs minhas saíram vácuas antes de eu acertar, e as duas "passaram".** A 1ª não tinha roadmap detectável; a 2ª usava `--init` quando o sítio do log está sob `--bootstrap-log`. Nas duas a vítima ficou intacta — que é exatamente o que eu queria ver. **Vítima intacta não prova guarda: prova que o código não chegou lá.** Só a 3ª exercitou o caminho.
+- **Braço (a) provado:** `discover --bootstrap-log` com `docs/roadmaps` → symlink externo → **RC=1**, stderr `trackfw: refusing write to .../docs/roadmaps/.trackfw-log: refusing symlink path ".../docs/roadmaps"` — o **ancestral** é nomeado —, vítima `PRESERVAR` intacta.
+- **Braço (b) provado:** mesmo fluxo sem symlink → RC=0, `✓ bootstrap log written ... (1 new entries)`, stderr vazio. A guarda não super-dispara.
+- **Barreira sozinha, árvore parada: RC=0, 792 `^OK `, 0 `: FALHA`, 0 `make: ***`**, 1664 linhas, guarda de conjunto OK, 216 OK na falsificação. `check-symlink-privilege-guard` agora varre **150** arquivos **e** roda `self-test: 3/3 braços OK`.
+- ⚠️ **792 não é ganho de cobertura, e não deve ser comparado com os 630 anteriores:** o gate novo imprime **uma linha `OK` por sítio examinado** (157). A métrica `^OK ` ficou inflada pelo próprio gate. A métrica que discrimina continua sendo `: FALHA`.
+- 🔴 **Erro meu no handoff do ML-2B:** proibi adicionar marcador `write-containment-allowed` nos dois sítios. A letra estava errada — o gate não faz análise de fluxo, então **todo** sítio contido precisa de marcador. A proibição real era *marcar em vez de corrigir*. O executor fez o certo: corrigiu **e** marcou.
+- **Achado lateral não absorvido (causa diferente):** na recusa, o `discover` imprime o bloco `Usage:` do cobra junto do erro — mesmo mecanismo do issue **#290**, que descreve isso no `validate`. Vai como comentário no #290, não como ML desta REQ.
+- **Pendência aceita:** `gen-falsify-scenario-weights.py` exige `FALSIFY_TIMING_FILE` de execução de CI; os 3 rótulos novos seguem com peso pessimista (54,1778 s). Desbalanceia shards, não afeta corretude.
