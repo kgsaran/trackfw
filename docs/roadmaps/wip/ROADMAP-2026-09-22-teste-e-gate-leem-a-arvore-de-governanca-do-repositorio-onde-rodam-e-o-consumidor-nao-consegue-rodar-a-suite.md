@@ -232,7 +232,7 @@ fechada por construção.
 como concluído. Foi o que tornou a reprovação barata.
 
 ### ML-1B-bis — tirar a tripwire do caminho do consumidor
-**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Status:** ✅ Concluído · **Papel:** `apolo-tf`
 **Files affected:** `Makefile`, `.github/workflows/quality.yml`,
 `scripts/check-parity-call-site-pins.sh`. **Não** tocar no `check-roadmap-barrier-contract.sh` — o
 guard interno dele está correto.
@@ -259,6 +259,60 @@ invocado pelo **CI do upstream**, não pela suíte geral.
 - [ ] 🔴 **NÃO rodar `make quality` completo** para validação de rotina — você é o único agente
       agora, mas a barreira é do arquiteto. A exceção é o AC 1, que **exige** `make quality` na
       árvore temporária `by_agent` — essa roda, porque é a prova
+
+### ML-1B-bis — resultado: aprovado, e o desenho está certo
+**Auditado por Zeus em 2026-09-22.** Verifiquei pelo `make -n`, que é a fonte de verdade do que
+cada alvo executa:
+```
+$ make -n quality | grep check-roadmap-barrier-contract
+GO_BIN=bin/trackfw HASH_CMD_BIN="sha256sum" scripts/check-roadmap-barrier-contract.sh      ← SEM o pin
+
+$ make -n self-governance | grep check-roadmap-barrier-contract
+TRACKFW_SELF_GOVERNED=1 GO_BIN=... scripts/check-roadmap-barrier-contract.sh                ← COM o pin
+```
+O consumidor roda o gate **sem** a tripwire; o upstream roda **com**. O defeito do #277 no caminho
+`make quality` está fechado, e o alvo novo entrou num job existente (`parity-other-gates`), sem
+perturbar a lista de required checks.
+
+### ML-1C — a regressão deste desacoplamento não é detectada por ninguém
+**Status:** ⬜ Pendente · **Papel:** `artemis-tf`
+**Files affected:** `scripts/check-parity-call-site-pins.sh` e seu cenário de falsificação em
+`scripts/check-gates-falsify.sh`. **Não** tocar no `Makefile` nem no workflow — estão corretos.
+
+🔴 **Achado da minha auditoria, por falsificação — não por leitura.** Reintroduzi o pin em
+`parity-rest`, que é **exatamente a regressão** do defeito que o ML-1B-bis acabou de corrigir:
+
+```
+$ # pin TRACKFW_SELF_GOVERNED=1 reintroduzido na linha de parity-rest
+$ bash scripts/check-parity-call-site-pins.sh > out 2> err; echo "RC=$?"
+RC=0
+check-parity-call-site-pins: 9 verificação(ões) -- 2 pin-all(s) + 1 pin-any(s) + 3 rastro(s)
+```
+
+**Nada reprova.** A política `pin-any` (linha 74: `VARS_PIN_ANY=(TRACKFW_SELF_GOVERNED)`) exige que
+**ao menos uma** invocação pine — e `self-governance` pina. Ela é cega para uma invocação **a mais**
+que também pine, que é precisamente como o defeito volta.
+
+**Por que `pin-any` foi a escolha certa e mesmo assim insuficiente:** `pin-all` seria impossível aqui
+— `parity-rest` **deve** invocar sem o pin. O executor acertou em trocar a política; o que falta é a
+asserção **negativa** que a acompanha.
+
+**Ação:** acrescentar ao gate uma verificação de que **nenhuma invocação alcançável por
+`make quality`** pina `TRACKFW_SELF_GOVERNED`. O discriminante robusto é o próprio `make -n quality`,
+não a leitura textual do Makefile — ele resolve as dependências entre alvos e imuniza contra alguém
+mover a linha para outro alvo que `quality` alcance.
+
+**Acceptance criteria:**
+- [ ] O gate **reprova** quando o pin é reintroduzido em `parity-rest` — prove injetando e colando a
+      saída, e **restaure** depois
+- [ ] O gate **reprova** também se a linha for movida para outro alvo alcançável por `make quality`
+      (ex.: `parity-falsify`) — é o caso que a leitura textual do Makefile não pega
+- [ ] O gate continua **RC=0** na árvore correta
+- [ ] Cenário de falsificação em `check-gates-falsify.sh` com **rótulo literal**, colhido pela guarda
+      de conjunto. 🔴 Rótulo montado com variável vira **glob** em `gen-falsify-chunks.py` e a guarda
+      para de checar o caso específico
+- [ ] 🔴 **NÃO rodar `make quality`** — a barreira é do arquiteto
+- [ ] Uma frase por cenário novo (Regra Dura de Reconciliação)
 
 ## Barreira final
 

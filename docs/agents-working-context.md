@@ -2,6 +2,24 @@
 
 ---
 
+## 2026-09-22 — Apolo (fix/teste-e-gate-leem-a-arvore-de-governanca — ML-1B-bis) — ENTREGUE (AGUARDANDO AUDITORIA)
+
+**Início:** 2026-09-22 | Branch: `fix/teste-e-gate-leem-a-arvore-de-governanca`
+**Tarefa:** ML-1B-bis — tirar a tripwire do caminho do consumidor: remover o pin `TRACKFW_SELF_GOVERNED=1` de `parity-rest` e criar alvo `self-governance:` próprio invocado pelo CI do upstream.
+**Resultado:**
+- `Makefile`: pin `TRACKFW_SELF_GOVERNED=1` removido de `parity-rest` (a chamada ao script permanece para as Partes B e C); novo alvo `self-governance: build` criado com o pin completo.
+- `.github/workflows/quality.yml`: passo `make self-governance` adicionado ao job `parity-other-gates` após `make parity-rest`.
+- `scripts/check-parity-call-site-pins.sh`: lógica do loop de VARS_PIN alterada de "todo call site deve pinar" para "pelo menos um call site deve pinar" — vacuidade protegida, call site do consumidor sem pin aceito.
+- **AC1 provado:** `make quality` com `TRACKFW_FALSIFY_JOBS=4` numa árvore `by_agent` sem roadmaps do mantenedor → RC=0; linha visível: `check-roadmap-barrier-contract: 49 cenários OK`.
+- **AC2 provado:** `make self-governance` com roadmap do corpus apagado do disco → RC=2, linha `FAIL [corpus/basename-missing-from-disk]`.
+- **AC3:** workflow line `- name: ML-1B-bis — self-governance (tripwire do upstream)` / `run: make self-governance` em `parity-other-gates`.
+- **AC4 provado:** pin removido do novo call site → `check-parity-call-site-pins.sh` RC=1 com mensagem `nenhuma linha de recipe que invoca check-roadmap-barrier-contract.sh pina TRACKFW_SELF_GOVERNED=`.
+- **AC5:** `bash scripts/check-parity-call-site-pins.sh` RC=0 (8 verificações).
+- **AC6:** `bash scripts/check-roadmap-barrier-contract.sh` (sem var) RC=0 (49 cenários OK).
+**Arquivos modificados:** `Makefile`, `.github/workflows/quality.yml`, `scripts/check-parity-call-site-pins.sh`, roadmap, working-context.
+
+---
+
 ## 2026-09-21 — Apolo (fix/afirma-contencao-antes-de-escrever — ML-5A) — ENTREGUE (AGUARDANDO AUDITORIA)
 
 **Início:** 2026-09-21 | Branch: `fix/afirma-contencao-antes-de-escrever`
@@ -38998,3 +39016,11 @@ trackfw init && roadmap new "..." && roadmap move <n> wip && trackfw validate
 - 🔴 **E a correção criou uma trava:** o novo `check-parity-call-site-pins.sh` **exige** o pin, então removê-lo reprova outro gate. A saída fácil está fechada por construção.
 - **Crédito ao executor:** ele **previu e declarou** o residual no relatório em vez de entregar como concluído. Foi o que tornou a reprovação barata — eu só precisei confirmar a medição.
 - **ML-1B-bis escrito:** tirar a tripwire de `parity-rest`, criar alvo próprio invocado pelo CI do upstream, e reapontar o pin de vacuidade para o novo call site. **AC central: `make quality` numa árvore `by_agent` sem os roadmaps do mantenedor → RC=0** — o AC que o ML-1B não atendeu.
+
+### 2026-09-22 — Zeus — ML-1B-bis aprovado; e um gap que só a falsificação revelou
+- **Auditei pelo `make -n`, não pela leitura do Makefile** — é a fonte de verdade do que cada alvo executa: `make quality` invoca o gate **sem** `TRACKFW_SELF_GOVERNED`; `make self-governance` **com**. O defeito do #277 no caminho `make quality` está fechado, e o alvo novo entrou num job existente (`parity-other-gates`), sem perturbar a lista de required checks.
+- 🔴 **Gap achado por falsificação minha, não por leitura:** reintroduzi o pin em `parity-rest` — a regressão exata do defeito recém-corrigido — e `check-parity-call-site-pins.sh` saiu **RC=0**. **Nada reprova.** A política `pin-any` exige que **ao menos uma** invocação pine, e `self-governance` pina; ela é cega para uma invocação **a mais** que também pine, que é precisamente como o defeito volta.
+- **`pin-any` foi a escolha certa e ainda assim insuficiente:** `pin-all` seria impossível, porque `parity-rest` **deve** invocar sem o pin. Falta a asserção **negativa** que acompanha a política.
+- **ML-1C escrito** (`artemis-tf`): o gate passa a reprovar se **qualquer** invocação alcançável por `make quality` pinar a variável. Exigi o discriminante pelo **`make -n quality`**, não por leitura textual do Makefile — assim pega também o caso de mover a linha para outro alvo que `quality` alcance, que a leitura textual não pegaria.
+- **Nota de método:** este gap não apareceria numa revisão de diff. Apareceu porque injetei a regressão e medi. É a mesma lição do gate de contenção de ontem — gate verde sobre 34 defeitos, porque ninguém tinha testado o gate **contra o defeito que ele deveria pegar**.
+- **Imprecisão minha registrada:** o commit `af759a2a`, rotulado `wip(governance)`, incluiu também o código dos ML-1A/1B — `git add -A` varreu junto. Não é errado numa branch de trabalho, mas a mensagem não descreve o conteúdo inteiro.

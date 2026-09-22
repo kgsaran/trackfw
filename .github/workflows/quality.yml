@@ -826,6 +826,13 @@ jobs:
       - run: make parity-rest
         env:
           TRACKFW_DISABLE_EXTERNAL_COMMANDS: "1"
+      # ML-1B-bis (ROADMAP-2026-09-22-teste-e-gate-leem-a-arvore-de-governanca-do-
+      # repositorio-onde-rodam-e-o-consumidor-nao-consegue-rodar-a-suite.md):
+      # Tripwire de disco do upstream: exige que todos os 144 basenames do corpus
+      # congelado existam em docs/roadmaps/. Separado de parity-rest para que o
+      # consumidor possa rodar `make quality` sem possuir a governança do mantenedor.
+      - name: ML-1B-bis — self-governance (tripwire do upstream)
+        run: make self-governance
 
   # ML-2G -- job de AGREGAÇÃO. Mantém o id `parity` DELIBERADAMENTE — nunca
   # renomear nem transformar em matriz.

@@ -32,10 +32,17 @@
 # exatamente as que o ML-2E criou/documentou, com o mesmo comentário "ML-2E,
 # mesma família de HASH_CMD_BIN" que este arquivo também usa. Manutenção:
 # quando um novo controle desta família for criado, ele deve repetir esse
-# comentário (convenção já em uso em Makefile:82-84 e
+# comentário (convenção já em uso em Makefile (alvo self-governance) e
 # scripts/check-roadmap-barrier-contract.sh:444) e seu nome deve entrar em
 # VARS_PIN/VARS_TRACE abaixo, no mesmo PR que o introduz — é uma linha, não
 # um mecanismo à parte a manter.
+#
+# ML-1B-bis (ROADMAP-2026-09-22-teste-e-gate-leem-a-arvore-de-governanca-do-
+# repositorio-onde-rodam-e-o-consumidor-nao-consegue-rodar-a-suite.md):
+# TRACKFW_SELF_GOVERNED=1 foi movido do alvo `parity-rest` para o alvo
+# `self-governance` — o gate detecta o pin no novo call site dinamicamente
+# (sem hardcoding de nome de alvo); remover o pin do alvo `self-governance`
+# reprova esta verificação.
 #
 # O que É derivado, não hardcoded: para cada variável da lista fechada, o
 # SCRIPT que a consome (via grep no corpo de scripts/*.sh) e a LINHA de
@@ -51,9 +58,20 @@ MAKEFILE="$ROOT/Makefile"
 SCRIPTS_DIR="$ROOT/scripts"
 SELF="$(basename "${BASH_SOURCE[0]}")"
 
-# Variáveis que exigem PIN no call site do Makefile (VAR=valor na mesma linha
-# de recipe que invoca o script consumidor).
-VARS_PIN=(HASH_CMD_BIN PYTHON_BIN TRACKFW_SELF_GOVERNED)
+# Variáveis que exigem PIN em TODA invocação no Makefile (VAR=valor na mesma
+# linha de recipe que invoca o script consumidor). Invariante original do ML-2E:
+# "HASH_CMD_BIN e PYTHON_BIN são seguros porque o Makefile os sobrescreve em
+# toda invocação".
+VARS_PIN_ALL=(HASH_CMD_BIN PYTHON_BIN)
+
+# Variáveis que exigem PIN em AO MENOS UMA invocação. Usado quando um script
+# tem dois call sites legítimos com semânticas distintas: um que pina (alvo de
+# governança do upstream, ex.: `self-governance`) e um que não pina (alvo para
+# o consumidor, ex.: `parity-rest`). A vacuidade protegida é: se ZERO call sites
+# pinarem a variável, o pin desapareceu e a tripwire pode ser suprimida por
+# ambiente. ML-1B-bis, ROADMAP-2026-09-22-teste-e-gate-leem-a-arvore-de-
+# governanca-do-repositorio-onde-rodam-e-o-consumidor-nao-consegue-rodar-a-suite.md
+VARS_PIN_ANY=(TRACKFW_SELF_GOVERNED)
 
 # Variáveis que exigem RASTRO em stderr no script consumidor quando setadas,
 # mas que são intencionalmente NÃO pinadas no Makefile (ML-2D/ML-2E: servem
@@ -104,7 +122,8 @@ find_consuming_scripts() {
     | grep -vF "/$SELF" || true
 }
 
-for var in "${VARS_PIN[@]}"; do
+# --- VARS_PIN_ALL: pin exigido em TODA invocação (política original ML-2E) ----
+for var in "${VARS_PIN_ALL[@]}"; do
   consumers=$(find_consuming_scripts "$var")
   if [[ -z "$consumers" ]]; then
     fail "call-site-pin/$var/consumer-found" \
@@ -129,6 +148,42 @@ for var in "${VARS_PIN[@]}"; do
           "linha de recipe invoca ${base} sem pinar ${var}= -- pin removido: $line"
       fi
     done <<<"$invocations"
+  done <<<"$consumers"
+done
+
+# --- VARS_PIN_ANY: pin exigido em AO MENOS UMA invocação (ML-1B-bis) ----------
+# Usado quando o script tem dois call sites com semânticas distintas: um que pina
+# (alvo upstream, ex.: `self-governance`) e um que não pina (alvo consumidor,
+# ex.: `parity-rest`). Vacuidade protegida: ZERO call sites pinados → FAIL.
+for var in "${VARS_PIN_ANY[@]}"; do
+  consumers=$(find_consuming_scripts "$var")
+  if [[ -z "$consumers" ]]; then
+    fail "call-site-pin/$var/consumer-found" \
+      "nenhum script em scripts/*.sh lê \${$var:-...} ou \${$var} -- o consumidor desapareceu, ou foi renomeado sem atualizar o gate"
+    continue
+  fi
+  while IFS= read -r consumer; do
+    [[ -z "$consumer" ]] && continue
+    base=$(basename "$consumer")
+    invocations=$(grep -F "scripts/${base}" "$RECIPE_LINES_FILE" || true)
+    if [[ -z "$invocations" ]]; then
+      fail "call-site-pin/$var/$base/invoked" \
+        "scripts/${base} não é chamado por nenhuma linha de recipe do Makefile -- alvo removido ou script deixou de ser invocado"
+      continue
+    fi
+    pinned_count=0
+    while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      if grep -qE "(^${TAB}|[[:space:]])${var}=" <<<"$line"; then
+        pinned_count=$((pinned_count + 1))
+      fi
+    done <<<"$invocations"
+    if [[ "$pinned_count" -gt 0 ]]; then
+      ok "call-site-pin/$var/$base"
+    else
+      fail "call-site-pin/$var/$base" \
+        "nenhuma linha de recipe que invoca ${base} pina ${var}= -- pin removido de todos os call sites (pin esperado no alvo self-governance)"
+    fi
   done <<<"$consumers"
 done
 
@@ -168,7 +223,7 @@ for var in "${VARS_TRACE[@]}"; do
   done <<<"$consumers"
 done
 
-echo "check-parity-call-site-pins: ${CHECKED} verificação(ões) -- ${#VARS_PIN[@]} pin(s) + ${#VARS_TRACE[@]} rastro(s) na lista"
+echo "check-parity-call-site-pins: ${CHECKED} verificação(ões) -- ${#VARS_PIN_ALL[@]} pin-all(s) + ${#VARS_PIN_ANY[@]} pin-any(s) + ${#VARS_TRACE[@]} rastro(s) na lista"
 
 if [[ "$CHECKED" -eq 0 ]]; then
   echo "check-parity-call-site-pins: nenhuma verificação executada -- guarda de vacuidade final" >&2
