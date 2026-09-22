@@ -6,6 +6,8 @@
 
 - [marcador-de-contencao-pode-ser-falso-guarda-de-dir-nao-cobre-a-folha-2026-09-21](marcador-de-contencao-pode-ser-falso-guarda-de-dir-nao-cobre-a-folha-2026-09-21.md) — `RejectSymlinks(root, dir)` nunca desce abaixo de `dir`: guardar o diretório e escrever o arquivo dentro deixa a folha livre (13 de 18 sítios em `scaffold.go`); e o marcador `write-containment-allowed` **afirma sem provar** — houve um falso, com o gate verde por cima
 
+- [carga-de-cpu-vem-da-suite-de-falsificacao-vezes-agentes-paralelos-2026-09-22](carga-de-cpu-vem-da-suite-de-falsificacao-vezes-agentes-paralelos-2026-09-22.md) — a suíte de falsificação roda 8 chunks em paralelo e compila binário por cenário; somada a N agentes com `go test ./...`, satura 10 CPUs. `gitstatusd` e `redirect_listener` são inocentes (medidos). Use `TRACKFW_FALSIFY_JOBS=4` e exija teste do pacote tocado, não de `./...`
+
 - [check-barrier-go-bin-vacuity-trap-2026-09-18](check-barrier-go-bin-vacuity-trap-2026-09-18.md) — `check-barrier.sh` sem `GO_BIN` explícito compila o binário correto do `$ROOT_DIR`; sabotagem em `/tmp` é invisível — sempre passar `GO_BIN=/tmp/sab/trackfw-sabotaged` ao testar binários mutados
 
 - [barrier-cascade-isolation-wave-label-malf-2026-09-18](barrier-cascade-isolation-wave-label-malf-2026-09-18.md) — `ParseWaves` abortava documento inteiro ao encontrar wave malformada (ex: `1b`); 2 roadmaps reais eram invisíveis a `barrier --wave N`; ML-1D revoga ADR-2026-07-29 decisão 16, implementa cascade isolation

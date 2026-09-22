@@ -13,6 +13,7 @@
 - [Não trocar de branch com agente vivo](feedback_nao_trocar_de_branch_com_agente_vivo.md) — nada de checkout/commit de outra branch com subagente editando; cópia durável agora, commit depois
 - [Explicar sigla na primeira vez](feedback_explicar_sigla_na_primeira_vez.md) — TOCTOU, ML, AC, BOM: expandir na estreia; sigla não explicada não comunica
 - [Medir com a regra, não com grep](feedback_medir_com_a_regra_nao_com_grep.md) — 4 contagens erradas medidas; nunca `| tail` num gate, `grep -a` no index.js
+- [Paralelismo tem custo de CPU](feedback_paralelismo_tem_custo_de_cpu.md) — proibi `make quality` nos 3 agentes e esqueci `go test ./...`; teste do pacote tocado, teto de 2 agentes
 - [Agente nunca roda em background](feedback_agente_nao_roda_em_background.md) — background + fim de turno = órfão; e retomar é SendMessage, não Agent novo
 - [Branch por objetivo, não por REQ](feedback_branch_por_objetivo_nao_por_req.md) — várias REQs na mesma branch se o objetivo final é um; organizar o PR por REQ
 - [Sem PR aberto, a implementação é nossa](feedback_sem_pr_aberto_implementacao_e_nossa.md) — oferta ≠ PR; dizer no ticket que abrimos a REQ e vamos implementar
