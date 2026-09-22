@@ -238,7 +238,7 @@ FALSIFY_SUCCESS_TALLY="$WORK/success-count"
 # Ao remover cenários legitimamente (consolidação, renomeação), atualize
 # este valor no mesmo commit que remove os cenários. Sem esse passo o piso
 # fica pessimista e o gate começará a reprovar em execuções limpas.
-FALSIFY_SUCCESS_FLOOR=201
+FALSIFY_SUCCESS_FLOOR=205
 if [[ "$TRACKFW_FALSIFY_ENUMERATE" == "1" ]]; then
   : > "$FALSIFY_ENUM_TALLY"
   echo "[falsify/enumerate] modo de enumeração ATIVO (TRACKFW_FALSIFY_ENUMERATE=1, default=0) -- reprovações são contadas e a execução continua para o próximo cenário; o exit code final permanece != 0 se qualquer cenário reprovar. Ferramenta de diagnóstico -- não usada por make quality/parity." >&2
@@ -6852,6 +6852,78 @@ falsify_count_success
 echo "OK   [falsify/roadmap-ref-stale-state/go]: as 3 direções (A/B/C) provadas"
 falsify_count_success
 echo "OK   [falsify/roadmap-ref-stale-state/python]: as 3 direções (A/B/C) provadas"
+
+# ---------------------------------------------------------------------------
+# Cenário 194 — check-write-containment.sh: gate de contenção de escrita
+#               nasce falsificável (ML-2A, ROADMAP-2026-08-31-guarda-de-folha).
+#
+# Três braços, obrigatórios pelo roadmap ML-2A:
+#
+# Braço A (write-containment/unguarded-write):
+#   Afirma que o gate DETECTA um sítio de escrita sem marcador — prova que
+#   o padrão de varredura (os.WriteFile etc.) funciona e o critério de
+#   reprovação dispara.
+#
+# Braço B (write-containment/marker-accepted):
+#   Afirma que o gate ACEITA o mesmo sítio quando o marcador
+#   write-containment-allowed: está presente na linha imediatamente acima —
+#   prova que a lógica de isenção por marcador funciona sem falso positivo.
+#
+# Braço C (write-containment/vacuous-scan):
+#   Afirma que o gate REPROVA corpus vazio — prova que a guarda de
+#   vacuidade dispara e o gate não reporta aprovação silenciosa.
+# ---------------------------------------------------------------------------
+T194="$WORK/s194"
+mkdir -p "$T194/scripts"
+cp "$ROOT_DIR/scripts/check-write-containment.sh" "$T194/scripts/"
+
+# Braço A — os.WriteFile cru sem marcador → gate REPROVA
+T194A="$T194/arm-a"
+mkdir -p "$T194A/internal/pkg"
+cat > "$T194A/internal/pkg/example.go" <<'GOEOF'
+package pkg
+
+import "os"
+
+func writeFile(path string, data []byte) error {
+	return os.WriteFile(path, data, 0644)
+}
+GOEOF
+
+assert_fails_with "write-containment/unguarded-write" \
+  "unjustified write" \
+  bash -c "WRITE_CONTAINMENT_SCAN_DIR='$T194A' bash '$T194/scripts/check-write-containment.sh'"
+
+# Braço B — mesmo sítio COM o marcador → gate PASSA
+T194B="$T194/arm-b"
+mkdir -p "$T194B/internal/pkg"
+cat > "$T194B/internal/pkg/example.go" <<'GOEOF'
+package pkg
+
+import "os"
+
+func writeFile(path string, data []byte) error {
+	// write-containment-allowed: test fixture, fixed path not derived from user root
+	return os.WriteFile(path, data, 0644)
+}
+GOEOF
+
+# assert_output_lacks prova que o braço (b) NÃO produz "unjustified write"
+# e que o gate sai com 0 (aceita o marcador).
+assert_output_lacks "write-containment/marker-accepted" \
+  "unjustified write" \
+  bash -c "WRITE_CONTAINMENT_SCAN_DIR='$T194B' bash '$T194/scripts/check-write-containment.sh'"
+
+# Braço C — corpus vazio → gate REPROVA por vácuo
+T194C="$T194/arm-c"
+mkdir -p "$T194C/internal"
+
+assert_fails_with "write-containment/vacuous-scan" \
+  "recusando reportar aprovação silenciosa" \
+  bash -c "WRITE_CONTAINMENT_SCAN_DIR='$T194C' bash '$T194/scripts/check-write-containment.sh'"
+
+falsify_count_success
+echo "OK   [falsify/write-containment]: os 3 braços (A/B/C) provados"
 
 # ---------------------------------------------------------------------------
 # ML-2B — fechamento do modo de enumeração. Desligado (default): este bloco

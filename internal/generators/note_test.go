@@ -97,3 +97,30 @@ func TestNewNote_NaoDuplicaLinkNoIndex(t *testing.T) {
 		t.Errorf("esperado 1 ocorrência no index, encontradas %d", count)
 	}
 }
+
+// ─── ML-1C Containment Tests ────────────────────────────────────────────────
+
+// TestNewNote_SymlinkVaultDirRefused asserts that ML-1C containment guards
+// reject NewNote when vault/notes/ is a symlink pointing outside the project root.
+func TestNewNote_SymlinkVaultDirRefused(t *testing.T) {
+	outside := t.TempDir()
+	dir := t.TempDir()
+	chdirNote(t, dir)
+
+	if err := os.MkdirAll("vault", 0755); err != nil {
+		t.Fatal(err)
+	}
+	symlinkOrSkip(t, outside, filepath.Join(dir, "vault", "notes"))
+
+	err := NewNote("symlink test note")
+	if err == nil {
+		t.Fatal("NewNote() should refuse when vault/notes/ is a symlink, got nil")
+	}
+	// Verify no note was written to the outside dir.
+	entries, _ := os.ReadDir(outside)
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".md") {
+			t.Errorf("containment violated: note %s was written outside the project", e.Name())
+		}
+	}
+}

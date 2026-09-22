@@ -103,6 +103,7 @@ harness', over a "scope": "project" JSON document — see docs/cli-parity.md.`,
 // progress lines as a side effect of writing; --json must emit only the
 // result document. Mirrors npm's silenceConsole (npm/src/lib/update-engine.js).
 func silenceStdout(fn func() error) error {
+	// write-containment-allowed: os.OpenFile to os.DevNull, a fixed system path not derived from user-controlled root
 	devnull, openErr := os.OpenFile(os.DevNull, os.O_WRONLY, 0)
 	if openErr != nil {
 		return fn()

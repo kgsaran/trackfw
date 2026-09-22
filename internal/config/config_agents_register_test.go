@@ -1,11 +1,32 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 )
+
+// symlinkOrSkip creates a symlink and skips the test if privilege is unavailable.
+// Copied from internal/generators/update_test.go — detects condition, not runtime.GOOS.
+func symlinkOrSkip(t *testing.T, target, link string) {
+	t.Helper()
+	err := os.Symlink(target, link)
+	if err == nil {
+		return
+	}
+	if os.IsPermission(err) {
+		t.Skipf("symlink guard not exercisable: %v", err)
+	}
+	var errno syscall.Errno
+	if errors.As(err, &errno) && errno == 1314 {
+		t.Skipf("symlink guard not exercisable: %v", err)
+	}
+	// symlinkOrSkip: all privilege checks exhausted — this is a real error
+	t.Fatalf("os.Symlink(%q, %q): %v", target, link, err)
+}
 
 // helper: write trackfw.yaml in tmp dir, return the path.
 func writeYAML(t *testing.T, dir, content string) string {
@@ -35,7 +56,7 @@ func TestAppendAgentToConfig_ByAgent_Append(t *testing.T) {
 	tmp := t.TempDir()
 	p := writeYAML(t, tmp, "roadmap_namespacing: by_agent\nagents:\n  - alpha\n")
 
-	if err := AppendAgentToConfig(p, "beta"); err != nil {
+	if err := AppendAgentToConfig(tmp, p, "beta"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -56,10 +77,10 @@ func TestAppendAgentToConfig_ByAgent_Idempotent(t *testing.T) {
 	tmp := t.TempDir()
 	p := writeYAML(t, tmp, "roadmap_namespacing: by_agent\nagents:\n  - alpha\n")
 
-	if err := AppendAgentToConfig(p, "alpha"); err != nil {
+	if err := AppendAgentToConfig(tmp, p, "alpha"); err != nil {
 		t.Fatalf("first call: %v", err)
 	}
-	if err := AppendAgentToConfig(p, "alpha"); err != nil {
+	if err := AppendAgentToConfig(tmp, p, "alpha"); err != nil {
 		t.Fatalf("second call: %v", err)
 	}
 
@@ -79,7 +100,7 @@ func TestAppendAgentToConfig_Flat_NoKey(t *testing.T) {
 	original := "roadmap_namespacing: flat\n# some comment\nreq_dir: docs/req\n"
 	p := writeYAML(t, tmp, original)
 
-	if err := AppendAgentToConfig(p, "beta"); err != nil {
+	if err := AppendAgentToConfig(tmp, p, "beta"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -112,7 +133,7 @@ func TestAppendAgentToConfig_PreservesFormat(t *testing.T) {
 		"hooks: none\n"
 	p := writeYAML(t, tmp, original)
 
-	if err := AppendAgentToConfig(p, "apolo-tf"); err != nil {
+	if err := AppendAgentToConfig(tmp, p, "apolo-tf"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -147,7 +168,7 @@ func TestAppendAgentToConfig_CreatesAgentsKey(t *testing.T) {
 	original := "roadmap_namespacing: by_agent\nci: none\n"
 	p := writeYAML(t, tmp, original)
 
-	if err := AppendAgentToConfig(p, "gamma"); err != nil {
+	if err := AppendAgentToConfig(tmp, p, "gamma"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -177,7 +198,7 @@ func TestAppendAgentToConfig_AppendsAfterLastKey(t *testing.T) {
 	original := "roadmap_namespacing: by_agent\nwip_limit: 3\n"
 	p := writeYAML(t, tmp, original)
 
-	if err := AppendAgentToConfig(p, "architect"); err != nil {
+	if err := AppendAgentToConfig(tmp, p, "architect"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -200,7 +221,7 @@ func TestAppendAgentToConfig_InlineFlow_Error(t *testing.T) {
 	tmp := t.TempDir()
 	p := writeYAML(t, tmp, "roadmap_namespacing: by_agent\nagents: [alpha, beta]\n")
 
-	err := AppendAgentToConfig(p, "gamma")
+	err := AppendAgentToConfig(tmp, p, "gamma")
 	if err == nil {
 		t.Fatal("expected error for inline-flow agents:, got nil")
 	}
@@ -222,7 +243,7 @@ func TestAppendAgentToConfig_FileAbsent(t *testing.T) {
 	tmp := t.TempDir()
 	p := filepath.Join(tmp, "trackfw.yaml") // does not exist
 
-	if err := AppendAgentToConfig(p, "gamma"); err != nil {
+	if err := AppendAgentToConfig(tmp, p, "gamma"); err != nil {
 		t.Fatalf("expected nil error for absent file; got: %v", err)
 	}
 }
@@ -238,7 +259,7 @@ func TestAppendAgentToConfig_AC8_Falsification(t *testing.T) {
 		tmp := t.TempDir()
 		p := writeYAML(t, tmp, "roadmap_namespacing: by_agent\nagents:\n  - alpha\n")
 
-		if err := AppendAgentToConfig(p, "new-agent"); err != nil {
+		if err := AppendAgentToConfig(tmp, p, "new-agent"); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
@@ -264,7 +285,7 @@ func TestAppendAgentToConfig_AC8_Falsification(t *testing.T) {
 		original := "roadmap_namespacing: flat\nreq_dir: docs/req\n"
 		p := writeYAML(t, tmp, original)
 
-		if err := AppendAgentToConfig(p, "new-agent"); err != nil {
+		if err := AppendAgentToConfig(tmp, p, "new-agent"); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 
@@ -273,4 +294,51 @@ func TestAppendAgentToConfig_AC8_Falsification(t *testing.T) {
 			t.Errorf("AC8 arm B: agents: key must NOT be created in flat project; got:\n%s", got)
 		}
 	})
+}
+
+// TestAppendAgentToConfig_SymlinkLeafRefused asserts that AppendAgentToConfig rejects
+// a write when trackfw.yaml is a symlink pointing outside the project root — braço (a)
+// for type (i) relative-path sites.
+// AC11: AppendAgentToConfig returns a non-nil error and writes nothing outside the
+// project when trackfw.yaml is a symlink, confirming the guard fires before os.WriteFile.
+func TestAppendAgentToConfig_SymlinkLeafRefused(t *testing.T) {
+	outside := t.TempDir()
+	dir := t.TempDir()
+
+	// Create a real trackfw.yaml in outside so the symlink has a valid target
+	outsideYAML := filepath.Join(outside, "trackfw.yaml")
+	if err := os.WriteFile(outsideYAML, []byte("roadmap_namespacing: by_agent\nagents:\n  - alpha\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// trackfw.yaml in dir → symlink to outside
+	symlinkOrSkip(t, outsideYAML, filepath.Join(dir, "trackfw.yaml"))
+	p := filepath.Join(dir, "trackfw.yaml")
+
+	err := AppendAgentToConfig(dir, p, "beta")
+	if err == nil {
+		t.Fatal("AppendAgentToConfig should refuse when trackfw.yaml is a symlink, got nil")
+	}
+	// Nothing should be appended to the file outside
+	got, _ := os.ReadFile(outsideYAML)
+	if strings.Contains(string(got), "beta") {
+		t.Error("containment violated: 'beta' was written to file outside project root")
+	}
+}
+
+// TestAppendAgentToConfig_SymlinkLegitimatePass asserts that AppendAgentToConfig
+// succeeds in a clean directory with no symlinks — braço (b): legitimate operation works.
+// AC11: AppendAgentToConfig returns nil and appends the agent name when no symlinks
+// are present, confirming the guard does not block normal by_agent install.
+func TestAppendAgentToConfig_SymlinkLegitimatePass(t *testing.T) {
+	tmp := t.TempDir()
+	p := writeYAML(t, tmp, "roadmap_namespacing: by_agent\nagents:\n  - alpha\n")
+
+	if err := AppendAgentToConfig(tmp, p, "beta"); err != nil {
+		t.Fatalf("AppendAgentToConfig should succeed with clean path, got: %v", err)
+	}
+	got := readFile(t, p)
+	if !strings.Contains(got, "  - beta\n") {
+		t.Errorf("expected '  - beta' written; got:\n%s", got)
+	}
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/kgsaran/trackfw/internal/discover"
 	"github.com/kgsaran/trackfw/internal/generators"
 	"github.com/kgsaran/trackfw/internal/i18n"
+	"github.com/kgsaran/trackfw/internal/pathguard"
 	"github.com/spf13/cobra"
 )
 
@@ -26,6 +27,15 @@ func NewDiscoverCmd() *cobra.Command {
 			cwd, err := os.Getwd()
 			if err != nil {
 				return err
+			}
+			// resolvedCwd is the EvalSymlinks-resolved form of cwd used as the root
+			// argument to pathguard. On macOS, os.Getwd() may return /tmp/... while
+			// EvalSymlinks resolves to /private/tmp/... — passing the unresolved path
+			// as root causes false "escapes root" errors for files genuinely inside
+			// the project. Falls back to cwd if EvalSymlinks fails.
+			resolvedCwd := cwd
+			if rc, rcErr := filepath.EvalSymlinks(cwd); rcErr == nil {
+				resolvedCwd = rc
 			}
 
 			fmt.Fprintf(out, "trackfw discover — scanning %s\n\n", cwd)
@@ -117,14 +127,17 @@ func NewDiscoverCmd() *cobra.Command {
 
 			// --init
 			if flagInit {
-				yamlPath := filepath.Join(cwd, "trackfw.yaml")
+				yamlPath := filepath.Join(resolvedCwd, "trackfw.yaml")
 				if _, statErr := os.Stat(yamlPath); statErr == nil {
 					// arquivo já existe — avisar e sair sem sobrescrever
 					fmt.Fprintln(out, "\n⚠ trackfw.yaml already exists — remove it first if you want to regenerate")
 					return nil
 				}
 				yaml := discover.GenerateYAML(r)
-				if err := os.WriteFile(yamlPath, []byte(yaml), 0644); err != nil {
+				if err := rejectDiscoverPath(resolvedCwd, yamlPath); err != nil {
+					return err
+				}
+				if err := os.WriteFile(yamlPath, []byte(yaml), 0644); err != nil { // write-containment-allowed: guarded by pathguard.RejectSymlinks via rejectDiscoverPath above
 					return fmt.Errorf("writing trackfw.yaml: %w", err)
 				}
 				fmt.Fprintln(out, "\n✓ trackfw.yaml generated")
@@ -152,7 +165,7 @@ func NewDiscoverCmd() *cobra.Command {
 					return fmt.Errorf("no roadmap dir detected — cannot bootstrap log")
 				}
 
-				logPath := filepath.Join(cwd, r.RoadmapDir, ".trackfw-log")
+				logPath := filepath.Join(resolvedCwd, r.RoadmapDir, ".trackfw-log")
 
 				// ler entradas já existentes para dedup
 				existingEntries := readLogEntries(logPath)
@@ -161,7 +174,10 @@ func NewDiscoverCmd() *cobra.Command {
 				newContent := discover.GenerateBootstrapLog(r, cwd)
 				lines := strings.Split(newContent, "\n")
 
-				f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+				if err := rejectDiscoverPath(resolvedCwd, logPath); err != nil {
+					return err
+				}
+				f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644) // write-containment-allowed: guarded by pathguard.RejectSymlinks via rejectDiscoverPath above
 				if err != nil {
 					return fmt.Errorf("opening log: %w", err)
 				}
@@ -192,6 +208,17 @@ func NewDiscoverCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&flagBootstrapLog, "bootstrap-log", false, "create retroactive .trackfw-log from done/ files")
 
 	return cmd
+}
+
+// rejectDiscoverPath guards a path inside root before any write.
+// It calls pathguard.RejectSymlinks and prints a refusal message to stderr on
+// failure, matching the pattern established in internal/generators/scaffold.go.
+func rejectDiscoverPath(root, absTarget string) error {
+	if err := pathguard.RejectSymlinks(root, absTarget); err != nil {
+		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absTarget, err)
+		return fmt.Errorf("refusing write to %s: %w", absTarget, err)
+	}
+	return nil
 }
 
 // readLogEntries lê o arquivo de log e retorna um set de chaves de dedup.

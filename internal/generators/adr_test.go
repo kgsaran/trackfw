@@ -345,3 +345,35 @@ func TestListADRs_ParsesMeta(t *testing.T) {
 		t.Errorf("status esperado 'Proposed', obteve: %q", status)
 	}
 }
+
+// ─── ML-1C Containment Tests ────────────────────────────────────────────────
+
+// TestNewADR_SymlinkAdrDirRefused asserts that ML-1C containment guards reject
+// NewADR when the adrDir path traverses a symlink pointing outside the project root.
+func TestNewADR_SymlinkAdrDirRefused(t *testing.T) {
+	outside := t.TempDir()
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	// docs/adr -> outside (symlink ancestor attack)
+	if err := os.MkdirAll("docs", 0755); err != nil {
+		t.Fatal(err)
+	}
+	symlinkOrSkip(t, outside, filepath.Join(dir, "docs", "adr"))
+
+	content := ADRContent{Title: "Symlink Test"}
+	err := NewADR(content, "docs/adr")
+	if err == nil {
+		t.Fatal("NewADR() should refuse when adrDir traverses a symlink, got nil")
+	}
+	entries, _ := os.ReadDir(outside)
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".md") {
+			t.Errorf("containment violated: ADR %s was written outside the project", e.Name())
+		}
+	}
+}
