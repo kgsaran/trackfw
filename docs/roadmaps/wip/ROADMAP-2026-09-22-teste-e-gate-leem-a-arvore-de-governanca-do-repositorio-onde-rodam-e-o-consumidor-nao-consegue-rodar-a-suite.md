@@ -195,6 +195,71 @@ disser que a causa é outra, ele sai — **com a medição escrita**, como manda
 
 ---
 
+### ML-1A — resultado
+**Status:** ✅ Concluído (auditado por Zeus em 2026-09-22). Escolha **(i) skip declarado**, com o
+trade-off escrito. Braço (b) provado: no layout plano, `total=194, unfinished=26/25` — a medição
+continua acontecendo. Árbitro `by_agent`: OLD `RC=1` → NEW `RC=0`.
+Achado extra dele, da mesma classe: as notas do arquivo afirmavam baselines de **27/30/32** de
+quando o corpus tinha ~27 itens; hoje são **194**. Corrigido.
+🔴 **Falso alarme meu na auditoria:** contei um `t.Fatalf` remanescente na função com `grep -c` — era
+o literal dentro de um **comentário**. Meu grep não distinguiu comentário de código, que é
+exatamente o que o `check-symlink-privilege-guard` faz certo.
+
+### ML-1B — resultado: sítio 2 aprovado, **sítio 3 REPROVADO**
+**Status:** 🔄 Em andamento — corretivo **ML-1B-bis** pendente
+
+**Sítio 2 ✅** — fixture preserva o discriminante (`adr: ""` com aspas, ADR só em backtick no corpo),
+e ele **acrescentou** `TestExtractRefPath_CorpusBacktickREF`: controle que ainda lê os 3 arquivos
+reais, mas com `t.Logf`+`continue` quando ausentes e `t.Skip` declarado se nenhum for achado — evita
+trocar acoplamento por vacuidade silenciosa. Upstream: 3/3 verificados.
+
+**Sítio 3 ❌ — a correção não alcança o caminho que o consumidor usa.**
+Ele mesmo declarou o residual, e a medição confirma:
+```
+Makefile:75   TRACKFW_SELF_GOVERNED=1 ... scripts/check-roadmap-barrier-contract.sh
+Makefile:27   parity-rest: build          →  parity: build parity-rest parity-falsify
+Makefile:156  quality: test lint parity
+```
+O pin é **incondicional** e está dentro de `parity-rest`. **Um fork que rode `make quality` continua
+reprovando com os 144 basenames** — e `make quality` é exatamente o que o #277 relata como
+inalcançável. O que ficou desacoplado foi a invocação avulsa do script, que ninguém usa.
+
+🔴 **E a correção criou uma trava:** `check-parity-call-site-pins.sh` agora **exige** o pin
+(`VARS_PIN=(... TRACKFW_SELF_GOVERNED)`), então removê-lo reprova outro gate. A saída fácil está
+fechada por construção.
+
+**Crédito ao executor:** ele **previu e declarou** exatamente isto no relatório, em vez de entregar
+como concluído. Foi o que tornou a reprovação barata.
+
+### ML-1B-bis — tirar a tripwire do caminho do consumidor
+**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Files affected:** `Makefile`, `.github/workflows/quality.yml`,
+`scripts/check-parity-call-site-pins.sh`. **Não** tocar no `check-roadmap-barrier-contract.sh` — o
+guard interno dele está correto.
+
+**A regra:** o que o consumidor roda (`make quality` → `parity` → `parity-rest`) **não pode** exigir
+a governança do mantenedor. A tripwire é auditoria do upstream e pertence a um alvo próprio,
+invocado pelo **CI do upstream**, não pela suíte geral.
+
+**Desenho pedido:**
+1. Remover a linha 75 de `parity-rest`.
+2. Criar alvo próprio (ex.: `self-governance:`) que invoca o script com `TRACKFW_SELF_GOVERNED=1`.
+3. Invocar esse alvo em `.github/workflows/quality.yml`, num job do upstream.
+4. Reapontar o pin de vacuidade em `check-parity-call-site-pins.sh` para o **novo call site**, de
+   modo que ele continue reprovando se o pin sumir — 🔴 **sem** voltar a exigi-lo em `parity-rest`.
+
+**Acceptance criteria:**
+- [ ] 🔴 **`make quality` numa árvore `by_agent` sem os roadmaps do mantenedor → RC=0.** É o AC que
+      o ML-1B não atendeu. Prove rodando, e cole a saída
+- [ ] 🔴 **A tripwire continua reprovando no upstream:** apague um roadmap do disco, rode o alvo
+      novo, veja reprovar. Cole a saída
+- [ ] O CI do upstream invoca o alvo novo — mostre a linha do workflow
+- [ ] O pin de vacuidade reprova se o `TRACKFW_SELF_GOVERNED=1` sumir do novo call site — prove
+      removendo
+- [ ] 🔴 **NÃO rodar `make quality` completo** para validação de rotina — você é o único agente
+      agora, mas a barreira é do arquiteto. A exceção é o AC 1, que **exige** `make quality` na
+      árvore temporária `by_agent` — essa roda, porque é a prova
+
 ## Barreira final
 
 Revisão `hefesto-tf` e `hades-tf`, auditoria do arquiteto, `trackfw barrier`.

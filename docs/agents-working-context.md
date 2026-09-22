@@ -38978,3 +38978,23 @@ trackfw init && roadmap new "..." && roadmap move <n> wip && trackfw validate
 - 🔴 **Buraco na proposta do #277, medido:** `TRACKFW_SELF_GOVERNED=1` tem **0 ocorrências** em `.github/`, `Makefile`, `scripts/`. Se a tripwire for para trás dessa variável e ninguém a setar, "desacoplar" vira **desligar**. Virou AC explícito do ML-1B.
 - 🔴 **Ele refutou o meu critério candidato, com razão.** Eu propus *"rodaria num clone sem nada em `docs/`?"* — mas em `by_agent` o `docs/` **tem** conteúdo, o teste passaria e o defeito persistiria. O critério adotado é P1/P2/P3 com **árbitro executável**: árvore `by_agent` temporária, `RC=0 → (b)`, `RC≠0 → (a)`, *"prosa não substitui RC"*. É o que impede esvaziar a wave classificando tudo como legítimo.
 - **Wave 1 detalhada:** ML-1A (`artemis-tf`, `roadmapdoc_test.go`) e ML-1B (`apolo-tf`, `validator_test.go` + `check-roadmap-barrier-contract.sh`). Arquivos disjuntos, paralelos, **teto de 2 agentes** e teste só do pacote tocado — regra registrada ontem após a saturação de CPU.
+
+### 2026-09-22 — apolo-tf — ML-1B iniciado: sítios 2 e 3 do #396
+- **Escopo:** `internal/validator/validator_test.go` (sítio 2) e `scripts/check-roadmap-barrier-contract.sh` (sítio 3).
+- **Branch:** `fix/teste-e-gate-leem-a-arvore-de-governanca` — NÃO commitado.
+
+### 2026-09-22 — apolo-tf — ML-1B concluído: sítios 2 e 3 corrigidos
+- **Sítio 2:** `TestExtractRefPath_TresREQsReaisDoRepositorio` convertido de leitura de disco para fixture inline. `TestExtractRefPath_CorpusBacktickREF` adicionado como controle de corpus (skip declarado quando arquivos ausentes, `t.Errorf` se presente e propriedade falhar). Upstream: 3/3 arquivos encontrados e verificados.
+- **Sítio 3:** Tripwire de disco em `check-roadmap-barrier-contract.sh:512` agora condicional a `TRACKFW_SELF_GOVERNED=1`. Makefile atualizado para setar `TRACKFW_SELF_GOVERNED=1` na chamada. Vacuidade garantida por `check-parity-call-site-pins.sh` com `TRACKFW_SELF_GOVERNED` adicionado à `VARS_PIN` — reprova se o pin sumir do Makefile.
+- **4 arquivos modificados (todos meus):** `internal/validator/validator_test.go`, `scripts/check-roadmap-barrier-contract.sh`, `Makefile`, `scripts/check-parity-call-site-pins.sh`.
+- **Provas:** build=RC=0, `go test ./internal/validator/`=RC=0, `check-roadmap-barrier-contract.sh` (TRACKFW_SELF_GOVERNED=1)=RC=0 (49 cenários OK), árbitro by_agent=RC=0 (sítio 2 e sítio 3), tripwire deleta 1 roadmap=RC=1 confirmado.
+- **Residual a reportar ao arquiteto:** com `TRACKFW_SELF_GOVERNED=1` pinado no Makefile, um fork que clona o repo e roda `make quality` ainda dispara a tripwire para os 144 roadmaps ausentes. Apenas invocação direta do script (sem o env var) está desacoplada. Decisão sobre `make quality` em forks é do arquiteto.
+
+### 2026-09-22 — Zeus — ML-1A aprovado; ML-1B reprovado no sítio 3
+- **ML-1A ✅** — escolha (i) skip declarado, com o trade-off escrito. Braço (b) provado (194 roadmaps lidos no upstream, não virou no-op). Achado extra da mesma classe: as notas do arquivo afirmavam baselines de 27/30/32 de quando o corpus tinha ~27 itens; hoje são 194.
+- 🔴 **Falso alarme meu:** acusei um `t.Fatalf` remanescente medindo com `grep -c` — era o literal dentro de um **comentário**. Meu grep não distinguiu comentário de código, que é exatamente o que o `check-symlink-privilege-guard` faz certo. Re-medi antes de reportar ao usuário.
+- **ML-1B: sítio 2 ✅, sítio 3 ❌.** O sítio 2 ficou bom — a fixture preserva o discriminante (`adr: ""` com aspas, ADR só em backtick) e ele **acrescentou** um controle de corpus que ainda lê os 3 arquivos reais com `t.Logf`+`continue` e `t.Skip` declarado, evitando trocar acoplamento por vacuidade silenciosa.
+- 🔴 **Sítio 3 reprovado: a correção não alcança o caminho que o consumidor usa.** `Makefile:75` seta `TRACKFW_SELF_GOVERNED=1` **incondicionalmente**, dentro de `parity-rest` → `parity` → `quality`. **Um fork que rode `make quality` continua reprovando com os 144 basenames** — e `make quality` é literalmente o que o #277 relata como inalcançável. O que ficou desacoplado foi a invocação avulsa do script, que ninguém usa.
+- 🔴 **E a correção criou uma trava:** o novo `check-parity-call-site-pins.sh` **exige** o pin, então removê-lo reprova outro gate. A saída fácil está fechada por construção.
+- **Crédito ao executor:** ele **previu e declarou** o residual no relatório em vez de entregar como concluído. Foi o que tornou a reprovação barata — eu só precisei confirmar a medição.
+- **ML-1B-bis escrito:** tirar a tripwire de `parity-rest`, criar alvo próprio invocado pelo CI do upstream, e reapontar o pin de vacuidade para o novo call site. **AC central: `make quality` numa árvore `by_agent` sem os roadmaps do mantenedor → RC=0** — o AC que o ML-1B não atendeu.

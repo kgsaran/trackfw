@@ -507,19 +507,29 @@ elif [[ -n "${CORPUS_FILELIST:-}" ]]; then
   MISSING_FROM_DISK=""
   while IFS= read -r snapshot_path; do
     base=$(basename "$snapshot_path")
-    # Basename ausente do disco (docs/roadmaps/**) reprova: o corpus congelado referencia um
-    # arquivo que já não existe na árvore de trabalho em NENHUM estado (wip/done/backlog/...).
-    on_disk=$(find "$ROOT_DIR/docs/roadmaps" -type f -name "$base" | head -n1)
-    if [[ -z "$on_disk" ]]; then
-      MISSING_FROM_DISK="${MISSING_FROM_DISK}${MISSING_FROM_DISK:+, }$base"
-      # NAO pula o arquivo. O veredito e computado sobre os BYTES DO SNAPSHOT — o disco
-      # so prova existencia, como o comentario logo abaixo diz. Pular aqui removia o
-      # arquivo do corpus CONGELADO, e ai as contagens e o hash da AC10 mudavam por
-      # truncamento em vez de por reclassificacao. Medido: apagando UM roadmap do disco,
-      # o gate emitia 6 falhas — a legitima (basename-missing-from-disk) mais CINCO
-      # falsas, entre elas "corpus reclassificado: hash da tabela de vereditos mudou",
-      # quando nada tinha sido reclassificado. A tripwire de disco e a AC10 sao
-      # contratos distintos e agora reprovam em separado.
+    # Tripwire de disco: ativa apenas quando TRACKFW_SELF_GOVERNED=1 (mantenedor do
+    # upstream). Consumidores e forks que não possuem os 144 roadmaps do mantenedor
+    # devem deixar TRACKFW_SELF_GOVERNED sem definição — o gate verifica o corpus
+    # congelado (bytes do snapshot) sem exigir os arquivos vivos no disco do chamador.
+    # O Makefile do upstream seta TRACKFW_SELF_GOVERNED=1 nesta chamada (ML-2E,
+    # mesma família de HASH_CMD_BIN — pin verificado por check-parity-call-site-pins.sh).
+    # Referência: ML-1B, ROADMAP-2026-09-22-teste-e-gate-leem-a-arvore-de-governanca-do-
+    # repositorio-onde-rodam-e-o-consumidor-nao-consegue-rodar-a-suite.md
+    if [[ "${TRACKFW_SELF_GOVERNED:-0}" == "1" ]]; then
+      # Basename ausente do disco (docs/roadmaps/**) reprova: o corpus congelado referencia um
+      # arquivo que já não existe na árvore de trabalho em NENHUM estado (wip/done/backlog/...).
+      on_disk=$(find "$ROOT_DIR/docs/roadmaps" -type f -name "$base" | head -n1)
+      if [[ -z "$on_disk" ]]; then
+        MISSING_FROM_DISK="${MISSING_FROM_DISK}${MISSING_FROM_DISK:+, }$base"
+        # NAO pula o arquivo. O veredito e computado sobre os BYTES DO SNAPSHOT — o disco
+        # so prova existencia, como o comentario logo abaixo diz. Pular aqui removia o
+        # arquivo do corpus CONGELADO, e ai as contagens e o hash da AC10 mudavam por
+        # truncamento em vez de por reclassificacao. Medido: apagando UM roadmap do disco,
+        # o gate emitia 6 falhas — a legitima (basename-missing-from-disk) mais CINCO
+        # falsas, entre elas "corpus reclassificado: hash da tabela de vereditos mudou",
+        # quando nada tinha sido reclassificado. A tripwire de disco e a AC10 sao
+        # contratos distintos e agora reprovam em separado.
+      fi
     fi
     CORPUS_FILES=$((CORPUS_FILES + 1))
     # Conteúdo vem do SNAPSHOT (bytes congelados), nunca do disco — o disco só prova
@@ -568,8 +578,12 @@ PYEOF
     rm -f "$CORPUS_SANDBOX/docs/roadmaps/wip/$base"
   done <<<"$CORPUS_FILELIST"
 
-  if [[ -n "$MISSING_FROM_DISK" ]]; then
-    fail "corpus/basename-missing-from-disk" "basename(s) do snapshot ausente(s) de docs/roadmaps/**: $MISSING_FROM_DISK"
+  if [[ "${TRACKFW_SELF_GOVERNED:-0}" == "1" ]]; then
+    if [[ -n "$MISSING_FROM_DISK" ]]; then
+      fail "corpus/basename-missing-from-disk" "basename(s) do snapshot ausente(s) de docs/roadmaps/**: $MISSING_FROM_DISK"
+    else
+      ok "corpus/basename-missing-from-disk"
+    fi
   else
     ok "corpus/basename-missing-from-disk"
   fi

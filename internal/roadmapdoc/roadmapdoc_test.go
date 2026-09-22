@@ -35,9 +35,10 @@ package roadmapdoc
 //     the three-category function.
 //
 //   TestCorpusMeasurement_ReportOnly
-//     Affirms: documents the current corpus count without asserting a specific number,
-//     because the corpus changes with every ML execution. This test NEVER fails; it exists
-//     to surface the count in the CI log.
+//     Affirms: when docs/roadmaps/done/ exists (flat layout), the test logs the current
+//     corpus count without asserting a specific number; when the directory is absent (by_agent
+//     layout or consumer tree), it calls t.Skip instead of t.Fatal — fulfilling "never fails"
+//     in both layouts.  The test exists to surface the count in the CI log of the upstream.
 //
 //   TestWaveLabelRe_CaseInsensitiveSuffix (ML-1B / AC3-ter)
 //     Affirms: WaveLabelRe accepts "3-Py" (upper-case P suffix) after the case-insensitive
@@ -75,29 +76,25 @@ package roadmapdoc
 //     []MalformedWave AND a non-empty []WaveBlock — the malformed wave is isolated, not
 //     propagated, proving the cascade-abort behaviour of ADR-2026-07-29 decision 16 is reversed.
 //
-// CORPUS MEASUREMENT NOTE (updated by ML-1B):
-//   ML-1A measured three counts (pre-fix):
-//     byStatusIsComplete (ignoring ParseWaves errors): 27
-//     HasUnfinishedMLs (fail-safe: ParseWaves error → unfinished): 30
-//     Architect's baseline: 32 (corrected in REQ to 27)
+// CORPUS MEASUREMENT NOTE (updated by ML-1A of REQ #396):
+//   No specific-number assertion is written; the count is logged only.  The corpus grows with
+//   every merged roadmap; pinning a number here would cause false failures on every merge that
+//   moves a roadmap to done/.
 //
-//   ML-1B fixes WaveLabelRe to be case-insensitive. After this fix:
-//   - "3-Py" is a VALID label; ParseWaves no longer errors on trackfw-update-command-2026-06-18.md.
-//   - "## Wave reaberta" (no digit prefix) still fails WaveLabelRe and will cause ParseWaves
-//     to error for ROADMAP-2026-09-01-caminho-dentro-de-artefato-versionado-usa-sempre-barra.md.
-//     That heading was added after the baseline was captured and is not corrected in this ML.
-//   - The 30→27 gap from ML-1A was caused by roadmaps with uppercase suffixes; after this fix,
-//     HasUnfinishedMLs no longer erroneously returns true for those roadmaps.
-//   - The gap between HasUnfinishedMLs and byStatusIsComplete should narrow after this fix.
+//   Historical baselines (kept for audit continuity, not for assertion):
+//     ML-1A pre-fix (REQ #392 era, ~27 items in done/): byStatusIsComplete=27, HasUnfinishedMLs=30
+//     After ML-1B case-insensitive fix: HasUnfinishedMLs count aligned closer to byStatusIsComplete
+//     As of REQ #396 (2026-09-22), done/ contains ≥194 files — those earlier numbers are stale.
 //
-//   No specific-number assertion is written; the count is logged only. The count will decrease
-//   further when ML-4A cleans the 6 sítios measured in done/.
-//
-//   ML-1A note about "32–30 = 2 gap": the REQ corrected the architect's baseline to 27.
-//   The "2-unit difference attributed to corpus drift" in the original note was incorrect —
-//   the REQ explicitly states the correct number is 27 and that done/ had not changed.
+//   ML-1A (REQ #396) change: replaced t.Fatalf with t.Skip when done/ is absent (errors.Is
+//   fs.ErrNotExist), so the test fulfils its "never fails" contract in consumer trees with
+//   by_agent layout.  Non-ENOENT errors (e.g. ENOTDIR) are logged and the function returns
+//   without failing.  In the flat upstream layout the directory exists and the measurement
+//   runs unchanged.
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -250,7 +247,16 @@ func TestCorpusMeasurement_ReportOnly(t *testing.T) {
 	doneDir := filepath.Join(repoRoot(t), "docs", "roadmaps", "done")
 	entries, err := os.ReadDir(doneDir)
 	if err != nil {
-		t.Fatalf("ReadDir %s: %v", doneDir, err)
+		if errors.Is(err, fs.ErrNotExist) {
+			// docs/roadmaps/done/ does not exist in this tree — by_agent layout or consumer
+			// tree where roadmaps live under docs/roadmaps/<agent>/done/.  There is no flat
+			// done/ to measure; the test skips rather than fails, honouring "never fails".
+			t.Skipf("docs/roadmaps/done/ not found (%s) — by_agent layout or consumer tree; corpus measurement skipped", doneDir)
+		}
+		// Any other I/O error: log and return.  "Never fails" means no t.Fatalf regardless
+		// of error kind — including ENOTDIR if a path component is a regular file.
+		t.Logf("ReadDir %s: %v — corpus measurement skipped", doneDir, err)
+		return
 	}
 
 	total := 0
@@ -292,7 +298,7 @@ func TestCorpusMeasurement_ReportOnly(t *testing.T) {
 
 	t.Logf("done/ corpus: total=%d, unfinished(StatusIsComplete)=%d, unfinished(HasUnfinishedMLs)=%d",
 		total, byStatusIsComplete, byThreeCategory)
-	t.Logf("Post-ML-1B note: count may remain 30 — trackfw-update-command has genuine pending MLs (⬜), so fixing WaveLabelRe changes the reason (fail-safe→genuine) but not the result. ROADMAP-2026-09-01 still has '## Wave reaberta' (letter-only label, not fixed by AC3-ter). See CORPUS MEASUREMENT NOTE in this file.")
+	t.Logf("Corpus measurement (REQ #396): count is logged for CI visibility only; no specific number is asserted. See CORPUS MEASUREMENT NOTE in this file.")
 }
 
 // ── ML-1B: AC3-ter — WaveLabelRe case-insensitive suffix ──────────────────────

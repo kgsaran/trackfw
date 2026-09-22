@@ -2241,10 +2241,73 @@ func TestADRAcceptedWhenREQDone_ADREntreBackticksSemFrontmatter_Violates(t *test
 // TestExtractRefPath_TresREQsReaisDoRepositorio — as 3 REQs reais do repositório sem
 // `adr:` no frontmatter, cujo ADR só é referenciado no corpo entre backticks, devem ter
 // o ADR resolvido pelo extrator após a correção do ML-1A.
+// TestExtractRefPath_TresREQsReaisDoRepositorio — fixture-based: as 3 REQs reais do
+// repositório sem `adr:` no frontmatter (adr: ""), cujo ADR só é referenciado no corpo
+// entre backticks, devem ter o ADR resolvido pelo extrator.
+//
+// Reconciliation (ML-1B): afirma que extractRefPath resolve o ADR citado exclusivamente
+// via backtick no corpo, quando adr: "" no frontmatter, para cada um dos três formatos
+// de REQ reais usados neste repositório. O teste não lê do disco — usa fixtures inline
+// capturadas em 2026-09-22 (correção do sítio 2 do ML-1B, REQ #396).
+// A fixture preserva o detalhe discriminante: adr: "" com aspas duplas (não bare adr:),
+// pois o caminho pelo extrator difere — see extractRefPath em validator.go.
 func TestExtractRefPath_TresREQsReaisDoRepositorio(t *testing.T) {
+	const adrRef = "docs/adr/ADR-2026-07-26-principios-de-design-de-gates-verificaveis.md"
+	fixtures := []struct {
+		name    string
+		content string
+	}{
+		{
+			name: "REQ-2026-07-27-roadmap-move-sincroniza-o-status-do-artefato.md",
+			content: "---\nstatus: Done\ndate: 2026-07-27\nauthor: \"\"\nadr: \"\"\n" +
+				"roadmap: \"docs/roadmaps/done/ROADMAP-2026-07-27-roadmap-move-sincroniza-o-status-do-artefato.md\"\n" +
+				"---\n\n# REQ: roadmap move sincroniza o status do artefato\n\n" +
+				"> Date: 2026-07-27 | Status: Done\n\n" +
+				"## Linked ADR\n\nADR: `" + adrRef + "` (P1–P4)\n",
+		},
+		{
+			name: "REQ-2026-07-27-integridade-das-referencias-e-ciclo-de-vida-da-req.md",
+			content: "---\nstatus: Done\ndate: 2026-07-27\nauthor: \"\"\nadr: \"\"\n" +
+				"roadmap: \"docs/roadmaps/done/ROADMAP-2026-07-27-integridade-das-referencias-e-ciclo-de-vida-da-req.md\"\n" +
+				"---\n\n# REQ: integridade das referencias e ciclo de vida da REQ\n\n" +
+				"> Date: 2026-07-27 | Status: Done\n\n" +
+				"## Linked ADR\n\nADR: `" + adrRef + "` — os dois defeitos são casos de P2\n",
+		},
+		{
+			name: "REQ-2026-07-27-convergencia-dos-templates-de-artefato-do-cli-python.md",
+			content: "---\nstatus: Done\ndate: 2026-07-27\nauthor: \"\"\nadr: \"\"\n" +
+				"roadmap: \"docs/roadmaps/done/ROADMAP-2026-07-27-convergencia-dos-templates-de-artefato-do-cli-python.md\"\n" +
+				"---\n\n# REQ: convergencia dos templates de artefato do CLI Python\n\n" +
+				"> Date: 2026-07-27 | Status: Done\n\n" +
+				"## Linked ADR\n\nADR: `" + adrRef + "` — esta REQ é um caso de P2\n",
+		},
+	}
+
+	for _, fix := range fixtures {
+		t.Run(fix.name, func(t *testing.T) {
+			got := extractRefPath(fix.content, "ADR")
+			if got == "" {
+				t.Fatalf("extractRefPath não resolveu o ADR de %q — regressão do ML-1A", fix.name)
+			}
+			if !strings.HasSuffix(got, ".md") {
+				t.Errorf("ADR resolvido de %q deveria terminar em .md, obteve %q", fix.name, got)
+			}
+		})
+	}
+}
+
+// TestExtractRefPath_CorpusBacktickREF — controle de corpus (não-regressão por arquivo real):
+// ao menos 1 REQ real em req_dir/ ainda satisfaz a propriedade de backtick-only ADR ref.
+// Skips declarado quando os arquivos não existem (contexto de consumidor); reprova se
+// presentes e a propriedade não se mantiver (regressão no upstream).
+//
+// Reconciliation (ML-1B): afirma que os arquivos de REQ reais neste repositório ainda
+// satisfazem a propriedade de resolução de ADR por backtick após a correção — controle
+// de não-regressão por corpus, distinto do teste de fixture acima.
+func TestExtractRefPath_CorpusBacktickREF(t *testing.T) {
 	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
-		t.Fatalf("erro ao resolver raiz do repositório: %v", err)
+		t.Skipf("não foi possível resolver raiz do repositório: %v", err)
 	}
 
 	reqs := []string{
@@ -2253,21 +2316,26 @@ func TestExtractRefPath_TresREQsReaisDoRepositorio(t *testing.T) {
 		"docs/req/REQ-2026-07-27-convergencia-dos-templates-de-artefato-do-cli-python.md",
 	}
 
+	found := 0
 	for _, rel := range reqs {
+		content, err := os.ReadFile(filepath.Join(repoRoot, rel))
+		if err != nil {
+			t.Logf("corpus: %q ausente — contexto de consumidor, ignorado", rel)
+			continue
+		}
+		found++
+		rel := rel // capture
 		t.Run(rel, func(t *testing.T) {
-			content, err := os.ReadFile(filepath.Join(repoRoot, rel))
-			if err != nil {
-				t.Fatalf("erro ao ler REQ real %q: %v", rel, err)
-			}
 			got := extractRefPath(string(content), "ADR")
 			if got == "" {
-				t.Fatalf("extractRefPath não resolveu o ADR de %q — regressão do ML-1A", rel)
-			}
-			if !strings.HasSuffix(got, ".md") {
-				t.Errorf("ADR resolvido de %q deveria terminar em .md, obteve %q", rel, got)
+				t.Errorf("CORPUS REGRESSION: extractRefPath não resolveu o ADR de %q — o arquivo real divergiu da fixture", rel)
 			}
 		})
 	}
+	if found == 0 {
+		t.Skip("corpus/backtick-ref: nenhum arquivo de REQ real encontrado — contexto de consumidor, skip declarado")
+	}
+	t.Logf("corpus/backtick-ref: %d/%d arquivos encontrados e verificados", found, len(reqs))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

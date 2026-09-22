@@ -53,7 +53,7 @@ SELF="$(basename "${BASH_SOURCE[0]}")"
 
 # Variáveis que exigem PIN no call site do Makefile (VAR=valor na mesma linha
 # de recipe que invoca o script consumidor).
-VARS_PIN=(HASH_CMD_BIN PYTHON_BIN)
+VARS_PIN=(HASH_CMD_BIN PYTHON_BIN TRACKFW_SELF_GOVERNED)
 
 # Variáveis que exigem RASTRO em stderr no script consumidor quando setadas,
 # mas que são intencionalmente NÃO pinadas no Makefile (ML-2D/ML-2E: servem
