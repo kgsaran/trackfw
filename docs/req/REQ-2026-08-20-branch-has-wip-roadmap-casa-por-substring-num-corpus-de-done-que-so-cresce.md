@@ -105,4 +105,4 @@ preservaria — os 127 roadmaps em `done/` são o corpus de teste pronto.
 ADR: <!-- a criar: precisao do casamento slug-roadmap -->
 
 ## Linked Roadmap
-Roadmap: <!-- sem roadmap; backlog -->
+Roadmap: `docs/roadmaps/abandoned/ROADMAP-2026-09-10-branch-has-wip-roadmap-casa-por-substring-num-corpus-de-done-que-so-cresce.md`

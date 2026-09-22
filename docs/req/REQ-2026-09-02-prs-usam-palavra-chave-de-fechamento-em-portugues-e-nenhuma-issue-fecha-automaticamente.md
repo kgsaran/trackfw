@@ -3,7 +3,7 @@ status: Done
 date: 2026-09-02
 author: "kgsaran"
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-02-gate-e-template-de-pr-exigem-palavra-chave-de-fechamento-em-ingles.md"
 ---
 
 # REQ: PRs usam palavra-chave de fechamento em português, e nenhuma issue fecha automaticamente
@@ -87,7 +87,7 @@ ADR:
 ## Linked Roadmap
 <!-- Roadmap a criar quando a branch do `context` do CLI Node fechar — não despachar dois agentes
      sobre a mesma árvore. -->
-Roadmap:
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-02-gate-e-template-de-pr-exigem-palavra-chave-de-fechamento-em-ingles.md`
 
 ---
 

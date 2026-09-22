@@ -144,4 +144,4 @@ ADR:
 ## Linked Roadmap
 Roadmap: docs/roadmaps/done/ROADMAP-2026-09-17-gerador-aplica-o-template-de-consumidor-ao-proprio-produtor-e-o-doctor-prescreve-desfazer-a-correcao.md
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: 
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-17-gerador-aplica-o-template-de-consumidor-ao-proprio-produtor-e-o-doctor-prescreve-desfazer-a-correcao.md`

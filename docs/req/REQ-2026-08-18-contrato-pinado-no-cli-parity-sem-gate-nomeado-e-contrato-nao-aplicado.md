@@ -106,4 +106,4 @@ ADR: <!-- avaliar: a regra "contrato sem gate é contrato não-aplicado" pode me
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: <!-- sem roadmap; backlog -->
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-08-20-contrato-pinado-no-cli-parity-sem-gate-nomeado.md`

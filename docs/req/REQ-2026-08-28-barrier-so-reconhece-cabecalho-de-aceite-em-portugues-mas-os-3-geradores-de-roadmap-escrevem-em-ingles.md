@@ -147,4 +147,4 @@ ADR: docs/adr/ADR-2026-08-29-dialeto-canonico-do-roadmap-e-vocabulario-de-status
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap:
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-08-29-dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier.md`

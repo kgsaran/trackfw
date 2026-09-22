@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-02
 author: "zeus-tf"
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-22-remover-a-entrada-pretooluse-do-settings-nao-e-detectado-por-nenhuma-regra-de-integridade-de-guard.md"
 ---
 
 # REQ: Remover a entrada `PreToolUse` do settings não é detectado por nenhuma regra de integridade de guard
@@ -95,4 +95,4 @@ mecanismo novo, isso é decisão arquitetural. -->
 
 ## Linked Roadmap
 
-Roadmap:
+Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-22-remover-a-entrada-pretooluse-do-settings-nao-e-detectado-por-nenhuma-regra-de-integridade-de-guard.md`

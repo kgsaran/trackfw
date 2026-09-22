@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-12
 author: ""
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-12-branch-new-cria-da-base-correta-e-o-guard-fecha-o-checkout-cru.md"
 ---
 
 # REQ: `branch new` cria a partir do HEAD atual, e não há comando para voltar à base

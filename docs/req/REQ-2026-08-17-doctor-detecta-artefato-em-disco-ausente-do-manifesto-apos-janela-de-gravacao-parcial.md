@@ -110,7 +110,7 @@ ADR: <!-- a criar, se a frente 2 for adiante (AC6) -->
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: <!-- sem roadmap; backlog -->
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-08-18-doctor-detecta-artefato-fora-do-manifesto-e-inverte-a-ordem-de-persistencia.md`
 
 ---
 

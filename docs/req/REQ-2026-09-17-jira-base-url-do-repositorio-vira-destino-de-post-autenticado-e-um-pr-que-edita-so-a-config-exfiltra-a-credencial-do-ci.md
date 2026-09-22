@@ -147,4 +147,4 @@ ADR:
 ## Linked Roadmap
 Roadmap: docs/roadmaps/done/ROADMAP-2026-09-17-jira-base-url-do-repositorio-vira-destino-de-post-autenticado-e-um-pr-que-edita-so-a-config-exfiltra-a-credencial-do-ci.md
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: 
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-17-jira-base-url-do-repositorio-vira-destino-de-post-autenticado-e-um-pr-que-edita-so-a-config-exfiltra-a-credencial-do-ci.md`

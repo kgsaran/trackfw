@@ -3,7 +3,7 @@ status: Done
 date: 2026-09-12
 author: ""
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-12-validar-um-binario-muitos-canais.md"
 ---
 
 # REQ: validar a opção D — um binário, muitos canais — antes de decidir se entra na v8

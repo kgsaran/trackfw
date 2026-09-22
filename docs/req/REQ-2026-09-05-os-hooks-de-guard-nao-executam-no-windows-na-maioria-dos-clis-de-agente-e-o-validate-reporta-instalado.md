@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-05
 author: ""
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-22-os-hooks-de-guard-nao-executam-no-windows-na-maioria-dos-clis-de-agente-e-o-validate-reporta-instalado.md"
 ---
 
 # REQ: os hooks de guard nao executam no Windows na maioria dos CLIs de agente e o validate reporta instalado
@@ -77,4 +77,4 @@ ADR: docs/adr/ADR-2026-09-05-hook-de-windows-roda-no-windows-geracao-nativa-por-
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap:
+Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-22-os-hooks-de-guard-nao-executam-no-windows-na-maioria-dos-clis-de-agente-e-o-validate-reporta-instalado.md`

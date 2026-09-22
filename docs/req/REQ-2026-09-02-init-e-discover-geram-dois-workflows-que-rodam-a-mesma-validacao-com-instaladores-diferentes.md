@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-02
 author: "zeus-tf"
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-22-init-e-discover-geram-dois-workflows-que-rodam-a-mesma-validacao-com-instaladores-diferentes.md"
 ---
 
 # REQ: `init` e `discover` geram dois workflows que rodam a mesma validação, com instaladores diferentes
@@ -78,4 +78,4 @@ ADR: <!-- avaliar na Wave 0: se a conclusão for que os dois caminhos atendem p�
 
 ## Linked Roadmap
 
-Roadmap:
+Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-22-init-e-discover-geram-dois-workflows-que-rodam-a-mesma-validacao-com-instaladores-diferentes.md`

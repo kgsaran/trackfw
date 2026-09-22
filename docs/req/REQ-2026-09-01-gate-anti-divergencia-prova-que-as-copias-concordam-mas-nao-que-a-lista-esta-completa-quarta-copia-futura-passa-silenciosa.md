@@ -70,7 +70,7 @@ descoberta-vs-lista vira postura de projeto e merece ADR. -->
 
 ## Linked Roadmap
 
-Roadmap:
+Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-09-gates-de-paridade-provam-concordancia-mas-nao-completude.md`
 
 
 ## 🔴 Sítio de mesma causa — issue #298, 2026-09-09

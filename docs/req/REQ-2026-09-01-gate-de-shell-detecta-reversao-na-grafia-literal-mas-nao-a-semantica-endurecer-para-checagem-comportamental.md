@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-01
 author: "zeus-tf"
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-22-gate-de-shell-detecta-reversao-na-grafia-literal-mas-nao-a-semantica-endurecer-para-checagem-comportamental.md"
 ---
 
 # REQ: Gate de shell detecta reversão na grafia literal, mas não a semântica — endurecer para checagem comportamental
@@ -89,4 +89,4 @@ disseminado, a postura "gate de ausência exige checagem comportamental" vira de
 
 ## Linked Roadmap
 
-Roadmap:
+Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-22-gate-de-shell-detecta-reversao-na-grafia-literal-mas-nao-a-semantica-endurecer-para-checagem-comportamental.md`

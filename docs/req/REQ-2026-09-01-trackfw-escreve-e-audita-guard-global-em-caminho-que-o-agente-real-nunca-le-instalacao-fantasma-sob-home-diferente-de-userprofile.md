@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-01
 author: "zeus-tf"
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-22-trackfw-escreve-e-audita-guard-global-em-caminho-que-o-agente-real-nunca-le-instalacao-fantasma-sob-home-userprofile.md"
 ---
 
 # REQ: `trackfw` escreve e audita guard global em caminho que o agente real nunca lê — instalação fantasma sob `$HOME` ≠ `%USERPROFILE%`
@@ -58,7 +58,7 @@ nativo do consumidor em vez do próprio, isso é decisão arquitetural e precisa
 
 ## Linked Roadmap
 
-Roadmap:
+Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-22-trackfw-escreve-e-audita-guard-global-em-caminho-que-o-agente-real-nunca-le-instalacao-fantasma-sob-home-userprofile.md`
 
 
 ---

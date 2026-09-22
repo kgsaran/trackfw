@@ -138,4 +138,4 @@ ADR:
 ## Linked Roadmap
 Roadmap: docs/roadmaps/done/ROADMAP-2026-09-17-gate-escreve-na-arvore-que-audita-e-a-guarda-existente-nao-cobre-o-culpado.md
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: 
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-17-gate-escreve-na-arvore-que-audita-e-a-guarda-existente-nao-cobre-o-culpado.md`

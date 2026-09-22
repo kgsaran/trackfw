@@ -106,4 +106,4 @@ ADR:
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: 
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-08-16-handler-global-de-erro-nos-entrypoints-node-e-python.md`

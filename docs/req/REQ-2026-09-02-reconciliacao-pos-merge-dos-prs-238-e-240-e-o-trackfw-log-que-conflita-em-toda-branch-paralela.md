@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-02
 author: "kgsaran"
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-22-reconciliacao-pos-merge-dos-prs-238-e-240-e-o-trackfw-log-que-conflita-em-toda-branch-paralela.md"
 ---
 
 # REQ: Reconciliação pós-merge dos PRs #238 e #240, e o `.trackfw-log` que conflita em toda branch paralela
@@ -146,4 +146,4 @@ ADR:
      docs/roadmaps/.trackfw-log, exatamente o arquivo em conflito nos PRs #238/#240. Criar o roadmap
      antes de os dois mergearem geraria um terceiro conflito no PR do reporter — que é o defeito
      descrito no item 5 desta própria REQ. Criar após os merges. -->
-Roadmap:
+Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-22-reconciliacao-pos-merge-dos-prs-238-e-240-e-o-trackfw-log-que-conflita-em-toda-branch-paralela.md`

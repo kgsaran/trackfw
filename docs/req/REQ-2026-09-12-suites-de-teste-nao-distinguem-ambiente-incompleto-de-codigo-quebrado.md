@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-12
 author: "Hefesto (Code Quality)"
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-12-suites-de-teste-nao-distinguem-ambiente-incompleto-de-codigo-quebrado.md"
 ---
 
 # REQ: suites de teste nao distinguem ambiente incompleto de codigo quebrado
