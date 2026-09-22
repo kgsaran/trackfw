@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/kgsaran/trackfw/internal/pathguard"
 )
 
 const vaultDir = "vault/notes"
@@ -16,6 +18,18 @@ const vaultIndexFile = "vault/notes/index.md"
 // Usa toSlug() existente para derivar o slug do título.
 // Idempotente: se a nota já existir, retorna erro em vez de sobrescrever.
 func NewNote(title string) error {
+	// Guard vault dir before MkdirAll to reject ancestor symlinks.
+	noteRoot, err := projectRoot()
+	if err != nil {
+		return fmt.Errorf("NewNote: %w", err)
+	}
+	absVaultDir := filepath.Join(noteRoot, vaultDir)
+	if guardErr := pathguard.RejectSymlinks(noteRoot, absVaultDir); guardErr != nil {
+		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absVaultDir, guardErr)
+		return fmt.Errorf("refusing write to %s: %w", absVaultDir, guardErr)
+	}
+
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.MkdirAll(vaultDir, 0755); err != nil {
 		return fmt.Errorf("criando vault/notes: %w", err)
 	}
@@ -52,6 +66,15 @@ related: []
 <!-- Como foi resolvido ou mitigado? O que deve ser feito? -->
 `, title, date, title)
 
+	// Leaf guard: the directory guard above covered the ancestor chain up to the
+	// directory; now guard the exact file so a symlink leaf (notePath itself
+	// pointing outside root) is also caught (ML-4B leaf-gap fix).
+	absNotePath := filepath.Join(noteRoot, notePath)
+	if guardErr := pathguard.RejectSymlinks(noteRoot, absNotePath); guardErr != nil {
+		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absNotePath, guardErr)
+		return fmt.Errorf("refusing write to %s: %w", absNotePath, guardErr)
+	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.WriteFile(notePath, []byte(body), 0644); err != nil {
 		return fmt.Errorf("escrevendo nota: %w", err)
 	}
@@ -67,6 +90,17 @@ related: []
 // appendNoteToIndex acrescenta uma linha de link para filename no vault/notes/index.md.
 // Cria o index.md se não existir. Se o link já estiver presente, não duplica.
 func appendNoteToIndex(filename string) error {
+	// Guard the index file against ancestor symlinks.
+	// NewNote already guarded vaultDir, so if we're here that check passed.
+	// Guard vaultIndexFile specifically (a symlink at the index itself is a separate vector).
+	if indexRoot, err := projectRoot(); err == nil {
+		absIndex := filepath.Join(indexRoot, vaultIndexFile)
+		if guardErr := pathguard.RejectSymlinks(indexRoot, absIndex); guardErr != nil {
+			fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absIndex, guardErr)
+			return fmt.Errorf("refusing write to %s: %w", absIndex, guardErr)
+		}
+	}
+
 	// Garante que index.md existe
 	if _, err := os.Stat(vaultIndexFile); os.IsNotExist(err) {
 		initial := `# Vault de Conhecimento
@@ -76,6 +110,7 @@ func appendNoteToIndex(filename string) error {
 ## Índice
 
 `
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if err := os.WriteFile(vaultIndexFile, []byte(initial), 0644); err != nil {
 			return fmt.Errorf("criando index.md: %w", err)
 		}
@@ -99,6 +134,7 @@ func appendNoteToIndex(filename string) error {
 
 	// Acrescenta linha de link
 	link := fmt.Sprintf("- [%s](%s)\n", nameWithoutExt, filename)
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	f, err := os.OpenFile(vaultIndexFile, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		return fmt.Errorf("abrindo index.md para append: %w", err)

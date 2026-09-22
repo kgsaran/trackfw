@@ -4,10 +4,16 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/kgsaran/trackfw/internal/pathguard"
 )
 
 // AppendAgentToConfig adds agentName to the agents: list in the file at yamlPath
 // if the file's roadmap_namespacing is "by_agent" and agentName is not already present.
+//
+// root is the project root boundary for the containment guard. Pass
+// manager.ProjectRoot (absolute) so RejectSymlinks can walk all ancestors
+// between root and yamlPath and reject any symlink along the way.
 //
 // It is a no-op when:
 //   - the file does not exist
@@ -17,7 +23,7 @@ import (
 // It preserves the rest of the file exactly: comments, key order, indentation, quoting.
 // Returns an error if the agents: key exists in inline-flow format (agents: [a, b]),
 // which cannot be safely edited without changing the representation.
-func AppendAgentToConfig(yamlPath, agentName string) error {
+func AppendAgentToConfig(root, yamlPath, agentName string) error {
 	data, err := os.ReadFile(yamlPath)
 	if os.IsNotExist(err) {
 		return nil
@@ -41,7 +47,7 @@ func AppendAgentToConfig(yamlPath, agentName string) error {
 		}
 	}
 
-	return appendAgentTextual(yamlPath, data, agentName)
+	return appendAgentTextual(root, yamlPath, data, agentName)
 }
 
 // appendAgentTextual performs the surgical line-level edit to add agentName.
@@ -59,7 +65,7 @@ func AppendAgentToConfig(yamlPath, agentName string) error {
 // Rejected shape (returns error, does NOT rewrite):
 //
 //	agents: [alpha, beta]   ← inline-flow; caller must edit manually
-func appendAgentTextual(yamlPath string, data []byte, agentName string) error {
+func appendAgentTextual(root, yamlPath string, data []byte, agentName string) error {
 	lines := strings.Split(string(data), "\n")
 
 	// Reject inline-flow format before doing any work.
@@ -120,5 +126,20 @@ func appendAgentTextual(yamlPath string, data []byte, agentName string) error {
 		result = append(result, "") // restore trailing newline
 	}
 
+	// Guard before write: reject any symlink ancestor between root and yamlPath.
+	// root is the real project root supplied by the caller (manager.ProjectRoot),
+	// so all ancestors from root to the file are checked — not just Dir(yamlPath).
+	// Guard precedes WriteFile so a refused destination creates no stray file.
+	// Fail closed: root == "" means the caller could not resolve the project root;
+	// without it we cannot verify containment, so we refuse the write.
+	if root == "" {
+		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: cannot verify containment: project root unknown\n", yamlPath)
+		return fmt.Errorf("refusing write to %s: cannot verify containment: project root unknown", yamlPath)
+	}
+	if guardErr := pathguard.RejectSymlinks(root, yamlPath); guardErr != nil {
+		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", yamlPath, guardErr)
+		return fmt.Errorf("refusing write to %s: %w", yamlPath, guardErr)
+	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks above (fail-closed when root is empty)
 	return os.WriteFile(yamlPath, []byte(strings.Join(result, "\n")), 0o644)
 }

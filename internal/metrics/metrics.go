@@ -5,10 +5,13 @@ import (
 	"encoding/csv"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/kgsaran/trackfw/internal/pathguard"
 )
 
 // Transition representa uma entrada do .trackfw-log.
@@ -35,6 +38,11 @@ type Metrics struct {
 // lineRe faz match de linhas do formato:
 // 2026-06-12 14:30  ROADMAP-2026-06-12-auth.md                  backlog → wip
 var lineRe = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s{2,}(\S+)\s{2,}(\S+)\s+→\s+(\S+)`)
+
+// metricsGetwdFn is the function used to obtain the current working directory inside
+// ExportCSV. It defaults to os.Getwd and may be overridden in tests to inject a
+// controlled failure without relying on OS-specific filesystem tricks.
+var metricsGetwdFn func() (string, error) = os.Getwd
 
 // ParseLog lê o arquivo .trackfw-log e retorna todas as transições.
 // Retorna nil, nil se o arquivo não existe.
@@ -182,7 +190,46 @@ func Calculate(transitions []Transition) Metrics {
 }
 
 // ExportCSV grava as transições e métricas em um arquivo CSV.
+//
+// Containment guard: when path is relative (or is absolute but contained inside
+// the project root), RejectSymlinks is applied to reject any symlink ancestor
+// between the project root and the destination.
+//
+// Named exception: an absolute path that resolves outside the project root
+// (e.g. /tmp/metrics.csv) is user-directed — the user explicitly chose an
+// external destination. That case is not "derived from root" per
+// ADR-2026-09-18 and is allowed through without a guard.
 func ExportCSV(m Metrics, transitions []Transition, path string) error {
+	// Resolve project root from CWD — macOS /tmp→/private/tmp invariant.
+	// Fail closed: if Getwd() fails we cannot determine whether the path is inside
+	// the project root, so we refuse the write rather than proceeding unguarded.
+	cwd, cwdErr := metricsGetwdFn()
+	if cwdErr != nil {
+		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: cannot verify containment: %v\n", path, cwdErr)
+		return fmt.Errorf("refusing write to %s: cannot verify containment: %w", path, cwdErr)
+	}
+	exportRoot := cwd
+	if resolved, resolveErr := filepath.EvalSymlinks(cwd); resolveErr == nil {
+		exportRoot = resolved
+	}
+	absPath := path
+	if !filepath.IsAbs(path) {
+		absPath = filepath.Join(exportRoot, path)
+	}
+	// Guard only paths inside the project root. External absolute paths are a
+	// named exception: user-directed, not derived from root (ADR-2026-09-18).
+	// When Beneath returns false (external absolute path), the guard is intentionally
+	// skipped — the caller explicitly chose an external destination.
+	if pathguard.Beneath(exportRoot, absPath) {
+		if guardErr := pathguard.RejectSymlinks(exportRoot, absPath); guardErr != nil {
+			fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absPath, guardErr)
+			return fmt.Errorf("refusing write to %s: %w", absPath, guardErr)
+		}
+	}
+	// Guarded when path is beneath project root (RejectSymlinks above); external absolute paths are
+	// a user-directed named exception per ADR-2026-09-18 (Beneath returns false → guard skipped).
+	// Fail closed on Getwd() error (early return above prevents reaching this line in that case).
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks above; Beneath-false paths are user-directed named exception (ADR-2026-09-18)
 	f, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("metrics: criar CSV: %w", err)

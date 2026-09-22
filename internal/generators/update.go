@@ -16,6 +16,7 @@ import (
 	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/identity"
 	"github.com/kgsaran/trackfw/internal/integrations"
+	"github.com/kgsaran/trackfw/internal/pathguard"
 )
 
 // loadUpdateConfig converts the Update namespace resolved by the single config
@@ -113,7 +114,7 @@ func Update(cwd string) error {
 	}
 
 	// 4. Git hooks — cirúrgico (categoria 3 — shared user files)
-	updateHooksSurgical(cfg)
+	updateHooksSurgical(cwd, cfg)
 
 	// 5. Historical Claude slash commands are a project-scope auxiliary and
 	// remain backward compatible here. The historical global Claude
@@ -189,16 +190,27 @@ func updateDetectedCodexIntegrations(cwd string) error {
 }
 
 // updateHooksSurgical garante que 'trackfw validate' está presente nos hooks sem sobrescrever conteúdo do usuário.
-func updateHooksSurgical(cfg Config) {
+// cwd must be the absolute path of the project root; it is used as the guard
+// root for RejectSymlinks (ADR-2026-09-18 / ML-1B) and to build absolute
+// paths from the hook files' relative names before passing them to the guard.
+func updateHooksSurgical(cwd string, cfg Config) {
 	switch cfg.Hooks {
 	case "husky":
-		path := filepath.Join(".husky", "pre-commit")
+		path := filepath.Join(cwd, ".husky", "pre-commit")
+		// Guard: reject if any ancestor of path is a symlink.
+		if guardErr := pathguard.RejectSymlinks(filepath.Clean(cwd), path); guardErr != nil {
+			fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
+			fmt.Printf("  ⚠ .husky/pre-commit: %v\n", guardErr)
+			return
+		}
 		data, _ := os.ReadFile(path)
 		if strings.Contains(string(data), "trackfw validate") {
 			fmt.Println("  ✓ .husky/pre-commit — trackfw validate já presente")
 			return
 		}
-		os.MkdirAll(".husky", 0755) //nolint:errcheck
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+		os.MkdirAll(filepath.Join(cwd, ".husky"), 0755) //nolint:errcheck
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0755)
 		if err != nil {
 			fmt.Printf("  ⚠ .husky/pre-commit: %v\n", err)
@@ -209,12 +221,19 @@ func updateHooksSurgical(cfg Config) {
 		fmt.Println("  ✓ .husky/pre-commit — trackfw validate injetado")
 
 	case "lefthook":
-		path := "lefthook.yml"
+		path := filepath.Join(cwd, "lefthook.yml")
+		// Guard: reject if any ancestor of path is a symlink.
+		if guardErr := pathguard.RejectSymlinks(filepath.Clean(cwd), path); guardErr != nil {
+			fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
+			fmt.Printf("  ⚠ lefthook.yml: %v\n", guardErr)
+			return
+		}
 		data, _ := os.ReadFile(path)
 		if strings.Contains(string(data), "trackfw-validate:") || strings.Contains(string(data), "trackfw validate") {
 			fmt.Println("  ✓ lefthook.yml — trackfw já presente")
 			return
 		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			fmt.Printf("  ⚠ lefthook.yml: %v\n", err)
@@ -266,6 +285,13 @@ func ensureGlobalADRDirRegistered(cwd string) error {
 	if insertErr != nil {
 		return insertErr
 	}
+	// Guard: reject writes through symlinks before mutating trackfw.yaml
+	// (ADR-2026-09-18 / ML-1B). Root is the project directory (cwd).
+	if guardErr := pathguard.RejectSymlinks(filepath.Clean(cwd), yamlPath); guardErr != nil {
+		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", yamlPath, guardErr)
+		return fmt.Errorf("writing %s: %w", yamlPath, guardErr)
+	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if writeErr := os.WriteFile(yamlPath, []byte(updated), 0o644); writeErr != nil {
 		return fmt.Errorf("writing %s: %w", yamlPath, writeErr)
 	}
@@ -499,6 +525,12 @@ func UpdateHarness(opts UpdateOptions) (UpdateReport, error) {
 	if homeErr != nil {
 		return UpdateReport{}, fmt.Errorf("resolving home directory: %w", homeErr)
 	}
+	// filepath.Clean normalises trailing slashes and "." segments before home
+	// is used as the RejectSymlinks root — the walk's "current == root"
+	// termination condition is a string equality, so a trailing slash or "."
+	// would cause the walk to overshoot root and return "escapes root" for
+	// every target (ADR-2026-09-18 / ML-1B precondition).
+	home = filepath.Clean(home)
 
 	// NOTE: the script files are now first-class targets ("git-branch-guard-script",
 	// "credential-guard-script") positioned before the wiring targets in
@@ -625,6 +657,19 @@ func selectDeclaredTargets(declared []string, requested []string) ([]string, err
 	return out, nil
 }
 
+// rejectHarnessSymlink checks path for symlinks in its ancestry (up to and
+// including home) before any filesystem mutation. It returns a TargetFailed
+// result and true if the guard fires, or TargetResult{} and false when the
+// path is clean. The refusal is written to stderr (ADR-2026-09-18, decision 3:
+// recusa audível — writes that would escape $HOME must never be silent).
+func rejectHarnessSymlink(home, path, id, displayPath string) (TargetResult, bool) {
+	if guardErr := pathguard.RejectSymlinks(home, path); guardErr != nil {
+		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: guardErr.Error()}, true
+	}
+	return TargetResult{}, false
+}
+
 // harnessGitBranchGuardScriptTarget evaluates (and, unless DryRun, applies)
 // the global git-branch-guard shell script at
 // ~/.trackfw/scripts/trackfw-git-branch-guard.sh.
@@ -639,6 +684,11 @@ func harnessGitBranchGuardScriptTarget(home string, opts UpdateOptions) TargetRe
 	const displayPath = "~/.trackfw/scripts/trackfw-git-branch-guard.sh"
 
 	path := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+	// Guard: reject writes through symlinks before any filesystem mutation
+	// (ADR-2026-09-18 / ML-1B).
+	if result, guarded := rejectHarnessSymlink(home, path, id, displayPath); guarded {
+		return result
+	}
 	desired := []byte(gitBranchGuardScript)
 
 	data, err := os.ReadFile(path)
@@ -651,9 +701,11 @@ func harnessGitBranchGuardScriptTarget(home string, opts UpdateOptions) TargetRe
 	if opts.DryRun {
 		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if writeErr := os.WriteFile(path, desired, 0755); writeErr != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 	}
@@ -671,6 +723,11 @@ func harnessCredentialGuardScriptTarget(home string, opts UpdateOptions) TargetR
 	const displayPath = "~/.trackfw/scripts/trackfw-credential-guard.sh"
 
 	path := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	// Guard: reject writes through symlinks before any filesystem mutation
+	// (ADR-2026-09-18 / ML-1B).
+	if result, guarded := rejectHarnessSymlink(home, path, id, displayPath); guarded {
+		return result
+	}
 	desired := []byte(globalCredentialGuardScript)
 
 	data, err := os.ReadFile(path)
@@ -683,9 +740,11 @@ func harnessCredentialGuardScriptTarget(home string, opts UpdateOptions) TargetR
 	if opts.DryRun {
 		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if writeErr := os.WriteFile(path, desired, 0755); writeErr != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 	}
@@ -699,6 +758,11 @@ func harnessClaudeSkillTarget(home string, opts UpdateOptions) TargetResult {
 	const displayPath = "~/.claude/skills/trackfw/SKILL.md"
 
 	path := GlobalClaudeSkillPath(home)
+	// Guard: reject writes through symlinks before any filesystem mutation
+	// (ADR-2026-09-18 / ML-1B).
+	if result, guarded := rejectHarnessSymlink(home, path, id, displayPath); guarded {
+		return result
+	}
 	desired := GlobalClaudeSkillContent()
 
 	data, err := os.ReadFile(path)
@@ -710,9 +774,11 @@ func harnessClaudeSkillTarget(home string, opts UpdateOptions) TargetResult {
 		if opts.DryRun {
 			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
 		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 		}
@@ -727,6 +793,7 @@ func harnessClaudeSkillTarget(home string, opts UpdateOptions) TargetResult {
 	if opts.DryRun {
 		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 	}
@@ -750,6 +817,11 @@ func harnessCredentialGuardTargetClaude(home string, opts UpdateOptions) TargetR
 	const displayPath = "~/.claude/settings.json"
 
 	path := filepath.Join(home, ".claude", "settings.json")
+	// Guard: reject writes through symlinks before any filesystem mutation
+	// (ADR-2026-09-18 / ML-1B).
+	if result, guarded := rejectHarnessSymlink(home, path, id, displayPath); guarded {
+		return result
+	}
 	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
 
 	raw, err := os.ReadFile(path)
@@ -767,9 +839,11 @@ func harnessCredentialGuardTargetClaude(home string, opts UpdateOptions) TargetR
 		if marshalErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
 		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
 		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if writeErr := os.WriteFile(path, append(desired, '\n'), 0644); writeErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 		}
@@ -800,6 +874,7 @@ func harnessCredentialGuardTargetClaude(home string, opts UpdateOptions) TargetR
 	if opts.DryRun {
 		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 	}
@@ -856,6 +931,11 @@ func harnessCredentialGuardTargetCodex(home string, opts UpdateOptions) TargetRe
 	const displayPath = "~/.codex/hooks.json"
 
 	path := filepath.Join(home, ".codex", "hooks.json")
+	// Guard: reject writes through symlinks before any filesystem mutation
+	// (ADR-2026-09-18 / ML-1B).
+	if result, guarded := rejectHarnessSymlink(home, path, id, displayPath); guarded {
+		return result
+	}
 	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
 
 	raw, err := os.ReadFile(path)
@@ -873,9 +953,11 @@ func harnessCredentialGuardTargetCodex(home string, opts UpdateOptions) TargetRe
 		if marshalErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
 		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
 		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if writeErr := os.WriteFile(path, append(desired, '\n'), 0644); writeErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 		}
@@ -906,6 +988,7 @@ func harnessCredentialGuardTargetCodex(home string, opts UpdateOptions) TargetRe
 	if opts.DryRun {
 		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 	}
@@ -948,6 +1031,11 @@ func harnessCredentialGuardTargetGemini(home string, opts UpdateOptions) TargetR
 	const displayPath = "~/.gemini/settings.json"
 
 	path := filepath.Join(home, ".gemini", "settings.json")
+	// Guard: reject writes through symlinks before any filesystem mutation
+	// (ADR-2026-09-18 / ML-1B).
+	if result, guarded := rejectHarnessSymlink(home, path, id, displayPath); guarded {
+		return result
+	}
 	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
 
 	raw, err := os.ReadFile(path)
@@ -965,9 +1053,11 @@ func harnessCredentialGuardTargetGemini(home string, opts UpdateOptions) TargetR
 		if marshalErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
 		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
 		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if writeErr := os.WriteFile(path, append(desired, '\n'), 0644); writeErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 		}
@@ -998,6 +1088,7 @@ func harnessCredentialGuardTargetGemini(home string, opts UpdateOptions) TargetR
 	if opts.DryRun {
 		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 	}
@@ -1051,6 +1142,11 @@ func harnessCredentialGuardTargetCursor(home string, opts UpdateOptions) TargetR
 	const displayPath = "~/.cursor/hooks.json"
 
 	path := filepath.Join(home, ".cursor", "hooks.json")
+	// Guard: reject writes through symlinks before any filesystem mutation
+	// (ADR-2026-09-18 / ML-1B).
+	if result, guarded := rejectHarnessSymlink(home, path, id, displayPath); guarded {
+		return result
+	}
 	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
 
 	raw, err := os.ReadFile(path)
@@ -1068,9 +1164,11 @@ func harnessCredentialGuardTargetCursor(home string, opts UpdateOptions) TargetR
 		if marshalErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
 		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
 		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if writeErr := os.WriteFile(path, append(desired, '\n'), 0644); writeErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 		}
@@ -1101,6 +1199,7 @@ func harnessCredentialGuardTargetCursor(home string, opts UpdateOptions) TargetR
 	if opts.DryRun {
 		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 	}
@@ -1187,6 +1286,11 @@ func harnessCredentialGuardTargetCopilot(home string, opts UpdateOptions) Target
 	const displayPath = "~/.copilot/settings.json"
 
 	path := filepath.Join(home, ".copilot", "settings.json")
+	// Guard: reject writes through symlinks before any filesystem mutation
+	// (ADR-2026-09-18 / ML-1B).
+	if result, guarded := rejectHarnessSymlink(home, path, id, displayPath); guarded {
+		return result
+	}
 	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
 
 	raw, err := os.ReadFile(path)
@@ -1204,9 +1308,11 @@ func harnessCredentialGuardTargetCopilot(home string, opts UpdateOptions) Target
 		if marshalErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
 		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
 		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if writeErr := os.WriteFile(path, append(desired, '\n'), 0644); writeErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 		}
@@ -1237,6 +1343,7 @@ func harnessCredentialGuardTargetCopilot(home string, opts UpdateOptions) Target
 	if opts.DryRun {
 		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 	}
@@ -1294,6 +1401,11 @@ func harnessCredentialGuardTargetKiro(home string, opts UpdateOptions) TargetRes
 	const displayPath = "~/.kiro/hooks/trackfw-credential-guard.json"
 
 	path := filepath.Join(home, ".kiro", "hooks", "trackfw-credential-guard.json")
+	// Guard: reject writes through symlinks before any filesystem mutation
+	// (ADR-2026-09-18 / ML-1B).
+	if result, guarded := rejectHarnessSymlink(home, path, id, displayPath); guarded {
+		return result
+	}
 	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
 
 	content := map[string]interface{}{
@@ -1330,9 +1442,11 @@ func harnessCredentialGuardTargetKiro(home string, opts UpdateOptions) TargetRes
 		if opts.DryRun {
 			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
 		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 		}
@@ -1347,6 +1461,7 @@ func harnessCredentialGuardTargetKiro(home string, opts UpdateOptions) TargetRes
 	if opts.DryRun {
 		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 	}
@@ -1383,6 +1498,11 @@ func harnessGitBranchGuardTargetClaude(home string, opts UpdateOptions) TargetRe
 	const displayPath = "~/.claude/settings.json"
 
 	path := filepath.Join(home, ".claude", "settings.json")
+	// Guard: reject writes through symlinks before any filesystem mutation
+	// (ADR-2026-09-18 / ML-1B).
+	if result, guarded := rejectHarnessSymlink(home, path, id, displayPath); guarded {
+		return result
+	}
 	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
 
 	raw, err := os.ReadFile(path)
@@ -1400,9 +1520,11 @@ func harnessGitBranchGuardTargetClaude(home string, opts UpdateOptions) TargetRe
 		if marshalErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
 		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
 		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if writeErr := os.WriteFile(path, append(desired, '\n'), 0644); writeErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 		}
@@ -1433,6 +1555,7 @@ func harnessGitBranchGuardTargetClaude(home string, opts UpdateOptions) TargetRe
 	if opts.DryRun {
 		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 	}
@@ -1447,6 +1570,11 @@ func harnessGitBranchGuardTargetCodex(home string, opts UpdateOptions) TargetRes
 	const displayPath = "~/.codex/hooks.json"
 
 	path := filepath.Join(home, ".codex", "hooks.json")
+	// Guard: reject writes through symlinks before any filesystem mutation
+	// (ADR-2026-09-18 / ML-1B).
+	if result, guarded := rejectHarnessSymlink(home, path, id, displayPath); guarded {
+		return result
+	}
 	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
 
 	raw, err := os.ReadFile(path)
@@ -1464,9 +1592,11 @@ func harnessGitBranchGuardTargetCodex(home string, opts UpdateOptions) TargetRes
 		if marshalErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
 		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
 		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if writeErr := os.WriteFile(path, append(desired, '\n'), 0644); writeErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 		}
@@ -1497,6 +1627,7 @@ func harnessGitBranchGuardTargetCodex(home string, opts UpdateOptions) TargetRes
 	if opts.DryRun {
 		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 	}
@@ -1511,6 +1642,11 @@ func harnessGitBranchGuardTargetGemini(home string, opts UpdateOptions) TargetRe
 	const displayPath = "~/.gemini/settings.json"
 
 	path := filepath.Join(home, ".gemini", "settings.json")
+	// Guard: reject writes through symlinks before any filesystem mutation
+	// (ADR-2026-09-18 / ML-1B).
+	if result, guarded := rejectHarnessSymlink(home, path, id, displayPath); guarded {
+		return result
+	}
 	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
 
 	raw, err := os.ReadFile(path)
@@ -1528,9 +1664,11 @@ func harnessGitBranchGuardTargetGemini(home string, opts UpdateOptions) TargetRe
 		if marshalErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
 		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
 		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if writeErr := os.WriteFile(path, append(desired, '\n'), 0644); writeErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 		}
@@ -1561,6 +1699,7 @@ func harnessGitBranchGuardTargetGemini(home string, opts UpdateOptions) TargetRe
 	if opts.DryRun {
 		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 	}
@@ -1575,6 +1714,11 @@ func harnessGitBranchGuardTargetCursor(home string, opts UpdateOptions) TargetRe
 	const displayPath = "~/.cursor/hooks.json"
 
 	path := filepath.Join(home, ".cursor", "hooks.json")
+	// Guard: reject writes through symlinks before any filesystem mutation
+	// (ADR-2026-09-18 / ML-1B).
+	if result, guarded := rejectHarnessSymlink(home, path, id, displayPath); guarded {
+		return result
+	}
 	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
 
 	raw, err := os.ReadFile(path)
@@ -1592,9 +1736,11 @@ func harnessGitBranchGuardTargetCursor(home string, opts UpdateOptions) TargetRe
 		if marshalErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
 		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
 		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if writeErr := os.WriteFile(path, append(desired, '\n'), 0644); writeErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 		}
@@ -1625,6 +1771,7 @@ func harnessGitBranchGuardTargetCursor(home string, opts UpdateOptions) TargetRe
 	if opts.DryRun {
 		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 	}
@@ -1639,6 +1786,11 @@ func harnessGitBranchGuardTargetCopilot(home string, opts UpdateOptions) TargetR
 	const displayPath = "~/.copilot/settings.json"
 
 	path := filepath.Join(home, ".copilot", "settings.json")
+	// Guard: reject writes through symlinks before any filesystem mutation
+	// (ADR-2026-09-18 / ML-1B).
+	if result, guarded := rejectHarnessSymlink(home, path, id, displayPath); guarded {
+		return result
+	}
 	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
 
 	raw, err := os.ReadFile(path)
@@ -1656,9 +1808,11 @@ func harnessGitBranchGuardTargetCopilot(home string, opts UpdateOptions) TargetR
 		if marshalErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
 		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
 		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if writeErr := os.WriteFile(path, append(desired, '\n'), 0644); writeErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 		}
@@ -1689,6 +1843,7 @@ func harnessGitBranchGuardTargetCopilot(home string, opts UpdateOptions) TargetR
 	if opts.DryRun {
 		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 	}
@@ -1716,6 +1871,11 @@ func harnessGitBranchGuardTargetKiro(home string, opts UpdateOptions) TargetResu
 	const displayPath = "~/.kiro/hooks/trackfw-git-branch-guard.json"
 
 	path := filepath.Join(home, ".kiro", "hooks", "trackfw-git-branch-guard.json")
+	// Guard: reject writes through symlinks before any filesystem mutation
+	// (ADR-2026-09-18 / ML-1B).
+	if result, guarded := rejectHarnessSymlink(home, path, id, displayPath); guarded {
+		return result
+	}
 	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
 
 	content := map[string]interface{}{
@@ -1752,9 +1912,11 @@ func harnessGitBranchGuardTargetKiro(home string, opts UpdateOptions) TargetResu
 		if opts.DryRun {
 			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
 		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 		}
@@ -1769,6 +1931,7 @@ func harnessGitBranchGuardTargetKiro(home string, opts UpdateOptions) TargetResu
 	if opts.DryRun {
 		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 	}
@@ -1973,6 +2136,15 @@ func refreshDiscoverGitHubActionsWorkflowIfPresent(root string) error {
 		fmt.Fprintf(os.Stderr, "aviso: %s é um symlink; trackfw update não escreve através de symlinks — arquivo não foi tocado\n", DiscoverGitHubActionsWorkflowPath)
 		return nil
 	}
+	// Full ancestor-symlink check: the leaf Lstat above only guards the last
+	// component; RejectSymlinks walks every ancestor up to root (ML-1B /
+	// ADR-2026-09-18). Refusal is loud (stderr, consistent with the leaf-only
+	// message already present for the leaf case).
+	if guardErr := pathguard.RejectSymlinks(filepath.Clean(root), path); guardErr != nil {
+		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
+		return nil
+	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	return os.WriteFile(path, []byte(BuildDiscoverGitHubActionsWorkflowContent(IsProducerGoMod(root))), 0o644)
 }
 
@@ -2095,7 +2267,7 @@ func runProjectTarget(id, root string, cfg Config, opts UpdateOptions) TargetRes
 		}
 		return runFileTarget(id, relPath, root, []string{relPath},
 			func(r string) error {
-				return withChdir(r, func() error { updateHooksSurgical(cfg); return nil })
+				return withChdir(r, func() error { updateHooksSurgical(r, cfg); return nil })
 			},
 			opts)
 	case "claude-commands":
@@ -2404,12 +2576,15 @@ func copyPath(src, dst string) error {
 		if readErr != nil {
 			return readErr
 		}
+		// write-containment-allowed: safe — dst is always an os.MkdirTemp sandbox root (never $HOME); no pathguard needed
 		if mkErr := os.MkdirAll(filepath.Dir(dst), 0755); mkErr != nil {
 			return mkErr
 		}
+		// write-containment-allowed: safe — dst is always an os.MkdirTemp sandbox root (never $HOME); no pathguard needed
 		return os.WriteFile(dst, data, 0644)
 	}
 	if info.IsDir() {
+		// write-containment-allowed: safe — dst is always an os.MkdirTemp sandbox root (never $HOME); no pathguard needed
 		if mkErr := os.MkdirAll(dst, 0755); mkErr != nil {
 			return mkErr
 		}
@@ -2429,9 +2604,11 @@ func copyPath(src, dst string) error {
 	if readErr != nil {
 		return readErr
 	}
+	// write-containment-allowed: safe — dst is always an os.MkdirTemp sandbox root (never $HOME); no pathguard needed
 	if mkErr := os.MkdirAll(filepath.Dir(dst), 0755); mkErr != nil {
 		return mkErr
 	}
+	// write-containment-allowed: safe — dst is always an os.MkdirTemp sandbox root (never $HOME); no pathguard needed
 	return os.WriteFile(dst, data, 0644)
 }
 

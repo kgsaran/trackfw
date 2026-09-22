@@ -3,7 +3,7 @@ status: Open
 date: 2026-08-31
 author: "zeus-tf"
 adr: ""
-roadmap: "docs/roadmaps/analyzing/ROADMAP-2026-08-31-guarda-de-folha-resolve-o-caminho-e-afirma-contencao-antes-de-escrever.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-31-guarda-de-folha-resolve-o-caminho-e-afirma-contencao-antes-de-escrever.md"
 ---
 
 # REQ: Guarda de folha faz `Lstat` só no último componente e nunca inspeciona ancestral — escrita fora do projeto em todo SO e todo runtime
@@ -111,9 +111,8 @@ checam link algum**, em 4 famílias. A família de maior severidade é `trackfw 
 ## Acceptance Criteria
 
 - [ ] **AC1** — 🔴 **Wave 0 enumera de verdade.** A lista de pontos que escrevem em caminho derivado
-      de `root` **sem** inspeção de ancestral, nos 3 runtimes, obtida varrendo os **primitivos de
-      escrita** — não `ModeSymlink`. A lista de 3 guardas é ponto de partida conhecido-incompleto.
-- [ ] **AC2** — Escrita através de **ancestral** symlink é recusada nos 3 CLIs, com a forma
+      de `root` **sem** inspeção de ancestral, no **único runtime (Go)**, obtida varrendo os **primitivos de escrita** — não `ModeSymlink`. A lista de 3 guardas é ponto de partida conhecido-incompleto.
+- [ ] **AC2** — Escrita através de **ancestral** symlink é recusada, com a forma
       resolver-e-afirmar-contenção.
 - [ ] **AC3** — 🔴 **Falsificação nas duas direções.** (a) com ancestral symlink apontando para fora,
       a escrita é recusada e **nada** é criado fora da árvore; (b) **controle**: operação legítima,
@@ -121,18 +120,31 @@ checam link algum**, em 4 famílias. A família de maior severidade é `trackfw 
       um buraco por uma quebra.
 - [ ] **AC4** — Recusa **audível**: mensagem em stderr nomeando o caminho e o motivo. Silêncio vira
       *"o update não atualizou meu arquivo e não disse nada"*.
-- [ ] **AC5** — Paridade exata nos 3 CLIs: mesma recusa, mesma mensagem. **Aqui a paridade vale
-      normalmente** — ao contrário da detecção de junction, onde os três divergem legitimamente.
-- [ ] **AC6** — Gate falsificável cobrindo AC2 e AC3 nos 3 runtimes, com guarda de vacuidade.
+- [ ] **AC5** — ~~Paridade nos 3 CLIs~~ **SEM OBJETO desde a v8.0.0** (commit `2eae0a44`): há uma
+      implementação única em Go. Medido em 2026-09-18: `npm/src` não existe, `git ls-files pypi/trackfw`
+      → vazio. Substituído por: a recusa e a mensagem são **idênticas em todos os sítios de escrita**
+      do Go — a consistência que importa agora é **entre sítios**, não entre runtimes.
+- [ ] **AC6** — Gate falsificável cobrindo AC2 e AC3, com guarda de vacuidade.
 - [ ] **AC7** — Reproduzível **localmente** em macOS/Linux, sem depender de runner Windows nem da
       sonda. É o que torna esta REQ mais rápida que a de junction.
 - [ ] **AC8** — `make quality` verde e **CI verde**. Verde local não é conclusão —
       ver `vault/notes/ambiente-do-dev-e-mais-rico-que-o-do-ci-2026-08-29.md`.
 
+- [ ] **AC9** — 🔴 **Absorve a `REQ-2026-08-30-roadmap-move-segue-symlink-de-arquivo-md-e-altera-arquivo-fora-do-projeto`.**
+      Mesma causa pelo teste da Regra Dura (*"se eu corrigir esta causa, exatamente estas falhas fecham"*):
+      **o produto resolve um caminho e escreve sem afirmar que o destino está contido na árvore.**
+      As duas são faces do mesmo defeito — lá o symlink é a **folha** (`roadmap move` o segue), aqui é um
+      **ancestral** (`Lstat` não o inspeciona). Reproduzido pelo arquiteto em 2026-09-18:
+      `ln -s /tmp/vitima.md docs/roadmaps/backlog/ROADMAP-isca.md && trackfw roadmap move ROADMAP-isca wip`
+      alterou o `status:` da vítima **fora do projeto**.
+      Falsificação exigida para este AC, além das do AC3: o mesmo comando passa a **recusar**, e
+      `roadmap move` legítimo **continua funcionando**.
+
 ## Negative Scope — o que esta REQ NÃO faz
 
 - **Não trata detecção de junction.** Classes 1 e 2, `ModeIrregular`, troca de primitiva no Python:
-  tudo isso é a REQ irmã, que **precisa de ADR** (divergência deliberada da paridade de 3 CLIs) e só
+  tudo isso é a REQ irmã de **junction**, que permanece separada (causa diferente: detecção de forma
+  no Windows, não contenção de destino) e só
   se verifica em runner Windows. Misturar faria esta REQ herdar a verificação pós-merge de lá.
 - **Não altera o Node na detecção de link.** Medido: o Node já enxerga junction.
 - **Não adota `ModeSymlink|ModeIrregular`** em lugar nenhum.
@@ -140,14 +152,17 @@ checam link algum**, em 4 famílias. A família de maior severidade é `trackfw 
 
 ## Linked ADR
 
-ADR: <!-- nenhum. Correção de bug com tratamento idêntico nos 3 runtimes; não há decisão
-arquitetural a registrar. O ADR pertence à REQ irmã, de junction, onde a divergência entre runtimes
-é deliberada e precisa ser documentada em docs/cli-parity.md para que um gate futuro não "conserte"
-o Node de volta à simetria. -->
+ADR: `docs/adr/ADR-2026-09-18-todo-sitio-que-escreve-em-caminho-derivado-de-root-resolve-e-afirma-contencao-antes-de-escrever.md`
+
+<!-- Retificação de 2026-09-18: a versão original declarava "nenhum ADR — correção de bug com
+tratamento idêntico nos 3 runtimes". O argumento morreu com a v8 (implementação única), e a
+conclusão estava errada de todo modo: há decisão arquitetural a registrar — o predicado é
+resolver-e-afirmar-contenção, não detectar symlink, e vive num ponto único em vez de copiado por
+sítio. -->
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/analyzing/ROADMAP-2026-08-31-guarda-de-folha-resolve-o-caminho-e-afirma-contencao-antes-de-escrever.md`
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-31-guarda-de-folha-resolve-o-caminho-e-afirma-contencao-antes-de-escrever.md`
 
 
 ---

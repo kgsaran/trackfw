@@ -2497,3 +2497,242 @@ func TestRefreshDiscoverWorkflow_ProducerContext(t *testing.T) {
 		t.Errorf("producer context: trackfw-validate.yml not refreshed to producer template.\ngot:\n%s\nwant:\n%s", got, want)
 	}
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// ML-1B tests: symlink containment guard for the global-scope family
+// (ADR-2026-09-18, REQ-2026-08-31).
+//
+// Each test ends with an AC11 sentence stating what ML conclusion it affirms.
+// ──────────────────────────────────────────────────────────────────────────────
+
+// TestUpdateHarnessClaudeSymlinkRefusesWrite affirms:
+// ML-1B conclusion: when $HOME/.claude is a symlink pointing outside $HOME,
+// UpdateHarness refuses claude-skill and all claude-* writes, returns
+// TargetFailed for those targets, writes nothing outside $HOME, and prints
+// the refusal to stderr.
+func TestUpdateHarnessClaudeSymlinkRefusesWrite(t *testing.T) {
+	// Braço (a): $HOME/.claude → symlink outside $HOME
+	home := t.TempDir()
+	outside := t.TempDir()
+	t.Setenv("HOME", home)
+
+	// Create a victim file outside home that the symlink points to.
+	victim := filepath.Join(outside, "skill.md")
+	const originalContent = "ORIGINAL CONTENT\n"
+	if err := os.WriteFile(victim, []byte(originalContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Plant the symlink: $HOME/.claude → outside/
+	symlinkOrSkip(t, outside, filepath.Join(home, ".claude"))
+
+	// Capture stderr to verify audible refusal.
+	origStderr := os.Stderr
+	r, w, pipeErr := os.Pipe()
+	if pipeErr != nil {
+		t.Fatal(pipeErr)
+	}
+	os.Stderr = w
+
+	report, err := UpdateHarness(UpdateOptions{
+		Targets:        []string{"claude-skill"},
+		InstallMissing: true,
+	})
+
+	w.Close()
+	os.Stderr = origStderr
+	var stderrBuf strings.Builder
+	if _, err2 := io.Copy(&stderrBuf, r); err2 != nil {
+		t.Fatal(err2)
+	}
+
+	if err != nil {
+		t.Fatalf("UpdateHarness returned unexpected error: %v", err)
+	}
+
+	// The victim outside $HOME must not have been touched.
+	gotContent, readErr := os.ReadFile(victim)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(gotContent) != originalContent {
+		t.Errorf("victim file outside $HOME was modified: got %q, want %q", gotContent, originalContent)
+	}
+
+	// No file should have been created inside outside/.
+	entries, _ := os.ReadDir(outside)
+	if len(entries) > 1 { // only the victim we created
+		var names []string
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Errorf("files created outside $HOME: %v", names)
+	}
+
+	// The target must be reported as TargetFailed.
+	if len(report.Targets) == 0 {
+		t.Fatal("UpdateHarness returned no targets")
+	}
+	for _, tr := range report.Targets {
+		if tr.ID == "claude-skill" {
+			if tr.State != TargetFailed {
+				t.Errorf("claude-skill state = %q, want %q", tr.State, TargetFailed)
+			}
+		}
+	}
+
+	// Refusal must be audible (stderr).
+	if !strings.Contains(stderrBuf.String(), "refusing write") {
+		t.Errorf("expected 'refusing write' on stderr, got: %q", stderrBuf.String())
+	}
+}
+
+// TestUpdateHarnessLegitimateRunSucceedsForAllTargets affirms:
+// ML-1B conclusion: UpdateHarness with --install-missing on a clean $HOME
+// (no symlinks) succeeds for all guarded targets without regression.
+func TestUpdateHarnessLegitimateRunSucceedsForAllTargets(t *testing.T) {
+	// Braço (b): clean $HOME, no symlinks — guards must be transparent.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	report, err := UpdateHarness(UpdateOptions{
+		InstallMissing: true,
+	})
+	if err != nil {
+		t.Fatalf("UpdateHarness returned unexpected error: %v", err)
+	}
+
+	// No target should be TargetFailed.
+	for _, tr := range report.Targets {
+		if tr.State == TargetFailed {
+			t.Errorf("target %q unexpectedly failed: %s", tr.ID, tr.Message)
+		}
+	}
+}
+
+// TestUpdateHarnessAncestorSymlinkRefusesAllTargets affirms:
+// ML-1B conclusion: when $HOME itself (the root) is a symlink, every guarded
+// harness target returns TargetFailed and nothing is written outside the
+// real home tree.
+func TestUpdateHarnessAncestorSymlinkRefusesAllTargets(t *testing.T) {
+	// Use a real dir and a symlink alias to it as "home".
+	realHome := t.TempDir()
+	outside := t.TempDir()
+	// Create a symlink: outside/homesym → realHome  (so homesym IS a symlink)
+	homeSym := filepath.Join(outside, "homesym")
+	symlinkOrSkip(t, realHome, homeSym)
+	t.Setenv("HOME", homeSym)
+
+	// Capture stderr.
+	origStderr := os.Stderr
+	r, w, pipeErr := os.Pipe()
+	if pipeErr != nil {
+		t.Fatal(pipeErr)
+	}
+	os.Stderr = w
+
+	report, err := UpdateHarness(UpdateOptions{
+		Targets:        []string{"claude-skill", "git-branch-guard-script", "credential-guard-script"},
+		InstallMissing: true,
+	})
+
+	w.Close()
+	os.Stderr = origStderr
+	io.Copy(io.Discard, r) //nolint:errcheck
+
+	if err != nil {
+		t.Fatalf("UpdateHarness returned unexpected error: %v", err)
+	}
+
+	// All selected targets must be TargetFailed because homeSym is a symlink.
+	for _, tr := range report.Targets {
+		if tr.State != TargetFailed {
+			t.Errorf("target %q: got state %q, want %q (ancestor homeSym is a symlink)", tr.ID, tr.State, TargetFailed)
+		}
+	}
+}
+
+// TestUpdateHarnessLeafSymlinkRefusesWrite affirms:
+// ML-4A conclusion: when the leaf file itself ($HOME/.claude/settings.json) is
+// a symlink pointing outside $HOME, the harness target that writes to that
+// path returns TargetFailed, nothing outside $HOME is written, and the
+// refusal is printed to stderr — proving the guard in the harness target
+// functions (e.g. harnessCredentialGuardTargetClaude) is load-bearing at the
+// leaf level, not only at ancestor directories.
+func TestUpdateHarnessLeafSymlinkRefusesWrite(t *testing.T) {
+	// Braço (a): leaf file $HOME/.claude/settings.json → symlink outside $HOME
+	home := t.TempDir()
+	outside := t.TempDir()
+	t.Setenv("HOME", home)
+
+	// Create the parent directory so the symlink can be planted at the leaf.
+	claudeDir := filepath.Join(home, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a victim file outside home that the leaf symlink will point to.
+	victim := filepath.Join(outside, "victim.json")
+	const originalContent = "VICTIM ORIGINAL CONTENT\n"
+	if err := os.WriteFile(victim, []byte(originalContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Plant the symlink AT THE LEAF: $HOME/.claude/settings.json → outside/victim.json
+	symlinkOrSkip(t, victim, filepath.Join(claudeDir, "settings.json"))
+
+	// Capture stderr to verify audible refusal.
+	origStderr := os.Stderr
+	r, w, pipeErr := os.Pipe()
+	if pipeErr != nil {
+		t.Fatal(pipeErr)
+	}
+	os.Stderr = w
+
+	report, err := UpdateHarness(UpdateOptions{
+		Targets:        []string{"claude-credential-guard"},
+		InstallMissing: true,
+	})
+
+	w.Close()
+	os.Stderr = origStderr
+	var stderrBuf strings.Builder
+	if _, err2 := io.Copy(&stderrBuf, r); err2 != nil {
+		t.Fatal(err2)
+	}
+
+	if err != nil {
+		t.Fatalf("UpdateHarness returned unexpected error: %v", err)
+	}
+
+	// The victim outside $HOME must not have been touched.
+	gotContent, readErr := os.ReadFile(victim)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if string(gotContent) != originalContent {
+		t.Errorf("victim file outside $HOME was modified: got %q, want %q", gotContent, originalContent)
+	}
+
+	// The target must be reported as TargetFailed.
+	if len(report.Targets) == 0 {
+		t.Fatal("UpdateHarness returned no targets")
+	}
+	var found bool
+	for _, tr := range report.Targets {
+		if tr.ID == "claude-credential-guard" {
+			found = true
+			if tr.State != TargetFailed {
+				t.Errorf("claude-credential-guard state = %q, want %q", tr.State, TargetFailed)
+			}
+		}
+	}
+	if !found {
+		t.Error("target claude-credential-guard not present in report")
+	}
+
+	// Refusal must be audible (stderr).
+	if !strings.Contains(stderrBuf.String(), "refusing write") {
+		t.Errorf("expected 'refusing write' on stderr, got: %q", stderrBuf.String())
+	}
+}

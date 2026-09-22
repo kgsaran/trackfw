@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/kgsaran/trackfw/internal/pathguard"
 )
 
 // quarantineSchemaVersion is the schema_version written to every quarantine
@@ -92,7 +94,14 @@ func WriteQuarantine(root string, entry QuarantineEntry) error {
 		return fmt.Errorf("encode quarantine entry: %w", err)
 	}
 	data = append(data, '\n')
-	if err := atomicWrite(QuarantinePath(root, entry.ChecksumSHA256), data, 0o600); err != nil {
+	dest := QuarantinePath(root, entry.ChecksumSHA256)
+	// GuardedWrite applies RejectSymlinks(root, dest) before any filesystem
+	// mutation — closing the "symlink in ancestor" write-escape described in
+	// REQ-2026-08-31 / ADR-2026-09-18. It also replaces the private
+	// atomicWrite that previously lived in this package (declared there as a
+	// mirror of internal/integrations/manager.go's atomicWrite — see the
+	// atomicWrite doc comment that was removed in ML-1B).
+	if err := pathguard.GuardedWrite(filepath.Clean(root), dest, data, 0o600); err != nil {
 		return fmt.Errorf("write quarantine entry: %w", err)
 	}
 	return nil
@@ -132,37 +141,6 @@ func (e QuarantineEntry) DecodeContent() ([]byte, error) {
 	return raw, nil
 }
 
-// atomicWrite writes data to filename via a temp file in the same
-// directory followed by os.Rename, so a reader never observes a partially
-// written file. Shared by quarantine.go and provenance.go — mirrors
-// internal/integrations/manager.go's atomicWrite (unexported there, so
-// replicated here rather than imported, same rationale as Checksum above
-// markers.go's doc comment).
-func atomicWrite(filename string, data []byte, mode os.FileMode) error {
-	directory := filepath.Dir(filename)
-	if err := os.MkdirAll(directory, 0o700); err != nil {
-		return err
-	}
-	temporary, err := os.CreateTemp(directory, ".trackfw-tmp-*")
-	if err != nil {
-		return err
-	}
-	temporaryName := temporary.Name()
-	defer os.Remove(temporaryName)
-	if err := temporary.Chmod(mode); err != nil {
-		temporary.Close()
-		return err
-	}
-	if _, err := temporary.Write(data); err != nil {
-		temporary.Close()
-		return err
-	}
-	if err := temporary.Sync(); err != nil {
-		temporary.Close()
-		return err
-	}
-	if err := temporary.Close(); err != nil {
-		return err
-	}
-	return os.Rename(temporaryName, filename)
-}
+// atomicWrite was removed in ML-1B (REQ-2026-08-31 / ADR-2026-09-18).
+// Its callers now use pathguard.GuardedWrite, which applies RejectSymlinks
+// before the atomic write. provenance.go was also updated in the same ML.

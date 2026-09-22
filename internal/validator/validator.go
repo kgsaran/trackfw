@@ -13,6 +13,7 @@ import (
 
 	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/integrations"
+	"github.com/kgsaran/trackfw/internal/pathguard"
 )
 
 // BaselineFile representa o conteúdo de .trackfw-baseline.json
@@ -51,6 +52,25 @@ func SaveBaseline(violations, warnings []string) error {
 	if err != nil {
 		return err
 	}
+	// Guard before write: baselineFileName is relative to CWD (= project root).
+	// Root: EvalSymlinks(Getwd()) — macOS /tmp→/private/tmp invariant.
+	// Guard precedes WriteFile so a refused destination creates no stray file.
+	// Fail closed: if Getwd() fails we cannot verify containment, so we refuse the write.
+	cwd, cwdErr := getwdFn()
+	if cwdErr != nil {
+		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: cannot verify containment: %v\n", baselineFileName, cwdErr)
+		return fmt.Errorf("refusing write to %s: cannot verify containment: %w", baselineFileName, cwdErr)
+	}
+	baselineRoot := cwd
+	if resolved, resolveErr := filepath.EvalSymlinks(cwd); resolveErr == nil {
+		baselineRoot = resolved
+	}
+	absBaseline := filepath.Join(baselineRoot, baselineFileName)
+	if guardErr := pathguard.RejectSymlinks(baselineRoot, absBaseline); guardErr != nil {
+		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absBaseline, guardErr)
+		return fmt.Errorf("refusing write to %s: %w", absBaseline, guardErr)
+	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks above (fail-closed on Getwd error)
 	return os.WriteFile(baselineFileName, data, 0644)
 }
 

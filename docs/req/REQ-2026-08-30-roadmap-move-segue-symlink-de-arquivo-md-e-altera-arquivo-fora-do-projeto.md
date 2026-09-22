@@ -1,5 +1,5 @@
 ---
-status: Open
+status: Superseded
 date: 2026-08-30
 author: "trackfw_architect (Zeus)"
 adr: ""
@@ -8,7 +8,7 @@ roadmap: ""
 
 # REQ: `roadmap move` segue symlink de arquivo `.md` e altera arquivo fora do projeto
 
-> Date: 2026-08-30 | Status: Open
+> Date: 2026-08-30 | Status: Superseded
 
 ## Motivation
 
@@ -91,3 +91,22 @@ ADR:
 
 ## Linked Roadmap
 Roadmap:
+
+## Absorvida em 2026-09-18 — mesma causa
+
+**Absorvida pela `REQ-2026-08-31-guarda-de-folha-faz-lstat-so-no-ultimo-componente...`**, como **AC9**.
+
+Pelo teste da Regra Dura de Causa Raiz — *"se eu corrigir esta causa, exatamente estas falhas fecham
+e nenhuma outra"* — as duas são faces do **mesmo** defeito: **o produto resolve um caminho e escreve
+sem afirmar que o destino está contido na árvore.** Aqui o symlink está na **folha** e o `roadmap move`
+o segue; lá está num **ancestral** e o `Lstat` não o inspeciona.
+
+Reproduzida pelo arquiteto em 2026-09-18, com o binário da `main` — **o defeito estava vivo**:
+
+```
+ln -s /tmp/vitima.md docs/roadmaps/backlog/ROADMAP-isca.md
+trackfw roadmap move ROADMAP-isca wip     → ✓ moved
+status de /tmp/vitima.md:  PRESERVAR → wip
+```
+
+Governada por `docs/adr/ADR-2026-09-18-todo-sitio-que-escreve-em-caminho-derivado-de-root-resolve-e-afirma-contencao-antes-de-escrever.md`.
