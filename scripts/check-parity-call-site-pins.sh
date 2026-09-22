@@ -78,6 +78,20 @@ VARS_PIN_ANY=(TRACKFW_SELF_GOVERNED)
 # para sabotagem controlada do harness de falsificação).
 VARS_TRACE=(TRACKFW_FALSIFY_SCRIPT TRACKFW_FALSIFY_GEN TRACKFW_FALSIFY_JOBS)
 
+# Variáveis cujo PIN não pode aparecer em NENHUMA invocação alcançável por
+# make quality. Semântica: o pin pertence exclusivamente ao alvo upstream
+# (self-governance) — o caminho do consumidor (make quality) não pode
+# alcançar nenhuma linha que o pina.
+# Lista fechada, não derivada: pelo mesmo motivo que VARS_PIN_ALL/VARS_PIN_ANY
+# — uma lista derivada incluiria qualquer variável acrescentada por engano e
+# produziria FAIL de dia zero.
+# ML-1C (ROADMAP-2026-09-22-teste-e-gate-leem-a-arvore-de-governanca-do-
+# repositorio-onde-rodam-e-o-consumidor-nao-consegue-rodar-a-suite.md):
+# asserção negativa complementar à política pin-any — garante que o pin
+# em self-governance não regride para parity-rest (nem para qualquer outro
+# alvo alcançado por make quality).
+VARS_FORBIDDEN_IN_QUALITY=(TRACKFW_SELF_GOVERNED)
+
 FAIL=0
 CHECKED=0
 ok()   { echo "OK   [$1]"; CHECKED=$((CHECKED + 1)); }
@@ -187,6 +201,52 @@ for var in "${VARS_PIN_ANY[@]}"; do
   done <<<"$consumers"
 done
 
+# --- VARS_FORBIDDEN_IN_QUALITY: asserção negativa — make quality NÃO alcança o pin ----
+# Discriminante: `make -n quality` resolve as dependências entre alvos, imunizando
+# contra o caso onde a linha é movida para outro alvo alcançável por quality
+# (ex.: parity-falsify). Leitura textual do Makefile não pegaria esse caso.
+# Vacuidade protegida: se make -n quality não invoca o script consumidor, o gate
+# falha fechado — ausência de pin só é significativa se a cadeia foi enumerada.
+# make -n verificado como efeito-zero: sem $(MAKE) nem +recipe lines na cadeia
+# quality→parity→parity-rest/falsify (medido em 2026-09-22).
+for var in "${VARS_FORBIDDEN_IN_QUALITY[@]}"; do
+  consumers=$(find_consuming_scripts "$var")
+  if [[ -z "$consumers" ]]; then
+    fail "call-site-pin/$var/forbidden-in-quality/consumer-found" \
+      "nenhum script em scripts/*.sh lê \${$var:-...} ou \${$var} -- o consumidor desapareceu, ou foi renomeado sem atualizar o gate"
+    continue
+  fi
+  while IFS= read -r consumer; do
+    [[ -z "$consumer" ]] && continue
+    base=$(basename "$consumer")
+    local_dryrun=$(mktemp "${TMPDIR:-/tmp}/trackfw-quality-dryrun.XXXXXX")
+    if ! make -n quality -C "$ROOT" >"$local_dryrun" 2>/dev/null; then
+      fail "call-site-pin/$var/forbidden-in-quality/make-dryrun" \
+        "make -n quality falhou em $ROOT -- não é possível verificar a cadeia de quality; gate falha fechado"
+      rm -f "$local_dryrun"
+      continue
+    fi
+    # Guarda de vacuidade: a saída deve conter ao menos uma invocação não-comentário
+    # do script consumidor. Sem isso, ausência de pin seria falso-positivo.
+    consumer_invocations=$(grep -F "scripts/${base}" "$local_dryrun" | grep -vE '^[[:space:]]*#' || true)
+    if [[ -z "$consumer_invocations" ]]; then
+      fail "call-site-pin/$var/forbidden-in-quality/consumer-invoked" \
+        "make -n quality não produziu nenhuma invocação não-comentário de scripts/${base} -- cadeia não chega ao consumidor; impossível afirmar ausência de pin"
+      rm -f "$local_dryrun"
+      continue
+    fi
+    # Asserção negativa: nenhuma linha não-comentário que invoca o consumidor pina var=.
+    forbidden=$(grep -F "scripts/${base}" "$local_dryrun" | grep -vE '^[[:space:]]*#' | grep -E "(^|[[:space:]])${var}=" || true)
+    rm -f "$local_dryrun"
+    if [[ -n "$forbidden" ]]; then
+      fail "call-site-pin/$var/forbidden-in-quality" \
+        "make quality alcança ao menos uma invocação de scripts/${base} que pina ${var}= -- o pin pertence exclusivamente ao alvo upstream (self-governance), não ao caminho do consumidor: $(head -1 <<<"$forbidden")"
+    else
+      ok "call-site-pin/$var/forbidden-in-quality"
+    fi
+  done <<<"$consumers"
+done
+
 # --- TRACKFW_FALSIFY_* — rastro no script consumidor, não pin no Makefile --
 for var in "${VARS_TRACE[@]}"; do
   consumers=$(find_consuming_scripts "$var")
@@ -223,7 +283,7 @@ for var in "${VARS_TRACE[@]}"; do
   done <<<"$consumers"
 done
 
-echo "check-parity-call-site-pins: ${CHECKED} verificação(ões) -- ${#VARS_PIN_ALL[@]} pin-all(s) + ${#VARS_PIN_ANY[@]} pin-any(s) + ${#VARS_TRACE[@]} rastro(s) na lista"
+echo "check-parity-call-site-pins: ${CHECKED} verificação(ões) -- ${#VARS_PIN_ALL[@]} pin-all(s) + ${#VARS_PIN_ANY[@]} pin-any(s) + ${#VARS_FORBIDDEN_IN_QUALITY[@]} forbidden-in-quality(s) + ${#VARS_TRACE[@]} rastro(s) na lista"
 
 if [[ "$CHECKED" -eq 0 ]]; then
   echo "check-parity-call-site-pins: nenhuma verificação executada -- guarda de vacuidade final" >&2

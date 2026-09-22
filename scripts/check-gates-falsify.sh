@@ -6926,6 +6926,102 @@ falsify_count_success
 echo "OK   [falsify/write-containment]: os 3 braços (A/B/C) provados"
 
 # ---------------------------------------------------------------------------
+# Cenário 195 — check-parity-call-site-pins.sh: asserção negativa de que
+#               make quality não alcança o pin TRACKFW_SELF_GOVERNED= (ML-1C).
+#
+# Objetivo: provar que a nova verificação VARS_FORBIDDEN_IN_QUALITY detecta a
+# regressão exata do ML-1B-bis — o pin reintroduzido em parity-rest, ou movido
+# para outro alvo alcançável por make quality (ex.: parity-falsify).
+#
+# Reconciliação (Regra Dura):
+#   call-site-pin/self-governed-in-quality: o gate REPROVA quando o pin
+#     TRACKFW_SELF_GOVERNED=1 é reintroduzido no alvo parity-rest. O arquiteto
+#     mediu RC=0 no gate antigo com a mesma mutação (roadmap ML-1B-bis, seção
+#     "achado da auditoria") — a nova verificação é a causa única da reprovação.
+#   call-site-pin/self-governed-moved: o gate REPROVA quando o pin é movido
+#     para parity-falsify, alvo alcançado por quality através de parity mas
+#     não lido por varredura textual de parity-rest. O discriminante make -n
+#     resolve dependências entre alvos e captura o caso que leitura direta do
+#     Makefile não pegaria.
+#   call-site-pin/self-governed-clean: o gate PASSA na árvore correta, onde o
+#     pin existe exclusivamente em self-governance (fora da cadeia quality).
+# ---------------------------------------------------------------------------
+T195="$WORK/s195"
+mkdir -p "$T195/scripts"
+cp "$ROOT_DIR/Makefile"    "$T195/"
+cp "$ROOT_DIR/scripts/"*.sh "$T195/scripts/"
+
+# Braço C — árvore correta: gate PASSA (baseline antes das mutações).
+if ! bash "$T195/scripts/check-parity-call-site-pins.sh" "$T195" >/dev/null 2>&1; then
+  echo "FAIL [falsify/setup-s195-baseline]: check-parity-call-site-pins.sh já reprova com fonte real -- prova inválida" >&2
+  falsify_count_failure
+  [[ "$TRACKFW_FALSIFY_ENUMERATE" == "1" ]] || exit 1
+fi
+
+assert_succeeds "call-site-pin/self-governed-clean" \
+  bash "$T195/scripts/check-parity-call-site-pins.sh" "$T195"
+
+# Braço A — pin reintroduzido em parity-rest: gate REPROVA.
+# Mutação: acrescenta TRACKFW_SELF_GOVERNED=1 na linha de parity-rest que
+# invoca check-roadmap-barrier-contract.sh (a regressão exata do ML-1B-bis).
+T195A="$WORK/s195-arm-a"
+mkdir -p "$T195A/scripts"
+cp "$T195/scripts/"*.sh "$T195A/scripts/"
+python3 - "$T195/Makefile" "$T195A/Makefile" <<'PYEOF'
+import sys
+src, dst = sys.argv[1], sys.argv[2]
+with open(src) as f:
+    lines = f.readlines()
+out = []
+for line in lines:
+    # Target: a única linha de recipe que invoca check-roadmap-barrier-contract.sh
+    # SEM o pin (alvo parity-rest) — adicionar o pin para simular regressão.
+    stripped = line.lstrip('\t')
+    if ('scripts/check-roadmap-barrier-contract.sh' in stripped
+            and 'TRACKFW_SELF_GOVERNED' not in stripped
+            and stripped.startswith('GO_BIN=')):
+        line = line.replace('GO_BIN=', 'TRACKFW_SELF_GOVERNED=1 GO_BIN=', 1)
+    out.append(line)
+with open(dst, 'w') as f:
+    f.writelines(out)
+PYEOF
+
+assert_fails_with "call-site-pin/self-governed-in-quality" \
+  "forbidden-in-quality" \
+  bash "$T195A/scripts/check-parity-call-site-pins.sh" "$T195A"
+
+# Braço B — pin movido para parity-falsify: gate REPROVA.
+# Mutação: insere uma linha após a invocação de run-gates-falsify-parallel.sh
+# no alvo parity-falsify, adicionando uma chamada pinada ao script consumidor.
+# Este alvo é alcançado por quality→parity→parity-falsify mas não seria
+# detectado por varredura textual de parity-rest.
+T195B="$WORK/s195-arm-b"
+mkdir -p "$T195B/scripts"
+cp "$T195/scripts/"*.sh "$T195B/scripts/"
+python3 - "$T195/Makefile" "$T195B/Makefile" <<'PYEOF'
+import sys
+src, dst = sys.argv[1], sys.argv[2]
+with open(src) as f:
+    lines = f.readlines()
+out = []
+for line in lines:
+    out.append(line)
+    # Após a linha de parity-falsify que invoca run-gates-falsify-parallel.sh,
+    # inserir uma chamada pinada ao script consumidor.
+    stripped = line.lstrip('\t')
+    if 'scripts/run-gates-falsify-parallel.sh' in stripped and stripped.startswith('GO_BIN='):
+        out.append('\tTRACKFW_SELF_GOVERNED=1 GO_BIN=$(BUILD_DIR)/$(BINARY) HASH_CMD_BIN="$(HASH_CMD)" scripts/check-roadmap-barrier-contract.sh\n')
+with open(dst, 'w') as f:
+    f.writelines(out)
+PYEOF
+
+assert_fails_with "call-site-pin/self-governed-moved" \
+  "forbidden-in-quality" \
+  bash "$T195B/scripts/check-parity-call-site-pins.sh" "$T195B"
+
+echo "OK   [falsify/call-site-pin]: 3 braços (clean/in-quality/moved) provados"
+
+# ---------------------------------------------------------------------------
 # ML-2B — fechamento do modo de enumeração. Desligado (default): este bloco
 # inteiro é pulado (a condição é falsa) e a saída do processo é a do último
 # comando acima -- 0, exatamente como antes deste ML (byte-idêntico: nenhuma

@@ -2,6 +2,25 @@
 
 ---
 
+## 2026-09-22 — Ártemis (fix/teste-e-gate-leem-a-arvore-de-governanca — ML-1C) — ENTREGUE (AGUARDANDO AUDITORIA)
+
+**Início:** 2026-09-22 | Branch: `fix/teste-e-gate-leem-a-arvore-de-governanca`
+**Tarefa:** ML-1C — a regressão do desacoplamento não é detectada por ninguém. Adicionar asserção negativa em `check-parity-call-site-pins.sh`: nenhuma invocação alcançável por `make quality` pode pinar `TRACKFW_SELF_GOVERNED`. Adicionar 3 cenários de falsificação em `check-gates-falsify.sh`.
+**Resultado:**
+- `scripts/check-parity-call-site-pins.sh`: novo array `VARS_FORBIDDEN_IN_QUALITY=(TRACKFW_SELF_GOVERNED)` e loop de verificação que usa `make -n quality -C "$ROOT"` como discriminante. Guarda de vacuidade: gate falha fechado se `make -n` falhar ou se o consumidor não aparecer na cadeia. Contagem passa de 9 para 10 verificações; resumo final atualizado.
+- `scripts/check-gates-falsify.sh`: Cenário 195 com 3 braços via `assert_succeeds`/`assert_fails_with`: clean (PASSA), pin em `parity-rest` (REPROVA), pin movido para `parity-falsify` (REPROVA). Todos os labels literais, colhidos pelo manifesto do `gen-falsify-chunks.py`.
+- **AC1 provado:** gate REPROVA (RC=1) com pin reintroduzido em `parity-rest` — `FAIL [call-site-pin/TRACKFW_SELF_GOVERNED/forbidden-in-quality]`
+- **AC2 provado:** gate REPROVA (RC=1) com pin movido para `parity-falsify` — mesma mensagem
+- **AC3:** gate PASSA (RC=0) na árvore correta — 10 verificações
+- **AC4 labels:** `call-site-pin/self-governed-clean`, `call-site-pin/self-governed-in-quality`, `call-site-pin/self-governed-moved` aparecem no manifesto como `chunk=1 label=...` (literais, não globs)
+- **AC5:** `bash scripts/check-parity-call-site-pins.sh` RC=0 na árvore correta
+- **Makefile restaurado:** shasum `59ef751929c2ef14896fe06487cb585d577076c9` confirmado; `make -n quality | grep check-roadmap-barrier-contract` devolve linha sem pin
+- `trackfw validate` RC=0
+- `git status --short`: `M docs/agents-working-context.md`, `M docs/roadmaps/wip/ROADMAP-2026-09-22-...md`, `M scripts/check-gates-falsify.sh`, `M scripts/check-parity-call-site-pins.sh`
+**Arquivos modificados:** `scripts/check-parity-call-site-pins.sh`, `scripts/check-gates-falsify.sh`, roadmap, working-context.
+
+---
+
 ## 2026-09-22 — Apolo (fix/teste-e-gate-leem-a-arvore-de-governanca — ML-1B-bis) — ENTREGUE (AGUARDANDO AUDITORIA)
 
 **Início:** 2026-09-22 | Branch: `fix/teste-e-gate-leem-a-arvore-de-governanca`
@@ -39024,3 +39043,10 @@ trackfw init && roadmap new "..." && roadmap move <n> wip && trackfw validate
 - **ML-1C escrito** (`artemis-tf`): o gate passa a reprovar se **qualquer** invocação alcançável por `make quality` pinar a variável. Exigi o discriminante pelo **`make -n quality`**, não por leitura textual do Makefile — assim pega também o caso de mover a linha para outro alvo que `quality` alcance, que a leitura textual não pegaria.
 - **Nota de método:** este gap não apareceria numa revisão de diff. Apareceu porque injetei a regressão e medi. É a mesma lição do gate de contenção de ontem — gate verde sobre 34 defeitos, porque ninguém tinha testado o gate **contra o defeito que ele deveria pegar**.
 - **Imprecisão minha registrada:** o commit `af759a2a`, rotulado `wip(governance)`, incluiu também o código dos ML-1A/1B — `git add -A` varreu junto. Não é errado numa branch de trabalho, mas a mensagem não descreve o conteúdo inteiro.
+
+### 2026-09-22 — Zeus — ML-1C aprovado; Wave 1 fechada, barrier verde nas 2 waves
+- **Verifiquei o ML-1C repetindo a MESMA mutação que usei contra o gate antigo:** pin reintroduzido em `parity-rest` dava **RC=0** antes, agora dá **RC=1**, com mensagem que nomeia o defeito e mostra a linha ofensora. Makefile restaurado e conferido por `make -n`.
+- **Barreira final da Wave 1: RC=0, 808 `^OK `, 0 `: FALHA`**, guarda de conjunto OK, 229 OK na falsificação (era 216 — os 3 braços novos entraram e foram colhidos).
+- **Decisão do executor que endosso:** não incrementou `FALSIFY_SUCCESS_FLOOR=205`, com a razão escrita — é piso verificado em modo serial, e mexer sem medir o novo total seria **número fabricado**.
+- 🔴 **Erro meu de estrutura, pego pelo barrier:** escrevi os blocos de auditoria como `### ML-1A — resultado`, e o parser leu cada um como **um ML novo, pendente** — daí `ML-1A: not complete` duas vezes e `ML-1B-bis: status missing`. **Um cabeçalho `### ML-` é uma declaração para o parser, não um título livre.** Rebaixei os blocos para `#### Auditoria —` e atualizei o status nas seções originais.
+- **Wave 0 e Wave 1: `result: passed`.** Falta a Barreira final do roadmap: revisão `hefesto-tf` e `hades-tf`, que ele exige explicitamente.

@@ -120,7 +120,7 @@ sítio. O seu trabalho é a **população**, não o caso individual.
 > Dependências: Wave 0 completa e **auditada**. Escopo definido pela tabela do ML-0A.
 
 ### ML-1A — `TestCorpusMeasurement_ReportOnly` cumpre o que declara (#396)
-**Status:** ⬜ Pendente · **Papel:** `artemis-tf`
+**Status:** ✅ Concluído (auditado por Zeus em 2026-09-22) · **Papel:** `artemis-tf`
 **Files affected:** `internal/roadmapdoc/roadmapdoc_test.go` — e só este
 
 **O defeito, já medido:** o cabeçalho da seção (linha 242) diz **"report-only, never fails"** e a
@@ -144,17 +144,17 @@ a outra daria.** Se escolher skip: o teste passa a não medir nada no consumidor
 Se escolher config: ele passa a medir corpus alheio — o número resultante significa o quê?
 
 **Acceptance criteria:**
-- [ ] O cabeçalho e o corpo **concordam** — se diz "never fails", não há `t.Fatalf`
-- [ ] Teste **load-bearing**: prove com um repositório sem `docs/roadmaps/done` que o comportamento
+- [x] O cabeçalho e o corpo **concordam** — se diz "never fails", não há `t.Fatalf`
+- [x] Teste **load-bearing**: prove com um repositório sem `docs/roadmaps/done` que o comportamento
       novo difere do antigo. Cole as duas saídas
-- [ ] 🔴 **Braço (b):** no layout plano deste repositório, a medição **continua acontecendo** — a
+- [x] 🔴 **Braço (b):** no layout plano deste repositório, a medição **continua acontecendo** — a
       correção não pode transformar o teste em no-op para o upstream
-- [ ] `go test ./internal/roadmapdoc/` RC=0
-- [ ] 🔴 **NÃO rodar `make quality`** — barreira é do arquiteto
-- [ ] Uma frase declarando qual conclusão do ML o teste afirma
+- [x] `go test ./internal/roadmapdoc/` RC=0
+- [x] 🔴 **NÃO rodar `make quality`** — barreira é do arquiteto
+- [x] Uma frase declarando qual conclusão do ML o teste afirma
 
 ### ML-1B — os outros dois sítios (a)
-**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Status:** ✅ Concluído (auditado por Zeus em 2026-09-22; sítio 3 corrigido no ML-1B-bis) · **Papel:** `apolo-tf`
 **Files affected:** `internal/validator/validator_test.go`, `scripts/check-roadmap-barrier-contract.sh`
 **Paralelo ao ML-1A** — arquivos disjuntos.
 
@@ -173,16 +173,16 @@ rodar só no upstream.
 **Qualquer desenho aqui precisa provar que a tripwire continua rodando no upstream.**
 
 **Acceptance criteria:**
-- [ ] Sítio 2: o teste não depende de REQ que só existe neste repositório; a conclusão que ele
+- [x] Sítio 2: o teste não depende de REQ que só existe neste repositório; a conclusão que ele
       afirma (o extrator resolve ADR citado entre backticks) continua **afirmada e verificada**
-- [ ] Sítio 3: tripwire separada do corpus, e **prova de que ela continua reprovando no upstream**
+- [x] Sítio 3: tripwire separada do corpus, e **prova de que ela continua reprovando no upstream**
       quando um roadmap some do disco
-- [ ] 🔴 Árbitro do ML-0A aplicado aos dois: árvore temporária com `roadmap_namespacing: by_agent`
+- [x] 🔴 Árbitro do ML-0A aplicado aos dois: árvore temporária com `roadmap_namespacing: by_agent`
       sem diretórios planos → **RC=0**. Cole a saída
-- [ ] Braço (b): no layout plano deste repositório, os dois continuam medindo o que mediam
-- [ ] `go test ./internal/validator/` RC=0 · `bash scripts/check-roadmap-barrier-contract.sh` RC=0
-- [ ] 🔴 **NÃO rodar `make quality`** e **NÃO** usar `go test ./...` — barreira é do arquiteto
-- [ ] Uma frase por teste novo (Regra Dura de Reconciliação)
+- [x] Braço (b): no layout plano deste repositório, os dois continuam medindo o que mediam
+- [x] `go test ./internal/validator/` RC=0 · `bash scripts/check-roadmap-barrier-contract.sh` RC=0
+- [x] 🔴 **NÃO rodar `make quality`** e **NÃO** usar `go test ./...` — barreira é do arquiteto
+- [x] Uma frase por teste novo (Regra Dura de Reconciliação)
 
 Inclui, se a Wave 0 confirmar: o corpus do `check-roadmap-barrier-contract` (**#277**), cuja proposta
 do reportante é separar as **fontes** — corpus vira fixture em `scripts/testdata/` (roda em qualquer
@@ -195,8 +195,8 @@ disser que a causa é outra, ele sai — **com a medição escrita**, como manda
 
 ---
 
-### ML-1A — resultado
-**Status:** ✅ Concluído (auditado por Zeus em 2026-09-22). Escolha **(i) skip declarado**, com o
+#### Auditoria — resultado
+**Veredito:** ✅ Concluído (auditado por Zeus em 2026-09-22). Escolha **(i) skip declarado**, com o
 trade-off escrito. Braço (b) provado: no layout plano, `total=194, unfinished=26/25` — a medição
 continua acontecendo. Árbitro `by_agent`: OLD `RC=1` → NEW `RC=0`.
 Achado extra dele, da mesma classe: as notas do arquivo afirmavam baselines de **27/30/32** de
@@ -205,8 +205,8 @@ quando o corpus tinha ~27 itens; hoje são **194**. Corrigido.
 o literal dentro de um **comentário**. Meu grep não distinguiu comentário de código, que é
 exatamente o que o `check-symlink-privilege-guard` faz certo.
 
-### ML-1B — resultado: sítio 2 aprovado, **sítio 3 REPROVADO**
-**Status:** 🔄 Em andamento — corretivo **ML-1B-bis** pendente
+#### Auditoria — resultado: sítio 2 aprovado, **sítio 3 REPROVADO**
+**Veredito:** 🔄 Em andamento — corretivo **ML-1B-bis** pendente
 
 **Sítio 2 ✅** — fixture preserva o discriminante (`adr: ""` com aspas, ADR só em backtick no corpo),
 e ele **acrescentou** `TestExtractRefPath_CorpusBacktickREF`: controle que ainda lê os 3 arquivos
@@ -249,18 +249,18 @@ invocado pelo **CI do upstream**, não pela suíte geral.
    modo que ele continue reprovando se o pin sumir — 🔴 **sem** voltar a exigi-lo em `parity-rest`.
 
 **Acceptance criteria:**
-- [ ] 🔴 **`make quality` numa árvore `by_agent` sem os roadmaps do mantenedor → RC=0.** É o AC que
+- [x] 🔴 **`make quality` numa árvore `by_agent` sem os roadmaps do mantenedor → RC=0.** É o AC que
       o ML-1B não atendeu. Prove rodando, e cole a saída
-- [ ] 🔴 **A tripwire continua reprovando no upstream:** apague um roadmap do disco, rode o alvo
+- [x] 🔴 **A tripwire continua reprovando no upstream:** apague um roadmap do disco, rode o alvo
       novo, veja reprovar. Cole a saída
-- [ ] O CI do upstream invoca o alvo novo — mostre a linha do workflow
-- [ ] O pin de vacuidade reprova se o `TRACKFW_SELF_GOVERNED=1` sumir do novo call site — prove
+- [x] O CI do upstream invoca o alvo novo — mostre a linha do workflow
+- [x] O pin de vacuidade reprova se o `TRACKFW_SELF_GOVERNED=1` sumir do novo call site — prove
       removendo
-- [ ] 🔴 **NÃO rodar `make quality` completo** para validação de rotina — você é o único agente
+- [x] 🔴 **NÃO rodar `make quality` completo** para validação de rotina — você é o único agente
       agora, mas a barreira é do arquiteto. A exceção é o AC 1, que **exige** `make quality` na
       árvore temporária `by_agent` — essa roda, porque é a prova
 
-### ML-1B-bis — resultado: aprovado, e o desenho está certo
+#### Auditoria — resultado: aprovado, e o desenho está certo
 **Auditado por Zeus em 2026-09-22.** Verifiquei pelo `make -n`, que é a fonte de verdade do que
 cada alvo executa:
 ```
@@ -275,7 +275,7 @@ O consumidor roda o gate **sem** a tripwire; o upstream roda **com**. O defeito 
 perturbar a lista de required checks.
 
 ### ML-1C — a regressão deste desacoplamento não é detectada por ninguém
-**Status:** ⬜ Pendente · **Papel:** `artemis-tf`
+**Status:** ✅ Concluído (auditado por Zeus em 2026-09-22) · **Papel:** `artemis-tf`
 **Files affected:** `scripts/check-parity-call-site-pins.sh` e seu cenário de falsificação em
 `scripts/check-gates-falsify.sh`. **Não** tocar no `Makefile` nem no workflow — estão corretos.
 
@@ -303,16 +303,41 @@ não a leitura textual do Makefile — ele resolve as dependências entre alvos 
 mover a linha para outro alvo que `quality` alcance.
 
 **Acceptance criteria:**
-- [ ] O gate **reprova** quando o pin é reintroduzido em `parity-rest` — prove injetando e colando a
+- [x] O gate **reprova** quando o pin é reintroduzido em `parity-rest` — prove injetando e colando a
       saída, e **restaure** depois
-- [ ] O gate **reprova** também se a linha for movida para outro alvo alcançável por `make quality`
+- [x] O gate **reprova** também se a linha for movida para outro alvo alcançável por `make quality`
       (ex.: `parity-falsify`) — é o caso que a leitura textual do Makefile não pega
-- [ ] O gate continua **RC=0** na árvore correta
-- [ ] Cenário de falsificação em `check-gates-falsify.sh` com **rótulo literal**, colhido pela guarda
+- [x] O gate continua **RC=0** na árvore correta
+- [x] Cenário de falsificação em `check-gates-falsify.sh` com **rótulo literal**, colhido pela guarda
       de conjunto. 🔴 Rótulo montado com variável vira **glob** em `gen-falsify-chunks.py` e a guarda
       para de checar o caso específico
-- [ ] 🔴 **NÃO rodar `make quality`** — a barreira é do arquiteto
-- [ ] Uma frase por cenário novo (Regra Dura de Reconciliação)
+- [x] 🔴 **NÃO rodar `make quality`** — a barreira é do arquiteto
+- [x] Uma frase por cenário novo (Regra Dura de Reconciliação)
+
+#### Auditoria — resultado: aprovado, verificado por mim com a MESMA mutação
+**Auditado por Zeus em 2026-09-22.** Repeti a falsificação que eu havia feito contra o gate antigo:
+
+| | gate antes do ML-1C | gate depois |
+|---|---|---|
+| pin reintroduzido em `parity-rest` | **RC=0** (cego) | **RC=1** |
+
+```
+FAIL [call-site-pin/TRACKFW_SELF_GOVERNED/forbidden-in-quality]: make quality alcança ao menos uma
+invocação de scripts/check-roadmap-barrier-contract.sh que pina TRACKFW_SELF_GOVERNED= -- o pin
+pertence exclusivamente ao alvo upstream (self-governance), não ao caminho do consumidor:
+TRACKFW_SELF_GOVERNED=1 GO_BIN=bin/trackfw HASH_CMD_BIN="sha256sum" scripts/check-roadmap-barrier-contract.sh
+```
+
+A mensagem **nomeia o defeito e mostra a linha ofensora** — não diz só "falhou". E o Makefile voltou
+íntegro (`make -n quality` mostra a invocação sem o pin).
+
+**O discriminante é `make -n quality`, como exigido** — por isso o braço `self-governed-moved` pega o
+pin movido para `parity-falsify`, caso que varredura textual de `parity-rest` não pegaria.
+
+**Decisão do executor que eu endosso:** ele **não** incrementou `FALSIFY_SUCCESS_FLOOR=205`, com a
+razão escrita — é piso, verificado em modo serial, e incrementá-lo sem medir o total serial novo
+seria **número fabricado**. Preferir não afirmar a afirmar sem medir é exatamente o comportamento que
+esta campanha vem cobrando.
 
 ## Barreira final
 
