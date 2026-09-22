@@ -339,6 +339,70 @@ razão escrita — é piso, verificado em modo serial, e incrementá-lo sem medi
 seria **número fabricado**. Preferir não afirmar a afirmar sem medir é exatamente o comportamento que
 esta campanha vem cobrando.
 
+## Wave 2 — corretivos da barreira final
+> Dependências: revisões `hades-tf` e `hefesto-tf` concluídas em 2026-09-22, ambas **aprovado com
+> ressalvas**, nenhuma bloqueando. **ML único, `artemis-tf`** — os três itens são de teste/gate.
+
+🔴 **Convergência independente entre os dois revisores:** Hades (R-C) e Hefesto (Q4) apontaram, sem
+se falarem, que o step `make self-governance` pode ser **deletado do workflow sem que nada reprove**.
+Dois pareceres convergindo num mesmo defeito é sinal forte — e é exatamente a causa desta REQ:
+proteção que desliga em silêncio.
+
+### ML-2A — fechar os três achados acionáveis
+**Status:** ⬜ Pendente · **Papel:** `artemis-tf`
+**Files affected:** `internal/validator/validator_test.go`, `internal/roadmapdoc/roadmapdoc_test.go`,
+e o gate que verificar o workflow (ver item 3). **Não** tocar no `Makefile`.
+
+#### 1. Asserção fraca na fixture (Hefesto Q2)
+As asserções do teste novo são só `got == ""` e `strings.HasSuffix(got, ".md")`. **Um parser quebrado
+de outro jeito, que devolvesse qualquer outro caminho `.md`, passaria em silêncio.**
+
+🔴 **E o vizinho já faz certo:** `validator_test.go:2222` usa `got != adrRel` — igualdade. O teste
+novo ficou **mais fraco que o teste pré-existente que ele espelha**. Acrescentar a comparação de
+igualdade contra o caminho esperado, nos dois (`TresREQsReaisDoRepositorio` e `CorpusBacktickREF`).
+
+#### 2. Vacuidade: `done/` vazia mede zero e passa (Hades R-A, confirmado por mim)
+```
+$ # docs/roadmaps/done/ existe e está VAZIA
+--- PASS: TestCorpusMeasurement_ReportOnly
+    done/ corpus: total=0, unfinished=0, unfinished=0
+RC=0
+```
+Não há guarda de vacuidade — medido: zero ocorrências de `total == 0` / piso na função.
+
+⚠️ **O contrato do teste é "never fails", e ele deve continuar assim.** A saída correta **não** é
+falhar: é **declarar** — `t.Skip` quando o corpus está vazio, como já faz quando o diretório não
+existe. Silenciar com `total=0` é dizer "medi" sem ter medido, e é a classe que esta campanha inteira
+vem corrigindo.
+
+#### 3. O step do CI pode sumir sem nada reprovar (Hades R-C **e** Hefesto Q4)
+Medido pelos dois: deletando o step `ML-1B-bis — self-governance` de `quality.yml`, `parity-rest`
+passa, `parity-other-gates` passa, `parity` (**required check**) passa. **Nada reprova**, e a
+tripwire do upstream desliga. `check-orphan-gates.sh` não pega, porque o script segue invocado por
+`parity-rest`.
+
+Acrescente a verificação de que **o workflow invoca `make self-governance`**. O gate natural é
+`check-parity-call-site-pins.sh`, que já lê `Makefile` e já tem a noção de call site — mas a escolha
+é sua, desde que o gate **reprove** quando o step sumir.
+
+**Acceptance criteria:**
+- [ ] Asserção de igualdade nos dois testes; prove que um retorno `.md` **errado** agora reprova
+- [ ] `done/` vazia ⇒ **skip declarado**, não `total=0` silencioso. Prove com diretório vazio
+- [ ] `done/` com conteúdo ⇒ medição **continua acontecendo** (braço b: 194 no upstream)
+- [ ] 🔴 Remover o step do `quality.yml` ⇒ **gate reprova**. Injete, cole a saída, **restaure e prove
+      que restaurou**
+- [ ] Gate continua RC=0 na árvore correta
+- [ ] Cenário de falsificação com **rótulo literal** para o item 3, colhido pela guarda de conjunto
+- [ ] 🔴 **NÃO rodar `make quality`** — a barreira é do arquiteto
+- [ ] Uma frase por teste/cenário novo (Regra Dura de Reconciliação)
+
+### Fora de escopo — vira issue, com a razão
+**Hefesto Q1:** `TestCorpusMeasurement_ReportOnly` promete *"surface the count in the CI log"*, mas o
+job roda `go test -timeout 2m ./...` **sem `-v`** (`quality.yml:31`) e o `t.Logf` é descartado.
+Confirmei. É de novo um artefato que não sustenta o que declara — **mas o mecanismo é outro**
+(visibilidade de log em CI, não acoplamento a governança) e a correção exige uma **decisão de
+produto**: virar step de CI com `-v`, ou deletar o teste. Issue própria, com a medição.
+
 ## Barreira final
 
 Revisão `hefesto-tf` e `hades-tf`, auditoria do arquiteto, `trackfw barrier`.

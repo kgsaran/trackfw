@@ -39050,3 +39050,19 @@ trackfw init && roadmap new "..." && roadmap move <n> wip && trackfw validate
 - **Decisão do executor que endosso:** não incrementou `FALSIFY_SUCCESS_FLOOR=205`, com a razão escrita — é piso verificado em modo serial, e mexer sem medir o novo total seria **número fabricado**.
 - 🔴 **Erro meu de estrutura, pego pelo barrier:** escrevi os blocos de auditoria como `### ML-1A — resultado`, e o parser leu cada um como **um ML novo, pendente** — daí `ML-1A: not complete` duas vezes e `ML-1B-bis: status missing`. **Um cabeçalho `### ML-` é uma declaração para o parser, não um título livre.** Rebaixei os blocos para `#### Auditoria —` e atualizei o status nas seções originais.
 - **Wave 0 e Wave 1: `result: passed`.** Falta a Barreira final do roadmap: revisão `hefesto-tf` e `hades-tf`, que ele exige explicitamente.
+
+### 2026-09-22 — hades-tf — Iniciando barreira final da REQ #396
+- **Tarefa:** revisão de segurança do que foi entregue na branch `fix/teste-e-gate-leem-a-arvore-de-governanca`, contra o modelo de ameaça Wave 0 que produzi.
+- **Arquivo de saída:** `docs/seguranca/2026-09-22-revisao-desacoplamento-governanca.md`
+
+### 2026-09-22 — hades-tf — Barreira final da REQ #396 concluída
+- **Veredito:** APROVADO COM RESSALVAS
+- **Arquivo produzido:** `docs/seguranca/2026-09-22-revisao-desacoplamento-governanca.md`
+- **3 sítios (a) verificados:** todos corrigidos conforme Wave 0.
+- **5 perguntas respondidas com evidência de execução:**
+  - Q1: desacoplamento não virou desligamento, com exceção de um gap de observabilidade (done/ existe mas vazia → silêncio com total=0, não skip). Aceitável.
+  - Q2: gate captura a regressão primária (pin inline em parity-rest). Dois bypasses confirmados (env: no CI yaml, export no Makefile) — ambos requerem edição de arquivo rastreado visível em PR. Não bloqueantes.
+  - Q3: TRACKFW_SELF_GOVERNED em exatamente um lugar (recipe de self-governance). Sem .env, sem env: no CI. Remoção detectada pelo VARS_PIN_ANY. Ativação incorreta via env: não detectada (R-B).
+  - Q4: asserção negativa cobre make quality/parity/parity-rest. Step de CI corretamente separado.
+  - Q5: residual R-A a R-D declarado. Nada bloqueante.
+- **Nota de método:** toda conclusão verificada por execução antes de escrever — sem PoC vácua.
