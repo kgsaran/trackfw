@@ -101,4 +101,4 @@ detecção. Ao fechar, a anotação da seção correspondente passa de `gap`/`pa
 ADR: <!-- nenhum; sao gates para contrato ja decidido -->
 
 ## Linked Roadmap
-Roadmap: <!-- a criar -->
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-08-20-gates-para-os-tres-contratos-de-maior-risco.md`

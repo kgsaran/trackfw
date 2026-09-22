@@ -3,7 +3,7 @@ status: Done
 date: 2026-09-12
 author: ""
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md"
 ---
 
 # REQ: v8 — um binário, muitos canais

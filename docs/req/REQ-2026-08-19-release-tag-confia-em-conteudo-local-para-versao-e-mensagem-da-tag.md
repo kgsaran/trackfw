@@ -78,4 +78,4 @@ invalida a ideia de que o `release tag` esteja fechado.
 ADR: <!-- avaliar: pode caber como Emenda 2 ao ADR-2026-08-19 -->
 
 ## Linked Roadmap
-Roadmap: <!-- sem roadmap; backlog -->
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-08-21-release-tag-ancora-versao-e-mensagem-no-forge.md`

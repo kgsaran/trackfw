@@ -143,7 +143,7 @@ do no-op. Não deixar implícito.
 ADR: <!-- a criar: forma do caminho governado para push forçado e tag -->
 
 ## Linked Roadmap
-Roadmap: <!-- a criar -->
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md`
 
 ## Débito nomeado ao fechar (não é regressão, é escopo que nunca esteve aqui)
 

@@ -3,7 +3,7 @@ status: Done
 date: 2026-09-05
 author: ""
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-05-fechar-os-tres-defeitos-mecanicos-dos-issues-do-consumidor-externo.md"
 ---
 
 # REQ: tres defeitos mecanicos medidos por consumidor externo: skips residuais, gate req_has_adr vacuo e ENOTDIR classificado como ausente

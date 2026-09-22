@@ -3,7 +3,7 @@ status: Done
 date: 2026-09-12
 author: ""
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-12-remover-o-byte-nul-literal-do-fonte-e-criar-o-gate-que-impede-a-classe.md"
 ---
 
 # REQ: byte NUL literal no fonte torna o arquivo invisível à busca, e já produziu duas REQs com evidência falsa

@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-03
 author: "trackfw_architect (Zeus)"
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/blocked/ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz.md"
 ---
 
 # REQ: As 217 falhas reais de Windows colapsam em poucas causas, e três delas exigem decisão antes de código

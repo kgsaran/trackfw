@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-05
 author: ""
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-22-a-instalacao-em-windows-promete-o-que-nao-entrega-e-o-instalador-recusa-a-plataforma-para-a-qual-publicamos-binario.md"
 ---
 
 # REQ: a instalacao em Windows promete o que nao entrega e o instalador recusa a plataforma para a qual publicamos binario
@@ -103,7 +103,7 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap:
+Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-22-a-instalacao-em-windows-promete-o-que-nao-entrega-e-o-instalador-recusa-a-plataforma-para-a-qual-publicamos-binario.md`
 
 ---
 

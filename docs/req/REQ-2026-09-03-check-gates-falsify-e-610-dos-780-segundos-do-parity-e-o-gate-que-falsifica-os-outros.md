@@ -3,7 +3,7 @@ status: Done
 date: 2026-09-03
 author: "trackfw_architect (Zeus)"
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-06-perfil-e-aceleracao-do-check-gates-falsify-sem-perder-cobertura.md"
 ---
 
 # REQ: `check-gates-falsify.sh` é 610 dos 780 segundos do `parity` — e é o gate que falsifica os outros
@@ -85,7 +85,7 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap:
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-06-perfil-e-aceleracao-do-check-gates-falsify-sem-perder-cobertura.md`
 
 
 ---

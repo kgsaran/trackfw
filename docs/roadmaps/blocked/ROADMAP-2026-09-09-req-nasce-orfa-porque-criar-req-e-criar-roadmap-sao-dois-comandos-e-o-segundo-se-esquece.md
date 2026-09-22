@@ -529,3 +529,50 @@ ML-4A dela, que classifica REQs e issues em *desaparece / barateia / indiferente
 deriva MLs) mordeu **três vezes em 2026-09-12** — inclusive ao gerar o esqueleto do roadmap da
 próprio v8, que precisou ser reescrito à mão. Ele **sobrevive à v8** e é o candidato mais forte a
 retomada imediata quando ela fechar.
+
+---
+
+## Medição de 2026-09-22 — o defeito confirmado em execução, e a dimensão dele
+
+Registrado por `trackfw_architect` ao organizar a governança. **Não altera o status deste roadmap**
+(segue `blocked`); acrescenta a evidência que faltava.
+
+### O comando existe, aceita a flag, e não faz o vínculo reverso
+
+```
+$ trackfw roadmap new --from-req docs/req/REQ-....md --req docs/req/REQ-....md
+✓ created docs/roadmaps/backlog/ROADMAP-2026-09-22-....md
+
+$ grep -n "^roadmap:" docs/req/REQ-....md
+6:roadmap: ""
+```
+
+O roadmap gerado **declara** a REQ no próprio frontmatter (`req: "docs/req/..."`). A REQ **não**
+recebe o ponteiro de volta. `--req` vincula roadmap→REQ; o sentido REQ→roadmap fica vazio, e é
+justamente o que o `trackfw validate` cobra com `has no linked Roadmap`.
+
+Ou seja: a informação existe e está correta de um lado. **O segundo comando não se esquece de
+perguntar — ele se esquece de escrever de volta.**
+
+### A dimensão, medida no corpus real
+
+| | antes | depois de vincular à mão |
+|---|---|---|
+| REQs sem roadmap vinculado | **35** | **12** |
+| `trackfw validate` warnings | **166** | **143** |
+
+As **47** REQs que puderam ser vinculadas foram reconstruídas a partir do campo `req:` **do próprio
+roadmap** — nenhum vínculo foi inventado. Verificação bidirecional: 47 consistentes, **0 cruzados**.
+
+As 12 remanescentes são **9 `Superseded`** (paridade Node/Python, sem sentido pós-v8) e **3 `Done`**
+históricas. **Nenhuma `Open`.**
+
+### O que isto sugere para o escopo deste roadmap
+
+O vínculo reverso é **derivável** — o roadmap já sabe de qual REQ nasceu. Então, além de fazer
+`roadmap new --req` escrever nos dois lados, cabe avaliar um modo de reconciliação
+(`trackfw validate --fix` ou `trackfw doctor`) que reconstrua o ponteiro a partir do `req:` do
+roadmap, em vez de exigir edição manual em 47 arquivos.
+
+🔴 **O ônus da prova é o de sempre:** um comando que escreve em 47 arquivos de governança precisa de
+falsificação nas duas direções — vínculo correto criado **e** vínculo cruzado recusado.

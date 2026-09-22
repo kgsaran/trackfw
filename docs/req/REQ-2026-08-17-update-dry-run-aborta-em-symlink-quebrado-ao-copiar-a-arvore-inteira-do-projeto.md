@@ -108,4 +108,4 @@ ADR: <!-- nenhum; se a opção 2 virar lista de inclusão, avaliar ADR -->
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: <!-- sem roadmap; backlog -->
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-08-27-sandbox-do-update-dry-run-por-lista-de-inclusao-dos-destinos-declarados.md`

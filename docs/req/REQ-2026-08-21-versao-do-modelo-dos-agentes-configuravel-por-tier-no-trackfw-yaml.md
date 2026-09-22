@@ -132,4 +132,4 @@ Isto precisa ser gate, não cuidado.
 ADR: <!-- a criar: versao por tier, composicao por alvo, escape hatch -->
 
 ## Linked Roadmap
-Roadmap: <!-- a criar -->
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md`

@@ -3,7 +3,7 @@ status: Open
 date: 2026-08-21
 author: ""
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-22-update-harness-le-trackfw-yaml-do-cwd-e-escreve-em-escopo-global.md"
 ---
 
 # REQ: `update harness` lê `trackfw.yaml` do cwd e escreve em escopo global
@@ -93,4 +93,4 @@ meu projeto"* de *"diretório qualquer"*, e essa distinção não é óbvia — 
 ADR: <!-- a criar: fronteira entre config de projeto e escrita global -->
 
 ## Linked Roadmap
-Roadmap: <!-- sem roadmap; backlog -->
+Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-22-update-harness-le-trackfw-yaml-do-cwd-e-escreve-em-escopo-global.md`

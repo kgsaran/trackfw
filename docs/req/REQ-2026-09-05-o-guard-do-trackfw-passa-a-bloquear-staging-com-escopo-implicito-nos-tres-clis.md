@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-05
 author: ""
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-22-o-guard-do-trackfw-passa-a-bloquear-staging-com-escopo-implicito-nos-tres-clis.md"
 ---
 
 # REQ: o guard do trackfw passa a bloquear staging com escopo implicito nos tres CLIs
@@ -76,4 +76,4 @@ ADR: docs/adr/ADR-2026-09-05-staging-com-escopo-implicito-e-bloqueado-porque-nin
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap:
+Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-22-o-guard-do-trackfw-passa-a-bloquear-staging-com-escopo-implicito-nos-tres-clis.md`

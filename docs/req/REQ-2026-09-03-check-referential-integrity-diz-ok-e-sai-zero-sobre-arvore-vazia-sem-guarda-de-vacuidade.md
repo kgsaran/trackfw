@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-03
 author: "trackfw_architect (Zeus)"
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-22-check-referential-integrity-sh-diz-ok-e-sai-0-sobre-arvore-vazia-quinto-gate-vacuo-e-esta-dentro-do-parity.md"
 ---
 
 # REQ: `check-referential-integrity.sh` diz `OK` e sai 0 sobre árvore vazia — quinto gate vácuo, e está dentro do `parity`
@@ -78,4 +78,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap:
+Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-22-check-referential-integrity-sh-diz-ok-e-sai-0-sobre-arvore-vazia-quinto-gate-vacuo-e-esta-dentro-do-parity.md`

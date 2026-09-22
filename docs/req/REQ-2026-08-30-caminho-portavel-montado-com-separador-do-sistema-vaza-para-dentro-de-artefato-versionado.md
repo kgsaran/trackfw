@@ -97,7 +97,7 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap:
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-01-caminho-dentro-de-artefato-versionado-usa-sempre-barra.md`
 
 
 ## 🔴 REABERTA — 2026-09-08: sítio de mesma causa, issue #292

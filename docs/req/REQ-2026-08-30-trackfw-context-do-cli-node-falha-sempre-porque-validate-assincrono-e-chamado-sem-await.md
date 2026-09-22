@@ -3,7 +3,7 @@ status: Done
 date: 2026-08-30
 author: "trackfw_architect (Zeus)"
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-02-context-do-cli-node-aguarda-validate-e-ganha-teste-que-executa-o-binario.md"
 ---
 
 # REQ: `trackfw context` do CLI Node falha sempre porque `validate()` assíncrono é chamado sem `await`
@@ -47,4 +47,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap:
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-02-context-do-cli-node-aguarda-validate-e-ganha-teste-que-executa-o-binario.md`

@@ -153,4 +153,4 @@ ADR:
 <!-- Roadmap não criado ainda: o ML-1A do .gitattributes está em execução e toca exatamente os 3
      geradores que esta REQ vai alterar (scaffold.go, init.js, init_gen.py). Despachar depois, para
      não pôr dois agentes no mesmo arquivo — colisão que já custou caro nesta sprint. -->
-Roadmap:
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-09-guard-emite-hookspecificoutput-e-a-razao-chega-ao-modelo-nos-3-clis.md`

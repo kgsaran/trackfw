@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-12
 author: ""
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/blocked/ROADMAP-2026-09-12-triagem-medida-das-reqs-de-paridade-e-gate-de-conjunto-de-regras.md"
 ---
 
 # REQ: REQs de paridade não distinguem entregue de pendente porque o gate que provaria a entrega não existe

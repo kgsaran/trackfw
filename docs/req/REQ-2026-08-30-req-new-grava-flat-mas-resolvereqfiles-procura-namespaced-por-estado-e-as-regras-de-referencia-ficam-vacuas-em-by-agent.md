@@ -3,7 +3,7 @@ status: Done
 date: 2026-08-30
 author: "trackfw_architect (Zeus)"
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-03-resolvedor-de-req-cobre-o-layout-canonico-e-ciclo-fechado-por-artefato.md"
 ---
 
 # REQ: `req new` grava flat, `resolveREQFiles` procura namespaced por estado — e as regras de referência ficam vácuas em `by_agent`
@@ -75,4 +75,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap:
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-03-resolvedor-de-req-cobre-o-layout-canonico-e-ciclo-fechado-por-artefato.md`

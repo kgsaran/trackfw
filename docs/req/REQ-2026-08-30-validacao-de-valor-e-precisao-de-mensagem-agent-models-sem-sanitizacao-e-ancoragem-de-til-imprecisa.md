@@ -3,7 +3,7 @@ status: Open
 date: 2026-08-30
 author: "trackfw_architect (Zeus)"
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-22-validacao-de-valor-e-precisao-de-mensagem-agent-models-sem-sanitizacao-e-ancoragem-de-imprecisa.md"
 ---
 
 # REQ: Validação de valor e precisão de mensagem — `agent_models` sem sanitização e ancoragem de `~` imprecisa
@@ -53,4 +53,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap:
+Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-22-validacao-de-valor-e-precisao-de-mensagem-agent-models-sem-sanitizacao-e-ancoragem-de-imprecisa.md`

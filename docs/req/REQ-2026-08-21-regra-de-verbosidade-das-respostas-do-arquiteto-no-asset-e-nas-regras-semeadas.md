@@ -92,4 +92,4 @@ silêncio conveniente.
 ADR: <!-- avaliar: a escolha regra-fixa-vs-botao pode merecer registro -->
 
 ## Linked Roadmap
-Roadmap: <!-- a criar -->
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-08-21-regra-de-verbosidade-no-asset-do-arquiteto-e-nas-regras-semeadas.md`

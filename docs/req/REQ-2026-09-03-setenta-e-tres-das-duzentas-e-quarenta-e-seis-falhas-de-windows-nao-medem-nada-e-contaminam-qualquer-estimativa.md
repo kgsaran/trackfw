@@ -3,7 +3,7 @@ status: Done
 date: 2026-09-03
 author: "trackfw_architect (Zeus)"
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-03-desmascarar-as-falhas-de-windows-que-nao-medem-nada-e-recontar.md"
 ---
 
 # REQ: 73 das 246 falhas de Windows não medem nada, e contaminam qualquer estimativa
@@ -103,7 +103,7 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap:
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-03-desmascarar-as-falhas-de-windows-que-nao-medem-nada-e-recontar.md`
 
 
 ---

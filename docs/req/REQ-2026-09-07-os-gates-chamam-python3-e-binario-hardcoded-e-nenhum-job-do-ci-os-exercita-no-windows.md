@@ -3,7 +3,7 @@ status: Done
 date: 2026-09-07
 author: ""
 adr: ""
-roadmap: ""
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-07-gates-rodam-no-windows-resolucao-de-interpretador-e-binario.md"
 ---
 
 # REQ: os gates chamam python3 e binario hardcoded e nenhum job do CI os exercita no Windows

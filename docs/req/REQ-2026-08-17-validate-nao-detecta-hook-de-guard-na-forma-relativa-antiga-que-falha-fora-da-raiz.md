@@ -108,4 +108,4 @@ ADR: `docs/adr/ADR-2026-08-11-resolucao-de-caminho-dos-hooks-de-projeto-por-cli-
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: <!-- sem roadmap; backlog -->
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-08-21-validate-detecta-hook-de-guard-na-forma-relativa-antiga.md`
