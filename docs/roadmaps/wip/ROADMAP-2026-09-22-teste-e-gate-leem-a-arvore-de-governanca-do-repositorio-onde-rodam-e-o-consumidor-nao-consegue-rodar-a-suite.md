@@ -38,8 +38,43 @@ para o consumidor — a proposta de valor sendo negada pelo próprio produto.
 > Dependências: nenhuma. **Bloqueia toda a implementação.**
 
 ### ML-0A — enumerar a população e classificar cada sítio
-**Status:** ⬜ Pendente · **Papel:** `hades-tf`
-**Files affected:** nenhum de produto — documento em `docs/seguranca/`
+**Status:** ✅ Concluído (auditado por Zeus em 2026-09-22)
+**Files affected:** `docs/seguranca/2026-09-22-enumeracao-acoplamento-a-governanca-do-repo.md`
+
+#### Resultado — **(a)=3 · (b)=4 · (c)=7 · fora de população=1**
+
+🔴 **Minha medição inicial foi REFUTADA na população, não confirmada.** Eu medi `1` sítio de teste
+porque procurei o **literal** `repoRoot(`. O segundo alcança a árvore real por
+`filepath.Abs(filepath.Join("..", ".."))` — mecanismo diferente, mesmo defeito. Era exatamente o
+risco que declarei no handoff, e por isso pedi refutação em vez de herança do número.
+
+| # | sítio | evidência |
+|---|---|---|
+| 1 | `internal/roadmapdoc/roadmapdoc_test.go:250` | RC=1 contra árvore `by_agent` sem `docs/roadmaps/done/` — **#396** |
+| 2 | `internal/validator/validator_test.go:2246` | lê **3 REQs reais por caminho literal** com `t.Fatalf`; RC=1 na mesma árvore — é o **achado 16 do #216** |
+| 3 | `scripts/check-roadmap-barrier-contract.sh:512` | tripwire de disco **incondicional**; 144 basenames ausentes ⇒ 144 falhas — **#277** |
+
+**#277 entra no ML-1B por medição, não por presunção**, como o roadmap exigia. O corpus congelado
+já está em `scripts/testdata/` (mecanismo correto); o defeito é só a tripwire da linha 512.
+
+🔴 **E a proposta do #277 tem um buraco medido:** a guarda `TRACKFW_SELF_GOVERNED=1` só fecha o
+defeito se o CI do mantenedor setar a variável — **0 ocorrências** em `.github/`, `Makefile` e
+`scripts/`. Confirmei. Sem isso, "desacoplar" vira "desligar".
+
+#### O critério (a)/(b) — e a refutação do meu candidato
+
+Eu propus *"rodaria num clone sem nenhum arquivo em `docs/`?"*. **Está errado, e ele mostrou por
+quê:** em `by_agent` o `docs/` **tem** conteúdo (`docs/roadmaps/<agente>/done/`); o teste passaria e
+o defeito persistiria. Além disso não cobre artefato fora de `docs/`.
+
+O critério adotado é P1 (pertence ao domínio configurável `roadmap_dir`/`req_dir`/`adr_dirs`?) → P2
+(o conteúdo varia entre mantenedor e consumidor?) → P3 (resolve via config **e** tolera qualquer
+estado válido, incluindo vazio e `by_agent`?).
+
+🔴 **Com árbitro executável contra o adversário:** quando P3 for arguível em prosa, copia-se o source
+para árvore temporária com `roadmap_namespacing: by_agent` sem os diretórios planos e executa-se o
+artefato. **RC=0 → (b). RC≠0 → (a). Prosa não substitui RC.** É o que impede esvaziar a wave
+classificando tudo como "é do upstream, é legítimo".
 
 **Contexto que você NÃO precisa remedir:** o #396 já está medido pelo reportante, e eu confirmei o
 sítio. O seu trabalho é a **população**, não o caso individual.
@@ -70,12 +105,12 @@ sítio. O seu trabalho é a **população**, não o caso individual.
 5. **Residual declarado.**
 
 **Acceptance criteria:**
-- [ ] Tabela completa, um veredito (a)/(b)/(c) por sítio, com `arquivo:linha` e o comando que
-      produziu a lista
-- [ ] 🔴 O critério que distingue (a) de (b) está **escrito e é aplicável por terceiro** — não
-      "julgamento do revisor"
-- [ ] As quatro seções com evidência, não asserção de uma linha
-- [ ] Nenhuma linha de implementação escrita neste ML
+- [x] Tabela completa, um veredito (a)/(b)/(c) por sítio, com `arquivo:linha` e o comando que
+      produziu a lista — 15 sítios classificados, varredura por **5 mecanismos** de alcance
+- [x] 🔴 O critério que distingue (a) de (b) está escrito e é aplicável por terceiro — P1/P2/P3 com
+      **árbitro executável** (`RC=0 → (b)`, `RC≠0 → (a)`; prosa não substitui RC)
+- [x] As quatro seções com evidência, não asserção de uma linha — 453 linhas, comando e saída
+- [x] Nenhuma linha de implementação escrita neste ML — verificado: só `docs/seguranca/` foi criado
 
 **Gate da wave:** `trackfw barrier <roadmap> --wave 0`, auditado por mim antes de qualquer despacho.
 
@@ -118,9 +153,36 @@ Se escolher config: ele passa a medir corpus alheio — o número resultante sig
 - [ ] 🔴 **NÃO rodar `make quality`** — barreira é do arquiteto
 - [ ] Uma frase declarando qual conclusão do ML o teste afirma
 
-### ML-1B — sítios (a) restantes
-**Status:** ⬜ Pendente · **Papel:** a definir pela tabela do ML-0A
-**Files affected:** definidos pelo ML-0A
+### ML-1B — os outros dois sítios (a)
+**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Files affected:** `internal/validator/validator_test.go`, `scripts/check-roadmap-barrier-contract.sh`
+**Paralelo ao ML-1A** — arquivos disjuntos.
+
+**Sítio 2 — `validator_test.go:2246`** (`TestExtractRefPath_TresREQsReaisDoRepositorio`): alcança a
+árvore real por `filepath.Abs(filepath.Join("..",".."))` e lê **3 REQs por caminho literal**, com
+`t.Fatalf` se faltarem. É o **achado 16 do #216**. As três REQs existem só neste repositório.
+
+**Sítio 3 — `check-roadmap-barrier-contract.sh:512`**: a tripwire de disco é **incondicional** — para
+cada basename do snapshot, exige `find $ROOT_DIR/docs/roadmaps`. Num fork, 108 de 144 ausentes.
+Proposta do #277: corpus (já em `scripts/testdata/`, correto) separado da tripwire, que passa a
+rodar só no upstream.
+
+🔴 **O buraco medido na proposta do #277:** `TRACKFW_SELF_GOVERNED=1` tem **0 ocorrências** em
+`.github/`, `Makefile` e `scripts/`. Se a tripwire ficar atrás dessa variável e ninguém a setar,
+"desacoplar" vira **desligar** — e o upstream perde a auditoria sem que nada fique vermelho.
+**Qualquer desenho aqui precisa provar que a tripwire continua rodando no upstream.**
+
+**Acceptance criteria:**
+- [ ] Sítio 2: o teste não depende de REQ que só existe neste repositório; a conclusão que ele
+      afirma (o extrator resolve ADR citado entre backticks) continua **afirmada e verificada**
+- [ ] Sítio 3: tripwire separada do corpus, e **prova de que ela continua reprovando no upstream**
+      quando um roadmap some do disco
+- [ ] 🔴 Árbitro do ML-0A aplicado aos dois: árvore temporária com `roadmap_namespacing: by_agent`
+      sem diretórios planos → **RC=0**. Cole a saída
+- [ ] Braço (b): no layout plano deste repositório, os dois continuam medindo o que mediam
+- [ ] `go test ./internal/validator/` RC=0 · `bash scripts/check-roadmap-barrier-contract.sh` RC=0
+- [ ] 🔴 **NÃO rodar `make quality`** e **NÃO** usar `go test ./...` — barreira é do arquiteto
+- [ ] Uma frase por teste novo (Regra Dura de Reconciliação)
 
 Inclui, se a Wave 0 confirmar: o corpus do `check-roadmap-barrier-contract` (**#277**), cuja proposta
 do reportante é separar as **fontes** — corpus vira fixture em `scripts/testdata/` (roda em qualquer
@@ -130,7 +192,6 @@ clone) e a tripwire de disco vira gate separado, executado só no upstream ou at
 🔴 **Não presuma que #277 entra.** Ele entra se a Wave 0 medir que é a mesma causa. Se a medição
 disser que a causa é outra, ele sai — **com a medição escrita**, como manda a Regra Dura.
 
-**Acceptance criteria:** definidos após o ML-0A.
 
 ---
 
