@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-31
 author: "zeus-tf"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-31-guarda-de-folha-resolve-o-caminho-e-afirma-contencao-antes-de-escrever.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-31-guarda-de-folha-resolve-o-caminho-e-afirma-contencao-antes-de-escrever.md"
 ---
 
 # REQ: Guarda de folha faz `Lstat` só no último componente e nunca inspeciona ancestral — escrita fora do projeto em todo SO e todo runtime
 
-> Date: 2026-08-31 | Status: Open
+> Date: 2026-08-31 | Status: Done
 
 ## Motivation
 
@@ -162,7 +162,7 @@ sítio. -->
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-31-guarda-de-folha-resolve-o-caminho-e-afirma-contencao-antes-de-escrever.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-08-31-guarda-de-folha-resolve-o-caminho-e-afirma-contencao-antes-de-escrever.md`
 
 
 ---
