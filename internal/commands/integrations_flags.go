@@ -304,7 +304,7 @@ func executeIntegrationMutation(cmd *cobra.Command, kind integrations.ItemKind, 
 				continue
 			}
 			seen[name] = true
-			if regErr := config.AppendAgentToConfig(yamlPath, name); regErr != nil {
+			if regErr := config.AppendAgentToConfig(manager.ProjectRoot, yamlPath, name); regErr != nil {
 				fmt.Fprintf(os.Stderr, "warning: could not register agent %q in trackfw.yaml: %v\n", name, regErr)
 			}
 		}

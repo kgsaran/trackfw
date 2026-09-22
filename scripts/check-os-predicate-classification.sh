@@ -91,6 +91,9 @@ COMPARADORES='strings\.(Contains|HasPrefix|HasSuffix|EqualFold|Index)|startswith
 BASELINE="
 internal/integrations/manager.go|resolucao de caminho de instalacao de integracao; produto do upstream, e o maior sitio unico (10 ocorrencias)
 internal/validator/validator.go|validacao de caminho relativo em artefato; produto do upstream
+internal/metrics/metrics.go|torna absoluto o caminho do export contra a raiz antes da guarda de escrita; produto do upstream, entrou com o #397 em 2026-09-22
+internal/pathguard/pathguard.go|Beneath recusa o resultado de filepath.Rel que saia da raiz; produto do upstream, entrou com o #397 em 2026-09-22
+internal/sync/sync.go|torna absoluto o caminho da REQ contra a raiz antes da guarda de escrita; produto do upstream, entrou com o #397 em 2026-09-22
 "
 
 esta_no_baseline() {

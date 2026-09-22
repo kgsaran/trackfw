@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/kgsaran/trackfw/internal/pathanchor"
+	"github.com/kgsaran/trackfw/internal/pathguard"
 )
 
 type LifecycleState string
@@ -751,37 +752,22 @@ func (m Manager) resolve(plan PlannedArtifact) (string, string, error) {
 	return destination, manifestFile, nil
 }
 
-func beneath(root, filename string) bool {
-	relative, err := filepath.Rel(root, filename)
-	return err == nil && relative != "." && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) && !filepath.IsAbs(relative)
-}
+// beneath delegates to pathguard.Beneath. The unexported name is preserved
+// so that existing white-box tests in package integrations (manager_test.go)
+// continue to compile and pass without modification — extraction is
+// behaviour-preserving by construction.
+func beneath(root, filename string) bool { return pathguard.Beneath(root, filename) }
 
-func rejectSymlinks(root, filename string) error {
-	current := filename
-	for {
-		info, err := os.Lstat(current)
-		if err == nil && info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("refusing symlink path %q", current)
-		}
-		if err != nil && !os.IsNotExist(err) {
-			return err
-		}
-		if current == root {
-			return nil
-		}
-		parent := filepath.Dir(current)
-		if parent == current || !beneath(root, current) {
-			return fmt.Errorf("path %q escapes root", filename)
-		}
-		current = parent
-	}
-}
+// rejectSymlinks delegates to pathguard.RejectSymlinks for the same reason.
+func rejectSymlinks(root, filename string) error { return pathguard.RejectSymlinks(root, filename) }
 
 func atomicWrite(filename string, data []byte, mode os.FileMode) error {
 	directory := filepath.Dir(filename)
+	// write-containment-allowed: atomicWrite is called only after caller invokes rejectSymlinks — the guard is at the call site, not inside this helper
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return err
 	}
+	// write-containment-allowed: atomicWrite is called only after caller invokes rejectSymlinks — the guard is at the call site, not inside this helper
 	temporary, err := os.CreateTemp(directory, ".trackfw-tmp-*")
 	if err != nil {
 		return err
@@ -803,6 +789,7 @@ func atomicWrite(filename string, data []byte, mode os.FileMode) error {
 	if err := temporary.Close(); err != nil {
 		return err
 	}
+	// write-containment-allowed: atomicWrite is called only after caller invokes rejectSymlinks — the guard is at the call site, not inside this helper
 	return os.Rename(temporaryName, filename)
 }
 

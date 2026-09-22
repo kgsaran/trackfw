@@ -719,7 +719,15 @@ func writeThirdPartyReferenceRegistry(root string, reg thirdPartyReferenceRegist
 		return fmt.Errorf("encode thirdparty reference registry: %w", err)
 	}
 	data = append(data, '\n')
-	if err := atomicWrite(thirdPartyReferencesPath(root), data, 0o600); err != nil {
+	// Guard before atomicWrite: root is the caller-supplied project root
+	// (always absolute), so rejectSymlinks walks all ancestors from root to
+	// the destination and rejects any symlink along the way.
+	// Guard precedes atomicWrite so no temp file is created on refusal.
+	destPath := thirdPartyReferencesPath(root)
+	if guardErr := rejectSymlinks(root, destPath); guardErr != nil {
+		return fmt.Errorf("write thirdparty reference registry: refusing symlink: %w", guardErr)
+	}
+	if err := atomicWrite(destPath, data, 0o600); err != nil {
 		return fmt.Errorf("write thirdparty reference registry: %w", err)
 	}
 	return nil

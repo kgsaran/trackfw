@@ -519,3 +519,104 @@ func TestScaffoldStatusVocabularyMatchesGenerator(t *testing.T) {
 		}
 	}
 }
+
+// ─── ML-1C Containment Tests ────────────────────────────────────────────────
+
+// TestGenerateAttentionScripts_SymlinkScriptsDirRefused asserts that ML-1C
+// containment guards reject GenerateAttentionScripts when scripts/ is a
+// symlink pointing outside the project tree.
+func TestGenerateAttentionScripts_SymlinkScriptsDirRefused(t *testing.T) {
+	outside := t.TempDir()
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	symlinkOrSkip(t, outside, filepath.Join(dir, "scripts"))
+
+	err := GenerateAttentionScripts("")
+	if err == nil {
+		t.Fatal("GenerateAttentionScripts() should refuse when scripts/ is a symlink, got nil")
+	}
+	if _, statErr := os.Stat(filepath.Join(outside, "trackfw-attention-signal.sh")); statErr == nil {
+		t.Error("containment violated: attention-signal.sh was written to outside dir")
+	}
+}
+
+// TestScaffold_SymlinkGovDirRefused asserts that ML-1C containment guards
+// cause Scaffold to refuse when one of the governance dirs (docs/) is a
+// symlink pointing outside the project root (PoC 1 scenario).
+func TestScaffold_SymlinkGovDirRefused(t *testing.T) {
+	outside := t.TempDir()
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	symlinkOrSkip(t, outside, filepath.Join(dir, "docs"))
+
+	cfg := Config{
+		ProjectType: "governance",
+		Frontend:    "none",
+		Backend:     "go",
+		WipLimit:    1,
+	}
+	err := Scaffold(cfg)
+	if err == nil {
+		t.Fatal("Scaffold() should refuse when docs/ is a symlink, got nil")
+	}
+	// The outside dir must NOT have gained governance subdirectories.
+	if _, statErr := os.Stat(filepath.Join(outside, "adr")); statErr == nil {
+		t.Error("containment violated: adr dir was created outside the project")
+	}
+}
+
+// TestGenerateClaudeCommandsInner_SymlinkDirRefused asserts that ML-1C
+// containment guards reject slash-command generation when .claude/ is a
+// symlink pointing outside the project root.
+func TestGenerateClaudeCommandsInner_SymlinkDirRefused(t *testing.T) {
+	outside := t.TempDir()
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	symlinkOrSkip(t, outside, filepath.Join(dir, ".claude"))
+
+	err := generateClaudeCommandsInner(false)
+	if err == nil {
+		t.Fatal("generateClaudeCommandsInner() should refuse when .claude/ is a symlink, got nil")
+	}
+	if _, statErr := os.Stat(filepath.Join(outside, "commands")); statErr == nil {
+		t.Error("containment violated: commands dir was created outside the project")
+	}
+}
+
+// TestGenerateGitHubActionsWorkflow_SymlinkGithubDirRefused asserts that
+// ML-1C containment guards reject GitHub Actions workflow generation when
+// .github/ is a symlink pointing outside the project root (PoC 1 scenario).
+func TestGenerateGitHubActionsWorkflow_SymlinkGithubDirRefused(t *testing.T) {
+	outside := t.TempDir()
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	symlinkOrSkip(t, outside, filepath.Join(dir, ".github"))
+
+	err := generateGitHubActionsWorkflow(Config{CI: "github-actions"})
+	if err == nil {
+		t.Fatal("generateGitHubActionsWorkflow() should refuse when .github/ is a symlink, got nil")
+	}
+	if _, statErr := os.Stat(filepath.Join(outside, "workflows")); statErr == nil {
+		t.Error("containment violated: workflows dir was created outside the project")
+	}
+}

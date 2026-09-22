@@ -22,3 +22,4 @@
 - [Ao publicar rc, verificar os três canais](feedback_rc_verificar_os_tres_canais.md) — GitHub erra por default (goreleaser `prerelease` ausente); npm/PyPI acertam sozinhos
 - [Fechamento de REQ é pós-merge](project_fechamento_e_pos_merge.md) — push tem hard gate de roadmap em wip/; e o marcador `Roadmap:` da REQ precisa iniciar a linha
 - [Processos órfãos de subagente](project_processos_orfaos_de_subagente.md) — loops `until` e `cat` em pipe não drenado seguram o agente como "em execução"; olhe o filho do shell, não a carga
+- [Marcador de fim nunca escrito](project_marcador_de_fim_nunca_escrito.md) — subagente espera `exit=`/`RC=` que nunca chega; 1468 linhas = run completo; nunca use `pgrep -f "make quality"`

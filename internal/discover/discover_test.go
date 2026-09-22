@@ -1078,3 +1078,23 @@ func findSubstr(s, sub string) int {
 	}
 	return -1
 }
+
+// TestInstallGates_SymlinkScriptsDirRefused asserts that ML-1C containment
+// guards cause InstallGates to refuse when scripts/ is a symlink pointing
+// outside the project root (PoC 1 scenario for discover --init).
+func TestInstallGates_SymlinkScriptsDirRefused(t *testing.T) {
+	outside := t.TempDir()
+	dir := t.TempDir()
+
+	mustWriteFile(t, filepath.Join(dir, "trackfw.yaml"), "backend: go\n")
+	symlinkOrSkip(t, outside, filepath.Join(dir, "scripts"))
+
+	r := DiscoveryResult{}
+	err := InstallGates(r, dir, io.Discard)
+	if err == nil {
+		t.Fatal("InstallGates() should refuse when scripts/ is a symlink, got nil")
+	}
+	if _, statErr := os.Stat(filepath.Join(outside, "trackfw-validate.sh")); statErr == nil {
+		t.Error("containment violated: trackfw-validate.sh was written outside the project")
+	}
+}

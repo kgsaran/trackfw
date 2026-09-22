@@ -17,6 +17,13 @@ ninguém questiona. Quatro ocorrências medidas neste projeto:
 | REQs com `adr:` vazio | `[ -z "$v" ]` — mas o valor é `""`, string de 2 chars, não vazia | 0 | **128** |
 | roadmaps de `done/` que falhariam em `wip/` | `grep` de marcador decorado | 13 | **~43** |
 | FAIL no `make quality` | `make quality \| tail -40` | 0 | indeterminado — só vi 40 de 3816 linhas |
+| `: FALHA` no `make quality` | `grep -c '": FALHA"'` — **aspas duplas dentro do padrão** | 0 | 0 por acaso; o padrão retorna 0 **sempre** |
+
+🔴 **Padrão que retorna 0 incondicionalmente é o pior caso**, porque coincide com a resposta desejada.
+Em 2026-09-21 um executor reportou `0 ": FALHA"` medindo com o literal **entre aspas duplas**; a
+barreira estava realmente verde, então o número batia — e o comando teria dado 0 numa barreira
+vermelha também. Antes de aceitar um `0`, pergunte: **este comando já deu diferente de zero alguma
+vez?** Se nunca, prove com um caso conhecido de falha.
 
 **How to apply:**
 
