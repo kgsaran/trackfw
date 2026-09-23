@@ -207,9 +207,11 @@ def population_lines(path):
     Trade-off assumido, na direcao segura: uma mencao MORTA a `python3` dentro
     de corpo de heredoc passa a colocar o arquivo na populacao e a exigir dele
     a declaracao. Isso e falso positivo, ruidoso e FECHADO — reprova pedindo
-    uma linha inofensiva —, ao contrario do falso negativo que substitui. Hoje
-    nao ocorre: as duas populacoes coincidem (38 = 38, delta vazio nas duas
-    direcoes)."""
+    uma linha inofensiva —, ao contrario do falso negativo que substitui.
+    Ocorre desde 2026-09-23: check-crlf-normalize-capture.sh menciona
+    `python3` em ERE e comentarios (sem invocar), caiu na populacao e resolveu
+    exatamente como o trade-off previu — gate reprovou, linha inofensiva foi
+    adicionada (ML-1B-bis, REQ-2026-09-23)."""
     with open(path, encoding="utf-8", errors="replace") as fh:
         return [
             (i, raw)

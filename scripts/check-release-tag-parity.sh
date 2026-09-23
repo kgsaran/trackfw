@@ -64,6 +64,8 @@ export NO_COLOR=1
 export TERM=dumb
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# shellcheck source=scripts/lib-crlf-normalize.sh
+. "$ROOT_DIR/scripts/lib-crlf-normalize.sh"
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/trackfw-release-tag-parity.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 
@@ -427,7 +429,7 @@ PYEOF
 # json_field FILE KEY — prints a top-level string field from a small JSON file, via python3.
 json_field() {
   local file=$1 key=$2
-  python3 - "$file" "$key" <<'PYEOF'
+  python3 - "$file" "$key" <<'PYEOF' | strip_cr
 import json, sys
 path, key = sys.argv[1], sys.argv[2]
 with open(path) as f:

@@ -36,6 +36,8 @@ set -euo pipefail
 export PYTHONIOENCODING=utf-8
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/lib-crlf-normalize.sh
+. "$SCRIPT_DIR/lib-crlf-normalize.sh"
 REPO_ROOT="${_CHECKNUL_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 EXCEPTIONS_FILE="${_CHECKNUL_EXCEPTIONS:-"$SCRIPT_DIR/nul-source-exceptions.txt"}"
 
@@ -58,7 +60,7 @@ for line in sys.stdin:
     path = path.strip()
     if "text=" in attrs_part:
         print(path)
-'
+' | strip_cr
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -309,7 +311,7 @@ while IFS= read -r rel; do
 
     if [[ $is_declared -eq 0 ]]; then
       # Reportar com offsets — passagem do caminho via argv, sem interpolação no código Python
-      offsets=$(python3 - "$full_path" << 'PYEOF'
+      offsets=$(python3 - "$full_path" << 'PYEOF' | strip_cr
 import sys
 with open(sys.argv[1], 'rb') as f:
     data = f.read()

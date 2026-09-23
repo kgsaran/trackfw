@@ -31,6 +31,8 @@ export PYTHONIOENCODING=utf-8
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# shellcheck source=scripts/lib-crlf-normalize.sh
+. "$SCRIPT_DIR/lib-crlf-normalize.sh"
 
 GORELEASER_YAML="$REPO_ROOT/.goreleaser.yaml"
 GEN_SCRIPT="$REPO_ROOT/scripts/gen-platform-manifests.sh"
@@ -90,7 +92,7 @@ if ! python3 -c "import yaml" 2>/dev/null; then
     exit 0
 fi
 
-GORELEASER_SLUGS=$(python3 - "$GORELEASER_YAML" <<'PYEOF'
+GORELEASER_SLUGS=$(python3 - "$GORELEASER_YAML" <<'PYEOF' | strip_cr
 import sys, yaml
 
 GOOS_TO_NPM  = {'linux': 'linux', 'darwin': 'darwin', 'windows': 'win32'}

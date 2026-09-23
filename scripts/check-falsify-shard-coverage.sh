@@ -31,6 +31,8 @@ set -euo pipefail
 export PYTHONIOENCODING=utf-8
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# shellcheck source=scripts/lib-crlf-normalize.sh
+. "$ROOT_DIR/scripts/lib-crlf-normalize.sh"
 
 SCRIPT="${1:?uso: check-falsify-shard-coverage.sh <script-fonte> <shard-count> <dir-com-artefatos-baixados>}"
 SHARD_COUNT="${2:?uso: check-falsify-shard-coverage.sh <script-fonte> <shard-count> <dir-com-artefatos-baixados>}"
@@ -65,7 +67,7 @@ WORKDIR=$(mktemp -d "${TMPDIR:-/tmp}/trackfw-falsify-coverage.XXXXXX")
 trap 'rm -rf "$WORKDIR"' EXIT
 
 # shellcheck disable=SC2086
-$PY_BIN "$ROOT_DIR/scripts/gen-falsify-chunks.py" "$SCRIPT" "$WORKDIR" "$SHARD_COUNT" > "$WORKDIR/manifest.txt"
+$PY_BIN "$ROOT_DIR/scripts/gen-falsify-chunks.py" "$SCRIPT" "$WORKDIR" "$SHARD_COUNT" | strip_cr > "$WORKDIR/manifest.txt"
 cat "$WORKDIR/manifest.txt" >&2
 
 FAIL=0

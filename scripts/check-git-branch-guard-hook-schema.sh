@@ -85,6 +85,10 @@ export NO_COLOR=1
 export TERM=dumb
 
 ROOT_DIR=${TRACKFW_ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
+# SCRIPT_DIR resolve pelo próprio script — imune a TRACKFW_ROOT_DIR (que o --self-test reaponta).
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=scripts/lib-crlf-normalize.sh
+. "$SCRIPT_DIR/lib-crlf-normalize.sh"
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/trackfw-git-branch-guard-hook-schema.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 
@@ -145,7 +149,7 @@ if __name__ == "__main__":
     sys.exit(main())
 PY_EOF
 
-decode_shape() { python3 "$DECODER"; }
+decode_shape() { python3 "$DECODER" | strip_cr; }
 
 # ---------------------------------------------------------------------------
 # check_site LABEL WORKDIR SCRIPT_RELPATH BLOCK_ARG

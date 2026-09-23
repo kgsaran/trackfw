@@ -52,6 +52,10 @@ parity-rest: build
 	scripts/check-jira-url-concat.sh --self-test
 	scripts/check-jira-url-concat.sh
 	scripts/check-raw-read-ban.sh
+	# ML-1B (ROADMAP-2026-09-23-bash-consome-stdout-de-python3-sem-normalizar-crlf...):
+	# todo $(python3 ...) em scripts/*.sh normaliza via strip_cr (lib-crlf-normalize.sh).
+	# Impede reintroducao de captura sem normalizacao apos ML-1A corrigir os 19 sitios.
+	scripts/check-crlf-normalize-capture.sh
 	# ML-2A (ROADMAP-2026-08-31-guarda-de-folha-resolve-o-caminho-e-afirma-contencao-antes-de-escrever):
 	# todo sítio de escrita em internal/**/*.go (produção) carrega marcador write-containment-allowed:
 	# ou reprova. Impede reintrodução de escrita desguardada após a Wave 1. Nasce falsificável.

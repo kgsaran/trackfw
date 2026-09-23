@@ -40,6 +40,8 @@
 set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# shellcheck source=scripts/lib-crlf-normalize.sh
+. "$ROOT_DIR/scripts/lib-crlf-normalize.sh"
 # TRACKFW_FALSIFY_SCRIPT: só para prova por sabotagem do próprio driver (ML-2D)
 # -- aponta o gerador+guarda para um fonte sintético minúsculo em vez do
 # check-gates-falsify.sh real, sem precisar de uma cópia paralela deste
@@ -126,7 +128,7 @@ if ! PY_BIN=$(resolve_py_bin); then
 fi
 
 # shellcheck disable=SC2086 -- PY_BIN pode ser "py -3" (dois tokens)
-$PY_BIN "$GEN" "$SCRIPT" "$WORKDIR" "$JOBS" > "$WORKDIR/manifest.txt"
+$PY_BIN "$GEN" "$SCRIPT" "$WORKDIR" "$JOBS" | strip_cr > "$WORKDIR/manifest.txt"
 cat "$WORKDIR/manifest.txt" >&2
 
 mapfile -t CHUNKS < <(find "$WORKDIR" -maxdepth 1 -name 'chunk_*.sh' | sort)

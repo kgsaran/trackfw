@@ -39,6 +39,8 @@ set -euo pipefail
 export PYTHONIOENCODING=utf-8
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# shellcheck source=scripts/lib-crlf-normalize.sh
+. "$SCRIPT_DIR/lib-crlf-normalize.sh"
 
 GORELEASER_YAML="${GORELEASER_YAML:-$REPO_ROOT/.goreleaser.yaml}"
 
@@ -57,7 +59,7 @@ check_prerelease() {
     fi
 
     local result
-    result=$(python3 - "$yaml_file" <<'PYEOF'
+    result=$(python3 - "$yaml_file" <<'PYEOF' | strip_cr
 import sys, yaml
 with open(sys.argv[1]) as f:
     # yaml.safe_load returns None for an empty file; `or {}` makes it a dict

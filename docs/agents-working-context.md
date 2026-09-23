@@ -2,6 +2,112 @@
 
 ---
 
+## 2026-09-23 — Apolo (fix/bash-consome-stdout-de-python3-sem-normalizar-crlf — ML-1C) — ENTREGUE (AGUARDANDO AUDITORIA)
+
+**Início:** 2026-09-23 | Branch: `fix/bash-consome-stdout-de-python3-sem-normalizar-crlf`
+**Tarefa:** ML-1C — o gate cobre uma forma de consumo; o AC prometia todas.
+
+**Resultado:**
+
+### (A) 4 funções normalizadas internamente
+- `check_field_json` (`check-barrier.sh:142`): adicionado `| strip_cr` — cobre 7 call sites automaticamente.
+- `normalize_barrier_json` (`check-barrier.sh:607`): adicionado `| strip_cr`.
+- `target_ids_json` (`check-update-parity.sh:91`): adicionado `| strip_cr`.
+- `doc_check_json` (`check-roadmap-barrier-contract.sh:113`): adicionado `| strip_cr` — cobre 4+ call sites.
+- Prova comportamental (macOS, todas as funções com `end='\r\n'` forçado): 0 bytes `\r` no output de todas as 4 funções após a correção.
+
+### (B) Gate estendido
+- Discriminante ampliado: `PY_DETECT_RE='\$\([^\)]*python3|\$\("?\$PY_BIN[" ]'` — cobre `$(python3...)` e `$("$PY_BIN"...)` e `$($PY_BIN ...)`.
+- Condição-2 (isenção de emissor de newline) estendida: adicionado `grep -qE 'sys\.stdout\.write\(.*\\n'` — `sys.stdout.write('x\n')` deixa de ser isentado incorretamente.
+- 5 isenções existentes (condição-2) intactas após a extensão.
+- Piso reavaliado: `CRLF_GATE_MIN_CAPTURES=0 bash scripts/check-crlf-normalize-capture.sh` → **68 candidatos** (era 66); floor mantido em 50 (≈74%).
+
+### Formas NÃO cobertas (documentadas no cabeçalho do gate):
+- `< <(python3 ...)` — processo de substituição, scanner diferente necessário; único sítio existente já corrigido dentro da função.
+- `$(funcao_que_chama_python3 ...)` — captura indireta; as 4 funções corrigidas em ML-1C normalizam internamente; detectar nova função helper exige análise de call-graph.
+- `$("${PY_BIN}" ...)` — forma brace, não usada no repo.
+- `eval "$CMD"` onde `$CMD` expande para `python3` — sem sítios existentes.
+
+### Injeções (prova das formas cobertas):
+- `$("$PY_BIN" -c ...) sem strip_cr` → gate: FAIL `[test-pybin.sh:4] python3 capture without strip_cr: BAD_VAR=$("$PY_BIN" -c 'print("hello")')` ✓
+- `$(python3 -c "sys.stdout.write('hello\n')") sem strip_cr` → gate: FAIL `[test-stdwrite.sh:4] python3 capture without strip_cr: ...` ✓
+
+### Falsificação
+- Braço D (`crlf-normalize/pybin-capture`): `assert_fails_with "python3 capture without strip_cr"` para `$("$PY_BIN" ...)`.
+- Braço E (`crlf-normalize/stdout-write-capture`): `assert_fails_with "python3 capture without strip_cr"` para `sys.stdout.write('x\n')`.
+- `FALSIFY_SUCCESS_FLOOR`: 208 → 210.
+- Echo de braços atualizado: "3 braços (A/B/C)" → "5 braços (A/B/C/D/E)".
+
+### Gates (braço (b)):
+- `bash scripts/check-crlf-normalize-capture.sh` → RC=0 (68 candidatos, 6 isenções, floor=50)
+- `bash scripts/check-barrier.sh` → RC=0
+- `bash scripts/check-update-parity.sh` → RC=0
+- `bash scripts/check-roadmap-barrier-contract.sh` → RC=0
+- `go build ./...` → RC=0
+- `go test ./...` → RC=0
+- `trackfw validate` → RC=0
+
+**Arquivos modificados:** `scripts/check-barrier.sh`, `scripts/check-update-parity.sh`, `scripts/check-roadmap-barrier-contract.sh`, `scripts/check-crlf-normalize-capture.sh`, `scripts/check-gates-falsify.sh` (Braços D/E + FLOOR 210), roadmap (ML-1C ✅), working-context.
+
+---
+
+## 2026-09-23 — Ártemis (fix/bash-consome-stdout-de-python3-sem-normalizar-crlf — ML-1B-bis) — ENTREGUE (AGUARDANDO AUDITORIA)
+
+**Início:** 2026-09-23 | Branch: `fix/bash-consome-stdout-de-python3-sem-normalizar-crlf`
+**Tarefa:** ML-1B-bis — a menção morta a `python3` aciona o gate de encoding.
+**Resultado:**
+- `scripts/check-crlf-normalize-capture.sh`: adicionado `export PYTHONIOENCODING=utf-8` com comentário explicando que é menção morta, não invocação.
+- `scripts/check-output-encoding-declared.sh`: comentário "Hoje nao ocorre" atualizado — registra que ocorre desde 2026-09-23 e que o caso se resolveu como o trade-off previu.
+- `bash scripts/check-output-encoding-declared.sh` → RC=0
+- `bash scripts/check-crlf-normalize-capture.sh` → RC=0; nenhuma invocação real de `python3` adicionada (apenas comentários e ERE patterns)
+- Discriminante do gate de encoding: inalterado. ALLOWLIST: não usada.
+**Arquivos modificados:** `scripts/check-crlf-normalize-capture.sh`, `scripts/check-output-encoding-declared.sh`, roadmap (ML-1B-bis ✅), working-context.
+
+---
+
+## 2026-09-23 — Ártemis (fix/bash-consome-stdout-de-python3-sem-normalizar-crlf — ML-1B) — ENTREGUE (AGUARDANDO AUDITORIA)
+
+**Início:** 2026-09-23 | Branch: `fix/bash-consome-stdout-de-python3-sem-normalizar-crlf`
+**Tarefa:** ML-1B — gate que impede a reintrodução de captura de python3 sem normalização CRLF.
+**Resultado:**
+- Gate criado: `scripts/check-crlf-normalize-capture.sh` (modo 100755)
+- Discriminante estrutural (não declaratório): verifica se `strip_cr` está no bloco da captura;
+  isenta quando condição-1 (command -v) ou condição-2 (sem print/writelines/os.linesep) é falsa.
+- Piso de vacuidade medido: 66 candidatos; MIN_CAPTURES=50 (≈75%).
+- 6 isenções corretas: 5 condition-2 (hashlib/base64 sem newline) + 1 condition-1 (command -v python3).
+- Achado de ML-1A não corrigido: `check-thirdparty-parity.sh:194` (violation_count sem strip_cr) —
+  corrigido neste ML por ser mesma causa, mesma REQ (Regra Dura de Causa Raiz).
+- Gate RC=0 na árvore real: `bash scripts/check-crlf-normalize-capture.sh` → RC=0
+- Falsificação em `check-gates-falsify.sh` (Cenário 197): 3 braços com rótulos literais.
+  - `crlf-normalize/unnormalized-capture`: captura sem strip_cr → REPROVA (RC=1 + "python3 capture without strip_cr")
+  - `crlf-normalize/normalized-capture`: captura com strip_cr → PASSA (RC=0)
+  - `crlf-normalize/vacuous-scan`: corpus abaixo do piso → REPROVA (RC=1 + "vacuity guard tripped")
+  Diagnósticos são strings distintas (não compartilham substring) por design.
+- FALSIFY_SUCCESS_FLOOR: 205 → 208 (3 novos assert_* calls).
+- Consumidor no Makefile: parity-rest (check-crlf-normalize-capture.sh).
+- check-orphan-gates.sh RC=0; go build ./... RC=0; go test ./... RC=0; trackfw validate RC=0.
+**Arquivos modificados:** `scripts/check-crlf-normalize-capture.sh` (novo), `scripts/check-thirdparty-parity.sh` (line 199), `scripts/check-gates-falsify.sh` (Cenário 197 + FLOOR), `Makefile` (consumidor), roadmap (ML-1B ✅), working-context.
+
+---
+
+## 2026-09-23 — Apolo (fix/bash-consome-stdout-de-python3-sem-normalizar-crlf — ML-1A-bis) — ENTREGUE (AGUARDANDO AUDITORIA)
+
+**Início:** 2026-09-23 | Branch: `fix/bash-consome-stdout-de-python3-sem-normalizar-crlf`
+**Tarefa:** ML-1A-bis — o `source` resolve por `$ROOT_DIR`, que o `--self-test` reaponta.
+**Resultado:**
+- Varredura dos 19 sítios: apenas `check-git-branch-guard-hook-schema.sh` combinava ROOT_DIR + `--self-test`; os outros 3 gates com `--self-test` já usavam `SCRIPT_DIR`.
+- `scripts/check-git-branch-guard-hook-schema.sh`: adicionado `SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)` e trocado `. "$ROOT_DIR/scripts/lib-crlf-normalize.sh"` por `. "$SCRIPT_DIR/lib-crlf-normalize.sh"`. `ROOT_DIR` preservado intacto.
+- `check-git-branch-guard-hook-schema.sh --self-test` RC=0 (7 cenários OK).
+- `check-channels-content.sh --self-test` RC=0 (4 cenários OK — já usava SCRIPT_DIR).
+- `check-goreleaser-prerelease.sh --self-test` RC=0 (5 cenários OK — já usava SCRIPT_DIR).
+- `check-no-literal-nul-in-source.sh --self-test` RC=0 (5 cenários OK — já usava SCRIPT_DIR).
+- Braço (b): `printf 'a\rb\n' | strip_cr | od -An -tx1` → `61 0d 62 0a` (CR do meio preservado).
+- `check-git-branch-guard-hook-schema.sh` sem `--self-test` RC=0.
+- `go build ./...` RC=0.
+**Arquivos modificados:** `scripts/check-git-branch-guard-hook-schema.sh`, roadmap, working-context.
+
+---
+
 ## 2026-09-22 — Ártemis (fix/teste-e-gate-leem-a-arvore-de-governanca — ML-1C) — ENTREGUE (AGUARDANDO AUDITORIA)
 
 **Início:** 2026-09-22 | Branch: `fix/teste-e-gate-leem-a-arvore-de-governanca`
@@ -39098,3 +39204,152 @@ trackfw init && roadmap new "..." && roadmap move <n> wip && trackfw validate
 - **Comentei no #258** com a medição e a sugestão: o script **já implementa** o caminho `gh pr view` (`--pr <n>` / `PR_NUMBER`); é questão de precedência de fontes. A API devolve o corpo atual e elimina a classe inteira, em vez de só acrescentar `edited` aos tipos de evento.
 - **Entregue pela REQ:** 3 sítios desacoplados da governança do mantenedor; gate `ci-workflow/self-governance-invoked` impedindo que o step do CI suma em silêncio; guarda de vacuidade no corpus; asserção de igualdade onde havia só sufixo `.md`. Falsificação foi de **216 → 244** rótulos.
 - **Registrado fora de escopo:** **#408** (o teste promete aparecer no log de CI, mas o job roda sem `-v`).
+
+### 2026-09-23 — Zeus — investigação da cascata: não era cascata, era CRLF do python3
+- **Censo disparado no CI** (run `35856380122`) para recontar Windows pós-v8. **Não produziu número:** 8/8 shards reprovados, 146 rótulos únicos acusados ausentes, apuração `TOTAL INCOMPLETO — 2/8 shards`. 🔴 **O instrumento se recusou a dar total subestimado — o design está certo**, e foi por isso que descobri a regressão em vez de agir sobre número falso.
+- **Regressão confirmada:** em 2026-09-10 o censo dava **8/8 shards com contagem**; hoje 2/8.
+- 🔴 **Não era cascata.** O padrão que denunciou: o **mesmo rótulo aparece emitido E acusado ausente**. Ele foi emitido; a **comparação** é que falhou.
+- **Causa raiz, provada localmente sem VM:** `run-gates-falsify-shard.sh:85` redireciona stdout do Python para `manifest.txt`; no Windows o Python traduz `\n`→`\r\n`; o bash lê com `while read` e `$expected` fica com `\r`. Então **linha 118** (`grep -qxF`, linha exata) **nunca casa**, enquanto **linha 127** (`grep -qF`, substring) casa. Isso explica o padrão parcial: literais somem, globs sobrevivem. Zero tratamento de `\r` no arquivo.
+- **Reprodução local:** manifesto LF + `-qxF` casa · manifesto **CRLF** + `-qxF` **AUSENTE** · CRLF + `-qF` casa.
+- **É a mesma causa do #353**, cuja medição do reportante é `671 caminhos, 671 com \r, [[ -f ]] → 0`. Duas ocorrências independentes do mesmo mecanismo.
+- **REQ e roadmap criados** com a causa como eixo. **Escopo negativo explícito:** esta REQ conserta o **instrumento**; a recontagem do cluster vem depois. Misturar é medir com régua quebrada. #363, #307, #364, #308 são **candidatos**, entram se a Wave 0 medir mesma causa.
+- 🔴 **Erro meu, reincidente:** capturei nome de arquivo com `ls | grep | head -1` e embuti um **ícone de Nerd Font** (``) no caminho gravado na REQ. O `grep` exibe o ícone como se fosse espaço, então a inspeção visual não denuncia — só `hex(ord(c))`. Meu `replace` falhou com `AssertionError`, e foi o assert que me impediu de achar que tinha corrigido. Memória reforçada: **`find`/glob para nome de arquivo, nunca `ls`**.
+
+### 2026-09-23 — Hades — ML-0A: enumeração CRLF python3 — ENTREGUE
+
+**Início:** 2026-09-23 | Branch: `fix/bash-consome-stdout-de-python3-sem-normalizar-crlf`
+**Tarefa:** Wave 0, ML-0A do roadmap CRLF — enumerar sítios de consumo de stdout de python3 por bash, classificar (a)/(b)/(c), produzir modelo de ameaça com falsificação nas duas direções.
+
+**Resultado:**
+- Varridos: 57 scripts/*.sh, 5 workflows, Makefile. Confirmado: **32 arquivos no grep** (2 falsos positivos por comentário → 30 reais).
+- **Medição inicial do arquiteto REFUTADA em um ponto:** "1 script normaliza \r" → **0 normalizam**. `PYTHONIOENCODING=utf-8` controla codec, não tradução de newline; confirmado via `os.linesep`.
+- **Contagem real:** 16 scripts em categoria (a) — defeito. 0 em (b). 14 em (c).
+- **ÚNICO sítio ativo em CI Windows:** `run-gates-falsify-shard.sh:85` (windows-census.yml, `runs-on: windows-latest`).
+- **15 sítios dormentes em CI** (ubuntu-latest), mas ativos para devs Windows via `make parity-rest`/`make quality` — sem guarda de plataforma no Makefile.
+- **Distinção delimitador/conteúdo escrita:** `tr -d '\r'` destrutivo; `sed 's/\r$//'` ou binary mode no Python são corretos. Exemplo concreto: `write_fixture_crlf` em check-roadmap-barrier-contract.sh criaria CRLF como dado — normalização cega destruiria o teste.
+- **Residual declarado:** check-gates-falsify.sh inline (linhas 3915, 4431), fontes não-Python (nenhuma identificada), PYTHONUTF8 em VM Windows (residual aceito), trackfw-attention-signal.sh (fora de make quality).
+
+**Arquivo entregue:** `docs/seguranca/2026-09-23-enumeracao-crlf-python3-em-bash.md`
+**Handoff para:** `trackfw_architect` — não commitado, não modifiquei código de produto.
+
+---
+
+### 2026-09-23 — Hades — ML-0A: enumeração CRLF python3 — COMPLETO (revisado)
+
+**Fim:** 2026-09-23 | Branch: `fix/bash-consome-stdout-de-python3-sem-normalizar-crlf`
+
+Documento revisado após chamada de advisor que bloqueou a primeira versão em 4 pontos:
+
+1. **Bloqueio 1 corrigido:** Ocorrência 1 da REQ (`check-no-literal-nul-in-source.sh`) estava classificada como (c) — a forma `done < <(_text_files_from_repo)` é condição 1 atendida. Reincorporada como (a) e promovida a sítio principal do script.
+2. **Bloqueio 2 corrigido:** Seção 2.5 adicionada com veredito por sítio para workflows (5 arquivos) e Makefile (6 linhas).
+3. **Bloqueio 3 corrigido:** Exemplo de conteúdo (`write_fixture_crlf` em check-roadmap-barrier-contract.sh:1091) adicionado na Seção 4 — fora da população de stdout capturado, mas dentro do blast radius de um helper mal-escopo. Motiva a regra `sed 's/\r$//'` vs `tr -d '\r'` com evidência concreta.
+4. **Correção P2:** polarity "não, sim, sim" → "não, não, sim" na Seção 3.
+5. **check-gates-falsify.sh atividade confirmada por medição:** geração de chunks confirmou PROSE_PAYLOAD em chunk_0.sh e T65_BIG_PAYLOAD em chunk_3.sh — ambos rodam em windows-latest.
+
+**Contagem final corrigida:** 19 (a) + 11 (c) = 30. Dos 19 (a): 2 ativos em CI Windows, 17 dormentes.
+
+**Arquivo:** `docs/seguranca/2026-09-23-enumeracao-crlf-python3-em-bash.md`
+**Não commitado. Handoff para `trackfw_architect`.**
+
+### 2026-09-23 — Zeus — Wave 0 do CRLF auditada; coordenação com o agente do consumidor
+- **Barrier wave 0: `passed`.** Resultado: **(a)=19 · (b)=0 · (c)=11**, 2 sítios ativos em CI de Windows.
+- 🔴 **Minha medição refutada, e para pior: eu disse "1 normaliza"; são ZERO.** O que tomei por normalização era `PYTHONIOENCODING=utf-8` — controla **codec**, não newline. Confirmei que os `tr -d` daquele arquivo removem **espaço** (saída de `wc -l`), não `\r`.
+- 🔴 **Achado que governa o ML-1A: `tr -d '\r'` está proibido.** Existe fixture com CRLF **intencional** (`check-roadmap-barrier-contract.sh:1091`, `write_fixture_crlf()`, para o #216) que seria destruído em silêncio. Regra: `sed 's/\r$//'` sobre **stdout capturado**, nunca sobre conteúdo de arquivo. É a direção (b) da falsificação, que costuma ser esquecida.
+- **Coordenação:** há outro agente (do consumidor) abrindo PRs neste repo. **#411** corrige um defeito **nosso** — o step de `self-governance` roda no fork porque `quality.yml` é o mesmo arquivo; corrigimos o `make quality` local e esquecemos o CI do consumidor. Testei em worktree separado: o PR dele **não quebra** nosso gate `ci-workflow/self-governance-invoked` (RC=0). **#412** ataca o #398.
+- **Declarei escopo no #353** para evitar duplicação: publiquei a medição da Wave 0 e disse que **#363, #307, #364, #308 estão livres**, pedindo só que não toquem nos 19 sítios de consumo de stdout. Oferta não é PR — quem vai implementar diz no ticket.
+
+### 2026-09-23 — apolo-tf — ML-1A concluído: ponto único de normalização CRLF nos 19 sítios (a)
+
+**Escopo:** ML-1A do roadmap `ROADMAP-2026-09-23-bash-consome-stdout-de-python3-sem-normalizar-crlf-e-o-gate-examina-zero-no-windows.md`.
+
+**Entregáveis:**
+- `scripts/lib-crlf-normalize.sh` — ponto único: `strip_cr() { sed $'s/\r$//'; }` (ANSI-C quoting para portabilidade BSD sed)
+- 19 scripts category (a) corrigidos: source adicionado + `| strip_cr` em cada captura `$(python3 ...)`
+
+**Scripts modificados (19):** `check-barrier.sh`, `check-channels-content.sh`, `check-falsify-shard-coverage.sh`, `check-gates-falsify.sh`, `check-git-branch-guard-hook-schema.sh`, `check-goreleaser-prerelease.sh`, `check-install-restriction.sh`, `check-manifest-version-gate.sh`, `check-no-literal-nul-in-source.sh`, `check-platform-matrix-parity.sh`, `check-release-tag-parity.sh`, `check-roadmap-barrier-contract.sh`, `check-serve-browser-security.sh`, `check-thirdparty-parity.sh`, `check-update-parity.sh`, `check-wheel-filename.sh`, `run-gates-falsify-parallel.sh`, `run-gates-falsify-shard.sh`, `trackfw-attention-signal.sh`
+
+**Fixos em nível de função (cobre todos call sites):** `decode_shape()` (check-git-branch-guard-hook-schema.sh), `doc_status()` e `get_wave_field()` (check-barrier.sh), `assert_check_status()` (check-roadmap-barrier-contract.sh), `json_field()` (check-release-tag-parity.sh)
+
+**`tr -d '\r'` não usado:** `sed $'s/\r$//'` em ponto único. `write_fixture_crlf()` intocada (escreve em arquivo, fora da população).
+
+**Evidência:**
+- `go build ./...` → RC=0
+- `go test ./...` → RC=0 (todos os pacotes)
+- `trackfw validate` → RC=0 (145 warnings pré-existentes, sem violações novas)
+- Provas load-bearing: CRLF stripped, LF preservado, 'valorr' preservado, fixture CRLF intacta (3 `\r\n` confirmados por `od -c`)
+- Gates individuais: `check-barrier.sh`, `check-manifest-version-gate.sh`, `check-serve-browser-security.sh`, `check-platform-matrix-parity.sh`, `check-roadmap-barrier-contract.sh`, `check-git-branch-guard-hook-schema.sh` → todos RC=0
+
+**Não commitado. Handoff para `trackfw_architect`.**
+
+### 2026-09-23 — Zeus — ML-1A auditado e aprovado
+- **Ponto único:** `scripts/lib-crlf-normalize.sh` com `strip_cr() { sed $'s/\r$//'; }`, sourceado pelos 19 sítios. ANSI-C quoting (`$'...'`) para o `sed` do BSD/macOS.
+- 🔴 **Provei a distinção delimitador/conteúdo eu mesmo**, que é o que a Wave 0 exigiu: `valor\r\n` → CR final removido · `valorr\n` → **os dois `r` preservados** (`tr -d '\r'` teria comido um) · **`a\rb\n` → `61 0d 62 0a`, CR no MEIO preservado**. É essa última que salva os fixtures do #216.
+- **Braço (b) confirmado:** `write_fixture_crlf` **intocada** (diff vazio), e `check-roadmap-barrier-contract` em **49 cenários OK**. `check-orphan-gates` aprova — o `lib-*.sh` não entra na varredura de `check-*.sh`.
+- **Discrepância declarada pelo executor, não silenciada:** a Wave 0 listou 9 sítios inline em `check-barrier.sh`; ele encontrou também `doc_status()` e `get_wave_field()` e corrigiu **no nível da função**, cobrindo todos os call sites. Declarar em vez de corrigir em silêncio é o comportamento certo.
+- **Coordenação:** comentei no **#413** do outro agente — `Error 126` era **bit de execução ausente** (`100644` contra `100755` dos outros ~40 gates), não lógica de gate. Sugeri, como não-bloqueante, um gate para a classe: `check-*.sh` invocado direto no Makefile deve ser `100755` — o `check-orphan-gates` exige **consumidor**, não **executabilidade**.
+
+### 2026-09-23 — Zeus — ML-1A-bis aprovado; minha hipótese dos "5 em risco" refutada
+- **Barreira verde: RC=0, 824 `^OK `, 0 `: FALHA`**, 244 OK na falsificação, guarda de conjunto OK. O `--self-test` do gate corrigido passa **dentro** da barreira.
+- 🔴 **Eu disse "5 gates em risco, corrija os 5"; apenas 1 precisava.** Meu critério era grosseiro — *"sourceia o lib **e** tem `--self-test`"* — e não verificava **como** cada um resolve o caminho. Três já usavam `SCRIPT_DIR` e estavam imunes. **Corrigir os cinco seria mexer no que não está quebrado**, que é exatamente o que venho cobrando dos executores. Ele recusou e mostrou a medição — comportamento certo.
+- **O quarto (`check-gates-falsify.sh`) usa `ROOT_DIR`** mas não reaponta para si; o argumento dele era por leitura, e a barreira confirmou por execução — 71 cenários, 244 rótulos, zero falha.
+- **A correção é de 2 linhas:** `SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)` e o source por ele. Dependência **interna do script** não deve ser resolvida por variável que o projeto reaponta.
+- **Pendência operacional:** o rebase reescreveu a história local, o remoto recusa fast-forward, e `trackfw push --force-with-lease` **só opera com PR aberto** (por desenho). Trabalho commitado localmente; nada perdido.
+
+### 2026-09-23 — Zeus — ML-1B auditado; o gate achou um sítio que a enumeração perdeu
+- 🔴 **O gate provou seu valor antes de entrar:** encontrou `check-thirdparty-parity.sh:194` — captura de `python3` sem `strip_cr` que a Wave 0 enumerou como 19 e eram **20**. Corrigido no mesmo ML (Regra Dura de Causa Raiz), não empurrado para issue.
+- **Discriminante estrutural, como exigi** — o gate verifica se `strip_cr` aparece no bloco da captura, e computa as isenções do **texto fonte** (condição 1: não é invocação de intérprete; condição 2: bloco não emite `\n`). Nada de marcador de autoria. São 6 isenções, todas derivadas, nenhuma declarada.
+- **Verifiquei por injeção minha:** inseri `ZEUS_INJECT=$(python3 -c 'print("x")')` em `check-barrier.sh` → gate **RC=1**, nomeando arquivo, linha e a captura. Arquivo restaurado e conferido.
+- **Guarda de vacuidade:** 66 candidatos ≥ piso 50, com a contagem visível na saída.
+- **Modo `100755` e conteúdo real estageado** (`3ac5ffa4`, não o SHA de arquivo vazio do `git add -N`) — a armadilha do `Error 126` que diagnostiquei no #413 do outro agente não se repetiu aqui.
+- **`FALSIFY_SUCCESS_FLOOR` 205 → 208:** desta vez o incremento é **derivável** (3 braços novos = 3 sucessos), diferente dos MLs anteriores onde recusar era o certo por não haver medição. A barreira confirma ou refuta.
+
+### 2026-09-23 — Zeus — ML-1B-bis aprovado; Wave 1 completa
+- **Barreira verde: RC=0, 899 `^OK `, 0 `: FALHA`**, falsificação **250** OK (era 244), guarda de conjunto sem rótulo ausente — o que confirma o `FALSIFY_SUCCESS_FLOOR=208`.
+- **A correção que mais valeu foi a do comentário**, não a da linha: o gate de encoding afirmava *"hoje não ocorre: as duas populações coincidem (38 = 38)"* e passou a registrar **a ocorrência que validou o trade-off** — gate reprovou, pediu a linha inofensiva, a linha foi adicionada. Vale mais que a afirmação original.
+- 🔴 **Instrumento meu impreciso, de novo:** meu grep de "invocação real de python3" acusou **4** ocorrências; as quatro eram **comentários** — `grep -v "^\s*#"` não pega indentação nesse contexto. Verifiquei antes de reportar, em vez de acusar o executor de violar o "bash puro" pela segunda vez.
+- **Próximo: Wave 2** — disparar o `windows-census.yml` **na branch** (`--ref`) e verificar se volta a **8/8 shards** com apuração, contra o run `35856380122` (2/8, 146 rótulos ausentes) como referência pré-correção.
+
+### 2026-09-23 — Zeus — Wave 2 auditada; AC reescrito pela medição, não marcado por generosidade
+- **Censo na branch (`35872779844`) contra a main (`35856380122`) — mesmo instrumento, mesma plataforma, só o código difere:**
+
+| | pré | pós |
+|---|---|---|
+| rótulos acusados ausentes | **146** | **19** |
+| shards com guarda local falhando | 8 | 5 |
+| shards apurados | 2/8 | 2/8 |
+
+- 🔴 **O AC "8/8 shards" NÃO foi atendido — e a razão é que ele presumia o que a medição refutou:** que o CRLF fosse a **única** causa. Era **87%** dela. Marcar como atendido seria falso; arrastar a REQ até 8/8 seria absorver a triagem do cluster que o escopo negativo excluiu desde o início — e agrupar sem medir é o erro do `IsAbs` (14 estimados, 2 entregues).
+- **AC reescrito com a medição**, e os **19 remanescentes ficam ENUMERADOS**, não estimados: 9 de `git-branch-guard/*`, 2 de `git-branch-guard-global-script-integrity`, 2 de `integration-assets/*`, 2 de `roadmap-req-frontmatter-path/*`, 1 cada de `credential-guard`, `barrier` e `trust-check`. É a entrada **medida** do próximo trabalho.
+- **Sinal de que o instrumento voltou a servir:** o censo agora reporta `[falsify/enumerate] 1 cenário(s) reprovaram` — defeito **real**, em vez de rótulo perdido por comparação com `\r`. Antes ele se auto-sabotava.
+- **Resta 1 AC aberto** no topo: `make quality` e **CI** verdes. Local está verde (899 `^OK `, 0 `: FALHA`); falta o CI da branch.
+
+### 2026-09-23 — Hades — Revisão de segurança final da REQ CRLF
+- **Início da revisão de barreira final** da REQ de normalização CRLF (`fix/bash-consome-stdout-de-python3-sem-normalizar-crlf`).
+- Verificando: normalização segura nos 20 sítios, falhas do gate, validade das isenções, 19 rótulos remanescentes.
+- Entregável: `docs/seguranca/2026-09-23-revisao-crlf-normalize.md`
+
+### 2026-09-23 — Hades — Revisão CRLF concluída
+- **Veredito: APROVADO COM RESSALVAS.** Implementação correta para os 20 sítios. Três evasões de gate confirmadas por execução — nenhuma afeta código atual.
+- **R1:** `$PY_BIN` em captura não detectado pelo ERE do gate (0 candidatos, confirmado).
+- **R2:** `sys.stdout.write('\n')` isento por condição-2 incorretamente (RC=0, confirmado).
+- **R3:** processo substitution `< <(python3...)` não coberto — sítio existente corrigido a nível de função.
+- **R4:** 19 rótulos remanescentes — 12/19 são controles de segurança no Windows census. Causa diferente de CRLF. Escopo da próxima fase.
+- **Entregável:** `docs/seguranca/2026-09-23-revisao-crlf-normalize.md`
+
+### 2026-09-23 — Zeus — ML-1C aprovado; barreira final destravada
+- **Barreira: RC=0, 903 `^OK `, 0 `: FALHA`**, falsificação **252** OK, guarda de conjunto OK. **`barrier: passed` nas 3 waves.** Os 5 braços `crlf-normalize/*` colhidos.
+- **Verifiquei a cobertura nova por injeção minha:** `$("$PY_BIN" -c ...)`, que antes dava **0 candidatos**, agora dá **RC=1** nomeando arquivo, linha e captura.
+- 🔴 **O gate declara o que NÃO cobre**, no cabeçalho: *"not measured is not acceptable; these are measured and the limit is documented"*. Duas formas ficam de fora (`< <(python3 ...)` e captura via função nova), cada uma com razão técnica. Gate que declara limite vale mais que gate que aparenta cobrir tudo — foi o segundo tipo que deixou 34 defeitos passarem na REQ anterior.
+- **Duas soluções do executor que eu não tinha previsto:**
+  1. O braço de falsificação do `$PY_BIN` precisa do literal, mas o literal faria o **próprio arquivo de falsificação** virar candidato do gate. Resolveu com indireção via `PYBIN_EXPR`.
+  2. macOS não emite `\r\n` nativo, então **forçou `end='\r\n'`** no Python e verificou byte a byte com `od -c` que as 4 funções entregam sem `\r`. Construiu a condição em vez de declarar "não dá para testar aqui".
+- **Os 2 ACs que desmarquei foram remarcados com a medição** — não por generosidade: cada um cita o que o corretivo fechou e o que ficou declarado como residual.
+- **Resta 1 AC:** `make quality` e **CI** verdes. Local verde; falta o CI da branch.
+
+## 2026-09-23 — trackfw_architect — REQ do CRLF fechada tecnicamente (PR #414 ready)
+
+- Waves 0–2 auditadas. Último AC (`make quality` + CI) fechado: **21 checks verdes** no PR #414,
+  incluindo os 6 jobs de Windows — a plataforma onde o defeito vive.
+- Os 6 ACs da REQ marcados com a evidência que os fecha. AC do censo **reescrito pela medição**:
+  146 → 19 rótulos ausentes; os 19 ficam enumerados como entrada do próximo trabalho.
+- PR #414 fora do draft. Fechamento (roadmap → `done/`, REQ → `Done`) é **pós-merge**.
