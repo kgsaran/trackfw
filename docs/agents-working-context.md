@@ -39345,3 +39345,11 @@ Documento revisado após chamada de advisor que bloqueou a primeira versão em 4
   2. macOS não emite `\r\n` nativo, então **forçou `end='\r\n'`** no Python e verificou byte a byte com `od -c` que as 4 funções entregam sem `\r`. Construiu a condição em vez de declarar "não dá para testar aqui".
 - **Os 2 ACs que desmarquei foram remarcados com a medição** — não por generosidade: cada um cita o que o corretivo fechou e o que ficou declarado como residual.
 - **Resta 1 AC:** `make quality` e **CI** verdes. Local verde; falta o CI da branch.
+
+## 2026-09-23 — trackfw_architect — REQ do CRLF fechada tecnicamente (PR #414 ready)
+
+- Waves 0–2 auditadas. Último AC (`make quality` + CI) fechado: **21 checks verdes** no PR #414,
+  incluindo os 6 jobs de Windows — a plataforma onde o defeito vive.
+- Os 6 ACs da REQ marcados com a evidência que os fecha. AC do censo **reescrito pela medição**:
+  146 → 19 rótulos ausentes; os 19 ficam enumerados como entrada do próximo trabalho.
+- PR #414 fora do draft. Fechamento (roadmap → `done/`, REQ → `Done`) é **pós-merge**.

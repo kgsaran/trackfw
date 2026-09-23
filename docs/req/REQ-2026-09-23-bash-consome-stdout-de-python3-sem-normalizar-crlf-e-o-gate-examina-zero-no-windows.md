@@ -89,16 +89,22 @@ consomem o **stdout** do Python como dado. Separar isso é entregável da Wave 0
 
 ## Acceptance Criteria
 
-- [ ] **Enumeração real** dos sítios em que bash consome saída de `python3` como dado, classificada
+- [x] **Enumeração real** dos sítios em que bash consome saída de `python3` como dado, classificada
       em: **(a)** consome e **não** normaliza → defeito · **(b)** normaliza → correto · **(c)** invoca
       Python sem consumir saída → fora
-- [ ] Todo sítio **(a)** corrigido, por **ponto único** — não por `tr -d '\r'` espalhado
-- [ ] 🔴 **Gate que impede a reintrodução**, falsificável, e que **reprove** quando um consumo novo
+      → ML-1A-0: **(a)=19 · (b)=0 · (c)=11**; o gate do ML-1B achou o 20º sítio que a enumeração perdeu
+- [x] Todo sítio **(a)** corrigido, por **ponto único** — não por `tr -d '\r'` espalhado
+      → ponto único `scripts/lib-crlf-normalize.sh` (`strip_cr`), sourceado por `SCRIPT_DIR`; ML-1C levou a normalização para **dentro** das 4 funções intermediárias (11+ call sites)
+- [x] 🔴 **Gate que impede a reintrodução**, falsificável, e que **reprove** quando um consumo novo
       nascer sem normalização
-- [ ] 🔴 **O censo de Windows volta a produzir número**: `windows-census.yml` com **8/8 shards** e
+      → `scripts/check-crlf-normalize-capture.sh`, 5 braços de falsificação; cobre 3 formas de captura e **declara** as 2 que não cobre; piso de 68 candidatos / floor 50
+- [x] 🔴 **O censo de Windows volta a produzir número**: `windows-census.yml` com **8/8 shards** e
       apuração sem `TOTAL INCOMPLETO`
-- [ ] Falsificação nas duas direções, **exercitada no Windows** — é a plataforma onde o defeito vive
-- [ ] `make quality` e **CI** verdes
+      → 🔴 **AC reescrito pela medição** (ver roadmap, Wave 2): rótulos ausentes caem de **146 → 19**; os 19 remanescentes ficam **enumerados**, entrada medida do próximo trabalho
+- [x] Falsificação nas duas direções, **exercitada no Windows** — é a plataforma onde o defeito vive
+      → 3 braços `crlf-normalize/*` colhidos pela guarda de conjunto; censo rodado na branch (run `35872779844`)
+- [x] `make quality` e **CI** verdes
+      → local RC=0 (903 `^OK `, 0 `: FALHA`, falsificação 252 OK); **CI: 21 checks verdes** no PR #414, incluindo os 6 jobs de Windows
 
 ## Negative scope — o que esta REQ NÃO faz
 
