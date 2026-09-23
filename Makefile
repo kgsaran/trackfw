@@ -2,7 +2,7 @@ BINARY=trackfw
 BUILD_DIR=bin
 HASH_CMD := $(shell command -v sha256sum >/dev/null 2>&1 && echo sha256sum || echo "shasum -a 256")
 
-.PHONY: build test parity parity-rest parity-falsify lint quality install clean check-integration-assets package-smoke check-required-full check-gates-remutation gen-manifests
+.PHONY: build test parity parity-rest parity-falsify self-governance lint quality install clean check-integration-assets package-smoke check-required-full check-gates-remutation gen-manifests
 
 build:
 	go build -o $(BUILD_DIR)/$(BINARY) ./cmd/trackfw
@@ -72,6 +72,9 @@ parity-rest: build
 	scripts/check-ci-workflow-binary-provenance.sh
 	# ML-3C: REESCREVER — Partes B e C (pins comportamentais do barrier) preservadas.
 	# Apenas as invocações cross-runtime node/py da Parte A foram removidas.
+	# ML-1B-bis: a tripwire de disco (TRACKFW_SELF_GOVERNED=1) foi movida para o alvo
+	# `self-governance` — invocado pelo CI do upstream, não pela suíte geral. O consumidor
+	# continua rodando as Partes B e C (corpus congelado, hashes) sem a tripwire.
 	GO_BIN=$(BUILD_DIR)/$(BINARY) HASH_CMD_BIN="$(HASH_CMD)" scripts/check-roadmap-barrier-contract.sh
 	scripts/check-ref-separator-portability.sh
 	scripts/check-output-encoding-declared.sh
@@ -129,6 +132,17 @@ parity-rest: build
 
 parity-falsify: build
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/run-gates-falsify-parallel.sh
+
+# ML-1B-bis (ROADMAP-2026-09-22-teste-e-gate-leem-a-arvore-de-governanca-do-
+# repositorio-onde-rodam-e-o-consumidor-nao-consegue-rodar-a-suite.md):
+# Alvo de governança do upstream. Invoca a tripwire de disco que exige os 144
+# roadmaps do mantenedor no disco — não faz parte de `parity-rest` porque o
+# consumidor não possui esses artefatos. Chamado pelo CI do upstream
+# (parity-other-gates, .github/workflows/quality.yml).
+# TRACKFW_SELF_GOVERNED=1: pin verificado por check-parity-call-site-pins.sh
+# (ML-2E, mesma família de HASH_CMD_BIN). Remover este pin reprova o gate.
+self-governance: build
+	TRACKFW_SELF_GOVERNED=1 GO_BIN=$(BUILD_DIR)/$(BINARY) HASH_CMD_BIN="$(HASH_CMD)" scripts/check-roadmap-barrier-contract.sh
 
 check-required-full:
 	# D/R/W — verificação completa: declared vs required_status_checks (API) vs workflow checks.

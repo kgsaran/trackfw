@@ -6926,6 +6926,170 @@ falsify_count_success
 echo "OK   [falsify/write-containment]: os 3 braços (A/B/C) provados"
 
 # ---------------------------------------------------------------------------
+# Cenário 195 — check-parity-call-site-pins.sh: asserção negativa de que
+#               make quality não alcança o pin TRACKFW_SELF_GOVERNED= (ML-1C).
+#
+# Objetivo: provar que a nova verificação VARS_FORBIDDEN_IN_QUALITY detecta a
+# regressão exata do ML-1B-bis — o pin reintroduzido em parity-rest, ou movido
+# para outro alvo alcançável por make quality (ex.: parity-falsify).
+#
+# Reconciliação (Regra Dura):
+#   call-site-pin/self-governed-in-quality: o gate REPROVA quando o pin
+#     TRACKFW_SELF_GOVERNED=1 é reintroduzido no alvo parity-rest. O arquiteto
+#     mediu RC=0 no gate antigo com a mesma mutação (roadmap ML-1B-bis, seção
+#     "achado da auditoria") — a nova verificação é a causa única da reprovação.
+#   call-site-pin/self-governed-moved: o gate REPROVA quando o pin é movido
+#     para parity-falsify, alvo alcançado por quality através de parity mas
+#     não lido por varredura textual de parity-rest. O discriminante make -n
+#     resolve dependências entre alvos e captura o caso que leitura direta do
+#     Makefile não pegaria.
+#   call-site-pin/self-governed-clean: o gate PASSA na árvore correta, onde o
+#     pin existe exclusivamente em self-governance (fora da cadeia quality).
+# ---------------------------------------------------------------------------
+T195="$WORK/s195"
+mkdir -p "$T195/scripts"
+cp "$ROOT_DIR/Makefile"    "$T195/"
+cp "$ROOT_DIR/scripts/"*.sh "$T195/scripts/"
+
+# Braço C — árvore correta: gate PASSA (baseline antes das mutações).
+if ! bash "$T195/scripts/check-parity-call-site-pins.sh" "$T195" >/dev/null 2>&1; then
+  echo "FAIL [falsify/setup-s195-baseline]: check-parity-call-site-pins.sh já reprova com fonte real -- prova inválida" >&2
+  falsify_count_failure
+  [[ "$TRACKFW_FALSIFY_ENUMERATE" == "1" ]] || exit 1
+fi
+
+assert_succeeds "call-site-pin/self-governed-clean" \
+  bash "$T195/scripts/check-parity-call-site-pins.sh" "$T195"
+
+# Braço A — pin reintroduzido em parity-rest: gate REPROVA.
+# Mutação: acrescenta TRACKFW_SELF_GOVERNED=1 na linha de parity-rest que
+# invoca check-roadmap-barrier-contract.sh (a regressão exata do ML-1B-bis).
+T195A="$WORK/s195-arm-a"
+mkdir -p "$T195A/scripts"
+cp "$T195/scripts/"*.sh "$T195A/scripts/"
+python3 - "$T195/Makefile" "$T195A/Makefile" <<'PYEOF'
+import sys
+src, dst = sys.argv[1], sys.argv[2]
+with open(src) as f:
+    lines = f.readlines()
+out = []
+for line in lines:
+    # Target: a única linha de recipe que invoca check-roadmap-barrier-contract.sh
+    # SEM o pin (alvo parity-rest) — adicionar o pin para simular regressão.
+    stripped = line.lstrip('\t')
+    if ('scripts/check-roadmap-barrier-contract.sh' in stripped
+            and 'TRACKFW_SELF_GOVERNED' not in stripped
+            and stripped.startswith('GO_BIN=')):
+        line = line.replace('GO_BIN=', 'TRACKFW_SELF_GOVERNED=1 GO_BIN=', 1)
+    out.append(line)
+with open(dst, 'w') as f:
+    f.writelines(out)
+PYEOF
+
+assert_fails_with "call-site-pin/self-governed-in-quality" \
+  "forbidden-in-quality" \
+  bash "$T195A/scripts/check-parity-call-site-pins.sh" "$T195A"
+
+# Braço B — pin movido para parity-falsify: gate REPROVA.
+# Mutação: insere uma linha após a invocação de run-gates-falsify-parallel.sh
+# no alvo parity-falsify, adicionando uma chamada pinada ao script consumidor.
+# Este alvo é alcançado por quality→parity→parity-falsify mas não seria
+# detectado por varredura textual de parity-rest.
+T195B="$WORK/s195-arm-b"
+mkdir -p "$T195B/scripts"
+cp "$T195/scripts/"*.sh "$T195B/scripts/"
+python3 - "$T195/Makefile" "$T195B/Makefile" <<'PYEOF'
+import sys
+src, dst = sys.argv[1], sys.argv[2]
+with open(src) as f:
+    lines = f.readlines()
+out = []
+for line in lines:
+    out.append(line)
+    # Após a linha de parity-falsify que invoca run-gates-falsify-parallel.sh,
+    # inserir uma chamada pinada ao script consumidor.
+    stripped = line.lstrip('\t')
+    if 'scripts/run-gates-falsify-parallel.sh' in stripped and stripped.startswith('GO_BIN='):
+        out.append('\tTRACKFW_SELF_GOVERNED=1 GO_BIN=$(BUILD_DIR)/$(BINARY) HASH_CMD_BIN="$(HASH_CMD)" scripts/check-roadmap-barrier-contract.sh\n')
+with open(dst, 'w') as f:
+    f.writelines(out)
+PYEOF
+
+assert_fails_with "call-site-pin/self-governed-moved" \
+  "forbidden-in-quality" \
+  bash "$T195B/scripts/check-parity-call-site-pins.sh" "$T195B"
+
+echo "OK   [falsify/call-site-pin]: 3 braços (clean/in-quality/moved) provados"
+
+# ---------------------------------------------------------------------------
+# Cenário 196 — check-parity-call-site-pins.sh: verificação de que o CI
+#               workflow invoca make self-governance (ML-2A, REQ #396).
+#
+# Objetivo: provar que a nova verificação ci-workflow/self-governance-invoked
+# detecta a remoção silenciosa do step `make self-governance` do CI yaml,
+# incluindo o caso onde a linha `run:` é substituída por um comentário.
+# Medido por hades-tf R-C e hefesto-tf Q4 em 2026-09-22: a remoção do step
+# não reprova parity (required check) nem check-parity-call-site-pins.sh antes
+# deste cenário.
+#
+# Reconciliação (Regra Dura):
+#   ci-workflow/self-governance-invoked/clean: o gate PASSA na árvore correta,
+#     onde quality.yml contém `run: make self-governance` em linha não-comentário.
+#   ci-workflow/self-governance-invoked/run-removed: o gate REPROVA quando a
+#     linha `run: make self-governance` é removida, mantendo o `name:` do step —
+#     exatamente o cenário de remoção silenciosa que motivou este check.
+#   ci-workflow/self-governance-invoked/run-commented: o gate REPROVA quando a
+#     linha `run:` é substituída por comentário `# make self-governance` — prova
+#     que o grep filtro de comentário funciona (sem ele, este caso passaria).
+# ---------------------------------------------------------------------------
+T196="$WORK/s196"
+mkdir -p "$T196/scripts" "$T196/.github/workflows"
+cp "$ROOT_DIR/Makefile"      "$T196/"
+cp "$ROOT_DIR/scripts/"*.sh  "$T196/scripts/"
+cp "$ROOT_DIR/.github/workflows/quality.yml" "$T196/.github/workflows/"
+
+# Braço C — árvore correta: gate PASSA (baseline antes das mutações).
+if ! bash "$T196/scripts/check-parity-call-site-pins.sh" "$T196" >/dev/null 2>&1; then
+  echo "FAIL [falsify/setup-s196-baseline]: check-parity-call-site-pins.sh já reprova com fonte real -- prova inválida" >&2
+  falsify_count_failure
+  [[ "$TRACKFW_FALSIFY_ENUMERATE" == "1" ]] || exit 1
+fi
+
+assert_succeeds "ci-workflow/self-governance-invoked/clean" \
+  bash "$T196/scripts/check-parity-call-site-pins.sh" "$T196"
+
+# Braço A — run: line removed, name: line kept: gate REPROVA.
+# Mutação: remove a linha `run: make self-governance` do workflow, mantendo
+# o `name:` acima. É o cenário exato de remoção silenciosa do step.
+T196A="$WORK/s196-arm-a"
+mkdir -p "$T196A/scripts" "$T196A/.github/workflows"
+cp "$T196/Makefile"     "$T196A/"
+cp "$T196/scripts/"*.sh "$T196A/scripts/"
+grep -v '^\s*run: make self-governance' "$T196/.github/workflows/quality.yml" \
+  > "$T196A/.github/workflows/quality.yml"
+
+assert_fails_with "ci-workflow/self-governance-invoked/run-removed" \
+  "ci-workflow/self-governance-invoked" \
+  bash "$T196A/scripts/check-parity-call-site-pins.sh" "$T196A"
+
+# Braço B — run: replaced with comment: gate REPROVA.
+# Mutação: substitui `run: make self-governance` por `# make self-governance`.
+# Prova que o filtro de linha-comentário não pode ser iludido.
+T196B="$WORK/s196-arm-b"
+mkdir -p "$T196B/scripts" "$T196B/.github/workflows"
+cp "$T196/Makefile"     "$T196B/"
+cp "$T196/scripts/"*.sh "$T196B/scripts/"
+sed 's/^\( *\)run: make self-governance$/\1# make self-governance/' \
+  "$T196/.github/workflows/quality.yml" \
+  > "$T196B/.github/workflows/quality.yml"
+
+assert_fails_with "ci-workflow/self-governance-invoked/run-commented" \
+  "ci-workflow/self-governance-invoked" \
+  bash "$T196B/scripts/check-parity-call-site-pins.sh" "$T196B"
+
+echo "OK   [falsify/ci-workflow-self-governance]: 3 braços (clean/run-removed/run-commented) provados"
+
+# ---------------------------------------------------------------------------
 # ML-2B — fechamento do modo de enumeração. Desligado (default): este bloco
 # inteiro é pulado (a condição é falsa) e a saída do processo é a do último
 # comando acima -- 0, exatamente como antes deste ML (byte-idêntico: nenhuma

@@ -2,6 +2,43 @@
 
 ---
 
+## 2026-09-22 — Ártemis (fix/teste-e-gate-leem-a-arvore-de-governanca — ML-1C) — ENTREGUE (AGUARDANDO AUDITORIA)
+
+**Início:** 2026-09-22 | Branch: `fix/teste-e-gate-leem-a-arvore-de-governanca`
+**Tarefa:** ML-1C — a regressão do desacoplamento não é detectada por ninguém. Adicionar asserção negativa em `check-parity-call-site-pins.sh`: nenhuma invocação alcançável por `make quality` pode pinar `TRACKFW_SELF_GOVERNED`. Adicionar 3 cenários de falsificação em `check-gates-falsify.sh`.
+**Resultado:**
+- `scripts/check-parity-call-site-pins.sh`: novo array `VARS_FORBIDDEN_IN_QUALITY=(TRACKFW_SELF_GOVERNED)` e loop de verificação que usa `make -n quality -C "$ROOT"` como discriminante. Guarda de vacuidade: gate falha fechado se `make -n` falhar ou se o consumidor não aparecer na cadeia. Contagem passa de 9 para 10 verificações; resumo final atualizado.
+- `scripts/check-gates-falsify.sh`: Cenário 195 com 3 braços via `assert_succeeds`/`assert_fails_with`: clean (PASSA), pin em `parity-rest` (REPROVA), pin movido para `parity-falsify` (REPROVA). Todos os labels literais, colhidos pelo manifesto do `gen-falsify-chunks.py`.
+- **AC1 provado:** gate REPROVA (RC=1) com pin reintroduzido em `parity-rest` — `FAIL [call-site-pin/TRACKFW_SELF_GOVERNED/forbidden-in-quality]`
+- **AC2 provado:** gate REPROVA (RC=1) com pin movido para `parity-falsify` — mesma mensagem
+- **AC3:** gate PASSA (RC=0) na árvore correta — 10 verificações
+- **AC4 labels:** `call-site-pin/self-governed-clean`, `call-site-pin/self-governed-in-quality`, `call-site-pin/self-governed-moved` aparecem no manifesto como `chunk=1 label=...` (literais, não globs)
+- **AC5:** `bash scripts/check-parity-call-site-pins.sh` RC=0 na árvore correta
+- **Makefile restaurado:** shasum `59ef751929c2ef14896fe06487cb585d577076c9` confirmado; `make -n quality | grep check-roadmap-barrier-contract` devolve linha sem pin
+- `trackfw validate` RC=0
+- `git status --short`: `M docs/agents-working-context.md`, `M docs/roadmaps/wip/ROADMAP-2026-09-22-...md`, `M scripts/check-gates-falsify.sh`, `M scripts/check-parity-call-site-pins.sh`
+**Arquivos modificados:** `scripts/check-parity-call-site-pins.sh`, `scripts/check-gates-falsify.sh`, roadmap, working-context.
+
+---
+
+## 2026-09-22 — Apolo (fix/teste-e-gate-leem-a-arvore-de-governanca — ML-1B-bis) — ENTREGUE (AGUARDANDO AUDITORIA)
+
+**Início:** 2026-09-22 | Branch: `fix/teste-e-gate-leem-a-arvore-de-governanca`
+**Tarefa:** ML-1B-bis — tirar a tripwire do caminho do consumidor: remover o pin `TRACKFW_SELF_GOVERNED=1` de `parity-rest` e criar alvo `self-governance:` próprio invocado pelo CI do upstream.
+**Resultado:**
+- `Makefile`: pin `TRACKFW_SELF_GOVERNED=1` removido de `parity-rest` (a chamada ao script permanece para as Partes B e C); novo alvo `self-governance: build` criado com o pin completo.
+- `.github/workflows/quality.yml`: passo `make self-governance` adicionado ao job `parity-other-gates` após `make parity-rest`.
+- `scripts/check-parity-call-site-pins.sh`: lógica do loop de VARS_PIN alterada de "todo call site deve pinar" para "pelo menos um call site deve pinar" — vacuidade protegida, call site do consumidor sem pin aceito.
+- **AC1 provado:** `make quality` com `TRACKFW_FALSIFY_JOBS=4` numa árvore `by_agent` sem roadmaps do mantenedor → RC=0; linha visível: `check-roadmap-barrier-contract: 49 cenários OK`.
+- **AC2 provado:** `make self-governance` com roadmap do corpus apagado do disco → RC=2, linha `FAIL [corpus/basename-missing-from-disk]`.
+- **AC3:** workflow line `- name: ML-1B-bis — self-governance (tripwire do upstream)` / `run: make self-governance` em `parity-other-gates`.
+- **AC4 provado:** pin removido do novo call site → `check-parity-call-site-pins.sh` RC=1 com mensagem `nenhuma linha de recipe que invoca check-roadmap-barrier-contract.sh pina TRACKFW_SELF_GOVERNED=`.
+- **AC5:** `bash scripts/check-parity-call-site-pins.sh` RC=0 (8 verificações).
+- **AC6:** `bash scripts/check-roadmap-barrier-contract.sh` (sem var) RC=0 (49 cenários OK).
+**Arquivos modificados:** `Makefile`, `.github/workflows/quality.yml`, `scripts/check-parity-call-site-pins.sh`, roadmap, working-context.
+
+---
+
 ## 2026-09-21 — Apolo (fix/afirma-contencao-antes-de-escrever — ML-5A) — ENTREGUE (AGUARDANDO AUDITORIA)
 
 **Início:** 2026-09-21 | Branch: `fix/afirma-contencao-antes-de-escrever`
@@ -38960,3 +38997,95 @@ trackfw init && roadmap new "..." && roadmap move <n> wip && trackfw validate
 - **Efeito medido:** REQs sem roadmap **35 → 12**; warnings do `validate` **166 → 143**. As 12 restantes são 9 `Superseded` (paridade Node/Python, sem sentido pós-v8) e 3 `Done`. **Nenhuma `Open`** — o objetivo foi atingido.
 - **Os 47 vínculos não foram inventados:** cada um foi reconstruído a partir do campo `req:` **do próprio roadmap**. Verificação bidirecional: **47 consistentes, 0 cruzados**.
 - 🔴 **Décimo oitavo instrumento vácuo, meu:** a primeira verificação usou `git diff main...HEAD` com o trabalho **ainda não commitado** — olhou **0 arquivos** e devolveu "0 inconsistentes". Eu quase reportei isso como prova. Trocado para `git diff HEAD`: aí sim, 47 verificados. **Um teste que examina zero itens sempre passa.**
+
+### 2026-09-22 — Zeus — REQ e roadmap do #396 criados; escopo ampliado pela Regra Dura
+- **Varredura §2.0 feita antes de escrever, e mudou o escopo.** O próprio reportante do #396 nomeia a família: *"é a mesma classe do corpus do `barrier-contract` (#277) e das REQs lidas por `TestExtractRefPath` (#216)"*. O sintoma é idêntico — **o consumidor não consegue rodar a suíte**.
+- **Decisão:** REQ da **classe**, não do sítio. A Regra Dura é explícita — mesmo sintoma investiga junto, e só se separa **com a medição escrita**. A Wave 0 é essa medição. Tratar o #396 sozinho reproduziria o padrão que este projeto já mediu 59 vezes.
+- 🔴 **Não presumi que o #277 entra.** O roadmap diz explicitamente: entra **se** a Wave 0 medir mesma causa; se a medição disser outra coisa, sai — com a medição escrita.
+- **Medição inicial minha, declarada como aproximada:** 1 teste com `repoRoot(` (o do #396) e 14 scripts que tocam caminhos de governança. **Os 14 não são defeito** — gate do upstream pode legitimamente auditar a própria governança; o defeito é exigir isso de quem consome. Separar é o entregável do ML-0A, e pedi ao `hades-tf` que **refute ou confirme** meu número em vez de aceitá-lo.
+- **O achado que dá o desenho do ML-1A:** com `docs/roadmaps/done/` vazio (só `.gitkeep`) o teste **passa** e o `validate` segue com 0 violações — logo **ele não mede o produto**, mede o corpus do mantenedor. Isso obriga a escolher entre skip declarado e resolução por config, com justificativa escrita das duas.
+- **Escopo negativo explícito na REQ:** não remove a capacidade de o upstream auditar a própria governança, não migra layout de ninguém, e não toca os defeitos de Windows/CI (#307, #353, #363, #364) — mecanismo diferente, ainda que se manifestem nos mesmos jobs.
+- **Estado:** roadmap em `wip`, branch `fix/teste-e-gate-leem-a-arvore-de-governanca` criada, `trackfw validate` RC=0. Próximo: despachar o ML-0A (`hades-tf`).
+
+### 2026-09-22 — Zeus — Wave 0 do #396 auditada e aprovada; minha medição foi refutada
+- **Barrier wave 0: `passed`.** Verifiquei que o `hades-tf` não tocou código — só `docs/seguranca/`.
+- 🔴 **Minha medição inicial foi REFUTADA na população, e isso é o valor do ML.** Eu medi **1** sítio de teste porque procurei o **literal** `repoRoot(`. São **2**: o segundo alcança a árvore real por `filepath.Abs(filepath.Join("..",".."))` e lê 3 REQs por caminho literal — é o achado 16 do #216. Declarei o risco no handoff e pedi refutação em vez de herança; foi o que evitou o erro.
+- **Resultado: (a)=3 · (b)=4 · (c)=7 · fora=1.** Os três (a): `roadmapdoc_test.go:250` (#396), `validator_test.go:2246` (#216), `check-roadmap-barrier-contract.sh:512` (#277).
+- **#277 entrou por medição, não por presunção** — como o roadmap exigia. O corpus já está em `scripts/testdata/` (correto); o defeito é só a tripwire incondicional da linha 512.
+- 🔴 **Buraco na proposta do #277, medido:** `TRACKFW_SELF_GOVERNED=1` tem **0 ocorrências** em `.github/`, `Makefile`, `scripts/`. Se a tripwire for para trás dessa variável e ninguém a setar, "desacoplar" vira **desligar**. Virou AC explícito do ML-1B.
+- 🔴 **Ele refutou o meu critério candidato, com razão.** Eu propus *"rodaria num clone sem nada em `docs/`?"* — mas em `by_agent` o `docs/` **tem** conteúdo, o teste passaria e o defeito persistiria. O critério adotado é P1/P2/P3 com **árbitro executável**: árvore `by_agent` temporária, `RC=0 → (b)`, `RC≠0 → (a)`, *"prosa não substitui RC"*. É o que impede esvaziar a wave classificando tudo como legítimo.
+- **Wave 1 detalhada:** ML-1A (`artemis-tf`, `roadmapdoc_test.go`) e ML-1B (`apolo-tf`, `validator_test.go` + `check-roadmap-barrier-contract.sh`). Arquivos disjuntos, paralelos, **teto de 2 agentes** e teste só do pacote tocado — regra registrada ontem após a saturação de CPU.
+
+### 2026-09-22 — apolo-tf — ML-1B iniciado: sítios 2 e 3 do #396
+- **Escopo:** `internal/validator/validator_test.go` (sítio 2) e `scripts/check-roadmap-barrier-contract.sh` (sítio 3).
+- **Branch:** `fix/teste-e-gate-leem-a-arvore-de-governanca` — NÃO commitado.
+
+### 2026-09-22 — apolo-tf — ML-1B concluído: sítios 2 e 3 corrigidos
+- **Sítio 2:** `TestExtractRefPath_TresREQsReaisDoRepositorio` convertido de leitura de disco para fixture inline. `TestExtractRefPath_CorpusBacktickREF` adicionado como controle de corpus (skip declarado quando arquivos ausentes, `t.Errorf` se presente e propriedade falhar). Upstream: 3/3 arquivos encontrados e verificados.
+- **Sítio 3:** Tripwire de disco em `check-roadmap-barrier-contract.sh:512` agora condicional a `TRACKFW_SELF_GOVERNED=1`. Makefile atualizado para setar `TRACKFW_SELF_GOVERNED=1` na chamada. Vacuidade garantida por `check-parity-call-site-pins.sh` com `TRACKFW_SELF_GOVERNED` adicionado à `VARS_PIN` — reprova se o pin sumir do Makefile.
+- **4 arquivos modificados (todos meus):** `internal/validator/validator_test.go`, `scripts/check-roadmap-barrier-contract.sh`, `Makefile`, `scripts/check-parity-call-site-pins.sh`.
+- **Provas:** build=RC=0, `go test ./internal/validator/`=RC=0, `check-roadmap-barrier-contract.sh` (TRACKFW_SELF_GOVERNED=1)=RC=0 (49 cenários OK), árbitro by_agent=RC=0 (sítio 2 e sítio 3), tripwire deleta 1 roadmap=RC=1 confirmado.
+- **Residual a reportar ao arquiteto:** com `TRACKFW_SELF_GOVERNED=1` pinado no Makefile, um fork que clona o repo e roda `make quality` ainda dispara a tripwire para os 144 roadmaps ausentes. Apenas invocação direta do script (sem o env var) está desacoplada. Decisão sobre `make quality` em forks é do arquiteto.
+
+### 2026-09-22 — Zeus — ML-1A aprovado; ML-1B reprovado no sítio 3
+- **ML-1A ✅** — escolha (i) skip declarado, com o trade-off escrito. Braço (b) provado (194 roadmaps lidos no upstream, não virou no-op). Achado extra da mesma classe: as notas do arquivo afirmavam baselines de 27/30/32 de quando o corpus tinha ~27 itens; hoje são 194.
+- 🔴 **Falso alarme meu:** acusei um `t.Fatalf` remanescente medindo com `grep -c` — era o literal dentro de um **comentário**. Meu grep não distinguiu comentário de código, que é exatamente o que o `check-symlink-privilege-guard` faz certo. Re-medi antes de reportar ao usuário.
+- **ML-1B: sítio 2 ✅, sítio 3 ❌.** O sítio 2 ficou bom — a fixture preserva o discriminante (`adr: ""` com aspas, ADR só em backtick) e ele **acrescentou** um controle de corpus que ainda lê os 3 arquivos reais com `t.Logf`+`continue` e `t.Skip` declarado, evitando trocar acoplamento por vacuidade silenciosa.
+- 🔴 **Sítio 3 reprovado: a correção não alcança o caminho que o consumidor usa.** `Makefile:75` seta `TRACKFW_SELF_GOVERNED=1` **incondicionalmente**, dentro de `parity-rest` → `parity` → `quality`. **Um fork que rode `make quality` continua reprovando com os 144 basenames** — e `make quality` é literalmente o que o #277 relata como inalcançável. O que ficou desacoplado foi a invocação avulsa do script, que ninguém usa.
+- 🔴 **E a correção criou uma trava:** o novo `check-parity-call-site-pins.sh` **exige** o pin, então removê-lo reprova outro gate. A saída fácil está fechada por construção.
+- **Crédito ao executor:** ele **previu e declarou** o residual no relatório em vez de entregar como concluído. Foi o que tornou a reprovação barata — eu só precisei confirmar a medição.
+- **ML-1B-bis escrito:** tirar a tripwire de `parity-rest`, criar alvo próprio invocado pelo CI do upstream, e reapontar o pin de vacuidade para o novo call site. **AC central: `make quality` numa árvore `by_agent` sem os roadmaps do mantenedor → RC=0** — o AC que o ML-1B não atendeu.
+
+### 2026-09-22 — Zeus — ML-1B-bis aprovado; e um gap que só a falsificação revelou
+- **Auditei pelo `make -n`, não pela leitura do Makefile** — é a fonte de verdade do que cada alvo executa: `make quality` invoca o gate **sem** `TRACKFW_SELF_GOVERNED`; `make self-governance` **com**. O defeito do #277 no caminho `make quality` está fechado, e o alvo novo entrou num job existente (`parity-other-gates`), sem perturbar a lista de required checks.
+- 🔴 **Gap achado por falsificação minha, não por leitura:** reintroduzi o pin em `parity-rest` — a regressão exata do defeito recém-corrigido — e `check-parity-call-site-pins.sh` saiu **RC=0**. **Nada reprova.** A política `pin-any` exige que **ao menos uma** invocação pine, e `self-governance` pina; ela é cega para uma invocação **a mais** que também pine, que é precisamente como o defeito volta.
+- **`pin-any` foi a escolha certa e ainda assim insuficiente:** `pin-all` seria impossível, porque `parity-rest` **deve** invocar sem o pin. Falta a asserção **negativa** que acompanha a política.
+- **ML-1C escrito** (`artemis-tf`): o gate passa a reprovar se **qualquer** invocação alcançável por `make quality` pinar a variável. Exigi o discriminante pelo **`make -n quality`**, não por leitura textual do Makefile — assim pega também o caso de mover a linha para outro alvo que `quality` alcance, que a leitura textual não pegaria.
+- **Nota de método:** este gap não apareceria numa revisão de diff. Apareceu porque injetei a regressão e medi. É a mesma lição do gate de contenção de ontem — gate verde sobre 34 defeitos, porque ninguém tinha testado o gate **contra o defeito que ele deveria pegar**.
+- **Imprecisão minha registrada:** o commit `af759a2a`, rotulado `wip(governance)`, incluiu também o código dos ML-1A/1B — `git add -A` varreu junto. Não é errado numa branch de trabalho, mas a mensagem não descreve o conteúdo inteiro.
+
+### 2026-09-22 — Zeus — ML-1C aprovado; Wave 1 fechada, barrier verde nas 2 waves
+- **Verifiquei o ML-1C repetindo a MESMA mutação que usei contra o gate antigo:** pin reintroduzido em `parity-rest` dava **RC=0** antes, agora dá **RC=1**, com mensagem que nomeia o defeito e mostra a linha ofensora. Makefile restaurado e conferido por `make -n`.
+- **Barreira final da Wave 1: RC=0, 808 `^OK `, 0 `: FALHA`**, guarda de conjunto OK, 229 OK na falsificação (era 216 — os 3 braços novos entraram e foram colhidos).
+- **Decisão do executor que endosso:** não incrementou `FALSIFY_SUCCESS_FLOOR=205`, com a razão escrita — é piso verificado em modo serial, e mexer sem medir o novo total seria **número fabricado**.
+- 🔴 **Erro meu de estrutura, pego pelo barrier:** escrevi os blocos de auditoria como `### ML-1A — resultado`, e o parser leu cada um como **um ML novo, pendente** — daí `ML-1A: not complete` duas vezes e `ML-1B-bis: status missing`. **Um cabeçalho `### ML-` é uma declaração para o parser, não um título livre.** Rebaixei os blocos para `#### Auditoria —` e atualizei o status nas seções originais.
+- **Wave 0 e Wave 1: `result: passed`.** Falta a Barreira final do roadmap: revisão `hefesto-tf` e `hades-tf`, que ele exige explicitamente.
+
+### 2026-09-22 — hades-tf — Iniciando barreira final da REQ #396
+- **Tarefa:** revisão de segurança do que foi entregue na branch `fix/teste-e-gate-leem-a-arvore-de-governanca`, contra o modelo de ameaça Wave 0 que produzi.
+- **Arquivo de saída:** `docs/seguranca/2026-09-22-revisao-desacoplamento-governanca.md`
+
+### 2026-09-22 — hades-tf — Barreira final da REQ #396 concluída
+- **Veredito:** APROVADO COM RESSALVAS
+- **Arquivo produzido:** `docs/seguranca/2026-09-22-revisao-desacoplamento-governanca.md`
+- **3 sítios (a) verificados:** todos corrigidos conforme Wave 0.
+- **5 perguntas respondidas com evidência de execução:**
+  - Q1: desacoplamento não virou desligamento, com exceção de um gap de observabilidade (done/ existe mas vazia → silêncio com total=0, não skip). Aceitável.
+  - Q2: gate captura a regressão primária (pin inline em parity-rest). Dois bypasses confirmados (env: no CI yaml, export no Makefile) — ambos requerem edição de arquivo rastreado visível em PR. Não bloqueantes.
+  - Q3: TRACKFW_SELF_GOVERNED em exatamente um lugar (recipe de self-governance). Sem .env, sem env: no CI. Remoção detectada pelo VARS_PIN_ANY. Ativação incorreta via env: não detectada (R-B).
+  - Q4: asserção negativa cobre make quality/parity/parity-rest. Step de CI corretamente separado.
+  - Q5: residual R-A a R-D declarado. Nada bloqueante.
+- **Nota de método:** toda conclusão verificada por execução antes de escrever — sem PoC vácua.
+
+### 2026-09-23 — artemis-tf — Iniciando Wave 2 / ML-2A (três achados acionáveis da barreira final)
+- **Tarefa:** fechar os três achados acionáveis da barreira final (pareceres hades-tf e hefesto-tf de 2026-09-22): (1) asserção fraca na fixture nos dois testes ExtractRefPath; (2) vacuidade silenciosa quando `done/` existe mas está vazia; (3) step `make self-governance` removível do CI sem detecção.
+- **Arquivos em escopo:** `internal/validator/validator_test.go`, `internal/roadmapdoc/roadmapdoc_test.go`, `scripts/check-parity-call-site-pins.sh`, `scripts/check-gates-falsify.sh`.
+- **Restrições:** NÃO tocar no `Makefile`. NÃO rodar `make quality`.
+
+### 2026-09-23 — artemis-tf — Wave 2 / ML-2A concluído (três achados acionáveis fechados)
+- **Item 1 (asserção fraca):** Adicionei `if got != adrRef` em `TestExtractRefPath_TresREQsReaisDoRepositorio` e `TestExtractRefPath_CorpusBacktickREF` (validator_test.go). Prova: `extractRefPath` retornando `docs/adr/WRONG-path.md` — ambos reprovam; restaurado e RC=0.
+- **Item 2 (vacuidade):** Adicionei guarda `if total == 0 → t.Skip` em `TestCorpusMeasurement_ReportOnly` (roadmapdoc_test.go). Prova: done/ vazia com só .gitkeep → `--- SKIP: TestCorpusMeasurement_ReportOnly`; upstream real (194 arquivos) → `PASS` com `total=194`.
+- **Item 3 (step CI removível):** Adicionei verificação `ci-workflow/self-governance-invoked` em `check-parity-call-site-pins.sh` — busca `make self-governance` em `*.yml` excluindo linhas-comentário. FALSIFY_SUCCESS_FLOOR NÃO alterado (mesma razão do ML-1C: medir o total serial antes de incrementar). Cenário 196 em `check-gates-falsify.sh` com 3 braços: clean/run-removed/run-commented — todos com rótulos literais.
+- **Provas de restauração:** workflow real inspecionado após testes temporários — `grep -n "make self-governance" .github/workflows/quality.yml` mostra linha 835 intacta. validator.go inspecionado — mutação removida.
+- **Gate final:** `bash scripts/check-parity-call-site-pins.sh .` RC=0, 11 verificações (2 pin-all + 1 pin-any + 1 forbidden + 3 rastros + 1 ci-workflow). `go test ./internal/validator/ ./internal/roadmapdoc/` RC=0. `trackfw validate` RC=0.
+- **Handoff:** não commitado, para auditoria do arquiteto.
+
+### 2026-09-23 — Zeus — ML-2A aprovado; REQ do #396 completa em código
+- **Verifiquei o item central repetindo a injeção por conta própria**, em cópia da árvore: removi `run: make self-governance` mantendo o `name:` → gate **RC=1**, com mensagem que nomeia o defeito e credita os dois pareceres. O workflow real ficou intacto (linha 835 conferida).
+- **Barreira: RC=0, 824 `^OK `, 0 `: FALHA`**, 244 OK na falsificação (era 229), guarda de conjunto OK. **`barrier: passed` nas 3 waves.**
+- **Três coisas que o executor fez melhor do que pedi:**
+  1. Guarda em `total == 0`, não `len(entries) == 0` — cobre `done/` com só um `.gitkeep`, que daria `len=1` e `total=0`. Eu não previ esse caso.
+  2. Braço de falsificação que eu não pedi: `run:` trocado por **comentário** — testa o filtro de linhas-comentário do próprio gate. Sem ele, comentar o step enganaria a verificação.
+  3. Manteve `FALSIFY_SUCCESS_FLOOR` intacto pela mesma razão do ML-1C, sem eu repetir a instrução.
+- 🔴 **Convergência que decidiu o escopo:** `hades-tf` (R-C) e `hefesto-tf` (Q4) apontaram o mesmo defeito **independentemente** — o step do CI deletável sem reprovação. Foi o que me fez tratá-lo como ML desta REQ em vez de issue: dois revisores separados chegando ao mesmo ponto sobre a causa que a REQ trata.
+- **Pendente:** issue do Hefesto Q1 (o teste promete aparecer no log de CI, mas o job roda `go test ./...` sem `-v` e o `t.Logf` é descartado — `quality.yml:31`), depois PR.

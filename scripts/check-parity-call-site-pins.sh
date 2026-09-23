@@ -32,10 +32,17 @@
 # exatamente as que o ML-2E criou/documentou, com o mesmo comentário "ML-2E,
 # mesma família de HASH_CMD_BIN" que este arquivo também usa. Manutenção:
 # quando um novo controle desta família for criado, ele deve repetir esse
-# comentário (convenção já em uso em Makefile:82-84 e
+# comentário (convenção já em uso em Makefile (alvo self-governance) e
 # scripts/check-roadmap-barrier-contract.sh:444) e seu nome deve entrar em
 # VARS_PIN/VARS_TRACE abaixo, no mesmo PR que o introduz — é uma linha, não
 # um mecanismo à parte a manter.
+#
+# ML-1B-bis (ROADMAP-2026-09-22-teste-e-gate-leem-a-arvore-de-governanca-do-
+# repositorio-onde-rodam-e-o-consumidor-nao-consegue-rodar-a-suite.md):
+# TRACKFW_SELF_GOVERNED=1 foi movido do alvo `parity-rest` para o alvo
+# `self-governance` — o gate detecta o pin no novo call site dinamicamente
+# (sem hardcoding de nome de alvo); remover o pin do alvo `self-governance`
+# reprova esta verificação.
 #
 # O que É derivado, não hardcoded: para cada variável da lista fechada, o
 # SCRIPT que a consome (via grep no corpo de scripts/*.sh) e a LINHA de
@@ -51,14 +58,39 @@ MAKEFILE="$ROOT/Makefile"
 SCRIPTS_DIR="$ROOT/scripts"
 SELF="$(basename "${BASH_SOURCE[0]}")"
 
-# Variáveis que exigem PIN no call site do Makefile (VAR=valor na mesma linha
-# de recipe que invoca o script consumidor).
-VARS_PIN=(HASH_CMD_BIN PYTHON_BIN)
+# Variáveis que exigem PIN em TODA invocação no Makefile (VAR=valor na mesma
+# linha de recipe que invoca o script consumidor). Invariante original do ML-2E:
+# "HASH_CMD_BIN e PYTHON_BIN são seguros porque o Makefile os sobrescreve em
+# toda invocação".
+VARS_PIN_ALL=(HASH_CMD_BIN PYTHON_BIN)
+
+# Variáveis que exigem PIN em AO MENOS UMA invocação. Usado quando um script
+# tem dois call sites legítimos com semânticas distintas: um que pina (alvo de
+# governança do upstream, ex.: `self-governance`) e um que não pina (alvo para
+# o consumidor, ex.: `parity-rest`). A vacuidade protegida é: se ZERO call sites
+# pinarem a variável, o pin desapareceu e a tripwire pode ser suprimida por
+# ambiente. ML-1B-bis, ROADMAP-2026-09-22-teste-e-gate-leem-a-arvore-de-
+# governanca-do-repositorio-onde-rodam-e-o-consumidor-nao-consegue-rodar-a-suite.md
+VARS_PIN_ANY=(TRACKFW_SELF_GOVERNED)
 
 # Variáveis que exigem RASTRO em stderr no script consumidor quando setadas,
 # mas que são intencionalmente NÃO pinadas no Makefile (ML-2D/ML-2E: servem
 # para sabotagem controlada do harness de falsificação).
 VARS_TRACE=(TRACKFW_FALSIFY_SCRIPT TRACKFW_FALSIFY_GEN TRACKFW_FALSIFY_JOBS)
+
+# Variáveis cujo PIN não pode aparecer em NENHUMA invocação alcançável por
+# make quality. Semântica: o pin pertence exclusivamente ao alvo upstream
+# (self-governance) — o caminho do consumidor (make quality) não pode
+# alcançar nenhuma linha que o pina.
+# Lista fechada, não derivada: pelo mesmo motivo que VARS_PIN_ALL/VARS_PIN_ANY
+# — uma lista derivada incluiria qualquer variável acrescentada por engano e
+# produziria FAIL de dia zero.
+# ML-1C (ROADMAP-2026-09-22-teste-e-gate-leem-a-arvore-de-governanca-do-
+# repositorio-onde-rodam-e-o-consumidor-nao-consegue-rodar-a-suite.md):
+# asserção negativa complementar à política pin-any — garante que o pin
+# em self-governance não regride para parity-rest (nem para qualquer outro
+# alvo alcançado por make quality).
+VARS_FORBIDDEN_IN_QUALITY=(TRACKFW_SELF_GOVERNED)
 
 FAIL=0
 CHECKED=0
@@ -104,7 +136,8 @@ find_consuming_scripts() {
     | grep -vF "/$SELF" || true
 }
 
-for var in "${VARS_PIN[@]}"; do
+# --- VARS_PIN_ALL: pin exigido em TODA invocação (política original ML-2E) ----
+for var in "${VARS_PIN_ALL[@]}"; do
   consumers=$(find_consuming_scripts "$var")
   if [[ -z "$consumers" ]]; then
     fail "call-site-pin/$var/consumer-found" \
@@ -129,6 +162,88 @@ for var in "${VARS_PIN[@]}"; do
           "linha de recipe invoca ${base} sem pinar ${var}= -- pin removido: $line"
       fi
     done <<<"$invocations"
+  done <<<"$consumers"
+done
+
+# --- VARS_PIN_ANY: pin exigido em AO MENOS UMA invocação (ML-1B-bis) ----------
+# Usado quando o script tem dois call sites com semânticas distintas: um que pina
+# (alvo upstream, ex.: `self-governance`) e um que não pina (alvo consumidor,
+# ex.: `parity-rest`). Vacuidade protegida: ZERO call sites pinados → FAIL.
+for var in "${VARS_PIN_ANY[@]}"; do
+  consumers=$(find_consuming_scripts "$var")
+  if [[ -z "$consumers" ]]; then
+    fail "call-site-pin/$var/consumer-found" \
+      "nenhum script em scripts/*.sh lê \${$var:-...} ou \${$var} -- o consumidor desapareceu, ou foi renomeado sem atualizar o gate"
+    continue
+  fi
+  while IFS= read -r consumer; do
+    [[ -z "$consumer" ]] && continue
+    base=$(basename "$consumer")
+    invocations=$(grep -F "scripts/${base}" "$RECIPE_LINES_FILE" || true)
+    if [[ -z "$invocations" ]]; then
+      fail "call-site-pin/$var/$base/invoked" \
+        "scripts/${base} não é chamado por nenhuma linha de recipe do Makefile -- alvo removido ou script deixou de ser invocado"
+      continue
+    fi
+    pinned_count=0
+    while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      if grep -qE "(^${TAB}|[[:space:]])${var}=" <<<"$line"; then
+        pinned_count=$((pinned_count + 1))
+      fi
+    done <<<"$invocations"
+    if [[ "$pinned_count" -gt 0 ]]; then
+      ok "call-site-pin/$var/$base"
+    else
+      fail "call-site-pin/$var/$base" \
+        "nenhuma linha de recipe que invoca ${base} pina ${var}= -- pin removido de todos os call sites (pin esperado no alvo self-governance)"
+    fi
+  done <<<"$consumers"
+done
+
+# --- VARS_FORBIDDEN_IN_QUALITY: asserção negativa — make quality NÃO alcança o pin ----
+# Discriminante: `make -n quality` resolve as dependências entre alvos, imunizando
+# contra o caso onde a linha é movida para outro alvo alcançável por quality
+# (ex.: parity-falsify). Leitura textual do Makefile não pegaria esse caso.
+# Vacuidade protegida: se make -n quality não invoca o script consumidor, o gate
+# falha fechado — ausência de pin só é significativa se a cadeia foi enumerada.
+# make -n verificado como efeito-zero: sem $(MAKE) nem +recipe lines na cadeia
+# quality→parity→parity-rest/falsify (medido em 2026-09-22).
+for var in "${VARS_FORBIDDEN_IN_QUALITY[@]}"; do
+  consumers=$(find_consuming_scripts "$var")
+  if [[ -z "$consumers" ]]; then
+    fail "call-site-pin/$var/forbidden-in-quality/consumer-found" \
+      "nenhum script em scripts/*.sh lê \${$var:-...} ou \${$var} -- o consumidor desapareceu, ou foi renomeado sem atualizar o gate"
+    continue
+  fi
+  while IFS= read -r consumer; do
+    [[ -z "$consumer" ]] && continue
+    base=$(basename "$consumer")
+    local_dryrun=$(mktemp "${TMPDIR:-/tmp}/trackfw-quality-dryrun.XXXXXX")
+    if ! make -n quality -C "$ROOT" >"$local_dryrun" 2>/dev/null; then
+      fail "call-site-pin/$var/forbidden-in-quality/make-dryrun" \
+        "make -n quality falhou em $ROOT -- não é possível verificar a cadeia de quality; gate falha fechado"
+      rm -f "$local_dryrun"
+      continue
+    fi
+    # Guarda de vacuidade: a saída deve conter ao menos uma invocação não-comentário
+    # do script consumidor. Sem isso, ausência de pin seria falso-positivo.
+    consumer_invocations=$(grep -F "scripts/${base}" "$local_dryrun" | grep -vE '^[[:space:]]*#' || true)
+    if [[ -z "$consumer_invocations" ]]; then
+      fail "call-site-pin/$var/forbidden-in-quality/consumer-invoked" \
+        "make -n quality não produziu nenhuma invocação não-comentário de scripts/${base} -- cadeia não chega ao consumidor; impossível afirmar ausência de pin"
+      rm -f "$local_dryrun"
+      continue
+    fi
+    # Asserção negativa: nenhuma linha não-comentário que invoca o consumidor pina var=.
+    forbidden=$(grep -F "scripts/${base}" "$local_dryrun" | grep -vE '^[[:space:]]*#' | grep -E "(^|[[:space:]])${var}=" || true)
+    rm -f "$local_dryrun"
+    if [[ -n "$forbidden" ]]; then
+      fail "call-site-pin/$var/forbidden-in-quality" \
+        "make quality alcança ao menos uma invocação de scripts/${base} que pina ${var}= -- o pin pertence exclusivamente ao alvo upstream (self-governance), não ao caminho do consumidor: $(head -1 <<<"$forbidden")"
+    else
+      ok "call-site-pin/$var/forbidden-in-quality"
+    fi
   done <<<"$consumers"
 done
 
@@ -168,7 +283,46 @@ for var in "${VARS_TRACE[@]}"; do
   done <<<"$consumers"
 done
 
-echo "check-parity-call-site-pins: ${CHECKED} verificação(ões) -- ${#VARS_PIN[@]} pin(s) + ${#VARS_TRACE[@]} rastro(s) na lista"
+# --- CI workflow invoca make self-governance --------------------------------
+# Verifica que ao menos um arquivo em .github/workflows/*.yml contém, numa linha
+# não-comentário, 'make self-governance'. Sem esta verificação, o step pode ser
+# removido do workflow em silêncio e a tripwire de disco para de rodar em CI sem
+# que nenhum gate acuse (medido por hades-tf R-C e hefesto-tf Q4, 2026-09-22).
+#
+# Antecedente: só verificamos se .github/workflows/ existe — ausência indica
+# contexto de consumidor (sem CI yaml). Deletar a pasta inteira é uma mudança
+# visível e intencional; o gap que este check fecha é a remoção SILENCIOSA de
+# um único step dentro de um arquivo rastreado.
+#
+# Exclusão de comentários: a linha deve aparecer FORA de blocos comentados (#).
+# Sem isso, deletar o `run:` e deixar o comentário `# make self-governance`
+# iludiria o grep — a mesma armadilha de "comentário distante" do ML-2A do
+# roadmap de prova negativa (Sabotagem 4 em check-parity-call-site-pins.sh).
+CI_WORKFLOW_CHECKED=0
+CI_WORKFLOWS_DIR="$ROOT/.github/workflows"
+if [[ ! -d "$CI_WORKFLOWS_DIR" ]]; then
+  ok "ci-workflow/self-governance-invoked/no-ci-dir"
+  CI_WORKFLOW_CHECKED=1
+else
+  self_gov_invoked=""
+  # Glob em todos os .yml do diretório de workflows, filtrando linhas de comentário.
+  for wf in "$CI_WORKFLOWS_DIR"/*.yml "$CI_WORKFLOWS_DIR"/*.yaml; do
+    [[ -f "$wf" ]] || continue
+    if grep -F 'make self-governance' "$wf" | grep -vqE '^[[:space:]]*#'; then
+      self_gov_invoked="$wf"
+      break
+    fi
+  done
+  CI_WORKFLOW_CHECKED=1
+  if [[ -n "$self_gov_invoked" ]]; then
+    ok "ci-workflow/self-governance-invoked"
+  else
+    fail "ci-workflow/self-governance-invoked" \
+      "nenhum arquivo em $CI_WORKFLOWS_DIR/*.yml invoca 'make self-governance' em linha não-comentário — o step da tripwire de disco foi removido do CI sem detecção (hades-tf R-C, hefesto-tf Q4, 2026-09-22)"
+  fi
+fi
+
+echo "check-parity-call-site-pins: ${CHECKED} verificação(ões) -- ${#VARS_PIN_ALL[@]} pin-all(s) + ${#VARS_PIN_ANY[@]} pin-any(s) + ${#VARS_FORBIDDEN_IN_QUALITY[@]} forbidden-in-quality(s) + ${#VARS_TRACE[@]} rastro(s) + ${CI_WORKFLOW_CHECKED} ci-workflow(s) na lista"
 
 if [[ "$CHECKED" -eq 0 ]]; then
   echo "check-parity-call-site-pins: nenhuma verificação executada -- guarda de vacuidade final" >&2

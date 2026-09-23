@@ -5,3 +5,4 @@
 - [Diagnóstico herdado pode estar vencido](feedback_diagnostico_herdado_pode_estar_vencido.md) — conferir a causa declarada no briefing contra a produção atual antes de escrever o remendo
 - [Mensagem de log prova o que já rodou](feedback_mensagem_de_log_prova_o_que_ja_rodou.md) — ordenar quem emite cada string falsifica hipótese sobre passo anterior, sem reproduzir o ambiente
 - [Assinatura de saída antes de hipótese](feedback_assinatura_de_saida_antes_de_hipotese.md) — medir rc+stdout+stderr de cada mecanismo candidato elimina sem ter a plataforma; ausência de FAIL não é prova de execução
+- [Build old binary before editing](feedback_build_old_binary_before_editing.md) — build the buggy binary FIRST, then edit; proves old=FAIL/new=PASS without git stash
