@@ -349,7 +349,7 @@ Dois pareceres convergindo num mesmo defeito é sinal forte — e é exatamente 
 proteção que desliga em silêncio.
 
 ### ML-2A — fechar os três achados acionáveis
-**Status:** ⬜ Pendente · **Papel:** `artemis-tf`
+**Status:** ✅ Concluído · **Papel:** `artemis-tf`
 **Files affected:** `internal/validator/validator_test.go`, `internal/roadmapdoc/roadmapdoc_test.go`,
 e o gate que verificar o workflow (ver item 3). **Não** tocar no `Makefile`.
 
@@ -386,15 +386,15 @@ Acrescente a verificação de que **o workflow invoca `make self-governance`**. 
 é sua, desde que o gate **reprove** quando o step sumir.
 
 **Acceptance criteria:**
-- [ ] Asserção de igualdade nos dois testes; prove que um retorno `.md` **errado** agora reprova
-- [ ] `done/` vazia ⇒ **skip declarado**, não `total=0` silencioso. Prove com diretório vazio
-- [ ] `done/` com conteúdo ⇒ medição **continua acontecendo** (braço b: 194 no upstream)
-- [ ] 🔴 Remover o step do `quality.yml` ⇒ **gate reprova**. Injete, cole a saída, **restaure e prove
+- [x] Asserção de igualdade nos dois testes; prove que um retorno `.md` **errado** agora reprova
+- [x] `done/` vazia ⇒ **skip declarado**, não `total=0` silencioso. Prove com diretório vazio
+- [x] `done/` com conteúdo ⇒ medição **continua acontecendo** (braço b: 194 no upstream)
+- [x] 🔴 Remover o step do `quality.yml` ⇒ **gate reprova**. Injete, cole a saída, **restaure e prove
       que restaurou**
-- [ ] Gate continua RC=0 na árvore correta
-- [ ] Cenário de falsificação com **rótulo literal** para o item 3, colhido pela guarda de conjunto
-- [ ] 🔴 **NÃO rodar `make quality`** — a barreira é do arquiteto
-- [ ] Uma frase por teste/cenário novo (Regra Dura de Reconciliação)
+- [x] Gate continua RC=0 na árvore correta
+- [x] Cenário de falsificação com **rótulo literal** para o item 3, colhido pela guarda de conjunto
+- [x] 🔴 **NÃO rodar `make quality`** — a barreira é do arquiteto
+- [x] Uma frase por teste/cenário novo (Regra Dura de Reconciliação)
 
 ### Fora de escopo — vira issue, com a razão
 **Hefesto Q1:** `TestCorpusMeasurement_ReportOnly` promete *"surface the count in the CI log"*, mas o

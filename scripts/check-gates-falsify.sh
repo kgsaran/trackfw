@@ -7022,6 +7022,74 @@ assert_fails_with "call-site-pin/self-governed-moved" \
 echo "OK   [falsify/call-site-pin]: 3 braços (clean/in-quality/moved) provados"
 
 # ---------------------------------------------------------------------------
+# Cenário 196 — check-parity-call-site-pins.sh: verificação de que o CI
+#               workflow invoca make self-governance (ML-2A, REQ #396).
+#
+# Objetivo: provar que a nova verificação ci-workflow/self-governance-invoked
+# detecta a remoção silenciosa do step `make self-governance` do CI yaml,
+# incluindo o caso onde a linha `run:` é substituída por um comentário.
+# Medido por hades-tf R-C e hefesto-tf Q4 em 2026-09-22: a remoção do step
+# não reprova parity (required check) nem check-parity-call-site-pins.sh antes
+# deste cenário.
+#
+# Reconciliação (Regra Dura):
+#   ci-workflow/self-governance-invoked/clean: o gate PASSA na árvore correta,
+#     onde quality.yml contém `run: make self-governance` em linha não-comentário.
+#   ci-workflow/self-governance-invoked/run-removed: o gate REPROVA quando a
+#     linha `run: make self-governance` é removida, mantendo o `name:` do step —
+#     exatamente o cenário de remoção silenciosa que motivou este check.
+#   ci-workflow/self-governance-invoked/run-commented: o gate REPROVA quando a
+#     linha `run:` é substituída por comentário `# make self-governance` — prova
+#     que o grep filtro de comentário funciona (sem ele, este caso passaria).
+# ---------------------------------------------------------------------------
+T196="$WORK/s196"
+mkdir -p "$T196/scripts" "$T196/.github/workflows"
+cp "$ROOT_DIR/Makefile"      "$T196/"
+cp "$ROOT_DIR/scripts/"*.sh  "$T196/scripts/"
+cp "$ROOT_DIR/.github/workflows/quality.yml" "$T196/.github/workflows/"
+
+# Braço C — árvore correta: gate PASSA (baseline antes das mutações).
+if ! bash "$T196/scripts/check-parity-call-site-pins.sh" "$T196" >/dev/null 2>&1; then
+  echo "FAIL [falsify/setup-s196-baseline]: check-parity-call-site-pins.sh já reprova com fonte real -- prova inválida" >&2
+  falsify_count_failure
+  [[ "$TRACKFW_FALSIFY_ENUMERATE" == "1" ]] || exit 1
+fi
+
+assert_succeeds "ci-workflow/self-governance-invoked/clean" \
+  bash "$T196/scripts/check-parity-call-site-pins.sh" "$T196"
+
+# Braço A — run: line removed, name: line kept: gate REPROVA.
+# Mutação: remove a linha `run: make self-governance` do workflow, mantendo
+# o `name:` acima. É o cenário exato de remoção silenciosa do step.
+T196A="$WORK/s196-arm-a"
+mkdir -p "$T196A/scripts" "$T196A/.github/workflows"
+cp "$T196/Makefile"     "$T196A/"
+cp "$T196/scripts/"*.sh "$T196A/scripts/"
+grep -v '^\s*run: make self-governance' "$T196/.github/workflows/quality.yml" \
+  > "$T196A/.github/workflows/quality.yml"
+
+assert_fails_with "ci-workflow/self-governance-invoked/run-removed" \
+  "ci-workflow/self-governance-invoked" \
+  bash "$T196A/scripts/check-parity-call-site-pins.sh" "$T196A"
+
+# Braço B — run: replaced with comment: gate REPROVA.
+# Mutação: substitui `run: make self-governance` por `# make self-governance`.
+# Prova que o filtro de linha-comentário não pode ser iludido.
+T196B="$WORK/s196-arm-b"
+mkdir -p "$T196B/scripts" "$T196B/.github/workflows"
+cp "$T196/Makefile"     "$T196B/"
+cp "$T196/scripts/"*.sh "$T196B/scripts/"
+sed 's/^\( *\)run: make self-governance$/\1# make self-governance/' \
+  "$T196/.github/workflows/quality.yml" \
+  > "$T196B/.github/workflows/quality.yml"
+
+assert_fails_with "ci-workflow/self-governance-invoked/run-commented" \
+  "ci-workflow/self-governance-invoked" \
+  bash "$T196B/scripts/check-parity-call-site-pins.sh" "$T196B"
+
+echo "OK   [falsify/ci-workflow-self-governance]: 3 braços (clean/run-removed/run-commented) provados"
+
+# ---------------------------------------------------------------------------
 # ML-2B — fechamento do modo de enumeração. Desligado (default): este bloco
 # inteiro é pulado (a condição é falsa) e a saída do processo é a do último
 # comando acima -- 0, exatamente como antes deste ML (byte-idêntico: nenhuma

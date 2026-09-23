@@ -243,6 +243,10 @@ func TestStatusCategory_CompleteVariants(t *testing.T) {
 //
 // AC11: documents the measurement without asserting, surfacing the count in CI logs
 // so divergence from the architect's baseline (32) is visible and can be adjudicated.
+//
+// Reconciliation (ML-2A): afirma que quando done/ existe mas está vazia (total == 0), o
+// teste emite t.Skip declarado em vez de silenciar com "total=0" — guardando contra a
+// classe de defeito "medir sem ter medido" (hades-tf R-A, 2026-09-22).
 func TestCorpusMeasurement_ReportOnly(t *testing.T) {
 	doneDir := filepath.Join(repoRoot(t), "docs", "roadmaps", "done")
 	entries, err := os.ReadDir(doneDir)
@@ -294,6 +298,15 @@ func TestCorpusMeasurement_ReportOnly(t *testing.T) {
 		if HasUnfinishedMLs(string(data)) {
 			byThreeCategory++
 		}
+	}
+
+	// ML-2A (REQ #396): guard de vacuidade. done/ existe mas tem zero arquivos .md (ex.:
+	// sparse-checkout que materializa o dir sem os arquivos, ou done/ contém só .gitkeep).
+	// Silenciar com total=0 é dizer "medi" sem ter medido — mesma classe que esta campanha
+	// corrige. t.Skip em vez de t.Fatal: "never fails" continua válido (hades-tf R-A, 2026-09-22).
+	if total == 0 {
+		t.Skipf("done/ corpus vazio (%s) — diretório existe mas não contém arquivos .md; "+
+			"sparse-checkout ou checkout incompleto? Corpus measurement skipped.", doneDir)
 	}
 
 	t.Logf("done/ corpus: total=%d, unfinished(StatusIsComplete)=%d, unfinished(HasUnfinishedMLs)=%d",

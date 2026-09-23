@@ -283,7 +283,46 @@ for var in "${VARS_TRACE[@]}"; do
   done <<<"$consumers"
 done
 
-echo "check-parity-call-site-pins: ${CHECKED} verificação(ões) -- ${#VARS_PIN_ALL[@]} pin-all(s) + ${#VARS_PIN_ANY[@]} pin-any(s) + ${#VARS_FORBIDDEN_IN_QUALITY[@]} forbidden-in-quality(s) + ${#VARS_TRACE[@]} rastro(s) na lista"
+# --- CI workflow invoca make self-governance --------------------------------
+# Verifica que ao menos um arquivo em .github/workflows/*.yml contém, numa linha
+# não-comentário, 'make self-governance'. Sem esta verificação, o step pode ser
+# removido do workflow em silêncio e a tripwire de disco para de rodar em CI sem
+# que nenhum gate acuse (medido por hades-tf R-C e hefesto-tf Q4, 2026-09-22).
+#
+# Antecedente: só verificamos se .github/workflows/ existe — ausência indica
+# contexto de consumidor (sem CI yaml). Deletar a pasta inteira é uma mudança
+# visível e intencional; o gap que este check fecha é a remoção SILENCIOSA de
+# um único step dentro de um arquivo rastreado.
+#
+# Exclusão de comentários: a linha deve aparecer FORA de blocos comentados (#).
+# Sem isso, deletar o `run:` e deixar o comentário `# make self-governance`
+# iludiria o grep — a mesma armadilha de "comentário distante" do ML-2A do
+# roadmap de prova negativa (Sabotagem 4 em check-parity-call-site-pins.sh).
+CI_WORKFLOW_CHECKED=0
+CI_WORKFLOWS_DIR="$ROOT/.github/workflows"
+if [[ ! -d "$CI_WORKFLOWS_DIR" ]]; then
+  ok "ci-workflow/self-governance-invoked/no-ci-dir"
+  CI_WORKFLOW_CHECKED=1
+else
+  self_gov_invoked=""
+  # Glob em todos os .yml do diretório de workflows, filtrando linhas de comentário.
+  for wf in "$CI_WORKFLOWS_DIR"/*.yml "$CI_WORKFLOWS_DIR"/*.yaml; do
+    [[ -f "$wf" ]] || continue
+    if grep -F 'make self-governance' "$wf" | grep -vqE '^[[:space:]]*#'; then
+      self_gov_invoked="$wf"
+      break
+    fi
+  done
+  CI_WORKFLOW_CHECKED=1
+  if [[ -n "$self_gov_invoked" ]]; then
+    ok "ci-workflow/self-governance-invoked"
+  else
+    fail "ci-workflow/self-governance-invoked" \
+      "nenhum arquivo em $CI_WORKFLOWS_DIR/*.yml invoca 'make self-governance' em linha não-comentário — o step da tripwire de disco foi removido do CI sem detecção (hades-tf R-C, hefesto-tf Q4, 2026-09-22)"
+  fi
+fi
+
+echo "check-parity-call-site-pins: ${CHECKED} verificação(ões) -- ${#VARS_PIN_ALL[@]} pin-all(s) + ${#VARS_PIN_ANY[@]} pin-any(s) + ${#VARS_FORBIDDEN_IN_QUALITY[@]} forbidden-in-quality(s) + ${#VARS_TRACE[@]} rastro(s) + ${CI_WORKFLOW_CHECKED} ci-workflow(s) na lista"
 
 if [[ "$CHECKED" -eq 0 ]]; then
   echo "check-parity-call-site-pins: nenhuma verificação executada -- guarda de vacuidade final" >&2

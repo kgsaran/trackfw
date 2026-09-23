@@ -2245,10 +2245,14 @@ func TestADRAcceptedWhenREQDone_ADREntreBackticksSemFrontmatter_Violates(t *test
 // repositório sem `adr:` no frontmatter (adr: ""), cujo ADR só é referenciado no corpo
 // entre backticks, devem ter o ADR resolvido pelo extrator.
 //
-// Reconciliation (ML-1B): afirma que extractRefPath resolve o ADR citado exclusivamente
-// via backtick no corpo, quando adr: "" no frontmatter, para cada um dos três formatos
-// de REQ reais usados neste repositório. O teste não lê do disco — usa fixtures inline
-// capturadas em 2026-09-22 (correção do sítio 2 do ML-1B, REQ #396).
+// Reconciliation (ML-1B + ML-2A): afirma que extractRefPath resolve o ADR citado
+// exclusivamente via backtick no corpo, para adr: "" no frontmatter, para cada um dos
+// três formatos de REQ reais — e que o resultado é exatamente o caminho esperado
+// (docs/adr/ADR-2026-07-26-principios-de-design-de-gates-verificaveis.md), não apenas
+// um caminho terminado em .md. A asserção de identidade foi acrescentada no ML-2A
+// (Hefesto Q2, 2026-09-22): sem ela, um parser diferentemente-quebrado que retornasse
+// qualquer outro .md passaria em silêncio.
+// O teste não lê do disco — usa fixtures inline capturadas em 2026-09-22 (ML-1B, REQ #396).
 // A fixture preserva o detalhe discriminante: adr: "" com aspas duplas (não bare adr:),
 // pois o caminho pelo extrator difere — see extractRefPath em validator.go.
 func TestExtractRefPath_TresREQsReaisDoRepositorio(t *testing.T) {
@@ -2292,6 +2296,13 @@ func TestExtractRefPath_TresREQsReaisDoRepositorio(t *testing.T) {
 			if !strings.HasSuffix(got, ".md") {
 				t.Errorf("ADR resolvido de %q deveria terminar em .md, obteve %q", fix.name, got)
 			}
+			// ML-2A (REQ #396): asserção de identidade — um parser diferentemente-quebrado
+			// que retornasse qualquer outro caminho .md passaria nas asserções acima em silêncio.
+			// O vizinho (validator_test.go:2222) já usava got != adrRel; este teste estava mais
+			// fraco (Hefesto Q2, 2026-09-22).
+			if got != adrRef {
+				t.Errorf("extractRefPath(%q) = %q, want %q", fix.name, got, adrRef)
+			}
 		})
 	}
 }
@@ -2301,10 +2312,14 @@ func TestExtractRefPath_TresREQsReaisDoRepositorio(t *testing.T) {
 // Skips declarado quando os arquivos não existem (contexto de consumidor); reprova se
 // presentes e a propriedade não se mantiver (regressão no upstream).
 //
-// Reconciliation (ML-1B): afirma que os arquivos de REQ reais neste repositório ainda
-// satisfazem a propriedade de resolução de ADR por backtick após a correção — controle
-// de não-regressão por corpus, distinto do teste de fixture acima.
+// Reconciliation (ML-1B + ML-2A): afirma que os arquivos de REQ reais neste repositório
+// resolvem o ADR para o caminho exato docs/adr/ADR-2026-07-26-principios-de-design-de-
+// gates-verificaveis.md — identidade, não apenas sufixo .md (Hefesto Q2, 2026-09-22).
+// Controle de não-regressão por corpus, distinto do teste de fixture acima.
 func TestExtractRefPath_CorpusBacktickREF(t *testing.T) {
+	// Todos os 3 arquivos de corpus citam o mesmo ADR (verificado em 2026-09-23, ML-2A).
+	const adrRef = "docs/adr/ADR-2026-07-26-principios-de-design-de-gates-verificaveis.md"
+
 	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Skipf("não foi possível resolver raiz do repositório: %v", err)
@@ -2329,6 +2344,10 @@ func TestExtractRefPath_CorpusBacktickREF(t *testing.T) {
 			got := extractRefPath(string(content), "ADR")
 			if got == "" {
 				t.Errorf("CORPUS REGRESSION: extractRefPath não resolveu o ADR de %q — o arquivo real divergiu da fixture", rel)
+			}
+			// ML-2A: asserção de identidade — sufixo .md não é suficiente (Hefesto Q2).
+			if got != "" && got != adrRef {
+				t.Errorf("CORPUS REGRESSION: extractRefPath(%q) = %q, want %q — o caminho resolvido divergiu do esperado", rel, got, adrRef)
 			}
 		})
 	}

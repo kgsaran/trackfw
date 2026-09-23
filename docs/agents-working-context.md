@@ -39066,3 +39066,26 @@ trackfw init && roadmap new "..." && roadmap move <n> wip && trackfw validate
   - Q4: asserção negativa cobre make quality/parity/parity-rest. Step de CI corretamente separado.
   - Q5: residual R-A a R-D declarado. Nada bloqueante.
 - **Nota de método:** toda conclusão verificada por execução antes de escrever — sem PoC vácua.
+
+### 2026-09-23 — artemis-tf — Iniciando Wave 2 / ML-2A (três achados acionáveis da barreira final)
+- **Tarefa:** fechar os três achados acionáveis da barreira final (pareceres hades-tf e hefesto-tf de 2026-09-22): (1) asserção fraca na fixture nos dois testes ExtractRefPath; (2) vacuidade silenciosa quando `done/` existe mas está vazia; (3) step `make self-governance` removível do CI sem detecção.
+- **Arquivos em escopo:** `internal/validator/validator_test.go`, `internal/roadmapdoc/roadmapdoc_test.go`, `scripts/check-parity-call-site-pins.sh`, `scripts/check-gates-falsify.sh`.
+- **Restrições:** NÃO tocar no `Makefile`. NÃO rodar `make quality`.
+
+### 2026-09-23 — artemis-tf — Wave 2 / ML-2A concluído (três achados acionáveis fechados)
+- **Item 1 (asserção fraca):** Adicionei `if got != adrRef` em `TestExtractRefPath_TresREQsReaisDoRepositorio` e `TestExtractRefPath_CorpusBacktickREF` (validator_test.go). Prova: `extractRefPath` retornando `docs/adr/WRONG-path.md` — ambos reprovam; restaurado e RC=0.
+- **Item 2 (vacuidade):** Adicionei guarda `if total == 0 → t.Skip` em `TestCorpusMeasurement_ReportOnly` (roadmapdoc_test.go). Prova: done/ vazia com só .gitkeep → `--- SKIP: TestCorpusMeasurement_ReportOnly`; upstream real (194 arquivos) → `PASS` com `total=194`.
+- **Item 3 (step CI removível):** Adicionei verificação `ci-workflow/self-governance-invoked` em `check-parity-call-site-pins.sh` — busca `make self-governance` em `*.yml` excluindo linhas-comentário. FALSIFY_SUCCESS_FLOOR NÃO alterado (mesma razão do ML-1C: medir o total serial antes de incrementar). Cenário 196 em `check-gates-falsify.sh` com 3 braços: clean/run-removed/run-commented — todos com rótulos literais.
+- **Provas de restauração:** workflow real inspecionado após testes temporários — `grep -n "make self-governance" .github/workflows/quality.yml` mostra linha 835 intacta. validator.go inspecionado — mutação removida.
+- **Gate final:** `bash scripts/check-parity-call-site-pins.sh .` RC=0, 11 verificações (2 pin-all + 1 pin-any + 1 forbidden + 3 rastros + 1 ci-workflow). `go test ./internal/validator/ ./internal/roadmapdoc/` RC=0. `trackfw validate` RC=0.
+- **Handoff:** não commitado, para auditoria do arquiteto.
+
+### 2026-09-23 — Zeus — ML-2A aprovado; REQ do #396 completa em código
+- **Verifiquei o item central repetindo a injeção por conta própria**, em cópia da árvore: removi `run: make self-governance` mantendo o `name:` → gate **RC=1**, com mensagem que nomeia o defeito e credita os dois pareceres. O workflow real ficou intacto (linha 835 conferida).
+- **Barreira: RC=0, 824 `^OK `, 0 `: FALHA`**, 244 OK na falsificação (era 229), guarda de conjunto OK. **`barrier: passed` nas 3 waves.**
+- **Três coisas que o executor fez melhor do que pedi:**
+  1. Guarda em `total == 0`, não `len(entries) == 0` — cobre `done/` com só um `.gitkeep`, que daria `len=1` e `total=0`. Eu não previ esse caso.
+  2. Braço de falsificação que eu não pedi: `run:` trocado por **comentário** — testa o filtro de linhas-comentário do próprio gate. Sem ele, comentar o step enganaria a verificação.
+  3. Manteve `FALSIFY_SUCCESS_FLOOR` intacto pela mesma razão do ML-1C, sem eu repetir a instrução.
+- 🔴 **Convergência que decidiu o escopo:** `hades-tf` (R-C) e `hefesto-tf` (Q4) apontaram o mesmo defeito **independentemente** — o step do CI deletável sem reprovação. Foi o que me fez tratá-lo como ML desta REQ em vez de issue: dois revisores separados chegando ao mesmo ponto sobre a causa que a REQ trata.
+- **Pendente:** issue do Hefesto Q1 (o teste promete aparecer no log de CI, mas o job roda `go test ./...` sem `-v` e o `t.Logf` é descartado — `quality.yml:31`), depois PR.
