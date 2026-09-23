@@ -43,8 +43,33 @@ com ele funcionando. Medir agora é medir com régua quebrada.
 > Dependências: nenhuma. **Bloqueia a implementação.**
 
 ### ML-0A — enumerar os sítios de consumo e classificar
-**Status:** ⬜ Pendente · **Papel:** `hades-tf`
-**Files affected:** nenhum de produto — documento em `docs/seguranca/`
+**Status:** ✅ Concluído (auditado por Zeus em 2026-09-23)
+**Files affected:** `docs/seguranca/2026-09-23-enumeracao-crlf-python3-em-bash.md`
+
+#### Resultado — **(a)=19 · (b)=0 · (c)=11**
+
+🔴 **Minha medição foi refutada, e para pior: eu disse "1 script normaliza"; são ZERO.** O que tomei
+por normalização era `PYTHONIOENCODING=utf-8` (`check-gates-falsify.sh:20`), que controla **codec**,
+não tradução de newline. Confirmei: os `tr -d` daquele arquivo removem **espaço** (saída de `wc -l`),
+não `\r`.
+
+**Dois sítios ATIVOS em CI de Windows:** `run-gates-falsify-shard.sh:85` (o do censo quebrado) e
+`check-gates-falsify.sh:3915,4431`. Os outros 17 são dormentes — **mas nenhum passa no teste de
+POSIX-only genuíno**: `make parity-rest` invoca vários sem guarda de plataforma.
+
+#### 🔴 A distinção que governa o ML-1A — delimitador vs conteúdo
+
+**`tr -d '\r'` está PROIBIDO.** Existe fixture com **CRLF intencional** no repositório —
+`check-roadmap-barrier-contract.sh:1091`, `write_fixture_crlf()`, usada a partir da linha 1110 para
+o #216. Um helper que normalize `\r` no nível de leitura de arquivo **destrói esses fixtures em
+silêncio**.
+
+- **Delimitador** (normalizar): rótulo de manifesto, lista de caminhos — o `\r` é artefato do modo
+  texto, nunca dado.
+- **Conteúdo** (preservar): arquivo cujo CRLF é **o objeto da verificação**.
+
+**Regra:** `sed 's/\r$//'` ou binary mode no Python, atuando **sobre stdout capturado** — nunca
+sobre conteúdo de arquivo.
 
 **O que já está medido — não remeça, use:**
 - Mecanismo provado localmente (sem VM): manifesto **CRLF** + `grep -qxF` → não casa; `grep -qF`
@@ -75,11 +100,11 @@ com ele funcionando. Medir agora é medir com régua quebrada.
 5. **Residual declarado.**
 
 **Acceptance criteria:**
-- [ ] Tabela completa, veredito por sítio, com `arquivo:linha` e o comando que produziu a lista
-- [ ] 🔴 Critério (a)/(c) **aplicável por terceiro**, não "julgamento do revisor"
-- [ ] 🔴 A distinção **delimitador vs conteúdo** está escrita, com um exemplo de cada
-- [ ] As quatro seções com evidência
-- [ ] Nenhuma linha de implementação neste ML
+- [x] Tabela completa, veredito por sítio, com `arquivo:linha` e o comando que produziu a lista
+- [x] 🔴 Critério (a)/(c) **aplicável por terceiro**, não "julgamento do revisor"
+- [x] 🔴 A distinção **delimitador vs conteúdo** está escrita, com um exemplo de cada
+- [x] As quatro seções com evidência
+- [x] Nenhuma linha de implementação neste ML
 
 **Gate:** `trackfw barrier <roadmap> --wave 0`, auditado por mim.
 

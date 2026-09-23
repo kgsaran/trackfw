@@ -39108,3 +39108,46 @@ trackfw init && roadmap new "..." && roadmap move <n> wip && trackfw validate
 - **É a mesma causa do #353**, cuja medição do reportante é `671 caminhos, 671 com \r, [[ -f ]] → 0`. Duas ocorrências independentes do mesmo mecanismo.
 - **REQ e roadmap criados** com a causa como eixo. **Escopo negativo explícito:** esta REQ conserta o **instrumento**; a recontagem do cluster vem depois. Misturar é medir com régua quebrada. #363, #307, #364, #308 são **candidatos**, entram se a Wave 0 medir mesma causa.
 - 🔴 **Erro meu, reincidente:** capturei nome de arquivo com `ls | grep | head -1` e embuti um **ícone de Nerd Font** (``) no caminho gravado na REQ. O `grep` exibe o ícone como se fosse espaço, então a inspeção visual não denuncia — só `hex(ord(c))`. Meu `replace` falhou com `AssertionError`, e foi o assert que me impediu de achar que tinha corrigido. Memória reforçada: **`find`/glob para nome de arquivo, nunca `ls`**.
+
+### 2026-09-23 — Hades — ML-0A: enumeração CRLF python3 — ENTREGUE
+
+**Início:** 2026-09-23 | Branch: `fix/bash-consome-stdout-de-python3-sem-normalizar-crlf`
+**Tarefa:** Wave 0, ML-0A do roadmap CRLF — enumerar sítios de consumo de stdout de python3 por bash, classificar (a)/(b)/(c), produzir modelo de ameaça com falsificação nas duas direções.
+
+**Resultado:**
+- Varridos: 57 scripts/*.sh, 5 workflows, Makefile. Confirmado: **32 arquivos no grep** (2 falsos positivos por comentário → 30 reais).
+- **Medição inicial do arquiteto REFUTADA em um ponto:** "1 script normaliza \r" → **0 normalizam**. `PYTHONIOENCODING=utf-8` controla codec, não tradução de newline; confirmado via `os.linesep`.
+- **Contagem real:** 16 scripts em categoria (a) — defeito. 0 em (b). 14 em (c).
+- **ÚNICO sítio ativo em CI Windows:** `run-gates-falsify-shard.sh:85` (windows-census.yml, `runs-on: windows-latest`).
+- **15 sítios dormentes em CI** (ubuntu-latest), mas ativos para devs Windows via `make parity-rest`/`make quality` — sem guarda de plataforma no Makefile.
+- **Distinção delimitador/conteúdo escrita:** `tr -d '\r'` destrutivo; `sed 's/\r$//'` ou binary mode no Python são corretos. Exemplo concreto: `write_fixture_crlf` em check-roadmap-barrier-contract.sh criaria CRLF como dado — normalização cega destruiria o teste.
+- **Residual declarado:** check-gates-falsify.sh inline (linhas 3915, 4431), fontes não-Python (nenhuma identificada), PYTHONUTF8 em VM Windows (residual aceito), trackfw-attention-signal.sh (fora de make quality).
+
+**Arquivo entregue:** `docs/seguranca/2026-09-23-enumeracao-crlf-python3-em-bash.md`
+**Handoff para:** `trackfw_architect` — não commitado, não modifiquei código de produto.
+
+---
+
+### 2026-09-23 — Hades — ML-0A: enumeração CRLF python3 — COMPLETO (revisado)
+
+**Fim:** 2026-09-23 | Branch: `fix/bash-consome-stdout-de-python3-sem-normalizar-crlf`
+
+Documento revisado após chamada de advisor que bloqueou a primeira versão em 4 pontos:
+
+1. **Bloqueio 1 corrigido:** Ocorrência 1 da REQ (`check-no-literal-nul-in-source.sh`) estava classificada como (c) — a forma `done < <(_text_files_from_repo)` é condição 1 atendida. Reincorporada como (a) e promovida a sítio principal do script.
+2. **Bloqueio 2 corrigido:** Seção 2.5 adicionada com veredito por sítio para workflows (5 arquivos) e Makefile (6 linhas).
+3. **Bloqueio 3 corrigido:** Exemplo de conteúdo (`write_fixture_crlf` em check-roadmap-barrier-contract.sh:1091) adicionado na Seção 4 — fora da população de stdout capturado, mas dentro do blast radius de um helper mal-escopo. Motiva a regra `sed 's/\r$//'` vs `tr -d '\r'` com evidência concreta.
+4. **Correção P2:** polarity "não, sim, sim" → "não, não, sim" na Seção 3.
+5. **check-gates-falsify.sh atividade confirmada por medição:** geração de chunks confirmou PROSE_PAYLOAD em chunk_0.sh e T65_BIG_PAYLOAD em chunk_3.sh — ambos rodam em windows-latest.
+
+**Contagem final corrigida:** 19 (a) + 11 (c) = 30. Dos 19 (a): 2 ativos em CI Windows, 17 dormentes.
+
+**Arquivo:** `docs/seguranca/2026-09-23-enumeracao-crlf-python3-em-bash.md`
+**Não commitado. Handoff para `trackfw_architect`.**
+
+### 2026-09-23 — Zeus — Wave 0 do CRLF auditada; coordenação com o agente do consumidor
+- **Barrier wave 0: `passed`.** Resultado: **(a)=19 · (b)=0 · (c)=11**, 2 sítios ativos em CI de Windows.
+- 🔴 **Minha medição refutada, e para pior: eu disse "1 normaliza"; são ZERO.** O que tomei por normalização era `PYTHONIOENCODING=utf-8` — controla **codec**, não newline. Confirmei que os `tr -d` daquele arquivo removem **espaço** (saída de `wc -l`), não `\r`.
+- 🔴 **Achado que governa o ML-1A: `tr -d '\r'` está proibido.** Existe fixture com CRLF **intencional** (`check-roadmap-barrier-contract.sh:1091`, `write_fixture_crlf()`, para o #216) que seria destruído em silêncio. Regra: `sed 's/\r$//'` sobre **stdout capturado**, nunca sobre conteúdo de arquivo. É a direção (b) da falsificação, que costuma ser esquecida.
+- **Coordenação:** há outro agente (do consumidor) abrindo PRs neste repo. **#411** corrige um defeito **nosso** — o step de `self-governance` roda no fork porque `quality.yml` é o mesmo arquivo; corrigimos o `make quality` local e esquecemos o CI do consumidor. Testei em worktree separado: o PR dele **não quebra** nosso gate `ci-workflow/self-governance-invoked` (RC=0). **#412** ataca o #398.
+- **Declarei escopo no #353** para evitar duplicação: publiquei a medição da Wave 0 e disse que **#363, #307, #364, #308 estão livres**, pedindo só que não toquem nos 19 sítios de consumo de stdout. Oferta não é PR — quem vai implementar diz no ticket.
