@@ -198,6 +198,50 @@ Gate que **reprova** quando um consumo novo de saída de `python3` nascer sem pa
 
 ---
 
+### ML-1B-bis — a menção morta a `python3` aciona o gate de encoding
+**Status:** ⬜ Pendente · **Papel:** `artemis-tf`
+**Files affected:** `scripts/check-crlf-normalize-capture.sh` e
+`scripts/check-output-encoding-declared.sh` (só o comentário obsoleto). **Nada mais.**
+
+🔴 **Reprovação da minha barreira:** RC=2, **544** `^OK ` contra 824.
+```
+check-output-encoding-declared: FAIL
+  - scripts/check-crlf-normalize-capture.sh: invoca python3 (linha 100)
+    e NAO declara `export PYTHONIOENCODING=utf-8`.
+```
+
+**Não é invocação — é menção.** O gate novo tem a string `python3` **18 vezes**, toda em regex e
+comentário. Ele é bash puro, como o handoff exigiu.
+
+**E não é bug do gate de encoding: é trade-off documentado nele**, linhas 207-212:
+> *"Trade-off assumido, na direção segura: uma menção MORTA a `python3` … passa a colocar o arquivo
+> na população e a exigir dele a declaração. Isso é falso positivo, ruidoso e **FECHADO** — reprova
+> pedindo uma linha inofensiva —, ao contrário do falso negativo que substitui. **Hoje não ocorre**:
+> as duas populações coincidem (38 = 38, delta vazio nas duas direções)."*
+
+Preferiram falso positivo **ruidoso e fechado** a falso negativo **silencioso e aberto**. É a escolha
+certa, e o remédio prescrito é a linha inofensiva.
+
+🔴 **Mas a frase "hoje não ocorre" acabou de ficar FALSA** — nosso gate é a primeira ocorrência.
+Deixá-la é a Regra Dura de Reconciliação violada: artefato afirmando o que não sustenta mais.
+
+**Ações:**
+1. Adicionar `export PYTHONIOENCODING=utf-8` em `check-crlf-normalize-capture.sh`, com comentário
+   de **uma linha** dizendo que é menção morta, não invocação, e que a linha atende ao trade-off
+   documentado do gate de encoding.
+2. Atualizar o comentário de `check-output-encoding-declared.sh` (linhas ~207-212): trocar *"hoje
+   não ocorre"* pelo fato — **ocorre desde 2026-09-23**, no `check-crlf-normalize-capture.sh`, e o
+   caso se resolveu como o trade-off previu.
+   ⚠️ **Não** mexa no discriminante nem na `ALLOWLIST` — a allowlist existe para exceção de
+   **processo** (o #238 aberto), não para menção morta.
+
+**Acceptance criteria:**
+- [ ] `bash scripts/check-output-encoding-declared.sh` RC=0
+- [ ] `bash scripts/check-crlf-normalize-capture.sh` RC=0 e continua **bash puro** (nenhuma
+      invocação real de `python3` adicionada)
+- [ ] O comentário do gate de encoding não afirma mais *"hoje não ocorre"*
+- [ ] 🔴 **NÃO rodar `make quality`** — a barreira é do arquiteto
+
 ## Wave 2 — A prova no Windows
 > Dependências: Wave 1 completa. **É a wave que fecha a REQ.**
 

@@ -39231,3 +39231,11 @@ Documento revisado após chamada de advisor que bloqueou a primeira versão em 4
 - **O quarto (`check-gates-falsify.sh`) usa `ROOT_DIR`** mas não reaponta para si; o argumento dele era por leitura, e a barreira confirmou por execução — 71 cenários, 244 rótulos, zero falha.
 - **A correção é de 2 linhas:** `SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)` e o source por ele. Dependência **interna do script** não deve ser resolvida por variável que o projeto reaponta.
 - **Pendência operacional:** o rebase reescreveu a história local, o remoto recusa fast-forward, e `trackfw push --force-with-lease` **só opera com PR aberto** (por desenho). Trabalho commitado localmente; nada perdido.
+
+### 2026-09-23 — Zeus — ML-1B auditado; o gate achou um sítio que a enumeração perdeu
+- 🔴 **O gate provou seu valor antes de entrar:** encontrou `check-thirdparty-parity.sh:194` — captura de `python3` sem `strip_cr` que a Wave 0 enumerou como 19 e eram **20**. Corrigido no mesmo ML (Regra Dura de Causa Raiz), não empurrado para issue.
+- **Discriminante estrutural, como exigi** — o gate verifica se `strip_cr` aparece no bloco da captura, e computa as isenções do **texto fonte** (condição 1: não é invocação de intérprete; condição 2: bloco não emite `\n`). Nada de marcador de autoria. São 6 isenções, todas derivadas, nenhuma declarada.
+- **Verifiquei por injeção minha:** inseri `ZEUS_INJECT=$(python3 -c 'print("x")')` em `check-barrier.sh` → gate **RC=1**, nomeando arquivo, linha e a captura. Arquivo restaurado e conferido.
+- **Guarda de vacuidade:** 66 candidatos ≥ piso 50, com a contagem visível na saída.
+- **Modo `100755` e conteúdo real estageado** (`3ac5ffa4`, não o SHA de arquivo vazio do `git add -N`) — a armadilha do `Error 126` que diagnostiquei no #413 do outro agente não se repetiu aqui.
+- **`FALSIFY_SUCCESS_FLOOR` 205 → 208:** desta vez o incremento é **derivável** (3 braços novos = 3 sucessos), diferente dos MLs anteriores onde recusar era o certo por não haver medição. A barreira confirma ou refuta.
