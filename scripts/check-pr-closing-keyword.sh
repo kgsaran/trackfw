@@ -90,6 +90,9 @@ export PYTHONIOENCODING=utf-8
 export LC_ALL="${LC_ALL:-C.UTF-8}" 2>/dev/null || true
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+
+# shellcheck source=scripts/lib-crlf-normalize.sh
+. "$ROOT_DIR/scripts/lib-crlf-normalize.sh"
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/trackfw-prclose.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 
@@ -341,7 +344,9 @@ elif [[ -n ${GITHUB_EVENT_PATH:-} ]]; then
   #
   # Ordem: corpo vivo pela API -> payload. Nunca o contrario, e nunca so a API: sem
   # `gh` autenticado (fork sem segredo, execucao local) o payload ainda mede algo.
-  EVENT_PR_NUMBER=$(python3 - "$GITHUB_EVENT_PATH" <<'PY' || true
+  # strip_cr: no Windows o python3 traduz \n em \r\n no stdout, e um numero com \r
+  # invisivel nao casa em [[ -n ]] nem serve de argumento para o gh (REQ do CRLF, #353).
+  EVENT_PR_NUMBER=$(python3 - "$GITHUB_EVENT_PATH" <<'PY' | strip_cr || true
 import json, sys
 try:
     with open(sys.argv[1], encoding="utf-8") as fh:
