@@ -199,7 +199,7 @@ Gate que **reprova** quando um consumo novo de saída de `python3` nascer sem pa
 ---
 
 ### ML-1B-bis — a menção morta a `python3` aciona o gate de encoding
-**Status:** ⬜ Pendente · **Papel:** `artemis-tf`
+**Status:** ✅ Concluído · **Papel:** `artemis-tf`
 **Files affected:** `scripts/check-crlf-normalize-capture.sh` e
 `scripts/check-output-encoding-declared.sh` (só o comentário obsoleto). **Nada mais.**
 

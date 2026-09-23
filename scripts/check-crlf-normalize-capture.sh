@@ -47,6 +47,12 @@
 
 set -uo pipefail
 
+# Dead mention, not an invocation: `python3` appears below only in ERE patterns
+# and comments. This export satisfies check-output-encoding-declared.sh whose
+# discriminant is intentionally file-level and conservative (trade-off
+# documented there, lines ~207-212).
+export PYTHONIOENCODING=utf-8
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 

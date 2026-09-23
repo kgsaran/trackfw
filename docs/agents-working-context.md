@@ -2,6 +2,20 @@
 
 ---
 
+## 2026-09-23 — Ártemis (fix/bash-consome-stdout-de-python3-sem-normalizar-crlf — ML-1B-bis) — ENTREGUE (AGUARDANDO AUDITORIA)
+
+**Início:** 2026-09-23 | Branch: `fix/bash-consome-stdout-de-python3-sem-normalizar-crlf`
+**Tarefa:** ML-1B-bis — a menção morta a `python3` aciona o gate de encoding.
+**Resultado:**
+- `scripts/check-crlf-normalize-capture.sh`: adicionado `export PYTHONIOENCODING=utf-8` com comentário explicando que é menção morta, não invocação.
+- `scripts/check-output-encoding-declared.sh`: comentário "Hoje nao ocorre" atualizado — registra que ocorre desde 2026-09-23 e que o caso se resolveu como o trade-off previu.
+- `bash scripts/check-output-encoding-declared.sh` → RC=0
+- `bash scripts/check-crlf-normalize-capture.sh` → RC=0; nenhuma invocação real de `python3` adicionada (apenas comentários e ERE patterns)
+- Discriminante do gate de encoding: inalterado. ALLOWLIST: não usada.
+**Arquivos modificados:** `scripts/check-crlf-normalize-capture.sh`, `scripts/check-output-encoding-declared.sh`, roadmap (ML-1B-bis ✅), working-context.
+
+---
+
 ## 2026-09-23 — Ártemis (fix/bash-consome-stdout-de-python3-sem-normalizar-crlf — ML-1B) — ENTREGUE (AGUARDANDO AUDITORIA)
 
 **Início:** 2026-09-23 | Branch: `fix/bash-consome-stdout-de-python3-sem-normalizar-crlf`
@@ -39239,3 +39253,9 @@ Documento revisado após chamada de advisor que bloqueou a primeira versão em 4
 - **Guarda de vacuidade:** 66 candidatos ≥ piso 50, com a contagem visível na saída.
 - **Modo `100755` e conteúdo real estageado** (`3ac5ffa4`, não o SHA de arquivo vazio do `git add -N`) — a armadilha do `Error 126` que diagnostiquei no #413 do outro agente não se repetiu aqui.
 - **`FALSIFY_SUCCESS_FLOOR` 205 → 208:** desta vez o incremento é **derivável** (3 braços novos = 3 sucessos), diferente dos MLs anteriores onde recusar era o certo por não haver medição. A barreira confirma ou refuta.
+
+### 2026-09-23 — Zeus — ML-1B-bis aprovado; Wave 1 completa
+- **Barreira verde: RC=0, 899 `^OK `, 0 `: FALHA`**, falsificação **250** OK (era 244), guarda de conjunto sem rótulo ausente — o que confirma o `FALSIFY_SUCCESS_FLOOR=208`.
+- **A correção que mais valeu foi a do comentário**, não a da linha: o gate de encoding afirmava *"hoje não ocorre: as duas populações coincidem (38 = 38)"* e passou a registrar **a ocorrência que validou o trade-off** — gate reprovou, pediu a linha inofensiva, a linha foi adicionada. Vale mais que a afirmação original.
+- 🔴 **Instrumento meu impreciso, de novo:** meu grep de "invocação real de python3" acusou **4** ocorrências; as quatro eram **comentários** — `grep -v "^\s*#"` não pega indentação nesse contexto. Verifiquei antes de reportar, em vez de acusar o executor de violar o "bash puro" pela segunda vez.
+- **Próximo: Wave 2** — disparar o `windows-census.yml` **na branch** (`--ref`) e verificar se volta a **8/8 shards** com apuração, contra o run `35856380122` (2/8, 146 rótulos ausentes) como referência pré-correção.
