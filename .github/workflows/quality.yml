@@ -831,7 +831,14 @@ jobs:
       # Tripwire de disco do upstream: exige que todos os 144 basenames do corpus
       # congelado existam em docs/roadmaps/. Separado de parity-rest para que o
       # consumidor possa rodar `make quality` sem possuir a governança do mantenedor.
+      # A tripwire exige os 144 basenames do corpus congelado NO DISCO, e esses
+      # roadmaps sao a governanca DESTE repositorio. Num consumidor (fork que usa o
+      # trackfw para se governar) eles nao existem, e o passo reprova por ausencia de
+      # artefato do mantenedor -- o mesmo mecanismo da issue #277, agora no workflow
+      # em vez do Makefile. A condicao abaixo mantem a tripwire cobrindo o repo onde
+      # ela significa algo, sem cobrar do consumidor um acervo que nao e dele.
       - name: ML-1B-bis — self-governance (tripwire do upstream)
+        if: github.repository == 'kgsaran/trackfw'
         run: make self-governance
 
   # ML-2G -- job de AGREGAÇÃO. Mantém o id `parity` DELIBERADAMENTE — nunca
