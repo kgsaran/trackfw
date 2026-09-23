@@ -76,6 +76,11 @@ parity-rest: build
 	# `self-governance` — invocado pelo CI do upstream, não pela suíte geral. O consumidor
 	# continua rodando as Partes B e C (corpus congelado, hashes) sem a tripwire.
 	GO_BIN=$(BUILD_DIR)/$(BINARY) HASH_CMD_BIN="$(HASH_CMD)" scripts/check-roadmap-barrier-contract.sh
+	# Usage e erro de USO; violacao e erro de RUNTIME. O gate exercita as DUAS
+	# direcoes e traz self-test: um gate que so afirmasse a supressao passaria
+	# num binario que nunca imprime usage, inclusive quando o usuario erra a linha.
+	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-usage-silencing.sh
+	scripts/check-usage-silencing.sh --self-test
 	scripts/check-ref-separator-portability.sh
 	scripts/check-output-encoding-declared.sh
 	scripts/check-parity-call-site-pins.sh
