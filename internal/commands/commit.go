@@ -30,7 +30,8 @@ type commitDeps struct {
 	// loadConfig returns the project configuration (production: config.Load).
 	loadConfig func() config.ProjectConfig
 	// currentBranch returns the current branch name (production: defaultCurrentBranch, which
-	// runs `git rev-parse --abbrev-ref HEAD`).
+	// runs `git rev-parse --abbrev-ref HEAD`, with `symbolic-ref` as fallback for an
+	// unborn branch).
 	currentBranch func() (string, error)
 	// resolveWIPDirs / resolveDoneDirs resolve state directories from cfg (production:
 	// validator.ResolveWIPDirs / validator.ResolveDoneDirs).
@@ -129,10 +130,37 @@ Create the governance artifacts first if this blocks you:
 	return cmd
 }
 
-// defaultCurrentBranch runs `git rev-parse --abbrev-ref HEAD` and returns the trimmed branch
-// name. Reuses defaultGitExec (ship.go) instead of duplicating exec.Command wiring.
+// defaultCurrentBranch returns the trimmed current branch name. Reuses defaultGitExec
+// (ship.go) instead of duplicating exec.Command wiring.
+//
+// Two commands, in this order, because neither one alone covers both states:
+//
+//	repository state   rev-parse --abbrev-ref HEAD   symbolic-ref --short HEAD
+//	-----------------  ----------------------------  -------------------------
+//	normal (has HEAD)  branch name                   branch name
+//	unborn (no commit) fatal: ambiguous argument     branch name
+//	detached HEAD      "HEAD"                        fatal: ref HEAD is not a symbolic ref
+//
+// rev-parse stays FIRST so detached HEAD keeps returning the literal "HEAD" it has
+// always returned; callers branch on the name, and switching the primary command
+// would change that answer. symbolic-ref is the fallback, and it is what makes the
+// root commit possible: in a repository with no commits, `trackfw commit` used to
+// refuse with "could not determine current branch (are you in a git repo?)" — and a
+// project that adopts the harness has no other governed path to its first commit.
 func defaultCurrentBranch() (string, error) {
-	return defaultGitExec("rev-parse", "--abbrev-ref", "HEAD")
+	branch, err := defaultGitExec("rev-parse", "--abbrev-ref", "HEAD")
+	if err == nil {
+		return branch, nil
+	}
+	// Unborn branch: HEAD points at a ref that does not exist yet. symbolic-ref reads
+	// the ref itself instead of resolving it to a commit, so it answers here.
+	if fallback, fallbackErr := defaultGitExec("symbolic-ref", "--short", "HEAD"); fallbackErr == nil {
+		return fallback, nil
+	}
+	// Neither worked: return the ORIGINAL error, not the fallback's. The first one
+	// names the real condition (not a repository, git missing); the fallback failing
+	// on top of it would only say "not a symbolic ref", which misleads.
+	return "", err
 }
 
 // defaultGitCommit runs `git commit -m <message>` with inherited stdio, so Git's own output
