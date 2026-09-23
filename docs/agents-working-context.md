@@ -39353,3 +39353,7 @@ Documento revisado após chamada de advisor que bloqueou a primeira versão em 4
 - Os 6 ACs da REQ marcados com a evidência que os fecha. AC do censo **reescrito pela medição**:
   146 → 19 rótulos ausentes; os 19 ficam enumerados como entrada do próximo trabalho.
 - PR #414 fora do draft. Fechamento (roadmap → `done/`, REQ → `Done`) é **pós-merge**.
+- **PR #414 mergeado** (commit `1f80abb3`). Roadmap → `done/`, REQ → `Done`, nota de vault escrita
+  (`bash-consome-stdout-de-python3-e-recebe-cr-invisivel-no-windows-2026-09-23.md`).
+- Próximo trabalho já medido e **enumerado**, não estimado: os **19 rótulos remanescentes** do censo
+  de Windows (9 em `git-branch-guard/*`; 12 dos 19 são controles de segurança).

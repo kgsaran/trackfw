@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-23
 req: "docs/req/REQ-2026-09-23-bash-consome-stdout-de-python3-sem-normalizar-crlf-e-o-gate-examina-zero-no-windows.md"
 squad: "hades-tf, apolo-tf, artemis-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf, artemis-tf"
 
 # Roadmap: bash consome stdout de `python3` sem normalizar CRLF
 
-> Created: 2026-09-23 | Status: wip
+> Created: 2026-09-23 | Status: done
 
 ## Context
 
