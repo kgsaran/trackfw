@@ -45,7 +45,8 @@ com ele funcionando. Medir agora é medir com régua quebrada.
       (9 de `git-branch-guard/*`), como entrada medida do próximo trabalho — fora desta REQ,
       por escopo negativo declarado desde o início.
 - [x] Falsificação exercitada **no Windows** — os 3 braços `crlf-normalize/*` colhidos, e o censo rodado na branch (`35872779844`)
-- [ ] `make quality` e **CI** verdes
+- [x] `make quality` e **CI** verdes — local RC=0 (903 `^OK `, 0 `: FALHA`, falsificação 252 OK);
+      **CI: 21 checks verdes** no PR #414, incluindo os 6 jobs de Windows
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
