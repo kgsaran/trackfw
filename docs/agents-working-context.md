@@ -39089,3 +39089,12 @@ trackfw init && roadmap new "..." && roadmap move <n> wip && trackfw validate
   3. Manteve `FALSIFY_SUCCESS_FLOOR` intacto pela mesma razão do ML-1C, sem eu repetir a instrução.
 - 🔴 **Convergência que decidiu o escopo:** `hades-tf` (R-C) e `hefesto-tf` (Q4) apontaram o mesmo defeito **independentemente** — o step do CI deletável sem reprovação. Foi o que me fez tratá-lo como ML desta REQ em vez de issue: dois revisores separados chegando ao mesmo ponto sobre a causa que a REQ trata.
 - **Pendente:** issue do Hefesto Q1 (o teste promete aparecer no log de CI, mas o job roda `go test ./...` sem `-v` e o `t.Logf` é descartado — `quality.yml:31`), depois PR.
+
+### 2026-09-23 — Zeus — REQ do #396 FECHADA (PR #409 mergeado)
+- **Merge:** `3fea9d12`, 2026-09-23T11:28Z. **#396 e #277 fecharam automaticamente** — o `Closes` em inglês funcionou.
+- **Fechamento no padrão:** roadmap `wip/` → `done/`, REQ `Open` → `Done` nos dois sítios, ponteiros sincronizados pelo `syncREQReferences`. `trackfw validate` RC=0.
+- 🔴 **Errei a palavra-chave de fechamento — em português — e a regra está na minha própria memória.** O gate pegou, corretamente. O que veio depois foi mais instrutivo: corrigi para `Closes` e o check **continuou vermelho**, acusando um texto que já não existia no PR.
+- **Causa, medida:** o gate lê o corpo do `GITHUB_EVENT_PATH`, e **o payload do evento é imutável**. `gh run rerun` reexecuta com o corpo de quando o PR foi aberto. Resolvi fechando e reabrindo o PR, que emite evento novo. É o issue **#258**, com um detalhe que o relato original não tinha.
+- **Comentei no #258** com a medição e a sugestão: o script **já implementa** o caminho `gh pr view` (`--pr <n>` / `PR_NUMBER`); é questão de precedência de fontes. A API devolve o corpo atual e elimina a classe inteira, em vez de só acrescentar `edited` aos tipos de evento.
+- **Entregue pela REQ:** 3 sítios desacoplados da governança do mantenedor; gate `ci-workflow/self-governance-invoked` impedindo que o step do CI suma em silêncio; guarda de vacuidade no corpus; asserção de igualdade onde havia só sufixo `.md`. Falsificação foi de **216 → 244** rótulos.
+- **Registrado fora de escopo:** **#408** (o teste promete aparecer no log de CI, mas o job roda sem `-v`).
