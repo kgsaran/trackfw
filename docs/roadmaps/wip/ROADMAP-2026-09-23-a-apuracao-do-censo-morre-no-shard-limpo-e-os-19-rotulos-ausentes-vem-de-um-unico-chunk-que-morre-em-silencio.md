@@ -8,7 +8,7 @@ squad: [hades-tf, ares-tf, artemis-tf]
 # Roadmap: a apuração do censo morre no shard limpo, e os 19 ausentes vêm de um chunk só
 
 > Criado em: 2026-09-23 | Status: wip
-> REQ: `REQ-2026-09-23-a-apuracao-do-censo-morre-no-shard-limpo-...`
+REQ: `docs/req/REQ-2026-09-23-a-apuracao-do-censo-morre-no-shard-limpo-e-os-19-rotulos-ausentes-vem-de-um-unico-chunk-que-morre-em-silencio.md`
 
 ## Diagnóstico
 
