@@ -28,8 +28,18 @@ com ele funcionando. Medir agora é medir com régua quebrada.
 ## Acceptance Criteria
 
 - [x] Enumeração real dos sítios, classificada (a)/(b)/(c) — **(a)=19 · (b)=0 · (c)=11**, e o gate do ML-1B achou o 20º que a enumeração perdeu
-- [x] Todo (a) corrigido por **ponto único** (`scripts/lib-crlf-normalize.sh`), não por `tr -d '\r'` espalhado
-- [x] Gate falsificável que reprova consumo novo sem normalização — `check-crlf-normalize-capture.sh`, discriminante **estrutural**, verificado por injeção do arquiteto
+- [ ] 🔴 **DESMARCADO em 2026-09-23 pela revisão do `hefesto-tf`.** Restam sítios (a) **não corrigidos**,
+      invisíveis ao gate porque capturam via **função intermediária**: `check_field_json`
+      (`check-barrier.sh:142`, 7 call sites), `normalize_barrier_json` (`:614`), `target_ids_json`
+      (`check-update-parity.sh:91`), `doc_check_json` (`check-roadmap-barrier-contract.sh:113`, 4 call
+      sites). Confirmei: a função chama `python3 -c` e **não** tem `strip_cr`; o gate **não** marca a
+      linha 142 como candidato. Vai para o ML-1C.
+- [ ] 🔴 **DESMARCADO por mim em 2026-09-23, após a revisão do `hades-tf`.** Eu havia marcado com base
+      na minha injeção — que usou a forma literal `$(python3 ...)`. Ele testou as **variantes** e o gate
+      é cego para três: `$("$PY_BIN" ...)`, `sys.stdout.write('...\n')` e `< <(python3 ...)`.
+      Confirmei o primeiro: **0 candidatos**. E `$PY_BIN` **já é usado no repo**
+      (`check-gates-falsify.sh:3917,4433`), logo é a forma mais provável de ser copiada.
+      O AC diz "reprova consumo novo"; hoje reprova **uma** das formas de consumo. Vai para o ML-1C.
 - [x] 🔴 **AC REESCRITO pela medição.** O original dizia "`windows-census.yml` volta a dar 8/8 shards";
       ele **presumia que o CRLF era a única causa**, e a medição refutou: era **87%** dela.
       Entregue: rótulos ausentes **146 → 19**, e o instrumento passa a reportar cenário que
@@ -246,6 +256,63 @@ Deixá-la é a Regra Dura de Reconciliação violada: artefato afirmando o que n
       invocação real de `python3` adicionada)
 - [x] O comentário do gate de encoding não afirma mais *"hoje não ocorre"*
 - [x] 🔴 **NÃO rodar `make quality`** — a barreira é do arquiteto
+
+### ML-1C — o gate é estreito demais, e há sítios (a) que ele não vê
+**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Files affected:** `scripts/check-barrier.sh`, `scripts/check-update-parity.sh`,
+`scripts/check-roadmap-barrier-contract.sh`, `scripts/check-crlf-normalize-capture.sh`,
+`scripts/check-gates-falsify.sh` (cenário).
+
+🔴 **Bloqueio da barreira final. Os DOIS revisores convergiram** — por caminhos diferentes — em que
+o gate cobre **uma** forma de consumo e o AC prometia todas.
+
+#### (A) Sítios não corrigidos, via função intermediária — achado do `hefesto-tf`
+
+| função | arquivo:linha | call sites |
+|---|---|---|
+| `check_field_json` | `check-barrier.sh:142` | **7** |
+| `normalize_barrier_json` | `check-barrier.sh:614` | — |
+| `target_ids_json` | `check-update-parity.sh:91` | — |
+| `doc_check_json` | `check-roadmap-barrier-contract.sh:113` | **4** |
+
+**Confirmei:** `check_field_json` chama `python3 -c` e termina **sem** `strip_cr`; é capturada em
+`$(check_field_json ...)`; e a comparação seguinte é `[[ "$WH_STATUS" == '"passed"' ]]`, que **quebra**
+com `"passed"\r`. **O gate não marca a linha 142 como candidato.**
+
+🔴 **São pré-existentes na `main`** — mas mesma causa, mesmo mecanismo, mesmos arquivos. Regra Dura:
+**ML nesta REQ, PR aberto até entrarem.** Não vira REQ nova.
+
+#### (B) Formas que o gate não enxerga — achado do `hades-tf`, confirmado por mim
+
+| forma | detecta? |
+|---|---|
+| `$(python3 -c ...)` | sim — foi a minha injeção, e por isso eu marquei o AC |
+| `$("$PY_BIN" -c ...)` | **não** — e **já é usada** em `check-gates-falsify.sh:3917,4433` |
+| `sys.stdout.write('...\n')` | **não** — isento por "não emite `\n`" |
+| `< <(python3 ...)` | **não** — só olha `$(...)` |
+| `$(funcao_que_chama_python3 ...)` | **não** — o (A) acima |
+
+🔴 **Erro meu, registrado:** marquei o AC do gate como atendido depois de injetar **a forma que o
+gate foi feito para pegar**. É o mesmo erro que venho apontando nos executores a semana toda —
+testar o gate contra o defeito conhecido, não contra o que vai aparecer.
+
+⚠️ **A guarda de vacuidade (66 ≥ 50) NÃO protege disso** — ela conta os candidatos que o
+discriminante **já enxerga**. Corpus estreito com piso alto dá aparência de cobertura.
+
+**Ações:**
+1. Normalizar **dentro** das 4 funções (cobre todos os call sites de uma vez — sugestão do
+   `hefesto-tf`, e é o ponto único correto).
+2. Estender o discriminante do gate para as formas de (B). Para cada uma que **não** for coberta,
+   **declare por quê** — "não coberto" é resultado aceitável; "não medido" não é.
+3. Reavaliar o piso: com o discriminante mais largo, o número de candidatos muda.
+
+**Acceptance criteria:**
+- [ ] As 4 funções normalizam; os 11+ call sites deixam de depender de correção por sítio
+- [ ] Gate reprova **cada** forma de (B) que passar a cobrir — prove injetando **uma a uma**
+- [ ] Para cada forma **não** coberta: razão escrita no cabeçalho do gate
+- [ ] Piso reavaliado, com o comando que produziu o número novo
+- [ ] Falsificação com **rótulos literais** para as formas novas
+- [ ] 🔴 **NÃO rodar `make quality`** — a barreira é do arquiteto
 
 ## Wave 2 — A prova no Windows
 > Dependências: Wave 1 completa. **É a wave que fecha a REQ.**

@@ -39273,3 +39273,16 @@ Documento revisado após chamada de advisor que bloqueou a primeira versão em 4
 - **AC reescrito com a medição**, e os **19 remanescentes ficam ENUMERADOS**, não estimados: 9 de `git-branch-guard/*`, 2 de `git-branch-guard-global-script-integrity`, 2 de `integration-assets/*`, 2 de `roadmap-req-frontmatter-path/*`, 1 cada de `credential-guard`, `barrier` e `trust-check`. É a entrada **medida** do próximo trabalho.
 - **Sinal de que o instrumento voltou a servir:** o censo agora reporta `[falsify/enumerate] 1 cenário(s) reprovaram` — defeito **real**, em vez de rótulo perdido por comparação com `\r`. Antes ele se auto-sabotava.
 - **Resta 1 AC aberto** no topo: `make quality` e **CI** verdes. Local está verde (899 `^OK `, 0 `: FALHA`); falta o CI da branch.
+
+### 2026-09-23 — Hades — Revisão de segurança final da REQ CRLF
+- **Início da revisão de barreira final** da REQ de normalização CRLF (`fix/bash-consome-stdout-de-python3-sem-normalizar-crlf`).
+- Verificando: normalização segura nos 20 sítios, falhas do gate, validade das isenções, 19 rótulos remanescentes.
+- Entregável: `docs/seguranca/2026-09-23-revisao-crlf-normalize.md`
+
+### 2026-09-23 — Hades — Revisão CRLF concluída
+- **Veredito: APROVADO COM RESSALVAS.** Implementação correta para os 20 sítios. Três evasões de gate confirmadas por execução — nenhuma afeta código atual.
+- **R1:** `$PY_BIN` em captura não detectado pelo ERE do gate (0 candidatos, confirmado).
+- **R2:** `sys.stdout.write('\n')` isento por condição-2 incorretamente (RC=0, confirmado).
+- **R3:** processo substitution `< <(python3...)` não coberto — sítio existente corrigido a nível de função.
+- **R4:** 19 rótulos remanescentes — 12/19 são controles de segurança no Windows census. Causa diferente de CRLF. Escopo da próxima fase.
+- **Entregável:** `docs/seguranca/2026-09-23-revisao-crlf-normalize.md`
