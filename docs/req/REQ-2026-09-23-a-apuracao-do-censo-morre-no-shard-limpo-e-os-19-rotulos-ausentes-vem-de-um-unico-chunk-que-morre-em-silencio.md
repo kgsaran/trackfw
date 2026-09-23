@@ -102,9 +102,12 @@ como 19 defeitos seria repetir o erro do `IsAbs`.
 
 ### Por que isto vem antes do resto do cluster de Windows
 
-Dos 19 rótulos, **12 são falsificação de controle de segurança** — `git-branch-guard/*` (10),
-`credential-guard-hook-resolvable/detected`, `trust-check/direction-b-detected`, além de
-`git-branch-guard-global-script-integrity/*`. Enquanto o chunk morre, a **detecção de bypass dos
+Dos 19 rótulos, **15 são falsificação de controle de segurança** (a Wave 0 refutou o `12` que eu
+tinha escrito, por aritmética: 19 − `integration-assets/*` 2 − `roadmap-req-frontmatter-path/*` 2 =
+**15**) — `git-branch-guard/*` (10), `git-branch-guard-global-script-integrity/*` (2),
+`credential-guard-hook-resolvable/detected`, `trust-check/direction-b-detected` e
+`barrier/wave-zero-flag-guard-rejected-again-detected`. **Onze deles estão SEM PROVA equivalente**
+no Windows, medido por leitura do corpo dos testes Go — 3 cobertos, 1 parcial, 11 sem prova. Enquanto o chunk morre, a **detecção de bypass dos
 guards não é exercitada no Windows** — a plataforma onde as escapadas de `git` bruto mais divergem.
 Não é higiene de instrumento: é controle de segurança sem prova na plataforma de maior risco.
 
@@ -121,8 +124,15 @@ $ grep -rn '|| echo "\?0"\?' .github/workflows/ scripts/ Makefile | wc -l
 | **(b)** comando que **não** imprime ao falhar (`wc -l <`, `jq`) → correto | 3 |
 | **(c)** fixture/corpus, não é código | 2 |
 
-A enumeração é aproximada por construção (`grep` de forma, não de semântica); **refutá-la ou
-confirmá-la é entregável da Wave 0**.
+🔴 **A Wave 0 refutou esta tabela em duas frentes, e o (a) é o único número que sobreviveu:**
+
+- **População estreita.** `grep -rnE '\$\([^)]*grep +-[a-z]*c[a-z]* '` acha **3 sítios** que a forma
+  `|| echo` não pega — `check-git-branch-guard-hook-schema.sh:528`,
+  `run-gates-falsify-parallel.sh:225,226`. A família tem **12 sítios, não 9**. Os 3 já estão na
+  **forma correta** (`|| true`) — são a prova de que a correção pedida é a que o repo já pratica.
+- **Classificação errada.** `scripts/gen-falsify-chunks.py:559` estava em (c) *"fixture/corpus"* e é
+  **(b)**: é o template do epílogo que roda em **todo chunk de todo shard**. Partição correta:
+  **4 (a) · 4 (b) · 1 (c)**.
 
 ## Acceptance Criteria
 
