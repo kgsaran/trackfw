@@ -133,6 +133,54 @@ que o arquivo tem CRLF), comer o `\r` destrói a verificação. A Wave 0 entrega
 - [ ] 🔴 **NÃO rodar `make quality`** — barreira é do arquiteto
 - [ ] Uma frase por teste novo
 
+### ML-1A-bis — o `source` resolve por `$ROOT_DIR`, que o `--self-test` reaponta
+**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Files affected:** os 5 gates que sourceiam o lib **e** têm `--self-test`. **Não** mexer no lib.
+
+🔴 **Reprovação encontrada na MINHA barreira, não na validação do executor.** Barreira após o ML-1A:
+`RC=2`, **101** `^OK ` (contra 824), `make: *** [parity-rest] Error 1`.
+
+```
+FAIL [self-test/ignora-artefato-de-build]: esperava exatamente 2 sítio(s) derivado(s)
+  check-git-branch-guard-hook-schema.sh: line 89:
+  /tmp/.../self-test/ignored-build-artifact/scripts/lib-crlf-normalize.sh: No such file or directory
+check-git-branch-guard-hook-schema.sh --self-test: 5 cenário(s) FALHARAM.
+```
+
+**Mecanismo:**
+```bash
+ROOT_DIR=${TRACKFW_ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
+. "$ROOT_DIR/scripts/lib-crlf-normalize.sh"
+```
+O `--self-test` monta árvores sintéticas em `/tmp` e **reaponta `ROOT_DIR`** para elas, copiando só
+`trackfw-git-branch-guard.sh`. O `source` então procura o lib na árvore sintética, onde ele não
+existe.
+
+**Não é defeito do lib nem da normalização** — é do **caminho de resolução**. `ROOT_DIR` é mutável
+por projeto: resolver uma dependência interna por ele é frágil por construção.
+
+**Correção pedida:** resolver o lib pelo diretório do **próprio script**, imune a `ROOT_DIR`:
+```bash
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+. "$SCRIPT_DIR/lib-crlf-normalize.sh"
+```
+
+**Os 5 em risco** (todos sourceiam o lib **e** têm `--self-test`): `check-channels-content.sh`,
+`check-git-branch-guard-hook-schema.sh`, `check-goreleaser-prerelease.sh`, `check-gates-falsify.sh`,
+`check-no-literal-nul-in-source.sh`. Só o segundo apareceu porque a barreira **abortou no primeiro**
+— os outros quatro não chegaram a rodar. **Corrija os 5**, e confirme se há outros que reapontem
+`ROOT_DIR` sem `--self-test`.
+
+🔴 **Erro meu de handoff, registrado:** pedi "os gates tocados, individualmente → RC=0" e **não
+exigi `--self-test` onde ele existe**. O executor rodou o gate, que passou; o `--self-test` é que
+reprova. A validação seguiu a letra do que pedi.
+
+**Acceptance criteria:**
+- [ ] Os 5 gates com `--self-test` passam: `bash <gate> --self-test` RC=0. Cole as 5 saídas
+- [ ] O caminho do lib **não** depende de `ROOT_DIR` em nenhum dos 19 sítios — verifique todos
+- [ ] Braço (b): `strip_cr` continua funcionando; `printf 'a\rb\n' | strip_cr` preserva o CR do meio
+- [ ] 🔴 **NÃO rodar `make quality`** — a barreira é do arquiteto
+
 ### ML-1B — gate que impede a reintrodução
 **Status:** ⬜ Pendente · **Papel:** `artemis-tf` · **Depende de:** ML-1A
 
