@@ -39259,3 +39259,17 @@ Documento revisado após chamada de advisor que bloqueou a primeira versão em 4
 - **A correção que mais valeu foi a do comentário**, não a da linha: o gate de encoding afirmava *"hoje não ocorre: as duas populações coincidem (38 = 38)"* e passou a registrar **a ocorrência que validou o trade-off** — gate reprovou, pediu a linha inofensiva, a linha foi adicionada. Vale mais que a afirmação original.
 - 🔴 **Instrumento meu impreciso, de novo:** meu grep de "invocação real de python3" acusou **4** ocorrências; as quatro eram **comentários** — `grep -v "^\s*#"` não pega indentação nesse contexto. Verifiquei antes de reportar, em vez de acusar o executor de violar o "bash puro" pela segunda vez.
 - **Próximo: Wave 2** — disparar o `windows-census.yml` **na branch** (`--ref`) e verificar se volta a **8/8 shards** com apuração, contra o run `35856380122` (2/8, 146 rótulos ausentes) como referência pré-correção.
+
+### 2026-09-23 — Zeus — Wave 2 auditada; AC reescrito pela medição, não marcado por generosidade
+- **Censo na branch (`35872779844`) contra a main (`35856380122`) — mesmo instrumento, mesma plataforma, só o código difere:**
+
+| | pré | pós |
+|---|---|---|
+| rótulos acusados ausentes | **146** | **19** |
+| shards com guarda local falhando | 8 | 5 |
+| shards apurados | 2/8 | 2/8 |
+
+- 🔴 **O AC "8/8 shards" NÃO foi atendido — e a razão é que ele presumia o que a medição refutou:** que o CRLF fosse a **única** causa. Era **87%** dela. Marcar como atendido seria falso; arrastar a REQ até 8/8 seria absorver a triagem do cluster que o escopo negativo excluiu desde o início — e agrupar sem medir é o erro do `IsAbs` (14 estimados, 2 entregues).
+- **AC reescrito com a medição**, e os **19 remanescentes ficam ENUMERADOS**, não estimados: 9 de `git-branch-guard/*`, 2 de `git-branch-guard-global-script-integrity`, 2 de `integration-assets/*`, 2 de `roadmap-req-frontmatter-path/*`, 1 cada de `credential-guard`, `barrier` e `trust-check`. É a entrada **medida** do próximo trabalho.
+- **Sinal de que o instrumento voltou a servir:** o censo agora reporta `[falsify/enumerate] 1 cenário(s) reprovaram` — defeito **real**, em vez de rótulo perdido por comparação com `\r`. Antes ele se auto-sabotava.
+- **Resta 1 AC aberto** no topo: `make quality` e **CI** verdes. Local está verde (899 `^OK `, 0 `: FALHA`); falta o CI da branch.

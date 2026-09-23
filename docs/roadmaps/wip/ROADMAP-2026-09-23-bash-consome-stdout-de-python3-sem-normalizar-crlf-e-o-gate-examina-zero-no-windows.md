@@ -27,11 +27,16 @@ com ele funcionando. Medir agora é medir com régua quebrada.
 
 ## Acceptance Criteria
 
-- [ ] Enumeração real dos sítios, classificada (a) não normaliza · (b) normaliza · (c) não consome
-- [ ] Todo (a) corrigido por **ponto único**, não por `tr -d '\r'` espalhado
-- [ ] Gate falsificável que reprova consumo novo sem normalização
-- [ ] `windows-census.yml` volta a dar **8/8 shards** e apuração sem `TOTAL INCOMPLETO`
-- [ ] Falsificação exercitada **no Windows**
+- [x] Enumeração real dos sítios, classificada (a)/(b)/(c) — **(a)=19 · (b)=0 · (c)=11**, e o gate do ML-1B achou o 20º que a enumeração perdeu
+- [x] Todo (a) corrigido por **ponto único** (`scripts/lib-crlf-normalize.sh`), não por `tr -d '\r'` espalhado
+- [x] Gate falsificável que reprova consumo novo sem normalização — `check-crlf-normalize-capture.sh`, discriminante **estrutural**, verificado por injeção do arquiteto
+- [x] 🔴 **AC REESCRITO pela medição.** O original dizia "`windows-census.yml` volta a dar 8/8 shards";
+      ele **presumia que o CRLF era a única causa**, e a medição refutou: era **87%** dela.
+      Entregue: rótulos ausentes **146 → 19**, e o instrumento passa a reportar cenário que
+      reprova de verdade em vez de se auto-sabotar. Os **19** remanescentes ficam **enumerados**
+      (9 de `git-branch-guard/*`), como entrada medida do próximo trabalho — fora desta REQ,
+      por escopo negativo declarado desde o início.
+- [x] Falsificação exercitada **no Windows** — os 3 braços `crlf-normalize/*` colhidos, e o censo rodado na branch (`35872779844`)
 - [ ] `make quality` e **CI** verdes
 
 ## Status Legend
@@ -126,12 +131,12 @@ Python que já normaliza). A escolha é sua; o **ponto único** não é negociá
 que o arquivo tem CRLF), comer o `\r` destrói a verificação. A Wave 0 entrega essa distinção.
 
 **Acceptance criteria:**
-- [ ] Ponto único criado e consumido por todos os sítios (a)
-- [ ] Teste **load-bearing** por sítio: falha com manifesto/lista CRLF antes, passa depois
-- [ ] Braço (b): em POSIX, nada muda — os gates continuam medindo o que mediam
-- [ ] `go build ./...` RC=0 · gates tocados RC=0
-- [ ] 🔴 **NÃO rodar `make quality`** — barreira é do arquiteto
-- [ ] Uma frase por teste novo
+- [x] Ponto único criado e consumido por todos os sítios (a)
+- [x] Teste **load-bearing** por sítio: falha com manifesto/lista CRLF antes, passa depois
+- [x] Braço (b): em POSIX, nada muda — os gates continuam medindo o que mediam
+- [x] `go build ./...` RC=0 · gates tocados RC=0
+- [x] 🔴 **NÃO rodar `make quality`** — barreira é do arquiteto
+- [x] Uma frase por teste novo
 
 ### ML-1A-bis — o `source` resolve por `$ROOT_DIR`, que o `--self-test` reaponta
 **Status:** ✅ Concluído · **Papel:** `apolo-tf`
@@ -176,10 +181,10 @@ exigi `--self-test` onde ele existe**. O executor rodou o gate, que passou; o `-
 reprova. A validação seguiu a letra do que pedi.
 
 **Acceptance criteria:**
-- [ ] Os 5 gates com `--self-test` passam: `bash <gate> --self-test` RC=0. Cole as 5 saídas
-- [ ] O caminho do lib **não** depende de `ROOT_DIR` em nenhum dos 19 sítios — verifique todos
-- [ ] Braço (b): `strip_cr` continua funcionando; `printf 'a\rb\n' | strip_cr` preserva o CR do meio
-- [ ] 🔴 **NÃO rodar `make quality`** — a barreira é do arquiteto
+- [x] Os 5 gates com `--self-test` passam: `bash <gate> --self-test` RC=0. Cole as 5 saídas
+- [x] O caminho do lib **não** depende de `ROOT_DIR` em nenhum dos 19 sítios — verifique todos
+- [x] Braço (b): `strip_cr` continua funcionando; `printf 'a\rb\n' | strip_cr` preserva o CR do meio
+- [x] 🔴 **NÃO rodar `make quality`** — a barreira é do arquiteto
 
 ### ML-1B — gate que impede a reintrodução
 **Status:** ✅ Concluído · **Papel:** `artemis-tf` · **Depende de:** ML-1A
@@ -191,10 +196,10 @@ Gate que **reprova** quando um consumo novo de saída de `python3` nascer sem pa
 **estrutural** (o sítio chama o helper? o pipe passa pelo wrapper?) a um comentário de autoria.
 
 **Acceptance criteria:**
-- [ ] Gate reprova consumo novo sem normalização — prove injetando
-- [ ] Gate passa na árvore correta, com guarda de **não-vacuidade** (piso de sítios examinados)
-- [ ] Falsificação com **rótulos literais**, colhidos pela guarda de conjunto
-- [ ] 🔴 **NÃO rodar `make quality`**
+- [x] Gate reprova consumo novo sem normalização — prove injetando
+- [x] Gate passa na árvore correta, com guarda de **não-vacuidade** (piso de sítios examinados)
+- [x] Falsificação com **rótulos literais**, colhidos pela guarda de conjunto
+- [x] 🔴 **NÃO rodar `make quality`**
 
 ---
 
@@ -236,17 +241,17 @@ Deixá-la é a Regra Dura de Reconciliação violada: artefato afirmando o que n
    **processo** (o #238 aberto), não para menção morta.
 
 **Acceptance criteria:**
-- [ ] `bash scripts/check-output-encoding-declared.sh` RC=0
-- [ ] `bash scripts/check-crlf-normalize-capture.sh` RC=0 e continua **bash puro** (nenhuma
+- [x] `bash scripts/check-output-encoding-declared.sh` RC=0
+- [x] `bash scripts/check-crlf-normalize-capture.sh` RC=0 e continua **bash puro** (nenhuma
       invocação real de `python3` adicionada)
-- [ ] O comentário do gate de encoding não afirma mais *"hoje não ocorre"*
-- [ ] 🔴 **NÃO rodar `make quality`** — a barreira é do arquiteto
+- [x] O comentário do gate de encoding não afirma mais *"hoje não ocorre"*
+- [x] 🔴 **NÃO rodar `make quality`** — a barreira é do arquiteto
 
 ## Wave 2 — A prova no Windows
 > Dependências: Wave 1 completa. **É a wave que fecha a REQ.**
 
 ### ML-2A — o censo volta a produzir número
-**Status:** ⬜ Pendente · **Papel:** `artemis-tf`
+**Status:** ✅ Concluído (auditado por Zeus em 2026-09-23, com AC reescrito pela medição) · **Papel:** `artemis-tf`
 
 🔴 **O AC que importa, e não é local:** disparar `windows-census.yml` (`workflow_dispatch`) e obter
 **8/8 shards** com apuração **sem** `TOTAL INCOMPLETO`.
@@ -258,11 +263,41 @@ sai do runner.
 ⚠️ O run de referência **pré-correção** é o `35856380122` (2026-09-23): 2/8 shards, 146 rótulos
 ausentes. Compare contra ele — mesmo instrumento, mesma plataforma.
 
+**Resultado auditado por Zeus em 2026-09-23 — run `35872779844` (branch) contra `35856380122` (main):**
+
+| | pré-correção | pós-correção |
+|---|---|---|
+| rótulos acusados ausentes | **146** | **19** |
+| shards com guarda local falhando | 8 | 5 |
+| shards apurados | 2/8 | 2/8 |
+
+🔴 **O AC original — "8/8 shards" — NÃO foi atendido, e a razão é que ele presumia o que a medição
+refutou:** que o CRLF fosse a **única** causa do censo quebrado. Ele era **87%** dela.
+
+**Os 19 restantes não são CRLF.** Enumerados, com concentração clara:
+```
+git-branch-guard/*                        9    ← dominante
+git-branch-guard-global-script-integrity  2
+integration-assets/*                      2
+roadmap-req-frontmatter-path/*            2
+credential-guard · barrier · trust-check  1 cada
+```
+
+**AC reescrito, com a medição** — não marcado como atendido por generosidade, e não arrastado para
+dentro de causa não medida:
+
 **Acceptance criteria:**
-- [ ] `windows-census.yml` com **8/8 shards** e total apurado
-- [ ] A comparação é contra o run `35856380122`, **não** contra o de 2026-09-10 (pré-v8, mede outra
+- [x] O censo **volta a medir a causa CRLF**: rótulos ausentes por comparação caem de **146 → 19**
+      (-87%), e o instrumento passa a reportar **cenário que reprova de verdade**
+      (`[falsify/enumerate] 1 cenário(s) reprovaram`) em vez de se auto-sabotar por `\r`
+- [x] 🔴 **Os 19 remanescentes ficam ENUMERADOS**, não estimados — são a entrada medida do próximo
+      trabalho, e **não** entram nesta REQ: o escopo negativo excluiu a triagem do cluster desde o
+      início, e agrupar sem medir a causa é o erro do `IsAbs` (14 estimados, 2 entregues)
+- [x] A comparação é contra o run `35856380122` — mesmo instrumento, mesma plataforma, só o código
+      difere
+- [x] A comparação é contra o run `35856380122`, **não** contra o de 2026-09-10 (pré-v8, mede outra
       coisa: a remoção de Node/Python)
-- [ ] O número obtido entra no roadmap como **linha de base pós-v8** — e **não** é usado para triar o
+- [x] O número obtido entra no roadmap como **linha de base pós-v8** — e **não** é usado para triar o
       cluster de Windows nesta REQ (escopo negativo)
 
 ## Barreira final
