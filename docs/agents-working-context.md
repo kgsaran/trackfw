@@ -39353,3 +39353,13 @@ Documento revisado após chamada de advisor que bloqueou a primeira versão em 4
 - Os 6 ACs da REQ marcados com a evidência que os fecha. AC do censo **reescrito pela medição**:
   146 → 19 rótulos ausentes; os 19 ficam enumerados como entrada do próximo trabalho.
 - PR #414 fora do draft. Fechamento (roadmap → `done/`, REQ → `Done`) é **pós-merge**.
+
+## 2026-09-23 — trackfw_architect — REQ do censo (apuração morre no shard limpo)
+
+- Achado ao preparar a entrada do próximo trabalho: o censo **continua** em `TOTAL INCOMPLETO — 2/8`
+  e a causa **não é artefato ausente** — os 8 estão lá. `$(grep -ac … || echo 0)` captura `$'0\n0'`
+  no shard **sem falha**, e a aritmética quebra. Replay dos artefatos reais: hoje `SHARDS_FOUND=2`,
+  corrigido `8/8 · OK=225 · FAIL=9`.
+- Os 19 rótulos ausentes são **todos do shard 1**, que morre em silêncio. Uma causa, não 19.
+- REQ + roadmap criados, branch `fix/a-apuracao-do-censo-...`. Wave 0 com `hades-tf` (12 dos 19 são
+  controles de segurança) bloqueia as waves de implementação.
