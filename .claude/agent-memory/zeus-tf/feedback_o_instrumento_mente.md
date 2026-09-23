@@ -43,3 +43,21 @@ branch com trabalho não integrado.
 Relacionado: [[medir-com-a-regra-nao-com-grep]] — lá o erro é medir o **proxy** errado; aqui o
 instrumento mente sobre o que leu. E [[verificacao-visual-obrigatoria]], mesma família: gate verde
 não é evidência de que se mediu o objetivo.
+
+## `ls` com ícones de Nerd Font — reincidi em 2026-09-23
+
+O `ls` desta shell emite **ícone de Nerd Font** (área de uso privado, ex.: `\uf48a`) **antes** do
+nome. Capturar nome de arquivo com `ls | grep | head -1` embute o ícone **e** o espaço seguinte:
+
+```
+roadmap: "docs/roadmaps/backlog/\uf48a ROADMAP-....md"     ← caminho quebrado, gravado numa REQ
+```
+
+🔴 **E o `grep` mostra o ícone como se fosse espaço**, então a inspeção visual não denuncia. Só
+`[hex(ord(c)) for c in ...]` revelou. Meu `str.replace('backlog/ ROADMAP', ...)` falhou com
+`AssertionError` — e foi o assert que me salvou de achar que tinha corrigido.
+
+**Use `find ... -name` ou glob do shell para capturar nome de arquivo. Nunca `ls`.**
+Para limpar um já contaminado: `re.sub(r'[\ue000-\uf8ff]\s*','',s)`.
+
+Esta é a **segunda** vez: o aviso sobre `ls` com alias já estava nesta nota.
