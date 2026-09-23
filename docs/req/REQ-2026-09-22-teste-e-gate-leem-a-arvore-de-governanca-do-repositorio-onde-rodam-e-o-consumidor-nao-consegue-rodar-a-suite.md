@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-22
 author: "trackfw_architect"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-22-teste-e-gate-leem-a-arvore-de-governanca-do-repositorio-onde-rodam-e-o-consumidor-nao-consegue-rodar-a-suite.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-22-teste-e-gate-leem-a-arvore-de-governanca-do-repositorio-onde-rodam-e-o-consumidor-nao-consegue-rodar-a-suite.md"
 ---
 
 # REQ: teste e gate leem a árvore de governança do repositório onde rodam, e o consumidor não consegue rodar a suíte
 
-> Date: 2026-09-22 | Status: Open
+> Date: 2026-09-22 | Status: Done
 | Linear Issue:
 | Jira Issue:
 
@@ -109,4 +109,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-22-teste-e-gate-leem-a-arvore-de-governanca-do-repositorio-onde-rodam-e-o-consumidor-nao-consegue-rodar-a-suite.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-22-teste-e-gate-leem-a-arvore-de-governanca-do-repositorio-onde-rodam-e-o-consumidor-nao-consegue-rodar-a-suite.md`
