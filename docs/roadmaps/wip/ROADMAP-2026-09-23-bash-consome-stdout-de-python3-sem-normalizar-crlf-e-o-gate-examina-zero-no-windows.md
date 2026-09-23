@@ -134,7 +134,7 @@ que o arquivo tem CRLF), comer o `\r` destrói a verificação. A Wave 0 entrega
 - [ ] Uma frase por teste novo
 
 ### ML-1A-bis — o `source` resolve por `$ROOT_DIR`, que o `--self-test` reaponta
-**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Status:** ✅ Concluído · **Papel:** `apolo-tf`
 **Files affected:** os 5 gates que sourceiam o lib **e** têm `--self-test`. **Não** mexer no lib.
 
 🔴 **Reprovação encontrada na MINHA barreira, não na validação do executor.** Barreira após o ML-1A:

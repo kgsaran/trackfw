@@ -2,6 +2,24 @@
 
 ---
 
+## 2026-09-23 — Apolo (fix/bash-consome-stdout-de-python3-sem-normalizar-crlf — ML-1A-bis) — ENTREGUE (AGUARDANDO AUDITORIA)
+
+**Início:** 2026-09-23 | Branch: `fix/bash-consome-stdout-de-python3-sem-normalizar-crlf`
+**Tarefa:** ML-1A-bis — o `source` resolve por `$ROOT_DIR`, que o `--self-test` reaponta.
+**Resultado:**
+- Varredura dos 19 sítios: apenas `check-git-branch-guard-hook-schema.sh` combinava ROOT_DIR + `--self-test`; os outros 3 gates com `--self-test` já usavam `SCRIPT_DIR`.
+- `scripts/check-git-branch-guard-hook-schema.sh`: adicionado `SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)` e trocado `. "$ROOT_DIR/scripts/lib-crlf-normalize.sh"` por `. "$SCRIPT_DIR/lib-crlf-normalize.sh"`. `ROOT_DIR` preservado intacto.
+- `check-git-branch-guard-hook-schema.sh --self-test` RC=0 (7 cenários OK).
+- `check-channels-content.sh --self-test` RC=0 (4 cenários OK — já usava SCRIPT_DIR).
+- `check-goreleaser-prerelease.sh --self-test` RC=0 (5 cenários OK — já usava SCRIPT_DIR).
+- `check-no-literal-nul-in-source.sh --self-test` RC=0 (5 cenários OK — já usava SCRIPT_DIR).
+- Braço (b): `printf 'a\rb\n' | strip_cr | od -An -tx1` → `61 0d 62 0a` (CR do meio preservado).
+- `check-git-branch-guard-hook-schema.sh` sem `--self-test` RC=0.
+- `go build ./...` RC=0.
+**Arquivos modificados:** `scripts/check-git-branch-guard-hook-schema.sh`, roadmap, working-context.
+
+---
+
 ## 2026-09-22 — Ártemis (fix/teste-e-gate-leem-a-arvore-de-governanca — ML-1C) — ENTREGUE (AGUARDANDO AUDITORIA)
 
 **Início:** 2026-09-22 | Branch: `fix/teste-e-gate-leem-a-arvore-de-governanca`
@@ -39181,3 +39199,10 @@ Documento revisado após chamada de advisor que bloqueou a primeira versão em 4
 - **Braço (b) confirmado:** `write_fixture_crlf` **intocada** (diff vazio), e `check-roadmap-barrier-contract` em **49 cenários OK**. `check-orphan-gates` aprova — o `lib-*.sh` não entra na varredura de `check-*.sh`.
 - **Discrepância declarada pelo executor, não silenciada:** a Wave 0 listou 9 sítios inline em `check-barrier.sh`; ele encontrou também `doc_status()` e `get_wave_field()` e corrigiu **no nível da função**, cobrindo todos os call sites. Declarar em vez de corrigir em silêncio é o comportamento certo.
 - **Coordenação:** comentei no **#413** do outro agente — `Error 126` era **bit de execução ausente** (`100644` contra `100755` dos outros ~40 gates), não lógica de gate. Sugeri, como não-bloqueante, um gate para a classe: `check-*.sh` invocado direto no Makefile deve ser `100755` — o `check-orphan-gates` exige **consumidor**, não **executabilidade**.
+
+### 2026-09-23 — Zeus — ML-1A-bis aprovado; minha hipótese dos "5 em risco" refutada
+- **Barreira verde: RC=0, 824 `^OK `, 0 `: FALHA`**, 244 OK na falsificação, guarda de conjunto OK. O `--self-test` do gate corrigido passa **dentro** da barreira.
+- 🔴 **Eu disse "5 gates em risco, corrija os 5"; apenas 1 precisava.** Meu critério era grosseiro — *"sourceia o lib **e** tem `--self-test`"* — e não verificava **como** cada um resolve o caminho. Três já usavam `SCRIPT_DIR` e estavam imunes. **Corrigir os cinco seria mexer no que não está quebrado**, que é exatamente o que venho cobrando dos executores. Ele recusou e mostrou a medição — comportamento certo.
+- **O quarto (`check-gates-falsify.sh`) usa `ROOT_DIR`** mas não reaponta para si; o argumento dele era por leitura, e a barreira confirmou por execução — 71 cenários, 244 rótulos, zero falha.
+- **A correção é de 2 linhas:** `SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)` e o source por ele. Dependência **interna do script** não deve ser resolvida por variável que o projeto reaponta.
+- **Pendência operacional:** o rebase reescreveu a história local, o remoto recusa fast-forward, e `trackfw push --force-with-lease` **só opera com PR aberto** (por desenho). Trabalho commitado localmente; nada perdido.
