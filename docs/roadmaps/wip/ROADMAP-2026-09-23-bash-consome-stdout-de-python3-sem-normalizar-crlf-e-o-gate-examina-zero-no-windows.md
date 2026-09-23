@@ -28,18 +28,16 @@ com ele funcionando. Medir agora é medir com régua quebrada.
 ## Acceptance Criteria
 
 - [x] Enumeração real dos sítios, classificada (a)/(b)/(c) — **(a)=19 · (b)=0 · (c)=11**, e o gate do ML-1B achou o 20º que a enumeração perdeu
-- [ ] 🔴 **DESMARCADO em 2026-09-23 pela revisão do `hefesto-tf`.** Restam sítios (a) **não corrigidos**,
-      invisíveis ao gate porque capturam via **função intermediária**: `check_field_json`
-      (`check-barrier.sh:142`, 7 call sites), `normalize_barrier_json` (`:614`), `target_ids_json`
-      (`check-update-parity.sh:91`), `doc_check_json` (`check-roadmap-barrier-contract.sh:113`, 4 call
-      sites). Confirmei: a função chama `python3 -c` e **não** tem `strip_cr`; o gate **não** marca a
-      linha 142 como candidato. Vai para o ML-1C.
-- [ ] 🔴 **DESMARCADO por mim em 2026-09-23, após a revisão do `hades-tf`.** Eu havia marcado com base
-      na minha injeção — que usou a forma literal `$(python3 ...)`. Ele testou as **variantes** e o gate
-      é cego para três: `$("$PY_BIN" ...)`, `sys.stdout.write('...\n')` e `< <(python3 ...)`.
-      Confirmei o primeiro: **0 candidatos**. E `$PY_BIN` **já é usado no repo**
-      (`check-gates-falsify.sh:3917,4433`), logo é a forma mais provável de ser copiada.
-      O AC diz "reprova consumo novo"; hoje reprova **uma** das formas de consumo. Vai para o ML-1C.
+- [x] Todo (a) corrigido por **ponto único** — incluindo os sítios que capturavam via **função
+      intermediária** (`check_field_json` 7 call sites, `normalize_barrier_json`, `target_ids_json`,
+      `doc_check_json` 4 call sites), normalizados **dentro** das funções no ML-1C. Desmarcado em
+      2026-09-23 pela revisão do `hefesto-tf` e remarcado após o corretivo.
+- [x] Gate falsificável — **5 braços**, cobrindo `$(python3 ...)`, `$("$PY_BIN" ...)` e
+      `sys.stdout.write(...\n)`. 🔴 **Duas formas ficam declaradas como NÃO cobertas** no cabeçalho
+      do gate (`< <(python3 ...)` e captura via função nova), com a razão técnica de cada uma —
+      *"not measured is not acceptable; these are measured and the limit is documented"*.
+      Desmarcado por mim após a revisão do `hades-tf` (eu havia injetado só a forma que o gate foi
+      feito para pegar) e remarcado após o ML-1C, com injeção minha por forma.
 - [x] 🔴 **AC REESCRITO pela medição.** O original dizia "`windows-census.yml` volta a dar 8/8 shards";
       ele **presumia que o CRLF era a única causa**, e a medição refutou: era **87%** dela.
       Entregue: rótulos ausentes **146 → 19**, e o instrumento passa a reportar cenário que
@@ -258,7 +256,7 @@ Deixá-la é a Regra Dura de Reconciliação violada: artefato afirmando o que n
 - [x] 🔴 **NÃO rodar `make quality`** — a barreira é do arquiteto
 
 ### ML-1C — o gate é estreito demais, e há sítios (a) que ele não vê
-**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Status:** ✅ Concluído · **Papel:** `apolo-tf`
 **Files affected:** `scripts/check-barrier.sh`, `scripts/check-update-parity.sh`,
 `scripts/check-roadmap-barrier-contract.sh`, `scripts/check-crlf-normalize-capture.sh`,
 `scripts/check-gates-falsify.sh` (cenário).
@@ -307,12 +305,12 @@ discriminante **já enxerga**. Corpus estreito com piso alto dá aparência de c
 3. Reavaliar o piso: com o discriminante mais largo, o número de candidatos muda.
 
 **Acceptance criteria:**
-- [ ] As 4 funções normalizam; os 11+ call sites deixam de depender de correção por sítio
-- [ ] Gate reprova **cada** forma de (B) que passar a cobrir — prove injetando **uma a uma**
-- [ ] Para cada forma **não** coberta: razão escrita no cabeçalho do gate
-- [ ] Piso reavaliado, com o comando que produziu o número novo
-- [ ] Falsificação com **rótulos literais** para as formas novas
-- [ ] 🔴 **NÃO rodar `make quality`** — a barreira é do arquiteto
+- [x] As 4 funções normalizam; os 11+ call sites deixam de depender de correção por sítio
+- [x] Gate reprova **cada** forma de (B) que passar a cobrir — prove injetando **uma a uma**
+- [x] Para cada forma **não** coberta: razão escrita no cabeçalho do gate
+- [x] Piso reavaliado, com o comando que produziu o número novo
+- [x] Falsificação com **rótulos literais** para as formas novas
+- [x] 🔴 **NÃO rodar `make quality`** — a barreira é do arquiteto
 
 ## Wave 2 — A prova no Windows
 > Dependências: Wave 1 completa. **É a wave que fecha a REQ.**

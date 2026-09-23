@@ -148,7 +148,7 @@ for c in d['checks']:
         print(json.dumps(c.get(field)))
         raise SystemExit(0)
 print('MISSING')
-" "$doc" "$name" "$field"
+" "$doc" "$name" "$field" | strip_cr
 }
 
 # assert_only_this_check_blocked DOC NAME LABEL — proves the failure is
@@ -617,7 +617,7 @@ d = json.loads(sys.stdin.read())
 d['started_at'] = 'TS'
 d['finished_at'] = 'TS'
 json.dump(d, sys.stdout, indent=2, ensure_ascii=False)
-"
+" | strip_cr
 }
 
 run_barrier go "$S6" ROADMAP-barrier-fixture --wave 1 --json --trust-local-gates

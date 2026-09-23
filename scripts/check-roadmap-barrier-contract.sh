@@ -119,7 +119,7 @@ for c in d['checks']:
         print(json.dumps(c.get(field)))
         raise SystemExit(0)
 print('null')
-" "$doc" "$name" "$field"
+" "$doc" "$name" "$field" | strip_cr
 }
 
 # assert_check_status LABEL DOC CHECK_NAME EXPECTED — confere checks[CHECK_NAME].status.

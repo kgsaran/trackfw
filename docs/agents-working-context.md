@@ -2,6 +2,55 @@
 
 ---
 
+## 2026-09-23 — Apolo (fix/bash-consome-stdout-de-python3-sem-normalizar-crlf — ML-1C) — ENTREGUE (AGUARDANDO AUDITORIA)
+
+**Início:** 2026-09-23 | Branch: `fix/bash-consome-stdout-de-python3-sem-normalizar-crlf`
+**Tarefa:** ML-1C — o gate cobre uma forma de consumo; o AC prometia todas.
+
+**Resultado:**
+
+### (A) 4 funções normalizadas internamente
+- `check_field_json` (`check-barrier.sh:142`): adicionado `| strip_cr` — cobre 7 call sites automaticamente.
+- `normalize_barrier_json` (`check-barrier.sh:607`): adicionado `| strip_cr`.
+- `target_ids_json` (`check-update-parity.sh:91`): adicionado `| strip_cr`.
+- `doc_check_json` (`check-roadmap-barrier-contract.sh:113`): adicionado `| strip_cr` — cobre 4+ call sites.
+- Prova comportamental (macOS, todas as funções com `end='\r\n'` forçado): 0 bytes `\r` no output de todas as 4 funções após a correção.
+
+### (B) Gate estendido
+- Discriminante ampliado: `PY_DETECT_RE='\$\([^\)]*python3|\$\("?\$PY_BIN[" ]'` — cobre `$(python3...)` e `$("$PY_BIN"...)` e `$($PY_BIN ...)`.
+- Condição-2 (isenção de emissor de newline) estendida: adicionado `grep -qE 'sys\.stdout\.write\(.*\\n'` — `sys.stdout.write('x\n')` deixa de ser isentado incorretamente.
+- 5 isenções existentes (condição-2) intactas após a extensão.
+- Piso reavaliado: `CRLF_GATE_MIN_CAPTURES=0 bash scripts/check-crlf-normalize-capture.sh` → **68 candidatos** (era 66); floor mantido em 50 (≈74%).
+
+### Formas NÃO cobertas (documentadas no cabeçalho do gate):
+- `< <(python3 ...)` — processo de substituição, scanner diferente necessário; único sítio existente já corrigido dentro da função.
+- `$(funcao_que_chama_python3 ...)` — captura indireta; as 4 funções corrigidas em ML-1C normalizam internamente; detectar nova função helper exige análise de call-graph.
+- `$("${PY_BIN}" ...)` — forma brace, não usada no repo.
+- `eval "$CMD"` onde `$CMD` expande para `python3` — sem sítios existentes.
+
+### Injeções (prova das formas cobertas):
+- `$("$PY_BIN" -c ...) sem strip_cr` → gate: FAIL `[test-pybin.sh:4] python3 capture without strip_cr: BAD_VAR=$("$PY_BIN" -c 'print("hello")')` ✓
+- `$(python3 -c "sys.stdout.write('hello\n')") sem strip_cr` → gate: FAIL `[test-stdwrite.sh:4] python3 capture without strip_cr: ...` ✓
+
+### Falsificação
+- Braço D (`crlf-normalize/pybin-capture`): `assert_fails_with "python3 capture without strip_cr"` para `$("$PY_BIN" ...)`.
+- Braço E (`crlf-normalize/stdout-write-capture`): `assert_fails_with "python3 capture without strip_cr"` para `sys.stdout.write('x\n')`.
+- `FALSIFY_SUCCESS_FLOOR`: 208 → 210.
+- Echo de braços atualizado: "3 braços (A/B/C)" → "5 braços (A/B/C/D/E)".
+
+### Gates (braço (b)):
+- `bash scripts/check-crlf-normalize-capture.sh` → RC=0 (68 candidatos, 6 isenções, floor=50)
+- `bash scripts/check-barrier.sh` → RC=0
+- `bash scripts/check-update-parity.sh` → RC=0
+- `bash scripts/check-roadmap-barrier-contract.sh` → RC=0
+- `go build ./...` → RC=0
+- `go test ./...` → RC=0
+- `trackfw validate` → RC=0
+
+**Arquivos modificados:** `scripts/check-barrier.sh`, `scripts/check-update-parity.sh`, `scripts/check-roadmap-barrier-contract.sh`, `scripts/check-crlf-normalize-capture.sh`, `scripts/check-gates-falsify.sh` (Braços D/E + FLOOR 210), roadmap (ML-1C ✅), working-context.
+
+---
+
 ## 2026-09-23 — Ártemis (fix/bash-consome-stdout-de-python3-sem-normalizar-crlf — ML-1B-bis) — ENTREGUE (AGUARDANDO AUDITORIA)
 
 **Início:** 2026-09-23 | Branch: `fix/bash-consome-stdout-de-python3-sem-normalizar-crlf`
@@ -39286,3 +39335,13 @@ Documento revisado após chamada de advisor que bloqueou a primeira versão em 4
 - **R3:** processo substitution `< <(python3...)` não coberto — sítio existente corrigido a nível de função.
 - **R4:** 19 rótulos remanescentes — 12/19 são controles de segurança no Windows census. Causa diferente de CRLF. Escopo da próxima fase.
 - **Entregável:** `docs/seguranca/2026-09-23-revisao-crlf-normalize.md`
+
+### 2026-09-23 — Zeus — ML-1C aprovado; barreira final destravada
+- **Barreira: RC=0, 903 `^OK `, 0 `: FALHA`**, falsificação **252** OK, guarda de conjunto OK. **`barrier: passed` nas 3 waves.** Os 5 braços `crlf-normalize/*` colhidos.
+- **Verifiquei a cobertura nova por injeção minha:** `$("$PY_BIN" -c ...)`, que antes dava **0 candidatos**, agora dá **RC=1** nomeando arquivo, linha e captura.
+- 🔴 **O gate declara o que NÃO cobre**, no cabeçalho: *"not measured is not acceptable; these are measured and the limit is documented"*. Duas formas ficam de fora (`< <(python3 ...)` e captura via função nova), cada uma com razão técnica. Gate que declara limite vale mais que gate que aparenta cobrir tudo — foi o segundo tipo que deixou 34 defeitos passarem na REQ anterior.
+- **Duas soluções do executor que eu não tinha previsto:**
+  1. O braço de falsificação do `$PY_BIN` precisa do literal, mas o literal faria o **próprio arquivo de falsificação** virar candidato do gate. Resolveu com indireção via `PYBIN_EXPR`.
+  2. macOS não emite `\r\n` nativo, então **forçou `end='\r\n'`** no Python e verificou byte a byte com `od -c` que as 4 funções entregam sem `\r`. Construiu a condição em vez de declarar "não dá para testar aqui".
+- **Os 2 ACs que desmarquei foram remarcados com a medição** — não por generosidade: cada um cita o que o corretivo fechou e o que ficou declarado como residual.
+- **Resta 1 AC:** `make quality` e **CI** verdes. Local verde; falta o CI da branch.

@@ -93,7 +93,7 @@ import json, sys
 from collections import OrderedDict
 d = json.loads(sys.argv[1], object_pairs_hook=OrderedDict)
 print(json.dumps([t['id'] for t in d['targets']]))
-" "$1"
+" "$1" | strip_cr
 }
 
 # snapshot_tree DIR — sha256 of every regular file under DIR, path-relative,

@@ -240,7 +240,7 @@ FALSIFY_SUCCESS_TALLY="$WORK/success-count"
 # Ao remover cenários legitimamente (consolidação, renomeação), atualize
 # este valor no mesmo commit que remove os cenários. Sem esse passo o piso
 # fica pessimista e o gate começará a reprovar em execuções limpas.
-FALSIFY_SUCCESS_FLOOR=208
+FALSIFY_SUCCESS_FLOOR=210
 if [[ "$TRACKFW_FALSIFY_ENUMERATE" == "1" ]]; then
   : > "$FALSIFY_ENUM_TALLY"
   echo "[falsify/enumerate] modo de enumeração ATIVO (TRACKFW_FALSIFY_ENUMERATE=1, default=0) -- reprovações são contadas e a execução continua para o próximo cenário; o exit code final permanece != 0 se qualquer cenário reprovar. Ferramenta de diagnóstico -- não usada por make quality/parity." >&2
@@ -7173,7 +7173,55 @@ assert_fails_with "crlf-normalize/vacuous-scan" \
   env CRLF_GATE_MIN_CAPTURES=5 bash "$T197/scripts/check-crlf-normalize-capture.sh" \
   --scan-root "$T197C"
 
-echo "OK   [falsify/crlf-normalize]: 3 braços (A/B/C) provados"
+# ---------------------------------------------------------------------------
+# Braço D — $("$PY_BIN" -c ...) sem strip_cr → gate REPROVA (ML-1C)
+#   Afirma que o discriminante estendido ($PY_BIN form) detecta a forma
+#   $("$PY_BIN" ...) e a reprova quando strip_cr está ausente.
+#   Prova: o gate que antes não via esta forma agora a detecta.
+#
+#   Indireção obrigatória: a string literal $("$PY_BIN" não pode aparecer
+#   verbatim neste source — o gate escaneia scripts/*.sh incluindo este.
+#   Montamos o token com variável (PYBIN_EXPR) para que o ERE do gate não
+#   case aqui, apenas no arquivo sintético em $T197D.
+# ---------------------------------------------------------------------------
+T197D="$WORK/s197/arm-d"
+mkdir -p "$T197D/scripts"
+cp "$T197/scripts/lib-crlf-normalize.sh" "$T197D/scripts/"
+PYBIN_EXPR='"$PY_BIN"'
+printf '#!/usr/bin/env bash\nSCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"\n. "$SCRIPT_DIR/lib-crlf-normalize.sh"\n' \
+  > "$T197D/scripts/check-pybin-bad-capture.sh"
+# Append the violating capture assembled from variable — $("$PY_BIN" never appears below.
+printf 'BAD_VAR=$(%s -c '"'"'print("hello")'"'"')\necho "$BAD_VAR"\n' "$PYBIN_EXPR" \
+  >> "$T197D/scripts/check-pybin-bad-capture.sh"
+
+assert_fails_with "crlf-normalize/pybin-capture" \
+  "python3 capture without strip_cr" \
+  env CRLF_GATE_MIN_CAPTURES=1 bash "$T197/scripts/check-crlf-normalize-capture.sh" \
+  --scan-root "$T197D"
+
+# ---------------------------------------------------------------------------
+# Braço E — $(python3 -c "sys.stdout.write('x\n')") sem strip_cr → gate REPROVA (ML-1C)
+#   Afirma que sys.stdout.write com \n literal no argumento é detectado como
+#   emissor de newline (condição 2 não isenta o bloco).
+#   Prova: antes de ML-1C o gate isentava este padrão (condição-2 não verificava
+#   sys.stdout.write); após ML-1C a isenção é removida e o gate reprova.
+# ---------------------------------------------------------------------------
+T197E="$WORK/s197/arm-e"
+mkdir -p "$T197E/scripts"
+cp "$T197/scripts/lib-crlf-normalize.sh" "$T197E/scripts/"
+printf '#!/usr/bin/env bash\nSCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"\n. "$SCRIPT_DIR/lib-crlf-normalize.sh"\n' \
+  > "$T197E/scripts/check-stdwrite-bad-capture.sh"
+# Append the violating capture — $(python3 literal assembled via $PY variable.
+PY=python3
+printf 'BAD_VAR=$(%s -c '"'"'import sys; sys.stdout.write("hello\\n")'"'"')\necho "$BAD_VAR"\n' "$PY" \
+  >> "$T197E/scripts/check-stdwrite-bad-capture.sh"
+
+assert_fails_with "crlf-normalize/stdout-write-capture" \
+  "python3 capture without strip_cr" \
+  env CRLF_GATE_MIN_CAPTURES=1 bash "$T197/scripts/check-crlf-normalize-capture.sh" \
+  --scan-root "$T197E"
+
+echo "OK   [falsify/crlf-normalize]: 5 braços (A/B/C/D/E) provados"
 
 # ---------------------------------------------------------------------------
 # ML-2B — fechamento do modo de enumeração. Desligado (default): este bloco

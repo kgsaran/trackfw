@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check-crlf-normalize-capture.sh — anti-reintroduction gate for ML-1B
+# check-crlf-normalize-capture.sh — anti-reintroduction gate for ML-1B / ML-1C
 # (ROADMAP-2026-09-23-bash-consome-stdout-de-python3-sem-normalizar-crlf-e-o-gate-examina-zero-no-windows.md)
 #
 # WHY THIS EXISTS:
@@ -12,8 +12,10 @@
 #
 # STRUCTURAL DISCRIMINANT (census ML-0A, Seção 2):
 #   Category (a) = three simultaneous conditions:
-#     1. Capture  — bash receives python3 stdout as data via $(python3 ...)
-#     2. Emission — Python emits \n (print(), writelines, sys.stdout.write+\n)
+#     1. Capture  — bash receives python3 stdout as data via $(python3 ...) or
+#                   $("$PY_BIN" ...) / $($PY_BIN ...)
+#     2. Emission — Python emits \n (print(), writelines, sys.stdout.write+\n,
+#                   os.linesep)
 #     3. No norm  — nothing strips \r between python3 and subsequent use
 #
 #   The gate exempts a capture when condition 1 or 2 is FALSE — computed
@@ -24,16 +26,44 @@
 #
 #   Condition 2 fails (no newline emitter in block):
 #     Block contains none of: print(  writelines  os.linesep
+#                             sys.stdout.write( followed by \n in argument
 #     Covers sys.stdout.write(hashlib/base64 data) which never emits \n.
 #     (Measured 2026-09-23: check-agent-models-parity.sh:927,928 and
 #     check-thirdparty-parity.sh:84,85,87 match this exemption.)
 #
+# FORMS COVERED BY DISCRIMINANT (condition 1):
+#   $(python3 ...)            — direct literal invocation (primary)
+#   $("$PY_BIN" ...)          — invocation via PY_BIN (double-quoted form)
+#   $($PY_BIN ...)            — invocation via PY_BIN (unquoted form)
+#
+# NON-COVERED FORMS (declared residuals — "not measured" is not acceptable;
+#                    these are measured and the limit is documented):
+#   < <(python3 ...)          — process substitution feeds a file descriptor,
+#                               not a shell variable; the one existing site
+#                               (check-no-literal-nul-in-source.sh) was fixed
+#                               inside the helper function; a new direct site
+#                               would require a second scanner pass.
+#   $(func_calling_python3)   — indirect capture via helper function; the four
+#                               known helpers (check_field_json,
+#                               normalize_barrier_json, target_ids_json,
+#                               doc_check_json) were corrected in ML-1C to
+#                               normalize internally; detecting a new helper
+#                               that calls python3 without normalizing requires
+#                               call-graph analysis beyond static line scanning.
+#   $("${PY_BIN}" ...)        — brace-quoted PY_BIN; not in use; the unquoted
+#                               and double-quoted forms cover all existing sites.
+#   eval "$CMD" (python3)     — eval expansion; no existing sites.
+#
 # NON-VACUITY:
-#   Floor measured 2026-09-23 by running this gate against the fully fixed tree.
+#   Floor re-measured 2026-09-23 (ML-1C) after extending discriminant to cover
+#   $("$PY_BIN" ...) / $($PY_BIN ...) forms. Two new candidates from
+#   check-gates-falsify.sh (PROSE_PAYLOAD and T65_BIG_PAYLOAD) now appear in
+#   the scan; both have strip_cr confirmed.
 #   Command: CRLF_GATE_MIN_CAPTURES=0 bash scripts/check-crlf-normalize-capture.sh
-#   Result: 66 candidates, 6 exempt (5 condition-2 + 1 condition-1).
-#   MIN_CAPTURES set to 50 (≈75% of measured — guards against empty-corpus
-#   silent pass).
+#   Result: 68 candidates, 6 exempt (5 condition-2 + 1 condition-1).
+#   MIN_CAPTURES set to 50 (≈74% of measured — guards against empty-corpus
+#   silent pass). Previous floor was 50 at 66 candidates (≈76%); floor is
+#   unchanged — still comfortably above the 74% threshold.
 #   Override with CRLF_GATE_MIN_CAPTURES env var (set to 1 in synthetic trees).
 #
 # DIAGNOSTIC STRINGS (must stay distinct — assert_fails_with matches on them):
@@ -72,9 +102,17 @@ TOTAL_EXEMPT=0
 SCANNED_FILES=0
 
 # ---------------------------------------------------------------------------
+# PY_DETECT_RE: matches command substitutions that invoke python3 or $PY_BIN.
+#   Forms covered: $(python3 ...) | $("$PY_BIN" ...) | $($PY_BIN <space>...)
+#   Stored in a variable so ERE alternation (|) works in [[ =~ ]] without
+#   quoting the variable — bash 4+ guarantees this behaviour.
+# ---------------------------------------------------------------------------
+PY_DETECT_RE='\$\([^\)]*python3|\$\("?\$PY_BIN[" ]'
+
+# ---------------------------------------------------------------------------
 # scan_file <file>
 #   Reads the file into an array and walks every non-comment line looking for
-#   $(python3 ... patterns. For each opening found:
+#   $(python3 ...) or $("$PY_BIN" ...) patterns. For each opening found:
 #     · Applies exemption conditions 1 and 2.
 #     · If not exempt: requires strip_cr within the block (same line or
 #       LOOKAHEAD_LINES ahead). Missing strip_cr → FAIL.
@@ -99,11 +137,13 @@ scan_file() {
       continue
     fi
 
-    # Detect opening of a python3 command substitution.
-    # Pattern (ERE): literal $( followed by any chars then python3.
-    # \$\( in ERE means: literal $ then literal (.
-    # This catches: $(python3 ...)  $(... | python3 ...)  etc.
-    if ! [[ "$line" =~ \$\([^\)]*python3 ]]; then
+    # Detect opening of a python3 command substitution (direct or via $PY_BIN).
+    # PY_DETECT_RE covers:
+    #   $(python3 ...)         — literal invocation
+    #   $("$PY_BIN" ...)       — PY_BIN double-quoted
+    #   $($PY_BIN <space>...)  — PY_BIN unquoted (trailing space required to
+    #                            avoid matching variable names like $PY_BINARY)
+    if ! [[ "$line" =~ $PY_DETECT_RE ]]; then
       ((i++))
       continue
     fi
@@ -140,17 +180,21 @@ scan_file() {
     # Condition 2 exemption: no newline emitter in block.
     # Only reached when strip_cr is NOT in the block.
     # If block contains none of: print(  writelines  os.linesep
+    #                            sys.stdout.write( with \n in argument
     # → condition 2 fails → Python cannot produce \r\n → exempt.
     # Covers sys.stdout.write(hashlib/base64 data) which never emits \n.
+    # NOTE: sys.stdout.write('x\n') IS a newline emitter — detected by the
+    # ERE 'sys\.stdout\.write\(.*\\n' (literal backslash-n in argument).
     local emits_newline=1
     if ! grep -qF 'print(' <<<"$block" && \
        ! grep -qF 'writelines' <<<"$block" && \
-       ! grep -qF 'os.linesep' <<<"$block"; then
+       ! grep -qF 'os.linesep' <<<"$block" && \
+       ! grep -qE 'sys\.stdout\.write\(.*\\n' <<<"$block"; then
       emits_newline=0
     fi
 
     if [ $emits_newline -eq 0 ]; then
-      echo "OK   [exempt/condition-2/$fname:$lineno] no newline emitter (print(/writelines/os.linesep absent in block)"
+      echo "OK   [exempt/condition-2/$fname:$lineno] no newline emitter (print(/writelines/os.linesep/sys.stdout.write+\\n absent in block)"
       ((TOTAL_EXEMPT++))
       ((i++))
       continue
