@@ -28,6 +28,8 @@ export PYTHONIOENCODING=utf-8
 # invocar cada chunk; a invocação direta do script original (sem a env var)
 # continua resolvendo pelo próprio caminho, sem mudança de comportamento.
 ROOT_DIR=${TRACKFW_ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
+# shellcheck source=scripts/lib-crlf-normalize.sh
+. "$ROOT_DIR/scripts/lib-crlf-normalize.sh"
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/trackfw-falsify.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 
@@ -3920,7 +3922,7 @@ cmd = ("bin/trackfw commit -m \"$(cat <<'"'"'EOF'"'"'\n"
        "EOF\n"
        ")\"")
 print(json.dumps({"tool_input": {"command": cmd}}))
-')
+' | strip_cr)
 
 T61_BASE_MOD="$WORK/s61-base-mod"
 mkdir -p "$T61_BASE_MOD/cmd" "$T61_BASE_MOD/internal"
@@ -4428,7 +4430,7 @@ mkdir -p "$T65_NO_YAML_DIR"
     0 1
 )
 
-T65_BIG_PAYLOAD=$("$PY_BIN" -c "import json; print(json.dumps({'tool_input':{'command':'git push','pad':'x'*200000}}))")
+T65_BIG_PAYLOAD=$("$PY_BIN" -c "import json; print(json.dumps({'tool_input':{'command':'git push','pad':'x'*200000}}))" | strip_cr)
 (
   cd "$T65_NO_YAML_DIR" && assert_writer_no_epipe \
     "git-branch-guard/stdin-drain-before-noop/baseline-writer-clean-large-payload" \

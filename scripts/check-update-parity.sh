@@ -34,6 +34,8 @@ export NO_COLOR=1
 export TERM=dumb
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# shellcheck source=scripts/lib-crlf-normalize.sh
+. "$ROOT_DIR/scripts/lib-crlf-normalize.sh"
 GO_BIN=${GO_BIN:-"$ROOT_DIR/bin/trackfw"}
 if [[ "$GO_BIN" != /* ]]; then
   GO_BIN="$(pwd)/$GO_BIN"
@@ -199,7 +201,7 @@ if [[ "$S1_GO_EXIT" != "0" ]]; then
 fi
 
 # Vacuity guard: output must parse as JSON with non-empty targets
-count=$(python3 -c "import json,sys; d=json.loads(sys.argv[1]); print(len(d.get('targets',[])))" "$S1_GO_OUT" 2>/dev/null || echo "PARSE_ERROR")
+count=$(python3 -c "import json,sys; d=json.loads(sys.argv[1]); print(len(d.get('targets',[])))" "$S1_GO_OUT" 2>/dev/null | strip_cr || echo "PARSE_ERROR")
 if [[ "$count" == "PARSE_ERROR" || "$count" == "0" ]]; then
   diag "update-harness/empty-harness/vacuity-guard" "go produced no parseable/non-empty targets array"
 fi
@@ -252,7 +254,7 @@ non_missing=$(python3 -c "
 import json, sys
 d = json.loads(sys.argv[1])
 print(sum(1 for t in d['targets'] if t['state'] != 'missing'))
-" "$S2_GO_OUT" 2>/dev/null || echo "PARSE_ERROR")
+" "$S2_GO_OUT" 2>/dev/null | strip_cr || echo "PARSE_ERROR")
 if [[ "$non_missing" == "PARSE_ERROR" || "$non_missing" == "0" ]]; then
   diag "update-harness/populated-harness/vacuity-guard" "go: no non-missing target found after installing claude agents"
 fi
@@ -276,7 +278,7 @@ if [[ "$S3_GO_EXIT" != "0" ]]; then
 fi
 
 if [[ "$FAIL" -eq 0 ]]; then
-  scope_go=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['scope'])" "$S3_GO_OUT" 2>/dev/null || echo "PARSE_ERROR")
+  scope_go=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['scope'])" "$S3_GO_OUT" 2>/dev/null | strip_cr || echo "PARSE_ERROR")
   if [[ "$scope_go" != "project" ]]; then
     diag "update-project/json/scope-field" "go: expected scope=\"project\", got \"$scope_go\""
   fi
@@ -317,7 +319,7 @@ if [[ "$S4_GO_EXIT" != "0" ]]; then
 fi
 
 if [[ "$FAIL" -eq 0 ]]; then
-  dry=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['dry_run'])" "$S4_GO_OUT")
+  dry=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['dry_run'])" "$S4_GO_OUT" | strip_cr)
   if [[ "$dry" != "True" ]]; then
     diag "update-harness/dry-run/dry-run-field" "expected dry_run=true in JSON, got $dry"
   fi
@@ -349,7 +351,7 @@ home="$WORK/s6-home-go"
 install_agent_global "$home" "gemini" "architect"
 artifact="$home/.gemini/agents/trackfw-architect.md"
 manifest="$home/.trackfw/integrations-manifest.json"
-art_key=$(python3 -c "import json; d=json.load(open('$manifest')); print(list(d['artifacts'].keys())[0])")
+art_key=$(python3 -c "import json; d=json.load(open('$manifest')); print(list(d['artifacts'].keys())[0])" | strip_cr)
 patch_manifest_outdated "$manifest" "$art_key" "$SKIP_SENTINEL"
 
 run_agents_install "$home" "$S6_PROJ" "gemini" "architect" "global"
@@ -374,7 +376,7 @@ S7_HOME="$WORK/s7-home-go"
 mkdir -p "$S7_PROJ" "$S7_HOME"
 install_agent_project "$S7_PROJ" "$S7_HOME" "claude" "architect"
 manifest="$S7_PROJ/.trackfw/integrations-manifest.json"
-art_key=$(python3 -c "import json; d=json.load(open('$manifest')); print(list(d['artifacts'].keys())[0])")
+art_key=$(python3 -c "import json; d=json.load(open('$manifest')); print(list(d['artifacts'].keys())[0])" | strip_cr)
 artifact="$art_key"  # manifest key IS the absolute artifact path for project scope
 patch_manifest_outdated "$manifest" "$artifact" "$SKIP_SENTINEL"
 
@@ -403,7 +405,7 @@ proj="$WORK/s8-proj-go"
 mkdir -p "$home" "$proj"
 install_agent_global "$home" "gemini" "architect"
 manifest="$home/.trackfw/integrations-manifest.json"
-art_key=$(python3 -c "import json; d=json.load(open('$manifest')); print(list(d['artifacts'].keys())[0])")
+art_key=$(python3 -c "import json; d=json.load(open('$manifest')); print(list(d['artifacts'].keys())[0])" | strip_cr)
 patch_manifest_outdated "$manifest" "$art_key" "$SKIP_SENTINEL"
 architect="$home/.gemini/agents/trackfw-architect.md"
 backend="$home/.gemini/agents/trackfw-backend.md"
@@ -452,7 +454,7 @@ try:
     print(str(d.get('dry_run', 'MISSING')).lower())
 except Exception as e:
     print('PARSE_ERROR:' + str(e))
-" "$UPDATE_STDOUT" 2>/dev/null || echo "PARSE_ERROR")
+" "$UPDATE_STDOUT" 2>/dev/null | strip_cr || echo "PARSE_ERROR")
 if [[ "$s9_dry_flag" != "true" ]]; then
   diag "sandbox/dangling-outside-set/vacuity" "dry_run field not true ($s9_dry_flag) — fixture broken or output unparseable"
 fi
@@ -484,7 +486,7 @@ try:
     print(d['targets'][0]['state'])
 except Exception as e:
     print('PARSE_ERROR:' + str(e))
-" "$UPDATE_STDOUT" 2>/dev/null || echo "PARSE_ERROR")
+" "$UPDATE_STDOUT" 2>/dev/null | strip_cr || echo "PARSE_ERROR")
 if [[ "$s10_state" == "PARSE_ERROR"* ]]; then
   diag "sandbox/dangling-inside-set/vacuity" "output unparseable: $s10_state"
 elif [[ "$s10_state" != "missing" ]]; then
@@ -538,7 +540,7 @@ try:
     print(d['targets'][0]['state'])
 except Exception as e:
     print('PARSE_ERROR:' + str(e))
-" "$UPDATE_STDOUT" 2>/dev/null || echo "PARSE_ERROR")
+" "$UPDATE_STDOUT" 2>/dev/null | strip_cr || echo "PARSE_ERROR")
 
   run_update "$WORK/s11-home-real-go" "$S11_REAL" --json --targets agent-rules
   s11_real_state=$(python3 -c "
@@ -548,7 +550,7 @@ try:
     print(d['targets'][0]['state'])
 except Exception as e:
     print('PARSE_ERROR:' + str(e))
-" "$UPDATE_STDOUT" 2>/dev/null || echo "PARSE_ERROR")
+" "$UPDATE_STDOUT" 2>/dev/null | strip_cr || echo "PARSE_ERROR")
 
   if [[ "$s11_real_state" != "updated" ]]; then
     diag "sandbox/gap-e/vacuity" "real-run state='$s11_real_state' (expected 'updated') — fixture may be broken"
@@ -590,7 +592,7 @@ try:
     print(d['targets'][0]['state'])
 except Exception as e:
     print('PARSE_ERROR:' + str(e))
-" "$UPDATE_STDOUT" 2>/dev/null || echo "PARSE_ERROR")
+" "$UPDATE_STDOUT" 2>/dev/null | strip_cr || echo "PARSE_ERROR")
 
 run_update "$WORK/s12-home-real-go" "$S12_REAL" --json --targets agent-hooks
 s12_real_state=$(python3 -c "
@@ -600,7 +602,7 @@ try:
     print(d['targets'][0]['state'])
 except Exception as e:
     print('PARSE_ERROR:' + str(e))
-" "$UPDATE_STDOUT" 2>/dev/null || echo "PARSE_ERROR")
+" "$UPDATE_STDOUT" 2>/dev/null | strip_cr || echo "PARSE_ERROR")
 
 if [[ ! -f "$S12_REAL/.github/hooks/trackfw-attention.json" ]]; then
   diag "sandbox/gap-c/vacuity" ".github/hooks/trackfw-attention.json not created in real run — fixture may be broken"
@@ -635,7 +637,7 @@ try:
     print(d['targets'][0]['path'])
 except Exception as e:
     print('PARSE_ERROR:' + str(e))
-" "$UPDATE_STDOUT" 2>/dev/null || echo "PARSE_ERROR")
+" "$UPDATE_STDOUT" 2>/dev/null | strip_cr || echo "PARSE_ERROR")
 s13_state=$(python3 -c "
 import json, sys
 try:
@@ -643,7 +645,7 @@ try:
     print(d['targets'][0]['state'])
 except Exception as e:
     print('PARSE_ERROR:' + str(e))
-" "$UPDATE_STDOUT" 2>/dev/null || echo "PARSE_ERROR")
+" "$UPDATE_STDOUT" 2>/dev/null | strip_cr || echo "PARSE_ERROR")
 
 if [[ "$s13_state" == "missing" ]]; then
   diag "sandbox/gap-ab/vacuity" "agent-hooks state=missing — fixture may be broken"
@@ -693,7 +695,7 @@ try:
     print(d['targets'][0]['state'])
 except Exception as e:
     print('PARSE_ERROR:' + str(e))
-" "$UPDATE_STDOUT" 2>/dev/null || echo "PARSE_ERROR")
+" "$UPDATE_STDOUT" 2>/dev/null | strip_cr || echo "PARSE_ERROR")
 
   run_update "$WORK/s14-home-go" "$S14_PROJ" --json --targets claude-commands
   s14_real_state=$(python3 -c "
@@ -703,7 +705,7 @@ try:
     print(d['targets'][0]['state'])
 except Exception as e:
     print('PARSE_ERROR:' + str(e))
-" "$UPDATE_STDOUT" 2>/dev/null || echo "PARSE_ERROR")
+" "$UPDATE_STDOUT" 2>/dev/null | strip_cr || echo "PARSE_ERROR")
 
   if [[ "$s14_real_state" != "skipped" ]]; then
     diag "sandbox/dir-already-correct/vacuity-real-skipped" "real-run state='$s14_real_state' (expected 'skipped') — prime did not produce correct content, or target is non-idempotent"

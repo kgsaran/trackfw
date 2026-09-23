@@ -39,6 +39,8 @@ export PYTHONIOENCODING=utf-8
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# shellcheck source=scripts/lib-crlf-normalize.sh
+. "$SCRIPT_DIR/lib-crlf-normalize.sh"
 BUILD_WHEEL="$REPO_ROOT/pypi/scripts/build_wheel.py"
 
 WORK=""
@@ -50,7 +52,7 @@ trap cleanup EXIT
 # ---------------------------------------------------------------------------
 if [[ "${1:-}" == "--falsify-raw" ]]; then
   RAW_NAME="trackfw-8.0.0-rc1-py3-none-manylinux_2_17_x86_64.whl"
-  result=$(python3 - <<PYEOF
+  result=$(python3 - <<PYEOF | strip_cr
 import sys
 try:
     from packaging.utils import parse_wheel_filename, InvalidWheelFilename
@@ -85,7 +87,7 @@ fi
 # ---------------------------------------------------------------------------
 if [[ "${1:-}" == "--falsify-normalized" ]]; then
   NORM_NAME="trackfw-8.0.0rc1-py3-none-manylinux_2_17_x86_64.whl"
-  result=$(python3 - <<PYEOF
+  result=$(python3 - <<PYEOF | strip_cr
 import sys
 try:
     from packaging.utils import parse_wheel_filename, InvalidWheelFilename
@@ -160,7 +162,7 @@ fi
 BASENAME=$(basename "$WHL")
 
 # Valida nome + internos com o parser oficial
-result=$(python3 - "$BASENAME" "$WHL" <<PYEOF
+result=$(python3 - "$BASENAME" "$WHL" <<PYEOF | strip_cr
 import sys, zipfile
 fname = sys.argv[1]
 whl_path = sys.argv[2]

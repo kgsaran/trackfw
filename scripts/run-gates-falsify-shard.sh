@@ -35,6 +35,8 @@ set -euo pipefail
 export PYTHONIOENCODING=utf-8
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# shellcheck source=scripts/lib-crlf-normalize.sh
+. "$ROOT_DIR/scripts/lib-crlf-normalize.sh"
 
 : "${SHARD_INDEX:?SHARD_INDEX (0-based) precisa estar setada}"
 : "${SHARD_COUNT:?SHARD_COUNT precisa estar setada}"
@@ -82,7 +84,7 @@ WORKDIR=$(mktemp -d "${TMPDIR:-/tmp}/trackfw-falsify-shard.XXXXXX")
 trap 'rm -rf "$WORKDIR"' EXIT
 
 # shellcheck disable=SC2086
-$PY_BIN "$GEN" "$SCRIPT" "$WORKDIR" "$SHARD_COUNT" > "$WORKDIR/manifest.txt"
+$PY_BIN "$GEN" "$SCRIPT" "$WORKDIR" "$SHARD_COUNT" | strip_cr > "$WORKDIR/manifest.txt"
 cat "$WORKDIR/manifest.txt" >&2
 
 CHUNK="$WORKDIR/chunk_${SHARD_INDEX}.sh"

@@ -17,6 +17,8 @@ export NO_COLOR=1
 export TERM=dumb
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# shellcheck source=scripts/lib-crlf-normalize.sh
+. "$ROOT_DIR/scripts/lib-crlf-normalize.sh"
 GO_BIN=${GO_BIN:-"$ROOT_DIR/bin/trackfw"}
 case "$GO_BIN" in
   /*) ;;
@@ -163,7 +165,7 @@ fi
 
 # D2-bis: installed_sha256 must be the normalized hash, not the raw hash
 installed_sha256=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['entries']['.claude/skills/thirdparty/my-skill.md']['installed_sha256'])" \
-  "$project/.trackfw/thirdparty-provenance.json" 2>/dev/null || true)
+  "$project/.trackfw/thirdparty-provenance.json" 2>/dev/null | strip_cr || true)
 if [[ "$installed_sha256" == "$INSTALLED_SHA256" ]]; then
   ok "go: thirdparty-provenance.json installed_sha256 matches normalized content hash (D2-bis)"
 else

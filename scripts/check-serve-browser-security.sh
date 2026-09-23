@@ -20,6 +20,8 @@ export NO_COLOR=1
 export TERM=dumb
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# shellcheck source=scripts/lib-crlf-normalize.sh
+. "$ROOT_DIR/scripts/lib-crlf-normalize.sh"
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/trackfw-serve-browser-security.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 
@@ -95,7 +97,7 @@ import subprocess
 url = '$ZONE_VECTOR_URL'
 argv = ['cmd', '/c', 'start', '', url]
 print(subprocess.list2cmdline(argv))
-" 2>/dev/null)
+" 2>/dev/null | strip_cr)
 
 if [[ -z "$ZONE_CMDLINE" ]]; then
   fail "zone-id-injection/vulnerable-arm" "list2cmdline check failed — cannot measure the attack vector (fail-closed)"

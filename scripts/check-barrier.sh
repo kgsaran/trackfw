@@ -23,6 +23,8 @@ set -euo pipefail
 export PYTHONIOENCODING=utf-8
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# shellcheck source=scripts/lib-crlf-normalize.sh
+. "$ROOT_DIR/scripts/lib-crlf-normalize.sh"
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/trackfw-barrier.XXXXXX")
 trap 'chmod -R u+w "$WORK" 2>/dev/null; rm -rf "$WORK"' EXIT
 
@@ -130,7 +132,7 @@ run_barrier() {
 # doc_status DOC — prints the top-level "status" field of a barrier JSON document.
 doc_status() {
   local doc=$1
-  python3 -c "import json, sys; print(json.loads(sys.argv[1])['status'])" "$doc"
+  python3 -c "import json, sys; print(json.loads(sys.argv[1])['status'])" "$doc" | strip_cr
 }
 
 # check_field_json DOC NAME FIELD — prints the JSON-encoded value of one field
@@ -886,7 +888,7 @@ exit 0
 - [x] done
 EOF
 get_wave_field() {
-  python3 -c "import json,sys; print(json.loads(sys.argv[1])['wave'])" "$1"
+  python3 -c "import json,sys; print(json.loads(sys.argv[1])['wave'])" "$1" | strip_cr
 }
 for runtime in go; do  # ML-3A (v8): node py removidos
   # --wave 2-bis must resolve Wave 2-bis (wave field = "2-bis", not "2")
@@ -986,7 +988,7 @@ run_barrier go "$S11" ROADMAP-barrier-fixture --wave 0 --json --trust-local-gate
 GO_STDOUT11="$BARRIER_STDOUT"
 # started_at/finished_at are timestamps and legitimately differ per run — strip them before comparing.
 STRIP_TS='import json,sys; d=json.loads(sys.argv[1]); d.pop("started_at",None); d.pop("finished_at",None); print(json.dumps(d,sort_keys=True))'
-GO_NORM11=$(python3 -c "$STRIP_TS" "$GO_STDOUT11")
+GO_NORM11=$(python3 -c "$STRIP_TS" "$GO_STDOUT11" | strip_cr)
 ok "barrier/wave-label/wave-zero-accepted/parity/go-behavioral-pin"
 
 # ---------------------------------------------------------------------------
@@ -1195,16 +1197,16 @@ for runtime in go; do  # ML-3A (v8): node py removidos
   # AC14: sentinel-absence FIRST
   [[ ! -f "$SENTINEL14" ]] || fail "barrier/trust/not-committed/$runtime" "hostile gate EXECUTED — sentinel was created; trust check failed to block execution"
   [[ "$BARRIER_EXIT" -eq 1 ]] || fail "barrier/trust/not-committed/$runtime" "expected exit 1, got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
-  GATES_STATUS14=$(python3 -c "import json,sys; d=json.loads(sys.argv[1]); r=[c['status'] for c in d['checks'] if c['name']=='gates']; print(r[0] if r else 'MISSING')" "$BARRIER_STDOUT")
+  GATES_STATUS14=$(python3 -c "import json,sys; d=json.loads(sys.argv[1]); r=[c['status'] for c in d['checks'] if c['name']=='gates']; print(r[0] if r else 'MISSING')" "$BARRIER_STDOUT" | strip_cr)
   [[ "$GATES_STATUS14" == "not_evaluated" ]] || fail "barrier/trust/not-committed/$runtime" "expected gates.status=not_evaluated, got [$GATES_STATUS14]; stdout: $BARRIER_STDOUT"
-  GATES_FAIL14=$(python3 -c "import json,sys; d=json.loads(sys.argv[1]); r=[c.get('failures',[]) for c in d['checks'] if c['name']=='gates']; print(r[0][0] if r and r[0] else 'MISSING')" "$BARRIER_STDOUT")
+  GATES_FAIL14=$(python3 -c "import json,sys; d=json.loads(sys.argv[1]); r=[c.get('failures',[]) for c in d['checks'] if c['name']=='gates']; print(r[0][0] if r and r[0] else 'MISSING')" "$BARRIER_STDOUT" | strip_cr)
   [[ "$GATES_FAIL14" == "$EXPECTED_NOT_COMMITTED" ]] || fail "barrier/trust/not-committed/$runtime" "failure message mismatch; want [$EXPECTED_NOT_COMMITTED] got [$GATES_FAIL14]"
   ok "barrier/trust/not-committed/$runtime"
 done
 
 # Cross-CLI JSON parity for not_evaluated (normalized — timestamps stripped)
 STRIP_TS_TRUST='import json,sys; d=json.loads(sys.argv[1]); d.pop("started_at",None); d.pop("finished_at",None); print(json.dumps(d,sort_keys=True))'
-run_barrier go   "$S14" ROADMAP-trust-fixture --wave 1 --json; GO_S14=$(python3 -c "$STRIP_TS_TRUST" "$BARRIER_STDOUT")
+run_barrier go   "$S14" ROADMAP-trust-fixture --wave 1 --json; GO_S14=$(python3 -c "$STRIP_TS_TRUST" "$BARRIER_STDOUT" | strip_cr)
 ok "barrier/trust/not-committed/parity/go-behavioral-pin"
 
 # ---------------------------------------------------------------------------
@@ -1224,7 +1226,7 @@ for runtime in go; do  # ML-3A (v8): node py removidos
   # validate check inside barrier may legitimately fail on the minimal git
   # fixture (branch_has_wip_roadmap etc.) — that is orthogonal to trust.
   [[ -f "$SENTINEL15" ]] || fail "barrier/trust/trust-local-gates/$runtime" "gate did NOT execute — sentinel was NOT created; --trust-local-gates may be broken"
-  GATES_STATUS15=$(python3 -c "import json,sys; d=json.loads(sys.argv[1]); r=[c['status'] for c in d['checks'] if c['name']=='gates']; print(r[0] if r else 'MISSING')" "$BARRIER_STDOUT")
+  GATES_STATUS15=$(python3 -c "import json,sys; d=json.loads(sys.argv[1]); r=[c['status'] for c in d['checks'] if c['name']=='gates']; print(r[0] if r else 'MISSING')" "$BARRIER_STDOUT" | strip_cr)
   [[ "$GATES_STATUS15" == "passed" ]] || fail "barrier/trust/trust-local-gates/$runtime" "expected gates.status=passed, got [$GATES_STATUS15]"
   ok "barrier/trust/trust-local-gates/$runtime"
 done
@@ -1234,7 +1236,7 @@ done
 # minimal fixture — parity claim is about the gates check, not validate).
 STRIP_TS_GATES='import json,sys; d=json.loads(sys.argv[1]); d.pop("started_at",None); d.pop("finished_at",None); d["checks"]=[c for c in d.get("checks",[]) if c["name"]=="gates"]; print(json.dumps(d,sort_keys=True))'
 rm -f "$SENTINEL15"
-run_barrier go   "$S15" ROADMAP-trust-fixture --wave 1 --json --trust-local-gates; GO_S15=$(python3 -c "$STRIP_TS_GATES" "$BARRIER_STDOUT")
+run_barrier go   "$S15" ROADMAP-trust-fixture --wave 1 --json --trust-local-gates; GO_S15=$(python3 -c "$STRIP_TS_GATES" "$BARRIER_STDOUT" | strip_cr)
 rm -f "$SENTINEL15"
 rm -f "$SENTINEL15"
 ok "barrier/trust/trust-local-gates/parity/go-behavioral-pin"
@@ -1255,14 +1257,14 @@ for runtime in go; do  # ML-3A (v8): node py removidos
   # Do NOT assert exit 0: validate inside barrier may fail on the minimal git
   # fixture — that is orthogonal to the trust check being exercised here.
   [[ -f "$SENTINEL16" ]] || fail "barrier/trust/trusted-identical/$runtime" "gate did NOT execute — sentinel was NOT created; trust check may be over-refusing"
-  GATES_STATUS16=$(python3 -c "import json,sys; d=json.loads(sys.argv[1]); r=[c['status'] for c in d['checks'] if c['name']=='gates']; print(r[0] if r else 'MISSING')" "$BARRIER_STDOUT")
+  GATES_STATUS16=$(python3 -c "import json,sys; d=json.loads(sys.argv[1]); r=[c['status'] for c in d['checks'] if c['name']=='gates']; print(r[0] if r else 'MISSING')" "$BARRIER_STDOUT" | strip_cr)
   [[ "$GATES_STATUS16" == "passed" ]] || fail "barrier/trust/trusted-identical/$runtime" "expected gates.status=passed, got [$GATES_STATUS16]"
   ok "barrier/trust/trusted-identical/$runtime"
 done
 
 # Cross-CLI JSON parity for trusted-identical gates check specifically
 rm -f "$SENTINEL16"
-run_barrier go   "$S16" ROADMAP-trust-fixture --wave 1 --json; GO_S16=$(python3 -c "$STRIP_TS_GATES" "$BARRIER_STDOUT")
+run_barrier go   "$S16" ROADMAP-trust-fixture --wave 1 --json; GO_S16=$(python3 -c "$STRIP_TS_GATES" "$BARRIER_STDOUT" | strip_cr)
 rm -f "$SENTINEL16"
 rm -f "$SENTINEL16"
 ok "barrier/trust/trusted-identical/parity/go-behavioral-pin"
@@ -1287,15 +1289,15 @@ for runtime in go; do  # ML-3A (v8): node py removidos
   run_barrier "$runtime" "$S17" ROADMAP-trust-fixture --wave 1 --json
   [[ ! -f "$SENTINEL17" ]] || fail "barrier/trust/content-differs/$runtime" "hostile gate EXECUTED — sentinel was created; content-differs check failed"
   [[ "$BARRIER_EXIT" -eq 1 ]] || fail "barrier/trust/content-differs/$runtime" "expected exit 1, got $BARRIER_EXIT; stderr: $BARRIER_STDERR"
-  GATES_STATUS17=$(python3 -c "import json,sys; d=json.loads(sys.argv[1]); r=[c['status'] for c in d['checks'] if c['name']=='gates']; print(r[0] if r else 'MISSING')" "$BARRIER_STDOUT")
+  GATES_STATUS17=$(python3 -c "import json,sys; d=json.loads(sys.argv[1]); r=[c['status'] for c in d['checks'] if c['name']=='gates']; print(r[0] if r else 'MISSING')" "$BARRIER_STDOUT" | strip_cr)
   [[ "$GATES_STATUS17" == "not_evaluated" ]] || fail "barrier/trust/content-differs/$runtime" "expected gates.status=not_evaluated, got [$GATES_STATUS17]"
-  GATES_FAIL17=$(python3 -c "import json,sys; d=json.loads(sys.argv[1]); r=[c.get('failures',[]) for c in d['checks'] if c['name']=='gates']; print(r[0][0] if r and r[0] else 'MISSING')" "$BARRIER_STDOUT")
+  GATES_FAIL17=$(python3 -c "import json,sys; d=json.loads(sys.argv[1]); r=[c.get('failures',[]) for c in d['checks'] if c['name']=='gates']; print(r[0][0] if r and r[0] else 'MISSING')" "$BARRIER_STDOUT" | strip_cr)
   [[ "$GATES_FAIL17" == "$EXPECTED_DIFFERS" ]] || fail "barrier/trust/content-differs/$runtime" "failure message mismatch; want [$EXPECTED_DIFFERS] got [$GATES_FAIL17]"
   ok "barrier/trust/content-differs/$runtime"
 done
 
 # Cross-CLI JSON parity for content-differs path
-run_barrier go   "$S17" ROADMAP-trust-fixture --wave 1 --json; GO_S17=$(python3 -c "$STRIP_TS_TRUST" "$BARRIER_STDOUT")
+run_barrier go   "$S17" ROADMAP-trust-fixture --wave 1 --json; GO_S17=$(python3 -c "$STRIP_TS_TRUST" "$BARRIER_STDOUT" | strip_cr)
 ok "barrier/trust/content-differs/parity/go-behavioral-pin"
 
 echo

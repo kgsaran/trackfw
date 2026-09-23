@@ -39151,3 +39151,33 @@ Documento revisado após chamada de advisor que bloqueou a primeira versão em 4
 - 🔴 **Achado que governa o ML-1A: `tr -d '\r'` está proibido.** Existe fixture com CRLF **intencional** (`check-roadmap-barrier-contract.sh:1091`, `write_fixture_crlf()`, para o #216) que seria destruído em silêncio. Regra: `sed 's/\r$//'` sobre **stdout capturado**, nunca sobre conteúdo de arquivo. É a direção (b) da falsificação, que costuma ser esquecida.
 - **Coordenação:** há outro agente (do consumidor) abrindo PRs neste repo. **#411** corrige um defeito **nosso** — o step de `self-governance` roda no fork porque `quality.yml` é o mesmo arquivo; corrigimos o `make quality` local e esquecemos o CI do consumidor. Testei em worktree separado: o PR dele **não quebra** nosso gate `ci-workflow/self-governance-invoked` (RC=0). **#412** ataca o #398.
 - **Declarei escopo no #353** para evitar duplicação: publiquei a medição da Wave 0 e disse que **#363, #307, #364, #308 estão livres**, pedindo só que não toquem nos 19 sítios de consumo de stdout. Oferta não é PR — quem vai implementar diz no ticket.
+
+### 2026-09-23 — apolo-tf — ML-1A concluído: ponto único de normalização CRLF nos 19 sítios (a)
+
+**Escopo:** ML-1A do roadmap `ROADMAP-2026-09-23-bash-consome-stdout-de-python3-sem-normalizar-crlf-e-o-gate-examina-zero-no-windows.md`.
+
+**Entregáveis:**
+- `scripts/lib-crlf-normalize.sh` — ponto único: `strip_cr() { sed $'s/\r$//'; }` (ANSI-C quoting para portabilidade BSD sed)
+- 19 scripts category (a) corrigidos: source adicionado + `| strip_cr` em cada captura `$(python3 ...)`
+
+**Scripts modificados (19):** `check-barrier.sh`, `check-channels-content.sh`, `check-falsify-shard-coverage.sh`, `check-gates-falsify.sh`, `check-git-branch-guard-hook-schema.sh`, `check-goreleaser-prerelease.sh`, `check-install-restriction.sh`, `check-manifest-version-gate.sh`, `check-no-literal-nul-in-source.sh`, `check-platform-matrix-parity.sh`, `check-release-tag-parity.sh`, `check-roadmap-barrier-contract.sh`, `check-serve-browser-security.sh`, `check-thirdparty-parity.sh`, `check-update-parity.sh`, `check-wheel-filename.sh`, `run-gates-falsify-parallel.sh`, `run-gates-falsify-shard.sh`, `trackfw-attention-signal.sh`
+
+**Fixos em nível de função (cobre todos call sites):** `decode_shape()` (check-git-branch-guard-hook-schema.sh), `doc_status()` e `get_wave_field()` (check-barrier.sh), `assert_check_status()` (check-roadmap-barrier-contract.sh), `json_field()` (check-release-tag-parity.sh)
+
+**`tr -d '\r'` não usado:** `sed $'s/\r$//'` em ponto único. `write_fixture_crlf()` intocada (escreve em arquivo, fora da população).
+
+**Evidência:**
+- `go build ./...` → RC=0
+- `go test ./...` → RC=0 (todos os pacotes)
+- `trackfw validate` → RC=0 (145 warnings pré-existentes, sem violações novas)
+- Provas load-bearing: CRLF stripped, LF preservado, 'valorr' preservado, fixture CRLF intacta (3 `\r\n` confirmados por `od -c`)
+- Gates individuais: `check-barrier.sh`, `check-manifest-version-gate.sh`, `check-serve-browser-security.sh`, `check-platform-matrix-parity.sh`, `check-roadmap-barrier-contract.sh`, `check-git-branch-guard-hook-schema.sh` → todos RC=0
+
+**Não commitado. Handoff para `trackfw_architect`.**
+
+### 2026-09-23 — Zeus — ML-1A auditado e aprovado
+- **Ponto único:** `scripts/lib-crlf-normalize.sh` com `strip_cr() { sed $'s/\r$//'; }`, sourceado pelos 19 sítios. ANSI-C quoting (`$'...'`) para o `sed` do BSD/macOS.
+- 🔴 **Provei a distinção delimitador/conteúdo eu mesmo**, que é o que a Wave 0 exigiu: `valor\r\n` → CR final removido · `valorr\n` → **os dois `r` preservados** (`tr -d '\r'` teria comido um) · **`a\rb\n` → `61 0d 62 0a`, CR no MEIO preservado**. É essa última que salva os fixtures do #216.
+- **Braço (b) confirmado:** `write_fixture_crlf` **intocada** (diff vazio), e `check-roadmap-barrier-contract` em **49 cenários OK**. `check-orphan-gates` aprova — o `lib-*.sh` não entra na varredura de `check-*.sh`.
+- **Discrepância declarada pelo executor, não silenciada:** a Wave 0 listou 9 sítios inline em `check-barrier.sh`; ele encontrou também `doc_status()` e `get_wave_field()` e corrigiu **no nível da função**, cobrindo todos os call sites. Declarar em vez de corrigir em silêncio é o comportamento certo.
+- **Coordenação:** comentei no **#413** do outro agente — `Error 126` era **bit de execução ausente** (`100644` contra `100755` dos outros ~40 gates), não lógica de gate. Sugeri, como não-bloqueante, um gate para a classe: `check-*.sh` invocado direto no Makefile deve ser `100755` — o `check-orphan-gates` exige **consumidor**, não **executabilidade**.

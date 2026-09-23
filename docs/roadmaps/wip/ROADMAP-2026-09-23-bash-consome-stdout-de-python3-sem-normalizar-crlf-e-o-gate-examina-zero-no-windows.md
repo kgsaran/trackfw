@@ -114,7 +114,7 @@ sobre conteúdo de arquivo.
 > Dependências: Wave 0 auditada. Escopo definido pela tabela do ML-0A.
 
 ### ML-1A — ponto único de normalização + os sítios (a)
-**Status:** ⬜ Pendente · **Papel:** `apolo-tf`
+**Status:** ✅ Concluído · **Papel:** `apolo-tf`
 
 🔴 **Ponto único, não `tr -d '\r'` espalhado.** Foi cópia de helper que originou a REQ-2026-08-31, e
 o issue #401 registra três cópias byte-idênticas do mesmo padrão ainda abertas. Não crie a quarta.

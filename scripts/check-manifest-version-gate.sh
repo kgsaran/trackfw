@@ -38,6 +38,8 @@ export PYTHONIOENCODING=utf-8
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# shellcheck source=scripts/lib-crlf-normalize.sh
+. "$SCRIPT_DIR/lib-crlf-normalize.sh"
 
 PASS=0
 FAIL=0
@@ -82,7 +84,7 @@ try:
 except Exception as e:
     print('', end='')
     sys.exit(1)
-" "$pkg_json" 2>/dev/null) || manifest_version=""
+" "$pkg_json" 2>/dev/null | strip_cr) || manifest_version=""
     if [[ -z "$manifest_version" ]]; then
         fail "$pkg_json: could not read version field"
         continue
@@ -134,7 +136,7 @@ try:
     print(d.get('version', ''))
 except Exception:
     sys.exit(1)
-" "$NPM_PKG" 2>/dev/null) || NPM_VERSION=""
+" "$NPM_PKG" 2>/dev/null | strip_cr) || NPM_VERSION=""
     if [[ -z "$NPM_VERSION" ]]; then
         fail "npm/package.json: could not read version field"
     elif [[ "$NPM_VERSION" != "$GO_VERSION" ]]; then

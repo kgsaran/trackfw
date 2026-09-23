@@ -31,6 +31,8 @@ export NO_COLOR=1
 export TERM=dumb
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+# shellcheck source=scripts/lib-crlf-normalize.sh
+. "$ROOT_DIR/scripts/lib-crlf-normalize.sh"
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/trackfw-roadmap-barrier-contract.XXXXXX")
 # Resolve para o caminho FÍSICO (pwd -P), não o simbólico. $TMPDIR no macOS é
 # /var/folders/... -> /private/var/folders/... (symlink). Sem isto, o `roadmapTrustForGates`
@@ -124,7 +126,7 @@ print('null')
 assert_check_status() {
   local label=$1 doc=$2 name=$3 expected=$4
   local status
-  status=$(doc_check_json "$doc" "$name" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
+  status=$(doc_check_json "$doc" "$name" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))" | strip_cr)
   if [[ "$status" != "$expected" ]]; then
     fail "$label" "check '$name' status='$status', esperado '$expected'; doc=$doc"
     return 1
@@ -786,7 +788,7 @@ EOF
 FENCE_TILDE_BLOCKED_DIVERGENT=""
 for rt in go; do  # ML-3A (v8): node py removidos
   run_cli "$rt" "$FALSIFY_DIR" barrier fence-phantom-tilde-blocked-cross-runtime --wave 1 --json
-  mls_status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
+  mls_status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))" | strip_cr)
   mls_failures=$(doc_check_json "$CLI_STDOUT" "mls_complete" "failures")
   if [[ "$mls_status" != "blocked" ]] || ! json_field_equals "$mls_failures" '["ML-1A: not complete (status: ⬜ Pendente)"]'; then
     FENCE_TILDE_BLOCKED_DIVERGENT="${FENCE_TILDE_BLOCKED_DIVERGENT}${rt}(status=$mls_status,failures=$mls_failures) "
@@ -824,7 +826,7 @@ EOF
 FENCE_B4_BLOCKED_DIVERGENT=""
 for rt in go; do  # ML-3A (v8): node py removidos
   run_cli "$rt" "$FALSIFY_DIR" barrier fence-phantom-backtick4-blocked-cross-runtime --wave 1 --json
-  mls_status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
+  mls_status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))" | strip_cr)
   mls_failures=$(doc_check_json "$CLI_STDOUT" "mls_complete" "failures")
   if [[ "$mls_status" != "blocked" ]] || ! json_field_equals "$mls_failures" '["ML-1A: not complete (status: ⬜ Pendente)"]'; then
     FENCE_B4_BLOCKED_DIVERGENT="${FENCE_B4_BLOCKED_DIVERGENT}${rt}(status=$mls_status,failures=$mls_failures) "
@@ -849,7 +851,7 @@ EOF
 INDENT_DIVERGENT=""
 for rt in go; do  # ML-3A (v8): node py removidos
   run_cli "$rt" "$FALSIFY_DIR" barrier indented-status --wave 1 --json
-  status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
+  status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))" | strip_cr)
   if [[ "$status" != "blocked" ]]; then
     INDENT_DIVERGENT="${INDENT_DIVERGENT}${rt}(status=$status) "
   fi
@@ -922,8 +924,8 @@ EOF
 FENCE_BYPASS_DIVERGENT=""
 for rt in go; do  # ML-3A (v8): node py removidos
   run_cli "$rt" "$FALSIFY_DIR" barrier fence-close-with-trailing-content-bypass --wave 1 --json
-  mls_status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
-  ev_status=$(doc_check_json "$CLI_STDOUT" "acceptance_evidence" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
+  mls_status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))" | strip_cr)
+  ev_status=$(doc_check_json "$CLI_STDOUT" "acceptance_evidence" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))" | strip_cr)
   if [[ "$mls_status" != "blocked" || "$ev_status" != "blocked" ]]; then
     FENCE_BYPASS_DIVERGENT="${FENCE_BYPASS_DIVERGENT}${rt}(mls_complete=$mls_status,acceptance_evidence=$ev_status) "
   fi
@@ -1003,7 +1005,7 @@ PYEOF
 COMBINING_VERDICTS=""
 for rt in go; do  # ML-3A (v8): node py removidos
   run_cli "$rt" "$FALSIFY_DIR" barrier combining-mark-out-of-range-u1dc0 --wave 1 --json
-  status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
+  status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))" | strip_cr)
   COMBINING_VERDICTS="${COMBINING_VERDICTS}${rt}=${status} "
 done
 COMBINING_DIVERGENT=""
@@ -1044,7 +1046,7 @@ EOF
 VS16_VERDICTS=""
 for rt in go; do  # ML-3A (v8): node py removidos
   run_cli "$rt" "$FALSIFY_DIR" barrier vs16-still-accepted --wave 1 --json
-  status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
+  status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))" | strip_cr)
   VS16_VERDICTS="${VS16_VERDICTS}${rt}=${status} "
 done
 if [[ "$VS16_VERDICTS" != *"go=passed"* ]]; then  # ML-3A (v8): node/py removidos — go-behavioral-pin
@@ -1068,7 +1070,7 @@ EOF
 ACCENTED_VERDICTS=""
 for rt in go; do  # ML-3A (v8): node py removidos
   run_cli "$rt" "$FALSIFY_DIR" barrier accented-concluido-still-accepted --wave 1 --json
-  status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
+  status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))" | strip_cr)
   ACCENTED_VERDICTS="${ACCENTED_VERDICTS}${rt}=${status} "
 done
 if [[ "$ACCENTED_VERDICTS" != *"go=passed"* ]]; then  # ML-3A (v8): node/py removidos — go-behavioral-pin
@@ -1117,8 +1119,8 @@ EOF
 CRLF_FULL_DIVERGENT=""
 for rt in go; do  # ML-3A (v8): node py removidos
   run_cli "$rt" "$FALSIFY_DIR" barrier crlf-full-roadmap-passes --wave 1 --json
-  mls_status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
-  acc_status=$(doc_check_json "$CLI_STDOUT" "acceptance_evidence" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
+  mls_status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))" | strip_cr)
+  acc_status=$(doc_check_json "$CLI_STDOUT" "acceptance_evidence" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))" | strip_cr)
   if [[ "$mls_status" != "passed" || "$acc_status" != "passed" ]]; then
     CRLF_FULL_DIVERGENT="${CRLF_FULL_DIVERGENT}${rt}(mls_complete=$mls_status,acceptance_evidence=$acc_status) "
   fi
@@ -1140,7 +1142,7 @@ EOF
 CRLF_PENDING_DIVERGENT=""
 for rt in go; do  # ML-3A (v8): node py removidos
   run_cli "$rt" "$FALSIFY_DIR" barrier crlf-pending-ml-blocks --wave 1 --json
-  mls_status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
+  mls_status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))" | strip_cr)
   if [[ "$mls_status" != "blocked" ]]; then
     CRLF_PENDING_DIVERGENT="${CRLF_PENDING_DIVERGENT}${rt}(mls_complete=$mls_status) "
   fi
@@ -1170,7 +1172,7 @@ EOF
 CRLF_FENCE_DIVERGENT=""
 for rt in go; do  # ML-3A (v8): node py removidos
   run_cli "$rt" "$FALSIFY_DIR" barrier crlf-fence-mask-still-works --wave 1 --json
-  mls_status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
+  mls_status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))" | strip_cr)
   if [[ "$mls_status" != "blocked" ]]; then
     CRLF_FENCE_DIVERGENT="${CRLF_FENCE_DIVERGENT}${rt}(mls_complete=$mls_status) "
   fi
@@ -1195,7 +1197,7 @@ EOF
 CRLF_INDENT_DIVERGENT=""
 for rt in go; do  # ML-3A (v8): node py removidos
   run_cli "$rt" "$FALSIFY_DIR" barrier crlf-indented-marker-still-rejected --wave 1 --json
-  mls_status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
+  mls_status=$(doc_check_json "$CLI_STDOUT" "mls_complete" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))" | strip_cr)
   if [[ "$mls_status" != "blocked" ]]; then
     CRLF_INDENT_DIVERGENT="${CRLF_INDENT_DIVERGENT}${rt}(mls_complete=$mls_status) "
   fi
@@ -1227,7 +1229,7 @@ EOF
 CRLF_GATES_DIVERGENT=""
 for rt in go; do  # ML-3A (v8): node py removidos
   run_cli "$rt" "$FALSIFY_DIR" barrier crlf-gates-header-recognized --wave 1 --json --trust-local-gates
-  gates_status=$(doc_check_json "$CLI_STDOUT" "gates" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
+  gates_status=$(doc_check_json "$CLI_STDOUT" "gates" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))" | strip_cr)
   gates_evidence=$(doc_check_json "$CLI_STDOUT" "gates" "evidence")
   if [[ "$gates_status" != "passed" || "$gates_evidence" != '["true: exit 0"]' ]]; then
     CRLF_GATES_DIVERGENT="${CRLF_GATES_DIVERGENT}${rt}(status=$gates_status,evidence=$gates_evidence) "
@@ -1260,7 +1262,7 @@ EOF
 GATES_PREFIX_DIVERGENT=""
 for rt in go; do  # ML-3A (v8): node py removidos
   run_cli "$rt" "$FALSIFY_DIR" barrier gates-header-prefix-match-with-trailing-prose --wave 1 --json --trust-local-gates
-  gates_status=$(doc_check_json "$CLI_STDOUT" "gates" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))")
+  gates_status=$(doc_check_json "$CLI_STDOUT" "gates" "status" | python3 -c "import json,sys; print(json.loads(sys.stdin.read()))" | strip_cr)
   gates_evidence=$(doc_check_json "$CLI_STDOUT" "gates" "evidence")
   if [[ "$gates_status" != "passed" || "$gates_evidence" != '["true: exit 0"]' ]]; then
     GATES_PREFIX_DIVERGENT="${GATES_PREFIX_DIVERGENT}${rt}(status=$gates_status,evidence=$gates_evidence) "

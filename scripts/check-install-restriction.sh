@@ -50,6 +50,8 @@ export PYTHONIOENCODING=utf-8
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# shellcheck source=scripts/lib-crlf-normalize.sh
+. "$SCRIPT_DIR/lib-crlf-normalize.sh"
 
 PASS=0
 FAIL=0
@@ -206,7 +208,7 @@ PY
 
   # Inspecionar package-lock.json (dependências transitivas)
   if [[ -f "$NPM_LOCK" ]]; then
-    C3_LOCK_COUNT=$(python3 - "$NPM_LOCK" <<'PY'
+    C3_LOCK_COUNT=$(python3 - "$NPM_LOCK" <<'PY' | strip_cr
 import json, sys, re
 with open(sys.argv[1], encoding='utf-8') as f:
     lock = json.load(f)
@@ -282,9 +284,9 @@ printf 'sentinel-%s' "$C4_OTHER_SLUG" >"$C4_OTHER_DIR/sentinel.txt"
 # Projeto com optionalDependencies apontando para os dois via file: relativo
 # Caminhos relativos a C4_PROJECT_DIR
 MY_REL="$(realpath --relative-to="$C4_PROJECT_DIR" "$C4_MY_DIR" 2>/dev/null || python3 -c \
-  "import os; print(os.path.relpath('$C4_MY_DIR', '$C4_PROJECT_DIR'))")"
+  "import os; print(os.path.relpath('$C4_MY_DIR', '$C4_PROJECT_DIR'))" | strip_cr)"
 OTHER_REL="$(realpath --relative-to="$C4_PROJECT_DIR" "$C4_OTHER_DIR" 2>/dev/null || python3 -c \
-  "import os; print(os.path.relpath('$C4_OTHER_DIR', '$C4_PROJECT_DIR'))")"
+  "import os; print(os.path.relpath('$C4_OTHER_DIR', '$C4_PROJECT_DIR'))" | strip_cr)"
 
 cat >"$C4_PROJECT_DIR/package.json" <<EOF
 {

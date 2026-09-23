@@ -51,6 +51,8 @@ export PYTHONIOENCODING=utf-8
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# shellcheck source=scripts/lib-crlf-normalize.sh
+. "$SCRIPT_DIR/lib-crlf-normalize.sh"
 
 PASS=0
 FAIL=0
@@ -458,7 +460,7 @@ try:
     print(str(Version('$VERSION')))
 except Exception:
     print('$VERSION')
-" 2>/dev/null || echo "$VERSION")
+" 2>/dev/null | strip_cr || echo "$VERSION")
 
     WHEEL_WORK="$WORK/wheels"
     mkdir -p "$WHEEL_WORK"
