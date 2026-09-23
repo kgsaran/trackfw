@@ -42,7 +42,7 @@ com ele funcionando. Medir agora é medir com régua quebrada.
       ele **presumia que o CRLF era a única causa**, e a medição refutou: era **87%** dela.
       Entregue: rótulos ausentes **146 → 19**, e o instrumento passa a reportar cenário que
       reprova de verdade em vez de se auto-sabotar. Os **19** remanescentes ficam **enumerados**
-      (9 de `git-branch-guard/*`), como entrada medida do próximo trabalho — fora desta REQ,
+      (10 de `git-branch-guard/*`), como entrada medida do próximo trabalho — fora desta REQ,
       por escopo negativo declarado desde o início.
 - [x] Falsificação exercitada **no Windows** — os 3 braços `crlf-normalize/*` colhidos, e o censo rodado na branch (`35872779844`)
 - [x] `make quality` e **CI** verdes — local RC=0 (903 `^OK `, 0 `: FALHA`, falsificação 252 OK);
@@ -342,12 +342,44 @@ refutou:** que o CRLF fosse a **única** causa do censo quebrado. Ele era **87%*
 
 **Os 19 restantes não são CRLF.** Enumerados, com concentração clara:
 ```
-git-branch-guard/*                        9    ← dominante
+git-branch-guard/*                       10    ← dominante (5 checkout-flag-position + 5 env-command-prefix)
 git-branch-guard-global-script-integrity  2
 integration-assets/*                      2
 roadmap-req-frontmatter-path/*            2
-credential-guard · barrier · trust-check  1 cada
+barrier · credential-guard · trust-check  1 cada
+                                        ────
+                                         19
 ```
+
+🔴 **Correção de contagem (2026-09-23, pós-merge):** a decomposição acima dizia `9` para
+`git-branch-guard/*` e **somava 18**, não 19. Recontado do artefato do run, não da prosa:
+`gh run view 35872779844 --log | grep -o 'AUSENTE: [^ ]*' | sort -u | wc -l` → **19**. A lista
+literal, que é a entrada do próximo trabalho:
+
+```
+barrier/wave-zero-flag-guard-rejected-again-detected
+credential-guard-hook-resolvable/detected
+git-branch-guard-global-script-integrity/detected-without-wiring
+git-branch-guard-global-script-integrity/non-vacuity
+git-branch-guard/checkout-flag-position/baseline-blocks-no-track
+git-branch-guard/checkout-flag-position/baseline-blocks-q-b
+git-branch-guard/checkout-flag-position/detection-catches-bypass-no-track
+git-branch-guard/checkout-flag-position/detection-catches-bypass-q-b
+git-branch-guard/checkout-flag-position/detection-does-not-break-plain-checkout-b
+git-branch-guard/env-command-prefix/baseline-blocks-command
+git-branch-guard/env-command-prefix/baseline-blocks-env
+git-branch-guard/env-command-prefix/detection-catches-bypass-command
+git-branch-guard/env-command-prefix/detection-catches-bypass-env
+git-branch-guard/env-command-prefix/detection-does-not-break-plain-push
+integration-assets/direction-a-catalog-absent
+integration-assets/direction-b-shim-absent
+roadmap-req-frontmatter-path/go/from-req
+roadmap-req-frontmatter-path/go/from-req-baseline
+trust-check/direction-b-detected
+```
+
+⚠️ **O run é do SHA `11eb7ff0`, anterior ao ML-1C.** O número 19 vale para aquela árvore. A linha
+de base pós-merge é medida por um censo novo em `main`.
 
 **AC reescrito, com a medição** — não marcado como atendido por generosidade, e não arrastado para
 dentro de causa não medida:
@@ -372,3 +404,59 @@ Revisão `hefesto-tf` e `hades-tf`, auditoria do arquiteto, `trackfw barrier`. *
 
 ⚠️ Custo de CPU: `TRACKFW_FALSIFY_JOBS=4` na barreira local, teste do pacote tocado nos handoffs —
 `vault/notes/carga-de-cpu-vem-da-suite-de-falsificacao-vezes-agentes-paralelos-2026-09-22.md`.
+
+---
+
+## Adendo pós-merge (2026-09-23) — por que o censo AINDA não dá número, e não são os 19
+
+Ao preparar a entrada do próximo trabalho, recontei do artefato em vez da prosa e encontrei **duas
+coisas que esta REQ não viu**:
+
+**1. A decomposição dos 19 estava errada** — dizia `9` para `git-branch-guard/*` e somava **18**.
+São **10** (5 `checkout-flag-position` + 5 `env-command-prefix`). Corrigido acima, com a lista
+literal.
+
+**2. 🔴 A apuração do censo morre por um defeito de uma linha — e não por falta de artefato.**
+
+O run `35872779844` termina com `TOTAL INCOMPLETO — 2/8 shards`. A leitura natural é *"6 shards não
+subiram log"*. **Está errada:** os 8 artefatos existem, no layout exato que a apuração procura.
+
+```
+$ gh api .../runs/35872779844/artifacts --jq '.artifacts[].name'
+falsify-shard-0 … falsify-shard-7          ← os 8
+$ gh run download 35872779844
+falsify-shard-1/shard_1.log                ← o caminho que a apuração testa
+```
+
+O que quebra é `windows-census.yml`, na contagem por shard:
+
+```bash
+CNT_FAIL_GREP=$(grep -ac '^FAIL' "$LOG_FILE" 2>/dev/null || echo 0)
+```
+
+`grep -c` **já imprime `0`** quando não casa nada — e sai com **1**, o que dispara o `|| echo 0` e
+acrescenta um segundo `0`. A variável fica com **duas linhas**:
+
+| entrada | valor de `CNT_FAIL_GREP` | `$(( ))` |
+|---|---|---|
+| log **sem** `FAIL` (shard limpo) | `$'0\n0'` | **`syntax error in expression`** |
+| log **com** `FAIL` (controle) | `2` | ok |
+| forma correta `{ grep -ac … \|\| true; }` | `0` | ok |
+
+No log do run, exatamente isso, no shard 1 — o primeiro shard **sem nenhuma falha**:
+
+```
+DISCREPÂNCIA FAIL shard 1: grep=0
+0 awk=0
+line 57: 0
+0: syntax error in expression (error token is "0")
+```
+
+🔴 **A consequência é perversa:** o shard que **passa inteiro** é o que derruba a apuração. Quanto
+melhor o resultado, mais cedo o total morre. E a mensagem acusa *"artefato não baixado"*, mandando
+quem investiga para o lado errado — o mesmo padrão do CRLF que esta REQ corrigiu: o instrumento
+denuncia a causa errada.
+
+**Isto não reabre esta REQ.** O AC do censo já foi reescrito pela medição e o original já está
+declarado **não atendido**. O achado é a entrada do próximo trabalho, agora com **causa medida** em
+vez de 19 rótulos sem mecanismo — e a triagem dos 19 nem começou, porque o total nunca existiu.
