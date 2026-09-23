@@ -196,7 +196,7 @@ import json, sys
 with open(sys.argv[1], encoding='utf-8') as fh:
     payload = json.load(fh)
 print(sum(1 for v in payload.get('violations', []) if v.get('rule') == 'thirdparty_artifact_has_provenance'))
-" "$WORK/go-clean-validate.json")
+" "$WORK/go-clean-validate.json" | strip_cr)
 if [[ "$violation_count" == "0" ]]; then
   ok "D2-bis: legitimate install of non-canonical content produces zero validate violations (go)"
 else

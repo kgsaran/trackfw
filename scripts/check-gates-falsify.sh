@@ -240,7 +240,7 @@ FALSIFY_SUCCESS_TALLY="$WORK/success-count"
 # Ao remover cenários legitimamente (consolidação, renomeação), atualize
 # este valor no mesmo commit que remove os cenários. Sem esse passo o piso
 # fica pessimista e o gate começará a reprovar em execuções limpas.
-FALSIFY_SUCCESS_FLOOR=205
+FALSIFY_SUCCESS_FLOOR=208
 if [[ "$TRACKFW_FALSIFY_ENUMERATE" == "1" ]]; then
   : > "$FALSIFY_ENUM_TALLY"
   echo "[falsify/enumerate] modo de enumeração ATIVO (TRACKFW_FALSIFY_ENUMERATE=1, default=0) -- reprovações são contadas e a execução continua para o próximo cenário; o exit code final permanece != 0 se qualquer cenário reprovar. Ferramenta de diagnóstico -- não usada por make quality/parity." >&2
@@ -7090,6 +7090,90 @@ assert_fails_with "ci-workflow/self-governance-invoked/run-commented" \
   bash "$T196B/scripts/check-parity-call-site-pins.sh" "$T196B"
 
 echo "OK   [falsify/ci-workflow-self-governance]: 3 braços (clean/run-removed/run-commented) provados"
+
+# ---------------------------------------------------------------------------
+# Cenário 197 — check-crlf-normalize-capture.sh: gate anti-reintrodução de
+#               captura de stdout de python3 sem normalização CRLF (ML-1B,
+#               ROADMAP-2026-09-23-bash-consome-stdout-de-python3-sem-normalizar-crlf...).
+#
+# Braço A (crlf-normalize/unnormalized-capture):
+#   Afirma que o gate REPROVA um script novo com $(python3 ...) sem strip_cr.
+#   Prova que o discriminante estrutural (ausência de strip_cr no bloco) dispara.
+#
+# Braço B (crlf-normalize/normalized-capture):
+#   Afirma que o gate APROVA o mesmo padrão quando strip_cr está no pipeline.
+#   Prova que o braço de normalização correto passa sem falso positivo.
+#
+# Braço C (crlf-normalize/vacuous-scan):
+#   Afirma que o gate REPROVA corpus abaixo do piso — guarda de vacuidade.
+#   Diagnostico distinto de "vacuity guard tripped" (não confunde com braço A).
+#
+# Nota sobre auto-referência: o arquivo sintetico com a captura ruim é montado
+# por concatenação (variável PY + printf) para que o literal $(python3 nunca
+# apareça verbatim neste source — o gate escaneia scripts/*.sh incluindo este.
+# ---------------------------------------------------------------------------
+T197="$WORK/s197"
+mkdir -p "$T197/scripts"
+cp "$ROOT_DIR/scripts/check-crlf-normalize-capture.sh" "$T197/scripts/"
+# Lib necessária para que o script sintetico "passe de verdade" no braço B.
+cp "$ROOT_DIR/scripts/lib-crlf-normalize.sh" "$T197/scripts/"
+
+# ---------------------------------------------------------------------------
+# Braço A — captura sem strip_cr → gate REPROVA
+# Monta a linha com variável para que $(python3 não apareça verbatim aqui.
+# ---------------------------------------------------------------------------
+T197A="$WORK/s197/arm-a"
+mkdir -p "$T197A/scripts"
+cp "$T197/scripts/lib-crlf-normalize.sh" "$T197A/scripts/"
+PY=python3
+printf '#!/usr/bin/env bash\nSCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"\n. "$SCRIPT_DIR/lib-crlf-normalize.sh"\n' \
+  > "$T197A/scripts/check-bad-capture.sh"
+# Append the violating capture assembled from variable — literal $(python3 never appears below.
+printf 'BAD_VAR=$(%s -c '"'"'print("hello")'"'"')\necho "$BAD_VAR"\n' "$PY" \
+  >> "$T197A/scripts/check-bad-capture.sh"
+
+# CRLF_GATE_MIN_CAPTURES=1: corpus has exactly 1 capture; without the override
+# the floor (50) would trip first and give "vacuity guard tripped" instead of
+# "python3 capture without strip_cr" — the two diagnostics are distinct strings
+# by gate design so assert_fails_with can discriminate between them.
+assert_fails_with "crlf-normalize/unnormalized-capture" \
+  "python3 capture without strip_cr" \
+  env CRLF_GATE_MIN_CAPTURES=1 bash "$T197/scripts/check-crlf-normalize-capture.sh" \
+  --scan-root "$T197A"
+
+# ---------------------------------------------------------------------------
+# Braço B — captura com strip_cr → gate PASSA
+# ---------------------------------------------------------------------------
+T197B="$WORK/s197/arm-b"
+mkdir -p "$T197B/scripts"
+cp "$T197/scripts/lib-crlf-normalize.sh" "$T197B/scripts/"
+printf '#!/usr/bin/env bash\nSCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"\n. "$SCRIPT_DIR/lib-crlf-normalize.sh"\n' \
+  > "$T197B/scripts/check-good-capture.sh"
+printf 'GOOD_VAR=$(%s -c '"'"'print("hello")'"'"' | strip_cr)\necho "$GOOD_VAR"\n' "$PY" \
+  >> "$T197B/scripts/check-good-capture.sh"
+
+assert_succeeds "crlf-normalize/normalized-capture" \
+  env CRLF_GATE_MIN_CAPTURES=1 bash "$T197/scripts/check-crlf-normalize-capture.sh" \
+  --scan-root "$T197B"
+
+# ---------------------------------------------------------------------------
+# Braço C — corpus abaixo do piso → gate REPROVA por vacuidade
+# Cria um script com uma captura normalizada mas seta MIN_CAPTURES=5 (>1).
+# ---------------------------------------------------------------------------
+T197C="$WORK/s197/arm-c"
+mkdir -p "$T197C/scripts"
+cp "$T197/scripts/lib-crlf-normalize.sh" "$T197C/scripts/"
+printf '#!/usr/bin/env bash\nSCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"\n. "$SCRIPT_DIR/lib-crlf-normalize.sh"\n' \
+  > "$T197C/scripts/check-ok-capture.sh"
+printf 'VAR=$(%s -c '"'"'print("hi")'"'"' | strip_cr)\necho "$VAR"\n' "$PY" \
+  >> "$T197C/scripts/check-ok-capture.sh"
+
+assert_fails_with "crlf-normalize/vacuous-scan" \
+  "vacuity guard tripped" \
+  env CRLF_GATE_MIN_CAPTURES=5 bash "$T197/scripts/check-crlf-normalize-capture.sh" \
+  --scan-root "$T197C"
+
+echo "OK   [falsify/crlf-normalize]: 3 braços (A/B/C) provados"
 
 # ---------------------------------------------------------------------------
 # ML-2B — fechamento do modo de enumeração. Desligado (default): este bloco

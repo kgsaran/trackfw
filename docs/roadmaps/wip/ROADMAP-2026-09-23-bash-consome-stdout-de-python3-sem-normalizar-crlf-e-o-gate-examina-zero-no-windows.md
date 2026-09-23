@@ -182,7 +182,7 @@ reprova. A validação seguiu a letra do que pedi.
 - [ ] 🔴 **NÃO rodar `make quality`** — a barreira é do arquiteto
 
 ### ML-1B — gate que impede a reintrodução
-**Status:** ⬜ Pendente · **Papel:** `artemis-tf` · **Depende de:** ML-1A
+**Status:** ✅ Concluído · **Papel:** `artemis-tf` · **Depende de:** ML-1A
 
 Gate que **reprova** quando um consumo novo de saída de `python3` nascer sem passar pelo ponto único.
 

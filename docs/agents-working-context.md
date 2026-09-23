@@ -2,6 +2,31 @@
 
 ---
 
+## 2026-09-23 — Ártemis (fix/bash-consome-stdout-de-python3-sem-normalizar-crlf — ML-1B) — ENTREGUE (AGUARDANDO AUDITORIA)
+
+**Início:** 2026-09-23 | Branch: `fix/bash-consome-stdout-de-python3-sem-normalizar-crlf`
+**Tarefa:** ML-1B — gate que impede a reintrodução de captura de python3 sem normalização CRLF.
+**Resultado:**
+- Gate criado: `scripts/check-crlf-normalize-capture.sh` (modo 100755)
+- Discriminante estrutural (não declaratório): verifica se `strip_cr` está no bloco da captura;
+  isenta quando condição-1 (command -v) ou condição-2 (sem print/writelines/os.linesep) é falsa.
+- Piso de vacuidade medido: 66 candidatos; MIN_CAPTURES=50 (≈75%).
+- 6 isenções corretas: 5 condition-2 (hashlib/base64 sem newline) + 1 condition-1 (command -v python3).
+- Achado de ML-1A não corrigido: `check-thirdparty-parity.sh:194` (violation_count sem strip_cr) —
+  corrigido neste ML por ser mesma causa, mesma REQ (Regra Dura de Causa Raiz).
+- Gate RC=0 na árvore real: `bash scripts/check-crlf-normalize-capture.sh` → RC=0
+- Falsificação em `check-gates-falsify.sh` (Cenário 197): 3 braços com rótulos literais.
+  - `crlf-normalize/unnormalized-capture`: captura sem strip_cr → REPROVA (RC=1 + "python3 capture without strip_cr")
+  - `crlf-normalize/normalized-capture`: captura com strip_cr → PASSA (RC=0)
+  - `crlf-normalize/vacuous-scan`: corpus abaixo do piso → REPROVA (RC=1 + "vacuity guard tripped")
+  Diagnósticos são strings distintas (não compartilham substring) por design.
+- FALSIFY_SUCCESS_FLOOR: 205 → 208 (3 novos assert_* calls).
+- Consumidor no Makefile: parity-rest (check-crlf-normalize-capture.sh).
+- check-orphan-gates.sh RC=0; go build ./... RC=0; go test ./... RC=0; trackfw validate RC=0.
+**Arquivos modificados:** `scripts/check-crlf-normalize-capture.sh` (novo), `scripts/check-thirdparty-parity.sh` (line 199), `scripts/check-gates-falsify.sh` (Cenário 197 + FLOOR), `Makefile` (consumidor), roadmap (ML-1B ✅), working-context.
+
+---
+
 ## 2026-09-23 — Apolo (fix/bash-consome-stdout-de-python3-sem-normalizar-crlf — ML-1A-bis) — ENTREGUE (AGUARDANDO AUDITORIA)
 
 **Início:** 2026-09-23 | Branch: `fix/bash-consome-stdout-de-python3-sem-normalizar-crlf`
