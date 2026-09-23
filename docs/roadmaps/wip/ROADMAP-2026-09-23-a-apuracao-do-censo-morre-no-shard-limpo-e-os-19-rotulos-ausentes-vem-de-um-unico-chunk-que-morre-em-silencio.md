@@ -121,8 +121,10 @@ a Regra Dura de Causa Raiz proíbe empurrá-lo para a fila.
 - [x] Os 4 sítios corrigidos para `|| true` — a forma que a Wave 0 mediu como (b), não um terceiro idioma
 - [x] Replay: forma atual `SHARDS_FOUND=2`, nova `8 · OK=225 · FAIL=9`; confirmado por `awk` e `python3` independentes
 - [x] Nenhuma comparação acrescentada — o `awk` cruzado que existia voltou a **não** acusar discrepância
-- [ ] 🔴 Uma frase por teste novo, dizendo qual conclusão deste ML ele afirma
-- [ ] 🔴 **NÃO rodar `make quality`**
+- [x] 🔴 Frases escritas — e **nenhum teste foi commitado**: o replay de dois braços e a
+      injeção de shard ausente são instrumento de medição, ficaram fora da árvore. A frase existe
+      para os dois, e a ausência está declarada
+- [x] 🔴 `make quality` não rodado pelo executor — barreira do arquiteto: **RC=0, 1021 `^OK `, 0 `: FALHA`**
 
 ### ML-1B — Gate anti-reintrodução, falsificável, com guarda de não-vacuidade
 **Owner:** `artemis-tf`
@@ -146,8 +148,9 @@ a Regra Dura de Causa Raiz proíbe empurrá-lo para a fila.
 - [x] Árvore atual RC=0; vacuidade auditada (`MIN_CANDIDATES=999` → RC=1, 87 candidatos, piso 50)
 - [x] 7 formas não cobertas declaradas, **cada uma com o comando e a contagem de sítios reais** (0 em quase todas)
 - [x] Cenário 198, 11 braços, rótulos literais colhidos pela guarda de conjunto
-- [ ] 🔴 Uma frase por teste novo
-- [ ] 🔴 **NÃO rodar `make quality`**
+- [x] 🔴 **11 frases, uma por braço** — inclusive as que afirmam cobertura de scanner (`workflow-yml`)
+      e não classe de defeito, e a que encoda o defeito da REQ anterior (`vacuous-scan`)
+- [x] 🔴 `make quality` não rodado pelo executor — barreira do arquiteto: **RC=0, 1021 `^OK `, 0 `: FALHA`**
 
 
 **Auditoria do arquiteto (medida por mim, não lida do relatório):**
