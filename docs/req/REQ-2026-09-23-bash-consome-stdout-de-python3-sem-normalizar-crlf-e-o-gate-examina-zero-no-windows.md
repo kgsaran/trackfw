@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-23
 author: "trackfw_architect"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-23-bash-consome-stdout-de-python3-sem-normalizar-crlf-e-o-gate-examina-zero-no-windows.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-23-bash-consome-stdout-de-python3-sem-normalizar-crlf-e-o-gate-examina-zero-no-windows.md"
 ---
 
 # REQ: bash consome stdout de `python3` sem normalizar CRLF, e o gate examina zero no Windows
 
-> Date: 2026-09-23 | Status: Open
+> Date: 2026-09-23 | Status: Done
 | Linear Issue:
 | Jira Issue:
 
@@ -123,4 +123,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-23-bash-consome-stdout-de-python3-sem-normalizar-crlf-e-o-gate-examina-zero-no-windows.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-23-bash-consome-stdout-de-python3-sem-normalizar-crlf-e-o-gate-examina-zero-no-windows.md`
