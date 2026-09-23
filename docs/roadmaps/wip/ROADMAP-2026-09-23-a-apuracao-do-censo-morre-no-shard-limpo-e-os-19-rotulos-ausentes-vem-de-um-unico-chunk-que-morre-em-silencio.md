@@ -97,7 +97,7 @@ a Regra Dura de Causa Raiz proíbe empurrá-lo para a fila.
 
 ### ML-1A — A forma de captura, nos sítios que a Wave 0 confirmar
 **Owner:** `ares-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-09-23
 **Arquivos afetados:** `.github/workflows/windows-census.yml` (e outros que o ML-0A confirmar)
 ⚠️ **NÃO** toque em `scripts/` — é o ML-1B, em paralelo.
 
@@ -118,15 +118,16 @@ a Regra Dura de Causa Raiz proíbe empurrá-lo para a fila.
    corrija o texto: ela mandou a investigação para o lado errado.
 
 **Critérios de aceite:**
-- [ ] Cada sítio (a) corrigido pela forma de captura
-- [ ] Replay nas duas direções, contra os artefatos reais, com os dois números colados no relatório
-- [ ] Nenhuma comparação nova acrescentada sobre captura quebrada
+- [x] Os 4 sítios corrigidos para `|| true` — a forma que a Wave 0 mediu como (b), não um terceiro idioma
+- [x] Replay: forma atual `SHARDS_FOUND=2`, nova `8 · OK=225 · FAIL=9`; confirmado por `awk` e `python3` independentes
+- [x] Nenhuma comparação acrescentada — o `awk` cruzado que existia voltou a **não** acusar discrepância
 - [ ] 🔴 Uma frase por teste novo, dizendo qual conclusão deste ML ele afirma
 - [ ] 🔴 **NÃO rodar `make quality`**
 
 ### ML-1B — Gate anti-reintrodução, falsificável, com guarda de não-vacuidade
 **Owner:** `artemis-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-09-23
+**Entregue:** `scripts/check-emitting-capture-fallback.sh` · Cenário 198 (11 braços)
 **Arquivos afetados:** `scripts/check-<nome>.sh` (novo), `Makefile`, `scripts/check-gates-falsify.sh`
 ⚠️ **NÃO** toque em `.github/workflows/` — é o ML-1A, em paralelo.
 
@@ -141,12 +142,36 @@ a Regra Dura de Causa Raiz proíbe empurrá-lo para a fila.
    guarda de conjunto.
 
 **Critérios de aceite:**
-- [ ] Gate reprova cada forma coberta — provado por injeção, uma a uma
-- [ ] Gate passa na árvore correta, com piso de não-vacuidade e o comando que o produziu
-- [ ] Formas não cobertas **declaradas** no cabeçalho, com a razão
-- [ ] Falsificação com rótulos literais
+- [x] Gate reprova as 6 formas cobertas, por injeção; **auditei contra `HEAD` pinado: RC=1, exatamente os 4 sítios**
+- [x] Árvore atual RC=0; vacuidade auditada (`MIN_CANDIDATES=999` → RC=1, 87 candidatos, piso 50)
+- [x] 7 formas não cobertas declaradas, **cada uma com o comando e a contagem de sítios reais** (0 em quase todas)
+- [x] Cenário 198, 11 braços, rótulos literais colhidos pela guarda de conjunto
 - [ ] 🔴 Uma frase por teste novo
 - [ ] 🔴 **NÃO rodar `make quality`**
+
+
+**Auditoria do arquiteto (medida por mim, não lida do relatório):**
+
+| afirmação | como confirmei |
+|---|---|
+| gate reprova a forma velha | contra `HEAD` pinado: **RC=1**, 4 `FAIL`, exatamente `:485,:486,:564,:565` |
+| gate aprova a forma nova | árvore atual: **RC=0** |
+| guarda de não-vacuidade funciona | `MIN_CANDIDATES=999` → **RC=1**, com diagnóstico próprio, 87 candidatos |
+| não reprova os (b) legítimos | nenhuma violação em `wc -l`/`jq` |
+| erro aritmético não derruba o script | reprodução própria em `bash 5.3`: o laço morre, o script segue, **`rc=0`** — e o job real ficou `apuracao → success` |
+
+🔴 **A varredura que eu escrevi na REQ era mais estreita do que eu afirmei.** Medido:
+`$(grep --count x f \|\| echo 0)` **não casa** o ERE `grep +-[a-z]*c[a-z]* `; `-ac` casa. A forma
+longa ficaria fora das duas enumerações. Quem fecha é o gate, que trata `--count` como contagem.
+Corrigido na REQ.
+
+⚠️ **Limitação aceita, não guardada:** `|| true` devolve string **vazia** se o `grep` sair `2`
+(arquivo ilegível), e `$((0 + ))` também quebra. Inalcançável aqui — o `[[ -f ]]` a montante barra.
+**Não empilhar `${VAR:-0}`**: guarda sobre captura é o padrão que produziu o defeito.
+
+🔴 **Herança para a Wave 3:** `QUEDA = 512 − 9 = 503` cai fora do intervalo `[420,465]`, então o
+censo passa a tomar o ramo *"queda fora do esperado"*. É o comportamento **correto** sobre este
+corpus truncado — não é regressão, e não deve ser "consertado" alargando o intervalo.
 
 ---
 

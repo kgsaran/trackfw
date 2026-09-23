@@ -7224,6 +7224,125 @@ assert_fails_with "crlf-normalize/stdout-write-capture" \
 echo "OK   [falsify/crlf-normalize]: 5 braços (A/B/C/D/E) provados"
 
 # ---------------------------------------------------------------------------
+# Cenário 198 — check-emitting-capture-fallback.sh: gate anti-reintrodução da
+#               captura $(cmd ... || echo N) sobre comando que JÁ emite no
+#               caminho de falha (ML-1B, ROADMAP-2026-09-23-a-apuracao-do-censo-
+#               morre-no-shard-limpo...).
+#
+# O defeito: `grep -c` imprime "0" E sai 1 quando não casa nada; o `|| echo 0`
+# acrescenta uma segunda linha, a captura vira $'0\n0' e o $(( )) a jusante
+# quebra. Foi o que matou a apuração do censo de Windows no primeiro shard limpo.
+#
+# Braços POSITIVOS (o gate REPROVA — uma forma coberta por braço, nunca uma só):
+#   A emitting-capture/grep-c-echo          -c isolada + || echo 0
+#   B emitting-capture/grep-ac-echo-quoted  -ac empacotada + 2>/dev/null + || echo "0"
+#   C emitting-capture/grep-long-count      --count (flag longa)
+#   D emitting-capture/grep-c-separate      -a -c separadas + fallback || printf
+#   E emitting-capture/pipeline-grep-c      grep -c no FIM de um pipeline
+#   F emitting-capture/workflow-yml         a MESMA forma dentro de .github/workflows/*.yml
+#                                           — o sítio real do defeito; sem este braço,
+#                                           um erro de glob de .yml seria invisível
+#
+# Braços NEGATIVOS (o gate PASSA — provam que o discriminante é `-c`, não `grep`,
+# e que a forma correta e os sítios (b) legítimos não são reprovados):
+#   G emitting-capture/true-fallback        { grep -ac ... || true; }  (a correção)
+#   H emitting-capture/bare-grep            grep sem -c + || echo 'no model line'
+#                                           (forma real de check-agent-models-parity.sh)
+#   I emitting-capture/wc-and-jq            wc -l < f e jq ... + || echo 0
+#                                           (os sítios (b) reais: não emitem ao falhar)
+#   J emitting-capture/color-flag           grep --color=never + || echo none
+#                                           (o discriminante exige TOKEN INTEIRO de flag:
+#                                            um token que apenas contém a letra `c` não é
+#                                            flag de contagem — sem isso, o gate reprovaria
+#                                            uma invocação legítima de grep)
+#   K emitting-capture/vacuous-scan         corpus abaixo do piso → REPROVA por vacuidade,
+#                                           com diagnóstico DISTINTO do braço de violação
+#
+# Auto-referência: o token `grep` das linhas sintéticas vem da variável $GREPC —
+# a string literal com `grep -c ... || echo` nunca aparece verbatim neste source,
+# que o próprio gate varre (scripts/*.sh).
+# ---------------------------------------------------------------------------
+T198="$WORK/s198"
+mkdir -p "$T198"
+GREPC=grep
+EMIT_GATE="$ROOT_DIR/scripts/check-emitting-capture-fallback.sh"
+
+# mk198 <arm> <formato-printf> [args...] -> cria $T198/<arm>/scripts/check-synth.sh
+mk198() {
+  local arm="$1"; shift
+  local fmt="$1"; shift
+  mkdir -p "$T198/$arm/scripts"
+  printf '#!/usr/bin/env bash\n' > "$T198/$arm/scripts/check-synth.sh"
+  # shellcheck disable=SC2059
+  printf "$fmt" "$@" >> "$T198/$arm/scripts/check-synth.sh"
+}
+
+# --- A: -c isolada ---------------------------------------------------------
+mk198 arm-a 'CNT=$(%s -c ZZZ f.txt || echo 0)\n' "$GREPC"
+assert_fails_with "emitting-capture/grep-c-echo" \
+  "captura com fallback emissor sobre comando que ja emite" \
+  env EMIT_FALLBACK_GATE_MIN_CANDIDATES=1 bash "$EMIT_GATE" --scan-root "$T198/arm-a"
+
+# --- B: -ac empacotada + redirect + aspas ----------------------------------
+mk198 arm-b 'CNT=$(%s -ac '"'"'^FAIL'"'"' "$LOG" 2>/dev/null || echo "0")\n' "$GREPC"
+assert_fails_with "emitting-capture/grep-ac-echo-quoted" \
+  "captura com fallback emissor sobre comando que ja emite" \
+  env EMIT_FALLBACK_GATE_MIN_CANDIDATES=1 bash "$EMIT_GATE" --scan-root "$T198/arm-b"
+
+# --- C: flag longa --count -------------------------------------------------
+mk198 arm-c 'CNT=$(%s --count ZZZ f.txt || echo 0)\n' "$GREPC"
+assert_fails_with "emitting-capture/grep-long-count" \
+  "captura com fallback emissor sobre comando que ja emite" \
+  env EMIT_FALLBACK_GATE_MIN_CANDIDATES=1 bash "$EMIT_GATE" --scan-root "$T198/arm-c"
+
+# --- D: -a -c separadas + fallback printf ----------------------------------
+mk198 arm-d 'CNT=$(%s -a -c ZZZ f.txt || printf '"'"'0\\n'"'"')\n' "$GREPC"
+assert_fails_with "emitting-capture/grep-c-separate" \
+  "captura com fallback emissor sobre comando que ja emite" \
+  env EMIT_FALLBACK_GATE_MIN_CANDIDATES=1 bash "$EMIT_GATE" --scan-root "$T198/arm-d"
+
+# --- E: grep -c no fim de um pipeline --------------------------------------
+mk198 arm-e 'CNT=$(cat f.txt | %s -c ZZZ || echo 0)\n' "$GREPC"
+assert_fails_with "emitting-capture/pipeline-grep-c" \
+  "captura com fallback emissor sobre comando que ja emite" \
+  env EMIT_FALLBACK_GATE_MIN_CANDIDATES=1 bash "$EMIT_GATE" --scan-root "$T198/arm-e"
+
+# --- F: a mesma forma em .github/workflows/*.yml (o sítio real) ------------
+mkdir -p "$T198/arm-f/.github/workflows"
+printf 'jobs:\n  censo:\n    steps:\n      - run: |\n          CNT=$(%s -ac '"'"'^FAIL'"'"' "$LOG" 2>/dev/null || echo 0)\n' \
+  "$GREPC" > "$T198/arm-f/.github/workflows/synth-census.yml"
+assert_fails_with "emitting-capture/workflow-yml" \
+  "captura com fallback emissor sobre comando que ja emite" \
+  env EMIT_FALLBACK_GATE_MIN_CANDIDATES=1 bash "$EMIT_GATE" --scan-root "$T198/arm-f"
+
+# --- G: a forma CORRETA ({ ... || true; }) passa ---------------------------
+mk198 arm-g 'CNT=$( { %s -ac ZZZ f.txt || true; } )\n' "$GREPC"
+assert_succeeds "emitting-capture/true-fallback" \
+  env EMIT_FALLBACK_GATE_MIN_CANDIDATES=1 bash "$EMIT_GATE" --scan-root "$T198/arm-g"
+
+# --- H: grep SEM -c + || echo <mensagem> passa -----------------------------
+mk198 arm-h 'M=$(%s '"'"'model:'"'"' "$f" || echo '"'"'no model line'"'"')\n' "$GREPC"
+assert_succeeds "emitting-capture/bare-grep" \
+  env EMIT_FALLBACK_GATE_MIN_CANDIDATES=1 bash "$EMIT_GATE" --scan-root "$T198/arm-h"
+
+# --- I: os sítios (b) reais (wc -l < f, jq) passam -------------------------
+mk198 arm-i 'N=$(wc -l < "$T" 2>/dev/null || echo 0)\nJ=$(jq '"'"'length'"'"' "$F" 2>/dev/null || echo 0)\n'
+assert_succeeds "emitting-capture/wc-and-jq" \
+  env EMIT_FALLBACK_GATE_MIN_CANDIDATES=2 bash "$EMIT_GATE" --scan-root "$T198/arm-i"
+
+# --- J: --color=never não é flag de contagem -------------------------------
+mk198 arm-j 'M=$(%s --color=never ZZZ f.txt || echo none)\n' "$GREPC"
+assert_succeeds "emitting-capture/color-flag" \
+  env EMIT_FALLBACK_GATE_MIN_CANDIDATES=1 bash "$EMIT_GATE" --scan-root "$T198/arm-j"
+
+# --- K: corpus abaixo do piso → vacuidade, diagnóstico distinto ------------
+assert_fails_with "emitting-capture/vacuous-scan" \
+  "guarda de vacuidade disparou" \
+  env EMIT_FALLBACK_GATE_MIN_CANDIDATES=5 bash "$EMIT_GATE" --scan-root "$T198/arm-g"
+
+echo "OK   [falsify/emitting-capture]: 11 braços (A-K) provados"
+
+# ---------------------------------------------------------------------------
 # ML-2B — fechamento do modo de enumeração. Desligado (default): este bloco
 # inteiro é pulado (a condição é falsa) e a saída do processo é a do último
 # comando acima -- 0, exatamente como antes deste ML (byte-idêntico: nenhuma

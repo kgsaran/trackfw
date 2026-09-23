@@ -126,8 +126,11 @@ $ grep -rn '|| echo "\?0"\?' .github/workflows/ scripts/ Makefile | wc -l
 
 🔴 **A Wave 0 refutou esta tabela em duas frentes, e o (a) é o único número que sobreviveu:**
 
-- **População estreita.** `grep -rnE '\$\([^)]*grep +-[a-z]*c[a-z]* '` acha **3 sítios** que a forma
-  `|| echo` não pega — `check-git-branch-guard-hook-schema.sh:528`,
+- **População estreita — e a varredura corretiva também.** `grep -rnE '\$\([^)]*grep +-[a-z]*c[a-z]* '`
+  acha **3 sítios** que a forma `|| echo` não pega. 🔴 **Mas ela própria não casa `--count`**
+  (medido: `$(grep --count x f || echo 0)` → não casa; `$(grep -ac x f || echo 0)` → casa). A forma
+  longa ficaria fora das duas enumerações; quem fecha esse buraco é o gate do ML-1B, que trata
+  `--count` como flag de contagem — `check-git-branch-guard-hook-schema.sh:528`,
   `run-gates-falsify-parallel.sh:225,226`. A família tem **12 sítios, não 9**. Os 3 já estão na
   **forma correta** (`|| true`) — são a prova de que a correção pedida é a que o repo já pratica.
 - **Classificação errada.** `scripts/gen-falsify-chunks.py:559` estava em (c) *"fixture/corpus"* e é

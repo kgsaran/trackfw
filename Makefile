@@ -56,6 +56,13 @@ parity-rest: build
 	# todo $(python3 ...) em scripts/*.sh normaliza via strip_cr (lib-crlf-normalize.sh).
 	# Impede reintroducao de captura sem normalizacao apos ML-1A corrigir os 19 sitios.
 	scripts/check-crlf-normalize-capture.sh
+	# ML-1B (ROADMAP-2026-09-23-a-apuracao-do-censo-morre-no-shard-limpo...):
+	# nenhuma captura $$(cmd ... || echo N) sobre comando que JA emite no caminho de
+	# falha. `grep -c` imprime "0" e sai 1: o `|| echo 0` acrescenta uma segunda
+	# linha, a captura vira $$'0\n0' e o $$(( )) a jusante quebra — foi o que matou
+	# a apuracao do censo de Windows no primeiro shard limpo. Forma correta:
+	# VAR=$$( { grep -ac 'PAT' "$$F" || true; } ).
+	scripts/check-emitting-capture-fallback.sh
 	# ML-2A (ROADMAP-2026-08-31-guarda-de-folha-resolve-o-caminho-e-afirma-contencao-antes-de-escrever):
 	# todo sítio de escrita em internal/**/*.go (produção) carrega marcador write-containment-allowed:
 	# ou reprova. Impede reintrodução de escrita desguardada após a Wave 1. Nasce falsificável.

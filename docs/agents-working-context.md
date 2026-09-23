@@ -39363,3 +39363,22 @@ Documento revisado após chamada de advisor que bloqueou a primeira versão em 4
 - Os 19 rótulos ausentes são **todos do shard 1**, que morre em silêncio. Uma causa, não 19.
 - REQ + roadmap criados, branch `fix/a-apuracao-do-censo-...`. Wave 0 com `hades-tf` (12 dos 19 são
   controles de segurança) bloqueia as waves de implementação.
+
+## 2026-09-23 — artemis-tf — ML-1B (Wave 1): gate anti-reintrodução da captura com fallback emissor
+
+- **Entregue (não commitado):** `scripts/check-emitting-capture-fallback.sh` (novo), registro em
+  `Makefile` (`parity-rest`, ao lado do gate irmão de CRLF) e o **Cenário 198** com 11 braços em
+  `scripts/check-gates-falsify.sh` (inserido no fim, fora da região do Cenário 18 — 1478–1603 — que
+  é do ML-2A).
+- **Discriminante:** violação = numa mesma `$( … )` coexistem (1) `grep` com `-c`/`-ac`/`--count`
+  (mede-se: imprime `0` e sai 1 no não-casamento) e (2) fallback `|| echo`/`|| printf`. `|| true`,
+  `grep` sem `-c`, `wc -l <` e `jq` são **isentos por construção** — não reprovam os sítios (b).
+- **Falsificação nas duas direções, contra conteúdo pinado (não contra a árvore viva, que o ML-1A
+  estava editando em paralelo):** `git show HEAD:.github/workflows/windows-census.yml` → gate **RC=1**
+  nomeando `:485 :486 :564 :565`; árvore atual (já corrigida por `ares-tf`) → **RC=0**, com os 4
+  sítios reclassificados como `exempt/non-emitting-fallback`.
+- **Guarda de não-vacuidade:** 87 candidatos medidos, piso 50. Comando colado no cabeçalho do gate.
+- **Formas não cobertas declaradas com medição** (crase, continuação de linha, captura aninhada,
+  captura indireta por função, `diff`, e o lado do consumo) — cada uma com o comando e a contagem.
+- 🔴 Não toquei em `.github/workflows/` (a modificação nesse arquivo é do ML-1A). Não commitei, não
+  fiz push, não rodei `make quality`. Status do ML no roadmap fica para a auditoria do arquiteto.

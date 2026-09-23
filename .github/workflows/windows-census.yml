@@ -475,15 +475,19 @@ jobs:
 
             if [[ -z "$LOG_FILE" ]]; then
               SHARDS_MISSING="$SHARDS_MISSING $i"
-              TABLE_LINES="$TABLE_LINES\n  shard $i: AUSENTE (artefato não baixado)"
+              TABLE_LINES="$TABLE_LINES\n  shard $i: SEM LOG (não encontrado em censo-artifacts/falsify-shard-$i/shard_$i.log nem censo-artifacts/shard_$i.log)"
               continue
             fi
 
             SHARDS_FOUND=$((SHARDS_FOUND + 1))
 
             # Contagem primária com grep -a para tolerar bytes NUL
-            CNT_FAIL_GREP=$(grep -ac '^FAIL' "$LOG_FILE" 2>/dev/null || echo 0)
-            CNT_OK_GREP=$(grep -ac '^OK' "$LOG_FILE" 2>/dev/null || echo 0)
+            # grep -c JÁ imprime '0' quando não casa nada, e sai 1. Com '|| echo 0'
+            # a captura recebe DUAS linhas ($'0\n0') e todo $(( )) a jusante quebra
+            # com 'arithmetic syntax error', abortando o laço no primeiro shard limpo.
+            # '|| true' não escreve nada: a captura fica com a única linha do grep.
+            CNT_FAIL_GREP=$(grep -ac '^FAIL' "$LOG_FILE" 2>/dev/null || true)
+            CNT_OK_GREP=$(grep -ac '^OK' "$LOG_FILE" 2>/dev/null || true)
 
             # Contagem cruzada com awk
             CNT_FAIL_AWK=$(awk '/^FAIL/{n++} END{print n+0}' "$LOG_FILE")
@@ -524,7 +528,7 @@ jobs:
 
             if [[ $SHARDS_FOUND -lt 8 ]]; then
               echo "⚠️  **TOTAL INCOMPLETO** — apenas $SHARDS_FOUND/8 shards presentes."
-              echo "Shards ausentes:$SHARDS_MISSING"
+              echo "Shards sem log nos dois caminhos procurados:$SHARDS_MISSING"
               echo "O total acima subestima FAIL e **não deve ser usado para calcular queda**."
               echo ""
             else
@@ -557,12 +561,13 @@ jobs:
               fi
 
               if [[ -z "$LOG_FILE" ]]; then
-                echo "| $i | — | — | ${BASE_FAIL[$i]} | AUSENTE |"
+                echo "| $i | — | — | ${BASE_FAIL[$i]} | SEM LOG |"
                 continue
               fi
 
-              CNT_FAIL_R=$(grep -ac '^FAIL' "$LOG_FILE" 2>/dev/null || echo 0)
-              CNT_OK_R=$(grep -ac '^OK' "$LOG_FILE" 2>/dev/null || echo 0)
+              # ver nota sobre '|| true' vs '|| echo 0' na apuração acima
+              CNT_FAIL_R=$(grep -ac '^FAIL' "$LOG_FILE" 2>/dev/null || true)
+              CNT_OK_R=$(grep -ac '^OK' "$LOG_FILE" 2>/dev/null || true)
               DELTA_R=$((CNT_FAIL_R - ${BASE_FAIL[$i]}))
               echo "| $i | $CNT_OK_R | $CNT_FAIL_R | ${BASE_FAIL[$i]} | $DELTA_R |"
             done
