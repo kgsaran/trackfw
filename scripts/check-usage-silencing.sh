@@ -48,6 +48,12 @@ caso_runtime() {
     echo "FAIL [runtime/$rot]: esperava rc != 0, veio 0 — o cenario nao produz erro de runtime"
     FAIL=1; return
   fi
+  # 🔴 rc=127 e "comando nao encontrado", nao erro de runtime do CLI. Sem esta guarda o
+  # braco de runtime fica VERDE quando o binario nem roda — erro sem usage, tecnicamente.
+  if [ "$rc" -eq 127 ]; then
+    echo "FAIL [runtime/$rot]: rc=127 — o binario nao foi encontrado, o cenario nao rodou"
+    FAIL=1; return
+  fi
   if tem_usage "$out"; then
     echo "FAIL [runtime/$rot]: bloco Usage: impresso em erro de runtime (rc=$rc)"
     FAIL=1; return
@@ -130,7 +136,22 @@ if [ ! -x "$GO_BIN" ]; then
   echo "check-usage-silencing: binario ausente em $GO_BIN — rode 'make build' antes." >&2
   exit 1
 fi
-BIN_SOB_TESTE="$GO_BIN"
+
+# 🔴 ABSOLUTO, sempre. O Makefile passa GO_BIN=$(BUILD_DIR)/$(BINARY), que e RELATIVO, e
+# cada cenario roda dentro de um projeto descartavel (cd). Com caminho relativo o binario
+# nao existe la, todo cenario sai rc=127, e o braco de runtime passaria dizendo
+# "erro sem usage" — verde pelo motivo errado. Medido no CI do PR #413.
+case "$GO_BIN" in
+  /*|[A-Za-z]:*) BIN_SOB_TESTE="$GO_BIN" ;;
+  *)             BIN_SOB_TESTE="$(CDPATH= cd -- "$(dirname -- "$GO_BIN")" && pwd)/$(basename -- "$GO_BIN")" ;;
+esac
+
+# Guarda de execucao: o binario tem de RODAR. Sem isto, um caminho valido mas quebrado
+# (arquitetura errada, dependencia ausente) reproduziria o mesmo verde falso.
+if ! "$BIN_SOB_TESTE" --version >/dev/null 2>&1; then
+  echo "check-usage-silencing: '$BIN_SOB_TESTE --version' nao executou — binario invalido." >&2
+  exit 1
+fi
 
 rodar_cenarios
 
