@@ -23,6 +23,23 @@ Run 'trackfw init' to set up governance in your project.`,
 		Version: trackversion.Version,
 	}
 
+	// Usage e erro de USO; violacao e erro de RUNTIME. O cobra nao distingue os dois
+	// sozinho — mas a ORDEM dele distingue: ParseFlags e ValidateArgs rodam ANTES dos
+	// hooks Persistent*, e RunE depois. Entao, no momento em que este hook executa, a
+	// linha de comando ja foi aceita: qualquer erro daqui para frente e de execucao, e
+	// imprimir o bloco `Usage:` junto sugere ao usuario que ele digitou errado.
+	//
+	// Um sitio so, no root, em vez de `cmd.SilenceUsage = true` espalhado por dezenas de
+	// RunE — que e como estava, e por isso era parcial: o validate so silenciava no ramo
+	// --json, e o `discover --bootstrap-log` imprimia usage ao recusar uma escrita.
+	//
+	// 🔴 Comando que QUEIRA o usage num erro proprio pode voltar a ligar (cmd.SilenceUsage
+	// = false) dentro do RunE, que roda depois deste hook.
+	root.PersistentPreRunE = func(cmd *cobra.Command, args []string) error {
+		cmd.SilenceUsage = true
+		return nil
+	}
+
 	helpCmd := newHelpCmd()
 
 	root.SetVersionTemplate("trackfw {{.Version}}\n")

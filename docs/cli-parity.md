@@ -1163,13 +1163,22 @@ Covered by `scripts/check-ship-parity.sh` (`feat-still-gated-non-regression` and
 
 ### Usage silencing
 
-<!-- trackfw-contract: gap reason=nenhum gate verifica que a saída de uso (usage/help) é suprimida em erros de runtime (padrão de branch, gate de governança, nada staged, -m ausente) nos 3 runtimes -->
+<!-- trackfw-contract: gate=scripts/check-usage-silencing.sh -->
 
-Runtime errors (branch pattern, governance gate, nothing staged, missing `-m`) set
-`SilenceUsage = true` inside the command handler (Go/cobra) or return a non-zero exit
-code directly from the runner function (Node.js/Python), so the usage text is never
-printed for runtime errors. Parse-time errors (unknown flags) still show usage, because
-they are raised by cobra/commander/argparse before the command handler runs.
+Runtime errors (branch pattern, governance gate, nothing staged, missing `-m`, artifact
+not found) never print the usage block; parse-time errors (unknown flag, wrong argument
+count) always do.
+
+The rule holds for every command from one site: the root command's `PersistentPreRunE`
+sets `SilenceUsage = true`. Cobra runs `ParseFlags` and `ValidateArgs` *before* the
+`Persistent*` hooks and `RunE` *after*, so by the time the hook runs the command line has
+already been accepted — anything that fails from there on is execution, not usage. A
+command that wants the usage block for an error of its own can set `SilenceUsage = false`
+inside its own `RunE`, which runs later.
+
+Before that, each handler set the flag for itself, and coverage was partial: `validate`
+silenced usage only in its `--json` branch, and `discover --bootstrap-log` printed the
+usage block while refusing a write.
 
 ### `ship --force-with-lease` — governed force-push (ML-1B)
 
