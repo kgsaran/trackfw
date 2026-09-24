@@ -63,6 +63,16 @@ parity-rest: build
 	# a apuracao do censo de Windows no primeiro shard limpo. Forma correta:
 	# VAR=$$( { grep -ac 'PAT' "$$F" || true; } ).
 	scripts/check-emitting-capture-fallback.sh
+	# ML-2H (ROADMAP-2026-09-23-a-apuracao-do-censo-morre-no-shard-limpo...):
+	# gate IRMAO do de cima, para a captura SEM FALLBACK NENHUM cujo rc PROPAGA —
+	# `v=$$(grep PAT f)`, `v=$$(a | grep PAT)` e `v=$$(a | grep PAT | b)` sob pipefail.
+	# Ali o rc de "nao casou" mata o script sob set -e, trocando o diagnostico que a
+	# linha seguinte ja escreveu por MORTE MUDA. Forma correta: `v=$$( { grep … || true; } )`
+	# — e, quando o valor e COMPARADO com outra captura, o `|| true` SOZINHO vira
+	# aprovacao vacua (ML-2I): precisa tambem de guarda de nao-vacuidade.
+	# Alargar o gate de cima para cobrir esta forma foi medido e reprovado (ML-2E):
+	# sem a exigencia de fallback, a regex dele acusaria todo $$(a | b) legitimo.
+	scripts/check-unguarded-capture-rc.sh
 	# ML-2A (ROADMAP-2026-08-31-guarda-de-folha-resolve-o-caminho-e-afirma-contencao-antes-de-escrever):
 	# todo sítio de escrita em internal/**/*.go (produção) carrega marcador write-containment-allowed:
 	# ou reprova. Impede reintrodução de escrita desguardada após a Wave 1. Nasce falsificável.

@@ -39623,6 +39623,11 @@ está em linha separada, que é o caso de `check-orphan-gates.sh`.
 **Falsificação, nas duas (três) direções, por sítio corrigido:** sem casar o script **continua**
 (ou reprova com rótulo); com casar o valor é **byte-idêntico** (`cmp` rc=0 nos dois harnesses).
 
+**Caminho de chunk (o que o CI usa) verificado, não inferido:** `gen-falsify-chunks.py` com N=8 —
+`total_segments` **60 → 61** (exatamente +1), os **17** rótulos caem num **único** chunk
+(`chunk_7`), `T199`/`UGREP`/`URC_GATE`/`URC_VIOL`/`mk199` todos definidos **dentro** do bloco, e o
+chunk gerado roda `rc=0` com `CHUNK_COMPLETE 7`.
+
 **Gates rodados individualmente, todos rc=0:** `check-ci-workflow-pin-parity.sh` ·
 `check-install-version-pin.sh` (32 cenários OK, incluindo os dois `ac5-*` tocados) ·
 `check-emitting-capture-fallback.sh` · `check-crlf-normalize-capture.sh` · `check-orphan-gates.sh` ·
@@ -39644,3 +39649,95 @@ DEST vazios comparam iguais e o cenário emite `OK`. **Mesmo sintoma (aprovaçã
 diferente (rc vs. ausência de rc)** — pela Regra Dura de Causa Raiz o sintoma inicia a investigação
 no mesmo roadmap; a medição acima é o que autorizaria separar. Não alarguei o escopo por conta
 própria.
+
+---
+
+## 2026-09-24 — `artemis-tf` — ML-2H (Wave 2-bis) — INÍCIO
+
+**Roadmap:** `ROADMAP-2026-09-23-a-apuracao-do-censo-morre-no-shard-limpo-e-os-19-rotulos-ausentes-vem-de-um-unico-chunk-que-morre-em-silencio.md` (wip)
+**Branch:** `fix/a-apuracao-do-censo-morre-no-shard-limpo-...` (criada pelo arquiteto; não commito, não faço push)
+
+**Escopo:** gate irmão do `check-emitting-capture-fallback.sh` (ML-1B) — discriminante para
+captura desguarnecida cujo rc **propaga**: `grep` em posição não-final de pipeline sob `pipefail`,
+`grep` em posição **final**, e a forma **sem cano** `v=$(grep … arquivo)`.
+
+**Arquivos que vou tocar:** `scripts/check-unguarded-capture-rc.sh` (novo) · `Makefile` (registro) ·
+`scripts/check-gates-falsify.sh` (braços novos, no fim, junto ao Cenário 198).
+⚠️ Frente paralela `ares-tf`/ML-2J em `scripts/check-install-version-pin.sh` e família `sed -n`/`awk`/`cut`
+— não entro. Se meu gate acusar um `check-*.sh` de produto, **reporto**, não corrijo.
+
+---
+
+## 2026-09-24 — `ares-tf` — ML-2J (Wave 2-bis) — INÍCIO/FIM
+
+**Roadmap:** `ROADMAP-2026-09-23-a-apuracao-do-censo-morre-no-shard-limpo-e-os-19-rotulos-ausentes-vem-de-um-unico-chunk-que-morre-em-silencio.md` (wip)
+**Branch:** `fix/a-apuracao-do-censo-morre-no-shard-limpo-...` (criada pelo arquiteto; **não** commitei, **não** fiz push)
+
+**Escopo:** o sítio que eu mesmo reportei no §7 do ML-2I — `DEST_BARE=$(sed -n 's/^DEST: //p' …)`
+nos dois cenários AC5 de `check-install-version-pin.sh`. `sed -n` sem casar **sai 0**: não há rc
+para propagar, a guarda do ML-2I é inútil por construção e o único discriminante é o **conteúdo**.
+
+**Corrigido (4 sítios / 2 cenários):** `check-install-version-pin.sh` — guarda de não-vacuidade com
+rótulo (`FAIL [... ]: … medicao vacua, nao comparacao`) em `ac5-same-asset` e
+`ac5-prerelease-same-asset`. 🔴 A guarda incide sobre o **basename** (`DEST_*_BASE`), que é a
+expressão que o `if` lê — medido: `DEST="/tmp/work/"` tem captura **não-vazia** e basename
+**vazio**, e a guarda copiada do padrão do `URL` passaria batido.
+
+**Censo pelo par captura↔comparação** (`scripts/*.sh` + `.github/**` + `Makefile`, família
+`sed -n`/`awk`/`cut`/`tr`/`sort`/`head`/`tail`/`jq`/`xargs`/`wc`): **67 brutos = 4 corrigidos ·
+63 isentos** em 5 classes com razão escrita. Limites do varredor (3 cegueiras medidas) na nota.
+
+**Falsificação em três braços** por cenário, `bash` explícito, rc lido de arquivo, sem cano:
+seam quebrado (antes `OK` rc=0 → depois `FAIL` rc=1 com rótulo) · seam normal (`cmp` rc=0, stdout
+byte-idêntico) · **divergência real** de basename (continua reprovando pela razão original,
+`cmp` de stderr rc=0 antes/depois).
+
+**Gates rodados individualmente, todos RC=0:** `check-install-version-pin` (32 cenários) ·
+`check-emitting-capture-fallback` · `check-crlf-normalize-capture` · `check-parity-call-site-pins` ·
+`check-req-path-literals` · `check-orphan-gates` · `check-write-containment` · `check-raw-read-ban`.
+🔴 `make quality` **não** rodado, por instrução.
+
+**Vault:** `vault/notes/sed-n-nao-tem-rc-para-propagar-o-unico-discriminante-e-o-conteudo-e-ele-e-o-basename-2026-09-24.md`, linkada no índice.
+
+🔴 **Nenhum teste novo commitado** — harnesses ficaram no scratchpad; **frases por medição** no
+relatório. Não toquei em `check-gates-falsify.sh`, `Makefile`, `.github/workflows/`, `docs/req/`
+nem `docs/roadmaps/` (logo **não** mudei o status do ML-2J no roadmap — transição para o arquiteto).
+
+## 2026-09-24 — `artemis-tf` — ML-2H (Wave 2-bis) — FIM
+
+**Entregue (não commitado — aguarda auditoria do arquiteto):**
+- `scripts/check-unguarded-capture-rc.sh` (novo) — gate irmão do `check-emitting-capture-fallback.sh`.
+- `scripts/check-gates-falsify.sh` — **Cenário 199**, 17 braços (A–Q), no fim junto ao 198;
+  `FALSIFY_SUCCESS_FLOOR` 210 → **227** (incremento **medido**, não somado: o tally do driver
+  isolado deu 17; o `echo` de resumo não incrementa). ⚠️ Se o ML-2J do `ares-tf` acrescentar N
+  braços, o piso vira 227+N — reconciliar **uma** vez, não duas.
+- `Makefile` — registro do gate no alvo de gates, com o porquê.
+- `vault/notes/cinco-defeitos-do-instrumento-ao-transformar-as-6-classes-em-gate-2026-09-24.md` + índice.
+
+**Discriminante:** atribuição `VAR=$( … )` onde um `grep`/`egrep`/`fgrep` ocupa posição cujo **rc
+propaga** — sem cano (a), elo **final** (b), elo **não-final** sob `pipefail` **no escopo** (c).
+🔴 O caso (b) é mais largo que o enunciado do ML-2H, de propósito: `check-annotations.yml:80` era
+posição **final**, e um gate restrito a "não-final" deixaria voltar o sítio que esta REQ corrigiu.
+
+**Árvore real:** 108 candidatos · **0 violações** · 69 arquivos · piso 60 (segundo caminho: 109).
+Exatamente **2** sítios chegam ao estágio de violação — `check-agent-namespace-union.sh`
+`alfa_ln`/`zulu_ln`, **classe 6 (semântica, não decidível)**, alegados com razão na forma estreita.
+
+🔴 **Classe 6 declarada no cabeçalho como NÃO coberta**, com duas formas de alegação (marcador
+inline, preferida; tabela `ALLEGATIONS` no gate, bootstrap) e **guarda de obsolescência**: alegação
+que não casa sítio nenhum **reprova**.
+
+**Não corrigi nenhum `check-*.sh` de produto.** As duas alegações ficaram na tabela do gate, e não
+como marcador no sítio, **por causa da fronteira de escrita deste ML** — está registrado na nota.
+
+**Caminho de chunk (o que o CI usa) verificado, não inferido:** `gen-falsify-chunks.py` com N=8 —
+`total_segments` **60 → 61** (exatamente +1), os **17** rótulos caem num **único** chunk
+(`chunk_7`), `T199`/`UGREP`/`URC_GATE`/`URC_VIOL`/`mk199` todos definidos **dentro** do bloco, e o
+chunk gerado roda `rc=0` com `CHUNK_COMPLETE 7`.
+
+**Gates rodados individualmente, todos rc=0:** `check-unguarded-capture-rc.sh` ·
+`check-emitting-capture-fallback.sh` · `check-crlf-normalize-capture.sh` · `check-orphan-gates.sh` ·
+`check-req-path-literals.sh` · `check-raw-read-ban.sh` · `bash -n` nos dois arquivos editados ·
+`shellcheck -S warning` no gate novo · `trackfw validate` rc=0.
+🔴 `make quality` e `go test ./...` **não** rodados — a barreira é do arquiteto.
+🔴 Status do ML-2H **não** alterado no roadmap — só após a auditoria. Sem commit, sem push.

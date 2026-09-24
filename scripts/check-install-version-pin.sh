@@ -230,7 +230,23 @@ if [ "$URL_BARE" != "$URL_PREFIXED" ]; then
   echo "  prefixed:  $URL_PREFIXED" >&2
   exit 1
 fi
-if [ "${DEST_BARE##*/}" != "${DEST_PREFIXED##*/}" ]; then
+# ML-2J: `sed -n` sem casar sai 0 — nao ha rc para propagar, logo a guarda de rc do ML-2I
+# e inutil AQUI por construcao; o unico discriminante possivel e o CONTEUDO. Sem esta
+# guarda, um seam de dryrun que parasse de emitir a linha "DEST: " deixaria as duas
+# capturas VAZIAS, elas comparariam IGUAIS e o cenario emitiria "OK" sobre medicao
+# nenhuma. A guarda incide sobre o BASENAME — a expressao efetivamente comparada abaixo —
+# e nao sobre a captura crua: um DEST terminado em "/" tem captura nao-vazia e basename
+# vazio, e e o basename que decide o veredito.
+DEST_BARE_BASE="${DEST_BARE##*/}"
+DEST_PREFIXED_BASE="${DEST_PREFIXED##*/}"
+if [ -z "$DEST_BARE_BASE" ] || [ -z "$DEST_PREFIXED_BASE" ]; then
+  echo "FAIL [install-version-pin/ac5-same-asset]: o seam de dryrun nao emitiu basename utilizavel na linha 'DEST: ' — medicao vacua, nao comparacao" >&2
+  echo "  bare:      [$DEST_BARE] basename [$DEST_BARE_BASE]" >&2
+  echo "  prefixed:  [$DEST_PREFIXED] basename [$DEST_PREFIXED_BASE]" >&2
+  echo "  output do ultimo run_install: $OUT" >&2
+  exit 1
+fi
+if [ "$DEST_BARE_BASE" != "$DEST_PREFIXED_BASE" ]; then
   echo "FAIL [install-version-pin/ac5-same-asset]: AC5 violado — '7.3.0' e 'v7.3.0' compuseram basenames de DEST diferentes" >&2
   echo "  bare:      $DEST_BARE" >&2
   echo "  prefixed:  $DEST_PREFIXED" >&2
@@ -274,7 +290,18 @@ if [ "$URL_PRE_BARE" != "$URL_PRE_PREFIXED" ]; then
   echo "  prefixed:  $URL_PRE_PREFIXED" >&2
   exit 1
 fi
-if [ "${DEST_PRE_BARE##*/}" != "${DEST_PRE_PREFIXED##*/}" ]; then
+# ML-2J: mesma causa e mesma guarda do cenario ac5-same-asset acima — o `sed -n` nao tem
+# rc para propagar e dois DEST vazios comparariam iguais, emitindo "OK" vacuo.
+DEST_PRE_BARE_BASE="${DEST_PRE_BARE##*/}"
+DEST_PRE_PREFIXED_BASE="${DEST_PRE_PREFIXED##*/}"
+if [ -z "$DEST_PRE_BARE_BASE" ] || [ -z "$DEST_PRE_PREFIXED_BASE" ]; then
+  echo "FAIL [install-version-pin/ac5-prerelease-same-asset]: o seam de dryrun nao emitiu basename utilizavel na linha 'DEST: ' — medicao vacua, nao comparacao" >&2
+  echo "  bare:      [$DEST_PRE_BARE] basename [$DEST_PRE_BARE_BASE]" >&2
+  echo "  prefixed:  [$DEST_PRE_PREFIXED] basename [$DEST_PRE_PREFIXED_BASE]" >&2
+  echo "  output do ultimo run_install: $OUT" >&2
+  exit 1
+fi
+if [ "$DEST_PRE_BARE_BASE" != "$DEST_PRE_PREFIXED_BASE" ]; then
   echo "FAIL [install-version-pin/ac5-prerelease-same-asset]: '8.0.0-rc2' e 'v8.0.0-rc2' compuseram basenames de DEST diferentes" >&2
   echo "  bare:      $DEST_PRE_BARE" >&2
   echo "  prefixed:  $DEST_PRE_PREFIXED" >&2

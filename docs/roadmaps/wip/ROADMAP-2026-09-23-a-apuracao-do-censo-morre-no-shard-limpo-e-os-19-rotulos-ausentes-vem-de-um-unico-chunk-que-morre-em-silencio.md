@@ -527,7 +527,7 @@ corrigidos / 9 isentos", contradizendo as 5 coordenadas da mesma frase. Aritmét
 
 ### ML-2J — `sed -n` não tem rc para propagar, e o efeito é o mesmo
 **Owner:** `ares-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-09-24 · **67 sítios · 4 corrigidos · 63 isentos**
 
 ```bash
 DEST_BARE=$(sed -n 's/^DEST: //p' <<<"$OUT")     # sed -n sem casar sai 0 — medido
@@ -548,7 +548,7 @@ roadmap com defeito conhecido no sítio que acabamos de tocar.
 
 ### ML-2H — Discriminante irmão: pipeline desguarnecido sob `pipefail`
 **Owner:** `artemis-tf`
-**Status:** ⬜ Pendente — **depende do ML-2G**
+**Status:** ✅ Concluído — auditado em 2026-09-24 · `scripts/check-unguarded-capture-rc.sh` · Cenário 199, 17 braços
 
 **Veredito do ML-2E, que eu aceito:** o gate `check-emitting-capture-fallback.sh` (ML-1B) **não**
 cobre esta forma e **não deve ser alargado** — ele exige coexistência de comando emissor **e**
@@ -584,6 +584,66 @@ Consequência: quando o braço usa o **mesmo nome** em `OK` e `FAIL`, apagar a p
 Separar os dois no `.actual` é mudança de contrato e mexe em consumidores. 🔴 **Não fazer é aceitar
 uma cegueira medida**, que é o que esta REQ inteira existe para atacar. A decisão é minha, e ela
 precisa da contagem de consumidores afetados antes.
+
+
+**Auditoria do arquiteto — ML-2J e ML-2H (medida por mim):**
+
+| afirmação | como confirmei |
+|---|---|
+| a guarda tinha de incidir no **basename**, não na captura | `DEST="/tmp/work/"` → captura `[/tmp/work/]` **não-vazia**, basename `[]` **vazia** — o `[ -z "$DEST_BARE" ]` copiado do padrão do `URL` **não dispararia** |
+| o gate novo passa na árvore | `check-unguarded-capture-rc.sh` → **rc=0**, com `OK alegacao viva: (check-agent-namespace-union.sh, zulu_ln) casa 1 sitio(s)` |
+| a guarda de não-vacuidade funciona | `MIN_CANDIDATES=9999` → **rc=1**, 108 candidatos, piso 60 |
+| `FALSIFY_SUCCESS_FLOOR` | 210 → **227**, e o ML-2J não acrescentou braço — sem colisão entre os dois MLs paralelos |
+
+🔴 **O ML-2H alargou o próprio enunciado, com razão medida.** Eu escrevi "posição **não-final**". Ele
+incluiu o **elo final** porque a §4 da nota do ML-2G mediu que `check-annotations.yml:80` — o sítio
+que esta REQ acabou de corrigir — tem o `grep` em posição **final**, onde o `set -e` mata **sem**
+`pipefail`. Um gate restrito a "não-final" deixaria o defeito voltar. Declarado no cabeçalho.
+
+🔴 **A guarda da classe 6 é ela mesma falsificável** (braço P): alegação que não casa sítio nenhum
+**reprova**. É o que separa "declarar um limite" de "declarar e seguir em frente" — uma guarda que
+nunca pode reprovar não é guarda.
+
+⚠️ **Erro meu nesta auditoria — o nono do instrumento.** Rodei o comando da classe 5 e obtive **5**
+sítios onde o executor afirmara **0**. Investigado: os 5 são **comentários e strings do próprio gate
+e do Cenário 199**, que ele acabou de criar. A medição dele era **pré-entrega** e estava certa; a
+minha mediu depois e contou o código de teste como se fosse produto. **Medir a árvore depois da
+entrega conta o instrumento junto com o objeto.**
+
+**Decisão minha, que estava pendente:** o gate acusaria `check-agent-namespace-union.sh:904,905`, e
+a forma **preferida** de isenção é o marcador inline — que exige editar um arquivo proibido ao
+`artemis-tf`. **Aceito a tabela `ALLEGATIONS` por ora**, porque ela é falsificável e chaveada por
+basename+variável (não por número de linha, que envelhece). **O marcador inline entra no ML-2K**,
+que já vai tocar arquivo de produto.
+
+---
+
+### ML-2K — O cross-check que concorda sem medir
+**Owner:** `ares-tf`
+**Status:** ⬜ Pendente
+
+Achado do ML-2J, **no arquivo que dá nome a esta REQ**:
+
+```bash
+CNT_FAIL_GREP=$(grep -ac '^FAIL' "$LOG_FILE" … || true)     # windows-census.yml:489
+CNT_FAIL_AWK=$(awk '/^FAIL/{n++} END{print n+0}' "$LOG_FILE")
+```
+
+São **duas capturas do mesmo produtor**. Com log **ausente ou vazio**, as duas valem `0`,
+**concordam**, e nenhum `::warning::` de discrepância sai. 🔴 **O cross-check de instrumentos
+concorda sem medir** — é a mesma defesa que a causa A já tinha derrotado, agora vácua por outro
+caminho.
+
+**Ações:** guarda de não-vacuidade no par (um log legível e não-vazio é pré-condição da comparação);
+e o **marcador inline** `# unguarded-capture-rc-allowed:` em `check-agent-namespace-union.sh:904,905`,
+migrando da tabela `ALLEGATIONS` para a forma preferida.
+
+- [ ] O par passa a distinguir "concordam em zero porque não há o que medir" de "concordam porque
+      mediram o mesmo" — falsificado nas duas direções
+- [ ] Marcador inline nos dois sítios; a entrada correspondente sai da tabela e a **guarda de
+      obsolescência** continua verde
+- [ ] 🔴 Uma frase por teste novo, ou ausência declarada
+- [ ] 🔴 **NÃO rodar `make quality`**
 
 ---
 

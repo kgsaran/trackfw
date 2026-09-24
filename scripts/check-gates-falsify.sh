@@ -301,7 +301,7 @@ FALSIFY_SUCCESS_TALLY="$WORK/success-count"
 # Ao remover cenários legitimamente (consolidação, renomeação), atualize
 # este valor no mesmo commit que remove os cenários. Sem esse passo o piso
 # fica pessimista e o gate começará a reprovar em execuções limpas.
-FALSIFY_SUCCESS_FLOOR=210
+FALSIFY_SUCCESS_FLOOR=227
 if [[ "$TRACKFW_FALSIFY_ENUMERATE" == "1" ]]; then
   : > "$FALSIFY_ENUM_TALLY"
   echo "[falsify/enumerate] modo de enumeração ATIVO (TRACKFW_FALSIFY_ENUMERATE=1, default=0) -- reprovações são contadas e a execução continua para o próximo cenário; o exit code final permanece != 0 se qualquer cenário reprovar. Ferramenta de diagnóstico -- não usada por make quality/parity." >&2
@@ -7587,6 +7587,172 @@ assert_fails_with "emitting-capture/vacuous-scan" \
   env EMIT_FALLBACK_GATE_MIN_CANDIDATES=5 bash "$EMIT_GATE" --scan-root "$T198/arm-g"
 
 echo "OK   [falsify/emitting-capture]: 11 braços (A-K) provados"
+
+# ---------------------------------------------------------------------------
+# Cenário 199 — check-unguarded-capture-rc.sh: gate IRMÃO do 198, para a captura
+#               SEM FALLBACK NENHUM cujo rc PROPAGA (ML-2H, mesma REQ).
+#
+# O 198 exige coexistência de comando emissor E fallback emissor. A forma daqui
+# não tem fallback: `v=$(… grep …)` mata pelo rc do próprio grep, sob `set -e`.
+# Medido em bash 5.3, rc lido de ARQUIVO (nunca depois de cano):
+#     v=$(grep ZZZ f.txt)                    -> rc=1, ALIVE nunca imprime
+#     v=$(cat f.txt | grep ZZZ)              -> rc=1, ALIVE nunca imprime
+#     v=$(cat f.txt | grep ZZZ | head -1)    -> rc=1 (sob pipefail), idem
+#     v=$( { grep ZZZ f.txt || true; } )     -> rc=0, v=[], ALIVE  (a correção)
+#
+# Braços POSITIVOS (o gate REPROVA — uma FORMA por braço):
+#   A unguarded-rc/no-pipe                sem cano nenhum (a forma do ML-2I)
+#   B unguarded-rc/pipeline-final         grep no FIM do cano — `pipefail` irrelevante
+#   C unguarded-rc/pipeline-nonfinal      grep em elo NÃO-FINAL sob `pipefail` (ML-2E/2G)
+#   D unguarded-rc/paren-in-pattern       multi-linha com `(` LITERAL no padrão do grep —
+#                                         sem contagem ciente de aspas, a substituição
+#                                         inteira era ENGOLIDA em silêncio (falso negativo
+#                                         medido em .github/workflows/quality.yml:1254)
+#   E unguarded-rc/workflow-run-block     bloco `run:` com `shell: bash` (pipefail implícito
+#                                         do GitHub Actions) — o sítio REAL do defeito
+#   F unguarded-rc/local-separate-line    🔴 CONTRAPROVA da classe 5: `local` em linha
+#                                         SEPARADA NÃO mascara o rc e DEVE reprovar.
+#                                         Medido: rc=1. Sem este braço, a classe 5 daria
+#                                         veredito certo por razão errada em
+#                                         check-orphan-gates.sh:86,102 (que é classe 4)
+#
+# Braços NEGATIVOS (o gate PASSA — as 6 classes de isenção, uma a uma):
+#   G unguarded-rc/argument-position      classe 1 — rc descartado em posição de argumento
+#   H unguarded-rc/guard-outside-parens   classe 2 — `|| true` DEPOIS do fecha-parênteses
+#   I unguarded-rc/foreign-scope          classe 3 — corpo de `bash -c` com `set -e` e SEM
+#                                         `pipefail`: a opção não atravessa a fronteira
+#   J unguarded-rc/no-errexit             classe 4 — escopo com `set -uo pipefail` só
+#   K unguarded-rc/local-same-line        classe 5 — `local v=$(…)` na MESMA linha
+#   L unguarded-rc/alleged-inline         classe 6 — alegação `# unguarded-capture-rc-allowed:`
+#   M unguarded-rc/correct-form           a correção `{ … || true; }` não é acusada
+#   N unguarded-rc/semantic-family        `command -v`/`find` são CANDIDATOS mas nunca
+#                                         acusados: rc não-zero ali é ambiente inviável ou
+#                                         erro de acesso, não "não casou" (ML-2I §4)
+#
+#   Q unguarded-rc/cond-keyword-not-condition  🔴 `if [ -n "$x" ]; then v=$(grep …)`:
+#                                         a palavra-chave `if` esta no prefixo mas a
+#                                         atribuicao vem DEPOIS do `; then`, logo o rc
+#                                         PROPAGA e o gate DEVE reprovar. Contra-braco do
+#                                         H (que e `if v=$(…); then`, onde o `if` consome
+#                                         o rc de verdade). Sem este braco, "prefixo contem
+#                                         if" vira isencao larga demais
+#
+# Braços de GUARDA (reprovam com diagnóstico DISTINTO do de violação):
+#   O unguarded-rc/vacuous-scan           corpus abaixo do piso
+#   P unguarded-rc/stale-allegation       🔴 alegação da classe 6 que não casa sítio nenhum.
+#                                         Uma alegação que não casa nada é COMENTÁRIO, não
+#                                         afirmação por sítio — e uma guarda que nunca pode
+#                                         reprovar não é guarda
+#
+# Auto-referência: todo `grep` sintético vem de $UGREP, e cada formato começa com
+# `\n` antes do `VAR=`, então o próprio gate (que varre scripts/*.sh) não lê
+# nenhuma destas linhas como sítio em posição de atribuição.
+# ---------------------------------------------------------------------------
+T199="$WORK/s199"
+mkdir -p "$T199"
+UGREP=grep
+URC_GATE="$ROOT_DIR/scripts/check-unguarded-capture-rc.sh"
+URC_VIOL="captura sem guarda cujo rc propaga"
+
+# mk199 <arm> <formato-printf> [args...] -> cria $T199/<arm>/scripts/check-synth.sh
+mk199() {
+  local arm="$1"; shift
+  local fmt="$1"; shift
+  mkdir -p "$T199/$arm/scripts"
+  printf '#!/usr/bin/env bash\n' > "$T199/$arm/scripts/check-synth.sh"
+  # shellcheck disable=SC2059
+  printf "$fmt" "$@" >> "$T199/$arm/scripts/check-synth.sh"
+}
+
+# --- A: sem cano -----------------------------------------------------------
+mk199 arm-a 'set -euo pipefail\nv=$(%s PAT f.txt)\nif [ -z "$v" ]; then echo vazio; fi\n' "$UGREP"
+assert_fails_with "unguarded-rc/no-pipe" "$URC_VIOL" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 bash "$URC_GATE" --scan-root "$T199/arm-a"
+
+# --- B: grep no FIM do cano ------------------------------------------------
+mk199 arm-b 'set -euo pipefail\nv=$(cat f.txt | %s PAT)\nif [ -z "$v" ]; then echo vazio; fi\n' "$UGREP"
+assert_fails_with "unguarded-rc/pipeline-final" "$URC_VIOL" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 bash "$URC_GATE" --scan-root "$T199/arm-b"
+
+# --- C: grep em elo NÃO-FINAL sob pipefail ---------------------------------
+mk199 arm-c 'set -euo pipefail\nv=$(cat f.txt | %s PAT | head -1)\nif [ -z "$v" ]; then echo vazio; fi\n' "$UGREP"
+assert_fails_with "unguarded-rc/pipeline-nonfinal" "$URC_VIOL" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 bash "$URC_GATE" --scan-root "$T199/arm-c"
+
+# --- D: multi-linha com parêntese LITERAL no padrão ------------------------
+mk199 arm-d 'set -euo pipefail\nv=$(%s -n "os\\.Symlink(" \\\n   a.go \\\n   b.go)\necho "$v"\n' "$UGREP"
+assert_fails_with "unguarded-rc/paren-in-pattern" "$URC_VIOL" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 bash "$URC_GATE" --scan-root "$T199/arm-d"
+
+# --- E: bloco run: de workflow com shell: bash -----------------------------
+mkdir -p "$T199/arm-e/.github/workflows"
+printf 'jobs:\n  j:\n    steps:\n      - name: x\n        shell: bash\n        run: |\n          ID=$(echo "$U" | %s -oE "[0-9]+$" | head -1)\n          echo "$ID"\n' \
+  "$UGREP" > "$T199/arm-e/.github/workflows/synth.yml"
+assert_fails_with "unguarded-rc/workflow-run-block" "$URC_VIOL" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 bash "$URC_GATE" --scan-root "$T199/arm-e"
+
+# --- F: CONTRAPROVA da classe 5 — `local` em linha SEPARADA reprova --------
+mk199 arm-f 'set -euo pipefail\nf() {\n  local v\n  v=$(%s PAT f.txt)\n  echo "$v"\n}\n' "$UGREP"
+assert_fails_with "unguarded-rc/local-separate-line" "$URC_VIOL" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 bash "$URC_GATE" --scan-root "$T199/arm-f"
+
+# --- G: classe 1 — posição de argumento ------------------------------------
+mk199 arm-g 'set -euo pipefail\nfail "rotulo" "$(%s -n PAT f.txt | head -5)"\n' "$UGREP"
+assert_succeeds "unguarded-rc/argument-position" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 bash "$URC_GATE" --scan-root "$T199/arm-g"
+
+# --- H: classe 2 — guarda depois do fecha-parênteses -----------------------
+mk199 arm-h 'set -euo pipefail\nrv=$(%s PAT f.txt | sed -n 1p) || true\n' "$UGREP"
+assert_succeeds "unguarded-rc/guard-outside-parens" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 bash "$URC_GATE" --scan-root "$T199/arm-h"
+
+# --- I: classe 3 — `pipefail` não atravessa a fronteira do escopo ----------
+mk199 arm-i 'set -euo pipefail\nSCRIPT=%s\n  set -e\n  v=$(%s%s -m1 "^req: " arq | sed -E "s/x/y/")\n'"'"'\nbash -c "$SCRIPT"\n' "'" "g" "rep"
+assert_succeeds "unguarded-rc/foreign-scope" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 bash "$URC_GATE" --scan-root "$T199/arm-i"
+
+# --- J: classe 4 — escopo sem `set -e` -------------------------------------
+mk199 arm-j 'set -uo pipefail\nv=$(%s PAT f.txt)\n' "$UGREP"
+assert_succeeds "unguarded-rc/no-errexit" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 bash "$URC_GATE" --scan-root "$T199/arm-j"
+
+# --- K: classe 5 — `local v=$(…)` na MESMA linha ---------------------------
+mk199 arm-k 'set -euo pipefail\nf() {\n  local v=$(%s PAT f.txt)\n  echo "$v"\n}\n' "$UGREP"
+assert_succeeds "unguarded-rc/local-same-line" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 bash "$URC_GATE" --scan-root "$T199/arm-k"
+
+# --- L: classe 6 — alegação inline -----------------------------------------
+mk199 arm-l 'set -euo pipefail\n# unguarded-capture-rc-allowed: o laco anterior ja validou o casamento com grep -qF e encerra com exit 1\nv=$(%s PAT f.txt)\n' "$UGREP"
+assert_succeeds "unguarded-rc/alleged-inline" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 bash "$URC_GATE" --scan-root "$T199/arm-l"
+
+# --- M: a forma CORRETA não é acusada --------------------------------------
+mk199 arm-m 'set -euo pipefail\nv=$( { %s PAT f.txt || true; } )\nif [ -z "$v" ]; then echo vazio; fi\n' "$UGREP"
+assert_succeeds "unguarded-rc/correct-form" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 bash "$URC_GATE" --scan-root "$T199/arm-m"
+
+# --- N: família semântica (command -v / find) é candidata, nunca acusada ---
+mk199 arm-n 'set -euo pipefail\nA=$(command -v uname)\nB=$(find . -name "*.sh")\n'
+assert_succeeds "unguarded-rc/semantic-family" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=2 bash "$URC_GATE" --scan-root "$T199/arm-n"
+
+# --- O: vacuidade — diagnóstico DISTINTO do de violação --------------------
+assert_fails_with "unguarded-rc/vacuous-scan" \
+  "guarda de vacuidade disparou" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=99 bash "$URC_GATE" --scan-root "$T199/arm-m"
+
+# --- P: alegação obsoleta — a guarda da classe 6 é ela mesma falsificável ---
+assert_fails_with "unguarded-rc/stale-allegation" \
+  "alegacao obsoleta" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 UNGUARDED_RC_GATE_FORCE_ALLEGATION_GUARD=1 \
+  bash "$URC_GATE" --scan-root "$T199/arm-m"
+
+# --- Q: `if` no prefixo nao isenta quando ha `; then` entre ele e o NAME= ---
+mk199 arm-q 'set -euo pipefail\nif [ -n "$x" ]; then v=$(%s PAT f.txt); fi\n' "$UGREP"
+assert_fails_with "unguarded-rc/cond-keyword-not-condition" "$URC_VIOL" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 bash "$URC_GATE" --scan-root "$T199/arm-q"
+
+echo "OK   [falsify/unguarded-rc]: 17 braços (A-Q) provados"
 
 # ---------------------------------------------------------------------------
 # ML-2B — fechamento do modo de enumeração. Desligado (default): este bloco
