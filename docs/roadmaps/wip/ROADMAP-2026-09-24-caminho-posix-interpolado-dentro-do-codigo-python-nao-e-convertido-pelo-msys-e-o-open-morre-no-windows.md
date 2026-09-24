@@ -137,7 +137,8 @@ enumerações que se revelaram limite inferior nesta campanha.
 > Dependências: Wave 0 auditada.
 
 ### ML-1A — Sítios (a) passam o caminho por `argv`
-**Owner:** `ares-tf` · **Status:** ✅ Concluído — auditado em 2026-09-24
+**Owner:** `ares-tf`
+**Status:** ✅ Concluído — auditado em 2026-09-24
 
 🔴 **CORREÇÃO (achado do ML-0A):** o roadmap citava `_normalize_version_in_file` do
 `check-doctor-parity.sh` como precedente. **Esse arquivo não existe** — deletado em `2eae0a44`
@@ -155,6 +156,7 @@ check-update-parity.sh:354, :379, :408
 check-serve-api-file-security.sh:87, :92
 ```
 
+**Critérios de aceite:**
 - [x] Os 6 por `argv` — **auditei**: 0 caminhos interpolados restantes, 0 `cygpath`/`os.environ` no
       diff (+9/−8). Fixtures idênticos por `cmp`, com guarda de não-vacuidade em cada comparação
 - [x] 🔴 E o rótulo **voltou a existir**: `OK [falsify/integration-assets/direction-b-shim-absent]`
@@ -164,8 +166,11 @@ check-serve-api-file-security.sh:87, :92
 - [x] 🔴 `make quality` não rodado pelos executores
 
 ### ML-1B — Gate anti-reintrodução
-**Owner:** `artemis-tf` · **Status:** ✅ Concluído — auditado em 2026-09-24 · `scripts/check-interpolated-path-in-python.sh` · Cenário 200, 9 braços
+**Owner:** `artemis-tf`
+**Status:** ✅ Concluído — auditado em 2026-09-24
+**Entregue:** `scripts/check-interpolated-path-in-python.sh` · Cenário 200, 9 braços
 
+**Critérios de aceite:**
 - [x] **Auditei nas duas direções**: corpus pré-fix (`git archive HEAD`) → **rc=1, exatamente os 6
       sítios**, linha a linha iguais à tabela do ML-0A, **e nenhum outro**; árvore pós-fix → **rc=0**
 - [x] Os dois não-flag saem como `OK [literal/…]`: **0 FAILs** para `check-validate-rule-pins.sh:371`
@@ -188,6 +193,7 @@ check-serve-api-file-security.sh:87, :92
 **Owner:** `ares-tf`
 **Status:** ✅ Concluído — auditado em 2026-09-24 · VM Windows 11, dois braços
 
+**Critérios de aceite:**
 - [x] **Exercitada na VM, nos dois braços** (`c79f260` × `dc9f733` — e **não** contra a `main`, que
       diverge em 10 arquivos de `scripts/`). Gate do ML-1B: **rc=1 com exatamente os 6** antes,
       **rc=0 com os dois pisos disparados** depois. O rótulo `integration-assets/direction-b-shim-absent`
