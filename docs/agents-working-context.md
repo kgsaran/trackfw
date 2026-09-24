@@ -39853,3 +39853,78 @@ ML-2L **não** alterado no roadmap (arquivo proibido). Sem commit, sem push.
   (`check-gates-falsify.sh:6745`, `python3 -c` com caminho interpolado) — que é o **primeiro item**
   da `REQ-2026-09-24`, já em backlog. Antes, isso teria sido silêncio.
 - Próximo: `REQ-2026-09-24` (caminho POSIX interpolado no código Python), backlog → wip.
+
+## 2026-09-24 — hades-tf — ML-0A (Wave 0): enumeração e reconciliação dos caminhos interpolados
+
+**Início e fim no mesmo ciclo.** Parecer em
+`docs/seguranca/2026-09-24-caminhos-interpolados-no-codigo-python.md`. Nenhuma linha de
+implementação; sem commit, sem push, sem branch; `make quality` **não** rodado.
+
+**Veredito: 6 interpolações (a), em 5 blocos `python3 -c`, em 3 arquivos** — unidade de contagem
+declarada, porque é toda a origem da divergência 15/10 vs 7.
+
+- `check-gates-falsify.sh:6745` — 🔴 **derruba o `chunk_0`** (`CHUNK_ABORT rc=1 line=3609`, 4
+  rótulos perdidos). Correspondência `chunk_0.sh:3609` ↔ `:6745` verificada byte a byte regerando os
+  chunks. Caminho do erro: `/d/a/trackfw/trackfw/npm/package.json` — grafia POSIX-MSYS de `D:\a\…`.
+- `check-update-parity.sh:354` — **3 rótulos FAIL** no mesmo run `36017761462` (shards 3 e 4:
+  `setup-s175-baseline`, `sandbox-gap-e/direction-a-detected`, `sandbox-walkdir-reintroduced/direction-b-detected`).
+  `:379` e `:408` são **latentes** — `set -euo pipefail` mata o script em `:354`.
+- `check-serve-api-file-security.sh:87,92` — único (a) em gate de **segurança**; **consequência zero
+  no CI hoje** (roda só em `ubuntu-latest`). Entram pela Regra Dura de Causa Raiz, não por dano.
+
+**Reconciliação:** o #417 foi **largo no predicado** (casava `open(` e `$` no mesmo *arquivo*,
+varrendo para dentro 5 sítios (b)/(c)) **e estreito na unidade** (1 por arquivo, onde
+`check-update-parity` tem 3 e `check-serve-api-file-security` tem 2). Ele mesmo declarou a peneira
+como peneira. A varredura do arquiteto (7) acertou o número por exigir `$` e `open(` na **mesma
+linha** — frágil como floor, correta nesta árvore.
+
+**Busca ativa (10 varreduras de forma + 1 enumeração sem forma):** nada novo. O fechamento não
+depende de forma — enumerei **as 39 linhas** com `$` em corpo Python fora de `.md` e li uma a uma.
+🔴 `internal/generators` **não** emite o padrão: o defeito não chega ao consumidor.
+
+**🔴 Três condições de handoff antes da Wave 1:**
+1. **O ML-1A manda imitar `scripts/check-doctor-parity.sh`, que não existe** — deletado em
+   `2eae0a44` (v8.0.0, 2026-09-16), 8 dias antes do #417. O precedente vivo é
+   `check-thirdparty-parity.sh:167`. Corrigir o handoff ou o agente vai atrás de arquivo ausente.
+   (Corolário: o segundo sítio da #363 fechou por **deleção**, não por correção.)
+2. **Entregar a lista (c) ao `artemis-tf`** como casos obrigatórios de **não-flag** do ML-1B. Duas
+   armadilhas nomeadas: `check-validate-rule-pins.sh:371` (`$PWD` **literal** dentro de `<<'PY'` —
+   um gate ingênuo reprovaria a linha que o #417 acabou de consertar) e
+   `check-serve-browser-security.sh:97` (URL, não caminho; e *depende* da não-conversão para
+   preservar o vetor `fe80::1%eth0&calc.exe&echo`).
+3. **Ordem:** `:6745` → `check-update-parity` → `check-serve-api-file-security`; **os três no mesmo
+   PR**.
+
+**Threat model, sem inflar:** não há falso-negativo de segurança. No Windows o gate de segurança cai
+em `fail "AC6 … resultado inesperado"` — alto e ruidoso. E `windows-full-suites` roda
+`go test ./...`, então `TestFileHandler_SymlinkEscape` **é** exercitado no Windows. O residual exato
+é **meta-prova**: a prova de não-vacuidade do AC6 não é executável no Windows, e nenhum job de
+Windows a pede hoje.
+
+**🔴 Correções de número feitas na própria Wave 0 (medidas, não inferidas):**
+
+- **"a1 leva 4 rótulos junto" não confere — é 1.** Contado no chunk regenerado: depois da linha
+  3609, o `chunk_0` tem **1** `assert_fails_with` e **0** `falsify_count_success` (totais do chunk:
+  37 e 35). O único rótulo perdido é `falsify/integration-assets/direction-b-shim-absent`. O "4" é o
+  **total do run** (`rótulos ausentes 19 → 4`), grandeza diferente. E o **shard 0 não caiu em `LOG
+  SEM VEREDITO`** — emitiu `OK=50 FAIL=1`, entrou no total. **O dano de a1 é menor do que o handoff
+  afirma**; ele continua em primeiro na ordem por ser o único que *remove medição* em vez de produzir
+  vermelho, e isso está dito no parecer — se a ordenação for por volume, a4 (3 FAIL) vem primeiro.
+- **Atribuição declarada:** 3 dos 11 FAIL do run são desta causa. Os outros 8 **não** atribuo
+  (`setup-s75`, `scaffold-update-chmod-removed/direction-c-detected`, `git-branch-guard-dedup/*` —
+  outro mecanismo). Extração não truncada (13 linhas, abaixo do `head -30`).
+- **§4.3 saiu de inferido para medido**, e o veredito de "não inflar" se sustenta. Run
+  `36023336663`: `parity-other-gates | make parity-rest | ok  AC6 Go falsificação: …` (a prova de
+  não-vacuidade **passa em todo PR**, via `Makefile:49` alcançado por `parity-rest`) e
+  `windows-full-suites | --- PASS: TestFileHandler_SymlinkEscape (0.01s)` (o **controle é exercitado
+  e verde no Windows**). Verifiquei o risco de `t.Skip`: `symlinkOrSkip`
+  (`internal/serve/symlink_helper_test.go:31`) pula por **condição** (`WinError 1314`), não por
+  `GOOS`, e **não pulou** neste runner — declarado como residual em §4.6, porque é propriedade do
+  runner, não garantia do repo.
+
+**🔴 Ação que só o arquiteto pode fazer:** o roadmap era arquivo proibido para mim, então o **ML-0A
+segue `⬜ Pendente` com os 6 critérios desmarcados**. `trackfw barrier <roadmap> --wave 0` só checa
+ML `✅` + ACs `[x]` — vai reprovar por escrituração se isso não for atualizado antes.
+
+`trackfw validate`: **passa** (148 warnings, todos pré-existentes). Um deles toca este roadmap —
+*"is in wip but has no acceptance criteria block"* — herdado do gerador, não introduzido por mim.
