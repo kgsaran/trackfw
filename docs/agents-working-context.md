@@ -39518,3 +39518,73 @@ Documento revisado após chamada de advisor que bloqueou a primeira versão em 4
   `check-parity-call-site-pins.sh:261` · `check-serve-address-parity.sh:229` ·
   `check-serve-api-file-security.sh:76` · `.github/workflows/check-annotations.yml:80`.
   Decisão de ML é do arquiteto; o comando e a lista estão na nota de vault.
+
+---
+
+## 2026-09-24 — `ares-tf` · ML-2G (Wave 2-bis): os 10 sítios da mesma causa fora do `check-gates-falsify.sh`
+
+**REQ:** REQ-2026-09-23 (a apuração do censo morre no shard limpo) ·
+**Roadmap:** `ROADMAP-2026-09-23-a-apuracao-do-censo-morre-no-shard-limpo-…` (wip) ·
+**Branch:** `fix/a-apuracao-do-censo-morre-no-shard-limpo-…` (não criada por mim; **não commitei**)
+
+**Início:** remedi a lista do ML-2E antes de corrigir — **73 brutos** (idêntico), **10 filtrados**,
+mas **não os mesmos 10**: `check-gates-falsify.sh:2021` entrou (é o `:1970` isento do ML-2E,
+deslocado pelas 61 linhas do próprio ML-2E; o filtro usa `pipefail in <arquivo>`, que não enxerga a
+fronteira do `bash -c`) e `.github/workflows/check-annotations.yml:80` é `grep` em posição **FINAL**,
+não não-final.
+
+**Veredito: 5 defeituosos corrigidos, 5 isentos com razão escrita, 1 fora do meu escopo de escrita.**
+
+| sítio | não casar é resultado válido? | veredito |
+|---|---|---|
+| `check-agent-namespace-union.sh:632` | **sim** — o `if [[ -z "$ln" ]]` seguinte emite `marker-missing`, distinto de `order-wrong` | corrigido |
+| `check-manifest-version-gate.sh:113` | **sim** — `if [[ -z ]]` emite "no '## [X.Y.Z]' section"; **dois** greps letais | corrigido (os dois) |
+| `check-parity-call-site-pins.sh:261` | **sim** — `if [[ -z "$guard_line" ]]` emite o FAIL nomeando a variável | corrigido |
+| `check-serve-address-parity.sh:229` | **sim** — `if [[ -z "$url" ]]` emite "no URL found in stdout" | corrigido |
+| `.github/workflows/check-annotations.yml:80` | **sim** — `if [[ -z ]]` emite `::warning::` e segue | corrigido |
+| `check-agent-namespace-union.sh:900` e `:901` | **não** — o laço anterior já reprovou com `exit 1` se o marcador faltasse | **isento**, inalterado |
+| `check-ci-workflow-pin-parity.sh:192` e `:211` | n/a — **já guardados** por `rv=$( … ) \|\| true` (fora do corpo; o filtro do ML-2E só olhava o miolo) | **isento**, inalterado |
+| `check-serve-api-file-security.sh:76` | **não** — e a substituição está em **posição de argumento** de `fail`, cujo rc é descartado | **isento**, inalterado |
+| `check-gates-falsify.sh:2021` | n/a — `bash -c`, sem `pipefail` (já julgado no ML-2E) | fora do escopo de escrita |
+
+**Falsificação nas duas direções** (bash explícito, harness só no scratchpad — **nenhum teste
+commitado**): nos 5 corrigidos, **sem casar** ANTES → `rc=1` e o script morre; DEPOIS → `rc=0`,
+`v=""` e **continua**. **Com casar**, o valor é **idêntico** antes e depois: `3` · `8.2.0` · `2` ·
+`http://0.0.0.0:4080` · `123456`. O `:113` tem uma **terceira** direção (`SÓ-UNRELEASED`): ANTES
+`rc=1`, DEPOIS `rc=0` — é ela que prova que o segundo `grep` também foi guardado.
+
+**Gates tocados, individualmente, RC=0:** `check-manifest-version-gate.sh` (9 passed/0 failed) ·
+`check-parity-call-site-pins.sh` (11 verificações) · `check-serve-address-parity.sh` (all scenarios)
+· `check-agent-namespace-union.sh` (22 scenarios) · `actionlint .github/workflows/check-annotations.yml`.
+🔴 `make quality` **não** rodado.
+
+**Nota de vault:** `nem-todo-grep-em-captura-e-defeito-a-posicao-do-sitio-decide-2026-09-24.md`,
+linkada no índice.
+
+🔴 **Mesma causa, fora do escopo enumerado — nomeados, não empurrados para REQ nova:** a forma
+**irmã sem cano** (`v=$(grep … arquivo)`, que mata pelo rc do `grep` sozinho, **sem** depender de
+`pipefail`) é invisível ao filtro do ML-2E, que exige `|` no corpo. **5 sítios** vivos:
+`check-ci-workflow-pin-parity.sh:230` · `check-install-version-pin.sh:210,213,246,249`.
+Decisão de ML é do arquiteto.
+
+🔴 Não criei branch, não commitei, não fiz push; não toquei em `check-gates-falsify.sh`, `Makefile`,
+`docs/req/` nem `docs/roadmaps/`.
+
+**Coordenadas pós-correção** (os números da tabela acima são **pré-correção**, como os enumerou o
+ML-2E; os comentários inseridos deslocaram os sítios): `check-agent-namespace-union.sh:632→636` e
+os isentos `:900,901→904,905` · `check-manifest-version-gate.sh:113→117` ·
+`check-parity-call-site-pins.sh:261→264` · `check-serve-address-parity.sh:229→232` ·
+`check-annotations.yml:80→85`. Os isentos de `check-ci-workflow-pin-parity.sh:192,211` e
+`check-serve-api-file-security.sh:76` não se moveram.
+
+**Medição de fechamento** (mesmo filtro do ML-2E): **73 brutos** inalterado, conjunto filtrado
+**10 → 6** — os 6 são exatamente os isentos + o sítio fora do escopo de escrita; o balde de `grep`
+em posição **final** vai de **1 → 0**.
+
+🔴 **Gates irmãos que varrem os arquivos editados, todos rc=0** (rodados porque os comentários
+adicionados contêm os tokens que esses gates caçam, e porque comentário dentro de bloco `run:` é
+indistinguível de diretiva para gate orientado a linha): `check-emitting-capture-fallback.sh`
+(o gate do ML-1B, desta REQ) · `check-ci-workflow-pin-parity.sh` · `check-crlf-normalize-capture.sh`
+· `check-orphan-gates.sh` · `check-req-path-literals.sh` · `check-roadmap-barrier-contract.sh`.
+`check-falsify-shard-coverage.sh` exige artefatos baixados do CI — não roda local.
+`trackfw validate` → **rc=0** (150 warnings pré-existentes, nenhuma violation).

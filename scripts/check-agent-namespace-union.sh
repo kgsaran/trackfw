@@ -629,7 +629,11 @@ assert_order() {
   shift 3
   local prev_ln=0 marker ln
   for marker in "$@"; do
-    ln=$(printf '%s\n' "$out" | grep -n -F -- "$marker" | head -1 | cut -d: -f1)
+    # `{ grep … || true; }`: marcador AUSENTE é resultado válido desta medição —
+    # o `if [[ -z "$ln" ]]` abaixo o diagnostica como "marker-missing", distinto de
+    # "order-wrong". Sem a guarda, o grep sai 1, o pipefail propaga, e o `set -e`
+    # mata o gate ANTES do diagnóstico — o ramo vira inalcançável (REQ 2026-09-23).
+    ln=$(printf '%s\n' "$out" | { grep -n -F -- "$marker" || true; } | head -1 | cut -d: -f1)
     if [[ -z "$ln" ]]; then
       fail "$label/$runtime/marker-missing" "marker '$marker' not found in output — output: $(printf '%q' "$out")"
     fi

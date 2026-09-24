@@ -226,7 +226,10 @@ for runtime in go; do  # ML-3A (v8): node py removed
   fi
   stop_pid "$LAST_PID"
 
-  url=$(grep -oE 'http://\S+' "$LAST_OUT" | head -1)
+  # `{ grep … || true; }`: stdout SEM URL é o resultado que o `if [[ -z "$url" ]]`
+  # abaixo diagnostica ("no URL found in stdout"). Sem a guarda, pipefail + set -e
+  # matam o gate e a ausência de URL vira morte muda (REQ 2026-09-23).
+  url=$( { grep -oE 'http://\S+' "$LAST_OUT" || true; } | head -1)
   if [[ -z "$url" ]]; then
     fail "host-wildcard-exposure/$runtime/url" "no URL found in stdout: $(cat "$LAST_OUT")"
   elif [[ "$url" != "http://0.0.0.0:$port" ]] || [[ "$url" == *localhost* ]]; then

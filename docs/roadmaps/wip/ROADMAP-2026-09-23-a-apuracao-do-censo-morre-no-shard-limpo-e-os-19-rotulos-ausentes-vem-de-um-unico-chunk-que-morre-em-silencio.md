@@ -411,7 +411,7 @@ fica **mais forte** que "7 em 8".
 
 ### ML-2G — Os 10 sítios da mesma causa fora do `check-gates-falsify.sh`
 **Owner:** `ares-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-09-24 · **5 corrigidos · 5 isentos com razão escrita**
 
 O ML-2E varreu o corpus inteiro (`scripts/*.sh` + `.github/workflows/` + `Makefile`): **73 brutos**
 → filtrando `pipefail` ativo, sem guarda e fora de comentário, e descartando 13 da forma correta,
@@ -434,10 +434,52 @@ check-serve-api-file-security.sh:76
 `|| true`. Se não for, o script **deve** morrer ali — e isso fica escrito.
 
 **Critérios de aceite:**
-- [ ] Veredito por sítio, com a pergunta acima respondida explicitamente
-- [ ] Defeituosos corrigidos com `{ grep … || true; }` — **não** `|| echo 0` (defeito da Wave 1),
-      **não** `${VAR:-0}`
-- [ ] 🔴 Uma frase por teste novo, ou a ausência declarada
+- [x] Veredito por sítio. **5/5** — exatamente o que eu pedi que não fosse automático: 5 defeituosos
+      e 5 isentos, **3 por razão estrutural e 1 por razão semântica**
+- [x] Auditei o diff: **9 ocorrências** de `|| true; }`, **0** de `|| echo 0`
+- [x] 🔴 Nenhum teste commitado; **14 frases por medição**
+- [x] 🔴 `make quality` não rodado pelo executor
+
+**Auditoria do arquiteto (medida por mim, em `bash 5.3`):**
+
+| isenção | como confirmei |
+|---|---|
+| substituição em **posição de argumento** descarta o rc | `f "$(echo x \| grep -o ausente \| head -1)"` sob `set -euo pipefail` → `ARG=[]`, **sobreviveu** |
+| `v=$( … ) \|\| true` guarda de fora | `rv=$(echo x \| grep -o ausente) \|\| true` → **sobreviveu**, `rv=[]` |
+| `grep` **final** mata mesmo sem `pipefail` | `set +o pipefail; v=$(grep -o ausente <<<"x")` → **rc=1**, a linha seguinte não executa |
+| o **segundo** `grep` do manifest precisava de guarda | CHANGELOG só com `## [Unreleased]`: antes **rc=1** (morre), depois **rc=0**, `v=[]` |
+
+🔴 **O achado mais importante deste ML é sobre a minha própria enumeração:** o filtro exige `|` no
+corpo, então a **forma irmã sem cano** — `v=$(grep … arquivo)`, que mata pelo rc do `grep` **sozinho,
+sem depender de `pipefail`** — é invisível às duas listas. **5 sítios vivos**, nomeados. A enumeração
+do ML-2E era um **limite inferior**, não a população.
+
+E ele encontrou um defeito no próprio instrumento: o primeiro braço positivo de `:229` deu vazio por
+**escape de heredoc**, não pela correção. Conferiu por segundo caminho que o `grep` BSD honra `\S` e
+refez. *"O instrumento mentiu; a correção estava certa."*
+
+⚠️ **Erro meu nesta auditoria, registrado:** medi o braço C com `… | head -2; echo $?` e li **rc=0**
+— que é o rc do `head`. É a armadilha que este projeto já pagou quatro vezes. Refiz sem cano:
+**rc=1**. A conclusão não mudou; o instrumento, sim.
+
+---
+
+### ML-2I — A forma irmã sem cano: `v=$(grep … arquivo)`
+**Owner:** `ares-tf`
+**Status:** ⬜ Pendente
+
+```
+check-ci-workflow-pin-parity.sh:230
+check-install-version-pin.sh:210,213,246,249
+```
+
+Mata pelo rc do `grep` **sozinho** — não depende de `pipefail`, como o braço C mediu. Mesma causa,
+mesma REQ.
+
+- [ ] Veredito por sítio com a mesma pergunta: *"não casar é resultado válido da medição?"*
+- [ ] Defeituosos corrigidos com `{ grep … || true; }`; isentos com a razão escrita
+- [ ] Falsificação nas duas direções por sítio corrigido
+- [ ] 🔴 Uma frase por teste novo, ou ausência declarada
 - [ ] 🔴 **NÃO rodar `make quality`**
 
 ### ML-2H — Discriminante irmão: pipeline desguarnecido sob `pipefail`
@@ -452,6 +494,13 @@ fallback emissor; aqui não há fallback algum. Alargar a regex acusaria todo `$
 - [ ] Gate que reprova `grep` em posição não-final de pipeline dentro de `$( )` sob `pipefail`, sem
       guarda — provado por injeção, forma a forma
 - [ ] Não reprova os legítimos — provado na árvore, incluindo as 13 da forma correta
+- [ ] 🔴 **As 4 classes que o gate NÃO pode acusar**, medidas no ML-2G, tratadas explicitamente:
+      (1) substituição em posição de argumento · (2) `|| true` depois do fecha-parênteses ·
+      (3) corpo em `bash -c`/`sh -c` — **as três sintáticas e decidíveis** — e (4) não-casamento
+      pré-excluído por checagem anterior que encerra o script — **semântica, NÃO decidível**: vai
+      para o cabeçalho como não coberta, com alegação por sítio. O gate não finge decidir o que não
+      decide
+- [ ] Cobre também a **forma sem cano** (ML-2I) — senão nasce com 5 sítios fora do alcance no dia 1
 - [ ] Formas não cobertas declaradas no cabeçalho
 - [ ] Guarda de não-vacuidade com piso e o comando que o produziu
 

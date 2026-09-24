@@ -110,7 +110,11 @@ if [[ ! -f "$CHANGELOG" ]]; then
     fail "CHANGELOG.md not found at $CHANGELOG"
 else
     # Extract first '## [X.Y.Z] - YYYY-MM-DD' line; skip '## [Unreleased]' if present.
-    CHANGELOG_VERSION=$(grep '^## \[' "$CHANGELOG" | grep -v '^\#\# \[Unreleased\]' | head -1 | sed 's/^## \[\([^]]*\)\].*/\1/')
+    # Os DOIS greps guardados com `|| true`: (a) nenhum '## [' no arquivo e
+    # (b) só '## [Unreleased]' presente (estado real de meio de ciclo de release)
+    # são ambos resultados VÁLIDOS — o `if [[ -z ]]` abaixo os diagnostica. Sem a
+    # guarda, o pipefail + set -e matam o gate sem mensagem (REQ 2026-09-23).
+    CHANGELOG_VERSION=$( { grep '^## \[' "$CHANGELOG" || true; } | { grep -v '^\#\# \[Unreleased\]' || true; } | head -1 | sed 's/^## \[\([^]]*\)\].*/\1/')
     if [[ -z "$CHANGELOG_VERSION" ]]; then
         fail "CHANGELOG.md has no '## [X.Y.Z]' section (excluding [Unreleased])"
     elif [[ "$CHANGELOG_VERSION" != "$GO_VERSION" ]]; then

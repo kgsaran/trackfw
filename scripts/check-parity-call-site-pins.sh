@@ -258,7 +258,10 @@ for var in "${VARS_TRACE[@]}"; do
   while IFS= read -r consumer; do
     [[ -z "$consumer" ]] && continue
     base=$(basename "$consumer")
-    guard_line=$(grep -nE -- "-n \"\\\$\\{${var}:-\\}\"" "$consumer" | head -1 | cut -d: -f1)
+    # `{ grep … || true; }`: guarda AUSENTE é exatamente o que este gate procura
+    # medir — o `if [[ -z "$guard_line" ]]` abaixo emite o FAIL nomeando a variável.
+    # Sem a guarda, pipefail + set -e matam o gate antes do diagnóstico.
+    guard_line=$( { grep -nE -- "-n \"\\\$\\{${var}:-\\}\"" "$consumer" || true; } | head -1 | cut -d: -f1)
     if [[ -z "$guard_line" ]]; then
       fail "call-site-trace/$var/$base/guard" \
         "guarda 'if [[ -n \"\${${var}:-}\" ]]' não encontrada em ${base} -- rastro pode ter sido removido junto com a guarda"
