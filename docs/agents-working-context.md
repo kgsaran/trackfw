@@ -39588,3 +39588,59 @@ indistinguível de diretiva para gate orientado a linha): `check-emitting-captur
 · `check-orphan-gates.sh` · `check-req-path-literals.sh` · `check-roadmap-barrier-contract.sh`.
 `check-falsify-shard-coverage.sh` exige artefatos baixados do CI — não roda local.
 `trackfw validate` → **rc=0** (150 warnings pré-existentes, nenhuma violation).
+
+---
+
+## 2026-09-24 — `ares-tf` · ML-2I (Wave 2-bis): a forma irmã **sem cano** — remedida por família
+
+**REQ:** `REQ-2026-09-23-a-apuracao-do-censo-morre-no-shard-limpo…` ·
+**Roadmap:** `ROADMAP-2026-09-23-a-apuracao-do-censo-morre-no-shard-limpo…` (wip) ·
+**Branch:** `fix/a-apuracao-do-censo-morre-no-shard-limpo-…` (não criei, não commitei, não fiz push)
+
+**Lista remedida e ampliada.** O varredor do ML-2G caçava o token `grep`; este fixa a **forma**
+(atribuição · substituição **sem cano** · sem `||` na linha) e abre a **família** de comandos cujo
+rc não-zero é resultado legítimo da medição (`grep`, `git rev-parse`, `command -v`, `test`,
+`jq -e`, `diff`, `cmp`, `find`, `which`, `type`). **13 brutos** contra os 5 nomeados — e os 8 novos
+são `command -v` (4), `find` (3) e **um** `grep` — este o falso positivo do varredor linha-a-linha
+(substituição multi-linha em `quality.yml:1255`, que já tem guarda três linhas abaixo). Nenhum
+`grep` **genuíno** novo: o token estava certo, a **família** é que era estreita. Os 5 originais
+foram confirmados nas mesmas linhas.
+
+**Placar: 13 brutos = 5 corrigidos · 7 isentos com razão escrita · 1 falso positivo do varredor.**
+Dos 7 isentos, **3** vivem em arquivos fora do escopo de escrita (`check-gates-falsify.sh:208` ·
+`windows-census.yml:97,98`) — reportados com veredito, não tocados.
+
+🔴 **O achado:** nos 4 sítios de `check-install-version-pin.sh` a medição é uma **comparação de duas
+capturas**. Guarda de rc **isolada** faria as duas ficarem vazias, comparar **iguais** e o cenário
+emitir `OK` — troca morte muda por **aprovação vácua**, que é pior. Medido em `bash 5.3`, três
+variantes. Corrigi com guarda de rc **mais** guarda de não-vacuidade que reprova com rótulo.
+
+**Duas classes novas de isenção estrutural**, medidas: **arquivo sem `set -e`**
+(`check-orphan-gates.sh`, `check-raw-read-ban.sh` usam `set -uo pipefail`) e **`local v=$(cmd)` na
+mesma linha**, onde o rc é o do `local` e vale sempre 0 — esta **não** se aplica quando o `local`
+está em linha separada, que é o caso de `check-orphan-gates.sh`.
+
+**Falsificação, nas duas (três) direções, por sítio corrigido:** sem casar o script **continua**
+(ou reprova com rótulo); com casar o valor é **byte-idêntico** (`cmp` rc=0 nos dois harnesses).
+
+**Gates rodados individualmente, todos rc=0:** `check-ci-workflow-pin-parity.sh` ·
+`check-install-version-pin.sh` (32 cenários OK, incluindo os dois `ac5-*` tocados) ·
+`check-emitting-capture-fallback.sh` · `check-crlf-normalize-capture.sh` · `check-orphan-gates.sh` ·
+`check-req-path-literals.sh` · `check-roadmap-barrier-contract.sh` · `check-raw-read-ban.sh`.
+🔴 `make quality` **não** rodado.
+
+**Nota de vault:**
+`vault/notes/o-ou-true-que-vira-aprovacao-vacua-a-forma-sem-cano-e-o-que-vem-depois-da-atribuicao-2026-09-24.md`,
+linkada no índice.
+
+🔴 **Nenhum teste novo commitado** — os harnesses ficaram no scratchpad. **8 frases por medição** no
+relatório. Não toquei em `check-gates-falsify.sh`, `Makefile`, `.github/workflows/`, `docs/req/`
+nem `docs/roadmaps/`.
+
+**Observação fora da forma deste ML (decisão do arquiteto):** `DEST_BARE=$(sed -n 's/^DEST: //p' …)`
+nos mesmos dois cenários **nunca** sai não-zero — `sed -n` sem casamento devolve 0. Logo não há rc
+para propagar e o sítio está fora da forma do ML-2I. Mas o **efeito** é o mesmo da §1 da nota: dois
+DEST vazios comparam iguais e o cenário emite `OK`. **Mesmo sintoma (aprovação vácua), mecanismo
+diferente (rc vs. ausência de rc)** — pela Regra Dura de Causa Raiz o sintoma inicia a investigação
+no mesmo roadmap; a medição acima é o que autorizaria separar. Não alarguei o escopo por conta
+própria.

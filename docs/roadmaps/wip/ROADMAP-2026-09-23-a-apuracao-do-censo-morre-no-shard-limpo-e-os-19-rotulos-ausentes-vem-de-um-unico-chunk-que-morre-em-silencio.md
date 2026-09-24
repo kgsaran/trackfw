@@ -466,7 +466,7 @@ refez. *"O instrumento mentiu; a correção estava certa."*
 
 ### ML-2I — A forma irmã sem cano: `v=$(grep … arquivo)`
 **Owner:** `ares-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-09-24 · **5 corrigidos · 7 isentos · 1 falso positivo**
 
 ```
 check-ci-workflow-pin-parity.sh:230
@@ -476,9 +476,73 @@ check-install-version-pin.sh:210,213,246,249
 Mata pelo rc do `grep` **sozinho** — não depende de `pipefail`, como o braço C mediu. Mesma causa,
 mesma REQ.
 
-- [ ] Veredito por sítio com a mesma pergunta: *"não casar é resultado válido da medição?"*
-- [ ] Defeituosos corrigidos com `{ grep … || true; }`; isentos com a razão escrita
-- [ ] Falsificação nas duas direções por sítio corrigido
+- [x] 13 sítios (não 5): a forma estava certa, **a família é que estava estreita** — 4 `command -v`,
+      3 `find`, 1 falso positivo de substituição multi-linha
+- [x] Corrigidos com `{ … || true; }` **mais guarda de não-vacuidade** nos AC5 — ver o achado abaixo;
+      7 isentos com razão, **5 estruturais e 2 semânticas**
+- [x] Duas direções, e **três** nos AC5 — o terceiro braço falsifica a alternativa que ele não escolheu
+- [x] 🔴 Nenhum teste commitado; 9 frases por medição
+- [x] 🔴 `make quality` não rodado pelo executor
+
+**Auditoria do arquiteto (medida por mim, em `bash 5.3`):**
+
+| afirmação | como confirmei |
+|---|---|
+| `local v=$(cmd)` na mesma linha **mascara o rc** | `local v=$(grep -o zzz <<<x)` sob `set -e` → **rc=0**, `ALIVE`; com `local v;` separado → **rc=1** |
+| `sed -n` sem casar **sai 0** | `v=$(sed -n 's/^DEST: //p' <<<"nada")` → **rc=0**, `v=[]` |
+| a guarda de não-vacuidade reprova **com rótulo** | `FAIL [install-version-pin/ac5-same-asset]: … medicao vacua, nao comparacao` |
+
+🔴 **O achado deste ML é o mais importante da Wave 2-bis, e ele contraria a receita que eu vinha
+repetindo.** Nos 4 sítios do `check-install-version-pin.sh` a linha seguinte **compara duas
+capturas**:
+
+```bash
+URL_BARE=$(grep '^URL: ' <<<"$OUT")
+URL_PREFIXED=$(grep '^URL: ' <<<"$OUT")
+if [ "$URL_BARE" != "$URL_PREFIXED" ]; then … exit 1; fi
+echo "OK   [install-version-pin/ac5-same-asset]"
+```
+
+Se o seam parar de emitir `URL: `, as duas ficam **vazias**, comparam **iguais**, e o cenário emite
+**`OK`**. Medido nas três variantes:
+
+| variante | não casa |
+|---|---|
+| antes (sem guarda) | rc=1, **morte muda** |
+| 🔴 **só `\|\| true`** | **rc=0 e `OK`** — **aprovação vácua** |
+| rc **+** não-vacuidade | rc=1 **com `FAIL` nomeado** |
+
+**`{ … \|\| true; }` isolado ali teria trocado um falso-negativo barulhento por um falso-positivo
+silencioso** — pior. Ele falsificou a alternativa em vez de supô-la.
+
+> **Teste de bolso corrigido, que passa a valer para a forma sem cano:** *"o código **depois** da
+> atribuição distingue **vazio** de valor legitimamente medido?"* Distingue → guarda de rc basta.
+> Não distingue → rc **+** não-vacuidade, ou o sítio fica como está com a razão escrita.
+
+E ele **reportou um erro próprio pego na revisão**: a primeira versão dos artefatos trazia "2
+corrigidos / 9 isentos", contradizendo as 5 coordenadas da mesma frase. Aritmética, não medição — e
+é exatamente o que a Regra Dura de Reconciliação existe para pegar.
+
+---
+
+### ML-2J — `sed -n` não tem rc para propagar, e o efeito é o mesmo
+**Owner:** `ares-tf`
+**Status:** ⬜ Pendente
+
+```bash
+DEST_BARE=$(sed -n 's/^DEST: //p' <<<"$OUT")     # sed -n sem casar sai 0 — medido
+```
+
+Nos **mesmos** cenários AC5, dois `DEST` vazios comparam iguais e o cenário emite `OK`.
+
+**Decisão minha:** entra nesta REQ. Mecanismo diferente (ausência de rc vs. rc não-zero), **sintoma
+idêntico** — e fechar a metade `URL` do mesmo `if` deixando a metade `DEST` vácua seria fechar o
+roadmap com defeito conhecido no sítio que acabamos de tocar.
+
+- [ ] Guarda de não-vacuidade para `DEST`, no padrão já estabelecido pelo ML-2I (reprova com rótulo)
+- [ ] Varra a família `sed -n`/`awk`/`cut` — **comandos que saem 0 mesmo sem produzir saída** — e dê
+      veredito por sítio. 🔴 Aqui o rc **nunca** ajuda: o único discriminante é o conteúdo
+- [ ] Falsificação em três braços, como no ML-2I
 - [ ] 🔴 Uma frase por teste novo, ou ausência declarada
 - [ ] 🔴 **NÃO rodar `make quality`**
 
@@ -500,7 +564,12 @@ fallback emissor; aqui não há fallback algum. Alargar a regex acusaria todo `$
       pré-excluído por checagem anterior que encerra o script — **semântica, NÃO decidível**: vai
       para o cabeçalho como não coberta, com alegação por sítio. O gate não finge decidir o que não
       decide
-- [ ] Cobre também a **forma sem cano** (ML-2I) — senão nasce com 5 sítios fora do alcance no dia 1
+- [ ] Cobre também a **forma sem cano** (ML-2I) — senão nasce com sítios fora do alcance no dia 1
+- [ ] 🔴 **São 5 classes de isenção, não 4.** O ML-2I acrescentou duas, ambas **sintáticas e
+      decidíveis**: arquivo **sem `set -e`** (medido em `check-orphan-gates.sh` e
+      `check-raw-read-ban.sh`) e **`local v=$(cmd)` na mesma linha**, que mascara o rc
+- [ ] 🔴 **Junte continuações antes de decidir** — um gate linha-a-linha nasce com o falso positivo
+      de `quality.yml:1255`, onde o `|| true` está três linhas abaixo do `$(`
 - [ ] Formas não cobertas declaradas no cabeçalho
 - [ ] Guarda de não-vacuidade com piso e o comando que o produziu
 
