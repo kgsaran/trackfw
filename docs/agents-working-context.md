@@ -40143,3 +40143,61 @@ outro motivo.
 reprodução A/B do overlay). Vault: `overlay-json-com-caminho-posix-e-ignorado-em-silencio-pelo-go-no-windows-2026-09-24.md`.
 Clone da VM deixado na branch local `wave2` em `dc9f733`, árvore limpa, com o não rastreado
 `sonda-rc128.sh` **pré-existente** (não meu, não removido).
+
+---
+
+## 2026-09-24 · `ares-tf` · ML-2A (Wave 2-bis) — o overlay do `go test` levava caminho POSIX
+
+**Início.** Único ML em execução. Escopo: `scripts/check-serve-api-file-security.sh:96`, varredura da
+família e veredito sobre o gate do ML-1B. Sem commit, sem push, sem branch.
+
+**Fim — a forma escolhida e por quê.** O `overlay.json` passou a ser escrito pelo **próprio Python**
+(`json.dumps` sobre `os.path.abspath(sys.argv[...])`), mesma forma de `quality.yml:1172` — que roda
+em **`windows-latest`**, logo é precedente **medido**. Não há ramo condicional por plataforma.
+`cygpath -m` foi descartado por dois motivos: exigiria ramo só-Windows e corrigiria **só a grafia**,
+deixando aberto o buraco de **escape** — `printf` de caminho cru em JSON quebra com qualquer `\` ou
+`"`, e é `cygpath -w` (não `-m`, que emite `/`) que produziria exatamente isso. `json.dumps` fecha os
+dois **por construção**. Na mesma edição entrou `assert count >= 1`, que fecha o **segundo canal de
+vacuidade** das mesmas quatro linhas: needle que muda → "vulnerável" idêntico ao correto → mesma
+linha enganosa, outro mecanismo. Medido: needle inexistente → `AssertionError … (count=0)`, rc=1.
+⚠️ Sob `set -euo pipefail` esse assert **aborta o gate** em vez de incrementar `FAIL` — o resumo
+"N ok, M falhou" não chega a imprimir. É ruidoso, logo aceitável; fica dito para não ser lido como
+defeito.
+
+**A/B na VM (Windows 11 ARM64, Git Bash, `go1.27.0 windows/arm64`), mesma sessão, mesmo `mktemp -d`,
+mesmo arquivo vulnerável (`grep -c 'if false && !filePathAllowed'` = 1):**
+
+| braço | chave do overlay | `go test` |
+|---|---|---|
+| A — `json.dumps`/`abspath` | `C:\\Users\\Lab\\trackfw\\internal\\serve\\api_file.go` | 🔴 `--- FAIL … esperado 403, obteve 200; corpo vazou segredo` (rc=1) |
+| B — `printf` (forma antiga) | `/c/Users/Lab/trackfw/internal/serve/api_file.go` | `ok … 0.043s` (rc=0) — overlay ignorado em silêncio |
+
+**Gate inteiro na VM, mesma sessão:** antes `rc=1`, 4 ok, 1 falhou (`FAIL AC6 Go falsificação`);
+depois `rc=0`, **5 ok, 0 falhou** — casa com `EXPECTED_PASS=5`, que não mudou.
+**Braço POSIX (macOS):** antes e depois `rc=0`, saída **byte a byte idêntica** (`diff` vazio).
+
+**Família varrida pela forma** (*caminho POSIX chega a binário Windows nativo por canal que o MSYS
+não converte*), não pelo token: `:96` era o **único** sítio de escrita de caminho de shell em arquivo
+estruturado em todo o repositório. Os dois outros `-overlay` (`quality.yml:1172`, `:1221`) são
+**imunes por construção** e rodam em `windows-latest` verdes. `GOCACHE=`/`GOPATH=`/`GIT_CONFIG_GLOBAL=`
+ficaram **isentos por medição**, não por presunção: o MSYS converte **também o ambiente**
+(`GOCACHE=/tmp/… go env GOCACHE` → `C:/Users/Lab/AppData/Local/Temp/…`, `go build` rc=0).
+
+**Veredito sobre o gate do ML-1B:** a forma **deve** ser gateada, e **não pode** ser por ele —
+população diferente (redirecionamento de shell, não corpo de programa Python) e sinal diferente
+(caminho cru em formato estruturado, não interpolação em texto de programa). Seria **ML próprio**;
+não alarguei nada. Custo honesto: com `:96` corrigido, a população restante são os **dois sítios já
+imunes** do `quality.yml` — o gate nasceria vazio.
+
+**Um artefato de verificação novo** (`assert count >= 1`), e a frase que ele afirma: *o arquivo
+vulnerável precisa estar genuinamente mutado, porque um arquivo não mutado com overlay funcionando
+reproduz a MESMA linha enganosa `AC6 … passou na versão vulnerável` por outro mecanismo.* Nenhum
+teste Go novo. Uma frase por medição está no relatório e na nota de vault.
+**Ausências declaradas:** o braço POSIX foi medido em **macOS**; `ubuntu-latest` é **inferido** da
+correção não ter ramo por plataforma — não foi medido aqui. E o status do ML-2A no roadmap segue
+`⬜ Pendente`: `docs/roadmaps/` está fora do meu escopo neste handoff — é ação do arquiteto.
+**Não** rodei `make quality` nem `go test ./...` (só `go test` de `./internal/serve/...` por dentro
+do gate e na reprodução A/B). Clone da VM restaurado: branch `wave2` em `dc9f733`, `git status`
+apenas com o não rastreado **pré-existente** `sonda-rc128.sh`. Nenhum commit, nenhum push.
+Vault: `overlay-json-com-caminho-posix-e-ignorado-em-silencio-pelo-go-no-windows-2026-09-24.md` (seção
+"Correção (ML-2A)").

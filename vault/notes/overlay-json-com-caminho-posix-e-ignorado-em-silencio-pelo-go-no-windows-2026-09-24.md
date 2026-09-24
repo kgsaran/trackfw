@@ -80,3 +80,58 @@ Consequência direta: a fixture `pin7-noexec` de `scripts/check-validate-rule-pi
 presente **e não executável**) **não é construível** nesse Windows, e o gate reprova com
 `[pin7-noexec] vacuity: … expected 'credential_guard_hook_resolvable' violation, none found (rc=0)`.
 Isso é **permissão**, não tradução de caminho — não confundir com a família acima.
+
+---
+
+## Correção (ML-2A, 2026-09-24) — e a regra de bolso **medida**, não presumida
+
+`:96` deixou de existir como `printf`. O `overlay.json` passou a ser escrito pelo **próprio Python**,
+com `json.dumps` sobre os caminhos recebidos por `argv` e passados por `os.path.abspath` — a mesma
+forma de `.github/workflows/quality.yml:1172`, que **roda em `windows-latest`** (job
+`windows-symlink-unprivileged`, `quality.yml:1026`) e por isso é precedente medido, não inferido.
+
+**Duas razões, e a segunda não é sobre Windows:**
+
+1. **grafia** — `argv` o MSYS converte; conteúdo de arquivo, nunca;
+2. 🔴 **escape** — `printf '{"Replace": {"%s": ...}}'` é interpolação de string crua dentro de
+   formato estruturado, e isso **não é um problema de Windows**: qualquer `\` ou `"` no caminho
+   quebra o JSON. `cygpath -m` corrigiria a grafia e escaparia do problema **por acidente**, por
+   emitir `/`; `cygpath -w` emitiria `C:\Users\...` e produziria **JSON inválido**. `json.dumps`
+   fecha os dois **por construção**, em todas as plataformas, sem ramo condicional.
+
+**Segundo canal de vacuidade, fechado nas mesmas linhas:** o `src.replace(needle, ...)` era um
+**no-op silencioso** se o needle mudasse — o "vulnerável" sairia byte a byte igual ao correto, o
+overlay aplicaria, o teste passaria, e o gate imprimiria **a mesma linha enganosa** (`AC6 … passou na
+versão vulnerável`) por outro mecanismo. Agora há `assert count >= 1`. Medido: com needle inexistente,
+`AssertionError: … (count=0)`, rc=1.
+
+### A regra de bolso, corrigida pela medição
+
+A primeira versão desta nota dizia "por `argv` o MSYS converte". **Ele converte `argv` E o
+ambiente.** Medido na mesma VM:
+
+```
+GOCACHE="/tmp/envprobe.0NJyt9/gc" go env GOCACHE
+  → C:/Users/Lab/AppData/Local/Temp/envprobe.0NJyt9/gc      (go build com ele: rc=0, binário gerado)
+```
+
+Isso **isenta** toda a família `GOCACHE=`/`GOPATH=`/`GIT_CONFIG_GLOBAL=` dos gates — que de outra
+forma seria a maior população suspeita do repositório.
+
+> **Regra de bolso — o que foi medido:** o MSYS converte caminho que sai do bash por **`argv`**
+> (Wave 1) e por **variável de ambiente** (probe acima). Ele **não** converte caminho que sai por
+> **conteúdo de arquivo** (overlay, manifesto, `.json`, `.yaml`) — é o A/B desta nota. Caminho que
+> atravessa por conteúdo para um binário Windows nativo precisa ser escrito pelo consumidor, ou
+> convertido antes.
+>
+> **Inferido, sem sítio no repositório para medir:** **stdin** canalizado para binário nativo deve
+> cair no mesmo caso do conteúdo de arquivo. A varredura do ML-2A não achou nenhum sítio dessa forma,
+> então isto **não** foi medido — está aqui como hipótese rotulada, não como achado.
+
+### Isenção por sítio — duas razões diferentes, não uma
+
+| família | consumidor | razão | estado |
+|---|---|---|---|
+| `GOCACHE=` / `GOPATH=` | `go.exe`, **nativo puro** | o MSYS converte o ambiente antes de entregar | **medido** (probe acima) |
+| `GIT_CONFIG_GLOBAL=` / `GIT_CONFIG_SYSTEM=` | `git.exe` do Git for Windows, programa **MSYS-linked** | aceita caminho POSIX nativamente (é por isso que `/dev/null` funciona nesses gates) | **inferido** — não medido pelo ML-2A |
+| `TRACKFW_ROOT_DIR=` / `TRACKFW_INSTALL_DIR=` | `bash`/`install.sh` | consumidor é o próprio shell MSYS | por construção |

@@ -214,7 +214,7 @@ Windows.** Nenhum é regressão. Um deles é meu de decidir, e decidi.
 
 ### ML-2A — O overlay do `go test` leva caminho POSIX e é ignorado EM SILÊNCIO
 **Owner:** `ares-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-09-24
 
 `scripts/check-serve-api-file-security.sh:96` monta o overlay com `printf` de variáveis do shell —
 caminhos **POSIX-MSYS** no Git Bash:
@@ -261,12 +261,63 @@ não roda no Windows".
    para dentro de JSON. Diga se deve ver. Se sim, é ML próprio, não remendo aqui.
 
 **Critérios de aceite:**
-- [ ] `:96` corrigido; razão da forma escolhida escrita
-- [ ] Falsificação nas duas direções **na VM**: braço vulnerável **falha** com a correção
-- [ ] Família varrida, veredito por sítio
-- [ ] Veredito escrito sobre o gate do ML-1B cobrir ou não esta forma
-- [ ] 🔴 Uma frase por teste novo, ou ausência declarada
-- [ ] 🔴 **NÃO rodar `make quality`**
+- [x] O `printf` sumiu: o overlay passa a ser escrito pelo **próprio Python**, com `json.dumps`
+      sobre `os.path.abspath` — a forma de `quality.yml:1172`. **Auditei: 0 ramos condicionais por
+      plataforma** (as 2 menções a `cygpath` no diff são comentários explicando por que **não** foi
+      usado)
+- [x] A/B na VM, mesmo `mktemp`, mesmo arquivo vulnerável: **A (json.dumps)** → `FAIL … 403→200,
+      corpo vazou segredo`, **rc=1** ← o resultado desejado; **B (printf)** → `ok 0.043s`, overlay
+      ignorado. Gate inteiro: antes `1 falhou`, depois **`5 ok, 0 falhou`**, com `EXPECTED_PASS=5`
+      inalterado
+- [x] Varrida **pela forma**: `:96` era o **único** sítio no repositório. Três buckets, com razões
+      **diferentes** por família — não uma razão só
+- [x] Veredito escrito, e **decisão minha abaixo**
+- [x] Nenhum teste Go novo; uma frase para o artefato novo (`assert count >= 1`)
+- [x] 🔴 `make quality` não rodado pelo executor
+
+**Auditoria do arquiteto (medida por mim):**
+
+| afirmação | como confirmei |
+|---|---|
+| `printf` do overlay eliminado | `grep -c 'printf .*Replace'` → **0** |
+| sem ramo por plataforma | as 2 menções a `cygpath` no diff são **comentários** justificando a não-escolha |
+| gate passa em POSIX | `rc=0`, `5 ok, 0 falhou` |
+
+🔴 **Dois achados do executor que valem mais que a correção em si:**
+
+1. **O MSYS converte também o AMBIENTE, não só `argv`.** Eu e ele presumíamos o contrário. Medido:
+   `GOCACHE="/tmp/…/gc" go env GOCACHE` → `C:/Users/Lab/AppData/Local/Temp/…/gc`. Isso **isenta por
+   medição a maior população suspeita do repositório** (≈8 gates com `GOCACHE=`/`GOPATH=`), que de
+   outro modo viraria trabalho. Regra de bolso corrigida na nota de vault.
+2. **Um segundo canal de vacuidade, quatro linhas acima, fechado junto:** o `src.replace(needle, …)`
+   era **no-op silencioso** se o needle mudasse — o "vulnerável" sairia byte a byte igual ao correto,
+   o overlay aplicaria, o teste passaria, e o gate imprimiria **a mesma linha enganosa** por outro
+   mecanismo. Entrou `assert count >= 1`. Mesmo sintoma, mecanismo diferente, mesmo bloco.
+
+⚠️ **Consequência declarada, não escondida:** sob `set -euo pipefail` esse assert **aborta o gate**
+em vez de incrementar `FAIL` — o resumo `N ok, M falhou` não chega a imprimir. É ruidoso, logo
+aceitável; fica dito para não ser lido como defeito depois.
+
+⚠️ **Ausência declarada:** `ubuntu-latest` **não foi medido** — é inferido de a correção não ter ramo
+por plataforma e de o braço macOS não ter mudado (saída byte a byte idêntica). O CI do PR mede.
+
+---
+
+### Decisão minha: **NÃO criar** o gate da forma "caminho cru em formato estruturado"
+
+O executor recomendou pesar o custo e **não implementou** — correto. Com `:96` corrigido, a
+população restante são os **dois sítios já imunes por construção** do `quality.yml`.
+
+🔴 **O gate nasceria vazio.** Um gate que examina zero e reporta sucesso é **exatamente o defeito que
+esta campanha inteira combate** — ele só existiria sustentado por fixture sintética permanente, sem
+sítio real para vigiar. Criar isso para "ficar protegido" é encenação de cobertura.
+
+**O que fica no lugar:** a forma correta — *escrever o arquivo estruturado pelo próprio consumidor,
+com serializador* — está registrada na nota de vault com o precedente (`quality.yml:1172`) e com as
+duas razões (grafia **e** escape).
+
+⚠️ **A premissa que muda esta decisão:** se aparecer um **segundo** sítio real da forma, o gate passa
+a ter população e se justifica. Quem reabrir deve medir isso primeiro, não herdar a decisão.
 
 ### Os outros dois, classificados como OUTRA causa — com a medição
 
