@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-24
 req: "docs/req/REQ-2026-09-24-treze-rotulos-falham-no-censo-de-windows-e-cinco-sao-setup-que-aborta-o-cenario-inteiro.md"
 squad: [hades-tf, ares-tf, artemis-tf]
@@ -7,7 +7,7 @@ squad: [hades-tf, ares-tf, artemis-tf]
 
 # Roadmap: treze rótulos falham no censo de Windows, e cinco são `setup`
 
-> Criado em: 2026-09-24 | Status: wip
+> Criado em: 2026-09-24 | Status: done
 
 REQ: `docs/req/REQ-2026-09-24-treze-rotulos-falham-no-censo-de-windows-e-cinco-sao-setup-que-aborta-o-cenario-inteiro.md`
 
