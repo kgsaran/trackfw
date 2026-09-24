@@ -40641,3 +40641,129 @@ esperado, porque só linhas `FAIL` foram acrescentadas e `ECHO_LABEL_PAT` só co
 **Detalhe deliberado:** a sonda se chama `s181-exec-bit-probe.**sh**` — mesma extensão da fixture
 real, para o caso de o MSYS decidir executabilidade parcialmente por extensão; sonda sem `.sh`
 poderia medir propriedade diferente da que a fixture enfrenta.
+
+---
+
+## 2026-09-24 — `ares-tf` (Infrastructure) · ML-3A (Wave 3, grupos G1 e G2) — INÍCIO
+
+Escopo: `scripts/check-release-tag-parity.sh` (G1, 6 rótulos), `scripts/check-update-parity.sh`
+(G2, 4 rótulos), `.github/workflows/windows-census.yml` (linha de `mount` — dívida do ML-2A),
+`vault/notes/`. Sem tocar em `internal/`, `Makefile`, `docs/req/`, `docs/roadmaps/`. Sem Git.
+Medições na VM `powershell-vm` (Windows 11 ARM64) em clone próprio `~/tfw-ml3a` — o clone
+`~/trackfw` da VM tem alterações não commitadas de outra frente e **não foi tocado**.
+
+## 2026-09-24 — `ares-tf` (Infrastructure) · ML-3A (Wave 3, G1 e G2) — FIM · **os 10 rótulos fecham no Windows, e a causa do `0xC0000005` está medida**
+
+**G2 — 4/4 fecham.** `ln -s` degrada para cópia no Git for Windows; com alvo inexistente de
+propósito a cópia reprova e, sob `set -euo pipefail`, matava o gate na construção da fixture do
+Cenário 9. `make_dangling_symlink` tenta `ln -s`, depois `MSYS=winsymlinks:nativestrict ln -s`, e
+decide por `[[ -L ]]` — nunca por `$?` de comando com cano. Medido na VM (Win 11 ARM64, GfW 2.55):
+`ln -sf` rc=1 / não-link; `nativestrict` rc=0 / **link**. Cenário 10 tinha o mesmo `ln -sf` 35
+linhas depois: **mesma causa, mesmo ML** (Regra Dura). Na VM, `check-update-parity.sh` com binário
+real passa **16 OK, rc=0** (antes: morria no Cenário 9). Chunks do falsify na VM:
+`sandbox-gap-e/direction-a-baseline` **OK**, `sandbox-gap-e/direction-a-detected` **OK**,
+`sandbox-walkdir-reintroduced/direction-b-detected` **OK**, `setup-s175-baseline` **0 ocorrências**.
+
+**G1 — 6/6 fecham, e a causa do `0xC0000005` foi medida, não suposta.** `git fetch`/`ls-remote` de
+remoto **local** spawna o transporte por um **shell**; sem `sh` (que mora em `/usr/bin`) o Git for
+Windows **morre com violação de acesso** em vez de reportar shell ausente. Quatro células, com
+controle: `RUNTIME_BIN:GIT_BIN_DIR` → 139/`0xC0000005`; **+ diretório só com `ls.exe`** → 139 (elimina
+"faltava um diretório qualquer"); **+ `sh.exe`+`msys-2.0.dll`** → 0; **+ `/usr/bin`** → 0.
+`git --version` passa em todas — por isso a guarda aprovava um PATH onde o `fetch` morre. **Eliminado:**
+DLL do próprio `git.exe` (seria `0xC0000135`). Correção: no ramo Windows, `NO_FORGE_PATH` passa a
+incluir `/usr/bin` do MSYS — que **não** contém `gh`/`glab`/`az` (medido) e cujo desvio a guarda de
+vacuidade reprova alto. Na VM, o gate passa **19 OK, "All scenarios passed"**, e no chunk_3 o rótulo
+antes **ausente** `release-tag-parity/success/baseline-clean` imprime **OK**.
+
+**A guarda parou de acusar o sujeito errado — com valor próprio.** Três probes do gate punham o PATH
+curado no `python3` procurado **nesse mesmo PATH**, caindo na cópia de `RUNTIME_BIN` que não inicia.
+Agora há `native_child_probe`: interpretador **real por caminho absoluto**, PATH curado no **processo
+pai** (🔴 no Windows o `CreateProcess` resolve pelo PATH do **pai** — `subprocess(env=)` não cura
+nada: medido, `gh 2.100.0` executou sob PATH curado **sem gh**), e três desfechos nomeados
+(`NOTFOUND` / `EXIT` com código em hexa / probe sem veredito). 🔴 A guarda do `gh` tinha o sinal
+**invertido**: a falha do interpretador era lida como "gh ausente" e a guarda **passava** — vacuidade
+em silêncio; agora reprova alto.
+
+**Censo:** acrescentada uma linha de `mount` + `df` + `TMPDIR` ao job `censo` (dívida registrada pelo
+ML-2A). `findmnt` é util-linux e **não existe** no Git for Windows — por isso `mount`, com `|| true`.
+
+**Falsificação nas duas direções, exercitada no Windows (VM):** G1 — (a) git genuinamente fora do
+PATH ⇒ "git NAO e encontrado … [WinError 2]"; (b) `git.exe` que resolve e morre ⇒ "git FOI encontrado
+… TERMINOU EM ERRO … rc=3221225477 (0xC0000005)"; (c) revertendo o `/usr/bin` o censo é reproduzido e
+a mensagem do Cenário 7 nomeia o **filho morto** — **0** ocorrências da mensagem antiga. G2 — (a)
+detecção real com binário sabotado (chunks 3 e 4) ⇒ os dois `direction-*-detected` **OK**; (b)
+`make_dangling_symlink` forçado a falhar ⇒ **dois FAIL nomeando as garantias**, **0** linhas `SKIP`,
+gate **segue até o fim** e sai 1.
+
+**POSIX:** `check-release-tag-parity.sh` 19 OK rc=0 · `check-update-parity.sh` 16 OK rc=0 ·
+`go build ./...` OK · `trackfw validate` rc=0 (152 avisos pré-existentes).
+
+**O que é observado e o que é deduzido (G1).** Observados na VM: `release-tag-parity/success/
+baseline-clean` **OK** e `setup-s75` some (chunk_3); `forge-commit-diverges-update-ref/
+baseline-clean` **OK** e `setup-s76` some (chunk_1) — os **dois** rótulos antes ausentes foram
+medidos, não deduzidos. Os outros dois — `setup-s87-baseline` e `setup-s158-baseline` (chunks 0 e 2)
+— **não foram executados**: fecham **por dedução**, e a dedução é apertada —
+todos os braços têm a forma `if ! bash check-release-tag-parity.sh; then FAIL; else OK`, e o gate
+passa inteiro nessa máquina com o `bin/trackfw` recém-compilado, logo todo `else` dispara.
+
+**Pendente e declarado — recontagem no CI** (`windows-census.yml`, `workflow_dispatch`), só possível
+depois do commit/push. Previsão a conferir, **por rótulo**:
+
+| grupo | hoje | depois | delta |
+|---|---|---|---|
+| G1 · `setup-s75`, `setup-s76`, `setup-s87-baseline`, `setup-s158-baseline` | 4 FAIL | somem | `FAIL −4` |
+| G1 · `success/baseline-clean`, `forge-commit-diverges-update-ref/baseline-clean` | ausentes | OK | `OK +2` |
+| G2 · `setup-s175-baseline` (FAIL some) + `sandbox-gap-e/direction-a-baseline` (ausente→OK) | 1 FAIL | 1 OK | `FAIL −1`, `OK +1` |
+| G2 · `sandbox-gap-e/direction-a-detected` | FAIL | OK | `FAIL −1`, `OK +1` |
+| G2 · `sandbox-walkdir-reintroduced/direction-b-detected` | FAIL | OK | `FAIL −1`, `OK +1` |
+
+**Total previsto: `FAIL −7` e `OK +5`.** (`assert_fails_with` imprime linha `OK` ao ter sucesso —
+por isso os dois `*-detected` contam `OK +1` cada; os `setup-s87/s158` contam `OK +0` porque o `OK`
+deles já era impresso pela Forma B.)
+
+🔴 **G2 fecha no CI SE E SOMENTE SE o runner permitir symlink nativo** — `MSYS=winsymlinks:
+nativestrict` foi medido na VM, **não** em `windows-latest`. O observável que decide é a presença de
+`FAIL [sandbox/dangling-outside-set/unconstructible]` / `…/dangling-inside-set/unconstructible` no
+log do shard: `grep -c 'unconstructible' shard_*.log`. **Zero** ⇒ symlink nativo permitido e a
+garantia foi exercitada; **não-zero** ⇒ o runner não permite, a garantia está **nomeada** e não
+silenciada, e o delta de G2 não se realiza (esse é o desenho, não uma surpresa).
+
+⚠️ **Onde a evidência de montagem cai:** o passo novo escreve no **log do job**, não no artefato
+`falsify-shard-out/shard_N.log`. A conferência do ML-2A tem de rodar contra `gh run view <id> --log`
+— `grep -ci 'noacl|mount'` no artefato continuará dando 0 por construção.
+
+**Uma frase por artefato novo (Regra Dura de Reconciliação).**
+1. `FAIL [sandbox/dangling-outside-set/unconstructible]` — **afirma** a conclusão deste ML de que
+   `ln -s` degrada para cópia onde `winsymlinks` está desligado: por isso a fixture é declarada
+   **inconstruível**, e nunca aprovada.
+2. `FAIL [sandbox/dangling-inside-set/unconstructible]` — idem, para a garantia irmã (symlink
+   pendurado **dentro** do conjunto é tratado como ausente, não como erro); emitido no mesmo ramo
+   porque **a mesma medição** cobre os dois sítios.
+3. `native_child_probe` e seus três desfechos nomeados — **afirma** a conclusão de que um único
+   observável ("o comando saiu != 0") cobria três estados distintos, e que a resolução no Windows
+   depende do PATH do **pai** (medido: `gh 2.100.0` sob PATH curado sem `gh`).
+4. Ramo de forma-de-crash no Cenário 7 — **afirma** a conclusão de que `exited with 3221225477` é
+   **filho morto**, não ausência de recusa.
+5. **Ausência declarada:** nenhum teste Go novo; nenhuma linha de `internal/` tocada.
+
+**Os 3 FAIL restantes no chunk_4 da VM não são meus, e há corroboração de CI:** o censo do shard 4
+tinha exatamente `setup-s175-baseline`, `sandbox-gap-e/direction-a-detected` e os dois
+`git-branch-guard-dedup` — **não** tinha `setup-s196-baseline`, `ci-workflow/self-governance-invoked/
+clean` nem `prose-in-message/detection-catches-regression`. São ambiente da VM ARM64 (dependências
+de `make`/node/pip ausentes), e nenhum deles invoca os dois gates que este ML tocou.
+
+**Achado alheio, reportado e não tocado:** no chunk_1 da VM, o único FAIL é
+`git-branch-guard/stdin-drain-before-noop/detection-catches-epipe-regression`: *"escritor terminou
+limpo, EPIPE esperado não ocorreu (cenário vácuo)"* — o braço de **detecção** do G5, depois da
+correção da Wave 1. Não é o rótulo do censo (`…/baseline-writer-clean-large-payload`) e pode ser
+próprio da VM ARM64. Decisão do arquiteto; não é escopo deste ML.
+
+**Observações reportadas, não corrigidas (fora dos 14 rótulos):** `check-release-tag-parity.sh:736`
+— `assert_three_way()` imprime `OK [<label>/go-behavioral-pin]` **incondicionalmente**, inclusive
+depois de o cenário ter reprovado (visto na falsificação F3); e `check-gates-falsify.sh:6596` —
+`sandbox-walkdir-reintroduced/direction-b-baseline` imprime OK **sem condição**, reaproveitando uma
+baseline que estava vermelha no Windows. Mesma forma da "Forma B" da Wave 0: o instrumento afirma o
+que não mediu. Decisão do arquiteto.
+
+**Nota de vault:** `vault/notes/path-curado-no-windows-tres-medicoes-que-invertem-o-diagnostico-2026-09-24.md`
+(linkada no índice).

@@ -503,4 +503,102 @@ arquivo.
 **Mecanismo distinto** de tudo nesta REQ (staleness de artefato, não fronteira MSYS), então **não
 entra aqui** — mas é grande demais para virar só um parágrafo. Vira **issue própria**, com a
 medição, depois do PR desta REQ.
+---
+
+## Wave 3 — G1 e G2: os dois bloqueios do #307 (10 dos 14 rótulos)
+
+### ML-3A — A causa do `0xC0000005`, medida; e o `ln -s` que degrada para cópia
+**Owner:** `ares-tf`
+**Status:** ✅ Concluído — auditado em 2026-09-24 · **G1 fecha 6/6** · **G2 fecha 4/4 na VM,
+condicional no CI**
+
+#### 🔴 A causa do `0xC0000005` — a Wave 0 declarou não ter determinado, e ele mediu
+
+`git fetch`/`git ls-remote` contra remoto de **caminho local** spawna o transporte através de um
+**shell** (`git-upload-pack '<path>'`, visível em `GIT_TRACE=2`). O `sh` mora em `/usr/bin`, ausente
+do `NO_FORGE_PATH` curado. **Sem `sh`, o Git for Windows morre com violação de acesso** em vez de
+reportar shell ausente.
+
+Quatro células, **com controle**:
+
+| PATH | `git fetch origin --prune` |
+|---|---|
+| `$RUNTIME_BIN:$GIT_BIN_DIR` | **139 / 0xC0000005** (= `3221225477` do censo) |
+| + diretório só com `ls.exe` (**controle**) | **139** — elimina *"faltava um diretório qualquer"* |
+| + diretório com `sh.exe` + `msys-2.0.dll` | **0** |
+| + `/usr/bin` | **0** |
+
+`git --version` passa em **todas** — é por isso que a guarda aprovava um PATH onde o `fetch` morre.
+**Eliminado:** DLL do próprio `git.exe` (daria `0xC0000135`, código diferente).
+
+#### 🔴 Dois achados de instrumento, e o primeiro quase inverteu a conclusão
+
+1. **No Windows, `CreateProcess` resolve o executável pelo PATH do processo CHAMADOR**, não pelo
+   `env=` entregue ao filho. A primeira versão do helper obteve `gh version 2.100.0` sob um PATH
+   curado **sem `gh`**, enquanto `shutil.which(path=curado)` dizia "não resolvido". **É a mesma
+   classe de contaminação que o autor do #307 declarou ter sofrido** — e ele a pegou, corrigiu e
+   documentou no código.
+2. **A guarda do `gh` tinha o sinal INVERTIDO:** falha do interpretador era lida como *"gh não
+   encontrado"* e a guarda **passava** — vacuidade **em silêncio**, pior que a ruidosa. Agora
+   reprova alto.
+
+E o diagnóstico enganoso foi corrigido: `native_child_probe` usa interpretador real por caminho
+absoluto, PATH curado no **pai**, e três desfechos nomeados (`NOTFOUND` · `EXIT` com código em hex ·
+probe sem veredito = falha do instrumento). O Cenário 7 passa a nomear o **filho morto**.
+
+#### G2 — e a ressalva que impede leitura de fechamento incondicional
+
+`ln -s` **copia** quando `winsymlinks` está desligado; com alvo inexistente de propósito, a cópia
+reprova com `ENOENT` e, sob `set -euo pipefail`, matava o gate na fixture do Cenário 9 — **os
+Cenários 9 a 14 nunca rodavam**. 🔴 **O Cenário 10 tinha o mesmo `ln -sf` 35 linhas depois** — mesma
+causa, mesmo ML, os dois corrigidos.
+
+Helper `make_dangling_symlink`: tenta `ln -s`, depois `MSYS=winsymlinks:nativestrict`, e o veredito é
+`[[ -L ]]` — **nunca `$?` de comando com cano**. Fixture inconstruível ⇒ **`FAIL` nomeando a
+garantia**, e o gate **segue**. Sem `SKIP`, pela razão medida no ML-2A.
+
+⚠️ **`nativestrict` foi medido na VM, não em `windows-latest`.** O observável que decide no CI é
+`grep -c 'unconstructible' shard_*.log`: **0** ⇒ fechou; **>0** ⇒ o runner não permite symlink
+nativo, a garantia fica **nomeada** (não silenciada) e o delta não se realiza. **É o desenho, não
+surpresa.**
+
+#### Auditoria do arquiteto (medida por mim)
+
+| afirmação | resultado |
+|---|---|
+| POSIX não regrediu | `check-release-tag-parity.sh` **rc=0, "All scenarios passed"**; `check-update-parity.sh` **rc=0** |
+| `mount` entrou no censo | `windows-census.yml:415`, com `\|\| true` |
+| escopo respeitado | 6 arquivos, nenhum em `internal/`, `Makefile` ou governança |
+
+⚠️ **`findmnt` não existe no Git for Windows** (é util-linux) — por isso `mount`. E a evidência cai
+no **log do job**, não no artefato `shard_N.log`: a conferência tem de rodar contra
+`gh run view <id> --log`.
+
+**Previsão de delta para a recontagem:** `FAIL −7` / `OK +5`. G1: `−4/+2`; G2: `−3/**+3**` — cada
+`assert_fails_with` bem-sucedido imprime uma linha `OK`, e `setup-s87/s158` contam `+0` porque o
+`OK` deles já era impresso **pela Forma B**.
+
+**Critérios de aceite:**
+- [x] **G2:** 4/4 na VM; garantia nomeada com `FAIL` quando inconstruível — nunca `SKIP`
+- [x] **G1:** causa do `0xC0000005` **medida com controle**; guarda deixa de acusar o sujeito errado
+- [x] Falsificação nas duas direções, por grupo, no Windows
+- [x] `mount` no `windows-census.yml`
+- [x] 🔴 O que **não** fechou está dito: G2 é **condicional** ao runner permitir symlink nativo
+- [x] 🔴 Nenhum teste Go novo; 4 frases por artefato + ausência declarada
+
+---
+
+### Dois sítios novos da **Forma B**, reportados e não corrigidos
+
+O ML-3A achou mais dois `OK` incondicional — a mesma forma que a Wave 0 nomeou:
+
+```
+check-release-tag-parity.sh:736   assert_three_way() imprime OK [<label>/go-behavioral-pin]
+                                  incondicionalmente, inclusive após o cenário reprovar
+check-gates-falsify.sh:6596       sandbox-walkdir-reintroduced/direction-b-baseline imprime OK
+                                  sem condição, sobre baseline que estava vermelha no Windows
+```
+
+🔴 **Mesma causa do ML-0B** (a Forma B dos Cenários 87 e 158), que ainda está **⬜ Pendente**. Pela
+Regra Dura, **entram nele** — não viram ML novo nem issue.
 
