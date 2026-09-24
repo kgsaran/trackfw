@@ -62,7 +62,8 @@ distinção**, não só o veredito (a)/(b)/(c).
 
 ### ML-0A — A enumeração real, e por que os dois números de partida divergem
 **Owner:** `hades-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-09-24 · **6 sítios (a)** em 5 blocos, 3 arquivos
+**Entregue:** `docs/seguranca/2026-09-24-caminhos-interpolados-no-codigo-python.md`
 **Arquivos afetados:** nenhum de produto
 
 **Ações:**
@@ -77,12 +78,58 @@ distinção**, não só o veredito (a)/(b)/(c).
 4. Frase de fechamento: *"corrijo esta causa, exatamente estes sítios fecham, e nenhum outro."*
 
 **Critérios de aceite:**
-- [ ] Tabela por sítio, com `arquivo:linha`, veredito, **e a consequência medida** (derruba chunk do
+- [x] Tabela com consequência medida por sítio:
+
+| # | sítio | consequência |
+|---|---|---|
+| a1 | `check-gates-falsify.sh:6745` | 🔴 aborta o `chunk_0` — **remove medição** |
+| a2/a3 | `check-serve-api-file-security.sh:87,92` | nenhuma no CI (gate só em `ubuntu-latest`) |
+| a4 | `check-update-parity.sh:354` | **3 dos 11 FAIL** do run do censo |
+| a5/a6 | `check-update-parity.sh:379,408` | latentes — o `set -e` mata em a4 antes |
+
+      🔴 **Um (a) está em gate de segurança** (`check-serve-api-file-security`), e o risco é **menor
+      do que eu supus**: no Windows ele **reprova alto** (`fail "AC6 … resultado inesperado"`), não
+      silencia. O residual real é **meta-prova** — a prova de não-vacuidade do AC6 não roda no
+      Windows. E a frase de fechamento nomeia os 6 sítios.
       censo? reprova só o próprio gate? nenhuma?) — o `:6745` é o caso com efeito já observado
-- [ ] Critério aplicável por terceiro, não julgamento do revisor
-- [ ] Reconciliação escrita dos dois números divergentes
-- [ ] 🔴 Nenhuma linha de implementação
-- [ ] 🔴 **NÃO rodar `make quality`**
+- [x] Critério aplicável por terceiro; correspondência `chunk_0.sh:3609` ↔ `:6745` verificada
+      **byte a byte** regerando os chunks
+- [x] **Reconciliado em 6, e nenhum dos dois errou — contavam objetos diferentes.** O #417 foi
+      **largo no predicado** (casava `open(` e `$` no mesmo *arquivo*) e **estreito na unidade**
+      (1 por arquivo, onde há 3 e 2). A minha exigia `$` e `open(` na **mesma linha** — correta
+      nesta árvore, frágil como piso
+- [x] 🔴 Nenhuma implementação — `git status` confirmou 3 arquivos, todos de medição
+- [x] 🔴 `make quality` não rodado
+
+**Auditoria do arquiteto (medida por mim):**
+
+| afirmação | como confirmei |
+|---|---|
+| 🔴 `check-doctor-parity.sh` **não existe** | `ls` → *No such file or directory*; deletado em `2eae0a44` |
+| o precedente vivo passa por `argv` | `check-thirdparty-parity.sh:167` → `json.load(open(sys.argv[1]))` |
+| os 6 sítios interpolam caminho | li as 6 linhas: `open('$ROOT_DIR/…')`, `open('$GO_API_FILE')`, `open('$VULN_GO')`, `open('$manifest')` ×3 |
+
+🔴 **Ele corrigiu dois erros meus, e o segundo é da família que a minha memória já registra:**
+*artefato de julho/agosto cita caminho que não existe mais na v8 — confirme antes de copiar.*
+Copiei o precedente do issue #363 sem `ls`.
+
+**O primeiro:** afirmei no handoff que o `:6745` leva **4 rótulos** junto. São **1**
+(`integration-assets/direction-b-shim-absent`). O "4" era o total de ausentes **do run inteiro** —
+grandeza diferente. E o shard 0 **não** caiu em `LOG SEM VEREDITO`: emitiu `OK=50 FAIL=1`.
+
+**Ele manteve a1 em primeiro e trocou a justificativa** — não é volume (a4 produz o triplo), é
+**natureza**: a1 é o único que **remove medição** em vez de produzir vermelho. Leitura certa,
+logo depois da REQ que fechamos.
+
+**Dois achados que nenhuma enumeração previa:**
+1. Um sítio da #363 **fechou por deleção**, não por correção.
+2. 🔴 **`internal/generators` NÃO emite o padrão** — `pathlib.Path('.')` literal ou
+   `json.load(sys.stdin)`. **O defeito não chega ao consumidor**, o que reduz o alcance da REQ e
+   precisava ser medido, não presumido.
+
+E o fechamento não foi por forma: extraiu **as 39 linhas** com `$` em corpo Python fora de `.md`,
+sem filtro de I/O, e **leu uma a uma**. Universo enumerado, não amostrado — depois de três
+enumerações que se revelaram limite inferior nesta campanha.
 
 ---
 
@@ -92,8 +139,21 @@ distinção**, não só o veredito (a)/(b)/(c).
 ### ML-1A — Sítios (a) passam o caminho por `argv`
 **Owner:** `ares-tf` · **Status:** ⬜ Pendente
 
-O padrão já existe no repositório: `check-thirdparty-parity.sh:167` e o
-`_normalize_version_in_file` do `check-doctor-parity.sh`. Não invente terceiro idioma.
+🔴 **CORREÇÃO (achado do ML-0A):** o roadmap citava `_normalize_version_in_file` do
+`check-doctor-parity.sh` como precedente. **Esse arquivo não existe** — deletado em `2eae0a44`
+(v8.0.0, #365), oito dias antes do #417. Copiei do issue **#363** sem conferir na árvore
+(`ls` → *No such file or directory*).
+
+**O precedente vivo é `check-thirdparty-parity.sh:167`**, que passa por `sys.argv[1]`.
+
+**Ordem de despacho:** a1 → a4/a5/a6 → a2/a3, **os três grupos no mesmo PR** (Regra Dura: a2/a3 têm
+consequência **zero** hoje, e é por isso que alguém vai querer deixá-los de fora):
+
+```
+check-gates-falsify.sh:6745
+check-update-parity.sh:354, :379, :408
+check-serve-api-file-security.sh:87, :92
+```
 
 - [ ] Todo (a) por `argv`; fixtures gerados **byte a byte idênticos** aos de antes
 - [ ] Braço POSIX: nada muda no que já passava
