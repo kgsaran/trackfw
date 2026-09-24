@@ -145,7 +145,198 @@ de `^OK` no log **≠** tally. A divergência é medível sem inspeção.
 
 ---
 
-## Wave 1+ — Um grupo por wave
+## Wave 1 — Os dois grupos de produto (2 MLs em paralelo)
+
+### ML-1A — G4 · **PREMISSA REFUTADA: não é produto, é fixture**
+**Owner:** `apolo-tf`
+**Status:** ✅ Concluído — auditado em 2026-09-24 · **nenhuma linha de produto alterada, com razão medida**
+
+🔴 **O executor declinou a tarefa que recebeu, e estava certo.** Ele foi despachado para fechar a
+gramática de `normalizeGuardPath`, e mediu que fechá-la **fecharia zero rótulos**.
+
+**O que a Wave 0 concluiu por construção, sem executar:** que o `HOME` de grafia MSYS chega ao Go
+**sem** letra de unidade, e que a divergência é de **separador**.
+
+**O que a sonda na VM mediu:**
+```
+NORM_JSON = "/tmp/trackfw-probe2.gmIUJB/…"
+NORM_COMP = "C:/Users/Lab/…"      ← 🔴 a conversão \ → / JÁ ACONTECEU
+MATCH     = false
+```
+
+O MSYS **converte a variável de ambiente** ao lançar processo nativo, logo
+`hasWindowsDriveLetterPrefix` é **verdadeiro**, o braço roda, e a divergência **sobrevive**. Não é
+gramática de separador: é **espaço de nomes**. O heredoc do fixture grava `/tmp/…` porque
+**conteúdo de arquivo o MSYS nunca converte**; o Go calcula `C:/Users/…`. Mesmo arquivo, duas
+montagens.
+
+🔴 **Consequência que fortalece o alerta original:** **nenhuma regra de string pode casar as duas
+grafias**, porque a diferença é de montagem, não de sintaxe. Toda "correção" que as faça casar é
+**necessariamente** afrouxamento semântico — o argumento contra comparar por *basename* fica mais
+forte, não mais fraco.
+
+**A/B com o binário real na VM, variável única (só o conteúdo do JSON muda):**
+
+| braço | `command` no JSON | resultado |
+|---|---|---|
+| A | `/tmp/…/guard.sh` | entrada de projeto **gravada** — dedup não disparou · **reproduz o FAIL** |
+| B | `C:/Users/Lab/…/guard.sh` | entrada **ausente** — dedup disparou · **o produto funciona** |
+
+**Os três itens em aberto da Wave 0, respondidos:**
+
+1. **Qual elo dispara:** o **(b), a comparação**. O `readGlobalHookJSON` **sucede** (`err=<nil>`) —
+   o `fail-open` de leitura não participa.
+2. **Cobertura Go: a presunção CAI — e a razão vale mais que o veredito.** Há 6 referências e **34
+   casos** em `guard_path_normalize_test.go`. O G4 ficou invisível **não por ausência de teste**, mas
+   porque **um teste fixa a forma como comportamento intencional** (`:84`):
+   ```go
+   {"relative path with backslash, no drive letter, untouched", `scripts\guard.sh`, `scripts\guard.sh`},
+   ```
+   🔴 **Teste que afirma o defeito como contrato é mais caro que teste ausente — ele defende o
+   defeito na revisão.**
+3. **`fail-open`: NÃO mudar.** `false` → "não instalado" → entrada de projeto **gravada** → guard
+   roda **duas vezes** (benigno). Inverter → entrada **pulada** → guard possivelmente **ausente**:
+   exatamente o bypass. Aqui a direção permissiva é a **segura**. Se alguém inverter assim mesmo,
+   passa a reprovar todo cenário sem `settings.json` global legível — incluindo dois braços hoje
+   verdes.
+
+🔴 **A linha que precisa ficar na tabela de risco, e independe de culpa:** com `MATCH=false`, a
+garantia *"global instalado ⇒ entrada de projeto pulada"* **não tem prova nenhuma no Windows hoje**.
+
+**Critérios de aceite:**
+- [x] Regra **declinada com razão medida** — fechá-la mexeria em decisão aprovada por barreira e
+      fecharia zero rótulos
+- [x] Falsificação nas duas direções, por instrumento **comportamental na VM** — obrigatório, porque
+      a divergência é propriedade de **montagem** e não existe num host POSIX
+- [x] Presunção de cobertura **refutada**, com a razão
+- [x] Veredito do `fail-open` escrito, com o que passa a reprovar se for invertido
+- [x] `go test ./internal/generators/` RC=0 (linha de base intocada)
+- [x] 🔴 **Zero testes novos** — o único concebível fixaria artefato de harness como contrato de
+      produto, a mesma patologia medida no teste existente. Sem frase possível, sem teste
+
+### ML-1B — G5 · O guard aprovava o que não conseguiu ler
+**Owner:** `ares-tf`
+**Status:** ✅ Concluído — auditado em 2026-09-24
+
+🔴 **O defeito é mais grave do que a triagem dizia, e eu confirmei no macOS.** Escritor lento (JSON
+em 5 pedaços de 1 s), com o dreno antigo:
+
+```
+len_lido=178  payload=446
+🔴 COMANDO INVISIVEL -> guard aprova em silencio
+```
+
+O `"command":"git push"` fica **fora** do que o guard leu. **Não é defeito de Windows** — é um
+controle de segurança que aprova o que não leu, em qualquer plataforma, quando o escritor é lento.
+O Windows só tornava fácil disparar: o `read` de pipe no MSYS custa ~90x mais por syscall
+(~14,7 KB/s contra ~1,3 MB/s).
+
+**Causa separada como pedido — é orçamento, não semântica:**
+
+| medição | macOS | Windows |
+|---|---|---|
+| `read -t 600 -d ''` de pipe | 0,151 s · 200000 B | **13,6 s** · 200000 B |
+| `read -t 2 -d ''` de pipe | 0,15 s · 200000 B | 🔴 **2,1 s · rc=142 · 25397 B** |
+| pipe × arquivo (fd seekable) | — | 13,6 s × **0,618 s** |
+
+Com tempo, o `-d ''` lê até o EOF real. **A semântica está certa; o orçamento não.**
+
+**Contrato escolhido, e o `-t` NÃO foi aumentado:** a janela de 2 s passou de **total** para
+**ociosa**, renovada a cada byte. O valor é o mesmo; o que mudou é a natureza — *"quanto o escritor
+pode ficar sem enviar nada"* em vez de *"quanto a transferência inteira pode levar"*. Mais
+**fail-closed**: truncado + sem argv ⇒ `deny` + `exit 2`.
+
+**Custo escrito:** invocação legítima que fique 2 s **sem enviar um único byte** passa a ser
+bloqueada com razão visível — antes era **aprovada sem o guard ter lido o que aprovava**. A recusa
+vem **depois** do no-op (ADR-2026-08-17 preservada) e **argv isenta**.
+
+**E ele corrigiu uma alegação falsa no próprio código:** o comentário afirmava, como medição, que
+`read -t` preserva o prefixo lido em bash 3.2. **Falso, medido** — no 3.2 o truncamento é
+indetectável, e isso ficou declarado com a razão.
+
+**Critérios de aceite:**
+- [x] Causa medida: **orçamento**, não semântica — com o custo localizado no **pipe**
+- [x] Contrato decidido e escrito, com o que ele custa
+- [x] Falsificação nas duas direções, com **reconciliação obrigatória**: pós-correção, 200 KB deixou
+      de ser "ilegível" e virou "lento" — a direção 2 teve de ser reconstruída como **escritor
+      travado**. Sem essa frase, um auditor lê substituição de cenário
+- [x] 🔴 A correção **não** é aumentar o `-t`
+- [x] Efeito no consumidor declarado: quem tem o script antigo segue com fail-open até
+      `trackfw agents update`; a regra de integridade **torna a pendência visível**
+- [x] 6 testes novos, uma frase cada
+
+### ML-1E — Os 2 sítios de `scripts/` que ficaram para trás
+**Owner:** `artemis-tf`
+**Status:** ✅ Concluído — auditado em 2026-09-24
+
+O dreno vive em **4 sítios byte-idênticos**; o ML-1B atualizou os 2 de `internal/`.
+
+🔴 **Ele corrigiu uma premissa do meu handoff:** eu disse que
+`TestGitBranchGuardScriptReference_MatchesGenerator` provaria a regeneração. **Não prova** — ele
+compara **duas constantes Go** e nunca olha o arquivo em disco. Quem prova é a regra
+`git_branch_guard_script_integrity`, e ele falsificou nas duas direções (script antigo → aviso;
+regenerado → aviso some).
+
+**Critérios de aceite:**
+- [x] Script **regenerado**, não editado à mão — **auditei**: `cmp` contra
+      `GenerateGitBranchGuardScript` → **byte-idêntico**; bit de execução preservado
+- [x] Sabotagem do Cenário 65 **ainda mede o que deve** — A/B: sabotagem real → `escritor_erro=1`;
+      sabotagem-identidade → `FAIL … cenário vácuo`. A guarda de vacuidade **re-falsifica**
+- [x] Literal alvo ocorre **exatamente 1 vez** no gerador, verificado com o mesmo `count()` do
+      `corrupt_literal`
+- [x] Comentário de `:4612` atualizado, **com a reconciliação** do que 200 KB passou a significar
+- [x] `go test ./internal/generators/` e `./internal/validator/` RC=0
+- [x] 🔴 Nenhum teste novo; a frase é do braço de detecção do Cenário 65
+- [x] **Conferência extra que eu não pedi:** não há **quinto sítio** (varredura repo-wide), e o
+      comentário novo **não perturbou o instrumento** — A/B do chunker: **266 rótulos, `diff` vazio**
+
+**Auditoria do arquiteto — um susto que não era defeito:**
+
+`trackfw validate` **acusava** divergência do script. Medido: o `cmp` contra o gerador dá
+**byte-idêntico**, e com o binário **compilado da árvore** o aviso **some** (0 ocorrências). É o
+**binário instalado** que carrega o template antigo — mesma versão `8.0.1`, compilada antes. Não há
+divergência real.
+
+### ML-1C — O fixture do Cenário 67 grava grafia que o binário nunca produz
+**Owner:** `artemis-tf`
+**Status:** ⬜ Pendente
+
+Consequência direta do ML-1A. `scripts/check-gates-falsify.sh:4722-4726` (braço 1) e `:4836`
+(braço 4) gravam o `command` do `settings.json` global em grafia MSYS, via heredoc — e **conteúdo de
+arquivo o MSYS nunca converte**.
+
+**Ação:** gravar o `command` em grafia nativa (`cygpath -m` quando disponível), de modo que o
+fixture represente o que o binário de fato produz.
+
+🔴 **Dois cuidados, ambos medidos:**
+- o comentário do braço 1 diz que o `HOME` é *"deliberately corrupted … so this baseline stays
+  deterministic across platforms"*. **Não quebre essa intenção** — o determinismo em POSIX precisa
+  sobreviver;
+- o braço 4 existe para testar **barra dupla** (`//`). A correção não pode apagar o caso que ele
+  exercita.
+
+**Critérios de aceite:**
+- [ ] Os dois sítios gravam grafia nativa no Windows, mantendo o determinismo em POSIX
+- [ ] O caso de **barra dupla** do braço 4 continua sendo exercitado
+- [ ] Os 2 rótulos do G4 passam no Windows — medido, não presumido
+- [ ] 🔴 Uma frase por teste novo, ou ausência declarada
+- [ ] 🔴 **NÃO rodar `make quality`**
+
+### ML-1D — O teste que fixa o defeito como contrato
+**Owner:** `artemis-tf`
+**Status:** ⬜ Pendente
+
+`internal/generators/guard_path_normalize_test.go:84` afirma como **intencional** a forma que o ML-1A
+mediu ser irrelevante para o G4 — e, pior, **defende-a na revisão**.
+
+- [ ] Veredito: o caso pina comportamento desejado ou congela um acidente? **Com a razão escrita**
+- [ ] Se for acidente, o caso sai ou muda de nome para dizer o que realmente afirma
+- [ ] 🔴 Não relaxar `normalizeGuardPath` para "fazer passar" — o ML-1A mediu que nenhuma regra de
+      string resolve
+
+---
+
+## Wave 1+ (waves seguintes) — Um grupo por wave
 > Dependências: Wave 0 auditada. **O detalhamento é escrito depois do ML-0A** — ML detalhado sobre
 > mecanismo não medido é o erro do `IsAbs`.
 

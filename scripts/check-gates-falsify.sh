@@ -4609,13 +4609,37 @@ run_go_guard_dump "setup-s64-go-corrupted-build" "$T64_MOD" "$T64_OUT"
 # corrigido pelo ML-1B) prova que o escritor termina limpo; baseline com
 # payload GRANDE (>64KB, estoura o buffer do pipe) prova que o dreno
 # funciona mesmo sob pressão de buffer; detecção corrompe o literal isolado
-# do dreno de stdin (`IFS= read -r -t 2 -d '' _TRACKFW_STDIN || true` ->
-# `true`, deixando a inicialização `_TRACKFW_STDIN=""` intacta mas
-# neutralizando a leitura real -- literal atualizado no ML-3A da ROADMAP-
-# 2026-09-09-guard-emite-hookspecificoutput-e-a-razao-chega-ao-modelo-nos-3-
-# clis.md, que trocou o discriminante `-t 0` por dreno com orçamento de
-# tempo) e prova que, sem o dreno, o EPIPE volta -- isolando a regressão ao
-# dreno em si, não a uma mudança geral no probe do no-op.
+# do dreno de stdin (a linha `IFS= read ... || _TRACKFW_STDIN_RC=$?` ->
+# `true`, deixando a inicialização `_TRACKFW_STDIN=""`, o laço e o teste de
+# truncamento intactos mas neutralizando a leitura real: sem o read, o
+# `_TRACKFW_STDIN_RC` fica 0, o `-le 128` quebra o laço na primeira volta e
+# o stdin nunca é consumido) e prova que, sem o dreno, o EPIPE volta --
+# isolando a regressão ao dreno em si, não a uma mudança geral no probe do
+# no-op.
+#
+# Literal atualizado duas vezes, por dois MLs diferentes -- registrado porque
+# o texto do literal É o contrato deste cenário e ele já quebrou o gate uma
+# vez ao mudar sem que este sítio acompanhasse:
+#   1. ML-3A da ROADMAP-2026-09-09-guard-emite-hookspecificoutput-...: trocou
+#      o discriminante `-t 0` por dreno com orçamento de tempo, produzindo
+#      `IFS= read -r -t 2 -d '' _TRACKFW_STDIN || true`;
+#   2. ML-1B (G5) da ROADMAP-2026-09-24-treze-rotulos-falham-no-censo-de-
+#      windows-...: o orçamento daquele dreno era TOTAL (dependente do
+#      TAMANHO do payload) e, estourado, o guard saía 0 -- aprovava um
+#      comando que não conseguiu ler. Virou orçamento OCIOSO (laço que renova
+#      os 2 s a cada byte recebido) + fail-closed quando trunca sem argv.
+#
+# ⚠️ RECONCILIAÇÃO com o rótulo do censo de Windows (vault/notes/guard-aprova-
+# quando-nao-conseguiu-ler-o-comando-orcamento-total-do-read-2026-09-24.md):
+# DEPOIS do ML-1B, 200 KB deixou de ser "payload que o guard não consegue
+# ler" -- passou a ser só um payload LENTO (13,4 s medidos no Git-Bash do
+# Windows, onde o read de pipe custa ~90x o do Darwin). O braço
+# `baseline-writer-clean-large-payload` continua provando pressão de buffer,
+# mas NÃO prova mais ilegibilidade; o caso residual genuinamente ilegível é
+# o ESCRITOR TRAVADO, coberto pelos testes Go de
+# internal/generators/git_branch_guard_stdin_drain_test.go. Ler este braço
+# contra o rótulo do censo sem esta nota leva à conclusão errada de que houve
+# substituição de cenário.
 # ---------------------------------------------------------------------------
 T65_NO_YAML_DIR="$WORK/s65-no-trackfw-yaml"
 mkdir -p "$T65_NO_YAML_DIR"
@@ -4646,7 +4670,7 @@ cp "$ROOT_DIR/go.sum" "$T65_MOD/go.sum"
 
 corrupt_literal \
   "$ROOT_DIR/internal/generators/scaffold.go" "$T65_MOD/internal/generators/scaffold.go" \
-  "IFS= read -r -t 2 -d '' _TRACKFW_STDIN || true" \
+  "IFS= read -r -t 2 -d '' _TRACKFW_STDIN_CHUNK || _TRACKFW_STDIN_RC=\$?" \
   "true" \
   "s65-go-stdin-drain-removed"
 

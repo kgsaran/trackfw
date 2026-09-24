@@ -30,22 +30,74 @@ set -f
 # (ex.: um runtime de hook que nunca fecha o descritor) travava o antigo "cat" para sempre, sem
 # limite -- foi o que pendurou "make quality" por 1h05 quando o gate de schema (ML-2A) chamou o
 # guard sem "</dev/null" em 3 sítios. Substituído por dreno com ORÇAMENTO DE TEMPO via
-# "read -t <segundos> -d ''": builtin do próprio bash desde a 3.0 (não do coreutils) -- medido
-# idêntico no bash 3.2 (padrão do macOS) e no bash 5.3 (Linux/Homebrew); o bash do MSYS2/Git-Bash
-# do Windows é bash de verdade e traz o mesmo builtin. Evita depender de "timeout(1)", que NÃO
-# existe no macOS base nem no MSYS2 mínimo. "-d ''" faz o read tentar ler até o EOF real (NUL
-# nunca aparece em payload de hook); "-t" interrompe a espera no orçamento e, medido contra um
-# FIFO nunca fechado (bash 3.2 e 5.3), preserva na variável qualquer prefixo já lido antes do
-# timeout -- sem perda do que chegou, só do que nunca chegou. 2s de orçamento: folga generosa
-# para o payload pequeno de um hook sob scheduler sob carga (CI, "make quality" paralelo), e
-# ainda curto o bastante para o travamento continuar perceptível em vez de indefinido. Estourar
-# o orçamento NÃO libera o bloqueio: o passo 1 abaixo já prefere "$*" quando há argumento
-# posicional, e cai para o que foi lido até o limite quando não há -- "exit 2" e o fail-closed
-# continuam idênticos nos dois casos. O antigo desvio para invocação manual em terminal (skip
-# total quando "-t 0") foi removido de propósito: era o próprio discriminante errado que este ML
-# elimina, não um caso a preservar -- agora toda invocação drena com o mesmo orçamento de 2s.
+# "read -t <segundos> -d ''": builtin do próprio bash desde a 3.0 (não do coreutils); o bash do
+# MSYS2/Git-Bash do Windows é bash de verdade e traz o mesmo builtin. Evita depender de
+# "timeout(1)", que NÃO existe no macOS base nem no MSYS2 mínimo. "-d ''" faz o read tentar ler
+# até o EOF real (NUL nunca aparece em payload de hook).
+#
+# ML-1B (ROADMAP-2026-09-24-treze-rotulos-falham-no-censo-de-windows-e-cinco-sao-setup-que-aborta-
+# o-cenario-inteiro.md, grupo G5 da triagem): o orçamento do ML-3A era TOTAL, e um orçamento total
+# é dependente do TAMANHO do payload -- o que o torna arbitrário por construção. Medido no
+# Git-Bash 5.3.15 do Windows (VM, 2026-09-24), lendo um payload de 200000 bytes de um PIPE:
+#
+#   read -t 600 -d ''  -> rc=1 (EOF), len=200000, 13.6 s     <- a semântica de -d '' está CERTA
+#   read -t 2   -d ''  -> rc=142 (timeout), len=25397, 2.1 s <- o orçamento TOTAL é a causa
+#   redirect de ARQUIVO (fd seekable), -t 600 -> 618 ms      <- o custo é do pipe, não do read
+#
+# São ~14,7 KB/s no pipe do MSYS contra ~1,3 MB/s no macOS (mesma medição, bash 5.3): o read do
+# bash consome fd não-seekable 1 byte por read(2), e a syscall do MSYS é ~90x mais cara. Com o
+# orçamento total, o guard lia 12,7% do payload, saía com 0 no no-op abaixo, e o escritor levava
+# EPIPE -- o rótulo
+# falsify/git-branch-guard/stdin-drain-before-noop/baseline-writer-clean-large-payload.
+#
+# 🔴 A correção NÃO é aumentar o "-t": qualquer valor passa em 200 KB e falha em 400 KB. O que
+# muda é a NATUREZA do orçamento -- de TOTAL para OCIOSO. O laço abaixo renova os 2s toda vez que
+# QUALQUER byte chega, então o limite deixa de ser "quanto tempo a transferência inteira pode
+# levar" (dependente de tamanho) e passa a ser "quanto tempo o escritor pode ficar sem enviar
+# nada" (independente de tamanho). 2s de ociosidade é limite de CONTRATO: é o que separa "escritor
+# lento" de "escritor que não vai escrever", e foi o segundo caso -- um chamador que segura o
+# descritor aberto sem escrever -- que pendurou "make quality" por 1h05 no ML-2A. Medido no mesmo
+# Git-Bash: o laço lê os 200000 bytes inteiros (len=200000, truncado=0) em 13,4 s.
+#
+# Por que não despejar o stdin em arquivo temporário, já que fd seekable é 22x mais rápido: o
+# despejo exige "cat" (ou equivalente) sem limite, e é exatamente o travamento indefinido que o
+# ML-3A removeu.
+#
+# Dois efeitos do orçamento OCIOSO, medidos e declarados (não são regressão silenciosa):
+#   (a) LATÊNCIA: com um escritor que manda alguns bytes e depois trava, o guard paga UMA janela
+#       ociosa a mais que o orçamento total antigo -- medido 4,07 s contra 2,07 s (1 byte + fd
+#       preso, macOS). É o preço de não cortar um escritor que ainda estava entregando.
+#   (b) TERMINAÇÃO: um escritor que mande 1 byte a cada menos de 2 s indefinidamente mantém o
+#       guard vivo indefinidamente. Aceito de propósito: esse escritor ESTÁ entregando o comando,
+#       e cortá-lo é justamente o defeito que este ML corrige. A patologia que o ML-3A fechou --
+#       chamador que segura o descritor e NÃO escreve nada (o "make quality" sem "</dev/null") --
+#       continua cortada em 2 s, porque lá nenhuma janela tem progresso. Um teto absoluto adicional
+#       seria um número sem razão de contrato (o mesmo chute que o "-t" maior), então não existe.
+#
+# Discriminante de truncamento: no bash >= 4 o read retorna rc > 128 (142 = 128+SIGALRM) quando
+# estoura o "-t", e rc=1 no EOF -- medido nos dois bash 5.3 (macOS e Windows). ⚠️ No bash 3.2
+# (padrão do macOS) NÃO existe esse discriminante: medido rc=1 no timeout, com a variável VAZIA
+# (o prefixo já lido é DESCARTADO). O comentário anterior deste bloco afirmava o contrário
+# ("preserva na variável qualquer prefixo já lido... bash 3.2 e 5.3") -- afirmação falsa,
+# corrigida aqui por medição. Consequência declarada: sob bash 3.2 o laço roda uma iteração só e
+# o truncamento fica INDETECTÁVEL (degrada exatamente para o comportamento de hoje). Não é
+# remediável sem discriminante; sob bash 3.2 a vazão medida é 200 KB em 0,15 s, então um timeout
+# ali só pode significar escritor parado, não payload grande.
 _TRACKFW_STDIN=""
-IFS= read -r -t 2 -d '' _TRACKFW_STDIN || true
+_TRACKFW_STDIN_TRUNCATED=0
+while :; do
+  _TRACKFW_STDIN_CHUNK=""
+  _TRACKFW_STDIN_RC=0
+  IFS= read -r -t 2 -d '' _TRACKFW_STDIN_CHUNK || _TRACKFW_STDIN_RC=$?
+  _TRACKFW_STDIN="${_TRACKFW_STDIN}${_TRACKFW_STDIN_CHUNK}"
+  if [ "$_TRACKFW_STDIN_RC" -le 128 ]; then
+    break
+  fi
+  if [ -z "$_TRACKFW_STDIN_CHUNK" ]; then
+    _TRACKFW_STDIN_TRUNCATED=1
+    break
+  fi
+done
 
 # --- 0b. No-op fora de projeto trackfw (ADR-2026-08-17-guard-global-cabeado-com-no-op-fora-de-
 # projeto-trackfw.md): sobe diretórios a partir do cwd FÍSICO (pwd -P, resolve symlink) até
@@ -69,6 +121,35 @@ while :; do
   fi
 done
 [ "$_TRACKFW_FOUND" -eq 1 ] || exit 0
+
+# --- 0c. Contrato quando o stdin NÃO pôde ser lido por inteiro (ML-1B, ROADMAP-2026-09-24-treze-
+# rotulos-..., grupo G5). Até aqui o guard era FAIL-OPEN nesse caso: com o payload truncado, o
+# passo 1 extraía comando vazio, caía em "[ -n "$CMD_RAW" ] || exit 0" e APROVAVA -- em silêncio,
+# sem nenhum sinal para quem chamou. É a pior das quatro categorias da triagem: os outros grupos
+# reprovam alto, este aprova baixo.
+#
+# Decisão: FAIL-CLOSED. Se o dreno terminou truncado e NÃO há comando em argv, o guard recusa com
+# a mesma resposta de bloqueio dos demais caminhos (JSON de deny no stdout + exit 2), nomeando o
+# motivo. O que isso CUSTA, escrito: uma invocação legítima, DENTRO de projeto trackfw, feita por
+# um runtime que só passa o comando por stdin e que fica 2s inteiros sem enviar um único byte,
+# passa a ser BLOQUEADA -- o usuário vê a razão e refaz o comando. Antes, ela era aprovada sem o
+# guard ter lido o que aprovava.
+#
+# Duas escolhas que limitam esse custo:
+#   (a) a recusa vem DEPOIS do no-op de 0b -- fora de projeto trackfw o guard continua saindo 0,
+#       como manda a ADR-2026-08-17; ali ele não tem autoridade para recusar nada, e não há perda
+#       de controle porque ali ele também nunca bloqueia;
+#   (b) argv isenta ($# > 0): o passo 1 prefere "$*" e o comando está completo -- o stdin é
+#       irrelevante para a decisão. Já "$TRACKFW_GIT_COMMAND" NÃO isenta, de propósito: o passo 1
+#       só recorre a ele quando o stdin rende vazio, e um payload truncado pode render um comando
+#       NÃO-vazio e ERRADO (um prefixo que não casa com "git push") -- que é mais perigoso que o
+#       vazio, porque desliga a isenção sem completar a informação.
+if [ "$_TRACKFW_STDIN_TRUNCATED" -eq 1 ] && [ "$#" -eq 0 ]; then
+  _TRACKFW_TRUNC_REASON='trackfw git-branch-guard: RECUSADO — o comando nao pode ser lido por inteiro do stdin (nenhum byte chegou em 2s de espera ociosa) e nao ha comando em argv. O guard recusa em vez de aprovar um comando que nao conseguiu ler. Reenvie o comando, ou use trackfw ship / trackfw branch new.'
+  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$_TRACKFW_TRUNC_REASON"
+  printf '%s\n' "$_TRACKFW_TRUNC_REASON" >&2
+  exit 2
+fi
 
 # --- 1. Obter o comando git bruto ------------------------------------------------------------
 if [ "$#" -gt 0 ]; then

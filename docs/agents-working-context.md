@@ -40266,3 +40266,207 @@ log do censo, e a VM é ARM64 contra censo x64. Não auditei os 347 `OK`. Não d
 sai `0xC0000005`, nem qual elo do G4 dispara primeiro, nem a causa do G5 entre orçamento de tempo e
 semântica de `read -d ''`. Não enumerei os testes Go de `agentfiles.go` (presunção declarada, não
 medição). Não rodei `make quality` nem `go test ./...`.
+
+---
+
+## 2026-09-24 — `apolo-tf` · ML-1A (Wave 1, G4) — **a premissa caiu; zero linhas de produto alteradas**
+
+REQ/Roadmap: `REQ-2026-09-24-treze-rotulos-falham-no-censo-de-windows-…` ·
+Branch: `fix/treze-rotulos-falham-no-censo-de-windows-…` · Arquivos de produto tocados: **nenhum**.
+
+**O ML foi despachado para "fechar a gramática" de `normalizeGuardPath`. Não fechei — e a razão é
+uma medição, não uma recusa.** O ML-0A concluiu **por construção, sem executar**, que o `HOME` de
+grafia MSYS chega ao Go sem letra de unidade e que a divergência é de **separador**. Medido na VM
+com sonda e depois com o **binário real**: o MSYS **converte a variável de ambiente** ao lançar um
+processo nativo, então `hasWindowsDriveLetterPrefix` é **verdadeiro**, o braço `\`→`/` **já roda**
+(`NORM_COMP="C:/Users/Lab/…"`) e a divergência sobrevive. Ela é de **espaço de nomes**: o heredoc do
+fixture grava `/tmp/…` (conteúdo de arquivo **não** é convertido pelo MSYS), o Go calcula
+`C:/Users/…/AppData/Local/Temp/…`. Mesmo arquivo, duas montagens. 🔴 **Fechar a gramática fecharia
+zero rótulos** e mexeria em código aprovado por barreira.
+
+**A/B com o binário real, única variável = a grafia no `settings.json` global:** grafia MSYS →
+entrada de projeto **gravada** (reproduz o FAIL do censo); grafia nativa (`cygpath -m`) → entrada
+**ausente**, dedup dispara. **O produto está correto no Windows.** O G4 sai de **D (produto)** para
+**harness** — o corretivo é `scripts/check-gates-falsify.sh:4722-4726` e `:4836`, fora do meu
+escopo, e pela Regra Dura entra como **novo ML nesta REQ**, não REQ nova.
+
+**Os três itens abertos do parecer, respondidos.** (1) **Qual elo dispara:** o (b), a comparação —
+`readGlobalHookJSON` **sucede** (`err=<nil>`), porque resolve pelo mesmo `homedir.Dir()` +
+`filepath.Join`, logo lê onde o MSYS escreveu. (2) **Cobertura Go: a presunção CAI** — existem 22
+casos em `internal/generators/guard_path_normalize_test.go`; o G4 ficou invisível não por ausência
+de teste, mas porque **um teste fixa a forma como comportamento intencional**
+(`{"relative path with backslash… untouched", scripts\guard.sh}`). (3) **`fail-open`: NÃO mudar** —
+`false` → "não instalado" → entrada de projeto gravada → guard roda **duas vezes**; inverter para
+fail-closed → entrada de projeto **pulada** → guard possivelmente **ausente**, exatamente o bypass
+que a seção 6.4 nomeia. Aqui a direção permissiva é a **segura**.
+
+**Zero testes novos, por regra do projeto:** o único teste concebível afirmaria que duas grafias do
+**mesmo arquivo** não devem casar — fixaria um artefato de harness como contrato de produto. Não
+consigo escrever a frase, então o teste não existe. `go test ./internal/generators/` → **RC=0**
+(linha de base intocada).
+
+**Residual declarado:** nada exercitado por mim no **Windows CI** (VM ARM64 × censo x64); o que
+transfere do run `36036473391` é que `$WORK` sai `/tmp/trackfw-falsify.Q5DXgN` e `/tmp` mapeia para
+`C:\Users\RUNNER~1\AppData\Local\Temp` lá também. O `cat` do braço 1 despeja o `settings.json` **de
+projeto** (`$CLAUDE_PROJECT_DIR/…`) — **não** serve de testemunha da grafia do `HOME`; o JSON global
+nunca é despejado. Nota de vault:
+`vault/notes/msys-converte-env-e-argv-mas-nunca-conteudo-de-arquivo-2026-09-24.md`.
+**Observação fora de escopo:** o comentário de `normalizeGuardPath` ainda alega espelhamento em
+`npm/src/generators/hooks.js` e `pypi/trackfw/generators/hooks.py` (inexistentes pós-v8), e
+`internal/homedir` tem alegação equivalente — **não toquei** em nenhum dos dois.
+
+---
+
+## 2026-09-24 — `ares-tf` · ML-1B (Wave 1, G5) — **o orçamento era TOTAL; o guard aprovava o que não leu**
+
+**Branch:** `fix/treze-rotulos-falham-no-censo-de-windows-e-cinco-sao-setup-que-aborta-o-cenario-inteiro`
+**Rótulo do censo:** `falsify/git-branch-guard/stdin-drain-before-noop/baseline-writer-clean-large-payload`
+
+**Causa MEDIDA, e a dúvida do ML-0A está fechada.** A triagem declarou não ter determinado se a
+causa era **orçamento de tempo** ou **semântica de `read -d ''`**. É **orçamento**. Medido no
+Git-Bash 5.3.15 da VM (2026-09-24), 200000 bytes de um **pipe**: `read -t 600 -d ''` → `rc=1`
+(EOF), `len=200000`, **13,6 s** — a semântica de `-d ''` está **certa**, ela lê até o EOF real.
+`read -t 2 -d ''` → `rc=142`, **`len=25397`**, 2,1 s. O mesmo payload no macOS leva **0,151 s**:
+~14,7 KB/s no MSYS contra ~1,3 MB/s no Darwin, porque o `read` consome fd não-seekable 1 byte por
+`read(2)` e a syscall do MSYS é ~90x mais cara (redirect de **arquivo**, fd seekable, no mesmo
+Windows: 618 ms).
+
+**A correção NÃO é aumentar o `-t`.** Qualquer valor total passa em 200 KB e falha em 400 KB. Mudou
+a **natureza** do orçamento, de **total** para **ocioso**: laço que renova os 2 s a cada byte que
+chega. O limite deixa de ser "quanto a transferência inteira pode levar" (dependente de tamanho) e
+passa a ser "quanto o escritor pode ficar sem enviar nada" (independente de tamanho) — e continua
+cortando o escritor-que-nunca-escreve, que pendurou `make quality` por 1h05 no ML-2A.
+
+**Contrato decidido — FAIL-CLOSED, com o custo escrito.** Truncado + sem argv ⇒ `deny` no stdout +
+razão no stderr + `exit 2`. **Custo:** invocação legítima **dentro** de projeto trackfw, por runtime
+que só passa comando por stdin e fica 2 s **sem enviar um byte**, passa a ser bloqueada (antes era
+aprovada sem o guard ter lido). Limites do custo: a recusa vem **depois** do no-op (ADR-2026-08-17
+preservada, fora de projeto continua `exit 0`) e **argv isenta**; `$TRACKFW_GIT_COMMAND` **não**
+isenta, porque payload truncado pode render comando **não-vazio e errado**.
+
+**Falsificação nas duas direções, A/B na mesma VM Windows:** 200 KB fora de projeto — antigo
+`guard_rc=0` com **`writer_rc=141`** (`128+SIGPIPE`, o defeito do censo reproduzido), novo
+`guard_rc=0` com `writer_rc=0`. Escritor **travado** dentro de projeto — antigo **`guard_rc=0`
+silencioso**, novo `guard_rc=2` com deny visível. ⚠️ **Reconciliação:** pós-correção 200 KB deixa de
+ser ilegível (é só lento, 13,4 s), então a direção 2 teve de ser reconstruída como **escritor
+travado** — não é substituição de cenário.
+
+**Achado colateral, e é correção de uma alegação falsa no próprio código:** o comentário do bloco
+afirmava, como medição, que `read -t` *"preserva na variável qualquer prefixo já lido"* em **bash
+3.2 e 5.3**. **Falso para o 3.2** (padrão do macOS): medido `rc=1` (não 142) e variável **vazia**.
+Logo no bash 3.2 **timeout é indistinguível de EOF** e o truncamento é **indetectável** — declarado
+no código, com a razão de não ser remediável (lá a vazão é 200 KB em 0,15 s, então timeout só pode
+significar escritor parado).
+
+**Evidência:** `go build ./...` OK · `go test ./internal/generators/` → **ok, RC=0** (23,3 s) ·
+`go test ./internal/validator/ -run GitBranchGuard` → **ok, RC=0** (byte-identidade da cópia de
+referência). `make quality` **não** rodado (barreira do arquiteto).
+
+**Arquivos:** `internal/generators/scaffold.go` ·
+`internal/validator/validator_git_branch_guard_reference.go` (espelho byte-idêntico obrigatório) ·
+`internal/generators/git_branch_guard_stdin_drain_test.go` (**novo**, 5 testes, uma frase de
+afirmação por teste) · nota de vault + índice.
+
+🔴 **BLOQUEIO PARA O ARQUITETO — 2 sítios em `scripts/` (proibidos para mim) ficam DIVERGENTES:**
+(1) `scripts/trackfw-git-branch-guard.sh:47-48` — cópia instalada neste repo, precisa ser
+regenerada; (2) `scripts/check-gates-falsify.sh:4650-4654` — o `corrupt_literal` do Cenário 65 cita
+`IFS= read -r -t 2 -d '' _TRACKFW_STDIN || true`, que **deixou de existir**, e o helper aborta com
+`expected exactly 1 occurrence of pattern, got 0`. Substituto sugerido:
+`IFS= read -r -t 2 -d '' _TRACKFW_STDIN_CHUNK || _TRACKFW_STDIN_RC=$?` → `true`.
+
+**Efeito no consumidor:** o script é **gerado e instalado**. Quem já tem o script antigo instalado
+continua com o dreno de orçamento total e com o fail-open — a mudança só chega por
+`trackfw agents update` / regeneração. A regra `git_branch_guard_script_integrity` do `validate`
+passa a acusar divergência do script instalado contra a referência nova, o que **torna a pendência
+visível** em vez de silenciosa. Mudança de comportamento a comunicar no release: uma invocação que
+antes era aprovada em silêncio passa a poder ser **bloqueada com razão explícita**.
+
+**Adendo (mesmo ML, medições pedidas na revisão).** (1) **Latência:** o orçamento ocioso paga **uma
+janela a mais** quando o escritor manda alguns bytes e trava — medido **4,07 s** contra **2,07 s** do
+antigo, com e sem argv. (2) **Terminação:** escritor que trickle 1 byte a cada <2 s indefinidamente
+mantém o guard vivo — aceito, porque ele **está** entregando; o caso do ML-2A (zero bytes, fd preso)
+continua cortado em 2 s. Teto absoluto adicional seria número sem razão de contrato, então não
+existe — declarado no comentário do bloco. (3) 🔴 **O defeito não é exclusivo do Windows quando o
+escritor é lento:** medido no **macOS**, payload de 450 B em 5 pedaços de 1 s com `"command"` no fim
+do JSON — antigo **`rc=0`** (aprova `git push`), novo **`rc=2`**. É a não-vacuidade do sexto teste.
+(4) Caminho argv com stdin preso: `git push` → `rc=2` pelo matcher normal (não pela recusa de
+truncamento), `git status` → `rc=0`, nos dois scripts.
+
+⚠️ **Duas pendências de governança que eu não posso tocar:** (a) o `**Status:**` do **ML-1B** no
+roadmap precisa ir de ⬜ para ✅ (pasta `docs/roadmaps/` proibida para mim); (b) `trackfw validate`
+avisa `roadmap ... is in wip but has no acceptance criteria block` — a Wave 1 nunca recebeu o bloco
+de critérios que o ML-0A deveria ter gerado, então a barreira não terá o que conferir.
+
+## 2026-09-24 — `artemis-tf` · ML-1E (Wave 1, G5) — INÍCIO
+
+Fechar os **2 sítios de `scripts/`** que o ML-1B deixou divergentes e que deixam a árvore vermelha
+(mesma causa, mesma REQ, mesmo PR — Regra Dura de Causa Raiz):
+(1) `scripts/trackfw-git-branch-guard.sh` — **regenerar** pelo gerador (byte-identidade exigida por
+`TestGitBranchGuardScriptReference_MatchesGenerator` e pela regra `git_branch_guard_script_integrity`);
+(2) `scripts/check-gates-falsify.sh` — `corrupt_literal` do **Cenário 65** (l. ~4649) cita literal que
+deixou de existir, e o comentário de l. ~4612 descreve o mecanismo antigo.
+
+**Não toco** em `internal/generators/scaffold.go`, `internal/validator/validator_git_branch_guard_reference.go`
+nem em `*_test.go` (entregues e auditados no ML-1B). Sem branch, sem commit, sem push.
+
+## 2026-09-24 — `artemis-tf` · ML-1E (Wave 1, G5) — FIM · **árvore verde; os 2 sítios de `scripts/` fechados**
+
+**(1) `scripts/trackfw-git-branch-guard.sh` — REGENERADO, não editado.** `zz_dumpguard/main.go`
+chamando `generators.GenerateGitBranchGuardScript(os.Args[1])` para um diretório do scratchpad,
+`diff -u` como evidência, `cat > ` por cima (preserva o modo — `git diff --summary` vazio, bit de
+execução intacto), `rm -rf zz_dumpguard`. Diff: **+96/−15**, exatamente o bloco do ML-1B (orçamento
+OCIOSO + `0c` fail-closed).
+🔴 **Falsificado nas duas direções pela regra que realmente olha o disco** (`git_branch_guard_script_integrity`;
+o `TestGitBranchGuardScriptReference_MatchesGenerator` compara **duas constantes Go** e **não** vê o
+arquivo): script antigo em disco → `⚠ scripts/trackfw-git-branch-guard.sh content diverges from the
+template`; regenerado → a linha **some**.
+
+**(2) `scripts/check-gates-falsify.sh` — Cenário 65 volta a rodar.** `corrupt_literal` passou a citar
+`IFS= read -r -t 2 -d '' _TRACKFW_STDIN_CHUNK || _TRACKFW_STDIN_RC=\$?` → `"true"`. **Conferi eu
+mesmo:** literal novo ocorre **exatamente 1×** em `scaffold.go`; o antigo, **0×** (era a causa do
+abort `expected exactly 1 occurrence, got 0`). Comentário do cabeçalho atualizado: mecanismo novo
+(sem o `read`, `_TRACKFW_STDIN_RC` fica 0, o `-le 128` quebra o laço na primeira volta, stdin nunca é
+consumido), histórico dos **dois** MLs que mudaram o literal, e a **reconciliação** do vault (pós-ML-1B,
+200 KB é payload *lento*, não *ilegível* — quem cobre o ilegível é o escritor travado nos testes Go).
+
+🔴 **A sabotagem reintroduz o defeito que o cenário mede — provado, não presumido.** Contra-braço com
+sabotagem **identidade** (literal por ele mesmo): real → `chunk_rc=0`, `escritor_erro=1`; identidade →
+`chunk_rc=1`, `FAIL … escritor terminou limpo, EPIPE esperado não ocorreu (cenário vácuo)`. A guarda
+de vacuidade do `assert_writer_no_epipe` **re-falsifica**.
+
+**Como rodei o Cenário 65 isolado** (não existe filtro; `TRACKFW_FALSIFY_ENUMERATE=1` é modo de
+contagem): `gen-falsify-chunks.py … 60` → `chunk_11` (traz o Cenário 64 junto por dependência de
+`$T64_BASE_OUT`) → `TRACKFW_ROOT_DIR="$PWD" bash chunk_11.sh`. **chunk_rc=0**, 3/3 braços OK.
+
+**Evidência:** `go build ./...` rc=0 · `go test -count=1 ./internal/generators/` **ok 27,963s** ·
+`go test -count=1 ./internal/validator/` **ok 8,139s** · `trackfw validate` **rc=0** (151 warnings
+pré-existentes; **nenhum** sobre `scripts/trackfw-git-branch-guard.sh`) · `bash -n` OK nos 2 scripts.
+
+**Reconciliação (Regra Dura):** **nenhum teste novo** nesta entrega — declarado. O que mudou de
+afirmação é o **braço de detecção do Cenário 65**, e a frase dele é: *sem o dreno de stdin, o guard
+sai 0 antes de consumir o pipe e o escritor leva EPIPE* — medido `escritor_erro=1` com a sabotagem e
+`escritor_erro=0` sem ela, no mesmo build e mesmo payload.
+
+⚠️ **Para o arquiteto:** `trackfw validate` continua avisando que
+`~/.trackfw/scripts/trackfw-git-branch-guard.sh` (**escopo global, fora do repo**) diverge — é o
+efeito no consumidor que o ML-1B já anunciou; fecha com `trackfw update harness`, decisão sua.
+Seguem pendentes, e são suas: `**Status:**` do ML-1B/ML-1E no roadmap, o bloco de critérios de aceite
+da Wave 1 e o gate placeholder da Wave 0.
+
+**Nota de vault:** `vault/notes/rodar-um-unico-cenario-de-check-gates-falsify-e-provar-que-a-sabotagem-nao-e-vacua-2026-09-24.md`
+(linkada no índice). Sem branch, sem commit, sem push — entrega não-commitada para auditoria.
+
+**Adendo do ML-1E — duas conferências que o relatório devia e não tinha.**
+**(a) Não há quinto sítio.** Varredura repo-wide por `_TRACKFW_STDIN` e `read -r -t 2 -d ''`: os
+únicos sítios **executáveis** são os 4 já conhecidos. Tudo o mais é **texto histórico congelado** que
+descreve corretamente o estado da época (roadmap `done` de 2026-09-09 e sua cópia em
+`internal/roadmapdoc/testdata/corpus/`, `docs/seguranca/2026-09-25-triagem-cluster-windows.md`,
+`vault/notes/git-branch-guard-stdin-drain-timeout-...-2026-09-09.md`) — não se reescreve. 🔴
+`docs/cli-parity.md` **não** descreve o dreno, então não há contrato de comportamento defasado ali.
+**(b) O meu comentário não perturbou o instrumento.** A/B do `gen-falsify-chunks.py` (N=60) contra
+`git show HEAD:scripts/check-gates-falsify.sh`: **conjunto de rótulos idêntico (266)**,
+`prelude_end_line=1501`, `total_segments=62`, `assertion_segments=61`, `fused_units=46`,
+`cross_segment_edges=16` — **todos iguais**; 102 avisos nos dois lados. As **únicas** diferenças são
++24 linhas no chunk dos Cenários 64/65 (mesmo peso, mesmo `n_labels=2`) e dois números de linha de
+bloco deslocados **exatamente +24**. Nenhum rótulo apareceu nem sumiu — logo a guarda de conjunto do
+driver paralelo continua exigindo o mesmo.
