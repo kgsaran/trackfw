@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-23
 author: "trackfw_architect"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-23-a-apuracao-do-censo-morre-no-shard-limpo-e-os-19-rotulos-ausentes-vem-de-um-unico-chunk-que-morre-em-silencio.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-23-a-apuracao-do-censo-morre-no-shard-limpo-e-os-19-rotulos-ausentes-vem-de-um-unico-chunk-que-morre-em-silencio.md"
 ---
 
 # REQ: a apuração do censo morre no shard limpo, e os 19 rótulos ausentes vêm de um único chunk que morre em silêncio
 
-> Date: 2026-09-23 | Status: Open
+> Date: 2026-09-23 | Status: Done
 | Linear Issue:
 | Jira Issue:
 
@@ -139,24 +139,32 @@ $ grep -rn '|| echo "\?0"\?' .github/workflows/ scripts/ Makefile | wc -l
 
 ## Acceptance Criteria
 
-- [ ] **AC1 — Enumeração real da causa A**, pelo critério *"o comando já emite saída no caminho de
+- [x] **AC1 — Enumeração real da causa A**, pelo critério *"o comando já emite saída no caminho de
+      → ML-0A + ML-2E: 4 sítios (a) confirmados; a enumeração foi **refutada duas vezes** — população 12 e não 9, e um (c) que era (b)
       falha"*, classificando cada sítio em **(a)** defeito · **(b)** correto · **(c)** fora. O
       critério é aplicável por terceiro, não julgamento do revisor
-- [ ] **AC2 — Todo sítio (a) corrigido**, e a correção é da **forma de captura** — não uma
+- [x] **AC2 — Todo sítio (a) corrigido**, e a correção é da **forma de captura** — não uma
+      → forma de captura (`|| true`), não comparação empilhada — o `awk` cruzado já existia e **foi derrotado** pelo próprio defeito
       comparação adicional por cima de uma captura quebrada
-- [ ] **AC3 — Mecanismo da causa B identificado e escrito**, com a medição que o sustenta. 🔴 Se não
+- [x] **AC3 — Mecanismo da causa B identificado e escrito**, com a medição que o sustenta. 🔴 Se não
+      → causa B **desdobrada em duas**: silêncio (ML-2A/2E) medido; `rc=128` = **MAX_PATH**, falsificado nas duas direções na VM
       for identificável, fica escrito o que foi **eliminado** — hipótese apresentada como causa, não
-- [ ] **AC4 — Teste de fechamento declarado por causa:** *"corrijo esta causa, exatamente estes
+- [x] **AC4 — Teste de fechamento declarado por causa:** *"corrijo esta causa, exatamente estes
+      → frase de fechamento por causa; a de B2 foi **recusada** por falta de medição, e escrita depois do ML-2B
       rótulos fecham, e nenhum outro"*. Sem isso, não se separa nem se agrupa
-- [ ] **AC5 — Falsificação nas duas direções para a causa A**, exercitada contra os **artefatos
+- [x] **AC5 — Falsificação nas duas direções para a causa A**, exercitada contra os **artefatos
+      → replay contra os 8 artefatos reais: forma atual `2/8`, corrigida `8/8 · OK=225 · FAIL=9`
       reais** do run `35872779844` (estão baixáveis; não exige runner de Windows): a forma atual
       reproduz `2/8`, a corrigida dá `8/8`
-- [ ] **AC6 — 🔴 O censo produz número**: um run pós-correção em `main` termina **sem**
+- [x] **AC6 — 🔴 O censo produz número**: um run pós-correção em `main` termina **sem**
+      → 🔴 **run `36017761462` em `main`: 8/8 shards, SEM `TOTAL INCOMPLETO`** · OK=321 · FAIL=11 · ausentes 19 → 4
       `TOTAL INCOMPLETO`, com total por shard. **Este número é a linha de base pós-v8** — e não é
       usado para triar o cluster aqui
-- [ ] **AC7 — Gate que impede a reintrodução** da forma `$(cmd || echo N)` quando `cmd` já emite no
+- [x] **AC7 — Gate que impede a reintrodução** da forma `$(cmd || echo N)` quando `cmd` já emite no
+      → **dois** gates: `check-emitting-capture-fallback.sh` e `check-unguarded-capture-rc.sh`, com piso e formas não cobertas declaradas
       caminho de falha, falsificável, com guarda de não-vacuidade
-- [ ] **AC8** — `make quality` e **CI** verdes
+- [x] **AC8** — `make quality` e **CI** verdes
+      → `make quality` RC=0 · 1195 `^OK ` · 0 `: FALHA`; CI verde no PR #419 (mergeado em `fbf1636b`)
 
 ## Negative scope — o que esta REQ NÃO faz
 
@@ -179,4 +187,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-23-a-apuracao-do-censo-morre-no-shard-limpo-e-os-19-rotulos-ausentes-vem-de-um-unico-chunk-que-morre-em-silencio.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-23-a-apuracao-do-censo-morre-no-shard-limpo-e-os-19-rotulos-ausentes-vem-de-um-unico-chunk-que-morre-em-silencio.md`

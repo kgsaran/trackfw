@@ -39844,3 +39844,12 @@ chunks, os 6 rótulos novos no chunk 7) · `trackfw validate`. 🔴 `make qualit
 arquiteto). Nota de vault
 `a-correcao-que-melhora-o-gate-esvazia-a-fixture-da-guarda-dele-2026-09-24.md` + índice. Status do
 ML-2L **não** alterado no roadmap (arquivo proibido). Sem commit, sem push.
+
+## 2026-09-24 — trackfw_architect — REQ do censo fechada
+
+- **O instrumento voltou a produzir número**: run `36017761462` em `main`, **8/8 shards**, sem
+  `TOTAL INCOMPLETO`. OK=321 · FAIL=11 · rótulos ausentes **19 → 4**.
+- 🔴 **E provou o próprio valor no primeiro uso**: o `chunk_0` morreu e **denunciou o sítio**
+  (`check-gates-falsify.sh:6745`, `python3 -c` com caminho interpolado) — que é o **primeiro item**
+  da `REQ-2026-09-24`, já em backlog. Antes, isso teria sido silêncio.
+- Próximo: `REQ-2026-09-24` (caminho POSIX interpolado no código Python), backlog → wip.
