@@ -176,8 +176,8 @@ check-serve-api-file-security.sh:87, :92
 - [x] **Dois** pisos (corpos e expansíveis), calibrados pelo **pior dos dois** cenários. Auditei:
       `MIN_BODIES=9999` → rc=1. 🔴 O segundo existe porque o primeiro **sozinho não pega**
       classificador de citação quebrado num corpus grande — medido: 65 corpos / 5 expansíveis
-- [ ] 🔴 Uma frase por teste novo
-- [ ] 🔴 **NÃO rodar `make quality`**
+- [x] 🔴 9 frases, uma por braço do Cenário 200
+- [x] 🔴 `make quality` não rodado pelo executor — barreira do arquiteto: **RC=0 · 1275 `^OK ` · 0 `: FALHA`**
 
 ---
 
