@@ -40470,3 +40470,102 @@ descreve corretamente o estado da época (roadmap `done` de 2026-09-09 e sua có
 +24 linhas no chunk dos Cenários 64/65 (mesmo peso, mesmo `n_labels=2`) e dois números de linha de
 bloco deslocados **exatamente +24**. Nenhum rótulo apareceu nem sumiu — logo a guarda de conjunto do
 driver paralelo continua exigindo o mesmo.
+
+---
+
+## 2026-09-24 — `artemis-tf` (QA) — ML-1C + ML-1D (Wave 1, G4) da REQ-2026-09-24 do cluster de Windows
+
+**Início.** Handoff do `trackfw_architect` com os dois MLs juntos (eles se contradizem se tratados
+separado). Branch `fix/treze-rotulos-falham-no-censo-de-windows-e-cinco-sao-setup-que-aborta-o-cenario-inteiro`,
+HEAD `0175634d`. Arquivos meus: `scripts/check-gates-falsify.sh` (Cenário 67),
+`internal/generators/guard_path_normalize_test.go`, `vault/notes/`, este arquivo.
+`internal/generators/agentfiles.go` **não** foi tocado — o ML-1A mediu que nenhuma regra de string
+resolve o G4.
+
+**Fim.**
+
+**Linha de base medida ANTES de editar** (VM Windows 11 ARM64, `chunk_4` de
+`gen-falsify-chunks.py … 24`, `TRACKFW_FALSIFY_ENUMERATE=1`), porque `OK` depois da mudança não
+distingue *"consertei"* de *"o cenário não rodou"*:
+
+```
+CHUNK_RC=1
+FAIL [falsify/git-branch-guard-dedup/baseline-skips-project-entry]
+OK   [falsify/git-branch-guard-dedup/baseline-credential-guard-unaffected]
+OK   [falsify/git-branch-guard-dedup/reverse-vacuity]
+OK   [falsify/git-branch-guard-dedup/detection-catches-regression]
+FAIL [falsify/git-branch-guard-dedup/double-slash-tolerance]
+```
+
+**ML-1C — o que mudou.** Braço 1: helper `to_native_path` (`cygpath -m` quando existe, identidade
+quando não), `T67_FAKE_HOME_POSIX` para operação de filesystem e `T67_FAKE_HOME` **nativo** usado
+nas duas pontas — gravado no heredoc **e** entregue como `HOME` ao binário. Isso tira o MSYS da
+fronteira: não dependemos de a conversão de env var do MSYS ser byte-igual à do `cygpath` (a VM dá
+nome longo, o censo x64 dá **8.3**, `C:/Users/RUNNER~1/…` — converter só o heredoc passaria na VM e
+seguiria vermelho no CI). Braço 4: `cygpath` **colapsa** `//`, então converto a **base**
+(`WORK67_CLEAN`) e injeto o `//` **depois**, com guarda de vacuidade ancorada no **segmento**
+(`//s67-fake-home-installed-slash`, nunca `//` solto) emitindo
+`PROOF …/double-slash-tolerance/non-vacuity`.
+
+**Depois (VM, mesmo chunk):** `CHUNK_RC=0`, os 5 rótulos `OK` **mais** o `PROOF` do `//`.
+**POSIX (macOS, mesmo chunk):** `CHUNK_RC=0`, mesmos 5 `OK` + `PROOF` — o determinismo do braço 1
+sobrevive **por construção** (em POSIX `to_native_path` devolve a entrada inalterada, as variáveis
+ficam byte a byte como eram).
+
+🔴 **Achado colateral, de graça:** `detection-catches-regression` estava **`OK` antes e depois** —
+e antes era **vacuoso**: ele usa o mesmo `$HOME` do braço 1, e com `MATCH=false` a entrada de
+projeto reaparecia **independente** de o binário estar corrompido. Detector verde com baseline
+vermelho, compartilhando fixture, não prova nada. Agora passa pelo motivo certo. Mesma causa, mesma
+REQ — sem artefato novo.
+
+**ML-1D — veredito: comportamento DESEJADO, caso mantido e renomeado.** Sem âncora de letra de
+unidade na posição 0, `\` é **byte de nome de arquivo**; traduzi-lo faria `scripts\guard.sh` e
+`scripts/guard.sh` — dois arquivos genuinamente diferentes em POSIX — compararem iguais: falso
+"já instalado" que desarma o dedup em silêncio. O resíduo em Windows está **declarado** no doc
+comment de `normalizeGuardPath`, com direção sempre **APERTA**. Nome novo declara a garantia
+(`"no drive-letter anchor: backslash is a filename byte, so two genuinely different relative paths
+never compare equal"`) em vez da implementação (`"untouched"`). `normalizeGuardPath` **não** foi
+relaxado — zero mudança em `internal/generators/agentfiles.go`.
+
+🔴 **Reparo na moldura do handoff:** o G4 **não** ficou invisível por causa desse caso. Nenhum caso
+daquela tabela poderia tê-lo pego — a tabela é de **sintaxe** e o G4 diverge por **montagem**. O
+próprio ML-1A já diz isso entre parênteses.
+
+**Reconciliação (Regra Dura) — um teste novo, uma frase.**
+`TestSamePathCommand_MSYSAndNativeSpellingsMustNotMatch` afirma a medição do ML-1A de que **nenhuma
+regra de string casa as duas grafias** — qualquer mudança que as faça comparar iguais é
+afrouxamento semântico. **Falsificado nas duas direções:** com `samePathCommand` afrouxado para
+comparar por *basename* (o afrouxamento que a §6.4 do parecer proíbe), via `go test -overlay`, ele
+**reprova** (`LOOSE_RC=1`, 2 asserções); na árvore íntegra, **passa**.
+O `PROOF …/non-vacuity` do braço 4 é asserção de fixture, não teste Go, e a frase dele é: *o `//`
+sobreviveu ao `command` gravado, logo o braço 4 mede tolerância a barra dupla e não outra coisa*.
+
+**Evidência (RC medido sem cano na linha do `$?`):**
+`bash -n scripts/check-gates-falsify.sh` OK · `go build ./...` rc=0 ·
+`go test ./internal/generators/` **GO_TEST_RC=0** · chunk do Cenário 67 **CHUNK_RC=0** em macOS e
+na VM Windows · `go test -overlay` com o afrouxamento **LOOSE_RC=1**.
+
+⚠️ **`go test ./internal/generators/` na VM Windows reprova 3 testes — pré-existentes, não meus.**
+`TestGitBranchGuard_UnterminatedHeredocBeforeRealPush_StillBlocks`,
+`TestAttentionScripts_FallbackWithoutJQ`, `TestUpdateMigratesKnownCodexAndPreservesUnknown`.
+Provado por `go test -overlay` substituindo o meu arquivo pela versão `HEAD`: os **mesmos 3**
+reprovam (`PRE_RC=1`). Fora do escopo desta REQ, mas registrado.
+
+**Nota de vault:**
+`vault/notes/fixture-que-cruza-a-fronteira-msys-controla-as-duas-pontas-a-partir-de-uma-string-2026-09-24.md`
+(linkada no índice). Sem branch, sem commit, sem push — entrega não-commitada para auditoria.
+Pendentes e suas: `**Status:**` do ML-1C/ML-1D no roadmap.
+
+**Adendo do ML-1C — duas conferências que o relatório devia e não tinha.**
+**(a) A/B do conjunto de rótulos, nos N que os workflows realmente usam.** O `PROOF` novo casa
+`ECHO_LABEL_PAT`, então vira rótulo **exigido** pela guarda de conjunto
+(`check-falsify-shard-coverage.sh`, que re-extrai do fonte). `gen-falsify-chunks.py` contra
+`git show HEAD:scripts/check-gates-falsify.sh`, em **N=4** (`quality.yml`), **N=8**
+(`windows-census.yml`) e N=24: `265` vs `264` rótulos nos três, **+1 adicionado**
+(`git-branch-guard-dedup/double-slash-tolerance/non-vacuity`), **0 removidos**. Rótulo que
+*sumisse* pararia de ser exigido em silêncio — é o modo de falha do ML-2D que este projeto já pagou.
+Depois de corrigir o cabeçalho defasado ("Três braços" → quatro), o conjunto continua **idêntico**.
+**(b) Limite de transferência do `//`.** A sobrevivência do `//` foi medida em **ARM64**; o censo é
+**x64**, e a divergência de grafia 8.3 que motivou a correção mostra que ARM64 ≠ x64 nesse terreno.
+Por isso a sobrevivência é **assertada no script**, não presumida: se o x64 se comportar diferente,
+o censo reporta `double-slash-tolerance-vacuity` como **FAIL**, em vez de um `OK` vacuoso.

@@ -81,7 +81,19 @@ func TestNormalizeGuardPath_WindowsSeparators(t *testing.T) {
 
 		// --- plain POSIX / relative input with a literal backslash byte: must NOT be touched ---
 		{"literal backslash in a POSIX segment name is a filename byte, not a separator", `/home/alice/weird\name/guard.sh`, `/home/alice/weird\name/guard.sh`},
-		{"relative path with backslash, no drive letter, untouched", `scripts\guard.sh`, `scripts\guard.sh`},
+		// ML-1D (ROADMAP-2026-09-24-treze-rotulos..., G4): veredito sobre este
+		// caso. Ele pina COMPORTAMENTO DESEJADO, não um acidente. Sem âncora de
+		// letra de unidade na posição 0, "\" é BYTE DE NOME DE ARQUIVO, e
+		// traduzi-lo faria `scripts\guard.sh` e `scripts/guard.sh` — dois
+		// arquivos genuinamente diferentes em POSIX — compararem iguais: um
+		// falso "já instalado" que desarma o dedup em silêncio, exatamente o
+		// afrouxamento que o doc comment de normalizeGuardPath proíbe. O
+		// resíduo em Windows (caminho relativo com "\" não canonicalizado)
+		// está declarado no mesmo doc comment, com direção sempre APERTA
+		// (entrada duplicada, nunca guard pulado) — é aceito de propósito, não
+		// esquecido. O nome antigo ("untouched") descrevia a implementação; o
+		// novo declara a GARANTIA, que é o que a revisão precisa ler.
+		{"no drive-letter anchor: backslash is a filename byte, so two genuinely different relative paths never compare equal", `scripts\guard.sh`, `scripts\guard.sh`},
 	}
 	for _, c := range cases {
 		if got := normalizeGuardPath(c.in); got != c.want {
@@ -141,6 +153,40 @@ func TestSamePathCommand_WindowsSeparatorsDoNotOverMatch(t *testing.T) {
 		if samePathCommand(c.a, c.b) {
 			t.Errorf("samePathCommand(%q, %q) should be false -- these are different paths", c.a, c.b)
 		}
+	}
+}
+
+// TestSamePathCommand_MSYSAndNativeSpellingsMustNotMatch é a trava executável
+// do ML-1D contra a correção errada do G4. O ML-1A mediu, com o binário real
+// na VM Windows, que as duas grafias do MESMO arquivo — a POSIX/MSYS que o
+// bash grava dentro de um arquivo ("/tmp/x/...") e a nativa que o Go computa
+// a partir do $HOME convertido pelo MSYS ("C:/Users/.../Temp/x/...") —
+// divergem por MONTAGEM, não por sintaxe: hasWindowsDriveLetterPrefix é
+// verdadeiro, o braço de letra de unidade RODA, e MATCH continua falso.
+// Nenhuma regra de string pode casá-las sem passar a casar também caminhos
+// genuinamente diferentes. A correção do G4 vive no fixture
+// (scripts/check-gates-falsify.sh, Cenário 67), não em normalizeGuardPath.
+//
+// Frase que este teste sustenta: afirma a medição do ML-1A de que nenhuma
+// regra de string casa as duas grafias — qualquer mudança que as faça
+// comparar iguais é afrouxamento semântico, e reprovaria aqui.
+func TestSamePathCommand_MSYSAndNativeSpellingsMustNotMatch(t *testing.T) {
+	// As duas strings exatas medidas na VM (nomes encurtados), mesmo arquivo
+	// em dois espaços de nomes.
+	posix := "/tmp/trackfw-falsify.6jwCan/s67-fake-home-installed/.trackfw/scripts/trackfw-git-branch-guard.sh"
+	native := "C:/Users/Lab/AppData/Local/Temp/trackfw-falsify.6jwCan/s67-fake-home-installed/.trackfw/scripts/trackfw-git-branch-guard.sh"
+	if samePathCommand(posix, native) {
+		t.Errorf("samePathCommand(%q, %q) deveria ser false: a divergência é de montagem, não de sintaxe — fazê-las casar é afrouxamento semântico", posix, native)
+	}
+	// A forma com "\" da mesma montagem nativa: canonicaliza para a mesma
+	// coisa que `native`, e mesmo assim não casa com a POSIX. Prova que o
+	// braço de letra de unidade JÁ roda e não é ele que falta.
+	nativeBackslash := `C:\Users\Lab\AppData\Local\Temp\trackfw-falsify.6jwCan\s67-fake-home-installed\.trackfw\scripts\trackfw-git-branch-guard.sh`
+	if !samePathCommand(nativeBackslash, native) {
+		t.Error("as duas grafias de separador da MESMA montagem nativa deveriam casar — o braço de letra de unidade precisa estar ativo para esta medição valer")
+	}
+	if samePathCommand(nativeBackslash, posix) {
+		t.Errorf("samePathCommand(%q, %q) deveria ser false pelo mesmo motivo", nativeBackslash, posix)
 	}
 }
 

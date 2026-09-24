@@ -192,8 +192,9 @@ forte, não mais fraco.
    ```go
    {"relative path with backslash, no drive letter, untouched", `scripts\guard.sh`, `scripts\guard.sh`},
    ```
-   🔴 **Teste que afirma o defeito como contrato é mais caro que teste ausente — ele defende o
-   defeito na revisão.**
+   🔴 A lição *"teste que afirma o defeito como contrato defende o defeito na revisão"* continua
+   valendo em geral — **mas não se aplica a este caso**, e propagá-la aqui teria levado alguém a
+   remover uma garantia real.
 3. **`fail-open`: NÃO mudar.** `false` → "não instalado" → entrada de projeto **gravada** → guard
    roda **duas vezes** (benigno). Inverter → entrada **pulada** → guard possivelmente **ausente**:
    exatamente o bypass. Aqui a direção permissiva é a **segura**. Se alguém inverter assim mesmo,
@@ -297,7 +298,83 @@ regenerado → aviso some).
 **binário instalado** que carrega o template antigo — mesma versão `8.0.1`, compilada antes. Não há
 divergência real.
 
-### ML-1C — O fixture do Cenário 67 grava grafia que o binário nunca produz
+### ML-1C — O fixture gravava grafia que o binário nunca produz
+**Owner:** `artemis-tf`
+**Status:** ✅ Concluído — auditado em 2026-09-24 · **os 2 rótulos do G4 passam na VM**
+
+**Linha de base antes de editar** (VM, árvore intocada, `ENUMERATE=1` para que o braço 4 chegasse a
+ser avaliado):
+```
+FAIL  git-branch-guard-dedup/baseline-skips-project-entry
+FAIL  git-branch-guard-dedup/double-slash-tolerance
+```
+**Depois:** `CHUNK_RC=0`, os 4 `OK` + `PROOF …/non-vacuity`, e `CHUNK_COMPLETE`.
+
+🔴 **Ele divergiu do meu handoff, com razão medida — e a minha instrução teria falhado no CI.** Eu
+mandei converter **só o heredoc**, deixando o MSYS converter o `HOME`. Isso depende de as duas
+conversões serem byte-iguais, e **não são**: a VM ARM64 dá nome longo
+(`C:\Users\Lab\AppData\…`), o censo x64 dá **8.3** (`C:/Users/RUNNER~1/…`). **Minha versão
+passaria na VM — satisfazendo o critério "medido na VM" — e seguiria vermelha no CI.** Ele controla
+as **duas pontas a partir de uma string só**, tirando o MSYS da fronteira.
+
+**Determinismo POSIX sobrevive por construção:** sem `cygpath`, `to_native_path` devolve a entrada
+**inalterada**.
+
+**E o `//` do braço 4 virou asserção, não presunção:** `cygpath` **colapsa** `//` embutido, então
+ele converte a **base** e injeta o `//` depois — com guarda ancorada no **segmento**
+(`//s67-fake-home-installed-slash`), nunca em `//` solto, que um prefixo `C:/` satisfaria por
+acidente.
+
+🔴 **Achado colateral, mesma causa:** `detection-catches-regression` aparecia **`OK` antes e depois**
+— e antes era **vacuoso**. Compartilha o `$HOME` sintético do braço 1; com `MATCH=false` a entrada
+de projeto reaparecia **independente** de o binário estar corrompido. **Regra transferível:** num par
+baseline/detecção que compartilha fixture, **detector verde com baseline vermelho não prova nada**.
+
+**Critérios de aceite:**
+- [x] Grafia nativa nas duas pontas; determinismo POSIX preservado por construção
+- [x] O `//` continua exercitado — **e agora é assertado**, com `PROOF …/non-vacuity`
+- [x] Os 2 rótulos passam **na VM**, com linha de base antes/depois
+- [x] A/B do conjunto de rótulos em **N=4, N=8 e N=24**: `265` vs `264` — **+1, 0 removidos**
+
+### ML-1D — O teste-contrato: **comportamento desejado**, caso mantido, nome reescrito
+**Owner:** `artemis-tf`
+**Status:** ✅ Concluído — auditado em 2026-09-24
+
+**Veredito: pina garantia, não acidente.** Sem âncora de letra de unidade, `\` é **byte de nome de
+arquivo**; traduzi-lo faria `scripts\guard.sh` e `scripts/guard.sh` — dois arquivos genuinamente
+diferentes em POSIX — compararem iguais, o falso *"já instalado"* que desarma o dedup em silêncio.
+
+🔴 **A evidência que decide não é o agrupamento do teste, é o doc comment de `normalizeGuardPath`**,
+que lista *"A relative path containing `\`"* entre os **known residuals**, declara *"Direction is
+always TIGHTENS … never loosens"* e ainda avisa *"Do not treat rediscovering these three as a new
+finding"*. **Aceito de propósito, não esquecido.**
+
+Nome novo, declarando a garantia em vez da implementação:
+```
+"no drive-letter anchor: backslash is a filename byte, so two genuinely
+ different relative paths never compare equal"
+```
+
+**Teste novo:** `TestSamePathCommand_MSYSAndNativeSpellingsMustNotMatch`, falsificado por
+`go test -overlay` com `samePathCommand` afrouxado para comparar por **basename** — o afrouxamento
+que o parecer proíbe: **`LOOSE_RC=1`**, duas asserções reprovam; árvore íntegra passa.
+
+**Critérios de aceite:**
+- [x] Veredito escrito, com a evidência do doc comment
+- [x] Nome passa a dizer a garantia — **auditei na linha 96**
+- [x] 🔴 `normalizeGuardPath` **não** relaxado — `git diff --name-only | grep -c agentfiles.go` → **0**
+- [x] `go test ./internal/generators/` RC=0
+
+**Auditoria do arquiteto:** confirmei o teste novo (`:173`), o nome reescrito (`:96`), o
+`agentfiles.go` intocado e o pacote verde.
+
+⚠️ **Duas ressalvas dele, registradas e não resolvidas aqui:** 3 testes reprovam na VM Windows, e ele
+**provou** que são pré-existentes (`go test -overlay` com a versão `HEAD` → os mesmos 3). Causa
+diferente, então **não** entram nesta REQ. E o `//` foi medido em **ARM64** enquanto o censo é x64 —
+por isso a sobrevivência virou **asserção no script**: se o x64 divergir, o censo reporta **FAIL**
+em vez de um `OK` vacuoso.
+
+### ML-1C-antigo — O fixture do Cenário 67 (superseded) grava grafia que o binário nunca produz
 **Owner:** `artemis-tf`
 **Status:** ⬜ Pendente
 

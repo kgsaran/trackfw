@@ -4708,7 +4708,8 @@ run_go_guard_dump "setup-s65-go-corrupted-build" "$T65_MOD" "$T65_OUT"
 # fim-a-fim contra o BINÁRIO REAL (`discover --init`), o que nenhum teste de
 # unidade cobre (eles chamam os injetores diretamente, nunca o comando CLI).
 #
-# Três braços:
+# Quatro braços (o 4º entrou com o ML-2C; este cabeçalho dizia "três" e
+# estava defasado desde então — corrigido no ML-1C):
 #   1. Baseline — $HOME sintético com ~/.claude/settings.json apontando
 #      PreToolUse[Bash] para o caminho EXATO que
 #      globalGitBranchGuardScriptPath() resolveria
@@ -4743,10 +4744,44 @@ mkdir -p "$T67_PROJECT_DIR"
 # // tolerance itself is now exercised EXPLICITLY by braco 4 below with a
 # deliberately corrupted HOME, so this baseline stays deterministic across
 # platforms instead of accidentally depending on TMPDIR's shape.
+#
+# ML-1C (ROADMAP-2026-09-24-treze-rotulos..., grupo G4): no Windows este
+# cenário reprovava por ESPAÇO DE NOMES, não por separador. O MSYS converte
+# variável de ambiente e argv ao lançar processo nativo, mas NUNCA o conteúdo
+# de um arquivo escrito pelo bash — então o heredoc abaixo gravava
+# "/tmp/trackfw-falsify.XXXX/..." no `command` do settings.json global, e o
+# Go, recebendo o HOME já convertido pelo MSYS, computava
+# "C:\Users\...\Temp\trackfw-falsify.XXXX\...". normalizeGuardPath converte
+# "\" -> "/" nos dois (o braço de letra de unidade RODA), e mesmo assim
+# MATCH=false: as duas grafias apontam para o MESMO arquivo em MONTAGENS
+# diferentes. Nenhuma regra de string pode casá-las — fazê-las casar seria
+# afrouxamento semântico. Medição em vault/notes/msys-converte-env-e-argv-
+# mas-nunca-conteudo-de-arquivo-2026-09-24.md.
+#
+# Correção: o fixture passa a controlar a GRAFIA DOS DOIS LADOS a partir de
+# UMA string só — o HOME entregue ao binário já vai em grafia nativa
+# (`cygpath -m`), e é essa mesma string que entra no heredoc. Assim o MSYS
+# sai inteiramente da fronteira: não dependemos de a conversão de env var do
+# MSYS ser byte-igual à do `cygpath` (o censo x64 mostra grafia 8.3,
+# "C:/Users/RUNNER~1/...", enquanto a VM ARM64 mostra o nome longo — se só o
+# heredoc fosse convertido, o cenário passaria na VM e seguiria vermelho no
+# CI). Em POSIX `cygpath` não existe, to_native_path devolve a entrada
+# INALTERADA e T67_FAKE_HOME fica byte a byte idêntico ao que era — o
+# determinismo do parágrafo acima sobrevive por construção, não por inspeção.
+to_native_path() {
+  if command -v cygpath >/dev/null 2>&1; then
+    cygpath -m "$1"
+  else
+    printf '%s' "$1"
+  fi
+}
+
 WORK67_CLEAN=$(printf '%s' "$WORK" | sed 's#//*#/#g')
-T67_FAKE_HOME="$WORK67_CLEAN/s67-fake-home-installed"
-mkdir -p "$T67_FAKE_HOME/.claude"
-cat >"$T67_FAKE_HOME/.claude/settings.json" <<EOF
+T67_FAKE_HOME_POSIX="$WORK67_CLEAN/s67-fake-home-installed"
+mkdir -p "$T67_FAKE_HOME_POSIX/.claude"
+# Grafia entregue ao binário E gravada no JSON (a mesma string, sempre).
+T67_FAKE_HOME=$(to_native_path "$T67_FAKE_HOME_POSIX")
+cat >"$T67_FAKE_HOME_POSIX/.claude/settings.json" <<EOF
 {"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"$T67_FAKE_HOME/.trackfw/scripts/trackfw-git-branch-guard.sh"}]}]}}
 EOF
 
@@ -4857,11 +4892,33 @@ fi
 # caminho já normalizado a partir do MESMO HOME; antes do ML-2C a comparação
 # de string crua entre os dois falhava e o dedup não disparava (refs=1); a
 # correção normaliza os dois lados antes de comparar (refs=0 esperado).
-T67_FAKE_HOME_SLASH="${WORK67_CLEAN}//s67-fake-home-installed-slash"
-mkdir -p "$T67_FAKE_HOME_SLASH/.claude"
-cat >"$T67_FAKE_HOME_SLASH/.claude/settings.json" <<EOF
+#
+# ML-1C: mesma correção de grafia do braço 1, com um cuidado a mais. O "//"
+# é O QUE ESTE BRAÇO MEDE, e `cygpath` COLAPSA "//" embutido — converter o
+# caminho já malformado apagaria o caso e o rótulo passaria sem provar nada.
+# Então converte-se a BASE ($WORK67_CLEAN) e injeta-se o "//" DEPOIS, sobre a
+# grafia nativa. A sobrevivência do "//" no arquivo gravado é ASSERTADA
+# abaixo (guarda de vacuidade), não presumida.
+T67_WORK67_CLEAN_NATIVE=$(to_native_path "$WORK67_CLEAN")
+T67_FAKE_HOME_SLASH="${T67_WORK67_CLEAN_NATIVE}//s67-fake-home-installed-slash"
+T67_FAKE_HOME_SLASH_POSIX="${WORK67_CLEAN}//s67-fake-home-installed-slash"
+mkdir -p "$T67_FAKE_HOME_SLASH_POSIX/.claude"
+cat >"$T67_FAKE_HOME_SLASH_POSIX/.claude/settings.json" <<EOF
 {"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"$T67_FAKE_HOME_SLASH/.trackfw/scripts/trackfw-git-branch-guard.sh"}]}]}}
 EOF
+
+# Guarda de vacuidade do braço 4: se o "//" não sobreviveu até o arquivo, o
+# cenário abaixo compara duas grafias JÁ normalizadas e o OK não prova a
+# tolerância a barra dupla. Âncora no SEGMENTO ("//s67-fake-home-installed-
+# slash"), nunca em "//" solto — um prefixo nativo "C:/" jamais satisfaz esta
+# checagem por acidente.
+if ! grep -qF '//s67-fake-home-installed-slash' "$T67_FAKE_HOME_SLASH_POSIX/.claude/settings.json"; then
+  echo "FAIL [falsify/git-branch-guard-dedup/double-slash-tolerance-vacuity]: o \"//\" nao sobreviveu ao comando gravado em $T67_FAKE_HOME_SLASH_POSIX/.claude/settings.json — o braco 4 nao estaria medindo tolerancia a barra dupla" >&2
+  cat "$T67_FAKE_HOME_SLASH_POSIX/.claude/settings.json" >&2
+  falsify_fail_point
+else
+  echo "PROOF [falsify/git-branch-guard-dedup/double-slash-tolerance/non-vacuity]: o \"//\" esta presente no command gravado — o braco 4 mede o que diz medir"
+fi
 
 T67_PROJECT_DIR_SLASH="$WORK67_CLEAN/s67-project-double-slash"
 mkdir -p "$T67_PROJECT_DIR_SLASH"
