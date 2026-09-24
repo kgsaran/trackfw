@@ -61,3 +61,23 @@ roadmap: "docs/roadmaps/backlog/\uf48a ROADMAP-....md"     ← caminho quebrado,
 Para limpar um já contaminado: `re.sub(r'[\ue000-\uf8ff]\s*','',s)`.
 
 Esta é a **segunda** vez: o aviso sobre `ls` com alias já estava nesta nota.
+
+
+## Ocorrência 2026-09-24 — a quinta vez, e eu estava auditando exatamente isto
+
+Auditando um ML **sobre** `grep` que sai 1, medi o braço de controle assim:
+
+```bash
+bash -c 'set -eu; set +o pipefail; v=$(grep -o ausente <<<"x"); echo "NAO DEVERIA CHEGAR"' 2>&1 | head -2
+echo "rc=$?"     # -> 0
+```
+
+Li **rc=0** e quase registrei que o script sobrevivia. **O `0` é do `head`.** Refeito sem cano:
+**rc=1**, o script morre.
+
+🔴 **O padrão a vigiar não é o comando — é o momento.** As cinco ocorrências desta campanha
+aconteceram quando eu estava com pressa de confirmar algo que já acreditava. O `| head`/`| tail`
+entra para "encurtar a saída" e leva o rc junto.
+
+**Regra operacional:** se a linha seguinte à do comando usa `$?`, o comando **não pode** ter cano.
+Redirecione para arquivo e leia depois.
