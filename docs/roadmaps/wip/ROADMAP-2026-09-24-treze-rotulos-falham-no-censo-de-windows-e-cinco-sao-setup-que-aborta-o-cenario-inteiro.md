@@ -767,3 +767,57 @@ Folga de **38** e **28**. Sem risco imediato, **e a direção é para baixo** �
 remove um corpo Python aproxima o piso. Quem mexer nesses gates de novo deve reavaliar, em vez de
 descobrir pelo vermelho.
 
+
+---
+
+## 🔴 Recontagem no CI — o critério central da REQ, medido
+
+Censo `36068087897`, na branch, `windows-latest` x64, **8/8 shards, sem `TOTAL INCOMPLETO`**:
+
+```
+antes (main, 36036473391):  OK=347 · FAIL=11 · 13 rótulos distintos em FAIL
+depois (branch):            OK=336 · FAIL=2  ·  2 rótulos distintos em FAIL
+```
+
+**E o delta divergiu da previsão — o roadmap manda tratar isso como achado, então: tratei.**
+
+| | previsto (ML-3A) | medido |
+|---|---|---|
+| `FAIL` | −7 | **−9** |
+| `OK` (ocorrências) | +5 | **−11** |
+
+**As duas divergências têm a mesma explicação, e ela é boa:** a previsão do ML-3A foi escrita
+**antes** do ML-0B existir. Os 18 sítios da Forma B **deixaram de imprimir `OK` quando o cenário
+reprova** — era falso verde sendo contado.
+
+**Rótulos distintos contam a história certa:**
+
+```
+OK distintos:  259 → 266   (+7)
+sumiu exatamente 1: scaffold-update-chmod-removed/direction-c-baseline
+```
+
+🔴 **Esse é o `OK` vácuo do G3**, substituído por `FAIL` nomeado. **É o desenho.**
+
+**Os 2 FAIL remanescentes são a recusa alta que o G3 desenhou:**
+
+```
+FAIL [falsify/scaffold-update-chmod-removed/direction-c-baseline]:
+     fixture inconstruivel neste sistema de arquivos -- chmod 0644 nao RETIROU o bit (mecanismo da #421…)
+FAIL [falsify/scaffold-update-chmod-removed/direction-c-detected]:
+     nao executado -- mesma fixture inconstruivel do braco de baseline acima
+```
+
+### Duas dívidas pagas por medição
+
+**1. `unconstructible` = 0 ocorrências.** O G2 era **condicional** — dependia de o runner permitir
+symlink nativo. **Permite.** Fecha **incondicionalmente**.
+
+**2. 🔴 A atribuição da #421 ao `noacl` sai de presunção.** A linha que faltava:
+
+```
+C:/Users/RUNNER~1/AppData/Local/Temp on /tmp type ntfs (binary,noacl,posix=0,usertemp)
+```
+
+**Idêntica à da VM ARM64.** O `windows-latest` x64 monta o `TMPDIR` com as **mesmas** opções — o que
+a própria issue declarava **não medido**. Agora é mecanismo medido no CI, não efeito observado.
