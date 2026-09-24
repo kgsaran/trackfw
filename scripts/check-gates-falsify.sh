@@ -33,6 +33,67 @@ ROOT_DIR=${TRACKFW_ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/trackfw-falsify.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 
+# --- Denúncia de morte súbita do chunk (ML-2A, alcance corrigido no ML-2E;
+# REQ-2026-09-23-a-apuracao-do-censo-morre-no-shard-limpo) --------------------
+#
+# Medido em docs/seguranca/2026-09-23-censo-chunk-morto.md: um shard do censo de
+# Windows morreu com chunk_rc!=0 e NÃO emitiu nem CHUNK_COMPLETE nem a linha
+# "N cenário(s) reprovaram" — o `set -e` acima mata o processo ANTES do epílogo
+# que gen-falsify-chunks.py anexa. O log parou na última linha viva, sem uma
+# palavra sobre onde ou por quê.
+#
+# 🔴 POR QUE ISTO VIVE NO PREÂMBULO (ML-2E): o ML-2A instalou este trap dentro do
+# bloco do cenário de não-mutação (o `git add -A` que motivou a investigação).
+# gen-falsify-chunks.py copia para TODO chunk apenas o preâmbulo real
+# (`lines[:prelude_end]`) mais os segmentos de suporte; o corpo de um cenário vai
+# só para o chunk que o recebeu. Consequência MEDIDA em 2026-09-24, gerando com
+# N=4/8/12/16/60: em toda partição exatamente 1 chunk continha o trap, e a
+# partir de N=12 o sítio que matou o chunk_0 do censo (o `grep … | wc -l` do
+# Cenário 69) caiu num chunk SEM trap. A cobertura era função da partição — em
+# N=8 os dois blocos coincidiam no chunk_0 e o defeito ficava invisível.
+# Instalado aqui, o trap está em 100% dos chunks por construção, qualquer N.
+#
+# Por que ERR e não EXIT: a linha imediatamente acima instala
+# `trap 'rm -rf "$WORK"' EXIT` e um segundo trap de EXIT o SUBSTITUIRIA, vazando
+# o diretório temporário a cada execução. ERR é um slot livre e, sob `set -e`,
+# dispara exatamente quando o shell está prestes a abortar. 🔴 Não trocar.
+#
+# Por que NÃO `set -E` (errtrace): sem ele o trap não é herdado por funções nem
+# por subshells — e isso é deliberado. Os laços de medição rodam cada gate num
+# subshell cuja saída vai para um "$_log" reimpresso com `sed`; com errtrace,
+# toda falha ESPERADA de gate escreveria CHUNK_ABORT dentro desse log, poluindo
+# diagnóstico legítimo. A cobertura resultante é a de comandos de topo de
+# script, que é onde vivem os sítios medidos. 🔴 Não acrescentar.
+#
+# Alcance declarado: instalado na primeira dezena de linhas do preâmbulo, cobre
+# o script inteiro e todo chunk gerado, do início ao fim — NÃO cobre falha
+# ocorrida DENTRO de função ou subshell (consequência direta de não usar
+# errtrace, acima). O prefixo CHUNK_ABORT é inerte para todos os consumidores:
+# run-gates-falsify-shard.sh colhe rótulos por
+# `^(OK|FAIL|PROOF)[[:space:]]+\[falsify/`, e o censo conta `^OK`/`^FAIL`.
+__falsify_abort_report() {
+  local _abort_rc="$1" _abort_line="$2" _abort_cmd="$3"
+  # 🔴 ML-2E: o trap de ERR dispara MESMO com `set +e` — medido em bash 5.3:
+  # dentro do handler, `$-` vale `huB` (sem `e`) nas regiões que desligam o
+  # errexit de propósito, e `ehuB` fora delas. Este script usa `set +e` … `set -e`
+  # em dezenas de blocos para capturar a saída de um comando que DEVE falhar
+  # (ex.: `s68dup_out=$(… trackfw validate 2>&1)` do Cenário 68). Sem esta
+  # guarda, o trap no preâmbulo imprimia `CHUNK_ABORT` para cada um deles —
+  # medido: 2 falsos positivos no chunk_3 de N=8, num chunk que terminou rc=0
+  # com 36 OK e 0 FAIL. `CHUNK_ABORT` afirma "o shell vai abortar agora"; com
+  # errexit desligado isso é FALSO, e diagnóstico que mente é pior que silêncio.
+  # (Este falso positivo já existia antes do ML-2E, latente: qualquer chunk que
+  # recebesse o Cenário 18 ANTES do 68 o produzia.)
+  case "$-" in
+    *e*) ;;
+    *)   return 0 ;;
+  esac
+  echo "CHUNK_ABORT rc=${_abort_rc} line=${_abort_line} src=${BASH_SOURCE[0]:-?} cmd=${_abort_cmd}" >&2
+  echo "CHUNK_ABORT: o shell abortou por 'set -e' antes do epílogo do chunk — nenhum CHUNK_COMPLETE e nenhuma linha 'N cenário(s) reprovaram' serão emitidos. A linha acima é o sítio e o rc; a ausência de rótulos abaixo dela é consequência, não causa." >&2
+}
+trap '__falsify_abort_rc=$?; __falsify_abort_report "$__falsify_abort_rc" "$LINENO" "$BASH_COMMAND"' ERR
+
+
 # $HOME sintético e isolado por padrão para o script INTEIRO — nunca o real. Sem isto, qualquer
 # cenário que rode `trackfw validate` (ou qualquer comando que passe por Validate()/
 # ValidateTagged()) sem controlar $HOME explicitamente enxerga o escopo GLOBAL de guards de quem
@@ -1506,45 +1567,6 @@ assert_fails_with "barrier/blocked-not-detected" \
 #   seria satisfeita vacuamente. O OID fecha esse buraco.
 # ---------------------------------------------------------------------------
 
-# --- Denúncia de morte súbita do chunk (ML-2A, REQ-2026-09-23-a-apuracao-do-
-# censo-morre-no-shard-limpo) --------------------------------------------------
-#
-# Medido em docs/seguranca/2026-09-23-censo-chunk-morto.md: o shard 1 do censo
-# de Windows morreu aqui dentro com chunk_rc=128 e NÃO emitiu nem
-# CHUNK_COMPLETE nem a linha "N cenário(s) reprovaram" — o `set -e` do preâmbulo
-# mata o processo ANTES do epílogo que gen-falsify-chunks.py anexa. O log parou
-# na última linha viva, sem uma palavra sobre onde ou por quê.
-#
-# 🔴 O que isto corrige é o DIAGNÓSTICO, não a causa do rc=128 — essa não está
-# identificada e a medição dela é o ML-2B (sonda em runner Windows real). Aqui
-# só se garante que, quando voltar a acontecer, o log diga o sítio e o rc em vez
-# de terminar mudo. Hoje a guarda de conjunto só percebe pela AUSÊNCIA de
-# rótulo, o que é inferência, não diagnóstico.
-#
-# Por que ERR e não EXIT: o preâmbulo já instala `trap 'rm -rf "$WORK"' EXIT`
-# (linha 34) e um segundo trap de EXIT o SUBSTITUIRIA, vazando o diretório
-# temporário a cada execução. ERR é um slot livre e, sob `set -e`, dispara
-# exatamente quando o shell está prestes a abortar.
-#
-# Por que NÃO `set -E` (errtrace): sem ele o trap não é herdado por funções nem
-# por subshells — e isso é deliberado. O laço de medição abaixo roda cada gate
-# num subshell cuja saída vai para "$_log" e é reimpressa com `sed`; com
-# errtrace, toda falha esperada de gate escreveria CHUNK_ABORT dentro desse log,
-# poluindo diagnóstico legítimo. A cobertura resultante é a de comandos de topo
-# de script, que é onde vivem os dois sítios medidos.
-#
-# Alcance declarado: o trap fica instalado do ponto de instalação até o fim do
-# processo, então cobre este cenário e todos os blocos que o sucederem no mesmo
-# chunk — NÃO cobre os blocos que vierem antes dele. O prefixo CHUNK_ABORT é
-# inerte para todos os consumidores: run-gates-falsify-shard.sh colhe rótulos
-# por `^(OK|FAIL|PROOF)[[:space:]]+\[falsify/`, e o censo conta `^OK`/`^FAIL`.
-__falsify_abort_report() {
-  local _abort_rc="$1" _abort_line="$2" _abort_cmd="$3"
-  echo "CHUNK_ABORT rc=${_abort_rc} line=${_abort_line} src=${BASH_SOURCE[0]:-?} cmd=${_abort_cmd}" >&2
-  echo "CHUNK_ABORT: o shell abortou por 'set -e' antes do epílogo do chunk — nenhum CHUNK_COMPLETE e nenhuma linha 'N cenário(s) reprovaram' serão emitidos. A linha acima é o sítio e o rc; a ausência de rótulos abaixo dela é consequência, não causa." >&2
-}
-trap '__falsify_abort_rc=$?; __falsify_abort_report "$__falsify_abort_rc" "$LINENO" "$BASH_COMMAND"' ERR
-
 # Exclusões declaradas (opt-out) — formato obrigatório: "basename.sh|motivo"
 _MUTATION_EXCLUSIONS=(
   "check-gates-falsify.sh|circular: este script é o executor do cenário de mutação; incluí-lo causaria recursão infinita"
@@ -1594,6 +1616,35 @@ mkdir -p "$_MUTATION_COPY"
 cp -R "$ROOT_DIR/." "$_MUTATION_COPY/"
 rm -rf "$_MUTATION_COPY/.git"
 git -C "$_MUTATION_COPY" init -q
+
+# ML-2E (causa medida no ML-2B): `core.longpaths=true` no repositório da CÓPIA.
+# Na VM Windows 11 (Git 2.55.0.windows.3) o `git add -A` abaixo saía rc=128 com
+# `error: open("internal/roadmapdoc/testdata/corpus/…"): Filename too long`:
+# o corpus de internal/roadmapdoc/testdata/ tem caminhos relativos de 196, 195 e
+# 190 chars e o prefixo de $WORK/mutation-clean empurra o total acima do
+# MAX_PATH=260 da API Win32 que o git nativo usa. Falsificado nas duas direções
+# no MESMO comprimento de caminho: longpaths=false -> rc=128, longpaths=true ->
+# rc=0. 🔴 A falha é MARGINAL e o nome sorteado pelo `mktemp` decide: um sítio
+# que passa hoje falha amanhã com um sufixo mais longo.
+#
+# 🔴 Por que CONFIG no repositório da cópia, e não `-c core.longpaths=true` em
+# cada invocação: (a) cobre os 11 `git -C "$_MUTATION_COPY" …` desta região sem
+# depender de enumeração que envelhece — um sítio acrescentado amanhã já nasce
+# coberto; (b) cobre o que a enumeração NÃO alcança — o laço abaixo roda cada
+# gate candidato com `cd "$_MUTATION_COPY"`, e pelo menos um deles chama `git`
+# contra a CÓPIA, onde nenhum `-c` nosso chegaria: verificado em
+# check-git-branch-guard-hook-schema.sh, `derive_sites()`, que faz
+# `git -C "$scan_root" rev-parse --is-inside-work-tree` e `git ls-files` com
+# `scan_root` resolvido a partir do cwd. (Os outros 4 candidatos que citam `git`
+# — check-barrier.sh, check-release-tag-parity.sh, check-usage-silencing.sh,
+# check-roadmap-barrier-contract.sh — montam fixtures próprios em tmp; não foi
+# medido que toquem a cópia, e a justificativa (a) já sustenta a decisão.)
+# Escrever config em .git/ não altera a árvore, então a medição de OID de
+# conteúdo deste cenário continua válida.
+# 🔴 Os nomes do corpus de testdata NÃO podem ser encurtados: são o dado sob
+# teste. A opção do git é o único ponto de acerto.
+# Inerte fora do Windows (verificado: rc=0 e sem aviso no git 2.54.0 do macOS).
+git -C "$_MUTATION_COPY" config core.longpaths true
 
 # ML-2A: o `2>/dev/null` que estava aqui descartava o ruído esperado do
 # `git add -A` (avisos de fim-de-linha, sobretudo no Windows) — e, junto com
@@ -4958,7 +5009,14 @@ s68_write_project "$T68_DUP" git_branch_guard_script_integrity error
 set +e
 s68dup_out=$(cd "$T68_DUP" && HOME="$T68_DUP_HOME" "$ROOT_DIR/bin/trackfw" validate 2>&1)
 set -e
-s68dup_count=$(grep -oF "$S68_MSG" <<<"$s68dup_out" | wc -l | tr -d ' ')
+# ML-2E: `{ grep … || true; }` — sem a chave, `grep` sem casar sai 1 e o
+# `pipefail` do preâmbulo propaga esse 1 para a substituição inteira, onde o
+# `set -e` MATA O CHUNK nesta linha. Medido em 2026-09-24: foi exatamente assim
+# que o chunk_0 do censo morreu, sem emitir rótulo algum — zero ocorrências, que
+# é o dado que a asserção abaixo quer medir, virava morte do processo. 🔴 NÃO
+# usar `|| echo 0` (é o defeito da Wave 1: `grep -c` já emite e a captura vira
+# $'0\n0') nem `${VAR:-0}` (guarda sobre captura é o padrão que gerou tudo isto).
+s68dup_count=$( { grep -oF "$S68_MSG" <<<"$s68dup_out" || true; } | wc -l | tr -d ' ')
 if [[ "$s68dup_count" -ne 1 ]]; then
   echo "FAIL [falsify/git-branch-guard-global-script-integrity/no-double-report]: esperado exatamente 1 ocorrência da mensagem de integridade (2 configs referenciam o MESMO script), obteve $s68dup_count" >&2
   echo "  output: $s68dup_out" >&2
@@ -5000,7 +5058,14 @@ s68_write_project "$T68_DUP_CG" credential_guard_script_integrity error
 set +e
 s68dupcg_out=$(cd "$T68_DUP_CG" && HOME="$T68_DUP_HOME_CG" "$ROOT_DIR/bin/trackfw" validate 2>&1)
 set -e
-s68dupcg_count=$(grep -oF "$S68_MSG" <<<"$s68dupcg_out" | wc -l | tr -d ' ')
+# ML-2E: `{ grep … || true; }` — sem a chave, `grep` sem casar sai 1 e o
+# `pipefail` do preâmbulo propaga esse 1 para a substituição inteira, onde o
+# `set -e` MATA O CHUNK nesta linha. Medido em 2026-09-24: foi exatamente assim
+# que o chunk_0 do censo morreu, sem emitir rótulo algum — zero ocorrências, que
+# é o dado que a asserção abaixo quer medir, virava morte do processo. 🔴 NÃO
+# usar `|| echo 0` (é o defeito da Wave 1: `grep -c` já emite e a captura vira
+# $'0\n0') nem `${VAR:-0}` (guarda sobre captura é o padrão que gerou tudo isto).
+s68dupcg_count=$( { grep -oF "$S68_MSG" <<<"$s68dupcg_out" || true; } | wc -l | tr -d ' ')
 if [[ "$s68dupcg_count" -ne 1 ]]; then
   echo "FAIL [falsify/credential-guard-global-script-integrity/no-double-report]: esperado exatamente 1 ocorrência (não-regressão + sem duplicar), obteve $s68dupcg_count" >&2
   echo "  output: $s68dupcg_out" >&2
@@ -5106,7 +5171,14 @@ fi
 # ausente, o credential-guard do Kiro (arquivo separado, script intacto)
 # continua em silêncio, E a violation do git-branch-guard aparece exatamente
 # 1 vez (não uma vez por arquivo/guard) -------------------------------------
-s69bad_gbg_count=$(grep -oF 'trackfw-git-branch-guard.json' <<<"$s69bad_out" | wc -l | tr -d ' ')
+# ML-2E: `{ grep … || true; }` — sem a chave, `grep` sem casar sai 1 e o
+# `pipefail` do preâmbulo propaga esse 1 para a substituição inteira, onde o
+# `set -e` MATA O CHUNK nesta linha. Medido em 2026-09-24: foi exatamente assim
+# que o chunk_0 do censo morreu, sem emitir rótulo algum — zero ocorrências, que
+# é o dado que a asserção abaixo quer medir, virava morte do processo. 🔴 NÃO
+# usar `|| echo 0` (é o defeito da Wave 1: `grep -c` já emite e a captura vira
+# $'0\n0') nem `${VAR:-0}` (guarda sobre captura é o padrão que gerou tudo isto).
+s69bad_gbg_count=$( { grep -oF 'trackfw-git-branch-guard.json' <<<"$s69bad_out" || true; } | wc -l | tr -d ' ')
 # ML-2D: duas checagens, um rótulo de sucesso. Flag (não `elif`) para que as
 # duas continuem emitindo diagnóstico em TRACKFW_FALSIFY_ENUMERATE=1; o
 # sucesso passa a ser condicional às duas passarem.

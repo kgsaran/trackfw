@@ -39474,3 +39474,47 @@ Documento revisado após chamada de advisor que bloqueou a primeira versão em 4
 - 🔴 **ML-2D não tem seção no roadmap** — `35d80052` só moveu status. Não criei (é do arquiteto).
 - 🔴 Não toquei em `gen-falsify-chunks.py`, `.github/workflows/`, `Makefile`, `docs/req/` nem
   `docs/roadmaps/`. Não commitei, não fiz push, não rodei `make quality` nem `go test ./...`.
+
+## 2026-09-24 — ares-tf — ML-2E (Wave 2-bis): trap no preâmbulo, `core.longpaths`, e a família `grep | wc -l`
+
+- **Início.** Escopo: `scripts/check-gates-falsify.sh` (único arquivo de produto tocado),
+  `vault/notes/` e este arquivo. Nenhum ML em paralelo. Proibido: `.github/workflows/`, `Makefile`,
+  `docs/req/`, `docs/roadmaps/`, `scripts/gen-falsify-chunks.py` (não foi necessário tocar).
+- Três trabalhos, mesmo sintoma: chunk que morre sem dar número.
+- **Entregue (não commitado), tudo em `scripts/check-gates-falsify.sh`:**
+  1. **Trap no preâmbulo.** O bloco `__falsify_abort_report` + `trap … ERR` saiu do bloco do Cenário
+     18 (`:1509-1546`) para logo depois do `trap 'rm -rf "$WORK"' EXIT` (`:34`). `prelude_end_line`
+     1431 → **1492**; `total_segments`/`fused_units`/manifesto de 234 rótulos **idênticos**.
+     Cobertura `1/N` → **N/N** em N=4/8/12/16/60.
+  2. **`core.longpaths`.** `git -C "$_MUTATION_COPY" config core.longpaths true` logo após o
+     `init -q`. Forma de **config**, não `-c` por invocação: cobre os 11 `git -C "$_MUTATION_COPY"`
+     **e** os gates candidatos, que rodam com `cd "$_MUTATION_COPY"` e chamam `git` por conta
+     própria. Único `cp -R "$ROOT_DIR/."` do harness (`:1594`) — não há outra cópia de repo em
+     `$WORK`.
+  3. **Família `grep … | wc -l`.** 3 sítios (`:4961`, `:5003`, `:5109` no fonte antigo) para
+     `$( { grep … || true; } | wc -l | tr -d ' ')`. 1 isento (`:1970`, roda em `bash -c` sem
+     `pipefail`).
+- 🔴 **Achado próprio, não previsto no handoff:** `trap … ERR` dispara **mesmo com `set +e`**. O
+  script usa `set +e … set -e` em dezenas de blocos; o trap no preâmbulo produziu **2 `CHUNK_ABORT`
+  falsos** no `chunk_3` (rc=0, 36 OK, 0 FAIL). Guarda: `case "$-" in *e*) ;; *) return 0;; esac`.
+  O falso positivo **já existia latente** — qualquer chunk com o Cenário 18 antes do 68 o produzia.
+- **VM Windows 11 / git 2.55.0.windows.3, prefixo real do harness (`len_win=69`):**
+  `longpaths=false` → **rc=128** `Filename too long`; `longpaths=true` → **rc=0**.
+- **Braço POSIX:** `chunk_0` (Cenário 18 + 69) e `chunk_3` (Cenário 68) rodados pristino vs.
+  corrigido — `rc=0` nos quatro, **34 OK / 0 FAIL** e **36 OK / 0 FAIL**, sequência de rótulos
+  byte-idêntica, **0 `CHUNK_ABORT`**. `chunk_6` idem (21 OK). `make quality` **não** rodado.
+- **Nota de vault:** `trap-dentro-de-bloco-de-cenario-cobre-subconjunto-que-depende-da-particao-2026-09-24.md`, linkada no índice.
+- **Veredito sobre o gate do ML-1B:** **não cobre** esta forma (exige fallback emissor; aqui não há
+  fallback) e **deveria** cobrir — é discriminante **irmão**, não alargamento de regex. **ML novo**,
+  não remendo aqui.
+- 🔴 Não commitei, não fiz push, não criei branch, não toquei em `gen-falsify-chunks.py`,
+  `.github/workflows/`, `Makefile`, `docs/req/`, `docs/roadmaps/` nem nos nomes do corpus de
+  `testdata`.
+- 🔴 **Mesma causa, fora do meu escopo de escrita — nomeados, não empurrados para REQ nova:** a
+  varredura por parênteses balanceados sobre `scripts/*.sh` + `.github/workflows/` + `Makefile`
+  (73 brutos) deixa **10 candidatos** com `grep` em posição não-final de pipeline dentro de `$( … )`
+  sob `pipefail`, sem `|| true`: `check-agent-namespace-union.sh:632,900,901` ·
+  `check-ci-workflow-pin-parity.sh:192,211` · `check-manifest-version-gate.sh:113` ·
+  `check-parity-call-site-pins.sh:261` · `check-serve-address-parity.sh:229` ·
+  `check-serve-api-file-security.sh:76` · `.github/workflows/check-annotations.yml:80`.
+  Decisão de ML é do arquiteto; o comando e a lista estão na nota de vault.

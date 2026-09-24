@@ -346,7 +346,7 @@ caso do `setup` e ele não era) — é o comportamento que esta casa pede.
 
 ### ML-2E — O trap em todos os chunks, o `longpaths`, e a família `grep | wc`
 **Owner:** `ares-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-09-24
 
 🔴 **Absorve a correção do ML-2B** (mesmo arquivo, mesmo sintoma): `core.longpaths=true` nos `git`
 que operam sobre cópia do repositório dentro de `$WORK`. **Todos os sítios**, não o do Cenário 18 —
@@ -373,15 +373,87 @@ sintoma exato que o ML-2A existe para eliminar.
    cobrir, **diga se deve cobrir** — e se a resposta for sim, é ML novo, não remendo aqui.
 
 **Critérios de aceite:**
-- [ ] O trap cobre **todos** os chunks — provado matando artificialmente um chunk que **não** contém
-      o Cenário 18
-- [ ] `core.longpaths=true` em todo `git` que opere sobre cópia do repo em `$WORK`, enumerado; o
-      `add -A` do Cenário 18 passa a sair **rc=0** na VM, provado nas duas direções
-- [ ] 🔴 **Não** encurtar os nomes do corpus de `testdata` — são o dado sob teste
-- [ ] `:5109` e os irmãos da mesma forma corrigidos, com a enumeração e o comando que a produziu
-- [ ] Braço POSIX: a suíte continua com os mesmos OK/FAIL e a guarda de conjunto verde
-- [ ] 🔴 Uma frase por teste novo
+- [x] Trap no prelúdio: **auditei gerando as partições — N=8 → 8/8, N=16 → 16/16**. Provado matando
+      o `chunk_6`, que não contém o Cenário 18
+- [x] `git config core.longpaths true` **no repositório da cópia** — cobre os 11 `git` e também os
+      gates candidatos que rodam com `cd` na cópia; VM em `len_win=69`: `false`→rc=128, `true`→rc=0
+- [x] 🔴 `git diff --name-only | grep -c testdata` → **0**
+- [x] 10 substituições com `grep` no arquivo → 6 prosa, **3 defeituosas corrigidas**, 1 isenta
+      (roda por `bash -c` sem `pipefail`, e `SHELLOPTS` não é exportado)
+- [x] Sequência de rótulos **byte-idêntica ao pristino** em 3 chunks; ⚠️ a guarda de conjunto **em
+      execução** ficou devendo — cobrada na barreira do arquiteto
+- [x] 🔴 Nenhum teste commitado; **14 frases por medição**
+- [x] 🔴 `make quality` não rodado pelo executor
+
+**Auditoria do arquiteto (medida por mim):**
+
+| afirmação | como confirmei |
+|---|---|
+| trap cobre todos os chunks | gerei as partições: **N=8 → 8/8**, **N=16 → 16/16** com `__falsify_abort_report` |
+| 🔴 o `ERR` dispara com `set +e` | reproduzi: `trap … ERR; set +e; false` → **dispara com flags `hBc`** (sem `e`) e o script **segue** |
+| a guarda existe | `case "$-" in *e*) ;; *) return 0` no handler, antes do `echo` |
+| corpus intocado | `git diff --name-only \| grep -c testdata` → **0** |
+
+🔴 **O achado próprio do executor é o mais valioso deste ML, e não estava no meu handoff.** Ao levar
+o trap para o prelúdio, ele mediu o efeito colateral em vez de presumi-lo: o `ERR` do bash **não**
+depende do errexit estar ligado, e este arquivo usa `set +e … set -e` em dezenas de blocos para
+capturar saída de comando que **deve** falhar. Resultado: **2 `CHUNK_ABORT` falsos** num chunk que
+terminou `rc=0, 36 OK, 0 FAIL`. A linha afirmaria *"o shell abortou por `set -e`"* com errexit
+desligado — **diagnóstico que mente**, que é exatamente a classe de defeito desta REQ. Ele guardou
+com `case "$-"`.
+
+⚠️ **E ele reconciliou uma contradição em vez de escolher um lado:** a cobertura do trap era
+**função da partição** — em N=4 e N=8 o Cenário 18 e o sítio do `chunk_0` caem no mesmo chunk; em
+N=12/16/60, não. A minha medição (N=8, via ML-2D com N=60) e a dele discordavam por isso. A tese
+fica **mais forte** que "7 em 8".
+
+---
+
+### ML-2G — Os 10 sítios da mesma causa fora do `check-gates-falsify.sh`
+**Owner:** `ares-tf`
+**Status:** ⬜ Pendente
+
+O ML-2E varreu o corpus inteiro (`scripts/*.sh` + `.github/workflows/` + `Makefile`): **73 brutos**
+→ filtrando `pipefail` ativo, sem guarda e fora de comentário, e descartando 13 da forma correta,
+sobram **10 candidatos da mesma causa** — `grep` em posição **não-final** de pipeline dentro de
+`$( … )`, onde não casar mata o script:
+
+```
+check-agent-namespace-union.sh:632,900,901
+check-ci-workflow-pin-parity.sh:192,211
+check-manifest-version-gate.sh:113
+check-parity-call-site-pins.sh:261
+check-serve-address-parity.sh:229
+check-serve-api-file-security.sh:76
+.github/workflows/check-annotations.yml:80
+```
+
+🔴 **Mesma causa, mesma REQ** — não vira REQ nova, que é onde os defeitos medidos se perdem.
+
+**A pergunta a responder por sítio:** *"não casar é resultado válido da medição?"* Se for, falta
+`|| true`. Se não for, o script **deve** morrer ali — e isso fica escrito.
+
+**Critérios de aceite:**
+- [ ] Veredito por sítio, com a pergunta acima respondida explicitamente
+- [ ] Defeituosos corrigidos com `{ grep … || true; }` — **não** `|| echo 0` (defeito da Wave 1),
+      **não** `${VAR:-0}`
+- [ ] 🔴 Uma frase por teste novo, ou a ausência declarada
 - [ ] 🔴 **NÃO rodar `make quality`**
+
+### ML-2H — Discriminante irmão: pipeline desguarnecido sob `pipefail`
+**Owner:** `artemis-tf`
+**Status:** ⬜ Pendente — **depende do ML-2G**
+
+**Veredito do ML-2E, que eu aceito:** o gate `check-emitting-capture-fallback.sh` (ML-1B) **não**
+cobre esta forma e **não deve ser alargado** — ele exige coexistência de comando emissor **e**
+fallback emissor; aqui não há fallback algum. Alargar a regex acusaria todo `$(a | b)` legítimo.
+É **discriminante irmão**, gate próprio.
+
+- [ ] Gate que reprova `grep` em posição não-final de pipeline dentro de `$( )` sob `pipefail`, sem
+      guarda — provado por injeção, forma a forma
+- [ ] Não reprova os legítimos — provado na árvore, incluindo as 13 da forma correta
+- [ ] Formas não cobertas declaradas no cabeçalho
+- [ ] Guarda de não-vacuidade com piso e o comando que o produziu
 
 ### ML-2F — Decidir o contrato do `.actual`: `FAIL` satisfaz a exigência do rótulo
 **Owner:** arquiteto (decisão), depois `artemis-tf`
