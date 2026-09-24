@@ -40209,3 +40209,60 @@ Vault: `overlay-json-com-caminho-posix-e-ignorado-em-silencio-pelo-go-no-windows
 - 🔴 A correção desmascarou um defeito de segurança: `go test -overlay` com chave POSIX é **ignorado
   em silêncio**, e o AC6 concluía que o teste passou na versão vulnerável.
 - Próximo: **triagem do cluster de Windows**, agora com o censo produzindo número.
+
+## 2026-09-25 — hades-tf — ML-0A (Wave 0): triagem do cluster de Windows por mecanismo
+
+**Entregável:** `docs/seguranca/2026-09-25-triagem-cluster-windows.md`. Nenhuma linha de
+implementação, nenhum commit, nenhum push, nenhum outro arquivo. (Entrada de início e de fim
+registradas juntas, ao encerrar — não em dois momentos.)
+
+🔴 **A população não é 13, é 11.** O censo mede `FAIL=11`, e a minha contagem ancorada por shard
+(1·2·1·3·4·0·0·0) bate linha a linha com a tabela que o job `apuracao` computou dentro do CI a partir
+dos artefatos. Dois dos treze rótulos da REQ **não são falhas**: `credential-guard-script-integrity/
+detected` está **`OK`** (log 5134) e `git-branch-guard-global-script-integrity/detected` **não existe**
+— o rótulo real é `/detected-without-wiring`, também `OK` (log 4163). Os dois entraram por serem
+**texto citado dentro de uma mensagem `PROOF … /non-vacuity`**. É o defeito de enumeração desta
+campanha — filtro por token em vez de por forma — só que produzindo **limite superior**, e a inflação
+caiu exatamente sobre a superfície de segurança: os dois controles de integridade de script estão
+**verdes** no Windows.
+
+🔴 **A hipótese do `setup` CAI, por dois lados.** `falsify_fail_point` (`:327`) **retorna 0** sob
+`TRACKFW_FALSIFY_ENUMERATE=1`, que é o modo do censo — não aborta nada; em modo normal aborta o
+**script inteiro**, não "o cenário". Corroborado no log: shard 3 imprime mais nove rótulos depois do
+`FAIL [setup-s75]`. O que o setup reprovado causa de fato é o `echo OK` do `else` não ser impresso —
+explica **exatamente os 3 ausentes** e **zero** dos 11 `FAIL`. O que sobrevive da intuição é **causa
+comum**, não encadeamento: consertar o braço de setup não fecharia os outros; consertar o **gate**
+fecha.
+
+**Grupos (14 rótulos reais):** G1 release-tag-parity, 6 · G2 update-parity, 4 · G3 bit de execução, 1
+· G4 dedup do git-branch-guard, 2 · G5 dreno de stdin, 1. Frase de fechamento por grupo no parecer.
+
+**#307 ABSORVIDO** — os **dois** bloqueios dele aparecem, em gates diferentes, e explicam 10 dos 14:
+`ln -s` degrada para cópia (mata o `check-update-parity.sh` no `ln -sf` do Cenário 9 sob `set -e`) e
+filho nativo não roda no `PATH` curado (`git fetch … exited with 3221225477` = `0xC0000005`, com a
+guarda acusando "falta a recusa de no-forge-CLI"). Três diferenças medidas contra o #307 estão
+escritas. **#308 DESCARTADO** com a diferença: expansão de chaves ao reconstruir `argv` de pai nativo
+não tem nada a ver com o G4, que diverge **inteiramente dentro do Go**.
+
+🔴 **Dois achados não previstos pela REQ.** (1) **Forma B**: nos Cenários 87 e 158 o `echo OK` está
+**fora do `if`** — a baseline reprova e o rótulo que afirma "o gate passa limpo" imprime `OK` na linha
+seguinte (1457→1458, 2343→2344). Único falso verde do cluster, não está em nenhuma REQ, e tem detector
+mecânico (a Forma B não chama `falsify_count_success`, logo `contagem de ^OK ≠ tally`). (2) **O escopo
+negativo da REQ tem duas classificações erradas, com medição**: `.venv/bin/python` não é "venv usa
+`Scripts/`" — o Cenário 9 não usa venv, fabrica um symlink pendurado sintético; e o rótulo do bit de
+execução é a **mesma causa da #421**, que o censo agora confirma também em x64 CI (a #421 declarava
+esse ponto não medido).
+
+**Threat model em 4 categorias, não 2** — a distinção *falha ruidosa* ≠ *garantia sem prova* se abre
+em: A recusa ruidosa (G1, G2 — risco baixo, o gate reprova alto e ninguém lê verde onde não há); C
+passagem vacuosa (G3 — `test -x` verdadeiro nos dois braços); **D controle ausente no Windows (G4 e
+G5 — produto, não harness)**. 🔴 G4 e G5 são o risco real: `normalizeGuardPath` só converte `\`→`/`
+com letra de unidade, e `fail-open` transforma o não-casamento em "não instalado" (a resposta
+permissiva); o dreno de stdin devolve `EPIPE` ao escritor com 200 KB **saindo 0**, sem recusa alta.
+Proponho G4/G5 primeiro: os outros três são gates que não rodam.
+
+**Residual declarado:** não abri sessão na VM (clone **não tocado**) — todo mecanismo saiu de fonte +
+log do censo, e a VM é ARM64 contra censo x64. Não auditei os 347 `OK`. Não determinei por que o `git`
+sai `0xC0000005`, nem qual elo do G4 dispara primeiro, nem a causa do G5 entre orçamento de tempo e
+semântica de `read -d ''`. Não enumerei os testes Go de `agentfiles.go` (presunção declarada, não
+medição). Não rodei `make quality` nem `go test ./...`.

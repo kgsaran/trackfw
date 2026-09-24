@@ -30,15 +30,33 @@ OK=347 · FAIL=11 · rótulos ausentes: 3
 
 | | valor |
 |---|---|
-| rótulos **distintos** em `FAIL` | **13** |
+| rótulos **distintos** em `FAIL` | ~~13~~ → **11** (ver correção abaixo) |
 | dos quais `setup-*` | **5** |
 | rótulos **ausentes** | **3** (dois do mesmo cenário) |
 
-**Os 13 em FAIL:**
+### 🔴 Correção de população (Wave 0): são **11**, não 13 — e o erro é meu, do mesmo tipo que persigo
+
+Dois rótulos que eu listei **não são falhas**:
+
+| rótulo que eu listei | medido |
+|---|---|
+| `credential-guard-script-integrity/detected` | **`OK`** |
+| `git-branch-guard-global-script-integrity/detected` | 🔴 **não existe** — o real é `/detected-without-wiring`, também **`OK`** |
+
+Eles entraram porque aparecem como **texto citado dentro de mensagens `PROOF …/non-vacuity`**, que
+ecoam literalmente `"FAIL [falsify/<label>]: saiu com 0, esperava != 0"`. Filtrei por **token**
+(`FAIL [falsify/`) em vez de por **forma** (ancorada). Remedido por mim com a âncora correta para o
+formato do `gh run view --log`: **11 ocorrências, 11 distintos**.
+
+🔴 **A inflação caiu exatamente sobre a superfície de segurança** — os dois fantasmas eram os dois
+controles de integridade de script, e os **dois estão verdes no Windows**. Uma wave teria sido
+desenhada para um buraco inexistente.
+
+**População real: 14** = 11 `FAIL` + 3 ausentes.
+
+**Os 11 em FAIL:**
 ```
 setup-s75 · setup-s76 · setup-s87-baseline · setup-s158-baseline · setup-s175-baseline
-credential-guard-script-integrity/detected
-git-branch-guard-global-script-integrity/detected
 git-branch-guard-dedup/baseline-skips-project-entry
 git-branch-guard-dedup/double-slash-tolerance
 git-branch-guard/stdin-drain-before-noop/baseline-writer-clean-large-payload
@@ -104,11 +122,16 @@ membro** — entra com medição.
 
 ## Negative scope — o que esta REQ NÃO faz
 
-- **Não** trata o **#421** (bit de execução em NTFS `noacl`). Mecanismo medido e distinto:
-  permissão, não caminho. Tem issue própria.
-- **Não** trata os dois classificados como outra causa na REQ anterior, ambos com medição escrita:
-  `.venv/bin/python` (venv no Windows usa `Scripts/`, não symlink em `bin/`) e `trackfw barrier`
-  saindo **2** onde o cenário espera **1**.
+- 🔴 **CORRIGIDO pela Wave 0 — duas exclusões minhas estavam erradas, com medição:**
+  - **#421 (bit em NTFS) ENTRA nesta REQ.** É a **mesma causa** do rótulo
+    `scaffold-update-chmod-removed/direction-c-detected`, e o censo **confirma a #421 em x64 no CI**
+    — ponto que a própria issue declarava **não medido**. "Está fora do escopo declarado" é
+    exatamente o que a Regra Dura recusa como razão para separar.
+  - **O `.venv/bin/python` NÃO é venv.** Eu o excluí dizendo *"venv no Windows usa `Scripts/`"*. O
+    Cenário 9 **não usa venv**: fabrica um symlink pendurado sintético para alvo inexistente, e a
+    causa é a degradação do `ln -s` — mesmo mecanismo do #307. **Entra.**
+- **Não** trata o `trackfw barrier` saindo **2** onde o cenário espera **1** — nenhum caminho
+  envolvido, mecanismo distinto, medição escrita na REQ anterior.
 - **Não** recalibra `falsify-scenario-weights.json` nem mexe no intervalo de queda esperada
   (`~442`) do censo. 🔴 A queda medida é **501**, fora do intervalo, e isso é **correto** sobre este
   corpus — a base ARM64 de 2026-09-08 é pré-v8. Alargar o intervalo para calar o aviso seria maquiar.
