@@ -379,18 +379,35 @@ func MoveREQ(name, status string) error {
 	var fromState string
 	var logBasename string
 
-	if !roadmapValidStateNames[status] {
-		return fmt.Errorf("invalid state %q — valid states: %s", status, roadmapValidStatesMessage)
+	// A validacao de estado pertence ao MOVIMENTO, nao ao comando. Os dois layouts
+	// abaixo usam `status` como NOME DE PASTA de destino; um valor arbitrario ali
+	// criaria docs/req/<agente>/Open/. Nos demais layouts nada se move: o comando so
+	// reescreve o campo, e exigir o vocabulario de roadmap fecharia o ciclo da REQ —
+	// era o que impedia `req move <nome> Open` de reabrir uma REQ no layout canonico
+	// de by_agent (issue #327), enquanto a mesma chamada funcionava com a REQ solta
+	// em req_dir. A ADR-2026-09-03 D1 diz que REQ nao tem dimensao de estado; o
+	// status vive no frontmatter, e este comando escreve o frontmatter.
+	exigeVocabularioDeEstado := func() error {
+		if !roadmapValidStateNames[status] {
+			return fmt.Errorf("invalid state %q — valid states: %s", status, roadmapValidStatesMessage)
+		}
+		return nil
 	}
 
 	switch {
 	case grandparentDir == reqDirClean && roadmapValidStateNames[filepath.Base(parentDir)]:
 		// Layout por-estado.
+		if err := exigeVocabularioDeEstado(); err != nil {
+			return err
+		}
 		fromState = filepath.Base(parentDir)
 		targetDir = filepath.Join(cfg.REQDir, status)
 		logBasename = filepath.Base(path)
 	case roadmapValidStateNames[filepath.Base(parentDir)] && filepath.Dir(grandparentDir) == reqDirClean:
 		// Layout by_agent.
+		if err := exigeVocabularioDeEstado(); err != nil {
+			return err
+		}
 		fromState = filepath.Base(parentDir)
 		agent := filepath.Base(grandparentDir)
 		targetDir = filepath.Join(cfg.REQDir, agent, status)
