@@ -335,7 +335,7 @@ sobrevivem à sabotagem).
 
 ### ML-4A — O bloco de saída do modo enumerate vem ANTES do Cenário 200
 **Owner:** `artemis-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-09-24
 
 Achado **independente e pré-existente** do ML-0B, provado por observação no chunk materializado.
 **Confirmei na árvore:**
@@ -357,6 +357,61 @@ aqui"*.
 - [ ] 🔴 Prova de que nenhum outro cenário está atrás do bloco — **enumere**, não conserte só este
 - [ ] Falsificação: com reprovação injetada, os rótulos do último cenário **continuam sendo emitidos**
 - [ ] 🔴 Uma frase por teste novo, ou ausência declarada
+
+**Resultado — e ele pegou um segundo defeito da mesma causa**
+
+**Enumeração: 1 cenário** atrás do bloco, medido com a regex do **próprio gerador**, nunca com uma
+segunda grafia. ⚠️ E ele reportou o **falso positivo que quase entrou**: ancorar no
+`if [[ "$TRACKFW_FALSIFY_ENUMERATE" == "1" ]]` devolve **62**, porque casa também o bloco de
+**inicialização** do preâmbulo. Mediu as duas antes de escolher.
+
+**A razão estrutural:** o particionador corta em `# Cenário N —`, e **o último segmento vai do
+último cabeçalho ao EOF**. Não havia marca separando cenário de epílogo — então *"append no fim do
+arquivo"*, o gesto natural de quem adiciona cenário, aterrissava **depois** dele, **sem sinal
+nenhum**. E não era intermitente: o fechamento por dependência de variável **fundia** os dois num
+bloco indivisível, então o `exit 1` chegava primeiro **sempre**.
+
+🔴 **Segundo defeito, mesma causa, fora do meu handoff:** a leitura
+`falsify_success_n=$(wc -l < …)` também vivia **antes** do Cenário 200, e o **único consumidor** dela
+— a guarda de vacuidade e o `Falsification checks passed (N scenarios)` — vive **depois**. O número
+comparado contra o piso era **um retrato tirado cedo demais**: os 9 `OK` do Cenário 200 entravam no
+tally e **nunca na conta**. Entrou pela Regra Dura.
+
+**A correção escolhida impede a reincidência, não só a ocorrência:** marca
+`# FALSIFY-EPILOGUE-BEGIN` + `check_epilogue_after_all_scenarios()` **no gerador**, que **recusa
+gerar chunks**. A razão de ser no gerador e não num gate novo é boa: ele é o **único** sítio da
+gramática `HDR_PAT` — que já quebrou 3× por reimplementação — e **todo** caminho obrigatório passa
+por ele. Reincidência vira falha de **geração**, não cobertura perdida em silêncio.
+
+**Guarda falsificável em 6 braços**, incluindo dois que esta campanha ensinou a exigir: **marca
+apagada** (fail-closed) e **marca sem o bloco que ela delimita** — a patologia de
+`a-correcao-que-melhora-o-gate-esvazia-a-fixture-da-guarda-dele`. E um braço **retro**: o fonte
+pré-ML-4A **nomeia o Cenário 200**.
+
+**Auditoria do arquiteto (medida por mim):**
+
+| direção | resultado |
+|---|---|
+| cenário injetado depois da marca | **rc=1** — *"1 cabecalho(s) de cenario na linha(s) 8289 vem DEPOIS da marca"* |
+| árvore íntegra | **rc=0** — gera os 8 chunks |
+
+**Piso medido, não somado:** `Falsification checks passed (258 scenarios)`, contra **249** antes. O
+piso `241` **não muda** — é um mínimo, e a contagem só subiu; a folga vai de **8 para 17**.
+
+⚠️ **Três coisas que ele declarou para eu não descobrir frio:** a falsificação da guarda é **ad hoc**
+(não deixa Cenário permanente — e um Cenário 201 teria de ficar **antes** da marca, senão a guarda
+que ele testa recusa gerar); a exigência da marca é **incondicional**, inclusive para o fonte
+sintético do `TRACKFW_FALSIFY_SCRIPT`, **por escolha** — condicional seria fail-open; e o
+`check-falsify-shard-coverage.sh` **não foi exercitado** por exigir artefatos do CI.
+
+**Critérios de aceite:**
+- [x] Enumeração com o comando, e a razão estrutural
+- [x] Correção com a razão de impedir reincidência — guard **no gerador**
+- [x] 🔴 Guard falsificável, 6 braços — **auditei 2 direções por mim**
+- [x] Direção 1: rótulos do último cenário sobrevivem (**0 → 9** no chunk com reprovação)
+- [x] Direção 2: conjunto de rótulos **265** idêntico em N=4, N=8 e N=24
+- [x] Piso **medido** (258), com o veredito de que 241 não muda
+- [x] 🔴 Zero testes Go novos; 3 frases por artefato
 
 ### ML-1C — O fixture gravava grafia que o binário nunca produz
 **Owner:** `artemis-tf`

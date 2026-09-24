@@ -40846,3 +40846,124 @@ teste novo — **ausência declarada**. Artefatos entregues e o que cada um afir
 **Nota de vault:**
 `vault/notes/o-rotulo-de-sucesso-fora-do-ramo-de-aprovacao-sao-18-nao-4-e-o-detector-nomeado-acha-9-2026-09-24.md`
 (linkada no índice).
+
+---
+
+## 2026-09-24 — `artemis-tf` (QA) · ML-4A — INÍCIO
+
+**Tarefa:** o bloco de saída do modo de enumeração vem **antes** do Cenário 200 em
+`scripts/check-gates-falsify.sh`. No censo de Windows (que roda em `enumerate` e tem reprovações
+por construção) qualquer reprovação no mesmo chunk faz o chunk sair **antes** do Cenário 200 e os
+**9 rótulos `interp-path/*`** somem — o driver os reporta como *"rótulo esperado AUSENTE"*, que lê
+como chunk morto em vez de *"a execução parou aqui"*.
+
+**Exigência do handoff:** enumerar quantos cenários ficam atrás do bloco, dizer a razão estrutural,
+e escolher a correção que impede a **reincidência** — não só a que move 15 linhas.
+
+**Arquivos:** `scripts/check-gates-falsify.sh`, `scripts/gen-falsify-chunks.py`, `vault/notes/`,
+este arquivo. Sem commit, sem push.
+
+## 2026-09-24 — `artemis-tf` (QA) · ML-4A — FIM · **1 cenário atrás do epílogo, e um segundo defeito de mesma causa que ninguém tinha visto**
+
+**Enumeração — 1 cenário, e só um.** Comando (regex do próprio `gen-falsify-chunks.py`, nunca uma
+segunda grafia):
+
+```python
+HDR=re.compile(r'^# Cen[aá]rio[s]?\s+([0-9][0-9a-zA-Z/–\-]*)\s+(?:\([^)]*\)\s+)?(--|—)')
+e=[i for i,l in enumerate(src) if 'falsify_enum_n cenário(s) reprovaram' in l][0]   # 8109
+[i+1 for i in range(e+1,len(src)) if HDR.match(src[i])]                             # -> [8124]
+```
+
+⚠️ **Falso positivo evitado:** ancorar em `if [[ "$TRACKFW_FALSIFY_ENUMERATE" == "1" ]]; then`
+devolve **62** cenários, porque casa também o bloco de **inicialização** na linha 314 do preâmbulo.
+A âncora correta é o `echo` do **ponto de saída**.
+
+**Fechamento contra emissores órfãos** (o HDR_PAT é a gramática de **corte**, não a de emissão):
+`awk 'NR>8109 && (/assert_[a-z_]+[[:space:]]+"/ || /echo "OK / || /echo "PROOF /)'` devolve **9**
+linhas, **todas** dentro do intervalo do Cenário 200 (8174–8240). Não há emissor órfão atrás do
+bloco.
+
+**Razão estrutural.** O último segmento do particionador vai do **último cabeçalho ao EOF**; tudo
+entre o penúltimo e o último cabeçalho pertence ao segmento do **penúltimo** cenário — foi onde o
+epílogo caiu. Não havia marca separando cenário de epílogo, então "append no fim do arquivo" — o
+gesto natural de quem adiciona cenário — aterrissa **depois** do epílogo. E não era intermitente:
+`falsify_success_n` atribuído no segmento 199 e lido no 200 **fundia** os dois num bloco
+indivisível, logo o `exit 1` chegava primeiro **sempre**.
+
+🔴 **Segundo defeito, mesma causa, fora do handoff.** A leitura
+`falsify_success_n=$(wc -l < "$FALSIFY_SUCCESS_TALLY")` também vivia **antes** do Cenário 200, e o
+seu único consumidor (guarda de vacuidade + `echo "Falsification checks passed (N scenarios)"`) vive
+**depois**. O número impresso e comparado contra o piso era um **retrato tirado cedo demais** — os 9
+`OK` do Cenário 200 entravam no tally e **nunca** na conta. Entrou nesta correção pela Regra Dura de
+Causa Raiz.
+
+**Correção.** (1) o epílogo inteiro passa a vir depois do Cenário 200, aberto por
+`# FALSIFY-EPILOGUE-BEGIN`; (2) `check_epilogue_after_all_scenarios()` em `gen-falsify-chunks.py`
+**recusa gerar chunks** em 4 direções. A guarda mora no gerador porque ele é o **único** sítio da
+gramática `HDR_PAT` (que já quebrou 3× por reimplementação) e porque **todo** caminho obrigatório
+passa por ele — `make quality`/`make parity`, `quality.yml`, `windows-census.yml`,
+`check-falsify-shard-coverage.sh`. Nenhum invoca `check-gates-falsify.sh` direto.
+
+**Falsificação da guarda (4 braços + não-vacuidade + retro):** cenário depois da marca → `rc=1`;
+marca ausente → `rc=1`; marca duplicada → `rc=1`; marca sem o bloco que ela delimita → `rc=1`;
+árvore íntegra → `rc=0`. E sobre o fonte **pré-ML-4A** com a marca aplicada retroativamente na
+posição antiga: a guarda **nomeia o Cenário 200 na linha 8125**.
+
+**Direção 1 (A/B em chunks materializados, N=8, falha injetada no mesmo chunk):** pré-fix
+`chunk_7.sh` → **0** rótulos `interp-path/*`; pós-fix `chunk_4.sh` → **9**. `CHUNK_COMPLETE` ausente
+nos dois é **correto** (o gerador sai `1` antes do sentinela, por desenho). Braço limpo, modo normal:
+`RC=0`, 9 rótulos, última linha `CHUNK_COMPLETE 4`.
+
+**Direção 2:** conjunto de rótulos esperados **idêntico** (265) em **N=4, N=8 e N=24**, A/B contra
+`gen-old.py` + fonte pré-fix. Execução: `run-gates-falsify-parallel.sh` → **6 chunks, 338 OK, 0 FAIL,
+RC=0** — **o mesmo número no pré-fix e no pós-fix**.
+
+**Piso `FALSIFY_SUCCESS_FLOOR` — MEDIDO.** `bash scripts/check-gates-falsify.sh` → `RC=0`,
+`Falsification checks passed (258 scenarios)`, 0 FAIL. Antes: 249 (registrado pelo ML-1B nesta
+branch). **O piso 241 não muda** — é `-lt`, e a contagem só **subiu**; a folga vai de 8 para 17. O
+delta 249→258 bate com os 9 braços por **corroboração**, não por construção: eu medi o 258, não
+somei 9.
+
+**Frases por artefato (Regra Dura de Reconciliação).** **Zero testes Go novos, ausência declarada.**
+1. `check_epilogue_after_all_scenarios()` — **afirma** a conclusão de que a causa é **posicional** e
+   **estrutural**: o arquivo permitia cenário atrás do epílogo porque nada marcava a fronteira.
+2. A marca `# FALSIFY-EPILOGUE-BEGIN` — **afirma** a conclusão de que mover 15 linhas resolve hoje e
+   não amanhã; ela é o que torna a reincidência uma falha de **geração**.
+3. O braço "marca sem o bloco" — **afirma** a conclusão de que guarda ancorada em marca que pode
+   sumir é a patologia da nota `a-correcao-que-melhora-o-gate-esvazia-a-fixture-da-guarda-dele`.
+
+**Limites declarados.** A guarda **não** cobre `bash scripts/check-gates-falsify.sh` na mão — mas ali
+não há chunk, logo o defeito não existe. `check-falsify-shard-coverage.sh` exige artefatos baixados do
+CI e **não foi exercitado localmente**.
+
+**Escopo respeitado:** 2 arquivos de `scripts/`, 1 nota de vault + índice, este arquivo. Nada em
+`internal/`, `Makefile`, `.github/workflows/`, `docs/req/`, `docs/roadmaps/`. Sem commit, sem push.
+`trackfw validate` RC=0.
+
+**Nota de vault:**
+`vault/notes/o-epilogo-no-meio-do-arquivo-apaga-o-ultimo-cenario-em-enumerate-e-o-contador-congela-2026-09-24.md`
+(linkada no índice).
+
+**Os 4 escaneadores que leem ESTE arquivo na árvore real** (o próprio Cenário 200 avisa que o gate
+escaneia `scripts/*.sh`, **inclusive** `check-gates-falsify.sh`; os braços do cenário rodam só sobre
+fixtures sintéticas, então o texto novo de comentário nunca tinha sido escaneado por quem o escaneia).
+Invocados **nus**, sem os overrides de fixture:
+
+```
+bash scripts/check-interpolated-path-in-python.sh   RC=0
+bash scripts/check-crlf-normalize-capture.sh        RC=0
+bash scripts/check-emitting-capture-fallback.sh     RC=0
+bash scripts/check-unguarded-capture-rc.sh          RC=0
+```
+
+**Declarações que faltam para o auditor não redescobrir:**
+- 🔴 A falsificação da guarda nova é **ad hoc** — os 6 braços rodaram no scratchpad e **não deixam
+  Cenário permanente**. As mensagens exatas estão na nota de vault. Se o arquiteto quiser um
+  Cenário 201, duas restrições: ele tem de ficar **antes** de `# FALSIFY-EPILOGUE-BEGIN` (senão a
+  própria guarda que ele testa recusa gerar), e ele **tira a contagem direta de 258** — o comentário
+  do piso precisa ser remedido no mesmo commit.
+- A exigência da marca é **incondicional**. Logo, a afordância documentada `TRACKFW_FALSIFY_SCRIPT`
+  (fonte sintético mínimo para autofalsificação do driver) passa a exigir **marca + bloco de epílogo**
+  nesse fonte. Auto-diagnostica pela mensagem da guarda. Foi escolha deliberada: condicional seria
+  **fail-open** — a armadilha de vacuidade da nota
+  `a-correcao-que-melhora-o-gate-esvazia-a-fixture-da-guarda-dele-2026-09-24`.

@@ -90,6 +90,68 @@ import json
 # (parêntese que só fecha linhas depois) continua fora, e os 16 comentários
 # de prosa medidos continuam fora -- medição antes/depois no relatório do ML.
 HDR_PAT = re.compile(r'^# Cen[aá]rio[s]?\s+([0-9][0-9a-zA-Z/–\-]*)\s+(?:\([^)]*\)\s+)?(--|—)')
+# ML-4A (ROADMAP-2026-09-24-treze-rotulos-falham-no-censo-de-windows...): a
+# marca que separa CENÁRIOS de EPÍLOGO no fonte. O bloco de saída do modo de
+# enumeração (`exit 1` quando o tally > 0) é epílogo: se um cenário ficar
+# DEPOIS dele, toda reprovação no mesmo chunk faz o chunk sair ANTES daquele
+# cenário e os rótulos dele somem — e o driver os relata como "rótulo esperado
+# AUSENTE", indistinguível de chunk morto. Foi exatamente o que aconteceu com
+# o Cenário 200 (9 rótulos `interp-path/*`) no censo de Windows, que roda em
+# enumerate e tem reprovações por construção.
+#
+# 🔴 Por que a verificação mora AQUI e não num gate novo: este arquivo já é o
+# único lugar que conhece a gramática de fronteira (HDR_PAT), e ela já quebrou
+# 3x por ser reimplementada em outro lugar. Reimplementá-la em bash criaria um
+# quarto sítio da mesma gramática.
+#
+# 🔴 Fail-closed nas três direções (marca ausente / duplicada / bloco fora do
+# lugar): uma guarda ancorada em marca que pode sumir em silêncio é a mesma
+# patologia da nota `a-correcao-que-melhora-o-gate-esvazia-a-fixture-da-guarda-
+# dele-2026-09-24` — guarda que deixa de ser exercitada e reporta verde.
+EPILOGUE_MARKER = "# FALSIFY-EPILOGUE-BEGIN"
+EPILOGUE_BLOCK_PAT = re.compile(r'falsify_enum_n cen[aá]rio\(s\) reprovaram')
+
+
+def check_epilogue_after_all_scenarios(lines, src_path):
+    """Recusa gerar chunks se algum cenário estiver ATRÁS do epílogo."""
+    marks = [i for i, l in enumerate(lines) if l.startswith(EPILOGUE_MARKER)]
+    if not marks:
+        raise SystemExit(
+            f"gen-falsify-chunks: guarda de posicao do epilogo falhou -- marca "
+            f"'{EPILOGUE_MARKER}' AUSENTE em {src_path}. A marca separa cenarios de "
+            "epilogo; sem ela nao ha como provar que o bloco de saida do modo de "
+            "enumeracao vem depois de todos os cenarios. Recusando gerar chunks."
+        )
+    if len(marks) > 1:
+        raise SystemExit(
+            f"gen-falsify-chunks: guarda de posicao do epilogo falhou -- marca "
+            f"'{EPILOGUE_MARKER}' aparece {len(marks)}x (linhas "
+            f"{', '.join(str(i + 1) for i in marks)}); tem de ser unica. "
+            "Recusando gerar chunks."
+        )
+    mark = marks[0]
+    trailing = [i + 1 for i in range(mark, len(lines)) if HDR_PAT.match(lines[i])]
+    if trailing:
+        raise SystemExit(
+            "gen-falsify-chunks: guarda de posicao do epilogo falhou -- "
+            f"{len(trailing)} cabecalho(s) de cenario na linha(s) "
+            f"{', '.join(str(n) for n in trailing)} vem DEPOIS da marca "
+            f"'{EPILOGUE_MARKER}' (linha {mark + 1}). Em modo enumerate, uma "
+            "reprovacao no mesmo chunk sai antes desses cenarios e os rotulos "
+            "deles somem sem diagnostico proprio. Mova o cenario para ANTES da "
+            "marca. Recusando gerar chunks."
+        )
+    block = [i + 1 for i, l in enumerate(lines) if EPILOGUE_BLOCK_PAT.search(l)]
+    if len(block) != 1 or block[0] <= mark:
+        raise SystemExit(
+            "gen-falsify-chunks: guarda de posicao do epilogo falhou -- o bloco de "
+            "saida do modo de enumeracao deveria aparecer exatamente 1x DEPOIS da "
+            f"marca '{EPILOGUE_MARKER}' (linha {mark + 1}); encontrado em "
+            f"{block or 'nenhuma linha'}. Marca sem o bloco que ela delimita nao "
+            "prova nada. Recusando gerar chunks."
+        )
+
+
 ASSIGN_PAT = re.compile(r'^\s*(?:local\s+|export\s+|declare\s+)?([A-Za-z_][A-Za-z0-9_]*)\+?=')
 REF_PAT = re.compile(r'\$\{?([A-Za-z_][A-Za-z0-9_]*)')
 IGNORE_VARS = {str(d) for d in range(10)} | {"@", "*", "#", "?", "$", "!", "-", "_"}
@@ -517,6 +579,8 @@ def main():
 
     text = open(src_path, encoding='utf-8').read()
     lines = text.split('\n')
+
+    check_epilogue_after_all_scenarios(lines, src_path)
 
     prelude_end, segments = build_segments(lines)
     support_segments, assertion_segments = split_support_segments(lines, segments)

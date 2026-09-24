@@ -308,8 +308,15 @@ FALSIFY_SUCCESS_TALLY="$WORK/success-count"
 # incremento não pode avermelhar uma execução limpa. A contagem absoluta sai do
 # `make quality` do arquiteto, não daqui.
 # ML-1B/REQ-2026-09-24: piso MEDIDO, nao somado. A execucao completa desta arvore
-# reporta "Falsification checks passed (249 scenarios)" — 241 deixa folga de 8 e
+# reportava "Falsification checks passed (249 scenarios)" — 241 deixava folga de 8 e
 # nao se apoia em aritmetica de "+9 bracos", que ja produziu piso inflado antes.
+# ML-4A (mesma REQ): a leitura de $falsify_success_n vivia ANTES do Cenario 200 --
+# o numero impresso era um retrato tirado cedo demais e nao continha os 9 rotulos
+# `interp-path/*`. Com a leitura movida para o epilogo, a MESMA arvore reporta 258
+# (medido: `bash scripts/check-gates-falsify.sh`, RC=0, 0 FAIL). O piso e um MINIMO
+# (`-lt`), entao a contagem so pode ter SUBIDO: 241 continua valido e a folga passa
+# de 8 para 17. Nao houve bump -- o delta 249->258 foi MEDIDO, nao somado, e bate
+# com os 9 bracos do Cenario 200 por corroboracao, nao por construcao.
 FALSIFY_SUCCESS_FLOOR=241
 if [[ "$TRACKFW_FALSIFY_ENUMERATE" == "1" ]]; then
   : > "$FALSIFY_ENUM_TALLY"
@@ -8093,34 +8100,6 @@ else
   echo "OK   [falsify/unguarded-rc]: braços A-T provados"
 fi
 
-# ---------------------------------------------------------------------------
-# ML-2B — fechamento do modo de enumeração. Desligado (default): este bloco
-# inteiro é pulado (a condição é falsa) e a saída do processo é a do último
-# comando acima -- 0, exatamente como antes deste ML (byte-idêntico: nenhuma
-# linha nova, nenhum exit code novo). Ligado: se qualquer cenário reprovou
-# (contado em $FALSIFY_ENUM_TALLY -- arquivo, não variável, ver nota do
-# bloco de definição acima sobre subshell), o exit final é != 0 -- guarda 1
-# (nunca torna o gate verde) também no ponto de saída, não só em cada ponto
-# de falha.
-if [[ "$TRACKFW_FALSIFY_ENUMERATE" == "1" ]]; then
-  falsify_enum_n=$(wc -l < "$FALSIFY_ENUM_TALLY" 2>/dev/null || echo 0)
-  falsify_enum_n=${falsify_enum_n//[[:space:]]/}
-  if [[ "${falsify_enum_n:-0}" -gt 0 ]]; then
-    echo "[falsify/enumerate] $falsify_enum_n cenário(s) reprovaram (enumerados acima, cada um prefixado FAIL) -- exit 1" >&2
-    exit 1
-  fi
-  echo "[falsify/enumerate] 0 cenários reprovaram -- exit 0" >&2
-fi
-
-# Imprime o número medido de asserções bem-sucedidas. Usa o mesmo arquivo
-# usado por falsify_count_success — medição da execução, não grep de fonte.
-# O contador cobre todas as linhas "OK   [falsify/..." emitidas por este
-# script (helpers + blocos inline). Sub-scripts externos como
-# check-wheel-filename.sh emitem suas próprias linhas OK sem incrementar
-# este contador — são ~2-7 linhas adicionais que não alteram a contagem aqui.
-falsify_success_n=$(wc -l < "$FALSIFY_SUCCESS_TALLY" 2>/dev/null || echo 0)
-falsify_success_n=${falsify_success_n//[[:space:]]/}
-
 # Cenário 200 — check-interpolated-path-in-python.sh: gate anti-reintrodução de
 #               caminho POSIX interpolado DENTRO do texto do programa Python
 #               (ML-1B, ROADMAP-2026-09-24-caminho-posix-interpolado-dentro-do-
@@ -8242,6 +8221,45 @@ assert_fails_with "interp-path/no-expanding-body" \
   env INTERP_PATH_GATE_MIN_BODIES=1 INTERP_PATH_GATE_MIN_EXPANDING=1 \
   bash "$GATE200" --scan-root "$T200C"
 
+
+# FALSIFY-EPILOGUE-BEGIN  (ML-4A, ROADMAP-2026-09-24-treze-rotulos-falham-no-
+# censo-de-windows...): daqui até o fim do arquivo é EPÍLOGO — nenhum cenário
+# pode vir depois desta marca. Antes deste ML o bloco de saída do modo de
+# enumeração vivia 15 linhas ANTES do Cenário 200: no censo de Windows (que
+# roda em enumerate e tem reprovações por construção) qualquer reprovação no
+# mesmo chunk fazia o chunk sair ANTES do Cenário 200, e os 9 rótulos
+# `interp-path/*` sumiam — o driver os reportava como "rótulo esperado
+# AUSENTE", que lê como chunk morto em vez de "a execução parou aqui".
+# A marca não é decorativa: gen-falsify-chunks.py EXIGE que ela exista, seja
+# única, e que nenhum cabeçalho de cenário apareça a partir dela — a
+# reincidência vira falha de GERAÇÃO, não cobertura perdida em silêncio.
+# ---------------------------------------------------------------------------
+# ML-2B — fechamento do modo de enumeração. Desligado (default): este bloco
+# inteiro é pulado (a condição é falsa) e a saída do processo é a do último
+# comando acima -- 0, exatamente como antes deste ML (byte-idêntico: nenhuma
+# linha nova, nenhum exit code novo). Ligado: se qualquer cenário reprovou
+# (contado em $FALSIFY_ENUM_TALLY -- arquivo, não variável, ver nota do
+# bloco de definição acima sobre subshell), o exit final é != 0 -- guarda 1
+# (nunca torna o gate verde) também no ponto de saída, não só em cada ponto
+# de falha.
+if [[ "$TRACKFW_FALSIFY_ENUMERATE" == "1" ]]; then
+  falsify_enum_n=$(wc -l < "$FALSIFY_ENUM_TALLY" 2>/dev/null || echo 0)
+  falsify_enum_n=${falsify_enum_n//[[:space:]]/}
+  if [[ "${falsify_enum_n:-0}" -gt 0 ]]; then
+    echo "[falsify/enumerate] $falsify_enum_n cenário(s) reprovaram (enumerados acima, cada um prefixado FAIL) -- exit 1" >&2
+    exit 1
+  fi
+  echo "[falsify/enumerate] 0 cenários reprovaram -- exit 0" >&2
+fi
+
+# Imprime o número medido de asserções bem-sucedidas. Usa o mesmo arquivo
+# usado por falsify_count_success — medição da execução, não grep de fonte.
+# O contador cobre todas as linhas "OK   [falsify/..." emitidas por este
+# script (helpers + blocos inline). Sub-scripts externos como
+# check-wheel-filename.sh emitem suas próprias linhas OK sem incrementar
+# este contador — são ~2-7 linhas adicionais que não alteram a contagem aqui.
+falsify_success_n=$(wc -l < "$FALSIFY_SUCCESS_TALLY" 2>/dev/null || echo 0)
+falsify_success_n=${falsify_success_n//[[:space:]]/}
 
 # Guarda de vacuidade: o número medido deve ser pelo menos FALSIFY_SUCCESS_FLOOR.
 # Se ficar abaixo, algo removeu chamadas de falsify_count_success ou o
