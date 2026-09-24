@@ -90,9 +90,6 @@ export PYTHONIOENCODING=utf-8
 export LC_ALL="${LC_ALL:-C.UTF-8}" 2>/dev/null || true
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-
-# shellcheck source=scripts/lib-crlf-normalize.sh
-. "$ROOT_DIR/scripts/lib-crlf-normalize.sh"
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/trackfw-prclose.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 
@@ -344,9 +341,15 @@ elif [[ -n ${GITHUB_EVENT_PATH:-} ]]; then
   #
   # Ordem: corpo vivo pela API -> payload. Nunca o contrario, e nunca so a API: sem
   # `gh` autenticado (fork sem segredo, execucao local) o payload ainda mede algo.
-  # strip_cr: no Windows o python3 traduz \n em \r\n no stdout, e um numero com \r
-  # invisivel nao casa em [[ -n ]] nem serve de argumento para o gh (REQ do CRLF, #353).
-  EVENT_PR_NUMBER=$(python3 - "$GITHUB_EVENT_PATH" <<'PY' | strip_cr || true
+  # O numero vai para ARQUIVO, nao para stdout capturado. Dois motivos, os dois
+  # medidos: (1) no Windows o python3 traduz \n em \r\n no stdout, e um numero com
+  # \r invisivel passaria no [[ -n ]] e viraria argumento invalido para o gh —
+  # exatamente o silencio da REQ do CRLF; (2) o cenario s182 do check-gates-falsify
+  # COPIA este gate para fora de scripts/, onde um `source` da lib de normalizacao
+  # nao resolveria. `newline="\n"` resolve (1) na origem, e a escrita em arquivo
+  # evita (2) sem duplicar helper.
+  PR_NUMBER_FILE="$WORK/event-pr-number.txt"
+  python3 - "$GITHUB_EVENT_PATH" "$PR_NUMBER_FILE" <<'PY' || true
 import json, sys
 try:
     with open(sys.argv[1], encoding="utf-8") as fh:
@@ -355,9 +358,11 @@ except Exception:
     raise SystemExit(0)
 n = (ev.get("pull_request") or {}).get("number")
 if isinstance(n, int):
-    print(n)
+    with open(sys.argv[2], "w", encoding="utf-8", newline="\n") as out:
+        out.write(str(n))
 PY
-)
+  EVENT_PR_NUMBER=""
+  [[ -f $PR_NUMBER_FILE ]] && EVENT_PR_NUMBER=$(tr -d '\r' <"$PR_NUMBER_FILE")
   if [[ -n ${EVENT_PR_NUMBER:-} ]] && command -v gh >/dev/null 2>&1 \
      && gh pr view "$EVENT_PR_NUMBER" --json body -q .body >"$BODY_FILE" 2>/dev/null; then
     echo "  fonte: API (corpo vivo do PR #$EVENT_PR_NUMBER) -- o payload do evento e imutavel"
