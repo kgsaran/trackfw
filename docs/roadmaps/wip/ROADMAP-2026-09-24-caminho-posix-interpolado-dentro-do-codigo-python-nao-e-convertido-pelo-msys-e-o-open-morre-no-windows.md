@@ -184,9 +184,103 @@ check-serve-api-file-security.sh:87, :92
 ## Wave 2 — Prova no Windows (1 ML)
 > Dependências: Wave 1 mergeada.
 
-- [ ] Falsificação nas duas direções **exercitada no Windows** — a plataforma onde o defeito vive
-- [ ] 🔴 Se a #363 não fechar, a razão fica escrita: ela depende também do cenário do bit em NTFS
+- [x] **Exercitada na VM, nos dois braços** (`c79f260` × `dc9f733` — e **não** contra a `main`, que
+      diverge em 10 arquivos de `scripts/`). Gate do ML-1B: **rc=1 com exatamente os 6** antes,
+      **rc=0 com os dois pisos disparados** depois. O rótulo `integration-assets/direction-b-shim-absent`
+      **voltou** no Windows. E os 3 rótulos novos do `check-update-parity` (`:354`/`:379`/`:408`) são a
+      **primeira prova direta de que a5/a6 executam** — o ML-0A só os derivava como latentes
+- [x] 🔴 **A #363 FECHA pela causa declarada**, medido: os dois sítios que ela nomeia são
+      `check-doctor-parity.sh:594` (fechou por **deleção**, v8.0.0) e `check-validate-rule-pins.sh`
+      (corrigido pelo **#417**). Gate inteiro na VM: **pins 1–6 `OK`, zero `FileNotFoundError`**.
+
+      **O que sobra é outro mecanismo, medido:** `pin7-noexec` reprova porque em NTFS montado
+      `noacl` o `chmod 644` **não tira o bit** (`ls -l` → `-rwxr-xr-x`, `stat %a` → `755`,
+      `[ -x ]` verdadeiro). A fixture *"presente e não executável"* é **inconstruível** nesse
+      Windows. É **permissão, não caminho** — fora desta REQ.
+
+      ⚠️ Duas ressalvas para a nota de fechamento: fechar **não** significa gate verde no Windows; e
+      o cenário do bit em NTFS **não tem issue** hoje (nem #307 nem #364 o cobrem)
 
 ## Barreira final
 
 Revisão `hefesto-tf` e `hades-tf`, auditoria do arquiteto, `trackfw barrier`, CI verde.
+
+---
+
+## Wave 2-bis — o defeito que a correção desmascarou (1 ML)
+
+🔴 **A Wave 2 removeu o `FileNotFoundError` e, com ele, a cortina que escondia três defeitos de
+Windows.** Nenhum é regressão. Um deles é meu de decidir, e decidi.
+
+### ML-2A — O overlay do `go test` leva caminho POSIX e é ignorado EM SILÊNCIO
+**Owner:** `ares-tf`
+**Status:** ⬜ Pendente
+
+`scripts/check-serve-api-file-security.sh:96` monta o overlay com `printf` de variáveis do shell —
+caminhos **POSIX-MSYS** no Git Bash:
+
+```bash
+printf '{"Replace": {"%s": "%s"}}\n' "$GO_API_FILE" "$VULN_GO" > "$OVERLAY_JSON"
+```
+
+**A/B na VM, mesma máquina, mesmo minuto, única variável a grafia da chave:**
+
+| chave do overlay | resultado |
+|---|---|
+| `/c/Users/Lab/trackfw/internal/serve/api_file.go` | `ok … 0.038s` — **overlay IGNORADO, sem erro** |
+| `C:/Users/Lab/trackfw/internal/serve/api_file.go` | `FAIL … esperado 403, obteve 200; corpo vazou segredo` |
+
+🔴 **`go test -overlay` com chave que não casa nenhum arquivo do build NÃO é erro.** O teste roda
+contra o fonte correto, passa, e o AC6 conclui `FAIL AC6 Go falsificação: teste passou na versão
+vulnerável`. O Python escreveu o arquivo vulnerável certo nas duas execuções — a diferença é só a
+grafia da chave.
+
+**Decisão minha: MESMA CAUSA, ML nesta REQ.** O teste de fechamento literal (*"corrijo a
+interpolação no código Python e este sítio fecha"*) diz **não** — a remediação difere. Mas a causa
+**raiz** é a mesma fronteira: **caminho POSIX atravessando para um binário Windows nativo sem
+conversão**; a interpolação no código Python é **uma forma**, o JSON de overlay é **outra**. E o
+CLAUDE.md nomeia *"é superfície diferente"* como exatamente o que **não** justifica REQ nova.
+
+Pesou também o que está em jogo: o braço de segurança **vazou segredo** quando a chave casou. Fechar
+esta REQ com `:96` intacto — **quatro linhas abaixo** dos sítios que acabei de corrigir, no mesmo
+bloco — é correção pela metade, e o PR mergeado fecharia a janela de atenção.
+
+⚠️ **`ubuntu-latest` NÃO é afetado** — lá POSIX é a grafia nativa e o braço passa (run
+`36023336663`). Isto **não** é "o gate de segurança está quebrado"; é "a prova de não-vacuidade dele
+não roda no Windows".
+
+**Ações:**
+1. Corrija `:96`. O precedente imune está na árvore: `quality.yml:1172` escreve o JSON **pelo
+   Python** (`json.dumps({'Replace': {src: inject}})`), que recebe os caminhos já resolvidos.
+   `cygpath -m` é a alternativa; escolha e **escreva a razão**.
+2. 🔴 **Falsifique nas duas direções na VM:** com a correção, o braço vulnerável precisa **FALHAR**
+   (é o que prova não-vacuidade); sem ela, passa em silêncio.
+3. **Varra a família:** outros `-overlay`, e caminho shell entregue a binário Go/nativo por arquivo
+   de configuração em vez de `argv`. Veredito por sítio.
+4. 🔴 **O gate do ML-1B não vê este sítio** — ele varre corpo de programa Python; aqui é `printf`
+   para dentro de JSON. Diga se deve ver. Se sim, é ML próprio, não remendo aqui.
+
+**Critérios de aceite:**
+- [ ] `:96` corrigido; razão da forma escolhida escrita
+- [ ] Falsificação nas duas direções **na VM**: braço vulnerável **falha** com a correção
+- [ ] Família varrida, veredito por sítio
+- [ ] Veredito escrito sobre o gate do ML-1B cobrir ou não esta forma
+- [ ] 🔴 Uma frase por teste novo, ou ausência declarada
+- [ ] 🔴 **NÃO rodar `make quality`**
+
+### Os outros dois, classificados como OUTRA causa — com a medição
+
+| achado | mecanismo | veredito |
+|---|---|---|
+| `ln: failed to create symbolic link '…/s9-proj/.venv/bin/python'` | venv no Windows usa `Scripts/python.exe`, não symlink em `bin/` | **outra** |
+| `trackfw barrier` sai **2** onde o cenário espera **1** | código de saída do `barrier`; nenhum caminho envolvido | **outra** |
+
+Nenhum é coberto por #307 ou #364. Ficam **registrados aqui**, não empurrados para REQ nova sem
+medição — e não são regressão: estavam atrás do abort.
+
+⚠️ **Ausência declarada, e honesta:** o `check-gates-falsify.sh` **não roda inteiro nesta VM** —
+morre no Cenário 19 (`barrier/wave-label`), **~4960 linhas antes** do a1. O que rodou no lugar foi um
+**mini-chunk** extraído **byte a byte** do chunk gerado (preâmbulo + segmento do a1), com
+`TRACKFW_ROOT_DIR` como o driver de CI faz. É materialmente mais forte que o braço do ML-1A, e
+**não** é "gate inteiro" — as duas coisas ditas.
+

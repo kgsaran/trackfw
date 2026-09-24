@@ -40088,3 +40088,58 @@ se moveram. `*/testdata/*` fica fora (corpus congelado — mesma exclusão que �
 `FNR==1` do arquivo seguinte, então uma violação dentro de um heredoc sem terminador seria atribuída
 ao arquivo **posterior**. Só alcançável em script sintaticamente quebrado, e o PISO 1 pega a queda
 de contagem que esse caso produz (medido: 140 → 109). Documentado na nota de vault §1.
+
+---
+
+## 2026-09-24 · `ares-tf` · Wave 2 — prova no Windows (REQ caminho POSIX interpolado)
+
+**Início.** Wave 1 commitada e empurrada (`012b42bb`, `dc9f7334`). Objetivo da Wave 2: exercitar a
+falsificação **nas duas direções na plataforma onde o defeito vive** e decidir o destino da #363.
+Instrumento: VM Windows 11 ARM64, Git Bash (MSYS x86_64 emulado), `go1.27.0 windows/arm64`,
+Python 3.12 nativo. Clone da VM trazido para a branch (`wave2` = `dc9f733`); braço "antes" é
+`012b42bb^` = `c79f260` — **não** a `main`, que diverge em `scripts/` (medido: 10 arquivos).
+
+**Fim — o que foi medido.**
+
+| gate | antes (`c79f260`) | depois (`dc9f733`) |
+|---|---|---|
+| `check-interpolated-path-in-python.sh` (ML-1B) | rc=1, **exatamente os 6 sítios**, nenhum outro | rc=0, 59 `OK`, 0 `FAIL`, os **dois pisos** dispararam (140≥100, 83≥55) |
+| `check-serve-api-file-security.sh` | rc=1, `FileNotFoundError … '/c/Users/Lab/trackfw/internal/serve/api_file.go'` — morre no AC6 | bloco Python executa; AC3/AC4 alcançados e verdes. rc=1 por **outro mecanismo** (ver achado) |
+| `check-update-parity.sh` | rc=1, 7 `OK`, `FileNotFoundError … '/tmp/trackfw-update-parity.rHkYA8/s6-home-go/.trackfw/integrations-manifest.json'` | rc=1, 10 `OK`, **0** `FileNotFoundError`; morre no Cenário 9 (`ln: failed to create symbolic link …/.venv/bin/python`) |
+| `check-gates-falsify.sh` — segmento do a1 | rc=1, `CHUNK_ABORT`, `'/c/Users/Lab/trackfw/npm/package.json'`, rótulo `direction-b-shim-absent` **ausente** | rc=0, 3 `OK` — o rótulo **voltou** |
+| `check-validate-rule-pins.sh` (#363) | — | pins 1–6 `OK`, **0** `FileNotFoundError`; reprova em `pin7-noexec` |
+
+**Ausência declarada, com a razão medida:** `check-gates-falsify.sh` **não roda inteiro** nesta VM —
+morre em 361 s no Cenário 19 (`barrier/wave-label/malformed-before-target/go`: `trackfw barrier` sai
+**2**, esperado 1), linha ~1789 do fonte, **~4960 linhas antes** do a1 (`:6745`). O `chunk_0` gerado
+morre no mesmo ponto. No lugar rodou um **mini-chunk**: preâmbulo + segmento do a1 extraídos
+**byte a byte** do chunk gerado (`1..1515` + `3570..3625` depois; `1..1512` + `3567..3622` antes).
+Isso é mais forte que o ML-1A (que embutia o texto do bloco), e **não** é "gate inteiro".
+
+**🔴 Achado novo, mesma causa, outra superfície — decisão do arquiteto.**
+`scripts/check-serve-api-file-security.sh:96` monta `overlay.json` com `printf` de caminhos
+POSIX-MSYS. O `go.exe` ignora a chave **em silêncio**, o teste roda contra o fonte correto e passa,
+e o AC6 conclui "passou na versão vulnerável". A/B: chave POSIX → `ok`; chave por `cygpath -m` →
+`--- FAIL … esperado 403, obteve 200; corpo vazou segredo`. Estava **escondido atrás do
+`FileNotFoundError`** que a Wave 1 removeu. Em `ubuntu-latest` (único CI que roda o gate) POSIX é a
+grafia nativa e o braço passa. Recomendação: **novo ML nesta REQ**, roadmap de volta a `wip`, mesmo
+PR — é a mesma fronteira MSYS, quatro linhas abaixo dos sítios a2/a3 já corrigidos. O gate do ML-1B
+**não** cobre este sítio (varre corpo Python; aqui é `printf` para JSON).
+
+**#363 — veredito com medição:** a causa declarada (caminho interpolado) está **fechada** nos dois
+sítios da issue (`check-doctor-parity.sh` por deleção na v8; `check-validate-rule-pins.sh` pelo
+#417). O que ainda reprova é `pin7-noexec`: em `/tmp` montado `ntfs (binary,noacl,posix=0)` o
+`chmod 644` deixa o arquivo **755** e `[ -x ]` verdadeiro — **permissão**, não tradução de caminho.
+Mecanismo diferente, **não pertence a esta REQ**. Não fechei a issue (artefato público é do
+arquiteto), e a nota de fechamento precisa dizer que o gate **continua vermelho** no Windows por
+outro motivo.
+
+**Outros dois achados, mecanismo diferente, sem issue existente que os cubra (#307/#364 não cobrem):**
+`ln: failed to create symbolic link '…/s9-proj/.venv/bin/python'` (venv no Windows usa
+`Scripts/python.exe`) e `trackfw barrier` saindo **2** onde o cenário espera 1.
+
+**Nenhum commit, nenhum push, nenhuma branch. `make quality` e `go test ./...` NÃO rodados**
+(rodei `go test` de um único pacote, `./internal/serve/...`, apenas por dentro do gate e na
+reprodução A/B do overlay). Vault: `overlay-json-com-caminho-posix-e-ignorado-em-silencio-pelo-go-no-windows-2026-09-24.md`.
+Clone da VM deixado na branch local `wave2` em `dc9f733`, árvore limpa, com o não rastreado
+`sonda-rc128.sh` **pré-existente** (não meu, não removido).
