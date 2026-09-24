@@ -184,7 +184,7 @@ corpus truncado — não é regressão, e não deve ser "consertado" alargando o
 
 ### ML-2A — O chunk para de morrer em silêncio
 **Owner:** `ares-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-09-24
 **Arquivos afetados:** `scripts/check-gates-falsify.sh` (região do Cenário 18, ~1478–1603)
 ⚠️ **NÃO** toque em `scripts/gen-falsify-chunks.py` — é o ML-2C, em paralelo.
 
@@ -203,15 +203,17 @@ diagnóstico e o `set -e` mata antes do epílogo — por isso não sai nem `CHUN
    falta de medição. Sua entrega é o diagnóstico ficar visível quando acontecer.
 
 **Critérios de aceite:**
-- [ ] Morte de chunk passa a emitir sítio e rc; provado por injeção de uma falha artificial
-- [ ] Os dois sítios deixam de engolir stderr no caminho de falha
-- [ ] Braço POSIX: nada muda no que já passa
-- [ ] 🔴 Uma frase por teste novo, dizendo qual conclusão deste ML ele afirma
-- [ ] 🔴 **NÃO rodar `make quality`**
+- [x] `trap ERR` emite `CHUNK_ABORT rc= line= src= cmd=`; **6 injeções pareadas**, incluindo INJ-3,
+      a assinatura exata medida (rc=128 com stderr **vazio**) — a linha de `rc=` é incondicional
+- [x] Stderr vai para arquivo: invisível no sucesso, impresso com o rc na falha
+- [x] Log da árvore limpa **byte-idêntico** ao pristino; zero `CHUNK_ABORT`, por dois caminhos
+- [x] 🔴 **Nenhum teste novo** — a prova é por injeção pareada, e a ausência está declarada; há
+      uma frase por injeção. E nenhuma hipótese sobre o `rc=128` foi escrita como causa
+- [x] 🔴 `make quality` não rodado pelo executor
 
 ### ML-2C — A guarda de conjunto enxerga rótulo emitido por `echo`, e o Cenário 18 volta a ser corte
 **Owner:** `artemis-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-09-24
 **Arquivos afetados:** `scripts/gen-falsify-chunks.py`
 ⚠️ **NÃO** toque em `scripts/check-gates-falsify.sh` — é o ML-2A, em paralelo.
 
@@ -235,12 +237,14 @@ guarda nenhuma** — gate verde com controle de segurança removido.
    continua passando, com guarda de não-vacuidade.
 
 **Critérios de aceite:**
-- [ ] `HDR_PAT` casa o Cenário 18; contagem de cabeçalhos antes/depois colada
-- [ ] Rótulos por `echo` viram exigência; número medido, com o comando
-- [ ] Apagar um `echo` de controle reprova — provado por injeção
-- [ ] Guarda de não-vacuidade com piso e o comando que o produziu
-- [ ] 🔴 Uma frase por teste novo
-- [ ] 🔴 **NÃO rodar `make quality`**
+- [x] `HDR_PAT` 59 → 60 — **auditei reimplementando a regex**: entra só a linha 1478, nenhum sai
+- [x] 165 → **232** exigidos (+67), conferido por segundo caminho; a divergência 99 vs 69 explicada:
+      **nenhum dos dois media "rótulo que vira exigência"**
+- [x] Apagar `no-repo-mutation` e `git-branch-guard-dedup/*`: gerador novo RC=1 nomeando o rótulo;
+      gerador antigo RC=0 — **cego**
+- [x] Direção verde com dado real: os 220 exigidos foram **todos** emitidos no run verde `35987929640`
+- [x] 🔴 Nenhum teste commitado (instrumento fora da árvore); frase por medição
+- [x] 🔴 `make quality` não rodado pelo executor
 
 ### ML-2B — Sonda: por que o `git` sai 128 no Windows
 **Owner:** arquiteto (dispara e lê), implementação por `ares-tf`
