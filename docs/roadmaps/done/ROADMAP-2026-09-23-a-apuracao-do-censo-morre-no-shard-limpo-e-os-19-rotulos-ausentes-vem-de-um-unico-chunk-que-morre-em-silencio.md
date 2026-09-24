@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-23
 req: "docs/req/REQ-2026-09-23-a-apuracao-do-censo-morre-no-shard-limpo-e-os-19-rotulos-ausentes-vem-de-um-unico-chunk-que-morre-em-silencio.md"
 squad: [hades-tf, ares-tf, artemis-tf]
@@ -7,7 +7,7 @@ squad: [hades-tf, ares-tf, artemis-tf]
 
 # Roadmap: a apuração do censo morre no shard limpo, e os 19 ausentes vêm de um chunk só
 
-> Criado em: 2026-09-23 | Status: wip
+> Criado em: 2026-09-23 | Status: done
 REQ: `docs/req/REQ-2026-09-23-a-apuracao-do-censo-morre-no-shard-limpo-e-os-19-rotulos-ausentes-vem-de-um-unico-chunk-que-morre-em-silencio.md`
 
 ## Diagnóstico
@@ -727,9 +727,22 @@ fica para depois do merge, com o censo funcionando.
 ## Wave 3 — Linha de base (1 ML, do arquiteto)
 > Dependências: Waves 1 e 2 mergeadas.
 
-- [ ] Censo disparado em `main` pós-correção termina **sem** `TOTAL INCOMPLETO`
-- [ ] Total por shard registrado aqui como **linha de base pós-v8**
-- [ ] 🔴 O número **não** é usado para triar o cluster de Windows nesta REQ (escopo negativo)
+- [x] 🔴 **Run `36017761462` (main, 2026-09-24): 8/8 shards, SEM `TOTAL INCOMPLETO`.** Primeira vez
+      desde que o instrumento quebrou
+- [x] **Linha de base pós-v8**, por shard:
+
+```
+censo ARM64 (2026-09-08):   OK=440 · FAIL=512
+censo x64   (este run):     OK=321 · FAIL=11      queda de FAIL: 501
+  shard 0: OK=50 FAIL=1     shard 4: OK=46 FAIL=4
+  shard 1: OK=45 FAIL=2     shard 5: OK=21 FAIL=0
+  shard 2: OK=63 FAIL=1     shard 6: OK=20 FAIL=0
+  shard 3: OK=30 FAIL=3     shard 7: OK=46 FAIL=0
+```
+
+Rótulos ausentes: **19 → 4**, e os 4 são consequência de **uma** morte de chunk, não defeitos
+independentes.
+- [x] 🔴 O número **não** foi usado para triar o cluster — escopo negativo respeitado
 
 > ⚠️ O run `35920654658` (main, 2026-09-23 pré-correção) é **nulo como linha de base** — ele tem a
 > causa A. Não citar o total dele.
@@ -737,3 +750,40 @@ fica para depois do merge, com o censo funcionando.
 ## Barreira final
 
 Revisão `hefesto-tf` e `hades-tf`, auditoria do arquiteto, `trackfw barrier`, CI verde.
+
+
+---
+
+## Wave 3 — resultado, e a prova de valor que não estava no plano
+
+🔴 **O `CHUNK_ABORT` funcionou em produção, no primeiro uso.** O `chunk_0` morreu — e, em vez do
+silêncio que originou esta REQ, o log trouxe:
+
+```
+CHUNK_ABORT rc=1 line=3609 src=…/chunk_0.sh cmd=python3 -c "
+CHUNK_ABORT: o shell abortou por 'set -e' antes do epílogo do chunk — nenhum CHUNK_COMPLETE e
+nenhuma linha 'N cenário(s) reprovaram' serão emitidos. A linha acima é o sítio e o rc; a ausência
+de rótulos abaixo dela é consequência, não causa.
+```
+
+**Rastreei o sítio até o fonte** (`check-gates-falsify.sh:6745`):
+
+```python
+python3 -c "
+import json, sys
+with open('$ROOT_DIR/npm/package.json') as f:
+```
+
+🔴 **É caminho POSIX interpolado dentro do código Python — exatamente a causa da
+`REQ-2026-09-24`, que já está em `backlog/`**, e é o **primeiro item** da enumeração que eu mesmo
+escrevi lá (`check-gates-falsify.sh:6493`, deslocado desde então). Roda em POSIX (`rc=0` local) e
+morre no Windows.
+
+**O instrumento que esta REQ consertou apontou, no primeiro uso, um defeito que estava enumerado e
+esperando priorização.** É a diferença entre *"8/8 shards reprovados, 146 rótulos ausentes, sem
+total"* e *"um sítio, uma linha, uma causa já conhecida"*.
+
+⚠️ **A queda de FAIL (501) ficou fora do intervalo esperado `~442`**, e o workflow tomou o ramo de
+achado. **Correto sobre este corpus** — a base ARM64 de 2026-09-08 é pré-v8 e mede outra coisa.
+Alargar o intervalo para calar o aviso seria maquiar; recalibrar a base é trabalho próprio, fora
+desta REQ.
