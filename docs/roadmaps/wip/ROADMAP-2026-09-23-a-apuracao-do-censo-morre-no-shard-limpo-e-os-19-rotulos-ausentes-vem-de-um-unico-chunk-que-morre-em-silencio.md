@@ -539,12 +539,13 @@ Nos **mesmos** cenários AC5, dois `DEST` vazios comparam iguais e o cenário em
 idêntico** — e fechar a metade `URL` do mesmo `if` deixando a metade `DEST` vácua seria fechar o
 roadmap com defeito conhecido no sítio que acabamos de tocar.
 
-- [ ] Guarda de não-vacuidade para `DEST`, no padrão já estabelecido pelo ML-2I (reprova com rótulo)
-- [ ] Varra a família `sed -n`/`awk`/`cut` — **comandos que saem 0 mesmo sem produzir saída** — e dê
+- [x] Guarda no **basename**, não na captura — `DEST="/tmp/work/"` tem captura não-vazia e basename
+      vazio; o padrão copiado do `URL` não dispararia (medido por mim)
+- [x] 67 sítios · 4 corrigidos · 63 isentos em 5 classes, **duas medidas** em vez de inferidas
       veredito por sítio. 🔴 Aqui o rc **nunca** ajuda: o único discriminante é o conteúdo
-- [ ] Falsificação em três braços, como no ML-2I
-- [ ] 🔴 Uma frase por teste novo, ou ausência declarada
-- [ ] 🔴 **NÃO rodar `make quality`**
+- [x] Três braços, incluindo o de **divergência real** — a guarda não mascara o defeito original
+- [x] 🔴 Nenhum teste commitado; 11 frases por medição
+- [x] 🔴 `make quality` não rodado pelo executor
 
 ### ML-2H — Discriminante irmão: pipeline desguarnecido sob `pipefail`
 **Owner:** `artemis-tf`
@@ -555,23 +556,24 @@ cobre esta forma e **não deve ser alargado** — ele exige coexistência de com
 fallback emissor; aqui não há fallback algum. Alargar a regex acusaria todo `$(a | b)` legítimo.
 É **discriminante irmão**, gate próprio.
 
-- [ ] Gate que reprova `grep` em posição não-final de pipeline dentro de `$( )` sob `pipefail`, sem
+- [x] `scripts/check-unguarded-capture-rc.sh` — e **alargado para o elo final**, com razão medida
       guarda — provado por injeção, forma a forma
-- [ ] Não reprova os legítimos — provado na árvore, incluindo as 13 da forma correta
-- [ ] 🔴 **As 4 classes que o gate NÃO pode acusar**, medidas no ML-2G, tratadas explicitamente:
+- [x] Não reprova os legítimos — `quality.yml:1255` sai como `exempt/guarded-inside-parens`
+- [x] As 6 classes, **cada uma com sítio real que a exercita** e injeção própria
       (1) substituição em posição de argumento · (2) `|| true` depois do fecha-parênteses ·
       (3) corpo em `bash -c`/`sh -c` — **as três sintáticas e decidíveis** — e (4) não-casamento
       pré-excluído por checagem anterior que encerra o script — **semântica, NÃO decidível**: vai
       para o cabeçalho como não coberta, com alegação por sítio. O gate não finge decidir o que não
       decide
-- [ ] Cobre também a **forma sem cano** (ML-2I) — senão nasce com sítios fora do alcance no dia 1
-- [ ] 🔴 **São 5 classes de isenção, não 4.** O ML-2I acrescentou duas, ambas **sintáticas e
+- [x] Cobre a forma sem cano (braço A) — `v=$(grep …)` mede rc=1 sem cano
+- [x] 5 classes sintáticas + a 6ª semântica; a distinção `local` mesma-linha vs. separada provada
+      nos **dois** sentidos (braços K e F)
       decidíveis**: arquivo **sem `set -e`** (medido em `check-orphan-gates.sh` e
       `check-raw-read-ban.sh`) e **`local v=$(cmd)` na mesma linha**, que mascara o rc
-- [ ] 🔴 **Junte continuações antes de decidir** — um gate linha-a-linha nasce com o falso positivo
+- [x] Varredura por parênteses balanceados, ciente de aspas
       de `quality.yml:1255`, onde o `|| true` está três linhas abaixo do `$(`
-- [ ] Formas não cobertas declaradas no cabeçalho
-- [ ] Guarda de não-vacuidade com piso e o comando que o produziu
+- [x] Classe 6 declarada, com **guarda de obsolescência ela mesma falsificável** (braço P)
+- [x] Piso 60 sobre 108 candidatos; **auditei**: `MIN_CANDIDATES=9999` → rc=1
 
 ### ML-2F — Decidir o contrato do `.actual`: `FAIL` satisfaz a exigência do rótulo
 **Owner:** arquiteto
@@ -635,12 +637,14 @@ caminho.
 e o **marcador inline** `# unguarded-capture-rc-allowed:` em `check-agent-namespace-union.sh:904,905`,
 migrando da tabela `ALLEGATIONS` para a forma preferida.
 
-- [ ] O par passa a distinguir "concordam em zero porque não há o que medir" de "concordam porque
+- [x] **Testemunha de medição** como pré-condição — não um terceiro contador; shard vácuo deixa de
+      contar como presente. Falsificado em 5 direções, com o bloco `run:` extraído por `yaml.safe_load`
       mediram o mesmo" — falsificado nas duas direções
-- [ ] Marcador inline nos dois sítios; a entrada correspondente sai da tabela e a **guarda de
+- [x] Marcador inline nos dois sítios; 🔴 a tabela esvaziou e **isso tornou a guarda vácua** — achado
+      declarado, corrigido no ML-2L
       obsolescência** continua verde
-- [ ] 🔴 Uma frase por teste novo, ou ausência declarada
-- [ ] 🔴 **NÃO rodar `make quality`**
+- [x] 🔴 Nenhum teste novo; 12 frases por medição
+- [x] 🔴 `make quality` não rodado pelo executor
 
 
 **Auditoria do arquiteto (medida por mim):**
