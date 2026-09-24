@@ -308,8 +308,15 @@ FALSIFY_SUCCESS_TALLY="$WORK/success-count"
 # incremento não pode avermelhar uma execução limpa. A contagem absoluta sai do
 # `make quality` do arquiteto, não daqui.
 # ML-1B/REQ-2026-09-24: piso MEDIDO, nao somado. A execucao completa desta arvore
-# reporta "Falsification checks passed (249 scenarios)" — 241 deixa folga de 8 e
+# reportava "Falsification checks passed (249 scenarios)" — 241 deixava folga de 8 e
 # nao se apoia em aritmetica de "+9 bracos", que ja produziu piso inflado antes.
+# ML-4A (mesma REQ): a leitura de $falsify_success_n vivia ANTES do Cenario 200 --
+# o numero impresso era um retrato tirado cedo demais e nao continha os 9 rotulos
+# `interp-path/*`. Com a leitura movida para o epilogo, a MESMA arvore reporta 258
+# (medido: `bash scripts/check-gates-falsify.sh`, RC=0, 0 FAIL). O piso e um MINIMO
+# (`-lt`), entao a contagem so pode ter SUBIDO: 241 continua valido e a folga passa
+# de 8 para 17. Nao houve bump -- o delta 249->258 foi MEDIDO, nao somado, e bate
+# com os 9 bracos do Cenario 200 por corroboracao, nao por construcao.
 FALSIFY_SUCCESS_FLOOR=241
 if [[ "$TRACKFW_FALSIFY_ENUMERATE" == "1" ]]; then
   : > "$FALSIFY_ENUM_TALLY"
@@ -361,6 +368,55 @@ falsify_count_failure() {
 # FALSIFY_ENUM_TALLY: sobrevive fronteira de subshell.
 falsify_count_success() {
   printf 'x\n' >> "$FALSIFY_SUCCESS_TALLY"
+}
+
+# ---------------------------------------------------------------------------
+# ML-0B -- Forma B: "rótulo de sucesso emitido por caminho que NÃO é o ramo de
+# aprovação da checagem que ele afirma".
+#
+# Mecânica: em TRACKFW_FALSIFY_ENUMERATE=1 os pontos de reprovação RETORNAM em
+# vez de sair (é o que torna a enumeração possível). Logo, todo `echo "OK ..."`
+# incondicional colocado DEPOIS de um guard de setup ou de uma sequência de
+# `assert_*` imprime veredito de sucesso sobre checagem já reprovada -- o único
+# FALSO VERDE do cluster de Windows (censo de 2026-09-24: baseline reprova numa
+# linha, `OK` sai na seguinte).
+#
+# `falsify_fail_mark` fotografa o tally de reprovações; `falsify_failed_since`
+# diz se ALGUMA reprovação foi registrada desde a foto. Par de uso, sempre
+# dentro do MESMO cenário (gen-falsify-chunks.py só corta em `# Cenário N`,
+# então a marca e a leitura nunca caem em chunks diferentes):
+#
+#   _falsify_mark_sNN=$(falsify_fail_mark)
+#   ... guards de setup / assert_* ...
+#   if falsify_failed_since "$_falsify_mark_sNN"; then
+#     echo "FAIL [falsify/<rótulo>]: ..." >&2
+#   else
+#     falsify_count_success
+#     echo "OK   [falsify/<rótulo>]"
+#   fi
+#
+# 🔴 O `echo "OK   [falsify/...]"` LITERAL é preservado em todos os sítios: é
+# dele que gen-falsify-chunks.py (ECHO_LABEL_PAT) colhe o conjunto de rótulos
+# exigidos pela guarda de conjunto do driver paralelo. E o ramo suprimido emite
+# `FAIL [falsify/<mesmo rótulo>]` porque o driver aceita a linha FAIL como
+# emissão do rótulo -- suprimir sem emitir nada viraria "rótulo AUSENTE",
+# diagnóstico errado (mesma razão escrita no Cenário 181).
+#
+# Sem cano e sem `$?`: `wc -l < arquivo` lê por redirecionamento direto.
+falsify_fail_mark() {
+  local n=0
+  if [[ -f "${FALSIFY_ENUM_TALLY:-}" ]]; then
+    n=$(wc -l < "$FALSIFY_ENUM_TALLY")
+    n=${n//[[:space:]]/}
+  fi
+  printf '%s\n' "${n:-0}"
+}
+
+falsify_failed_since() {
+  local mark=${1:-0}
+  local now
+  now=$(falsify_fail_mark)
+  [[ "${now:-0}" -gt "${mark:-0}" ]]
 }
 
 # ---------------------------------------------------------------------------
@@ -4609,13 +4665,37 @@ run_go_guard_dump "setup-s64-go-corrupted-build" "$T64_MOD" "$T64_OUT"
 # corrigido pelo ML-1B) prova que o escritor termina limpo; baseline com
 # payload GRANDE (>64KB, estoura o buffer do pipe) prova que o dreno
 # funciona mesmo sob pressão de buffer; detecção corrompe o literal isolado
-# do dreno de stdin (`IFS= read -r -t 2 -d '' _TRACKFW_STDIN || true` ->
-# `true`, deixando a inicialização `_TRACKFW_STDIN=""` intacta mas
-# neutralizando a leitura real -- literal atualizado no ML-3A da ROADMAP-
-# 2026-09-09-guard-emite-hookspecificoutput-e-a-razao-chega-ao-modelo-nos-3-
-# clis.md, que trocou o discriminante `-t 0` por dreno com orçamento de
-# tempo) e prova que, sem o dreno, o EPIPE volta -- isolando a regressão ao
-# dreno em si, não a uma mudança geral no probe do no-op.
+# do dreno de stdin (a linha `IFS= read ... || _TRACKFW_STDIN_RC=$?` ->
+# `true`, deixando a inicialização `_TRACKFW_STDIN=""`, o laço e o teste de
+# truncamento intactos mas neutralizando a leitura real: sem o read, o
+# `_TRACKFW_STDIN_RC` fica 0, o `-le 128` quebra o laço na primeira volta e
+# o stdin nunca é consumido) e prova que, sem o dreno, o EPIPE volta --
+# isolando a regressão ao dreno em si, não a uma mudança geral no probe do
+# no-op.
+#
+# Literal atualizado duas vezes, por dois MLs diferentes -- registrado porque
+# o texto do literal É o contrato deste cenário e ele já quebrou o gate uma
+# vez ao mudar sem que este sítio acompanhasse:
+#   1. ML-3A da ROADMAP-2026-09-09-guard-emite-hookspecificoutput-...: trocou
+#      o discriminante `-t 0` por dreno com orçamento de tempo, produzindo
+#      `IFS= read -r -t 2 -d '' _TRACKFW_STDIN || true`;
+#   2. ML-1B (G5) da ROADMAP-2026-09-24-treze-rotulos-falham-no-censo-de-
+#      windows-...: o orçamento daquele dreno era TOTAL (dependente do
+#      TAMANHO do payload) e, estourado, o guard saía 0 -- aprovava um
+#      comando que não conseguiu ler. Virou orçamento OCIOSO (laço que renova
+#      os 2 s a cada byte recebido) + fail-closed quando trunca sem argv.
+#
+# ⚠️ RECONCILIAÇÃO com o rótulo do censo de Windows (vault/notes/guard-aprova-
+# quando-nao-conseguiu-ler-o-comando-orcamento-total-do-read-2026-09-24.md):
+# DEPOIS do ML-1B, 200 KB deixou de ser "payload que o guard não consegue
+# ler" -- passou a ser só um payload LENTO (13,4 s medidos no Git-Bash do
+# Windows, onde o read de pipe custa ~90x o do Darwin). O braço
+# `baseline-writer-clean-large-payload` continua provando pressão de buffer,
+# mas NÃO prova mais ilegibilidade; o caso residual genuinamente ilegível é
+# o ESCRITOR TRAVADO, coberto pelos testes Go de
+# internal/generators/git_branch_guard_stdin_drain_test.go. Ler este braço
+# contra o rótulo do censo sem esta nota leva à conclusão errada de que houve
+# substituição de cenário.
 # ---------------------------------------------------------------------------
 T65_NO_YAML_DIR="$WORK/s65-no-trackfw-yaml"
 mkdir -p "$T65_NO_YAML_DIR"
@@ -4646,7 +4726,7 @@ cp "$ROOT_DIR/go.sum" "$T65_MOD/go.sum"
 
 corrupt_literal \
   "$ROOT_DIR/internal/generators/scaffold.go" "$T65_MOD/internal/generators/scaffold.go" \
-  "IFS= read -r -t 2 -d '' _TRACKFW_STDIN || true" \
+  "IFS= read -r -t 2 -d '' _TRACKFW_STDIN_CHUNK || _TRACKFW_STDIN_RC=\$?" \
   "true" \
   "s65-go-stdin-drain-removed"
 
@@ -4684,7 +4764,8 @@ run_go_guard_dump "setup-s65-go-corrupted-build" "$T65_MOD" "$T65_OUT"
 # fim-a-fim contra o BINÁRIO REAL (`discover --init`), o que nenhum teste de
 # unidade cobre (eles chamam os injetores diretamente, nunca o comando CLI).
 #
-# Três braços:
+# Quatro braços (o 4º entrou com o ML-2C; este cabeçalho dizia "três" e
+# estava defasado desde então — corrigido no ML-1C):
 #   1. Baseline — $HOME sintético com ~/.claude/settings.json apontando
 #      PreToolUse[Bash] para o caminho EXATO que
 #      globalGitBranchGuardScriptPath() resolveria
@@ -4719,10 +4800,44 @@ mkdir -p "$T67_PROJECT_DIR"
 # // tolerance itself is now exercised EXPLICITLY by braco 4 below with a
 # deliberately corrupted HOME, so this baseline stays deterministic across
 # platforms instead of accidentally depending on TMPDIR's shape.
+#
+# ML-1C (ROADMAP-2026-09-24-treze-rotulos..., grupo G4): no Windows este
+# cenário reprovava por ESPAÇO DE NOMES, não por separador. O MSYS converte
+# variável de ambiente e argv ao lançar processo nativo, mas NUNCA o conteúdo
+# de um arquivo escrito pelo bash — então o heredoc abaixo gravava
+# "/tmp/trackfw-falsify.XXXX/..." no `command` do settings.json global, e o
+# Go, recebendo o HOME já convertido pelo MSYS, computava
+# "C:\Users\...\Temp\trackfw-falsify.XXXX\...". normalizeGuardPath converte
+# "\" -> "/" nos dois (o braço de letra de unidade RODA), e mesmo assim
+# MATCH=false: as duas grafias apontam para o MESMO arquivo em MONTAGENS
+# diferentes. Nenhuma regra de string pode casá-las — fazê-las casar seria
+# afrouxamento semântico. Medição em vault/notes/msys-converte-env-e-argv-
+# mas-nunca-conteudo-de-arquivo-2026-09-24.md.
+#
+# Correção: o fixture passa a controlar a GRAFIA DOS DOIS LADOS a partir de
+# UMA string só — o HOME entregue ao binário já vai em grafia nativa
+# (`cygpath -m`), e é essa mesma string que entra no heredoc. Assim o MSYS
+# sai inteiramente da fronteira: não dependemos de a conversão de env var do
+# MSYS ser byte-igual à do `cygpath` (o censo x64 mostra grafia 8.3,
+# "C:/Users/RUNNER~1/...", enquanto a VM ARM64 mostra o nome longo — se só o
+# heredoc fosse convertido, o cenário passaria na VM e seguiria vermelho no
+# CI). Em POSIX `cygpath` não existe, to_native_path devolve a entrada
+# INALTERADA e T67_FAKE_HOME fica byte a byte idêntico ao que era — o
+# determinismo do parágrafo acima sobrevive por construção, não por inspeção.
+to_native_path() {
+  if command -v cygpath >/dev/null 2>&1; then
+    cygpath -m "$1"
+  else
+    printf '%s' "$1"
+  fi
+}
+
 WORK67_CLEAN=$(printf '%s' "$WORK" | sed 's#//*#/#g')
-T67_FAKE_HOME="$WORK67_CLEAN/s67-fake-home-installed"
-mkdir -p "$T67_FAKE_HOME/.claude"
-cat >"$T67_FAKE_HOME/.claude/settings.json" <<EOF
+T67_FAKE_HOME_POSIX="$WORK67_CLEAN/s67-fake-home-installed"
+mkdir -p "$T67_FAKE_HOME_POSIX/.claude"
+# Grafia entregue ao binário E gravada no JSON (a mesma string, sempre).
+T67_FAKE_HOME=$(to_native_path "$T67_FAKE_HOME_POSIX")
+cat >"$T67_FAKE_HOME_POSIX/.claude/settings.json" <<EOF
 {"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"$T67_FAKE_HOME/.trackfw/scripts/trackfw-git-branch-guard.sh"}]}]}}
 EOF
 
@@ -4833,11 +4948,33 @@ fi
 # caminho já normalizado a partir do MESMO HOME; antes do ML-2C a comparação
 # de string crua entre os dois falhava e o dedup não disparava (refs=1); a
 # correção normaliza os dois lados antes de comparar (refs=0 esperado).
-T67_FAKE_HOME_SLASH="${WORK67_CLEAN}//s67-fake-home-installed-slash"
-mkdir -p "$T67_FAKE_HOME_SLASH/.claude"
-cat >"$T67_FAKE_HOME_SLASH/.claude/settings.json" <<EOF
+#
+# ML-1C: mesma correção de grafia do braço 1, com um cuidado a mais. O "//"
+# é O QUE ESTE BRAÇO MEDE, e `cygpath` COLAPSA "//" embutido — converter o
+# caminho já malformado apagaria o caso e o rótulo passaria sem provar nada.
+# Então converte-se a BASE ($WORK67_CLEAN) e injeta-se o "//" DEPOIS, sobre a
+# grafia nativa. A sobrevivência do "//" no arquivo gravado é ASSERTADA
+# abaixo (guarda de vacuidade), não presumida.
+T67_WORK67_CLEAN_NATIVE=$(to_native_path "$WORK67_CLEAN")
+T67_FAKE_HOME_SLASH="${T67_WORK67_CLEAN_NATIVE}//s67-fake-home-installed-slash"
+T67_FAKE_HOME_SLASH_POSIX="${WORK67_CLEAN}//s67-fake-home-installed-slash"
+mkdir -p "$T67_FAKE_HOME_SLASH_POSIX/.claude"
+cat >"$T67_FAKE_HOME_SLASH_POSIX/.claude/settings.json" <<EOF
 {"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"$T67_FAKE_HOME_SLASH/.trackfw/scripts/trackfw-git-branch-guard.sh"}]}]}}
 EOF
+
+# Guarda de vacuidade do braço 4: se o "//" não sobreviveu até o arquivo, o
+# cenário abaixo compara duas grafias JÁ normalizadas e o OK não prova a
+# tolerância a barra dupla. Âncora no SEGMENTO ("//s67-fake-home-installed-
+# slash"), nunca em "//" solto — um prefixo nativo "C:/" jamais satisfaz esta
+# checagem por acidente.
+if ! grep -qF '//s67-fake-home-installed-slash' "$T67_FAKE_HOME_SLASH_POSIX/.claude/settings.json"; then
+  echo "FAIL [falsify/git-branch-guard-dedup/double-slash-tolerance-vacuity]: o \"//\" nao sobreviveu ao comando gravado em $T67_FAKE_HOME_SLASH_POSIX/.claude/settings.json — o braco 4 nao estaria medindo tolerancia a barra dupla" >&2
+  cat "$T67_FAKE_HOME_SLASH_POSIX/.claude/settings.json" >&2
+  falsify_fail_point
+else
+  echo "PROOF [falsify/git-branch-guard-dedup/double-slash-tolerance/non-vacuity]: o \"//\" esta presente no command gravado — o braco 4 mede o que diz medir"
+fi
 
 T67_PROJECT_DIR_SLASH="$WORK67_CLEAN/s67-project-double-slash"
 mkdir -p "$T67_PROJECT_DIR_SLASH"
@@ -5633,6 +5770,7 @@ write_s77_fixture "$T77A" \
   "<!-- trackfw-contract: none reason=e so prosa de contexto -->"
 
 T77A_OUT="$WORK/s77a-out"
+_falsify_mark_s77a=$(falsify_fail_mark)
 set +e
 T77A_STDOUT=$(bash "$T77/scripts/check-parity-contract-coverage.sh" "$T77A" 2>"$T77A_OUT")
 T77A_STATUS=$?
@@ -5657,8 +5795,12 @@ for expected in \
     falsify_fail_point
   fi
 done
-falsify_count_success
-echo "OK   [falsify/parity-contract-coverage/baseline]: 3 níveis de título + 4 estados válidos, todas anotadas, contagens corretas"
+if falsify_failed_since "$_falsify_mark_s77a"; then
+  echo "FAIL [falsify/parity-contract-coverage/baseline]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
+else
+  falsify_count_success
+  echo "OK   [falsify/parity-contract-coverage/baseline]: 3 níveis de título + 4 estados válidos, todas anotadas, contagens corretas"
+fi
 
 # --- 77b — gate= sem caminho nomeado (vazio) — regra GERAL da Emenda 2:
 #           chave PRESENTE com valor vazio reprova, mensagem nomeia a chave --
@@ -5982,24 +6124,30 @@ sed 's/} else if targetID == "claude" \&\& len(agentModels) > 0 {/} else if len(
 # Verificação de vivacidade: confirmar que o patch foi aplicado
 if cmp -s "$ROOT_DIR/internal/integrations/render.go" "$T86/internal/integrations/render.go"; then
   echo 'FAIL [falsify/setup-s86-liveness]: sed nao modificou render.go — seam pode ter mudado' >&2
+  echo "FAIL [falsify/agent-models-parity/namespace-guard-liveness]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
   falsify_fail_point
+else
+  echo 'OK   [falsify/agent-models-parity/namespace-guard-liveness]'
 fi
-echo 'OK   [falsify/agent-models-parity/namespace-guard-liveness]'
 
 # Compilar binário corrompido — a guarda é um predicado puro; sem ela o código
 # continua válido Go e compila normalmente.
 if ! (cd "$T86" && env GOCACHE="$WORK/go-build-cache" go build -o "$T86/bin/trackfw" ./cmd/trackfw) >/dev/null 2>&1; then
   echo 'FAIL [falsify/setup-s86-build]: binário corrompido nao compilou — verificar o patch' >&2
+  echo "FAIL [falsify/agent-models-parity/namespace-guard-sabotaged-build]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
   falsify_fail_point
+else
+  echo 'OK   [falsify/agent-models-parity/namespace-guard-sabotaged-build]'
 fi
-echo 'OK   [falsify/agent-models-parity/namespace-guard-sabotaged-build]'
 
 # Braco de baseline: gate deve PASSAR com o binário real
 if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-agent-models-parity.sh" >/dev/null 2>&1; then
   echo 'FAIL [falsify/setup-s86-baseline]: check-agent-models-parity.sh ja reprova com binario real — prova P4 invalida' >&2
+  echo "FAIL [falsify/agent-models-parity/namespace-guard-baseline]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
   falsify_fail_point
+else
+  echo 'OK   [falsify/agent-models-parity/namespace-guard-baseline]'
 fi
-echo 'OK   [falsify/agent-models-parity/namespace-guard-baseline]'
 
 # Braco de detecção: gate deve FALHAR com o binário corrompido,
 # especificamente relatando "namespace leak" no output.
@@ -6064,9 +6212,11 @@ cp "$ROOT_DIR/go.sum" "$T87C_GO_MOD/go.sum"
 # Baseline: gate deve PASSAR com o binário real
 if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-release-tag-parity.sh" >/dev/null 2>&1; then
   echo 'FAIL [falsify/setup-s87-baseline]: check-release-tag-parity.sh ja reprova com binario real — prova P4 invalida' >&2
+  echo "FAIL [falsify/release-tag-parity/content-from-commit-baseline]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
   falsify_fail_point
+else
+  echo 'OK   [falsify/release-tag-parity/content-from-commit-baseline]'
 fi
-echo 'OK   [falsify/release-tag-parity/content-from-commit-baseline]'
 
 # Aplicar sabotagem: substituir objectSHA por "HEAD" na leitura do CHANGELOG
 corrupt_literal \
@@ -6121,9 +6271,11 @@ cp "$ROOT_DIR/go.sum" "$T88C_GO_MOD/go.sum"
 # Baseline: gate deve PASSAR com o binário real (independente do braço S87)
 if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-release-tag-parity.sh" >/dev/null 2>&1; then
   echo 'FAIL [falsify/setup-s158-baseline]: check-release-tag-parity.sh ja reprova com binario real — prova P4 invalida' >&2
+  echo "FAIL [falsify/release-tag-parity/refs-replace-bypass-baseline]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
   falsify_fail_point
+else
+  echo 'OK   [falsify/release-tag-parity/refs-replace-bypass-baseline]'
 fi
-echo 'OK   [falsify/release-tag-parity/refs-replace-bypass-baseline]'
 
 # Aplicar sabotagem: remover --no-replace-objects da chamada git show
 corrupt_literal \
@@ -6212,6 +6364,7 @@ assert_fails_with "barrier/wave-zero-rejected-again-detected" \
 #                falsificacao dedicada -- um dos dois pontos do achado
 #                ficaria fechado so por inspecao, nao por gate.
 # ---------------------------------------------------------------------------
+_falsify_mark_s168=$(falsify_fail_mark)
 T99="$WORK/s168"
 mkdir -p "$T99/cmd" "$T99/internal"
 cp -r "$ROOT_DIR/cmd/." "$T99/cmd/"
@@ -6234,8 +6387,12 @@ build_go_or_fail "setup-s168-build" "$T99" "$T99_BIN"
 # Baseline ja provado pelo Cenario 167 (mesmo binario real, mesmo
 # check-barrier.sh) -- reexecutar aqui seria redundante; a garantia de
 # nao-vacuidade do braco de deteccao vem do assert_fails_with abaixo.
-falsify_count_success
-echo "OK   [falsify/barrier/wave-zero-flag-guard-rejected-again-baseline]: reaproveita a baseline do Cenario 167 (mesmo binario real, mesmo check-barrier.sh)"
+if falsify_failed_since "$_falsify_mark_s168"; then
+  echo "FAIL [falsify/barrier/wave-zero-flag-guard-rejected-again-baseline]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
+else
+  falsify_count_success
+  echo "OK   [falsify/barrier/wave-zero-flag-guard-rejected-again-baseline]: reaproveita a baseline do Cenario 167 (mesmo binario real, mesmo check-barrier.sh)"
+fi
 
 assert_fails_with "barrier/wave-zero-flag-guard-rejected-again-detected" \
   "expected exit 0 or 1 (never 2" \
@@ -6298,6 +6455,7 @@ assert_fails_with "global-scope/direction-a-reads-cwd-detected" \
 #                Baseline reaproveita do Cenario 169 (mesmo binario real,
 #                mesmo check-agent-models-parity.sh).
 # ---------------------------------------------------------------------------
+_falsify_mark_s170=$(falsify_fail_mark)
 T170="$WORK/s170"
 mkdir -p "$T170/cmd" "$T170/internal"
 cp -r "$ROOT_DIR/cmd/." "$T170/cmd/"
@@ -6318,8 +6476,12 @@ mkdir -p "$(dirname "$T170_BIN")"
 build_go_or_fail "setup-s170-build" "$T170" "$T170_BIN"
 
 # Baseline reaproveita do Cenario 169 (mesmo binario real, mesmo gate)
-falsify_count_success
-echo "OK   [falsify/global-scope/direction-b-reads-global-baseline]: reaproveita baseline do Cenario 169"
+if falsify_failed_since "$_falsify_mark_s170"; then
+  echo "FAIL [falsify/global-scope/direction-b-reads-global-baseline]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
+else
+  falsify_count_success
+  echo "OK   [falsify/global-scope/direction-b-reads-global-baseline]: reaproveita baseline do Cenario 169"
+fi
 
 assert_fails_with "global-scope/direction-b-reads-global-detected" \
   "claude-sonnet-9-9' (project pin)" \
@@ -6379,6 +6541,7 @@ assert_fails_with "ac2-sanitization/direction-a-detected" \
 #                Baseline reaproveita do Cenario 171 (mesmo binario real,
 #                mesmo check-barrier.sh).
 # ---------------------------------------------------------------------------
+_falsify_mark_s172=$(falsify_fail_mark)
 T172="$WORK/s172"
 mkdir -p "$T172/cmd" "$T172/internal"
 cp -r "$ROOT_DIR/cmd/." "$T172/cmd/"
@@ -6399,8 +6562,12 @@ mkdir -p "$(dirname "$T172_BIN")"
 build_go_or_fail "setup-s172-build" "$T172" "$T172_BIN"
 
 # Baseline reaproveita do Cenario 171 (mesmo binario real, mesmo gate)
-falsify_count_success
-echo "OK   [falsify/trust-check/direction-b-baseline]: reaproveita baseline do Cenario 171"
+if falsify_failed_since "$_falsify_mark_s172"; then
+  echo "FAIL [falsify/trust-check/direction-b-baseline]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
+else
+  falsify_count_success
+  echo "OK   [falsify/trust-check/direction-b-baseline]: reaproveita baseline do Cenario 171"
+fi
 
 assert_fails_with "trust-check/direction-b-detected" \
   "hostile gate EXECUTED" \
@@ -6457,6 +6624,7 @@ assert_fails_with "sandbox-gap-e/direction-a-detected" \
 #                Deteccao: check-update-parity.sh reprova com
 #                "sandbox/dangling-outside-set/exit-zero".
 # ---------------------------------------------------------------------------
+_falsify_mark_s176=$(falsify_fail_mark)
 T176="$WORK/s176"
 mkdir -p "$T176/cmd" "$T176/internal"
 cp -r "$ROOT_DIR/cmd/." "$T176/cmd/"
@@ -6511,8 +6679,12 @@ T176_BIN="$WORK/s176-bin/trackfw"
 mkdir -p "$(dirname "$T176_BIN")"
 build_go_or_fail "setup-s176-build" "$T176" "$T176_BIN"
 
-falsify_count_success
-echo "OK   [falsify/sandbox-walkdir-reintroduced/direction-b-baseline]: reaproveita baseline do Cenario 175"
+if falsify_failed_since "$_falsify_mark_s176"; then
+  echo "FAIL [falsify/sandbox-walkdir-reintroduced/direction-b-baseline]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
+else
+  falsify_count_success
+  echo "OK   [falsify/sandbox-walkdir-reintroduced/direction-b-baseline]: reaproveita baseline do Cenario 175"
+fi
 
 assert_fails_with "sandbox-walkdir-reintroduced/direction-b-detected" \
   "sandbox/dangling-outside-set/exit-zero" \
@@ -6580,58 +6752,108 @@ roadmap_dir: docs/roadmaps
 roadmap_namespacing: flat
 '
 
-# Braco de baseline: REAL binary restaura o bit apos ser baixado
-T181_BASE_PROJ="$WORK/s181-base/project"
-T181_BASE_HOME="$WORK/s181-base/home"
-mkdir -p "$T181_BASE_PROJ" "$T181_BASE_HOME/.trackfw"
-printf '%s\n' "$_S181_ID" >"$T181_BASE_HOME/.trackfw/identity.json"
-printf '%s' "$_S181_CFG" >"$T181_BASE_PROJ/trackfw.yaml"
-(cd "$T181_BASE_PROJ" && HOME="$T181_BASE_HOME" "$ROOT_DIR/bin/trackfw" \
-  update --install-missing --targets validate-script) >/dev/null
-chmod 0644 "$T181_BASE_PROJ/scripts/trackfw-validate.sh"
-(cd "$T181_BASE_PROJ" && HOME="$T181_BASE_HOME" "$ROOT_DIR/bin/trackfw" \
-  update --targets validate-script) >/dev/null
-if test -x "$T181_BASE_PROJ/scripts/trackfw-validate.sh"; then
-  falsify_count_success
-  echo "OK   [falsify/scaffold-update-chmod-removed/direction-c-baseline]"
-else
-  echo "FAIL [falsify/scaffold-update-chmod-removed/direction-c-baseline]: binario real nao restaurou o bit de execucao apos update" >&2
-  ls -la "$T181_BASE_PROJ/scripts/trackfw-validate.sh" >&2
-  falsify_fail_point
+# Sonda de representabilidade do bit de execucao (#421) -- ML-2A/G3.
+# POR QUE ELA EXISTE: em NTFS montado `noacl` (padrao do Git for Windows),
+# `chmod 0644` NAO retira o bit -- `test -x` fica verdadeiro NOS DOIS bracos,
+# e o `OK` do braco de baseline nao prova nada ("passagem vacuosa",
+# categoria C da triagem 2026-09-25). Sem esta sonda, remover o braco de
+# deteccao deixaria o cenario INTEIRAMENTE VERDE no Windows sem exercitar
+# nada. A sonda e construida em "$WORK" -- o MESMO mount onde as fixtures
+# dos dois bracos vivem; sonda em outro mount nao provaria nada sobre elas.
+# Sequencia: 0755 -> test -x (o FS sabe MARCAR?) -> 0644 -> test -x
+# (o FS sabe RETIRAR?). So a segunda pergunta e a da #421, mas a primeira
+# separa "chmod e no-op" de "nem cria executavel".
+# Nao ha cano na linha anterior a nenhuma leitura de estado: cada chmod e
+# testado com `if ! chmod ...` (sob `set -euo pipefail` um chmod nu que
+# falha mataria o chunk e o diagnostico viraria "morreu no meio").
+T181_PROBE="$WORK/s181-exec-bit-probe.sh"
+printf '#!/bin/sh\nexit 0\n' >"$T181_PROBE"
+T181_FS_EXEC_BIT=1
+T181_PROBE_WHY=""
+if ! chmod 0755 "$T181_PROBE"; then
+  T181_FS_EXEC_BIT=0
+  T181_PROBE_WHY="chmod 0755 falhou no FS do diretorio de trabalho do gate"
+elif ! test -x "$T181_PROBE"; then
+  T181_FS_EXEC_BIT=0
+  T181_PROBE_WHY="chmod 0755 nao MARCOU o bit -- o FS nao representa execucao"
+elif ! chmod 0644 "$T181_PROBE"; then
+  T181_FS_EXEC_BIT=0
+  T181_PROBE_WHY="chmod 0644 falhou no FS do diretorio de trabalho do gate"
+elif test -x "$T181_PROBE"; then
+  T181_FS_EXEC_BIT=0
+  T181_PROBE_WHY="chmod 0644 nao RETIROU o bit (mecanismo da #421: NTFS noacl)"
 fi
 
-# Braco de deteccao: sabotaged binary restaura o conteudo mas NAO o bit
-T181_DET_PROJ="$WORK/s181-det/project"
-T181_DET_HOME="$WORK/s181-det/home"
-mkdir -p "$T181_DET_PROJ" "$T181_DET_HOME/.trackfw"
-printf '%s\n' "$_S181_ID" >"$T181_DET_HOME/.trackfw/identity.json"
-printf '%s' "$_S181_CFG" >"$T181_DET_PROJ/trackfw.yaml"
-(cd "$T181_DET_PROJ" && HOME="$T181_DET_HOME" "$ROOT_DIR/bin/trackfw" \
-  update --install-missing --targets validate-script) >/dev/null
-T181_SCRIPT="$T181_DET_PROJ/scripts/trackfw-validate.sh"
-# Salva conteudo canonico antes de corromper
-cp "$T181_SCRIPT" "$WORK/s181-canonical.sh"
-# Corrompe conteudo (apply() deve detectar e restaurar) e baixa o bit
-printf 'X' >>"$T181_SCRIPT"
-chmod 0644 "$T181_SCRIPT"
-# Roda binario sabotado
-(cd "$T181_DET_PROJ" && HOME="$T181_DET_HOME" "$T181_BIN" \
-  update --targets validate-script) >/dev/null
-# Verifica: conteudo restaurado (apply() rodou)
-_falsify_arm_fail_6523=0
-if ! cmp -s "$WORK/s181-canonical.sh" "$T181_SCRIPT"; then
-  echo "FAIL [falsify/scaffold-update-chmod-removed/direction-c-detected]: binario sabotado nao restaurou o conteudo -- apply() nao rodou" >&2
+if [[ "$T181_FS_EXEC_BIT" -eq 0 ]]; then
+  # Fixture inconstruivel != controle passou. Saida escolhida: FALHAR ALTO
+  # (categoria C -> A). Nao e skip silencioso e nao e skip nenhum: o censo
+  # de Windows e diagnostico (workflow_dispatch + continue-on-error, nunca
+  # bloqueia merge), entao um FAIL nomeado custa honestidade e nada mais --
+  # enquanto um SKIP sairia com 0 e satisfaria a guarda de conjunto do
+  # run-gates-falsify-parallel.sh, reconstruindo a categoria C um nivel
+  # acima. Os DOIS rotulos sao emitidos porque a guarda de conjunto do
+  # driver os espera (extraidos dos `echo "OK ..."` abaixo) e aceita
+  # linha `FAIL [falsify/<rotulo>]` como emissao -- um rotulo so viraria
+  # "rotulo esperado AUSENTE", diagnostico errado.
+  echo "FAIL [falsify/scaffold-update-chmod-removed/direction-c-baseline]: fixture inconstruivel neste sistema de arquivos -- $T181_PROBE_WHY (#421). GARANTIA NAO EXERCITADA: que 'trackfw update --targets validate-script' RESTAURA o bit de execucao de scripts/trackfw-validate.sh previamente rebaixado (os.Chmod em generateValidateScript). Ela continua exercitada de verdade em FS POSIX; aqui NAO foi exercitada -- e o 'OK' que este rotulo emitia antes desta sonda era vacuo, porque 'test -x' era verdadeiro independentemente de os.Chmod ter rodado." >&2
+  echo "FAIL [falsify/scaffold-update-chmod-removed/direction-c-detected]: nao executado -- mesma fixture inconstruivel do braco de baseline acima ($T181_PROBE_WHY). GARANTIA NAO EXERCITADA: que a asercao do braco de baseline DISCRIMINA, i.e. que um binario sem os.Chmod deixa o arquivo nao-executavel apos o update." >&2
+  ls -la "$T181_PROBE" >&2
   falsify_fail_point
-  _falsify_arm_fail_6523=1
-fi
-# Verifica: bit ainda ausente (Chmod nao rodou)
-if test -x "$T181_SCRIPT"; then
-  echo "FAIL [falsify/scaffold-update-chmod-removed/direction-c-detected]: binario sabotado restaurou o bit de execucao -- os.Chmod nao foi removido" >&2
-  ls -la "$T181_SCRIPT" >&2
   falsify_fail_point
-elif [[ "$_falsify_arm_fail_6523" -eq 0 ]]; then
-  falsify_count_success
-  echo "OK   [falsify/scaffold-update-chmod-removed/direction-c-detected]"
+else
+  # Braco de baseline: REAL binary restaura o bit apos ser baixado
+  T181_BASE_PROJ="$WORK/s181-base/project"
+  T181_BASE_HOME="$WORK/s181-base/home"
+  mkdir -p "$T181_BASE_PROJ" "$T181_BASE_HOME/.trackfw"
+  printf '%s\n' "$_S181_ID" >"$T181_BASE_HOME/.trackfw/identity.json"
+  printf '%s' "$_S181_CFG" >"$T181_BASE_PROJ/trackfw.yaml"
+  (cd "$T181_BASE_PROJ" && HOME="$T181_BASE_HOME" "$ROOT_DIR/bin/trackfw" \
+    update --install-missing --targets validate-script) >/dev/null
+  chmod 0644 "$T181_BASE_PROJ/scripts/trackfw-validate.sh"
+  (cd "$T181_BASE_PROJ" && HOME="$T181_BASE_HOME" "$ROOT_DIR/bin/trackfw" \
+    update --targets validate-script) >/dev/null
+  if test -x "$T181_BASE_PROJ/scripts/trackfw-validate.sh"; then
+    falsify_count_success
+    echo "OK   [falsify/scaffold-update-chmod-removed/direction-c-baseline]"
+  else
+    echo "FAIL [falsify/scaffold-update-chmod-removed/direction-c-baseline]: binario real nao restaurou o bit de execucao apos update" >&2
+    ls -la "$T181_BASE_PROJ/scripts/trackfw-validate.sh" >&2
+    falsify_fail_point
+  fi
+
+  # Braco de deteccao: sabotaged binary restaura o conteudo mas NAO o bit
+  T181_DET_PROJ="$WORK/s181-det/project"
+  T181_DET_HOME="$WORK/s181-det/home"
+  mkdir -p "$T181_DET_PROJ" "$T181_DET_HOME/.trackfw"
+  printf '%s\n' "$_S181_ID" >"$T181_DET_HOME/.trackfw/identity.json"
+  printf '%s' "$_S181_CFG" >"$T181_DET_PROJ/trackfw.yaml"
+  (cd "$T181_DET_PROJ" && HOME="$T181_DET_HOME" "$ROOT_DIR/bin/trackfw" \
+    update --install-missing --targets validate-script) >/dev/null
+  T181_SCRIPT="$T181_DET_PROJ/scripts/trackfw-validate.sh"
+  # Salva conteudo canonico antes de corromper
+  cp "$T181_SCRIPT" "$WORK/s181-canonical.sh"
+  # Corrompe conteudo (apply() deve detectar e restaurar) e baixa o bit
+  printf 'X' >>"$T181_SCRIPT"
+  chmod 0644 "$T181_SCRIPT"
+  # Roda binario sabotado
+  (cd "$T181_DET_PROJ" && HOME="$T181_DET_HOME" "$T181_BIN" \
+    update --targets validate-script) >/dev/null
+  # Verifica: conteudo restaurado (apply() rodou)
+  _falsify_arm_fail_6523=0
+  if ! cmp -s "$WORK/s181-canonical.sh" "$T181_SCRIPT"; then
+    echo "FAIL [falsify/scaffold-update-chmod-removed/direction-c-detected]: binario sabotado nao restaurou o conteudo -- apply() nao rodou" >&2
+    falsify_fail_point
+    _falsify_arm_fail_6523=1
+  fi
+  # Verifica: bit ainda ausente (Chmod nao rodou)
+  if test -x "$T181_SCRIPT"; then
+    echo "FAIL [falsify/scaffold-update-chmod-removed/direction-c-detected]: binario sabotado restaurou o bit de execucao -- os.Chmod nao foi removido" >&2
+    ls -la "$T181_SCRIPT" >&2
+    falsify_fail_point
+  elif [[ "$_falsify_arm_fail_6523" -eq 0 ]]; then
+    falsify_count_success
+    echo "OK   [falsify/scaffold-update-chmod-removed/direction-c-detected]"
+  fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -7015,6 +7237,7 @@ S193_MSG_VACUITY='links to Roadmap "docs/roadmaps/wip/ROADMAP-2026-09-06-s193-va
 
 
 # --- Go: fixtures compartilhadas (baseline usa o binário real; corrupção usa cópia isolada) ---
+_falsify_mark_s193=$(falsify_fail_mark)
 T193_G_LIFECYCLE="$WORK/s193-go-lifecycle"
 mkdir -p "$T193_G_LIFECYCLE"
 scaffold_adr_req_project "$T193_G_LIFECYCLE"
@@ -7105,10 +7328,18 @@ assert_output_lacks "roadmap-ref-stale-state/go/vacuity-detects-regression" \
   "$S193_MSG_VACUITY" \
   bash -c "cd '$T193_G_VACUITY' && exec '$T193C_GO_B_BIN' validate"
 
-falsify_count_success
-echo "OK   [falsify/roadmap-ref-stale-state/go]: as 3 direções (A/B/C) provadas"
-falsify_count_success
-echo "OK   [falsify/roadmap-ref-stale-state/python]: as 3 direções (A/B/C) provadas"
+if falsify_failed_since "$_falsify_mark_s193"; then
+  echo "FAIL [falsify/roadmap-ref-stale-state/go]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
+else
+  falsify_count_success
+  echo "OK   [falsify/roadmap-ref-stale-state/go]: as 3 direções (A/B/C) provadas"
+fi
+if falsify_failed_since "$_falsify_mark_s193"; then
+  echo "FAIL [falsify/roadmap-ref-stale-state/python]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
+else
+  falsify_count_success
+  echo "OK   [falsify/roadmap-ref-stale-state/python]: as 3 direções (A/B/C) provadas"
+fi
 
 # ---------------------------------------------------------------------------
 # Cenário 194 — check-write-containment.sh: gate de contenção de escrita
@@ -7130,6 +7361,7 @@ echo "OK   [falsify/roadmap-ref-stale-state/python]: as 3 direções (A/B/C) pro
 #   Afirma que o gate REPROVA corpus vazio — prova que a guarda de
 #   vacuidade dispara e o gate não reporta aprovação silenciosa.
 # ---------------------------------------------------------------------------
+_falsify_mark_s194=$(falsify_fail_mark)
 T194="$WORK/s194"
 mkdir -p "$T194/scripts"
 cp "$ROOT_DIR/scripts/check-write-containment.sh" "$T194/scripts/"
@@ -7179,8 +7411,12 @@ assert_fails_with "write-containment/vacuous-scan" \
   "recusando reportar aprovação silenciosa" \
   bash -c "WRITE_CONTAINMENT_SCAN_DIR='$T194C' bash '$T194/scripts/check-write-containment.sh'"
 
-falsify_count_success
-echo "OK   [falsify/write-containment]: os 3 braços (A/B/C) provados"
+if falsify_failed_since "$_falsify_mark_s194"; then
+  echo "FAIL [falsify/write-containment]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
+else
+  falsify_count_success
+  echo "OK   [falsify/write-containment]: os 3 braços (A/B/C) provados"
+fi
 
 # ---------------------------------------------------------------------------
 # Cenário 195 — check-parity-call-site-pins.sh: asserção negativa de que
@@ -7203,6 +7439,7 @@ echo "OK   [falsify/write-containment]: os 3 braços (A/B/C) provados"
 #   call-site-pin/self-governed-clean: o gate PASSA na árvore correta, onde o
 #     pin existe exclusivamente em self-governance (fora da cadeia quality).
 # ---------------------------------------------------------------------------
+_falsify_mark_s195=$(falsify_fail_mark)
 T195="$WORK/s195"
 mkdir -p "$T195/scripts"
 cp "$ROOT_DIR/Makefile"    "$T195/"
@@ -7276,7 +7513,11 @@ assert_fails_with "call-site-pin/self-governed-moved" \
   "forbidden-in-quality" \
   bash "$T195B/scripts/check-parity-call-site-pins.sh" "$T195B"
 
-echo "OK   [falsify/call-site-pin]: 3 braços (clean/in-quality/moved) provados"
+if falsify_failed_since "$_falsify_mark_s195"; then
+  echo "FAIL [falsify/call-site-pin]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
+else
+  echo "OK   [falsify/call-site-pin]: 3 braços (clean/in-quality/moved) provados"
+fi
 
 # ---------------------------------------------------------------------------
 # Cenário 196 — check-parity-call-site-pins.sh: verificação de que o CI
@@ -7299,6 +7540,7 @@ echo "OK   [falsify/call-site-pin]: 3 braços (clean/in-quality/moved) provados"
 #     linha `run:` é substituída por comentário `# make self-governance` — prova
 #     que o grep filtro de comentário funciona (sem ele, este caso passaria).
 # ---------------------------------------------------------------------------
+_falsify_mark_s196=$(falsify_fail_mark)
 T196="$WORK/s196"
 mkdir -p "$T196/scripts" "$T196/.github/workflows"
 cp "$ROOT_DIR/Makefile"      "$T196/"
@@ -7344,7 +7586,11 @@ assert_fails_with "ci-workflow/self-governance-invoked/run-commented" \
   "ci-workflow/self-governance-invoked" \
   bash "$T196B/scripts/check-parity-call-site-pins.sh" "$T196B"
 
-echo "OK   [falsify/ci-workflow-self-governance]: 3 braços (clean/run-removed/run-commented) provados"
+if falsify_failed_since "$_falsify_mark_s196"; then
+  echo "FAIL [falsify/ci-workflow-self-governance]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
+else
+  echo "OK   [falsify/ci-workflow-self-governance]: 3 braços (clean/run-removed/run-commented) provados"
+fi
 
 # ---------------------------------------------------------------------------
 # Cenário 197 — check-crlf-normalize-capture.sh: gate anti-reintrodução de
@@ -7367,6 +7613,7 @@ echo "OK   [falsify/ci-workflow-self-governance]: 3 braços (clean/run-removed/r
 # por concatenação (variável PY + printf) para que o literal $(python3 nunca
 # apareça verbatim neste source — o gate escaneia scripts/*.sh incluindo este.
 # ---------------------------------------------------------------------------
+_falsify_mark_s197=$(falsify_fail_mark)
 T197="$WORK/s197"
 mkdir -p "$T197/scripts"
 cp "$ROOT_DIR/scripts/check-crlf-normalize-capture.sh" "$T197/scripts/"
@@ -7476,7 +7723,11 @@ assert_fails_with "crlf-normalize/stdout-write-capture" \
   env CRLF_GATE_MIN_CAPTURES=1 bash "$T197/scripts/check-crlf-normalize-capture.sh" \
   --scan-root "$T197E"
 
-echo "OK   [falsify/crlf-normalize]: 5 braços (A/B/C/D/E) provados"
+if falsify_failed_since "$_falsify_mark_s197"; then
+  echo "FAIL [falsify/crlf-normalize]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
+else
+  echo "OK   [falsify/crlf-normalize]: 5 braços (A/B/C/D/E) provados"
+fi
 
 # ---------------------------------------------------------------------------
 # Cenário 198 — check-emitting-capture-fallback.sh: gate anti-reintrodução da
@@ -7517,6 +7768,7 @@ echo "OK   [falsify/crlf-normalize]: 5 braços (A/B/C/D/E) provados"
 # a string literal com `grep -c ... || echo` nunca aparece verbatim neste source,
 # que o próprio gate varre (scripts/*.sh).
 # ---------------------------------------------------------------------------
+_falsify_mark_s198=$(falsify_fail_mark)
 T198="$WORK/s198"
 mkdir -p "$T198"
 GREPC=grep
@@ -7595,7 +7847,11 @@ assert_fails_with "emitting-capture/vacuous-scan" \
   "guarda de vacuidade disparou" \
   env EMIT_FALLBACK_GATE_MIN_CANDIDATES=5 bash "$EMIT_GATE" --scan-root "$T198/arm-g"
 
-echo "OK   [falsify/emitting-capture]: 11 braços (A-K) provados"
+if falsify_failed_since "$_falsify_mark_s198"; then
+  echo "FAIL [falsify/emitting-capture]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
+else
+  echo "OK   [falsify/emitting-capture]: 11 braços (A-K) provados"
+fi
 
 # ---------------------------------------------------------------------------
 # Cenário 199 — check-unguarded-capture-rc.sh: gate IRMÃO do 198, para a captura
@@ -7676,6 +7932,7 @@ echo "OK   [falsify/emitting-capture]: 11 braços (A-K) provados"
 # `\n` antes do `VAR=`, então o próprio gate (que varre scripts/*.sh) não lê
 # nenhuma destas linhas como sítio em posição de atribuição.
 # ---------------------------------------------------------------------------
+_falsify_mark_s199=$(falsify_fail_mark)
 T199="$WORK/s199"
 mkdir -p "$T199"
 UGREP=grep
@@ -7837,35 +8094,11 @@ assert_fails_with "unguarded-rc/cond-keyword-not-condition" "$URC_VIOL" \
 
 # Sem contagem literal aqui: o número de braços já ficou obsoleto uma vez nesta
 # árvore. A contagem real é o tally medido na execução (FALSIFY_SUCCESS_FLOOR).
-echo "OK   [falsify/unguarded-rc]: braços A-T provados"
-
-# ---------------------------------------------------------------------------
-# ML-2B — fechamento do modo de enumeração. Desligado (default): este bloco
-# inteiro é pulado (a condição é falsa) e a saída do processo é a do último
-# comando acima -- 0, exatamente como antes deste ML (byte-idêntico: nenhuma
-# linha nova, nenhum exit code novo). Ligado: se qualquer cenário reprovou
-# (contado em $FALSIFY_ENUM_TALLY -- arquivo, não variável, ver nota do
-# bloco de definição acima sobre subshell), o exit final é != 0 -- guarda 1
-# (nunca torna o gate verde) também no ponto de saída, não só em cada ponto
-# de falha.
-if [[ "$TRACKFW_FALSIFY_ENUMERATE" == "1" ]]; then
-  falsify_enum_n=$(wc -l < "$FALSIFY_ENUM_TALLY" 2>/dev/null || echo 0)
-  falsify_enum_n=${falsify_enum_n//[[:space:]]/}
-  if [[ "${falsify_enum_n:-0}" -gt 0 ]]; then
-    echo "[falsify/enumerate] $falsify_enum_n cenário(s) reprovaram (enumerados acima, cada um prefixado FAIL) -- exit 1" >&2
-    exit 1
-  fi
-  echo "[falsify/enumerate] 0 cenários reprovaram -- exit 0" >&2
+if falsify_failed_since "$_falsify_mark_s199"; then
+  echo "FAIL [falsify/unguarded-rc]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
+else
+  echo "OK   [falsify/unguarded-rc]: braços A-T provados"
 fi
-
-# Imprime o número medido de asserções bem-sucedidas. Usa o mesmo arquivo
-# usado por falsify_count_success — medição da execução, não grep de fonte.
-# O contador cobre todas as linhas "OK   [falsify/..." emitidas por este
-# script (helpers + blocos inline). Sub-scripts externos como
-# check-wheel-filename.sh emitem suas próprias linhas OK sem incrementar
-# este contador — são ~2-7 linhas adicionais que não alteram a contagem aqui.
-falsify_success_n=$(wc -l < "$FALSIFY_SUCCESS_TALLY" 2>/dev/null || echo 0)
-falsify_success_n=${falsify_success_n//[[:space:]]/}
 
 # Cenário 200 — check-interpolated-path-in-python.sh: gate anti-reintrodução de
 #               caminho POSIX interpolado DENTRO do texto do programa Python
@@ -7988,6 +8221,45 @@ assert_fails_with "interp-path/no-expanding-body" \
   env INTERP_PATH_GATE_MIN_BODIES=1 INTERP_PATH_GATE_MIN_EXPANDING=1 \
   bash "$GATE200" --scan-root "$T200C"
 
+
+# FALSIFY-EPILOGUE-BEGIN  (ML-4A, ROADMAP-2026-09-24-treze-rotulos-falham-no-
+# censo-de-windows...): daqui até o fim do arquivo é EPÍLOGO — nenhum cenário
+# pode vir depois desta marca. Antes deste ML o bloco de saída do modo de
+# enumeração vivia 15 linhas ANTES do Cenário 200: no censo de Windows (que
+# roda em enumerate e tem reprovações por construção) qualquer reprovação no
+# mesmo chunk fazia o chunk sair ANTES do Cenário 200, e os 9 rótulos
+# `interp-path/*` sumiam — o driver os reportava como "rótulo esperado
+# AUSENTE", que lê como chunk morto em vez de "a execução parou aqui".
+# A marca não é decorativa: gen-falsify-chunks.py EXIGE que ela exista, seja
+# única, e que nenhum cabeçalho de cenário apareça a partir dela — a
+# reincidência vira falha de GERAÇÃO, não cobertura perdida em silêncio.
+# ---------------------------------------------------------------------------
+# ML-2B — fechamento do modo de enumeração. Desligado (default): este bloco
+# inteiro é pulado (a condição é falsa) e a saída do processo é a do último
+# comando acima -- 0, exatamente como antes deste ML (byte-idêntico: nenhuma
+# linha nova, nenhum exit code novo). Ligado: se qualquer cenário reprovou
+# (contado em $FALSIFY_ENUM_TALLY -- arquivo, não variável, ver nota do
+# bloco de definição acima sobre subshell), o exit final é != 0 -- guarda 1
+# (nunca torna o gate verde) também no ponto de saída, não só em cada ponto
+# de falha.
+if [[ "$TRACKFW_FALSIFY_ENUMERATE" == "1" ]]; then
+  falsify_enum_n=$(wc -l < "$FALSIFY_ENUM_TALLY" 2>/dev/null || echo 0)
+  falsify_enum_n=${falsify_enum_n//[[:space:]]/}
+  if [[ "${falsify_enum_n:-0}" -gt 0 ]]; then
+    echo "[falsify/enumerate] $falsify_enum_n cenário(s) reprovaram (enumerados acima, cada um prefixado FAIL) -- exit 1" >&2
+    exit 1
+  fi
+  echo "[falsify/enumerate] 0 cenários reprovaram -- exit 0" >&2
+fi
+
+# Imprime o número medido de asserções bem-sucedidas. Usa o mesmo arquivo
+# usado por falsify_count_success — medição da execução, não grep de fonte.
+# O contador cobre todas as linhas "OK   [falsify/..." emitidas por este
+# script (helpers + blocos inline). Sub-scripts externos como
+# check-wheel-filename.sh emitem suas próprias linhas OK sem incrementar
+# este contador — são ~2-7 linhas adicionais que não alteram a contagem aqui.
+falsify_success_n=$(wc -l < "$FALSIFY_SUCCESS_TALLY" 2>/dev/null || echo 0)
+falsify_success_n=${falsify_success_n//[[:space:]]/}
 
 # Guarda de vacuidade: o número medido deve ser pelo menos FALSIFY_SUCCESS_FLOOR.
 # Se ficar abaixo, algo removeu chamadas de falsify_count_success ou o

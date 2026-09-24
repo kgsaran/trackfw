@@ -58,6 +58,47 @@ diag() {
 }
 
 # ---------------------------------------------------------------------------
+# make_dangling_symlink TARGET LINK
+#   Cria um symlink PENDURADO (alvo deliberadamente inexistente) de forma
+#   construtivel onde `ln -s` nao cria symlink. Devolve 0 se o resultado e um
+#   symlink de verdade ([[ -L ]]), 1 se nao foi possivel criar nenhum.
+#
+#   Por que existe (ML-3A, G2 da REQ-2026-09-24; issue #307 secao 2):
+#   no Git for Windows sem `winsymlinks`, `ln -s` DEGRADA PARA COPIA. Como o
+#   alvo aqui nao existe de proposito, a copia reprova com
+#     ln: failed to create symbolic link 'X': No such file or directory
+#   e, sob `set -euo pipefail` (linha 19), isso matava o GATE INTEIRO na
+#   construcao da fixture do Cenario 9 — os Cenarios 9 a 14 nunca rodavam
+#   (medido no censo 36036473391, shards 3 e 4: a linha do `ln` e a ultima que
+#   o gate imprime).
+#
+#   Medicao que sustenta as duas tentativas (VM Windows 11 ARM64, Git for
+#   Windows 2.55, MSYS sem winsymlinks, 2026-09-24):
+#     ln -sf /nonexistent-target link                  -> rc=1, [ -L ] falso
+#     MSYS=winsymlinks:nativestrict ln -sf ... link2   -> rc=0, [ -L ] VERDADEIRO
+#   Em POSIX a primeira tentativa ja resolve e a segunda nunca roda.
+#
+#   Nenhuma tentativa pode matar o gate: cada `ln` leva `|| true`, e o veredito
+#   vem de `[[ -L ]]` — nunca de `$?` de um comando com cano.
+# ---------------------------------------------------------------------------
+make_dangling_symlink() {
+  local target=$1 link=$2
+  rm -f "$link" 2>/dev/null || true
+  ln -s "$target" "$link" 2>/dev/null || true
+  if [[ -L "$link" ]]; then
+    return 0
+  fi
+  # A tentativa acima pode ter deixado uma COPIA (ou nada) no lugar.
+  rm -f "$link" 2>/dev/null || true
+  MSYS=winsymlinks:nativestrict ln -s "$target" "$link" 2>/dev/null || true
+  if [[ -L "$link" ]]; then
+    return 0
+  fi
+  rm -f "$link" 2>/dev/null || true
+  return 1
+}
+
+# ---------------------------------------------------------------------------
 # run_update HOME_DIR PROJECT_DIR ARGS...
 # Sets UPDATE_EXIT, UPDATE_STDOUT, UPDATE_STDERR as globals.
 # ---------------------------------------------------------------------------
@@ -441,13 +482,16 @@ fi
 # ===========================================================================
 S9_PROJ="$WORK/s9-proj"
 mkdir -p "$S9_PROJ/.venv/bin"
-ln -sf /nonexistent-python3.99 "$S9_PROJ/.venv/bin/python"
 cat > "$S9_PROJ/trackfw.yaml" << 'S9YAML'
 name: s9
 S9YAML
 
-run_update "$WORK/s9-home-go" "$S9_PROJ" --dry-run --json
-s9_dry_flag=$(python3 -c "
+# Fixture inconstrutivel => FAIL que NOMEIA a garantia nao exercitada, e o gate
+# SEGUE para os Cenarios 10-14. Nunca skip silencioso: um FS que nao representa
+# symlink nao pode produzir verde aqui (mesma disciplina do ML-2A/G3).
+if make_dangling_symlink /nonexistent-python3.99 "$S9_PROJ/.venv/bin/python"; then
+  run_update "$WORK/s9-home-go" "$S9_PROJ" --dry-run --json
+  s9_dry_flag=$(python3 -c "
 import json, sys
 try:
     d = json.loads(sys.argv[1])
@@ -455,15 +499,18 @@ try:
 except Exception as e:
     print('PARSE_ERROR:' + str(e))
 " "$UPDATE_STDOUT" 2>/dev/null | strip_cr || echo "PARSE_ERROR")
-if [[ "$s9_dry_flag" != "true" ]]; then
-  diag "sandbox/dangling-outside-set/vacuity" "dry_run field not true ($s9_dry_flag) — fixture broken or output unparseable"
-fi
-if [[ "$UPDATE_EXIT" != "0" ]]; then
-  diag "sandbox/dangling-outside-set/exit-zero" "go exited $UPDATE_EXIT — dangling symlink outside declared set must not abort --dry-run"
-fi
+  if [[ "$s9_dry_flag" != "true" ]]; then
+    diag "sandbox/dangling-outside-set/vacuity" "dry_run field not true ($s9_dry_flag) — fixture broken or output unparseable"
+  fi
+  if [[ "$UPDATE_EXIT" != "0" ]]; then
+    diag "sandbox/dangling-outside-set/exit-zero" "go exited $UPDATE_EXIT — dangling symlink outside declared set must not abort --dry-run"
+  fi
 
-if [[ "$FAIL" -eq 0 ]]; then
-  ok "sandbox/dangling-outside-set"
+  if [[ "$FAIL" -eq 0 ]]; then
+    ok "sandbox/dangling-outside-set"
+  fi
+else
+  diag "sandbox/dangling-outside-set/unconstructible" "nao foi possivel criar um symlink pendurado em $S9_PROJ/.venv/bin/python (nem 'ln -s' nem 'MSYS=winsymlinks:nativestrict ln -s'); GARANTIA NAO EXERCITADA: 'symlink pendurado FORA do conjunto declarado nao aborta --dry-run' (copyProjectTree por inclusao). O gate segue para os cenarios seguintes"
 fi
 
 # ===========================================================================
@@ -476,10 +523,12 @@ mkdir -p "$S10_PROJ"
 cat > "$S10_PROJ/trackfw.yaml" << 'S10YAML'
 name: s10
 S10YAML
-ln -sf /nonexistent-claude "$S10_PROJ/CLAUDE.md"
 
-run_update "$WORK/s10-home-go" "$S10_PROJ" --dry-run --json --targets agent-rules
-s10_state=$(python3 -c "
+# Mesma causa, mesmo sitio de correcao do Cenario 9 (Regra Dura de Causa Raiz):
+# este `ln -sf` de alvo inexistente matava o gate 35 linhas depois do outro.
+if make_dangling_symlink /nonexistent-claude "$S10_PROJ/CLAUDE.md"; then
+  run_update "$WORK/s10-home-go" "$S10_PROJ" --dry-run --json --targets agent-rules
+  s10_state=$(python3 -c "
 import json, sys
 try:
     d = json.loads(sys.argv[1])
@@ -487,17 +536,20 @@ try:
 except Exception as e:
     print('PARSE_ERROR:' + str(e))
 " "$UPDATE_STDOUT" 2>/dev/null | strip_cr || echo "PARSE_ERROR")
-if [[ "$s10_state" == "PARSE_ERROR"* ]]; then
-  diag "sandbox/dangling-inside-set/vacuity" "output unparseable: $s10_state"
-elif [[ "$s10_state" != "missing" ]]; then
-  diag "sandbox/dangling-inside-set/state" "go: expected state=missing for CLAUDE.md broken symlink, got '$s10_state'"
-fi
-if [[ "$UPDATE_EXIT" != "0" ]]; then
-  diag "sandbox/dangling-inside-set/exit-zero" "go exited $UPDATE_EXIT — broken symlink inside declared set must not abort"
-fi
+  if [[ "$s10_state" == "PARSE_ERROR"* ]]; then
+    diag "sandbox/dangling-inside-set/vacuity" "output unparseable: $s10_state"
+  elif [[ "$s10_state" != "missing" ]]; then
+    diag "sandbox/dangling-inside-set/state" "go: expected state=missing for CLAUDE.md broken symlink, got '$s10_state'"
+  fi
+  if [[ "$UPDATE_EXIT" != "0" ]]; then
+    diag "sandbox/dangling-inside-set/exit-zero" "go exited $UPDATE_EXIT — broken symlink inside declared set must not abort"
+  fi
 
-if [[ "$FAIL" -eq 0 ]]; then
-  ok "sandbox/dangling-inside-set"
+  if [[ "$FAIL" -eq 0 ]]; then
+    ok "sandbox/dangling-inside-set"
+  fi
+else
+  diag "sandbox/dangling-inside-set/unconstructible" "nao foi possivel criar um symlink pendurado em $S10_PROJ/CLAUDE.md (nem 'ln -s' nem 'MSYS=winsymlinks:nativestrict ln -s'); GARANTIA NAO EXERCITADA: 'symlink pendurado DENTRO do conjunto declarado e tratado como ausente (state=missing), nao como erro'. O gate segue para os cenarios seguintes"
 fi
 
 # ===========================================================================

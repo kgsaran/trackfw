@@ -159,8 +159,29 @@ unset TRACKFW_DISABLE_EXTERNAL_COMMANDS || true
 #   because ubuntu-latest runners carry a real gh at /usr/bin/gh (the CI failure that
 #   motivated GIT_ONLY_BIN in the first place, ML-6B). On POSIX the symlink is seen by native
 #   child processes (exec(2) follows it transparently), so this form has no broken-symlink risk.
+#   Windows, correcao do ML-3A (G1 da REQ-2026-09-24; issue #307 secao 3):
+#   `$RUNTIME_BIN:$GIT_BIN_DIR` NAO basta. O `git fetch origin --prune` que o
+#   produto roda contra um remoto de CAMINHO LOCAL spawna o transporte atraves
+#   de um SHELL (`sh`), que mora em /usr/bin — ausente desse PATH. Sem `sh`, o
+#   Git for Windows NAO reporta "shell nao encontrado": ele MORRE com violacao
+#   de acesso, 0xC0000005 (3221225477 para um filho nativo; SIGSEGV/139 sob
+#   bash). Era exatamente o observavel do censo 36036473391 (log 5080).
+#
+#   Medido na VM Windows 11 ARM64 (GfW 2.55, 2026-09-24), quatro celulas:
+#     PATH=$RUNTIME_BIN:$GIT_BIN_DIR              git fetch -> 139 (0xC0000005)
+#     idem + dir so com ls.exe (controle, sem sh) git fetch -> 139  [ainda morre]
+#     idem + dir com sh.exe + msys-2.0.dll        git fetch -> 0
+#     idem + /usr/bin                             git fetch -> 0
+#   `git --version` passa em TODAS: nao e carregamento de DLL do git (seria
+#   0xC0000135, outro codigo), e nao e resolucao do git — e o filho que o git
+#   spawna. `git ls-remote` morre igual; e o transporte local, nao o `fetch`.
+#
+#   O discriminante "sem CLI de forge" fica preservado por construcao: o
+#   /usr/bin do MSYS nao contem gh, glab nem az (medido: `ls /usr/bin/gh*
+#   /usr/bin/glab* /usr/bin/az*` -> nenhum), e a guarda de vacuidade abaixo
+#   reprova ALTO se algum dia contiver. Nao e presuncao, e guarda.
 if [[ -f "${REAL_GIT}.exe" ]]; then
-  NO_FORGE_PATH="$RUNTIME_BIN:$GIT_BIN_DIR"
+  NO_FORGE_PATH="$RUNTIME_BIN:$GIT_BIN_DIR:/usr/bin"
 else
   GIT_ONLY_BIN="$WORK/gitonlybin"
   mkdir -p "$GIT_ONLY_BIN"
@@ -182,12 +203,92 @@ done
 # MSYS symlink but CreateProcess cannot (ML-R2c Forma 2). python3's subprocess.run uses the
 # same CreateProcess + PATHEXT lookup the product uses. Reconciliation: this guard asserts that
 # a native child, not bash, resolves git on the path the no-forge scenario uses.
-if ! PATH="$NO_FORGE_PATH" python3 -c \
-    'import subprocess,sys; sys.exit(subprocess.run(["git","--version"],capture_output=True).returncode)' \
-    2>/dev/null; then
-  echo "check-release-tag-parity: vacuity guard failed — git does not resolve on NO_FORGE_PATH ($NO_FORGE_PATH) for a native child process" >&2
-  exit 1
-fi
+# ML-3A (G1 da REQ-2026-09-24; issue #307 secao 4) — a guarda acusava o sujeito
+# ERRADO. Duas correcoes, e a segunda tem valor proprio mesmo que o cenario
+# volte a passar:
+#
+#  1. INSTRUMENTO. O probe antigo era `PATH="$NO_FORGE_PATH" python3 -c ...`:
+#     alem do PATH do pai (que e o correto — ver native_child_probe), o PROPRIO
+#     interpretador era RESOLVIDO no PATH curado, caindo na copia de python3 de
+#     RUNTIME_BIN (`ln -s` degrada para COPIA no Git for Windows), que nao
+#     inicia sem o diretorio de instalacao do Python. Medido na VM ARM64
+#     (2026-09-24): o probe antigo devolve rc=127 e a guarda concluia "git nao
+#     resolve", com o git intacto em /clangarm64/bin. Agora o interpretador e
+#     invocado por CAMINHO ABSOLUTO — ele nao depende mais do PATH curado —
+#     enquanto o PATH curado continua no processo pai, que e o que governa a
+#     resolucao do FILHO no Windows.
+#
+#  2. DIAGNOSTICO. Um unico observavel ("o comando saiu != 0") cobria tres
+#     estados distintos. A guarda agora os separa e NOMEIA:
+#       NOTFOUND -> git nao e encontrado pelo filho nativo (o que a mensagem
+#                   antiga afirmava)
+#       EXIT     -> git FOI encontrado em <caminho> e o filho terminou em erro,
+#                   com o codigo em hexadecimal (o que realmente acontecia)
+#       (vazio)  -> o proprio interpretador do probe nao iniciou (o caso do
+#                   #307) — o sujeito nao e o git nem o produto
+# native_child_probe PATH_CURADO COMANDO [ARGS...]
+#   Executa COMANDO num PROCESSO FILHO NATIVO cujo PATH e PATH_CURADO, a partir
+#   do interpretador REAL invocado por CAMINHO ABSOLUTO: o PATH curado vai so
+#   para o FILHO, nunca para o instrumento. Imprime UMA linha, em tres formas:
+#     OK|<resolvido>|stdout=...                      -> o filho rodou e saiu 0
+#     EXIT|<resolvido>|rc=N (0x........) stderr=...   -> rodou e saiu != 0
+#     NOTFOUND|<resolvido>|<detalhe>                 -> CreateProcess nao achou
+#   Saida VAZIA significa que o PROPRIO instrumento nao iniciou — quem chama TEM
+#   de tratar esse caso explicitamente, e nunca como "o comando nao existe".
+#
+#   🔴 Por que o PATH curado e posto no PROCESSO PAI e nao em `subprocess(env=)`:
+#   no Windows o CreateProcess resolve o executavel pelo PATH do processo
+#   CHAMADOR, nao pelo bloco de ambiente entregue ao filho. Medido na VM ARM64
+#   (2026-09-24), com a versao errada deste helper: o probe entregou ao filho um
+#   PATH curado SEM gh e mesmo assim obteve `gh version 2.100.0`, enquanto
+#   `shutil.which(..., path=curado)` devolvia "<nao resolvido>" — a resolucao
+#   veio do PATH do pai. Um probe assim provaria o contrario do que afirma.
+#   O interpretador e invocado por CAMINHO ABSOLUTO justamente para que ele
+#   proprio nao dependa do PATH curado (as DLLs dele ficam ao lado do .exe);
+#   o que depende do PATH curado e so a RESOLUCAO DO FILHO, que e o objeto da
+#   medicao.
+native_child_probe() {
+  local curated=$1
+  shift
+  PATH="$curated" "$REAL_PYTHON3" - "$curated" "$@" <<'PYPROBE' 2>/dev/null || true
+import shutil, subprocess, sys
+
+curated, argv = sys.argv[1], sys.argv[2:]
+resolved = shutil.which(argv[0], path=curated) or "<nao resolvido>"
+try:
+    r = subprocess.run(argv, capture_output=True)
+except FileNotFoundError as exc:
+    print("NOTFOUND|%s|%s" % (resolved, exc))
+    raise SystemExit(0)
+except OSError as exc:
+    print("NOTFOUND|%s|%s" % (resolved, exc))
+    raise SystemExit(0)
+out = r.stdout.decode("utf-8", "replace").strip().replace("\n", " ")[:200]
+err = r.stderr.decode("utf-8", "replace").strip().replace("\n", " ")[:200]
+if r.returncode == 0:
+    print("OK|%s|stdout=%s" % (resolved, out))
+else:
+    print("EXIT|%s|rc=%d (0x%08X) stderr=%s" % (resolved, r.returncode, r.returncode & 0xFFFFFFFF, err))
+PYPROBE
+}
+
+_guard_probe=$(native_child_probe "$NO_FORGE_PATH" git --version)
+case "$_guard_probe" in
+  OK\|*) : ;;
+  NOTFOUND\|*)
+    echo "check-release-tag-parity: vacuity guard failed — git NAO e encontrado por um processo filho nativo no NO_FORGE_PATH ($NO_FORGE_PATH); detalhe: ${_guard_probe#NOTFOUND|}" >&2
+    exit 1
+    ;;
+  EXIT\|*)
+    echo "check-release-tag-parity: vacuity guard failed — git FOI encontrado no NO_FORGE_PATH ($NO_FORGE_PATH), mas o processo filho nativo TERMINOU EM ERRO; isto NAO e 'git nao resolve': o sujeito que falhou e o processo, nao a resolucao; detalhe: ${_guard_probe#EXIT|}" >&2
+    exit 1
+    ;;
+  *)
+    echo "check-release-tag-parity: vacuity guard failed — o PROBE nao produziu veredito (o interpretador do probe, $REAL_PYTHON3, pode nao ter iniciado); saida bruta: '${_guard_probe}'. O sujeito aqui nao e o git nem o produto — e o instrumento" >&2
+    exit 1
+    ;;
+esac
+unset _guard_probe
 
 # ---------------------------------------------------------------------------
 # Windows compatibility: gh.exe shim — defined HERE (before the vacuity guard)
@@ -322,18 +423,26 @@ GOEOF
 # Guard is Windows-only (POSIX: command -v and subprocess agree; no PATHEXT divergence).
 if [[ -f "${REAL_GIT}.exe" ]]; then
   # (a) Execute, not resolve: prove gh is NOT executable on NO_FORGE_PATH.
-  # Exceptions cover WinError 2 (not found) and WinError 267 (ENOTDIR variant).
-  if PATH="$NO_FORGE_PATH" python3 -c '
-import subprocess, sys
-try:
-    subprocess.run(["gh", "--version"], capture_output=True)
-    sys.exit(0)  # gh ran — it was found
-except (FileNotFoundError, OSError):
-    sys.exit(1)  # not found — guard passes
-'; then
-    echo "check-release-tag-parity: vacuity guard failed — 'gh' executes on NO_FORGE_PATH ($NO_FORGE_PATH) via native subprocess; the no-forge-cli scenario would prove nothing" >&2
-    exit 1
-  fi
+  # ML-3A: passa a usar native_child_probe. O probe antigo procurava o PROPRIO
+  # python3 no PATH curado, e 🔴 a falha do interpretador era indistinguivel de
+  # "gh nao encontrado" — mas com o sinal INVERTIDO: o `if` reprovava, a guarda
+  # PASSAVA, e a prova de nao-vacuidade virava vacuosa em silencio. Medido na VM
+  # ARM64 (2026-09-24): a copia de python3 em RUNTIME_BIN nao inicia sob PATH
+  # curado ("error while loading shared libraries"). Agora a saida vazia do
+  # probe e tratada como falha do INSTRUMENTO, alto.
+  _gh_probe=$(native_child_probe "$NO_FORGE_PATH" gh --version)
+  case "$_gh_probe" in
+    NOTFOUND\|*) : ;;  # gh nao executa — a guarda passa
+    OK\|*|EXIT\|*)
+      echo "check-release-tag-parity: vacuity guard failed — 'gh' executes on NO_FORGE_PATH ($NO_FORGE_PATH) via native subprocess; the no-forge-cli scenario would prove nothing; detalhe: $_gh_probe" >&2
+      exit 1
+      ;;
+    *)
+      echo "check-release-tag-parity: vacuity guard failed — o PROBE de 'gh' nao produziu veredito (o interpretador do probe, $REAL_PYTHON3, pode nao ter iniciado); saida bruta: '${_gh_probe}'. Ausencia de veredito NAO e prova de ausencia de gh" >&2
+      exit 1
+      ;;
+  esac
+  unset _gh_probe
   # (b) Execute and verify marker: probe PATH is bash-free (probe dir + RUNTIME_BIN only) so
   # the shim's injected bashFallback is the load-bearing branch (exec.LookPath("bash.exe")
   # misses on this PATH), proving the captured-bash-path correction is actually exercised.
@@ -344,23 +453,37 @@ except (FileNotFoundError, OSError):
     printf '#!/bin/bash\necho GH_SHIM_OK\n' > "$_PROBE_DIR/gh"
     chmod +x "$_PROBE_DIR/gh"
     cp "$_GH_STUB_SHIM" "$_PROBE_DIR/gh.exe"
-    if ! PATH="$_PROBE_DIR:$RUNTIME_BIN" python3 -c '
-import subprocess, sys
-try:
-    r = subprocess.run(["gh", "probe"], capture_output=True, text=True)
-    sys.exit(0 if r.returncode == 0 and "GH_SHIM_OK" in r.stdout else 1)
-except (FileNotFoundError, OSError):
-    sys.exit(1)
-'; then
-      echo "check-release-tag-parity: vacuity guard failed — gh.exe shim does NOT execute and return marker via native subprocess in probe dir ($WORK/gh-vacuity-probe); the stub fix would be vacuous" >&2
-      exit 1
-    fi
+    # ML-3A: mesmo instrumento, mesma causa — o probe antigo procurava python3
+    # no PATH do probe e acusava o SHIM quando quem nao iniciava era o
+    # interpretador copiado. Medido na VM ARM64 (2026-09-24): esta guarda era a
+    # que reprovava, com "gh.exe shim does NOT execute", enquanto o stderr real
+    # dizia ".../runtimebin/python3: error while loading shared libraries".
+    _shim_probe=$(native_child_probe "$_PROBE_DIR:$RUNTIME_BIN" gh probe)
+    case "$_shim_probe" in
+      OK\|*GH_SHIM_OK*) : ;;
+      OK\|*|EXIT\|*|NOTFOUND\|*)
+        echo "check-release-tag-parity: vacuity guard failed — gh.exe shim does NOT execute and return marker via native subprocess in probe dir ($WORK/gh-vacuity-probe); the stub fix would be vacuous; detalhe: $_shim_probe" >&2
+        exit 1
+        ;;
+      *)
+        echo "check-release-tag-parity: vacuity guard failed — o PROBE do shim nao produziu veredito (o interpretador do probe, $REAL_PYTHON3, pode nao ter iniciado); saida bruta: '${_shim_probe}'. O sujeito aqui e o instrumento, NAO o shim" >&2
+        exit 1
+        ;;
+    esac
+    unset _shim_probe
   fi
 fi
 
 FAIL=0
+# ML-0B (Forma B): FAIL_N conta reprovacoes; FAIL continua sendo o exit code.
+# assert_three_way usa a diferenca de FAIL_N para decidir se o rotulo de
+# sucesso do cenario pode sair -- ate este ML ele saia INCONDICIONALMENTE,
+# inclusive depois de fail() ja ter sido chamado no mesmo cenario, que e o
+# unico falso verde do cluster de Windows.
+FAIL_N=0
+RT_PIN_WATERMARK=0
 ok()   { echo "OK   [$1]"; }
-fail() { echo "FAIL [$1]: $2" >&2; FAIL=1; }
+fail() { echo "FAIL [$1]: $2" >&2; FAIL=1; FAIL_N=$((FAIL_N + 1)); }
 
 RELEASE_VERSION="9.9.9"
 RELEASE_TAG="v9.9.9"
@@ -619,6 +742,19 @@ run_release() {
 # pypi/trackfw/ deleted. The function now just records that Go ran OK.
 assert_three_way() {
   local label=$1
+  # ML-0B: o pin so e emitido se NENHUMA reprovacao foi registrada desde a
+  # chamada anterior deste helper -- i.e. se o cenario que termina aqui
+  # passou. A marca d'agua avanca nos dois ramos, entao a supressao NUNCA
+  # cascateia para o cenario seguinte (cada cenario e julgado pelas suas
+  # proprias reprovacoes). O ramo suprimido emite `FAIL [<mesmo rotulo>]`:
+  # sumir com a linha inteira transformaria "cenario reprovou" em "rotulo
+  # ausente", diagnostico errado para quem le o log do censo.
+  local failed_here=$((FAIL_N - RT_PIN_WATERMARK))
+  RT_PIN_WATERMARK=$FAIL_N
+  if [[ "$failed_here" -gt 0 ]]; then
+    echo "FAIL [release-tag-parity/$label/go-behavioral-pin]: pin suprimido -- $failed_here reprovacao(oes) neste cenario; o comportamento NAO foi fixado" >&2
+    return 0
+  fi
   local go_exit
   go_exit=$(cat "$WORK/$label.go.exit")
   ok "release-tag-parity/$label/go-behavioral-pin"
@@ -833,6 +969,16 @@ for runtime in go; do  # ML-3A (v8): node py removed
     continue
   fi
   if ! grep -qF "trackfw release tag requires the GitHub CLI (gh) to publish the tag" "$RT_ERR_FILE"; then
+    # ML-3A: separa "o produto nao recusou" de "um processo filho nativo morreu
+    # antes de o produto chegar a recusa". O censo 36036473391 (log 5080) caiu
+    # no segundo caso e a mensagem publicava o primeiro — mandando o mantenedor
+    # investigar o `release tag`, quando quem quebrou foi o ambiente.
+    # 3221225477=0xC0000005 (violacao de acesso) · 3221225781=0xC0000135 (DLL
+    # ausente) · 3221225786=0xC000013A (Ctrl-C) · 139=SIGSEGV via shell.
+    if grep -qE 'exited with (3221225477|3221225781|3221225786|139|-?1073741[0-9]{3})' "$RT_ERR_FILE"; then
+      fail "release-tag-parity/$RT_LABEL/$runtime" "um processo filho nativo MORREU sob NO_FORGE_PATH ($NO_FORGE_PATH) antes de o produto alcancar a recusa de no-forge-CLI — o sujeito e o filho, NAO a ausencia de recusa; stderr: $(cat "$RT_ERR_FILE")"
+      continue
+    fi
     fail "release-tag-parity/$RT_LABEL/$runtime" "vacuity guard: stderr missing the no-forge-CLI refusal; stderr: $(cat "$RT_ERR_FILE")"
     continue
   fi

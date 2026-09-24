@@ -400,6 +400,21 @@ jobs:
 
       - run: go build -o bin/trackfw ./cmd/trackfw
 
+      # ML-3A — divida registrada pelo ML-2A: o log do censo mostrava o EFEITO
+      # (`chmod 0644` seguido de `-rwxr-xr-x`) e nunca as OPCOES DE MONTAGEM,
+      # entao a atribuicao do defeito do bit de execucao ao `noacl` era
+      # presuncao (`grep -ci 'noacl\|findmnt'` no log inteiro -> 0). Esta linha
+      # tira isso do terreno da presuncao. `findmnt` e util-linux e NAO existe
+      # no Git for Windows (medido) — por isso `mount`, com `|| true` para que
+      # uma sonda nunca derrube o shard.
+      - name: "Opcoes de montagem do TMPDIR (evidencia para a atribuicao ao noacl)"
+        if: always()
+        run: |
+          echo "TMPDIR=${TMPDIR:-<unset>}  RUNNER_TEMP=${RUNNER_TEMP:-<unset>}"
+          findmnt -T "${TMPDIR:-/tmp}" 2>/dev/null || echo "findmnt: ausente (esperado no Git for Windows)"
+          mount || true
+          df -h "${TMPDIR:-/tmp}" || true
+
       - name: "Shard ${{ matrix.shard }} de check-gates-falsify.sh (enumerate)"
         run: scripts/run-gates-falsify-shard.sh
 

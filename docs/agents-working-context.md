@@ -40209,3 +40209,761 @@ Vault: `overlay-json-com-caminho-posix-e-ignorado-em-silencio-pelo-go-no-windows
 - 🔴 A correção desmascarou um defeito de segurança: `go test -overlay` com chave POSIX é **ignorado
   em silêncio**, e o AC6 concluía que o teste passou na versão vulnerável.
 - Próximo: **triagem do cluster de Windows**, agora com o censo produzindo número.
+
+## 2026-09-25 — hades-tf — ML-0A (Wave 0): triagem do cluster de Windows por mecanismo
+
+**Entregável:** `docs/seguranca/2026-09-25-triagem-cluster-windows.md`. Nenhuma linha de
+implementação, nenhum commit, nenhum push, nenhum outro arquivo. (Entrada de início e de fim
+registradas juntas, ao encerrar — não em dois momentos.)
+
+🔴 **A população não é 13, é 11.** O censo mede `FAIL=11`, e a minha contagem ancorada por shard
+(1·2·1·3·4·0·0·0) bate linha a linha com a tabela que o job `apuracao` computou dentro do CI a partir
+dos artefatos. Dois dos treze rótulos da REQ **não são falhas**: `credential-guard-script-integrity/
+detected` está **`OK`** (log 5134) e `git-branch-guard-global-script-integrity/detected` **não existe**
+— o rótulo real é `/detected-without-wiring`, também `OK` (log 4163). Os dois entraram por serem
+**texto citado dentro de uma mensagem `PROOF … /non-vacuity`**. É o defeito de enumeração desta
+campanha — filtro por token em vez de por forma — só que produzindo **limite superior**, e a inflação
+caiu exatamente sobre a superfície de segurança: os dois controles de integridade de script estão
+**verdes** no Windows.
+
+🔴 **A hipótese do `setup` CAI, por dois lados.** `falsify_fail_point` (`:327`) **retorna 0** sob
+`TRACKFW_FALSIFY_ENUMERATE=1`, que é o modo do censo — não aborta nada; em modo normal aborta o
+**script inteiro**, não "o cenário". Corroborado no log: shard 3 imprime mais nove rótulos depois do
+`FAIL [setup-s75]`. O que o setup reprovado causa de fato é o `echo OK` do `else` não ser impresso —
+explica **exatamente os 3 ausentes** e **zero** dos 11 `FAIL`. O que sobrevive da intuição é **causa
+comum**, não encadeamento: consertar o braço de setup não fecharia os outros; consertar o **gate**
+fecha.
+
+**Grupos (14 rótulos reais):** G1 release-tag-parity, 6 · G2 update-parity, 4 · G3 bit de execução, 1
+· G4 dedup do git-branch-guard, 2 · G5 dreno de stdin, 1. Frase de fechamento por grupo no parecer.
+
+**#307 ABSORVIDO** — os **dois** bloqueios dele aparecem, em gates diferentes, e explicam 10 dos 14:
+`ln -s` degrada para cópia (mata o `check-update-parity.sh` no `ln -sf` do Cenário 9 sob `set -e`) e
+filho nativo não roda no `PATH` curado (`git fetch … exited with 3221225477` = `0xC0000005`, com a
+guarda acusando "falta a recusa de no-forge-CLI"). Três diferenças medidas contra o #307 estão
+escritas. **#308 DESCARTADO** com a diferença: expansão de chaves ao reconstruir `argv` de pai nativo
+não tem nada a ver com o G4, que diverge **inteiramente dentro do Go**.
+
+🔴 **Dois achados não previstos pela REQ.** (1) **Forma B**: nos Cenários 87 e 158 o `echo OK` está
+**fora do `if`** — a baseline reprova e o rótulo que afirma "o gate passa limpo" imprime `OK` na linha
+seguinte (1457→1458, 2343→2344). Único falso verde do cluster, não está em nenhuma REQ, e tem detector
+mecânico (a Forma B não chama `falsify_count_success`, logo `contagem de ^OK ≠ tally`). (2) **O escopo
+negativo da REQ tem duas classificações erradas, com medição**: `.venv/bin/python` não é "venv usa
+`Scripts/`" — o Cenário 9 não usa venv, fabrica um symlink pendurado sintético; e o rótulo do bit de
+execução é a **mesma causa da #421**, que o censo agora confirma também em x64 CI (a #421 declarava
+esse ponto não medido).
+
+**Threat model em 4 categorias, não 2** — a distinção *falha ruidosa* ≠ *garantia sem prova* se abre
+em: A recusa ruidosa (G1, G2 — risco baixo, o gate reprova alto e ninguém lê verde onde não há); C
+passagem vacuosa (G3 — `test -x` verdadeiro nos dois braços); **D controle ausente no Windows (G4 e
+G5 — produto, não harness)**. 🔴 G4 e G5 são o risco real: `normalizeGuardPath` só converte `\`→`/`
+com letra de unidade, e `fail-open` transforma o não-casamento em "não instalado" (a resposta
+permissiva); o dreno de stdin devolve `EPIPE` ao escritor com 200 KB **saindo 0**, sem recusa alta.
+Proponho G4/G5 primeiro: os outros três são gates que não rodam.
+
+**Residual declarado:** não abri sessão na VM (clone **não tocado**) — todo mecanismo saiu de fonte +
+log do censo, e a VM é ARM64 contra censo x64. Não auditei os 347 `OK`. Não determinei por que o `git`
+sai `0xC0000005`, nem qual elo do G4 dispara primeiro, nem a causa do G5 entre orçamento de tempo e
+semântica de `read -d ''`. Não enumerei os testes Go de `agentfiles.go` (presunção declarada, não
+medição). Não rodei `make quality` nem `go test ./...`.
+
+---
+
+## 2026-09-24 — `apolo-tf` · ML-1A (Wave 1, G4) — **a premissa caiu; zero linhas de produto alteradas**
+
+REQ/Roadmap: `REQ-2026-09-24-treze-rotulos-falham-no-censo-de-windows-…` ·
+Branch: `fix/treze-rotulos-falham-no-censo-de-windows-…` · Arquivos de produto tocados: **nenhum**.
+
+**O ML foi despachado para "fechar a gramática" de `normalizeGuardPath`. Não fechei — e a razão é
+uma medição, não uma recusa.** O ML-0A concluiu **por construção, sem executar**, que o `HOME` de
+grafia MSYS chega ao Go sem letra de unidade e que a divergência é de **separador**. Medido na VM
+com sonda e depois com o **binário real**: o MSYS **converte a variável de ambiente** ao lançar um
+processo nativo, então `hasWindowsDriveLetterPrefix` é **verdadeiro**, o braço `\`→`/` **já roda**
+(`NORM_COMP="C:/Users/Lab/…"`) e a divergência sobrevive. Ela é de **espaço de nomes**: o heredoc do
+fixture grava `/tmp/…` (conteúdo de arquivo **não** é convertido pelo MSYS), o Go calcula
+`C:/Users/…/AppData/Local/Temp/…`. Mesmo arquivo, duas montagens. 🔴 **Fechar a gramática fecharia
+zero rótulos** e mexeria em código aprovado por barreira.
+
+**A/B com o binário real, única variável = a grafia no `settings.json` global:** grafia MSYS →
+entrada de projeto **gravada** (reproduz o FAIL do censo); grafia nativa (`cygpath -m`) → entrada
+**ausente**, dedup dispara. **O produto está correto no Windows.** O G4 sai de **D (produto)** para
+**harness** — o corretivo é `scripts/check-gates-falsify.sh:4722-4726` e `:4836`, fora do meu
+escopo, e pela Regra Dura entra como **novo ML nesta REQ**, não REQ nova.
+
+**Os três itens abertos do parecer, respondidos.** (1) **Qual elo dispara:** o (b), a comparação —
+`readGlobalHookJSON` **sucede** (`err=<nil>`), porque resolve pelo mesmo `homedir.Dir()` +
+`filepath.Join`, logo lê onde o MSYS escreveu. (2) **Cobertura Go: a presunção CAI** — existem 22
+casos em `internal/generators/guard_path_normalize_test.go`; o G4 ficou invisível não por ausência
+de teste, mas porque **um teste fixa a forma como comportamento intencional**
+(`{"relative path with backslash… untouched", scripts\guard.sh}`). (3) **`fail-open`: NÃO mudar** —
+`false` → "não instalado" → entrada de projeto gravada → guard roda **duas vezes**; inverter para
+fail-closed → entrada de projeto **pulada** → guard possivelmente **ausente**, exatamente o bypass
+que a seção 6.4 nomeia. Aqui a direção permissiva é a **segura**.
+
+**Zero testes novos, por regra do projeto:** o único teste concebível afirmaria que duas grafias do
+**mesmo arquivo** não devem casar — fixaria um artefato de harness como contrato de produto. Não
+consigo escrever a frase, então o teste não existe. `go test ./internal/generators/` → **RC=0**
+(linha de base intocada).
+
+**Residual declarado:** nada exercitado por mim no **Windows CI** (VM ARM64 × censo x64); o que
+transfere do run `36036473391` é que `$WORK` sai `/tmp/trackfw-falsify.Q5DXgN` e `/tmp` mapeia para
+`C:\Users\RUNNER~1\AppData\Local\Temp` lá também. O `cat` do braço 1 despeja o `settings.json` **de
+projeto** (`$CLAUDE_PROJECT_DIR/…`) — **não** serve de testemunha da grafia do `HOME`; o JSON global
+nunca é despejado. Nota de vault:
+`vault/notes/msys-converte-env-e-argv-mas-nunca-conteudo-de-arquivo-2026-09-24.md`.
+**Observação fora de escopo:** o comentário de `normalizeGuardPath` ainda alega espelhamento em
+`npm/src/generators/hooks.js` e `pypi/trackfw/generators/hooks.py` (inexistentes pós-v8), e
+`internal/homedir` tem alegação equivalente — **não toquei** em nenhum dos dois.
+
+---
+
+## 2026-09-24 — `ares-tf` · ML-1B (Wave 1, G5) — **o orçamento era TOTAL; o guard aprovava o que não leu**
+
+**Branch:** `fix/treze-rotulos-falham-no-censo-de-windows-e-cinco-sao-setup-que-aborta-o-cenario-inteiro`
+**Rótulo do censo:** `falsify/git-branch-guard/stdin-drain-before-noop/baseline-writer-clean-large-payload`
+
+**Causa MEDIDA, e a dúvida do ML-0A está fechada.** A triagem declarou não ter determinado se a
+causa era **orçamento de tempo** ou **semântica de `read -d ''`**. É **orçamento**. Medido no
+Git-Bash 5.3.15 da VM (2026-09-24), 200000 bytes de um **pipe**: `read -t 600 -d ''` → `rc=1`
+(EOF), `len=200000`, **13,6 s** — a semântica de `-d ''` está **certa**, ela lê até o EOF real.
+`read -t 2 -d ''` → `rc=142`, **`len=25397`**, 2,1 s. O mesmo payload no macOS leva **0,151 s**:
+~14,7 KB/s no MSYS contra ~1,3 MB/s no Darwin, porque o `read` consome fd não-seekable 1 byte por
+`read(2)` e a syscall do MSYS é ~90x mais cara (redirect de **arquivo**, fd seekable, no mesmo
+Windows: 618 ms).
+
+**A correção NÃO é aumentar o `-t`.** Qualquer valor total passa em 200 KB e falha em 400 KB. Mudou
+a **natureza** do orçamento, de **total** para **ocioso**: laço que renova os 2 s a cada byte que
+chega. O limite deixa de ser "quanto a transferência inteira pode levar" (dependente de tamanho) e
+passa a ser "quanto o escritor pode ficar sem enviar nada" (independente de tamanho) — e continua
+cortando o escritor-que-nunca-escreve, que pendurou `make quality` por 1h05 no ML-2A.
+
+**Contrato decidido — FAIL-CLOSED, com o custo escrito.** Truncado + sem argv ⇒ `deny` no stdout +
+razão no stderr + `exit 2`. **Custo:** invocação legítima **dentro** de projeto trackfw, por runtime
+que só passa comando por stdin e fica 2 s **sem enviar um byte**, passa a ser bloqueada (antes era
+aprovada sem o guard ter lido). Limites do custo: a recusa vem **depois** do no-op (ADR-2026-08-17
+preservada, fora de projeto continua `exit 0`) e **argv isenta**; `$TRACKFW_GIT_COMMAND` **não**
+isenta, porque payload truncado pode render comando **não-vazio e errado**.
+
+**Falsificação nas duas direções, A/B na mesma VM Windows:** 200 KB fora de projeto — antigo
+`guard_rc=0` com **`writer_rc=141`** (`128+SIGPIPE`, o defeito do censo reproduzido), novo
+`guard_rc=0` com `writer_rc=0`. Escritor **travado** dentro de projeto — antigo **`guard_rc=0`
+silencioso**, novo `guard_rc=2` com deny visível. ⚠️ **Reconciliação:** pós-correção 200 KB deixa de
+ser ilegível (é só lento, 13,4 s), então a direção 2 teve de ser reconstruída como **escritor
+travado** — não é substituição de cenário.
+
+**Achado colateral, e é correção de uma alegação falsa no próprio código:** o comentário do bloco
+afirmava, como medição, que `read -t` *"preserva na variável qualquer prefixo já lido"* em **bash
+3.2 e 5.3**. **Falso para o 3.2** (padrão do macOS): medido `rc=1` (não 142) e variável **vazia**.
+Logo no bash 3.2 **timeout é indistinguível de EOF** e o truncamento é **indetectável** — declarado
+no código, com a razão de não ser remediável (lá a vazão é 200 KB em 0,15 s, então timeout só pode
+significar escritor parado).
+
+**Evidência:** `go build ./...` OK · `go test ./internal/generators/` → **ok, RC=0** (23,3 s) ·
+`go test ./internal/validator/ -run GitBranchGuard` → **ok, RC=0** (byte-identidade da cópia de
+referência). `make quality` **não** rodado (barreira do arquiteto).
+
+**Arquivos:** `internal/generators/scaffold.go` ·
+`internal/validator/validator_git_branch_guard_reference.go` (espelho byte-idêntico obrigatório) ·
+`internal/generators/git_branch_guard_stdin_drain_test.go` (**novo**, 5 testes, uma frase de
+afirmação por teste) · nota de vault + índice.
+
+🔴 **BLOQUEIO PARA O ARQUITETO — 2 sítios em `scripts/` (proibidos para mim) ficam DIVERGENTES:**
+(1) `scripts/trackfw-git-branch-guard.sh:47-48` — cópia instalada neste repo, precisa ser
+regenerada; (2) `scripts/check-gates-falsify.sh:4650-4654` — o `corrupt_literal` do Cenário 65 cita
+`IFS= read -r -t 2 -d '' _TRACKFW_STDIN || true`, que **deixou de existir**, e o helper aborta com
+`expected exactly 1 occurrence of pattern, got 0`. Substituto sugerido:
+`IFS= read -r -t 2 -d '' _TRACKFW_STDIN_CHUNK || _TRACKFW_STDIN_RC=$?` → `true`.
+
+**Efeito no consumidor:** o script é **gerado e instalado**. Quem já tem o script antigo instalado
+continua com o dreno de orçamento total e com o fail-open — a mudança só chega por
+`trackfw agents update` / regeneração. A regra `git_branch_guard_script_integrity` do `validate`
+passa a acusar divergência do script instalado contra a referência nova, o que **torna a pendência
+visível** em vez de silenciosa. Mudança de comportamento a comunicar no release: uma invocação que
+antes era aprovada em silêncio passa a poder ser **bloqueada com razão explícita**.
+
+**Adendo (mesmo ML, medições pedidas na revisão).** (1) **Latência:** o orçamento ocioso paga **uma
+janela a mais** quando o escritor manda alguns bytes e trava — medido **4,07 s** contra **2,07 s** do
+antigo, com e sem argv. (2) **Terminação:** escritor que trickle 1 byte a cada <2 s indefinidamente
+mantém o guard vivo — aceito, porque ele **está** entregando; o caso do ML-2A (zero bytes, fd preso)
+continua cortado em 2 s. Teto absoluto adicional seria número sem razão de contrato, então não
+existe — declarado no comentário do bloco. (3) 🔴 **O defeito não é exclusivo do Windows quando o
+escritor é lento:** medido no **macOS**, payload de 450 B em 5 pedaços de 1 s com `"command"` no fim
+do JSON — antigo **`rc=0`** (aprova `git push`), novo **`rc=2`**. É a não-vacuidade do sexto teste.
+(4) Caminho argv com stdin preso: `git push` → `rc=2` pelo matcher normal (não pela recusa de
+truncamento), `git status` → `rc=0`, nos dois scripts.
+
+⚠️ **Duas pendências de governança que eu não posso tocar:** (a) o `**Status:**` do **ML-1B** no
+roadmap precisa ir de ⬜ para ✅ (pasta `docs/roadmaps/` proibida para mim); (b) `trackfw validate`
+avisa `roadmap ... is in wip but has no acceptance criteria block` — a Wave 1 nunca recebeu o bloco
+de critérios que o ML-0A deveria ter gerado, então a barreira não terá o que conferir.
+
+## 2026-09-24 — `artemis-tf` · ML-1E (Wave 1, G5) — INÍCIO
+
+Fechar os **2 sítios de `scripts/`** que o ML-1B deixou divergentes e que deixam a árvore vermelha
+(mesma causa, mesma REQ, mesmo PR — Regra Dura de Causa Raiz):
+(1) `scripts/trackfw-git-branch-guard.sh` — **regenerar** pelo gerador (byte-identidade exigida por
+`TestGitBranchGuardScriptReference_MatchesGenerator` e pela regra `git_branch_guard_script_integrity`);
+(2) `scripts/check-gates-falsify.sh` — `corrupt_literal` do **Cenário 65** (l. ~4649) cita literal que
+deixou de existir, e o comentário de l. ~4612 descreve o mecanismo antigo.
+
+**Não toco** em `internal/generators/scaffold.go`, `internal/validator/validator_git_branch_guard_reference.go`
+nem em `*_test.go` (entregues e auditados no ML-1B). Sem branch, sem commit, sem push.
+
+## 2026-09-24 — `artemis-tf` · ML-1E (Wave 1, G5) — FIM · **árvore verde; os 2 sítios de `scripts/` fechados**
+
+**(1) `scripts/trackfw-git-branch-guard.sh` — REGENERADO, não editado.** `zz_dumpguard/main.go`
+chamando `generators.GenerateGitBranchGuardScript(os.Args[1])` para um diretório do scratchpad,
+`diff -u` como evidência, `cat > ` por cima (preserva o modo — `git diff --summary` vazio, bit de
+execução intacto), `rm -rf zz_dumpguard`. Diff: **+96/−15**, exatamente o bloco do ML-1B (orçamento
+OCIOSO + `0c` fail-closed).
+🔴 **Falsificado nas duas direções pela regra que realmente olha o disco** (`git_branch_guard_script_integrity`;
+o `TestGitBranchGuardScriptReference_MatchesGenerator` compara **duas constantes Go** e **não** vê o
+arquivo): script antigo em disco → `⚠ scripts/trackfw-git-branch-guard.sh content diverges from the
+template`; regenerado → a linha **some**.
+
+**(2) `scripts/check-gates-falsify.sh` — Cenário 65 volta a rodar.** `corrupt_literal` passou a citar
+`IFS= read -r -t 2 -d '' _TRACKFW_STDIN_CHUNK || _TRACKFW_STDIN_RC=\$?` → `"true"`. **Conferi eu
+mesmo:** literal novo ocorre **exatamente 1×** em `scaffold.go`; o antigo, **0×** (era a causa do
+abort `expected exactly 1 occurrence, got 0`). Comentário do cabeçalho atualizado: mecanismo novo
+(sem o `read`, `_TRACKFW_STDIN_RC` fica 0, o `-le 128` quebra o laço na primeira volta, stdin nunca é
+consumido), histórico dos **dois** MLs que mudaram o literal, e a **reconciliação** do vault (pós-ML-1B,
+200 KB é payload *lento*, não *ilegível* — quem cobre o ilegível é o escritor travado nos testes Go).
+
+🔴 **A sabotagem reintroduz o defeito que o cenário mede — provado, não presumido.** Contra-braço com
+sabotagem **identidade** (literal por ele mesmo): real → `chunk_rc=0`, `escritor_erro=1`; identidade →
+`chunk_rc=1`, `FAIL … escritor terminou limpo, EPIPE esperado não ocorreu (cenário vácuo)`. A guarda
+de vacuidade do `assert_writer_no_epipe` **re-falsifica**.
+
+**Como rodei o Cenário 65 isolado** (não existe filtro; `TRACKFW_FALSIFY_ENUMERATE=1` é modo de
+contagem): `gen-falsify-chunks.py … 60` → `chunk_11` (traz o Cenário 64 junto por dependência de
+`$T64_BASE_OUT`) → `TRACKFW_ROOT_DIR="$PWD" bash chunk_11.sh`. **chunk_rc=0**, 3/3 braços OK.
+
+**Evidência:** `go build ./...` rc=0 · `go test -count=1 ./internal/generators/` **ok 27,963s** ·
+`go test -count=1 ./internal/validator/` **ok 8,139s** · `trackfw validate` **rc=0** (151 warnings
+pré-existentes; **nenhum** sobre `scripts/trackfw-git-branch-guard.sh`) · `bash -n` OK nos 2 scripts.
+
+**Reconciliação (Regra Dura):** **nenhum teste novo** nesta entrega — declarado. O que mudou de
+afirmação é o **braço de detecção do Cenário 65**, e a frase dele é: *sem o dreno de stdin, o guard
+sai 0 antes de consumir o pipe e o escritor leva EPIPE* — medido `escritor_erro=1` com a sabotagem e
+`escritor_erro=0` sem ela, no mesmo build e mesmo payload.
+
+⚠️ **Para o arquiteto:** `trackfw validate` continua avisando que
+`~/.trackfw/scripts/trackfw-git-branch-guard.sh` (**escopo global, fora do repo**) diverge — é o
+efeito no consumidor que o ML-1B já anunciou; fecha com `trackfw update harness`, decisão sua.
+Seguem pendentes, e são suas: `**Status:**` do ML-1B/ML-1E no roadmap, o bloco de critérios de aceite
+da Wave 1 e o gate placeholder da Wave 0.
+
+**Nota de vault:** `vault/notes/rodar-um-unico-cenario-de-check-gates-falsify-e-provar-que-a-sabotagem-nao-e-vacua-2026-09-24.md`
+(linkada no índice). Sem branch, sem commit, sem push — entrega não-commitada para auditoria.
+
+**Adendo do ML-1E — duas conferências que o relatório devia e não tinha.**
+**(a) Não há quinto sítio.** Varredura repo-wide por `_TRACKFW_STDIN` e `read -r -t 2 -d ''`: os
+únicos sítios **executáveis** são os 4 já conhecidos. Tudo o mais é **texto histórico congelado** que
+descreve corretamente o estado da época (roadmap `done` de 2026-09-09 e sua cópia em
+`internal/roadmapdoc/testdata/corpus/`, `docs/seguranca/2026-09-25-triagem-cluster-windows.md`,
+`vault/notes/git-branch-guard-stdin-drain-timeout-...-2026-09-09.md`) — não se reescreve. 🔴
+`docs/cli-parity.md` **não** descreve o dreno, então não há contrato de comportamento defasado ali.
+**(b) O meu comentário não perturbou o instrumento.** A/B do `gen-falsify-chunks.py` (N=60) contra
+`git show HEAD:scripts/check-gates-falsify.sh`: **conjunto de rótulos idêntico (266)**,
+`prelude_end_line=1501`, `total_segments=62`, `assertion_segments=61`, `fused_units=46`,
+`cross_segment_edges=16` — **todos iguais**; 102 avisos nos dois lados. As **únicas** diferenças são
++24 linhas no chunk dos Cenários 64/65 (mesmo peso, mesmo `n_labels=2`) e dois números de linha de
+bloco deslocados **exatamente +24**. Nenhum rótulo apareceu nem sumiu — logo a guarda de conjunto do
+driver paralelo continua exigindo o mesmo.
+
+---
+
+## 2026-09-24 — `artemis-tf` (QA) — ML-1C + ML-1D (Wave 1, G4) da REQ-2026-09-24 do cluster de Windows
+
+**Início.** Handoff do `trackfw_architect` com os dois MLs juntos (eles se contradizem se tratados
+separado). Branch `fix/treze-rotulos-falham-no-censo-de-windows-e-cinco-sao-setup-que-aborta-o-cenario-inteiro`,
+HEAD `0175634d`. Arquivos meus: `scripts/check-gates-falsify.sh` (Cenário 67),
+`internal/generators/guard_path_normalize_test.go`, `vault/notes/`, este arquivo.
+`internal/generators/agentfiles.go` **não** foi tocado — o ML-1A mediu que nenhuma regra de string
+resolve o G4.
+
+**Fim.**
+
+**Linha de base medida ANTES de editar** (VM Windows 11 ARM64, `chunk_4` de
+`gen-falsify-chunks.py … 24`, `TRACKFW_FALSIFY_ENUMERATE=1`), porque `OK` depois da mudança não
+distingue *"consertei"* de *"o cenário não rodou"*:
+
+```
+CHUNK_RC=1
+FAIL [falsify/git-branch-guard-dedup/baseline-skips-project-entry]
+OK   [falsify/git-branch-guard-dedup/baseline-credential-guard-unaffected]
+OK   [falsify/git-branch-guard-dedup/reverse-vacuity]
+OK   [falsify/git-branch-guard-dedup/detection-catches-regression]
+FAIL [falsify/git-branch-guard-dedup/double-slash-tolerance]
+```
+
+**ML-1C — o que mudou.** Braço 1: helper `to_native_path` (`cygpath -m` quando existe, identidade
+quando não), `T67_FAKE_HOME_POSIX` para operação de filesystem e `T67_FAKE_HOME` **nativo** usado
+nas duas pontas — gravado no heredoc **e** entregue como `HOME` ao binário. Isso tira o MSYS da
+fronteira: não dependemos de a conversão de env var do MSYS ser byte-igual à do `cygpath` (a VM dá
+nome longo, o censo x64 dá **8.3**, `C:/Users/RUNNER~1/…` — converter só o heredoc passaria na VM e
+seguiria vermelho no CI). Braço 4: `cygpath` **colapsa** `//`, então converto a **base**
+(`WORK67_CLEAN`) e injeto o `//` **depois**, com guarda de vacuidade ancorada no **segmento**
+(`//s67-fake-home-installed-slash`, nunca `//` solto) emitindo
+`PROOF …/double-slash-tolerance/non-vacuity`.
+
+**Depois (VM, mesmo chunk):** `CHUNK_RC=0`, os 5 rótulos `OK` **mais** o `PROOF` do `//`.
+**POSIX (macOS, mesmo chunk):** `CHUNK_RC=0`, mesmos 5 `OK` + `PROOF` — o determinismo do braço 1
+sobrevive **por construção** (em POSIX `to_native_path` devolve a entrada inalterada, as variáveis
+ficam byte a byte como eram).
+
+🔴 **Achado colateral, de graça:** `detection-catches-regression` estava **`OK` antes e depois** —
+e antes era **vacuoso**: ele usa o mesmo `$HOME` do braço 1, e com `MATCH=false` a entrada de
+projeto reaparecia **independente** de o binário estar corrompido. Detector verde com baseline
+vermelho, compartilhando fixture, não prova nada. Agora passa pelo motivo certo. Mesma causa, mesma
+REQ — sem artefato novo.
+
+**ML-1D — veredito: comportamento DESEJADO, caso mantido e renomeado.** Sem âncora de letra de
+unidade na posição 0, `\` é **byte de nome de arquivo**; traduzi-lo faria `scripts\guard.sh` e
+`scripts/guard.sh` — dois arquivos genuinamente diferentes em POSIX — compararem iguais: falso
+"já instalado" que desarma o dedup em silêncio. O resíduo em Windows está **declarado** no doc
+comment de `normalizeGuardPath`, com direção sempre **APERTA**. Nome novo declara a garantia
+(`"no drive-letter anchor: backslash is a filename byte, so two genuinely different relative paths
+never compare equal"`) em vez da implementação (`"untouched"`). `normalizeGuardPath` **não** foi
+relaxado — zero mudança em `internal/generators/agentfiles.go`.
+
+🔴 **Reparo na moldura do handoff:** o G4 **não** ficou invisível por causa desse caso. Nenhum caso
+daquela tabela poderia tê-lo pego — a tabela é de **sintaxe** e o G4 diverge por **montagem**. O
+próprio ML-1A já diz isso entre parênteses.
+
+**Reconciliação (Regra Dura) — um teste novo, uma frase.**
+`TestSamePathCommand_MSYSAndNativeSpellingsMustNotMatch` afirma a medição do ML-1A de que **nenhuma
+regra de string casa as duas grafias** — qualquer mudança que as faça comparar iguais é
+afrouxamento semântico. **Falsificado nas duas direções:** com `samePathCommand` afrouxado para
+comparar por *basename* (o afrouxamento que a §6.4 do parecer proíbe), via `go test -overlay`, ele
+**reprova** (`LOOSE_RC=1`, 2 asserções); na árvore íntegra, **passa**.
+O `PROOF …/non-vacuity` do braço 4 é asserção de fixture, não teste Go, e a frase dele é: *o `//`
+sobreviveu ao `command` gravado, logo o braço 4 mede tolerância a barra dupla e não outra coisa*.
+
+**Evidência (RC medido sem cano na linha do `$?`):**
+`bash -n scripts/check-gates-falsify.sh` OK · `go build ./...` rc=0 ·
+`go test ./internal/generators/` **GO_TEST_RC=0** · chunk do Cenário 67 **CHUNK_RC=0** em macOS e
+na VM Windows · `go test -overlay` com o afrouxamento **LOOSE_RC=1**.
+
+⚠️ **`go test ./internal/generators/` na VM Windows reprova 3 testes — pré-existentes, não meus.**
+`TestGitBranchGuard_UnterminatedHeredocBeforeRealPush_StillBlocks`,
+`TestAttentionScripts_FallbackWithoutJQ`, `TestUpdateMigratesKnownCodexAndPreservesUnknown`.
+Provado por `go test -overlay` substituindo o meu arquivo pela versão `HEAD`: os **mesmos 3**
+reprovam (`PRE_RC=1`). Fora do escopo desta REQ, mas registrado.
+
+**Nota de vault:**
+`vault/notes/fixture-que-cruza-a-fronteira-msys-controla-as-duas-pontas-a-partir-de-uma-string-2026-09-24.md`
+(linkada no índice). Sem branch, sem commit, sem push — entrega não-commitada para auditoria.
+Pendentes e suas: `**Status:**` do ML-1C/ML-1D no roadmap.
+
+**Adendo do ML-1C — duas conferências que o relatório devia e não tinha.**
+**(a) A/B do conjunto de rótulos, nos N que os workflows realmente usam.** O `PROOF` novo casa
+`ECHO_LABEL_PAT`, então vira rótulo **exigido** pela guarda de conjunto
+(`check-falsify-shard-coverage.sh`, que re-extrai do fonte). `gen-falsify-chunks.py` contra
+`git show HEAD:scripts/check-gates-falsify.sh`, em **N=4** (`quality.yml`), **N=8**
+(`windows-census.yml`) e N=24: `265` vs `264` rótulos nos três, **+1 adicionado**
+(`git-branch-guard-dedup/double-slash-tolerance/non-vacuity`), **0 removidos**. Rótulo que
+*sumisse* pararia de ser exigido em silêncio — é o modo de falha do ML-2D que este projeto já pagou.
+Depois de corrigir o cabeçalho defasado ("Três braços" → quatro), o conjunto continua **idêntico**.
+**(b) Limite de transferência do `//`.** A sobrevivência do `//` foi medida em **ARM64**; o censo é
+**x64**, e a divergência de grafia 8.3 que motivou a correção mostra que ARM64 ≠ x64 nesse terreno.
+Por isso a sobrevivência é **assertada no script**, não presumida: se o x64 se comportar diferente,
+o censo reporta `double-slash-tolerance-vacuity` como **FAIL**, em vez de um `OK` vacuoso.
+
+---
+
+## Sessão 2026-09-24 — ares-tf (Infrastructure) — ML-2A (Wave 2, grupo G3): a fixture inconstruível deixa de passar por controle aprovado
+
+**Início.** Escopo exclusivo: `scripts/check-gates-falsify.sh`, Cenário 181
+(`scaffold-update-chmod-removed/direction-c-*`) — o **único rótulo de categoria C** (passagem
+vacuosa) do cluster de Windows, conforme `docs/seguranca/2026-09-25-triagem-cluster-windows.md` §6.3
+e a issue #421. Sem branch nova, sem commit, sem push. Não toquei `Makefile`, `docs/req/`,
+`docs/roadmaps/`, `internal/` — nem `run-gates-falsify-parallel.sh`/`gen-falsify-chunks.py`.
+
+**Saída escolhida: FALHAR ALTO (categoria C → A), com a garantia nomeada.** Uma sonda de
+representabilidade do bit (`0755` → `test -x` → `0644` → `test -x`), construída **no mesmo mount das
+fixtures** (`$WORK`), decide. Se o FS não representa o bit, o cenário emite **dois** `FAIL` que
+nomeiam explicitamente a garantia **não exercitada** e não roda braço nenhum; se representa, os dois
+braços rodam exatamente como antes.
+
+🔴 **`SKIP` foi avaliado e descartado com razão medida, não estilística:** o driver colhe rótulos com
+`^(OK|FAIL|PROOF)`, então uma linha `SKIP` (a) não satisfaz a exigência de rótulo — vira
+*"esperado AUSENTE"*, que é o diagnóstico de chunk morto — e (b) sairia com **0**, reconstruindo a
+categoria C dentro da própria guarda. `FAIL [falsify/<rótulo>]: …` satisfaz a exigência **e**
+reprova; conferido aplicando o pipeline exato do driver ao log medido. Custo da escolha: o censo de
+Windows passa a mostrar **2 FAIL** onde mostrava 1 `OK` vácuo + 1 `FAIL` — aceitável porque
+`windows-census.yml` é `workflow_dispatch` + `continue-on-error: true` e nunca bloqueia merge.
+
+**Prova de não-vacuidade (imagem FAT32 esparsa via `hdiutil`, FS real que não retira o bit):**
+
+| variante | `TMPDIR` na imagem FAT32 |
+|---|---|
+| `HEAD`, **braço de detecção removido** | `OK [.../direction-c-baseline]`, **rc=0 — verde inteiro** 🔴 |
+| `HEAD`, completo | `OK` vácuo + `FAIL` — estado do censo |
+| novo, **braço de detecção removido** | 2× `FAIL` nomeado, **rc=1** |
+| novo, completo | 2× `FAIL` nomeado, **rc=1** |
+
+Em APFS (POSIX), código novo: `chunk_21` completo **rc=0**, os dois braços `OK` — a garantia segue
+exercitada de verdade.
+
+**Veredito sobre a testemunha de CI.** O log do run `36036473391`, linha 4187, mostra `-rwxr-xr-x`
+**depois** do `chmod 0644` em `windows-latest` x64: **suficiente para o efeito**, fecha o "não
+medido" da #421. **Insuficiente para atribuir ao `noacl`** — o log não tem nenhuma linha de `mount`.
+Fecha com uma linha `mount`/`findmnt -T "$TMPDIR"` no censo.
+
+**Evidência.** `bash -n scripts/check-gates-falsify.sh` OK · `trackfw validate` **rc=0** (lenient;
+152 avisos pré-existentes) · `make quality` **não** rodado (barreira do arquiteto).
+
+**Nota de vault:**
+`vault/notes/chmod-que-nao-retira-o-bit-torna-o-braco-de-baseline-vacuo-e-o-skip-reconstroi-a-vacuidade-2026-09-24.md`
+(linkada no índice).
+
+**Observação reportada, não corrigida:** o braço de baseline usa `$ROOT_DIR/bin/trackfw` — binário
+**committado**, potencialmente defasado em relação a `internal/`; o veredito atesta `bin/`, não a
+árvore. Decisão do arquiteto. Pendentes e suas: `**Status:**` do ML-2A no roadmap.
+
+**Adendo do ML-2A — três conferências que o relatório devia.**
+**(a) Frase por artefato novo (Regra Dura de Reconciliação).** O único artefato novo é a sonda de
+representabilidade do bit. **A sonda afirma a conclusão do próprio ML de que `test -x` não
+discrimina neste FS**: ela mede exatamente a propriedade que o braço de baseline pressupõe (*o
+`chmod` retira o bit?*), e é por isso que a fixture é declarada **inconstruível** em vez de
+aprovada. Nenhum teste Go novo — ausência declarada.
+**(b) Acoplamento baseline/detecção (lição da Wave 1).** Os dois braços usam **diretórios de projeto
+distintos** (`$WORK/s181-base` vs `$WORK/s181-det`), **`HOME`s distintos** e **binários distintos**
+(real vs sabotado): **não há instância de fixture compartilhada**, logo o modo de falha da Wave 1
+(detector verde com baseline vermelho) não se aplica. O acoplamento aqui nunca foi de *instância* —
+era uma **propriedade do sistema de arquivos**, herdada pelos dois braços, e é exatamente ela que a
+sonda decide **uma vez, antes de qualquer braço rodar**.
+**(c) A/B do conjunto de rótulos nos N que os workflows usam.** `gen-falsify-chunks.py` contra
+`git show HEAD:scripts/check-gates-falsify.sh` e contra a árvore, em **N=4** (`quality.yml`),
+**N=8** (`windows-census.yml`) e N=24: **265 vs 265 nos três, 0 adicionados, 0 removidos** — como
+esperado, porque só linhas `FAIL` foram acrescentadas e `ECHO_LABEL_PAT` só colhe `OK|PROOF`.
+**Detalhe deliberado:** a sonda se chama `s181-exec-bit-probe.**sh**` — mesma extensão da fixture
+real, para o caso de o MSYS decidir executabilidade parcialmente por extensão; sonda sem `.sh`
+poderia medir propriedade diferente da que a fixture enfrenta.
+
+---
+
+## 2026-09-24 — `ares-tf` (Infrastructure) · ML-3A (Wave 3, grupos G1 e G2) — INÍCIO
+
+Escopo: `scripts/check-release-tag-parity.sh` (G1, 6 rótulos), `scripts/check-update-parity.sh`
+(G2, 4 rótulos), `.github/workflows/windows-census.yml` (linha de `mount` — dívida do ML-2A),
+`vault/notes/`. Sem tocar em `internal/`, `Makefile`, `docs/req/`, `docs/roadmaps/`. Sem Git.
+Medições na VM `powershell-vm` (Windows 11 ARM64) em clone próprio `~/tfw-ml3a` — o clone
+`~/trackfw` da VM tem alterações não commitadas de outra frente e **não foi tocado**.
+
+## 2026-09-24 — `ares-tf` (Infrastructure) · ML-3A (Wave 3, G1 e G2) — FIM · **os 10 rótulos fecham no Windows, e a causa do `0xC0000005` está medida**
+
+**G2 — 4/4 fecham.** `ln -s` degrada para cópia no Git for Windows; com alvo inexistente de
+propósito a cópia reprova e, sob `set -euo pipefail`, matava o gate na construção da fixture do
+Cenário 9. `make_dangling_symlink` tenta `ln -s`, depois `MSYS=winsymlinks:nativestrict ln -s`, e
+decide por `[[ -L ]]` — nunca por `$?` de comando com cano. Medido na VM (Win 11 ARM64, GfW 2.55):
+`ln -sf` rc=1 / não-link; `nativestrict` rc=0 / **link**. Cenário 10 tinha o mesmo `ln -sf` 35
+linhas depois: **mesma causa, mesmo ML** (Regra Dura). Na VM, `check-update-parity.sh` com binário
+real passa **16 OK, rc=0** (antes: morria no Cenário 9). Chunks do falsify na VM:
+`sandbox-gap-e/direction-a-baseline` **OK**, `sandbox-gap-e/direction-a-detected` **OK**,
+`sandbox-walkdir-reintroduced/direction-b-detected` **OK**, `setup-s175-baseline` **0 ocorrências**.
+
+**G1 — 6/6 fecham, e a causa do `0xC0000005` foi medida, não suposta.** `git fetch`/`ls-remote` de
+remoto **local** spawna o transporte por um **shell**; sem `sh` (que mora em `/usr/bin`) o Git for
+Windows **morre com violação de acesso** em vez de reportar shell ausente. Quatro células, com
+controle: `RUNTIME_BIN:GIT_BIN_DIR` → 139/`0xC0000005`; **+ diretório só com `ls.exe`** → 139 (elimina
+"faltava um diretório qualquer"); **+ `sh.exe`+`msys-2.0.dll`** → 0; **+ `/usr/bin`** → 0.
+`git --version` passa em todas — por isso a guarda aprovava um PATH onde o `fetch` morre. **Eliminado:**
+DLL do próprio `git.exe` (seria `0xC0000135`). Correção: no ramo Windows, `NO_FORGE_PATH` passa a
+incluir `/usr/bin` do MSYS — que **não** contém `gh`/`glab`/`az` (medido) e cujo desvio a guarda de
+vacuidade reprova alto. Na VM, o gate passa **19 OK, "All scenarios passed"**, e no chunk_3 o rótulo
+antes **ausente** `release-tag-parity/success/baseline-clean` imprime **OK**.
+
+**A guarda parou de acusar o sujeito errado — com valor próprio.** Três probes do gate punham o PATH
+curado no `python3` procurado **nesse mesmo PATH**, caindo na cópia de `RUNTIME_BIN` que não inicia.
+Agora há `native_child_probe`: interpretador **real por caminho absoluto**, PATH curado no **processo
+pai** (🔴 no Windows o `CreateProcess` resolve pelo PATH do **pai** — `subprocess(env=)` não cura
+nada: medido, `gh 2.100.0` executou sob PATH curado **sem gh**), e três desfechos nomeados
+(`NOTFOUND` / `EXIT` com código em hexa / probe sem veredito). 🔴 A guarda do `gh` tinha o sinal
+**invertido**: a falha do interpretador era lida como "gh ausente" e a guarda **passava** — vacuidade
+em silêncio; agora reprova alto.
+
+**Censo:** acrescentada uma linha de `mount` + `df` + `TMPDIR` ao job `censo` (dívida registrada pelo
+ML-2A). `findmnt` é util-linux e **não existe** no Git for Windows — por isso `mount`, com `|| true`.
+
+**Falsificação nas duas direções, exercitada no Windows (VM):** G1 — (a) git genuinamente fora do
+PATH ⇒ "git NAO e encontrado … [WinError 2]"; (b) `git.exe` que resolve e morre ⇒ "git FOI encontrado
+… TERMINOU EM ERRO … rc=3221225477 (0xC0000005)"; (c) revertendo o `/usr/bin` o censo é reproduzido e
+a mensagem do Cenário 7 nomeia o **filho morto** — **0** ocorrências da mensagem antiga. G2 — (a)
+detecção real com binário sabotado (chunks 3 e 4) ⇒ os dois `direction-*-detected` **OK**; (b)
+`make_dangling_symlink` forçado a falhar ⇒ **dois FAIL nomeando as garantias**, **0** linhas `SKIP`,
+gate **segue até o fim** e sai 1.
+
+**POSIX:** `check-release-tag-parity.sh` 19 OK rc=0 · `check-update-parity.sh` 16 OK rc=0 ·
+`go build ./...` OK · `trackfw validate` rc=0 (152 avisos pré-existentes).
+
+**O que é observado e o que é deduzido (G1).** Observados na VM: `release-tag-parity/success/
+baseline-clean` **OK** e `setup-s75` some (chunk_3); `forge-commit-diverges-update-ref/
+baseline-clean` **OK** e `setup-s76` some (chunk_1) — os **dois** rótulos antes ausentes foram
+medidos, não deduzidos. Os outros dois — `setup-s87-baseline` e `setup-s158-baseline` (chunks 0 e 2)
+— **não foram executados**: fecham **por dedução**, e a dedução é apertada —
+todos os braços têm a forma `if ! bash check-release-tag-parity.sh; then FAIL; else OK`, e o gate
+passa inteiro nessa máquina com o `bin/trackfw` recém-compilado, logo todo `else` dispara.
+
+**Pendente e declarado — recontagem no CI** (`windows-census.yml`, `workflow_dispatch`), só possível
+depois do commit/push. Previsão a conferir, **por rótulo**:
+
+| grupo | hoje | depois | delta |
+|---|---|---|---|
+| G1 · `setup-s75`, `setup-s76`, `setup-s87-baseline`, `setup-s158-baseline` | 4 FAIL | somem | `FAIL −4` |
+| G1 · `success/baseline-clean`, `forge-commit-diverges-update-ref/baseline-clean` | ausentes | OK | `OK +2` |
+| G2 · `setup-s175-baseline` (FAIL some) + `sandbox-gap-e/direction-a-baseline` (ausente→OK) | 1 FAIL | 1 OK | `FAIL −1`, `OK +1` |
+| G2 · `sandbox-gap-e/direction-a-detected` | FAIL | OK | `FAIL −1`, `OK +1` |
+| G2 · `sandbox-walkdir-reintroduced/direction-b-detected` | FAIL | OK | `FAIL −1`, `OK +1` |
+
+**Total previsto: `FAIL −7` e `OK +5`.** (`assert_fails_with` imprime linha `OK` ao ter sucesso —
+por isso os dois `*-detected` contam `OK +1` cada; os `setup-s87/s158` contam `OK +0` porque o `OK`
+deles já era impresso pela Forma B.)
+
+🔴 **G2 fecha no CI SE E SOMENTE SE o runner permitir symlink nativo** — `MSYS=winsymlinks:
+nativestrict` foi medido na VM, **não** em `windows-latest`. O observável que decide é a presença de
+`FAIL [sandbox/dangling-outside-set/unconstructible]` / `…/dangling-inside-set/unconstructible` no
+log do shard: `grep -c 'unconstructible' shard_*.log`. **Zero** ⇒ symlink nativo permitido e a
+garantia foi exercitada; **não-zero** ⇒ o runner não permite, a garantia está **nomeada** e não
+silenciada, e o delta de G2 não se realiza (esse é o desenho, não uma surpresa).
+
+⚠️ **Onde a evidência de montagem cai:** o passo novo escreve no **log do job**, não no artefato
+`falsify-shard-out/shard_N.log`. A conferência do ML-2A tem de rodar contra `gh run view <id> --log`
+— `grep -ci 'noacl|mount'` no artefato continuará dando 0 por construção.
+
+**Uma frase por artefato novo (Regra Dura de Reconciliação).**
+1. `FAIL [sandbox/dangling-outside-set/unconstructible]` — **afirma** a conclusão deste ML de que
+   `ln -s` degrada para cópia onde `winsymlinks` está desligado: por isso a fixture é declarada
+   **inconstruível**, e nunca aprovada.
+2. `FAIL [sandbox/dangling-inside-set/unconstructible]` — idem, para a garantia irmã (symlink
+   pendurado **dentro** do conjunto é tratado como ausente, não como erro); emitido no mesmo ramo
+   porque **a mesma medição** cobre os dois sítios.
+3. `native_child_probe` e seus três desfechos nomeados — **afirma** a conclusão de que um único
+   observável ("o comando saiu != 0") cobria três estados distintos, e que a resolução no Windows
+   depende do PATH do **pai** (medido: `gh 2.100.0` sob PATH curado sem `gh`).
+4. Ramo de forma-de-crash no Cenário 7 — **afirma** a conclusão de que `exited with 3221225477` é
+   **filho morto**, não ausência de recusa.
+5. **Ausência declarada:** nenhum teste Go novo; nenhuma linha de `internal/` tocada.
+
+**Os 3 FAIL restantes no chunk_4 da VM não são meus, e há corroboração de CI:** o censo do shard 4
+tinha exatamente `setup-s175-baseline`, `sandbox-gap-e/direction-a-detected` e os dois
+`git-branch-guard-dedup` — **não** tinha `setup-s196-baseline`, `ci-workflow/self-governance-invoked/
+clean` nem `prose-in-message/detection-catches-regression`. São ambiente da VM ARM64 (dependências
+de `make`/node/pip ausentes), e nenhum deles invoca os dois gates que este ML tocou.
+
+**Achado alheio, reportado e não tocado:** no chunk_1 da VM, o único FAIL é
+`git-branch-guard/stdin-drain-before-noop/detection-catches-epipe-regression`: *"escritor terminou
+limpo, EPIPE esperado não ocorreu (cenário vácuo)"* — o braço de **detecção** do G5, depois da
+correção da Wave 1. Não é o rótulo do censo (`…/baseline-writer-clean-large-payload`) e pode ser
+próprio da VM ARM64. Decisão do arquiteto; não é escopo deste ML.
+
+**Observações reportadas, não corrigidas (fora dos 14 rótulos):** `check-release-tag-parity.sh:736`
+— `assert_three_way()` imprime `OK [<label>/go-behavioral-pin]` **incondicionalmente**, inclusive
+depois de o cenário ter reprovado (visto na falsificação F3); e `check-gates-falsify.sh:6596` —
+`sandbox-walkdir-reintroduced/direction-b-baseline` imprime OK **sem condição**, reaproveitando uma
+baseline que estava vermelha no Windows. Mesma forma da "Forma B" da Wave 0: o instrumento afirma o
+que não mediu. Decisão do arquiteto.
+
+**Nota de vault:** `vault/notes/path-curado-no-windows-tres-medicoes-que-invertem-o-diagnostico-2026-09-24.md`
+(linkada no índice).
+
+## 2026-09-24 — `artemis-tf` (QA) · ML-0B — INÍCIO
+
+Entrada: handoff do `trackfw-architect` para a **Forma B** (rótulo de sucesso emitido fora do ramo
+de aprovação) na REQ do cluster de Windows, branch
+`fix/treze-rotulos-falham-no-censo-de-windows-...` já criada. Escopo de escrita:
+`scripts/check-gates-falsify.sh`, `scripts/check-release-tag-parity.sh`, `vault/notes/`,
+este arquivo. Sem git, sem `make quality` (barreira do arquiteto). 4 sítios conhecidos, a enumerar
+**pela forma**.
+
+## 2026-09-24 — `artemis-tf` (QA) · ML-0B — FIM · **são 18 sítios, não 4 — e o detector nomeado no handoff enxerga 9 deles**
+
+**Enumeração pela forma (não por token).** Varredor estrutural em `awk` (heredoc ignorado,
+`if/else/fi` contados, `return`/`exit` desarmando) + **fecho transitivo dos envelopes** que
+alcançam o ponto de reprovação e **retornam**. Sem o fecho: 12 candidatos. Com ele: **27**, dos
+quais **18 verdadeiros** e **9 falsos positivos** (já corrigidos numa campanha anterior pelo
+padrão `_falsify_arm_fail_<linha>` + `elif`, que o varredor não modela).
+
+🔴 **O detector nomeado no handoff é falso para metade.** *"A Forma B não chama
+`falsify_count_success`, logo `^OK` ≠ tally"* — mas 9 dos 18 sítios chamam
+`falsify_count_success` na linha imediatamente acima do `echo OK` incondicional; os dois
+contadores andam juntos **inclusive quando o cenário reprova**, e o piso `FALSIFY_SUCCESS_FLOOR`
+era **inflado por reprovação**. Quem caçasse a divergência acharia menos do que existe.
+
+**Duas subclasses.** *Guard de setup* (10 sítios) e — nova — ***sumário de braços*** (8 sítios:
+`call-site-pin`, `ci-workflow-self-governance`, `crlf-normalize`, `emitting-capture`,
+`unguarded-rc`, `write-containment`, `roadmap-ref-stale-state/{go,python}`), em que o `OK` afirma
+*"os N braços provados"* depois de uma série de `assert_*`; um `assert_fails_with` que reprova
+**retorna 0** por construção (senão o `set -e` do call site mataria o chunk) e o sumário sai
+mesmo assim. Os 4 sítios do handoff estão todos dentro dos 18.
+
+**Correção.** `falsify_fail_mark` / `falsify_failed_since` + ramo `else`; o `echo "OK
+[falsify/<rótulo>]"` **literal é preservado** (é dele que `gen-falsify-chunks.py`/`ECHO_LABEL_PAT`
+colhe o conjunto exigido pela guarda do driver) e o ramo suprimido emite `FAIL [falsify/<mesmo
+rótulo>]` — sumir com a linha viraria *"rótulo AUSENTE"*, diagnóstico errado. Em
+`check-release-tag-parity.sh`, `assert_three_way` passa a decidir por marca d'água de `FAIL_N`,
+sem tocar em nenhum dos **17 chamadores**.
+
+**Medições.** Árvore íntegra: `run-gates-falsify-parallel.sh` **rc=0**, 268 rótulos `OK` distintos,
+0 `FAIL`; `check-release-tag-parity.sh` **rc=0**, 19 pins. Cópia sabotada em modo de enumeração:
+nos **18** sítios o `OK` some e o `FAIL` do mesmo rótulo aparece — **18/18**. Sem cascata: 27
+rótulos a menos = 18 alvos + 9 do Cenário 200 (ver achado abaixo). `assert_three_way` com `fail`
+injetado: código **antigo** imprime `FAIL` e `OK` do mesmo cenário em linhas consecutivas (falso
+verde reproduzido); código novo imprime `FAIL`+`FAIL` e **18 de 19** pins seguem `OK`. Conjunto de
+rótulos **idêntico** antes/depois, e as 12 marcas ficam no **mesmo chunk** da sua leitura em N=4 e
+N=8. `trackfw validate` rc=0; `shellcheck -S warning`: nenhum achado novo nos dois arquivos.
+
+🔴 **Achado independente, pré-existente, NÃO corrigido:** o bloco `exit 1` do modo de enumeração
+está **antes do Cenário 200** no fonte (`:8105` vs `:8124`), então no censo de Windows — que roda
+em enumeração e tem reprovações por construção — qualquer reprovação no mesmo chunk **aborta antes**
+do Cenário 200 e apaga os **9 rótulos `interp-path/*`**, que o driver reporta como *"rótulo
+esperado AUSENTE"*. Causa **posicional**, não Forma B. Decisão do arquiteto: recomendo entrar como
+ML novo **nesta REQ**, não como REQ nova.
+
+**Escopo da marca, declarado (não é over-suppression — foi medido).** A marca cobre o **cenário
+inteiro, inclusive o setup**: se a fixture não se formou, os braços não foram provados. Conferido
+sítio a sítio quais pontos de reprovação caem dentro de cada escopo — são **apenas** o
+`setup-sNNN-build` do próprio cenário e braços com o **prefixo do próprio rótulo** de sumário
+(`unguarded-rc/*` sob `unguarded-rc`, `crlf-normalize/*` sob `crlf-normalize`, etc.). **Nenhum
+ponto de reprovação alheio** entra no escopo de nenhuma das 12 marcas. Único caso a registrar:
+`roadmap-ref-stale-state/python` divide o escopo com os braços `/go` — é rótulo histórico (v8 não
+tem runtime Python) e os dois sumários afirmam as mesmas 3 direções.
+
+**Frases por artefato (Regra Dura de Reconciliação).** Nenhum teste Go novo e nenhum arquivo de
+teste novo — **ausência declarada**. Artefatos entregues e o que cada um afirma:
+1. `falsify_fail_mark`/`falsify_failed_since` — **afirmam** a conclusão de que o ponto de
+   reprovação **retorna** em modo de enumeração, e que por isso o rótulo de sucesso precisa
+   consultar o tally, não a posição no arquivo.
+2. Os 18 ramos `else` + `FAIL [falsify/<rótulo>]` — **afirmam** a conclusão de que suprimir o `OK`
+   sem emitir o rótulo viraria *"AUSENTE"* na guarda de conjunto do driver.
+3. A marca d'água de `FAIL_N` em `assert_three_way` — **afirma** a conclusão de que a supressão
+   tem de ser **por cenário**, medida contra a chamada anterior do helper, e não global.
+
+**Escopo respeitado:** 2 arquivos de `scripts/`, 1 nota de vault + índice, este arquivo. Nada em
+`internal/`, `Makefile`, `.github/workflows/`, `docs/req/`, `docs/roadmaps/`. Sem commit, sem push.
+
+**Nota de vault:**
+`vault/notes/o-rotulo-de-sucesso-fora-do-ramo-de-aprovacao-sao-18-nao-4-e-o-detector-nomeado-acha-9-2026-09-24.md`
+(linkada no índice).
+
+---
+
+## 2026-09-24 — `artemis-tf` (QA) · ML-4A — INÍCIO
+
+**Tarefa:** o bloco de saída do modo de enumeração vem **antes** do Cenário 200 em
+`scripts/check-gates-falsify.sh`. No censo de Windows (que roda em `enumerate` e tem reprovações
+por construção) qualquer reprovação no mesmo chunk faz o chunk sair **antes** do Cenário 200 e os
+**9 rótulos `interp-path/*`** somem — o driver os reporta como *"rótulo esperado AUSENTE"*, que lê
+como chunk morto em vez de *"a execução parou aqui"*.
+
+**Exigência do handoff:** enumerar quantos cenários ficam atrás do bloco, dizer a razão estrutural,
+e escolher a correção que impede a **reincidência** — não só a que move 15 linhas.
+
+**Arquivos:** `scripts/check-gates-falsify.sh`, `scripts/gen-falsify-chunks.py`, `vault/notes/`,
+este arquivo. Sem commit, sem push.
+
+## 2026-09-24 — `artemis-tf` (QA) · ML-4A — FIM · **1 cenário atrás do epílogo, e um segundo defeito de mesma causa que ninguém tinha visto**
+
+**Enumeração — 1 cenário, e só um.** Comando (regex do próprio `gen-falsify-chunks.py`, nunca uma
+segunda grafia):
+
+```python
+HDR=re.compile(r'^# Cen[aá]rio[s]?\s+([0-9][0-9a-zA-Z/–\-]*)\s+(?:\([^)]*\)\s+)?(--|—)')
+e=[i for i,l in enumerate(src) if 'falsify_enum_n cenário(s) reprovaram' in l][0]   # 8109
+[i+1 for i in range(e+1,len(src)) if HDR.match(src[i])]                             # -> [8124]
+```
+
+⚠️ **Falso positivo evitado:** ancorar em `if [[ "$TRACKFW_FALSIFY_ENUMERATE" == "1" ]]; then`
+devolve **62** cenários, porque casa também o bloco de **inicialização** na linha 314 do preâmbulo.
+A âncora correta é o `echo` do **ponto de saída**.
+
+**Fechamento contra emissores órfãos** (o HDR_PAT é a gramática de **corte**, não a de emissão):
+`awk 'NR>8109 && (/assert_[a-z_]+[[:space:]]+"/ || /echo "OK / || /echo "PROOF /)'` devolve **9**
+linhas, **todas** dentro do intervalo do Cenário 200 (8174–8240). Não há emissor órfão atrás do
+bloco.
+
+**Razão estrutural.** O último segmento do particionador vai do **último cabeçalho ao EOF**; tudo
+entre o penúltimo e o último cabeçalho pertence ao segmento do **penúltimo** cenário — foi onde o
+epílogo caiu. Não havia marca separando cenário de epílogo, então "append no fim do arquivo" — o
+gesto natural de quem adiciona cenário — aterrissa **depois** do epílogo. E não era intermitente:
+`falsify_success_n` atribuído no segmento 199 e lido no 200 **fundia** os dois num bloco
+indivisível, logo o `exit 1` chegava primeiro **sempre**.
+
+🔴 **Segundo defeito, mesma causa, fora do handoff.** A leitura
+`falsify_success_n=$(wc -l < "$FALSIFY_SUCCESS_TALLY")` também vivia **antes** do Cenário 200, e o
+seu único consumidor (guarda de vacuidade + `echo "Falsification checks passed (N scenarios)"`) vive
+**depois**. O número impresso e comparado contra o piso era um **retrato tirado cedo demais** — os 9
+`OK` do Cenário 200 entravam no tally e **nunca** na conta. Entrou nesta correção pela Regra Dura de
+Causa Raiz.
+
+**Correção.** (1) o epílogo inteiro passa a vir depois do Cenário 200, aberto por
+`# FALSIFY-EPILOGUE-BEGIN`; (2) `check_epilogue_after_all_scenarios()` em `gen-falsify-chunks.py`
+**recusa gerar chunks** em 4 direções. A guarda mora no gerador porque ele é o **único** sítio da
+gramática `HDR_PAT` (que já quebrou 3× por reimplementação) e porque **todo** caminho obrigatório
+passa por ele — `make quality`/`make parity`, `quality.yml`, `windows-census.yml`,
+`check-falsify-shard-coverage.sh`. Nenhum invoca `check-gates-falsify.sh` direto.
+
+**Falsificação da guarda (4 braços + não-vacuidade + retro):** cenário depois da marca → `rc=1`;
+marca ausente → `rc=1`; marca duplicada → `rc=1`; marca sem o bloco que ela delimita → `rc=1`;
+árvore íntegra → `rc=0`. E sobre o fonte **pré-ML-4A** com a marca aplicada retroativamente na
+posição antiga: a guarda **nomeia o Cenário 200 na linha 8125**.
+
+**Direção 1 (A/B em chunks materializados, N=8, falha injetada no mesmo chunk):** pré-fix
+`chunk_7.sh` → **0** rótulos `interp-path/*`; pós-fix `chunk_4.sh` → **9**. `CHUNK_COMPLETE` ausente
+nos dois é **correto** (o gerador sai `1` antes do sentinela, por desenho). Braço limpo, modo normal:
+`RC=0`, 9 rótulos, última linha `CHUNK_COMPLETE 4`.
+
+**Direção 2:** conjunto de rótulos esperados **idêntico** (265) em **N=4, N=8 e N=24**, A/B contra
+`gen-old.py` + fonte pré-fix. Execução: `run-gates-falsify-parallel.sh` → **6 chunks, 338 OK, 0 FAIL,
+RC=0** — **o mesmo número no pré-fix e no pós-fix**.
+
+**Piso `FALSIFY_SUCCESS_FLOOR` — MEDIDO.** `bash scripts/check-gates-falsify.sh` → `RC=0`,
+`Falsification checks passed (258 scenarios)`, 0 FAIL. Antes: 249 (registrado pelo ML-1B nesta
+branch). **O piso 241 não muda** — é `-lt`, e a contagem só **subiu**; a folga vai de 8 para 17. O
+delta 249→258 bate com os 9 braços por **corroboração**, não por construção: eu medi o 258, não
+somei 9.
+
+**Frases por artefato (Regra Dura de Reconciliação).** **Zero testes Go novos, ausência declarada.**
+1. `check_epilogue_after_all_scenarios()` — **afirma** a conclusão de que a causa é **posicional** e
+   **estrutural**: o arquivo permitia cenário atrás do epílogo porque nada marcava a fronteira.
+2. A marca `# FALSIFY-EPILOGUE-BEGIN` — **afirma** a conclusão de que mover 15 linhas resolve hoje e
+   não amanhã; ela é o que torna a reincidência uma falha de **geração**.
+3. O braço "marca sem o bloco" — **afirma** a conclusão de que guarda ancorada em marca que pode
+   sumir é a patologia da nota `a-correcao-que-melhora-o-gate-esvazia-a-fixture-da-guarda-dele`.
+
+**Limites declarados.** A guarda **não** cobre `bash scripts/check-gates-falsify.sh` na mão — mas ali
+não há chunk, logo o defeito não existe. `check-falsify-shard-coverage.sh` exige artefatos baixados do
+CI e **não foi exercitado localmente**.
+
+**Escopo respeitado:** 2 arquivos de `scripts/`, 1 nota de vault + índice, este arquivo. Nada em
+`internal/`, `Makefile`, `.github/workflows/`, `docs/req/`, `docs/roadmaps/`. Sem commit, sem push.
+`trackfw validate` RC=0.
+
+**Nota de vault:**
+`vault/notes/o-epilogo-no-meio-do-arquivo-apaga-o-ultimo-cenario-em-enumerate-e-o-contador-congela-2026-09-24.md`
+(linkada no índice).
+
+**Os 4 escaneadores que leem ESTE arquivo na árvore real** (o próprio Cenário 200 avisa que o gate
+escaneia `scripts/*.sh`, **inclusive** `check-gates-falsify.sh`; os braços do cenário rodam só sobre
+fixtures sintéticas, então o texto novo de comentário nunca tinha sido escaneado por quem o escaneia).
+Invocados **nus**, sem os overrides de fixture:
+
+```
+bash scripts/check-interpolated-path-in-python.sh   RC=0
+bash scripts/check-crlf-normalize-capture.sh        RC=0
+bash scripts/check-emitting-capture-fallback.sh     RC=0
+bash scripts/check-unguarded-capture-rc.sh          RC=0
+```
+
+**Declarações que faltam para o auditor não redescobrir:**
+- 🔴 A falsificação da guarda nova é **ad hoc** — os 6 braços rodaram no scratchpad e **não deixam
+  Cenário permanente**. As mensagens exatas estão na nota de vault. Se o arquiteto quiser um
+  Cenário 201, duas restrições: ele tem de ficar **antes** de `# FALSIFY-EPILOGUE-BEGIN` (senão a
+  própria guarda que ele testa recusa gerar), e ele **tira a contagem direta de 258** — o comentário
+  do piso precisa ser remedido no mesmo commit.
+- A exigência da marca é **incondicional**. Logo, a afordância documentada `TRACKFW_FALSIFY_SCRIPT`
+  (fonte sintético mínimo para autofalsificação do driver) passa a exigir **marca + bloco de epílogo**
+  nesse fonte. Auto-diagnostica pela mensagem da guarda. Foi escolha deliberada: condicional seria
+  **fail-open** — a armadilha de vacuidade da nota
+  `a-correcao-que-melhora-o-gate-esvazia-a-fixture-da-guarda-dele-2026-09-24`.
