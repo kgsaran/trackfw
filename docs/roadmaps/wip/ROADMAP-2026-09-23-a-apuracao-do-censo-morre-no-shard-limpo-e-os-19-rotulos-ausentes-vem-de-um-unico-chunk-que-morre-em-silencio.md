@@ -246,16 +246,43 @@ guarda nenhuma** — gate verde com controle de segurança removido.
 - [x] 🔴 Nenhum teste commitado (instrumento fora da árvore); frase por medição
 - [x] 🔴 `make quality` não rodado pelo executor
 
-### ML-2B — Sonda: por que o `git` sai 128 no Windows
-**Owner:** arquiteto (dispara e lê), implementação por `ares-tf`
-**Status:** ⬜ Pendente — **depende do ML-2A mergeado**
+### ML-2B — Sonda: por que o `git` sai 128 no Windows ✅ Concluído — 2026-09-24
+**Owner:** arquiteto (mediu na VM, não no CI)
 
-Job `windows-latest` que roda **verbatim** `check-gates-falsify.sh:1553-1572` com o `2>/dev/null`
-removido, ecoando rc e stderr por comando. Responde **qual sítio** e **por que**, de uma vez.
+🔴 **Causa identificada: MAX_PATH.** Falsificada nas duas direções, no **mesmo** comprimento de
+caminho, na VM Windows 11 (Git 2.55.0.windows.3):
+
+```
+longpaths=false  rc=128  len_win=66   error: open("internal/roadmapdoc/testdata/corpus/…"):
+                                      Filename too long
+longpaths=true   rc=0    len_win=66
+```
+
+**65 + 1 + 195 = 261 > 260.** O corpus de `internal/roadmapdoc/testdata/` tem caminhos relativos de
+**196, 195 e 190** chars — nomes de roadmap usados como fixture.
+
+**Por que ninguém achou antes, e por que a Wave 0 acertou em recusar a causa:**
+
+- 🔴 **A falha é marginal e o nome do `mktemp` decide.** No meu próprio teste, `lp.cW227I` (9 chars)
+  **passou** e `sonda-rc128.fEHVaE` (18) **falhou** — mesmo comando, mesmo repositório. A Wave 0
+  mediu "240-255, abaixo de 260" e classificou a hipótese como enfraquecida: estava certa para o
+  prefixo que ela usou.
+- **Não é o MSYS:** o `bash` cria e escreve em caminho de **916 chars** sem reclamar. Quem recusa é
+  o `git` nativo, via API Win32 com `MAX_PATH=260`.
+- **A "assinatura com stderr vazio" era artefato do próprio código.** O `git` escreve 3 linhas; o
+  `2>/dev/null` as apagava. 🔴 **A correção do ML-2A teria revelado a causa sozinha.**
+
+**Eliminado com medição:** `safe.directory` (o `rev-parse` funciona) e **arquitetura** — o `uname`
+da VM é `…ARM64 3.6.9-….x86_64 … x86_64 Msys`: o runtime MSYS é **x86_64 emulado**, o mesmo build do
+runner.
 
 **Critérios de aceite:**
-- [ ] A causa do `rc=128` fica **escrita com a medição**, ou a lista do que a sonda eliminou
-- [ ] 🔴 Nenhuma hipótese apresentada como causa
+- [x] A causa do `rc=128` **escrita com a medição**, falsificada nas duas direções
+- [x] 🔴 Nenhuma hipótese apresentada como causa — e as duas eliminadas têm a medição que as elimina
+- [x] Nota de vault: `o-git-sai-128-no-windows-porque-o-corpus-de-testdata-estoura-max-path-2026-09-24.md`
+
+⚠️ **Medido na VM, não no CI — e isso é deliberado.** *"VM investiga, CI mede"* vale para **contagem**;
+o mecanismo é mecanismo. O número que a Wave 3 vai afirmar continua saindo do `windows-census.yml`.
 
 ### ML-2D — Emissão de sucesso condicional à checagem ter passado ✅ Concluído — auditado em 2026-09-24
 **Owner:** `artemis-tf`
@@ -317,9 +344,13 @@ caso do `setup` e ele não era) — é o comportamento que esta casa pede.
 ## Wave 2-bis — O que a auditoria do ML-2D descobriu (2 MLs)
 > Dependências: nenhuma. Mesma causa, mesma REQ: chunk que morre sem produzir número.
 
-### ML-2E — O diagnóstico de morte cobre 1 chunk em 8, e o sítio que mata está fora dele
+### ML-2E — O trap em todos os chunks, o `longpaths`, e a família `grep | wc`
 **Owner:** `ares-tf`
 **Status:** ⬜ Pendente
+
+🔴 **Absorve a correção do ML-2B** (mesmo arquivo, mesmo sintoma): `core.longpaths=true` nos `git`
+que operam sobre cópia do repositório dentro de `$WORK`. **Todos os sítios**, não o do Cenário 18 —
+a distância até os 260 depende do `mktemp` daquele dia.
 
 🔴 **Falha de auditoria minha:** marquei o AC do ML-2A *"morte de chunk passa a emitir sítio e rc"*
 como atendido. O ML-2A **declarou** o limite — "do ponto de instalação até o fim do processo" — e eu
@@ -344,6 +375,9 @@ sintoma exato que o ML-2A existe para eliminar.
 **Critérios de aceite:**
 - [ ] O trap cobre **todos** os chunks — provado matando artificialmente um chunk que **não** contém
       o Cenário 18
+- [ ] `core.longpaths=true` em todo `git` que opere sobre cópia do repo em `$WORK`, enumerado; o
+      `add -A` do Cenário 18 passa a sair **rc=0** na VM, provado nas duas direções
+- [ ] 🔴 **Não** encurtar os nomes do corpus de `testdata` — são o dado sob teste
 - [ ] `:5109` e os irmãos da mesma forma corrigidos, com a enumeração e o comando que a produziu
 - [ ] Braço POSIX: a suíte continua com os mesmos OK/FAIL e a guarda de conjunto verde
 - [ ] 🔴 Uma frase por teste novo
