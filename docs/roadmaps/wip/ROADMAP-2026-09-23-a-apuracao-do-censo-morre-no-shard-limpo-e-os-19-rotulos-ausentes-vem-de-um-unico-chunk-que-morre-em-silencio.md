@@ -574,47 +574,44 @@ fallback emissor; aqui não há fallback algum. Alargar a regex acusaria todo `$
 - [ ] Guarda de não-vacuidade com piso e o comando que o produziu
 
 ### ML-2F — Decidir o contrato do `.actual`: `FAIL` satisfaz a exigência do rótulo
-**Owner:** arquiteto (decisão), depois `artemis-tf`
-**Status:** ⬜ Pendente — **bloqueado por decisão**
+**Owner:** arquiteto
+**Status:** ✅ **Decidido em 2026-09-24 — NÃO alterar o contrato**, com a medição que sustenta
 
-Medido no ML-2D: a guarda de conjunto aceita um `FAIL` como prova de que o rótulo foi exercitado.
-Consequência: quando o braço usa o **mesmo nome** em `OK` e `FAIL`, apagar a prova e deixar a falha
-**passa pela guarda**. Em 33 dos 39 sítios é esse o caso.
+O ML-2D mediu: a guarda de conjunto aceita um `FAIL` como prova de que o rótulo foi exercitado. Em
+33 dos 39 sítios o `OK` e o `FAIL` compartilham o rótulo, então *"apagar a prova e deixar a falha"*
+passaria pela guarda. A decisão era minha e exigia a contagem de consumidores.
 
-Separar os dois no `.actual` é mudança de contrato e mexe em consumidores. 🔴 **Não fazer é aceitar
-uma cegueira medida**, que é o que esta REQ inteira existe para atacar. A decisão é minha, e ela
-precisa da contagem de consumidores afetados antes.
+**Medido:**
 
+```
+$ grep -rn '\.actual' scripts/*.sh .github/workflows/*.yml
+scripts/check-falsify-shard-coverage.sh:80     ← consumidor
+scripts/run-gates-falsify-shard.sh:112-114     ← produtor
+scripts/run-gates-falsify-parallel.sh:185      ← consumidor
+```
 
-**Auditoria do arquiteto — ML-2J e ML-2H (medida por mim):**
+Três sítios. O custo de mudar o contrato é baixo. **O que decide não é o custo — é o risco
+protegido, e ele é nulo.** Enumerei os caminhos pelos quais a cegueira poderia mascarar algo:
 
-| afirmação | como confirmei |
+| cenário | o que acontece |
 |---|---|
-| a guarda tinha de incidir no **basename**, não na captura | `DEST="/tmp/work/"` → captura `[/tmp/work/]` **não-vazia**, basename `[]` **vazia** — o `[ -z "$DEST_BARE" ]` copiado do padrão do `URL` **não dispararia** |
-| o gate novo passa na árvore | `check-unguarded-capture-rc.sh` → **rc=0**, com `OK alegacao viva: (check-agent-namespace-union.sh, zulu_ln) casa 1 sitio(s)` |
-| a guarda de não-vacuidade funciona | `MIN_CANDIDATES=9999` → **rc=1**, 108 candidatos, piso 60 |
-| `FALSIFY_SUCCESS_FLOOR` | 210 → **227**, e o ML-2J não acrescentou braço — sem colisão entre os dois MLs paralelos |
+| apagar asserção **e** `echo OK`, deixando `echo FAIL` num ramo **inalcançável** | o rótulo **não é emitido** → a guarda **pega** |
+| apagar o braço inteiro | rótulo ausente → a guarda **pega** |
+| deixar o `FAIL` **alcançável** | ele é emitido, e emissão de `FAIL` **já reprova** — em `enumerate` é contada e vira `exit 1` |
+| `FAIL` vem de **outro** braço que compartilha o rótulo | o rótulo aparece, **mas o run já está vermelho** por aquele `FAIL` |
 
-🔴 **O ML-2H alargou o próprio enunciado, com razão medida.** Eu escrevi "posição **não-final**". Ele
-incluiu o **elo final** porque a §4 da nota do ML-2G mediu que `check-annotations.yml:80` — o sítio
-que esta REQ acabou de corrigir — tem o `grep` em posição **final**, onde o `set -e` mata **sem**
-`pipefail`. Um gate restrito a "não-final" deixaria o defeito voltar. Declarado no cabeçalho.
+🔴 **Não existe caminho em que a guarda seja enganada num run que de outra forma passaria.** A
+cegueira só se manifesta em run **já reprovado** — onde ela não mascara nada, porque o veredito
+final já é o correto.
 
-🔴 **A guarda da classe 6 é ela mesma falsificável** (braço P): alegação que não casa sítio nenhum
-**reprova**. É o que separa "declarar um limite" de "declarar e seguir em frente" — uma guarda que
-nunca pode reprovar não é guarda.
+**Portanto:** mudar o contrato acrescentaria complexidade a três sítios para fechar uma janela que
+não existe. Fica registrado com a medição, **não** empurrado para REQ nova — que é o que a Regra
+Dura proíbe.
 
-⚠️ **Erro meu nesta auditoria — o nono do instrumento.** Rodei o comando da classe 5 e obtive **5**
-sítios onde o executor afirmara **0**. Investigado: os 5 são **comentários e strings do próprio gate
-e do Cenário 199**, que ele acabou de criar. A medição dele era **pré-entrega** e estava certa; a
-minha mediu depois e contou o código de teste como se fosse produto. **Medir a árvore depois da
-entrega conta o instrumento junto com o objeto.**
-
-**Decisão minha, que estava pendente:** o gate acusaria `check-agent-namespace-union.sh:904,905`, e
-a forma **preferida** de isenção é o marcador inline — que exige editar um arquivo proibido ao
-`artemis-tf`. **Aceito a tabela `ALLEGATIONS` por ora**, porque ela é falsificável e chaveada por
-basename+variável (não por número de linha, que envelhece). **O marcador inline entra no ML-2K**,
-que já vai tocar arquivo de produto.
+⚠️ **O que muda essa decisão:** se algum dia a guarda de conjunto passar a rodar **sem** o contador
+de falhas — isto é, se a ausência de rótulo virar o **único** sinal —, os quatro caminhos acima
+deixam de valer e a separação passa a proteger algo real. Quem reabrir isto deve medir essa
+premissa primeiro.
 
 ---
 
