@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: wip
 date: 2026-09-24
 req: "docs/req/REQ-2026-09-24-caminho-posix-interpolado-dentro-do-codigo-python-nao-e-convertido-pelo-msys-e-o-open-morre-no-windows.md"
 squad: [hades-tf, ares-tf, artemis-tf]
@@ -7,7 +7,7 @@ squad: [hades-tf, ares-tf, artemis-tf]
 
 # Roadmap: caminho POSIX interpolado no código Python não é convertido pelo MSYS
 
-> Criado em: 2026-09-24 | Status: ⬜ Backlog
+> Criado em: 2026-09-24 | Status: wip
 
 REQ: `docs/req/REQ-2026-09-24-caminho-posix-interpolado-dentro-do-codigo-python-nao-e-convertido-pelo-msys-e-o-open-morre-no-windows.md`
 
@@ -25,6 +25,36 @@ afirmação sai do CI.
 
 ⚠️ **Custo de CPU:** teto de 2 agentes simultâneos, `go test` só do pacote tocado, `make quality`
 apenas na barreira do arquiteto.
+
+---
+
+## 🔴 Entrada nova, apontada pelo próprio censo (2026-09-24)
+
+O censo consertado pela REQ-2026-09-23 **apontou um sítio desta REQ no primeiro uso**. Run
+`36017761462` em `main`:
+
+```
+CHUNK_ABORT rc=1 line=3609 src=…/chunk_0.sh cmd=python3 -c "
+```
+
+Rastreado até `scripts/check-gates-falsify.sh:6745` (era `:6493` quando enumerei):
+
+```python
+python3 -c "
+import json, sys
+with open('$ROOT_DIR/npm/package.json') as f:
+```
+
+**Isto muda duas coisas para a Wave 0:**
+
+1. 🔴 **Há um sítio com efeito medido em produção**, não só por varredura estática — ele **mata o
+   `chunk_0` inteiro** no Windows e leva 4 rótulos junto. Comece por ele.
+2. O sítio roda em POSIX (`rc=0` local, medido) e morre no Windows — o que **confirma o mecanismo**
+   desta REQ sem depender de nova reprodução.
+
+⚠️ **E ele muda a prioridade dentro do (a):** um sítio que derruba um chunk do censo tem
+consequência maior que um que só reprova o próprio gate. A enumeração deve **registrar essa
+distinção**, não só o veredito (a)/(b)/(c).
 
 ---
 
@@ -47,7 +77,8 @@ apenas na barreira do arquiteto.
 4. Frase de fechamento: *"corrijo esta causa, exatamente estes sítios fecham, e nenhum outro."*
 
 **Critérios de aceite:**
-- [ ] Tabela por sítio, com `arquivo:linha` e veredito, e o comando que produziu a lista
+- [ ] Tabela por sítio, com `arquivo:linha`, veredito, **e a consequência medida** (derruba chunk do
+      censo? reprova só o próprio gate? nenhuma?) — o `:6745` é o caso com efeito já observado
 - [ ] Critério aplicável por terceiro, não julgamento do revisor
 - [ ] Reconciliação escrita dos dois números divergentes
 - [ ] 🔴 Nenhuma linha de implementação

@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-24
 author: "trackfw_architect"
 adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-24-caminho-posix-interpolado-dentro-do-codigo-python-nao-e-convertido-pelo-msys-e-o-open-morre-no-windows.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-24-caminho-posix-interpolado-dentro-do-codigo-python-nao-e-convertido-pelo-msys-e-o-open-morre-no-windows.md"
 ---
 
 # REQ: caminho POSIX interpolado dentro do código Python não é convertido pelo MSYS, e o `open()` morre no Windows
@@ -101,4 +101,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-24-caminho-posix-interpolado-dentro-do-codigo-python-nao-e-convertido-pelo-msys-e-o-open-morre-no-windows.md`
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-24-caminho-posix-interpolado-dentro-do-codigo-python-nao-e-convertido-pelo-msys-e-o-open-morre-no-windows.md`
