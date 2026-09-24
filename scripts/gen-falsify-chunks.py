@@ -78,7 +78,18 @@ import sys
 import os
 import json
 
-HDR_PAT = re.compile(r'^# Cen[aá]rio[s]?\s+([0-9][0-9a-zA-Z/–\-]*)\s+(--|—)')
+# ML-2C (ROADMAP-2026-09-23-a-apuracao-do-censo-morre-no-shard-limpo...): o
+# padrão exigia que o travessão viesse IMEDIATAMENTE depois do número, e o
+# Cenário 18 escreve `# Cenário 18 (AC1/AC2/AC3 — REQ #366) — não-mutação:`.
+# Consequência medida: o 18 NÃO era ponto de corte, fundia-se ao bloco do
+# Cenário 13 e seus rótulos nunca viravam exigência da guarda de conjunto --
+# foi exatamente o bloco onde o chunk 1 do censo morreu em silêncio.
+# O grupo opcional `(...)` é deliberadamente ANCORADO entre o número e o
+# travessão e proíbe `)` interno: prosa como
+# `# Cenário 34 (vault/notes/cenarios-de-falsificacao-quebram-em-refactor-do-`
+# (parêntese que só fecha linhas depois) continua fora, e os 16 comentários
+# de prosa medidos continuam fora -- medição antes/depois no relatório do ML.
+HDR_PAT = re.compile(r'^# Cen[aá]rio[s]?\s+([0-9][0-9a-zA-Z/–\-]*)\s+(?:\([^)]*\)\s+)?(--|—)')
 ASSIGN_PAT = re.compile(r'^\s*(?:local\s+|export\s+|declare\s+)?([A-Za-z_][A-Za-z0-9_]*)\+?=')
 REF_PAT = re.compile(r'\$\{?([A-Za-z_][A-Za-z0-9_]*)')
 IGNORE_VARS = {str(d) for d in range(10)} | {"@", "*", "#", "?", "$", "!", "-", "_"}
@@ -91,6 +102,30 @@ ASSERT_CALL_PAT = re.compile(
     r'\bassert_(' + "|".join(ASSERT_FNS) + r')\s+"([^"]*)"'
 )
 ECHO_SIGNAL_PAT = re.compile(r'echo\s+"(OK|FAIL)\s')
+
+# ML-2C: rótulo emitido por `echo` direto (sem passar por assert_*) também
+# vira exigência da guarda de conjunto. Antes desta mudança, apagar o `echo`
+# E as asserções acima dele não era detectado por guarda nenhuma -- gate
+# verde com controle de segurança removido (no-repo-mutation,
+# write-containment, credential-guard-*, git-branch-guard-dedup/*, ...).
+#
+# 🔴 Só `OK` e `PROOF`, nunca `FAIL`. Medido neste ML (fonte em a5747fc8):
+# 43 rótulos literais existem SOMENTE em linha `FAIL` (família `setup*`,
+# `*/attack-inert`, `vacuity-guard`, ...). São diagnósticos do caminho de
+# FALHA: numa árvore correta eles NUNCA são emitidos. Exigi-los faria a
+# guarda cobrar que uma falha aconteça -- gate permanentemente vermelho.
+# Destes 43, 1 ainda é exigido por vir também de um `assert_*`; os outros
+# 42 (36 da família `setup*` + 6 reais, entre eles `vacuity-guard` e
+# `credential-guard-git-env-bypass/{attack-inert,config-attack-inert,
+# worktree-baseline}`) continuam INVISÍVEIS: o controle passa em silêncio,
+# não há emissão de sucesso para cobrar. Limite declarado no relatório do
+# ML-2C; fechá-lo exige dar emissão de sucesso a esses braços -- mesma
+# causa, mesma REQ.
+#
+# Aceita aspas simples e duplas: 10 sítios do arquivo real usam `echo '...'`
+# (ex.: :5741, :5823). Em aspas simples o `$` NÃO interpola, então lá ele é
+# caractere literal do rótulo, não marcador de glob.
+ECHO_LABEL_PAT = re.compile(r'''echo\s+(["'])(OK|PROOF)\s+\[falsify/([^]"']*)\]''')
 FUNC_DEF_PAT = re.compile(r'^([A-Za-z_][A-Za-z0-9_]*)\s*\(\)\s*\{\s*$')
 HEREDOC_START_PAT = re.compile(r"<<-?\s*'?\"?([A-Za-z_][A-Za-z0-9_]*)'?\"?\s*$")
 
@@ -282,7 +317,7 @@ def fuse_dependent_segments(lines, prelude_assigns, segments):
         # casa por glob.
         weight_keys = set()
         for s, e in ranges:
-            lit, glb = extract_expected_labels(lines, s, e)
+            lit, glb = extract_expected_labels(lines, s, e, include_echo=False)
             weight_keys.update(lit)
             weight_keys.update(glb)
         fused.append({
@@ -311,13 +346,24 @@ def pack_lpt(fused, n_chunks):
     return buckets
 
 
-def extract_expected_labels(lines, start, end):
+def extract_expected_labels(lines, start, end, include_echo=True):
     """Extrai, do próprio texto-fonte do intervalo [start,end), os rótulos
-    que os assert_* deste trecho PODEM emitir. Rótulo literal (sem `$`) vira
-    exigência exata; rótulo com `$var` vira prefixo glob (o valor real só se
-    resolve em runtime, ex.: loop `for path_name in ...`) -- ver
+    que este trecho PODE emitir no caminho de SUCESSO. Rótulo literal (sem
+    `$`) vira exigência exata; rótulo com `$var` vira prefixo glob (o valor
+    real só se resolve em runtime, ex.: loop `for path_name in ...`) -- ver
     ROADMAP-2026-09-06 ML-2D, "derive do próprio fonte, nunca lista
-    congelada"."""
+    congelada".
+
+    Duas fontes: chamadas `assert_*` e (ML-2C) `echo "OK|PROOF
+    [falsify/...]"` direto.
+
+    `include_echo=False` é usado SÓ para montar `weight_keys` (calibração de
+    tempo do ML-2H). Motivo medido no ML-2C: o arquivo de pesos foi calibrado
+    sobre o espaço de chaves de `assert_*`; somar os rótulos de `echo` ali
+    introduz ~67 chaves sem peso, cada uma caindo no peso PESSIMISTA (máximo
+    já calibrado), o que quase dobrou a massa de empacotamento (4.122s ->
+    7.713s de peso nominal) e piorou o balanceamento do LPT. Calibração e
+    guarda de cobertura são contratos distintos -- só o segundo muda aqui."""
     literals, globs = [], []
     for i in range(start, end):
         line = lines[i]
@@ -335,7 +381,27 @@ def extract_expected_labels(lines, start, end):
                 label = f"{label}/non-vacuity"
             if '$' in label:
                 prefix = label.split('$', 1)[0]
-                globs.append(prefix)
+                if prefix:
+                    globs.append(prefix)
+            else:
+                literals.append(label)
+
+        if not include_echo:
+            continue
+        # ML-2C: rótulos emitidos por `echo` direto, mesma regra de literal
+        # vs glob. NENHUM ajuste `/non-vacuity` aqui: o texto do `echo` já
+        # carrega o sufixo literalmente quando é o caso (ver :355 e :6448 do
+        # check-gates-falsify.sh) -- aplicar o ajuste do assert_would_now_fail
+        # aqui duplicaria o sufixo e a exigência nunca casaria.
+        for m in ECHO_LABEL_PAT.finditer(line):
+            quote, label = m.group(1), m.group(3)
+            if quote == '"' and '$' in label:
+                prefix = label.split('$', 1)[0]
+                # Prefixo vazio (ex.: `echo "OK   [falsify/$label]"` nos
+                # helpers) seria `grep -qF ""` no driver: casa QUALQUER
+                # linha -- exigência vácua que parece verde. Descartado.
+                if prefix:
+                    globs.append(prefix)
             else:
                 literals.append(label)
     return literals, globs
@@ -576,7 +642,12 @@ def main():
                 lit, glb = extract_expected_labels(lines, s, e)
                 chunk_literals.extend(lit)
                 chunk_globs.extend(glb)
-        for lit in chunk_literals:
+        # ML-2C: deduplica. Com os rótulos de `echo` somados aos de assert_*,
+        # o mesmo rótulo aparece pelas duas vias; linha repetida no manifesto
+        # só multiplica a mesma checagem (e a mesma mensagem de falha em
+        # check-falsify-shard-coverage.sh). Nenhum consumidor lê
+        # multiplicidade -- os três leitores casam por prefixo de linha.
+        for lit in sorted(set(chunk_literals)):
             label_lines.append(f"chunk={i} label={lit}")
         for glb in sorted(set(chunk_globs)):
             label_lines.append(f"chunk={i} label_glob={glb}")

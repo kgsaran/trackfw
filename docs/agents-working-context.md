@@ -39382,3 +39382,30 @@ Documento revisado após chamada de advisor que bloqueou a primeira versão em 4
   captura indireta por função, `diff`, e o lado do consumo) — cada uma com o comando e a contagem.
 - 🔴 Não toquei em `.github/workflows/` (a modificação nesse arquivo é do ML-1A). Não commitei, não
   fiz push, não rodei `make quality`. Status do ML no roadmap fica para a auditoria do arquiteto.
+
+## 2026-09-24 — artemis-tf — ML-2C (Wave 2): a guarda de conjunto enxerga rótulo emitido por `echo`
+
+- **Início.** Escopo: **só** `scripts/gen-falsify-chunks.py` (ML-2A do `ares-tf` roda em paralelo na
+  mesma árvore, na região do Cenário 18 de `check-gates-falsify.sh`). Fonte medido a partir de um
+  **snapshot** (`sha256 b6f26a6a…`, HEAD `a5747fc8`), nunca da árvore viva.
+- **Entregue (não commitado):** duas correções em `gen-falsify-chunks.py` —
+  (1) `HDR_PAT` aceita anotação entre parênteses entre o número e o travessão (59 → **60**
+  cabeçalhos; entra **só** a linha 1478, o Cenário 18; os 16 comentários de prosa continuam fora);
+  (2) `extract_expected_labels` colhe também `echo "OK|PROOF [falsify/<rótulo>]"` (165 → **232**
+  rótulos literais exigidos, +67; globs 1 → 2).
+- 🔴 **Desvio deliberado do handoff, com medição:** `FAIL` **não** vira exigência — 43 literais só
+  existem em linha `FAIL` (caminho de falha); exigi-los deixaria o gate permanentemente vermelho.
+  Resíduo declarado: 42 rótulos continuam invisíveis, 6 deles fora da família `setup*`.
+- **Falsificação nas duas direções**, pelo gate real `check-falsify-shard-coverage.sh`: emissão
+  perfeita → RC=0; apagar `no-repo-mutation` ou `git-branch-guard-dedup/detection-catches-regression`
+  → **RC=1 nomeando o rótulo** com o gerador novo e **RC=0 (cego)** com o antigo.
+- **Direção verde, com dado real:** os 220 rótulos exigidos pela regra nova em `dc95ff34` foram
+  **todos** emitidos no run verde `35987929640` (0 faltantes). Nos artefatos do censo (Windows), os
+  33 exigidos-e-não-emitidos estão **todos** no chunk 1 — nenhum é skip de plataforma.
+- **Empacotamento:** massa +46,66s (peso de fallback do bloco novo), makespan previsto **inalterado**
+  (812,67s, chunk 7). `weight_keys` ficou deliberadamente no espaço de chaves de `assert_*`.
+- 🔴 Não toquei em `check-gates-falsify.sh`, `.github/workflows/` nem no `Makefile`. Não commitei,
+  não fiz push, não rodei `make quality`. Status do ML no roadmap fica para a auditoria do arquiteto.
+- Wave 2 auditada (ML-2A + ML-2C). O ML-2C **recusou** o meu handoff com medição: exigir rótulo de
+  linha `FAIL` faria a guarda cobrar que uma falha aconteça. Confirmei: 38 rótulos só existem em
+  `FAIL`. ML-2D aberto para os 6 controles que passam em silêncio — mesma causa, mesma REQ.

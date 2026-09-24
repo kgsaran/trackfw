@@ -1506,6 +1506,45 @@ assert_fails_with "barrier/blocked-not-detected" \
 #   seria satisfeita vacuamente. O OID fecha esse buraco.
 # ---------------------------------------------------------------------------
 
+# --- Denúncia de morte súbita do chunk (ML-2A, REQ-2026-09-23-a-apuracao-do-
+# censo-morre-no-shard-limpo) --------------------------------------------------
+#
+# Medido em docs/seguranca/2026-09-23-censo-chunk-morto.md: o shard 1 do censo
+# de Windows morreu aqui dentro com chunk_rc=128 e NÃO emitiu nem
+# CHUNK_COMPLETE nem a linha "N cenário(s) reprovaram" — o `set -e` do preâmbulo
+# mata o processo ANTES do epílogo que gen-falsify-chunks.py anexa. O log parou
+# na última linha viva, sem uma palavra sobre onde ou por quê.
+#
+# 🔴 O que isto corrige é o DIAGNÓSTICO, não a causa do rc=128 — essa não está
+# identificada e a medição dela é o ML-2B (sonda em runner Windows real). Aqui
+# só se garante que, quando voltar a acontecer, o log diga o sítio e o rc em vez
+# de terminar mudo. Hoje a guarda de conjunto só percebe pela AUSÊNCIA de
+# rótulo, o que é inferência, não diagnóstico.
+#
+# Por que ERR e não EXIT: o preâmbulo já instala `trap 'rm -rf "$WORK"' EXIT`
+# (linha 34) e um segundo trap de EXIT o SUBSTITUIRIA, vazando o diretório
+# temporário a cada execução. ERR é um slot livre e, sob `set -e`, dispara
+# exatamente quando o shell está prestes a abortar.
+#
+# Por que NÃO `set -E` (errtrace): sem ele o trap não é herdado por funções nem
+# por subshells — e isso é deliberado. O laço de medição abaixo roda cada gate
+# num subshell cuja saída vai para "$_log" e é reimpressa com `sed`; com
+# errtrace, toda falha esperada de gate escreveria CHUNK_ABORT dentro desse log,
+# poluindo diagnóstico legítimo. A cobertura resultante é a de comandos de topo
+# de script, que é onde vivem os dois sítios medidos.
+#
+# Alcance declarado: o trap fica instalado do ponto de instalação até o fim do
+# processo, então cobre este cenário e todos os blocos que o sucederem no mesmo
+# chunk — NÃO cobre os blocos que vierem antes dele. O prefixo CHUNK_ABORT é
+# inerte para todos os consumidores: run-gates-falsify-shard.sh colhe rótulos
+# por `^(OK|FAIL|PROOF)[[:space:]]+\[falsify/`, e o censo conta `^OK`/`^FAIL`.
+__falsify_abort_report() {
+  local _abort_rc="$1" _abort_line="$2" _abort_cmd="$3"
+  echo "CHUNK_ABORT rc=${_abort_rc} line=${_abort_line} src=${BASH_SOURCE[0]:-?} cmd=${_abort_cmd}" >&2
+  echo "CHUNK_ABORT: o shell abortou por 'set -e' antes do epílogo do chunk — nenhum CHUNK_COMPLETE e nenhuma linha 'N cenário(s) reprovaram' serão emitidos. A linha acima é o sítio e o rc; a ausência de rótulos abaixo dela é consequência, não causa." >&2
+}
+trap '__falsify_abort_rc=$?; __falsify_abort_report "$__falsify_abort_rc" "$LINENO" "$BASH_COMMAND"' ERR
+
 # Exclusões declaradas (opt-out) — formato obrigatório: "basename.sh|motivo"
 _MUTATION_EXCLUSIONS=(
   "check-gates-falsify.sh|circular: este script é o executor do cenário de mutação; incluí-lo causaria recursão infinita"
@@ -1555,23 +1594,64 @@ mkdir -p "$_MUTATION_COPY"
 cp -R "$ROOT_DIR/." "$_MUTATION_COPY/"
 rm -rf "$_MUTATION_COPY/.git"
 git -C "$_MUTATION_COPY" init -q
-git -C "$_MUTATION_COPY" -c user.email="mutation-check@localhost" \
-    -c user.name="Mutation Check" add -A 2>/dev/null
-git -C "$_MUTATION_COPY" -c user.email="mutation-check@localhost" \
-    -c user.name="Mutation Check" commit -q -m "mutation-check-baseline"
 
-# Verifica worktree limpo (deve ser sempre por construção — guarda de robustez interna)
-_initial_porcelain=$(git -C "$_MUTATION_COPY" status --porcelain)
-if [[ -n "$_initial_porcelain" ]]; then
-  echo "FAIL [falsify/no-repo-mutation]: worktree de medição não ficou limpo após commit de baseline — erro interno:" >&2
-  echo "$_initial_porcelain" >&2
+# ML-2A: o `2>/dev/null` que estava aqui descartava o ruído esperado do
+# `git add -A` (avisos de fim-de-linha, sobretudo no Windows) — e, junto com
+# ele, o stderr do caminho de FALHA. Um dos dois sítios de `add -A` desta região
+# é o candidato sobrevivente da análise do ML-0A para o rc=128 do shard 1, e o
+# descarte é justamente o motivo de o log não ter dito nada. Agora o stderr é
+# capturado em arquivo: no caminho de sucesso continua invisível (nada muda para
+# quem já passa), no caminho de falha é impresso junto do rc.
+# 🔴 A linha de rc é INCONDICIONAL: a assinatura medida é rc=128 com stderr
+# VAZIO — condicionar o diagnóstico à existência de stderr não diria nada
+# exatamente no caso que motivou este ML.
+_mut_add_stderr="$WORK/mutation-check.add.stderr"
+_mut_baseline_ok=1
+_mut_add_rc=0
+git -C "$_MUTATION_COPY" -c user.email="mutation-check@localhost" \
+    -c user.name="Mutation Check" add -A 2>"$_mut_add_stderr" || _mut_add_rc=$?
+if [[ "$_mut_add_rc" -ne 0 ]]; then
+  echo "FAIL [falsify/no-repo-mutation]: 'git add -A' do baseline saiu com rc=$_mut_add_rc em '$_MUTATION_COPY' (check-gates-falsify.sh, add -A de baseline)" >&2
+  if [[ -s "$_mut_add_stderr" ]]; then
+    sed 's/^/    /' "$_mut_add_stderr" >&2
+  else
+    echo "    (stderr vazio — a falha não escreveu nada; o rc acima é todo o diagnóstico que o git deu)" >&2
+  fi
+  _mut_baseline_ok=0
   falsify_fail_point
 fi
 
-# OID de referência da árvore limpa (conteúdo, não apenas status)
-_baseline_oid=$(git -C "$_MUTATION_COPY" write-tree)
+# ML-2A: o preparo do baseline só continua se o `add -A` acima tiver funcionado.
+# Sem esta guarda, em modo de enumeração (falsify_fail_point RETORNA em vez de
+# sair) o `commit` seguinte falharia com rc=1 ("nothing added to commit"),
+# derrubando o chunk inteiro por um efeito da falha já reportada — que é
+# exatamente o padrão "a morte engole o resto do chunk" que este ML existe para
+# eliminar. No modo normal nada muda: falsify_fail_point já saiu com 1.
+_baseline_oid=""
+if [[ "$_mut_baseline_ok" == "1" ]]; then
+  git -C "$_MUTATION_COPY" -c user.email="mutation-check@localhost" \
+      -c user.name="Mutation Check" commit -q -m "mutation-check-baseline"
+
+  # Verifica worktree limpo (deve ser sempre por construção — guarda de robustez interna)
+  _initial_porcelain=$(git -C "$_MUTATION_COPY" status --porcelain)
+  if [[ -n "$_initial_porcelain" ]]; then
+    echo "FAIL [falsify/no-repo-mutation]: worktree de medição não ficou limpo após commit de baseline — erro interno:" >&2
+    echo "$_initial_porcelain" >&2
+    falsify_fail_point
+  fi
+
+  # OID de referência da árvore limpa (conteúdo, não apenas status)
+  _baseline_oid=$(git -C "$_MUTATION_COPY" write-tree)
+fi
 
 for _gate_path in "${_MUTATION_CANDIDATES[@]}"; do
+  # ML-2A: se o baseline não se formou, a comparação de OID abaixo é sem
+  # sentido — ela reportaria cada gate como MUTADOR (falso positivo) e repetiria
+  # a mesma falha de `add -A` uma vez por gate. Em modo de enumeração
+  # (TRACKFW_FALSIFY_ENUMERATE=1, o do censo de Windows) falsify_fail_point
+  # RETORNA em vez de sair, então sem este break o log ganharia dezenas de FAILs
+  # derivados de uma causa só. Uma reprovação, nomeada, basta.
+  [[ "$_mut_baseline_ok" == "1" ]] || break
   _bname="$(basename "$_gate_path")"
   _log="$WORK/mutation-check.$_bname.log"
 
@@ -1580,7 +1660,20 @@ for _gate_path in "${_MUTATION_CANDIDATES[@]}"; do
     >"$_log" 2>&1 || _gate_exit=$?
 
   # Computa OID após execução — git add -A captura modificações e arquivos novos não gitignored
-  git -C "$_MUTATION_COPY" add -A 2>/dev/null
+  # ML-2A: mesmo tratamento do sítio de baseline acima — ruído de sucesso segue
+  # descartado, falha passa a dizer rc e sítio (o gate em curso está nomeado).
+  _mut_add_rc=0
+  git -C "$_MUTATION_COPY" add -A 2>"$_mut_add_stderr" || _mut_add_rc=$?
+  if [[ "$_mut_add_rc" -ne 0 ]]; then
+    echo "FAIL [falsify/no-repo-mutation]: 'git add -A' após o gate $_bname saiu com rc=$_mut_add_rc em '$_MUTATION_COPY' (check-gates-falsify.sh, add -A do laço de medição)" >&2
+    if [[ -s "$_mut_add_stderr" ]]; then
+      sed 's/^/    /' "$_mut_add_stderr" >&2
+    else
+      echo "    (stderr vazio — a falha não escreveu nada; o rc acima é todo o diagnóstico que o git deu)" >&2
+    fi
+    falsify_fail_point
+    continue
+  fi
   _after_oid=$(git -C "$_MUTATION_COPY" write-tree)
 
   if [[ "$_after_oid" != "$_baseline_oid" ]]; then
@@ -1599,8 +1692,13 @@ for _gate_path in "${_MUTATION_CANDIDATES[@]}"; do
   fi
 done
 
-falsify_count_success
-echo "OK   [falsify/no-repo-mutation]"
+# ML-2A: o OK só é emitido se o baseline se formou. Sem esta guarda, o caminho
+# em que o `add -A` falha em modo de enumeração imprimiria um FAIL e, logo
+# abaixo, um OK contraditório para o mesmo rótulo.
+if [[ "$_mut_baseline_ok" == "1" ]]; then
+  falsify_count_success
+  echo "OK   [falsify/no-repo-mutation]"
+fi
 
 # ---------------------------------------------------------------------------
 # Cenário 19 — check-barrier.sh: o gate de heading-malformada-after-target
