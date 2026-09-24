@@ -361,30 +361,45 @@ chmod +x "$CG_TMP/cg-claude-relativo/scripts/trackfw-credential-guard.sh"
 
 # cg-claude-pwd: $PWD path (class 2) → "with a $PWD path".
 mkdir -p "$CG_TMP/cg-claude-pwd/.claude"
-python3 -c "
-import json
-d = {'hooks': {'PreToolUse': [{'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': '\$PWD/scripts/trackfw-credential-guard.sh'}]}]}}
-with open('$CG_TMP/cg-claude-pwd/.claude/settings.json', 'w') as f:
+# 🔴 O caminho vai como ARGUMENTO, nunca interpolado dentro do programa.
+# No MSYS/Git-bash o argumento que parece caminho POSIX e convertido para caminho do
+# Windows antes de chegar ao python; o texto dentro de `-c` NAO e. O python do Windows
+# nao resolve /tmp, e o open() morre com FileNotFoundError num diretorio que o mkdir
+# acabou de criar. Medido no Windows, issue #363.
+python3 - "$CG_TMP/cg-claude-pwd/.claude/settings.json" <<'PY'
+import json, sys
+d = {'hooks': {'PreToolUse': [{'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': '$PWD/scripts/trackfw-credential-guard.sh'}]}]}}
+with open(sys.argv[1], 'w') as f:
     json.dump(d, f)
-"
+PY
 
 # cg-claude-absoluto: absolute path (class 1) → silent.
 mkdir -p "$CG_TMP/cg-claude-absoluto/.claude"
-python3 -c "
-import json
+# 🔴 O caminho vai como ARGUMENTO, nunca interpolado dentro do programa.
+# No MSYS/Git-bash o argumento que parece caminho POSIX e convertido para caminho do
+# Windows antes de chegar ao python; o texto dentro de `-c` NAO e. O python do Windows
+# nao resolve /tmp, e o open() morre com FileNotFoundError num diretorio que o mkdir
+# acabou de criar. Medido no Windows, issue #363.
+python3 - "$CG_TMP/cg-claude-absoluto/.claude/settings.json" <<'PY'
+import json, sys
 d = {'hooks': {'PreToolUse': [{'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': '/opt/trackfw/scripts/trackfw-credential-guard.sh'}]}]}}
-with open('$CG_TMP/cg-claude-absoluto/.claude/settings.json', 'w') as f:
+with open(sys.argv[1], 'w') as f:
     json.dump(d, f)
-"
+PY
 
 # cg-claude-windows-drive: Windows drive letter (class 1 by union) → silent.
 mkdir -p "$CG_TMP/cg-claude-windows-drive/.claude"
-python3 -c "
-import json
+# 🔴 O caminho vai como ARGUMENTO, nunca interpolado dentro do programa.
+# No MSYS/Git-bash o argumento que parece caminho POSIX e convertido para caminho do
+# Windows antes de chegar ao python; o texto dentro de `-c` NAO e. O python do Windows
+# nao resolve /tmp, e o open() morre com FileNotFoundError num diretorio que o mkdir
+# acabou de criar. Medido no Windows, issue #363.
+python3 - "$CG_TMP/cg-claude-windows-drive/.claude/settings.json" <<'PY'
+import json, sys
 d = {'hooks': {'PreToolUse': [{'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': r'C:\Users\kg\scripts\trackfw-credential-guard.sh'}]}]}}
-with open('$CG_TMP/cg-claude-windows-drive/.claude/settings.json', 'w') as f:
+with open(sys.argv[1], 'w') as f:
     json.dump(d, f)
-"
+PY
 
 # cg-claude-invalid-json: malformed JSON → "is not valid JSON".
 mkdir -p "$CG_TMP/cg-claude-invalid-json/.claude"
@@ -403,21 +418,31 @@ with open(sys.argv[1], "wb") as f:
 
 # cg-claude-tilde-quoted: "~/..." with outer quotes (class 2) → "with a quoted tilde path".
 mkdir -p "$CG_TMP/cg-claude-tilde-quoted/.claude"
-python3 -c "
-import json
-d = {'hooks': {'PreToolUse': [{'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': '\"' + r'~/scripts/trackfw-credential-guard.sh' + '\"'}]}]}}
-with open('$CG_TMP/cg-claude-tilde-quoted/.claude/settings.json', 'w') as f:
+# 🔴 O caminho vai como ARGUMENTO, nunca interpolado dentro do programa.
+# No MSYS/Git-bash o argumento que parece caminho POSIX e convertido para caminho do
+# Windows antes de chegar ao python; o texto dentro de `-c` NAO e. O python do Windows
+# nao resolve /tmp, e o open() morre com FileNotFoundError num diretorio que o mkdir
+# acabou de criar. Medido no Windows, issue #363.
+python3 - "$CG_TMP/cg-claude-tilde-quoted/.claude/settings.json" <<'PY'
+import json, sys
+d = {'hooks': {'PreToolUse': [{'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': '"' + r'~/scripts/trackfw-credential-guard.sh' + '"'}]}]}}
+with open(sys.argv[1], 'w') as f:
     json.dump(d, f)
-"
+PY
 
 # cg-claude-tilde-user: ~alice/... (class 2) → "with a named-user tilde path".
 mkdir -p "$CG_TMP/cg-claude-tilde-user/.claude"
-python3 -c "
-import json
+# 🔴 O caminho vai como ARGUMENTO, nunca interpolado dentro do programa.
+# No MSYS/Git-bash o argumento que parece caminho POSIX e convertido para caminho do
+# Windows antes de chegar ao python; o texto dentro de `-c` NAO e. O python do Windows
+# nao resolve /tmp, e o open() morre com FileNotFoundError num diretorio que o mkdir
+# acabou de criar. Medido no Windows, issue #363.
+python3 - "$CG_TMP/cg-claude-tilde-user/.claude/settings.json" <<'PY'
+import json, sys
 d = {'hooks': {'PreToolUse': [{'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': '~alice/scripts/trackfw-credential-guard.sh'}]}]}}
-with open('$CG_TMP/cg-claude-tilde-user/.claude/settings.json', 'w') as f:
+with open(sys.argv[1], 'w') as f:
     json.dump(d, f)
-"
+PY
 
 # cg-cursor-present: Cursor with script present → silent.
 mkdir -p "$CG_TMP/cg-cursor-present/.cursor" "$CG_TMP/cg-cursor-present/scripts"
