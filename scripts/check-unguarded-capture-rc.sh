@@ -229,8 +229,16 @@ MIN_CANDIDATES="${UNGUARDED_RC_GATE_MIN_CANDIDATES:-60}"
 # Toda entrada que não casar nenhum sítio REPROVA o gate (guarda de obsolescência).
 # ---------------------------------------------------------------------------
 ALLEGATIONS=(
-  "check-agent-namespace-union.sh|alfa_ln|o laco imediatamente anterior ja validou os tres marcadores com grep -qF e o fail() deste arquivo encerra com exit 1, logo o nao-casamento e inalcancavel quando o fluxo chega aqui; e a saida (~7 roadmaps) esta muito abaixo da capacidade do pipe, logo o segundo caminho nao-zero (SIGPIPE 141 do head) tambem nao ocorre"
-  "check-agent-namespace-union.sh|zulu_ln|idem alfa_ln: pre-validado pelo mesmo laco com grep -qF + exit 1, e saida pequena demais para o head fechar o cano antes de o grep terminar de escrever"
+  # VAZIA desde o ML-2K (2026-09-24): as duas entradas de bootstrap
+  # (check-agent-namespace-union.sh: alfa_ln, zulu_ln) migraram para a forma
+  # PREFERIDA — marcador inline `# unguarded-capture-rc-allowed:` no proprio
+  # sitio. A tabela existia porque o ML-2H estava proibido de editar arquivo
+  # de produto; o ML-2K nao estava.
+  # 🔴 ACHADO REGISTRADO NO RELATORIO DO ML-2K: com a tabela vazia, a guarda de
+  # obsolescencia abaixo itera ZERO entradas e reporta verde SEM EXAMINAR NADA,
+  # e o braco P do Cenario 199 (que usa esta tabela como unica fixture) deixa de
+  # falsificar. Corrigir isso exige editar logica de gate ou o braco P — os dois
+  # fora da fronteira de escrita do ML-2K.
 )
 
 FAIL=0

@@ -39741,3 +39741,53 @@ chunk gerado roda `rc=0` com `CHUNK_COMPLETE 7`.
 `shellcheck -S warning` no gate novo · `trackfw validate` rc=0.
 🔴 `make quality` e `go test ./...` **não** rodados — a barreira é do arquiteto.
 🔴 Status do ML-2H **não** alterado no roadmap — só após a auditoria. Sem commit, sem push.
+
+---
+
+## 2026-09-24 — ares-tf — ML-2K (Wave 2-bis) — INÍCIO
+
+REQ-2026-09-23 (a apuração do censo morre no shard limpo). Escopo: (1) o par
+`grep`/`awk` de `.github/workflows/windows-census.yml` que **concorda em zero sem medir**;
+(2) migrar as duas alegações de `check-agent-namespace-union.sh:904,905` da tabela `ALLEGATIONS`
+para o marcador inline `# unguarded-capture-rc-allowed:`.
+Arquivos permitidos: `windows-census.yml`, `check-agent-namespace-union.sh`,
+`check-unguarded-capture-rc.sh` (só a tabela), `vault/notes/`, este arquivo.
+🔴 Proibidos: `check-gates-falsify.sh`, `Makefile`, `docs/req/`, `docs/roadmaps/`.
+Sem branch, sem commit, sem push. `make quality` e `go test ./...` **não** serão rodados.
+
+## 2026-09-24 — ares-tf — ML-2K (Wave 2-bis) — FIM (aguardando auditoria)
+
+**Trabalho 1 — testemunha de medição no par `grep`/`awk`** (`.github/workflows/windows-census.yml`).
+As quatro capturas são **dois instrumentos sobre o mesmo produtor**: com log presente e **sem
+nenhuma linha `^OK`/`^FAIL`**, todas valem 0, a comparação **concorda sem medir**, o shard entra no
+total como `OK=0 FAIL=0` e a tabela imprime `delta=-113 ▼` — **cadáver lido como melhora**, com
+`Shards completos: 8/8` e rc=0 (medido no bloco **pré-ML**). Correção: **pré-condição** de
+não-vacuidade derivada das 4 capturas existentes (🔴 **nenhum terceiro contador**) → shard vira
+`LOG SEM VEREDITO`, **não** entra no total, aparece em lista própria nos 3 lugares que falam de
+completude. Mesmo defeito no 2º laço (tabela `### Por shard`, sem par) corrigido junto —
+mesma causa, mesma REQ — com rótulo distinto.
+
+**Casos alcançáveis, medidos:** log 0 bytes e log com texto sem veredito → **mesmo ramo**
+(discriminante idêntico). Log **ilegível não chega à guarda**: o `awk` sem `|| true` mata o step na
+atribuição (`rc=2`, medido com `chmod 000`) — morte ruidosa, sem ramo morto.
+
+**Falsificação (bloco `run:` extraído por `yaml.safe_load`, nunca recopiado):** texto-sem-veredito e
+0-bytes → denunciados (`7/8`); 8 logs normais → saída **byte-idêntica** à de `git show HEAD`,
+stderr vazio; misto (1 sem log + 1 sem veredito) → `6/8` com as duas listas separadas.
+
+**Trabalho 2 — marcador inline** em `check-agent-namespace-union.sh` (`alfa_ln`/`zulu_ln`,
+adjacentes → **um marcador acima de cada**), razão na forma estreita (pré-validação + SIGPIPE 141);
+tabela `ALLEGATIONS` esvaziada. 🔴 **ACHADO:** a tabela era a **única fixture do braço P do
+Cenário 199** — com ela vazia a guarda de obsolescência itera **zero** entradas e reporta verde **sem
+examinar nada**, e o braço P deixa de falsificar (medido: rc=0 onde ele espera `alegacao obsoleta`).
+Corrigir exige lógica de gate ou `check-gates-falsify.sh`, **os dois fora da fronteira deste ML**.
+
+**Rodados, todos rc=0:** `check-unguarded-capture-rc.sh` (108 candidatos, 0 violações, os 2 sítios
+como `exempt/class6-alleged-inline` — conferido pelas linhas, não pelo rc) ·
+`check-agent-namespace-union.sh` (22 cenários) · `check-emitting-capture-fallback.sh` ·
+`check-crlf-normalize-capture.sh` · `check-orphan-gates.sh` · `check-raw-read-ban.sh` ·
+`check-req-path-literals.sh` · `check-output-encoding-declared.sh` · `check-workflow-yaml.py` ·
+`check-ci-workflow-{job-id-collision,pin-parity,binary-provenance}` · `bash -n` · `trackfw validate`.
+🔴 `make quality` e `go test ./...` **não** rodados. Nota de vault
+`cross-check-de-dois-instrumentos-concorda-em-zero-sem-medir-2026-09-24.md` + índice.
+Status do ML-2K **não** alterado no roadmap (arquivo proibido). Sem commit, sem push.

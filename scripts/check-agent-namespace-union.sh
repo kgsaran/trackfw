@@ -901,7 +901,9 @@ for marker in "[zulu" "[alfa" "[extra"; do
     fail "direction-c/go/detects-order-regression" "the corrupted binary produced no usable output at all (marker '$marker' absent too) — cannot distinguish 'order regressed' from 'binary crashed/empty output'; output: $(printf '%q' "$dirc_go_out")"
   fi
 done
+# unguarded-capture-rc-allowed: o laco imediatamente anterior ja validou os tres marcadores com grep -qF e o fail() deste arquivo encerra com exit 1, logo o nao-casamento e inalcancavel quando o fluxo chega aqui; e a saida (~7 roadmaps) esta muito abaixo da capacidade do pipe, logo o segundo caminho nao-zero (SIGPIPE 141 do head) tambem nao ocorre
 alfa_ln=$(grep -n -F -- "[alfa" <<<"$dirc_go_out" | head -1 | cut -d: -f1)
+# unguarded-capture-rc-allowed: idem alfa_ln: pre-validado pelo mesmo laco com grep -qF + exit 1, e saida pequena demais para o head fechar o cano antes de o grep terminar de escrever
 zulu_ln=$(grep -n -F -- "[zulu" <<<"$dirc_go_out" | head -1 | cut -d: -f1)
 if (( zulu_ln < alfa_ln )); then
   fail "direction-c/go/detects-order-regression" "corrupted binary still put zulu (declared 1st) before alfa (declared 2nd) — checagem vácua, output: $(printf '%q' "$dirc_go_out")"

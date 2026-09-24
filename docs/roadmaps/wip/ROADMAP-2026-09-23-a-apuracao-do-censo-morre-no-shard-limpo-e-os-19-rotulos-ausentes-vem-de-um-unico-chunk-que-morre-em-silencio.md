@@ -620,7 +620,7 @@ que já vai tocar arquivo de produto.
 
 ### ML-2K — O cross-check que concorda sem medir
 **Owner:** `ares-tf`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Entregue e auditado · ❌ **a árvore está VERMELHA** até o ML-2L — ver abaixo
 
 Achado do ML-2J, **no arquivo que dá nome a esta REQ**:
 
@@ -644,6 +644,51 @@ migrando da tabela `ALLEGATIONS` para a forma preferida.
       obsolescência** continua verde
 - [ ] 🔴 Uma frase por teste novo, ou ausência declarada
 - [ ] 🔴 **NÃO rodar `make quality`**
+
+
+**Auditoria do arquiteto (medida por mim):**
+
+| afirmação | como confirmei |
+|---|---|
+| os dois sítios saem pela classe **pretendida** | `OK [exempt/class6-alleged-inline/check-agent-namespace-union.sh:905\|:907]` — isenção pela classe 6, não veredito certo por razão errada |
+| 🔴 a guarda de obsolescência ficou **vácua** | `FORCE_ALLEGATION_GUARD=1` com tabela vazia → **rc=0**; a seção imprime o cabeçalho e **nada embaixo** |
+
+🔴 **Ele entregou sabendo que a árvore reprova, e mediu em vez de prever.** É o comportamento certo:
+o handoff mandou tratar como achado de relatório, não como ajuste silencioso.
+
+**O que aconteceu é a ironia inteira desta REQ numa linha:** ao migrar as duas alegações para a forma
+**preferida** (marcador inline), a tabela esvaziou — e a guarda que vigia a obsolescência da tabela
+passou a **iterar zero entradas e reportar sucesso**. É **literalmente a classe de defeito que o
+cabeçalho do próprio gate nomeia como razão de existir**, reproduzida por acidente, pela correção
+que o tornava melhor.
+
+E o efeito colateral é que o braço **P** do Cenário 199 — o que falsifica a guarda — deixa de
+falsificar: `assert_fails_with "alegacao obsoleta"` recebe **rc=0**. A tabela era a **única fixture**
+dele.
+
+**Decisão minha — opção (1), fixture injetável.** O executor apresentou duas, honestamente:
+
+1. o gate ganha fixture injetável, e o braço P constrói a própria alegação;
+2. a tabela continua não-vazia (reverter um dos marcadores).
+
+Escolho **(1)**. A (2) é custo zero e funciona hoje, mas deixa a guarda **falsificável apenas por
+acidente** — ela só teria teste enquanto sobrasse alegação real. 🔴 **Uma guarda que só funciona
+porque existe dado real é infalsificável no dia em que o dado acaba** — e este roadmap já mediu
+três vezes que a defesa vácua é pior que a ausência de defesa.
+
+---
+
+### ML-2L — A guarda de obsolescência precisa da própria fixture
+**Owner:** `artemis-tf` (autor do gate)
+**Status:** ⬜ Pendente — 🔴 **bloqueia a barreira**
+
+- [ ] `check-unguarded-capture-rc.sh` aceita alegação **sintética** (env/fixture) para que a guarda de
+      obsolescência seja exercitável com a tabela **vazia**
+- [ ] O braço **P** do Cenário 199 volta a falsificar — `assert_fails_with "alegacao obsoleta"` reprova
+- [ ] 🔴 A guarda passa a **reprovar quando não há o que verificar**, em vez de reportar sucesso
+      iterando zero — é a mesma testemunha-de-medição que o ML-2K pôs no censo
+- [ ] `make quality` volta a **RC=0** (verificado pelo arquiteto)
+- [ ] 🔴 Uma frase por teste novo
 
 ---
 
