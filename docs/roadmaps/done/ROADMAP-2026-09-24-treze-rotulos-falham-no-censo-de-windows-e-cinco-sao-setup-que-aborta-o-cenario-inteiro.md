@@ -821,3 +821,32 @@ C:/Users/RUNNER~1/AppData/Local/Temp on /tmp type ntfs (binary,noacl,posix=0,use
 
 **Idêntica à da VM ARM64.** O `windows-latest` x64 monta o `TMPDIR` com as **mesmas** opções — o que
 a própria issue declarava **não medido**. Agora é mecanismo medido no CI, não efeito observado.
+
+---
+
+## 🔴 O achado dos "43 sítios com binário committado" — investigado e DESCARTADO com medição
+
+O ML-2A reportou, e eu registrei aqui como candidato a issue própria:
+
+> *"O braço de baseline roda `$ROOT_DIR/bin/trackfw` — o binário **committado**. O veredito atesta o
+> que estiver em `bin/`, não a árvore `internal/`. Mesmo mecanismo em 43 sítios."*
+
+**Antes de abrir a issue, medi. O achado não se sustenta:**
+
+| afirmação | medição |
+|---|---|
+| "binário **committado**" | 🔴 **`bin/` é gitignored** — `.gitignore:1:/bin/`. `git ls-files bin/` → **vazio** |
+| "o veredito atesta o que está em `bin/`" | o CI faz `go build -o bin/trackfw ./cmd/trackfw` **antes** (`quality.yml:76` e `:786`) |
+| "…e não a árvore" | o `Makefile` **reconstrói por dependência**: `parity: build …`, `parity-rest: build`, `parity-falsify: build` |
+
+**Todo caminho obrigatório reconstrói o binário a partir da árvore.** A premissa do relato estava
+errada, e a consequência descrita não existe.
+
+**O que sobra é real mas não é defeito:** quem invoca `bash scripts/check-gates-falsify.sh`
+**direto**, sem `make`, usa o `bin/trackfw` de qualquer época — o meu, agora, `cmp` diz que **diverge**
+do build da árvore. Isso é modo de desenvolvimento fora do caminho suportado, e os 121 sítios que
+usam `GO_BIN` mostram que a forma correta já é a dominante.
+
+🔴 **Não abri a issue.** Abrir seria afirmar sem medir — exatamente o que esta REQ passou a campanha
+inteira cobrando dos executores, e o que o ML-1A fez certo ao **declinar** uma tarefa cuja premissa
+tinha caído.
