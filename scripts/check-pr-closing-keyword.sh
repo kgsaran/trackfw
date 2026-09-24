@@ -77,7 +77,9 @@
 #                que o CI usa -- nao ha segunda copia do matcher.
 #   (padrao)     le o corpo do PR de, nesta ordem:
 #                  PR_BODY_FILE  -> caminho de arquivo
-#                  GITHUB_EVENT_PATH + GITHUB_EVENT_NAME=pull_request
+#                  GITHUB_EVENT_PATH + GITHUB_EVENT_NAME=pull_request, e dentro dele:
+#                     corpo VIVO pela API (`gh pr view` do .pull_request.number)
+#                     corpo do payload, se a API nao estiver disponivel
 #                  --pr <n> / PR_NUMBER -> `gh pr view`
 set -euo pipefail
 
@@ -331,6 +333,49 @@ elif [[ -n ${GITHUB_EVENT_PATH:-} ]]; then
   [[ ${GITHUB_EVENT_NAME:-} == pull_request || ${GITHUB_EVENT_NAME:-} == pull_request_target ]] \
     || not_evaluated "GITHUB_EVENT_NAME='${GITHUB_EVENT_NAME:-<vazio>}' nao e pull_request"
   [[ -f $GITHUB_EVENT_PATH ]] || not_evaluated "GITHUB_EVENT_PATH=$GITHUB_EVENT_PATH nao existe"
+
+  # O payload do evento e IMUTAVEL: ele guarda o corpo de quando o PR foi ABERTO.
+  # Corrigir o corpo no GitHub e reexecutar o job devolve o mesmo veredito, porque o
+  # re-run reexecuta com o MESMO payload -- medido no PR #409 (issue #258). Por isso,
+  # quando da para perguntar ao GitHub qual e o corpo AGORA, o corpo vivo vence.
+  #
+  # Ordem: corpo vivo pela API -> payload. Nunca o contrario, e nunca so a API: sem
+  # `gh` autenticado (fork sem segredo, execucao local) o payload ainda mede algo.
+  # O numero vai para ARQUIVO, nao para stdout capturado. Dois motivos, os dois
+  # medidos: (1) no Windows o python3 traduz \n em \r\n no stdout, e um numero com
+  # \r invisivel passaria no [[ -n ]] e viraria argumento invalido para o gh —
+  # exatamente o silencio da REQ do CRLF; (2) o cenario s182 do check-gates-falsify
+  # COPIA este gate para fora de scripts/, onde um `source` da lib de normalizacao
+  # nao resolveria. `newline="\n"` resolve (1) na origem, e a escrita em arquivo
+  # evita (2) sem duplicar helper.
+  PR_NUMBER_FILE="$WORK/event-pr-number.txt"
+  python3 - "$GITHUB_EVENT_PATH" "$PR_NUMBER_FILE" <<'PY' || true
+import json, sys
+try:
+    with open(sys.argv[1], encoding="utf-8") as fh:
+        ev = json.load(fh)
+except Exception:
+    raise SystemExit(0)
+n = (ev.get("pull_request") or {}).get("number")
+if isinstance(n, int):
+    with open(sys.argv[2], "w", encoding="utf-8", newline="\n") as out:
+        out.write(str(n))
+PY
+  EVENT_PR_NUMBER=""
+  [[ -f $PR_NUMBER_FILE ]] && EVENT_PR_NUMBER=$(tr -d '\r' <"$PR_NUMBER_FILE")
+  if [[ -n ${EVENT_PR_NUMBER:-} ]] && command -v gh >/dev/null 2>&1 \
+     && gh pr view "$EVENT_PR_NUMBER" --json body -q .body >"$BODY_FILE" 2>/dev/null; then
+    echo "  fonte: API (corpo vivo do PR #$EVENT_PR_NUMBER) -- o payload do evento e imutavel"
+    evaluate_body_file "$BODY_FILE"
+    exit 0
+  fi
+  # Sem API: o payload volta a ser a fonte, e o gate DIZ que esta lendo o corpo de
+  # abertura -- para quem le o log nao concluir que reexecutar resolveria.
+  if [[ -n ${EVENT_PR_NUMBER:-} ]]; then
+    echo "  fonte: payload do evento (corpo de ABERTURA do PR #$EVENT_PR_NUMBER)."
+    echo "  \`gh\` indisponivel ou sem permissao: se o corpo foi editado depois, reexecutar"
+    echo "  este job NAO muda o veredito -- feche e reabra o PR, ou rode com \`--pr $EVENT_PR_NUMBER\`."
+  fi
   # json.load, nunca grep/sed: um corpo com \n escapado destroi extracao
   # orientada a linha e o resultado seria uma leitura parcial SILENCIOSA.
   python3 - "$GITHUB_EVENT_PATH" "$BODY_FILE" <<'PY' || not_evaluated "payload sem .pull_request.body legivel"
