@@ -351,7 +351,7 @@ home="$WORK/s6-home-go"
 install_agent_global "$home" "gemini" "architect"
 artifact="$home/.gemini/agents/trackfw-architect.md"
 manifest="$home/.trackfw/integrations-manifest.json"
-art_key=$(python3 -c "import json; d=json.load(open('$manifest')); print(list(d['artifacts'].keys())[0])" | strip_cr)
+art_key=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(list(d['artifacts'].keys())[0])" "$manifest" | strip_cr)
 patch_manifest_outdated "$manifest" "$art_key" "$SKIP_SENTINEL"
 
 run_agents_install "$home" "$S6_PROJ" "gemini" "architect" "global"
@@ -376,7 +376,7 @@ S7_HOME="$WORK/s7-home-go"
 mkdir -p "$S7_PROJ" "$S7_HOME"
 install_agent_project "$S7_PROJ" "$S7_HOME" "claude" "architect"
 manifest="$S7_PROJ/.trackfw/integrations-manifest.json"
-art_key=$(python3 -c "import json; d=json.load(open('$manifest')); print(list(d['artifacts'].keys())[0])" | strip_cr)
+art_key=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(list(d['artifacts'].keys())[0])" "$manifest" | strip_cr)
 artifact="$art_key"  # manifest key IS the absolute artifact path for project scope
 patch_manifest_outdated "$manifest" "$artifact" "$SKIP_SENTINEL"
 
@@ -405,7 +405,7 @@ proj="$WORK/s8-proj-go"
 mkdir -p "$home" "$proj"
 install_agent_global "$home" "gemini" "architect"
 manifest="$home/.trackfw/integrations-manifest.json"
-art_key=$(python3 -c "import json; d=json.load(open('$manifest')); print(list(d['artifacts'].keys())[0])" | strip_cr)
+art_key=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(list(d['artifacts'].keys())[0])" "$manifest" | strip_cr)
 patch_manifest_outdated "$manifest" "$art_key" "$SKIP_SENTINEL"
 architect="$home/.gemini/agents/trackfw-architect.md"
 backend="$home/.gemini/agents/trackfw-backend.md"

@@ -54,8 +54,15 @@ escolhido. Categoria "separador de caminho" — deliberadamente fora do escopo d
 em QUALQUER plataforma, não só Windows. No Windows, esse é o primeiro cenário (17) cuja fixture
 interna toca esse padrão (`python3 -c "...open('$path')..."` com o caminho por interpolação de bash
 dentro do script, não como argv separado), e o gate aborta ali. Scripts que já usam este padrão:
-`scripts/check-update-parity.sh:560,617,685` (as três ocorrências de
+`scripts/check-update-parity.sh:354,379,408` (as três ocorrências de
 `art_key=$(python3 -c "import json; d=json.load(open('$manifest'))...")`).
+
+> **Atualizado em 2026-09-24 (ML-0A, `hades-tf`):** as linhas eram `560,617,685` quando esta nota
+> nasceu; hoje são **`354,379,408`**. O censo de Windows (run `36017761462`) **observou** o defeito
+> nos shards 3 e 4 (`s6-home-go/.trackfw/integrations-manifest.json`), e `:379`/`:408` são
+> **latentes** — `set -euo pipefail` mata o script em `:354`. A enumeração completa (6 interpolações,
+> 5 blocos, 3 arquivos) e a reconciliação com o #417 estão em
+> `docs/seguranca/2026-09-24-caminhos-interpolados-no-codigo-python.md`.
 
 ## Se algum dia isso vai ser corrigido
 

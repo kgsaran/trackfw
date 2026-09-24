@@ -83,17 +83,35 @@ echo ""
 echo "── AC6 falsificação: Go dinâmico (go test -overlay) ─────────────────────"
 
 VULN_GO="$WORK/api_file_vuln.go"
-python3 -c "
-src = open('$GO_API_FILE').read()
-vuln = src.replace(
-    '\tif !filePathAllowed(realAbsPath, physicalAllowedDirs) {',
-    '\tif false && !filePathAllowed(realAbsPath, physicalAllowedDirs) {'
-)
-open('$VULN_GO', 'w').write(vuln)
-"
-
 OVERLAY_JSON="$WORK/overlay.json"
-printf '{"Replace": {"%s": "%s"}}\n' "$GO_API_FILE" "$VULN_GO" > "$OVERLAY_JSON"
+# O overlay.json é escrito pelo PRÓPRIO Python, com json.dumps sobre os caminhos
+# recebidos por argv (mesma forma de .github/workflows/quality.yml:1172, que roda
+# em windows-latest). Duas razões, nenhuma delas condicional por plataforma:
+#   1. grafia — no Git Bash as variáveis do shell são caminhos POSIX-MSYS
+#      (/c/Users/...); o MSYS converte argv de processo nativo, mas NUNCA o
+#      conteúdo de um arquivo. Um overlay com chave POSIX é ignorado EM SILÊNCIO
+#      pelo go.exe (não é erro), o teste roda contra o fonte correto e o braço de
+#      falsificação conclui "passou na versão vulnerável";
+#   2. escape — interpolar caminho cru dentro de JSON via printf é injeção em
+#      formato estruturado, independente de plataforma: qualquer '\\' ou '"' no
+#      caminho quebra o JSON. `cygpath -m` corrigiria só a grafia (e escapa do
+#      problema por acidente, por emitir '/'); `cygpath -w` emitiria C:\Users\...
+#      e produziria JSON inválido. json.dumps fecha os dois por construção.
+# O assert fecha o segundo canal de vacuidade das mesmas linhas: se o needle
+# mudar, o "vulnerável" seria byte a byte igual ao correto e o teste passaria —
+# mesmo sintoma, outro mecanismo.
+python3 -c "
+import json, os, sys
+src, vuln, overlay = (os.path.abspath(a) for a in sys.argv[1:4])
+content = open(src, encoding='utf-8').read()
+needle = '\tif !filePathAllowed(realAbsPath, physicalAllowedDirs) {'
+count = content.count(needle)
+assert count >= 1, 'AC6: padrao de injecao nao encontrado em %s (count=%d)' % (src, count)
+open(vuln, 'w', encoding='utf-8').write(
+    content.replace(needle, '\tif false && !filePathAllowed(realAbsPath, physicalAllowedDirs) {')
+)
+open(overlay, 'w', encoding='utf-8').write(json.dumps({'Replace': {src: vuln}}))
+" "$GO_API_FILE" "$VULN_GO" "$OVERLAY_JSON"
 
 VULN_GO_OUT=$(cd "$ROOT_DIR" && go test -overlay="$OVERLAY_JSON" ./internal/serve/... \
     -run "TestFileHandler_SymlinkEscape" -count=1 -timeout 30s 2>&1 || true)
