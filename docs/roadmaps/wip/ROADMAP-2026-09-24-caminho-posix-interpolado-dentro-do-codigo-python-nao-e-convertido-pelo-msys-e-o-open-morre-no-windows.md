@@ -184,6 +184,10 @@ check-serve-api-file-security.sh:87, :92
 ## Wave 2 — Prova no Windows (1 ML)
 > Dependências: Wave 1 mergeada.
 
+### ML-2W — Falsificação exercitada no Windows
+**Owner:** `ares-tf`
+**Status:** ✅ Concluído — auditado em 2026-09-24 · VM Windows 11, dois braços
+
 - [x] **Exercitada na VM, nos dois braços** (`c79f260` × `dc9f733` — e **não** contra a `main`, que
       diverge em 10 arquivos de `scripts/`). Gate do ML-1B: **rc=1 com exatamente os 6** antes,
       **rc=0 com os dois pisos disparados** depois. O rótulo `integration-assets/direction-b-shim-absent`
