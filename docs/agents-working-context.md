@@ -39928,3 +39928,163 @@ ML `✅` + ACs `[x]` — vai reprovar por escrituração se isso não for atuali
 
 `trackfw validate`: **passa** (148 warnings, todos pré-existentes). Um deles toca este roadmap —
 *"is in wip but has no acceptance criteria block"* — herdado do gerador, não introduzido por mim.
+
+---
+
+## 2026-09-24 — `artemis-tf` · ML-1B (Wave 1) — INÍCIO
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-09-24-caminho-posix-interpolado-dentro-do-codigo-python-nao-e-convertido-pelo-msys-e-o-open-morre-no-windows.md`
+**Escopo:** gate anti-reintrodução para caminho interpolado pelo shell dentro do texto do programa
+Python. Entrada obrigatória: §1.4 do parecer do ML-0A (lista de **não-flag**), com
+`check-validate-rule-pins.sh:371` (heredoc citado) e `check-serve-browser-security.sh:97`
+(URL, cujo vetor **depende** da não-conversão) nomeados.
+**Fronteira de escrita:** `scripts/check-interpolated-path-in-python.sh` (novo), `Makefile`,
+`vault/notes/`, este arquivo. ⚠️ ML-1A (`ares-tf`) roda em paralelo na mesma árvore e detém
+`check-gates-falsify.sh`, `check-update-parity.sh` e `check-serve-api-file-security.sh` — **não toco**.
+Braços de falsificação entregues como **bloco para colar**, não escritos em `check-gates-falsify.sh`.
+**Proibido:** branch, commit, push, `make quality`, `go test ./...`.
+
+---
+
+## 2026-09-24 — `ares-tf` · ML-1A (Wave 1) — INÍCIO
+
+**Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-09-24-caminho-posix-interpolado-dentro-do-codigo-python-nao-e-convertido-pelo-msys-e-o-open-morre-no-windows.md`
+**Escopo:** os **6 sítios (a)** do parecer do ML-0A passam a receber o caminho por `argv`
+(`sys.argv[n]`), precedente vivo `check-thirdparty-parity.sh:167`. Nenhum terceiro idioma
+(`cygpath`, env var, `os.environ`).
+**Fronteira de escrita:** `scripts/check-gates-falsify.sh`, `scripts/check-update-parity.sh`,
+`scripts/check-serve-api-file-security.sh`, `vault/notes/`, este arquivo.
+⚠️ ML-1B (`artemis-tf`) roda em paralelo na mesma árvore e detém
+`scripts/check-interpolated-path-in-python.sh` e o `Makefile` — **não toco**.
+**Proibido:** branch, commit, push, `make quality`, `go test ./...`, `docs/req/`, `docs/roadmaps/`.
+
+## 2026-09-24 — `ares-tf` · ML-1A (Wave 1) — FIM
+
+**Os 6 sítios passam o caminho por `argv`.** Diff: 3 arquivos, +9/−8. Nenhum `cygpath`, nenhuma env
+var, nenhum `os.environ` — só `sys.argv[n]`, o idioma de `check-thirdparty-parity.sh:167`.
+
+| sítio | antes | depois |
+|---|---|---|
+| a1 `check-gates-falsify.sh:6745` | `open('$ROOT_DIR/npm/package.json')` | `open(sys.argv[1])` + `" "$ROOT_DIR/npm/package.json" > …` (o argumento entra **antes** do redirecionamento) |
+| a2/a3 `check-serve-api-file-security.sh:87,92` | `open('$GO_API_FILE')` / `open('$VULN_GO','w')` | `import sys` + `open(sys.argv[1])` / `open(sys.argv[2],'w')` + `" "$GO_API_FILE" "$VULN_GO"` |
+| a4/a5/a6 `check-update-parity.sh:354,379,408` | `json.load(open('$manifest'))` | `import json,sys` + `json.load(open(sys.argv[1]))` + `" "$manifest" \| strip_cr` (argumento **antes** do cano) |
+
+**Braço POSIX — `cmp`, não inspeção visual.** Extraí cada bloco para o scratchpad em par antes/depois
+sobre as entradas reais e comparei o produto: `a1-antes.json`↔`a1-depois.json` **idênticos** (1465 B),
+`vuln-antes.go`↔`vuln-depois.go` **idênticos**, `art_key` antes↔depois **idêntico**. Guarda de
+não-vacuidade em cada um (senão dois no-ops passariam no `cmp`): a1 remove 1 das 3 ocorrências de
+`bin/trackfw.js`; a2/a3 casam a sabotagem 1× e o produto **difere** do original; a4 devolve a 1ª de
+**3** chaves.
+
+**Braço Windows — VM, Git Bash, Python nativo 3.12.10 (MINGW64_NT ARM64).** Os três blocos, forma
+antiga e forma nova, lado a lado:
+
+```
+[a1]     ANTES rc=1 FileNotFoundError … '/c/Users/Lab/trackfw/npm/package.json'   | DEPOIS rc=0
+[a2a3]   ANTES rc=1 FileNotFoundError … '/c/Users/Lab/trackfw/internal/serve/api_file.go' | DEPOIS rc=0
+[a4a5a6] ANTES rc=1 FileNotFoundError … '/tmp/ml1a.FRpTD9/integrations-manifest.json'     | DEPOIS rc=0
+```
+
+A grafia POSIX-MSYS no erro é a assinatura do mecanismo do parecer, reproduzida nos **três** arquivos.
+
+**Gates tocados, individualmente, RC=0:** `check-gates-falsify.sh` (249 cenários, 5m01s, o rótulo
+`falsify/integration-assets/direction-b-shim-absent` **existe e passa**), `check-update-parity.sh`
+(todos os cenários; as 3 guardas de vacuidade que consomem `art_key` passam), 
+`check-serve-api-file-security.sh` (5 ok / 0 falhou, **incluindo** a prova de não-vacuidade do AC6).
+
+Regerei os chunks (`gen-falsify-chunks.py`, 8): o bloco a1 continua **inteiro** em `chunk_0.sh`
+(3609-3615) e todos os 8 chunks passam `bash -n`.
+
+**Varredura de sítio novo da mesma causa: vazia** em `scripts/` e `.github/` — nada a acrescentar a
+esta REQ por essa via.
+
+**Sem nota de vault nova:** o mecanismo já está em
+`vault/notes/msys-nao-converte-caminho-embutido-em-string-maior-2026-09-07.md` (index, linha 176),
+com a mesma medição e o mesmo remédio. Duplicar seria ruído.
+
+**🔴 Ação que só o arquiteto pode fazer:** `docs/roadmaps/` é arquivo proibido para mim — o **ML-1A
+segue `⬜ Pendente` com os ACs desmarcados**. Nenhum commit, nenhum push, nenhuma branch,
+`make quality` **não** executado.
+
+**Nenhum arquivo de teste novo foi criado** — os arnesses de falsificação vivem no scratchpad. A
+exigência de "uma frase por teste novo" é cumprida como **ausência declarada + uma frase por
+medição**:
+
+1. O `cmp` de a1 afirma que trocar a interpolação por `argv` **não altera** o `package.json`
+   produzido pelo Cenário 185-B.
+2. O `grep -c 'if false && !filePathAllowed'` em a2/a3 afirma que o `cmp` **não comparou dois
+   no-ops** — a sabotagem casou de verdade nos dois braços.
+3. O rótulo `falsify/integration-assets/direction-b-shim-absent` presente e **OK** afirma que a1
+   voltou a produzir asserção em POSIX, e não apenas deixou de abortar.
+4. As três guardas de vacuidade do `check-update-parity.sh` afirmam que `art_key` continua
+   **não-vazio e correto** depois de sair de dentro do texto do programa.
+5. O `ok AC6 Go falsificação` do gate real afirma que a2/a3 continuam montando o braço vulnerável —
+   a prova de não-vacuidade do AC6 não foi esvaziada pela mudança.
+6. O braço Windows afirma que os três blocos **morriam** por `FileNotFoundError` com grafia
+   POSIX-MSYS e **passam** depois.
+
+**a5/a6 na VM:** são **byte a byte idênticos** a a4 (confirmado: a mesma string casou 3× e foi
+substituída 3×), então a forma foi exercitada **uma vez** e o resultado transfere por identidade,
+não por três execuções separadas.
+
+**Ausência declarada — o braço Windows é de BLOCO, não de gate inteiro.** A correção está
+**não commitada** (commit é autoridade do arquiteto), então o clone da VM não a contém — o delta de
+bytes do produto de a1 (1528 na VM × 1465 local) mede essa diferença de árvore. Além disso,
+`check-serve-api-file-security.sh` exige toolchain Go e `go test -overlay` na VM. O critério de
+aceite pergunta se o **sítio** morria antes e passa depois; é isso que está provado, e não o gate
+completo no Windows — que é escopo da Wave 2.
+
+## 2026-09-24 — `artemis-tf` · ML-1B (Wave 1) — FIM
+
+**Entregue:** `scripts/check-interpolated-path-in-python.sh` (novo), registrado no `Makefile`
+(alvo `parity-rest`, padrão dos gates irmãos), + nota de vault + bloco de falsificação para colar.
+
+**Discriminante — duas condições, as duas decidíveis por leitura:**
+1. **classe de citação** — `-c "` e `<<PY` EXPANDEM (o gate examina); `-c '`, `<<'PY'` e `<<"PY"`
+   são LITERAIS (o gate nunca acusa);
+2. **uso como caminho** — o valor interpolado entra na região de argumento de uma chamada que toca
+   o FS. Região delimitada por **casamento de parênteses com consciência de aspas**, não por regex.
+
+**Tier 2** (forma dividida `p = '$DIR/x'` … `open(p)`) existe porque o ML-0A §2.3 mediu que a
+varredura de mesma linha "acerta por uma coincidência da árvore… como floor, era frágil".
+
+**Falsificação nas duas direções, na árvore REAL:**
+- corpus **pré-ML-1A** (`git archive HEAD`): reprova **exatamente os 6 sítios** do censo —
+  `check-gates-falsify.sh:6745`, `check-serve-api-file-security.sh:87,:92`,
+  `check-update-parity.sh:354,:379,:408` — **e nenhum outro**;
+- árvore **pós-ML-1A** (atual): **0 violações**, gate verde.
+
+**🔴 Os dois não-flag obrigatórios, poupados por razões INDEPENDENTES:**
+- `check-validate-rule-pins.sh:371` — corpo classificado **LITERAL** (aberturas :369 e :383);
+  poupado pela **condição 1**. É a linha que o PR #417 consertou.
+- `check-serve-browser-security.sh:97` — corpo **EXPANSÍVEL** (abertura :95), logo a condição 1
+  vale; poupado pela **condição 2** (o corpo só faz `list2cmdline`/`print`, não toca o FS). O vetor
+  `fe80::1%eth0&calc.exe&echo` depende da não-conversão.
+- Teste discriminante extra: com `<<'PY'` trocado por `<<PY` em rule-pins, o gate **continua** sem
+  acusar — o tier 2 chaveia em *usado como caminho*, não em *tem `$`*.
+
+**Não-vacuidade — dois pisos, calibrados pelo PIOR de dois cenários medidos:**
+árvore de hoje 140 corpos/83 expansíveis · cenário `:176` (heredoc citado) 130/70 →
+`MIN_BODIES=100`, `MIN_EXPANDING=55`. Contagem conferida por **segundo caminho** (grep): 140, idêntico.
+
+**Fronteira respeitada:** não toquei `check-gates-falsify.sh`, `check-update-parity.sh` nem
+`check-serve-api-file-security.sh` (ML-1A/`ares-tf`). Os braços de falsificação vão como **bloco
+para colar** em `vault/blocos-para-colar/`, já executados (9/9) e verificados contra auto-referência.
+**Nenhum commit, nenhum push, nenhuma branch. `make quality` e `go test ./...` NÃO rodados.**
+`trackfw validate`: 148 warnings, o mesmo número do ML-0A — nenhum introduzido por mim.
+
+**Adendo (mesma sessão) — residual 3 do ML-0A §3.2 FECHADO, não declarado.** O parecer atribuiu ao
+ML-1B impedir que o padrão "nasça num diretório novo". O corpus do gate é **todo `*.sh` rastreado +
+`.github/workflows/*.y{a,}ml`, em qualquer diretório** (não só `scripts/`), por `git ls-files` —
+não por varredura da árvore de trabalho, pela lição da nota
+`gate-deriva-sitio-de-arvore-de-trabalho-em-vez-de-git-ls-files-2026-09-09.md` (`pypi/build/lib/...`
+entrando na contagem e divergindo CI×local). Árvores sintéticas caem num fallback por `find`.
+Custo medido de alargar: **0** arquivos novos hoje
+(`git ls-files '*.sh' | grep -v '^scripts/[^/]*\.sh$' | grep -v '/testdata/'` → 0), e os pisos não
+se moveram. `*/testdata/*` fica fora (corpus congelado — mesma exclusão que é o discriminante de
+`check-orphan-gates.sh`).
+
+**Limite conhecido, declarado e NÃO corrigido:** o varredor esvazia um corpo não terminado no
+`FNR==1` do arquivo seguinte, então uma violação dentro de um heredoc sem terminador seria atribuída
+ao arquivo **posterior**. Só alcançável em script sintaticamente quebrado, e o PISO 1 pega a queda
+de contagem que esse caso produz (medido: 140 → 109). Documentado na nota de vault §1.

@@ -73,6 +73,17 @@ parity-rest: build
 	# Alargar o gate de cima para cobrir esta forma foi medido e reprovado (ML-2E):
 	# sem a exigencia de fallback, a regex dele acusaria todo $$(a | b) legitimo.
 	scripts/check-unguarded-capture-rc.sh
+	# ML-1B (ROADMAP-2026-09-24-caminho-posix-interpolado-dentro-do-codigo-python...):
+	# nenhum caminho interpolado pelo shell DENTRO do texto do programa Python. O MSYS
+	# converte caminho POSIX -> Windows em `argv`, e NAO dentro de string de codigo: o
+	# `python3 -c "… open('$$VAR') …"` recebe /d/a/... literal e morre com FileNotFoundError.
+	# Medido no run 36017761462: matou o chunk_0 inteiro do censo de Windows (CHUNK_ABORT)
+	# e removeu o rotulo integration-assets/direction-b-shim-absent — dano do tipo REMOVE
+	# MEDICAO, nao do tipo produz vermelho. Forma correta: passar por `sys.argv[1]`
+	# (precedente VIVO: check-thirdparty-parity.sh:167; heredoc citado em :176).
+	# O discriminante olha a CLASSE DE CITACAO, nao o token `$$`: `-c '…'` e `<<'PY'` nao
+	# expandem, e acusa-los reprovaria a linha que o PR #417 acabou de consertar.
+	scripts/check-interpolated-path-in-python.sh
 	# ML-2A (ROADMAP-2026-08-31-guarda-de-folha-resolve-o-caminho-e-afirma-contencao-antes-de-escrever):
 	# todo sítio de escrita em internal/**/*.go (produção) carrega marcador write-containment-allowed:
 	# ou reprova. Impede reintrodução de escrita desguardada após a Wave 1. Nasce falsificável.

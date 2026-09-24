@@ -84,13 +84,14 @@ echo "── AC6 falsificação: Go dinâmico (go test -overlay) ─────
 
 VULN_GO="$WORK/api_file_vuln.go"
 python3 -c "
-src = open('$GO_API_FILE').read()
+import sys
+src = open(sys.argv[1]).read()
 vuln = src.replace(
     '\tif !filePathAllowed(realAbsPath, physicalAllowedDirs) {',
     '\tif false && !filePathAllowed(realAbsPath, physicalAllowedDirs) {'
 )
-open('$VULN_GO', 'w').write(vuln)
-"
+open(sys.argv[2], 'w').write(vuln)
+" "$GO_API_FILE" "$VULN_GO"
 
 OVERLAY_JSON="$WORK/overlay.json"
 printf '{"Replace": {"%s": "%s"}}\n' "$GO_API_FILE" "$VULN_GO" > "$OVERLAY_JSON"

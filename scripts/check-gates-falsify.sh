@@ -307,7 +307,10 @@ FALSIFY_SUCCESS_TALLY="$WORK/success-count"
 # conservador (os Cenários 198/199 entraram nesta branch sem bump), então o
 # incremento não pode avermelhar uma execução limpa. A contagem absoluta sai do
 # `make quality` do arquiteto, não daqui.
-FALSIFY_SUCCESS_FLOOR=232
+# ML-1B/REQ-2026-09-24: piso MEDIDO, nao somado. A execucao completa desta arvore
+# reporta "Falsification checks passed (249 scenarios)" — 241 deixa folga de 8 e
+# nao se apoia em aritmetica de "+9 bracos", que ja produziu piso inflado antes.
+FALSIFY_SUCCESS_FLOOR=241
 if [[ "$TRACKFW_FALSIFY_ENUMERATE" == "1" ]]; then
   : > "$FALSIFY_ENUM_TALLY"
   echo "[falsify/enumerate] modo de enumeração ATIVO (TRACKFW_FALSIFY_ENUMERATE=1, default=0) -- reprovações são contadas e a execução continua para o próximo cenário; o exit code final permanece != 0 se qualquer cenário reprovar. Ferramenta de diagnóstico -- não usada por make quality/parity." >&2
@@ -6742,11 +6745,11 @@ echo '{"description":"trackfw"}' > "$T185B/internal/integrations/assets/catalog.
 # package.json sem "bin/trackfw.js" em files
 python3 -c "
 import json, sys
-with open('$ROOT_DIR/npm/package.json') as f:
+with open(sys.argv[1]) as f:
     d = json.load(f)
 d['files'] = [x for x in d.get('files', []) if x != 'bin/trackfw.js']
 print(json.dumps(d, indent=2))
-" > "$T185B/npm/package.json"
+" "$ROOT_DIR/npm/package.json" > "$T185B/npm/package.json"
 assert_fails_with "integration-assets/direction-b-shim-absent" \
   "must list bin/trackfw.js in files" \
   bash "$T185B/scripts/check-integration-assets.sh"
@@ -7863,6 +7866,128 @@ fi
 # este contador — são ~2-7 linhas adicionais que não alteram a contagem aqui.
 falsify_success_n=$(wc -l < "$FALSIFY_SUCCESS_TALLY" 2>/dev/null || echo 0)
 falsify_success_n=${falsify_success_n//[[:space:]]/}
+
+# Cenário 200 — check-interpolated-path-in-python.sh: gate anti-reintrodução de
+#               caminho POSIX interpolado DENTRO do texto do programa Python
+#               (ML-1B, ROADMAP-2026-09-24-caminho-posix-interpolado-dentro-do-
+#               codigo-python-nao-e-convertido-pelo-msys-e-o-open-morre-no-windows).
+#
+# 🔴 AUTO-REFERÊNCIA (obrigatória, mesma nota do Cenário 197): o gate escaneia
+# scripts/*.sh, INCLUSIVE este arquivo. Se a string `python3 -c "` aparecesse
+# verbatim numa linha de código aqui, o scanner abriria um corpo Python sobre o
+# texto do printf e acusaria check-gates-falsify.sh. Por isso o interpretador
+# entra sempre por %s / "$PY200" — o literal nunca aparece fora de comentário.
+#
+# Braço A (interp-path/same-line-violation):
+#   Afirma que o gate REPROVA `-c "` com open('$VAR') — a forma dos 6 sítios
+#   do ML-0A. É o tier 1 (mesma linha).
+# Braço B (interp-path/argv-form-passes):
+#   Afirma que o gate APROVA a forma corrigida pelo ML-1A (sys.argv[1] +
+#   caminho como argumento) — precedente vivo check-thirdparty-parity.sh:167.
+# Braço C (interp-path/quoted-heredoc-spared)  🔴 PAR MÍNIMO com o braço D:
+#   Afirma que o gate NÃO acusa `<<'PY'`. C e D diferem SÓ na citação do
+#   delimitador. É a prova de que o discriminante é a CLASSE DE CITAÇÃO, não o
+#   token `$` — e é o braço que protege a linha que o PR #417 consertou.
+# Braço D (interp-path/unquoted-heredoc-violation):
+#   Afirma que o gate REPROVA `<<PY` (delimitador NÃO citado), onde o shell
+#   expande de verdade.
+# Braço E (interp-path/pin10-pwd-fixture-spared):
+#   Réplica fiel de check-validate-rule-pins.sh:369-374 (o `$PWD` literal em
+#   heredoc citado, dict + json.dump, caminho por sys.argv). Afirma que nem o
+#   tier 1 nem o tier 2 a acusam.
+# Braço F (interp-path/split-form-violation):
+#   Afirma que o tier 2 REPROVA a forma dividida (`p = '$DIR/x'` … `open(p)`),
+#   que o ML-0A §2.3 mediu como o ponto frágil de uma varredura de mesma linha.
+# Braço G (interp-path/non-path-expansion-spared):
+#   Réplica de check-serve-browser-security.sh:97 — `$` em corpo EXPANSÍVEL,
+#   mas é URL e o corpo não toca o FS. Afirma que a condição 2 discrimina.
+# Braço H (interp-path/vacuous-scan):
+#   Afirma que o PISO 1 reprova corpus abaixo do piso.
+# Braço I (interp-path/no-expanding-body):
+#   Afirma que o PISO 2 reprova SOZINHO quando nenhum corpo expansível sobra —
+#   o cenário do classificador de citação quebrado. Diagnóstico distinto do H.
+# ---------------------------------------------------------------------------
+T200="$WORK/s200"
+mkdir -p "$T200/scripts"
+cp "$ROOT_DIR/scripts/check-interpolated-path-in-python.sh" "$T200/scripts/"
+GATE200="$T200/scripts/check-interpolated-path-in-python.sh"
+PY200=python3
+
+# --- Braço A — interpolação na mesma linha, corpo `-c "` → REPROVA -----------
+T200A="$T200/arm-a"; mkdir -p "$T200A/scripts"
+printf '#!/usr/bin/env bash\nMANIFEST=/tmp/m.json\nK=$(%s -c "import json; d=json.load(open('"'"'$MANIFEST'"'"')); print(d)")\necho "$K"\n' \
+  "$PY200" > "$T200A/scripts/check-sintetico-a.sh"
+assert_fails_with "interp-path/same-line-violation" \
+  "caminho interpolado no texto do programa Python" \
+  env INTERP_PATH_GATE_MIN_BODIES=1 INTERP_PATH_GATE_MIN_EXPANDING=1 \
+  bash "$GATE200" --scan-root "$T200A"
+
+# --- Braço B — forma corrigida (argv) → PASSA --------------------------------
+T200B="$T200/arm-b"; mkdir -p "$T200B/scripts"
+printf '#!/usr/bin/env bash\nMANIFEST=/tmp/m.json\nK=$(%s -c "import json,sys; print(json.load(open(sys.argv[1])))" "$MANIFEST")\necho "$K"\n' \
+  "$PY200" > "$T200B/scripts/check-sintetico-b.sh"
+assert_succeeds "interp-path/argv-form-passes" \
+  env INTERP_PATH_GATE_MIN_BODIES=1 INTERP_PATH_GATE_MIN_EXPANDING=1 \
+  bash "$GATE200" --scan-root "$T200B"
+
+# --- Braços C e D — PAR MÍNIMO: só a citação do delimitador muda -------------
+# MIN_EXPANDING=0 no braço C: por construção ele não tem corpo expansível
+# nenhum — é exatamente o que se quer provar. O piso 2 é exercitado no braço I.
+T200C="$T200/arm-c"; mkdir -p "$T200C/scripts"
+printf '#!/usr/bin/env bash\nOUT=/tmp/o.json\n%s - <<'"'"'PY'"'"'\nimport json\nopen('"'"'$OUT'"'"', '"'"'w'"'"').write("x")\nPY\n' \
+  "$PY200" > "$T200C/scripts/check-sintetico-c.sh"
+assert_succeeds "interp-path/quoted-heredoc-spared" \
+  env INTERP_PATH_GATE_MIN_BODIES=1 INTERP_PATH_GATE_MIN_EXPANDING=0 \
+  bash "$GATE200" --scan-root "$T200C"
+
+T200D="$T200/arm-d"; mkdir -p "$T200D/scripts"
+printf '#!/usr/bin/env bash\nOUT=/tmp/o.json\n%s - <<PY\nimport json\nopen('"'"'$OUT'"'"', '"'"'w'"'"').write("x")\nPY\n' \
+  "$PY200" > "$T200D/scripts/check-sintetico-d.sh"
+assert_fails_with "interp-path/unquoted-heredoc-violation" \
+  "caminho interpolado no texto do programa Python" \
+  env INTERP_PATH_GATE_MIN_BODIES=1 INTERP_PATH_GATE_MIN_EXPANDING=1 \
+  bash "$GATE200" --scan-root "$T200D"
+
+# --- Braço E — réplica fiel da fixture pin10-pwd do PR #417 → PASSA ----------
+T200E="$T200/arm-e"; mkdir -p "$T200E/scripts"
+printf '#!/usr/bin/env bash\nCG=/tmp/cg\n%s - "$CG/settings.json" <<'"'"'PY'"'"'\nimport json, sys\nd = {"hooks": {"PreToolUse": [{"hooks": [{"command": "$PWD/scripts/trackfw-credential-guard.sh"}]}]}}\nwith open(sys.argv[1], "w") as f:\n    json.dump(d, f)\nPY\n' \
+  "$PY200" > "$T200E/scripts/check-sintetico-e.sh"
+assert_succeeds "interp-path/pin10-pwd-fixture-spared" \
+  env INTERP_PATH_GATE_MIN_BODIES=1 INTERP_PATH_GATE_MIN_EXPANDING=0 \
+  bash "$GATE200" --scan-root "$T200E"
+
+# --- Braço F — tier 2, forma dividida → REPROVA ------------------------------
+T200F="$T200/arm-f"; mkdir -p "$T200F/scripts"
+printf '#!/usr/bin/env bash\nDIR=/tmp/d\n%s -c "\np = '"'"'$DIR/saida.json'"'"'\nwith open(p, '"'"'w'"'"') as f:\n    f.write(\\"x\\")\n"\n' \
+  "$PY200" > "$T200F/scripts/check-sintetico-f.sh"
+assert_fails_with "interp-path/split-form-violation" \
+  "variavel Python ligada a caminho interpolado" \
+  env INTERP_PATH_GATE_MIN_BODIES=1 INTERP_PATH_GATE_MIN_EXPANDING=1 \
+  bash "$GATE200" --scan-root "$T200F"
+
+# --- Braço G — `$` expansível que NÃO é caminho (réplica browser-security) ---
+T200G="$T200/arm-g"; mkdir -p "$T200G/scripts"
+printf '#!/usr/bin/env bash\nZONE_VECTOR_URL=http://host:4080\nZ=$(%s -c "\nimport subprocess\nurl = '"'"'$ZONE_VECTOR_URL'"'"'\nargv = ['"'"'cmd'"'"', '"'"'/c'"'"', '"'"'start'"'"', '"'"''"'"', url]\nprint(subprocess.list2cmdline(argv))\n")\necho "$Z"\n' \
+  "$PY200" > "$T200G/scripts/check-sintetico-g.sh"
+assert_succeeds "interp-path/non-path-expansion-spared" \
+  env INTERP_PATH_GATE_MIN_BODIES=1 INTERP_PATH_GATE_MIN_EXPANDING=1 \
+  bash "$GATE200" --scan-root "$T200G"
+
+# --- Braço H — PISO 1 (corpos) → REPROVA por vacuidade -----------------------
+assert_fails_with "interp-path/vacuous-scan" \
+  "guarda de vacuidade disparou" \
+  env INTERP_PATH_GATE_MIN_BODIES=5 INTERP_PATH_GATE_MIN_EXPANDING=0 \
+  bash "$GATE200" --scan-root "$T200B"
+
+# --- Braço I — PISO 2 (expansíveis) reprova SOZINHO --------------------------
+# Corpus do braço C: 1 corpo, LITERAL. O piso 1 (=1) é atendido; o piso 2 (=1)
+# não. Prova que o piso 2 pega o classificador de citação quebrado, que o
+# piso 1 por construção não pega.
+assert_fails_with "interp-path/no-expanding-body" \
+  "nenhum corpo expansivel para examinar" \
+  env INTERP_PATH_GATE_MIN_BODIES=1 INTERP_PATH_GATE_MIN_EXPANDING=1 \
+  bash "$GATE200" --scan-root "$T200C"
+
 
 # Guarda de vacuidade: o número medido deve ser pelo menos FALSIFY_SUCCESS_FLOOR.
 # Se ficar abaixo, algo removeu chamadas de falsify_count_success ou o
