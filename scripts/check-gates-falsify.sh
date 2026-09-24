@@ -2373,18 +2373,21 @@ S34_APOLO_UNDECLARED='agent namespace "apolo" exists in roadmap_dir but is not d
 # de apolo PRESENTE é obrigatória aqui: prova que o validate rodou, varreu o
 # disco e a regra disparou de verdade, só não para o namespace declarado.
 s34_validate_go_out=$(cd "$S34_PROJECT" && "$T27_GO_BIN" validate 2>&1; true)
+_falsify_arm_fail_2376=0
 if ! grep -qF "$S34_APOLO_UNDECLARED" <<<"$s34_validate_go_out"; then
   echo "FAIL [falsify/config-unindented-agents/go/agent-namespace-undeclared-baseline]: apolo (só-disco) deveria estar 'não declarado' no ciclo LIMPO e não está — validate pode não ter rodado (cenário vácuo)" >&2
   echo "  output: $(printf '%q' "$s34_validate_go_out")" >&2
   falsify_fail_point
+  _falsify_arm_fail_2376=1
 fi
 if grep -qF "$S34_ZEUS_UNDECLARED" <<<"$s34_validate_go_out"; then
   echo "FAIL [falsify/config-unindented-agents/go/agent-namespace-undeclared-baseline]: zeus (declarado em agents:) já aparece como não-declarado no ciclo LIMPO — o cenário seria vácuo" >&2
   echo "  output: $(printf '%q' "$s34_validate_go_out")" >&2
   falsify_fail_point
+elif [[ "$_falsify_arm_fail_2376" -eq 0 ]]; then
+  falsify_count_success
+  echo "OK   [falsify/config-unindented-agents/go/agent-namespace-undeclared-baseline]"
 fi
-falsify_count_success
-echo "OK   [falsify/config-unindented-agents/go/agent-namespace-undeclared-baseline]"
 
 # --- braço de detecção: Go deixa de atribuir cfg.Agents a partir da lista --
 # lida (RETARGET — ver comentário no topo do Cenário 34: isListItem/
@@ -2582,9 +2585,10 @@ for pair in "go:$s35_validate_go_out"; do
     echo "FAIL [falsify/config-inline-comma-in-quotes/$runtime/agent-namespace-undeclared-baseline]: obi ou 'ka, tsu' (declarados em agents:) já aparecem como não-declarados no ciclo LIMPO — o cenário seria vácuo" >&2
     echo "  output: $(printf '%q' "$out")" >&2
     falsify_fail_point
+  else
+    falsify_count_success
+    echo "OK   [falsify/config-inline-comma-in-quotes/$runtime/agent-namespace-undeclared-baseline]"
   fi
-  falsify_count_success
-  echo "OK   [falsify/config-inline-comma-in-quotes/$runtime/agent-namespace-undeclared-baseline]"
 done
 
 # --- braço de detecção: Go deixa de atribuir cfg.Agents a partir da lista --
@@ -3163,10 +3167,12 @@ set +e
 s47ok_out=$(cd "$T47_OK" && "$ROOT_DIR/bin/trackfw" validate 2>&1)
 s47ok_status=$?
 set -e
+_falsify_arm_fail_3168=0
 if [[ $s47ok_status -ne 0 ]]; then
   echo "FAIL [falsify/credential-guard-hook-resolvable/baseline]: árvore íntegra (script presente e executável) deveria passar, saiu com $s47ok_status" >&2
   echo "  output: $s47ok_out" >&2
   falsify_fail_point
+  _falsify_arm_fail_3168=1
 fi
 # Nota: o modo texto do `validate` (exercitado aqui) nunca imprime o nome
 # interno da regra ("credential_guard_hook_resolvable") — só a mensagem. Só
@@ -3179,9 +3185,10 @@ if grep -qF "$S47_MSG_MISSING" <<<"$s47ok_out"; then
   echo "FAIL [falsify/credential-guard-hook-resolvable/baseline]: script presente e executável mas a regra disparou mesmo assim" >&2
   echo "  output: $s47ok_out" >&2
   falsify_fail_point
+elif [[ "$_falsify_arm_fail_3168" -eq 0 ]]; then
+  falsify_count_success
+  echo "OK   [falsify/credential-guard-hook-resolvable/baseline]"
 fi
-falsify_count_success
-echo "OK   [falsify/credential-guard-hook-resolvable/baseline]"
 
 # --- braço detecção: script ausente -> validate acusa esta regra -----------
 T47_MISSING="$WORK/s47-script-missing"
@@ -3281,18 +3288,21 @@ set +e
 s49ok_out=$(cd "$T49_OK" && "$ROOT_DIR/bin/trackfw" validate 2>&1)
 s49ok_status=$?
 set -e
+_falsify_arm_fail_3287=0
 if [[ $s49ok_status -ne 0 ]]; then
   echo "FAIL [falsify/credential-guard-script-integrity/baseline]: árvore íntegra (script byte-idêntico ao template) deveria passar, saiu com $s49ok_status" >&2
   echo "  output: $s49ok_out" >&2
   falsify_fail_point
+  _falsify_arm_fail_3287=1
 fi
 if grep -qF "$S49_MSG" <<<"$s49ok_out"; then
   echo "FAIL [falsify/credential-guard-script-integrity/baseline]: script íntegro mas a regra disparou mesmo assim" >&2
   echo "  output: $s49ok_out" >&2
   falsify_fail_point
+elif [[ "$_falsify_arm_fail_3287" -eq 0 ]]; then
+  falsify_count_success
+  echo "OK   [falsify/credential-guard-script-integrity/baseline]"
 fi
-falsify_count_success
-echo "OK   [falsify/credential-guard-script-integrity/baseline]"
 
 # --- braço detecção: script corrompido -> validate acusa esta regra --------
 T49_BAD="$WORK/s49-script-corrupted"
@@ -3416,18 +3426,21 @@ set +e
 s50ok_out=$(cd "$T50_OK" && "$ROOT_DIR/bin/trackfw" validate 2>&1)
 s50ok_status=$?
 set -e
+_falsify_arm_fail_3423=0
 if [[ $s50ok_status -ne 0 ]]; then
   echo "FAIL [falsify/credential-guard-mode-downgrade/baseline]: disco == HEAD (mode: block) deveria passar, saiu com $s50ok_status" >&2
   echo "  output: $s50ok_out" >&2
   falsify_fail_point
+  _falsify_arm_fail_3423=1
 fi
 if grep -qF "$S50_MSG" <<<"$s50ok_out"; then
   echo "FAIL [falsify/credential-guard-mode-downgrade/baseline]: disco == HEAD mas a regra disparou mesmo assim" >&2
   echo "  output: $s50ok_out" >&2
   falsify_fail_point
+elif [[ "$_falsify_arm_fail_3423" -eq 0 ]]; then
+  falsify_count_success
+  echo "OK   [falsify/credential-guard-mode-downgrade/baseline]"
 fi
-falsify_count_success
-echo "OK   [falsify/credential-guard-mode-downgrade/baseline]"
 
 # --- braço detecção: disco diverge do HEAD (mode: warn, não commitado) -----
 T50_BAD="$WORK/s50-mode-downgraded"
@@ -3620,23 +3633,27 @@ set +e
 s52_out=$(cd "$T52" && "$ROOT_DIR/bin/trackfw" validate 2>&1)
 s52_status=$?
 set -e
+_falsify_arm_fail_3628=0
 if [[ $s52_status -eq 0 ]]; then
   echo "FAIL [falsify/credential-guard-baseline-carveout]: baseline listando a violação de credential-guard deveria continuar reprovando (carve-out), saiu com 0" >&2
   echo "  output: $s52_out" >&2
   falsify_fail_point
+  _falsify_arm_fail_3628=1
 fi
 if ! grep -qF "$S50_MSG" <<<"$s52_out"; then
   echo "FAIL [falsify/credential-guard-baseline-carveout]: violação de credential-guard listada no baseline foi suprimida — carve-out não está funcionando" >&2
   echo "  output: $s52_out" >&2
   falsify_fail_point
+  _falsify_arm_fail_3628=1
 fi
 if grep -qF "$S52_FILENAME_MSG" <<<"$s52_out"; then
   echo "FAIL [falsify/credential-guard-baseline-carveout]: violação NÃO-guard (filename_uniqueness) listada no MESMO baseline não foi suprimida — o formato do baseline não está funcionando neste fixture (prova vácua: a linha acima passaria mesmo com um baseline mal-formado)" >&2
   echo "  output: $s52_out" >&2
   falsify_fail_point
+elif [[ "$_falsify_arm_fail_3628" -eq 0 ]]; then
+  falsify_count_success
+  echo "OK   [falsify/credential-guard-baseline-carveout]: guarda reportada apesar do baseline, não-guarda suprimida pelo MESMO baseline"
 fi
-falsify_count_success
-echo "OK   [falsify/credential-guard-baseline-carveout]: guarda reportada apesar do baseline, não-guarda suprimida pelo MESMO baseline"
 
 # ---------------------------------------------------------------------------
 # Cenário 53 — internal/validator: NÃO-REGRESSÃO — a regra "zero delta" do
@@ -3837,9 +3854,20 @@ if [[ $s54_raw_status -eq 0 ]] && grep -qF "mode: block" <<<"$s54_raw_out"; then
   echo "FAIL [falsify/credential-guard-git-env-bypass/attack-inert]: GIT_DIR/GIT_WORK_TREE NÃO desviaram um \`git -C\` cru para o repositório-isca — o vetor de ataque em si está inerte neste ambiente, a prova abaixo não provaria nada" >&2
   echo "  output: $s54_raw_out" >&2
   falsify_fail_point
+else
+  # ML-2D: `falsify_count_success` + `echo OK` ficam no ramo `else`, NUNCA em
+  # sequência depois do `fi`. Motivo medido: em TRACKFW_FALSIFY_ENUMERATE=1 --
+  # o modo do censo de Windows (`windows-census.yml`, `continue-on-error: true`,
+  # apuração POR RÓTULO) -- `falsify_fail_point` devolve `return 0` e a execução
+  # continua; a emissão incondicional imprimia `OK [falsify/...]` logo após o
+  # `FAIL` do MESMO braço. O agregado via o rótulo de sucesso presente para um
+  # controle que acabara de reprovar. É o mesmo defeito que o comentário do
+  # `falsify_fail_point` (:265-274) já descreve para os helpers e que os blocos
+  # inline não tinham. Em modo normal o `exit 1` já impedia o OK -- a mudança é
+  # neutra ali e discriminante no censo.
+  falsify_count_success
+  echo "OK   [falsify/credential-guard-git-env-bypass/redirect-attack-is-real]: GIT_DIR/GIT_WORK_TREE realmente desviam um \`git -C\` cru (saiu $s54_raw_status, sem 'mode: block' do HEAD real) — confirma que o vetor é genuíno, não teatro"
 fi
-falsify_count_success
-echo "OK   [falsify/credential-guard-git-env-bypass/redirect-attack-is-real]: GIT_DIR/GIT_WORK_TREE realmente desviam um \`git -C\` cru (saiu $s54_raw_status, sem 'mode: block' do HEAD real) — confirma que o vetor é genuíno, não teatro"
 
 set +e
 s54_rawcfg_out=$(GIT_CONFIG_COUNT=abc git -C "$T54" rev-parse --is-inside-work-tree 2>&1)
@@ -3849,9 +3877,11 @@ if [[ $s54_rawcfg_status -eq 0 ]]; then
   echo "FAIL [falsify/credential-guard-git-env-bypass/config-attack-inert]: GIT_CONFIG_COUNT=abc NÃO derrubou um \`git -C\` cru — o vetor de falha induzida está inerte neste ambiente, a prova abaixo não provaria nada" >&2
   echo "  output: $s54_rawcfg_out" >&2
   falsify_fail_point
+else
+  # ML-2D: sucesso no ramo `else` -- mesma razão do braço acima.
+  falsify_count_success
+  echo "OK   [falsify/credential-guard-git-env-bypass/config-attack-is-real]: GIT_CONFIG_COUNT=abc realmente derruba um \`git -C\` cru (saiu $s54_rawcfg_status) — confirma que o vetor é genuíno"
 fi
-falsify_count_success
-echo "OK   [falsify/credential-guard-git-env-bypass/config-attack-is-real]: GIT_CONFIG_COUNT=abc realmente derruba um \`git -C\` cru (saiu $s54_rawcfg_status) — confirma que o vetor é genuíno"
 
 # Braço de detecção 1/2 — REDIRECIONAMENTO: mesmo GIT_DIR/GIT_WORK_TREE do
 # repositório-isca acima, agora contra o binário trackfw. gitCommand()
@@ -3891,18 +3921,28 @@ set +e
 s54wt_ok_out=$(cd "$T54_WT_LINKED" && "$ROOT_DIR/bin/trackfw" validate 2>&1)
 s54wt_ok_status=$?
 set -e
+# ML-2D: braço de DUAS checagens com UM rótulo de sucesso. Usa flag, não
+# `elif`: em TRACKFW_FALSIFY_ENUMERATE=1 as duas checagens precisam continuar
+# emitindo o próprio diagnóstico (o `elif` engoliria a segunda quando a
+# primeira reprovasse). A flag só decide a EMISSÃO DO SUCESSO -- que agora é
+# condicional, em vez de incondicional depois do `fi`.
+s54wt_bad=0
 if [[ $s54wt_ok_status -ne 0 ]]; then
   echo "FAIL [falsify/credential-guard-git-env-bypass/worktree-baseline]: worktree vinculada com disco == HEAD (mode: block) deveria passar, saiu com $s54wt_ok_status" >&2
   echo "  output: $s54wt_ok_out" >&2
   falsify_fail_point
+  s54wt_bad=1
 fi
 if grep -qF "$S50_MSG" <<<"$s54wt_ok_out"; then
   echo "FAIL [falsify/credential-guard-git-env-bypass/worktree-baseline]: worktree vinculada com disco == HEAD, mas a regra disparou mesmo assim" >&2
   echo "  output: $s54wt_ok_out" >&2
   falsify_fail_point
+  s54wt_bad=1
 fi
-falsify_count_success
-echo "OK   [falsify/credential-guard-git-env-bypass/worktree-legitimate-baseline]"
+if [[ $s54wt_bad -eq 0 ]]; then
+  falsify_count_success
+  echo "OK   [falsify/credential-guard-git-env-bypass/worktree-legitimate-baseline]"
+fi
 
 s50_yaml_content warn > "$T54_WT_LINKED/trackfw.yaml"
 assert_fails_with "credential-guard-git-env-bypass/worktree-legitimate-detection" \
@@ -4641,17 +4681,19 @@ if grep -qF 'trackfw-git-branch-guard.sh' "$s67b_settings"; then
   echo "FAIL [falsify/git-branch-guard-dedup/baseline-skips-project-entry]: entrada de git-branch-guard presente em $s67b_settings com a fiação global instalada" >&2
   cat "$s67b_settings" >&2
   falsify_fail_point
+else
+  falsify_count_success
+  echo "OK   [falsify/git-branch-guard-dedup/baseline-skips-project-entry]"
 fi
-falsify_count_success
-echo "OK   [falsify/git-branch-guard-dedup/baseline-skips-project-entry]"
 
 if ! grep -qF 'trackfw-credential-guard.sh' "$s67b_settings"; then
   echo "FAIL [falsify/git-branch-guard-dedup/baseline-credential-guard-unaffected]: entrada de credential-guard ausente — o skip não deveria afetar o outro guard" >&2
   cat "$s67b_settings" >&2
   falsify_fail_point
+else
+  falsify_count_success
+  echo "OK   [falsify/git-branch-guard-dedup/baseline-credential-guard-unaffected]"
 fi
-falsify_count_success
-echo "OK   [falsify/git-branch-guard-dedup/baseline-credential-guard-unaffected]"
 
 # --- braço 2: reverse-vacuity, $HOME vazio -> entrada de projeto normal ---
 T67_PROJECT_DIR_RV="$WORK/s67-project-reverse-vacuity"
@@ -4675,9 +4717,10 @@ if ! grep -qF 'trackfw-git-branch-guard.sh' "$s67rv_settings"; then
   echo "FAIL [falsify/git-branch-guard-dedup/reverse-vacuity]: entrada de git-branch-guard ausente com \$HOME vazio (sem fiação global) — o skip não deveria acontecer aqui" >&2
   cat "$s67rv_settings" >&2
   falsify_fail_point
+else
+  falsify_count_success
+  echo "OK   [falsify/git-branch-guard-dedup/reverse-vacuity]"
 fi
-falsify_count_success
-echo "OK   [falsify/git-branch-guard-dedup/reverse-vacuity]"
 
 # --- braço 3: detecção — dedup neutralizado, entrada de projeto reaparece ---
 T67_MOD="$WORK/s67-corrupt-go"
@@ -4716,9 +4759,10 @@ if ! grep -qF 'trackfw-git-branch-guard.sh' "$s67d_settings"; then
   echo "FAIL [falsify/git-branch-guard-dedup/detection-catches-regression]: com o dedup neutralizado (sempre 'não instalado'), a entrada de projeto deveria REAPARECER mesmo com a fiação global instalada — não reapareceu" >&2
   cat "$s67d_settings" >&2
   falsify_fail_point
+else
+  falsify_count_success
+  echo "OK   [falsify/git-branch-guard-dedup/detection-catches-regression]"
 fi
-falsify_count_success
-echo "OK   [falsify/git-branch-guard-dedup/detection-catches-regression]"
 
 # --- braço 4 (ML-2C) — tolerância a "//" no comando gravado no config global ---
 # Constrói um HOME sintético com barra dupla EMBUTIDA no meio do caminho
@@ -4754,9 +4798,10 @@ if grep -qF 'trackfw-git-branch-guard.sh' "$s67s_settings"; then
   echo "FAIL [falsify/git-branch-guard-dedup/double-slash-tolerance]: entrada de git-branch-guard presente em $s67s_settings mesmo com // no comando gravado do HOME global — a comparação deveria normalizar antes de comparar" >&2
   cat "$s67s_settings" >&2
   falsify_fail_point
+else
+  falsify_count_success
+  echo "OK   [falsify/git-branch-guard-dedup/double-slash-tolerance]"
 fi
-falsify_count_success
-echo "OK   [falsify/git-branch-guard-dedup/double-slash-tolerance]"
 
 # ---------------------------------------------------------------------------
 # Cenário 68 — internal/validator: "git_branch_guard_script_integrity" (e,
@@ -4815,18 +4860,21 @@ set +e
 s68ok_out=$(cd "$T68_OK" && HOME="$T68_HOME" "$ROOT_DIR/bin/trackfw" validate 2>&1)
 s68ok_status=$?
 set -e
+_falsify_arm_fail_4852=0
 if [[ $s68ok_status -ne 0 ]]; then
   echo "FAIL [falsify/git-branch-guard-global-script-integrity/baseline]: script global íntegro e SEM fiação deveria passar, saiu com $s68ok_status" >&2
   echo "  output: $s68ok_out" >&2
   falsify_fail_point
+  _falsify_arm_fail_4852=1
 fi
 if grep -qF "$S68_MSG" <<<"$s68ok_out"; then
   echo "FAIL [falsify/git-branch-guard-global-script-integrity/baseline]: script global íntegro mas a regra disparou mesmo assim" >&2
   echo "  output: $s68ok_out" >&2
   falsify_fail_point
+elif [[ "$_falsify_arm_fail_4852" -eq 0 ]]; then
+  falsify_count_success
+  echo "OK   [falsify/git-branch-guard-global-script-integrity/baseline]"
 fi
-falsify_count_success
-echo "OK   [falsify/git-branch-guard-global-script-integrity/baseline]"
 
 # --- braço de ausência: $HOME onde NENHUM script foi instalado -> silêncio -
 # (não ter rodado 'trackfw update harness' nesse $HOME é estado legítimo, não
@@ -4841,18 +4889,21 @@ set +e
 s68absent_out=$(cd "$T68_ABSENT" && HOME="$T68_ABSENT_HOME" "$ROOT_DIR/bin/trackfw" validate 2>&1)
 s68absent_status=$?
 set -e
+_falsify_arm_fail_4879=0
 if [[ $s68absent_status -ne 0 ]]; then
   echo "FAIL [falsify/git-branch-guard-global-script-integrity/absent-is-not-a-violation]: script global nunca instalado ($T68_ABSENT_HOME) não pode reprovar validate, saiu com $s68absent_status" >&2
   echo "  output: $s68absent_out" >&2
   falsify_fail_point
+  _falsify_arm_fail_4879=1
 fi
 if grep -qF "$S68_MSG" <<<"$s68absent_out"; then
   echo "FAIL [falsify/git-branch-guard-global-script-integrity/absent-is-not-a-violation]: script global nunca instalado, mas a regra disparou (falso-positivo de ausência)" >&2
   echo "  output: $s68absent_out" >&2
   falsify_fail_point
+elif [[ "$_falsify_arm_fail_4879" -eq 0 ]]; then
+  falsify_count_success
+  echo "OK   [falsify/git-branch-guard-global-script-integrity/absent-is-not-a-violation]"
 fi
-falsify_count_success
-echo "OK   [falsify/git-branch-guard-global-script-integrity/absent-is-not-a-violation]"
 
 # --- braço de detecção: script global corrompido, ZERO config referenciando
 # ele -> validate acusa mesmo assim — o discriminante central deste ML -----
@@ -4912,9 +4963,10 @@ if [[ "$s68dup_count" -ne 1 ]]; then
   echo "FAIL [falsify/git-branch-guard-global-script-integrity/no-double-report]: esperado exatamente 1 ocorrência da mensagem de integridade (2 configs referenciam o MESMO script), obteve $s68dup_count" >&2
   echo "  output: $s68dup_out" >&2
   falsify_fail_point
+else
+  falsify_count_success
+  echo "OK   [falsify/git-branch-guard-global-script-integrity/no-double-report]"
 fi
-falsify_count_success
-echo "OK   [falsify/git-branch-guard-global-script-integrity/no-double-report]"
 
 # --- braço de não-regressão + não-duplicação (credential-guard): mesmo
 # padrão acima, mas para o guard que HOJE já é verificado via fiação — prova
@@ -4953,9 +5005,10 @@ if [[ "$s68dupcg_count" -ne 1 ]]; then
   echo "FAIL [falsify/credential-guard-global-script-integrity/no-double-report]: esperado exatamente 1 ocorrência (não-regressão + sem duplicar), obteve $s68dupcg_count" >&2
   echo "  output: $s68dupcg_out" >&2
   falsify_fail_point
+else
+  falsify_count_success
+  echo "OK   [falsify/credential-guard-global-script-integrity/no-double-report]"
 fi
-falsify_count_success
-echo "OK   [falsify/credential-guard-global-script-integrity/no-double-report]"
 
 # ---------------------------------------------------------------------------
 # Cenário 69 — internal/validator: "git_branch_guard_hook_resolvable" em
@@ -5008,18 +5061,21 @@ set +e
 s69ok_out=$(cd "$T69_OK" && HOME="$T69_HOME" "$ROOT_DIR/bin/trackfw" validate 2>&1)
 s69ok_status=$?
 set -e
+_falsify_arm_fail_5049=0
 if [[ $s69ok_status -ne 0 ]]; then
   echo "FAIL [falsify/git-branch-guard-global-hook-resolvable/kiro-dedicated-file/baseline]: fiação Kiro íntegra deveria passar, saiu com $s69ok_status" >&2
   echo "  output: $s69ok_out" >&2
   falsify_fail_point
+  _falsify_arm_fail_5049=1
 fi
 if grep -qF 'trackfw-git-branch-guard.json' <<<"$s69ok_out"; then
   echo "FAIL [falsify/git-branch-guard-global-hook-resolvable/kiro-dedicated-file/baseline]: fiação Kiro íntegra mas a regra disparou mesmo assim" >&2
   echo "  output: $s69ok_out" >&2
   falsify_fail_point
+elif [[ "$_falsify_arm_fail_5049" -eq 0 ]]; then
+  falsify_count_success
+  echo "OK   [falsify/git-branch-guard-global-hook-resolvable/kiro-dedicated-file/baseline]"
 fi
-falsify_count_success
-echo "OK   [falsify/git-branch-guard-global-hook-resolvable/kiro-dedicated-file/baseline]"
 
 # --- braço de detecção: script referenciado pelo arquivo DEDICADO do Kiro
 # some do disco -> validate deve acusar, citando o arquivo do Kiro — o
@@ -5051,18 +5107,26 @@ fi
 # continua em silêncio, E a violation do git-branch-guard aparece exatamente
 # 1 vez (não uma vez por arquivo/guard) -------------------------------------
 s69bad_gbg_count=$(grep -oF 'trackfw-git-branch-guard.json' <<<"$s69bad_out" | wc -l | tr -d ' ')
+# ML-2D: duas checagens, um rótulo de sucesso. Flag (não `elif`) para que as
+# duas continuem emitindo diagnóstico em TRACKFW_FALSIFY_ENUMERATE=1; o
+# sucesso passa a ser condicional às duas passarem.
+s69bad_bad=0
 if [[ "$s69bad_gbg_count" -ne 1 ]]; then
   echo "FAIL [falsify/git-branch-guard-global-hook-resolvable/kiro-dedicated-file/no-double-report]: esperado exatamente 1 ocorrência da violation do Kiro, obteve $s69bad_gbg_count" >&2
   echo "  output: $s69bad_out" >&2
   falsify_fail_point
+  s69bad_bad=1
 fi
 if grep -qF 'trackfw-credential-guard.json' <<<"$s69bad_out"; then
   echo "FAIL [falsify/git-branch-guard-global-hook-resolvable/kiro-dedicated-file/no-regression]: credential-guard do Kiro (arquivo intacto) não deveria disparar, mas apareceu na saída" >&2
   echo "  output: $s69bad_out" >&2
   falsify_fail_point
+  s69bad_bad=1
 fi
-falsify_count_success
-echo "OK   [falsify/git-branch-guard-global-hook-resolvable/kiro-dedicated-file/no-double-report-and-no-regression]"
+if [[ $s69bad_bad -eq 0 ]]; then
+  falsify_count_success
+  echo "OK   [falsify/git-branch-guard-global-hook-resolvable/kiro-dedicated-file/no-double-report-and-no-regression]"
+fi
 
 # ---------------------------------------------------------------------------
 # Cenário 74 — scripts/trackfw-git-branch-guard.sh (ML-3A, ROADMAP-2026-08-19-
@@ -5380,9 +5444,10 @@ assert_guard_exit "git-branch-guard/checkout-path/detection-catches-overblock-br
 if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-release-tag-parity.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s75]: check-release-tag-parity.sh failed against the UNMODIFIED Go binary — baseline must be green before the detection arm means anything" >&2
   falsify_fail_point
+else
+  falsify_count_success
+  echo "OK   [falsify/release-tag-parity/success/baseline-clean]"
 fi
-falsify_count_success
-echo "OK   [falsify/release-tag-parity/success/baseline-clean]"
 
 T75C_GO_MOD="$WORK/s75-corrupt-go"
 mkdir -p "$T75C_GO_MOD/cmd" "$T75C_GO_MOD/internal"
@@ -5424,9 +5489,10 @@ assert_fails_with "release-tag-parity/success-lightweight-tag-false-negative" \
 if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-release-tag-parity.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s76]: check-release-tag-parity.sh failed against the UNMODIFIED Go binary — baseline must be green before the detection arm means anything" >&2
   falsify_fail_point
+else
+  falsify_count_success
+  echo "OK   [falsify/release-tag-parity/forge-commit-diverges-update-ref/baseline-clean]"
 fi
-falsify_count_success
-echo "OK   [falsify/release-tag-parity/forge-commit-diverges-update-ref/baseline-clean]"
 
 T76_GO_MOD="$WORK/s76-corrupt-go"
 mkdir -p "$T76_GO_MOD/cmd" "$T76_GO_MOD/internal"
@@ -5771,9 +5837,10 @@ build_go_or_fail "setup-s85-liveness-build" "$T85" "$T85_BIN"
 if ! (cd "$ROOT_DIR" && env GOCACHE="$WORK/go-build-cache" TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test ./internal/config/ -run TestParseRulesFromContentWithAgentModels_NoPanic) >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s85-baseline]: go test falhou no código real — prova P4 inválida" >&2
   falsify_fail_point
+else
+  falsify_count_success
+  echo "OK   [falsify/nil-map-init/parse-with-agent-models-nopanic-baseline]"
 fi
-falsify_count_success
-echo "OK   [falsify/nil-map-init/parse-with-agent-models-nopanic-baseline]"
 
 # Braço de detecção: go test panica na cópia corrompida
 assert_fails_with "nil-map-init/parse-missing-causes-panic-on-agent-models" \
@@ -6037,9 +6104,10 @@ build_go_or_fail "setup-s167-build" "$T97" "$T97_BIN"
 if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-barrier.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s167-baseline]: check-barrier.sh ja reprova com o binario real -- prova P4 invalida" >&2
   falsify_fail_point
+else
+  falsify_count_success
+  echo "OK   [falsify/barrier/wave-zero-rejected-again-baseline]"
 fi
-falsify_count_success
-echo "OK   [falsify/barrier/wave-zero-rejected-again-baseline]"
 
 assert_fails_with "barrier/wave-zero-rejected-again-detected" \
   "malformed wave heading" \
@@ -6127,9 +6195,10 @@ build_go_or_fail "setup-s169-build" "$T169" "$T169_BIN"
 if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-agent-models-parity.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s169-baseline]: check-agent-models-parity.sh ja reprova com o binario real -- prova P4 invalida" >&2
   falsify_fail_point
+else
+  falsify_count_success
+  echo "OK   [falsify/global-scope/direction-a-reads-cwd-baseline]"
 fi
-falsify_count_success
-echo "OK   [falsify/global-scope/direction-a-reads-cwd-baseline]"
 
 assert_fails_with "global-scope/direction-a-reads-cwd-detected" \
   "from global pin" \
@@ -6208,9 +6277,10 @@ build_go_or_fail "setup-s171-build" "$T171" "$T171_BIN"
 if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-barrier.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s171-baseline]: check-barrier.sh ja reprova com o binario real -- prova P4 invalida" >&2
   falsify_fail_point
+else
+  falsify_count_success
+  echo "OK   [falsify/ac2-sanitization/direction-a-baseline]"
 fi
-falsify_count_success
-echo "OK   [falsify/ac2-sanitization/direction-a-baseline]"
 
 assert_fails_with "ac2-sanitization/direction-a-detected" \
   "expected exit non-0 for forged title" \
@@ -6288,9 +6358,10 @@ build_go_or_fail "setup-s175-build" "$T175" "$T175_BIN"
 if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-update-parity.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s175-baseline]: check-update-parity.sh ja reprova com o binario real -- prova P4 invalida" >&2
   falsify_fail_point
+else
+  falsify_count_success
+  echo "OK   [falsify/sandbox-gap-e/direction-a-baseline]"
 fi
-falsify_count_success
-echo "OK   [falsify/sandbox-gap-e/direction-a-baseline]"
 
 assert_fails_with "sandbox-gap-e/direction-a-detected" \
   "sandbox/gap-e/dry-vs-real" \
@@ -6466,18 +6537,21 @@ chmod 0644 "$T181_SCRIPT"
 (cd "$T181_DET_PROJ" && HOME="$T181_DET_HOME" "$T181_BIN" \
   update --targets validate-script) >/dev/null
 # Verifica: conteudo restaurado (apply() rodou)
+_falsify_arm_fail_6523=0
 if ! cmp -s "$WORK/s181-canonical.sh" "$T181_SCRIPT"; then
   echo "FAIL [falsify/scaffold-update-chmod-removed/direction-c-detected]: binario sabotado nao restaurou o conteudo -- apply() nao rodou" >&2
   falsify_fail_point
+  _falsify_arm_fail_6523=1
 fi
 # Verifica: bit ainda ausente (Chmod nao rodou)
 if test -x "$T181_SCRIPT"; then
   echo "FAIL [falsify/scaffold-update-chmod-removed/direction-c-detected]: binario sabotado restaurou o bit de execucao -- os.Chmod nao foi removido" >&2
   ls -la "$T181_SCRIPT" >&2
   falsify_fail_point
+elif [[ "$_falsify_arm_fail_6523" -eq 0 ]]; then
+  falsify_count_success
+  echo "OK   [falsify/scaffold-update-chmod-removed/direction-c-detected]"
 fi
-falsify_count_success
-echo "OK   [falsify/scaffold-update-chmod-removed/direction-c-detected]"
 
 # ---------------------------------------------------------------------------
 # ML-1A-D6write — normalização semver→PEP 440 no nome da wheel (auditoria 2026-09-13)
@@ -6520,9 +6594,10 @@ echo "OK   [falsify/wheel-filename/normalized]: nome normalizado aceito (cenario
 if ! bash "$ROOT_DIR/scripts/check-static-assets.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s184-baseline]: check-static-assets.sh ja reprova com a fonte real -- prova invalida" >&2
   falsify_fail_point
+else
+  falsify_count_success
+  echo "OK   [falsify/static-assets/vacuity-baseline]"
 fi
-falsify_count_success
-echo "OK   [falsify/static-assets/vacuity-baseline]"
 
 # Direcao A: fonte canonica VAZIA -> gate falha
 T184A="$WORK/s184a"
@@ -6562,9 +6637,10 @@ echo "PROOF [falsify/static-assets/vacuity-guard/non-vacuity]: sem a guarda, fon
 if ! bash "$ROOT_DIR/scripts/check-integration-assets.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s185-baseline]: check-integration-assets.sh ja reprova com artefatos reais -- prova invalida" >&2
   falsify_fail_point
+else
+  falsify_count_success
+  echo "OK   [falsify/integration-assets/baseline]"
 fi
-falsify_count_success
-echo "OK   [falsify/integration-assets/baseline]"
 
 # Direcao A: catalog.json ausente (dir de assets existe mas sem catalog.json)
 T185A="$WORK/s185a"

@@ -257,6 +257,112 @@ removido, ecoando rc e stderr por comando. Responde **qual sítio** e **por que*
 - [ ] A causa do `rc=128` fica **escrita com a medição**, ou a lista do que a sonda eliminou
 - [ ] 🔴 Nenhuma hipótese apresentada como causa
 
+### ML-2D — Emissão de sucesso condicional à checagem ter passado ✅ Concluído — auditado em 2026-09-24
+**Owner:** `artemis-tf`
+
+🔴 **A premissa do meu handoff estava errada, e a medição do executor a refutou.** Eu escrevi que os
+6 rótulos "passam em silêncio, não há emissão de sucesso para cobrar". **Falso para 5 dos 6:** cada
+um tem emissão de sucesso no mesmo braço, sob **outro nome**, e esses rótulos já estavam no
+manifesto.
+
+**O defeito real, medido, é maior e mais grave:**
+
+```bash
+if [[ <falha> ]]; then echo "FAIL [...]"; falsify_fail_point; fi
+falsify_count_success          # <- incondicional
+echo "OK   [falsify/...]"      # <- incondicional
+```
+
+Sob `TRACKFW_FALSIFY_ENUMERATE=1` — **o modo do censo de Windows** — `falsify_fail_point` faz
+`return 0`, e o `OK` do **mesmo braço** saía logo depois do `FAIL`. O comentário do próprio
+`falsify_fail_point` (`:265-274`) já descrevia o problema e já o resolvera **para os helpers**; os
+blocos inline nunca receberam.
+
+**População: 39 sítios**, não 5 — 30 da forma A (sucesso incondicional após o `fi`) e 9 da forma B
+(irmão anterior reprova sem gatear o sucesso). Todos corrigidos; varredura final 0 de cada.
+
+**Critérios de aceite:**
+- [x] Lista remedida — **idêntica** à do ML-2C, item a item; nenhuma diferença a registrar
+- [x] Correção provada por **injeção de falha** nos 9 pares, com o particionamento conferido igual
+- [x] 🔴 Nenhum `OK` decorativo — `vacuity-guard` ficou **declarado SEM prova**, com a razão medida
+- [x] Família `setup*` declarada fora, confirmada quebrando o harness do Cenário 69
+- [x] A regra do ML-2C não foi invertida
+- [x] 🔴 Nenhum teste commitado (instrumento no scratchpad); uma frase por par de injeção
+
+**Auditoria do arquiteto:**
+
+| afirmação | como confirmei |
+|---|---|
+| o ML-2D não tinha seção no roadmap | **verdade, e o erro é meu** — um `str.replace` sem `assert` falhou em silêncio e eu não conferi |
+| o sítio `:5109` mata o chunk | reproduzi: `n=$(grep -oF ausente <<<"$out" \| wc -l)` sob `set -euo pipefail` → **rc=1, a linha seguinte nunca executa** |
+| o trap do ML-2A está no bloco do Cenário 18 | `trap … ERR` na linha **1546**; o sítio que mata está na **5109** — outro bloco, outro chunk |
+
+🔴 **Dois limites que a medição impôs, e que o executor não escondeu:**
+
+1. **A guarda de conjunto só discrimina quando o rótulo de `FAIL` difere do de `OK`.** O `.actual` é
+   montado com `grep -oE '^(OK|FAIL|PROOF)…'` — **um `FAIL` satisfaz a exigência do rótulo**. Nos 33
+   sítios em que os dois nomes coincidem, o ganho é a consistência da apuração `^OK`/`^FAIL` do
+   censo, **não** a guarda. Separar `FAIL` de `OK` no `.actual` é mudança de contrato — fica fora
+   deste ML, **registrada**, não esquecida.
+2. **`vacuity-guard` não pode ser exigido:** o epílogo (`:7490`) está sob
+   `if ! declare -f __falsify_timing_mark`, e essa função é injetada em **todo** chunk — o bloco
+   **nunca executa em chunk**. Testado: o rótulo entra no manifesto e nunca é emitido → gate
+   permanentemente vermelho. Mesma armadilha do ML-2C, por outro caminho.
+
+E o executor registrou uma **previsão própria refutada** (esperava que o fonte antigo fosse cego no
+caso do `setup` e ele não era) — é o comportamento que esta casa pede.
+
+---
+
+## Wave 2-bis — O que a auditoria do ML-2D descobriu (2 MLs)
+> Dependências: nenhuma. Mesma causa, mesma REQ: chunk que morre sem produzir número.
+
+### ML-2E — O diagnóstico de morte cobre 1 chunk em 8, e o sítio que mata está fora dele
+**Owner:** `ares-tf`
+**Status:** ⬜ Pendente
+
+🔴 **Falha de auditoria minha:** marquei o AC do ML-2A *"morte de chunk passa a emitir sítio e rc"*
+como atendido. O ML-2A **declarou** o limite — "do ponto de instalação até o fim do processo" — e eu
+li isso como ressalva, sem medir o alcance. O ML-2D mediu: o `trap ERR` está em `:1546`, dentro do
+bloco do Cenário 18; **num particionamento de 8 chunks, 7 não têm o trap em lugar nenhum do texto**.
+E mediu um caso real: **chunk_0 morreu por `set -e` sem emitir uma linha de `CHUNK_ABORT`** — o
+sintoma exato que o ML-2A existe para eliminar.
+
+**Ações:**
+1. Leve a instalação do trap para o **prelúdio** — a região que `gen-falsify-chunks.py` copia para
+   **todo** chunk. Verifique com o próprio gerador qual é o `prelude_end_line`, não por inspeção
+   visual.
+2. 🔴 Preserve as duas decisões do ML-2A, que foram medidas: `ERR` e **não** `EXIT` (há
+   `trap 'rm -rf "$WORK"' EXIT` em `:34`, que seria substituído); e **sem `set -E`**, porque com
+   errtrace toda falha *esperada* de gate escreveria `CHUNK_ABORT` dentro do log do subshell.
+3. **Corrija `:5109`** e varra a família: `$(grep … | wc -l)` e afins, onde o `grep` sem casar sai 1
+   e o `pipefail` transforma "zero ocorrências" em morte do chunk. **É a mesma raiz da Wave 1** —
+   `grep` que sai 1 no caminho de não-casamento — em outra forma. Enumere antes de corrigir.
+4. Verifique se o gate do ML-1B (`check-emitting-capture-fallback.sh`) cobre esta forma. Se não
+   cobrir, **diga se deve cobrir** — e se a resposta for sim, é ML novo, não remendo aqui.
+
+**Critérios de aceite:**
+- [ ] O trap cobre **todos** os chunks — provado matando artificialmente um chunk que **não** contém
+      o Cenário 18
+- [ ] `:5109` e os irmãos da mesma forma corrigidos, com a enumeração e o comando que a produziu
+- [ ] Braço POSIX: a suíte continua com os mesmos OK/FAIL e a guarda de conjunto verde
+- [ ] 🔴 Uma frase por teste novo
+- [ ] 🔴 **NÃO rodar `make quality`**
+
+### ML-2F — Decidir o contrato do `.actual`: `FAIL` satisfaz a exigência do rótulo
+**Owner:** arquiteto (decisão), depois `artemis-tf`
+**Status:** ⬜ Pendente — **bloqueado por decisão**
+
+Medido no ML-2D: a guarda de conjunto aceita um `FAIL` como prova de que o rótulo foi exercitado.
+Consequência: quando o braço usa o **mesmo nome** em `OK` e `FAIL`, apagar a prova e deixar a falha
+**passa pela guarda**. Em 33 dos 39 sítios é esse o caso.
+
+Separar os dois no `.actual` é mudança de contrato e mexe em consumidores. 🔴 **Não fazer é aceitar
+uma cegueira medida**, que é o que esta REQ inteira existe para atacar. A decisão é minha, e ela
+precisa da contagem de consumidores afetados antes.
+
+---
+
 ## Wave 3 — Linha de base (1 ML, do arquiteto)
 > Dependências: Waves 1 e 2 mergeadas.
 

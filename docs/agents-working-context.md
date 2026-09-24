@@ -39409,3 +39409,68 @@ Documento revisado após chamada de advisor que bloqueou a primeira versão em 4
 - Wave 2 auditada (ML-2A + ML-2C). O ML-2C **recusou** o meu handoff com medição: exigir rótulo de
   linha `FAIL` faria a guarda cobrar que uma falha aconteça. Confirmei: 38 rótulos só existem em
   `FAIL`. ML-2D aberto para os 6 controles que passam em silêncio — mesma causa, mesma REQ.
+
+## 2026-09-24 — artemis-tf — ML-2D (Wave 2): os 6 rótulos que só existem em linha `FAIL`
+
+- **Início.** Escopo de escrita: `scripts/check-gates-falsify.sh`, `vault/notes/` e este arquivo.
+  🔴 Fora: `gen-falsify-chunks.py`, `.github/workflows/`, `Makefile`, `docs/req/`, `docs/roadmaps/`.
+  Nenhum ML em paralelo. Sem branch, sem commit, sem push, sem `make quality`.
+- Objetivo: remedir a lista dos 6 na árvore atual e dar emissão de sucesso **onde houver ponto de
+  prova genuíno** — sem inverter a regra do ML-2C (que proíbe exigir rótulo de linha `FAIL`).
+- **Lista remedida na árvore atual** (`sha256 8b5f86e2…`): **42** rótulos só em linha `FAIL` — 36 da
+  família `setup*` (27 com prefixo `setup`, 9 com `/setup`/`-setup` no fim) e **6** de controle.
+  🔴 **Idêntica à do ML-2C**, item a item. Nenhuma diferença a registrar.
+- 🔴 **O handoff estava errado na premissa, e a medição mostra isso:** os 6 **não** passam em
+  silêncio. **Cinco** deles já têm emissão de sucesso no mesmo braço, sob **outro nome** —
+  `redirect-attack-is-real`, `config-attack-is-real`, `worktree-legitimate-baseline`,
+  `no-double-report-and-no-regression` — e esses 4 rótulos **já estavam no manifesto**. O defeito
+  real é outro: a emissão de sucesso era **incondicional**, depois do `fi`.
+- **Defeito medido:** em `TRACKFW_FALSIFY_ENUMERATE=1` — o modo do censo de Windows, com
+  `continue-on-error: true` e apuração **por rótulo** — `falsify_fail_point` faz `return 0`, a
+  execução continua e o `OK` do **mesmo braço** era impresso logo após o `FAIL`. O agregado via
+  sucesso para um controle que reprovou.
+- 🔴 **Extensão real da causa: 39 sítios, não 5.** Os 6 rótulos foram a porta de entrada, não o
+  tamanho do defeito. Varredura estrutural do arquivo inteiro (casamento `if`/`fi` por pilha,
+  coluna 0; **duas variantes do parser, mesma lista**): **30** da forma A (sucesso incondicional
+  depois do `fi`) + **9** da forma B (braço com `if` irmão que reprova e não gateia o sucesso).
+  **Todos corrigidos** — Regra Dura de Causa Raiz. Varredura final: 0 e 0. Os 5 braços que abriram
+  o ML estão **dentro** desses 39 (convertidos à mão antes da passada mecânica — por isso a lista de
+  B saiu com 9 e não 11); não há discrepância entre o nº de hunks do diff e este número.
+- **Entregue (não commitado):** `scripts/check-gates-falsify.sh` — forma A: sucesso no ramo `else`;
+  forma B: `elif [[ "$_falsify_arm_fail_<linha>" -eq 0 ]]` com flag setada em cada ramo de falha
+  (🔴 nunca `elif` puro no lugar do irmão: em modo enumerate os dois diagnósticos precisam sair).
+- **Falsificação por injeção de falha**, esperado do fonte **pristino**, emitido de cópia sabotada
+  com contagem de linhas preservada: **6 pares**, todos discriminantes — antes `OK
+  [shard-coverage/shard_N/labels]` com o rótulo presente; depois `FAIL … rotulo esperado AUSENTE`
+  nomeando-o. Direção verde: shards 14 e 0 (N=60) com `shard_N.actual` **byte-idêntico** e `rc=0`.
+- **Direção verde, suíte INTEIRA** (`run-gates-falsify-parallel.sh`, 8 chunks, os dois fontes):
+  antigo **273 OK / 0 FAIL**, novo **273 OK / 0 FAIL**, `rc=0`, guarda de conjunto sem rótulo
+  ausente nos dois. Rótulos exigidos **232 → 232**. `FALSIFY_SUCCESS_FLOOR` **não tocado** — os 273
+  provam empiricamente que não era preciso. (A contagem de `falsify_count_success` no **fonte**
+  continua 66; ela não pode mudar por construção e **não** é evidência — a evidência são os 273.)
+- 🔴 **Limite medido, que precisa ir para a auditoria:** `shard_N.actual` é montado com
+  `^(OK|FAIL|PROOF)`, então um `FAIL` **satisfaz** a exigência do rótulo. A guarda de conjunto só
+  discrimina quando o rótulo de falha **difere** do de sucesso — o caso dos 6 do handoff. Nos demais
+  (ex.: `…/no-double-report`), o ganho está na **consistência da apuração do censo**: injetando
+  falha, `OK=5 FAIL=1` → `OK=4 FAIL=1`; a guarda fica cega antes e depois. São dois ganhos
+  distintos e o relatório não os mistura.
+- 🔴 **`vacuity-guard` fica declarado SEM ponto de prova, com medição:** o bloco é pulado em chunk
+  (`declare -f __falsify_timing_mark`). Pus um `OK` lá numa cópia — entra no manifesto
+  (`chunk=43`, N=60) e **nunca é emitido** → gate permanentemente vermelho. Nenhum `OK` decorativo.
+- **`setup*` fora, confirmado em caso concreto:** quebrei o `update harness` do Cenário 69 — o
+  rótulo `setup` continua fora do manifesto (contagem 0) e a guarda **nomeia o cenário assim mesmo**,
+  pela ausência de `…/no-double-report-and-no-regression`.
+- 🔴 **Desvio declarado do critério 5:** "provar apagando" é **estruturalmente impossível** para esta
+  guarda — manifesto e runtime saem do MESMO fonte (§2 da nota do ML-2C, reconfirmado). Substituí
+  por **injeção de falha**, que discrimina. Não inverti a regra do ML-2C.
+- **Dois achados laterais para o arquiteto** (não corrigidos — região do ML-2A, já auditada):
+  (a) o `CHUNK_ABORT` do ML-2A é instalado **dentro** do bloco do Cenário 18, então só cobre o chunk
+  que recebeu esse bloco — **7 dos 8 shards do censo ficam sem diagnóstico**; medido: chunk_0 (N=60)
+  morreu por `set -e` sem uma linha de `CHUNK_ABORT`.
+  (b) o sítio dessa morte é `grep -oF … | wc -l` sob `set -euo pipefail`: `grep` sem casar sai 1 e o
+  `pipefail` mata o chunk.
+- **Nota de vault:** `emissao-de-sucesso-incondicional-reporta-ok-para-braco-que-reprovou-2026-09-24.md`,
+  linkada no índice.
+- 🔴 **ML-2D não tem seção no roadmap** — `35d80052` só moveu status. Não criei (é do arquiteto).
+- 🔴 Não toquei em `gen-falsify-chunks.py`, `.github/workflows/`, `Makefile`, `docs/req/` nem
+  `docs/roadmaps/`. Não commitei, não fiz push, não rodei `make quality` nem `go test ./...`.
