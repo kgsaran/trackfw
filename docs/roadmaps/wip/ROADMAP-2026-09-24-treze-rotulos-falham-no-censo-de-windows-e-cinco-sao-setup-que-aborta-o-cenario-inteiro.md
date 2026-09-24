@@ -123,7 +123,7 @@ wave do G4.
 
 ### ML-0B — A Forma B: o rótulo afirma que o gate passou limpo, e o gate reprovou
 **Owner:** `artemis-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-09-24 · **18 sítios, não 4**
 
 Achado do ML-0A, **fora dos 14 e fora de qualquer REQ**: nos Cenários 87 (`:6066`) e 158 (`:6123`) o
 `echo OK` está **fora do `if`**. A baseline reprova, e o rótulo que afirma *"o gate passa limpo"*
@@ -297,6 +297,66 @@ regenerado → aviso some).
 **byte-idêntico**, e com o binário **compilado da árvore** o aviso **some** (0 ocorrências). É o
 **binário instalado** que carrega o template antigo — mesma versão `8.0.1`, compilada antes. Não há
 divergência real.
+
+**Auditoria do arquiteto — e o detector que eu dei no handoff estava ERRADO**
+
+🔴 **São 18 sítios, não 4.** E o mais importante: **o detector mecânico que eu nomeei é falso para 9
+deles.** Eu escrevi *"a Forma B não chama `falsify_count_success`, logo `^OK` ≠ tally"*. Metade dos
+sítios **chama** — `falsify_count_success` na linha imediatamente acima do `echo OK` incondicional.
+Os dois contadores andam juntos **inclusive quando o cenário reprova**.
+
+🔴 **E a consequência é pior que a contagem:** isso **inflava `falsify_success_n` contra o
+`FALSIFY_SUCCESS_FLOOR=241`** — **o piso de vacuidade era alimentado por reprovação**. Quem caçasse a
+divergência que eu descrevi acharia **menos** do que existe. É a **quinta enumeração incompleta**
+desta campanha, e desta vez o detector errado foi meu.
+
+**Duas subclasses**, e a nova é a mais enganosa:
+
+| subclasse | n | por quê |
+|---|---|---|
+| guard de setup | 10 | `echo OK` fora do `if` |
+| **sumário de braços** | 8 | `assert_fails_with` que reprova **retorna 0** por construção (`return 1` mataria o chunk pelo `set -e` do call site), e o `echo "OK …: os 3 braços provados"` logo abaixo **afirma o conjunto** |
+
+**Não-vacuidade provada sítio a sítio — 18/18**, com sabotagem cirúrgica: `OK_AUSENTE=SIM` e
+`FAIL_PRESENTE=SIM(1)` em todos. Direção oposta: árvore íntegra **rc=0, 268 rótulos `OK`, 0 FAIL**.
+**Sem cascata:** 268 − 241 = **27** = os 18 alvos + 9 do achado abaixo. Nenhum rótulo perdido além.
+
+**Decisão de forma que eu endosso:** o `echo "OK   [falsify/<rótulo>]"` **literal foi preservado**
+nos 18 — é dele que o gerador colhe o conjunto exigido pela guarda do driver; trocar por helper
+apagaria o rótulo do conjunto esperado. O ramo suprimido emite **`FAIL` do mesmo rótulo**, nunca
+silêncio — senão vira *"AUSENTE"*, precedente do Cenário 181.
+
+**Auditei:** os helpers existem (31 ocorrências), o `OK` literal está preservado nos sítios
+amostrados, e a marca d'água entrou no `check-release-tag-parity.sh`. **17 chamadores do
+`assert_three_way`, 0 mudam de veredito em POSIX** — e a supressão **não cascateia** (18 dos 19 pins
+sobrevivem à sabotagem).
+
+---
+
+### ML-4A — O bloco de saída do modo enumerate vem ANTES do Cenário 200
+**Owner:** `artemis-tf`
+**Status:** ⬜ Pendente
+
+Achado **independente e pré-existente** do ML-0B, provado por observação no chunk materializado.
+**Confirmei na árvore:**
+
+```
+linha 8109   echo "[falsify/enumerate] N cenário(s) reprovaram … -- exit 1"
+linha 8124   # Cenário 200 — check-interpolated-path-in-python.sh
+```
+
+🔴 **O bloco de saída está 15 linhas ANTES do cenário.** No censo de Windows — que roda **justamente
+em enumerate** e tem reprovações **por construção** — qualquer reprovação no mesmo chunk faz o
+chunk sair **antes** de rodar o Cenário 200, e os **9 rótulos `interp-path/*`** somem. O driver os
+reporta como *"rótulo esperado AUSENTE"*, que **lê como chunk morto** em vez de *"a execução parou
+aqui"*.
+
+**Causa posicional, não Forma B** — por isso ML próprio. Mesma REQ, pela Regra Dura.
+
+- [ ] O bloco de saída passa a vir **depois** de todos os cenários, ou o Cenário 200 sai de trás dele
+- [ ] 🔴 Prova de que nenhum outro cenário está atrás do bloco — **enumere**, não conserte só este
+- [ ] Falsificação: com reprovação injetada, os rótulos do último cenário **continuam sendo emitidos**
+- [ ] 🔴 Uma frase por teste novo, ou ausência declarada
 
 ### ML-1C — O fixture gravava grafia que o binário nunca produz
 **Owner:** `artemis-tf`
@@ -601,4 +661,35 @@ check-gates-falsify.sh:6596       sandbox-walkdir-reintroduced/direction-b-basel
 
 🔴 **Mesma causa do ML-0B** (a Forma B dos Cenários 87 e 158), que ainda está **⬜ Pendente**. Pela
 Regra Dura, **entram nele** — não viram ML novo nem issue.
+
+### ⚠️ Queda de 2 `OK` entre barreiras — investigada e explicada
+
+A barreira do G1/G2 deu **RC=0, 1273 `^OK `** contra **1275** da anterior. Zero falhas nas duas, mas
+**queda de sucesso sem explicação é exatamente o que esta campanha aprendeu a não ignorar**.
+
+Rastreado por mim:
+
+```
+rótulos falsify distintos: antes=304  depois=304   (nenhum sumiu, nenhum entrou)
+a diferença está fora do falsify:
+  OK [literal/check-release-tag-parity.sh:N]   4 → 2
+```
+
+**Causa:** o ML-3A substituiu probes de `python3` pelo `native_child_probe`, e com isso **dois corpos
+Python literais deixaram de existir** naquele arquivo. Quem os contava é o gate
+`check-interpolated-path-in-python.sh` (REQ anterior), que reporta corpos de citação **literal**.
+
+**Não é regressão** — é consequência direta e esperada da correção.
+
+🔴 **Mas é exatamente o efeito que a nota daquele gate previu:** *"o piso anda junto com a
+correção"*. Medido agora:
+
+| | antes | agora | piso |
+|---|---|---|---|
+| corpos reconhecidos | 140 | **138** | 100 |
+| expansíveis | 83 | 83 | 55 |
+
+Folga de **38** e **28**. Sem risco imediato, **e a direção é para baixo** — cada correção que
+remove um corpo Python aproxima o piso. Quem mexer nesses gates de novo deve reavaliar, em vez de
+descobrir pelo vermelho.
 

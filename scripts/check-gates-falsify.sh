@@ -364,6 +364,55 @@ falsify_count_success() {
 }
 
 # ---------------------------------------------------------------------------
+# ML-0B -- Forma B: "rótulo de sucesso emitido por caminho que NÃO é o ramo de
+# aprovação da checagem que ele afirma".
+#
+# Mecânica: em TRACKFW_FALSIFY_ENUMERATE=1 os pontos de reprovação RETORNAM em
+# vez de sair (é o que torna a enumeração possível). Logo, todo `echo "OK ..."`
+# incondicional colocado DEPOIS de um guard de setup ou de uma sequência de
+# `assert_*` imprime veredito de sucesso sobre checagem já reprovada -- o único
+# FALSO VERDE do cluster de Windows (censo de 2026-09-24: baseline reprova numa
+# linha, `OK` sai na seguinte).
+#
+# `falsify_fail_mark` fotografa o tally de reprovações; `falsify_failed_since`
+# diz se ALGUMA reprovação foi registrada desde a foto. Par de uso, sempre
+# dentro do MESMO cenário (gen-falsify-chunks.py só corta em `# Cenário N`,
+# então a marca e a leitura nunca caem em chunks diferentes):
+#
+#   _falsify_mark_sNN=$(falsify_fail_mark)
+#   ... guards de setup / assert_* ...
+#   if falsify_failed_since "$_falsify_mark_sNN"; then
+#     echo "FAIL [falsify/<rótulo>]: ..." >&2
+#   else
+#     falsify_count_success
+#     echo "OK   [falsify/<rótulo>]"
+#   fi
+#
+# 🔴 O `echo "OK   [falsify/...]"` LITERAL é preservado em todos os sítios: é
+# dele que gen-falsify-chunks.py (ECHO_LABEL_PAT) colhe o conjunto de rótulos
+# exigidos pela guarda de conjunto do driver paralelo. E o ramo suprimido emite
+# `FAIL [falsify/<mesmo rótulo>]` porque o driver aceita a linha FAIL como
+# emissão do rótulo -- suprimir sem emitir nada viraria "rótulo AUSENTE",
+# diagnóstico errado (mesma razão escrita no Cenário 181).
+#
+# Sem cano e sem `$?`: `wc -l < arquivo` lê por redirecionamento direto.
+falsify_fail_mark() {
+  local n=0
+  if [[ -f "${FALSIFY_ENUM_TALLY:-}" ]]; then
+    n=$(wc -l < "$FALSIFY_ENUM_TALLY")
+    n=${n//[[:space:]]/}
+  fi
+  printf '%s\n' "${n:-0}"
+}
+
+falsify_failed_since() {
+  local mark=${1:-0}
+  local now
+  now=$(falsify_fail_mark)
+  [[ "${now:-0}" -gt "${mark:-0}" ]]
+}
+
+# ---------------------------------------------------------------------------
 # Helper: assert que o comando retorna exit != 0 E a saída contém o diagnóstico.
 # Uso: assert_fails_with LABEL DIAGNOSTIC_PATTERN CMD [ARGS...]
 # ---------------------------------------------------------------------------
@@ -5714,6 +5763,7 @@ write_s77_fixture "$T77A" \
   "<!-- trackfw-contract: none reason=e so prosa de contexto -->"
 
 T77A_OUT="$WORK/s77a-out"
+_falsify_mark_s77a=$(falsify_fail_mark)
 set +e
 T77A_STDOUT=$(bash "$T77/scripts/check-parity-contract-coverage.sh" "$T77A" 2>"$T77A_OUT")
 T77A_STATUS=$?
@@ -5738,8 +5788,12 @@ for expected in \
     falsify_fail_point
   fi
 done
-falsify_count_success
-echo "OK   [falsify/parity-contract-coverage/baseline]: 3 níveis de título + 4 estados válidos, todas anotadas, contagens corretas"
+if falsify_failed_since "$_falsify_mark_s77a"; then
+  echo "FAIL [falsify/parity-contract-coverage/baseline]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
+else
+  falsify_count_success
+  echo "OK   [falsify/parity-contract-coverage/baseline]: 3 níveis de título + 4 estados válidos, todas anotadas, contagens corretas"
+fi
 
 # --- 77b — gate= sem caminho nomeado (vazio) — regra GERAL da Emenda 2:
 #           chave PRESENTE com valor vazio reprova, mensagem nomeia a chave --
@@ -6063,24 +6117,30 @@ sed 's/} else if targetID == "claude" \&\& len(agentModels) > 0 {/} else if len(
 # Verificação de vivacidade: confirmar que o patch foi aplicado
 if cmp -s "$ROOT_DIR/internal/integrations/render.go" "$T86/internal/integrations/render.go"; then
   echo 'FAIL [falsify/setup-s86-liveness]: sed nao modificou render.go — seam pode ter mudado' >&2
+  echo "FAIL [falsify/agent-models-parity/namespace-guard-liveness]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
   falsify_fail_point
+else
+  echo 'OK   [falsify/agent-models-parity/namespace-guard-liveness]'
 fi
-echo 'OK   [falsify/agent-models-parity/namespace-guard-liveness]'
 
 # Compilar binário corrompido — a guarda é um predicado puro; sem ela o código
 # continua válido Go e compila normalmente.
 if ! (cd "$T86" && env GOCACHE="$WORK/go-build-cache" go build -o "$T86/bin/trackfw" ./cmd/trackfw) >/dev/null 2>&1; then
   echo 'FAIL [falsify/setup-s86-build]: binário corrompido nao compilou — verificar o patch' >&2
+  echo "FAIL [falsify/agent-models-parity/namespace-guard-sabotaged-build]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
   falsify_fail_point
+else
+  echo 'OK   [falsify/agent-models-parity/namespace-guard-sabotaged-build]'
 fi
-echo 'OK   [falsify/agent-models-parity/namespace-guard-sabotaged-build]'
 
 # Braco de baseline: gate deve PASSAR com o binário real
 if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-agent-models-parity.sh" >/dev/null 2>&1; then
   echo 'FAIL [falsify/setup-s86-baseline]: check-agent-models-parity.sh ja reprova com binario real — prova P4 invalida' >&2
+  echo "FAIL [falsify/agent-models-parity/namespace-guard-baseline]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
   falsify_fail_point
+else
+  echo 'OK   [falsify/agent-models-parity/namespace-guard-baseline]'
 fi
-echo 'OK   [falsify/agent-models-parity/namespace-guard-baseline]'
 
 # Braco de detecção: gate deve FALHAR com o binário corrompido,
 # especificamente relatando "namespace leak" no output.
@@ -6145,9 +6205,11 @@ cp "$ROOT_DIR/go.sum" "$T87C_GO_MOD/go.sum"
 # Baseline: gate deve PASSAR com o binário real
 if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-release-tag-parity.sh" >/dev/null 2>&1; then
   echo 'FAIL [falsify/setup-s87-baseline]: check-release-tag-parity.sh ja reprova com binario real — prova P4 invalida' >&2
+  echo "FAIL [falsify/release-tag-parity/content-from-commit-baseline]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
   falsify_fail_point
+else
+  echo 'OK   [falsify/release-tag-parity/content-from-commit-baseline]'
 fi
-echo 'OK   [falsify/release-tag-parity/content-from-commit-baseline]'
 
 # Aplicar sabotagem: substituir objectSHA por "HEAD" na leitura do CHANGELOG
 corrupt_literal \
@@ -6202,9 +6264,11 @@ cp "$ROOT_DIR/go.sum" "$T88C_GO_MOD/go.sum"
 # Baseline: gate deve PASSAR com o binário real (independente do braço S87)
 if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-release-tag-parity.sh" >/dev/null 2>&1; then
   echo 'FAIL [falsify/setup-s158-baseline]: check-release-tag-parity.sh ja reprova com binario real — prova P4 invalida' >&2
+  echo "FAIL [falsify/release-tag-parity/refs-replace-bypass-baseline]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
   falsify_fail_point
+else
+  echo 'OK   [falsify/release-tag-parity/refs-replace-bypass-baseline]'
 fi
-echo 'OK   [falsify/release-tag-parity/refs-replace-bypass-baseline]'
 
 # Aplicar sabotagem: remover --no-replace-objects da chamada git show
 corrupt_literal \
@@ -6293,6 +6357,7 @@ assert_fails_with "barrier/wave-zero-rejected-again-detected" \
 #                falsificacao dedicada -- um dos dois pontos do achado
 #                ficaria fechado so por inspecao, nao por gate.
 # ---------------------------------------------------------------------------
+_falsify_mark_s168=$(falsify_fail_mark)
 T99="$WORK/s168"
 mkdir -p "$T99/cmd" "$T99/internal"
 cp -r "$ROOT_DIR/cmd/." "$T99/cmd/"
@@ -6315,8 +6380,12 @@ build_go_or_fail "setup-s168-build" "$T99" "$T99_BIN"
 # Baseline ja provado pelo Cenario 167 (mesmo binario real, mesmo
 # check-barrier.sh) -- reexecutar aqui seria redundante; a garantia de
 # nao-vacuidade do braco de deteccao vem do assert_fails_with abaixo.
-falsify_count_success
-echo "OK   [falsify/barrier/wave-zero-flag-guard-rejected-again-baseline]: reaproveita a baseline do Cenario 167 (mesmo binario real, mesmo check-barrier.sh)"
+if falsify_failed_since "$_falsify_mark_s168"; then
+  echo "FAIL [falsify/barrier/wave-zero-flag-guard-rejected-again-baseline]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
+else
+  falsify_count_success
+  echo "OK   [falsify/barrier/wave-zero-flag-guard-rejected-again-baseline]: reaproveita a baseline do Cenario 167 (mesmo binario real, mesmo check-barrier.sh)"
+fi
 
 assert_fails_with "barrier/wave-zero-flag-guard-rejected-again-detected" \
   "expected exit 0 or 1 (never 2" \
@@ -6379,6 +6448,7 @@ assert_fails_with "global-scope/direction-a-reads-cwd-detected" \
 #                Baseline reaproveita do Cenario 169 (mesmo binario real,
 #                mesmo check-agent-models-parity.sh).
 # ---------------------------------------------------------------------------
+_falsify_mark_s170=$(falsify_fail_mark)
 T170="$WORK/s170"
 mkdir -p "$T170/cmd" "$T170/internal"
 cp -r "$ROOT_DIR/cmd/." "$T170/cmd/"
@@ -6399,8 +6469,12 @@ mkdir -p "$(dirname "$T170_BIN")"
 build_go_or_fail "setup-s170-build" "$T170" "$T170_BIN"
 
 # Baseline reaproveita do Cenario 169 (mesmo binario real, mesmo gate)
-falsify_count_success
-echo "OK   [falsify/global-scope/direction-b-reads-global-baseline]: reaproveita baseline do Cenario 169"
+if falsify_failed_since "$_falsify_mark_s170"; then
+  echo "FAIL [falsify/global-scope/direction-b-reads-global-baseline]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
+else
+  falsify_count_success
+  echo "OK   [falsify/global-scope/direction-b-reads-global-baseline]: reaproveita baseline do Cenario 169"
+fi
 
 assert_fails_with "global-scope/direction-b-reads-global-detected" \
   "claude-sonnet-9-9' (project pin)" \
@@ -6460,6 +6534,7 @@ assert_fails_with "ac2-sanitization/direction-a-detected" \
 #                Baseline reaproveita do Cenario 171 (mesmo binario real,
 #                mesmo check-barrier.sh).
 # ---------------------------------------------------------------------------
+_falsify_mark_s172=$(falsify_fail_mark)
 T172="$WORK/s172"
 mkdir -p "$T172/cmd" "$T172/internal"
 cp -r "$ROOT_DIR/cmd/." "$T172/cmd/"
@@ -6480,8 +6555,12 @@ mkdir -p "$(dirname "$T172_BIN")"
 build_go_or_fail "setup-s172-build" "$T172" "$T172_BIN"
 
 # Baseline reaproveita do Cenario 171 (mesmo binario real, mesmo gate)
-falsify_count_success
-echo "OK   [falsify/trust-check/direction-b-baseline]: reaproveita baseline do Cenario 171"
+if falsify_failed_since "$_falsify_mark_s172"; then
+  echo "FAIL [falsify/trust-check/direction-b-baseline]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
+else
+  falsify_count_success
+  echo "OK   [falsify/trust-check/direction-b-baseline]: reaproveita baseline do Cenario 171"
+fi
 
 assert_fails_with "trust-check/direction-b-detected" \
   "hostile gate EXECUTED" \
@@ -6538,6 +6617,7 @@ assert_fails_with "sandbox-gap-e/direction-a-detected" \
 #                Deteccao: check-update-parity.sh reprova com
 #                "sandbox/dangling-outside-set/exit-zero".
 # ---------------------------------------------------------------------------
+_falsify_mark_s176=$(falsify_fail_mark)
 T176="$WORK/s176"
 mkdir -p "$T176/cmd" "$T176/internal"
 cp -r "$ROOT_DIR/cmd/." "$T176/cmd/"
@@ -6592,8 +6672,12 @@ T176_BIN="$WORK/s176-bin/trackfw"
 mkdir -p "$(dirname "$T176_BIN")"
 build_go_or_fail "setup-s176-build" "$T176" "$T176_BIN"
 
-falsify_count_success
-echo "OK   [falsify/sandbox-walkdir-reintroduced/direction-b-baseline]: reaproveita baseline do Cenario 175"
+if falsify_failed_since "$_falsify_mark_s176"; then
+  echo "FAIL [falsify/sandbox-walkdir-reintroduced/direction-b-baseline]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
+else
+  falsify_count_success
+  echo "OK   [falsify/sandbox-walkdir-reintroduced/direction-b-baseline]: reaproveita baseline do Cenario 175"
+fi
 
 assert_fails_with "sandbox-walkdir-reintroduced/direction-b-detected" \
   "sandbox/dangling-outside-set/exit-zero" \
@@ -7146,6 +7230,7 @@ S193_MSG_VACUITY='links to Roadmap "docs/roadmaps/wip/ROADMAP-2026-09-06-s193-va
 
 
 # --- Go: fixtures compartilhadas (baseline usa o binário real; corrupção usa cópia isolada) ---
+_falsify_mark_s193=$(falsify_fail_mark)
 T193_G_LIFECYCLE="$WORK/s193-go-lifecycle"
 mkdir -p "$T193_G_LIFECYCLE"
 scaffold_adr_req_project "$T193_G_LIFECYCLE"
@@ -7236,10 +7321,18 @@ assert_output_lacks "roadmap-ref-stale-state/go/vacuity-detects-regression" \
   "$S193_MSG_VACUITY" \
   bash -c "cd '$T193_G_VACUITY' && exec '$T193C_GO_B_BIN' validate"
 
-falsify_count_success
-echo "OK   [falsify/roadmap-ref-stale-state/go]: as 3 direções (A/B/C) provadas"
-falsify_count_success
-echo "OK   [falsify/roadmap-ref-stale-state/python]: as 3 direções (A/B/C) provadas"
+if falsify_failed_since "$_falsify_mark_s193"; then
+  echo "FAIL [falsify/roadmap-ref-stale-state/go]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
+else
+  falsify_count_success
+  echo "OK   [falsify/roadmap-ref-stale-state/go]: as 3 direções (A/B/C) provadas"
+fi
+if falsify_failed_since "$_falsify_mark_s193"; then
+  echo "FAIL [falsify/roadmap-ref-stale-state/python]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
+else
+  falsify_count_success
+  echo "OK   [falsify/roadmap-ref-stale-state/python]: as 3 direções (A/B/C) provadas"
+fi
 
 # ---------------------------------------------------------------------------
 # Cenário 194 — check-write-containment.sh: gate de contenção de escrita
@@ -7261,6 +7354,7 @@ echo "OK   [falsify/roadmap-ref-stale-state/python]: as 3 direções (A/B/C) pro
 #   Afirma que o gate REPROVA corpus vazio — prova que a guarda de
 #   vacuidade dispara e o gate não reporta aprovação silenciosa.
 # ---------------------------------------------------------------------------
+_falsify_mark_s194=$(falsify_fail_mark)
 T194="$WORK/s194"
 mkdir -p "$T194/scripts"
 cp "$ROOT_DIR/scripts/check-write-containment.sh" "$T194/scripts/"
@@ -7310,8 +7404,12 @@ assert_fails_with "write-containment/vacuous-scan" \
   "recusando reportar aprovação silenciosa" \
   bash -c "WRITE_CONTAINMENT_SCAN_DIR='$T194C' bash '$T194/scripts/check-write-containment.sh'"
 
-falsify_count_success
-echo "OK   [falsify/write-containment]: os 3 braços (A/B/C) provados"
+if falsify_failed_since "$_falsify_mark_s194"; then
+  echo "FAIL [falsify/write-containment]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
+else
+  falsify_count_success
+  echo "OK   [falsify/write-containment]: os 3 braços (A/B/C) provados"
+fi
 
 # ---------------------------------------------------------------------------
 # Cenário 195 — check-parity-call-site-pins.sh: asserção negativa de que
@@ -7334,6 +7432,7 @@ echo "OK   [falsify/write-containment]: os 3 braços (A/B/C) provados"
 #   call-site-pin/self-governed-clean: o gate PASSA na árvore correta, onde o
 #     pin existe exclusivamente em self-governance (fora da cadeia quality).
 # ---------------------------------------------------------------------------
+_falsify_mark_s195=$(falsify_fail_mark)
 T195="$WORK/s195"
 mkdir -p "$T195/scripts"
 cp "$ROOT_DIR/Makefile"    "$T195/"
@@ -7407,7 +7506,11 @@ assert_fails_with "call-site-pin/self-governed-moved" \
   "forbidden-in-quality" \
   bash "$T195B/scripts/check-parity-call-site-pins.sh" "$T195B"
 
-echo "OK   [falsify/call-site-pin]: 3 braços (clean/in-quality/moved) provados"
+if falsify_failed_since "$_falsify_mark_s195"; then
+  echo "FAIL [falsify/call-site-pin]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
+else
+  echo "OK   [falsify/call-site-pin]: 3 braços (clean/in-quality/moved) provados"
+fi
 
 # ---------------------------------------------------------------------------
 # Cenário 196 — check-parity-call-site-pins.sh: verificação de que o CI
@@ -7430,6 +7533,7 @@ echo "OK   [falsify/call-site-pin]: 3 braços (clean/in-quality/moved) provados"
 #     linha `run:` é substituída por comentário `# make self-governance` — prova
 #     que o grep filtro de comentário funciona (sem ele, este caso passaria).
 # ---------------------------------------------------------------------------
+_falsify_mark_s196=$(falsify_fail_mark)
 T196="$WORK/s196"
 mkdir -p "$T196/scripts" "$T196/.github/workflows"
 cp "$ROOT_DIR/Makefile"      "$T196/"
@@ -7475,7 +7579,11 @@ assert_fails_with "ci-workflow/self-governance-invoked/run-commented" \
   "ci-workflow/self-governance-invoked" \
   bash "$T196B/scripts/check-parity-call-site-pins.sh" "$T196B"
 
-echo "OK   [falsify/ci-workflow-self-governance]: 3 braços (clean/run-removed/run-commented) provados"
+if falsify_failed_since "$_falsify_mark_s196"; then
+  echo "FAIL [falsify/ci-workflow-self-governance]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
+else
+  echo "OK   [falsify/ci-workflow-self-governance]: 3 braços (clean/run-removed/run-commented) provados"
+fi
 
 # ---------------------------------------------------------------------------
 # Cenário 197 — check-crlf-normalize-capture.sh: gate anti-reintrodução de
@@ -7498,6 +7606,7 @@ echo "OK   [falsify/ci-workflow-self-governance]: 3 braços (clean/run-removed/r
 # por concatenação (variável PY + printf) para que o literal $(python3 nunca
 # apareça verbatim neste source — o gate escaneia scripts/*.sh incluindo este.
 # ---------------------------------------------------------------------------
+_falsify_mark_s197=$(falsify_fail_mark)
 T197="$WORK/s197"
 mkdir -p "$T197/scripts"
 cp "$ROOT_DIR/scripts/check-crlf-normalize-capture.sh" "$T197/scripts/"
@@ -7607,7 +7716,11 @@ assert_fails_with "crlf-normalize/stdout-write-capture" \
   env CRLF_GATE_MIN_CAPTURES=1 bash "$T197/scripts/check-crlf-normalize-capture.sh" \
   --scan-root "$T197E"
 
-echo "OK   [falsify/crlf-normalize]: 5 braços (A/B/C/D/E) provados"
+if falsify_failed_since "$_falsify_mark_s197"; then
+  echo "FAIL [falsify/crlf-normalize]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
+else
+  echo "OK   [falsify/crlf-normalize]: 5 braços (A/B/C/D/E) provados"
+fi
 
 # ---------------------------------------------------------------------------
 # Cenário 198 — check-emitting-capture-fallback.sh: gate anti-reintrodução da
@@ -7648,6 +7761,7 @@ echo "OK   [falsify/crlf-normalize]: 5 braços (A/B/C/D/E) provados"
 # a string literal com `grep -c ... || echo` nunca aparece verbatim neste source,
 # que o próprio gate varre (scripts/*.sh).
 # ---------------------------------------------------------------------------
+_falsify_mark_s198=$(falsify_fail_mark)
 T198="$WORK/s198"
 mkdir -p "$T198"
 GREPC=grep
@@ -7726,7 +7840,11 @@ assert_fails_with "emitting-capture/vacuous-scan" \
   "guarda de vacuidade disparou" \
   env EMIT_FALLBACK_GATE_MIN_CANDIDATES=5 bash "$EMIT_GATE" --scan-root "$T198/arm-g"
 
-echo "OK   [falsify/emitting-capture]: 11 braços (A-K) provados"
+if falsify_failed_since "$_falsify_mark_s198"; then
+  echo "FAIL [falsify/emitting-capture]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
+else
+  echo "OK   [falsify/emitting-capture]: 11 braços (A-K) provados"
+fi
 
 # ---------------------------------------------------------------------------
 # Cenário 199 — check-unguarded-capture-rc.sh: gate IRMÃO do 198, para a captura
@@ -7807,6 +7925,7 @@ echo "OK   [falsify/emitting-capture]: 11 braços (A-K) provados"
 # `\n` antes do `VAR=`, então o próprio gate (que varre scripts/*.sh) não lê
 # nenhuma destas linhas como sítio em posição de atribuição.
 # ---------------------------------------------------------------------------
+_falsify_mark_s199=$(falsify_fail_mark)
 T199="$WORK/s199"
 mkdir -p "$T199"
 UGREP=grep
@@ -7968,7 +8087,11 @@ assert_fails_with "unguarded-rc/cond-keyword-not-condition" "$URC_VIOL" \
 
 # Sem contagem literal aqui: o número de braços já ficou obsoleto uma vez nesta
 # árvore. A contagem real é o tally medido na execução (FALSIFY_SUCCESS_FLOOR).
-echo "OK   [falsify/unguarded-rc]: braços A-T provados"
+if falsify_failed_since "$_falsify_mark_s199"; then
+  echo "FAIL [falsify/unguarded-rc]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
+else
+  echo "OK   [falsify/unguarded-rc]: braços A-T provados"
+fi
 
 # ---------------------------------------------------------------------------
 # ML-2B — fechamento do modo de enumeração. Desligado (default): este bloco

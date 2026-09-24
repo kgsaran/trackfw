@@ -40767,3 +40767,82 @@ que não mediu. Decisão do arquiteto.
 
 **Nota de vault:** `vault/notes/path-curado-no-windows-tres-medicoes-que-invertem-o-diagnostico-2026-09-24.md`
 (linkada no índice).
+
+## 2026-09-24 — `artemis-tf` (QA) · ML-0B — INÍCIO
+
+Entrada: handoff do `trackfw-architect` para a **Forma B** (rótulo de sucesso emitido fora do ramo
+de aprovação) na REQ do cluster de Windows, branch
+`fix/treze-rotulos-falham-no-censo-de-windows-...` já criada. Escopo de escrita:
+`scripts/check-gates-falsify.sh`, `scripts/check-release-tag-parity.sh`, `vault/notes/`,
+este arquivo. Sem git, sem `make quality` (barreira do arquiteto). 4 sítios conhecidos, a enumerar
+**pela forma**.
+
+## 2026-09-24 — `artemis-tf` (QA) · ML-0B — FIM · **são 18 sítios, não 4 — e o detector nomeado no handoff enxerga 9 deles**
+
+**Enumeração pela forma (não por token).** Varredor estrutural em `awk` (heredoc ignorado,
+`if/else/fi` contados, `return`/`exit` desarmando) + **fecho transitivo dos envelopes** que
+alcançam o ponto de reprovação e **retornam**. Sem o fecho: 12 candidatos. Com ele: **27**, dos
+quais **18 verdadeiros** e **9 falsos positivos** (já corrigidos numa campanha anterior pelo
+padrão `_falsify_arm_fail_<linha>` + `elif`, que o varredor não modela).
+
+🔴 **O detector nomeado no handoff é falso para metade.** *"A Forma B não chama
+`falsify_count_success`, logo `^OK` ≠ tally"* — mas 9 dos 18 sítios chamam
+`falsify_count_success` na linha imediatamente acima do `echo OK` incondicional; os dois
+contadores andam juntos **inclusive quando o cenário reprova**, e o piso `FALSIFY_SUCCESS_FLOOR`
+era **inflado por reprovação**. Quem caçasse a divergência acharia menos do que existe.
+
+**Duas subclasses.** *Guard de setup* (10 sítios) e — nova — ***sumário de braços*** (8 sítios:
+`call-site-pin`, `ci-workflow-self-governance`, `crlf-normalize`, `emitting-capture`,
+`unguarded-rc`, `write-containment`, `roadmap-ref-stale-state/{go,python}`), em que o `OK` afirma
+*"os N braços provados"* depois de uma série de `assert_*`; um `assert_fails_with` que reprova
+**retorna 0** por construção (senão o `set -e` do call site mataria o chunk) e o sumário sai
+mesmo assim. Os 4 sítios do handoff estão todos dentro dos 18.
+
+**Correção.** `falsify_fail_mark` / `falsify_failed_since` + ramo `else`; o `echo "OK
+[falsify/<rótulo>]"` **literal é preservado** (é dele que `gen-falsify-chunks.py`/`ECHO_LABEL_PAT`
+colhe o conjunto exigido pela guarda do driver) e o ramo suprimido emite `FAIL [falsify/<mesmo
+rótulo>]` — sumir com a linha viraria *"rótulo AUSENTE"*, diagnóstico errado. Em
+`check-release-tag-parity.sh`, `assert_three_way` passa a decidir por marca d'água de `FAIL_N`,
+sem tocar em nenhum dos **17 chamadores**.
+
+**Medições.** Árvore íntegra: `run-gates-falsify-parallel.sh` **rc=0**, 268 rótulos `OK` distintos,
+0 `FAIL`; `check-release-tag-parity.sh` **rc=0**, 19 pins. Cópia sabotada em modo de enumeração:
+nos **18** sítios o `OK` some e o `FAIL` do mesmo rótulo aparece — **18/18**. Sem cascata: 27
+rótulos a menos = 18 alvos + 9 do Cenário 200 (ver achado abaixo). `assert_three_way` com `fail`
+injetado: código **antigo** imprime `FAIL` e `OK` do mesmo cenário em linhas consecutivas (falso
+verde reproduzido); código novo imprime `FAIL`+`FAIL` e **18 de 19** pins seguem `OK`. Conjunto de
+rótulos **idêntico** antes/depois, e as 12 marcas ficam no **mesmo chunk** da sua leitura em N=4 e
+N=8. `trackfw validate` rc=0; `shellcheck -S warning`: nenhum achado novo nos dois arquivos.
+
+🔴 **Achado independente, pré-existente, NÃO corrigido:** o bloco `exit 1` do modo de enumeração
+está **antes do Cenário 200** no fonte (`:8105` vs `:8124`), então no censo de Windows — que roda
+em enumeração e tem reprovações por construção — qualquer reprovação no mesmo chunk **aborta antes**
+do Cenário 200 e apaga os **9 rótulos `interp-path/*`**, que o driver reporta como *"rótulo
+esperado AUSENTE"*. Causa **posicional**, não Forma B. Decisão do arquiteto: recomendo entrar como
+ML novo **nesta REQ**, não como REQ nova.
+
+**Escopo da marca, declarado (não é over-suppression — foi medido).** A marca cobre o **cenário
+inteiro, inclusive o setup**: se a fixture não se formou, os braços não foram provados. Conferido
+sítio a sítio quais pontos de reprovação caem dentro de cada escopo — são **apenas** o
+`setup-sNNN-build` do próprio cenário e braços com o **prefixo do próprio rótulo** de sumário
+(`unguarded-rc/*` sob `unguarded-rc`, `crlf-normalize/*` sob `crlf-normalize`, etc.). **Nenhum
+ponto de reprovação alheio** entra no escopo de nenhuma das 12 marcas. Único caso a registrar:
+`roadmap-ref-stale-state/python` divide o escopo com os braços `/go` — é rótulo histórico (v8 não
+tem runtime Python) e os dois sumários afirmam as mesmas 3 direções.
+
+**Frases por artefato (Regra Dura de Reconciliação).** Nenhum teste Go novo e nenhum arquivo de
+teste novo — **ausência declarada**. Artefatos entregues e o que cada um afirma:
+1. `falsify_fail_mark`/`falsify_failed_since` — **afirmam** a conclusão de que o ponto de
+   reprovação **retorna** em modo de enumeração, e que por isso o rótulo de sucesso precisa
+   consultar o tally, não a posição no arquivo.
+2. Os 18 ramos `else` + `FAIL [falsify/<rótulo>]` — **afirmam** a conclusão de que suprimir o `OK`
+   sem emitir o rótulo viraria *"AUSENTE"* na guarda de conjunto do driver.
+3. A marca d'água de `FAIL_N` em `assert_three_way` — **afirma** a conclusão de que a supressão
+   tem de ser **por cenário**, medida contra a chamada anterior do helper, e não global.
+
+**Escopo respeitado:** 2 arquivos de `scripts/`, 1 nota de vault + índice, este arquivo. Nada em
+`internal/`, `Makefile`, `.github/workflows/`, `docs/req/`, `docs/roadmaps/`. Sem commit, sem push.
+
+**Nota de vault:**
+`vault/notes/o-rotulo-de-sucesso-fora-do-ramo-de-aprovacao-sao-18-nao-4-e-o-detector-nomeado-acha-9-2026-09-24.md`
+(linkada no índice).

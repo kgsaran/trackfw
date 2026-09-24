@@ -475,8 +475,15 @@ if [[ -f "${REAL_GIT}.exe" ]]; then
 fi
 
 FAIL=0
+# ML-0B (Forma B): FAIL_N conta reprovacoes; FAIL continua sendo o exit code.
+# assert_three_way usa a diferenca de FAIL_N para decidir se o rotulo de
+# sucesso do cenario pode sair -- ate este ML ele saia INCONDICIONALMENTE,
+# inclusive depois de fail() ja ter sido chamado no mesmo cenario, que e o
+# unico falso verde do cluster de Windows.
+FAIL_N=0
+RT_PIN_WATERMARK=0
 ok()   { echo "OK   [$1]"; }
-fail() { echo "FAIL [$1]: $2" >&2; FAIL=1; }
+fail() { echo "FAIL [$1]: $2" >&2; FAIL=1; FAIL_N=$((FAIL_N + 1)); }
 
 RELEASE_VERSION="9.9.9"
 RELEASE_TAG="v9.9.9"
@@ -735,6 +742,19 @@ run_release() {
 # pypi/trackfw/ deleted. The function now just records that Go ran OK.
 assert_three_way() {
   local label=$1
+  # ML-0B: o pin so e emitido se NENHUMA reprovacao foi registrada desde a
+  # chamada anterior deste helper -- i.e. se o cenario que termina aqui
+  # passou. A marca d'agua avanca nos dois ramos, entao a supressao NUNCA
+  # cascateia para o cenario seguinte (cada cenario e julgado pelas suas
+  # proprias reprovacoes). O ramo suprimido emite `FAIL [<mesmo rotulo>]`:
+  # sumir com a linha inteira transformaria "cenario reprovou" em "rotulo
+  # ausente", diagnostico errado para quem le o log do censo.
+  local failed_here=$((FAIL_N - RT_PIN_WATERMARK))
+  RT_PIN_WATERMARK=$FAIL_N
+  if [[ "$failed_here" -gt 0 ]]; then
+    echo "FAIL [release-tag-parity/$label/go-behavioral-pin]: pin suprimido -- $failed_here reprovacao(oes) neste cenario; o comportamento NAO foi fixado" >&2
+    return 0
+  fi
   local go_exit
   go_exit=$(cat "$WORK/$label.go.exit")
   ok "release-tag-parity/$label/go-behavioral-pin"
