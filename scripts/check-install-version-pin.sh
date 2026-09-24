@@ -206,19 +206,47 @@ pass_pinned "pinned-pre-1.0-no-v"      "0.9.1"    "v0.9.1"    "0.9.1"
 
 # AC5: "7.3.0" e "v7.3.0" tem que baixar o mesmo asset — URL E DEST byte-identicos. O DEST e
 # o alvo real do -o do curl (o argumento de escrita em disco), nao so a URL remota.
+# ML-2I: o rc do grep SOZINHO (sem cano) mata o script sob `set -e` — nao depende de
+# pipefail. Antes desta guarda, um seam de dryrun que parasse de emitir a linha "URL: "
+# matava o gate MUDO, sem rotulo nenhum. A guarda de rc abaixo tira a morte muda; a
+# guarda de nao-vacuidade logo depois e obrigatoria porque, sem ela, duas URLs vazias
+# se comparariam IGUAIS e o cenario emitiria "OK" sobre medicao nenhuma.
 run_install "TRACKFW_VERSION=7.3.0"
-URL_BARE=$(grep '^URL: ' <<<"$OUT")
+URL_BARE=$({ grep '^URL: ' <<<"$OUT" || true; })
 DEST_BARE=$(sed -n 's/^DEST: //p' <<<"$OUT")
 run_install "TRACKFW_VERSION=v7.3.0"
-URL_PREFIXED=$(grep '^URL: ' <<<"$OUT")
+URL_PREFIXED=$({ grep '^URL: ' <<<"$OUT" || true; })
 DEST_PREFIXED=$(sed -n 's/^DEST: //p' <<<"$OUT")
+if [ -z "$URL_BARE" ] || [ -z "$URL_PREFIXED" ]; then
+  echo "FAIL [install-version-pin/ac5-same-asset]: o seam de dryrun nao emitiu linha 'URL: ' — medicao vacua, nao comparacao" >&2
+  echo "  bare:      [$URL_BARE]" >&2
+  echo "  prefixed:  [$URL_PREFIXED]" >&2
+  echo "  output do ultimo run_install: $OUT" >&2
+  exit 1
+fi
 if [ "$URL_BARE" != "$URL_PREFIXED" ]; then
   echo "FAIL [install-version-pin/ac5-same-asset]: AC5 violado — '7.3.0' e 'v7.3.0' compuseram URLs diferentes" >&2
   echo "  bare:      $URL_BARE" >&2
   echo "  prefixed:  $URL_PREFIXED" >&2
   exit 1
 fi
-if [ "${DEST_BARE##*/}" != "${DEST_PREFIXED##*/}" ]; then
+# ML-2J: `sed -n` sem casar sai 0 — nao ha rc para propagar, logo a guarda de rc do ML-2I
+# e inutil AQUI por construcao; o unico discriminante possivel e o CONTEUDO. Sem esta
+# guarda, um seam de dryrun que parasse de emitir a linha "DEST: " deixaria as duas
+# capturas VAZIAS, elas comparariam IGUAIS e o cenario emitiria "OK" sobre medicao
+# nenhuma. A guarda incide sobre o BASENAME — a expressao efetivamente comparada abaixo —
+# e nao sobre a captura crua: um DEST terminado em "/" tem captura nao-vazia e basename
+# vazio, e e o basename que decide o veredito.
+DEST_BARE_BASE="${DEST_BARE##*/}"
+DEST_PREFIXED_BASE="${DEST_PREFIXED##*/}"
+if [ -z "$DEST_BARE_BASE" ] || [ -z "$DEST_PREFIXED_BASE" ]; then
+  echo "FAIL [install-version-pin/ac5-same-asset]: o seam de dryrun nao emitiu basename utilizavel na linha 'DEST: ' — medicao vacua, nao comparacao" >&2
+  echo "  bare:      [$DEST_BARE] basename [$DEST_BARE_BASE]" >&2
+  echo "  prefixed:  [$DEST_PREFIXED] basename [$DEST_PREFIXED_BASE]" >&2
+  echo "  output do ultimo run_install: $OUT" >&2
+  exit 1
+fi
+if [ "$DEST_BARE_BASE" != "$DEST_PREFIXED_BASE" ]; then
   echo "FAIL [install-version-pin/ac5-same-asset]: AC5 violado — '7.3.0' e 'v7.3.0' compuseram basenames de DEST diferentes" >&2
   echo "  bare:      $DEST_BARE" >&2
   echo "  prefixed:  $DEST_PREFIXED" >&2
@@ -242,19 +270,38 @@ pass_pinned "pinned-prerelease-rc-v"         "v8.0.0-rc2"  "v8.0.0-rc2"   "8.0.0
 pass_pinned "pinned-prerelease-beta"         "v8.0.0-beta1" "v8.0.0-beta1" "8.0.0-beta1"
 
 # AC5-pre: bare e prefixed com prerelease devem baixar o mesmo asset
+# ML-2I: mesma causa e mesmo par de guardas do cenario ac5-same-asset acima.
 run_install "TRACKFW_VERSION=8.0.0-rc2"
-URL_PRE_BARE=$(grep '^URL: ' <<<"$OUT")
+URL_PRE_BARE=$({ grep '^URL: ' <<<"$OUT" || true; })
 DEST_PRE_BARE=$(sed -n 's/^DEST: //p' <<<"$OUT")
 run_install "TRACKFW_VERSION=v8.0.0-rc2"
-URL_PRE_PREFIXED=$(grep '^URL: ' <<<"$OUT")
+URL_PRE_PREFIXED=$({ grep '^URL: ' <<<"$OUT" || true; })
 DEST_PRE_PREFIXED=$(sed -n 's/^DEST: //p' <<<"$OUT")
+if [ -z "$URL_PRE_BARE" ] || [ -z "$URL_PRE_PREFIXED" ]; then
+  echo "FAIL [install-version-pin/ac5-prerelease-same-asset]: o seam de dryrun nao emitiu linha 'URL: ' — medicao vacua, nao comparacao" >&2
+  echo "  bare:      [$URL_PRE_BARE]" >&2
+  echo "  prefixed:  [$URL_PRE_PREFIXED]" >&2
+  echo "  output do ultimo run_install: $OUT" >&2
+  exit 1
+fi
 if [ "$URL_PRE_BARE" != "$URL_PRE_PREFIXED" ]; then
   echo "FAIL [install-version-pin/ac5-prerelease-same-asset]: '8.0.0-rc2' e 'v8.0.0-rc2' compuseram URLs diferentes" >&2
   echo "  bare:      $URL_PRE_BARE" >&2
   echo "  prefixed:  $URL_PRE_PREFIXED" >&2
   exit 1
 fi
-if [ "${DEST_PRE_BARE##*/}" != "${DEST_PRE_PREFIXED##*/}" ]; then
+# ML-2J: mesma causa e mesma guarda do cenario ac5-same-asset acima — o `sed -n` nao tem
+# rc para propagar e dois DEST vazios comparariam iguais, emitindo "OK" vacuo.
+DEST_PRE_BARE_BASE="${DEST_PRE_BARE##*/}"
+DEST_PRE_PREFIXED_BASE="${DEST_PRE_PREFIXED##*/}"
+if [ -z "$DEST_PRE_BARE_BASE" ] || [ -z "$DEST_PRE_PREFIXED_BASE" ]; then
+  echo "FAIL [install-version-pin/ac5-prerelease-same-asset]: o seam de dryrun nao emitiu basename utilizavel na linha 'DEST: ' — medicao vacua, nao comparacao" >&2
+  echo "  bare:      [$DEST_PRE_BARE] basename [$DEST_PRE_BARE_BASE]" >&2
+  echo "  prefixed:  [$DEST_PRE_PREFIXED] basename [$DEST_PRE_PREFIXED_BASE]" >&2
+  echo "  output do ultimo run_install: $OUT" >&2
+  exit 1
+fi
+if [ "$DEST_PRE_BARE_BASE" != "$DEST_PRE_PREFIXED_BASE" ]; then
   echo "FAIL [install-version-pin/ac5-prerelease-same-asset]: '8.0.0-rc2' e 'v8.0.0-rc2' compuseram basenames de DEST diferentes" >&2
   echo "  bare:      $DEST_PRE_BARE" >&2
   echo "  prefixed:  $DEST_PRE_PREFIXED" >&2

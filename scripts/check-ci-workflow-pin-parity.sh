@@ -227,7 +227,12 @@ check_checkout_pin() {
 check_gate_producer_no_install() {
   local file=$1
   local stripped
-  stripped=$(grep -v '^[[:space:]]*#' "$file")
+  # ML-2I: o rc do grep sozinho (sem cano) mata o script sob `set -e`. Um template
+  # composto SO de linhas de comentario e um estado alcancavel e o grep -v sai 1 ali.
+  # Nao casar e resultado valido da medicao: `stripped` vazio simplesmente nao contem
+  # o padrao proibido, e a checagem seguinte re-le "$file" (nao `stripped`), entao um
+  # template todo-comentario continua reprovando com mensagem propria.
+  stripped=$({ grep -v '^[[:space:]]*#' "$file" || true; })
   if echo "$stripped" | grep -qE 'install\.sh[[:space:]]*\|[[:space:]]*sh'; then
     echo "template de produtor (gate) contém 'install.sh | sh' — deve compilar do fonte"
     return 1

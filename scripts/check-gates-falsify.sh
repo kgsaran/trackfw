@@ -33,6 +33,67 @@ ROOT_DIR=${TRACKFW_ROOT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/trackfw-falsify.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 
+# --- Denúncia de morte súbita do chunk (ML-2A, alcance corrigido no ML-2E;
+# REQ-2026-09-23-a-apuracao-do-censo-morre-no-shard-limpo) --------------------
+#
+# Medido em docs/seguranca/2026-09-23-censo-chunk-morto.md: um shard do censo de
+# Windows morreu com chunk_rc!=0 e NÃO emitiu nem CHUNK_COMPLETE nem a linha
+# "N cenário(s) reprovaram" — o `set -e` acima mata o processo ANTES do epílogo
+# que gen-falsify-chunks.py anexa. O log parou na última linha viva, sem uma
+# palavra sobre onde ou por quê.
+#
+# 🔴 POR QUE ISTO VIVE NO PREÂMBULO (ML-2E): o ML-2A instalou este trap dentro do
+# bloco do cenário de não-mutação (o `git add -A` que motivou a investigação).
+# gen-falsify-chunks.py copia para TODO chunk apenas o preâmbulo real
+# (`lines[:prelude_end]`) mais os segmentos de suporte; o corpo de um cenário vai
+# só para o chunk que o recebeu. Consequência MEDIDA em 2026-09-24, gerando com
+# N=4/8/12/16/60: em toda partição exatamente 1 chunk continha o trap, e a
+# partir de N=12 o sítio que matou o chunk_0 do censo (o `grep … | wc -l` do
+# Cenário 69) caiu num chunk SEM trap. A cobertura era função da partição — em
+# N=8 os dois blocos coincidiam no chunk_0 e o defeito ficava invisível.
+# Instalado aqui, o trap está em 100% dos chunks por construção, qualquer N.
+#
+# Por que ERR e não EXIT: a linha imediatamente acima instala
+# `trap 'rm -rf "$WORK"' EXIT` e um segundo trap de EXIT o SUBSTITUIRIA, vazando
+# o diretório temporário a cada execução. ERR é um slot livre e, sob `set -e`,
+# dispara exatamente quando o shell está prestes a abortar. 🔴 Não trocar.
+#
+# Por que NÃO `set -E` (errtrace): sem ele o trap não é herdado por funções nem
+# por subshells — e isso é deliberado. Os laços de medição rodam cada gate num
+# subshell cuja saída vai para um "$_log" reimpresso com `sed`; com errtrace,
+# toda falha ESPERADA de gate escreveria CHUNK_ABORT dentro desse log, poluindo
+# diagnóstico legítimo. A cobertura resultante é a de comandos de topo de
+# script, que é onde vivem os sítios medidos. 🔴 Não acrescentar.
+#
+# Alcance declarado: instalado na primeira dezena de linhas do preâmbulo, cobre
+# o script inteiro e todo chunk gerado, do início ao fim — NÃO cobre falha
+# ocorrida DENTRO de função ou subshell (consequência direta de não usar
+# errtrace, acima). O prefixo CHUNK_ABORT é inerte para todos os consumidores:
+# run-gates-falsify-shard.sh colhe rótulos por
+# `^(OK|FAIL|PROOF)[[:space:]]+\[falsify/`, e o censo conta `^OK`/`^FAIL`.
+__falsify_abort_report() {
+  local _abort_rc="$1" _abort_line="$2" _abort_cmd="$3"
+  # 🔴 ML-2E: o trap de ERR dispara MESMO com `set +e` — medido em bash 5.3:
+  # dentro do handler, `$-` vale `huB` (sem `e`) nas regiões que desligam o
+  # errexit de propósito, e `ehuB` fora delas. Este script usa `set +e` … `set -e`
+  # em dezenas de blocos para capturar a saída de um comando que DEVE falhar
+  # (ex.: `s68dup_out=$(… trackfw validate 2>&1)` do Cenário 68). Sem esta
+  # guarda, o trap no preâmbulo imprimia `CHUNK_ABORT` para cada um deles —
+  # medido: 2 falsos positivos no chunk_3 de N=8, num chunk que terminou rc=0
+  # com 36 OK e 0 FAIL. `CHUNK_ABORT` afirma "o shell vai abortar agora"; com
+  # errexit desligado isso é FALSO, e diagnóstico que mente é pior que silêncio.
+  # (Este falso positivo já existia antes do ML-2E, latente: qualquer chunk que
+  # recebesse o Cenário 18 ANTES do 68 o produzia.)
+  case "$-" in
+    *e*) ;;
+    *)   return 0 ;;
+  esac
+  echo "CHUNK_ABORT rc=${_abort_rc} line=${_abort_line} src=${BASH_SOURCE[0]:-?} cmd=${_abort_cmd}" >&2
+  echo "CHUNK_ABORT: o shell abortou por 'set -e' antes do epílogo do chunk — nenhum CHUNK_COMPLETE e nenhuma linha 'N cenário(s) reprovaram' serão emitidos. A linha acima é o sítio e o rc; a ausência de rótulos abaixo dela é consequência, não causa." >&2
+}
+trap '__falsify_abort_rc=$?; __falsify_abort_report "$__falsify_abort_rc" "$LINENO" "$BASH_COMMAND"' ERR
+
+
 # $HOME sintético e isolado por padrão para o script INTEIRO — nunca o real. Sem isto, qualquer
 # cenário que rode `trackfw validate` (ou qualquer comando que passe por Validate()/
 # ValidateTagged()) sem controlar $HOME explicitamente enxerga o escopo GLOBAL de guards de quem
@@ -240,7 +301,13 @@ FALSIFY_SUCCESS_TALLY="$WORK/success-count"
 # Ao remover cenários legitimamente (consolidação, renomeação), atualize
 # este valor no mesmo commit que remove os cenários. Sem esse passo o piso
 # fica pessimista e o gate começará a reprovar em execuções limpas.
-FALSIFY_SUCCESS_FLOOR=210
+# ML-2L (2026-09-24): +5 — o Cenário 199 ganhou 5 asserções (S x2, R, T x2) ao
+# tornar a guarda de obsolescência da classe 6 falsificável com a tabela vazia.
+# Reconciliado ARITMETICAMENTE, uma vez: 227 + 5. O piso é um MÍNIMO e já estava
+# conservador (os Cenários 198/199 entraram nesta branch sem bump), então o
+# incremento não pode avermelhar uma execução limpa. A contagem absoluta sai do
+# `make quality` do arquiteto, não daqui.
+FALSIFY_SUCCESS_FLOOR=232
 if [[ "$TRACKFW_FALSIFY_ENUMERATE" == "1" ]]; then
   : > "$FALSIFY_ENUM_TALLY"
   echo "[falsify/enumerate] modo de enumeração ATIVO (TRACKFW_FALSIFY_ENUMERATE=1, default=0) -- reprovações são contadas e a execução continua para o próximo cenário; o exit code final permanece != 0 se qualquer cenário reprovar. Ferramenta de diagnóstico -- não usada por make quality/parity." >&2
@@ -1555,23 +1622,93 @@ mkdir -p "$_MUTATION_COPY"
 cp -R "$ROOT_DIR/." "$_MUTATION_COPY/"
 rm -rf "$_MUTATION_COPY/.git"
 git -C "$_MUTATION_COPY" init -q
-git -C "$_MUTATION_COPY" -c user.email="mutation-check@localhost" \
-    -c user.name="Mutation Check" add -A 2>/dev/null
-git -C "$_MUTATION_COPY" -c user.email="mutation-check@localhost" \
-    -c user.name="Mutation Check" commit -q -m "mutation-check-baseline"
 
-# Verifica worktree limpo (deve ser sempre por construção — guarda de robustez interna)
-_initial_porcelain=$(git -C "$_MUTATION_COPY" status --porcelain)
-if [[ -n "$_initial_porcelain" ]]; then
-  echo "FAIL [falsify/no-repo-mutation]: worktree de medição não ficou limpo após commit de baseline — erro interno:" >&2
-  echo "$_initial_porcelain" >&2
+# ML-2E (causa medida no ML-2B): `core.longpaths=true` no repositório da CÓPIA.
+# Na VM Windows 11 (Git 2.55.0.windows.3) o `git add -A` abaixo saía rc=128 com
+# `error: open("internal/roadmapdoc/testdata/corpus/…"): Filename too long`:
+# o corpus de internal/roadmapdoc/testdata/ tem caminhos relativos de 196, 195 e
+# 190 chars e o prefixo de $WORK/mutation-clean empurra o total acima do
+# MAX_PATH=260 da API Win32 que o git nativo usa. Falsificado nas duas direções
+# no MESMO comprimento de caminho: longpaths=false -> rc=128, longpaths=true ->
+# rc=0. 🔴 A falha é MARGINAL e o nome sorteado pelo `mktemp` decide: um sítio
+# que passa hoje falha amanhã com um sufixo mais longo.
+#
+# 🔴 Por que CONFIG no repositório da cópia, e não `-c core.longpaths=true` em
+# cada invocação: (a) cobre os 11 `git -C "$_MUTATION_COPY" …` desta região sem
+# depender de enumeração que envelhece — um sítio acrescentado amanhã já nasce
+# coberto; (b) cobre o que a enumeração NÃO alcança — o laço abaixo roda cada
+# gate candidato com `cd "$_MUTATION_COPY"`, e pelo menos um deles chama `git`
+# contra a CÓPIA, onde nenhum `-c` nosso chegaria: verificado em
+# check-git-branch-guard-hook-schema.sh, `derive_sites()`, que faz
+# `git -C "$scan_root" rev-parse --is-inside-work-tree` e `git ls-files` com
+# `scan_root` resolvido a partir do cwd. (Os outros 4 candidatos que citam `git`
+# — check-barrier.sh, check-release-tag-parity.sh, check-usage-silencing.sh,
+# check-roadmap-barrier-contract.sh — montam fixtures próprios em tmp; não foi
+# medido que toquem a cópia, e a justificativa (a) já sustenta a decisão.)
+# Escrever config em .git/ não altera a árvore, então a medição de OID de
+# conteúdo deste cenário continua válida.
+# 🔴 Os nomes do corpus de testdata NÃO podem ser encurtados: são o dado sob
+# teste. A opção do git é o único ponto de acerto.
+# Inerte fora do Windows (verificado: rc=0 e sem aviso no git 2.54.0 do macOS).
+git -C "$_MUTATION_COPY" config core.longpaths true
+
+# ML-2A: o `2>/dev/null` que estava aqui descartava o ruído esperado do
+# `git add -A` (avisos de fim-de-linha, sobretudo no Windows) — e, junto com
+# ele, o stderr do caminho de FALHA. Um dos dois sítios de `add -A` desta região
+# é o candidato sobrevivente da análise do ML-0A para o rc=128 do shard 1, e o
+# descarte é justamente o motivo de o log não ter dito nada. Agora o stderr é
+# capturado em arquivo: no caminho de sucesso continua invisível (nada muda para
+# quem já passa), no caminho de falha é impresso junto do rc.
+# 🔴 A linha de rc é INCONDICIONAL: a assinatura medida é rc=128 com stderr
+# VAZIO — condicionar o diagnóstico à existência de stderr não diria nada
+# exatamente no caso que motivou este ML.
+_mut_add_stderr="$WORK/mutation-check.add.stderr"
+_mut_baseline_ok=1
+_mut_add_rc=0
+git -C "$_MUTATION_COPY" -c user.email="mutation-check@localhost" \
+    -c user.name="Mutation Check" add -A 2>"$_mut_add_stderr" || _mut_add_rc=$?
+if [[ "$_mut_add_rc" -ne 0 ]]; then
+  echo "FAIL [falsify/no-repo-mutation]: 'git add -A' do baseline saiu com rc=$_mut_add_rc em '$_MUTATION_COPY' (check-gates-falsify.sh, add -A de baseline)" >&2
+  if [[ -s "$_mut_add_stderr" ]]; then
+    sed 's/^/    /' "$_mut_add_stderr" >&2
+  else
+    echo "    (stderr vazio — a falha não escreveu nada; o rc acima é todo o diagnóstico que o git deu)" >&2
+  fi
+  _mut_baseline_ok=0
   falsify_fail_point
 fi
 
-# OID de referência da árvore limpa (conteúdo, não apenas status)
-_baseline_oid=$(git -C "$_MUTATION_COPY" write-tree)
+# ML-2A: o preparo do baseline só continua se o `add -A` acima tiver funcionado.
+# Sem esta guarda, em modo de enumeração (falsify_fail_point RETORNA em vez de
+# sair) o `commit` seguinte falharia com rc=1 ("nothing added to commit"),
+# derrubando o chunk inteiro por um efeito da falha já reportada — que é
+# exatamente o padrão "a morte engole o resto do chunk" que este ML existe para
+# eliminar. No modo normal nada muda: falsify_fail_point já saiu com 1.
+_baseline_oid=""
+if [[ "$_mut_baseline_ok" == "1" ]]; then
+  git -C "$_MUTATION_COPY" -c user.email="mutation-check@localhost" \
+      -c user.name="Mutation Check" commit -q -m "mutation-check-baseline"
+
+  # Verifica worktree limpo (deve ser sempre por construção — guarda de robustez interna)
+  _initial_porcelain=$(git -C "$_MUTATION_COPY" status --porcelain)
+  if [[ -n "$_initial_porcelain" ]]; then
+    echo "FAIL [falsify/no-repo-mutation]: worktree de medição não ficou limpo após commit de baseline — erro interno:" >&2
+    echo "$_initial_porcelain" >&2
+    falsify_fail_point
+  fi
+
+  # OID de referência da árvore limpa (conteúdo, não apenas status)
+  _baseline_oid=$(git -C "$_MUTATION_COPY" write-tree)
+fi
 
 for _gate_path in "${_MUTATION_CANDIDATES[@]}"; do
+  # ML-2A: se o baseline não se formou, a comparação de OID abaixo é sem
+  # sentido — ela reportaria cada gate como MUTADOR (falso positivo) e repetiria
+  # a mesma falha de `add -A` uma vez por gate. Em modo de enumeração
+  # (TRACKFW_FALSIFY_ENUMERATE=1, o do censo de Windows) falsify_fail_point
+  # RETORNA em vez de sair, então sem este break o log ganharia dezenas de FAILs
+  # derivados de uma causa só. Uma reprovação, nomeada, basta.
+  [[ "$_mut_baseline_ok" == "1" ]] || break
   _bname="$(basename "$_gate_path")"
   _log="$WORK/mutation-check.$_bname.log"
 
@@ -1580,7 +1717,20 @@ for _gate_path in "${_MUTATION_CANDIDATES[@]}"; do
     >"$_log" 2>&1 || _gate_exit=$?
 
   # Computa OID após execução — git add -A captura modificações e arquivos novos não gitignored
-  git -C "$_MUTATION_COPY" add -A 2>/dev/null
+  # ML-2A: mesmo tratamento do sítio de baseline acima — ruído de sucesso segue
+  # descartado, falha passa a dizer rc e sítio (o gate em curso está nomeado).
+  _mut_add_rc=0
+  git -C "$_MUTATION_COPY" add -A 2>"$_mut_add_stderr" || _mut_add_rc=$?
+  if [[ "$_mut_add_rc" -ne 0 ]]; then
+    echo "FAIL [falsify/no-repo-mutation]: 'git add -A' após o gate $_bname saiu com rc=$_mut_add_rc em '$_MUTATION_COPY' (check-gates-falsify.sh, add -A do laço de medição)" >&2
+    if [[ -s "$_mut_add_stderr" ]]; then
+      sed 's/^/    /' "$_mut_add_stderr" >&2
+    else
+      echo "    (stderr vazio — a falha não escreveu nada; o rc acima é todo o diagnóstico que o git deu)" >&2
+    fi
+    falsify_fail_point
+    continue
+  fi
   _after_oid=$(git -C "$_MUTATION_COPY" write-tree)
 
   if [[ "$_after_oid" != "$_baseline_oid" ]]; then
@@ -1599,8 +1749,13 @@ for _gate_path in "${_MUTATION_CANDIDATES[@]}"; do
   fi
 done
 
-falsify_count_success
-echo "OK   [falsify/no-repo-mutation]"
+# ML-2A: o OK só é emitido se o baseline se formou. Sem esta guarda, o caminho
+# em que o `add -A` falha em modo de enumeração imprimiria um FAIL e, logo
+# abaixo, um OK contraditório para o mesmo rótulo.
+if [[ "$_mut_baseline_ok" == "1" ]]; then
+  falsify_count_success
+  echo "OK   [falsify/no-repo-mutation]"
+fi
 
 # ---------------------------------------------------------------------------
 # Cenário 19 — check-barrier.sh: o gate de heading-malformada-after-target
@@ -2275,18 +2430,21 @@ S34_APOLO_UNDECLARED='agent namespace "apolo" exists in roadmap_dir but is not d
 # de apolo PRESENTE é obrigatória aqui: prova que o validate rodou, varreu o
 # disco e a regra disparou de verdade, só não para o namespace declarado.
 s34_validate_go_out=$(cd "$S34_PROJECT" && "$T27_GO_BIN" validate 2>&1; true)
+_falsify_arm_fail_2376=0
 if ! grep -qF "$S34_APOLO_UNDECLARED" <<<"$s34_validate_go_out"; then
   echo "FAIL [falsify/config-unindented-agents/go/agent-namespace-undeclared-baseline]: apolo (só-disco) deveria estar 'não declarado' no ciclo LIMPO e não está — validate pode não ter rodado (cenário vácuo)" >&2
   echo "  output: $(printf '%q' "$s34_validate_go_out")" >&2
   falsify_fail_point
+  _falsify_arm_fail_2376=1
 fi
 if grep -qF "$S34_ZEUS_UNDECLARED" <<<"$s34_validate_go_out"; then
   echo "FAIL [falsify/config-unindented-agents/go/agent-namespace-undeclared-baseline]: zeus (declarado em agents:) já aparece como não-declarado no ciclo LIMPO — o cenário seria vácuo" >&2
   echo "  output: $(printf '%q' "$s34_validate_go_out")" >&2
   falsify_fail_point
+elif [[ "$_falsify_arm_fail_2376" -eq 0 ]]; then
+  falsify_count_success
+  echo "OK   [falsify/config-unindented-agents/go/agent-namespace-undeclared-baseline]"
 fi
-falsify_count_success
-echo "OK   [falsify/config-unindented-agents/go/agent-namespace-undeclared-baseline]"
 
 # --- braço de detecção: Go deixa de atribuir cfg.Agents a partir da lista --
 # lida (RETARGET — ver comentário no topo do Cenário 34: isListItem/
@@ -2484,9 +2642,10 @@ for pair in "go:$s35_validate_go_out"; do
     echo "FAIL [falsify/config-inline-comma-in-quotes/$runtime/agent-namespace-undeclared-baseline]: obi ou 'ka, tsu' (declarados em agents:) já aparecem como não-declarados no ciclo LIMPO — o cenário seria vácuo" >&2
     echo "  output: $(printf '%q' "$out")" >&2
     falsify_fail_point
+  else
+    falsify_count_success
+    echo "OK   [falsify/config-inline-comma-in-quotes/$runtime/agent-namespace-undeclared-baseline]"
   fi
-  falsify_count_success
-  echo "OK   [falsify/config-inline-comma-in-quotes/$runtime/agent-namespace-undeclared-baseline]"
 done
 
 # --- braço de detecção: Go deixa de atribuir cfg.Agents a partir da lista --
@@ -3065,10 +3224,12 @@ set +e
 s47ok_out=$(cd "$T47_OK" && "$ROOT_DIR/bin/trackfw" validate 2>&1)
 s47ok_status=$?
 set -e
+_falsify_arm_fail_3168=0
 if [[ $s47ok_status -ne 0 ]]; then
   echo "FAIL [falsify/credential-guard-hook-resolvable/baseline]: árvore íntegra (script presente e executável) deveria passar, saiu com $s47ok_status" >&2
   echo "  output: $s47ok_out" >&2
   falsify_fail_point
+  _falsify_arm_fail_3168=1
 fi
 # Nota: o modo texto do `validate` (exercitado aqui) nunca imprime o nome
 # interno da regra ("credential_guard_hook_resolvable") — só a mensagem. Só
@@ -3081,9 +3242,10 @@ if grep -qF "$S47_MSG_MISSING" <<<"$s47ok_out"; then
   echo "FAIL [falsify/credential-guard-hook-resolvable/baseline]: script presente e executável mas a regra disparou mesmo assim" >&2
   echo "  output: $s47ok_out" >&2
   falsify_fail_point
+elif [[ "$_falsify_arm_fail_3168" -eq 0 ]]; then
+  falsify_count_success
+  echo "OK   [falsify/credential-guard-hook-resolvable/baseline]"
 fi
-falsify_count_success
-echo "OK   [falsify/credential-guard-hook-resolvable/baseline]"
 
 # --- braço detecção: script ausente -> validate acusa esta regra -----------
 T47_MISSING="$WORK/s47-script-missing"
@@ -3183,18 +3345,21 @@ set +e
 s49ok_out=$(cd "$T49_OK" && "$ROOT_DIR/bin/trackfw" validate 2>&1)
 s49ok_status=$?
 set -e
+_falsify_arm_fail_3287=0
 if [[ $s49ok_status -ne 0 ]]; then
   echo "FAIL [falsify/credential-guard-script-integrity/baseline]: árvore íntegra (script byte-idêntico ao template) deveria passar, saiu com $s49ok_status" >&2
   echo "  output: $s49ok_out" >&2
   falsify_fail_point
+  _falsify_arm_fail_3287=1
 fi
 if grep -qF "$S49_MSG" <<<"$s49ok_out"; then
   echo "FAIL [falsify/credential-guard-script-integrity/baseline]: script íntegro mas a regra disparou mesmo assim" >&2
   echo "  output: $s49ok_out" >&2
   falsify_fail_point
+elif [[ "$_falsify_arm_fail_3287" -eq 0 ]]; then
+  falsify_count_success
+  echo "OK   [falsify/credential-guard-script-integrity/baseline]"
 fi
-falsify_count_success
-echo "OK   [falsify/credential-guard-script-integrity/baseline]"
 
 # --- braço detecção: script corrompido -> validate acusa esta regra --------
 T49_BAD="$WORK/s49-script-corrupted"
@@ -3318,18 +3483,21 @@ set +e
 s50ok_out=$(cd "$T50_OK" && "$ROOT_DIR/bin/trackfw" validate 2>&1)
 s50ok_status=$?
 set -e
+_falsify_arm_fail_3423=0
 if [[ $s50ok_status -ne 0 ]]; then
   echo "FAIL [falsify/credential-guard-mode-downgrade/baseline]: disco == HEAD (mode: block) deveria passar, saiu com $s50ok_status" >&2
   echo "  output: $s50ok_out" >&2
   falsify_fail_point
+  _falsify_arm_fail_3423=1
 fi
 if grep -qF "$S50_MSG" <<<"$s50ok_out"; then
   echo "FAIL [falsify/credential-guard-mode-downgrade/baseline]: disco == HEAD mas a regra disparou mesmo assim" >&2
   echo "  output: $s50ok_out" >&2
   falsify_fail_point
+elif [[ "$_falsify_arm_fail_3423" -eq 0 ]]; then
+  falsify_count_success
+  echo "OK   [falsify/credential-guard-mode-downgrade/baseline]"
 fi
-falsify_count_success
-echo "OK   [falsify/credential-guard-mode-downgrade/baseline]"
 
 # --- braço detecção: disco diverge do HEAD (mode: warn, não commitado) -----
 T50_BAD="$WORK/s50-mode-downgraded"
@@ -3522,23 +3690,27 @@ set +e
 s52_out=$(cd "$T52" && "$ROOT_DIR/bin/trackfw" validate 2>&1)
 s52_status=$?
 set -e
+_falsify_arm_fail_3628=0
 if [[ $s52_status -eq 0 ]]; then
   echo "FAIL [falsify/credential-guard-baseline-carveout]: baseline listando a violação de credential-guard deveria continuar reprovando (carve-out), saiu com 0" >&2
   echo "  output: $s52_out" >&2
   falsify_fail_point
+  _falsify_arm_fail_3628=1
 fi
 if ! grep -qF "$S50_MSG" <<<"$s52_out"; then
   echo "FAIL [falsify/credential-guard-baseline-carveout]: violação de credential-guard listada no baseline foi suprimida — carve-out não está funcionando" >&2
   echo "  output: $s52_out" >&2
   falsify_fail_point
+  _falsify_arm_fail_3628=1
 fi
 if grep -qF "$S52_FILENAME_MSG" <<<"$s52_out"; then
   echo "FAIL [falsify/credential-guard-baseline-carveout]: violação NÃO-guard (filename_uniqueness) listada no MESMO baseline não foi suprimida — o formato do baseline não está funcionando neste fixture (prova vácua: a linha acima passaria mesmo com um baseline mal-formado)" >&2
   echo "  output: $s52_out" >&2
   falsify_fail_point
+elif [[ "$_falsify_arm_fail_3628" -eq 0 ]]; then
+  falsify_count_success
+  echo "OK   [falsify/credential-guard-baseline-carveout]: guarda reportada apesar do baseline, não-guarda suprimida pelo MESMO baseline"
 fi
-falsify_count_success
-echo "OK   [falsify/credential-guard-baseline-carveout]: guarda reportada apesar do baseline, não-guarda suprimida pelo MESMO baseline"
 
 # ---------------------------------------------------------------------------
 # Cenário 53 — internal/validator: NÃO-REGRESSÃO — a regra "zero delta" do
@@ -3739,9 +3911,20 @@ if [[ $s54_raw_status -eq 0 ]] && grep -qF "mode: block" <<<"$s54_raw_out"; then
   echo "FAIL [falsify/credential-guard-git-env-bypass/attack-inert]: GIT_DIR/GIT_WORK_TREE NÃO desviaram um \`git -C\` cru para o repositório-isca — o vetor de ataque em si está inerte neste ambiente, a prova abaixo não provaria nada" >&2
   echo "  output: $s54_raw_out" >&2
   falsify_fail_point
+else
+  # ML-2D: `falsify_count_success` + `echo OK` ficam no ramo `else`, NUNCA em
+  # sequência depois do `fi`. Motivo medido: em TRACKFW_FALSIFY_ENUMERATE=1 --
+  # o modo do censo de Windows (`windows-census.yml`, `continue-on-error: true`,
+  # apuração POR RÓTULO) -- `falsify_fail_point` devolve `return 0` e a execução
+  # continua; a emissão incondicional imprimia `OK [falsify/...]` logo após o
+  # `FAIL` do MESMO braço. O agregado via o rótulo de sucesso presente para um
+  # controle que acabara de reprovar. É o mesmo defeito que o comentário do
+  # `falsify_fail_point` (:265-274) já descreve para os helpers e que os blocos
+  # inline não tinham. Em modo normal o `exit 1` já impedia o OK -- a mudança é
+  # neutra ali e discriminante no censo.
+  falsify_count_success
+  echo "OK   [falsify/credential-guard-git-env-bypass/redirect-attack-is-real]: GIT_DIR/GIT_WORK_TREE realmente desviam um \`git -C\` cru (saiu $s54_raw_status, sem 'mode: block' do HEAD real) — confirma que o vetor é genuíno, não teatro"
 fi
-falsify_count_success
-echo "OK   [falsify/credential-guard-git-env-bypass/redirect-attack-is-real]: GIT_DIR/GIT_WORK_TREE realmente desviam um \`git -C\` cru (saiu $s54_raw_status, sem 'mode: block' do HEAD real) — confirma que o vetor é genuíno, não teatro"
 
 set +e
 s54_rawcfg_out=$(GIT_CONFIG_COUNT=abc git -C "$T54" rev-parse --is-inside-work-tree 2>&1)
@@ -3751,9 +3934,11 @@ if [[ $s54_rawcfg_status -eq 0 ]]; then
   echo "FAIL [falsify/credential-guard-git-env-bypass/config-attack-inert]: GIT_CONFIG_COUNT=abc NÃO derrubou um \`git -C\` cru — o vetor de falha induzida está inerte neste ambiente, a prova abaixo não provaria nada" >&2
   echo "  output: $s54_rawcfg_out" >&2
   falsify_fail_point
+else
+  # ML-2D: sucesso no ramo `else` -- mesma razão do braço acima.
+  falsify_count_success
+  echo "OK   [falsify/credential-guard-git-env-bypass/config-attack-is-real]: GIT_CONFIG_COUNT=abc realmente derruba um \`git -C\` cru (saiu $s54_rawcfg_status) — confirma que o vetor é genuíno"
 fi
-falsify_count_success
-echo "OK   [falsify/credential-guard-git-env-bypass/config-attack-is-real]: GIT_CONFIG_COUNT=abc realmente derruba um \`git -C\` cru (saiu $s54_rawcfg_status) — confirma que o vetor é genuíno"
 
 # Braço de detecção 1/2 — REDIRECIONAMENTO: mesmo GIT_DIR/GIT_WORK_TREE do
 # repositório-isca acima, agora contra o binário trackfw. gitCommand()
@@ -3793,18 +3978,28 @@ set +e
 s54wt_ok_out=$(cd "$T54_WT_LINKED" && "$ROOT_DIR/bin/trackfw" validate 2>&1)
 s54wt_ok_status=$?
 set -e
+# ML-2D: braço de DUAS checagens com UM rótulo de sucesso. Usa flag, não
+# `elif`: em TRACKFW_FALSIFY_ENUMERATE=1 as duas checagens precisam continuar
+# emitindo o próprio diagnóstico (o `elif` engoliria a segunda quando a
+# primeira reprovasse). A flag só decide a EMISSÃO DO SUCESSO -- que agora é
+# condicional, em vez de incondicional depois do `fi`.
+s54wt_bad=0
 if [[ $s54wt_ok_status -ne 0 ]]; then
   echo "FAIL [falsify/credential-guard-git-env-bypass/worktree-baseline]: worktree vinculada com disco == HEAD (mode: block) deveria passar, saiu com $s54wt_ok_status" >&2
   echo "  output: $s54wt_ok_out" >&2
   falsify_fail_point
+  s54wt_bad=1
 fi
 if grep -qF "$S50_MSG" <<<"$s54wt_ok_out"; then
   echo "FAIL [falsify/credential-guard-git-env-bypass/worktree-baseline]: worktree vinculada com disco == HEAD, mas a regra disparou mesmo assim" >&2
   echo "  output: $s54wt_ok_out" >&2
   falsify_fail_point
+  s54wt_bad=1
 fi
-falsify_count_success
-echo "OK   [falsify/credential-guard-git-env-bypass/worktree-legitimate-baseline]"
+if [[ $s54wt_bad -eq 0 ]]; then
+  falsify_count_success
+  echo "OK   [falsify/credential-guard-git-env-bypass/worktree-legitimate-baseline]"
+fi
 
 s50_yaml_content warn > "$T54_WT_LINKED/trackfw.yaml"
 assert_fails_with "credential-guard-git-env-bypass/worktree-legitimate-detection" \
@@ -4543,17 +4738,19 @@ if grep -qF 'trackfw-git-branch-guard.sh' "$s67b_settings"; then
   echo "FAIL [falsify/git-branch-guard-dedup/baseline-skips-project-entry]: entrada de git-branch-guard presente em $s67b_settings com a fiação global instalada" >&2
   cat "$s67b_settings" >&2
   falsify_fail_point
+else
+  falsify_count_success
+  echo "OK   [falsify/git-branch-guard-dedup/baseline-skips-project-entry]"
 fi
-falsify_count_success
-echo "OK   [falsify/git-branch-guard-dedup/baseline-skips-project-entry]"
 
 if ! grep -qF 'trackfw-credential-guard.sh' "$s67b_settings"; then
   echo "FAIL [falsify/git-branch-guard-dedup/baseline-credential-guard-unaffected]: entrada de credential-guard ausente — o skip não deveria afetar o outro guard" >&2
   cat "$s67b_settings" >&2
   falsify_fail_point
+else
+  falsify_count_success
+  echo "OK   [falsify/git-branch-guard-dedup/baseline-credential-guard-unaffected]"
 fi
-falsify_count_success
-echo "OK   [falsify/git-branch-guard-dedup/baseline-credential-guard-unaffected]"
 
 # --- braço 2: reverse-vacuity, $HOME vazio -> entrada de projeto normal ---
 T67_PROJECT_DIR_RV="$WORK/s67-project-reverse-vacuity"
@@ -4577,9 +4774,10 @@ if ! grep -qF 'trackfw-git-branch-guard.sh' "$s67rv_settings"; then
   echo "FAIL [falsify/git-branch-guard-dedup/reverse-vacuity]: entrada de git-branch-guard ausente com \$HOME vazio (sem fiação global) — o skip não deveria acontecer aqui" >&2
   cat "$s67rv_settings" >&2
   falsify_fail_point
+else
+  falsify_count_success
+  echo "OK   [falsify/git-branch-guard-dedup/reverse-vacuity]"
 fi
-falsify_count_success
-echo "OK   [falsify/git-branch-guard-dedup/reverse-vacuity]"
 
 # --- braço 3: detecção — dedup neutralizado, entrada de projeto reaparece ---
 T67_MOD="$WORK/s67-corrupt-go"
@@ -4618,9 +4816,10 @@ if ! grep -qF 'trackfw-git-branch-guard.sh' "$s67d_settings"; then
   echo "FAIL [falsify/git-branch-guard-dedup/detection-catches-regression]: com o dedup neutralizado (sempre 'não instalado'), a entrada de projeto deveria REAPARECER mesmo com a fiação global instalada — não reapareceu" >&2
   cat "$s67d_settings" >&2
   falsify_fail_point
+else
+  falsify_count_success
+  echo "OK   [falsify/git-branch-guard-dedup/detection-catches-regression]"
 fi
-falsify_count_success
-echo "OK   [falsify/git-branch-guard-dedup/detection-catches-regression]"
 
 # --- braço 4 (ML-2C) — tolerância a "//" no comando gravado no config global ---
 # Constrói um HOME sintético com barra dupla EMBUTIDA no meio do caminho
@@ -4656,9 +4855,10 @@ if grep -qF 'trackfw-git-branch-guard.sh' "$s67s_settings"; then
   echo "FAIL [falsify/git-branch-guard-dedup/double-slash-tolerance]: entrada de git-branch-guard presente em $s67s_settings mesmo com // no comando gravado do HOME global — a comparação deveria normalizar antes de comparar" >&2
   cat "$s67s_settings" >&2
   falsify_fail_point
+else
+  falsify_count_success
+  echo "OK   [falsify/git-branch-guard-dedup/double-slash-tolerance]"
 fi
-falsify_count_success
-echo "OK   [falsify/git-branch-guard-dedup/double-slash-tolerance]"
 
 # ---------------------------------------------------------------------------
 # Cenário 68 — internal/validator: "git_branch_guard_script_integrity" (e,
@@ -4717,18 +4917,21 @@ set +e
 s68ok_out=$(cd "$T68_OK" && HOME="$T68_HOME" "$ROOT_DIR/bin/trackfw" validate 2>&1)
 s68ok_status=$?
 set -e
+_falsify_arm_fail_4852=0
 if [[ $s68ok_status -ne 0 ]]; then
   echo "FAIL [falsify/git-branch-guard-global-script-integrity/baseline]: script global íntegro e SEM fiação deveria passar, saiu com $s68ok_status" >&2
   echo "  output: $s68ok_out" >&2
   falsify_fail_point
+  _falsify_arm_fail_4852=1
 fi
 if grep -qF "$S68_MSG" <<<"$s68ok_out"; then
   echo "FAIL [falsify/git-branch-guard-global-script-integrity/baseline]: script global íntegro mas a regra disparou mesmo assim" >&2
   echo "  output: $s68ok_out" >&2
   falsify_fail_point
+elif [[ "$_falsify_arm_fail_4852" -eq 0 ]]; then
+  falsify_count_success
+  echo "OK   [falsify/git-branch-guard-global-script-integrity/baseline]"
 fi
-falsify_count_success
-echo "OK   [falsify/git-branch-guard-global-script-integrity/baseline]"
 
 # --- braço de ausência: $HOME onde NENHUM script foi instalado -> silêncio -
 # (não ter rodado 'trackfw update harness' nesse $HOME é estado legítimo, não
@@ -4743,18 +4946,21 @@ set +e
 s68absent_out=$(cd "$T68_ABSENT" && HOME="$T68_ABSENT_HOME" "$ROOT_DIR/bin/trackfw" validate 2>&1)
 s68absent_status=$?
 set -e
+_falsify_arm_fail_4879=0
 if [[ $s68absent_status -ne 0 ]]; then
   echo "FAIL [falsify/git-branch-guard-global-script-integrity/absent-is-not-a-violation]: script global nunca instalado ($T68_ABSENT_HOME) não pode reprovar validate, saiu com $s68absent_status" >&2
   echo "  output: $s68absent_out" >&2
   falsify_fail_point
+  _falsify_arm_fail_4879=1
 fi
 if grep -qF "$S68_MSG" <<<"$s68absent_out"; then
   echo "FAIL [falsify/git-branch-guard-global-script-integrity/absent-is-not-a-violation]: script global nunca instalado, mas a regra disparou (falso-positivo de ausência)" >&2
   echo "  output: $s68absent_out" >&2
   falsify_fail_point
+elif [[ "$_falsify_arm_fail_4879" -eq 0 ]]; then
+  falsify_count_success
+  echo "OK   [falsify/git-branch-guard-global-script-integrity/absent-is-not-a-violation]"
 fi
-falsify_count_success
-echo "OK   [falsify/git-branch-guard-global-script-integrity/absent-is-not-a-violation]"
 
 # --- braço de detecção: script global corrompido, ZERO config referenciando
 # ele -> validate acusa mesmo assim — o discriminante central deste ML -----
@@ -4809,14 +5015,22 @@ s68_write_project "$T68_DUP" git_branch_guard_script_integrity error
 set +e
 s68dup_out=$(cd "$T68_DUP" && HOME="$T68_DUP_HOME" "$ROOT_DIR/bin/trackfw" validate 2>&1)
 set -e
-s68dup_count=$(grep -oF "$S68_MSG" <<<"$s68dup_out" | wc -l | tr -d ' ')
+# ML-2E: `{ grep … || true; }` — sem a chave, `grep` sem casar sai 1 e o
+# `pipefail` do preâmbulo propaga esse 1 para a substituição inteira, onde o
+# `set -e` MATA O CHUNK nesta linha. Medido em 2026-09-24: foi exatamente assim
+# que o chunk_0 do censo morreu, sem emitir rótulo algum — zero ocorrências, que
+# é o dado que a asserção abaixo quer medir, virava morte do processo. 🔴 NÃO
+# usar `|| echo 0` (é o defeito da Wave 1: `grep -c` já emite e a captura vira
+# $'0\n0') nem `${VAR:-0}` (guarda sobre captura é o padrão que gerou tudo isto).
+s68dup_count=$( { grep -oF "$S68_MSG" <<<"$s68dup_out" || true; } | wc -l | tr -d ' ')
 if [[ "$s68dup_count" -ne 1 ]]; then
   echo "FAIL [falsify/git-branch-guard-global-script-integrity/no-double-report]: esperado exatamente 1 ocorrência da mensagem de integridade (2 configs referenciam o MESMO script), obteve $s68dup_count" >&2
   echo "  output: $s68dup_out" >&2
   falsify_fail_point
+else
+  falsify_count_success
+  echo "OK   [falsify/git-branch-guard-global-script-integrity/no-double-report]"
 fi
-falsify_count_success
-echo "OK   [falsify/git-branch-guard-global-script-integrity/no-double-report]"
 
 # --- braço de não-regressão + não-duplicação (credential-guard): mesmo
 # padrão acima, mas para o guard que HOJE já é verificado via fiação — prova
@@ -4850,14 +5064,22 @@ s68_write_project "$T68_DUP_CG" credential_guard_script_integrity error
 set +e
 s68dupcg_out=$(cd "$T68_DUP_CG" && HOME="$T68_DUP_HOME_CG" "$ROOT_DIR/bin/trackfw" validate 2>&1)
 set -e
-s68dupcg_count=$(grep -oF "$S68_MSG" <<<"$s68dupcg_out" | wc -l | tr -d ' ')
+# ML-2E: `{ grep … || true; }` — sem a chave, `grep` sem casar sai 1 e o
+# `pipefail` do preâmbulo propaga esse 1 para a substituição inteira, onde o
+# `set -e` MATA O CHUNK nesta linha. Medido em 2026-09-24: foi exatamente assim
+# que o chunk_0 do censo morreu, sem emitir rótulo algum — zero ocorrências, que
+# é o dado que a asserção abaixo quer medir, virava morte do processo. 🔴 NÃO
+# usar `|| echo 0` (é o defeito da Wave 1: `grep -c` já emite e a captura vira
+# $'0\n0') nem `${VAR:-0}` (guarda sobre captura é o padrão que gerou tudo isto).
+s68dupcg_count=$( { grep -oF "$S68_MSG" <<<"$s68dupcg_out" || true; } | wc -l | tr -d ' ')
 if [[ "$s68dupcg_count" -ne 1 ]]; then
   echo "FAIL [falsify/credential-guard-global-script-integrity/no-double-report]: esperado exatamente 1 ocorrência (não-regressão + sem duplicar), obteve $s68dupcg_count" >&2
   echo "  output: $s68dupcg_out" >&2
   falsify_fail_point
+else
+  falsify_count_success
+  echo "OK   [falsify/credential-guard-global-script-integrity/no-double-report]"
 fi
-falsify_count_success
-echo "OK   [falsify/credential-guard-global-script-integrity/no-double-report]"
 
 # ---------------------------------------------------------------------------
 # Cenário 69 — internal/validator: "git_branch_guard_hook_resolvable" em
@@ -4910,18 +5132,21 @@ set +e
 s69ok_out=$(cd "$T69_OK" && HOME="$T69_HOME" "$ROOT_DIR/bin/trackfw" validate 2>&1)
 s69ok_status=$?
 set -e
+_falsify_arm_fail_5049=0
 if [[ $s69ok_status -ne 0 ]]; then
   echo "FAIL [falsify/git-branch-guard-global-hook-resolvable/kiro-dedicated-file/baseline]: fiação Kiro íntegra deveria passar, saiu com $s69ok_status" >&2
   echo "  output: $s69ok_out" >&2
   falsify_fail_point
+  _falsify_arm_fail_5049=1
 fi
 if grep -qF 'trackfw-git-branch-guard.json' <<<"$s69ok_out"; then
   echo "FAIL [falsify/git-branch-guard-global-hook-resolvable/kiro-dedicated-file/baseline]: fiação Kiro íntegra mas a regra disparou mesmo assim" >&2
   echo "  output: $s69ok_out" >&2
   falsify_fail_point
+elif [[ "$_falsify_arm_fail_5049" -eq 0 ]]; then
+  falsify_count_success
+  echo "OK   [falsify/git-branch-guard-global-hook-resolvable/kiro-dedicated-file/baseline]"
 fi
-falsify_count_success
-echo "OK   [falsify/git-branch-guard-global-hook-resolvable/kiro-dedicated-file/baseline]"
 
 # --- braço de detecção: script referenciado pelo arquivo DEDICADO do Kiro
 # some do disco -> validate deve acusar, citando o arquivo do Kiro — o
@@ -4952,19 +5177,34 @@ fi
 # ausente, o credential-guard do Kiro (arquivo separado, script intacto)
 # continua em silêncio, E a violation do git-branch-guard aparece exatamente
 # 1 vez (não uma vez por arquivo/guard) -------------------------------------
-s69bad_gbg_count=$(grep -oF 'trackfw-git-branch-guard.json' <<<"$s69bad_out" | wc -l | tr -d ' ')
+# ML-2E: `{ grep … || true; }` — sem a chave, `grep` sem casar sai 1 e o
+# `pipefail` do preâmbulo propaga esse 1 para a substituição inteira, onde o
+# `set -e` MATA O CHUNK nesta linha. Medido em 2026-09-24: foi exatamente assim
+# que o chunk_0 do censo morreu, sem emitir rótulo algum — zero ocorrências, que
+# é o dado que a asserção abaixo quer medir, virava morte do processo. 🔴 NÃO
+# usar `|| echo 0` (é o defeito da Wave 1: `grep -c` já emite e a captura vira
+# $'0\n0') nem `${VAR:-0}` (guarda sobre captura é o padrão que gerou tudo isto).
+s69bad_gbg_count=$( { grep -oF 'trackfw-git-branch-guard.json' <<<"$s69bad_out" || true; } | wc -l | tr -d ' ')
+# ML-2D: duas checagens, um rótulo de sucesso. Flag (não `elif`) para que as
+# duas continuem emitindo diagnóstico em TRACKFW_FALSIFY_ENUMERATE=1; o
+# sucesso passa a ser condicional às duas passarem.
+s69bad_bad=0
 if [[ "$s69bad_gbg_count" -ne 1 ]]; then
   echo "FAIL [falsify/git-branch-guard-global-hook-resolvable/kiro-dedicated-file/no-double-report]: esperado exatamente 1 ocorrência da violation do Kiro, obteve $s69bad_gbg_count" >&2
   echo "  output: $s69bad_out" >&2
   falsify_fail_point
+  s69bad_bad=1
 fi
 if grep -qF 'trackfw-credential-guard.json' <<<"$s69bad_out"; then
   echo "FAIL [falsify/git-branch-guard-global-hook-resolvable/kiro-dedicated-file/no-regression]: credential-guard do Kiro (arquivo intacto) não deveria disparar, mas apareceu na saída" >&2
   echo "  output: $s69bad_out" >&2
   falsify_fail_point
+  s69bad_bad=1
 fi
-falsify_count_success
-echo "OK   [falsify/git-branch-guard-global-hook-resolvable/kiro-dedicated-file/no-double-report-and-no-regression]"
+if [[ $s69bad_bad -eq 0 ]]; then
+  falsify_count_success
+  echo "OK   [falsify/git-branch-guard-global-hook-resolvable/kiro-dedicated-file/no-double-report-and-no-regression]"
+fi
 
 # ---------------------------------------------------------------------------
 # Cenário 74 — scripts/trackfw-git-branch-guard.sh (ML-3A, ROADMAP-2026-08-19-
@@ -5282,9 +5522,10 @@ assert_guard_exit "git-branch-guard/checkout-path/detection-catches-overblock-br
 if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-release-tag-parity.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s75]: check-release-tag-parity.sh failed against the UNMODIFIED Go binary — baseline must be green before the detection arm means anything" >&2
   falsify_fail_point
+else
+  falsify_count_success
+  echo "OK   [falsify/release-tag-parity/success/baseline-clean]"
 fi
-falsify_count_success
-echo "OK   [falsify/release-tag-parity/success/baseline-clean]"
 
 T75C_GO_MOD="$WORK/s75-corrupt-go"
 mkdir -p "$T75C_GO_MOD/cmd" "$T75C_GO_MOD/internal"
@@ -5326,9 +5567,10 @@ assert_fails_with "release-tag-parity/success-lightweight-tag-false-negative" \
 if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-release-tag-parity.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s76]: check-release-tag-parity.sh failed against the UNMODIFIED Go binary — baseline must be green before the detection arm means anything" >&2
   falsify_fail_point
+else
+  falsify_count_success
+  echo "OK   [falsify/release-tag-parity/forge-commit-diverges-update-ref/baseline-clean]"
 fi
-falsify_count_success
-echo "OK   [falsify/release-tag-parity/forge-commit-diverges-update-ref/baseline-clean]"
 
 T76_GO_MOD="$WORK/s76-corrupt-go"
 mkdir -p "$T76_GO_MOD/cmd" "$T76_GO_MOD/internal"
@@ -5673,9 +5915,10 @@ build_go_or_fail "setup-s85-liveness-build" "$T85" "$T85_BIN"
 if ! (cd "$ROOT_DIR" && env GOCACHE="$WORK/go-build-cache" TRACKFW_DISABLE_EXTERNAL_COMMANDS=1 go test ./internal/config/ -run TestParseRulesFromContentWithAgentModels_NoPanic) >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s85-baseline]: go test falhou no código real — prova P4 inválida" >&2
   falsify_fail_point
+else
+  falsify_count_success
+  echo "OK   [falsify/nil-map-init/parse-with-agent-models-nopanic-baseline]"
 fi
-falsify_count_success
-echo "OK   [falsify/nil-map-init/parse-with-agent-models-nopanic-baseline]"
 
 # Braço de detecção: go test panica na cópia corrompida
 assert_fails_with "nil-map-init/parse-missing-causes-panic-on-agent-models" \
@@ -5939,9 +6182,10 @@ build_go_or_fail "setup-s167-build" "$T97" "$T97_BIN"
 if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-barrier.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s167-baseline]: check-barrier.sh ja reprova com o binario real -- prova P4 invalida" >&2
   falsify_fail_point
+else
+  falsify_count_success
+  echo "OK   [falsify/barrier/wave-zero-rejected-again-baseline]"
 fi
-falsify_count_success
-echo "OK   [falsify/barrier/wave-zero-rejected-again-baseline]"
 
 assert_fails_with "barrier/wave-zero-rejected-again-detected" \
   "malformed wave heading" \
@@ -6029,9 +6273,10 @@ build_go_or_fail "setup-s169-build" "$T169" "$T169_BIN"
 if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-agent-models-parity.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s169-baseline]: check-agent-models-parity.sh ja reprova com o binario real -- prova P4 invalida" >&2
   falsify_fail_point
+else
+  falsify_count_success
+  echo "OK   [falsify/global-scope/direction-a-reads-cwd-baseline]"
 fi
-falsify_count_success
-echo "OK   [falsify/global-scope/direction-a-reads-cwd-baseline]"
 
 assert_fails_with "global-scope/direction-a-reads-cwd-detected" \
   "from global pin" \
@@ -6110,9 +6355,10 @@ build_go_or_fail "setup-s171-build" "$T171" "$T171_BIN"
 if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-barrier.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s171-baseline]: check-barrier.sh ja reprova com o binario real -- prova P4 invalida" >&2
   falsify_fail_point
+else
+  falsify_count_success
+  echo "OK   [falsify/ac2-sanitization/direction-a-baseline]"
 fi
-falsify_count_success
-echo "OK   [falsify/ac2-sanitization/direction-a-baseline]"
 
 assert_fails_with "ac2-sanitization/direction-a-detected" \
   "expected exit non-0 for forged title" \
@@ -6190,9 +6436,10 @@ build_go_or_fail "setup-s175-build" "$T175" "$T175_BIN"
 if ! GO_BIN="$FALSIFY_GO_BIN" bash "$ROOT_DIR/scripts/check-update-parity.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s175-baseline]: check-update-parity.sh ja reprova com o binario real -- prova P4 invalida" >&2
   falsify_fail_point
+else
+  falsify_count_success
+  echo "OK   [falsify/sandbox-gap-e/direction-a-baseline]"
 fi
-falsify_count_success
-echo "OK   [falsify/sandbox-gap-e/direction-a-baseline]"
 
 assert_fails_with "sandbox-gap-e/direction-a-detected" \
   "sandbox/gap-e/dry-vs-real" \
@@ -6368,18 +6615,21 @@ chmod 0644 "$T181_SCRIPT"
 (cd "$T181_DET_PROJ" && HOME="$T181_DET_HOME" "$T181_BIN" \
   update --targets validate-script) >/dev/null
 # Verifica: conteudo restaurado (apply() rodou)
+_falsify_arm_fail_6523=0
 if ! cmp -s "$WORK/s181-canonical.sh" "$T181_SCRIPT"; then
   echo "FAIL [falsify/scaffold-update-chmod-removed/direction-c-detected]: binario sabotado nao restaurou o conteudo -- apply() nao rodou" >&2
   falsify_fail_point
+  _falsify_arm_fail_6523=1
 fi
 # Verifica: bit ainda ausente (Chmod nao rodou)
 if test -x "$T181_SCRIPT"; then
   echo "FAIL [falsify/scaffold-update-chmod-removed/direction-c-detected]: binario sabotado restaurou o bit de execucao -- os.Chmod nao foi removido" >&2
   ls -la "$T181_SCRIPT" >&2
   falsify_fail_point
+elif [[ "$_falsify_arm_fail_6523" -eq 0 ]]; then
+  falsify_count_success
+  echo "OK   [falsify/scaffold-update-chmod-removed/direction-c-detected]"
 fi
-falsify_count_success
-echo "OK   [falsify/scaffold-update-chmod-removed/direction-c-detected]"
 
 # ---------------------------------------------------------------------------
 # ML-1A-D6write — normalização semver→PEP 440 no nome da wheel (auditoria 2026-09-13)
@@ -6422,9 +6672,10 @@ echo "OK   [falsify/wheel-filename/normalized]: nome normalizado aceito (cenario
 if ! bash "$ROOT_DIR/scripts/check-static-assets.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s184-baseline]: check-static-assets.sh ja reprova com a fonte real -- prova invalida" >&2
   falsify_fail_point
+else
+  falsify_count_success
+  echo "OK   [falsify/static-assets/vacuity-baseline]"
 fi
-falsify_count_success
-echo "OK   [falsify/static-assets/vacuity-baseline]"
 
 # Direcao A: fonte canonica VAZIA -> gate falha
 T184A="$WORK/s184a"
@@ -6464,9 +6715,10 @@ echo "PROOF [falsify/static-assets/vacuity-guard/non-vacuity]: sem a guarda, fon
 if ! bash "$ROOT_DIR/scripts/check-integration-assets.sh" >/dev/null 2>&1; then
   echo "FAIL [falsify/setup-s185-baseline]: check-integration-assets.sh ja reprova com artefatos reais -- prova invalida" >&2
   falsify_fail_point
+else
+  falsify_count_success
+  echo "OK   [falsify/integration-assets/baseline]"
 fi
-falsify_count_success
-echo "OK   [falsify/integration-assets/baseline]"
 
 # Direcao A: catalog.json ausente (dir de assets existe mas sem catalog.json)
 T185A="$WORK/s185a"
@@ -7222,6 +7474,367 @@ assert_fails_with "crlf-normalize/stdout-write-capture" \
   --scan-root "$T197E"
 
 echo "OK   [falsify/crlf-normalize]: 5 braços (A/B/C/D/E) provados"
+
+# ---------------------------------------------------------------------------
+# Cenário 198 — check-emitting-capture-fallback.sh: gate anti-reintrodução da
+#               captura $(cmd ... || echo N) sobre comando que JÁ emite no
+#               caminho de falha (ML-1B, ROADMAP-2026-09-23-a-apuracao-do-censo-
+#               morre-no-shard-limpo...).
+#
+# O defeito: `grep -c` imprime "0" E sai 1 quando não casa nada; o `|| echo 0`
+# acrescenta uma segunda linha, a captura vira $'0\n0' e o $(( )) a jusante
+# quebra. Foi o que matou a apuração do censo de Windows no primeiro shard limpo.
+#
+# Braços POSITIVOS (o gate REPROVA — uma forma coberta por braço, nunca uma só):
+#   A emitting-capture/grep-c-echo          -c isolada + || echo 0
+#   B emitting-capture/grep-ac-echo-quoted  -ac empacotada + 2>/dev/null + || echo "0"
+#   C emitting-capture/grep-long-count      --count (flag longa)
+#   D emitting-capture/grep-c-separate      -a -c separadas + fallback || printf
+#   E emitting-capture/pipeline-grep-c      grep -c no FIM de um pipeline
+#   F emitting-capture/workflow-yml         a MESMA forma dentro de .github/workflows/*.yml
+#                                           — o sítio real do defeito; sem este braço,
+#                                           um erro de glob de .yml seria invisível
+#
+# Braços NEGATIVOS (o gate PASSA — provam que o discriminante é `-c`, não `grep`,
+# e que a forma correta e os sítios (b) legítimos não são reprovados):
+#   G emitting-capture/true-fallback        { grep -ac ... || true; }  (a correção)
+#   H emitting-capture/bare-grep            grep sem -c + || echo 'no model line'
+#                                           (forma real de check-agent-models-parity.sh)
+#   I emitting-capture/wc-and-jq            wc -l < f e jq ... + || echo 0
+#                                           (os sítios (b) reais: não emitem ao falhar)
+#   J emitting-capture/color-flag           grep --color=never + || echo none
+#                                           (o discriminante exige TOKEN INTEIRO de flag:
+#                                            um token que apenas contém a letra `c` não é
+#                                            flag de contagem — sem isso, o gate reprovaria
+#                                            uma invocação legítima de grep)
+#   K emitting-capture/vacuous-scan         corpus abaixo do piso → REPROVA por vacuidade,
+#                                           com diagnóstico DISTINTO do braço de violação
+#
+# Auto-referência: o token `grep` das linhas sintéticas vem da variável $GREPC —
+# a string literal com `grep -c ... || echo` nunca aparece verbatim neste source,
+# que o próprio gate varre (scripts/*.sh).
+# ---------------------------------------------------------------------------
+T198="$WORK/s198"
+mkdir -p "$T198"
+GREPC=grep
+EMIT_GATE="$ROOT_DIR/scripts/check-emitting-capture-fallback.sh"
+
+# mk198 <arm> <formato-printf> [args...] -> cria $T198/<arm>/scripts/check-synth.sh
+mk198() {
+  local arm="$1"; shift
+  local fmt="$1"; shift
+  mkdir -p "$T198/$arm/scripts"
+  printf '#!/usr/bin/env bash\n' > "$T198/$arm/scripts/check-synth.sh"
+  # shellcheck disable=SC2059
+  printf "$fmt" "$@" >> "$T198/$arm/scripts/check-synth.sh"
+}
+
+# --- A: -c isolada ---------------------------------------------------------
+mk198 arm-a 'CNT=$(%s -c ZZZ f.txt || echo 0)\n' "$GREPC"
+assert_fails_with "emitting-capture/grep-c-echo" \
+  "captura com fallback emissor sobre comando que ja emite" \
+  env EMIT_FALLBACK_GATE_MIN_CANDIDATES=1 bash "$EMIT_GATE" --scan-root "$T198/arm-a"
+
+# --- B: -ac empacotada + redirect + aspas ----------------------------------
+mk198 arm-b 'CNT=$(%s -ac '"'"'^FAIL'"'"' "$LOG" 2>/dev/null || echo "0")\n' "$GREPC"
+assert_fails_with "emitting-capture/grep-ac-echo-quoted" \
+  "captura com fallback emissor sobre comando que ja emite" \
+  env EMIT_FALLBACK_GATE_MIN_CANDIDATES=1 bash "$EMIT_GATE" --scan-root "$T198/arm-b"
+
+# --- C: flag longa --count -------------------------------------------------
+mk198 arm-c 'CNT=$(%s --count ZZZ f.txt || echo 0)\n' "$GREPC"
+assert_fails_with "emitting-capture/grep-long-count" \
+  "captura com fallback emissor sobre comando que ja emite" \
+  env EMIT_FALLBACK_GATE_MIN_CANDIDATES=1 bash "$EMIT_GATE" --scan-root "$T198/arm-c"
+
+# --- D: -a -c separadas + fallback printf ----------------------------------
+mk198 arm-d 'CNT=$(%s -a -c ZZZ f.txt || printf '"'"'0\\n'"'"')\n' "$GREPC"
+assert_fails_with "emitting-capture/grep-c-separate" \
+  "captura com fallback emissor sobre comando que ja emite" \
+  env EMIT_FALLBACK_GATE_MIN_CANDIDATES=1 bash "$EMIT_GATE" --scan-root "$T198/arm-d"
+
+# --- E: grep -c no fim de um pipeline --------------------------------------
+mk198 arm-e 'CNT=$(cat f.txt | %s -c ZZZ || echo 0)\n' "$GREPC"
+assert_fails_with "emitting-capture/pipeline-grep-c" \
+  "captura com fallback emissor sobre comando que ja emite" \
+  env EMIT_FALLBACK_GATE_MIN_CANDIDATES=1 bash "$EMIT_GATE" --scan-root "$T198/arm-e"
+
+# --- F: a mesma forma em .github/workflows/*.yml (o sítio real) ------------
+mkdir -p "$T198/arm-f/.github/workflows"
+printf 'jobs:\n  censo:\n    steps:\n      - run: |\n          CNT=$(%s -ac '"'"'^FAIL'"'"' "$LOG" 2>/dev/null || echo 0)\n' \
+  "$GREPC" > "$T198/arm-f/.github/workflows/synth-census.yml"
+assert_fails_with "emitting-capture/workflow-yml" \
+  "captura com fallback emissor sobre comando que ja emite" \
+  env EMIT_FALLBACK_GATE_MIN_CANDIDATES=1 bash "$EMIT_GATE" --scan-root "$T198/arm-f"
+
+# --- G: a forma CORRETA ({ ... || true; }) passa ---------------------------
+mk198 arm-g 'CNT=$( { %s -ac ZZZ f.txt || true; } )\n' "$GREPC"
+assert_succeeds "emitting-capture/true-fallback" \
+  env EMIT_FALLBACK_GATE_MIN_CANDIDATES=1 bash "$EMIT_GATE" --scan-root "$T198/arm-g"
+
+# --- H: grep SEM -c + || echo <mensagem> passa -----------------------------
+mk198 arm-h 'M=$(%s '"'"'model:'"'"' "$f" || echo '"'"'no model line'"'"')\n' "$GREPC"
+assert_succeeds "emitting-capture/bare-grep" \
+  env EMIT_FALLBACK_GATE_MIN_CANDIDATES=1 bash "$EMIT_GATE" --scan-root "$T198/arm-h"
+
+# --- I: os sítios (b) reais (wc -l < f, jq) passam -------------------------
+mk198 arm-i 'N=$(wc -l < "$T" 2>/dev/null || echo 0)\nJ=$(jq '"'"'length'"'"' "$F" 2>/dev/null || echo 0)\n'
+assert_succeeds "emitting-capture/wc-and-jq" \
+  env EMIT_FALLBACK_GATE_MIN_CANDIDATES=2 bash "$EMIT_GATE" --scan-root "$T198/arm-i"
+
+# --- J: --color=never não é flag de contagem -------------------------------
+mk198 arm-j 'M=$(%s --color=never ZZZ f.txt || echo none)\n' "$GREPC"
+assert_succeeds "emitting-capture/color-flag" \
+  env EMIT_FALLBACK_GATE_MIN_CANDIDATES=1 bash "$EMIT_GATE" --scan-root "$T198/arm-j"
+
+# --- K: corpus abaixo do piso → vacuidade, diagnóstico distinto ------------
+assert_fails_with "emitting-capture/vacuous-scan" \
+  "guarda de vacuidade disparou" \
+  env EMIT_FALLBACK_GATE_MIN_CANDIDATES=5 bash "$EMIT_GATE" --scan-root "$T198/arm-g"
+
+echo "OK   [falsify/emitting-capture]: 11 braços (A-K) provados"
+
+# ---------------------------------------------------------------------------
+# Cenário 199 — check-unguarded-capture-rc.sh: gate IRMÃO do 198, para a captura
+#               SEM FALLBACK NENHUM cujo rc PROPAGA (ML-2H, mesma REQ).
+#
+# O 198 exige coexistência de comando emissor E fallback emissor. A forma daqui
+# não tem fallback: `v=$(… grep …)` mata pelo rc do próprio grep, sob `set -e`.
+# Medido em bash 5.3, rc lido de ARQUIVO (nunca depois de cano):
+#     v=$(grep ZZZ f.txt)                    -> rc=1, ALIVE nunca imprime
+#     v=$(cat f.txt | grep ZZZ)              -> rc=1, ALIVE nunca imprime
+#     v=$(cat f.txt | grep ZZZ | head -1)    -> rc=1 (sob pipefail), idem
+#     v=$( { grep ZZZ f.txt || true; } )     -> rc=0, v=[], ALIVE  (a correção)
+#
+# Braços POSITIVOS (o gate REPROVA — uma FORMA por braço):
+#   A unguarded-rc/no-pipe                sem cano nenhum (a forma do ML-2I)
+#   B unguarded-rc/pipeline-final         grep no FIM do cano — `pipefail` irrelevante
+#   C unguarded-rc/pipeline-nonfinal      grep em elo NÃO-FINAL sob `pipefail` (ML-2E/2G)
+#   D unguarded-rc/paren-in-pattern       multi-linha com `(` LITERAL no padrão do grep —
+#                                         sem contagem ciente de aspas, a substituição
+#                                         inteira era ENGOLIDA em silêncio (falso negativo
+#                                         medido em .github/workflows/quality.yml:1254)
+#   E unguarded-rc/workflow-run-block     bloco `run:` com `shell: bash` (pipefail implícito
+#                                         do GitHub Actions) — o sítio REAL do defeito
+#   F unguarded-rc/local-separate-line    🔴 CONTRAPROVA da classe 5: `local` em linha
+#                                         SEPARADA NÃO mascara o rc e DEVE reprovar.
+#                                         Medido: rc=1. Sem este braço, a classe 5 daria
+#                                         veredito certo por razão errada em
+#                                         check-orphan-gates.sh:86,102 (que é classe 4)
+#
+# Braços NEGATIVOS (o gate PASSA — as 6 classes de isenção, uma a uma):
+#   G unguarded-rc/argument-position      classe 1 — rc descartado em posição de argumento
+#   H unguarded-rc/guard-outside-parens   classe 2 — `|| true` DEPOIS do fecha-parênteses
+#   I unguarded-rc/foreign-scope          classe 3 — corpo de `bash -c` com `set -e` e SEM
+#                                         `pipefail`: a opção não atravessa a fronteira
+#   J unguarded-rc/no-errexit             classe 4 — escopo com `set -uo pipefail` só
+#   K unguarded-rc/local-same-line        classe 5 — `local v=$(…)` na MESMA linha
+#   L unguarded-rc/alleged-inline         classe 6 — alegação `# unguarded-capture-rc-allowed:`
+#   M unguarded-rc/correct-form           a correção `{ … || true; }` não é acusada
+#   N unguarded-rc/semantic-family        `command -v`/`find` são CANDIDATOS mas nunca
+#                                         acusados: rc não-zero ali é ambiente inviável ou
+#                                         erro de acesso, não "não casou" (ML-2I §4)
+#
+#   Q unguarded-rc/cond-keyword-not-condition  🔴 `if [ -n "$x" ]; then v=$(grep …)`:
+#                                         a palavra-chave `if` esta no prefixo mas a
+#                                         atribuicao vem DEPOIS do `; then`, logo o rc
+#                                         PROPAGA e o gate DEVE reprovar. Contra-braco do
+#                                         H (que e `if v=$(…); then`, onde o `if` consome
+#                                         o rc de verdade). Sem este braco, "prefixo contem
+#                                         if" vira isencao larga demais
+#
+# Braços de GUARDA (reprovam com diagnóstico DISTINTO do de violação):
+#   O unguarded-rc/vacuous-scan           corpus abaixo do piso
+#   P unguarded-rc/stale-allegation       🔴 alegação da classe 6 que não casa sítio nenhum.
+#                                         Uma alegação que não casa nada é COMENTÁRIO, não
+#                                         afirmação por sítio — e uma guarda que nunca pode
+#                                         reprovar não é guarda. A fixture é INJETADA por
+#                                         UNGUARDED_RC_GATE_ALLEGATIONS_FILE (ML-2L): a tabela
+#                                         ALLEGATIONS, que era a única fixture deste braço,
+#                                         esvaziou no ML-2K e o braço parou de falsificar
+#   S unguarded-rc/live-injected-allegation  contra-braço de P: alegação injetada que CASA
+#                                         sítio isenta e o gate sai 0 ("alegacao viva"). Sem ele,
+#                                         P provaria só que injetar reprova — não que reprova
+#                                         por OBSOLESCÊNCIA
+#   R unguarded-rc/stale-inline-marker    🔴 marcador inline ÓRFÃO (acima de sítio já isento por
+#                                         classe anterior) reprova, com diagnóstico DISTINTO do
+#                                         da tabela. É o que dá à guarda o que examinar na árvore
+#                                         real depois da migração do ML-2K
+#   T unguarded-rc/allegation-guard-idle  🔴 "não há o que verificar" ≠ "não fui exercitada":
+#                                         tabela vazia + zero marcadores + zero isenções de
+#                                         classe 6 → NOTA e rc=0. Reprovar aqui quebraria o gate
+#                                         em toda árvore sem classe 6. O par P/T mede os dois
+#                                         casos. (O terceiro caso — isenção concedida com zero
+#                                         alegações examinadas — reprova, e é falsificado por
+#                                         MUTAÇÃO da contabilidade, não por braço: ver cabeçalho
+#                                         de check-unguarded-capture-rc.sh e o relatório do ML-2L)
+#
+# Auto-referência: todo `grep` sintético vem de $UGREP, e cada formato começa com
+# `\n` antes do `VAR=`, então o próprio gate (que varre scripts/*.sh) não lê
+# nenhuma destas linhas como sítio em posição de atribuição.
+# ---------------------------------------------------------------------------
+T199="$WORK/s199"
+mkdir -p "$T199"
+UGREP=grep
+URC_GATE="$ROOT_DIR/scripts/check-unguarded-capture-rc.sh"
+URC_VIOL="captura sem guarda cujo rc propaga"
+
+# mk199 <arm> <formato-printf> [args...] -> cria $T199/<arm>/scripts/check-synth.sh
+mk199() {
+  local arm="$1"; shift
+  local fmt="$1"; shift
+  mkdir -p "$T199/$arm/scripts"
+  printf '#!/usr/bin/env bash\n' > "$T199/$arm/scripts/check-synth.sh"
+  # shellcheck disable=SC2059
+  printf "$fmt" "$@" >> "$T199/$arm/scripts/check-synth.sh"
+}
+
+# --- A: sem cano -----------------------------------------------------------
+mk199 arm-a 'set -euo pipefail\nv=$(%s PAT f.txt)\nif [ -z "$v" ]; then echo vazio; fi\n' "$UGREP"
+assert_fails_with "unguarded-rc/no-pipe" "$URC_VIOL" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 bash "$URC_GATE" --scan-root "$T199/arm-a"
+
+# --- B: grep no FIM do cano ------------------------------------------------
+mk199 arm-b 'set -euo pipefail\nv=$(cat f.txt | %s PAT)\nif [ -z "$v" ]; then echo vazio; fi\n' "$UGREP"
+assert_fails_with "unguarded-rc/pipeline-final" "$URC_VIOL" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 bash "$URC_GATE" --scan-root "$T199/arm-b"
+
+# --- C: grep em elo NÃO-FINAL sob pipefail ---------------------------------
+mk199 arm-c 'set -euo pipefail\nv=$(cat f.txt | %s PAT | head -1)\nif [ -z "$v" ]; then echo vazio; fi\n' "$UGREP"
+assert_fails_with "unguarded-rc/pipeline-nonfinal" "$URC_VIOL" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 bash "$URC_GATE" --scan-root "$T199/arm-c"
+
+# --- D: multi-linha com parêntese LITERAL no padrão ------------------------
+mk199 arm-d 'set -euo pipefail\nv=$(%s -n "os\\.Symlink(" \\\n   a.go \\\n   b.go)\necho "$v"\n' "$UGREP"
+assert_fails_with "unguarded-rc/paren-in-pattern" "$URC_VIOL" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 bash "$URC_GATE" --scan-root "$T199/arm-d"
+
+# --- E: bloco run: de workflow com shell: bash -----------------------------
+mkdir -p "$T199/arm-e/.github/workflows"
+printf 'jobs:\n  j:\n    steps:\n      - name: x\n        shell: bash\n        run: |\n          ID=$(echo "$U" | %s -oE "[0-9]+$" | head -1)\n          echo "$ID"\n' \
+  "$UGREP" > "$T199/arm-e/.github/workflows/synth.yml"
+assert_fails_with "unguarded-rc/workflow-run-block" "$URC_VIOL" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 bash "$URC_GATE" --scan-root "$T199/arm-e"
+
+# --- F: CONTRAPROVA da classe 5 — `local` em linha SEPARADA reprova --------
+mk199 arm-f 'set -euo pipefail\nf() {\n  local v\n  v=$(%s PAT f.txt)\n  echo "$v"\n}\n' "$UGREP"
+assert_fails_with "unguarded-rc/local-separate-line" "$URC_VIOL" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 bash "$URC_GATE" --scan-root "$T199/arm-f"
+
+# --- G: classe 1 — posição de argumento ------------------------------------
+mk199 arm-g 'set -euo pipefail\nfail "rotulo" "$(%s -n PAT f.txt | head -5)"\n' "$UGREP"
+assert_succeeds "unguarded-rc/argument-position" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 bash "$URC_GATE" --scan-root "$T199/arm-g"
+
+# --- H: classe 2 — guarda depois do fecha-parênteses -----------------------
+mk199 arm-h 'set -euo pipefail\nrv=$(%s PAT f.txt | sed -n 1p) || true\n' "$UGREP"
+assert_succeeds "unguarded-rc/guard-outside-parens" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 bash "$URC_GATE" --scan-root "$T199/arm-h"
+
+# --- I: classe 3 — `pipefail` não atravessa a fronteira do escopo ----------
+mk199 arm-i 'set -euo pipefail\nSCRIPT=%s\n  set -e\n  v=$(%s%s -m1 "^req: " arq | sed -E "s/x/y/")\n'"'"'\nbash -c "$SCRIPT"\n' "'" "g" "rep"
+assert_succeeds "unguarded-rc/foreign-scope" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 bash "$URC_GATE" --scan-root "$T199/arm-i"
+
+# --- J: classe 4 — escopo sem `set -e` -------------------------------------
+mk199 arm-j 'set -uo pipefail\nv=$(%s PAT f.txt)\n' "$UGREP"
+assert_succeeds "unguarded-rc/no-errexit" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 bash "$URC_GATE" --scan-root "$T199/arm-j"
+
+# --- K: classe 5 — `local v=$(…)` na MESMA linha ---------------------------
+mk199 arm-k 'set -euo pipefail\nf() {\n  local v=$(%s PAT f.txt)\n  echo "$v"\n}\n' "$UGREP"
+assert_succeeds "unguarded-rc/local-same-line" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 bash "$URC_GATE" --scan-root "$T199/arm-k"
+
+# --- L: classe 6 — alegação inline -----------------------------------------
+mk199 arm-l 'set -euo pipefail\n# unguarded-capture-rc-allowed: o laco anterior ja validou o casamento com grep -qF e encerra com exit 1\nv=$(%s PAT f.txt)\n' "$UGREP"
+assert_succeeds "unguarded-rc/alleged-inline" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 bash "$URC_GATE" --scan-root "$T199/arm-l"
+
+# --- M: a forma CORRETA não é acusada --------------------------------------
+mk199 arm-m 'set -euo pipefail\nv=$( { %s PAT f.txt || true; } )\nif [ -z "$v" ]; then echo vazio; fi\n' "$UGREP"
+assert_succeeds "unguarded-rc/correct-form" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 bash "$URC_GATE" --scan-root "$T199/arm-m"
+
+# --- N: família semântica (command -v / find) é candidata, nunca acusada ---
+mk199 arm-n 'set -euo pipefail\nA=$(command -v uname)\nB=$(find . -name "*.sh")\n'
+assert_succeeds "unguarded-rc/semantic-family" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=2 bash "$URC_GATE" --scan-root "$T199/arm-n"
+
+# --- O: vacuidade — diagnóstico DISTINTO do de violação --------------------
+assert_fails_with "unguarded-rc/vacuous-scan" \
+  "guarda de vacuidade disparou" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=99 bash "$URC_GATE" --scan-root "$T199/arm-m"
+
+# --- P: alegação obsoleta — a guarda da classe 6 é ela mesma falsificável ---
+# 🔴 A fixture é INJETADA (ML-2L). Até o ML-2K a única fixture deste braço era a
+# tabela ALLEGATIONS de bootstrap do próprio gate: quando o ML-2K migrou as duas
+# entradas para a forma inline (a preferida), a tabela esvaziou, a guarda passou
+# a iterar ZERO e a imprimir verde, e este braço deixou de falsificar — medido,
+# rc=0 onde ele espera reprovação. Guarda que só tem teste enquanto sobra dado
+# real é falsificável por ACIDENTE; a fixture injetável a torna falsificável por
+# CONSTRUÇÃO, com a tabela vazia.
+mkdir -p "$T199/fixtures"
+cat > "$T199/fixtures/stale.txt" <<'EOF'
+# entrada sintetica: nenhum sitio com esta (basename, variavel) existe na arvore
+check-synth.sh|variavel_que_nao_existe|razao sintetica do braco P
+EOF
+assert_fails_with "unguarded-rc/stale-allegation" \
+  "alegacao obsoleta" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 UNGUARDED_RC_GATE_FORCE_ALLEGATION_GUARD=1 \
+  UNGUARDED_RC_GATE_ALLEGATIONS_FILE="$T199/fixtures/stale.txt" \
+  bash "$URC_GATE" --scan-root "$T199/arm-m"
+
+# --- S: contra-braço de P — alegação injetada que CASA sítio NÃO reprova -----
+# Sem ele, P provaria apenas que injetar alegação reprova, não que reprova por
+# OBSOLESCÊNCIA. arm-a é a violação crua (`v=$(grep PAT f.txt)`): a alegação
+# casa (check-synth.sh, v), isenta o sítio na classe 6 e o gate sai 0.
+cat > "$T199/fixtures/live.txt" <<'EOF'
+check-synth.sh|v|o laco anterior ja validou o casamento e a saida nao enche o pipe
+EOF
+assert_succeeds "unguarded-rc/live-injected-allegation" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 UNGUARDED_RC_GATE_FORCE_ALLEGATION_GUARD=1 \
+  UNGUARDED_RC_GATE_ALLEGATIONS_FILE="$T199/fixtures/live.txt" \
+  bash "$URC_GATE" --scan-root "$T199/arm-a"
+assert_output_contains "unguarded-rc/live-injected-allegation/diag" \
+  "alegacao viva" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 UNGUARDED_RC_GATE_FORCE_ALLEGATION_GUARD=1 \
+  UNGUARDED_RC_GATE_ALLEGATIONS_FILE="$T199/fixtures/live.txt" \
+  bash "$URC_GATE" --scan-root "$T199/arm-a"
+
+# --- R: marcador inline ÓRFÃO reprova ---------------------------------------
+# O marcador está acima de um sítio JÁ isento por classe anterior (a forma
+# correta `{ … || true; }`): alguém corrigiu o sítio e esqueceu o marcador. A
+# alegação afirma sobre sítio que não precisa dela — obsoleta por definição, e
+# com diagnóstico DISTINTO do da tabela.
+mk199 arm-r 'set -euo pipefail\n# unguarded-capture-rc-allowed: razao que sobrou de um sitio ja corrigido\nv=$( { %s PAT f.txt || true; } )\n' "$UGREP"
+assert_fails_with "unguarded-rc/stale-inline-marker" \
+  "alegacao inline obsoleta" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 UNGUARDED_RC_GATE_FORCE_ALLEGATION_GUARD=1 \
+  bash "$URC_GATE" --scan-root "$T199/arm-r"
+
+# --- T: "nada a verificar" NÃO é reprovação, e é DISTINGUÍVEL de "não fui ----
+#        exercitada" -------------------------------------------------------
+# Mesma árvore de P, SEM fixture: tabela vazia, nenhum marcador, ZERO isenções
+# de classe 6 concedidas. Não há afirmação que possa envelhecer, logo o gate
+# segue utilizável (reprovar aqui o quebraria em toda árvore sem classe 6). O
+# par P/T é a medição dos DOIS casos que o ML-2L exige distinguir.
+assert_succeeds "unguarded-rc/allegation-guard-idle" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 UNGUARDED_RC_GATE_FORCE_ALLEGATION_GUARD=1 \
+  bash "$URC_GATE" --scan-root "$T199/arm-m"
+assert_output_contains "unguarded-rc/allegation-guard-idle/diag" \
+  "NOTA nada a verificar" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 UNGUARDED_RC_GATE_FORCE_ALLEGATION_GUARD=1 \
+  bash "$URC_GATE" --scan-root "$T199/arm-m"
+
+# --- Q: `if` no prefixo nao isenta quando ha `; then` entre ele e o NAME= ---
+mk199 arm-q 'set -euo pipefail\nif [ -n "$x" ]; then v=$(%s PAT f.txt); fi\n' "$UGREP"
+assert_fails_with "unguarded-rc/cond-keyword-not-condition" "$URC_VIOL" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 bash "$URC_GATE" --scan-root "$T199/arm-q"
+
+# Sem contagem literal aqui: o número de braços já ficou obsoleto uma vez nesta
+# árvore. A contagem real é o tally medido na execução (FALSIFY_SUCCESS_FLOOR).
+echo "OK   [falsify/unguarded-rc]: braços A-T provados"
 
 # ---------------------------------------------------------------------------
 # ML-2B — fechamento do modo de enumeração. Desligado (default): este bloco

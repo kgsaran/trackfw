@@ -425,6 +425,10 @@ jobs:
   # - Se discreparam, imprimir ambas e parar; não escolher uma
   # - Se algum shard não foi baixado, declarar explicitamente; não apresentar
   #   total parcial como completo
+  # - 🔴 Testemunha de medição (ML-2K): a comparação cruzada só vale se ao menos
+  #   um instrumento viu uma linha de veredito. Log presente mas sem nenhuma
+  #   linha ^OK/^FAIL faz grep e awk concordarem em ZERO sem medir nada — o
+  #   shard é declarado LOG SEM VEREDITO e NÃO entra no total
   # ──────────────────────────────────────────────────────────────────────────
   apuracao:
     runs-on: ubuntu-latest
@@ -462,6 +466,7 @@ jobs:
           TOTAL_FAIL=0
           SHARDS_FOUND=0
           SHARDS_MISSING=""
+          SHARDS_VACUOUS=""
           TABLE_LINES=""
 
           for i in 0 1 2 3 4 5 6 7; do
@@ -475,19 +480,50 @@ jobs:
 
             if [[ -z "$LOG_FILE" ]]; then
               SHARDS_MISSING="$SHARDS_MISSING $i"
-              TABLE_LINES="$TABLE_LINES\n  shard $i: AUSENTE (artefato não baixado)"
+              TABLE_LINES="$TABLE_LINES\n  shard $i: SEM LOG (não encontrado em censo-artifacts/falsify-shard-$i/shard_$i.log nem censo-artifacts/shard_$i.log)"
               continue
             fi
 
-            SHARDS_FOUND=$((SHARDS_FOUND + 1))
-
             # Contagem primária com grep -a para tolerar bytes NUL
-            CNT_FAIL_GREP=$(grep -ac '^FAIL' "$LOG_FILE" 2>/dev/null || echo 0)
-            CNT_OK_GREP=$(grep -ac '^OK' "$LOG_FILE" 2>/dev/null || echo 0)
+            # grep -c JÁ imprime '0' quando não casa nada, e sai 1. Com '|| echo 0'
+            # a captura recebe DUAS linhas ($'0\n0') e todo $(( )) a jusante quebra
+            # com 'arithmetic syntax error', abortando o laço no primeiro shard limpo.
+            # '|| true' não escreve nada: a captura fica com a única linha do grep.
+            CNT_FAIL_GREP=$(grep -ac '^FAIL' "$LOG_FILE" 2>/dev/null || true)
+            CNT_OK_GREP=$(grep -ac '^OK' "$LOG_FILE" 2>/dev/null || true)
 
             # Contagem cruzada com awk
             CNT_FAIL_AWK=$(awk '/^FAIL/{n++} END{print n+0}' "$LOG_FILE")
             CNT_OK_AWK=$(awk '/^OK/{n++} END{print n+0}' "$LOG_FILE")
+
+            # ─── TESTEMUNHA DE MEDIÇÃO — pré-condição da comparação (ML-2K) ──
+            # As quatro capturas acima são DOIS INSTRUMENTOS sobre o MESMO
+            # produtor. Com um log presente mas SEM NENHUMA linha de veredito
+            # (^OK/^FAIL) as quatro valem 0, a comparação abaixo CONCORDA — e
+            # não mediu nada. Pior que o empate vazio: o shard entraria no total
+            # como OK=0 FAIL=0 e a tabela exibiria delta=-110 ▼, isto é, um chunk
+            # MORTO lido como melhora. Concordância só é evidência DEPOIS que ao
+            # menos um instrumento viu uma linha de veredito; a não-vacuidade é
+            # PRÉ-CONDIÇÃO da comparação, nunca resultado dela.
+            # 🔴 Nenhum terceiro contador: a soma vem das quatro capturas que já
+            # existem. Mais instrumentos não curam concordância vácua — foi o que
+            # a causa A desta REQ já ensinou; o que faltava era TESTEMUNHA de que
+            # houve medição.
+            # Cobre num único ramo os dois casos alcançáveis (log de 0 bytes e log
+            # com texto mas sem veredito) porque o discriminante é o mesmo: zero
+            # linhas de veredito. Log ILEGÍVEL não chega aqui — o awk acima não
+            # tem guarda de rc e mata o step sob set -e, morte ruidosa, medida.
+            if (( CNT_FAIL_GREP + CNT_OK_GREP + CNT_FAIL_AWK + CNT_OK_AWK == 0 )); then
+              LOG_BYTES=$(wc -c < "$LOG_FILE" | tr -d '[:space:]')
+              LOG_HEAD=$(head -c 200 "$LOG_FILE" | tr '\n' '~')
+              SHARDS_VACUOUS="$SHARDS_VACUOUS $i"
+              echo "::error::shard $i — LOG SEM VEREDITO (apuração): $LOG_BYTES byte(s), nenhuma linha ^OK nem ^FAIL — grep e awk concordam em zero porque não há o que medir; o shard NÃO entra no total. Início do log: $LOG_HEAD"
+              echo "LOG SEM VEREDITO (apuração) shard $i: $LOG_BYTES bytes, 0 linhas de veredito" >&2
+              TABLE_LINES="$TABLE_LINES\n  shard $i: LOG SEM VEREDITO (apuração) — $LOG_BYTES byte(s), nenhuma linha ^OK/^FAIL; não somado ao total"
+              continue
+            fi
+
+            SHARDS_FOUND=$((SHARDS_FOUND + 1))
 
             if [[ "$CNT_FAIL_GREP" != "$CNT_FAIL_AWK" ]]; then
               echo "::warning::shard $i — discrepância FAIL: grep=$CNT_FAIL_GREP awk=$CNT_FAIL_AWK — usando grep (com -a)"
@@ -524,7 +560,8 @@ jobs:
 
             if [[ $SHARDS_FOUND -lt 8 ]]; then
               echo "⚠️  **TOTAL INCOMPLETO** — apenas $SHARDS_FOUND/8 shards presentes."
-              echo "Shards ausentes:$SHARDS_MISSING"
+              echo "Shards sem log nos dois caminhos procurados:${SHARDS_MISSING:- (nenhum)}"
+              echo "Shards com log SEM VEREDITO (presente, porém sem nenhuma linha \`^OK\`/\`^FAIL\` — chunk morreu antes de emitir):${SHARDS_VACUOUS:- (nenhum)}"
               echo "O total acima subestima FAIL e **não deve ser usado para calcular queda**."
               echo ""
             else
@@ -557,12 +594,23 @@ jobs:
               fi
 
               if [[ -z "$LOG_FILE" ]]; then
-                echo "| $i | — | — | ${BASE_FAIL[$i]} | AUSENTE |"
+                echo "| $i | — | — | ${BASE_FAIL[$i]} | SEM LOG |"
                 continue
               fi
 
-              CNT_FAIL_R=$(grep -ac '^FAIL' "$LOG_FILE" 2>/dev/null || echo 0)
-              CNT_OK_R=$(grep -ac '^OK' "$LOG_FILE" 2>/dev/null || echo 0)
+              # ver nota sobre '|| true' vs '|| echo 0' na apuração acima
+              CNT_FAIL_R=$(grep -ac '^FAIL' "$LOG_FILE" 2>/dev/null || true)
+              CNT_OK_R=$(grep -ac '^OK' "$LOG_FILE" 2>/dev/null || true)
+              # Mesma causa do laço de apuração (ML-2K): log sem nenhuma linha de
+              # veredito produz 0/0, e o delta contra a base viraria "-110 ▼" —
+              # um chunk morto impresso como a MAIOR melhora da tabela. Aqui não
+              # há par (não existe awk neste laço), então a testemunha é só a
+              # soma; o rótulo é DISTINTO do outro sítio de propósito, para que o
+              # log do job diga qual dos dois disparou.
+              if (( CNT_FAIL_R + CNT_OK_R == 0 )); then
+                echo "| $i | — | — | ${BASE_FAIL[$i]} | LOG SEM VEREDITO (tabela) |"
+                continue
+              fi
               DELTA_R=$((CNT_FAIL_R - ${BASE_FAIL[$i]}))
               echo "| $i | $CNT_OK_R | $CNT_FAIL_R | ${BASE_FAIL[$i]} | $DELTA_R |"
             done
@@ -587,6 +635,8 @@ jobs:
             echo "  queda de FAIL:               $QUEDA  (esperado ~442)"
           else
             echo "  TOTAL INCOMPLETO — $SHARDS_FOUND/8 shards. Queda não calculada."
+            echo "    sem log:${SHARDS_MISSING:- (nenhum)}"
+            echo "    log sem veredito:${SHARDS_VACUOUS:- (nenhum)}"
           fi
           echo ""
           echo "  Por shard:"
