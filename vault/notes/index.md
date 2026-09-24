@@ -4,6 +4,8 @@
 
 ## Índice
 
+- [a-correcao-que-melhora-o-gate-esvazia-a-fixture-da-guarda-dele-2026-09-24](a-correcao-que-melhora-o-gate-esvazia-a-fixture-da-guarda-dele-2026-09-24.md) — 🔴 **uma guarda cuja fixture é o dado real é falsificável por ACIDENTE**: o ML-2K migrou as 2 alegações da tabela `ALLEGATIONS` para o marcador inline (forma preferida) e a guarda de obsolescência passou a iterar **zero** e reportar verde — a classe de defeito que o gate existe para atacar, reproduzida pela correção que o melhorava. Conserto: **fixture injetável** por arquivo + **três** estados (exercitada · "nada a verificar" · 🔴 "não fui exercitada" quando há isenção concedida sem alegação examinada) + obsolescência também do **marcador inline**, com **uma** regex ancorada para censo e consumo
+
 - [marcador-de-contencao-pode-ser-falso-guarda-de-dir-nao-cobre-a-folha-2026-09-21](marcador-de-contencao-pode-ser-falso-guarda-de-dir-nao-cobre-a-folha-2026-09-21.md) — `RejectSymlinks(root, dir)` nunca desce abaixo de `dir`: guardar o diretório e escrever o arquivo dentro deixa a folha livre (13 de 18 sítios em `scaffold.go`); e o marcador `write-containment-allowed` **afirma sem provar** — houve um falso, com o gate verde por cima
 
 - [carga-de-cpu-vem-da-suite-de-falsificacao-vezes-agentes-paralelos-2026-09-22](carga-de-cpu-vem-da-suite-de-falsificacao-vezes-agentes-paralelos-2026-09-22.md) — a suíte de falsificação roda 8 chunks em paralelo e compila binário por cenário; somada a N agentes com `go test ./...`, satura 10 CPUs. `gitstatusd` e `redirect_listener` são inocentes (medidos). Use `TRACKFW_FALSIFY_JOBS=4` e exija teste do pacote tocado, não de `./...`

@@ -620,7 +620,7 @@ que já vai tocar arquivo de produto.
 
 ### ML-2K — O cross-check que concorda sem medir
 **Owner:** `ares-tf`
-**Status:** 🔄 Entregue e auditado · ❌ **a árvore está VERMELHA** até o ML-2L — ver abaixo
+**Status:** ✅ Concluído — auditado em 2026-09-24 (a árvore ficou vermelha entre o ML-2K e o ML-2L, de propósito e registrado)
 
 Achado do ML-2J, **no arquivo que dá nome a esta REQ**:
 
@@ -680,15 +680,46 @@ três vezes que a defesa vácua é pior que a ausência de defesa.
 
 ### ML-2L — A guarda de obsolescência precisa da própria fixture
 **Owner:** `artemis-tf` (autor do gate)
-**Status:** ⬜ Pendente — 🔴 **bloqueia a barreira**
+**Status:** ✅ Concluído — auditado em 2026-09-24
 
-- [ ] `check-unguarded-capture-rc.sh` aceita alegação **sintética** (env/fixture) para que a guarda de
-      obsolescência seja exercitável com a tabela **vazia**
-- [ ] O braço **P** do Cenário 199 volta a falsificar — `assert_fails_with "alegacao obsoleta"` reprova
-- [ ] 🔴 A guarda passa a **reprovar quando não há o que verificar**, em vez de reportar sucesso
-      iterando zero — é a mesma testemunha-de-medição que o ML-2K pôs no censo
-- [ ] `make quality` volta a **RC=0** (verificado pelo arquiteto)
-- [ ] 🔴 Uma frase por teste novo
+- [x] `UNGUARDED_RC_GATE_ALLEGATIONS_FILE` — arquivo, mesmo formato da tabela, **anexado** a
+      `ALLEGATIONS` antes da varredura: a fixture percorre o **mesmo** caminho de código, não um ramo
+      paralelo. E a injeção é **sempre anunciada** — fixture silenciosa que muda veredito é a classe
+      de defeito desta REQ
+- [x] **Auditei nas duas direções**: árvore real → rc=0 com `guarda exercitada: 2 alegacao(oes)`;
+      fixture obsoleta → **rc=1**, `FAIL alegacao obsoleta: (check-inexistente.sh, var_fantasma)`
+- [x] 🔴 **Três** estados, não dois — e o terceiro é a testemunha do ML-2K aplicada aqui:
+      *exercitada* · *nada a verificar* (rc inalterado) · ***não fui exercitada*** (isenção concedida
+      com zero alegações examinadas → `FAIL`, contabilidade quebrada)
+- [x] `FALSIFY_SUCCESS_FLOOR` 227 → **232**, reconciliado **uma vez**
+- [x] 🔴 Uma frase por braço novo (6)
+
+**Auditoria do arquiteto (medida por mim):**
+
+```
+árvore real              rc=0   OK guarda exercitada: 2 alegacao(oes) examinada(s)
+fixture obsoleta         rc=1   FAIL alegacao obsoleta: (check-inexistente.sh, var_fantasma) …
+```
+
+🔴 **O que tirou a guarda da vacuidade não foi a fixture — foi estender a obsolescência à forma
+preferida.** Marcador inline que **não isenta sítio nenhum** passou a reprovar, com diagnóstico
+próprio. Por isso a guarda tem **2 alegações reais** para examinar na árvore de hoje, sem fixture
+nenhuma; a fixture serve ao braço P, que precisa provar a reprovação **independentemente** de haver
+dado real.
+
+⚠️ **E a armadilha que ele mediu ao fazer isso:** o padrão frouxo casaria **prosa e código de
+teste** — o próprio `mk199 arm-l 'set -euo pipefail\n# unguarded-capture-rc-allowed: …'` nasceria
+"obsoleto". A âncora `^[[:space:]]*#[[:space:]]*unguarded-capture-rc-allowed:` exclui os dois, e é a
+**mesma** `MARKER_RE` do censo e do consumo — se divergissem, um sítio poderia ser isentado por
+marcador que o censo nunca viu, e o estado 3 reprovaria por razão falsa.
+
+**Decisão dele que eu endosso:** *"nada a verificar"* **não** reprova. Não há afirmação que possa
+envelhecer quando nenhuma isenção foi concedida; reprovar ali quebraria o gate em toda árvore sem
+sítio de classe 6 — inclusive em repositório consumidor. Custo alto, risco protegido nenhum.
+
+**Pendência registrada, não bloqueante:** os 6 rótulos `unguarded-rc/*` entram sem peso calibrado
+(fallback pessimista de 54,2 s). 2 já eram assim desde o ML-2H. Recalibrar exige run completo —
+fica para depois do merge, com o censo funcionando.
 
 ---
 

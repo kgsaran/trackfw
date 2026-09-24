@@ -125,10 +125,51 @@
 #             variável atribuída). Chave por NOME, não por número de linha:
 #             as coordenadas do ML-2E/2G já se deslocaram uma vez (§7 da nota).
 #
-#      🔴 GUARDA DE OBSOLESCÊNCIA: toda entrada de ALLEGATIONS que NÃO casar
-#      nenhum sítio REPROVA o gate. Uma alegação que não casa nada é um
-#      comentário, não uma afirmação por sítio — e é a mesma classe de defeito
-#      do gate que examina zero e reporta sucesso.
+#      🔴 GUARDA DE OBSOLESCÊNCIA (as DUAS formas). Uma alegação que não casa
+#      nada é um comentário, não uma afirmação por sítio:
+#        * entrada de ALLEGATIONS que não casa nenhum sítio -> "alegacao obsoleta"
+#        * marcador inline que não isentou nenhum sítio na classe 6 ->
+#          "alegacao inline obsoleta". 🔴 Um marcador acima de um sítio que já
+#          é isentado por classe ANTERIOR (ex.: alguém corrigiu o sítio para
+#          `{ grep … || true; }` e esqueceu o marcador) é obsoleto POR
+#          DEFINIÇÃO: ele afirma sobre um sítio que não precisa dele.
+#      A forma inline foi adicionada no ML-2L. Sem ela a guarda não teria NADA
+#      a examinar na árvore real depois do ML-2K, que migrou as duas entradas
+#      de bootstrap para inline — e guarda que examina zero e imprime verde é
+#      exatamente a classe de defeito que este gate existe para atacar.
+#
+#      🔴 "NÃO HÁ O QUE VERIFICAR" ≠ "NÃO FUI EXERCITADA" — e a distinção é o
+#      núcleo do ML-2L. Se a guarda examina ZERO alegações:
+#        (a) e NENHUMA isenção de classe 6 foi concedida -> LEGÍTIMO. Nada foi
+#            isentado por alegação, logo não há afirmação que possa envelhecer.
+#            Imprime "NOTA nada a verificar", rc INALTERADO. Reprovar aqui
+#            tornaria o gate inutilizável em qualquer árvore sem sítio de
+#            classe 6 (inclusive as sintéticas do Cenário 199 e um repo
+#            consumidor) — custo alto, risco protegido nenhum.
+#        (b) e ALGUMA isenção de classe 6 FOI concedida -> REPROVA
+#            ("guarda de obsolescencia nao foi exercitada"). Isenção concedida
+#            sem alegação examinada é incoerência de contabilidade: um sítio
+#            passou por afirmação que a guarda não viu. É a TESTEMUNHA DE
+#            MEDIÇÃO do ML-2K aplicada aqui — a existência de algo a medir é
+#            PRÉ-CONDIÇÃO, não resultado.
+#            Por construção (b) não pode ocorrer com a contabilidade íntegra:
+#            toda isenção inline registra uso de um marcador do censo, e toda
+#            isenção por tabela registra hit. É defesa contra REGRESSÃO da
+#            própria contabilidade — o §5 da nota de vault (efeito perdido na
+#            fronteira do subshell) já a quebrou uma vez. Falsificada por
+#            MUTAÇÃO (cópia do gate com o censo neutralizado), não por braço
+#            permanente do Cenário 199; a saída está no relatório do ML-2L.
+#
+#      FIXTURE INJETÁVEL (UNGUARDED_RC_GATE_ALLEGATIONS_FILE):
+#      um arquivo com uma entrada por linha, no MESMO formato da tabela
+#      (`<basename>|<var>|<razao>`; linhas vazias e iniciadas por `#` ignoradas)
+#      é ANEXADO a ALLEGATIONS. Existe para que a guarda seja exercitável com a
+#      tabela VAZIA — sem isso ela só teria teste enquanto sobrasse alegação de
+#      bootstrap, isto é, seria falsificável por ACIDENTE. Arquivo, não variável
+#      com separador: a razão é texto livre e a árvore já pagou por casamento
+#      vácuo com newline embutida (vault, 2026-08-16).
+#      🔴 A injeção é sempre ANUNCIADA na saída — fixture silenciosa que muda o
+#      veredito é a própria classe de defeito desta REQ.
 #
 #      🔴 A razão vai na FORMA ESTREITA. A nota de vault §2 mede por quê: sob
 #      `pipefail`, `grep | head -1` tem um SEGUNDO caminho não-zero — o `head`
@@ -206,9 +247,16 @@
 # ============================================================================
 # STRINGS DE DIAGNÓSTICO (assert_fails_with casa nelas — precisam ficar distintas)
 # ============================================================================
-#   Violação   : "captura sem guarda cujo rc propaga"
-#   Vacuidade  : "guarda de vacuidade disparou"
-#   Alegação   : "alegacao obsoleta"
+#   Violação          : "captura sem guarda cujo rc propaga"
+#   Vacuidade         : "guarda de vacuidade disparou"
+#   Alegação (tabela) : "alegacao obsoleta"
+#   Alegação (inline) : "alegacao inline obsoleta"
+#   Guarda não exercitada : "guarda de obsolescencia nao foi exercitada"
+#   Guarda ociosa (NÃO é falha, e NÃO contém a palavra FAIL):
+#                       "NOTA nada a verificar"
+#   🔴 Nenhuma é subsequência contígua de outra: "alegacao obsoleta" NÃO ocorre
+#   dentro de "alegacao inline obsoleta" (o `inline` se interpõe), e
+#   assert_fails_with casa com `grep -qF`, que é literal e contíguo.
 #
 # AUTO-REFERÊNCIA: este arquivo é excluído da própria varredura (SELF_NAME).
 # As formas acima aparecem aqui só em comentário e em ERE, nunca como código.
@@ -241,6 +289,41 @@ ALLEGATIONS=(
   # fora da fronteira de escrita do ML-2K.
 )
 
+# ---------------------------------------------------------------------------
+# Fixture injetavel (ML-2L) — ver "FIXTURE INJETAVEL" no cabecalho.
+# Anexa entradas sinteticas a ALLEGATIONS, no MESMO formato da tabela, para que
+# a guarda de obsolescencia seja exercitavel com a tabela VAZIA.
+# ---------------------------------------------------------------------------
+ALLEG_FIXTURE="${UNGUARDED_RC_GATE_ALLEGATIONS_FILE:-}"
+ALLEG_INJECTED=0
+if [ -n "$ALLEG_FIXTURE" ]; then
+  if [ ! -f "$ALLEG_FIXTURE" ]; then
+    echo "check-unguarded-capture-rc: UNGUARDED_RC_GATE_ALLEGATIONS_FILE aponta para arquivo inexistente: $ALLEG_FIXTURE" >&2
+    exit 2
+  fi
+  # Sem cano e sem $( ): a leitura alimenta um array global, e a linha seguinte
+  # nao depende de $? (§5 da nota de vault — funcao com efeito em global nao
+  # pode ser chamada dentro de $( )).
+  declare -a __fx=()
+  mapfile -t __fx < "$ALLEG_FIXTURE"
+  for __e in "${__fx[@]}"; do
+    [ -z "${__e//[[:space:]]/}" ] && continue
+    case "$__e" in \#*) continue;; esac
+    ALLEGATIONS+=("$__e")
+    ALLEG_INJECTED=$(( ALLEG_INJECTED + 1 ))
+  done
+  unset __fx __e
+fi
+
+# Marcador inline da classe 6. UMA definicao, usada pelo CENSO e pelo CONSUMO:
+# se as duas divergissem, um sitio poderia ser isentado por marcador que o censo
+# nunca registrou, e a guarda (b) reprovaria por razao falsa.
+# Ancorado em COMENTARIO no inicio da linha — deliberadamente estreito: sem a
+# ancora, `mk199 arm-l '…# unguarded-capture-rc-allowed: …'` de
+# check-gates-falsify.sh (marcador dentro de formato de printf) entraria no
+# censo como marcador real e nasceria "obsoleto". Medido 2026-09-24.
+MARKER_RE='^[[:space:]]*#[[:space:]]*unguarded-capture-rc-allowed:[[:space:]]*(.*)$'
+
 FAIL=0
 TOTAL_CANDIDATES=0
 TOTAL_VIOLATIONS=0
@@ -248,6 +331,10 @@ SCANNED_FILES=0
 declare -a EXEMPT_COUNT_KEYS=()
 declare -A EXEMPT_COUNT=()
 declare -A ALLEGATION_HITS=()
+# Censo de marcadores inline (ML-2L). Chave "<basename>|<lineno-1-based>".
+declare -a INLINE_MARKER_KEYS=()
+declare -A INLINE_MARKER_TEXT=()
+declare -A INLINE_MARKER_USED=()
 
 bump_exempt() {
   local k="$1"
@@ -561,6 +648,20 @@ scan_file() {
 
   ((SCANNED_FILES++))
 
+  # --- censo de marcadores inline da classe 6 (ML-2L) ----------------------
+  # Laco DIRETO no corpo da funcao: nenhum $( ), nenhum estagio de cano — os
+  # arrays globais morreriam na fronteira do subshell (§5 da nota de vault).
+  local mi=0 mkey=""
+  while [ $mi -lt $n ]; do
+    if [[ "${L[$mi]}" =~ $MARKER_RE ]]; then
+      mkey="$fname|$((mi+1))"
+      INLINE_MARKER_KEYS+=("$mkey")
+      INLINE_MARKER_TEXT["$mkey"]="${BASH_REMATCH[1]}"
+      INLINE_MARKER_USED["$mkey"]=0
+    fi
+    ((mi++))
+  done
+
   local i=0 col=0
   while [ $i -lt $n ]; do
     local line="${L[$i]}"
@@ -710,16 +811,28 @@ classify_site() {
 
   # --- classe 6: alegacao por sitio ---------------------------------------
   local marker="" reason=""
+  local marker_key=""
   local p=$((idx-1))
   while [ $p -ge 0 ]; do
     local pl="${__ll[$p]}"
     [ -z "${pl//[[:space:]]/}" ] && { ((p--)); continue; }
-    if [[ "$pl" =~ unguarded-capture-rc-allowed:[[:space:]]*(.*)$ ]]; then marker="${BASH_REMATCH[1]}"; fi
+    # MESMA MARKER_RE do censo — ver a nota na definicao dela.
+    if [[ "$pl" =~ $MARKER_RE ]]; then
+      marker="${BASH_REMATCH[1]}"
+      marker_key="$fname|$((p+1))"
+    fi
     break
   done
-  if [ -n "$marker" ]; then
+  # 🔴 Marcador SEM razao nao isenta: a alegacao exige razao escrita (forma
+  # ESTREITA). Sem razao o sitio VIOLA e o marcador fica sem uso — as duas
+  # reprovacoes sao desejadas, e nenhuma e silenciosa.
+  if [ -n "$marker_key" ] && [ -n "${marker//[[:space:]]/}" ]; then
     tag="exempt/class6-alleged-inline"
     echo "OK   [$tag/$fname:$lineno] alegacao inline ($varname): $marker"
+    # Marca o marcador como CONSUMIDO: so aqui, na classe 6. Marcador acima de
+    # sitio isentado por classe anterior nunca chega neste ponto e permanece
+    # com uso 0 — obsoleto por definicao (ML-2L).
+    INLINE_MARKER_USED["$marker_key"]=1
     bump_exempt "$tag"; return 0
   fi
   if allegation_reason "$fname" "$varname"; then
@@ -785,9 +898,17 @@ fi
 if [ "$SCAN_ROOT" = "$REPO_ROOT" ] || [ "${UNGUARDED_RC_GATE_FORCE_ALLEGATION_GUARD:-0}" = "1" ]; then
   echo ""
   echo "=== guarda de obsolescencia das alegacoes (classe 6) ==="
+  if [ "$ALLEG_INJECTED" -gt 0 ]; then
+    echo "NOTA fixture injetada: $ALLEG_INJECTED alegacao(oes) sintetica(s) de $ALLEG_FIXTURE (UNGUARDED_RC_GATE_ALLEGATIONS_FILE)"
+  fi
+
+  ALLEG_EXAMINED=0
+
+  # --- forma (ii): tabela ALLEGATIONS + fixture injetada -------------------
   for entry in "${ALLEGATIONS[@]}"; do
     ef="${entry%%|*}"; er="${entry#*|}"; ev="${er%%|*}"
     hits="${ALLEGATION_HITS["$ef|$ev"]:-0}"
+    ALLEG_EXAMINED=$(( ALLEG_EXAMINED + 1 ))
     if [ "$hits" -eq 0 ]; then
       echo "FAIL alegacao obsoleta: ($ef, $ev) nao casa nenhum sitio — o sitio foi corrigido, renomeado ou removido; apague a entrada de ALLEGATIONS no mesmo commit"
       FAIL=1
@@ -795,6 +916,31 @@ if [ "$SCAN_ROOT" = "$REPO_ROOT" ] || [ "${UNGUARDED_RC_GATE_FORCE_ALLEGATION_GU
       echo "OK   alegacao viva: ($ef, $ev) casa $hits sitio(s)"
     fi
   done
+
+  # --- forma (i), PREFERIDA: marcadores inline -----------------------------
+  for mkey in "${INLINE_MARKER_KEYS[@]}"; do
+    ALLEG_EXAMINED=$(( ALLEG_EXAMINED + 1 ))
+    if [ "${INLINE_MARKER_USED[$mkey]}" -eq 0 ]; then
+      echo "FAIL alegacao inline obsoleta: marcador em ${mkey%|*}:${mkey##*|} nao isentou nenhum sitio na classe 6 — o sitio foi corrigido, movido, ja e isento por classe anterior, ou o marcador ficou orfao; apague o marcador no mesmo commit"
+      FAIL=1
+    else
+      echo "OK   alegacao inline viva: ${mkey%|*}:${mkey##*|} isentou o sitio logo abaixo"
+    fi
+  done
+
+  # --- testemunha: examinar zero NAO e sucesso -----------------------------
+  # Ver "NAO HA O QUE VERIFICAR != NAO FUI EXERCITADA" no cabecalho.
+  if [ "$ALLEG_EXAMINED" -eq 0 ]; then
+    granted=$(( ${EXEMPT_COUNT["exempt/class6-alleged-inline"]:-0} + ${EXEMPT_COUNT["exempt/class6-alleged-table"]:-0} ))
+    if [ "$granted" -eq 0 ]; then
+      echo "NOTA nada a verificar: tabela ALLEGATIONS vazia, nenhum marcador inline no corpus e ZERO isencoes de classe 6 concedidas — nao ha afirmacao que possa envelhecer. A guarda nao reprova aqui de proposito (ver cabecalho); para exercita-la com a tabela vazia use UNGUARDED_RC_GATE_ALLEGATIONS_FILE."
+    else
+      echo "FAIL guarda de obsolescencia nao foi exercitada: $granted isencao(oes) de classe 6 foram concedidas mas ZERO alegacoes foram examinadas — a contabilidade de alegacoes esta quebrada (sitio isentado por afirmacao que a guarda nao viu)"
+      FAIL=1
+    fi
+  else
+    echo "OK   guarda exercitada: $ALLEG_EXAMINED alegacao(oes) examinada(s)"
+  fi
 fi
 
 echo ""

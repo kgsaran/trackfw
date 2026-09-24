@@ -301,7 +301,13 @@ FALSIFY_SUCCESS_TALLY="$WORK/success-count"
 # Ao remover cenários legitimamente (consolidação, renomeação), atualize
 # este valor no mesmo commit que remove os cenários. Sem esse passo o piso
 # fica pessimista e o gate começará a reprovar em execuções limpas.
-FALSIFY_SUCCESS_FLOOR=227
+# ML-2L (2026-09-24): +5 — o Cenário 199 ganhou 5 asserções (S x2, R, T x2) ao
+# tornar a guarda de obsolescência da classe 6 falsificável com a tabela vazia.
+# Reconciliado ARITMETICAMENTE, uma vez: 227 + 5. O piso é um MÍNIMO e já estava
+# conservador (os Cenários 198/199 entraram nesta branch sem bump), então o
+# incremento não pode avermelhar uma execução limpa. A contagem absoluta sai do
+# `make quality` do arquiteto, não daqui.
+FALSIFY_SUCCESS_FLOOR=232
 if [[ "$TRACKFW_FALSIFY_ENUMERATE" == "1" ]]; then
   : > "$FALSIFY_ENUM_TALLY"
   echo "[falsify/enumerate] modo de enumeração ATIVO (TRACKFW_FALSIFY_ENUMERATE=1, default=0) -- reprovações são contadas e a execução continua para o próximo cenário; o exit code final permanece != 0 se qualquer cenário reprovar. Ferramenta de diagnóstico -- não usada por make quality/parity." >&2
@@ -7642,7 +7648,26 @@ echo "OK   [falsify/emitting-capture]: 11 braços (A-K) provados"
 #   P unguarded-rc/stale-allegation       🔴 alegação da classe 6 que não casa sítio nenhum.
 #                                         Uma alegação que não casa nada é COMENTÁRIO, não
 #                                         afirmação por sítio — e uma guarda que nunca pode
-#                                         reprovar não é guarda
+#                                         reprovar não é guarda. A fixture é INJETADA por
+#                                         UNGUARDED_RC_GATE_ALLEGATIONS_FILE (ML-2L): a tabela
+#                                         ALLEGATIONS, que era a única fixture deste braço,
+#                                         esvaziou no ML-2K e o braço parou de falsificar
+#   S unguarded-rc/live-injected-allegation  contra-braço de P: alegação injetada que CASA
+#                                         sítio isenta e o gate sai 0 ("alegacao viva"). Sem ele,
+#                                         P provaria só que injetar reprova — não que reprova
+#                                         por OBSOLESCÊNCIA
+#   R unguarded-rc/stale-inline-marker    🔴 marcador inline ÓRFÃO (acima de sítio já isento por
+#                                         classe anterior) reprova, com diagnóstico DISTINTO do
+#                                         da tabela. É o que dá à guarda o que examinar na árvore
+#                                         real depois da migração do ML-2K
+#   T unguarded-rc/allegation-guard-idle  🔴 "não há o que verificar" ≠ "não fui exercitada":
+#                                         tabela vazia + zero marcadores + zero isenções de
+#                                         classe 6 → NOTA e rc=0. Reprovar aqui quebraria o gate
+#                                         em toda árvore sem classe 6. O par P/T mede os dois
+#                                         casos. (O terceiro caso — isenção concedida com zero
+#                                         alegações examinadas — reprova, e é falsificado por
+#                                         MUTAÇÃO da contabilidade, não por braço: ver cabeçalho
+#                                         de check-unguarded-capture-rc.sh e o relatório do ML-2L)
 #
 # Auto-referência: todo `grep` sintético vem de $UGREP, e cada formato começa com
 # `\n` antes do `VAR=`, então o próprio gate (que varre scripts/*.sh) não lê
@@ -7742,8 +7767,63 @@ assert_fails_with "unguarded-rc/vacuous-scan" \
   env UNGUARDED_RC_GATE_MIN_CANDIDATES=99 bash "$URC_GATE" --scan-root "$T199/arm-m"
 
 # --- P: alegação obsoleta — a guarda da classe 6 é ela mesma falsificável ---
+# 🔴 A fixture é INJETADA (ML-2L). Até o ML-2K a única fixture deste braço era a
+# tabela ALLEGATIONS de bootstrap do próprio gate: quando o ML-2K migrou as duas
+# entradas para a forma inline (a preferida), a tabela esvaziou, a guarda passou
+# a iterar ZERO e a imprimir verde, e este braço deixou de falsificar — medido,
+# rc=0 onde ele espera reprovação. Guarda que só tem teste enquanto sobra dado
+# real é falsificável por ACIDENTE; a fixture injetável a torna falsificável por
+# CONSTRUÇÃO, com a tabela vazia.
+mkdir -p "$T199/fixtures"
+cat > "$T199/fixtures/stale.txt" <<'EOF'
+# entrada sintetica: nenhum sitio com esta (basename, variavel) existe na arvore
+check-synth.sh|variavel_que_nao_existe|razao sintetica do braco P
+EOF
 assert_fails_with "unguarded-rc/stale-allegation" \
   "alegacao obsoleta" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 UNGUARDED_RC_GATE_FORCE_ALLEGATION_GUARD=1 \
+  UNGUARDED_RC_GATE_ALLEGATIONS_FILE="$T199/fixtures/stale.txt" \
+  bash "$URC_GATE" --scan-root "$T199/arm-m"
+
+# --- S: contra-braço de P — alegação injetada que CASA sítio NÃO reprova -----
+# Sem ele, P provaria apenas que injetar alegação reprova, não que reprova por
+# OBSOLESCÊNCIA. arm-a é a violação crua (`v=$(grep PAT f.txt)`): a alegação
+# casa (check-synth.sh, v), isenta o sítio na classe 6 e o gate sai 0.
+cat > "$T199/fixtures/live.txt" <<'EOF'
+check-synth.sh|v|o laco anterior ja validou o casamento e a saida nao enche o pipe
+EOF
+assert_succeeds "unguarded-rc/live-injected-allegation" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 UNGUARDED_RC_GATE_FORCE_ALLEGATION_GUARD=1 \
+  UNGUARDED_RC_GATE_ALLEGATIONS_FILE="$T199/fixtures/live.txt" \
+  bash "$URC_GATE" --scan-root "$T199/arm-a"
+assert_output_contains "unguarded-rc/live-injected-allegation/diag" \
+  "alegacao viva" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 UNGUARDED_RC_GATE_FORCE_ALLEGATION_GUARD=1 \
+  UNGUARDED_RC_GATE_ALLEGATIONS_FILE="$T199/fixtures/live.txt" \
+  bash "$URC_GATE" --scan-root "$T199/arm-a"
+
+# --- R: marcador inline ÓRFÃO reprova ---------------------------------------
+# O marcador está acima de um sítio JÁ isento por classe anterior (a forma
+# correta `{ … || true; }`): alguém corrigiu o sítio e esqueceu o marcador. A
+# alegação afirma sobre sítio que não precisa dela — obsoleta por definição, e
+# com diagnóstico DISTINTO do da tabela.
+mk199 arm-r 'set -euo pipefail\n# unguarded-capture-rc-allowed: razao que sobrou de um sitio ja corrigido\nv=$( { %s PAT f.txt || true; } )\n' "$UGREP"
+assert_fails_with "unguarded-rc/stale-inline-marker" \
+  "alegacao inline obsoleta" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 UNGUARDED_RC_GATE_FORCE_ALLEGATION_GUARD=1 \
+  bash "$URC_GATE" --scan-root "$T199/arm-r"
+
+# --- T: "nada a verificar" NÃO é reprovação, e é DISTINGUÍVEL de "não fui ----
+#        exercitada" -------------------------------------------------------
+# Mesma árvore de P, SEM fixture: tabela vazia, nenhum marcador, ZERO isenções
+# de classe 6 concedidas. Não há afirmação que possa envelhecer, logo o gate
+# segue utilizável (reprovar aqui o quebraria em toda árvore sem classe 6). O
+# par P/T é a medição dos DOIS casos que o ML-2L exige distinguir.
+assert_succeeds "unguarded-rc/allegation-guard-idle" \
+  env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 UNGUARDED_RC_GATE_FORCE_ALLEGATION_GUARD=1 \
+  bash "$URC_GATE" --scan-root "$T199/arm-m"
+assert_output_contains "unguarded-rc/allegation-guard-idle/diag" \
+  "NOTA nada a verificar" \
   env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 UNGUARDED_RC_GATE_FORCE_ALLEGATION_GUARD=1 \
   bash "$URC_GATE" --scan-root "$T199/arm-m"
 
@@ -7752,7 +7832,9 @@ mk199 arm-q 'set -euo pipefail\nif [ -n "$x" ]; then v=$(%s PAT f.txt); fi\n' "$
 assert_fails_with "unguarded-rc/cond-keyword-not-condition" "$URC_VIOL" \
   env UNGUARDED_RC_GATE_MIN_CANDIDATES=1 bash "$URC_GATE" --scan-root "$T199/arm-q"
 
-echo "OK   [falsify/unguarded-rc]: 17 braços (A-Q) provados"
+# Sem contagem literal aqui: o número de braços já ficou obsoleto uma vez nesta
+# árvore. A contagem real é o tally medido na execução (FALSIFY_SUCCESS_FLOOR).
+echo "OK   [falsify/unguarded-rc]: braços A-T provados"
 
 # ---------------------------------------------------------------------------
 # ML-2B — fechamento do modo de enumeração. Desligado (default): este bloco

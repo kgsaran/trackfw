@@ -39791,3 +39791,53 @@ como `exempt/class6-alleged-inline` — conferido pelas linhas, não pelo rc) ·
 🔴 `make quality` e `go test ./...` **não** rodados. Nota de vault
 `cross-check-de-dois-instrumentos-concorda-em-zero-sem-medir-2026-09-24.md` + índice.
 Status do ML-2K **não** alterado no roadmap (arquivo proibido). Sem commit, sem push.
+
+## 2026-09-24 — `artemis-tf` — ML-2L (Wave 2-bis) — INÍCIO
+
+**Escopo:** a guarda de obsolescência das alegações (classe 6) de
+`scripts/check-unguarded-capture-rc.sh` ficou **vácua** depois do ML-2K: com a tabela `ALLEGATIONS`
+esvaziada (migração para o marcador inline, que é a forma preferida), ela itera **zero** entradas e
+imprime verde sem examinar nada — a mesma classe de defeito que o gate existe para atacar,
+reproduzida pela correção que tornou o gate melhor. Efeito colateral: o **braço P** do Cenário 199
+deixou de falsificar (`assert_fails_with "alegacao obsoleta"` recebe rc=0), porque a tabela era a
+**única fixture** do braço.
+
+**Decisão do arquiteto (opção 1):** fixture injetável no gate, em vez de manter a tabela não-vazia
+por acidente. Arquivos: `scripts/check-unguarded-capture-rc.sh`, `scripts/check-gates-falsify.sh`
+(Cenário 199), `vault/notes/`, este arquivo. Sem branch, sem commit, sem push.
+
+## 2026-09-24 — `artemis-tf` — ML-2L (Wave 2-bis) — FIM (aguardando auditoria)
+
+**Fixture injetável:** `UNGUARDED_RC_GATE_ALLEGATIONS_FILE` — **arquivo**, uma entrada por linha no
+mesmo formato da tabela (`<basename>|<var>|<razão>`), anexado a `ALLEGATIONS` e sempre **anunciado**
+na saída. Arquivo e não variável com separador porque a razão é texto livre num script cheio de
+`printf` e a árvore já pagou por casamento vácuo com newline embutida (vault 2026-08-16).
+
+**Três estados, não dois** (o núcleo do ML): *exercitada* (≥1 alegação examinada — verifica cada
+uma) · *nada a verificar* (zero alegações **e** zero isenções de classe 6 → `NOTA`, rc inalterado;
+reprovar aqui quebraria o gate em toda árvore sem classe 6) · 🔴 *não fui exercitada* (zero
+alegações examinadas **mas** isenção concedida → `FAIL`). O terceiro é a **testemunha de medição**
+do ML-2K e reproduz exatamente o estado que o ML-2K criou.
+
+**O que tirou a guarda da vacuidade na árvore real:** obsolescência passa a valer também para o
+**marcador inline** (marcador que não isentou nenhum sítio na classe 6 → `alegacao inline obsoleta`).
+Censo e consumo usam **uma** `MARKER_RE` ancorada em comentário — sem a âncora, o marcador dentro do
+`printf` de `mk199 arm-l` entraria no censo e nasceria obsoleto.
+
+**Medido (rc lido de arquivo, nunca depois de cano):** gate na árvore real `rc=0`, 108 candidatos,
+0 violações, os 2 sítios em `exempt/class6-alleged-inline`, guarda **exercitada: 2** · braço P
+`rc=1` **com** fixture / `rc=0` **sem** (a fixture é o que o faz falsificar) · braços novos contra o
+gate de `HEAD`: R `rc=0` e P `rc=0` (defeito presente), contra o novo `rc=1` os dois · "não fui
+exercitada" falsificado por **mutação** (censo neutralizado, árvore real): `rc=1`, *2 isenções
+concedidas, ZERO alegações examinadas* · Cenário 199 isolado `rc=0`, **22 asserções** (A–T).
+
+`FALSIFY_SUCCESS_FLOOR` 227 → **232** (+5), reconciliado uma vez. O piso **não** se aplica em chunk
+(`__falsify_timing_mark`), e já estava conservador — o incremento não pode avermelhar run limpo.
+
+**Rodados, rc=0:** `check-orphan-gates.sh` · `check-raw-read-ban.sh` ·
+`check-emitting-capture-fallback.sh` · `check-crlf-normalize-capture.sh` ·
+`check-output-encoding-declared.sh` · `bash -n` nos dois arquivos · `gen-falsify-chunks.py` (8
+chunks, os 6 rótulos novos no chunk 7) · `trackfw validate`. 🔴 `make quality` **não** rodado (é do
+arquiteto). Nota de vault
+`a-correcao-que-melhora-o-gate-esvazia-a-fixture-da-guarda-dele-2026-09-24.md` + índice. Status do
+ML-2L **não** alterado no roadmap (arquivo proibido). Sem commit, sem push.
