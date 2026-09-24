@@ -6661,58 +6661,108 @@ roadmap_dir: docs/roadmaps
 roadmap_namespacing: flat
 '
 
-# Braco de baseline: REAL binary restaura o bit apos ser baixado
-T181_BASE_PROJ="$WORK/s181-base/project"
-T181_BASE_HOME="$WORK/s181-base/home"
-mkdir -p "$T181_BASE_PROJ" "$T181_BASE_HOME/.trackfw"
-printf '%s\n' "$_S181_ID" >"$T181_BASE_HOME/.trackfw/identity.json"
-printf '%s' "$_S181_CFG" >"$T181_BASE_PROJ/trackfw.yaml"
-(cd "$T181_BASE_PROJ" && HOME="$T181_BASE_HOME" "$ROOT_DIR/bin/trackfw" \
-  update --install-missing --targets validate-script) >/dev/null
-chmod 0644 "$T181_BASE_PROJ/scripts/trackfw-validate.sh"
-(cd "$T181_BASE_PROJ" && HOME="$T181_BASE_HOME" "$ROOT_DIR/bin/trackfw" \
-  update --targets validate-script) >/dev/null
-if test -x "$T181_BASE_PROJ/scripts/trackfw-validate.sh"; then
-  falsify_count_success
-  echo "OK   [falsify/scaffold-update-chmod-removed/direction-c-baseline]"
-else
-  echo "FAIL [falsify/scaffold-update-chmod-removed/direction-c-baseline]: binario real nao restaurou o bit de execucao apos update" >&2
-  ls -la "$T181_BASE_PROJ/scripts/trackfw-validate.sh" >&2
-  falsify_fail_point
+# Sonda de representabilidade do bit de execucao (#421) -- ML-2A/G3.
+# POR QUE ELA EXISTE: em NTFS montado `noacl` (padrao do Git for Windows),
+# `chmod 0644` NAO retira o bit -- `test -x` fica verdadeiro NOS DOIS bracos,
+# e o `OK` do braco de baseline nao prova nada ("passagem vacuosa",
+# categoria C da triagem 2026-09-25). Sem esta sonda, remover o braco de
+# deteccao deixaria o cenario INTEIRAMENTE VERDE no Windows sem exercitar
+# nada. A sonda e construida em "$WORK" -- o MESMO mount onde as fixtures
+# dos dois bracos vivem; sonda em outro mount nao provaria nada sobre elas.
+# Sequencia: 0755 -> test -x (o FS sabe MARCAR?) -> 0644 -> test -x
+# (o FS sabe RETIRAR?). So a segunda pergunta e a da #421, mas a primeira
+# separa "chmod e no-op" de "nem cria executavel".
+# Nao ha cano na linha anterior a nenhuma leitura de estado: cada chmod e
+# testado com `if ! chmod ...` (sob `set -euo pipefail` um chmod nu que
+# falha mataria o chunk e o diagnostico viraria "morreu no meio").
+T181_PROBE="$WORK/s181-exec-bit-probe.sh"
+printf '#!/bin/sh\nexit 0\n' >"$T181_PROBE"
+T181_FS_EXEC_BIT=1
+T181_PROBE_WHY=""
+if ! chmod 0755 "$T181_PROBE"; then
+  T181_FS_EXEC_BIT=0
+  T181_PROBE_WHY="chmod 0755 falhou no FS do diretorio de trabalho do gate"
+elif ! test -x "$T181_PROBE"; then
+  T181_FS_EXEC_BIT=0
+  T181_PROBE_WHY="chmod 0755 nao MARCOU o bit -- o FS nao representa execucao"
+elif ! chmod 0644 "$T181_PROBE"; then
+  T181_FS_EXEC_BIT=0
+  T181_PROBE_WHY="chmod 0644 falhou no FS do diretorio de trabalho do gate"
+elif test -x "$T181_PROBE"; then
+  T181_FS_EXEC_BIT=0
+  T181_PROBE_WHY="chmod 0644 nao RETIROU o bit (mecanismo da #421: NTFS noacl)"
 fi
 
-# Braco de deteccao: sabotaged binary restaura o conteudo mas NAO o bit
-T181_DET_PROJ="$WORK/s181-det/project"
-T181_DET_HOME="$WORK/s181-det/home"
-mkdir -p "$T181_DET_PROJ" "$T181_DET_HOME/.trackfw"
-printf '%s\n' "$_S181_ID" >"$T181_DET_HOME/.trackfw/identity.json"
-printf '%s' "$_S181_CFG" >"$T181_DET_PROJ/trackfw.yaml"
-(cd "$T181_DET_PROJ" && HOME="$T181_DET_HOME" "$ROOT_DIR/bin/trackfw" \
-  update --install-missing --targets validate-script) >/dev/null
-T181_SCRIPT="$T181_DET_PROJ/scripts/trackfw-validate.sh"
-# Salva conteudo canonico antes de corromper
-cp "$T181_SCRIPT" "$WORK/s181-canonical.sh"
-# Corrompe conteudo (apply() deve detectar e restaurar) e baixa o bit
-printf 'X' >>"$T181_SCRIPT"
-chmod 0644 "$T181_SCRIPT"
-# Roda binario sabotado
-(cd "$T181_DET_PROJ" && HOME="$T181_DET_HOME" "$T181_BIN" \
-  update --targets validate-script) >/dev/null
-# Verifica: conteudo restaurado (apply() rodou)
-_falsify_arm_fail_6523=0
-if ! cmp -s "$WORK/s181-canonical.sh" "$T181_SCRIPT"; then
-  echo "FAIL [falsify/scaffold-update-chmod-removed/direction-c-detected]: binario sabotado nao restaurou o conteudo -- apply() nao rodou" >&2
+if [[ "$T181_FS_EXEC_BIT" -eq 0 ]]; then
+  # Fixture inconstruivel != controle passou. Saida escolhida: FALHAR ALTO
+  # (categoria C -> A). Nao e skip silencioso e nao e skip nenhum: o censo
+  # de Windows e diagnostico (workflow_dispatch + continue-on-error, nunca
+  # bloqueia merge), entao um FAIL nomeado custa honestidade e nada mais --
+  # enquanto um SKIP sairia com 0 e satisfaria a guarda de conjunto do
+  # run-gates-falsify-parallel.sh, reconstruindo a categoria C um nivel
+  # acima. Os DOIS rotulos sao emitidos porque a guarda de conjunto do
+  # driver os espera (extraidos dos `echo "OK ..."` abaixo) e aceita
+  # linha `FAIL [falsify/<rotulo>]` como emissao -- um rotulo so viraria
+  # "rotulo esperado AUSENTE", diagnostico errado.
+  echo "FAIL [falsify/scaffold-update-chmod-removed/direction-c-baseline]: fixture inconstruivel neste sistema de arquivos -- $T181_PROBE_WHY (#421). GARANTIA NAO EXERCITADA: que 'trackfw update --targets validate-script' RESTAURA o bit de execucao de scripts/trackfw-validate.sh previamente rebaixado (os.Chmod em generateValidateScript). Ela continua exercitada de verdade em FS POSIX; aqui NAO foi exercitada -- e o 'OK' que este rotulo emitia antes desta sonda era vacuo, porque 'test -x' era verdadeiro independentemente de os.Chmod ter rodado." >&2
+  echo "FAIL [falsify/scaffold-update-chmod-removed/direction-c-detected]: nao executado -- mesma fixture inconstruivel do braco de baseline acima ($T181_PROBE_WHY). GARANTIA NAO EXERCITADA: que a asercao do braco de baseline DISCRIMINA, i.e. que um binario sem os.Chmod deixa o arquivo nao-executavel apos o update." >&2
+  ls -la "$T181_PROBE" >&2
   falsify_fail_point
-  _falsify_arm_fail_6523=1
-fi
-# Verifica: bit ainda ausente (Chmod nao rodou)
-if test -x "$T181_SCRIPT"; then
-  echo "FAIL [falsify/scaffold-update-chmod-removed/direction-c-detected]: binario sabotado restaurou o bit de execucao -- os.Chmod nao foi removido" >&2
-  ls -la "$T181_SCRIPT" >&2
   falsify_fail_point
-elif [[ "$_falsify_arm_fail_6523" -eq 0 ]]; then
-  falsify_count_success
-  echo "OK   [falsify/scaffold-update-chmod-removed/direction-c-detected]"
+else
+  # Braco de baseline: REAL binary restaura o bit apos ser baixado
+  T181_BASE_PROJ="$WORK/s181-base/project"
+  T181_BASE_HOME="$WORK/s181-base/home"
+  mkdir -p "$T181_BASE_PROJ" "$T181_BASE_HOME/.trackfw"
+  printf '%s\n' "$_S181_ID" >"$T181_BASE_HOME/.trackfw/identity.json"
+  printf '%s' "$_S181_CFG" >"$T181_BASE_PROJ/trackfw.yaml"
+  (cd "$T181_BASE_PROJ" && HOME="$T181_BASE_HOME" "$ROOT_DIR/bin/trackfw" \
+    update --install-missing --targets validate-script) >/dev/null
+  chmod 0644 "$T181_BASE_PROJ/scripts/trackfw-validate.sh"
+  (cd "$T181_BASE_PROJ" && HOME="$T181_BASE_HOME" "$ROOT_DIR/bin/trackfw" \
+    update --targets validate-script) >/dev/null
+  if test -x "$T181_BASE_PROJ/scripts/trackfw-validate.sh"; then
+    falsify_count_success
+    echo "OK   [falsify/scaffold-update-chmod-removed/direction-c-baseline]"
+  else
+    echo "FAIL [falsify/scaffold-update-chmod-removed/direction-c-baseline]: binario real nao restaurou o bit de execucao apos update" >&2
+    ls -la "$T181_BASE_PROJ/scripts/trackfw-validate.sh" >&2
+    falsify_fail_point
+  fi
+
+  # Braco de deteccao: sabotaged binary restaura o conteudo mas NAO o bit
+  T181_DET_PROJ="$WORK/s181-det/project"
+  T181_DET_HOME="$WORK/s181-det/home"
+  mkdir -p "$T181_DET_PROJ" "$T181_DET_HOME/.trackfw"
+  printf '%s\n' "$_S181_ID" >"$T181_DET_HOME/.trackfw/identity.json"
+  printf '%s' "$_S181_CFG" >"$T181_DET_PROJ/trackfw.yaml"
+  (cd "$T181_DET_PROJ" && HOME="$T181_DET_HOME" "$ROOT_DIR/bin/trackfw" \
+    update --install-missing --targets validate-script) >/dev/null
+  T181_SCRIPT="$T181_DET_PROJ/scripts/trackfw-validate.sh"
+  # Salva conteudo canonico antes de corromper
+  cp "$T181_SCRIPT" "$WORK/s181-canonical.sh"
+  # Corrompe conteudo (apply() deve detectar e restaurar) e baixa o bit
+  printf 'X' >>"$T181_SCRIPT"
+  chmod 0644 "$T181_SCRIPT"
+  # Roda binario sabotado
+  (cd "$T181_DET_PROJ" && HOME="$T181_DET_HOME" "$T181_BIN" \
+    update --targets validate-script) >/dev/null
+  # Verifica: conteudo restaurado (apply() rodou)
+  _falsify_arm_fail_6523=0
+  if ! cmp -s "$WORK/s181-canonical.sh" "$T181_SCRIPT"; then
+    echo "FAIL [falsify/scaffold-update-chmod-removed/direction-c-detected]: binario sabotado nao restaurou o conteudo -- apply() nao rodou" >&2
+    falsify_fail_point
+    _falsify_arm_fail_6523=1
+  fi
+  # Verifica: bit ainda ausente (Chmod nao rodou)
+  if test -x "$T181_SCRIPT"; then
+    echo "FAIL [falsify/scaffold-update-chmod-removed/direction-c-detected]: binario sabotado restaurou o bit de execucao -- os.Chmod nao foi removido" >&2
+    ls -la "$T181_SCRIPT" >&2
+    falsify_fail_point
+  elif [[ "$_falsify_arm_fail_6523" -eq 0 ]]; then
+    falsify_count_success
+    echo "OK   [falsify/scaffold-update-chmod-removed/direction-c-detected]"
+  fi
 fi
 
 # ---------------------------------------------------------------------------

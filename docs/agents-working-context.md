@@ -40569,3 +40569,75 @@ Depois de corrigir o cabeçalho defasado ("Três braços" → quatro), o conjunt
 **x64**, e a divergência de grafia 8.3 que motivou a correção mostra que ARM64 ≠ x64 nesse terreno.
 Por isso a sobrevivência é **assertada no script**, não presumida: se o x64 se comportar diferente,
 o censo reporta `double-slash-tolerance-vacuity` como **FAIL**, em vez de um `OK` vacuoso.
+
+---
+
+## Sessão 2026-09-24 — ares-tf (Infrastructure) — ML-2A (Wave 2, grupo G3): a fixture inconstruível deixa de passar por controle aprovado
+
+**Início.** Escopo exclusivo: `scripts/check-gates-falsify.sh`, Cenário 181
+(`scaffold-update-chmod-removed/direction-c-*`) — o **único rótulo de categoria C** (passagem
+vacuosa) do cluster de Windows, conforme `docs/seguranca/2026-09-25-triagem-cluster-windows.md` §6.3
+e a issue #421. Sem branch nova, sem commit, sem push. Não toquei `Makefile`, `docs/req/`,
+`docs/roadmaps/`, `internal/` — nem `run-gates-falsify-parallel.sh`/`gen-falsify-chunks.py`.
+
+**Saída escolhida: FALHAR ALTO (categoria C → A), com a garantia nomeada.** Uma sonda de
+representabilidade do bit (`0755` → `test -x` → `0644` → `test -x`), construída **no mesmo mount das
+fixtures** (`$WORK`), decide. Se o FS não representa o bit, o cenário emite **dois** `FAIL` que
+nomeiam explicitamente a garantia **não exercitada** e não roda braço nenhum; se representa, os dois
+braços rodam exatamente como antes.
+
+🔴 **`SKIP` foi avaliado e descartado com razão medida, não estilística:** o driver colhe rótulos com
+`^(OK|FAIL|PROOF)`, então uma linha `SKIP` (a) não satisfaz a exigência de rótulo — vira
+*"esperado AUSENTE"*, que é o diagnóstico de chunk morto — e (b) sairia com **0**, reconstruindo a
+categoria C dentro da própria guarda. `FAIL [falsify/<rótulo>]: …` satisfaz a exigência **e**
+reprova; conferido aplicando o pipeline exato do driver ao log medido. Custo da escolha: o censo de
+Windows passa a mostrar **2 FAIL** onde mostrava 1 `OK` vácuo + 1 `FAIL` — aceitável porque
+`windows-census.yml` é `workflow_dispatch` + `continue-on-error: true` e nunca bloqueia merge.
+
+**Prova de não-vacuidade (imagem FAT32 esparsa via `hdiutil`, FS real que não retira o bit):**
+
+| variante | `TMPDIR` na imagem FAT32 |
+|---|---|
+| `HEAD`, **braço de detecção removido** | `OK [.../direction-c-baseline]`, **rc=0 — verde inteiro** 🔴 |
+| `HEAD`, completo | `OK` vácuo + `FAIL` — estado do censo |
+| novo, **braço de detecção removido** | 2× `FAIL` nomeado, **rc=1** |
+| novo, completo | 2× `FAIL` nomeado, **rc=1** |
+
+Em APFS (POSIX), código novo: `chunk_21` completo **rc=0**, os dois braços `OK` — a garantia segue
+exercitada de verdade.
+
+**Veredito sobre a testemunha de CI.** O log do run `36036473391`, linha 4187, mostra `-rwxr-xr-x`
+**depois** do `chmod 0644` em `windows-latest` x64: **suficiente para o efeito**, fecha o "não
+medido" da #421. **Insuficiente para atribuir ao `noacl`** — o log não tem nenhuma linha de `mount`.
+Fecha com uma linha `mount`/`findmnt -T "$TMPDIR"` no censo.
+
+**Evidência.** `bash -n scripts/check-gates-falsify.sh` OK · `trackfw validate` **rc=0** (lenient;
+152 avisos pré-existentes) · `make quality` **não** rodado (barreira do arquiteto).
+
+**Nota de vault:**
+`vault/notes/chmod-que-nao-retira-o-bit-torna-o-braco-de-baseline-vacuo-e-o-skip-reconstroi-a-vacuidade-2026-09-24.md`
+(linkada no índice).
+
+**Observação reportada, não corrigida:** o braço de baseline usa `$ROOT_DIR/bin/trackfw` — binário
+**committado**, potencialmente defasado em relação a `internal/`; o veredito atesta `bin/`, não a
+árvore. Decisão do arquiteto. Pendentes e suas: `**Status:**` do ML-2A no roadmap.
+
+**Adendo do ML-2A — três conferências que o relatório devia.**
+**(a) Frase por artefato novo (Regra Dura de Reconciliação).** O único artefato novo é a sonda de
+representabilidade do bit. **A sonda afirma a conclusão do próprio ML de que `test -x` não
+discrimina neste FS**: ela mede exatamente a propriedade que o braço de baseline pressupõe (*o
+`chmod` retira o bit?*), e é por isso que a fixture é declarada **inconstruível** em vez de
+aprovada. Nenhum teste Go novo — ausência declarada.
+**(b) Acoplamento baseline/detecção (lição da Wave 1).** Os dois braços usam **diretórios de projeto
+distintos** (`$WORK/s181-base` vs `$WORK/s181-det`), **`HOME`s distintos** e **binários distintos**
+(real vs sabotado): **não há instância de fixture compartilhada**, logo o modo de falha da Wave 1
+(detector verde com baseline vermelho) não se aplica. O acoplamento aqui nunca foi de *instância* —
+era uma **propriedade do sistema de arquivos**, herdada pelos dois braços, e é exatamente ela que a
+sonda decide **uma vez, antes de qualquer braço rodar**.
+**(c) A/B do conjunto de rótulos nos N que os workflows usam.** `gen-falsify-chunks.py` contra
+`git show HEAD:scripts/check-gates-falsify.sh` e contra a árvore, em **N=4** (`quality.yml`),
+**N=8** (`windows-census.yml`) e N=24: **265 vs 265 nos três, 0 adicionados, 0 removidos** — como
+esperado, porque só linhas `FAIL` foram acrescentadas e `ECHO_LABEL_PAT` só colhe `OK|PROOF`.
+**Detalhe deliberado:** a sonda se chama `s181-exec-bit-probe.**sh**` — mesma extensão da fixture
+real, para o caso de o MSYS decidir executabilidade parcialmente por extensão; sonda sem `.sh`
+poderia medir propriedade diferente da que a fixture enfrenta.

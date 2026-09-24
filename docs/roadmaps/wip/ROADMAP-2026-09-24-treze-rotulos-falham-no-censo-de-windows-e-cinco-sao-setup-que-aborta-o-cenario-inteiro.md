@@ -428,3 +428,79 @@ mediu ser irrelevante para o G4 — e, pior, **defende-a na revisão**.
 ## Barreira final
 
 Revisão `hefesto-tf` e `hades-tf`, auditoria do arquiteto, `trackfw barrier`, CI verde.
+---
+
+## Wave 2 — G3, o único da categoria **C — passagem vacuosa**
+
+### ML-2A — O cenário do bit passa a falhar alto em vez de aprovar sem medir
+**Owner:** `ares-tf`
+**Status:** ✅ Concluído — auditado em 2026-09-24 · Cenário 181
+
+**Saída escolhida: falhar alto (C → A).** Uma sonda de representabilidade do bit — `0755` →
+`test -x` → `0644` → `test -x`, construída **no mesmo mount das fixtures** — decide **antes** de
+qualquer braço rodar. FS que não representa o bit ⇒ **dois** `FAIL` que **nomeiam a garantia não
+exercitada**, e nenhum braço roda.
+
+🔴 **`SKIP` foi descartado por razão MEDIDA, não estilística** — e a razão é bonita: o driver colhe
+rótulos com `grep -oE '^(OK|FAIL|PROOF)…'` e **exige** por chunk todo literal extraído dos
+`echo "OK|PROOF …"`. Uma linha `SKIP [falsify/<rótulo>]` **(a)** não é colhida → o rótulo vira
+*"esperado AUSENTE"*, que é o diagnóstico de **chunk morto**; e **(b)** sai 0 → **a categoria C
+reconstruída dentro da própria guarda**. Por isso os **dois** rótulos são emitidos no ramo
+inconstruível: emitir só um deixaria o irmão como ausente.
+
+**Prova de não-vacuidade com instrumento real, não stub** — ele reproduziu um FS que não representa
+o bit **em darwin**, com imagem FAT32 esparsa de ~6 GB (200 MB morriam em `no space left` ao
+compilar o binário sabotado):
+
+| variante | resultado |
+|---|---|
+| `HEAD`, **braço de detecção removido** | `OK`, **rc=0 — verde inteiro** 🔴 a vacuidade, reproduzida |
+| `HEAD`, completo | `OK` vácuo + `FAIL` — o estado do censo |
+| **novo**, braço removido | 2× `FAIL` nomeado, **rc=1** |
+| **novo**, completo | 2× `FAIL` nomeado, **rc=1** |
+
+**POSIX (APFS):** `chunk_21` completo, **rc=0**, os dois braços `OK` — a garantia continua
+exercitada de verdade.
+
+**Custo escrito:** o censo passa a mostrar **2 FAIL** onde mostrava 1 `OK` vácuo + 1 `FAIL`.
+Aceitável porque o `windows-census.yml` é `workflow_dispatch` + `continue-on-error` — **nunca
+bloqueia merge**. 🔴 **Se o censo virar bloqueante, esta decisão precisa ser reaberta** — aí seria
+vermelho permanente sem ação disponível.
+
+**Auditoria do arquiteto (medida por mim):**
+
+| afirmação | como confirmei |
+|---|---|
+| testemunha de CI existe | log do censo: `-rwxr-xr-x … /s181-det/…/trackfw-validate.sh` **depois** do `chmod 0644`, em `windows-latest` x64 |
+| a atribuição ao `noacl` é presunção | `grep -ci 'noacl\|findmnt\|usertemp'` no log inteiro → **0** |
+| conjunto de rótulos inalterado | `gen-falsify-chunks.py` N=8, `HEAD` × árvore → **265 = 265, diff vazio** |
+| sintaxe | `bash -n` OK |
+
+**Sobre a #421:** a testemunha **fecha o "não medido"** dela — o `chmod` não retira o bit também em
+**x64 no runner**, não só na VM ARM64. Mas **não** atribui o mecanismo ao `noacl`.
+
+**Critérios de aceite:**
+- [x] O cenário distingue **fixture inconstruível** de **controle passou**, com custo escrito
+- [x] 🔴 Sem skip silencioso — e o `SKIP` foi **descartado com medição**
+- [x] A garantia continua exercitada em POSIX
+- [x] Falsificação da **vacuidade**, com instrumento real
+- [x] Veredito sobre a testemunha de CI: suficiente para o efeito, insuficiente para o mecanismo
+- [x] 🔴 Nenhum teste Go novo; a frase é da sonda
+
+---
+
+### Dois itens que ficam registrados aqui, e são decisão minha
+
+**1. Falta uma linha no censo, e ela fecha a atribuição da #421.** Uma linha `findmnt -T "$TMPDIR"`
+(ou `mount`) no `windows-census.yml` tira o `noacl` de presunção para medição. **Entra no próximo ML
+que tocar o workflow** — não vale um ML só para isso, e não vale esquecer.
+
+**2. 🔴 O braço de baseline roda `$ROOT_DIR/bin/trackfw` — o binário COMMITADO.** Achado reportado
+pelo ML-2A e **não corrigido, corretamente** (não expandiu escopo). O veredito do baseline atesta o
+que estiver em `bin/`, **não** a árvore `internal/` — e o mesmo mecanismo aparece em **43 sítios** do
+arquivo.
+
+**Mecanismo distinto** de tudo nesta REQ (staleness de artefato, não fronteira MSYS), então **não
+entra aqui** — mas é grande demais para virar só um parágrafo. Vira **issue própria**, com a
+medição, depois do PR desta REQ.
+
