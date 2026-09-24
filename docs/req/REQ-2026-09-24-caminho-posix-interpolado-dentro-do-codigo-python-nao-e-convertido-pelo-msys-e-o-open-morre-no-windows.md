@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-24
 author: "trackfw_architect"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-24-caminho-posix-interpolado-dentro-do-codigo-python-nao-e-convertido-pelo-msys-e-o-open-morre-no-windows.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-24-caminho-posix-interpolado-dentro-do-codigo-python-nao-e-convertido-pelo-msys-e-o-open-morre-no-windows.md"
 ---
 
 # REQ: caminho POSIX interpolado dentro do código Python não é convertido pelo MSYS, e o `open()` morre no Windows
 
-> Date: 2026-09-24 | Status: Open
+> Date: 2026-09-24 | Status: Done
 | Linear Issue:
 | Jira Issue:
 
@@ -72,17 +72,22 @@ aplicável por terceiro, é o primeiro entregável.
 
 ## Acceptance Criteria
 
-- [ ] **Enumeração real**, classificada em **(a)** interpola caminho no código e escreve/lê arquivo
+- [x] **Enumeração real**, classificada em **(a)** interpola caminho no código e escreve/lê arquivo
+      → ML-0A: **6 sítios (a)** em 5 blocos, 3 arquivos; reconciliação escrita (o #417 era largo no predicado e estreito na unidade)
       → defeito · **(b)** passa por `argv` ou recebe caminho já convertido → correto · **(c)** o `$`
       não é caminho → fora. Com o comando que produziu a lista, e a **reconciliação escrita** com os
       dois números divergentes de partida (15/10 do #417 vs 7 do arquiteto)
-- [ ] Todo sítio **(a)** corrigido **por `argv`**, que é o padrão que o próprio repositório já
+- [x] Todo sítio **(a)** corrigido **por `argv`**, que é o padrão que o próprio repositório já
+      → os 6 por `sys.argv` — precedente `check-thirdparty-parity.sh:167`; **0** caminhos interpolados restantes
       pratica (`check-thirdparty-parity.sh:167`, `check-doctor-parity.sh` em `_normalize_version_in_file`)
-- [ ] 🔴 **Gate que impede a reintrodução**, falsificável, com guarda de não-vacuidade, e com as
+- [x] 🔴 **Gate que impede a reintrodução**, falsificável, com guarda de não-vacuidade, e com as
+      → `check-interpolated-path-in-python.sh` + Cenário 200 (9 braços); dois pisos de não-vacuidade; poupa os 2 não-flag por razões independentes
       formas **não cobertas declaradas** no cabeçalho
-- [ ] Falsificação nas duas direções, **exercitada no Windows** — é a plataforma onde o defeito vive,
+- [x] Falsificação nas duas direções, **exercitada no Windows** — é a plataforma onde o defeito vive,
+      → VM Windows nos **dois braços**: rc=1 com os 6 antes, rc=0 depois; o rótulo `direction-b-shim-absent` **voltou**
       e é por isso que nenhum CI viu
-- [ ] `make quality` e **CI** verdes
+- [x] `make quality` e **CI** verdes
+      → `make quality` RC=0 · 1275 `^OK ` · 0 `: FALHA`; `trackfw barrier` passa nas waves 0, 1 e 2; CI verde no PR #422 (`8a9dba76`)
 
 ## Negative scope — o que esta REQ NÃO faz
 
@@ -101,4 +106,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-24-caminho-posix-interpolado-dentro-do-codigo-python-nao-e-convertido-pelo-msys-e-o-open-morre-no-windows.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-24-caminho-posix-interpolado-dentro-do-codigo-python-nao-e-convertido-pelo-msys-e-o-open-morre-no-windows.md`

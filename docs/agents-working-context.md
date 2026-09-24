@@ -40201,3 +40201,11 @@ do gate e na reprodução A/B). Clone da VM restaurado: branch `wave2` em `dc9f7
 apenas com o não rastreado **pré-existente** `sonda-rc128.sh`. Nenhum commit, nenhum push.
 Vault: `overlay-json-com-caminho-posix-e-ignorado-em-silencio-pelo-go-no-windows-2026-09-24.md` (seção
 "Correção (ML-2A)").
+
+## 2026-09-24 — trackfw_architect — REQ dos caminhos interpolados fechada (#422)
+
+- 6 sítios por `argv` + gate novo; **#363 fecha com medição**, e o resíduo (bit de execução em NTFS
+  `noacl`) virou a **#421** — mecanismo distinto, para ninguém ler verde onde não há.
+- 🔴 A correção desmascarou um defeito de segurança: `go test -overlay` com chave POSIX é **ignorado
+  em silêncio**, e o AC6 concluía que o teste passou na versão vulnerável.
+- Próximo: **triagem do cluster de Windows**, agora com o censo produzindo número.

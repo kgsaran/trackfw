@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-24
 req: "docs/req/REQ-2026-09-24-caminho-posix-interpolado-dentro-do-codigo-python-nao-e-convertido-pelo-msys-e-o-open-morre-no-windows.md"
 squad: [hades-tf, ares-tf, artemis-tf]
@@ -7,7 +7,7 @@ squad: [hades-tf, ares-tf, artemis-tf]
 
 # Roadmap: caminho POSIX interpolado no código Python não é convertido pelo MSYS
 
-> Criado em: 2026-09-24 | Status: wip
+> Criado em: 2026-09-24 | Status: done
 
 REQ: `docs/req/REQ-2026-09-24-caminho-posix-interpolado-dentro-do-codigo-python-nao-e-convertido-pelo-msys-e-o-open-morre-no-windows.md`
 
