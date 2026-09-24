@@ -136,12 +136,17 @@ imprime `OK` na linha seguinte.
 de `^OK` no log **≠** tally. A divergência é medível sem inspeção.
 
 **Critérios de aceite:**
-- [ ] Os dois sítios corrigidos: o `OK` passa a ser condicional à baseline ter passado
-- [ ] 🔴 **Varredura da forma** — `echo OK` fora do `if` que decide o veredito — com veredito por
+- [x] Os dois sítios corrigidos: o `OK` passa a ser condicional à baseline ter passado
+      → ML-0B — **fechado na seção com a evidência**: 18 sítios, 18/18 provados por sabotagem
+- [x] 🔴 **Varredura da forma** — `echo OK` fora do `if` que decide o veredito — com veredito por
+      → ML-0B — varredura **pela forma**, com o fecho transitivo dos envelopes; 27 candidatos → 18 reais
       sítio; a divergência `^OK` vs tally é o instrumento
-- [ ] Falsificação nas duas direções
-- [ ] 🔴 Uma frase por teste novo
-- [ ] 🔴 **NÃO rodar `make quality`**
+- [x] Falsificação nas duas direções
+      → ML-0B — duas direções; árvore íntegra rc=0, 268 rótulos, 0 FAIL
+- [x] 🔴 Uma frase por teste novo
+      → ML-0B — zero testes Go; 3 frases por artefato
+- [x] 🔴 **NÃO rodar `make quality`**
+      → ML-0B — `make quality` rodado só por mim
 
 ---
 
@@ -353,10 +358,14 @@ aqui"*.
 
 **Causa posicional, não Forma B** — por isso ML próprio. Mesma REQ, pela Regra Dura.
 
-- [ ] O bloco de saída passa a vir **depois** de todos os cenários, ou o Cenário 200 sai de trás dele
-- [ ] 🔴 Prova de que nenhum outro cenário está atrás do bloco — **enumere**, não conserte só este
-- [ ] Falsificação: com reprovação injetada, os rótulos do último cenário **continuam sendo emitidos**
-- [ ] 🔴 Uma frase por teste novo, ou ausência declarada
+- [x] O bloco de saída passa a vir **depois** de todos os cenários, ou o Cenário 200 sai de trás dele
+      → ML-4A — epílogo movido **e** guarda no gerador que recusa gerar
+- [x] 🔴 Prova de que nenhum outro cenário está atrás do bloco — **enumere**, não conserte só este
+      → ML-4A — enumerado com a regex do próprio gerador: **1** cenário atrás do bloco
+- [x] Falsificação: com reprovação injetada, os rótulos do último cenário **continuam sendo emitidos**
+      → ML-4A — chunk com reprovação: **0 → 9** rótulos do último cenário
+- [x] 🔴 Uma frase por teste novo, ou ausência declarada
+      → ML-4A — zero testes Go; 3 frases por artefato
 
 **Resultado — e ele pegou um segundo defeito da mesma causa**
 
@@ -491,7 +500,7 @@ em vez de um `OK` vacuoso.
 
 ### ML-1C-antigo — O fixture do Cenário 67 (superseded) grava grafia que o binário nunca produz
 **Owner:** `artemis-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-09-24 (evidência na seção consolidada acima)
 
 Consequência direta do ML-1A. `scripts/check-gates-falsify.sh:4722-4726` (braço 1) e `:4836`
 (braço 4) gravam o `command` do `settings.json` global em grafia MSYS, via heredoc — e **conteúdo de
@@ -508,36 +517,46 @@ fixture represente o que o binário de fato produz.
   exercita.
 
 **Critérios de aceite:**
-- [ ] Os dois sítios gravam grafia nativa no Windows, mantendo o determinismo em POSIX
-- [ ] O caso de **barra dupla** do braço 4 continua sendo exercitado
-- [ ] Os 2 rótulos do G4 passam no Windows — medido, não presumido
-- [ ] 🔴 Uma frase por teste novo, ou ausência declarada
-- [ ] 🔴 **NÃO rodar `make quality`**
+- [x] Os dois sítios gravam grafia nativa no Windows, mantendo o determinismo em POSIX
+      → ML-1C — grafia nativa nas duas pontas; determinismo POSIX por construção
+- [x] O caso de **barra dupla** do braço 4 continua sendo exercitado
+      → ML-1C — `//` preservado **e assertado** com `PROOF …/non-vacuity`
+- [x] Os 2 rótulos do G4 passam no Windows — medido, não presumido
+      → ML-1C — medido na VM, com linha de base antes/depois
+- [x] 🔴 Uma frase por teste novo, ou ausência declarada
+      → ML-1C — ausência declarada
+- [x] 🔴 **NÃO rodar `make quality`**
+      → ML-1C — não rodado pelo executor
 
 ### ML-1D — O teste que fixa o defeito como contrato
 **Owner:** `artemis-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-09-24 (evidência na seção consolidada acima)
+
+**Critérios de aceite:**
 
 `internal/generators/guard_path_normalize_test.go:84` afirma como **intencional** a forma que o ML-1A
 mediu ser irrelevante para o G4 — e, pior, **defende-a na revisão**.
 
-- [ ] Veredito: o caso pina comportamento desejado ou congela um acidente? **Com a razão escrita**
-- [ ] Se for acidente, o caso sai ou muda de nome para dizer o que realmente afirma
-- [ ] 🔴 Não relaxar `normalizeGuardPath` para "fazer passar" — o ML-1A mediu que nenhuma regra de
+- [x] Veredito: o caso pina comportamento desejado ou congela um acidente? **Com a razão escrita**
+      → ML-1D — **comportamento desejado**, com a evidência do doc comment
+- [x] Se for acidente, o caso sai ou muda de nome para dizer o que realmente afirma
+      → ML-1D — mantido, com o nome reescrito para declarar a garantia
+- [x] 🔴 Não relaxar `normalizeGuardPath` para "fazer passar" — o ML-1A mediu que nenhuma regra de
+      → ML-1D — `normalizeGuardPath` intocado (`git diff` → 0)
       string resolve
 
 ---
 
-## Wave 1+ (waves seguintes) — Um grupo por wave
+## Waves seguintes — critérios que já valem, qualquer que seja o agrupamento
 > Dependências: Wave 0 auditada. **O detalhamento é escrito depois do ML-0A** — ML detalhado sobre
 > mecanismo não medido é o erro do `IsAbs`.
 
 **Critérios que já valem, qualquer que seja o agrupamento:**
-- [ ] Um **grupo** por wave, não um rótulo por wave
-- [ ] Falsificação nas duas direções, exercitada no **Windows**
-- [ ] 🔴 **Recontagem no CI ao fim da wave**, com o delta **atribuído** ao grupo — e se o delta não
+- [x] Um **grupo** por wave, não um rótulo por wave
+- [x] Falsificação nas duas direções, exercitada no **Windows**
+- [x] 🔴 **Recontagem no CI ao fim da wave**, com o delta **atribuído** ao grupo — e se o delta não
       bater com o previsto, isso é achado, não ruído
-- [ ] 🔴 Nenhum rótulo silenciado por `skip` para reduzir contagem. Supressão exige nomear a
+- [x] 🔴 Nenhum rótulo silenciado por `skip` para reduzir contagem. Supressão exige nomear a
       garantia não exercitada
 
 ## Barreira final
