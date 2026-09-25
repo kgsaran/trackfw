@@ -40967,3 +40967,13 @@ bash scripts/check-unguarded-capture-rc.sh          RC=0
   nesse fonte. Auto-diagnostica pela mensagem da guarda. Foi escolha deliberada: condicional seria
   **fail-open** — a armadilha de vacuidade da nota
   `a-correcao-que-melhora-o-gate-esvazia-a-fixture-da-guarda-dele-2026-09-24`.
+
+## 2026-09-24 — trackfw_architect — triagem do cluster de Windows fechada (#424)
+
+- **FAIL 11 → 2**, e os 2 são a recusa alta desenhada (fixture do bit inconstruível, nomeada).
+- 🔴 A triagem corrigiu **duas coisas minhas**: a população (11, não 13 — filtrei por token e capturei
+  texto citado) e a hipótese do `setup` (caiu: `falsify_fail_point` retorna 0 no modo do censo).
+- 🔴 O G5 não era defeito de Windows: reproduzi no macOS um guard que **aprova o que não leu**.
+- Dívidas pagas por medição: `unconstructible`=0 (G2 incondicional) e o `mount` do runner
+  (`ntfs … noacl …`), que tira a atribuição da #421 da presunção.
+- Próximo: issue dos 43 sítios que rodam `bin/trackfw` committado; fila **#400-#403, #407, #408, #421**.

@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-24
 author: "trackfw_architect"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-24-treze-rotulos-falham-no-censo-de-windows-e-cinco-sao-setup-que-aborta-o-cenario-inteiro.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-24-treze-rotulos-falham-no-censo-de-windows-e-cinco-sao-setup-que-aborta-o-cenario-inteiro.md"
 ---
 
 # REQ: treze rótulos falham no censo de Windows, e cinco são `setup` que aborta o cenário inteiro
 
-> Date: 2026-09-24 | Status: Open
+> Date: 2026-09-24 | Status: Done
 | Linear Issue:
 | Jira Issue:
 
@@ -107,18 +107,24 @@ membro** — entra com medição.
 
 ## Acceptance Criteria
 
-- [ ] **Triagem por causa, não por rótulo**: cada um dos 13 `FAIL` e dos 3 ausentes recebe um
+- [x] **Triagem por causa, não por rótulo**: cada um dos 13 `FAIL` e dos 3 ausentes recebe um
+      → **5 grupos** por mecanismo; frase de fechamento por grupo. 🔴 E a população era **11, não 13** — dois rótulos eram texto *citado* em mensagens `PROOF`
       veredito de **mecanismo**, e os rótulos são agrupados por causa. 🔴 Para cada grupo, a frase de
       fechamento: *"corrijo esta causa, exatamente estes rótulos fecham, e nenhum outro"*
-- [ ] **A hipótese do `setup` é medida, não assumida** — quantos dos 8 rótulos não-`setup` fecham
+- [x] **A hipótese do `setup` é medida, não assumida** — quantos dos 8 rótulos não-`setup` fecham
+      → 🔴 **A hipótese CAIU**, medida: `falsify_fail_point` retorna 0 no modo do censo; o setup causa **os 3 ausentes e zero dos 11 FAIL**
       quando o `setup` do mesmo cenário passa? Se a resposta for "nenhum", a hipótese cai e isso fica
       escrito
-- [ ] **O #307 é absorvido ou descartado com medição** — se o mecanismo for o mesmo, os rótulos dele
+- [x] **O #307 é absorvido ou descartado com medição** — se o mecanismo for o mesmo, os rótulos dele
+      → **#307 ABSORVIDO** (explica 10 dos 14, `Closes #307` no PR #424); **#308 descartado** com a diferença escrita
       entram nesta REQ e a issue é referenciada; se não for, a diferença fica escrita
-- [ ] Cada grupo corrigido tem **falsificação nas duas direções**, exercitada no Windows
-- [ ] 🔴 **Recontagem no CI ao fim de cada wave**, com o delta **atribuído** ao grupo corrigido —
+- [x] Cada grupo corrigido tem **falsificação nas duas direções**, exercitada no Windows
+      → Cada grupo com falsificação nas duas direções, exercitada na VM Windows; G2 provado **incondicional** no CI (`unconstructible`=0)
+- [x] 🔴 **Recontagem no CI ao fim de cada wave**, com o delta **atribuído** ao grupo corrigido —
+      → 🔴 Censo `36068087897`: **FAIL 11 → 2**, e a divergência da previsão (`−7` previsto, `−9` medido) **explicada**, não ignorada
       sem isso não se sabe qual correção funcionou
-- [ ] `make quality` e **CI** verdes
+- [x] `make quality` e **CI** verdes
+      → `make quality` RC=0 · 1273 `^OK ` · 0 `: FALHA`; `trackfw barrier` passa nas waves 0–3; CI verde no PR #424
 
 ## Negative scope — o que esta REQ NÃO faz
 
@@ -145,4 +151,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-24-treze-rotulos-falham-no-censo-de-windows-e-cinco-sao-setup-que-aborta-o-cenario-inteiro.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-24-treze-rotulos-falham-no-censo-de-windows-e-cinco-sao-setup-que-aborta-o-cenario-inteiro.md`
