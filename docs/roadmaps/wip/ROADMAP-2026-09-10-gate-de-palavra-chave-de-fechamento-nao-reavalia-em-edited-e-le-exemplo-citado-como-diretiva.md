@@ -668,7 +668,14 @@ idênticas ao baseline, **sem cancelamento entre elas**. `--self-test`: **70 OK,
 
 ### ML-N3 — **AC1 + `GH_TOKEN` juntos, e por ÚLTIMO** — a chave de ativação
 **Owner:** `ares-tf`
-**Status:** ⬜ Pendente · **depende de `ML-N1` e `ML-N2` MERGEADOS**
+**Status:** 🔄 Em andamento (despachado em 2026-09-25) · `ML-N1` e `ML-N2` ✅ commitados na branch
+
+⚠️ **Medição minha, acrescentada no despacho:** `on: pull_request` (linha 5) está **sem `types:`**, logo
+o default é `opened · synchronize · reopened` — **`edited` não está lá**, e é a causa mecânica do AC1.
+E 🔴 **o comentário do job (`quality.yml:46-49`) MENTE**: afirma que o script *"lê o corpo do próprio
+payload… não usa `gh`, não precisa de token"*, enquanto a linha **901** do gate chama `gh pr view` com
+**fallback silencioso** ao payload (linha 915). O comentário é anterior ao #416 e não foi atualizado —
+é o mesmo "contrato que mente" que o `ML-N1` já pagou, agora em YAML.
 
 🔴 **Leia isto antes de qualquer coisa: não antecipe este ML, e não separe o `GH_TOKEN` do AC1.**
 
