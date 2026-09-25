@@ -93,8 +93,54 @@ E o teste da direção "não recusa operação legítima" tem de afirmar **três
 **dentro** da árvore, **e que o escopo de guarda usado continuou sendo o de projeto**. Sem a
 terceira, o teste passa com o controle desligado.
 
+## Correção (ML-7A, 2026-09-25) — e a medição que endurece a autorrefutação
+
+**Forma aplicada** (`adrGuardPaths`, ponto único de decisão de escopo em `internal/generators/adr.go`):
+
+- `adrDir` **relativo** ⇒ escopo de projeto **incondicional**: `Beneath` não é consultado,
+  `root = projectRoot()` e `alvo = filepath.Join(projectRoot(), adrDir)`. Os dois nascem no mesmo
+  namespace resolvido, então `RejectSymlinks` caminha `root → docs` e recusa pelo symlink.
+  **Falha fechada** se `projectRoot()` erra — sem fallback para `filepath.Abs`.
+- `adrDir` **absoluto** ⇒ escopo global (`root = adrDir`), o residual nomeado da decisão 3.
+  🔴 `Beneath` sobrevive **só aqui**, e só numa posição onde pode **AUMENTAR** a estritura: caminho
+  absoluto genuinamente dentro do projeto é **promovido** a escopo de projeto. Nunca rebaixa.
+  Trocar isso por um `filepath.IsAbs` puro seria um **enfraquecimento** — hoje um `adr_dirs[0]`
+  absoluto e interno pega escopo de projeto, e perderia a checagem dos ancestrais.
+
+### 🔴 A correção ÓBVIA é PIOR que o defeito — medido, não deduzido
+
+A §3.3-bis do relatório do ML-6A já dizia que `EvalSymlinks(absAdrDir)` **mantém** o escape. A
+medição por mutação do ML-7A mostra mais que isso: ela **abre a arm que hoje recusa**.
+
+| mutante | arm `$PWD` resolvido | arm `$PWD` não resolvido |
+|---|---|---|
+| A — forma pré-fix (`main` de hoje) | recusa (correto) | **escreve na vítima, rc=0** |
+| B — a correção "óbvia" (`EvalSymlinks` no alvo) | **escreve na vítima, rc=0** | **escreve na vítima, rc=0** |
+| ML-7A | recusa | recusa |
+
+⚠️ **E a falsificação do mutante B depende de um detalhe de fixture:** `EvalSymlinks` exige que o
+caminho **exista**. Se `<vítima>/adr` ainda não existe, a resolução **falha**, o código mantém o
+caminho não resolvido e o mutante B degenera no mutante A — falsificado, mas **pela razão errada**,
+e a arm resolvida passa dando a impressão de que a correção óbvia "quase funciona". A fixture
+**pré-cria `<vítima>/adr`** (o estado que qualquer escape anterior já deixou) para exercitar o traço
+da §3.3-bis de verdade.
+
+### Como o teste prova, e o que ele exige para não ser vácuo
+
+- **Duas arms deterministas em qualquer plataforma:** em vez de depender de `/tmp` ser symlink,
+  a fixture cria `alias -> proj` e faz `chdir(alias)` + `PWD=alias`. `os.Getwd()` do Go devolve
+  `$PWD` quando ele `stat`-bate com `.`; `projectRoot()` resolve. Divergência garantida.
+- 🔴 **No Windows `os.Getwd()` ignora `$PWD`** (devolve `syscall.Getwd()` direto): as duas arms
+  colapsariam numa só e a suíte ficaria verde tendo medido metade. A arm não resolvida **assere a
+  pré-condição** (`Getwd != projectRoot()`) e **`t.Skip` nomeando o que não foi exercitado**.
+- **Braço de controle no mesmo teste:** `NewREQ` continua recusando — sem ele, "tudo recusa porque
+  quebrei tudo" passaria como conserto.
+- **A asserção é `refusing symlink path` + vítima vazia**, não `err != nil`: erro de config ou de
+  ambiguidade de agente satisfaria `err != nil` sem provar contenção nenhuma.
+
 ## Ver também
 
 - `docs/seguranca/2026-09-25-ponto-unico-de-contencao-e-o-instrumento-que-o-prova.md` (ML-6A)
 - `vault/notes/resolve-symlinks-primitivas-divergem-nos-3-runtimes-folha-inexistente-2026-08-31.md`
+- `internal/generators/adr_scope_guard_test.go` (ML-7A — as duas arms, o controle e a falsificação)
 - `vault/notes/marcador-de-contencao-pode-ser-falso-guarda-de-dir-nao-cobre-a-folha-2026-09-21.md`

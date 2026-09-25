@@ -41191,3 +41191,30 @@ bash scripts/check-unguarded-capture-rc.sh          RC=0
   `adr.go`); população (b) = **53 implementações do par**, em **5 gramáticas** de mensagem, com
   **3 sítios mudos**.
 - 🔴 **AC5 e AC4 medidamente NÃO atendidos** — a REQ foi para `done` com eles abertos.
+
+## 2026-09-25 — apolo-tf — ML-7A (início): fechar o escape VIVO do `adr new`
+
+- **Escopo:** `internal/generators/adr.go` (os 2 fluxos: `NewADR` e `NewADRDraft`) + teste novo.
+  Fora: ponto único (`ML-7B`), analisador de AST (`ML-7C`), os 13 sítios de `Clean(cwd)` (Wave 8).
+- **Forma a medir (§3.3-bis):** `adrDir` relativo ⇒ escopo de projeto incondicional, com
+  `absAdrDir = filepath.Join(projectRoot(), adrDir)`. `Beneath` só sobrevive onde pode **aumentar**
+  a estritura (ramo absoluto), nunca rebaixar.
+- Sem Git: não crio branch, não commito, não faço push.
+
+## 2026-09-25 — apolo-tf — ML-7A (fim): o escape do `adr new` está fechado
+
+- **Produto:** `internal/generators/adr.go` — novo ponto único `adrGuardPaths`, consumido por
+  `NewADR` e `NewADRDraft`. Os 4 pares `RejectSymlinks` + `Fprintf(os.Stderr, ...)` e os marcadores
+  `write-containment-allowed` continuam **idênticos em forma e em número** — mudou só a
+  **procedência do 1º operando**.
+- **Teste:** `internal/generators/adr_scope_guard_test.go` — as duas arms de `$PWD`, o braço de
+  controle (`NewREQ`) no mesmo teste, e a falsificação contra a correção **óbvia**.
+- 🔴 **Medição que endurece a §3.3-bis:** a correção óbvia (`EvalSymlinks` no alvo) não só mantém o
+  escape — ela **abre também a arm de `$PWD` resolvido**, que hoje recusa. Fica pior que o defeito.
+  Registrado no vault.
+- **E2E contra binário:** `bin/trackfw` (main) escapa **1** arquivo na arm não resolvida;
+  binário com o fix escapa **0** nas duas arms, com o controle recusando em ambas.
+- `make quality` **MAKE_RC=0** (338 OK / 0 FAIL na falsificação) · `trackfw validate` rc=0 (150
+  warnings pré-existentes).
+- Status do ML no roadmap **mantido em 🔄** — muda para ✅ só após a auditoria do arquiteto.
+- Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.

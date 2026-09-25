@@ -1425,7 +1425,7 @@ versionado, que passa a ser entregável desta wave.
 
 ### ML-7A — 🔴 Fechar o escape VIVO do `adr new` — vem ANTES de tudo
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento (despachado em 2026-09-25)
+**Status:** ✅ Concluído — auditado em 2026-09-25 · **o escape está fechado nas duas arms**
 
 **Por que na frente:** é o único defeito desta reabertura que **escreve fora do projeto hoje**, com
 `RC=0`. Os outros são inconsistência e instrumento; este é o defeito do título da REQ, vivo. Reproduzido
@@ -1444,13 +1444,89 @@ resolver"* leva `guardRoot` a virar a **própria vítima**, e o produto escreve 
 ausência de resolução do alvo — **é o fallback permissivo**.
 
 **Critérios de aceite:**
-- [ ] As **duas arms** do R-1 viram teste: `PWD` resolvido **e** `PWD` não resolvido, as duas recusando
-- [ ] 🔴 **Braço de controle no mesmo teste:** `req new` continua recusando — senão o teste não
+- [x] As **duas arms** do R-1 viram teste: `PWD` resolvido **e** `PWD` não resolvido, as duas recusando
+- [x] 🔴 **Braço de controle no mesmo teste:** `req new` continua recusando — senão o teste não
       distingue "consertei" de "quebrei tudo"
-- [ ] 🔴 **Falsificação contra a correção errada:** o teste **reprova** se alguém aplicar
+- [x] 🔴 **Falsificação contra a correção errada:** o teste **reprova** se alguém aplicar
       `EvalSymlinks(absAdrDir)` em vez da forma acima. Sem este braço, a autorrefutação se perde
-- [ ] O ramo global (`adrDir` absoluto) continua funcionando — não é o alvo desta correção
-- [ ] `make quality` verde
+- [x] O ramo global (`adrDir` absoluto) continua funcionando — não é o alvo desta correção
+- [x] `make quality` verde
+
+
+#### 🔴 Auditoria do ML-7A — reproduzi o antes e o depois, com o controle
+
+Recompilei `bin/trackfw` da árvore e rodei a mesma isca (`docs` → symlink para fora):
+
+```
+arm PWD não resolvido → refusing symlink path "…/docs"   RC=1
+arm PWD resolvido     → refusing symlink path "…/docs"   RC=1
+controle `req new`    → refusing symlink path "…/docs"   RC=1
+arquivos na vítima    → 0
+```
+
+E o **ramo global**, que este ML não deveria tocar, verifiquei separadamente:
+
+```
+adr_dirs absoluto FORA do projeto  → created /tmp/zeus-global-…/ADR-….md   RC=0   ✅ intacto
+adr_dirs absoluto DENTRO           → created …/docs/adr/ADR-….md           RC=0   ✅ promovido
+```
+
+`make quality` → **exit 0**, 338 OK, 0 FAIL, guarda de conjunto OK.
+
+### 🔴 Ele refutou a MINHA forma proposta, e estava certo
+
+Eu prescrevi *"`adrDir` relativo ⇒ projeto; global só para absoluto"*. Implementado como `if IsAbs →
+global` **puro**, isso **perde a segunda cláusula do contrato** escrito em `adr.go:32-37` (*"relative
+**or beneath cwd**"*): um `adr_dirs[0]` **absoluto e genuinamente dentro do projeto** pega escopo de
+projeto hoje e passaria a pegar o global, **mais fraco**.
+
+🔴 **Seria um enfraquecimento dentro da REQ cuja tese é "o fallback tem de ser o mais estrito".** A
+forma entregue mantém `Beneath` **só onde ele pode AUMENTAR a estritura** — promoção, nunca
+rebaixamento — e o ramo relativo falha **fechado** se `projectRoot()` falhar, sem cair para
+`filepath.Abs`.
+
+### E a medição dele foi ALÉM da autorrefutação do ML-6A
+
+A §3.3-bis dizia que a correção óbvia **mantém** o escape. A mutação mediu que ela é **pior que o
+defeito** — abre também a arm que hoje recusa:
+
+| mutante | arm resolvida | arm não resolvida |
+|---|---|---|
+| **A** — pré-fix (a `main` de hoje) | recusa | **escreve na vítima** |
+| **B** — a correção "óbvia" | **escreve na vítima** | **escreve na vítima** |
+| **ML-7A** | recusa | recusa |
+
+⚠️ **E o braço só é visível com a fixture certa.** `EvalSymlinks` exige que o caminho **exista**: com
+`<vítima>/adr` ausente a resolução falha, o mutante B **degenera no mutante A**, e a arm resolvida
+**passa** — falsificação pela razão errada, dando a impressão de que a correção óbvia "quase
+funciona". A fixture final pré-cria o diretório. 🔴 **É a classe de erro que esta casa mais paga:
+teste verde que não mediu o que diz medir.**
+
+### Censo do mecanismo, pela Regra Dura
+
+`grep 'Beneath('` não-teste → 7 linhas. Só **duas** usam `Beneath` para **selecionar** o root
+(`adr.go:48` e `:250`) — as duas corrigidas aqui. `metrics.go:223` é **mecanismo diferente**: o root
+já vem resolvido e `Beneath` é predicado de **isenção documentada**, não seletor de controle. Nenhum
+sítio de mesma causa ficou fora.
+
+### Não-vacuidade que ele construiu sem eu pedir
+
+Em vez de depender de `/tmp` ser symlink, a fixture força a divergência de namespace por
+`chdir(alias)` + `PWD=alias`. 🔴 **No Windows `os.Getwd()` ignora `$PWD`** — as duas arms colapsariam
+numa só e a suíte ficaria **verde tendo medido metade**. A arm não resolvida **assere a pré-condição**
+e faz `t.Skipf` **nomeando** o que não foi exercitado. E a asserção é `refusing symlink path` +
+vítima vazia, nunca `err != nil` — que erro de config satisfaria sem provar contenção.
+
+### Residuais registrados, nenhum bloqueante
+
+1. **`adrDir` relativo com `..`** agora **recusa** onde antes escorregava para o escopo global.
+   Correto pela tese da REQ, mas é **mudança de comportamento**; nenhum consumidor depende (medido).
+2. ⚠️ **`resolveADRDir` não chama `config.ExpandPath`**, então `adr_dirs[0]` do tipo `~/...` é tratado
+   como relativo. **Pré-existente, não regressão** — mas o `validator.go` **chama** `ExpandPath` no
+   mesmo campo, e ele registrou a assimetria por ser *"o tipo de coisa que alguém conserta errado daqui
+   a seis meses"*.
+3. As linhas `a17–a20` da tabela do `ML-6A` **saíram do lugar** (o comentário novo empurrou o código):
+   agora **104, 175, 301, 360**. Registrado para não recitar linha obsoleta.
 
 ### ML-7B — Extrair o ponto único (#401)
 **Status:** ⬜ Pendente · **precede o `ML-7C` por dependência técnica, não por gosto**
