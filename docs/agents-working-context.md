@@ -40977,3 +40977,36 @@ bash scripts/check-unguarded-capture-rc.sh          RC=0
 - Dívidas pagas por medição: `unconstructible`=0 (G2 incondicional) e o `mount` do runner
   (`ntfs … noacl …`), que tira a atribuição da #421 da presunção.
 - Próximo: issue dos 43 sítios que rodam `bin/trackfw` committado; fila **#400-#403, #407, #408, #421**.
+
+## 2026-09-24 — hades-tf — ML-0B: o discriminante do gate de palavra-chave é um só (medido)
+
+- **Parecer:** `docs/seguranca/2026-09-25-discriminante-do-gate-de-palavra-chave.md`. Medição, zero linha
+  de produto. Corpora: 357 corpos **vivos** de PR mergeado + 41 frases por forma (as reais de #417, #424,
+  #293, #258). Gate invocado pelo caminho real, um corpo por invocação, `$?` sem cano antes.
+- 🔴 **A forma 1 NÃO está corrigida no CI.** O #416 mergeou o caminho da API, mas `quality.yml` não define
+  `GH_TOKEN` e o log do run `36074650903` (PR #425, depois do merge) diz
+  `fonte: payload do evento (corpo de ABERTURA)`. A tabela do #416 foi medida **localmente**, com `gh`
+  autenticado. Reconciliação: artefato afirma o que o ambiente real nega.
+- 🔴 **A forma 1 está MASCARANDO a forma 4.** O gate da época de #293 acusa o corpo vivo de #293 (rc=1) e o
+  check foi `SUCCESS`. Logo **AC1 não pode entrar antes da forma 4** — reavaliar ativa o falso positivo.
+- **Precisão/cobertura de hoje: 1 acerto em 3 acusações; 1 de 4 declarações reais.** Os 3 falsos negativos
+  (#312, #325, #330) fecharam issue à mão — confirmado por `closingIssuesReferences`.
+- **As 4 formas caem com um discriminante só** (40/40 sintético, 4/4 real sem falso positivo). Mas
+  **troca o modo de falha**: 6 de 10 evasões de supressão passam (`Sem dúvida, fecha a #12`,
+  `Não só fecha a #12, mas também…`). A fronteira está em 3 invariantes; I3 (toda supressão declarada e
+  falsificada) é a que o remendo viola.
+- 🔴 **Ordenação travada:** forma 3 + forma 4 no **mesmo commit** (`Não fecha **#421**` é FP novo se a 3
+  entrar sozinha), e **AC1 depois** das duas.
+- ⚠️ **Decisão pendente do arquiteto:** a frase canônica do #258 passa **só** pela zona de aspas, que o
+  **AC3 proíbe** literalmente. Ampliar o AC3 ou declarar a frase como residual — §3.3 do parecer.
+- **Enumeração: 8 famílias, não 4.** Novas: conjugação fora da lista (`Fecho`/`Fechará`/`Fechando`),
+  referência cruzada/URL só no lado inglês (fail-open de gramática), verbos fora das 4 famílias, e
+  🔴 **a zona de código apaga a ISENÇÃO inglesa** (`Fecha #246. A forma certa seria \`Closes #246\`.` →
+  acusa **hoje**). A forma 2 tem 5 sítios, não 2: aspas retas/curvas, blockquote, tabela e bloco indentado
+  por 4 espaços também são lidos como prosa.
+- 🔴 **Segundo custo do discriminante único: passe ÚNICO de mascaramento destrói a isenção inglesa** — 5 de
+  5 medidos (`Fecha #246.` + `Closes #246` em aspas/bq/tabela/indent/cerca → acusa). **Não aparece nos 357
+  corpos**, logo o "0 falso positivo" é propriedade do corpus, não do discriminante. Exige **dois passes**.
+- ⚠️ **Premissa não verificada e load-bearing:** "o GitHub ignora palavra-chave dentro de bloco de código".
+  Zero PRs no corpus decidem. Escrita como premissa no parecer, não como fato.
+- Não commitei, não fiz push, não rodei `make quality`.
