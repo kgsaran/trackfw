@@ -7315,7 +7315,7 @@ reduzido de `release.yml` (3 gates), por decisão já registrada na
 
 ## Palavra-chave de fechamento de issue no corpo do PR — fora do contrato dos 3 CLIs, registrada mesmo assim
 
-<!-- trackfw-contract: gate=scripts/check-pr-closing-keyword.sh partial=o gate casa a forma LITERAL e ADJACENTE (palavra-chave portuguesa colada ao `#N`, com no máximo artigo definido e/ou a palavra "issue" no meio). Paráfrase com palavras intervenientes — "este PR fecha, por fim, a #246" — NÃO é coberta, e isso é deliberado: adjacência é exatamente o que mantém o falso positivo em zero sobre os 240 corpos reais medidos. Trechos em cerca de código e code span são removidos antes de casar, então a forma errada CITADA como exemplo não reprova (e, pelo mesmo motivo, um autor que envolvesse a própria linha de fechamento em crase escaparia — linha em crase também não fecha issue nenhuma, então o gate não perde nada que importe). Não é defesa contra evasão adversária: o autor do corpo não é um adversário, é alguém que quer fechar a issue e erra o idioma. Ver vault/notes/gate-literal-regex-syntax-equivalent-bypass-2026-09-01.md -->
+<!-- trackfw-contract: gate=scripts/check-pr-closing-keyword.sh partial=o gate pergunta se a frase AFIRMA fechamento, nao se a palavra-chave portuguesa esta adjacente ao `#N`. Reescrito no ML-N1 da REQ-2026-09-05 (2026-09-25); a redacao anterior descrevia adjacencia literal e afirmava que "a forma errada CITADA como exemplo nao reprova", o que foi MEDIDO COMO FALSO. As zonas do corpo se partem em dois baldes com comportamento OPOSTO no proprio GitHub, medido por closingIssuesReferences em 7 PRs-sonda com braco de controle (#427 prosa=[426]; #428 cerca, #429 code span, #431 bloco indentado = []; #432 blockquote, #433 tabela, #434 aspas retas = [430]). Balde CODIGO (cerca, code span, bloco indentado): o GitHub IGNORA a palavra-chave ali, logo a isencao inglesa seria falsa e a mascara e subtraida dos DOIS matchers -- uma linha de fechamento em crase nao isenta, e ACUSAR e o trabalho do gate. Balde NAO-CODIGO (blockquote `> ...`, linha de tabela `| ... |`, span entre aspas RETAS): o GitHub HONRA a palavra-chave ali, logo a isencao e real; passe PROPRIO, subtraido so do matcher portugues, IMPLEMENTADO no ML-N2 (2026-09-25) e falsificado zona a zona nos dois lados -- cada zona suprime a acusacao portuguesa E deixa a isencao inglesa atravessar. O AC3 da REQ foi AMPLIADO para admitir o span entre aspas, por decisao do arquiteto e com razao medida: a frase canonica do issue #258 (`O corpo da minha PR #247 dizia "Fecha #246" ...`), que e a propria descricao deste defeito, passa EXCLUSIVAMENTE pela zona de aspas -- retiradas as aspas nao sobra sinal nenhum e o gate acusa (medido rc=1). Aspas sao o quinto de cinco mecanismos de zona, nao o unico, que era o que o AC3 proibia. A indentacao do balde de CODIGO passa a ser medida no corpo COMO O AUTOR ESCREVEU, e nao depois do mascaramento de code span: apagar um span no inicio da linha FABRICAVA 4 espacos a esquerda e silenciava a declaracao -- uma linha iniciada por code span seguida de `Fecha #246.`, apos linha em branco, media rc=0 antes do ML-N2 e mede rc=1 depois. Isso reconcilia a divida de largura declarada pelo ML-N1: as 80 linhas do censo do parecer sao a contagem linha-a-linha sobre o corpo cru (54 dentro de cerca, 26 fora, NENHUMA abrindo bloco apos linha em branco, logo 0 efetivamente apagadas), e as 304 que o ML-N1 media eram indentacao FABRICADA pelo passe anterior. Corpus A (358 PRs mergeados, 357 com corpo) antes e depois do ML-N2: rc=0 353 / rc=1 4 / rc=2 1, acusados #247/#312/#325/#330 -- veredito identico PR a PR, medido tambem em ablacao separada de cada uma das duas mudancas. Supressao por polaridade (negacao a esquerda do verbo, na mesma clausula) e heuristica DECLARADA, nao analise sintatica: ela nao fecha em regex ("Nao e verdade que fecha #12" deve acusar e "Sem contar o #99, fecha a #12" nao, com a mesma janela), e por isso toda supressao e IMPRESSA no log, nos dois caminhos de saida. Nao coberto e declarado: verbos fora das 4 familias, preterito perfeito (relata acao passada, nao declara fechamento -- #233 mediria falso positivo), segunda referencia coordenada por palavra, e zonas nao medidas (comentario HTML, <pre>/<code>, ASPAS CURVAS, cerca com atributo de linguagem). As aspas CURVAS sao residual DECLARADO e preso por cenario de autoteste (`residual-aspas-curvas-nao-sao-zona`): a sonda #434 mediu so as RETAS e o corpus A tem ZERO ocorrencia de curvas, entao trata-las junto seria extrapolacao por analogia -- a mesma que a secao 10.1 do parecer ja viu refutada duas vezes. `~~~` e analogia HERDADA e nao medida: o FENCE_RE o casa e o gate o trata como zona de codigo, sem sonda que o confirme. A largura da zona de TABELA e divida declarada: 1354 linhas apagadas no corpus A, ZERO com declaracao portuguesa e `#N`, e a forma estrita (`^| ... |$`) apaga exatamente as mesmas 1354 que a forma larga. Costura medida entre o passe de nao-codigo e a leitura de polaridade: a zona de aspas apaga DENTRO da linha, entao um token de negacao que vive numa CITACAO deixa de suprimir a declaracao do autor -- `Ele disse "nao" e fecha a #246` saia rc=0 e passa a sair rc=1, unica divergencia em 7 arranjos de negacao x zona exercitados, e na direcao fail-closed (a clausula como o autor a escreveu AFIRMA o fechamento). Presa pelo par de cenarios `costura-negacao-*`. Falso negativo por construcao nas 6 zonas: quem declarar o fechamento DENTRO de blockquote, tabela ou aspas nao e avisado -- preco escolhido para nao acusar quem apenas CITA. Nao e defesa contra evasao adversaria: o autor do corpo nao e um adversario, e alguem que quer fechar a issue e erra o idioma. Ver vault/notes/gate-literal-regex-syntax-equivalent-bypass-2026-09-01.md e docs/seguranca/2026-09-25-discriminante-do-gate-de-palavra-chave.md -->
 
 **Não é feature de produto.** Nada em `internal/`, `npm/src/` ou `pypi/trackfw/` muda, e o
 `trackfw init` **não** passa a gerar template de PR em projeto adotante. É infraestrutura deste
@@ -7352,14 +7352,40 @@ portugueses e não fecham nada.
 `$GITHUB_EVENT_PATH` — nunca `grep`/`sed` sobre o JSON, que produziria leitura parcial silenciosa
 num corpo com `\n` escapado.
 
+**Fonte do corpo: API primeiro, payload depois — e a queda entre as duas é ANUNCIADA (ML-N3,
+2026-09-25).** O payload do evento é imutável: ele congela o corpo no instante daquele evento. O
+gate pergunta ao GitHub qual é o corpo *agora* (`gh pr view <n> --json body`) e só cai para o
+payload se não conseguir. Até o ML-N3 essa queda era **silenciosa** (`2>/dev/null`) e o log
+afirmava estar lendo o *"corpo de ABERTURA"* — o que passaria a ser **falso** no mesmo commit que
+ligou o gatilho `edited`, porque num payload de `edited` o corpo já é o editado. Agora o gate
+imprime a **ação do evento**, a **causa** da degradação (sem número no payload · `gh` fora do PATH ·
+rc e stderr do `gh`) e um `::warning::` sob `GITHUB_ACTIONS`. 🔴 Degradação **não** é vacuidade: o
+payload é um corpo real, o gate mede e dá veredito; o que muda é a *precisão da fonte*. Vacuidade
+continua sendo *não ter corpo* → exit 2.
+
+**O `GH_TOKEN` é o que liga esse caminho.** Entregue no PR #416, ele ficou **inerte em CI** até o
+ML-N3: `grep -c 'GH_TOKEN' .github/workflows/quality.yml` media **0** em 2026-09-25. Consequência
+medida: o PR **#293** mergeou **verde** com `**Não fecha #290**` e `**Não fecha #275**` no corpo
+vivo, porque a negação entrou por **edição posterior** ao último evento com payload.
+
 **Um único matcher.** `--self-test` (usado por `make parity`, onde não há contexto de PR) e o
 caminho de CI chamam a **mesma** função `evaluate_body_file`; não existe segunda cópia da regex. Um
 autoteste que gerasse o próprio matcher seria exatamente o gate vácuo que a auditoria mediu.
 
 Ligado a `parity:` no `Makefile` (modo `--self-test`) e ao job `pr-closing-keyword` de
-`.github/workflows/quality.yml`, com `if: github.event_name == 'pull_request'` — o único evento em
-que o corpo existe no payload. **Não** foi acrescentado a `required_status_checks`: é decisão do
-arquiteto, e um gate novo em obrigatório bloqueia todo PR se nascer com defeito.
+`.github/workflows/pr-closing-keyword.yml` — **workflow próprio desde o ML-N3**, não mais um job do
+`quality.yml`. Razão medida: o gate precisa reavaliar no tipo de evento `edited` (o corpo muda sem
+commit novo, e `opened · synchronize · reopened`, o default, não cobre isso), e declarar `edited` no
+`on:` do `quality.yml` dispararia **os 13 jobs daquele arquivo** a cada correção de typo em
+descrição de PR — 11 sem `if:` e 2 com `if: always()`, nenhum com `if:` que exclua `edited` (medido
+em 2026-09-25). O job tem `permissions: {contents: read, pull-requests: read}` **no job** (o bloco de
+job *substitui* o do workflow, não se soma) e `GH_TOKEN: ${{ github.token }}` no step que mede o
+corpo — o escopo é ler o corpo de um PR, nada além. O nome do workflow (`PR Closing Keyword`) foi
+acrescentado ao `workflow_run.workflows` de `check-annotations.yml` no mesmo commit, para que sair do
+`Quality` não custasse a verificação de anotações. O gatilho é preso por
+`scripts/check-workflow-yaml.py` (6 mutações falsificadas). **Não** foi acrescentado a
+`required_status_checks`: é decisão do arquiteto, e um gate novo em obrigatório bloqueia todo PR se
+nascer com defeito.
 
 ## `serve`: `/api/chain` — vínculo `roadmap:`/`adr:` nunca resolvia por frontmatter só (ML-3D, ROADMAP-2026-09-05)
 

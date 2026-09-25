@@ -123,7 +123,10 @@ parity-rest: build
 	# --self-test: `make parity` roda fora de um pull request, entao nao ha corpo de
 	# PR para medir. O autoteste exercita o MESMO matcher que o CI usa (nao ha
 	# segunda copia da regex) nas duas direcoes + a guarda de vacuidade. A medicao
-	# do corpo real acontece no job `pr-closing-keyword` de .github/workflows/quality.yml.
+	# do corpo real acontece no job `pr-closing-keyword` de
+	# .github/workflows/pr-closing-keyword.yml -- workflow PROPRIO desde o ML-N3 da
+	# REQ-2026-09-05, porque ele precisa do tipo de evento `edited` e po-lo no
+	# quality.yml dispararia as 13 suites daquele arquivo a cada edicao de descricao.
 	scripts/check-pr-closing-keyword.sh --self-test
 	# ML-2A (ROADMAP-2026-09-06-ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega):
 	# autoteste do ratchet de nomes do Windows. Roda localmente sem artefatos de CI (--self-test

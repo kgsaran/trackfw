@@ -3,6 +3,15 @@ name: Quality
 on:
   push:
     branches: [main]
+  # SEM `types:` — de proposito. O default do `on: pull_request` e
+  # `opened · synchronize · reopened`, e acrescentar `edited` aqui dispararia
+  # o workflow INTEIRO a cada edicao de descricao de PR: medido em 2026-09-25,
+  # TODOS os 13 jobs deste arquivo (11 sem `if:` + 2 com `if: always()`, nenhum
+  # com `if:` que exclua `edited`) passariam a rodar, incluindo as tres suites
+  # de windows-latest. Escrever esse `if:` job a job deixaria o proximo job novo
+  # sem ele — contrato que se quebra por omissao. O gate que PRECISA de
+  # `edited` e so o de palavra-chave de fechamento, e por isso ele mora em
+  # .github/workflows/pr-closing-keyword.yml, com gatilho proprio.
   pull_request:
 
 permissions:
@@ -35,29 +44,6 @@ jobs:
       - run: go build ./...
       - run: scripts/check-static-assets.sh
       - run: scripts/check-integration-assets.sh
-
-  pr-closing-keyword:
-    # Gate de palavra-chave de fechamento de issue no corpo do PR
-    # (REQ-2026-09-02-prs-usam-palavra-chave-de-fechamento-em-portugues-e-nenhuma-
-    # issue-fecha-automaticamente). So faz sentido no evento `pull_request`: e o
-    # unico em que `github.event.pull_request.body` existe no payload. Em `push`
-    # para a main o job e pulado inteiro pelo `if:` — nao ha corpo a medir, e o
-    # script sairia 2 (not_evaluated), nunca 0 em silencio.
-    #
-    # O script le o corpo do proprio payload do evento (GITHUB_EVENT_PATH), com
-    # `json.load` — nao usa `gh`, nao precisa de token, e nao depende de
-    # `contents: read` alem do checkout.
-    #
-    # NAO adicionado a `required_status_checks` — decisao do arquiteto. Um gate
-    # novo em obrigatorio bloqueia todo PR se nascer com defeito.
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: Autoteste do gate (falsificacao nas duas direcoes)
-        run: scripts/check-pr-closing-keyword.sh --self-test
-      - name: Corpo deste PR usa palavra-chave de fechamento em ingles
-        run: scripts/check-pr-closing-keyword.sh
 
   package-smoke:
     runs-on: ubuntu-latest
