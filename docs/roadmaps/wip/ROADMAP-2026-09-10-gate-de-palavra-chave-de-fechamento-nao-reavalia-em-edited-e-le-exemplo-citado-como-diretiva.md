@@ -552,7 +552,7 @@ não-coberto. O `ML-N2` atualiza de novo quando acrescentar as zonas de não-có
 
 ### ML-N2 — Forma 2 (exemplo citado) — AC3 **ampliado** para span entre aspas
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente · **depende de `ML-N1` (dois passes)**
+**Status:** 🔄 Em andamento (despachado em 2026-09-25) · `ML-N1` ✅ entregue os dois passes
 
 🔴 **Este ML altera o AC3 da REQ, por decisão minha, e a razão fica escrita.** O AC3 original proíbe
 *"inferir de aspas apenas"*. Mas foi medido que a **frase canônica do #258** — a própria descrição do
@@ -569,7 +569,11 @@ frase. Manter o AC estrito significaria deixar o gate acusando o texto que docum
    ⚠️ **Aspas curvas não foram medidas** — só as retas (#434). Se o gate as tratar junto, isso é
    extrapolação por analogia, e foi a analogia que produziu as duas presunções refutadas. Ou mede, ou
    declara como residual.
-2. 🔴 **Corrigir `docs/cli-parity.md:7318` neste mesmo commit.** Ele afirma que *"a forma errada **citada
+2. ⚠️ **O bloco `trackfw-contract` do `cli-parity.md` JÁ foi reescrito no `ML-N1`** — o arquiteto o fez
+   porque aquele commit tornou falsa a afirmação sobre bloco indentado. O que resta aqui é **atualizá-lo
+   de novo** para declarar as 3 zonas de não-código como implementadas (hoje ele diz *"passe próprio,
+   ainda NÃO implementado — é do ML-N2"*). Instrução original, mantida para registro:
+   🔴 **Corrigir `docs/cli-parity.md` neste mesmo commit.** Ele afirma que *"a forma errada **citada
    como exemplo** não reprova"* — **medido como falso** hoje para aspas, blockquote, tabela e bloco
    indentado. O contrato e o comportamento passam a concordar **no mesmo commit**: contrato que mente é
    pior que contrato ausente, e um commit depois é uma janela em que alguém lê a mentira.
