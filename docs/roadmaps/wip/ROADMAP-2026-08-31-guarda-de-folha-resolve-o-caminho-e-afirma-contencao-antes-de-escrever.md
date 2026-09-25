@@ -1684,11 +1684,44 @@ esta casa já mediu várias vezes. O braço que discrimina é: **o analisador re
 e os 7 marcadores falsos que o gate bash aprovou**, reconstruídos do estado pré-Wave-4 por `git show`
 ou overlay.
 
+**Owner:** `apolo-tf`
+**Status:** 🔄 Em andamento (despachado em 2026-09-25)
+
+⚠️ **Correção do AC, feita pelo `ML-6A`:** eu escrevera *"reconstruídos por `git show`"*. Isso **não é
+executável no CI** — e o commit que eu citaria (`7721efc6^1`) é **pré-REQ, com zero marcadores**. O
+corpus é **`87fe4915`**, já protegido por `refs/tags/corpus/write-containment-pre-fix` e reempurrado
+ao remoto. Conferido por mim: **157 marcadores no corpus** contra **158 na árvore de hoje** (o extra é
+prosa de docstring, não sítio).
+
+🔴 **O corpus vai para `testdata/` VERSIONADO, sem referência a commit-ish.** Ausência = **FAIL**,
+nunca `skip`. Materializá-lo é entregável deste ML.
+
+**Os dois predicados — e um só não basta** (medido no `ML-6A`):
+
+| | predicado | por que |
+|---|---|---|
+| **P1** | a guarda **precede** a escrita no fluxo | é o que o gate bash tentava aproximar por texto |
+| **P2** | a **provenância do 1º operando** termina em resolvedor aprovado, com `filepath.Clean` **não** transparente | 🔴 um AST de fluxo puro **aprova** `RejectSymlinks(Clean(cwd), p)`, porque o fluxo **passa** por `pathguard` |
+
+**P2 é interprocedural** — um analisador intraprocedural perde **17 das 34** escritas.
+
 **Critérios de aceite:**
-- [ ] 🔴 O analisador **reprova** os 22 gaps e os 7 marcadores falsos reconstruídos do estado pré-fix
-- [ ] Sobre a árvore atual: **verde, e a não-vacuidade é provada** — população contada e piso declarado
-- [ ] O AC6 desta REQ (*"gate falsificável cobrindo AC2 e AC3, com guarda de vacuidade"*) passa a ser
-      atendido **pelo que o gate prova**, não pelo que ele afirma
+- [ ] 🔴 O analisador **reprova** os 22 gaps e os 7 marcadores falsos do corpus **versionado em
+      `testdata/`**; corpus ausente = **FAIL**
+- [ ] Sobre a árvore atual: **verde**, com **não-vacuidade provada** — população contada e **piso por
+      contagem, nunca por data**. Os três modos de obsolescência (corpus ausente · população == 0 ·
+      contagem ≠ piso, com o delta impresso) **reprovam**
+- [ ] 🔴 **T3 — a lista de exceções não pode dissolver a regra.** É o caminho mais provável de esvaziar
+      este gate, acima dos maliciosos: o analisador aponta um sítio legítimo, alguém relaxa a regra ou
+      exceta o arquivo, e o gate fica verde para sempre. Exceção **por sítio**, contagem fixada, e **o
+      braço do corpus reprova independentemente da lista**
+- [ ] O analisador fecha os residuais textuais do `ML-7B`: **import com alias** (`pg "…/pathguard"`) e
+      **`if err != nil {}` vazio** — os dois evadem o scanner de hoje
+- [ ] ⚠️ **T5 fica declarado, não fingido:** `projectRoot()`/`resolveRoot()` fazem **fallback
+      silencioso** quando `EvalSymlinks` falha, e **AST não alcança isso** — precisa de fail-closed +
+      teste de runtime, e não pode ser marcado como coberto pelo analisador
+- [ ] O AC6 desta REQ passa a ser atendido **pelo que o gate prova**, não pelo que ele afirma
+- [ ] Reconciliação: uma frase por teste novo
 - [ ] `make quality` verde
 
 ## Wave 8 — Root resolvido nos dois lados (#402)
