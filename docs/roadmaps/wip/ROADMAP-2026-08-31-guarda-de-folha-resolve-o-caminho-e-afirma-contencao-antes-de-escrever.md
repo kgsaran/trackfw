@@ -1420,10 +1420,40 @@ durabilidade remota ainda é dívida**, e a saída definitiva é materializar o 
 versionado, que passa a ser entregável desta wave.
 
 ## Wave 7 — Ponto único + o analisador que o prova
-> Dependências: Wave 6 auditada. `ML-7A` e `ML-7B` tocam os mesmos arquivos: **sequenciais**.
+> Dependências: Wave 6 auditada. Os três MLs tocam `internal/generators/`: **sequenciais**.
+> Ordem travada: **`ML-7A` primeiro** (escape vivo) → `ML-7B` (ponto único) → `ML-7C` (analisador).
 
-### ML-7A — Extrair o ponto único (#401)
-**Status:** ⬜ Pendente · **precede o `ML-7B` por dependência técnica, não por gosto**
+### ML-7A — 🔴 Fechar o escape VIVO do `adr new` — vem ANTES de tudo
+**Owner:** `apolo-tf`
+**Status:** 🔄 Em andamento (despachado em 2026-09-25)
+
+**Por que na frente:** é o único defeito desta reabertura que **escreve fora do projeto hoje**, com
+`RC=0`. Os outros são inconsistência e instrumento; este é o defeito do título da REQ, vivo. Reproduzido
+por mim e pelo `ML-6A`, com braço de controle (`req new` recusa no mesmo diretório, com a mesma isca).
+
+**Forma proposta pelo `ML-6A` (§3.3-bis), e a autorrefutação vai junto:**
+1. **`adrDir` relativo ⇒ escopo de projeto, incondicionalmente** — sem consultar `Beneath`. O ramo
+   global fica alcançável **só** para `adrDir` absoluto, que é o contrato já escrito em `adr.go:32-37`.
+2. `absAdrDir` deriva de `filepath.Join(projectRoot(), adrDir)`, **não** de `filepath.Abs`, que herda
+   o `cwd` lógico. Root e alvo nascem no **mesmo namespace resolvido**.
+3. 🔴 **Nenhum `EvalSymlinks` sobre o alvo antes da guarda** — a ordem guarda-antes-de-resolver do ADR
+   fica preservada.
+
+🔴 **A correção ÓBVIA está ERRADA e o próprio fonte avisa** (`adr.go:42-45`): *"faça `absAdrDir`
+resolver"* leva `guardRoot` a virar a **própria vítima**, e o produto escreve nela. O defeito não é a
+ausência de resolução do alvo — **é o fallback permissivo**.
+
+**Critérios de aceite:**
+- [ ] As **duas arms** do R-1 viram teste: `PWD` resolvido **e** `PWD` não resolvido, as duas recusando
+- [ ] 🔴 **Braço de controle no mesmo teste:** `req new` continua recusando — senão o teste não
+      distingue "consertei" de "quebrei tudo"
+- [ ] 🔴 **Falsificação contra a correção errada:** o teste **reprova** se alguém aplicar
+      `EvalSymlinks(absAdrDir)` em vez da forma acima. Sem este braço, a autorrefutação se perde
+- [ ] O ramo global (`adrDir` absoluto) continua funcionando — não é o alvo desta correção
+- [ ] `make quality` verde
+
+### ML-7B — Extrair o ponto único (#401)
+**Status:** ⬜ Pendente · **precede o `ML-7C` por dependência técnica, não por gosto**
 
 **Critérios de aceite:**
 - [ ] Uma implementação do par predicado+recusa; os 4 sítios passam a delegar
@@ -1431,7 +1461,7 @@ versionado, que passa a ser entregável desta wave.
       AC5 desta REQ exige (*"idênticas em todos os sítios de escrita do Go"*)
 - [ ] `make quality` verde
 
-### ML-7B — O analisador de AST (#400)
+### ML-7C — O analisador de AST (#400)
 **Status:** ⬜ Pendente
 
 🔴 **O escopo é O INSTRUMENTO, e só ele.** A triagem mediu que **os 34 defeitos já estão corrigidos**
