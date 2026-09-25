@@ -2141,6 +2141,49 @@ devolve o cwd do processo, e aceitar isso substituiria o root em silêncio.
 
 ⚠️ `gofmt -l` reporta `internal/integrations/{models,render}_test.go`: **pré-existente**, diff vazio.
 
+
+### ML-9B — Corretivo de CI: o corpus vira CRLF no Windows e um teste compara separador
+**Owner:** `apolo-tf`
+**Status:** 🔄 Em andamento (despachado em 2026-09-25) · **PR #441, `windows-full-suites` vermelho**
+
+**Nenhuma das duas é defeito de produto — as duas são instrumento.** Diagnóstico meu, do log do run
+`36183918594`:
+
+**A — o corpus congelado é convertido para CRLF no checkout do Windows** (3 testes):
+```
+corpus file …/agentfiles.go.txt has sha256 234fbb1c…, the manifest pins 5d7a85ef…
+  — the frozen pre-fix evidence was modified
+$ git ls-files --eol …/agentfiles.go.txt
+i/lf    w/lf    attr/            ← SEM atributo
+```
+🔴 **A causa é o próprio truque que fez o corpus funcionar.** A extensão `.go.txt` foi escolhida para
+mantê-lo fora do build **e** fora do `find -name '*.go'` do gate bash — e isso o tirou também da
+regra `*.go text=auto eol=lf` do `.gitattributes`. No runner Windows, `autocrlf` converte, e o
+`sha256` do manifesto quebra. **Efeito colateral não previsto por ninguém, meu inclusive.**
+
+**B — teste compara caminho com separador POSIX contra mensagem com separador do SO** (1 teste):
+```
+update_test.go:2413: expected a stderr warning naming .github/workflows/trackfw-validate.yml
+  as a symlink, got: "trackfw: refusing write to C:\Users\…\.github\workflows\trackfw-validate.yml…"
+```
+O teste faz `strings.Contains(stderr, DiscoverGitHubActionsWorkflowPath)`, e aquela constante usa
+`/`. ⚠️ **O teste já era frágil**; o que mudou foi o emissor: até o `ML-7B` a mensagem era
+`aviso: %s é um symlink…` com caminho **relativo**; agora é a gramática única com caminho
+**absoluto do SO**. Medido: `rc=0` no macOS.
+
+**Critérios de aceite:**
+- [ ] O corpus **não é convertido** em nenhuma plataforma, e a razão fica escrita no `.gitattributes`
+      junto com as outras exclusões medidas
+- [ ] 🔴 **Falsificação da regra nova:** um braço que prove que o arquivo **não** sofre conversão —
+      `git check-attr` sobre um sítio do corpus, ou equivalente. Sem isso, a regra é comentário
+- [ ] O teste B compara caminho de forma **independente de separador**, e 🔴 **continua exigindo que a
+      mensagem nomeie o artefato** — trocar por um `Contains("symlink")` genérico passaria com o
+      caminho errado
+- [ ] ⚠️ **Varrer a MESMA classe antes de fechar** (Regra Dura): há outro teste comparando caminho com
+      `/` literal contra saída do produto? E outro `testdata` de evidência byte-exata sem regra de
+      `eol`? A resposta fica escrita, mesmo que seja "nenhum"
+- [ ] `make quality` verde **e** o `windows-full-suites` do PR #441 verde
+
 ## Fora desta REQ: o #403
 
 **Causa própria, e a diferença de mecanismo fica escrita.** O #403 é: *rótulo de cenário novo não tem
