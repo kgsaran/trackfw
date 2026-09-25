@@ -51,8 +51,10 @@ func captureStderrIntegrations(t *testing.T, body func()) string {
 func TestRejectSymlinksDelegateIsAudible(t *testing.T) {
 	root := t.TempDir()
 	victim := t.TempDir()
-	if err := os.Symlink(victim, filepath.Join(root, ".trackfw")); err != nil {
-		t.Fatalf("planting the bait symlink: %v", err)
+	// symlinkOrSkip, not os.Symlink — see scripts/check-symlink-privilege-guard.sh:
+	// lack of the Windows symlink privilege is a skip, any other failure is fatal.
+	if !symlinkOrSkip(t, victim, filepath.Join(root, ".trackfw")) {
+		return
 	}
 	target := filepath.Join(root, ".trackfw", "integrations-manifest.json")
 

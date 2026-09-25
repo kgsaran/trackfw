@@ -41249,3 +41249,37 @@ bash scripts/check-unguarded-capture-rc.sh          RC=0
   (`generators/note.go:72 [raw-predicate]`).
 - Status do ML no roadmap **mantido em 🔄** — muda para ✅ só após a auditoria do arquiteto.
 - Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.
+
+## 2026-09-25 — apolo-tf — ML-7C (início): o analisador de AST, com corpus versionado
+
+- **Escopo:** o **instrumento**, e só ele. Substituir a prova por marcador textual
+  (`scripts/check-write-containment.sh`) por um analisador de AST com dois predicados — P1
+  (guarda-antes-de-escrever, no mesmo fluxo) e P2 (provenância do 1º operando, com
+  `filepath.Clean` **não** transparente).
+- **Fora:** corrigir os 16 sítios `Clean(cwd|root)` (Wave 8), relitigar o escopo global (decisão 3
+  do ADR), fechar T5 (fail-closed do resolvedor).
+- **Corpus:** `87fe4915` materializado em `internal/pathguard/testdata/corpus-pre-fix/` como
+  `.go.txt` versionado, com `MANIFEST.sha256`. Nenhum braço referencia commit-ish; ausência = FAIL.
+- Sem Git: não crio branch, não commito, não faço push.
+
+## 2026-09-25 — apolo-tf — ML-7C (fim): o analisador mede, e mede duas árvores
+
+- **Produto (tudo em `_test.go`, nada em produção):**
+  `internal/pathguard/containment_analyzer_test.go` (o analisador: taint interprocedural,
+  dominância por ancestralidade de bloco, provenância), `containment_corpus_test.go` (T1/T2/T3),
+  `containment_live_test.go` (árvore atual + as duas listas fixadas por sítio),
+  `containment_falsify_test.go` (5 mutantes + braço de controle + 4 arms de provenância),
+  e `testdata/corpus-pre-fix/` (16 arquivos + manifesto sha256).
+- **Medição:** árvore atual 107 arquivos / 154 escritas / 151 em população / 59 guardas / **20
+  achados P1**, todos fixados por sítio. Corpus pré-fix: 146 escritas / 139 em população /
+  **104 achados** (35 escritas sem guarda + 35 predicado cru + 34 emissor fora do pathguard).
+- **Os dois casos-bandeira do #400 reprovam pelo nome:** `syncREQReferences` (roadmap.go:1141) e
+  o ramo lefthook de `generateCommitMsgHook` (scaffold.go:2313) — e **nenhum dos dois** aparece na
+  árvore de hoje.
+- **P2 aponta os 16 sítios `filepath.Clean` e NÃO os corrige** (Wave 8), mais 6 por propagação de
+  parâmetro; `grep` literal acha 13 — é a diferença de régua outra vez.
+- 🔴 **Achado que devolvo ao arquiteto:** **5 sítios vivos fail-open** (guarda dentro de
+  `if root, err := projectRoot(); err == nil`, escrita fora) — `java.go:77`, `note.go:111/135`,
+  `req.go:478`, `roadmap.go:833`. Mesma causa, mesma REQ: pede ML novo, não REQ nova.
+- Status do ML no roadmap mantido em 🔄 — muda para ✅ só após a auditoria do arquiteto.
+- Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.

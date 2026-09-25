@@ -1671,7 +1671,7 @@ degeneração de fixture do `ML-7A` em outra roupa.
 4. `manager.go:281` e `:625` são recusas de **leitura**: causa diferente, discriminante escrito.
 
 ### ML-7C — O analisador de AST (#400)
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento — entregue por `apolo-tf` em 2026-09-25, aguardando auditoria
 
 🔴 **O escopo é O INSTRUMENTO, e só ele.** A triagem mediu que **os 34 defeitos já estão corrigidos**
 — `syncREQReferences` tem `pathguard.RejectSymlinks` na linha 63, antes do `os.WriteFile` da 71; o
@@ -1685,7 +1685,7 @@ e os 7 marcadores falsos que o gate bash aprovou**, reconstruídos do estado pr�
 ou overlay.
 
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento (despachado em 2026-09-25)
+**Status:** ✅ Concluído — auditado em 2026-09-25 · **o analisador DISCRIMINA: 104 achados no corpus, 20 fixados hoje**
 
 ⚠️ **Correção do AC, feita pelo `ML-6A`:** eu escrevera *"reconstruídos por `git show`"*. Isso **não é
 executável no CI** — e o commit que eu citaria (`7721efc6^1`) é **pré-REQ, com zero marcadores**. O
@@ -1706,22 +1706,212 @@ nunca `skip`. Materializá-lo é entregável deste ML.
 **P2 é interprocedural** — um analisador intraprocedural perde **17 das 34** escritas.
 
 **Critérios de aceite:**
-- [ ] 🔴 O analisador **reprova** os 22 gaps e os 7 marcadores falsos do corpus **versionado em
-      `testdata/`**; corpus ausente = **FAIL**
-- [ ] Sobre a árvore atual: **verde**, com **não-vacuidade provada** — população contada e **piso por
-      contagem, nunca por data**. Os três modos de obsolescência (corpus ausente · população == 0 ·
-      contagem ≠ piso, com o delta impresso) **reprovam**
-- [ ] 🔴 **T3 — a lista de exceções não pode dissolver a regra.** É o caminho mais provável de esvaziar
-      este gate, acima dos maliciosos: o analisador aponta um sítio legítimo, alguém relaxa a regra ou
-      exceta o arquivo, e o gate fica verde para sempre. Exceção **por sítio**, contagem fixada, e **o
-      braço do corpus reprova independentemente da lista**
-- [ ] O analisador fecha os residuais textuais do `ML-7B`: **import com alias** (`pg "…/pathguard"`) e
-      **`if err != nil {}` vazio** — os dois evadem o scanner de hoje
-- [ ] ⚠️ **T5 fica declarado, não fingido:** `projectRoot()`/`resolveRoot()` fazem **fallback
-      silencioso** quando `EvalSymlinks` falha, e **AST não alcança isso** — precisa de fail-closed +
-      teste de runtime, e não pode ser marcado como coberto pelo analisador
-- [ ] O AC6 desta REQ passa a ser atendido **pelo que o gate prova**, não pelo que ele afirma
-- [ ] Reconciliação: uma frase por teste novo
+- [x] 🔴 O analisador **reprova** os gaps e marcadores falsos do corpus **versionado em
+      `testdata/`**; corpus ausente = **FAIL** — ⚠️ ver a divergência de régua abaixo
+- [x] Sobre a árvore atual: **verde** sob duas listas fixadas por sítio, com **não-vacuidade provada**
+      — população contada, **piso por contagem, nunca por data**; os três modos de obsolescência
+      reprovam, com o delta impresso
+- [x] 🔴 **T3:** exceção **por sítio** (arquivo + função + expressão do caminho, **nunca** por arquivo
+      nem por padrão), contagem fixada, razão obrigatória com tamanho mínimo, e o braço do corpus
+      **reprova com as chaves ao vivo aplicadas cegas ao arquivo**
+- [x] Os residuais textuais do `ML-7B` fechados: **import com alias** e **`if err != nil {}` vazio**,
+      cada um com braço que os **cria** e vê o analisador reprovar
+- [x] ⚠️ **T5 declarado, não fingido** — limite 1 do cabeçalho do analisador, com o caminho escrito
+      (fail-closed + teste de runtime); **nada aqui o cobre**
+- [x] Reconciliação: uma frase por teste novo, e o próprio teste reprova entrada sem razão escrita
+- [x] `make quality` verde
+
+#### Medição do ML-7C — as duas árvores, pelo mesmo instrumento
+
+| | árvore de hoje | corpus `87fe4915` |
+|---|---|---|
+| arquivos analisados | 107 (`internal/` + `cmd/`) | 16 |
+| chamadas a primitivo de escrita | 154 | 146 |
+| **em população** | 151 | 139 |
+| chamadas de guarda | 59 | 36 |
+| **achados** | **20**, todos fixados por sítio | **104** |
+| — escritas sem guarda (P1) | 20 | **35** |
+| — predicado cru fora do `pathguard` | 0 | 35 |
+| — emissor de recusa fora do `pathguard` | 0 | 34 |
+
+🔴 **Os dois casos que o #400 nomeia reprovam PELO NOME**, e nenhum deles aparece na árvore de hoje:
+`syncREQReferences` (`roadmap.go:1141`) e o ramo lefthook de `generateCommitMsgHook`
+(`scaffold.go:2313`).
+
+### ⚠️ Refutação 1 — o "22 + 7" não é reproduzível, e não deveria ser
+
+O AC pedia *"reprova os 22 gaps e os 7 marcadores falsos"*. O analisador reprova **35 escritas** no
+corpus. **Não é divergência de medição, é divergência de régua:** o #400 contou **marcadores
+auditados à mão**; este instrumento conta **sítios de escrita** que a população por taint alcança.
+Um marcador cobre N escritas, e escrita sem marcador nenhum não entra na conta dele.
+
+O que discrimina não é o número — é: **o corpus reprova · a árvore de hoje não · os dois
+casos-bandeira são nomeados**. A contagem fica **fixada em valor exato** para que regressão do
+analisador mude o número e reprove.
+
+### 🔴 Refutação 2 — a população, não o predicado, é a decisão cara
+
+Medi as três candidatas:
+
+| população | escritas alcançadas hoje | veredito |
+|---|---|---|
+| todo primitivo de escrita em `internal/` | 154 | exigiria **~130 exceções** — isso **é** o T3, não defesa contra ele |
+| só o que tem taint de root | 9 | 🔴 **perde o caso-bandeira**: `"lefthook.yml"` é literal relativo |
+| taint ∪ *"a função guarda alguma coisa"* | 151 | a entregue |
+
+A terceira regra é o achado: **uma função que guarda já declarou que opera sobre root do usuário;
+toda escrita dentro dela entra em população, qualquer que seja a grafia do caminho.** É a forma
+exata do defeito do #400.
+
+### 🔴 Refutação 3 — achei 5 sítios fail-open VIVOS, e eles são ML novo desta REQ
+
+Guarda dentro de `if root, err := projectRoot(); err == nil { … }`, escrita **fora** do bloco: se o
+resolvedor falha, escreve **sem guarda**.
+
+| sítio | |
+|---|---|
+| `generators/java.go:77` | `GeneratePomXML` |
+| `generators/note.go:111` e `:135` | `appendNoteToIndex` |
+| `generators/req.go:478` | `appendREQTransitionLog` |
+| `generators/roadmap.go:833` | `appendTransitionLog` |
+
+`RefuseUnverifiableRoot` existe desde o `ML-7B` exatamente para isto. **Mesma causa, mesma REQ** —
+consequência de governança, não sugestão: **este roadmap fica em `wip`, o PR fica aberto, e entra um
+`ML-7D` para estes 5 sítios**. 🔴 `liveKnownFailOpen` é a **única** parte desta entrega sem
+enforcement atrás dela: a lista de pontos cegos se autoinvalida (entrada obsoleta vira erro), esta
+não. Sem o `ML-7D`, os 5 sítios herdam exatamente o destino que a Regra Dura de Causa Raiz descreve —
+registrados, e vivos. Estão em `liveKnownFailOpen`, **contados e nomeados**, numa
+lista deliberadamente **separada** dos pontos cegos: *"isto é aceitável"* e *"isto é defeito medido
+ainda não corrigido"* são afirmações diferentes, e unificá-las é como um gate vira tautologia.
+
+### P2 aponta os 16 — e a régua diverge do `grep` outra vez
+
+**16** sítios cujo root da guarda é literalmente `filepath.Clean(…)` (`agentfiles` ×9, `update` ×4,
+`identity`, `provenance`, `quarantine`) — exatamente a população que a Wave 8 existe para fechar,
+🔴 **e o ML não corrigiu nenhum**. Mais **6** por propagação de parâmetro (total fixado em 22).
+`grep 'RejectAndReport(filepath.Clean'` acha **13**.
+
+### Achado de processo — o `make quality` chegou **vermelho** nas minhas mãos
+
+`check-symlink-privilege-guard` reprovava **4 arquivos de teste do `ML-7B`**
+(`nonfatal_refusal_grammar_test.go`, `mute_guards_speak_test.go`, `mute_guard_speaks_test.go`,
+`guarded_write_speaks_test.go`) por `os.Symlink` nu. ⚠️ O gate enumera por `git ls-files`, então
+arquivo **não commitado é invisível a ele** — foi assim que passou despercebido. Corrigido aqui
+(`symlinkOrSkip` por pacote; `pathguard` precisou de um próprio porque o do
+`pathguard_test.go` está no pacote de teste **externo**).
+
+
+#### 🔴 Auditoria do ML-7C — o analisador discrimina de verdade, e achou 5 fail-open vivos
+
+Rodei os braços eu mesmo (`go test ./internal/pathguard/ -v`):
+
+```
+corpus: 16 file(s), sha256 verified against MANIFEST.sha256
+corpus total findings: 104 (pinned) · unguarded writes (P1): 35 · rogue emitters: 34
+flagship reproved: CORPUS/…/roadmap.go:1141  syncREQReferences()     [unguarded-write]
+                   "the marker is present and there is not one pathguard call in the whole
+                    function — the false marker in its purest form"
+flagship reproved: CORPUS/…/scaffold.go:2313 generateCommitMsgHook() [unguarded-write]
+                   "the two guards cover .husky and .lefthook/commit-msg; lefthook.yml is
+                    written at the root, outside both — the leaf gap in its purest form"
+93 of 104 corpus finding(s) survive every live exception applied FILE-BLIND
+mutantes: alias-import · empty-failure-branch · dominance · leaf-gap · + controle exigindo ZERO
+```
+
+🔴 **É a prova de discriminação que eu exigi:** mesmo instrumento, mesmo predicado, **vereditos
+opostos** nas duas árvores — e os dois casos que o #400 nomeia reprovam **pelo nome** no corpus e
+**não aparecem** hoje. O corpus está em `testdata/corpus-pre-fix/` como `.go.txt` com manifesto
+sha256, e **não polui o gate bash**: `check-write-containment` continua examinando **157** sítios,
+não 314. `make quality` → **rc 0**, lido sem nada antes.
+
+### 🔴 R-3: cinco sítios fail-open VIVOS — verifiquei dois e são reais
+
+```go
+javaRoot, rootErr := projectRoot()
+if rootErr == nil {
+    if guardErr := pathguard.RejectAndReport(javaRoot, absPom); guardErr != nil { return guardErr }
+}
+// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+return os.WriteFile("pom.xml", …)        ← se projectRoot() FALHA, escreve SEM GUARDA
+```
+
+`java.go:77` · `note.go:111` e `:135` · `req.go:478` · `roadmap.go:833`. **E o marcador
+`write-containment-allowed` está lá afirmando que está guardado** — é **marcador falso**, a classe
+exata do #400, na REQ que existe para fechá-la. `RefuseUnverifiableRoot` existe desde o `ML-7B`
+justamente para isto.
+
+**Mesma causa ⇒ mesma REQ ⇒ mesmo PR.** Entra como **`ML-7D`**, este roadmap **fica em `wip`** e o PR
+fica aberto. 🔴 **E o argumento decisivo é dele:** `liveKnownFailOpen` é a **única** parte da entrega
+**sem enforcement atrás** — a lista de pontos cegos se autoinvalida (entrada obsoleta vira erro), esta
+não. Sem o `ML-7D`, os 5 herdam exatamente o destino que a Regra Dura descreve: **registrados, e vivos**.
+
+### R-2 — a população era a decisão cara, não o predicado
+
+Ele mediu **três** candidatas antes de escolher:
+
+| população | alcança hoje | veredito |
+|---|---|---|
+| todo primitivo de escrita | 154 | exigiria **~130 exceções** — 🔴 **isso É o T3 realizado**, não defesa contra ele |
+| só o que tem taint de root | **9** | **perde o caso-bandeira**: `"lefthook.yml"` é literal relativo |
+| taint ∪ *"a função guarda alguma coisa"* | **151** | a entregue |
+
+A regra 2 é o achado: *uma função que guarda alguma coisa já declarou que opera sobre root do
+usuário.* E o segundo achado do mesmo tipo: `reqFiles, err := scanREQFiles(cfg)` (multi-valor)
+**matava o taint em silêncio** — foi isso que manteve `syncREQReferences`, o marcador falso mais puro
+do #400, fora de todo relatório. 🔴 **O analisador não errava: calava.**
+
+### R-1 — "22 gaps + 7 marcadores" não é reproduzível, e não deveria ser
+
+Divergência de **régua**, não de medição — pela terceira vez nesta REQ. O #400 contou **marcadores
+auditados à mão**; o instrumento conta **sítios de escrita**. Um marcador cobre N escritas, e escrita
+sem marcador não entra na conta dele. O que discrimina não é o número: é **corpus reprova · árvore
+não · casos-bandeira nomeados**.
+
+### 🔴 Achado de processo que vale além desta REQ
+
+`make quality` chegou **vermelho** nas mãos dele, por **4 arquivos de teste do `ML-7B`** com
+`os.Symlink` nu. Causa: `check-symlink-privilege-guard` enumera por **`git ls-files`** — **arquivo
+não commitado é invisível a ele**. Quando o `ML-7B` rodou a barreira, os arquivos ainda não estavam
+commitados; depois do commit, o gate passou a vê-los e a reprovar.
+
+⚠️ **Isto é meu, não dele:** minha barreira roda **antes** do commit, logo **não cobre gates que
+enumeram por `git ls-files`**. Ele corrigiu os 4 (test-only, mecânico) e declarou. A barreira precisa
+de uma segunda passada **pós-commit** para essa classe — fica registrado.
+
+### As quatro decisões que ele submeteu — ratifico as quatro
+
+1. **Classificação 15 pontos cegos / 5 fail-open** — conferi `scaffold.go:2396-2412`: os dois
+   `switch cfg.Hooks` irmãos guardam e escrevem **as mesmas cadeias**, logo é ponto cego de
+   dominância, não gap de ancestral. Correto.
+2. **Regra de população 2** — ratifico, e é **decisão de desenho, não dedução**, como ele diz. Sem
+   ela o caso-bandeira do #400 não aparece.
+3. **Manter o gate bash** — ratifico. Não é superconjunto nem subconjunto; removê-lo exigiria **medir
+   a diferença de cobertura**, e ninguém a pagou.
+4. **Exemption de `package pathguard` em P1** — ratifico: espelha a autoexemção que o gate bash e o
+   `single_emitter_test.go` já concedem, e todo braço de P1 vive em outro pacote.
+
+### T5 declarado, não fingido
+
+`projectRoot()`/`resolveRoot()` caem para o caminho **não resolvido** quando `EvalSymlinks` falha; a
+provenância é **estática** e a degradação é **dinâmica**. 🔴 **Nada nesta entrega pode ser lido como
+cobertura de T5** — o caminho escrito é fail-closed no resolvedor + teste de runtime.
+
+## Wave 9 — `ML-7D`: os 5 sítios fail-open
+> Dependências: `ML-7C` auditado. 🔴 **Mesma causa ⇒ mesma REQ ⇒ mesmo PR** — o roadmap fica em `wip`.
+
+### ML-9A — Trocar o fail-open por `RefuseUnverifiableRoot`
+**Status:** ⬜ Pendente
+
+**Sítios:** `java.go:77` · `note.go:111` · `note.go:135` · `req.go:478` · `roadmap.go:833`
+
+**Critérios de aceite:**
+- [ ] Os 5 sítios recusam quando `projectRoot()` falha, em vez de escrever sem guarda
+- [ ] 🔴 O marcador `write-containment-allowed` de cada um passa a ser **verdadeiro** — hoje ele
+      afirma contenção que não existe no ramo de erro
+- [ ] Falsificação **por sítio**, com `projectRoot()` forçado a falhar — e braço de controle provando
+      que o caminho feliz continua escrevendo
+- [ ] `liveKnownFailOpen` fica **vazia**, e a lista passa a ter o mesmo enforcement das demais:
+      entrada obsoleta vira **erro**
 - [ ] `make quality` verde
 
 ## Wave 8 — Root resolvido nos dois lados (#402)

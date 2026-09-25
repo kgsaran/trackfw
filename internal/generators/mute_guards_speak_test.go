@@ -91,9 +91,10 @@ func plantAncestorSymlink(t *testing.T, root, segment string) string {
 	t.Helper()
 	victim := t.TempDir()
 	link := filepath.Join(root, segment)
-	if err := os.Symlink(victim, link); err != nil {
-		t.Fatalf("planting the bait symlink %s → %s: %v", link, victim, err)
-	}
+	// symlinkOrSkip, not os.Symlink: a Windows without Developer Mode cannot
+	// create one, and that is "not exercisable here", not a failing guard
+	// (gate: scripts/check-symlink-privilege-guard.sh).
+	symlinkOrSkip(t, victim, link)
 	info, err := os.Lstat(link)
 	if err != nil || info.Mode()&os.ModeSymlink == 0 {
 		t.Fatalf("bait %s is not a symlink (lstat err=%v) — this arm would pass for the wrong reason", link, err)

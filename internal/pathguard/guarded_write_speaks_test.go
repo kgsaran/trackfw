@@ -1,9 +1,11 @@
 package pathguard
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -69,8 +71,11 @@ func TestGuardedWriteRefusalIsAudible(t *testing.T) {
 	// Loud arm: an ancestor of the destination is a symlink pointing outside.
 	root := t.TempDir()
 	victim := t.TempDir()
-	if err := os.Symlink(victim, filepath.Join(root, "sub")); err != nil {
-		t.Fatalf("planting the bait symlink: %v", err)
+	// symlinkOrSkip, not os.Symlink: on a Windows without Developer Mode the
+	// creation fails for lack of privilege, and a bare t.Fatalf would report that
+	// as a broken guard (gate: scripts/check-symlink-privilege-guard.sh).
+	if !symlinkOrSkipInPathguard(t, victim, filepath.Join(root, "sub")) {
+		return
 	}
 
 	var err error
@@ -119,4 +124,36 @@ func TestRefuseUnverifiableRootSpeaksAndWraps(t *testing.T) {
 	if !strings.Contains(err.Error(), cause.Error()) {
 		t.Errorf("returned error must wrap the cause, got: %v", err)
 	}
+}
+
+// symlinkOrSkipInPathguard is the capability guard the repository requires of
+// every symlink created in a test (scripts/check-symlink-privilege-guard.sh).
+// The twin in pathguard_test.go cannot be reused: it lives in the EXTERNAL test
+// package, and this file is in package pathguard.
+//
+// 🔴 The detection is on the CONDITION, never on runtime.GOOS: a Windows with
+// Developer Mode enabled creates the symlink and exercises the guard for real,
+// which a GOOS-based skip would throw away.
+func symlinkOrSkipInPathguard(t *testing.T, target, link string) bool {
+	t.Helper()
+	err := os.Symlink(target, link)
+	if err == nil {
+		return true
+	}
+	if isSymlinkPrivilegeErrorInPathguard(err) {
+		t.Skipf("containment guard not exercised: creating a symlink requires Developer Mode (or an elevated process) on this Windows: %v", err)
+		return false
+	}
+	t.Fatalf("os.Symlink(%q, %q): %v", target, link, err)
+	return false
+}
+
+// isSymlinkPrivilegeErrorInPathguard matches WinError 1314
+// (ERROR_PRIVILEGE_NOT_HELD) or a generic permission denial — never a GOOS.
+func isSymlinkPrivilegeErrorInPathguard(err error) bool {
+	if os.IsPermission(err) {
+		return true
+	}
+	var errno syscall.Errno
+	return errors.As(err, &errno) && errno == 1314
 }

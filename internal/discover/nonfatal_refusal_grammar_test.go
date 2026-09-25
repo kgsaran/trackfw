@@ -70,8 +70,10 @@ func TestWriteCIWorkflowRefusalUsesTheSingleGrammar(t *testing.T) {
 	// Loud arm: .github is a symlink pointing outside the project.
 	root := t.TempDir()
 	victim := t.TempDir()
-	if err := os.Symlink(victim, filepath.Join(root, ".github")); err != nil {
-		t.Fatalf("planting the bait symlink: %v", err)
+	// symlinkOrSkip, not os.Symlink — see scripts/check-symlink-privilege-guard.sh:
+	// lack of the Windows symlink privilege is a skip, any other failure is fatal.
+	if !symlinkOrSkip(t, victim, filepath.Join(root, ".github")) {
+		return
 	}
 
 	var err error
