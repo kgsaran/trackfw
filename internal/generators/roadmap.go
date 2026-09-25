@@ -234,9 +234,8 @@ func NewRoadmapFromContent(content RoadmapContent) error {
 		return fmt.Errorf("NewRoadmapFromContent: %w", err)
 	}
 	absBacklogDir := filepath.Join(root, backlogDir)
-	if guardErr := pathguard.RejectSymlinks(root, absBacklogDir); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absBacklogDir, guardErr)
-		return fmt.Errorf("refusing write to %s: %w", absBacklogDir, guardErr)
+	if guardErr := pathguard.RejectAndReport(root, absBacklogDir); guardErr != nil {
+		return guardErr
 	}
 
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
@@ -292,9 +291,8 @@ REQ: %s
 	// backlogDir; now guard the exact file so a symlink leaf pointing outside
 	// root is also caught (ML-4B leaf-gap fix).
 	absFilename := filepath.Join(root, filename)
-	if guardErr := pathguard.RejectSymlinks(root, absFilename); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absFilename, guardErr)
-		return fmt.Errorf("refusing write to %s: %w", absFilename, guardErr)
+	if guardErr := pathguard.RejectAndReport(root, absFilename); guardErr != nil {
+		return guardErr
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.WriteFile(filename, []byte(body), 0644); err != nil {
@@ -629,9 +627,8 @@ func MoveRoadmap(name, state string) error {
 		return fmt.Errorf("MoveRoadmap: %w", err)
 	}
 	absSrc := filepath.Join(root, src)
-	if guardErr := pathguard.RejectSymlinks(root, absSrc); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing symlink path %s: %v\n", absSrc, guardErr)
-		return fmt.Errorf("refusing symlink path %s: %w", absSrc, guardErr)
+	if guardErr := pathguard.RejectAndReport(root, absSrc); guardErr != nil {
+		return guardErr
 	}
 
 	var targetDir string
@@ -669,9 +666,8 @@ func MoveRoadmap(name, state string) error {
 	// is created. dst is also used by the rename and subsequent status-sync writes.
 	dst := filepath.Join(targetDir, filepath.Base(src))
 	absDst := filepath.Join(root, dst)
-	if guardErr := pathguard.RejectSymlinks(root, absDst); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing symlink path %s: %v\n", absDst, guardErr)
-		return fmt.Errorf("refusing symlink path %s: %w", absDst, guardErr)
+	if guardErr := pathguard.RejectAndReport(root, absDst); guardErr != nil {
+		return guardErr
 	}
 
 	// AC6 (REQ #392 ML-3A): refuse the done transition when the roadmap still has
@@ -822,11 +818,14 @@ func containsIgnoreCase(s, sub string) bool {
 func appendTransitionLog(basename, fromState, toState string) {
 	lp := logPath()
 	// Guard the log file against ancestor symlinks. This is an append-mode write so
-	// we cannot use GuardedWrite (which does atomic replace). Use RejectSymlinks only.
-	// Errors here are silent — a log write failure must not abort the move.
+	// we cannot use GuardedWrite (which does atomic replace).
+	// The refusal is NON-FATAL — a log write failure must not abort the move — but it
+	// is no longer SILENT: until ML-7B this called RejectSymlinks and returned without
+	// a word, so the user saw the move succeed with no hint that the transition log
+	// had been skipped. RejectAndReport keeps the control flow and adds the voice.
 	if root, err := projectRoot(); err == nil {
 		absLog := filepath.Join(root, lp)
-		if guardErr := pathguard.RejectSymlinks(root, absLog); guardErr != nil {
+		if guardErr := pathguard.RejectAndReport(root, absLog); guardErr != nil {
 			return
 		}
 	}
@@ -1158,8 +1157,7 @@ func syncREQReferences(roadmapBasename, newRoadmapPath string) error {
 		// file before writing — a symlink REQ file pointing outside root would
 		// otherwise redirect the sync write without detection.
 		absReqPath := filepath.Join(syncRoot, reqPath)
-		if guardErr := pathguard.RejectSymlinks(syncRoot, absReqPath); guardErr != nil {
-			fmt.Fprintf(os.Stderr, "trackfw roadmap move: refusing symlink path %s: %v\n", reqBase, guardErr)
+		if guardErr := pathguard.RejectAndReport(syncRoot, absReqPath); guardErr != nil {
 			if firstErr == nil {
 				firstErr = guardErr
 			}

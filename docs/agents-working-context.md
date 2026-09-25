@@ -41218,3 +41218,34 @@ bash scripts/check-unguarded-capture-rc.sh          RC=0
   warnings pré-existentes).
 - Status do ML no roadmap **mantido em 🔄** — muda para ✅ só após a auditoria do arquiteto.
 - Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.
+
+## 2026-09-25 — apolo-tf — ML-7B (início): extrair o ponto único de contenção
+
+- **Escopo:** `internal/pathguard/` (novo emissor) + os **52** sítios de chamada não-teste que hoje
+  reimplementam o par *predicado + recusa audível* inline ou em helper nomeado.
+  Fora: analisador de AST (`ML-7C`), argumento `filepath.Clean(cwd)` (Wave 8), residual do escopo
+  global (decisão 3 do ADR).
+- **Forma:** `pathguard.RejectAndReport(resolvedRoot, absTarget)` como **único** sítio emissor; as
+  5 gramáticas colapsam em 1 derivada de **um literal**; os 3 sítios mudos passam a falar.
+- Sem Git: não crio branch, não commito, não faço push.
+
+## 2026-09-25 — apolo-tf — ML-7B (fim): 53 implementações do par viram 1 emissor
+
+- **Produto:** `internal/pathguard/pathguard.go` — `RejectAndReport` (recusa da guarda) e
+  `RefuseUnverifiableRoot` (fail-closed quando o root não pôde ser estabelecido). Ambas derivam a
+  linha de stderr **e** o erro retornado do mesmo literal `refusalGrammar`.
+- **Sítios convertidos:** 52 chamadas `pathguard.RejectSymlinks` não-teste → `RejectAndReport`
+  (0 restantes fora de `pathguard`); 4 sítios fail-closed → `RefuseUnverifiableRoot`;
+  `GuardedWrite` passa a delegar (era um 4º mudo, mesma causa).
+- **Gramáticas:** 5 → 1. **Mudos:** 3 → 0 (4 → 0 contando `GuardedWrite`).
+- **Testes novos:** `internal/pathguard/single_emitter_test.go` (scanner por sítio + corpus mutante
+  com as 8 formas históricas), `internal/pathguard/guarded_write_speaks_test.go`,
+  `internal/generators/mute_guards_speak_test.go`,
+  `internal/integrations/mute_guard_speaks_test.go`,
+  `internal/discover/nonfatal_refusal_grammar_test.go`.
+- **Falsificação por sítio comprovada por mutação:** revertidos individualmente `roadmap.go`,
+  `req.go`, `update.go` (`rejectHarnessSymlink`), `manager.go`, `discover.go`, `GuardedWrite` e
+  **um** sítio inline do bulk (`note.go`) — cada mutante reprova, e o scanner **nomeia o artefato**
+  (`generators/note.go:72 [raw-predicate]`).
+- Status do ML no roadmap **mantido em 🔄** — muda para ✅ só após a auditoria do arquiteto.
+- Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.

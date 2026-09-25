@@ -205,8 +205,7 @@ func ExportCSV(m Metrics, transitions []Transition, path string) error {
 	// the project root, so we refuse the write rather than proceeding unguarded.
 	cwd, cwdErr := metricsGetwdFn()
 	if cwdErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: cannot verify containment: %v\n", path, cwdErr)
-		return fmt.Errorf("refusing write to %s: cannot verify containment: %w", path, cwdErr)
+		return pathguard.RefuseUnverifiableRoot(path, cwdErr)
 	}
 	exportRoot := cwd
 	if resolved, resolveErr := filepath.EvalSymlinks(cwd); resolveErr == nil {
@@ -221,9 +220,8 @@ func ExportCSV(m Metrics, transitions []Transition, path string) error {
 	// When Beneath returns false (external absolute path), the guard is intentionally
 	// skipped — the caller explicitly chose an external destination.
 	if pathguard.Beneath(exportRoot, absPath) {
-		if guardErr := pathguard.RejectSymlinks(exportRoot, absPath); guardErr != nil {
-			fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absPath, guardErr)
-			return fmt.Errorf("refusing write to %s: %w", absPath, guardErr)
+		if guardErr := pathguard.RejectAndReport(exportRoot, absPath); guardErr != nil {
+			return guardErr
 		}
 	}
 	// Guarded when path is beneath project root (RejectSymlinks above); external absolute paths are

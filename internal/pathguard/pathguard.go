@@ -116,8 +116,14 @@ func RejectSymlinks(root, filename string) error {
 // root must be the real (fully resolved) parent boundary — the same constraint
 // as RejectSymlinks, which GuardedWrite calls first so that no directory is
 // created before the guard fires.
+//
+// The guard runs through RejectAndReport, not RejectSymlinks: all three callers
+// (internal/identity, internal/thirdparty/quarantine, internal/thirdparty/
+// provenance) wrapped the error and printed nothing, so a refusal here used to
+// be silent — the same defect as the three mute call sites ML-7B fixed. Same
+// mechanism, same fix.
 func GuardedWrite(root, filename string, data []byte, mode os.FileMode) error {
-	if err := RejectSymlinks(root, filename); err != nil {
+	if err := RejectAndReport(root, filename); err != nil {
 		return err
 	}
 	directory := filepath.Dir(filename)
@@ -149,4 +155,74 @@ func GuardedWrite(root, filename string, data []byte, mode os.FileMode) error {
 	}
 	// write-containment-allowed: GuardedWrite implements the containment helper itself; Rename is always called after RejectSymlinks guard passes
 	return os.Rename(temporaryName, filename)
+}
+
+// refusalGrammar is the ONE grammar of the containment refusal. Both the
+// user-facing stderr line and the returned error are built from this single
+// literal, so they cannot drift apart: identical by construction, not by
+// textual coincidence. This is what AC5 of REQ-2026-08-31 demands.
+//
+// The trailing verb is appended by the two call forms below ("%v" for the
+// stderr line, "%w" for the returned error) because the language forces that
+// difference — fmt.Fprintf does not accept %w and fmt.Errorf must wrap. The
+// grammar itself is not duplicated.
+//
+// 🔴 Do not add a second grammar here, and do not give RejectAndReport a
+// "display path" parameter: a per-caller knob over the message re-creates the
+// divergence (5 grammars, measured by ML-6A on 2026-09-25) that this constant
+// removes.
+const refusalGrammar = "refusing write to %s: "
+
+// stderrPrefix identifies the binary and belongs only to the stderr line — the
+// returned error is wrapped further up by callers and must not carry it.
+const stderrPrefix = "trackfw: "
+
+// RejectAndReport is the ONLY site in the binary that emits the containment
+// refusal. Every write site that guards a destination path derived from a
+// user-supplied root calls this instead of pairing RejectSymlinks with its own
+// fmt.Fprintf(os.Stderr, …).
+//
+// Before this function existed the pair was implemented 53 times (4 named
+// helpers + 49 inline copies) across 5 distinct message grammars, and 3 of the
+// sites refused silently — measured by ML-6A on 2026-09-25.
+//
+// resolvedRoot SHOULD come from an approved resolver (projectRoot /
+// scaffoldRoot / resolveRoot / filepath.EvalSymlinks). The parameter is named
+// so that an AST provenance check can key on it (ML-7C).
+//
+// 🔴 This function deliberately does NOT validate or normalise resolvedRoot.
+// Several call sites still pass filepath.Clean(cwd); fixing that ARGUMENT is
+// Wave 8, and silently resolving it here would erase what Wave 8 must measure.
+//
+// It returns nil when the path is contained. The returned error already names
+// the refused path — callers must NOT re-wrap it with a second
+// "refusing write to …" or the message doubles.
+func RejectAndReport(resolvedRoot, absTarget string) error {
+	guardErr := RejectSymlinks(resolvedRoot, absTarget)
+	if guardErr == nil {
+		return nil
+	}
+	fmt.Fprintf(os.Stderr, stderrPrefix+refusalGrammar+"%v\n", absTarget, guardErr)
+	return fmt.Errorf(refusalGrammar+"%w", absTarget, guardErr)
+}
+
+// unverifiableReason is the ONE reason clause used when the root itself could
+// not be established, so RejectSymlinks could never run. It composes with
+// refusalGrammar rather than restating it.
+const unverifiableReason = "cannot verify containment: "
+
+// RefuseUnverifiableRoot is the fail-closed sibling of RejectAndReport, and the
+// ONLY other site in the binary that emits a containment refusal to the user.
+//
+// It is called when the root could not be resolved at all (os.Getwd failed, the
+// caller passed an empty project root, …) — the guard cannot run, so the write
+// is refused rather than proceeding unguarded. Keeping the emission here is what
+// makes "no containment refusal is printed outside package pathguard" a
+// mechanical property instead of a convention.
+//
+// cause must be non-nil: it is what the user needs in order to diagnose the
+// refusal.
+func RefuseUnverifiableRoot(target string, cause error) error {
+	fmt.Fprintf(os.Stderr, stderrPrefix+refusalGrammar+unverifiableReason+"%v\n", target, cause)
+	return fmt.Errorf(refusalGrammar+unverifiableReason+"%w", target, cause)
 }

@@ -211,14 +211,13 @@ func NewDiscoverCmd() *cobra.Command {
 }
 
 // rejectDiscoverPath guards a path inside root before any write.
-// It calls pathguard.RejectSymlinks and prints a refusal message to stderr on
-// failure, matching the pattern established in internal/generators/scaffold.go.
+// It delegates to pathguard.RejectAndReport, which is the single site in the
+// binary that emits the containment refusal (ML-7B).
 func rejectDiscoverPath(root, absTarget string) error {
-	if err := pathguard.RejectSymlinks(root, absTarget); err != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absTarget, err)
-		return fmt.Errorf("refusing write to %s: %w", absTarget, err)
-	}
-	return nil
+	// Thin adapter over pathguard.RejectAndReport: it must NOT re-wrap the error
+	// (the message already names the refused path) and must NOT print — the single
+	// emission point lives in pathguard (ML-7B).
+	return pathguard.RejectAndReport(root, absTarget)
 }
 
 // readLogEntries lê o arquivo de log e retorna um set de chaves de dedup.

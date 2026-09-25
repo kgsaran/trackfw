@@ -134,8 +134,7 @@ Delete the file when resolved. Visible as a live banner in ` + "`trackfw serve`"
 func injectOrUpdateRules(filePath, headerIfNew, cwd string) error {
 	// Guard: reject writes through symlinks before any filesystem mutation
 	// (ADR-2026-09-18 / ML-1B).
-	if guardErr := pathguard.RejectSymlinks(filepath.Clean(cwd), filePath); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", filePath, guardErr)
+	if guardErr := pathguard.RejectAndReport(filepath.Clean(cwd), filePath); guardErr != nil {
 		return guardErr
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
@@ -238,8 +237,7 @@ func InjectClaudeHooks(cwd string) error {
 	path := filepath.Join(cwd, ".claude", "settings.json")
 	// Guard: reject writes through symlinks before any filesystem mutation
 	// (ADR-2026-09-18 / ML-1B).
-	if guardErr := pathguard.RejectSymlinks(filepath.Clean(cwd), path); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
+	if guardErr := pathguard.RejectAndReport(filepath.Clean(cwd), path); guardErr != nil {
 		return guardErr
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
@@ -456,8 +454,7 @@ func InjectCodexHooks(cwd string) error {
 	path := filepath.Join(dir, "hooks.json")
 	// Guard: reject writes through symlinks before any filesystem mutation
 	// (ADR-2026-09-18 / ML-1B).
-	if guardErr := pathguard.RejectSymlinks(filepath.Clean(cwd), path); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
+	if guardErr := pathguard.RejectAndReport(filepath.Clean(cwd), path); guardErr != nil {
 		return guardErr
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
@@ -609,8 +606,7 @@ func InjectGeminiHooks(cwd string) error {
 	path := filepath.Join(dir, "settings.json")
 	// Guard: reject writes through symlinks before any filesystem mutation
 	// (ADR-2026-09-18 / ML-1B).
-	if guardErr := pathguard.RejectSymlinks(filepath.Clean(cwd), path); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
+	if guardErr := pathguard.RejectAndReport(filepath.Clean(cwd), path); guardErr != nil {
 		return guardErr
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
@@ -792,8 +788,7 @@ func InjectKiroHooks(cwd string) error {
 	path := filepath.Join(dir, "trackfw-attention.json")
 	// Guard: reject writes through symlinks before any filesystem mutation
 	// (ADR-2026-09-18 / ML-1B).
-	if guardErr := pathguard.RejectSymlinks(filepath.Clean(cwd), path); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
+	if guardErr := pathguard.RejectAndReport(filepath.Clean(cwd), path); guardErr != nil {
 		return guardErr
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
@@ -925,8 +920,7 @@ func InjectCopilotHooks(cwd string) error {
 	path := filepath.Join(dir, "trackfw-attention.json")
 	// Guard: reject writes through symlinks before any filesystem mutation
 	// (ADR-2026-09-18 / ML-1B).
-	if guardErr := pathguard.RejectSymlinks(filepath.Clean(cwd), path); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
+	if guardErr := pathguard.RejectAndReport(filepath.Clean(cwd), path); guardErr != nil {
 		return guardErr
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
@@ -1104,8 +1098,7 @@ func InjectCursorHooks(cwd string) error {
 	path := filepath.Join(cwd, ".cursor", "hooks.json")
 	// Guard: reject writes through symlinks before any filesystem mutation
 	// (ADR-2026-09-18 / ML-1B).
-	if guardErr := pathguard.RejectSymlinks(filepath.Clean(cwd), path); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
+	if guardErr := pathguard.RejectAndReport(filepath.Clean(cwd), path); guardErr != nil {
 		return guardErr
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
@@ -1354,8 +1347,7 @@ func InjectWindsurfHooks(cwd string) error {
 	path := filepath.Join(dir, "hooks.json")
 	// Guard: reject writes through symlinks before any filesystem mutation
 	// (ADR-2026-09-18 / ML-1B).
-	if guardErr := pathguard.RejectSymlinks(filepath.Clean(cwd), path); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
+	if guardErr := pathguard.RejectAndReport(filepath.Clean(cwd), path); guardErr != nil {
 		return guardErr
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
@@ -1470,8 +1462,7 @@ func InjectAmazonQHooks(cwd string) error {
 	path := filepath.Join(cwd, ".amazonq", amazonQCliAgentsDir, amazonQDefaultAgentFile)
 	// Guard: reject writes through symlinks before any filesystem mutation
 	// (ADR-2026-09-18 / ML-1B).
-	if guardErr := pathguard.RejectSymlinks(filepath.Clean(cwd), path); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
+	if guardErr := pathguard.RejectAndReport(filepath.Clean(cwd), path); guardErr != nil {
 		return guardErr
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site

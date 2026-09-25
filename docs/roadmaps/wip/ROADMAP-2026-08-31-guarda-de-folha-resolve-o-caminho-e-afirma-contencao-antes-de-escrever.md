@@ -1530,7 +1530,7 @@ vítima vazia, nunca `err != nil` — que erro de config satisfaria sem provar c
 
 ### ML-7B — Extrair o ponto único (#401)
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento (despachado em 2026-09-25) · **precede o `ML-7C` por dependência técnica**
+**Status:** ✅ Concluído — auditado em 2026-09-25 · **53 → 1 emissor; 7 gramáticas → 1; 4 mudos → 0**
 
 ⚠️ **Os números que eu escrevi aqui antes estavam errados, e a correção é do `ML-6A`.** Eu disse
 *"os 4 sítios delegam"* — `^func reject` acha 4, mas essa é **régua de identificador**. O par
@@ -1551,17 +1551,124 @@ os sítios de escrita do Go"*), e a REQ foi para `done` assim.
 **aprova** — erra na direção insegura por omissão. São **53 formas a modelar** contra **1**.
 
 **Critérios de aceite:**
-- [ ] **Um** sítio emissor no binário: `Fprintf(…refus…)` **fora** de `pathguard` == **0**
-- [ ] As **5 gramáticas** colapsam em **1**, e os **3 sítios mudos** passam a falar
-- [ ] A mensagem é idêntica **por construção**, não por coincidência textual — é o que o AC5 exige
-- [ ] 🔴 **Falsificação por sítio, não só agregada:** para cada família de chamada, um braço que
+- [x] **Um** sítio emissor no binário: `Fprintf(…refus…)` **fora** de `pathguard` == **0**
+- [x] As **5 gramáticas** colapsam em **1**, e os **3 sítios mudos** passam a falar
+- [x] A mensagem é idêntica **por construção**, não por coincidência textual — é o que o AC5 exige
+- [x] 🔴 **Falsificação por sítio, não só agregada:** para cada família de chamada, um braço que
       **reprova** se aquele sítio deixar de delegar. Um teste que só conta ocorrências passa com o
       colapso feito pela metade
-- [ ] 🔴 **Os 3 sítios mudos são falsificados pela SAÍDA**, não pelo rc — hoje eles já recusam; o que
+- [x] 🔴 **Os 3 sítios mudos são falsificados pela SAÍDA**, não pelo rc — hoje eles já recusam; o que
       falta é dizer. Um teste de `err != nil` passaria sem a correção
-- [ ] O `ML-7A` não é desfeito: `adr new` continua recusando nas duas arms
-- [ ] Reconciliação: uma frase por teste novo
-- [ ] `make quality` verde
+- [x] O `ML-7A` não é desfeito: `adr new` continua recusando nas duas arms
+- [x] Reconciliação: uma frase por teste novo
+- [x] `make quality` verde
+
+#### Medição do `ML-7B` — antes → depois (entregue, aguardando auditoria)
+
+| medida | antes | depois | comando |
+|---|---|---|---|
+| `pathguard.RejectSymlinks(` não-teste fora de `pathguard` | **52** | **0** | `grep -rn 'pathguard\.RejectSymlinks(' --include='*.go' internal/ \| grep -v _test.go \| wc -l` |
+| `Fprintf(os.Stderr, …refus…)` fora de `pathguard` | **49** + 4 fail-closed + 1 aviso de folha = **54** | **0** | `grep -rn 'Fprintf(os.Stderr' --include='*.go' internal/ \| grep -v _test.go \| grep -iE 'refus\|symlink' \| grep -v '^internal/pathguard/'` |
+| gramáticas distintas de recusa | **5** | **1** (`refusalGrammar`, uma const, usada nas duas formas) | — |
+| sítios mudos | **3** (`manager.go:762`, `roadmap.go:829`, `req.go:474`) | **0** | — |
+
+🔴 **Refutação ao próprio censo: os mudos eram 4, não 3.** `pathguard.GuardedWrite` chamava
+`RejectSymlinks` e devolvia o erro **sem imprimir**, e os seus três chamadores (`identity.go:86`,
+`quarantine.go:104`, `provenance.go:146`) só embrulham. A régua do `ML-6A` isentou o pacote
+`pathguard` **antes** de medir, então o 4º mudo era invisível por construção. Mesma causa, mesma REQ:
+corrigido aqui.
+
+⚠️ **Duas gramáticas a mais do que as 5 declaradas, ambas colapsadas:** os 4 sítios *fail-closed*
+(`metrics`, `validator`, `configure`, `config_agents_register`) emitiam
+`refusing write to …: cannot verify containment` de 4 literais separados — agora
+`pathguard.RefuseUnverifiableRoot`; e `update.go` tinha um ramo de folha
+(`aviso: %s é um symlink`) que reimplementava o que `RejectSymlinks` já faz — removido.
+
+**Falsificação POR SÍTIO, comprovada por mutação** (cada reversão isolada, teste rodado, árvore
+restaurada):
+
+| sítio revertido | teste que reprova | mensagem |
+|---|---|---|
+| `roadmap.go` `appendTransitionLog` | `TestAppendTransitionLogRefusalIsAudible` | `refused SILENTLY` |
+| `req.go` `appendREQTransitionLog` | `TestAppendREQTransitionLogRefusalIsAudible` | `refused SILENTLY` |
+| `update.go` `rejectHarnessSymlink` | `TestRejectHarnessSymlinkSpeaksTheSingleGrammar` | `must print the single grammar` |
+| `manager.go` `rejectSymlinks` | `TestRejectSymlinksDelegateIsAudible` | `refused SILENTLY` |
+| `discover.go` `writeCIWorkflow` | `TestWriteCIWorkflowRefusalUsesTheSingleGrammar` | `refusal was silent` |
+| `pathguard.GuardedWrite` | `TestGuardedWriteRefusalIsAudible` | `refused SILENTLY` |
+| **um** sítio inline do bulk (`note.go`) | `TestNoContainmentEmitterOutsidePathguard` | `generators/note.go:72 [raw-predicate]` — **nomeia o artefato** |
+
+Os 3 mudos são falsificados **pela saída**, nunca por `err != nil`: eles já recusavam antes.
+
+
+#### 🔴 Auditoria do ML-7B — medido por mim
+
+```
+pathguard.RejectSymlinks( fora de pathguard (não-teste)   52 → 0
+emissores de recusa fora de pathguard                          0
+Fprintf reais dentro de pathguard                              2   (o 3º match é comentário)
+filepath.Clean(cwd|root) preservados para a Wave 8             16  ← intocados, como mandei
+go build ./... · go vet ./...                                  limpos
+make quality                                                   exit 0 · 338 OK · 0 FAIL
+```
+
+**`ML-7A` não foi desfeito** — reproduzi contra binário recompilado: as duas arms `rc=1`, zero
+arquivos na vítima.
+
+⚠️ **Erro de instrumento meu, corrigido antes de virar número:** na primeira medição li `RC=0` na arm
+resolvida. Era o rc do **`tail`** do cano, não o do binário — a mesma armadilha que esta casa já pagou
+lendo o rc do `head`. Refiz sem cano: `rc=1` nas duas. 🔴 **Se a linha seguinte usa `$?`, o comando
+não pode ter cano.**
+
+### Duas refutações dele, e a primeira é uma regra que vale além desta REQ
+
+🔴 **R-1 — os sítios mudos eram 4, e o quarto estava DENTRO do `pathguard`.** A régua do `ML-6A` era
+*"chamada de `RejectSymlinks` **fora** de `pathguard` sem `Fprintf` por perto"* — ela **isenta o
+pacote antes de medir**, e `pathguard.GuardedWrite` recusava **mudo**. Os três chamadores só
+embrulham o erro (`identity.go:86`, `quarantine.go:104`, `provenance.go:146`): **toda escrita atômica
+do binário recusava em silêncio.**
+
+> **A regra que sai disso:** isenção de censo diz onde a **correção mora**, não onde o **defeito pode
+> estar**. Pacote isentado tem de ser medido **separadamente**.
+
+**R-2 — as gramáticas eram 7, não 5.** As duas extras são 4 literais separados de *"cannot verify
+containment"* e um ramo de folha em `update.go:2132` reimplementando o `Lstat` que `RejectSymlinks`
+**já faz**.
+
+**R-3 — minha régua de `internal/` era estreita:** o AC diz *"no binário"*, e `cmd/` conta. Medido:
+**0** ocorrências lá, o AC fecha — mas o instrumento passou a varrer a raiz, senão um sítio novo em
+`cmd/` nasceria **invisível** ao gate que o `ML-7C` vai construir.
+
+### Falsificação por sítio, provada por mutação — era o AC que eu mais temia ver marcado de graça
+
+Sete sítios revertidos **isoladamente** para `RejectSymlinks`, teste rodado, árvore restaurada; cada
+um reprova **nomeando o artefato** (`generators/note.go:72 [raw-predicate]`). E os mudos têm **braço
+de controle** em árvore limpa que exige stderr vazio **e o arquivo de log escrito** — 🔴 **o segundo
+é o que prova que o fluxo chegou à guarda.** Sem ele, o braço barulhento não significaria nada: é a
+degeneração de fixture do `ML-7A` em outra roupa.
+
+### As três decisões que ele pediu para eu auditar — ratifico as três
+
+1. **Dois `Fprintf` dentro de `pathguard`, não um.** Ratifico a leitura *"um pacote emissor, uma
+   gramática-raiz"*. `RefuseUnverifiableRoot` é evento **distinto** — a guarda **não pôde rodar** —,
+   compõe a mesma const, e colapsá-lo perderia a distinção que os 5 testes fail-closed já asseriam.
+   🔴 **Numa REQ cuja tese é fail-closed explícito, apagar a diferença entre "recusei" e "não consegui
+   verificar" seria andar para trás.**
+2. **O caminho reportado mudou em ~14 sítios** que guardavam um caminho e reportavam outro. Ratifico:
+   nomear o caminho **guardado** é mais exato, e um parâmetro `displayPath` recriaria a divergência
+   por chamador que o AC5 proíbe.
+3. **Assinatura de 2 params, sem validar `resolvedRoot`.** Ratifico, e é o ponto mais fino: resolver
+   ali dentro **destruiria o que a Wave 8 existe para medir**. O nome é aspiracional de propósito, e
+   serve de âncora para o AST do `ML-7C`.
+
+### Residuais declarados
+
+1. `update.go:201/226` mantêm um `Printf` em **stdout** ao lado da recusa em stderr — segunda emissão
+   do mesmo conteúdo, e o scanner **não a vê**.
+2. 🔴 **O scanner casa o literal `pathguard.RejectSymlinks(`: um import com alias o evade.** Medido:
+   zero aliases hoje. Fechar isso **exige AST** — é o `ML-7C`, e está escrito no cabeçalho do teste.
+3. O scanner prova que o sítio **delega**, não que ele **age** sobre o erro — `if err != nil {}` vazio
+   passa. Guarda-antes-de-escrever é o `ML-7C`.
+4. `manager.go:281` e `:625` são recusas de **leitura**: causa diferente, discriminante escrito.
 
 ### ML-7C — O analisador de AST (#400)
 **Status:** ⬜ Pendente

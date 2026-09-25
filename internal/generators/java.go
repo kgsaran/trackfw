@@ -69,9 +69,8 @@ func GeneratePomXML(cfg Config) error {
 	javaRoot, rootErr := projectRoot()
 	if rootErr == nil {
 		absPom := filepath.Join(javaRoot, "pom.xml")
-		if guardErr := pathguard.RejectSymlinks(javaRoot, absPom); guardErr != nil {
-			fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absPom, guardErr)
-			return fmt.Errorf("refusing write to pom.xml: %w", guardErr)
+		if guardErr := pathguard.RejectAndReport(javaRoot, absPom); guardErr != nil {
+			return guardErr
 		}
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site

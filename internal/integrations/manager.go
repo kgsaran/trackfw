@@ -758,8 +758,11 @@ func (m Manager) resolve(plan PlannedArtifact) (string, string, error) {
 // behaviour-preserving by construction.
 func beneath(root, filename string) bool { return pathguard.Beneath(root, filename) }
 
-// rejectSymlinks delegates to pathguard.RejectSymlinks for the same reason.
-func rejectSymlinks(root, filename string) error { return pathguard.RejectSymlinks(root, filename) }
+// rejectSymlinks delegates to pathguard.RejectAndReport for the same reason.
+// It used to delegate to RejectSymlinks, which refused SILENTLY: neither this
+// function nor its callers in resolve() printed anything, so a containment
+// refusal here reached the user as a bare error. ML-7B made it speak.
+func rejectSymlinks(root, filename string) error { return pathguard.RejectAndReport(root, filename) }
 
 func atomicWrite(filename string, data []byte, mode os.FileMode) error {
 	directory := filepath.Dir(filename)

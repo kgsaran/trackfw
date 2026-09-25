@@ -198,8 +198,7 @@ func updateHooksSurgical(cwd string, cfg Config) {
 	case "husky":
 		path := filepath.Join(cwd, ".husky", "pre-commit")
 		// Guard: reject if any ancestor of path is a symlink.
-		if guardErr := pathguard.RejectSymlinks(filepath.Clean(cwd), path); guardErr != nil {
-			fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
+		if guardErr := pathguard.RejectAndReport(filepath.Clean(cwd), path); guardErr != nil {
 			fmt.Printf("  ⚠ .husky/pre-commit: %v\n", guardErr)
 			return
 		}
@@ -223,8 +222,7 @@ func updateHooksSurgical(cwd string, cfg Config) {
 	case "lefthook":
 		path := filepath.Join(cwd, "lefthook.yml")
 		// Guard: reject if any ancestor of path is a symlink.
-		if guardErr := pathguard.RejectSymlinks(filepath.Clean(cwd), path); guardErr != nil {
-			fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
+		if guardErr := pathguard.RejectAndReport(filepath.Clean(cwd), path); guardErr != nil {
 			fmt.Printf("  ⚠ lefthook.yml: %v\n", guardErr)
 			return
 		}
@@ -287,9 +285,8 @@ func ensureGlobalADRDirRegistered(cwd string) error {
 	}
 	// Guard: reject writes through symlinks before mutating trackfw.yaml
 	// (ADR-2026-09-18 / ML-1B). Root is the project directory (cwd).
-	if guardErr := pathguard.RejectSymlinks(filepath.Clean(cwd), yamlPath); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", yamlPath, guardErr)
-		return fmt.Errorf("writing %s: %w", yamlPath, guardErr)
+	if guardErr := pathguard.RejectAndReport(filepath.Clean(cwd), yamlPath); guardErr != nil {
+		return guardErr
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if writeErr := os.WriteFile(yamlPath, []byte(updated), 0o644); writeErr != nil {
@@ -663,8 +660,7 @@ func selectDeclaredTargets(declared []string, requested []string) ([]string, err
 // path is clean. The refusal is written to stderr (ADR-2026-09-18, decision 3:
 // recusa audível — writes that would escape $HOME must never be silent).
 func rejectHarnessSymlink(home, path, id, displayPath string) (TargetResult, bool) {
-	if guardErr := pathguard.RejectSymlinks(home, path); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
+	if guardErr := pathguard.RejectAndReport(home, path); guardErr != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: guardErr.Error()}, true
 	}
 	return TargetResult{}, false
@@ -2128,20 +2124,16 @@ func discoverWorkflowPresent(root string) bool {
 // never silent, so "update didn't refresh my workflow" is diagnosable.
 func refreshDiscoverGitHubActionsWorkflowIfPresent(root string) error {
 	path := filepath.Join(root, DiscoverGitHubActionsWorkflowPath)
-	info, err := os.Lstat(path)
-	if err != nil {
+	if _, err := os.Lstat(path); err != nil {
 		return nil // not installed — update never creates it (AC17(b))
 	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		fmt.Fprintf(os.Stderr, "aviso: %s é um symlink; trackfw update não escreve através de symlinks — arquivo não foi tocado\n", DiscoverGitHubActionsWorkflowPath)
-		return nil
-	}
-	// Full ancestor-symlink check: the leaf Lstat above only guards the last
-	// component; RejectSymlinks walks every ancestor up to root (ML-1B /
-	// ADR-2026-09-18). Refusal is loud (stderr, consistent with the leaf-only
-	// message already present for the leaf case).
-	if guardErr := pathguard.RejectSymlinks(filepath.Clean(root), path); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
+	// Single containment check for BOTH the leaf and every ancestor up to root:
+	// pathguard.RejectSymlinks Lstats the leaf first, so the separate leaf-only
+	// branch that used to live here (with its own "aviso: … é um symlink"
+	// wording) was a sixth message grammar for an outcome this call already
+	// produces. ML-7B collapsed it; refusal stays loud, now in the single
+	// grammar emitted by pathguard.
+	if guardErr := pathguard.RejectAndReport(filepath.Clean(root), path); guardErr != nil {
 		return nil
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
