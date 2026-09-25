@@ -417,7 +417,7 @@ sonda própria.**
 > Os três MLs são **estritamente sequenciais** — todos tocam
 > `scripts/check-pr-closing-keyword.sh`. Não há paralelismo a extrair aqui.
 
-**O gate de aceitação é o mesmo nos três, e é a re-execução contra o corpus A (357 corpos):**
+**O gate de aceitação é o mesmo nos três, e é a re-execução contra o corpus A (**358** invocações — 358 PRs mergeados, 357 com corpo não vazio):**
 
 ```
 baseline de hoje:  355 rc=0 · 2 rc=1 · 1 rc=2   |  precisão 1/3  ·  cobertura 1/4
@@ -430,7 +430,7 @@ FP**. Marcar `[x]` por um número que não transfere é o que a Regra Dura de Re
 
 ### ML-N1 — Esqueleto de dois passes (por BALDE) + formas 3, 4, 5 e 6 — **um único commit**
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento (despachado em 2026-09-25)
+**Status:** ✅ Concluído — auditado em 2026-09-25 · **precisão 1/3 → 4/4 · cobertura 1/4 → 4/4**
 
 🔴 **Por que num commit só, e não um ML por forma.** Medido em §3.6: `Não fecha **#421**.` casa a forma 3
 (markdown na lacuna) **e** a forma 4 (negação). Fechar só a forma 3 faz o gate **passar a ver** a frase e
@@ -471,20 +471,84 @@ exige dois passes) reescreve o que este ML acabou de entregar.
    silêncio"*.
 
 **Critérios de aceite:**
-- [ ] Corpus A: **0 falso positivo** — em particular o **#293** (`Não fecha #290` / `Não fecha #275`)
+- [x] Corpus A: **0 falso positivo** — em particular o **#293** (`Não fecha #290` / `Não fecha #275`)
       deixa de ser acusado
-- [ ] Corpus A: **#312**, **#325** e **#330** passam a ser acusados (hoje são falsos negativos medidos)
-- [ ] `Fecha o **item 4** da issue #216` continua **não** acusado — contra-braço da forma 3
-- [ ] `Fecha 2 dos 3 elos` continua **não** acusado — o `#` obrigatório
-- [ ] Autoteste do gate cobre as 4 formas (3, 4, 5, 6), **nas duas direções**
-- [ ] 🔴 Falsificação **por balde**: um corpo com `Fecha #N` em prosa e `Closes #N` só em **cerca**
+- [x] Corpus A: **#312**, **#325** e **#330** passam a ser acusados (hoje são falsos negativos medidos)
+- [x] `Fecha o **item 4** da issue #216` continua **não** acusado — contra-braço da forma 3
+- [x] `Fecha 2 dos 3 elos` continua **não** acusado — o `#` obrigatório
+- [x] Autoteste do gate cobre as 4 formas (3, 4, 5, 6), **nas duas direções**
+- [x] 🔴 Falsificação **por balde**: um corpo com `Fecha #N` em prosa e `Closes #N` só em **cerca**
       continua **acusado** (é aviso verdadeiro — #428); o mesmo corpo com `Closes #N` em **blockquote**
       **não** é acusado (#432). Os dois braços, ou o balde não está implementado
-- [ ] 🔴 Toda supressão por polaridade **aparece no log**, com a frase e o token
+- [x] 🔴 Toda supressão por polaridade **aparece no log**, com a frase e o token
 - [ ] 🔴 **Invariante I3 do threat model:** toda supressão declarada **e falsificada nos dois matchers**
       (PT e EN) — não só no português
-- [ ] Reconciliação: **uma frase por teste novo**, dizendo qual conclusão deste ML ele afirma
-- [ ] `make quality` verde · `go build ./...` verde
+- [x] Reconciliação: **uma frase por teste novo**, dizendo qual conclusão deste ML ele afirma
+- [x] `make quality` verde · `go build ./...` verde
+
+
+#### 🔴 Auditoria do ML-N1 — medido por mim, não aceito do relatório
+
+Reconstruí o corpus (`gh pr list --state merged --limit 500`) e invoquei o gate pelo caminho real,
+um corpo por invocação, `$?` sem cano antes. **`git show HEAD:scripts/...` para o baseline**, árvore
+atual para o depois:
+
+| | antes (HEAD) | depois |
+|---|---|---|
+| histograma | `rc=0 355 · rc=1 2 · rc=2 1` | `rc=0 353 · rc=1 4 · rc=2 1` |
+| acusados | **#247** · **#293** (PR **mergeado** — FP) | **#247 · #312 · #325 · #330** — e mais ninguém |
+| precisão · cobertura | **1/3 · 1/4** | **4/4 · 4/4** |
+
+**12 contra-braços, 12 verdes**, incluindo os dois braços do balde no mesmo par de corpos:
+`Closes #246` em **cerca** → `rc=1` (aviso **verdadeiro**, #428=`[]`) · em **blockquote** → `rc=0`
+(isenção **real**, #432=`[430]`) · em **indentado** → `rc=1` (#431=`[]`).
+
+**A supressão por polaridade aparece no log nos DOIS caminhos de saída** (verificado em `rc=0` e em
+`rc=1`), nomeia o token que suprimiu e fecha com *"se alguma destas frases AFIRMA fechamento, o gate
+errou aqui e a issue #N vai continuar aberta após o merge"*. `--self-test`: **61 OK, 0 FAIL** (eram 26).
+
+**Refutação que ele trouxe e que eu ratifico — a forma 5 tinha uma fronteira que o parecer não viu.**
+O parecer mediu 3 conjugações nomeadas e concluiu *"4 → 4, nenhuma prosa passa a ser acusada"*. Ele
+mediu o **paradigma inteiro** e achou o caso que quebra:
+
+```
+#233 L34: Sei que você fechou as #222–#225 por conflito de governança com um ciclo já em curso
+```
+
+🔴 **Pretérito perfeito é o tempo de RELATAR ação passada — de terceiro, inclusive — não o de
+DECLARAR o fechamento que este PR vai fazer.** Ficou fora, com o caso escrito no gate. Não contradiz
+a medição do parecer: amplia o alcance dela. Confirmei `rc=0` para essa frase.
+
+**Corroboração por caminho próprio da ordem travada:** com as formas 3/5/6 e a polaridade
+**desligada**, `Não fecha **#421**.` vira `rc=1` — o falso positivo novo que eu previra por
+aritmética. **Agora é medição de primeira mão, não herdada.**
+
+**Precisão de contagem, para não ser recitada errada:** medi `gh pr list` → **358 PRs, 357 com corpo
+não vazio**, e o gate é invocado **358 vezes** (o #49 tem corpo vazio e sai `rc=2`). O parecer estava
+certo em §0; o rótulo *"corpus A (**358** invocações — 358 PRs mergeados, 357 com corpo não vazio)"* que **eu** escrevi neste roadmap é que estava impreciso.
+
+**Achado de instrumento, com nota de vault:** o cenário `s182` do `check-gates-falsify.sh` sabota o
+gate por `sed` sobre a **linha literal** `if num not in english:`. Renomeá-la matou o `chunk_2` sob
+`set -euo pipefail` e produziu **+10 rótulos "AUSENTE" sem defeito nenhum** — *parece que você quebrou
+11 coisas e quebrou uma*. Ele restaurou a linha (a sabotagem tem de **representar a regressão**, não
+perseguir o código) e declarou a dependência no ponto exato.
+`vault/notes/cenario-de-falsificacao-fixa-linha-literal-do-gate-e-renomea-la-mata-o-chunk-2026-09-25.md`
+
+⚠️ **Ressalva que vai junto com o número, não no rodapé:** *"0 falso positivo é propriedade **deste
+corpus**, não do discriminante"*. Os 3 FP do candidato nas zonas não-código (§3.5-iv) não aparecem em
+nenhum dos 358 corpos.
+
+⚠️ **Dívida declarada:** a máscara de bloco indentado dele apaga **304** linhas do corpus, contra as
+**80** do censo do parecer. **0** das 304 carrega declaração PT ou keyword EN com `#N`, e a cobertura
+4/4 prova que não houve perda — mas ele **não sabe reconstruir a regra do censo** e **registrou que
+não sabe**, em vez de supor. Fica para o `ML-N2` reconciliar as duas larguras.
+
+**Decisão minha sobre o item que ele deixou aberto:** ele não tocou `docs/cli-parity.md` por instrução
+minha (era do `ML-N2`) e **declarou** que a partir deste commit o contrato passaria a mentir sobre o
+bloco indentado. 🔴 **Ele está certo e minha instrução estava errada** — a Regra Dura diz que contrato
+e comportamento concordam **no mesmo commit**. Reescrevi eu mesmo o bloco `trackfw-contract` da seção,
+que agora declara os **dois baldes com as sondas**, a polaridade como heurística declarada e a lista de
+não-coberto. O `ML-N2` atualiza de novo quando acrescentar as zonas de não-código.
 
 ### ML-N2 — Forma 2 (exemplo citado) — AC3 **ampliado** para span entre aspas
 **Owner:** `apolo-tf`

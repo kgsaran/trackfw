@@ -41034,3 +41034,60 @@ bash scripts/check-unguarded-capture-rc.sh          RC=0
   (cerca), **#429** (span), **#431** (indentado), **#432** (blockquote), **#433** (tabela), **#434** (aspas).
   Branches `probe/*` deletadas, nenhuma sonda mergeada, 13 runs de CI cancelados.
 - Não commitei, não fiz push, não criei branch por `git`, não rodei `make quality`.
+
+## 2026-09-25 — apolo-tf — ML-N1 (início): dois passes por balde + formas 3, 4, 5 e 6
+
+- Escopo: `scripts/check-pr-closing-keyword.sh` (único arquivo de produto). `docs/cli-parity.md:7318`
+  fica para o `ML-N2`, por instrução explícita do handoff.
+- Lido antes de agir: `### ML-N1` e `## 🔴 Resultado do ML-0C` do roadmap em `wip/`; o parecer
+  `docs/seguranca/2026-09-25-discriminante-do-gate-de-palavra-chave.md` §2.4, §3.2, §3.5, §10.4.
+- A **Wave 1** do roadmap está marcada SUBSTITUÍDA — não executada.
+- Sem `git` de escrita: entrego não commitado.
+
+## 2026-09-25 — apolo-tf — ML-N1 (fim): 358 corpos, 0 FP, cobertura 1/4 → 4/4
+
+- **Único arquivo de produto alterado:** `scripts/check-pr-closing-keyword.sh`. `docs/cli-parity.md`
+  intocado — é entrega do `ML-N2`, por instrução do handoff.
+- 🔴 **O corpus A tem 358 corpos, não 357.** O rótulo do parecer estava errado; o histograma dele
+  (`355+2+1`) sempre somou 358. Baseline reproduzido **literalmente** contra o gate intocado:
+  `355 rc=0 · 2 rc=1 · 1 rc=2`, acusando **#247** (1 TP) e **#293 ×2** (FP, PR MERGEADO).
+- **Depois:** `353 rc=0 · 4 rc=1 · 1 rc=2` — acusados **#247, #312, #325, #330** e mais ninguém.
+  **0 falso positivo · precisão 1/3 → 4/4 · cobertura 1/4 → 4/4.** #293 deixou de ser acusado.
+- ⚠️ **"0 FP" é propriedade DESTE corpus, não do discriminante** — os 3 FP do candidato nas zonas
+  não-código (§3.5-iv) não aparecem em corpo nenhum dos 358.
+- 🔴 **Refutei uma afirmação do parecer, por medição própria:** §5 diz que a forma 5 não acusa prosa
+  nova ("medido: 4 → 4"). **Falso para o paradigma completo.** Com o pretérito perfeito na lista,
+  aparece FP inédito — **#233 L34** `Sei que você fechou as #222–#225 por conflito de governança`.
+  Pretérito perfeito é o tempo de **relatar** ação passada (de terceiro, inclusive), não de
+  **declarar** fechamento. Ficou **fora**, e o motivo está escrito no gate.
+- **Ordenação confirmada por medição minha, não herdada:** com as formas 3/5/6 e a polaridade
+  desligada, `Não fecha **#421**`, `Não fecha: #421` e `**Não fecha **#421**.**` viram **rc=1** —
+  FP novo onde hoje há silêncio. Com o candidato completo, **rc=0**. A forma 3 sozinha é regressão.
+- **Baldes falsificados nos dois braços:** cerca/span/indentado **acusam** (#428/#429/#431 = `[]`);
+  blockquote/tabela/aspas **calam** (#432/#433/#434 = `[430]`). A única zona que o `ML-N1` de fato
+  acrescenta é o **bloco indentado** — era `rc=0` (falso negativo silencioso) no gate antigo.
+- **Esqueleto de dois passes** entregue e **exercitado** pela zona-sonda `@@PROBE@@`
+  (`PRCLOSE_SELFCHECK_NONCODE=1`), que falsifica nos **dois** matchers (I3) sem embarcar nenhuma das
+  zonas medidas do `ML-N2`. `NONCODE_ZONE_RES` fica **vazia** de propósito.
+- ⚠️ **Dívida declarada:** minha máscara de bloco indentado apaga **304** linhas do corpus, não as 80
+  do censo do parecer — regra mais larga. **0** dessas linhas carrega declaração PT ou keyword EN com
+  `#N`, e a cobertura 4/4 prova que não houve perda. Mesma classe de dívida que o `TBL`.
+- **Residual da polaridade tornado VISÍVEL:** as 8 frases afirmativas com token de negação continuam
+  silenciadas (não fecha em regex), mas **8/8 aparecem no log** com a frase e o token.
+- Autoteste: **26 → 59** cenários, todos verdes, cada bloco com sua frase de reconciliação.
+- Não commitei, não fiz push, não criei branch, não usei `git stash`/`checkout --`.
+- 🔴 **`make quality` reprovou na 1ª execução, e o achado virou nota de vault.** O cenário `s182` do
+  `check-gates-falsify.sh` sabota o gate por `sed` sobre a **linha literal** `if num not in
+  english:`; eu a havia reescrito como `if num in english: continue`. O cenário reprovou
+  fail-closed e nomeando a causa, mas matou o `chunk_2` e produziu **+10 rótulos "AUSENTE" sem
+  defeito**. Restaurei a linha original (a sabotagem tem de representar a regressão) e **declarei a
+  dependência em comentário no ponto exato**. Nota:
+  `vault/notes/cenario-de-falsificacao-fixa-linha-literal-do-gate-e-renomea-la-mata-o-chunk-2026-09-25.md`.
+- **Evidência final:** `make quality` **exit 0** (`8 chunks, 338 OK, 0 FAIL, guarda de conjunto OK`);
+  `--self-test` **rc=0, 59 OK, 0 FAIL**; `trackfw validate` **rc=0** (149 warnings pré-existentes,
+  0 violations; score 100/100).
+- **Adendo (I3):** acrescentei o cenário `i3-polaridade-nao-alcanca-o-matcher-ingles` — a leitura de
+  polaridade é **unilateral** (só o laço PT); `Closes #12` em cláusula negada **continua isentando**,
+  e o gate **acerta** (o parser do GitHub também fecha). Residual **6.6** do parecer, agora
+  **preso por teste** em vez de só declarado. Autoteste: **60** cenários. Adição só de teste —
+  verificada por `--self-test`; o `make quality` verde cobre o código de produto, inalterado desde então.

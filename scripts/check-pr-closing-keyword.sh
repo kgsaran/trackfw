@@ -21,11 +21,21 @@
 # (vault/notes/gate-literal-regex-syntax-equivalent-bypass-2026-09-01.md exige
 #  que um gate baseado em regex diga o que cobre e o que NAO cobre)
 # ============================================================================
-# RECUSA (exit 1) -- palavra-chave PORTUGUESA de fechamento ADJACENTE a `#N`,
-#   opcionalmente com artigo definido e/ou a palavra "issue" no meio, e SEM
-#   forma inglesa valida para AQUELE MESMO numero:
+# RECUSA (exit 1) -- frase que AFIRMA fechamento em portugues, com a referencia
+#   da issue, e SEM forma inglesa valida para AQUELE MESMO numero:
 #     "Fecha #246."            "Corrige o #239."      "Encerra a issue #12"
 #     "**Corrigido** #12"      "Fecham #12"           "Resolvido #12"
+#     "Fecha **#274**"         "Fecha: #421"          "Fecha [#274](url)"
+#     "Fecho a #12"            "Fechara a #12"        "Fechando a #12"
+#     "Fecha kgsaran/trackfw#12"  "Fecha https://github.com/o/r/issues/12"
+#
+#   >>> "AFIRMA" e a palavra load-bearing, e e a correcao de 2026-09-25: ate
+#       aqui o gate media ADJACENCIA LEXICAL e nunca perguntava se a frase
+#       afirmava fechamento. Medido em 358 corpos reais de PR mergeado, isso
+#       dava precisao de 1 acerto em 3 acusacoes e cobertura de 1 em 4.
+#       Entre o verbo e a referencia agora cabe qualquer caractere de uma lista
+#       FECHADA de nao-palavra (`* _ ~ : , - -- [` e espaco/tab) -- nunca uma
+#       PALAVRA, que continua descaracterizando a declaracao (forma aceita 3).
 #
 # ACEITA (exit 0), deliberadamente:
 #   1. Qualquer forma inglesa valida para o mesmo numero, em qualquer lugar do
@@ -50,13 +60,59 @@
 #          corpos reais. Afrouxar para "keyword em qualquer lugar da linha"
 #          sobe de 1 para 43 linhas reprovadas neste mesmo corpus -- um gate
 #          ruidoso e desligado, e ai nao guarda nada.
-#   4. Trechos em cerca de codigo (```) e em code span (`...`) sao removidos
-#      antes de casar. Motivo: DOCUMENTAR a forma errada e o que este proprio
-#      PR faz. Um exemplo citado nao e uma declaracao de intencao.
+#   4. Trechos em ZONA DE CODIGO -- cerca (```), code span (`...`) e bloco
+#      indentado por 4 espacos/tab -- sao removidos antes de casar. Motivo:
+#      DOCUMENTAR a forma errada e o que este proprio PR faz. Um exemplo citado
+#      nao e uma declaracao de intencao.
+#   5. Frase que NEGA o fechamento na mesma clausula: "Este PR nao fecha a
+#      #363", "Entrega sem fechar a #12", "Deixa de fechar a #12".
+#      >>> 🔴 Toda supressao por polaridade SAI NO LOG, com a frase e o token.
+#          Ver o bloco VACUIDADE abaixo -- e obrigacao, nao cortesia.
+#
+# ============================================================================
+# OS DOIS BALDES DE ZONA -- comportamento OPOSTO, e MEDIDO (nao deduzido)
+# ============================================================================
+# Medido em 2026-09-24 com 7 PRs sonda contra 2 issues descartaveis deste
+# repositorio, lendo `closingIssuesReferences` (secao 10 do parecer
+# docs/seguranca/2026-09-25-discriminante-do-gate-de-palavra-chave.md):
+#
+#   CODIGO     cerca · code span · bloco indentado    #428/#429/#431 = []
+#              O GitHub IGNORA a palavra-chave aqui. A isencao inglesa seria
+#              FALSA -> a mascara e subtraida dos DOIS matchers.
+#              🔴 Logo `Fecha #246.` cuja unica forma inglesa vive em cerca
+#              RECUSA, e isso esta CERTO: aquele corpo nao fecha a issue. Fazer
+#              a isencao valer ali instalaria FALSO NEGATIVO -- silencio sobre
+#              uma declaracao falsa, que e pior que o incomodo de hoje.
+#   NAO-CODIGO blockquote · celula de tabela · aspas   #432/#433/#434 = [430]
+#              O GitHub HONRA a palavra-chave aqui. A isencao e REAL -> passe
+#              PROPRIO, subtraido so do matcher portugues.
+#              >>> As zonas deste balde sao entrega do ML-N2. O que ja existe
+#                  aqui e o ESQUELETO de dois passes, falsificado no autoteste
+#                  pela zona-sonda `@@PROBE@@`.
 #
 # NAO COBERTO (limite declarado, nao acidente):
 #   - Parafrase com palavras intervenientes: "este PR fecha, por fim, a #246".
 #     Deliberado -- ver item 3 acima; cobrir isso custa o falso positivo zero.
+#   - Segunda referencia de uma declaracao coordenada: "Fecha **#274** e
+#     **#275**" acusa o #274 e NAO o #275, porque "e" e PALAVRA e a lacuna as
+#     proibe. A LINHA e acusada, entao o defeito e visto; alargar a lacuna para
+#     palavras custaria o contra-braco "Fecha o **item 4** da issue #216".
+#   - `Fecha (#274)` com PARENTESE. Medido: admitir `(` produz falso positivo
+#     inedito no corpus (`issues ja fechados** (#335, #336)`). `[` sozinho e
+#     seguro e esta DENTRO.
+#   - `Fecha a issue 12` sem `#`. Medido: numero nu custa +6 falsos positivos.
+#   - PRETERITO PERFEITO (`fechou`, `fechei`, `corrigiu`). Medido: relatar acao
+#     passada nao e declarar fechamento (`Sei que voce fechou as #222...`).
+#   - Verbos fora das 4 familias (`Sana`, `Soluciona`, `Conserta`, `Elimina`).
+#     Lista fechada POR ESCOLHA, nao por completude.
+#   - 🔴 SUPERFICIE DE SILENCIAMENTO DA POLARIDADE. Nao fecha em regex: um
+#     intensificador afirmativo pode conter token de negacao. "Nao e verdade
+#     que fecha #12" (deve acusar) e "Sem contar o #99, fecha a #12" (nao deve)
+#     cabem na MESMA janela e querem vereditos OPOSTOS -- nenhum ajuste de
+#     janela as separa. Por isso o residual e tornado VISIVEL no log, nao
+#     aceito em silencio.
+#   - Zonas nao medidas, que NAO sao extrapoladas por analogia: comentario
+#     HTML, <pre>/<code>, aspas curvas, `~~~`, cerca com atributo de linguagem.
 #   - Evasao adversaria (o autor do corpo nao e um adversario: e alguem que
 #     quer fechar a issue e erra o idioma).
 #   Anotado como `partial=` em docs/cli-parity.md, nunca `gate=`.
@@ -68,6 +124,10 @@
 #   exit 1 = defeito encontrado (linha nomeada)
 #   exit 2 = not_evaluated: corpo vazio, evento sem payload, execucao fora de
 #            `pull_request`, `gh` ausente. Non-zero de proposito.
+#   🔴 E o exit 0 tambem nao e silencioso quando houve SUPRESSAO por
+#      polaridade: o gate imprime a linha suprimida e o token que a suprimiu,
+#      nos DOIS caminhos de saida (0 e 1). Sem isso a leitura de polaridade
+#      seria um buraco invisivel no meio do invariante desta secao.
 #
 # ============================================================================
 # MODOS
@@ -98,6 +158,7 @@ cat >"$MATCHER" <<'PY_EOF'
 # -*- coding: utf-8 -*-
 """Matcher unico do gate. Le UM arquivo com o corpo bruto do PR.
 exit 0 = limpo | exit 1 = defeito | exit 2 = not_evaluated"""
+import os
 import re
 import sys
 
@@ -114,36 +175,195 @@ EN_RE = re.compile(
     r"(?i)(?<![\w/])" + EN_KEYWORDS + r"\b[ \t:]*" + EN_REF
 )
 
-# Portugues: SEM `resolve` puro (ver cabecalho do .sh, forma aceita 2).
+# --------------------------------------------------------------------------
+# FORMA 5 -- conjugacao. A lista de SUFIXOS foi ampliada dentro das 4 FAMILIAS
+# ja declaradas (fech*, corrig*, resolv*, encerr*). A lista de VERBOS continua
+# fechada POR ESCOLHA: `Sana`/`Soluciona`/`Conserta`/`Elimina` sao residual
+# aceito e declarado -- amplia-la sem medir custo de falso positivo e o caminho
+# do gate ruidoso que alguem desliga.
+# `resolve` PURO continua FORA (grafia identica ao ingles valido; recusa-lo
+# seria reprovar um corpo que funciona -- ver forma aceita 2 no cabecalho).
+# --------------------------------------------------------------------------
+# 🔴 O PRETERITO PERFEITO fica de FORA (`fechou`, `fechei`, `fecharam`,
+# `corrigiu`, `resolveu`, ...), e isso foi MEDIDO, nao estilo: com `ou` na
+# lista, o corpus A ganha um falso positivo inedito --
+#   #233 L34 `Sei que voce fechou as #222-#225 por conflito de governanca`.
+# O preterito perfeito e o tempo de RELATAR acao ja ocorrida (de terceiro,
+# inclusive), nao o de DECLARAR o fechamento que este PR vai fazer.
+# O PARTICIPIO (`fechado`/`corrigido`) continua DENTRO: ja estava na lista
+# antiga e e a forma de `**Corrigido** #12`.
 PT_KEYWORDS = (
-    r"(?:fecha(?:m|r|do|da|dos|das)?"
-    r"|corrig(?:e|em|ir|ido|ida|idos|idas)"
-    r"|resolv(?:em|er|ido|ida|idos|idas)"
-    r"|encerra(?:m|r|do|da|dos|das)?)"
+    r"(?:fech(?:a|am|amos|ando|ar|ara|ará|arao|arão|arei|em|e|o"
+    r"|ado|ada|ados|adas)"
+    r"|corrig(?:e|em|imos|indo|ir|ira|irá|irao|irão|irei|ido|ida|idos|idas)"
+    r"|resolv(?:em|emos|endo|er|era|erá|erao|erão|erei|o|ido|ida|idos|idas)"
+    r"|encerr(?:a|am|amos|ando|ar|ara|ará|arao|arão|arei|em|e|o"
+    r"|ado|ada|ados|adas))"
 )
-# Entre a palavra-chave e o `#N` so pode haver: enfase markdown, artigo
-# definido (o/a/os/as), e/ou a palavra "issue(s)". Qualquer outra palavra
-# (item, defeito, governanca, tres, ultimo...) descaracteriza a declaracao de
-# fechamento e vira prosa -> nao reprova.
+
+# --------------------------------------------------------------------------
+# FORMA 3 -- a LACUNA entre o verbo e a referencia.
+# Antes: so `\*{0,2}` (negrito colado). 11 de 11 grafias escapavam -- e foi
+# assim que #312, #325 e #330 mergearam verdes com as issues abertas.
+# Agora: qualquer caractere desta lista FECHADA de nao-palavra, mais os
+# opcionais artigo definido e "issue(s)".
+# 🔴 A lista e ENUMERADA, nao `\W`. Dois motivos MEDIDOS:
+#   - `(` produz falso positivo inedito no corpus A
+#     (#337 L11 -- `issues ja fechados** (#335, #336)`). Fica FORA.
+#     `[` sozinho e seguro (`Fecha [#N](url)`) e fica DENTRO.
+#   - `_` e caractere de palavra (`\w`), entao `\W` nem seria superconjunto.
+# 🔴 PALAVRA na lacuna continua descaracterizando a declaracao:
+# `Fecha o **item 4** da issue #216` e prosa e NAO reprova.
+# --------------------------------------------------------------------------
+PT_GAP = r"[ \t*_~:,\-—–\[]*"
 PT_FILLER = (
-    r"(?:[ \t]*\*{0,2}\b(?:o|a|os|as)\b\*{0,2})?"
-    r"(?:[ \t]*\*{0,2}\b(?:a[ \t]+)?issues?\b\*{0,2})?"
-    r"[ \t]*"
+    PT_GAP
+    + r"(?:(?:o|a|os|as)\b" + PT_GAP + r")?"
+    + r"(?:issues?\b" + PT_GAP + r")?"
+)
+
+# --------------------------------------------------------------------------
+# FORMA 6 -- gramatica de referencia SIMETRICA a do ingles.
+# Antes o lado PT aceitava so `#(\d+)`: o gate reconhecia `owner/repo#N` e a
+# URL quando ela ISENTAVA (EN_REF) e nao a reconhecia quando ela ACUSAVA.
+# Isso e fail-open de gramatica -- o lado permissivo mais expressivo que o
+# restritivo -- e nao uma lacuna de conveniencia.
+# 🔴 O `#` continua OBRIGATORIO nas formas `#N` e `owner/repo#N`. Espelhar o
+# `#?` do EN_REF (numero nu) mediu +6 falsos positivos no corpus A
+# (`Fecha 2 dos 3 elos`, `fecha ~50 vermelhos`, ...). A URL completa de issue e
+# a unica alternativa sem `#`, por ser inequivoca.
+# --------------------------------------------------------------------------
+PT_REF = (
+    r"(?:[-\w.]+/[-\w.]+#"
+    r"|https?://github\.com/[-\w.]+/[-\w.]+/issues/"
+    r"|#)(\d+)"
 )
 PT_RE = re.compile(
-    r"(?i)(?<![\w/])\*{0,2}" + PT_KEYWORDS + r"\b\*{0,2}" + PT_FILLER + r"#(\d+)"
+    r"(?i)(?<![\w/])\*{0,2}" + PT_KEYWORDS + r"\b" + PT_FILLER + PT_REF
 )
 
+# --------------------------------------------------------------------------
+# FORMA 4 -- POLARIDADE. O discriminante antigo nunca perguntava se a frase
+# AFIRMA fechamento: `**Nao fecha #290**` era acusado como se afirmasse.
+# Negacao a ESQUERDA do verbo e DENTRO DA MESMA CLAUSULA suprime a acusacao.
+# 🔴 A supressao e SEMPRE registrada no log (ver `report_suppressions`): a
+# superficie de silenciamento nao fecha em regex -- `Nao e verdade que fecha
+# #12` (deve acusar) e `Sem contar o #99, fecha a #12` (nao deve) cabem na
+# MESMA janela e querem vereditos OPOSTOS. Residual nao eliminavel tem de ser
+# VISIVEL, senao viola o invariante "este gate NUNCA sai 0 em silencio".
+# --------------------------------------------------------------------------
+NEG_RE = re.compile(
+    r"(?i)(?<![\w])(?:n[aã]o|nem|nunca|jamais|sem"
+    r"|deixa(?:m|ram|va|vam)?[ \t]+de|deixou[ \t]+de"
+    r"|em[ \t]+vez[ \t]+de|ao[ \t]+inv[eé]s[ \t]+de)(?![\w])"
+)
+CLAUSE_BREAK_RE = re.compile(r"[.;:!?]")
+
+# --------------------------------------------------------------------------
+# BALDES DE ZONA -- os dois tem comportamento OPOSTO, e isso foi MEDIDO
+# (ML-0C, 7 PRs sonda contra 2 issues descartaveis; ver secao 10 do parecer
+# docs/seguranca/2026-09-25-discriminante-do-gate-de-palavra-chave.md):
+#
+#   CODIGO     cerca ``` · code span `...` · bloco indentado 4 espacos/tab
+#              O GitHub IGNORA a palavra-chave aqui (#428/#429/#431 = []).
+#              Logo a isencao inglesa seria FALSA, e a mascara e subtraida dos
+#              DOIS matchers -- exatamente como o `blank_code` antigo fazia.
+#              🔴 NAO "corrigir" isso: `Fecha #246.` com `Closes #246` so
+#              dentro de cerca NAO fecha a issue, entao acusar e o trabalho do
+#              gate. Fazer a isencao valer ali instalaria FALSO NEGATIVO --
+#              silencio sobre uma declaracao falsa, que e pior que o incomodo
+#              de hoje (o aviso atual e VERDADEIRO).
+#
+#   NAO-CODIGO blockquote · celula de tabela · span entre aspas
+#              O GitHub HONRA a palavra-chave aqui (#432/#433/#434 = [430]).
+#              A isencao e REAL, entao esta mascara vai num PASSE PROPRIO que
+#              suprime so a acusacao PORTUGUESA e NAO e subtraida do scan da
+#              isencao inglesa.
+#              >>> A lista abaixo esta VAZIA de proposito: as zonas nao-codigo
+#                  sao entrega do ML-N2. O que o ML-N1 entrega e o ESQUELETO
+#                  de dois passes, exercitado pela zona-sonda abaixo.
+# --------------------------------------------------------------------------
 FENCE_RE = re.compile(r"(?ms)^[ \t]*(?:```|~~~).*?^[ \t]*(?:```|~~~)[ \t]*$")
 SPAN_RE = re.compile(r"`[^`\n]*`")
+INDENT_RE = re.compile(r"^(?: {4,}|\t)")
+
+NONCODE_ZONE_RES = []  # ML-N2: blockquote, celula de tabela, span entre aspas
+
+# Zona-sonda: NAO e uma zona real e nunca esta ativa em producao. Existe para
+# que o autoteste FALSIFIQUE o passe de nao-codigo nos dois matchers (I3) sem
+# embarcar nenhuma das zonas medidas do ML-N2 antes da hora. Um esqueleto de
+# dois passes que ninguem exercita e um esqueleto que o ML-N2 recomeca.
+PROBE_ZONE_RE = re.compile(r"(?s)@@PROBE@@.*?@@PROBE@@")
 
 
-def blank_code(text):
-    """Substitui cerca/span de codigo por espacos, PRESERVANDO quebras de linha
-    (numero de linha reportado continua batendo com o corpo original)."""
-    def keep_newlines(m):
-        return re.sub(r"[^\n]", " ", m.group(0))
-    return SPAN_RE.sub(keep_newlines, FENCE_RE.sub(keep_newlines, text))
+def _blank(match):
+    """Espacos no lugar do trecho, PRESERVANDO quebras de linha (o numero de
+    linha reportado continua batendo com o corpo original)."""
+    return re.sub(r"[^\n]", " ", match.group(0))
+
+
+def mask_indented_code(text):
+    """Bloco indentado por 4 espacos/tab -- balde de CODIGO (sonda #431 = []).
+    Um bloco so COMECA depois de linha em branco; isso evita mascarar
+    continuacao de paragrafo e de item de lista, que nao sao codigo."""
+    out = []
+    prev_blank = True
+    in_block = False
+    for line in text.split("\n"):
+        blank = not line.strip()
+        indented = bool(INDENT_RE.match(line))
+        if in_block:
+            if blank:
+                out.append(line)
+                continue
+            if indented:
+                out.append(re.sub(r"[^\n]", " ", line))
+                continue
+            in_block = False
+        elif indented and prev_blank and not blank:
+            in_block = True
+            out.append(re.sub(r"[^\n]", " ", line))
+            prev_blank = False
+            continue
+        out.append(line)
+        prev_blank = blank
+    return "\n".join(out)
+
+
+def mask_code_zones(text):
+    """Passe 1 -- subtraido dos DOIS matchers (PT e EN)."""
+    return mask_indented_code(SPAN_RE.sub(_blank, FENCE_RE.sub(_blank, text)))
+
+
+def noncode_zone_res():
+    zones = list(NONCODE_ZONE_RES)
+    if os.environ.get("PRCLOSE_SELFCHECK_NONCODE") == "1":
+        zones.append(PROBE_ZONE_RE)
+    return zones
+
+
+def mask_noncode_zones(text):
+    """Passe 2 -- subtraido SO do matcher portugues. A isencao inglesa
+    atravessa este passe intacta, porque nestas zonas o GitHub fecha mesmo."""
+    for rx in noncode_zone_res():
+        text = rx.sub(_blank, text)
+    return text
+
+
+def negation_in_clause(line, verb_start):
+    """Token de negacao a esquerda do verbo, DENTRO da mesma clausula.
+    Quebradores de clausula: . ; : ! ? -- e o inicio da linha, porque o laco de
+    acusacao ja e por linha (fim de linha quebra clausula de graca).
+    Devolve o token que suprime, ou None."""
+    left = line[:verb_start]
+    cut = 0
+    for br in CLAUSE_BREAK_RE.finditer(left):
+        cut = br.end()
+    clause = left[cut:]
+    token = None
+    for neg in NEG_RE.finditer(clause):
+        token = neg.group(0)
+    return token
 
 
 def main():
@@ -163,18 +383,57 @@ def main():
         print("  este gate em silencio. Use .github/PULL_REQUEST_TEMPLATE.md.")
         return 2
 
-    scan = blank_code(body)
+    # DOIS PASSES, por BALDE -- ver o bloco "BALDES DE ZONA" acima.
+    # O scan do INGLES leva so a mascara de CODIGO: nas zonas nao-codigo a
+    # isencao e real (medido) e nao pode ser apagada.
+    scan_en = mask_code_zones(body)
+    # O scan do PORTUGUES leva as duas mascaras: nas zonas nao-codigo a
+    # declaracao portuguesa e citacao, nao intencao.
+    scan_pt = mask_noncode_zones(scan_en)
     original_lines = body.splitlines()
 
-    english = {int(n) for n in EN_RE.findall(scan)}
+    english = {int(n) for n in EN_RE.findall(scan_en)}
 
     offenders = []
-    for idx, line in enumerate(scan.splitlines(), 1):
+    suppressed = []
+    for idx, line in enumerate(scan_pt.split("\n"), 1):
         for m in PT_RE.finditer(line):
             num = int(m.group(1))
+            # 🔴 NAO reescrever esta condicao como `if num in english: continue`.
+            # O cenario s182 do check-gates-falsify.sh sabota EXATAMENTE esta
+            # linha (`if num not in english:` -> `if not english:`) para provar
+            # que a isencao e POR NUMERO e nao global. Renomea-la faz aquele
+            # cenario parar de medir o que promete -- e ele reprova dizendo
+            # isso, em vez de passar verde. Medido em 2026-09-25.
             if num not in english:
                 shown = original_lines[idx - 1] if idx <= len(original_lines) else line
-                offenders.append((idx, m.group(0).strip(), num, shown.strip()))
+                neg = negation_in_clause(line, m.start())
+                if neg:
+                    suppressed.append((idx, m.group(0).strip(), num, shown.strip(), neg))
+                else:
+                    offenders.append((idx, m.group(0).strip(), num, shown.strip()))
+
+    def report_suppressions():
+        # 🔴 A supressao por polaridade SAI NO LOG, sempre, nos dois caminhos de
+        # saida. A superficie de silenciamento nao se fecha em regex (um
+        # intensificador afirmativo como "Sem duvida, fecha a #12" contem token
+        # de negacao); como o residual nao e eliminavel, ele tem de ser VISIVEL.
+        if not suppressed:
+            return
+        print("")
+        print("NOTA [pr-closing-keyword]: %d acusacao(oes) SUPRIMIDA(S) por"
+              % len(suppressed))
+        print("     polaridade -- o gate leu a frase como NEGANDO o fechamento.")
+        for idx, frag, num, shown, neg in suppressed:
+            print("  linha %d: %s" % (idx, shown))
+            print("           ^ \"%s\" nao foi acusada: o token \"%s\" nega o"
+                  % (frag, neg))
+            print("             fechamento na mesma clausula, a esquerda do verbo.")
+        print("")
+        print("  🔴 Se alguma destas frases AFIRMA fechamento, o gate errou aqui e")
+        print("     a issue #%s vai continuar aberta apos o merge. A leitura de"
+              % ", #".join(str(s[2]) for s in suppressed))
+        print("     polaridade e heuristica declarada, nao analise sintatica.")
 
     if not offenders:
         print("OK   [pr-closing-keyword]: nenhuma palavra-chave de fechamento em")
@@ -182,6 +441,7 @@ def main():
         if english:
             print("     Issues que o GitHub vai fechar no merge: %s"
                   % ", ".join("#%d" % n for n in sorted(english)))
+        report_suppressions()
         return 0
 
     print("FAIL [pr-closing-keyword]: palavra-chave de fechamento em PORTUGUES.")
@@ -196,6 +456,7 @@ def main():
     print("")
     print("  A linha de fechamento e SINTAXE DO GITHUB, nao prosa: o corpo do PR")
     print("  continua em portugues. Ver .github/PULL_REQUEST_TEMPLATE.md.")
+    report_suppressions()
     return 1
 
 
@@ -222,6 +483,35 @@ self_test() {
     printf '%s' "$body" >"$f"
     set +e
     out=$(evaluate_body_file "$f" 2>&1)
+    status=$?
+    set -e
+    if [[ $status -ne $expected ]]; then
+      echo "FAIL [pr-closing-keyword/self-test/$label]: exit $status, esperava $expected" >&2
+      printf '%s\n' "$out" | sed 's/^/    /' >&2
+      failures=$((failures + 1))
+      return
+    fi
+    if [[ -n $needle ]] && ! grep -qF -- "$needle" <<<"$out"; then
+      echo "FAIL [pr-closing-keyword/self-test/$label]: exit $status correto, mas falta '$needle'" >&2
+      printf '%s\n' "$out" | sed 's/^/    /' >&2
+      failures=$((failures + 1))
+      return
+    fi
+    echo "OK   [pr-closing-keyword/self-test/$label]"
+  }
+
+  assert_body_env() { # assert_body_env LABEL EXPECTED_EXIT EXPECTED_SUBSTR ENVSPEC BODY
+    # Igual a assert_body, mas com uma variavel de ambiente no matcher. Serve a
+    # zona-sonda do esqueleto de dois passes (PRCLOSE_SELFCHECK_NONCODE).
+    local label=$1 expected=$2 needle=$3 envspec=$4 body=$5
+    local f="$WORK/fixture-env.md" out status
+    printf '%s' "$body" >"$f"
+    set +e
+    if [[ -n $envspec ]]; then
+      out=$(env "$envspec" python3 "$MATCHER" "$f" 2>&1)
+    else
+      out=$(env -u PRCLOSE_SELFCHECK_NONCODE python3 "$MATCHER" "$f" 2>&1)
+    fi
     status=$?
     set -e
     if [[ $status -ne $expected ]]; then
@@ -270,6 +560,115 @@ self_test() {
   assert_body "code-span-nao-reprova" 0 '' 'A forma errada e `Fecha #246`, que nao fecha nada.'
   assert_body "cerca-nao-reprova"     0 '' $'Exemplo do defeito:\n\n```\nFecha #246.\n```\n\nFim.\n'
 
+  # ==========================================================================
+  # ML-N1 -- formas 3, 4, 5 e 6 + baldes de zona.
+  # 🔴 Regra Dura de Reconciliacao: cada bloco declara, em UMA frase, qual
+  # conclusao do ML-N1 aquele teste afirma. Teste para o qual a frase nao pode
+  # ser escrita nao deveria existir.
+  # ==========================================================================
+
+  # --- BALDE DE CODIGO (cerca · code span · bloco indentado) ----------------
+  # AFIRMA: o GitHub IGNORA a palavra-chave inglesa nestas tres zonas (sondas
+  # #428/#429/#431 = []), entao a isencao ali seria FALSA e o corpo NAO fecha a
+  # issue -- acusar e o trabalho do gate, e nao um falso positivo a corrigir.
+  assert_body "balde-codigo-cerca-nao-isenta"  1 'nao fecha a issue #246' \
+    $'Fecha #246.\n\n```\nCloses #246\n```\n'
+  assert_body "balde-codigo-span-nao-isenta"   1 'nao fecha a issue #246' \
+    $'Fecha #246. A forma certa seria `Closes #246`.\n'
+  # 🔴 Zona NOVA deste ML -- era rc=0 (falso negativo silencioso) ate aqui.
+  assert_body "balde-codigo-indentado-nao-isenta" 1 'nao fecha a issue #246' \
+    $'Fecha #246.\n\n    Closes #246\n\nFim.\n'
+
+  # --- BALDE NAO-CODIGO -- guarda de REGRESSAO ------------------------------
+  # AFIRMA: a mascara de nao-codigo NUNCA e subtraida do scan da isencao
+  # inglesa. Hoje a lista de zonas nao-codigo esta vazia (elas sao do ML-N2),
+  # entao este braco passa por AUSENCIA de mascara; ele existe para falhar no
+  # dia em que alguem puser uma zona nao-codigo no passe errado.
+  assert_body "balde-naocodigo-blockquote-isenta" 0 '' \
+    $'Fecha #246.\n\n> Closes #246\n'
+
+  # --- ESQUELETO DE DOIS PASSES, falsificado nos DOIS matchers (I3) ---------
+  # AFIRMA: o passe de nao-codigo suprime a acusacao PORTUGUESA e PRESERVA a
+  # isencao INGLESA -- que e a propriedade exata de que o ML-N2 depende. Usa a
+  # zona-sonda (`@@PROBE@@`), nao uma zona real, para nao embarcar o ML-N2.
+  assert_body_env "dois-passes-probe-inativa-por-padrao" 1 'nao fecha a issue #246' \
+    "" $'@@PROBE@@Fecha #246@@PROBE@@\n'
+  assert_body_env "dois-passes-suprime-acusacao-pt" 0 '' \
+    "PRCLOSE_SELFCHECK_NONCODE=1" $'@@PROBE@@Fecha #246@@PROBE@@\n'
+  assert_body_env "dois-passes-preserva-isencao-en" 0 'Issues que o GitHub vai fechar' \
+    "PRCLOSE_SELFCHECK_NONCODE=1" $'Fecha #246.\n\n@@PROBE@@Closes #246@@PROBE@@\n'
+
+  # --- FORMA 3 -- a lacuna entre o verbo e a referencia ---------------------
+  # AFIRMA: a lacuna aberta a nao-palavra passa a acusar as declaracoes reais
+  # que mergearam verdes com a issue aberta (#312, #325, #330) -- e PALAVRA na
+  # lacuna continua descaracterizando a declaracao.
+  assert_body "forma3-negrito"      1 'nao fecha a issue #274' 'Fecha **#274** e **#275**.'
+  assert_body "forma3-dois-pontos"  1 'nao fecha a issue #421' 'Fecha: #421.'
+  assert_body "forma3-link-md"      1 'nao fecha a issue #274' 'Fecha [#274](https://x/274)'
+  assert_body "forma3-travessao"    1 'nao fecha a issue #314' 'Fecha — #314'
+  assert_body "forma3-real-325"     1 'nao fecha a issue #314' \
+    'Fecha **#314** e **#319** — ambos sobre o mesmo script.'
+  assert_body "forma3-real-330"     1 'nao fecha a issue #320' 'Fechar o **#320** pela causa raiz.'
+  # Contra-bracos: PALAVRA na lacuna e PARENTESE continuam fora.
+  assert_body "forma3-contra-item4" 0 '' \
+    'Fecha o **item 4** da issue #216 -- o ultimo dos onze defeitos.'
+  assert_body "forma3-contra-parenteses" 0 '' 'issues ja fechados** (#335, #336)'
+
+  # --- FORMA 4 -- polaridade ------------------------------------------------
+  # AFIRMA: negacao a esquerda do verbo na MESMA clausula suprime a acusacao --
+  # e e por isso que a forma 3 nao pode entrar sozinha, sob pena de criar falso
+  # positivo onde hoje ha silencio.
+  assert_body "forma4-nega-simples"  0 'SUPRIMIDA' 'Não fecha #421.'
+  assert_body "forma4-nega-negrito"  0 'SUPRIMIDA' 'Não fecha **#421**.'
+  assert_body "forma4-nega-real-293" 0 'SUPRIMIDA' '**Não fecha #290** (usage sujo no Go)'
+  assert_body "forma4-sem-fechar"    0 'SUPRIMIDA' 'Entrega sem fechar a #12.'
+  assert_body "forma4-deixa-de"      0 'SUPRIMIDA' 'Deixa de fechar a #12.'
+  # Contra-bracos: negacao em OUTRA clausula ou A DIREITA nao suprime.
+  assert_body "forma4-contra-outra-clausula" 1 'nao fecha a issue #421' \
+    'Isto não é refactor. Fecha #421.'
+  assert_body "forma4-contra-dois-pontos"    1 'nao fecha a issue #12' \
+    'Sem mais delongas: fecha a #12.'
+  assert_body "forma4-contra-nega-a-direita" 1 'nao fecha a issue #12' \
+    'Fecha a #12, não a #13.'
+
+  # --- I3: a supressao por polaridade e falsificada nos DOIS matchers -------
+  # AFIRMA: a leitura de polaridade e UNILATERAL -- roda so no laco PORTUGUES.
+  # O matcher INGLES nao tem nocao de polaridade, entao `Closes #12` dentro de
+  # uma clausula negada CONTINUA isentando, e o corpo sai 0.
+  # 🔴 Isto e residual DECLARADO (secao 6.6 do parecer), nao defeito: o parser
+  # do GitHub tambem ignora a negacao e fecha a #12 nesse corpo -- o gate
+  # acerta o veredito. O cenario existe para PRENDER esse comportamento: se um
+  # dia a polaridade for aplicada tambem ao ingles, este teste fica vermelho e
+  # a decisao volta a ser consciente, em vez de silenciosa.
+  assert_body "i3-polaridade-nao-alcanca-o-matcher-ingles" 0 'Issues que o GitHub vai fechar' \
+    $'Fecha #12.\n\nNão fecha #12 em ingles: Closes #12\n'
+
+  # --- FORMA 5 -- conjugacao ------------------------------------------------
+  # AFIRMA: as conjugacoes que a lista antiga perdia passam a ser acusadas
+  # DENTRO das 4 familias declaradas -- e o preterito perfeito fica de fora
+  # porque relatar acao passada nao e declarar fechamento (#233 L34 medido).
+  assert_body "forma5-1a-pessoa"  1 'nao fecha a issue #12' 'Fecho a #12 com este PR.'
+  assert_body "forma5-futuro"     1 'nao fecha a issue #12' 'Fechará a #12 no merge.'
+  assert_body "forma5-gerundio"   1 'nao fecha a issue #12' 'Fechando a #12.'
+  assert_body "forma5-encerrando" 1 'nao fecha a issue #12' 'Encerrando a #12.'
+  assert_body "forma5-contra-preterito" 0 '' \
+    'Sei que voce fechou as #222 por conflito de governanca.'
+  # A lista de VERBOS continua fechada -- residual aceito e DECLARADO.
+  assert_body "forma5-residual-verbo-fora-da-lista" 0 '' 'Sana o #12.'
+
+  # --- FORMA 6 -- gramatica de referencia simetrica -------------------------
+  # AFIRMA: o lado portugues passa a reconhecer as mesmas referencias que o
+  # lado ingles ja reconhecia para ISENTAR -- fechando o fail-open de gramatica
+  # -- mas o `#` continua obrigatorio, porque numero nu mediu +6 FP.
+  assert_body "forma6-owner-repo" 1 'nao fecha a issue #12' 'Fecha kgsaran/trackfw#12'
+  assert_body "forma6-url-issue"  1 'nao fecha a issue #12' \
+    'Fecha https://github.com/kgsaran/trackfw/issues/12'
+  assert_body "forma6-contra-numero-nu" 0 '' 'Fecha 2 dos 3 elos (#148, #149)'
+  assert_body "forma6-contra-issue-sem-cerquilha" 0 '' 'Fecha a issue 12'
+  # A isencao POR NUMERO continua valendo nas formas novas.
+  assert_body "forma6-isencao-owner-repo" 0 '' \
+    $'Fecha kgsaran/trackfw#12\n\nFixes #12\n'
+
   # --- Vacuidade ------------------------------------------------------------
   assert_body "vacuidade-corpo-vazio"    2 'not_evaluated: corpo do PR vazio' ''
   assert_body "vacuidade-so-espacos"     2 'not_evaluated: corpo do PR vazio' $'   \n\n\t\n'
@@ -299,7 +698,8 @@ self_test() {
     echo "FAIL [pr-closing-keyword]: $failures cenario(s) de autoteste falharam." >&2
     exit 1
   fi
-  echo "OK   [pr-closing-keyword]: autoteste completo (deteccao + prosa + isencao por numero + vacuidade)."
+  echo "OK   [pr-closing-keyword]: autoteste completo (deteccao + prosa + isencao por numero +"
+  echo "     baldes de zona + formas 3/4/5/6 nas duas direcoes + vacuidade)."
   exit 0
 }
 
