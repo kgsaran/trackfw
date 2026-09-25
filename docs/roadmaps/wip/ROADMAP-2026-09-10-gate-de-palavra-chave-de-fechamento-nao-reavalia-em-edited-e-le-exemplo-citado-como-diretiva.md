@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: wip
 date: 2026-09-10
 req: "docs/req/REQ-2026-09-05-gate-de-palavra-chave-de-fechamento-nao-reavalia-em-edited-e-le-exemplo-citado-como-diretiva.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: gate de palavra-chave de fechamento nao reavalia em edited e le exemplo citado como diretiva
 
-> Created: 2026-09-10 | Status: backlog
+> Created: 2026-09-10 | Status: wip
 
 ## Context
 <!-- Derived from REQ: REQ-2026-09-05-gate-de-palavra-chave-de-fechamento-nao-reavalia-em-edited-e-le-exemplo-citado-como-diretiva.md -->
@@ -119,3 +119,49 @@ Fecha `#N`          Fecha: #N             Fecha os #N e #M
 
 E o contra-braço: prosa legítima que **cita** um issue sem pretender fechá-lo **não** pode reprovar —
 senão o gate vira ruído e alguém o desliga.
+
+---
+
+## 🔴 Ampliação (2026-09-24): a REQ passou de 2 para 4 formas
+
+As formas 3 (markdown quebra a adjacência) e 4 (negação lida como afirmação) foram medidas **depois**
+deste roadmap. Pela Regra Dura, entram aqui.
+
+**A forma 4 é a que muda a prioridade**, e não por frequência: as outras três produzem **ruído**; ela
+produz **dano dirigido** — o conselho do gate fecharia uma issue viva. Quatro ocorrências, e a última
+foi **minha**, no PR #424, **um dia depois** de eu documentar a forma no #258.
+
+⚠️ **E o contorno atual treina o time a não declarar escopo negativo** — nas duas vezes o remédio foi
+reescrever a frase para não conter a palavra proibida. Um gate cujo remédio é **piorar a redação**
+desincentiva o que esta casa exige em toda REQ.
+
+### ML-0B — Wave 0 ampliada: o discriminante é um só, e precisa cobrir as 4
+**Owner:** `hades-tf`
+**Status:** ⬜ Pendente
+**Arquivos afetados:** nenhum de produto — parecer em `docs/seguranca/`
+
+**Ações:**
+1. **Leia o gate** (`scripts/check-pr-closing-keyword.sh`) e diga **qual é o discriminante hoje** —
+   em uma frase, não em paráfrase do código.
+2. **Enumere as formas** que ele erra, **pela forma e não pelo token** — esta campanha teve **cinco**
+   enumerações que se revelaram limite inferior por caçar token. As 4 conhecidas são o piso, não o
+   teto. Procure ativamente: negação distante (`não é verdade que fecha #N`), verbo em outra pessoa,
+   `#N` em bloco de código, referência cruzada (`owner/repo#N`), e a palavra dentro de link.
+3. 🔴 **Meça a tensão entre as correções.** Corrigir a negação com uma janela à esquerda pode
+   reintroduzir a forma 2 (exemplo citado *tem* contexto à esquerda). **As quatro têm de cair com um
+   discriminante só** — se não caírem, diga **quais são incompatíveis** e por quê.
+4. **Threat model:** o gate é um **controle de processo**. Qual garantia ele oferece, e o que se
+   perde se ele for afrouxado demais? 🔴 Um gate que nunca acusa é tão inútil quanto um que acusa
+   sempre — e o caminho do remendo leva ao primeiro.
+5. Frase de fechamento por forma: *"corrijo esta causa, exatamente estas frases deixam de ser
+   acusadas, e nenhuma outra."*
+
+**Critérios de aceite:**
+- [ ] O discriminante atual dito em **uma frase**
+- [ ] Enumeração **pela forma**, com o comando e com a busca ativa pelo que não está na lista
+- [ ] 🔴 Tensão entre as correções **medida** — as 4 caem juntas, ou as incompatibilidades ficam escritas
+- [ ] Threat model do gate como controle de processo
+- [ ] Frase de fechamento por forma
+- [ ] 🔴 Nenhuma linha de implementação
+- [ ] 🔴 **NÃO rodar `make quality`**
+

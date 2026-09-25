@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-05
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-10-gate-de-palavra-chave-de-fechamento-nao-reavalia-em-edited-e-le-exemplo-citado-como-diretiva.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-10-gate-de-palavra-chave-de-fechamento-nao-reavalia-em-edited-e-le-exemplo-citado-como-diretiva.md"
 ---
 
 # REQ: gate de palavra-chave de fechamento nao reavalia em edited e le exemplo citado como diretiva
@@ -30,6 +30,44 @@ Este gate tem valor **medido**: de 241 PRs mergeados, apenas 4 fechavam issue au
 o repositório escrevia "Fecha #123" em português, que o GitHub ignora. Depois da instrumentação, o
 PR #281 fechou `#278` e `#279` sozinho. **É justamente por funcionar que os dois defeitos importam.**
 
+## 🔴 Ampliação de escopo (2026-09-24): são QUATRO formas, não duas
+
+Pela Regra Dura de Causa Raiz, as duas formas descobertas depois desta REQ **entram nela**, não em
+REQ nova. A causa é a mesma: **o discriminante não olha o contexto do verbo.**
+
+| # | forma | medido em | efeito |
+|---|---|---|---|
+| 1 | não reavalia em `edited` | #258 (2026-09-03) | veredito descreve estado que não existe mais |
+| 2 | exemplo citado lido como diretiva | #258 | PR que *fala sobre* o gate é acusado |
+| 3 | **`Fecha **#N**`** — markdown entre a palavra e o número | 2026-09-12 | a adjacência quebra, o gate **não vê** |
+| 4 | 🔴 **negação lida como afirmação** | PR **#417** (2026-09-23) e PR **#424** (2026-09-24) | o gate manda **fechar o que o PR declara não fechar** |
+
+### A forma 4 é a mais séria, e não é por ser a mais frequente
+
+As três primeiras produzem **ruído**. A quarta produz **dano dirigido**: o conselho do gate
+(`Troque por: Closes #N`) fecharia uma issue viva, num PR cuja frase seguinte explica **por que** ela
+não fecha. O gate existe para impedir que o texto minta sobre fechamento — e nessa forma **é ele
+quem introduz a mentira**.
+
+**Quatro ocorrências, e a quarta é o argumento:**
+
+| ocorrência | autor |
+|---|---|
+| #417 — *"o PR **não** fecha a #363"* | contribuidor externo |
+| #424 — *"**Não fecha a #421**"* | 🔴 **o arquiteto, um dia depois de documentar a forma no #258** |
+
+Se quem conhece o defeito e comentou sobre ele ontem ainda o dispara, **o gate não está educando
+ninguém — está cobrando pedágio.**
+
+### 🔴 E o contorno atual treina o time a não declarar escopo negativo
+
+O remédio, nas duas vezes, foi **reescrever a frase para não conter a palavra proibida** — *"a #421
+permanece aberta"*. O texto fica pior e a informação é a mesma. Um gate cujo remédio é **piorar a
+redação** desincentiva exatamente o que esta casa exige em toda REQ: dizer o que o trabalho **não**
+faz.
+
+**Isso muda um critério:** não basta o gate parar de acusar; ele precisa **não punir a frase natural**.
+
 ## Acceptance Criteria
 
 - [ ] **AC1** — O gate reavalia no evento `edited`, não só na abertura.
@@ -46,6 +84,15 @@ PR #281 fechou `#278` e `#279` sozinho. **É justamente por funcionar que os doi
       arquivo ausente. Os cenários novos entram lá — um gate que valida corpo de PR e não é
       exercitado sobre corpo nenhum não mede.
 
+- [ ] **AC6** — 🔴 **A forma 3 (markdown) e a forma 4 (negação) deixam de ser acusadas** — as duas com
+      falsificação **nas duas direções**: a frase de escopo negativo **não** é acusada, **e** o
+      fechamento legítimo continua sendo exigido
+- [ ] **AC7** — 🔴 **Nenhuma das quatro formas volta pelo remédio da outra.** O discriminante é um só;
+      corrigir a negação com uma lista de exceções que quebre o exemplo citado é troca de defeito,
+      não correção
+- [ ] **AC8** — O corpus de falsificação inclui as **frases reais** que dispararam as 4 ocorrências
+      (#417, #424, e as duas do #258) — não paráfrases
+
 ## Negative Scope
 - ❌ **Não** mudar quais palavras-chave são aceitas. O inglês é exigência do GitHub, não escolha
   nossa, e já está documentado no template.
@@ -58,4 +105,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-10-gate-de-palavra-chave-de-fechamento-nao-reavalia-em-edited-e-le-exemplo-citado-como-diretiva.md`
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-10-gate-de-palavra-chave-de-fechamento-nao-reavalia-em-edited-e-le-exemplo-citado-como-diretiva.md`
