@@ -93,6 +93,65 @@ confirmar pela Wave 0, que decide também sobre `analyzing/`.
       que o `trackfw-chain` fique vermelho
 - [ ] `make quality` e **CI** verdes
 
+
+## 🔴 Ampliação (2026-09-25): o issue #439 entra aqui — mesmo sintoma, e a medição decide a causa
+
+**Origem:** issue **#439**, do mesmo consumidor, no mesmo dia. `trackfw req move` **não atualiza o
+campo `req:`** dos roadmaps que apontam para a REQ movida.
+
+### A assimetria, medida por mim
+
+```
+$ grep -n 'syncREQReferences' internal/generators/roadmap.go
+760:  if syncErr := syncREQReferences(filepath.Base(src), portableDst); syncErr != nil {
+1117: func syncREQReferences(roadmapBasename, newRoadmapPath string) error {
+
+$ awk '/^func MoveREQ/,/^}/' internal/generators/req.go | grep -c 'sync'
+0          ← 115 linhas, nenhuma chamada de sincronização
+```
+
+`roadmap move` sincroniza **e anuncia** (`✓ synced REQ-….md → …`). `req move` **não faz e não diz**.
+
+🔴 **A assimetria é pior que a falta.** Quem segue a ordem que o próprio protocolo recomenda
+(`roadmap move` → `req move`) termina com o repositório **inconsistente** e só descobre no `validate`
+seguinte — normalmente no CI, **já dentro do PR**. No consumidor há **78 violações de `stale state
+path` congeladas no baseline**; somadas às 14 de `orphan_req`, são **92 entradas de passivo** que
+existem para conviver com dois defeitos.
+
+⚠️ **Nota irônica e útil:** `syncREQReferences` é a **mesma função** que o analisador de contenção
+nomeou, no corpus pré-fix da REQ-2026-08-31, como *"the false marker in its purest form"*. Ela já é
+o ponto de sincronização do projeto; o que falta é a **simetria**.
+
+### Por que entra nesta REQ, e não em REQ própria
+
+**Pelo teste literal, as causas são distintas:** corrigir `MoveREQ` **não** fecha o #435, e isentar
+`backlog/` na regra **não** fecha o #439. Se o critério fosse só esse, seriam duas REQs.
+
+🔴 **Mas o sintoma é o mesmo** — *"o estado mora na pasta e o resto do sistema não acompanha"* — e a
+Regra Dura é explícita: **mesmo sintoma investiga junto; só se separa com a medição escrita.** O ônus
+é de quem quer dividir. Como esta REQ **ainda está em `backlog/`, sem uma linha de trabalho feita**, o
+custo de juntar é **zero** e o ganho é a Wave 0 medir as duas superfícies com a mesma régua:
+
+| | superfície | direção |
+|---|---|---|
+| **#435** | regra de **leitura** decide sem consultar o estado | passiva |
+| **#439** | comando de **escrita** não propaga a mudança de estado aos apontadores | ativa |
+
+**A Wave 0 decide se são uma causa ou duas, e a decisão fica escrita.** Se forem duas, a separação
+acontece **com a medição**, não por presunção — que é exatamente o que a regra exige.
+
+### Critérios de aceite acrescentados
+
+- [ ] **Enumeração dos apontadores:** que campos referenciam artefato por caminho que **contém o
+      estado**? (`roadmap:` na REQ, `req:` no roadmap, `adr:`, `Roadmap:`/`REQ:` de corpo, …) — e quais
+      comandos os movem
+- [ ] 🔴 **A simetria é fechada ou a assimetria é declarada.** Se `req move` não for sincronizar, ele
+      **avisa** — o que não pode continuar é *"um anuncia, o outro cala"*
+- [ ] Falsificação nas duas direções: mover a REQ **atualiza** quem aponta para ela; e o comando
+      **não** reescreve apontador que não era dela
+- [ ] O consumidor consegue remover as **78 entradas de `stale state path`** do baseline sem o
+      `trackfw-chain` ficar vermelho
+
 ## Negative scope — o que esta REQ NÃO faz
 
 - **Não** desliga nem rebaixa `traceid_orphan_req`. Rebaixar é convivência disponível hoje por config,
@@ -103,6 +162,8 @@ confirmar pela Wave 0, que decide também sobre `analyzing/`.
   escrita, como a Regra Dura exige de quem quer separar.
 - **Não** migra layout de ninguém nem altera `req_dir`/`roadmap_namespacing` deste repositório.
 - **Não** regenera o `.trackfw-baseline.json` do consumidor — isso é dele, e só faz sentido depois.
+- **Não** muda o formato do campo `req:`/`roadmap:` nem introduz referência por id em vez de caminho.
+  Seria outra decisão, com outro custo, e não é necessária para fechar estas causas.
 
 ## Linked ADR
 ADR:
