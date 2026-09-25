@@ -1282,10 +1282,10 @@ R0 mede **pelo mecanismo**, não pelo identificador.
 devolve **um único commit** — `7721efc6 (#397)`, esta REQ. Os 13 nasceram aqui. A alegação de
 "pré-existente" está refutada.
 
-## Wave R0 — Enumeração e desenho, antes de qualquer código
-> Dependências: nenhuma. **Bloqueia as Waves R1 e R2.**
+## Wave 6 — Enumeração e desenho, antes de qualquer código
+> Dependências: nenhuma. **Bloqueia as Waves 7 e 8.**
 
-### ML-R0A — Enumerar pelo mecanismo e desenhar o ponto único
+### ML-6A — Enumerar pelo mecanismo e desenhar o ponto único
 **Owner:** `hades-tf`
 **Status:** ⬜ Pendente
 
@@ -1316,11 +1316,11 @@ test -f docs/seguranca/2026-09-25-ponto-unico-de-contencao-e-o-instrumento-que-o
 git diff --quiet "$(git merge-base origin/main HEAD)" HEAD -- internal/
 ```
 
-## Wave R1 — Ponto único + o analisador que o prova
-> Dependências: Wave R0 auditada. `ML-R1A` e `ML-R1B` tocam os mesmos arquivos: **sequenciais**.
+## Wave 7 — Ponto único + o analisador que o prova
+> Dependências: Wave 6 auditada. `ML-7A` e `ML-7B` tocam os mesmos arquivos: **sequenciais**.
 
-### ML-R1A — Extrair o ponto único (#401)
-**Status:** ⬜ Pendente · **precede o `ML-R1B` por dependência técnica, não por gosto**
+### ML-7A — Extrair o ponto único (#401)
+**Status:** ⬜ Pendente · **precede o `ML-7B` por dependência técnica, não por gosto**
 
 **Critérios de aceite:**
 - [ ] Uma implementação do par predicado+recusa; os 4 sítios passam a delegar
@@ -1328,7 +1328,7 @@ git diff --quiet "$(git merge-base origin/main HEAD)" HEAD -- internal/
       AC5 desta REQ exige (*"idênticas em todos os sítios de escrita do Go"*)
 - [ ] `make quality` verde
 
-### ML-R1B — O analisador de AST (#400)
+### ML-7B — O analisador de AST (#400)
 **Status:** ⬜ Pendente
 
 🔴 **O escopo é O INSTRUMENTO, e só ele.** A triagem mediu que **os 34 defeitos já estão corrigidos**
@@ -1349,10 +1349,10 @@ ou overlay.
       atendido **pelo que o gate prova**, não pelo que ele afirma
 - [ ] `make quality` verde
 
-## Wave R2 — Root resolvido nos dois lados (#402)
-> Dependências: Wave R0 auditada. **Independente da R1** — o defeito é o **argumento**, não o fluxo.
+## Wave 8 — Root resolvido nos dois lados (#402)
+> Dependências: Wave 6 auditada. **Independente da R1** — o defeito é o **argumento**, não o fluxo.
 
-### ML-R2A — Os 13 sítios passam a derivar o root de fonte resolvida
+### ML-8A — Os 13 sítios passam a derivar o root de fonte resolvida
 **Status:** ⬜ Pendente
 
 ⚠️ **Por que não agrupa com a R1:** um analisador de AST perfeito **continuaria aprovando**
@@ -1365,7 +1365,7 @@ discriminante não for explicitado, ele passa despercebido pelo instrumento da R
 - [ ] A armadilha 3 da Decisão 2 (*"comparar destino resolvido contra root não resolvido → falso
       positivo; medido `/tmp` → `/private/tmp` no macOS"*) é **falsificada por teste**
 - [ ] O discriminante *"o root passado a `RejectSymlinks` vem de fonte resolvida"* entra no analisador
-      da Wave R1 — senão o instrumento não pega a reintrodução
+      da Wave 7 — senão o instrumento não pega a reintrodução
 - [ ] `make quality` verde
 
 ## Fora desta REQ: o #403
