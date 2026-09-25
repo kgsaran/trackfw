@@ -41170,3 +41170,24 @@ bash scripts/check-unguarded-capture-rc.sh          RC=0
   payload de `edited` ela viraria mentira no mesmo commit que corrige outra mentira.
 - `make quality` verde (`MAKE_RC=0`, 338 OK / 0 FAIL na falsificação) · `trackfw validate` rc=0.
 - Não commitei, não fiz push, não criei branch, não usei `git stash`/`git checkout --`.
+
+## 2026-09-25 — hades-tf — ML-6A (início/fim): Wave 0 da reabertura — enumerar pelo mecanismo e o instrumento que prova
+
+- **Entregue:** `docs/seguranca/2026-09-25-ponto-unico-de-contencao-e-o-instrumento-que-o-prova.md`.
+  Nada em `internal/`. Sem Git: não criei branch, não commitei, não fiz push, não usei
+  `git stash`/`git checkout --`.
+- 🔴 **Escape VIVO achado e reproduzido contra `bin/trackfw`:** `trackfw adr new` escreve **fora do
+  projeto** através de um `docs` symlinkado, num `cd` normal de login shell. `adr.go:47-50` compara
+  `Beneath(projectRoot() resolvido, filepath.Abs(adrDir) NÃO resolvido)`, dá `false` e **cai
+  silenciosamente no escopo global**, que nunca inspeciona o ancestral. `req new`/`roadmap new`
+  recusam corretamente — fronteira medida. Mesma causa → **ML novo nesta REQ**, não issue.
+- 🔴 **O AC da Wave 7 não é executável como está:** o corpus de falsificação vive só em
+  `refs/heads/fix/afirma-contencao-antes-de-escrever`, **local**, apagado no remoto (#397 foi
+  squash). O CI nunca alcança e um `branch prune` destrói. E o commit apontado estava errado —
+  o corpus é **`87fe4915`** (fix em `a8912bd6`), não `7721efc6^1`. Corpus tem de ir para
+  `testdata/` versionado como saída da Wave 6.
+- **Censos pela régua do mecanismo:** população (a) = **20 expressões / 34 escritas** (o `13` é
+  régua de identificador: perde `home` de `homedir.Dir()`, `Manager.ProjectRoot` e o ramo global de
+  `adr.go`); população (b) = **53 implementações do par**, em **5 gramáticas** de mensagem, com
+  **3 sítios mudos**.
+- 🔴 **AC5 e AC4 medidamente NÃO atendidos** — a REQ foi para `done` com eles abertos.

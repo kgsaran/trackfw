@@ -1287,7 +1287,7 @@ devolve **um único commit** — `7721efc6 (#397)`, esta REQ. Os 13 nasceram aqu
 
 ### ML-6A — Enumerar pelo mecanismo e desenhar o ponto único
 **Owner:** `hades-tf`
-**Status:** 🔄 Em andamento (despachado em 2026-09-25)
+**Status:** ✅ Concluído — auditado em 2026-09-25 · 🔴 **achou um escape VIVO que eu reproduzi**
 
 **Ações:**
 1. **Enumerar pelo mecanismo, não pelo identificador**, as duas populações: (a) sítios que passam um
@@ -1305,16 +1305,119 @@ devolve **um único commit** — `7721efc6 (#397)`, esta REQ. Os 13 nasceram aqu
 4. Falsificação nas duas direções e residual declarado.
 
 **Critérios de aceite:**
-- [ ] As duas populações enumeradas **pelo mecanismo**, com caminho e linha, e a divergência 9/12/13
+- [x] As duas populações enumeradas **pelo mecanismo**, com caminho e linha, e a divergência 9/12/13
       explicada pela régua
-- [ ] O ponto único desenhado, com a razão de ser pré-requisito do AST
-- [ ] 🔴 Nenhuma linha de implementação
+- [x] O ponto único desenhado, com a razão de ser pré-requisito do AST
+- [x] 🔴 Nenhuma linha de implementação
 
 **Gates da wave:**
 ```bash
 test -f docs/seguranca/2026-09-25-ponto-unico-de-contencao-e-o-instrumento-que-o-prova.md
 git diff --quiet "$(git merge-base origin/main HEAD)" HEAD -- internal/
 ```
+
+
+#### 🔴 Auditoria do ML-6A — reproduzi o escape, e ele muda o peso desta REQ
+
+**`trackfw adr new` escreve FORA do projeto, hoje, com `RC=0`.** Reproduzi por caminho próprio,
+contra `bin/trackfw` recompilado da árvore, com `docs` sendo symlink para fora:
+
+```
+$ bash -lc "cd /tmp/zeus-esc-85091 && trackfw adr new 'zeus escape probe'"
+PWD=/tmp/zeus-esc-85091
+created docs/adr/ADR-2026-09-25-zeus-escape-probe.md          RC=0
+$ ls /tmp/zeus-victim-85091/adr
+ADR-2026-09-25-zeus-escape-probe.md          ← FORA do projeto
+
+$ ... mesma isca, mesmo diretório, controle:
+$ trackfw req new 'zeus escape control'
+trackfw: refusing write to …/docs/req: refusing symlink path "…/docs"      RC=1
+```
+
+🔴 **O braço de controle é o que fecha o argumento:** `req new` recusa **no mesmo diretório, com a
+mesma isca**. Não é ambiente, não é sonda artificial — é `adr.go` divergindo dos irmãos.
+
+**Mecanismo** (`internal/generators/adr.go:47-50`): `os.Getwd()` do Go honra `$PWD` e devolve
+`/tmp/x`, enquanto `projectRoot()` resolve `/private/tmp/x`. O `Beneath(pr, absAdrDir)` compara
+**namespaces diferentes**, dá `false`, e o código **cai silenciosamente no escopo global** — que por
+desenho nunca inspeciona o ancestral `docs`.
+
+🔴 **A armadilha 3 da Decisão 2 previa *falso positivo*. A implementação a "resolveu" DEGRADANDO O
+CONTROLE.** É o defeito do título desta REQ, vivo, dentro da REQ que existe para fechá-lo — e a
+prova mais dura de que reabrir era o caminho certo, não zelo processual.
+
+**Autorrefutação que ele fez sozinho, e que eu ratifico:** a correção óbvia (*"faça `absAdrDir`
+resolver"*) **não fecha o escape** — `EvalSymlinks` do alvo faz `guardRoot` virar a própria vítima, e
+o produto escreve nela. O próprio `adr.go:42-45` já avisa disso no fonte. A forma proposta usa o
+discriminante que já está no comentário de `adr.go:32-37`: **`adrDir` relativo ⇒ escopo de projeto
+incondicional**.
+
+### As réguas, de novo — e desta vez a minha também estava errada
+
+| régua | contagem |
+|---|---|
+| `grep 'Clean(cwd)'` (#402) | 9 |
+| `grep 'Clean('` (triagem) | 12 |
+| `grep 'RejectSymlinks(filepath.Clean'` (**eu**) | 13 |
+| **provenância do 1º operando, rastreada até o resolvedor** | **20 expressões · 34 sítios de escrita** |
+
+🔴 **Eu acusei as duas contagens anteriores de serem "régua de identificador" e usei outra régua de
+identificador.** As 52 chamadas não-teste incluem `home` de `homedir.Dir()` (`update.go:666`, **15
+escritas**), `Manager.ProjectRoot`/`HomeDir` e o ramo global de `adr.go` — **nenhuma escreve
+`Clean`**, e todas as três contagens as perdem. Mesma coisa no #401: `^func reject` acha 4, mas o par
+está **inline** em 49 sítios → **53 implementações**.
+
+⚠️ **Calibragem honesta dele, que impede over-claim:** em 16 das 20 expressões root e alvo têm a mesma
+base, logo **não há defeito vivo ali** — é sub-censo, exatamente como o #402 diz de si mesmo. O
+escape vivo são as outras 4.
+
+**E o AC5 e o AC4 estão medidamente NÃO atendidos:** **5 gramáticas** de mensagem de recusa e **3
+sítios mudos** (`manager.go:762`, `roadmap.go:829`, `req.go:474`). A REQ foi para `done` com eles
+abertos.
+
+### O que muda nos ACs que EU escrevi
+
+| AC meu | forma medida |
+|---|---|
+| Wave 7: *"reconstruídos por `git show`"* | 🔴 **não executável** — e o commit que eu citaria estava **errado**: `7721efc6^1` é pré-REQ, com **zero** marcadores. O corpus é **`87fe4915`**. Vai para **`testdata/` versionado**, sem referência a commit-ish; ausência = **FAIL**, nunca skip |
+| Wave 7: *"os 4 sítios delegam"* | **53** implementações do par; o alvo é **1 sítio emissor** |
+| Wave 8: *"os 13 sítios"* | **20 expressões / 34 escritas**, com piso fixado |
+| Wave 8: *"armadilha 3 falsificada por teste"* | o teste como eu o descrevi **passa com o controle degradado** — precisa afirmar `rc=0` **+** arquivo dentro **+ que o escopo de guarda continuou o de projeto** |
+| — | **ML novo**: o escape do `adr new` |
+
+### Threat model do instrumento — e T3 é o que eu subestimei
+
+**T3: a lista de exceções dissolve a regra**, e ele o classifica **acima** dos caminhos maliciosos —
+com razão. O analisador vai apontar `adr.go`; o implementador apressado relaxa a regra para
+`filepath.Abs` ou exceta o arquivo; a regra vira tautologia e 🔴 **o escape reabre com o gate verde**.
+Contramedida: exceção **por sítio**, contagem fixada, e **o braço do corpus reprova
+independentemente da lista**.
+
+**T4:** são **dois** predicados, não um — P1 (a guarda precede a escrita no fluxo) e P2 (a
+provenância do 1º operando termina em resolvedor aprovado, com `filepath.Clean` **não** transparente).
+P2 é **interprocedural**; um analisador intraprocedural perde **17 das 34** escritas.
+
+**T5:** `projectRoot()`/`resolveRoot()` fazem **fallback silencioso** para o caminho não resolvido
+quando `EvalSymlinks` falha — e **AST não alcança isso**. Fail-closed + teste de runtime.
+
+### 🔴 Ação zero que ele exigiu, e que eu executei antes de tudo
+
+O corpus `87fe4915` era alcançável por **um único ref local**:
+
+```
+$ git for-each-ref --contains 87fe4915
+refs/heads/fix/afirma-contencao-antes-de-escrever     ← só isto
+$ git ls-remote --heads origin 'fix/afirma*'          ← vazio
+```
+
+O PR #397 foi **squash-merge**, então os commits não são alcançáveis da `main`, e `git branch -vv`
+mostra a branch como `[origin/…: gone]` — que o protocolo do `CLAUDE.md` **e** o próprio
+`trackfw branch prune --apply` classificam como **"seguro apagar"**. Em 2026-09-12 este projeto já
+perdeu trabalho exatamente assim.
+
+Criei `refs/tags/corpus/write-containment-pre-fix` apontando para `87fe4915`. ⚠️ **A tag é local — a
+durabilidade remota ainda é dívida**, e a saída definitiva é materializar o corpus em `testdata/`
+versionado, que passa a ser entregável desta wave.
 
 ## Wave 7 — Ponto único + o analisador que o prova
 > Dependências: Wave 6 auditada. `ML-7A` e `ML-7B` tocam os mesmos arquivos: **sequenciais**.
