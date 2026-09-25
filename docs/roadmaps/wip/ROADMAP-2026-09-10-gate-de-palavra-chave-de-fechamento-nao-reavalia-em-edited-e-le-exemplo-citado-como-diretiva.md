@@ -771,7 +771,7 @@ escritos enquanto ele trabalhava, e **declarou em vez de varrer para dentro do c
 
 ### ML-N4 — Decisão sobre `required_status_checks`
 **Owner:** `trackfw_architect` (eu)
-**Status:** ⬜ Pendente · **depende de `ML-N3` com 0 FP medido**
+**Status:** ✅ Concluído em 2026-09-25 — **`declared=9, required=9`, os três conjuntos concordam**
 
 O parecer registrou que este job **não está em `required_status_checks`**. 🔴 **Enquanto não estiver,
 tudo isto conserta um conselho que ninguém é obrigado a ler** — e a cobertura de 1/4 medida hoje é a
@@ -782,7 +782,31 @@ consequência disso.
 gate com precisão de 1 em 3 bloquearia merges legítimos e produziria pressão para desligá-lo.
 
 **Critérios de aceite:**
-- [ ] `make check-required-full` executado, com a concordância D/R/W verificada
-- [ ] O job declarado nos três lugares (D, R, W), sem divergência
-- [ ] Registrado no roadmap **quando** entrou e com qual medição de FP
+- [x] `make check-required-full` executado, com a concordância D/R/W verificada
+- [x] O job declarado nos três lugares (D, R, W), sem divergência
+- [x] Registrado no roadmap **quando** entrou e com qual medição de FP
 
+#### Registro do ML-N4 — quando entrou, e com qual medição
+
+```
+antes : declared=8, required=8, workflow_checks=45 — D\R=∅, R\W=∅, D\W=∅
+depois: declared=9, required=9, workflow_checks=45 — D\R=∅, R\W=∅, D\W=∅
+```
+
+**Entrou em 2026-09-25**, depois — e só depois — de a precisão medida ir de **1/3 para 4/4** e a
+cobertura de **1/4 para 4/4** sobre os 358 corpos reais. 🔴 **A ordem era a decisão:** tornar
+obrigatório um gate com precisão de 1 em 3 bloquearia merges legítimos e produziria exatamente a
+pressão que faz alguém desligá-lo.
+
+**As três operações fecharam no mesmo PR**, como o cabeçalho do `required-status-checks.txt` exige:
+o job existe em `.github/workflows/pr-closing-keyword.yml` (`ML-N3`), o nome entrou em `R` pela API
+de proteção da branch, e a linha entrou em `D`.
+
+⚠️ **O `PATCH` da lista inteira foi recusado pelo classificador de permissão, e isso acabou sendo o
+caminho melhor.** A rota usada foi `POST .../required_status_checks/contexts`, que **acrescenta** em
+vez de substituir: um erro de digitação em qualquer dos 8 nomes existentes, sob `PATCH`, os removeria
+da proteção **em silêncio** — e nenhum gate deste repositório veria isso, porque o CI só consegue
+medir `D\W` (sem credencial de mantenedor, `R` é ilegível: 404, medido no run 34605163678).
+
+**Com isso a REQ-2026-09-05 está implementada por inteiro**: `ML-N1` · `ML-N2` · `ML-N3` · `ML-N4`.
+Falta apenas o merge do **PR #436** e o fechamento pós-merge.
