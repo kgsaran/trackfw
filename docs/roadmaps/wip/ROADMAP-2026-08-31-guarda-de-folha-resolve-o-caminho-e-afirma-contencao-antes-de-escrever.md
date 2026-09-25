@@ -1992,20 +1992,52 @@ pós-commit é obrigatória aqui.**
 ## Wave 8 — Root resolvido nos dois lados (#402)
 > Dependências: Wave 6 auditada. **Independente da R1** — o defeito é o **argumento**, não o fluxo.
 
-### ML-8A — Os 13 sítios passam a derivar o root de fonte resolvida
-**Status:** ⬜ Pendente
+### ML-8A — Os sítios passam a derivar o root de fonte resolvida
+**Owner:** `apolo-tf`
+**Status:** 🔄 Em andamento (despachado em 2026-09-25)
 
-⚠️ **Por que não agrupa com a R1:** um analisador de AST perfeito **continuaria aprovando**
-`RejectSymlinks(filepath.Clean(cwd), path)`, porque o fluxo **passa** por `pathguard`. Se este
-discriminante não for explicitado, ele passa despercebido pelo instrumento da R1.
+⚠️ **Por que não agrupou com a Wave 7:** um analisador de fluxo **continuaria aprovando**
+`RejectSymlinks(filepath.Clean(cwd), path)`, porque o fluxo **passa** por `pathguard`. O defeito é o
+**argumento**, não o fluxo. ✅ **Esse discriminante já foi entregue** — é o **P2** do `ML-7C`, e é ele
+que produz os números abaixo.
+
+### 🔴 A régua diverge pela quarta vez nesta REQ, e agora o AST é o árbitro
+
+```
+#402 diz                                        9
+triagem (grep 'Clean(')                        12
+eu (grep 'RejectSymlinks(filepath.Clean')      13
+P2 do analisador, por provenância              16   ← o número desta ML
+```
+
+O AST **corrobora a minha contagem por outro caminho e a estende**: o grep literal acha 13 porque três
+sítios chegam ao `Clean` por outra grafia. E a população completa é maior:
+
+| medida (pinada no `ML-7C`) | valor |
+|---|---|
+| root **literalmente** `filepath.Clean(…)` | **16** — `agentfiles` ×9 · `update` ×4 (`201, 225, 288, 2136`) · `identity.go:86` · `provenance.go:146` · `quarantine.go:104` |
+| root **sem provenância de resolvedor** (inclui propagação por parâmetro) | **22** |
+| escritas guardadas **sob outra grafia de root** (`RootAliased`) | **16** |
+
+⚠️ **Calibragem honesta do `ML-6A`, que impede over-claim:** em boa parte dos sítios root e alvo têm a
+**mesma base**, logo **não há escape vivo ali** — é sub-censo, exatamente como o #402 diz de si mesmo.
+O que se corrige é a **classe**, não uma exploração demonstrada. O escape vivo desta família já foi o
+`adr new`, e fechou no `ML-7A`.
 
 **Critérios de aceite:**
-- [ ] Os **13** sítios derivam o root de fonte resolvida (`EvalSymlinks`), como `discover.go:31-38` e
-      `scaffold.go:15-28` já fazem **dentro desta mesma REQ**
-- [ ] A armadilha 3 da Decisão 2 (*"comparar destino resolvido contra root não resolvido → falso
-      positivo; medido `/tmp` → `/private/tmp` no macOS"*) é **falsificada por teste**
-- [ ] O discriminante *"o root passado a `RejectSymlinks` vem de fonte resolvida"* entra no analisador
-      da Wave 7 — senão o instrumento não pega a reintrodução
+- [ ] Os **16** sítios de `filepath.Clean(…)` derivam o root de fonte resolvida, como
+      `discover.go:31-38` e `scaffold.go:15-28` já fazem **dentro desta mesma REQ**
+- [ ] Os **6** restantes (propagação por parâmetro, total **22**) são resolvidos **ou** têm a razão
+      escrita por sítio — 🔴 **não podem sumir da contagem sem explicação**
+- [ ] A armadilha 3 da Decisão 2 (*"destino resolvido contra root não resolvido → falso positivo;
+      medido `/tmp` → `/private/tmp` no macOS"*) é **falsificada por teste**
+- [ ] 🔴 **O teste da armadilha 3 não pode passar com o controle degradado.** É a lição do `ML-7A`:
+      afirmar `rc=0` + arquivo dentro **+ que o escopo de guarda continuou o de projeto**
+- [ ] Os pins do P2 caem **com o delta impresso**, nunca em silêncio — e o que **não** cair fica
+      declarado
+- [ ] 🔴 **`ML-7A`, `ML-7B` e `ML-9A` não são desfeitos:** `adr new` recusa nas duas arms · zero
+      emissores fora de `pathguard` · `liveKnownFailOpen` continua **vazia**
+- [ ] Reconciliação: uma frase por teste novo
 - [ ] `make quality` verde
 
 ## Fora desta REQ: o #403
