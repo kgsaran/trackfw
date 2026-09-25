@@ -41010,3 +41010,27 @@ bash scripts/check-unguarded-capture-rc.sh          RC=0
 - ⚠️ **Premissa não verificada e load-bearing:** "o GitHub ignora palavra-chave dentro de bloco de código".
   Zero PRs no corpus decidem. Escrita como premissa no parecer, não como fato.
 - Não commitei, não fiz push, não rodei `make quality`.
+
+## 2026-09-24 — hades-tf — ML-0C: o GitHub ignora keyword em zona de CÓDIGO, e honra em zona não-código
+
+- **Adendo §10** em `docs/seguranca/2026-09-25-discriminante-do-gate-de-palavra-chave.md`. Único arquivo de
+  produto tocado: **nenhum** — `scripts/check-pr-closing-keyword.sh` intocado (o 3º braço do gate da wave).
+- 🔴 **Uma premissa minha do ML-0B foi REFUTADA.** A "forma 8" (*a zona de código apaga a isenção inglesa*)
+  **não é defeito**: medido, `Fecha #246.` + `Closes #246` só dentro de cerca/span **não fecha a issue**,
+  então acusar é **correto** e o `esp` que eu escrevi como 0 é **1**. 8 famílias → **7 defeitos + 1 acerto**.
+- **Instrumento:** `gh pr view <n> --json closingIssuesReferences`, 7 PRs sonda rascunho contra 2 issues
+  descartáveis, criados e destruídos **pela API** (sem `git` de escrita). Braço de **controle** em prosa
+  voltou `[426]` — é ele que torna os `[]` interpretáveis.
+- **Cerca e code span NÃO divergem** (as duas `[]`). 🔴 **A divergência está em outro eixo:** cerca/span/
+  bloco-indentado (`[]`, não fecha) × blockquote/tabela/aspas (`[430]`, fecha). Dois baldes opostos.
+- 🔴 **Diretriz para o `ML-N1` passo 1 (§10.4):** implemente os dois passes **só para as zonas não-código**;
+  a máscara de cerca/span/indentado continua subtraída dos **dois** matchers, como hoje. Fazer a isenção
+  inglesa valer dentro de cerca instalaria **falso negativo** — silêncio sobre um corpo que não fecha nada.
+- **Corrigido também no parecer:** a tabela de §3.5-iv vira **3 de 5** (não 5 de 5), o invariante **I3** passa
+  a exigir veredito **por balde**, §6.8 sai de residual, e §7 ganha a exigência de declarar o balde no
+  `cli-parity`. Residual novo nomeado em §10.5 (comentário HTML, `<pre>`, aspas curvas, `~~~`, cerca com
+  linguagem) — **não extrapolei balde por analogia**, foi a analogia que produziu o erro que este ML refutou.
+- **Artefatos de medição, todos fechados:** issues **#426**, **#430**; PRs **#427** (controle), **#428**
+  (cerca), **#429** (span), **#431** (indentado), **#432** (blockquote), **#433** (tabela), **#434** (aspas).
+  Branches `probe/*` deletadas, nenhuma sonda mergeada, 13 runs de CI cancelados.
+- Não commitei, não fiz push, não criei branch por `git`, não rodei `make quality`.

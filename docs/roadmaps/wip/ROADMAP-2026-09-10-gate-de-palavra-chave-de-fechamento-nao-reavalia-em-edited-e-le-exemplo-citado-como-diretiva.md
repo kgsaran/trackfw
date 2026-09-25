@@ -43,7 +43,8 @@ o `ML-0B` é a versão ampliada deste ML, não um ML paralelo
 
 ### ML-0C — 🔴 O GitHub honra palavra-chave de fechamento dentro de bloco de código?
 **Owner:** `hades-tf`
-**Status:** ⬜ Pendente · **bloqueia a forma 8 do `ML-N1`**
+**Status:** ✅ Concluído — auditado em 2026-09-25 · 🔴 **a forma 8 NÃO era defeito, e as zonas se partem
+em dois baldes com comportamento OPOSTO**
 
 **Por que este ML existe.** O parecer declarou esta premissa **não verificada** e mediu que o corpus A
 **não a decide em nenhuma direção** (zero PRs cuja única keyword inglesa viva em cerca ou span). E ela
@@ -76,12 +77,12 @@ Dura de Reconciliação aplicada antes da entrega, não depois.
    substituindo a ressalva "⚠️ premissa NÃO VERIFICADA" de §2.4 pela medição.
 
 **Critérios de aceite:**
-- [ ] `closingIssuesReferences` medido para **cerca** e para **code span**, separadamente
-- [ ] O veredito da forma 8 declarado: **é defeito** (dois passes) ou **é comportamento correto** (e então
+- [x] `closingIssuesReferences` medido para **cerca** e para **code span**, separadamente
+- [x] O veredito da forma 8 declarado: **é defeito** (dois passes) ou **é comportamento correto** (e então
       a tabela de §2.4 tem `esp` errado, e isso fica escrito)
-- [ ] 🔴 Se as duas zonas divergirem entre si, isso fica escrito — o fix não pode tratá-las juntas
-- [ ] Artefatos de teste (issue + PR) **fechados**, com os números citados
-- [ ] Nenhuma alteração em `scripts/check-pr-closing-keyword.sh` — este ML **mede**, não corrige
+- [x] 🔴 Se as duas zonas divergirem entre si, isso fica escrito — o fix não pode tratá-las juntas
+- [x] Artefatos de teste (issue + PR) **fechados**, com os números citados
+- [x] Nenhuma alteração em `scripts/check-pr-closing-keyword.sh` — este ML **mede**, não corrige
 
 > 🔴 O `barrier` executa **uma linha por vez**, sem estado entre elas — variável definida numa linha não
 > existe na seguinte. Cada linha abaixo é auto-contida por isso, e não por estilo.
@@ -348,6 +349,66 @@ decide — e é essa premissa que determina se suprimir a acusação dentro de c
 conflito** com o meu AC em vez de resolver em silêncio. **A fronteira era minha e estava estreita** —
 já reconheci isso em REQ anterior. Mantido.
 
+## 🔴 Resultado do ML-0C — a medição refutou o plano, e é por isso que ela veio antes
+
+**Auditei as 7 sondas eu mesmo, por `gh pr view --json closingIssuesReferences`:**
+
+| sonda | zona da keyword inglesa | GitHub fecha? |
+|---|---|---|
+| **#427** | prosa (**controle**) | **[426]** ✅ |
+| #428 | cerca ``` | `[]` |
+| #429 | code span `` ` `` | `[]` |
+| #431 | bloco indentado 4 espaços | `[]` |
+| #432 | blockquote | **[430]** |
+| #433 | célula de tabela | **[430]** |
+| #434 | aspas retas | **[430]** |
+
+Issues **#426** e **#430** `closed`, as 7 sondas `closed`, `matching-refs/heads/probe` devolve **0**.
+🔴 **O braço de controle é o que valida o instrumento** — sem o #427, `[]` seria indistinguível de
+medição quebrada. Ele o incluiu sem que eu pedisse, e está certo.
+
+**As zonas divergem — mas não no eixo que eu previ.** Cerca e code span **não** divergem entre si;
+ambas `[]`. A divergência está em outro eixo, e é **oposta entre baldes**:
+
+| balde | zonas | GitHub |
+|---|---|---|
+| **CÓDIGO** | cerca · code span · bloco indentado | **ignora** |
+| **NÃO-CÓDIGO** | blockquote · tabela · aspas | **honra** |
+
+### Duas consequências, e as duas corrigem o que eu escrevi
+
+**1. A forma 8 sai da lista de defeitos: o gate de hoje ACERTA.** `Fecha #246.` em prosa com `Closes
+#246` só dentro de cerca **não fecha a issue** — logo o `esp` daquela linha é **1**, não 0, e acusar é o
+trabalho do gate. **8 famílias → 7 defeitos + 1 comportamento correto.** Executar o passo 1 do `ML-N1`
+como eu o redigi instalaria **falso negativo**: silêncio sobre um corpo cuja única forma inglesa vive
+numa zona que o GitHub ignora. 🔴 **É a direção oposta do defeito, e é pior — o incômodo de hoje é um
+aviso verdadeiro.**
+
+**2. O 3º critério de aceite do `ML-N2` estava ERRADO.** Eu listei `bloco indentado por 4 espaços/tab`
+entre as "zonas novas" e exigi que *"a isenção inglesa continua valendo"* nelas. A sonda **#431** mede o
+contrário. Cumprir aquele AC como escrito instalaria falso negativo — **um AC meu produzindo o defeito
+que a REQ existe para remover.** Corrigido abaixo.
+
+Ele também corrigiu, no parecer, a afirmação de §3.5-iv de que *"o GitHub fecha nos cinco casos"*: são
+**3 de 5**, pelo mesmo mecanismo. E declarou uma precisão contra si mesmo: a sonda #431 é **consistente
+com**, mas **não discrimina**, a linha `esp = 0` da forma 2 — porque keyword **portuguesa** não fecha
+issue em zona nenhuma; aquele `esp` se sustenta no argumento semântico de §3.3, não na medição de §10.
+🔴 **Isso é a Regra Dura de Reconciliação exercida sem ninguém cobrar.**
+
+**Extensão de escopo declarada e aprovada:** pedi 2 braços, ele fez 6 + controle. Não é escopo crescido —
+é a medição achando defeito no critério de aceite de um ML a jusante. Custo: 7 PRs rascunho, 13 runs
+cancelados.
+
+**Fronteira de escrita:** escreveu a nota de vault
+`github-ignora-keyword-de-fechamento-em-zona-de-codigo-e-honra-em-zona-nao-codigo-2026-09-24.md` além do
+parecer, e **declarou** em vez de resolver em silêncio. **Mantida** — é exatamente o caso que a regra
+global exige (>10 min de outro agente amanhã), e minha fronteira estava estreita de novo.
+
+**Residual declarado, e não extrapolado por analogia** — foi a analogia que produziu as duas presunções
+refutadas: comentário HTML, `<pre>`/`<code>`, **aspas curvas** (só as retas foram medidas), cerca `~~~`,
+cerca com atributo de linguagem, `<details>`, item de lista. 🔴 **Zona nova na gramática do gate exige
+sonda própria.**
+
 ---
 
 ## Wave 2 — Implementação, em ORDEM TRAVADA
@@ -367,7 +428,7 @@ alvo:              0 falso positivo  ·  as 4 declarações reais acusadas (#247
 **deste corpus**, não do discriminante"* — a simetria PT↔EN sem `#` obrigatório, por exemplo, mediu **+6
 FP**. Marcar `[x]` por um número que não transfere é o que a Regra Dura de Reconciliação proíbe.
 
-### ML-N1 — Esqueleto de dois passes + formas 3, 4, 5, 6 e 8 — **um único commit**
+### ML-N1 — Esqueleto de dois passes (por BALDE) + formas 3, 4, 5 e 6 — **um único commit**
 **Owner:** `apolo-tf`
 **Status:** ⬜ Pendente
 
@@ -380,9 +441,16 @@ FP**. Marcar `[x]` por um número que não transfere é o que a Regra Dura de Re
 exige dois passes) reescreve o que este ML acabou de entregar.
 
 **Ações, na ordem:**
-1. **Dois passes de mascaramento** (o fix da forma 8): a zona não-assertiva suprime a **acusação
-   portuguesa** e **não** é subtraída do scan da **isenção inglesa**. Hoje `blank_code` é aplicado uma vez
-   e o `scan` alimenta os dois. 🔴 **Só execute este passo na direção que o `ML-0C` medir.**
+1. **Dois passes de mascaramento — mas por BALDE, e os baldes têm comportamento oposto.** 🔴 **Reescrito
+   pela medição do `ML-0C`; a redação anterior instalaria falso negativo.**
+
+   | balde | zonas | máscara | por quê |
+   |---|---|---|---|
+   | **CÓDIGO** | cerca · code span · bloco indentado 4 espaços/tab | subtraída dos **DOIS** matchers, **como o `blank_code` de hoje já faz** | o GitHub **ignora** keyword aqui (#428/#429/#431 = `[]`) — a isenção inglesa é **falsa**, e suprimi-la está correto |
+   | **NÃO-CÓDIGO** | blockquote · célula de tabela · span entre aspas | passe **próprio**, que suprime a acusação PT e **preserva** a isenção EN | o GitHub **honra** keyword aqui (#432/#433/#434) — a isenção é **real** |
+
+   **A "forma 8" sai da lista de correções deste ML: não há nada a corrigir ali.** O que entra é a
+   separação em baldes, que é pré-requisito do `ML-N2`.
 2. **Forma 3** — lacuna entre verbo e referência aberta a caracteres **não-palavra** (`* _ ~ : , - — – [`
    e espaço), **nunca a palavras**. O contra-braço obrigatório é `Fecha o **item 4** da issue #216`, que
    deve continuar passando como prosa.
@@ -408,7 +476,10 @@ exige dois passes) reescreve o que este ML acabou de entregar.
 - [ ] Corpus A: **#312**, **#325** e **#330** passam a ser acusados (hoje são falsos negativos medidos)
 - [ ] `Fecha o **item 4** da issue #216` continua **não** acusado — contra-braço da forma 3
 - [ ] `Fecha 2 dos 3 elos` continua **não** acusado — o `#` obrigatório
-- [ ] Autoteste do gate cobre as 5 formas, **nas duas direções** (acusa quando deve, cala quando deve)
+- [ ] Autoteste do gate cobre as 4 formas (3, 4, 5, 6), **nas duas direções**
+- [ ] 🔴 Falsificação **por balde**: um corpo com `Fecha #N` em prosa e `Closes #N` só em **cerca**
+      continua **acusado** (é aviso verdadeiro — #428); o mesmo corpo com `Closes #N` em **blockquote**
+      **não** é acusado (#432). Os dois braços, ou o balde não está implementado
 - [ ] 🔴 Toda supressão por polaridade **aparece no log**, com a frase e o token
 - [ ] 🔴 **Invariante I3 do threat model:** toda supressão declarada **e falsificada nos dois matchers**
       (PT e EN) — não só no português
@@ -425,8 +496,15 @@ defeito — passa **exclusivamente** pela zona de aspas: retiradas as aspas, **n
 frase. Manter o AC estrito significaria deixar o gate acusando o texto que documenta o seu próprio bug.
 
 **Ações:**
-1. Ampliar a zona não-assertiva: cerca, code span, **bloco indentado por 4 espaços/tab**, blockquote,
-   linha de tabela **e span entre aspas** (retas **e** curvas — `"…"` e `“…”`).
+1. Ampliar a zona não-assertiva do **balde NÃO-CÓDIGO**: blockquote, linha de tabela **e span entre
+   aspas** (retas **e** curvas — `"…"` e `“…”`).
+   🔴 **`bloco indentado por 4 espaços/tab` NÃO entra aqui — corrigido pela medição do `ML-0C`.** A sonda
+   **#431** devolveu `[]`: o GitHub **não** fecha dentro de bloco indentado, logo ele pertence ao balde de
+   **CÓDIGO** (máscara única, dois matchers), entregue no `ML-N1`. A redação anterior deste ML exigia o
+   oposto e instalaria falso negativo.
+   ⚠️ **Aspas curvas não foram medidas** — só as retas (#434). Se o gate as tratar junto, isso é
+   extrapolação por analogia, e foi a analogia que produziu as duas presunções refutadas. Ou mede, ou
+   declara como residual.
 2. 🔴 **Corrigir `docs/cli-parity.md:7318` neste mesmo commit.** Ele afirma que *"a forma errada **citada
    como exemplo** não reprova"* — **medido como falso** hoje para aspas, blockquote, tabela e bloco
    indentado. O contrato e o comportamento passam a concordar **no mesmo commit**: contrato que mente é
@@ -435,9 +513,10 @@ frase. Manter o AC estrito significaria deixar o gate acusando o texto que docum
 **Critérios de aceite:**
 - [ ] A frase do **#258** (`O corpo da minha PR #247 dizia "Fecha #246" …`) **não** é acusada — nas duas
       grafias de aspas
-- [ ] As 5 zonas falsificadas individualmente: cada uma suprime, e **cada uma** é exercitada
-- [ ] 🔴 A isenção inglesa **continua valendo** dentro das zonas novas — o `ML-N1` entregou dois passes;
-      este ML não pode reintroduzir o passe único por outro caminho
+- [ ] As **3** zonas do balde NÃO-CÓDIGO falsificadas individualmente, cada uma exercitada
+- [ ] 🔴 A isenção inglesa **continua valendo** dentro das 3 zonas novas — medido em #432/#433/#434 — e o
+      `ML-N1` não pode ter sido desfeito: dentro do balde de **CÓDIGO** ela continua **suprimida** (#428/
+      #429/#431). Os dois lados, ou o AC está marcado por metade da medição
 - [ ] `docs/cli-parity.md:7318` corrigido **neste commit**, e a afirmação nova é a medida
 - [ ] Corpus A: 0 FP mantido, cobertura do `ML-N1` mantida
 - [ ] `make quality` verde
