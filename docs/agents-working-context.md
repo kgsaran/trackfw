@@ -40977,3 +40977,196 @@ bash scripts/check-unguarded-capture-rc.sh          RC=0
 - Dívidas pagas por medição: `unconstructible`=0 (G2 incondicional) e o `mount` do runner
   (`ntfs … noacl …`), que tira a atribuição da #421 da presunção.
 - Próximo: issue dos 43 sítios que rodam `bin/trackfw` committado; fila **#400-#403, #407, #408, #421**.
+
+## 2026-09-24 — hades-tf — ML-0B: o discriminante do gate de palavra-chave é um só (medido)
+
+- **Parecer:** `docs/seguranca/2026-09-25-discriminante-do-gate-de-palavra-chave.md`. Medição, zero linha
+  de produto. Corpora: 357 corpos **vivos** de PR mergeado + 41 frases por forma (as reais de #417, #424,
+  #293, #258). Gate invocado pelo caminho real, um corpo por invocação, `$?` sem cano antes.
+- 🔴 **A forma 1 NÃO está corrigida no CI.** O #416 mergeou o caminho da API, mas `quality.yml` não define
+  `GH_TOKEN` e o log do run `36074650903` (PR #425, depois do merge) diz
+  `fonte: payload do evento (corpo de ABERTURA)`. A tabela do #416 foi medida **localmente**, com `gh`
+  autenticado. Reconciliação: artefato afirma o que o ambiente real nega.
+- 🔴 **A forma 1 está MASCARANDO a forma 4.** O gate da época de #293 acusa o corpo vivo de #293 (rc=1) e o
+  check foi `SUCCESS`. Logo **AC1 não pode entrar antes da forma 4** — reavaliar ativa o falso positivo.
+- **Precisão/cobertura de hoje: 1 acerto em 3 acusações; 1 de 4 declarações reais.** Os 3 falsos negativos
+  (#312, #325, #330) fecharam issue à mão — confirmado por `closingIssuesReferences`.
+- **As 4 formas caem com um discriminante só** (40/40 sintético, 4/4 real sem falso positivo). Mas
+  **troca o modo de falha**: 6 de 10 evasões de supressão passam (`Sem dúvida, fecha a #12`,
+  `Não só fecha a #12, mas também…`). A fronteira está em 3 invariantes; I3 (toda supressão declarada e
+  falsificada) é a que o remendo viola.
+- 🔴 **Ordenação travada:** forma 3 + forma 4 no **mesmo commit** (`Não fecha **#421**` é FP novo se a 3
+  entrar sozinha), e **AC1 depois** das duas.
+- ⚠️ **Decisão pendente do arquiteto:** a frase canônica do #258 passa **só** pela zona de aspas, que o
+  **AC3 proíbe** literalmente. Ampliar o AC3 ou declarar a frase como residual — §3.3 do parecer.
+- **Enumeração: 8 famílias, não 4.** Novas: conjugação fora da lista (`Fecho`/`Fechará`/`Fechando`),
+  referência cruzada/URL só no lado inglês (fail-open de gramática), verbos fora das 4 famílias, e
+  🔴 **a zona de código apaga a ISENÇÃO inglesa** (`Fecha #246. A forma certa seria \`Closes #246\`.` →
+  acusa **hoje**). A forma 2 tem 5 sítios, não 2: aspas retas/curvas, blockquote, tabela e bloco indentado
+  por 4 espaços também são lidos como prosa.
+- 🔴 **Segundo custo do discriminante único: passe ÚNICO de mascaramento destrói a isenção inglesa** — 5 de
+  5 medidos (`Fecha #246.` + `Closes #246` em aspas/bq/tabela/indent/cerca → acusa). **Não aparece nos 357
+  corpos**, logo o "0 falso positivo" é propriedade do corpus, não do discriminante. Exige **dois passes**.
+- ⚠️ **Premissa não verificada e load-bearing:** "o GitHub ignora palavra-chave dentro de bloco de código".
+  Zero PRs no corpus decidem. Escrita como premissa no parecer, não como fato.
+- Não commitei, não fiz push, não rodei `make quality`.
+
+## 2026-09-24 — hades-tf — ML-0C: o GitHub ignora keyword em zona de CÓDIGO, e honra em zona não-código
+
+- **Adendo §10** em `docs/seguranca/2026-09-25-discriminante-do-gate-de-palavra-chave.md`. Único arquivo de
+  produto tocado: **nenhum** — `scripts/check-pr-closing-keyword.sh` intocado (o 3º braço do gate da wave).
+- 🔴 **Uma premissa minha do ML-0B foi REFUTADA.** A "forma 8" (*a zona de código apaga a isenção inglesa*)
+  **não é defeito**: medido, `Fecha #246.` + `Closes #246` só dentro de cerca/span **não fecha a issue**,
+  então acusar é **correto** e o `esp` que eu escrevi como 0 é **1**. 8 famílias → **7 defeitos + 1 acerto**.
+- **Instrumento:** `gh pr view <n> --json closingIssuesReferences`, 7 PRs sonda rascunho contra 2 issues
+  descartáveis, criados e destruídos **pela API** (sem `git` de escrita). Braço de **controle** em prosa
+  voltou `[426]` — é ele que torna os `[]` interpretáveis.
+- **Cerca e code span NÃO divergem** (as duas `[]`). 🔴 **A divergência está em outro eixo:** cerca/span/
+  bloco-indentado (`[]`, não fecha) × blockquote/tabela/aspas (`[430]`, fecha). Dois baldes opostos.
+- 🔴 **Diretriz para o `ML-N1` passo 1 (§10.4):** implemente os dois passes **só para as zonas não-código**;
+  a máscara de cerca/span/indentado continua subtraída dos **dois** matchers, como hoje. Fazer a isenção
+  inglesa valer dentro de cerca instalaria **falso negativo** — silêncio sobre um corpo que não fecha nada.
+- **Corrigido também no parecer:** a tabela de §3.5-iv vira **3 de 5** (não 5 de 5), o invariante **I3** passa
+  a exigir veredito **por balde**, §6.8 sai de residual, e §7 ganha a exigência de declarar o balde no
+  `cli-parity`. Residual novo nomeado em §10.5 (comentário HTML, `<pre>`, aspas curvas, `~~~`, cerca com
+  linguagem) — **não extrapolei balde por analogia**, foi a analogia que produziu o erro que este ML refutou.
+- **Artefatos de medição, todos fechados:** issues **#426**, **#430**; PRs **#427** (controle), **#428**
+  (cerca), **#429** (span), **#431** (indentado), **#432** (blockquote), **#433** (tabela), **#434** (aspas).
+  Branches `probe/*` deletadas, nenhuma sonda mergeada, 13 runs de CI cancelados.
+- Não commitei, não fiz push, não criei branch por `git`, não rodei `make quality`.
+
+## 2026-09-25 — apolo-tf — ML-N1 (início): dois passes por balde + formas 3, 4, 5 e 6
+
+- Escopo: `scripts/check-pr-closing-keyword.sh` (único arquivo de produto). `docs/cli-parity.md:7318`
+  fica para o `ML-N2`, por instrução explícita do handoff.
+- Lido antes de agir: `### ML-N1` e `## 🔴 Resultado do ML-0C` do roadmap em `wip/`; o parecer
+  `docs/seguranca/2026-09-25-discriminante-do-gate-de-palavra-chave.md` §2.4, §3.2, §3.5, §10.4.
+- A **Wave 1** do roadmap está marcada SUBSTITUÍDA — não executada.
+- Sem `git` de escrita: entrego não commitado.
+
+## 2026-09-25 — apolo-tf — ML-N1 (fim): 358 corpos, 0 FP, cobertura 1/4 → 4/4
+
+- **Único arquivo de produto alterado:** `scripts/check-pr-closing-keyword.sh`. `docs/cli-parity.md`
+  intocado — é entrega do `ML-N2`, por instrução do handoff.
+- 🔴 **O corpus A tem 358 corpos, não 357.** O rótulo do parecer estava errado; o histograma dele
+  (`355+2+1`) sempre somou 358. Baseline reproduzido **literalmente** contra o gate intocado:
+  `355 rc=0 · 2 rc=1 · 1 rc=2`, acusando **#247** (1 TP) e **#293 ×2** (FP, PR MERGEADO).
+- **Depois:** `353 rc=0 · 4 rc=1 · 1 rc=2` — acusados **#247, #312, #325, #330** e mais ninguém.
+  **0 falso positivo · precisão 1/3 → 4/4 · cobertura 1/4 → 4/4.** #293 deixou de ser acusado.
+- ⚠️ **"0 FP" é propriedade DESTE corpus, não do discriminante** — os 3 FP do candidato nas zonas
+  não-código (§3.5-iv) não aparecem em corpo nenhum dos 358.
+- 🔴 **Refutei uma afirmação do parecer, por medição própria:** §5 diz que a forma 5 não acusa prosa
+  nova ("medido: 4 → 4"). **Falso para o paradigma completo.** Com o pretérito perfeito na lista,
+  aparece FP inédito — **#233 L34** `Sei que você fechou as #222–#225 por conflito de governança`.
+  Pretérito perfeito é o tempo de **relatar** ação passada (de terceiro, inclusive), não de
+  **declarar** fechamento. Ficou **fora**, e o motivo está escrito no gate.
+- **Ordenação confirmada por medição minha, não herdada:** com as formas 3/5/6 e a polaridade
+  desligada, `Não fecha **#421**`, `Não fecha: #421` e `**Não fecha **#421**.**` viram **rc=1** —
+  FP novo onde hoje há silêncio. Com o candidato completo, **rc=0**. A forma 3 sozinha é regressão.
+- **Baldes falsificados nos dois braços:** cerca/span/indentado **acusam** (#428/#429/#431 = `[]`);
+  blockquote/tabela/aspas **calam** (#432/#433/#434 = `[430]`). A única zona que o `ML-N1` de fato
+  acrescenta é o **bloco indentado** — era `rc=0` (falso negativo silencioso) no gate antigo.
+- **Esqueleto de dois passes** entregue e **exercitado** pela zona-sonda `@@PROBE@@`
+  (`PRCLOSE_SELFCHECK_NONCODE=1`), que falsifica nos **dois** matchers (I3) sem embarcar nenhuma das
+  zonas medidas do `ML-N2`. `NONCODE_ZONE_RES` fica **vazia** de propósito.
+- ⚠️ **Dívida declarada:** minha máscara de bloco indentado apaga **304** linhas do corpus, não as 80
+  do censo do parecer — regra mais larga. **0** dessas linhas carrega declaração PT ou keyword EN com
+  `#N`, e a cobertura 4/4 prova que não houve perda. Mesma classe de dívida que o `TBL`.
+- **Residual da polaridade tornado VISÍVEL:** as 8 frases afirmativas com token de negação continuam
+  silenciadas (não fecha em regex), mas **8/8 aparecem no log** com a frase e o token.
+- Autoteste: **26 → 59** cenários, todos verdes, cada bloco com sua frase de reconciliação.
+- Não commitei, não fiz push, não criei branch, não usei `git stash`/`checkout --`.
+- 🔴 **`make quality` reprovou na 1ª execução, e o achado virou nota de vault.** O cenário `s182` do
+  `check-gates-falsify.sh` sabota o gate por `sed` sobre a **linha literal** `if num not in
+  english:`; eu a havia reescrito como `if num in english: continue`. O cenário reprovou
+  fail-closed e nomeando a causa, mas matou o `chunk_2` e produziu **+10 rótulos "AUSENTE" sem
+  defeito**. Restaurei a linha original (a sabotagem tem de representar a regressão) e **declarei a
+  dependência em comentário no ponto exato**. Nota:
+  `vault/notes/cenario-de-falsificacao-fixa-linha-literal-do-gate-e-renomea-la-mata-o-chunk-2026-09-25.md`.
+- **Evidência final:** `make quality` **exit 0** (`8 chunks, 338 OK, 0 FAIL, guarda de conjunto OK`);
+  `--self-test` **rc=0, 59 OK, 0 FAIL**; `trackfw validate` **rc=0** (149 warnings pré-existentes,
+  0 violations; score 100/100).
+- **Adendo (I3):** acrescentei o cenário `i3-polaridade-nao-alcanca-o-matcher-ingles` — a leitura de
+  polaridade é **unilateral** (só o laço PT); `Closes #12` em cláusula negada **continua isentando**,
+  e o gate **acerta** (o parser do GitHub também fecha). Residual **6.6** do parecer, agora
+  **preso por teste** em vez de só declarado. Autoteste: **60** cenários. Adição só de teste —
+  verificada por `--self-test`; o `make quality` verde cobre o código de produto, inalterado desde então.
+
+## 2026-09-25 — apolo-tf — ML-N2 (início): as 3 zonas do balde NÃO-CÓDIGO e o AC3 ampliado
+
+- Handoff do `trackfw_architect` na branch
+  `fix/gate-de-palavra-chave-de-fechamento-nao-reavalia-em-edited-e-le-exemplo-citado-como-diretiva`.
+- Escopo: preencher `NONCODE_ZONE_RES` (blockquote · linha de tabela · span entre aspas), resolver a
+  zona-sonda `@@PROBE@@`, reconciliar a dívida de largura do `INDENT_RE` (304 × 80) e atualizar o
+  bloco `trackfw-contract` de `docs/cli-parity.md` **no mesmo commit**.
+- Li antes: a seção `### ML-N2` do roadmap em `wip/`, a auditoria do `ML-N1`, §3.3 e §10 do parecer
+  `docs/seguranca/2026-09-25-discriminante-do-gate-de-palavra-chave.md`, `vault/notes/index.md` e a
+  nota do acoplamento `s182` ↔ linha literal do gate.
+- Sem Git: não crio branch, não commito, não faço push. Entrega não commitada, para auditoria.
+
+## 2026-09-25 — apolo-tf — ML-N2 (fim): 6 zonas, dois baldes, e um falso negativo que não estava no escopo
+
+- **Arquivos:** `scripts/check-pr-closing-keyword.sh`, `docs/cli-parity.md` (bloco
+  `trackfw-contract`, mesmo commit), `vault/notes/…-fabrica-indentacao-…-2026-09-25.md` + índice.
+- **Corpus A, pelo caminho real (358 invocações, `$?` lido sem cano antes):** antes
+  `rc=0 353 · rc=1 4 · rc=2 1`; depois **idêntico, PR a PR** (`diff` vazio) — acusados exatamente
+  **#247/#312/#325/#330**, `rc=2` só o **#49**. Medido também em **ablação separada** de cada uma das
+  duas mudanças: nenhuma delas move o histograma sozinha, então não há cancelamento.
+- **As 6 linhas da §10.4 do parecer batem 6/6** pelo caminho real: cerca/span/indentado **acusam**
+  (rc=1), blockquote/tabela/aspas **calam** (rc=0). Os dois lados do balde, não metade da medição.
+- **Frase canônica do #258:** com aspas retas **rc=0**; **sem aspas rc=1** (controle — a isenção vem
+  da zona, não da prosa); **com aspas curvas rc=1** (residual declarado).
+- 🔴 **Achado fora do escopo declarado, mesma causa, corrigido nesta REQ (Regra Dura de Causa Raiz):**
+  a "dívida de contagem" do `ML-N1` **não era contabilidade** — era **falso negativo vivo**. Apagar um
+  code span no início da linha **fabrica** 4+ espaços à esquerda, o `INDENT_RE` casa e o bloco engole a
+  declaração. Medido antes do fix: `Texto.\n\n` + `` `trackfw validate` — Fecha #246. `` saía **rc=0**.
+  Reconciliação fechada: **80 = 54 dentro de cerca + 26 fora + 0 abrindo bloco**, logo o `INDENT` apaga
+  **0** linhas reais neste corpus e as **304** eram 100% fabricadas. A indentação passa a ser lida no
+  corpo **como o autor escreveu**. Nota de vault escrita e linkada.
+- **Aspas curvas: declaradas residuais, não presumidas.** A sonda #434 mediu só as retas e o corpus A
+  tem **zero** ocorrência de curvas — incluí-las não compraria nada mensurável e custaria a
+  extrapolação por analogia que a Wave 0 já viu refutada duas vezes. Presa por cenário de autoteste.
+- **Largura do `TBL`, a maior das seis, medida em vez de admitida:** 1354 linhas apagadas, **0** com
+  declaração portuguesa e `#N`, e a forma **estrita** (`^| … |$`) apaga exatamente as **mesmas 1354**
+  que a larga — então ficou a estrita, que não arrasta prosa que apenas comece com `|`.
+- **Zona-sonda `@@PROBE@@` removida por inteiro**, com a razão escrita: regex, leitura de
+  `PRCLOSE_SELFCHECK_NONCODE`, helper `assert_body_env`, os 3 cenários e o comentário de cabeçalho.
+  `import os` do matcher saiu junto (ficou sem uso). Meia remoção deixaria um comentário que mente.
+- **Autoteste: 60 → 69 cenários**, cada bloco com sua frase de reconciliação.
+- 🔴 **Costura medida entre o passe novo e a forma 4, que eu não tinha no escopo:** a zona de aspas
+  apaga **dentro** da linha, então ela alcança a leitura de polaridade. `Ele disse "nao" e fecha a
+  #246` saía **rc=0** e passa a sair **rc=1** — **única divergência em 7 arranjos** de negação ×
+  aspas × blockquote × tabela que exercitei. Direção **fail-closed** e correta: quem nega é a frase
+  **citada**, não o autor — e de quebra estreita uma superfície de **silenciamento**. Presa pelo par
+  `costura-negacao-citada-nao-suprime` / `costura-negacao-e-verbo-na-mesma-citacao`.
+- ⚠️ **Divergência de redação sinalizada ao arquiteto:** o AC do roadmap diz *"nas duas grafias de
+  aspas"*; a ação 2 do handoff o substitui por *"mede ou declara residual"*. Segui o handoff.
+- Não commitei, não fiz push, não criei branch, não usei `git stash`/`git checkout --`.
+
+## 2026-09-25 — ares-tf — ML-N3 (início): a chave de ativação (`GH_TOKEN` + reavaliação em `edited`)
+
+- **Escopo:** `.github/workflows/quality.yml`, workflow próprio para o gate, `check-annotations.yml`,
+  `scripts/check-pr-closing-keyword.sh` (resolvedor de fonte), `scripts/check-workflow-yaml.py`,
+  `Makefile`, `docs/cli-parity.md`.
+- Branch `fix/gate-de-palavra-chave-de-fechamento-nao-reavalia-em-edited-…`, já criada pelo arquiteto.
+- Sem Git: não crio branch, não commito, não faço push. Entrega não commitada, para auditoria.
+
+## 2026-09-25 — ares-tf — ML-N3 (fim): a chave ligada, e o gatilho num arquivo próprio
+
+- **Arquivos:** `.github/workflows/pr-closing-keyword.yml` (novo), `.github/workflows/quality.yml`
+  (job removido + razão do `on:` sem `types:`), `.github/workflows/check-annotations.yml`,
+  `scripts/check-pr-closing-keyword.sh` (resolvedor de fonte + 8 arms novas),
+  `scripts/check-workflow-yaml.py` (gatilho preso), `Makefile`, `docs/cli-parity.md`,
+  `vault/notes/gatilho-edited-so-existe-no-workflow-…-2026-09-25.md` + índice.
+- 🔴 **Nada de `required_status_checks`** — é o `ML-N4`, do arquiteto. O job id continua
+  `pr-closing-keyword` e **sem** chave `name:`, para o nome do check não mudar.
+- **`edited` sem repetir as suítes — a medição que decidiu:** `on.pull_request.types` é do
+  **workflow**, não do job. Medido no `quality.yml`: **13 jobs, 11 sem `if:` + 2 com `if: always()`,
+  nenhum com `if:` que exclua `edited`** → declarar `edited` ali rodaria tudo, inclusive as três
+  suítes de `windows-latest`, a cada correção de typo em descrição de PR. Workflow próprio.
+- **#293 com o corpo atual: `rc=0`**, com as duas supressões por polaridade impressas — prova de que
+  o `ML-N1` chegou antes do `GH_TOKEN`.
+- **Degradação API→payload deixou de ser silenciosa** e a frase *"corpo de ABERTURA"* saiu: num
+  payload de `edited` ela viraria mentira no mesmo commit que corrige outra mentira.
+- `make quality` verde (`MAKE_RC=0`, 338 OK / 0 FAIL na falsificação) · `trackfw validate` rc=0.
+- Não commitei, não fiz push, não criei branch, não usei `git stash`/`git checkout --`.
