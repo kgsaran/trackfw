@@ -430,7 +430,7 @@ FP**. Marcar `[x]` por um número que não transfere é o que a Regra Dura de Re
 
 ### ML-N1 — Esqueleto de dois passes (por BALDE) + formas 3, 4, 5 e 6 — **um único commit**
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento (despachado em 2026-09-25)
 
 🔴 **Por que num commit só, e não um ML por forma.** Medido em §3.6: `Não fecha **#421**.` casa a forma 3
 (markdown na lacuna) **e** a forma 4 (negação). Fechar só a forma 3 faz o gate **passar a ver** a frase e
