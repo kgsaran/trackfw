@@ -18,8 +18,23 @@ import (
 // EvalSymlinks resolves it to /private/tmp/... — passing the unresolved path as
 // root causes false "escapes root" errors for files that are genuinely inside the
 // project. Falls back to the unresolved cwd if EvalSymlinks fails.
+// getwdFn is the single seam through which projectRoot reads the working
+// directory. os.Getwd failing is the ONLY error path of projectRoot
+// (filepath.EvalSymlinks failing falls back to the unresolved cwd and returns
+// nil), so injecting this variable is the portable, deterministic way for a test
+// to exercise the "root could not be established" branch of every call site.
+//
+// 🔴 The seam is at os.Getwd and NOT at projectRoot: internal/pathguard's
+// analyser keys provenance on the literal identifier `projectRoot` at the call
+// site (approvedResolvers / taintSourceCalls). Turning projectRoot itself into a
+// variable would strip resolver provenance from every guard root in this package
+// and make P2 report them as unresolved. See vault/notes/
+// chdir-removeall-nao-forca-getwd-falhar-no-windows-2026-09-17.md for why a
+// filesystem trick (chdir + RemoveAll) is not usable here.
+var getwdFn = os.Getwd
+
 func projectRoot() (string, error) {
-	cwd, err := os.Getwd()
+	cwd, err := getwdFn()
 	if err != nil {
 		return "", fmt.Errorf("projectRoot: %w", err)
 	}

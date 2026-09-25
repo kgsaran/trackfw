@@ -462,22 +462,42 @@ func findREQ(name string, cfg config.ProjectConfig) (string, error) {
 // appendREQTransitionLog registra a transição de estado de uma REQ em cfg.REQDir/.trackfw-log,
 // mesmo formato de appendTransitionLog (roadmap.go), em arquivo de log separado.
 func appendREQTransitionLog(basename, fromState, toState string) {
+	// NON-FATAL by decision: a log write failure must not abort the REQ move. The
+	// decision lives HERE, in the wrapper that discards the error — and only here.
+	// appendREQTransitionLogEntry below returns the refusal like any other guarded
+	// write, which is what lets ML-9A refuse an unverifiable root with a plain
+	// `return pathguard.RefuseUnverifiableRoot(...)` instead of a discarded call
+	// whose error nothing consumes.
+	_ = appendREQTransitionLogEntry(basename, fromState, toState)
+}
+
+// appendREQTransitionLogEntry writes one transition line to cfg.REQDir/.trackfw-log,
+// refusing rather than writing when containment cannot be established. It is the
+// mirror of roadmap.go's appendTransitionLogEntry — the two are deliberately
+// written as the same shape.
+//
+// 🔴 Fail-closed (ML-9A): until ML-9A the guard lived inside
+// `if root, err := projectRoot(); err == nil` and the append happened whether or
+// not the root had been established, so a resolver failure appended unguarded.
+// The refusal was already non-silent since ML-7B; what ML-9A adds is that the
+// root failing is itself a refusal.
+func appendREQTransitionLogEntry(basename, fromState, toState string) error {
 	cfg := config.Load()
 	logFile := filepath.Join(cfg.REQDir, ".trackfw-log")
 	// Guard the log file against ancestor symlinks (append-mode, so GuardedWrite's
-	// atomic replace is not usable). Non-fatal, but NOT silent since ML-7B: the
-	// previous RejectSymlinks + bare return refused without telling the user the
-	// REQ transition log had been skipped.
-	if root, err := projectRoot(); err == nil {
-		absLog := filepath.Join(root, logFile)
-		if guardErr := pathguard.RejectAndReport(root, absLog); guardErr != nil {
-			return
-		}
+	// atomic replace is not usable).
+	root, rootErr := projectRoot()
+	if rootErr != nil {
+		return pathguard.RefuseUnverifiableRoot(logFile, rootErr)
 	}
-	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+	absLog := filepath.Join(root, logFile)
+	if guardErr := pathguard.RejectAndReport(root, absLog); guardErr != nil {
+		return guardErr
+	}
+	// write-containment-allowed: pathguard.RejectAndReport(root, absLog) above dominates this append unconditionally; an unresolvable root refuses via RefuseUnverifiableRoot
 	f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return
+		return err
 	}
 	defer f.Close()
 	line := fmt.Sprintf("%s  %-50s  %s → %s\n",
@@ -486,5 +506,6 @@ func appendREQTransitionLog(basename, fromState, toState string) {
 		fromState,
 		toState,
 	)
-	f.WriteString(line)
+	_, err = f.WriteString(line)
+	return err
 }

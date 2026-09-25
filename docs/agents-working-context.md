@@ -41283,3 +41283,44 @@ bash scripts/check-unguarded-capture-rc.sh          RC=0
   `req.go:478`, `roadmap.go:833`. Mesma causa, mesma REQ: pede ML novo, não REQ nova.
 - Status do ML no roadmap mantido em 🔄 — muda para ✅ só após a auditoria do arquiteto.
 - Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.
+
+## 2026-09-25 — apolo-tf — ML-9A (início): os 5 fail-open viram recusa
+
+- **Escopo:** trocar o fail-open dos 5 sítios medidos pelo ML-7C (`java.go:77`, `note.go:111/135`,
+  `req.go:478`, `roadmap.go:833`) por `pathguard.RefuseUnverifiableRoot`, preservando o controle de
+  fluxo de cada um (fatal continua fatal; log de transição continua não-fatal), corrigir o texto dos
+  marcadores `write-containment-allowed` que hoje afirmam contenção inexistente no ramo de erro, e
+  zerar `liveKnownFailOpen`.
+- **Baseline medido antes de editar:** árvore viva 107 arquivos / 154 escritas / 151 em população /
+  59 guardas / 20 achados (15 ponto cego + 5 fail-open); P2 16 `filepath.Clean` / 22 sem provenância
+  / 16 root-aliased.
+- **Fora:** os 16 sítios `filepath.Clean(cwd|root)` (Wave 8), os 15 `liveAnalyserBlindSpots`, e o
+  gate bash `check-write-containment.sh`.
+- Sem Git: não crio branch, não commito, não faço push, não uso `git stash`/`git checkout --`.
+
+## 2026-09-25 — apolo-tf — ML-9A (fim): os 5 fail-open recusam, e a lista fica vazia
+
+- **Produção:** `java.go` (`GeneratePomXML`), `note.go` (`appendNoteToIndex`), `req.go` e
+  `roadmap.go` (log de transição, extraído em `…Entry` que retorna erro + invólucro void que o
+  descarta por decisão), e o seam `var getwdFn = os.Getwd` em `scaffold.go`. Os 5 marcadores
+  `write-containment-allowed` foram reescritos: eles nomeavam `RejectSymlinks` (o emissor é
+  `RejectAndReport`) e diziam "at the enclosing write site" quando a guarda não dominava o ramo de
+  erro.
+- **Testes:** `internal/generators/fail_closed_root_test.go` — 4 testes, **por sítio**, com
+  `projectRoot()` forçado a falhar pelo seam; `note.go` tem **dois** braços de controle porque o
+  sítio fixado cobre **duas** escritas. `internal/pathguard/containment_live_test.go` ganha
+  `TestML9ASitesStayClosed` (os 5 sítios pelo nome + piso de escrita por sítio).
+- **Falsificação medida:** com os 4 arquivos revertidos à forma pré-fix, os 4 testes reprovam, cada
+  um nomeando o seu sítio; restaurados por `cmp` byte-a-byte. Revertendo **só** `java.go`, o
+  analisador acusa `java.go:80 GeneratePomXML() [unguarded-write]` em
+  `TestContainmentAnalyserOverTheLiveTree` **e** em `TestML9ASitesStayClosed`.
+- **Delta dos pins:** achados 20 → **15** (15 ponto cego + 0 fail-open); `liveFailOpenSitesPin`
+  5 → **0** e `liveKnownFailOpen` vazia; guardas 59 → **63**; delegações 56 → **60**. Inalterados,
+  e é isso que prova que não vazei para a Wave 8: população 151, escritas 154, arquivos 107,
+  P2 22/16, root-aliased 16.
+- **Nota de vault:** `recusa-de-root-em-funcao-void-o-analisador-exige-que-a-recusa-seja-acionada-2026-09-25.md`
+  — por que `_ = RefuseUnverifiableRoot(...)` reprova no analisador e por que afrouxar a regra seria
+  pior que extrair a função.
+- `make quality` verde (rc=0, 338 OK / 0 FAIL na suíte de falsificação), `trackfw validate` rc=0.
+- Status do ML mantido em 🔄 — muda para ✅ só após a auditoria do arquiteto.
+- Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.

@@ -1901,19 +1901,93 @@ cobertura de T5** — o caminho escrito é fail-closed no resolvedor + teste de 
 
 ### ML-9A — Trocar o fail-open por `RefuseUnverifiableRoot`
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento (despachado em 2026-09-25)
+**Status:** ✅ Concluído — auditado em 2026-09-25 · **fail-open 5 → 0, e a lista vazia É o enforcement**
 
 **Sítios:** `java.go:77` · `note.go:111` · `note.go:135` · `req.go:478` · `roadmap.go:833`
 
 **Critérios de aceite:**
-- [ ] Os 5 sítios recusam quando `projectRoot()` falha, em vez de escrever sem guarda
-- [ ] 🔴 O marcador `write-containment-allowed` de cada um passa a ser **verdadeiro** — hoje ele
+- [x] Os 5 sítios recusam quando `projectRoot()` falha, em vez de escrever sem guarda
+- [x] 🔴 O marcador `write-containment-allowed` de cada um passa a ser **verdadeiro** — hoje ele
       afirma contenção que não existe no ramo de erro
-- [ ] Falsificação **por sítio**, com `projectRoot()` forçado a falhar — e braço de controle provando
+- [x] Falsificação **por sítio**, com `projectRoot()` forçado a falhar — e braço de controle provando
       que o caminho feliz continua escrevendo
-- [ ] `liveKnownFailOpen` fica **vazia**, e a lista passa a ter o mesmo enforcement das demais:
+- [x] `liveKnownFailOpen` fica **vazia**, e a lista passa a ter o mesmo enforcement das demais:
       entrada obsoleta vira **erro**
-- [ ] `make quality` verde
+- [x] `make quality` verde
+
+
+#### 🔴 Auditoria do ML-9A — medido por mim
+
+```
+liveKnownFailOpen                    5 → 0   (e o comentário declara: "EMPTY since ML-9A, and that
+                                              is the point of the list, not the end of it")
+achados na árvore                   20 → 15  (15 pontos cegos, 0 fail-open)
+chamadas de guarda                  59 → 63
+delegações no corpus                56 → 60
+população · escritas · arquivos     151 · 154 · 107  ← INALTERADOS
+P2 (Clean / sem provenância / alias) 16 · 22 · 16     ← INALTERADOS
+make quality                         rc 0 · 338 OK · 0 FAIL
+```
+
+🔴 **Os números inalterados são a evidência do escopo negativo:** o fix **não vazou** para a Wave 8.
+Confirmei por caminho próprio: `grep 'filepath.Clean(cwd|root)'` continua **16**.
+
+O marcador de `java.go` hoje diz o que o sítio faz: *"`RejectAndReport(javaRoot, absPom)` above
+dominates this write **unconditionally**; an unresolvable root refuses via `RefuseUnverifiableRoot`"*.
+
+### R1 — a forma que EU prescrevi foi reprovada pelo instrumento, e a regra estava certa
+
+Mandei *"em quem é void e não-fatal, fale e retorne sem escrever"*. Implementado como
+`_ = RefuseUnverifiableRoot(…)`, o analisador do `ML-7C` reprovou com uma espécie **nova** de achado:
+
+```
+req.go:478 appendREQTransitionLog() [guard-not-acted-on]
+  — guard result assigned but no failure branch found in the same block
+```
+
+🔴 **E ele verificou que a regra está certa antes de decidir**, em vez de afrouxá-la: relaxá-la faria
+uma chamada nua no topo do corpo virar um `guardRecord` que **domina** a escrita, e o sítio passaria a
+ler como contido tendo apenas **imprimido** uma mensagem. A única forma que passaria sem extração
+seria `if refusal := RefuseUnverifiableRoot(…); refusal != nil` — condição **sempre verdadeira** sobre
+função documentada como sempre não-nil. **O gate aceitaria a mentira.**
+
+**Decisão dele, que ratifico: não tocou no analisador.** Extraiu o corpo guardado para um irmão que
+retorna erro e deixou a não-fatalidade numa linha só no invólucro void. 🔴 **É o instrumento
+disciplinando o implementador — exatamente o que esta REQ existe para construir, funcionando na
+primeira oportunidade de ser testado.**
+
+### R3 — "5 sítios" são 5 escritas em 4 funções, e isso tem consequência de teste
+
+`note.go` é **uma** entrada cobrindo **duas** escritas (`WriteFile` quando o índice não existe,
+`OpenFile` append quando existe). Logo **dois** braços de controle, não um — com só o braço "índice
+ausente", o sítio de append ficaria sem prova de que ainda escreve, e *"nada escreve mais"*
+satisfaria metade do braço negativo. É a degeneração do `ML-7A` de novo, e ele a viu sozinho.
+
+### R4 — meu AC estava impreciso, e a correção é melhor que o AC
+
+Escrevi que `liveKnownFailOpen` *"passa a ter o mesmo enforcement das demais"*. Medido: ela **já
+tinha** (`assertListMatches`). O que faltava é outra coisa: **com a lista vazia, `assertListMatches` e
+`assertPin(0,0)` não afirmam nada.** Ele fechou com `TestML9ASitesStayClosed`, que nomeia os sítios e
+fixa a contagem de primitivas de escrita **por sítio** — senão **apagar a escrita** tornaria o sítio
+"limpo" e o teste verde.
+
+### O seam, e por que ele não podia ir no lugar óbvio
+
+`var getwdFn = os.Getwd`, **não** `projectRootFn`. Razão medida: o analisador casa provenância pelo
+**identificador literal** `projectRoot`, então um seam ali tiraria provenância de resolvedor de toda
+raiz de guarda do pacote e **estouraria o P2**. E `os.Getwd` é o **único** ramo de erro de
+`projectRoot` — `EvalSymlinks` falhando cai no fallback. O truque de `chdir`+`RemoveAll` não serve:
+Windows recusa remover o cwd (nota de 2026-09-17). Cada braço **verifica o seam antes de rodar** e
+afirma a **causa injetada** + a frase `cannot verify containment` + o **nome do artefato** — nunca
+*"houve erro"*.
+
+### ⚠️ Residual que é meu: o arquivo de teste novo está untracked
+
+`internal/generators/fail_closed_root_test.go` **não** foi varrido por
+`check-symlink-privilege-guard` (171 arquivos, enumerados por `git ls-files`). Ele verificou o que
+importa — **zero** `os.Symlink` no arquivo — mas 🔴 **é o meu commit que põe o arquivo no escopo do
+gate**, e foi assim que 4 testes do `ML-7B` reprovaram *depois* de commitados. **A segunda passada
+pós-commit é obrigatória aqui.**
 
 ## Wave 8 — Root resolvido nos dois lados (#402)
 > Dependências: Wave 6 auditada. **Independente da R1** — o defeito é o **argumento**, não o fluxo.

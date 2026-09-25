@@ -816,23 +816,41 @@ func containsIgnoreCase(s, sub string) bool {
 }
 
 func appendTransitionLog(basename, fromState, toState string) {
+	// NON-FATAL by decision: a log write failure must not abort the move. The
+	// decision lives HERE, in the wrapper that discards the error — and only here.
+	// appendTransitionLogEntry below returns the refusal like any other guarded
+	// write, which is what lets ML-9A refuse an unverifiable root with a plain
+	// `return pathguard.RefuseUnverifiableRoot(...)` instead of a discarded call
+	// whose error nothing consumes.
+	_ = appendTransitionLogEntry(basename, fromState, toState)
+}
+
+// appendTransitionLogEntry writes one transition line to the roadmap log,
+// refusing rather than writing when containment cannot be established. It is the
+// mirror of appendREQTransitionLog's appendREQTransitionLogEntry (req.go) — the
+// two are deliberately written as the same shape.
+//
+// 🔴 Fail-closed (ML-9A): until ML-9A the guard lived inside
+// `if root, err := projectRoot(); err == nil` and the append happened whether or
+// not the root had been established, so a resolver failure appended unguarded.
+// The refusal was already non-silent since ML-7B; what ML-9A adds is that the
+// root failing is itself a refusal.
+func appendTransitionLogEntry(basename, fromState, toState string) error {
 	lp := logPath()
 	// Guard the log file against ancestor symlinks. This is an append-mode write so
 	// we cannot use GuardedWrite (which does atomic replace).
-	// The refusal is NON-FATAL — a log write failure must not abort the move — but it
-	// is no longer SILENT: until ML-7B this called RejectSymlinks and returned without
-	// a word, so the user saw the move succeed with no hint that the transition log
-	// had been skipped. RejectAndReport keeps the control flow and adds the voice.
-	if root, err := projectRoot(); err == nil {
-		absLog := filepath.Join(root, lp)
-		if guardErr := pathguard.RejectAndReport(root, absLog); guardErr != nil {
-			return
-		}
+	root, rootErr := projectRoot()
+	if rootErr != nil {
+		return pathguard.RefuseUnverifiableRoot(lp, rootErr)
 	}
-	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+	absLog := filepath.Join(root, lp)
+	if guardErr := pathguard.RejectAndReport(root, absLog); guardErr != nil {
+		return guardErr
+	}
+	// write-containment-allowed: pathguard.RejectAndReport(root, absLog) above dominates this append unconditionally; an unresolvable root refuses via RefuseUnverifiableRoot
 	f, err := os.OpenFile(lp, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return
+		return err
 	}
 	defer f.Close()
 	line := fmt.Sprintf("%s  %-50s  %s → %s\n",
@@ -841,7 +859,8 @@ func appendTransitionLog(basename, fromState, toState string) {
 		fromState,
 		toState,
 	)
-	f.WriteString(line)
+	_, err = f.WriteString(line)
+	return err
 }
 
 // ShowRoadmap exibe o conteúdo de um roadmap identificado por nome parcial.

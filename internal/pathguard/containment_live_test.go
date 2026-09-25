@@ -17,10 +17,11 @@ package pathguard
 //
 //	liveKnownFailOpen — measured DEFECTS. The guard is nested in
 //	    `if root, err := resolver(); err == nil { … }` and the write sits outside
-//	    it, so a resolver failure means the write proceeds unguarded. Five sites.
-//	    🔴 These are NOT approved by being listed. They are counted, named, and
-//	    handed to the architect: same cause, same REQ (CLAUDE.md's Regra Dura de
-//	    Causa Raiz), so they belong to a new ML of REQ-2026-08-31, not to a new REQ.
+//	    it, so a resolver failure means the write proceeds unguarded. 🔴 EMPTY since
+//	    ML-9A: the five sites it held were fixed, not approved — same cause, same
+//	    REQ (CLAUDE.md's Regra Dura de Causa Raiz). The list stays declared because
+//	    an empty exception list is what makes a reintroduction land in the
+//	    `unexplained` arm and fail by name.
 //
 // Both lists are keyed BY SITE (file + function + kind + path expression), never
 // by file and never by pattern, and both carry an exact expected count. A new
@@ -43,8 +44,13 @@ package pathguard
 //   - TestAnalyserVocabularyIsPinned affirms the ML's conclusion that the analyser's
 //     own reach is a counted list and not an assumption — shrinking the primitive,
 //     guard or resolver vocabulary is the cheapest way to make it vacuous.
+//   - TestML9ASitesStayClosed affirms ML-9A's conclusion that the five fail-open
+//     sites it fixed are closed IN THE TREE: each of the five functions still holds
+//     the write primitive it always held (so "no finding" is not "nothing left to
+//     analyse"), and not one finding of any kind names them.
 
 import (
+	"go/ast"
 	"sort"
 	"strings"
 	"testing"
@@ -63,7 +69,7 @@ const (
 	liveP2CleanSitesPin   = 16  // the Wave 8 population, by the mechanism's ruler
 	liveRootAliasedPin    = 16
 	liveBlindSpotSitesPin = 15
-	liveFailOpenSitesPin  = 5
+	liveFailOpenSitesPin  = 0 // was 5 until ML-9A; see liveKnownFailOpen
 )
 
 // liveAnalyserBlindSpots — site → number of write sites it covers → why the
@@ -97,14 +103,19 @@ var liveAnalyserBlindSpots = map[string]blindSpot{
 // conditional on the resolver succeeding, and the write is not), so by the Regra
 // Dura de Causa Raiz they belong to a new ML of this same REQ.
 var liveKnownFailOpen = map[string]blindSpot{
-	"internal/generators/java.go|GeneratePomXML|unguarded-write|\"pom.xml\"": {1,
-		"guard lives inside `if rootErr == nil`; when projectRoot() fails the write happens unguarded — RefuseUnverifiableRoot (built by ML-7B for exactly this) is the fix"},
-	"internal/generators/note.go|appendNoteToIndex|unguarded-write|vaultIndexFile": {2,
-		"guard lives inside `if indexRoot, err := projectRoot(); err == nil`; both writes below it are outside the branch"},
-	"internal/generators/req.go|appendREQTransitionLog|unguarded-write|logFile": {1,
-		"guard lives inside `if root, err := projectRoot(); err == nil`; the append happens whether or not the root was established"},
-	"internal/generators/roadmap.go|appendTransitionLog|unguarded-write|lp": {1,
-		"same shape as appendREQTransitionLog — the two are explicitly written as mirrors of each other"},
+	// 🔴 EMPTY since ML-9A (2026-09-25), and that is the point of the list, not the
+	// end of it. The five entries that lived here — java.go|GeneratePomXML,
+	// note.go|appendNoteToIndex (2 writes), req.go|appendREQTransitionLog and
+	// roadmap.go|appendTransitionLog — were measured DEFECTS, not exceptions: the
+	// guard sat inside `if …, err := projectRoot(); err == nil` and the write sat
+	// outside it. ML-9A replaced the fail-open with pathguard.RefuseUnverifiableRoot
+	// and the analyser stopped reporting them (20 findings → 15).
+	//
+	// Keeping the list declared and empty is deliberate: a finding that lands in
+	// NEITHER pinned list is an error (the `unexplained` arm above), so the empty
+	// map is what makes a reintroduced fail-open fail this test by NAME instead of
+	// being absorbed by an entry someone widens. TestML9ASitesStayClosed below
+	// names the five sites, so their silence is asserted and not merely observed.
 }
 
 type blindSpot struct {
@@ -273,4 +284,86 @@ func sumSites(list map[string]blindSpot) int {
 		total += entry.sites
 	}
 	return total
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ML-9A — the five fail-open sites, by name
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ml9ASites are the five write sites ML-7C measured as fail-open and ML-9A
+// closed. They are asserted BY NAME because a count survives losing exactly these
+// and gaining others, and because `liveKnownFailOpen` is now empty: an empty map
+// asserts nothing on its own, and "the list is empty" must not be the whole proof.
+//
+// `function` is the function the write lives in TODAY. `formerFunction` is where
+// it lived before ML-9A — roadmap.go and req.go extracted the guarded body into a
+// mirror pair (…Entry) so that the refusal of an unverifiable root is a plain
+// `return pathguard.RefuseUnverifiableRoot(…)` instead of a discarded call whose
+// error nothing consumes. Both names are asserted clean, so neither the new shape
+// nor a revert to the old one can pass silently.
+//
+// 🔴 The behavioural proof that each site REFUSES when projectRoot() fails is not
+// here — it is in internal/generators (…_fail_closed_test.go), per site, with a
+// control arm. This arm proves the instrument no longer sees the defect; that one
+// proves the binary no longer commits it.
+var ml9ASites = []struct {
+	file, function, formerFunction string
+	writes                         int
+}{
+	{"internal/generators/java.go", "GeneratePomXML", "GeneratePomXML", 1},
+	{"internal/generators/note.go", "appendNoteToIndex", "appendNoteToIndex", 2},
+	{"internal/generators/req.go", "appendREQTransitionLogEntry", "appendREQTransitionLog", 1},
+	{"internal/generators/roadmap.go", "appendTransitionLogEntry", "appendTransitionLog", 1},
+}
+
+func TestML9ASitesStayClosed(t *testing.T) {
+	if len(liveKnownFailOpen) != 0 {
+		t.Errorf("liveKnownFailOpen holds %d entry/entries — ML-9A emptied it; a new entry here is a measured defect being recorded instead of fixed, which CLAUDE.md's Regra Dura de Causa Raiz forbids inside the REQ that owns the cause", len(liveKnownFailOpen))
+	}
+
+	units, err := liveUnits(repositoryRoot(t), "internal", "cmd")
+	if err != nil {
+		t.Fatalf("reading the live tree: %v", err)
+	}
+	analyser, err := newAnalyzer(units)
+	if err != nil {
+		t.Fatalf("building the analyser: %v", err)
+	}
+	report := analyser.analyze()
+
+	for _, site := range ml9ASites {
+		fn := analyser.funcs[site.function]
+		if fn == nil {
+			t.Errorf("%s: function %s() is gone from the tree — the silence of this site below would then mean nothing", site.file, site.function)
+			continue
+		}
+		if fn.file.name != site.file {
+			t.Errorf("%s() now lives in %s, not %s — the site moved and this pin no longer names what it claims to", site.function, fn.file.name, site.file)
+		}
+		// Non-vacuity, per site: the write primitive is still there. Without this,
+		// deleting the write would make the site "clean" and this test green — the
+		// degeneration ML-7A already paid for once in this REQ.
+		writes := 0
+		walkWithBlocks(fn.decl.Body, func(call *ast.CallExpr, _ located, _ ast.Stmt) {
+			if _, _, ok := analyser.writeCallAt(call); ok {
+				writes++
+			}
+		})
+		if writes != site.writes {
+			t.Errorf("%s:%s() holds %d write primitive call(s), pinned at %d (delta %+d) — a site whose write disappeared is not a site that was fixed", site.file, site.function, writes, site.writes, writes-site.writes)
+		}
+	}
+
+	for _, finding := range report.Findings {
+		for _, site := range ml9ASites {
+			if finding.File != site.file {
+				continue
+			}
+			if finding.Func == site.function || finding.Func == site.formerFunction {
+				t.Errorf("ML-9A site is violating P1 again: %s", finding)
+			}
+		}
+	}
+
+	t.Logf("ML-9A: %d site(s) named, liveKnownFailOpen empty, %d finding(s) in the tree — none of them in these functions", len(ml9ASites), len(report.Findings))
 }
