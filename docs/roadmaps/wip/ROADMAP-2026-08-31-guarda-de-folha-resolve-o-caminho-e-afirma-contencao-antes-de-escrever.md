@@ -1287,7 +1287,7 @@ devolve **um único commit** — `7721efc6 (#397)`, esta REQ. Os 13 nasceram aqu
 
 ### ML-6A — Enumerar pelo mecanismo e desenhar o ponto único
 **Owner:** `hades-tf`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento (despachado em 2026-09-25)
 
 **Ações:**
 1. **Enumerar pelo mecanismo, não pelo identificador**, as duas populações: (a) sítios que passam um
