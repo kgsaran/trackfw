@@ -1900,7 +1900,8 @@ cobertura de T5** — o caminho escrito é fail-closed no resolvedor + teste de 
 > Dependências: `ML-7C` auditado. 🔴 **Mesma causa ⇒ mesma REQ ⇒ mesmo PR** — o roadmap fica em `wip`.
 
 ### ML-9A — Trocar o fail-open por `RefuseUnverifiableRoot`
-**Status:** ⬜ Pendente
+**Owner:** `apolo-tf`
+**Status:** 🔄 Em andamento (despachado em 2026-09-25)
 
 **Sítios:** `java.go:77` · `note.go:111` · `note.go:135` · `req.go:478` · `roadmap.go:833`
 
