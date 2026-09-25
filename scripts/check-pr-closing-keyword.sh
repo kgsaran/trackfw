@@ -60,10 +60,23 @@
 #          corpos reais. Afrouxar para "keyword em qualquer lugar da linha"
 #          sobe de 1 para 43 linhas reprovadas neste mesmo corpus -- um gate
 #          ruidoso e desligado, e ai nao guarda nada.
-#   4. Trechos em ZONA DE CODIGO -- cerca (```), code span (`...`) e bloco
-#      indentado por 4 espacos/tab -- sao removidos antes de casar. Motivo:
-#      DOCUMENTAR a forma errada e o que este proprio PR faz. Um exemplo citado
-#      nao e uma declaracao de intencao.
+#   4. Trechos em ZONA DE CITACAO -- as SEIS zonas dos dois baldes abaixo:
+#      cerca (```), code span (`...`), bloco indentado por 4 espacos/tab,
+#      blockquote (`> ...`), linha de tabela (`| ... |`) e span entre aspas
+#      RETAS ("..."). Motivo: DOCUMENTAR a forma errada e o que este proprio PR
+#      faz. Um exemplo citado nao e uma declaracao de intencao.
+#      >>> A indentacao e medida no corpo COMO O AUTOR ESCREVEU, nunca depois
+#          do mascaramento de code span: apagar um span no inicio da linha
+#          FABRICA 4 espacos a esquerda, e ``trackfw validate` -- Fecha #246.`
+#          saia rc=0 por isso -- falso negativo medido e corrigido no ML-N2.
+#      >>> 🔴 As aspas sao o QUINTO de cinco mecanismos de zona, nao o unico.
+#          O AC3 da REQ proibia inferir citacao "de aspas apenas"; o arquiteto
+#          ampliou-o no ML-N2 com a razao medida: a frase canonica do issue
+#          #258 (`O corpo da minha PR #247 dizia "Fecha #246" ...`) -- a propria
+#          descricao deste defeito -- passa EXCLUSIVAMENTE pela zona de aspas.
+#          Retiradas as aspas nao sobra sinal nenhum na frase (medido: rc=1),
+#          e o gate ficaria acusando para sempre o texto que documenta o seu
+#          proprio bug.
 #   5. Frase que NEGA o fechamento na mesma clausula: "Este PR nao fecha a
 #      #363", "Entrega sem fechar a #12", "Deixa de fechar a #12".
 #      >>> 🔴 Toda supressao por polaridade SAI NO LOG, com a frase e o token.
@@ -86,9 +99,12 @@
 #   NAO-CODIGO blockquote · celula de tabela · aspas   #432/#433/#434 = [430]
 #              O GitHub HONRA a palavra-chave aqui. A isencao e REAL -> passe
 #              PROPRIO, subtraido so do matcher portugues.
-#              >>> As zonas deste balde sao entrega do ML-N2. O que ja existe
-#                  aqui e o ESQUELETO de dois passes, falsificado no autoteste
-#                  pela zona-sonda `@@PROBE@@`.
+#              >>> IMPLEMENTADO no ML-N2 (`NONCODE_ZONE_RES`). As tres zonas
+#                  sao falsificadas INDIVIDUALMENTE e nos DOIS lados: cada uma
+#                  suprime a acusacao portuguesa E deixa a isencao inglesa
+#                  atravessar. A zona-sonda `@@PROBE@@` do ML-N1 foi removida:
+#                  as zonas reais exercitam a mesma propriedade, com
+#                  verdade-terreno medida na API.
 #
 # NAO COBERTO (limite declarado, nao acidente):
 #   - Parafrase com palavras intervenientes: "este PR fecha, por fim, a #246".
@@ -111,8 +127,34 @@
 #     cabem na MESMA janela e querem vereditos OPOSTOS -- nenhum ajuste de
 #     janela as separa. Por isso o residual e tornado VISIVEL no log, nao
 #     aceito em silencio.
+#     >>> O ML-N2 ESTREITA essa superficie por um efeito colateral medido: a
+#         zona de aspas apaga DENTRO da linha, entao um token de negacao que
+#         vive numa CITACAO deixa de suprimir a declaracao do autor.
+#         `Ele disse "nao" e fecha a #246` saia rc=0 e passa a sair rc=1 --
+#         unica divergencia em 7 arranjos de negacao x zona exercitados, e na
+#         direcao fail-closed. Presa pelo par `costura-negacao-*`.
 #   - Zonas nao medidas, que NAO sao extrapoladas por analogia: comentario
-#     HTML, <pre>/<code>, aspas curvas, `~~~`, cerca com atributo de linguagem.
+#     HTML, <pre>/<code>, ASPAS CURVAS, cerca com atributo de linguagem.
+#     🔴 As aspas CURVAS sao residual DECLARADO, nao esquecimento: a sonda #434
+#     mediu so as RETAS, e o corpus A tem ZERO ocorrencia de curvas -- inclui-
+#     las nao compraria nada mensuravel e custaria uma premissa nao medida,
+#     que e exatamente a analogia refutada duas vezes na Wave 0 desta REQ.
+#     Preso por cenario (`residual-aspas-curvas-nao-sao-zona`): se um dia forem
+#     medidas e entrarem, o autoteste fica vermelho e a decisao volta a ser
+#     consciente.
+#     ⚠️ `~~~` e caso diferente e fica REGISTRADO como tal: o FENCE_RE ja o
+#     casa, entao o gate o trata como zona de CODIGO -- mas a sonda mediu so
+#     ```` ``` ````. E uma analogia HERDADA, nao medida; esta declarada aqui
+#     em vez de passar por cobertura.
+#   - Largura da zona de TABELA: `| ... |` apaga 1354 linhas do corpus A, de
+#     longe a mais larga das seis. Divida DECLARADA e medida inerte aqui: ZERO
+#     das 1354 carrega declaracao portuguesa com `#N`, e a forma estrita (com
+#     o pipe de fechamento) apaga exatamente as MESMAS 1354 que a forma larga.
+#   - FALSO NEGATIVO por construcao nas 6 zonas: quem escrever a declaracao de
+#     fechamento DENTRO de um blockquote, de uma tabela ou entre aspas nao sera
+#     avisado. E o preco escolhido para nao acusar quem apenas CITA -- e nas
+#     tres zonas de codigo o silencio e duplamente correto, porque ali o
+#     GitHub nao fecha de qualquer forma.
 #   - Evasao adversaria (o autor do corpo nao e um adversario: e alguem que
 #     quer fechar a issue e erra o idioma).
 #   Anotado como `partial=` em docs/cli-parity.md, nunca `gate=`.
@@ -158,7 +200,6 @@ cat >"$MATCHER" <<'PY_EOF'
 # -*- coding: utf-8 -*-
 """Matcher unico do gate. Le UM arquivo com o corpo bruto do PR.
 exit 0 = limpo | exit 1 = defeito | exit 2 = not_evaluated"""
-import os
 import re
 import sys
 
@@ -287,13 +328,33 @@ FENCE_RE = re.compile(r"(?ms)^[ \t]*(?:```|~~~).*?^[ \t]*(?:```|~~~)[ \t]*$")
 SPAN_RE = re.compile(r"`[^`\n]*`")
 INDENT_RE = re.compile(r"^(?: {4,}|\t)")
 
-NONCODE_ZONE_RES = []  # ML-N2: blockquote, celula de tabela, span entre aspas
+# As TRES zonas do balde NAO-CODIGO (ML-N2). Cada uma corresponde a UMA sonda
+# da secao 10.3 do parecer, e as tres devolveram `[430]` -- o GitHub FECHA a
+# issue quando a palavra-chave inglesa vive ali. Logo esta lista vai SO para o
+# passe portugues; apagar estas zonas do scan ingles instalaria falso positivo.
+#
+#   BLOCKQUOTE_RE  sonda #432  `> Closes #430`
+#   TABLE_ROW_RE   sonda #433  `| Closes #430 | alvo |`
+#   QUOTED_SPAN_RE sonda #434  aspas RETAS -- `a linha certa seria "Closes #430"`
+#
+# 🔴 A linha de tabela exige o pipe de FECHAMENTO (`^|...|$`), e nao so o de
+# abertura. Medido no corpus A: as duas grafias apagam exatamente as MESMAS
+# 1354 linhas, entao a forma estrita nao custa nada e nao arrasta prosa que
+# apenas COMECE com `|`. Das 1354, ZERO carrega declaracao portuguesa com `#N`
+# (medido neste ML, nao citado do parecer) -- a divida de largura do `TBL` e
+# declarada e, neste corpus, inerte.
+#
+# ⚠️ ASPAS CURVAS (`“…”`) ficam de FORA, e isso e residual DECLARADO, nao
+# esquecimento. A sonda #434 mediu so as RETAS; tratar as curvas junto seria
+# extrapolacao por analogia -- e foi a analogia que produziu as duas premissas
+# refutadas na Wave 0 desta REQ (secao 10.1 do parecer). Medido: o corpus A tem
+# ZERO ocorrencia de aspas curvas, entao incluí-las nao compraria nada
+# mensuravel e custaria uma premissa nao medida. Preso por cenario de autoteste.
+BLOCKQUOTE_RE = re.compile(r"(?m)^[ \t]*>.*$")
+TABLE_ROW_RE = re.compile(r"(?m)^[ \t]*\|[^\n]*\|[ \t]*$")
+QUOTED_SPAN_RE = re.compile(r"\"[^\"\n]*\"")
 
-# Zona-sonda: NAO e uma zona real e nunca esta ativa em producao. Existe para
-# que o autoteste FALSIFIQUE o passe de nao-codigo nos dois matchers (I3) sem
-# embarcar nenhuma das zonas medidas do ML-N2 antes da hora. Um esqueleto de
-# dois passes que ninguem exercita e um esqueleto que o ML-N2 recomeca.
-PROBE_ZONE_RE = re.compile(r"(?s)@@PROBE@@.*?@@PROBE@@")
+NONCODE_ZONE_RES = [BLOCKQUOTE_RE, TABLE_ROW_RE, QUOTED_SPAN_RE]
 
 
 def _blank(match):
@@ -302,16 +363,42 @@ def _blank(match):
     return re.sub(r"[^\n]", " ", match.group(0))
 
 
-def mask_indented_code(text):
+def mask_indented_code(text, ref=None):
     """Bloco indentado por 4 espacos/tab -- balde de CODIGO (sonda #431 = []).
     Um bloco so COMECA depois de linha em branco; isso evita mascarar
-    continuacao de paragrafo e de item de lista, que nao sao codigo."""
+    continuacao de paragrafo e de item de lista, que nao sao codigo.
+
+    🔴 `ref` e a DIVIDA DE LARGURA do ML-N1, reconciliada e CORRIGIDA aqui.
+    O ML-N1 declarou que esta mascara apagava 304 linhas do corpus A contra as
+    80 do censo do parecer, e registrou que nao sabia reconstruir a regra do
+    censo. Reconstruida por medicao neste ML: as 80 sao a contagem linha-a-
+    linha sobre o corpo CRU; as 304 apareciam porque a indentacao era medida
+    DEPOIS do mascaramento de code span, e uma linha que COMECA com crase
+    (``trackfw validate` -- Fecha #246.`) vira 4+ espacos a esquerda quando o
+    span e apagado. Indentacao FABRICADA pelo passe anterior, nao escrita pelo
+    autor.
+
+    Isso nao era contabilidade: era FALSO NEGATIVO vivo. Medido antes do fix, o
+    corpo `Texto.\\n\\n`trackfw validate` -- Fecha #246.\\n` saia rc=0 -- o gate
+    calava sobre uma declaracao portuguesa real. O "0 das 304 carrega
+    declaracao" do ML-N1 era propriedade do CORPUS, nao da regra, exatamente
+    como o "0 falso positivo" da secao 3.4 do parecer.
+
+    A decisao de indentacao passa a sair de `ref` (o corpo como o autor
+    escreveu) e o apagamento continua acontecendo em `text` (ja sem cerca e sem
+    span). As duas arvores tem o MESMO numero de linhas porque `_blank`
+    preserva as quebras -- e se algum dia nao tiverem, o fallback e medir no
+    proprio `text`, que e o comportamento antigo, nunca um IndexError."""
+    lines = text.split("\n")
+    ref_lines = lines if ref is None else ref.split("\n")
+    if len(ref_lines) != len(lines):
+        ref_lines = lines
     out = []
     prev_blank = True
     in_block = False
-    for line in text.split("\n"):
-        blank = not line.strip()
-        indented = bool(INDENT_RE.match(line))
+    for line, ref_line in zip(lines, ref_lines):
+        blank = not ref_line.strip()
+        indented = bool(INDENT_RE.match(ref_line))
         if in_block:
             if blank:
                 out.append(line)
@@ -332,20 +419,23 @@ def mask_indented_code(text):
 
 def mask_code_zones(text):
     """Passe 1 -- subtraido dos DOIS matchers (PT e EN)."""
-    return mask_indented_code(SPAN_RE.sub(_blank, FENCE_RE.sub(_blank, text)))
-
-
-def noncode_zone_res():
-    zones = list(NONCODE_ZONE_RES)
-    if os.environ.get("PRCLOSE_SELFCHECK_NONCODE") == "1":
-        zones.append(PROBE_ZONE_RE)
-    return zones
+    masked = SPAN_RE.sub(_blank, FENCE_RE.sub(_blank, text))
+    return mask_indented_code(masked, ref=text)
 
 
 def mask_noncode_zones(text):
     """Passe 2 -- subtraido SO do matcher portugues. A isencao inglesa
-    atravessa este passe intacta, porque nestas zonas o GitHub fecha mesmo."""
-    for rx in noncode_zone_res():
+    atravessa este passe intacta, porque nestas zonas o GitHub fecha mesmo.
+
+    A zona-sonda `@@PROBE@@` do ML-N1 (ativada por PRCLOSE_SELFCHECK_NONCODE)
+    foi REMOVIDA aqui, com a razao escrita: ela existia porque a lista de zonas
+    estava vazia e um esqueleto que ninguem exercita e um esqueleto que o ML
+    seguinte recomeca. As tres zonas reais exercitam o mesmo par de
+    propriedades (suprime PT · preserva EN), cada uma individualmente e com
+    verdade-terreno medida na API -- a sonda virou redundante, e uma via de
+    codigo ligada por variavel de ambiente que so o autoteste usa e superficie
+    a menos quando nao e mais necessaria."""
+    for rx in NONCODE_ZONE_RES:
         text = rx.sub(_blank, text)
     return text
 
@@ -500,35 +590,6 @@ self_test() {
     echo "OK   [pr-closing-keyword/self-test/$label]"
   }
 
-  assert_body_env() { # assert_body_env LABEL EXPECTED_EXIT EXPECTED_SUBSTR ENVSPEC BODY
-    # Igual a assert_body, mas com uma variavel de ambiente no matcher. Serve a
-    # zona-sonda do esqueleto de dois passes (PRCLOSE_SELFCHECK_NONCODE).
-    local label=$1 expected=$2 needle=$3 envspec=$4 body=$5
-    local f="$WORK/fixture-env.md" out status
-    printf '%s' "$body" >"$f"
-    set +e
-    if [[ -n $envspec ]]; then
-      out=$(env "$envspec" python3 "$MATCHER" "$f" 2>&1)
-    else
-      out=$(env -u PRCLOSE_SELFCHECK_NONCODE python3 "$MATCHER" "$f" 2>&1)
-    fi
-    status=$?
-    set -e
-    if [[ $status -ne $expected ]]; then
-      echo "FAIL [pr-closing-keyword/self-test/$label]: exit $status, esperava $expected" >&2
-      printf '%s\n' "$out" | sed 's/^/    /' >&2
-      failures=$((failures + 1))
-      return
-    fi
-    if [[ -n $needle ]] && ! grep -qF -- "$needle" <<<"$out"; then
-      echo "FAIL [pr-closing-keyword/self-test/$label]: exit $status correto, mas falta '$needle'" >&2
-      printf '%s\n' "$out" | sed 's/^/    /' >&2
-      failures=$((failures + 1))
-      return
-    fi
-    echo "OK   [pr-closing-keyword/self-test/$label]"
-  }
-
   # --- Direcao A: DETECTA a forma portuguesa (exit 1, nomeando a linha) ------
   assert_body "detecta-fecha"      1 'linha 1: Fecha #123.'          'Fecha #123.'
   assert_body "detecta-corrige-artigo" 1 'Corrige o #239'            'Corrige o #239.'
@@ -575,28 +636,101 @@ self_test() {
     $'Fecha #246.\n\n```\nCloses #246\n```\n'
   assert_body "balde-codigo-span-nao-isenta"   1 'nao fecha a issue #246' \
     $'Fecha #246. A forma certa seria `Closes #246`.\n'
-  # 🔴 Zona NOVA deste ML -- era rc=0 (falso negativo silencioso) ate aqui.
+  # 🔴 Zona NOVA do ML-N1 -- era rc=0 (falso negativo silencioso) ate aqui.
   assert_body "balde-codigo-indentado-nao-isenta" 1 'nao fecha a issue #246' \
     $'Fecha #246.\n\n    Closes #246\n\nFim.\n'
+  # Contra-braco do bloco indentado: a acusacao PORTUGUESA continua suprimida
+  # ali, por dois motivos independentes -- e citacao, E nao fecha nada.
+  # AFIRMA: o balde de CODIGO nao foi desfeito por este ML; so a decisao de
+  # ONDE a indentacao e medida mudou (ver `indent-*` abaixo).
+  assert_body "balde-codigo-indentado-suprime-acusacao-pt" 0 '' \
+    $'Exemplo do defeito:\n\n    Fecha #246\n\nFim.\n'
 
-  # --- BALDE NAO-CODIGO -- guarda de REGRESSAO ------------------------------
-  # AFIRMA: a mascara de nao-codigo NUNCA e subtraida do scan da isencao
-  # inglesa. Hoje a lista de zonas nao-codigo esta vazia (elas sao do ML-N2),
-  # entao este braco passa por AUSENCIA de mascara; ele existe para falhar no
-  # dia em que alguem puser uma zona nao-codigo no passe errado.
-  assert_body "balde-naocodigo-blockquote-isenta" 0 '' \
+  # ==========================================================================
+  # ML-N2 -- as TRES zonas do balde NAO-CODIGO + a divida de largura do INDENT.
+  # 🔴 Regra Dura de Reconciliacao: cada bloco declara, em UMA frase, qual
+  # conclusao do ML-N2 aquele teste afirma.
+  # ==========================================================================
+
+  # --- BALDE NAO-CODIGO -- os DOIS lados, zona por zona ---------------------
+  # AFIRMA (lado 1): nas tres zonas que o GitHub HONRA (#432/#433/#434 = [430])
+  # a declaracao portuguesa e CITACAO, nao intencao, e o passe proprio a
+  # suprime -- cada zona exercitada INDIVIDUALMENTE, nunca em bloco.
+  assert_body "naocodigo-blockquote-suprime-acusacao-pt" 0 '' \
+    $'O reporter escreveu:\n\n> Fecha #246.\n'
+  assert_body "naocodigo-tabela-suprime-acusacao-pt" 0 '' \
+    $'| forma | veredito |\n| --- | --- |\n| Fecha #246 | nao fecha nada |\n'
+  # 🔴 A frase CANONICA do issue #258 -- a propria descricao do defeito. Ela
+  # passa EXCLUSIVAMENTE pela zona de aspas: retiradas as aspas nao sobra sinal
+  # nenhum (secao 3.3 do parecer). E a razao medida de o AC3 ter sido ampliado.
+  assert_body "naocodigo-aspas-frase-canonica-do-258" 0 '' \
+    'O corpo da minha PR #247 dizia "Fecha #246" e a issue continuou aberta.'
+  # Controle da frase do #258: SEM as aspas nao sobra sinal, e o gate acusa.
+  # AFIRMA: a isencao vem da ZONA, nao da prosa em volta -- se este braco
+  # calasse, a zona de aspas estaria comprando silencio que nao e dela.
+  assert_body "naocodigo-aspas-controle-sem-aspas-acusa" 1 'nao fecha a issue #246' \
+    'O corpo da minha PR dizia Fecha #246 e a issue continuou aberta.'
+
+  # AFIRMA (lado 2): nas MESMAS tres zonas a isencao INGLESA atravessa intacta
+  # -- o GitHub fecha de verdade ali, entao apagar a zona do scan ingles seria
+  # falso positivo (secao 3.5-iv, 3 de 5 linhas confirmadas pelo ML-0C).
+  # O needle e load-bearing: ele prova que o numero entrou no conjunto
+  # `english`, e nao apenas que a acusacao sumiu por outro caminho.
+  # 🔴 Este cenario ja existia no ML-N1 e passava por AUSENCIA de mascara;
+  # agora passa porque a mascara esta no passe CERTO. Mesma assercao, virou
+  # load-bearing.
+  assert_body "balde-naocodigo-blockquote-isenta" 0 'Issues que o GitHub vai fechar' \
     $'Fecha #246.\n\n> Closes #246\n'
+  assert_body "balde-naocodigo-tabela-isenta" 0 'Issues que o GitHub vai fechar' \
+    $'Fecha #246.\n\n| Closes #246 | alvo |\n'
+  # A linha da secao 10.4 do parecer. 🔴 Ela passa por um mecanismo DIFERENTE
+  # dos dois acima e da frase do #258: a palavra-chave inglesa dentro das aspas
+  # NAO e apagada do scan ingles, entao a isencao POR NUMERO isenta a
+  # declaracao portuguesa da MESMA linha. E o unico cenario que exercita a
+  # INTERACAO entre os dois passes, em vez de cada mascara isolada.
+  assert_body "balde-naocodigo-aspas-isenta" 0 'Issues que o GitHub vai fechar' \
+    'Fecha #246. A linha certa e "Closes #246".'
 
-  # --- ESQUELETO DE DOIS PASSES, falsificado nos DOIS matchers (I3) ---------
-  # AFIRMA: o passe de nao-codigo suprime a acusacao PORTUGUESA e PRESERVA a
-  # isencao INGLESA -- que e a propriedade exata de que o ML-N2 depende. Usa a
-  # zona-sonda (`@@PROBE@@`), nao uma zona real, para nao embarcar o ML-N2.
-  assert_body_env "dois-passes-probe-inativa-por-padrao" 1 'nao fecha a issue #246' \
-    "" $'@@PROBE@@Fecha #246@@PROBE@@\n'
-  assert_body_env "dois-passes-suprime-acusacao-pt" 0 '' \
-    "PRCLOSE_SELFCHECK_NONCODE=1" $'@@PROBE@@Fecha #246@@PROBE@@\n'
-  assert_body_env "dois-passes-preserva-isencao-en" 0 'Issues que o GitHub vai fechar' \
-    "PRCLOSE_SELFCHECK_NONCODE=1" $'Fecha #246.\n\n@@PROBE@@Closes #246@@PROBE@@\n'
+  # --- RESIDUAL DECLARADO: aspas CURVAS ------------------------------------
+  # AFIRMA: aspas curvas NAO sao zona, e isso e escolha medida, nao omissao --
+  # a sonda #434 mediu so as retas, o corpus A tem ZERO ocorrencia de curvas, e
+  # trata-las junto seria a extrapolacao por analogia que a Wave 0 ja viu ser
+  # refutada duas vezes. Se um dia forem medidas e entrarem, este cenario fica
+  # vermelho e a decisao volta a ser consciente, em vez de silenciosa.
+  assert_body "residual-aspas-curvas-nao-sao-zona" 1 'nao fecha a issue #246' \
+    'O corpo dizia “Fecha #246” e a issue continuou aberta.'
+
+  # --- DIVIDA DE LARGURA DO INDENT, reconciliada ---------------------------
+  # AFIRMA: a indentacao passa a ser medida no corpo COMO O AUTOR ESCREVEU, e
+  # nao depois do mascaramento de code span -- que fabricava 4 espacos a
+  # esquerda numa linha iniciada por crase e SILENCIAVA a declaracao. Medido
+  # rc=0 antes do fix e rc=1 depois; e o mesmo defeito desta REQ, na direcao do
+  # falso negativo.
+  assert_body "indent-span-inicial-nao-fabrica-bloco" 1 'nao fecha a issue #246' \
+    $'Texto.\n\n`trackfw validate` — Fecha #246.\n'
+  # Contra-braco: o bloco indentado de VERDADE continua sendo zona de codigo --
+  # a correcao nao desligou a mascara, so mudou onde ela le a indentacao.
+  assert_body "indent-bloco-real-continua-mascarado" 0 '' \
+    $'Exemplo:\n\n    Fecha #246\n    Fecha #247\n\nFim.\n'
+
+  # --- COSTURA entre o passe de nao-codigo e a FORMA 4 (polaridade) ---------
+  # AFIRMA: a zona de aspas apaga DENTRO da linha, e por isso ela alcanca a
+  # leitura de polaridade -- um token de negacao que vive numa CITACAO deixa de
+  # suprimir a declaracao do autor. Medido: este corpo saia rc=0 antes do ML-N2
+  # e sai rc=1 depois, e e a UNICA divergencia entre os dois gates em 7 arranjos
+  # de negacao x aspas x blockquote x tabela que eu exercitei.
+  # 🔴 A direcao nova e a CORRETA, e e a fail-closed: a clausula, como o autor a
+  # escreveu, AFIRMA o fechamento; quem nega e a frase citada, nao ele. De
+  # quebra, fecha uma superficie de SILENCIAMENTO -- e silencio e o que esta
+  # secao inteira existe para nao produzir.
+  assert_body "costura-negacao-citada-nao-suprime" 1 'nao fecha a issue #246' \
+    'Ele disse "nao" e fecha a #246'
+  # Contra-braco: quando a negacao E o verbo vivem DENTRO das mesmas aspas, o
+  # corpo continua saindo 0 -- mas por outro mecanismo (a ZONA apaga os dois),
+  # e nao pela polaridade. Mesmo veredito, causa diferente: e o par que prova
+  # que o cenario acima mede a costura, e nao a zona sozinha.
+  assert_body "costura-negacao-e-verbo-na-mesma-citacao" 0 '' \
+    'Ele disse "nao fecha a #246" no corpo'
 
   # --- FORMA 3 -- a lacuna entre o verbo e a referencia ---------------------
   # AFIRMA: a lacuna aberta a nao-palavra passa a acusar as declaracoes reais

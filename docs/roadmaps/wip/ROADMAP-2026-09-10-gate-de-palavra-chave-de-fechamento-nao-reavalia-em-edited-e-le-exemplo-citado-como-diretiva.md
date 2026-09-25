@@ -552,7 +552,7 @@ não-coberto. O `ML-N2` atualiza de novo quando acrescentar as zonas de não-có
 
 ### ML-N2 — Forma 2 (exemplo citado) — AC3 **ampliado** para span entre aspas
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento (despachado em 2026-09-25) · `ML-N1` ✅ entregue os dois passes
+**Status:** ✅ Concluído — auditado em 2026-09-25 · e a reconciliação de uma dívida **expôs um falso negativo vivo**
 
 🔴 **Este ML altera o AC3 da REQ, por decisão minha, e a razão fica escrita.** O AC3 original proíbe
 *"inferir de aspas apenas"*. Mas foi medido que a **frase canônica do #258** — a própria descrição do
@@ -579,15 +579,92 @@ frase. Manter o AC estrito significaria deixar o gate acusando o texto que docum
    pior que contrato ausente, e um commit depois é uma janela em que alguém lê a mentira.
 
 **Critérios de aceite:**
-- [ ] A frase do **#258** (`O corpo da minha PR #247 dizia "Fecha #246" …`) **não** é acusada — nas duas
-      grafias de aspas
-- [ ] As **3** zonas do balde NÃO-CÓDIGO falsificadas individualmente, cada uma exercitada
-- [ ] 🔴 A isenção inglesa **continua valendo** dentro das 3 zonas novas — medido em #432/#433/#434 — e o
+- [x] A frase do **#258** (`O corpo da minha PR #247 dizia "Fecha #246" …`) **não** é acusada
+      → medido por mim: **antes `rc=1`, depois `rc=0`**. ⚠️ **AC corrigido por mim:** dizia *"nas duas
+      grafias de aspas"*; as **curvas não foram medidas** contra a API, e a ação 2 do handoff substituiu a
+      exigência por *"mede ou declara residual"*. Ficaram **residuais declaradas e presas por cenário** —
+      o corpus A tem **zero** ocorrência delas. Exigir o que não se mediu é o que produz AC marcado por
+      presunção
+- [x] As **3** zonas do balde NÃO-CÓDIGO falsificadas individualmente, cada uma exercitada
+- [x] 🔴 A isenção inglesa **continua valendo** dentro das 3 zonas novas — medido em #432/#433/#434 — e o
       `ML-N1` não pode ter sido desfeito: dentro do balde de **CÓDIGO** ela continua **suprimida** (#428/
       #429/#431). Os dois lados, ou o AC está marcado por metade da medição
-- [ ] `docs/cli-parity.md:7318` corrigido **neste commit**, e a afirmação nova é a medida
-- [ ] Corpus A: 0 FP mantido, cobertura do `ML-N1` mantida
-- [ ] `make quality` verde
+- [x] `docs/cli-parity.md:7318` corrigido **neste commit**, e a afirmação nova é a medida
+- [x] Corpus A: 0 FP mantido, cobertura do `ML-N1` mantida
+- [x] `make quality` verde
+
+
+#### 🔴 Auditoria do ML-N2 — e a dívida que eu mandei "reconciliar ou declarar inerte" era um defeito
+
+Rodei o corpus inteiro e **14 contra-braços**, comparando `git show HEAD:scripts/...` (pós-`ML-N1`)
+contra a árvore. **14/14 no esperado.**
+
+**O achado, e ele é da mesma causa desta REQ, na direção do silêncio:**
+
+```
+$ printf 'Texto.\n\n`trackfw validate` — Fecha #246.\n' > /tmp/c.md
+$ PR_BODY_FILE=/tmp/c.md bash <gate pos-ML-N1> ; echo $?
+0        ← falso negativo VIVO
+$ ... árvore atual
+1
+```
+
+**Causa:** `_blank()` troca o trecho casado por **espaços**. Uma linha que *começa* com code span vira
+4+ espaços à esquerda depois do `SPAN_RE.sub`, o `INDENT_RE` casa, o bloco abre, e a linha inteira é
+apagada **com a declaração portuguesa dentro**. 🔴 **Indentação fabricada pelo passe anterior, não
+escrita pelo autor.** Corrigido aqui, não empurrado para REQ nova — Regra Dura de Causa Raiz. A
+indentação passa a ser decidida em `ref` (corpo como o autor escreveu) e apagada em `text`; a ordem
+alternativa (`INDENT` antes de `FENCE`) foi considerada e **recusada**, porque apagaria os marcadores
+de uma cerca indentada.
+
+**A reconciliação numérica fechou exatamente — e a conclusão é melhor que a que eu pedi:**
+
+| medida | valor |
+|---|---|
+| censo do parecer (corpo **cru**) | **80** = 54 dentro de cerca + 26 fora |
+| dessas 26, **abrindo bloco** (linha anterior em branco) | **0** |
+| medida do `ML-N1` | **304** — **100% fabricadas** |
+
+🔴 **As duas contagens nunca foram da mesma coisa; não havia "regra mais larga" a descobrir.** E o
+*"0 das 304 carrega declaração"* do `ML-N1` era propriedade do **corpus**, não da **regra** — a mesma
+distinção que o parecer faz sobre o "0 FP", agora aplicada contra o próprio trabalho anterior.
+
+**Costura fora do escopo declarado, medida e presa.** A zona de aspas apaga **dentro** da linha, logo
+alcança a leitura de polaridade (forma 4). Ele exercitou 7 arranjos; **uma divergência**, e confirmei:
+
+```
+antes=0 depois=1   Ele disse "nao" e fecha a #246        ← negação CITADA
+antes=0 depois=0   Nao fecha a #246                      ← negação do AUTOR
+```
+
+Direção **fail-closed** e correta — quem nega é a frase **citada**, não o autor — e de quebra
+**estreita a superfície de silenciamento** que o parecer declarou não-fechável.
+
+**Corpus A, e a prova é mais forte que o agregado:**
+
+```
+ANTES (pós-ML-N1): rc=0 353 · rc=1 4 · rc=2 1   acusados #247 #312 #325 #330
+DEPOIS:            rc=0 353 · rc=1 4 · rc=2 1   acusados #247 #312 #325 #330
+diff pr-a-pr → VAZIO
+```
+
+Ele ainda **ablacionou cada mudança em separado** (só-zonas, só-INDENT) sobre os 358 corpos — ambas
+idênticas ao baseline, **sem cancelamento entre elas**. `--self-test`: **70 OK, 0 FAIL** (eram 61).
+
+**Decisões que ele tomou bem, e registro para não serem revisitadas:**
+
+- **Aspas curvas → residuais declaradas**, com medição (zero ocorrências no corpus A), **presas** pelo
+  cenário `residual-aspas-curvas-nao-sao-zona`: se um dia entrarem, o autoteste fica **vermelho**.
+- **Zona-sonda `@@PROBE@@` → removida por inteiro** — `PROBE_ZONE_RE`, a leitura de
+  `PRCLOSE_SELFCHECK_NONCODE`, o helper, os 3 cenários, o comentário **e** o `import os` que ficou sem
+  uso. *"Meia remoção deixaria comentário que mente."*
+- **Largura do `TBL` medida em vez de admitida:** a forma estrita (`^| … |$`) apaga **exatamente as
+  mesmas 1354** linhas que a larga — ficou a estrita, que não arrasta prosa que apenas comece com `|`.
+- **`~~~` declarado como analogia herdada, não como cobertura.** O `FENCE_RE` o casa, mas a sonda mediu
+  só ```` ``` ````. 🔴 **Registrar a analogia como analogia é exatamente o que a Wave 0 desta REQ teve de
+  aprender duas vezes.**
+
+**Nota de vault:** `mascarar-code-span-fabrica-indentacao-e-a-mascara-seguinte-engole-a-linha-2026-09-25.md`.
 
 ### ML-N3 — **AC1 + `GH_TOKEN` juntos, e por ÚLTIMO** — a chave de ativação
 **Owner:** `ares-tf`

@@ -41091,3 +41091,54 @@ bash scripts/check-unguarded-capture-rc.sh          RC=0
   e o gate **acerta** (o parser do GitHub também fecha). Residual **6.6** do parecer, agora
   **preso por teste** em vez de só declarado. Autoteste: **60** cenários. Adição só de teste —
   verificada por `--self-test`; o `make quality` verde cobre o código de produto, inalterado desde então.
+
+## 2026-09-25 — apolo-tf — ML-N2 (início): as 3 zonas do balde NÃO-CÓDIGO e o AC3 ampliado
+
+- Handoff do `trackfw_architect` na branch
+  `fix/gate-de-palavra-chave-de-fechamento-nao-reavalia-em-edited-e-le-exemplo-citado-como-diretiva`.
+- Escopo: preencher `NONCODE_ZONE_RES` (blockquote · linha de tabela · span entre aspas), resolver a
+  zona-sonda `@@PROBE@@`, reconciliar a dívida de largura do `INDENT_RE` (304 × 80) e atualizar o
+  bloco `trackfw-contract` de `docs/cli-parity.md` **no mesmo commit**.
+- Li antes: a seção `### ML-N2` do roadmap em `wip/`, a auditoria do `ML-N1`, §3.3 e §10 do parecer
+  `docs/seguranca/2026-09-25-discriminante-do-gate-de-palavra-chave.md`, `vault/notes/index.md` e a
+  nota do acoplamento `s182` ↔ linha literal do gate.
+- Sem Git: não crio branch, não commito, não faço push. Entrega não commitada, para auditoria.
+
+## 2026-09-25 — apolo-tf — ML-N2 (fim): 6 zonas, dois baldes, e um falso negativo que não estava no escopo
+
+- **Arquivos:** `scripts/check-pr-closing-keyword.sh`, `docs/cli-parity.md` (bloco
+  `trackfw-contract`, mesmo commit), `vault/notes/…-fabrica-indentacao-…-2026-09-25.md` + índice.
+- **Corpus A, pelo caminho real (358 invocações, `$?` lido sem cano antes):** antes
+  `rc=0 353 · rc=1 4 · rc=2 1`; depois **idêntico, PR a PR** (`diff` vazio) — acusados exatamente
+  **#247/#312/#325/#330**, `rc=2` só o **#49**. Medido também em **ablação separada** de cada uma das
+  duas mudanças: nenhuma delas move o histograma sozinha, então não há cancelamento.
+- **As 6 linhas da §10.4 do parecer batem 6/6** pelo caminho real: cerca/span/indentado **acusam**
+  (rc=1), blockquote/tabela/aspas **calam** (rc=0). Os dois lados do balde, não metade da medição.
+- **Frase canônica do #258:** com aspas retas **rc=0**; **sem aspas rc=1** (controle — a isenção vem
+  da zona, não da prosa); **com aspas curvas rc=1** (residual declarado).
+- 🔴 **Achado fora do escopo declarado, mesma causa, corrigido nesta REQ (Regra Dura de Causa Raiz):**
+  a "dívida de contagem" do `ML-N1` **não era contabilidade** — era **falso negativo vivo**. Apagar um
+  code span no início da linha **fabrica** 4+ espaços à esquerda, o `INDENT_RE` casa e o bloco engole a
+  declaração. Medido antes do fix: `Texto.\n\n` + `` `trackfw validate` — Fecha #246. `` saía **rc=0**.
+  Reconciliação fechada: **80 = 54 dentro de cerca + 26 fora + 0 abrindo bloco**, logo o `INDENT` apaga
+  **0** linhas reais neste corpus e as **304** eram 100% fabricadas. A indentação passa a ser lida no
+  corpo **como o autor escreveu**. Nota de vault escrita e linkada.
+- **Aspas curvas: declaradas residuais, não presumidas.** A sonda #434 mediu só as retas e o corpus A
+  tem **zero** ocorrência de curvas — incluí-las não compraria nada mensurável e custaria a
+  extrapolação por analogia que a Wave 0 já viu refutada duas vezes. Presa por cenário de autoteste.
+- **Largura do `TBL`, a maior das seis, medida em vez de admitida:** 1354 linhas apagadas, **0** com
+  declaração portuguesa e `#N`, e a forma **estrita** (`^| … |$`) apaga exatamente as **mesmas 1354**
+  que a larga — então ficou a estrita, que não arrasta prosa que apenas comece com `|`.
+- **Zona-sonda `@@PROBE@@` removida por inteiro**, com a razão escrita: regex, leitura de
+  `PRCLOSE_SELFCHECK_NONCODE`, helper `assert_body_env`, os 3 cenários e o comentário de cabeçalho.
+  `import os` do matcher saiu junto (ficou sem uso). Meia remoção deixaria um comentário que mente.
+- **Autoteste: 60 → 69 cenários**, cada bloco com sua frase de reconciliação.
+- 🔴 **Costura medida entre o passe novo e a forma 4, que eu não tinha no escopo:** a zona de aspas
+  apaga **dentro** da linha, então ela alcança a leitura de polaridade. `Ele disse "nao" e fecha a
+  #246` saía **rc=0** e passa a sair **rc=1** — **única divergência em 7 arranjos** de negação ×
+  aspas × blockquote × tabela que exercitei. Direção **fail-closed** e correta: quem nega é a frase
+  **citada**, não o autor — e de quebra estreita uma superfície de **silenciamento**. Presa pelo par
+  `costura-negacao-citada-nao-suprime` / `costura-negacao-e-verbo-na-mesma-citacao`.
+- ⚠️ **Divergência de redação sinalizada ao arquiteto:** o AC do roadmap diz *"nas duas grafias de
+  aspas"*; a ação 2 do handoff o substitui por *"mede ou declara residual"*. Segui o handoff.
+- Não commitei, não fiz push, não criei branch, não usei `git stash`/`git checkout --`.
