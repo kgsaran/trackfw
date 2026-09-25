@@ -41324,3 +41324,63 @@ bash scripts/check-unguarded-capture-rc.sh          RC=0
 - `make quality` verde (rc=0, 338 OK / 0 FAIL na suíte de falsificação), `trackfw validate` rc=0.
 - Status do ML mantido em 🔄 — muda para ✅ só após a auditoria do arquiteto.
 - Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.
+
+## 2026-09-25 — apolo-tf — ML-8A (início): os sítios derivam o root de fonte resolvida
+
+- **Escopo:** fechar o #402 — guardas que comparam um destino resolvido contra um root **não
+  resolvido**. Os 16 sítios `filepath.Clean(…)` medidos pelo P2 do ML-7C passam a derivar o root de
+  fonte resolvida, e os 6 restantes (propagação por parâmetro; total 22) são resolvidos ou ganham
+  razão escrita **por sítio**. Armadilha 3 da Decisão 2 falsificada por teste, com braço de controle
+  degradado.
+- **Baseline medido antes de editar:** árvore viva 107 arquivos / 154 escritas / 151 em população /
+  59 guardas / 15 achados (todos ponto cego, 0 fail-open); P2 **16** `filepath.Clean` / **22** sem
+  proveniência / **16** root-aliased.
+- **Fora:** os 15 `liveAnalyserBlindSpots`, o gate bash `check-write-containment.sh`, o residual do
+  escopo global (decisão 3 da ADR) e o T5 (fallback silencioso de `projectRoot`/`resolveRoot`).
+- Sem Git: não crio branch, não commito, não faço push, não uso `git stash`/`git checkout --`.
+
+## 2026-09-25 — apolo-tf — ML-8A (fim): Clean 16→0, sem-proveniência 22→3, aliased 16→3
+
+- 🔴 **Refutação que abre o relatório:** o exemplar citado no handoff, `internal/commands/discover.go:31-38`,
+  **não satisfazia o P2**. `buildEnv` grava `env[nome]` só na **primeira** ligação, então
+  `resolvedCwd := cwd` + reatribuição condicional é correto em runtime e invisível ao analisador —
+  ele era um dos 22. Quem satisfazia era `scaffold.go`, por `projectRoot()` ser **chamada**.
+- **Produção:** novo `pathguard.ResolveRoot` (Abs + EvalSymlinks com o mesmo fallback do T5; root
+  vazio é erro, nunca fallback), e 5 cópias manuais do idioma colapsadas nele (`scaffoldRoot`,
+  3× `absHome` em `scaffold.go`, `resolvedCwd` em `discover.go`). Os 16 sítios de `filepath.Clean`
+  fechados: `agentfiles.go` ×9 (parâmetro renomeado para `rootDir`, todo caminho derivado do
+  `guardRoot`), `update.go` ×4 (incluindo o par `updateHooksSurgical`/`…Entry` do ML-9A, porque a
+  função é void), `identity.go`, `provenance.go`, `quarantine.go`. Em `internal/discover` as
+  escritas passam a ser derivadas do root resolvido (13 dos 16 `root-aliased`).
+- **Dois sítios tentados e REVERTIDOS com a medição escrita no código:** `Manager.resolve`
+  (`ResolveRoot(root)` reprova **7** testes — o destino do ramo `IsAnchored||IsAbs` é absoluto do
+  usuário) e `UpdateHarness` (`home` é gravado **verbatim** nos hooks; **15** testes fixam a forma
+  lógica). Os 3 `root-aliased` restantes (`NewADRDraft`, `MoveRoadmap` ×2) idem.
+- **Testes:** `internal/thirdparty/resolved_root_test.go` — 3 braços sobre `WriteQuarantine` com root
+  alcançado por symlink: aceita e o artefato está **dentro** do root real; ainda **recusa** um
+  ancestral symlinkado; ainda **limita o escopo** ao root dado (travessia recusada). Em
+  `containment_live_test.go`, `TestP2PointsAtTheUnresolvedRootsWithoutFixingThem` foi substituído por
+  `TestP2FindsOnlyTheRootsThatCannotMove` (+ sonda sintética analisada **na mesma varredura**, para
+  que zero não possa significar "o instrumento parou") e `TestRootAliasedResidualIsNamed`.
+- **Falsificação medida:** com `quarantine.go` revertido à forma pré-fix, o braço 1 reprova nomeando
+  o sítio (`refusing symlink path ".../link"`); restaurado por `cmp` byte-a-byte.
+- **Delta dos pins:** `liveP2CleanSitesPin` 16 → **0**; `liveP2UnresolvedPin` 22 → **3**;
+  `liveRootAliasedPin` 16 → **3**. Inalterados: findings P1 **15** (todos ponto cego),
+  `liveKnownFailOpen` **vazia**, população 151, escritas 154, arquivos 107. Guardas 59 → 78.
+- **Preservados:** `adr new` recusa nas duas arms (`TestNewADR_SymlinkAncestorRefused_BothPWDArms`),
+  **0** emissores fora de `pathguard`, `liveKnownFailOpen` vazia e os 4 testes fail-closed do ML-9A.
+- **`pathguard.ResolveRoot` tem contrato asseverado:** `internal/pathguard/resolve_root_test.go` —
+  root vazio recusa, root inexistente devolve a forma absoluta com erro **nil** (o T5, que esta ML
+  deliberadamente não mudou) e root existente atrás de symlink volta resolvido; mais um braço de
+  controle que exige que o pareamento `filepath.Clean(root)` pré-ML-8A **recuse**.
+- 🔴 **Gate que o `make quality` não podia cobrir, verificado à mão:** `check-symlink-privilege-guard`
+  enumera por `git ls-files`, então era **no-op** sobre o arquivo de teste novo (não commitado). Rodado
+  por `FAKE_REPO` num repo sintético: a forma inicial do helper **reprovava** (`resolved_root_test.go:65`
+  — o `t.Fatalf("os.Symlink(%q…")` é ele mesmo um match do padrão, e o token de guarda ficava a 15
+  linhas), a forma entregue (com `isSymlinkPrivilegeError` extraído logo abaixo) passa; 3 arquivos
+  verificados, rc=0.
+- `make quality` verde (rc=0, 338 OK / 0 FAIL na suíte de falsificação), `trackfw validate` rc=0,
+  `go test ./...` rc=0.
+- **Nota de vault:** `resolver-o-root-so-vale-quando-o-outro-operando-se-move-junto-2026-09-25.md`.
+- Status do ML mantido em 🔄 — muda para ✅ só após a auditoria do arquiteto.
+- Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.

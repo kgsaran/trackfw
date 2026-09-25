@@ -1994,7 +1994,7 @@ pós-commit é obrigatória aqui.**
 
 ### ML-8A — Os sítios passam a derivar o root de fonte resolvida
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento (despachado em 2026-09-25)
+**Status:** ✅ Concluído — auditado em 2026-09-25 · **Clean 16 → 0 · sem provenância 22 → 3 · aliased 16 → 3**
 
 ⚠️ **Por que não agrupou com a Wave 7:** um analisador de fluxo **continuaria aprovando**
 `RejectSymlinks(filepath.Clean(cwd), path)`, porque o fluxo **passa** por `pathguard`. O defeito é o
@@ -2025,20 +2025,121 @@ O que se corrige é a **classe**, não uma exploração demonstrada. O escape vi
 `adr new`, e fechou no `ML-7A`.
 
 **Critérios de aceite:**
-- [ ] Os **16** sítios de `filepath.Clean(…)` derivam o root de fonte resolvida, como
+- [x] Os **16** sítios de `filepath.Clean(…)` derivam o root de fonte resolvida, como
       `discover.go:31-38` e `scaffold.go:15-28` já fazem **dentro desta mesma REQ**
-- [ ] Os **6** restantes (propagação por parâmetro, total **22**) são resolvidos **ou** têm a razão
+- [x] Os **6** restantes (propagação por parâmetro, total **22**) são resolvidos **ou** têm a razão
       escrita por sítio — 🔴 **não podem sumir da contagem sem explicação**
 - [ ] A armadilha 3 da Decisão 2 (*"destino resolvido contra root não resolvido → falso positivo;
       medido `/tmp` → `/private/tmp` no macOS"*) é **falsificada por teste**
-- [ ] 🔴 **O teste da armadilha 3 não pode passar com o controle degradado.** É a lição do `ML-7A`:
+- [x] 🔴 **O teste da armadilha 3 não pode passar com o controle degradado.** É a lição do `ML-7A`:
       afirmar `rc=0` + arquivo dentro **+ que o escopo de guarda continuou o de projeto**
-- [ ] Os pins do P2 caem **com o delta impresso**, nunca em silêncio — e o que **não** cair fica
+- [x] Os pins do P2 caem **com o delta impresso**, nunca em silêncio — e o que **não** cair fica
       declarado
 - [ ] 🔴 **`ML-7A`, `ML-7B` e `ML-9A` não são desfeitos:** `adr new` recusa nas duas arms · zero
       emissores fora de `pathguard` · `liveKnownFailOpen` continua **vazia**
-- [ ] Reconciliação: uma frase por teste novo
-- [ ] `make quality` verde
+- [x] Reconciliação: uma frase por teste novo
+- [x] `make quality` verde
+
+
+#### 🔴 Auditoria do ML-8A — e a refutação mais embaraçosa da campanha é minha
+
+```
+guard roots literalmente filepath.Clean(…)      16 → 0
+guard roots sem provenância de resolvedor       22 → 3   (os 3 nomeados)
+escritas sob outra grafia de root               16 → 3   (13 fechadas)
+findings P1                                     15 → 15  (todos ponto cego)
+população · escritas · arquivos          151 · 154 · 107  ← INALTERADOS
+liveKnownFailOpen                               vazia     ← ML-9A preservado
+make quality                                    rc 0 · 338 OK · 0 FAIL
+```
+
+Confirmei por caminho próprio: `grep 'Reject*(filepath.Clean'` → **0**. E os invariantes anteriores
+passam: `SymlinkAncestorRefused_BothPWDArms` ✅ · `NoContainmentEmitterOutsidePathguard` ✅ ·
+`ML9ASitesStayClosed` ✅.
+
+### 🔴 R1 — o exemplar que EU mandei copiar NÃO satisfazia o P2. Ele era um dos 22.
+
+Escrevi no handoff: *"o padrão correto já existe dentro desta mesma REQ — `commands/discover.go:31-38`"*.
+Medido, antes de qualquer edição:
+
+```
+P2: internal/commands/discover.go:220 rejectDiscoverPath() [root-unresolved] path=root
+```
+
+A causa é fina e vale registrar: o analisador grava `env[nome]` **só na primeira** atribuição, e o
+idioma do exemplar é de **duas etapas** —
+
+```go
+resolvedCwd := cwd                                    // ← esta ligação fica
+if rc, err := filepath.EvalSymlinks(cwd); err == nil {
+    resolvedCwd = rc                                  // ← esta o analisador NÃO vê
+}
+```
+
+`cwd` vem de `os.Getwd()`, logo `resolvedCwd` é lido como **não resolvido**: **correto em runtime,
+invisível ao instrumento.** Quem satisfazia era o `scaffold.go`, e por outro motivo — `projectRoot()`
+é **chamada**, e chamada não passa por `env`.
+
+🔴 **Copiar o exemplar que eu indiquei não fecharia nada.** Daí ele ter criado
+`pathguard.ResolveRoot` — **uma atribuição, uma chamada de resolvedor** — e colapsado nele as **5**
+cópias manuais do idioma. *"Uma atribuição de um resolvedor é o que torna a propriedade mecânica em
+vez de um comentário"*, e o sítio que eu citei agora leva essa explicação no próprio código.
+
+### R4 — minha régua subcontava a Wave 8 pela metade
+
+Listei `RootAliased = 16` como **medida** e não escrevi **nenhum critério** sobre ela. Lendo os
+sítios: `internal/discover/discover.go` calculava `root := resolveRoot(rootDir)`, **guardava**
+`Join(root, …)` e **escrevia** `Join(rootDir, …)`. 🔴 **O fluxo passa pela guarda; o argumento não —
+a guarda não governa o caminho escrito.** Mesma causa, mesmo mecanismo, e o teste *"o outro operando
+se move junto?"* dá **sim**. Entraram pela Regra Dura: **13 dos 16 caíram**.
+
+⚠️ **E é aqui que está a única exceção à calibragem:** nos demais sítios root e alvo tinham a mesma
+base, logo **não havia escape vivo** — corrigiu-se a **classe**. Em `internal/discover` **havia**.
+
+### R2 — dois sítios ele tentou corrigir e REVERTEU com a medição
+
+Não foram declinados; foram **medidos e revertidos**, com a razão **no código**, no sítio:
+
+| sítio | o que a medição mostrou |
+|---|---|
+| `manager.go` `Manager.resolve` | **7 testes reprovam** — no ramo `IsAnchored\|\|IsAbs` o destino é caminho **absoluto do usuário aceito verbatim**; root resolvido + destino lógico é a **armadilha 3 na outra direção**. E o outro operando não pode mover: resolver o destino é a autorrefutação do `ML-6A` |
+| `update.go` `UpdateHarness` (`home`) | **15 testes reprovam** — `home` é gravado **verbatim no conteúdo** de `.claude/settings.json` e irmãos; resolver muda o **artefato gerado**. Decisão de produto |
+
+Nos dois a contenção **não** está degradada: root e alvo compartilham namespace, e a armadilha 3 é o
+**descasamento**, não a escolha de um. Fixados por nome em `liveP2IrreducibleRoots`.
+
+O terceiro irredutível é `pathguard.go|RejectAndReport|resolvedRoot` — **por construção**: é o
+parâmetro do emissor único, a fronteira de contrato, e resolver ali **repararia silenciosamente o
+argumento de todo chamador**. ⚠️ `GuardedWrite` **saiu sozinho** da lista, porque todos os chamadores
+passaram a entregar root resolvido.
+
+### R3 — o gate de symlink não podia ver o teste novo, e a forma inicial REPROVAVA
+
+Ele verificou à mão com `FAKE_REPO` (o gate suporta) em vez de confiar no `make quality` verde:
+forma inicial **rc=1**, forma entregue **rc=0**. Motivo que vale registrar: o padrão casa
+`os.Symlink(` **inclusive dentro de format string** — o `t.Fatalf("os.Symlink(%q…")` é um match, e o
+token de guarda precisa estar a ±5 linhas dele. **É por isso que as 4 cópias existentes declaram
+`isSymlinkPrivilegeError` logo abaixo.** 🔴 É a terceira vez nesta REQ que o gate `git ls-files`
+morde; minha barreira pré-commit continua cega a ele.
+
+### T5 preservado, e agora com teste
+
+`ResolveRoot` mantém **o mesmo fallback dos exemplares** (falha do `EvalSymlinks` → caminho absoluto,
+erro **nil**), e `TestResolveRootContract` existe para reprovar quem "arrumar" isso. ⚠️ **O T5 virou
+dependência de ~19 ramos `RefuseUnverifiableRoot`**: fazer `ResolveRoot` errar no fallback dispararia
+todos eles no caminho normal de criar arquivo. Root **vazio**, porém, é erro — `filepath.Abs("")`
+devolve o cwd do processo, e aceitar isso substituiria o root em silêncio.
+
+### Decisões que ficam para depois, com a razão escrita
+
+1. **`UpdateHarness` (`home`)** — resolver muda o **conteúdo** gravado nos hooks. ML próprio, com os
+   15 pins.
+2. **`Manager.resolve`** — exige decidir **o que significa** destino absoluto do usuário perante root
+   resolvido. Mecanismo distinto, com histórico de Windows.
+3. **`adr.go NewADRDraft`** e **`roadmap.go MoveRoadmap`** — 3 `root-aliased`: o primeiro cruza o
+   invariante do `ML-7A` (as duas arms), o segundo é mudança de convenção de caminho relativo.
+
+⚠️ `gofmt -l` reporta `internal/integrations/{models,render}_test.go`: **pré-existente**, diff vazio.
 
 ## Fora desta REQ: o #403
 

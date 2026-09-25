@@ -694,6 +694,25 @@ func (m Manager) resolve(plan PlannedArtifact) (string, string, error) {
 	if root == "" {
 		return "", "", fmt.Errorf("%s root is required", plan.Claim.Scope)
 	}
+	// 🔴 ML-8A / #402 tried to make this pathguard.ResolveRoot(root) and REVERTED
+	// after measuring. The reason is the switch immediately below, not a policy:
+	// in the `IsAnchored || IsAbs` branch the destination is a user-supplied
+	// ABSOLUTE path accepted VERBATIM (Clean only) — it is not derived from root.
+	// Resolving root alone therefore recreates armadilha 3 in its other
+	// direction: root /private/var/… vs destination /var/…, and `beneath` below
+	// refuses a destination that is genuinely inside the tree. Measured: 7 tests
+	// in this package fail, e.g. TestClaimOrigin_LegacyManifestReadsAsCatalog —
+	// `destination "/var/folders/.../.claude/agents/trackfw-backend.md" is
+	// outside project root`.
+	//
+	// And the other operand cannot move either: resolving the DESTINATION before
+	// the guard is the ML-6A self-refutation — EvalSymlinks would erase the very
+	// symlink rejectSymlinks exists to reject. Pairing this root with a resolved
+	// destination is therefore a decision about what an absolute, user-supplied
+	// destination MEANS, which belongs to the anchored-path mechanism (and its
+	// Windows history documented in the switch below), not to the argument fix
+	// this ML owns. P2 keeps reporting rejectSymlinks()'s `root`; the finding is
+	// pinned by name with this reason.
 	root, err := filepath.Abs(root)
 	if err != nil {
 		return "", "", err

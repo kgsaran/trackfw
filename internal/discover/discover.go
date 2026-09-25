@@ -92,7 +92,11 @@ func InstallGates(r DiscoveryResult, rootDir string, w io.Writer) error {
 
 func writeValidateScript(rootDir string) error {
 	root := resolveRoot(rootDir)
-	scriptsDir := filepath.Join(rootDir, "scripts")
+	// ML-8A / #402: every path written below is derived from `root` (the resolved
+	// form), not from `rootDir`. The guards were already on `root`, so a write
+	// built from `rootDir` was guarded under a DIFFERENT spelling — the analyser's
+	// `root-aliased` finding: the flow passes the guard, the argument does not.
+	scriptsDir := filepath.Join(root, "scripts")
 	// Guard the scripts dir (catches ancestor symlinks such as scripts/ → /outside)
 	// before MkdirAll so a symlink replacement cannot redirect the write.
 	if guardErr := pathguard.RejectAndReport(root, filepath.Join(root, "scripts")); guardErr != nil {
@@ -124,9 +128,12 @@ func installHook(framework, rootDir string, w io.Writer) error {
 
 	switch framework {
 	case "lefthook":
-		cfgPath := filepath.Join(rootDir, "lefthook.yml")
+		// ML-8A / #402: built from the RESOLVED root, the same spelling the guard
+		// below uses — otherwise the guard governs one path and the append hits
+		// another.
+		cfgPath := filepath.Join(root, "lefthook.yml")
 		if !fileExists(cfgPath) {
-			cfgPath = filepath.Join(rootDir, ".lefthook.yml")
+			cfgPath = filepath.Join(root, ".lefthook.yml")
 		}
 		content, err := os.ReadFile(cfgPath)
 		if err != nil {
@@ -151,7 +158,8 @@ func installHook(framework, rootDir string, w io.Writer) error {
 		return err
 
 	case "husky":
-		huskyHook := filepath.Join(rootDir, ".husky", "pre-commit")
+		// ML-8A / #402: resolved root, same spelling as the two guards below.
+		huskyHook := filepath.Join(root, ".husky", "pre-commit")
 		// Guard the .husky dir before MkdirAll.
 		if guardErr := pathguard.RejectAndReport(root, filepath.Join(root, ".husky")); guardErr != nil {
 			return guardErr
@@ -194,7 +202,8 @@ func installLefthook(rootDir string, w io.Writer) error {
 	root := resolveRoot(rootDir)
 	const lefthookContent = "pre-commit:\n  commands:\n    trackfw-validate:\n      run: scripts/trackfw-validate.sh\n"
 
-	cfgPath := filepath.Join(rootDir, "lefthook.yml")
+	// ML-8A / #402: resolved root, same spelling as the guard immediately below.
+	cfgPath := filepath.Join(root, "lefthook.yml")
 	// Guard lefthook.yml before any write (creation or append).
 	if guardErr := pathguard.RejectAndReport(root, filepath.Join(root, "lefthook.yml")); guardErr != nil {
 		return guardErr
@@ -267,7 +276,8 @@ func installHusky(rootDir string, w io.Writer) error {
 	}
 
 	// cria/append .husky/pre-commit com linha do trackfw
-	huskyHook := filepath.Join(rootDir, ".husky", "pre-commit")
+	// ML-8A / #402: resolved root, same spelling as the leaf guard below.
+	huskyHook := filepath.Join(root, ".husky", "pre-commit")
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.MkdirAll(filepath.Dir(huskyHook), 0755); err != nil {
 		return fmt.Errorf("creating .husky dir: %w", err)
@@ -309,7 +319,8 @@ func installHuskyNPX(rootDir string, w io.Writer) error {
 	}
 
 	// cria/append .husky/pre-commit com linha do trackfw
-	huskyHook := filepath.Join(rootDir, ".husky", "pre-commit")
+	// ML-8A / #402: resolved root, same spelling as the leaf guard below.
+	huskyHook := filepath.Join(root, ".husky", "pre-commit")
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.MkdirAll(filepath.Dir(huskyHook), 0755); err != nil {
 		return fmt.Errorf("creating .husky dir: %w", err)
@@ -334,7 +345,11 @@ func installHuskyNPX(rootDir string, w io.Writer) error {
 
 func writeCIWorkflow(rootDir string) error {
 	root := resolveRoot(rootDir)
-	workflowsDir := filepath.Join(rootDir, ".github", "workflows")
+	// ML-8A / #402: every path written below is derived from `root` (the resolved
+	// form), not from `rootDir`. The guards were already on `root`, so a write
+	// built from `rootDir` was guarded under a DIFFERENT spelling — the analyser's
+	// `root-aliased` finding: the flow passes the guard, the argument does not.
+	workflowsDir := filepath.Join(root, ".github", "workflows")
 	dest := filepath.Join(workflowsDir, "trackfw-validate.yml")
 	// RejectSymlinks checks every ancestor from dest up to root (covers .github/ being a
 	// symlink — the PoC 1 attack vector — as well as dest itself being a symlink).

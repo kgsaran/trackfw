@@ -33,9 +33,16 @@ func NewDiscoverCmd() *cobra.Command {
 			// EvalSymlinks resolves to /private/tmp/... — passing the unresolved path
 			// as root causes false "escapes root" errors for files genuinely inside
 			// the project. Falls back to cwd if EvalSymlinks fails.
-			resolvedCwd := cwd
-			if rc, rcErr := filepath.EvalSymlinks(cwd); rcErr == nil {
-				resolvedCwd = rc
+			//
+			// ML-8A / #402: this used to be `resolvedCwd := cwd` followed by a
+			// conditional reassignment. Behaviourally identical, but the two-step
+			// shape BINDS resolvedCwd to cwd, so the containment analyser's P2 read
+			// this — the very site the fix's exemplar was quoted from — as an
+			// unresolved guard root. One assignment from one resolver is what makes
+			// the property mechanical instead of a comment.
+			resolvedCwd, rootErr := pathguard.ResolveRoot(cwd)
+			if rootErr != nil {
+				return rootErr
 			}
 
 			fmt.Fprintf(out, "trackfw discover — scanning %s\n\n", cwd)

@@ -226,3 +226,48 @@ func RefuseUnverifiableRoot(target string, cause error) error {
 	fmt.Fprintf(os.Stderr, stderrPrefix+refusalGrammar+unverifiableReason+"%v\n", target, cause)
 	return fmt.Errorf(refusalGrammar+unverifiableReason+"%w", target, cause)
 }
+
+// ResolveRoot turns a caller-supplied root into the form the guard predicates
+// above require as their FIRST operand: an absolute path in the RESOLVED
+// namespace (filepath.EvalSymlinks applied).
+//
+// # Why this exists (ML-8A, issue #402)
+//
+// RejectSymlinks walks the target upwards comparing each component against
+// root. If the target is resolved (or is derived from a resolved root) and root
+// is not, Beneath can never establish containment and the guard refuses a write
+// that is genuinely inside the tree — measured on macOS, where os.Getwd() yields
+// /tmp/… and EvalSymlinks yields /private/tmp/…. That is "armadilha 3" of
+// Decisão 2 of REQ-2026-08-31. Sixteen guard sites passed filepath.Clean(root)
+// instead, and filepath.Clean normalises TEXT: it never resolves a symlink.
+//
+// 🔴 Callers must derive the TARGET from the value this function returns (by
+// filepath.Join, never by EvalSymlinks on the target itself). Resolving the
+// target is what the ML-6A self-refutation showed turns the guard into its own
+// victim: EvalSymlinks would erase the very symlink RejectSymlinks must reject.
+// filepath.Join is purely textual, so the leaf and its ancestors stay unresolved
+// in the string and every one of them is still Lstat'd.
+//
+// Fallback, deliberately unchanged: when EvalSymlinks fails (a component that
+// does not exist yet is the common case) the absolute-but-unresolved path is
+// returned with a nil error, exactly as projectRoot/scaffoldRoot/resolveRoot
+// already do. This is the T5 residual declared by ML-9A, and ML-8A does not
+// alter it — changing it is a behaviour decision of its own, not a side effect
+// of fixing the argument.
+//
+// An EMPTY root is an error, not a fallback: filepath.Abs("") returns the
+// process working directory, so accepting it would silently substitute a root
+// nobody asked for. Callers turn that error into RefuseUnverifiableRoot.
+func ResolveRoot(root string) (string, error) {
+	if strings.TrimSpace(root) == "" {
+		return "", fmt.Errorf("guard root is empty")
+	}
+	absolute, err := filepath.Abs(root)
+	if err != nil {
+		return "", fmt.Errorf("guard root %q is not absolutizable: %w", root, err)
+	}
+	if resolved, resolveErr := filepath.EvalSymlinks(absolute); resolveErr == nil {
+		return resolved, nil
+	}
+	return absolute, nil
+}

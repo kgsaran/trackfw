@@ -37,10 +37,15 @@ package pathguard
 //     is not "nothing to find": the corpus of files, write sites, sites in
 //     population and guard calls are each pinned above zero, and the three
 //     obsolescence modes fail.
-//   - TestP2PointsAtTheUnresolvedRootsWithoutFixingThem affirms the ML's conclusion
-//     that P2 sees the argument defect Wave 8 exists to close: the 16 sites whose
-//     guard root is filepath.Clean are reported BY NAME, and the analyser leaves
-//     them exactly as they are.
+//   - TestP2FindsOnlyTheRootsThatCannotMove affirms ML-8A's conclusion that the
+//     Wave 8 population is CLOSED: zero guard roots are a filepath.Clean, and the
+//     three that remain without resolver provenance are named one by one with the
+//     measurement that says why each cannot move — while a synthetic unit carrying
+//     a Clean root, analysed in the same run as the live tree, is still reported,
+//     so "P2 found nothing" cannot mean "P2 stopped running".
+//   - TestRootAliasedResidualIsNamed affirms ML-8A's conclusion that the writes
+//     guarded under a different root spelling fell from 16 to 3, and that the 3
+//     survivors are the two sites whose OTHER operand cannot move with the root.
 //   - TestAnalyserVocabularyIsPinned affirms the ML's conclusion that the analyser's
 //     own reach is a counted list and not an assumption — shrinking the primitive,
 //     guard or resolver vocabulary is the cheapest way to make it vacuous.
@@ -65,9 +70,9 @@ const (
 	liveWriteSiteFloor    = 120 // measured 154
 	livePopulationFloor   = 120 // measured 151
 	liveGuardCallFloor    = 45  // measured 59
-	liveP2UnresolvedPin   = 22  // measured; 16 of them are a literal filepath.Clean
-	liveP2CleanSitesPin   = 16  // the Wave 8 population, by the mechanism's ruler
-	liveRootAliasedPin    = 16
+	liveP2UnresolvedPin   = 3   // was 22 until ML-8A; see liveP2IrreducibleRoots
+	liveP2CleanSitesPin   = 0   // was 16 until ML-8A — the whole Wave 8 population
+	liveRootAliasedPin    = 3   // was 16 until ML-8A; see liveRootAliasedResidual
 	liveBlindSpotSitesPin = 15
 	liveFailOpenSitesPin  = 0 // was 5 until ML-9A; see liveKnownFailOpen
 )
@@ -116,6 +121,32 @@ var liveKnownFailOpen = map[string]blindSpot{
 	// map is what makes a reintroduced fail-open fail this test by NAME instead of
 	// being absorbed by an entry someone widens. TestML9ASitesStayClosed below
 	// names the five sites, so their silence is asserted and not merely observed.
+}
+
+// liveP2IrreducibleRoots — the guard roots ML-8A did NOT move, BY SITE, each with
+// the measurement that says why. 🔴 These are not "fine": they are the three
+// places where moving the root alone would recreate armadilha 3 in its other
+// direction, because the OTHER operand of the comparison cannot move with it.
+// That is the test ML-8A applied at every site: a root may be resolved only when
+// the target derived from it moves into the same namespace.
+var liveP2IrreducibleRoots = map[string]blindSpot{
+	"internal/generators/update.go|rejectHarnessSymlink|root-unresolved|home": {1,
+		"`home` is not only the guard root of UpdateHarness: it is embedded VERBATIM in the hook command paths written into .claude/settings.json, .codex/hooks.json, .gemini/settings.json and .cursor/hooks.json. Resolving it changes the CONTENT of every generated artifact (/var/… → /private/var/… on macOS) — measured: 15 tests pin the logical form — and that is a product decision about what trackfw writes into the user's config, not an argument fix. Containment is not degraded: every harness target is filepath.Join'ed from this same `home`, so root and target share a namespace, and armadilha 3 is the MISMATCH between namespaces, not the choice of one"},
+	"internal/integrations/manager.go|rejectSymlinks|root-unresolved|root": {1,
+		"ML-8A made this root pathguard.ResolveRoot(root) and REVERTED after measuring: in Manager.resolve's `IsAnchored || IsAbs` branch the destination is a user-supplied ABSOLUTE path accepted verbatim, not derived from root, so a resolved root refuses it — 7 tests failed, e.g. TestClaimOrigin_LegacyManifestReadsAsCatalog reported `destination \"/var/folders/….claude/agents/trackfw-backend.md\" is outside project root`. The other operand cannot move either: resolving the DESTINATION is the ML-6A self-refutation, since EvalSymlinks erases the symlink the guard exists to reject"},
+	"internal/pathguard/pathguard.go|RejectAndReport|root-unresolved|resolvedRoot": {1,
+		"this is the single emitter itself, and `resolvedRoot` is its PARAMETER — the contract boundary where the caller's obligation is discharged. There is nothing upstream of it inside this package to derive provenance from, and resolving it here is precisely what the function's own doc forbids: it would silently repair every caller's argument and erase the measurement P2 exists to produce. Irreducible by construction, not by omission"},
+}
+
+// liveRootAliasedResidual — writes still guarded under a DIFFERENT spelling of
+// the root than the one they are written through. ML-8A closed 13 of the 16 (all
+// of internal/discover) by deriving the written path from the resolved root; the
+// three below fail the same "does the other operand move" test.
+var liveRootAliasedResidual = map[string]blindSpot{
+	"internal/generators/adr.go|NewADRDraft|root-aliased|path": {1,
+		"the guard is deliberately on the PRE-EvalSymlinks path (absLeafDraft = Join(absAdrDirDraftRaw, filename)) — the ML-4B leaf-gap fix — so that a symlink leaf is still seen as a symlink. Aligning the write to the guard's spelling means changing which path adr new creates relative to a possibly-relative adrDir, which is exactly the flow ML-7A's adrGuardPaths owns and whose two $PWD arms it pins. A spelling decision inside another ML's invariant, not an argument fix"},
+	"internal/generators/roadmap.go|MoveRoadmap|root-aliased|dst": {2,
+		"dst is RELATIVE by design and is used that way by os.Rename, os.ReadFile, the status-sync write, agentFromPath and every error message in the function; the guard is on absDst = Join(root, dst). Moving the write to absDst means changing MoveRoadmap's path convention wholesale — and the function already carries a measured reason not to re-derive paths after the rename (src no longer exists, and EvalSymlinks then yields the divergent /var vs /private/var prefix). A convention change with its own decision, not an argument fix"},
 }
 
 type blindSpot struct {
@@ -209,15 +240,19 @@ func TestP1PopulationIsNotVacuous(t *testing.T) {
 	t.Logf("non-vacuity: %d files, %d writes, %d in population, %d guards", report.FilesParsed, report.WriteSites, report.InPopulation, report.GuardCalls)
 }
 
-// TestP2PointsAtTheUnresolvedRootsWithoutFixingThem is the arm the threat model
-// asks for in §3.4 and the AC repeats: P2 must SEE the argument defect. 🔴 It must
-// not correct it — the 16 sites are the population Wave 8 exists to measure, and
-// resolving them here would erase it.
-func TestP2PointsAtTheUnresolvedRootsWithoutFixingThem(t *testing.T) {
+// TestP2FindsOnlyTheRootsThatCannotMove is the ML-8A inversion of the arm the
+// threat model asks for in §3.4. Until ML-8A, P2 had to SEE the argument defect
+// and leave it alone — the 16 filepath.Clean roots were the population Wave 8
+// existed to measure. ML-8A closed that population, so the assertion flips: zero
+// Clean roots, and every surviving finding named with the measurement that says
+// why it could not move.
+//
+// 🔴 A test that only asserts "P2 found nothing" is satisfied by a P2 that stopped
+// running. The synthetic unit below is analysed in the SAME call as the live tree
+// and MUST be reported, so the green above is "nothing left to find" and not
+// "nothing is looking".
+func TestP2FindsOnlyTheRootsThatCannotMove(t *testing.T) {
 	report := liveReport(t)
-	if len(report.P2Unresolved) == 0 {
-		t.Fatalf("P2 reports ZERO unresolved guard roots — the 16 filepath.Clean sites are still in the tree by design (Wave 8), so zero means P2 is not running")
-	}
 
 	cleanSites := []Finding{}
 	for _, finding := range report.P2Unresolved {
@@ -225,13 +260,94 @@ func TestP2PointsAtTheUnresolvedRootsWithoutFixingThem(t *testing.T) {
 			cleanSites = append(cleanSites, finding)
 		}
 	}
+	for _, finding := range cleanSites {
+		t.Errorf("a guard root is still a literal filepath.Clean(…): %s — filepath.Clean normalises text and never resolves a symlink; this is the whole of #402", finding)
+	}
 	assertPin(t, "guard roots that are literally filepath.Clean(…)", len(cleanSites), liveP2CleanSitesPin)
+
+	accounted := map[string]int{}
+	for _, finding := range report.P2Unresolved {
+		key := finding.siteKey()
+		if liveP2IrreducibleRoots[key].sites > 0 {
+			accounted[key]++
+			continue
+		}
+		t.Errorf("guard root without resolver provenance and with NO written reason: %s — either derive it from a resolver, or add an entry that NAMES this site and says what measurement stops it", finding)
+	}
+	assertListMatches(t, "irreducible root", liveP2IrreducibleRoots, accounted)
 	assertPin(t, "guard roots without resolver provenance (total)", len(report.P2Unresolved), liveP2UnresolvedPin)
+
+	for key, entry := range liveP2IrreducibleRoots {
+		if len(strings.TrimSpace(entry.reason)) < 40 {
+			t.Errorf("irreducible root %q carries no usable reason — \"it cannot move\" without the measurement is an exception nobody can audit", key)
+		}
+	}
+
+	// Non-vacuity, in the same walk: a synthetic unit whose guard root is
+	// filepath.Clean(cwd) must still be reported by name.
+	const probe = `package waveeightprobe
+
+import (
+	"os"
+	"path/filepath"
+
+	"github.com/kgsaran/trackfw/internal/pathguard"
+)
+
+func writeProbe(name string) error {
+	cwd, _ := os.Getwd()
+	target := filepath.Join(cwd, name)
+	if guardErr := pathguard.RejectAndReport(filepath.Clean(cwd), target); guardErr != nil {
+		return guardErr
+	}
+	return os.WriteFile(target, nil, 0644)
+}
+`
+	units, err := liveUnits(repositoryRoot(t), "internal", "cmd")
+	if err != nil {
+		t.Fatalf("reading the live tree: %v", err)
+	}
+	withProbe, err := analyzeUnits(append(units, unit{name: "waveeightprobe/probe.go", src: probe}))
+	if err != nil {
+		t.Fatalf("analysing the live tree plus the probe: %v", err)
+	}
+	seen := false
+	for _, finding := range withProbe.P2Unresolved {
+		if finding.File == "waveeightprobe/probe.go" && finding.Func == "writeProbe" {
+			seen = true
+		}
+	}
+	if !seen {
+		t.Fatalf("P2 did NOT report the synthetic filepath.Clean root planted in the same walk as the live tree — the zero above would then mean the instrument is off, not that the tree is clean")
+	}
+
+	t.Logf("P2 over the live tree: 0 Clean root(s), %d unresolved root(s), all named; probe reported", len(report.P2Unresolved))
+}
+
+// TestRootAliasedResidualIsNamed keeps the OTHER half of Wave 8 honest: a write
+// whose path is spelled from a different root than the guard's is a write the
+// guard does not govern, even when the flow passes through pathguard.
+func TestRootAliasedResidualIsNamed(t *testing.T) {
+	report := liveReport(t)
+
+	accounted := map[string]int{}
+	for _, finding := range report.RootAliased {
+		key := finding.siteKey()
+		if liveRootAliasedResidual[key].sites > 0 {
+			accounted[key]++
+			continue
+		}
+		t.Errorf("write guarded under a different root spelling, with no written reason: %s — derive the written path from the same root the guard uses, or name the site here", finding)
+	}
+	assertListMatches(t, "root-aliased residual", liveRootAliasedResidual, accounted)
 	assertPin(t, "writes guarded under a different root spelling", len(report.RootAliased), liveRootAliasedPin)
 
-	for _, finding := range cleanSites {
-		t.Logf("Wave 8 population: %s", finding)
+	for key, entry := range liveRootAliasedResidual {
+		if len(strings.TrimSpace(entry.reason)) < 40 {
+			t.Errorf("root-aliased entry %q carries no usable reason", key)
+		}
 	}
+	t.Logf("root-aliased: %d finding(s), all named (13 of the original 16 closed by ML-8A)", len(report.RootAliased))
 }
 
 func TestAnalyserVocabularyIsPinned(t *testing.T) {
