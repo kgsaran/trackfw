@@ -41384,3 +41384,45 @@ bash scripts/check-unguarded-capture-rc.sh          RC=0
 - **Nota de vault:** `resolver-o-root-so-vale-quando-o-outro-operando-se-move-junto-2026-09-25.md`.
 - Status do ML mantido em 🔄 — muda para ✅ só após a auditoria do arquiteto.
 - Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.
+
+## 2026-09-25 — apolo-tf — ML-9B (início): o corpus vira CRLF no Windows e um teste compara separador
+
+- **Escopo:** corretivo de CI do PR #441 (`windows-full-suites`, run `36183918594`), 4 falhas, nenhuma
+  de produto. (A) 3 testes do corpus pré-fix quebram porque o checkout do Windows converte a evidência
+  congelada para CRLF e os sha256 do MANIFEST não batem; (B) `TestUpdateNeverWritesThroughSymlinkAt
+  DiscoverWorkflowPath` compara `DiscoverGitHubActionsWorkflowPath` (com `/`) contra a mensagem do
+  emissor único, que hoje imprime caminho absoluto do SO (com `\` no Windows).
+- **Sem Git:** não crio branch, não commito, não faço push; entrega não commitada ao arquiteto.
+
+## 2026-09-25 — apolo-tf — ML-9B (fim): o corpus deixa de ser convertido, e a asserção de caminho vira nativa
+
+- **Causa A medida, e reproduzida em macOS sem runner Windows:**
+  `git -c core.autocrlf=true checkout-index --prefix=<tmp>/ -a` → `agentfiles.go.txt` com **2172**
+  linhas CRLF e os 3 testes do corpus reprovando com a mesma mensagem do CI. 🔴 Braço-contrário na
+  mesma árvore (zero sozinho não prova nada): `docs/cli-parity.md` = **7451** CRLF (a conversão
+  dispara), `internal/pathguard/pathguard.go` = **0** (a regra `*.go eol=lf` segura). Depois da
+  regra: corpus **0**, MANIFEST **0**, golden **0**, contra-braços **inalterados**.
+- **Forma escolhida:** `internal/pathguard/testdata/corpus-pre-fix/** -text` (+ os goldens), no
+  **fim** do `.gitattributes`. `-text` e não `text eol=lf` porque `text` normaliza CRLF→LF no
+  **check-in**: edição acidental seria regravada em LF com o sha256 intacto — adulteração invisível
+  para o instrumento feito para detectá-la.
+- **Falsificação da regra:** `TestCorpusIsPinnedAgainstEOLConversion`, dois braços. Removida a linha
+  do `.gitattributes` → rc=1 nomeando `text: unspecified` por arquivo; restaurado byte-a-byte por
+  `diff`. Injetado CRLF em `note.go.txt` → rc=1 com **a mensagem do braço 1** (185 CRLF), não a do
+  sha256 — por isso o teste **não** chama `loadCorpus`: numa árvore convertida ele morre antes com
+  "the frozen pre-fix evidence was modified", que é o diagnóstico errado que custou este ciclo.
+- **Causa B:** `filepath.FromSlash(DiscoverGitHubActionsWorkflowPath)`, mantendo o conjunto com
+  `Contains("symlink")` — a asserção continua exigindo que a mensagem **nomeie** o artefato. Não se
+  compara o caminho absoluto: no Windows o `t.TempDir()` pode cair sob nome 8.3.
+- **Varredura de mesma classe (escrita mesmo onde deu vazio):** (a) **nenhum outro** teste compara
+  `/` literal contra caminho construído por `filepath` — os 14 candidatos são ref de git, porcelain,
+  URL ou literais que o **produto** escreve com `/` por contrato (`check-ref-separator-portability`);
+  (b) **há** um outro `testdata` de evidência byte-exata: os 4 goldens de `internal/integrations`,
+  pinados aqui. 🔴 Mas medir refutou a explicação óbvia: o `Render` do asset **não** passa por
+  `NormalizeCRLF`, o `got` sai COM CRLF, os dois lados se cancelavam em parte (3 subtestes → 1), e
+  `TestRenderWithoutIdentityMatchesFrozenGoldens` **continua** vermelho no Windows por causa de
+  produto — mecanismo distinto, fora desta REQ pelo teste literal da Regra Dura.
+- `make quality` **rc=0** (0 FAIL, 1343 OK, falsify 338 OK / 0 FAIL), `trackfw validate` **rc=0**.
+- **Nota de vault:** `a-extensao-que-esconde-do-gate-esconde-tambem-do-gitattributes-2026-09-25.md`.
+- Status do ML mantido em 🔄 — muda para ✅ só após a auditoria do arquiteto.
+- Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.

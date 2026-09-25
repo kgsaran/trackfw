@@ -44,10 +44,12 @@ package pathguard
 //     exception list.
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -272,4 +274,101 @@ func assertPin(t *testing.T, label string, got, want int) {
 		return
 	}
 	t.Logf("%s: %d (pinned)", label, got)
+}
+
+// TestCorpusIsPinnedAgainstEOLConversion — o braço de falsificação da regra nova
+// do .gitattributes (ML-9B).
+//
+// # Por que existe
+//
+// O corpus foi entregue como `.go.txt` para ficar fora do build E fora do
+// `find internal -name '*.go'` do scripts/check-write-containment.sh. Efeito
+// colateral não previsto: isso o tirou também da regra `*.go text=auto eol=lf`, e
+// no runner Windows (core.autocrlf=true) o checkout entregava CRLF — os 16 sha256
+// do MANIFEST quebravam e os três braços acima ficavam vermelhos por INSTRUMENTO,
+// não por defeito de produto (PR #441, job windows-full-suites).
+//
+// A linha `internal/pathguard/testdata/corpus-pre-fix/** -text` no .gitattributes
+// cura isso. Sem este teste ela seria um COMENTÁRIO: ninguém no CI de Linux/macOS
+// percebe a remoção dela, porque lá não há conversão para reprovar.
+//
+// Dois braços, e o segundo é o que pega a remoção em qualquer plataforma:
+//   - bytes: nenhum arquivo do corpus tem CRLF na árvore de trabalho. É a
+//     propriedade de verdade, e é ela que reprova no Windows.
+//   - declaração: `git check-attr text` tem de responder `unset` para cada arquivo
+//     (o que `-text` produz). `text: unspecified` — o estado de antes — reprova.
+//     Este braço reprova no Linux/macOS no minuto em que a linha sumir.
+//
+// 🔴 `-text` e não `text eol=lf`: `text` autorizaria o git a normalizar CRLF→LF no
+// CHECK-IN, e uma edição acidental com editor CRLF seria regravada em LF com o
+// sha256 intacto — adulteração invisível para o instrumento feito para detectá-la.
+//
+// Ausência de git é FAIL, nunca skip, pelo mesmo motivo dos braços acima: um skip
+// é indistinguível de verde, e é exatamente este arquivo que existe para não
+// confiar em verde não medido.
+//
+// Uma frase (Regra Dura de Reconciliação): TestCorpusIsPinnedAgainstEOLConversion
+// afirma a conclusão deste ML de que as 3 falhas do windows-full-suites eram
+// conversão de fim de linha no checkout — e não modificação da evidência —, e que
+// a regra que as cura está declarada e vigente, não só escrita em comentário.
+func TestCorpusIsPinnedAgainstEOLConversion(t *testing.T) {
+	// 🔴 Este teste NÃO chama loadCorpus, e a razão é o defeito que ele mede: numa
+	// árvore convertida o loadCorpus morre PRIMEIRO no sha256, com a mensagem
+	// "the frozen pre-fix evidence was modified" — exatamente o diagnóstico errado
+	// que custou um ciclo de CI a este ML. A população vem do WalkDir, que não
+	// depende do conteúdo dos arquivos.
+	paths := []string{filepath.Join(corpusDir, corpusManifest)}
+	err := filepath.WalkDir(corpusDir, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if d.IsDir() || filepath.Base(path) == corpusManifest {
+			return nil
+		}
+		paths = append(paths, path)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walking %s: %v", corpusDir, err)
+	}
+	if len(paths) != corpusFileCount+1 {
+		t.Fatalf("walked %d path(s) under %s, expected %d (%d corpus files + MANIFEST) — the arm is not covering the whole corpus",
+			len(paths), corpusDir, corpusFileCount+1, corpusFileCount)
+	}
+
+	// Braço 1 — os bytes. É o que reprova no Windows se a regra sumir.
+	for _, path := range paths {
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatalf("reading %s: %v", path, readErr)
+		}
+		if n := bytes.Count(data, []byte("\r\n")); n > 0 {
+			t.Errorf("%s: %d CRLF line ending(s) in the working tree — the frozen evidence was converted on checkout; the `-text` rule in .gitattributes is missing or was overridden", path, n)
+		}
+	}
+
+	// Braço 2 — a declaração. É o que reprova no Linux/macOS se a regra sumir.
+	// filepath.ToSlash em cada argumento: o WalkDir devolve separador NATIVO, e no
+	// Windows entregar "testdata\\corpus-pre-fix\\…" a um padrão escrito com "/"
+	// é a mesma dependência de separador que este ML acabou de remover do teste do
+	// update — e que não se pode medir daqui. O parse abaixo já é indiferente.
+	args := []string{"check-attr", "text", "--"}
+	for _, path := range paths {
+		args = append(args, filepath.ToSlash(path))
+	}
+	out, attrErr := exec.Command("git", args...).CombinedOutput()
+	if attrErr != nil {
+		t.Fatalf("git check-attr failed (%v) — the rule that protects the frozen evidence cannot be verified, and an unverifiable rule is a comment; output: %s", attrErr, out)
+	}
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(lines) != len(paths) {
+		t.Fatalf("git check-attr reported %d line(s) for %d path(s): %s", len(lines), len(paths), out)
+	}
+	for _, line := range lines {
+		// Formato: "<path>: text: <value>". O valor que `-text` produz é "unset";
+		// "unspecified" é exatamente o estado que deixou o corpus ser convertido.
+		if !strings.HasSuffix(line, ": text: unset") {
+			t.Errorf("git check-attr: %q — expected `text: unset`, which only the `-text` rule produces; `unspecified` is the pre-ML-9B state that let the Windows checkout rewrite the evidence", line)
+		}
+	}
 }

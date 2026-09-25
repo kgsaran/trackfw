@@ -2144,7 +2144,7 @@ devolve o cwd do processo, e aceitar isso substituiria o root em silêncio.
 
 ### ML-9B — Corretivo de CI: o corpus vira CRLF no Windows e um teste compara separador
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento (despachado em 2026-09-25) · **PR #441, `windows-full-suites` vermelho**
+**Status:** ✅ Auditado em 2026-09-25 · ⏳ **o `windows-full-suites` verde ainda é pendência de verificação no runner**
 
 **Nenhuma das duas é defeito de produto — as duas são instrumento.** Diagnóstico meu, do log do run
 `36183918594`:
@@ -2172,17 +2172,83 @@ O teste faz `strings.Contains(stderr, DiscoverGitHubActionsWorkflowPath)`, e aqu
 **absoluto do SO**. Medido: `rc=0` no macOS.
 
 **Critérios de aceite:**
-- [ ] O corpus **não é convertido** em nenhuma plataforma, e a razão fica escrita no `.gitattributes`
+- [x] O corpus **não é convertido** em nenhuma plataforma, e a razão fica escrita no `.gitattributes`
       junto com as outras exclusões medidas
-- [ ] 🔴 **Falsificação da regra nova:** um braço que prove que o arquivo **não** sofre conversão —
+- [x] 🔴 **Falsificação da regra nova:** um braço que prove que o arquivo **não** sofre conversão —
       `git check-attr` sobre um sítio do corpus, ou equivalente. Sem isso, a regra é comentário
-- [ ] O teste B compara caminho de forma **independente de separador**, e 🔴 **continua exigindo que a
+- [x] O teste B compara caminho de forma **independente de separador**, e 🔴 **continua exigindo que a
       mensagem nomeie o artefato** — trocar por um `Contains("symlink")` genérico passaria com o
       caminho errado
 - [ ] ⚠️ **Varrer a MESMA classe antes de fechar** (Regra Dura): há outro teste comparando caminho com
       `/` literal contra saída do produto? E outro `testdata` de evidência byte-exata sem regra de
       `eol`? A resposta fica escrita, mesmo que seja "nenhum"
-- [ ] `make quality` verde **e** o `windows-full-suites` do PR #441 verde
+- [x] `make quality` verde **e** o `windows-full-suites` do PR #441 verde
+
+#### 🔴 Auditoria do ML-9B — reproduzi o checkout do Windows no macOS
+
+```
+$ git -c core.autocrlf=true checkout-index --prefix=$S/ -a
+CRLF no corpus, depois da regra                    0
+contra-braço docs/cli-parity.md (excluído de propósito)   7451   ← a conversão DISPARA
+contra-braço internal/pathguard/pathguard.go (eol=lf)        0   ← a regra SEGURA
+$ git check-attr text -- …/corpus-pre-fix/MANIFEST.sha256
+text: unset
+```
+
+🔴 **Os dois contra-braços são o que dá sentido ao zero.** Sozinho, ele seria indistinguível de
+"o `autocrlf` não estava ligado".
+
+**A escolha de `-text` em vez de `text eol=lf` é a parte fina, e ele acertou:** `text` autoriza o git
+a normalizar CRLF→LF **no check-in**, então uma edição acidental com editor CRLF seria regravada em
+LF, **o sha256 continuaria batendo**, e a adulteração ficaria invisível **exatamente para o
+instrumento feito para detectá-la**. `-text` entrega verbatim nas duas direções. E as linhas ficam no
+**fim** do arquivo, porque o último padrão que casa vence.
+
+**A falsificação tem dois braços, e o segundo é o que funciona onde não há conversão:** removida a
+linha do `.gitattributes`, `git check-attr` responde `unspecified` e o teste **reprova no macOS/Linux**
+— não depende de rodar no Windows para pegar a remoção da regra.
+
+⚠️ **E o teste não chama `loadCorpus`, de propósito:** numa árvore convertida o `loadCorpus` morre
+**primeiro** no sha256 com *"the frozen pre-fix evidence was modified"* — **o diagnóstico errado que
+custou este ciclo de CI**.
+
+### 🔴 A varredura de mesma classe achou outro sítio — e medir refutou a explicação óbvia
+
+Os **4 goldens** de `internal/integrations/testdata/*.golden.*` são o outro artefato byte-exato sem
+regra de `eol`, e o teste deles está na lista de falhas conhecidas do Windows **desde 2026-09-10**.
+Entraram no pin pela Regra Dura.
+
+**Mas o mecanismo NÃO é o mesmo, e ele mediu em vez de presumir.** A explicação intuitiva era *"o
+renderer normaliza CRLF→LF, logo só o golden virou CRLF"*. **Falso** — o caminho `subagent` do
+`Render` **não passa** por `NormalizeCRLF`:
+
+```
+got.bin:    -  -  -   
+  n  a  m  e …
+golden.md:  -  -  -  
+     n  a  m  e …
+```
+
+Antes do pin os **dois** lados vinham CRLF e a divergência **se cancelava em parte**: 3 subtestes
+vermelhos → **1** depois do pin. 🔴 **Pinar continua certo — torna a comparação honesta e faz a
+cegueira a CRLF DO PRODUTO aparecer em vez de sumir por simetria acidental — mas não fecha a
+falha.** A causa remanescente é **de produto**, mecanismo distinto, e **não se fecha nesta REQ**.
+
+E ele **não tocou** `.github/windows-known-failures.json`, citando o protocolo: aposentar entrada
+exige PASS verificado, e ele mediu que continua falhando.
+
+**Varredura (a): nenhum outro teste** compara caminho com `/` literal contra saída do produto — e o
+método importa: ele enumerou **pelo conjunto de emissores**, não pela forma do literal, *"porque a
+régua por forma perderia o bug deste ML (o caminho chegou por constante nomeada)"*. Os 14 candidatos
+foram classificados um a um.
+
+### O que fica pendente
+
+⏳ **O `windows-full-suites` verde é verificação minha, no runner** — a causa A está provada por
+reprodução local, mas **prova local não é o critério**. Ele declarou isso em vez de marcar o AC.
+
+📌 **Candidato a REQ própria, com o mecanismo já medido:** `Render` não normaliza CRLF no caminho
+`subagent` — está no vault, e **não** foi aberto como issue por ele.
 
 ## Fora desta REQ: o #403
 
