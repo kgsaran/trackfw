@@ -1529,12 +1529,38 @@ vítima vazia, nunca `err != nil` — que erro de config satisfaria sem provar c
    agora **104, 175, 301, 360**. Registrado para não recitar linha obsoleta.
 
 ### ML-7B — Extrair o ponto único (#401)
-**Status:** ⬜ Pendente · **precede o `ML-7C` por dependência técnica, não por gosto**
+**Owner:** `apolo-tf`
+**Status:** 🔄 Em andamento (despachado em 2026-09-25) · **precede o `ML-7C` por dependência técnica**
+
+⚠️ **Os números que eu escrevi aqui antes estavam errados, e a correção é do `ML-6A`.** Eu disse
+*"os 4 sítios delegam"* — `^func reject` acha 4, mas essa é **régua de identificador**. O par
+*predicado + recusa audível* está **inline** em 49 sítios; o total é **53 implementações**.
+
+| medida | hoje |
+|---|---|
+| `pathguard.RejectSymlinks(` não-teste | **52** |
+| dessas, com `Fprintf(os.Stderr, …refus…)` inline | **49** |
+| funções `reject*` nomeadas | **4** (2 byte-idênticas + 2 variantes) |
+| **gramáticas distintas de mensagem de recusa** | **5** |
+| **sítios mudos** (recusam sem dizer nada ao usuário) | **3** — `manager.go:762`, `roadmap.go:829`, `req.go:474` |
+
+🔴 **O AC5 desta REQ está medidamente NÃO atendido** (*"a recusa e a mensagem são idênticas em todos
+os sítios de escrita do Go"*), e a REQ foi para `done` assim.
+
+**Por que este ML precede o analisador, e não é preferência:** cada forma não modelada pelo analisador
+**aprova** — erra na direção insegura por omissão. São **53 formas a modelar** contra **1**.
 
 **Critérios de aceite:**
-- [ ] Uma implementação do par predicado+recusa; os 4 sítios passam a delegar
-- [ ] A mensagem de recusa é idêntica **por construção**, não por coincidência textual — é o que o
-      AC5 desta REQ exige (*"idênticas em todos os sítios de escrita do Go"*)
+- [ ] **Um** sítio emissor no binário: `Fprintf(…refus…)` **fora** de `pathguard` == **0**
+- [ ] As **5 gramáticas** colapsam em **1**, e os **3 sítios mudos** passam a falar
+- [ ] A mensagem é idêntica **por construção**, não por coincidência textual — é o que o AC5 exige
+- [ ] 🔴 **Falsificação por sítio, não só agregada:** para cada família de chamada, um braço que
+      **reprova** se aquele sítio deixar de delegar. Um teste que só conta ocorrências passa com o
+      colapso feito pela metade
+- [ ] 🔴 **Os 3 sítios mudos são falsificados pela SAÍDA**, não pelo rc — hoje eles já recusam; o que
+      falta é dizer. Um teste de `err != nil` passaria sem a correção
+- [ ] O `ML-7A` não é desfeito: `adr new` continua recusando nas duas arms
+- [ ] Reconciliação: uma frase por teste novo
 - [ ] `make quality` verde
 
 ### ML-7C — O analisador de AST (#400)
