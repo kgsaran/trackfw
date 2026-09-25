@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-10
 req: "docs/req/REQ-2026-09-05-gate-de-palavra-chave-de-fechamento-nao-reavalia-em-edited-e-le-exemplo-citado-como-diretiva.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: gate de palavra-chave de fechamento nao reavalia em edited e le exemplo citado como diretiva
 
-> Created: 2026-09-10 | Status: wip
+> Created: 2026-09-10 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-09-05-gate-de-palavra-chave-de-fechamento-nao-reavalia-em-edited-e-le-exemplo-citado-como-diretiva.md -->
