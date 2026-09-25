@@ -1,0 +1,84 @@
+name: PR Closing Keyword
+
+# Gate de palavra-chave de fechamento de issue no corpo do PR
+# (REQ-2026-09-05-gate-de-palavra-chave-de-fechamento-nao-reavalia-em-edited-e-le-
+#  exemplo-citado-como-diretiva.md — ML-N3).
+#
+# ============================================================================
+# POR QUE ESTE JOB SAIU DO `quality.yml` — e a medicao que decidiu
+# ============================================================================
+# O gate precisa REAVALIAR quando o corpo do PR e editado (AC1): o corpo e a
+# unica entrada que ele mede, e `opened · synchronize · reopened` (o default do
+# `on: pull_request`, que o `quality.yml` usa) NAO inclui `edited`.
+#
+# Acrescentar `types: [..., edited]` ao `on: pull_request` do `quality.yml`
+# resolveria o gatilho e dispararia o WORKFLOW INTEIRO a cada correcao de typo
+# na descricao de um PR. Medido em 2026-09-25 sobre o proprio `quality.yml`:
+#
+#   python3 -c "import yaml; d=yaml.safe_load(open('.github/workflows/quality.yml'));
+#               print(len(d['jobs']))"                              -> 14 jobs
+#   jobs SEM `if:`                                                  -> 11
+#   jobs com `if: always()` (rodam mesmo assim)                     -> 2
+#   => 13 dos 14 jobs passariam a rodar em cada `edited`,
+#      incluindo as tres suites de windows-latest.
+#
+# O `if:` de cada job nao contem esse custo: os 13 nao tem `if` que exclua
+# `edited`, e escrever um em cada um deixaria o proximo job novo sem ele — um
+# contrato que se quebra por omissao. Workflow proprio e a fronteira que o
+# gatilho ja da de graca.
+#
+# 🔴 COBERTURA DE ANOTACOES: `check-annotations.yml` observa workflows por NOME
+# (`workflows: ["Quality", "PR Closing Keyword"]`). Este nome foi acrescentado
+# la no MESMO commit — tirar o job do `quality.yml` sem isso perderia a
+# verificacao de anotacao em silencio, que e exatamente a classe de defeito que
+# esta REQ existe para remover.
+#
+# 🔴 NAO acrescentado a `required_status_checks` — e o `ML-N4`, e e decisao do
+# arquiteto. O job id e `pr-closing-keyword` e NAO tem chave `name:`: o nome do
+# check e o id, que e a string que `.github/required-status-checks.txt` listaria.
+
+on:
+  pull_request:
+    # `edited` e o motivo deste workflow existir: o corpo do PR muda sem que
+    # haja commit novo, e sem este tipo o gate nunca reve o que ja aprovou.
+    # (`reopened` e `synchronize` ficam porque sao o default que o job herdava
+    # no `quality.yml`; remove-los seria regressao silenciosa de cobertura.)
+    #
+    # ⚠️ DECLARADO, nao acidente: `edited` e mais largo que "o corpo mudou" --
+    # ele tambem dispara em edicao de TITULO e de branch base. Uma edicao so de
+    # titulo reexecuta o gate. Custo: um job de ubuntu, e reler o corpo vivo e
+    # idempotente. Nao e defeito; e o preco do unico tipo de evento que o
+    # GitHub oferece para "a descricao do PR mudou".
+    types: [opened, synchronize, reopened, edited]
+
+jobs:
+  pr-closing-keyword:
+    runs-on: ubuntu-latest
+
+    # ESCOPO MINIMO, e a razao escrita — ampliar superficie de token exige
+    # razao, e esta e a razao:
+    #   contents: read        -> `actions/checkout` (sem isto o checkout falha;
+    #                            `permissions:` no job SUBSTITUI o do workflow,
+    #                            nao se soma a ele)
+    #   pull-requests: read   -> `gh pr view <n> --json body`, e NADA ALEM disso
+    # O gate le o corpo de UM pull request. Nao escreve, nao comenta, nao rotula.
+    permissions:
+      contents: read
+      pull-requests: read
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Autoteste do gate (falsificacao nas duas direcoes)
+        run: scripts/check-pr-closing-keyword.sh --self-test
+
+      - name: Corpo deste PR usa palavra-chave de fechamento em ingles
+        # GH_TOKEN e o que LIGA o caminho da API do gate (entregue no #416 e
+        # INERTE ate aqui: `grep -c GH_TOKEN quality.yml` media 0 em
+        # 2026-09-25). Sem ele o gate cai para o corpo do payload do evento —
+        # que e imutavel — e um corpo corrigido por edicao continua sendo
+        # medido pelo texto antigo. Foi assim que o PR #293 foi mergeado verde
+        # com `**Nao fecha #290**` no corpo vivo.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/check-pr-closing-keyword.sh

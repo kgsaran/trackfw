@@ -16,7 +16,11 @@ name: Check Job Annotations
 
 on:
   workflow_run:
-    workflows: ["Quality"]
+    # "PR Closing Keyword" acrescentado no ML-N3 da REQ-2026-09-05: o job
+    # `pr-closing-keyword` saiu do workflow "Quality" para ganhar gatilho
+    # `edited` proprio, e sem este nome aqui ele perderia a verificacao de
+    # anotacao EM SILENCIO — a classe de defeito que aquela REQ remove.
+    workflows: ["Quality", "PR Closing Keyword"]
     types: [completed]
 
 permissions:

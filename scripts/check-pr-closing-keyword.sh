@@ -166,6 +166,16 @@
 #   exit 1 = defeito encontrado (linha nomeada)
 #   exit 2 = not_evaluated: corpo vazio, evento sem payload, execucao fora de
 #            `pull_request`, `gh` ausente. Non-zero de proposito.
+#   🔴 DEGRADACAO NAO E VACUIDADE, e as duas sao distinguiveis no log (ML-N3):
+#      cair da API para o payload do evento ainda E uma leitura -- o payload e um
+#      corpo real, o gate mede e da veredito (0 ou 1). O que se perde e a
+#      PRECISAO DA FONTE, e isso sai anunciado: a acao do evento, a CAUSA da
+#      queda (sem numero no payload / `gh` fora do PATH / rc e stderr do `gh`) e
+#      um `::warning::` sob GITHUB_ACTIONS. Nao ter corpo nenhum continua sendo
+#      exit 2. Ate o ML-N3 a queda era silenciosa (`2>/dev/null`): "sem token",
+#      "rate limit" e "rede caiu" eram indistinguiveis, e remover a permissao
+#      `pull-requests: read` do workflow faria o gate voltar a medir corpo velho
+#      sem ninguem perceber.
 #   🔴 E o exit 0 tambem nao e silencioso quando houve SUPRESSAO por
 #      polaridade: o gate imprime a linha suprimida e o token que a suprimiu,
 #      nos DOIS caminhos de saida (0 e 1). Sem isso a leitura de polaridade
@@ -181,7 +191,13 @@
 #                  PR_BODY_FILE  -> caminho de arquivo
 #                  GITHUB_EVENT_PATH + GITHUB_EVENT_NAME=pull_request, e dentro dele:
 #                     corpo VIVO pela API (`gh pr view` do .pull_request.number)
-#                     corpo do payload, se a API nao estiver disponivel
+#                     corpo do payload, se a API nao estiver disponivel -- com a
+#                     DEGRADACAO ANUNCIADA (ver VACUIDADE acima)
+#                  >>> Em CI, o que liga o caminho da API e o `GH_TOKEN` do job
+#                      `pr-closing-keyword` em .github/workflows/pr-closing-keyword.yml
+#                      (workflow PROPRIO desde o ML-N3: ele precisa do tipo de evento
+#                      `edited`, e po-lo no quality.yml dispararia as 13 suites
+#                      daquele arquivo a cada edicao de descricao de PR).
 #                  --pr <n> / PR_NUMBER -> `gh pr view`
 set -euo pipefail
 
@@ -828,12 +844,127 @@ self_test() {
     failures=$((failures + 1))
   fi
 
+  # --- ML-N3 -- RESOLVEDOR DE FONTE sob evento de PR -----------------------
+  # Estas arm(s) nao passam pelo `assert_body`: elas exercitam o RESOLVEDOR (o
+  # bloco GITHUB_EVENT_PATH), reinvocando o proprio script com um payload
+  # sintetico e um `gh` falso no PATH. Tudo vive em $WORK -- nenhuma leitura de
+  # .github/workflows/ entra aqui, porque o cenario s182 do check-gates-falsify
+  # COPIA este gate para fora de scripts/ e um caminho relativo quebraria la.
+  local EVDIR="$WORK/evt" EVBIN="$WORK/evt/bin"
+  mkdir -p "$EVBIN"
+
+  fake_gh_body() { # fake_gh_body <arquivo-com-o-corpo-vivo>
+    printf '#!/usr/bin/env bash\ncat %q\n' "$1" >"$EVBIN/gh"
+    chmod +x "$EVBIN/gh"
+  }
+  fake_gh_fail() {
+    printf '#!/usr/bin/env bash\necho "HTTP 403: Resource not accessible by integration" >&2\nexit 1\n' >"$EVBIN/gh"
+    chmod +x "$EVBIN/gh"
+  }
+  make_payload() { # make_payload <arquivo-payload> <acao> <numero|""> <arquivo-corpo|"">
+    python3 - "$1" "$2" "$3" "$4" <<'PY'
+import json, sys
+path, action, number, bodyfile = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+pr = {}
+if number:
+    pr["number"] = int(number)
+pr["body"] = open(bodyfile, encoding="utf-8").read() if bodyfile else None
+with open(path, "w", encoding="utf-8", newline="\n") as out:
+    json.dump({"action": action, "pull_request": pr}, out)
+PY
+  }
+  assert_event() { # assert_event LABEL EXPECTED_EXIT NEEDLE PROIBIDO PAYLOAD [GITHUB_ACTIONS]
+    local label=$1 expected=$2 needle=$3 forbidden=$4 payload=$5 ga=${6:-}
+    local out status
+    set +e
+    if [[ -n $ga ]]; then
+      out=$(env -u PR_BODY_FILE -u PR_NUMBER PATH="$EVBIN:$PATH" GITHUB_ACTIONS="$ga" \
+            GITHUB_EVENT_NAME=pull_request GITHUB_EVENT_PATH="$payload" \
+            "$ROOT_DIR/scripts/check-pr-closing-keyword.sh" 2>&1)
+    else
+      out=$(env -u PR_BODY_FILE -u PR_NUMBER -u GITHUB_ACTIONS PATH="$EVBIN:$PATH" \
+            GITHUB_EVENT_NAME=pull_request GITHUB_EVENT_PATH="$payload" \
+            "$ROOT_DIR/scripts/check-pr-closing-keyword.sh" 2>&1)
+    fi
+    status=$?
+    set -e
+    if [[ $status -ne $expected ]]; then
+      echo "FAIL [pr-closing-keyword/self-test/$label]: exit $status, esperava $expected" >&2
+      printf '%s\n' "$out" | sed 's/^/    /' >&2
+      failures=$((failures + 1)); return
+    fi
+    if [[ -n $needle ]] && ! grep -qF -- "$needle" <<<"$out"; then
+      echo "FAIL [pr-closing-keyword/self-test/$label]: falta '$needle' na saida" >&2
+      printf '%s\n' "$out" | sed 's/^/    /' >&2
+      failures=$((failures + 1)); return
+    fi
+    if [[ -n $forbidden ]] && grep -qF -- "$forbidden" <<<"$out"; then
+      echo "FAIL [pr-closing-keyword/self-test/$label]: saida contem o proibido '$forbidden'" >&2
+      printf '%s\n' "$out" | sed 's/^/    /' >&2
+      failures=$((failures + 1)); return
+    fi
+    echo "OK   [pr-closing-keyword/self-test/$label]"
+  }
+
+  local STALE="$EVDIR/stale.md" LIVE="$EVDIR/live.md" EV="$EVDIR/event.json"
+
+  # AFIRMA: com `gh` disponivel (o que o `GH_TOKEN` do workflow liga), o corpo
+  # VIVO vence o payload congelado -- e por isso uma correcao feita por EDICAO
+  # passa a ser vista. E a direcao "PR ganha a palavra-chave por edicao": o
+  # payload ainda traz `Fecha #12.` e o corpo de agora ja traz `Fixes #12`.
+  printf 'Fecha #12.\n' >"$STALE"
+  printf 'Closes #12\n' >"$LIVE"
+  make_payload "$EV" edited 12 "$STALE"
+  fake_gh_body "$LIVE"
+  assert_event "edited-api-vence-payload-obsoleto" 0 'fonte: API (corpo vivo do PR #12)' '' "$EV"
+
+  # AFIRMA: a mesma preferencia vale na direcao INVERSA -- um corpo que ABRIU
+  # limpo e foi editado para conter a forma portuguesa e ACUSADO, embora o
+  # payload congelado esteja limpo. Sem o `GH_TOKEN` esta arm seria rc=0.
+  printf 'Closes #12\n' >"$STALE"
+  printf 'Fecha #12.\n' >"$LIVE"
+  make_payload "$EV" edited 12 "$STALE"
+  fake_gh_body "$LIVE"
+  assert_event "edited-api-acusa-corpo-que-regrediu" 1 'linha 1: Fecha #12.' '' "$EV"
+
+  # AFIRMA: a queda API -> payload e ANUNCIADA, com a causa e com o stderr do
+  # `gh` -- nunca mais um `2>/dev/null` que torna "sem token", "rate limit" e
+  # "rede caiu" indistinguiveis. E AFIRMA que o gate deixou de dizer "corpo de
+  # ABERTURA": num payload de `edited` isso seria falso.
+  printf 'Fecha #12.\n' >"$STALE"
+  make_payload "$EV" edited 12 "$STALE"
+  fake_gh_fail
+  assert_event "degradacao-api-payload-anunciada" 1 \
+    'degradacao API -> payload: `gh pr view 12` saiu 1' 'ABERTURA' "$EV"
+  assert_event "degradacao-anuncia-acao-do-evento" 1 'fonte: payload do evento (acao: edited)' '' "$EV"
+  assert_event "degradacao-anuncia-stderr-do-gh" 1 'Resource not accessible by integration' '' "$EV"
+  assert_event "degradacao-vira-warning-no-actions" 1 \
+    '::warning title=pr-closing-keyword::corpo lido do payload' '' "$EV" true
+
+  # AFIRMA: sem numero no payload o gate nomeia ESSA causa, em vez de cair em
+  # silencio -- o unico ramo que, antes do ML-N3, nao imprimia anuncio nenhum.
+  printf 'Fecha #12.\n' >"$STALE"
+  make_payload "$EV" synchronize "" "$STALE"
+  fake_gh_body "$LIVE"
+  assert_event "degradacao-sem-numero-no-payload" 1 \
+    'o payload nao traz .pull_request.number' '' "$EV"
+
+  # AFIRMA: "nao consegui ler" != "nao achei". Payload sem corpo E API
+  # indisponivel -> exit 2 (not_evaluated), NUNCA 0 e nunca 1: nao houve corpo
+  # medido, entao nao ha veredito a dar.
+  make_payload "$EV" edited 12 ""
+  fake_gh_fail
+  assert_event "vacuidade-payload-sem-corpo-e-api-caida" 2 \
+    'not_evaluated' '' "$EV"
+
   if [[ $failures -gt 0 ]]; then
     echo "FAIL [pr-closing-keyword]: $failures cenario(s) de autoteste falharam." >&2
     exit 1
   fi
   echo "OK   [pr-closing-keyword]: autoteste completo (deteccao + prosa + isencao por numero +"
-  echo "     baldes de zona + formas 3/4/5/6 nas duas direcoes + vacuidade)."
+  echo "     baldes de zona + formas 3/4/5/6 nas duas direcoes + vacuidade +"
+  echo "     resolvedor de fonte sob evento de PR: API vence payload nas DUAS direcoes,"
+  echo "     degradacao anunciada com causa e stderr)."
   exit 0
 }
 
@@ -868,10 +999,17 @@ elif [[ -n ${GITHUB_EVENT_PATH:-} ]]; then
     || not_evaluated "GITHUB_EVENT_NAME='${GITHUB_EVENT_NAME:-<vazio>}' nao e pull_request"
   [[ -f $GITHUB_EVENT_PATH ]] || not_evaluated "GITHUB_EVENT_PATH=$GITHUB_EVENT_PATH nao existe"
 
-  # O payload do evento e IMUTAVEL: ele guarda o corpo de quando o PR foi ABERTO.
-  # Corrigir o corpo no GitHub e reexecutar o job devolve o mesmo veredito, porque o
-  # re-run reexecuta com o MESMO payload -- medido no PR #409 (issue #258). Por isso,
-  # quando da para perguntar ao GitHub qual e o corpo AGORA, o corpo vivo vence.
+  # O payload do evento e IMUTAVEL: ele congela o corpo do PR no instante daquele
+  # evento. Corrigir o corpo no GitHub e REEXECUTAR o job devolve o mesmo veredito,
+  # porque o re-run reexecuta com o MESMO payload -- medido no PR #409 (issue #258).
+  # Por isso, quando da para perguntar ao GitHub qual e o corpo AGORA, o corpo vivo
+  # vence.
+  #
+  # >>> 🔴 O gate NAO afirma QUAL corpo o payload carrega. Ate o ML-N3 ele dizia
+  #     "corpo de ABERTURA", e isso passou a ser FALSO no mesmo commit que ligou o
+  #     gatilho `edited`: num payload de `edited` o `.pull_request.body` e o corpo
+  #     JA EDITADO. O que e verdade em todo evento e so isto, e e o que o log diz:
+  #     o payload reflete o corpo no instante do evento `<acao>`.
   #
   # Ordem: corpo vivo pela API -> payload. Nunca o contrario, e nunca so a API: sem
   # `gh` autenticado (fork sem segredo, execucao local) o payload ainda mede algo.
@@ -881,9 +1019,11 @@ elif [[ -n ${GITHUB_EVENT_PATH:-} ]]; then
   # exatamente o silencio da REQ do CRLF; (2) o cenario s182 do check-gates-falsify
   # COPIA este gate para fora de scripts/, onde um `source` da lib de normalizacao
   # nao resolveria. `newline="\n"` resolve (1) na origem, e a escrita em arquivo
-  # evita (2) sem duplicar helper.
+  # evita (2) sem duplicar helper. A ACAO do evento sai do mesmo `json.load`: um
+  # segundo processo para reler o mesmo arquivo nao compraria nada.
   PR_NUMBER_FILE="$WORK/event-pr-number.txt"
-  python3 - "$GITHUB_EVENT_PATH" "$PR_NUMBER_FILE" <<'PY' || true
+  PR_ACTION_FILE="$WORK/event-action.txt"
+  python3 - "$GITHUB_EVENT_PATH" "$PR_NUMBER_FILE" "$PR_ACTION_FILE" <<'PY' || true
 import json, sys
 try:
     with open(sys.argv[1], encoding="utf-8") as fh:
@@ -894,21 +1034,63 @@ n = (ev.get("pull_request") or {}).get("number")
 if isinstance(n, int):
     with open(sys.argv[2], "w", encoding="utf-8", newline="\n") as out:
         out.write(str(n))
+a = ev.get("action")
+if isinstance(a, str) and a:
+    with open(sys.argv[3], "w", encoding="utf-8", newline="\n") as out:
+        out.write(a)
 PY
   EVENT_PR_NUMBER=""
   [[ -f $PR_NUMBER_FILE ]] && EVENT_PR_NUMBER=$(tr -d '\r' <"$PR_NUMBER_FILE")
-  if [[ -n ${EVENT_PR_NUMBER:-} ]] && command -v gh >/dev/null 2>&1 \
-     && gh pr view "$EVENT_PR_NUMBER" --json body -q .body >"$BODY_FILE" 2>/dev/null; then
-    echo "  fonte: API (corpo vivo do PR #$EVENT_PR_NUMBER) -- o payload do evento e imutavel"
-    evaluate_body_file "$BODY_FILE"
-    exit 0
+  EVENT_ACTION=""
+  [[ -f $PR_ACTION_FILE ]] && EVENT_ACTION=$(tr -d '\r' <"$PR_ACTION_FILE")
+  [[ -n $EVENT_ACTION ]] || EVENT_ACTION="<sem .action no payload>"
+
+  # ---------------------------------------------------------------------------
+  # DEGRADACAO ANUNCIADA -- a API e a fonte preferida; cair para o payload e uma
+  # PERDA DE PRECISAO, e o log tem de dizer POR QUE caiu. Ate o ML-N3 o `2>/dev/null`
+  # do `gh` engolia a causa: "sem token", "rate limit" e "rede caiu" ficavam
+  # indistinguiveis, e se a permissao `pull-requests: read` fosse removida do
+  # workflow o gate voltaria a medir corpo velho SEM NINGUEM PERCEBER -- a mesma
+  # classe de vault/notes/guard-aprova-quando-nao-conseguiu-ler-o-comando-*.md.
+  # 🔴 Isto NAO e a guarda de vacuidade: o gate continua MEDINDO (o payload e um
+  # corpo real). Vacuidade e nao ter corpo nenhum -> exit 2. Aqui o rc e o do
+  # corpo lido; o que muda e a PRECISAO da fonte, e por isso vira aviso, nao erro.
+  # ---------------------------------------------------------------------------
+  GH_STDERR="$WORK/gh-stderr.txt"
+  : >"$GH_STDERR"
+  API_DEGRADED_REASON=""
+  if [[ -z ${EVENT_PR_NUMBER:-} ]]; then
+    API_DEGRADED_REASON="o payload nao traz .pull_request.number -- nao ha a quem perguntar o corpo vivo"
+  elif ! command -v gh >/dev/null 2>&1; then
+    API_DEGRADED_REASON="\`gh\` nao esta no PATH"
+  else
+    set +e
+    gh pr view "$EVENT_PR_NUMBER" --json body -q .body >"$BODY_FILE" 2>"$GH_STDERR"
+    gh_status=$?
+    set -e
+    if [[ $gh_status -eq 0 ]]; then
+      echo "  fonte: API (corpo vivo do PR #$EVENT_PR_NUMBER) -- o payload do evento e imutavel"
+      evaluate_body_file "$BODY_FILE"
+      exit 0
+    fi
+    API_DEGRADED_REASON="\`gh pr view $EVENT_PR_NUMBER\` saiu $gh_status (sem token? sem \`pull-requests: read\`? rede?)"
   fi
-  # Sem API: o payload volta a ser a fonte, e o gate DIZ que esta lendo o corpo de
-  # abertura -- para quem le o log nao concluir que reexecutar resolveria.
+
+  # Sem API: o payload volta a ser a fonte, e o gate DIZ o que esta lendo e por que.
+  echo "  fonte: payload do evento (acao: $EVENT_ACTION) -- o payload e IMUTAVEL e"
+  echo "  reflete o corpo no instante daquele evento, nao o corpo de agora."
+  echo "  degradacao API -> payload: $API_DEGRADED_REASON"
+  if [[ -s $GH_STDERR ]]; then
+    echo "  stderr do \`gh\`:"
+    sed 's/^/    /' <"$GH_STDERR"
+  fi
   if [[ -n ${EVENT_PR_NUMBER:-} ]]; then
-    echo "  fonte: payload do evento (corpo de ABERTURA do PR #$EVENT_PR_NUMBER)."
-    echo "  \`gh\` indisponivel ou sem permissao: se o corpo foi editado depois, reexecutar"
-    echo "  este job NAO muda o veredito -- feche e reabra o PR, ou rode com \`--pr $EVENT_PR_NUMBER\`."
+    echo "  Se o corpo foi editado depois deste evento, REEXECUTAR o job NAO muda o"
+    echo "  veredito -- rode com \`--pr $EVENT_PR_NUMBER\`, ou edite o corpo de novo para"
+    echo "  disparar um evento \`edited\` com payload novo."
+  fi
+  if [[ -n ${GITHUB_ACTIONS:-} ]]; then
+    echo "::warning title=pr-closing-keyword::corpo lido do payload, nao da API ($API_DEGRADED_REASON) -- o veredito pode estar medindo um corpo antigo"
   fi
   # json.load, nunca grep/sed: um corpo com \n escapado destroi extracao
   # orientada a linha e o resultado seria uma leitura parcial SILENCIOSA.

@@ -668,7 +668,7 @@ idênticas ao baseline, **sem cancelamento entre elas**. `--self-test`: **70 OK,
 
 ### ML-N3 — **AC1 + `GH_TOKEN` juntos, e por ÚLTIMO** — a chave de ativação
 **Owner:** `ares-tf`
-**Status:** 🔄 Em andamento (despachado em 2026-09-25) · `ML-N1` e `ML-N2` ✅ commitados na branch
+**Status:** ✅ Concluído — auditado em 2026-09-25 · **o #293 sai verde com o corpo vivo**
 
 ⚠️ **Medição minha, acrescentada no despacho:** `on: pull_request` (linha 5) está **sem `types:`**, logo
 o default é `opened · synchronize · reopened` — **`edited` não está lá**, e é a causa mecânica do AC1.
@@ -707,12 +707,67 @@ pego pelo próprio gate.
    ter lido e não achado. É a mesma classe do `guarda-aprova-quando-nao-conseguiu-ler-o-comando`.
 
 **Critérios de aceite:**
-- [ ] `GH_TOKEN` presente, com escopo mínimo **comentado no YAML**
-- [ ] Reavaliação no `edited` **sem** disparar as suítes de `quality`
-- [ ] 🔴 O **#293** é reavaliado com o corpo **atual** e sai **verde** — prova de que o `ML-N1` chegou antes
-- [ ] Falsificação das duas direções do `edited`
-- [ ] Vacuidade: "não consegui ler" ≠ "não achei", com rc distintos
-- [ ] `make quality` e **CI** verdes
+- [x] `GH_TOKEN` presente, com escopo mínimo **comentado no YAML**
+- [x] Reavaliação no `edited` **sem** disparar as suítes de `quality`
+- [x] 🔴 O **#293** é reavaliado com o corpo **atual** e sai **verde** — prova de que o `ML-N1` chegou antes
+- [x] Falsificação das duas direções do `edited`
+- [x] Vacuidade: "não consegui ler" ≠ "não achei", com rc distintos
+- [x] `make quality` e **CI** verdes
+
+
+#### 🔴 Auditoria do ML-N3 — medido por mim
+
+| verificação | resultado |
+|---|---|
+| `--pr 293` com o corpo **vivo** | **`rc=0`** — e o log nomeia as duas supressões nas linhas 98 e 101 |
+| corpus A | `rc=0 353 · rc=1 4 · rc=2 1` — **idêntico PR a PR** ao pós-`ML-N2` |
+| `--self-test` | **78 OK, 0 FAIL** (eram 70) |
+| `make quality` | **exit 0** — 338 OK, 0 FAIL, guarda de conjunto OK |
+| `.github/required-status-checks.txt` | **intocado** — é o `ML-N4`, e é meu |
+
+🔴 **O `rc=0` do #293 é a prova de que a ordem travada era necessária, não preferência.** Com o
+`GH_TOKEN` ligado o gate lê o corpo atual; se este ML tivesse vindo antes do `ML-N1`, esse mesmo corpo
+seria **acusado** — e todo PR com escopo negativo junto.
+
+**Correção que ele fez no meu handoff, e é de grau mas importa:** eu escrevi *"os outros jobs não têm
+esse `if:`"*. Medido: **não são "os outros", são TODOS** — 11 dos 14 jobs sem `if:` e os 2 restantes com
+`if: always()`, que **rodam mais**, não menos. Não havia subconjunto a salvar com `if:`. Daí a decisão
+de **workflow próprio** (`.github/workflows/pr-closing-keyword.yml`) estar certa: `on.pull_request.types`
+é do **workflow**, não do job, e escrever um `if:` em cada job deixaria *"o próximo job novo sem ele — um
+contrato que se quebra por omissão"*.
+
+🔴 **Achado que o handoff não previa, e que é a mesma lição do `ML-N1` em outra roupa.** O gate dizia,
+no caminho de degradação, *"payload do evento (**corpo de ABERTURA** do PR #N)"*. Isso era verdade
+**só enquanto `edited` não estivesse no gatilho** — num payload de `edited` o `.pull_request.body` é o
+corpo **já editado**. **Ele instalaria uma mentira nova no mesmo commit que corrige a de
+`quality.yml:46-49`.** Trocado por uma afirmação verdadeira em todo evento: *"o payload é imutável e
+reflete o corpo no instante daquele evento (ação: X)"*.
+
+**Decisões dele que eu ratifico:**
+
+- **`permissions:` no JOB com os dois escopos**, porque bloco de job **substitui** o do workflow e não
+  soma — omitir `contents: read` quebraria o `actions/checkout`. Verifiquei: `{contents: read,
+  pull-requests: read}`, e o `GH_TOKEN` só no step do gate.
+- **Job id `pr-closing-keyword` e SEM chave `name:`** — o nome do check é o id, que é a string que o
+  `ML-N4` vai listar. Verifiquei: `name` ausente.
+- **`check-annotations.yml` passou a observar `["Quality", "PR Closing Keyword"]`** no mesmo commit —
+  tirar o job do "Quality" sem isso perderia a verificação de anotação **em silêncio**, que é a classe
+  exata de defeito que esta REQ existe para remover. Verifiquei na linha 23.
+- **Degradação ≠ vacuidade, e é deliberado.** O payload é corpo **real**: o gate mede e dá veredito; o
+  que se perde é a **precisão da fonte**, e isso é **anunciado** (causa, rc e stderr do `gh`, e
+  `::warning::` sob `GITHUB_ACTIONS`). Vacuidade é **não ter corpo** → `exit 2`. 🔴 *"Fazer degradação
+  reprovar transformaria 'sem token' em 'PR vermelho', e é assim que se desliga um gate."*
+- **`--scope dw` rodado de verdade** (o `--self-test` do `make quality` usa fixtures e não parseia
+  workflows): `declared=8, workflow_checks=45`, `D\W=∅`. O `ML-N4` herda D/W limpo.
+
+⚠️ **Residual declarado:** o cumprimento do gatilho pelo GitHub **não é observável localmente** — a
+asserção estática sobre o YAML é a medição honesta. Mas o veredito ao vivo chega **neste PR**, porque
+workflow `pull_request` roda a partir do **head**. E `edited` dispara também em edição de **título** e
+de base — é o único tipo que o GitHub oferece, declarado no YAML.
+
+⚠️ **Fronteira:** ele encontrou na árvore dois arquivos meus de `.claude/agent-memory/zeus-tf/`,
+escritos enquanto ele trabalhava, e **declarou em vez de varrer para dentro do commit dele**. Commitei-os
+**separado**, antes deste. Era eu editando árvore com agente vivo — a regra é minha e fui eu que a tensionei.
 
 ### ML-N4 — Decisão sobre `required_status_checks`
 **Owner:** `trackfw_architect` (eu)

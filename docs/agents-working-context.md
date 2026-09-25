@@ -41142,3 +41142,31 @@ bash scripts/check-unguarded-capture-rc.sh          RC=0
 - ⚠️ **Divergência de redação sinalizada ao arquiteto:** o AC do roadmap diz *"nas duas grafias de
   aspas"*; a ação 2 do handoff o substitui por *"mede ou declara residual"*. Segui o handoff.
 - Não commitei, não fiz push, não criei branch, não usei `git stash`/`git checkout --`.
+
+## 2026-09-25 — ares-tf — ML-N3 (início): a chave de ativação (`GH_TOKEN` + reavaliação em `edited`)
+
+- **Escopo:** `.github/workflows/quality.yml`, workflow próprio para o gate, `check-annotations.yml`,
+  `scripts/check-pr-closing-keyword.sh` (resolvedor de fonte), `scripts/check-workflow-yaml.py`,
+  `Makefile`, `docs/cli-parity.md`.
+- Branch `fix/gate-de-palavra-chave-de-fechamento-nao-reavalia-em-edited-…`, já criada pelo arquiteto.
+- Sem Git: não crio branch, não commito, não faço push. Entrega não commitada, para auditoria.
+
+## 2026-09-25 — ares-tf — ML-N3 (fim): a chave ligada, e o gatilho num arquivo próprio
+
+- **Arquivos:** `.github/workflows/pr-closing-keyword.yml` (novo), `.github/workflows/quality.yml`
+  (job removido + razão do `on:` sem `types:`), `.github/workflows/check-annotations.yml`,
+  `scripts/check-pr-closing-keyword.sh` (resolvedor de fonte + 8 arms novas),
+  `scripts/check-workflow-yaml.py` (gatilho preso), `Makefile`, `docs/cli-parity.md`,
+  `vault/notes/gatilho-edited-so-existe-no-workflow-…-2026-09-25.md` + índice.
+- 🔴 **Nada de `required_status_checks`** — é o `ML-N4`, do arquiteto. O job id continua
+  `pr-closing-keyword` e **sem** chave `name:`, para o nome do check não mudar.
+- **`edited` sem repetir as suítes — a medição que decidiu:** `on.pull_request.types` é do
+  **workflow**, não do job. Medido no `quality.yml`: **13 jobs, 11 sem `if:` + 2 com `if: always()`,
+  nenhum com `if:` que exclua `edited`** → declarar `edited` ali rodaria tudo, inclusive as três
+  suítes de `windows-latest`, a cada correção de typo em descrição de PR. Workflow próprio.
+- **#293 com o corpo atual: `rc=0`**, com as duas supressões por polaridade impressas — prova de que
+  o `ML-N1` chegou antes do `GH_TOKEN`.
+- **Degradação API→payload deixou de ser silenciosa** e a frase *"corpo de ABERTURA"* saiu: num
+  payload de `edited` ela viraria mentira no mesmo commit que corrige outra mentira.
+- `make quality` verde (`MAKE_RC=0`, 338 OK / 0 FAIL na falsificação) · `trackfw validate` rc=0.
+- Não commitei, não fiz push, não criei branch, não usei `git stash`/`git checkout --`.
