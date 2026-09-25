@@ -1,5 +1,5 @@
 ---
-status: done
+status: wip
 date: 2026-08-31
 req: "docs/req/REQ-2026-08-31-guarda-de-folha-faz-lstat-so-no-ultimo-componente-e-nunca-inspeciona-ancestral-escrita-fora-do-projeto-em-todo-so-e-todo-runtime.md"
 squad: "hades-tf, apolo-tf, artemis-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf, artemis-tf"
 
 # Roadmap: Guarda de folha resolve o caminho e afirma contenção antes de escrever
 
-> Created: 2026-08-31 | Status: done
+> Created: 2026-08-31 | Status: wip
 
 ## Context
 
@@ -1229,3 +1229,158 @@ verdade. Décimo quinto instrumento mentindo — não copie a forma com aspas.
 🔴 **O gate foi verificado DENTRO da barreira** (linha 376), não só isolado: 150 arquivos. Era
 exatamente aí que este ML nasceu — a barreira anterior varreu 143 e o defeito ficou invisível.
 Log com mtime 09:08:36 > arquivo corrigido 08:59:57: a barreira testou a correção.
+
+---
+
+# 🔴 REABERTURA — 2026-09-25: o roadmap fechou com os sítios NOMEADOS na própria tabela de residuais
+
+Este roadmap foi para `done` com uma seção chamada, literalmente,
+**"Achados aceitos como residual, com a razão (não viram ML)"** (linha 921). Os issues **#400**,
+**#401** e **#402** não são achados novos: são **três linhas daquela tabela**, promovidas a issue.
+
+| issue | onde este roadmap já o nomeava | o que ele registrou |
+|---|---|---|
+| **#400** | linha 925 (R3) | *"marcador textual não prova guard real … Fix correto é analisador de AST — **issue**"* |
+| **#401** | linha 927 (Q) | *"byte-idênticos … extrair para `pathguard` — **issue, antes da terceira cópia**. Foi cópia de helper que originou esta REQ"* |
+| **#402** | linha 928 (Q) | *"9 guards novos usam `filepath.Clean(cwd)` … **é inconsistência introduzida aqui**"* |
+
+🔴 **O CLAUDE.md não deixa margem:** *"fechar o roadmap com sítios conhecidos e não corrigidos marca
+como concluído algo cujo critério não foi atendido — e é o achado A1 da auditoria externa de
+2026-09-05, que este projeto já pagou uma vez."* E a auditoria **dentro desta própria REQ** (linhas
+170-194) já avisava: *"os ACs atuais podem ser satisfeitos por uma implementação que **não** fecha o
+defeito descrito no título desta própria REQ"* — foi exatamente o que o #400 mediu depois.
+
+**Por isso a REQ volta a `Open` e este roadmap volta a `wip`.** Não é REQ nova: *"é superfície
+diferente"* e *"está fora do escopo declarado"* estão na lista de **não-justificativas**.
+
+## ⚠️ O braço do "mesmo PR" é inaplicável aqui, e isto fica escrito para não ser re-litigado
+
+A regra diz **mesma causa → mesma REQ → mesmo PR**, e o motivo é manter a causa visível enquanto não
+estiver inteira. Mas o **PR #397 já está mergeado** — a janela fechou antes de a tabela de residuais
+virar issue. O novo PR é contra **esta REQ reaberta**. Quem ler no futuro não está vendo violação da
+regra: está vendo **impossibilidade**, e a parte viva dela (mesma REQ, mesmo roadmap) está cumprida.
+
+## 🔴 Três contagens diferentes do mesmo defeito, e a régua é que decide
+
+O #402 diz **9** sítios. A triagem de 2026-09-25 mediu **12**. Eu medi **13**, e a diferença não é
+descuido — é **qual régua se usa**:
+
+```
+$ grep -rn 'RejectSymlinks(filepath.Clean' --include='*.go' internal/ | wc -l
+13
+   9 × internal/generators/agentfiles.go   (os do issue)
+   3 × internal/generators/update.go       com `cwd`   — fora do issue
+   1 × internal/generators/update.go:2143  com `root`  — fora das duas contagens
+```
+
+O 13º escapa de quem procura `Clean(cwd)` **porque a variável se chama `root`**. Rastreei a origem:
+`refreshDiscoverGitHubActionsWorkflowIfPresent(root)` é chamada em `update.go:110` com **`cwd`**, que
+vem de `os.Getwd()` — **não resolvido**. 🔴 **Mesmo mecanismo, nome diferente.** A enumeração da Wave
+R0 mede **pelo mecanismo**, não pelo identificador.
+
+**Provenance confirmada:** `git log -S 'RejectSymlinks(filepath.Clean' -- internal/generators/`
+devolve **um único commit** — `7721efc6 (#397)`, esta REQ. Os 13 nasceram aqui. A alegação de
+"pré-existente" está refutada.
+
+## Wave R0 — Enumeração e desenho, antes de qualquer código
+> Dependências: nenhuma. **Bloqueia as Waves R1 e R2.**
+
+### ML-R0A — Enumerar pelo mecanismo e desenhar o ponto único
+**Owner:** `hades-tf`
+**Status:** ⬜ Pendente
+
+**Ações:**
+1. **Enumerar pelo mecanismo, não pelo identificador**, as duas populações: (a) sítios que passam um
+   root **não resolvido** a `pathguard.RejectSymlinks`; (b) implementações do par
+   *predicado + recusa audível* — hoje conhecidas: `rejectScaffoldPath` (`scaffold.go:86`),
+   `rejectDiscoverPath` (`discover.go:216`), `rejectHarnessSymlink` (`update.go:665`) e
+   `rejectSymlinks` (`manager.go:762`). ⚠️ **Só as duas primeiras são byte-idênticas** — o título do
+   #401 diz "três cópias byte-idênticas" e isso **é falso**; as outras duas **reimplementam** o mesmo
+   par com assinatura e retorno diferentes. A refutação não muda o veredito: 2 cópias + 2 variantes
+   continuam sendo "copiado por sítio".
+2. Desenhar o **ponto único** (`pathguard.RejectAndReport` ou equivalente) e dizer **por que** ele é
+   pré-requisito do analisador de AST: um nó canônico é reconhecível; quatro variantes escritas à mão
+   obrigam o analisador a modelar as quatro.
+3. 🔴 **Threat model do instrumento:** quem faz o analisador de AST nascer **verde por vacuidade**?
+4. Falsificação nas duas direções e residual declarado.
+
+**Critérios de aceite:**
+- [ ] As duas populações enumeradas **pelo mecanismo**, com caminho e linha, e a divergência 9/12/13
+      explicada pela régua
+- [ ] O ponto único desenhado, com a razão de ser pré-requisito do AST
+- [ ] 🔴 Nenhuma linha de implementação
+
+**Gates da wave:**
+```bash
+test -f docs/seguranca/2026-09-25-ponto-unico-de-contencao-e-o-instrumento-que-o-prova.md
+git diff --quiet "$(git merge-base origin/main HEAD)" HEAD -- internal/
+```
+
+## Wave R1 — Ponto único + o analisador que o prova
+> Dependências: Wave R0 auditada. `ML-R1A` e `ML-R1B` tocam os mesmos arquivos: **sequenciais**.
+
+### ML-R1A — Extrair o ponto único (#401)
+**Status:** ⬜ Pendente · **precede o `ML-R1B` por dependência técnica, não por gosto**
+
+**Critérios de aceite:**
+- [ ] Uma implementação do par predicado+recusa; os 4 sítios passam a delegar
+- [ ] A mensagem de recusa é idêntica **por construção**, não por coincidência textual — é o que o
+      AC5 desta REQ exige (*"idênticas em todos os sítios de escrita do Go"*)
+- [ ] `make quality` verde
+
+### ML-R1B — O analisador de AST (#400)
+**Status:** ⬜ Pendente
+
+🔴 **O escopo é O INSTRUMENTO, e só ele.** A triagem mediu que **os 34 defeitos já estão corrigidos**
+— `syncREQReferences` tem `pathguard.RejectSymlinks` na linha 63, antes do `os.WriteFile` da 71; o
+ramo lefthook tem `rejectScaffoldPath` na 2446, antes do `os.WriteFile` da 2450. *"34 defeitos
+passaram com o gate verde"* é **medição histórica do instrumento**, não defeito corrente.
+
+🔴 **E é exatamente por isso que o AC tem de falsificar contra a árvore PRÉ-fix.** Um analisador novo
+rodando sobre a árvore de hoje fica **verde por não haver nada a achar** — a passagem vacuosa que
+esta casa já mediu várias vezes. O braço que discrimina é: **o analisador reprova os 22 gaps de folha
+e os 7 marcadores falsos que o gate bash aprovou**, reconstruídos do estado pré-Wave-4 por `git show`
+ou overlay.
+
+**Critérios de aceite:**
+- [ ] 🔴 O analisador **reprova** os 22 gaps e os 7 marcadores falsos reconstruídos do estado pré-fix
+- [ ] Sobre a árvore atual: **verde, e a não-vacuidade é provada** — população contada e piso declarado
+- [ ] O AC6 desta REQ (*"gate falsificável cobrindo AC2 e AC3, com guarda de vacuidade"*) passa a ser
+      atendido **pelo que o gate prova**, não pelo que ele afirma
+- [ ] `make quality` verde
+
+## Wave R2 — Root resolvido nos dois lados (#402)
+> Dependências: Wave R0 auditada. **Independente da R1** — o defeito é o **argumento**, não o fluxo.
+
+### ML-R2A — Os 13 sítios passam a derivar o root de fonte resolvida
+**Status:** ⬜ Pendente
+
+⚠️ **Por que não agrupa com a R1:** um analisador de AST perfeito **continuaria aprovando**
+`RejectSymlinks(filepath.Clean(cwd), path)`, porque o fluxo **passa** por `pathguard`. Se este
+discriminante não for explicitado, ele passa despercebido pelo instrumento da R1.
+
+**Critérios de aceite:**
+- [ ] Os **13** sítios derivam o root de fonte resolvida (`EvalSymlinks`), como `discover.go:31-38` e
+      `scaffold.go:15-28` já fazem **dentro desta mesma REQ**
+- [ ] A armadilha 3 da Decisão 2 (*"comparar destino resolvido contra root não resolvido → falso
+      positivo; medido `/tmp` → `/private/tmp` no macOS"*) é **falsificada por teste**
+- [ ] O discriminante *"o root passado a `RejectSymlinks` vem de fonte resolvida"* entra no analisador
+      da Wave R1 — senão o instrumento não pega a reintrodução
+- [ ] `make quality` verde
+
+## Fora desta REQ: o #403
+
+**Causa própria, e a diferença de mecanismo fica escrita.** O #403 é: *rótulo de cenário novo não tem
+entrada em `scripts/falsify-scenario-weights.json` e o balanceador cai no peso máximo, porque
+`gen-falsify-scenario-weights.py` só recalibra a partir de um `FALSIFY_TIMING_FILE` produzido em CI.*
+
+Confirmado por medição: `grep -c 'write-containment' scripts/falsify-scenario-weights.json` → **0**.
+
+O teste literal separa **nos dois sentidos**: nenhum passo da correção desta REQ — nem o AST, nem o
+ponto único, nem o `EvalSymlinks` — escreve uma linha naquele JSON; e recalibrar os pesos não fecha
+nenhum dos outros três.
+
+⚠️ **E recuso o enquadramento alternativo** de que ele caberia aqui por *"ter nascido no mesmo PR"*:
+isso é **proveniência**, não causa — e contrabandear proveniência como causa é precisamente o que a
+Regra Dura proíbe.
+
