@@ -1,0 +1,12 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Pergunta, dúvida de uso ou planejamento
+    url: https://github.com/kgsaran/trackfw/discussions
+    about: >
+      Perguntas vão em Discussions, não em issues. Exemplos: "há release planejada?",
+      "como configuro X?", "por que a decisão foi Y?". Issue é para DEFEITO com medição.
+  - name: Suspeita de vulnerabilidade
+    url: https://github.com/kgsaran/trackfw/security/advisories/new
+    about: >
+      Não abra issue pública. Use o advisory privado — especialmente para escrita fora
+      da árvore do projeto, escalonamento por symlink, ou exfiltração de credencial de CI.
