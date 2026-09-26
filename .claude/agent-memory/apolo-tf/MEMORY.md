@@ -5,3 +5,4 @@
 - [Métrica por artefato, não por regra](feedback_metrica_por_artefato.md) — "a regra apareceu na saída" dá falso verde; exigir que a violação nomeie o artefato, e medir nas duas árvores
 - [Classificar marcadores: ler RejectSymlinks antes de vereditar](feedback_classificar_marcadores.md) — confirmar se a função checa a folha ou só os ancestrais; define se 48 marcadores são (A) ou (B)
 - [Refutações primeiro no relatório](feedback_refutacoes_primeiro_no_relatorio.md) — censo do handoff é régua de identificador e subconta o mecanismo; abrir com a divergência medida, não enterrá-la
+- [Medir antes/depois sem git stash](feedback_medir_antes_e_depois_sem_git_stash.md) — `git archive HEAD | tar -x` + dois binários, exercitados sobre CÓPIA do corpus real

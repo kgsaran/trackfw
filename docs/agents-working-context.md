@@ -41426,3 +41426,55 @@ bash scripts/check-unguarded-capture-rc.sh          RC=0
 - **Nota de vault:** `a-extensao-que-esconde-do-gate-esconde-tambem-do-gitattributes-2026-09-25.md`.
 - Status do ML mantido em 🔄 — muda para ✅ só após a auditoria do arquiteto.
 - Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.
+
+## 2026-09-26 — apolo-tf — ML-1C (início): `roadmap move ""` movia o primeiro roadmap do primeiro estado
+
+- **Escopo:** `internal/generators/roadmap.go` (`findRoadmap`, `containsIgnoreCase`, `ShowRoadmap`) e
+  `internal/generators/req.go` (`findREQ`, Família 2 do censo — mesma causa, Regra Dura). Duas
+  recusas novas: nome **vazio** e nome **ambíguo**. Nome **exato** e nome **parcial único** continuam
+  movendo (contra-braços).
+- **Ordem:** este ML vem antes do ML-3A por decisão escrita da D4 do ADR-2026-09-26 — recusar o nome
+  vazio é aditivo em segurança (`Contains(x, "")` sempre verdadeiro não tem consumidor legítimo) e
+  não pode paralisar o `trackfw commit` que entrega o próprio fix.
+- **Escopo negativo:** `validator.BranchSlugMatchesRoadmap` (ML-3A) e o vínculo escrito (D1, Wave 3).
+- **Sem Git:** não crio branch, não commito, não faço push; entrega não commitada ao arquiteto.
+
+## 2026-09-26 — apolo-tf — ML-1C (fim): o nome vazio movia o primeiro — e o nome COMPLETO movia o irmão maior
+
+- 🔴 **Refutação primeiro:** o defeito era maior que o handoff descrevia. Medido com binário de `HEAD`
+  contra binário corrigido, sobre **cópia** do corpus real (228 roadmaps / 231 REQs):
+  `roadmap move ROADMAP-2026-07-19-global-adrs-governance analyzing` — **nome completo e exato** —
+  movia `...-governance-ML-1B.md`, o irmão maior. São **3 pares assim nos roadmaps e os mesmos 3 nos
+  REQs**. Consequência de projeto: recusar ambiguidade **sem** precedência de casamento exato tornaria
+  esses 3 nomes inendereçáveis — trocaria mover-o-errado por não-mover-nenhum.
+- **Antes (binário de HEAD):** `roadmap move "" wip` → `✓ moved ROADMAP-…-alpha.md` rc=0;
+  `req move "" wip` → `✓ moved REQ-…-dois.md` rc=0 **e o `status:` reescrito para `wip` dentro do
+  arquivo errado**; fragmento ambíguo → escolhe um, rc=0.
+  **Depois:** as 5 formas recusam com rc=1, disco intacto; ambiguidade **nomeia os candidatos**.
+- **Contra-braços (os dois exigidos):** nome exato (com e sem `.md`) move; parcial **único** move —
+  incluído o nome completo que o KG usou nesta sessão, contra o corpus real de 228.
+- **Medição único vs múltiplo (a régua é cardinalidade, não comprimento):** nome completo sem `.md`
+  → 225/228 únicos e **3** ambíguos (roadmaps), 228/231 e **3** (REQs); fragmento de 20 chars →
+  151 únicos e **77** ambíguos (hoje escolhidos em silêncio); vazio → **228 / 231** (casa tudo).
+- **Varredura de mesma classe (escrita mesmo onde deu vazio):** fechados `findRoadmap` (ponto único
+  `roadmapCandidateFiles`, cobrindo `flat` **e** `by_agent` — havia **duas** cópias do laço
+  primeiro-vence e só `flat` é exercitado pelo corpus real), `findREQ` e o nome vazio de
+  `ShowRoadmap`. Negativos medidos: `resolveBarrierRoadmap` (filename exato), glob de idempotência de
+  `NewADR` (`ADR-*-<slug>.md`; slug vazio produz `ADR-*-.md`, que não casa nada), `ListADRs`/
+  `ListREQs`/`ListRoadmaps`/`NoteFiles` (enumeram, não selecionam por nome do usuário).
+  🔴 **Não tocado por escopo:** `validator.BranchSlugMatchesRoadmap:3493` — mesma classe, e com
+  `branchSlug` vazio casa **qualquer** roadmap (validação passa vaziamente). É o `ML-3A` por decisão
+  escrita da D4; o braço do slug vazio tem de entrar na lista dele.
+- **Falsificação dos testes (3 mutações, restauradas):** guard de vazio desativado → 3 testes
+  reprovam; + ambiguidade escolhendo o primeiro (= comportamento pré-ML-1C) → 5 reprovam;
+  precedência de exato removida → os 2 testes de irmão maior reprovam.
+- `make quality` **rc=0** (1326 OK, falsify 338 OK / 0 FAIL), `trackfw validate` **rc=0** (151
+  warnings pré-existentes).
+- **Reconciliação do contrato escrito:** a primeira redação da seção nova de `docs/cli-parity.md`
+  nomeava `roadmap show` junto com os dois `move` e afirmava as 4 regras para os três — **falso e
+  medido**: `roadmap show ROADMAP-2026-07-19-global-adrs-governance` recusa como ambíguo (não tem
+  precedência de exato, mantém o glob próprio) e imprime os candidatos em **stdout**. O contrato foi
+  corrigido para declarar que `show` compartilha **só** a recusa de nome vazio.
+- **Nota de vault:** `nome-vazio-move-o-primeiro-e-nome-completo-move-o-irmao-maior-2026-09-26.md`.
+- Status do ML mantido em 🔄 — muda para ✅ só após a auditoria do arquiteto.
+- Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.

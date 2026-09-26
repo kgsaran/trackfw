@@ -395,6 +395,40 @@ trackfw roadmap move: failed to sync <req-basename>: <cause>
 Remaining REQs are still attempted; the command reports the first failure's cause and exits non-zero
 after processing all of them, so one unwritable file does not hide the rest.
 
+### `roadmap move` / `req move` — name resolution refuses instead of guessing
+
+<!-- trackfw-contract: gate=internal/generators/artifact_select_ml1c_test.go partial=o gate cobre findRoadmap (flat e by_agent), findREQ e ShowRoadmap; NÃO cobre outros resolvedores por nome fora de internal/generators (o vínculo branch↔roadmap de validator.BranchSlugMatchesRoadmap é contrato próprio, tratado pelo ML-3A da REQ-2026-09-09) -->
+
+`roadmap move <name> <state>` and `req move <name> <status>` resolve `<name>` against the artifact
+basenames through one shared decision point. The resolution is pinned as follows
+(ML-1C, REQ-2026-09-09):
+
+1. **Empty or whitespace-only `<name>` is refused**, naming the problem, and **no file is touched**.
+   Before ML-1C the match was `strings.Contains(basename, name)`, and `Contains(x, "")` is always
+   true — so an empty name (measured cause: an empty shell variable, 2026-09-12) resolved to the
+   **first** file of the **first** state directory and `roadmap move` moved it. `req move` was worse:
+   it also **rewrote** the status inside that file. There is no legitimate consumer of `move ""`.
+2. **An exact basename match wins**, with or without the `.md` suffix, over any substring candidate.
+   Without this precedence a stem that is a prefix of a longer sibling
+   (`ROADMAP-x` vs `ROADMAP-x-ML-1B.md`) would have no way to be named at all.
+3. **A partial name that identifies exactly one artifact still resolves** — partial is not forbidden,
+   ambiguous is.
+4. **More than one candidate is refused, and the error names every candidate path.** Before ML-1C the
+   first one in scan order was picked silently.
+
+For these two commands the candidate list travels inside the returned error, not on stdout, so it
+lands on the command's error path.
+
+**`roadmap show <name>` shares only rule 1** (the empty-name refusal). It keeps its own
+`*<name>*.md` glob: it has **no** exact-basename precedence — measured, `roadmap show
+ROADMAP-2026-07-19-global-adrs-governance` refuses as ambiguous against the 3 files of that stem
+while `roadmap move` with the same name resolves to the exact one — and it prints its candidate list
+to **stdout** before returning `ambiguous match for %q`. It is a read-only command, which is why
+ML-1C closed only the arm that could act on an arbitrary artifact.
+
+`trackfw barrier <roadmap>` is unaffected: it resolves by exact filename (`<base>.md`) under
+`wip/`/`done/` and never matched by substring.
+
 ### `req list` / `req move` — discovery layouts and conditional physical move
 
 <!-- trackfw-contract: gap reason=nenhum gate cross-CLI exercita req list/req move — nem a descoberta por layout (flat/by_agent) nem a discriminação in-place-vs-physical-move são comparadas entre Go, Node.js e Python -->

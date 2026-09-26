@@ -350,7 +350,7 @@ o sync (`✓ synced REQ ... → roadmap`) — 🔴 **a capacidade existe num com
 
 ### ML-1C — **AC8 + AC12 (parte 1 de 2)** — recusar o nome vazio
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento (despachado em 2026-09-26)
+**Status:** ✅ Concluído — auditado em 2026-09-26 · 🔴 **o defeito era maior: o nome EXATO movia o arquivo errado**
 **Arquivos afetados:** `internal/generators/roadmap.go` — `containsIgnoreCase` está em **`:814`** e
 é usada em **`:791`** e **`:805`** (a linha `~632` do texto original está obsoleta; medido em 2026-09-26).
 ⚠️ **Os caminhos `npm/src/…` e `pypi/trackfw/…` NÃO EXISTEM desde a v8.0.0.**
@@ -364,13 +364,93 @@ por variável de shell vazia.
 1. Nome vazio ⇒ **erro que nomeia o problema**, nos 3 CLIs.
 2. Nome que não casa exatamente ⇒ recusar e **listar os candidatos**, em vez de escolher um.
    🔴 Decisão do KG de 2026-08-29: *"controle que não reconhece rejeita e avisa, em vez de adivinhar"*.
+**Sítios efetivamente fechados (entrega de 2026-09-26, pendente de auditoria):** `findRoadmap`
+(ponto único de enumeração `roadmapCandidateFiles`, cobrindo `flat` **e** `by_agent`), `findREQ`
+(`req.go` — Família 2 do censo, mesma causa, Regra Dura) e o nome vazio de `ShowRoadmap`. Contrato
+documentado em `docs/cli-parity.md` (seção nova, anotada). `resolveBarrierRoadmap` medido como
+negativo (resolve por filename exato). `BranchSlugMatchesRoadmap` permanece no `ML-3A` — e o braço
+do **slug vazio** (casa qualquer roadmap) tem de estar na lista dele.
 **Critérios de aceite:**
-- [ ] Nome vazio ⇒ erro, nenhum arquivo movido (falsificação)
-- [ ] Nome exato ⇒ move (contra-braço)
-- [ ] Nome parcial ambíguo ⇒ recusa nomeando os candidatos
+- [x] Nome vazio ⇒ erro, nenhum arquivo movido (falsificação)
+- [x] Nome exato ⇒ move (contra-braço)
+- [x] Nome parcial ambíguo ⇒ recusa nomeando os candidatos
 - [x] ~~Paridade nos 3 CLIs~~ **SEM OBJETO desde a v8.0.0**
 
 ---
+
+#### 🔴 Auditoria do ML-1C — reproduzi o antes e o depois, e havia um TERCEIRO braço
+
+Comparei o binário de `HEAD` contra o corrigido, sobre fixture com um par de prefixo:
+
+```
+ANTES (HEAD)
+  roadmap move ""                          → ✓ moved …-alvo-ML-1B.md   rc=0
+  roadmap move "ROADMAP-2026-07-19-alvo"   → ✓ moved …-alvo-ML-1B.md   rc=0   ← NOME EXATO, ARQUIVO ERRADO
+
+DEPOIS
+  ""                          → Error: roadmap name is required …            rc=1   nada movido
+  "ROADMAP-2026-07-19-alvo"   → ✓ moved ROADMAP-2026-07-19-alvo.md           rc=0   ← o alvo
+  "2026-09-26"  (ambíguo)     → Error: multiple roadmaps match … be specific rc=1   nada movido
+  "um"          (único)       → ✓ moved ROADMAP-2026-09-26-um.md             rc=0
+```
+
+🔴 **O terceiro braço não estava no meu handoff e nenhuma inspeção de código o previa:** quando o
+stem é **prefixo de um irmão maior** (`…-governance` ⊂ `…-governance-ML-1B.md`), o substring casa os
+dois e **a ordem de varredura decide**. É a forma que o usuário digita **achando que é inequívoca** —
+e este repositório tem **3 pares assim nos roadmaps e 3 nos REQs**. Confirmei:
+`ROADMAP-2026-07-19-global-adrs-governance.md` convive com `-ML-1B.md` e `-ML-2B.md`.
+
+⚠️ **E é o achado que quase transformou o fix numa paralisação:** recusar ambiguidade **sem**
+precedência de casamento exato tornaria esses 3 nomes **inendereçáveis** — trocaria mover-o-errado
+por não-mover-nenhum. A ordem entregue é **exato (com ou sem `.md`) → parcial único → recusa
+nomeando candidatos**.
+
+### A régua é cardinalidade, nunca comprimento — e os números mostram por quê
+
+| query | roadmaps (228) | REQs (231) |
+|---|---|---|
+| nome completo sem `.md` | 225 únicos · **3 ambíguos** | 228 · **3** |
+| 20 primeiros chars | 151 únicos · **77 ambíguos** | 206 · 25 |
+| **vazio** | **228 casados** | **231 casados** |
+
+Os **77** são casamentos que hoje **escolhem em silêncio**. E proibir "parcial" mataria os **151** —
+o uso diário, o meu inclusive. A mudança **não acrescenta nenhuma recusa** para nome completo e
+converte 3 escolhas arbitrárias em resolução correta.
+
+### A varredura de mesma classe achou o sítio PIOR, e um ponto único que faltava
+
+- **`findREQ`** (`req.go`) tem a mesma causa — e é **pior**, porque `MoveREQ` também **reescreve o
+  `status:` dentro do arquivo**: com nome vazio, os **231** casavam e o conteúdo do errado era
+  alterado. Entrou pela Regra Dura.
+- 🔴 **Havia DUAS cópias do laço primeiro-vence** em `findRoadmap` (`flat` e `by_agent`). O corpus
+  deste projeto é `flat`, logo **meia-correção ficaria verde no `make quality`** — exatamente a
+  família do #396. Ele criou o ponto único `roadmapCandidateFiles` e testou o ramo `by_agent`
+  separadamente.
+- **`ShowRoadmap`** com nome vazio imprimia o arquivo.
+- **Negativos medidos e escritos:** `resolveBarrierRoadmap`, o glob de `NewADR`, e os `List*` — nenhum
+  seleciona por nome do usuário.
+
+### Autorrefutação dele, pega antes do commit
+
+A primeira redação da seção nova de `docs/cli-parity.md` afirmava as 4 regras também para
+`roadmap show`. **Falso, e medido:** `show` recusa como ambíguo (glob próprio, sem precedência de
+exato) e imprime candidatos em **stdout**. Contrato corrigido para dizer que `show` compartilha
+**só** a recusa de nome vazio. 🔴 **Contradição interna pega antes do commit, não depois** — é a Regra
+Dura de Reconciliação funcionando.
+
+### O que fica para o ML-3A, e entra na lista dele
+
+`validator.BranchSlugMatchesRoadmap` (`validator.go:3493`) é **mesma classe**: com `branchSlug`
+**vazio**, casa **qualquer** roadmap (`matched = true` vaziamente). Não tocado aqui por escopo (D4 do
+ADR manda o matcher vir depois, em modo aditivo) — **mas o braço do slug vazio tem de entrar no
+`ML-3A`**.
+
+⚠️ **Residual que é meu:** `check-symlink-privilege-guard` **não viu** o arquivo de teste novo
+(enumera por `git ls-files`; medido `grep -c` = 0 no log, com rc=0 — **invisibilidade, não
+segurança**). Ele fechou por inspeção direta (0 ocorrências de `os.Symlink`). **Segunda passada
+pós-commit obrigatória.**
+
+`make quality` → **rc 0**, 338 OK, 0 FAIL, `Error [0-9]` = 0.
 
 ## Wave 2 — A decisão arquitetural
 > Dependências: Wave 1 (a fonte de verdade precisa estar decidida).

@@ -444,19 +444,23 @@ func MoveREQ(name, status string) error {
 	return nil
 }
 
-// findREQ busca por uma REQ cujo basename contenha name (case-insensitive), varrendo
-// os 3 layouts suportados via listREQFiles (ordem: flat → por-estado → by_agent).
+// findREQ resolve name contra os REQs dos 3 layouts suportados via listREQFiles
+// (ordem: flat → por-estado → by_agent), delegando a decisão a
+// selectArtifactByName (roadmap.go) — que é o mesmo ponto de decisão usado por
+// findRoadmap.
+//
+// 🔴 ML-1C, Regra Dura de Causa Raiz — mesma causa, mesma REQ: até aqui findREQ
+// tinha exatamente o defeito de findRoadmap (substring + primeiro-vence), e era o
+// sítio PIOR dos dois: `req move "" wip` casava o primeiro REQ da varredura e
+// MoveREQ reescrevia o status dentro do arquivo, não só movia. O guard de vazio
+// que MoveREQ já tinha era sobre o `status`, nunca sobre o `name`.
 func findREQ(name string, cfg config.ProjectConfig) (string, error) {
 	files, err := listREQFiles(cfg)
 	if err != nil {
 		return "", fmt.Errorf("findREQ: %w", err)
 	}
-	for _, path := range files {
-		if containsIgnoreCase(filepath.Base(path), name) {
-			return path, nil
-		}
-	}
-	return "", fmt.Errorf("REQ %q not found in %s", name, cfg.REQDir)
+	return selectArtifactByName("REQ", "REQs", name, files,
+		fmt.Errorf("REQ %q not found in %s", name, cfg.REQDir))
 }
 
 // appendREQTransitionLog registra a transição de estado de uma REQ em cfg.REQDir/.trackfw-log,

@@ -775,40 +775,122 @@ func normalizeRefSeparator(p string) string {
 	return strings.ReplaceAll(p, "\\", "/")
 }
 
-func findRoadmap(name string) (string, error) {
-	cfg := config.Load()
-
+// roadmapCandidateFiles enumerates every roadmap file, in the canonical state
+// order, for BOTH layouts (flat and by_agent).
+//
+// 🔴 ML-1C: this is the single enumeration point on purpose. Until ML-1C the
+// by_agent branch (former :791) and the flat branch (former :805) each carried
+// their own `containsIgnoreCase` first-wins loop, so a fix applied to one layout
+// left the other one picking an arbitrary file — and the live corpus of this
+// project is `flat`, so the by_agent copy is exercised by no real roadmap. One
+// collector makes the half-fix structurally impossible.
+//
+// Only regular `.md` files are collected. The former loops matched ANY directory
+// entry, which under first-wins was harmless (a stray `.DS_Store` never contains
+// a roadmap name); under collect-all it would turn a currently working unique
+// match into a refusal. Measured on the real corpus in 2026-09-26: the only
+// non-`.md` files under `docs/roadmaps` are `.trackfw-log` and `.DS_Store`, both
+// in the roadmap root — zero inside the state directories — and there are no
+// subdirectories under the state directories.
+func roadmapCandidateFiles(cfg config.ProjectConfig) []string {
+	var dirs []string
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
-		agents := validator.ResolveAgentNamespaces(cfg, cfg.RoadmapDir)
-		for _, agent := range agents {
+		for _, agent := range validator.ResolveAgentNamespaces(cfg, cfg.RoadmapDir) {
 			for _, state := range roadmapStateOrder {
-				dir := cfg.RoadmapDir + "/" + agent + "/" + state
-				entries, err := os.ReadDir(dir)
-				if err != nil {
-					continue
-				}
-				for _, e := range entries {
-					if containsIgnoreCase(e.Name(), name) {
-						return filepath.Join(dir, e.Name()), nil
-					}
-				}
+				dirs = append(dirs, cfg.RoadmapDir+"/"+agent+"/"+state)
 			}
 		}
 	} else {
 		for _, state := range roadmapStateOrder {
-			dir := cfg.RoadmapDir + "/" + state
-			entries, err := os.ReadDir(dir)
-			if err != nil {
-				continue
-			}
-			for _, e := range entries {
-				if containsIgnoreCase(e.Name(), name) {
-					return filepath.Join(dir, e.Name()), nil
-				}
-			}
+			dirs = append(dirs, cfg.RoadmapDir+"/"+state)
 		}
 	}
-	return "", fmt.Errorf("roadmap %q not found in any state directory", name)
+
+	var files []string
+	for _, dir := range dirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if e.IsDir() || !strings.EqualFold(filepath.Ext(e.Name()), ".md") {
+				continue
+			}
+			files = append(files, filepath.Join(dir, e.Name()))
+		}
+	}
+	return files
+}
+
+// selectArtifactByName resolves a user-supplied name against candidate paths,
+// refusing instead of guessing. It is shared by findRoadmap and findREQ because
+// they are the same defect on two surfaces (Regra Dura de Causa Raiz).
+//
+// 🔴 Two refusals, both new in ML-1C:
+//
+//  1. EMPTY name. `containsIgnoreCase(x, "")` is always true — `strings.Contains`
+//     says every string contains the empty string — so an empty name used to
+//     resolve to the FIRST file of the FIRST state directory and `roadmap move`
+//     moved it. This happened for real on 2026-09-12, from an empty shell
+//     variable. There is no legitimate consumer of `roadmap move ""`, which is
+//     why this refusal is purely additive in safety.
+//
+//  2. AMBIGUOUS name: more than one candidate matches. The old code returned the
+//     first one in scan order. KG's decision of 2026-08-29: "controle que não
+//     reconhece rejeita e avisa, em vez de adivinhar".
+//
+// Partial names keep working when they identify exactly ONE candidate — that is
+// today's real usage and breaking it would trade a defect for a standstill. An
+// EXACT basename match (with or without the `.md` suffix) wins over substring
+// candidates: without that precedence, the 3 real roadmap stems that are a
+// prefix of a longer file (e.g. `...global-adrs-governance` vs
+// `...global-adrs-governance-ML-1B.md`) would become refusals instead of
+// resolving to the file the user actually named.
+//
+// The candidate list travels INSIDE the error so it lands on the command's error
+// path, not on stdout.
+func selectArtifactByName(kind, kindPlural, name string, candidates []string, notFound error) (string, error) {
+	if strings.TrimSpace(name) == "" {
+		return "", fmt.Errorf("%s name is required — an empty name matches every %s and would act on an arbitrary one; pass the basename (or a unique fragment) explicitly", kind, kind)
+	}
+
+	query := strings.TrimSuffix(name, ".md")
+	var exact, partial []string
+	for _, path := range candidates {
+		base := filepath.Base(path)
+		if strings.EqualFold(strings.TrimSuffix(base, ".md"), query) {
+			exact = append(exact, path)
+			continue
+		}
+		if containsIgnoreCase(base, name) {
+			partial = append(partial, path)
+		}
+	}
+
+	matched := exact
+	if len(matched) == 0 {
+		matched = partial
+	}
+	switch len(matched) {
+	case 0:
+		return "", notFound
+	case 1:
+		return matched[0], nil
+	default:
+		var b strings.Builder
+		fmt.Fprintf(&b, "multiple %s match %q — be more specific:", kindPlural, name)
+		for _, path := range matched {
+			fmt.Fprintf(&b, "\n  %s", path)
+		}
+		return "", fmt.Errorf("%s", b.String())
+	}
+}
+
+func findRoadmap(name string) (string, error) {
+	cfg := config.Load()
+	return selectArtifactByName("roadmap", "roadmaps", name,
+		roadmapCandidateFiles(cfg),
+		fmt.Errorf("roadmap %q not found in any state directory", name))
 }
 
 func containsIgnoreCase(s, sub string) bool {
@@ -866,6 +948,16 @@ func appendTransitionLogEntry(basename, fromState, toState string) error {
 // ShowRoadmap exibe o conteúdo de um roadmap identificado por nome parcial.
 func ShowRoadmap(name string) error {
 	cfg := config.Load()
+
+	// ML-1C — mesma classe do defeito de findRoadmap, medida e fechada aqui: o glob
+	// `*<name>*.md` com name vazio casa TODO roadmap. Com o corpus deste projeto
+	// (228 roadmaps) isso já caía na recusa de ambiguidade abaixo, mas num projeto
+	// com UM roadmap `roadmap show ""` imprimia esse arquivo pelo mesmo mecanismo
+	// de "vazio casa tudo". Recusar aqui fecha a classe em vez de tratar como
+	// superfície diferente — leitura, e não escrita, não é fundamento para separar.
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("roadmap name is required — an empty name matches every roadmap; pass the basename (or a unique fragment) explicitly")
+	}
 
 	var pattern string
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
