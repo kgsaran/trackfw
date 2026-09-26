@@ -840,7 +840,7 @@ uma palavra legítima do nome, ela não ajuda.
 
 ### ML-3A + ML-3B — **AC12 (parte 2) + AC13 + AC15** — o matcher, em modo ADITIVO
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento (despachado em 2026-09-26)
+**Status:** ✅ Concluído — auditado em 2026-09-26 · 🔴 **eram 29 de 205 rejeitadas, não 2 de 111**
 **Arquivos afetados:** `internal/validator/validator.go` — `BranchSlugMatchesRoadmap` está em
 **`:3594`** e `normalizeBranchSlug` em **`:3750`** (medido 2026-09-26; a linha `2864` do texto
 original está obsoleta). Consumidores: `validate` · `branch new` (`commands/branch.go:100`) · `commit`.
@@ -853,24 +853,24 @@ pelo próprio `trackfw commit` e evita o **deadlock de bootstrap** (matcher reje
 `commit` falha → `git commit` cru é bloqueado pelo guard → o fix não pode ser mergeado).
 
 **Critérios de aceite:**
-- [ ] **AC12** — vínculo **escrito** (D1) é a fonte; a inferência por **sobreposição de tokens** (D2)
+- [x] **AC12** — vínculo **escrito** (D1) é a fonte; a inferência por **sobreposição de tokens** (D2)
       é fallback para branch vinda de fora do `branch new`
-- [ ] 🔴 **AC13 (ex-ML-3B) — modo aditivo provado por MEDIÇÃO, não por intenção:** as **111 branches
+- [x] 🔴 **AC13 (ex-ML-3B) — modo aditivo provado por MEDIÇÃO, não por intenção:** as **111 branches
       históricas** que `Contains` aceitava **continuam** aceitas. Zero regressão, e o número sai do
       corpus, não do raciocínio
-- [ ] 🔴 **AC15 — a direção RESTRITO DEMAIS fecha:** uma branch legitimamente governada cujo slug
+- [x] 🔴 **AC15 — a direção RESTRITO DEMAIS fecha:** uma branch legitimamente governada cujo slug
       **não** é substring do roadmap passa a ser aceita. Caso do #273:
       `feat/adrs-retroativas-da-divida-do-acervo` × `ROADMAP-…-divida-de-governanca-do-acervo-…`
-- [ ] **Retomada legítima** de roadmap em `done/` continua funcionando (contra-braço)
-- [ ] 🔴 **`branchSlug` vazio** deixa de casar qualquer roadmap — herdado do `ML-1C`, que o mediu e
+- [x] **Retomada legítima** de roadmap em `done/` continua funcionando (contra-braço)
+- [x] 🔴 **`branchSlug` vazio** deixa de casar qualquer roadmap — herdado do `ML-1C`, que o mediu e
       declarou fora do escopo dele
-- [ ] 🔴 **O gate que fixa o comportamento atual é ATUALIZADO, nunca afrouxado para caber.**
+- [x] 🔴 **O gate que fixa o comportamento atual é ATUALIZADO, nunca afrouxado para caber.**
       `scripts/check-barrier.sh` e `scripts/check-validate-rule-pins.sh` referenciam o matcher
-- [ ] ⚠️ **O número mínimo de tokens é CALIBRADO contra o corpus**, não escolhido. O #273 propôs ≥2 e
+- [x] ⚠️ **O número mínimo de tokens é CALIBRADO contra o corpus**, não escolhido. O #273 propôs ≥2 e
       **declarou que não era valor calibrado**
-- [ ] `ML-1B`…`ML-1E` não são desfeitos
-- [ ] Reconciliação: uma frase por teste novo
-- [ ] `make quality` verde
+- [x] `ML-1B`…`ML-1E` não são desfeitos
+- [x] Reconciliação: uma frase por teste novo
+- [x] `make quality` verde
 
 ### ML-3C — **AC14** — a medição vira gate
 **Status:** ⬜ Pendente
@@ -883,6 +883,91 @@ altere o veredito de qualquer das 111 reprova.
 - [ ] Contra-braço: matcher correto ⇒ gate passa
 
 ---
+
+#### 🔴 Auditoria do ML-3A+3B — o defeito era 7× maior do que o ADR dizia
+
+Medi por caminho próprio:
+
+```
+branches governadas no histórico     205   (o ADR dizia 111)
+bootstrap: TRACKFW_BRANCH=<esta branch> validate  →  0 violações, rc=0
+os 6 testes do matcher                PASS
+make quality  rc 0 · 342 OK · 0 FAIL · check-validate-rule-pins OK (28 pins, era 25)
+```
+
+🔴 **`strings.Contains` rejeita 29 das 205 branches governadas — 14%**, não os "2 de 111" do ADR nem
+os ~9% do #273. Das 29, **14** casam o roadmap certo por ≥2 tokens, verificadas par a par.
+
+⚠️ **E a ressalva dele é o que dá sentido ao número:** os 176 aceitos são população **sobrevivente** —
+o autor do #273 **renomeou a branch para caber na regra**, e esta casa provavelmente fez o mesmo sem
+registrar. **`Contains` acertar 86% é em parte seleção, não acerto.**
+
+### R2 — a D3 do meu ADR é NO-OP, e eu citei linhas que não existem mais
+
+Mandei `generators/roadmap.go` delegar, citando `:791,805`. **Essas linhas morreram no `ML-1C`.**
+Confirmei: `containsIgnoreCase` está em `:939`, chamada de `:908`, dentro de `selectArtifactByName` —
+que resolve **argumento do usuário**, não vínculo branch↔roadmap.
+
+🔴 **Delegar ali reintroduziria seleção difusa no `roadmap move` e desfaria o `ML-1C`** — que é
+critério de aceite deste próprio ML. **D3 satisfeita com zero linha**, e ele tratou isso como achado
+a declarar, não como tarefa a pular. **Emendei o ADR.**
+
+### R3 — "falso positivo" tem dois sentidos, e medir um só dá falso verde
+
+A relação é um **OR** e a função responde *"algum roadmap casou?"*. Para branch que já passava por
+substring, token extra **não muda veredito**. Ele reportou os dois níveis — **veredito** (o que este
+portão aplica: 14 flips rejeita→aceita, **0** aceita→rejeita) e **cardinalidade** (o sinal da etapa 2).
+
+### R4 — tokenizar o nome cru dá um token grátis a todo mundo
+
+`normalizeBranchSlug("ROADMAP-2026-09-09-x.md")` = `roadmap-2026-09-09-x-md`: 🔴 **`roadmap` é token
+de todo arquivo do acervo** — 175 de 201 crus contra **16** com prefixo removido. Remédio **posicional**,
+nunca lista negra: o token `req` do mesmo par é **título** e sobrevive.
+
+### O limiar 2 foi FORÇADO, não escolhido
+
+| N | das 29 passam | regressão | genérico de 1 token |
+|---|---|---|---|
+| 1 | 29 (**205/205** — deixa de discriminar) | 0 | `req` 18 · `gate` 20 · `guard` 14 |
+| **2** | **14** | **0** | **0** |
+| 3 | 5 | 0 | 0 |
+
+**Teto:** o par do #273 compartilha **exatamente 2** tokens. **Piso:** `N=1` aceita tudo.
+
+### Zero regressão é ESTRUTURAL antes de empírica
+
+Para todo slug não-vazio, `Contains(x,s) ⇒ aceita` **por construção** (OR com o braço substring
+preservado verbatim), logo o conjunto aceito é **superconjunto universal**. As 205 confirmam:
+`flip− = 0` em 4 limiares × 2 tokenizações. 🔴 **Prova de construção primeiro, medição como
+confirmação** — é a ordem certa, e evita concluir "não regrediu" de uma amostra.
+
+**Bootstrap testado no PRIMEIRO build**, não no fim — o deadlock é impossível nesta etapa por
+construção.
+
+### Armadilha de rótulo que ele achou e que teria passado
+
+O Bloco 3 do `check-validate-rule-pins.sh` **já usava** `pin6`/`pin7`/`pin8`. Continuar a numeração
+local do Bloco 2 fez o gate **passar com rótulos duplicados**, sem detecção, imprimindo
+`Block 3: pin6-pin20` como se nada fosse. Renomeados para `pin2b`/`pin2c`/`pin2d`.
+
+### As três decisões que ele devolveu — decidi as três
+
+1. **Emendar o ADR** (censo 29/205 e D3 no-op) — ✅ **feito**, no mesmo dia. ADR que descreve mal o
+   corpus é pior que ADR ausente, porque é citado.
+2. **`SITE_FLOOR=157` defasado** (mede 158 **já em `HEAD`**) — ✅ **corrijo em commit separado**, e ele
+   estava certo em não fazê-lo aqui: bumpar junto faria parecer que este ML criou o sítio.
+3. 🔴 **`.gitignore` do `trackfw init`** — vira **`ML-3D`**. Se o consumidor não ignorar o arquivo de
+   vínculo, **estado por checkout vaza para o repositório dele** — e é entregável desta REQ, não
+   achado externo.
+
+### ML-3D — o `trackfw init` precisa ignorar o vínculo no consumidor
+**Status:** ⬜ Pendente
+
+**Critérios de aceite:**
+- [ ] `trackfw init` acrescenta `<roadmap_dir>/.trackfw-branch-links.json` ao `.gitignore` gerado
+- [ ] 🔴 **Contra-braço:** `.gitignore` já existente não é sobrescrito, e rodar duas vezes não duplica
+- [ ] Consumidor já onboardado (que não vai rodar `init` de novo) tem caminho declarado — nem que seja
+      uma linha no contrato dizendo que o arquivo é local
 
 ## Wave 4 — Prevenção e severidade
 > Dependências: Wave 1. Independente da Wave 3.

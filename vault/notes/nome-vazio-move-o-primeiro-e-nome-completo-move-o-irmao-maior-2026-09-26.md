@@ -60,3 +60,10 @@ recusar a própria branch que entrega o fix (`trackfw commit` falha, `git commit
 pelo guard). Recusar o nome vazio no `move`, ao contrário, é aditivo em segurança — não existe
 consumidor legítimo de `move ""`. 🔴 Quando o ML-3A chegar, o braço do **slug vazio** tem de estar
 na lista dele.
+
+> **Fechado em 2026-09-26 pelo `ML-3A`:** o braço do slug vazio de `BranchSlugMatchesRoadmap` foi
+> recusado, e a relação ganhou o segundo braço (sobreposição de tokens). O que a medição daquele ML
+> acrescentou está em
+> [[o-prefixo-roadmap-e-token-de-todo-roadmap-e-o-contains-rejeita-29-das-205-2026-09-26]] — inclusive
+> a refutação de que o `Contains` só errava em ~2 de 111 casos.
+

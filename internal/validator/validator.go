@@ -871,11 +871,14 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	}
 	applyRule("filename_uniqueness", uniquenessViolations, &violations, &warnings)
 
-	branchViolations, e := validateBranchHasWIPRoadmap()
+	branchViolations, branchWarnings, e := validateBranchHasWIPRoadmap()
 	if e != nil {
 		return nil, nil, e
 	}
 	applyRule("branch_has_wip_roadmap", branchViolations, &violations, &warnings)
+	// Stale written link: warning only, never severity-configurable — same treatment as the wip
+	// limit warnings above, and for the same reason (it must not be promotable to a violation).
+	warnings = append(warnings, branchWarnings...)
 
 	noteOrphanMsgs, e := validateNoteOrphan()
 	if e != nil {
@@ -1221,11 +1224,14 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 	}
 	applyRuleTagged("filename_uniqueness", uniquenessViolations, &violations, &warnings)
 
-	branchViolationsT, e := validateBranchHasWIPRoadmap()
+	branchViolationsT, branchWarningsT, e := validateBranchHasWIPRoadmap()
 	if e != nil {
 		return nil, nil, e
 	}
 	applyRuleTagged("branch_has_wip_roadmap", branchViolationsT, &violations, &warnings)
+	for _, m := range branchWarningsT {
+		warnings = append(warnings, TaggedMsg{Rule: "branch_has_wip_roadmap", Msg: m})
+	}
 
 	noteOrphanMsgsT, e := validateNoteOrphan()
 	if e != nil {
@@ -3585,6 +3591,29 @@ func validateFilenameUniqueness() ([]string, error) {
 	return violations, nil
 }
 
+// branchRoadmapMinSharedTokens is the minimum number of DISTINCT content tokens a branch slug and a
+// roadmap filename must share for the token-overlap arm to accept the pair.
+//
+// 🔴 CALIBRATED against this repository's corpus (ML-3A, 2026-09-26), not chosen. The #273 reporter
+// proposed 2 and explicitly declared it was not a calibrated value. Both bounds are forced:
+//
+//   - CEILING: the #273 case (feat/adrs-retroativas-da-divida-do-acervo ×
+//     ROADMAP-2026-09-05-divida-de-governanca-do-acervo-…) shares EXACTLY 2 content tokens
+//     ("divida", "acervo"), so any threshold ≥ 3 fails AC15 — the false-negative the issue reports
+//     stays open.
+//   - FLOOR: at 1, every single-token generic slug (req, gate, python, windows) matches every
+//     roadmap whose title contains that word, which is the loose direction the ADR wants CLOSED,
+//     not widened.
+//
+// The measured curve (matches per generic slug, 201 roadmaps in wip/+done/) is in the ML-3A report
+// and becomes a gate in ML-3C.
+const branchRoadmapMinSharedTokens = 2
+
+// branchRoadmapMinTokenLen is the minimum length of a token that counts toward the overlap. Below 3
+// characters a token carries no identifying signal ("de", "e", "a", "6", "9") and would make
+// overlap accidental — the #273 measurement used the same cut.
+const branchRoadmapMinTokenLen = 3
+
 // BranchSlugMatchesRoadmap verifica se branchSlug (já normalizado via normalizeBranchSlug) casa com o
 // nome de algum roadmap .md encontrado em wipDirs ou doneDirs. Reutilizada por
 // validateBranchHasWIPRoadmap e pelo comando `trackfw branch new` — nunca duplicar esta lógica.
@@ -3592,24 +3621,136 @@ func validateFilenameUniqueness() ([]string, error) {
 // matched indica se algum candidato casou com o slug. candidates lista todos os roadmaps .md
 // encontrados em wipDirs+doneDirs (para diagnóstico/mensagem de orientação quando matched é false).
 func BranchSlugMatchesRoadmap(branchSlug string, wipDirs, doneDirs []string) (matched bool, candidates []string) {
+	matches, candidates := MatchRoadmapsForBranchSlug(branchSlug, wipDirs, doneDirs)
+	return len(matches) > 0, candidates
+}
+
+// MatchRoadmapsForBranchSlug is THE single implementation of the branch↔roadmap relation (D3 of
+// ADR-2026-09-26). It returns every roadmap filename in wipDirs+doneDirs that the slug matches, and
+// the full candidate list for diagnostics. BranchSlugMatchesRoadmap, `trackfw branch new`,
+// `trackfw commit` and `trackfw ship` all go through here — never reimplement the relation.
+//
+// 🔴 The relation is ADDITIVE (D4, etapa 1): a pair is accepted when EITHER arm accepts it.
+//
+//  1. SUBSTRING (the historical arm, kept verbatim): normalizeBranchSlug(filename) contains the
+//     slug. Keeping it is what makes this change reversible without manual git surgery — no branch
+//     that passed before can start failing, so the fix to the matcher can be committed by
+//     `trackfw commit` itself instead of deadlocking on its own gate.
+//  2. TOKEN OVERLAP (new, D2): the slug and the roadmap's CONTENT slug share at least
+//     branchRoadmapMinSharedTokens distinct tokens of branchRoadmapMinTokenLen+ characters. This is
+//     the arm that closes the restrito-demais direction of #273, where the branch names THE WORK
+//     and the roadmap names THE REQ TITLE, so neither is a substring of the other.
+//
+// The single deliberate RESTRICTION is the empty slug: strings.Contains(x, "") is always true, so an
+// empty slug used to report matched=true vacuously against any corpus. ML-1C measured this on the
+// sibling site (findRoadmap) and the ADR declares the refusal as the written exception to the
+// additive order — there is no legitimate consumer of an empty branch slug.
+func MatchRoadmapsForBranchSlug(branchSlug string, wipDirs, doneDirs []string) (matches, candidates []string) {
 	dirs := append(append([]string{}, wipDirs...), doneDirs...)
+	slugTokens := branchRoadmapTokens(branchSlug)
+	empty := strings.TrimSpace(branchSlug) == ""
 	for _, dir := range dirs {
 		entries, _ := listDir(dir)
 		for _, name := range entries {
-			if strings.HasSuffix(name, ".md") {
-				candidates = append(candidates, name)
-				if strings.Contains(normalizeBranchSlug(name), branchSlug) {
-					matched = true
-				}
+			if !strings.HasSuffix(name, ".md") {
+				continue
+			}
+			candidates = append(candidates, name)
+			if empty {
+				continue
+			}
+			if strings.Contains(normalizeBranchSlug(name), branchSlug) ||
+				sharedTokenCount(slugTokens, branchRoadmapTokens(roadmapContentSlug(name))) >= branchRoadmapMinSharedTokens {
+				matches = append(matches, name)
 			}
 		}
 	}
-	return matched, candidates
+	return matches, candidates
+}
+
+// roadmapContentSlug strips the STRUCTURAL part of an artifact filename — the kind prefix
+// (ROADMAP-/REQ-/ADR-), the ISO date and the .md suffix — and returns the normalized remainder.
+//
+// 🔴 Measured reason this exists (ML-3A, 2026-09-26): without stripping, "roadmap" is a token of
+// every single roadmap file in the corpus, so any branch slug containing the word "roadmap" would
+// get one free shared token against all 201 files — halving the threshold for that slug alone. The
+// fix is prefix-stripping, NOT a word blacklist: a roadmap legitimately TITLED "roadmap move …"
+// must keep its own content token "roadmap".
+func roadmapContentSlug(filename string) string {
+	base := filename
+	if i := strings.LastIndex(base, "."); i >= 0 && strings.EqualFold(base[i:], ".md") {
+		base = base[:i]
+	}
+	parts := strings.Split(normalizeBranchSlug(base), "-")
+	i := 0
+	if i < len(parts) {
+		switch parts[i] {
+		case "roadmap", "req", "adr":
+			i++
+		}
+	}
+	// ISO date: up to three all-digit segments (yyyy, mm, dd).
+	for n := 0; n < 3 && i < len(parts) && isAllDigits(parts[i]); n++ {
+		i++
+	}
+	return strings.Join(parts[i:], "-")
+}
+
+// branchRoadmapTokens splits an already normalized slug into the content tokens that count toward
+// the overlap: at least branchRoadmapMinTokenLen characters and not purely numeric.
+func branchRoadmapTokens(normalized string) []string {
+	var out []string
+	for _, part := range strings.Split(normalized, "-") {
+		if len(part) < branchRoadmapMinTokenLen || isAllDigits(part) {
+			continue
+		}
+		out = append(out, part)
+	}
+	return out
+}
+
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// sharedTokenCount counts DISTINCT tokens present in both lists. Distinct matters: a slug that
+// repeats one word ("guard-guard-guard") must not reach the threshold on a single shared word.
+func sharedTokenCount(a, b []string) int {
+	if len(a) == 0 || len(b) == 0 {
+		return 0
+	}
+	set := make(map[string]struct{}, len(b))
+	for _, t := range b {
+		set[t] = struct{}{}
+	}
+	seen := make(map[string]struct{}, len(a))
+	count := 0
+	for _, t := range a {
+		if _, dup := seen[t]; dup {
+			continue
+		}
+		seen[t] = struct{}{}
+		if _, ok := set[t]; ok {
+			count++
+		}
+	}
+	return count
 }
 
 // validateBranchHasWIPRoadmap verifica se a branch atual (feat/fix/refactor) tem ao menos um roadmap em wip/.
 // Retorna violation se a branch for de implementação mas wip/ estiver vazio — previne trabalho órfão.
-func validateBranchHasWIPRoadmap() ([]string, error) {
+// It returns (violations, warnings, error): the warnings channel exists for the STALE WRITTEN LINK
+// (D1 of ADR-2026-09-26). A stale link must not be silent — and must not be a violation either, or
+// the additive order of D4 breaks.
+func validateBranchHasWIPRoadmap() ([]string, []string, error) {
 	branch := firstNonEmpty(os.Getenv("TRACKFW_BRANCH"))
 	if branch == "" && isGitWorktree(".") {
 		cmd := gitCommand(".", "symbolic-ref", "--short", "HEAD")
@@ -3626,23 +3767,23 @@ func validateBranchHasWIPRoadmap() ([]string, error) {
 		}
 	}
 	if !strings.HasPrefix(branch, "feat/") && !strings.HasPrefix(branch, "fix/") && !strings.HasPrefix(branch, "refactor/") {
-		return nil, nil // só enforça em branches de implementação
+		return nil, nil, nil // só enforça em branches de implementação
 	}
 
 	cfg := config.Load()
 	wipDirs := resolveWIPDirs(cfg)
 	doneDirs := resolveDoneDirs(cfg)
 
-	branchSlug := normalizeBranchSlug(strings.SplitN(branch, "/", 2)[1])
-	matched, candidates := BranchSlugMatchesRoadmap(branchSlug, wipDirs, doneDirs)
-	if matched {
-		return nil, nil
+	// D1 resolution order: written link first, name inference as fallback.
+	res := ResolveBranchRoadmap(cfg, branch, wipDirs, doneDirs)
+	if res.Matched {
+		return nil, res.Warnings, nil
 	}
 
-	if len(candidates) == 0 {
-		return []string{BranchGovernanceOrientation(branch, cfg)}, nil
+	if len(res.Candidates) == 0 {
+		return []string{BranchGovernanceOrientation(branch, cfg)}, res.Warnings, nil
 	}
-	return []string{BranchNoMatchingRoadmapMessage(branch, candidates)}, nil
+	return []string{BranchNoMatchingRoadmapMessage(branch, res.Candidates)}, res.Warnings, nil
 }
 
 // BranchGovernanceOrientation is the guidance message printed when a feat/fix/refactor branch
@@ -3786,7 +3927,7 @@ func (e *GovernanceViolation) Error() string {
 func CheckShipGovernance() *GovernanceViolation {
 	var missing []string
 
-	branchViolations, _ := validateBranchHasWIPRoadmap()
+	branchViolations, _, _ := validateBranchHasWIPRoadmap()
 	missing = append(missing, branchViolations...)
 
 	wipReqViolations, _ := validateWIPHasREQ()

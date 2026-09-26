@@ -166,3 +166,74 @@ Não resolve o portão de escrita.
 
 ## Linked REQ
 REQ: `docs/req/REQ-2026-09-09-req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos-e-o-segundo-se-esquece.md`
+
+---
+
+## 🔴 Emenda — 2026-09-26, mesmo dia: a implementação mediu e duas coisas deste ADR estavam erradas
+
+**Quem emenda:** `trackfw_architect`, a partir da medição do `ML-3A+3B`. Emendo **no mesmo dia** porque
+um ADR que descreve mal o corpus é pior que um ADR ausente — ele é citado.
+
+### 1. O censo estava desatualizado nos dois eixos, e a direção restrito-demais é MAIOR
+
+| | este ADR dizia | medido em 2026-09-26 |
+|---|---|---|
+| roadmaps | 185 | **228** (201 em `wip/`+`done/`) |
+| branches governadas | 111 | **205** |
+| rejeitadas por `Contains` | *"2"* (e ~9% no #273) | 🔴 **29 — 14%** |
+
+Das 29, **14** casam o roadmap certo por ≥2 tokens de conteúdo, verificadas par a par.
+
+⚠️ **E a ressalva dele é o que dá sentido ao número:** os 176 aceitos são população **sobrevivente**.
+O autor do #273 **renomeou a branch para caber na regra**, e este repositório provavelmente fez o
+mesmo sem registrar. 🔴 **`Contains` acertar 86% é em parte seleção, não acerto** — o que reforça a
+decisão, não a enfraquece.
+
+### 2. A D3 é NO-OP, e as linhas que este ADR cita não existem mais
+
+A D3 mandava `generators/roadmap.go` delegar, citando `:791,805`. **Essas linhas morreram no `ML-1C`**,
+que as colapsou no ponto único `selectArtifactByName`. Medi: `containsIgnoreCase` está em `:939`,
+chamada de `:908`, e resolve **argumento do usuário** (`roadmap move <name>`) — **não** vínculo
+branch↔roadmap. Varredura de `internal/generators/`: **nenhum** sítio faz esse casamento.
+
+🔴 **Delegar ali reintroduziria seleção difusa no `roadmap move` e desfaria o `ML-1C`** — que é
+critério de aceite do próprio `ML-3A`. **D3 satisfeita com zero linha de código**, e isso é achado,
+não omissão.
+
+**A intenção da D3 permanece válida e vigente:** se um segundo sítio precisar da relação
+branch↔roadmap, ele **delega** a `validator.go`. Hoje não há segundo sítio.
+
+### 3. O que a implementação acrescentou e este ADR não previu
+
+- **Onde o vínculo mora:** `<roadmap_dir>/.trackfw-branch-links.json`, **gitignored**. Escolhido em vez
+  do frontmatter porque lá o `status:` é sincronizado pelo `roadmap move`, parseado pelo `roadmapdoc`
+  e pinado pelo contrato do barrier — acrescentar estado por checkout ali colidiria com três
+  consumidores.
+- **Vínculo obsoleto** (alvo saiu de `wip/`+`done/`) → cai na inferência **e avisa**
+  (`branch_link_stale`), 🔴 **nunca violação** — promovê-lo quebraria a ordem aditiva da D4.
+- **Grava só quando a inferência identifica exatamente UM roadmap.** Com 2+ não há verdade única, e
+  escolher por ordem de varredura é o defeito que o `ML-1C` removeu.
+- ⚠️ **O vínculo nunca existe em CI, clone ou fork** — por ser gitignored, por desenho. Lá a inferência
+  é o único caminho, e ela agora é **superconjunto** do que era, logo é seguro. **Registro porque
+  "o vínculo não casa em CI" é o tipo de coisa que passa meses parecendo funcionar.**
+
+### 4. O limiar: o **2** foi FORÇADO dos dois lados, não escolhido
+
+| N | das 29 rejeitadas, passam | regressão | slug genérico de 1 token |
+|---|---|---|---|
+| 1 | 29 (**205/205** — deixa de discriminar) | 0 | `req` 18 · `gate` 20 · `guard` 14 |
+| **2** | **14** | **0** | **0** |
+| 3 | 5 | 0 | 0 |
+| 4 | 2 | 0 | 0 |
+
+**Teto:** o par do #273 compartilha **exatamente 2** tokens — `N≥3` reabre o falso-negativo.
+**Piso:** `N=1` aceita tudo. 🔴 **O ADR dizia que o número seria calibrado; ele foi, e o resultado é
+que não havia escolha.**
+
+### 5. Um achado de tokenização que este ADR não anteciparia
+
+`normalizeBranchSlug("ROADMAP-2026-09-09-x.md")` = `roadmap-2026-09-09-x-md`: 🔴 **`roadmap` é token
+de todo arquivo do acervo** — 175 de 201 crus contra **16** com o prefixo removido. O remédio é
+remoção **posicional** (prefixo + data ISO + extensão), **nunca lista negra**: o token `req` do mesmo
+par é **título** e tem de sobreviver.
+

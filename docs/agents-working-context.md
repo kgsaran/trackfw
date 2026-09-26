@@ -41663,3 +41663,70 @@ bash scripts/check-unguarded-capture-rc.sh          RC=0
   decisão do arquiteto (`gen-falsify-scenario-weights.py`).
   Status do ML mantido em 🔄 até a auditoria.
 - Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.
+
+## 2026-09-26 — apolo-tf — ML-3A + ML-3B (início): o matcher branch↔roadmap, em modo ADITIVO
+
+- **Escopo:** `internal/validator/validator.go` — `BranchSlugMatchesRoadmap` (`:3594`) e
+  `normalizeBranchSlug` (`:3750`); novo `internal/validator/branchlink.go` para o vínculo ESCRITO.
+  Implementa as cinco decisões da `ADR-2026-09-26-precisao-do-vinculo-branch-roadmap-…`. Fecha o #273.
+- **Método:** calibração do limiar contra o acervo real (201 roadmaps em `wip/`+`done/`, 205 branches
+  históricas `feat|fix|refactor`), curva por limiar e por modo de tokenização, nos DOIS sentidos de
+  falso positivo (veredito e cardinalidade); teste de bootstrap no PRIMEIRO build (a branch deste ML
+  tem de continuar aceita pelo binário recém-compilado); falsificação manual dos pins novos.
+- **Escopo negativo:** a etapa 2 (restritiva) da D4 e o gate de corpus (`ML-3C`); `req_has_roadmap` /
+  `req_has_adr` (ML-1D/ML-1E, entregues); `generators/roadmap.go` (ver refutação no fim).
+- Sem Git: não crio branch, não commito, não faço push.
+
+## 2026-09-26 — apolo-tf — ML-3A + ML-3B (fim): o `Contains` rejeita **29 das 205**, e a D3 é NO-OP
+
+- 🔴 **Refutação 1 — o censo do handoff está desatualizado nos dois eixos.** Não são 185 roadmaps e
+  111 branches: são **228** roadmaps (**201** em `wip/`+`done/`) e **205** branches históricas
+  `feat|fix|refactor` (`gh pr list --state all --limit 500` ∪ merges ∪ refs remotas). E o número que
+  muda a leitura: o `strings.Contains` de hoje **rejeita 29** das 205 (**14%**, contra os ~9% do #273),
+  não 2 de 111. A direção **restrito demais** é maior do que o issue mediu.
+- ⚠️ **Os 176 aceitos são população SOBREVIVENTE** — o autor do #273 renomeou a branch para caber na
+  regra. `Contains` acertar 86% é em parte seleção, o que reforça o fix.
+- 🔴 **Refutação 2 — a D3 é NO-OP, e as linhas que o ADR cita não existem.** O ADR manda
+  `generators/roadmap.go` delegar *"se precisar da mesma relação"*, citando `:791,805`. Essas linhas
+  morreram no ML-1C: `containsIgnoreCase` está em `:939`, chamada de `:908`, **dentro** de
+  `selectArtifactByName` — que resolve **argumento do usuário**, não vínculo branch↔roadmap. Nenhum
+  sítio de `internal/generators` faz esse casamento (varrido). Delegar ali **reintroduziria** seleção
+  difusa no `roadmap move` e desfaria o ML-1C — que é critério de aceite deste ML. D3 satisfeita com
+  zero linha de código.
+- **Limiar CALIBRADO (não escolhido): 2, forçado dos dois lados.** Teto: o par do #273 compartilha
+  **exatamente 2** tokens (`divida`+`acervo`), logo `N≥3` reabre o falso-negativo. Piso: com `N=1` a
+  relação aceita **205 de 205** e um termo genérico admite ~10% do acervo (`req` 18, `gate` 20 de 201).
+  Curva das 29 rejeitadas: N=1 → 29 passam · **N=2 → 14** · N=3 → 5 · N=4 → 2; regressão **0** em todos.
+- 🔴 **Tokenizar o nome do arquivo CRU dá token grátis:** `roadmap` casa **175 de 201** cru contra
+  **16** com o prefixo estrutural removido, e a aceitação espúria concreta é `feat/roadmap-list` ×
+  `ROADMAP-…-req-move-list-…` (tokens `[roadmap, list]`). Remoção **posicional** (`ROADMAP-`/`REQ-`/
+  `ADR-` + data ISO + `.md`), nunca lista negra — o `req` do mesmo par é **título** e sobrevive.
+- **Zero regressão, estrutural antes de empírica:** `Contains(x,s) ⇒ aceita` por construção (a relação
+  é um OR e o braço substring é preservado verbatim), logo o conjunto aceito é superconjunto do antigo
+  universalmente; as 205 **confirmam** (flip aceita→rejeita = 0 em 4 limiares × 2 tokenizações).
+- **Bootstrap testado no primeiro build:** `TRACKFW_BRANCH=fix/req-nasce-orfa-… ./bin/trackfw validate
+  --json` → 0 violações. O deadlock não é possível por construção nesta etapa.
+- **D1 (vínculo escrito):** `<roadmap_dir>/.trackfw-branch-links.json`, gravado pelo `branch new`
+  **depois** do checkout e só quando a inferência identifica **exatamente um** roadmap. Vínculo
+  obsoleto → cai na inferência **e avisa** (`branch_link_stale`), nunca em silêncio e **nunca**
+  violação (promovê-lo quebraria a ordem aditiva). Escolhido em vez do frontmatter: o `status:` de lá é
+  sincronizado pelo `roadmap move`, parseado pelo `roadmapdoc` e pinado pelo contrato do barrier.
+- **Gate ATUALIZADO, não afrouxado:** 3 pins novos em `check-validate-rule-pins.sh` (25 → 28), cada um
+  falsificado à mão: limiar 2→3 ⇒ `PIN2B` reprova (rc **1**); carve-out de slug vazio removido ⇒
+  `PIN2C` reprova (rc **1**); leitor do vínculo neutralizado ⇒ `PIN2D` reprova (rc **1**); árvore
+  restaurada ⇒ **28 pins passam** (rc **0**). `PIN2D` traz contra-braço no mesmo pin (mesmo nome de
+  branch, sem vínculo gravado, tem de reprovar).
+- ⚠️ **Armadilha de rótulo, medida:** o Bloco 3 do mesmo gate **já usa** `pin6`/`pin7`/`pin8`. Continuar
+  a numeração local do Bloco 2 fez o gate **passar com rótulos duplicados**, sem nenhuma detecção.
+  Renomeados para `pin2b`/`pin2c`/`pin2d`.
+- **Nenhum literal tocado está pinado em `scripts/`** (verificado um a um: `strings.Contains(normalize…`,
+  `func BranchSlugMatchesRoadmap`, `append(append([]string{}`, `validateBranchHasWIPRoadmap`,
+  `execGitCheckout(branchName)`, `deps.matchSlug`) — nenhuma ocorrência fora de `testdata`.
+- **Resíduos:** (1) `check-symlink-privilege-guard` enumera por `git ls-files` e **não vê** os 2
+  arquivos de teste novos — verificado à mão, 0 ocorrências de `os.Symlink`. (2)
+  `check-write-containment` examina **158** sítios com `SITE_FLOOR=157`, e mede 158 também na árvore de
+  `HEAD` (`git archive`): o piso está **defasado por 1 antes deste ML**, não por causa dele. (3) A
+  direção **frouxa** segue aberta por decisão da D4 (`fix/roadmap` ainda casa 175 de 201 pelo braço
+  substring) — é o `ML-3C`. Status do ML mantido em 🔄 até a auditoria.
+- Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.
+

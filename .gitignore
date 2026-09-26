@@ -15,6 +15,11 @@ npm/node_modules/
 # trackfw: baseline local de violations toleradas (nao versionado)
 .trackfw-baseline.json
 
+# trackfw: vinculo branch<->roadmap escrito pelo `branch new` (estado POR CHECKOUT, nao versionado —
+# ML-3A da REQ-2026-09-09 / ADR-2026-09-26). Clone, fork e CI nao o tem por desenho: a inferencia por
+# nome e o fallback para essa populacao, e ela e superconjunto do que o `Contains` aceitava.
+docs/roadmaps/.trackfw-branch-links.json
+
 
 # macOS
 .DS_Store

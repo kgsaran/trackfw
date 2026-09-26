@@ -48,7 +48,13 @@ type branchNewDeps struct {
 	// execGitCheckout runs `git checkout -b <branchName>` with inherited stdio, propagating Git's
 	// own output and exit code literally (production: defaultGitCheckout).
 	execGitCheckout func(branchName string) error
-	out             io.Writer
+	// recordLink writes the branch↔roadmap link after the branch is created (production:
+	// validator.RecordBranchLink). 🔴 This is D1 of ADR-2026-09-26: `branch new` KNOWS which roadmap
+	// governs the branch at this exact instant, so it writes it down instead of leaving every later
+	// `commit`/`ship`/`validate` to re-infer it from the two names. nil skips the recording, which
+	// is what the pre-existing unit tests do — the link is an accelerator, never a gate.
+	recordLink func(cfg config.ProjectConfig, branch string) error
+	out        io.Writer
 }
 
 func newBranchCmd() *cobra.Command {
@@ -99,6 +105,7 @@ Create the governance artifacts first if this blocks you:
 				resolveDoneDirs: validator.ResolveDoneDirs,
 				matchSlug:       validator.BranchSlugMatchesRoadmap,
 				execGitCheckout: defaultGitCheckout,
+				recordLink:      validator.RecordBranchLink,
 				out:             cmd.OutOrStdout(),
 			}
 			return runBranchNew(args[0], dryRun, deps)
@@ -144,8 +151,9 @@ func runBranchNew(spec string, dryRun bool, deps branchNewDeps) error {
 
 	// chore/docs are housekeeping types — already treated as roadmap-exempt by `trackfw ship`
 	// and `trackfw commit` — so the branch_has_wip_roadmap gate below does not apply to them.
+	var cfg config.ProjectConfig
 	if branchGatedTypes[branchType] {
-		cfg := deps.loadConfig()
+		cfg = deps.loadConfig()
 		wipDirs := deps.resolveWIPDirs(cfg)
 		doneDirs := deps.resolveDoneDirs(cfg)
 
@@ -173,7 +181,20 @@ func runBranchNew(spec string, dryRun bool, deps branchNewDeps) error {
 		return nil
 	}
 
-	return deps.execGitCheckout(branchName)
+	if err := deps.execGitCheckout(branchName); err != nil {
+		return err
+	}
+
+	// The link is recorded ONLY for gated types and ONLY after Git created the branch: recording a
+	// link for a branch that does not exist would be state about nothing. A failure here is
+	// reported and swallowed — the branch exists, the gate passed, and losing the accelerator must
+	// not turn a successful creation into an error the user cannot act on.
+	if branchGatedTypes[branchType] && deps.recordLink != nil {
+		if err := deps.recordLink(cfg, branchName); err != nil {
+			fmt.Fprintf(deps.out, "trackfw branch new: branch created, but the branch↔roadmap link could not be recorded: %v\n", err)
+		}
+	}
+	return nil
 }
 
 // parseBranchSpec splits "<type>/<slug>" and validates both parts. type must be one of

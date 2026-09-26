@@ -508,7 +508,7 @@ placeholder. The amendment to that ADR is pending (REQ-2026-09-09, AC7).
 
 ### `roadmap move` / `req move` — name resolution refuses instead of guessing
 
-<!-- trackfw-contract: gate=internal/generators/artifact_select_ml1c_test.go partial=o gate cobre findRoadmap (flat e by_agent), findREQ e ShowRoadmap; NÃO cobre outros resolvedores por nome fora de internal/generators (o vínculo branch↔roadmap de validator.BranchSlugMatchesRoadmap é contrato próprio, tratado pelo ML-3A da REQ-2026-09-09) -->
+<!-- trackfw-contract: gate=internal/generators/artifact_select_ml1c_test.go partial=o gate cobre findRoadmap (flat e by_agent), findREQ e ShowRoadmap; NÃO cobre outros resolvedores por nome fora de internal/generators — o vínculo branch↔roadmap de validator.MatchRoadmapsForBranchSlug é contrato próprio, entregue pelo ML-3A da REQ-2026-09-09 e pinado na seção "Vínculo branch↔roadmap" abaixo -->
 
 `roadmap move <name> <state>` and `req move <name> <status>` resolve `<name>` against the artifact
 basenames through one shared decision point. The resolution is pinned as follows
@@ -1739,17 +1739,22 @@ time.
 
 ```
 1. Parse "<type>/<slug>" — <type> must be feat|fix|refactor|chore|docs, <slug> non-empty.
-2. For feat|fix|refactor only: normalize the slug and check whether any roadmap filename in
-   wip/ or done/ contains it — the same BranchSlugMatchesRoadmap (Go) /
-   branchSlugMatchesRoadmap (Node.js) / branch_slug_matches_roadmap (Python) function
-   trackfw validate calls for branch_has_wip_roadmap. Not a reimplementation — the same
-   function, imported. chore|docs skip this step entirely — matchSlug is never called.
+2. For feat|fix|refactor only: normalize the slug and check whether it matches any roadmap
+   filename in wip/ or done/ — the same validator.MatchRoadmapsForBranchSlug the
+   trackfw validate rule branch_has_wip_roadmap calls (via BranchSlugMatchesRoadmap). Not a
+   reimplementation — the same function, imported. The relation is substring OR token overlap
+   (see "Vínculo branch↔roadmap" below). chore|docs skip this step entirely — matchSlug is
+   never called.
 3. No match (feat|fix|refactor only): print the same governance orientation message
    trackfw validate already prints for this rule, exit non-zero, never invoke git.
 4. --dry-run with a match (or chore|docs): print "[dry-run] would create branch "<type>/<slug>"
    (git checkout -b <type>/<slug>)", exit 0, never invoke git.
 5. Match (or chore|docs), no --dry-run: run `git checkout -b <type>/<slug>` with inherited
    stdio.
+6. For feat|fix|refactor only, AFTER git created the branch: record the branch↔roadmap link in
+   <roadmap_dir>/.trackfw-branch-links.json, when the inference identified exactly ONE roadmap.
+   A failure to record is printed and does not fail the command — the link is an accelerator,
+   never a gate.
 ```
 
 ### Shared matching logic — never duplicated
@@ -1760,7 +1765,7 @@ The slug-matching rule is implemented once per runtime and called from both plac
 
 | Runtime | Shared function | Called by `trackfw validate` | Called by `trackfw branch new` |
 |---|---|---|---|
-| Go | `validator.BranchSlugMatchesRoadmap` | `validateBranchHasWIPRoadmap` (`internal/validator/validator.go`) | `runBranchNew` (`internal/commands/branch.go`) |
+| Go | `validator.MatchRoadmapsForBranchSlug` (via `BranchSlugMatchesRoadmap`) | `validateBranchHasWIPRoadmap` (`internal/validator/validator.go`) | `runBranchNew` (`internal/commands/branch.go`) |
 | Node.js | `validator.branchSlugMatchesRoadmap` | `npm/src/validator.js` | `runBranchNew` (`npm/src/branch/runner.js`) |
 | Python | `_validator.branch_slug_matches_roadmap` | `pypi/trackfw/validator.py` | `run_branch_new` (`pypi/trackfw/commands/branch.py`) |
 
@@ -3967,9 +3972,6 @@ procura o slug em **`wip/` e `done/`**, não apenas em `wip/`.
 | Nenhum roadmap em `wip/` nem em `done/` | Violação com mensagem "no roadmap is in wip/ nor done/" + orientação de remediação |
 | Roadmap em `done/` com slug **diferente** da branch | Violação com mensagem "no matching roadmap in wip/ nor done/" — casamento de slug é obrigatório |
 
-O casamento é feito por `normalizeBranchSlug(filename).contains(branchSlug)` (substring, não
-igualdade), pois nomes de roadmap carregam prefixos de data (`ROADMAP-2026-07-27-<slug>.md`).
-
 A resolução de diretórios (`wip/`, `done/`) é centralizada em `resolveStateDirs` (Go),
 `resolveStateDirs` (Node.js) e `_resolve_state_dirs` (Python) — as variantes por agente
 (`by_agent`) são suportadas via os mesmos wrappers `resolveWIPDirs`/`resolveDoneDirs`.
@@ -3978,9 +3980,48 @@ O ID da regra (`branch_has_wip_roadmap`) e o mecanismo de severidade configuráv
 preservados — a aceitação de `done/` não altera a config key nem o comportamento de `off`/`warning`.
 
 `trackfw branch new` (ver "`trackfw branch new`" acima) aplica exatamente esta mesma regra **antes**
-da branch existir, chamando a mesma função de matching (`BranchSlugMatchesRoadmap` /
-`branchSlugMatchesRoadmap` / `branch_slug_matches_roadmap`) que `validateBranchHasWIPRoadmap`
-chama aqui — não uma segunda implementação.
+da branch existir, chamando a mesma função de matching (`MatchRoadmapsForBranchSlug`, via
+`BranchSlugMatchesRoadmap`) que `validateBranchHasWIPRoadmap` chama aqui — não uma segunda implementação.
+
+### Vínculo branch↔roadmap — relação ADITIVA, com vínculo escrito na frente
+
+<!-- trackfw-contract: gate=scripts/check-validate-rule-pins.sh,internal/validator/branch_roadmap_match_ml3a_test.go partial=os pins cobrem a relação (substring, sobreposição de tokens, slug vazio) e o vínculo escrito pelo `branch new`; NÃO cobrem o corpus histórico completo das 205 branches deste repositório — essa medição vira gate no ML-3C da REQ-2026-09-09 -->
+
+Desde o `ML-3A` da REQ-2026-09-09 (ADR-2026-09-26), a resolução tem **duas etapas, nesta ordem**:
+
+**1. Vínculo ESCRITO (fonte de verdade).** `trackfw branch new` grava
+`<roadmap_dir>/.trackfw-branch-links.json` (`{"version":1,"links":{"<branch>":"<ROADMAP-….md>"}}`)
+no instante em que cria a branch — o instante em que a informação ainda é exata. `validate`,
+`commit` e `ship` consultam esse vínculo. Se ele aponta para roadmap que **saiu de `wip/`+`done/`**,
+o vínculo está **obsoleto**: cai-se na inferência **e emite-se o aviso `branch_link_stale`** —
+nunca em silêncio. 🔴 O aviso **nunca** é violação: promovê-lo quebraria a ordem aditiva (uma branch
+que passa hoje começaria a falhar por causa de um registro obsoleto ao lado dela).
+
+**2. INFERÊNCIA por nome (fallback).** Para branch que não passou pelo `branch new` (clone, fork,
+`git checkout -b`), a relação é `MatchRoadmapsForBranchSlug` e aceita quando **qualquer** um dos dois
+braços aceita:
+
+| braço | relação | por quê |
+|---|---|---|
+| substring | `normalizeBranchSlug(filename)` contém `branchSlug` | braço histórico, mantido **verbatim**: nenhuma branch que passava pode passar a falhar (etapa 1, aditiva, da D4 do ADR) |
+| sobreposição de tokens | ≥ **2** tokens de conteúdo distintos, de 3+ caracteres, em comum | fecha a direção **restrito demais** do issue #273: a branch nomeia **o trabalho**, o roadmap nomeia **o título da REQ**, e nenhum é substring do outro |
+
+Os tokens do roadmap saem do **slug de conteúdo** — o prefixo estrutural (`ROADMAP-`/`REQ-`/`ADR-`),
+a data ISO e o `.md` são removidos antes de tokenizar. Sem isso, `roadmap` seria token de **todo**
+roadmap do acervo (175 de 201 neste repositório), dando um token grátis a qualquer slug que contenha
+a palavra. É remoção **posicional**, não lista negra: um roadmap cujo **título** contém "roadmap"
+mantém esse token.
+
+O **2** é valor **calibrado** contra o acervo (ML-3A, 2026-09-26), não escolhido: o caso do #273
+compartilha exatamente 2 tokens, logo ≥3 reabre o falso-negativo; e com 1 a relação aceita **205 de
+205** branches históricas, deixando de discriminar.
+
+🔴 **Slug vazio casa NADA.** `strings.Contains(x, "")` é sempre verdadeiro, então antes do `ML-3A` a
+branch `feat/` era relatada como governada por qualquer acervo. É a única restrição desta etapa, e é
+a exceção declarada no ADR à ordem aditiva — não existe consumidor legítimo de slug vazio.
+
+A etapa **restritiva** (remover o que o substring aceita e a sobreposição não) **não** está no ar:
+depende do gate de corpus do `ML-3C`.
 
 ## Contrato de artefatos gerados (req, adr, roadmap, note)
 
