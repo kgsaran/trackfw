@@ -534,20 +534,100 @@ silenciosa. Registro aqui e corrijo na REQ-2026-09-25 em seguida.
 
 ### ML-1D — 🔴 A regra `req_has_roadmap` não implementa a decisão do ML-1A
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento (despachado em 2026-09-26)
+**Status:** ✅ Concluído — auditado em 2026-09-26 · **1 REQ mudou de veredito, e é genuína**
 
 **Medido:** `roadmap: none` satisfaz a regra. `validator.go:2236` usa `extractFrontmatterField`
 (qualquer valor não-vazio) enquanto o comentário de `:2217` afirma usar `extractRefPath`
 (frontmatter-first, **exige `.md`**).
 
 **Critérios de aceite:**
-- [ ] A regra passa a usar a fonte de verdade que o `ML-1A` decidiu, ou 🔴 **a decisão do `ML-1A` é
+- [x] A regra passa a usar a fonte de verdade que o `ML-1A` decidiu, ou 🔴 **a decisão do `ML-1A` é
       corrigida com a razão escrita** — o que não pode continuar é comentário afirmando o que o
       código não faz
-- [ ] `roadmap: none` (e irmãos: `none`, `-`, `TBD`, comentário HTML) **passam a disparar**
-- [ ] 🔴 **Contra-braço:** vínculo legítimo continua **não** disparando, e o corpus real não ganha
+- [x] `roadmap: none` (e irmãos: `none`, `-`, `TBD`, comentário HTML) **passam a disparar**
+- [x] 🔴 **Contra-braço:** vínculo legítimo continua **não** disparando, e o corpus real não ganha
       violação nova — medir **antes e depois** nos 231 REQs
-- [ ] O comentário de `:2217` passa a descrever o que o código faz
+- [x] O comentário de `:2217` passa a descrever o que o código faz
+
+#### 🔴 Auditoria do ML-1D — medido por mim, com os dois binários
+
+```
+$ tf-before validate | grep -c "has no linked Roadmap"   →  12
+$ tf-after  validate | grep -c "has no linked Roadmap"   →  13
+$ diff (before | sort) (after | sort)
+> ⚠ req "REQ-2026-08-16-conformidade-estrutural-…-tres-clis.md" has no linked Roadmap
+```
+
+**Exatamente 1 REQ mudou de veredito, e ela é genuína.** O valor dela, na linha 143:
+
+```
+Roadmap: (a criar quando esta REQ sair do backlog — não iniciar sem REQ + roadmap em `wip`)
+```
+
+🔴 **Prosa que diz literalmente que o roadmap não existe** — e passava pela regra. Sonda própria:
+`roadmap: none` **dispara** (1) · vínculo legítimo **continua limpo** (0). `make quality` **rc 0**,
+**340 OK** (338 + 2 da Direção C nova), 0 FAIL.
+
+### R2 — o que decidiu entre (a) e (b) não foi o que eu mandei medir
+
+Mandei escolher **pela medição do corpus**. Ele mediu, e a medição confirma — **mas o argumento que
+fecha é outro, e é melhor:** o `docs/cli-parity.md` escrito pelo **próprio `ML-1B`** já declarava que
+o gerador trata `none`, `-`, `<!-- … -->` como **placeholder a preencher**.
+
+🔴 **Logo o gerador chamava `roadmap: none` de placeholder enquanto o validador chamava a mesma REQ
+de vinculada.** Não era escolha de política entre duas saídas legítimas — era **divergência interna
+do mesmo contrato**, e (b) exigiria reescrever o contrato do gerador junto. **Aritmética, não
+amostra.**
+
+### R1 — o comentário tinha DUAS claims falsas, não uma
+
+Além da fonte de verdade, ele afirmava **case-insensitive**, e `extractFrontmatterField` faz
+`HasPrefix(line, field+":")` — **sensível a caixa**. Só `extractRefPath` é `EqualFold`. As duas
+viraram verdadeiras com a troca.
+
+### 🔴 R3 — apertar a regra ESVAZIA o Cenário 192-B, e nenhuma composição salva
+
+O Cenário 192 provava o achado A2 sabotando a ancoragem de `contentHasMarkerValue` e exigindo que a
+violação **desaparecesse**. Com a regra migrada, a sabotagem deixa de mudar o veredito → a violação
+**sobrevive** → `assert_lacks_pattern` reprova **sem defeito nenhum**.
+
+E o detalhe que torna isso irrecuperável por remendo: com `.md` exigido, a prosa é recusada por
+**duas razões independentes** (sem ancoragem **e** sem `.md`), então neutralizar só a ancoragem
+**nunca** vira verde. Ele migrou a Direção B para o campo **ADR** (consumidor vivo de
+`contentHasMarkerValue`) e criou a **Direção C** para medir a mesma propriedade no leitor novo.
+
+⚠️ **E a Direção C só compila como disjunção** — substituir a condição deixaria `key` sem uso e o Go
+recusa. É o tipo de detalhe que só aparece construindo.
+
+### A população em risco não era 231, eram 7 — e a subtração é o teste
+
+```
+212 com .md · 17 com roadmap: "" · 2 sem o campo · 0 com none/não-.md
+raio do aperto = 19 (frontmatter vazio) − 12 (já acusadas) = 7 REQs que passavam SÓ pelo corpo
+```
+
+Das 7: **4** têm caminho simples → passam · **2** têm caminho **entre backticks** → passam (e isso
+fecha um achado da `REQ-2026-07-30` que registrava esse formato como *"ignorado"*) · **1** era a
+prosa. 🔴 **Medir só o total esconde o raio** — foi ele que viu isso, não eu.
+
+### Sítio de mesma causa fechado no mesmo ML
+
+O lado frontmatter de `req_roadmap_sync` (`:2278`) ainda usava `extractFrontmatterField`. Deixá-lo
+faria as duas regras **discordarem sobre o que é valor**: `roadmap: "none"` + caminho real no corpo
+daria *"sem vínculo"* numa e *"divergent links"* na outra — divergência que **não existe**. Corrigido;
+a saída ficou **byte-idêntica** à medição "depois", logo é correção de **mecanismo**, não de contagem.
+
+### Varredura de mesma classe, com o critério certo
+
+Ele não varreu "regras que leem frontmatter" — varreu **regras cujo comentário afirma uma fonte de
+verdade diferente da que o código usa**. `req_has_adr`/`wip_has_req`/`blocked_has_req` são cegas ao
+frontmatter **mas não têm comentário mentindo** → fora da classe, e viram o **`ML-1E`**.
+`note_orphan` e `resolveAdrStatus` descrevem o código. E o doc de `extractRefPath` **omitia a
+exigência de `.md`** — *"foi essa omissão que alimentou a confusão ML-1A/ML-1D"*.
+
+⚠️ **Verrugas deliberadas, declaradas:** a mensagem da violação continua dizendo *"marker must start
+the line"* (lê torto para o caminho de frontmatter) porque o literal **é barreira**; e um `roadmap:`
+declarado e absolutamente vazio bloqueia o fallback para o corpo — **0 casos** nos 231.
 
 ### ML-1E — `req new` (wizard) cria ADR draft e não grava `adr:`
 **Status:** ⬜ Pendente · ⚠️ **achado estrutural, sem instância medida no corpus**

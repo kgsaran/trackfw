@@ -2211,15 +2211,32 @@ func validateBlockedHasREQ() ([]string, error) {
 
 // validateREQsHaveRoadmap verifica se cada REQ tem ao menos um campo de vínculo preenchido.
 //
-// ML-1A (AC9) — fonte de verdade: FRONTMATTER.
-// O campo `roadmap:` do frontmatter é mantido pelo `roadmap move` via syncREQReferences;
-// é o que o `serve` e o `validate` usam como autoridade. O marcador de corpo `Roadmap:`
-// é legado e pode estar desatualizado após moves. A detecção usa extractRefPath, que é
-// case-insensitive e frontmatter-first: retorna o campo `roadmap:` do frontmatter quando
-// não-vazio, caindo para o `Roadmap:` do corpo caso contrário. Isso corrige os 21 casos
-// onde o frontmatter estava preenchido mas a contagem do validate mostrava "órfã" porque
-// contentHasMarkerValue (case-sensitive, marcador capital "Roadmap:") não enxergava o
-// campo lowercase "roadmap:" do frontmatter.
+// ML-1A (AC9) — fonte de verdade: FRONTMATTER. O campo `roadmap:` do frontmatter é mantido pelo
+// `roadmap move` via syncREQReferences; é o que o `serve` e o `validate` usam como autoridade. O
+// marcador de corpo `Roadmap:` é legado e pode estar desatualizado após moves. Isso corrige os 21
+// casos onde o frontmatter estava preenchido mas a contagem do validate mostrava "órfã" porque
+// contentHasMarkerValue (case-sensitive, marcador capital "Roadmap:") não enxergava o campo
+// lowercase "roadmap:" do frontmatter.
+//
+// ML-1D — o que o código faz, exatamente (o comentário anterior afirmava extractRefPath e o código
+// usava extractFrontmatterField, que aceita QUALQUER valor não-vazio; medido: `roadmap: none`
+// satisfazia a regra, e uma REQ cujo corpo dizia "Roadmap: (a criar quando esta REQ sair do
+// backlog…)" contava como vinculada):
+//
+//   - a detecção é contentHasStructuredRefValue sobre cfg.LinkFieldsRoadmap, que delega a
+//     extractRefPath — logo o vínculo tem de ser um caminho terminado em ".md". `none`, `TBD`,
+//     `-`, comentário HTML e prosa deixaram de contar;
+//   - o casamento da chave é CASE-INSENSITIVE (EqualFold em extractRefPath), então `roadmap:` do
+//     frontmatter e `Roadmap:` do corpo são o mesmo campo — e é por isso que a claim de
+//     case-insensitividade, falsa enquanto o código usava extractFrontmatterField
+//     (HasPrefix(field+":"), sensível a caixa), agora é verdadeira;
+//   - a precedência do frontmatter é POSICIONAL, não explícita: extractRefPath varre linha a linha
+//     e o frontmatter vem primeiro no arquivo, então ele vence quando carrega um valor real, e o
+//     corpo é o fallback quando não carrega. Consequência deliberada e documentada: um `roadmap:`
+//     declarado e VERDADEIRAMENTE vazio (nada depois do ":") faz extractRefPath retornar cedo e
+//     BLOQUEIA o fallback para o corpo — medido em 2026-09-26 nos 231 REQs deste repositório: zero
+//     casos (as 17 REQs com frontmatter vazio gravam `roadmap: ""`, que não é vazio para o
+//     extrator e cai no corpo normalmente).
 func validateREQsHaveRoadmap() ([]string, error) {
 	cfg := config.Load()
 	files, err := resolveREQFiles(cfg)
@@ -2233,8 +2250,7 @@ func validateREQsHaveRoadmap() ([]string, error) {
 		if !ok {
 			continue
 		}
-		fmRoadmap := extractFrontmatterField(string(content), "roadmap")
-		if fmRoadmap == "" && !contentHasMarkerValue(string(content), cfg.LinkFieldsRoadmap) {
+		if !contentHasStructuredRefValue(string(content), cfg.LinkFieldsRoadmap) {
 			violations = append(violations, fmt.Sprintf("req %q has no linked Roadmap (marker must start the line with a real, non-placeholder value)", filepath.Base(path)))
 		}
 	}
@@ -2259,10 +2275,23 @@ func validateREQRoadmapSync() ([]string, error) {
 		if !ok {
 			continue
 		}
-		fmRef := extractFrontmatterField(string(content), "roadmap")
+		// ML-1D: o lado frontmatter passou a usar o MESMO critério de "referência real" do lado corpo
+		// (que já ia por extractBodyRefPath → extractRefPath) e do req_has_roadmap. Antes, o
+		// frontmatter ia por extractFrontmatterField e aceitava qualquer valor não-vazio: uma REQ com
+		// `roadmap: "none"` e um caminho real no corpo era reportada como "divergent roadmap links:
+		// frontmatter=\"none\" body=\"x.md\"" — e não há divergência ali, há UM vínculo e UM
+		// placeholder. Pior, as duas regras discordariam sobre o que é valor: req_has_roadmap diria
+		// "sem vínculo" e esta diria "vínculos conflitantes". Medido nos 231 REQs em 2026-09-26: zero
+		// ocorrências (as 17 REQs de frontmatter vazio gravam `roadmap: ""`, que já era ignorado), logo
+		// a correção é de mecanismo, não de contagem.
+		//
+		// A delegação remonta a LINHA do campo em vez de chamar um predicado de valor: o predicado vive
+		// dentro de extractRefPath e extraí-lo para um helper próprio exigiria mexer no corpo daquela
+		// função, cujo literal o Cenário 28 do check-gates-falsify fixa para sabotar o strip de backtick.
+		fmRef := extractRefPath("roadmap: "+extractFrontmatterField(string(content), "roadmap"), "roadmap")
 		bodyRef := extractBodyRefPath(string(content), "Roadmap")
 		if fmRef == "" || bodyRef == "" {
-			continue // divergência requer os dois preenchidos
+			continue // divergência requer os dois preenchidos com referência REAL
 		}
 		fmBase := filepath.Base(strings.Trim(fmRef, `"'` + "`"))
 		bodyBase := filepath.Base(strings.Trim(bodyRef, `"'` + "`"))
@@ -2957,7 +2986,10 @@ func gitLastModifiedTime(path string) (time.Time, bool) {
 }
 
 // extractRefPath extrai o valor do campo field: na linha de frontmatter/cabeçalho.
-// Retorna string vazia se o campo estiver ausente, vazio ou com valor traço.
+// Retorna string vazia se o campo estiver ausente, vazio ou com valor traço — e TAMBÉM quando o
+// primeiro token do valor não termina em ".md" (ML-1D: essa condição é parte do contrato, não um
+// detalhe; é ela que faz `none`, `TBD` e prosa NÃO serem referência, e o comentário anterior a
+// omitia, o que alimentou a divergência entre a regra req_has_roadmap e este extrator).
 // ExtractRefPath é o wrapper exportado de extractRefPath, usado por consumidores fora do pacote
 // validator (internal/serve/api_chain.go, ML-3D). Achado durante o ML-3D: o gerador de REQ
 // (internal/generators/req.go) grava `adr: ""` e `roadmap: ""` SEMPRE vazios no frontmatter —
@@ -2990,6 +3022,44 @@ func extractRefPath(content, field string) string {
 		}
 	}
 	return ""
+}
+
+// contentHasStructuredRefValue reporta se algum dos markers de vínculo tem, no conteúdo, um valor
+// que extractRefPath aceita como REFERÊNCIA REAL — isto é, um caminho terminado em ".md".
+//
+// ML-1D: é o ponto único de "está vinculada?" para as regras cujo vínculo é lido por extractRefPath,
+// e existe para que a regra e o extrator não possam divergir (era o defeito medido: a regra aceitava
+// qualquer valor não-vazio do frontmatter, então `roadmap: none` passava).
+//
+// Alcance, escrito para não virar a próxima claim falsa: quem passa por aqui hoje é `req_has_roadmap`.
+// `req_roadmap_sync` e `ref_targets_exist` chamam extractRefPath direto (o MESMO predicado, sem este
+// invólucro) porque precisam do VALOR da referência, não do booleano. Já `req_has_adr`, `wip_has_req` e
+// `blocked_has_req` continuam em contentHasMarkerValue — decisão de escopo, não descuido: o campo
+// `adr:` é o ML-1E desta mesma REQ, e nenhuma dessas três carrega comentário afirmando outra fonte de
+// verdade (o defeito que o ML-1D corrige é comentário que mente, não assimetria por si).
+//
+// O que ele herda de extractRefPath, e que contentHasMarkerValue NÃO faz:
+//   - exige que o valor termine em ".md" — recusa `none`, `TBD`, `nenhum`, prosa e qualquer outro
+//     texto que não seja um caminho de artefato;
+//   - casa a chave por EqualFold, então o `roadmap:` (minúsculo) do frontmatter e o `Roadmap:`
+//     (capital) do corpo são o MESMO campo;
+//   - remove backtick/aspas do primeiro token, então `` Roadmap: `docs/.../X.md` `` conta.
+//
+// O que ele preserva de contentHasMarkerValue: a configurabilidade de link_fields (cada marker vira
+// o field do extrator, sem o ":" final) e a ancoragem por chave de linha — em extractRefPath a chave
+// é TUDO o que vem antes do primeiro ":", então prosa como "veja a secao Roadmap: mais abaixo" não
+// casa (a chave seria "veja a secao Roadmap").
+func contentHasStructuredRefValue(content string, markers []string) bool {
+	for _, marker := range markers {
+		field := strings.TrimSuffix(strings.TrimSpace(marker), ":")
+		if field == "" {
+			continue
+		}
+		if extractRefPath(content, field) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // validateRefTargetsExist verifica se arquivos referenciados via REQ:, ADR: e Roadmap: existem.

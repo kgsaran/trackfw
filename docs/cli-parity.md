@@ -421,6 +421,17 @@ marker is updated too, because a body that disagrees with the frontmatter mislea
 | frontmatter `roadmap:` | anything that is **not** a `.md` reference (`""`, `none`, `-`, `<!-- … -->`) | machine-written field: the REQ generator always emits `roadmap: ""` |
 | body `Roadmap:` | **only** empty, a dash, or an HTML-comment placeholder | human prose: `Roadmap: to be decided after the ADR` must not be erased |
 
+**The validator reads the link with the same notion of "real" (ML-1D, 2026-09-26).** `req_has_roadmap`
+resolves the link through `extractRefPath` — the extractor shared by `ref_targets_exist` and
+`req_roadmap_sync`, whose frontmatter side moved to the same predicate in the same change — so a value that is not a `.md` reference (`none`, `TBD`, `-`, `<!-- … -->`, prose)
+does **not** satisfy the rule, in the frontmatter or in the body. Before this, the rule accepted any
+non-empty frontmatter value, which made the two halves of this contract disagree: the generator
+classified `roadmap: none` as *fillable placeholder* while the validator classified the same REQ as
+*linked*. Measured on the 231 REQs of this repository: 12 REQs flagged before, 13 after — the single
+new one declared, in its own body, `Roadmap: (a criar quando esta REQ sair do backlog…)`. The
+frontmatter still wins over the body, by position: `extractRefPath` scans top-down and the frontmatter
+block comes first.
+
 **Cardinality — every case pinned:**
 
 | State of the named REQ | Behaviour |

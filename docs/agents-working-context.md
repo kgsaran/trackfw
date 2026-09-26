@@ -41536,3 +41536,60 @@ bash scripts/check-unguarded-capture-rc.sh          RC=0
   (fechado por inspeção: 0 ocorrências de `os.Symlink`) — **segunda passada pós-commit obrigatória**.
 - Status do ML mantido em 🔄 e ACs não marcados — muda só após a auditoria do arquiteto.
 - Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.
+
+## 2026-09-26 — apolo-tf — ML-1D (início): a regra `req_has_roadmap` não implementa a decisão do ML-1A
+
+- **Escopo:** `internal/validator/validator.go` — o comentário de `:2217` afirma usar `extractRefPath`
+  (frontmatter-first, case-insensitive, exige `.md`) mas o código usa `extractFrontmatterField`
+  (qualquer valor não-vazio, case-sensitive). Medido: `roadmap: none` satisfaz a regra hoje.
+- **Método:** censo dos 231 REQs + binário de HEAD contra binário corrigido, antes/depois, com a lista
+  das REQs que mudam de veredito. Escolher (a) apertar a regra ou (b) corrigir a decisão do ML-1A
+  **pela medição**, não por presunção.
+- **Escopo negativo:** `BranchSlugMatchesRoadmap` (ML-3A) e `.trackfw-baseline.json` não são tocados.
+- Sem Git: não crio branch, não commito, não faço push.
+
+## 2026-09-26 — apolo-tf — ML-1D (fim): o comentário mentia em DUAS claims, e apertar a regra esvazia o Cenário 192
+
+- **Saída escolhida: (a)** — a regra passa a ler o vínculo por `extractRefPath`. 🔴 O argumento decisivo
+  **não** foi a medição do validador, foi o contrato do **gerador**: `docs/cli-parity.md` já declarava
+  que `roadmap:` é sobrescrito quando o valor *"is not a `.md` reference (`""`, `none`, `-`,
+  `<!-- … -->`)"*. O gerador já chamava `none` de placeholder a preencher e o validador chamava a
+  mesma REQ de vinculada — divergência interna do mesmo contrato, não escolha de política.
+- **Duas claims falsas no comentário de `:2217`, não uma:** a fonte de verdade (`extractRefPath` ×
+  `extractFrontmatterField`) **e** a case-insensitividade (`extractFrontmatterField` é
+  `HasPrefix(field+":")`, sensível a caixa). As duas passaram a ser verdadeiras com a troca.
+- **Medição (231 REQs, binário de HEAD × binário corrigido, corpus real):** 12 → **13** acusadas,
+  **zero** vínculo legítimo perdido. A única nova é genuína: `REQ-2026-08-16` passava com
+  `Roadmap: (a criar quando esta REQ sair do backlog…)`. Censo: 212 com `.md`, 17 com `roadmap: ""`,
+  2 sem campo, **0 com `none`** — o raio do aperto mora nas **7** REQs que passavam só pelo corpo
+  (19 de frontmatter vazio − 12 já acusadas), não no total.
+- 🔴 **Armadilha de instrumento nova (a mais cara deste ML):** migrar a regra de
+  `contentHasMarkerValue` para `extractRefPath` **esvazia** a Direção B do Cenário 192 — a sabotagem da
+  ancoragem deixa de mudar o veredito, a violação sobrevive e `assert_lacks_pattern` reprova sem
+  defeito nenhum. Nenhuma composição salva (a prosa passa a ser recusada por duas razões
+  independentes). Conserto: **Direção B migrou para o campo ADR** (consumidor vivo de
+  `contentHasMarkerValue`, e a prosa cita o CAMINHO senão `adr_orphan` reprova os dois braços) e
+  **Direção C nova** mede a mesma propriedade no leitor novo.
+- **5 fixtures do harness saíram de `Roadmap: none` para um alvo real** (`ensure_roadmap_link_target`),
+  em `docs/roadmaps/abandoned/`: `backlog/` colide com o `find docs/roadmaps/backlog` dos Cenários
+  24/25/26; medido em 8 células que `wip/` dispara `wip_wave0`/`wip_has_req`/`wip_acceptance` e `done/`
+  dispara `req_roadmap_lifecycle` para REQ Open.
+- **Varredura de mesma classe:** `req_has_adr`/`wip_has_req`/`blocked_has_req` leem só o corpo e
+  `adr_orphan` usa `strings.Contains` — assimetria real, **nenhum comentário afirmando outra fonte de
+  verdade**, logo fora da classe do ML-1D (`adr:` é o ML-1E). `note_orphan`, `req_roadmap_sync` e
+  `resolveAdrStatus` conferidos: descrevem o código. Completei a omissão do comentário de
+  `extractRefPath`, que não citava a exigência de `.md`.
+- **Falsificação dos 4 testes novos (mutações restauradas):** regra antiga → 6 reprovam; `field`
+  hardcoded → o de `link_fields` reprova; sem strip de backtick → o de backtick reprova.
+- **Sítio de mesma causa fechado na MESMA REQ (Regra Dura):** o lado **frontmatter** de
+  `req_roadmap_sync` ainda ia por `extractFrontmatterField` — uma REQ com `roadmap: "none"` + caminho
+  real no corpo era reportada como *"divergent roadmap links: frontmatter=\"none\""*, e as duas regras
+  passariam a discordar sobre o que é valor (`req_has_roadmap`: sem vínculo; `req_roadmap_sync`:
+  vínculos conflitantes). Corrigido no mesmo ML; **0 ocorrências nos 231 REQs** (a saída de `validate`
+  ficou byte-idêntica à medição anterior), logo é correção de mecanismo, não de contagem.
+- **Outros leitores do mesmo campo, medidos:** `internal/serve/api_chain.go` já usa
+  `validator.ExtractRefPath` (board e validate concordam) e `internal/generators/roadmap.go` usa
+  `reqRoadmapFMIsFillable` (que já tratava `none` como placeholder) — **nenhum outro sítio divergente**.
+- **Resíduo:** `check-symlink-privilege-guard` enumera por `git ls-files` e não vê os testes novos;
+  evidência deles é `go test ./internal/validator/`. Status do ML mantido em 🔄.
+- Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.

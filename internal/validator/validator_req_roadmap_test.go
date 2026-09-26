@@ -197,3 +197,118 @@ func TestValidateREQRoadmapSync_StateDiffOnly(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// ML-1D — a regra passa a ler o vínculo pelo MESMO extrator que o ML-1A decidiu
+// (contentHasStructuredRefValue → extractRefPath), então placeholder deixa de contar.
+//
+// Reconciliação obrigatória (CLAUDE.md): cada teste declara qual conclusão do ML-1D afirma.
+// ---------------------------------------------------------------------------
+
+// reqHasRoadmapFired reporta se req_has_roadmap acusou a REQ, olhando violations E warnings —
+// a severidade da regra depende do trackfw.yaml do projeto sob teste, e o que este ML mede é o
+// VEREDITO da regra, não o canal por onde ela sai.
+func reqHasRoadmapFired(t *testing.T) bool {
+	t.Helper()
+	violations, warnings, err := ValidateUnfiltered()
+	if err != nil {
+		t.Fatalf("ValidateUnfiltered() erro: %v", err)
+	}
+	for _, m := range append(append([]string{}, violations...), warnings...) {
+		if hasViolation([]string{m}, "no linked Roadmap") {
+			return true
+		}
+	}
+	return false
+}
+
+// TestValidateREQsHaveRoadmap_PlaceholderNoneFires — afirma a MEDIÇÃO de abertura do ML-1D: uma REQ
+// com `roadmap: none` no frontmatter (e `Roadmap: none` no corpo) marcava ZERO violações de
+// "no linked Roadmap" antes desta correção, porque extractFrontmatterField aceitava qualquer valor
+// não-vazio. Agora dispara.
+func TestValidateREQsHaveRoadmap_PlaceholderNoneFires(t *testing.T) {
+	for _, placeholder := range []string{"none", "TBD", "-", "nenhum", "<!-- sem roadmap -->"} {
+		t.Run(placeholder, func(t *testing.T) {
+			dir := buildReqRoadmapDir(t)
+			writeREQWithFields(t, dir, "REQ-placeholder.md", placeholder, placeholder)
+			config.Reset()
+			chdir(t, dir)
+			t.Cleanup(config.Reset)
+
+			if !reqHasRoadmapFired(t) {
+				t.Errorf("placeholder %q no frontmatter e no corpo DEVE disparar req_has_roadmap", placeholder)
+			}
+		})
+	}
+}
+
+// TestValidateREQsHaveRoadmap_ProseValueFires — afirma que a única violação NOVA medida no corpus
+// real dos 231 REQs é genuína: REQ-2026-08-16 passava com
+// "Roadmap: (a criar quando esta REQ sair do backlog — não iniciar sem REQ + roadmap em `wip`)",
+// uma prosa que diz literalmente que o roadmap não existe.
+func TestValidateREQsHaveRoadmap_ProseValueFires(t *testing.T) {
+	dir := buildReqRoadmapDir(t)
+	writeREQWithFields(t, dir, "REQ-prose.md", "",
+		"(a criar quando esta REQ sair do backlog — não iniciar sem REQ + roadmap em `wip`)")
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	if !reqHasRoadmapFired(t) {
+		t.Error("valor de prosa no marcador de corpo DEVE disparar req_has_roadmap")
+	}
+}
+
+// TestValidateREQsHaveRoadmap_BacktickBodyStillPasses — contra-braço: afirma que as 2 REQs do corpus
+// real cujo vínculo vive no corpo entre backticks (REQ-2026-09-17 e REQ-2026-09-18) continuam NÃO
+// acusadas — extractRefPath remove backtick do primeiro token (Cenário 28 do check-gates-falsify).
+func TestValidateREQsHaveRoadmap_BacktickBodyStillPasses(t *testing.T) {
+	dir := buildReqRoadmapDir(t)
+	writeREQWithFields(t, dir, "REQ-backtick.md", "", "`docs/roadmaps/done/ROADMAP-x.md`")
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	if reqHasRoadmapFired(t) {
+		t.Error("vínculo de corpo entre backticks NÃO deve disparar req_has_roadmap")
+	}
+}
+
+// TestValidateREQsHaveRoadmap_CustomLinkFieldHonored — contra-braço de configurabilidade: afirma que
+// trocar o extrator NÃO perdeu link_fields.roadmap, porque contentHasStructuredRefValue deriva o
+// field de cada marker configurado (aqui `roadmap_ref`, sem o ":" do marcador default).
+func TestValidateREQsHaveRoadmap_CustomLinkFieldHonored(t *testing.T) {
+	dir := buildReqRoadmapDir(t)
+	writeFile(t, dir, "trackfw.yaml", "link_fields:\n  roadmap:\n    - roadmap_ref\n")
+	writeFile(t, dir, filepath.Join("docs/req", "REQ-custom-field.md"),
+		"---\nstatus: Open\ndate: 2026-09-26\n---\n\n# REQ: Fixture\n\nroadmap_ref: docs/roadmaps/done/ROADMAP-x.md\n")
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	if reqHasRoadmapFired(t) {
+		t.Error("marcador customizado (link_fields.roadmap=[roadmap_ref]) com valor .md NÃO deve disparar req_has_roadmap")
+	}
+}
+
+// TestValidateREQRoadmapSync_PlaceholderFrontmatterIsNotDivergence — afirma a conclusão do ML-1D de que
+// o lado frontmatter de req_roadmap_sync passou a usar o mesmo critério de "referência real": uma REQ
+// com `roadmap: "none"` e um caminho real no corpo tem UM vínculo e UM placeholder, não dois vínculos
+// conflitantes, e não deve disparar o warning de divergência.
+func TestValidateREQRoadmapSync_PlaceholderFrontmatterIsNotDivergence(t *testing.T) {
+	dir := buildReqRoadmapDir(t)
+	writeREQWithFields(t, dir, "REQ-fm-placeholder.md", "none", "docs/roadmaps/done/ROADMAP-x.md")
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	_, warnings, err := ValidateUnfiltered()
+	if err != nil {
+		t.Fatalf("ValidateUnfiltered() erro: %v", err)
+	}
+	for _, w := range warnings {
+		if hasWarning([]string{w}, "divergent roadmap") {
+			t.Errorf("frontmatter com placeholder NÃO deve disparar req_roadmap_sync, obteve: %q", w)
+		}
+	}
+}
