@@ -2,7 +2,7 @@
 status: Open
 date: 2026-09-09
 author: ""
-adr: ""
+adr: "docs/adr/ADR-2026-09-26-precisao-do-vinculo-branch-roadmap-escrever-em-vez-de-inferir.md"
 roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-09-req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos-e-o-segundo-se-esquece.md"
 ---
 
@@ -251,12 +251,13 @@ instante em que o elo existe sem ambiguidade — e é o instante em que ele não
 
 ### Critérios acrescentados
 
-- [ ] **AC11** — 🔴 **ADR obrigatório** (herdado do AC1 da REQ absorvida): decisão registrada sobre
+- [x] **AC11** — 🔴 **ADR obrigatório** (herdado do AC1 da REQ absorvida): decisão registrada sobre
       precisão do vínculo branch↔roadmap, com os candidatos descartados **e a medição acima**, que
       falsifica o candidato 1. A ADR precisa dizer se o vínculo passa a ser escrito, inferido com
       regra mais estrita, ou os dois.
       > Nota: `adr_accepted_when_req_done` **não** exige ADR (`adrRef == "" → continue`); só valida
       > ADR já linkado. Esta obrigação é da REQ, não do gate — registrar para não evaporar.
+      → `docs/adr/ADR-2026-09-26-precisao-do-vinculo-branch-roadmap-escrever-em-vez-de-inferir.md` (2026-09-26)
 - [ ] **AC12** — `findRoadmap` (`roadmap move`) e `BranchSlugMatchesRoadmap` (`validate`/`branch
       new`/`commit`) param de aceitar nome vazio e param de escolher por proximidade.
       ⚠️ **"nos 3 CLIs" ficou SEM OBJETO** desde a v8.0.0 — há uma implementação única em Go. Os dois

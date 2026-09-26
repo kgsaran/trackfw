@@ -373,7 +373,32 @@ por variável de shell vazia.
 > Dependências: Wave 1 (a fonte de verdade precisa estar decidida).
 
 ### ML-2A — **AC11** — ADR da precisão do vínculo branch↔roadmap
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído em 2026-09-26 — `docs/adr/ADR-2026-09-26-precisao-do-vinculo-branch-roadmap-escrever-em-vez-de-inferir.md`
+
+**As cinco decisões, em uma linha cada:**
+
+| | decisão |
+|---|---|
+| **D1** | 🔴 **O vínculo passa a ser ESCRITO; a inferência vira fallback.** O `branch new` **sabe** qual roadmap está em `wip/` no instante em que cria a branch — inferir depois é reconstruir informação que existia e foi jogada fora |
+| **D2** | A relação da inferência é **sobreposição de tokens**, não substring nem fronteira. ⚠️ **O número mínimo NÃO é decidido no ADR** — é calibração do `ML-3A`, e o `AC14` a torna gate |
+| **D3** | **`validator.go` é a FONTE**; `generators/roadmap.go` delega. Sem isso a Wave 3 entrega dois matchers concordando **por coincidência** — o defeito do AC5 da REQ-2026-08-31 em outra roupa |
+| **D4** | 🔴 **Modo ADITIVO primeiro.** A etapa 1 aceita tudo que `Contains` aceitava **e mais**, logo nenhuma branch que passava passa a falhar — é o que torna o fix commitável pelo próprio `trackfw commit` |
+| **D5** | A contenção do falso-positivo é **medida** (`AC14` vira gate), não prometida |
+
+**Por que D4 é a decisão que mais importa:** o roadmap declara o *deadlock de bootstrap* como risco
+terminal — matcher novo rejeita a branch do fix → `trackfw commit` falha → `git commit` cru é
+bloqueado pelo guard → **o fix não pode ser mergeado**. Isso já acontece em ~9% dos casos medidos.
+A ordem aditiva-primeiro é o que o torna **reversível sem intervenção manual de git**.
+
+**Exceção à ordem, com razão escrita:** o nome vazio. `strings.Contains(x, "")` é sempre verdadeiro e
+**não existe consumidor legítimo** de `roadmap move ""` — recusá-lo é aditivo em segurança e não
+paralisa ninguém.
+
+**Critérios de aceite:**
+- [x] ADR escrita, com candidatos descartados e a medição citada
+      → 4 alternativas, e a A1 (fronteira) **falsificada por aritmética**, não por amostra
+- [x] Decisão explícita sobre escrever vs. inferir → **D1**: escrever é fonte, inferir é fallback
+- [x] Contenção do risco de falso-positivo declarada → **D4** (ordem) + **D5** (gate)
 **Arquivos afetados:** novo ADR em `docs/adr/`.
 **Insumo obrigatório — a medição já feita em 2026-09-12, contra 185 roadmaps e 111 branches reais:**
 
