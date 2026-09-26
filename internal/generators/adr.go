@@ -23,36 +23,86 @@ type ADRContent struct {
 	Alternatives string
 }
 
+// adrGuardPaths resolves the containment root and the absolute adrDir used by the
+// write guards of NewADR/NewADRDraft. It is the single point where the ADR scope
+// (project vs global) is decided.
+//
+// # Why this exists (ML-7A — live escape closed)
+//
+// The previous shape defaulted to GLOBAL scope (root = adrDir itself) and only
+// upgraded to project scope when Beneath(projectRoot(), filepath.Abs(adrDir)) held.
+// projectRoot() is EvalSymlinks-resolved while filepath.Abs inherits the LOGICAL cwd
+// (Go's os.Getwd honours $PWD when it stat-matches "."), so on a plain `cd /tmp/p`
+// the two operands live in DIFFERENT namespaces, Beneath returns false, and the code
+// silently DEGRADED to global scope — which by design never inspects the ancestors
+// above adrDir. Result: `trackfw adr new` wrote outside the project through a
+// symlinked `docs`, rc=0. Measured 2026-09-25 (§R-1 of the ML-6A security report).
+//
+// 🔴 The obvious fix — "resolve absAdrDir with EvalSymlinks" — KEEPS the escape,
+// and measurement (ML-7A) shows it is STRICTLY WORSE than the defect it replaces:
+// when `docs` is the symlink and the target exists, EvalSymlinks maps adrDir onto
+// the VICTIM, Beneath is still false, guardRoot becomes the victim itself, and
+// RejectSymlinks finds nothing to reject — so the write escapes in BOTH $PWD arms,
+// including the resolved arm that refuses correctly today. The defect was never the
+// missing resolution of the target; it was the PERMISSIVE FALLBACK. See the
+// guard-before-resolve note in NewADR below.
+//
+// The rule enforced here:
+//
+//   - relative adrDir  ⇒ project scope, UNCONDITIONALLY (Beneath is not consulted).
+//     Root and target are both born from projectRoot(), i.e. the SAME resolved
+//     namespace, so RejectSymlinks walks root → docs → adr and refuses on the
+//     symlinked ancestor. Fails CLOSED if projectRoot() errors.
+//   - absolute adrDir ⇒ global scope (root = adrDir), the documented named exception
+//     for explicit global paths (ADR decision 3). Beneath survives ONLY here, and
+//     only in a position where it can RAISE strictness: an absolute adrDir that is
+//     genuinely inside the project is upgraded to full project-root scope. It can
+//     never downgrade.
+//
+// No EvalSymlinks is applied to the target before the guard — the guard-before-resolve
+// order of the ADR is preserved.
+func adrGuardPaths(adrDir string) (guardRoot string, absAdrDir string, err error) {
+	if !filepath.IsAbs(adrDir) {
+		projectScopeRoot, rootErr := projectRoot()
+		if rootErr != nil {
+			return "", "", fmt.Errorf("resolving project root for adrDir %q: %w", adrDir, rootErr)
+		}
+		return projectScopeRoot, filepath.Join(projectScopeRoot, adrDir), nil
+	}
+	absolute := filepath.Clean(adrDir)
+	guardRoot = absolute // global scope — root at adrDir itself
+	if projectScopeRoot, rootErr := projectRoot(); rootErr == nil {
+		if pathguard.Beneath(projectScopeRoot, absolute) {
+			guardRoot = projectScopeRoot // upgrade: absolute path genuinely inside the project
+		}
+	}
+	return guardRoot, absolute, nil
+}
+
 // NewADR gera um arquivo ADR em adrDir com base no conteúdo fornecido.
 // Campos preenchidos são inseridos diretamente; campos vazios mantêm o placeholder HTML.
 // O chamador resolve adrDir (via config.Load().ADRDirs[0] para escopo "project" ou via
 // GlobalADRDir(home) para escopo "global") — esta função não lê trackfw.yaml, permitindo
 // uso em --scope global sem exigir projeto/trackfw.yaml no cwd.
 func NewADR(content ADRContent, adrDir string) error {
-	// Guard adrDir before MkdirAll. The root depends on scope:
-	//   project scope (adrDir relative or beneath cwd): use projectRoot() so all
-	//     ancestors between root and adrDir are checked.
-	//   global scope (adrDir absolute, outside cwd): use absAdrDir as root — only
-	//     symlinks within adrDir are caught; ancestors above it are an accepted residual
-	//     (documented per ADR decision 3, named exception for explicit global paths).
-	absAdrDir, err := filepath.Abs(adrDir)
-	if err != nil {
-		return fmt.Errorf("resolving adrDir: %w", err)
-	}
+	// Guard adrDir before MkdirAll. The scope decision (project vs global) lives in the
+	// single point adrGuardPaths — read its doc comment before touching this:
+	//   project scope (adrDir RELATIVE, unconditionally): root = projectRoot(), target =
+	//     Join(projectRoot(), adrDir), so all ancestors between root and adrDir are checked.
+	//   global scope (adrDir ABSOLUTE): root = adrDir — only symlinks within adrDir are
+	//     caught; ancestors above it are an accepted residual (ADR decision 3, named
+	//     exception for explicit global paths).
 	// Guard adrDir BEFORE EvalSymlinks: if absAdrDir itself is a symlink (or has a symlink
 	// ancestor), EvalSymlinks would resolve it to the target outside the tree, making
 	// Beneath(pr, resolved) false and defeating the containment check. We use the raw
 	// absolute path for the guard so that RejectSymlinks can detect the symlink.
-	guardRoot := absAdrDir // default: global scope — root at adrDir itself
-	if pr, prErr := projectRoot(); prErr == nil {
-		if pathguard.Beneath(pr, absAdrDir) {
-			guardRoot = pr // project scope — full ancestor check from project root
-		}
+	guardRoot, absAdrDir, err := adrGuardPaths(adrDir)
+	if err != nil {
+		return fmt.Errorf("resolving adrDir: %w", err)
 	}
 	absFilename := filepath.Join(absAdrDir, ".trackfw-new-adr") // probe path inside adrDir
-	if guardErr := pathguard.RejectSymlinks(guardRoot, absFilename); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absAdrDir, guardErr)
-		return fmt.Errorf("refusing write to %s: %w", absAdrDir, guardErr)
+	if guardErr := pathguard.RejectAndReport(guardRoot, absFilename); guardErr != nil {
+		return guardErr
 	}
 	// Save pre-EvalSymlinks path for the leaf guard below: the leaf guard must
 	// use the raw absolute path (same namespace as guardRoot) rather than the
@@ -121,9 +171,8 @@ author: ""
 	// stay in the same namespace as guardRoot) so a symlink leaf pointing
 	// outside root is also caught (ML-4B leaf-gap fix).
 	absLeaf := filepath.Join(absAdrDirRaw, filepath.Base(filename))
-	if guardErr := pathguard.RejectSymlinks(guardRoot, absLeaf); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absLeaf, guardErr)
-		return fmt.Errorf("refusing write to %s: %w", absLeaf, guardErr)
+	if guardErr := pathguard.RejectAndReport(guardRoot, absLeaf); guardErr != nil {
+		return guardErr
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.WriteFile(filename, []byte(body), 0644); err != nil {
@@ -239,22 +288,16 @@ func slugToTitle(slug string) string {
 func NewADRDraft(slug string, adrDir string) (string, error) {
 	// Same root-selection logic as NewADR: project scope uses projectRoot(), global scope
 	// uses absAdrDir. This ensures consistent containment behavior for both write paths.
-	absAdrDirDraft, draftAbsErr := filepath.Abs(adrDir)
+	// Guard BEFORE EvalSymlinks — same reason as NewADR: resolving the symlink first
+	// would defeat the Beneath check by making absAdrDirDraft point outside the tree.
+	// Scope decision (project vs global) comes from the single point adrGuardPaths.
+	draftGuardRoot, absAdrDirDraft, draftAbsErr := adrGuardPaths(adrDir)
 	if draftAbsErr != nil {
 		return "", fmt.Errorf("resolving adrDir: %w", draftAbsErr)
 	}
-	// Guard BEFORE EvalSymlinks — same reason as NewADR: resolving the symlink first
-	// would defeat the Beneath check by making absAdrDirDraft point outside the tree.
-	draftGuardRoot := absAdrDirDraft
-	if pr, prErr := projectRoot(); prErr == nil {
-		if pathguard.Beneath(pr, absAdrDirDraft) {
-			draftGuardRoot = pr
-		}
-	}
 	draftProbe := filepath.Join(absAdrDirDraft, ".trackfw-new-adr-draft")
-	if guardErr := pathguard.RejectSymlinks(draftGuardRoot, draftProbe); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absAdrDirDraft, guardErr)
-		return "", fmt.Errorf("refusing write to %s: %w", absAdrDirDraft, guardErr)
+	if guardErr := pathguard.RejectAndReport(draftGuardRoot, draftProbe); guardErr != nil {
+		return "", guardErr
 	}
 	// Save pre-EvalSymlinks path for the leaf guard below (same reason as NewADR).
 	absAdrDirDraftRaw := absAdrDirDraft
@@ -311,9 +354,8 @@ author: ""
 	// Leaf guard: same pattern as NewADR — guard the exact file using the
 	// pre-EvalSymlinks path so a symlink leaf is caught (ML-4B leaf-gap fix).
 	absLeafDraft := filepath.Join(absAdrDirDraftRaw, filename)
-	if guardErr := pathguard.RejectSymlinks(draftGuardRoot, absLeafDraft); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absLeafDraft, guardErr)
-		return "", fmt.Errorf("refusing write to %s: %w", absLeafDraft, guardErr)
+	if guardErr := pathguard.RejectAndReport(draftGuardRoot, absLeafDraft); guardErr != nil {
+		return "", guardErr
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.WriteFile(path, []byte(body), 0644); err != nil {

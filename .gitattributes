@@ -42,7 +42,9 @@ npm/bin/trackfw   text=auto eol=lf
 # artefatos de governança deste repo (`docs/roadmaps/**`, `docs/req/**`), que o
 # `validate`/`status`/`context` leem. Ficam de fora, e cada um por medição:
 #   - `*/integrations/assets/**` (90: 87 `.md` + 3 `catalog.json`) — entrada do parser
-#   - `internal/integrations/testdata/*.golden.*` (3 `.md` + 1 `.toml`) — golden
+#   - os GOLDENS de `internal/integrations/testdata/*.golden.*` (3 `.md` + 1 `.toml`)
+#     SAÍRAM desta lista em 2026-09-25: são saída esperada, nunca entrada de parser,
+#     e estão pinados como evidência byte-exata no bloco do fim deste arquivo
 #   - `scripts/testdata/roadmap-barrier-corpus-snapshot/**` (144 `.md`) — corpus da barreira
 #   - `*.md` em geral (919) — governança + docs que o produto e os testes parseiam
 #   - `*.json`/`*.yml`/`*.yaml`/`*.toml` — parsers indiferentes a espaço em branco;
@@ -51,3 +53,49 @@ npm/bin/trackfw   text=auto eol=lf
 #   - `*.ps1` (`scripts/windows-repro/run.ps1`) — CRLF é o nativo correto no Windows
 #   - `Formula/trackfw.rb` — consumido pelo Homebrew no macOS/Linux, nunca sob autocrlf
 #   - `.trackfw-log` — dado escrito pelo produto; mantém `merge=union` e nenhum `eol`
+
+# ─── EVIDÊNCIA CONGELADA BYTE-EXATA — nunca converter, em direção nenhuma ────
+# O caso OPOSTO ao bloco acima. Lá o critério de exclusão é "o produto PARSEIA
+# isto"; aqui nada é entrada de parser: são artefatos cuja IDENTIDADE EM BYTES é o
+# ponto — um corpus pré-fix verificado por sha256 e goldens de renderização
+# congelados. Declarar `eol` sobre eles não esconde defeito nenhum, porque não há
+# parser do produto na frente deles.
+#
+# Medido em 2026-09-25 (PR #441, job windows-full-suites), reproduzido em macOS com
+# `git -c core.autocrlf=true checkout-index --prefix=<tmp>/ -a` (braço-contrário na
+# mesma árvore: docs/cli-parity.md chega com 7451 linhas CRLF, provando que a
+# conversão de fato dispara; internal/pathguard/pathguard.go chega com 0, provando
+# que a regra `*.go eol=lf` acima segura):
+#   - `testdata/corpus-pre-fix/**` (16 `.go.txt` + MANIFEST.sha256) — chegava com
+#     CRLF (2172 linhas só em agentfiles.go.txt) e os sha256 do manifesto quebravam:
+#     3 testes vermelhos. 🔴 A causa foi o próprio truque que fez o corpus funcionar:
+#     a extensão `.go.txt` o mantém fora do build E do `find -name '*.go'` do
+#     scripts/check-write-containment.sh — e isso o tirou também da regra `*.go`.
+#   - `internal/integrations/testdata/*.golden.*` (3 `.md` + 1 `.toml`) — golden é
+#     saída ESPERADA, congelada; o valor dele é ser byte-estável em toda plataforma.
+#     ⚠️ Medido, e o resultado NÃO é o intuitivo: pinar o golden NÃO deixa
+#     TestRenderWithoutIdentityMatchesFrozenGoldens verde no Windows (ele já está em
+#     .github/windows-known-failures.json desde 2026-09-10). Na árvore convertida o
+#     `got` sai COM CRLF — o Render do asset não passa por NormalizeCRLF
+#     (render.go:393, aplicada em outro caminho) —, então antes os dois lados vinham
+#     CRLF e a divergência se CANCELAVA em parte (medido: 3 subtestes vermelhos → 1).
+#     Pinar só o golden é o certo mesmo assim: torna a comparação honesta e faz a
+#     cegueira a CRLF do PRODUTO aparecer como `got` CRLF vs golden LF, em vez de
+#     sumir por simetria acidental. A causa remanescente é de produto, não de
+#     checkout — mecanismo distinto do corpus, e por isso não se fecha aqui.
+#     Os ASSETS que alimentam esse render continuam fora, de propósito: são entrada
+#     de parser, e é assim que os `_CRLFSourceMatchesLF` seguem expondo o defeito.
+#
+# `-text` e NÃO `text eol=lf` — a diferença é o check-in: `text` autoriza o git a
+# normalizar CRLF→LF ao gravar, então uma edição acidental com editor CRLF seria
+# reescrita para LF, o sha256 continuaria batendo e a adulteração ficaria INVISÍVEL
+# exatamente para o instrumento que existe para detectá-la. `-text` grava e entrega
+# os bytes verbatim nas duas direções: qualquer modificação aparece como divergência
+# de hash. Também não é o macro `binary` (= `-text -diff`): queremos o diff legível.
+#
+# Estas linhas ficam no FIM do arquivo de propósito — o último padrão que casa vence,
+# então nenhuma regra futura de `*.txt`/`*.md` reabilita a conversão em silêncio.
+# Falsificação: internal/pathguard/containment_corpus_test.go,
+# TestCorpusIsPinnedAgainstEOLConversion — reprova se estas duas linhas sumirem.
+internal/pathguard/testdata/corpus-pre-fix/** -text
+internal/integrations/testdata/*.golden.*     -text

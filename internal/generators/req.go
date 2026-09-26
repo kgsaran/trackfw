@@ -48,9 +48,8 @@ func NewREQ(content REQContent) error {
 		return fmt.Errorf("NewREQ: %w", err)
 	}
 	absReqDir := filepath.Join(reqRoot, reqDir)
-	if guardErr := pathguard.RejectSymlinks(reqRoot, absReqDir); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absReqDir, guardErr)
-		return fmt.Errorf("refusing write to %s: %w", absReqDir, guardErr)
+	if guardErr := pathguard.RejectAndReport(reqRoot, absReqDir); guardErr != nil {
+		return guardErr
 	}
 
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
@@ -137,9 +136,8 @@ Roadmap: %s
 	// reqDir; now guard the exact file so a symlink leaf pointing outside root
 	// is also caught (ML-4B leaf-gap fix).
 	absFilename := filepath.Join(reqRoot, filename)
-	if guardErr := pathguard.RejectSymlinks(reqRoot, absFilename); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absFilename, guardErr)
-		return fmt.Errorf("refusing write to %s: %w", absFilename, guardErr)
+	if guardErr := pathguard.RejectAndReport(reqRoot, absFilename); guardErr != nil {
+		return guardErr
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.WriteFile(filename, []byte(body), 0644); err != nil {
@@ -347,9 +345,8 @@ func MoveREQ(name, status string) error {
 		return fmt.Errorf("MoveREQ: %w", err)
 	}
 	absPath := filepath.Join(moveRoot, path)
-	if guardErr := pathguard.RejectSymlinks(moveRoot, absPath); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing symlink path %s: %v\n", absPath, guardErr)
-		return fmt.Errorf("refusing symlink path %s: %w", absPath, guardErr)
+	if guardErr := pathguard.RejectAndReport(moveRoot, absPath); guardErr != nil {
+		return guardErr
 	}
 
 	raw, err := os.ReadFile(path)
@@ -425,9 +422,8 @@ func MoveREQ(name, status string) error {
 	// Guard dst before MkdirAll so a refused destination leaves no empty directory.
 	dst := filepath.Join(targetDir, filepath.Base(path))
 	absDst := filepath.Join(moveRoot, dst)
-	if guardErr := pathguard.RejectSymlinks(moveRoot, absDst); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing symlink path %s: %v\n", absDst, guardErr)
-		return fmt.Errorf("refusing symlink path %s: %w", absDst, guardErr)
+	if guardErr := pathguard.RejectAndReport(moveRoot, absDst); guardErr != nil {
+		return guardErr
 	}
 
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
@@ -466,19 +462,42 @@ func findREQ(name string, cfg config.ProjectConfig) (string, error) {
 // appendREQTransitionLog registra a transição de estado de uma REQ em cfg.REQDir/.trackfw-log,
 // mesmo formato de appendTransitionLog (roadmap.go), em arquivo de log separado.
 func appendREQTransitionLog(basename, fromState, toState string) {
+	// NON-FATAL by decision: a log write failure must not abort the REQ move. The
+	// decision lives HERE, in the wrapper that discards the error — and only here.
+	// appendREQTransitionLogEntry below returns the refusal like any other guarded
+	// write, which is what lets ML-9A refuse an unverifiable root with a plain
+	// `return pathguard.RefuseUnverifiableRoot(...)` instead of a discarded call
+	// whose error nothing consumes.
+	_ = appendREQTransitionLogEntry(basename, fromState, toState)
+}
+
+// appendREQTransitionLogEntry writes one transition line to cfg.REQDir/.trackfw-log,
+// refusing rather than writing when containment cannot be established. It is the
+// mirror of roadmap.go's appendTransitionLogEntry — the two are deliberately
+// written as the same shape.
+//
+// 🔴 Fail-closed (ML-9A): until ML-9A the guard lived inside
+// `if root, err := projectRoot(); err == nil` and the append happened whether or
+// not the root had been established, so a resolver failure appended unguarded.
+// The refusal was already non-silent since ML-7B; what ML-9A adds is that the
+// root failing is itself a refusal.
+func appendREQTransitionLogEntry(basename, fromState, toState string) error {
 	cfg := config.Load()
 	logFile := filepath.Join(cfg.REQDir, ".trackfw-log")
-	// Guard the log file against ancestor symlinks (append-mode: use RejectSymlinks only).
-	if root, err := projectRoot(); err == nil {
-		absLog := filepath.Join(root, logFile)
-		if guardErr := pathguard.RejectSymlinks(root, absLog); guardErr != nil {
-			return
-		}
+	// Guard the log file against ancestor symlinks (append-mode, so GuardedWrite's
+	// atomic replace is not usable).
+	root, rootErr := projectRoot()
+	if rootErr != nil {
+		return pathguard.RefuseUnverifiableRoot(logFile, rootErr)
 	}
-	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+	absLog := filepath.Join(root, logFile)
+	if guardErr := pathguard.RejectAndReport(root, absLog); guardErr != nil {
+		return guardErr
+	}
+	// write-containment-allowed: pathguard.RejectAndReport(root, absLog) above dominates this append unconditionally; an unresolvable root refuses via RefuseUnverifiableRoot
 	f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return
+		return err
 	}
 	defer f.Close()
 	line := fmt.Sprintf("%s  %-50s  %s → %s\n",
@@ -487,5 +506,6 @@ func appendREQTransitionLog(basename, fromState, toState string) {
 		fromState,
 		toState,
 	)
-	f.WriteString(line)
+	_, err = f.WriteString(line)
+	return err
 }

@@ -41170,3 +41170,259 @@ bash scripts/check-unguarded-capture-rc.sh          RC=0
   payload de `edited` ela viraria mentira no mesmo commit que corrige outra mentira.
 - `make quality` verde (`MAKE_RC=0`, 338 OK / 0 FAIL na falsificação) · `trackfw validate` rc=0.
 - Não commitei, não fiz push, não criei branch, não usei `git stash`/`git checkout --`.
+
+## 2026-09-25 — hades-tf — ML-6A (início/fim): Wave 0 da reabertura — enumerar pelo mecanismo e o instrumento que prova
+
+- **Entregue:** `docs/seguranca/2026-09-25-ponto-unico-de-contencao-e-o-instrumento-que-o-prova.md`.
+  Nada em `internal/`. Sem Git: não criei branch, não commitei, não fiz push, não usei
+  `git stash`/`git checkout --`.
+- 🔴 **Escape VIVO achado e reproduzido contra `bin/trackfw`:** `trackfw adr new` escreve **fora do
+  projeto** através de um `docs` symlinkado, num `cd` normal de login shell. `adr.go:47-50` compara
+  `Beneath(projectRoot() resolvido, filepath.Abs(adrDir) NÃO resolvido)`, dá `false` e **cai
+  silenciosamente no escopo global**, que nunca inspeciona o ancestral. `req new`/`roadmap new`
+  recusam corretamente — fronteira medida. Mesma causa → **ML novo nesta REQ**, não issue.
+- 🔴 **O AC da Wave 7 não é executável como está:** o corpus de falsificação vive só em
+  `refs/heads/fix/afirma-contencao-antes-de-escrever`, **local**, apagado no remoto (#397 foi
+  squash). O CI nunca alcança e um `branch prune` destrói. E o commit apontado estava errado —
+  o corpus é **`87fe4915`** (fix em `a8912bd6`), não `7721efc6^1`. Corpus tem de ir para
+  `testdata/` versionado como saída da Wave 6.
+- **Censos pela régua do mecanismo:** população (a) = **20 expressões / 34 escritas** (o `13` é
+  régua de identificador: perde `home` de `homedir.Dir()`, `Manager.ProjectRoot` e o ramo global de
+  `adr.go`); população (b) = **53 implementações do par**, em **5 gramáticas** de mensagem, com
+  **3 sítios mudos**.
+- 🔴 **AC5 e AC4 medidamente NÃO atendidos** — a REQ foi para `done` com eles abertos.
+
+## 2026-09-25 — apolo-tf — ML-7A (início): fechar o escape VIVO do `adr new`
+
+- **Escopo:** `internal/generators/adr.go` (os 2 fluxos: `NewADR` e `NewADRDraft`) + teste novo.
+  Fora: ponto único (`ML-7B`), analisador de AST (`ML-7C`), os 13 sítios de `Clean(cwd)` (Wave 8).
+- **Forma a medir (§3.3-bis):** `adrDir` relativo ⇒ escopo de projeto incondicional, com
+  `absAdrDir = filepath.Join(projectRoot(), adrDir)`. `Beneath` só sobrevive onde pode **aumentar**
+  a estritura (ramo absoluto), nunca rebaixar.
+- Sem Git: não crio branch, não commito, não faço push.
+
+## 2026-09-25 — apolo-tf — ML-7A (fim): o escape do `adr new` está fechado
+
+- **Produto:** `internal/generators/adr.go` — novo ponto único `adrGuardPaths`, consumido por
+  `NewADR` e `NewADRDraft`. Os 4 pares `RejectSymlinks` + `Fprintf(os.Stderr, ...)` e os marcadores
+  `write-containment-allowed` continuam **idênticos em forma e em número** — mudou só a
+  **procedência do 1º operando**.
+- **Teste:** `internal/generators/adr_scope_guard_test.go` — as duas arms de `$PWD`, o braço de
+  controle (`NewREQ`) no mesmo teste, e a falsificação contra a correção **óbvia**.
+- 🔴 **Medição que endurece a §3.3-bis:** a correção óbvia (`EvalSymlinks` no alvo) não só mantém o
+  escape — ela **abre também a arm de `$PWD` resolvido**, que hoje recusa. Fica pior que o defeito.
+  Registrado no vault.
+- **E2E contra binário:** `bin/trackfw` (main) escapa **1** arquivo na arm não resolvida;
+  binário com o fix escapa **0** nas duas arms, com o controle recusando em ambas.
+- `make quality` **MAKE_RC=0** (338 OK / 0 FAIL na falsificação) · `trackfw validate` rc=0 (150
+  warnings pré-existentes).
+- Status do ML no roadmap **mantido em 🔄** — muda para ✅ só após a auditoria do arquiteto.
+- Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.
+
+## 2026-09-25 — apolo-tf — ML-7B (início): extrair o ponto único de contenção
+
+- **Escopo:** `internal/pathguard/` (novo emissor) + os **52** sítios de chamada não-teste que hoje
+  reimplementam o par *predicado + recusa audível* inline ou em helper nomeado.
+  Fora: analisador de AST (`ML-7C`), argumento `filepath.Clean(cwd)` (Wave 8), residual do escopo
+  global (decisão 3 do ADR).
+- **Forma:** `pathguard.RejectAndReport(resolvedRoot, absTarget)` como **único** sítio emissor; as
+  5 gramáticas colapsam em 1 derivada de **um literal**; os 3 sítios mudos passam a falar.
+- Sem Git: não crio branch, não commito, não faço push.
+
+## 2026-09-25 — apolo-tf — ML-7B (fim): 53 implementações do par viram 1 emissor
+
+- **Produto:** `internal/pathguard/pathguard.go` — `RejectAndReport` (recusa da guarda) e
+  `RefuseUnverifiableRoot` (fail-closed quando o root não pôde ser estabelecido). Ambas derivam a
+  linha de stderr **e** o erro retornado do mesmo literal `refusalGrammar`.
+- **Sítios convertidos:** 52 chamadas `pathguard.RejectSymlinks` não-teste → `RejectAndReport`
+  (0 restantes fora de `pathguard`); 4 sítios fail-closed → `RefuseUnverifiableRoot`;
+  `GuardedWrite` passa a delegar (era um 4º mudo, mesma causa).
+- **Gramáticas:** 5 → 1. **Mudos:** 3 → 0 (4 → 0 contando `GuardedWrite`).
+- **Testes novos:** `internal/pathguard/single_emitter_test.go` (scanner por sítio + corpus mutante
+  com as 8 formas históricas), `internal/pathguard/guarded_write_speaks_test.go`,
+  `internal/generators/mute_guards_speak_test.go`,
+  `internal/integrations/mute_guard_speaks_test.go`,
+  `internal/discover/nonfatal_refusal_grammar_test.go`.
+- **Falsificação por sítio comprovada por mutação:** revertidos individualmente `roadmap.go`,
+  `req.go`, `update.go` (`rejectHarnessSymlink`), `manager.go`, `discover.go`, `GuardedWrite` e
+  **um** sítio inline do bulk (`note.go`) — cada mutante reprova, e o scanner **nomeia o artefato**
+  (`generators/note.go:72 [raw-predicate]`).
+- Status do ML no roadmap **mantido em 🔄** — muda para ✅ só após a auditoria do arquiteto.
+- Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.
+
+## 2026-09-25 — apolo-tf — ML-7C (início): o analisador de AST, com corpus versionado
+
+- **Escopo:** o **instrumento**, e só ele. Substituir a prova por marcador textual
+  (`scripts/check-write-containment.sh`) por um analisador de AST com dois predicados — P1
+  (guarda-antes-de-escrever, no mesmo fluxo) e P2 (provenância do 1º operando, com
+  `filepath.Clean` **não** transparente).
+- **Fora:** corrigir os 16 sítios `Clean(cwd|root)` (Wave 8), relitigar o escopo global (decisão 3
+  do ADR), fechar T5 (fail-closed do resolvedor).
+- **Corpus:** `87fe4915` materializado em `internal/pathguard/testdata/corpus-pre-fix/` como
+  `.go.txt` versionado, com `MANIFEST.sha256`. Nenhum braço referencia commit-ish; ausência = FAIL.
+- Sem Git: não crio branch, não commito, não faço push.
+
+## 2026-09-25 — apolo-tf — ML-7C (fim): o analisador mede, e mede duas árvores
+
+- **Produto (tudo em `_test.go`, nada em produção):**
+  `internal/pathguard/containment_analyzer_test.go` (o analisador: taint interprocedural,
+  dominância por ancestralidade de bloco, provenância), `containment_corpus_test.go` (T1/T2/T3),
+  `containment_live_test.go` (árvore atual + as duas listas fixadas por sítio),
+  `containment_falsify_test.go` (5 mutantes + braço de controle + 4 arms de provenância),
+  e `testdata/corpus-pre-fix/` (16 arquivos + manifesto sha256).
+- **Medição:** árvore atual 107 arquivos / 154 escritas / 151 em população / 59 guardas / **20
+  achados P1**, todos fixados por sítio. Corpus pré-fix: 146 escritas / 139 em população /
+  **104 achados** (35 escritas sem guarda + 35 predicado cru + 34 emissor fora do pathguard).
+- **Os dois casos-bandeira do #400 reprovam pelo nome:** `syncREQReferences` (roadmap.go:1141) e
+  o ramo lefthook de `generateCommitMsgHook` (scaffold.go:2313) — e **nenhum dos dois** aparece na
+  árvore de hoje.
+- **P2 aponta os 16 sítios `filepath.Clean` e NÃO os corrige** (Wave 8), mais 6 por propagação de
+  parâmetro; `grep` literal acha 13 — é a diferença de régua outra vez.
+- 🔴 **Achado que devolvo ao arquiteto:** **5 sítios vivos fail-open** (guarda dentro de
+  `if root, err := projectRoot(); err == nil`, escrita fora) — `java.go:77`, `note.go:111/135`,
+  `req.go:478`, `roadmap.go:833`. Mesma causa, mesma REQ: pede ML novo, não REQ nova.
+- Status do ML no roadmap mantido em 🔄 — muda para ✅ só após a auditoria do arquiteto.
+- Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.
+
+## 2026-09-25 — apolo-tf — ML-9A (início): os 5 fail-open viram recusa
+
+- **Escopo:** trocar o fail-open dos 5 sítios medidos pelo ML-7C (`java.go:77`, `note.go:111/135`,
+  `req.go:478`, `roadmap.go:833`) por `pathguard.RefuseUnverifiableRoot`, preservando o controle de
+  fluxo de cada um (fatal continua fatal; log de transição continua não-fatal), corrigir o texto dos
+  marcadores `write-containment-allowed` que hoje afirmam contenção inexistente no ramo de erro, e
+  zerar `liveKnownFailOpen`.
+- **Baseline medido antes de editar:** árvore viva 107 arquivos / 154 escritas / 151 em população /
+  59 guardas / 20 achados (15 ponto cego + 5 fail-open); P2 16 `filepath.Clean` / 22 sem provenância
+  / 16 root-aliased.
+- **Fora:** os 16 sítios `filepath.Clean(cwd|root)` (Wave 8), os 15 `liveAnalyserBlindSpots`, e o
+  gate bash `check-write-containment.sh`.
+- Sem Git: não crio branch, não commito, não faço push, não uso `git stash`/`git checkout --`.
+
+## 2026-09-25 — apolo-tf — ML-9A (fim): os 5 fail-open recusam, e a lista fica vazia
+
+- **Produção:** `java.go` (`GeneratePomXML`), `note.go` (`appendNoteToIndex`), `req.go` e
+  `roadmap.go` (log de transição, extraído em `…Entry` que retorna erro + invólucro void que o
+  descarta por decisão), e o seam `var getwdFn = os.Getwd` em `scaffold.go`. Os 5 marcadores
+  `write-containment-allowed` foram reescritos: eles nomeavam `RejectSymlinks` (o emissor é
+  `RejectAndReport`) e diziam "at the enclosing write site" quando a guarda não dominava o ramo de
+  erro.
+- **Testes:** `internal/generators/fail_closed_root_test.go` — 4 testes, **por sítio**, com
+  `projectRoot()` forçado a falhar pelo seam; `note.go` tem **dois** braços de controle porque o
+  sítio fixado cobre **duas** escritas. `internal/pathguard/containment_live_test.go` ganha
+  `TestML9ASitesStayClosed` (os 5 sítios pelo nome + piso de escrita por sítio).
+- **Falsificação medida:** com os 4 arquivos revertidos à forma pré-fix, os 4 testes reprovam, cada
+  um nomeando o seu sítio; restaurados por `cmp` byte-a-byte. Revertendo **só** `java.go`, o
+  analisador acusa `java.go:80 GeneratePomXML() [unguarded-write]` em
+  `TestContainmentAnalyserOverTheLiveTree` **e** em `TestML9ASitesStayClosed`.
+- **Delta dos pins:** achados 20 → **15** (15 ponto cego + 0 fail-open); `liveFailOpenSitesPin`
+  5 → **0** e `liveKnownFailOpen` vazia; guardas 59 → **63**; delegações 56 → **60**. Inalterados,
+  e é isso que prova que não vazei para a Wave 8: população 151, escritas 154, arquivos 107,
+  P2 22/16, root-aliased 16.
+- **Nota de vault:** `recusa-de-root-em-funcao-void-o-analisador-exige-que-a-recusa-seja-acionada-2026-09-25.md`
+  — por que `_ = RefuseUnverifiableRoot(...)` reprova no analisador e por que afrouxar a regra seria
+  pior que extrair a função.
+- `make quality` verde (rc=0, 338 OK / 0 FAIL na suíte de falsificação), `trackfw validate` rc=0.
+- Status do ML mantido em 🔄 — muda para ✅ só após a auditoria do arquiteto.
+- Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.
+
+## 2026-09-25 — apolo-tf — ML-8A (início): os sítios derivam o root de fonte resolvida
+
+- **Escopo:** fechar o #402 — guardas que comparam um destino resolvido contra um root **não
+  resolvido**. Os 16 sítios `filepath.Clean(…)` medidos pelo P2 do ML-7C passam a derivar o root de
+  fonte resolvida, e os 6 restantes (propagação por parâmetro; total 22) são resolvidos ou ganham
+  razão escrita **por sítio**. Armadilha 3 da Decisão 2 falsificada por teste, com braço de controle
+  degradado.
+- **Baseline medido antes de editar:** árvore viva 107 arquivos / 154 escritas / 151 em população /
+  59 guardas / 15 achados (todos ponto cego, 0 fail-open); P2 **16** `filepath.Clean` / **22** sem
+  proveniência / **16** root-aliased.
+- **Fora:** os 15 `liveAnalyserBlindSpots`, o gate bash `check-write-containment.sh`, o residual do
+  escopo global (decisão 3 da ADR) e o T5 (fallback silencioso de `projectRoot`/`resolveRoot`).
+- Sem Git: não crio branch, não commito, não faço push, não uso `git stash`/`git checkout --`.
+
+## 2026-09-25 — apolo-tf — ML-8A (fim): Clean 16→0, sem-proveniência 22→3, aliased 16→3
+
+- 🔴 **Refutação que abre o relatório:** o exemplar citado no handoff, `internal/commands/discover.go:31-38`,
+  **não satisfazia o P2**. `buildEnv` grava `env[nome]` só na **primeira** ligação, então
+  `resolvedCwd := cwd` + reatribuição condicional é correto em runtime e invisível ao analisador —
+  ele era um dos 22. Quem satisfazia era `scaffold.go`, por `projectRoot()` ser **chamada**.
+- **Produção:** novo `pathguard.ResolveRoot` (Abs + EvalSymlinks com o mesmo fallback do T5; root
+  vazio é erro, nunca fallback), e 5 cópias manuais do idioma colapsadas nele (`scaffoldRoot`,
+  3× `absHome` em `scaffold.go`, `resolvedCwd` em `discover.go`). Os 16 sítios de `filepath.Clean`
+  fechados: `agentfiles.go` ×9 (parâmetro renomeado para `rootDir`, todo caminho derivado do
+  `guardRoot`), `update.go` ×4 (incluindo o par `updateHooksSurgical`/`…Entry` do ML-9A, porque a
+  função é void), `identity.go`, `provenance.go`, `quarantine.go`. Em `internal/discover` as
+  escritas passam a ser derivadas do root resolvido (13 dos 16 `root-aliased`).
+- **Dois sítios tentados e REVERTIDOS com a medição escrita no código:** `Manager.resolve`
+  (`ResolveRoot(root)` reprova **7** testes — o destino do ramo `IsAnchored||IsAbs` é absoluto do
+  usuário) e `UpdateHarness` (`home` é gravado **verbatim** nos hooks; **15** testes fixam a forma
+  lógica). Os 3 `root-aliased` restantes (`NewADRDraft`, `MoveRoadmap` ×2) idem.
+- **Testes:** `internal/thirdparty/resolved_root_test.go` — 3 braços sobre `WriteQuarantine` com root
+  alcançado por symlink: aceita e o artefato está **dentro** do root real; ainda **recusa** um
+  ancestral symlinkado; ainda **limita o escopo** ao root dado (travessia recusada). Em
+  `containment_live_test.go`, `TestP2PointsAtTheUnresolvedRootsWithoutFixingThem` foi substituído por
+  `TestP2FindsOnlyTheRootsThatCannotMove` (+ sonda sintética analisada **na mesma varredura**, para
+  que zero não possa significar "o instrumento parou") e `TestRootAliasedResidualIsNamed`.
+- **Falsificação medida:** com `quarantine.go` revertido à forma pré-fix, o braço 1 reprova nomeando
+  o sítio (`refusing symlink path ".../link"`); restaurado por `cmp` byte-a-byte.
+- **Delta dos pins:** `liveP2CleanSitesPin` 16 → **0**; `liveP2UnresolvedPin` 22 → **3**;
+  `liveRootAliasedPin` 16 → **3**. Inalterados: findings P1 **15** (todos ponto cego),
+  `liveKnownFailOpen` **vazia**, população 151, escritas 154, arquivos 107. Guardas 59 → 78.
+- **Preservados:** `adr new` recusa nas duas arms (`TestNewADR_SymlinkAncestorRefused_BothPWDArms`),
+  **0** emissores fora de `pathguard`, `liveKnownFailOpen` vazia e os 4 testes fail-closed do ML-9A.
+- **`pathguard.ResolveRoot` tem contrato asseverado:** `internal/pathguard/resolve_root_test.go` —
+  root vazio recusa, root inexistente devolve a forma absoluta com erro **nil** (o T5, que esta ML
+  deliberadamente não mudou) e root existente atrás de symlink volta resolvido; mais um braço de
+  controle que exige que o pareamento `filepath.Clean(root)` pré-ML-8A **recuse**.
+- 🔴 **Gate que o `make quality` não podia cobrir, verificado à mão:** `check-symlink-privilege-guard`
+  enumera por `git ls-files`, então era **no-op** sobre o arquivo de teste novo (não commitado). Rodado
+  por `FAKE_REPO` num repo sintético: a forma inicial do helper **reprovava** (`resolved_root_test.go:65`
+  — o `t.Fatalf("os.Symlink(%q…")` é ele mesmo um match do padrão, e o token de guarda ficava a 15
+  linhas), a forma entregue (com `isSymlinkPrivilegeError` extraído logo abaixo) passa; 3 arquivos
+  verificados, rc=0.
+- `make quality` verde (rc=0, 338 OK / 0 FAIL na suíte de falsificação), `trackfw validate` rc=0,
+  `go test ./...` rc=0.
+- **Nota de vault:** `resolver-o-root-so-vale-quando-o-outro-operando-se-move-junto-2026-09-25.md`.
+- Status do ML mantido em 🔄 — muda para ✅ só após a auditoria do arquiteto.
+- Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.
+
+## 2026-09-25 — apolo-tf — ML-9B (início): o corpus vira CRLF no Windows e um teste compara separador
+
+- **Escopo:** corretivo de CI do PR #441 (`windows-full-suites`, run `36183918594`), 4 falhas, nenhuma
+  de produto. (A) 3 testes do corpus pré-fix quebram porque o checkout do Windows converte a evidência
+  congelada para CRLF e os sha256 do MANIFEST não batem; (B) `TestUpdateNeverWritesThroughSymlinkAt
+  DiscoverWorkflowPath` compara `DiscoverGitHubActionsWorkflowPath` (com `/`) contra a mensagem do
+  emissor único, que hoje imprime caminho absoluto do SO (com `\` no Windows).
+- **Sem Git:** não crio branch, não commito, não faço push; entrega não commitada ao arquiteto.
+
+## 2026-09-25 — apolo-tf — ML-9B (fim): o corpus deixa de ser convertido, e a asserção de caminho vira nativa
+
+- **Causa A medida, e reproduzida em macOS sem runner Windows:**
+  `git -c core.autocrlf=true checkout-index --prefix=<tmp>/ -a` → `agentfiles.go.txt` com **2172**
+  linhas CRLF e os 3 testes do corpus reprovando com a mesma mensagem do CI. 🔴 Braço-contrário na
+  mesma árvore (zero sozinho não prova nada): `docs/cli-parity.md` = **7451** CRLF (a conversão
+  dispara), `internal/pathguard/pathguard.go` = **0** (a regra `*.go eol=lf` segura). Depois da
+  regra: corpus **0**, MANIFEST **0**, golden **0**, contra-braços **inalterados**.
+- **Forma escolhida:** `internal/pathguard/testdata/corpus-pre-fix/** -text` (+ os goldens), no
+  **fim** do `.gitattributes`. `-text` e não `text eol=lf` porque `text` normaliza CRLF→LF no
+  **check-in**: edição acidental seria regravada em LF com o sha256 intacto — adulteração invisível
+  para o instrumento feito para detectá-la.
+- **Falsificação da regra:** `TestCorpusIsPinnedAgainstEOLConversion`, dois braços. Removida a linha
+  do `.gitattributes` → rc=1 nomeando `text: unspecified` por arquivo; restaurado byte-a-byte por
+  `diff`. Injetado CRLF em `note.go.txt` → rc=1 com **a mensagem do braço 1** (185 CRLF), não a do
+  sha256 — por isso o teste **não** chama `loadCorpus`: numa árvore convertida ele morre antes com
+  "the frozen pre-fix evidence was modified", que é o diagnóstico errado que custou este ciclo.
+- **Causa B:** `filepath.FromSlash(DiscoverGitHubActionsWorkflowPath)`, mantendo o conjunto com
+  `Contains("symlink")` — a asserção continua exigindo que a mensagem **nomeie** o artefato. Não se
+  compara o caminho absoluto: no Windows o `t.TempDir()` pode cair sob nome 8.3.
+- **Varredura de mesma classe (escrita mesmo onde deu vazio):** (a) **nenhum outro** teste compara
+  `/` literal contra caminho construído por `filepath` — os 14 candidatos são ref de git, porcelain,
+  URL ou literais que o **produto** escreve com `/` por contrato (`check-ref-separator-portability`);
+  (b) **há** um outro `testdata` de evidência byte-exata: os 4 goldens de `internal/integrations`,
+  pinados aqui. 🔴 Mas medir refutou a explicação óbvia: o `Render` do asset **não** passa por
+  `NormalizeCRLF`, o `got` sai COM CRLF, os dois lados se cancelavam em parte (3 subtestes → 1), e
+  `TestRenderWithoutIdentityMatchesFrozenGoldens` **continua** vermelho no Windows por causa de
+  produto — mecanismo distinto, fora desta REQ pelo teste literal da Regra Dura.
+- `make quality` **rc=0** (0 FAIL, 1343 OK, falsify 338 OK / 0 FAIL), `trackfw validate` **rc=0**.
+- **Nota de vault:** `a-extensao-que-esconde-do-gate-esconde-tambem-do-gitattributes-2026-09-25.md`.
+- Status do ML mantido em 🔄 — muda para ✅ só após a auditoria do arquiteto.
+- Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.

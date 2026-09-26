@@ -24,9 +24,8 @@ func NewNote(title string) error {
 		return fmt.Errorf("NewNote: %w", err)
 	}
 	absVaultDir := filepath.Join(noteRoot, vaultDir)
-	if guardErr := pathguard.RejectSymlinks(noteRoot, absVaultDir); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absVaultDir, guardErr)
-		return fmt.Errorf("refusing write to %s: %w", absVaultDir, guardErr)
+	if guardErr := pathguard.RejectAndReport(noteRoot, absVaultDir); guardErr != nil {
+		return guardErr
 	}
 
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
@@ -70,9 +69,8 @@ related: []
 	// directory; now guard the exact file so a symlink leaf (notePath itself
 	// pointing outside root) is also caught (ML-4B leaf-gap fix).
 	absNotePath := filepath.Join(noteRoot, notePath)
-	if guardErr := pathguard.RejectSymlinks(noteRoot, absNotePath); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absNotePath, guardErr)
-		return fmt.Errorf("refusing write to %s: %w", absNotePath, guardErr)
+	if guardErr := pathguard.RejectAndReport(noteRoot, absNotePath); guardErr != nil {
+		return guardErr
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.WriteFile(notePath, []byte(body), 0644); err != nil {
@@ -93,12 +91,16 @@ func appendNoteToIndex(filename string) error {
 	// Guard the index file against ancestor symlinks.
 	// NewNote already guarded vaultDir, so if we're here that check passed.
 	// Guard vaultIndexFile specifically (a symlink at the index itself is a separate vector).
-	if indexRoot, err := projectRoot(); err == nil {
-		absIndex := filepath.Join(indexRoot, vaultIndexFile)
-		if guardErr := pathguard.RejectSymlinks(indexRoot, absIndex); guardErr != nil {
-			fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absIndex, guardErr)
-			return fmt.Errorf("refusing write to %s: %w", absIndex, guardErr)
-		}
+	// 🔴 Fail-closed (ML-9A): until ML-9A this guard lived inside
+	// `if …; err == nil` and BOTH writes below it sat outside the branch, so a
+	// projectRoot() failure meant creating and appending to the index unguarded.
+	indexRoot, rootErr := projectRoot()
+	if rootErr != nil {
+		return pathguard.RefuseUnverifiableRoot(vaultIndexFile, rootErr)
+	}
+	absIndex := filepath.Join(indexRoot, vaultIndexFile)
+	if guardErr := pathguard.RejectAndReport(indexRoot, absIndex); guardErr != nil {
+		return guardErr
 	}
 
 	// Garante que index.md existe
@@ -110,7 +112,7 @@ func appendNoteToIndex(filename string) error {
 ## Índice
 
 `
-		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+		// write-containment-allowed: pathguard.RejectAndReport(indexRoot, absIndex) at the top of this function dominates this write unconditionally; an unresolvable root refuses via RefuseUnverifiableRoot
 		if err := os.WriteFile(vaultIndexFile, []byte(initial), 0644); err != nil {
 			return fmt.Errorf("criando index.md: %w", err)
 		}
@@ -134,7 +136,7 @@ func appendNoteToIndex(filename string) error {
 
 	// Acrescenta linha de link
 	link := fmt.Sprintf("- [%s](%s)\n", nameWithoutExt, filename)
-	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+	// write-containment-allowed: pathguard.RejectAndReport(indexRoot, absIndex) at the top of this function dominates this append unconditionally; an unresolvable root refuses via RefuseUnverifiableRoot
 	f, err := os.OpenFile(vaultIndexFile, os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
 		return fmt.Errorf("abrindo index.md para append: %w", err)

@@ -33,9 +33,16 @@ func NewDiscoverCmd() *cobra.Command {
 			// EvalSymlinks resolves to /private/tmp/... — passing the unresolved path
 			// as root causes false "escapes root" errors for files genuinely inside
 			// the project. Falls back to cwd if EvalSymlinks fails.
-			resolvedCwd := cwd
-			if rc, rcErr := filepath.EvalSymlinks(cwd); rcErr == nil {
-				resolvedCwd = rc
+			//
+			// ML-8A / #402: this used to be `resolvedCwd := cwd` followed by a
+			// conditional reassignment. Behaviourally identical, but the two-step
+			// shape BINDS resolvedCwd to cwd, so the containment analyser's P2 read
+			// this — the very site the fix's exemplar was quoted from — as an
+			// unresolved guard root. One assignment from one resolver is what makes
+			// the property mechanical instead of a comment.
+			resolvedCwd, rootErr := pathguard.ResolveRoot(cwd)
+			if rootErr != nil {
+				return rootErr
 			}
 
 			fmt.Fprintf(out, "trackfw discover — scanning %s\n\n", cwd)
@@ -211,14 +218,13 @@ func NewDiscoverCmd() *cobra.Command {
 }
 
 // rejectDiscoverPath guards a path inside root before any write.
-// It calls pathguard.RejectSymlinks and prints a refusal message to stderr on
-// failure, matching the pattern established in internal/generators/scaffold.go.
+// It delegates to pathguard.RejectAndReport, which is the single site in the
+// binary that emits the containment refusal (ML-7B).
 func rejectDiscoverPath(root, absTarget string) error {
-	if err := pathguard.RejectSymlinks(root, absTarget); err != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absTarget, err)
-		return fmt.Errorf("refusing write to %s: %w", absTarget, err)
-	}
-	return nil
+	// Thin adapter over pathguard.RejectAndReport: it must NOT re-wrap the error
+	// (the message already names the refused path) and must NOT print — the single
+	// emission point lives in pathguard (ML-7B).
+	return pathguard.RejectAndReport(root, absTarget)
 }
 
 // readLogEntries lê o arquivo de log e retorna um set de chaves de dedup.

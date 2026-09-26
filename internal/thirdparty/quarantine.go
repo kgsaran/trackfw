@@ -94,14 +94,24 @@ func WriteQuarantine(root string, entry QuarantineEntry) error {
 		return fmt.Errorf("encode quarantine entry: %w", err)
 	}
 	data = append(data, '\n')
-	dest := QuarantinePath(root, entry.ChecksumSHA256)
-	// GuardedWrite applies RejectSymlinks(root, dest) before any filesystem
+	// ML-8A / #402: the guard root must be in the RESOLVED namespace, and the
+	// destination must be derived FROM it — filepath.Clean(root) only normalised
+	// text, so on macOS a root of /tmp/x never contained a target under
+	// /private/tmp/x. Resolving the root and rebuilding dest from it moves both
+	// operands together; the symlink components of dest stay unresolved because
+	// filepath.Join is textual, so RejectSymlinks still Lstats every one of them.
+	guardRoot, rootErr := pathguard.ResolveRoot(root)
+	if rootErr != nil {
+		return pathguard.RefuseUnverifiableRoot(QuarantinePath(root, entry.ChecksumSHA256), rootErr)
+	}
+	dest := QuarantinePath(guardRoot, entry.ChecksumSHA256)
+	// GuardedWrite applies RejectSymlinks(guardRoot, dest) before any filesystem
 	// mutation — closing the "symlink in ancestor" write-escape described in
 	// REQ-2026-08-31 / ADR-2026-09-18. It also replaces the private
 	// atomicWrite that previously lived in this package (declared there as a
 	// mirror of internal/integrations/manager.go's atomicWrite — see the
 	// atomicWrite doc comment that was removed in ML-1B).
-	if err := pathguard.GuardedWrite(filepath.Clean(root), dest, data, 0o600); err != nil {
+	if err := pathguard.GuardedWrite(guardRoot, dest, data, 0o600); err != nil {
 		return fmt.Errorf("write quarantine entry: %w", err)
 	}
 	return nil

@@ -77,13 +77,20 @@ func Save(homeDir string, cfg Config) error {
 	}
 	data = append(data, '\n')
 
-	filename := identityPath(homeDir)
-	// GuardedWrite applies RejectSymlinks(homeDir, filename) before any
+	// ML-8A / #402: the guard root must be in the RESOLVED namespace and filename
+	// must be derived FROM it. filepath.Clean(homeDir) normalised text only, so a
+	// $HOME of /tmp/h never contained a target under /private/tmp/h on macOS.
+	guardRoot, rootErr := pathguard.ResolveRoot(homeDir)
+	if rootErr != nil {
+		return pathguard.RefuseUnverifiableRoot(identityPath(homeDir), rootErr)
+	}
+	filename := identityPath(guardRoot)
+	// GuardedWrite applies RejectSymlinks(guardRoot, filename) before any
 	// filesystem mutation — closing the "symlink in ancestor" write-escape
 	// described in REQ-2026-08-31 / ADR-2026-09-18. It also replaces the
 	// private atomicWrite that previously lived in this file (declared there
 	// as a mirror of internal/integrations/manager.go's atomicWrite).
-	if err := pathguard.GuardedWrite(filepath.Clean(homeDir), filename, data, 0o600); err != nil {
+	if err := pathguard.GuardedWrite(guardRoot, filename, data, 0o600); err != nil {
 		return fmt.Errorf("identity: falha ao gravar %s: %w", filename, err)
 	}
 	return nil

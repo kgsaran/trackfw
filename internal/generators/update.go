@@ -190,59 +190,88 @@ func updateDetectedCodexIntegrations(cwd string) error {
 }
 
 // updateHooksSurgical garante que 'trackfw validate' está presente nos hooks sem sobrescrever conteúdo do usuário.
-// cwd must be the absolute path of the project root; it is used as the guard
-// root for RejectSymlinks (ADR-2026-09-18 / ML-1B) and to build absolute
-// paths from the hook files' relative names before passing them to the guard.
-func updateHooksSurgical(cwd string, cfg Config) {
+// rootDir must be the absolute path of the project root as the caller knows it;
+// the guard root and every path below are derived from its RESOLVED form
+// (ML-8A / #402).
+//
+// NON-FATAL by decision: a hook-file failure must never abort `trackfw update`.
+// The decision lives HERE, in the wrapper that discards the error — and only
+// here. updateHooksSurgicalEntry below returns the refusal like any other
+// guarded write, which is what lets an unverifiable root refuse with a plain
+// `return pathguard.RefuseUnverifiableRoot(...)` instead of a discarded call
+// whose error nothing consumes (same shape as appendTransitionLog, ML-9A).
+func updateHooksSurgical(rootDir string, cfg Config) {
+	_ = updateHooksSurgicalEntry(rootDir, cfg)
+}
+
+func updateHooksSurgicalEntry(rootDir string, cfg Config) error {
+	// The relative name is decided BEFORE the root is resolved so that a refusal
+	// can name the file the user was expecting to see updated.
+	var relPath string
 	switch cfg.Hooks {
 	case "husky":
-		path := filepath.Join(cwd, ".husky", "pre-commit")
+		relPath = filepath.Join(".husky", "pre-commit")
+	case "lefthook":
+		relPath = "lefthook.yml"
+	default:
+		return nil
+	}
+	// ML-8A / #402: filepath.Clean(cwd) normalised text and never resolved a
+	// symlink, so the guard root could not contain a target derived from the
+	// resolved tree. Both operands now come from the resolved root.
+	guardRoot, rootErr := pathguard.ResolveRoot(rootDir)
+	if rootErr != nil {
+		return pathguard.RefuseUnverifiableRoot(filepath.Join(rootDir, relPath), rootErr)
+	}
+
+	switch cfg.Hooks {
+	case "husky":
+		path := filepath.Join(guardRoot, ".husky", "pre-commit")
 		// Guard: reject if any ancestor of path is a symlink.
-		if guardErr := pathguard.RejectSymlinks(filepath.Clean(cwd), path); guardErr != nil {
-			fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
+		if guardErr := pathguard.RejectAndReport(guardRoot, path); guardErr != nil {
 			fmt.Printf("  ⚠ .husky/pre-commit: %v\n", guardErr)
-			return
+			return guardErr
 		}
 		data, _ := os.ReadFile(path)
 		if strings.Contains(string(data), "trackfw validate") {
 			fmt.Println("  ✓ .husky/pre-commit — trackfw validate já presente")
-			return
+			return nil
 		}
 		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
-		os.MkdirAll(filepath.Join(cwd, ".husky"), 0755) //nolint:errcheck
+		os.MkdirAll(filepath.Join(guardRoot, ".husky"), 0755) //nolint:errcheck
 		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0755)
 		if err != nil {
 			fmt.Printf("  ⚠ .husky/pre-commit: %v\n", err)
-			return
+			return err
 		}
 		defer f.Close()
 		fmt.Fprintln(f, "\ntrackfw validate")
 		fmt.Println("  ✓ .husky/pre-commit — trackfw validate injetado")
 
 	case "lefthook":
-		path := filepath.Join(cwd, "lefthook.yml")
+		path := filepath.Join(guardRoot, "lefthook.yml")
 		// Guard: reject if any ancestor of path is a symlink.
-		if guardErr := pathguard.RejectSymlinks(filepath.Clean(cwd), path); guardErr != nil {
-			fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
+		if guardErr := pathguard.RejectAndReport(guardRoot, path); guardErr != nil {
 			fmt.Printf("  ⚠ lefthook.yml: %v\n", guardErr)
-			return
+			return guardErr
 		}
 		data, _ := os.ReadFile(path)
 		if strings.Contains(string(data), "trackfw-validate:") || strings.Contains(string(data), "trackfw validate") {
 			fmt.Println("  ✓ lefthook.yml — trackfw já presente")
-			return
+			return nil
 		}
 		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			fmt.Printf("  ⚠ lefthook.yml: %v\n", err)
-			return
+			return err
 		}
 		defer f.Close()
 		fmt.Fprintln(f, "\npre-commit:\n  commands:\n    trackfw-validate:\n      run: trackfw validate")
 		fmt.Println("  ✓ lefthook.yml — trackfw-validate injetado")
 	}
+	return nil
 }
 
 // ensureGlobalADRDirRegistered registers ~/.trackfw/adr in trackfw.yaml's
@@ -269,7 +298,14 @@ func ensureGlobalADRDirRegistered(cwd string) error {
 		return nil // global ADR dir has no ADRs yet — no-op
 	}
 
-	yamlPath := filepath.Join(cwd, "trackfw.yaml")
+	// ML-8A / #402: the guard root and yamlPath must both live in the resolved
+	// namespace — filepath.Clean(cwd) normalised text only and never resolved a
+	// symlink, so on macOS a cwd of /tmp/p could not contain /private/tmp/p/....
+	guardRoot, rootErr := pathguard.ResolveRoot(cwd)
+	if rootErr != nil {
+		return pathguard.RefuseUnverifiableRoot(filepath.Join(cwd, "trackfw.yaml"), rootErr)
+	}
+	yamlPath := filepath.Join(guardRoot, "trackfw.yaml")
 	data, readErr := os.ReadFile(yamlPath)
 	if readErr != nil {
 		return fmt.Errorf("reading %s: %w", yamlPath, readErr)
@@ -286,10 +322,9 @@ func ensureGlobalADRDirRegistered(cwd string) error {
 		return insertErr
 	}
 	// Guard: reject writes through symlinks before mutating trackfw.yaml
-	// (ADR-2026-09-18 / ML-1B). Root is the project directory (cwd).
-	if guardErr := pathguard.RejectSymlinks(filepath.Clean(cwd), yamlPath); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", yamlPath, guardErr)
-		return fmt.Errorf("writing %s: %w", yamlPath, guardErr)
+	// (ADR-2026-09-18 / ML-1B). Root is the RESOLVED project directory.
+	if guardErr := pathguard.RejectAndReport(guardRoot, yamlPath); guardErr != nil {
+		return guardErr
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if writeErr := os.WriteFile(yamlPath, []byte(updated), 0o644); writeErr != nil {
@@ -530,6 +565,24 @@ func UpdateHarness(opts UpdateOptions) (UpdateReport, error) {
 	// termination condition is a string equality, so a trailing slash or "."
 	// would cause the walk to overshoot root and return "escapes root" for
 	// every target (ADR-2026-09-18 / ML-1B precondition).
+	//
+	// 🔴 ML-8A / #402 deliberately does NOT resolve home here, and the reason is
+	// measured, not assumed. This `home` is not only the guard root: it is
+	// embedded VERBATIM in the hook command paths written into
+	// .claude/settings.json, .codex/hooks.json, .gemini/settings.json,
+	// .cursor/hooks.json and friends. Swapping it for the EvalSymlinks form
+	// changes the CONTENT of every generated artifact (/var/... →
+	// /private/var/... on macOS) — 15 tests pin the logical form — and that is a
+	// product decision about what trackfw writes into the user's config, not the
+	// argument fix this ML owns.
+	//
+	// Containment is NOT degraded by leaving it logical: every harness target is
+	// built by filepath.Join from this same `home`, so the guard root and the
+	// guarded target live in the SAME namespace. Armadilha 3 is the MISMATCH
+	// between the two namespaces, not the choice of namespace. The residual is
+	// that P2 still reports rejectHarnessSymlink()'s `home` parameter as
+	// unresolved; that finding is pinned by name in containment_live_test.go
+	// with this reason.
 	home = filepath.Clean(home)
 
 	// NOTE: the script files are now first-class targets ("git-branch-guard-script",
@@ -663,8 +716,7 @@ func selectDeclaredTargets(declared []string, requested []string) ([]string, err
 // path is clean. The refusal is written to stderr (ADR-2026-09-18, decision 3:
 // recusa audível — writes that would escape $HOME must never be silent).
 func rejectHarnessSymlink(home, path, id, displayPath string) (TargetResult, bool) {
-	if guardErr := pathguard.RejectSymlinks(home, path); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
+	if guardErr := pathguard.RejectAndReport(home, path); guardErr != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: guardErr.Error()}, true
 	}
 	return TargetResult{}, false
@@ -2126,26 +2178,30 @@ func discoverWorkflowPresent(root string) bool {
 // `update`'s call whether to follow a link planted at a path it manages;
 // the file may not even belong to this project. Refusing is loud (stderr),
 // never silent, so "update didn't refresh my workflow" is diagnosable.
-func refreshDiscoverGitHubActionsWorkflowIfPresent(root string) error {
-	path := filepath.Join(root, DiscoverGitHubActionsWorkflowPath)
-	info, err := os.Lstat(path)
-	if err != nil {
+func refreshDiscoverGitHubActionsWorkflowIfPresent(rootDir string) error {
+	// ML-8A / #402: resolve the root FIRST and derive path from it, so the guard
+	// compares two paths in the same namespace. filepath.Clean(root) only
+	// normalised text. The Lstat below still runs on the unresolved-by-Join
+	// target, so a symlinked workflow file is still seen as a symlink.
+	guardRoot, rootErr := pathguard.ResolveRoot(rootDir)
+	if rootErr != nil {
+		return pathguard.RefuseUnverifiableRoot(filepath.Join(rootDir, DiscoverGitHubActionsWorkflowPath), rootErr)
+	}
+	path := filepath.Join(guardRoot, DiscoverGitHubActionsWorkflowPath)
+	if _, err := os.Lstat(path); err != nil {
 		return nil // not installed — update never creates it (AC17(b))
 	}
-	if info.Mode()&os.ModeSymlink != 0 {
-		fmt.Fprintf(os.Stderr, "aviso: %s é um symlink; trackfw update não escreve através de symlinks — arquivo não foi tocado\n", DiscoverGitHubActionsWorkflowPath)
-		return nil
-	}
-	// Full ancestor-symlink check: the leaf Lstat above only guards the last
-	// component; RejectSymlinks walks every ancestor up to root (ML-1B /
-	// ADR-2026-09-18). Refusal is loud (stderr, consistent with the leaf-only
-	// message already present for the leaf case).
-	if guardErr := pathguard.RejectSymlinks(filepath.Clean(root), path); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
+	// Single containment check for BOTH the leaf and every ancestor up to root:
+	// pathguard.RejectSymlinks Lstats the leaf first, so the separate leaf-only
+	// branch that used to live here (with its own "aviso: … é um symlink"
+	// wording) was a sixth message grammar for an outcome this call already
+	// produces. ML-7B collapsed it; refusal stays loud, now in the single
+	// grammar emitted by pathguard.
+	if guardErr := pathguard.RejectAndReport(guardRoot, path); guardErr != nil {
 		return nil
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
-	return os.WriteFile(path, []byte(BuildDiscoverGitHubActionsWorkflowContent(IsProducerGoMod(root))), 0o644)
+	return os.WriteFile(path, []byte(BuildDiscoverGitHubActionsWorkflowContent(IsProducerGoMod(guardRoot))), 0o644)
 }
 
 // UpdateProject evaluates (and, unless DryRun, applies) every declared

@@ -154,16 +154,14 @@ Gera arquivo esparso: apenas campos que diferem dos defaults são gravados.`,
 			// Fail closed: if Getwd() fails we cannot verify containment, so we refuse the write.
 			configureRoot, cwdErr := configureGetwdFn()
 			if cwdErr != nil {
-				fmt.Fprintf(os.Stderr, "trackfw: refusing write to trackfw.yaml: cannot verify containment: %v\n", cwdErr)
-				return fmt.Errorf("refusing write to trackfw.yaml: cannot verify containment: %w", cwdErr)
+				return pathguard.RefuseUnverifiableRoot("trackfw.yaml", cwdErr)
 			}
 			if resolved, resolveErr := filepath.EvalSymlinks(configureRoot); resolveErr == nil {
 				configureRoot = resolved
 			}
 			absYAML := filepath.Join(configureRoot, "trackfw.yaml")
-			if guardErr := pathguard.RejectSymlinks(configureRoot, absYAML); guardErr != nil {
-				fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absYAML, guardErr)
-				return fmt.Errorf("refusing write to trackfw.yaml: %w", guardErr)
+			if guardErr := pathguard.RejectAndReport(configureRoot, absYAML); guardErr != nil {
+				return guardErr
 			}
 			// write-containment-allowed: guarded by pathguard.RejectSymlinks above (fail-closed on Getwd error)
 			if err := os.WriteFile("trackfw.yaml", []byte(content), 0644); err != nil {

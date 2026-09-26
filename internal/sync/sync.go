@@ -139,9 +139,8 @@ func syncToProvider(create func(string, string) (string, error), issueField stri
 		if !filepath.IsAbs(f) {
 			absF = filepath.Join(syncRoot, f)
 		}
-		if guardErr := pathguard.RejectSymlinks(syncRoot, absF); guardErr != nil {
-			fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absF, guardErr)
-			results = append(results, SyncResult{REQPath: f, Error: fmt.Errorf("refusing write: %w", guardErr)})
+		if guardErr := pathguard.RejectAndReport(syncRoot, absF); guardErr != nil {
+			results = append(results, SyncResult{REQPath: f, Error: guardErr})
 			continue
 		}
 		// write-containment-allowed: guarded by pathguard.RejectSymlinks above (fail-closed on Getwd error)

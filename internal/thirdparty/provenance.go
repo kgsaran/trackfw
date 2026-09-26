@@ -142,8 +142,17 @@ func WriteProvenance(root string, prov Provenance) error {
 		return fmt.Errorf("encode thirdparty provenance: %w", err)
 	}
 	data = append(data, '\n')
-	dest := ProvenancePath(root)
-	if err := pathguard.GuardedWrite(filepath.Clean(root), dest, data, 0o600); err != nil {
+	// ML-8A / #402: same argument defect as WriteQuarantine — filepath.Clean(root)
+	// normalises text and never resolves a symlink, so the guard root and a dest
+	// built from the resolved tree could not be related by Beneath. Resolve the
+	// root and derive dest from it; filepath.Join stays textual, so every
+	// component of dest is still Lstat'd by RejectSymlinks.
+	guardRoot, rootErr := pathguard.ResolveRoot(root)
+	if rootErr != nil {
+		return pathguard.RefuseUnverifiableRoot(ProvenancePath(root), rootErr)
+	}
+	dest := ProvenancePath(guardRoot)
+	if err := pathguard.GuardedWrite(guardRoot, dest, data, 0o600); err != nil {
 		return fmt.Errorf("write thirdparty provenance: %w", err)
 	}
 	return nil

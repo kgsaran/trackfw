@@ -2409,8 +2409,19 @@ func TestUpdateNeverWritesThroughSymlinkAtDiscoverWorkflowPath(t *testing.T) {
 		t.Fatalf("expected %s to remain a symlink (untouched), got mode %v", workflowPath, linkInfo.Mode())
 	}
 
-	if !strings.Contains(stderrBuf.String(), DiscoverGitHubActionsWorkflowPath) || !strings.Contains(stderrBuf.String(), "symlink") {
-		t.Fatalf("expected a stderr warning naming %s as a symlink, got: %q", DiscoverGitHubActionsWorkflowPath, stderrBuf.String())
+	// ML-9B: a asserção compara o caminho com o separador NATIVO. O emissor mudou
+	// no ML-7B — antes era `aviso: %s é um symlink` com caminho RELATIVO (sempre
+	// "/", porque a constante é "/"); hoje é a gramática única, que imprime o
+	// caminho ABSOLUTO do SO, e no Windows ele vem com "\".
+	// filepath.FromSlash é o que reconcilia os dois sem afrouxar a asserção: ela
+	// continua exigindo que a mensagem NOMEIE o artefato (um Contains("symlink")
+	// genérico passaria com o caminho errado, que é justamente o que este teste
+	// existe para reprovar). Não se compara o workflowPath absoluto porque no
+	// Windows o t.TempDir() pode cair sob nome 8.3 (C:\Users\RUNNE~1\...) e o
+	// prefixo divergiria legitimamente do root — o que se exige é o SUFIXO.
+	nativeWorkflowPath := filepath.FromSlash(DiscoverGitHubActionsWorkflowPath)
+	if !strings.Contains(stderrBuf.String(), nativeWorkflowPath) || !strings.Contains(stderrBuf.String(), "symlink") {
+		t.Fatalf("expected a stderr warning naming %s as a symlink, got: %q", nativeWorkflowPath, stderrBuf.String())
 	}
 
 	// A live symlink is not "manageable" by update, so — for a ci:none

@@ -92,12 +92,15 @@ func InstallGates(r DiscoveryResult, rootDir string, w io.Writer) error {
 
 func writeValidateScript(rootDir string) error {
 	root := resolveRoot(rootDir)
-	scriptsDir := filepath.Join(rootDir, "scripts")
+	// ML-8A / #402: every path written below is derived from `root` (the resolved
+	// form), not from `rootDir`. The guards were already on `root`, so a write
+	// built from `rootDir` was guarded under a DIFFERENT spelling — the analyser's
+	// `root-aliased` finding: the flow passes the guard, the argument does not.
+	scriptsDir := filepath.Join(root, "scripts")
 	// Guard the scripts dir (catches ancestor symlinks such as scripts/ → /outside)
 	// before MkdirAll so a symlink replacement cannot redirect the write.
-	if guardErr := pathguard.RejectSymlinks(root, filepath.Join(root, "scripts")); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", scriptsDir, guardErr)
-		return fmt.Errorf("refusing write to %s: %w", scriptsDir, guardErr)
+	if guardErr := pathguard.RejectAndReport(root, filepath.Join(root, "scripts")); guardErr != nil {
+		return guardErr
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.MkdirAll(scriptsDir, 0755); err != nil {
@@ -108,9 +111,8 @@ func writeValidateScript(rootDir string) error {
 	// Guard the leaf file: the directory guard above (RejectSymlinks on "scripts/") does not
 	// walk below the directory; a symlink placed at the leaf path is caught here.
 	leafDest := filepath.Join(root, "scripts", "trackfw-validate.sh")
-	if guardErr := pathguard.RejectSymlinks(root, leafDest); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", dest, guardErr)
-		return fmt.Errorf("refusing write to %s: %w", dest, guardErr)
+	if guardErr := pathguard.RejectAndReport(root, leafDest); guardErr != nil {
+		return guardErr
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.WriteFile(dest, []byte(content), 0755); err != nil {
@@ -126,9 +128,12 @@ func installHook(framework, rootDir string, w io.Writer) error {
 
 	switch framework {
 	case "lefthook":
-		cfgPath := filepath.Join(rootDir, "lefthook.yml")
+		// ML-8A / #402: built from the RESOLVED root, the same spelling the guard
+		// below uses — otherwise the guard governs one path and the append hits
+		// another.
+		cfgPath := filepath.Join(root, "lefthook.yml")
 		if !fileExists(cfgPath) {
-			cfgPath = filepath.Join(rootDir, ".lefthook.yml")
+			cfgPath = filepath.Join(root, ".lefthook.yml")
 		}
 		content, err := os.ReadFile(cfgPath)
 		if err != nil {
@@ -140,9 +145,8 @@ func installHook(framework, rootDir string, w io.Writer) error {
 		}
 		// Guard before O_APPEND open: cfgPath may be beneath a symlink ancestor.
 		absCfgPath := filepath.Join(root, filepath.Base(cfgPath))
-		if guardErr := pathguard.RejectSymlinks(root, absCfgPath); guardErr != nil {
-			fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", cfgPath, guardErr)
-			return fmt.Errorf("refusing write to %s: %w", cfgPath, guardErr)
+		if guardErr := pathguard.RejectAndReport(root, absCfgPath); guardErr != nil {
+			return guardErr
 		}
 		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		f, err := os.OpenFile(cfgPath, os.O_APPEND|os.O_WRONLY, 0644)
@@ -154,11 +158,11 @@ func installHook(framework, rootDir string, w io.Writer) error {
 		return err
 
 	case "husky":
-		huskyHook := filepath.Join(rootDir, ".husky", "pre-commit")
+		// ML-8A / #402: resolved root, same spelling as the two guards below.
+		huskyHook := filepath.Join(root, ".husky", "pre-commit")
 		// Guard the .husky dir before MkdirAll.
-		if guardErr := pathguard.RejectSymlinks(root, filepath.Join(root, ".husky")); guardErr != nil {
-			fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", filepath.Dir(huskyHook), guardErr)
-			return fmt.Errorf("refusing write to %s: %w", filepath.Dir(huskyHook), guardErr)
+		if guardErr := pathguard.RejectAndReport(root, filepath.Join(root, ".husky")); guardErr != nil {
+			return guardErr
 		}
 		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		if err := os.MkdirAll(filepath.Dir(huskyHook), 0755); err != nil {
@@ -166,9 +170,8 @@ func installHook(framework, rootDir string, w io.Writer) error {
 		}
 		// Guard the leaf file: the directory guard above (RejectSymlinks on ".husky/") does not
 		// walk below the directory; a symlink placed at the leaf path is caught here.
-		if guardErr := pathguard.RejectSymlinks(root, filepath.Join(root, ".husky", "pre-commit")); guardErr != nil {
-			fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", huskyHook, guardErr)
-			return fmt.Errorf("refusing write to %s: %w", huskyHook, guardErr)
+		if guardErr := pathguard.RejectAndReport(root, filepath.Join(root, ".husky", "pre-commit")); guardErr != nil {
+			return guardErr
 		}
 		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 		f, err := os.OpenFile(huskyHook, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0755)
@@ -199,11 +202,11 @@ func installLefthook(rootDir string, w io.Writer) error {
 	root := resolveRoot(rootDir)
 	const lefthookContent = "pre-commit:\n  commands:\n    trackfw-validate:\n      run: scripts/trackfw-validate.sh\n"
 
-	cfgPath := filepath.Join(rootDir, "lefthook.yml")
+	// ML-8A / #402: resolved root, same spelling as the guard immediately below.
+	cfgPath := filepath.Join(root, "lefthook.yml")
 	// Guard lefthook.yml before any write (creation or append).
-	if guardErr := pathguard.RejectSymlinks(root, filepath.Join(root, "lefthook.yml")); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", cfgPath, guardErr)
-		return fmt.Errorf("refusing write to %s: %w", cfgPath, guardErr)
+	if guardErr := pathguard.RejectAndReport(root, filepath.Join(root, "lefthook.yml")); guardErr != nil {
+		return guardErr
 	}
 
 	if fileExists(cfgPath) {
@@ -255,9 +258,8 @@ func installHusky(rootDir string, w io.Writer) error {
 	root := resolveRoot(rootDir)
 	// Guard .husky dir before any write. npm install and npx husky init run as
 	// external commands (no Go write), so the guard only covers the hook file write.
-	if guardErr := pathguard.RejectSymlinks(root, filepath.Join(root, ".husky")); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s/.husky: %v\n", rootDir, guardErr)
-		return fmt.Errorf("refusing write to %s/.husky: %w", rootDir, guardErr)
+	if guardErr := pathguard.RejectAndReport(root, filepath.Join(root, ".husky")); guardErr != nil {
+		return guardErr
 	}
 	// npm install --save-dev husky
 	if out, err := runExternalCommand(rootDir, "npm", "install", "--save-dev", "husky"); err != nil {
@@ -274,16 +276,16 @@ func installHusky(rootDir string, w io.Writer) error {
 	}
 
 	// cria/append .husky/pre-commit com linha do trackfw
-	huskyHook := filepath.Join(rootDir, ".husky", "pre-commit")
+	// ML-8A / #402: resolved root, same spelling as the leaf guard below.
+	huskyHook := filepath.Join(root, ".husky", "pre-commit")
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.MkdirAll(filepath.Dir(huskyHook), 0755); err != nil {
 		return fmt.Errorf("creating .husky dir: %w", err)
 	}
 	// Guard the leaf file: the directory guard above (RejectSymlinks on ".husky/") does not
 	// walk below the directory; a symlink placed at the leaf path is caught here.
-	if guardErr := pathguard.RejectSymlinks(root, filepath.Join(root, ".husky", "pre-commit")); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", huskyHook, guardErr)
-		return fmt.Errorf("refusing write to %s: %w", huskyHook, guardErr)
+	if guardErr := pathguard.RejectAndReport(root, filepath.Join(root, ".husky", "pre-commit")); guardErr != nil {
+		return guardErr
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	f, err := os.OpenFile(huskyHook, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0755)
@@ -305,9 +307,8 @@ func installHusky(rootDir string, w io.Writer) error {
 func installHuskyNPX(rootDir string, w io.Writer) error {
 	root := resolveRoot(rootDir)
 	// Guard .husky dir before the hook file write.
-	if guardErr := pathguard.RejectSymlinks(root, filepath.Join(root, ".husky")); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s/.husky: %v\n", rootDir, guardErr)
-		return fmt.Errorf("refusing write to %s/.husky: %w", rootDir, guardErr)
+	if guardErr := pathguard.RejectAndReport(root, filepath.Join(root, ".husky")); guardErr != nil {
+		return guardErr
 	}
 	// npx husky init — cria .husky/ e instala o handler de hooks
 	if out, err := runExternalCommand(rootDir, "npx", "husky", "init"); err != nil {
@@ -318,16 +319,16 @@ func installHuskyNPX(rootDir string, w io.Writer) error {
 	}
 
 	// cria/append .husky/pre-commit com linha do trackfw
-	huskyHook := filepath.Join(rootDir, ".husky", "pre-commit")
+	// ML-8A / #402: resolved root, same spelling as the leaf guard below.
+	huskyHook := filepath.Join(root, ".husky", "pre-commit")
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.MkdirAll(filepath.Dir(huskyHook), 0755); err != nil {
 		return fmt.Errorf("creating .husky dir: %w", err)
 	}
 	// Guard the leaf file: the directory guard above (RejectSymlinks on ".husky/") does not
 	// walk below the directory; a symlink placed at the leaf path is caught here.
-	if guardErr := pathguard.RejectSymlinks(root, filepath.Join(root, ".husky", "pre-commit")); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", huskyHook, guardErr)
-		return fmt.Errorf("refusing write to %s: %w", huskyHook, guardErr)
+	if guardErr := pathguard.RejectAndReport(root, filepath.Join(root, ".husky", "pre-commit")); guardErr != nil {
+		return guardErr
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	f, err := os.OpenFile(huskyHook, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0755)
@@ -344,16 +345,22 @@ func installHuskyNPX(rootDir string, w io.Writer) error {
 
 func writeCIWorkflow(rootDir string) error {
 	root := resolveRoot(rootDir)
-	workflowsDir := filepath.Join(rootDir, ".github", "workflows")
+	// ML-8A / #402: every path written below is derived from `root` (the resolved
+	// form), not from `rootDir`. The guards were already on `root`, so a write
+	// built from `rootDir` was guarded under a DIFFERENT spelling — the analyser's
+	// `root-aliased` finding: the flow passes the guard, the argument does not.
+	workflowsDir := filepath.Join(root, ".github", "workflows")
 	dest := filepath.Join(workflowsDir, "trackfw-validate.yml")
 	// RejectSymlinks checks every ancestor from dest up to root (covers .github/ being a
 	// symlink — the PoC 1 attack vector — as well as dest itself being a symlink).
 	// Applied BEFORE MkdirAll so a symlink replacement cannot redirect the write.
 	// Returns nil (not an error) on symlink detection: discover --init is a best-effort
-	// install; skipping silently preserves the behavior of the old leaf-only Lstat check
-	// and keeps the caller's (InstallGates) contract of non-fatal on symlink collision.
-	if guardErr := pathguard.RejectSymlinks(root, filepath.Join(root, ".github", "workflows", "trackfw-validate.yml")); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "aviso: %s — trackfw discover não escreve através de symlinks — arquivo não foi tocado\n", filepath.Join(".github", "workflows", "trackfw-validate.yml"))
+	// install, and the caller's (InstallGates) contract is non-fatal on symlink
+	// collision. Non-fatal is a CONTROL-FLOW property and is preserved; it is not a
+	// reason for a different message. Until ML-7B this site printed a grammar of its
+	// own ("aviso: … não escreve através de symlinks"), which was the 5th of the 5
+	// measured grammars. The refusal now comes from the single emitter.
+	if guardErr := pathguard.RejectAndReport(root, filepath.Join(root, ".github", "workflows", "trackfw-validate.yml")); guardErr != nil {
 		return nil
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site

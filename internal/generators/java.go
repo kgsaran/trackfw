@@ -66,14 +66,17 @@ func GeneratePomXML(cfg Config) error {
 	// Guard before write: pom.xml is written relative to CWD (= project root).
 	// Root: projectRoot() — resolves macOS /tmp→/private/tmp via EvalSymlinks.
 	// Guard precedes WriteFile so a refused destination creates no stray file.
+	// 🔴 Fail-closed (ML-9A): when the root cannot be established the guard cannot
+	// run, so the write is REFUSED instead of proceeding unguarded. Until ML-9A the
+	// guard sat inside `if rootErr == nil` while the write sat outside it.
 	javaRoot, rootErr := projectRoot()
-	if rootErr == nil {
-		absPom := filepath.Join(javaRoot, "pom.xml")
-		if guardErr := pathguard.RejectSymlinks(javaRoot, absPom); guardErr != nil {
-			fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absPom, guardErr)
-			return fmt.Errorf("refusing write to pom.xml: %w", guardErr)
-		}
+	if rootErr != nil {
+		return pathguard.RefuseUnverifiableRoot("pom.xml", rootErr)
 	}
-	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+	absPom := filepath.Join(javaRoot, "pom.xml")
+	if guardErr := pathguard.RejectAndReport(javaRoot, absPom); guardErr != nil {
+		return guardErr
+	}
+	// write-containment-allowed: pathguard.RejectAndReport(javaRoot, absPom) above dominates this write unconditionally; an unresolvable root refuses via RefuseUnverifiableRoot
 	return os.WriteFile("pom.xml", []byte(content), 0644)
 }

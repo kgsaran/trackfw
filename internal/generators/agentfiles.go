@@ -131,11 +131,16 @@ Delete the file when resolved. Visible as a live banner in ` + "`trackfw serve`"
 //   - File doesn't exist: creates with headerIfNew + rules block
 //   - File exists, no marker: appends rules block at end
 //   - File exists, has marker: replaces content between markers (idempotent update)
-func injectOrUpdateRules(filePath, headerIfNew, cwd string) error {
+//
+// guardRoot must ALREADY be resolved (ML-8A / #402): it is the first operand of
+// the containment guard, and filePath is built from it by the caller. Resolving
+// it here instead would pair a resolved root with a target the caller built from
+// the unresolved one — the false-refusal half of armadilha 3, traded for the
+// false-approval half.
+func injectOrUpdateRules(filePath, headerIfNew, guardRoot string) error {
 	// Guard: reject writes through symlinks before any filesystem mutation
 	// (ADR-2026-09-18 / ML-1B).
-	if guardErr := pathguard.RejectSymlinks(filepath.Clean(cwd), filePath); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", filePath, guardErr)
+	if guardErr := pathguard.RejectAndReport(guardRoot, filePath); guardErr != nil {
 		return guardErr
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
@@ -143,8 +148,8 @@ func injectOrUpdateRules(filePath, headerIfNew, cwd string) error {
 		return err
 	}
 
-	namespacing, agents := config.ReadNamespacingConfig(cwd)
-	block := trackfwRulesBlock(config.ReadAgentConventions(cwd), namespacing, agents)
+	namespacing, agents := config.ReadNamespacingConfig(guardRoot)
+	block := trackfwRulesBlock(config.ReadAgentConventions(guardRoot), namespacing, agents)
 
 	data, err := os.ReadFile(filePath)
 	if os.IsNotExist(err) {
@@ -190,13 +195,19 @@ func injectOrUpdateRules(filePath, headerIfNew, cwd string) error {
 // InjectRulesForTool injects trackfw governance rules into the config file for the given
 // AI tool. tool must be one of: claude, codex, gemini, copilot, windsurf, amazonq, cursor.
 // cwd is the project root directory.
-func InjectRulesForTool(tool, cwd string) error {
+func InjectRulesForTool(tool, rootDir string) error {
 	relPath, ok := agentFiles[tool]
 	if !ok {
 		return nil
 	}
 	header := agentHeaders[tool]
-	return injectOrUpdateRules(filepath.Join(cwd, relPath), header, cwd)
+	// ML-8A / #402: resolve the root HERE, where the target is built, so both
+	// operands of the guard move into the resolved namespace together.
+	guardRoot, rootErr := pathguard.ResolveRoot(rootDir)
+	if rootErr != nil {
+		return pathguard.RefuseUnverifiableRoot(filepath.Join(rootDir, relPath), rootErr)
+	}
+	return injectOrUpdateRules(filepath.Join(guardRoot, relPath), header, guardRoot)
 }
 
 // InjectRulesDetected scans cwd for existing AI agent config files and injects
@@ -234,12 +245,21 @@ func InjectRulesDetected(cwd string) error {
 // --- Attention Hook Injectors ---
 
 // InjectClaudeHooks injects Claude Code attention hooks into .claude/settings.json.
-func InjectClaudeHooks(cwd string) error {
-	path := filepath.Join(cwd, ".claude", "settings.json")
+func InjectClaudeHooks(rootDir string) error {
+	// ML-8A / #402: the guard root must live in the RESOLVED namespace and every
+	// path below must be derived FROM it. filepath.Clean(cwd) only normalised
+	// text, so a root of /tmp/p never contained a target under /private/tmp/p on
+	// macOS. filepath.Join stays textual, so the target's own components remain
+	// unresolved and RejectSymlinks still Lstats every one of them.
+	guardRoot, rootErr := pathguard.ResolveRoot(rootDir)
+	if rootErr != nil {
+		return pathguard.RefuseUnverifiableRoot(filepath.Join(rootDir, ".claude", "settings.json"), rootErr)
+	}
+
+	path := filepath.Join(guardRoot, ".claude", "settings.json")
 	// Guard: reject writes through symlinks before any filesystem mutation
 	// (ADR-2026-09-18 / ML-1B).
-	if guardErr := pathguard.RejectSymlinks(filepath.Clean(cwd), path); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
+	if guardErr := pathguard.RejectAndReport(guardRoot, path); guardErr != nil {
 		return guardErr
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
@@ -451,13 +471,22 @@ const (
 // is added here; this is a documented limitation (also called out in
 // docs/cli-parity.md), not a workaround. Write/edit materialization IS
 // covered via the "apply_patch" matcher (documented aliases Edit/Write).
-func InjectCodexHooks(cwd string) error {
-	dir := filepath.Join(cwd, ".codex")
+func InjectCodexHooks(rootDir string) error {
+	// ML-8A / #402: the guard root must live in the RESOLVED namespace and every
+	// path below must be derived FROM it. filepath.Clean(cwd) only normalised
+	// text, so a root of /tmp/p never contained a target under /private/tmp/p on
+	// macOS. filepath.Join stays textual, so the target's own components remain
+	// unresolved and RejectSymlinks still Lstats every one of them.
+	guardRoot, rootErr := pathguard.ResolveRoot(rootDir)
+	if rootErr != nil {
+		return pathguard.RefuseUnverifiableRoot(filepath.Join(rootDir, ".codex", "hooks.json"), rootErr)
+	}
+
+	dir := filepath.Join(guardRoot, ".codex")
 	path := filepath.Join(dir, "hooks.json")
 	// Guard: reject writes through symlinks before any filesystem mutation
 	// (ADR-2026-09-18 / ML-1B).
-	if guardErr := pathguard.RejectSymlinks(filepath.Clean(cwd), path); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
+	if guardErr := pathguard.RejectAndReport(guardRoot, path); guardErr != nil {
 		return guardErr
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
@@ -604,13 +633,22 @@ func InjectCodexHooks(cwd string) error {
 // never touching the .trackfw-attention.json file that trackfw-attention-cleanup.sh
 // deletes — the same fix that neutralized the equivalent race confirmed for Codex
 // in ML-2B applies here regardless of Gemini's actual concurrency model.
-func InjectGeminiHooks(cwd string) error {
-	dir := filepath.Join(cwd, ".gemini")
+func InjectGeminiHooks(rootDir string) error {
+	// ML-8A / #402: the guard root must live in the RESOLVED namespace and every
+	// path below must be derived FROM it. filepath.Clean(cwd) only normalised
+	// text, so a root of /tmp/p never contained a target under /private/tmp/p on
+	// macOS. filepath.Join stays textual, so the target's own components remain
+	// unresolved and RejectSymlinks still Lstats every one of them.
+	guardRoot, rootErr := pathguard.ResolveRoot(rootDir)
+	if rootErr != nil {
+		return pathguard.RefuseUnverifiableRoot(filepath.Join(rootDir, ".gemini", "settings.json"), rootErr)
+	}
+
+	dir := filepath.Join(guardRoot, ".gemini")
 	path := filepath.Join(dir, "settings.json")
 	// Guard: reject writes through symlinks before any filesystem mutation
 	// (ADR-2026-09-18 / ML-1B).
-	if guardErr := pathguard.RejectSymlinks(filepath.Clean(cwd), path); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
+	if guardErr := pathguard.RejectAndReport(guardRoot, path); guardErr != nil {
 		return guardErr
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
@@ -787,13 +825,22 @@ func InjectGeminiHooks(cwd string) error {
 //   - PreToolUse/PostToolUse STDIN payload is JSON: {"hook_event_name", "cwd", "session_id",
 //     "tool_name", "tool_input"} — trackfw-credential-guard.sh scans the raw payload for JWT/AWS-key
 //     patterns regardless of field names (ML-1A), so it works under this shape without changes.
-func InjectKiroHooks(cwd string) error {
-	dir := filepath.Join(cwd, ".kiro", "hooks")
+func InjectKiroHooks(rootDir string) error {
+	// ML-8A / #402: the guard root must live in the RESOLVED namespace and every
+	// path below must be derived FROM it. filepath.Clean(cwd) only normalised
+	// text, so a root of /tmp/p never contained a target under /private/tmp/p on
+	// macOS. filepath.Join stays textual, so the target's own components remain
+	// unresolved and RejectSymlinks still Lstats every one of them.
+	guardRoot, rootErr := pathguard.ResolveRoot(rootDir)
+	if rootErr != nil {
+		return pathguard.RefuseUnverifiableRoot(filepath.Join(rootDir, ".kiro", "hooks", "trackfw-attention.json"), rootErr)
+	}
+
+	dir := filepath.Join(guardRoot, ".kiro", "hooks")
 	path := filepath.Join(dir, "trackfw-attention.json")
 	// Guard: reject writes through symlinks before any filesystem mutation
 	// (ADR-2026-09-18 / ML-1B).
-	if guardErr := pathguard.RejectSymlinks(filepath.Clean(cwd), path); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
+	if guardErr := pathguard.RejectAndReport(guardRoot, path); guardErr != nil {
 		return guardErr
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
@@ -920,13 +967,22 @@ func InjectKiroHooks(cwd string) error {
 // Gemini's undocumented cross-group model); the ML-1A fix (credential-guard's "warn" mode writes to
 // its own dedicated $ROADMAP_DIR/.trackfw-credential-guard.json, never touching the shared
 // .trackfw-attention.json that trackfw-attention-cleanup.sh deletes) makes this moot regardless.
-func InjectCopilotHooks(cwd string) error {
-	dir := filepath.Join(cwd, ".github", "hooks")
+func InjectCopilotHooks(rootDir string) error {
+	// ML-8A / #402: the guard root must live in the RESOLVED namespace and every
+	// path below must be derived FROM it. filepath.Clean(cwd) only normalised
+	// text, so a root of /tmp/p never contained a target under /private/tmp/p on
+	// macOS. filepath.Join stays textual, so the target's own components remain
+	// unresolved and RejectSymlinks still Lstats every one of them.
+	guardRoot, rootErr := pathguard.ResolveRoot(rootDir)
+	if rootErr != nil {
+		return pathguard.RefuseUnverifiableRoot(filepath.Join(rootDir, ".github", "hooks", "trackfw-attention.json"), rootErr)
+	}
+
+	dir := filepath.Join(guardRoot, ".github", "hooks")
 	path := filepath.Join(dir, "trackfw-attention.json")
 	// Guard: reject writes through symlinks before any filesystem mutation
 	// (ADR-2026-09-18 / ML-1B).
-	if guardErr := pathguard.RejectSymlinks(filepath.Clean(cwd), path); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
+	if guardErr := pathguard.RejectAndReport(guardRoot, path); guardErr != nil {
 		return guardErr
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
@@ -1100,12 +1156,21 @@ func InjectCopilotHooks(cwd string) error {
 // unrelated entries a user may have added there themselves (those keys are
 // inert either way — Cursor never read the top-level location — so leaving
 // them is harmless and avoids destroying unrelated user data on a guess).
-func InjectCursorHooks(cwd string) error {
-	path := filepath.Join(cwd, ".cursor", "hooks.json")
+func InjectCursorHooks(rootDir string) error {
+	// ML-8A / #402: the guard root must live in the RESOLVED namespace and every
+	// path below must be derived FROM it. filepath.Clean(cwd) only normalised
+	// text, so a root of /tmp/p never contained a target under /private/tmp/p on
+	// macOS. filepath.Join stays textual, so the target's own components remain
+	// unresolved and RejectSymlinks still Lstats every one of them.
+	guardRoot, rootErr := pathguard.ResolveRoot(rootDir)
+	if rootErr != nil {
+		return pathguard.RefuseUnverifiableRoot(filepath.Join(rootDir, ".cursor", "hooks.json"), rootErr)
+	}
+
+	path := filepath.Join(guardRoot, ".cursor", "hooks.json")
 	// Guard: reject writes through symlinks before any filesystem mutation
 	// (ADR-2026-09-18 / ML-1B).
-	if guardErr := pathguard.RejectSymlinks(filepath.Clean(cwd), path); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
+	if guardErr := pathguard.RejectAndReport(guardRoot, path); guardErr != nil {
 		return guardErr
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
@@ -1333,29 +1398,38 @@ const legacyWindsurfHooksFile = "trackfw-git-branch-guard.json"
 // fix: trackfw has no established, confirmed mechanism for rewriting IDE user
 // settings safely, and inventing one on a guess repeats the exact mistake
 // this fix corrects. Documented as an open gap in docs/cli-parity.md.
-func InjectWindsurfHooks(cwd string) error {
-	if err := InjectRulesForTool("windsurf", cwd); err != nil {
+func InjectWindsurfHooks(rootDir string) error {
+	// ML-8A / #402: the guard root must live in the RESOLVED namespace and every
+	// path below must be derived FROM it. filepath.Clean(cwd) only normalised
+	// text, so a root of /tmp/p never contained a target under /private/tmp/p on
+	// macOS. filepath.Join stays textual, so the target's own components remain
+	// unresolved and RejectSymlinks still Lstats every one of them.
+	guardRoot, rootErr := pathguard.ResolveRoot(rootDir)
+	if rootErr != nil {
+		return pathguard.RefuseUnverifiableRoot(filepath.Join(rootDir, ".windsurf", "hooks.json"), rootErr)
+	}
+
+	if err := InjectRulesForTool("windsurf", guardRoot); err != nil {
 		return err
 	}
 
 	// Migration: remove the incorrect, previously-written dedicated hook file
 	// from an older (buggy) trackfw run, so it doesn't linger as a dead,
 	// never-consumed artifact once the correct .windsurf/hooks.json exists.
-	legacyPath := filepath.Join(cwd, ".windsurf", "hooks", legacyWindsurfHooksFile)
+	legacyPath := filepath.Join(guardRoot, ".windsurf", "hooks", legacyWindsurfHooksFile)
 	if err := os.Remove(legacyPath); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	// Best-effort cleanup of the now-possibly-empty legacy directory; ignore
 	// failure (non-empty dir, e.g. holding unrelated user files, or already
 	// gone) — never fatal.
-	_ = os.Remove(filepath.Join(cwd, ".windsurf", "hooks"))
+	_ = os.Remove(filepath.Join(guardRoot, ".windsurf", "hooks"))
 
-	dir := filepath.Join(cwd, ".windsurf")
+	dir := filepath.Join(guardRoot, ".windsurf")
 	path := filepath.Join(dir, "hooks.json")
 	// Guard: reject writes through symlinks before any filesystem mutation
 	// (ADR-2026-09-18 / ML-1B).
-	if guardErr := pathguard.RejectSymlinks(filepath.Clean(cwd), path); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
+	if guardErr := pathguard.RejectAndReport(guardRoot, path); guardErr != nil {
 		return guardErr
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
@@ -1466,12 +1540,21 @@ const amazonQDefaultAgentFile = "q_cli_default.json"
 // Gemini above. `tools: ["*"]` is written on first creation so the default
 // agent keeps today's unrestricted tool access (this fix does not narrow
 // what any agent can do, only where the deny wiring lives).
-func InjectAmazonQHooks(cwd string) error {
-	path := filepath.Join(cwd, ".amazonq", amazonQCliAgentsDir, amazonQDefaultAgentFile)
+func InjectAmazonQHooks(rootDir string) error {
+	// ML-8A / #402: the guard root must live in the RESOLVED namespace and every
+	// path below must be derived FROM it. filepath.Clean(cwd) only normalised
+	// text, so a root of /tmp/p never contained a target under /private/tmp/p on
+	// macOS. filepath.Join stays textual, so the target's own components remain
+	// unresolved and RejectSymlinks still Lstats every one of them.
+	guardRoot, rootErr := pathguard.ResolveRoot(rootDir)
+	if rootErr != nil {
+		return pathguard.RefuseUnverifiableRoot(filepath.Join(rootDir, ".amazonq", amazonQCliAgentsDir, amazonQDefaultAgentFile), rootErr)
+	}
+
+	path := filepath.Join(guardRoot, ".amazonq", amazonQCliAgentsDir, amazonQDefaultAgentFile)
 	// Guard: reject writes through symlinks before any filesystem mutation
 	// (ADR-2026-09-18 / ML-1B).
-	if guardErr := pathguard.RejectSymlinks(filepath.Clean(cwd), path); guardErr != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", path, guardErr)
+	if guardErr := pathguard.RejectAndReport(guardRoot, path); guardErr != nil {
 		return guardErr
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site

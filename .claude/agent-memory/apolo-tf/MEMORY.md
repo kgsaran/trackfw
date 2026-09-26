@@ -4,3 +4,4 @@
 - [make quality excede o timeout da tool](project_make_quality_excede_timeout.md) — ~13 min, roda em background; exit code só sem pipe; markdown tardio só re-roda os gates de doc
 - [Métrica por artefato, não por regra](feedback_metrica_por_artefato.md) — "a regra apareceu na saída" dá falso verde; exigir que a violação nomeie o artefato, e medir nas duas árvores
 - [Classificar marcadores: ler RejectSymlinks antes de vereditar](feedback_classificar_marcadores.md) — confirmar se a função checa a folha ou só os ancestrais; define se 48 marcadores são (A) ou (B)
+- [Refutações primeiro no relatório](feedback_refutacoes_primeiro_no_relatorio.md) — censo do handoff é régua de identificador e subconta o mecanismo; abrir com a divergência medida, não enterrá-la

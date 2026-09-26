@@ -18,8 +18,23 @@ import (
 // EvalSymlinks resolves it to /private/tmp/... — passing the unresolved path as
 // root causes false "escapes root" errors for files that are genuinely inside the
 // project. Falls back to the unresolved cwd if EvalSymlinks fails.
+// getwdFn is the single seam through which projectRoot reads the working
+// directory. os.Getwd failing is the ONLY error path of projectRoot
+// (filepath.EvalSymlinks failing falls back to the unresolved cwd and returns
+// nil), so injecting this variable is the portable, deterministic way for a test
+// to exercise the "root could not be established" branch of every call site.
+//
+// 🔴 The seam is at os.Getwd and NOT at projectRoot: internal/pathguard's
+// analyser keys provenance on the literal identifier `projectRoot` at the call
+// site (approvedResolvers / taintSourceCalls). Turning projectRoot itself into a
+// variable would strip resolver provenance from every guard root in this package
+// and make P2 report them as unresolved. See vault/notes/
+// chdir-removeall-nao-forca-getwd-falhar-no-windows-2026-09-17.md for why a
+// filesystem trick (chdir + RemoveAll) is not usable here.
+var getwdFn = os.Getwd
+
 func projectRoot() (string, error) {
-	cwd, err := os.Getwd()
+	cwd, err := getwdFn()
 	if err != nil {
 		return "", fmt.Errorf("projectRoot: %w", err)
 	}
@@ -71,24 +86,20 @@ func scaffoldRoot(rootDir string) (string, error) {
 	if rootDir == "" || rootDir == "." {
 		return projectRoot()
 	}
-	abs, err := filepath.Abs(rootDir)
-	if err != nil {
-		return "", fmt.Errorf("resolving rootDir: %w", err)
-	}
-	if resolved, rerr := filepath.EvalSymlinks(abs); rerr == nil {
-		return resolved, nil
-	}
-	return abs, nil
+	// ML-8A / #402: Abs + EvalSymlinks-with-fallback is exactly what
+	// pathguard.ResolveRoot does; this was the third hand-written copy of it.
+	// Delegating keeps one implementation of "what a guard root must be".
+	return pathguard.ResolveRoot(rootDir)
 }
 
 // rejectScaffoldPath guards a path inside root before any write or MkdirAll.
-// It calls pathguard.RejectSymlinks and returns a formatted error on failure.
+// It delegates to pathguard.RejectAndReport, which is the single site in the
+// binary that emits the containment refusal (ML-7B).
 func rejectScaffoldPath(root, absTarget string) error {
-	if err := pathguard.RejectSymlinks(root, absTarget); err != nil {
-		fmt.Fprintf(os.Stderr, "trackfw: refusing write to %s: %v\n", absTarget, err)
-		return fmt.Errorf("refusing write to %s: %w", absTarget, err)
-	}
-	return nil
+	// Thin adapter over pathguard.RejectAndReport: it must NOT re-wrap the error
+	// (the message already names the refused path) and must NOT print — the single
+	// emission point lives in pathguard (ML-7B).
+	return pathguard.RejectAndReport(root, absTarget)
 }
 
 func Scaffold(cfg Config) error {
@@ -206,12 +217,13 @@ func installGlobalSkillInner(force bool) error {
 	}
 
 	// Guard: resolve home and use it as root for the global skill write.
-	absHome, absErr := filepath.Abs(home)
+	// ML-8A / #402: one assignment from one resolver. The previous shape (Abs,
+	// then a conditional reassignment from EvalSymlinks) was behaviourally the
+	// same but bound absHome to the UNRESOLVED Abs(home), which is what the
+	// containment analyser's P2 reads.
+	absHome, absErr := pathguard.ResolveRoot(home)
 	if absErr != nil {
 		return fmt.Errorf("resolving home: %w", absErr)
-	}
-	if resolved, rerr := filepath.EvalSymlinks(absHome); rerr == nil {
-		absHome = resolved
 	}
 	skillPath := GlobalClaudeSkillPath(home)
 	skillDir := filepath.Dir(skillPath)
@@ -1068,12 +1080,10 @@ func GenerateGlobalCredentialGuardScript(home string) error {
 	if home == "" {
 		return fmt.Errorf("home directory vazio")
 	}
-	absHome, err := filepath.Abs(home)
+	// ML-8A / #402: see GenerateGlobalSkill — one assignment from one resolver.
+	absHome, err := pathguard.ResolveRoot(home)
 	if err != nil {
 		return fmt.Errorf("resolving home: %w", err)
-	}
-	if resolved, rerr := filepath.EvalSymlinks(absHome); rerr == nil {
-		absHome = resolved
 	}
 	scriptsDir := filepath.Join(absHome, ".trackfw", "scripts")
 	if err := rejectScaffoldPath(absHome, scriptsDir); err != nil {
@@ -1419,12 +1429,10 @@ func GenerateGlobalGitBranchGuardScript(home string) error {
 	if home == "" {
 		return fmt.Errorf("home directory vazio")
 	}
-	absHome, err := filepath.Abs(home)
+	// ML-8A / #402: see GenerateGlobalSkill — one assignment from one resolver.
+	absHome, err := pathguard.ResolveRoot(home)
 	if err != nil {
 		return fmt.Errorf("resolving home: %w", err)
-	}
-	if resolved, rerr := filepath.EvalSymlinks(absHome); rerr == nil {
-		absHome = resolved
 	}
 	scriptsDir := filepath.Join(absHome, ".trackfw", "scripts")
 	if err := rejectScaffoldPath(absHome, scriptsDir); err != nil {
