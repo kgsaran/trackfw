@@ -333,8 +333,9 @@ do AC7 (ML-1B), mesma causa, mesmo roadmap. Registrado no vault.
 
 ### ML-1B — **AC7** — `--from-req` fecha o laço
 **Status:** ⬜ Pendente
-**Arquivos afetados:** `internal/generators/roadmap.go`, `npm/src/generators/roadmap.js`,
-`pypi/trackfw/generators/roadmap.py`.
+**Arquivos afetados:** `internal/generators/roadmap.go`.
+⚠️ **Os caminhos `npm/src/…` e `pypi/trackfw/…` que este ML listava NÃO EXISTEM desde a v8.0.0** —
+implementação única em Go. Corrigido em 2026-09-26.
 **Contexto medido:** `roadmap new --from-req` gera os MLs a partir dos ACs, mas **não** grava
 `roadmap:` na REQ e deixa o bloco "Acceptance Criteria" do roadmap **vazio**. O `roadmap move` já faz
 o sync (`✓ synced REQ ... → roadmap`) — 🔴 **a capacidade existe num comando e falta no outro.**
@@ -345,12 +346,14 @@ o sync (`✓ synced REQ ... → roadmap`) — 🔴 **a capacidade existe num com
 **Critérios de aceite:**
 - [ ] Criar REQ + roadmap pelo caminho integrado ⇒ `req_has_roadmap` **não** dispara (falsificação)
 - [ ] Bloco de ACs do roadmap reflete os ACs da REQ
-- [ ] Paridade nos 3 CLIs
+- [x] ~~Paridade nos 3 CLIs~~ **SEM OBJETO desde a v8.0.0** — implementação única em Go
 
 ### ML-1C — **AC8 + AC12 (parte 1 de 2)** — recusar o nome vazio
-**Status:** ⬜ Pendente
-**Arquivos afetados:** `internal/generators/roadmap.go` (`findRoadmap`, linha ~632),
-`npm/src/generators/roadmap.js`, `pypi/trackfw/generators/roadmap.py`.
+**Owner:** `apolo-tf`
+**Status:** 🔄 Em andamento (despachado em 2026-09-26)
+**Arquivos afetados:** `internal/generators/roadmap.go` — `containsIgnoreCase` está em **`:814`** e
+é usada em **`:791`** e **`:805`** (a linha `~632` do texto original está obsoleta; medido em 2026-09-26).
+⚠️ **Os caminhos `npm/src/…` e `pypi/trackfw/…` NÃO EXISTEM desde a v8.0.0.**
 🔴 **Este ML vem ANTES do ML-3A por decisão de ordem:** recusar nome vazio é **estritamente aditivo**
 — não existe consumidor legítimo de `roadmap move ""`. Apertar o matcher compartilhado (ML-3A) não é
 aditivo e pode paralisar quem depende dele.
@@ -365,7 +368,7 @@ por variável de shell vazia.
 - [ ] Nome vazio ⇒ erro, nenhum arquivo movido (falsificação)
 - [ ] Nome exato ⇒ move (contra-braço)
 - [ ] Nome parcial ambíguo ⇒ recusa nomeando os candidatos
-- [ ] Paridade nos 3 CLIs, mensagens byte-idênticas
+- [x] ~~Paridade nos 3 CLIs~~ **SEM OBJETO desde a v8.0.0**
 
 ---
 
@@ -477,7 +480,7 @@ intenção.*
 **Critérios de aceite:**
 - [ ] Caminho integrado produz REQ **não órfã** (falsificação)
 - [ ] Caminho deliberado sem roadmap continua disponível (contra-braço)
-- [ ] Paridade nos 3 CLIs
+- [x] ~~Paridade nos 3 CLIs~~ **SEM OBJETO desde a v8.0.0** — implementação única em Go
 
 ### ML-4B — **AC2 + AC3** — corte por data, grandfathering visível
 **Status:** ⬜ Pendente
@@ -488,7 +491,7 @@ em 32 REQs — alguém configura `lenient` e perdemos a regra **e** o aviso.
 **Critérios de aceite:**
 - [ ] REQ pós-corte sem roadmap ⇒ error; pré-corte ⇒ warning (os dois braços)
 - [ ] Relatório mostra contagem de isentas e a data de corte
-- [ ] Paridade nos 3 CLIs
+- [x] ~~Paridade nos 3 CLIs~~ **SEM OBJETO desde a v8.0.0** — implementação única em Go
 
 ### ML-4C — **AC4** — onde bloqueia
 **Status:** ⬜ Pendente
