@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-09
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/blocked/ROADMAP-2026-09-09-req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos-e-o-segundo-se-esquece.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-09-req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos-e-o-segundo-se-esquece.md"
 ---
 
 # REQ: REQ nasce orfa porque criar REQ e criar roadmap sao dois comandos e o segundo se esquece
@@ -258,7 +258,13 @@ instante em que o elo existe sem ambiguidade — e é o instante em que ele não
       > Nota: `adr_accepted_when_req_done` **não** exige ADR (`adrRef == "" → continue`); só valida
       > ADR já linkado. Esta obrigação é da REQ, não do gate — registrar para não evaporar.
 - [ ] **AC12** — `findRoadmap` (`roadmap move`) e `BranchSlugMatchesRoadmap` (`validate`/`branch
-      new`/`commit`) param de aceitar nome vazio e param de escolher por proximidade, **nos 3 CLIs**.
+      new`/`commit`) param de aceitar nome vazio e param de escolher por proximidade.
+      ⚠️ **"nos 3 CLIs" ficou SEM OBJETO** desde a v8.0.0 — há uma implementação única em Go. Os dois
+      sítios são `internal/validator/validator.go:3493` (`strings.Contains`) e
+      `internal/generators/roadmap.go:791,805` (`containsIgnoreCase`), consumidos por caminhos
+      diferentes. 🔴 **O ADR do AC11 tem de dizer qual é a FONTE** — senão a Wave 3 entrega dois
+      matchers novos concordando por coincidência, que é exatamente o defeito do AC5 da
+      REQ-2026-08-31 em outra roupa.
       🔴 Ordem obrigatória: o caso do nome vazio primeiro — ele é estritamente aditivo e não tem
       consumidor legítimo.
 - [ ] **AC13** — retomada legítima de roadmap concluído **continua funcionando**, provada por cenário
@@ -266,6 +272,21 @@ instante em que o elo existe sem ambiguidade — e é o instante em que ele não
       `branch new`, `commit` e `ship`; falso-positivo aqui **paralisa**, não irrita.
 - [ ] **AC14** — a medição dos 185 roadmaps vira **gate**, não nota de rodapé: mudança no matcher que
       altere o veredito de qualquer das 111 branches históricas reprova.
+
+- [ ] **AC15** — 🔴 **A direção RESTRITO DEMAIS é falsificada, e ela não tinha AC nenhum.**
+      Acrescentado em 2026-09-26 a partir do **#273**. A REQ e o roadmap discutiam a direção no corpo
+      (linhas 185-199 do roadmap), mas **nenhum critério a exigia** — medido: zero ocorrências de
+      *"restrito demais"* / *"falso-negativo"* nos ACs.
+      **O que o AC exige:** uma branch **legitimamente governada** cujo slug **não** seja substring do
+      nome do roadmap **não é rejeitada**. Caso real do reportante:
+      `feat/adrs-retroativas-da-divida-do-acervo` contra
+      `ROADMAP-2026-09-05-divida-de-governanca-do-acervo-…` — a branch nomeia o **trabalho**, o roadmap
+      nomeia o **título da REQ**, e não há substring. Ele teve de **renomear a branch** para caber.
+      **Medição do fork:** 22 branches governadas, **2 rejeitadas** (~9%), com a ressalva escrita de
+      que uma das três era branch mal nomeada e **não conta** como falso-negativo.
+      🔴 **Sem este AC, a Wave 3 fecha pela metade:** o candidato "fronteira" satisfaz os ACs atuais e
+      **piora** esta direção, porque é subconjunto estrito de `Contains`.
+
 
 ### Risco de execução registrado
 

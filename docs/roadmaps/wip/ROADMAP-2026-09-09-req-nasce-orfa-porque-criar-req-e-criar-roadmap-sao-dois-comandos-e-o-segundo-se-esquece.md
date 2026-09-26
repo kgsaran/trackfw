@@ -1,5 +1,5 @@
 ---
-status: blocked
+status: wip
 date: 2026-09-09
 req: "docs/req/REQ-2026-09-09-req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos-e-o-segundo-se-esquece.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: REQ nasce orfa porque criar REQ e criar roadmap sao dois comandos e o segundo se esquece
 
-> Created: 2026-09-09 | Reestruturado: 2026-09-12 (absorção da REQ-2026-08-20) | Status: blocked
+> Created: 2026-09-09 | Reestruturado: 2026-09-12 (absorção da REQ-2026-08-20) | Status: wip
 
 ## Context
 REQ: docs/req/REQ-2026-09-09-req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos-e-o-segundo-se-esquece.md
@@ -576,3 +576,50 @@ roadmap, em vez de exigir edição manual em 47 arquivos.
 
 🔴 **O ônus da prova é o de sempre:** um comando que escreve em 47 arquivos de governança precisa de
 falsificação nas duas direções — vínculo correto criado **e** vínculo cruzado recusado.
+
+---
+
+## 🔴 Desbloqueio — 2026-09-26: a condição de reabertura foi satisfeita e ninguém a leu
+
+Este roadmap foi para `blocked` em **2026-09-12 22:32**, e a razão estava **escrita** aqui:
+
+> *"Reabre: quando a Wave 3 da v8 fechar (`ROADMAP-2026-09-12-v8-um-binario-muitos-canais`), pelo
+> ML-4A dela, que classifica REQs e issues em desaparece / barateia / indiferente."*
+
+**Medido em 2026-09-26:** `docs/roadmaps/done/ROADMAP-2026-09-12-v8-um-binario-muitos-canais.md` e a
+REQ correspondente com `status: Done`. 🔴 **A condição foi satisfeita há duas semanas, e o roadmap
+ficou parado** — o bloqueio expirou sem que nada o reabrisse.
+
+⚠️ **Registro do que isso significa para o processo:** um `blocked` com condição de reabertura escrita
+é bom; o que falta é **alguém reler a condição quando ela vence**. Não há gate para isso — e este é o
+segundo artefato desta campanha que ficou parado por esse mecanismo (o outro foi a tabela de
+residuais da REQ-2026-08-31, que virou as issues #400/#401/#402).
+
+### Por que a retomada é agora, e o que o #273 acrescenta
+
+Pedido do usuário, com a razão dele: *"o #273 já está causando problemas inclusive para nós"*.
+
+O **#273** já estava absorvido aqui como **AC11–AC14** — mas medi que ele traz uma coisa que **nenhum
+AC exigia**: a direção **restrito demais**. Virou o **AC15** da REQ.
+
+### ⚠️ Uma tese minha, refutada pelo contra-braço ANTES de virar argumento
+
+Medi que as branches governadas deste repositório têm slug de **63,6 chars** em média (máx. 109) e ia
+usar isso como *"a regra deforma os nomes para caber"*. O contra-braço:
+
+```
+governadas (feat/fix/refactor):   média 63,6 chars   n=10
+NÃO governadas (docs/, chore/):   média 58,9 chars   n=8
+```
+
+🔴 **Diferença de 4,7 caracteres — o comprimento NÃO acompanha a governança. É estilo desta casa.**
+Declarado como **não-discriminante**; a medição do fork (~9% de rejeição real) continua sendo a
+evidência, e a minha não a reforça.
+
+### E o que eu quase reportei errado
+
+Ao criar a branch desta retomada, `trackfw branch new` **recusou** — e a tentação era anunciar que
+reproduzira o #273 ao vivo. Refeito depois do `roadmap move … wip`: **passou**. A causa da primeira
+recusa era o roadmap estar em `blocked/`, que o guard não aceita, **não** o casamento de slug.
+🔴 **Não afirmei o que não medi.**
+
