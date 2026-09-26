@@ -1,5 +1,5 @@
 ---
-status: Open
+status: Superseded
 date: 2026-08-16
 author: "Zeus (Arquiteto)"
 adr: ""
@@ -8,7 +8,7 @@ roadmap: ""
 
 # REQ: Conformidade estrutural **e comportamental** de i18n entre os três CLIs
 
-> Date: 2026-08-16 | Status: Open (backlog, sem roadmap)
+> Date: 2026-08-16 | Status: Superseded
 | Linear Issue:
 | Jira Issue:
 
@@ -141,3 +141,30 @@ ADR: (a decidir — AC2 e AC4 podem exigir uma decisão registrada sobre qual é
 ## Linked Roadmap
 
 Roadmap: (a criar quando esta REQ sair do backlog — não iniciar sem REQ + roadmap em `wip`)
+
+## Fechamento — ML-5A da `REQ-2026-09-09`, em 2026-09-26
+
+**Veredito:** Superseded. **Motivo medido:** os três sujeitos da REQ não existem mais.
+
+```
+$ git ls-files npm/src        | wc -l   →  0
+$ git ls-files pypi/trackfw   | wc -l   →  0
+$ git ls-files 'pypi/trackfw/generators/roadmap.py'   →  (nada)   ← o sítio citado na Motivation
+$ git ls-files '*locales*'
+internal/i18n/locales/{en-US,es-ES,pt-BR}.json                    ← sobra só o Go
+```
+
+Removidos por `2eae0a44` — *"v8.0.0: uma implementação em Go, três canais"* (#365). É o **mesmo motivo
+medido** já registrado em 8 REQs irmãs desta série, e o AC1 (*"os 3 CLIs produzem saída
+byte-idêntica"*) perdeu o objeto: não há mais três saídas para comparar.
+
+🔴 **Por que só agora:** a triagem de 2026-09-18 cobriu **31 das 40** REQs abertas, e esta ficou nas 9
+não triadas. Foi o ML-5A — re-triagem **por leitura** das REQs sem roadmap — que a encontrou. Registro
+o mecanismo da falha, não só o resultado: uma triagem parcial que não enumera o resto do universo
+deixa o resíduo indistinguível de trabalho vivo, e ele reaparece como órfã sem que ninguém saiba que
+já foi decidida.
+
+**O que sobrevive desta REQ, com sujeito novo:** nada de paridade cross-runtime. O AC3 (*"zero chaves
+órfãs, verificação por consumo real"*) tem forma independente de runtime e continua aplicável ao Go
+sozinho — se voltar, volta como REQ própria com a população medida em `internal/i18n/`, não como
+herança desta.

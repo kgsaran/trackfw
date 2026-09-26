@@ -997,14 +997,13 @@ local do Bloco 2 fez o gate **passar com rótulos duplicados**, sem detecção, 
    vínculo, **estado por checkout vaza para o repositório dele** — e é entregável desta REQ, não
    achado externo.
 
-#### Registro — o `ML-3D` nasceu aqui (a definição vive na linha 902)
-**Status:** ⬜ Pendente
+#### Registro — o `ML-3D` nasceu aqui
 
-**Critérios de aceite:**
-- [ ] `trackfw init` acrescenta `<roadmap_dir>/.trackfw-branch-links.json` ao `.gitignore` gerado
-- [ ] 🔴 **Contra-braço:** `.gitignore` já existente não é sobrescrito, e rodar duas vezes não duplica
-- [ ] Consumidor já onboardado (que não vai rodar `init` de novo) tem caminho declarado — nem que seja
-      uma linha no contrato dizendo que o arquivo é local
+⚠️ **A definição e o status do `ML-3D` são os da seção própria dele**, acima. Este bloco é só o
+registro de **onde o ML nasceu** (achado do ML-3A), e a cópia dos critérios que existia aqui foi
+removida: ela marcava `⬜ Pendente` para um ML que está `✅ Concluído`, e o único motivo de o `barrier`
+não a ter acusado é que este heading não começa com o rótulo. Critério em dois lugares é critério que
+divergem.
 
 #### 🔴 Auditoria do ML-3C e do ML-3D — e o achado do 3C reposiciona a etapa 2
 
@@ -1213,7 +1212,7 @@ precedência do `ML-1A`/`ML-1D`. As duas réguas **divergem em 13 dos 231** arqu
 desses 13 é uma das 13 órfãs** — a escolha de régua **não muda veredito nenhum hoje**. E data
 ilegível **falha fechado**, o que fecha o bypass de apagar `date:` e renomear.
 
-### ML-4A R1 — "caminho livre onde é intenção" é verdade no COMANDO e falso no `validate`
+#### Adendo R1 ao ML-4A — "caminho livre onde é intenção" é verdade no COMANDO e falso no `validate`
 
 O próprio teste de controle dele prova: com `--no-roadmap`, o comando sai **exit 0** sem atrito, e
 `req_has_roadmap` **acusa** a REQ. 🔴 **Ele não inventou marcador de isenção** (o escopo negativo
@@ -1259,18 +1258,235 @@ contrato existente para satisfazer a leitura estrita de um AC meu seria pagar ca
 > Dependências: Waves 1–4.
 
 ### ML-5A — **AC5** — re-triagem das REQs sem roadmap
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — executado pelo `trackfw_architect` em 2026-09-26, **por leitura das 13**
 **Ações:** quantas **legitimamente** não têm roadmap (decisão pura, fechada sem implementação).
 🔴 O classificador heurístico da REQ **não serve** como escopo: ele casa palavras-chave e testa esse
 ramo primeiro, então REQ que tenha as duas coisas cai em "decisão".
 **Critérios de aceite:**
-- [ ] Contagem por leitura, não por heurística, com a lista
+- [x] Contagem por leitura, não por heurística, com a lista
+
+#### Resultado — **12 das 13 legitimamente sem roadmap · 1 com status errado**
+
+Escopo: as **13** REQs que o `validate` acusa com `has no linked Roadmap` depois do ML-4B. Cada uma
+lida na íntegra — título, Motivation, ACs e seção de fechamento. **Nenhuma classificada por
+palavra-chave.**
+
+| # | REQ | status | veredito | por quê — lido, não inferido |
+|---|---|---|---|---|
+| 1 | `2026-08-20-note-orphan-…-node` | Superseded | legítima | `npm/src/validator/index.js` deletado em `2eae0a44` |
+| 2 | `2026-08-20-validate-json-do-python-…` | Superseded | legítima | `pypi/trackfw/validator.py` deletado em `2eae0a44` |
+| 3 | `2026-08-28-cli-python-…-init` | Superseded | legítima | `pypi/trackfw/commands/init.py` deletado |
+| 4 | `2026-08-30-fonte-unica-de-vetores` | Superseded | legítima | **premissa** eliminada: não há mais três suítes |
+| 5 | `2026-08-30-roadmap-move-segue-symlink` | Superseded | legítima | 🔴 **absorvida** como **AC9** da `REQ-2026-08-31-guarda-de-folha…` — o roadmap dela **é** o da absorvedora. Regra Dura de Causa Raiz, não supersessão por v8 |
+| 6 | `2026-09-01-api-chain-do-serve` | Superseded | legítima | braços Node/Python removidos; o `serve` Go responde 505 nodes / 531 edges |
+| 7 | `2026-09-01-cli-node-chmodsync` | Superseded | legítima | alvo removido; o Go já usa descritor, e o **Negative Scope da própria REQ** isentava o Go |
+| 8 | `2026-09-01-pypi-tty-py` | Superseded | legítima | `pypi/trackfw/tty.py` deletado |
+| 9 | `2026-09-01-thirdparty-provenance-node` | Superseded | legítima | alvo removido; a regra vive em `internal/validator/validator_thirdparty_provenance.go` |
+| 10 | `2026-08-21-nil-map-em-projectconfig` | Done | legítima | 🔴 corrigida **dentro do roadmap da REQ que a causou** — `ROADMAP-2026-08-21-versao-do-modelo-por-tier`, **ML-2C "Fechar a classe do nil map"**. Absorvida, não órfã |
+| 11 | `2026-08-30-titulo-de-roadmap-com-newline` | Done | legítima | já corrigida pela `ADR-2026-08-23` quando foi triada — `roadmap new` responde *"title must be a single line"* |
+| 12 | `2026-09-02-job-parity-13m23s` | Done | legítima | **decisão pura**: a medição **descartou** o ganho proposto e nomeou sucessora. Nada a implementar, por construção |
+| 13 | `2026-08-16-conformidade-de-i18n-entre-os-tres-clis` | **Open** | 🔴 **não legítima** | ver abaixo |
+
+#### 🔴 O achado: a única Open das 13 não precisava de roadmap — precisava ser fechada
+
+Os três sujeitos da REQ **não existem**:
+
+```
+$ git ls-files npm/src                               → 0
+$ git ls-files pypi/trackfw                          → 0
+$ git ls-files pypi/trackfw/generators/roadmap.py    → (nada)   ← o sítio citado na Motivation
+$ git ls-files '*locales*'
+internal/i18n/locales/{en-US,es-ES,pt-BR}.json                 ← sobra só o Go
+```
+
+O AC1 dela — *"os 3 CLIs produzem saída **byte-idêntica** sob locale fixo"* — **perdeu o objeto**: não
+há mais três saídas para comparar. Fechada como `Superseded` com o **mesmo motivo medido** das 8
+irmãs. A seção de fechamento está na própria REQ.
+
+🔴 **Isto é o oposto do que o `req_has_roadmap` sugeriria.** A regra diria *"dê um roadmap a esta
+REQ"*; o correto era **fechá-la**. É exatamente o escopo negativo deste roadmap — *"roadmap vazio
+gerado em massa parece cobertura e não é"* — visto do outro lado: **órfã não é sinônimo de trabalho
+pendente**, e o grandfathering do ML-4B existe porque tratar as duas coisas igual produziria 13
+roadmaps decorativos.
+
+#### ⚠️ Uma afirmação deste mesmo roadmap, refutada
+
+A seção *"Medição de 2026-09-22"* acima declara, sobre as remanescentes:
+
+> *"São **9 `Superseded`** … e **3 `Done`** históricas. **Nenhuma `Open`.**"*
+
+**Falso, e verificável no git:**
+
+```
+$ git show 596a694b:docs/req/REQ-2026-08-16-conformidade-…-clis.md | head -6
+status: Open
+roadmap: ""
+```
+
+A régua daquela contagem errou por **1**, e o erro caiu **justamente na única das 13 que exigia
+decisão** — as 12 legítimas foram classificadas certo. Não é aleatório: aquela contagem deduziu o
+grupo *"Superseded/Done"* das que **tinham seção de fechamento**, e a 08-16 não tinha porque nunca
+havia sido triada. **O caso não coberto pela heurística era o único caso com trabalho.**
+
+Causa a montante, medida: a triagem de 2026-09-18 cobriu **31 das 40** REQs abertas, e esta ficou nas
+**9 não triadas**. Triagem parcial que não enumera o resto do universo deixa o resíduo indistinguível
+de trabalho vivo. Consistente com o mecanismo que este roadmap já registrou duas vezes — `blocked`
+com condição vencida, e a tabela de residuais que virou #400/#401/#402.
+
+**Efeito no acervo:** REQs `Open` caem de **25 → 24**; as 13 órfãs ficam **13 isentas por
+grandfathering, 0 cobradas** — e agora **13 decididas por leitura**, o que antes não era verdade.
 
 ### ML-5B — **AC6** — paridade e fechamento
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento — local verde; **aguardando CI**
 **Critérios de aceite:**
-- [ ] `make quality` verde **e CI verde**
-- [ ] `trackfw validate` sem violation nova
+- [x] `make quality` verde  → `exit=0`, **1359 `^OK `**, **0 `: FALHA`**, 2731 linhas de log
+- [ ] `trackfw validate` sem violation nova  → **0 violations, rc=0**; warnings **172 → 171**
+- [ ] **CI verde** — medido no PR, não aqui
+
+#### Medição, com a ressalva
+
+```
+make quality                 exit=0   OK=1359   FALHA=0
+trackfw validate             rc=0     violations=0   warnings=171
+trackfw barrier … --wave 5   ✓ wave_headings  ✓ gates  ✓ validate
+```
+
+⚠️ **Um warning que eu declarei zerado na Wave 4 não estava zerado.** O `validate` acusou
+`duplicate ML label "ML-4A" at lines [1100 1216]`, e verifiquei em `HEAD` que **já estava commitado** —
+o heading `### ML-4A R1` do adendo é lido como um segundo ML com o mesmo rótulo. Rebaixado para
+`#### Adendo R1 ao ML-4A — …`, e o warning foi a **0**.
+
+🔴 **Registro o erro de método, não só o conserto:** na Wave 4 eu reportei *"`duplicate ML label` → 0"*
+contando **depois** de corrigir três headings `### ML-3D`, e não **reexecutei a contagem no artefato
+commitado**. A régua estava certa; a hora de aplicá-la estava errada. É a terceira vez nesta campanha
+que uma contagem minha só sobrevive porque alguém a repetiu no artefato final — as duas anteriores
+foram o `SITE_FLOOR` defasado e o censo de 185/111 que era 228/205.
+
+---
+
+## 🔴 Wave 6 — o AC16, que a auditoria pré-PR encontrou sem ML nenhum
+> Dependências: Waves 1–5. **Bloqueia o PR** — não é wave opcional.
+
+### Por que esta wave existe
+
+Antes de abrir o PR eu confrontei as **16 ACs da REQ** com a evidência escrita, em vez de conferir os
+checkboxes. Quinze têm ML `✅` auditado. **O AC16 não tem ML nenhum** — foi acrescentado à REQ em
+2026-09-26, ao corrigir a atribuição do **#439**, e o roadmap **nunca** foi atualizado para cobri-lo.
+`grep -n AC16 <roadmap>` → **vazio**.
+
+**Reproduzido ao vivo em 2026-09-26**, com o binário desta branch, em layout com subpastas de estado
+(que é o do consumidor):
+
+```
+$ trackfw req move REQ-2026-09-26-x done
+✓ moved REQ-2026-09-26-x.md → docs/req/done
+
+$ grep '^req:' docs/roadmaps/wip/ROADMAP-x.md
+req: "docs/req/wip/REQ-2026-09-26-x.md"     ← caminho antigo
+
+$ test -f docs/req/wip/REQ-2026-09-26-x.md
+NÃO EXISTE — vínculo quebrado
+```
+
+Confirmado no código: `MoveREQ` (`internal/generators/req.go:358`, **115 linhas**) chama apenas
+`rewriteREQStatus`. A contraparte `MoveRoadmap` chama `syncREQReferences` em `roadmap.go:803`. **A
+assimetria está no fonte, não na interpretação.**
+
+🔴 **Por que não dá para deferir:** é a **mesma causa** desta REQ — *"o comando conhece o vínculo e não
+o escreve"* — e a Regra Dura de Causa Raiz é literal: *mesma causa → mesma REQ → **mesmo PR***, e
+*"não se mergeia o PR parcial prometendo o resto depois"*. Fechar aqui produziria exatamente o achado
+A1 da auditoria externa: ADR de ponto único marcada satisfeita com sítio conhecido sobrando.
+
+⚠️ **E o efeito medido é do consumidor, não nosso:** neste repositório `req_dir` é **flat**, então
+`req move` só reescreve o `status:` e o defeito **não aparece**. Ele só se manifesta em layout com
+subpastas de estado — as **78 violações de `stale state path`** congeladas no baseline do consumidor.
+É a quarta vez nesta campanha que o sinal vem de fora porque o upstream não exercita o layout do
+consumidor.
+
+### ML-6A — **AC16** — `req move` escreve o vínculo de volta, simétrico ao `roadmap move`
+**Status:** ⬜ Pendente
+**Arquivos:** `internal/generators/req.go` · `internal/generators/roadmap.go` (só se o ponto único
+exigir) · `internal/generators/req_test.go`
+**Ações:**
+1. Ao mover a REQ de pasta, atualizar o `req:` do **roadmap vinculado** para o novo caminho — pelo
+   mesmo mecanismo de `syncREQReferences`, não por uma segunda implementação.
+2. 🔴 **Decidir e escrever qual é o ponto único.** `syncREQReferences` descobre REQs cujo `roadmap:`
+   já aponta para o roadmap; aqui o sentido é o inverso. Se a simetria exigir função nova, ela é
+   **uma**, e o comentário diz por que não deu para reusar — `roadmap.go:1394` já tem a distinção
+   escrita, e é o lugar certo para ancorar a decisão.
+3. Anunciar a sincronização em stdout, como `roadmap move` já faz. Silêncio aqui reproduz o *"o
+   trabalho é feito, mas o controle não aparece no relatório"* que esta casa já pagou.
+**Critérios de aceite:**
+- [ ] Reprodução acima passa a sair com o `req:` **atualizado**, e o caminho existe
+- [ ] 🔴 **Contra-braço:** `req move` em `req_dir` **flat** (este repositório) **não** altera nada além
+      do `status:` — nenhuma reescrita espúria em 232 REQs
+- [ ] 🔴 **Recusa preservada:** vínculo **cruzado** não é criado. Um roadmap cujo `req:` aponta para
+      **outra** REQ não é reescrito por este comando
+- [ ] Contenção de escrita: o sítio novo passa pelo analisador do `check-write-containment`, sem
+      `_ = RefuseUnverifiableRoot(...)` — o retorno é **agido**
+- [ ] A frase da Regra Dura de Reconciliação, por teste novo
+- [ ] `make quality` verde e `trackfw validate` sem violation nova
+**Validação:** `go test ./internal/generators/ -run 'MoveREQ|ReqMove' -v` · `make quality`
+
+---
+
+## Auditoria pré-PR das 16 ACs da REQ — 2026-09-26
+
+Feita **por confronto com a evidência escrita**, não pelos checkboxes. É o controle que o achado A1 da
+auditoria externa de 2026-09-05 exige.
+
+| AC | ML | veredito |
+|---|---|---|
+| AC1 · AC10 | ML-4A | ✅ auditado |
+| AC2 · AC3 | ML-4B | ✅ auditado — com a correção de que a regra **já era** `error` |
+| AC4 | ML-4C | ✅ decidido: só o `validate`; o `push` não muda |
+| AC5 | ML-5A | ✅ 12 de 13 legítimas · 1 fechada |
+| AC6 | ML-5B | ⚠️ **emendado** — ver abaixo |
+| AC7 | ML-1C | ✅ auditado — o defeito era maior: o nome exato também movia errado |
+| AC8 | ML-1B | ✅ auditado |
+| AC9 | ML-1A + ML-1D | ✅ auditado — o ML-1D existe porque o AC do ML-1A não estava implementado |
+| AC11 | ML-2A | ✅ ADR escrita, com emenda do mesmo dia |
+| AC12 · AC13 · AC15 | ML-3A + ML-3B | ✅ auditado — 29 de 205, não 2 de 111 |
+| AC14 | ML-3C | ✅ auditado — e o braço substring é praticamente morto |
+| — | ML-3D | ✅ entregável descoberto, não previsto por AC |
+| **AC16** | **nenhum** | 🔴 **NÃO ENTREGUE** → `ML-6A` |
+
+### ⚠️ Emenda ao AC6 — perdeu o objeto, e digo isso em vez de marcá-lo
+
+O AC6 diz *"paridade nos 3 CLIs"*. A REQ é de **2026-09-09**; a **v8.0.0** (`2eae0a44`) removeu os CLIs
+Node e Python. **Não há mais três CLIs para ter paridade.** Marcar este AC como atendido seria afirmar
+uma verificação impossível; deixá-lo em branco sem explicação seria deixar a REQ eternamente aberta.
+
+**Fica assim:** o AC6 é lido como *"`make quality` verde e CI verde na implementação única em Go"* —
+que é o que o `ML-5B` mede. A emenda está escrita aqui e na própria REQ. 🔴 **É o mesmo mecanismo que
+o ML-5A acabou de achar na `REQ-2026-08-16`**: AC redigida contra três runtimes, sobrevivendo à
+remoção deles. Vale perguntar quantas outras REQs abertas têm AC nessa condição — e essa pergunta é
+**causa diferente** desta REQ, logo não entra aqui.
+
+---
+
+## ⚠️ Resíduo desta wave, que NÃO é desta causa
+
+O `ML-5A` mediu que a triagem de 2026-09-18 cobriu **31 das 40** REQs abertas, e a `REQ-2026-08-16`
+estava entre as **9** não triadas. **Tentei enumerar as 9 e não consegui** — e o motivo importa:
+
+```
+régua tentada:   REQ Open, anterior a 2026-09-18, sem marca de triagem   → 21
+contra-braço:    REQ Open COM marca de triagem                           → 0
+```
+
+🔴 **O contra-braço derruba a régua.** A marca de triagem só foi escrita nas REQs que a triagem
+**fechou**; as que ela examinou e declarou *"VIVE"* não receberam marca nenhuma. Então o filtro não
+distingue *triada-e-viva* de *não-triada*, e o `21` é o universo, não o resíduo. **A lista das 31 não
+existe em nenhum artefato** — `docs/triagem-reqs-abertas-2026-09-18.md` registra só o agregado
+(13 obsoletas / 18 vivem) e cita **1** REQ por nome.
+
+**Não invento o número.** O que fica medido: **21 REQs `Open` anteriores à triagem, das quais no
+máximo 18 foram declaradas vivas** — e nenhuma carrega prova de ter sido examinada.
+
+Causa disto é *"triagem registra agregado e não lista nominal"*, **diferente** da causa desta REQ. Por
+isso **não** entra aqui: vira issue, com a régua falsificada acima escrita, para não ser a quinta
+ocorrência do mecanismo que este roadmap diagnosticou.
 
 ---
 

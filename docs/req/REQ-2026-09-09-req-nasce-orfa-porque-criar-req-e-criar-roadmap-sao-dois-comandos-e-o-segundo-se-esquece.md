@@ -67,20 +67,23 @@ ignorar. E é a crítica que o autor do issue #275 fez sobre contagem.
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — 🔴 **Prevenção antes de gate:** criar REQ e roadmap deixa de exigir dois comandos.
+- [x] **AC1** — 🔴 **Prevenção antes de gate:** criar REQ e roadmap deixa de exigir dois comandos.
       Forma a decidir (flag em `req new`, prompt, ou `req new` chamando `--from-req`) — **medir o
       atrito de cada uma**, não escolher por gosto.
-- [ ] **AC2** — severidade endurecida **por data de corte**, não por contagem: REQ criada a partir de
+- [x] **AC2** — severidade endurecida **por data de corte**, não por contagem: REQ criada a partir de
       `<corte>` sem roadmap ⇒ **error**; anterior ⇒ **warning**, grandfathered. Corte declarado no
       artefato.
-- [ ] **AC3** — 🔴 **O grandfathering é visível, não silencioso.** O relatório diz quantas REQs estão
+- [x] **AC3** — 🔴 **O grandfathering é visível, não silencioso.** O relatório diz quantas REQs estão
       isentas e desde quando. Isenção que não se vê vira permanente.
-- [ ] **AC4** — decisão escrita sobre **onde bloqueia**: só `validate`, ou também `push`. 🔴 O `push`
+- [x] **AC4** — decisão escrita sobre **onde bloqueia**: só `validate`, ou também `push`. 🔴 O `push`
       hoje exige REQ+roadmap **da branch**, não de toda REQ — são coisas diferentes e a decisão precisa
       dizer qual muda.
-- [ ] **AC5** — re-triagem das 32: quantas **legitimamente** não têm roadmap (decisão pura, fechada sem
+- [x] **AC5** — re-triagem das 32: quantas **legitimamente** não têm roadmap (decisão pura, fechada sem
       implementação). O classificador heurístico acima **não serve** como escopo.
-- [ ] **AC6** — paridade nos 3 CLIs.
+- [x] **AC6** — ~~paridade nos 3 CLIs~~ → **emendado em 2026-09-26: perdeu o objeto.** A v8.0.0
+      (`2eae0a44`) removeu os CLIs Node e Python; não há três saídas para comparar. Lido como
+      *"`make quality` verde e CI verde na implementação única em Go"*, que é o que o `ML-5B` mede.
+      Justificativa completa no roadmap, seção *Auditoria pré-PR das 16 ACs*.
 
 ## Negative Scope
 
@@ -174,15 +177,15 @@ branches diferentes. Tive que restaurar os dois arquivos e refazer o elo à mão
 
 ### Critérios acrescentados
 
-- [ ] **AC7** — `roadmap move` com nome **vazio** ou que não casa exatamente **recusa e nomeia**, nos 3
+- [x] **AC7** — `roadmap move` com nome **vazio** ou que não casa exatamente **recusa e nomeia**, nos 3
       CLIs. 🔴 Nunca escolher um roadmap por proximidade. Falsificação: nome vazio ⇒ erro; nome exato ⇒
       move.
-- [ ] **AC8** — `roadmap new --from-req` escreve o vínculo **de volta na REQ**, no formato que o
+- [x] **AC8** — `roadmap new --from-req` escreve o vínculo **de volta na REQ**, no formato que o
       `validate` de fato lê. Uma operação, dois lados do elo.
-- [ ] **AC9** — 🔴 **uma** noção de "vinculada". Ou o corpo é autoritativo e o frontmatter é derivado,
+- [x] **AC9** — 🔴 **uma** noção de "vinculada". Ou o corpo é autoritativo e o frontmatter é derivado,
       ou o inverso — **escolher e escrever**. Enquanto houver duas, toda contagem de órfãs é uma
       opinião. Gate que prove que as duas concordam, ou que só uma existe.
-- [ ] **AC10** — 🔴 **contra-braço do AC1:** criar REQ **sem** roadmap continua possível quando é
+- [x] **AC10** — 🔴 **contra-braço do AC1:** criar REQ **sem** roadmap continua possível quando é
       deliberado (decisão pura, REQ fechada sem implementação). O remédio não pode ser proibir — o AC5
       já reconhece que parte das 34 é legítima. **Atrito onde é engano, caminho livre onde é intenção.**
 
@@ -258,7 +261,7 @@ instante em que o elo existe sem ambiguidade — e é o instante em que ele não
       > Nota: `adr_accepted_when_req_done` **não** exige ADR (`adrRef == "" → continue`); só valida
       > ADR já linkado. Esta obrigação é da REQ, não do gate — registrar para não evaporar.
       → `docs/adr/ADR-2026-09-26-precisao-do-vinculo-branch-roadmap-escrever-em-vez-de-inferir.md` (2026-09-26)
-- [ ] **AC12** — `findRoadmap` (`roadmap move`) e `BranchSlugMatchesRoadmap` (`validate`/`branch
+- [x] **AC12** — `findRoadmap` (`roadmap move`) e `BranchSlugMatchesRoadmap` (`validate`/`branch
       new`/`commit`) param de aceitar nome vazio e param de escolher por proximidade.
       ⚠️ **"nos 3 CLIs" ficou SEM OBJETO** desde a v8.0.0 — há uma implementação única em Go. Os dois
       sítios são `internal/validator/validator.go:3493` (`strings.Contains`) e
@@ -268,13 +271,13 @@ instante em que o elo existe sem ambiguidade — e é o instante em que ele não
       REQ-2026-08-31 em outra roupa.
       🔴 Ordem obrigatória: o caso do nome vazio primeiro — ele é estritamente aditivo e não tem
       consumidor legítimo.
-- [ ] **AC13** — retomada legítima de roadmap concluído **continua funcionando**, provada por cenário
+- [x] **AC13** — retomada legítima de roadmap concluído **continua funcionando**, provada por cenário
       (AC3 da REQ absorvida). 🔴 Risco dominante herdado: este portão é atravessado por **todo**
       `branch new`, `commit` e `ship`; falso-positivo aqui **paralisa**, não irrita.
-- [ ] **AC14** — a medição dos 185 roadmaps vira **gate**, não nota de rodapé: mudança no matcher que
+- [x] **AC14** — a medição dos 185 roadmaps vira **gate**, não nota de rodapé: mudança no matcher que
       altere o veredito de qualquer das 111 branches históricas reprova.
 
-- [ ] **AC15** — 🔴 **A direção RESTRITO DEMAIS é falsificada, e ela não tinha AC nenhum.**
+- [x] **AC15** — 🔴 **A direção RESTRITO DEMAIS é falsificada, e ela não tinha AC nenhum.**
       Acrescentado em 2026-09-26 a partir do **#273**. A REQ e o roadmap discutiam a direção no corpo
       (linhas 185-199 do roadmap), mas **nenhum critério a exigia** — medido: zero ocorrências de
       *"restrito demais"* / *"falso-negativo"* nos ACs.
