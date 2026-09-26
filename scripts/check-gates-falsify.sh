@@ -734,6 +734,16 @@ REQEOF
 # em Go/Node/Python — só o texto QUE SEGUE difere — então localizamos por
 # índice de ocorrência em vez de âncora de sufixo (frágil e específica por
 # linguagem).
+#
+# 🔴 ML-1B (AC7, 2026-09-26): o bloco é o HEADING + o comentário, e NÃO inclui
+# mais os itens "- [ ]\n- [ ]". Motivo: a partir do ML-1B o caminho --from-req
+# preenche os itens com os ACs da REQ (`%s` interpolado), então a forma antiga
+# — que embutia os dois itens vazios — passou a ocorrer 1x em vez de 2x e o
+# setup deste cenário abortava com "expected 2 occurrences". O que o Cenário 24
+# mede é a AUSÊNCIA DO HEADING (`wip_acceptance` casa por
+# cfg.AcceptanceMarkers = "## Acceptance Criteria"), então remover só o heading
+# + comentário é exatamente o seam — os itens que sobram órfãos não carregam
+# marcador nenhum.
 
 remove_roadmap_acceptance_heading() {
   local src_file=$1
@@ -747,8 +757,7 @@ import sys
 src_path, dest_path, occurrence = sys.argv[1], sys.argv[2], int(sys.argv[3])
 source = pathlib.Path(src_path).read_text(encoding="utf-8")
 block = ("## Acceptance Criteria\n"
-         "<!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->\n"
-         "- [ ]\n- [ ]\n\n")
+         "<!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->\n")
 positions = [i for i in range(len(source)) if source.startswith(block, i)]
 if len(positions) != 2:
     raise SystemExit(f"expected 2 occurrences of the heading block, got {len(positions)}")
@@ -2020,6 +2029,12 @@ assert_lacks_pattern "roadmap-req-frontmatter-path/go/from-req-baseline" \
   bash -c "$ROADMAP_CYCLE_SCRIPT_FROM_REQ" _ "$T25G_BASE" "$T25G_BASE_BIN"
 
 # Braço de detecção: gerador revertido para gravar basename.
+#
+# 🔴 ML-1B (AC7, 2026-09-26): a lista de argumentos abaixo ganhou `acBlock` (o bloco consolidado de
+# ACs passou a ser interpolado em vez de literal). O literal fixado aqui é a LINHA DE ARGUMENTOS do
+# fmt.Sprintf do template --from-req: qualquer argumento novo nesse Sprintf quebra o casamento e o
+# cenário morre em `expected exactly 1 occurrence of pattern, got 0` — fail-closed, mas por motivo
+# alheio ao que ele mede. Ao tocar esse Sprintf, atualize as duas linhas abaixo.
 T25G_MOD="$WORK/s25-go-mod"
 mkdir -p "$T25G_MOD/cmd" "$T25G_MOD/internal"
 cp -r "$ROOT_DIR/cmd/." "$T25G_MOD/cmd/"
@@ -2028,8 +2043,8 @@ cp "$ROOT_DIR/go.mod" "$T25G_MOD/go.mod"
 cp "$ROOT_DIR/go.sum" "$T25G_MOD/go.sum"
 corrupt_literal \
   "$ROOT_DIR/internal/generators/roadmap.go" "$T25G_MOD/internal/generators/roadmap.go" \
-  'date, reqPath, squadVal, title, date, filepath.Base(reqPath), reqPath, adrRef, mlSection.String())' \
-  'date, filepath.Base(reqPath), squadVal, title, date, filepath.Base(reqPath), reqPath, adrRef, mlSection.String())' \
+  'date, reqPath, squadVal, title, date, filepath.Base(reqPath), reqPath, adrRef, acBlock, mlSection.String())' \
+  'date, filepath.Base(reqPath), squadVal, title, date, filepath.Base(reqPath), reqPath, adrRef, acBlock, mlSection.String())' \
   "s25-go"
 
 T25G_BIN="$WORK/s25-go-bin/trackfw"

@@ -333,7 +333,7 @@ do AC7 (ML-1B), mesma causa, mesmo roadmap. Registrado no vault.
 
 ### ML-1B — **AC7** — `--from-req` fecha o laço
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento (despachado em 2026-09-26)
+**Status:** ✅ Concluído — auditado em 2026-09-26 · **e o AC do ML-1A não está implementado pela regra**
 **Arquivos afetados:** `internal/generators/roadmap.go`.
 ⚠️ **Os caminhos `npm/src/…` e `pypi/trackfw/…` que este ML listava NÃO EXISTEM desde a v8.0.0** —
 implementação única em Go. Corrigido em 2026-09-26.
@@ -345,8 +345,8 @@ o sync (`✓ synced REQ ... → roadmap`) — 🔴 **a capacidade existe num com
    ML-1A). Uma operação, dois lados do elo.
 2. O bloco consolidado de ACs do roadmap deixa de sair vazio quando a REQ tem ACs.
 **Critérios de aceite:**
-- [ ] Criar REQ + roadmap pelo caminho integrado ⇒ `req_has_roadmap` **não** dispara (falsificação)
-- [ ] Bloco de ACs do roadmap reflete os ACs da REQ
+- [x] Criar REQ + roadmap pelo caminho integrado ⇒ `req_has_roadmap` **não** dispara (falsificação)
+- [x] Bloco de ACs do roadmap reflete os ACs da REQ
 - [x] ~~Paridade nos 3 CLIs~~ **SEM OBJETO desde a v8.0.0** — implementação única em Go
 
 ### ML-1C — **AC8 + AC12 (parte 1 de 2)** — recusar o nome vazio
@@ -452,6 +452,112 @@ segurança**). Ele fechou por inspeção direta (0 ocorrências de `os.Symlink`)
 pós-commit obrigatória.**
 
 `make quality` → **rc 0**, 338 OK, 0 FAIL, `Error [0-9]` = 0.
+
+#### 🔴 Auditoria do ML-1B — dois achados que são decisão minha, e eu decidi os dois
+
+**O fix funciona, medido no ciclo inteiro:**
+
+```
+ANTES   roadmap new --from-req …    REQ: roadmap: ""      validate: ✗ has no linked Roadmap
+DEPOIS  ✓ created … + ✓ linked REQ-….md → docs/roadmaps/backlog/ROADMAP-….md
+        REQ: roadmap: "docs/roadmaps/backlog/…md"  e  Roadmap: docs/…md
+        ciclo completo: move wip → ✓ synced → validate rc=0
+```
+
+`make quality` **rc 0**, 338 OK, 0 FAIL, `Error [0-9]` = 0.
+
+### 🔴 R1 — a decisão do ML-1A existe, e a regra NÃO a implementa. Confirmei.
+
+O `ML-1A` registrou a fonte de verdade como `extractRefPath` (frontmatter-first, **exige `.md`**). O
+comentário de `validator.go:2217` **afirma isso**. O código de `:2236` usa `extractFrontmatterField`,
+que aceita **qualquer valor não-vazio**. Medi:
+
+```
+REQ com  roadmap: none  →  validate: 0 violações de "no linked Roadmap"
+```
+
+🔴 **O comentário mente, e o AC do `ML-1A` foi marcado por uma decisão que o código não cumpre.** É a
+classe exata que esta REQ persegue. **Decisão: ML novo NESTA REQ** (`ML-1D`), pela Regra Dura — não
+issue, não REQ nova.
+
+⚠️ **E ele não explorou a fraqueza:** o valor que o fix grava é caminho relativo **resolvível**, e o
+teste afirma `os.Stat` sobre ele. Passar pela regra fraca seria fácil e teria sido invisível.
+
+### 🔴 R3 — divergência com ADR `Accepted`, declarada em vez de assumida. Emendei a ADR.
+
+A `ADR-2026-07-31` Decisão 3 diz: *"a seção consolidada é gerada como placeholder a preencher, **não**
+como agregação automática"*. O AC7 pede o oposto. Ele **implementou conforme a REQ, restringiu ao
+`--from-req`**, e **declarou a divergência** em vez de tomar precedência por conta própria.
+
+**Auditei e emendei a ADR**, com a razão: a Decisão 3 fala de **reagregação** (*"o gerador não tem
+como reagregar depois que o arquivo passa a ser editado à mão"*), e o `--from-req` **semeia uma vez,
+na criação**, quando os MLs **são** os ACs da REQ — não há duas fontes a divergir. A emenda mantém o
+placeholder no template simples e **proíbe** reagregação posterior.
+
+🔴 **O comportamento certo aqui foi o dele, não o meu handoff:** eu não previ a ADR, e ele parou para
+declarar em vez de seguir.
+
+### R2 — `syncREQReferences` não servia, e a razão é estrutural
+
+Ela **descobre** REQs cujo `roadmap:` **já aponta** para o basename movido
+(`if fmVal == "" || basename != roadmapBasename { continue }`) — uma REQ com `roadmap: ""` cai no
+**primeiro** ramo e é descartada **por construção**. Ele reusou o **escritor** (`rewriteREQRoadmapRefWith`),
+não a descoberta, com o critério de sobrescrita como **predicado**. É o AC5 da REQ-2026-08-31
+aplicado: uma implementação, dois consumidores.
+
+### R4 — o fix ficou INERTE na primeira versão, e sem erro nenhum
+
+`NewRoadmapFromREQ` montava o `req:` dentro da **string do Body** e chamava `NewRoadmapFromContent`
+**sem `REQPath`**. A primeira versão compilou, rodou e produziu **saída byte-idêntica à de antes**.
+🔴 **Fix inerte que não falha é pior que fix que quebra** — está na nota de vault.
+
+### Duas armadilhas de instrumento, e a segunda ele não previu
+
+O **Cenário 24** fixa o bloco de ACs como literal e exige **exatamente 2 ocorrências**. E o
+**Cenário 25 fixa a LINHA DE ARGUMENTOS do `fmt.Sprintf`** — acrescentar `acBlock` matou o
+`corrupt_literal`, o `chunk_1` morreu no meio, e o log cuspiu **~40 rótulos "AUSENTE" por UM
+literal**. Primeira barreira **rc=2**. É a terceira vez que o `s182` morde nesta campanha, e ele
+escreveu um checador dos 8 literais que `scripts/` fixa contra `roadmap.go`.
+
+### Decisão minha sobre o #439, e é uma CORREÇÃO de atribuição
+
+Ele propôs que `req move` deixando o `req:` do roadmap defasado é mesma causa **desta** REQ. 🔴 **Ele
+está certo e eu estava errado.** Absorvi o #439 na `REQ-2026-09-25` (rastreabilidade/estado) por
+**mesmo sintoma** — passivo no baseline. Mas a **causa** é esta: *"o comando conhece o vínculo e não
+o escreve"*, e `syncREQReferences`, o sincronizador desta REQ, é literalmente a função que falta do
+outro lado.
+
+⚠️ **O PR #440 já está mergeado**, então a correção de atribuição é um PR próprio, não uma edição
+silenciosa. Registro aqui e corrijo na REQ-2026-09-25 em seguida.
+
+## Wave 1 (cont.) — os sítios que a varredura do ML-1B achou
+
+### ML-1D — 🔴 A regra `req_has_roadmap` não implementa a decisão do ML-1A
+**Status:** ⬜ Pendente
+
+**Medido:** `roadmap: none` satisfaz a regra. `validator.go:2236` usa `extractFrontmatterField`
+(qualquer valor não-vazio) enquanto o comentário de `:2217` afirma usar `extractRefPath`
+(frontmatter-first, **exige `.md`**).
+
+**Critérios de aceite:**
+- [ ] A regra passa a usar a fonte de verdade que o `ML-1A` decidiu, ou 🔴 **a decisão do `ML-1A` é
+      corrigida com a razão escrita** — o que não pode continuar é comentário afirmando o que o
+      código não faz
+- [ ] `roadmap: none` (e irmãos: `none`, `-`, `TBD`, comentário HTML) **passam a disparar**
+- [ ] 🔴 **Contra-braço:** vínculo legítimo continua **não** disparando, e o corpus real não ganha
+      violação nova — medir **antes e depois** nos 231 REQs
+- [ ] O comentário de `:2217` passa a descrever o que o código faz
+
+### ML-1E — `req new` (wizard) cria ADR draft e não grava `adr:`
+**Status:** ⬜ Pendente · ⚠️ **achado estrutural, sem instância medida no corpus**
+
+Mesmo mecanismo, outro elo: o wizard cria drafts via `NewADRDraft`, lista em *"Blocked by ADRs"* e
+**nunca** grava `adr:` — `content.LinkedADR` fica vazio.
+
+**Critérios de aceite:**
+- [ ] O elo é escrito na criação, ou a ausência é **declarada** no contrato
+- [ ] 🔴 **A instância é construída antes de corrigir** — o corpus não tem nenhuma, e corrigir o que
+      não se consegue reproduzir é como o gate que fica verde por não haver o que achar
 
 ## Wave 2 — A decisão arquitetural
 > Dependências: Wave 1 (a fonte de verdade precisa estar decidida).

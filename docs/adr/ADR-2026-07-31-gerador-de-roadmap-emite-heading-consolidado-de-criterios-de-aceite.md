@@ -88,3 +88,47 @@ o gerador não tem como reagregar depois que o arquivo passa a ser editado à m�
 (`roadmap-new-gera-marcador-de-aceite-invalido-2026-07-31.md`), mas documentar uma armadilha não é
 substituto para removê-la. O trackfw é uma ferramenta de governança; gerar artefato que ele próprio
 reprova corrói a confiança na ferramenta.
+
+---
+
+## 🔴 Emenda — 2026-09-26: a Decisão 3 não alcança o `--from-req`
+
+**Quem emenda:** `trackfw_architect`, provocado pelo `ML-1B` da
+`REQ-2026-09-09-req-nasce-orfa-…`, que **declarou a divergência em vez de assumir precedência** e
+verificou por evidência que esta ADR não tinha emenda nem supersessão.
+
+**A tensão, escrita honestamente.** A Decisão 3 diz:
+
+> *"A seção consolidada é gerada como **placeholder a preencher**, não como agregação automática dos
+> critérios dos MLs."*
+
+E o **AC7** da REQ-2026-09-09 pede que o bloco de ACs do roadmap gerado por `--from-req` **deixe de
+sair vazio** quando a REQ tem ACs. Lidas literalmente, uma contradiz a outra.
+
+**Por que não há contradição real — a razão declarada da ADR é sobre RE-agregação:**
+
+> *"Agregar duplicaria conteúdo e criaria duas fontes de verdade"* · *"o gerador não tem como
+> **reagregar** depois que o arquivo passa a ser editado à mão."*
+
+🔴 **O `--from-req` não reagrega: ele SEMEIA, uma vez, no instante da criação** — e naquele instante
+os MLs **são** derivados dos ACs da REQ, logo não existem "duas fontes" a divergir. A segunda fonte
+só nasce quando alguém edita o roadmap à mão, e a partir daí o gerador não toca mais no arquivo.
+
+**A emenda, portanto:**
+
+| caminho | comportamento | vigora |
+|---|---|---|
+| `roadmap new` (template simples) | **placeholder a preencher** | Decisão 3, **inalterada** |
+| `roadmap new --from-req` | **semeia os ACs da REQ, uma vez, na criação** | esta emenda |
+| qualquer reagregação posterior | **proibida** | Decisão 3, **reforçada** |
+
+⚠️ **O que esta emenda NÃO autoriza:** o gerador **não** passa a reconciliar o bloco com a REQ depois
+da criação. Se a REQ ganhar um AC novo, o roadmap **não** é atualizado — e isso é deliberado, pela
+razão original da Decisão 3. Quem quiser essa reconciliação precisa de decisão própria, porque é
+exatamente onde as duas fontes de verdade nasceriam.
+
+**Precedência:** o AC7 é posterior, explícito e do dono do produto. Mas 🔴 **não o tratei como
+revogação automática** — a Decisão 3 continua governando os outros dois caminhos, e o executor
+restringiu a mudança ao `--from-req` **antes** de eu decidir, o que preservou a ADR íntegra onde ela
+não estava sendo contrariada.
+

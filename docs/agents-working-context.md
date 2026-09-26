@@ -41478,3 +41478,61 @@ bash scripts/check-unguarded-capture-rc.sh          RC=0
 - **Nota de vault:** `nome-vazio-move-o-primeiro-e-nome-completo-move-o-irmao-maior-2026-09-26.md`.
 - Status do ML mantido em 🔄 — muda para ✅ só após a auditoria do arquiteto.
 - Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.
+
+## 2026-09-26 — apolo-tf — ML-1B (início): `--from-req` pergunta a REQ e não escreve de volta
+
+- **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-09-09-req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos-e-o-segundo-se-esquece.md` — `ML-1B` (AC7).
+- **Defeito medido (binário de HEAD, sandbox):** `roadmap new --from-req` grava `req:` no roadmap,
+  a REQ continua com `roadmap: ""` e o `validate` acusa `req_has_roadmap`; o bloco consolidado
+  "Acceptance Criteria" do roadmap sai `- [ ]` / `- [ ]` mesmo com ACs na REQ.
+- **Escopo:** `internal/generators/roadmap.go` (Go é a implementação única desde a v8.0.0).
+- Sem Git: não crio branch, não commito, não faço push.
+
+## 2026-09-26 — apolo-tf — ML-1B (fim): o `--from-req` perdia a REQ **dentro do Body**
+
+- **Refutação 1 (lead) — a decisão do ML-1A não é o que o código faz.** O comentário de
+  `validateREQsHaveRoadmap` (`internal/validator/validator.go:2214-2222`) afirma que a detecção usa
+  `extractRefPath`; o código usa `extractFrontmatterField(content, "roadmap")`, que **não exige
+  `.md`**, é case-sensitive e aceita **qualquer** valor não-vazio. Consequência medida: `roadmap: none`
+  no frontmatter **satisfaz** `req_has_roadmap` hoje. A decisão do ML-1A **foi localizada** (no bloco
+  "Decisões implementadas" do próprio roadmap); o que divergiu foi a implementação da regra. Resíduo
+  do ML-1A, não deste ML.
+- **Refutação 2 — `syncREQReferences` não servia, e o motivo não era estilo.** Ela **descobre** REQs
+  cujo `roadmap:` já aponta para o basename movido; `fmVal == ""` cai no primeiro `continue`, logo a
+  REQ recém-criada é descartada **por construção**. Reaproveitado o **escritor**
+  (`rewriteREQRoadmapRefWith`, critério de sobrescrita por predicado) — não a descoberta.
+- **Refutação 3 (bloqueante para auditoria) — divergência com ADR Accepted.** A `ADR-2026-07-31`
+  (Decisão 3) decide que o bloco consolidado é *"placeholder a preencher, não agregação automática dos
+  critérios dos MLs"*. No `--from-req` os MLs **são** os ACs da REQ. Implementado conforme o AC7 da
+  REQ-2026-09-09 (posterior e explícita) e **restrito ao `--from-req`**; o template simples segue
+  emitindo placeholder. **A emenda à ADR é do arquiteto.**
+- **Causa raiz do sintoma:** `NewRoadmapFromREQ` montava o `req:` dentro do `Body` e chamava
+  `NewRoadmapFromContent` **sem `REQPath`** — a primeira versão do fix ficou **inerte** por isso, com
+  saída byte-idêntica à de antes. O backlink vive em `NewRoadmapFromContent`, que é o ponto por onde
+  passam `--from-req`, `--req` e o wizard (mesma causa, mesmo ML).
+- **Medição (binário real, sandbox):** ANTES `roadmap: ""` + bloco `- [ ]`/`- [ ]` + `✗ req … has no
+  linked Roadmap`. DEPOIS `✓ linked REQ-… → docs/roadmaps/backlog/ROADMAP-….md`, frontmatter e corpo
+  preenchidos, `validate` sem `req_has_roadmap`; ciclo `move wip` → `✓ synced` → **rc=0**.
+- **Contra-braços:** REQ sem roadmap **continua** acusada; REQ **sem ACs** mantém o placeholder e não
+  gera ML; REQ já vinculada a **outro** roadmap não é sobrescrita (aviso em stderr, rc **0**);
+  idempotência **byte-a-byte** entre duas rodadas.
+- **Varredura de mesma classe:** fechados `--req` e wizard (mesmo ponto). **Negativos escritos:**
+  `req new` não tem `--roadmap` (e `LinkedADR`/`LinkedRoadmap` são inalcançáveis — único sítio de
+  `REQContent{}` só passa Title+Agent); `adr new` não tem campo de REQ no template; `note new` já
+  escreve os dois lados. **Dois sítios propostos como ML novo (não implementados):** o wizard de
+  `req new` cria ADR drafts e **não** grava `adr:` (mesmo mecanismo, outro elo), e `req move` em
+  layout por-estado/`by_agent` move a REQ e deixa o `req:` do roadmap defasado (`ref_targets_exist`
+  avisa, nada repara; em `flat` — este projeto — não ocorre).
+- **Armadilha de instrumento paga DUAS vezes:** o Cenário 24 fixa o bloco de ACs como literal e exige
+  **2 ocorrências** (corrigido para heading+comentário, e provado construindo os dois binários
+  corrompidos); o **Cenário 25 fixa a LINHA DE ARGUMENTOS do `fmt.Sprintf`** — esse eu esqueci no
+  grep, `chunk_1` morreu no meio e o log cuspiu ~40 "rótulo esperado AUSENTE" por **um** literal.
+- **Falsificação dos testes (4 mutações, restauradas):** backlink desligado → 2 reprovam; frontmatter
+  sempre preenchível → 2; bloco de ACs de volta ao placeholder → 1; corpo sempre preenchível → 1.
+- `make quality` **rc=0** (1344 OK, 0 FAIL, falsify 338 OK / 0 FAIL, `Error [0-9]` = 0);
+  `trackfw validate` **rc=0** (151 warnings, idênticos à baseline).
+- **Nota de vault:** `o-gerador-perdia-a-req-dentro-do-body-e-o-cenario-24-fixa-o-bloco-de-acs-2026-09-26.md`.
+- **Resíduo:** `check-symlink-privilege-guard` enumera por `git ls-files` e **não viu** o teste novo
+  (fechado por inspeção: 0 ocorrências de `os.Symlink`) — **segunda passada pós-commit obrigatória**.
+- Status do ML mantido em 🔄 e ACs não marcados — muda só após a auditoria do arquiteto.
+- Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.

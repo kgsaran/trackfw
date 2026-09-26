@@ -395,6 +395,61 @@ trackfw roadmap move: failed to sync <req-basename>: <cause>
 Remaining REQs are still attempted; the command reports the first failure's cause and exits non-zero
 after processing all of them, so one unwritable file does not hide the rest.
 
+### `roadmap new` writes the REQ backlink at creation time
+
+<!-- trackfw-contract: gate=internal/generators/roadmap_backlink_ml1b_test.go partial=o gate cobre o backlink e o bloco consolidado nos caminhos --from-req e --req de internal/generators; NÃO cobre o wizard interativo (TTY) nem o sentido inverso roadmap→REQ quando a REQ é MOVIDA depois (`req move` em layout por-estado/by_agent deixa o `req:` do roadmap defasado — ML novo proposto na REQ-2026-09-09) -->
+
+`trackfw roadmap new` writes **both sides of the link in one operation**. The roadmap declares the REQ
+in its own frontmatter (`req: "docs/req/REQ-….md"`), and the REQ receives the pointer back
+(`roadmap: "docs/roadmaps/backlog/ROADMAP-….md"`). Before this contract existed, the link was
+one-way: the REQ stayed at `roadmap: ""` and `trackfw validate` reported `req_has_roadmap` against a
+user who had followed the documented path exactly — *"a warning that fires on the correct path teaches
+people to ignore the warning"* (REQ-2026-09-09, Medição 3).
+
+Applies to every creation path that knows the REQ: `--from-req`, `--req`, and the wizard selection.
+The write happens after `✓ created`, from the single point where the roadmap's final path is known.
+
+**Which value is written.** The roadmap path **relative to the project root**, with `/` separators —
+the same form `roadmap move` writes, and the form the validator can resolve
+(`ref_targets_exist`). The **frontmatter** `roadmap:` is the normative field; the body `Roadmap:`
+marker is updated too, because a body that disagrees with the frontmatter misleads the human reader.
+
+**Which existing values may be overwritten — asymmetric on purpose:**
+
+| Field | Overwritten when the current value is | Rationale |
+|---|---|---|
+| frontmatter `roadmap:` | anything that is **not** a `.md` reference (`""`, `none`, `-`, `<!-- … -->`) | machine-written field: the REQ generator always emits `roadmap: ""` |
+| body `Roadmap:` | **only** empty, a dash, or an HTML-comment placeholder | human prose: `Roadmap: to be decided after the ADR` must not be erased |
+
+**Cardinality — every case pinned:**
+
+| State of the named REQ | Behaviour |
+|---|---|
+| Placeholder link | Both fields written; one line on **stdout** (below). |
+| Already links **this** roadmap | **No write at all** — byte-level idempotent. Running `--from-req` twice changes nothing. |
+| Already links a **different** roadmap | **Not touched.** Diagnostic on stderr, exit **0**. Re-pointing a REQ is a governance decision, not a side effect of `roadmap new`. |
+| REQ missing / unreadable / refused by the containment guard | Roadmap is **kept**, backlink abandoned, diagnostic on stderr, exit **0**. |
+
+**Output, pinned literally.** One line, on **stdout**, after the existing `✓ created …` line, only when
+the REQ was actually rewritten:
+
+```
+✓ linked <req-basename> → <roadmap-path>
+```
+
+**Why no failure path is fatal.** The roadmap already exists and `✓ created` has already been printed
+when the backlink runs; a non-zero exit would report failure for the part that succeeded, and `--req`
+accepts a path the user types freely. The silence that caused the original defect does not return: every
+abandonment writes to stderr. Containment refusals keep coming from the single emission point
+(`pathguard.RejectAndReport`); only the exit code is non-fatal.
+
+**Consolidated acceptance criteria on the `--from-req` path.** When the REQ has acceptance criteria, the
+roadmap's `## Acceptance Criteria` block is filled with them instead of the two empty `- [ ]` items.
+When the REQ has **none**, the placeholder is emitted unchanged and no ML is derived — the generator
+never invents criteria. 🔴 This narrows ADR-2026-07-31 (decision 3, *"placeholder to fill, not automatic
+aggregation"*) **on the `--from-req` path only**; the plain template of `roadmap new` still emits the
+placeholder. The amendment to that ADR is pending (REQ-2026-09-09, AC7).
+
 ### `roadmap move` / `req move` — name resolution refuses instead of guessing
 
 <!-- trackfw-contract: gate=internal/generators/artifact_select_ml1c_test.go partial=o gate cobre findRoadmap (flat e by_agent), findREQ e ShowRoadmap; NÃO cobre outros resolvedores por nome fora de internal/generators (o vínculo branch↔roadmap de validator.BranchSlugMatchesRoadmap é contrato próprio, tratado pelo ML-3A da REQ-2026-09-09) -->
