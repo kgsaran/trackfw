@@ -332,7 +332,8 @@ REQ. `syncREQReferences` (em `roadmap move`) só atualiza REQs que já têm fron
 do AC7 (ML-1B), mesma causa, mesmo roadmap. Registrado no vault.
 
 ### ML-1B — **AC7** — `--from-req` fecha o laço
-**Status:** ⬜ Pendente
+**Owner:** `apolo-tf`
+**Status:** 🔄 Em andamento (despachado em 2026-09-26)
 **Arquivos afetados:** `internal/generators/roadmap.go`.
 ⚠️ **Os caminhos `npm/src/…` e `pypi/trackfw/…` que este ML listava NÃO EXISTEM desde a v8.0.0** —
 implementação única em Go. Corrigido em 2026-09-26.
