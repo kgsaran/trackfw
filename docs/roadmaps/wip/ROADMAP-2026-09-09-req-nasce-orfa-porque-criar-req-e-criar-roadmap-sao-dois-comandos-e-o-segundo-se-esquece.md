@@ -530,7 +530,7 @@ outro lado.
 ⚠️ **O PR #440 já está mergeado**, então a correção de atribuição é um PR próprio, não uma edição
 silenciosa. Registro aqui e corrijo na REQ-2026-09-25 em seguida.
 
-## Wave 1 (cont.) — os sítios que a varredura do ML-1B achou
+### Sítios que a varredura do ML-1B achou (ainda Wave 1)
 
 ### ML-1D — 🔴 A regra `req_has_roadmap` não implementa a decisão do ML-1A
 **Owner:** `apolo-tf`
@@ -631,7 +631,7 @@ declarado e absolutamente vazio bloqueia o fallback para o corpo — **0 casos**
 
 ### ML-1E — As regras de vínculo são cegas ao frontmatter — e há instância medida
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento (despachado em 2026-09-26)
+**Status:** ✅ Concluído — auditado em 2026-09-26 · **o delta não era −2: é −7 e +24**
 
 ⚠️ **Este ML foi REESCRITO por mim em 2026-09-26.** A redação anterior dizia *"achado estrutural, sem
 instância medida no corpus"* e falava só do wizard. 🔴 **Medi, e há instância — na regra, não no
@@ -674,17 +674,103 @@ que têm vínculo e são acusadas mesmo assim.
    no contrato.
 
 **Critérios de aceite:**
-- [ ] As **2 acusações falsas** medidas desaparecem, **nomeadas uma a uma** no relatório
-- [ ] 🔴 **Contra-braço:** as **2 com travessão continuam acusadas** — se sumirem, a regra virou
+- [x] As **2 acusações falsas** medidas desaparecem, **nomeadas uma a uma** no relatório
+- [x] 🔴 **Contra-braço:** as **2 com travessão continuam acusadas** — se sumirem, a regra virou
       permissiva e trocamos falso positivo por falso negativo
-- [ ] Medir **antes e depois** as 128 de `no linked ADR`, com a lista das que mudaram de veredito.
+- [x] Medir **antes e depois** as 128 de `no linked ADR`, com a lista das que mudaram de veredito.
       🔴 **Se o delta for maior que 2, cada uma extra é explicada** — número que muda sem explicação é
       o que esta REQ persegue
-- [ ] `wip_has_req` e `blocked_has_req` recebem o mesmo tratamento, com a medição própria de cada uma
-- [ ] O wizard: elo escrito **ou** ausência declarada no contrato, com a instância construída
-- [ ] `ML-1B`, `ML-1C` e `ML-1D` não são desfeitos
-- [ ] Reconciliação: uma frase por teste novo
-- [ ] `make quality` verde
+- [x] `wip_has_req` e `blocked_has_req` recebem o mesmo tratamento, com a medição própria de cada uma
+- [x] O wizard: elo escrito **ou** ausência declarada no contrato, com a instância construída
+- [x] `ML-1B`, `ML-1C` e `ML-1D` não são desfeitos
+- [x] Reconciliação: uma frase por teste novo
+- [x] `make quality` verde
+
+#### 🔴 Auditoria do ML-1E — o delta que eu previ estava errado por um fator de 12
+
+Medi com os dois binários:
+
+```
+              antes    depois
+no linked ADR   128  →   145        ← −7 falsas, +24 novas e CORRETAS
+no linked Roadmap 13 →    13        ← ML-1D intacto
+wip_has_req        0 →     0        ← medido, não presumido
+blocked_has_req    0 →     0
+warnings         153 →   170
+contra-braço: as 2 com `adr: —` continuam acusadas ✅
+```
+
+🔴 **Eu escrevi que o delta seria −2 e que "delta maior que 2 exige explicação".** Ele explicou, e a
+explicação refuta a minha régua: eu censei *"REQs sem a linha `ADR:` no corpo"*, e **o mecanismo é o
+frontmatter ser invisível ao casamento case-sensitive**. As outras 5 falsas **têm** linha `ADR:` — um
+**comentário HTML** — e caminho `.md` real no frontmatter. Minha régua as excluiu **por construção**.
+
+**E a direção que eu não previ é a maior:** **+24 acusações novas e corretas**, de REQs que
+satisfaziam a regra com **placeholder em prosa** (`ADR: N/A — extensão de um gate…`,
+`ADR: (a decidir — …`). Nenhuma tem ADR. 🔴 **O bloco CRESCER é o sinal certo** — o `ML-1D` produziu o
+mesmo em `req_has_roadmap` (12 → 13). Zerá-lo é que seria o defeito.
+
+Fora do bloco do ADR, a saída é **idêntica linha a linha**: nenhuma outra regra mudou de veredito.
+
+### Ponto de ratificação 1 — o +24: **ratifico**
+
+São genuínas, e `validate` continua **rc=0** nos dois lados (o acervo está `lenient` até 2027-12-31).
+É **surfacing**, não gate: o passivo vira visível sem travar ninguém.
+
+### 🔴 Ponto de ratificação 2 — o ID pelado deixa de ser vínculo: **ratifico, e vai para o CHANGELOG**
+
+`REQ: REQ-2026-07-29-fixture` (sem diretório, sem `.md`) satisfazia `wip_has_req`/`blocked_has_req` e
+**não satisfaz mais**. Medi: **zero** ocorrências nos artefatos governados — mas era a forma viva nas
+**fixtures** (6 testes de barrier + 1 de `ship` + 12 sítios de `check-barrier.sh`).
+
+**Ratifico pela consistência:** a mesma restrição já valia para `roadmap:` desde o `ML-1D`, e ter
+`REQ:` aceitando ID pelado enquanto `roadmap:` exige `.md` **é exatamente a divergência que esta REQ
+persegue**. O valor precisa ser resolvível para `ref_targets_exist` significar alguma coisa.
+
+⚠️ **Mas é mudança de comportamento observável, e o usuário pediu o changelog explícito.** São
+**três**, não duas:
+
+| # | mudança | efeito |
+|---|---|---|
+| 1 | `lenient` sem `lenient_until` | `validate` que saía `rc=0` pode sair `rc≠0` |
+| 2 | vínculo branch↔roadmap deixa de ser substring | **a medir na Wave 3** (ADR manda aditivo) |
+| 3 | **`REQ:`/`ADR:` com ID pelado deixa de ser vínculo** | consumidor com `link_fields` não-caminho perde o casamento |
+
+⚠️ `link_fields` **não tem superfície de contrato** em `cli-parity.md` (medido: 2 menções, nenhuma
+normativa), então nada documentado quebra — **mas o consumidor que configurou `req_id` não leu
+documentação nenhuma para fazê-lo.**
+
+### O wizard: instância CONSTRUÍDA, e a não-correção é a decisão certa
+
+Ele reproduziu sem TTY pelo caminho real (`NewADRDraft` → `DependsOnADRs` → `NewREQ`): a REQ nasce
+com o ADR listado só em *"Blocked by ADRs"*, `adr: ""`, e **é acusada**.
+
+🔴 **E não corrigiu, com razão melhor que a minha:** o ADR está em **`Draft`**, e aquela seção
+significa **o oposto** de vinculado — o próprio wizard imprime *"Resolve these ADRs (set Status:
+Accepted) before creating a roadmap"*. Preencher `adr:` chamaria de vinculada uma REQ cuja decisão
+**não existe**, trocando o falso positivo pelo **falso negativo que o contra-braço proíbe**.
+Declarado no contrato e **pinado por teste**, para a declaração não envelhecer calada.
+
+### Instrumento: três braços esvaziados, e o segundo achado pelo QUALITY, não por leitura
+
+As Direções **A e B** do Cenário 192 ficaram vácuas **de uma vez** — com as três regras migradas,
+sabotar a ancoragem não move veredito nenhum. E o **Cenário 28** reprovou na primeira barreira:
+
+🔴 *"A régua 'grepe a MENSAGEM da regra' acha quem **assevera** a mensagem; não acha quem passa a
+**emiti-la como efeito colateral**."* O mesmo binário corrompido que escondia a referência de
+`adr_accepted_when_req_done` escondia o vínculo de `req_has_adr`, que passou a emitir corretamente e
+derrubou um `assert_lacks_pattern` **sem defeito nenhum**.
+
+⚠️ **E o rc lido em linha separada foi decisivo:** a notificação do runner disse *exit code 0* na
+primeira execução, e o rc real era **2** — era o `echo` do wrapper que saía 0. **Só o arquivo de rc
+revelou a reprovação.**
+
+### Resíduo
+
+- `contentHasMarkerValue` ficou **sem chamador de produção** (só testes). Mantida: remover ampliaria o
+  diff. A propriedade do achado A2 sobrevive **por construção** dentro de `extractRefPath`.
+- `gen-falsify-chunks` avisa que os 7 rótulos novos estão **sem peso calibrado** — é o **#403**, que
+  está declarado fora desta REQ. Coerente.
 
 ## Wave 2 — A decisão arquitetural
 > Dependências: Wave 1 (a fonte de verdade precisa estar decidida).

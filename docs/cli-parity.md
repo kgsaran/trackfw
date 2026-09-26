@@ -421,6 +421,51 @@ marker is updated too, because a body that disagrees with the frontmatter mislea
 | frontmatter `roadmap:` | anything that is **not** a `.md` reference (`""`, `none`, `-`, `<!-- … -->`) | machine-written field: the REQ generator always emits `roadmap: ""` |
 | body `Roadmap:` | **only** empty, a dash, or an HTML-comment placeholder | human prose: `Roadmap: to be decided after the ADR` must not be erased |
 
+**The other three link rules read the link the same way (ML-1E, 2026-09-26).** `req_has_adr`,
+`wip_has_req` and `blocked_has_req` moved to the **same** predicate as `req_has_roadmap`
+(`contentHasStructuredRefValue` → `extractRefPath`), so the four link rules now share one notion of
+"linked": a value that is a `.md` reference, matched **case-insensitively** on the key, **frontmatter
+first** and body as fallback. Two consequences, both measured on this repository's 231 REQs on
+2026-09-26:
+
+| Direction | Count | What it was |
+|---|---|---|
+| Accusations **removed** | **7** | REQs whose `adr:` frontmatter carried a real, on-disk `docs/adr/….md` path. The rule matched `ADR:` by case-sensitive prefix and never saw the lowercase frontmatter field. One of the 7 is REQ-2026-09-09 itself. |
+| Accusations **added** | **24** | REQs that satisfied the rule with a *prose* placeholder in the body — `ADR: N/A — …`, `ADR: (a decidir …`, an HTML comment closing on a later line. None of them has an ADR. |
+
+Net on the corpus: `has no linked ADR` went **128 → 145**. The block **grows**, and that is the
+expected sign — `req_has_roadmap` produced the same signal in ML-1D (12 → 13). `wip_has_req` and
+`blocked_has_req` were measured **separately**, not assumed: 0 violations before and 0 after, in
+`wip/` and in `blocked/` — for those two the change is mechanism, not count.
+
+🔴 **Narrowing to ratify, stated explicitly: a bare artifact ID is no longer a link.** `REQ:
+REQ-2026-07-29-fixture` (no directory, no `.md`) satisfied `wip_has_req`/`blocked_has_req` before and
+does not any more, because `extractRefPath` requires an artifact path. Zero instances in this
+repository's governed artifacts, but the form was in real use in **fixtures**: it broke 6 barrier
+tests, 1 `ship` test and 12 sites of `scripts/check-barrier.sh`, all corrected in the same change by
+pointing at a real path and materialising the target. This is inherited from the ML-1D predicate, not
+invented here — the same constraint already applied to `roadmap:`. It also means a project that
+configures a non-path marker (e.g. `link_fields.req: [REQ:, req_id]`, the shape exercised by
+`internal/config/config_evolution_test.go`) cannot satisfy the rule through that marker, since the
+value would have to end in `.md`.
+
+### `req new` — the wizard's ADR link is deliberately NOT written
+
+<!-- trackfw-contract: gate=internal/generators/req_wizard_adr_link_ml1e_test.go partial=o gate pina a FORMA que o wizard produz (NewADRDraft + DependsOnADRs + NewREQ) e o veredito de req_has_adr sobre ela; NÃO exercita o formulário interativo (TTY, huh) nem a escolha de escopo local/global -->
+
+The interactive `trackfw req new` creates one **Draft** ADR per answered probe
+(`generators.NewADRDraft`), lists them under `## Blocked by ADRs`, and leaves `adr: ""` in the
+frontmatter and `ADR:` empty in the body. So a REQ born from that path is reported by `req_has_adr`
+even though a real ADR file was created in the same command.
+
+**This is declared, not fixed (ML-1E, 2026-09-26).** The ADR is in `Draft` and the section that names
+it means the opposite of "linked" — the wizard itself prints *"Resolve these ADRs (set Status:
+Accepted) before creating a roadmap"*. Writing `adr:` with a Draft would make `req_has_adr` call
+"linked" a REQ whose decision does not exist yet: a false negative traded for a false positive, which
+is what the ML-1E counter-arm forbids. Filling the link only when the ADR leaves `Draft` is a change
+to the wizard's own surface and is not in this change. The instance is **constructed** and pinned by
+the gate above, so this paragraph cannot silently go stale.
+
 **The validator reads the link with the same notion of "real" (ML-1D, 2026-09-26).** `req_has_roadmap`
 resolves the link through `extractRefPath` — the extractor shared by `ref_targets_exist` and
 `req_roadmap_sync`, whose frontmatter side moved to the same predicate in the same change — so a value that is not a `.md` reference (`none`, `TBD`, `-`, `<!-- … -->`, prose)

@@ -153,6 +153,10 @@ func contentHasMarker(content string, markers []string) bool {
 // issue #278 (ML-1B): 5 de 7 grafias naturais de campo vazio escapavam da checagem anterior
 // por literal — esta função decide por VALOR (TrimSpace do resto da linha), o que já cobre as 7
 // grafias medidas na triagem original.
+// 🔴 ML-1E (2026-09-26): esta função não tem mais chamador de PRODUÇÃO — as três últimas regras que a
+// usavam (req_has_adr, wip_has_req, blocked_has_req) migraram para contentHasStructuredRefValue. Os
+// chamadores restantes são testes de unidade. Ver o comentário de contentHasStructuredRefValue para o
+// porquê de ela ter sido mantida em vez de removida.
 func contentHasMarkerValue(content string, markers []string) bool {
 	for _, rawLine := range strings.Split(content, "\n") {
 		line := strings.TrimRight(rawLine, "\r")
@@ -2150,6 +2154,14 @@ func resolveREQFiles(cfg config.ProjectConfig) ([]string, error) {
 	return ResolveREQFiles(cfg)
 }
 
+// validateWIPHasREQ — ML-1E (2026-09-26): o vínculo passou a ser lido por
+// contentHasStructuredRefValue, o MESMO leitor que o ML-1D instalou em req_has_roadmap. Antes lia por
+// contentHasMarkerValue, que (a) casa o marcador por prefixo CASE-SENSITIVE, logo nunca via o campo
+// `req:` minúsculo do frontmatter — o campo que `roadmap new` escreve —, e (b) aceitava qualquer valor
+// não-vazio, logo `REQ: N/A — ...` contava como vínculo. Medição própria desta regra nos roadmaps de
+// wip/ deste repositório em 2026-09-26: 0 violações antes, 0 depois (nenhum roadmap em wip/ divergia
+// entre os dois leitores) — a correção é de mecanismo, não de contagem, e foi medida em vez de
+// presumida porque o ML-1E exige medição por regra.
 func validateWIPHasREQ() ([]string, error) {
 	cfg := config.Load()
 	wipDirs := resolveWIPDirs(cfg)
@@ -2162,7 +2174,7 @@ func validateWIPHasREQ() ([]string, error) {
 			if !ok {
 				continue
 			}
-			if !contentHasMarkerValue(string(content), cfg.LinkFieldsReq) {
+			if !contentHasStructuredRefValue(string(content), cfg.LinkFieldsReq) {
 				violations = append(violations, fmt.Sprintf("roadmap %q is in wip but has no linked REQ (marker must start the line with a real, non-placeholder value)", name))
 			}
 		}
@@ -2170,6 +2182,20 @@ func validateWIPHasREQ() ([]string, error) {
 	return violations, nil
 }
 
+// validateREQsHaveADR — ML-1E (2026-09-26): mesma migração de leitor do ML-1D, no campo ao lado.
+//
+// O defeito medido, nos 231 REQs deste repositório: 7 REQs declaram no frontmatter
+// `adr: "docs/adr/ADR-….md"`, o alvo EXISTE no disco (conferido também por ref_targets_exist, que já
+// lia esse campo por extractRefPath), e a regra as acusava de "has no linked ADR" — porque
+// contentHasMarkerValue casa "ADR:" por prefixo case-sensitive e o campo do frontmatter é `adr:`.
+// Uma das 7 é a REQ desta própria campanha.
+//
+// O mesmo troco corrige a direção oposta, e ela é maior: 24 REQs satisfaziam a regra com um
+// placeholder em PROSA no corpo (`ADR: N/A — …`, `ADR: (a decidir …`, `ADR: <!-- … ` cujo comentário
+// fecha em outra linha). Nenhuma delas tem ADR; extractRefPath exige caminho terminado em ".md" e
+// passa a acusá-las corretamente. Saldo medido no acervo: 128 → 145 ocorrências de "has no linked
+// ADR". O bloco CRESCE, e isso é o esperado — o ML-1D produziu o mesmo sinal em req_has_roadmap
+// (12 → 13).
 func validateREQsHaveADR() ([]string, error) {
 	cfg := config.Load()
 	files, err := resolveREQFiles(cfg)
@@ -2183,13 +2209,17 @@ func validateREQsHaveADR() ([]string, error) {
 		if !ok {
 			continue
 		}
-		if !contentHasMarkerValue(string(content), cfg.LinkFieldsADR) {
+		if !contentHasStructuredRefValue(string(content), cfg.LinkFieldsADR) {
 			violations = append(violations, fmt.Sprintf("req %q has no linked ADR (marker must start the line with a real, non-placeholder value)", filepath.Base(path)))
 		}
 	}
 	return violations, nil
 }
 
+// validateBlockedHasREQ — ML-1E (2026-09-26): mesma migração de leitor de validateWIPHasREQ, pelos
+// mesmos dois motivos (frontmatter `req:` invisível ao casamento case-sensitive; placeholder em prosa
+// contando como vínculo). Medição própria nos roadmaps de blocked/ deste repositório em 2026-09-26:
+// 0 violações antes, 0 depois — os 2 roadmaps em blocked/ não divergem entre os leitores.
 func validateBlockedHasREQ() ([]string, error) {
 	cfg := config.Load()
 
@@ -2201,7 +2231,7 @@ func validateBlockedHasREQ() ([]string, error) {
 			if !ok {
 				continue
 			}
-			if !contentHasMarkerValue(string(content), cfg.LinkFieldsReq) {
+			if !contentHasStructuredRefValue(string(content), cfg.LinkFieldsReq) {
 				violations = append(violations, fmt.Sprintf("roadmap %q is in blocked but has no linked REQ (marker must start the line with a real, non-placeholder value)", name))
 			}
 		}
@@ -3031,12 +3061,20 @@ func extractRefPath(content, field string) string {
 // e existe para que a regra e o extrator não possam divergir (era o defeito medido: a regra aceitava
 // qualquer valor não-vazio do frontmatter, então `roadmap: none` passava).
 //
-// Alcance, escrito para não virar a próxima claim falsa: quem passa por aqui hoje é `req_has_roadmap`.
-// `req_roadmap_sync` e `ref_targets_exist` chamam extractRefPath direto (o MESMO predicado, sem este
-// invólucro) porque precisam do VALOR da referência, não do booleano. Já `req_has_adr`, `wip_has_req` e
-// `blocked_has_req` continuam em contentHasMarkerValue — decisão de escopo, não descuido: o campo
-// `adr:` é o ML-1E desta mesma REQ, e nenhuma dessas três carrega comentário afirmando outra fonte de
-// verdade (o defeito que o ML-1D corrige é comentário que mente, não assimetria por si).
+// Alcance, escrito para não virar a próxima claim falsa — ATUALIZADO pelo ML-1E (2026-09-26), que é
+// justamente o ML que tornou falsa a redação anterior desta frase ("quem passa por aqui hoje é
+// req_has_roadmap; req_has_adr, wip_has_req e blocked_has_req continuam em contentHasMarkerValue"):
+//
+//   - passam por aqui as QUATRO regras de "está vinculada?": `req_has_roadmap` (ML-1D),
+//     `req_has_adr`, `wip_has_req` e `blocked_has_req` (ML-1E);
+//   - `req_roadmap_sync` e `ref_targets_exist` chamam extractRefPath direto (o MESMO predicado, sem
+//     este invólucro) porque precisam do VALOR da referência, não do booleano;
+//   - 🔴 consequência a registrar, não a esconder: com a migração das três, `contentHasMarkerValue`
+//     ficou SEM NENHUM chamador de produção (só testes). A propriedade que ele guardava —
+//     comentário HTML como placeholder não é vínculo (achado A2 da auditoria externa de 2026-09-05)
+//     — sobrevive por construção dentro de extractRefPath, que exige caminho terminado em ".md" e
+//     portanto recusa `<!-- … -->` sem precisar de guard próprio. A função foi MANTIDA (remover
+//     ampliaria o diff e derrubaria seus testes de unidade); a decisão de retirá-la é do arquiteto.
 //
 // O que ele herda de extractRefPath, e que contentHasMarkerValue NÃO faz:
 //   - exige que o valor termine em ".md" — recusa `none`, `TBD`, `nenhum`, prosa e qualquer outro

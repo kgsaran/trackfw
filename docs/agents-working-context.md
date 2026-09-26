@@ -41593,3 +41593,73 @@ bash scripts/check-unguarded-capture-rc.sh          RC=0
 - **Resíduo:** `check-symlink-privilege-guard` enumera por `git ls-files` e não vê os testes novos;
   evidência deles é `go test ./internal/validator/`. Status do ML mantido em 🔄.
 - Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.
+
+## 2026-09-26 — apolo-tf — ML-1E (início): as 3 regras de vínculo restantes são cegas ao frontmatter
+
+- **Escopo:** `internal/validator/validator.go` — `req_has_adr` (`:2186`), `wip_has_req` (`:2165`) e
+  `blocked_has_req` (`:2204`) leem o vínculo por `contentHasMarkerValue` (prefixo case-sensitive,
+  qualquer valor não-vazio). Migrar para `contentHasStructuredRefValue`, o leitor que o ML-1D instalou.
+- **Método:** censo dos 231 REQs + binário de HEAD contra binário corrigido, antes/depois, com a lista
+  nominal das que mudam de veredito; medição PRÓPRIA de `wip_has_req` e `blocked_has_req` (não
+  presumir delta zero); contra-braço obrigatório (as 2 REQs com travessão continuam acusadas).
+- **Escopo negativo:** `BranchSlugMatchesRoadmap` (ML-3A) e baseline não são tocados.
+- Sem Git: não crio branch, não commito, não faço push.
+
+## 2026-09-26 — apolo-tf — ML-1E (fim): o delta é −7/+24, não −2 — e o censo do handoff subcontava por construção
+
+- 🔴 **Refutação do handoff, medida:** o handoff previa **2** acusações falsas (régua: *"`adr:` no
+  frontmatter e NENHUM `ADR:` no corpo"*). São **7**. As outras 5 TÊM linha `ADR:` no corpo — um
+  comentário HTML (`ADR: <!-- a criar, se a frente 2 for adiante -->`) — e o frontmatter carrega um
+  caminho `.md` real. A régua contava a AUSÊNCIA da linha; o mecanismo é o campo do frontmatter ser
+  invisível ao casamento case-sensitive. Os 7 alvos foram conferidos com `test -f`: todos existem.
+- 🔴 **Direção oposta, maior, e não prevista pelo handoff: +24.** REQs que satisfaziam a regra com
+  placeholder em PROSA no corpo (`ADR: N/A — …`, `ADR: (a decidir …`, `ADR: <!-- …` fechando em outra
+  linha). Nenhuma tem ADR — são acusações CORRETAS que passam a aparecer. Saldo no acervo:
+  **128 → 145**, mesmo sinal do ML-1D (12 → 13). O bloco **cresce**; zerá-lo seria o defeito.
+- **Medição própria por regra (não presumida):** `wip_has_req` 0 → 0; `blocked_has_req` 0 → 0;
+  `req_has_roadmap` 13 → 13 (ML-1D intacto). Fora do bloco do ADR, a saída de `validate` é idêntica
+  linha a linha antes e depois — só o contador de warnings muda (153 → 170).
+- **Contra-braço verde:** as 2 REQs com `adr: —` (`REQ-2026-06-13-traceid-bidirecional`,
+  `REQ-2026-06-13-v2.4-config-evolution`) continuam acusadas.
+- 🔴 **Estreitamento a RATIFICAR:** ID pelado (`REQ: REQ-2026-07-29-fixture`, sem `.md`) deixou de ser
+  vínculo. Zero instâncias nos artefatos governados, mas era a forma usada em FIXTURES: quebrou 6
+  testes de barrier, 1 de `ship` e 12 sítios de `scripts/check-barrier.sh`. Herdado do predicado do
+  ML-1D, não inventado aqui. Consequência para consumidores: marcador não-caminho configurado em
+  `link_fields` (ex.: `req_id`, a forma exercitada por `config_evolution_test.go`) não satisfaz mais a
+  regra. Declarado em `docs/cli-parity.md`.
+- 🔴 **`contentHasMarkerValue` ficou sem chamador de produção.** Mantida (remover ampliaria o diff e
+  derrubaria seus testes de unidade); a propriedade do achado A2 (comentário HTML não é vínculo)
+  sobrevive dentro de `extractRefPath`, que exige `.md`. Decisão de retirá-la é do arquiteto.
+- **Cenário 192 reescrito nas Direções A e B** (a armadilha que o ML-1D já pagou uma vez): com as três
+  regras migradas, sabotar `isHTMLCommentOnlyValue` ou a ancoragem `HasPrefix` não move veredito
+  nenhum — os dois braços ficariam vácuos. A passou a sabotar a exigência de `.md` em
+  `extractRefPath`; B reusa o binário corrompido da Direção C (mesmo seam, campo ADR). Direção A usa
+  `assert_output_lacks` + liveness anchor porque a corrupção é na função COMPARTILHADA e o mesmo
+  binário emite, corretamente, `links to ADR "<!--" which does not exist` — exit 0 é inalcançável ali
+  por construção. As 3 direções exercitadas em harness de bancada antes do `make quality`.
+- **Fixtures corrigidas:** 2 × `ADR: none` do `check-gates-falsify.sh` viraram alvo real
+  (`ensure_adr_link_target`, ADR **Accepted** separado do `$adr_basename` Proposed, para não acoplar o
+  seam de `blocked_by_draft_adr`); `common_dirs` do `check-barrier.sh` passou a materializar REQ + ADR
+  + alvo em `abandoned/`; fixtures Go de barrier/ship ganharam `writeBarrierREQFixture`.
+- **Wizard (ação 2): instância CONSTRUÍDA e ausência DECLARADA.** `req new` cria ADR **Draft** por
+  probe, lista em "Blocked by ADRs" e nunca grava `adr:` — logo nasce acusada. Não corrigido de
+  propósito: preencher `adr:` com um Draft chamaria de vinculada uma REQ cuja decisão não existe
+  (falso negativo). Pinado por `internal/generators/req_wizard_adr_link_ml1e_test.go` e escrito no
+  contrato.
+- **Falsificação dos testes novos:** o arquivo novo de `internal/validator` rodado contra o código de
+  HEAD (via `git archive`) — **7 reprovam**, 4 contra-braços passam nas duas árvores.
+- 🔴 **Terceiro braço esvaziado, achado pelo PRIMEIRO `make quality` (rc=2) e não por leitura:** o
+  Cenário **28** (backtick em `extractRefPath`) reprovou com *"ciclo limpo saiu com 1, esperava 0"*.
+  Mecanismo: a fixture referencia o ADR só pelo corpo e só entre backticks, então o mesmo binário
+  corrompido que esconde a referência de `adr_accepted_when_req_done` passa a esconder o vínculo de
+  `req_has_adr` — que emite, corretamente, `has no linked ADR`. Mesmo conserto da Direção A
+  (`assert_output_lacks` + liveness anchor), exercitado em bancada antes do segundo `make quality`.
+  **A lição de instrumento:** a régua "grepe a MENSAGEM da regra" acha os cenários que ASSEREM a
+  mensagem; não acha os que passam a emiti-la como EFEITO COLATERAL e morrem no `rc != 0`.
+- **Resíduo:** `check-symlink-privilege-guard` enumera por `git ls-files` e não vê os 2 arquivos de
+  teste novos (não commitados); a evidência deles é `go test ./internal/{validator,generators}/`.
+  `gen-falsify-chunks` avisa (stderr) que os 7 rótulos do Cenário 192 estão sem peso calibrado e usa o
+  peso pessimista — comportamento documentado para rótulo novo/renomeado, não reprovação; recalibrar é
+  decisão do arquiteto (`gen-falsify-scenario-weights.py`).
+  Status do ML mantido em 🔄 até a auditoria.
+- Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.
