@@ -291,7 +291,7 @@ instante em que o elo existe sem ambiguidade — e é o instante em que ele não
       🔴 **Sem este AC, a Wave 3 fecha pela metade:** o candidato "fronteira" satisfaz os ACs atuais e
       **piora** esta direção, porque é subconjunto estrito de `Contains`.
 
-- [ ] **AC16** — 🔴 **`req move` escreve o vínculo de volta, como o `roadmap move` já faz.**
+- [x] **AC16** — 🔴 **`req move` escreve o vínculo de volta, como o `roadmap move` já faz.**
       Acrescentado em 2026-09-26, movido da `REQ-2026-09-25` por **correção de atribuição minha**:
       absorvi o **#439** lá por *mesmo sintoma* (passivo no baseline do consumidor), e a medição do
       `ML-1B` mostrou que a **causa é esta** — *"o comando conhece o vínculo e não o escreve"*.

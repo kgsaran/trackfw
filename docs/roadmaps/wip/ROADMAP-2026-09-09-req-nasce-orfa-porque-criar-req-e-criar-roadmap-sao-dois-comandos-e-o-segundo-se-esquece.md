@@ -1337,11 +1337,15 @@ com condição vencida, e a tabela de residuais que virou #400/#401/#402.
 grandfathering, 0 cobradas** — e agora **13 decididas por leitura**, o que antes não era verdade.
 
 ### ML-5B — **AC6** — paridade e fechamento
-**Status:** 🔄 Em andamento — local verde; **aguardando CI**
+**Status:** 🔄 Em andamento — local verde **depois da Wave 6**; **aguardando CI**
 **Critérios de aceite:**
-- [x] `make quality` verde  → `exit=0`, **1359 `^OK `**, **0 `: FALHA`**, 2731 linhas de log
-- [ ] `trackfw validate` sem violation nova  → **0 violations, rc=0**; warnings **172 → 171**
-- [ ] **CI verde** — medido no PR, não aqui
+- [x] `make quality` verde  → remedido após o `ML-6A`: `exit=0`, **1360 `^OK `**, **0 `: FALHA`**
+- [x] `trackfw validate` sem violation nova  → **0 violations, rc=0**, **171 warnings**
+- [ ] **CI verde** — medido no PR, não aqui. 🔴 É o único critério desta REQ que não se mede localmente
+
+⚠️ **Este ML foi remedido.** A primeira medição (1359 OK) foi feita **antes** de a auditoria pré-PR
+achar o `AC16`. Um `make quality` verde numa REQ com AC não entregue não afirma o que parece afirmar —
+por isso a contagem que vale é a de **depois** da Wave 6.
 
 #### Medição, com a ressalva
 
@@ -1404,7 +1408,8 @@ subpastas de estado — as **78 violações de `stale state path`** congeladas n
 consumidor.
 
 ### ML-6A — **AC16** — `req move` escreve o vínculo de volta, simétrico ao `roadmap move`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-09-26 · e o corretivo R1 removeu um teste que afirmava o
+nome errado
 **Arquivos:** `internal/generators/req.go` · `internal/generators/roadmap.go` (só se o ponto único
 exigir) · `internal/generators/req_test.go`
 **Ações:**
@@ -1417,16 +1422,70 @@ exigir) · `internal/generators/req_test.go`
 3. Anunciar a sincronização em stdout, como `roadmap move` já faz. Silêncio aqui reproduz o *"o
    trabalho é feito, mas o controle não aparece no relatório"* que esta casa já pagou.
 **Critérios de aceite:**
-- [ ] Reprodução acima passa a sair com o `req:` **atualizado**, e o caminho existe
-- [ ] 🔴 **Contra-braço:** `req move` em `req_dir` **flat** (este repositório) **não** altera nada além
-      do `status:` — nenhuma reescrita espúria em 232 REQs
-- [ ] 🔴 **Recusa preservada:** vínculo **cruzado** não é criado. Um roadmap cujo `req:` aponta para
-      **outra** REQ não é reescrito por este comando
-- [ ] Contenção de escrita: o sítio novo passa pelo analisador do `check-write-containment`, sem
-      `_ = RefuseUnverifiableRoot(...)` — o retorno é **agido**
-- [ ] A frase da Regra Dura de Reconciliação, por teste novo
-- [ ] `make quality` verde e `trackfw validate` sem violation nova
+- [x] Reprodução acima passa a sair com o `req:` **atualizado**, e o caminho existe
+      → `✓ synced ROADMAP-x.md → docs/req/done/REQ-2026-09-26-x.md`, e o arquivo existe lá
+- [x] 🔴 **Contra-braço:** `req move` em `req_dir` **flat** (este repositório) **não** altera nada além
+      do `status:` → `git status --porcelain docs/` acusa só a REQ movida; nenhuma das 232 tocada.
+      As branches in-place retornam antes da sincronização, porque `dst == path`
+- [x] 🔴 **Recusa preservada:** vínculo **cruzado** não é criado
+      → `TestMoveREQ_CrossLinkGuard_NotRewritten`; o guard compara o basename do `req:` do roadmap
+- [x] Contenção de escrita: sítio novo agido, sem `_ = RefuseUnverifiableRoot(...)`
+      → `check-write-containment: 161 sítio(s) em 109 arquivo(s) — OK`
+- [x] A frase da Regra Dura de Reconciliação, por teste novo → 4 frases, uma por teste
+- [x] `make quality` verde e `trackfw validate` sem violation nova
 **Validação:** `go test ./internal/generators/ -run 'MoveREQ|ReqMove' -v` · `make quality`
+
+#### O ponto único, e por que não deu para reusar `syncREQReferences`
+
+`rewriteREQRoadmapRefWith` foi **generalizado** com `(fmKey, bodyKey string, bodyOnce bool)`. Os dois
+callers que já existiam passam `"roadmap", "Roadmap", false` e mantêm o comportamento anterior; o
+caller novo passa `"req", "REQ", true`. **Não** nasceu uma segunda implementação de reescrita de
+frontmatter — que era o risco que o handoff nomeava.
+
+`syncREQReferences` **descobre** REQs cujo `roadmap:` já aponta para o roadmap movido. Aqui o sentido é
+o inverso: parte-se da REQ e chega-se ao roadmap. O que as duas compartilham é o ponto único acima.
+
+#### 🔴 Auditoria do ML-6A — dois achados meus, e uma régua minha que caiu
+
+**R1 — um teste afirmava o que o nome não dizia.** `TestMoveREQ_SyncIdempotent` criava uma **segunda
+REQ diferente** e verificava que o roadmap não era reescrito — isto é o **cross-link guard**, predicado
+que `TestMoveREQ_CrossLinkGuard_NotRewritten` já afirmava. E a **idempotência real ficou sem
+cobertura**, apesar de o lado espelho (`syncREQReferences`) tê-la em `roadmap_test.go`.
+
+🔴 **O nome de um teste é uma afirmação.** Quem lesse a lista concluiria que a idempotência estava
+coberta. É a classe exata que originou a Regra Dura de Reconciliação nesta casa — o caso `ENOTDIR` de
+2026-09-05, em que o relatório media uma coisa e o teste da mesma entrega afirmava o contrário.
+Corrigido: removido (sobreposição total medida, uma única condição de guard) e substituído por
+`TestMoveREQ_SyncRoadmapREQRef_Idempotent`, que compara **bytes** — não `mtime`, cuja granularidade
+faria o teste passar pelo relógio em vez de pelo predicado.
+
+**R2 — o `SITE_FLOOR` absorveu defasagem pré-existente.** Ele subiu 158 → 161 num movimento. Medi
+contra `HEAD` limpo, com `git archive`:
+
+```
+HEAD limpo:  160 sítio(s) examinado(s), floor declarado 158   ← defasagem de 2, JÁ existia
+ML-6A:       +1 sítio
+```
+
+O número final está certo; a **atribuição** não estava. Separado em dois commits, como na Wave 3.
+
+**⚠️ E o número de `validate` que ele reportou não era desta branch.** Ele reportou *"152 warnings,
+lenient mode"*; eu medi **171**. A diferença é o **binário**:
+
+```
+/tmp/tf-6b  (build desta branch)   → 171 warning(s)
+trackfw     (Homebrew 8.0.1)       → 152 warning(s)
+```
+
+🔴 O handoff dizia, literalmente, para usar o binário compilado. Não muda a conclusão (0 violations
+nas duas réguas), mas o número publicado era de **outro artefato** — e é o mesmo erro que eu cometi
+no ML-1B desta campanha, quando quase reportei um ML como falho medindo com o binário do Homebrew.
+
+**⚠️ Minha régua sobre `bodyOnce`, refutada pelo contra-braço.** Tentei falsificar a heurística *"a
+primeira linha `REQ:` do corpo é sempre a linha de contexto"* varrendo os roadmaps e marcando como
+suspeito o que tivesse backtick: **94 de 184**. Olhando o resultado, o backtick é o **formato do
+próprio template** — minha régua marcou o padrão, não a anomalia. **Nenhum contra-exemplo encontrado**;
+o risco residual é contido pelo cross-link guard, que só reescreve se o basename casar.
 
 ---
 
@@ -1449,7 +1508,7 @@ auditoria externa de 2026-09-05 exige.
 | AC12 · AC13 · AC15 | ML-3A + ML-3B | ✅ auditado — 29 de 205, não 2 de 111 |
 | AC14 | ML-3C | ✅ auditado — e o braço substring é praticamente morto |
 | — | ML-3D | ✅ entregável descoberto, não previsto por AC |
-| **AC16** | **nenhum** | 🔴 **NÃO ENTREGUE** → `ML-6A` |
+| AC16 | ML-6A | ✅ auditado — entregue na Wave 6, com o corretivo R1 |
 
 ### ⚠️ Emenda ao AC6 — perdeu o objeto, e digo isso em vez de marcá-lo
 
