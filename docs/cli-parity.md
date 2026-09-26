@@ -506,6 +506,59 @@ never invents criteria. 🔴 This narrows ADR-2026-07-31 (decision 3, *"placehol
 aggregation"*) **on the `--from-req` path only**; the plain template of `roadmap new` still emits the
 placeholder. The amendment to that ADR is pending (REQ-2026-09-09, AC7).
 
+### `req_has_roadmap` — date cutoff, and the grandfathering is visible
+
+<!-- trackfw-contract: gate=internal/validator/validator_req_roadmap_cutoff.go,internal/validator/validator_req_roadmap_cutoff_ml4b_test.go partial=nenhum gate de shell exercita o corte pela superfície do CLI; a falsificação dos dois braços é feita em Go, sabotando reqIsGrandfathered -->
+
+**The rule is split in two arms by the creation date of the REQ (ML-4B, 2026-09-26).** A REQ created
+**on or after** the cutoff `2026-09-03` without a linked Roadmap is reported at the rule's normal
+severity — `error` by default, since `req_has_roadmap` is absent from `ruleDefaults`. A REQ created
+**before** the cutoff is reported as a **warning, never a violation**, with the suffix
+`— exempt as pre-cutoff (2026-09-03)`. The cutoff is a declared constant with the reasoning written
+next to it (`reqRoadmapCutoff`, `internal/validator/validator_req_roadmap_cutoff.go`), not a value
+buried in logic.
+
+**Why a cutoff at all, and why that date.** Inverting the severity without one makes `validate` fail
+on the whole historical liability at once, and the predictable answer is
+`governance_mode: lenient` — which loses the rule **and** the warning. The date is measured, not
+chosen: on the 231 REQs of this repository (2026-09-26) 13 have no linked Roadmap, all dated between
+`2026-08-16` and `2026-09-02`, and the exempt/enforced curve **saturates at `2026-09-03`** (every
+candidate ≥ 09-03 yields 13 exempt / 0 enforced). The curve constrains the choice to `>= 09-03` but
+does not pick inside it; the tiebreaker is direction of strictness — the cutoff grants *amnesty*, and a
+later date would silently amnesty orphan REQs dated after 09-03, which are errors today. Minimum
+amnesty wins.
+
+**One line in the report carries the count and the cutoff**, because *an exemption that is not seen
+becomes permanent*:
+
+```
+⚠  req_has_roadmap grandfathering: 13 REQ(s) without a linked Roadmap exempt as created before the
+   cutoff 2026-09-03, 0 enforced as created on/after it, 231 REQ(s) scanned (cutoff declared in
+   internal/validator/validator_req_roadmap_cutoff.go)
+```
+
+The message always carries the **denominator** (`N REQ(s) scanned`) alongside both counts, so `0
+exempt` can never be confused with *not measured*. It is emitted only when the rule found at least one
+orphan REQ: with zero orphans there is no exemption to make visible, and emitting unconditionally would
+add a warning to every clean project (the `TestValidate_Clean` contract: empty structure, zero noise).
+`rules: {req_has_roadmap: off}` silences both arms **and** the notice — whoever turns the rule off does
+not get its notice. The notice is a warning, so it survives `governance_mode: lenient`, which only
+downgrades violations.
+
+**Date ruler: `date:` in the frontmatter first, the `REQ-YYYY-MM-DD-` prefix of the filename as
+fallback** — the same frontmatter-first precedence ML-1A/ML-1D fixed for the link itself. Measured on
+the corpus: the two rulers disagree on 13 files (3 with both present and different, 3 with a filename
+date only, 7 with a frontmatter date only) and **none** of those 13 is one of the 13 orphan REQs, so
+the choice of ruler changes no verdict today. When **neither** ruler is readable the REQ is treated as
+post-cutoff (**fail closed**): accepting "no date" as amnesty would open the bypass of deleting `date:`
+and renaming the file. Zero REQs of the corpus fall in that branch today.
+
+**Residuals, declared and not fixed here.** `date:` is user-editable, so backdating bypasses the
+amnesty — neither ruler is tamper-resistant; git is, and it is out of this change's scope. And a
+`.trackfw-baseline.json` entry can tolerate the notice like any warning; the embedded counts mitigate
+it, since the message text changes whenever the liability changes and a stale baseline entry stops
+matching.
+
 ### `roadmap move` / `req move` — name resolution refuses instead of guessing
 
 <!-- trackfw-contract: gate=internal/generators/artifact_select_ml1c_test.go partial=o gate cobre findRoadmap (flat e by_agent), findREQ e ShowRoadmap; NÃO cobre outros resolvedores por nome fora de internal/generators — o vínculo branch↔roadmap de validator.MatchRoadmapsForBranchSlug é contrato próprio, entregue pelo ML-3A da REQ-2026-09-09 e pinado na seção "Vínculo branch↔roadmap" abaixo -->

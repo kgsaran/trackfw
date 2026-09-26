@@ -997,7 +997,7 @@ local do Bloco 2 fez o gate **passar com rótulos duplicados**, sem detecção, 
    vínculo, **estado por checkout vaza para o repositório dele** — e é entregável desta REQ, não
    achado externo.
 
-### ML-3D — o `trackfw init` precisa ignorar o vínculo no consumidor
+#### Registro — o `ML-3D` nasceu aqui (a definição vive na linha 902)
 **Status:** ⬜ Pendente
 
 **Critérios de aceite:**
@@ -1065,7 +1065,7 @@ acrescenta token compartilhado**, e escreveu isso como nota no próprio fixture.
 regeneração** do corpus — *"as linhas que um leitor futuro usa para decidir o que regenerar"*.
 **Corrigi todas**, marcando o valor antigo.
 
-### ML-3D — ratifico a decisão de NÃO parar
+#### Auditoria do `ML-3D` — ratifico a decisão de NÃO parar
 
 O handoff mandava parar se o `init` não gerasse `.gitignore`. Ele não gera (medido: 0 ocorrências em
 `HEAD`) — mas a razão do gatilho era *"categoria nova de mutação de arquivo do projeto"*, e
@@ -1078,7 +1078,7 @@ reversão de graça.** Sonda própria: o `.gitignore` nasce com `docs/roadmaps/.
 lendo a config ou **hardcodando** a string, e o AC anti-hardcode ficaria *não verificado com aparência
 de coberto*.
 
-### 🔴 R4 do ML-3D — reproduzi, é grave, e virou a issue #445
+#### 🔴 R4 do ML-3D — reproduzi, é grave, e virou a issue #445
 
 ```
 roadmap_dir: governance/plans   →   trackfw init   →   roadmap_dir: docs/roadmaps
@@ -1099,26 +1099,26 @@ importar; se alguém mudá-la antes, **o AC quebra em silêncio**.
 
 ### ML-4A — **AC1 + AC10** — um comando, com contra-braço
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento (despachado em 2026-09-26)
+**Status:** ✅ Concluído — auditado em 2026-09-26 · **o prompt caiu por medição, não por gosto**
 **Ações:** criar REQ e roadmap deixa de exigir dois comandos. 🔴 **Medir o atrito de cada forma**
 (flag em `req new`, prompt, `req new` chamando `--from-req`) — não escolher por gosto. **E** criar
 REQ sem roadmap continua possível quando é deliberado: *atrito onde é engano, caminho livre onde é
 intenção.*
 **Critérios de aceite:**
-- [ ] Caminho integrado produz REQ **não órfã** (falsificação)
-- [ ] Caminho deliberado sem roadmap continua disponível (contra-braço)
+- [x] Caminho integrado produz REQ **não órfã** (falsificação)
+- [x] Caminho deliberado sem roadmap continua disponível (contra-braço)
 - [x] ~~Paridade nos 3 CLIs~~ **SEM OBJETO desde a v8.0.0** — implementação única em Go
 
 ### ML-4B — **AC2 + AC3** — corte por data, grandfathering visível
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento (despachado em 2026-09-26)
+**Status:** ✅ Concluído — auditado em 2026-09-26 · 🔴 **a regra JÁ era `error`; o ML não inverte severidade**
 **Ações:** REQ criada a partir de `<corte>` sem roadmap ⇒ **error**; anterior ⇒ warning. Corte
 declarado no artefato. O relatório diz **quantas** estão isentas e **desde quando**.
 🔴 *Isenção que não se vê vira permanente.* E inverter a severidade sem corte faz o `validate` falhar
 em 32 REQs — alguém configura `lenient` e perdemos a regra **e** o aviso.
 **Critérios de aceite:**
-- [ ] REQ pós-corte sem roadmap ⇒ error; pré-corte ⇒ warning (os dois braços)
-- [ ] Relatório mostra contagem de isentas e a data de corte
+- [x] REQ pós-corte sem roadmap ⇒ error; pré-corte ⇒ warning (os dois braços)
+- [x] Relatório mostra contagem de isentas e a data de corte
 - [x] ~~Paridade nos 3 CLIs~~ **SEM OBJETO desde a v8.0.0** — implementação única em Go
 
 ### ML-4C — **AC4** — onde bloqueia
@@ -1163,6 +1163,97 @@ data — que é o instrumento certo para passivo histórico.
       entregas até que o passivo de terceiros fosse quitado
 
 ---
+
+#### 🔴 Auditoria da Wave 4 — e os dois MLs refutaram a premissa do próprio ML
+
+**Sondas próprias, com o binário compilado da árvore:**
+
+```
+req new "sonda integrada"   →  ✓ created ROADMAP-… + ✓ linked REQ-… → docs/roadmaps/backlog/…
+validate na fixture          →  0 ocorrências de "no linked Roadmap"
+grandfathering: 13 isentas (pré-corte 2026-09-03) · 0 cobradas · 232 varridas
+make quality  rc 0 · 342 OK · 0 FAIL
+```
+
+### 🔴 ML-4B R1 — a regra JÁ era `error`. Este ML não inverte severidade.
+
+O roadmap descrevia o ML como *"inverter a severidade"*. Medido: `req_has_roadmap` está **ausente de
+`ruleDefaults`** e o `trackfw.yaml` daqui **não tem bloco `rules:`** → o fallback é `"error"`. E há
+prova viva, não ausência de configuração: `TestReqHasRoadmapConfiguravel/default_error` **já
+afirmava** isso.
+
+🔴 **O que faz as 13 saírem como `⚠` neste repositório é `governance_mode: lenient` com
+`lenient_until: 2027-12-31`.** Ou seja: **o modo de falha que o roadmap temia — *"alguém configura
+`lenient` e perdemos a regra E o aviso"* — já está em vigor há tempo.** O aviso de contagem que ele
+entrega é **warning**, e `applyLenientWithCarveout` só rebaixa violations — então **sobrevive ao
+lenient**. Era o buraco exato.
+
+E o *"32 REQs"* do texto estava desatualizado **duas vezes**: são **13**.
+
+### A curva do corte satura, e o desempate NÃO é gosto
+
+```
+corte      isentas  cobradas
+2026-08-16     0       13
+2026-09-02    12        1
+2026-09-03    13        0   ← satura
+2026-09-26    13        0
+```
+
+A curva **restringe** a escolha a `≥ 09-03` e **não decide dentro** do intervalo. O desempate é
+**direção de estritude**: o corte concede **anistia**, e a regra já é `error` — logo um corte mais
+**tarde** anistiaria em silêncio REQ órfã datada entre 09-03 e hoje, que **hoje é erro**. **Anistia
+mínima = a data mais antiga que zera o deadlock.**
+
+⚠️ **E um efeito colateral medido a favor:** a fixture do Cenário 192 (`date: 2026-09-06`) continua
+violation. **Um corte em "hoje" teria derrubado aquele braço em silêncio.**
+
+**A régua de data, com o achado que eu pedi:** frontmatter-first com fallback para o nome — a mesma
+precedência do `ML-1A`/`ML-1D`. As duas réguas **divergem em 13 dos 231** arquivos, mas 🔴 **nenhum
+desses 13 é uma das 13 órfãs** — a escolha de régua **não muda veredito nenhum hoje**. E data
+ilegível **falha fechado**, o que fecha o bypass de apagar `date:` e renomear.
+
+### ML-4A R1 — "caminho livre onde é intenção" é verdade no COMANDO e falso no `validate`
+
+O próprio teste de controle dele prova: com `--no-roadmap`, o comando sai **exit 0** sem atrito, e
+`req_has_roadmap` **acusa** a REQ. 🔴 **Ele não inventou marcador de isenção** (o escopo negativo
+proíbe mudar a forma do vínculo) e **devolveu a decisão** — que o `ML-4B` respondeu declarando, no
+residual 5, que **não há override por projeto**: é a direção restrito-demais do AC15, declarada em vez
+de inferível.
+
+### O prompt caiu por MEDIÇÃO, e a comparação está escrita
+
+| forma | ao esquecer | não-interativo |
+|---|---|---|
+| flag de adesão | 🔴 **reproduz o defeito inteiro** — flag a lembrar é comando a lembrar, mais barato de digitar | ok |
+| prompt | 🔴 morre no guard `cbterm.IsTerminal` — **não roda sem TTY**, ou seja, inerte em CI e sob agente; e se rodasse em pipeline, **travaria** | inerte ou travando |
+| **encadeamento padrão + `--no-roadmap`** | quem esquece obtém o estado **governado** | determinístico, exit 0 |
+
+**A assimetria que autoriza inverter o padrão:** roadmap sobrando é reversível (`roadmap move
+abandoned`); **REQ órfã é irreversível no sentido que importa** — ninguém volta para consertá-la, que
+é o achado desta REQ.
+
+### Ele descartou o "pular por ADR Draft" que ia implementar, e mediu para isso
+
+Com REQ `Open` bloqueada por ADR `Draft`: **com e sem** roadmap disparam `blocked_by_draft_adr` +
+`req_has_adr`; sem roadmap dispara **também** `req_has_roadmap`. **Zero regra nova.** Manter o pular
+implícito tornaria a frase de reconciliação *"o caminho integrado produz REQ não órfã"* **falsa no
+caminho do wizard** — o padrão A1/A2/A3 que este projeto já pagou.
+
+### Decisão minha sobre o residual 1 do ML-4B — ratifico o narrowing
+
+Ele cobriu o caso **literal** do meu AC (zero cobradas ⇒ o aviso traz `13 isentas / 0 cobradas / 232
+varridas`, que não é silêncio). Não cobriu **zero órfãs no total** — e a razão é medida: a alternativa
+**quebra `TestValidate_Clean`**, que fixa *"estrutura vazia = zero ruído"*. 🔴 **Ratifico:** trocar um
+contrato existente para satisfazer a leitura estrita de um AC meu seria pagar caro por simetria.
+
+### Dois defeitos MEUS, corrigidos neste commit
+
+1. 🔴 **A REQ que criei hoje era a única `1 enforced`** — porque usei o `trackfw` do **Homebrew
+   (8.0.1)** em vez do binário da árvore, e o backlink do `ML-1B` não existe lá. Gravei o vínculo à
+   mão; agora **`0 enforced`**. **O instrumento mente quando é o binário errado.**
+2. **`duplicate ML label "ML-3D" at lines [902 1000 1068]`** — eu criei três headings `### ML-3D`. Os
+   dois de auditoria viraram `####`. Agora **0**.
 
 ## Wave 5 — Fechamento
 > Dependências: Waves 1–4.

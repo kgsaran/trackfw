@@ -537,6 +537,27 @@ func applyRuleTagged(ruleName string, msgs []string, violations, warnings *[]Tag
 	}
 }
 
+// applyRuleWarnOnly (ML-4B) roteia mensagens que NUNCA devem virar violation, mesmo
+// quando a severidade da regra é "error": o braço pré-corte de req_has_roadmap e o
+// aviso de contagem do grandfathering. `off` continua silenciando — quem desliga a
+// regra não deve receber o aviso dela.
+func applyRuleWarnOnly(ruleName string, msgs []string, warnings *[]string) {
+	if len(msgs) == 0 || ruleSeverity(ruleName) == "off" {
+		return
+	}
+	*warnings = append(*warnings, msgs...)
+}
+
+// applyRuleWarnOnlyTagged é applyRuleWarnOnly no domínio TaggedMsg.
+func applyRuleWarnOnlyTagged(ruleName string, msgs []string, warnings *[]TaggedMsg) {
+	if len(msgs) == 0 || ruleSeverity(ruleName) == "off" {
+		return
+	}
+	for _, m := range msgs {
+		*warnings = append(*warnings, TaggedMsg{Rule: ruleName, Msg: m})
+	}
+}
+
 // lenientCarveoutRules is the named, closed set of rules that lenient mode never silences.
 // Criterion: the rule detects a contradiction between live artifacts (not a historical absence).
 // These rules signal active inconsistency in the governance chain — suppressing them defeats
@@ -793,11 +814,13 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	}
 	applyRule("blocked_has_req", blockedViolations, &violations, &warnings)
 
-	reqRoadmapViolations, e := validateREQsHaveRoadmap()
+	reqRoadmapViolations, reqRoadmapExempt, reqRoadmapScanned, e := validateREQsHaveRoadmap()
 	if e != nil {
 		return nil, nil, e
 	}
 	applyRule("req_has_roadmap", reqRoadmapViolations, &violations, &warnings)
+	// ML-4B: braço isento + aviso de contagem — nunca violation, silenciado só com `off`.
+	applyRuleWarnOnly("req_has_roadmap", reqRoadmapAlwaysWarn(reqRoadmapViolations, reqRoadmapExempt, reqRoadmapScanned), &warnings)
 
 	reqRoadmapSyncWarns, e := validateREQRoadmapSync()
 	if e != nil {
@@ -1141,11 +1164,13 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 	}
 	applyRuleTagged("blocked_has_req", blockedViolations, &violations, &warnings)
 
-	reqRoadmapViolations, e := validateREQsHaveRoadmap()
+	reqRoadmapViolations, reqRoadmapExempt, reqRoadmapScanned, e := validateREQsHaveRoadmap()
 	if e != nil {
 		return nil, nil, e
 	}
 	applyRuleTagged("req_has_roadmap", reqRoadmapViolations, &violations, &warnings)
+	// ML-4B: espelha ValidateUnfiltered — braço isento + aviso de contagem, sempre warnings.
+	applyRuleWarnOnlyTagged("req_has_roadmap", reqRoadmapAlwaysWarn(reqRoadmapViolations, reqRoadmapExempt, reqRoadmapScanned), &warnings)
 
 	reqRoadmapSyncWarnsT, e := validateREQRoadmapSync()
 	if e != nil {
@@ -2273,24 +2298,48 @@ func validateBlockedHasREQ() ([]string, error) {
 //     BLOQUEIA o fallback para o corpo — medido em 2026-09-26 nos 231 REQs deste repositório: zero
 //     casos (as 17 REQs com frontmatter vazio gravam `roadmap: ""`, que não é vazio para o
 //     extrator e cai no corpo normalmente).
-func validateREQsHaveRoadmap() ([]string, error) {
+// ML-4B: o retorno é PARTIDO em dois braços pelo corte de data (ver
+// validator_req_roadmap_cutoff.go). `enforced` vai pela severidade normal da regra
+// (default "error"); `exempt` é o passivo histórico e vai SEMPRE para warnings.
+// `scanned` é o denominador do aviso de grandfathering — sem ele, "0 isentas" não se
+// distingue de "não medi".
+func validateREQsHaveRoadmap() (enforced []string, exempt []string, scanned int, err error) {
 	cfg := config.Load()
-	files, err := resolveREQFiles(cfg)
-	if err != nil {
-		return []string{err.Error()}, nil
+	files, rErr := resolveREQFiles(cfg)
+	if rErr != nil {
+		return []string{rErr.Error()}, nil, 0, nil
 	}
 
-	var violations []string
 	for _, path := range files {
-		content, ok := readFileForRule("req_has_roadmap", path, &violations)
+		scanned++
+		content, ok := readFileForRule("req_has_roadmap", path, &enforced)
 		if !ok {
 			continue
 		}
 		if !contentHasStructuredRefValue(string(content), cfg.LinkFieldsRoadmap) {
-			violations = append(violations, fmt.Sprintf("req %q has no linked Roadmap (marker must start the line with a real, non-placeholder value)", filepath.Base(path)))
+			msg := fmt.Sprintf("req %q has no linked Roadmap (marker must start the line with a real, non-placeholder value)", filepath.Base(path))
+			if reqIsGrandfathered(string(content), path) {
+				exempt = append(exempt, msg+" — exempt as pre-cutoff ("+reqRoadmapCutoff+")")
+				continue
+			}
+			enforced = append(enforced, msg)
 		}
 	}
-	return violations, nil
+	return enforced, exempt, scanned, nil
+}
+
+// reqRoadmapAlwaysWarn devolve o que sai SEMPRE por warnings: o braço isento mais o
+// aviso de contagem. O aviso só é emitido quando a regra achou algo (isenta ou
+// cobrada) — emitir sempre acrescentaria um warning a todo projeto limpo e quebraria
+// o contrato de "estrutura vazia = zero ruído" (TestValidate_Clean).
+func reqRoadmapAlwaysWarn(enforced, exempt []string, scanned int) []string {
+	if len(enforced) == 0 && len(exempt) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(exempt)+1)
+	out = append(out, exempt...)
+	out = append(out, reqRoadmapGrandfatherNotice(len(exempt), len(enforced), scanned))
+	return out
 }
 
 // validateREQRoadmapSync detecta REQs onde o campo `roadmap:` do frontmatter e o marcador

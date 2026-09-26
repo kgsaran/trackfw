@@ -25,3 +25,4 @@
 - [Processos órfãos de subagente](project_processos_orfaos_de_subagente.md) — loops `until` e `cat` em pipe não drenado seguram o agente como "em execução"; olhe o filho do shell, não a carga
 - [Marcador de fim nunca escrito](project_marcador_de_fim_nunca_escrito.md) — subagente espera `exit=`/`RC=` que nunca chega; 1468 linhas = run completo; nunca use `pgrep -f "make quality"`
 - [Upstream não exercita o layout do consumidor](project_upstream_nao_exercita_layout_do_consumidor.md) — req_dir flat aqui; #396 e #435 são a mesma família, e o sinal só chega de fora
+- [Nunca sobrepor o modelo do agente](feedback_nunca_sobrepor_o_modelo_do_agente.md) — 🔴 não passe `model` no Agent tool; o frontmatter decide, e o roteamento existe para economizar tokens

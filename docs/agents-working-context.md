@@ -41790,3 +41790,69 @@ checkout e gitignored, logo não congelável em fixture; (2) pina **veredito**, 
 — regenerá-lo é ato deliberado, e as duas coisas estão escritas na anotação de contrato.
 
 - Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.
+
+## 2026-09-26 — `apolo-tf` · ML-4A: criar REQ passa a criar o roadmap, com saída deliberada
+
+**Contexto:** `ML-4A` (AC1 + AC10) da `ROADMAP-2026-09-09-req-nasce-orfa-…`. Fronteira declarada no
+handoff: `internal/commands/req.go` · `internal/generators/` — **não** entrei em
+`internal/validator/` nem em `docs/cli-parity.md` (frente paralela do `ML-4B`).
+
+**Entregue (não commitado):**
+- `internal/generators/req.go` — `NewREQWithResult` devolve `REQResult{Path, Agent}`; `NewREQ` passa
+  a ser casca dela (assinatura histórica preservada, um único escritor de REQ).
+- `internal/generators/req_chain_ml4a.go` — `FindRoadmapLinkingREQ` (guard de idempotência por
+  vínculo, não por nome de arquivo) e `RelinkREQToRoadmap` (o ponto único do `ML-1B` reexposto).
+- `internal/commands/req.go` — `req new` cria o roadmap por padrão via `NewRoadmapFromREQ`;
+  `--no-roadmap` é o caminho deliberado; o conselho impresso sobre ADRs Draft passa a falar de
+  **promoção para wip**, não de criação.
+- `internal/commands/req_chain_ml4a_test.go` — 5 testes; `req_test.go` — teste renomeado
+  (`BehaviorUnchanged` virou mentira neste ML).
+
+**Medição que decidiu a forma:** com uma REQ bloqueada por ADR Draft, criar o roadmap em `backlog/`
+adiciona **zero** regra nova no `validate` (braço A sem roadmap: `blocked_by_draft_adr`,
+`req_has_adr`, `req_has_roadmap`; braço B com roadmap: as duas primeiras) — logo não há pular
+automático por ADR Draft, e o encadeamento é incondicional.
+
+**Falsificação por sabotagem:** chain no-op → 4 testes vermelhos; chain "inerte" (cria roadmap sem
+propagar o caminho da REQ, o modo de falha do `ML-1B`) → 4 testes vermelhos, incluindo "reexecução
+deixou a REQ órfã" e "2 roadmaps".
+
+**Resíduo declarado:** `req new` continua reescrevendo o arquivo da REQ do zero numa reexecução do
+mesmo dia (comportamento anterior a este ML) — o roadmap e o vínculo sobrevivem, edições à mão **na
+REQ** não.
+
+- Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.
+
+## 2026-09-26 — `apolo-tf` · ML-4B: `req_has_roadmap` ganha corte por data, e a isenção passa a ser contada
+
+**Contexto:** `ML-4B` (AC2 + AC3) da `ROADMAP-2026-09-09-req-nasce-orfa-…`. Fronteira declarada no
+handoff: `internal/validator/` · `docs/cli-parity.md` — **não** entrei em `internal/commands/` nem em
+`internal/generators/` (frente paralela do `ML-4A`). Entrada e saída registradas juntas, num único
+apêndice, para não colidir com a escrita do outro agente neste mesmo arquivo.
+
+**Refutação de abertura:** a regra **já era `error`** (`req_has_roadmap` está ausente de
+`ruleDefaults` e do bloco `rules:` do `trackfw.yaml`). O que faz as 13 saírem como `⚠` neste
+repositório é `governance_mode: lenient` até 2027-12-31 — ou seja, o próprio modo de falha que o
+roadmap temia já está em vigor. Logo este ML **não inverte severidade**: ele acrescenta o braço de
+rebaixamento (pré-corte ⇒ warning) e a contagem visível.
+
+**Entregue (não commitado):**
+- `internal/validator/validator_req_roadmap_cutoff.go` — constante `reqRoadmapCutoff = "2026-09-03"`
+  com a curva e a razão escritas ao lado, régua de data frontmatter-first com fallback para o nome do
+  arquivo e **fail closed** quando nenhuma das duas é legível, e a mensagem de contagem.
+- `internal/validator/validator.go` — `validateREQsHaveRoadmap` devolve `(enforced, exempt, scanned)`;
+  `applyRuleWarnOnly`/`applyRuleWarnOnlyTagged` roteiam o braço isento e o aviso sempre por warnings
+  (silenciados só com `off`).
+- `internal/validator/validator_req_roadmap_cutoff_ml4b_test.go` — 9 testes, um por conclusão.
+- `docs/cli-parity.md` — seção nova anotada (`gate=` nomeando os dois arquivos Go).
+
+**Curva do corte, medida nos 231 REQs (régua frontmatter-first):** satura em `2026-09-03` — 08-16:
+0/13 · 08-21: 3/10 · 08-29: 5/8 · 08-31: 8/5 · 09-02: 12/1 · **09-03: 13/0** · 09-26: 13/0. Escolhido
+o **mínimo** que zera o deadlock, porque corte mais tarde anistiaria em silêncio REQ órfã datada entre
+09-03 e hoje, que hoje é erro.
+
+**Achado da régua:** as duas réguas divergem em **13** dos 231 arquivos (3 com as duas e diferentes, 3
+só com data no nome, 7 só com `date:`) — e **nenhum** deles é uma das 13 REQs órfãs, logo a escolha de
+régua não muda veredito nenhum hoje.
+
+- Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.
