@@ -533,7 +533,8 @@ silenciosa. Registro aqui e corrijo na REQ-2026-09-25 em seguida.
 ## Wave 1 (cont.) — os sítios que a varredura do ML-1B achou
 
 ### ML-1D — 🔴 A regra `req_has_roadmap` não implementa a decisão do ML-1A
-**Status:** ⬜ Pendente
+**Owner:** `apolo-tf`
+**Status:** 🔄 Em andamento (despachado em 2026-09-26)
 
 **Medido:** `roadmap: none` satisfaz a regra. `validator.go:2236` usa `extractFrontmatterField`
 (qualquer valor não-vazio) enquanto o comentário de `:2217` afirma usar `extractRefPath`
