@@ -873,14 +873,51 @@ pelo próprio `trackfw commit` e evita o **deadlock de bootstrap** (matcher reje
 - [x] `make quality` verde
 
 ### ML-3C — **AC14** — a medição vira gate
-**Status:** ⬜ Pendente
+**Owner:** `apolo-tf`
+**Status:** 🔄 Em andamento (despachado em 2026-09-26)
 **Arquivos afetados:** novo `scripts/check-roadmap-slug-matching.sh`, wired no `Makefile`.
-**Ações:** o corpus de 185 roadmaps e as 111 branches históricas viram fixture. Mudança no matcher que
-altere o veredito de qualquer das 111 reprova.
+🔴 **Fronteira:** este ML **NÃO** toca `internal/generators/` — é do `ML-3D`, em paralelo.
+
+⚠️ **Os números deste ML estavam errados** (corrigido em 2026-09-26 pela medição do `ML-3A+3B`):
+não são 185 roadmaps e 111 branches, são **201** em `wip/`+`done/` e **205** branches governadas.
+"Os 3 runtimes" ficou **sem objeto** desde a v8.
+
+**Ações:** o corpus real vira **fixture versionada**, e mudança no matcher que altere o veredito de
+qualquer branch **reprova**.
+
 **Critérios de aceite:**
-- [ ] Gate roda nos 3 runtimes e compara saídas reais
-- [ ] Falsificação: mutação no matcher ⇒ gate reprova
-- [ ] Contra-braço: matcher correto ⇒ gate passa
+- [ ] 🔴 **O corpus é FIXTURE VERSIONADA, não consulta ao `git`/`gh` em tempo de gate.** Lição do
+      `ML-7C` da REQ-2026-08-31: corpus alcançável só por ref local é corpus que o CI não tem — e ali
+      o objeto sobrevivia em **um único ref**, que o `branch prune` classificaria como seguro apagar
+- [ ] O gate fixa o veredito das **205** branches contra os **201** roadmaps, e a contagem é **exata**,
+      não piso — regressão do matcher **muda o número** e reprova
+- [ ] 🔴 **Falsificação: mutação no matcher ⇒ gate reprova**, e o braço **nomeia** qual branch mudou
+      de veredito. Gate que só diz "o número mudou" manda o próximo desenvolvedor adivinhar
+- [ ] **Contra-braço:** matcher correto ⇒ gate passa, com **não-vacuidade provada** (corpus ausente ou
+      população zero **reprovam**, nunca passam em silêncio)
+- [ ] ⚠️ **O limiar `branchRoadmapMinSharedTokens=2` é fixado pelo gate** — alterá-lo sem atualizar o
+      corpus reprova. É a calibração virando contrato
+- [ ] `make quality` verde
+
+### ML-3D — `trackfw init` precisa ignorar o vínculo no consumidor
+**Owner:** `apolo-tf`
+**Status:** 🔄 Em andamento (despachado em 2026-09-26)
+🔴 **Fronteira:** este ML toca **`internal/generators/`** e seus testes. **NÃO** toca `scripts/`,
+`Makefile` nem `docs/cli-parity.md` — são do `ML-3C`, em paralelo.
+
+**Por que é entregável desta REQ, e não achado externo:** o `ML-3A` criou
+`<roadmap_dir>/.trackfw-branch-links.json` e o adicionou ao `.gitignore` **deste** repositório. No
+consumidor, o `trackfw init` não sabe dele — então **estado por checkout vaza para o repositório
+dele**, e o vínculo de uma máquina passa a governar a de outra.
+
+**Critérios de aceite:**
+- [ ] `trackfw init` acrescenta `<roadmap_dir>/.trackfw-branch-links.json` ao `.gitignore` gerado
+- [ ] 🔴 **Contra-braço:** `.gitignore` já existente **não é sobrescrito**, e rodar duas vezes **não
+      duplica** a linha
+- [ ] ⚠️ **Consumidor já onboardado não vai rodar `init` de novo** — o caminho para ele fica
+      **declarado**, nem que seja uma linha dizendo que o arquivo é local e pode ser ignorado à mão
+- [ ] Reconciliação: uma frase por teste novo
+- [ ] `go test ./internal/generators/` verde (a barreira completa é do arquiteto)
 
 ---
 
