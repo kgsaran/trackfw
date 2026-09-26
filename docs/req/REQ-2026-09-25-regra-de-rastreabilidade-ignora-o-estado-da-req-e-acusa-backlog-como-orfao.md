@@ -94,7 +94,32 @@ confirmar pela Wave 0, que decide também sobre `analyzing/`.
 - [ ] `make quality` e **CI** verdes
 
 
-## 🔴 Ampliação (2026-09-25): o issue #439 entra aqui — mesmo sintoma, e a medição decide a causa
+## ❌ RETIRADA (2026-09-26): o #439 saiu daqui — a causa é outra, e o erro de atribuição foi meu
+
+🔴 **Correção minha, declarada em vez de silenciosa.** Absorvi o #439 nesta REQ em 2026-09-25 por
+**mesmo sintoma** (passivo congelado no baseline do consumidor: 78 `stale state path` + 14
+`orphan_req`). A medição do `ML-1B` da `REQ-2026-09-09-req-nasce-orfa-…` mostrou que a **causa** é
+outra, e é de lá:
+
+| | causa |
+|---|---|
+| **esta REQ (#435)** | regra de **leitura** decide sem consultar o **estado da pasta** |
+| **#439** | **o comando conhece o vínculo e não o escreve** — e `syncREQReferences`, o sincronizador da REQ-2026-09-09, é **literalmente a função que falta do outro lado** |
+
+**O teste literal separa nos dois sentidos:** isentar `backlog/` na regra não faz `req move`
+sincronizar; e fazer `req move` sincronizar não impede a regra de acusar REQ em `backlog/`.
+
+⚠️ **Eu havia escrito aqui que "o custo de juntar é zero porque a REQ ainda não começou".** Era
+verdade sobre o custo, e **irrelevante sobre a causa** — agrupar por sintoma quando a causa é
+conhecida é o erro que a Regra Dura nomeia. O #439 está agora na `REQ-2026-09-09`, cuja Wave 1 já
+entregou o sincronizador de um dos lados.
+
+**O que fica desta ampliação:** nada do escopo. A medição abaixo foi movida para a REQ correta e é
+mantida aqui **apenas como registro do erro**, riscada.
+
+<details><summary>Texto original da ampliação (retirado — mantido para auditoria)</summary>
+
+### A assimetria, medida por mim (2026-09-25)
 
 **Origem:** issue **#439**, do mesmo consumidor, no mesmo dia. `trackfw req move` **não atualiza o
 campo `req:`** dos roadmaps que apontam para a REQ movida.
@@ -140,7 +165,9 @@ custo de juntar é **zero** e o ganho é a Wave 0 medir as duas superfícies com
 **A Wave 0 decide se são uma causa ou duas, e a decisão fica escrita.** Se forem duas, a separação
 acontece **com a medição**, não por presunção — que é exatamente o que a regra exige.
 
-### Critérios de aceite acrescentados
+</details>
+
+### ~~Critérios de aceite acrescentados~~ — RETIRADOS com o #439
 
 - [ ] **Enumeração dos apontadores:** que campos referenciam artefato por caminho que **contém o
       estado**? (`roadmap:` na REQ, `req:` no roadmap, `adr:`, `Roadmap:`/`REQ:` de corpo, …) — e quais

@@ -74,21 +74,20 @@ correção precisa de fixture que construa o layout do consumidor, senão o gate
 **Status:** ⬜ Pendente
 
 **Ações:**
-1. **Enumeração pela forma**, não pelo nome, nas **duas** superfícies:
-   **(a)** quais regras do validador **decidem** sem consultar o estado do artefato?
-   **(b)** quais **comandos** movem artefato sem propagar a mudança aos apontadores que o referenciam
-   por caminho contendo o estado? (medido: `MoveRoadmap` sincroniza e anuncia; `MoveREQ` não faz nem
-   diz — 115 linhas, zero chamadas de sync) 🔴 **Não parar nos dois sítios já medidos** (`traceid_orphan_req`,
+1. **Enumeração pela forma**, não pelo nome: quais regras do validador **decidem** sem consultar o
+   estado do artefato?
+   ❌ **A superfície (b) — comandos que movem sem propagar aos apontadores — SAIU desta REQ em
+   2026-09-26.** É o #439, e a causa dele é *"o comando conhece o vínculo e não o escreve"*, tratada
+   na `REQ-2026-09-09-req-nasce-orfa-…`, cuja Wave 1 já entregou o sincronizador de um dos lados.
+   Erro de atribuição meu, corrigido com a medição escrita. 🔴 **Não parar nos dois sítios já medidos** (`traceid_orphan_req`,
    `req_has_roadmap`) — varrer as **32 regras** declaradas via `applyRule`/`applyRuleTagged`.
 2. Classificar cada uma em **(a)** decide errado por ignorar o estado · **(b)** consulta e está
    correta · **(c)** o estado é irrelevante.
 3. Decidir, com medição, **quais estados isentam**: `backlog` é certo; `abandoned` provavelmente;
    🔴 **`analyzing` é a pergunta aberta** — é o estado em que a REQ já está sendo estudada, e pode ou
    não exigir roadmap.
-4. 🔴 **Decidir, com medição, se (a) e (b) são a MESMA causa ou duas.** Elas entraram juntas por
-   **mesmo sintoma** — *"o estado mora na pasta e o resto do sistema não acompanha"*. O teste literal
-   sugere que são duas (corrigir `MoveREQ` não fecha o #435, e vice-versa), **mas o ônus é de quem
-   quer separar**: a separação só vale com a medição escrita.
+4. ✅ **Já decidido em 2026-09-26, com medição:** (a) e (b) são **causas distintas**, e o teste
+   literal separa nos dois sentidos. A (b) saiu para a `REQ-2026-09-09`.
 5. **Threat model:** quem esvazia esta Wave 0 sem quebrar regra escrita? Em particular: uma isenção
    larga demais transforma `orphan_req` num gate que nunca acusa, o que é pior que o falso positivo
    de hoje — o falso positivo ao menos é **visível**.

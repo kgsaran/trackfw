@@ -288,6 +288,22 @@ instante em que o elo existe sem ambiguidade — e é o instante em que ele não
       🔴 **Sem este AC, a Wave 3 fecha pela metade:** o candidato "fronteira" satisfaz os ACs atuais e
       **piora** esta direção, porque é subconjunto estrito de `Contains`.
 
+- [ ] **AC16** — 🔴 **`req move` escreve o vínculo de volta, como o `roadmap move` já faz.**
+      Acrescentado em 2026-09-26, movido da `REQ-2026-09-25` por **correção de atribuição minha**:
+      absorvi o **#439** lá por *mesmo sintoma* (passivo no baseline do consumidor), e a medição do
+      `ML-1B` mostrou que a **causa é esta** — *"o comando conhece o vínculo e não o escreve"*.
+      **Medido:** `roadmap.go:760` chama `syncREQReferences` **e anuncia**; `MoveREQ` tem 115 linhas e
+      **zero** chamadas de sincronização. No consumidor isso virou **78 violações de `stale state
+      path`** congeladas no baseline.
+      🔴 **A assimetria é pior que a falta:** quem segue a ordem que o próprio protocolo recomenda
+      (`roadmap move` → `req move`) termina com o repositório inconsistente e só descobre no
+      `validate` seguinte — normalmente no CI, **já dentro do PR**.
+      **Falsificação nas duas direções:** mover a REQ **atualiza** quem aponta para ela; e o comando
+      **não** reescreve apontador que não era dela.
+      ⚠️ **Em layout `flat` (este projeto) a escrita é in-place e o defeito não ocorre** — a fixture
+      precisa ser `by_agent`/por-estado, senão o teste fica verde por não exercitar nada.
+
+
 
 ### Risco de execução registrado
 
