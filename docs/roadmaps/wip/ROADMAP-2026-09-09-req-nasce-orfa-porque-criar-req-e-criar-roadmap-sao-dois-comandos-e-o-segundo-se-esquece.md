@@ -629,16 +629,62 @@ exigência de `.md`** — *"foi essa omissão que alimentou a confusão ML-1A/ML
 the line"* (lê torto para o caminho de frontmatter) porque o literal **é barreira**; e um `roadmap:`
 declarado e absolutamente vazio bloqueia o fallback para o corpo — **0 casos** nos 231.
 
-### ML-1E — `req new` (wizard) cria ADR draft e não grava `adr:`
-**Status:** ⬜ Pendente · ⚠️ **achado estrutural, sem instância medida no corpus**
+### ML-1E — As regras de vínculo são cegas ao frontmatter — e há instância medida
+**Owner:** `apolo-tf`
+**Status:** 🔄 Em andamento (despachado em 2026-09-26)
 
-Mesmo mecanismo, outro elo: o wizard cria drafts via `NewADRDraft`, lista em *"Blocked by ADRs"* e
-**nunca** grava `adr:` — `content.LinkedADR` fica vazio.
+⚠️ **Este ML foi REESCRITO por mim em 2026-09-26.** A redação anterior dizia *"achado estrutural, sem
+instância medida no corpus"* e falava só do wizard. 🔴 **Medi, e há instância — na regra, não no
+wizard.**
+
+### O achado: `req_has_adr` acusa REQ com vínculo legítimo
+
+`req_has_adr` (`validator.go:2186`) lê **só o corpo**, por `contentHasMarkerValue`. O mesmo vale para
+`wip_has_req` (`:2165`) e `blocked_has_req` (`:2204`). Medido nos 231 REQs:
+
+```
+4 REQs têm `adr:` no frontmatter e NENHUM `ADR:` no corpo
+  2 com travessão (—)                          → acusação CORRETA, é placeholder
+  2 com caminho .md REAL e resolvível no disco → 🔴 ACUSAÇÃO FALSA
+```
+
+E uma das duas falsas é **a REQ desta própria campanha**:
+
+```
+⚠ req "REQ-2026-09-09-req-nasce-orfa-….md" has no linked ADR
+   frontmatter: adr: "docs/adr/ADR-2026-09-26-precisao-do-vinculo-branch-roadmap-….md"   ← existe no disco
+```
+
+🔴 **Eu vinculei essa REQ ao ADR que escrevi hoje, pelo frontmatter, e o validador diz que ela não
+tem ADR.** É exatamente o defeito que o `ML-1D` acabou de corrigir para `roadmap:`, **no campo ao
+lado**, e que não foi tocado porque a régua da varredura era *"comentário que mente"* — e estas três
+regras **não têm comentário nenhum**, logo ficaram fora da classe.
+
+⚠️ **Contexto que dimensiona:** `no linked ADR` é o maior bloco do `validate` hoje — **128
+ocorrências**. A correção **não** deve zerá-lo: a maioria é REQ genuinamente sem ADR. O alvo são as
+que têm vínculo e são acusadas mesmo assim.
+
+### Ações
+
+1. As três regras passam a consultar **frontmatter e corpo**, pela mesma fonte de verdade que o
+   `ML-1D` instalou (`contentHasStructuredRefValue`). 🔴 **Reúse o helper** — escrever um segundo é o
+   defeito do AC5 da REQ-2026-08-31, que esta casa já pagou.
+2. O **wizard** (`req new`) cria ADR drafts via `NewADRDraft`, lista em *"Blocked by ADRs"* e **nunca**
+   grava `adr:`. ⚠️ **Sem instância no corpus** — construa uma antes de corrigir, ou declare a ausência
+   no contrato.
 
 **Critérios de aceite:**
-- [ ] O elo é escrito na criação, ou a ausência é **declarada** no contrato
-- [ ] 🔴 **A instância é construída antes de corrigir** — o corpus não tem nenhuma, e corrigir o que
-      não se consegue reproduzir é como o gate que fica verde por não haver o que achar
+- [ ] As **2 acusações falsas** medidas desaparecem, **nomeadas uma a uma** no relatório
+- [ ] 🔴 **Contra-braço:** as **2 com travessão continuam acusadas** — se sumirem, a regra virou
+      permissiva e trocamos falso positivo por falso negativo
+- [ ] Medir **antes e depois** as 128 de `no linked ADR`, com a lista das que mudaram de veredito.
+      🔴 **Se o delta for maior que 2, cada uma extra é explicada** — número que muda sem explicação é
+      o que esta REQ persegue
+- [ ] `wip_has_req` e `blocked_has_req` recebem o mesmo tratamento, com a medição própria de cada uma
+- [ ] O wizard: elo escrito **ou** ausência declarada no contrato, com a instância construída
+- [ ] `ML-1B`, `ML-1C` e `ML-1D` não são desfeitos
+- [ ] Reconciliação: uma frase por teste novo
+- [ ] `make quality` verde
 
 ## Wave 2 — A decisão arquitetural
 > Dependências: Wave 1 (a fonte de verdade precisa estar decidida).
