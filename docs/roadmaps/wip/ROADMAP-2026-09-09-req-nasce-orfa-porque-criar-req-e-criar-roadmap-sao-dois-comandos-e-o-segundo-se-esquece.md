@@ -1098,7 +1098,8 @@ importar; se alguém mudá-la antes, **o AC quebra em silêncio**.
 > Dependências: Wave 1. Independente da Wave 3.
 
 ### ML-4A — **AC1 + AC10** — um comando, com contra-braço
-**Status:** ⬜ Pendente
+**Owner:** `apolo-tf`
+**Status:** 🔄 Em andamento (despachado em 2026-09-26)
 **Ações:** criar REQ e roadmap deixa de exigir dois comandos. 🔴 **Medir o atrito de cada forma**
 (flag em `req new`, prompt, `req new` chamando `--from-req`) — não escolher por gosto. **E** criar
 REQ sem roadmap continua possível quando é deliberado: *atrito onde é engano, caminho livre onde é
@@ -1109,7 +1110,8 @@ intenção.*
 - [x] ~~Paridade nos 3 CLIs~~ **SEM OBJETO desde a v8.0.0** — implementação única em Go
 
 ### ML-4B — **AC2 + AC3** — corte por data, grandfathering visível
-**Status:** ⬜ Pendente
+**Owner:** `apolo-tf`
+**Status:** 🔄 Em andamento (despachado em 2026-09-26)
 **Ações:** REQ criada a partir de `<corte>` sem roadmap ⇒ **error**; anterior ⇒ warning. Corte
 declarado no artefato. O relatório diz **quantas** estão isentas e **desde quando**.
 🔴 *Isenção que não se vê vira permanente.* E inverter a severidade sem corte faz o `validate` falhar
@@ -1120,11 +1122,45 @@ em 32 REQs — alguém configura `lenient` e perdemos a regra **e** o aviso.
 - [x] ~~Paridade nos 3 CLIs~~ **SEM OBJETO desde a v8.0.0** — implementação única em Go
 
 ### ML-4C — **AC4** — onde bloqueia
-**Status:** ⬜ Pendente
-**Ações:** decisão escrita: só `validate`, ou também `push`. 🔴 O `push` hoje exige REQ+roadmap **da
-branch**, não de toda REQ — são coisas diferentes e a decisão precisa dizer **qual** muda.
+**Owner:** `trackfw_architect` (eu)
+**Status:** ✅ Concluído em 2026-09-26 — **decisão: só o `validate`. O `push` não muda.**
+
+### A distinção que o AC4 pede, medida
+
+🔴 **São dois universos diferentes, e confundi-los é o erro que este ML existe para evitar:**
+
+| | o que pergunta | universo |
+|---|---|---|
+| `branch_has_wip_roadmap` | *"a branch em que estou tem roadmap em `wip/`?"* | **1** artefato — o da branch |
+| `req_has_roadmap` | *"toda REQ do acervo tem roadmap?"* | **231** artefatos |
+
+O `push` e o `commit` atravessam o **primeiro**. Medido: `commands/commit.go:24` referencia
+`branch_has_wip_roadmap`, e **não** há referência a `req_has_roadmap` em `push.go`/`commit.go`.
+
+### A decisão, e a razão
+
+**`req_has_roadmap` bloqueia apenas no `validate`. O `push` continua exigindo só o da branch.**
+
+Medição que fecha o argumento: **13 REQs** do acervo não têm roadmap — **8 de agosto, 5 de setembro**.
+Se `req_has_roadmap` passasse a bloquear o `push`, 🔴 **ninguém conseguiria empurrar nada até que as
+13 fossem resolvidas** — inclusive o PR que entrega esta própria REQ.
+
+É a **mesma forma do deadlock de bootstrap** que a D4 do ADR evitou no matcher, e o roadmap já a
+nomeia como *risco terminal*: o portão do `push` é atravessado por todo trabalho, e um passivo
+histórico de 13 artefatos viraria trava para 100% das entregas.
+
+⚠️ **E há uma assimetria que justifica a diferença, não só a conveniência:** o que a branch faz é
+responsabilidade de quem empurra; o passivo do acervo **não é**. Bloquear alguém por uma REQ que
+outra pessoa criou em agosto é cobrar o que ele não pode pagar — e o resultado previsível é
+`governance_mode: lenient`, que perde a regra **e** o aviso.
+
+**O que muda, então:** nada no `push`. O `ML-4B` cuida da severidade no `validate`, com corte por
+data — que é o instrumento certo para passivo histórico.
+
 **Critérios de aceite:**
-- [ ] Decisão escrita, com o impacto de cada opção
+- [x] Decisão escrita, com o impacto de cada opção
+      → medido: 13 REQs afetadas, 8 de agosto e 5 de setembro; bloquear o `push` travaria 100% das
+      entregas até que o passivo de terceiros fosse quitado
 
 ---
 
