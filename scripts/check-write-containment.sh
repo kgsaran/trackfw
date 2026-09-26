@@ -48,7 +48,7 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
-SITE_FLOOR=160
+SITE_FLOOR=161
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Self-test: 3 arms — unguarded-write REPROVA, marker-accepted PASSA,

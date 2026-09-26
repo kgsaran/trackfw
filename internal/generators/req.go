@@ -468,6 +468,14 @@ func MoveREQ(name, status string) error {
 	}
 	appendREQTransitionLog(logBasename, fromState, status)
 	fmt.Printf("✓ moved %s → %s\n", filepath.Base(path), targetDir)
+
+	// Synchronize roadmap: update the req: field in the paired roadmap that points at the moved REQ.
+	// Runs after ✓ moved is printed so ✓ synced always follows it in stdout.
+	// A sync failure does NOT roll back the move; the error causes non-zero exit.
+	// The in-place branches above (flat layout, fallback) return early: dst == path, no repath event.
+	if syncErr := syncRoadmapREQReference(updated, filepath.Base(path), normalizeRefSeparator(dst)); syncErr != nil {
+		return syncErr
+	}
 	return nil
 }
 

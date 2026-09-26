@@ -2,6 +2,21 @@
 
 ---
 
+## 2026-09-26 — Apolo (fix/req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos — ML-6A R1) — ENTREGUE (AGUARDANDO AUDITORIA)
+
+**Início:** 2026-09-26 | Branch: `fix/req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos`
+**Tarefa:** ML-6A R1 — corretivo de `TestMoveREQ_SyncIdempotent`: nome afirma idempotência, corpo afirma cross-link guard.
+
+**Resultado:**
+- `TestMoveREQ_SyncIdempotent` removido — seu predicado (cross-link guard: quando `roadmap.req:` basename ≠ REQ sendo movida, não reescreve) é subsumed integralmente por `TestMoveREQ_CrossLinkGuard_NotRewritten`. A sobreposição é total: ambos exercem a mesma linha `filepath.Base(existingReq) != reqBasename` em `roadmap.go:1543`. A diferença de setup (roadmap nunca apontou vs roadmap foi atualizado por move anterior) não abre caminho de código novo.
+- `TestMoveREQ_SyncRoadmapREQRef_Idempotent` adicionado — chama `syncRoadmapREQReference` duas vezes com os mesmos argumentos; compara bytes (não mtime) do roadmap após cada chamada. Afirma o guarda `if existingReq == newREQPath { return nil }` em `roadmap.go:1548`. Espelho de `TestSyncREQ_Idempotency_ByteLevel` de `roadmap_test.go`.
+- Imports `"bytes"` e `"fmt"` adicionados a `req_test.go`.
+- `go test ./internal/generators/ -run 'MoveREQ' -v`: 19 testes, todos PASS.
+- `go test ./...`: todos os pacotes PASS.
+- `make quality` (background): exit=0, 0 `: FALHA`.
+
+---
+
 ## 2026-09-23 — Apolo (fix/bash-consome-stdout-de-python3-sem-normalizar-crlf — ML-1C) — ENTREGUE (AGUARDANDO AUDITORIA)
 
 **Início:** 2026-09-23 | Branch: `fix/bash-consome-stdout-de-python3-sem-normalizar-crlf`
@@ -41856,3 +41871,43 @@ só com data no nome, 7 só com `date:`) — e **nenhum** deles é uma das 13 RE
 régua não muda veredito nenhum hoje.
 
 - Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.
+
+---
+
+## 2026-09-26 — Apolo (fix/req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos — ML-6A) — INÍCIO
+
+**Início:** 2026-09-26 | Branch: `fix/req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos`
+**Tarefa:** ML-6A — AC16: `req move` escreve o vínculo de volta, simétrico ao `roadmap move`.
+
+---
+
+## 2026-09-26 — Apolo (fix/req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos — ML-6A) — ENTREGUE (AGUARDANDO AUDITORIA)
+
+**Fim:** 2026-09-26 | Branch: `fix/req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos`
+
+**Entregue (não commitado):**
+
+- `internal/generators/roadmap.go`
+  - `rewriteREQRoadmapRefWith` generalizado com `fmKey, bodyKey string, bodyOnce bool` — **ponto único** agora cobre tanto o lado roadmap (fmKey="roadmap", bodyKey="Roadmap", bodyOnce=false) quanto o lado REQ (fmKey="req", bodyKey="REQ", bodyOnce=true).
+  - Callers `rewriteREQRoadmapRef` e `linkREQToRoadmap` atualizados para passar os novos parâmetros.
+  - `rewriteRoadmapREQRef` — wrapper fino para o lado roadmap (req/REQ, bodyOnce=true).
+  - `syncRoadmapREQReference` — análogo a `syncREQReferences` mas no sentido inverso: dado o conteúdo da REQ movida, encontra o roadmap vinculado e atualiza seu campo `req:`.
+- `internal/generators/req.go`
+  - `MoveREQ`: após `✓ moved`, chama `syncRoadmapREQReference` na branch de move físico (state-layout e by_agent). As branches in-place (flat e fallback) retornam antes — nenhum sync (dst == path, nenhum repath).
+- `scripts/check-write-containment.sh`
+  - `SITE_FLOOR`: 158 → 161 (contagem real medida após a mudança: 161 sítios, +1 novo `os.WriteFile` em `syncRoadmapREQReference`).
+- `internal/generators/req_test.go`
+  - 5 testes novos (ML-6A, AC16): StateLayout, ByAgentLayout, FlatLayout, CrossLinkGuard, Idempotent.
+
+**Medições reais:**
+- Probe do handoff (state-layout): `req:` do roadmap atualizado de `docs/req/wip/...` para `docs/req/done/...`. Linha `REQ:` do corpo também atualizada.
+- Contra-braço flat: `git status --porcelain docs/` mostra só o arquivo REQ — nenhum roadmap tocado.
+- `go test ./...`: PASS em todos os pacotes.
+- `make quality`: exit=0 · 1360 linhas `^OK ` · 0 FALHA real (os 14 matches incluem mensagens de self-test de falsificação esperadas).
+- `trackfw validate`: 171 warnings pré-existentes, 0 novas violações.
+- `check-write-containment`: 161 sítios examinados, OK.
+
+**Decisão do ponto único (item 2 do handoff):**
+`rewriteREQRoadmapRefWith` foi generalizado em vez de criar cópia. Dois novos parâmetros (`fmKey`, `bodyKey`) substituem as strings literais "roadmap"/"Roadmap". `bodyOnce=true` para o lado roadmap — previne reescrita de prosa/blocos de código após o §Context.
+
+**Sem Git:** não criei branch, não commitei, não fiz push.
