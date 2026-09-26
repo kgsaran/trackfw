@@ -41730,3 +41730,63 @@ bash scripts/check-unguarded-capture-rc.sh          RC=0
   substring) — é o `ML-3C`. Status do ML mantido em 🔄 até a auditoria.
 - Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.
 
+
+## 2026-09-26 — `apolo-tf` · ML-3D: o `trackfw init` passa a ignorar o vínculo no consumidor
+
+- **Escopo:** `internal/generators/` apenas (`scaffold.go`, `update.go`, `gitignore_test.go` novo).
+  Fronteira respeitada: nada em `scripts/`, `Makefile` ou `docs/cli-parity.md` (do `ML-3C`, em paralelo).
+- 🔴 **O gatilho de parada do handoff disparou na letra e não na razão:** o `trackfw init` **não**
+  gerava `.gitignore` — mas `generateGitAttributes` (`scaffold.go:2603`) é a **mesma classe de
+  comportamento** (arquivo do projeto, na raiz, cria-se-ausente / append-se-presente / no-op-se-a-regra-existe),
+  já auditada e testada, como `lefthook.yml` e os hooks. A classe não é nova; só o nome do arquivo é.
+  Implementado espelhando o precedente — **reversível de graça**, entregue não commitado.
+- **`roadmap_dir` efetivo, não `docs/roadmaps` fixo:** `effectiveRoadmapDir()` lê o `trackfw.yaml` do
+  cwd via `config.ParseDirsFromContent`. 🔴 **Não** `config.Load()`: é singleton `once.Do` e cacheia o
+  primeiro projeto lido no processo.
+- **Ordem deliberada:** `generateGitIgnore` roda **antes** de `writeTrackfwConfig`, que sobrescreve
+  `trackfw.yaml` com `roadmap_dir: docs/roadmaps` sem ler o valor anterior. Depois dele, "ler a config"
+  seria satisfeito só na letra.
+- **Idempotência por BASENAME:** `hasGitIgnoreRule` casa qualquer padrão cujo basename seja
+  `.trackfw-branch-links.json` (inclusive negado com `!`) — mesma lição do `hasGitAttributesRule`.
+- **Consumidor já onboardado:** `generateGitIgnore` também entrou no `generators.Update(cwd)` — o
+  caminho deixa de ser só declarado. Adição de escopo, **descartável** pelo arquiteto.
+- **3 mutantes, falsificação medida:** hardcode de `docs/roadmaps` ⇒ reprova o teste de `roadmap_dir`
+  não-default; predicado por caminho literal ⇒ reprova o teste de basename; sobrescrita do arquivo
+  preexistente ⇒ reprova 2 testes. Árvore restaurada, `go test ./internal/generators/` **verde**.
+- **Resíduos para o arquiteto:** (1) `git add` do teste novo **antes** da barreira —
+  `check-symlink-privilege-guard` enumera por `git ls-files` (0 ocorrências de `os.Symlink` no arquivo,
+  verificado). (2) marcadores `write-containment-allowed` vão de 161 para **163** (2 sítios novos, o
+  mesmo par do precedente); `SITE_FLOOR` é **piso**, não igualdade — não bloqueia, mas o piso segue
+  defasado. (3) 🔴 `writeTrackfwConfig` **sobrescreve `roadmap_dir` customizado** em todo `init`
+  re-executado — mesma família do #396, medido aqui, **não corrigido**: decisão do arquiteto se vira ML
+  desta REQ.
+- Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.
+
+## 2026-09-26 — `apolo-tf` · ML-3C: a medição do matcher vira gate, com corpus congelado
+
+**Contexto:** `ML-3C` (AC14) da `ROADMAP-2026-09-09-req-nasce-orfa-…`. Fronteira declarada no
+handoff: `scripts/` · `Makefile` · `docs/cli-parity.md` — **não** entrei em `internal/generators/`
+(frente paralela do `ML-3D`, que já entregou; as mudanças em `scaffold.go`/`update.go`/
+`gitignore_test.go` no `git status` são dele, intocadas por mim).
+
+**Entregue (não commitado):**
+- `scripts/check-roadmap-slug-matching.sh` — gate novo, com `--self-test` de **8 braços**.
+- `scripts/testdata/branch-roadmap-slug-corpus/` — corpus **congelado**: 201 nomes de roadmap ×
+  205 branches governadas, `manifest.txt` com os dois limiares e as seis contagens, mais o caso
+  externo do #273 em corpus próprio (não contamina os números 201/205).
+- `Makefile` — duas linhas em `parity-rest` (`--self-test` e execução), com `unset
+  TRACKFW_SLUG_CORPUS_DIR` pelo mesmo motivo do `WRITE_CONTAINMENT_SCAN_DIR`.
+- `docs/cli-parity.md` — a seção "Vínculo branch↔roadmap" ganha o subitem do corpus; a anotação de
+  contrato sai de "essa medição vira gate no ML-3C" para `gate=` nomeando o script e duas fixtures.
+
+**Medição própria, que reproduz o censo do `ML-3A` por caminho independente:** 205 branches =
+união de `gh pr list --state all` com `git branch -a` (prefixos governados). Com o matcher de HEAD:
+**190 accept / 15 block**. Com o braço de tokens desligado (limiar 99): **176 / 29** — exatamente o
+"`Contains` rejeita 29 das 205" do `ML-3A`, e 29 − 14 = 15 fecha a aritmética sem amostra.
+
+**Resíduos declarados:** (1) o gate pina a **inferência**, não o vínculo escrito da D1 — este é por
+checkout e gitignored, logo não congelável em fixture; (2) pina **veredito**, não **cardinalidade**
+(a CLI não expõe quantos roadmaps casaram); (3) nada prova que o corpus ainda reflete o acervo vivo
+— regenerá-lo é ato deliberado, e as duas coisas estão escritas na anotação de contrato.
+
+- Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.

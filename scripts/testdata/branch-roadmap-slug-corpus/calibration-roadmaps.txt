@@ -1,0 +1,20 @@
+# calibration-roadmaps.txt — the EXTERNAL case of GitHub issue #273, kept as a corpus of its
+# own and DELIBERATELY NOT merged into the census.
+#
+# Why separate: the census is exactly 201 roadmaps × 205 branches of THIS repository, and the
+# acceptance criterion of ML-3C states those two numbers. Folding a synthetic pair into them
+# would make the gate print 202/206 and silently invalidate the numbers the roadmap, the ADR
+# and the #273 thread all cite.
+#
+# Why it exists at all: the CEILING of branchRoadmapMinSharedTokens is forced by this pair and
+# by no branch of this repository — the reporter renamed his branch to fit strings.Contains, so
+# the case never entered our history. Without it, a future "let's require 3 shared tokens, it
+# looks safer" change would reopen exactly the false negative #273 reported, and the census
+# alone would only say that 9 of our old branches flipped.
+#
+# ⚠️ HONESTY NOTE about this filename: both issue #273 and the ADR elide the tail of the real
+# roadmap name ("ROADMAP-2026-09-05-divida-de-governanca-do-acervo-..."). The tail is completed
+# here with "-de-decisoes", which adds NO token shared with the branch slug — so the pair still
+# shares EXACTLY the two content tokens the issue measured ("divida", "acervo"), which is the
+# property under test. The branch name is verbatim from the issue.
+ROADMAP-2026-09-05-divida-de-governanca-do-acervo-de-decisoes.md

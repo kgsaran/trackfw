@@ -10,3 +10,5 @@
 - [Migrar o leitor de uma regra esvazia o falsify](feedback_migrar_leitor_de_regra_esvazia_falsify.md) — grepe a MENSAGEM da regra antes de trocar o mecanismo; o cenário que sabotava o leitor antigo reprova sem defeito
 - [Alvo de vínculo de fixture vai em abandoned/](feedback_fixture_de_req_precisa_alvo_em_abandoned.md) — backlog/ colide com o `find` dos Cenários 24/25/26; wip/ e done/ disparam regras; o alvo tem de existir no disco
 - [ID pelado é forma viva em fixtures](feedback_id_pelado_e_forma_viva_em_fixtures.md) — exigir `.md` no vínculo quebra 6 testes de barrier, 1 de ship e 12 sítios de check-barrier.sh; alvo tem de existir
+- [Anotação de contrato exige ARQUIVO](feedback_anotacao_de_contrato_exige_arquivo.md) — `gate=<dir>` reprova em cli-parity; nomeie os arquivos da fixture
+- [Cenário 18 enumera gates que citam GO_BIN](project_cenario18_enumera_gates_com_go_bin.md) — gate novo entra sozinho na proibição de mutar a árvore; escreva só em mktemp

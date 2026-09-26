@@ -3985,7 +3985,7 @@ da branch existir, chamando a mesma função de matching (`MatchRoadmapsForBranc
 
 ### Vínculo branch↔roadmap — relação ADITIVA, com vínculo escrito na frente
 
-<!-- trackfw-contract: gate=scripts/check-validate-rule-pins.sh,internal/validator/branch_roadmap_match_ml3a_test.go partial=os pins cobrem a relação (substring, sobreposição de tokens, slug vazio) e o vínculo escrito pelo `branch new`; NÃO cobrem o corpus histórico completo das 205 branches deste repositório — essa medição vira gate no ML-3C da REQ-2026-09-09 -->
+<!-- trackfw-contract: gate=scripts/check-validate-rule-pins.sh,internal/validator/branch_roadmap_match_ml3a_test.go,scripts/check-roadmap-slug-matching.sh partial=os pins cobrem a relação (substring, sobreposição de tokens, slug vazio) e o vínculo escrito pelo `branch new`; o gate de corpus fixa o veredito das 205 branches × 201 roadmaps e os dois limiares calibrados, mas só pela via da INFERÊNCIA (`branch new --dry-run`) — o vínculo ESCRITO da etapa 1 é por checkout e gitignored, logo não é congelável em fixture, e a CARDINALIDADE (quantos roadmaps casam) não é observável pela CLI, só o veredito -->
 
 Desde o `ML-3A` da REQ-2026-09-09 (ADR-2026-09-26), a resolução tem **duas etapas, nesta ordem**:
 
@@ -4020,8 +4020,36 @@ compartilha exatamente 2 tokens, logo ≥3 reabre o falso-negativo; e com 1 a re
 branch `feat/` era relatada como governada por qualquer acervo. É a única restrição desta etapa, e é
 a exceção declarada no ADR à ordem aditiva — não existe consumidor legítimo de slug vazio.
 
-A etapa **restritiva** (remover o que o substring aceita e a sobreposição não) **não** está no ar:
-depende do gate de corpus do `ML-3C`.
+#### O corpus da calibração é fixture versionada (`ML-3C`)
+
+<!-- trackfw-contract: gate=scripts/check-roadmap-slug-matching.sh,scripts/testdata/branch-roadmap-slug-corpus/census-verdicts.tsv,scripts/testdata/branch-roadmap-slug-corpus/manifest.txt partial=o gate roda o corpus congelado e pina os dois limiares; o --self-test dele falsifica as três mutações (N=3, N=1, braço de tokens morto) e as quatro guardas de não-vacuidade, mas nenhum gate prova que o corpus ainda REFLETE o acervo vivo — regenerá-lo é ato deliberado, registrado em roadmap -->
+
+`scripts/check-roadmap-slug-matching.sh` congela a medição que autorizou a relação acima, e
+`make parity-rest` a reexecuta a cada ciclo:
+
+| | |
+|---|---|
+| corpus | `scripts/testdata/branch-roadmap-slug-corpus/` — **201** nomes de roadmap (`wip/`+`done/` em 2026-09-26) × **205** branches governadas (união de `gh pr list --state all` com `git branch -a`, prefixos `feat/`/`fix/`/`refactor/`) |
+| veredito congelado | **190 accept** (176 pelo braço substring · **14 só pelo braço de tokens** — a reparação do `ML-3A`) · **15 block** |
+| caso de calibração | o par **externo** do issue #273, em corpus próprio para não contaminar os números 201/205 — é ele que força o **teto** do limiar, porque o autor renomeou a branch e o caso nunca entrou neste acervo |
+| limiares pinados | as declarações literais `const branchRoadmapMinSharedTokens = 2` e `const branchRoadmapMinTokenLen = 3`; mudar uma sem regenerar o corpus **reprova** |
+
+🔴 **O corpus é fixture, não consulta ao `git`/`gh` em tempo de gate** — nem `gh` (sem credencial
+em CI de fork), nem o reflog (não clonado), nem o conteúdo atual de `docs/roadmaps/` (muda a cada
+transição) sustentam um veredito parado. E a reprovação **nomeia a branch** cujo veredito mudou: o
+número sozinho manda adivinhar qual.
+
+⚠️ **As 15 `block` não são defeito.** `strings.Contains` rejeitava **29 das 205** (14%); o braço de
+tokens fecha 14, e estas 15 são o resíduo medido. Com `N=1` as 205 passam — a relação deixa de
+discriminar. Baixar o limiar para "consertar" as 15 destrói a regra, não conserta o acervo.
+
+A etapa **restritiva** (remover o que o substring aceita e a sobreposição não) **não** está no ar —
+o `ML-3C` entrega o **instrumento** que a torna medível, não a restrição. E o instrumento já deu o
+primeiro número: com o braço substring **desligado** no corpus congelado, **2 das 205** branches
+mudam de veredito (`feat/v2.0-gaps` e `fix/v8-um-binario`, ambas com menos de 2 tokens de conteúdo de
+3+ caracteres no slug). Ou seja, em **203 dos 205** casos a sobreposição de tokens já **subsume** o
+substring, e o raio de alcance da etapa restritiva são exatamente essas duas branches — medido pelo
+braço `mutation/braco-substring-morto` do `--self-test`, não estimado.
 
 ## Contrato de artefatos gerados (req, adr, roadmap, note)
 

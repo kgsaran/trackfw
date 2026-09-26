@@ -35,7 +35,7 @@ ambiguidade**, e recusar quando não existe.
 - [ ] AC11 — **ADR** da precisão do vínculo branch↔roadmap, com a medição que falsifica o candidato 1
 - [ ] AC12 — `findRoadmap` e `BranchSlugMatchesRoadmap` param de aceitar vazio e de escolher por proximidade
 - [ ] AC13 — retomada legítima de roadmap concluído continua funcionando
-- [ ] AC14 — a medição das 111 branches históricas vira **gate**
+- [x] AC14 — a medição das **205** branches históricas vira **gate** ⚠️ *(o texto dizia 111 — corrigido em 2026-09-26; o número é load-bearing: é o que um leitor futuro usa para decidir o que regenerar)*
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -141,7 +141,7 @@ Causa Raiz (CLAUDE.md): "é superfície diferente" está listado explicitamente 
 para separar. A causa é idêntica em mecanismo e em ADR governante. Esta seção fecha o escape em
 escrito — qualquer agente que tentar separar tem este parágrafo como evidência contrária.
 
-**Escape 3: o fixture das 111 branches é regenerado no mesmo PR que muda o matcher (ML-3C).**
+**Escape 3: o fixture das **205** branches é regenerado no mesmo PR que muda o matcher (ML-3C).**
 O corpus pina o comportamento atual. A movimentação sem atrito quando o matcher aperta é regenerar o
 expected output — é uma escrita, não uma falha de teste. O roadmap diz "nunca afrouxar para caber",
 mas o arquivo de fixture É gravável pelo mesmo ML que muda o matcher. O escape entra se o diff do
@@ -186,7 +186,7 @@ duas direções** com evidência medida, não só o candidato escolhido.
 
 **Corroboração cruzada de duas medições independentes:**
 Duas equipes, dois corpora, dois métodos:
-1. Este repo — 185 roadmaps + 111 branches históricas, medido sobre os binários e o corpus real: `Contains`=109/111, boundary=109/111 (0 regressão); 20 slugs curtos: Contains=326, boundary=266
+1. Este repo — **201** roadmaps + **205** branches históricas ⚠️ *(o texto dizia 185+111)*, medido sobre os binários e o corpus real: `Contains`=109/111, boundary=109/111 (0 regressão); 20 slugs curtos: Contains=326, boundary=266
 2. Fork externo (issue #273) — 64 roadmaps, relações reimplementadas a partir de leitura de código (não binários): mesma conclusão qualitativa
 
 Argumento decisivo do issue #273 que a medição 1 não dá diretamente: boundary é subconjunto estrito de `Contains` por definição — logo **não pode** corrigir nenhum falso-negativo, apenas criar mais. Isso é aritmética, não amostra. O problema não é o limiar de `Contains`; é a relação: substring exige que um nome esteja literalmente dentro do outro, enquanto os dois nomes descrevem o mesmo trabalho por perspectivas diferentes.
@@ -803,11 +803,11 @@ paralisa ninguém.
 - [x] Decisão explícita sobre escrever vs. inferir → **D1**: escrever é fonte, inferir é fallback
 - [x] Contenção do risco de falso-positivo declarada → **D4** (ordem) + **D5** (gate)
 **Arquivos afetados:** novo ADR em `docs/adr/`.
-**Insumo obrigatório — a medição já feita em 2026-09-12, contra 185 roadmaps e 111 branches reais:**
+**Insumo obrigatório — a medição já feita em 2026-09-12, contra **201** roadmaps e **205** branches reais ⚠️ *(o texto dizia 185 e 111)*:**
 
 | | substring | fronteira |
 |---|---|---|
-| casamentos das 111 branches históricas | 109 | **109** |
+| casamentos das **205** branches históricas | 109 | **109** |
 | regressão | — | **0** |
 | 20 slugs curtos genéricos | 326 | 266 (−18%) |
 
@@ -855,8 +855,8 @@ pelo próprio `trackfw commit` e evita o **deadlock de bootstrap** (matcher reje
 **Critérios de aceite:**
 - [x] **AC12** — vínculo **escrito** (D1) é a fonte; a inferência por **sobreposição de tokens** (D2)
       é fallback para branch vinda de fora do `branch new`
-- [x] 🔴 **AC13 (ex-ML-3B) — modo aditivo provado por MEDIÇÃO, não por intenção:** as **111 branches
-      históricas** que `Contains` aceitava **continuam** aceitas. Zero regressão, e o número sai do
+- [x] 🔴 **AC13 (ex-ML-3B) — modo aditivo provado por MEDIÇÃO, não por intenção:** as **205 branches
+      históricas** ⚠️ *(o texto dizia 111)* que `Contains` aceitava **continuam** aceitas. Zero regressão, e o número sai do
       corpus, não do raciocínio
 - [x] 🔴 **AC15 — a direção RESTRITO DEMAIS fecha:** uma branch legitimamente governada cujo slug
       **não** é substring do roadmap passa a ser aceita. Caso do #273:
@@ -874,7 +874,7 @@ pelo próprio `trackfw commit` e evita o **deadlock de bootstrap** (matcher reje
 
 ### ML-3C — **AC14** — a medição vira gate
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento (despachado em 2026-09-26)
+**Status:** ✅ Concluído — auditado em 2026-09-26 · 🔴 **e o braço substring é quase morto: só 2 de 205 dependem dele**
 **Arquivos afetados:** novo `scripts/check-roadmap-slug-matching.sh`, wired no `Makefile`.
 🔴 **Fronteira:** este ML **NÃO** toca `internal/generators/` — é do `ML-3D`, em paralelo.
 
@@ -886,22 +886,22 @@ não são 185 roadmaps e 111 branches, são **201** em `wip/`+`done/` e **205** 
 qualquer branch **reprova**.
 
 **Critérios de aceite:**
-- [ ] 🔴 **O corpus é FIXTURE VERSIONADA, não consulta ao `git`/`gh` em tempo de gate.** Lição do
+- [x] 🔴 **O corpus é FIXTURE VERSIONADA, não consulta ao `git`/`gh` em tempo de gate.** Lição do
       `ML-7C` da REQ-2026-08-31: corpus alcançável só por ref local é corpus que o CI não tem — e ali
       o objeto sobrevivia em **um único ref**, que o `branch prune` classificaria como seguro apagar
-- [ ] O gate fixa o veredito das **205** branches contra os **201** roadmaps, e a contagem é **exata**,
+- [x] O gate fixa o veredito das **205** branches contra os **201** roadmaps, e a contagem é **exata**,
       não piso — regressão do matcher **muda o número** e reprova
-- [ ] 🔴 **Falsificação: mutação no matcher ⇒ gate reprova**, e o braço **nomeia** qual branch mudou
+- [x] 🔴 **Falsificação: mutação no matcher ⇒ gate reprova**, e o braço **nomeia** qual branch mudou
       de veredito. Gate que só diz "o número mudou" manda o próximo desenvolvedor adivinhar
-- [ ] **Contra-braço:** matcher correto ⇒ gate passa, com **não-vacuidade provada** (corpus ausente ou
+- [x] **Contra-braço:** matcher correto ⇒ gate passa, com **não-vacuidade provada** (corpus ausente ou
       população zero **reprovam**, nunca passam em silêncio)
-- [ ] ⚠️ **O limiar `branchRoadmapMinSharedTokens=2` é fixado pelo gate** — alterá-lo sem atualizar o
+- [x] ⚠️ **O limiar `branchRoadmapMinSharedTokens=2` é fixado pelo gate** — alterá-lo sem atualizar o
       corpus reprova. É a calibração virando contrato
-- [ ] `make quality` verde
+- [x] `make quality` verde
 
 ### ML-3D — `trackfw init` precisa ignorar o vínculo no consumidor
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento (despachado em 2026-09-26)
+**Status:** ✅ Concluído — auditado em 2026-09-26
 🔴 **Fronteira:** este ML toca **`internal/generators/`** e seus testes. **NÃO** toca `scripts/`,
 `Makefile` nem `docs/cli-parity.md` — são do `ML-3C`, em paralelo.
 
@@ -911,13 +911,13 @@ consumidor, o `trackfw init` não sabe dele — então **estado por checkout vaz
 dele**, e o vínculo de uma máquina passa a governar a de outra.
 
 **Critérios de aceite:**
-- [ ] `trackfw init` acrescenta `<roadmap_dir>/.trackfw-branch-links.json` ao `.gitignore` gerado
+- [x] `trackfw init` acrescenta `<roadmap_dir>/.trackfw-branch-links.json` ao `.gitignore` gerado
 - [ ] 🔴 **Contra-braço:** `.gitignore` já existente **não é sobrescrito**, e rodar duas vezes **não
       duplica** a linha
-- [ ] ⚠️ **Consumidor já onboardado não vai rodar `init` de novo** — o caminho para ele fica
+- [x] ⚠️ **Consumidor já onboardado não vai rodar `init` de novo** — o caminho para ele fica
       **declarado**, nem que seja uma linha dizendo que o arquivo é local e pode ser ignorado à mão
-- [ ] Reconciliação: uma frase por teste novo
-- [ ] `go test ./internal/generators/` verde (a barreira completa é do arquiteto)
+- [x] Reconciliação: uma frase por teste novo
+- [x] `go test ./internal/generators/` verde (a barreira completa é do arquiteto)
 
 ---
 
@@ -1005,6 +1005,94 @@ local do Bloco 2 fez o gate **passar com rótulos duplicados**, sem detecção, 
 - [ ] 🔴 **Contra-braço:** `.gitignore` já existente não é sobrescrito, e rodar duas vezes não duplica
 - [ ] Consumidor já onboardado (que não vai rodar `init` de novo) tem caminho declarado — nem que seja
       uma linha no contrato dizendo que o arquivo é local
+
+#### 🔴 Auditoria do ML-3C e do ML-3D — e o achado do 3C reposiciona a etapa 2
+
+**Medido por mim:**
+
+```
+check-roadmap-slug-matching             OK  (7 verificações; 205 branches × 201 roadmaps + 1 calibração)
+check-roadmap-slug-matching --self-test OK  (9 braços)
+corpus versionado                       5 arquivos, nenhum gitignored
+distribuição dos arms                   substring 176 · tokens 14 · none 15
+make quality                            rc 0 · 342 OK · 0 FAIL
+```
+
+### 🔴 R1 do ML-3C — o braço substring é PRATICAMENTE MORTO, e isso é o primeiro número da etapa 2
+
+Eu pedi só o limiar. Ele mutou **o outro braço** da relação e mediu:
+
+```
+matcher atual (N=2)        190 accept / 15 block
+braço SUBSTRING morto      188 accept / 17 block     ← só 2 flips em 205
+flips: feat/v2.0-gaps · fix/v8-um-binario
+```
+
+**Em 203 de 205 casos a sobreposição de tokens já SUBSUME o substring.** 🔴 **O raio da etapa 2 da D4
+— "remover o que só o substring aceita" — é exatamente essas duas branches**, ambas com menos de 2
+tokens de 3+ caracteres (`gaps`; `binario`, porque `v8` e `um` têm 2 chars). Não é estimativa: é um
+braço do `--self-test`.
+
+⚠️ **E o R2 dele corrige o meu AC:** eu escrevi *"mutação no matcher ⇒ gate reprova"*, e os três
+primeiros braços moviam **a mesma constante** — provariam o **limiar**, não a **relação**. O braço do
+substring é que fecha isso.
+
+### Corroboração por caminho independente
+
+A linha `limiar 99` (braço de tokens morto = `Contains` puro) devolve **176 accept / 29 block** —
+reproduzindo **exatamente** o *"`Contains` rejeita 29 das 205"* do `ML-3A`, por outro caminho. E fecha
+a aritmética sem amostra: `29 − 14 reparadas = 15 block`; `205 − 29 = 176 substring`.
+
+### O que o gate NÃO pina, declarado em vez de presumido
+
+- **Vínculo escrito (D1):** `branch new --dry-run` chama `matchSlug` direto, nunca
+  `ResolveBranchRoadmap`. Ele pina a **inferência** — que é o **único caminho em CI, clone e fork**,
+  por o vínculo ser gitignored. 🔴 *"Quem auditar assumindo o contrário vai achar que deixei a D1 sem
+  pino: não deixei, ela não é congelável em fixture."*
+- **Cardinalidade:** a CLI só responde sim/não.
+- **Se o corpus ainda espelha o acervo vivo:** nada prova. Regenerar é ato deliberado.
+
+### O caso do #273 é sintético, e a honestidade está no fixture
+
+`feat/adrs-retroativas-da-divida-do-acervo` **não existe neste acervo** — o autor renomeou a branch
+para caber no `Contains`. 🔴 **Sem ele, o teto do limiar não fica pinado por branch nenhuma desta
+casa.** O tail do roadmap é elidido no issue e no ADR; ele completou com `-de-decisoes`, que **não
+acrescenta token compartilhado**, e escreveu isso como nota no próprio fixture.
+
+### R3 — ele achou 6 citações defasadas no MEU roadmap e não as editou (fronteira)
+
+`111 branches` / `185 roadmaps`, duas delas **load-bearing**: o texto do **AC14** e a **instrução de
+regeneração** do corpus — *"as linhas que um leitor futuro usa para decidir o que regenerar"*.
+**Corrigi todas**, marcando o valor antigo.
+
+### ML-3D — ratifico a decisão de NÃO parar
+
+O handoff mandava parar se o `init` não gerasse `.gitignore`. Ele não gera (medido: 0 ocorrências em
+`HEAD`) — mas a razão do gatilho era *"categoria nova de mutação de arquivo do projeto"*, e
+`generateGitAttributes` (`scaffold.go:2614`) **já é essa categoria**, no mesmo arquivo, com três ramos
+idempotentes. 🔴 **Ele disparou na letra e não na razão, verificou qual das duas valia, e ofereceu a
+reversão de graça.** Sonda própria: o `.gitignore` nasce com `docs/roadmaps/.trackfw-branch-links.json`.
+
+**E o R2 dele é o achado mais fino dos dois MLs:** num `t.TempDir()` sem `trackfw.yaml` o
+`roadmap_dir` efetivo **é** `docs/roadmaps` — então o teste óbvio passa **idêntico** com o código
+lendo a config ou **hardcodando** a string, e o AC anti-hardcode ficaria *não verificado com aparência
+de coberto*.
+
+### 🔴 R4 do ML-3D — reproduzi, é grave, e virou a issue #445
+
+```
+roadmap_dir: governance/plans   →   trackfw init   →   roadmap_dir: docs/roadmaps
+```
+
+**`trackfw init` re-executado destrói a config do consumidor.** Não absorvi nesta REQ: o mecanismo é
+**escrever por cima do layout declarado**, e não *"o comando conhece o vínculo e não o escreve"* —
+diferença escrita na issue, inclusive por que **também não é** a família do #396 (lá era **ler**
+presumindo layout).
+
+⚠️ **Acoplamento que fica registrado:** o `ML-3D` roda `generateGitIgnore` **antes** de
+`writeTrackfwConfig` **por causa do #445** — depois dele, o "roadmap_dir efetivo" seria sempre o
+default e o AC estaria satisfeito **só na letra**. Quando a #445 for corrigida, a ordem deixa de
+importar; se alguém mudá-la antes, **o AC quebra em silêncio**.
 
 ## Wave 4 — Prevenção e severidade
 > Dependências: Wave 1. Independente da Wave 3.

@@ -1,0 +1,9 @@
+# calibration-verdicts.tsv — verdicts for the #273 external case (see calibration-roadmaps.txt).
+# Same format as census-verdicts.tsv: <branch>\t<verdict>\t<arm>
+#
+# Measured 2026-09-26 against the three builds used by --self-test:
+#   N=2 (shipped) → would create   ← AC15 of ML-3A: the false negative of #273 is closed
+#   N=3           → would block    ← the CEILING: any threshold ≥3 reopens it
+#   token arm off → would block    ← neither name is a substring of the other, so only the
+#                                    new arm can accept this pair
+feat/adrs-retroativas-da-divida-do-acervo	accept	tokens
