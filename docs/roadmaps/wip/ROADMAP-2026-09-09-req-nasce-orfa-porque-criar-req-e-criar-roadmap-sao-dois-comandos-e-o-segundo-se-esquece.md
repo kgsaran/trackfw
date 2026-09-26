@@ -838,23 +838,39 @@ uma palavra legítima do nome, ela não ajuda.
 > Dependências: **ML-2A** (não mexer no matcher antes da ADR). 🔴 Enquanto esta wave estiver aberta,
 > frente paralela deve usar o `trackfw` **instalado**, não `bin/trackfw` reconstruído desta árvore.
 
-### ML-3A — **AC12 (parte 2 de 2)** — `BranchSlugMatchesRoadmap`
-**Status:** ⬜ Pendente
-**Arquivos afetados:** `internal/validator/validator.go:2864`, espelhos em `npm/src/validator/`,
-`pypi/trackfw/validator.py`. Consumidores: `validate`, `branch new` (`commands/branch.go:100`),
-`commit` (`commands/commit.go:103`).
-**Ações:** implementar o que a ADR do ML-2A decidiu.
-**Critérios de aceite:**
-- [ ] Comportamento decidido na ADR, nos 3 CLIs
-- [ ] 🔴 O gate do ML-2A da REQ antiga fixa o comportamento **atual** — atualizar junto, **nunca
-      afrouxar para caber**
+### ML-3A + ML-3B — **AC12 (parte 2) + AC13 + AC15** — o matcher, em modo ADITIVO
+**Owner:** `apolo-tf`
+**Status:** 🔄 Em andamento (despachado em 2026-09-26)
+**Arquivos afetados:** `internal/validator/validator.go` — `BranchSlugMatchesRoadmap` está em
+**`:3594`** e `normalizeBranchSlug` em **`:3750`** (medido 2026-09-26; a linha `2864` do texto
+original está obsoleta). Consumidores: `validate` · `branch new` (`commands/branch.go:100`) · `commit`.
+⚠️ **Os espelhos `npm/src/validator/` e `pypi/trackfw/validator.py` NÃO EXISTEM desde a v8.0.0.**
+**Ações:** implementar o que a **ADR do ML-2A** decidiu — `ADR-2026-09-26-precisao-do-vinculo-branch-roadmap-escrever-em-vez-de-inferir.md`.
 
-### ML-3B — **AC13** — retomada legítima continua funcionando
-**Status:** ⬜ Pendente
-**Ações:** cenário provando que retomar trabalho de um roadmap em `done/` continua permitido.
+🔴 **A D4 é a decisão que governa este ML: modo ADITIVO.** A etapa 1 aceita **tudo que `Contains`
+aceitava, e mais**. Nenhuma branch que passava pode passar a falhar — é o que torna o fix commitável
+pelo próprio `trackfw commit` e evita o **deadlock de bootstrap** (matcher rejeita a branch do fix →
+`commit` falha → `git commit` cru é bloqueado pelo guard → o fix não pode ser mergeado).
+
 **Critérios de aceite:**
-- [ ] Cenário de retomada legítima passa (contra-braço do ML-3A)
-- [ ] Cenário de slug curto espúrio reprova (braço)
+- [ ] **AC12** — vínculo **escrito** (D1) é a fonte; a inferência por **sobreposição de tokens** (D2)
+      é fallback para branch vinda de fora do `branch new`
+- [ ] 🔴 **AC13 (ex-ML-3B) — modo aditivo provado por MEDIÇÃO, não por intenção:** as **111 branches
+      históricas** que `Contains` aceitava **continuam** aceitas. Zero regressão, e o número sai do
+      corpus, não do raciocínio
+- [ ] 🔴 **AC15 — a direção RESTRITO DEMAIS fecha:** uma branch legitimamente governada cujo slug
+      **não** é substring do roadmap passa a ser aceita. Caso do #273:
+      `feat/adrs-retroativas-da-divida-do-acervo` × `ROADMAP-…-divida-de-governanca-do-acervo-…`
+- [ ] **Retomada legítima** de roadmap em `done/` continua funcionando (contra-braço)
+- [ ] 🔴 **`branchSlug` vazio** deixa de casar qualquer roadmap — herdado do `ML-1C`, que o mediu e
+      declarou fora do escopo dele
+- [ ] 🔴 **O gate que fixa o comportamento atual é ATUALIZADO, nunca afrouxado para caber.**
+      `scripts/check-barrier.sh` e `scripts/check-validate-rule-pins.sh` referenciam o matcher
+- [ ] ⚠️ **O número mínimo de tokens é CALIBRADO contra o corpus**, não escolhido. O #273 propôs ≥2 e
+      **declarou que não era valor calibrado**
+- [ ] `ML-1B`…`ML-1E` não são desfeitos
+- [ ] Reconciliação: uma frase por teste novo
+- [ ] `make quality` verde
 
 ### ML-3C — **AC14** — a medição vira gate
 **Status:** ⬜ Pendente
