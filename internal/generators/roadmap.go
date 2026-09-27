@@ -300,6 +300,20 @@ REQ: %s
 	}
 
 	fmt.Printf("✓ created %s\n", filename)
+
+	// ML-1B (AC7): o elo tem dois lados e uma única operação escreve os dois. O roadmap acabou de
+	// declarar a REQ no próprio frontmatter; a REQ recebe aqui o ponteiro de volta — que é o que o
+	// `validate` cobra em `req_has_roadmap`.
+	//
+	// 🔴 Fica AQUI, e não em NewRoadmapFromREQ, porque este é o ponto pelo qual passam TODOS os caminhos
+	// de criação que conhecem a REQ: `--from-req`, `--req` e o wizard. O defeito medido era do
+	// `--from-req`, mas a causa é a mesma nos três (Regra Dura de Causa Raiz: mesma causa, mesma REQ),
+	// e é aqui que o caminho final do roadmap existe — quem chama ainda não o conhece.
+	//
+	// `filename` é relativo à raiz do projeto (docs/roadmaps/backlog/…): é a forma que o validate
+	// resolve e a mesma que o `roadmap move` grava. normalizeRefSeparator garante "/" quando o
+	// binário roda no Windows.
+	linkREQToRoadmap(content.REQPath, normalizeRefSeparator(filename))
 	return nil
 }
 
@@ -369,6 +383,32 @@ func NewRoadmapFromREQ(reqPath, agent string) error {
 		adrRef = "\nADR: " + linkedADR
 	}
 
+	// ML-1B (AC7): o bloco consolidado deixa de sair vazio quando a REQ TEM ACs — era ele que obrigava a
+	// reescrever à mão o roadmap desta própria REQ.
+	//
+	// 🔴 Divergência de governança declarada, não escondida: a ADR-2026-07-31 (Decisão 3) decidiu que a
+	// seção consolidada é "placeholder a preencher, não agregação automática dos critérios dos MLs". No
+	// caminho `--from-req` os MLs SÃO os ACs da REQ, então preencher daqui é, pelas palavras da ADR,
+	// agregação. A REQ-2026-09-09 (AC7), posterior e explícita, pede o oposto. Implementado conforme a
+	// REQ e restrito ao caminho `--from-req`: o template simples de NewRoadmapFromContent continua
+	// emitindo o placeholder, então a ADR segue íntegra em todo caminho que a REQ não contradiz. A
+	// emenda à ADR-2026-07-31 é do arquiteto — este ML não escreve ADR.
+	//
+	// Braço negativo: REQ SEM ACs mantém exatamente o placeholder anterior — nenhum critério é inventado
+	// (e o laço de MLs acima já não emite ML nenhum nesse caso).
+	acBlock := "- [ ]\n- [ ]"
+	if len(criteria) > 0 {
+		var acs strings.Builder
+		for i, criterion := range criteria {
+			if i > 0 {
+				acs.WriteString("\n")
+			}
+			acs.WriteString("- [ ] ")
+			acs.WriteString(criterion)
+		}
+		acBlock = acs.String()
+	}
+
 	// squad recebe o agente resolvido para registrar o namespace no frontmatter (AC4/AC11).
 	squadVal := resolvedAgent
 	body := fmt.Sprintf(`---
@@ -388,15 +428,18 @@ REQ: %s%s
 
 ## Acceptance Criteria
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
-- [ ]
-- [ ]
+%s
 
-%s`, date, reqPath, squadVal, title, date, filepath.Base(reqPath), reqPath, adrRef, mlSection.String())
+%s`, date, reqPath, squadVal, title, date, filepath.Base(reqPath), reqPath, adrRef, acBlock, mlSection.String())
 
 	return NewRoadmapFromContent(RoadmapContent{
 		Title: title,
 		Body:  body,
-		Agent: resolvedAgent, // passa o agente já resolvido para o path resolver em NewRoadmapFromContent
+		// ML-1B: REQPath viaja junto porque é ele que habilita o backlink em NewRoadmapFromContent.
+		// Antes deste ML o caminho --from-req montava o `req:` DENTRO do Body e deixava REQPath vazio —
+		// o roadmap declarava a REQ e o gerador, uma linha depois, não sabia mais qual era.
+		REQPath: reqPath,
+		Agent:   resolvedAgent, // passa o agente já resolvido para o path resolver em NewRoadmapFromContent
 	})
 }
 
@@ -775,40 +818,122 @@ func normalizeRefSeparator(p string) string {
 	return strings.ReplaceAll(p, "\\", "/")
 }
 
-func findRoadmap(name string) (string, error) {
-	cfg := config.Load()
-
+// roadmapCandidateFiles enumerates every roadmap file, in the canonical state
+// order, for BOTH layouts (flat and by_agent).
+//
+// 🔴 ML-1C: this is the single enumeration point on purpose. Until ML-1C the
+// by_agent branch (former :791) and the flat branch (former :805) each carried
+// their own `containsIgnoreCase` first-wins loop, so a fix applied to one layout
+// left the other one picking an arbitrary file — and the live corpus of this
+// project is `flat`, so the by_agent copy is exercised by no real roadmap. One
+// collector makes the half-fix structurally impossible.
+//
+// Only regular `.md` files are collected. The former loops matched ANY directory
+// entry, which under first-wins was harmless (a stray `.DS_Store` never contains
+// a roadmap name); under collect-all it would turn a currently working unique
+// match into a refusal. Measured on the real corpus in 2026-09-26: the only
+// non-`.md` files under `docs/roadmaps` are `.trackfw-log` and `.DS_Store`, both
+// in the roadmap root — zero inside the state directories — and there are no
+// subdirectories under the state directories.
+func roadmapCandidateFiles(cfg config.ProjectConfig) []string {
+	var dirs []string
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
-		agents := validator.ResolveAgentNamespaces(cfg, cfg.RoadmapDir)
-		for _, agent := range agents {
+		for _, agent := range validator.ResolveAgentNamespaces(cfg, cfg.RoadmapDir) {
 			for _, state := range roadmapStateOrder {
-				dir := cfg.RoadmapDir + "/" + agent + "/" + state
-				entries, err := os.ReadDir(dir)
-				if err != nil {
-					continue
-				}
-				for _, e := range entries {
-					if containsIgnoreCase(e.Name(), name) {
-						return filepath.Join(dir, e.Name()), nil
-					}
-				}
+				dirs = append(dirs, cfg.RoadmapDir+"/"+agent+"/"+state)
 			}
 		}
 	} else {
 		for _, state := range roadmapStateOrder {
-			dir := cfg.RoadmapDir + "/" + state
-			entries, err := os.ReadDir(dir)
-			if err != nil {
-				continue
-			}
-			for _, e := range entries {
-				if containsIgnoreCase(e.Name(), name) {
-					return filepath.Join(dir, e.Name()), nil
-				}
-			}
+			dirs = append(dirs, cfg.RoadmapDir+"/"+state)
 		}
 	}
-	return "", fmt.Errorf("roadmap %q not found in any state directory", name)
+
+	var files []string
+	for _, dir := range dirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if e.IsDir() || !strings.EqualFold(filepath.Ext(e.Name()), ".md") {
+				continue
+			}
+			files = append(files, filepath.Join(dir, e.Name()))
+		}
+	}
+	return files
+}
+
+// selectArtifactByName resolves a user-supplied name against candidate paths,
+// refusing instead of guessing. It is shared by findRoadmap and findREQ because
+// they are the same defect on two surfaces (Regra Dura de Causa Raiz).
+//
+// 🔴 Two refusals, both new in ML-1C:
+//
+//  1. EMPTY name. `containsIgnoreCase(x, "")` is always true — `strings.Contains`
+//     says every string contains the empty string — so an empty name used to
+//     resolve to the FIRST file of the FIRST state directory and `roadmap move`
+//     moved it. This happened for real on 2026-09-12, from an empty shell
+//     variable. There is no legitimate consumer of `roadmap move ""`, which is
+//     why this refusal is purely additive in safety.
+//
+//  2. AMBIGUOUS name: more than one candidate matches. The old code returned the
+//     first one in scan order. KG's decision of 2026-08-29: "controle que não
+//     reconhece rejeita e avisa, em vez de adivinhar".
+//
+// Partial names keep working when they identify exactly ONE candidate — that is
+// today's real usage and breaking it would trade a defect for a standstill. An
+// EXACT basename match (with or without the `.md` suffix) wins over substring
+// candidates: without that precedence, the 3 real roadmap stems that are a
+// prefix of a longer file (e.g. `...global-adrs-governance` vs
+// `...global-adrs-governance-ML-1B.md`) would become refusals instead of
+// resolving to the file the user actually named.
+//
+// The candidate list travels INSIDE the error so it lands on the command's error
+// path, not on stdout.
+func selectArtifactByName(kind, kindPlural, name string, candidates []string, notFound error) (string, error) {
+	if strings.TrimSpace(name) == "" {
+		return "", fmt.Errorf("%s name is required — an empty name matches every %s and would act on an arbitrary one; pass the basename (or a unique fragment) explicitly", kind, kind)
+	}
+
+	query := strings.TrimSuffix(name, ".md")
+	var exact, partial []string
+	for _, path := range candidates {
+		base := filepath.Base(path)
+		if strings.EqualFold(strings.TrimSuffix(base, ".md"), query) {
+			exact = append(exact, path)
+			continue
+		}
+		if containsIgnoreCase(base, name) {
+			partial = append(partial, path)
+		}
+	}
+
+	matched := exact
+	if len(matched) == 0 {
+		matched = partial
+	}
+	switch len(matched) {
+	case 0:
+		return "", notFound
+	case 1:
+		return matched[0], nil
+	default:
+		var b strings.Builder
+		fmt.Fprintf(&b, "multiple %s match %q — be more specific:", kindPlural, name)
+		for _, path := range matched {
+			fmt.Fprintf(&b, "\n  %s", path)
+		}
+		return "", fmt.Errorf("%s", b.String())
+	}
+}
+
+func findRoadmap(name string) (string, error) {
+	cfg := config.Load()
+	return selectArtifactByName("roadmap", "roadmaps", name,
+		roadmapCandidateFiles(cfg),
+		fmt.Errorf("roadmap %q not found in any state directory", name))
 }
 
 func containsIgnoreCase(s, sub string) bool {
@@ -866,6 +991,16 @@ func appendTransitionLogEntry(basename, fromState, toState string) error {
 // ShowRoadmap exibe o conteúdo de um roadmap identificado por nome parcial.
 func ShowRoadmap(name string) error {
 	cfg := config.Load()
+
+	// ML-1C — mesma classe do defeito de findRoadmap, medida e fechada aqui: o glob
+	// `*<name>*.md` com name vazio casa TODO roadmap. Com o corpus deste projeto
+	// (228 roadmaps) isso já caía na recusa de ambiguidade abaixo, mas num projeto
+	// com UM roadmap `roadmap show ""` imprimia esse arquivo pelo mesmo mecanismo
+	// de "vazio casa tudo". Recusar aqui fecha a classe em vez de tratar como
+	// superfície diferente — leitura, e não escrita, não é fundamento para separar.
+	if strings.TrimSpace(name) == "" {
+		return fmt.Errorf("roadmap name is required — an empty name matches every roadmap; pass the basename (or a unique fragment) explicitly")
+	}
 
 	var pattern string
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
@@ -970,7 +1105,7 @@ func scanREQFiles(cfg config.ProjectConfig) ([]string, error) {
 	return validator.ResolveREQFiles(cfg)
 }
 
-// extractFrontmatterRoadmap extrai o valor do campo roadmap: do bloco frontmatter YAML.
+// extractFrontmatterRoadmap extrai o valor do campo roadmap: do bloco frontmatter YAML de uma REQ.
 // Retorna string vazia se o campo estiver ausente, vazio ou fora do frontmatter.
 // Trima aspas simples e duplas mas NÃO backticks — espelha o comportamento de
 // extractRefPath do validador, onde a forma com backtick não termina em ".md"
@@ -1000,6 +1135,7 @@ func extractFrontmatterRoadmap(content string) string {
 	}
 	return ""
 }
+// extractFrontmatterReq: já declarada em req_chain_ml4a.go (mesmo pacote).
 
 // rewriteREQRoadmapRef reescreve o campo roadmap: no frontmatter e a linha Roadmap: no
 // corpo da REQ quando o basename do valor atual coincide com roadmapBasename.
@@ -1017,6 +1153,30 @@ func extractFrontmatterRoadmap(content string) string {
 // no valor de `line` que o split preservava — Join produzia um arquivo com terminador MISTO.
 // Medido com o binário real (ML-5C): 8 bytes "\r" vazados na REQ reescrita por `roadmap move`.
 func rewriteREQRoadmapRef(content []byte, roadmapBasename, newRoadmapPath string) ([]byte, bool) {
+	sameBasename := func(plainVal string) bool {
+		return filepath.Base(normalizeRefSeparator(plainVal)) == roadmapBasename
+	}
+	return rewriteREQRoadmapRefWith(content, sameBasename, sameBasename, "roadmap", "Roadmap", false, newRoadmapPath)
+}
+
+// rewriteREQRoadmapRefWith é o ÚNICO ponto que reescreve um campo de vínculo dentro de um artefato.
+// Os consumidores diferem apenas em QUAL campo reescrever e QUAL valor existente pode ser sobrescrito,
+// e por isso ambos os critérios entram como parâmetro em vez de virar cópias do escritor (ML-1B; a
+// REQ-2026-08-31 gastou um microlote inteiro desfazendo duas implementações do mesmo sync, AC5:
+// "idênticas por construção, não por coincidência"):
+//
+//   - `roadmap move` (syncREQReferences): fmKey="roadmap", bodyKey="Roadmap", bodyOnce=false —
+//     sobrescreve quando o basename do valor atual é o do roadmap movido.
+//   - `roadmap new` (linkREQToRoadmap): fmKey="roadmap", bodyKey="Roadmap", bodyOnce=false —
+//     sobrescreve quando o valor atual é um PLACEHOLDER.
+//   - `req move` (syncRoadmapREQReference): fmKey="req", bodyKey="REQ", bodyOnce=true —
+//     sobrescreve o req: do roadmap vinculado; bodyOnce=true porque o nome do arquivo pode
+//     aparecer em prosa/blocos de código após o § Context — primeira ocorrência é a correta.
+//
+// fmMatch decide a linha do frontmatter; bodyMatch decide a linha do corpo.
+// Predicados separados porque as duas superfícies têm donos diferentes: o frontmatter é escrito por
+// máquina, enquanto o corpo é prosa editada por humano.
+func rewriteREQRoadmapRefWith(content []byte, fmMatch, bodyMatch func(plainVal string) bool, fmKey, bodyKey string, bodyOnce bool, newPath string) ([]byte, bool) {
 	content = integrations.NormalizeCRLF(content)
 	text := string(content)
 	lines := strings.Split(text, "\n")
@@ -1025,6 +1185,7 @@ func rewriteREQRoadmapRef(content []byte, roadmapBasename, newRoadmapPath string
 	inFM := false
 	fmClosed := false
 	fmCount := 0
+	bodyRewritten := false
 
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
@@ -1042,22 +1203,22 @@ func rewriteREQRoadmapRef(content []byte, roadmapBasename, newRoadmapPath string
 			}
 			if inFM {
 				k, v, ok := strings.Cut(line, ":")
-				if ok && strings.EqualFold(strings.TrimSpace(k), "roadmap") {
+				if ok && strings.EqualFold(strings.TrimSpace(k), fmKey) {
 					rawVal := strings.TrimSpace(v)
 					plainVal := strings.Trim(rawVal, `"'`)
 					// Normaliza antes de comparar: um valor sujo com "\" (herdado de um
 					// commit no Windows, antes do fix de escrita) não separa nada em
-					// filepath.Base em Linux/macOS — sem normalizar, esta REQ nunca é curada.
-					if filepath.Base(normalizeRefSeparator(plainVal)) == roadmapBasename {
+					// filepath.Base em Linux/macOS — sem normalizar, este artefato nunca é curado.
+					if fmMatch(plainVal) {
 						// Preservar estilo de aspas do valor original
 						var newLine string
 						switch {
 						case strings.HasPrefix(rawVal, `"`) || strings.HasSuffix(rawVal, `"`):
-							newLine = fmt.Sprintf("%s: \"%s\"", strings.TrimSpace(k), newRoadmapPath)
+							newLine = fmt.Sprintf("%s: \"%s\"", strings.TrimSpace(k), newPath)
 						case strings.HasPrefix(rawVal, `'`) || strings.HasSuffix(rawVal, `'`):
-							newLine = fmt.Sprintf("%s: '%s'", strings.TrimSpace(k), newRoadmapPath)
+							newLine = fmt.Sprintf("%s: '%s'", strings.TrimSpace(k), newPath)
 						default:
-							newLine = fmt.Sprintf("%s: %s", strings.TrimSpace(k), newRoadmapPath)
+							newLine = fmt.Sprintf("%s: %s", strings.TrimSpace(k), newPath)
 						}
 						if lines[i] != newLine {
 							lines[i] = newLine
@@ -1069,31 +1230,32 @@ func rewriteREQRoadmapRef(content []byte, roadmapBasename, newRoadmapPath string
 			}
 		}
 
-		// Corpo (pós-frontmatter): reescrever linha "Roadmap: <valor>" preservando formato.
-		if fmClosed {
+		// Corpo (pós-frontmatter): reescrever a linha "<bodyKey>: <valor>" preservando formato.
+		if fmClosed && !(bodyOnce && bodyRewritten) {
 			k, v, ok := strings.Cut(line, ":")
-			if ok && strings.EqualFold(strings.TrimSpace(k), "Roadmap") {
+			if ok && strings.EqualFold(strings.TrimSpace(k), bodyKey) {
 				rawVal := strings.TrimSpace(v)
 				plainVal := strings.Trim(rawVal, "`\"'")
 				// Mesma normalização do bloco de frontmatter acima — ver comentário lá.
-				if filepath.Base(normalizeRefSeparator(plainVal)) == roadmapBasename {
+				if bodyMatch(plainVal) {
 					// Preservar backticks ou aspas do valor original
 					var newVal string
 					switch {
 					case strings.HasPrefix(rawVal, "`") && strings.HasSuffix(rawVal, "`"):
-						newVal = "`" + newRoadmapPath + "`"
+						newVal = "`" + newPath + "`"
 					case strings.HasPrefix(rawVal, `"`) && strings.HasSuffix(rawVal, `"`):
-						newVal = `"` + newRoadmapPath + `"`
+						newVal = `"` + newPath + `"`
 					case strings.HasPrefix(rawVal, `'`) && strings.HasSuffix(rawVal, `'`):
-						newVal = `'` + newRoadmapPath + `'`
+						newVal = `'` + newPath + `'`
 					default:
-						newVal = newRoadmapPath
+						newVal = newPath
 					}
 					newLine := fmt.Sprintf("%s: %s", strings.TrimSpace(k), newVal)
 					if lines[i] != newLine {
 						lines[i] = newLine
 						changed = true
 					}
+					bodyRewritten = true
 				}
 			}
 		}
@@ -1195,4 +1357,218 @@ func syncREQReferences(roadmapBasename, newRoadmapPath string) error {
 	}
 
 	return firstErr
+}
+
+// ─── Backlink REQ↔roadmap na CRIAÇÃO (ML-1B, AC7) ────────────────────────────
+
+// reqRoadmapFMIsFillable decide se o valor atual do campo `roadmap:` do FRONTMATTER de uma REQ é um
+// placeholder que a criação de roadmap pode preencher.
+//
+// O critério é o do próprio validador: vale como vínculo o valor que termina em ".md" (extractRefPath,
+// internal/validator/validator.go). Tudo o mais — `""`, `none`, `-`, `<!-- preencher -->` — é
+// placeholder, porque nenhum deles resolve para um arquivo. Não é uma lista de grafias de vazio
+// inventada aqui: é a negação do predicado que o validate usa, o que evita a sétima grafia de vazio
+// (achado A2 da auditoria externa de 2026-09-05).
+func reqRoadmapFMIsFillable(plainVal string) bool {
+	return !strings.HasSuffix(strings.TrimSpace(plainVal), ".md")
+}
+
+// reqRoadmapBodyIsFillable é o lado CONSERVADOR do par, e a assimetria é deliberada.
+//
+// O frontmatter é escrito por máquina (o gerador de REQ emite sempre `roadmap: ""`), então sobrescrever
+// qualquer valor que não seja um ".md" ali não destrói informação de ninguém. O CORPO é prosa editada
+// por humano: uma linha `Roadmap: a decidir depois do ADR` também "não termina em .md", e sobrescrevê-la
+// apagaria o que a pessoa escreveu. Por isso o corpo só é preenchido quando está vazio ou traz um
+// placeholder reconhecível — vazio, traço ou comentário HTML, as formas que os templates emitem.
+//
+// Consequência aceita e medida: uma REQ com `Roadmap: none` no corpo (fixture de
+// scripts/check-gates-falsify.sh) fica com o corpo intacto. Não produz aviso `req_roadmap_sync`, porque
+// esse aviso exige os DOIS lados com valor ".md" e `none` não é lido como referência pelo validate.
+func reqRoadmapBodyIsFillable(plainVal string) bool {
+	v := strings.TrimSpace(plainVal)
+	switch v {
+	case "", "-", "—", "–":
+		return true
+	}
+	return strings.HasPrefix(v, "<!--") && strings.HasSuffix(v, "-->")
+}
+
+// linkREQToRoadmap escreve o lado REQ→roadmap do elo no instante em que o roadmap é criado — a metade
+// que faltava para que `roadmap new` deixasse de produzir REQ órfã (AC7 da REQ-2026-09-09).
+//
+// 🔴 Por que não é `syncREQReferences`: aquela função DESCOBRE as REQs cujo `roadmap:` já aponta para o
+// roadmap movido, e por construção pula exatamente o caso desta função — uma REQ com `roadmap: ""`
+// nunca é encontrada por ela. Aqui a REQ não precisa ser descoberta: o usuário a nomeou em `--from-req`
+// / `--req`. O que as duas compartilham — a reescrita das linhas, a preservação de estilo de aspas e
+// backticks, a normalização de CRLF e de separador — é `rewriteREQRoadmapRefWith`, ponto único.
+//
+// Nunca é fatal, por decisão escrita:
+//   - o roadmap JÁ foi criado quando esta função roda, e o ✓ created já saiu; transformar uma falha de
+//     backlink em exit não-zero faria o comando parecer ter falhado no que ele fez certo;
+//   - `--req` aceita um caminho que o usuário digita livremente (e que pode nem existir), e recusar a
+//     criação do roadmap por causa disso seria uma paralisação nova — a troca que o ML-1C quase fez;
+//   - o silêncio, que é o defeito original, não volta: todo caminho de desistência escreve em stderr.
+//
+// Exit code em todos os ramos de desistência: 0 (o comando não retorna erro). A visibilidade fica no
+// stderr, não no código de saída.
+func linkREQToRoadmap(reqPath, roadmapPath string) {
+	if reqPath == "" {
+		return
+	}
+
+	absReq, err := filepath.Abs(reqPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "trackfw roadmap new: skipped REQ backlink for %s: %v\n", reqPath, err)
+		return
+	}
+	// O caminho pode chegar em forma não-canônica (/var vs /private/var no macOS, o mesmo caso que os
+	// testes ML-3C cobrem para a herança de agente). Resolver antes de guardar evita que o guard recuse
+	// por divergência de prefixo quando o alvo está, de fato, dentro da árvore.
+	if resolved, resErr := filepath.EvalSymlinks(absReq); resErr == nil {
+		absReq = resolved
+	}
+
+	content, err := os.ReadFile(absReq)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "trackfw roadmap new: skipped REQ backlink for %s: %v\n", filepath.Base(absReq), err)
+		return
+	}
+
+	newBase := filepath.Base(normalizeRefSeparator(roadmapPath))
+	sameBasename := func(plainVal string) bool {
+		return filepath.Base(normalizeRefSeparator(strings.TrimSpace(plainVal))) == newBase
+	}
+
+	// Contra-braço: REQ que já aponta para OUTRO roadmap não é sobrescrita. Reaproveitar uma REQ para um
+	// segundo roadmap é decisão de quem governa, não efeito colateral de um `roadmap new`.
+	existing := extractFrontmatterRoadmap(string(content))
+	if !reqRoadmapFMIsFillable(existing) && !sameBasename(existing) {
+		fmt.Fprintf(os.Stderr, "trackfw roadmap new: %s already links roadmap %q — backlink not overwritten\n",
+			filepath.Base(absReq), existing)
+		return
+	}
+
+	fmMatch := func(plainVal string) bool { return reqRoadmapFMIsFillable(plainVal) || sameBasename(plainVal) }
+	bodyMatch := func(plainVal string) bool { return reqRoadmapBodyIsFillable(plainVal) || sameBasename(plainVal) }
+
+	updated, changed := rewriteREQRoadmapRefWith(content, fmMatch, bodyMatch, "roadmap", "Roadmap", false, roadmapPath)
+	if !changed {
+		// Idempotência: rodar de novo sobre a mesma REQ e o mesmo roadmap não reescreve byte nenhum.
+		return
+	}
+
+	root, rootErr := projectRoot()
+	if rootErr != nil {
+		fmt.Fprintf(os.Stderr, "trackfw roadmap new: skipped REQ backlink for %s: %v\n", filepath.Base(absReq), rootErr)
+		return
+	}
+	// A recusa de contenção é emitida pelo ponto único (pathguard.RejectAndReport); o erro devolvido é
+	// deliberadamente descartado — ver o comentário de não-fatalidade acima. O backlink é abandonado, a
+	// REQ não é escrita.
+	if guardErr := pathguard.RejectAndReport(root, absReq); guardErr != nil {
+		return
+	}
+	// write-containment-allowed: guarded by pathguard.RejectAndReport at the enclosing write site
+	if err := os.WriteFile(absReq, updated, 0644); err != nil {
+		fmt.Fprintf(os.Stderr, "trackfw roadmap new: failed to write REQ backlink for %s: %v\n", filepath.Base(absReq), err)
+		return
+	}
+
+	fmt.Printf("✓ linked %s → %s\n", filepath.Base(absReq), roadmapPath)
+}
+
+// ─── Backlink roadmap←REQ no MOVIMENTO (ML-6A, AC16) ────────────────────────
+
+// rewriteRoadmapREQRef reescreve o campo req: no frontmatter e a linha REQ: no corpo de um roadmap
+// quando o basename do valor atual coincide com reqBasename.
+//
+// 🔴 Por que não é rewriteREQRoadmapRefWith diretamente: é — este wrapper apenas fixa fmKey="req",
+// bodyKey="REQ" e bodyOnce=true. O bodyOnce=true é obrigatório porque o basename de uma REQ pode
+// aparecer em blocos de código ou em prosa depois do § Context; a primeira ocorrência de "REQ: ..."
+// no corpo é sempre a linha de contexto gerada pelo template.
+//
+// 🔴 Por que não reutiliza syncREQReferences (o inverso): aquela função DESCOBRE roadmaps cujo roadmap:
+// já aponta para a REQ movida — o sentido aqui é o inverso. O que as duas compartilham é a reescrita
+// de linhas via rewriteREQRoadmapRefWith, o ponto único.
+func rewriteRoadmapREQRef(content []byte, reqBasename, newREQPath string) ([]byte, bool) {
+	sameBasename := func(plainVal string) bool {
+		return filepath.Base(normalizeRefSeparator(plainVal)) == reqBasename
+	}
+	return rewriteREQRoadmapRefWith(content, sameBasename, sameBasename, "req", "REQ", true, newREQPath)
+}
+
+// syncRoadmapREQReference atualiza o campo req: no frontmatter (e a linha REQ: no corpo) do roadmap
+// apontado pela REQ movida, trocando o caminho antigo pelo novo.
+//
+// Contrato:
+//   - REQ sem campo roadmap: → no-op, exit 0
+//   - Roadmap não encontrado → stderr, exit 0 (vínculo pendente é achado do validate, não razão de falha)
+//   - Roadmap cujo req: aponta para OUTRA REQ → não toca (guarda de vínculo cruzado)
+//   - req: já correto → nenhuma escrita (idempotente byte-a-byte)
+//   - Falha de escrita → retorna erro, causa exit não-zero (espelha MoveRoadmap/syncREQReferences)
+//
+// Preenchimento de req: vazio (placeholder) NÃO é responsabilidade desta função — isso cabe a
+// linkREQToRoadmap (chamado em roadmap new). Esta função só atualiza um caminho que mudou, não
+// preenche campos vazios.
+func syncRoadmapREQReference(reqContent []byte, reqBasename, newREQPath string) error {
+	roadmapRef := extractFrontmatterRoadmap(string(reqContent))
+	if roadmapRef == "" {
+		return nil // REQ sem vínculo de roadmap — no-op
+	}
+
+	cfg := config.Load()
+	roadmapBase := filepath.Base(normalizeRefSeparator(roadmapRef))
+	candidates := roadmapCandidateFiles(cfg)
+	var roadmapPath string
+	for _, f := range candidates {
+		if filepath.Base(f) == roadmapBase {
+			roadmapPath = f
+			break
+		}
+	}
+	if roadmapPath == "" {
+		fmt.Fprintf(os.Stderr, "trackfw req move: roadmap %q not found — req: reference not updated\n", roadmapBase)
+		return nil // vínculo pendente: validate detecta, req move não falha
+	}
+
+	roadmapContent, err := os.ReadFile(roadmapPath)
+	if err != nil {
+		return fmt.Errorf("syncRoadmapREQReference: read roadmap: %w", err)
+	}
+
+	// Guarda de vínculo cruzado: só reescreve se o req: do roadmap aponta para ESTA REQ.
+	// Um basename vazio ou com grafia diferente não coincide — a mesma predicado que o
+	// validate usa para detectar stale-path (sem inventar lista de grafias de vazio).
+	existingReq := extractFrontmatterReq(string(roadmapContent))
+	if filepath.Base(normalizeRefSeparator(existingReq)) != reqBasename {
+		return nil // aponta para outra REQ ou está vazio — não toca
+	}
+
+	// Idempotência: caminho já correto → nenhuma escrita.
+	if existingReq == newREQPath {
+		return nil
+	}
+
+	updated, changed := rewriteRoadmapREQRef(roadmapContent, reqBasename, newREQPath)
+	if !changed {
+		return nil
+	}
+
+	// Contenção de escrita: roadmapCandidateFiles devolve caminhos relativos a cfg.RoadmapDir;
+	// filepath.Join(syncRoot, roadmapPath) produz o caminho absoluto para o guard.
+	syncRoot, syncRootErr := projectRoot()
+	if syncRootErr != nil {
+		return fmt.Errorf("syncRoadmapREQReference: %w", syncRootErr)
+	}
+	absRoadmapPath := filepath.Join(syncRoot, roadmapPath)
+	if guardErr := pathguard.RejectAndReport(syncRoot, absRoadmapPath); guardErr != nil {
+		return guardErr
+	}
+	// write-containment-allowed: guarded by pathguard.RejectAndReport at the enclosing write site
+	if err := os.WriteFile(roadmapPath, updated, 0644); err != nil {
+		return fmt.Errorf("syncRoadmapREQReference: write roadmap: %w", err)
+	}
+
+	fmt.Printf("✓ synced %s → %s\n", filepath.Base(roadmapPath), newREQPath)
+	return nil
 }

@@ -169,6 +169,19 @@ parity-rest: build
 	# as duas direções de falsificação (chave ausente/errada e configuração correta).
 	scripts/check-goreleaser-prerelease.sh --self-test
 	scripts/check-goreleaser-prerelease.sh
+	# ML-3C (ROADMAP-2026-09-09-req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos...):
+	# AC14 -- a medicao que autorizou o matcher branch<->roadmap do ML-3A vira gate. Corpus
+	# CONGELADO em scripts/testdata/branch-roadmap-slug-corpus/ (205 branches x 201 roadmaps +
+	# o caso externo do #273), nunca consulta a git/gh em tempo de gate: corpus alcancavel so
+	# por ref local e corpus que o CI nao tem (licao do ML-7C da REQ-2026-08-31). Mutacao no
+	# matcher reprova NOMEANDO a branch cujo veredito mudou. O --self-test reconstroi o matcher
+	# com o limiar mutado em copia isolada do modulo (jamais na arvore real) e exige que o gate
+	# reprove nomeando -- mais as 4 guardas de nao-vacuidade (corpus ausente, populacao zero,
+	# pin do limiar divergente, identidade fixture<->disco).
+	# unset TRACKFW_SLUG_CORPUS_DIR: mesma razao do WRITE_CONTAINMENT_SCAN_DIR acima -- override
+	# esquecido no ambiente nao pode apontar o gate para outro corpus.
+	unset TRACKFW_SLUG_CORPUS_DIR && GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-roadmap-slug-matching.sh --self-test
+	unset TRACKFW_SLUG_CORPUS_DIR && GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-roadmap-slug-matching.sh
 
 parity-falsify: build
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/run-gates-falsify-parallel.sh

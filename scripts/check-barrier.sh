@@ -101,12 +101,77 @@ fail() {
 # fixture builder in internal/commands/barrier_contract_test.go
 # (buildBarrierRoadmap), extended to two waves.
 # ---------------------------------------------------------------------------
+# 🔴 ML-1E (2026-09-26): common_dirs passou a MATERIALIZAR a REQ que os roadmaps-fixture citam.
+#
+# Antes, o vínculo era o ID pelado (o basename da REQ, sem diretório e sem ".md") e nada existia no
+# disco. As regras wip_has_req/blocked_has_req migraram para o leitor estrutural
+# (contentHasStructuredRefValue → extractRefPath), que exige um caminho terminado em ".md" — o ID pelado
+# deixou de ser vínculo, o check "validate" da barrier passou a bloquear, e os cenários cuja premissa é
+# "governança verde" reprovariam por motivo alheio ao seam sob prova.
+#
+# Duas escolhas, as duas medidas em 2026-09-26:
+#   - a REQ aponta para um roadmap em abandoned/ (alvo próprio, criado aqui), não para o
+#     roadmap-fixture de cada cenário: ref_targets_exist é violação mesmo em lenient e exige alvo
+#     existente, e abandoned/ é o único estado inerte (wip/ dispararia wip_wave0/wip_has_req/
+#     wip_acceptance sobre o ALVO; done/ dispararia req_roadmap_lifecycle para REQ Open);
+#   - o ADR citado existe e está Accepted, senão req_has_adr — que migrou no mesmo ML — acusaria.
+#
+# O cenário 3d (validate isolado) continua bloqueando por wip_has_req: o que falta lá é o marcador de
+# vínculo NO ROADMAP, não a REQ no disco.
+BARRIER_REQ_REL='docs/req/REQ-2026-07-29-barrier-fixture.md'
+
 common_dirs() {
   local dir=$1
   mkdir -p \
     "$dir/docs/roadmaps/wip" "$dir/docs/roadmaps/backlog" "$dir/docs/roadmaps/blocked" \
     "$dir/docs/roadmaps/done" "$dir/docs/roadmaps/abandoned" \
     "$dir/docs/req" "$dir/docs/adr"
+  cat >"$dir/docs/roadmaps/abandoned/ROADMAP-2026-07-29-barrier-link-target.md" <<'EOF'
+---
+status: abandoned
+date: 2026-07-29
+---
+
+# Roadmap: alvo de vínculo mínimo
+
+> Created: 2026-07-29 | Status: abandoned
+EOF
+  cat >"$dir/docs/adr/ADR-2026-07-29-barrier-fixture.md" <<'EOF'
+---
+status: Accepted
+date: 2026-07-29
+author: ""
+---
+
+# ADR: Barrier Fixture
+
+> Date: 2026-07-29 | Status: Accepted
+
+## Context
+ctx
+
+## Decision
+decision
+EOF
+  cat >"$dir/$BARRIER_REQ_REL" <<'EOF'
+---
+status: Open
+date: 2026-07-29
+author: ""
+adr: "docs/adr/ADR-2026-07-29-barrier-fixture.md"
+roadmap: "docs/roadmaps/abandoned/ROADMAP-2026-07-29-barrier-link-target.md"
+---
+
+# REQ: Barrier Fixture
+
+> Date: 2026-07-29 | Status: Open
+
+## Motivation
+motivo
+
+## Acceptance Criteria
+- [ ] fixture
+EOF
 }
 
 # run_barrier RUNTIME DIR ARGS...
@@ -188,7 +253,7 @@ write_two_wave_roadmap() {
   {
     echo "# Roadmap: Barrier E2E Fixture"
     echo
-    echo "REQ: REQ-2026-07-29-barrier-fixture"
+    echo "REQ: docs/req/REQ-2026-07-29-barrier-fixture.md"
     echo
     echo "## Acceptance Criteria"
     echo "- [x] fixture roadmap-level criterion"
@@ -285,7 +350,7 @@ common_dirs "$S3A"
 cat >"$S3A/docs/roadmaps/wip/ROADMAP-barrier-fixture.md" <<'EOF'
 # Roadmap: Barrier Fixture
 
-REQ: REQ-2026-07-29-barrier-fixture
+REQ: docs/req/REQ-2026-07-29-barrier-fixture.md
 
 ## Acceptance Criteria
 - [x] fixture roadmap-level criterion
@@ -322,7 +387,7 @@ common_dirs "$S3B"
 cat >"$S3B/docs/roadmaps/wip/ROADMAP-barrier-fixture.md" <<'EOF'
 # Roadmap: Barrier Fixture
 
-REQ: REQ-2026-07-29-barrier-fixture
+REQ: docs/req/REQ-2026-07-29-barrier-fixture.md
 
 ## Acceptance Criteria
 - [x] fixture roadmap-level criterion
@@ -360,7 +425,7 @@ common_dirs "$S3C"
 cat >"$S3C/docs/roadmaps/wip/ROADMAP-barrier-fixture.md" <<'EOF'
 # Roadmap: Barrier Fixture
 
-REQ: REQ-2026-07-29-barrier-fixture
+REQ: docs/req/REQ-2026-07-29-barrier-fixture.md
 
 ## Acceptance Criteria
 - [x] fixture roadmap-level criterion
@@ -445,7 +510,7 @@ SENTINEL="$WORK/s4a-sentinel"
 cat >"$S4A/docs/roadmaps/wip/ROADMAP-barrier-fixture.md" <<EOF
 # Roadmap: Barrier Fixture
 
-REQ: REQ-2026-07-29-barrier-fixture
+REQ: docs/req/REQ-2026-07-29-barrier-fixture.md
 
 ## Acceptance Criteria
 - [x] fixture roadmap-level criterion
@@ -494,7 +559,7 @@ chmod +x "$S4B/would-run-if-invented.sh"
 cat >"$S4B/docs/roadmaps/wip/ROADMAP-barrier-fixture.md" <<'EOF'
 # Roadmap: Barrier Fixture
 
-REQ: REQ-2026-07-29-barrier-fixture
+REQ: docs/req/REQ-2026-07-29-barrier-fixture.md
 
 ## Acceptance Criteria
 - [x] fixture roadmap-level criterion
@@ -533,7 +598,7 @@ common_dirs "$S5"
 cat >"$S5/docs/roadmaps/wip/ROADMAP-barrier-fixture.md" <<'EOF'
 # Roadmap: Barrier Fixture
 
-REQ: REQ-2026-07-29-barrier-fixture
+REQ: docs/req/REQ-2026-07-29-barrier-fixture.md
 
 ## Acceptance Criteria
 - [x] fixture roadmap-level criterion
@@ -574,7 +639,7 @@ common_dirs "$S6"
 cat >"$S6/docs/roadmaps/wip/ROADMAP-barrier-fixture.md" <<'EOF'
 # Roadmap: Barrier Fixture
 
-REQ: REQ-2026-07-29-barrier-fixture
+REQ: docs/req/REQ-2026-07-29-barrier-fixture.md
 
 ## Acceptance Criteria
 - [x] fixture roadmap-level criterion
@@ -678,7 +743,7 @@ common_dirs "$S8"
 cat >"$S8/docs/roadmaps/wip/ROADMAP-barrier-fixture.md" <<'EOF'
 # Roadmap: Barrier Before Fixture
 
-REQ: REQ-2026-07-29-barrier-fixture
+REQ: docs/req/REQ-2026-07-29-barrier-fixture.md
 
 ## Acceptance Criteria
 - [x] fixture roadmap-level criterion
@@ -758,7 +823,7 @@ if [[ "$BIS_SELFTEST_BREAK" == "1" ]]; then
   cat >"$ROADMAP9" <<'EOF'
 # Roadmap: Barrier After Fixture (seam: no malformed heading)
 
-REQ: REQ-2026-07-29-barrier-fixture
+REQ: docs/req/REQ-2026-07-29-barrier-fixture.md
 
 ## Acceptance Criteria
 - [x] fixture roadmap-level criterion
@@ -794,7 +859,7 @@ else
   cat >"$ROADMAP9" <<'EOF'
 # Roadmap: Barrier After Fixture
 
-REQ: REQ-2026-07-29-barrier-fixture
+REQ: docs/req/REQ-2026-07-29-barrier-fixture.md
 
 ## Acceptance Criteria
 - [x] fixture roadmap-level criterion
@@ -850,7 +915,7 @@ common_dirs "$S10"
 cat >"$S10/docs/roadmaps/wip/ROADMAP-barrier-fixture.md" <<'EOF'
 # Roadmap: Barrier Bis-Identity Fixture
 
-REQ: REQ-2026-07-29-barrier-fixture
+REQ: docs/req/REQ-2026-07-29-barrier-fixture.md
 
 ## Acceptance Criteria
 - [x] fixture roadmap-level criterion

@@ -1,0 +1,238 @@
+# census-verdicts.tsv — FROZEN VERDICTS: what the branch↔roadmap matcher answers for each
+# of the 205 governed branches this repository ever had, against census-roadmaps.txt.
+#
+# Population (measured 2026-09-26): the union of
+#   gh pr list --state all --limit 600 --json headRefName   (feat/ fix/ refactor/ only)
+#   git branch -a                                           (local + origin, same prefixes)
+# = 205 distinct branch names. Frozen for the same reason as the roadmap list: neither `gh`
+# nor the reflog is reachable from a CI checkout, and a corpus the CI cannot reach is a
+# corpus that does not exist.
+#
+# Format: <branch>\t<verdict>\t<arm>
+#   verdict = accept | block   — `accept` means `trackfw branch new --dry-run <branch>`
+#                                prints "would create"; `block` means "would block".
+#   arm     = substring | tokens | none
+#             substring = accepted by the HISTORICAL arm (strings.Contains), i.e. it already
+#                         passed before ML-3A. 176 branches.
+#             tokens    = accepted ONLY by the new token-overlap arm — these 14 are exactly
+#                         the branches ML-3A's change repaired. Measured by rebuilding with
+#                         branchRoadmapMinSharedTokens=99 (token arm dead) and diffing.
+#             none      = rejected by both arms. 15 branches.
+#
+# 🔴 THE 15 `block` ROWS ARE NOT A BUG — DO NOT "FIX" THEM BY LOWERING THE THRESHOLD.
+# strings.Contains rejected 29 of the 205 (14%, ML-3A census). The token arm closes 14 of
+# them; these 15 are the measured residual. They are pre-governance branches whose title
+# shares fewer than 2 content tokens of 3+ chars with any roadmap in the corpus (e.g.
+# feat/agents-command against ROADMAP-…-agent-rules-inject-…). At N=1 ALL 205 are accepted —
+# the relation stops discriminating entirely — which is exactly the floor that forced N=2.
+# Widening the threshold to accept these 15 destroys the rule, it does not fix the corpus.
+#
+# Arithmetic that ties these numbers to the ML-3A audit, independent of this file:
+#   205 total − 29 rejected by Contains = 176 substring
+#   29 rejected − 14 repaired by tokens = 15 block
+# Both identities are re-derived by the gate's self-test from a substring-only build.
+feat/adr-new-com-escopo-global-scope-global-escrevendo-em-trackfw-adr	accept	substring
+feat/adr-wizard-e-list	accept	substring
+feat/agentes-especialistas-aceitam-contexto-de-convencoes	accept	substring
+feat/agents-command	block	none
+feat/agents-skills-lifecycle-multi-cli	accept	substring
+feat/analyzing-state-ml-status-rules	accept	substring
+feat/antigravity-agent-tools	accept	substring
+feat/architect-command-guidelines	accept	substring
+feat/attention-hooks-agent-clis	accept	substring
+feat/barrier-aceita-wave-com-sufixo-bis	accept	substring
+feat/barrier-governanca-e-autoridade-do-orquestrador	accept	substring
+feat/bloqueio-tecnico-de-comandos-git-brutos	accept	substring
+feat/branch-prune-com-dry-run-por-padrao-e-heuristica-de-arquivos-tocados	accept	substring
+feat/caminho-governado-para-push-forcado-e-tag-de-release	accept	substring
+feat/codex-agent-integrations	block	none
+feat/comando-que-audita-a-superficie-executavel-de-um-checkout-de-pr	accept	substring
+feat/comando-trackfw-branch-new-para-bloquear-criacao-de-branch-sem-req-roadmap-em-wip	accept	substring
+feat/comando-trackfw-changelog	accept	substring
+feat/comando-trackfw-ship-agnostico-de-forge	accept	substring
+feat/compatibilidade-com-opencode-opencode-ai-para-uso-de-modelos-open-source	accept	substring
+feat/conectar-adrs-globais-aos-agentes-auto-registro-em-adr-dirs-via-update-e-escolha-local-global-ao-criar-adr-de-req	accept	substring
+feat/contrato-canonico-do-roadmap-e-estado-analyzing	accept	substring
+feat/contrato-pinado-no-cli-parity-sem-gate-nomeado	accept	substring
+feat/convergencia-do-harness-pessoal-para-o-trackfw	accept	substring
+feat/convergir-o-comando-status-dos-tres-clis-num-formato-unico	accept	substring
+feat/credential-guard-modo-block-por-padrao-cobertura-de-read-write-e-resolucao-de-arquivo-referenciado	accept	substring
+feat/detectar-adr-nao-aceito-referenciado-por-req-concluida	accept	substring
+feat/discover-init-hook-autoinstall	accept	substring
+feat/doctor-cobre-artefatos-de-scaffold	accept	substring
+feat/doctor-detecta-artefato-fora-do-manifesto	accept	substring
+feat/gate-pre-trabalho-e-husky-node	accept	tokens
+feat/gates-para-os-tres-contratos-de-maior-risco	accept	substring
+feat/global-adrs-governance	accept	substring
+feat/global-skill	block	none
+feat/guard-emite-hookspecificoutput-e-a-razao-chega-ao-modelo-nos-3-clis	accept	substring
+feat/hooks-de-credential-guard-como-escopo-global-cross-project-via-trackfw-update-harness	accept	substring
+feat/hooks-de-guarda-contra-materializacao-de-credenciais	accept	substring
+feat/identidade-humanizada-agentes	accept	substring
+feat/instalacao-de-skills-de-terceiro-via-url-para-agentes-especialistas	accept	substring
+feat/job-parity-do-ci-so-roda-4-de-14-scripts-do-make-parity-falsificacao-e-identity-parity-nunca-rodam-em-ci	accept	substring
+feat/kanban-roadmap-progress	accept	substring
+feat/model-tier-no-render-de-agentes	accept	substring
+feat/multi-ai-support	accept	substring
+feat/npm-nodejs-rewrite	accept	substring
+feat/padrao-unico-de-saida-de-versao-nos-tres-clis	accept	substring
+feat/publish-npm-pypi	block	none
+feat/regra-de-verbosidade-no-asset-do-arquiteto	accept	substring
+feat/req-driven-adr-discovery	accept	substring
+feat/req-move-list-subpastas-e-move-fisico	accept	substring
+feat/req-wizard-e-list	accept	substring
+feat/reservar-v-para-verbose-e-remover-atalho-de-versao-no-go	accept	substring
+feat/roadmap-ai-generation	accept	substring
+feat/roadmap-list	block	none
+feat/roadmap-move-sincroniza-a-referencia-da-req-pareada	accept	substring
+feat/robustez-dos-gates-de-governanca-e-paridade	accept	substring
+feat/trackfw-commit-sugere-mensagem	accept	substring
+feat/trackfw-implement-skill	block	none
+feat/trackfw-push-comando-proprio-para-empurrar-commits-ja-criados	accept	substring
+feat/trackfw-ship-gera-corpo-de-pr-minimo	accept	substring
+feat/trackfw-skills	block	none
+feat/trackfw-validate-deve-detectar-scripts-de-hook	accept	substring
+feat/v1-remaining-features	accept	substring
+feat/v1.1.0-i18n-wizard-java	accept	substring
+feat/v2.0-gaps	accept	substring
+feat/v2.1-discovery-mode	accept	substring
+feat/v2.2-cli-parity	accept	tokens
+feat/v2.2-python-cli-nativo	accept	substring
+feat/v2.3-ai-agent-rail	accept	tokens
+feat/v2.3-validator-improvements	accept	substring
+feat/v2.4-config-evolution	accept	substring
+feat/v2.4-docs-site	accept	tokens
+feat/v2.5-discovery-json-traceid	accept	substring
+feat/v2.6.0-rules-req-configuraveis	accept	substring
+feat/v2.7.0-trackfw-serve-ui	accept	substring
+feat/versao-do-modelo-por-tier-com-composicao-por-alvo	accept	substring
+feat/views-de-lista-para-adrs-e-reqs-no-dashboard	accept	substring
+feat/wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push	accept	substring
+feat/wizard-guiado-identidade-agents-install	accept	substring
+feat/wizard-iterativo	block	none
+fix/a-apuracao-do-censo-morre-no-shard-limpo-e-os-19-rotulos-ausentes-vem-de-um-unico-chunk-que-morre-em-silencio	accept	substring
+fix/afirma-contencao-antes-de-escrever	accept	substring
+fix/agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global	accept	substring
+fix/alinhar-marcador-de-criterios-de-aceite-do-gerador-de-roadmap	accept	substring
+fix/ancorar-rules-no-head-para-as-regras-de-credential-guard	accept	substring
+fix/attention-hooks-pos-auditoria	accept	tokens
+fix/atualiza-actions-do-github-para-versoes-com-node24-nativo	accept	substring
+fix/atualiza-protocolo-de-criacao-de-branch-do-architect-para-usar-trackfw-branch-new	accept	substring
+fix/backticks-em-campos-de-referencia-e-mensagem-de-sucesso-do-validate-no-python	accept	substring
+fix/barrier-executa-gate-de-roadmap-nao-confiavel	accept	substring
+fix/barrier-nao-executa-gate-de-roadmap-nao-confiavel	accept	substring
+fix/bash-consome-stdout-de-python3-sem-normalizar-crlf	accept	substring
+fix/binario-muitos	accept	substring
+fix/binario-muitos-canais	accept	substring
+fix/bloqueadores-de-release-de-paridade-e-precisao-contratual	accept	substring
+fix/by-agent-req-new-e-roadmap-new	accept	substring
+fix/caminho-dentro-de-artefato-versionado-usa-sempre-barra	accept	substring
+fix/caminho-posix-interpolado-dentro-do-codigo-python-nao-e-convertido-pelo-msys-e-o-open-morre-no-windows	accept	substring
+fix/claude-credential-guard-project-dir-cwd-drift	accept	tokens
+fix/context-do-cli-node-aguarda-validate-e-ganha-teste-que-executa-o-binario	accept	substring
+fix/convergencia-dos-templates-de-artefato-do-cli-python	accept	substring
+fix/corrige-divergencia-de-versao-pypi-e-schema-legado-de-hooks-do-cursor	accept	substring
+fix/corrigir-403-em-links-markdown-relativos-dentro-do-drawer	accept	substring
+fix/corrigir-dispatch-sem-subagent-type-no-template-do-architect	accept	substring
+fix/corrigir-falso-positivo-ref-targets-exist-em-roadmap-new-from-req	accept	substring
+fix/debitos-tecnicos-pos-release-de-robustez-e-manutenibilidade	accept	substring
+fix/declarar-eol-lf-para-os-fontes-na-raiz-do-gitattributes	accept	substring
+fix/desmascarar-as-falhas-de-windows-que-nao-medem-nada-e-recontar	accept	substring
+fix/deteccao-de-adulteracao-do-credential-guard-regra-de-validate	accept	substring
+fix/dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier	accept	substring
+fix/discover-init-nao-gera-os-scripts-de-attention-hooks-em-go-e-node-quebra-de-paridade-com-python	accept	substring
+fix/doctor-compara-o-bit-de-execucao	accept	substring
+fix/escopo-de-instalacao-selecionavel-para-agents-e-skills	accept	substring
+fix/escrita-atomica-do-cli-python-funciona-no-windows	accept	substring
+fix/falha-de-windows-por-causa-raiz	accept	tokens
+fix/fecha-o-fail-open-do-guard	accept	substring
+fix/fecha-req-validator-improvements	accept	tokens
+fix/fechar-os-grupos-de-falha-de-windows	block	none
+fix/fechar-os-grupos-de-falha-de-windows-por-causa-raiz	accept	tokens
+fix/fechar-os-tres-defeitos-mecanicos	accept	substring
+fix/fronteira-de-escrita-dos-agentes-auditores	accept	substring
+fix/gate-de-ci-pinado-na-versao-geradora-e-install-sh-honrando-trackfw-version	accept	substring
+fix/gate-de-palavra-chave-de-fechamento-nao-reavalia-em-edited-e-le-exemplo-citado-como-diretiva	accept	substring
+fix/gate-escreve-na-arvore	accept	substring
+fix/gates-rodam-no-windows-resolucao-de-interpretador-e-binario	accept	substring
+fix/gerador-aplica-o-template-de-consumidor	accept	substring
+fix/gitattributes-com-merge-union-para-o-trackfw-log-nos-3-clis	accept	substring
+fix/grupos-de-falha-de-windows-por-causa-raiz	accept	tokens
+fix/guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao	accept	substring
+fix/guard-global-por-padrao-wave-0-medicao-bloqueante-da-premissa-de-sandbox	accept	substring
+fix/guarda-de-folha-resolve-o-caminho-e-afirma-contencao-antes-de-escrever	accept	substring
+fix/handler-global-de-erro-nos-entrypoints-node-e-python	accept	substring
+fix/hardening-qualidade-attention-hooks	accept	substring
+fix/higiene-sete-debitos-acumulados-da-entrega-de-plugins-e-da-release-7-0-0	accept	substring
+fix/install-pula-artefato-desatualizado	accept	substring
+fix/install-sh-extrai-o-tarball-sem-conferir	accept	substring
+fix/integridade-das-referencias-e-ciclo-de-vida-da-req	accept	substring
+fix/jira-base-url	accept	substring
+fix/job-de-windows-largo-que-nasce-vermelho-e-sonda-sob-demanda	accept	substring
+fix/json-marshalindent-do-go-escapa-html-e-diverge-de-node-python-em-3-targets-do-catalogo-kiro-amazonq-antigravity-legacy	accept	substring
+fix/kanban-next-ml-progress	accept	tokens
+fix/leniencia-sem-prazo	accept	substring
+fix/lista-de-agentes-complementa-o-disco-e-namespace-nao-declarado-vira-violacao	accept	substring
+fix/make-quality-locale-fixo-no-falsify	accept	substring
+fix/mitigacao-do-fail-open-do-credential-guard	accept	substring
+fix/npm-publish-workflow	block	none
+fix/npm-windows-postinstall	block	none
+fix/npm-windows-tar	block	none
+fix/o-alvo-do-manifesto-e-dono-do-caminho-do-script-do-guard	accept	substring
+fix/o-ciclo-testa-onde-funciona	accept	substring
+fix/o-ciclo-testa-onde-funciona-faltam-cp1252	accept	substring
+fix/o-repositorio-do-trackfw-sob-os-cuidados-do-trackfw	accept	substring
+fix/os-3-clis-executam-gate-de-wave-com-sh-c	accept	substring
+fix/portar-as-correcoes-do-reporter-da-issue-216	accept	substring
+fix/proteger-dependencias-cdn-do-dashboard-com-sri-e-remover-htmx-morto	accept	substring
+fix/prova-negativa-dedicada-para-o-guard-de-vacuidade-credential-guard-present	accept	substring
+fix/ratchet-por-nome-e-classe-propria-para-suite-que-nao-carrega	accept	substring
+fix/reconciliar-o-que-declaramos	accept	substring
+fix/reconciliar-o-que-declaramos-com-o-que-medimos	accept	substring
+fix/release-tag-ancora-versao-e-mensagem-no-forge	accept	substring
+fix/req-linked-adr-roadmap-select	accept	tokens
+fix/req-move-node-try-catch-local	accept	substring
+fix/req-nasce-orfa	accept	substring
+fix/req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos	accept	substring
+fix/resolucao-de-caminho-dos-hooks-de-agente-independente-do-cwd	accept	substring
+fix/resolvedor-de-req-cobre-o-layout-canonico-e-ciclo-fechado-por-artefato	accept	substring
+fix/retarget-dos-checks-de-camada-2	accept	substring
+fix/roadmap-move-sincroniza-o-status-do-artefato	accept	substring
+fix/run-capture-le-stdout	accept	substring
+fix/saida-nao-ascii-declara-codificacao-em-script-gerado-e-em-gate	accept	substring
+fix/sandbox-do-update-dry-run-por-lista-de-inclusao	accept	substring
+fix/sanitizar-html-do-drawer-do-dashboard-com-dompurify	accept	substring
+fix/scaffold-placeholder-chega-a-done	accept	substring
+fix/scripts-de-attention-hooks-divergem-em-conteudo-entre-go-node-e-python-sem-gate-de-paridade	accept	substring
+fix/self-test-do-ratchet-escreve-no-canal-do-gate-real	accept	substring
+fix/semantica-de-falha-de-hook-fail-open-vs-fail-closed	accept	substring
+fix/serve-amarra-em-loopback-por-padrao-com-opt-in-explicito-para-exposicao	accept	substring
+fix/serve-api-file-valida-o-caminho-lexico	accept	substring
+fix/serve-interpola-host-em-string-de-shell	accept	substring
+fix/server-config-paths	block	none
+fix/smoke-integration-packages-scope-explicito	block	none
+fix/sonda-mede-junction-nos-3-runtimes-e-a-pergunta-7-volta-a-responder	accept	substring
+fix/sync-enumera-req	accept	substring
+fix/teste-e-gate-leem-a-arvore-de-governanca	accept	substring
+fix/trackfw-branch-new-aceita-tipos-chore-e-docs-sem-gate-de-roadmap	accept	substring
+fix/trackfw-ship-aceita-branches-chore-e-docs-sem-gate-de-roadmap	accept	substring
+fix/treze-rotulos-falham-no-censo-de-windows-e-cinco-sao-setup-que-aborta-o-cenario-inteiro	accept	substring
+fix/triagem-medida-das-reqs-de-paridade	block	none
+fix/um-binario-muitos	accept	substring
+fix/um-binario-muitos-canais	accept	substring
+fix/v2.4.1-baseline-ratchet-warnings	accept	substring
+fix/v2.5.1-json-rule-file-help-traceid	accept	tokens
+fix/v2.5.2-traceid-by-agent	accept	substring
+fix/v2.5.3-req-indexing-by-agent	accept	substring
+fix/v2.5.4-context-req-by-agent	accept	substring
+fix/v8-um-binario	accept	substring
+fix/v8-um-binario-muitos-canais	accept	substring
+fix/validar-um-binario-muitos-canais	accept	substring
+fix/validate-detecta-hook-com-pwd-que-falha-fora-da-raiz	accept	substring
+fix/validate-detecta-hook-de-guard-na-forma-relativa-antiga	accept	substring
+fix/windows-integrations-resolve	accept	tokens
+refactor/perfil-e-aceleracao-do-check-gates-falsify-sem-perder-cobertura	accept	substring
+refactor/remocao-do-subsistema-de-plugins-do-trackfw	accept	substring
+refactor/remover-geradores-legados-orfaos-installcodex-copilot-cursor-gemini-windsurf-amazonq-e-installglobalskill	accept	substring
+refactor/substituir-os-parsers-artesanais-de-config-por-biblioteca-yaml-nos-tres-clis	accept	substring
+refactor/unificar-a-leitura-do-trackfw-yaml	accept	substring

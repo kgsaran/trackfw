@@ -355,7 +355,10 @@ func TestBarrierCLI_EnglishHeaderAndWordStatusPass(t *testing.T) {
 	content := strings.Join([]string{
 		"# Roadmap: English dialect fixture",
 		"",
-		"REQ: REQ-2026-08-29-barrier-fixture",
+		// ML-1E (2026-09-26): caminho REAL, não o ID pelado — wip_has_req passou a exigir uma
+		// referência ".md" (contentHasStructuredRefValue), e o alvo é materializado por
+		// writeBarrierREQFixture porque ref_targets_exist é violação mesmo em lenient.
+		"REQ: " + barrierFixtureREQRel,
 		"",
 		"## Acceptance Criteria",
 		"- [x] fixture roadmap-level criterion",
@@ -379,10 +382,12 @@ func TestBarrierCLI_EnglishHeaderAndWordStatusPass(t *testing.T) {
 		"**Acceptance criteria:**",
 		"- [x] build passes",
 	}, "\n")
-	roadmapPath := filepath.Join(dir, "docs/roadmaps/wip/ROADMAP-english-fixture.md")
+	roadmapRel := "docs/roadmaps/wip/ROADMAP-english-fixture.md"
+	roadmapPath := filepath.Join(dir, roadmapRel)
 	if err := os.WriteFile(roadmapPath, []byte(content), 0644); err != nil {
 		t.Fatalf("write roadmap: %v", err)
 	}
+	writeBarrierREQFixture(t, dir, roadmapRel)
 
 	// --trust-local-gates: temp dir (no git repo); test exercises English header
 	// parsing, not the trust check.
@@ -418,7 +423,10 @@ func TestBarrierCLI_ForgedFenceContentDoesNotLiberateWave(t *testing.T) {
 	content := strings.Join([]string{
 		"# Roadmap: Forged fence fixture",
 		"",
-		"REQ: REQ-2026-08-29-barrier-fixture",
+		// ML-1E (2026-09-26): caminho REAL, não o ID pelado — wip_has_req passou a exigir uma
+		// referência ".md" (contentHasStructuredRefValue), e o alvo é materializado por
+		// writeBarrierREQFixture porque ref_targets_exist é violação mesmo em lenient.
+		"REQ: " + barrierFixtureREQRel,
 		"",
 		"## Acceptance Criteria",
 		"- [x] fixture roadmap-level criterion",
@@ -435,10 +443,12 @@ func TestBarrierCLI_ForgedFenceContentDoesNotLiberateWave(t *testing.T) {
 		"```",
 		"**Status:** pending",
 	}, "\n")
-	roadmapPath := filepath.Join(dir, "docs/roadmaps/wip/ROADMAP-forged-fence-fixture.md")
+	roadmapRel := "docs/roadmaps/wip/ROADMAP-forged-fence-fixture.md"
+	roadmapPath := filepath.Join(dir, roadmapRel)
 	if err := os.WriteFile(roadmapPath, []byte(content), 0644); err != nil {
 		t.Fatalf("write roadmap: %v", err)
 	}
+	writeBarrierREQFixture(t, dir, roadmapRel)
 
 	stdout, stderr, code := runBarrierCLI(t, dir, "ROADMAP-forged-fence-fixture", "--wave", "1", "--json")
 	if code != 1 {

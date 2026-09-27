@@ -153,6 +153,10 @@ func contentHasMarker(content string, markers []string) bool {
 // issue #278 (ML-1B): 5 de 7 grafias naturais de campo vazio escapavam da checagem anterior
 // por literal — esta função decide por VALOR (TrimSpace do resto da linha), o que já cobre as 7
 // grafias medidas na triagem original.
+// 🔴 ML-1E (2026-09-26): esta função não tem mais chamador de PRODUÇÃO — as três últimas regras que a
+// usavam (req_has_adr, wip_has_req, blocked_has_req) migraram para contentHasStructuredRefValue. Os
+// chamadores restantes são testes de unidade. Ver o comentário de contentHasStructuredRefValue para o
+// porquê de ela ter sido mantida em vez de removida.
 func contentHasMarkerValue(content string, markers []string) bool {
 	for _, rawLine := range strings.Split(content, "\n") {
 		line := strings.TrimRight(rawLine, "\r")
@@ -533,6 +537,27 @@ func applyRuleTagged(ruleName string, msgs []string, violations, warnings *[]Tag
 	}
 }
 
+// applyRuleWarnOnly (ML-4B) roteia mensagens que NUNCA devem virar violation, mesmo
+// quando a severidade da regra é "error": o braço pré-corte de req_has_roadmap e o
+// aviso de contagem do grandfathering. `off` continua silenciando — quem desliga a
+// regra não deve receber o aviso dela.
+func applyRuleWarnOnly(ruleName string, msgs []string, warnings *[]string) {
+	if len(msgs) == 0 || ruleSeverity(ruleName) == "off" {
+		return
+	}
+	*warnings = append(*warnings, msgs...)
+}
+
+// applyRuleWarnOnlyTagged é applyRuleWarnOnly no domínio TaggedMsg.
+func applyRuleWarnOnlyTagged(ruleName string, msgs []string, warnings *[]TaggedMsg) {
+	if len(msgs) == 0 || ruleSeverity(ruleName) == "off" {
+		return
+	}
+	for _, m := range msgs {
+		*warnings = append(*warnings, TaggedMsg{Rule: ruleName, Msg: m})
+	}
+}
+
 // lenientCarveoutRules is the named, closed set of rules that lenient mode never silences.
 // Criterion: the rule detects a contradiction between live artifacts (not a historical absence).
 // These rules signal active inconsistency in the governance chain — suppressing them defeats
@@ -789,11 +814,13 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	}
 	applyRule("blocked_has_req", blockedViolations, &violations, &warnings)
 
-	reqRoadmapViolations, e := validateREQsHaveRoadmap()
+	reqRoadmapViolations, reqRoadmapExempt, reqRoadmapScanned, e := validateREQsHaveRoadmap()
 	if e != nil {
 		return nil, nil, e
 	}
 	applyRule("req_has_roadmap", reqRoadmapViolations, &violations, &warnings)
+	// ML-4B: braço isento + aviso de contagem — nunca violation, silenciado só com `off`.
+	applyRuleWarnOnly("req_has_roadmap", reqRoadmapAlwaysWarn(reqRoadmapViolations, reqRoadmapExempt, reqRoadmapScanned), &warnings)
 
 	reqRoadmapSyncWarns, e := validateREQRoadmapSync()
 	if e != nil {
@@ -867,11 +894,14 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	}
 	applyRule("filename_uniqueness", uniquenessViolations, &violations, &warnings)
 
-	branchViolations, e := validateBranchHasWIPRoadmap()
+	branchViolations, branchWarnings, e := validateBranchHasWIPRoadmap()
 	if e != nil {
 		return nil, nil, e
 	}
 	applyRule("branch_has_wip_roadmap", branchViolations, &violations, &warnings)
+	// Stale written link: warning only, never severity-configurable — same treatment as the wip
+	// limit warnings above, and for the same reason (it must not be promotable to a violation).
+	warnings = append(warnings, branchWarnings...)
 
 	noteOrphanMsgs, e := validateNoteOrphan()
 	if e != nil {
@@ -1134,11 +1164,13 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 	}
 	applyRuleTagged("blocked_has_req", blockedViolations, &violations, &warnings)
 
-	reqRoadmapViolations, e := validateREQsHaveRoadmap()
+	reqRoadmapViolations, reqRoadmapExempt, reqRoadmapScanned, e := validateREQsHaveRoadmap()
 	if e != nil {
 		return nil, nil, e
 	}
 	applyRuleTagged("req_has_roadmap", reqRoadmapViolations, &violations, &warnings)
+	// ML-4B: espelha ValidateUnfiltered — braço isento + aviso de contagem, sempre warnings.
+	applyRuleWarnOnlyTagged("req_has_roadmap", reqRoadmapAlwaysWarn(reqRoadmapViolations, reqRoadmapExempt, reqRoadmapScanned), &warnings)
 
 	reqRoadmapSyncWarnsT, e := validateREQRoadmapSync()
 	if e != nil {
@@ -1217,11 +1249,14 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 	}
 	applyRuleTagged("filename_uniqueness", uniquenessViolations, &violations, &warnings)
 
-	branchViolationsT, e := validateBranchHasWIPRoadmap()
+	branchViolationsT, branchWarningsT, e := validateBranchHasWIPRoadmap()
 	if e != nil {
 		return nil, nil, e
 	}
 	applyRuleTagged("branch_has_wip_roadmap", branchViolationsT, &violations, &warnings)
+	for _, m := range branchWarningsT {
+		warnings = append(warnings, TaggedMsg{Rule: "branch_has_wip_roadmap", Msg: m})
+	}
 
 	noteOrphanMsgsT, e := validateNoteOrphan()
 	if e != nil {
@@ -2150,6 +2185,14 @@ func resolveREQFiles(cfg config.ProjectConfig) ([]string, error) {
 	return ResolveREQFiles(cfg)
 }
 
+// validateWIPHasREQ — ML-1E (2026-09-26): o vínculo passou a ser lido por
+// contentHasStructuredRefValue, o MESMO leitor que o ML-1D instalou em req_has_roadmap. Antes lia por
+// contentHasMarkerValue, que (a) casa o marcador por prefixo CASE-SENSITIVE, logo nunca via o campo
+// `req:` minúsculo do frontmatter — o campo que `roadmap new` escreve —, e (b) aceitava qualquer valor
+// não-vazio, logo `REQ: N/A — ...` contava como vínculo. Medição própria desta regra nos roadmaps de
+// wip/ deste repositório em 2026-09-26: 0 violações antes, 0 depois (nenhum roadmap em wip/ divergia
+// entre os dois leitores) — a correção é de mecanismo, não de contagem, e foi medida em vez de
+// presumida porque o ML-1E exige medição por regra.
 func validateWIPHasREQ() ([]string, error) {
 	cfg := config.Load()
 	wipDirs := resolveWIPDirs(cfg)
@@ -2162,7 +2205,7 @@ func validateWIPHasREQ() ([]string, error) {
 			if !ok {
 				continue
 			}
-			if !contentHasMarkerValue(string(content), cfg.LinkFieldsReq) {
+			if !contentHasStructuredRefValue(string(content), cfg.LinkFieldsReq) {
 				violations = append(violations, fmt.Sprintf("roadmap %q is in wip but has no linked REQ (marker must start the line with a real, non-placeholder value)", name))
 			}
 		}
@@ -2170,6 +2213,20 @@ func validateWIPHasREQ() ([]string, error) {
 	return violations, nil
 }
 
+// validateREQsHaveADR — ML-1E (2026-09-26): mesma migração de leitor do ML-1D, no campo ao lado.
+//
+// O defeito medido, nos 231 REQs deste repositório: 7 REQs declaram no frontmatter
+// `adr: "docs/adr/ADR-….md"`, o alvo EXISTE no disco (conferido também por ref_targets_exist, que já
+// lia esse campo por extractRefPath), e a regra as acusava de "has no linked ADR" — porque
+// contentHasMarkerValue casa "ADR:" por prefixo case-sensitive e o campo do frontmatter é `adr:`.
+// Uma das 7 é a REQ desta própria campanha.
+//
+// O mesmo troco corrige a direção oposta, e ela é maior: 24 REQs satisfaziam a regra com um
+// placeholder em PROSA no corpo (`ADR: N/A — …`, `ADR: (a decidir …`, `ADR: <!-- … ` cujo comentário
+// fecha em outra linha). Nenhuma delas tem ADR; extractRefPath exige caminho terminado em ".md" e
+// passa a acusá-las corretamente. Saldo medido no acervo: 128 → 145 ocorrências de "has no linked
+// ADR". O bloco CRESCE, e isso é o esperado — o ML-1D produziu o mesmo sinal em req_has_roadmap
+// (12 → 13).
 func validateREQsHaveADR() ([]string, error) {
 	cfg := config.Load()
 	files, err := resolveREQFiles(cfg)
@@ -2183,13 +2240,17 @@ func validateREQsHaveADR() ([]string, error) {
 		if !ok {
 			continue
 		}
-		if !contentHasMarkerValue(string(content), cfg.LinkFieldsADR) {
+		if !contentHasStructuredRefValue(string(content), cfg.LinkFieldsADR) {
 			violations = append(violations, fmt.Sprintf("req %q has no linked ADR (marker must start the line with a real, non-placeholder value)", filepath.Base(path)))
 		}
 	}
 	return violations, nil
 }
 
+// validateBlockedHasREQ — ML-1E (2026-09-26): mesma migração de leitor de validateWIPHasREQ, pelos
+// mesmos dois motivos (frontmatter `req:` invisível ao casamento case-sensitive; placeholder em prosa
+// contando como vínculo). Medição própria nos roadmaps de blocked/ deste repositório em 2026-09-26:
+// 0 violações antes, 0 depois — os 2 roadmaps em blocked/ não divergem entre os leitores.
 func validateBlockedHasREQ() ([]string, error) {
 	cfg := config.Load()
 
@@ -2201,7 +2262,7 @@ func validateBlockedHasREQ() ([]string, error) {
 			if !ok {
 				continue
 			}
-			if !contentHasMarkerValue(string(content), cfg.LinkFieldsReq) {
+			if !contentHasStructuredRefValue(string(content), cfg.LinkFieldsReq) {
 				violations = append(violations, fmt.Sprintf("roadmap %q is in blocked but has no linked REQ (marker must start the line with a real, non-placeholder value)", name))
 			}
 		}
@@ -2211,34 +2272,74 @@ func validateBlockedHasREQ() ([]string, error) {
 
 // validateREQsHaveRoadmap verifica se cada REQ tem ao menos um campo de vínculo preenchido.
 //
-// ML-1A (AC9) — fonte de verdade: FRONTMATTER.
-// O campo `roadmap:` do frontmatter é mantido pelo `roadmap move` via syncREQReferences;
-// é o que o `serve` e o `validate` usam como autoridade. O marcador de corpo `Roadmap:`
-// é legado e pode estar desatualizado após moves. A detecção usa extractRefPath, que é
-// case-insensitive e frontmatter-first: retorna o campo `roadmap:` do frontmatter quando
-// não-vazio, caindo para o `Roadmap:` do corpo caso contrário. Isso corrige os 21 casos
-// onde o frontmatter estava preenchido mas a contagem do validate mostrava "órfã" porque
-// contentHasMarkerValue (case-sensitive, marcador capital "Roadmap:") não enxergava o
-// campo lowercase "roadmap:" do frontmatter.
-func validateREQsHaveRoadmap() ([]string, error) {
+// ML-1A (AC9) — fonte de verdade: FRONTMATTER. O campo `roadmap:` do frontmatter é mantido pelo
+// `roadmap move` via syncREQReferences; é o que o `serve` e o `validate` usam como autoridade. O
+// marcador de corpo `Roadmap:` é legado e pode estar desatualizado após moves. Isso corrige os 21
+// casos onde o frontmatter estava preenchido mas a contagem do validate mostrava "órfã" porque
+// contentHasMarkerValue (case-sensitive, marcador capital "Roadmap:") não enxergava o campo
+// lowercase "roadmap:" do frontmatter.
+//
+// ML-1D — o que o código faz, exatamente (o comentário anterior afirmava extractRefPath e o código
+// usava extractFrontmatterField, que aceita QUALQUER valor não-vazio; medido: `roadmap: none`
+// satisfazia a regra, e uma REQ cujo corpo dizia "Roadmap: (a criar quando esta REQ sair do
+// backlog…)" contava como vinculada):
+//
+//   - a detecção é contentHasStructuredRefValue sobre cfg.LinkFieldsRoadmap, que delega a
+//     extractRefPath — logo o vínculo tem de ser um caminho terminado em ".md". `none`, `TBD`,
+//     `-`, comentário HTML e prosa deixaram de contar;
+//   - o casamento da chave é CASE-INSENSITIVE (EqualFold em extractRefPath), então `roadmap:` do
+//     frontmatter e `Roadmap:` do corpo são o mesmo campo — e é por isso que a claim de
+//     case-insensitividade, falsa enquanto o código usava extractFrontmatterField
+//     (HasPrefix(field+":"), sensível a caixa), agora é verdadeira;
+//   - a precedência do frontmatter é POSICIONAL, não explícita: extractRefPath varre linha a linha
+//     e o frontmatter vem primeiro no arquivo, então ele vence quando carrega um valor real, e o
+//     corpo é o fallback quando não carrega. Consequência deliberada e documentada: um `roadmap:`
+//     declarado e VERDADEIRAMENTE vazio (nada depois do ":") faz extractRefPath retornar cedo e
+//     BLOQUEIA o fallback para o corpo — medido em 2026-09-26 nos 231 REQs deste repositório: zero
+//     casos (as 17 REQs com frontmatter vazio gravam `roadmap: ""`, que não é vazio para o
+//     extrator e cai no corpo normalmente).
+// ML-4B: o retorno é PARTIDO em dois braços pelo corte de data (ver
+// validator_req_roadmap_cutoff.go). `enforced` vai pela severidade normal da regra
+// (default "error"); `exempt` é o passivo histórico e vai SEMPRE para warnings.
+// `scanned` é o denominador do aviso de grandfathering — sem ele, "0 isentas" não se
+// distingue de "não medi".
+func validateREQsHaveRoadmap() (enforced []string, exempt []string, scanned int, err error) {
 	cfg := config.Load()
-	files, err := resolveREQFiles(cfg)
-	if err != nil {
-		return []string{err.Error()}, nil
+	files, rErr := resolveREQFiles(cfg)
+	if rErr != nil {
+		return []string{rErr.Error()}, nil, 0, nil
 	}
 
-	var violations []string
 	for _, path := range files {
-		content, ok := readFileForRule("req_has_roadmap", path, &violations)
+		scanned++
+		content, ok := readFileForRule("req_has_roadmap", path, &enforced)
 		if !ok {
 			continue
 		}
-		fmRoadmap := extractFrontmatterField(string(content), "roadmap")
-		if fmRoadmap == "" && !contentHasMarkerValue(string(content), cfg.LinkFieldsRoadmap) {
-			violations = append(violations, fmt.Sprintf("req %q has no linked Roadmap (marker must start the line with a real, non-placeholder value)", filepath.Base(path)))
+		if !contentHasStructuredRefValue(string(content), cfg.LinkFieldsRoadmap) {
+			msg := fmt.Sprintf("req %q has no linked Roadmap (marker must start the line with a real, non-placeholder value)", filepath.Base(path))
+			if reqIsGrandfathered(string(content), path) {
+				exempt = append(exempt, msg+" — exempt as pre-cutoff ("+reqRoadmapCutoff+")")
+				continue
+			}
+			enforced = append(enforced, msg)
 		}
 	}
-	return violations, nil
+	return enforced, exempt, scanned, nil
+}
+
+// reqRoadmapAlwaysWarn devolve o que sai SEMPRE por warnings: o braço isento mais o
+// aviso de contagem. O aviso só é emitido quando a regra achou algo (isenta ou
+// cobrada) — emitir sempre acrescentaria um warning a todo projeto limpo e quebraria
+// o contrato de "estrutura vazia = zero ruído" (TestValidate_Clean).
+func reqRoadmapAlwaysWarn(enforced, exempt []string, scanned int) []string {
+	if len(enforced) == 0 && len(exempt) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(exempt)+1)
+	out = append(out, exempt...)
+	out = append(out, reqRoadmapGrandfatherNotice(len(exempt), len(enforced), scanned))
+	return out
 }
 
 // validateREQRoadmapSync detecta REQs onde o campo `roadmap:` do frontmatter e o marcador
@@ -2259,10 +2360,23 @@ func validateREQRoadmapSync() ([]string, error) {
 		if !ok {
 			continue
 		}
-		fmRef := extractFrontmatterField(string(content), "roadmap")
+		// ML-1D: o lado frontmatter passou a usar o MESMO critério de "referência real" do lado corpo
+		// (que já ia por extractBodyRefPath → extractRefPath) e do req_has_roadmap. Antes, o
+		// frontmatter ia por extractFrontmatterField e aceitava qualquer valor não-vazio: uma REQ com
+		// `roadmap: "none"` e um caminho real no corpo era reportada como "divergent roadmap links:
+		// frontmatter=\"none\" body=\"x.md\"" — e não há divergência ali, há UM vínculo e UM
+		// placeholder. Pior, as duas regras discordariam sobre o que é valor: req_has_roadmap diria
+		// "sem vínculo" e esta diria "vínculos conflitantes". Medido nos 231 REQs em 2026-09-26: zero
+		// ocorrências (as 17 REQs de frontmatter vazio gravam `roadmap: ""`, que já era ignorado), logo
+		// a correção é de mecanismo, não de contagem.
+		//
+		// A delegação remonta a LINHA do campo em vez de chamar um predicado de valor: o predicado vive
+		// dentro de extractRefPath e extraí-lo para um helper próprio exigiria mexer no corpo daquela
+		// função, cujo literal o Cenário 28 do check-gates-falsify fixa para sabotar o strip de backtick.
+		fmRef := extractRefPath("roadmap: "+extractFrontmatterField(string(content), "roadmap"), "roadmap")
 		bodyRef := extractBodyRefPath(string(content), "Roadmap")
 		if fmRef == "" || bodyRef == "" {
-			continue // divergência requer os dois preenchidos
+			continue // divergência requer os dois preenchidos com referência REAL
 		}
 		fmBase := filepath.Base(strings.Trim(fmRef, `"'` + "`"))
 		bodyBase := filepath.Base(strings.Trim(bodyRef, `"'` + "`"))
@@ -2957,7 +3071,10 @@ func gitLastModifiedTime(path string) (time.Time, bool) {
 }
 
 // extractRefPath extrai o valor do campo field: na linha de frontmatter/cabeçalho.
-// Retorna string vazia se o campo estiver ausente, vazio ou com valor traço.
+// Retorna string vazia se o campo estiver ausente, vazio ou com valor traço — e TAMBÉM quando o
+// primeiro token do valor não termina em ".md" (ML-1D: essa condição é parte do contrato, não um
+// detalhe; é ela que faz `none`, `TBD` e prosa NÃO serem referência, e o comentário anterior a
+// omitia, o que alimentou a divergência entre a regra req_has_roadmap e este extrator).
 // ExtractRefPath é o wrapper exportado de extractRefPath, usado por consumidores fora do pacote
 // validator (internal/serve/api_chain.go, ML-3D). Achado durante o ML-3D: o gerador de REQ
 // (internal/generators/req.go) grava `adr: ""` e `roadmap: ""` SEMPRE vazios no frontmatter —
@@ -2990,6 +3107,52 @@ func extractRefPath(content, field string) string {
 		}
 	}
 	return ""
+}
+
+// contentHasStructuredRefValue reporta se algum dos markers de vínculo tem, no conteúdo, um valor
+// que extractRefPath aceita como REFERÊNCIA REAL — isto é, um caminho terminado em ".md".
+//
+// ML-1D: é o ponto único de "está vinculada?" para as regras cujo vínculo é lido por extractRefPath,
+// e existe para que a regra e o extrator não possam divergir (era o defeito medido: a regra aceitava
+// qualquer valor não-vazio do frontmatter, então `roadmap: none` passava).
+//
+// Alcance, escrito para não virar a próxima claim falsa — ATUALIZADO pelo ML-1E (2026-09-26), que é
+// justamente o ML que tornou falsa a redação anterior desta frase ("quem passa por aqui hoje é
+// req_has_roadmap; req_has_adr, wip_has_req e blocked_has_req continuam em contentHasMarkerValue"):
+//
+//   - passam por aqui as QUATRO regras de "está vinculada?": `req_has_roadmap` (ML-1D),
+//     `req_has_adr`, `wip_has_req` e `blocked_has_req` (ML-1E);
+//   - `req_roadmap_sync` e `ref_targets_exist` chamam extractRefPath direto (o MESMO predicado, sem
+//     este invólucro) porque precisam do VALOR da referência, não do booleano;
+//   - 🔴 consequência a registrar, não a esconder: com a migração das três, `contentHasMarkerValue`
+//     ficou SEM NENHUM chamador de produção (só testes). A propriedade que ele guardava —
+//     comentário HTML como placeholder não é vínculo (achado A2 da auditoria externa de 2026-09-05)
+//     — sobrevive por construção dentro de extractRefPath, que exige caminho terminado em ".md" e
+//     portanto recusa `<!-- … -->` sem precisar de guard próprio. A função foi MANTIDA (remover
+//     ampliaria o diff e derrubaria seus testes de unidade); a decisão de retirá-la é do arquiteto.
+//
+// O que ele herda de extractRefPath, e que contentHasMarkerValue NÃO faz:
+//   - exige que o valor termine em ".md" — recusa `none`, `TBD`, `nenhum`, prosa e qualquer outro
+//     texto que não seja um caminho de artefato;
+//   - casa a chave por EqualFold, então o `roadmap:` (minúsculo) do frontmatter e o `Roadmap:`
+//     (capital) do corpo são o MESMO campo;
+//   - remove backtick/aspas do primeiro token, então `` Roadmap: `docs/.../X.md` `` conta.
+//
+// O que ele preserva de contentHasMarkerValue: a configurabilidade de link_fields (cada marker vira
+// o field do extrator, sem o ":" final) e a ancoragem por chave de linha — em extractRefPath a chave
+// é TUDO o que vem antes do primeiro ":", então prosa como "veja a secao Roadmap: mais abaixo" não
+// casa (a chave seria "veja a secao Roadmap").
+func contentHasStructuredRefValue(content string, markers []string) bool {
+	for _, marker := range markers {
+		field := strings.TrimSuffix(strings.TrimSpace(marker), ":")
+		if field == "" {
+			continue
+		}
+		if extractRefPath(content, field) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // validateRefTargetsExist verifica se arquivos referenciados via REQ:, ADR: e Roadmap: existem.
@@ -3477,6 +3640,29 @@ func validateFilenameUniqueness() ([]string, error) {
 	return violations, nil
 }
 
+// branchRoadmapMinSharedTokens is the minimum number of DISTINCT content tokens a branch slug and a
+// roadmap filename must share for the token-overlap arm to accept the pair.
+//
+// 🔴 CALIBRATED against this repository's corpus (ML-3A, 2026-09-26), not chosen. The #273 reporter
+// proposed 2 and explicitly declared it was not a calibrated value. Both bounds are forced:
+//
+//   - CEILING: the #273 case (feat/adrs-retroativas-da-divida-do-acervo ×
+//     ROADMAP-2026-09-05-divida-de-governanca-do-acervo-…) shares EXACTLY 2 content tokens
+//     ("divida", "acervo"), so any threshold ≥ 3 fails AC15 — the false-negative the issue reports
+//     stays open.
+//   - FLOOR: at 1, every single-token generic slug (req, gate, python, windows) matches every
+//     roadmap whose title contains that word, which is the loose direction the ADR wants CLOSED,
+//     not widened.
+//
+// The measured curve (matches per generic slug, 201 roadmaps in wip/+done/) is in the ML-3A report
+// and becomes a gate in ML-3C.
+const branchRoadmapMinSharedTokens = 2
+
+// branchRoadmapMinTokenLen is the minimum length of a token that counts toward the overlap. Below 3
+// characters a token carries no identifying signal ("de", "e", "a", "6", "9") and would make
+// overlap accidental — the #273 measurement used the same cut.
+const branchRoadmapMinTokenLen = 3
+
 // BranchSlugMatchesRoadmap verifica se branchSlug (já normalizado via normalizeBranchSlug) casa com o
 // nome de algum roadmap .md encontrado em wipDirs ou doneDirs. Reutilizada por
 // validateBranchHasWIPRoadmap e pelo comando `trackfw branch new` — nunca duplicar esta lógica.
@@ -3484,24 +3670,136 @@ func validateFilenameUniqueness() ([]string, error) {
 // matched indica se algum candidato casou com o slug. candidates lista todos os roadmaps .md
 // encontrados em wipDirs+doneDirs (para diagnóstico/mensagem de orientação quando matched é false).
 func BranchSlugMatchesRoadmap(branchSlug string, wipDirs, doneDirs []string) (matched bool, candidates []string) {
+	matches, candidates := MatchRoadmapsForBranchSlug(branchSlug, wipDirs, doneDirs)
+	return len(matches) > 0, candidates
+}
+
+// MatchRoadmapsForBranchSlug is THE single implementation of the branch↔roadmap relation (D3 of
+// ADR-2026-09-26). It returns every roadmap filename in wipDirs+doneDirs that the slug matches, and
+// the full candidate list for diagnostics. BranchSlugMatchesRoadmap, `trackfw branch new`,
+// `trackfw commit` and `trackfw ship` all go through here — never reimplement the relation.
+//
+// 🔴 The relation is ADDITIVE (D4, etapa 1): a pair is accepted when EITHER arm accepts it.
+//
+//  1. SUBSTRING (the historical arm, kept verbatim): normalizeBranchSlug(filename) contains the
+//     slug. Keeping it is what makes this change reversible without manual git surgery — no branch
+//     that passed before can start failing, so the fix to the matcher can be committed by
+//     `trackfw commit` itself instead of deadlocking on its own gate.
+//  2. TOKEN OVERLAP (new, D2): the slug and the roadmap's CONTENT slug share at least
+//     branchRoadmapMinSharedTokens distinct tokens of branchRoadmapMinTokenLen+ characters. This is
+//     the arm that closes the restrito-demais direction of #273, where the branch names THE WORK
+//     and the roadmap names THE REQ TITLE, so neither is a substring of the other.
+//
+// The single deliberate RESTRICTION is the empty slug: strings.Contains(x, "") is always true, so an
+// empty slug used to report matched=true vacuously against any corpus. ML-1C measured this on the
+// sibling site (findRoadmap) and the ADR declares the refusal as the written exception to the
+// additive order — there is no legitimate consumer of an empty branch slug.
+func MatchRoadmapsForBranchSlug(branchSlug string, wipDirs, doneDirs []string) (matches, candidates []string) {
 	dirs := append(append([]string{}, wipDirs...), doneDirs...)
+	slugTokens := branchRoadmapTokens(branchSlug)
+	empty := strings.TrimSpace(branchSlug) == ""
 	for _, dir := range dirs {
 		entries, _ := listDir(dir)
 		for _, name := range entries {
-			if strings.HasSuffix(name, ".md") {
-				candidates = append(candidates, name)
-				if strings.Contains(normalizeBranchSlug(name), branchSlug) {
-					matched = true
-				}
+			if !strings.HasSuffix(name, ".md") {
+				continue
+			}
+			candidates = append(candidates, name)
+			if empty {
+				continue
+			}
+			if strings.Contains(normalizeBranchSlug(name), branchSlug) ||
+				sharedTokenCount(slugTokens, branchRoadmapTokens(roadmapContentSlug(name))) >= branchRoadmapMinSharedTokens {
+				matches = append(matches, name)
 			}
 		}
 	}
-	return matched, candidates
+	return matches, candidates
+}
+
+// roadmapContentSlug strips the STRUCTURAL part of an artifact filename — the kind prefix
+// (ROADMAP-/REQ-/ADR-), the ISO date and the .md suffix — and returns the normalized remainder.
+//
+// 🔴 Measured reason this exists (ML-3A, 2026-09-26): without stripping, "roadmap" is a token of
+// every single roadmap file in the corpus, so any branch slug containing the word "roadmap" would
+// get one free shared token against all 201 files — halving the threshold for that slug alone. The
+// fix is prefix-stripping, NOT a word blacklist: a roadmap legitimately TITLED "roadmap move …"
+// must keep its own content token "roadmap".
+func roadmapContentSlug(filename string) string {
+	base := filename
+	if i := strings.LastIndex(base, "."); i >= 0 && strings.EqualFold(base[i:], ".md") {
+		base = base[:i]
+	}
+	parts := strings.Split(normalizeBranchSlug(base), "-")
+	i := 0
+	if i < len(parts) {
+		switch parts[i] {
+		case "roadmap", "req", "adr":
+			i++
+		}
+	}
+	// ISO date: up to three all-digit segments (yyyy, mm, dd).
+	for n := 0; n < 3 && i < len(parts) && isAllDigits(parts[i]); n++ {
+		i++
+	}
+	return strings.Join(parts[i:], "-")
+}
+
+// branchRoadmapTokens splits an already normalized slug into the content tokens that count toward
+// the overlap: at least branchRoadmapMinTokenLen characters and not purely numeric.
+func branchRoadmapTokens(normalized string) []string {
+	var out []string
+	for _, part := range strings.Split(normalized, "-") {
+		if len(part) < branchRoadmapMinTokenLen || isAllDigits(part) {
+			continue
+		}
+		out = append(out, part)
+	}
+	return out
+}
+
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// sharedTokenCount counts DISTINCT tokens present in both lists. Distinct matters: a slug that
+// repeats one word ("guard-guard-guard") must not reach the threshold on a single shared word.
+func sharedTokenCount(a, b []string) int {
+	if len(a) == 0 || len(b) == 0 {
+		return 0
+	}
+	set := make(map[string]struct{}, len(b))
+	for _, t := range b {
+		set[t] = struct{}{}
+	}
+	seen := make(map[string]struct{}, len(a))
+	count := 0
+	for _, t := range a {
+		if _, dup := seen[t]; dup {
+			continue
+		}
+		seen[t] = struct{}{}
+		if _, ok := set[t]; ok {
+			count++
+		}
+	}
+	return count
 }
 
 // validateBranchHasWIPRoadmap verifica se a branch atual (feat/fix/refactor) tem ao menos um roadmap em wip/.
 // Retorna violation se a branch for de implementação mas wip/ estiver vazio — previne trabalho órfão.
-func validateBranchHasWIPRoadmap() ([]string, error) {
+// It returns (violations, warnings, error): the warnings channel exists for the STALE WRITTEN LINK
+// (D1 of ADR-2026-09-26). A stale link must not be silent — and must not be a violation either, or
+// the additive order of D4 breaks.
+func validateBranchHasWIPRoadmap() ([]string, []string, error) {
 	branch := firstNonEmpty(os.Getenv("TRACKFW_BRANCH"))
 	if branch == "" && isGitWorktree(".") {
 		cmd := gitCommand(".", "symbolic-ref", "--short", "HEAD")
@@ -3518,23 +3816,23 @@ func validateBranchHasWIPRoadmap() ([]string, error) {
 		}
 	}
 	if !strings.HasPrefix(branch, "feat/") && !strings.HasPrefix(branch, "fix/") && !strings.HasPrefix(branch, "refactor/") {
-		return nil, nil // só enforça em branches de implementação
+		return nil, nil, nil // só enforça em branches de implementação
 	}
 
 	cfg := config.Load()
 	wipDirs := resolveWIPDirs(cfg)
 	doneDirs := resolveDoneDirs(cfg)
 
-	branchSlug := normalizeBranchSlug(strings.SplitN(branch, "/", 2)[1])
-	matched, candidates := BranchSlugMatchesRoadmap(branchSlug, wipDirs, doneDirs)
-	if matched {
-		return nil, nil
+	// D1 resolution order: written link first, name inference as fallback.
+	res := ResolveBranchRoadmap(cfg, branch, wipDirs, doneDirs)
+	if res.Matched {
+		return nil, res.Warnings, nil
 	}
 
-	if len(candidates) == 0 {
-		return []string{BranchGovernanceOrientation(branch, cfg)}, nil
+	if len(res.Candidates) == 0 {
+		return []string{BranchGovernanceOrientation(branch, cfg)}, res.Warnings, nil
 	}
-	return []string{BranchNoMatchingRoadmapMessage(branch, candidates)}, nil
+	return []string{BranchNoMatchingRoadmapMessage(branch, res.Candidates)}, res.Warnings, nil
 }
 
 // BranchGovernanceOrientation is the guidance message printed when a feat/fix/refactor branch
@@ -3678,7 +3976,7 @@ func (e *GovernanceViolation) Error() string {
 func CheckShipGovernance() *GovernanceViolation {
 	var missing []string
 
-	branchViolations, _ := validateBranchHasWIPRoadmap()
+	branchViolations, _, _ := validateBranchHasWIPRoadmap()
 	missing = append(missing, branchViolations...)
 
 	wipReqViolations, _ := validateWIPHasREQ()
