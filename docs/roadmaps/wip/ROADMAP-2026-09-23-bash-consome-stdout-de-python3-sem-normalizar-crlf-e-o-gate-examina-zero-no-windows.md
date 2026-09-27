@@ -1,5 +1,5 @@
 ---
-status: done
+status: wip
 date: 2026-09-23
 req: "docs/req/REQ-2026-09-23-bash-consome-stdout-de-python3-sem-normalizar-crlf-e-o-gate-examina-zero-no-windows.md"
 squad: "hades-tf, apolo-tf, artemis-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf, artemis-tf"
 
 # Roadmap: bash consome stdout de `python3` sem normalizar CRLF
 
-> Created: 2026-09-23 | Status: done
+> Created: 2026-09-23 | Status: wip
 
 ## Context
 
@@ -120,7 +120,18 @@ sobre conteúdo de arquivo.
 - [x] As quatro seções com evidência
 - [x] Nenhuma linha de implementação neste ML
 
-**Gate:** `trackfw barrier <roadmap> --wave 0`, auditado por mim.
+**Gates da wave:**
+
+```bash
+n=$(git grep -l lib-crlf-normalize -- "scripts/*.sh" | wc -l | tr -d " "); test "$n" -ge 4 && echo "Gate W0: ponto unico sourceado por $n scripts (piso 4)" || { echo "GATE FALHOU: $n < 4 - o ponto unico deixou de ser usado" >&2; exit 1; }
+```
+
+⚠️ **Gate real escrito em 2026-09-27**, na reabertura. Antes havia só a menção em prosa ao `barrier`,
+que o `validate` acusa como *placeholder ou ausente* (AC7 da `ADR-2026-09-18`). Medido hoje: **19**
+scripts sourceiam o ponto único; piso **4**, para não travar refatoração legítima.
+
+🔴 **Uma linha só, de propósito:** o `barrier` executa **uma linha por vez**, então bloco `if…fi`
+multi-linha nunca roda como gate — defeito que já deixou uma Wave 0 inteira inexecutável nesta casa.
 
 ---
 
@@ -372,3 +383,125 @@ Revisão `hefesto-tf` e `hades-tf`, auditoria do arquiteto, `trackfw barrier`. *
 
 ⚠️ Custo de CPU: `TRACKFW_FALSIFY_JOBS=4` na barreira local, teste do pacote tocado nos handoffs —
 `vault/notes/carga-de-cpu-vem-da-suite-de-falsificacao-vezes-agentes-paralelos-2026-09-22.md`.
+
+---
+
+## Wave 3 — REABERTURA: o literal distribuído, que o gate desta REQ nunca varreu
+> Dependências: Waves 0–2 (fechadas). 🔴 **Esta wave existe porque a REQ foi fechada com sítio vivo.**
+
+### O que mudou desde o fechamento
+
+Medido em 2026-09-27, ao encontrar a cópia versionada **revertida na árvore**:
+
+```
+scripts/trackfw-attention-signal.sh   (cópia versionada)   strip_cr = 2   ← a correção de #414
+internal/generators/scaffold.go       (literal embutido)   strip_cr = 0   ← nunca recebeu
+árvore local, após regeneração pelo produto                strip_cr = 0   ← o defeito VOLTOU
+```
+
+🔴 **O impacto é no consumidor, não aqui.** `trackfw init` e `discover --init` escrevem o script a
+partir do **literal**. Na **v9.0.0 — já publicada nos três canais** — todo projeto novo recebe o
+`trackfw-attention-signal.sh` **sem** normalização de CRLF, e o defeito do #353 volta a ser
+distribuído.
+
+### A causa estrutural, e por que o gate desta própria REQ não pegou
+
+```
+scripts/check-crlf-normalize-capture.sh:232
+    for f in "$SCAN_ROOT/scripts/"*.sh
+```
+
+Varre **só `scripts/*.sh`**. Nunca lê `internal/generators/*.go`. A correção foi aplicada exatamente
+onde o gate enxerga; o sítio que **distribui** ficou fora do campo de visão.
+
+⚠️ **E isto não é um caso isolado — é uma FORMA.** A nota
+`vault/notes/copia-versionada-do-attention-signal-esta-obsoleta-e-sem-guarda-2026-09-02.md` já
+descrevia a estrutura de dois artefatos (literal × cópia versionada) e registrava que **nada compara
+os dois**. Ela documentou a cópia **atrasada**; aqui a cópia estava **adiantada** e foi regenerada
+por cima. Mesma ausência de guarda, direção oposta.
+
+🔴 **Erro de método meu, registrado:** essa nota existia e eu investiguei **antes** de lê-la. A regra
+do vault é explícita — consultar antes de investigar. Li depois, e ela teria encurtado o caminho.
+
+---
+
+### ML-3A — **Wave 0 da reabertura** — modelo de ameaça do sítio distribuído
+**Owner:** `hades-tf`
+**Status:** ⬜ Pendente
+🔴 **Bloqueia o ML-3B e o ML-3C.** Nenhuma implementação antes desta auditada.
+**Ações:**
+1. O sítio é um **hook** (`PreToolUse`) que roda na máquina do consumidor e consome **JSON vindo do
+   agente** (`tool_input.command`, `tool_input.question`). Avaliar o que muda no modelo de ameaça ao
+   introduzir `strip_cr` no caminho — em particular se remover `\r` pode **alterar** um valor que
+   depois é interpolado em `.trackfw-attention.json`.
+2. 🔴 **A pergunta que eu quero respondida:** o `strip_cr` deve ser aplicado **antes ou depois** do
+   truncamento `[:300]`? Se o `\r` estiver dentro dos 300, a ordem muda o resultado — e um dos dois
+   pode partir um escape pela metade.
+3. Declarar se a **regeneração** da cópia versionada a partir do literal pode sobrescrever conteúdo
+   do consumidor sem aviso — é a mesma família do **#445**.
+**Critérios de aceite:**
+- [ ] Parecer escrito em `docs/seguranca/`, com veredito por item
+- [ ] A ordem `strip_cr` × truncamento **decidida e justificada**, não deixada ao acaso
+**Gates da wave:**
+
+```bash
+n=$(git grep -c -e strip_cr -e normalize_crlf -- internal/generators/scaffold.go | cut -d: -f2); test -n "$n" && test "$n" -ge 1 && echo "Gate W3: literal embutido normaliza CRLF ($n ocorrencia(s))" || { echo "GATE FALHOU: o literal de scaffold.go NAO normaliza CRLF - e ele que o init distribui" >&2; exit 1; }
+```
+
+⚠️ **Este gate REPROVA hoje, e é essa a intenção**: ele afirma o estado que a Wave 3 tem de alcançar.
+Medido em 2026-09-27: `strip_cr = 0` no literal. Quando o `ML-3B` entregar, ele passa — e a partir
+daí impede a regressão silenciosa que originou esta reabertura.
+
+### ML-3B — **AC7 parte 1** — o literal recebe a normalização
+**Owner:** `apolo-tf`
+**Status:** ⬜ Pendente — bloqueado pelo ML-3A
+**Arquivos:** `internal/generators/scaffold.go` (linhas 924 e 925) · a cópia versionada
+`scripts/trackfw-attention-signal.sh`, **regenerada a partir do literal**
+**Ações:**
+1. Levar a normalização de CRLF para os **2 sítios** do literal que capturam stdout de `python3` em
+   variável. O sítio `2202` (`py_compile`) **não** captura saída e fica fora — classificação medida.
+2. 🔴 **A cópia versionada passa a ser DERIVADA do literal**, nunca editada à mão. Hoje ela é a
+   única com a correção, e foi por isso que a regeneração a perdeu.
+3. O script gerado **não pode** depender de `lib-crlf-normalize.sh` existir no projeto do consumidor
+   — ele não tem esse arquivo. A normalização tem de ser **autocontida** no script gerado.
+   ⚠️ Este ponto é o que torna a correção não-trivial; a cópia versionada podia dar `source` porque
+   vive ao lado da lib, e o script distribuído **não vive**.
+**Critérios de aceite:**
+- [ ] `grep -c strip_cr internal/generators/scaffold.go` ≥ 2, ou equivalente autocontido
+- [ ] Script gerado por `init` num diretório limpo **roda** sem `lib-crlf-normalize.sh` presente —
+      provado executando, não por leitura
+- [ ] A cópia versionada é byte-idêntica ao que o literal gera
+- [ ] A frase da Regra Dura de Reconciliação, por teste novo
+- [ ] `make quality` `exit=0` e `trackfw validate` sem violation nova
+
+### ML-3C — **AC7 parte 2** — o gate passa a varrer o literal
+**Owner:** `artemis-tf`
+**Status:** ⬜ Pendente — bloqueado pelo ML-3A
+**Arquivos:** `scripts/check-crlf-normalize-capture.sh`
+**Ações:**
+1. Estender o escopo para os **literais embutidos** em `internal/generators/*.go`, além de
+   `scripts/*.sh`.
+2. 🔴 **Falsificação nas duas direções:** um literal novo que capture `python3` **sem** normalizar
+   faz o gate **reprovar**; um literal que normalize **passa**. Sem o primeiro braço o gate é
+   decorativo — e foi exatamente assim que ele deixou este defeito passar.
+3. **Declarar o que o gate NÃO cobre**, como a versão atual já faz para as formas de captura.
+**Critérios de aceite:**
+- [ ] Os 2 sítios do `scaffold.go` são **acusados** pelo gate antes do ML-3B e **aceitos** depois
+- [ ] Piso de candidatos atualizado, com o número novo escrito
+- [ ] 🔴 Contra-braço: o gate **continua** reprovando os casos de `scripts/*.sh` que já reprovava —
+      ampliar escopo não pode afrouxar o que já funcionava
+- [ ] A frase da Regra Dura de Reconciliação, por teste novo
+
+### ML-3D — a guarda que faltava entre literal e cópia
+**Owner:** `artemis-tf`
+**Status:** ⬜ Pendente — depende do ML-3B
+**Ações:** teste ou gate que **compare** a cópia versionada com o que o literal gera, e reprove na
+divergência. É a guarda cuja ausência a nota de vault de 2026-09-02 já havia registrado e que
+ninguém criou.
+🔴 **Sem isto, a Wave 3 conserta o sintoma e deixa o mecanismo vivo:** nada impede que a próxima
+correção volte a ser aplicada só numa das duas naturezas.
+**Critérios de aceite:**
+- [ ] A divergência de hoje é **reproduzida** pelo teste antes do ML-3B (reprova) e passa depois
+- [ ] O teste **não** usa `os.Chdir(t.TempDir())` antes de ler o caminho relativo — foi assim que os
+      testes existentes ficaram cegos, e está medido na nota do vault
+- [ ] A frase da Regra Dura de Reconciliação

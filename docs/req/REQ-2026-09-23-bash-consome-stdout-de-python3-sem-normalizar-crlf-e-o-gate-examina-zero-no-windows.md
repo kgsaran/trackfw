@@ -1,9 +1,9 @@
 ---
-status: Done
+status: wip
 date: 2026-09-23
 author: "trackfw_architect"
 adr: ""
-roadmap: "docs/roadmaps/done/ROADMAP-2026-09-23-bash-consome-stdout-de-python3-sem-normalizar-crlf-e-o-gate-examina-zero-no-windows.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-23-bash-consome-stdout-de-python3-sem-normalizar-crlf-e-o-gate-examina-zero-no-windows.md"
 ---
 
 # REQ: bash consome stdout de `python3` sem normalizar CRLF, e o gate examina zero no Windows
@@ -104,7 +104,65 @@ consomem o **stdout** do Python como dado. Separar isso é entregável da Wave 0
 - [x] Falsificação nas duas direções, **exercitada no Windows** — é a plataforma onde o defeito vive
       → 3 braços `crlf-normalize/*` colhidos pela guarda de conjunto; censo rodado na branch (run `35872779844`)
 - [x] `make quality` e **CI** verdes
+- [ ] 🔴 **AC7 (2026-09-27)** — o `strip_cr` chega ao **literal embutido** (`scaffold.go:924,925`), a
+      cópia versionada é **regenerada a partir dele** (e não o contrário), e o
+      `check-crlf-normalize-capture.sh` passa a **varrer os literais embutidos** — com falsificação
+      que reprove um literal novo sem normalização
       → local RC=0 (903 `^OK `, 0 `: FALHA`, falsificação 252 OK); **CI: 21 checks verdes** no PR #414, incluindo os 6 jobs de Windows
+
+## 🔴 REABERTA em 2026-09-27 — o ponto único nunca alcançou o literal distribuído
+
+**AC7** — o `strip_cr` chega ao **literal embutido**, que é o que o produto escreve na máquina de
+quem adota, e o gate passa a **varrê-lo**.
+
+### O que aconteceu
+
+A correção de #414 (`1f80abb3`) foi aplicada **só na cópia versionada**
+`scripts/trackfw-attention-signal.sh`. O **literal embutido** em `internal/generators/scaffold.go`
+— origem do script que `trackfw init` e `discover --init` gravam no projeto do consumidor — **nunca
+a recebeu**:
+
+```
+scripts/trackfw-attention-signal.sh   (cópia versionada)   strip_cr = 2
+internal/generators/scaffold.go       (literal embutido)   strip_cr = 0
+```
+
+Em 2026-09-27 encontrei a cópia versionada **revertida na árvore** — `strip_cr = 0` —, regenerada a
+partir do literal por um comando do próprio produto. O defeito voltou sozinho.
+
+🔴 **A consequência que importa não é local.** Todo consumidor que rodar `init` ou `discover --init`
+na **v9.0.0** recebe o script **sem** a normalização. O defeito do #353 **continua sendo
+distribuído**, e a `v9.0.0` já está publicada nos três canais.
+
+### Por que o gate desta REQ não pegou — a causa estrutural
+
+```
+scripts/check-crlf-normalize-capture.sh:232
+    for f in "$SCAN_ROOT/scripts/"*.sh
+```
+
+O gate criado **por esta REQ** para impedir a reintrodução varre **apenas `scripts/*.sh`**. Ele
+nunca olha `internal/generators/*.go`. A correção foi aplicada exatamente onde o gate enxerga, e o
+sítio que **distribui** ficou fora do seu campo de visão.
+
+É a mesma forma de defeito que a `REQ-2026-09-01-gate-anti-divergencia` nomeia: *"o controle roda,
+mede corretamente, e é completo sobre o que conhece — mas o que ele conhece está congelado"*.
+
+### Por que reabre em vez de virar REQ nova
+
+**Mesma causa, mesmo mecanismo, mesma ADR.** O AC2 original diz: *"todo sítio (a) corrigido, por
+**ponto único** — não por `tr -d '\r'` espalhado"*, e o AC3 pede *"gate que impede a reintrodução"*.
+Nenhum dos dois estava satisfeito para o literal. Fechar esta REQ com esse sítio vivo foi o achado
+**A1** da auditoria externa de 2026-09-05 repetido — ADR de ponto único marcada satisfeita com sítio
+sobrando — e este projeto já pagou por isso uma vez.
+
+### População medida em 2026-09-27
+
+| sítio | consome stdout como dado? | veredito |
+|---|---|---|
+| `scaffold.go:924` (`TOOL=$(…)`) | sim — captura em variável | **defeito** |
+| `scaffold.go:925` (`MSG=$(…)`) | sim — captura em variável | **defeito** |
+| `scaffold.go:2202` (`py_compile`) | não — não captura saída | fora |
 
 ## Negative scope — o que esta REQ NÃO faz
 
@@ -123,4 +181,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-23-bash-consome-stdout-de-python3-sem-normalizar-crlf-e-o-gate-examina-zero-no-windows.md`
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-23-bash-consome-stdout-de-python3-sem-normalizar-crlf-e-o-gate-examina-zero-no-windows.md`
