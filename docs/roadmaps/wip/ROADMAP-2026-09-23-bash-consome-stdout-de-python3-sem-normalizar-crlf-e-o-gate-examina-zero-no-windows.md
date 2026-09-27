@@ -1,5 +1,5 @@
 ---
-status: done
+status: wip
 date: 2026-09-23
 req: "docs/req/REQ-2026-09-23-bash-consome-stdout-de-python3-sem-normalizar-crlf-e-o-gate-examina-zero-no-windows.md"
 squad: "hades-tf, apolo-tf, artemis-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf, artemis-tf"
 
 # Roadmap: bash consome stdout de `python3` sem normalizar CRLF
 
-> Created: 2026-09-23 | Status: done
+> Created: 2026-09-23 | Status: wip
 
 ## Context
 
@@ -120,7 +120,18 @@ sobre conteúdo de arquivo.
 - [x] As quatro seções com evidência
 - [x] Nenhuma linha de implementação neste ML
 
-**Gate:** `trackfw barrier <roadmap> --wave 0`, auditado por mim.
+**Gates da wave:**
+
+```bash
+n=$(git grep -l lib-crlf-normalize -- "scripts/*.sh" | wc -l | tr -d " "); test "$n" -ge 4 && echo "Gate W0: ponto unico sourceado por $n scripts (piso 4)" || { echo "GATE FALHOU: $n < 4 - o ponto unico deixou de ser usado" >&2; exit 1; }
+```
+
+⚠️ **Gate real escrito em 2026-09-27**, na reabertura. Antes havia só a menção em prosa ao `barrier`,
+que o `validate` acusa como *placeholder ou ausente* (AC7 da `ADR-2026-09-18`). Medido hoje: **19**
+scripts sourceiam o ponto único; piso **4**, para não travar refatoração legítima.
+
+🔴 **Uma linha só, de propósito:** o `barrier` executa **uma linha por vez**, então bloco `if…fi`
+multi-linha nunca roda como gate — defeito que já deixou uma Wave 0 inteira inexecutável nesta casa.
 
 ---
 
@@ -372,3 +383,341 @@ Revisão `hefesto-tf` e `hades-tf`, auditoria do arquiteto, `trackfw barrier`. *
 
 ⚠️ Custo de CPU: `TRACKFW_FALSIFY_JOBS=4` na barreira local, teste do pacote tocado nos handoffs —
 `vault/notes/carga-de-cpu-vem-da-suite-de-falsificacao-vezes-agentes-paralelos-2026-09-22.md`.
+
+---
+
+## Wave 3 — REABERTURA: o literal distribuído, que o gate desta REQ nunca varreu
+> Dependências: Waves 0–2 (fechadas). 🔴 **Esta wave existe porque a REQ foi fechada com sítio vivo.**
+
+### O que mudou desde o fechamento
+
+Medido em 2026-09-27, ao encontrar a cópia versionada **revertida na árvore**:
+
+```
+scripts/trackfw-attention-signal.sh   (cópia versionada)   strip_cr = 2   ← a correção de #414
+internal/generators/scaffold.go       (literal embutido)   strip_cr = 0   ← nunca recebeu
+árvore local, após regeneração pelo produto                strip_cr = 0   ← o defeito VOLTOU
+```
+
+🔴 **RETRATAÇÃO — 2026-09-27, após o ML-3A.** Eu escrevi aqui, e no commit da reabertura, que *"o
+defeito do #353 volta a ser distribuído"*. **É inexato, e a medição do `hades-tf` me refutou.**
+
+`TOOL` e `MSG` passam por `tr -d '\000-\037'` (`scaffold.go:937,938`) **antes** de entrar no JSON, e
+CR é octal `015` — dentro desse intervalo. Verifiquei eu mesmo:
+
+```
+$ printf 'conteudo\r' | tr -d '\000-\037' | od -c
+0000000    c   o   n   t   e   u   d   o
+```
+
+**O CR não chega ao JSON gravado.** A sanitização downstream cobre. A justificativa do `ML-3B` passa
+a ser: **(a)** paridade literal↔cópia versionada, que o `ML-3D` formaliza como gate, e **(b)** defesa
+em profundidade — eliminar o `\r` na variável antes da sanitização, em vez de depender dela.
+
+⚠️ **Por que eu errei:** medi a *ausência* do `strip_cr` no literal e concluí impacto sem seguir o
+dado até o fim do pipeline. Régua estreita — o mesmo defeito de método que passei a campanha
+cobrando dos executores.
+
+### A causa estrutural, e por que o gate desta própria REQ não pegou
+
+```
+scripts/check-crlf-normalize-capture.sh:232
+    for f in "$SCAN_ROOT/scripts/"*.sh
+```
+
+Varre **só `scripts/*.sh`**. Nunca lê `internal/generators/*.go`. A correção foi aplicada exatamente
+onde o gate enxerga; o sítio que **distribui** ficou fora do campo de visão.
+
+⚠️ **E isto não é um caso isolado — é uma FORMA.** A nota
+`vault/notes/copia-versionada-do-attention-signal-esta-obsoleta-e-sem-guarda-2026-09-02.md` já
+descrevia a estrutura de dois artefatos (literal × cópia versionada) e registrava que **nada compara
+os dois**. Ela documentou a cópia **atrasada**; aqui a cópia estava **adiantada** e foi regenerada
+por cima. Mesma ausência de guarda, direção oposta.
+
+🔴 **Erro de método meu, registrado:** essa nota existia e eu investiguei **antes** de lê-la. A regra
+do vault é explícita — consultar antes de investigar. Li depois, e ela teria encurtado o caminho.
+
+---
+
+### ML-3A — **Wave 0 da reabertura** — modelo de ameaça do sítio distribuído
+**Owner:** `hades-tf`
+**Status:** ✅ Concluído — auditado em 2026-09-27 · 🔴 **refutou a minha afirmação e achou um defeito
+maior** (`docs/seguranca/2026-09-27-wave0-literal-distribuido-crlf.md`)
+🔴 **Bloqueia o ML-3B e o ML-3C.** Nenhuma implementação antes desta auditada.
+**Ações:**
+1. O sítio é um **hook** (`PreToolUse`) que roda na máquina do consumidor e consome **JSON vindo do
+   agente** (`tool_input.command`, `tool_input.question`). Avaliar o que muda no modelo de ameaça ao
+   introduzir `strip_cr` no caminho — em particular se remover `\r` pode **alterar** um valor que
+   depois é interpolado em `.trackfw-attention.json`.
+2. 🔴 **A pergunta que eu quero respondida:** o `strip_cr` deve ser aplicado **antes ou depois** do
+   truncamento `[:300]`? Se o `\r` estiver dentro dos 300, a ordem muda o resultado — e um dos dois
+   pode partir um escape pela metade.
+3. Declarar se a **regeneração** da cópia versionada a partir do literal pode sobrescrever conteúdo
+   do consumidor sem aviso — é a mesma família do **#445**.
+**Critérios de aceite:**
+- [x] Parecer escrito em `docs/seguranca/`, com veredito por item
+- [x] A ordem `strip_cr` × truncamento **decidida e justificada** → **DEPOIS**, com `sed $'s/\r$//'`,
+      e a pré-condição de `pipefail` nomeada
+- [x] 🔴 **Refutação entregue:** o CR **não** chega ao JSON — `tr -d '\000-\037'` já o remove.
+      Verifiquei por conta própria antes de aceitar
+- [x] 🔴 **Achado fora da enumeração:** `ROADMAP_DIR` com CR silencia o sinal de atenção → `ML-3E`
+- [x] Veredito sobre o **#445**: mesma causa (`os.WriteFile` sem guard), roteado para a REQ do #445
+**Gates da wave:**
+
+```bash
+n=$(grep -cF "s/\r" internal/generators/scaffold.go); test "$n" -ge 3 && echo "Gate W3: literal embutido normaliza CRLF em $n sitio(s)" || { echo "GATE FALHOU: $n - o literal de scaffold.go NAO normaliza CRLF, e e ele que o init distribui" >&2; exit 1; }
+```
+
+⚠️ **Este gate foi CORRIGIDO em 2026-09-27, e o defeito dele era o mesmo que esta REQ combate.**
+
+Eu o escrevi procurando `strip_cr`. A implementação correta **não usa** `strip_cr` — usa
+`sed $'s/\r$//'` inline, porque o script distribuído **não pode sourcear** a `lib-crlf-normalize.sh`
+(o consumidor não a tem). 🔴 **Meu gate media o token, não o efeito** — e teria reprovado a correção
+certa enquanto aceitaria um `strip_cr` decorativo. É a mesma classe do gate que deixou este defeito
+passar; escrevi um terceiro exemplar dela sem perceber.
+
+Régua nova: a **forma** de normalização (`s/\r`), com piso **3** (medido: 11 ocorrências, entre
+comentários de decisão e os pipelines). Falsificado nas duas direções antes de entrar.
+
+### ML-3B — **AC7 parte 1** — o literal recebe a normalização
+**Owner:** `apolo-tf`
+**Status:** ✅ Concluído — auditado em 2026-09-27
+**Arquivos:** `internal/generators/scaffold.go` (linhas 924 e 925) · a cópia versionada
+`scripts/trackfw-attention-signal.sh`, **regenerada a partir do literal**
+**Ações:**
+1. Levar a normalização de CRLF para os **2 sítios** do literal que capturam stdout de `python3` em
+   variável. O sítio `2202` (`py_compile`) **não** captura saída e fica fora — classificação medida.
+2. 🔴 **A cópia versionada passa a ser DERIVADA do literal**, nunca editada à mão. Hoje ela é a
+   única com a correção, e foi por isso que a regeneração a perdeu.
+3. O script gerado **não pode** depender de `lib-crlf-normalize.sh` existir no projeto do consumidor
+   — ele não tem esse arquivo. A normalização tem de ser **autocontida** no script gerado.
+   ⚠️ Este ponto é o que torna a correção não-trivial; a cópia versionada podia dar `source` porque
+   vive ao lado da lib, e o script distribuído **não vive**.
+**Critérios de aceite:**
+- [x] ⚠️ **AC atendido pela segunda metade, e digo qual.** `grep -c strip_cr` no literal → **0**.
+      O `strip_cr` é alias da lib, e o script distribuído **não pode** sourceá-la. A forma
+      autocontida entregue é `sed $'s/\r$//'` (python3) e `sed $'s/\r//g'` (ROADMAP_DIR) — **11**
+      ocorrências medidas. Marcar sem esta ressalva afirmaria uma verificação que não foi feita
+- [x] Script gerado por `init` em diretório limpo **roda** sem a lib — provado executando
+- [x] Cópia versionada **byte-idêntica** ao gerado → `diff -q` silencioso, verificado por mim
+- [x] A frase da Regra Dura de Reconciliação, por teste novo → 4 frases (ML-3B/3E)
+- [x] `make quality` `exit=0` (1367 `^OK `, 0 `: FALHA`) e `validate` 170 warnings, 0 violations
+
+### ML-3C — **AC7 parte 2** — o gate passa a varrer o literal
+**Owner:** `artemis-tf`
+**Status:** ✅ Concluído — auditado em 2026-09-27 · 🔴 **e achou que o discriminante era derrotável por comentário**
+**Arquivos:** `scripts/check-crlf-normalize-capture.sh`
+**Ações:**
+1. Estender o escopo para os **literais embutidos** em `internal/generators/*.go`, além de
+   `scripts/*.sh`.
+2. 🔴 **Falsificação nas duas direções:** um literal novo que capture `python3` **sem** normalizar
+   faz o gate **reprovar**; um literal que normalize **passa**. Sem o primeiro braço o gate é
+   decorativo — e foi exatamente assim que ele deixou este defeito passar.
+3. **Declarar o que o gate NÃO cobre**, como a versão atual já faz para as formas de captura.
+**Critérios de aceite:**
+- [x] Braço de reprovação provado por **fixture** (braço F) — o ML-3B corrigiu os sítios reais
+      antes de o ML-3C medir, então o arquivo real já não servia como braço negativo
+- [x] Piso 50 → **52** (70 candidatos medidos, ≈74%)
+- [x] 🔴 Contra-braço: mesma população de `scripts/*.sh` (**69**), e os 2 FAIL viraram OK **porque
+      foram corrigidos**, não porque o gate afrouxou — verificado por mim com fixtures nas duas
+      direções
+- [x] A frase da Regra Dura de Reconciliação, por braço novo → 3 frases (F/G/H)
+
+### ML-3D — a guarda que faltava entre literal e cópia
+**Owner:** `artemis-tf`
+**Status:** ✅ Concluído — auditado em 2026-09-27 · **5 de 5 pares**, após corretivo R1
+**Ações:** teste ou gate que **compare** a cópia versionada com o que o literal gera, e reprove na
+divergência. É a guarda cuja ausência a nota de vault de 2026-09-02 já havia registrado e que
+ninguém criou.
+🔴 **Sem isto, a Wave 3 conserta o sintoma e deixa o mecanismo vivo:** nada impede que a próxima
+correção volte a ser aplicada só numa das duas naturezas.
+**Critérios de aceite:**
+- [x] Divergência **reproduzida**: adulterei `trackfw-git-branch-guard.sh` e o teste **reprovou**;
+      restaurada, **passou**. Falsificação minha, não do relatório
+- [x] O teste **não** usa `os.Chdir` — os geradores recebem caminho **absoluto** e a cópia é lida via
+      `findRepoRoot` (sobe de `os.Getwd()` até o `go.mod`)
+- [x] A frase da Regra Dura de Reconciliação
+- [x] 🔴 **R1 — escopo estendido de 2 para 5 pares.** A entrega inicial cobria só `signal` e
+      `cleanup`; `credential-guard`, `git-branch-guard` e `validate` têm a **mesma estrutura e a
+      mesma ausência de guarda**. Estavam byte-idênticos, que é precisamente como o par do
+      attention-signal estava **antes** de divergir
+
+### ML-3E — 🔴 o achado do ML-3A: `ROADMAP_DIR` com CR silencia o sinal de atenção
+**Owner:** `apolo-tf`
+**Status:** ✅ Concluído — auditado em 2026-09-27 · 🔴 **eram TRÊS sítios, não dois**
+**Arquivos:** `internal/generators/scaffold.go` (linhas 928 e 959) · cópia versionada regenerada
+
+#### Por que este ML vale mais que o que originou a reabertura
+
+O `hades-tf` mediu, e eu **reproduzi**: o `ROADMAP_DIR` é extraído do `trackfw.yaml` e **não passa**
+pela sanitização que protege `TOOL` e `MSG`.
+
+```bash
+ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml | head -1 | sed 's/…//' | tr -d '"' | tr -d "'")
+#                                                                        ↑ só remove ASPAS
+case "$ROADMAP_DIR" in /*|../*|*/../*|*/..|..) ROADMAP_DIR="docs/roadmaps" ;; esac
+#                      ↑ rejeita absoluto e "..", NÃO rejeita CR
+mkdir -p "$ROADMAP_DIR"
+… > "$ROADMAP_DIR/.trackfw-attention.json"
+```
+
+Reprodução, com `trackfw.yaml` em CRLF (Windows, Notepad):
+
+```
+$ printf 'roadmap_dir: docs/roadmaps\r\n' | grep … | sed … | tr -d '"' | tr -d "'" | od -c
+0000000  d o c s / r o a d m a p s  \r  \n
+```
+
+**Efeito:** `mkdir -p "docs/roadmaps\r"` cria um diretório **com CR no nome**, e o
+`.trackfw-attention.json` é gravado lá. O `trackfw serve` procura em `docs/roadmaps/` e **não
+encontra**.
+
+🔴 **O sinal de atenção silencia — sem erro, sem aviso.** É pior que o defeito que abriu esta
+reabertura: ali o CR era absorvido a jusante; aqui ele **muda o caminho de escrita**. E é
+exatamente a classe que esta REQ existe para tratar: *"o mecanismo dá sinal de sucesso enquanto o
+controle está inerte"*.
+
+**Causa raiz distinta dos sítios `python3`** — aqui é `grep` sobre arquivo, não stdout de `python3`.
+Fica **no mesmo roadmap** pela regra deste projeto: *mesmo sintoma investiga junto; só se separa com
+a medição escrita*. A medição está escrita, e ela **mantém** junto: mesmo script, mesma wave, mesma
+entrega.
+
+**Ações:**
+1. Normalizar o `ROADMAP_DIR` na extração — forma **autocontida**, sem depender de
+   `lib-crlf-normalize.sh` (o consumidor não o tem).
+2. Avaliar se o `case` de validação deve **também** recusar caracteres de controle, em vez de só
+   normalizar. Decidir e escrever: normalizar silenciosamente esconde um `trackfw.yaml` malformado.
+3. Aplicar no **literal** e regenerar a cópia versionada a partir dele.
+
+**Critérios de aceite:**
+- [x] `trackfw.yaml` com CRLF produz `.trackfw-attention.json` em `docs/roadmaps/` — provado
+      **executando**; o diretório com `\r` no nome **não** é criado
+- [x] 🔴 **Contra-braço:** LF continua funcionando, `roadmap_dir` com espaço não é quebrado, e
+      `trackfw.yaml` **sem** `roadmap_dir:` cai no fallback
+- [x] A decisão escrita: **normalizar, não rejeitar** — rejeitar cairia no fallback `docs/roadmaps`,
+      que é o **mesmo** desfecho silencioso que estamos corrigindo; muda só qual diretório errado.
+      Higiene de YAML malformado pertence ao `validate`/`doctor`, que têm canal com o usuário
+- [x] A frase da Regra Dura de Reconciliação, por teste novo
+
+---
+
+## Ajustes do ML-3B decididos pela Wave 0
+
+- **Ordem:** `strip_cr` **DEPOIS** do `[:300]` — os dois vivem em contextos irredutíveis (`[:300]` é
+  do subprocesso `python3`, a normalização é do bash sobre o stdout dele). O `\r` de interesse é
+  acrescentado pelo `print()` **após** o slice, então não há escape a partir pela metade.
+- **Forma autocontida:** `sed $'s/\r$//'` — ANSI-C quoting, portável entre BSD e GNU `sed`, mesmo
+  padrão do `lib-crlf-normalize.sh`, sem depender da lib.
+- 🔴 **Pré-condição obrigatória — `pipefail`:** o script tem `set -euo pipefail` na linha 3. **Com**
+  `pipefail`, o rc não-zero do `python3` propaga pelo pipe e o `|| echo "Agent needs attention"`
+  dispara. **Sem** `pipefail`, o `sed` (último do pipe) devolve 0, o `||` **nunca** dispara e a
+  variável fica **vazia em silêncio**. O `ML-3B` deve deixar **comentário inline** registrando essa
+  dependência — uma refatoração futura que remova o `pipefail` quebra o fallback sem erro visível.
+
+## Roteamento decidido — o overwrite NÃO entra aqui
+
+O ML-3A mediu que `scaffold.go:995` usa `os.WriteFile` (`O_TRUNC`) sem checar existência, sem diff e
+sem prompt — **mesma causa do #445** (`writeTrackfwConfig`, `scaffold.go:789`).
+
+**Não entra nesta REQ.** Mesma causa → mesma REQ, e a REQ é a do **#445**, que já existe. Abrir aqui
+seria o padrão que a Regra Dura proíbe. Fica registrado como **residual desta wave**, com a
+assimetria de severidade que o parecer nomeia: aqui o consumidor perde uma customização e recebe o
+script **correto**; no #445 ele perde **configuração deliberada** e o produto passa a reportar estado
+de governança **falso**.
+
+
+### Auditoria do ML-3D — e uma régua minha que repetiu o defeito que acabamos de corrigir
+
+**Falsifiquei por conta própria**, sem confiar no relatório: adulterei `trackfw-git-branch-guard.sh`,
+o teste **reprovou**; restaurei, **passou**; `git status` limpo depois.
+
+⚠️ **O `validate` ficou fora da tabela, com razão declarada e que eu aceito.** `generateValidateScript`
+escreve em caminho **relativo ao cwd** — em `go test` o cwd é `internal/generators/`, então chamá-la
+gravaria em `internal/generators/scripts/`. É **a armadilha do `Chdir` documentada na nota do vault**,
+por outro caminho. A saída foi comparar contra `buildValidateScript(Config{})`, a função pura que ela
+chama por dentro.
+
+🔴 **Ressalva que fica escrita:** isso fixa que a cópia versionada foi gerada com `Config` **vazia**.
+Se algum dia ela passar a ser gerada com config preenchida, o teste reprova por **motivo alheio** ao
+que mede. Não é defeito hoje — é dívida declarada, e declará-la é o que a distingue de uma omissão.
+
+#### 🔴 O erro de método que eu cometi auditando
+
+Para checar se o teste caía na armadilha do `Chdir`, rodei `grep -c 'os.Chdir'` e obtive **2**. Ia
+reportar violação. As duas ocorrências eram **comentários** explicando que ele **não** usa `Chdir`.
+
+**É exatamente o defeito que o `ML-3C` acabou de corrigir no gate** — `grep` sobre bloco **com**
+comentários, prosa contando como implementação. Consertamos no produto e eu o repeti na auditoria,
+no mesmo dia, sobre o mesmo tema. Fica registrado porque a lição não é sobre o gate: é sobre a régua.
+
+---
+
+### ML-3F — 🔴 a correção do ML-3E quebrava no Windows, que é a plataforma que ela existe para consertar
+**Owner:** `apolo-tf`
+**Status:** ✅ Concluído — auditado em 2026-09-27, **com verificação na VM antes do CI**
+
+#### O defeito, achado pelo contra-braço que eu exigi
+
+O `windows-full-suites` do PR #453 reprovou em
+`TestAttentionSignal_SpaceInRoadmapDir_NotBrokenByCRLFNorm` — o **contra-braço de espaço no nome**.
+Reproduzi na VM e instrumentei o pipeline:
+
+```
+ROADMAP_DIR=$( … | sed $'s/\r//g' )
+sed: -e expression #1, char 0: no previous regular expression
+ROADMAP_DIR=[]        ← vazio, cai no fallback e IGNORA o roadmap_dir do consumidor
+```
+
+🔴 **E falhava sempre no Windows — com CRLF e com LF.** Não era caso de borda: era **todo** consumidor
+Windows com `roadmap_dir` customizado perdendo o valor. Pior que o defeito original, e a um merge de
+ser publicado na v9.0.1.
+
+#### Três formas, duas plataformas — medido, porque "portável" era hipótese
+
+| forma | macOS (BSD sed) | Windows (Git Bash, GNU sed 4.9) |
+|---|---|---|
+| `sed $'s/\r$//'` — caminho **python3** (ML-3B) | ok | **ok** |
+| `sed $'s/\r//g'` — **ROADMAP_DIR** (ML-3E) | ok | 🔴 **falha** |
+| `tr -d '\r'` | ok | ok |
+
+O parecer da Wave 0 afirmou que `sed $'...'` é *"portável entre BSD e GNU sed"*. É verdade para a
+forma `$//` e **falso** para a forma `//g` no MSYS. **Afirmação de portabilidade que ninguém
+exercitou no ambiente alvo** — e que nenhum gate local tinha como pegar.
+
+Escolha: `tr -d '\r'`, que o script **já usa duas vezes** no mesmo pipeline (para aspas). Menos
+superfície que introduzir um `sed` com quoting diferente.
+
+#### Verificação na VM, ANTES do CI — os quatro cenários
+
+```
+CRLF + espaço no nome     → ./my roadmaps/.trackfw-attention.json
+LF   + espaço no nome     → ./my roadmaps/.trackfw-attention.json
+CRLF simples              → ./docs/roadmaps/.trackfw-attention.json
+sem roadmap_dir           → ./docs/roadmaps/.trackfw-attention.json   (fallback)
+```
+
+**Critérios de aceite:**
+- [x] Os 3 sítios usam `tr -d '\r'`; o caminho python3 permanece `sed $'s/\r$//'`
+- [x] As 3 cópias versionadas **regeneradas a partir do literal** — `TestScripts_LiteralMatchesVersionedCopy` verde nos 5 pares
+- [x] Comentário de decisão registra a reprovação medida, com o erro literal do Git Bash
+- [x] Verificado na **VM**: 4 cenários corretos
+- [x] `make quality` `exit=0`, **1367** `^OK `, **0** `: FALHA`
+- [ ] 🔴 `windows-full-suites` verde no PR #453 — **só o CI fecha este**
+
+#### ⚠️ Residual declarado: o discriminante do gate NÃO reconhece `tr -d '\r'`
+
+O executor afirmou que *"`tr -d '\r'` é reconhecido como `strip_cr`"*. **Verifiquei e não é.** O gate
+testa:
+
+```
+grep -qF 'strip_cr' … || grep -qF 's/\r$//' …
+```
+
+`tr -d '\r'` não casa com nenhum dos dois. O gate passa porque **o sítio `ROADMAP_DIR` não é
+candidato** — candidato exige captura de `python3`, e ali não há `python3`. Passa pelo motivo certo,
+mas **não** pela razão que ele deu.
+
+🔴 **Lacuna latente:** se alguém usar `tr -d '\r'` num sítio que **é** candidato, o gate **acusa
+indevidamente**. Não corrijo aqui: nenhum sítio real está nessa condição hoje, e a v9.0.1 tem janela
+— cada dia com a v9.0.0 corrente gera instalações novas com o sinal silenciando. **Declarado para
+não virar surpresa**, que é o que distingue dívida de omissão.

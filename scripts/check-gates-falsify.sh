@@ -8001,10 +8001,77 @@ assert_fails_with "crlf-normalize/stdout-write-capture" \
   env CRLF_GATE_MIN_CAPTURES=1 bash "$T197/scripts/check-crlf-normalize-capture.sh" \
   --scan-root "$T197E"
 
+# ---------------------------------------------------------------------------
+# Braço F — Go embedded literal sem normalização → gate REPROVA (ML-3C)
+#   Afirma que o gate reprova um literal bash embutido em internal/generators/*.go
+#   que captura python3 sem strip_cr nem sed-crlf — a conclusão deste ML de que
+#   o escopo antigo não enxergava o sítio que distribui.
+#
+#   Indireção obrigatória: o literal $(python3 não pode aparecer verbatim neste
+#   source — o gate escaneia scripts/*.sh incluindo este. Montamos com $PY.
+#   O arquivo .go sintético vai em internal/generators/ dentro do scan-root
+#   para que o glob do gate o encontre.
+# ---------------------------------------------------------------------------
+T197F="$WORK/s197/arm-f"
+mkdir -p "$T197F/scripts" "$T197F/internal/generators"
+cp "$T197/scripts/lib-crlf-normalize.sh" "$T197F/scripts/"
+PY=python3
+# Write a synthetic Go file with an embedded bash literal that captures python3
+# without normalization. The backtick string mimics Go raw-string literal syntax.
+printf 'package generators\n\nconst badScript = `#!/usr/bin/env bash\nBAD_VAR=$(%s -c '"'"'print("hello")'"'"')\necho "$BAD_VAR"\n`\n' "$PY" \
+  > "$T197F/internal/generators/bad_embed.go"
+
+assert_fails_with "crlf-normalize/go-unnormalized-capture" \
+  "python3 capture without strip_cr" \
+  env CRLF_GATE_MIN_CAPTURES=1 bash "$T197/scripts/check-crlf-normalize-capture.sh" \
+  --scan-root "$T197F"
+
+# ---------------------------------------------------------------------------
+# Braço G — Go embedded literal com sed-crlf → gate PASSA (ML-3C)
+#   Afirma que o mesmo literal com sed $'s/\r$//' (o inline equivalente de
+#   strip_cr) passa sem falso positivo — a ampliação não é um acusador
+#   indiscriminado.
+# ---------------------------------------------------------------------------
+T197G="$WORK/s197/arm-g"
+mkdir -p "$T197G/scripts" "$T197G/internal/generators"
+cp "$T197/scripts/lib-crlf-normalize.sh" "$T197G/scripts/"
+# Write a synthetic Go file with an embedded bash literal that normalizes via
+# the inline sed form. We assemble the sed pattern via variable to avoid the
+# literal appearing verbatim here (scanner uses fixed-string grep on \.sh files).
+SED_NORM='s/\r$//'
+printf 'package generators\n\nconst goodScript = `#!/usr/bin/env bash\nGOOD_VAR=$(%s -c '"'"'print("hello")'"'"' | sed '"'"'%s'"'"')\necho "$GOOD_VAR"\n`\n' "$PY" "$SED_NORM" \
+  > "$T197G/internal/generators/good_embed.go"
+
+assert_succeeds "crlf-normalize/go-normalized-capture" \
+  env CRLF_GATE_MIN_CAPTURES=1 bash "$T197/scripts/check-crlf-normalize-capture.sh" \
+  --scan-root "$T197G"
+
+# ---------------------------------------------------------------------------
+# Braço H — Go embedded literal com sed-crlf APENAS em comentário → gate REPROVA (ML-3C)
+#   Afirma que uma menção de 's/\r$//' num comentário (^[[:space:]]*#) NÃO
+#   satisfaz a condição 3 — a normalização deve estar em código ativo, não em
+#   prosa. Prova que o filtro de comentários no bloco block_code funciona.
+#
+#   Contexto: scaffold.go:939 tem exatamente este padrão — um comentário que
+#   menciona 'sed $'"'"'s/\r$//'  antes das linhas de captura. Sem o filtro,
+#   o gate aprovaria incorretamente qualquer captura seguida deste comentário.
+# ---------------------------------------------------------------------------
+T197H="$WORK/s197/arm-h"
+mkdir -p "$T197H/scripts" "$T197H/internal/generators"
+cp "$T197/scripts/lib-crlf-normalize.sh" "$T197H/scripts/"
+SED_PAT='s/\r$//'
+printf 'package generators\n\nconst commentOnly = `#!/usr/bin/env bash\nBAD_VAR=$(%s -c '"'"'print("hello")'"'"')\n# sed '"'"'%s'"'"': strips CRLF -- comment only, not in pipeline\necho "$BAD_VAR"\n`\n' "$PY" "$SED_PAT" \
+  > "$T197H/internal/generators/comment_only.go"
+
+assert_fails_with "crlf-normalize/go-comment-only-sed" \
+  "python3 capture without strip_cr" \
+  env CRLF_GATE_MIN_CAPTURES=1 bash "$T197/scripts/check-crlf-normalize-capture.sh" \
+  --scan-root "$T197H"
+
 if falsify_failed_since "$_falsify_mark_s197"; then
   echo "FAIL [falsify/crlf-normalize]: rótulo de sucesso suprimido -- ponto de reprovação registrado neste cenário (modo enumerate); a garantia NÃO foi exercitada" >&2
 else
-  echo "OK   [falsify/crlf-normalize]: 5 braços (A/B/C/D/E) provados"
+  echo "OK   [falsify/crlf-normalize]: 8 braços (A/B/C/D/E/F/G/H) provados"
 fi
 
 # ---------------------------------------------------------------------------

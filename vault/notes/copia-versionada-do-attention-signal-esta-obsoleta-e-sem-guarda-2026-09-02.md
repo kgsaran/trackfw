@@ -57,6 +57,23 @@ por isso, e **não** na cópia versionada — se ancorasse na cópia, reprovaria
   saída do gerador. Hoje esse gate não existe, e a lacuna é maior que o prefixo de codificação:
   vale para **qualquer** mudança futura no literal.
 
+## Resolução — ML-3D (REQ-2026-09-23, Wave 3) · 2026-09-27
+
+O gate foi criado: `TestAttentionScripts_LiteralMatchesVersionedCopy` em
+`internal/generators/scaffold_literal_copy_parity_test.go`.
+
+Ele usa `GenerateAttentionScripts(t.TempDir())` com caminho absoluto — sem nenhum
+`os.Chdir`. A raiz do repositório é resolvida por `findRepoRoot` (caminha até `go.mod`).
+Esse design evita por construção a armadilha descrita na seção "Por que ninguém percebeu".
+
+Cobertos: `trackfw-attention-signal.sh` e `trackfw-attention-cleanup.sh`. Mensagem de
+falha nomeia explicitamente a direção de correção (literal → cópia) e o offset do
+primeiro byte divergente.
+
+**Achado colateral:** `gitBranchGuardScript` em `scaffold.go` e
+`scripts/trackfw-git-branch-guard.sh` têm a mesma estrutura de duas naturezas sem guarda.
+Fora do escopo deste ML — reportado ao arquiteto.
+
 ## Referências
 
 - `scripts/check-output-encoding-declared.sh` (alvo 2)

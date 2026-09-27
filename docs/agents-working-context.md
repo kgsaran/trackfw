@@ -2,6 +2,83 @@
 
 ---
 
+## 2026-09-27 — Apolo (fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre — ML-3F) — ENTREGUE (AGUARDANDO AUDITORIA)
+
+**Início:** 2026-09-27 | Branch: `fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre`
+**Tarefa:** ML-3F — trocar `sed $'s/\r//g'` por `tr -d '\r'` nos 3 sítios de ROADMAP_DIR; regenerar cópias versionadas
+
+**Resultado:**
+- 3 sítios de `ROADMAP_DIR` em `internal/generators/scaffold.go` trocados: `sed $'s/\r//g'` → `tr -d '\r'` (linhas 951, 984, 1326 — pos-edição).
+- Comentário do bloco Go acima do literal atualizado: documenta que `sed $'s/\r//g'` foi medido e reprovado no Git Bash com o erro literal: `sed: -e expression #1, char 0: no previous regular expression`.
+- Comentários inline nos 3 sítios dentro do bash literal também atualizados para `tr -d '\r'` com aviso `DO NOT use sed $'s/\r//g'`.
+- Caminho python3 (`sed $'s/\r$//'` em TOOL e MSG) intocado — funciona nos dois, mudança sem necessidade evitada.
+- 3 cópias versionadas regeneradas via binário compilado desta branch (`/tmp/tf-3f`): `scripts/trackfw-attention-signal.sh`, `scripts/trackfw-attention-cleanup.sh`, `scripts/trackfw-credential-guard.sh` — byte-idênticas ao que o gerador produz (diff exit=0).
+- `internal/validator/validator_credential_guard_integrity_reference.go` atualizado (mesma troca de `sed $'s/\r//g'` → `tr -d '\r'` + comentário) — `TestCredentialGuardScriptReference_MatchesGenerator` verde.
+- `go test ./...`: exit=0, todos os pacotes PASS.
+- `go build ./...`: exit=0.
+- `make quality`: rodando em background, /private/tmp/quality-3f.log, sem FALHA até linha 317.
+- `trackfw validate`: exit=0, 0 violations novas (170 warnings lenient, pré-existentes).
+- `scripts/check-crlf-normalize-capture.sh`: exit=0 — `tr -d '\r'` reconhecido como `strip_cr`, não flagrado.
+- Nenhum teste novo criado neste ML — Regra Dura de Reconciliação não se aplica.
+- `git status --porcelain`: apenas os 6 arquivos esperados (working-context, scaffold.go, validator reference, 3 scripts).
+
+---
+
+## 2026-09-27 — Ártemis (fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre — ML-3D) — ENTREGUE (AGUARDANDO AUDITORIA)
+
+**Início:** 2026-09-27 | Branch: `fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre`
+**Tarefa:** ML-3D — guarda que compara o literal embutido com a cópia versionada
+
+**Resultado:**
+- Novo arquivo `internal/generators/scaffold_literal_copy_parity_test.go` com `TestAttentionScripts_LiteralMatchesVersionedCopy`.
+- Usa `GenerateAttentionScripts(t.TempDir())` com caminho absoluto — sem `os.Chdir` em nenhum ponto; armadilha do Chdir evitada por construção.
+- `findRepoRoot` (já em `scaffold_parity_test.go`) usada para localizar as cópias versionadas; caminha até `go.mod`.
+- Cobre signal e cleanup num loop table-driven; `t.Skip` se `scripts/` dir ausente, `t.Errorf` se arquivo específico ausente.
+- Mensagem de falha: nomeia a direção (literal → cópia), offset do primeiro byte divergente, contexto de 60 bytes de cada lado.
+- Falsificação: tamper em `trackfw-attention-signal.sh` (conteúdo, não deleção) → rc=1, FAIL/signal; restore → rc=0, PASS. SHAs antes/depois registrados.
+  - SHA antes (original): `f9c2471b5d1c9eaa...`  SHA após tamper: `c8272da87edfc8ca...`  SHA após restore: `f9c2471b5d1c9eaa...`
+- `make quality`: exit=0, 0 `: FALHA`, 347 OK (parity), suite completa.
+- `trackfw validate`: exit=0, 170 warnings (lenient), 0 violations novas.
+- Vault note `copia-versionada-do-attention-signal-esta-obsoleta-e-sem-guarda-2026-09-02.md` atualizada com seção "Resolução".
+- Achado colateral: `gitBranchGuardScript` / `scripts/trackfw-git-branch-guard.sh` — mesma estrutura de duas naturezas, sem guarda. Fora do escopo deste ML; reportado ao arquiteto.
+
+---
+
+## 2026-09-27 — Apolo (fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre — ML-3B + ML-3E) — ENTREGUE (AGUARDANDO AUDITORIA)
+
+**Início:** 2026-09-27 | Branch: `fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre`
+**Tarefa:** ML-3B (normalizar CRLF nos sítios python3 do literal) + ML-3E (normalizar ROADMAP_DIR)
+**Arquivos afetados:** `internal/generators/scaffold.go` · `scripts/trackfw-attention-signal.sh` · `internal/generators/scaffold_test.go` · `internal/validator/validator_credential_guard_integrity_reference.go`
+
+**Resultado:**
+- ML-3B: `sed $'s/\r$//'` adicionado a TOOL e MSG (linhas 941-942 no literal `attentionSignalScript`). Comentário inline sobre dependência de `pipefail`. Decisão de normalização documentada no bloco Go acima do literal.
+- ML-3E: `sed $'s/\r//g'` adicionado ao ROADMAP_DIR em 3 sítios: `attentionSignalScript` (946), `attentionCleanupScript` (979), e `credentialGuardProjectTail` (1321 — sítio adicional identificado pelo advisor: mesma causa, não enumerado no handoff).
+- Decisão normalize-vs-reject: normalizar. Razão: rejeitar (fallback para "docs/roadmaps") seria o mesmo outcome silencioso-errado que estamos corrigindo. Documentado no bloco Go acima do literal.
+- `scripts/trackfw-attention-signal.sh` regenerada do literal — byte-idêntica ao que o gerador produz (diff exit=0, ambas 1900 bytes).
+- `internal/validator/validator_credential_guard_integrity_reference.go` atualizado para paridade com o gerador (linha ROADMAP_DIR + comentário adicionados).
+- 4 testes novos: `TestAttentionSignal_Literal_HasCRLFNormalisationAtPython3Sites` (ML-3B estrutural), `TestAttentionSignal_CRLF_TrackfwYaml_WritesToCorrectPath` (ML-3E execução), `TestAttentionSignal_LF_TrackfwYaml_StillWorks` (contra-braço LF), `TestAttentionSignal_SpaceInRoadmapDir_NotBrokenByCRLFNorm` (contra-braço espaço).
+- `go test ./...`: exit=0, todos os pacotes PASS.
+- `go build ./...`: exit=0.
+- `make quality`: rodando em background (~13 min), `/private/tmp/quality-3b.log`, 0 `: FALHA` até 1191 linhas.
+- Refutação da enumeração: handoff dizia "duas ocorrências" (928 e 959); `credentialGuardProjectTail` tem o mesmo bloco na linha ~1300 — mesmo sintoma, mesmo arquivo, mesma causa. Corrigido junto (Regra Dura de Causa Raiz).
+- Linhas pós-edição (para ML-3C): TOOL=941, MSG=942, ROADMAP_DIR(signal)=946, ROADMAP_DIR(cleanup)=979, ROADMAP_DIR(credguard)=1321. Token autocontido: `sed $'s/\r$//'` (python3) e `sed $'s/\r//g'` (ROADMAP_DIR).
+
+---
+
+## 2026-09-27 — Hades (fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre — ML-3A) — ENTREGUE
+
+**Inicio:** 2026-09-27 | Branch: `fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre`
+**Tarefa:** ML-3A — Wave 0 da reabertura da REQ-2026-09-23 — modelo de ameaca do sitio distribuido.
+
+**Resultado:**
+- Parecer escrito em `docs/seguranca/2026-09-27-wave0-literal-distribuido-crlf.md`.
+- Q1: `strip_cr` nao altera o modelo de ameaca para o JSON gravado — `tr -d '\000-\037'` ja remove CR. Justificativa correta para ML-3B e paridade literal+copia, nao prevencao de JSON inválido.
+- Q2: `strip_cr` DEPOIS de `[:300]` (pipe no subprocesso). Forma: `sed $'s/\r$//'`. Constraint: depende de `set -o pipefail` para fallback de MSG — ML-3B deve comentar.
+- Q3: regeneracao sobrescreve sem aviso, mesma causa que #445. Routing: REQ do #445, nao nova REQ aqui.
+- Achado adicional: ROADMAP_DIR pode receber `\r` de trackfw.yaml CRLF (grep sobre arquivo, nao python3). Nao passa por `tr -d '\000-\037'`. Recomendo ML-3E nesta REQ; decisao do arquiteto.
+
+---
+
 ## 2026-09-26 — Apolo (fix/req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos — ML-6B) — ENTREGUE (AGUARDANDO AUDITORIA)
 
 **Início:** 2026-09-26 | Branch: `fix/req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos`
@@ -41927,5 +42004,74 @@ régua não muda veredito nenhum hoje.
 
 **Decisão do ponto único (item 2 do handoff):**
 `rewriteREQRoadmapRefWith` foi generalizado em vez de criar cópia. Dois novos parâmetros (`fmKey`, `bodyKey`) substituem as strings literais "roadmap"/"Roadmap". `bodyOnce=true` para o lado roadmap — previne reescrita de prosa/blocos de código após o §Context.
+
+**Sem Git:** não criei branch, não commitei, não fiz push.
+
+## 2026-09-27 — Ártemis (fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre — ML-3C) — EM ANDAMENTO
+
+**Início:** 2026-09-27 | Branch: `fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre`
+
+**Tarefa:** ML-3C — Estender `scripts/check-crlf-normalize-capture.sh` para também varrer literais embutidos em `internal/generators/*.go`.
+
+**Estado:** Editando `scripts/check-crlf-normalize-capture.sh` + adicionando braços F/G ao Cenário 197 de `scripts/check-gates-falsify.sh`.
+
+## 2026-09-27 — Ártemis (fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre — ML-3C) — ENTREGUE (AGUARDANDO AUDITORIA)
+
+**Fim:** 2026-09-27 | Branch: `fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre`
+
+**Entregue (não commitado):**
+
+- `scripts/check-crlf-normalize-capture.sh`
+  - Scope estendido para `internal/generators/*.go` — segundo loop após o de scripts/*.sh
+  - Reconhece `sed $'s/\r$//'` como normalizador equivalente a `strip_cr` (ambos usam a mesma sed command; necessário porque scripts standalone não podem sourcear lib-crlf-normalize.sh)
+  - Floor atualizado de 50→52 (70 candidatos medidos, ≈74%)
+  - Header documentado: SCOPE, NORMALIZATION FORMS RECOGNIZED, NON-COVERED FORMS para Go
+  - Go `//` comments: declarados no header como superfície de falso-positivo (não cobertos pelo skip de `#`)
+- `scripts/check-gates-falsify.sh`
+  - Braço F: Go embedded literal sem normalização → gate REPROVA
+  - Braço G: Go embedded literal com sed-crlf → gate PASSA
+  - Contador atualizado de "5 braços" para "7 braços (A/B/C/D/E/F/G)"
+
+**Medições reais:**
+- Braço de reprovação (pré-correção): confirmado via braço F da falsify (fixture `bad_embed.go`) — FAIL [bad_embed.go:4] python3 capture without strip_cr
+- Braço de aprovação (pós-correção): scaffold.go:941-942 agora passam (ML-3B já fixou com `sed $'s/\r$//'`)
+- Controle negativo: scaffold.go:2202 não aparece na saída do gate
+- Contra-braço scripts/*.sh: antes 67 OK + 2 FAIL = 69; depois 69 OK + 0 FAIL = 69 (mesma contagem, sem afrouxamento)
+- Candidatos totais: 70 (68 de scripts/*.sh + 2 de scaffold.go:941-942)
+- `make quality`: exit=0, 0 `: FALHA` · `trackfw validate`: 170 warnings, 0 novas violações
+
+**Sem Git:** não criei branch, não commitei, não fiz push.
+
+**Descoberta adicional durante ML-3C:** `grep -qF 's/\r$//'` no bloco de lookahead era derrotável por comentário (`# sed $'s/\r$//'`). Corrigido com `block_code` (linhas `^[[:space:]]*#` filtradas) antes da verificação de normalização. Vault note: `vault/notes/grep-normalization-check-defeatable-by-comment-2026-09-27.md`. Braço H do Cenário 197 falsifica.
+
+## 2026-09-27 — Ártemis (fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre — ML-3D R1) — ENTREGUE (AGUARDANDO AUDITORIA)
+
+**Fim:** 2026-09-27 | Branch: `fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre`
+
+**Entregue (não commitado):**
+
+- `internal/generators/scaffold_literal_copy_parity_test.go`
+  - Renomeado: `TestAttentionScripts_LiteralMatchesVersionedCopy` → `TestScripts_LiteralMatchesVersionedCopy` (nome era só referenciado no próprio arquivo untracked; renomeado para refletir escopo expandido)
+  - Tabela estendida de 2 → 4 pares: adicionados `credential-guard` e `git-branch-guard`
+  - Adicionado `t.Run("validate", ...)` fora da tabela com comparação direta via `buildValidateScript(Config{})` (generateValidateScript usa cwd-relativo — Chdir trap documentada na vault note; solução: chamar buildValidateScript diretamente)
+  - Função `divergenceError` extraída como helper compartilhado entre todos os sub-testes
+  - Mensagem de falha de cada par nomeia o literal/função de origem (direção: regenerar a cópia do literal, nunca o contrário)
+  - Cobertura: 5 de 5 pares
+
+**Medições reais (falsificação par a par, duas direções):**
+
+| Par | Mutação (FAIL) | Restauração (PASS) |
+|-----|---------------|-------------------|
+| credential-guard | offset 4820: versioned=4834 vs generated=4820 | PASS |
+| git-branch-guard | offset 30666: versioned=30680 vs generated=30666 | PASS |
+| validate | offset 176: versioned=190 vs generated=176 | PASS |
+
+(attention signal/cleanup: cobertos pelo teste anterior, mantidos funcionando)
+
+**Regra Dura de Reconciliação:** os três pares novos assertam que `trackfw-credential-guard.sh`, `trackfw-git-branch-guard.sh` e `trackfw-validate.sh` são pares literal/cópia da mesma natureza que o par de attention (byte-idênticos hoje, mesma estrutura de gerador, mesma guarda ausente) — e portanto sujeitos ao mesmo silent revert que o #414 produziu: literal corrigido, cópia não atualizada, ou cópia corrigida e um `trackfw init` posterior regenera a cópia a partir do literal não corrigido.
+
+**Gates:**
+- `make quality`: exit=0, 0 `: FALHA`
+- `trackfw validate`: 170 warnings, 0 novas violações
 
 **Sem Git:** não criei branch, não commitei, não fiz push.
