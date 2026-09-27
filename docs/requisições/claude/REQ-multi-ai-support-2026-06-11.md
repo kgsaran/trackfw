@@ -5,6 +5,7 @@ title: Suporte multi-AI — subcomandos por ferramenta
 status: Done
 priority: medium
 type: feature
+date: 2026-06-11
 created: 2026-06-11
 author: claude
 ---

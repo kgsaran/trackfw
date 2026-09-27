@@ -5,6 +5,7 @@ title: REQ-driven ADR discovery
 status: Done
 priority: medium
 type: feature
+date: 2026-06-12
 created: 2026-06-12
 author: claude
 ---
