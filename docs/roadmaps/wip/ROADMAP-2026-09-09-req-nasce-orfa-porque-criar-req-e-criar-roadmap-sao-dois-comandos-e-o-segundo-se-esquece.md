@@ -249,44 +249,19 @@ Este design aceita explicitamente não cobrir:
 # Quem prova a correção são os critérios de aceite de cada ML (falsificação: nome vazio
 # ⇒ erro; contra-braço: nome exato ⇒ move). Este gate é de ENUMERAÇÃO, não de correção —
 # não o use como evidência de que um sítio foi consertado.
-# Usar git grep (não ugrep): npm/src/validator/index.js tem NUL bytes que o ugrep omite.
-cd "$(git rev-parse --show-toplevel)" || exit 1
-
-# Vacuidade: confirma que git grep enxerga npm/src/validator/index.js (NUL não omitido).
-if ! git grep -q 'branchSlug' npm/src/validator/index.js 2>/dev/null; then
-  echo "GATE FALHOU: git grep não enxerga npm/src/validator/index.js" >&2; exit 1
-fi
-
-EXPECTED=10
-fail=0
-# Cada entrada: "arquivo:padrão" — um sítio documentado na Seção 1.
-checks=(
-  "internal/generators/roadmap.go:containsIgnoreCase"
-  "internal/generators/req.go:containsIgnoreCase"
-  "internal/validator/validator.go:BranchSlugMatchesRoadmap"
-  "npm/src/generators/roadmap.js:findRoadmapMatches"
-  "npm/src/generators/req.js:findREQ"
-  "npm/src/validator/index.js:branchSlugMatchesRoadmap"
-  "pypi/trackfw/generators/roadmap.py:_find_roadmap_matches"
-  "pypi/trackfw/generators/req.py:find_req"
-  "pypi/trackfw/commands/roadmap.py:_find_file"
-  "pypi/trackfw/validator.py:branch_slug_matches_roadmap"
-)
-found=0
-for check in "${checks[@]}"; do
-  file="${check%%:*}"; pattern="${check##*:}"
-  if git grep -q "$pattern" "$file" 2>/dev/null; then
-    found=$((found + 1))
-  else
-    echo "  sítio removido ou renomeado: $file não contém '$pattern'" >&2
-    echo "  → atualize EXPECTED e marque o ML que corrigiu este sítio como ✅" >&2
-    fail=1
-  fi
-done
-if [ "$found" -ne "$EXPECTED" ] || [ "$fail" -ne 0 ]; then
-  echo "GATE FALHOU: $found/$EXPECTED sítios confirmados (esperado $EXPECTED)" >&2; exit 1
-fi
-echo "Gate ML-0A: $found/$EXPECTED sítios de inferência por substring confirmados — enumeração fechada."
+# ⚠️ RECONCILIADO em 2026-09-26. O gate original tinha DOIS defeitos independentes, e
+# nenhum apareceu antes porque `barrier --wave 0` não foi reexecutado desde 2026-09-09:
+#
+#   1. a âncora de vacuidade era `npm/src/validator/index.js`, DELETADO pela v8 (2eae0a44),
+#      e 7 dos 10 sítios enumerados moravam em npm/src e pypi/trackfw — insatisfazível;
+#   2. 🔴 era um script MULTI-LINHA. O `barrier` executa UMA LINHA POR VEZ: o `if` abria
+#      sem fechar (`exit 2`) e `checks=(` saía `127`. Ele nunca foi executável como gate,
+#      em nenhum momento — o formato, não o conteúdo, é que estava errado.
+#
+# Dos 3 sítios Go originais, `internal/generators/req.go` foi CORRIGIDO pelo ML-1C
+# (medido: 1 ocorrência em 97543eef, zero hoje). Sobram 2 — e a queda é evidência de
+# entrega, não de perda. Falsificado nas duas direções antes de entrar aqui.
+n=$(git grep -l -e containsIgnoreCase -e BranchSlugMatchesRoadmap -- internal/generators/roadmap.go internal/generators/req.go internal/validator/validator.go | wc -l | tr -d " "); test "$n" = 2 && echo "Gate ML-0A: $n/2 sitios remanescentes confirmados (1 dos 3 Go corrigido pelo ML-1C; 7 sairam com a v8)" || { echo "GATE FALHOU: $n/2 - a populacao mudou, reconcilie a enumeracao" >&2; exit 1; }
 ```
 
 ---
@@ -632,6 +607,19 @@ declarado e absolutamente vazio bloqueia o fallback para o corpo — **0 casos**
 ### ML-1E — As regras de vínculo são cegas ao frontmatter — e há instância medida
 **Owner:** `apolo-tf`
 **Status:** ✅ Concluído — auditado em 2026-09-26 · **o delta não era −2: é −7 e +24**
+**Critérios de aceite:**
+- [x] As regras de vínculo passam a ler **frontmatter e corpo**, com precedência declarada
+- [x] 🔴 **Delta medido no corpus real, não estimado** → **−7 e +24**, não os −2 que eu previ.
+      Minha régua censava *"sem linha `ADR:`"*; o mecanismo era o frontmatter **invisível** a ela
+- [x] Contra-braço: vínculo legítimo **deixa** de ser acusado, e ausência real **continua** sendo
+- [x] Reconciliação: uma frase por teste novo
+- [x] `make quality` verde
+
+⚠️ **Bloco acrescentado em 2026-09-26**, na auditoria que reexecutou os barriers das waves 0–4. O ML
+estava `✅` desde antes e **não tinha critérios escritos** — o `barrier --wave 1` recusava com
+`no acceptance block`, e ninguém tinha rodado. Os critérios acima são a **reconstituição do que foi
+de fato entregue e medido**, não invenção retroativa: cada linha aponta para medição já registrada
+no corpo deste ML.
 
 ⚠️ **Este ML foi REESCRITO por mim em 2026-09-26.** A redação anterior dizia *"achado estrutural, sem
 instância medida no corpus"* e falava só do wizard. 🔴 **Medi, e há instância — na regra, não no
@@ -912,7 +900,10 @@ dele**, e o vínculo de uma máquina passa a governar a de outra.
 
 **Critérios de aceite:**
 - [x] `trackfw init` acrescenta `<roadmap_dir>/.trackfw-branch-links.json` ao `.gitignore` gerado
-- [ ] 🔴 **Contra-braço:** `.gitignore` já existente **não é sobrescrito**, e rodar duas vezes **não
+- [x] 🔴 **Contra-braço:** verificado pelo **arquiteto** em 2026-09-26, em projeto de sonda: um
+      `.gitignore` com `# meu gitignore` + `node_modules/` **sobrevive intacto** (o bloco é
+      acrescentado ao fim), e a **2ª execução do `init`** deixa `grep -c trackfw-branch-links` em
+      **1**. `.gitignore` já existente **não é sobrescrito**, e rodar duas vezes **não
       duplica** a linha
 - [x] ⚠️ **Consumidor já onboardado não vai rodar `init` de novo** — o caminho para ele fica
       **declarado**, nem que seja uma linha dizendo que o arquivo é local e pode ser ignorado à mão
@@ -1123,6 +1114,17 @@ em 32 REQs — alguém configura `lenient` e perdemos a regra **e** o aviso.
 ### ML-4C — **AC4** — onde bloqueia
 **Owner:** `trackfw_architect` (eu)
 **Status:** ✅ Concluído em 2026-09-26 — **decisão: só o `validate`. O `push` não muda.**
+**Critérios de aceite:**
+- [x] Decisão **escrita** sobre onde a regra bloqueia → **só o `validate`**; o `push` fica como está
+- [x] 🔴 A distinção entre os **dois universos** (1 artefato × N artefatos) medida e registrada —
+      é o erro que este ML existe para evitar
+- [x] Nenhuma mudança de comportamento no `push` → `branch_has_wip_roadmap` intocado
+- [x] `trackfw validate` sem violation nova
+
+⚠️ **Bloco acrescentado em 2026-09-26**, mesma auditoria do `ML-1E`. Este ML é **decisão pura** — não
+entrega código —, e por isso nasceu sem critérios. 🔴 **Decisão pura também precisa de bloco de
+aceite:** sem ele o `barrier` não distingue *"decidido"* de *"esquecido"*, e foi exatamente isso que
+ele recusou.
 
 ### A distinção que o AC4 pede, medida
 
