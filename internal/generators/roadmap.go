@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -978,14 +979,57 @@ func appendTransitionLogEntry(basename, fromState, toState string) error {
 		return err
 	}
 	defer f.Close()
-	line := fmt.Sprintf("%s  %-50s  %s → %s\n",
-		time.Now().Format("2006-01-02 15:04"),
+	now := time.Now()
+	line := fmt.Sprintf("%s  %-50s  %s → %s%s\n",
+		now.Format("2006-01-02 15:04"),
 		basename,
 		fromState,
 		toState,
+		transitionLogSuffix(now),
 	)
 	_, err = f.WriteString(line)
 	return err
+}
+
+// transitionLogSuffix devolve a cauda de fuso e autor acrescentada a toda linha de
+// transicao, construida para o ParseLog de HOJE continuar lendo sem mudanca.
+//
+// 🔴 Por que no FIM, e nao ao lado do horario: a regex de internal/serve/metrics_log.go
+// nao e ancorada no fim, entao um sufixo e invisivel para ela — mas um offset inserido
+// depois da hora ("2026-09-18 08:29 -0300  ...") quebra o \s{2,} que segue o grupo do
+// timestamp, e a linha deixaria de ser lida EM SILENCIO. As tres formas foram medidas
+// contra aquela regex antes de escrever esta (#407).
+//
+// A unidade continua sendo a linha, entao o merge=union do .gitattributes
+// (REQ-2026-09-02) segue valendo.
+func transitionLogSuffix(t time.Time) string {
+	suffix := "  " + t.Format("-0700")
+	if email := gitUserEmail(); email != "" {
+		suffix += "  (" + email + ")"
+	}
+	return suffix
+}
+
+// gitUserEmail le user.email do git, e devolve "" em vez de falhar.
+//
+// Fail-soft por decisao: sem git, sem repositorio, ou com user.email vazio, o campo
+// entre parenteses simplesmente nao aparece e a linha continua valida. Um log de
+// transicao que recusasse escrever por falta de identidade trocaria um campo ausente
+// por um historico ausente.
+//
+// A recusa de CR, LF e parenteses nao e paranoia: a linha e a unidade de que dependem
+// tanto o merge=union quanto o ParseLog, e um e-mail com quebra de linha partiria as
+// duas coisas de uma vez.
+func gitUserEmail() string {
+	out, err := exec.Command("git", "config", "--get", "user.email").Output()
+	if err != nil {
+		return ""
+	}
+	email := strings.TrimSpace(string(out))
+	if strings.ContainsAny(email, "\r\n()") {
+		return ""
+	}
+	return email
 }
 
 // ShowRoadmap exibe o conteúdo de um roadmap identificado por nome parcial.
@@ -1135,6 +1179,7 @@ func extractFrontmatterRoadmap(content string) string {
 	}
 	return ""
 }
+
 // extractFrontmatterReq: já declarada em req_chain_ml4a.go (mesmo pacote).
 
 // rewriteREQRoadmapRef reescreve o campo roadmap: no frontmatter e a linha Roadmap: no
