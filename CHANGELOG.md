@@ -7,6 +7,45 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [9.0.1] - 2026-09-27
+
+### Fixed
+
+#### 🔴 O sinal de atenção silenciava no Windows quando `trackfw.yaml` estava em CRLF
+
+`trackfw init` e `discover --init` gravam `scripts/trackfw-attention-signal.sh` a partir de um
+literal embutido no binário. Esse literal extraía o `roadmap_dir` do `trackfw.yaml` **sem** remover
+o `\r` das terminações de linha do Windows — os dois `tr -d` do pipeline removem apenas aspas, e a
+validação de caminho rejeita caminho absoluto e `..`, mas **não** caracteres de controle.
+
+O efeito não era erro: era **silêncio**. Com `roadmap_dir: docs/roadmaps` em CRLF, o valor saía
+`docs/roadmaps\r`, o `mkdir -p` criava um diretório **com CR no nome**, o `.trackfw-attention.json`
+era gravado lá, e o `trackfw serve` procurava em `docs/roadmaps/` — sem encontrar.
+
+Corrigido em **três** sítios (`attentionSignalScript`, `attentionCleanupScript` e
+`credentialGuardProjectTail`), que compartilhavam o bloco byte-idêntico.
+
+**Quem é afetado:** qualquer projeto no Windows cujo `trackfw.yaml` tenha sido salvo com terminações
+CRLF — o que o Bloco de Notas faz por padrão. **Remédio:** atualizar para a 9.0.1 e rodar
+`trackfw update`, ou normalizar o `trackfw.yaml` para LF.
+
+#### A correção do CRLF nunca alcançava o script que o produto distribui
+
+A correção equivalente de `v8.x` havia sido aplicada apenas na cópia versionada do repositório do
+trackfw, não no literal embutido. Como o gate que a protegia varria somente `scripts/*.sh`, o sítio
+que **distribui** ficava fora do seu campo de visão, e uma reexecução do gerador desfazia a correção
+silenciosamente.
+
+Agora o gate varre também os literais embutidos, e um teste compara **os 5 pares** literal ↔ cópia
+versionada, reprovando na divergência.
+
+### Internal
+
+- O discriminante do gate de CRLF passou a ignorar linhas de comentário: uma menção à forma de
+  normalização **em comentário** fazia o gate aprovar um pipeline não corrigido.
+
+---
+
 ## [9.0.0] - 2026-09-27
 
 > **Três mudanças de comportamento sobem juntas nesta major.** Nenhuma delas é adição de

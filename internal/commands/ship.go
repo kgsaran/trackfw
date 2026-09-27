@@ -437,8 +437,8 @@ func runShip(opts shipOpts, deps shipDeps) error {
 		// across the 3 CLIs (ML-1B's parity gate compares this literally).
 		pushArgs = append([]string{pushArgs[0], "--force-with-lease"}, pushArgs[1:]...)
 	}
-	if _, err := git(pushArgs...); err != nil {
-		return fmt.Errorf("git push failed: %w", err)
+	if pushOut, err := git(pushArgs...); err != nil {
+		return pushFailure(pushOut, err)
 	}
 
 	if !opts.dryRun {
@@ -798,6 +798,28 @@ func detectPendingSquashMerges(currentBranch string, gitExec func(...string) (st
 
 // buildPushArgs determines whether -u is needed and returns the full push args.
 // Uses git rev-parse @{u} to detect upstream; exit ≠ 0 means no upstream.
+// pushFailure builds the error for a failed `git push`, keeping git's own STDOUT.
+//
+// Why stdout, and why this was invisible: git forwards a pre-push hook's stdout to
+// its own stdout, and defaultGitExec captures that stream with cmd.Output() and
+// returns it as the FIRST value. Both push call sites discarded it with `_`, so the
+// hook's reason — the only text that says WHY the push was refused — never reached
+// the user. The error carried stderr alone, whose last line ("failed to push some
+// refs to …") names the symptom and not the cause.
+//
+// Measured in #449: an operator burned a battery of manual probes (invoking the hook
+// with refs on stdin, the zeroed-SHA case for a new branch, ls-remote, fast-forward
+// counts) to rediscover a message the process had already produced and thrown away.
+//
+// The empty case keeps the previous wording byte for byte, so a push that fails
+// without hook output reads exactly as it did before.
+func pushFailure(stdout string, err error) error {
+	if trimmed := strings.TrimSpace(stdout); trimmed != "" {
+		return fmt.Errorf("git push failed: %w\n%s", err, trimmed)
+	}
+	return fmt.Errorf("git push failed: %w", err)
+}
+
 func buildPushArgs(branch string, gitExec func(...string) (string, error)) []string {
 	_, err := gitExec("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
 	if err != nil {

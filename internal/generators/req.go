@@ -539,11 +539,13 @@ func appendREQTransitionLogEntry(basename, fromState, toState string) error {
 		return err
 	}
 	defer f.Close()
-	line := fmt.Sprintf("%s  %-50s  %s → %s\n",
-		time.Now().Format("2006-01-02 15:04"),
+	now := time.Now()
+	line := fmt.Sprintf("%s  %-50s  %s → %s%s\n",
+		now.Format("2006-01-02 15:04"),
 		basename,
 		fromState,
 		toState,
+		transitionLogSuffix(now),
 	)
 	_, err = f.WriteString(line)
 	return err
