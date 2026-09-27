@@ -2,6 +2,28 @@
 
 ---
 
+## 2026-09-27 — Apolo (fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre — ML-3F) — ENTREGUE (AGUARDANDO AUDITORIA)
+
+**Início:** 2026-09-27 | Branch: `fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre`
+**Tarefa:** ML-3F — trocar `sed $'s/\r//g'` por `tr -d '\r'` nos 3 sítios de ROADMAP_DIR; regenerar cópias versionadas
+
+**Resultado:**
+- 3 sítios de `ROADMAP_DIR` em `internal/generators/scaffold.go` trocados: `sed $'s/\r//g'` → `tr -d '\r'` (linhas 951, 984, 1326 — pos-edição).
+- Comentário do bloco Go acima do literal atualizado: documenta que `sed $'s/\r//g'` foi medido e reprovado no Git Bash com o erro literal: `sed: -e expression #1, char 0: no previous regular expression`.
+- Comentários inline nos 3 sítios dentro do bash literal também atualizados para `tr -d '\r'` com aviso `DO NOT use sed $'s/\r//g'`.
+- Caminho python3 (`sed $'s/\r$//'` em TOOL e MSG) intocado — funciona nos dois, mudança sem necessidade evitada.
+- 3 cópias versionadas regeneradas via binário compilado desta branch (`/tmp/tf-3f`): `scripts/trackfw-attention-signal.sh`, `scripts/trackfw-attention-cleanup.sh`, `scripts/trackfw-credential-guard.sh` — byte-idênticas ao que o gerador produz (diff exit=0).
+- `internal/validator/validator_credential_guard_integrity_reference.go` atualizado (mesma troca de `sed $'s/\r//g'` → `tr -d '\r'` + comentário) — `TestCredentialGuardScriptReference_MatchesGenerator` verde.
+- `go test ./...`: exit=0, todos os pacotes PASS.
+- `go build ./...`: exit=0.
+- `make quality`: rodando em background, /private/tmp/quality-3f.log, sem FALHA até linha 317.
+- `trackfw validate`: exit=0, 0 violations novas (170 warnings lenient, pré-existentes).
+- `scripts/check-crlf-normalize-capture.sh`: exit=0 — `tr -d '\r'` reconhecido como `strip_cr`, não flagrado.
+- Nenhum teste novo criado neste ML — Regra Dura de Reconciliação não se aplica.
+- `git status --porcelain`: apenas os 6 arquivos esperados (working-context, scaffold.go, validator reference, 3 scripts).
+
+---
+
 ## 2026-09-27 — Ártemis (fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre — ML-3D) — ENTREGUE (AGUARDANDO AUDITORIA)
 
 **Início:** 2026-09-27 | Branch: `fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre`

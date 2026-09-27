@@ -17,8 +17,9 @@ else
   MSG=$(echo "$INPUT" | PYTHONIOENCODING=utf-8 python3 -c "import sys,json; d=json.load(sys.stdin); ti=d.get('tool_input',{}); print((ti.get('question') or ti.get('command') or 'Agent is executing: '+d.get('tool_name','unknown'))[:300])" 2>/dev/null | sed $'s/\r$//' || echo "Agent needs attention")
 fi
 
-# sed $'s/\r//g': Windows CRLF in trackfw.yaml corrupts the path; normalise (not reject).
-ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | head -1 | sed 's/^roadmap_dir:[[:space:]]*//; s/[[:space:]]*#.*$//' | tr -d '"' | tr -d "'" | sed $'s/\r//g' || true)
+# tr -d '\r': Windows CRLF in trackfw.yaml corrupts the path; normalise (not reject).
+# DO NOT use sed $'s/\r//g' -- fails on Git Bash (GNU sed 4.9): "no previous regular expression".
+ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | head -1 | sed 's/^roadmap_dir:[[:space:]]*//; s/[[:space:]]*#.*$//' | tr -d '"' | tr -d "'" | tr -d '\r' || true)
 ROADMAP_DIR=${ROADMAP_DIR:-docs/roadmaps}
 
 case "$ROADMAP_DIR" in

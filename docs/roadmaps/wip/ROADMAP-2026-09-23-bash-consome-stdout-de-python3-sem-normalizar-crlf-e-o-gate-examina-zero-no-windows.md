@@ -649,3 +649,75 @@ reportar violação. As duas ocorrências eram **comentários** explicando que e
 **É exatamente o defeito que o `ML-3C` acabou de corrigir no gate** — `grep` sobre bloco **com**
 comentários, prosa contando como implementação. Consertamos no produto e eu o repeti na auditoria,
 no mesmo dia, sobre o mesmo tema. Fica registrado porque a lição não é sobre o gate: é sobre a régua.
+
+---
+
+### ML-3F — 🔴 a correção do ML-3E quebrava no Windows, que é a plataforma que ela existe para consertar
+**Owner:** `apolo-tf`
+**Status:** ✅ Concluído — auditado em 2026-09-27, **com verificação na VM antes do CI**
+
+#### O defeito, achado pelo contra-braço que eu exigi
+
+O `windows-full-suites` do PR #453 reprovou em
+`TestAttentionSignal_SpaceInRoadmapDir_NotBrokenByCRLFNorm` — o **contra-braço de espaço no nome**.
+Reproduzi na VM e instrumentei o pipeline:
+
+```
+ROADMAP_DIR=$( … | sed $'s/\r//g' )
+sed: -e expression #1, char 0: no previous regular expression
+ROADMAP_DIR=[]        ← vazio, cai no fallback e IGNORA o roadmap_dir do consumidor
+```
+
+🔴 **E falhava sempre no Windows — com CRLF e com LF.** Não era caso de borda: era **todo** consumidor
+Windows com `roadmap_dir` customizado perdendo o valor. Pior que o defeito original, e a um merge de
+ser publicado na v9.0.1.
+
+#### Três formas, duas plataformas — medido, porque "portável" era hipótese
+
+| forma | macOS (BSD sed) | Windows (Git Bash, GNU sed 4.9) |
+|---|---|---|
+| `sed $'s/\r$//'` — caminho **python3** (ML-3B) | ok | **ok** |
+| `sed $'s/\r//g'` — **ROADMAP_DIR** (ML-3E) | ok | 🔴 **falha** |
+| `tr -d '\r'` | ok | ok |
+
+O parecer da Wave 0 afirmou que `sed $'...'` é *"portável entre BSD e GNU sed"*. É verdade para a
+forma `$//` e **falso** para a forma `//g` no MSYS. **Afirmação de portabilidade que ninguém
+exercitou no ambiente alvo** — e que nenhum gate local tinha como pegar.
+
+Escolha: `tr -d '\r'`, que o script **já usa duas vezes** no mesmo pipeline (para aspas). Menos
+superfície que introduzir um `sed` com quoting diferente.
+
+#### Verificação na VM, ANTES do CI — os quatro cenários
+
+```
+CRLF + espaço no nome     → ./my roadmaps/.trackfw-attention.json
+LF   + espaço no nome     → ./my roadmaps/.trackfw-attention.json
+CRLF simples              → ./docs/roadmaps/.trackfw-attention.json
+sem roadmap_dir           → ./docs/roadmaps/.trackfw-attention.json   (fallback)
+```
+
+**Critérios de aceite:**
+- [x] Os 3 sítios usam `tr -d '\r'`; o caminho python3 permanece `sed $'s/\r$//'`
+- [x] As 3 cópias versionadas **regeneradas a partir do literal** — `TestScripts_LiteralMatchesVersionedCopy` verde nos 5 pares
+- [x] Comentário de decisão registra a reprovação medida, com o erro literal do Git Bash
+- [x] Verificado na **VM**: 4 cenários corretos
+- [x] `make quality` `exit=0`, **1367** `^OK `, **0** `: FALHA`
+- [ ] 🔴 `windows-full-suites` verde no PR #453 — **só o CI fecha este**
+
+#### ⚠️ Residual declarado: o discriminante do gate NÃO reconhece `tr -d '\r'`
+
+O executor afirmou que *"`tr -d '\r'` é reconhecido como `strip_cr`"*. **Verifiquei e não é.** O gate
+testa:
+
+```
+grep -qF 'strip_cr' … || grep -qF 's/\r$//' …
+```
+
+`tr -d '\r'` não casa com nenhum dos dois. O gate passa porque **o sítio `ROADMAP_DIR` não é
+candidato** — candidato exige captura de `python3`, e ali não há `python3`. Passa pelo motivo certo,
+mas **não** pela razão que ele deu.
+
+🔴 **Lacuna latente:** se alguém usar `tr -d '\r'` num sítio que **é** candidato, o gate **acusa
+indevidamente**. Não corrijo aqui: nenhum sítio real está nessa condição hoje, e a v9.0.1 tem janela
+— cada dia com a v9.0.0 corrente gera instalações novas com o sinal silenciando. **Declarado para
+não virar surpresa**, que é o que distingue dívida de omissão.
