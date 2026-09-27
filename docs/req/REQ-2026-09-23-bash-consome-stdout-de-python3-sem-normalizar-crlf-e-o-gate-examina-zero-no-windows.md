@@ -1,9 +1,9 @@
 ---
-status: wip
+status: Done
 date: 2026-09-23
 author: "trackfw_architect"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-23-bash-consome-stdout-de-python3-sem-normalizar-crlf-e-o-gate-examina-zero-no-windows.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-23-bash-consome-stdout-de-python3-sem-normalizar-crlf-e-o-gate-examina-zero-no-windows.md"
 ---
 
 # REQ: bash consome stdout de `python3` sem normalizar CRLF, e o gate examina zero no Windows
@@ -104,7 +104,7 @@ consomem o **stdout** do Python como dado. Separar isso é entregável da Wave 0
 - [x] Falsificação nas duas direções, **exercitada no Windows** — é a plataforma onde o defeito vive
       → 3 braços `crlf-normalize/*` colhidos pela guarda de conjunto; censo rodado na branch (run `35872779844`)
 - [x] `make quality` e **CI** verdes
-- [ ] 🔴 **AC7 (2026-09-27)** — o `strip_cr` chega ao **literal embutido** (`scaffold.go:924,925`), a
+- [x] 🔴 **AC7 (2026-09-27)** — o `strip_cr` chega ao **literal embutido** (`scaffold.go:924,925`), a
       cópia versionada é **regenerada a partir dele** (e não o contrário), e o
       `check-crlf-normalize-capture.sh` passa a **varrer os literais embutidos** — com falsificação
       que reprove um literal novo sem normalização
@@ -181,4 +181,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-23-bash-consome-stdout-de-python3-sem-normalizar-crlf-e-o-gate-examina-zero-no-windows.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-23-bash-consome-stdout-de-python3-sem-normalizar-crlf-e-o-gate-examina-zero-no-windows.md`
