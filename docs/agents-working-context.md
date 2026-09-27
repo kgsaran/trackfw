@@ -2,6 +2,20 @@
 
 ---
 
+## 2026-09-27 — Hades (fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre — ML-3A) — ENTREGUE
+
+**Inicio:** 2026-09-27 | Branch: `fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre`
+**Tarefa:** ML-3A — Wave 0 da reabertura da REQ-2026-09-23 — modelo de ameaca do sitio distribuido.
+
+**Resultado:**
+- Parecer escrito em `docs/seguranca/2026-09-27-wave0-literal-distribuido-crlf.md`.
+- Q1: `strip_cr` nao altera o modelo de ameaca para o JSON gravado — `tr -d '\000-\037'` ja remove CR. Justificativa correta para ML-3B e paridade literal+copia, nao prevencao de JSON inválido.
+- Q2: `strip_cr` DEPOIS de `[:300]` (pipe no subprocesso). Forma: `sed $'s/\r$//'`. Constraint: depende de `set -o pipefail` para fallback de MSG — ML-3B deve comentar.
+- Q3: regeneracao sobrescreve sem aviso, mesma causa que #445. Routing: REQ do #445, nao nova REQ aqui.
+- Achado adicional: ROADMAP_DIR pode receber `\r` de trackfw.yaml CRLF (grep sobre arquivo, nao python3). Nao passa por `tr -d '\000-\037'`. Recomendo ML-3E nesta REQ; decisao do arquiteto.
+
+---
+
 ## 2026-09-26 — Apolo (fix/req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos — ML-6B) — ENTREGUE (AGUARDANDO AUDITORIA)
 
 **Início:** 2026-09-26 | Branch: `fix/req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos`

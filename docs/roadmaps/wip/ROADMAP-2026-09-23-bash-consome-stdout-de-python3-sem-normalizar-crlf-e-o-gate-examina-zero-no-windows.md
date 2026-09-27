@@ -399,10 +399,24 @@ internal/generators/scaffold.go       (literal embutido)   strip_cr = 0   ← nu
 árvore local, após regeneração pelo produto                strip_cr = 0   ← o defeito VOLTOU
 ```
 
-🔴 **O impacto é no consumidor, não aqui.** `trackfw init` e `discover --init` escrevem o script a
-partir do **literal**. Na **v9.0.0 — já publicada nos três canais** — todo projeto novo recebe o
-`trackfw-attention-signal.sh` **sem** normalização de CRLF, e o defeito do #353 volta a ser
-distribuído.
+🔴 **RETRATAÇÃO — 2026-09-27, após o ML-3A.** Eu escrevi aqui, e no commit da reabertura, que *"o
+defeito do #353 volta a ser distribuído"*. **É inexato, e a medição do `hades-tf` me refutou.**
+
+`TOOL` e `MSG` passam por `tr -d '\000-\037'` (`scaffold.go:937,938`) **antes** de entrar no JSON, e
+CR é octal `015` — dentro desse intervalo. Verifiquei eu mesmo:
+
+```
+$ printf 'conteudo\r' | tr -d '\000-\037' | od -c
+0000000    c   o   n   t   e   u   d   o
+```
+
+**O CR não chega ao JSON gravado.** A sanitização downstream cobre. A justificativa do `ML-3B` passa
+a ser: **(a)** paridade literal↔cópia versionada, que o `ML-3D` formaliza como gate, e **(b)** defesa
+em profundidade — eliminar o `\r` na variável antes da sanitização, em vez de depender dela.
+
+⚠️ **Por que eu errei:** medi a *ausência* do `strip_cr` no literal e concluí impacto sem seguir o
+dado até o fim do pipeline. Régua estreita — o mesmo defeito de método que passei a campanha
+cobrando dos executores.
 
 ### A causa estrutural, e por que o gate desta própria REQ não pegou
 
@@ -427,7 +441,8 @@ do vault é explícita — consultar antes de investigar. Li depois, e ela teria
 
 ### ML-3A — **Wave 0 da reabertura** — modelo de ameaça do sítio distribuído
 **Owner:** `hades-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-09-27 · 🔴 **refutou a minha afirmação e achou um defeito
+maior** (`docs/seguranca/2026-09-27-wave0-literal-distribuido-crlf.md`)
 🔴 **Bloqueia o ML-3B e o ML-3C.** Nenhuma implementação antes desta auditada.
 **Ações:**
 1. O sítio é um **hook** (`PreToolUse`) que roda na máquina do consumidor e consome **JSON vindo do
@@ -440,8 +455,13 @@ do vault é explícita — consultar antes de investigar. Li depois, e ela teria
 3. Declarar se a **regeneração** da cópia versionada a partir do literal pode sobrescrever conteúdo
    do consumidor sem aviso — é a mesma família do **#445**.
 **Critérios de aceite:**
-- [ ] Parecer escrito em `docs/seguranca/`, com veredito por item
-- [ ] A ordem `strip_cr` × truncamento **decidida e justificada**, não deixada ao acaso
+- [x] Parecer escrito em `docs/seguranca/`, com veredito por item
+- [x] A ordem `strip_cr` × truncamento **decidida e justificada** → **DEPOIS**, com `sed $'s/\r$//'`,
+      e a pré-condição de `pipefail` nomeada
+- [x] 🔴 **Refutação entregue:** o CR **não** chega ao JSON — `tr -d '\000-\037'` já o remove.
+      Verifiquei por conta própria antes de aceitar
+- [x] 🔴 **Achado fora da enumeração:** `ROADMAP_DIR` com CR silencia o sinal de atenção → `ML-3E`
+- [x] Veredito sobre o **#445**: mesma causa (`os.WriteFile` sem guard), roteado para a REQ do #445
 **Gates da wave:**
 
 ```bash
@@ -505,3 +525,84 @@ correção volte a ser aplicada só numa das duas naturezas.
 - [ ] O teste **não** usa `os.Chdir(t.TempDir())` antes de ler o caminho relativo — foi assim que os
       testes existentes ficaram cegos, e está medido na nota do vault
 - [ ] A frase da Regra Dura de Reconciliação
+
+### ML-3E — 🔴 o achado do ML-3A: `ROADMAP_DIR` com CR silencia o sinal de atenção
+**Owner:** `apolo-tf`
+**Status:** ⬜ Pendente — desbloqueado (Wave 0 auditada)
+**Arquivos:** `internal/generators/scaffold.go` (linhas 928 e 959) · cópia versionada regenerada
+
+#### Por que este ML vale mais que o que originou a reabertura
+
+O `hades-tf` mediu, e eu **reproduzi**: o `ROADMAP_DIR` é extraído do `trackfw.yaml` e **não passa**
+pela sanitização que protege `TOOL` e `MSG`.
+
+```bash
+ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml | head -1 | sed 's/…//' | tr -d '"' | tr -d "'")
+#                                                                        ↑ só remove ASPAS
+case "$ROADMAP_DIR" in /*|../*|*/../*|*/..|..) ROADMAP_DIR="docs/roadmaps" ;; esac
+#                      ↑ rejeita absoluto e "..", NÃO rejeita CR
+mkdir -p "$ROADMAP_DIR"
+… > "$ROADMAP_DIR/.trackfw-attention.json"
+```
+
+Reprodução, com `trackfw.yaml` em CRLF (Windows, Notepad):
+
+```
+$ printf 'roadmap_dir: docs/roadmaps\r\n' | grep … | sed … | tr -d '"' | tr -d "'" | od -c
+0000000  d o c s / r o a d m a p s  \r  \n
+```
+
+**Efeito:** `mkdir -p "docs/roadmaps\r"` cria um diretório **com CR no nome**, e o
+`.trackfw-attention.json` é gravado lá. O `trackfw serve` procura em `docs/roadmaps/` e **não
+encontra**.
+
+🔴 **O sinal de atenção silencia — sem erro, sem aviso.** É pior que o defeito que abriu esta
+reabertura: ali o CR era absorvido a jusante; aqui ele **muda o caminho de escrita**. E é
+exatamente a classe que esta REQ existe para tratar: *"o mecanismo dá sinal de sucesso enquanto o
+controle está inerte"*.
+
+**Causa raiz distinta dos sítios `python3`** — aqui é `grep` sobre arquivo, não stdout de `python3`.
+Fica **no mesmo roadmap** pela regra deste projeto: *mesmo sintoma investiga junto; só se separa com
+a medição escrita*. A medição está escrita, e ela **mantém** junto: mesmo script, mesma wave, mesma
+entrega.
+
+**Ações:**
+1. Normalizar o `ROADMAP_DIR` na extração — forma **autocontida**, sem depender de
+   `lib-crlf-normalize.sh` (o consumidor não o tem).
+2. Avaliar se o `case` de validação deve **também** recusar caracteres de controle, em vez de só
+   normalizar. Decidir e escrever: normalizar silenciosamente esconde um `trackfw.yaml` malformado.
+3. Aplicar no **literal** e regenerar a cópia versionada a partir dele.
+
+**Critérios de aceite:**
+- [ ] `trackfw.yaml` com CRLF produz `.trackfw-attention.json` em `docs/roadmaps/`, e o `serve` o
+      encontra — provado **executando**, não por leitura
+- [ ] 🔴 **Contra-braço:** `trackfw.yaml` com LF **continua** funcionando, e `roadmap_dir` com espaço
+      no nome não é quebrado pela correção
+- [ ] A decisão do item 2 escrita, com a razão
+- [ ] A frase da Regra Dura de Reconciliação, por teste novo
+
+---
+
+## Ajustes do ML-3B decididos pela Wave 0
+
+- **Ordem:** `strip_cr` **DEPOIS** do `[:300]` — os dois vivem em contextos irredutíveis (`[:300]` é
+  do subprocesso `python3`, a normalização é do bash sobre o stdout dele). O `\r` de interesse é
+  acrescentado pelo `print()` **após** o slice, então não há escape a partir pela metade.
+- **Forma autocontida:** `sed $'s/\r$//'` — ANSI-C quoting, portável entre BSD e GNU `sed`, mesmo
+  padrão do `lib-crlf-normalize.sh`, sem depender da lib.
+- 🔴 **Pré-condição obrigatória — `pipefail`:** o script tem `set -euo pipefail` na linha 3. **Com**
+  `pipefail`, o rc não-zero do `python3` propaga pelo pipe e o `|| echo "Agent needs attention"`
+  dispara. **Sem** `pipefail`, o `sed` (último do pipe) devolve 0, o `||` **nunca** dispara e a
+  variável fica **vazia em silêncio**. O `ML-3B` deve deixar **comentário inline** registrando essa
+  dependência — uma refatoração futura que remova o `pipefail` quebra o fallback sem erro visível.
+
+## Roteamento decidido — o overwrite NÃO entra aqui
+
+O ML-3A mediu que `scaffold.go:995` usa `os.WriteFile` (`O_TRUNC`) sem checar existência, sem diff e
+sem prompt — **mesma causa do #445** (`writeTrackfwConfig`, `scaffold.go:789`).
+
+**Não entra nesta REQ.** Mesma causa → mesma REQ, e a REQ é a do **#445**, que já existe. Abrir aqui
+seria o padrão que a Regra Dura proíbe. Fica registrado como **residual desta wave**, com a
+assimetria de severidade que o parecer nomeia: aqui o consumidor perde uma customização e recebe o
+script **correto**; no #445 ele perde **configuração deliberada** e o produto passa a reportar estado
+de governança **falso**.
