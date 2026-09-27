@@ -5,3 +5,10 @@
 - [Métrica por artefato, não por regra](feedback_metrica_por_artefato.md) — "a regra apareceu na saída" dá falso verde; exigir que a violação nomeie o artefato, e medir nas duas árvores
 - [Classificar marcadores: ler RejectSymlinks antes de vereditar](feedback_classificar_marcadores.md) — confirmar se a função checa a folha ou só os ancestrais; define se 48 marcadores são (A) ou (B)
 - [Refutações primeiro no relatório](feedback_refutacoes_primeiro_no_relatorio.md) — censo do handoff é régua de identificador e subconta o mecanismo; abrir com a divergência medida, não enterrá-la
+- [Medir antes/depois sem git stash](feedback_medir_antes_e_depois_sem_git_stash.md) — `git archive HEAD | tar -x` + dois binários, exercitados sobre CÓPIA do corpus real
+- [Grepar scripts inclui a LISTA DE ARGUMENTOS](feedback_grep_scripts_inclui_lista_de_argumentos.md) — cenário 24 fixa o texto do template, cenário 25 fixa os args do Sprintf; esquecer o 2º custa 13 min
+- [Migrar o leitor de uma regra esvazia o falsify](feedback_migrar_leitor_de_regra_esvazia_falsify.md) — grepe a MENSAGEM da regra antes de trocar o mecanismo; o cenário que sabotava o leitor antigo reprova sem defeito
+- [Alvo de vínculo de fixture vai em abandoned/](feedback_fixture_de_req_precisa_alvo_em_abandoned.md) — backlog/ colide com o `find` dos Cenários 24/25/26; wip/ e done/ disparam regras; o alvo tem de existir no disco
+- [ID pelado é forma viva em fixtures](feedback_id_pelado_e_forma_viva_em_fixtures.md) — exigir `.md` no vínculo quebra 6 testes de barrier, 1 de ship e 12 sítios de check-barrier.sh; alvo tem de existir
+- [Anotação de contrato exige ARQUIVO](feedback_anotacao_de_contrato_exige_arquivo.md) — `gate=<dir>` reprova em cli-parity; nomeie os arquivos da fixture
+- [Cenário 18 enumera gates que citam GO_BIN](project_cenario18_enumera_gates_com_go_bin.md) — gate novo entra sozinho na proibição de mutar a árvore; escreva só em mktemp

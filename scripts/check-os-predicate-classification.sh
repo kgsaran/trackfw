@@ -95,6 +95,7 @@ internal/generators/adr.go|adrGuardPaths torna absoluto o adr_dir relativo contr
 internal/metrics/metrics.go|torna absoluto o caminho do export contra a raiz antes da guarda de escrita; produto do upstream, entrou com o #397 em 2026-09-22
 internal/pathguard/pathguard.go|Beneath recusa o resultado de filepath.Rel que saia da raiz; produto do upstream, entrou com o #397 em 2026-09-22
 internal/sync/sync.go|torna absoluto o caminho da REQ contra a raiz antes da guarda de escrita; produto do upstream, entrou com o #397 em 2026-09-22
+internal/validator/branchlink.go|torna absoluto o roadmap_dir relativo do trackfw.yaml contra a raiz resolvida antes da GuardedWrite; mesma forma do adr.go, produto do upstream, entrou com o #446 em 2026-09-27
 "
 
 esta_no_baseline() {

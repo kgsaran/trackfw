@@ -5,6 +5,7 @@ title: REQ — wizard interativo nas seções e req list
 status: Done
 priority: medium
 type: feature
+date: 2026-06-11
 created: 2026-06-11
 author: apolo
 ---

@@ -8,9 +8,11 @@
 # specific rule names, message substrings, exit codes.  Nothing here invokes
 # `node npm/bin/trackfw` or `python3 -m trackfw`.
 #
-# Pin inventory (25 pins across 4 blocks):
+# Pin inventory (28 pins across 4 blocks):
 #   Block 1 — ADR/REQ rule-set:         {adr_accepted_when_req_done, blocked_by_draft_adr}
 #   Block 2 — branch_has_wip_roadmap:    nomatch/diff message markers + --agent guidance
+#                                        + the ML-3A matcher: token overlap accepts (PIN6),
+#                                        empty slug refuses (PIN7), written link governs (PIN8)
 #   Block 3 — credential_guard:          10 message pins + 5 silence pins
 #   Block 4 — git_branch_guard:          1 message pin + 1 silence pin + 3 shared-fixture pins
 #
@@ -187,15 +189,27 @@ PY
 #   PIN3 — empty wip/ and done/ → "no roadmap is in wip/ nor done/"
 #   PIN4 — done/ with different slug → "no matching roadmap in wip/ nor done/"
 #   PIN5 — by_agent + 2 agents + no roadmap → message contains "--agent"
+#
+# ML-3A (ADR-2026-09-26, REQ-2026-09-09) added three pins to this block. They are an UPDATE of the
+# behaviour this gate fixes, not a loosening: each one REPROVES a mutation of the matcher.
+#   PIN2B — token overlap accepts the #273 pair (slug is NOT a substring of the roadmap name).
+#          Falsified by raising branchRoadmapMinSharedTokens to 3 or deleting the token arm.
+#   PIN2C — an EMPTY branch slug matches NOTHING (strings.Contains(x,"") used to accept any corpus).
+#          Falsified by removing the empty-slug carve-out.
+#   PIN2D — the WRITTEN link (.trackfw-branch-links.json) governs a branch that inference rejects.
+#          Falsified by ignoring the link file.
 # ---------------------------------------------------------------------------
 mkdir -p \
   "$TMP_DIR/bhr-match/docs/roadmaps"/{wip,done} \
   "$TMP_DIR/bhr-nomatch/docs/roadmaps"/{wip,done} \
   "$TMP_DIR/bhr-diff/docs/roadmaps"/{wip,done} \
   "$TMP_DIR/bhr-byagent/docs/roadmaps/zeus"/{wip,done} \
-  "$TMP_DIR/bhr-byagent/docs/roadmaps/apolo"/{wip,done}
+  "$TMP_DIR/bhr-byagent/docs/roadmaps/apolo"/{wip,done} \
+  "$TMP_DIR/bhr-tokens/docs/roadmaps"/{wip,done} \
+  "$TMP_DIR/bhr-empty/docs/roadmaps"/{wip,done} \
+  "$TMP_DIR/bhr-link/docs/roadmaps"/{wip,done}
 
-for d in bhr-match bhr-nomatch bhr-diff; do
+for d in bhr-match bhr-nomatch bhr-diff bhr-tokens bhr-empty bhr-link; do
   cat >"$TMP_DIR/$d/trackfw.yaml" <<'EOF'
 roadmap_dir: docs/roadmaps
 EOF
@@ -232,10 +246,48 @@ run_bhr() {
   set -e
 }
 
+# PIN2B fixture — the real #273 pair. The branch names THE WORK, the roadmap names THE REQ TITLE,
+# so neither is a substring of the other; they share exactly two content tokens (divida, acervo).
+cat >"$TMP_DIR/bhr-tokens/docs/roadmaps/wip/ROADMAP-2026-09-05-divida-de-governanca-do-acervo-que-nasceu-sem-adr.md" <<'EOF'
+---
+status: wip
+---
+# Roadmap: divida de governanca do acervo
+EOF
+
+# PIN2C fixture — a corpus with one roadmap, exercised with an EMPTY branch slug ("feat/").
+cat >"$TMP_DIR/bhr-empty/docs/roadmaps/wip/ROADMAP-2026-08-20-qualquer-coisa.md" <<'EOF'
+---
+status: wip
+---
+# Roadmap: qualquer coisa
+EOF
+
+# PIN2D fixture — the branch slug shares NOTHING with the roadmap name, so inference must reject it;
+# the written link recorded by `trackfw branch new` is what governs it.
+cat >"$TMP_DIR/bhr-link/docs/roadmaps/wip/ROADMAP-2026-09-26-tema-totalmente-diferente.md" <<'EOF'
+---
+status: wip
+---
+# Roadmap: tema totalmente diferente
+EOF
+cat >"$TMP_DIR/bhr-link/docs/roadmaps/.trackfw-branch-links.json" <<'EOF'
+{
+  "version": 1,
+  "links": {
+    "feat/nada-em-comum": "ROADMAP-2026-09-26-tema-totalmente-diferente.md"
+  }
+}
+EOF
+
 run_bhr "$TMP_DIR/bhr-match-go.json"   "$TMP_DIR/bhr-match"   feat/minha-feature
 run_bhr "$TMP_DIR/bhr-nomatch-go.json" "$TMP_DIR/bhr-nomatch" feat/sem-roadmap-nenhum
 run_bhr "$TMP_DIR/bhr-diff-go.json"    "$TMP_DIR/bhr-diff"    feat/minha-feature
 run_bhr "$TMP_DIR/bhr-byagent-go.json" "$TMP_DIR/bhr-byagent" feat/sem-roadmap-byagent
+run_bhr "$TMP_DIR/bhr-tokens-go.json"  "$TMP_DIR/bhr-tokens"  feat/adrs-retroativas-da-divida-do-acervo
+run_bhr "$TMP_DIR/bhr-empty-go.json"   "$TMP_DIR/bhr-empty"   "feat/"
+run_bhr "$TMP_DIR/bhr-link-go.json"    "$TMP_DIR/bhr-link"    feat/nada-em-comum
+run_bhr "$TMP_DIR/bhr-link-noinfer-go.json" "$TMP_DIR/bhr-tokens" feat/nada-em-comum
 
 python3 - "$TMP_DIR" <<'PY'
 import json, os, sys
@@ -304,6 +356,50 @@ if not any("--agent" in m for m in msgs):
         f"project with 2 agents (zeus, apolo). Got: {msgs!r}"
     )
 print("OK [validate-rule-pins/pin5-byagent-agent-guidance]")
+
+# PIN2B (ML-3A / AC15): token overlap accepts the #273 pair. The slug
+# "adrs-retroativas-da-divida-do-acervo" is NOT a substring of
+# "ROADMAP-2026-09-05-divida-de-governanca-do-acervo-que-nasceu-sem-adr.md", so the ONLY relation
+# that can accept it is the token-overlap arm. Raising the threshold to 3 or deleting the arm makes
+# this pin fail.
+rc, msgs = load_bhr("bhr-tokens-go.json")
+if msgs:
+    raise SystemExit(
+        f"PIN2B: bhr-tokens: a legitimately governed branch whose slug is NOT a substring of the "
+        f"roadmap filename must be accepted via token overlap (AC15 of REQ-2026-09-09, issue #273), "
+        f"but got: {msgs!r}"
+    )
+print("OK [validate-rule-pins/pin2b-token-overlap-accepted]")
+
+# PIN2C (ML-3A / AC12): an EMPTY branch slug matches nothing. strings.Contains(x, "") is always true,
+# so before ML-3A the branch "feat/" was reported as governed by ANY corpus.
+rc, msgs = load_bhr("bhr-empty-go.json")
+if not msgs:
+    raise SystemExit(
+        f"PIN2C: bhr-empty: an empty branch slug must match NO roadmap — Contains(x, \"\") is always "
+        f"true and used to accept any corpus vacuously (rc={rc})"
+    )
+MARKER_EMPTY = "no matching roadmap in wip/ nor done/"
+if not all(MARKER_EMPTY in m for m in msgs):
+    raise SystemExit(f"PIN2C: bhr-empty: message lacks {MARKER_EMPTY!r}: {msgs!r}")
+print("OK [validate-rule-pins/pin2c-empty-slug-refused]")
+
+# PIN2D (ML-3A / AC12, D1): the WRITTEN link governs a branch that inference rejects.
+# Contra-arm in the same pin: the SAME branch name against a corpus with no link recorded must be
+# rejected — otherwise PIN2D would pass for a reason other than the link.
+rc, msgs = load_bhr("bhr-link-go.json")
+if msgs:
+    raise SystemExit(
+        f"PIN2D: bhr-link: the written branch↔roadmap link must govern the branch (D1 of "
+        f"ADR-2026-09-26), but got: {msgs!r}"
+    )
+rc, msgs = load_bhr("bhr-link-noinfer-go.json")
+if not msgs:
+    raise SystemExit(
+        f"PIN2D vacuity: bhr-link-noinfer: the same branch name WITHOUT a recorded link must be "
+        f"rejected — otherwise PIN8 does not prove the link is what accepted it (rc={rc})"
+    )
+print("OK [validate-rule-pins/pin2d-written-link-governs]")
 PY
 
 # ---------------------------------------------------------------------------
@@ -631,8 +727,8 @@ for fixture, marker, pin in [
     print(f"OK [validate-rule-pins/{pin}]  {marker!r}")
 PY
 
-echo "validate-rule-pins: all 25 pins pass"
+echo "validate-rule-pins: all 28 pins pass"
 echo "  Block 1 (rule-set):          pin1"
-echo "  Block 2 (bhr-messages):      pin2-pin5"
+echo "  Block 2 (bhr-messages):      pin2-pin5 + pin2b/pin2c/pin2d (ML-3A matcher)"
 echo "  Block 3 (credential-guard):  pin6-pin20"
 echo "  Block 4 (git-branch-guard):  pin21-pin25"

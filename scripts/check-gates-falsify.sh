@@ -704,10 +704,18 @@ sys.stdout.flush()
 # Fixture de REQ válida (ADR/Roadmap preenchidos) reaproveitada nos sandboxes
 # — evita disparar wip_has_req/req_has_adr/req_has_roadmap, que reprovariam
 # por motivo diferente do heading e confundiriam o diagnóstico.
+#
+# ML-1D: o `Roadmap:` deixou de ser o placeholder `none` (que a regra passou a acusar) e virou o alvo
+# real de ensure_roadmap_link_target — ver o comentário daquele helper para o porquê de abandoned/.
+# 🔴 ML-1E (2026-09-26): o `ADR: none` seguiu o mesmo caminho — `req_has_adr` migrou para o leitor
+# estrutural e passou a acusar placeholder. A afirmação anterior deste comentário ("`ADR: none`
+# continua válido: req_has_adr lê por contentHasMarkerValue") deixou de valer no mesmo ato.
 
 write_roadmap_acceptance_req_fixture() {
   local dest=$1
   mkdir -p "$(dirname "$dest")"
+  ensure_roadmap_link_target "$dest"
+  ensure_adr_link_target "$dest"
   cat > "$dest" <<'REQEOF'
 ---
 status: Open
@@ -722,10 +730,10 @@ roadmap: ""
 - [ ] Something
 
 ## Linked ADR
-ADR: none
+ADR: docs/adr/ADR-2026-08-01-link-target.md
 
 ## Linked Roadmap
-Roadmap: none
+Roadmap: docs/roadmaps/abandoned/ROADMAP-2026-08-01-link-target.md
 REQEOF
 }
 
@@ -734,6 +742,16 @@ REQEOF
 # em Go/Node/Python — só o texto QUE SEGUE difere — então localizamos por
 # índice de ocorrência em vez de âncora de sufixo (frágil e específica por
 # linguagem).
+#
+# 🔴 ML-1B (AC7, 2026-09-26): o bloco é o HEADING + o comentário, e NÃO inclui
+# mais os itens "- [ ]\n- [ ]". Motivo: a partir do ML-1B o caminho --from-req
+# preenche os itens com os ACs da REQ (`%s` interpolado), então a forma antiga
+# — que embutia os dois itens vazios — passou a ocorrer 1x em vez de 2x e o
+# setup deste cenário abortava com "expected 2 occurrences". O que o Cenário 24
+# mede é a AUSÊNCIA DO HEADING (`wip_acceptance` casa por
+# cfg.AcceptanceMarkers = "## Acceptance Criteria"), então remover só o heading
+# + comentário é exatamente o seam — os itens que sobram órfãos não carregam
+# marcador nenhum.
 
 remove_roadmap_acceptance_heading() {
   local src_file=$1
@@ -747,8 +765,7 @@ import sys
 src_path, dest_path, occurrence = sys.argv[1], sys.argv[2], int(sys.argv[3])
 source = pathlib.Path(src_path).read_text(encoding="utf-8")
 block = ("## Acceptance Criteria\n"
-         "<!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->\n"
-         "- [ ]\n- [ ]\n\n")
+         "<!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->\n")
 positions = [i for i in range(len(source)) if source.startswith(block, i)]
 if len(positions) != 2:
     raise SystemExit(f"expected 2 occurrences of the heading block, got {len(positions)}")
@@ -886,6 +903,109 @@ roadmap_dir: docs/roadmaps
 EOF
 }
 
+# ML-1D — alvo de vínculo Roadmap MÍNIMO, em docs/roadmaps/abandoned/.
+#
+# Por que ele existe: a regra `req_has_roadmap` passou a ler o vínculo pelo MESMO extrator que as
+# demais regras de referência (contentHasStructuredRefValue → extractRefPath), então valor de
+# placeholder — `none`, `TBD`, `-`, comentário HTML, prosa — deixou de contar como vínculo. As
+# fixtures de REQ deste harness usavam `Roadmap: none` exatamente porque ele passava; agora precisam
+# de um caminho ".md" REAL, sob pena de reprovarem por motivo alheio ao seam sob prova
+# (`ref_targets_exist` tem severidade default "error" e não silencia nem em lenient — está em
+# lenientCarveoutRules, logo um alvo inexistente também não serve).
+#
+# Por que um estado INERTE, e não wip/ ou done/ (medido em 2026-09-26 com o binário deste ML, 8 células):
+#   - wip/   → dispara wip_wave0 ("has no ## Wave 0 heading"), wip_has_req e wip_acceptance; é o que
+#              write_roadmap_link_target_fixture existe para satisfazer, ao custo de um roadmap
+#              inteiro com wave e gate;
+#   - done/  → dispara req_roadmap_lifecycle ("is Open but linked Roadmap ... is in done/") para toda
+#              fixture de REQ com status Open;
+#   - backlog/ e abandoned/ → rc=0 com REQ Done E com REQ Open, sem nenhum diagnóstico extra.
+#
+# 🔴 E por que abandoned/ e não backlog/, entre os dois que ficam limpos: os scripts de ciclo dos
+# Cenários 24/25/26 fazem `name=$(basename "$(find docs/roadmaps/backlog -name "*.md")")` — um alvo
+# em backlog/ faria o `find` devolver DUAS linhas e o `roadmap move` receberia um nome corrompido,
+# reprovando por motivo alheio ao seam. backlog/ é estrutural ali (é onde `roadmap new` grava);
+# abandoned/ não é destino de nenhum comando do harness.
+#
+# O alvo é COMPARTILHADO e idempotente: duas REQs da mesma fixture-projeto podem apontar para ele sem
+# corrida, porque o conteúdo é byte-idêntico e ele não tem back-link `req:` (nenhuma regra exige que
+# um roadmap em abandoned/ aponte de volta).
+ROADMAP_LINK_TARGET_REL='docs/roadmaps/abandoned/ROADMAP-2026-08-01-link-target.md'
+
+# ADR_LINK_TARGET_REL / ensure_adr_link_target — irmão do bloco acima, para o campo ADR.
+#
+# 🔴 ML-1E (2026-09-26): a regra `req_has_adr` migrou para o MESMO leitor de vínculo
+# (contentHasStructuredRefValue → extractRefPath), então o `ADR: none` que estas fixtures usavam
+# deixou de contar como vínculo — e o comentário que dizia "`ADR: none` continua válido porque
+# req_has_adr lê por contentHasMarkerValue" virou falso no mesmo ato. As fixtures precisam de um
+# caminho ".md" REAL, pelo mesmo motivo do alvo de roadmap: `ref_targets_exist` é violação mesmo em
+# lenient, então um alvo inexistente não serve.
+#
+# Status "Accepted", deliberadamente: um ADR "Proposed" referenciado pela seção "## Blocked by ADRs"
+# é o seam de `blocked_by_draft_adr` (write_req_open_blocked_fixture), e reaproveitar o MESMO ADR nos
+# dois papéis tornaria aquele cenário dependente de um alvo cujo status ele próprio testa. A árvore de
+# ADR é FLAT (sem pastas de estado), então não há escolha de estado a fazer aqui.
+# ⚠️ O caminho aparece DUPLICADO como literal nas duas fixtures que usam este alvo (o heredoc de
+# write_roadmap_acceptance_req_fixture é citado — <<'REQEOF' —, então a variável não expandiria ali, e
+# manter as duas fixtures com a mesma grafia literal é mais legível que citar uma e interpolar a outra).
+# Se mudar o valor aqui, grepe pelo caminho antigo no arquivo.
+ADR_LINK_TARGET_REL='docs/adr/ADR-2026-08-01-link-target.md'
+
+ensure_adr_link_target() {
+  local req_dest=$1 req_dir proj
+  req_dir=$(dirname "$req_dest")
+  case "$req_dir" in
+    */docs/req) ;;
+    *)
+      echo "FAIL [falsify/setup]: ensure_adr_link_target espera <proj>/docs/req/<REQ>.md, recebeu '$req_dest'" >&2
+      return 1
+      ;;
+  esac
+  proj=$(dirname "$(dirname "$req_dir")")
+  mkdir -p "$proj/$(dirname "$ADR_LINK_TARGET_REL")"
+  cat > "$proj/$ADR_LINK_TARGET_REL" <<'EOF'
+---
+status: Accepted
+date: 2026-08-01
+author: ""
+---
+
+# ADR: alvo de vínculo mínimo
+
+> Date: 2026-08-01 | Status: Accepted
+
+## Context
+ctx
+
+## Decision
+decision
+EOF
+}
+
+ensure_roadmap_link_target() {
+  local req_dest=$1 req_dir proj
+  req_dir=$(dirname "$req_dest")
+  case "$req_dir" in
+    */docs/req) ;;
+    *)
+      echo "FAIL [falsify/setup]: ensure_roadmap_link_target espera <proj>/docs/req/<REQ>.md, recebeu '$req_dest'" >&2
+      return 1
+      ;;
+  esac
+  proj=$(dirname "$(dirname "$req_dir")")
+  mkdir -p "$proj/$(dirname "$ROADMAP_LINK_TARGET_REL")"
+  cat > "$proj/$ROADMAP_LINK_TARGET_REL" <<'EOF'
+---
+status: abandoned
+date: 2026-08-01
+---
+
+# Roadmap: alvo de vínculo mínimo
+
+> Created: 2026-08-01 | Status: abandoned
+EOF
+}
+
 # ADR fixture com status alinhado entre frontmatter e cabeçalho (caso
 # canônico bem formado) — mesmo padrão de adrFixtureContent (validator_test.go).
 
@@ -914,7 +1034,7 @@ EOF
 # REQ Done referenciando o ADR via frontmatter \`adr:\` e via a seção
 # "## Linked ADR" — mesmo padrão de reqDoneFixtureContent (validator_test.go).
 #
-# $3 (roadmap_rel, opcional, default "none") — ML-1D (issue #278, rescaldo):
+# $3 (roadmap_rel, opcional) — ML-1D (issue #278, rescaldo):
 # antes do ML-1B, `Roadmap:` sem valor era um "vazio" que `contentHasMarker`
 # (por literal) não detectava, então este fixture passava despercebido pela
 # regra `req_has_roadmap` mesmo sem vínculo real. Pós-ML-1B
@@ -925,17 +1045,24 @@ EOF
 # inteiro, não apenas a ausência do padrão sob prova — uma suposição inicial
 # deste ML de que ela "tolera violações extras" estava errada (achado ao
 # rodar este script isolado, não coberto por make quality até então rodar
-# até essa asserção). Por isso o default de $roadmap_rel deixou de ser vazio
-# e passou a ser o literal "none" — mesmo placeholder inofensivo já usado em
-# write_roadmap_acceptance_req_fixture (não termina em ".md", então
-# ref_targets_exist não tenta resolvê-lo no disco, e tem valor não-branco,
-# então req_has_roadmap não o acusa). Cenários que precisam de um alvo REAL
-# (ex.: adr-not-accepted/*/superseded-not-a-violation-baseline) continuam
-# passando $3 explicitamente.
+# até essa asserção). Por isso o default de $roadmap_rel deixou de ser vazio.
+#
+# 🔴 ML-1D de 2026-09-26 (ROADMAP-2026-09-09-req-nasce-orfa…, homônimo do ML-1D acima, que é do
+# roadmap de 2026-08): esse default era o literal "none", e a razão escrita acima — "tem valor
+# não-branco, então req_has_roadmap não o acusa" — era exatamente o DEFEITO que aquele ML corrigiu.
+# A regra agora lê o vínculo por extractRefPath, então `none` é acusado. O default passou a ser o
+# alvo real de ensure_roadmap_link_target, criado junto com a fixture. Cenários que precisam de
+# outro alvo (ex.: adr-not-accepted/*/superseded-not-a-violation-baseline) continuam passando $3
+# explicitamente — e nesse caso o alvo de backlog NÃO é criado, para não deixar arquivo inerte no
+# projeto-fixture.
 
 write_req_done_fixture() {
-  local dest=$1 adr_rel=$2 roadmap_rel=${3:-none}
+  local dest=$1 adr_rel=$2 roadmap_rel=${3:-}
   mkdir -p "$(dirname "$dest")"
+  if [[ -z "$roadmap_rel" ]]; then
+    ensure_roadmap_link_target "$dest"
+    roadmap_rel=$ROADMAP_LINK_TARGET_REL
+  fi
   cat > "$dest" <<EOF
 ---
 status: Done
@@ -1013,14 +1140,25 @@ EOF
 
 # REQ Open bloqueada pelo ADR via a seção "## Blocked by ADRs" — mesmo padrão
 # do fixture de TestBlockedByDraftADR_REQOpen_ProposedADR_Violates.
-# ML-1D (issue #278, rescaldo): "ADR: none" / "Roadmap: none" — mesmo placeholder de
-# write_roadmap_acceptance_req_fixture — evitam disparar req_has_adr/req_has_roadmap sem
-# apontar para um arquivo real; a seção "## Blocked by ADRs" (não "Linked ADR") é a fonte
-# real de $adr_basename para blocked_by_draft_adr, então nenhuma das duas fica sem cobertura.
+# ML-1D (issue #278, rescaldo): "ADR: none" evitava disparar req_has_adr sem apontar para um arquivo
+# real; a seção "## Blocked by ADRs" (não "Linked ADR") é a fonte real de $adr_basename para
+# blocked_by_draft_adr, então ela não fica sem cobertura.
+# 🔴 ML-1E (2026-09-26): esse "ADR: none" virou o alvo real de ensure_adr_link_target — a regra
+# req_has_adr passou a exigir referência ".md". O alvo é um ADR **Accepted** SEPARADO do
+# $adr_basename (Proposed) desta fixture: o seam de blocked_by_draft_adr é o status do ADR citado em
+# "## Blocked by ADRs", e reaproveitá-lo no campo "Linked ADR" acoplaria os dois.
+#
+# ML-1D de 2026-09-26: o "Roadmap: none" daqui virou o alvo real de ensure_roadmap_link_target —
+# a regra req_has_roadmap passou a acusar placeholder, e esta fixture vive em T27_GO_VIOLATING, cujo
+# braço "-detects-regression" usa assert_lacks_pattern (exige exit 0 do processo INTEIRO, não só a
+# ausência do padrão sob prova). Note que a REQ aqui é Open: é por isso que o alvo mora em backlog/ e
+# não em done/ (done/ dispararia req_roadmap_lifecycle).
 
 write_req_open_blocked_fixture() {
   local dest=$1 adr_basename=$2
   mkdir -p "$(dirname "$dest")"
+  ensure_roadmap_link_target "$dest"
+  ensure_adr_link_target "$dest"
   cat > "$dest" <<EOF
 ---
 status: Open
@@ -1041,29 +1179,35 @@ motivo
 - [ ] pendente
 
 ## Linked ADR
-ADR: none
+ADR: docs/adr/ADR-2026-08-01-link-target.md
 
 ## Blocked by ADRs
 - $adr_basename (Proposed)
 
 ## Linked Roadmap
-Roadmap: none
+Roadmap: docs/roadmaps/abandoned/ROADMAP-2026-08-01-link-target.md
 EOF
 }
 
 # REQ Done SEM `adr:` no frontmatter, referenciando o ADR só via backtick na
 # seção "## Linked ADR" — a forma real usada em REQs do repositório.
 #
-# "Roadmap: none" (ML-1D, mesmo placeholder de write_roadmap_acceptance_req_fixture):
-# contentHasMarkerValue (req_has_roadmap) é independente de extractRefPath — não é afetado
-# pela corrupção deste Cenário — então um "Roadmap:" verdadeiramente vazio dispararia
-# req_has_roadmap nos dois braços (baseline E detects-regression) e quebraria
-# assert_lacks_pattern, que exige exit 0 do processo inteiro, não só a ausência do padrão
-# sob prova.
+# O `Roadmap:` desta fixture é um caminho REAL e SEM BACKTICK, e isso é deliberado em duas direções
+# (ML-1D de 2026-09-26):
+#   - sem valor real, req_has_roadmap dispararia nos DOIS braços (baseline E detects-regression) e
+#     quebraria assert_lacks_pattern, que exige exit 0 do processo inteiro, não só a ausência do
+#     padrão sob prova. A afirmação anterior deste comentário — "contentHasMarkerValue
+#     (req_has_roadmap) é independente de extractRefPath" — deixou de valer: a regra passou a ler o
+#     vínculo por extractRefPath, então o placeholder `none` que estava aqui seria acusado;
+#   - 🔴 e SEM BACKTICK porque a corrupção deste Cenário é justamente a remoção do strip de backtick
+#     em extractRefPath: um `Roadmap:` entre backticks ficaria invisível para o binário corrompido e
+#     req_has_roadmap voltaria a disparar no braço detects-regression, quebrando o mesmo
+#     assert_lacks_pattern por um caminho novo. O backtick sob prova é o do campo ADR, e só dele.
 
 write_req_done_fixture_backtick_body_only() {
   local dest=$1 adr_rel=$2
   mkdir -p "$(dirname "$dest")"
+  ensure_roadmap_link_target "$dest"
   cat > "$dest" <<EOF
 ---
 status: Done
@@ -1087,7 +1231,7 @@ motivo
 ADR: \`$adr_rel\` (prosa)
 
 ## Linked Roadmap
-Roadmap: none
+Roadmap: docs/roadmaps/abandoned/ROADMAP-2026-08-01-link-target.md
 EOF
 }
 
@@ -1143,14 +1287,15 @@ date: 2026-08-02
 EOF
 }
 
-# "Roadmap: none" (ML-1D, mesmo placeholder das demais fixtures deste script): evita
-# req_has_roadmap num "Roadmap:" que, de outra forma, ficaria vazio nos dois braços
-# (assert_fails_with/assert_lacks_pattern) — assert_lacks_pattern exige exit 0 do
-# processo inteiro, não só a ausência do padrão sob prova.
+# O `Roadmap:` aponta para o alvo real de ensure_roadmap_link_target (ML-1D de 2026-09-26; antes
+# era o placeholder `none`, que a regra passou a acusar): evita req_has_roadmap num "Roadmap:" que, de
+# outra forma, ficaria vazio nos dois braços (assert_fails_with/assert_lacks_pattern) —
+# assert_lacks_pattern exige exit 0 do processo inteiro, não só a ausência do padrão sob prova.
 
 write_req_done_fixture_unpaired_delimiter_body_only() {
   local dest=$1 adr_rel=$2
   mkdir -p "$(dirname "$dest")"
+  ensure_roadmap_link_target "$dest"
   cat > "$dest" <<EOF
 ---
 status: Done
@@ -1174,7 +1319,7 @@ motivo
 ADR: "$adr_rel'
 
 ## Linked Roadmap
-Roadmap: none
+Roadmap: docs/roadmaps/abandoned/ROADMAP-2026-08-01-link-target.md
 EOF
 }
 
@@ -1381,13 +1526,71 @@ Roadmap: $roadmap_rel
 EOF
 }
 
-# $2 (adr_rel) precisa ser um alvo REAL, mesmo motivo de write_req_adr_placeholder_fixture
-# acima — aqui é o Roadmap: que fica com a prosa no meio da frase, a única falsa-positiva
-# sob prova nesta fixture.
+# 🔴 ML-1D (2026-09-26) — esta fixture SUBSTITUI write_req_roadmap_prose_fixture, e a troca do campo
+# em prosa (Roadmap → ADR) é o ponto todo. A guarda de ancoragem por linha vive em
+# contentHasMarkerValue, e depois do ML-1D a regra req_has_roadmap NÃO a usa mais (passou a ler o
+# vínculo por extractRefPath). Manter a prosa no campo Roadmap deixaria o braço
+# "-detects-regression" da Direção B VÁCUO: neutralizar a ancoragem não mudaria mais o veredito de
+# req_has_roadmap, a violação sobreviveria à sabotagem e assert_lacks_pattern reprovaria — sem que
+# nada estivesse quebrado. A prosa passou para o campo ADR, que continua sendo consumidor VIVO de
+# contentHasMarkerValue (req_has_adr); a ancoragem do extrator novo ganhou prova própria na Direção C.
+#
+# A prosa cita o CAMINHO do ADR, não só a palavra "ADR:", por um motivo medido: adr_orphan casa por
+# strings.Contains do basename em todo o conteúdo das REQs — sem o caminho no texto, o ADR do projeto
+# ficaria órfão e reprovaria os DOIS braços por motivo alheio ao seam.
+#
+# O `Roadmap:` aponta para o alvo real de ensure_roadmap_link_target: a única falsa-positiva sob
+# prova nesta fixture é a do ADR.
 
-write_req_roadmap_prose_fixture() {
+write_req_adr_prose_fixture() {
   local dest=$1 adr_rel=$2
   mkdir -p "$(dirname "$dest")"
+  ensure_roadmap_link_target "$dest"
+  cat > "$dest" <<EOF
+---
+status: Open
+date: 2026-09-06
+author: ""
+adr: ""
+roadmap: ""
+---
+
+# REQ: fixture de prosa no meio da linha (campo ADR)
+
+> Date: 2026-09-06 | Status: Open
+
+## Motivation
+motivo
+
+## Acceptance Criteria
+- [ ] pendente
+
+## Linked ADR
+veja a secao ADR: $adr_rel mais abaixo para detalhes
+
+## Linked Roadmap
+Roadmap: docs/roadmaps/abandoned/ROADMAP-2026-08-01-link-target.md
+EOF
+}
+
+# ML-1D (2026-09-26) — fixture da Direção C: a prosa fica no campo Roadmap e CARREGA um caminho
+# ".md" real.
+#
+# Por que o caminho tem de estar na prosa: depois do ML-1D, um valor de prosa é recusado por DUAS
+# razões independentes (não está ancorado na chave da linha E não termina em ".md"). Se a prosa não
+# carregasse um ".md", neutralizar só a ancoragem não mudaria o veredito e o braço
+# "-detects-regression" seria vácuo. Com o ".md" na prosa, a ancoragem da chave em extractRefPath
+# (`EqualFold(TrimSpace(key), field)`, onde a chave é TUDO antes do primeiro ":") é o único
+# discriminante — é exatamente o que a Direção C sabota.
+#
+# O alvo existe no disco (ensure_roadmap_link_target) porque o binário sabotado passa a EXTRAIR a
+# referência, e aí ref_targets_exist a resolve — um alvo inexistente reprovaria o braço sabotado por
+# motivo alheio ao seam (ref_targets_exist é violação mesmo em lenient).
+
+write_req_roadmap_prose_md_fixture() {
+  local dest=$1 adr_rel=$2
+  mkdir -p "$(dirname "$dest")"
+  ensure_roadmap_link_target "$dest"
   cat > "$dest" <<EOF
 ---
 status: Open
@@ -1397,7 +1600,7 @@ adr: "$adr_rel"
 roadmap: ""
 ---
 
-# REQ: fixture de prosa no meio da linha
+# REQ: fixture de prosa no meio da linha (campo Roadmap, com caminho .md)
 
 > Date: 2026-09-06 | Status: Open
 
@@ -1411,7 +1614,7 @@ motivo
 ADR: $adr_rel
 
 ## Linked Roadmap
-veja a secao Roadmap: mais abaixo para detalhes
+veja a secao Roadmap: docs/roadmaps/abandoned/ROADMAP-2026-08-01-link-target.md mais abaixo para detalhes
 EOF
 }
 
@@ -2020,6 +2223,12 @@ assert_lacks_pattern "roadmap-req-frontmatter-path/go/from-req-baseline" \
   bash -c "$ROADMAP_CYCLE_SCRIPT_FROM_REQ" _ "$T25G_BASE" "$T25G_BASE_BIN"
 
 # Braço de detecção: gerador revertido para gravar basename.
+#
+# 🔴 ML-1B (AC7, 2026-09-26): a lista de argumentos abaixo ganhou `acBlock` (o bloco consolidado de
+# ACs passou a ser interpolado em vez de literal). O literal fixado aqui é a LINHA DE ARGUMENTOS do
+# fmt.Sprintf do template --from-req: qualquer argumento novo nesse Sprintf quebra o casamento e o
+# cenário morre em `expected exactly 1 occurrence of pattern, got 0` — fail-closed, mas por motivo
+# alheio ao que ele mede. Ao tocar esse Sprintf, atualize as duas linhas abaixo.
 T25G_MOD="$WORK/s25-go-mod"
 mkdir -p "$T25G_MOD/cmd" "$T25G_MOD/internal"
 cp -r "$ROOT_DIR/cmd/." "$T25G_MOD/cmd/"
@@ -2028,8 +2237,8 @@ cp "$ROOT_DIR/go.mod" "$T25G_MOD/go.mod"
 cp "$ROOT_DIR/go.sum" "$T25G_MOD/go.sum"
 corrupt_literal \
   "$ROOT_DIR/internal/generators/roadmap.go" "$T25G_MOD/internal/generators/roadmap.go" \
-  'date, reqPath, squadVal, title, date, filepath.Base(reqPath), reqPath, adrRef, mlSection.String())' \
-  'date, filepath.Base(reqPath), squadVal, title, date, filepath.Base(reqPath), reqPath, adrRef, mlSection.String())' \
+  'date, reqPath, squadVal, title, date, filepath.Base(reqPath), reqPath, adrRef, acBlock, mlSection.String())' \
+  'date, filepath.Base(reqPath), squadVal, title, date, filepath.Base(reqPath), reqPath, adrRef, acBlock, mlSection.String())' \
   "s25-go"
 
 T25G_BIN="$WORK/s25-go-bin/trackfw"
@@ -2286,8 +2495,24 @@ T28C_GO_BIN="$WORK/s28-corrupt-go-bin/trackfw"
 mkdir -p "$(dirname "$T28C_GO_BIN")"
 build_go_or_fail "setup-s28-go-build" "$T28C_GO_MOD" "$T28C_GO_BIN"
 
-assert_lacks_pattern "backtick-ref/go/adr_accepted_when_req_done-detects-regression" \
+# 🔴 ML-1E (2026-09-26): este braço passou de assert_lacks_pattern para assert_output_lacks + liveness
+# anchor, e o motivo é consequência DIRETA do ML-1E — não afrouxamento.
+#
+# `req_has_adr` migrou para contentHasStructuredRefValue → extractRefPath. A fixture deste cenário
+# referencia o ADR SÓ pelo corpo e SÓ entre backticks (é o que ela existe para exercitar), então o
+# MESMO binário corrompido que esconde a referência de `adr_accepted_when_req_done` passa a esconder o
+# vínculo de `req_has_adr` também — que emite, corretamente, "has no linked ADR". Exit 0 virou
+# inalcançável POR CONSTRUÇÃO, e assert_lacks_pattern (que exige rc 0 do processo inteiro) reprovava
+# com "ciclo limpo saiu com 1" sem defeito nenhum — medido no primeiro `make quality` deste ML.
+#
+# O que está sob prova continua sendo o DESAPARECIMENTO de "$S28_MSG_ACCEPTED". A vacuidade é
+# descartada pelo anchor abaixo: se o binário corrompido tivesse morrido ou saído vazio, a mensagem de
+# req_has_adr também faltaria. Mesma solução da Direção A do Cenário 192, pelo mesmo motivo.
+assert_output_lacks "backtick-ref/go/adr_accepted_when_req_done-detects-regression" \
   "$S28_MSG_ACCEPTED" \
+  bash -c "cd '$T28_GO_VIOLATING' && exec '$T28C_GO_BIN' validate"
+assert_output_contains "backtick-ref/go/adr_accepted_when_req_done-detects-regression-liveness" \
+  'has no linked ADR' \
   bash -c "cd '$T28_GO_VIOLATING' && exec '$T28C_GO_BIN' validate"
 
 # ---------------------------------------------------------------------------
@@ -7086,24 +7311,54 @@ fi
 #   2. prosa que menciona o marcador no meio de uma frase ("veja a secao
 #      ADR: mais abaixo") contava como vínculo real.
 #
-# Este cenário prova as DUAS direções cross-CLI, cada uma com seu próprio
-# seam, contra o MESMO fixture (REQ com "ADR: <!-- preencher depois -->" e
-# "Roadmap:" só mencionado em prosa) — sem o fixture nunca deveria emitir
-# nenhuma das duas violações, com QUALQUER dos dois guards desativado ele
-# deveria voltar a emitir a violação correspondente. Vacuidade descartada:
-# a baseline (código real, sem corrupção) é limpa (assert_succeeds); só a
-# corrupção reintroduz a violação (assert_fails_with).
+# Cada direção tem seu próprio fixture e seu próprio seam: a baseline (código real) emite a violação
+# (assert_fails_with) e a corrupção do guard correspondente a faz DESAPARECER (assert_lacks_pattern,
+# que exige exit 0 do processo inteiro). Vacuidade descartada nas duas pontas.
 #
-# Direção A — guard do comentário HTML neutralizado (Go: `if
-# isHTMLCommentOnlyValue(rest)` → `if false`; Node/Python equivalentes):
-# reintroduz o defeito 1 — placeholder volta a contar como vínculo real, a
-# violação "has no linked ADR" desaparece.
+# 🔴 Direções A e B REESCRITAS pelo ML-1E (2026-09-26). Motivo, e é o mesmo que o ML-1D já pagou uma
+# vez na Direção B: `req_has_adr` migrou de contentHasMarkerValue para contentHasStructuredRefValue
+# (o leitor estrutural), e com isso contentHasMarkerValue ficou SEM chamador de produção. As duas
+# corrupções antigas — `isHTMLCommentOnlyValue` e a ancoragem `HasPrefix` — passaram a não mover
+# veredito NENHUM: a violação sobreviveria à sabotagem e assert_lacks_pattern reprovaria sem defeito.
+# Os dois braços ficariam VÁCUOS. As duas propriedades continuam medidas, agora no leitor que a regra
+# realmente usa.
 #
-# Direção B — ancoragem por linha neutralizada (Go: `if
-# !strings.HasPrefix(leading, marker)` → `if !strings.Contains(line,
-# marker)`; Node/Python equivalentes): reintroduz o defeito 2 — prosa com o
-# marcador no meio volta a contar como vínculo real, a violação "has no
-# linked Roadmap" desaparece.
+# Direção A — a exigência de caminho ".md" em extractRefPath neutralizada
+# (`if strings.HasSuffix(v, ".md")` → `if v != ""`): reintroduz o defeito 1 — o placeholder
+# `ADR: <!-- preencher depois -->` volta a contar como vínculo e a violação "has no linked ADR"
+# desaparece. É onde a propriedade do achado A2 vive DEPOIS do ML-1E: não há mais guard dedicado a
+# comentário HTML no caminho da regra; quem recusa `<!-- … -->` é a exigência de ".md".
+#
+# ⚠️ Por que a Direção A usa assert_output_lacks e não assert_lacks_pattern: a corrupção é na função
+# COMPARTILHADA extractRefPath, então o mesmo binário corrompido passa a devolver `<!--` como
+# referência de ADR também para `ref_targets_exist`, que emite — corretamente — "links to ADR
+# \"<!--\" which does not exist". Exit 0 é inalcançável POR CONSTRUÇÃO neste braço, e exigi-lo
+# tornaria o braço infalsificável. A vacuidade é descartada por outro caminho: um liveness anchor
+# assere que o binário corrompido AINDA emite a mensagem de ref_targets_exist, provando que ele rodou
+# e que a ausência de "has no linked ADR" é veredito, não saída vazia.
+#
+# Direção B — ancoragem da CHAVE em extractRefPath neutralizada, no campo ADR: reusa o MESMO binário
+# corrompido da Direção C (o seam é o mesmo desde que as duas regras compartilham o leitor), com a
+# fixture de PROSA do campo ADR e a mensagem "has no linked ADR". Reusar em vez de compilar um quarto
+# binário é deliberado: a alternativa seria uma corrupção byte-idêntica à da Direção C, o que custaria
+# um build inteiro para medir a mesma linha. O que B acrescenta a C é o CAMPO — C prova a propriedade
+# pelo `Roadmap:`, B pelo `ADR:`, e é justamente a simetria entre campos que o ML-1E instalou.
+#
+# 🔴 Acoplamento a declarar, para quem editar depois: **se a corrupção da Direção C mudar de alvo, a
+# Direção B perde o seam em silêncio** — ela não tem binário próprio. Retargetar C exige reconferir B
+# (ou dar a B uma corrupção própria de novo).
+#
+# 🔴 Direção C — ML-1D (2026-09-26), ancoragem da CHAVE em extractRefPath neutralizada
+# (`EqualFold(TrimSpace(key), field)` → a MESMA condição em DISJUNÇÃO com
+# `Contains(ToLower(trimmed), ToLower(field)+":")` — disjunção, e não substituição, porque trocar a
+# condição inteira deixa `key` sem uso e o compilador Go recusa; medido em 2026-09-26): o defeito 2
+# tem, desde o ML-1D, DOIS leitores de vínculo distintos, e a regra req_has_roadmap migrou para o
+# segundo. A Direção B media o defeito 2 pela mensagem "has no linked Roadmap"; com a migração, a
+# sabotagem da ancoragem de contentHasMarkerValue deixou de alterar aquele veredito e o braço ficaria
+# VÁCUO (a violação sobreviveria à sabotagem, e assert_lacks_pattern reprovaria sem defeito nenhum).
+# Por isso a Direção B passou a medir o defeito 2 no campo ADR — consumidor vivo de
+# contentHasMarkerValue — e a Direção C mede a MESMA propriedade ("prosa no meio da linha não é
+# vínculo") no leitor novo, pela mensagem "has no linked Roadmap".
 # ---------------------------------------------------------------------------
 
 S192_MSG_ADR='has no linked ADR'
@@ -7124,20 +7379,32 @@ write_req_adr_placeholder_fixture \
   "$T192_GO_PROJECT_A/docs/req/REQ-2026-09-06-adr-placeholder-fixture.md" \
   "docs/roadmaps/wip/ROADMAP-2026-09-06-s192-target.md"
 
-# Fixture B: só a falsa-positiva do Roadmap (ADR: aponta para um alvo real).
+# Fixture B: só a falsa-positiva do ADR em PROSA (Roadmap: aponta para um alvo real).
 T192_GO_PROJECT_B="$WORK/s192-go-project-b"
 scaffold_adr_req_project "$T192_GO_PROJECT_B"
 write_adr_status_fixture "$T192_GO_PROJECT_B/docs/adr/ADR-2026-09-06-s192-target.md" "Accepted"
-write_req_roadmap_prose_fixture \
-  "$T192_GO_PROJECT_B/docs/req/REQ-2026-09-06-roadmap-prose-fixture.md" \
+write_req_adr_prose_fixture \
+  "$T192_GO_PROJECT_B/docs/req/REQ-2026-09-06-adr-prose-fixture.md" \
   "docs/adr/ADR-2026-09-06-s192-target.md"
+
+# Fixture C (ML-1D): só a falsa-positiva do Roadmap em PROSA, e a prosa CARREGA um caminho ".md"
+# (ADR: aponta para um alvo real).
+T192_GO_PROJECT_C="$WORK/s192-go-project-c"
+scaffold_adr_req_project "$T192_GO_PROJECT_C"
+write_adr_status_fixture "$T192_GO_PROJECT_C/docs/adr/ADR-2026-09-06-s192-c-target.md" "Accepted"
+write_req_roadmap_prose_md_fixture \
+  "$T192_GO_PROJECT_C/docs/req/REQ-2026-09-06-roadmap-prose-md-fixture.md" \
+  "docs/adr/ADR-2026-09-06-s192-c-target.md"
 
 assert_fails_with "structural-marker-value/go/adr-placeholder-baseline" \
   "$S192_MSG_ADR" \
   bash -c "cd '$T192_GO_PROJECT_A' && exec '$T192_GO_BIN' validate"
-assert_fails_with "structural-marker-value/go/roadmap-prose-baseline" \
-  "$S192_MSG_ROADMAP" \
+assert_fails_with "structural-marker-value/go/adr-prose-baseline" \
+  "$S192_MSG_ADR" \
   bash -c "cd '$T192_GO_PROJECT_B' && exec '$T192_GO_BIN' validate"
+assert_fails_with "structural-marker-value/go/roadmap-prose-md-baseline" \
+  "$S192_MSG_ROADMAP" \
+  bash -c "cd '$T192_GO_PROJECT_C' && exec '$T192_GO_BIN' validate"
 
 # --- Go: direção A — guard do comentário HTML neutralizado ----------------
 T192C_GO_A="$WORK/s192-corrupt-go-a"
@@ -7148,36 +7415,47 @@ cp "$ROOT_DIR/go.mod" "$T192C_GO_A/go.mod"
 cp "$ROOT_DIR/go.sum" "$T192C_GO_A/go.sum"
 corrupt_literal \
   "$ROOT_DIR/internal/validator/validator.go" "$T192C_GO_A/internal/validator/validator.go" \
-  'if isHTMLCommentOnlyValue(rest) {' \
-  'if false { // [falsified] was: isHTMLCommentOnlyValue(rest)' \
+  'if strings.HasSuffix(v, ".md") {' \
+  'if v != "" { // [falsified] was: strings.HasSuffix(v, ".md")' \
   "s192-go-direction-a"
 T192C_GO_A_BIN="$WORK/s192-corrupt-go-a-bin/trackfw"
 mkdir -p "$(dirname "$T192C_GO_A_BIN")"
 build_go_or_fail "setup-s192-go-a-build" "$T192C_GO_A" "$T192C_GO_A_BIN"
 
-assert_lacks_pattern "structural-marker-value/go/adr-placeholder-detects-regression" \
+assert_output_lacks "structural-marker-value/go/adr-placeholder-detects-regression" \
   "$S192_MSG_ADR" \
   bash -c "cd '$T192_GO_PROJECT_A' && exec '$T192C_GO_A_BIN' validate"
+# Liveness anchor do braço acima (ver o comentário do cenário): prova que o binário corrompido rodou e
+# produziu saída utilizável — sem isto, "corrupção derrubou o binário" e "corrupção removeu a
+# violação" seriam indistinguíveis.
+assert_output_contains "structural-marker-value/go/adr-placeholder-detects-regression-liveness" \
+  'links to ADR' \
+  bash -c "cd '$T192_GO_PROJECT_A' && exec '$T192C_GO_A_BIN' validate"
 
-# --- Go: direção B — ancoragem por linha neutralizada ----------------------
-T192C_GO_B="$WORK/s192-corrupt-go-b"
-mkdir -p "$T192C_GO_B/cmd" "$T192C_GO_B/internal"
-cp -r "$ROOT_DIR/cmd/." "$T192C_GO_B/cmd/"
-cp -r "$ROOT_DIR/internal/." "$T192C_GO_B/internal/"
-cp "$ROOT_DIR/go.mod" "$T192C_GO_B/go.mod"
-cp "$ROOT_DIR/go.sum" "$T192C_GO_B/go.sum"
+# --- Go: direção C (ML-1D) — ancoragem da CHAVE em extractRefPath neutralizada ---
+T192C_GO_C="$WORK/s192-corrupt-go-c"
+mkdir -p "$T192C_GO_C/cmd" "$T192C_GO_C/internal"
+cp -r "$ROOT_DIR/cmd/." "$T192C_GO_C/cmd/"
+cp -r "$ROOT_DIR/internal/." "$T192C_GO_C/internal/"
+cp "$ROOT_DIR/go.mod" "$T192C_GO_C/go.mod"
+cp "$ROOT_DIR/go.sum" "$T192C_GO_C/go.sum"
 corrupt_literal \
-  "$ROOT_DIR/internal/validator/validator.go" "$T192C_GO_B/internal/validator/validator.go" \
-  'if !strings.HasPrefix(leading, marker) {' \
-  'if !strings.Contains(line, marker) { // [falsified] was: !strings.HasPrefix(leading, marker)' \
-  "s192-go-direction-b"
-T192C_GO_B_BIN="$WORK/s192-corrupt-go-b-bin/trackfw"
-mkdir -p "$(dirname "$T192C_GO_B_BIN")"
-build_go_or_fail "setup-s192-go-b-build" "$T192C_GO_B" "$T192C_GO_B_BIN"
+  "$ROOT_DIR/internal/validator/validator.go" "$T192C_GO_C/internal/validator/validator.go" \
+  'if ok && strings.EqualFold(strings.TrimSpace(key), field) {' \
+  'if ok && (strings.EqualFold(strings.TrimSpace(key), field) || strings.Contains(strings.ToLower(trimmed), strings.ToLower(field)+":")) { // [falsified] was: EqualFold(TrimSpace(key), field) only' \
+  "s192-go-direction-c"
+T192C_GO_C_BIN="$WORK/s192-corrupt-go-c-bin/trackfw"
+mkdir -p "$(dirname "$T192C_GO_C_BIN")"
+build_go_or_fail "setup-s192-go-c-build" "$T192C_GO_C" "$T192C_GO_C_BIN"
 
-assert_lacks_pattern "structural-marker-value/go/roadmap-prose-detects-regression" \
+assert_lacks_pattern "structural-marker-value/go/roadmap-prose-md-detects-regression" \
   "$S192_MSG_ROADMAP" \
-  bash -c "cd '$T192_GO_PROJECT_B' && exec '$T192C_GO_B_BIN' validate"
+  bash -c "cd '$T192_GO_PROJECT_C' && exec '$T192C_GO_C_BIN' validate"
+
+# --- Go: direção B (reescrita pelo ML-1E) — a MESMA corrupção de chave, medida no campo ADR --------
+assert_lacks_pattern "structural-marker-value/go/adr-prose-detects-regression" \
+  "$S192_MSG_ADR" \
+  bash -c "cd '$T192_GO_PROJECT_B' && exec '$T192C_GO_C_BIN' validate"
 # ---------------------------------------------------------------------------
 # Cenário 193 — ROADMAP-2026-09-05-reconciliar-o-que-declaramos-com-o-que-
 # medimos-apos-a-auditoria-externa, ML-3B: vínculo Roadmap: guarda o caminho

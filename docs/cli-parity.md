@@ -395,6 +395,204 @@ trackfw roadmap move: failed to sync <req-basename>: <cause>
 Remaining REQs are still attempted; the command reports the first failure's cause and exits non-zero
 after processing all of them, so one unwritable file does not hide the rest.
 
+### `roadmap new` writes the REQ backlink at creation time
+
+<!-- trackfw-contract: gate=internal/generators/roadmap_backlink_ml1b_test.go partial=o gate cobre o backlink e o bloco consolidado nos caminhos --from-req e --req de internal/generators; NÃO cobre o wizard interativo (TTY) nem o sentido inverso roadmap→REQ quando a REQ é MOVIDA depois (`req move` em layout por-estado/by_agent deixa o `req:` do roadmap defasado — ML novo proposto na REQ-2026-09-09) -->
+
+`trackfw roadmap new` writes **both sides of the link in one operation**. The roadmap declares the REQ
+in its own frontmatter (`req: "docs/req/REQ-….md"`), and the REQ receives the pointer back
+(`roadmap: "docs/roadmaps/backlog/ROADMAP-….md"`). Before this contract existed, the link was
+one-way: the REQ stayed at `roadmap: ""` and `trackfw validate` reported `req_has_roadmap` against a
+user who had followed the documented path exactly — *"a warning that fires on the correct path teaches
+people to ignore the warning"* (REQ-2026-09-09, Medição 3).
+
+Applies to every creation path that knows the REQ: `--from-req`, `--req`, and the wizard selection.
+The write happens after `✓ created`, from the single point where the roadmap's final path is known.
+
+**Which value is written.** The roadmap path **relative to the project root**, with `/` separators —
+the same form `roadmap move` writes, and the form the validator can resolve
+(`ref_targets_exist`). The **frontmatter** `roadmap:` is the normative field; the body `Roadmap:`
+marker is updated too, because a body that disagrees with the frontmatter misleads the human reader.
+
+**Which existing values may be overwritten — asymmetric on purpose:**
+
+| Field | Overwritten when the current value is | Rationale |
+|---|---|---|
+| frontmatter `roadmap:` | anything that is **not** a `.md` reference (`""`, `none`, `-`, `<!-- … -->`) | machine-written field: the REQ generator always emits `roadmap: ""` |
+| body `Roadmap:` | **only** empty, a dash, or an HTML-comment placeholder | human prose: `Roadmap: to be decided after the ADR` must not be erased |
+
+**The other three link rules read the link the same way (ML-1E, 2026-09-26).** `req_has_adr`,
+`wip_has_req` and `blocked_has_req` moved to the **same** predicate as `req_has_roadmap`
+(`contentHasStructuredRefValue` → `extractRefPath`), so the four link rules now share one notion of
+"linked": a value that is a `.md` reference, matched **case-insensitively** on the key, **frontmatter
+first** and body as fallback. Two consequences, both measured on this repository's 231 REQs on
+2026-09-26:
+
+| Direction | Count | What it was |
+|---|---|---|
+| Accusations **removed** | **7** | REQs whose `adr:` frontmatter carried a real, on-disk `docs/adr/….md` path. The rule matched `ADR:` by case-sensitive prefix and never saw the lowercase frontmatter field. One of the 7 is REQ-2026-09-09 itself. |
+| Accusations **added** | **24** | REQs that satisfied the rule with a *prose* placeholder in the body — `ADR: N/A — …`, `ADR: (a decidir …`, an HTML comment closing on a later line. None of them has an ADR. |
+
+Net on the corpus: `has no linked ADR` went **128 → 145**. The block **grows**, and that is the
+expected sign — `req_has_roadmap` produced the same signal in ML-1D (12 → 13). `wip_has_req` and
+`blocked_has_req` were measured **separately**, not assumed: 0 violations before and 0 after, in
+`wip/` and in `blocked/` — for those two the change is mechanism, not count.
+
+🔴 **Narrowing to ratify, stated explicitly: a bare artifact ID is no longer a link.** `REQ:
+REQ-2026-07-29-fixture` (no directory, no `.md`) satisfied `wip_has_req`/`blocked_has_req` before and
+does not any more, because `extractRefPath` requires an artifact path. Zero instances in this
+repository's governed artifacts, but the form was in real use in **fixtures**: it broke 6 barrier
+tests, 1 `ship` test and 12 sites of `scripts/check-barrier.sh`, all corrected in the same change by
+pointing at a real path and materialising the target. This is inherited from the ML-1D predicate, not
+invented here — the same constraint already applied to `roadmap:`. It also means a project that
+configures a non-path marker (e.g. `link_fields.req: [REQ:, req_id]`, the shape exercised by
+`internal/config/config_evolution_test.go`) cannot satisfy the rule through that marker, since the
+value would have to end in `.md`.
+
+### `req new` — the wizard's ADR link is deliberately NOT written
+
+<!-- trackfw-contract: gate=internal/generators/req_wizard_adr_link_ml1e_test.go partial=o gate pina a FORMA que o wizard produz (NewADRDraft + DependsOnADRs + NewREQ) e o veredito de req_has_adr sobre ela; NÃO exercita o formulário interativo (TTY, huh) nem a escolha de escopo local/global -->
+
+The interactive `trackfw req new` creates one **Draft** ADR per answered probe
+(`generators.NewADRDraft`), lists them under `## Blocked by ADRs`, and leaves `adr: ""` in the
+frontmatter and `ADR:` empty in the body. So a REQ born from that path is reported by `req_has_adr`
+even though a real ADR file was created in the same command.
+
+**This is declared, not fixed (ML-1E, 2026-09-26).** The ADR is in `Draft` and the section that names
+it means the opposite of "linked" — the wizard itself prints *"Resolve these ADRs (set Status:
+Accepted) before creating a roadmap"*. Writing `adr:` with a Draft would make `req_has_adr` call
+"linked" a REQ whose decision does not exist yet: a false negative traded for a false positive, which
+is what the ML-1E counter-arm forbids. Filling the link only when the ADR leaves `Draft` is a change
+to the wizard's own surface and is not in this change. The instance is **constructed** and pinned by
+the gate above, so this paragraph cannot silently go stale.
+
+**The validator reads the link with the same notion of "real" (ML-1D, 2026-09-26).** `req_has_roadmap`
+resolves the link through `extractRefPath` — the extractor shared by `ref_targets_exist` and
+`req_roadmap_sync`, whose frontmatter side moved to the same predicate in the same change — so a value that is not a `.md` reference (`none`, `TBD`, `-`, `<!-- … -->`, prose)
+does **not** satisfy the rule, in the frontmatter or in the body. Before this, the rule accepted any
+non-empty frontmatter value, which made the two halves of this contract disagree: the generator
+classified `roadmap: none` as *fillable placeholder* while the validator classified the same REQ as
+*linked*. Measured on the 231 REQs of this repository: 12 REQs flagged before, 13 after — the single
+new one declared, in its own body, `Roadmap: (a criar quando esta REQ sair do backlog…)`. The
+frontmatter still wins over the body, by position: `extractRefPath` scans top-down and the frontmatter
+block comes first.
+
+**Cardinality — every case pinned:**
+
+| State of the named REQ | Behaviour |
+|---|---|
+| Placeholder link | Both fields written; one line on **stdout** (below). |
+| Already links **this** roadmap | **No write at all** — byte-level idempotent. Running `--from-req` twice changes nothing. |
+| Already links a **different** roadmap | **Not touched.** Diagnostic on stderr, exit **0**. Re-pointing a REQ is a governance decision, not a side effect of `roadmap new`. |
+| REQ missing / unreadable / refused by the containment guard | Roadmap is **kept**, backlink abandoned, diagnostic on stderr, exit **0**. |
+
+**Output, pinned literally.** One line, on **stdout**, after the existing `✓ created …` line, only when
+the REQ was actually rewritten:
+
+```
+✓ linked <req-basename> → <roadmap-path>
+```
+
+**Why no failure path is fatal.** The roadmap already exists and `✓ created` has already been printed
+when the backlink runs; a non-zero exit would report failure for the part that succeeded, and `--req`
+accepts a path the user types freely. The silence that caused the original defect does not return: every
+abandonment writes to stderr. Containment refusals keep coming from the single emission point
+(`pathguard.RejectAndReport`); only the exit code is non-fatal.
+
+**Consolidated acceptance criteria on the `--from-req` path.** When the REQ has acceptance criteria, the
+roadmap's `## Acceptance Criteria` block is filled with them instead of the two empty `- [ ]` items.
+When the REQ has **none**, the placeholder is emitted unchanged and no ML is derived — the generator
+never invents criteria. 🔴 This narrows ADR-2026-07-31 (decision 3, *"placeholder to fill, not automatic
+aggregation"*) **on the `--from-req` path only**; the plain template of `roadmap new` still emits the
+placeholder. The amendment to that ADR is pending (REQ-2026-09-09, AC7).
+
+### `req_has_roadmap` — date cutoff, and the grandfathering is visible
+
+<!-- trackfw-contract: gate=internal/validator/validator_req_roadmap_cutoff.go,internal/validator/validator_req_roadmap_cutoff_ml4b_test.go partial=nenhum gate de shell exercita o corte pela superfície do CLI; a falsificação dos dois braços é feita em Go, sabotando reqIsGrandfathered -->
+
+**The rule is split in two arms by the creation date of the REQ (ML-4B, 2026-09-26).** A REQ created
+**on or after** the cutoff `2026-09-03` without a linked Roadmap is reported at the rule's normal
+severity — `error` by default, since `req_has_roadmap` is absent from `ruleDefaults`. A REQ created
+**before** the cutoff is reported as a **warning, never a violation**, with the suffix
+`— exempt as pre-cutoff (2026-09-03)`. The cutoff is a declared constant with the reasoning written
+next to it (`reqRoadmapCutoff`, `internal/validator/validator_req_roadmap_cutoff.go`), not a value
+buried in logic.
+
+**Why a cutoff at all, and why that date.** Inverting the severity without one makes `validate` fail
+on the whole historical liability at once, and the predictable answer is
+`governance_mode: lenient` — which loses the rule **and** the warning. The date is measured, not
+chosen: on the 231 REQs of this repository (2026-09-26) 13 have no linked Roadmap, all dated between
+`2026-08-16` and `2026-09-02`, and the exempt/enforced curve **saturates at `2026-09-03`** (every
+candidate ≥ 09-03 yields 13 exempt / 0 enforced). The curve constrains the choice to `>= 09-03` but
+does not pick inside it; the tiebreaker is direction of strictness — the cutoff grants *amnesty*, and a
+later date would silently amnesty orphan REQs dated after 09-03, which are errors today. Minimum
+amnesty wins.
+
+**One line in the report carries the count and the cutoff**, because *an exemption that is not seen
+becomes permanent*:
+
+```
+⚠  req_has_roadmap grandfathering: 13 REQ(s) without a linked Roadmap exempt as created before the
+   cutoff 2026-09-03, 0 enforced as created on/after it, 231 REQ(s) scanned (cutoff declared in
+   internal/validator/validator_req_roadmap_cutoff.go)
+```
+
+The message always carries the **denominator** (`N REQ(s) scanned`) alongside both counts, so `0
+exempt` can never be confused with *not measured*. It is emitted only when the rule found at least one
+orphan REQ: with zero orphans there is no exemption to make visible, and emitting unconditionally would
+add a warning to every clean project (the `TestValidate_Clean` contract: empty structure, zero noise).
+`rules: {req_has_roadmap: off}` silences both arms **and** the notice — whoever turns the rule off does
+not get its notice. The notice is a warning, so it survives `governance_mode: lenient`, which only
+downgrades violations.
+
+**Date ruler: `date:` in the frontmatter first, the `REQ-YYYY-MM-DD-` prefix of the filename as
+fallback** — the same frontmatter-first precedence ML-1A/ML-1D fixed for the link itself. Measured on
+the corpus: the two rulers disagree on 13 files (3 with both present and different, 3 with a filename
+date only, 7 with a frontmatter date only) and **none** of those 13 is one of the 13 orphan REQs, so
+the choice of ruler changes no verdict today. When **neither** ruler is readable the REQ is treated as
+post-cutoff (**fail closed**): accepting "no date" as amnesty would open the bypass of deleting `date:`
+and renaming the file. Zero REQs of the corpus fall in that branch today.
+
+**Residuals, declared and not fixed here.** `date:` is user-editable, so backdating bypasses the
+amnesty — neither ruler is tamper-resistant; git is, and it is out of this change's scope. And a
+`.trackfw-baseline.json` entry can tolerate the notice like any warning; the embedded counts mitigate
+it, since the message text changes whenever the liability changes and a stale baseline entry stops
+matching.
+
+### `roadmap move` / `req move` — name resolution refuses instead of guessing
+
+<!-- trackfw-contract: gate=internal/generators/artifact_select_ml1c_test.go partial=o gate cobre findRoadmap (flat e by_agent), findREQ e ShowRoadmap; NÃO cobre outros resolvedores por nome fora de internal/generators — o vínculo branch↔roadmap de validator.MatchRoadmapsForBranchSlug é contrato próprio, entregue pelo ML-3A da REQ-2026-09-09 e pinado na seção "Vínculo branch↔roadmap" abaixo -->
+
+`roadmap move <name> <state>` and `req move <name> <status>` resolve `<name>` against the artifact
+basenames through one shared decision point. The resolution is pinned as follows
+(ML-1C, REQ-2026-09-09):
+
+1. **Empty or whitespace-only `<name>` is refused**, naming the problem, and **no file is touched**.
+   Before ML-1C the match was `strings.Contains(basename, name)`, and `Contains(x, "")` is always
+   true — so an empty name (measured cause: an empty shell variable, 2026-09-12) resolved to the
+   **first** file of the **first** state directory and `roadmap move` moved it. `req move` was worse:
+   it also **rewrote** the status inside that file. There is no legitimate consumer of `move ""`.
+2. **An exact basename match wins**, with or without the `.md` suffix, over any substring candidate.
+   Without this precedence a stem that is a prefix of a longer sibling
+   (`ROADMAP-x` vs `ROADMAP-x-ML-1B.md`) would have no way to be named at all.
+3. **A partial name that identifies exactly one artifact still resolves** — partial is not forbidden,
+   ambiguous is.
+4. **More than one candidate is refused, and the error names every candidate path.** Before ML-1C the
+   first one in scan order was picked silently.
+
+For these two commands the candidate list travels inside the returned error, not on stdout, so it
+lands on the command's error path.
+
+**`roadmap show <name>` shares only rule 1** (the empty-name refusal). It keeps its own
+`*<name>*.md` glob: it has **no** exact-basename precedence — measured, `roadmap show
+ROADMAP-2026-07-19-global-adrs-governance` refuses as ambiguous against the 3 files of that stem
+while `roadmap move` with the same name resolves to the exact one — and it prints its candidate list
+to **stdout** before returning `ambiguous match for %q`. It is a read-only command, which is why
+ML-1C closed only the arm that could act on an arbitrary artifact.
+
+`trackfw barrier <roadmap>` is unaffected: it resolves by exact filename (`<base>.md`) under
+`wip/`/`done/` and never matched by substring.
+
 ### `req list` / `req move` — discovery layouts and conditional physical move
 
 <!-- trackfw-contract: gap reason=nenhum gate cross-CLI exercita req list/req move — nem a descoberta por layout (flat/by_agent) nem a discriminação in-place-vs-physical-move são comparadas entre Go, Node.js e Python -->
@@ -1594,17 +1792,22 @@ time.
 
 ```
 1. Parse "<type>/<slug>" — <type> must be feat|fix|refactor|chore|docs, <slug> non-empty.
-2. For feat|fix|refactor only: normalize the slug and check whether any roadmap filename in
-   wip/ or done/ contains it — the same BranchSlugMatchesRoadmap (Go) /
-   branchSlugMatchesRoadmap (Node.js) / branch_slug_matches_roadmap (Python) function
-   trackfw validate calls for branch_has_wip_roadmap. Not a reimplementation — the same
-   function, imported. chore|docs skip this step entirely — matchSlug is never called.
+2. For feat|fix|refactor only: normalize the slug and check whether it matches any roadmap
+   filename in wip/ or done/ — the same validator.MatchRoadmapsForBranchSlug the
+   trackfw validate rule branch_has_wip_roadmap calls (via BranchSlugMatchesRoadmap). Not a
+   reimplementation — the same function, imported. The relation is substring OR token overlap
+   (see "Vínculo branch↔roadmap" below). chore|docs skip this step entirely — matchSlug is
+   never called.
 3. No match (feat|fix|refactor only): print the same governance orientation message
    trackfw validate already prints for this rule, exit non-zero, never invoke git.
 4. --dry-run with a match (or chore|docs): print "[dry-run] would create branch "<type>/<slug>"
    (git checkout -b <type>/<slug>)", exit 0, never invoke git.
 5. Match (or chore|docs), no --dry-run: run `git checkout -b <type>/<slug>` with inherited
    stdio.
+6. For feat|fix|refactor only, AFTER git created the branch: record the branch↔roadmap link in
+   <roadmap_dir>/.trackfw-branch-links.json, when the inference identified exactly ONE roadmap.
+   A failure to record is printed and does not fail the command — the link is an accelerator,
+   never a gate.
 ```
 
 ### Shared matching logic — never duplicated
@@ -1615,7 +1818,7 @@ The slug-matching rule is implemented once per runtime and called from both plac
 
 | Runtime | Shared function | Called by `trackfw validate` | Called by `trackfw branch new` |
 |---|---|---|---|
-| Go | `validator.BranchSlugMatchesRoadmap` | `validateBranchHasWIPRoadmap` (`internal/validator/validator.go`) | `runBranchNew` (`internal/commands/branch.go`) |
+| Go | `validator.MatchRoadmapsForBranchSlug` (via `BranchSlugMatchesRoadmap`) | `validateBranchHasWIPRoadmap` (`internal/validator/validator.go`) | `runBranchNew` (`internal/commands/branch.go`) |
 | Node.js | `validator.branchSlugMatchesRoadmap` | `npm/src/validator.js` | `runBranchNew` (`npm/src/branch/runner.js`) |
 | Python | `_validator.branch_slug_matches_roadmap` | `pypi/trackfw/validator.py` | `run_branch_new` (`pypi/trackfw/commands/branch.py`) |
 
@@ -3822,9 +4025,6 @@ procura o slug em **`wip/` e `done/`**, não apenas em `wip/`.
 | Nenhum roadmap em `wip/` nem em `done/` | Violação com mensagem "no roadmap is in wip/ nor done/" + orientação de remediação |
 | Roadmap em `done/` com slug **diferente** da branch | Violação com mensagem "no matching roadmap in wip/ nor done/" — casamento de slug é obrigatório |
 
-O casamento é feito por `normalizeBranchSlug(filename).contains(branchSlug)` (substring, não
-igualdade), pois nomes de roadmap carregam prefixos de data (`ROADMAP-2026-07-27-<slug>.md`).
-
 A resolução de diretórios (`wip/`, `done/`) é centralizada em `resolveStateDirs` (Go),
 `resolveStateDirs` (Node.js) e `_resolve_state_dirs` (Python) — as variantes por agente
 (`by_agent`) são suportadas via os mesmos wrappers `resolveWIPDirs`/`resolveDoneDirs`.
@@ -3833,9 +4033,76 @@ O ID da regra (`branch_has_wip_roadmap`) e o mecanismo de severidade configuráv
 preservados — a aceitação de `done/` não altera a config key nem o comportamento de `off`/`warning`.
 
 `trackfw branch new` (ver "`trackfw branch new`" acima) aplica exatamente esta mesma regra **antes**
-da branch existir, chamando a mesma função de matching (`BranchSlugMatchesRoadmap` /
-`branchSlugMatchesRoadmap` / `branch_slug_matches_roadmap`) que `validateBranchHasWIPRoadmap`
-chama aqui — não uma segunda implementação.
+da branch existir, chamando a mesma função de matching (`MatchRoadmapsForBranchSlug`, via
+`BranchSlugMatchesRoadmap`) que `validateBranchHasWIPRoadmap` chama aqui — não uma segunda implementação.
+
+### Vínculo branch↔roadmap — relação ADITIVA, com vínculo escrito na frente
+
+<!-- trackfw-contract: gate=scripts/check-validate-rule-pins.sh,internal/validator/branch_roadmap_match_ml3a_test.go,scripts/check-roadmap-slug-matching.sh partial=os pins cobrem a relação (substring, sobreposição de tokens, slug vazio) e o vínculo escrito pelo `branch new`; o gate de corpus fixa o veredito das 205 branches × 201 roadmaps e os dois limiares calibrados, mas só pela via da INFERÊNCIA (`branch new --dry-run`) — o vínculo ESCRITO da etapa 1 é por checkout e gitignored, logo não é congelável em fixture, e a CARDINALIDADE (quantos roadmaps casam) não é observável pela CLI, só o veredito -->
+
+Desde o `ML-3A` da REQ-2026-09-09 (ADR-2026-09-26), a resolução tem **duas etapas, nesta ordem**:
+
+**1. Vínculo ESCRITO (fonte de verdade).** `trackfw branch new` grava
+`<roadmap_dir>/.trackfw-branch-links.json` (`{"version":1,"links":{"<branch>":"<ROADMAP-….md>"}}`)
+no instante em que cria a branch — o instante em que a informação ainda é exata. `validate`,
+`commit` e `ship` consultam esse vínculo. Se ele aponta para roadmap que **saiu de `wip/`+`done/`**,
+o vínculo está **obsoleto**: cai-se na inferência **e emite-se o aviso `branch_link_stale`** —
+nunca em silêncio. 🔴 O aviso **nunca** é violação: promovê-lo quebraria a ordem aditiva (uma branch
+que passa hoje começaria a falhar por causa de um registro obsoleto ao lado dela).
+
+**2. INFERÊNCIA por nome (fallback).** Para branch que não passou pelo `branch new` (clone, fork,
+`git checkout -b`), a relação é `MatchRoadmapsForBranchSlug` e aceita quando **qualquer** um dos dois
+braços aceita:
+
+| braço | relação | por quê |
+|---|---|---|
+| substring | `normalizeBranchSlug(filename)` contém `branchSlug` | braço histórico, mantido **verbatim**: nenhuma branch que passava pode passar a falhar (etapa 1, aditiva, da D4 do ADR) |
+| sobreposição de tokens | ≥ **2** tokens de conteúdo distintos, de 3+ caracteres, em comum | fecha a direção **restrito demais** do issue #273: a branch nomeia **o trabalho**, o roadmap nomeia **o título da REQ**, e nenhum é substring do outro |
+
+Os tokens do roadmap saem do **slug de conteúdo** — o prefixo estrutural (`ROADMAP-`/`REQ-`/`ADR-`),
+a data ISO e o `.md` são removidos antes de tokenizar. Sem isso, `roadmap` seria token de **todo**
+roadmap do acervo (175 de 201 neste repositório), dando um token grátis a qualquer slug que contenha
+a palavra. É remoção **posicional**, não lista negra: um roadmap cujo **título** contém "roadmap"
+mantém esse token.
+
+O **2** é valor **calibrado** contra o acervo (ML-3A, 2026-09-26), não escolhido: o caso do #273
+compartilha exatamente 2 tokens, logo ≥3 reabre o falso-negativo; e com 1 a relação aceita **205 de
+205** branches históricas, deixando de discriminar.
+
+🔴 **Slug vazio casa NADA.** `strings.Contains(x, "")` é sempre verdadeiro, então antes do `ML-3A` a
+branch `feat/` era relatada como governada por qualquer acervo. É a única restrição desta etapa, e é
+a exceção declarada no ADR à ordem aditiva — não existe consumidor legítimo de slug vazio.
+
+#### O corpus da calibração é fixture versionada (`ML-3C`)
+
+<!-- trackfw-contract: gate=scripts/check-roadmap-slug-matching.sh,scripts/testdata/branch-roadmap-slug-corpus/census-verdicts.tsv,scripts/testdata/branch-roadmap-slug-corpus/manifest.txt partial=o gate roda o corpus congelado e pina os dois limiares; o --self-test dele falsifica as três mutações (N=3, N=1, braço de tokens morto) e as quatro guardas de não-vacuidade, mas nenhum gate prova que o corpus ainda REFLETE o acervo vivo — regenerá-lo é ato deliberado, registrado em roadmap -->
+
+`scripts/check-roadmap-slug-matching.sh` congela a medição que autorizou a relação acima, e
+`make parity-rest` a reexecuta a cada ciclo:
+
+| | |
+|---|---|
+| corpus | `scripts/testdata/branch-roadmap-slug-corpus/` — **201** nomes de roadmap (`wip/`+`done/` em 2026-09-26) × **205** branches governadas (união de `gh pr list --state all` com `git branch -a`, prefixos `feat/`/`fix/`/`refactor/`) |
+| veredito congelado | **190 accept** (176 pelo braço substring · **14 só pelo braço de tokens** — a reparação do `ML-3A`) · **15 block** |
+| caso de calibração | o par **externo** do issue #273, em corpus próprio para não contaminar os números 201/205 — é ele que força o **teto** do limiar, porque o autor renomeou a branch e o caso nunca entrou neste acervo |
+| limiares pinados | as declarações literais `const branchRoadmapMinSharedTokens = 2` e `const branchRoadmapMinTokenLen = 3`; mudar uma sem regenerar o corpus **reprova** |
+
+🔴 **O corpus é fixture, não consulta ao `git`/`gh` em tempo de gate** — nem `gh` (sem credencial
+em CI de fork), nem o reflog (não clonado), nem o conteúdo atual de `docs/roadmaps/` (muda a cada
+transição) sustentam um veredito parado. E a reprovação **nomeia a branch** cujo veredito mudou: o
+número sozinho manda adivinhar qual.
+
+⚠️ **As 15 `block` não são defeito.** `strings.Contains` rejeitava **29 das 205** (14%); o braço de
+tokens fecha 14, e estas 15 são o resíduo medido. Com `N=1` as 205 passam — a relação deixa de
+discriminar. Baixar o limiar para "consertar" as 15 destrói a regra, não conserta o acervo.
+
+A etapa **restritiva** (remover o que o substring aceita e a sobreposição não) **não** está no ar —
+o `ML-3C` entrega o **instrumento** que a torna medível, não a restrição. E o instrumento já deu o
+primeiro número: com o braço substring **desligado** no corpus congelado, **2 das 205** branches
+mudam de veredito (`feat/v2.0-gaps` e `fix/v8-um-binario`, ambas com menos de 2 tokens de conteúdo de
+3+ caracteres no slug). Ou seja, em **203 dos 205** casos a sobreposição de tokens já **subsume** o
+substring, e o raio de alcance da etapa restritiva são exatamente essas duas branches — medido pelo
+braço `mutation/braco-substring-morto` do `--self-test`, não estimado.
 
 ## Contrato de artefatos gerados (req, adr, roadmap, note)
 

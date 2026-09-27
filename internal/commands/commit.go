@@ -41,6 +41,12 @@ type commitDeps struct {
 	// (production: validator.BranchSlugMatchesRoadmap — the same logic `trackfw branch new` and
 	// `trackfw validate` use).
 	matchSlug func(slug string, wipDirs, doneDirs []string) (matched bool, candidates []string)
+	// branchLink reads the WRITTEN branch↔roadmap link recorded by `trackfw branch new`
+	// (production: validator.BranchLinkFor). D1 of ADR-2026-09-26: the written link is the source of
+	// truth and inference is the fallback, so it is consulted before the branch is blocked. It can
+	// only ADD acceptance — it is what keeps a branch governed after its roadmap is renamed. nil
+	// skips the lookup.
+	branchLink func(cfg config.ProjectConfig, branch string, wipDirs, doneDirs []string) validator.BranchLinkStatus
 	// execGitCommit runs `git commit -m <message>` with inherited stdio, propagating Git's own
 	// output and exit code literally (production: defaultGitCommit).
 	execGitCommit func(message string) error
@@ -102,6 +108,7 @@ Create the governance artifacts first if this blocks you:
 				resolveWIPDirs:   validator.ResolveWIPDirs,
 				resolveDoneDirs:  validator.ResolveDoneDirs,
 				matchSlug:        validator.BranchSlugMatchesRoadmap,
+				branchLink:       validator.BranchLinkFor,
 				execGitCommit:    defaultGitCommit,
 				stagedNameStatus: defaultStagedNameStatus,
 				out:              cmd.OutOrStdout(),
@@ -356,6 +363,19 @@ func runCommit(message string, deps commitDeps) error {
 
 		normalizedSlug := validator.NormalizeBranchSlug(slug)
 		matched, candidates := deps.matchSlug(normalizedSlug, wipDirs, doneDirs)
+
+		// D1: the written link is consulted when inference did not match. A STALE link (recorded,
+		// but its roadmap left wip/+done/) never silently degrades — it is named in the output.
+		if !matched && deps.branchLink != nil {
+			link := deps.branchLink(cfg, branch, wipDirs, doneDirs)
+			switch {
+			case link.InScope:
+				matched = true
+				fmt.Fprintf(deps.out, "trackfw commit: branch %q governed by the written link to %q.\n", branch, link.Roadmap)
+			case link.Present:
+				fmt.Fprintln(deps.out, validator.BranchLinkStaleWarning(cfg, branch, link.Roadmap))
+			}
+		}
 
 		if !matched {
 			var msg string

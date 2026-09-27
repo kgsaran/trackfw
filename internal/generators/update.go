@@ -94,6 +94,15 @@ func Update(cwd string) error {
 		fmt.Printf("  ⚠ git branch guard script: %v\n", err)
 	}
 
+	// 2b. .gitignore: garante que <roadmap_dir>/.trackfw-branch-links.json esteja
+	// ignorado (ML-3D). Este é o caminho do consumidor JÁ ONBOARDADO, que não vai
+	// rodar `init` de novo — sem ele, a correção só alcançaria projetos novos.
+	// Idempotente e nunca sobrescreve: append quando falta a regra, no-op quando
+	// alguma linha já nomeia o arquivo.
+	if err := generateGitIgnore(); err != nil {
+		fmt.Printf("  ⚠ .gitignore: %v\n", err)
+	}
+
 	// 3. CI workflow (categoria 2 — trackfw-owned, overwrite seguro)
 	if err := generateCIWorkflow(cfg); err != nil {
 		fmt.Printf("  ⚠ CI workflow: %v\n", err)

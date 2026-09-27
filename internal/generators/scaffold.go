@@ -3,12 +3,15 @@ package generators
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/homedir"
 	"github.com/kgsaran/trackfw/internal/pathguard"
+	"github.com/kgsaran/trackfw/internal/validator"
 	"github.com/kgsaran/trackfw/internal/version"
 )
 
@@ -124,6 +127,14 @@ func Scaffold(cfg Config) error {
 	}
 
 	if err := generateGitAttributes(); err != nil {
+		return err
+	}
+
+	// ANTES de writeTrackfwConfig de propósito: writeTrackfwConfig sobrescreve
+	// trackfw.yaml com `roadmap_dir: docs/roadmaps` sem ler o valor anterior, então
+	// chamar depois dele faria todo projeto brownfield com roadmap_dir próprio
+	// receber a linha do layout do mantenedor. Aqui ainda se lê o valor do projeto.
+	if err := generateGitIgnore(); err != nil {
 		return err
 	}
 
@@ -2640,6 +2651,111 @@ func generateGitAttributes() error {
 		return fmt.Errorf("appending to .gitattributes: %w", err)
 	}
 	fmt.Println("  ✓ .gitattributes")
+	return nil
+}
+
+// gitIgnoreRuleTarget é o BASENAME do arquivo que este gerador garante ignorado.
+// O predicado de idempotência casa o basename (e não o caminho literal emitido)
+// porque `roadmap_dir` é configurável: um projeto que reconfigure o diretório e
+// rode `init` de novo receberia uma segunda linha para o MESMO arquivo se o
+// reconhecimento fosse por string exata. Mesma lição do hasGitAttributesRule.
+const gitIgnoreRuleTarget = validator.BranchLinkFileName
+
+// effectiveRoadmapDir devolve o `roadmap_dir` do trackfw.yaml do diretório
+// corrente, ou o default quando o arquivo está ausente/ilegível.
+//
+// 🔴 Deliberadamente NÃO usa config.Load(): Load é singleton `once.Do` e cacheia
+// o primeiro trackfw.yaml lido no processo — num gerador chamado após chdir (e nos
+// testes, que rodam vários cwd no mesmo binário) isso devolveria a config de outro
+// projeto. config.ParseDirsFromContent é o mesmo parser sem o cache, e já tem o
+// contrato de "chave ausente cai no default".
+func effectiveRoadmapDir() string {
+	data, err := os.ReadFile("trackfw.yaml")
+	if err != nil {
+		_, roadmapDir, _ := config.ParseDirsFromContent("")
+		return roadmapDir
+	}
+	_, roadmapDir, _ := config.ParseDirsFromContent(string(data))
+	return roadmapDir
+}
+
+// gitIgnoreBlock é o bloco emitido no caminho de criação E no de append, com o
+// `roadmap_dir` EFETIVO do projeto — nunca `docs/roadmaps` fixo (o produto
+// presumir o layout do mantenedor é a família de defeito do #396).
+func gitIgnoreBlock(roadmapDir string) string {
+	return fmt.Sprintf(`# trackfw: branch<->roadmap link written by `+"`trackfw branch new`"+` — PER-CHECKOUT state,
+# not versioned. A clone, a fork and CI never have it by design: inference by branch
+# name is the fallback for that population. Committing it would let the link recorded
+# on one machine govern another, possibly on a different branch.
+%s/%s
+`, strings.TrimSuffix(roadmapDir, "/"), gitIgnoreRuleTarget)
+}
+
+// hasGitIgnoreRule decide idempotência: verdadeiro quando ALGUMA linha
+// não-comentário tem um padrão cujo basename é o arquivo de vínculo — qualquer
+// caminho, e inclusive a forma negada (`!...`), que é decisão explícita do projeto
+// e não deve ser contrariada por append.
+func hasGitIgnoreRule(content string) bool {
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		pattern := strings.TrimSuffix(strings.TrimPrefix(trimmed, "!"), "/")
+		if path.Base(pattern) == gitIgnoreRuleTarget {
+			return true
+		}
+	}
+	return false
+}
+
+// generateGitIgnore garante que `<roadmap_dir>/.trackfw-branch-links.json` esteja
+// ignorado no `.gitignore` da raiz do projeto. Três ramos, todos idempotentes —
+// mesmo desenho de generateGitAttributes:
+//   - arquivo ausente  → cria com o bloco
+//   - existe sem regra → APPEND do bloco (nunca sobrescreve o arquivo do projeto)
+//   - existe com regra → no-op
+func generateGitIgnore() error {
+	giRoot, giErr := projectRoot()
+	if giErr != nil {
+		return fmt.Errorf("generateGitIgnore: %w", giErr)
+	}
+	absGitIgnore := filepath.Join(giRoot, ".gitignore")
+	if err := rejectScaffoldPath(giRoot, absGitIgnore); err != nil {
+		return err
+	}
+	const gitIgnorePath = ".gitignore"
+	block := gitIgnoreBlock(effectiveRoadmapDir())
+	existing, err := os.ReadFile(gitIgnorePath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("reading .gitignore: %w", err)
+		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+		if err := os.WriteFile(gitIgnorePath, []byte(block), 0644); err != nil {
+			return fmt.Errorf("writing .gitignore: %w", err)
+		}
+		fmt.Println("  ✓ .gitignore")
+		return nil
+	}
+
+	if hasGitIgnoreRule(string(existing)) {
+		return nil
+	}
+
+	// Arquivo preexistente sem newline final: emendar o bloco direto grudaria a
+	// primeira linha do bloco no último padrão do projeto, transformando os dois
+	// numa linha só e corrompendo o .gitignore dele em silêncio.
+	out := string(existing)
+	if out != "" && !strings.HasSuffix(out, "\n") {
+		out += "\n"
+	}
+	out += block
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+	if err := os.WriteFile(gitIgnorePath, []byte(out), 0644); err != nil {
+		return fmt.Errorf("appending to .gitignore: %w", err)
+	}
+	fmt.Println("  ✓ .gitignore")
 	return nil
 }
 

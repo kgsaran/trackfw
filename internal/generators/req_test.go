@@ -1,6 +1,8 @@
 package generators
 
 import (
+	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -652,6 +654,282 @@ func TestMoveREQ_LogsTransition(t *testing.T) {
 // ─── ML-1C Containment Tests ────────────────────────────────────────────────
 
 // TestNewREQ_SymlinkReqDirRefused asserts that ML-1C containment guards reject
+// ─── ML-6A: syncRoadmapREQReference ────────────────────────────────────────
+
+// TestMoveREQ_SyncsRoadmapREQRef_StateLayout — ao mover uma REQ fisicamente (layout por-estado),
+// o campo req: do roadmap vinculado é atualizado para o novo caminho.
+// Reconciliação (Regra Dura): este teste afirma que MoveREQ em state-layout propaga o repath ao
+// roadmap vinculado — que é a conclusão central do ML-6A.
+func TestMoveREQ_SyncsRoadmapREQRef_StateLayout(t *testing.T) {
+	dir := t.TempDir()
+	chdirREQ(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	if err := os.MkdirAll("docs/req/wip", 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll("docs/roadmaps/wip", 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	roadmapContent := "---\nstatus: wip\nreq: \"docs/req/wip/REQ-2026-09-26-sync-test.md\"\n---\n# Roadmap: Sync\n\n## Context\nREQ: docs/req/wip/REQ-2026-09-26-sync-test.md\n"
+	if err := os.WriteFile("docs/roadmaps/wip/ROADMAP-sync-test.md", []byte(roadmapContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	reqContent := "---\nstatus: wip\nroadmap: \"docs/roadmaps/wip/ROADMAP-sync-test.md\"\n---\n# REQ: Sync Test\n"
+	if err := os.WriteFile("docs/req/wip/REQ-2026-09-26-sync-test.md", []byte(reqContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := MoveREQ("sync-test", "done"); err != nil {
+		t.Fatalf("MoveREQ erro: %v", err)
+	}
+
+	// REQ deve estar no novo caminho
+	if _, err := os.Stat("docs/req/done/REQ-2026-09-26-sync-test.md"); err != nil {
+		t.Fatalf("REQ deveria existir em docs/req/done/: %v", err)
+	}
+
+	// Roadmap: campo req: deve ter o novo caminho
+	updated, err := os.ReadFile("docs/roadmaps/wip/ROADMAP-sync-test.md")
+	if err != nil {
+		t.Fatalf("lendo roadmap atualizado: %v", err)
+	}
+	body := string(updated)
+	if !strings.Contains(body, "docs/req/done/REQ-2026-09-26-sync-test.md") {
+		t.Fatalf("req: do roadmap deveria ter o caminho novo, obteve:\n%s", body)
+	}
+	if strings.Contains(body, "docs/req/wip/REQ-2026-09-26-sync-test.md") {
+		t.Fatalf("req: do roadmap não deveria ter o caminho antigo, obteve:\n%s", body)
+	}
+	// Corpo REQ: também atualizado (bodyOnce=true: primeira ocorrência)
+	if !strings.Contains(body, "REQ: docs/req/done/REQ-2026-09-26-sync-test.md") {
+		t.Fatalf("linha REQ: do corpo deveria ter o caminho novo, obteve:\n%s", body)
+	}
+}
+
+// TestMoveREQ_SyncsRoadmapREQRef_ByAgentLayout — mesmo contrato para layout by_agent.
+// Reconciliação: afirma que o repath alcança layouts by_agent, prevenindo o bug de meia-correção
+// documentado em roadmap.go:824–830.
+func TestMoveREQ_SyncsRoadmapREQRef_ByAgentLayout(t *testing.T) {
+	dir := t.TempDir()
+	chdirREQ(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	yamlContent := "roadmap_namespacing: by_agent\nagents:\n- apolo\n"
+	if err := os.WriteFile("trackfw.yaml", []byte(yamlContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll("docs/req/apolo/wip", 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll("docs/roadmaps/apolo/wip", 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	roadmapContent := "---\nstatus: wip\nreq: \"docs/req/apolo/wip/REQ-2026-09-26-ba.md\"\n---\n# Roadmap: BA\n\n## Context\nREQ: docs/req/apolo/wip/REQ-2026-09-26-ba.md\n"
+	if err := os.WriteFile("docs/roadmaps/apolo/wip/ROADMAP-ba.md", []byte(roadmapContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	reqContent := "---\nstatus: wip\nroadmap: \"docs/roadmaps/apolo/wip/ROADMAP-ba.md\"\n---\n# REQ: BA\n"
+	if err := os.WriteFile("docs/req/apolo/wip/REQ-2026-09-26-ba.md", []byte(reqContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := MoveREQ("ba", "done"); err != nil {
+		t.Fatalf("MoveREQ erro: %v", err)
+	}
+
+	if _, err := os.Stat("docs/req/apolo/done/REQ-2026-09-26-ba.md"); err != nil {
+		t.Fatalf("REQ deveria existir em docs/req/apolo/done/: %v", err)
+	}
+
+	updated, err := os.ReadFile("docs/roadmaps/apolo/wip/ROADMAP-ba.md")
+	if err != nil {
+		t.Fatalf("lendo roadmap: %v", err)
+	}
+	body := string(updated)
+	if !strings.Contains(body, "docs/req/apolo/done/REQ-2026-09-26-ba.md") {
+		t.Fatalf("req: deveria ter novo caminho, obteve:\n%s", body)
+	}
+}
+
+// TestMoveREQ_FlatLayout_NoRoadmapChange — em req_dir flat, req move só reescreve o status:
+// da REQ; nenhum roadmap é alterado.
+// Reconciliação: afirma que o contra-braço flat está correto — o sinal de diagnóstico não chega
+// neste repositório porque o consumidor usa layout com subpastas.
+func TestMoveREQ_FlatLayout_NoRoadmapChange(t *testing.T) {
+	dir := t.TempDir()
+	chdirREQ(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	if err := os.MkdirAll("docs/req", 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll("docs/roadmaps/wip", 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Roadmap com req: apontando para a REQ (flat, sem subpasta de estado)
+	roadmapContent := "---\nstatus: wip\nreq: \"docs/req/REQ-2026-09-26-flat.md\"\n---\n# Roadmap: Flat\n"
+	roadmapPath := "docs/roadmaps/wip/ROADMAP-flat.md"
+	if err := os.WriteFile(roadmapPath, []byte(roadmapContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	roadmapStat0, err := os.Stat(roadmapPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reqContent := "---\nstatus: wip\nroadmap: \"docs/roadmaps/wip/ROADMAP-flat.md\"\n---\n# REQ: Flat\n"
+	if err := os.WriteFile("docs/req/REQ-2026-09-26-flat.md", []byte(reqContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := MoveREQ("flat", "done"); err != nil {
+		t.Fatalf("MoveREQ: %v", err)
+	}
+
+	// O caminho da REQ não mudou (in-place) — roadmap não deve ter sido tocado.
+	roadmapStat1, err := os.Stat(roadmapPath)
+	if err != nil {
+		t.Fatalf("roadmap removido inesperadamente: %v", err)
+	}
+	if !roadmapStat1.ModTime().Equal(roadmapStat0.ModTime()) {
+		t.Fatalf("roadmap foi modificado em flat layout: mtime mudou de %v para %v", roadmapStat0.ModTime(), roadmapStat1.ModTime())
+	}
+}
+
+// TestMoveREQ_CrossLinkGuard_NotRewritten — roadmap cujo req: aponta para OUTRA REQ não é
+// reescrito ao mover esta REQ.
+// Reconciliação: afirma o guarda de vínculo cruzado — o teste falso-positivo mais óbvio seria
+// um basename-check ingênuo que compara apenas a parte do nome sem conferir qual REQ está vinculada.
+func TestMoveREQ_CrossLinkGuard_NotRewritten(t *testing.T) {
+	dir := t.TempDir()
+	chdirREQ(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	if err := os.MkdirAll("docs/req/wip", 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll("docs/roadmaps/wip", 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Roadmap aponta para REQ-other, não para REQ-mover
+	roadmapContent := "---\nstatus: wip\nreq: \"docs/req/wip/REQ-2026-09-26-other.md\"\n---\n# Roadmap: Cross\n"
+	roadmapPath := "docs/roadmaps/wip/ROADMAP-cross.md"
+	if err := os.WriteFile(roadmapPath, []byte(roadmapContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+	roadmapStat0, err := os.Stat(roadmapPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// REQ-mover aponta para o roadmap (pelo basename), mas roadmap aponta para REQ-other
+	reqContent := "---\nstatus: wip\nroadmap: \"docs/roadmaps/wip/ROADMAP-cross.md\"\n---\n# REQ: Mover\n"
+	if err := os.WriteFile("docs/req/wip/REQ-2026-09-26-mover.md", []byte(reqContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := MoveREQ("mover", "done"); err != nil {
+		t.Fatalf("MoveREQ: %v", err)
+	}
+
+	// Roadmap não deve ter sido modificado
+	roadmapStat1, err := os.Stat(roadmapPath)
+	if err != nil {
+		t.Fatalf("roadmap removido: %v", err)
+	}
+	if !roadmapStat1.ModTime().Equal(roadmapStat0.ModTime()) {
+		t.Fatalf("roadmap foi modificado indevidamente (cross-link): mtime mudou")
+	}
+
+	// req: deve ainda apontar para other
+	updated, err := os.ReadFile(roadmapPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(updated), "REQ-2026-09-26-other.md") {
+		t.Fatalf("req: do roadmap foi reescrito indevidamente:\n%s", string(updated))
+	}
+}
+
+// TestMoveREQ_SyncRoadmapREQRef_Idempotent — chamar syncRoadmapREQReference duas vezes com os
+// mesmos argumentos produz bytes byte-idênticos no roadmap: a segunda chamada é no-op.
+// Reconciliação (Regra Dura): este teste afirma o guarda de idempotência de roadmap.go:1548
+// (`if existingReq == newREQPath { return nil }`) — conclusão central do ML-6A: o repath é
+// seguro de repetir sem escrita duplicada. É o espelho de TestSyncREQ_Idempotency_ByteLevel
+// de roadmap_test.go, para a direção REQ→roadmap.
+// Nota: TestMoveREQ_SyncIdempotent foi removido — seu corpo testava o cross-link guard
+// (predicado já coberto por TestMoveREQ_CrossLinkGuard_NotRewritten), não idempotência.
+func TestMoveREQ_SyncRoadmapREQRef_Idempotent(t *testing.T) {
+	dir := t.TempDir()
+	chdirREQ(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	if err := os.MkdirAll("docs/req/wip", 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll("docs/req/done", 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll("docs/roadmaps/wip", 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	roadmapPath := "docs/roadmaps/wip/ROADMAP-req-idem.md"
+	oldREQPath := "docs/req/wip/REQ-2026-09-26-req-idem.md"
+	newREQPath := "docs/req/done/REQ-2026-09-26-req-idem.md"
+	reqBasename := "REQ-2026-09-26-req-idem.md"
+
+	roadmapContent := fmt.Sprintf("---\nstatus: wip\nreq: %q\n---\n# Roadmap: ReqIdem\n\n## Context\nREQ: %s\n",
+		oldREQPath, oldREQPath)
+	if err := os.WriteFile(roadmapPath, []byte(roadmapContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// reqContent: bytes da REQ já reescrita (frontmatter roadmap: aponta para o roadmap).
+	reqContent := []byte(fmt.Sprintf("---\nstatus: done\nroadmap: %q\n---\n# REQ: ReqIdem\n", roadmapPath))
+
+	// Primeira chamada: deve atualizar req: do roadmap de oldREQPath → newREQPath.
+	if err := syncRoadmapREQReference(reqContent, reqBasename, normalizeRefSeparator(newREQPath)); err != nil {
+		t.Fatalf("primeira syncRoadmapREQReference: %v", err)
+	}
+	bytesAfterFirst, err := os.ReadFile(roadmapPath)
+	if err != nil {
+		t.Fatalf("lendo roadmap após primeira chamada: %v", err)
+	}
+	// Sanidade: a primeira chamada deve ter atualizado o req:.
+	if !strings.Contains(string(bytesAfterFirst), newREQPath) {
+		t.Fatalf("primeira chamada não atualizou req:, obteve:\n%s", bytesAfterFirst)
+	}
+
+	// Segunda chamada com os mesmos argumentos: idempotência — nenhuma escrita.
+	// O guarda em roadmap.go:1548 (`if existingReq == newREQPath { return nil }`) deve disparar.
+	if err := syncRoadmapREQReference(reqContent, reqBasename, normalizeRefSeparator(newREQPath)); err != nil {
+		t.Fatalf("segunda syncRoadmapREQReference: %v", err)
+	}
+	bytesAfterSecond, err := os.ReadFile(roadmapPath)
+	if err != nil {
+		t.Fatalf("lendo roadmap após segunda chamada: %v", err)
+	}
+
+	// Comparação byte-level: não depende de granularidade de relógio.
+	if !bytes.Equal(bytesAfterFirst, bytesAfterSecond) {
+		t.Fatalf("idempotência violada: bytes diferem após segunda chamada\napós 1ª:\n%q\napós 2ª:\n%q",
+			bytesAfterFirst, bytesAfterSecond)
+	}
+}
+
 // NewREQ when docs/req/ is a symlink pointing outside the project root.
 func TestNewREQ_SymlinkReqDirRefused(t *testing.T) {
 	outside := t.TempDir()
