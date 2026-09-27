@@ -121,6 +121,38 @@ func barrierBinary(t *testing.T) string {
 // seção "Roadmap parsing rules" de docs/cli-parity.md.
 // ────────────────────────────────────────────────────────────────────────────
 
+// barrierFixtureREQRel / barrierFixtureADRRel — o vínculo REQ do roadmap-fixture.
+//
+// 🔴 ML-1E (2026-09-26): era o ID pelado "REQ-2026-07-29-barrier-fixture". As regras wip_has_req e
+// blocked_has_req passaram a ler o vínculo por contentHasStructuredRefValue (o leitor que o ML-1D
+// instalou em req_has_roadmap), que exige um caminho terminado em ".md" — então o ID pelado deixou de
+// contar como vínculo e o check "validate" da barrier bloqueava em 6 testes cuja premissa é
+// "governança verde". A fixture passou a gravar o caminho REAL e a MATERIALIZAR o alvo
+// (writeBarrierREQFixture), porque ref_targets_exist — regra de carve-out, violação mesmo em lenient —
+// exige que o arquivo apontado exista.
+const (
+	barrierFixtureREQRel = "docs/req/REQ-2026-07-29-barrier-fixture.md"
+	barrierFixtureADRRel = "docs/adr/ADR-2026-07-29-barrier-fixture.md"
+)
+
+// writeBarrierREQFixture materializa, em dir, a REQ (e o ADR que ela cita) que o roadmap-fixture
+// referencia — com os dois vínculos preenchidos por caminho real, para que nem req_has_adr nem
+// req_has_roadmap nem ref_targets_exist disparem e o check "validate" da barrier siga verde.
+// roadmapRel é o caminho do roadmap RELATIVO à raiz do projeto-fixture (ex.:
+// "docs/roadmaps/wip/ROADMAP-barrier-fixture.md").
+func writeBarrierREQFixture(t *testing.T, dir, roadmapRel string) {
+	t.Helper()
+	adr := "---\nstatus: Accepted\ndate: 2026-07-29\n---\n\n# ADR: Barrier Fixture\n\n> Status: Accepted\n"
+	if err := os.WriteFile(filepath.Join(dir, barrierFixtureADRRel), []byte(adr), 0644); err != nil {
+		t.Fatalf("writeBarrierREQFixture: write adr: %v", err)
+	}
+	req := "---\nstatus: Open\ndate: 2026-07-29\nadr: \"" + barrierFixtureADRRel + "\"\nroadmap: \"" + roadmapRel + "\"\n---\n\n" +
+		"# REQ: Barrier Fixture\n\n## Acceptance Criteria\n- [ ] fixture\n"
+	if err := os.WriteFile(filepath.Join(dir, barrierFixtureREQRel), []byte(req), 0644); err != nil {
+		t.Fatalf("writeBarrierREQFixture: write req: %v", err)
+	}
+}
+
 // barrierFixtureConfig descreve os eixos que cada cenário varia.
 type barrierFixtureConfig struct {
 	linkedREQ         bool     // roadmap-level "REQ:" — mantém trackfw validate verde quando true
@@ -135,7 +167,7 @@ func buildBarrierRoadmap(cfg barrierFixtureConfig) string {
 	var b strings.Builder
 	b.WriteString("# Roadmap: Barrier Contract Fixture\n\n")
 	if cfg.linkedREQ {
-		b.WriteString("REQ: REQ-2026-07-29-barrier-fixture\n\n")
+		b.WriteString("REQ: " + barrierFixtureREQRel + "\n\n")
 	}
 	// Bloco de aceite em nível de roadmap — satisfaz wip_acceptance (governança),
 	// distinto do bloco por-ML usado pela barrier (rule 4).
@@ -184,9 +216,13 @@ func setupBarrierFixture(t *testing.T, cfg barrierFixtureConfig) (string, string
 			t.Fatalf("setupBarrierFixture: mkdirs: %v", err)
 		}
 	}
-	roadmapPath := filepath.Join(dir, "docs/roadmaps/wip/ROADMAP-barrier-fixture.md")
+	roadmapRel := "docs/roadmaps/wip/ROADMAP-barrier-fixture.md"
+	roadmapPath := filepath.Join(dir, roadmapRel)
 	if err := os.WriteFile(roadmapPath, []byte(buildBarrierRoadmap(cfg)), 0644); err != nil {
 		t.Fatalf("setupBarrierFixture: write roadmap: %v", err)
+	}
+	if cfg.linkedREQ {
+		writeBarrierREQFixture(t, dir, roadmapRel)
 	}
 	return dir, roadmapPath
 }
@@ -601,7 +637,7 @@ func TestBarrierContract_WaveHeadingsMalformadaBloqueiaVeredito(t *testing.T) {
 	roadmap := strings.Join([]string{
 		"# Roadmap: ML-1E Vacuity Falsification",
 		"",
-		"REQ: REQ-2026-07-29-barrier-fixture",
+		"REQ: " + barrierFixtureREQRel,
 		"",
 		"## Acceptance Criteria",
 		"- [x] fixture roadmap-level criterion",
@@ -637,10 +673,12 @@ func TestBarrierContract_WaveHeadingsMalformadaBloqueiaVeredito(t *testing.T) {
 			t.Fatalf("mkdirs: %v", err)
 		}
 	}
-	roadmapPath := filepath.Join(dir, "docs/roadmaps/wip/ROADMAP-barrier-fixture-ml1e.md")
+	roadmapRelML1E := "docs/roadmaps/wip/ROADMAP-barrier-fixture-ml1e.md"
+	roadmapPath := filepath.Join(dir, roadmapRelML1E)
 	if err := os.WriteFile(roadmapPath, []byte(roadmap), 0644); err != nil {
 		t.Fatalf("write roadmap: %v", err)
 	}
+	writeBarrierREQFixture(t, dir, roadmapRelML1E)
 
 	stdout, stderr, code := runBarrierCLI(t, dir, "ROADMAP-barrier-fixture-ml1e",
 		"--wave", "1", "--json", "--trust-local-gates")

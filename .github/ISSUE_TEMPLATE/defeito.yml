@@ -1,0 +1,83 @@
+name: Defeito com medição
+description: Algo que o trackfw faz e não deveria, ou não faz e deveria — com evidência reproduzível.
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **O que este projeto pede de um relato, e por quê.**
+
+        Os issues que mudaram decisões de arquitetura aqui (#273, #308, #353) têm uma coisa em
+        comum: trouxeram **medição**, não impressão. Não é burocracia — é que a régua decide.
+        Nesta casa o mesmo defeito já foi contado como 9, 12, 13 e 16 sítios, e todas as contagens
+        estavam "certas" para a régua de quem contou.
+
+        🔴 **Você não precisa acertar a causa.** Precisa dizer o que observou e como observou.
+  - type: textarea
+    id: observado
+    attributes:
+      label: O que acontece
+      description: Comando exato e saída **literal** — copie, não parafraseie.
+      placeholder: |
+        $ trackfw roadmap move "" wip
+        ✓ moved ROADMAP-2026-09-26-alpha.md → docs/roadmaps/wip
+        rc=0
+    validations:
+      required: true
+  - type: textarea
+    id: esperado
+    attributes:
+      label: O que você esperava, e por quê
+      description: >
+        Se houver contrato escrito que sustente a expectativa (ADR, `docs/cli-parity.md`, mensagem
+        do próprio comando), cite. Contrato que mente contra o código é, por si só, um defeito aqui.
+    validations:
+      required: true
+  - type: textarea
+    id: reproducao
+    attributes:
+      label: Como reproduzir
+      description: >
+        Passos mínimos. Se o defeito só aparece em uma plataforma ou layout, **diga** — metade dos
+        defeitos deste projeto só existem fora do layout do mantenedor (`req_dir` plano, `flat`).
+      placeholder: |
+        1. mkdir /tmp/x && cd /tmp/x
+        2. trackfw init
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: medicao
+    attributes:
+      label: Medição (opcional, mas é o que acelera)
+      description: >
+        Quantas ocorrências, em que corpus, medidas como. E **diga a régua**: `grep` literal,
+        contagem à mão e leitura de código dão números diferentes, e a diferença costuma ser o achado.
+      placeholder: |
+        $ grep -rn 'padrão' --include='*.go' internal/ | wc -l
+        16        ← por grep literal
+        ...mas por provenância do argumento são 22, e os 6 extras chegam por parâmetro.
+  - type: textarea
+    id: contra-braco
+    attributes:
+      label: Contra-braço (opcional)
+      description: >
+        O caso que **continua funcionando** e não pode quebrar com a correção. Vale muito:
+        sem ele, "nada mais funciona" satisfaz o relato, e já trocamos defeito por paralisação aqui.
+  - type: input
+    id: ambiente
+    attributes:
+      label: Ambiente
+      description: Versão do trackfw (`trackfw --version`), SO, e o layout do seu projeto.
+      placeholder: "v8.0.1 · Windows 11 · req_dir: docs/requisições, roadmap_namespacing: by_agent"
+    validations:
+      required: true
+  - type: checkboxes
+    id: honestidade
+    attributes:
+      label: Antes de enviar
+      options:
+        - label: >
+            Se eu li o código em vez de executar, eu disse isso no relato. Leitura replicada é
+            evidência legítima aqui — desde que declarada como tal.
+          required: true

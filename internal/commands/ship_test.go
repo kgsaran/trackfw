@@ -1256,7 +1256,27 @@ func TestShip_Integration_GracefulDegradation_RealBinary(t *testing.T) {
 	if err := os.MkdirAll(wipDir, 0755); err != nil {
 		t.Fatalf("mkdir wip: %v", err)
 	}
-	roadmapContent := "REQ: REQ-ship-integration-test\n\n# Roadmap: Integration Test\n\nTest roadmap for graceful degradation proof.\n"
+	// ML-1E (2026-09-26): o vínculo era o ID pelado "REQ-ship-integration-test". wip_has_req passou a
+	// exigir referência ".md" (contentHasStructuredRefValue), então o roadmap ficava sem REQ e o
+	// `ship` recusava por governança. A REQ (e o ADR que ela cita) são materializados abaixo, porque
+	// ref_targets_exist é violação mesmo em lenient.
+	reqRel := "docs/req/REQ-2026-07-26-ship-integration-test.md"
+	adrRel := "docs/adr/ADR-2026-07-26-ship-integration-test.md"
+	roadmapRel := "docs/roadmaps/wip/ROADMAP-2026-07-26-ship-integration-test.md"
+	for _, d := range []string{"docs/req", "docs/adr"} {
+		if err := os.MkdirAll(filepath.Join(repoDir, d), 0755); err != nil {
+			t.Fatalf("mkdir %s: %v", d, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, adrRel),
+		[]byte("---\nstatus: Accepted\ndate: 2026-07-26\n---\n\n# ADR: Ship Integration Fixture\n"), 0644); err != nil {
+		t.Fatalf("write adr: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoDir, reqRel),
+		[]byte("---\nstatus: Open\ndate: 2026-07-26\nadr: \""+adrRel+"\"\nroadmap: \""+roadmapRel+"\"\n---\n\n# REQ: Ship Integration Fixture\n\n## Acceptance Criteria\n- [ ] fixture\n"), 0644); err != nil {
+		t.Fatalf("write req: %v", err)
+	}
+	roadmapContent := "REQ: " + reqRel + "\n\n# Roadmap: Integration Test\n\nTest roadmap for graceful degradation proof.\n"
 	roadmapPath := filepath.Join(wipDir, "ROADMAP-2026-07-26-ship-integration-test.md")
 	if err := os.WriteFile(roadmapPath, []byte(roadmapContent), 0644); err != nil {
 		t.Fatalf("write roadmap: %v", err)

@@ -26,14 +26,39 @@ type REQContent struct {
 	Agent string
 }
 
+// REQResult descreve o que a criação de uma REQ produziu. Existe porque o caminho integrado
+// do ML-4A (`req new` criando o roadmap no mesmo ato) precisa de DUAS coisas que NewREQ já
+// calculava e descartava:
+//
+//   - Path: o caminho da REQ recém-criada, RELATIVO à raiz do projeto e com "/" — exatamente a
+//     forma que NewREQ imprime, que o `req:` do roadmap grava e que ref_targets_exist resolve.
+//     Recalcular esse caminho em quem chama seria um segundo sítio de derivação de caminho de
+//     escrita, o que a ADR-2026-09-03 (D2/D4) proíbe.
+//   - Agent: o namespace JÁ RESOLVIDO por validator.ResolveWriteAgent. Passá-lo adiante impede
+//     que a REQ e o roadmap discordem de namespace caso a rederivação por caminho mude.
+type REQResult struct {
+	Path  string
+	Agent string
+}
+
 // NewREQ gera um arquivo REQ em docs/req/ com base no conteúdo fornecido.
 // Campos preenchidos são inseridos diretamente; campos vazios mantêm o placeholder original.
+//
+// Mantida com a assinatura original (apenas `error`) porque é o consumidor histórico; quem precisa
+// do caminho gerado chama NewREQWithResult, que é o corpo real.
 func NewREQ(content REQContent) error {
+	_, err := NewREQWithResult(content)
+	return err
+}
+
+// NewREQWithResult é NewREQ devolvendo o que ela produziu (ver REQResult). É o único corpo: NewREQ
+// delega aqui, então não existem dois escritores de REQ.
+func NewREQWithResult(content REQContent) (REQResult, error) {
 	cfg := config.Load()
 	// Resolver o agente antes de chamar REQWriteDir — ResolveWriteAgent faz a guarda de ambiguidade.
 	agent, err := validator.ResolveWriteAgent(cfg, content.Agent)
 	if err != nil {
-		return err
+		return REQResult{}, err
 	}
 	// Ponto único de decisão de caminho de ESCRITA (ADR-2026-09-03, D2/D4): em by_agent grava no
 	// canônico req_dir/<agente>/; em flat, req_dir/ — o mesmo ponto que alimenta a união de leitura.
@@ -45,16 +70,16 @@ func NewREQ(content REQContent) error {
 	// outside the project tree.
 	reqRoot, err := projectRoot()
 	if err != nil {
-		return fmt.Errorf("NewREQ: %w", err)
+		return REQResult{}, fmt.Errorf("NewREQ: %w", err)
 	}
 	absReqDir := filepath.Join(reqRoot, reqDir)
 	if guardErr := pathguard.RejectAndReport(reqRoot, absReqDir); guardErr != nil {
-		return guardErr
+		return REQResult{}, guardErr
 	}
 
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.MkdirAll(reqDir, 0755); err != nil {
-		return err
+		return REQResult{}, err
 	}
 
 	slug := toSlug(content.Title)
@@ -137,15 +162,17 @@ Roadmap: %s
 	// is also caught (ML-4B leaf-gap fix).
 	absFilename := filepath.Join(reqRoot, filename)
 	if guardErr := pathguard.RejectAndReport(reqRoot, absFilename); guardErr != nil {
-		return guardErr
+		return REQResult{}, guardErr
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.WriteFile(filename, []byte(body), 0644); err != nil {
-		return fmt.Errorf("writing REQ: %w", err)
+		return REQResult{}, fmt.Errorf("writing REQ: %w", err)
 	}
 
 	fmt.Printf("created %s\n", filename)
-	return nil
+	// `filename` é montado com "/" literal acima (fmt.Sprintf), logo já é a forma que o validate
+	// resolve — devolvê-lo é devolver o que foi impresso, não uma segunda derivação.
+	return REQResult{Path: filename, Agent: agent}, nil
 }
 
 // listREQFiles descobre todos os arquivos .md de REQ. NÃO reimplementa a descoberta: delega ao
@@ -441,22 +468,34 @@ func MoveREQ(name, status string) error {
 	}
 	appendREQTransitionLog(logBasename, fromState, status)
 	fmt.Printf("✓ moved %s → %s\n", filepath.Base(path), targetDir)
+
+	// Synchronize roadmap: update the req: field in the paired roadmap that points at the moved REQ.
+	// Runs after ✓ moved is printed so ✓ synced always follows it in stdout.
+	// A sync failure does NOT roll back the move; the error causes non-zero exit.
+	// The in-place branches above (flat layout, fallback) return early: dst == path, no repath event.
+	if syncErr := syncRoadmapREQReference(updated, filepath.Base(path), normalizeRefSeparator(dst)); syncErr != nil {
+		return syncErr
+	}
 	return nil
 }
 
-// findREQ busca por uma REQ cujo basename contenha name (case-insensitive), varrendo
-// os 3 layouts suportados via listREQFiles (ordem: flat → por-estado → by_agent).
+// findREQ resolve name contra os REQs dos 3 layouts suportados via listREQFiles
+// (ordem: flat → por-estado → by_agent), delegando a decisão a
+// selectArtifactByName (roadmap.go) — que é o mesmo ponto de decisão usado por
+// findRoadmap.
+//
+// 🔴 ML-1C, Regra Dura de Causa Raiz — mesma causa, mesma REQ: até aqui findREQ
+// tinha exatamente o defeito de findRoadmap (substring + primeiro-vence), e era o
+// sítio PIOR dos dois: `req move "" wip` casava o primeiro REQ da varredura e
+// MoveREQ reescrevia o status dentro do arquivo, não só movia. O guard de vazio
+// que MoveREQ já tinha era sobre o `status`, nunca sobre o `name`.
 func findREQ(name string, cfg config.ProjectConfig) (string, error) {
 	files, err := listREQFiles(cfg)
 	if err != nil {
 		return "", fmt.Errorf("findREQ: %w", err)
 	}
-	for _, path := range files {
-		if containsIgnoreCase(filepath.Base(path), name) {
-			return path, nil
-		}
-	}
-	return "", fmt.Errorf("REQ %q not found in %s", name, cfg.REQDir)
+	return selectArtifactByName("REQ", "REQs", name, files,
+		fmt.Errorf("REQ %q not found in %s", name, cfg.REQDir))
 }
 
 // appendREQTransitionLog registra a transição de estado de uma REQ em cfg.REQDir/.trackfw-log,

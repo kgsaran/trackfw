@@ -1,0 +1,21 @@
+# manifest.txt — the CALIBRATION AS CONTRACT.
+#
+# Every number here is asserted twice by scripts/check-roadmap-slug-matching.sh:
+#   1. against the literal const declarations in internal/validator/validator.go
+#   2. against the actual line counts of the fixture files next to this one
+# Changing a constant in Go without regenerating this corpus fails the gate; changing this
+# manifest without regenerating the verdicts fails it too. That two-way lock is the whole
+# point: ML-3A measured the threshold instead of choosing it, and a measured value that
+# nothing pins goes back to being a choice.
+#
+# Format: key=value. Lines starting with # and blank lines ignored.
+min_shared_tokens=2
+min_token_len=3
+census_roadmaps=201
+census_branches=205
+census_accept=190
+census_block=15
+census_arm_substring=176
+census_arm_tokens=14
+calibration_roadmaps=1
+calibration_branches=1

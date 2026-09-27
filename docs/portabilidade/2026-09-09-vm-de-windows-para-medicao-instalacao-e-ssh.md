@@ -18,9 +18,19 @@ que não existiria se a medição tivesse nascido no CI.
 
 ---
 
-## 1. Onde colocar o disco — a lição que custou a VM anterior
+## 1. Onde colocar o disco
 
-🔴 **Disco da VM no SSD interno. Nunca em volume externo.**
+> ⚠️ **Revisto em 2026-09-26 por decisão do KG.** A recomendação original desta seção era *"nunca em
+> volume externo"*. Ele consultou a possibilidade de mover o disco para o SSD externo e **a
+> movimentação foi recomendada sem ressalvas**; a VM atual (`/Volumes/External/virtual-machines/Windows-Lab.utm`)
+> roda de lá. O relato abaixo **continua válido como histórico** — a VM anterior morreu daquele jeito —
+> mas **não é mais a regra vigente**, e ninguém deve tratar o disco externo como defeito de
+> configuração a corrigir.
+>
+> 🔴 **O que sobrevive da lição, e não depende de onde o disco está: tire snapshot.** A causa
+> imediata da perda foi não haver snapshot, não o volume.
+
+**Histórico — por que a recomendação original existia:**
 
 A VM anterior tinha o `.qcow2` em `/Volumes/External/`. Ela caiu no meio de uma sessão de trabalho e
 não subiu mais. O diagnóstico final:

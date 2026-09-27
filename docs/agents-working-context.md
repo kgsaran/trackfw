@@ -2,6 +2,39 @@
 
 ---
 
+## 2026-09-26 — Apolo (fix/req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos — ML-6B) — ENTREGUE (AGUARDANDO AUDITORIA)
+
+**Início:** 2026-09-26 | Branch: `fix/req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos`
+**Tarefa:** ML-6B — 4 testes do vínculo REQ↔roadmap reprovam no Windows por comparação de separador nativo vs. POSIX.
+
+**Resultado:**
+- Causa confirmada por CI dump (#446): 4/4 testes com `filepath.Glob` como expected falharam; 0 sem ele falharam. Decisão **(b) defeito de teste** em todos os 4 — produto escreve POSIX por `fmt.Sprintf("%s/ROADMAP-...", ...)` + `normalizeRefSeparator`; testes esperavam separador nativo do SO.
+- `TestNewRoadmapFromREQ_WritesBacklinkIntoREQ`: `filepath.ToSlash(roadmapRel)` nas 2 assertions de path; assertion ADR-2026-09-04 D1 adicionada.
+- `TestNewRoadmapFromContent_REQPathAlsoGetsBacklink`: `filepath.ToSlash(roadmapRel)` + assertion ADR D1.
+- `TestNewRoadmapFromContent_BacklinkWithNonCanonicalAbsoluteREQPath`: `filepath.ToSlash(roadmapRel)` + assertion ADR D1. Causa alternativa (pathguard rejeitando no Windows) descartada por medição: CI mostra `✓ linked` em todos os 4.
+- `TestRunReqNew_IntegratedPathHonorsCustomDirs`: `filepath.ToSlash(rms[0])` + assertion ADR D1.
+- `go test ./...`: verde (macOS, POSIX contra-braço).
+- `make quality`: exit=0, `grep -c ': FALHA'` = 0, 342 OK.
+- `.github/windows-known-failures.json`: inalterado (confirmado por `git diff --stat`).
+- Vault: nota adicionada em `vault/notes/filepath-glob-retorna-separador-nativo-e-produto-escreve-posix-2026-09-26.md`.
+
+---
+
+## 2026-09-26 — Apolo (fix/req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos — ML-6A R1) — ENTREGUE (AGUARDANDO AUDITORIA)
+
+**Início:** 2026-09-26 | Branch: `fix/req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos`
+**Tarefa:** ML-6A R1 — corretivo de `TestMoveREQ_SyncIdempotent`: nome afirma idempotência, corpo afirma cross-link guard.
+
+**Resultado:**
+- `TestMoveREQ_SyncIdempotent` removido — seu predicado (cross-link guard: quando `roadmap.req:` basename ≠ REQ sendo movida, não reescreve) é subsumed integralmente por `TestMoveREQ_CrossLinkGuard_NotRewritten`. A sobreposição é total: ambos exercem a mesma linha `filepath.Base(existingReq) != reqBasename` em `roadmap.go:1543`. A diferença de setup (roadmap nunca apontou vs roadmap foi atualizado por move anterior) não abre caminho de código novo.
+- `TestMoveREQ_SyncRoadmapREQRef_Idempotent` adicionado — chama `syncRoadmapREQReference` duas vezes com os mesmos argumentos; compara bytes (não mtime) do roadmap após cada chamada. Afirma o guarda `if existingReq == newREQPath { return nil }` em `roadmap.go:1548`. Espelho de `TestSyncREQ_Idempotency_ByteLevel` de `roadmap_test.go`.
+- Imports `"bytes"` e `"fmt"` adicionados a `req_test.go`.
+- `go test ./internal/generators/ -run 'MoveREQ' -v`: 19 testes, todos PASS.
+- `go test ./...`: todos os pacotes PASS.
+- `make quality` (background): exit=0, 0 `: FALHA`.
+
+---
+
 ## 2026-09-23 — Apolo (fix/bash-consome-stdout-de-python3-sem-normalizar-crlf — ML-1C) — ENTREGUE (AGUARDANDO AUDITORIA)
 
 **Início:** 2026-09-23 | Branch: `fix/bash-consome-stdout-de-python3-sem-normalizar-crlf`
@@ -41426,3 +41459,473 @@ bash scripts/check-unguarded-capture-rc.sh          RC=0
 - **Nota de vault:** `a-extensao-que-esconde-do-gate-esconde-tambem-do-gitattributes-2026-09-25.md`.
 - Status do ML mantido em 🔄 — muda para ✅ só após a auditoria do arquiteto.
 - Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.
+
+## 2026-09-26 — apolo-tf — ML-1C (início): `roadmap move ""` movia o primeiro roadmap do primeiro estado
+
+- **Escopo:** `internal/generators/roadmap.go` (`findRoadmap`, `containsIgnoreCase`, `ShowRoadmap`) e
+  `internal/generators/req.go` (`findREQ`, Família 2 do censo — mesma causa, Regra Dura). Duas
+  recusas novas: nome **vazio** e nome **ambíguo**. Nome **exato** e nome **parcial único** continuam
+  movendo (contra-braços).
+- **Ordem:** este ML vem antes do ML-3A por decisão escrita da D4 do ADR-2026-09-26 — recusar o nome
+  vazio é aditivo em segurança (`Contains(x, "")` sempre verdadeiro não tem consumidor legítimo) e
+  não pode paralisar o `trackfw commit` que entrega o próprio fix.
+- **Escopo negativo:** `validator.BranchSlugMatchesRoadmap` (ML-3A) e o vínculo escrito (D1, Wave 3).
+- **Sem Git:** não crio branch, não commito, não faço push; entrega não commitada ao arquiteto.
+
+## 2026-09-26 — apolo-tf — ML-1C (fim): o nome vazio movia o primeiro — e o nome COMPLETO movia o irmão maior
+
+- 🔴 **Refutação primeiro:** o defeito era maior que o handoff descrevia. Medido com binário de `HEAD`
+  contra binário corrigido, sobre **cópia** do corpus real (228 roadmaps / 231 REQs):
+  `roadmap move ROADMAP-2026-07-19-global-adrs-governance analyzing` — **nome completo e exato** —
+  movia `...-governance-ML-1B.md`, o irmão maior. São **3 pares assim nos roadmaps e os mesmos 3 nos
+  REQs**. Consequência de projeto: recusar ambiguidade **sem** precedência de casamento exato tornaria
+  esses 3 nomes inendereçáveis — trocaria mover-o-errado por não-mover-nenhum.
+- **Antes (binário de HEAD):** `roadmap move "" wip` → `✓ moved ROADMAP-…-alpha.md` rc=0;
+  `req move "" wip` → `✓ moved REQ-…-dois.md` rc=0 **e o `status:` reescrito para `wip` dentro do
+  arquivo errado**; fragmento ambíguo → escolhe um, rc=0.
+  **Depois:** as 5 formas recusam com rc=1, disco intacto; ambiguidade **nomeia os candidatos**.
+- **Contra-braços (os dois exigidos):** nome exato (com e sem `.md`) move; parcial **único** move —
+  incluído o nome completo que o KG usou nesta sessão, contra o corpus real de 228.
+- **Medição único vs múltiplo (a régua é cardinalidade, não comprimento):** nome completo sem `.md`
+  → 225/228 únicos e **3** ambíguos (roadmaps), 228/231 e **3** (REQs); fragmento de 20 chars →
+  151 únicos e **77** ambíguos (hoje escolhidos em silêncio); vazio → **228 / 231** (casa tudo).
+- **Varredura de mesma classe (escrita mesmo onde deu vazio):** fechados `findRoadmap` (ponto único
+  `roadmapCandidateFiles`, cobrindo `flat` **e** `by_agent` — havia **duas** cópias do laço
+  primeiro-vence e só `flat` é exercitado pelo corpus real), `findREQ` e o nome vazio de
+  `ShowRoadmap`. Negativos medidos: `resolveBarrierRoadmap` (filename exato), glob de idempotência de
+  `NewADR` (`ADR-*-<slug>.md`; slug vazio produz `ADR-*-.md`, que não casa nada), `ListADRs`/
+  `ListREQs`/`ListRoadmaps`/`NoteFiles` (enumeram, não selecionam por nome do usuário).
+  🔴 **Não tocado por escopo:** `validator.BranchSlugMatchesRoadmap:3493` — mesma classe, e com
+  `branchSlug` vazio casa **qualquer** roadmap (validação passa vaziamente). É o `ML-3A` por decisão
+  escrita da D4; o braço do slug vazio tem de entrar na lista dele.
+- **Falsificação dos testes (3 mutações, restauradas):** guard de vazio desativado → 3 testes
+  reprovam; + ambiguidade escolhendo o primeiro (= comportamento pré-ML-1C) → 5 reprovam;
+  precedência de exato removida → os 2 testes de irmão maior reprovam.
+- `make quality` **rc=0** (1326 OK, falsify 338 OK / 0 FAIL), `trackfw validate` **rc=0** (151
+  warnings pré-existentes).
+- **Reconciliação do contrato escrito:** a primeira redação da seção nova de `docs/cli-parity.md`
+  nomeava `roadmap show` junto com os dois `move` e afirmava as 4 regras para os três — **falso e
+  medido**: `roadmap show ROADMAP-2026-07-19-global-adrs-governance` recusa como ambíguo (não tem
+  precedência de exato, mantém o glob próprio) e imprime os candidatos em **stdout**. O contrato foi
+  corrigido para declarar que `show` compartilha **só** a recusa de nome vazio.
+- **Nota de vault:** `nome-vazio-move-o-primeiro-e-nome-completo-move-o-irmao-maior-2026-09-26.md`.
+- Status do ML mantido em 🔄 — muda para ✅ só após a auditoria do arquiteto.
+- Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.
+
+## 2026-09-26 — apolo-tf — ML-1B (início): `--from-req` pergunta a REQ e não escreve de volta
+
+- **Roadmap:** `docs/roadmaps/wip/ROADMAP-2026-09-09-req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos-e-o-segundo-se-esquece.md` — `ML-1B` (AC7).
+- **Defeito medido (binário de HEAD, sandbox):** `roadmap new --from-req` grava `req:` no roadmap,
+  a REQ continua com `roadmap: ""` e o `validate` acusa `req_has_roadmap`; o bloco consolidado
+  "Acceptance Criteria" do roadmap sai `- [ ]` / `- [ ]` mesmo com ACs na REQ.
+- **Escopo:** `internal/generators/roadmap.go` (Go é a implementação única desde a v8.0.0).
+- Sem Git: não crio branch, não commito, não faço push.
+
+## 2026-09-26 — apolo-tf — ML-1B (fim): o `--from-req` perdia a REQ **dentro do Body**
+
+- **Refutação 1 (lead) — a decisão do ML-1A não é o que o código faz.** O comentário de
+  `validateREQsHaveRoadmap` (`internal/validator/validator.go:2214-2222`) afirma que a detecção usa
+  `extractRefPath`; o código usa `extractFrontmatterField(content, "roadmap")`, que **não exige
+  `.md`**, é case-sensitive e aceita **qualquer** valor não-vazio. Consequência medida: `roadmap: none`
+  no frontmatter **satisfaz** `req_has_roadmap` hoje. A decisão do ML-1A **foi localizada** (no bloco
+  "Decisões implementadas" do próprio roadmap); o que divergiu foi a implementação da regra. Resíduo
+  do ML-1A, não deste ML.
+- **Refutação 2 — `syncREQReferences` não servia, e o motivo não era estilo.** Ela **descobre** REQs
+  cujo `roadmap:` já aponta para o basename movido; `fmVal == ""` cai no primeiro `continue`, logo a
+  REQ recém-criada é descartada **por construção**. Reaproveitado o **escritor**
+  (`rewriteREQRoadmapRefWith`, critério de sobrescrita por predicado) — não a descoberta.
+- **Refutação 3 (bloqueante para auditoria) — divergência com ADR Accepted.** A `ADR-2026-07-31`
+  (Decisão 3) decide que o bloco consolidado é *"placeholder a preencher, não agregação automática dos
+  critérios dos MLs"*. No `--from-req` os MLs **são** os ACs da REQ. Implementado conforme o AC7 da
+  REQ-2026-09-09 (posterior e explícita) e **restrito ao `--from-req`**; o template simples segue
+  emitindo placeholder. **A emenda à ADR é do arquiteto.**
+- **Causa raiz do sintoma:** `NewRoadmapFromREQ` montava o `req:` dentro do `Body` e chamava
+  `NewRoadmapFromContent` **sem `REQPath`** — a primeira versão do fix ficou **inerte** por isso, com
+  saída byte-idêntica à de antes. O backlink vive em `NewRoadmapFromContent`, que é o ponto por onde
+  passam `--from-req`, `--req` e o wizard (mesma causa, mesmo ML).
+- **Medição (binário real, sandbox):** ANTES `roadmap: ""` + bloco `- [ ]`/`- [ ]` + `✗ req … has no
+  linked Roadmap`. DEPOIS `✓ linked REQ-… → docs/roadmaps/backlog/ROADMAP-….md`, frontmatter e corpo
+  preenchidos, `validate` sem `req_has_roadmap`; ciclo `move wip` → `✓ synced` → **rc=0**.
+- **Contra-braços:** REQ sem roadmap **continua** acusada; REQ **sem ACs** mantém o placeholder e não
+  gera ML; REQ já vinculada a **outro** roadmap não é sobrescrita (aviso em stderr, rc **0**);
+  idempotência **byte-a-byte** entre duas rodadas.
+- **Varredura de mesma classe:** fechados `--req` e wizard (mesmo ponto). **Negativos escritos:**
+  `req new` não tem `--roadmap` (e `LinkedADR`/`LinkedRoadmap` são inalcançáveis — único sítio de
+  `REQContent{}` só passa Title+Agent); `adr new` não tem campo de REQ no template; `note new` já
+  escreve os dois lados. **Dois sítios propostos como ML novo (não implementados):** o wizard de
+  `req new` cria ADR drafts e **não** grava `adr:` (mesmo mecanismo, outro elo), e `req move` em
+  layout por-estado/`by_agent` move a REQ e deixa o `req:` do roadmap defasado (`ref_targets_exist`
+  avisa, nada repara; em `flat` — este projeto — não ocorre).
+- **Armadilha de instrumento paga DUAS vezes:** o Cenário 24 fixa o bloco de ACs como literal e exige
+  **2 ocorrências** (corrigido para heading+comentário, e provado construindo os dois binários
+  corrompidos); o **Cenário 25 fixa a LINHA DE ARGUMENTOS do `fmt.Sprintf`** — esse eu esqueci no
+  grep, `chunk_1` morreu no meio e o log cuspiu ~40 "rótulo esperado AUSENTE" por **um** literal.
+- **Falsificação dos testes (4 mutações, restauradas):** backlink desligado → 2 reprovam; frontmatter
+  sempre preenchível → 2; bloco de ACs de volta ao placeholder → 1; corpo sempre preenchível → 1.
+- `make quality` **rc=0** (1344 OK, 0 FAIL, falsify 338 OK / 0 FAIL, `Error [0-9]` = 0);
+  `trackfw validate` **rc=0** (151 warnings, idênticos à baseline).
+- **Nota de vault:** `o-gerador-perdia-a-req-dentro-do-body-e-o-cenario-24-fixa-o-bloco-de-acs-2026-09-26.md`.
+- **Resíduo:** `check-symlink-privilege-guard` enumera por `git ls-files` e **não viu** o teste novo
+  (fechado por inspeção: 0 ocorrências de `os.Symlink`) — **segunda passada pós-commit obrigatória**.
+- Status do ML mantido em 🔄 e ACs não marcados — muda só após a auditoria do arquiteto.
+- Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.
+
+## 2026-09-26 — apolo-tf — ML-1D (início): a regra `req_has_roadmap` não implementa a decisão do ML-1A
+
+- **Escopo:** `internal/validator/validator.go` — o comentário de `:2217` afirma usar `extractRefPath`
+  (frontmatter-first, case-insensitive, exige `.md`) mas o código usa `extractFrontmatterField`
+  (qualquer valor não-vazio, case-sensitive). Medido: `roadmap: none` satisfaz a regra hoje.
+- **Método:** censo dos 231 REQs + binário de HEAD contra binário corrigido, antes/depois, com a lista
+  das REQs que mudam de veredito. Escolher (a) apertar a regra ou (b) corrigir a decisão do ML-1A
+  **pela medição**, não por presunção.
+- **Escopo negativo:** `BranchSlugMatchesRoadmap` (ML-3A) e `.trackfw-baseline.json` não são tocados.
+- Sem Git: não crio branch, não commito, não faço push.
+
+## 2026-09-26 — apolo-tf — ML-1D (fim): o comentário mentia em DUAS claims, e apertar a regra esvazia o Cenário 192
+
+- **Saída escolhida: (a)** — a regra passa a ler o vínculo por `extractRefPath`. 🔴 O argumento decisivo
+  **não** foi a medição do validador, foi o contrato do **gerador**: `docs/cli-parity.md` já declarava
+  que `roadmap:` é sobrescrito quando o valor *"is not a `.md` reference (`""`, `none`, `-`,
+  `<!-- … -->`)"*. O gerador já chamava `none` de placeholder a preencher e o validador chamava a
+  mesma REQ de vinculada — divergência interna do mesmo contrato, não escolha de política.
+- **Duas claims falsas no comentário de `:2217`, não uma:** a fonte de verdade (`extractRefPath` ×
+  `extractFrontmatterField`) **e** a case-insensitividade (`extractFrontmatterField` é
+  `HasPrefix(field+":")`, sensível a caixa). As duas passaram a ser verdadeiras com a troca.
+- **Medição (231 REQs, binário de HEAD × binário corrigido, corpus real):** 12 → **13** acusadas,
+  **zero** vínculo legítimo perdido. A única nova é genuína: `REQ-2026-08-16` passava com
+  `Roadmap: (a criar quando esta REQ sair do backlog…)`. Censo: 212 com `.md`, 17 com `roadmap: ""`,
+  2 sem campo, **0 com `none`** — o raio do aperto mora nas **7** REQs que passavam só pelo corpo
+  (19 de frontmatter vazio − 12 já acusadas), não no total.
+- 🔴 **Armadilha de instrumento nova (a mais cara deste ML):** migrar a regra de
+  `contentHasMarkerValue` para `extractRefPath` **esvazia** a Direção B do Cenário 192 — a sabotagem da
+  ancoragem deixa de mudar o veredito, a violação sobrevive e `assert_lacks_pattern` reprova sem
+  defeito nenhum. Nenhuma composição salva (a prosa passa a ser recusada por duas razões
+  independentes). Conserto: **Direção B migrou para o campo ADR** (consumidor vivo de
+  `contentHasMarkerValue`, e a prosa cita o CAMINHO senão `adr_orphan` reprova os dois braços) e
+  **Direção C nova** mede a mesma propriedade no leitor novo.
+- **5 fixtures do harness saíram de `Roadmap: none` para um alvo real** (`ensure_roadmap_link_target`),
+  em `docs/roadmaps/abandoned/`: `backlog/` colide com o `find docs/roadmaps/backlog` dos Cenários
+  24/25/26; medido em 8 células que `wip/` dispara `wip_wave0`/`wip_has_req`/`wip_acceptance` e `done/`
+  dispara `req_roadmap_lifecycle` para REQ Open.
+- **Varredura de mesma classe:** `req_has_adr`/`wip_has_req`/`blocked_has_req` leem só o corpo e
+  `adr_orphan` usa `strings.Contains` — assimetria real, **nenhum comentário afirmando outra fonte de
+  verdade**, logo fora da classe do ML-1D (`adr:` é o ML-1E). `note_orphan`, `req_roadmap_sync` e
+  `resolveAdrStatus` conferidos: descrevem o código. Completei a omissão do comentário de
+  `extractRefPath`, que não citava a exigência de `.md`.
+- **Falsificação dos 4 testes novos (mutações restauradas):** regra antiga → 6 reprovam; `field`
+  hardcoded → o de `link_fields` reprova; sem strip de backtick → o de backtick reprova.
+- **Sítio de mesma causa fechado na MESMA REQ (Regra Dura):** o lado **frontmatter** de
+  `req_roadmap_sync` ainda ia por `extractFrontmatterField` — uma REQ com `roadmap: "none"` + caminho
+  real no corpo era reportada como *"divergent roadmap links: frontmatter=\"none\""*, e as duas regras
+  passariam a discordar sobre o que é valor (`req_has_roadmap`: sem vínculo; `req_roadmap_sync`:
+  vínculos conflitantes). Corrigido no mesmo ML; **0 ocorrências nos 231 REQs** (a saída de `validate`
+  ficou byte-idêntica à medição anterior), logo é correção de mecanismo, não de contagem.
+- **Outros leitores do mesmo campo, medidos:** `internal/serve/api_chain.go` já usa
+  `validator.ExtractRefPath` (board e validate concordam) e `internal/generators/roadmap.go` usa
+  `reqRoadmapFMIsFillable` (que já tratava `none` como placeholder) — **nenhum outro sítio divergente**.
+- **Resíduo:** `check-symlink-privilege-guard` enumera por `git ls-files` e não vê os testes novos;
+  evidência deles é `go test ./internal/validator/`. Status do ML mantido em 🔄.
+- Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.
+
+## 2026-09-26 — apolo-tf — ML-1E (início): as 3 regras de vínculo restantes são cegas ao frontmatter
+
+- **Escopo:** `internal/validator/validator.go` — `req_has_adr` (`:2186`), `wip_has_req` (`:2165`) e
+  `blocked_has_req` (`:2204`) leem o vínculo por `contentHasMarkerValue` (prefixo case-sensitive,
+  qualquer valor não-vazio). Migrar para `contentHasStructuredRefValue`, o leitor que o ML-1D instalou.
+- **Método:** censo dos 231 REQs + binário de HEAD contra binário corrigido, antes/depois, com a lista
+  nominal das que mudam de veredito; medição PRÓPRIA de `wip_has_req` e `blocked_has_req` (não
+  presumir delta zero); contra-braço obrigatório (as 2 REQs com travessão continuam acusadas).
+- **Escopo negativo:** `BranchSlugMatchesRoadmap` (ML-3A) e baseline não são tocados.
+- Sem Git: não crio branch, não commito, não faço push.
+
+## 2026-09-26 — apolo-tf — ML-1E (fim): o delta é −7/+24, não −2 — e o censo do handoff subcontava por construção
+
+- 🔴 **Refutação do handoff, medida:** o handoff previa **2** acusações falsas (régua: *"`adr:` no
+  frontmatter e NENHUM `ADR:` no corpo"*). São **7**. As outras 5 TÊM linha `ADR:` no corpo — um
+  comentário HTML (`ADR: <!-- a criar, se a frente 2 for adiante -->`) — e o frontmatter carrega um
+  caminho `.md` real. A régua contava a AUSÊNCIA da linha; o mecanismo é o campo do frontmatter ser
+  invisível ao casamento case-sensitive. Os 7 alvos foram conferidos com `test -f`: todos existem.
+- 🔴 **Direção oposta, maior, e não prevista pelo handoff: +24.** REQs que satisfaziam a regra com
+  placeholder em PROSA no corpo (`ADR: N/A — …`, `ADR: (a decidir …`, `ADR: <!-- …` fechando em outra
+  linha). Nenhuma tem ADR — são acusações CORRETAS que passam a aparecer. Saldo no acervo:
+  **128 → 145**, mesmo sinal do ML-1D (12 → 13). O bloco **cresce**; zerá-lo seria o defeito.
+- **Medição própria por regra (não presumida):** `wip_has_req` 0 → 0; `blocked_has_req` 0 → 0;
+  `req_has_roadmap` 13 → 13 (ML-1D intacto). Fora do bloco do ADR, a saída de `validate` é idêntica
+  linha a linha antes e depois — só o contador de warnings muda (153 → 170).
+- **Contra-braço verde:** as 2 REQs com `adr: —` (`REQ-2026-06-13-traceid-bidirecional`,
+  `REQ-2026-06-13-v2.4-config-evolution`) continuam acusadas.
+- 🔴 **Estreitamento a RATIFICAR:** ID pelado (`REQ: REQ-2026-07-29-fixture`, sem `.md`) deixou de ser
+  vínculo. Zero instâncias nos artefatos governados, mas era a forma usada em FIXTURES: quebrou 6
+  testes de barrier, 1 de `ship` e 12 sítios de `scripts/check-barrier.sh`. Herdado do predicado do
+  ML-1D, não inventado aqui. Consequência para consumidores: marcador não-caminho configurado em
+  `link_fields` (ex.: `req_id`, a forma exercitada por `config_evolution_test.go`) não satisfaz mais a
+  regra. Declarado em `docs/cli-parity.md`.
+- 🔴 **`contentHasMarkerValue` ficou sem chamador de produção.** Mantida (remover ampliaria o diff e
+  derrubaria seus testes de unidade); a propriedade do achado A2 (comentário HTML não é vínculo)
+  sobrevive dentro de `extractRefPath`, que exige `.md`. Decisão de retirá-la é do arquiteto.
+- **Cenário 192 reescrito nas Direções A e B** (a armadilha que o ML-1D já pagou uma vez): com as três
+  regras migradas, sabotar `isHTMLCommentOnlyValue` ou a ancoragem `HasPrefix` não move veredito
+  nenhum — os dois braços ficariam vácuos. A passou a sabotar a exigência de `.md` em
+  `extractRefPath`; B reusa o binário corrompido da Direção C (mesmo seam, campo ADR). Direção A usa
+  `assert_output_lacks` + liveness anchor porque a corrupção é na função COMPARTILHADA e o mesmo
+  binário emite, corretamente, `links to ADR "<!--" which does not exist` — exit 0 é inalcançável ali
+  por construção. As 3 direções exercitadas em harness de bancada antes do `make quality`.
+- **Fixtures corrigidas:** 2 × `ADR: none` do `check-gates-falsify.sh` viraram alvo real
+  (`ensure_adr_link_target`, ADR **Accepted** separado do `$adr_basename` Proposed, para não acoplar o
+  seam de `blocked_by_draft_adr`); `common_dirs` do `check-barrier.sh` passou a materializar REQ + ADR
+  + alvo em `abandoned/`; fixtures Go de barrier/ship ganharam `writeBarrierREQFixture`.
+- **Wizard (ação 2): instância CONSTRUÍDA e ausência DECLARADA.** `req new` cria ADR **Draft** por
+  probe, lista em "Blocked by ADRs" e nunca grava `adr:` — logo nasce acusada. Não corrigido de
+  propósito: preencher `adr:` com um Draft chamaria de vinculada uma REQ cuja decisão não existe
+  (falso negativo). Pinado por `internal/generators/req_wizard_adr_link_ml1e_test.go` e escrito no
+  contrato.
+- **Falsificação dos testes novos:** o arquivo novo de `internal/validator` rodado contra o código de
+  HEAD (via `git archive`) — **7 reprovam**, 4 contra-braços passam nas duas árvores.
+- 🔴 **Terceiro braço esvaziado, achado pelo PRIMEIRO `make quality` (rc=2) e não por leitura:** o
+  Cenário **28** (backtick em `extractRefPath`) reprovou com *"ciclo limpo saiu com 1, esperava 0"*.
+  Mecanismo: a fixture referencia o ADR só pelo corpo e só entre backticks, então o mesmo binário
+  corrompido que esconde a referência de `adr_accepted_when_req_done` passa a esconder o vínculo de
+  `req_has_adr` — que emite, corretamente, `has no linked ADR`. Mesmo conserto da Direção A
+  (`assert_output_lacks` + liveness anchor), exercitado em bancada antes do segundo `make quality`.
+  **A lição de instrumento:** a régua "grepe a MENSAGEM da regra" acha os cenários que ASSEREM a
+  mensagem; não acha os que passam a emiti-la como EFEITO COLATERAL e morrem no `rc != 0`.
+- **Resíduo:** `check-symlink-privilege-guard` enumera por `git ls-files` e não vê os 2 arquivos de
+  teste novos (não commitados); a evidência deles é `go test ./internal/{validator,generators}/`.
+  `gen-falsify-chunks` avisa (stderr) que os 7 rótulos do Cenário 192 estão sem peso calibrado e usa o
+  peso pessimista — comportamento documentado para rótulo novo/renomeado, não reprovação; recalibrar é
+  decisão do arquiteto (`gen-falsify-scenario-weights.py`).
+  Status do ML mantido em 🔄 até a auditoria.
+- Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.
+
+## 2026-09-26 — apolo-tf — ML-3A + ML-3B (início): o matcher branch↔roadmap, em modo ADITIVO
+
+- **Escopo:** `internal/validator/validator.go` — `BranchSlugMatchesRoadmap` (`:3594`) e
+  `normalizeBranchSlug` (`:3750`); novo `internal/validator/branchlink.go` para o vínculo ESCRITO.
+  Implementa as cinco decisões da `ADR-2026-09-26-precisao-do-vinculo-branch-roadmap-…`. Fecha o #273.
+- **Método:** calibração do limiar contra o acervo real (201 roadmaps em `wip/`+`done/`, 205 branches
+  históricas `feat|fix|refactor`), curva por limiar e por modo de tokenização, nos DOIS sentidos de
+  falso positivo (veredito e cardinalidade); teste de bootstrap no PRIMEIRO build (a branch deste ML
+  tem de continuar aceita pelo binário recém-compilado); falsificação manual dos pins novos.
+- **Escopo negativo:** a etapa 2 (restritiva) da D4 e o gate de corpus (`ML-3C`); `req_has_roadmap` /
+  `req_has_adr` (ML-1D/ML-1E, entregues); `generators/roadmap.go` (ver refutação no fim).
+- Sem Git: não crio branch, não commito, não faço push.
+
+## 2026-09-26 — apolo-tf — ML-3A + ML-3B (fim): o `Contains` rejeita **29 das 205**, e a D3 é NO-OP
+
+- 🔴 **Refutação 1 — o censo do handoff está desatualizado nos dois eixos.** Não são 185 roadmaps e
+  111 branches: são **228** roadmaps (**201** em `wip/`+`done/`) e **205** branches históricas
+  `feat|fix|refactor` (`gh pr list --state all --limit 500` ∪ merges ∪ refs remotas). E o número que
+  muda a leitura: o `strings.Contains` de hoje **rejeita 29** das 205 (**14%**, contra os ~9% do #273),
+  não 2 de 111. A direção **restrito demais** é maior do que o issue mediu.
+- ⚠️ **Os 176 aceitos são população SOBREVIVENTE** — o autor do #273 renomeou a branch para caber na
+  regra. `Contains` acertar 86% é em parte seleção, o que reforça o fix.
+- 🔴 **Refutação 2 — a D3 é NO-OP, e as linhas que o ADR cita não existem.** O ADR manda
+  `generators/roadmap.go` delegar *"se precisar da mesma relação"*, citando `:791,805`. Essas linhas
+  morreram no ML-1C: `containsIgnoreCase` está em `:939`, chamada de `:908`, **dentro** de
+  `selectArtifactByName` — que resolve **argumento do usuário**, não vínculo branch↔roadmap. Nenhum
+  sítio de `internal/generators` faz esse casamento (varrido). Delegar ali **reintroduziria** seleção
+  difusa no `roadmap move` e desfaria o ML-1C — que é critério de aceite deste ML. D3 satisfeita com
+  zero linha de código.
+- **Limiar CALIBRADO (não escolhido): 2, forçado dos dois lados.** Teto: o par do #273 compartilha
+  **exatamente 2** tokens (`divida`+`acervo`), logo `N≥3` reabre o falso-negativo. Piso: com `N=1` a
+  relação aceita **205 de 205** e um termo genérico admite ~10% do acervo (`req` 18, `gate` 20 de 201).
+  Curva das 29 rejeitadas: N=1 → 29 passam · **N=2 → 14** · N=3 → 5 · N=4 → 2; regressão **0** em todos.
+- 🔴 **Tokenizar o nome do arquivo CRU dá token grátis:** `roadmap` casa **175 de 201** cru contra
+  **16** com o prefixo estrutural removido, e a aceitação espúria concreta é `feat/roadmap-list` ×
+  `ROADMAP-…-req-move-list-…` (tokens `[roadmap, list]`). Remoção **posicional** (`ROADMAP-`/`REQ-`/
+  `ADR-` + data ISO + `.md`), nunca lista negra — o `req` do mesmo par é **título** e sobrevive.
+- **Zero regressão, estrutural antes de empírica:** `Contains(x,s) ⇒ aceita` por construção (a relação
+  é um OR e o braço substring é preservado verbatim), logo o conjunto aceito é superconjunto do antigo
+  universalmente; as 205 **confirmam** (flip aceita→rejeita = 0 em 4 limiares × 2 tokenizações).
+- **Bootstrap testado no primeiro build:** `TRACKFW_BRANCH=fix/req-nasce-orfa-… ./bin/trackfw validate
+  --json` → 0 violações. O deadlock não é possível por construção nesta etapa.
+- **D1 (vínculo escrito):** `<roadmap_dir>/.trackfw-branch-links.json`, gravado pelo `branch new`
+  **depois** do checkout e só quando a inferência identifica **exatamente um** roadmap. Vínculo
+  obsoleto → cai na inferência **e avisa** (`branch_link_stale`), nunca em silêncio e **nunca**
+  violação (promovê-lo quebraria a ordem aditiva). Escolhido em vez do frontmatter: o `status:` de lá é
+  sincronizado pelo `roadmap move`, parseado pelo `roadmapdoc` e pinado pelo contrato do barrier.
+- **Gate ATUALIZADO, não afrouxado:** 3 pins novos em `check-validate-rule-pins.sh` (25 → 28), cada um
+  falsificado à mão: limiar 2→3 ⇒ `PIN2B` reprova (rc **1**); carve-out de slug vazio removido ⇒
+  `PIN2C` reprova (rc **1**); leitor do vínculo neutralizado ⇒ `PIN2D` reprova (rc **1**); árvore
+  restaurada ⇒ **28 pins passam** (rc **0**). `PIN2D` traz contra-braço no mesmo pin (mesmo nome de
+  branch, sem vínculo gravado, tem de reprovar).
+- ⚠️ **Armadilha de rótulo, medida:** o Bloco 3 do mesmo gate **já usa** `pin6`/`pin7`/`pin8`. Continuar
+  a numeração local do Bloco 2 fez o gate **passar com rótulos duplicados**, sem nenhuma detecção.
+  Renomeados para `pin2b`/`pin2c`/`pin2d`.
+- **Nenhum literal tocado está pinado em `scripts/`** (verificado um a um: `strings.Contains(normalize…`,
+  `func BranchSlugMatchesRoadmap`, `append(append([]string{}`, `validateBranchHasWIPRoadmap`,
+  `execGitCheckout(branchName)`, `deps.matchSlug`) — nenhuma ocorrência fora de `testdata`.
+- **Resíduos:** (1) `check-symlink-privilege-guard` enumera por `git ls-files` e **não vê** os 2
+  arquivos de teste novos — verificado à mão, 0 ocorrências de `os.Symlink`. (2)
+  `check-write-containment` examina **158** sítios com `SITE_FLOOR=157`, e mede 158 também na árvore de
+  `HEAD` (`git archive`): o piso está **defasado por 1 antes deste ML**, não por causa dele. (3) A
+  direção **frouxa** segue aberta por decisão da D4 (`fix/roadmap` ainda casa 175 de 201 pelo braço
+  substring) — é o `ML-3C`. Status do ML mantido em 🔄 até a auditoria.
+- Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.
+
+
+## 2026-09-26 — `apolo-tf` · ML-3D: o `trackfw init` passa a ignorar o vínculo no consumidor
+
+- **Escopo:** `internal/generators/` apenas (`scaffold.go`, `update.go`, `gitignore_test.go` novo).
+  Fronteira respeitada: nada em `scripts/`, `Makefile` ou `docs/cli-parity.md` (do `ML-3C`, em paralelo).
+- 🔴 **O gatilho de parada do handoff disparou na letra e não na razão:** o `trackfw init` **não**
+  gerava `.gitignore` — mas `generateGitAttributes` (`scaffold.go:2603`) é a **mesma classe de
+  comportamento** (arquivo do projeto, na raiz, cria-se-ausente / append-se-presente / no-op-se-a-regra-existe),
+  já auditada e testada, como `lefthook.yml` e os hooks. A classe não é nova; só o nome do arquivo é.
+  Implementado espelhando o precedente — **reversível de graça**, entregue não commitado.
+- **`roadmap_dir` efetivo, não `docs/roadmaps` fixo:** `effectiveRoadmapDir()` lê o `trackfw.yaml` do
+  cwd via `config.ParseDirsFromContent`. 🔴 **Não** `config.Load()`: é singleton `once.Do` e cacheia o
+  primeiro projeto lido no processo.
+- **Ordem deliberada:** `generateGitIgnore` roda **antes** de `writeTrackfwConfig`, que sobrescreve
+  `trackfw.yaml` com `roadmap_dir: docs/roadmaps` sem ler o valor anterior. Depois dele, "ler a config"
+  seria satisfeito só na letra.
+- **Idempotência por BASENAME:** `hasGitIgnoreRule` casa qualquer padrão cujo basename seja
+  `.trackfw-branch-links.json` (inclusive negado com `!`) — mesma lição do `hasGitAttributesRule`.
+- **Consumidor já onboardado:** `generateGitIgnore` também entrou no `generators.Update(cwd)` — o
+  caminho deixa de ser só declarado. Adição de escopo, **descartável** pelo arquiteto.
+- **3 mutantes, falsificação medida:** hardcode de `docs/roadmaps` ⇒ reprova o teste de `roadmap_dir`
+  não-default; predicado por caminho literal ⇒ reprova o teste de basename; sobrescrita do arquivo
+  preexistente ⇒ reprova 2 testes. Árvore restaurada, `go test ./internal/generators/` **verde**.
+- **Resíduos para o arquiteto:** (1) `git add` do teste novo **antes** da barreira —
+  `check-symlink-privilege-guard` enumera por `git ls-files` (0 ocorrências de `os.Symlink` no arquivo,
+  verificado). (2) marcadores `write-containment-allowed` vão de 161 para **163** (2 sítios novos, o
+  mesmo par do precedente); `SITE_FLOOR` é **piso**, não igualdade — não bloqueia, mas o piso segue
+  defasado. (3) 🔴 `writeTrackfwConfig` **sobrescreve `roadmap_dir` customizado** em todo `init`
+  re-executado — mesma família do #396, medido aqui, **não corrigido**: decisão do arquiteto se vira ML
+  desta REQ.
+- Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.
+
+## 2026-09-26 — `apolo-tf` · ML-3C: a medição do matcher vira gate, com corpus congelado
+
+**Contexto:** `ML-3C` (AC14) da `ROADMAP-2026-09-09-req-nasce-orfa-…`. Fronteira declarada no
+handoff: `scripts/` · `Makefile` · `docs/cli-parity.md` — **não** entrei em `internal/generators/`
+(frente paralela do `ML-3D`, que já entregou; as mudanças em `scaffold.go`/`update.go`/
+`gitignore_test.go` no `git status` são dele, intocadas por mim).
+
+**Entregue (não commitado):**
+- `scripts/check-roadmap-slug-matching.sh` — gate novo, com `--self-test` de **8 braços**.
+- `scripts/testdata/branch-roadmap-slug-corpus/` — corpus **congelado**: 201 nomes de roadmap ×
+  205 branches governadas, `manifest.txt` com os dois limiares e as seis contagens, mais o caso
+  externo do #273 em corpus próprio (não contamina os números 201/205).
+- `Makefile` — duas linhas em `parity-rest` (`--self-test` e execução), com `unset
+  TRACKFW_SLUG_CORPUS_DIR` pelo mesmo motivo do `WRITE_CONTAINMENT_SCAN_DIR`.
+- `docs/cli-parity.md` — a seção "Vínculo branch↔roadmap" ganha o subitem do corpus; a anotação de
+  contrato sai de "essa medição vira gate no ML-3C" para `gate=` nomeando o script e duas fixtures.
+
+**Medição própria, que reproduz o censo do `ML-3A` por caminho independente:** 205 branches =
+união de `gh pr list --state all` com `git branch -a` (prefixos governados). Com o matcher de HEAD:
+**190 accept / 15 block**. Com o braço de tokens desligado (limiar 99): **176 / 29** — exatamente o
+"`Contains` rejeita 29 das 205" do `ML-3A`, e 29 − 14 = 15 fecha a aritmética sem amostra.
+
+**Resíduos declarados:** (1) o gate pina a **inferência**, não o vínculo escrito da D1 — este é por
+checkout e gitignored, logo não congelável em fixture; (2) pina **veredito**, não **cardinalidade**
+(a CLI não expõe quantos roadmaps casaram); (3) nada prova que o corpus ainda reflete o acervo vivo
+— regenerá-lo é ato deliberado, e as duas coisas estão escritas na anotação de contrato.
+
+- Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.
+
+## 2026-09-26 — `apolo-tf` · ML-4A: criar REQ passa a criar o roadmap, com saída deliberada
+
+**Contexto:** `ML-4A` (AC1 + AC10) da `ROADMAP-2026-09-09-req-nasce-orfa-…`. Fronteira declarada no
+handoff: `internal/commands/req.go` · `internal/generators/` — **não** entrei em
+`internal/validator/` nem em `docs/cli-parity.md` (frente paralela do `ML-4B`).
+
+**Entregue (não commitado):**
+- `internal/generators/req.go` — `NewREQWithResult` devolve `REQResult{Path, Agent}`; `NewREQ` passa
+  a ser casca dela (assinatura histórica preservada, um único escritor de REQ).
+- `internal/generators/req_chain_ml4a.go` — `FindRoadmapLinkingREQ` (guard de idempotência por
+  vínculo, não por nome de arquivo) e `RelinkREQToRoadmap` (o ponto único do `ML-1B` reexposto).
+- `internal/commands/req.go` — `req new` cria o roadmap por padrão via `NewRoadmapFromREQ`;
+  `--no-roadmap` é o caminho deliberado; o conselho impresso sobre ADRs Draft passa a falar de
+  **promoção para wip**, não de criação.
+- `internal/commands/req_chain_ml4a_test.go` — 5 testes; `req_test.go` — teste renomeado
+  (`BehaviorUnchanged` virou mentira neste ML).
+
+**Medição que decidiu a forma:** com uma REQ bloqueada por ADR Draft, criar o roadmap em `backlog/`
+adiciona **zero** regra nova no `validate` (braço A sem roadmap: `blocked_by_draft_adr`,
+`req_has_adr`, `req_has_roadmap`; braço B com roadmap: as duas primeiras) — logo não há pular
+automático por ADR Draft, e o encadeamento é incondicional.
+
+**Falsificação por sabotagem:** chain no-op → 4 testes vermelhos; chain "inerte" (cria roadmap sem
+propagar o caminho da REQ, o modo de falha do `ML-1B`) → 4 testes vermelhos, incluindo "reexecução
+deixou a REQ órfã" e "2 roadmaps".
+
+**Resíduo declarado:** `req new` continua reescrevendo o arquivo da REQ do zero numa reexecução do
+mesmo dia (comportamento anterior a este ML) — o roadmap e o vínculo sobrevivem, edições à mão **na
+REQ** não.
+
+- Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.
+
+## 2026-09-26 — `apolo-tf` · ML-4B: `req_has_roadmap` ganha corte por data, e a isenção passa a ser contada
+
+**Contexto:** `ML-4B` (AC2 + AC3) da `ROADMAP-2026-09-09-req-nasce-orfa-…`. Fronteira declarada no
+handoff: `internal/validator/` · `docs/cli-parity.md` — **não** entrei em `internal/commands/` nem em
+`internal/generators/` (frente paralela do `ML-4A`). Entrada e saída registradas juntas, num único
+apêndice, para não colidir com a escrita do outro agente neste mesmo arquivo.
+
+**Refutação de abertura:** a regra **já era `error`** (`req_has_roadmap` está ausente de
+`ruleDefaults` e do bloco `rules:` do `trackfw.yaml`). O que faz as 13 saírem como `⚠` neste
+repositório é `governance_mode: lenient` até 2027-12-31 — ou seja, o próprio modo de falha que o
+roadmap temia já está em vigor. Logo este ML **não inverte severidade**: ele acrescenta o braço de
+rebaixamento (pré-corte ⇒ warning) e a contagem visível.
+
+**Entregue (não commitado):**
+- `internal/validator/validator_req_roadmap_cutoff.go` — constante `reqRoadmapCutoff = "2026-09-03"`
+  com a curva e a razão escritas ao lado, régua de data frontmatter-first com fallback para o nome do
+  arquivo e **fail closed** quando nenhuma das duas é legível, e a mensagem de contagem.
+- `internal/validator/validator.go` — `validateREQsHaveRoadmap` devolve `(enforced, exempt, scanned)`;
+  `applyRuleWarnOnly`/`applyRuleWarnOnlyTagged` roteiam o braço isento e o aviso sempre por warnings
+  (silenciados só com `off`).
+- `internal/validator/validator_req_roadmap_cutoff_ml4b_test.go` — 9 testes, um por conclusão.
+- `docs/cli-parity.md` — seção nova anotada (`gate=` nomeando os dois arquivos Go).
+
+**Curva do corte, medida nos 231 REQs (régua frontmatter-first):** satura em `2026-09-03` — 08-16:
+0/13 · 08-21: 3/10 · 08-29: 5/8 · 08-31: 8/5 · 09-02: 12/1 · **09-03: 13/0** · 09-26: 13/0. Escolhido
+o **mínimo** que zera o deadlock, porque corte mais tarde anistiaria em silêncio REQ órfã datada entre
+09-03 e hoje, que hoje é erro.
+
+**Achado da régua:** as duas réguas divergem em **13** dos 231 arquivos (3 com as duas e diferentes, 3
+só com data no nome, 7 só com `date:`) — e **nenhum** deles é uma das 13 REQs órfãs, logo a escolha de
+régua não muda veredito nenhum hoje.
+
+- Sem Git: não criei branch, não commitei, não fiz push, não usei `git stash`/`git checkout --`.
+
+---
+
+## 2026-09-26 — Apolo (fix/req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos — ML-6A) — INÍCIO
+
+**Início:** 2026-09-26 | Branch: `fix/req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos`
+**Tarefa:** ML-6A — AC16: `req move` escreve o vínculo de volta, simétrico ao `roadmap move`.
+
+---
+
+## 2026-09-26 — Apolo (fix/req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos — ML-6A) — ENTREGUE (AGUARDANDO AUDITORIA)
+
+**Fim:** 2026-09-26 | Branch: `fix/req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos`
+
+**Entregue (não commitado):**
+
+- `internal/generators/roadmap.go`
+  - `rewriteREQRoadmapRefWith` generalizado com `fmKey, bodyKey string, bodyOnce bool` — **ponto único** agora cobre tanto o lado roadmap (fmKey="roadmap", bodyKey="Roadmap", bodyOnce=false) quanto o lado REQ (fmKey="req", bodyKey="REQ", bodyOnce=true).
+  - Callers `rewriteREQRoadmapRef` e `linkREQToRoadmap` atualizados para passar os novos parâmetros.
+  - `rewriteRoadmapREQRef` — wrapper fino para o lado roadmap (req/REQ, bodyOnce=true).
+  - `syncRoadmapREQReference` — análogo a `syncREQReferences` mas no sentido inverso: dado o conteúdo da REQ movida, encontra o roadmap vinculado e atualiza seu campo `req:`.
+- `internal/generators/req.go`
+  - `MoveREQ`: após `✓ moved`, chama `syncRoadmapREQReference` na branch de move físico (state-layout e by_agent). As branches in-place (flat e fallback) retornam antes — nenhum sync (dst == path, nenhum repath).
+- `scripts/check-write-containment.sh`
+  - `SITE_FLOOR`: 158 → 161 (contagem real medida após a mudança: 161 sítios, +1 novo `os.WriteFile` em `syncRoadmapREQReference`).
+- `internal/generators/req_test.go`
+  - 5 testes novos (ML-6A, AC16): StateLayout, ByAgentLayout, FlatLayout, CrossLinkGuard, Idempotent.
+
+**Medições reais:**
+- Probe do handoff (state-layout): `req:` do roadmap atualizado de `docs/req/wip/...` para `docs/req/done/...`. Linha `REQ:` do corpo também atualizada.
+- Contra-braço flat: `git status --porcelain docs/` mostra só o arquivo REQ — nenhum roadmap tocado.
+- `go test ./...`: PASS em todos os pacotes.
+- `make quality`: exit=0 · 1360 linhas `^OK ` · 0 FALHA real (os 14 matches incluem mensagens de self-test de falsificação esperadas).
+- `trackfw validate`: 171 warnings pré-existentes, 0 novas violações.
+- `check-write-containment`: 161 sítios examinados, OK.
+
+**Decisão do ponto único (item 2 do handoff):**
+`rewriteREQRoadmapRefWith` foi generalizado em vez de criar cópia. Dois novos parâmetros (`fmKey`, `bodyKey`) substituem as strings literais "roadmap"/"Roadmap". `bodyOnce=true` para o lado roadmap — previne reescrita de prosa/blocos de código após o §Context.
+
+**Sem Git:** não criei branch, não commitei, não fiz push.

@@ -965,7 +965,7 @@ func TestValidateBranchHasWIPRoadmap_Violation(t *testing.T) {
 	chdir(t, dir)
 	t.Cleanup(config.Reset)
 
-	violations, err := validateBranchHasWIPRoadmap()
+	violations, _, err := validateBranchHasWIPRoadmap()
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}
@@ -984,7 +984,7 @@ func TestValidateBranchHasWIPRoadmap_Pass(t *testing.T) {
 	chdir(t, dir)
 	t.Cleanup(config.Reset)
 
-	violations, err := validateBranchHasWIPRoadmap()
+	violations, _, err := validateBranchHasWIPRoadmap()
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}
@@ -1002,7 +1002,7 @@ func TestValidateBranchHasWIPRoadmap_MismatchedRoadmap(t *testing.T) {
 	chdir(t, dir)
 	t.Cleanup(config.Reset)
 
-	violations, err := validateBranchHasWIPRoadmap()
+	violations, _, err := validateBranchHasWIPRoadmap()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1023,7 +1023,7 @@ func TestValidateBranchHasWIPRoadmap_DonePass(t *testing.T) {
 	chdir(t, dir)
 	t.Cleanup(config.Reset)
 
-	violations, err := validateBranchHasWIPRoadmap()
+	violations, _, err := validateBranchHasWIPRoadmap()
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}
@@ -1043,7 +1043,7 @@ func TestValidateBranchHasWIPRoadmap_DoneMismatch(t *testing.T) {
 	chdir(t, dir)
 	t.Cleanup(config.Reset)
 
-	violations, err := validateBranchHasWIPRoadmap()
+	violations, _, err := validateBranchHasWIPRoadmap()
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}
@@ -1061,7 +1061,7 @@ func TestValidateBranchHasWIPRoadmap_CIBranchEnvironment(t *testing.T) {
 	t.Setenv("TRACKFW_BRANCH", "feat/ci-feature")
 	t.Cleanup(config.Reset)
 
-	violations, err := validateBranchHasWIPRoadmap()
+	violations, _, err := validateBranchHasWIPRoadmap()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1080,7 +1080,7 @@ func TestValidateBranchHasWIPRoadmap_MainBranch(t *testing.T) {
 	chdir(t, dir)
 	t.Cleanup(config.Reset)
 
-	violations, err := validateBranchHasWIPRoadmap()
+	violations, _, err := validateBranchHasWIPRoadmap()
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}
@@ -1649,7 +1649,7 @@ func TestValidateBranchHasWIPRoadmap_TruncaMensagem(t *testing.T) {
 	chdir(t, dir)
 	t.Cleanup(config.Reset)
 
-	violations, err := validateBranchHasWIPRoadmap()
+	violations, _, err := validateBranchHasWIPRoadmap()
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}
