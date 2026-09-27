@@ -2,6 +2,24 @@
 
 ---
 
+## 2026-09-27 — Hades (fix/contencao-nao-ve-juncao-do-windows — ML-0A Wave 0) — ENTREGUE
+
+**Início:** 2026-09-27 | Branch: `fix/contencao-nao-ve-juncao-do-windows`
+**Tarefa:** ML-0A — fechar a população de falso-positivo para o predicado da contenção de junção no Windows; decidir o predicado antes que Wave 1 implemente.
+
+**Resultado:**
+- Mecanismo `winsymlink` GODEBUG confirmado por leitura de fonte Go 1.27.0 e A/B de go.mod na VM.
+- Tabela completa objeto × tag × mode (23 objetos medidos + 2 declarados por fonte).
+- Predicado decidido: opção (a) `ModeSymlink | ModeIrregular`, correto sob winsymlink=0 e winsymlink=1.
+- EvalSymlinks eliminado como candidato (c): não resolve junções sob winsymlink=1.
+- OneDrive cloud-only: não mensurável (VM vazia), declarado por fonte como `ModeIrregular` provável.
+- Dev Drive: não presente na VM, declarado como não mensurável.
+- Parecer em `docs/seguranca/2026-09-27-predicado-da-contencao-de-juncao-no-windows.md`.
+- Nota de vault: `vault/notes/winsymlink-gomod-governa-mode-de-juncao-2026-09-27.md` + index atualizado.
+- 🔴 Afirmação KG refutada: a tabela inicial dizia que o comportamento é da VM (ARM64) — é do go.mod.
+
+---
+
 ## 2026-09-27 — Apolo (fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre — ML-3F) — ENTREGUE (AGUARDANDO AUDITORIA)
 
 **Início:** 2026-09-27 | Branch: `fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre`
