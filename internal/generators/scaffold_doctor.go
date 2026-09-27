@@ -59,7 +59,13 @@ const DiscoverGitHubActionsWorkflowPath = ".github/workflows/trackfw-validate.ym
 func BuildDiscoverGitHubActionsWorkflowContent(isProducer bool) string {
 	if isProducer {
 		return `name: trackfw validate
-on: [push, pull_request]
+on:
+  # push so na main. Com o gatilho de lista (push e pull_request juntos), uma
+  # branch do proprio repositorio dispara os DOIS eventos no mesmo commit e o
+  # gate roda em dobro — medido num PR real: 2 execucoes do mesmo job, mesmo SHA.
+  push:
+    branches: [main]
+  pull_request:
 jobs:
   governance-go-install:
     runs-on: ubuntu-latest
@@ -94,7 +100,13 @@ jobs:
 `
 	}
 	return `name: trackfw validate
-on: [push, pull_request]
+on:
+  # push so na main. Com o gatilho de lista (push e pull_request juntos), uma
+  # branch do proprio repositorio dispara os DOIS eventos no mesmo commit e o
+  # gate roda em dobro — medido num PR real: 2 execucoes do mesmo job, mesmo SHA.
+  push:
+    branches: [main]
+  pull_request:
 jobs:
   governance-go-install:
     runs-on: ubuntu-latest

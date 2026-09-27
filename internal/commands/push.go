@@ -232,8 +232,8 @@ func runPush(opts pushOpts, deps pushDeps) error {
 		// across the 3 CLIs (the parity gate compares this literally).
 		pushArgs = append([]string{pushArgs[0], "--force-with-lease"}, pushArgs[1:]...)
 	}
-	if _, err := git(pushArgs...); err != nil {
-		return fmt.Errorf("git push failed: %w", err)
+	if pushOut, err := git(pushArgs...); err != nil {
+		return pushFailure(pushOut, err)
 	}
 
 	if !opts.dryRun {
