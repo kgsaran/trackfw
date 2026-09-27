@@ -525,17 +525,22 @@ comentários de decisão e os pipelines). Falsificado nas duas direções antes 
 
 ### ML-3D — a guarda que faltava entre literal e cópia
 **Owner:** `artemis-tf`
-**Status:** ⬜ Pendente — depende do ML-3B
+**Status:** ✅ Concluído — auditado em 2026-09-27 · **5 de 5 pares**, após corretivo R1
 **Ações:** teste ou gate que **compare** a cópia versionada com o que o literal gera, e reprove na
 divergência. É a guarda cuja ausência a nota de vault de 2026-09-02 já havia registrado e que
 ninguém criou.
 🔴 **Sem isto, a Wave 3 conserta o sintoma e deixa o mecanismo vivo:** nada impede que a próxima
 correção volte a ser aplicada só numa das duas naturezas.
 **Critérios de aceite:**
-- [ ] A divergência de hoje é **reproduzida** pelo teste antes do ML-3B (reprova) e passa depois
-- [ ] O teste **não** usa `os.Chdir(t.TempDir())` antes de ler o caminho relativo — foi assim que os
-      testes existentes ficaram cegos, e está medido na nota do vault
-- [ ] A frase da Regra Dura de Reconciliação
+- [x] Divergência **reproduzida**: adulterei `trackfw-git-branch-guard.sh` e o teste **reprovou**;
+      restaurada, **passou**. Falsificação minha, não do relatório
+- [x] O teste **não** usa `os.Chdir` — os geradores recebem caminho **absoluto** e a cópia é lida via
+      `findRepoRoot` (sobe de `os.Getwd()` até o `go.mod`)
+- [x] A frase da Regra Dura de Reconciliação
+- [x] 🔴 **R1 — escopo estendido de 2 para 5 pares.** A entrega inicial cobria só `signal` e
+      `cleanup`; `credential-guard`, `git-branch-guard` e `validate` têm a **mesma estrutura e a
+      mesma ausência de guarda**. Estavam byte-idênticos, que é precisamente como o par do
+      attention-signal estava **antes** de divergir
 
 ### ML-3E — 🔴 o achado do ML-3A: `ROADMAP_DIR` com CR silencia o sinal de atenção
 **Owner:** `apolo-tf`
@@ -619,3 +624,28 @@ seria o padrão que a Regra Dura proíbe. Fica registrado como **residual desta 
 assimetria de severidade que o parecer nomeia: aqui o consumidor perde uma customização e recebe o
 script **correto**; no #445 ele perde **configuração deliberada** e o produto passa a reportar estado
 de governança **falso**.
+
+
+### Auditoria do ML-3D — e uma régua minha que repetiu o defeito que acabamos de corrigir
+
+**Falsifiquei por conta própria**, sem confiar no relatório: adulterei `trackfw-git-branch-guard.sh`,
+o teste **reprovou**; restaurei, **passou**; `git status` limpo depois.
+
+⚠️ **O `validate` ficou fora da tabela, com razão declarada e que eu aceito.** `generateValidateScript`
+escreve em caminho **relativo ao cwd** — em `go test` o cwd é `internal/generators/`, então chamá-la
+gravaria em `internal/generators/scripts/`. É **a armadilha do `Chdir` documentada na nota do vault**,
+por outro caminho. A saída foi comparar contra `buildValidateScript(Config{})`, a função pura que ela
+chama por dentro.
+
+🔴 **Ressalva que fica escrita:** isso fixa que a cópia versionada foi gerada com `Config` **vazia**.
+Se algum dia ela passar a ser gerada com config preenchida, o teste reprova por **motivo alheio** ao
+que mede. Não é defeito hoje — é dívida declarada, e declará-la é o que a distingue de uma omissão.
+
+#### 🔴 O erro de método que eu cometi auditando
+
+Para checar se o teste caía na armadilha do `Chdir`, rodei `grep -c 'os.Chdir'` e obtive **2**. Ia
+reportar violação. As duas ocorrências eram **comentários** explicando que ele **não** usa `Chdir`.
+
+**É exatamente o defeito que o `ML-3C` acabou de corrigir no gate** — `grep` sobre bloco **com**
+comentários, prosa contando como implementação. Consertamos no produto e eu o repeti na auditoria,
+no mesmo dia, sobre o mesmo tema. Fica registrado porque a lição não é sobre o gate: é sobre a régua.

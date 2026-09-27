@@ -2,6 +2,26 @@
 
 ---
 
+## 2026-09-27 — Ártemis (fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre — ML-3D) — ENTREGUE (AGUARDANDO AUDITORIA)
+
+**Início:** 2026-09-27 | Branch: `fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre`
+**Tarefa:** ML-3D — guarda que compara o literal embutido com a cópia versionada
+
+**Resultado:**
+- Novo arquivo `internal/generators/scaffold_literal_copy_parity_test.go` com `TestAttentionScripts_LiteralMatchesVersionedCopy`.
+- Usa `GenerateAttentionScripts(t.TempDir())` com caminho absoluto — sem `os.Chdir` em nenhum ponto; armadilha do Chdir evitada por construção.
+- `findRepoRoot` (já em `scaffold_parity_test.go`) usada para localizar as cópias versionadas; caminha até `go.mod`.
+- Cobre signal e cleanup num loop table-driven; `t.Skip` se `scripts/` dir ausente, `t.Errorf` se arquivo específico ausente.
+- Mensagem de falha: nomeia a direção (literal → cópia), offset do primeiro byte divergente, contexto de 60 bytes de cada lado.
+- Falsificação: tamper em `trackfw-attention-signal.sh` (conteúdo, não deleção) → rc=1, FAIL/signal; restore → rc=0, PASS. SHAs antes/depois registrados.
+  - SHA antes (original): `f9c2471b5d1c9eaa...`  SHA após tamper: `c8272da87edfc8ca...`  SHA após restore: `f9c2471b5d1c9eaa...`
+- `make quality`: exit=0, 0 `: FALHA`, 347 OK (parity), suite completa.
+- `trackfw validate`: exit=0, 170 warnings (lenient), 0 violations novas.
+- Vault note `copia-versionada-do-attention-signal-esta-obsoleta-e-sem-guarda-2026-09-02.md` atualizada com seção "Resolução".
+- Achado colateral: `gitBranchGuardScript` / `scripts/trackfw-git-branch-guard.sh` — mesma estrutura de duas naturezas, sem guarda. Fora do escopo deste ML; reportado ao arquiteto.
+
+---
+
 ## 2026-09-27 — Apolo (fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre — ML-3B + ML-3E) — ENTREGUE (AGUARDANDO AUDITORIA)
 
 **Início:** 2026-09-27 | Branch: `fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre`
@@ -42001,3 +42021,35 @@ régua não muda veredito nenhum hoje.
 **Sem Git:** não criei branch, não commitei, não fiz push.
 
 **Descoberta adicional durante ML-3C:** `grep -qF 's/\r$//'` no bloco de lookahead era derrotável por comentário (`# sed $'s/\r$//'`). Corrigido com `block_code` (linhas `^[[:space:]]*#` filtradas) antes da verificação de normalização. Vault note: `vault/notes/grep-normalization-check-defeatable-by-comment-2026-09-27.md`. Braço H do Cenário 197 falsifica.
+
+## 2026-09-27 — Ártemis (fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre — ML-3D R1) — ENTREGUE (AGUARDANDO AUDITORIA)
+
+**Fim:** 2026-09-27 | Branch: `fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre`
+
+**Entregue (não commitado):**
+
+- `internal/generators/scaffold_literal_copy_parity_test.go`
+  - Renomeado: `TestAttentionScripts_LiteralMatchesVersionedCopy` → `TestScripts_LiteralMatchesVersionedCopy` (nome era só referenciado no próprio arquivo untracked; renomeado para refletir escopo expandido)
+  - Tabela estendida de 2 → 4 pares: adicionados `credential-guard` e `git-branch-guard`
+  - Adicionado `t.Run("validate", ...)` fora da tabela com comparação direta via `buildValidateScript(Config{})` (generateValidateScript usa cwd-relativo — Chdir trap documentada na vault note; solução: chamar buildValidateScript diretamente)
+  - Função `divergenceError` extraída como helper compartilhado entre todos os sub-testes
+  - Mensagem de falha de cada par nomeia o literal/função de origem (direção: regenerar a cópia do literal, nunca o contrário)
+  - Cobertura: 5 de 5 pares
+
+**Medições reais (falsificação par a par, duas direções):**
+
+| Par | Mutação (FAIL) | Restauração (PASS) |
+|-----|---------------|-------------------|
+| credential-guard | offset 4820: versioned=4834 vs generated=4820 | PASS |
+| git-branch-guard | offset 30666: versioned=30680 vs generated=30666 | PASS |
+| validate | offset 176: versioned=190 vs generated=176 | PASS |
+
+(attention signal/cleanup: cobertos pelo teste anterior, mantidos funcionando)
+
+**Regra Dura de Reconciliação:** os três pares novos assertam que `trackfw-credential-guard.sh`, `trackfw-git-branch-guard.sh` e `trackfw-validate.sh` são pares literal/cópia da mesma natureza que o par de attention (byte-idênticos hoje, mesma estrutura de gerador, mesma guarda ausente) — e portanto sujeitos ao mesmo silent revert que o #414 produziu: literal corrigido, cópia não atualizada, ou cópia corrigida e um `trackfw init` posterior regenera a cópia a partir do literal não corrigido.
+
+**Gates:**
+- `make quality`: exit=0, 0 `: FALHA`
+- `trackfw validate`: 170 warnings, 0 novas violações
+
+**Sem Git:** não criei branch, não commitei, não fiz push.
