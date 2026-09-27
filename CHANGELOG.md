@@ -7,7 +7,14 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### ⚠️ Mudança de comportamento — `governance_mode: lenient` exige `lenient_until`
+## [9.0.0] - 2026-09-27
+
+> **Três mudanças de comportamento sobem juntas nesta major.** Nenhuma delas é adição de
+> funcionalidade — o intervalo desde a `v8.0.1` tem **34 commits e zero `feat`**. O major existe
+> porque a primeira delas **muda o código de saída** de quem já está onboardado, e SemVer trata isso
+> como incompatível independentemente do tipo de commit.
+
+### ⚠️ Mudança 1 de 3 — `governance_mode: lenient` exige `lenient_until`
 
 **Consumidores onboardados por `trackfw discover`** cujo `trackfw.yaml` declara
 `governance_mode: lenient` **sem** `lenient_until` passam a ser tratados como `strict` a partir
@@ -18,6 +25,62 @@ reprovando violações que ficavam silenciosas.
 
 **Remédio em uma linha:** declare um prazo explícito — `lenient_until: "YYYY-MM-DD"` com data dentro
 dos próximos 730 dias — ou remova `governance_mode: lenient` para operar em modo estrito desde já.
+
+### ⚠️ Mudança 2 de 3 — o casamento branch↔roadmap passa a aceitar por sobreposição de tokens
+
+`branch_has_wip_roadmap` e `trackfw branch new` erravam **nas duas direções**, e a direção *restrito
+demais* não tinha critério de aceite nenhum até esta versão: **29 de 205** branches governadas deste
+repositório eram rejeitadas apesar de terem roadmap legítimo — **14%**. Reportado de fora, na #273,
+por um consumidor cuja medição independente chegou ao mesmo lugar.
+
+O casamento agora é a **união** de duas regras: a substring que já existia **mais** sobreposição de
+tokens (mínimo de 2 tokens de 3+ caracteres).
+
+🔴 **O modo é ADITIVO, e isso é garantia estrutural, não empírica:** o conjunto novo é
+**superconjunto por construção** do anterior. Nenhuma branch que era aceita passa a ser rejeitada.
+
+**Remédio:** nenhum. Se algo era aceito antes, continua. Se era rejeitado sem motivo, passa a ser
+aceito.
+
+**Efeito colateral declarado:** `trackfw branch new` grava o vínculo em
+`<roadmap_dir>/.trackfw-branch-links.json`. É **estado por checkout** e o `trackfw init` passa a
+acrescentá-lo ao `.gitignore` gerado. Quem já está onboardado e não vai rodar `init` de novo: o
+arquivo é local, e um clone, um fork ou o CI nunca o têm — por desenho. A inferência pelo nome da
+branch é o caminho para essa população.
+
+### ⚠️ Mudança 3 de 3 — ID pelado deixa de contar como vínculo de REQ
+
+Um campo como `roadmap: ROADMAP-2026-01-01-alguma-coisa` (só o identificador, sem caminho) **contava
+como vínculo** e não conta mais; o mesmo vale para placeholders como `none` e
+`<!-- preencher depois -->`. A regra passa a exigir um caminho real.
+
+**Efeito:** `trackfw validate` pode acusar `has no linked Roadmap` em REQs que antes passavam.
+Medido no corpus deste repositório: de **12 para 13** REQs acusadas, e **zero vínculo legítimo
+perdido**.
+
+**Remédio:** substitua o identificador pelo caminho —
+`roadmap: "docs/roadmaps/wip/ROADMAP-….md"`. Se a REQ genuinamente não tem roadmap, considere se ela
+não deveria estar fechada: das 13 órfãs deste repositório, **12 eram decisões já encerradas**.
+
+🔴 **REQs criadas antes de 2026-09-03 estão isentas por data de corte**, e a isenção é **anunciada em
+voz alta** pelo `validate` — não é silenciosa. O corte está declarado em
+`internal/validator/validator_req_roadmap_cutoff.go`.
+
+### Added
+
+- `trackfw req new` cria a REQ **e o roadmap no mesmo ato**, com o vínculo escrito nos dois sentidos.
+  `--no-roadmap` continua permitindo o caminho de decisão pura, sem atrito.
+- `trackfw roadmap new --from-req` passa a escrever o vínculo **de volta** na REQ.
+
+### Fixed
+
+- `trackfw req move` passa a sincronizar o campo `req:` do roadmap pareado, como o `roadmap move` já
+  fazia. Em layout com subpastas de estado, o vínculo ficava apontando para um caminho inexistente —
+  **78 violações de `stale state path`** congeladas no baseline de um consumidor (#439).
+- `roadmap move ""` movia o primeiro roadmap encontrado (`strings.Contains(x, "")` é sempre
+  verdadeiro), e o nome **completo e exato** movia o irmão maior quando o stem era prefixo dele.
+- `npm/package-lock.json` estava em **7.6.0** enquanto o `package.json` ia em 8.0.1 — duas majors de
+  defasagem. Os dois passam a ser escritos juntos.
 
 ---
 
