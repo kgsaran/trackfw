@@ -253,7 +253,21 @@ func TestRunReqNew_IntegratedPathHonorsCustomDirs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile REQ: %v", err)
 	}
-	if !strings.Contains(string(data), `roadmap: "`+rms[0]+`"`) {
-		t.Errorf("REQ deveria apontar para %q, obteve:\n%s", rms[0], data)
+	// filepath.ToSlash: o produto escreve separador portável; filepath.Glob devolve nativo no Windows.
+	portableRM := filepath.ToSlash(rms[0])
+	if !strings.Contains(string(data), `roadmap: "`+portableRM+`"`) {
+		t.Errorf("REQ deveria apontar para %q, obteve:\n%s", portableRM, data)
+	}
+	// ADR-2026-09-04 D1: separador portável "/" nos artefatos autorados.
+	// Reconciliação: afirma que o produto grava separador POSIX no frontmatter roadmap: mesmo com
+	// diretórios customizados (cfg.RoadmapDir="docs/planos" em trackfw.yaml).
+	if i := strings.Index(string(data), `roadmap: "`); i >= 0 {
+		line := string(data)[i:]
+		if nl := strings.IndexByte(line, '\n'); nl >= 0 {
+			line = line[:nl]
+		}
+		if strings.ContainsRune(line, '\\') {
+			t.Errorf("produto gravou separador nativo em artefato versionado — viola ADR-2026-09-04 D1: %s", strings.TrimSpace(line))
+		}
 	}
 }

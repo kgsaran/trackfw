@@ -83,14 +83,27 @@ func TestNewRoadmapFromREQ_WritesBacklinkIntoREQ(t *testing.T) {
 	got := string(reqAfter)
 
 	// Frontmatter: é o campo normativo (ML-1A) e o que req_has_roadmap consulta.
-	wantFM := `roadmap: "` + roadmapRel + `"`
+	// filepath.ToSlash: filepath.Glob devolve separador nativo; o produto escreve sempre "/".
+	wantFM := `roadmap: "` + filepath.ToSlash(roadmapRel) + `"`
 	if !strings.Contains(got, wantFM) {
 		t.Errorf("frontmatter da REQ deveria conter %q, obteve:\n%s", wantFM, got)
 	}
+	// ADR-2026-09-04 D1: paths em artefatos autorados usam separador portável "/".
+	// Reconciliação: afirma que o produto grava separador POSIX no frontmatter roadmap: — se o
+	// produto emitir "\" aqui, o artefato quebra em todos os consumidores (validate, humanos, git).
+	if i := strings.Index(got, `roadmap: "`); i >= 0 {
+		line := got[i:]
+		if nl := strings.IndexByte(line, '\n'); nl >= 0 {
+			line = line[:nl]
+		}
+		if strings.ContainsRune(line, '\\') {
+			t.Errorf("produto gravou separador nativo em artefato versionado — viola ADR-2026-09-04 D1: %s", strings.TrimSpace(line))
+		}
+	}
 	// Corpo: o marcador estava vazio, logo é preenchível — um corpo que discorda do frontmatter
 	// engana o leitor humano (contrato de docs/cli-parity.md).
-	if !strings.Contains(got, "Roadmap: "+roadmapRel) {
-		t.Errorf("corpo da REQ deveria conter o marcador Roadmap: %q, obteve:\n%s", roadmapRel, got)
+	if !strings.Contains(got, "Roadmap: "+filepath.ToSlash(roadmapRel)) {
+		t.Errorf("corpo da REQ deveria conter o marcador Roadmap: %q, obteve:\n%s", filepath.ToSlash(roadmapRel), got)
 	}
 	// O caminho gravado tem de resolver no disco — um valor não resolvível satisfaria
 	// req_has_roadmap (que aceita qualquer valor não-vazio) e reprovaria ref_targets_exist.
@@ -222,8 +235,23 @@ func TestNewRoadmapFromContent_REQPathAlsoGetsBacklink(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile REQ: %v", err)
 	}
-	if !strings.Contains(string(reqAfter), `roadmap: "`+roadmapRel+`"`) {
-		t.Errorf("REQ do caminho --req deveria receber o backlink %q, obteve:\n%s", roadmapRel, reqAfter)
+	// filepath.ToSlash: o produto escreve separador portável; filepath.Glob devolve nativo no Windows.
+	portableRel := filepath.ToSlash(roadmapRel)
+	if !strings.Contains(string(reqAfter), `roadmap: "`+portableRel+`"`) {
+		t.Errorf("REQ do caminho --req deveria receber o backlink %q, obteve:\n%s", portableRel, reqAfter)
+	}
+	// ADR-2026-09-04 D1: separador portável "/" nos artefatos autorados.
+	// Reconciliação: afirma que o produto grava separador POSIX no frontmatter roadmap: no caminho
+	// --req (NewRoadmapFromContent), provando que a causa do ML-1B era do ponto de criação, não da
+	// variante de template.
+	if i := strings.Index(string(reqAfter), `roadmap: "`); i >= 0 {
+		line := string(reqAfter)[i:]
+		if nl := strings.IndexByte(line, '\n'); nl >= 0 {
+			line = line[:nl]
+		}
+		if strings.ContainsRune(line, '\\') {
+			t.Errorf("produto gravou separador nativo em artefato versionado — viola ADR-2026-09-04 D1: %s", strings.TrimSpace(line))
+		}
 	}
 }
 
@@ -303,8 +331,23 @@ func TestNewRoadmapFromContent_BacklinkWithNonCanonicalAbsoluteREQPath(t *testin
 	if err != nil {
 		t.Fatalf("ReadFile REQ: %v", err)
 	}
-	if !strings.Contains(string(reqAfter), `roadmap: "`+roadmapRel+`"`) {
+	// filepath.ToSlash: o produto escreve separador portável; filepath.Glob devolve nativo no Windows.
+	portableRel := filepath.ToSlash(roadmapRel)
+	if !strings.Contains(string(reqAfter), `roadmap: "`+portableRel+`"`) {
 		t.Errorf("REQ apontada por caminho absoluto não-canônico deveria receber o backlink %q, obteve:\n%s",
-			roadmapRel, reqAfter)
+			portableRel, reqAfter)
+	}
+	// ADR-2026-09-04 D1: separador portável "/" nos artefatos autorados.
+	// Reconciliação: afirma que o produto grava separador POSIX no frontmatter roadmap: mesmo quando
+	// o caminho da REQ chega como absoluto não-canônico — pathguard.RejectAndReport não rejeita e
+	// normalizeRefSeparator garante o "/" na fronteira de emissão (medido no CI: "✓ linked").
+	if i := strings.Index(string(reqAfter), `roadmap: "`); i >= 0 {
+		line := string(reqAfter)[i:]
+		if nl := strings.IndexByte(line, '\n'); nl >= 0 {
+			line = line[:nl]
+		}
+		if strings.ContainsRune(line, '\\') {
+			t.Errorf("produto gravou separador nativo em artefato versionado — viola ADR-2026-09-04 D1: %s", strings.TrimSpace(line))
+		}
 	}
 }

@@ -2,6 +2,24 @@
 
 ---
 
+## 2026-09-26 — Apolo (fix/req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos — ML-6B) — ENTREGUE (AGUARDANDO AUDITORIA)
+
+**Início:** 2026-09-26 | Branch: `fix/req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos`
+**Tarefa:** ML-6B — 4 testes do vínculo REQ↔roadmap reprovam no Windows por comparação de separador nativo vs. POSIX.
+
+**Resultado:**
+- Causa confirmada por CI dump (#446): 4/4 testes com `filepath.Glob` como expected falharam; 0 sem ele falharam. Decisão **(b) defeito de teste** em todos os 4 — produto escreve POSIX por `fmt.Sprintf("%s/ROADMAP-...", ...)` + `normalizeRefSeparator`; testes esperavam separador nativo do SO.
+- `TestNewRoadmapFromREQ_WritesBacklinkIntoREQ`: `filepath.ToSlash(roadmapRel)` nas 2 assertions de path; assertion ADR-2026-09-04 D1 adicionada.
+- `TestNewRoadmapFromContent_REQPathAlsoGetsBacklink`: `filepath.ToSlash(roadmapRel)` + assertion ADR D1.
+- `TestNewRoadmapFromContent_BacklinkWithNonCanonicalAbsoluteREQPath`: `filepath.ToSlash(roadmapRel)` + assertion ADR D1. Causa alternativa (pathguard rejeitando no Windows) descartada por medição: CI mostra `✓ linked` em todos os 4.
+- `TestRunReqNew_IntegratedPathHonorsCustomDirs`: `filepath.ToSlash(rms[0])` + assertion ADR D1.
+- `go test ./...`: verde (macOS, POSIX contra-braço).
+- `make quality`: exit=0, `grep -c ': FALHA'` = 0, 342 OK.
+- `.github/windows-known-failures.json`: inalterado (confirmado por `git diff --stat`).
+- Vault: nota adicionada em `vault/notes/filepath-glob-retorna-separador-nativo-e-produto-escreve-posix-2026-09-26.md`.
+
+---
+
 ## 2026-09-26 — Apolo (fix/req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos — ML-6A R1) — ENTREGUE (AGUARDANDO AUDITORIA)
 
 **Início:** 2026-09-26 | Branch: `fix/req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos`
