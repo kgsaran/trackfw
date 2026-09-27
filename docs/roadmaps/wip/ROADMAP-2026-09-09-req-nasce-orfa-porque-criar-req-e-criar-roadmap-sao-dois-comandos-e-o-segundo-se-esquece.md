@@ -1337,11 +1337,16 @@ com condição vencida, e a tabela de residuais que virou #400/#401/#402.
 grandfathering, 0 cobradas** — e agora **13 decididas por leitura**, o que antes não era verdade.
 
 ### ML-5B — **AC6** — paridade e fechamento
-**Status:** 🔄 Em andamento — local verde **depois da Wave 6**; **aguardando CI**
+**Status:** ✅ Concluído — **CI verde: 21/21**, `state=CLEAN` no PR #446 (head `a28b6461`)
 **Critérios de aceite:**
 - [x] `make quality` verde  → remedido após o `ML-6A`: `exit=0`, **1360 `^OK `**, **0 `: FALHA`**
 - [x] `trackfw validate` sem violation nova  → **0 violations, rc=0**, **171 warnings**
-- [ ] **CI verde** — medido no PR, não aqui. 🔴 É o único critério desta REQ que não se mede localmente
+- [x] **CI verde** — medido no PR, não aqui → **21 checks, 21 SUCCESS**, `mergeable=MERGEABLE state=CLEAN`
+
+🔴 **E foi o CI que achou o que o local não achava.** Os 4 testes do `ML-6B` reprovavam no Windows
+**desde a Wave 1** e ninguém tinha visto: o `windows-full-suites` só dispara em `pull_request`, e
+esta branch não teve PR até o fim da Wave 6. O critério *"CI verde"* não era burocracia — era o único
+instrumento que enxergava aquela plataforma. Ver `ML-6B`.
 
 ⚠️ **Este ML foi remedido.** A primeira medição (1359 OK) foi feita **antes** de a auditoria pré-PR
 achar o `AC16`. Um `make quality` verde numa REQ com AC não entregue não afirma o que parece afirmar —
@@ -1368,7 +1373,7 @@ foram o `SITE_FLOOR` defasado e o censo de 185/111 que era 228/205.
 
 ---
 
-## 🔴 Wave 6 — o AC16, que a auditoria pré-PR encontrou sem ML nenhum
+## Wave 6 — o AC16, que a auditoria pré-PR encontrou sem ML nenhum (🔴 achada na auditoria)
 > Dependências: Waves 1–5. **Bloqueia o PR** — não é wave opcional.
 
 ### Por que esta wave existe
@@ -1486,6 +1491,60 @@ primeira linha `REQ:` do corpo é sempre a linha de contexto"* varrendo os roadm
 suspeito o que tivesse backtick: **94 de 184**. Olhando o resultado, o backtick é o **formato do
 próprio template** — minha régua marcou o padrão, não a anomalia. **Nenhum contra-exemplo encontrado**;
 o risco residual é contido pelo cross-link guard, que só reescreve se o basename casar.
+
+---
+
+### ML-6B — os 4 testes do vínculo comparavam separador nativo com valor portável
+**Status:** ✅ Concluído — auditado em 2026-09-26 · 🔴 **e refutou a minha hipótese**
+**Arquivos afetados:** `internal/generators/roadmap_backlink_ml1b_test.go` · `internal/commands/req_chain_ml4a_test.go`
+**Critérios de aceite:**
+- [x] Os 4 testes passam no `windows-full-suites` do PR #446 — **medido no CI**
+      → **21 checks, 21 SUCCESS**, `state=CLEAN`, head `a28b6461`
+- [x] Para cada um: decisão **(a)** ou **(b)** escrita, com a linha do código e a do teste
+      → **(b) nos 4**, mesma causa raiz, justificada pela `ADR-2026-09-04` D1
+- [x] 🔴 **Contra-braço:** a correção **não** quebra POSIX → `go test ./internal/...` verde no macOS
+- [x] `.github/windows-known-failures.json` **inalterado** → confirmado por `git diff --stat`
+- [x] Se algum dos 4 tiver causa diferente, isso está escrito
+      → **não tem**: a hipótese de segunda causa para `…NonCanonicalAbsoluteREQPath` foi
+      **descartada por medição** — o CI mostra `✓ linked` nos 4, então o `pathguard` não rejeitou
+- [x] A frase da Regra Dura de Reconciliação por teste alterado → 4 frases
+- [x] `make quality` `exit=0` (1360 `^OK `, 0 `: FALHA`) e `validate` rc=0 sem violation nova
+**Validação:** `gh pr checks 446` · `go test ./internal/generators/ ./internal/commands/`
+
+
+Achado pelo **primeiro** CI desta branch: `windows-full-suites` vermelho, 4 falhas novas, todas do
+`ML-1B` e do `ML-4A` — **Waves 1 e 4**. Estavam vivas desde a Wave 1, invisíveis porque a suíte de
+Windows só roda em `pull_request`.
+
+**A causa é o inverso do que eu escrevi no handoff.** Eu disse que *"(b) o defeito é do teste é a
+resposta confortável e costuma ser a errada"*. A medição:
+
+```
+produto grava:   roadmap: "docs/planos/backlog/ROADMAP-….md"    ← com "/"
+teste esperava:  "docs\planosacklog\ROADMAP-….md"             ← retorno de filepath.Glob
+```
+
+O produto **obedece** a `ADR-2026-09-04` D1 — separador portável em artefato autorado cujo consumidor
+não é o sistema de arquivos. Os testes é que usavam o retorno de `filepath.Glob`, nativo no Windows,
+como valor esperado. **Decisão (b) nos 4** — e aqui ela não é a saída preguiçosa, é o que a ADR exige.
+
+**Convergência por dois caminhos independentes:** o executor mediu pelo **dump do CI**; eu reproduzi
+na **VM de Windows** (worktree isolado — a VM investiga, o `windows-latest` mede). As duas leituras
+batem, e nenhuma dependeu da outra.
+
+**Correção:** `filepath.ToSlash` no valor vindo do `Glob`, mais uma assertion por teste afirmando que
+o campo gravado **não contém** `\` — a direção que nenhum teste cobria.
+🔴 **`.github/windows-known-failures.json` INALTERADO.** Silenciar o ratchet transformaria defeito
+medido em ruído permanente — o padrão que esta casa mediu 59 vezes.
+
+⚠️ **Ressalva da auditoria, registrada sem bloquear:** a assertion nova da ADR D1 é condicional
+(`if strings.Index(…, "roadmap: \"") >= 0`), então **sozinha** passaria vacuamente se o campo
+sumisse. Não é defeito porque a assertion vizinha, no mesmo teste, falha nesse caso — mas se alguém
+mover uma das duas, a outra deixa de ser suficiente.
+
+⚠️ **O executor reportou `151 warnings` do `validate`.** É o binário do Homebrew 8.0.1; a branch
+reporta **170**. Conclusão idêntica (0 violations), procedência diferente. **Segunda ocorrência do
+mesmo erro em dois MLs seguidos** — o handoff avisa, e ainda assim acontece.
 
 ---
 
