@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-31
 author: "zeus-tf"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-08-31-guarda-de-folha-resolve-o-caminho-e-afirma-contencao-antes-de-escrever.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-08-31-guarda-de-folha-resolve-o-caminho-e-afirma-contencao-antes-de-escrever.md"
 ---
 
 # REQ: Guarda de folha faz `Lstat` só no último componente e nunca inspeciona ancestral — escrita fora do projeto em todo SO e todo runtime
 
-> Date: 2026-08-31 | Status: Open
+> Date: 2026-08-31 | Status: Done
 
 ## Motivation
 
@@ -110,27 +110,35 @@ checam link algum**, em 4 famílias. A família de maior severidade é `trackfw 
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — 🔴 **Wave 0 enumera de verdade.** A lista de pontos que escrevem em caminho derivado
+- [x] **AC1** — 🔴 **Wave 0 enumera de verdade.** A lista de pontos que escrevem em caminho derivado
       de `root` **sem** inspeção de ancestral, no **único runtime (Go)**, obtida varrendo os **primitivos de escrita** — não `ModeSymlink`. A lista de 3 guardas é ponto de partida conhecido-incompleto.
-- [ ] **AC2** — Escrita através de **ancestral** symlink é recusada, com a forma
+      → **Wave 6** (`ML-6A`, `hades-tf`). E a enumeração do fechamento original estava **incompleta pela régua**: 4 identificadores `reject*` contra **53** implementações do par inline; 9/12/13 sítios por grep contra **16** por provenância no AST.
+- [x] **AC2** — Escrita através de **ancestral** symlink é recusada, com a forma
       resolver-e-afirmar-contenção.
-- [ ] **AC3** — 🔴 **Falsificação nas duas direções.** (a) com ancestral symlink apontando para fora,
+      → `ML-7A`. 🔴 **E a Wave 6 achou um escape VIVO que o fechamento anterior não tinha visto:** `trackfw adr new` escrevia **fora do projeto** com `RC=0`, porque `Beneath` comparava namespaces diferentes e o código **caía no escopo global** em silêncio.
+- [x] **AC3** — 🔴 **Falsificação nas duas direções.** (a) com ancestral symlink apontando para fora,
       a escrita é recusada e **nada** é criado fora da árvore; (b) **controle**: operação legítima,
       sem link algum, **continua funcionando** — a guarda não pode super-disparar. Sem (b), trocamos
       um buraco por uma quebra.
-- [ ] **AC4** — Recusa **audível**: mensagem em stderr nomeando o caminho e o motivo. Silêncio vira
+      → braço (a) e braço (b) **em cada ML**, e o controle foi o que impediu três conserto-vazios: `req new` recusando no mesmo diretório (`ML-7A`), o caminho feliz ainda escrevendo (`ML-9A`), e o mutante da forma correta exigindo **zero** achado (`ML-7C`).
+- [x] **AC4** — Recusa **audível**: mensagem em stderr nomeando o caminho e o motivo. Silêncio vira
       *"o update não atualizou meu arquivo e não disse nada"*.
-- [ ] **AC5** — ~~Paridade nos 3 CLIs~~ **SEM OBJETO desde a v8.0.0** (commit `2eae0a44`): há uma
+      → `ML-7B`. **Estava aberto e medido:** **7** gramáticas distintas e **4** sítios que recusavam **mudos** — o quarto dentro do próprio `pathguard`, invisível ao censo porque a régua **isentava o pacote antes de medir**.
+- [x] **AC5** — ~~Paridade nos 3 CLIs~~ **SEM OBJETO desde a v8.0.0** (commit `2eae0a44`): há uma
       implementação única em Go. Medido em 2026-09-18: `npm/src` não existe, `git ls-files pypi/trackfw`
       → vazio. Substituído por: a recusa e a mensagem são **idênticas em todos os sítios de escrita**
       do Go — a consistência que importa agora é **entre sítios**, não entre runtimes.
-- [ ] **AC6** — Gate falsificável cobrindo AC2 e AC3, com guarda de vacuidade.
-- [ ] **AC7** — Reproduzível **localmente** em macOS/Linux, sem depender de runner Windows nem da
+      → `ML-7B`: **53 implementações → 1 emissor**, com a identidade **por construção** (stderr e erro saem da mesma const), não por coincidência textual.
+- [x] **AC6** — Gate falsificável cobrindo AC2 e AC3, com guarda de vacuidade.
+      → `ML-7C`. 🔴 **Este era o AC satisfeito por um instrumento que não provava nada** — o gate bash ficou **verde por cima de 22 instâncias vivas** do defeito. Substituído por analisador de AST com **corpus pré-fix versionado**: 104 achados no corpus, 15 na árvore (todos fixados), e os dois casos que o #400 nomeia reprovando **pelo nome**.
+- [x] **AC7** — Reproduzível **localmente** em macOS/Linux, sem depender de runner Windows nem da
       sonda. É o que torna esta REQ mais rápida que a de junction.
-- [ ] **AC8** — `make quality` verde e **CI verde**. Verde local não é conclusão —
+      → reproduzido localmente em macOS o tempo todo, inclusive o checkout do Windows (`git -c core.autocrlf=true checkout-index`) para o `ML-9B`.
+- [x] **AC8** — `make quality` verde e **CI verde**. Verde local não é conclusão —
       ver `vault/notes/ambiente-do-dev-e-mais-rico-que-o-do-ci-2026-08-29.md`.
 
-- [ ] **AC9** — 🔴 **Absorve a `REQ-2026-08-30-roadmap-move-segue-symlink-de-arquivo-md-e-altera-arquivo-fora-do-projeto`.**
+      → `make quality` rc 0 e **PR #441 com 21 checks, 21 `pass`**, incluindo `windows-full-suites`. ⚠️ **E o AC8 provou seu próprio ponto:** o verde local **não** era conclusão — o Windows reprovou 4 testes que passavam aqui.
+- [x] **AC9** — 🔴 **Absorve a `REQ-2026-08-30-roadmap-move-segue-symlink-de-arquivo-md-e-altera-arquivo-fora-do-projeto`.**
       Mesma causa pelo teste da Regra Dura (*"se eu corrigir esta causa, exatamente estas falhas fecham"*):
       **o produto resolve um caminho e escreve sem afirmar que o destino está contido na árvore.**
       As duas são faces do mesmo defeito — lá o symlink é a **folha** (`roadmap move` o segue), aqui é um
@@ -139,6 +147,7 @@ checam link algum**, em 4 famílias. A família de maior severidade é `trackfw 
       alterou o `status:` da vítima **fora do projeto**.
       Falsificação exigida para este AC, além das do AC3: o mesmo comando passa a **recusar**, e
       `roadmap move` legítimo **continua funcionando**.
+      → mantido; a família da folha já fechara na Wave 4, e a reabertura tratou o **ancestral** e o **argumento**.
 
 ## Negative Scope — o que esta REQ NÃO faz
 
@@ -162,7 +171,7 @@ sítio. -->
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-08-31-guarda-de-folha-resolve-o-caminho-e-afirma-contencao-antes-de-escrever.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-08-31-guarda-de-folha-resolve-o-caminho-e-afirma-contencao-antes-de-escrever.md`
 
 
 ---
@@ -192,3 +201,71 @@ desligada na semana seguinte.
 
 **Consequência:** os ACs atuais podem ser satisfeitos por uma implementação que **não** fecha o
 defeito descrito no título desta própria REQ. Precisam de revisão antes do roadmap.
+
+## 🔴 Fechamento pós-merge (PR #441, 2026-09-26) — esta REQ foi REABERTA, e a reabertura era necessária
+
+Esta REQ já esteve `Done` uma vez. Foi reaberta em 2026-09-25 porque o roadmap tinha ido para `done`
+com uma seção chamada, **literalmente**, *"Achados aceitos como residual, com a razão (não viram
+ML)"* — e as issues **#400**, **#401** e **#402** eram **três linhas daquela tabela**.
+
+🔴 **O que a reabertura encontrou justifica a regra que a obrigou.** A Wave 6 mediu um **escape vivo
+que ninguém tinha reportado**: `trackfw adr new` escrevia **fora do projeto**, com `RC=0`, enquanto
+`req new` recusava no mesmo diretório com a mesma isca. Era o defeito do **título desta REQ**, vivo,
+**dentro da REQ que existe para fechá-lo** — e ele não estava em issue nenhuma.
+
+### O que mudou, medido
+
+| | fechamento anterior | agora |
+|---|---|---|
+| implementações do par predicado+recusa | **53** | **1** |
+| gramáticas de mensagem de recusa | **7** | **1** |
+| sítios que recusam **mudos** | **4** | **0** |
+| sítios **fail-open** (guarda no `if`, escrita fora) | **5** | **0** |
+| guard roots não resolvidos (`filepath.Clean`) | **16** | **0** |
+| escritas sob outra grafia de root | **16** | **3** (nomeadas) |
+| instrumento | marcador textual | **analisador de AST + corpus versionado** |
+
+### As cinco vezes em que a régua decidiu, e o arquiteto errou junto
+
+1. **Sítios de root não resolvido:** 9 (issue) · 12 (triagem) · **13 (arquiteto, por grep)** · **16
+   (AST, por provenância)**. Acusei as duas primeiras de serem régua de identificador **e usei outra
+   régua de identificador**.
+2. **Implementações do par:** `^func reject` acha 4; o par está **inline** em 49 → **53**.
+3. **Sítios mudos:** eram **4**, não 3 — o quarto dentro do `pathguard`, invisível porque a régua
+   **isentava o pacote antes de medir**. *Isenção de censo diz onde a correção mora, não onde o
+   defeito pode estar.*
+4. **Gramáticas:** 7, não 5. E medir só `internal/` era estreito — o AC diz *"no binário"*, e `cmd/`
+   conta.
+5. 🔴 **O exemplar de "forma correta" que EU mandei copiar não satisfazia o próprio analisador.**
+   `commands/discover.go` era um dos 22: o idioma de duas etapas é correto em runtime e **invisível
+   ao instrumento**.
+
+### Três coisas que o instrumento impediu, e que teriam passado
+
+- A **correção óbvia** do escape (`EvalSymlinks` no alvo) não só o mantinha como **abria a arm que
+  recusava** — e só é visível com a fixture certa: com o diretório da vítima ausente, o mutante
+  **degenera no pré-fix** e o teste passa.
+- A forma que prescrevi para os sítios `void` (`_ = RefuseUnverifiableRoot(…)`) foi **reprovada pelo
+  analisador** com `guard-not-acted-on`. Afrouxar a regra faria uma chamada nua **dominar** a escrita
+  tendo apenas *imprimido* uma mensagem.
+- O executor **tentou corrigir dois sítios e reverteu com a medição** (7 e 15 testes), deixando a
+  razão **no código**: em `update.go` o `home` é gravado **verbatim no conteúdo** de
+  `.claude/settings.json`, logo resolver muda o **artefato gerado** — decisão de produto, não refactor.
+
+### Residual declarado, e por que não é dívida escondida
+
+- **T5** — `projectRoot()`/`resolveRoot()` caem para o caminho não resolvido quando `EvalSymlinks`
+  falha. **Dinâmico**; a provenância é **estática**. 🔴 Nada aqui pode ser lido como cobertura dele, e
+  virou dependência de ~19 ramos `RefuseUnverifiableRoot`.
+- **3 roots irredutíveis** e **3 `root-aliased`**, todos **nomeados com a medição** que diz por que
+  não podem mover.
+- **15 pontos cegos** do analisador, fixados por sítio — entrada obsoleta vira **erro**.
+- **`Render` não normaliza CRLF no caminho `subagent`** — medido no `ML-9B`, mecanismo **de produto**,
+  candidato a REQ própria.
+- **#403** fica fora, com a diferença de mecanismo escrita: nenhum passo desta correção escreve em
+  `falsify-scenario-weights.json`.
+
+⚠️ **E um achado de processo que é meu:** dois gates (`check-symlink-privilege-guard`,
+`check-write-containment`) enumeram por `git ls-files`, logo **arquivo não commitado é invisível a
+eles**. Minha barreira roda **antes** do commit — três vezes nesta campanha um teste passou na
+barreira e reprovou depois. **A segunda passada pós-commit virou parte do meu protocolo.**
