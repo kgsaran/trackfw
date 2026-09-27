@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-09
 author: ""
 adr: "docs/adr/ADR-2026-09-26-precisao-do-vinculo-branch-roadmap-escrever-em-vez-de-inferir.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-09-req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos-e-o-segundo-se-esquece.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-09-req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos-e-o-segundo-se-esquece.md"
 ---
 
 # REQ: REQ nasce orfa porque criar REQ e criar roadmap sao dois comandos e o segundo se esquece
 
-> Date: 2026-09-09 | Status: Open
+> Date: 2026-09-09 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
