@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: wip
 date: 2026-09-22
 req: "docs/req/REQ-2026-09-02-init-e-discover-geram-dois-workflows-que-rodam-a-mesma-validacao-com-instaladores-diferentes.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: `init` e `discover` geram dois workflows que rodam a mesma validação, com instaladores diferentes
 
-> Created: 2026-09-22 | Status: backlog
+> Created: 2026-09-22 | Status: wip
 
 ## Context
 <!-- Derived from REQ: REQ-2026-09-02-init-e-discover-geram-dois-workflows-que-rodam-a-mesma-validacao-com-instaladores-diferentes.md -->
@@ -99,3 +99,64 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 - [ ] **AC6** — make quality e **CI** verdes.
 - [ ] build passes
 - [ ] tests green
+
+---
+
+## Correção de 2026-09-27 — a cópia do PRÓPRIO repositório ficou para trás
+
+### Como apareceu
+
+Ao cruzar os 4 PRs mergeados em 2026-09-27 com as issues que eles aparentavam fechar (nenhum trouxe
+palavra-chave), a auditoria mediu que o **#456 corrigiu o template embutido e não a cópia versionada
+deste repositório**:
+
+```
+internal/generators/scaffold_doctor.go   push: branches: [main]     ← corrigido pelo #456
+.github/workflows/trackfw-validate.yml   on: [push, pull_request]   ← ficou para trás
+```
+
+🔴 **É a mesma forma do defeito que a `REQ-2026-09-23` fechou horas antes** — literal corrigido, cópia
+versionada não. Outro par, o mesmo mecanismo.
+
+### Por que NÃO estendi a guarda de paridade aos workflows
+
+A guarda criada na `REQ-2026-09-23` (`TestScripts_LiteralMatchesVersionedCopy`) cobre **5 pares de
+scripts** e **nenhum workflow** — medido: `grep -cE 'workflow|\.yml'` no teste dá **0**.
+
+A tentação era estender. Medi a população antes:
+
+```
+trackfw-gate.yml       já com o gatilho novo
+trackfw-validate.yml   🔴 gatilho antigo   ← ÚNICO divergente
+```
+
+**Um par divergente, não uma família.** A guarda de scripts nasceu de um defeito que **já tinha
+acontecido duas vezes**; construir a mesma maquinaria para um caso único é maquinaria que não se
+paga. Fica **declarado como dívida**: quando aparecer o segundo par de workflow divergente, a guarda
+se justifica.
+
+⚠️ **Registro uma recomendação minha que corrigi no meio do caminho.** Eu havia dito ao KG que *"o par
+literal↔workflow é mesma causa, e a Regra Dura manda"* — sugerindo reabrir a `REQ-2026-09-23` pela
+terceira vez. A Regra Dura manda para **mesma causa com múltiplos sítios**; com um sítio só, o que
+ela exige é **corrigir**, não construir guarda. Eu estava aplicando a regra pelo formato, não pelo
+conteúdo.
+
+### Verificação
+
+- `python3 scripts/check-required-status-checks.py --scope dw` → `[OK] declared=9, workflow_checks=45, D\W=∅`
+  🔴 **Este era o risco real da mudança:** `governance-go-install` é contrato de
+  `required_status_checks`. Com o gatilho novo ele continua sendo produzido em `pull_request`, que é
+  onde os required checks são avaliados.
+- YAML parseado com `yaml.safe_load` — não por inspeção visual
+- `make quality` `exit=0`, **1367** `^OK `, **0** `: FALHA`
+- `trackfw validate` 170 warnings, 0 violations
+
+### O que continua aberto nesta REQ
+
+A **sugestão 1 da issue #451** — *detectar workflow de governança já existente e não instalar um
+segundo, ou avisar que vai substituir* — **não** foi endereçada, nem aqui nem pelo #456. É o que
+sobra, e é a parte que protege o consumidor que já está onboardado.
+
+⚠️ E a redução é de **3 para 2** execuções por push em PR, não para 1. A issue pede economia de cota;
+2 ainda é duplicata. A coexistência dos dois arquivos está decidida na `ADR-2026-08-28`, então
+reduzir para 1 é mudança de decisão, não de implementação.
