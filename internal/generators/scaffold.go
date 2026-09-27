@@ -908,6 +908,26 @@ func generateValidateScript(cfg Config) error {
 // attentionSignalScript is the canonical content of the attention-signal hook written
 // by trackfw init/update and compared by scaffold doctor (ADR-2026-08-27).
 // Mirrors npm/src/generators/hooks.js and pypi/trackfw/generators/init_gen.py byte-for-byte.
+//
+// CRLF normalisation (ML-3B, ML-3E — REQ-2026-09-23 Wave 3 reopening):
+//
+// python3 path (TOOL/MSG): sed $'s/\r$//' strips the trailing \r that python3 print() appends in
+// Windows text mode after [:300]. Placed after [:300] because [:300] executes inside python3 and
+// the \r is appended by print() afterwards. Relies on set -o pipefail (line 3): python3 non-zero
+// exit propagates through sed so the || fallback fires; without pipefail sed returns 0 and the
+// fallback silences, leaving the variable empty. See Wave 0 parecer (2026-09-27).
+//
+// ROADMAP_DIR path: tr -d '\r' strips all CR from the extracted value.  A trailing \r causes
+// mkdir -p to create "docs/roadmaps\r" and the attention signal goes to the wrong directory with
+// no error — the signal silences.  Decision — normalise, not reject: rejecting would fall back to
+// "docs/roadmaps", which is the same silent-wrong-path outcome.  Other control characters and yaml
+// hygiene belong in `trackfw validate/doctor`, which have a user-facing channel this hook does not.
+// This normalisation is autocontained (no lib-crlf-normalize.sh — the consumer does not have it).
+//
+// 🔴 DO NOT use sed $'s/\r//g' here. Measured on Git Bash (GNU sed 4.9, Windows): produces
+//    "sed: -e expression #1, char 0: no previous regular expression" and ROADMAP_DIR becomes empty.
+//    The form fails even on LF-only input — every Windows consumer loses the custom roadmap_dir.
+//    tr -d '\r' works on both macOS (BSD) and Windows (Git Bash). Measured 2026-09-27.
 const attentionSignalScript = `#!/usr/bin/env bash
 # trackfw attention signal — PreToolUse/BeforeTool hook
 set -euo pipefail
@@ -921,11 +941,15 @@ if command -v jq &>/dev/null; then
   TOOL=$(echo "$INPUT" | jq -r '.tool_name // ""')
   MSG=$(echo "$INPUT" | jq -r '(.tool_input.question // .tool_input.command // "Agent is executing: \(.tool_name // "unknown")") | .[0:300]')
 else
-  TOOL=$(echo "$INPUT" | PYTHONIOENCODING=utf-8 python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_name',''))" 2>/dev/null || echo "")
-  MSG=$(echo "$INPUT" | PYTHONIOENCODING=utf-8 python3 -c "import sys,json; d=json.load(sys.stdin); ti=d.get('tool_input',{}); print((ti.get('question') or ti.get('command') or 'Agent is executing: '+d.get('tool_name','unknown'))[:300])" 2>/dev/null || echo "Agent needs attention")
+  # sed $'s/\r$//' strips trailing \r added by python3 print() in Windows text mode.
+  # Requires set -o pipefail (line 3) so python3 failure propagates and || fallback fires.
+  TOOL=$(echo "$INPUT" | PYTHONIOENCODING=utf-8 python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('tool_name',''))" 2>/dev/null | sed $'s/\r$//' || echo "")
+  MSG=$(echo "$INPUT" | PYTHONIOENCODING=utf-8 python3 -c "import sys,json; d=json.load(sys.stdin); ti=d.get('tool_input',{}); print((ti.get('question') or ti.get('command') or 'Agent is executing: '+d.get('tool_name','unknown'))[:300])" 2>/dev/null | sed $'s/\r$//' || echo "Agent needs attention")
 fi
 
-ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | head -1 | sed 's/^roadmap_dir:[[:space:]]*//; s/[[:space:]]*#.*$//' | tr -d '"' | tr -d "'" || true)
+# tr -d '\r': Windows CRLF in trackfw.yaml corrupts the path; normalise (not reject).
+# DO NOT use sed $'s/\r//g' -- fails on Git Bash (GNU sed 4.9): "no previous regular expression".
+ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | head -1 | sed 's/^roadmap_dir:[[:space:]]*//; s/[[:space:]]*#.*$//' | tr -d '"' | tr -d "'" | tr -d '\r' || true)
 ROADMAP_DIR=${ROADMAP_DIR:-docs/roadmaps}
 
 case "$ROADMAP_DIR" in
@@ -949,6 +973,7 @@ exit 0
 // attentionCleanupScript is the canonical content of the attention-cleanup hook written
 // by trackfw init/update and compared by scaffold doctor (ADR-2026-08-27).
 // Mirrors npm/src/generators/hooks.js and pypi/trackfw/generators/init_gen.py byte-for-byte.
+// CRLF normalisation: see attentionSignalScript comment block above.
 const attentionCleanupScript = `#!/usr/bin/env bash
 # trackfw attention cleanup — PostToolUse/AfterTool hook
 set -euo pipefail
@@ -956,7 +981,9 @@ set -euo pipefail
 # Script is intentionally a no-op when executed outside the project root
 [ -f "trackfw.yaml" ] || exit 0
 
-ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | head -1 | sed 's/^roadmap_dir:[[:space:]]*//; s/[[:space:]]*#.*$//' | tr -d '"' | tr -d "'" || true)
+# tr -d '\r': Windows CRLF in trackfw.yaml corrupts the path; normalise (not reject).
+# DO NOT use sed $'s/\r//g' -- fails on Git Bash (GNU sed 4.9): "no previous regular expression".
+ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | head -1 | sed 's/^roadmap_dir:[[:space:]]*//; s/[[:space:]]*#.*$//' | tr -d '"' | tr -d "'" | tr -d '\r' || true)
 ROADMAP_DIR=${ROADMAP_DIR:-docs/roadmaps}
 
 case "$ROADMAP_DIR" in
@@ -1297,7 +1324,9 @@ fi
 
 echo "trackfw-credential-guard: warning - possible $MATCH detected in tool payload." >&2
 
-ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | head -1 | sed 's/^roadmap_dir:[[:space:]]*//; s/[[:space:]]*#.*$//' | tr -d '"' | tr -d "'" || true)
+# tr -d '\r': Windows CRLF in trackfw.yaml corrupts the path; normalise (not reject).
+# DO NOT use sed $'s/\r//g' -- fails on Git Bash (GNU sed 4.9): "no previous regular expression".
+ROADMAP_DIR=$(grep '^roadmap_dir:' trackfw.yaml 2>/dev/null | head -1 | sed 's/^roadmap_dir:[[:space:]]*//; s/[[:space:]]*#.*$//' | tr -d '"' | tr -d "'" | tr -d '\r' || true)
 ROADMAP_DIR=${ROADMAP_DIR:-docs/roadmaps}
 
 case "$ROADMAP_DIR" in
