@@ -42093,3 +42093,38 @@ régua não muda veredito nenhum hoje.
 - `trackfw validate`: 170 warnings, 0 novas violações
 
 **Sem Git:** não criei branch, não commitei, não fiz push.
+
+---
+
+## apolo-tf · ML-1A · 2026-09-27 — INÍCIO
+
+**Branch:** `fix/contencao-nao-ve-juncao-do-windows`
+**REQ/Roadmap:** `REQ-2026-09-27` / `ROADMAP-2026-09-27-a-contencao-de-escrita-testa-um-bit-que-nao-ve-juncao-do-windows-e-juncao-nao-exige-privilegio.md`
+**Escopo:** ML-1A — o guard passa a recusar reparse point, não só symlink
+
+**Arquivos a modificar:**
+- `internal/pathguard/pathguard.go` — predicado `ModeSymlink` → `ModeSymlink|ModeIrregular`, mensagem nomeia o modo
+- `internal/pathguard/containment_junction_windows_test.go` — braço da junção de `t.Logf` para expectativa; preservar cláusula-tripwire
+
+**Fora de escopo:** `docs/cli-parity.md` (ML-1B, outro agente). Sem git operations.
+
+## apolo-tf · ML-1A · 2026-09-27 — CONCLUÍDO
+
+**Resultado:** Implementação entregue, build verde, todos os testes passando.
+
+**Arquivos modificados:**
+- `internal/pathguard/pathguard.go` — predicado `ModeSymlink` → `ModeSymlink|ModeIrregular`; mensagem "refusing reparse-point path %q (mode %v)"; comentário de pacote atualizado com seção "Windows reparse points"
+- `internal/pathguard/containment_junction_windows_test.go` — `TestRejectSymlinks_WalksThroughAJunction` renomeado para `TestRejectSymlinks_RefusesAJunction`; braço de junção virou expectativa (t.Fatal se nil); cláusula-tripwire `junction reported ModeSymlink` preservada; braço C2 mantido
+- `internal/generators/adr_scope_guard_test.go` — "refusing symlink path" → "refusing reparse-point path"
+- `internal/generators/mute_guards_speak_test.go` — idem
+- `internal/generators/update_test.go` — idem + comentário atualizado para nomear ML-1A
+- `internal/integrations/manager_test.go` — `strings.Contains(err.Error(), "symlink")` → `"reparse-point"`
+- `internal/integrations/mute_guard_speaks_test.go` — idem
+
+**Evidências:**
+- `go build ./...`: exit=0
+- `go test ./...`: 17/17 pacotes ok
+- `make quality`: exit=0, 0 `: FALHA`
+- `trackfw validate`: 172 warnings, 0 violations novas (baseline era 170; os 2 extras são os artefatos de governança desta REQ, pré-existentes)
+
+**Limite Windows:** os testes `containment_junction_windows_test.go` têm `//go:build windows` — não executam no macOS. O veredito final sobre os braços de junção é do `windows-latest` no CI. Não afirmo que está corrigido no Windows; reporto o que mediu este ambiente.

@@ -143,7 +143,7 @@ grep -qF 'ModeIrregular' internal/pathguard/pathguard.go && echo "Gate W1: o gua
 
 ### ML-1A — o guard passa a recusar reparse point, não só symlink
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos:** `internal/pathguard/pathguard.go` · `internal/pathguard/containment_junction_windows_test.go`
 
 **Ações:**
