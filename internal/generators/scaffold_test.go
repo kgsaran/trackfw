@@ -620,3 +620,164 @@ func TestGenerateGitHubActionsWorkflow_SymlinkGithubDirRefused(t *testing.T) {
 		t.Error("containment violated: workflows dir was created outside the project")
 	}
 }
+
+// ─── ML-3B + ML-3E: CRLF normalisation in the distributed literal ───────────
+
+// TestAttentionSignal_Literal_HasCRLFNormalisationAtPython3Sites affirms that
+// the TOOL and MSG capture pipelines in the distributed literal each contain
+// sed $'s/\r$//', which removes the trailing \r that python3 print() appends
+// in Windows text mode.
+//
+// ML-3B Regra Dura de Reconciliação sentence: this test affirms that the
+// attentionSignalScript literal applies sed $'s/\r$//' to each python3 stdout
+// capture site, matching the Wave 0 conclusion that python3 in Windows text
+// mode appends \r\n to print() output and that the correction must be
+// autocontained (no lib-crlf-normalize.sh, which the consumer does not have).
+func TestAttentionSignal_Literal_HasCRLFNormalisationAtPython3Sites(t *testing.T) {
+	// Both python3 capture lines must contain the autocontained sed strip.
+	// We count by splitting on the exact sed token so one occurrence does not
+	// mask a missing second one.
+	token := `sed $'s/\r$//'`
+	count := strings.Count(attentionSignalScript, token)
+	if count < 2 {
+		t.Errorf("attentionSignalScript contains %d occurrence(s) of %q, want >= 2 (one per python3 capture site: TOOL and MSG)", count, token)
+	}
+	// Verify placement: each occurrence is on the same line as python3.
+	for _, line := range strings.Split(attentionSignalScript, "\n") {
+		if strings.Contains(line, "python3") && strings.Contains(line, "2>/dev/null") {
+			// Every active python3 capture line (not a comment) must pipe through sed.
+			if !strings.Contains(line, token) {
+				t.Errorf("python3 capture line is missing %q:\n  %s", token, line)
+			}
+		}
+	}
+}
+
+// TestAttentionSignal_CRLF_TrackfwYaml_WritesToCorrectPath affirms that a
+// CRLF-formatted trackfw.yaml does not corrupt ROADMAP_DIR, so the signal file
+// is written to docs/roadmaps/ and not to docs/roadmaps\r/ (a silent wrong-path
+// outcome that makes the board miss the signal entirely).
+//
+// ML-3E Regra Dura de Reconciliação sentence: this test affirms that grep over
+// a CRLF trackfw.yaml no longer produces a ROADMAP_DIR with a trailing \r,
+// because sed $'s/\r//g' strips all \r from the extracted value before it
+// reaches mkdir -p and the JSON write.
+func TestAttentionSignal_CRLF_TrackfwYaml_WritesToCorrectPath(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	_ = os.Chdir(dir)
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	// Write trackfw.yaml with CRLF line endings (as Notepad on Windows would produce).
+	crlfYaml := "roadmap_dir: docs/roadmaps\r\n"
+	if err := os.WriteFile("trackfw.yaml", []byte(crlfYaml), 0644); err != nil {
+		t.Fatalf("WriteFile trackfw.yaml CRLF: %v", err)
+	}
+	if err := GenerateAttentionScripts(""); err != nil {
+		t.Fatalf("GenerateAttentionScripts: %v", err)
+	}
+
+	signalPath := filepath.Join("scripts", "trackfw-attention-signal.sh")
+	cmd := exec.Command("bash", signalPath)
+	cmd.Stdin = strings.NewReader(`{"tool_name":"crlf_tool","tool_input":{"question":"CRLF test"}}`)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("signal script failed with CRLF trackfw.yaml: %v\n%s", err, out)
+	}
+
+	// The signal must be in docs/roadmaps/, not docs/roadmaps\r/.
+	wantFile := filepath.Join("docs", "roadmaps", ".trackfw-attention.json")
+	data, err := os.ReadFile(wantFile)
+	if err != nil {
+		t.Fatalf("attention file not found at %s (CRLF trackfw.yaml corrupted ROADMAP_DIR): %v", wantFile, err)
+	}
+
+	var payload map[string]interface{}
+	if jsonErr := json.Unmarshal(data, &payload); jsonErr != nil {
+		t.Fatalf("attention file is not valid JSON: %v\ncontent: %s", jsonErr, data)
+	}
+
+	// Contra-braço: no stray directory with \r in name.
+	badDir := filepath.Join("docs", "roadmaps\r")
+	if _, statErr := os.Stat(badDir); statErr == nil {
+		t.Errorf("directory with CR in name was created (%q) — ROADMAP_DIR normalisation failed", badDir)
+	}
+}
+
+// TestAttentionSignal_LF_TrackfwYaml_StillWorks is the contra-braço for ML-3E:
+// a plain LF trackfw.yaml must continue to work after the CRLF normalisation
+// is added to the ROADMAP_DIR extraction pipeline.
+//
+// ML-3E contra-braço sentence: this test affirms that sed $'s/\r//g' on an LF
+// trackfw.yaml leaves ROADMAP_DIR unchanged so the signal is still written to
+// docs/roadmaps/.
+func TestAttentionSignal_LF_TrackfwYaml_StillWorks(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	_ = os.Chdir(dir)
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	// Plain LF yaml (Unix-standard).
+	if err := os.WriteFile("trackfw.yaml", []byte("roadmap_dir: docs/roadmaps\n"), 0644); err != nil {
+		t.Fatalf("WriteFile trackfw.yaml LF: %v", err)
+	}
+	if err := GenerateAttentionScripts(""); err != nil {
+		t.Fatalf("GenerateAttentionScripts: %v", err)
+	}
+
+	signalPath := filepath.Join("scripts", "trackfw-attention-signal.sh")
+	cmd := exec.Command("bash", signalPath)
+	cmd.Stdin = strings.NewReader(`{"tool_name":"lf_tool","tool_input":{"question":"LF test"}}`)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("signal script failed with LF trackfw.yaml: %v\n%s", err, out)
+	}
+
+	wantFile := filepath.Join("docs", "roadmaps", ".trackfw-attention.json")
+	data, err := os.ReadFile(wantFile)
+	if err != nil {
+		t.Fatalf("attention file not found at %s after LF yaml: %v", wantFile, err)
+	}
+	var payload map[string]interface{}
+	if jsonErr := json.Unmarshal(data, &payload); jsonErr != nil {
+		t.Fatalf("JSON invalid after LF yaml: %v\ncontent: %s", jsonErr, data)
+	}
+}
+
+// TestAttentionSignal_SpaceInRoadmapDir_NotBrokenByCRLFNorm is the contra-braço
+// that ensures sed $'s/\r//g' does not mangle a roadmap_dir value that contains
+// a space (unusual but valid on Unix).
+//
+// ML-3E contra-braço sentence: this test affirms that the CRLF normalisation
+// stage (sed $'s/\r//g') does not split or collapse roadmap_dir values that
+// contain spaces, so the correction does not introduce a new class of path
+// corruption for consumers with unconventional but valid directory names.
+func TestAttentionSignal_SpaceInRoadmapDir_NotBrokenByCRLFNorm(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	_ = os.Chdir(dir)
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	// roadmap_dir with a space — exercise the sed normalisation stage specifically.
+	if err := os.WriteFile("trackfw.yaml", []byte("roadmap_dir: my roadmaps\n"), 0644); err != nil {
+		t.Fatalf("WriteFile trackfw.yaml with space: %v", err)
+	}
+	if err := GenerateAttentionScripts(""); err != nil {
+		t.Fatalf("GenerateAttentionScripts: %v", err)
+	}
+
+	signalPath := filepath.Join("scripts", "trackfw-attention-signal.sh")
+	cmd := exec.Command("bash", signalPath)
+	cmd.Stdin = strings.NewReader(`{"tool_name":"space_tool","tool_input":{"question":"space dir test"}}`)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("signal script failed with space in roadmap_dir: %v\n%s", err, out)
+	}
+
+	wantFile := filepath.Join("my roadmaps", ".trackfw-attention.json")
+	data, err := os.ReadFile(wantFile)
+	if err != nil {
+		t.Fatalf("attention file not found at %q — space in roadmap_dir was broken by CRLF norm: %v", wantFile, err)
+	}
+	var payload map[string]interface{}
+	if jsonErr := json.Unmarshal(data, &payload); jsonErr != nil {
+		t.Fatalf("JSON invalid for space roadmap_dir: %v\ncontent: %s", jsonErr, data)
+	}
+}

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check-crlf-normalize-capture.sh — anti-reintroduction gate for ML-1B / ML-1C
+# check-crlf-normalize-capture.sh — anti-reintroduction gate for ML-1B / ML-1C / ML-3C
 # (ROADMAP-2026-09-23-bash-consome-stdout-de-python3-sem-normalizar-crlf-e-o-gate-examina-zero-no-windows.md)
 #
 # WHY THIS EXISTS:
@@ -9,6 +9,20 @@
 #   mode).  A bash capture that does not pipe through strip_cr receives values
 #   with a trailing \r — the failure mode that silently broke the Windows
 #   census (issue #353).
+#
+# SCOPE (ML-3C):
+#   The gate previously scanned only scripts/*.sh.  ML-3C extends it to also
+#   scan internal/generators/*.go.  That directory contains Go raw-string
+#   literals (backtick strings) that are the templates `trackfw init` and
+#   `trackfw discover --init` write to the user's machine.  A fix applied only
+#   to scripts/ leaves the distributed template unfixed — the defect returns
+#   the next time any user runs an init command (measured: scaffold.go:924-925,
+#   REQ-2026-09-23).  The Go scanner reuses scan_file() unchanged; PY_DETECT_RE
+#   requires $( so Go comment lines (//) and non-capture mentions of python3
+#   cannot match.  Go // comments are NOT skipped by the ^[[:space:]]*# guard —
+#   they are harmless today because none contain $(...python3...) patterns, but
+#   this is a live false-positive surface if anyone documents a capture pattern
+#   in a Go comment.
 #
 # STRUCTURAL DISCRIMINANT (census ML-0A, Seção 2):
 #   Category (a) = three simultaneous conditions:
@@ -36,6 +50,14 @@
 #   $("$PY_BIN" ...)          — invocation via PY_BIN (double-quoted form)
 #   $($PY_BIN ...)            — invocation via PY_BIN (unquoted form)
 #
+# NORMALIZATION FORMS RECOGNIZED (primary check):
+#   strip_cr                  — function call (source lib-crlf-normalize.sh)
+#   s/\r$//                   — inline sed equivalent (ML-3C); used in standalone
+#                               distributed scripts; identical to strip_cr's body
+#                               (lib-crlf-normalize.sh:40: strip_cr() { sed $'s/\r$//'; })
+#                               substring match: any sed s/\r$// command in the
+#                               block satisfies condition 3.
+#
 # NON-COVERED FORMS (declared residuals — "not measured" is not acceptable;
 #                    these are measured and the limit is documented):
 #   < <(python3 ...)          — process substitution feeds a file descriptor,
@@ -54,16 +76,41 @@
 #                               and double-quoted forms cover all existing sites.
 #   eval "$CMD" (python3)     — eval expansion; no existing sites.
 #
+# NON-COVERED FORMS (Go embedded literals — ML-3C, measured 2026-09-27):
+#   base += "..." (concatenated Go string)
+#                             — bash content assembled across multiple Go +=
+#                               expressions is invisible to this scanner because
+#                               adjacent Go lines are not adjacent bash lines;
+#                               the scanner's lookahead window follows the .go
+#                               file's line order, not the bash line order
+#                               produced at runtime.  Measured: scaffold.go:2202
+#                               uses this form for a python3 build-check that
+#                               does NOT capture output — not a risk site — but
+#                               the pattern exists.
+#   fmt.Sprintf("...", args)  — dynamically assembled bash content; same
+#                               invisibility as += above.
+#   generators outside internal/generators/
+#                             — Measured 2026-09-27: grep -rl 'python3'
+#                               --include='*.go' internal/ returned
+#                               internal/auditsurface/auditsurface.go,
+#                               internal/generators/{scaffold,claudemd,update,
+#                               scaffold_test}.go; none outside
+#                               internal/generators/ contains $(python3 ...)
+#                               captures.  If a new generator package is added,
+#                               this gate's glob must be widened.
+#
 # NON-VACUITY:
-#   Floor re-measured 2026-09-23 (ML-1C) after extending discriminant to cover
-#   $("$PY_BIN" ...) / $($PY_BIN ...) forms. Two new candidates from
-#   check-gates-falsify.sh (PROSE_PAYLOAD and T65_BIG_PAYLOAD) now appear in
-#   the scan; both have strip_cr confirmed.
+#   Floor re-measured 2026-09-27 (ML-3C) after extending scope to include
+#   internal/generators/*.go.  Two new candidates from scaffold.go (lines
+#   924-925, the attentionSignalScript literal, TOOL and MSG captures).
+#   NOTE: TOTAL_CANDIDATES is incremented before the strip_cr check, so
+#   corrected sites still count toward the floor — the floor survives ML-3B
+#   landing and does not need re-tuning when those two sites are fixed.
 #   Command: CRLF_GATE_MIN_CAPTURES=0 bash scripts/check-crlf-normalize-capture.sh
-#   Result: 68 candidates, 6 exempt (5 condition-2 + 1 condition-1).
-#   MIN_CAPTURES set to 50 (≈74% of measured — guards against empty-corpus
-#   silent pass). Previous floor was 50 at 66 candidates (≈76%); floor is
-#   unchanged — still comfortably above the 74% threshold.
+#   Result: 70 candidates, 6 exempt (5 condition-2 + 1 condition-1).
+#   MIN_CAPTURES set to 52 (≈74% of 70 — guards against empty-corpus
+#   silent pass). Previous floor was 50 at 68 candidates (≈74%); raised
+#   proportionally to maintain the 74% threshold ratio.
 #   Override with CRLF_GATE_MIN_CAPTURES env var (set to 1 in synthetic trees).
 #
 # DIAGNOSTIC STRINGS (must stay distinct — assert_fails_with matches on them):
@@ -90,7 +137,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # Configuration (overridable for synthetic-corpus tests)
 # ---------------------------------------------------------------------------
 SCAN_ROOT="${CRLF_GATE_SCAN_ROOT:-$REPO_ROOT}"
-MIN_CAPTURES="${CRLF_GATE_MIN_CAPTURES:-50}"
+MIN_CAPTURES="${CRLF_GATE_MIN_CAPTURES:-52}"
 
 # How many lines ahead to look when strip_cr is not on the opening line.
 # All known multi-line patterns in this repo close within 12 lines.
@@ -157,22 +204,41 @@ scan_file() {
     fi
 
     # Collect the block: opening line + up to LOOKAHEAD_LINES following lines.
+    # Also build block_code: same window with comment lines (^[[:space:]]*#)
+    # removed.  Normalization checks run against block_code so that a comment
+    # mentioning 'strip_cr' or 's/\r$//' cannot falsely satisfy condition 3.
+    # (condition-2 emitter detection uses the original block — a commented-out
+    # print() is not an active emitter, but keeping it in the condition-2 check
+    # is conservative: if the comment were uncommented the block would emit.)
     ((TOTAL_CANDIDATES++))
     local block=""
+    local block_code=""
     local j=$i
     local limit=$((i + LOOKAHEAD_LINES))
     [ $limit -ge $n ] && limit=$((n - 1))
     while [ $j -le $limit ]; do
-      block+="${lines[$j]}"$'\n'
+      local bline="${lines[$j]}"
+      block+="$bline"$'\n'
+      if ! [[ "$bline" =~ ^[[:space:]]*# ]]; then
+        block_code+="$bline"$'\n'
+      fi
       ((j++))
     done
 
-    # Primary check: strip_cr in block → normalized (structural proof).
+    # Primary check: strip_cr or sed-crlf in non-comment block lines → normalized.
+    # Also accepts the inline equivalent `sed $'s/\r$//'` — this is strip_cr's
+    # exact implementation (lib-crlf-normalize.sh line 40) and is used in
+    # distributed standalone scripts that cannot source the library.
+    # ML-3C: the scaffold.go attentionSignalScript uses the inline form because
+    # the generated script is standalone and lib-crlf-normalize.sh is not
+    # distributed to the user's machine.
+    # Checks use block_code (comments stripped) so a comment mentioning the
+    # pattern does not defeat the accusation.
     # This check runs BEFORE condition-2 exemption so that captures that use
     # Python code in a variable ($STRIP_TS etc.) are not incorrectly exempted
     # (their block lacks literal "print(" but strip_cr is still in the pipeline).
-    if grep -qF 'strip_cr' <<<"$block"; then
-      echo "OK   [$fname:$lineno] python3 capture normalized (strip_cr in block)"
+    if grep -qF 'strip_cr' <<<"$block_code" || grep -qF 's/\r$//' <<<"$block_code"; then
+      echo "OK   [$fname:$lineno] python3 capture normalized (strip_cr or sed-crlf in block)"
       ((i++))
       continue
     fi
@@ -233,6 +299,19 @@ for f in "$SCAN_ROOT/scripts/"*.sh; do
   [ -e "$f" ] || continue
   # Skip self to avoid scanning this gate's own source code.
   [ "$(basename "$f")" = "check-crlf-normalize-capture.sh" ] && continue
+  scan_file "$f"
+done
+
+# ML-3C: also scan embedded bash literals in Go generator files.
+# These are the templates that `trackfw init` / `trackfw discover --init`
+# write to the user's machine.  A fix applied only to scripts/ leaves the
+# distributed template unfixed — the defect returns on the next init run.
+echo ""
+echo "=== check-crlf-normalize-capture: scanning internal/generators/*.go under $SCAN_ROOT ==="
+echo ""
+
+for f in "$SCAN_ROOT/internal/generators/"*.go; do
+  [ -e "$f" ] || continue
   scan_file "$f"
 done
 

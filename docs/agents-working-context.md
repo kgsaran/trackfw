@@ -2,6 +2,27 @@
 
 ---
 
+## 2026-09-27 — Apolo (fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre — ML-3B + ML-3E) — ENTREGUE (AGUARDANDO AUDITORIA)
+
+**Início:** 2026-09-27 | Branch: `fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre`
+**Tarefa:** ML-3B (normalizar CRLF nos sítios python3 do literal) + ML-3E (normalizar ROADMAP_DIR)
+**Arquivos afetados:** `internal/generators/scaffold.go` · `scripts/trackfw-attention-signal.sh` · `internal/generators/scaffold_test.go` · `internal/validator/validator_credential_guard_integrity_reference.go`
+
+**Resultado:**
+- ML-3B: `sed $'s/\r$//'` adicionado a TOOL e MSG (linhas 941-942 no literal `attentionSignalScript`). Comentário inline sobre dependência de `pipefail`. Decisão de normalização documentada no bloco Go acima do literal.
+- ML-3E: `sed $'s/\r//g'` adicionado ao ROADMAP_DIR em 3 sítios: `attentionSignalScript` (946), `attentionCleanupScript` (979), e `credentialGuardProjectTail` (1321 — sítio adicional identificado pelo advisor: mesma causa, não enumerado no handoff).
+- Decisão normalize-vs-reject: normalizar. Razão: rejeitar (fallback para "docs/roadmaps") seria o mesmo outcome silencioso-errado que estamos corrigindo. Documentado no bloco Go acima do literal.
+- `scripts/trackfw-attention-signal.sh` regenerada do literal — byte-idêntica ao que o gerador produz (diff exit=0, ambas 1900 bytes).
+- `internal/validator/validator_credential_guard_integrity_reference.go` atualizado para paridade com o gerador (linha ROADMAP_DIR + comentário adicionados).
+- 4 testes novos: `TestAttentionSignal_Literal_HasCRLFNormalisationAtPython3Sites` (ML-3B estrutural), `TestAttentionSignal_CRLF_TrackfwYaml_WritesToCorrectPath` (ML-3E execução), `TestAttentionSignal_LF_TrackfwYaml_StillWorks` (contra-braço LF), `TestAttentionSignal_SpaceInRoadmapDir_NotBrokenByCRLFNorm` (contra-braço espaço).
+- `go test ./...`: exit=0, todos os pacotes PASS.
+- `go build ./...`: exit=0.
+- `make quality`: rodando em background (~13 min), `/private/tmp/quality-3b.log`, 0 `: FALHA` até 1191 linhas.
+- Refutação da enumeração: handoff dizia "duas ocorrências" (928 e 959); `credentialGuardProjectTail` tem o mesmo bloco na linha ~1300 — mesmo sintoma, mesmo arquivo, mesma causa. Corrigido junto (Regra Dura de Causa Raiz).
+- Linhas pós-edição (para ML-3C): TOOL=941, MSG=942, ROADMAP_DIR(signal)=946, ROADMAP_DIR(cleanup)=979, ROADMAP_DIR(credguard)=1321. Token autocontido: `sed $'s/\r$//'` (python3) e `sed $'s/\r//g'` (ROADMAP_DIR).
+
+---
+
 ## 2026-09-27 — Hades (fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre — ML-3A) — ENTREGUE
 
 **Inicio:** 2026-09-27 | Branch: `fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre`
@@ -41943,3 +41964,40 @@ régua não muda veredito nenhum hoje.
 `rewriteREQRoadmapRefWith` foi generalizado em vez de criar cópia. Dois novos parâmetros (`fmKey`, `bodyKey`) substituem as strings literais "roadmap"/"Roadmap". `bodyOnce=true` para o lado roadmap — previne reescrita de prosa/blocos de código após o §Context.
 
 **Sem Git:** não criei branch, não commitei, não fiz push.
+
+## 2026-09-27 — Ártemis (fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre — ML-3C) — EM ANDAMENTO
+
+**Início:** 2026-09-27 | Branch: `fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre`
+
+**Tarefa:** ML-3C — Estender `scripts/check-crlf-normalize-capture.sh` para também varrer literais embutidos em `internal/generators/*.go`.
+
+**Estado:** Editando `scripts/check-crlf-normalize-capture.sh` + adicionando braços F/G ao Cenário 197 de `scripts/check-gates-falsify.sh`.
+
+## 2026-09-27 — Ártemis (fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre — ML-3C) — ENTREGUE (AGUARDANDO AUDITORIA)
+
+**Fim:** 2026-09-27 | Branch: `fix/literal-embutido-nao-normaliza-crlf-e-o-gate-nao-o-varre`
+
+**Entregue (não commitado):**
+
+- `scripts/check-crlf-normalize-capture.sh`
+  - Scope estendido para `internal/generators/*.go` — segundo loop após o de scripts/*.sh
+  - Reconhece `sed $'s/\r$//'` como normalizador equivalente a `strip_cr` (ambos usam a mesma sed command; necessário porque scripts standalone não podem sourcear lib-crlf-normalize.sh)
+  - Floor atualizado de 50→52 (70 candidatos medidos, ≈74%)
+  - Header documentado: SCOPE, NORMALIZATION FORMS RECOGNIZED, NON-COVERED FORMS para Go
+  - Go `//` comments: declarados no header como superfície de falso-positivo (não cobertos pelo skip de `#`)
+- `scripts/check-gates-falsify.sh`
+  - Braço F: Go embedded literal sem normalização → gate REPROVA
+  - Braço G: Go embedded literal com sed-crlf → gate PASSA
+  - Contador atualizado de "5 braços" para "7 braços (A/B/C/D/E/F/G)"
+
+**Medições reais:**
+- Braço de reprovação (pré-correção): confirmado via braço F da falsify (fixture `bad_embed.go`) — FAIL [bad_embed.go:4] python3 capture without strip_cr
+- Braço de aprovação (pós-correção): scaffold.go:941-942 agora passam (ML-3B já fixou com `sed $'s/\r$//'`)
+- Controle negativo: scaffold.go:2202 não aparece na saída do gate
+- Contra-braço scripts/*.sh: antes 67 OK + 2 FAIL = 69; depois 69 OK + 0 FAIL = 69 (mesma contagem, sem afrouxamento)
+- Candidatos totais: 70 (68 de scripts/*.sh + 2 de scaffold.go:941-942)
+- `make quality`: exit=0, 0 `: FALHA` · `trackfw validate`: 170 warnings, 0 novas violações
+
+**Sem Git:** não criei branch, não commitei, não fiz push.
+
+**Descoberta adicional durante ML-3C:** `grep -qF 's/\r$//'` no bloco de lookahead era derrotável por comentário (`# sed $'s/\r$//'`). Corrigido com `block_code` (linhas `^[[:space:]]*#` filtradas) antes da verificação de normalização. Vault note: `vault/notes/grep-normalization-check-defeatable-by-comment-2026-09-27.md`. Braço H do Cenário 197 falsifica.

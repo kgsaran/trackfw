@@ -465,16 +465,23 @@ maior** (`docs/seguranca/2026-09-27-wave0-literal-distribuido-crlf.md`)
 **Gates da wave:**
 
 ```bash
-n=$(git grep -c -e strip_cr -e normalize_crlf -- internal/generators/scaffold.go | cut -d: -f2); test -n "$n" && test "$n" -ge 1 && echo "Gate W3: literal embutido normaliza CRLF ($n ocorrencia(s))" || { echo "GATE FALHOU: o literal de scaffold.go NAO normaliza CRLF - e ele que o init distribui" >&2; exit 1; }
+n=$(grep -cF "s/\r" internal/generators/scaffold.go); test "$n" -ge 3 && echo "Gate W3: literal embutido normaliza CRLF em $n sitio(s)" || { echo "GATE FALHOU: $n - o literal de scaffold.go NAO normaliza CRLF, e e ele que o init distribui" >&2; exit 1; }
 ```
 
-⚠️ **Este gate REPROVA hoje, e é essa a intenção**: ele afirma o estado que a Wave 3 tem de alcançar.
-Medido em 2026-09-27: `strip_cr = 0` no literal. Quando o `ML-3B` entregar, ele passa — e a partir
-daí impede a regressão silenciosa que originou esta reabertura.
+⚠️ **Este gate foi CORRIGIDO em 2026-09-27, e o defeito dele era o mesmo que esta REQ combate.**
+
+Eu o escrevi procurando `strip_cr`. A implementação correta **não usa** `strip_cr` — usa
+`sed $'s/\r$//'` inline, porque o script distribuído **não pode sourcear** a `lib-crlf-normalize.sh`
+(o consumidor não a tem). 🔴 **Meu gate media o token, não o efeito** — e teria reprovado a correção
+certa enquanto aceitaria um `strip_cr` decorativo. É a mesma classe do gate que deixou este defeito
+passar; escrevi um terceiro exemplar dela sem perceber.
+
+Régua nova: a **forma** de normalização (`s/\r`), com piso **3** (medido: 11 ocorrências, entre
+comentários de decisão e os pipelines). Falsificado nas duas direções antes de entrar.
 
 ### ML-3B — **AC7 parte 1** — o literal recebe a normalização
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente — bloqueado pelo ML-3A
+**Status:** ✅ Concluído — auditado em 2026-09-27
 **Arquivos:** `internal/generators/scaffold.go` (linhas 924 e 925) · a cópia versionada
 `scripts/trackfw-attention-signal.sh`, **regenerada a partir do literal**
 **Ações:**
@@ -487,16 +494,18 @@ daí impede a regressão silenciosa que originou esta reabertura.
    ⚠️ Este ponto é o que torna a correção não-trivial; a cópia versionada podia dar `source` porque
    vive ao lado da lib, e o script distribuído **não vive**.
 **Critérios de aceite:**
-- [ ] `grep -c strip_cr internal/generators/scaffold.go` ≥ 2, ou equivalente autocontido
-- [ ] Script gerado por `init` num diretório limpo **roda** sem `lib-crlf-normalize.sh` presente —
-      provado executando, não por leitura
-- [ ] A cópia versionada é byte-idêntica ao que o literal gera
-- [ ] A frase da Regra Dura de Reconciliação, por teste novo
-- [ ] `make quality` `exit=0` e `trackfw validate` sem violation nova
+- [x] ⚠️ **AC atendido pela segunda metade, e digo qual.** `grep -c strip_cr` no literal → **0**.
+      O `strip_cr` é alias da lib, e o script distribuído **não pode** sourceá-la. A forma
+      autocontida entregue é `sed $'s/\r$//'` (python3) e `sed $'s/\r//g'` (ROADMAP_DIR) — **11**
+      ocorrências medidas. Marcar sem esta ressalva afirmaria uma verificação que não foi feita
+- [x] Script gerado por `init` em diretório limpo **roda** sem a lib — provado executando
+- [x] Cópia versionada **byte-idêntica** ao gerado → `diff -q` silencioso, verificado por mim
+- [x] A frase da Regra Dura de Reconciliação, por teste novo → 4 frases (ML-3B/3E)
+- [x] `make quality` `exit=0` (1367 `^OK `, 0 `: FALHA`) e `validate` 170 warnings, 0 violations
 
 ### ML-3C — **AC7 parte 2** — o gate passa a varrer o literal
 **Owner:** `artemis-tf`
-**Status:** ⬜ Pendente — bloqueado pelo ML-3A
+**Status:** ✅ Concluído — auditado em 2026-09-27 · 🔴 **e achou que o discriminante era derrotável por comentário**
 **Arquivos:** `scripts/check-crlf-normalize-capture.sh`
 **Ações:**
 1. Estender o escopo para os **literais embutidos** em `internal/generators/*.go`, além de
@@ -506,11 +515,13 @@ daí impede a regressão silenciosa que originou esta reabertura.
    decorativo — e foi exatamente assim que ele deixou este defeito passar.
 3. **Declarar o que o gate NÃO cobre**, como a versão atual já faz para as formas de captura.
 **Critérios de aceite:**
-- [ ] Os 2 sítios do `scaffold.go` são **acusados** pelo gate antes do ML-3B e **aceitos** depois
-- [ ] Piso de candidatos atualizado, com o número novo escrito
-- [ ] 🔴 Contra-braço: o gate **continua** reprovando os casos de `scripts/*.sh` que já reprovava —
-      ampliar escopo não pode afrouxar o que já funcionava
-- [ ] A frase da Regra Dura de Reconciliação, por teste novo
+- [x] Braço de reprovação provado por **fixture** (braço F) — o ML-3B corrigiu os sítios reais
+      antes de o ML-3C medir, então o arquivo real já não servia como braço negativo
+- [x] Piso 50 → **52** (70 candidatos medidos, ≈74%)
+- [x] 🔴 Contra-braço: mesma população de `scripts/*.sh` (**69**), e os 2 FAIL viraram OK **porque
+      foram corrigidos**, não porque o gate afrouxou — verificado por mim com fixtures nas duas
+      direções
+- [x] A frase da Regra Dura de Reconciliação, por braço novo → 3 frases (F/G/H)
 
 ### ML-3D — a guarda que faltava entre literal e cópia
 **Owner:** `artemis-tf`
@@ -528,7 +539,7 @@ correção volte a ser aplicada só numa das duas naturezas.
 
 ### ML-3E — 🔴 o achado do ML-3A: `ROADMAP_DIR` com CR silencia o sinal de atenção
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente — desbloqueado (Wave 0 auditada)
+**Status:** ✅ Concluído — auditado em 2026-09-27 · 🔴 **eram TRÊS sítios, não dois**
 **Arquivos:** `internal/generators/scaffold.go` (linhas 928 e 959) · cópia versionada regenerada
 
 #### Por que este ML vale mais que o que originou a reabertura
@@ -574,12 +585,14 @@ entrega.
 3. Aplicar no **literal** e regenerar a cópia versionada a partir dele.
 
 **Critérios de aceite:**
-- [ ] `trackfw.yaml` com CRLF produz `.trackfw-attention.json` em `docs/roadmaps/`, e o `serve` o
-      encontra — provado **executando**, não por leitura
-- [ ] 🔴 **Contra-braço:** `trackfw.yaml` com LF **continua** funcionando, e `roadmap_dir` com espaço
-      no nome não é quebrado pela correção
-- [ ] A decisão do item 2 escrita, com a razão
-- [ ] A frase da Regra Dura de Reconciliação, por teste novo
+- [x] `trackfw.yaml` com CRLF produz `.trackfw-attention.json` em `docs/roadmaps/` — provado
+      **executando**; o diretório com `\r` no nome **não** é criado
+- [x] 🔴 **Contra-braço:** LF continua funcionando, `roadmap_dir` com espaço não é quebrado, e
+      `trackfw.yaml` **sem** `roadmap_dir:` cai no fallback
+- [x] A decisão escrita: **normalizar, não rejeitar** — rejeitar cairia no fallback `docs/roadmaps`,
+      que é o **mesmo** desfecho silencioso que estamos corrigindo; muda só qual diretório errado.
+      Higiene de YAML malformado pertence ao `validate`/`doctor`, que têm canal com o usuário
+- [x] A frase da Regra Dura de Reconciliação, por teste novo
 
 ---
 
