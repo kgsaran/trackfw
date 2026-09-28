@@ -2958,13 +2958,62 @@ func generateLefthookHook() error {
 	if err := rejectScaffoldPath(lhRoot, absLH); err != nil {
 		return err
 	}
-	content := `pre-commit:
-  commands:
-    trackfw-validate:
-      run: trackfw validate
-`
-	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
-	if err := os.WriteFile("lefthook.yml", []byte(content), 0644); err != nil {
+
+	const validateEntry = "    trackfw-validate:\n      run: trackfw validate\n"
+	const fullBlock = "pre-commit:\n  commands:\n" + validateEntry
+
+	// Read before write — guard that preserves consumer-authored lefthook.yml content.
+	existing, _ := os.ReadFile("lefthook.yml")
+	existingStr := string(existing)
+
+	// Idempotent: trackfw-validate already present → no-op.
+	if strings.Contains(existingStr, "trackfw-validate:") {
+		return nil
+	}
+
+	var out string
+	if !presentTopLevelKeys(existingStr)["pre-commit"] {
+		// No pre-commit block yet: append the full block with a blank-line separator.
+		out = existingStr
+		if out != "" && !strings.HasSuffix(out, "\n") {
+			out += "\n"
+		}
+		if out != "" {
+			out += "\n"
+		}
+		out += fullBlock
+	} else {
+		// pre-commit block exists: insert trackfw-validate under its commands: entry.
+		lines := strings.Split(existingStr, "\n")
+		result := make([]string, 0, len(lines)+2)
+		inPreCommit := false
+		inserted := false
+		for _, line := range lines {
+			// Track top-level sections (column-0, non-comment).
+			if len(line) > 0 && line[0] != ' ' && line[0] != '\t' && line[0] != '#' {
+				inPreCommit = line == "pre-commit:"
+			}
+			result = append(result, line)
+			if inPreCommit && !inserted && strings.TrimSpace(line) == "commands:" {
+				result = append(result, "    trackfw-validate:")
+				result = append(result, "      run: trackfw validate")
+				inserted = true
+			}
+		}
+		if !inserted {
+			// pre-commit exists but has no commands: section — warn and skip to avoid
+			// corrupting a file with an unknown layout.
+			fmt.Println("  ⚠ lefthook.yml: pre-commit block has no 'commands:' section — trackfw-validate not added")
+			return nil
+		}
+		out = strings.Join(result, "\n")
+	}
+
+	// Guarda real: leitura de lefthook.yml acima — o merge só acrescenta o que falta.
+	// Não há marcador de isenção declarativa aqui: com a leitura detectável na mesma
+	// função, a isenção seria redundante e mascararia a perda da guarda se o bloco
+	// de leitura fosse extraído para um helper em refatores futuros.
+	if err := os.WriteFile("lefthook.yml", []byte(out), 0644); err != nil {
 		return fmt.Errorf("writing lefthook config: %w", err)
 	}
 	fmt.Println("  ✓ lefthook.yml")

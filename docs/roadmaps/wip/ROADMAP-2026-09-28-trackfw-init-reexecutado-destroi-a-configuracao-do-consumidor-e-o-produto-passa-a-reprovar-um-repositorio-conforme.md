@@ -122,7 +122,7 @@ create/append/no-op) — são o **precedente de implementação** para o ML-1A, 
 
 ### ML-1C — `generateLefthookHook` mescla em vez de truncar
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-09-28
 **Arquivos:** `internal/generators/scaffold.go` (função `generateLefthookHook`, ~linha 2806)
 **⚠️ Mesmo arquivo do ML-1A** → **SEQUENCIAL após o ML-1A**, nunca em paralelo com ele.
 
@@ -134,14 +134,57 @@ insatisfeito e a REQ fecharia com sítio conhecido e vivo — o achado A1 da aud
 já lê → verifica `strings.Contains(…, "commit-msg:")` → acrescenta se ausente. **Reuse o padrão.**
 
 **Critérios de aceite:**
-- [ ] `lefthook.yml` ausente → escreve o conteúdo (comportamento atual preservado)
-- [ ] `lefthook.yml` presente com hooks do consumidor (`pre-push`, `pre-commit` com outros comandos)
-      → **preservados**, e `trackfw-validate` acrescentado só se ausente
-- [ ] Reexecutar → **zero diff** (idempotente)
-- [ ] 🔴 **O teste percorre o caminho do WIZARD** (`cfg.Hooks = "lefthook"`), não o não-interativo —
-      o caminho não-interativo usa `Hooks: "none"` e **não** atinge este código. Um teste no braço
-      errado passaria vacuamente
-- [ ] Reconciliação: o teste novo declara, em uma frase, qual conclusão do ML afirma
+- [x] `lefthook.yml` ausente → escreve o conteúdo (comportamento atual preservado)
+- [x] `lefthook.yml` presente com hooks do consumidor → **preservados**. Insere **dentro** do
+      `commands:` existente em vez de acrescentar um segundo `pre-commit:` — evita chave YAML
+      duplicada. Recusa conservadoramente quando o layout é desconhecido
+- [x] Reexecutar → **zero diff** (idempotente), afirmado por teste que compara bytes
+- [x] 🔴 Os testes percorrem `cfg.Hooks = "lefthook"`, e há contra-braço `Hooks: "none"` provando
+      que o caminho não-interativo **não** cria o arquivo
+- [x] 5 frases de reconciliação, todas afirmando o que foi **medido** (contagem de linhas, bytes,
+      `os.Stat`) — diferente do ML-1A, que deduziu
+- [x] 🔴 **Correção de auditoria:** o sítio ficou com a guarda real **e** o marcador de isenção
+      `consumer-config-merge-allowed:`. Como o gate é um **OR**, um refator que extraísse o
+      `os.ReadFile` deixaria o marcador isentando sozinho. Marcador removido, e a correção
+      **falsificada**: pré-fix (marcador, sem `ReadFile`) → **PASS falso**; pós-fix → **FAIL**
+
+### ML-1D — 🔴 o gate do ML-1B aceita `os.ReadFile` em COMENTÁRIO como guarda
+**Owner:** `apolo-tf`
+**Status:** ⬜ Pendente
+**Arquivos:** `scripts/check-init-preserves-user-config.sh` **apenas**
+
+**Achado da auditoria do arquiteto, medido em 2026-09-28.** O gate criado por esta REQ para impedir
+a reintrodução **não impediria a reintrodução**: ele procura o token `os.ReadFile` sem excluir
+linhas de comentário.
+
+```
+# cópia com a guarda REAL removida, mencionada só em comentário:
+//  antes aqui havia os.ReadFile("lefthook.yml") — removido por um refator
+    var existing []byte
+
+→ OK [lefthook.yml[literal]] ... os.ReadFile precedes write in same function
+→ PASS: all 4 consumer-config write site(s) are guarded        🔴 FALSO VERDE
+```
+
+Braço de controle (cópia fiel) também passa — então o falso verde é **indistinguível** do verde
+legítimo. É a mesma classe de defeito que o `check-crlf-normalize-capture.sh` já pagou nesta base
+(*"comentário derrotava o gate"*), e que a memória do arquiteto registra como *"medir com a régua,
+não com grep"*. O executor do ML-1C **tropeçou nisto** — o primeiro rascunho do comentário dele
+continha `os.ReadFile` literal e produziu falso positivo — e reportou como nota de processo, sem
+perceber que era defeito do gate.
+
+⚠️ **Nota de método para quem executar:** o gate resolve o alvo por `SCAFFOLD_FILE` (env var), e
+**ignora argumento posicional**. Eu mesmo medi errado na primeira tentativa por passar o caminho
+como `$1` — o gate leu a árvore real e eu quase reportei o resultado do arquivo errado. Use
+`SCAFFOLD_FILE=<caminho> bash scripts/...`.
+
+**Critérios de aceite:**
+- [ ] O discriminante ignora linhas de comentário (`^[[:space:]]*//`) ao procurar a guarda
+- [ ] 🔴 **Falsificação nas duas direções**, com `SCAFFOLD_FILE` apontando para cópias no scratchpad:
+      guarda real presente → **PASS** · guarda removida e citada só em comentário → **FAIL**
+- [ ] O `--self-test` embutido ganha um braço para **este** caso, para que não regrida
+- [ ] Contagem de sítios e anti-vacuidade por alvo **preservadas**; `RC=0` na árvore real
+- [ ] Reconciliação: uma frase dizendo qual conclusão o braço novo do self-test afirma
 
 ## Wave 2 — auditoria independente
 > Dependências: Wave 1 completa e auditada.

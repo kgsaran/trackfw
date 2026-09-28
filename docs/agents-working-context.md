@@ -2,6 +2,24 @@
 
 ---
 
+## 2026-09-28 — Apolo (fix/init-reexecutado-destroi-config-do-consumidor — ML-1C correção de auditoria) — ENTREGUE
+
+**Início:** 2026-09-28 | Branch: `fix/init-reexecutado-destroi-config-do-consumidor`
+**Tarefa:** ML-1C (auditoria) — remover isenção `consumer-config-merge-allowed:` redundante em `generateLefthookHook` (scaffold.go) que enfraquecia o gate ML-1B.
+
+**Resultado:**
+- `internal/generators/scaffold.go`: comentário `// consumer-config-merge-allowed:` na linha 3012 (antes da edição) removido e substituído por comentário explicativo sem o marcador. Zero ocorrências do marcador na função.
+- `go build ./...`: RC=0 | `go test ./internal/generators/`: RC=0
+- Gate `check-init-preserves-user-config.sh`: RC=0 — passa pela condição ReadFile (linha 3016 em `generateLefthookHook`)
+- Gate `--self-test`: RC=0 — ambos os braços passaram
+- Falsificação (cópia sem ReadFile e sem marcador): gate REPROVADO (RC=1), nomeando `lefthook.yml[literal]` — prova que a correção fez diferença
+- Falsificação pré-fix simulada (sem ReadFile, com marcador): gate PASSOU (RC=0) — prova que o marcador redundante isentava o sítio mesmo sem guarda real
+- `git diff trackfw.yaml`: vazio
+- Arquivos alterados: `docs/agents-working-context.md`, `internal/generators/scaffold.go`
+- Nota: durante o trabalho foi detectado que o primeiro rascunho do comentário de substituição continha o texto `os.ReadFile` literalmente, o que fazia o gate detectar um falso positivo. Reescrito para evitar a string literal.
+
+---
+
 ## 2026-09-28 — Apolo (fix/init-reexecutado-destroi-config-do-consumidor — ML-1B gate) — ENTREGUE
 
 **Início:** 2026-09-28 | Branch: `fix/init-reexecutado-destroi-config-do-consumidor`
@@ -42324,3 +42342,32 @@ régua não muda veredito nenhum hoje.
 
 **Artefato:** `docs/seguranca/2026-09-28-triagem-issues-abertas.md`
 **git diff trackfw.yaml:** vazio
+
+## apolo-tf · ML-1C (REQ-2026-09-28) · 2026-09-28 — INICIADO
+
+**Branch:** `fix/init-reexecutado-destroi-config-do-consumidor`
+**Escopo:** Corrigir `generateLefthookHook` — truncamento incondicional de `lefthook.yml` (sítio (a) #2)
+**Restrições:** NÃO commitar, NÃO criar branch, NÃO rodar `trackfw init` nesta árvore
+
+## apolo-tf · ML-1C (REQ-2026-09-28) · 2026-09-28 — CONCLUÍDO
+
+**Resultado:** Implementação completa. Gate RC=0. 5 novos testes verdes. Sem regressões.
+
+**Arquivos modificados:**
+- `internal/generators/scaffold.go` — `generateLefthookHook`: substituído truncamento incondicional por merge com read-before-write; 3 caminhos: (1) arquivo ausente → cria bloco completo; (2) pre-commit: ausente → acrescenta bloco com separador; (3) pre-commit: presente + commands: → insere trackfw-validate sob commands:; idempotente via `strings.Contains(existingStr, "trackfw-validate:")`
+- `internal/generators/lefthook_hook_merge_test.go` — 5 novos testes via `generateGitHooks(Config{Hooks:"lefthook"})` (caminho do wizard)
+
+**Gate:**
+- `bash scripts/check-init-preserves-user-config.sh` → RC=0, Sites examined: 4
+- `bash scripts/check-init-preserves-user-config.sh --self-test` → SELFTEST_RC=0
+
+**Frases de reconciliação por teste:**
+- T1 AbsentCreates: medindo que lefthook.yml é criado com trackfw-validate: como único pre-commit quando arquivo ausente
+- T2 ConsumerHooksPreserved: medindo que exatamente 1 top-level pre-commit: existe e lint: coexiste com trackfw-validate: sob ele
+- T3 Idempotent: medindo que bytes após run1 == bytes após run2
+- T4 NoneSkipsLefthook: medindo que Hooks:"none" não cria lefthook.yml (pina alcançabilidade)
+- T5 NoPreCommitAppends: medindo que pre-push: é preservado e exatamente 1 pre-commit: é acrescentado
+
+**git diff trackfw.yaml:** vazio
+**git diff --name-only:** `internal/generators/scaffold.go`
+**git status --short:** M scaffold.go + ?? lefthook_hook_merge_test.go
