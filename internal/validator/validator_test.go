@@ -2514,8 +2514,11 @@ func TestValidateRoadmapGateCoverage_AC7_ExitOneIntact(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Validate() error: %v", err)
 	}
+	// #460: a mensagem passou a nomear a causa. Afirmar "is still the placeholder"
+	// e mais estrito que o antigo "placeholder or absent", que casava tambem quando
+	// a causa era outra — inclusive a posicional, que era o defeito relatado.
 	if !hasViolation(violations, "roadmap_gate_coverage") && !hasViolation(violations, "gate_coverage") &&
-		!hasViolation(violations, "placeholder or absent") {
+		!hasViolation(violations, "is still the placeholder") {
 		t.Errorf("expected roadmap_gate_coverage violation for exit 1 placeholder, got violations: %v", violations)
 	}
 }
@@ -2532,7 +2535,9 @@ func TestValidateRoadmapGateCoverage_AC7_BlockDeleted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Validate() error: %v", err)
 	}
-	if !hasViolation(violations, "placeholder or absent") {
+	// #460: bloco apagado e causa PROPRIA, e a instrucao dela e escrever o bloco —
+	// nao "substituir o exit 1", que era o que a mensagem antiga mandava fazer.
+	if !hasViolation(violations, "has no gate block") {
 		t.Errorf("expected roadmap_gate_coverage violation for deleted gate block, got violations: %v", violations)
 	}
 }
@@ -2552,12 +2557,14 @@ func TestValidateRoadmapGateCoverage_AC7_RealGate(t *testing.T) {
 		t.Fatalf("Validate() error: %v", err)
 	}
 	for _, v := range violations {
-		if strings.Contains(v, "placeholder or absent") && strings.Contains(v, "ROADMAP-real-gate") {
+		// "Wave 0 gate" e o prefixo comum das tres mensagens do #460, entao o
+		// negativo continua pegando falso alarme venha pela causa que vier.
+		if strings.Contains(v, "Wave 0 gate") && strings.Contains(v, "ROADMAP-real-gate") {
 			t.Errorf("roadmap_gate_coverage false alarm on real gate (violations): %q", v)
 		}
 	}
 	for _, w := range warnings {
-		if strings.Contains(w, "placeholder or absent") && strings.Contains(w, "ROADMAP-real-gate") {
+		if strings.Contains(w, "Wave 0 gate") && strings.Contains(w, "ROADMAP-real-gate") {
 			t.Errorf("roadmap_gate_coverage false alarm on real gate (warnings): %q", w)
 		}
 	}
@@ -2663,13 +2670,13 @@ status: backlog
 		t.Fatalf("Validate() error: %v", err)
 	}
 	for _, v := range violations {
-		if (strings.Contains(v, "placeholder or absent") || strings.Contains(v, "Wave 0")) &&
+		if (strings.Contains(v, "Wave 0 gate") || strings.Contains(v, "Wave 0")) &&
 			strings.Contains(v, "ROADMAP-backlog-placeholder") {
 			t.Errorf("AC8-bis: false alarm on backlog/ roadmap (violations): %q", v)
 		}
 	}
 	for _, w := range warnings {
-		if (strings.Contains(w, "placeholder or absent") || strings.Contains(w, "Wave 0")) &&
+		if (strings.Contains(w, "Wave 0 gate") || strings.Contains(w, "Wave 0")) &&
 			strings.Contains(w, "ROADMAP-backlog-placeholder") {
 			t.Errorf("AC8-bis: false alarm on backlog/ roadmap (warnings): %q", w)
 		}
@@ -2719,12 +2726,12 @@ REQ: docs/req/REQ-test.md
 		t.Fatalf("Validate() error: %v", err)
 	}
 	for _, v := range violations {
-		if strings.Contains(v, "placeholder or absent") && strings.Contains(v, "ROADMAP-fresh-scaffold") {
+		if strings.Contains(v, "Wave 0 gate") && strings.Contains(v, "ROADMAP-fresh-scaffold") {
 			t.Errorf("roadmap_gate_coverage false alarm on fresh scaffold with all-pending MLs (violations): %q", v)
 		}
 	}
 	for _, w := range warnings {
-		if strings.Contains(w, "placeholder or absent") && strings.Contains(w, "ROADMAP-fresh-scaffold") {
+		if strings.Contains(w, "Wave 0 gate") && strings.Contains(w, "ROADMAP-fresh-scaffold") {
 			t.Errorf("roadmap_gate_coverage false alarm on fresh scaffold with all-pending MLs (warnings): %q", w)
 		}
 	}
@@ -2767,7 +2774,7 @@ REQ: docs/req/REQ-test.md
 	if err != nil {
 		t.Fatalf("Validate() error: %v", err)
 	}
-	if !hasViolation(violations, "placeholder or absent") {
+	if !hasViolation(violations, "is still the placeholder") {
 		t.Errorf("expected roadmap_gate_coverage violation when work has started and gate is still placeholder, got violations: %v", violations)
 	}
 }
