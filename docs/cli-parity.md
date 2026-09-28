@@ -595,6 +595,8 @@ ML-1C closed only the arm that could act on an arbitrary artifact.
 
 #### `roadmap show <name> --json` — o mesmo resolvedor, outra saída
 
+<!-- trackfw-contract: gate=internal/generators/roadmap_show_json_test.go partial=o gate cobre a normalizacao do vocabulario de status (as 8 grafias medidas na #407 nas 3 categorias), a cerca de codigo ignorada, a wave malformada exposta, o status ausente distinguivel e o heading cru; NAO cobre a divergencia de stdout na ambiguidade (o teste exercita buildRoadmapShowDoc, que e a montagem pura, e nao o caminho de resolucao de nome) -->
+
 `--json` emite as waves e, por wave, os MLs com `id`, `heading` cru, `line`, `status_marker` cru,
 `status_found` e `status` normalizado (`complete` | `pending` | `terminated`, as três categorias de
 `roadmapdoc.StatusCategory` — nem uma a mais), mais `acceptance` (`met`, `unmet`, `has_block`). Waves
