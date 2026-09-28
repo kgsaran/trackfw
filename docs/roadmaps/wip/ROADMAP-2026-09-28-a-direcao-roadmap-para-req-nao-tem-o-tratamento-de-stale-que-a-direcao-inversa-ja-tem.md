@@ -227,7 +227,7 @@ do `ToSlash` é detectada.
       `ToSlash` revertido → `RC=1` nomeando o assert ausente
 - [x] A guarda de anti-vacuidade do ML-1C **não foi relaxada** — ganhou comentário proibindo o relaxe
 - [x] `go build ./...` e `go test ./internal/generators/...` verdes; `trackfw.yaml` intacto
-- [ ] `windows-full-suites` verde no PR #464 ← **mede o CI, não a VM**
+- [x] `windows-full-suites` verde no PR #464 — **20/20 checks SUCCESS** (mede o CI, não a VM)
 
 ### ML-1E — o teste que afirmava o contrato ANTIGO
 **Owner:** `apolo-tf`
@@ -264,4 +264,4 @@ não `\`, mesmo no Windows.
 - [x] 🔴 Verde no **Windows real** (VM, `go1.27 windows/arm64`): `TestMoveRoadmap*`,
       `TestFindRoadmapLinkingREQ*`, `TestShowRoadmap*`, `TestRoadmapCandidateFiles*` — `ok`, 0 falhas
 - [x] Gate de separador segue `RC=0` com 14 assinaturas; `roadmap.go` e `trackfw.yaml` intactos
-- [ ] `windows-full-suites` verde no PR #464 ← **mede o CI**
+- [x] `windows-full-suites` verde no PR #464 — **20/20 checks SUCCESS**
