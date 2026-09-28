@@ -104,7 +104,10 @@ A classificação é por **natureza do conteúdo destruído**, não por forma da
       achados e corrigidos** (ML-1D: guarda em comentário; e o espelho, write-site em comentário).
       Limite conhecido **declarado**, não escondido. Original:, falsificável nas duas direções: reprova quando um sítio
       (a) novo nasce truncando, **e** não reprova um sítio (b) legítimo
-- [ ] `make quality` e **CI** verdes
+- [x] `make quality` **RC=0** — verificado pelo arquiteto, não aceito do relatório:
+      1380 `OK`, 0 FAIL real (os 6 `FAIL` do log vêm de `/var/folders/.../arm1.go`, fixtures dos
+      braços de self-test, e os 3 braços dão `PASS`). Os 4 sítios da árvore passam **via
+      `os.ReadFile`**, nenhum por marcador. CI: ver PR
 
 ## Negative scope — o que esta REQ NÃO faz
 

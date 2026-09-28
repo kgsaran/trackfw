@@ -2,6 +2,39 @@
 
 ---
 
+## 2026-09-28 — Apolo (fix/init-reexecutado-destroi-config-do-consumidor — ML-1G restaurar write-containment-allowed) — ENTREGUE
+
+**Início:** 2026-09-28 | Branch: `fix/init-reexecutado-destroi-config-do-consumidor`
+**Tarefa:** ML-1G — Restaurar o marcador `write-containment-allowed:` em `generateLefthookHook` (`internal/generators/scaffold.go`) que foi removido acidentalmente no ML-1D quando o arquiteto pediu remoção de `consumer-config-merge-allowed:`. Apenas edição de comentário; sem alteração de lógica.
+
+**Resultado:**
+- `internal/generators/scaffold.go`: adicionadas 3 linhas de comentário antes do `os.WriteFile` em `generateLefthookHook`: distinção entre os dois gates (write-containment vs config-preservation) e o marcador `write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site`. As 4 linhas de comentário pré-existentes foram mantidas intactas. Nenhuma ocorrência de `consumer-config-merge-allowed` no arquivo.
+- `go build ./...`: RC=0
+- `go test ./internal/generators/`: RC=0 (ok, 29.614s)
+- `bash scripts/check-init-preserves-user-config.sh`: RC=0 (4 sítios, todos PASS via `os.ReadFile precedes write`, não via marcador)
+- `bash scripts/check-init-preserves-user-config.sh --self-test`: SELFTEST_RC=0 (3 braços, todos PASS)
+- `make quality`: RC=0
+- `git diff trackfw.yaml`: vazio
+- Arquivos alterados: `docs/agents-working-context.md`, `internal/generators/scaffold.go`
+
+---
+
+## 2026-09-28 — Apolo (fix/init-reexecutado-destroi-config-do-consumidor — ML-1F comentário inline duplica entrada) — ENTREGUE
+
+**Início:** 2026-09-28 | Branch: `fix/init-reexecutado-destroi-config-do-consumidor`
+**Tarefa:** ML-1F — corrigir `lefthookValidatePresent` que trata `trackfw-validate: # comment` como ausente porque compara de forma exata sem truncar o comentário inline, causando duplicação da entrada quando o arquivo já tem o hook com comentário. Adicionar 4 braços de teste (tabela) e contra-braço de corrupção (contagem).
+
+**Resultado:**
+- `internal/generators/scaffold.go`: `lefthookValidatePresent` agora trunca comentário inline (` #` sequence) antes de comparar. Docblock declara caveat de string com `#` (valor citado). Restante da lógica (rastreamento de seção, ML-1E fix) intacto.
+- `internal/generators/lefthook_hook_merge_test.go`: T8 `FourArms` (tabela, 4 braços: limpo→presente, inline-comment→presente [o fix], só-pre-push→ausente [regressão ML-1E], espaço-no-fim→presente) e T9 `InlineCommentNoCorruption` (contra-braço: arquivo com `trackfw-validate: # cmt` já instalado → count=1 após merge).
+- `go build ./...`: RC=0 | `go test ./internal/generators/`: RC=0 (ok, 28.740s)
+- `bash scripts/check-init-preserves-user-config.sh`: RC=0 (4 sítios, todos PASS)
+- `bash scripts/check-init-preserves-user-config.sh --self-test`: SELFTEST_RC=0 (3 braços, todos PASS)
+- `git diff trackfw.yaml`: vazio.
+- Arquivos alterados: `docs/agents-working-context.md`, `internal/generators/scaffold.go`, `internal/generators/lefthook_hook_merge_test.go`.
+
+---
+
 ## 2026-09-28 — Apolo (fix/init-reexecutado-destroi-config-do-consumidor — ML-1E predicado de idempotência) — ENTREGUE
 
 **Início:** 2026-09-28 | Branch: `fix/init-reexecutado-destroi-config-do-consumidor`

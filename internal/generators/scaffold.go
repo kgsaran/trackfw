@@ -2957,6 +2957,14 @@ func generateGitIgnore() error {
 // "trackfw-validate:" only while inside that section. This avoids false positives from:
 //   - the key appearing under a different top-level block (e.g. pre-push:)
 //   - the key appearing inside a comment (# trackfw-validate:)
+//
+// Inline YAML comments (space + "#" sequence after the key) are stripped before
+// comparison so that "trackfw-validate: # installed by trackfw" is treated as present.
+// Caveat: if trackfw-validate: ever carried a quoted value containing " #" (e.g.
+// trackfw-validate: "run # something"), this truncation would incorrectly strip part
+// of the value. Since this key carries no quoted value in practice — only optional
+// trailing comments — the truncation is safe. Declaring rather than hiding the edge
+// case (mirrors the equivalent caveat in scripts/check-init-preserves-user-config.sh).
 func lefthookValidatePresent(content string) bool {
 	inPreCommit := false
 	for _, line := range strings.Split(content, "\n") {
@@ -2964,7 +2972,14 @@ func lefthookValidatePresent(content string) bool {
 		if len(line) > 0 && line[0] != ' ' && line[0] != '\t' && line[0] != '#' {
 			inPreCommit = line == "pre-commit:"
 		}
-		if inPreCommit && strings.TrimSpace(line) == "trackfw-validate:" {
+		// Strip inline YAML comment (" #" sequence) before comparing.
+		// A leading '#' (full-line comment) is already excluded by the section-tracking
+		// guard above. Here we only need to handle trailing inline comments.
+		trimmed := strings.TrimSpace(line)
+		if idx := strings.Index(trimmed, " #"); idx >= 0 {
+			trimmed = strings.TrimSpace(trimmed[:idx])
+		}
+		if inPreCommit && trimmed == "trackfw-validate:" {
 			return true
 		}
 	}
@@ -3038,6 +3053,11 @@ func generateLefthookHook() error {
 	// Não há marcador de isenção declarativa aqui: com a leitura detectável na mesma
 	// função, a isenção seria redundante e mascararia a perda da guarda se o bloco
 	// de leitura fosse extraído para um helper em refatores futuros.
+	// Distinção de gates: write-containment-allowed pertence ao check-write-containment/pathguard
+	// (contenção de escrita — este sítio). O marcador de preservação de config do consumidor
+	// (check-init-preserves-user-config) NÃO deve estar aqui — sua presença enfraquecia aquele gate
+	// porque a detecção real é via os.ReadFile, não via marcador declarativo (ML-1C/ML-1D).
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.WriteFile("lefthook.yml", []byte(out), 0644); err != nil {
 		return fmt.Errorf("writing lefthook config: %w", err)
 	}

@@ -31,6 +31,15 @@ package generators
 //   T7 CommentNotCounted            → medindo que "# trackfw-validate:" (comentário) fora
 //                                      de commands: é tratado como ausente pelo predicado,
 //                                      e o hook é instalado normalmente
+//
+// ML-1F (comentário inline duplica entrada):
+//
+//   T8 FourArms                     → tabela com 4 braços medindo lefthookValidatePresent:
+//                                      limpo→presente, inline-comment→presente (o fix),
+//                                      só pre-push→ausente (regressão ML-1E), espaço→presente
+//   T9 InlineCommentNoCorruption    → contra-braço de corrupção: arquivo com
+//                                      "trackfw-validate: # cmt" já instalado → merge é
+//                                      no-op → exatamente 1 ocorrência da chave em commands:
 
 import (
 	"os"
@@ -356,5 +365,94 @@ func TestGenerateLefthookHook_CommentNotCounted(t *testing.T) {
 	}
 	if topLevelPreCommit != 1 {
 		t.Errorf("esperava exatamente 1 'pre-commit:' de nível 0, obteve %d\nconteúdo:\n%s", topLevelPreCommit, content)
+	}
+}
+
+// T8 — tabela de 4 braços para lefthookValidatePresent (ML-1F).
+//
+// Reconciliação: cada braço afirma um comportamento medido de lefthookValidatePresent:
+//   arm 1 (clean)          → medindo que "trackfw-validate:" sem comentário é presente (true)
+//   arm 2 (inline-comment) → medindo que "trackfw-validate: # cmt" com comentário inline
+//                            é presente (true) — este é o bug corrigido no ML-1F
+//   arm 3 (pre-push-only)  → medindo que "trackfw-validate:" sob pre-push: sem pre-commit:
+//                            é ausente (false) — regressão do fix do ML-1E
+//   arm 4 (trailing-space) → medindo que "trackfw-validate:   " com espaço no fim é presente (true)
+func TestLefthookValidatePresent_FourArms(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string
+		want    bool
+	}{
+		{
+			name:    "clean",
+			content: "pre-commit:\n  commands:\n    trackfw-validate:\n      run: trackfw validate\n",
+			want:    true,
+		},
+		{
+			name:    "inline-comment",
+			content: "pre-commit:\n  commands:\n    trackfw-validate: # instalado pelo trackfw\n      run: trackfw validate\n",
+			want:    true,
+		},
+		{
+			name:    "pre-push-only",
+			content: "pre-push:\n  commands:\n    trackfw-validate:\n      run: trackfw validate\n",
+			want:    false,
+		},
+		{
+			name:    "trailing-space",
+			content: "pre-commit:\n  commands:\n    trackfw-validate:   \n      run: trackfw validate\n",
+			want:    true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := lefthookValidatePresent(tc.content)
+			if got != tc.want {
+				t.Errorf("lefthookValidatePresent(%q) = %v, want %v", tc.name, got, tc.want)
+			}
+		})
+	}
+}
+
+// T9 — contra-braço de corrupção: arquivo com "trackfw-validate: # cmt" já instalado
+// não recebe segunda entrada ao executar o merge (ML-1F).
+//
+// Reconciliação: este teste afirma que o caminho de merge não produz segunda entrada
+// "trackfw-validate:" quando o arquivo já contém a chave com comentário inline —
+// medido CONTANDO as linhas que começam com "trackfw-validate:" (após TrimSpace) no
+// arquivo resultante e exigindo exatamente 1. A contagem literal é o que o handoff
+// exige: "não afirme por dedução — conte".
+func TestGenerateLefthookHook_InlineCommentNoCorruption(t *testing.T) {
+	dir := chdirTemp(t)
+
+	// Fixture: trackfw-validate: JÁ instalado, com comentário inline (o caso do defeito).
+	alreadyInstalled := "pre-commit:\n  commands:\n    trackfw-validate: # instalado pelo trackfw\n      run: trackfw validate\n"
+	if err := os.WriteFile(filepath.Join(dir, "lefthook.yml"), []byte(alreadyInstalled), 0644); err != nil {
+		t.Fatalf("preparar fixture: %v", err)
+	}
+
+	// Executa o merge — deve ser no-op (idempotente).
+	if err := generateGitHooks(Config{Hooks: "lefthook"}); err != nil {
+		t.Fatalf("generateGitHooks: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "lefthook.yml"))
+	if err != nil {
+		t.Fatalf("ler lefthook.yml: %v", err)
+	}
+	content := string(data)
+
+	// Conta todas as linhas que começam com "trackfw-validate:" (após TrimSpace),
+	// incluindo tanto a entrada limpa quanto a com comentário inline.
+	// O resultado deve ser exatamente 1 — se for 2, o merge duplicou a entrada.
+	count := 0
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "trackfw-validate:") {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("corrupção detectada: esperava exatamente 1 ocorrência de 'trackfw-validate:' em commands:, obteve %d\nconteúdo:\n%s", count, content)
 	}
 }
