@@ -42164,3 +42164,30 @@ régua não muda veredito nenhum hoje.
 - `git ls-files --modified`: apenas `docs/cli-parity.md` (+ hades-tf pre-existing untracked)
 
 **Distinção preservada:** DEDUP ("não vemos, e está tudo bem") e OneDrive cloud-only ("podemos barrar indevidamente, não medimos") foram declaradas em subseções separadas com marcadores `gap` distintos, preservando a natureza oposta das duas limitações (uma é carve-out do Go sem risco; a outra é falso-positivo operacional não mensurável).
+
+## hades-tf · ML-0A · Wave 0 (REQ-2026-09-28) · 2026-09-28 — INICIADO
+
+**Branch:** `fix/roadmap-para-req-sem-tratamento-de-stale`
+**REQ/Roadmap:** `REQ-2026-09-28` / `ROADMAP-2026-09-28-a-direcao-roadmap-para-req-nao-tem-o-tratamento-de-stale-que-a-direcao-inversa-ja-tem.md`
+**Escopo:** ML-0A — Wave 0: medir o que NÃO precisa ser construído
+
+**Sem git operations. Sem implementação.**
+
+## hades-tf · ML-0A · Wave 0 (REQ-2026-09-28) · 2026-09-28 — CONCLUÍDO
+
+**Resultado:** Parecer escrito. Nenhuma implementação. Roadmap ML-0A marcado ✅.
+
+**Arquivo produzido:**
+- `docs/seguranca/2026-09-28-wave0-req-stale-direction.md`
+
+**Vereditos:**
+
+1. **Ramo de ambiguidade é alcançável** em `by_agent` com 2+ agentes. `req new --agent hades "x"` + `req new --agent apolo "x"` cria dois arquivos de basename idêntico sem obstáculo. A premissa do arquiteto ("provavelmente inalcançável") foi refutada pela medição.
+
+2. **AC4: ampliar para `backlog` (Opção B).** Custo medido: 14 violações históricas em done/abandoned (artefatos pré-padronização); 0 em backlog. Expandir só para backlog+analyzing fecha o #452 sem ruído permanente.
+
+3. **Bloqueio crítico para Wave 1:** predicado `isStaleRoadmapStateRef` bloqueia o fallback para o ref do #452 (`hefesto/` não está em `agentNamespaceStateNames`). Mirror literal não corrige o #452. Predicado correto: `filepath.Dir(ref) != "."`. Scenario 25 preservado com este predicado.
+
+4. **Wave 0 gate cego em `by_agent`**: glob `docs/req/*.md` não alcança subdirs. Fora do escopo desta REQ.
+
+5. **Secundário (same-mechanism):** `FindRoadmapLinkingREQ` vincula REQ de agente B ao roadmap de agente A via basename. Por Regra Dura, é ML desta REQ.

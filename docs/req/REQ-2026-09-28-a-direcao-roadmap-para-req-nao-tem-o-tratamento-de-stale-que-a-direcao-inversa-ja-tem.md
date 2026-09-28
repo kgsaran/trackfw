@@ -99,9 +99,20 @@ invenção, é o padrão da casa.
 - [ ] **AC1** — a direção **Roadmap → REQ** classifica como a inversa já faz: *inexistente* ·
       *stale* · *(ambíguo, se alcançável)*. **Espelhar `resolveRoadmapRefStatus`**, não escrever um
       segundo mecanismo
-- [ ] **AC2 — 🔴 o ramo de ambiguidade é medido antes de existir.** Com **0 colisões em 233 REQs**, o
-      `default` pode ser **inalcançável** — e ramo inalcançável é **dívida, não segurança**. Se for,
-      declarar em vez de implementar
+- [x] **AC2 — medido, e a minha premissa CAIU.** Eu supus que o ramo fosse inalcançável a partir de
+      *0 colisões em 233 REQs*. A Wave 0 produziu a colisão com **dois comandos normais**
+      (`req new --agent hades` e `--agent apolo`, mesmo título): `req new` **não verifica colisão
+      entre namespaces**. 🔴 Confundi *ausência no meu corpus* — que é `flat` — com *impossibilidade
+      no produto*. **O ramo entra.**
+
+- [ ] **AC7 (2026-09-28) — 🔴 o predicado NÃO é o do espelho.** `isStaleRoadmapStateRef` testa se o
+      pai do ref é um **estado**; no caso do #452 o pai é o **agente** (`hefesto`), e o fallback
+      nunca roda. Copiar `resolveRoadmapRefStatus` entrega código que compila, passa todos os testes
+      e **não corrige nada**. O predicado para REQ é `filepath.Dir(ref) != "."`
+
+- [ ] **AC8 (2026-09-28)** — `FindRoadmapLinkingREQ` **cruza namespace de agente**: a REQ do `apolo`
+      foi vinculada ao roadmap do `hades` de mesmo basename. Mesma causa, mesmo mecanismo → entra
+      aqui, não vira REQ nova
 - [ ] **AC3** — `links to ADR` (`validator.go:3192`) fica **fora**: ADR não tem dimensão de estado,
       logo não sofre deste defeito. Declarado, não esquecido
 - [ ] **AC4 — a cobertura parcial de `ref_targets_exist` é decidida:** ela só varre `wip` e
