@@ -69,13 +69,32 @@ func Beneath(root, filename string) bool {
 // RejectSymlinks walks every path component of filename up to (and including)
 // root, calling os.Lstat at each step. It returns a non-nil error if:
 //
-//   - any component along the walk is a symlink ("refusing symlink path"), or
+//   - any component along the walk is a symlink or a Windows reparse point
+//     ("refusing reparse-point path"), or
 //   - any component escapes root (path equal to or outside root before reaching
 //     the root stop-condition).
 //
 // A non-existent component is not an error: the typical use case for this guard
 // is writes that CREATE a new file, so the leaf (and sometimes its parent
 // directory) legitimately does not exist yet.
+//
+// # Windows reparse points (issue #444)
+//
+// On Windows, os.ModeSymlink covers only IO_REPARSE_TAG_SYMLINK. An NTFS
+// junction (mklink /J, IO_REPARSE_TAG_MOUNT_POINT) allows a directory tree to
+// be redirected without administrator privileges. Under go.mod directives >= 1.23
+// (GODEBUG winsymlink=1, which trackfw uses), the Go runtime reports junctions
+// as os.ModeIrregular rather than os.ModeSymlink — so the single-bit check
+// missed them entirely. The OR of both bits closes the gap under both winsymlink
+// settings: winsymlink=0 reports junctions as ModeSymlink (already caught);
+// winsymlink=1 reports them as ModeIrregular (now caught). A future go.mod bump
+// cannot reopen the hole.
+//
+// Known false-positive: a cloud-only (dehydrated) OneDrive ancestor directory
+// also reports ModeIrregular. The guard will refuse writes whose path traverses
+// such a directory. This is a fail-closed decision: the alternative (writing
+// through an unresolved reparse point) is the vulnerability this function exists
+// to prevent.
 //
 // root must be the real (fully resolved) project root. filename must be an
 // absolute path derived from root via filepath.Join or equivalent — passing a
@@ -85,8 +104,8 @@ func RejectSymlinks(root, filename string) error {
 	current := filename
 	for {
 		info, err := os.Lstat(current)
-		if err == nil && info.Mode()&os.ModeSymlink != 0 {
-			return fmt.Errorf("refusing symlink path %q", current)
+		if err == nil && (info.Mode()&(os.ModeSymlink|os.ModeIrregular)) != 0 {
+			return fmt.Errorf("refusing reparse-point path %q (mode %v)", current, info.Mode())
 		}
 		if err != nil && !os.IsNotExist(err) {
 			return err

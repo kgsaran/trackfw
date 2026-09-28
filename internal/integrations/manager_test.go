@@ -365,7 +365,7 @@ func TestManagerRejectsSymlinkFileAndParent(t *testing.T) {
 		return
 	}
 	parentPlan := testPlan("project", "linked/backend.md", "v1", "x")
-	if err := manager.Install([]PlannedArtifact{parentPlan}, false); err == nil || !strings.Contains(err.Error(), "symlink") {
+	if err := manager.Install([]PlannedArtifact{parentPlan}, false); err == nil || !strings.Contains(err.Error(), "reparse-point") {
 		t.Fatalf("symlink parent error = %v", err)
 	}
 
@@ -377,7 +377,7 @@ func TestManagerRejectsSymlinkFileAndParent(t *testing.T) {
 		return
 	}
 	filePlan := testPlan("project", "link.md", "v1", "x")
-	if _, err := manager.Inspect(filePlan); err == nil || !strings.Contains(err.Error(), "symlink") {
+	if _, err := manager.Inspect(filePlan); err == nil || !strings.Contains(err.Error(), "reparse-point") {
 		t.Fatalf("symlink file error = %v", err)
 	}
 }

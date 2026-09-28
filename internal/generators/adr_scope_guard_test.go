@@ -18,7 +18,7 @@ package generators
 //     Affirms: with `docs` symlinked outside the project, NewADR/NewADRDraft refuse
 //     in BOTH $PWD arms (resolved and unresolved) and write nothing into the victim,
 //     while the control (NewREQ, which already derived root and target from the same
-//     projectRoot()) keeps refusing with the same "refusing symlink path" message —
+//     projectRoot()) keeps refusing with the same "refusing reparse-point path" message —
 //     so a green result cannot mean "nothing writes anymore".
 //   - TestAdrGuardPaths_RelativeAdrDirNeverDegradesToGlobalScope
 //     Affirms: for a RELATIVE adrDir the scope is project UNCONDITIONALLY — guardRoot
@@ -167,8 +167,8 @@ func assertRefusedBySymlink(t *testing.T, err error, label string) {
 	if err == nil {
 		t.Fatalf("%s: expected refusal, got nil", label)
 	}
-	if !strings.Contains(err.Error(), "refusing symlink path") {
-		t.Errorf("%s: refused for the WRONG reason — want a %q error, got: %v", label, "refusing symlink path", err)
+	if !strings.Contains(err.Error(), "refusing reparse-point path") {
+		t.Errorf("%s: refused for the WRONG reason — want a %q error, got: %v", label, "refusing reparse-point path", err)
 	}
 }
 

@@ -57,6 +57,38 @@ Varredura por primitivos de escrita (`os.WriteFile`, `os.Rename`, `MkdirAll`) em
 
 ### 1. 🔴 O predicado adotado é o que o projeto **já tem e já provou** — não se reinventa
 
+> ## ⚠️ EMENDA — 2026-09-27: o predicado ganhou `ModeIrregular`
+>
+> A decisão desta seção — *adotar o predicado que o projeto já tem* — **continua válida como
+> método**. O predicado em si foi **ampliado**, e o motivo é medição posterior:
+>
+> ```go
+> if err == nil && (info.Mode()&(os.ModeSymlink|os.ModeIrregular)) != 0 {
+>     return fmt.Errorf("refusing reparse-point path %q (mode %v)", current, info.Mode())
+> }
+> ```
+>
+> **Por quê:** `os.ModeSymlink` **não acende numa junção do Windows** (`mklink /J`), e junção **não
+> exige privilégio** enquanto symlink exige. A isca que o predicado antigo recusava era a que o
+> atacante não conseguia criar. Reportado na **issue #444** por consumidor externo, com medição de
+> seis braços e controle.
+>
+> 🔴 **O achado que torna isto não-óbvio:** o comportamento depende do `go` directive do `go.mod`,
+> via o GODEBUG `winsymlink` (`$GOROOT/src/internal/godebugs/table.go`: `Changed: 23, Old: "0"`).
+> Com `go.mod < 1.23` a junção vira `ModeSymlink` e **o predicado antigo já a pegaria**; com
+> `go.mod ≥ 1.23` — o caso do trackfw, `go 1.25.2` — ela vira `ModeIrregular` e escapa.
+> **O mesmo código muda de comportamento por causa de uma linha do `go.mod`.**
+>
+> **A mensagem mudou junto**, e não por estética: ela passa a nomear o **modo**. O AC13 da
+> `REQ-2026-09-09` registra que *"falso-positivo aqui **paralisa**, não irrita"* — quem for barrado
+> precisa saber por quê.
+>
+> Governado pela `REQ-2026-09-27-a-contencao-de-escrita-testa-um-bit-que-nao-ve-juncao-do-windows…`;
+> parecer em `docs/seguranca/2026-09-27-predicado-da-contencao-de-juncao-no-windows.md`.
+>
+> ⚠️ **O bloco de código abaixo é o ESTADO ANTERIOR**, preservado porque é o que a decisão original
+> adotou. Não o copie como referência atual.
+
 `internal/integrations/manager.go:759`, `rejectSymlinks(root, filename)`:
 
 ```go

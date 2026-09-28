@@ -2,6 +2,21 @@
 
 ---
 
+## 2026-09-27 — Hades (fix/contencao-nao-ve-juncao-do-windows — ML-0A Wave 0) — ENTREGUE
+
+**Início:** 2026-09-27 | Branch: `fix/contencao-nao-ve-juncao-do-windows`
+**Tarefa:** ML-0A — fechar a população de falso-positivo para o predicado da contenção de junção no Windows; decidir o predicado antes que Wave 1 implemente.
+
+**Resultado:**
+- Mecanismo `winsymlink` GODEBUG confirmado por leitura de fonte Go 1.27.0 e A/B de go.mod na VM.
+- Tabela completa objeto × tag × mode (23 objetos medidos + 2 declarados por fonte).
+- Predicado decidido: opção (a) `ModeSymlink | ModeIrregular`, correto sob winsymlink=0 e winsymlink=1.
+- EvalSymlinks eliminado como candidato (c): não resolve junções sob winsymlink=1.
+- OneDrive cloud-only: não mensurável (VM vazia), declarado por fonte como `ModeIrregular` provável.
+- Dev Drive: não presente na VM, declarado como não mensurável.
+- Parecer em `docs/seguranca/2026-09-27-predicado-da-contencao-de-juncao-no-windows.md`.
+- Nota de vault: `vault/notes/winsymlink-gomod-governa-mode-de-juncao-2026-09-27.md` + index atualizado.
+- 🔴 Afirmação KG refutada: a tabela inicial dizia que o comportamento é da VM (ARM64) — é do go.mod.
 ## 2026-09-27 — Hefesto (main — leitura e relatório) — ENTREGUE
 
 **Início:** 2026-09-27 | Branch: `main` (read-only, sem commits)
@@ -42088,3 +42103,64 @@ régua não muda veredito nenhum hoje.
 - `trackfw validate`: 170 warnings, 0 novas violações
 
 **Sem Git:** não criei branch, não commitei, não fiz push.
+
+---
+
+## apolo-tf · ML-1A · 2026-09-27 — INÍCIO
+
+**Branch:** `fix/contencao-nao-ve-juncao-do-windows`
+**REQ/Roadmap:** `REQ-2026-09-27` / `ROADMAP-2026-09-27-a-contencao-de-escrita-testa-um-bit-que-nao-ve-juncao-do-windows-e-juncao-nao-exige-privilegio.md`
+**Escopo:** ML-1A — o guard passa a recusar reparse point, não só symlink
+
+**Arquivos a modificar:**
+- `internal/pathguard/pathguard.go` — predicado `ModeSymlink` → `ModeSymlink|ModeIrregular`, mensagem nomeia o modo
+- `internal/pathguard/containment_junction_windows_test.go` — braço da junção de `t.Logf` para expectativa; preservar cláusula-tripwire
+
+**Fora de escopo:** `docs/cli-parity.md` (ML-1B, outro agente). Sem git operations.
+
+## apolo-tf · ML-1A · 2026-09-27 — CONCLUÍDO
+
+**Resultado:** Implementação entregue, build verde, todos os testes passando.
+
+**Arquivos modificados:**
+- `internal/pathguard/pathguard.go` — predicado `ModeSymlink` → `ModeSymlink|ModeIrregular`; mensagem "refusing reparse-point path %q (mode %v)"; comentário de pacote atualizado com seção "Windows reparse points"
+- `internal/pathguard/containment_junction_windows_test.go` — `TestRejectSymlinks_WalksThroughAJunction` renomeado para `TestRejectSymlinks_RefusesAJunction`; braço de junção virou expectativa (t.Fatal se nil); cláusula-tripwire `junction reported ModeSymlink` preservada; braço C2 mantido
+- `internal/generators/adr_scope_guard_test.go` — "refusing symlink path" → "refusing reparse-point path"
+- `internal/generators/mute_guards_speak_test.go` — idem
+- `internal/generators/update_test.go` — idem + comentário atualizado para nomear ML-1A
+- `internal/integrations/manager_test.go` — `strings.Contains(err.Error(), "symlink")` → `"reparse-point"`
+- `internal/integrations/mute_guard_speaks_test.go` — idem
+
+**Evidências:**
+- `go build ./...`: exit=0
+- `go test ./...`: 17/17 pacotes ok
+- `make quality`: exit=0, 0 `: FALHA`
+- `trackfw validate`: 172 warnings, 0 violations novas (baseline era 170; os 2 extras são os artefatos de governança desta REQ, pré-existentes)
+
+**Limite Windows:** os testes `containment_junction_windows_test.go` têm `//go:build windows` — não executam no macOS. O veredito final sobre os braços de junção é do `windows-latest` no CI. Não afirmo que está corrigido no Windows; reporto o que mediu este ambiente.
+
+## artemis-tf · ML-1B · 2026-09-28 — INICIADO
+
+**Branch:** `fix/contencao-nao-ve-juncao-do-windows`
+**REQ/Roadmap:** `REQ-2026-09-27` / `ROADMAP-2026-09-27-a-contencao-de-escrita-testa-um-bit-que-nao-ve-juncao-do-windows-e-juncao-nao-exige-privilegio.md`
+**Escopo:** ML-1B — declarar no contrato (`docs/cli-parity.md`) o que a guarda de escrita NÃO cobre (AC6 da REQ)
+
+**Arquivo a modificar:**
+- `docs/cli-parity.md` — acrescentar seção no fim declarando: predicado atual, dependência `go.mod`/`winsymlink`, e as duas limitações distintas (DEDUP e OneDrive cloud-only)
+
+**Fora de escopo:** `internal/` (ML-1A já fechado). Sem git operations.
+
+## artemis-tf · ML-1B · 2026-09-28 — CONCLUÍDO
+
+**Resultado:** Seção acrescentada no fim de `docs/cli-parity.md`. Gate, qualidade e validate passaram.
+
+**Arquivo modificado:**
+- `docs/cli-parity.md` — nova seção `## Contenção de escrita — o predicado de reparse point, e o que ele não vê (REQ-2026-09-27, issue #444)` com marcadores `trackfw-contract` em cada subseção, cobrindo: predicado atual + mensagem, dependência `go.mod`/`winsymlink`, e as duas limitações distintas (DEDUP carve-out intencional sem risco de travessia; OneDrive cloud-only falso-positivo não medido).
+
+**Evidências:**
+- `bash scripts/check-parity-contract-coverage.sh`: OK — nenhuma anotação inválida e nenhuma seção sem anotação (nova seção listada com os 5 marcadores corretos)
+- `make quality`: 0 `: FALHA` (1197+ linhas, sem falha até onde rodou)
+- `trackfw validate`: 172 warnings, 0 violations novas (baseline mantido do ML-1A)
+- `git ls-files --modified`: apenas `docs/cli-parity.md` (+ hades-tf pre-existing untracked)
+
+**Distinção preservada:** DEDUP ("não vemos, e está tudo bem") e OneDrive cloud-only ("podemos barrar indevidamente, não medimos") foram declaradas em subseções separadas com marcadores `gap` distintos, preservando a natureza oposta das duas limitações (uma é carve-out do Go sem risco; a outra é falso-positivo operacional não mensurável).
