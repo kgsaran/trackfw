@@ -125,14 +125,21 @@ func newRoadmapListCmd() *cobra.Command {
 }
 
 func newRoadmapShowCmd() *cobra.Command {
-	return &cobra.Command{
+	var jsonOut bool
+
+	cmd := &cobra.Command{
 		Use:   "show <name>",
 		Short: "Show a roadmap by name (partial match)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if jsonOut {
+				return generators.ShowRoadmapJSON(args[0])
+			}
 			return generators.ShowRoadmap(args[0])
 		},
 	}
+	cmd.Flags().BoolVar(&jsonOut, "json", false, "Emit waves and per-ML status as a JSON document instead of the raw file")
+	return cmd
 }
 
 func newRoadmapMoveCmd() *cobra.Command {

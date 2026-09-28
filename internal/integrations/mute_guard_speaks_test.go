@@ -87,7 +87,7 @@ func TestRejectSymlinksDelegateIsAudible(t *testing.T) {
 	if !strings.Contains(output, "trackfw: refusing write to ") {
 		t.Errorf("refusal is audible but not in the single grammar, got: %q", output)
 	}
-	if !strings.Contains(guardErr.Error(), "refusing symlink path") {
+	if !strings.Contains(guardErr.Error(), "refusing reparse-point path") {
 		t.Errorf("refused for the WRONG reason — want the symlink refusal, got: %v", guardErr)
 	}
 }

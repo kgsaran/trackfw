@@ -593,6 +593,25 @@ ML-1C closed only the arm that could act on an arbitrary artifact.
 `trackfw barrier <roadmap>` is unaffected: it resolves by exact filename (`<base>.md`) under
 `wip/`/`done/` and never matched by substring.
 
+#### `roadmap show <name> --json` — o mesmo resolvedor, outra saída
+
+<!-- trackfw-contract: gate=internal/generators/roadmap_show_json_test.go partial=o gate cobre a normalizacao do vocabulario de status (as 8 grafias medidas na #407 nas 3 categorias), a cerca de codigo ignorada, a wave malformada exposta, o status ausente distinguivel e o heading cru; NAO cobre a divergencia de stdout na ambiguidade (o teste exercita buildRoadmapShowDoc, que e a montagem pura, e nao o caminho de resolucao de nome) -->
+
+`--json` emite as waves e, por wave, os MLs com `id`, `heading` cru, `line`, `status_marker` cru,
+`status_found` e `status` normalizado (`complete` | `pending` | `terminated`, as três categorias de
+`roadmapdoc.StatusCategory` — nem uma a mais), mais `acceptance` (`met`, `unmet`, `has_block`). Waves
+com heading malformado aparecem em `malformed_waves` com linha e token, em vez de sumirem.
+
+**Uma divergência deliberada com a saída de texto, e é a única:** com `--json` a lista de candidatos
+de um casamento ambíguo **não** vai para o stdout — ela viaja dentro do erro, como em `roadmap move`.
+Com `--json` o stdout é o documento ou nada; imprimir texto humano ali quebraria todo consumidor.
+A resolução do nome é a mesma função nas duas saídas (`resolveRoadmapMatches`), então a recusa de
+nome vazio, o glob e a contagem de casamentos não podem divergir.
+
+🔴 **Não existe campo `title`.** Separar o título do id exigiria adivinhar o separador (`—`, `-`,
+`:`, nenhum); `heading` carrega a linha como ela é, sem o `### `. Inventar essa régua seria criar um
+dialeto para descrever um dialeto, que é o defeito que esta saída existe para eliminar.
+
 ### `req list` / `req move` — discovery layouts and conditional physical move
 
 <!-- trackfw-contract: gap reason=nenhum gate cross-CLI exercita req list/req move — nem a descoberta por layout (flat/by_agent) nem a discriminação in-place-vs-physical-move são comparadas entre Go, Node.js e Python -->
@@ -7716,3 +7735,76 @@ Go é provada por `TestChainHandler_EdgeResolvesStaleStateRoadmapPath` e
 (`internal/serve/api_chain_test.go`), com falsificação manual registrada no relatório do ML
 (revert do fallback → teste reprova; restauração → teste passa) — mesmo padrão de limite
 declarado do ML-3B ("provada apenas pela direção C da falsificação").
+
+## Contenção de escrita — o predicado de reparse point, e o que ele não vê (REQ-2026-09-27, issue #444)
+
+<!-- trackfw-contract: gate=internal/pathguard/containment_junction_windows_test.go partial=os braços de junção têm //go:build windows e só rodam no windows-latest do CI; DEDUP e OneDrive cloud-only não têm braço (o primeiro por carve-out do Go, o segundo por não ser mensurável na VM) -->
+
+> Decisão: `fix(pathguard): o guard recusa reparse point, nao so symlink — e a ADR e emendada`
+> (commit `0c30264d`, ML-1A do #444). Emenda à `docs/adr/ADR-2026-09-18-contencao-de-escrita-usa-lstat-walk-no-pathguard.md`.
+> Implementação: `internal/pathguard/pathguard.go`.
+> Parecer de segurança: `docs/seguranca/2026-09-27-predicado-da-contencao-de-juncao-no-windows.md`.
+
+### O predicado atual e a mensagem
+
+<!-- trackfw-contract: gate=internal/pathguard/containment_junction_windows_test.go partial=testa o comportamento de recusa da junção, não a string de mensagem como invariante formal -->
+
+O predicado de `RejectSymlinks` passou de `os.ModeSymlink` para `os.ModeSymlink | os.ModeIrregular`.
+A mensagem passou de `"refusing symlink path %q"` para `"refusing reparse-point path %q (mode %v)"`.
+O modo é nomeado na mensagem porque falso-positivo nesta guarda **paralisa** a operação — o chamador
+precisa saber por que foi barrado (AC13 da REQ-2026-09-09).
+
+### Dependência do `go.mod` via GODEBUG `winsymlink`
+
+<!-- trackfw-contract: gap reason=não há gate que leia o go.mod e valide que a linha `go` permanece >= 1.23; a dependência é declarada aqui para que o próximo leitor não altere a linha sem saber da consequência -->
+
+O comportamento do predicado depende da linha `go` do `go.mod`, via `GODEBUG=winsymlink`:
+
+| `go` no `go.mod` | comportamento padrão | `IO_REPARSE_TAG_MOUNT_POINT` (`mklink /J`) |
+|---|---|---|
+| `< 1.23` | `winsymlink=0` | → `ModeSymlink` (predicado antigo já captura) |
+| `>= 1.23` (trackfw: `1.25.2`) | `winsymlink=1` | → `ModeIrregular` (exige predicado ampliado) |
+
+🔴 **O mesmo código muda de comportamento por causa de uma linha do `go.mod`.** Quem alterar a linha
+`go` no `go.mod` para um valor `< 1.23` muda silenciosamente o comportamento da guarda: junções
+voltam a ser reportadas como `ModeSymlink` e o predicado ampliado as captura de novo — mas a
+cláusula-tripwire `"junction reported ModeSymlink"` em
+`internal/pathguard/containment_junction_windows_test.go` acenderia para sinalizar a mudança.
+
+### O que o predicado NÃO cobre
+
+<!-- trackfw-contract: gap reason=as duas limitações abaixo são de naturezas distintas (uma é carve-out intencional do Go sem risco de travessia; a outra é falso-positivo em cenário não mensurável na VM) — achatar as duas em "limitações conhecidas" perderia o que importa para quem for agir sobre elas -->
+
+As duas limitações abaixo têm naturezas **distintas** e exigem respostas diferentes:
+
+#### `IO_REPARSE_TAG_DEDUP` (`0x80000013`) — não vemos, e está tudo bem
+
+<!-- trackfw-contract: gap reason=arquivo deduplicado não acende ModeIrregular por carve-out explícito no Go; não é risco de travessia e não requer gate -->
+
+O Go tem um carve-out **intencional** para este tag (`src/os/types_windows.go`, linha 212, Go 1.27.0):
+
+```go
+case windows.IO_REPARSE_TAG_DEDUP: // tratado como arquivo regular (intencional)
+```
+
+Um arquivo deduplicado **não acende `ModeIrregular`** e passa pelo predicado como arquivo regular.
+Isso não é risco: dedup não redireciona a leitura para fora da árvore de arquivos — o dado pode vir
+de outra região do disco, mas a **identidade do caminho** não muda. A guarda protege contra
+travessia de caminho; DEDUP não cria travessia. Nenhuma ação necessária.
+
+#### Diretório *cloud-only* do OneDrive (`IO_REPARSE_TAG_CLOUD_FILES`, `0x9000001a`) — podemos barrar indevidamente, não medimos
+
+<!-- trackfw-contract: gap reason=comportamento derivado de leitura de fonte (cai no default: ModeIrregular), não medido na VM (OneDrive estava vazio); é falso-positivo, não falso-negativo — o risco é operacional, não de segurança -->
+
+Um diretório *cloud-only* (placeholder do OneDrive, conteúdo não baixado) usa este tag e
+**provavelmente** acende `ModeIrregular=true`, por cair no ramo `default` da função `mode()` do Go.
+
+⚠️ **Esta afirmação é derivada de leitura de fonte, não de medição.** A VM de teste tinha OneDrive
+montado mas sem arquivos cloud-only — o cenário não foi reproduzido.
+
+Se um ancestral entre a raiz da contenção e o arquivo-alvo estiver desidratado (cloud-only), o
+predicado **recusa a operação** — falso-positivo, não falso-negativo. O risco é operacional
+(operação bloqueada em WorkDir dentro do OneDrive com arquivos não sincronizados), não de segurança.
+
+A cláusula-tripwire e o gate atual não cobrem este cenário. Para medi-lo seria necessário um
+ambiente Windows com OneDrive configurado e arquivo cloud-only no caminho de trabalho.

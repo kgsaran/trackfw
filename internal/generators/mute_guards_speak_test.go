@@ -155,7 +155,7 @@ func TestAppendTransitionLogRefusalIsAudible(t *testing.T) {
 	if !strings.Contains(output, singleGrammar) {
 		t.Errorf("refusal is audible but not in the single grammar %q, got: %q", singleGrammar, output)
 	}
-	if !strings.Contains(output, "refusing symlink path") {
+	if !strings.Contains(output, "refusing reparse-point path") {
 		t.Errorf("refused for the WRONG reason — want the symlink refusal, got: %q", output)
 	}
 	assertVictimEmpty(t, victim)
@@ -197,7 +197,7 @@ func TestAppendREQTransitionLogRefusalIsAudible(t *testing.T) {
 	if !strings.Contains(output, singleGrammar) {
 		t.Errorf("refusal is audible but not in the single grammar %q, got: %q", singleGrammar, output)
 	}
-	if !strings.Contains(output, "refusing symlink path") {
+	if !strings.Contains(output, "refusing reparse-point path") {
 		t.Errorf("refused for the WRONG reason — want the symlink refusal, got: %q", output)
 	}
 	assertVictimEmpty(t, victim)
@@ -223,7 +223,7 @@ func TestRejectHarnessSymlinkSpeaksTheSingleGrammar(t *testing.T) {
 	if !strings.Contains(output, singleGrammar) {
 		t.Errorf("rejectHarnessSymlink must print the single grammar %q, got: %q", singleGrammar, output)
 	}
-	if !strings.Contains(result.Message, "refusing symlink path") {
+	if !strings.Contains(result.Message, "refusing reparse-point path") {
 		t.Errorf("refused for the WRONG reason — want the symlink refusal in the message, got: %q", result.Message)
 	}
 	assertVictimEmpty(t, victim)
