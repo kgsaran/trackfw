@@ -17,6 +17,16 @@
 - Parecer em `docs/seguranca/2026-09-27-predicado-da-contencao-de-juncao-no-windows.md`.
 - Nota de vault: `vault/notes/winsymlink-gomod-governa-mode-de-juncao-2026-09-27.md` + index atualizado.
 - 🔴 Afirmação KG refutada: a tabela inicial dizia que o comportamento é da VM (ARM64) — é do go.mod.
+## 2026-09-27 — Hefesto (main — leitura e relatório) — ENTREGUE
+
+**Início:** 2026-09-27 | Branch: `main` (read-only, sem commits)
+**Tarefa:** Auditar quatro PRs mergeados hoje (#454, #455, #456, #457) contra as issues que aparentam tratar (#449, #444, #451, #407).
+
+**Resultado:**
+- PR #454 ↔ #449: PARCIAL — Defect 2 (output engolido) resolvido; Defect 1 (branch sem upstream falha) não reproduzido, aberto aguardando feedback do usuário.
+- PR #455 ↔ #444: INTOCADA (do ponto de vista de fix) — junção ainda atravessa o `RejectSymlinks`; PR traz apenas teste de reprodução.
+- PR #456 ↔ #451: PARCIAL — template corrigido (3→2 execuções para repos novos); sugestão 1 (detectar workflow existente) não endereçada; repo trackfw próprio não auto-aplicou.
+- PR #457 ↔ #407: PARCIAL — item 1 (fuso+autor no log) resolvido; itens 2 (roadmap status --json) e 3 (metrics --json) intocados.
 
 ---
 
