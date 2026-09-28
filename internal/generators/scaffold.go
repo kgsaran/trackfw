@@ -799,6 +799,122 @@ func generateClaudeCommandsInner(force bool) error {
 	return nil
 }
 
+// configBlock representa um bloco de configuração extraído do template gerado.
+// text inclui: separador blank líder (se houver), linhas de comentário adjacentes
+// (P3: comentário = ausente), linha-chave em coluna 0 e corpo (linhas indentadas).
+type configBlock struct {
+	key  string
+	text string
+}
+
+// presentTopLevelKeys devolve o conjunto de chaves de nível 0 presentes no
+// conteúdo YAML, respeitando as quatro propriedades da ADR:
+//
+//   - P1: âncora em coluna 0 — chave começa sem espaço/tab.
+//   - P2: dois-pontos obrigatórios — compara key+":" para evitar colisão de
+//     prefixo (ex: roadmap_dir vs. roadmap_namespacing).
+//   - P3: linha comentada = chave ausente — linhas que começam com "#" após
+//     TrimSpace são ignoradas.
+//
+// A função intenciona detectar presença, não ausência — não confundir com
+// parseConfigBlocks, que extrai blocos do conteúdo *gerado* (não do existente).
+func presentTopLevelKeys(content string) map[string]bool {
+	keys := make(map[string]bool)
+	for _, line := range strings.Split(content, "\n") {
+		// P3: ignora linhas de comentário
+		if strings.HasPrefix(strings.TrimSpace(line), "#") {
+			continue
+		}
+		// P1: âncora em coluna 0 — ignora linhas indentadas e em branco
+		if len(line) == 0 || line[0] == ' ' || line[0] == '\t' {
+			continue
+		}
+		// P2: dois-pontos obrigatórios
+		idx := strings.Index(line, ":")
+		if idx <= 0 {
+			continue
+		}
+		keys[line[:idx]] = true
+	}
+	return keys
+}
+
+// parseConfigBlocks extrai os blocos de configuração do conteúdo *gerado* pelo
+// template. Cada bloco cobre:
+//
+//  1. Um blank líder (separador visual entre blocos), quando presente.
+//  2. Linhas de comentário imediatamente adjacentes (sem blank entre elas e a
+//     chave) — precedente de generateGitAttributes: comentário que pertence à
+//     chave deve aparecer junto quando a chave for acrescentada.
+//  3. A linha-chave em coluna 0.
+//  4. O corpo: linhas indentadas até a próxima chave de nível 0 (ou EOF).
+//
+// O cabeçalho do arquivo (linhas antes do primeiro bloco, separadas por blank)
+// não faz parte de nenhum bloco e nunca é acrescentado.
+func parseConfigBlocks(content string) []configBlock {
+	lines := strings.Split(content, "\n")
+
+	// Encontra os índices de todas as linhas-chave de nível 0.
+	var keyIndices []int
+	for i, line := range lines {
+		if len(line) == 0 || line[0] == ' ' || line[0] == '\t' || line[0] == '#' {
+			continue
+		}
+		if strings.Contains(line, ":") {
+			keyIndices = append(keyIndices, i)
+		}
+	}
+	if len(keyIndices) == 0 {
+		return nil
+	}
+
+	// Calcula blockStart para cada chave: a linha-chave mais o contexto
+	// imediatamente anterior (comentários adjacentes + um blank líder).
+	blockStarts := make([]int, len(keyIndices))
+	for ki, keyIdx := range keyIndices {
+		start := keyIdx
+		// Inclui linhas de comentário imediatamente adjacentes (sem blank entre).
+		for start > 0 {
+			prev := lines[start-1]
+			if strings.HasPrefix(strings.TrimSpace(prev), "#") {
+				start--
+			} else {
+				break
+			}
+		}
+		// Inclui um único blank líder (separador visual entre blocos), quando
+		// imediatamente anterior às linhas de comentário ou à própria chave.
+		// Precedente: generateGitAttributes/generateGitIgnore usam o mesmo guarda.
+		if start > 0 && strings.TrimSpace(lines[start-1]) == "" {
+			start--
+		}
+		blockStarts[ki] = start
+	}
+
+	blocks := make([]configBlock, 0, len(keyIndices))
+	for ki, keyIdx := range keyIndices {
+		// blockEnd = blockStart do próximo bloco, ou EOF.
+		var blockEnd int
+		if ki+1 < len(keyIndices) {
+			blockEnd = blockStarts[ki+1]
+		} else {
+			blockEnd = len(lines)
+		}
+
+		key := lines[keyIdx][:strings.Index(lines[keyIdx], ":")]
+
+		text := strings.Join(lines[blockStarts[ki]:blockEnd], "\n")
+		// Garante newline final (equivalente ao guarda de generateGitAttributes
+		// linhas 2674-2676 e generateGitIgnore linhas 2779-2781).
+		if !strings.HasSuffix(text, "\n") {
+			text += "\n"
+		}
+
+		blocks = append(blocks, configBlock{key: key, text: text})
+	}
+	return blocks
+}
+
 func writeTrackfwConfig(cfg Config) error {
 	wipLimit := cfg.WipLimit
 	if wipLimit <= 0 {
@@ -860,8 +976,53 @@ roadmap_namespacing: flat
 	if err := rejectScaffoldPath(root, absConfig); err != nil {
 		return err
 	}
+
+	existing, readErr := os.ReadFile("trackfw.yaml")
+	if readErr != nil {
+		if !os.IsNotExist(readErr) {
+			return fmt.Errorf("reading trackfw.yaml: %w", readErr)
+		}
+		// Arquivo ausente: escreve o template completo (caminho de criação).
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+		if err := os.WriteFile("trackfw.yaml", []byte(content), 0644); err != nil {
+			return fmt.Errorf("writing trackfw.yaml: %w", err)
+		}
+		fmt.Println("  ✓ trackfw.yaml")
+		return nil
+	}
+
+	// Arquivo presente: merge textual por chave ausente (ADR-2026-09-28).
+	// Preserva todo valor já escrito pelo consumidor; acrescenta apenas as chaves
+	// que faltam. Zero diff nas linhas pré-existentes quando não há chave nova.
+	existingKeys := presentTopLevelKeys(string(existing))
+	blocks := parseConfigBlocks(content)
+
+	var missing []string
+	for _, b := range blocks {
+		if !existingKeys[b.key] {
+			missing = append(missing, b.text)
+		}
+	}
+
+	if len(missing) == 0 {
+		// Todas as chaves já presentes: no-op (garante zero diff).
+		return nil
+	}
+
+	// Acrescenta blocos ausentes.
+	// P4 — guarda de newline final: precedente de generateGitAttributes (linhas
+	// 2674-2676) e generateGitIgnore (linhas 2779-2781). Sem este guarda, o
+	// primeiro bloco acrescentado grudaria na última linha pré-existente.
+	out := string(existing)
+	if out != "" && !strings.HasSuffix(out, "\n") {
+		out += "\n"
+	}
+	for _, text := range missing {
+		out += text
+	}
+
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
-	if err := os.WriteFile("trackfw.yaml", []byte(content), 0644); err != nil {
+	if err := os.WriteFile("trackfw.yaml", []byte(out), 0644); err != nil {
 		return fmt.Errorf("writing trackfw.yaml: %w", err)
 	}
 	fmt.Println("  ✓ trackfw.yaml")

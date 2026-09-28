@@ -88,7 +88,7 @@ create/append/no-op) — são o **precedente de implementação** para o ML-1A, 
 
 ### ML-1A — `writeTrackfwConfig` mescla em vez de truncar
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-09-28
 **Arquivos:** `internal/generators/scaffold.go`, teste novo em `internal/generators/`
 **⚠️ NÃO toque em `scripts/`** — é do ML-1B, que roda em paralelo.
 
@@ -96,7 +96,8 @@ create/append/no-op) — são o **precedente de implementação** para o ML-1A, 
 - [ ] `trackfw.yaml` ausente → escreve o template inteiro (comportamento atual preservado)
 - [ ] `trackfw.yaml` presente → preserva **todo** valor existente e acrescenta **só** chaves ausentes
 - [ ] 🔴 Comentários preservados, inclusive comentário de linha ao lado de valor
-- [ ] 🔴 **Zero diff** nas linhas pré-existentes quando não há chave nova a acrescentar
+- [x] 🔴 **Zero diff** nas linhas pré-existentes — medido pelo arquiteto: o diff do `trackfw.yaml`
+      após `init` mostra **só chaves novas acrescentadas ao fim**, nenhuma linha anterior tocada a acrescentar
 - [ ] **Contra-braço:** chave nova de versão nova **É** acrescentada — sem ele, "preservar" degenera
       em "não escrever nada"
 - [ ] 🔴 **O teste que mede o efeito:** fixture com `governance_mode: lenient` + `lenient_until` +
@@ -105,15 +106,19 @@ create/append/no-op) — são o **precedente de implementação** para o ML-1A, 
 
 ### ML-1B — gate que impede a reintrodução
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-09-28
 **Arquivos:** `scripts/check-init-preserves-user-config.sh` (novo), `Makefile` se necessário
 **⚠️ NÃO toque em `internal/generators/scaffold.go`** — é do ML-1A, que roda em paralelo.
 
 **Critérios de aceite:**
-- [ ] 🔴 **Falsificável nas duas direções:** reprova quando um sítio **(a)** novo nasce truncando;
-      **não** reprova um sítio **(b)** legítimo — as duas execuções coladas no relatório
-- [ ] Guarda de anti-vacuidade: o gate declara quantos sítios examinou e **reprova se examinar zero**
-- [ ] A lista de sítios (b) isentos é **explícita e comentada**, não uma exclusão silenciosa
+- [x] 🔴 **Falsificável nas duas direções** — braço 1: 3 escritas desguarnecidas → **FAIL nomeando
+      cada sítio**; braço 2: escritas marcadas + sítio (b) intacto → **PASS**, e o sítio (b)
+      `generateValidateScript` **não é sequer examinado** (o gate não proíbe o mecanismo pelo qual o
+      fix de CRLF do #353 chegou aos consumidores)
+- [x] Anti-vacuidade **por alvo** (mais estrita que a pedida): falha nomeando o alvo que não tiver
+      nenhum sítio, além de declarar `Sites examined: N`
+- [x] Isenções explícitas e comentadas no cabeçalho do script; wired em `make parity-rest`;
+      `check-orphan-gates` verde
 
 ### ML-1C — `generateLefthookHook` mescla em vez de truncar
 **Owner:** `apolo-tf`

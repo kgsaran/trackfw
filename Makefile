@@ -89,6 +89,13 @@ parity-rest: build
 	# ou reprova. Impede reintrodução de escrita desguardada após a Wave 1. Nasce falsificável.
 	unset WRITE_CONTAINMENT_SCAN_DIR && scripts/check-write-containment.sh
 	scripts/check-write-containment.sh --self-test
+	# ML-1B (ROADMAP-2026-09-28-trackfw-init-reexecutado-destroi-configuracao-do-consumidor):
+	# todo os.WriteFile em internal/generators/scaffold.go que toca arquivo autorado pelo
+	# consumidor (trackfw.yaml, lefthook.yml) deve ter ReadFile no mesmo bloco de funcao
+	# OU marker consumer-config-merge-allowed: na linha ou na linha acima. Impede
+	# reintroducao de overwrite incondicional apos a correcao da Wave 1.
+	scripts/check-init-preserves-user-config.sh --self-test
+	scripts/check-init-preserves-user-config.sh
 	# ML-1B (ROADMAP-2026-09-11-o-ciclo-testa-onde-funciona): toda criacao de
 	# symlink/fifo em arquivo de teste passa por guarda de capacidade (nao por
 	# guarda de plataforma). Gate impede a decima-primeira instancia da issue #315.

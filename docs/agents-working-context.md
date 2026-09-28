@@ -2,6 +2,37 @@
 
 ---
 
+## 2026-09-28 — Apolo (fix/init-reexecutado-destroi-config-do-consumidor — ML-1B gate) — ENTREGUE
+
+**Início:** 2026-09-28 | Branch: `fix/init-reexecutado-destroi-config-do-consumidor`
+**Tarefa:** ML-1B — escrever `scripts/check-init-preserves-user-config.sh` (gate estático que impede reintrodução de overwrite incondicional em config do consumidor) e adicionar ao `Makefile` em `parity-rest`.
+
+**Resultado:**
+- `scripts/check-init-preserves-user-config.sh`: gate criado com predicado duplo (ReadFile no mesmo bloco OU marker `consumer-config-merge-allowed:`) + anti-vacuidade por alvo + `--self-test` com ambos os braços.
+- `Makefile`: gate adicionado em `parity-rest` com `--self-test` e chamada real, após `check-write-containment.sh`.
+- `check-orphan-gates.sh`: PASS — gate tem consumidor.
+- Self-test RC=0 — braço 1 reprova 3 sítios nomeando-os; braço 2 passa com sítio (b) intacto.
+- Gate na árvore atual: RC=1, 1 violação — linha 2967 `generateLefthookHook → lefthook.yml` (sítio (a) sem ML atribuído). `trackfw.yaml` PASSou: ML-1A já aplicou ReadFile guard (2 sítios, linhas 987 e 1025).
+- `git diff trackfw.yaml`: vazio.
+- Observação para o arquiteto: a linha 864 original (Wave 0) está agora nas linhas 987/1025 e já corrigida por ML-1A; a linha 2806 original está agora na linha 2967 e ainda é violação — o ML adicional para `generateLefthookHook` (item 1 de Wave 0 §7) precisa ser criado e atribuído antes de o gate poder PASSAR.
+
+---
+
+## 2026-09-28 — Apolo (fix/init-reexecutado-destroi-config-do-consumidor — ML-1A) — ENTREGUE
+
+**Início:** 2026-09-28 | Branch: `fix/init-reexecutado-destroi-config-do-consumidor`
+**Tarefa:** ML-1A — `writeTrackfwConfig` mescla em vez de truncar. Implementar merge textual por chave ausente (P1-P4) e testes.
+
+**Resultado:**
+- `internal/generators/scaffold.go`: adicionadas funções `presentTopLevelKeys`, `parseConfigBlocks`, `configBlock`. `writeTrackfwConfig` agora lê o arquivo existente antes de escrever; se ausente escreve template completo (comportamento preservado); se presente faz merge textual acrescentando apenas chaves faltantes (P1-P4).
+- `internal/generators/trackfw_config_merge_test.go`: 7 testes (T1-T7). AC principal: T2 (`PresenteTodasChavesNoOp`) falha contra a implementação antiga e passa contra a nova.
+- `go build ./...`: RC=0 | `go test ./internal/generators/`: RC=0 (todos os testes passam, incluindo existentes).
+- Gate ML-1B (`scripts/check-init-preserves-user-config.sh`): `trackfw.yaml` — 2 OK (ReadFile precede WriteFile). Falha em `generateLefthookHook` é ML-1C (fora deste escopo, conforme handoff).
+- `trackfw validate`: 173 warnings, RC=0.
+- `git diff trackfw.yaml`: vazio.
+
+---
+
 ## 2026-09-28 — Hades (fix/init-reexecutado-destroi-config-do-consumidor — ML-0A Wave 0) — ENTREGUE
 
 **Início:** 2026-09-28 | Branch: `fix/init-reexecutado-destroi-config-do-consumidor`
