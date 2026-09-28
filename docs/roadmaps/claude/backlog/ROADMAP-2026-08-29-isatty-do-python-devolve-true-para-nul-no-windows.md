@@ -1,7 +1,7 @@
 ---
 status: backlog
 date: 2026-08-29
-req: REQ-2026-08-29-isatty-do-python-devolve-true-para-nul-no-windows
+req: docs/requisições/claude/REQ-2026-08-29-isatty-do-python-devolve-true-para-nul-no-windows.md
 squad: ""
 ---
 
