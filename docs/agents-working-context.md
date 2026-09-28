@@ -2,6 +2,16 @@
 
 ---
 
+## 2026-09-28 — Apolo (fix/roadmap-para-req-sem-tratamento-de-stale — ML-1E reconciliação teste) — ENTREGUE
+
+**Início:** 2026-09-28 | Branch: `fix/roadmap-para-req-sem-tratamento-de-stale`
+**Tarefa:** Reconciliar teste `TestMoveRoadmap_AmbiguousPartial_RefusesNamingCandidates` com o contrato POSIX de `roadmapCandidateFiles` (ML-1D). Trocar `filepath.Join` por literais POSIX + comentário de contrato.
+
+**Resultado:**
+- `internal/generators/artifact_select_ml1c_test.go`: literais POSIX substituem `filepath.Join`; comentário explica o contrato e a medição (PR #464).
+- `go build ./...`: RC=0 | testes alvo: todos PASS, RC=0 | gate portabilidade: 14 assinaturas OK, RC=0.
+- `git diff --name-only`: apenas `internal/generators/artifact_select_ml1c_test.go`.
+
 ## 2026-09-28 — Apolo (fix/roadmap-para-req-sem-tratamento-de-stale — separator fix PR #464) — ENTREGUE
 
 **Início:** 2026-09-28 | Branch: `fix/roadmap-para-req-sem-tratamento-de-stale`

@@ -228,3 +228,40 @@ do `ToSlash` é detectada.
 - [x] A guarda de anti-vacuidade do ML-1C **não foi relaxada** — ganhou comentário proibindo o relaxe
 - [x] `go build ./...` e `go test ./internal/generators/...` verdes; `trackfw.yaml` intacto
 - [ ] `windows-full-suites` verde no PR #464 ← **mede o CI, não a VM**
+
+### ML-1E — o teste que afirmava o contrato ANTIGO
+**Owner:** `apolo-tf`
+**Status:** ✅ Concluído — 2026-09-28
+**Arquivos:** `internal/generators/artifact_select_ml1c_test.go`
+
+**Origem:** o ML-1D fechou a falha que o motivou, mas **destapou outra**:
+`TestMoveRoadmap_AmbiguousPartial_RefusesNamingCandidates` fixava a mensagem de ambiguidade com
+`filepath.Join` — forma **nativa**, o contrato antigo.
+
+🔴 **Falha de auditoria do arquiteto, registrada:** eu identifiquei, no ML-1D, que
+`selectArtifactByName` *"imprime o caminho cru ao usuário"* — e **não procurei testes que afirmassem
+a forma antiga**. Havia um. A régua da auditoria enxergou o consumidor e não os seus testes.
+
+**Medição (Windows real):**
+```
+erro deveria conter "docs\roadmaps\backlog\...um.md"
+got:                 docs/roadmaps/backlog/...um.md
+```
+
+**Sobre as 93 falhas da suíte na VM — o instrumento mentiu.** `go test ./internal/generators/...` na
+VM acusou 87 falhas únicas, 86 delas **não** na `windows-known-failures.json`. Não são regressões:
+falham por `exec: "bash": executable file not found in %PATH%` — o `cmd.exe` da VM não tem bash, o
+runner do CI tem. **Unanimidade num corpus inteiro é sinal de instrumento quebrado.** A interseção
+VM ∩ CI era **uma** falha, e é esta.
+
+**Reconciliação (Regra Dura):** o teste corrigido afirma que `roadmapCandidateFiles` devolve
+separador POSIX em toda plataforma — e que a mensagem de ambiguidade **exibida ao usuário** usa `/`,
+não `\`, mesmo no Windows.
+
+**Critérios de aceite:**
+- [x] Literal POSIX no lugar de `filepath.Join`, com o **porquê** no comentário
+- [x] Import de `filepath` **medido** como ainda necessário (8 outros usos) antes de tocar
+- [x] 🔴 Verde no **Windows real** (VM, `go1.27 windows/arm64`): `TestMoveRoadmap*`,
+      `TestFindRoadmapLinkingREQ*`, `TestShowRoadmap*`, `TestRoadmapCandidateFiles*` — `ok`, 0 falhas
+- [x] Gate de separador segue `RC=0` com 14 assinaturas; `roadmap.go` e `trackfw.yaml` intactos
+- [ ] `windows-full-suites` verde no PR #464 ← **mede o CI**
