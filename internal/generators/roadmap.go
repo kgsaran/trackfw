@@ -836,6 +836,8 @@ func normalizeRefSeparator(p string) string {
 // non-`.md` files under `docs/roadmaps` are `.trackfw-log` and `.DS_Store`, both
 // in the roadmap root — zero inside the state directories — and there are no
 // subdirectories under the state directories.
+//
+// Todos os caminhos devolvidos usam separador POSIX ("/"), independentemente do SO.
 func roadmapCandidateFiles(cfg config.ProjectConfig) []string {
 	var dirs []string
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
@@ -860,7 +862,13 @@ func roadmapCandidateFiles(cfg config.ProjectConfig) []string {
 			if e.IsDir() || !strings.EqualFold(filepath.Ext(e.Name()), ".md") {
 				continue
 			}
-			files = append(files, filepath.Join(dir, e.Name()))
+			// Contrato de retorno: SEMPRE separador POSIX ("/"), em toda plataforma.
+			// filepath.Join chama Clean, que no Windows converte "/" -> "\" (path.go:43),
+			// e o retorno cru vaza para o usuário na mensagem "multiple roadmaps match"
+			// (selectArtifactByName). Os demais consumidores usam filepath.Base/Abs/Rel e
+			// toleram os dois; o ToSlash torna a forma um contrato em vez de acidente.
+			// Windows aceita "/" em os.ReadFile/filepath.Join, então a leitura não regride.
+			files = append(files, filepath.ToSlash(filepath.Join(dir, e.Name())))
 		}
 	}
 	return files
