@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-28
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-28-a-direcao-roadmap-para-req-nao-tem-o-tratamento-de-stale-que-a-direcao-inversa-ja-tem.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-28-a-direcao-roadmap-para-req-nao-tem-o-tratamento-de-stale-que-a-direcao-inversa-ja-tem.md"
 ---
 
 # REQ: a direcao roadmap para REQ nao tem o tratamento de stale que a direcao inversa ja tem
 
-> Date: 2026-09-28 | Status: Open
+> Date: 2026-09-28 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -139,4 +139,4 @@ ADR:
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-28-a-direcao-roadmap-para-req-nao-tem-o-tratamento-de-stale-que-a-direcao-inversa-ja-tem.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-09-28-a-direcao-roadmap-para-req-nao-tem-o-tratamento-de-stale-que-a-direcao-inversa-ja-tem.md

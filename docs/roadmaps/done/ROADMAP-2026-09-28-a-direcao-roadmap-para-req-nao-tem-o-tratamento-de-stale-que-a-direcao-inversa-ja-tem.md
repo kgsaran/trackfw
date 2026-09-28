@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-28
 req: "docs/req/REQ-2026-09-28-a-direcao-roadmap-para-req-nao-tem-o-tratamento-de-stale-que-a-direcao-inversa-ja-tem.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: a direcao roadmap para REQ nao tem o tratamento de stale que a direcao inversa ja tem
 
-> Created: 2026-09-28 | Status: wip
+> Created: 2026-09-28 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-09-28-a-direcao-roadmap-para-req-nao-tem-o-tratamento-de-stale-que-a-direcao-inversa-ja-tem.md -->
