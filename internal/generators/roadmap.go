@@ -1033,7 +1033,16 @@ func gitUserEmail() string {
 }
 
 // ShowRoadmap exibe o conteúdo de um roadmap identificado por nome parcial.
-func ShowRoadmap(name string) error {
+// resolveRoadmapMatches e o PONTO UNICO que transforma um nome parcial nos
+// caminhos que casam. Extraido na parte 2 da #407, quando `roadmap show` ganhou
+// --json: com duas saidas, duplicar a recusa de nome vazio, o glob e a contagem
+// de casamentos seria criar duas resolucoes que divergem em silencio — a mesma
+// classe que a ML-1C fechou aqui dentro.
+//
+// Devolve os casamentos SEM decidir o que fazer com mais de um: o formato de
+// texto imprime a lista no stdout, e o --json nao pode imprimir nada la que nao
+// seja o documento. A decisao e de quem formata.
+func resolveRoadmapMatches(name string) ([]string, error) {
 	cfg := config.Load()
 
 	// ML-1C — mesma classe do defeito de findRoadmap, medida e fechada aqui: o glob
@@ -1043,7 +1052,7 @@ func ShowRoadmap(name string) error {
 	// de "vazio casa tudo". Recusar aqui fecha a classe em vez de tratar como
 	// superfície diferente — leitura, e não escrita, não é fundamento para separar.
 	if strings.TrimSpace(name) == "" {
-		return fmt.Errorf("roadmap name is required — an empty name matches every roadmap; pass the basename (or a unique fragment) explicitly")
+		return nil, fmt.Errorf("roadmap name is required — an empty name matches every roadmap; pass the basename (or a unique fragment) explicitly")
 	}
 
 	var pattern string
@@ -1056,10 +1065,18 @@ func ShowRoadmap(name string) error {
 
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(matches) == 0 {
-		return fmt.Errorf("no roadmap found matching %q", name)
+		return nil, fmt.Errorf("no roadmap found matching %q", name)
+	}
+	return matches, nil
+}
+
+func ShowRoadmap(name string) error {
+	matches, err := resolveRoadmapMatches(name)
+	if err != nil {
+		return err
 	}
 	if len(matches) > 1 {
 		fmt.Println("Multiple roadmaps found — be more specific:")

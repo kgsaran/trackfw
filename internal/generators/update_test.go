@@ -2414,14 +2414,16 @@ func TestUpdateNeverWritesThroughSymlinkAtDiscoverWorkflowPath(t *testing.T) {
 	// "/", porque a constante é "/"); hoje é a gramática única, que imprime o
 	// caminho ABSOLUTO do SO, e no Windows ele vem com "\".
 	// filepath.FromSlash é o que reconcilia os dois sem afrouxar a asserção: ela
-	// continua exigindo que a mensagem NOMEIE o artefato (um Contains("symlink")
+	// continua exigindo que a mensagem NOMEIE o artefato (um Contains("reparse-point")
 	// genérico passaria com o caminho errado, que é justamente o que este teste
 	// existe para reprovar). Não se compara o workflowPath absoluto porque no
 	// Windows o t.TempDir() pode cair sob nome 8.3 (C:\Users\RUNNE~1\...) e o
 	// prefixo divergiria legitimamente do root — o que se exige é o SUFIXO.
+	// ML-1A (#444): a mensagem mudou de "refusing symlink path" para
+	// "refusing reparse-point path" para cobrir também juncões do Windows.
 	nativeWorkflowPath := filepath.FromSlash(DiscoverGitHubActionsWorkflowPath)
-	if !strings.Contains(stderrBuf.String(), nativeWorkflowPath) || !strings.Contains(stderrBuf.String(), "symlink") {
-		t.Fatalf("expected a stderr warning naming %s as a symlink, got: %q", nativeWorkflowPath, stderrBuf.String())
+	if !strings.Contains(stderrBuf.String(), nativeWorkflowPath) || !strings.Contains(stderrBuf.String(), "reparse-point") {
+		t.Fatalf("expected a stderr warning naming %s as a reparse-point, got: %q", nativeWorkflowPath, stderrBuf.String())
 	}
 
 	// A live symlink is not "manageable" by update, so — for a ci:none

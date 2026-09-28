@@ -13,22 +13,14 @@ import (
 // ────────────────────────────────────────────────────────────────────────────
 // #444 — a contenção recusa symlink e não vê JUNÇÃO do Windows.
 //
-// Este arquivo NÃO escolhe o remédio. Ele fixa em teste a medição, porque a
-// assimetria que a torna alcançável é de privilégio e não de forma:
+// A assimetria de privilégio que torna a junção o vetor de ataque:
 //
 //	mklink /D  (symlink de diretório)  →  exige privilégio; falha numa conta comum
 //	mklink /J  (junção)                →  NÃO exige privilégio; sempre funciona
 //
-// Ou seja: a isca que a guarda recusa é a que um usuário comum não consegue criar,
-// e a que ele consegue criar passa. Medido em 2026-09-27, Windows 11 sem Developer
-// Mode, Go 1.26.1/amd64.
-//
-// 🔴 Por que não entra aqui um teste que EXIGE a recusa: recusar `ModeIrregular` em
-// bloco alcança outros reparse points, e o AC13 da REQ-2026-09-09 escreve que
-// falso-positivo neste portão "paralisa, não irrita" — há máquina Windows com junção
-// legítima no caminho (redirecionamento de pasta). A direção é decisão de produto.
-// Estes testes tornam o estado ATUAL visível e reproduzível; quando a decisão sair,
-// é aqui que ela vira expectativa.
+// Corrigido em ML-1A (2026-09-27): o predicado passou de `ModeSymlink` para
+// `ModeSymlink|ModeIrregular`. Sob go.mod >= 1.23 (winsymlink=1, trackfw usa
+// go 1.25.2), juncões reportam ModeIrregular — o bit antigo não as via.
 //
 // Reconciliação (Regra Dura): cada teste declara, em uma frase, o que afirma.
 // ────────────────────────────────────────────────────────────────────────────
@@ -100,10 +92,10 @@ func TestJunction_IsInvisibleToBothInstruments(t *testing.T) {
 	}
 }
 
-// AFIRMA: com a junção no caminho, RejectSymlinks devolve nil — a escrita atravessa
-// para fora da raiz sem que a guarda diga nada. É o comportamento de hoje, não o
-// desejado, e está aqui para ser reproduzível em vez de anedótico.
-func TestRejectSymlinks_WalksThroughAJunction(t *testing.T) {
+// AFIRMA: com a junção no caminho, RejectSymlinks devolve erro — a guarda recusa a
+// escrita. É o comportamento corrigido pelo ML-1A (#444): o predicado
+// ModeSymlink|ModeIrregular captura a junção que ModeSymlink sozinho não via.
+func TestRejectSymlinks_RefusesAJunction(t *testing.T) {
 	base := t.TempDir()
 	root := filepath.Join(base, "project")
 	victim := filepath.Join(base, "victim")
@@ -122,22 +114,20 @@ func TestRejectSymlinks_WalksThroughAJunction(t *testing.T) {
 		t.Fatalf("Beneath said %q is outside %q — the scenario is not the one #444 describes", target, root)
 	}
 
-	err := RejectSymlinks(root, target)
-
-	// Controle na direção oposta: um caminho que escapa DE FORMA VISÍVEL continua
-	// sendo recusado. Sem ele, "RejectSymlinks devolveu nil" poderia significar que a
-	// guarda está desligada, e não que a junção é invisível para ela.
+	// Braço C2 — controle na direção oposta: um caminho que escapa DE FORMA VISÍVEL
+	// continua sendo recusado. Sem ele, "RejectSymlinks devolveu erro" poderia
+	// significar que a guarda está recusando tudo, e não que a junção foi detectada.
 	visible := filepath.Join(base, "victim", "adr", "ADR-probe.md")
 	if visibleErr := RejectSymlinks(root, visible); visibleErr == nil {
 		t.Fatal("the guard accepted a path that escapes root in plain sight — it is not armed, " +
-			"so this file proves nothing about junctions")
+			"so this file proves nothing about junctions (braço C2 falhou)")
 	}
 
-	if err != nil {
-		t.Logf("RejectSymlinks refused the junction (%v). If this is intentional, #444 is "+
-			"addressed and this test should become an expectation instead of a record.", err)
-		return
+	// Braço principal — a guarda DEVE recusar a junção.
+	err := RejectSymlinks(root, target)
+	if err == nil {
+		t.Fatalf("RejectSymlinks(%q, %q) = nil — the guard accepted a path that traverses a "+
+			"junction; the reparse-point containment (ML-1A, #444) is broken. "+
+			"The write would silently reach %q, outside the root.", root, target, victim)
 	}
-	t.Logf("measured state of #444: RejectSymlinks(%q, %q) = nil — the write reaches %q, "+
-		"outside the root, with the guard silent.", root, target, victim)
 }
