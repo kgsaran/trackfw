@@ -101,13 +101,14 @@ assert_has "Go: log_basename por concatenacao explicita com /" \
 # compara chave de string contra conteudo sempre gravado com "/", tem que passar
 # pelo normalizador antes.
 #
-# Go: referenceExists() e validateREQRoadmapLifecycle() em validator.go produzem,
-# coincidentemente, a MESMA linha de normalizacao — assert_count exige as duas
-# ocorrencias, nao so uma (ver comentario de assert_count acima).
-assert_count "Go validate: referenceExists + validateREQRoadmapLifecycle normalizam antes de resolver" \
+# Go: referenceExists(), validateREQRoadmapLifecycle() e resolveREQRefStatus() em
+# validator.go produzem, coincidentemente, a MESMA linha de normalizacao —
+# assert_count exige as tres ocorrencias, nao so uma (ver comentario de
+# assert_count acima). resolveREQRefStatus adicionada em ML-1A (REQ-2026-09-28).
+assert_count "Go validate: referenceExists + validateREQRoadmapLifecycle + resolveREQRefStatus normalizam antes de resolver" \
   "internal/validator/validator.go" \
   'expandedRef := config.ExpandPath(normalizeRefSeparator(ref))' \
-  2
+  3
 assert_has "Go validate: provenanceKey normalizado antes do lookup" \
   "internal/validator/validator_thirdparty_provenance.go" \
   'provenanceKey = normalizeRefSeparator(provenanceKey)'

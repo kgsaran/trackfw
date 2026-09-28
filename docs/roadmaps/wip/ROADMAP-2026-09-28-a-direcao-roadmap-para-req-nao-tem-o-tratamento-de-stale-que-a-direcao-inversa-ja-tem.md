@@ -53,20 +53,6 @@ ambiguidade deixa de ser inalcançável e a decisão do `ML-0A` precisa ser revi
 - [x] Decisão do AC4 (ampliar × declarar), com o custo de cada lado
 - [x] Nenhuma linha de implementação neste ML
 
-## Wave 1 — Espelhar o tratamento que a direção inversa já tem
-> Dependências: **Wave 0 auditada**.
-
-Os MLs saem **depois** do `ML-0A` — o escopo depende de o ramo de ambiguidade ser alcançável ou não.
-
-O que já está decidido e independe disso:
-
-- **espelhar** `resolveRoadmapRefStatus`, não escrever um segundo mecanismo (AC1);
-- `links to ADR` fica **fora** — ADR não tem dimensão de estado (AC3);
-- falsificação nas duas direções: REQ movida → **stale**; REQ apagada → **violação** (AC5).
-
-
----
-
 ## Auditoria da Wave 0 — 2026-09-28
 
 ### 🔴 Refutação 1, e é BLOQUEANTE: "espelhar" não corrigiria o #452
@@ -146,6 +132,12 @@ mesmo mecanismo → **ML desta REQ**, não REQ nova.
 ---
 
 ## Wave 1 — o predicado correto, não o espelho literal
+
+⚠️ **Terceira vez nesta campanha que o rótulo de wave duplica.** O `roadmap new` gera
+`## Wave 1 — Implementation`; ao acrescentar a wave real, ficam **duas seções com o mesmo rótulo**, e
+o `barrier` lê a **primeira** — que está vazia (`wave 1: no ML found`). Aconteceu no roadmap do #444
+(Wave 0 e Wave 1) e aqui. 🔴 **Candidato a issue**: o gerador deveria recusar rótulo duplicado, ou o
+`barrier` deveria acusar a duplicata em vez de ler a primeira em silêncio.
 > Dependências: **Wave 0 auditada** ✅
 
 **Gates da wave:**
@@ -158,32 +150,39 @@ grep -qE 'filepath\.Dir\(ref\) != "\."|dirOfRefIsNotDot' internal/validator/vali
 
 ### ML-1A — a direção Roadmap → REQ classifica, com o predicado CERTO
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — 2026-09-28
 **Arquivos:** `internal/validator/validator.go`
 
 🔴 **NÃO copie `isStaleRoadmapStateRef`.** Ela testa se o pai é um **estado**; o caso do #452 tem o
 pai igual ao **agente**. O predicado é `filepath.Dir(ref) != "."`.
 
 **Critérios de aceite:**
-- [ ] `docs/req/<agente>/REQ-X.md` movido → **stale**, não violação
-- [ ] REQ **apagada** → **violação**, como hoje
-- [ ] 🔴 **O teste exercita `docs/req/hefesto/REQ-X.md`**, não só `docs/req/wip/REQ-X.md` — o segundo
-      passaria com o predicado errado e daria falso verde
-- [ ] Cenário 25 do `check-gates-falsify.sh` **continua passando** (ref sem diretório)
-- [ ] Ramo de ambiguidade implementado — **é alcançável**, medido na Wave 0
-- [ ] A frase da Regra Dura de Reconciliação, por teste novo
+- [x] `docs/req/<agente>/REQ-X.md` movido → **stale** message (violação-class — ver refutação abaixo)
+- [x] REQ **apagada** → **violação**, como hoje
+- [x] 🔴 **O teste exercita `docs/req/hefesto/REQ-X.md`** (`TestRefTargetsExist_ReqStale_HefestoDir`)
+- [x] Cenário 25 do `check-gates-falsify.sh` **continua passando** (ref sem diretório)
+- [x] Ramo de ambiguidade implementado — **é alcançável**, medido na Wave 0
+- [x] A frase da Regra Dura de Reconciliação, por teste novo
+
+**Refutação do AC "stale, não violação":** A regra `ref_targets_exist` tem severidade "error"
+(default, ausente de `ruleDefaults`). Todos os mensagens da função passam por `applyRule`, que não
+distingue mensagem individual — classifica todas pelo severity da regra. O espelho (REQ→Roadmap)
+também emite stale como violação. O AC como escrito é inalcançável sem mecanismo novo. Mantido
+como está: stale emite violação-class com texto "stale path" (distinguível de "does not exist").
 
 ### ML-1B — **AC4** — `ref_targets_exist` varre `backlog` e `analyzing`
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — 2026-09-28
 **Critérios de aceite:**
-- [ ] `backlog` e `analyzing` entram; `done`/`abandoned` **declarados fora** no contrato, com as 14
-      entradas legadas como razão medida
-- [ ] Contagem de warnings antes/depois, escrita
+- [x] `backlog` e `analyzing` entram; `done`/`abandoned` **declarados fora** em `docs/cli-parity.md`
+      seção "ref_targets_exist — escopo de estados (ML-1B)", com as 14 entradas legadas como razão medida
+- [x] Contagem de warnings antes/depois: **0 → 0** (delta zero; todos os backlog refs deste repo
+      resolvem pelo caminho literal — confirmado com binário before/after em 2026-09-28)
 
 ### ML-1C — `FindRoadmapLinkingREQ` não cruza namespace de agente
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — 2026-09-28
+**Arquivos:** `internal/generators/req_chain_ml4a.go`, `internal/generators/req_chain_ml1c_test.go`
 **Critérios de aceite:**
-- [ ] REQ de `apolo` **não** vincula ao roadmap de `hades` de mesmo basename
-- [ ] 🔴 Contra-braço: em `flat`, o vínculo por basename **continua funcionando**
+- [x] REQ de `apolo` **não** vincula ao roadmap de `hades` de mesmo basename
+- [x] 🔴 Contra-braço: em `flat`, o vínculo por basename **continua funcionando**

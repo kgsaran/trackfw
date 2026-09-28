@@ -2810,3 +2810,265 @@ status: blocked
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// ML-1A + ML-1B (REQ-2026-09-28): Roadmap→REQ classifica stale/ambíguo/inexistente
+// ---------------------------------------------------------------------------
+
+// Fixture YAML mínimo (flat) para os testes de ref_targets_exist.
+const minimalTrackfwYamlForRefTargets = `roadmap_dir: docs/roadmaps
+req_dir: docs/req
+adr_dirs: [docs/adr]
+`
+
+// TestRefTargetsExist_ReqStale_HefestoDir — ML-1A: roadmap aponta para
+// docs/req/hefesto/REQ-X.md, mas o arquivo real está em docs/req/REQ-X.md
+// (layout flat). Deve emitir "stale path", não "does not exist".
+//
+// Frase de Reconciliação (Regra Dura): este teste afirma que o predicado
+// filepath.Dir(ref) != "." entra no fallback para refs com componente de
+// agente ("hefesto") — caso motivador do #452. Se o predicado fosse
+// isStaleRoadmapStateRef (o mirror literal), "hefesto" não estaria em
+// agentNamespaceStateNames e o fallback não rodaria; o teste produziria
+// "does not exist" e falharia.
+func TestRefTargetsExist_ReqStale_HefestoDir(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir,
+		"docs/roadmaps/wip", "docs/roadmaps/backlog", "docs/roadmaps/blocked",
+		"docs/roadmaps/done", "docs/roadmaps/analyzing",
+		"docs/req", "docs/adr",
+	)
+	writeFile(t, dir, "trackfw.yaml", minimalTrackfwYamlForRefTargets)
+	// REQ existe no layout flat (docs/req/REQ-...md).
+	writeFile(t, dir, "docs/req/REQ-2026-09-28-hefesto-stale-fixture.md", "# REQ\n")
+	// Roadmap aponta para o caminho com subdirectório "hefesto/" (que não existe).
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-hefesto-stale.md",
+		`req: "docs/req/hefesto/REQ-2026-09-28-hefesto-stale-fixture.md"
+# Roadmap: test hefesto stale
+`)
+	chdir(t, dir)
+
+	warnings, err := validateRefTargetsExist()
+	if err != nil {
+		t.Fatalf("validateRefTargetsExist() error: %v", err)
+	}
+
+	hasStale := false
+	hasNotExist := false
+	for _, w := range warnings {
+		if strings.Contains(w, "ROADMAP-hefesto-stale.md") {
+			if strings.Contains(w, "stale path") {
+				hasStale = true
+			}
+			if strings.Contains(w, "does not exist") {
+				hasNotExist = true
+			}
+		}
+	}
+
+	if !hasStale {
+		t.Errorf("esperado aviso de stale path para ref com dir 'hefesto/', mas não apareceu. warnings=%v", warnings)
+	}
+	if hasNotExist {
+		t.Errorf("não esperado 'does not exist' para REQ que existe por basename; o predicado isStaleRoadmapStateRef teria falhado aqui. warnings=%v", warnings)
+	}
+}
+
+// TestRefTargetsExist_ReqDeleted — ML-1A: REQ não existe em lugar nenhum →
+// violação "does not exist" (comportamento preservado).
+//
+// Frase de Reconciliação: este teste afirma que referências para REQs
+// genuinamente ausentes (nenhum arquivo de mesmo basename) continuam
+// produzindo "does not exist".
+func TestRefTargetsExist_ReqDeleted(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir,
+		"docs/roadmaps/wip", "docs/roadmaps/backlog", "docs/roadmaps/blocked",
+		"docs/roadmaps/done", "docs/roadmaps/analyzing",
+		"docs/req", "docs/adr",
+	)
+	writeFile(t, dir, "trackfw.yaml", minimalTrackfwYamlForRefTargets)
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-req-deleted.md",
+		`req: "docs/req/hefesto/REQ-2026-09-28-deleted.md"
+# Roadmap: test req deleted
+`)
+	chdir(t, dir)
+
+	warnings, err := validateRefTargetsExist()
+	if err != nil {
+		t.Fatalf("validateRefTargetsExist() error: %v", err)
+	}
+
+	hasNotExist := false
+	for _, w := range warnings {
+		if strings.Contains(w, "ROADMAP-req-deleted.md") && strings.Contains(w, "does not exist") {
+			hasNotExist = true
+		}
+	}
+	if !hasNotExist {
+		t.Errorf("esperado 'does not exist' para REQ ausente, mas não apareceu. warnings=%v", warnings)
+	}
+}
+
+// TestRefTargetsExist_ReqBareName — ML-1A: ref sem componente de diretório
+// ("REQ-flag-source.md") deve produzir "does not exist" mesmo que um arquivo
+// com esse basename exista — análogo ao Cenário 25 de check-gates-falsify.sh.
+//
+// Frase de Reconciliação: este teste afirma que o predicado
+// filepath.Dir(ref) == "." bloqueia o fallback por basename para referências
+// sem diretório, preservando a garantia do Cenário 25.
+func TestRefTargetsExist_ReqBareName(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir,
+		"docs/roadmaps/wip", "docs/roadmaps/backlog", "docs/roadmaps/blocked",
+		"docs/roadmaps/done", "docs/roadmaps/analyzing",
+		"docs/req", "docs/adr",
+	)
+	writeFile(t, dir, "trackfw.yaml", minimalTrackfwYamlForRefTargets)
+	// REQ existe no layout flat, mas o roadmap aponta só pelo basename (sem diretório).
+	writeFile(t, dir, "docs/req/REQ-flag-source.md", "# REQ\n")
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-bare-ref.md",
+		`req: "REQ-flag-source.md"
+# Roadmap: test bare ref
+`)
+	chdir(t, dir)
+
+	warnings, err := validateRefTargetsExist()
+	if err != nil {
+		t.Fatalf("validateRefTargetsExist() error: %v", err)
+	}
+
+	hasNotExist := false
+	hasStale := false
+	for _, w := range warnings {
+		if strings.Contains(w, "ROADMAP-bare-ref.md") {
+			if strings.Contains(w, "does not exist") {
+				hasNotExist = true
+			}
+			if strings.Contains(w, "stale path") {
+				hasStale = true
+			}
+		}
+	}
+	if !hasNotExist {
+		t.Errorf("esperado 'does not exist' para ref sem diretório (Cenário 25), mas não apareceu. warnings=%v", warnings)
+	}
+	if hasStale {
+		t.Errorf("não esperado stale path para ref sem diretório; o fallback deve ser bloqueado. warnings=%v", warnings)
+	}
+}
+
+// TestRefTargetsExist_ReqAmbiguous — ML-1A: dois arquivos com o mesmo
+// basename em localizações diferentes → aviso "ambiguous".
+//
+// Usa o layout por-estado legado (docs/req/wip/ e docs/req/done/) que é
+// lido pelo resolveREQFiles em modo flat via o caso 2 (req_dir/<estado>/).
+//
+// Frase de Reconciliação: este teste afirma que, quando o basename de um
+// ref de REQ aparece em mais de um arquivo descoberto por resolveREQFiles,
+// o validador emite "ambiguous" em vez de resolver silenciosamente.
+func TestRefTargetsExist_ReqAmbiguous(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir,
+		"docs/roadmaps/wip", "docs/roadmaps/backlog", "docs/roadmaps/blocked",
+		"docs/roadmaps/done", "docs/roadmaps/analyzing",
+		"docs/req", "docs/req/wip", "docs/req/done",
+		"docs/adr",
+	)
+	writeFile(t, dir, "trackfw.yaml", minimalTrackfwYamlForRefTargets)
+	// Dois arquivos com mesmo basename em estados diferentes (layout por-estado legado).
+	writeFile(t, dir, "docs/req/wip/REQ-2026-09-28-dup.md", "# REQ wip\n")
+	writeFile(t, dir, "docs/req/done/REQ-2026-09-28-dup.md", "# REQ done\n")
+	// Roadmap aponta para caminho que não existe (mas basename existe em dois lugares).
+	writeFile(t, dir, "docs/roadmaps/wip/ROADMAP-ambiguous-req.md",
+		`req: "docs/req/backlog/REQ-2026-09-28-dup.md"
+# Roadmap: test ambiguous req
+`)
+	chdir(t, dir)
+
+	warnings, err := validateRefTargetsExist()
+	if err != nil {
+		t.Fatalf("validateRefTargetsExist() error: %v", err)
+	}
+
+	hasAmbiguous := false
+	for _, w := range warnings {
+		if strings.Contains(w, "ROADMAP-ambiguous-req.md") && strings.Contains(w, "ambiguous") {
+			hasAmbiguous = true
+		}
+	}
+	if !hasAmbiguous {
+		t.Errorf("esperado aviso 'ambiguous' para basename com duas ocorrências, mas não apareceu. warnings=%v", warnings)
+	}
+}
+
+// TestRefTargetsExist_BacklogScanned — ML-1B: roadmap em backlog/ com
+// referência de REQ quebrada deve agora gerar violação (antes, backlog não
+// era varrido e o defeito passava silencioso).
+//
+// Frase de Reconciliação: este teste afirma que a expansão do dirs para
+// incluir backlog faz refs quebradas em roadmaps de backlog serem detectadas.
+func TestRefTargetsExist_BacklogScanned(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir,
+		"docs/roadmaps/wip", "docs/roadmaps/backlog", "docs/roadmaps/blocked",
+		"docs/roadmaps/done", "docs/roadmaps/analyzing",
+		"docs/req", "docs/adr",
+	)
+	writeFile(t, dir, "trackfw.yaml", minimalTrackfwYamlForRefTargets)
+	writeFile(t, dir, "docs/roadmaps/backlog/ROADMAP-backlog-broken-req.md",
+		`req: "docs/req/REQ-2026-09-28-backlog-missing.md"
+# Roadmap: test backlog scanned
+`)
+	chdir(t, dir)
+
+	warnings, err := validateRefTargetsExist()
+	if err != nil {
+		t.Fatalf("validateRefTargetsExist() error: %v", err)
+	}
+
+	hasViolation := false
+	for _, w := range warnings {
+		if strings.Contains(w, "ROADMAP-backlog-broken-req.md") && strings.Contains(w, "does not exist") {
+			hasViolation = true
+		}
+	}
+	if !hasViolation {
+		t.Errorf("esperado violation para REQ inexistente em roadmap de backlog/, mas não apareceu (ML-1B: backlog deve ser varrido). warnings=%v", warnings)
+	}
+}
+
+// TestRefTargetsExist_AnalyzingScanned — ML-1B: roadmap em analyzing/ com
+// referência de REQ quebrada deve gerar violação.
+//
+// Frase de Reconciliação: este teste afirma que a expansão do dirs para
+// incluir analyzing faz refs quebradas em roadmaps de analyzing serem detectadas.
+func TestRefTargetsExist_AnalyzingScanned(t *testing.T) {
+	dir := t.TempDir()
+	mkdirs(t, dir,
+		"docs/roadmaps/wip", "docs/roadmaps/backlog", "docs/roadmaps/blocked",
+		"docs/roadmaps/done", "docs/roadmaps/analyzing",
+		"docs/req", "docs/adr",
+	)
+	writeFile(t, dir, "trackfw.yaml", minimalTrackfwYamlForRefTargets)
+	writeFile(t, dir, "docs/roadmaps/analyzing/ROADMAP-analyzing-broken-req.md",
+		`req: "docs/req/REQ-2026-09-28-analyzing-missing.md"
+# Roadmap: test analyzing scanned
+`)
+	chdir(t, dir)
+
+	warnings, err := validateRefTargetsExist()
+	if err != nil {
+		t.Fatalf("validateRefTargetsExist() error: %v", err)
+	}
+
+	hasViolation := false
+	for _, w := range warnings {
+		if strings.Contains(w, "ROADMAP-analyzing-broken-req.md") && strings.Contains(w, "does not exist") {
+			hasViolation = true
+		}
+	}
+	if !hasViolation {
+		t.Errorf("esperado violation para REQ inexistente em roadmap de analyzing/, mas não apareceu (ML-1B: analyzing deve ser varrido). warnings=%v", warnings)
+	}
+}

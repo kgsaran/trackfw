@@ -802,6 +802,32 @@ project, the number of rules seeing zero REQs must be **zero** — `ref_targets_
 that receives a *directory* instead of the resolved list (as `traceid` did) stays vacuous even after the
 resolver is fixed.
 
+### `ref_targets_exist` — escopo de estados (ML-1B, REQ-2026-09-28)
+
+<!-- trackfw-contract: gate=internal/validator/validator_test.go partial=os testes de ML-1B (TestRefTargetsExist_BacklogScanned, TestRefTargetsExist_AnalyzingScanned) cobrem backlog e analyzing; nenhum gate de shell exercita done/abandoned para confirmar ausência de violação nessas pastas -->
+
+`ref_targets_exist` varre os roadmaps nos estados **`wip`**, **`blocked`**, **`backlog`** e
+**`analyzing`** em busca de referências quebradas (campo `REQ:`). Os estados **`done`** e
+**`abandoned`** estão **declarados fora do escopo**, por razão medida:
+
+Medição realizada em 2026-09-28 nos 206 roadmaps de `done`/`abandoned` deste repositório:
+
+| categoria | n |
+|---|---|
+| caminho literal resolve | 149 |
+| resolveria por basename (viraria *stale* na ML-1A) | 20 |
+| não existe em lugar nenhum | **14** |
+| sem campo `req:` | 23 |
+
+As **14** entradas `NOWHERE` são referências legadas pré-padronização de caminho — 3 com
+`req: "~"` (valor inválido) e 11 sem prefixo de diretório (ex.: `REQ-2026-07-29-barrier-aceita-wave-com-sufixo-bis`
+em vez de `docs/req/REQ-2026-07-29-...`), de antes de `req_dir` ser obrigatório. Nenhum
+operador corrige um roadmap `done` para atualizar um campo legado; emiti-los seria ruído
+permanente no CI que dilui o sinal das violações reais.
+
+`backlog` e `analyzing` foram adicionados na ML-1B porque é nesses estados que o defeito do
+#452 se manifesta (trabalho futuro com referência ainda apontando para o caminho pré-move).
+
 ## JSON Schema artifacts
 
 <!-- trackfw-contract: gap reason=nenhum gate compara os 3 arquivos docs/schema/*.json publicados por init entre os 3 runtimes; check-artifact-parity.sh tem uma lista fixa de KINDS que não inclui os schemas -->
