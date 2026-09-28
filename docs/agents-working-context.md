@@ -42261,3 +42261,23 @@ régua não muda veredito nenhum hoje.
 **Predicate proof:** `filepath.Dir(normalizeRefSeparator(ref)) == "."` bloqueia fallback para refs sem diretório (Cenário 25); deixa `docs/req/hefesto/REQ-X.md` entrar no fallback (caso motivador #452).
 
 **Delta validate:** 0 novas violações/warnings antes/depois em corpus real (176 linhas idênticas).
+
+## hefesto-tf · triagem-issues-abertas · 2026-09-28 — INICIADO
+
+**Branch:** `docs/fechamento-req-2026-09-28-stale-roadmap-para-req` (somente leitura — sem commits)
+**Escopo:** triagem das 12 issues abertas (#308, #364, #403, #407, #408, #421, #435, #443, #445, #450, #451, #460) por reprodução contra `./bin/trackfw` (v9.0.1)
+**Artefato:** `docs/seguranca/2026-09-28-triagem-issues-abertas.md`
+**Restrições:** NÃO commitar, NÃO criar branch, NÃO rodar `trackfw init` nesta árvore
+
+## hefesto-tf · triagem-issues-abertas · 2026-09-28 — CONCLUÍDO
+
+**Resultado:** Triagem completa das 12 issues abertas contra `./bin/trackfw` v9.0.1.
+
+**Resumo:**
+- (A) Corrigido: #407, #443, #460 (3 issues)
+- (B) Reproduz: #408 (BAIXA), #435 (MÉDIA), #445 (ALTA), #450 (ALTA) — 4 issues
+- (C) Parcial: #451 (MÉDIA) — 1 issue
+- (D) Não verificável macOS: #308, #364, #403, #421 — 4 issues
+
+**Artefato:** `docs/seguranca/2026-09-28-triagem-issues-abertas.md`
+**git diff trackfw.yaml:** vazio
