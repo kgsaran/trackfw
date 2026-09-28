@@ -42392,3 +42392,51 @@ régua não muda veredito nenhum hoje.
 **git diff trackfw.yaml:** vazio
 **git diff --name-only:** `internal/generators/scaffold.go`
 **git status --short:** M scaffold.go + ?? lefthook_hook_merge_test.go
+
+## hades-tf · ML-2A (REQ-2026-09-28) · 2026-09-28 — INICIADO
+
+**Branch:** `fix/init-reexecutado-destroi-config-do-consumidor`
+**Escopo:** Auditoria independente por reimplementação — black-box measurement do binário contra ADR+REQ+Wave0
+**Restrições:** NÃO commitar, NÃO criar branch, NÃO rodar trackfw init nesta árvore
+
+## hades-tf · ML-2A (REQ-2026-09-28) · 2026-09-28 — CONCLUÍDO
+
+**Resultado:** Auditoria independente completa. 13 casos medidos (cenário real + 8 adversariais P1-P4 + gate + lefthook Go tests). Nenhum defeito encontrado.
+
+**Arquivos escritos:**
+- `docs/seguranca/2026-09-28-wave2-auditoria-independente-init.md` — parecer completo
+
+**Resumo dos achados:**
+- Cenário real (lenient+agent_models+comentários): validate byte-idêntico, CORRETO
+- Sítio (a) #2 lefthook.yml via Go tests: 5/5 PASS, CORRETO
+- Gate check-init-preserves-user-config.sh: RC=0, 4 sites guardados, CORRETO
+- P1 (coluna 0): chave dentro de bloco literal (indentada) ignorada corretamente
+- P2 (colon): roadmap_dir vs roadmap_namespacing distinguidos corretamente
+- P3 (comentário = ausente): # wip_limit: 3 tratado como ausente corretamente
+- P4 (newline guard): arquivo sem newline final tratado corretamente
+- CRLF: key detection funciona, mixed endings resultado (cosmético, não defeito)
+- TAB indentation: P1 explicitamente trata TAB
+- 1-space indentation: P1 ignora, duplicata resultado (YAML já inválido no consumer)
+- Literal block + column-0 key: YAML e merge concordam
+- discover --init guard: ainda ativo
+
+**ADR de ponto único:** satisfeita. Dois sítios (a), dois corrigidos, gate verde.
+
+**git diff trackfw.yaml:** vazio
+
+## hades-tf · ML-2A (REQ-2026-09-28) · 2026-09-28 — CONCLUÍDO (revisado)
+
+**Resultado:** Auditoria independente completa com 3 defeitos encontrados além dos casos corretos.
+
+**Defeitos reportados para Apolo:**
+
+**D1 — scaffold.go:2970** (DEFEITO PRODUTO):
+`strings.Contains(existingStr, "trackfw-validate:")` em `generateLefthookHook` viola P3: retorna true para `# trackfw-validate:` em comentário → hook silenciosamente não instalado.
+
+**D2 — gate check-init-preserves-user-config.sh** (DEFEITO GATE — FALSO NEGATIVO):
+Condição 1 ("os.ReadFile precede WriteFile na mesma função") aprovada por leitura decorativa + truncamento incondicional. Medido: decoy com `_ = len(existing)` + `os.WriteFile(template)` → gate RC=0.
+
+**D3 — sub-key delivery (LACUNA ADR)**:
+Consumer com `rules:` customizado nunca recebe novas sub-keys. `branch_has_wip_roadmap` ausente mesmo sendo novo. ADR não declarou este residual explicitamente. Arquiteto decide.
+
+**git diff trackfw.yaml:** vazio

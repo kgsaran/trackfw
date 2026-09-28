@@ -82,18 +82,27 @@ A classificação é por **natureza do conteúdo destruído**, não por forma da
       `lefthook.yml` incondicionalmente, destruindo hooks do consumidor. **Alcançável só pelo wizard**
       (`init.go:226` oferece `lefthook`); o caminho não-interativo usa `Hooks: "none"` (`init.go:110`)
       e não o atinge — razão pela qual a primeira reprodução do arquiteto **não** o reproduziu
-- [ ] 🔴 **O AC que mede o efeito, não o token:** reexecutar `init` sobre um `trackfw.yaml` com
+- [x] 🔴 **O AC que mede o efeito, não o token** — MEDIDO duas vezes de forma independente (arquiteto
+      na auditoria do ML-1A, e Wave 2 reconstruindo o cenário do zero): `validate` **byte-idêntico**
+      antes e depois, `governance_mode`/`lenient_until`/`ci`/`forge` preservados. Detalhe original: reexecutar `init` sobre um `trackfw.yaml` com
       `governance_mode: lenient` + `lenient_until` + bloco `agent_models` **preserva os três**, e a
       saída de `trackfw validate` é **byte-idêntica** antes e depois
-- [ ] 🔴 **Comentários preservados** — o bloco `agent_models` mantém a justificativa de cota escrita
+- [x] 🔴 **Comentários preservados** — confirmado na Wave 2 com bloco `agent_models` comentado. — o bloco `agent_models` mantém a justificativa de cota escrita
       em comentário. Preservar chaves e descartar a razão delas é preservação aparente
-- [ ] **Zero diff nas linhas que já existiam** (`git diff trackfw.yaml` vazio quando nenhuma chave
+- [x] **Zero diff nas linhas que já existiam** — medido: o diff pós-`init` mostra só chaves novas
+      ao fim; segundo `init` produz diff vazio (idempotente). (`git diff trackfw.yaml` vazio quando nenhuma chave
       nova precisa ser acrescentada) — é a propriedade que torna a correção auditável
-- [ ] **Chave nova de versão nova É acrescentada** — contra-braço: sem ele, "preservar" degenera em
-      "não escrever nada" e o `init` pós-upgrade deixa de servir
-- [ ] Todo sítio **(a)** corrigido por **ponto único**; todo sítio **(b)** **declarado** como
+- [x] **Chave nova de versão nova É acrescentada** — verificado para **chave de nível 0**.
+      🔴 **Sub-chave nova sob bloco de nível 0 já presente NÃO é entregue, por decisão** — ver
+      **Emenda 1** da ADR. Entregar significaria injetar regra de severidade `error` num repositório
+      conforme, que é o dano que esta REQ elimina. Medido na Wave 2: consumidor com
+      `rules: {some_other_rule}` não recebe `branch_has_wip_roadmap`
+- [x] Os **2** sítios (a) corrigidos (ML-1A e ML-1C); os 14 sítios (b) **declarados** intencionais no
+      parecer da Wave 0, não corrigidos. Original:; todo sítio **(b)** **declarado** como
       intencional, com a razão — não corrigido
-- [ ] 🔴 **Gate que impede a reintrodução**, falsificável nas duas direções: reprova quando um sítio
+- [x] 🔴 **Gate que impede a reintrodução** — criado (ML-1B), e **dois falsos verdes seus foram
+      achados e corrigidos** (ML-1D: guarda em comentário; e o espelho, write-site em comentário).
+      Limite conhecido **declarado**, não escondido. Original:, falsificável nas duas direções: reprova quando um sítio
       (a) novo nasce truncando, **e** não reprova um sítio (b) legítimo
 - [ ] `make quality` e **CI** verdes
 

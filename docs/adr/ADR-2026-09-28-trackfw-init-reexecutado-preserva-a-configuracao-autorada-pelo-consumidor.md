@@ -85,6 +85,20 @@ problema que o merge textual já resolve.
 - Uma chave cujo **default mudou** entre versões não é atualizada — o valor do consumidor vence.
   É o comportamento correto: o valor está lá porque alguém o escolheu. Comunicar mudança de default
   é problema de release notes, não de sobrescrita silenciosa.
+- 🔴 **Emenda 1 (2026-09-28, achado da Wave 2): sub-chave nova sob bloco de nível 0 já presente
+  também NÃO é entregue** — e isso é **decisão**, não lacuna.
+
+  Medido: um consumidor com `rules:` contendo `some_other_rule: warning` **não** recebe
+  `branch_has_wip_roadmap: error` num `init` posterior. O merge vê `rules:` como chave de nível 0
+  presente e pula o bloco inteiro.
+
+  **Por que manter assim:** entregar sub-chave nova sob `rules:` significaria **injetar silenciosamente
+  uma regra de severidade `error` num repositório conforme** — que é exatamente o dano
+  `170 warnings → 156 violations` que esta ADR existe para eliminar. Corrigir isso com merge
+  recursivo reintroduziria a classe de defeito pela porta de trás, com outra roupa.
+
+  Consequência aceita: uma regra nova de uma versão nova só chega a quem **não** tem o bloco `rules:`.
+  Para quem tem, a comunicação é por release notes — que é onde mudança de comportamento pertence.
 - O merge textual precisa de teste para YAML com aspas, listas e blocos aninhados — a classe (c)
   mostra que o projeto já sabe fazer isso, mas a superfície é maior aqui.
 

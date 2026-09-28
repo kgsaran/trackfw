@@ -201,7 +201,7 @@ como `$1` — o gate leu a árvore real e eu quase reportei o resultado do arqui
 
 ### ML-2A — revisão independente por reimplementação
 **Owner:** `hades-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-09-28 · **3 achados, 1 toca produto**
 **Tarefa:** reimplementar a verificação **a partir da leitura da ADR e da REQ**, não conferindo o
 diff. A Regra Dura de Reconciliação pega contradição interna; **não** pega premissa errada
 compartilhada entre teste e implementação. Esta wave existe para isso.
@@ -211,3 +211,59 @@ compartilhada entre teste e implementação. Esta wave existe para isso.
       com comentário → `init` → `validate` byte-idêntico
 - [ ] Veredito explícito sobre se algum sítio **(a)** ficou sem correção — a ADR de ponto único
       **não** está satisfeita enquanto sobrar sítio
+
+**Resultado — 10 ataques a P1–P4 todos corretos** (bloco literal `|`, prefixo compartilhado, chave
+duplicada, sem newline final, arquivo vazio, só comentários, CRLF, TAB, indentação de 1 espaço, chave
+em coluna 0 após `|`). O cenário do dano real reconstruído do zero: `validate` **byte-idêntico**.
+
+⚠️ **Nota de leitura:** o parecer usa `D1`/`D2` em **duas** numerações diferentes (defeitos *e* casos
+de ataque). Aqui os achados são citados por **nome**, para o próximo leitor não cruzar as tabelas.
+
+**Achado 1 — predicado de idempotência do lefthook pergunta a coisa errada** → vira **ML-1E**.
+**Achado 2 — o gate não distingue leitura usada de leitura decorativa** → **limite declarado**, não corrigido.
+**Achado 3 — sub-chave nova sob bloco existente não é entregue** → **decisão**, ADR Emenda 1.
+
+### ML-1E — o predicado de idempotência do lefthook pergunta "o texto aparece?" em vez de "o hook está no lugar?"
+**Owner:** `apolo-tf`
+**Status:** ⬜ Pendente
+**Arquivos:** `internal/generators/scaffold.go` (`generateLefthookHook`), `scripts/check-init-preserves-user-config.sh` (só o header)
+
+**Achado da Wave 2, e o arquiteto ampliou o escopo ao medir.** O Hades reportou o defeito pelo braço
+do **comentário** (`# trackfw-validate:` fazendo o `init` virar no-op). Medi e o defeito é **maior**:
+
+```go
+if strings.Contains(existingStr, "trackfw-validate:") { return nil }   // linha ~2970
+```
+
+`strings.Contains` casa **qualquer ocorrência em qualquer lugar**. Medido com um `lefthook.yml`
+legítimo, **sem comentário nenhum** — consumidor que roda o validate no **push** em vez do commit:
+
+```
+pre-commit:
+  commands:
+    lint: {run: golangci-lint run}
+pre-push:
+  commands:
+    trackfw-validate: {run: trackfw validate}     ← configuração legítima
+
+strings.Contains(arquivo, "trackfw-validate:") = true
+→ o init declara idempotência e NUNCA instala o hook em pre-commit:
+```
+
+🔴 O predicado pergunta *"o texto aparece no arquivo?"*; deveria perguntar *"o hook está instalado no
+lugar certo?"*. Corrigido isso, o caso do comentário cai por consequência — e a questão filosófica
+*"comentar é desabilitar deliberadamente?"* **deixa de precisar de resposta**.
+
+**Critérios de aceite:**
+- [ ] O predicado verifica presença **dentro** de `pre-commit:` → `commands:`, não no arquivo inteiro.
+      Reuse o caminho que o merge já percorre.
+- [ ] 🔴 **Teste no braço do `pre-push:`** (sem comentário): hook sob `pre-push:` → `trackfw-validate`
+      **É** instalado em `pre-commit:`, e o `pre-push:` do consumidor é **preservado**
+- [ ] Contra-braço: hook **já** em `pre-commit:` → no-op, zero diff (idempotência real preservada)
+- [ ] Braço do comentário: `# trackfw-validate:` fora de `commands:` → tratado como ausente
+- [ ] **Header do gate ganha o limite declarado:** *"este gate é estrutural — detecta ausência de
+      leitura, não uso semântico dela; um `os.ReadFile` decorativo o satisfaz"*.
+      🔴 **NÃO** tornar o marcador obrigatório: o decoy da Wave 2 passaria igual, bastando colar o
+      marcador. O ML-1C já removeu o marcador deste sítio **por medição**, e a falsificação provou que
+      fortaleceu o gate. Limite conhecido se **declara**; não se finge corrigir.
+- [ ] Reconciliação: cada teste novo declara, em uma frase, o que **mediu**
