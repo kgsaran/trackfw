@@ -1,7 +1,7 @@
 ---
 status: backlog
 date: 2026-08-29
-req: REQ-2026-08-29-slug-de-artefato-no-python-diverge-de-go-e-node
+req: docs/requisições/claude/REQ-2026-08-29-slug-de-artefato-no-python-diverge-de-go-e-node.md
 squad: ""
 ---
 

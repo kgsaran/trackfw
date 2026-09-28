@@ -3,7 +3,7 @@ name: migrar-para-upstream-7.3.0-2026-08-29
 title: "Migrar para a base do upstream 7.3.0"
 status: backlog
 date: 2026-08-29
-req: REQ-2026-08-29-migrar-para-upstream-7.3.0
+req: docs/requisições/claude/REQ-2026-08-29-migrar-para-upstream-7.3.0.md
 branch: chore/migrar-upstream-7.3.0
 ---
 
