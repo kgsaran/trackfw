@@ -2949,6 +2949,28 @@ func generateGitIgnore() error {
 	return nil
 }
 
+// lefthookValidatePresent reports whether a trackfw-validate: entry already lives
+// inside the top-level pre-commit: block of a lefthook.yml file.
+//
+// It uses the same section-tracking logic as the merge path in generateLefthookHook:
+// iterate lines, track inPreCommit by watching column-0 non-comment keys, and look for
+// "trackfw-validate:" only while inside that section. This avoids false positives from:
+//   - the key appearing under a different top-level block (e.g. pre-push:)
+//   - the key appearing inside a comment (# trackfw-validate:)
+func lefthookValidatePresent(content string) bool {
+	inPreCommit := false
+	for _, line := range strings.Split(content, "\n") {
+		// Track top-level sections (column-0, non-whitespace, non-comment).
+		if len(line) > 0 && line[0] != ' ' && line[0] != '\t' && line[0] != '#' {
+			inPreCommit = line == "pre-commit:"
+		}
+		if inPreCommit && strings.TrimSpace(line) == "trackfw-validate:" {
+			return true
+		}
+	}
+	return false
+}
+
 func generateLefthookHook() error {
 	lhRoot, lhErr := projectRoot()
 	if lhErr != nil {
@@ -2966,8 +2988,11 @@ func generateLefthookHook() error {
 	existing, _ := os.ReadFile("lefthook.yml")
 	existingStr := string(existing)
 
-	// Idempotent: trackfw-validate already present → no-op.
-	if strings.Contains(existingStr, "trackfw-validate:") {
+	// Idempotent: trackfw-validate already installed inside pre-commit: → no-op.
+	// Uses the same section-tracking logic as the merge path below to avoid false
+	// positives from the key appearing in comments or under a different top-level
+	// block (e.g. pre-push:).
+	if lefthookValidatePresent(existingStr) {
 		return nil
 	}
 

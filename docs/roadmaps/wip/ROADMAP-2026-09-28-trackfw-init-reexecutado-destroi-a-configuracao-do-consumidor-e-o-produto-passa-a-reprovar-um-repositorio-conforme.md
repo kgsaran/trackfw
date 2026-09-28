@@ -225,7 +225,7 @@ de ataque). Aqui os achados são citados por **nome**, para o próximo leitor n�
 
 ### ML-1E — o predicado de idempotência do lefthook pergunta "o texto aparece?" em vez de "o hook está no lugar?"
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-09-28 · **a auditoria achou um caso não testado**
 **Arquivos:** `internal/generators/scaffold.go` (`generateLefthookHook`), `scripts/check-init-preserves-user-config.sh` (só o header)
 
 **Achado da Wave 2, e o arquiteto ampliou o escopo ao medir.** O Hades reportou o defeito pelo braço
@@ -267,3 +267,45 @@ lugar certo?"*. Corrigido isso, o caso do comentário cai por consequência — 
       marcador. O ML-1C já removeu o marcador deste sítio **por medição**, e a falsificação provou que
       fortaleceu o gate. Limite conhecido se **declara**; não se finge corrigir.
 - [ ] Reconciliação: cada teste novo declara, em uma frase, o que **mediu**
+
+**Entregue:** `lefthookValidatePresent(content)`, que rastreia seção de nível 0 e só conta
+`trackfw-validate:` **dentro** de `pre-commit:`. Gate com **só comentários** alterados (verificado por
+`git diff` filtrando linhas `#` — saída vazia). Testes T6 (braço `pre-push:`) e T7 (comentário).
+
+### ML-1F — 🔴 comentário inline após a chave faz o merge DUPLICAR a entrada
+**Owner:** `apolo-tf`
+**Status:** ⬜ Pendente
+**Arquivos:** `internal/generators/scaffold.go` (`lefthookValidatePresent`), teste em
+`internal/generators/lefthook_hook_merge_test.go`
+
+**Achado da auditoria do arquiteto ao ML-1E, por falsificação de um caso que nenhum teste cobriu.**
+Replicei a função entregue e medi 4 formas do hook já instalado:
+
+```
+hook instalado, limpo            presente=true    ✅
+hook instalado + comentário inline presente=false  🔴
+hook só sob pre-push             presente=false   ✅ (é o fix do ML-1E)
+hook com espaço no fim da linha  presente=true    ✅
+```
+
+A comparação é `strings.TrimSpace(line) == "trackfw-validate:"` — **exata**. Um
+`trackfw-validate: # instalado pelo trackfw` é **YAML válido** e não casa. Efeito: o predicado diz
+"ausente", o merge insere **uma segunda** entrada `trackfw-validate:` dentro do mesmo `commands:`, e
+o `lefthook.yml` do consumidor fica com **chave YAML duplicada** — exatamente a corrupção que o ML-1C
+evitou ao inserir dentro do bloco em vez de acrescentar outro `pre-commit:`.
+
+🔴 **Severidade: é corrupção de arquivo do consumidor** — a classe mais grave desta REQ, não cosmético.
+
+**A lição já estava na base:** o ML-1D aprendeu a **filtrar comentário** no gate (`awk` truncando
+`//`). A mesma operação falta no produto, com `#`. O defeito atravessou gate e produto na mesma
+sessão, e só o gate recebeu a correção.
+
+**Critérios de aceite:**
+- [ ] `lefthookValidatePresent` trunca comentário inline (`#`) antes de comparar
+- [ ] 🔴 **Os 4 braços medidos acima entram como teste**, com o resultado esperado de cada um
+- [ ] 🔴 **Contra-braço de corrupção:** partindo de `trackfw-validate: # cmt` já instalado, rodar o
+      merge **não** produz uma segunda entrada — conte as ocorrências de `trackfw-validate:` dentro
+      de `commands:` e exija **exatamente 1**
+- [ ] `#` dentro de valor entre aspas não é tratado como comentário — **ou**, se for, o caveat é
+      **declarado** no comentário da função (o gate declarou o seu; faça o mesmo)
+- [ ] Reconciliação: uma frase por teste, dizendo o que **mediu**

@@ -66,6 +66,18 @@
 #     in a comment.  Gate must FAIL naming the comment-only site AND emit OK for the real-guard
 #     site.  Demonstrates that condition 1 is live after the fix (not silently dead) and that
 #     a comment mentioning os.ReadFile cannot satisfy condition 1.
+#
+# LIMITE CONHECIDO (Wave 2, 2026-09-28): este gate é ESTRUTURAL, não semântico.
+# Ele detecta a AUSÊNCIA de leitura antes da escrita; não verifica que o resultado
+# da leitura é USADO no merge. Um os.ReadFile decorativo — p.ex.
+#   existing, _ := os.ReadFile("trackfw.yaml"); _ = len(existing)
+#   return os.WriteFile("trackfw.yaml", template, 0644)   // trunca
+# satisfaz o gate. Medido com decoy na auditoria independente.
+# Isto é limite da técnica (análise textual), não defeito a corrigir.
+# 🔴 NÃO "resolva" tornando o marcador consumer-config-merge-allowed: obrigatório:
+# o decoy passaria igual, bastando colar o marcador — que é afirmação do mesmo
+# autor que escreveu o truncamento. O ML-1C removeu esse marcador POR MEDIÇÃO
+# (falsificação provou que a remoção fortaleceu o gate).
 
 set -uo pipefail
 

@@ -20,6 +20,17 @@ package generators
 //   T5 NoPreCommitAppends     → medindo que quando lefthook.yml tem um bloco pre-push:
 //                                mas não tem pre-commit:, após a função o arquivo contém
 //                                exatamente um pre-commit: e o pre-push: original é preservado
+//
+// ML-1E (predicado de idempotência):
+//
+//   T6 PrePushOnlyInstallsPreCommit → medindo que trackfw-validate: sob pre-push: (sem
+//                                      pre-commit:) é tratado como ausente: o hook É
+//                                      instalado em pre-commit: e o bloco pre-push: original
+//                                      é preservado íntegro; e que uma 2ª chamada é no-op
+//                                      (contra-braço: idempotência após correção)
+//   T7 CommentNotCounted            → medindo que "# trackfw-validate:" (comentário) fora
+//                                      de commands: é tratado como ausente pelo predicado,
+//                                      e o hook é instalado normalmente
 
 import (
 	"os"
@@ -215,5 +226,135 @@ func TestGenerateLefthookHook_NoPreCommitAppends(t *testing.T) {
 	// trackfw-validate: presente.
 	if !strings.Contains(content, "trackfw-validate:") {
 		t.Errorf("trackfw-validate: não foi acrescentado\nconteúdo:\n%s", content)
+	}
+}
+
+// T6 — trackfw-validate: sob pre-push: (sem pre-commit:) → hook instalado em pre-commit:,
+// bloco pre-push: preservado íntegro; e 2ª chamada é no-op (contra-braço).
+//
+// Reconciliação: este teste afirma que quando lefthook.yml contém trackfw-validate: apenas
+// sob pre-push: e não tem bloco pre-commit:, lefthookValidatePresent retorna false (o hook
+// não está no lugar certo), generateGitHooks instala trackfw-validate: em um novo bloco
+// pre-commit:, e o bloco pre-push: original é preservado byte-a-byte; e que uma segunda
+// chamada produz output byte-idêntico ao da primeira (o predicado corrigido reconhece
+// trackfw-validate: em pre-commit: e retorna early) — medido por contagem de linhas de
+// nível 0, substring e comparação de bytes entre run1 e run2.
+func TestGenerateLefthookHook_PrePushOnlyInstallsPreCommit(t *testing.T) {
+	dir := chdirTemp(t)
+
+	// Fixture: trackfw-validate: está sob pre-push:, sem nenhum pre-commit:.
+	// Este é o braço exato do achado: consumidor que roda validate no push em vez do commit.
+	prePushWithValidate := "pre-commit:\n  commands:\n    lint:\n      run: golangci-lint run\npre-push:\n  commands:\n    trackfw-validate:\n      run: trackfw validate\n"
+	if err := os.WriteFile(filepath.Join(dir, "lefthook.yml"), []byte(prePushWithValidate), 0644); err != nil {
+		t.Fatalf("preparar fixture: %v", err)
+	}
+
+	// 1ª chamada.
+	if err := generateGitHooks(Config{Hooks: "lefthook"}); err != nil {
+		t.Fatalf("generateGitHooks (1ª): %v", err)
+	}
+
+	run1, err := os.ReadFile(filepath.Join(dir, "lefthook.yml"))
+	if err != nil {
+		t.Fatalf("ler lefthook.yml após 1ª: %v", err)
+	}
+	content := string(run1)
+
+	// Exatamente um top-level pre-commit: (sem duplicata).
+	topLevelPreCommit := 0
+	for _, line := range strings.Split(content, "\n") {
+		if line == "pre-commit:" {
+			topLevelPreCommit++
+		}
+	}
+	if topLevelPreCommit != 1 {
+		t.Errorf("esperava exatamente 1 'pre-commit:' de nível 0, obteve %d\nconteúdo:\n%s", topLevelPreCommit, content)
+	}
+
+	// trackfw-validate: instalado especificamente dentro do bloco pre-commit: —
+	// não apenas em qualquer lugar do arquivo (ex: ainda só sob pre-push:).
+	installedInPreCommit := false
+	{
+		inPC := false
+		for _, ln := range strings.Split(content, "\n") {
+			if len(ln) > 0 && ln[0] != ' ' && ln[0] != '\t' && ln[0] != '#' {
+				inPC = ln == "pre-commit:"
+			}
+			if inPC && strings.TrimSpace(ln) == "trackfw-validate:" {
+				installedInPreCommit = true
+				break
+			}
+		}
+	}
+	if !installedInPreCommit {
+		t.Errorf("trackfw-validate: não foi instalado dentro de pre-commit: (só estava em pre-push:)\nconteúdo:\n%s", content)
+	}
+
+	// Bloco pre-push: preservado íntegro.
+	if !strings.Contains(content, "pre-push:") {
+		t.Errorf("bloco pre-push: foi destruído\nconteúdo:\n%s", content)
+	}
+
+	// Contra-braço: 2ª chamada é no-op (idempotência real preservada após correção do predicado).
+	if err := generateGitHooks(Config{Hooks: "lefthook"}); err != nil {
+		t.Fatalf("generateGitHooks (2ª): %v", err)
+	}
+	run2, err := os.ReadFile(filepath.Join(dir, "lefthook.yml"))
+	if err != nil {
+		t.Fatalf("ler lefthook.yml após 2ª: %v", err)
+	}
+	if string(run1) != string(run2) {
+		t.Fatalf("idempotência quebrada após correção do predicado — 2ª execução alterou o arquivo:\nrun1:\n%s\nrun2:\n%s", string(run1), string(run2))
+	}
+}
+
+// T7 — "# trackfw-validate:" como comentário → tratado como ausente, hook instalado.
+//
+// Reconciliação: este teste afirma que lefthookValidatePresent retorna false quando
+// trackfw-validate: aparece apenas em linhas de comentário (fora de commands:), e que
+// generateGitHooks instala o hook normalmente — medido verificando que o arquivo
+// resultante contém trackfw-validate: como entrada real (indentado sob pre-commit:) e
+// não apenas como comentário.
+func TestGenerateLefthookHook_CommentNotCounted(t *testing.T) {
+	dir := chdirTemp(t)
+
+	// Fixture: trackfw-validate: aparece APENAS como comentário, fora de commands:.
+	commentFixture := "pre-commit:\n  commands:\n    lint:\n      run: golangci-lint run\n# trackfw-validate: disabled\n"
+	if err := os.WriteFile(filepath.Join(dir, "lefthook.yml"), []byte(commentFixture), 0644); err != nil {
+		t.Fatalf("preparar fixture: %v", err)
+	}
+
+	if err := generateGitHooks(Config{Hooks: "lefthook"}); err != nil {
+		t.Fatalf("generateGitHooks: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(dir, "lefthook.yml"))
+	if err != nil {
+		t.Fatalf("ler lefthook.yml: %v", err)
+	}
+	content := string(data)
+
+	// trackfw-validate: instalado como entrada real (indentado sob pre-commit:).
+	// Uma linha "    trackfw-validate:" (4 espaços) indica entrada em commands:.
+	found := false
+	for _, line := range strings.Split(content, "\n") {
+		if strings.TrimSpace(line) == "trackfw-validate:" && len(line) > 0 && (line[0] == ' ' || line[0] == '\t') {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("trackfw-validate: não foi instalado como entrada real (indentada) sob pre-commit:\nconteúdo:\n%s", content)
+	}
+
+	// Exatamente um top-level pre-commit: (sem duplicata).
+	topLevelPreCommit := 0
+	for _, line := range strings.Split(content, "\n") {
+		if line == "pre-commit:" {
+			topLevelPreCommit++
+		}
+	}
+	if topLevelPreCommit != 1 {
+		t.Errorf("esperava exatamente 1 'pre-commit:' de nível 0, obteve %d\nconteúdo:\n%s", topLevelPreCommit, content)
 	}
 }

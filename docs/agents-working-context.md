@@ -2,6 +2,25 @@
 
 ---
 
+## 2026-09-28 — Apolo (fix/init-reexecutado-destroi-config-do-consumidor — ML-1E predicado de idempotência) — ENTREGUE
+
+**Início:** 2026-09-28 | Branch: `fix/init-reexecutado-destroi-config-do-consumidor`
+**Tarefa:** ML-1E — corrigir o predicado de idempotência de `generateLefthookHook` que usava `strings.Contains(file, "trackfw-validate:")` e dava falso-positivo (hook sob `pre-push:` sendo tratado como "já instalado", impedindo a instalação em `pre-commit:`). Adicionar declaração de limite ao cabeçalho do gate.
+
+**Resultado:**
+- `internal/generators/scaffold.go`: função `lefthookValidatePresent(content string) bool` adicionada acima de `generateLefthookHook`. Usa o mesmo rastreamento de seção da rota de merge (iteração linha a linha, `inPreCommit` por chave de nível 0 não-comentário), verificando `trackfw-validate:` apenas dentro do bloco `pre-commit:`. Substitui `strings.Contains(existingStr, "trackfw-validate:")` por `lefthookValidatePresent(existingStr)`.
+- `internal/generators/lefthook_hook_merge_test.go`: dois testes novos (T6 e T7) com frases de reconciliação:
+  - T6 `PrePushOnlyInstallsPreCommit`: medindo que `trackfw-validate:` sob `pre-push:` é tratado como ausente pelo predicado corrigido → hook instalado dentro de `pre-commit:` (verificado por rastreamento de seção inline), `pre-push:` preservado, e 2ª chamada é byte-idêntica (contra-braço).
+  - T7 `CommentNotCounted`: medindo que `# trackfw-validate:` como comentário é tratado como ausente → hook instalado como entrada real indentada sob `pre-commit:`.
+- `scripts/check-init-preserves-user-config.sh`: declaração de limite estrutural (Wave 2, 2026-09-28) adicionada ao cabeçalho de comentários, antes de `set -uo pipefail`. Nenhuma lógica alterada.
+- `go build ./...`: RC=0 | `go test ./internal/generators/`: RC=0
+- `bash scripts/check-init-preserves-user-config.sh`: RC=0 (4 sítios, todos PASS)
+- `bash scripts/check-init-preserves-user-config.sh --self-test`: SELFTEST_RC=0 (3 braços, todos PASS)
+- `git diff trackfw.yaml`: vazio.
+- Arquivos alterados: `docs/agents-working-context.md`, `internal/generators/scaffold.go`, `internal/generators/lefthook_hook_merge_test.go`, `scripts/check-init-preserves-user-config.sh`.
+
+---
+
 ## 2026-09-28 — Apolo (fix/init-reexecutado-destroi-config-do-consumidor — ML-1D falso verde em comentário) — ENTREGUE
 
 **Início:** 2026-09-28 | Branch: `fix/init-reexecutado-destroi-config-do-consumidor`
