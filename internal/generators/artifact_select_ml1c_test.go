@@ -167,8 +167,13 @@ func TestMoveRoadmap_AmbiguousPartial_RefusesNamingCandidates(t *testing.T) {
 	msg := err.Error()
 	for _, want := range []string{
 		"multiple roadmaps match",
-		filepath.Join("docs/roadmaps/backlog", "ROADMAP-2026-07-19-global-adrs-um.md"),
-		filepath.Join("docs/roadmaps/done", "ROADMAP-2026-07-19-global-adrs-dois.md"),
+		// Literal POSIX, NÃO filepath.Join: roadmapCandidateFiles devolve separador
+		// POSIX por contrato (roadmap.go, doc comment; fixado por
+		// scripts/check-ref-separator-portability.sh), e esta mensagem de erro é
+		// exibida ao usuário com o caminho cru. filepath.Join aqui afirmaria a forma
+		// NATIVA — o contrato antigo — e reprova no Windows (medido, PR #464).
+		"docs/roadmaps/backlog/ROADMAP-2026-07-19-global-adrs-um.md",
+		"docs/roadmaps/done/ROADMAP-2026-07-19-global-adrs-dois.md",
 	} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("erro deveria conter %q; got: %v", want, msg)

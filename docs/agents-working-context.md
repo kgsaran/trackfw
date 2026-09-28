@@ -2,6 +2,27 @@
 
 ---
 
+## 2026-09-28 — Apolo (fix/roadmap-para-req-sem-tratamento-de-stale — ML-1E reconciliação teste) — ENTREGUE
+
+**Início:** 2026-09-28 | Branch: `fix/roadmap-para-req-sem-tratamento-de-stale`
+**Tarefa:** Reconciliar teste `TestMoveRoadmap_AmbiguousPartial_RefusesNamingCandidates` com o contrato POSIX de `roadmapCandidateFiles` (ML-1D). Trocar `filepath.Join` por literais POSIX + comentário de contrato.
+
+**Resultado:**
+- `internal/generators/artifact_select_ml1c_test.go`: literais POSIX substituem `filepath.Join`; comentário explica o contrato e a medição (PR #464).
+- `go build ./...`: RC=0 | testes alvo: todos PASS, RC=0 | gate portabilidade: 14 assinaturas OK, RC=0.
+- `git diff --name-only`: apenas `internal/generators/artifact_select_ml1c_test.go`.
+
+## 2026-09-28 — Apolo (fix/roadmap-para-req-sem-tratamento-de-stale — separator fix PR #464) — ENTREGUE
+
+**Início:** 2026-09-28 | Branch: `fix/roadmap-para-req-sem-tratamento-de-stale`
+**Tarefa:** Corrigir `roadmapCandidateFiles` para devolver separador POSIX em toda plataforma (Windows fix para PR #464), adicionar gate e comentário de contrato.
+
+**Resultado:**
+- `internal/generators/roadmap.go`: `filepath.ToSlash` no retorno de `roadmapCandidateFiles` + doc comment de contrato.
+- `scripts/check-ref-separator-portability.sh`: `assert_has` novo para o contrato; contagem atualizada 13→14.
+- `internal/generators/req_chain_ml1c_test.go`: comentário explicativo acima da guarda de anti-vacuidade (produto corrigido, não o teste).
+- `go build ./...`: RC=0 | `go test ./internal/generators/...`: RC=0 | gate: 14 assinaturas OK, RC=0.
+
 ## 2026-09-27 — Hades (fix/contencao-nao-ve-juncao-do-windows — ML-0A Wave 0) — ENTREGUE
 
 **Início:** 2026-09-27 | Branch: `fix/contencao-nao-ve-juncao-do-windows`
@@ -49,6 +70,28 @@
 - `scripts/check-crlf-normalize-capture.sh`: exit=0 — `tr -d '\r'` reconhecido como `strip_cr`, não flagrado.
 - Nenhum teste novo criado neste ML — Regra Dura de Reconciliação não se aplica.
 - `git status --porcelain`: apenas os 6 arquivos esperados (working-context, scaffold.go, validator reference, 3 scripts).
+
+---
+
+## 2026-09-28 — Apolo (fix/roadmap-para-req-sem-tratamento-de-stale — ML-1C) — EM ANDAMENTO
+
+**Início:** 2026-09-28 | Branch: `fix/roadmap-para-req-sem-tratamento-de-stale`
+**Tarefa:** ML-1C — `FindRoadmapLinkingREQ` não cruza namespace de agente em `by_agent`.
+**Escopo:** `internal/generators/req_chain_ml4a.go` apenas. Arquivo `internal/validator/validator.go` em uso por outro agente — intocado.
+
+**Resultado:**
+- `FindRoadmapLinkingREQ` corrigida: modo `by_agent` requer que o componente de agente do ref
+  armazenado no roadmap coincida com o do `reqPath` de entrada. Flat mode não ativado (byAgent gate).
+- Nova função `reqAgentOf(reqPath, reqDir, agents)`: ancora no basename de `reqDir` para extrair o agente, funcionando em layouts canônico (agent/REQ.md) e com state subdir (agent/state/REQ.md) — robusto para caminhos absolutos e stale refs após `req move`.
+- Decisão: Option A (same namespace) + recusa por ambiguidade se >1 candidatos sobreviverem ao filtro. Option B (basename único) refutada: não resolve o caso onde apenas 1 roadmap existe mas pertence a agente diferente.
+- 3 testes novos em `internal/generators/req_chain_ml1c_test.go`: cross-namespace prevented, own-namespace found (anti-vacuidade), flat contra-braço.
+- Afirmação do handoff refutada: "Prefiro a segunda forma (recusar se basename não único)" — medição mostra que Option B não resolve o bug quando há apenas 1 match (o do agente errado).
+- `go build ./...`: exit=0.
+- `go test ./...`: exit=0, todos os pacotes PASS.
+- `trackfw validate`: 0 violations novas, 174 warnings (lenient, pré-existentes).
+- `make quality`: exit=2, mas a ÚNICA falha é `check-ref-separator-portability` em `internal/validator/validator.go` — arquivo da frente paralela (ML-1A/1B), o qual acrescentou 3ª ocorrência de `expandedRef := config.ExpandPath(normalizeRefSeparator(ref))` enquanto o gate espera 2. Não é do escopo de ML-1C. Confirmado: HEAD snapshot tem 2 ocorrências; working tree (com mudanças do paralelo) tem 3.
+- `git status --porcelain`: 2 arquivos meus (req_chain_ml4a.go, req_chain_ml1c_test.go) + working-context + roadmap. validator.go e validator_test.go são da frente paralela.
+
 
 ---
 
@@ -42164,3 +42207,57 @@ régua não muda veredito nenhum hoje.
 - `git ls-files --modified`: apenas `docs/cli-parity.md` (+ hades-tf pre-existing untracked)
 
 **Distinção preservada:** DEDUP ("não vemos, e está tudo bem") e OneDrive cloud-only ("podemos barrar indevidamente, não medimos") foram declaradas em subseções separadas com marcadores `gap` distintos, preservando a natureza oposta das duas limitações (uma é carve-out do Go sem risco; a outra é falso-positivo operacional não mensurável).
+
+## hades-tf · ML-0A · Wave 0 (REQ-2026-09-28) · 2026-09-28 — INICIADO
+
+**Branch:** `fix/roadmap-para-req-sem-tratamento-de-stale`
+**REQ/Roadmap:** `REQ-2026-09-28` / `ROADMAP-2026-09-28-a-direcao-roadmap-para-req-nao-tem-o-tratamento-de-stale-que-a-direcao-inversa-ja-tem.md`
+**Escopo:** ML-0A — Wave 0: medir o que NÃO precisa ser construído
+
+**Sem git operations. Sem implementação.**
+
+## hades-tf · ML-0A · Wave 0 (REQ-2026-09-28) · 2026-09-28 — CONCLUÍDO
+
+**Resultado:** Parecer escrito. Nenhuma implementação. Roadmap ML-0A marcado ✅.
+
+**Arquivo produzido:**
+- `docs/seguranca/2026-09-28-wave0-req-stale-direction.md`
+
+**Vereditos:**
+
+1. **Ramo de ambiguidade é alcançável** em `by_agent` com 2+ agentes. `req new --agent hades "x"` + `req new --agent apolo "x"` cria dois arquivos de basename idêntico sem obstáculo. A premissa do arquiteto ("provavelmente inalcançável") foi refutada pela medição.
+
+2. **AC4: ampliar para `backlog` (Opção B).** Custo medido: 14 violações históricas em done/abandoned (artefatos pré-padronização); 0 em backlog. Expandir só para backlog+analyzing fecha o #452 sem ruído permanente.
+
+3. **Bloqueio crítico para Wave 1:** predicado `isStaleRoadmapStateRef` bloqueia o fallback para o ref do #452 (`hefesto/` não está em `agentNamespaceStateNames`). Mirror literal não corrige o #452. Predicado correto: `filepath.Dir(ref) != "."`. Scenario 25 preservado com este predicado.
+
+4. **Wave 0 gate cego em `by_agent`**: glob `docs/req/*.md` não alcança subdirs. Fora do escopo desta REQ.
+
+5. **Secundário (same-mechanism):** `FindRoadmapLinkingREQ` vincula REQ de agente B ao roadmap de agente A via basename. Por Regra Dura, é ML desta REQ.
+
+
+## apolo-tf · ML-1A + ML-1B (REQ-2026-09-28) · 2026-09-28 — INICIADO
+
+**Branch:** `fix/roadmap-para-req-sem-tratamento-de-stale`
+**REQ/Roadmap:** `REQ-2026-09-28` / `ROADMAP-2026-09-28-a-direcao-roadmap-para-req-...`
+**Escopo:** ML-1A (direção Roadmap→REQ classifica stale/ambíguo) + ML-1B (backlog+analyzing varridos)
+**Arquivo principal:** `internal/validator/validator.go`
+
+**Sem git operations. Sem criação de branch.**
+
+## apolo-tf · ML-1A + ML-1B (REQ-2026-09-28) · 2026-09-28 — CONCLUÍDO
+
+**Resultado:** Implementação completa. `make quality` exit=0. Nenhuma regressão.
+
+**Arquivos modificados:**
+- `internal/validator/validator.go` — `resolveREQRefStatus`, `resolveREQRefByBasename`, expansão do `dirs` scan para backlog+analyzing, switch stale/ambíguo/inexistente na direção Roadmap→REQ
+- `internal/validator/validator_test.go` — 6 novos testes: `TestRefTargetsExist_ReqStale_HefestoDir`, `TestRefTargetsExist_ReqDeleted`, `TestRefTargetsExist_ReqBareName`, `TestRefTargetsExist_ReqAmbiguous`, `TestRefTargetsExist_BacklogScanned`, `TestRefTargetsExist_AnalyzingScanned`
+- `docs/cli-parity.md` — seção `ref_targets_exist — escopo de estados (ML-1B)` com annotation de contrato
+- `docs/roadmaps/wip/ROADMAP-2026-09-28-...md` — ML-1A e ML-1B marcados ✅
+- `scripts/check-ref-separator-portability.sh` — assert_count atualizado de 2→3 para `resolveREQRefStatus` (3ª ocorrência legítima de `expandedRef := config.ExpandPath(normalizeRefSeparator(ref))`)
+
+**Refutação registrada no roadmap:** AC "stale, não violação" é inalcançável — `ref_targets_exist` é severity "error", `applyRule` não distingue por mensagem. Mesmo comportamento do espelho.
+
+**Predicate proof:** `filepath.Dir(normalizeRefSeparator(ref)) == "."` bloqueia fallback para refs sem diretório (Cenário 25); deixa `docs/req/hefesto/REQ-X.md` entrar no fallback (caso motivador #452).
+
+**Delta validate:** 0 novas violações/warnings antes/depois em corpus real (176 linhas idênticas).
