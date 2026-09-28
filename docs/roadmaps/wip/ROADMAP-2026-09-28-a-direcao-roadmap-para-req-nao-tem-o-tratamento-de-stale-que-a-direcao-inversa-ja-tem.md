@@ -15,8 +15,15 @@ REQ: docs/req/REQ-2026-09-28-a-direcao-roadmap-para-req-nao-tem-o-tratamento-de-
 
 ## Acceptance Criteria
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
-- [ ]
-- [ ]
+- [x] A direção Roadmap → REQ **classifica** referência stale, com o predicado certo (ML-1A)
+- [x] `ref_targets_exist` varre `backlog` e `analyzing`; `done`/`abandoned` **declarados fora**, com
+      a razão medida em `docs/cli-parity.md` (ML-1B)
+- [x] `FindRoadmapLinkingREQ` **não cruza namespace** de agente em `by_agent`, e em `flat` o vínculo
+      por basename **continua funcionando** (ML-1C)
+- [x] `roadmapCandidateFiles` devolve separador **POSIX por contrato**, fixado por gate falsificado
+      nas duas direções (ML-1D)
+- [x] Nenhum teste afirma o contrato de separador **antigo** (ML-1E)
+- [x] `make quality` local e **CI verdes**: 20/20 checks SUCCESS no PR #464
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
