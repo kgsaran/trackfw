@@ -150,7 +150,7 @@ já lê → verifica `strings.Contains(…, "commit-msg:")` → acrescenta se au
 
 ### ML-1D — 🔴 o gate do ML-1B aceita `os.ReadFile` em COMENTÁRIO como guarda
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-09-28
 **Arquivos:** `scripts/check-init-preserves-user-config.sh` **apenas**
 
 **Achado da auditoria do arquiteto, medido em 2026-09-28.** O gate criado por esta REQ para impedir
@@ -179,12 +179,22 @@ como `$1` — o gate leu a árvore real e eu quase reportei o resultado do arqui
 `SCAFFOLD_FILE=<caminho> bash scripts/...`.
 
 **Critérios de aceite:**
-- [ ] O discriminante ignora linhas de comentário (`^[[:space:]]*//`) ao procurar a guarda
-- [ ] 🔴 **Falsificação nas duas direções**, com `SCAFFOLD_FILE` apontando para cópias no scratchpad:
-      guarda real presente → **PASS** · guarda removida e citada só em comentário → **FAIL**
-- [ ] O `--self-test` embutido ganha um braço para **este** caso, para que não regrida
-- [ ] Contagem de sítios e anti-vacuidade por alvo **preservadas**; `RC=0` na árvore real
-- [ ] Reconciliação: uma frase dizendo qual conclusão o braço novo do self-test afirma
+- [x] O discriminante ignora comentário de linha **e** de fim de linha (`sub(/[[:space:]]*\/\/.*$/)`),
+      com o caveat de truncar em `//` dentro de string literal **declarado** no header do script
+- [x] 🔴 **Falsificação nas duas direções**, e **reverificada pelo arquiteto com a fixture original
+      do achado**: a cópia que dava falso verde agora → **FAIL**; cópia fiel → **PASS**
+- [x] `--self-test` ganhou o **braço 3**, e ele é **discriminante, não decorativo**: o executor rodou
+      a fixture do braço 3 contra o script **pré-fix** e obteve `PASS/RC=0` — prova de que o braço
+      falharia antes e passa depois
+- [x] Contagem e anti-vacuidade por alvo preservadas; `RC=0` na árvore real, `SELFTEST_RC=0` (3/3
+      braços), `check-orphan-gates` OK sobre 50 scripts
+- [x] Reconciliação escrita, e ela afirma o discriminante: numa mesma execução sobre a mesma
+      fixture, o gate **reprova** o sítio cuja guarda está só em comentário e **aceita** o sítio
+      adjacente cuja guarda é código executável
+- [x] 🔴 **Defeito ESPELHO achado e corrigido no mesmo ML** (Regra Dura, mesma causa): a detecção do
+      *write-site* por `grep -nE` também não filtrava comentários — um `os.WriteFile` comentado
+      satisfazia a anti-vacuidade e produzia falso verde pelo outro lado. Corrigido com
+      `grep -Ev '^[0-9]+:[[:space:]]*//'`, e falsificado
 
 ## Wave 2 — auditoria independente
 > Dependências: Wave 1 completa e auditada.

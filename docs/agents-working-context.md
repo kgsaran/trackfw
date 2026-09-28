@@ -2,6 +2,27 @@
 
 ---
 
+## 2026-09-28 — Apolo (fix/init-reexecutado-destroi-config-do-consumidor — ML-1D falso verde em comentário) — ENTREGUE
+
+**Início:** 2026-09-28 | Branch: `fix/init-reexecutado-destroi-config-do-consumidor`
+**Tarefa:** ML-1D — corrigir falso verde no gate `check-init-preserves-user-config.sh` que aceitava `os.ReadFile` citado apenas em comentário como guarda válida; e o defeito espelho simétrico no lado da detecção de write-sites.
+
+**Resultado:**
+- `has_read` awk: agora pula linhas de comentário puro (`^[[:space:]]*//`) e faz strip de comentário inline (`sub(/[[:space:]]*\/\/.*$/, "")`) antes do match — `os.ReadFile` numa linha de comentário não satisfaz a condição 1.
+- Write-site detection: pipe adicional `grep -Ev '^[0-9]+:[[:space:]]*//'` filtra write sites em comentário, resolvendo o defeito espelho (write site comentado iludia anti-vacuidade e dava falso verde).
+- Arm 3 adicionado ao `--self-test`: fixture com dois sites `lefthook.yml[literal]` — um com ReadFile real (OK), outro com ReadFile só em comentário (FAIL). Verificação de dois lados: confirma que condição 1 está viva pós-fix.
+- Tratamento de comentário inline declarado explicitamente no header do script.
+- Falsificações (via `SCAFFOLD_FILE=`):
+  1. guarda real presente → PASS (RC=0) ✓
+  2. guarda removida, citada só em comentário → FAIL (RC=1), nomeando `lefthook.yml[literal]` ✓
+  3. write site comentado → FAIL anti-vacuidade (RC=1) ✓
+- Prova pré-fix: arm 3 com script original (`git show HEAD:...`) dava falso verde (RC=0, PRE_FIX_RC=0).
+- `check-init-preserves-user-config.sh`: RC=0 | `--self-test`: SELFTEST_RC=0 (all 3 arms) | `check-orphan-gates.sh`: ORPHAN_RC=0
+- `git diff trackfw.yaml`: vazio.
+- Arquivo alterado: `scripts/check-init-preserves-user-config.sh` (único).
+
+---
+
 ## 2026-09-28 — Apolo (fix/init-reexecutado-destroi-config-do-consumidor — ML-1C correção de auditoria) — ENTREGUE
 
 **Início:** 2026-09-28 | Branch: `fix/init-reexecutado-destroi-config-do-consumidor`

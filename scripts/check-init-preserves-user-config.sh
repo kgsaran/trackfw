@@ -42,6 +42,18 @@
 #   .husky/*, .lefthook/commit-msg/trackfw-req-check.sh, ~/.claude/skills/trackfw/SKILL.md.
 #   (Wave 0 class (b), 14 sites — this gate does not examine them.)
 #
+# COMMENT FILTERING (both write-site detection and ReadFile guard detection):
+#   Lines that are pure Go comments (optional whitespace + //) are excluded from both the
+#   grep that finds write sites and the awk that finds ReadFile guards.  A real call that
+#   appears only in a comment does NOT count as a guard and does NOT count as a write site.
+#   Inline trailing comments are also stripped before pattern-matching in the guard awk.
+#   Caveat: the inline strip uses sub(/[[:space:]]*\/\/.*$/, "") which also truncates at //
+#   inside string literals (e.g. URLs).  This is acceptable for this gate: os.ReadFile after
+#   a URL in the same source line is not a credible real-world pattern in scaffold.go.
+#   A comment-only guard is INDISTINGUISHABLE from an absent guard — by design.
+#   For consistency, inline end-of-line comments are also excluded: `foo() // os.ReadFile`
+#   does NOT satisfy condition 1; the guard must be executable code.
+#
 # SELF-TEST (--self-test flag):
 #   Arm 1 (braço 1): synthetic scaffold with unmarked writes to consumer files → gate FAILS,
 #     naming each site.  Demonstrates the gate catches the defect.
@@ -49,6 +61,11 @@
 #     (b) site (generateValidateScript, unconditional os.WriteFile to scripts/trackfw-validate.sh)
 #     is present → gate PASSES.  Demonstrates the gate does NOT flag product-generated writes,
 #     which would block the mechanism by which script fixes (e.g. CRLF, PR #353) reach consumers.
+#   Arm 3 (braço 3): fixture with two lefthook.yml write sites in separate functions —
+#     one guarded by a REAL os.ReadFile call (no marker), one where os.ReadFile appears only
+#     in a comment.  Gate must FAIL naming the comment-only site AND emit OK for the real-guard
+#     site.  Demonstrates that condition 1 is live after the fix (not silently dead) and that
+#     a comment mentioning os.ReadFile cannot satisfy condition 1.
 
 set -uo pipefail
 
@@ -114,9 +131,23 @@ check_scaffold() {
                 | grep -oE 'func [A-Za-z0-9_]+' | head -1 | cut -d' ' -f2 || echo "<unknown>")
 
             # ---- Condition 1: os.ReadFile in enclosing function, before the write ----
+            # Comment filtering: pure comment lines (^[[:space:]]*// ...) are skipped.
+            # Inline trailing comments are stripped before matching so that
+            #   existing, _ := os.ReadFile(f) // some note
+            # still counts as a guard, but
+            #   // old: existing, _ := os.ReadFile(f)    ← comment-only, NOT a guard
+            # does not.  Caveat documented in the script header.
             local has_read
-            has_read=$(awk -v fstart="$func_start" -v wline="$lineno" \
-                'NR > fstart && NR < wline && /os\.ReadFile/ { found=1 } END { print (found ? "yes" : "no") }' \
+            has_read=$(awk -v fstart="$func_start" -v wline="$lineno" '
+                NR > fstart && NR < wline {
+                    line = $0
+                    # Skip pure comment lines
+                    if (line ~ /^[[:space:]]*\/\//) next
+                    # Strip inline trailing comment before matching
+                    sub(/[[:space:]]*\/\/.*$/, "", line)
+                    if (line ~ /os\.ReadFile/) found=1
+                }
+                END { print (found ? "yes" : "no") }' \
                 "$scaffold")
 
             # ---- Condition 2: inline marker on the write line or the line above ----
@@ -139,7 +170,7 @@ check_scaffold() {
                 echo "FAIL [$name] line $lineno in $func_name — unconditional write to consumer-authored file (no ReadFile guard, no '$MARKER' marker)"
                 total_violations=$((total_violations + 1))
             fi
-        done < <(grep -nE "$pattern" "$scaffold" || true)
+        done < <(grep -nE "$pattern" "$scaffold" | grep -Ev '^[0-9]+:[[:space:]]*//' || true)
 
         # Anti-vacuity: every target must have at least one site
         if [[ $sites_for_target -eq 0 ]]; then
@@ -276,8 +307,72 @@ GOEOF
     fi
     echo ""
 
+    # ---- Arm 3 (braço 3): one real ReadFile guard + one comment-only "guard" → gate MUST FAIL
+    #      naming the comment-only site AND emit OK for the real-guard site.
+    #      Two-sided assertion: proves condition 1 is live (real guard accepted) AND that a
+    #      comment mentioning os.ReadFile cannot satisfy condition 1 (comment-only rejected).
+    cat > "$TMPDIR_ST/arm3.go" <<'GOEOF'
+package generators
+
+import "os"
+
+// trackfw.yaml — marker guard so anti-vacuity passes for that target
+func writeTrackfwConfig() error {
+	// consumer-config-merge-allowed: merges missing top-level keys only
+	if err := os.WriteFile("trackfw.yaml", []byte("content"), 0644); err != nil {
+		return err
+	}
+	return nil
+}
+
+// lefthook.yml site A — REAL os.ReadFile guard (no marker): condition 1 satisfied → OK
+func funcWithRealGuard() error {
+	existing, _ := os.ReadFile("lefthook.yml")
+	if err := os.WriteFile("lefthook.yml", existing, 0644); err != nil {
+		return err
+	}
+	return nil
+}
+
+// lefthook.yml site B — os.ReadFile appears ONLY in a comment: condition 1 NOT satisfied → FAIL
+func funcWithCommentOnlyGuard() error {
+	// old: existing, _ := os.ReadFile("lefthook.yml") — removed by refactor
+	var existing []byte
+	_ = existing
+	if err := os.WriteFile("lefthook.yml", []byte("content"), 0644); err != nil {
+		return err
+	}
+	return nil
+}
+
+// lefthook.yml via variable — real ReadFile guard for anti-vacuity of lefthook.yml[via-lefthookPath]
+func generateCommitMsgHook() error {
+	lefthookPath := "lefthook.yml"
+	existing, _ := os.ReadFile(lefthookPath)
+	if err := os.WriteFile(lefthookPath, existing, 0644); err != nil {
+		return err
+	}
+	return nil
+}
+GOEOF
+
+    echo "=== Arm 3 (braço 3): real ReadFile guard + comment-only 'guard' — gate must FAIL naming comment site, OK real site ==="
+    arm3_rc=0
+    arm3_out=$(SCAFFOLD_FILE="$TMPDIR_ST/arm3.go" bash "${BASH_SOURCE[0]}" 2>&1) || arm3_rc=$?
+    echo "$arm3_out"
+    # Gate must exit non-zero AND name lefthook.yml[literal] as FAIL AND also emit OK for lefthook.yml[literal]
+    if [[ $arm3_rc -ne 0 ]] \
+        && echo "$arm3_out" | grep -q "FAIL \[lefthook.yml\[literal\]\]" \
+        && echo "$arm3_out" | grep -q "OK   \[lefthook.yml\[literal\]\]"; then
+        echo "SELF-TEST arm3: PASS (gate failed naming comment-only site; real-guard site accepted; rc=$arm3_rc)"
+    else
+        echo "SELF-TEST arm3: FAIL — expected FAIL for comment-only site AND OK for real-guard site (rc=$arm3_rc)" >&2
+        overall_rc=1
+    fi
+    echo ""
+
     if [[ $overall_rc -eq 0 ]]; then
-        echo "SELF-TEST: PASS (both arms)"
+        echo "SELF-TEST: PASS (all 3 arms)"
     else
         echo "SELF-TEST: FAIL" >&2
     fi
