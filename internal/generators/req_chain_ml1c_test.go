@@ -75,6 +75,11 @@ func TestFindRoadmapLinkingREQ_ByAgent_DoesNotCrossNamespace(t *testing.T) {
 
 	got := FindRoadmapLinkingREQ(apoloReqPath)
 
+	// Esta guarda reprovou legitimamente no Windows (PR #464) e expôs que
+	// roadmapCandidateFiles devolvia separador nativo. Foi corrigido no PRODUTO
+	// (roadmap.go: ToSlash no retorno), não aqui. NÃO relaxe esta guarda: sem ela
+	// o teste passa vacuamente no Windows, porque "não retorna o roadmap errado"
+	// é trivialmente verdadeiro quando a busca não encontra nada.
 	// Anti-vacuidade: verificar que o roadmap de hades está de fato na árvore e seria
 	// encontrado por uma busca ingênua (basename-only). Sem esta verificação, um
 	// roadmapCandidateFiles vazio passaria no teste por vácuo.

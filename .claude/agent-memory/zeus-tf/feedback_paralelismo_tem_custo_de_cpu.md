@@ -40,3 +40,31 @@ Nota de vault com o detalhe: `vault/notes/carga-de-cpu-vem-da-suite-de-falsifica
 
 Relacionado: [[processos-orfaos-de-subagente]] — sintoma parecido, causa oposta (lá o processo
 **fica**; aqui ele termina e some, e por isso a investigação tardia não acha nada).
+
+## ⚠️ Ampliação de 2026-09-28: o custo NÃO é só CPU — é medição sobre árvore em movimento
+
+Em 2026-09-28 despachei dois agentes em paralelo (`ML-1A/1B` em `validator.go`, `ML-1C` em
+`req_chain_ml4a.go`). A fronteira **de arquivo** estava certa e foi respeitada. Mesmo assim o
+`ML-1C` entregou `make quality` **`exit=2`** — e a falha não era dele:
+
+```
+check-ref-separator-portability: esperava 2 ocorrência(s), achou 3 em internal/validator/validator.go
+HEAD: 2   ·   árvore no momento da medição: 3   ← o outro agente estava editando
+```
+
+🔴 **Gate é recurso compartilhado, mesmo quando o arquivo não é.** Um agente que roda `make quality`
+mede o trabalho **incompleto** do outro, e reporta como se fosse defeito próprio. O veredito nasce
+inválido, e pior: parece legítimo.
+
+**How to apply — acrescente ao handoff paralelo:**
+
+> ❌ **Não rode `make quality`.** Há frente paralela na mesma árvore; a barreira completa é minha, e
+> eu a rodo **uma vez**, depois que todos entregarem. Rode apenas `go test ./internal/<seu-pacote>/`.
+
+E na auditoria: **número medido durante frente paralela é suspeito por construção**. Antes de aceitar
+qualquer contagem de gate, confirme se o arquivo citado estava sendo editado por outro agente —
+`git diff --stat -- <arquivo>` responde.
+
+⚠️ Note também o que o episódio revelou de útil: `check-ref-separator-portability` **fixa contagem
+exata**. Trabalho legítimo que acrescente uma ocorrência reprova o gate até o piso ser atualizado —
+e a atualização cabe a quem editou o arquivo, não a quem esbarrou nela.

@@ -178,6 +178,12 @@ assert_has "Go fixture: chave de proveniencia normalizada (fidelidade a producao
   "internal/validator/validator_thirdparty_provenance_test.go" \
   'relDest = normalizeRefSeparator(relDest)'
 
+# roadmapCandidateFiles devolve caminho que vaza ao usuário em "multiple roadmaps match"
+# e é comparado como chave em teste; o contrato de forma POSIX é fixado aqui.
+assert_has "Go: roadmapCandidateFiles devolve separador POSIX" \
+  "internal/generators/roadmap.go" \
+  'files = append(files, filepath.ToSlash(filepath.Join(dir, e.Name())))'
+
 # --- Guardas de vacuidade -----------------------------------------------------
 # Duas guardas distintas, cada uma cobrindo uma forma diferente de "passar sem
 # checar nada" (docs/cli-parity.md, "Quatro propriedades exigidas de todo gate
@@ -196,10 +202,10 @@ assert_has "Go fixture: chave de proveniencia normalizada (fidelidade a producao
 #    linha — nunca um "0 encontrados, gate passa" silencioso. Falsificado em
 #    scratchpad/refsep/{empty-root,nonexistent-dir-xyz} (ver relatorio do ML).
 #
-# 13 e o numero de chamadas assert_has/assert_count acima (Go only — v8 single-runtime;
-# ML-3A removed all Node/Python assertions) — nomeado, nao magico.
+# 14 e o numero de chamadas assert_has/assert_count acima (Go only — v8 single-runtime;
+# ML-3A removed all Node/Python assertions; +1 roadmapCandidateFiles POSIX contract) — nomeado, nao magico.
 # ocorrencias) — nomeado, nao magico.
-expected=13  # ML-3A (v8): Node/Python assertions removed
+expected=14  # ML-3A (v8): Node/Python assertions removed; +1 roadmapCandidateFiles (PR #464)
 if [[ "$checked" -ne "$expected" ]]; then
   echo "check-ref-separator-portability: vacuidade — esperava checar $expected assinaturas, checou $checked" >&2
   fail=1

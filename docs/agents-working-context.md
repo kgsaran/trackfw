@@ -2,6 +2,17 @@
 
 ---
 
+## 2026-09-28 — Apolo (fix/roadmap-para-req-sem-tratamento-de-stale — separator fix PR #464) — ENTREGUE
+
+**Início:** 2026-09-28 | Branch: `fix/roadmap-para-req-sem-tratamento-de-stale`
+**Tarefa:** Corrigir `roadmapCandidateFiles` para devolver separador POSIX em toda plataforma (Windows fix para PR #464), adicionar gate e comentário de contrato.
+
+**Resultado:**
+- `internal/generators/roadmap.go`: `filepath.ToSlash` no retorno de `roadmapCandidateFiles` + doc comment de contrato.
+- `scripts/check-ref-separator-portability.sh`: `assert_has` novo para o contrato; contagem atualizada 13→14.
+- `internal/generators/req_chain_ml1c_test.go`: comentário explicativo acima da guarda de anti-vacuidade (produto corrigido, não o teste).
+- `go build ./...`: RC=0 | `go test ./internal/generators/...`: RC=0 | gate: 14 assinaturas OK, RC=0.
+
 ## 2026-09-27 — Hades (fix/contencao-nao-ve-juncao-do-windows — ML-0A Wave 0) — ENTREGUE
 
 **Início:** 2026-09-27 | Branch: `fix/contencao-nao-ve-juncao-do-windows`

@@ -186,3 +186,45 @@ como está: stale emite violação-class com texto "stale path" (distinguível d
 **Critérios de aceite:**
 - [x] REQ de `apolo` **não** vincula ao roadmap de `hades` de mesmo basename
 - [x] 🔴 Contra-braço: em `flat`, o vínculo por basename **continua funcionando**
+
+### ML-1D — `roadmapCandidateFiles` devolve separador POSIX por contrato
+**Owner:** `apolo-tf`
+**Status:** ✅ Concluído — 2026-09-28
+**Arquivos:** `internal/generators/roadmap.go`, `scripts/check-ref-separator-portability.sh`,
+`internal/generators/req_chain_ml1c_test.go`
+
+**Origem:** o `windows-full-suites` do PR #464 reprovou em
+`TestFindRoadmapLinkingREQ_ByAgent_DoesNotCrossNamespace` — na **guarda de anti-vacuidade** do
+ML-1C. 🔴 **A guarda fez o trabalho dela:** sem ela, o teste passaria **vacuamente** no Windows,
+porque *"não retorna o roadmap errado"* é trivialmente verdadeiro quando a busca não acha nada.
+
+**Medição (Windows real, `go1.27 windows/arm64`, VM `Lab@192.168.64.6`):**
+```
+Join        = "docs\\roadmaps\\hades\\backlog\\R.md"   ← todo backslash
+ToSlash(J)  = "docs/roadmaps/hades/backlog/R.md"
+Base(J)     = "R.md"   Base(slash) = "R.md"
+```
+Fonte primária concordante: `$GOROOT/src/path/filepath/path.go:43` — *"any occurrences of slash are
+replaced by Separator"* — e `IsPathSeparator` do Windows aceita `/`. 🔴 **Retratação do arquiteto:**
+afirmei antes que o separador era *"misto"* (barra no prefixo, backslash no fim). É **falso** — o
+`Clean` dentro do `Join` achata a barra literal da montagem de `dirs`.
+
+**Decisão — (a) defeito do PRODUTO, não do teste.** `roadmapCandidateFiles` devolvia caminho em
+separador nativo **sem contrato declarado de forma**. Dos 4 consumidores, 3 são imunes **por
+acidente** (`filepath.Base` em `FindRoadmapLinkingREQ`/`selectArtifactByName`/`syncRoadmapREQReference`;
+`Abs`/`Rel`/`ToSlash` em `agentFromPath`) e o 4º **imprime o caminho cru ao usuário** na mensagem
+`multiple roadmaps match`. Corrigir o teste preservaria a armadilha para o próximo consumidor — foi
+recusado explicitamente como a saída confortável.
+
+**Reconciliação (Regra Dura):** o `assert_has "Go: roadmapCandidateFiles devolve separador POSIX"`
+afirma a conclusão de que o contrato de forma passou a ser **estrutural e não acidental** — reversão
+do `ToSlash` é detectada.
+
+**Critérios de aceite:**
+- [x] `roadmapCandidateFiles` devolve `/` em toda plataforma, com o contrato no doc comment
+- [x] Gate fixa o contrato; contagem de anti-vacuidade `13 → 14`, **medida** (`grep -c` real = 14)
+- [x] 🔴 **Falsificação nas duas direções**, feita pelo arquiteto sobre cópia mutada: fiel → `RC=0`;
+      `ToSlash` revertido → `RC=1` nomeando o assert ausente
+- [x] A guarda de anti-vacuidade do ML-1C **não foi relaxada** — ganhou comentário proibindo o relaxe
+- [x] `go build ./...` e `go test ./internal/generators/...` verdes; `trackfw.yaml` intacto
+- [ ] `windows-full-suites` verde no PR #464 ← **mede o CI, não a VM**
