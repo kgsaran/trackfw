@@ -3160,7 +3160,20 @@ func validateRefTargetsExist() ([]string, error) {
 	cfg := config.Load()
 	var warnings []string
 
+	// Pré-computar a lista de REQs uma única vez:
+	//   (1) para busca por basename no fallback da direção Roadmap→REQ (ML-1A, REQ-2026-09-28),
+	//   (2) para iterar na direção REQ→Roadmap e REQ→ADR (abaixo).
+	// Hoistado fora dos laços para não chamar resolveREQFiles ~230 vezes por validate.
+	allREQFiles, reqFilesErr := resolveREQFiles(cfg)
+
+	// ML-1B (REQ-2026-09-28): varrer backlog e analyzing além de wip e blocked.
+	// done/abandoned declarados fora do escopo: 14 referências legadas pré-padronização
+	// (sem prefixo de diretório ou req: "~") emitiriam ruído permanente no CI.
+	// Medido na Wave 0 nos 206 roadmaps de done/abandoned deste repositório em 2026-09-28.
+	// Declarado em docs/cli-parity.md, seção "ref_targets_exist — escopo de estados (ML-1B)".
 	dirs := append(resolveWIPDirs(cfg), resolveStateDirs(cfg, "blocked")...)
+	dirs = append(dirs, resolveStateDirs(cfg, "backlog")...)
+	dirs = append(dirs, resolveStateDirs(cfg, "analyzing")...)
 	for _, dir := range dirs {
 		entries := listDirForRule("ref_targets_exist", dir, &warnings)
 		for _, name := range entries {
@@ -3168,20 +3181,34 @@ func validateRefTargetsExist() ([]string, error) {
 			if !ok {
 				continue
 			}
+			// ML-1A (REQ-2026-09-28): classificar a direção Roadmap→REQ em inexistente,
+			// stale (encontrado por basename noutra localização) ou ambíguo.
+			// 🔴 NÃO usa referenceExists cru — ele produziria só "does not exist" para uma
+			// REQ movida de docs/req/ para docs/req/hefesto/, que é exactamente o caso #452.
 			if ref := extractRefPath(string(content), "REQ"); ref != "" {
-				if !referenceExists(ref) {
+				resolved, stale := resolveREQRefStatus(allREQFiles, ref)
+				switch len(resolved) {
+				case 0:
 					warnings = append(warnings, fmt.Sprintf("roadmap %q links to REQ %q which does not exist", name, ref))
+				case 1:
+					if stale {
+						// Caminho literal falhou; encontrado por basename noutra localização.
+						// Reportar como stale para que o operador actualize o campo req:.
+						warnings = append(warnings, fmt.Sprintf("roadmap %q links to REQ %q but the file was found at %s (stale path)", name, ref, resolved[0]))
+					}
+					// senão: caminho literal resolveu — silêncio.
+				default:
+					warnings = append(warnings, fmt.Sprintf("roadmap %q links to REQ %q is ambiguous: found at multiple paths: %s", name, ref, strings.Join(resolved, ", ")))
 				}
 			}
 		}
 	}
 
-	reqFiles, err := resolveREQFiles(cfg)
-	if err != nil {
-		warnings = append(warnings, err.Error())
+	if reqFilesErr != nil {
+		warnings = append(warnings, reqFilesErr.Error())
 		return warnings, nil
 	}
-	for _, reqPath := range reqFiles {
+	for _, reqPath := range allREQFiles {
 		content, ok := readFileForRule("ref_targets_exist", reqPath, &warnings)
 		if !ok {
 			continue
@@ -3241,18 +3268,15 @@ func referenceExists(ref string) bool {
 // INCLUINDO a pasta de estado (ex.: "docs/roadmaps/wip/x.md"), e pelo CLAUDE.md a pasta É o estado —
 // então todo `trackfw roadmap move` quebra, por construção, o caminho literal gravado antes do move.
 //
-// Escopo DELIBERADAMENTE restrito ao campo Roadmap: (não REQ:, não ADR:):
-//   - REQ não tem dimensão de estado (ADR-2026-09-03, invariante D1, ver reqLayoutStates acima) — um
-//     caminho de REQ não fica velho por causa de um `move`, então não há mecanismo a corrigir aqui.
-//     Aplicar fallback por basename ao campo REQ: destruiria a garantia estrita da
-//     ADR-2026-08-01-caminho-completo-no-campo-req-do-frontmatter-e-remocao-do-parametro-roots-morto:
-//     o Cenário 25 de scripts/check-gates-falsify.sh corrompe deliberadamente um gerador para gravar
-//     `filepath.Base(reqPath)` em vez do caminho completo, e esse teste SÓ funciona porque hoje
-//     "REQ-flag-source.md" (sem diretório) não resolve por basename em lugar nenhum. Resolver por
-//     basename ali tornaria esse teste vácuo — silenciaria exatamente a regressão que ele existe para
-//     capturar.
-//   - a árvore de ADR é FLAT (sem pastas de estado — confirmado em `ls docs/adr/`), então não há
+// Escopo restrito ao campo Roadmap: (não ADR:):
+//   - ADR: a árvore é FLAT (sem pastas de estado — confirmado em `ls docs/adr/`), então não há
 //     hierarquia de estado equivalente a resolver; inventar uma aqui não tem medição que a sustente.
+//
+// Para o campo REQ: existe um fallback por basename análogo (REQ-2026-09-28, ML-1A), mas com
+// predicado diferente — ver resolveREQRefByBasename + resolveREQRefStatus. O predicado é
+// filepath.Dir(ref) != "." (não isStaleRoadmapStateRef), porque REQs podem ter como pai um nome de
+// agente (ex.: "hefesto"), que não é nome de estado. O Cenário 25 é preservado por construção
+// naquele predicado.
 //
 // Chamado só quando o caminho LITERAL já falhou E o segmento imediatamente anterior ao arquivo no
 // valor gravado é um nome de estado reconhecido (agentNamespaceStateNames) — isso é o que torna o
@@ -3337,6 +3361,51 @@ func resolveRoadmapRefStatus(cfg config.ProjectConfig, ref string) (resolved []s
 		return nil, false
 	}
 	found := resolveRoadmapRefByBasename(cfg, ref)
+	return found, len(found) > 0
+}
+
+// resolveREQRefByBasename procura, entre os arquivos de REQ pré-computados (allREQFiles —
+// resultado de resolveREQFiles), um cujo basename case com filepath.Base(ref).
+// O chamador passa a lista como parâmetro para evitar chamadas repetidas ao disco dentro do
+// laço por roadmap em validateRefTargetsExist.
+//
+// Retorna a lista de caminhos encontrados: 0 (sem match), 1 (resolvido), >1 (ambíguo).
+func resolveREQRefByBasename(allREQFiles []string, ref string) []string {
+	base := filepath.Base(ref)
+	if base == "." || base == "" {
+		return nil
+	}
+	var found []string
+	for _, reqPath := range allREQFiles {
+		if filepath.Base(reqPath) == base {
+			found = append(found, reqPath)
+		}
+	}
+	sort.Strings(found)
+	return found
+}
+
+// resolveREQRefStatus resolve um valor de campo `REQ:` já extraído por extractRefPath.
+// Caminho literal primeiro; se falhar E filepath.Dir(ref) != "." (o ref tem componente de
+// diretório), cai para busca por basename em allREQFiles via resolveREQRefByBasename.
+//
+// Predicado de guarda: filepath.Dir(normalizeRefSeparator(ref)) != "."
+// 🔴 NÃO usar isStaleRoadmapStateRef aqui — esse predicado testa se o pai é um NOME DE ESTADO
+// ({backlog, wip, done, …}), excluindo nomes de agente (ex.: "hefesto", "apolo"), e tornaria o
+// fallback inerte para o caso motivador (REQ-2026-09-28 / #452: ref com parent "hefesto").
+// O Cenário 25 de scripts/check-gates-falsify.sh é preservado por construção: "REQ-flag-source.md"
+// tem filepath.Dir == "." → fallback bloqueado → violação mantida tal como antes.
+//
+// stale=true quando a resolução só teve sucesso via basename (caminho literal falhou).
+func resolveREQRefStatus(allREQFiles []string, ref string) (resolved []string, stale bool) {
+	expandedRef := config.ExpandPath(normalizeRefSeparator(ref))
+	if _, err := os.Stat(expandedRef); err == nil {
+		return []string{expandedRef}, false
+	}
+	if filepath.Dir(normalizeRefSeparator(ref)) == "." {
+		return nil, false
+	}
+	found := resolveREQRefByBasename(allREQFiles, ref)
 	return found, len(found) > 0
 }
 
