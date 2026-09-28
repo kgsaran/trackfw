@@ -44,9 +44,10 @@ import (
 // Each is independently routed through applyRule/applyRuleTagged by the caller.
 //
 // State coverage per rule:
-//   roadmap_wave0_required  → wip/ only  (see header comment)
-//   roadmap_gate_coverage   → wip/ only  (see header comment)
-//   roadmap_duplicate_label → wip/ + blocked/
+//
+//	roadmap_wave0_required  → wip/ only  (see header comment)
+//	roadmap_gate_coverage   → wip/ only  (see header comment)
+//	roadmap_duplicate_label → wip/ + blocked/
 //
 // The function never returns a non-nil error: read errors become diagnostic messages
 // inside the relevant slice (following the pattern of other validator functions here).
@@ -84,9 +85,23 @@ func validateRoadmapGatesCoverage() (wave0Msgs []string, gateMsgs []string, dupM
 
 			// AC7: Wave 0 gate must be real — not a placeholder, not absent.
 			// If Wave 0 is absent the gate predicate returns false (AC7-bis handles it above).
-			if roadmapdoc.Wave0HasPlaceholderOrMissingGate(data) {
+			// #460: a causa vem junto, porque as tres levam a acoes OPOSTAS —
+			// reescrever o comando, escrever o bloco, ou mover a cerca. A mensagem
+			// antiga nomeava duas causas e instruia sobre uma so.
+			switch roadmapdoc.Wave0GateDiagnosis(data) {
+			case roadmapdoc.Wave0GatePlaceholder:
 				gateMsgs = append(gateMsgs, fmt.Sprintf(
-					"roadmap %q (wip) Wave 0 gate is placeholder or absent; replace the exit 1 placeholder with a real gate command (AC7, ADR-2026-09-18 decision 4)",
+					"roadmap %q (wip) Wave 0 gate is still the placeholder; replace the exit 1 command with a real gate (AC7, ADR-2026-09-18 decision 4)",
+					base,
+				))
+			case roadmapdoc.Wave0GateAbsent:
+				gateMsgs = append(gateMsgs, fmt.Sprintf(
+					"roadmap %q (wip) Wave 0 has no gate block; add '**Gates da wave:**' followed by a ```bash fence with a real gate command (AC7, ADR-2026-09-18 decision 4)",
+					base,
+				))
+			case roadmapdoc.Wave0GateMalformed:
+				gateMsgs = append(gateMsgs, fmt.Sprintf(
+					"roadmap %q (wip) Wave 0 gate block was not found: '**Gates da wave:**' is not followed by a ```bash fence before the next heading (AC7, ADR-2026-09-18 decision 4)",
 					base,
 				))
 			}
