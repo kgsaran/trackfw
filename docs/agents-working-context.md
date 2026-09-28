@@ -42128,3 +42128,29 @@ régua não muda veredito nenhum hoje.
 - `trackfw validate`: 172 warnings, 0 violations novas (baseline era 170; os 2 extras são os artefatos de governança desta REQ, pré-existentes)
 
 **Limite Windows:** os testes `containment_junction_windows_test.go` têm `//go:build windows` — não executam no macOS. O veredito final sobre os braços de junção é do `windows-latest` no CI. Não afirmo que está corrigido no Windows; reporto o que mediu este ambiente.
+
+## artemis-tf · ML-1B · 2026-09-28 — INICIADO
+
+**Branch:** `fix/contencao-nao-ve-juncao-do-windows`
+**REQ/Roadmap:** `REQ-2026-09-27` / `ROADMAP-2026-09-27-a-contencao-de-escrita-testa-um-bit-que-nao-ve-juncao-do-windows-e-juncao-nao-exige-privilegio.md`
+**Escopo:** ML-1B — declarar no contrato (`docs/cli-parity.md`) o que a guarda de escrita NÃO cobre (AC6 da REQ)
+
+**Arquivo a modificar:**
+- `docs/cli-parity.md` — acrescentar seção no fim declarando: predicado atual, dependência `go.mod`/`winsymlink`, e as duas limitações distintas (DEDUP e OneDrive cloud-only)
+
+**Fora de escopo:** `internal/` (ML-1A já fechado). Sem git operations.
+
+## artemis-tf · ML-1B · 2026-09-28 — CONCLUÍDO
+
+**Resultado:** Seção acrescentada no fim de `docs/cli-parity.md`. Gate, qualidade e validate passaram.
+
+**Arquivo modificado:**
+- `docs/cli-parity.md` — nova seção `## Contenção de escrita — o predicado de reparse point, e o que ele não vê (REQ-2026-09-27, issue #444)` com marcadores `trackfw-contract` em cada subseção, cobrindo: predicado atual + mensagem, dependência `go.mod`/`winsymlink`, e as duas limitações distintas (DEDUP carve-out intencional sem risco de travessia; OneDrive cloud-only falso-positivo não medido).
+
+**Evidências:**
+- `bash scripts/check-parity-contract-coverage.sh`: OK — nenhuma anotação inválida e nenhuma seção sem anotação (nova seção listada com os 5 marcadores corretos)
+- `make quality`: 0 `: FALHA` (1197+ linhas, sem falha até onde rodou)
+- `trackfw validate`: 172 warnings, 0 violations novas (baseline mantido do ML-1A)
+- `git ls-files --modified`: apenas `docs/cli-parity.md` (+ hades-tf pre-existing untracked)
+
+**Distinção preservada:** DEDUP ("não vemos, e está tudo bem") e OneDrive cloud-only ("podemos barrar indevidamente, não medimos") foram declaradas em subseções separadas com marcadores `gap` distintos, preservando a natureza oposta das duas limitações (uma é carve-out do Go sem risco; a outra é falso-positivo operacional não mensurável).

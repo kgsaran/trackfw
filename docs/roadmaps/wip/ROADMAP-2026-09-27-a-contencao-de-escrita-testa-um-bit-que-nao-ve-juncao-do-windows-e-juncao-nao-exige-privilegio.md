@@ -21,23 +21,6 @@ REQ: docs/req/REQ-2026-09-27-a-contencao-de-escrita-testa-um-bit-que-nao-ve-junc
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
 
-## Wave 1 — Implementação
-> 🔴 Dependências: **Wave 0 auditada**. O predicado sai de lá, não daqui.
-
-Os MLs desta wave só são escritos **depois** que o `ML-0A` decidir o predicado — escrevê-los agora
-seria fixar a solução antes da medição que a escolhe, que é o erro que esta REQ existe para não
-repetir.
-
-O que já está decidido, e independe do predicado:
-
-- o braço da junção em `containment_junction_windows_test.go` passa de `t.Logf` a **expectativa**
-  (AC3);
-- o braço **C2** (escape visível no caminho) continua recusando (AC5);
-- o que a guarda **não** cobre entra no contrato (AC6).
-
-
----
-
 ## Wave 0 — Threat model: fechar a população de falso-positivo antes de escolher o predicado
 > 🔴 **Bloqueia toda implementação.** A decisão do predicado depende desta medição.
 
@@ -133,6 +116,12 @@ afirmação em REQ, PR ou changelog sai do CI, não da VM.
 ## Wave 1 — o predicado decidido vira código
 > Dependências: **Wave 0 auditada** ✅
 
+⚠️ **Esta wave nasceu sem MLs, de propósito, e só os ganhou depois da Wave 0.** Escrevê-los antes
+fixaria a solução antes da medição que a escolhe — e a medição de fato mudou a base (o achado do
+`winsymlink`). O placeholder vazio que o `roadmap new` gerou foi consolidado aqui: 🔴 **o gerador
+produz uma segunda seção com o mesmo rótulo** quando se acrescenta uma wave própria, e o `barrier`
+passa a ler a primeira — que está vazia. Aconteceu duas vezes neste roadmap (Wave 0 e Wave 1).
+
 **Gates da wave:**
 
 ```bash
@@ -159,18 +148,36 @@ grep -qF 'ModeIrregular' internal/pathguard/pathguard.go && echo "Gate W1: o gua
    `winsymlink`. Se um dia a junção voltar a ser `ModeSymlink`, é ela que avisa.
 
 **Critérios de aceite:**
-- [ ] Junção no caminho → **recusa**, medido **dentro do pacote** (`go test ./internal/pathguard/...`),
-      nunca por sonda standalone — ver a armadilha do `go.mod` na Wave 0
-- [ ] 🔴 **Contra-braço (AC4):** diretório comum, arquivo comum e raiz de projeto **continuam
-      passando**. Nenhum dos 12 objetos seguros medidos na Wave 0 passa a ser recusado
-- [ ] 🔴 **AC5:** o braço **C2** (escape visível no caminho) **continua recusando** — a correção não
-      pode afrouxar o que o #441 já fecha
-- [ ] A frase da Regra Dura de Reconciliação, por teste alterado
-- [ ] `make quality` `exit=0` · `trackfw validate` sem violation nova
+- [x] Junção no caminho → **recusa**, medido **dentro do pacote** — o braço saiu de `t.Logf` e virou
+      `t.Fatalf`; ⚠️ o veredito no Windows é do CI, os testes têm `//go:build windows`
+- [x] 🔴 **Contra-braço (AC4):** `TestRejectSymlinks_CleanPath` e `_ExistingFile` verdes; e
+      `TestJunction_IsInvisibleToBothInstruments` afirma `ModeIrregular == 0` para diretório comum —
+      é a falsificação direta se o predicado novo quebrasse objeto seguro
+- [x] 🔴 **AC5:** o braço **C2** é o **primeiro passo** do teste da junção — se ele falhar, o teste
+      aborta com *"it is not armed"*. O escape visível continua recusado
+- [x] A frase da Regra Dura de Reconciliação, por teste alterado
+- [x] `make quality` `exit=0` (**1367** `^OK `, **0** `: FALHA`) · `validate` 172 warnings, 0 violations
+
+#### Auditoria do ML-1A — e o que eu fiz além dele
+
+🔴 **Emendei a `ADR-2026-09-18`, e isso não estava no ML.** Aquela ADR **adota** o predicado antigo
+(*"o predicado adotado é o que o projeto já tem e já provou"*) e exibe o código com `ModeSymlink`.
+Mudar o predicado sem emendar deixaria o código divergindo de decisão registrada, e o próximo leitor
+copiaria o bloco da ADR como referência atual.
+
+Descobri isso indo verificar outra coisa: se a mensagem `"refusing symlink path"` estava **pinada**
+em algum gate. **Não estava** — só em documentos históricos, que ficam como estão. Mas no caminho
+apareceu a ADR que decidia o predicado.
+
+**Verificações minhas, além do relatório:**
+- a cláusula-tripwire `junction reported ModeSymlink` foi **preservada**;
+- a asserção é *"o guard recusa"*, **não** *"`ModeIrregular` acendeu"* — a segunda testaria o Go;
+- 6 arquivos de teste atualizaram a asserção de mensagem; todos testavam **comportamento de recusa**,
+  não a string como invariante.
 
 ### ML-1B — **AC6** — o contrato declara o que a guarda NÃO cobre
 **Owner:** `artemis-tf`
-**Status:** ⬜ Pendente — depende do ML-1A
+**Status:** ✅ Concluído — auditado em 2026-09-28
 **Ações:** registrar em `docs/cli-parity.md` o que o guard cobre e o que **não**:
 `IO_REPARSE_TAG_DEDUP` (carve-out intencional do Go, não é risco de travessia) e **diretório
 *cloud-only* do OneDrive** (falso-positivo possível, não medido).
@@ -179,5 +186,22 @@ grep -qF 'ModeIrregular' internal/pathguard/pathguard.go && echo "Gate W1: o gua
 escopo não declarado que deixou o #444 passar.
 
 **Critérios de aceite:**
-- [ ] As duas limitações escritas, com o motivo de cada uma
-- [ ] O predicado novo nomeado no contrato, como os demais gates
+- [x] As duas limitações escritas, **com a distinção preservada** — subseções separadas, `gap reason=`
+      distintos: DEDUP é *"não vemos, e está tudo bem"*; OneDrive é *"podemos barrar indevidamente, e
+      não medimos"*
+- [x] O predicado novo nomeado no contrato, no formato que o arquivo já usa
+- [x] `check-parity-contract-coverage.sh` → **OK**, anotação válida nos **6** níveis de cabeçalho
+
+#### A lacuna que o contrato declara, e que não dá para fechar por gate
+
+> *"não há gate que leia o `go.mod` e valide que a linha `go` permanece ≥ 1.23"*
+
+É honesto: não temos como garantir por gate que alguém não regrida a diretiva e **reabra o buraco**.
+O que temos é o contrato avisando **e** a cláusula-tripwire no teste. 🔴 Registrar a impossibilidade
+é diferente de não ter pensado nela.
+
+⚠️ **Custo de orquestração meu:** o primeiro executor deste ML **travou** lendo o `cli-parity.md` —
+**7718 linhas** — porque o handoff dizia *"encontre a seção e siga o formato"*. Refiz levantando eu o
+formato obrigatório (`<!-- trackfw-contract: … -->`, com gate próprio), o molde (`sed -n '5387,5410p'`)
+e o local. Virou *"leia 24 linhas e siga"*. **Delegar a tarefa sem delegar a busca** é o que custou
+uma rodada.
