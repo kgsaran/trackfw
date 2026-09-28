@@ -593,6 +593,23 @@ ML-1C closed only the arm that could act on an arbitrary artifact.
 `trackfw barrier <roadmap>` is unaffected: it resolves by exact filename (`<base>.md`) under
 `wip/`/`done/` and never matched by substring.
 
+#### `roadmap show <name> --json` — o mesmo resolvedor, outra saída
+
+`--json` emite as waves e, por wave, os MLs com `id`, `heading` cru, `line`, `status_marker` cru,
+`status_found` e `status` normalizado (`complete` | `pending` | `terminated`, as três categorias de
+`roadmapdoc.StatusCategory` — nem uma a mais), mais `acceptance` (`met`, `unmet`, `has_block`). Waves
+com heading malformado aparecem em `malformed_waves` com linha e token, em vez de sumirem.
+
+**Uma divergência deliberada com a saída de texto, e é a única:** com `--json` a lista de candidatos
+de um casamento ambíguo **não** vai para o stdout — ela viaja dentro do erro, como em `roadmap move`.
+Com `--json` o stdout é o documento ou nada; imprimir texto humano ali quebraria todo consumidor.
+A resolução do nome é a mesma função nas duas saídas (`resolveRoadmapMatches`), então a recusa de
+nome vazio, o glob e a contagem de casamentos não podem divergir.
+
+🔴 **Não existe campo `title`.** Separar o título do id exigiria adivinhar o separador (`—`, `-`,
+`:`, nenhum); `heading` carrega a linha como ela é, sem o `### `. Inventar essa régua seria criar um
+dialeto para descrever um dialeto, que é o defeito que esta saída existe para eliminar.
+
 ### `req list` / `req move` — discovery layouts and conditional physical move
 
 <!-- trackfw-contract: gap reason=nenhum gate cross-CLI exercita req list/req move — nem a descoberta por layout (flat/by_agent) nem a discriminação in-place-vs-physical-move são comparadas entre Go, Node.js e Python -->
