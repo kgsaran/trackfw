@@ -2,6 +2,18 @@
 
 ---
 
+## 2026-09-28 — Hades (fix/init-reexecutado-destroi-config-do-consumidor — ML-0A Wave 0) — ENTREGUE
+
+**Início:** 2026-09-28 | Branch: `fix/init-reexecutado-destroi-config-do-consumidor`
+**Tarefa:** ML-0A — enumerar e classificar os 22 sítios de escrita de `scaffold.go`, verificar sítios (c), e confirmar ou refutar a premissa da ADR de que merge textual basta.
+
+**Resultado:**
+- `docs/seguranca/2026-09-28-wave0-init-destroi-config.md`: parecer completo com tabela dos 22 sítios, dois sítios (a) (linha 864 e linha 2806), todos os sítios (c) com ramos de merge completos, e confirmação da ADR com spec de implementação P1-P4.
+- Descoberta bloqueante: `generateLefthookHook` (linha 2806) é segundo sítio (a) — overwrite incondicional de `lefthook.yml`; a ordem de chamada (165 antes de 169) o confirma. Roadmap precisa de ML adicional antes de Wave 1.
+- `git diff trackfw.yaml`: vazio — produto não foi tocado.
+
+---
+
 ## 2026-09-28 — Apolo (fix/roadmap-para-req-sem-tratamento-de-stale — ML-1E reconciliação teste) — ENTREGUE
 
 **Início:** 2026-09-28 | Branch: `fix/roadmap-para-req-sem-tratamento-de-stale`

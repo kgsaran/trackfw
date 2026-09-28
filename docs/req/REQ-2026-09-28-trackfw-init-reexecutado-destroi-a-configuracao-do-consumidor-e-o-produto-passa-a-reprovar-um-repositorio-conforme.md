@@ -74,8 +74,14 @@ A classificação é por **natureza do conteúdo destruído**, não por forma da
 
 ## Acceptance Criteria
 
-- [ ] **Enumeração real** dos 22 sítios, classificada em **(a)** / **(b)** / **(c)**, com a razão
+- [x] **Enumeração real** dos 22 sítios, classificada em **(a)** / **(b)** / **(c)**, com a razão
       escrita por sítio — entregável da Wave 0
+      → **(a)=2 · (b)=14 · (c)=6**; os 6 sítios (c) têm ramo de merge **completo** e são o precedente
+      correto. 🔴 **A Wave 0 refutou a premissa da REQ de que (a) seria só `trackfw.yaml`**
+- [x] 🔴 **Segundo sítio (a) descoberto:** `generateLefthookHook` (`scaffold.go:2806`) sobrescreve
+      `lefthook.yml` incondicionalmente, destruindo hooks do consumidor. **Alcançável só pelo wizard**
+      (`init.go:226` oferece `lefthook`); o caminho não-interativo usa `Hooks: "none"` (`init.go:110`)
+      e não o atinge — razão pela qual a primeira reprodução do arquiteto **não** o reproduziu
 - [ ] 🔴 **O AC que mede o efeito, não o token:** reexecutar `init` sobre um `trackfw.yaml` com
       `governance_mode: lenient` + `lenient_until` + bloco `agent_models` **preserva os três**, e a
       saída de `trackfw validate` é **byte-idêntica** antes e depois
