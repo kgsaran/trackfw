@@ -2454,9 +2454,15 @@ These are literal parsing rules. All three runtimes must implement them identica
    `^\*\*` line or at the ML boundary. Every line in that block matching `^- \[ \]` is unmet
    evidence. The ML has evidence only when the block exists, is non-empty, and contains zero
    `- [ ]` lines. **An ML with no acceptance block at all is `blocked`, not vacuously passed.**
-5. **Wave gates.** Gates are declared per wave by a `**Gates da wave:**` line immediately
-   followed by a fenced ```` ```bash ```` block. Each non-empty, non-comment line in that block
-   is one gate command, executed from the repository root, in declaration order.
+5. **Wave gates.** Gates are declared per wave by a `**Gates da wave:**` line followed by a
+   fenced ```` ```bash ```` block. Each non-empty, non-comment line in that block is one gate
+   command, executed from the repository root, in declaration order.
+   **Prose is allowed between the marker and the fence** (#460): blank lines, blockquotes and
+   paragraphs are skipped. 🔴 The search stops at the **next heading** (`## ` or `### `) — without
+   that bound it would adopt a ```` ```bash ```` fence belonging to another section, such as an
+   example inside an ML body, and the product would run a command nobody declared as a gate.
+   A marker with no fence before the next heading is a malformed block, and the message says so
+   instead of blaming the gate's content.
    A wave with no `**Gates da wave:**` block declares zero gates — that is legal and yields a
    `gates` check with `status: "passed"` and an empty `commands` array. The barrier **never**
    invents a gate.

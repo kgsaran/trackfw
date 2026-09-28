@@ -38,7 +38,7 @@ var (
 	// ML-1D (REQ #392): the hyphen before the suffix is now optional — "1b" and "1-b" are both
 	// valid. The integer-part constraint is unchanged: labels like "abc" or "reaberta" (no
 	// leading digit) remain invalid. Counter-example that must still fail: "X", "abc", "reaberta".
-	WaveLabelRe = regexp.MustCompile(`^\d+(?:-?[a-zA-Z0-9]+)?$`)
+	WaveLabelRe      = regexp.MustCompile(`^\d+(?:-?[a-zA-Z0-9]+)?$`)
 	MLHeadingRe      = regexp.MustCompile(`^### (ML-\S+)`)
 	StatusLineRe     = regexp.MustCompile(`^\*\*Status:\*\*(.*)$`)
 	CriteriaHeaderRe = regexp.MustCompile(`^\*\*(?:Acceptance criteria|Crit[eé]rios de aceite):\*\*`)
@@ -184,7 +184,7 @@ const (
 // deliberate and recorded, not forgotten.
 var terminatedVocabulary = map[string]bool{
 	"abandonado": true,
-	"🚫":         true,
+	"🚫":          true,
 }
 
 // canceladoToken is the second-token disambiguator for the ❌ first-token case.
@@ -615,12 +615,32 @@ func ParseGates(lines []string, waveStart, waveEnd int) ([]string, error) {
 		if !GatesHeaderRe.MatchString(lines[i]) {
 			continue
 		}
+		// #460: a busca pula PROSA, nao so linha em branco. Escrever um gate real
+		// convida a explica-lo — o proprio template diz "replace this placeholder
+		// with a project-specific check", e um check especifico costuma precisar de
+		// uma frase de contexto. Exigir a cerca na linha seguinte fazia a forma mais
+		// natural de escrever ser a unica recusada.
+		//
+		// 🔴 A BORDA e o proximo heading, e nao o fim da wave. Sem ela, a varredura
+		// acharia uma cerca ```bash que pertence a outra secao — um exemplo dentro do
+		// corpo de um ML, por exemplo — e o gate passaria a ser um comando que ninguem
+		// declarou como gate. Parar no heading mantem a cerca na MESMA secao do
+		// marcador, que e o vinculo que o formato promete.
 		j := i + 1
-		for j < waveEnd && strings.TrimSpace(lines[j]) == "" {
+		for j < waveEnd {
+			t := strings.TrimSpace(lines[j])
+			if t == "```bash" {
+				break
+			}
+			if strings.HasPrefix(lines[j], "## ") || strings.HasPrefix(lines[j], "### ") {
+				// Chegou na proxima secao sem achar a cerca.
+				j = waveEnd
+				break
+			}
 			j++
 		}
-		if j >= waveEnd || strings.TrimSpace(lines[j]) != "```bash" {
-			return nil, fmt.Errorf("malformed gates block at line %d: expected a ```bash fence immediately after '**Gates da wave:**'", i+1)
+		if j >= waveEnd {
+			return nil, fmt.Errorf("gates block not found: '**Gates da wave:**' at line %d is not followed by a ```bash fence before the next heading", i+1)
 		}
 		fenceStart := j
 		var cmds []string
@@ -673,10 +693,11 @@ func ParseGates(lines []string, waveStart, waveEnd int) ([]string, error) {
 // should already have been executed and replaced the gate.
 //
 // Four arms (AC7 + ML-4D discriminant):
-//   (a) exit 1 intacto + work started       → returns true  (violation)
-//   (b) block deleted + work started        → returns true  (violation — len(cmds)==0)
-//   (c) real gate command                   → returns false (no violation, any ML state)
-//   (d) placeholder/absent, all MLs pending → returns false (fresh scaffold, legitimate)
+//
+//	(a) exit 1 intacto + work started       → returns true  (violation)
+//	(b) block deleted + work started        → returns true  (violation — len(cmds)==0)
+//	(c) real gate command                   → returns false (no violation, any ML state)
+//	(d) placeholder/absent, all MLs pending → returns false (fresh scaffold, legitimate)
 //
 // Fail-closed on ML status: an ML with no **Status:** line is treated as non-pending
 // (same as HasUnfinishedMLs) so that stripping status lines cannot silence the gate.
@@ -686,7 +707,30 @@ func ParseGates(lines []string, waveStart, waveEnd int) ([]string, error) {
 // Precondition: Wave 0 must be present; call HasWave0 first or check the return
 // value of ParseWaves. If Wave 0 is absent, this function returns false — that is
 // AC7-bis's domain (HasWave0/roadmap_wave0_required).
-func Wave0HasPlaceholderOrMissingGate(data string) bool {
+// Wave0GateCause nomeia QUAL das tres situacoes fez o predicado reprovar. Existe
+// porque a mensagem antiga dizia "is placeholder or absent" e mandava "replace the
+// exit 1 placeholder" — instrucao que so serve para uma das causas. Quem lia
+// concluia que o problema era o CONTEUDO do gate e reescrevia o comando; no relato
+// da #460 isso custou seis ciclos e duas hipoteses falsificadas antes de alguem
+// suspeitar da posicao.
+type Wave0GateCause int
+
+const (
+	// Wave0GateOK — nao ha violacao.
+	Wave0GateOK Wave0GateCause = iota
+	// Wave0GatePlaceholder — o bloco existe e todo comando ainda e o `exit 1` do template.
+	Wave0GatePlaceholder
+	// Wave0GateAbsent — nao ha bloco de gates, ou ele esta vazio (so comentarios).
+	Wave0GateAbsent
+	// Wave0GateMalformed — o marcador existe e a cerca ```bash nao foi encontrada
+	// antes do proximo heading, ou a cerca nao fecha.
+	Wave0GateMalformed
+)
+
+// Wave0GateDiagnosis e o predicado COM a causa. Wave0HasPlaceholderOrMissingGate
+// passa a ser a leitura booleana dele, entao nao existem duas derivacoes do mesmo
+// veredito que possam divergir.
+func Wave0GateDiagnosis(data string) Wave0GateCause {
 	lines := SplitRoadmapLines(data)
 	waves, _ := ParseWaves(lines)
 	for _, w := range waves {
@@ -695,27 +739,34 @@ func Wave0HasPlaceholderOrMissingGate(data string) bool {
 		}
 		cmds, err := ParseGates(lines, w.Start, w.End)
 		if err != nil {
-			// Malformed gates block — treat as placeholder (fail closed).
-			// Still check ML status: placeholder is only a violation if work started.
-			return hasAnyNonPendingML(data)
+			// Bloco malformado — fail closed, como antes. O que muda e o NOME da causa.
+			if hasAnyNonPendingML(data) {
+				return Wave0GateMalformed
+			}
+			return Wave0GateOK
 		}
 		if len(cmds) == 0 {
-			// No **Gates da wave:** block, or block present but empty (all comments).
-			// Both cases mean the gate the template gave has been lost.
-			return hasAnyNonPendingML(data)
+			if hasAnyNonPendingML(data) {
+				return Wave0GateAbsent
+			}
+			return Wave0GateOK
 		}
 		for _, cmd := range cmds {
 			if !strings.HasPrefix(cmd, "exit 1") {
-				// At least one command is not a bare "exit 1" placeholder.
-				return false
+				return Wave0GateOK
 			}
 		}
-		// Every command starts with "exit 1" — all are placeholder variants.
-		// Only a violation if work has started (ML-4D discriminant).
-		return hasAnyNonPendingML(data)
+		if hasAnyNonPendingML(data) {
+			return Wave0GatePlaceholder
+		}
+		return Wave0GateOK
 	}
-	// Wave 0 not found in this document.  AC7-bis handles the absence.
-	return false
+	// Wave 0 nao encontrada — dominio do AC7-bis.
+	return Wave0GateOK
+}
+
+func Wave0HasPlaceholderOrMissingGate(data string) bool {
+	return Wave0GateDiagnosis(data) != Wave0GateOK
 }
 
 // hasAnyNonPendingML returns true if at least one ML in the document has a
