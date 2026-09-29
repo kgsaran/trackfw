@@ -93,10 +93,69 @@ deste repositório. Ver **D1-bis** da ADR.
 > Dependências: **Wave 0 auditada.** O desenho dos MLs sai da Wave 0 — se ela refutar D3, este
 > bloco muda antes de ser despachado.
 
-### ML-1A — (a definir pela Wave 0)
+**Ordem:** ML-1A sozinho (é o núcleo e define o predicado). Depois **ML-1B e ML-1C em paralelo** —
+arquivos disjuntos, e ambos consomem o predicado que o 1A cria.
+
+### ML-1A — o recorte semântico e o casamento por vínculo real, em `traceid_orphan_req`
+**Owner:** `apolo-tf`
 **Status:** ⬜ Pendente
-Placeholder consciente: o recorte exato depende do veredito sobre D3 e da contagem do corpus.
-🔴 **Não despachar antes da Wave 0 auditada.**
+**Arquivos:** `internal/validator/validator_traceid.go` + testes
+
+Cobre **as duas causas na mesma regra**, porque vivem no mesmo laço (`validator_traceid.go:262-277`):
+
+**C1 — recorte semântico.** O laço passa a disparar **apenas** para REQ com `status: Done`.
+🔴 **Pelo `status:` do frontmatter, NUNCA pela pasta** — `e.state` é **vazio em layout plano**
+(`validator_traceid.go:77`) e a regra ficaria inerte aqui. Reuse `reqStatusIsDone` (já existe,
+`EqualFold`). `Open`, `Superseded` e `Closed` **não** disparam (ADR **D2-bis**).
+
+**C2 — casamento por vínculo real.** Além do id, casar pelo campo `req:` do roadmap — que é o que o
+`roadmap new` **de fato** grava. 🔴 **Com `normalizeRefSeparator`** (`validator.go:3285`): medido, um
+`req:` com `\` não casa sem ele.
+
+**Critérios de aceite:**
+- [ ] 🔴 **C1:** REQ `Open` com `req_id` e sem roadmap → **não** dispara
+- [ ] 🔴 **Contra-braço — a regra continua servindo:** REQ **`Done`** sem roadmap → **ainda** dispara.
+      Se nada mais dispara, a correção virou remoção de regra, e isso seria outra decisão
+- [ ] `Superseded` e `Closed` → não disparam
+- [ ] 🔴 **C2, braço do passivo:** par REQ↔roadmap existente, roadmap **sem** `req_id` mas **com**
+      `req:` correto → deixa de disparar **sem alterar arquivo nenhum**
+- [ ] **C2, separador:** `req: "docs\req\REQ-x.md"` casa igual
+- [ ] 🔴 **Nenhuma decisão por diretório** — um teste deve falhar se alguém reintroduzir leitura da
+      pasta da REQ para decidir isso
+- [ ] **Delta medido no corpus** deste repositório, antes/depois, com a razão de cada violação que sair
+- [ ] Reconciliação: uma frase por teste, dizendo o que **mediu**
+
+### ML-1B — `req_has_roadmap` aplica o mesmo critério (ADR D4)
+**Owner:** `apolo-tf`
+**Status:** ⬜ Pendente
+**Arquivos:** `internal/validator/validator.go` (`validateREQsHaveRoadmap`) + testes
+**⚠️ Sequencial após ML-1A** (reusa o predicado) · **paralelo com ML-1C** (arquivos disjuntos)
+
+Hoje ela **não tem o estado disponível** — usa `resolveREQFiles`, que devolve só caminhos.
+
+**Critérios de aceite:**
+- [ ] Mesmo critério do ML-1A: só `Done` dispara
+- [ ] 🔴 **O cutoff de grandfathering PERMANECE** — a Wave 0 refutou que ficaria redundante: **3** dos
+      13 grandfathered são `Done` e voltariam a violar sem ele
+- [ ] As duas regras **concordam** na fixture onde hoje discordam (par válido: `req_has_roadmap`
+      PASS × `traceid_orphan_req` FAIL)
+- [ ] Delta medido no corpus, com razão
+
+### ML-1C — gate: regra de vínculo REQ↔roadmap não decide sem consultar `status`
+**Owner:** `apolo-tf`
+**Status:** ⬜ Pendente
+**Arquivos:** `scripts/check-req-roadmap-rule-is-status-aware.sh` (novo) + `Makefile`
+**⚠️ 🔴 NÃO edite nenhum `.go`** — frente paralela no ML-1B
+
+**Critérios de aceite:**
+- [ ] 🔴 **Falsificável nas duas direções**, execuções coladas
+- [ ] **Anti-vacuidade:** declara quantos sítios examinou e **reprova se examinar zero**
+- [ ] 🔴 **O discriminante IGNORA COMENTÁRIOS.** Esta base já pagou **quatro vezes** por gate
+      enganado por comentário — `check-crlf-normalize-capture.sh`, `check-init-preserves-user-config.sh`
+      (nas duas direções) e a própria fixture do `check-adr-enumeration-single-point.sh`.
+      **Falsifique este caso explicitamente.**
+- [ ] Isenções explícitas e comentadas — `req_roadmap_lifecycle` **já** filtra por estado e não pode
+      ser acusado
 
 ## Wave 2 — auditoria independente
 > Dependências: Wave 1 completa.
