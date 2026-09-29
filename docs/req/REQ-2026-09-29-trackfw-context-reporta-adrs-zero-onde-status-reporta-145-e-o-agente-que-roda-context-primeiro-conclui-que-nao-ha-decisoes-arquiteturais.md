@@ -1,0 +1,112 @@
+---
+status: Open
+date: 2026-09-29
+author: "trackfw_architect"
+adr: "docs/adr/ADR-2026-09-29-a-enumeracao-de-adr-e-uniao-de-layouts-e-context-e-status-consomem-o-mesmo-ponto-unico.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-29-trackfw-context-reporta-adrs-0-onde-status-reporta-145.md"
+---
+
+# REQ: `trackfw context` reporta `ADRs (0)` onde `status` reporta 145
+
+> Date: 2026-09-29 | Status: Open
+| Linear Issue:
+| Jira Issue:
+
+Origem: **#450**, consumidor externo, com reprodução e uma hipótese explicitamente marcada como
+não confirmada — **confirmada pelo arquiteto** nesta REQ.
+
+## Motivation
+
+No mesmo repositório e versão, dois comandos discordam sobre o mesmo dado. Reproduzido em fixture:
+
+```
+ADRs no disco:  4
+trackfw status:   ADRs 4        ← correto
+trackfw context:  ## ADRs (0)   ← zero
+```
+
+Causa em `internal/generators/context.go:39`: `os.ReadDir(adrDir)` lê **apenas a raiz** de cada
+`adr_dirs`, sem descer nas subpastas de estado onde os ADRs vivem.
+
+### 🔴 A contradição está dentro da mesma saída
+
+```
+## ADRs (0)
+- (none)
+...
+## Warnings (6)
+- adr "ADR-2026-09-01-teste.md" is not referenced by any REQ
+```
+
+O mesmo comando, na mesma execução, **declara zero ADRs e nomeia um ADR**. Não é ambiguidade de
+layout: são **duas implementações da mesma pergunta**, e uma está errada.
+
+### Por que pesa mais que um número errado
+
+O `context` é o comando que a documentação instalada manda o agente rodar **primeiro**
+(*"always run first"*). Quem obedece recebe `ADRs: (none)` e conclui que **não há decisões
+arquiteturais registradas** — quando há 145.
+
+🔴 **É a pior forma de dado errado: a que induz confiança na ausência.** Um agente assim não viola
+uma ADR conscientemente — ele nem sabe que ela existe. E este projeto tem uma diretriz que manda
+*"inspecionar e respeitar todos os ADRs antes de propor alterações de arquitetura"*; o comando que
+deveria servi-la é o que a nega.
+
+### A hipótese do reportante sobre o score — CONFIRMADA e quantificada
+
+Ele escreveu: *"provavelmente é calculado a partir da mesma leitura… não confirmei, é inferência"*.
+Medido em `context.go:121`:
+
+```go
+if len(adrs) > 0 { score += 20 }
+```
+
+`adrs` vem do enumerador quebrado. O defeito custa **exatamente 20 pontos** de `Governance score`.
+
+### O precedente que ficou pela metade
+
+`context.go:56`: *"REQs — pelo PONTO ÚNICO de leitura (ADR-2026-09-03, D3/D4)"*. As REQs já foram
+migradas; **os ADRs ficaram para trás**. É o achado **A1** da auditoria externa de 2026-09-05 outra
+vez — ADR de ponto único marcada satisfeita com sítio sobrando.
+
+## Acceptance Criteria
+
+- [ ] **Enumeração real** de todos os sítios que enumeram ADR (não só `context` e `status`),
+      classificados em: usa o ponto único · tem implementação própria correta · tem implementação
+      própria **errada** — entregável da Wave 0
+- [ ] 🔴 **`context` e `status` consomem o MESMO resolvedor** (ADR D3). Não basta o `context`
+      passar a descer: dois enumeradores que concordam hoje divergem amanhã
+- [ ] Layout **plano** (ADRs na raiz de `adr_dirs`) **continua funcionando** — é o layout deste
+      repositório, e quebrá-lo trocaria um defeito por outro
+- [ ] Layout com **subpastas de estado** passa a ser enumerado
+- [ ] 🔴 **O contra-braço que mede a contradição:** numa fixture com ADRs em subpastas, a saída do
+      `context` **não** pode conter `## ADRs (0)` e, ao mesmo tempo, um warning nomeando um ADR.
+      Este é o AC que mede o **efeito** — os outros são meios
+- [ ] **`Governance score` medido antes/depois** na mesma fixture: a diferença tem que ser
+      exatamente os **20 pontos** da categoria ADR, nem mais nem menos
+- [ ] 🔴 **Gate que impede a reintrodução**, falsificável nas duas direções: reprova quando um
+      enumerador de ADR novo nascer sem passar pelo ponto único, e **não** reprova o ponto único
+- [ ] `make quality` e **CI** verdes
+
+## Negative scope — o que esta REQ NÃO faz
+
+- **Não** trata o **#435** (`traceid_orphan_req` dispara para REQ em `backlog/`). Medição escrita:
+  aplicando o teste da Regra Dura — *"se eu corrigir esta causa, exatamente estas falhas fecham"* —
+  corrigir o enumerador de ADR do `context` **não fecha** o #435, que é uma **regra de validação
+  que não filtra por estado**, não um **enumerador que não desce em subpastas**. Correções disjuntas,
+  causas distintas. REQ própria.
+- **Não** muda o **formato** da saída do `context`, nem o critério dos 20 pontos por categoria. O
+  score está errado porque o **insumo** está errado; mexer na fórmula mascararia a causa.
+- **Não** migra layout de ADR de ninguém. `adr_dirs` com ADRs na raiz continua válido — **D1** é
+  união, não substituição.
+- **Não** estende a **ADR-2026-09-03** por analogia: o invariante dela é que *REQ não tem dimensão de
+  estado*, e ADR **tem**. Ver **D2** da ADR desta REQ.
+
+## Linked ADR
+ADR: docs/adr/ADR-2026-09-29-a-enumeracao-de-adr-e-uniao-de-layouts-e-context-e-status-consomem-o-mesmo-ponto-unico.md
+
+## Blocked by ADRs
+<!-- none -->
+
+## Linked Roadmap
+Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-29-trackfw-context-reporta-adrs-0-onde-status-reporta-145.md
