@@ -6,11 +6,13 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
 
 	"github.com/kgsaran/trackfw/internal/pathguard"
+	"github.com/kgsaran/trackfw/internal/validator"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -183,19 +185,18 @@ author: ""
 	return nil
 }
 
-// ListADRs lista todos os ADRs encontrados em dir, imprimindo filename e status.
+// ListADRs lista todos os ADRs encontrados em dir e suas subpastas, imprimindo filename e status.
 // Retorna nil se o diretório estiver ausente ou sem arquivos .md.
+// Usa WalkADRFilePaths (varredura recursiva) em lugar de filepath.Glob raiz-only — corrige S6
+// (ADR-2026-09-29): layout com subpastas de estado não produzia "No ADRs found" mesmo com ADRs no disco.
 func ListADRs(dir string) error {
-	matches, err := filepath.Glob(filepath.Join(dir, "*.md"))
-	if err != nil {
-		return fmt.Errorf("listing ADRs: %w", err)
-	}
-	if len(matches) == 0 {
+	paths := validator.WalkADRFilePaths(dir)
+	if len(paths) == 0 {
 		fmt.Printf("No ADRs found in %s\n", dir)
 		return nil
 	}
-
-	for _, path := range matches {
+	sort.Strings(paths)
+	for _, path := range paths {
 		filename := filepath.Base(path)
 		title, status := parseADRMeta(path)
 		if title == "" {
@@ -311,13 +312,17 @@ func NewADRDraft(slug string, adrDir string) (string, error) {
 		return "", fmt.Errorf("creating %s: %w", adrDir, err)
 	}
 
-	// Verificar idempotência: glob por slug
-	pattern := filepath.Join(adrDir, "ADR-*-"+slug+".md")
-	matches, err := filepath.Glob(pattern)
-	if err != nil {
-		return "", fmt.Errorf("glob: %w", err)
+	// Verificar idempotência: scan recursivo por slug — corrige S7 (ADR-2026-09-29):
+	// filepath.Glob(adrDir+"/*.md") não via subpastas de estado, criando rascunho duplicado
+	// quando o twin já existe em adrDir/wip/, adrDir/done/ etc.
+	var matches []string
+	for _, p := range validator.WalkADRFilePaths(adrDir) {
+		if matched, _ := filepath.Match("ADR-*-"+slug+".md", filepath.Base(p)); matched {
+			matches = append(matches, p)
+		}
 	}
 	if len(matches) > 0 {
+		sort.Strings(matches)
 		basename := filepath.Base(matches[0])
 		fmt.Printf("skipped %s (already exists)\n", basename)
 		return basename, nil
