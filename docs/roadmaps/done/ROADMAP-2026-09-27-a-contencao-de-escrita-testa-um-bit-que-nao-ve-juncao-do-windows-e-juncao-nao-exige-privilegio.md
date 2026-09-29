@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-27
 req: "docs/req/REQ-2026-09-27-a-contencao-de-escrita-testa-um-bit-que-nao-ve-juncao-do-windows-e-juncao-nao-exige-privilegio.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: a contencao de escrita testa um bit que nao ve juncao do Windows, e juncao nao exige privilegio
 
-> Created: 2026-09-27 | Status: wip
+> Created: 2026-09-27 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-09-27-a-contencao-de-escrita-testa-um-bit-que-nao-ve-juncao-do-windows-e-juncao-nao-exige-privilegio.md -->

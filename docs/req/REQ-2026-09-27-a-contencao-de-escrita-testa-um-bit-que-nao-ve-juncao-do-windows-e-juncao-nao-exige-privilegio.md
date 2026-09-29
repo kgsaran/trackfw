@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-27
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-27-a-contencao-de-escrita-testa-um-bit-que-nao-ve-juncao-do-windows-e-juncao-nao-exige-privilegio.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-27-a-contencao-de-escrita-testa-um-bit-que-nao-ve-juncao-do-windows-e-juncao-nao-exige-privilegio.md"
 ---
 
 # REQ: a contencao de escrita testa um bit que nao ve juncao do Windows, e juncao nao exige privilegio
 
-> Date: 2026-09-27 | Status: Open
+> Date: 2026-09-27 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -113,4 +113,4 @@ ADR:
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-27-a-contencao-de-escrita-testa-um-bit-que-nao-ve-juncao-do-windows-e-juncao-nao-exige-privilegio.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-09-27-a-contencao-de-escrita-testa-um-bit-que-nao-ve-juncao-do-windows-e-juncao-nao-exige-privilegio.md
