@@ -2,6 +2,40 @@
 
 ---
 
+## 2026-09-29 — Apolo (fix/context-reporta-zero-adrs-onde-status-reporta-145 — ML-1B gate enumerador único ADR) — ENTREGUE
+
+**Início:** 2026-09-29 | Branch: `fix/context-reporta-zero-adrs-onde-status-reporta-145`
+**Tarefa:** ML-1B — escrever `scripts/check-adr-enumeration-single-point.sh` e registrá-lo no Makefile. Gate que impede enumerador de ADR fora do ponto único (os.ReadDir/filepath.Glob em vez de walkADRFilePaths/ResolveADRFiles). Sem edição de arquivos .go.
+
+**Resultado:**
+- `scripts/check-adr-enumeration-single-point.sh` criado: 4 padrões (A name, A' loop-context, B file-scope adr.go, C ADR- glob), filtragem de comentários bidirecional, 4 braços de self-test, anti-vacuidade, env-var ADR_ENUM_SCAN_DIR documentado.
+- `Makefile`: gate registrado em `parity-rest` (--self-test + real run), sem GO_BIN.
+- Falsificação executada: arm1 (FAIL com os.ReadDir(adrDir)), arm2 (PASS com WalkDir), arm3a (PASS com comentário-only), arm3b (FAIL com chamada real + comentário WalkDir acima), arm4 (FAIL com Glob em adr.go), Pattern A' (FAIL com var de loop), Pattern C (FAIL em commands/, PASS em update.go isento).
+- `bash scripts/check-adr-enumeration-single-point.sh --self-test`: SELFTEST_RC=0 (4 braços)
+- `bash scripts/check-adr-enumeration-single-point.sh`: RC=0 (110 arquivos examinados — ML-1A já completado)
+- `bash scripts/check-orphan-gates.sh`: ORPHAN_RC=0
+- `trackfw validate`: sem violações bloqueantes (lenient mode, warnings apenas)
+- `git diff --name-only`: scripts/check-adr-enumeration-single-point.sh, Makefile, docs/agents-working-context.md (apenas arquivos do ML-1B; .go são do ML-1A)
+- Candidato S10 reportado: `update.go:302` filepath.Glob(GlobalADRDir) — isento provisório (dir plano por design), mas merece entrada no vault se GlobalADRDir ganhar subpastas no futuro.
+
+---
+
+## 2026-09-29 — Apolo (fix/context-reporta-zero-adrs-onde-status-reporta-145 — ML-1A resolvedor único de ADR) — ENTREGUE
+
+**Início:** 2026-09-29 | Branch: `fix/context-reporta-zero-adrs-onde-status-reporta-145`
+**Tarefa:** ML-1A — Implementar ponto único de leitura de ADR (ADR-2026-09-29, D3): substituir os 3 sítios errados (S1 context.go, S6 adr.go ListADRs, S7 adr.go NewADRDraft) por `ResolveADRFiles(cfg)` e `WalkADRFilePaths(dir)` no validator.
+
+**Resultado:**
+- `internal/validator/validator.go`: adicionados `WalkADRFilePaths(dir)` (wrapper exportado), `ResolveADRFiles(cfg)` (ponto único com dedup por caminho absoluto); `inventoryBlock` migrado para `ResolveADRFiles(cfg)` (corrige S2 double-count para adr_dirs aninhados)
+- `internal/generators/context.go`: loop `os.ReadDir` raiz substituído por `validator.ResolveADRFiles(cfg)` — corrige S1
+- `internal/generators/adr.go`: `ListADRs` usa `validator.WalkADRFilePaths(dir)` + sort (corrige S6); `NewADRDraft` usa scan recursivo + slug match (corrige S7)
+- 2 novos arquivos de teste: `validator_resolve_adr_test.go` (5 testes: layout plano, subpastas, dedup aninhado, dirs distintos, HasSuffix sem prefixo) e `context_adr_subpastas_test.go` (5 testes: NaoZero, ScoreDelta20, SemContradicao, ListADRs_Subpastas, NewADRDraft_NaoCriaDuplicado)
+- Build: verde. `go test ./internal/generators/ ./internal/validator/`: ambos ok
+- `git diff trackfw.yaml`: vazio
+- `git diff --name-only`: internal/generators/adr.go, internal/generators/context.go, internal/validator/validator.go (+ 2 novos arquivos de teste)
+
+---
+
 ## 2026-09-29 — Hades (fix/context-reporta-zero-adrs-onde-status-reporta-145 — ML-0A Wave 0 threat model) — ENTREGUE
 
 **Início:** 2026-09-29 | Branch: `fix/context-reporta-zero-adrs-onde-status-reporta-145`

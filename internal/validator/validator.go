@@ -1415,10 +1415,7 @@ func ValidateTagged() (violations []TaggedMsg, warnings []TaggedMsg, err error) 
 func inventoryBlock(cfg config.ProjectConfig) string {
 	var sb strings.Builder
 
-	adrCount := 0
-	for _, adrDir := range cfg.ADRDirs {
-		adrCount += len(walkADRFilePaths(adrDir))
-	}
+	adrCount := len(ResolveADRFiles(cfg))
 
 	reqFiles, _ := resolveREQFiles(cfg) // inventory: err → 0 counts, safe
 	var reqOpen, reqDone, reqClosed, reqOther int
@@ -3002,6 +2999,46 @@ func resolvePhysical(p string) string {
 // walkADRFilePaths retorna os caminhos completos de todos os arquivos .md encontrados recursivamente em adrDir.
 func walkADRFilePaths(adrDir string) []string {
 	return walkADRFilePathsForRule("", adrDir, nil)
+}
+
+// WalkADRFilePaths é o wrapper exportado de walkADRFilePaths — primitivo por diretório.
+// Retorna os caminhos completos de todos os arquivos .md encontrados recursivamente em adrDir.
+// Consumido por ListADRs e NewADRDraft (internal/generators/adr.go) para substituir filepath.Glob
+// raiz-only. Critério de identificação: strings.HasSuffix(path, ".md") sem filtro de prefixo —
+// idêntico ao comportamento existente de walkADRFilePaths.
+func WalkADRFilePaths(adrDir string) []string {
+	return walkADRFilePaths(adrDir)
+}
+
+// ResolveADRFiles é o PONTO ÚNICO de LEITURA de ADR (ADR-2026-09-29, D3): devolve os paths de
+// todos os .md de ADR como UNIÃO dos layouts suportados para todos os diretórios em cfg.ADRDirs,
+// deduplicados por caminho absoluto.
+//
+// 🔴 DEDUPLICAÇÃO É OBRIGATÓRIA para o caso de adr_dirs aninhados:
+// [docs/adr/zeus, docs/adr/zeus/done] → walkDir de zeus já desce em done;
+// walkDir de zeus/done emitiria os mesmos arquivos uma segunda vez.
+// Dedup usa filepath.Abs como chave; em caso de erro usa filepath.Clean (nunca descarta).
+// Dois arquivos com mesmo basename em diretórios distintos e não-aninhados são mantidos como
+// entidades distintas — a dedup é por caminho absoluto, nunca por basename.
+//
+// Consumido por GetContext (internal/generators/context.go) e inventoryBlock (status).
+func ResolveADRFiles(cfg config.ProjectConfig) []string {
+	seen := make(map[string]bool)
+	var files []string
+	for _, adrDir := range cfg.ADRDirs {
+		for _, p := range walkADRFilePaths(adrDir) {
+			key, err := filepath.Abs(p)
+			if err != nil {
+				key = filepath.Clean(p)
+			}
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			files = append(files, p)
+		}
+	}
+	return files
 }
 
 func walkADRFilePathsForRule(rule, adrDir string, msgs *[]string) []string {

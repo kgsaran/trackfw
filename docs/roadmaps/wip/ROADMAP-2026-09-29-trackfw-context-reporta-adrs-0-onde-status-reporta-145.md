@@ -85,38 +85,77 @@ issue própria.
 
 ### ML-1A — resolvedor único de ADR, consumido por `context` e `status`
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-09-29
 
 **Forma decidida pela Wave 0:** `walkADRFilePaths(dir) []string` (primitivo, já existe) +
 `ResolveADRFiles(cfg) []string` (wrapper: loop em `ADRDirs` + **dedup por caminho absoluto**).
 Precedente a copiar: `context.go:60`, que já usa `validator.ResolveREQFiles(cfg)` para REQ.
 
 **Critérios de aceite:**
-- [ ] Layout plano (`adr_dir/*.md`) **continua** funcionando — é o layout deste repositório
-- [ ] Layout com subpastas de estado passa a ser enumerado
-- [ ] `context` e `status` chamam o **mesmo** resolvedor
-- [ ] 🔴 **Os TRÊS sítios (iii)**: `context.go:38`, `adr.go:189` (`ListADRs`), `adr.go:316`
+- [x] Layout plano (`adr_dir/*.md`) **continua** funcionando — é o layout deste repositório
+- [x] Layout com subpastas de estado passa a ser enumerado
+- [x] `context` e `status` chamam o **mesmo** resolvedor
+- [x] 🔴 **Os TRÊS sítios (iii)**: `context.go:38`, `adr.go:189` (`ListADRs`), `adr.go:316`
       (`NewADRDraft`). Deixar `adr list` de fora entregaria meia correção
-- [ ] 🔴 **Dedup**, com fixture de `adr_dirs` **aninhadas**: `[docs/adr/zeus, docs/adr/zeus/done]`
+- [x] 🔴 **Dedup**, com fixture de `adr_dirs` **aninhadas**: `[docs/adr/zeus, docs/adr/zeus/done]`
       com 4 ADRs reais tem que reportar **4**, não 7
-- [ ] 🔴 **O critério de identificação NÃO muda** — `HasSuffix(".md")`, **sem** filtro de prefixo.
+- [x] 🔴 **O critério de identificação NÃO muda** — `HasSuffix(".md")`, **sem** filtro de prefixo.
       Teste que fixe isso, senão um refator futuro "melhora" o filtro e muda contagens em silêncio
-- [ ] 🔴 **O teste que mede o efeito:** numa fixture com ADRs em subpastas, a saída do `context`
+- [x] 🔴 **O teste que mede o efeito:** numa fixture com ADRs em subpastas, a saída do `context`
       **não** contém `## ADRs (0)` junto de um warning que nomeia um ADR
-- [ ] 🔴 **Score medido antes/depois:** diferença de **exatamente 20 pontos**. Nem mais — se subir
+- [x] 🔴 **Score medido antes/depois:** diferença de **exatamente 20 pontos**. Nem mais — se subir
       40, a mudança tocou outra categoria e isso precisa ser explicado
-- [ ] Reconciliação: uma frase por teste, dizendo o que **mediu**
+- [x] Reconciliação: uma frase por teste, dizendo o que **mediu**
 
 ### ML-1B — gate que impede enumerador de ADR fora do ponto único
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-09-29
 
 **Critérios de aceite:**
-- [ ] 🔴 Falsificável nas **duas** direções, com as execuções coladas
-- [ ] Anti-vacuidade: declara quantos sítios examinou e **reprova se examinar zero**
-- [ ] 🔴 **O discriminante ignora comentários** — este projeto já pagou por gate que aceitava token
+- [x] 🔴 Falsificável nas **duas** direções, com as execuções coladas
+- [x] Anti-vacuidade: declara quantos sítios examinou e **reprova se examinar zero**
+- [x] 🔴 **O discriminante ignora comentários** — este projeto já pagou por gate que aceitava token
       em comentário **duas vezes** (`check-crlf-normalize-capture.sh` e, em 2026-09-28,
       `check-init-preserves-user-config.sh`, nas duas direções). Falsifique esse caso explicitamente.
+
+### ML-1C — 🔴 `ensureGlobalADRDirRegistered` lê `~/.trackfw/adr` com `Glob` raiz, e o diretório global nunca é registrado
+**Owner:** `apolo-tf`
+**Status:** ⬜ Pendente
+**Arquivos:** `internal/generators/update.go` (~linha 302), teste; e a **isenção** correspondente em
+`scripts/check-adr-enumeration-single-point.sh`
+
+**Achado da auditoria do arquiteto ao ML-1B.** O executor isentou este sítio classificando-o como
+*"diretório global plano **por design**"*, e marcou a isenção como **provisória**. Investiguei a
+premissa e ela **não se sustenta**:
+
+```go
+// update.go:302 — dentro de ensureGlobalADRDirRegistered
+matches, globErr := filepath.Glob(filepath.Join(globalDir, "ADR-*.md"))
+if len(matches) == 0 { return nil }   // no-op
+```
+
+🔴 **A função REGISTRA `~/.trackfw/adr` dentro de `adr_dirs`.** Ou seja, o mesmo diretório passa a ser
+varrido **recursivamente** por `ResolveADRFiles(cfg)` — enquanto **este** sítio o lê com `Glob` raiz.
+São **dois leitores do mesmo diretório com alcances diferentes**: exatamente a divergência que esta
+REQ existe para eliminar.
+
+**Efeito medido por leitura:** um usuário com ADRs globais **apenas em subpastas** obtém
+`len(matches) == 0` → **no-op** → `~/.trackfw/adr` **nunca entra** em `adr_dirs` → os ADRs globais
+ficam **invisíveis para todos os comandos**. Mesmo sintoma do #450, outra porta.
+
+**Por que ML e não issue nova:** Regra Dura — mesma causa (leitura raiz onde deveria ser recursiva),
+mesmo mecanismo, mesma ADR. Um sítio conhecido e não corrigido deixaria a ADR de ponto único
+insatisfeita, que é o achado A1 que este projeto já pagou duas vezes.
+
+**Critérios de aceite:**
+- [ ] A verificação de existência passa a ser **recursiva**, preservando a semântica *"há algum ADR
+      neste diretório?"* — não transforme em enumeração para contagem
+- [ ] 🔴 **Teste no braço do achado:** `~/.trackfw/adr` com ADRs **apenas em subpasta** → o diretório
+      **É** registrado em `adr_dirs`
+- [ ] **Contra-braço:** `~/.trackfw/adr` **vazio** ou inexistente → continua no-op, sem registrar
+- [ ] A **isenção deste sítio sai** do `check-adr-enumeration-single-point.sh`, e o gate continua
+      `RC=0` — se a isenção precisar ficar, a razão tem que ser outra, escrita
+- [ ] Reconciliação: uma frase por teste, dizendo o que **mediu**
 
 ## Wave 2 — auditoria independente
 > Dependências: Wave 1 completa e auditada.
