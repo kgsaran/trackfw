@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-25
 author: "trackfw_architect"
 adr: "docs/adr/ADR-2026-09-29-quando-uma-req-deve-ter-roadmap-e-o-casamento-req-roadmap-nao-depende-de-req-id-no-roadmap.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-29-traceid-orphan-req-reprova-estado-correto-por-duas-causas-distintas.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-29-traceid-orphan-req-reprova-estado-correto-por-duas-causas-distintas.md"
 ---
 
 # REQ: regra de rastreabilidade ignora o estado da REQ e acusa backlog como orfao
 
-> Date: 2026-09-25 | Status: Open
+> Date: 2026-09-25 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -199,7 +199,10 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-25-regra-de-rastreabilidade-ignora-o-estado-da-req-e-acusa-backlog-como-orfao.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-29-traceid-orphan-req-reprova-estado-correto-por-duas-causas-distintas.md`
+<!-- O ponteiro anterior apontava para o roadmap da própria REQ antes da consolidação de 2026-09-29;
+     aquele roadmap foi para abandoned/ e este é o vigente. Divergência detectada por `validate`
+     (has divergent roadmap links) e corrigida. -->
 
 
 ---

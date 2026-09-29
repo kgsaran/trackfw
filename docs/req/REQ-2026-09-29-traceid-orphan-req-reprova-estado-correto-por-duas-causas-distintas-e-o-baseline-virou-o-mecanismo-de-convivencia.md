@@ -3,7 +3,7 @@ status: Abandoned
 date: 2026-09-29
 author: "trackfw_architect"
 adr: "docs/adr/ADR-2026-09-29-quando-uma-req-deve-ter-roadmap-e-o-casamento-req-roadmap-nao-depende-de-req-id-no-roadmap.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-29-traceid-orphan-req-reprova-estado-correto-por-duas-causas-distintas.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-29-traceid-orphan-req-reprova-estado-correto-por-duas-causas-distintas.md"
 ---
 
 # REQ: `traceid_orphan_req` reprova estado correto por duas causas distintas
@@ -100,4 +100,4 @@ ADR: docs/adr/ADR-2026-09-29-quando-uma-req-deve-ter-roadmap-e-o-casamento-req-r
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-29-traceid-orphan-req-reprova-estado-correto-por-duas-causas-distintas.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-09-29-traceid-orphan-req-reprova-estado-correto-por-duas-causas-distintas.md

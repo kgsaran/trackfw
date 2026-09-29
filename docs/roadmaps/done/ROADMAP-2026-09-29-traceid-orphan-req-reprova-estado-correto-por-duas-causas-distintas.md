@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-29
 req: "docs/req/REQ-2026-09-25-regra-de-rastreabilidade-ignora-o-estado-da-req-e-acusa-backlog-como-orfao.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: `traceid_orphan_req` reprova estado correto por duas causas distintas
 
-> Created: 2026-09-29 | Status: wip
+> Created: 2026-09-29 | Status: done
 
 ## Context
 <!-- Derived from REQ -->
@@ -204,32 +204,15 @@ exist` — ambas as arms de direção A passariam. O FAIL real está antes: o ba
 `traceid_orphan_req` (ML-1A) não afeta porque `scaffold_adr_req_project` não define `trace_id_field`
 — `validateTraceId` retorna nil imediatamente.
 
-### ML-1D — a fixture S192 assumia o comportamento antigo e matou o chunk
-**Owner:** `apolo-tf`
-**Status:** ✅ Concluído — auditado em 2026-09-29 · 🔴 **refutou a hipótese do meu handoff**
+**Auditoria do arquiteto:** `make quality` **RC=0** verificado por mim — 8 chunks, 347 OK, 0 FAIL. A
+fixture mudou **exatamente uma coisa** (`Open` → `Done`), com a razão e a medição escritas no próprio
+script.
 
-`make quality` reprovava com `chunk_1 nao chegou ao sentinela CHUNK_COMPLETE`, e **4 rótulos
-ausentes** — que eram **consequência** da morte do chunk, não 4 falhas.
+⚠️ **Este bloco foi FUNDIDO a partir de dois `### ML-1D` duplicados** (um do executor, um meu),
+detectados pelo `validate`: `duplicate ML label "ML-1D" at lines [180 207]`. 🔴 O aviso **desapareceu
+sozinho** quando o roadmap saiu de `wip` — a regra só varre `wip`. Sumir do alcance da regra **não é
+corrigir**, e por isso a fusão foi feita mesmo com o roadmap já em `done`.
 
-🔴 **Eu apontei a causa errada no handoff.** Escrevi que o suspeito era a *liveness arm*
-(`links to ADR`). O executor mediu e **refutou**: as duas arms de direção A passariam. A falha era na
-**terceira baseline** do bloco S192 (linha 7405), sobre a **fixture C**.
-
-**Causa real:** `write_req_roadmap_prose_md_fixture` escrevia `status: Open`. O ML-1B fez
-`req_has_roadmap` disparar **só** para `Done`. O `validate` saiu `✓ No violations found` com `RC=0`,
-o `assert_fails_with` esperava `RC≠0`, e o `exit 1` matou o chunk — explicando exatamente a última
-linha do log.
-
-**Corrigido na camada certa: a fixture.** O comportamento do ML-1B é o decidido na ADR e já auditado;
-quem assumia o comportamento antigo era o teste. E ele **provou que a fixture continua exercitando o
-alvo** — o seam de ancoragem de chave em `extractRefPath` segue discriminante com `Done`.
-
-**Critérios de aceite:**
-- [x] Causa nomeada **com evidência**, e ela **contrariou** a hipótese do handoff
-- [x] Correção na fixture, não no produto, com a razão escrita no próprio script
-- [x] A fixture continua testando o alvo — medido no scratchpad: baseline `RC=1` com
-      *"has no linked Roadmap"*; corrupted-C `RC=0` sem a mensagem
-- [x] `make quality` **RC=0** — verificado pelo arquiteto: 8 chunks, **347 OK, 0 FAIL**
 
 ## Wave 2 — auditoria independente
 > Dependências: Wave 1 completa (incluindo ML-1D).
