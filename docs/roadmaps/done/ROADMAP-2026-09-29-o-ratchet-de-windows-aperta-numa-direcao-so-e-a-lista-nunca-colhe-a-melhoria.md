@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-29
 req: "docs/req/REQ-2026-09-29-o-ratchet-de-windows-aperta-numa-direcao-so-e-a-lista-de-falhas-conhecidas-nunca-colhe-a-melhoria.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: o ratchet de Windows aperta numa direção só
 
-> Created: 2026-09-29 | Status: wip
+> Created: 2026-09-29 | Status: done
 
 ## Context
 <!-- Derived from REQ -->
