@@ -38,7 +38,7 @@ n=$(jq -r '.entries[]|.name' .github/windows-known-failures.json 2>/dev/null | w
 
 ### ML-0A — triar as 14 por causa-raiz e mapear o checker
 **Owner:** `hades-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-09-29 · 🔴 **BLOQUEOU o D6 como eu o escrevi**
 **Arquivos:** leitura de `.github/`, `scripts/`; escrita em `docs/seguranca/2026-09-29-wave0-ratchet.md`
 
 **Tarefa:**
@@ -55,19 +55,53 @@ n=$(jq -r '.entries[]|.name' .github/windows-known-failures.json 2>/dev/null | w
 4. **Onde o campo de razão cabe** no esquema sem quebrar o checker nem o `removed[]`.
 
 **Critérios de aceite:**
-- [ ] As 14 com razão **medida** e citação da mensagem de falha, nenhuma sem evidência
-- [ ] Agrupamento por causa-raiz, com a contagem por grupo
-- [ ] Mapa do checker: onde comparar, onde emitir, o que já é validado
-- [ ] 🔴 Veredito sobre o D6 **antes** de alguém escrever código: skip e rename produzem falso
-      positivo? Se sim, o D6 precisa de recorte — e ele é escrito **agora**, não depois
-- [ ] Proposta de esquema para o campo de razão, compatível com `entries[]` e `removed[]`
+- [x] 14 com razão medida; **11 MEDIDAS** na mensagem de falha, **3 inferidas** e marcadas como tal
+- [x] **4 grupos:** permissões POSIX (4) · CRLF no renderer (4) · comando externo (2) · representação de caminho (3)
+- [x] `scripts/check-windows-known-failures.py`: passo 6 = `obs − known` (D1, não muda) · passo 7 = `known − obs`, **hoje `::warning::`, nunca exit 1** · passo 10 emite `[-N resolvido]`, puramente informativo · `entries[]` **não tem validação de esquema** hoje
+- [x] 🔴 **SIM, produzem — D6 de uma linha BLOQUEADO.** Fixture sintética: pacote com `panic` (sem
+      marcador `[setup failed]`) faz o teste sumir das observadas, e o D6 ingênuo diria *"resolveu"*.
+      Passos 3 e 5b **não cobrem**. Recorte de **três baldes** escrito na ADR **antes** do código
+- [x] `reason` obrigatório em `entries[]`, opcional em `removed[]` (as 24 já lá não o têm).
+      🔴 **ASCII puro** — o self-test roda sob `PYTHONIOENCODING=cp1252` (`quality.yml:977`), e um
+      acento causaria `UnicodeEncodeError` **exatamente quando o checker precisasse falar**
 
 ## Wave 1 — o gatilho e a razão
 > Dependências: **Wave 0 auditada.** O desenho sai dela — se o D6 precisar de recorte, este bloco muda.
 
-### ML-1A — (a definir pela Wave 0)
+### ML-1A — D6 em três baldes, e o campo `reason` validado
+**Owner:** `apolo-tf`
 **Status:** ⬜ Pendente
-Placeholder consciente. 🔴 **Não despachar antes da Wave 0 auditada.**
+**Arquivos:** `scripts/check-windows-known-failures.py`, `.github/windows-known-failures.json`
+
+**O desenho saiu da Wave 0, não do plano.** Três coisas que ela fixou e que são AC:
+
+**1 — D6 em TRÊS baldes** (dois branches no passo 7, **não** um `_warn` → `_err`):
+
+| balde | condição | ação | mensagem |
+|---|---|---|---|
+| resolvido | na lista **e** passou | reprova | mover para `removed[]` com `removal_note` (**D4**) |
+| **não executou** | na lista, **nem** passou **nem** falhou | reprova | *skip, `panic` de pacote, ou deletado — **não é resolução*** |
+| ainda falha | na lista **e** falhou | passa | — |
+
+**2 — `reason` obrigatório em `entries[]`**, ASCII puro, validado por função análoga a
+`validate_removed()`.
+
+**3 — 🔴 ~20 fixtures do self-test** (`write_list(...)`, linhas ~1216-1699) usam `{name, runtime,
+class}` **sem** `reason`. Se a validação entrar no fluxo normal sem atualizá-los, **`make quality`
+fica vermelho na hora**. Atualizá-los é **parte deste ML**, não consequência dele.
+
+**Critérios de aceite:**
+- [ ] Os **três** baldes implementados, cada um com mensagem própria — a atribuição errada é o
+      defeito que o **D3** existe para evitar, e que esta base já pagou 3× no #274
+- [ ] 🔴 **Falsificação por balde:** entrada que passou → reprova dizendo *resolveu* · entrada que
+      sumiu por `panic` → reprova dizendo *não executou* · entrada que falhou → passa
+- [ ] 🔴 **Contra-braço do D1:** **regressão nova continua reprovando** — o D6 não pode ter
+      desligado o que já funcionava
+- [ ] `reason` obrigatório em `entries[]` e **validado**; ausência → reprova
+- [ ] 🔴 **ASCII puro**, verificado sob `PYTHONIOENCODING=cp1252 PYTHONUTF8=0`
+- [ ] **As 14 entradas recebem a razão** da triagem da Wave 0 — as 3 inferidas marcadas como tal
+- [ ] **Os ~20 fixtures do self-test atualizados**, e o `--self-test` verde
+- [ ] `make quality` **RC=0**
 
 ## Wave 2 — auditoria independente
 > Dependências: Wave 1 completa.

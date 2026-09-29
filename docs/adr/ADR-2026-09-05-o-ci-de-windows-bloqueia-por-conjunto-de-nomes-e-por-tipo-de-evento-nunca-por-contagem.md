@@ -121,6 +121,27 @@ ponto mais barato **agora**. Esperar acumula passivo e transforma a adoção num
 risco da remoção automática, com desfecho melhor — uma reprovação **visível e corrigível**, não uma
 remoção silenciosa. E o **D5** já declara nomes instáveis como limite conhecido.
 
+#### 🔴 D6 exige RECORTE — a Wave 0 bloqueou a versão de uma linha
+
+Medido em 2026-09-29 com fixture sintética: um pacote com **`panic`** (sem marcador
+`[setup failed]`) faz o teste **sumir das observadas**. Um D6 ingênuo — trocar `_warn` por `_err` no
+passo que compara `known − observed` — diria **"resolveu"**. 🔴 **Atribuição falsa**, e é o mesmo
+erro de discriminação que o **D3** existe para evitar.
+
+Os passos 3 e 5b **não cobrem** esse caso: o 3a exige marcador explícito (o `panic` do Go não o
+escreve) e o 5b exige **zero** linhas FAIL/PASS (o pacote saudável produziu resultados).
+
+**D6 implementa-se em TRÊS baldes, não em um:**
+
+| balde | condição | ação | o que a mensagem diz |
+|---|---|---|---|
+| **1 — resolvido** | está na lista **e** passou | **reprova** | mova para `removed[]` com `removal_note` (**D4**) |
+| **2 — não executou** | está na lista, **não** passou **e não** falhou | **reprova** | *nem falhou nem passou* — skip, `panic` de pacote, ou deletado. **Não é resolução** |
+| **3 — ainda falha** | está na lista **e** falhou | passa | — |
+
+Os baldes 1 e 2 **ambos** reprovam. O que muda é a **atribuição** — e atribuição errada é o defeito
+que esta ADR já pagou três vezes no #274.
+
 ### D7 — Cada entrada carrega a RAZÃO da falha
 
 Hoje uma entrada é `{name, runtime, class}` — **nenhuma diz por que falha no Windows**. Quem for
@@ -130,6 +151,25 @@ atacar qualquer uma reinvestiga do zero, e é provável que as 14 tenham **pouca
 As entradas passam a carregar a razão. **Sem isso o D6 não se sustenta na prática:** quando o job
 reprovar dizendo "esta entrada resolveu", quem não souber por que ela falhava não consegue julgar se
 resolveu de verdade ou se o ambiente mudou.
+
+🔴 **A razão é ASCII puro — restrição medida, não estilo.** O self-test roda sob
+`PYTHONIOENCODING=cp1252 PYTHONUTF8=0` (`quality.yml:977`). Um travessão, seta ou acento no campo
+causaria **`UnicodeEncodeError`** ao emitir `::error::` — o checker quebraria exatamente quando
+precisasse falar.
+
+⚠️ **Correção de uma suposição minha nesta Emenda:** eu escrevi que os mecanismos prováveis eram
+*"permissão POSIX, CRLF, `bash` ausente"*. A triagem mediu **4 grupos, e "bash ausente" não tem
+representante**:
+
+| grupo | n | mecanismo medido |
+|---|---|---|
+| **A — permissões POSIX** | 4 | `os.Chmod(0o600/0o000)` é **silencioso** em NTFS |
+| **B — CRLF no renderer** | 4 | *"CRLF source produced a different render than LF source"* |
+| **C — comando externo** | 2 | privilégio de **symlink** do Windows · defesa anti-fork-bomb do runner |
+| **D — representação de caminho** | 3 | `shasum` escapando `\` · provável short-name `8.3` (`RUNNER~1`) |
+
+O que eu chamei de *"`bash` ausente"* é, medido, **privilégio de symlink**: `os.Symlink` falha em
+silêncio, o diretório de binários falsos fica vazio, e o script cai no fallback.
 
 ## Consequências
 

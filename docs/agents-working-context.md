@@ -2,6 +2,27 @@
 
 ---
 
+## 2026-09-29 — Hades (fix/ratchet-windows-nao-colhe-melhoria — ML-0A Wave 0 threat model) — ENTREGUE
+
+**Início:** 2026-09-29 | Branch: `fix/ratchet-windows-nao-colhe-melhoria`
+**Tarefa:** ML-0A — Wave 0 threat model: triar as 14 falhas, mapear o checker, vereditar D6, propor D7.
+
+**Log usado:** run 36608706692, job 109544299744 (windows-full-suites, 2026-09-29, main).
+**Gate W0:** `jq -r '.entries[]|.name' .github/windows-known-failures.json | wc -l` = 14. Passa.
+
+**Achados principais:**
+- 14 entradas = 4 causas-raiz: A=POSIX permissions (4), B=CRLF renderer (4, 2 infer), C=external command (2: symlink privilege + fork-bomb), D=path representation (3, 2 infer).
+- **Correcao da ADR:** bucket "bash ausente" previsto nao tem representante. FallbackWithoutJQ falha por Windows symlink privilege (test setup), nao por bash ausente.
+- Checker: step 6 = nova falha; step 7 = nao observada (warning hoje); step 10 = label informativo. D6 NAO e mudanca de uma linha.
+- **D6 precisa de tres baldes (medido):** package panic mid-run produz balde 2 (nao executou) e seria falsamente atribuido como "resolvido" com mudanca simples. Medido com fixture sintetica + verificacao de buckets. Ambos os baldes disparam exit 1 mas com mensagens distintas.
+- D7: `reason` ASCII obrigatorio em `entries[]` (nao em `removed[]`). ~20 fixtures no self-test precisam ser atualizados. `validate_active_entries()` analogous to `validate_removed()`.
+
+**Artefato:** `docs/seguranca/2026-09-29-wave0-ratchet.md`
+
+**git diff trackfw.yaml:** vazio.
+
+---
+
 ## 2026-09-29 — Hades (fix/orphan-req-reprova-estado-correto — ML-2A Wave 2 auditoria independente) — ENTREGUE
 
 **Início:** 2026-09-29 | Branch: `fix/orphan-req-reprova-estado-correto`
