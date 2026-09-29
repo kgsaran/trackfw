@@ -18,7 +18,7 @@ import (
 func TestParseWaves_SingleWave(t *testing.T) {
 	content := "# Roadmap\n\n## Wave 1 — Foo\nbody line\n\n### ML-1A — x\n**Status:** ✅\n"
 	lines := strings.Split(content, "\n")
-	waves, malformed := parseWaves(lines)
+	waves, malformed := parseWaves(lines, fenceMask(lines))
 	if len(malformed) != 0 {
 		t.Fatalf("unexpected malformed waves: %v", malformed)
 	}
@@ -41,7 +41,7 @@ func TestParseWaves_MultipleWavesEndAtNextH2(t *testing.T) {
 		"content of wave 2",
 	}, "\n")
 	lines := strings.Split(content, "\n")
-	waves, malformed := parseWaves(lines)
+	waves, malformed := parseWaves(lines, fenceMask(lines))
 	if len(malformed) != 0 {
 		t.Fatalf("unexpected malformed waves: %v", malformed)
 	}
@@ -66,7 +66,7 @@ func TestParseWaves_MultipleWavesEndAtNextH2(t *testing.T) {
 func TestParseWaves_MalformedLabelIsIsolated(t *testing.T) {
 	content := "## Wave x — Foo\nbody\n"
 	lines := strings.Split(content, "\n")
-	waves, malformed := parseWaves(lines)
+	waves, malformed := parseWaves(lines, fenceMask(lines))
 	if len(malformed) == 0 {
 		t.Fatalf("expected malformed entry for label 'x', got waves=%+v", waves)
 	}
@@ -86,7 +86,7 @@ func TestParseWaves_MalformedLabelIsIsolated(t *testing.T) {
 func TestParseWaves_BisSuffix(t *testing.T) {
 	content := "## Wave 2-bis — Corrective\nbody\n"
 	lines := strings.Split(content, "\n")
-	waves, malformed := parseWaves(lines)
+	waves, malformed := parseWaves(lines, fenceMask(lines))
 	if len(malformed) != 0 {
 		t.Fatalf("unexpected malformed waves for valid label 2-bis: %v", malformed)
 	}
@@ -109,7 +109,7 @@ func TestParseWaves_LabelIdentityDistinct(t *testing.T) {
 		"body of wave 2-bis",
 	}, "\n")
 	lines := strings.Split(content, "\n")
-	waves, malformed := parseWaves(lines)
+	waves, malformed := parseWaves(lines, fenceMask(lines))
 	if len(malformed) != 0 {
 		t.Fatalf("unexpected malformed waves: %v", malformed)
 	}
@@ -824,7 +824,7 @@ func TestParseWaves_MalformedHeadingIsCascadeIsolated_ML1D(t *testing.T) {
 
 	// Unit-level: parseWaves returns the valid wave AND records the malformed one.
 	lines := strings.Split(content, "\n")
-	waves, malformed := parseWaves(lines)
+	waves, malformed := parseWaves(lines, fenceMask(lines))
 	if len(waves) == 0 {
 		t.Fatalf("parseWaves returned no valid waves — cascade isolation failed")
 	}
@@ -979,7 +979,7 @@ func TestWaveLabelGrammar_ValidAndInvalid(t *testing.T) {
 			// Composite check: heading pre-pass must also accept it.
 			content := "## Wave " + lbl + " — Test Heading\nbody\n"
 			lines := strings.Split(content, "\n")
-			_, uerr := parseWaves(lines)
+			_, uerr := parseWaves(lines, fenceMask(lines))
 			if uerr != nil {
 				t.Errorf("parseWaves: expected no error for valid label %q, got: %v", lbl, uerr)
 			}
@@ -993,7 +993,7 @@ func TestWaveLabelGrammar_ValidAndInvalid(t *testing.T) {
 			// predicate.
 			content := "## Wave " + lbl + " — Bad Heading\nbody\n"
 			lines := strings.Split(content, "\n")
-			_, uerr := parseWaves(lines)
+			_, uerr := parseWaves(lines, fenceMask(lines))
 			if uerr == nil {
 				t.Errorf("parseWaves: expected usage error for invalid label %q, got nil", lbl)
 			}

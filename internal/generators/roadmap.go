@@ -615,7 +615,7 @@ type pendingMLEntry struct {
 func pendingMLsForDone(data string) []pendingMLEntry {
 	lines := roadmapdoc.SplitRoadmapLines(data)
 	fenced := roadmapdoc.FenceMask(lines)
-	waves, malformed := roadmapdoc.ParseWaves(lines)
+	waves, malformed := roadmapdoc.ParseWaves(lines, fenced)
 
 	var pending []pendingMLEntry
 

@@ -396,21 +396,31 @@ type MLBlock struct {
 
 // ParseWaves splits the roadmap into wave blocks (rule 1).
 //
+// `fenced` is the FenceMask of the same lines, and BOTH readings consult it (#470): a
+// "## Wave <label> " line inside a fenced code block does not open a wave, and a "## " line
+// inside one does not close the preceding wave. Passing the mask is not optional — it is a
+// parameter rather than an internal FenceMask call so that the callers which already compute
+// the mask for ParseMLs/MLStatusMarker/AcceptanceEvaluate pass the SAME slice, and the four
+// readings can never disagree about which lines are structure.
+//
 // Malformed headings are ISOLATED, not aborted (ML-1D/ML-1E, REQ #392 — emends ADR-2026-07-29
 // decision 16). Each invalid label is recorded in the returned []MalformedWave slice and
 // parsing continues for the rest of the document. The safe basis is that every "## Wave …"
-// heading is an H2; the block-end scan (strings.HasPrefix(lines[j], "## ")) still closes the
+// heading is an H2; the block-end scan (strings.HasPrefix on the unfenced lines) still closes the
 // preceding valid wave at the malformed heading, so valid-wave boundaries are never corrupted.
 //
 // 🔴 Never fail open: malformed waves are NOT added to the WaveBlock slice. The barrier
 // translates each MalformedWave into a failure in the wave_headings check (ML-1E), blocking
 // the overall verdict. HasUnfinishedMLs also returns true whenever len(malformed) > 0 as a
 // belt-and-suspenders fail-safe.
-func ParseWaves(lines []string) ([]WaveBlock, []MalformedWave) {
+func ParseWaves(lines []string, fenced []bool) ([]WaveBlock, []MalformedWave) {
 	var waves []WaveBlock
 	var malformed []MalformedWave
 	n := len(lines)
 	for i := 0; i < n; i++ {
+		if fenced[i] {
+			continue
+		}
 		m := WaveHeadingRe.FindStringSubmatch(lines[i])
 		if m == nil {
 			continue
@@ -431,6 +441,9 @@ func ParseWaves(lines []string) ([]WaveBlock, []MalformedWave) {
 		}
 		end := n
 		for j := i + 1; j < n; j++ {
+			if fenced[j] {
+				continue
+			}
 			if strings.HasPrefix(lines[j], "## ") {
 				end = j
 				break
@@ -732,7 +745,7 @@ const (
 // veredito que possam divergir.
 func Wave0GateDiagnosis(data string) Wave0GateCause {
 	lines := SplitRoadmapLines(data)
-	waves, _ := ParseWaves(lines)
+	waves, _ := ParseWaves(lines, FenceMask(lines))
 	for _, w := range waves {
 		if w.Label != "0" {
 			continue
@@ -783,7 +796,7 @@ func Wave0HasPlaceholderOrMissingGate(data string) bool {
 func hasAnyNonPendingML(data string) bool {
 	lines := SplitRoadmapLines(data)
 	fenced := FenceMask(lines)
-	waves, malformed := ParseWaves(lines)
+	waves, malformed := ParseWaves(lines, fenced)
 	if len(malformed) > 0 {
 		// Cannot inspect MLs inside malformed waves; assume non-pending (fail closed).
 		return true
@@ -814,15 +827,19 @@ func hasAnyNonPendingML(data string) bool {
 // "corrected" later for appearing inconsistent.
 //
 // Built on ParseWaves so that grammar validation is applied: a heading whose label
-// fails WaveLabelRe goes into MalformedWave and does NOT satisfy this check — the
-// presence of "## Wave 0" inside a fenced code block would require WaveHeadingRe to
-// match the line, which it does (ParseWaves does not apply FenceMask). In practice
-// this project's roadmaps do not embed literal "## Wave 0" headings inside fences,
-// and consistency with the existing ParseWaves contract is more important than
-// closing a theoretical fenced-example edge case here.
+// fails WaveLabelRe goes into MalformedWave and does NOT satisfy this check.
+//
+// This comment used to declare the fenced-heading case a "theoretical edge case" and
+// keep ParseWaves outside the fence rule on purpose. Issue #470 measured it on a real
+// roadmap and retired that decision: the defect does not need "## Wave 0" inside a
+// fence to fire — ANY "## " line inside one closed the wave early, because the
+// block-end scan used a bare strings.HasPrefix. An ML that pasted the output of
+// trackfw context (which emits "## ADRs (N)", "## Warnings (N)") lost its acceptance
+// block to that scan, and the barrier reported "no acceptance block" for an ML that
+// has one. ParseWaves now takes the same FenceMask the other readings already used.
 func HasWave0(data string) bool {
 	lines := SplitRoadmapLines(data)
-	waves, _ := ParseWaves(lines)
+	waves, _ := ParseWaves(lines, FenceMask(lines))
 	for _, w := range waves {
 		if w.Label == "0" {
 			return true
@@ -890,7 +907,7 @@ func DuplicateWaveOrMLLabels(data string) []string {
 func HasUnfinishedMLs(data string) bool {
 	lines := SplitRoadmapLines(data)
 	fenced := FenceMask(lines)
-	waves, malformed := ParseWaves(lines)
+	waves, malformed := ParseWaves(lines, fenced)
 	if len(malformed) > 0 {
 		// Malformed wave heading: treat as having unfinished content (fail safe).
 		// The MLs inside malformed waves are unreachable by wave-scoped barrier calls
