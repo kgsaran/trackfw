@@ -1586,6 +1586,14 @@ EOF
 # O alvo existe no disco (ensure_roadmap_link_target) porque o binário sabotado passa a EXTRAIR a
 # referência, e aí ref_targets_exist a resolve — um alvo inexistente reprovaria o braço sabotado por
 # motivo alheio ao seam (ref_targets_exist é violação mesmo em lenient).
+#
+# 🔴 ML-1B (fix/orphan-req-reprova-estado-correto, 2026-09-29): `req_has_roadmap` só dispara para
+# REQs com `status: Done` (ADR D4). O status era Open, e o baseline (`assert_fails_with`) recebia
+# `✓ No violations found.` + RC=0 — exatamente a falha medida. Alterado para Done. A regra
+# `traceid_orphan_req` (também status-gatilhada por ML-1A) não afeta esta fixture porque
+# `scaffold_adr_req_project` não define `trace_id_field` no trackfw.yaml — validateTraceId retorna
+# nil imediatamente. Medido no scratchpad antes da edição: baseline RC=1 com "has no linked
+# Roadmap" ✓; corrupted-C RC=0 sem a mensagem ✓.
 
 write_req_roadmap_prose_md_fixture() {
   local dest=$1 adr_rel=$2
@@ -1593,7 +1601,7 @@ write_req_roadmap_prose_md_fixture() {
   ensure_roadmap_link_target "$dest"
   cat > "$dest" <<EOF
 ---
-status: Open
+status: Done
 date: 2026-09-06
 author: ""
 adr: "$adr_rel"
@@ -1602,7 +1610,7 @@ roadmap: ""
 
 # REQ: fixture de prosa no meio da linha (campo Roadmap, com caminho .md)
 
-> Date: 2026-09-06 | Status: Open
+> Date: 2026-09-06 | Status: Done
 
 ## Motivation
 motivo

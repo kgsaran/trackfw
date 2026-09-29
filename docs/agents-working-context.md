@@ -2,6 +2,56 @@
 
 ---
 
+## 2026-09-29 — Apolo (fix/orphan-req-reprova-estado-correto — ML-1D falsify fixture S192) — ENTREGUE
+
+**Início:** 2026-09-29 | Branch: `fix/orphan-req-reprova-estado-correto`
+**Tarefa:** ML-1D — corrigir fixture `write_req_roadmap_prose_md_fixture` em `check-gates-falsify.sh`.
+
+**Causa raiz (refuta o handoff):** o handoff apontava a liveness arm (`links to ADR`) como falha. Medido no scratchpad: o binário corrompido A sobre fixture A produz `✗ ... links to ADR "<!--" which does not exist` — ambas as arms de direção A passariam. A falha real estava no BASELINE da Direção C (`assert_fails_with "roadmap-prose-md-baseline"`), que é o terceiro baseline no bloco (linha 7405). A fixture C tinha `status: Open`; ML-1B silenciou `req_has_roadmap` para Open; validate retornou `✓ No violations found.` (RC=0); assert_fails_with esperava RC≠0 → FAIL → `exit 1` → chunk morreu → 4 labels de direção nunca registradas.
+
+**Correção:** `write_req_roadmap_prose_md_fixture` em `check-gates-falsify.sh`: `status: Open` → `status: Done` (frontmatter e heading). `traceid_orphan_req` não afeta porque `scaffold_adr_req_project` não define `trace_id_field` — `validateTraceId` retorna nil imediatamente.
+
+**Verificações:**
+- Baseline C com `status: Done`: RC=1, "has no linked Roadmap" ✓ (medido no scratchpad)
+- Direção C (corrupted-C) com `status: Done`: RC=0, sem "has no linked Roadmap" ✓ (medido)
+- `go test ./...`: verde
+- `make quality` RC=0 — 8 chunks, 347 OK, 0 FAIL, guarda OK
+- `git diff trackfw.yaml`: vazio
+
+**git diff --name-only (ML-1D apenas):** `scripts/check-gates-falsify.sh`, `docs/roadmaps/wip/ROADMAP-...md`, `docs/agents-working-context.md`
+
+---
+
+## 2026-09-29 — Apolo (fix/orphan-req-reprova-estado-correto — ML-1C gate req-roadmap-rule-is-status-aware) — ENTREGUE
+
+**Início:** 2026-09-29 | Branch: `fix/orphan-req-reprova-estado-correto`
+**Tarefa:** ML-1C — criar `scripts/check-req-roadmap-rule-is-status-aware.sh` e adicionar entrada no `Makefile` (parity-rest).
+
+**O que foi feito:**
+- Novo script `scripts/check-req-roadmap-rule-is-status-aware.sh`: gate com 4 braços de falsificação (arm1 FAIL, arm2 PASS, arm3a trailing-comment FAIL, arm3b full-line-comment FAIL, arm4 narrowing FAIL).
+- Extração narrow: ancora em `readFileForRule("rule")`, termina em primeiro `applyRule("rule")` ou próximo `^func` — impede decoy em bloco vizinho satisfazer o gate.
+- Makefile: entrada comentada em `parity-rest` com contexto (ML, isenções, recorte).
+- ML-1B estava já aplicado na branch: `req_has_roadmap` já tinha `reqStatusIsDone` quando o gate rodou contra a árvore real.
+
+**Falsificação executada:**
+- Cópia em scratchpad de `validator.go` SEM o bloco ML-1B (`reqStatusIsDone` removido) → gate FAIL nomeando `validator.go:2311`. Cópia não commitada, permanece apenas no scratchpad.
+- Árvore real → `RC=0` (ambas as regras passam).
+
+**Números medidos:**
+- Sites examinados: 2 / 2
+- Janela `traceid_orphan_req`: 282-295 (apertada — anchor → applyRule)
+- Janela `req_has_roadmap`: 2311-2339 (anchor → next func)
+
+**gate checks:**
+- `bash scripts/check-req-roadmap-rule-is-status-aware.sh --self-test`: SELFTEST_RC=0
+- `bash scripts/check-req-roadmap-rule-is-status-aware.sh`: RC=0
+- `bash scripts/check-orphan-gates.sh`: ORPHAN_RC=0
+
+**git diff --name-only (ML-1C apenas):** `scripts/check-req-roadmap-rule-is-status-aware.sh` (novo), `Makefile`, `docs/agents-working-context.md`
+**git diff trackfw.yaml:** vazio
+
+---
+
 ## 2026-09-29 — Apolo (fix/context-reporta-zero-adrs-onde-status-reporta-145 — ML-1D warnings duplicados com adr_dirs aninhadas) — CONCLUÍDO
 
 **Início:** 2026-09-29 | Branch: `fix/context-reporta-zero-adrs-onde-status-reporta-145`
@@ -42688,6 +42738,33 @@ Medições independentes sobre 10 casos de teste (cenário #450, score delta, de
 
 ---
 
+## 2026-09-29 — Apolo (fix/orphan-req-reprova-estado-correto — ML-1B req_has_roadmap aplica critério status:Done) — CONCLUÍDO
+
+**Início:** 2026-09-29 | Branch: `fix/orphan-req-reprova-estado-correto`
+**Tarefa:** ML-1B — aplicar o mesmo critério do `traceid_orphan_req` (ADR D4) em `validateREQsHaveRoadmap`: só REQ `Done` dispara.
+
+**Arquivos modificados:**
+- `internal/validator/validator.go`: adicionado guard `if !reqStatusIsDone(string(content)) { continue }` em `validateREQsHaveRoadmap`. `scanned++` mantido antes de `readFileForRule` (denominador = todos os REQs).
+- `internal/validator/validator_req_roadmap_test.go`: `writeREQWithFields` atualizado para `status: Done`; 5 novos testes ML-1B (`Open/Superseded/Closed silenciados`, `Done fires`, `Concordance` com 2 sub-testes) + helper `writeREQStatusOnly`.
+- `internal/validator/validator_req_roadmap_cutoff_ml4b_test.go`: `writeOrphanREQ` atualizado para `status: Done`; inline REQ em `ML1DReaderPreserved` corrigida para `status: Done`.
+- `internal/validator/validator_test.go`: fixture em `TestReqHasRoadmapConfiguravel/buildDir` atualizada para `status: Done`.
+- `internal/commands/req_chain_ml4a_test.go`: braço "deliberado" do `TestRunReqNew_IntegratedPath` atualizado para promover REQ para `Done` antes do validate (alinhado à semântica nova: Open REQs não são acusadas).
+
+**Números medidos:**
+- ANTES: 173 warnings, 13 `req_has_roadmap` warnings (10 Superseded + 3 Done, todos pré-cutoff), grandfathering: "13 exempt, 0 enforced, 237 scanned"
+- DEPOIS: 163 warnings, 3 `req_has_roadmap` warnings (3 Done, todos pré-cutoff), grandfathering: "3 exempt, 0 enforced, 237 scanned"
+- Delta: -10 warnings (os 10 Superseded silenciados). Grandfathering preservado para os 3 Done pré-cutoff.
+
+**Concordância C2 verificada (fixture manual):**
+- Par válido (trace_id_field: req_id, REQ Done com req_id, roadmap com req: no frontmatter sem req_id): `req_has_roadmap` PASS + `traceid_orphan_req` PASS na mesma execução
+- Contra-braço: sem roadmap → ambas disparam (violations)
+- `git diff trackfw.yaml`: VAZIO
+- `go test ./...`: VERDE (todos os pacotes)
+
+**Status:** CONCLUÍDO — aguardando auditoria e commit por trackfw_architect.
+
+---
+
 ## 2026-09-29 — Apolo (fix/orphan-req-reprova-estado-correto — ML-1A recorte semântico + casamento por vínculo real) — EM ANDAMENTO
 
 **Início:** 2026-09-29 | Branch: `fix/orphan-req-reprova-estado-correto`
@@ -42708,6 +42785,6 @@ Medições independentes sobre 10 casos de teste (cenário #450, score delta, de
 - Todos os testes do pacote `internal/validator/` passando.
 
 **git diff trackfw.yaml:** vazio (confirmado)
-**git diff --name-only:** `docs/agents-working-context.md`, `internal/validator/validator_traceid.go`, `internal/validator/validator_traceid_test.go`
+**git diff --name-only (ML-1A):** `docs/agents-working-context.md`, `internal/validator/validator_traceid.go`, `internal/validator/validator_traceid_test.go`
 
-**Status:** CONCLUÍDO — aguardando auditoria e commit por trackfw_architect.
+**Status (ML-1A):** CONCLUÍDO — aguardando auditoria e commit por trackfw_architect.

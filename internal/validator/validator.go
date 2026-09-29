@@ -2313,6 +2313,14 @@ func validateREQsHaveRoadmap() (enforced []string, exempt []string, scanned int,
 		if !ok {
 			continue
 		}
+		// ML-1B: aplica o mesmo critério do traceid_orphan_req (ADR D4) — só REQs
+		// com status: Done disparam; Open, Superseded e Closed silenciam.
+		// 🔴 Não usa e.state: vazio em layout plano; usa o frontmatter via reqStatusIsDone.
+		// 🔴 Não reimplementar o predicado: reusar reqStatusIsDone é o que elimina as
+		// duas noções divergentes que a ADR D4 manda corrigir.
+		if !reqStatusIsDone(string(content)) {
+			continue
+		}
 		if !contentHasStructuredRefValue(string(content), cfg.LinkFieldsRoadmap) {
 			msg := fmt.Sprintf("req %q has no linked Roadmap (marker must start the line with a real, non-placeholder value)", filepath.Base(path))
 			if reqIsGrandfathered(string(content), path) {

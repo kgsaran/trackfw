@@ -853,8 +853,9 @@ func TestReqHasRoadmapConfiguravel(t *testing.T) {
 			"docs/req",
 			"docs/adr",
 		)
-		// REQ com ADR preenchido mas SEM Roadmap — dispara req_has_roadmap
-		writeFile(t, dir, "docs/req/REQ-sem-roadmap.md", "# REQ: Sem Roadmap\n\nADR: ADR-001\n")
+		// REQ Done com ADR preenchido mas SEM Roadmap — dispara req_has_roadmap.
+		// ML-1B: a regra agora só dispara para status: Done; sem esse campo a REQ seria silenciada.
+		writeFile(t, dir, "docs/req/REQ-sem-roadmap.md", "---\nstatus: Done\n---\n# REQ: Sem Roadmap\n\nADR: ADR-001\n")
 		return dir
 	}
 

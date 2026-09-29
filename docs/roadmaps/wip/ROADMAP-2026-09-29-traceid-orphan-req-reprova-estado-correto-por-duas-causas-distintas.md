@@ -147,38 +147,92 @@ registro — já corrigido, com evidência.
 
 ### ML-1B — `req_has_roadmap` aplica o mesmo critério (ADR D4)
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-09-29
 **Arquivos:** `internal/validator/validator.go` (`validateREQsHaveRoadmap`) + testes
 **⚠️ Sequencial após ML-1A** (reusa o predicado) · **paralelo com ML-1C** (arquivos disjuntos)
 
 Hoje ela **não tem o estado disponível** — usa `resolveREQFiles`, que devolve só caminhos.
 
 **Critérios de aceite:**
-- [ ] Mesmo critério do ML-1A: só `Done` dispara
-- [ ] 🔴 **O cutoff de grandfathering PERMANECE** — a Wave 0 refutou que ficaria redundante: **3** dos
+- [x] Mesmo critério do ML-1A: só `Done` dispara
+- [x] 🔴 **O cutoff de grandfathering PERMANECE** — a Wave 0 refutou que ficaria redundante: **3** dos
       13 grandfathered são `Done` e voltariam a violar sem ele
-- [ ] As duas regras **concordam** na fixture onde hoje discordam (par válido: `req_has_roadmap`
+- [x] As duas regras **concordam** na fixture onde hoje discordam (par válido: `req_has_roadmap`
       PASS × `traceid_orphan_req` FAIL)
-- [ ] Delta medido no corpus, com razão
+- [x] Delta medido no corpus, com razão
 
 ### ML-1C — gate: regra de vínculo REQ↔roadmap não decide sem consultar `status`
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-09-29
 **Arquivos:** `scripts/check-req-roadmap-rule-is-status-aware.sh` (novo) + `Makefile`
 **⚠️ 🔴 NÃO edite nenhum `.go`** — frente paralela no ML-1B
 
 **Critérios de aceite:**
-- [ ] 🔴 **Falsificável nas duas direções**, execuções coladas
-- [ ] **Anti-vacuidade:** declara quantos sítios examinou e **reprova se examinar zero**
-- [ ] 🔴 **O discriminante IGNORA COMENTÁRIOS.** Esta base já pagou **quatro vezes** por gate
+- [x] 🔴 **Falsificável nas duas direções**, execuções coladas
+- [x] **Anti-vacuidade:** declara quantos sítios examinou e **reprova se examinar zero**
+- [x] 🔴 **O discriminante IGNORA COMENTÁRIOS.** Esta base já pagou **quatro vezes** por gate
       enganado por comentário — `check-crlf-normalize-capture.sh`, `check-init-preserves-user-config.sh`
       (nas duas direções) e a própria fixture do `check-adr-enumeration-single-point.sh`.
       **Falsifique este caso explicitamente.**
-- [ ] Isenções explícitas e comentadas — `req_roadmap_lifecycle` **já** filtra por estado e não pode
+- [x] Isenções explícitas e comentadas — `req_roadmap_lifecycle` **já** filtra por estado e não pode
       ser acusado
 
+### ML-1D — corrigir fixture da suíte de falsificação que assumia comportamento pré-ML-1B
+**Owner:** `apolo-tf`
+**Status:** ✅ Concluído — 2026-09-29
+**Arquivos:** `scripts/check-gates-falsify.sh` (fixture `write_req_roadmap_prose_md_fixture`)
+
+`make quality` RC=2 — chunk_1 morria antes de CHUNK_COMPLETE. Causa raiz: o baseline do Cenário 192
+(Direção C) chamava `assert_fails_with ... "has no linked Roadmap"` contra uma fixture com REQ
+`status: Open`. ML-1B silenciou `req_has_roadmap` para Open — a fixture passou a retornar
+`✓ No violations found.` (RC=0) e o baseline falhou.
+
+🔴 **Refuta o handoff:** o relatório dizia que a *liveness* arm (`links to ADR`) era a falha. Medido
+no scratchpad: o binário corrompido A na fixture A produz `✗ ... links to ADR "<!--" which does not
+exist` — ambas as arms de direção A passariam. O FAIL real está antes: o baseline da Direção C
+(`assert_fails_with "roadmap-prose-md-baseline"`), terceira baseline no bloco, que mata o chunk com
+`exit 1` e impede as 4 labels de direção de serem registradas.
+
+**Critérios de aceite:**
+- [x] Causa nomeada com evidência (reproduzida no scratchpad)
+- [x] Correção na camada certa: fixture atualizada (`status: Done`), sem toque em código Go
+- [x] Fixture continua exercitando o seam: o corrupted-C RC=0 sem "has no linked Roadmap" (medido)
+- [x] `go test ./...` verde
+- [x] `make quality` RC=0 — 8 chunks, 347 OK, 0 FAIL, guarda OK
+
+**Por que `status: Done`:** `req_has_roadmap` (ML-1B) só dispara para `Done`. A regra
+`traceid_orphan_req` (ML-1A) não afeta porque `scaffold_adr_req_project` não define `trace_id_field`
+— `validateTraceId` retorna nil imediatamente.
+
+### ML-1D — a fixture S192 assumia o comportamento antigo e matou o chunk
+**Owner:** `apolo-tf`
+**Status:** ✅ Concluído — auditado em 2026-09-29 · 🔴 **refutou a hipótese do meu handoff**
+
+`make quality` reprovava com `chunk_1 nao chegou ao sentinela CHUNK_COMPLETE`, e **4 rótulos
+ausentes** — que eram **consequência** da morte do chunk, não 4 falhas.
+
+🔴 **Eu apontei a causa errada no handoff.** Escrevi que o suspeito era a *liveness arm*
+(`links to ADR`). O executor mediu e **refutou**: as duas arms de direção A passariam. A falha era na
+**terceira baseline** do bloco S192 (linha 7405), sobre a **fixture C**.
+
+**Causa real:** `write_req_roadmap_prose_md_fixture` escrevia `status: Open`. O ML-1B fez
+`req_has_roadmap` disparar **só** para `Done`. O `validate` saiu `✓ No violations found` com `RC=0`,
+o `assert_fails_with` esperava `RC≠0`, e o `exit 1` matou o chunk — explicando exatamente a última
+linha do log.
+
+**Corrigido na camada certa: a fixture.** O comportamento do ML-1B é o decidido na ADR e já auditado;
+quem assumia o comportamento antigo era o teste. E ele **provou que a fixture continua exercitando o
+alvo** — o seam de ancoragem de chave em `extractRefPath` segue discriminante com `Done`.
+
+**Critérios de aceite:**
+- [x] Causa nomeada **com evidência**, e ela **contrariou** a hipótese do handoff
+- [x] Correção na fixture, não no produto, com a razão escrita no próprio script
+- [x] A fixture continua testando o alvo — medido no scratchpad: baseline `RC=1` com
+      *"has no linked Roadmap"*; corrupted-C `RC=0` sem a mensagem
+- [x] `make quality` **RC=0** — verificado pelo arquiteto: 8 chunks, **347 OK, 0 FAIL**
+
 ## Wave 2 — auditoria independente
-> Dependências: Wave 1 completa.
+> Dependências: Wave 1 completa (incluindo ML-1D).
 
 ### ML-2A — revisão por reimplementação
 **Owner:** `hades-tf`

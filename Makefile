@@ -129,6 +129,14 @@ parity-rest: build
 	scripts/check-ref-separator-portability.sh
 	scripts/check-output-encoding-declared.sh
 	scripts/check-parity-call-site-pins.sh
+	# ML-1C (fix/orphan-req-reprova-estado-correto): cada regra que decide "esta REQ
+	# deveria ter roadmap?" deve chamar reqStatusIsDone antes de emitir violation.
+	# Regras sob contrato: req_has_roadmap (validator.go) e traceid_orphan_req (validator_traceid.go).
+	# Janela de extração: narrow (readFileForRule → applyRule), não função inteira.
+	# Isenções explícitas: req_roadmap_lifecycle (já filtra via reqStatusIsOpen),
+	# ref_targets_exist (mede existência de arquivo, não obrigação de vínculo).
+	scripts/check-req-roadmap-rule-is-status-aware.sh --self-test
+	scripts/check-req-roadmap-rule-is-status-aware.sh
 	# ML-NOVO (ROADMAP-2026-09-11-serve-interpola-host-...): gate da classe — todo
 	# check-*.sh deve ter consumidor. Inclui --self-test para falsificar os 4 braços.
 	scripts/check-orphan-gates.sh --self-test

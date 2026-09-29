@@ -107,8 +107,19 @@ func TestRunReqNew_IntegratedPathIsNotOrphanAndNoRoadmapArmIs(t *testing.T) {
 			t.Fatalf("runReqNew --no-roadmap não deve falhar: %v", err)
 		}
 		reqPath := onlyREQML4A(t)
+		// ML-1B: req_has_roadmap só dispara para REQ com status: Done — a REQ recém-criada
+		// nasce Open. Promovemos para Done antes do validate para exercitar o braço de acusação,
+		// que é o que este teste precisa: uma REQ Done sem roadmap deve ser acusada.
+		data, err := os.ReadFile(reqPath)
+		if err != nil {
+			t.Fatalf("leitura da REQ: %v", err)
+		}
+		promoted := strings.Replace(string(data), "status: Open", "status: Done", 1)
+		if err := os.WriteFile(reqPath, []byte(promoted), 0644); err != nil {
+			t.Fatalf("escrita da REQ promovida: %v", err)
+		}
 		if !reqHasRoadmapNames(t, filepath.Base(reqPath)) {
-			t.Errorf("braço de controle vacuoso: o validate NÃO acusa %s mesmo sem roadmap — "+
+			t.Errorf("braço de controle vacuoso: o validate NÃO acusa %s mesmo sem roadmap (status Done) — "+
 				"o braço padrão deste teste passaria com a integração desligada",
 				filepath.Base(reqPath))
 		}
