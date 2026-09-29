@@ -2,8 +2,8 @@
 status: Open
 date: 2026-09-25
 author: "trackfw_architect"
-adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-25-regra-de-rastreabilidade-ignora-o-estado-da-req-e-acusa-backlog-como-orfao.md"
+adr: "docs/adr/ADR-2026-09-29-quando-uma-req-deve-ter-roadmap-e-o-casamento-req-roadmap-nao-depende-de-req-id-no-roadmap.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-29-traceid-orphan-req-reprova-estado-correto-por-duas-causas-distintas.md"
 ---
 
 # REQ: regra de rastreabilidade ignora o estado da REQ e acusa backlog como orfao
@@ -200,3 +200,74 @@ ADR:
 
 ## Linked Roadmap
 Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-25-regra-de-rastreabilidade-ignora-o-estado-da-req-e-acusa-backlog-como-orfao.md`
+
+
+---
+
+## 🔴 CONSOLIDAÇÃO (2026-09-29) — esta REQ absorve a duplicata que eu criei por falha de varredura
+
+**Erro meu, registrado porque é o que evita repetição.** Em 2026-09-29 criei a
+`REQ-2026-09-29-traceid-orphan-req-reprova-estado-correto-por-duas-causas-distintas` para o **mesmo
+#435** — sem ver que **esta REQ já existia, aberta, escrita por mim quatro dias antes**.
+
+Varri os **issues** abertos, como a regra manda. **Não varri as REQs abertas** — e a Regra Dura é
+explícita: *"REQs abertas com o mesmo mecanismo têm o mesmo peso; a regra manda absorvê-las em vez de
+abrir trabalho paralelo"*. Citei essa regra três vezes no mesmo dia para decidir escopo, e a violei.
+
+**A duplicata foi marcada `Abandoned`.** Esta REQ — a vigente — recebe a ADR, o roadmap em `wip` e
+tudo que a duplicata produziu.
+
+### O que a consolidação traz de novo
+
+**C2 — a SEGUNDA causa, que esta REQ não continha.** Reproduzida na v9.1.0: um par REQ↔roadmap
+**válido e pareado** dispara `traceid_orphan_req` porque `roadmap new` **não escreve `req_id:`** no
+frontmatter do roadmap (medido: `grep -c '^req_id:'` no roadmap gerado = **0**). O casamento é por
+id, e o par fica invisível.
+
+🔴 **As duas causas se parecem no log e diferem no mecanismo.** Quem corrigir só uma vê a regra
+continuar reprovando e conclui que a correção falhou.
+
+**ADR própria** (`ADR-2026-09-29-quando-uma-req-deve-ter-roadmap-e-o-casamento-req-roadmap-nao-depende-de-req-id-no-roadmap.md`), com o desenho decidido: recorte semântico por `status:`, casamento por
+vínculo real (`req:`), e as **quatro** regras vizinhas alinhadas.
+
+**Wave 0 auditada**, que refutou duas afirmações minhas e mediu o alcance real de cada decisão.
+
+### O que ESTA REQ já tinha e a duplicata não
+
+A medição dos sítios, que é melhor que a que refiz hoje:
+
+- **Sítio 1** — `validator_traceid.go:262-277`: o laço percorre `reqIndex` e **nunca consulta
+  `e.state`**. 🔴 O campo **existe**, é preenchido, e é usado **10 linhas abaixo** por
+  `traceid_state_mismatch`.
+- **Sítio 2** — `req_has_roadmap`: itera todas as REQs e **não tem o estado disponível**.
+
+⚠️ E esse achado **refinou a ADR**: eu ia recusar `e.state` só por invocar a ADR-2026-09-03 D1.
+A razão real, medida, é melhor — **`e.state` é vazio em layout plano** (`validator_traceid.go:77`),
+e a regra ficaria inerte no layout deste repositório. Ver **D1-bis**.
+
+## Acceptance Criteria (consolidados — substituem os originais acima)
+
+- [x] **Enumeração real** das regras que decidem "esta REQ deveria ter roadmap?" → **4, não 2**
+      (`req_has_roadmap`, `traceid_orphan_req`, `ref_targets_exist`, `req_roadmap_lifecycle`)
+- [ ] 🔴 **C1 fechada por recorte SEMÂNTICO** (`status:`), **nunca pela pasta da REQ** — teste que
+      falhe se alguém reintroduzir decisão por diretório
+- [ ] 🔴 **C2 fechada por casamento via vínculo real** (`req:` do roadmap, com
+      `normalizeRefSeparator`), e **não** só fazendo o gerador escrever `req_id:`
+- [ ] **Braço do passivo:** par já existente, sem `req_id` no roadmap, deixa de disparar **sem
+      alterar arquivo nenhum**
+- [ ] **Contra-braço:** REQ **`Done`** sem roadmap **ainda** dispara — senão a correção virou remoção
+- [ ] `Superseded` e `Closed` **não** disparam (ADR **D2-bis**)
+- [ ] As **4** regras aplicam o mesmo critério (ADR **D4**)
+- [ ] **Delta medido** de violações no corpus, antes/depois, com a razão de cada uma que sair
+- [ ] `make quality` e **CI** verdes
+
+## Negative scope (consolidado)
+
+- **Não** remove o cutoff de `req_has_roadmap` — 🔴 a Wave 0 **refutou** que ele ficaria redundante:
+  **3** dos 13 grandfathered são `Done` e voltariam a violar sem ele.
+- **Não** fecha C2 para os **58 roadmaps** fora do alcance de D3 (32 `req:` stale · 8 vazio/null ·
+  18 sem campo). Limite **medido e declarado** na ADR, não omitido.
+- **Não** trata o **#273** — **CLOSED**, e a medição separa: lá é algoritmo de match de slug em
+  `branch_has_wip_roadmap`, que **já é** consciente de estado. Falsificação nas duas direções:
+  corrigir C1/C2 não afeta slug matching, e vice-versa.
+- **Não** regenera `.trackfw-baseline.json` de ninguém.

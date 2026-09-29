@@ -1,5 +1,5 @@
 ---
-status: Open
+status: Abandoned
 date: 2026-09-29
 author: "trackfw_architect"
 adr: "docs/adr/ADR-2026-09-29-quando-uma-req-deve-ter-roadmap-e-o-casamento-req-roadmap-nao-depende-de-req-id-no-roadmap.md"
@@ -8,7 +8,17 @@ roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-29-traceid-orphan-req-reprova-estado
 
 # REQ: `traceid_orphan_req` reprova estado correto por duas causas distintas
 
-> Date: 2026-09-29 | Status: Open
+> 🔴 **ABANDONADA em 2026-09-29 — DUPLICATA criada por falha de varredura minha.**
+>
+> A REQ vigente para esta causa é **`REQ-2026-09-25-regra-de-rastreabilidade-ignora-o-estado-da-req-e-acusa-backlog-como-orfao.md`**, escrita por mim **quatro dias antes** e aberta o tempo
+> todo. Varri os **issues** abertos, como a regra manda, e **não varri as REQs abertas** — que a
+> Regra Dura coloca no mesmo peso: *"absorvê-las em vez de abrir trabalho paralelo"*.
+>
+> Todo o conteúdo útil (a segunda causa C2, a ADR, a Wave 0) foi **consolidado na vigente**. Este
+> arquivo fica como registro do erro, não como trabalho paralelo — e é deliberado: apagá-lo
+> esconderia que uma REQ minha, aberta, ficou invisível na minha própria varredura.
+
+> Date: 2026-09-29 | Status: Abandoned
 | Linear Issue:
 | Jira Issue:
 

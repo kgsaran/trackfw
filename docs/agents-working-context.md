@@ -42639,3 +42639,49 @@ Medições independentes sobre 10 casos de teste (cenário #450, score delta, de
 **Entregável:** `docs/seguranca/2026-09-29-wave2-auditoria-independente-adr.md`
 
 **git diff trackfw.yaml:** vazio
+
+---
+
+## hades-tf · ML-0A (REQ-2026-09-29-traceid-orphan-req) · 2026-09-29 — CONCLUÍDO
+
+**Início:** 2026-09-29 | Branch: `fix/orphan-req-reprova-estado-correto`
+**Tarefa:** Wave 0 — threat model para `traceid_orphan_req` reprova estado correto (C1+C2).
+
+**O que foi feito:**
+- Leu ADR-2026-09-29, REQ-2026-09-29, ADR-2026-09-03 na íntegra.
+- Build limpo: `go build -o bin/trackfw ./cmd/trackfw` — OK.
+- Enumerou as QUATRO regras sobre o vínculo REQ↔roadmap (ADR D4 subespecificada: declara 2, existem 4).
+- Construiu fixture em scratchpad com `trace_id_field` configurado; reproduziu C1 e C2 literalmente.
+- Adicionou ghost-path e Windows-separator ao fixture; mediu divergências.
+- Auditou `req:` field dos 234 roadmaps: 176 com target existente, 32 stale, 8 empty/null, 18 sem campo.
+- Verificou os 13 grandfathered: 3 `Done`, 10 `Superseded` — refuta "cutoff pode tornar-se redundante".
+- Leu issue #273 e REQ associada: mecanismo diferente, causa diferente — separação justificada.
+- Identificou Vetor E (AC8 REQ-2026-09-28, namespace cruzado) como pré-condição para D3 em `by_agent`.
+- Identificou REQ-2026-09-25 duplicata aberta para mesma causa — sinalizou para arquiteto.
+
+**Achados que bloqueiam ou restringem a implementação:**
+- F1 (BLOQUEADOR POTENCIAL): AC8 de REQ-2026-09-28 aberto — D3 herda bug de namespace cruzado em `by_agent`.
+- F2: ADR D4 subespecificada — nomeia 2 regras, existem 4.
+- F3: 32 roadmaps com `req:` stale + 18 sem `req:` — D3 não fecha C2 para esses pares.
+- F4: `Superseded`/`Closed` sem comportamento definido por D2 — decisão silenciosa no código.
+- F5 (REFUTAÇÃO): "cutoff redundante sob D1/D2" — REFUTADO; 3 `Done` grandfathered precisam do cutoff.
+
+**Entregável:** `docs/seguranca/2026-09-29-wave0-orphan-req.md`
+
+**git diff trackfw.yaml:** vazio
+
+**Veredito: APROVA COM RESSALVAS**
+
+10 casos medidos (caixa-preta). Nenhum defeito de produto nos ACs principais.
+
+**Achados que o arquiteto deve tratar:**
+- F1: Warnings duplicados com adr_dirs aninhadas — mesmo mecanismo que D4 (Regra Dura: mesma REQ).
+- F3: Gate tem 2 caminhos de evasão conhecidos; AC da REQ "impede reintrodução" está overstated.
+
+**Achados informacionais:**
+- F2: dir symlinks não seguidos por WalkDir — comportamento stdlib, sem requisito.
+- S7: verificação por inspeção + teste entregue (não black-box pura), limitação documentada.
+
+**Entregável:** `docs/seguranca/2026-09-29-wave2-auditoria-independente-adr.md`
+
+**git diff trackfw.yaml:** vazio

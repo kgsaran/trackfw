@@ -63,10 +63,32 @@ cria amanhã, que é exatamente o caso do issue.
 roadmap?" olhando o diretório em que a REQ está. O discriminante é o **`status:` do frontmatter** —
 que é o campo que a ADR-2026-09-03 D1 estabelece como a dimensão legítima da REQ.
 
+**D1-bis — Por que `status:` e não `e.state`, medido.** O `reqIndex` **tem** um campo `state`
+(`validator_traceid.go:136`, `state = parent`), e a regra vizinha `traceid_state_mismatch` **já o
+consome** (linha 289). Seria tentador usá-lo. **Medido, ele não serve como fonte única:**
+
+```
+validator_traceid.go:77    state: ""        ← layout PLANO: vazio
+validator_traceid.go:136   state = parent   ← subpastas: nome do diretório
+validator_traceid.go:289   "Só compara se ambos têm estado definido"
+```
+
+🔴 **Em layout plano — o deste repositório — `e.state` é vazio, e a regra ficaria inerte.** O
+`status:` do frontmatter está **sempre** disponível. E o próprio precedente já reconhece a lacuna, ao
+só comparar quando ambos os estados existem.
+
 **D2 — Uma REQ `Open` sem roadmap NÃO é órfã; é uma REQ que ainda não começou.** É o protocolo que o
 próprio produto recomenda (`req new` → `roadmap new` → `roadmap move wip`). Reprovar ali **inverte o
 fluxo**: ou o usuário cria roadmaps vazios para satisfazer o validate, ou convive com violação
 permanente. O sinal legítimo é **REQ `Done` sem roadmap** — aí sim, algo se perdeu.
+
+**D2-bis — `Superseded` e `Closed` NÃO disparam.** A Wave 0 achou **14 `Superseded` + 2 `Closed`**
+no corpus, sem comportamento declarado — um limbo que bloquearia o ML-1A.
+
+**Decidido:** só **`Done`** dispara. `Superseded` e `Closed` são desfechos em que **a ausência de
+roadmap é esperada** — uma REQ substituída ou encerrada sem execução não deveria ter roadmap, e
+exigi-lo recriaria o defeito desta REQ noutro estado. 🔴 E o caso deixou de ser hipotético: esta
+própria REQ vai marcar outra como `Superseded` na consolidação.
 
 **D3 — O casamento REQ↔roadmap não pode depender de `req_id` no roadmap.** O `roadmap new` não o
 escreve, e **milhares de roadmaps existentes não o têm**. A regra passa a casar também pelo vínculo
@@ -76,8 +98,20 @@ que o produto **de fato** grava — o campo `req:` do frontmatter do roadmap.
 alcança nenhum roadmap já existente, e as 14 ocorrências congeladas continuariam vivas. O casamento
 por vínculo real corrige o passivo **sem migração**.
 
-**D4 — As duas regras vizinhas param de discordar.** `req_has_roadmap` e `traceid_orphan_req` medem
-o mesmo fato e devem aplicar **o mesmo critério**. Duas regras com vereditos diferentes sobre a
+**D4 — As regras vizinhas param de discordar. São QUATRO, não duas.** A Wave 0 varreu todos os
+`applyRule*(` e encontrou quatro que opinam sobre o vínculo REQ↔roadmap:
+
+| regra | critério | filtra por estado? |
+|---|---|---|
+| `req_has_roadmap` | REQ sem `roadmap:` apontando para `.md` real | **não** |
+| `traceid_orphan_req` | REQ com `req_id` sem roadmap de mesmo id | **não** |
+| `ref_targets_exist` | REQ com `Roadmap:` apontando para arquivo inexistente | **não** |
+| `req_roadmap_lifecycle` | REQ `Open` com roadmap em `done/` | **sim** — só `Open` |
+
+🔴 **A primeira versão desta ADR nomeava duas.** A quarta já filtra por estado — logo o precedente de
+"regra consciente de estado" **já existe no produto**, e o que falta é consistência, não invenção.
+
+As quatro aplicam o mesmo critério de "esta REQ deveria ter roadmap?". Duas regras com vereditos diferentes sobre a
 mesma pergunta é a mesma classe de defeito do #450 (`context` × `status`), noutra superfície.
 
 ## Consequences
@@ -87,14 +121,31 @@ mesma pergunta é a mesma classe de defeito do #450 (`context` × `status`), nou
 - O `.trackfw-baseline.json` deixa de ser usado para esconder estado correto.
 - O casamento passa a funcionar para roadmaps **já existentes**, sem pedir migração a ninguém.
 
+**Limite de D3, medido e declarado (Wave 0)** — casar por `req:` **não** fecha C2 para todos:
+
+| bucket | roadmaps | razão |
+|---|---|---|
+| `req:` **stale** | 32 | 17 apontam para `docs/requisições/` (dir migrado), 7 sem `.md`, 8 outros |
+| `req:` **vazio/null** | 8 | `req: ""` ou `req: ~` |
+| **sem** campo `req:` | 18 | gerações antigas |
+
+**58 roadmaps** neste corpus continuam disparando após D3. Não é refutação — é o **alcance** de D3, e
+está escrito para que ninguém declare C2 fechada sem rodar o discriminador no corpus alvo.
+
+⚠️ **E D3 deve chamar `normalizeRefSeparator`** (`validator.go:3285`): medido, um `req:` gravado com
+`\` (Windows) não casa sem isso.
+
 **Negativas e aceitas**
 - **A contagem de violações cai** em repositórios que hoje as têm. É a correção aparecendo — e entra
   nas release notes, porque número que muda sozinho entre versões gera issue.
 - **Uma REQ `Open` abandonada há meses sem roadmap deixa de ser sinalizada como violação.** Aceito:
   o sinal de abandono é `status`/idade, não ausência de roadmap, e emitir violação por isso foi
   exatamente o que produziu este defeito.
-- O cutoff temporal de `req_has_roadmap` pode tornar-se redundante sob D1/D2. **Não é removido nesta
-  decisão** — removê-lo é mudança de comportamento própria, e medir antes de mexer é o ponto.
+- 🔴 **RETRATAÇÃO (Wave 0, 2026-09-29).** A primeira versão desta ADR afirmava que *"o cutoff
+  temporal de `req_has_roadmap` pode tornar-se redundante sob D1/D2"*. **REFUTADO por medição:** dos
+  13 warnings grandfathered no corpus, **3 são `Done`** — sob D2 elas voltariam a ser **violations**
+  se o cutoff sumisse. O cutoff **não** é redundante; permanece, e removê-lo continua sendo decisão
+  própria.
 
 ## Alternatives Considered
 
