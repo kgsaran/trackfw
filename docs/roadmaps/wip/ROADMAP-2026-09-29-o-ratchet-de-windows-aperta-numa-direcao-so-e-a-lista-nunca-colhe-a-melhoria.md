@@ -122,7 +122,7 @@ fica vermelho na hora**. Atualizá-los é **parte deste ML**, não consequência
 
 ### ML-3A — o rótulo `resolvido` no sumário agrega os baldes 1 e 2
 **Owner:** `artemis-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — 2026-09-29 · self-test 59/59 PASS (UTF-8 e cp1252) · make quality RC=0
 **Arquivos:** `scripts/check-windows-known-failures.py` · `.github/windows-known-failures.json` ·
 `docs/adr/ADR-2026-09-05-...-nunca-por-contagem.md`
 
@@ -150,11 +150,11 @@ apenas deixou de rodar.
    e que a contagem `9/5` é conferível por grep estrito.
 
 **Critérios de aceite:**
-- [ ] Balde 2 isolado → resumo diz **`ausente`**, e **não** contém `resolvido`
-- [ ] Balde 1 isolado → resumo diz **`resolvido`**
-- [ ] 🔴 **Os dois na mesma classe** → resumo mostra os **dois** termos
-- [ ] Contra-braço: tudo equilibrado → nenhum dos dois termos (T24 continua válido)
-- [ ] Contra-braço do D1: regressão nova continua com `[+N NOVO]`
-- [ ] `grep -c '(MEASURED)'` nas `entries` = **9** · `(INFER)` = **5** · soma = 14
-- [ ] `--self-test` verde, com fixture nova por critério acima
-- [ ] `make quality` **RC=0**
+- [x] Balde 2 isolado → resumo diz **`ausente`**, e **não** contém `resolvido`
+- [x] Balde 1 isolado → resumo diz **`resolvido`**
+- [x] 🔴 **Os dois na mesma classe** → resumo mostra os **dois** termos
+- [x] Contra-braço: tudo equilibrado → nenhum dos dois termos (T24 continua válido)
+- [x] Contra-braço do D1: regressão nova continua com `[+N NOVO]`
+- [x] `grep -c '(MEASURED)'` nas `entries` = **9** · `(INFER)` = **5** · soma = 14
+- [x] `--self-test` verde, com fixture nova por critério acima (59/59 PASS)
+- [x] `make quality` **RC=0** (347 OK, 0 FAIL)

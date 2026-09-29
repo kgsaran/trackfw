@@ -181,6 +181,14 @@ causa"* é exatamente o que o **D7** existe para preservar.
 O que eu chamei de *"`bash` ausente"* é, medido, **privilégio de symlink**: `os.Symlink` falha em
 silêncio, o diretório de binários falsos fica vazio, e o script cai no fallback.
 
+⚠️ **Normalização do marcador canônico (ML-3A, 2026-09-29):** o campo `reason` de cada entrada usa
+um marcador ao final para indicar se a causa foi medida ou inferida. O formato canônico é
+**`(MEASURED)`** e **`INFER Group ...`** (sem parênteses no INFER, conforme o padrão das 5 entradas
+existentes). A entrada `TestStaleWIPReportsWIPWalkError` usava `(MEASURED in ADR-2026-09-05 Adendo)`
+— normalizada para `(MEASURED)`. Após essa correção, a contagem por grep estrito é:
+`grep -c '(MEASURED)' .github/windows-known-failures.json` = **9** · `grep -c 'INFER'` = **5** ·
+soma = 14 (exatamente as entradas ativas).
+
 ## Consequências
 
 **O `continue-on-error: true` do `windows-full-suites` sai** — mas só depois de D1, D3 e D4 estarem

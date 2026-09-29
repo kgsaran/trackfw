@@ -1040,28 +1040,52 @@ def run_check(
     total_known   = len(known)
     total_removed = len(removed)
 
-    def _cls_label(obs_set: set, known_set: set, prefix: str) -> tuple:
+    def _cls_label(obs_set: set, known_set: set, passes_set: set, prefix: str) -> tuple:
         """Build per-class label with direction indicator using set difference.
 
         Returns (label_string, has_imbalance).
-        Invariant: if steps 6/7 fire for this class, has_imbalance is True and the
-        label contains a direction tag — same set difference, same result.
+
+        Invariant 1 (boolean identity): has_imbalance is bit-identical to the old
+        code — bool(surplus or resolved or absent) == bool(surplus or (known_set -
+        obs_set)) — because resolved | absent == known_set - obs_set exactly.
+
+        Invariant 2 (per-class alignment): the bucket split here uses the same
+        discriminant as step 7 for each class:
+          - Go:          passes_set = go_passes   (same as 'if name in go_passes' at step 7)
+          - Node-assert: passes_set = node_passes (same discriminant)
+          - Python:      passes_set = py_passes   (same discriminant)
+          - Node-load:   passes_set = set()       — no pass discriminant exists for this
+                         class (TAP 'ok N -' lines are assertion names, not file basenames);
+                         all unobserved load-failure entries are attributed to 'ausente',
+                         matching the unconditional bucket-2 attribution at step 7 line 986.
+
+        Defect fixed (2026-09-29, ML-3A): the old code computed resolved = known - obs,
+        which is the union of D6 bucket 1 (passed) and bucket 2 (absent). Both buckets
+        print '-N resolvido'. A reader seeing only the CI first-line summary therefore
+        reached the same wrong conclusion that step 7 was built to prevent: that the entry
+        genuinely resolved and can be retired. The summary now names each bucket separately
+        so the first-line signal is consistent with the step-7 attribution.
         """
         surplus  = obs_set - known_set   # new failures in this class (step 6 direction)
-        resolved = known_set - obs_set   # debt paid in this class  (step 7 direction)
+        not_obs  = known_set - obs_set   # was in list, not observed failing
+        resolved = not_obs & passes_set  # bucket 1: ran and passed
+        absent   = not_obs - passes_set  # bucket 2: neither passed nor failed
         label = f"{prefix} {len(obs_set)}/{len(known_set)}"
-        if surplus and resolved:
-            label += f" [+{len(surplus)} NOVO, -{len(resolved)} resolvido]"
-        elif surplus:
-            label += f" [+{len(surplus)} NOVO]"
-        elif resolved:
-            label += f" [-{len(resolved)} resolvido]"
-        return label, bool(surplus or resolved)
+        parts = []
+        if surplus:
+            parts.append(f"+{len(surplus)} NOVO")
+        if resolved:
+            parts.append(f"-{len(resolved)} resolvido")
+        if absent:
+            parts.append(f"-{len(absent)} ausente")
+        if parts:
+            label += f" [{', '.join(parts)}]"
+        return label, bool(surplus or resolved or absent)
 
-    go_lbl, go_imb = _cls_label(obs_go,         known_go_assert,  "Go")
-    na_lbl, na_imb = _cls_label(obs_node_assert, known_node_assert, "Node-assert")
-    nl_lbl, nl_imb = _cls_label(obs_node_load,   known_node_load,  "Node-load")
-    py_lbl, py_imb = _cls_label(obs_py,          known_py_assert,  "Python")
+    go_lbl, go_imb = _cls_label(obs_go,         known_go_assert,  go_passes,   "Go")
+    na_lbl, na_imb = _cls_label(obs_node_assert, known_node_assert, node_passes, "Node-assert")
+    nl_lbl, nl_imb = _cls_label(obs_node_load,   known_node_load,  set(),       "Node-load")
+    py_lbl, py_imb = _cls_label(obs_py,          known_py_assert,  py_passes,   "Python")
 
     headline = (
         " — DESEQUILÍBRIO POR CLASSE"
@@ -1235,7 +1259,9 @@ def run_self_test() -> int:
           print a clean headline while set-based detection exposes the surplus. This arm
           separates the correct fix from the plausible-wrong count-based alternative.
           Measurement: Node-assert known={A,B}, obs={A,C} → count 2/2 but surplus={C},
-          resolved={B} → '+1 NOVO, -1 resolvido' tag appears despite equal count.
+          absent={B} → '[+1 NOVO, -1 ausente]' tag appears despite equal count.
+          (NodeB is absent, not resolved: TAP output has no 'ok N - NodeB' line, so NodeB
+          is not in node_passes and lands in bucket 2.)
           [SYNTHETIC: Node-assert with two known entries, one replaced in observation]
 
     ── D6 three-bucket ratchet (T28) ────────────────────────────────────────────
@@ -1245,6 +1271,7 @@ def run_self_test() -> int:
           ran and passed) causes exit 1 with 'PASSED' attribution. The entry is genuinely
           resolved and must be retired via D4. This is the bucket that makes the ratchet
           bidirectional: it blocks CI until the resolved entry is moved to removed[].
+          Also asserts (ML-3A AC2): summary label says '-1 resolvido', not 'ausente'.
           Counter-arms: T1 (bucket 3 -- entry still fails -> exit 0, D6 is not a trap);
           T2 (D1 counter-arm -- new failure still exits 1 after D6 changes);
           T3 (bucket 2 -- entry absent from FAIL and PASS -> exit 1, different message).
@@ -1271,6 +1298,25 @@ def run_self_test() -> int:
           _err() with an ASCII-only message. Under cp1252 encoding (quality.yml:977), the
           _err() call must not raise UnicodeEncodeError. The non-ASCII reason is rejected
           (exit 1) but the error message itself is ASCII-safe.
+
+    ── ML-3A summary label split: 'resolvido' vs 'ausente' (T33-T34) ────────────
+
+    T33 — 'bucket 2 in summary' -> summary says 'ausente', not 'resolvido'
+          Asserts: ML-3A AC1 -- when a known entry is absent from both FAIL and PASS
+          output (bucket 2), the summary label is '-N ausente', NOT '-N resolvido'.
+          A reader seeing only the CI first-line summary must not conclude the entry
+          resolved. Negative assertion ('resolvido' absent) is kept live by T34
+          (positive arm for 'resolvido' in the same session).
+          [SYNTHETIC: BASE_ENTRIES + TestKnownButAbsent (go); GO_FAIL artifact keeps
+           TestFoo failing (non-vacuous); TestKnownButAbsent absent from all output]
+
+    T34 — 'bucket 1 + bucket 2 in same class' -> both labels on summary line
+          Asserts: ML-3A AC3 -- when one Go entry passes (bucket 1) and another
+          disappears without passing (bucket 2), the summary line shows both
+          '-1 resolvido' AND '-1 ausente' for the Go class. Uses exact label substrings
+          to detect class-level leakage.
+          [SYNTHETIC: 3 Go entries (TestStillFails=fail, TestResolved=pass,
+           TestAbsent=absent); Node/Python balanced]
     """
     n_pass = 0
     n_fail = 0
@@ -1796,8 +1842,9 @@ def run_self_test() -> int:
         check(
             "DESEQUIL" not in summary_line_t24
             and "NOVO" not in summary_line_t24
-            and "resolvido" not in summary_line_t24,
-            "T24: all classes balanced -> no 'DESEQUILIBRIO', 'NOVO', or 'resolvido' on summary line",
+            and "resolvido" not in summary_line_t24
+            and "ausente" not in summary_line_t24,
+            "T24: all classes balanced -> no 'DESEQUILIBRIO', 'NOVO', 'resolvido', or 'ausente' on summary line",
         )
 
         # ── Sumário T25: one class surplus, others balanced ───────────────────────────
@@ -1838,9 +1885,10 @@ def run_self_test() -> int:
         )
 
         # ── Sumário T26: equal count but different names in one class ─────────────────
-        # Asserts: set-based detection catches one-name replacement (surplus + resolved in
+        # Asserts: set-based detection catches one-name replacement (surplus + absent in
         # same class) even when obs count == known count. Count-based logic would see 2/2
-        # and print clean; set-based sees surplus={NodeC} → '[+1 NOVO, -1 resolvido]' tag.
+        # and print clean; set-based sees surplus={NodeC}, absent={NodeB} → '[+1 NOVO, -1 ausente]'
+        # tag. (NodeB is absent, not resolved: no 'ok N - NodeB' in TAP, so not in node_passes.)
         # This arm separates the correct (set-based) fix from the plausible-wrong (count-based).
         _st_print("=== T26: equal count, different names in a class -> [+1 NOVO] on summary line ===")
         entries_t26 = [
@@ -1916,16 +1964,27 @@ def run_self_test() -> int:
         # appear only in go_passes (not in obs_go) -> bucket 1 -> exit 1.
         # Counter-arms: T1 (bucket 3, entry still fails -> exit 0) and T2 (D1, new
         # failure -> exit 1) are unchanged and still pass — see reconciliation docstring.
+        # ML-3A: also checks that the summary label says 'resolvido' (not 'ausente') for
+        # bucket 1 — the summary must agree with the step-7 attribution class by class.
         _st_print("=== T28: D6 bucket 1 -- known Go entry PASSED -> exit 1 ===")
         write_list(BASE_ENTRIES)
         # GO_PASS: TestFoo in go_passes only, not in obs_go -> bucket 1 (resolved)
         write_artifacts(go=GO_PASS)
+        buf_t28 = io.StringIO()
         with _capture_annotations() as ann:
-            rc = run_check(list_path, go_path, tap_path, py_path)
+            with contextlib.redirect_stdout(buf_t28):
+                rc = run_check(list_path, go_path, tap_path, py_path)
+        summary_line_t28 = next(
+            (l for l in buf_t28.getvalue().splitlines() if l.startswith("ML-2A/2B:")), ""
+        )
         check(rc == 1, "T28: D6 bucket 1 -- TestFoo in go_passes, not in obs_go -> exit 1")
         check(
             "::error::" in ann.getvalue() and "PASSED" in ann.getvalue(),
             "T28 AC5: D6 bucket 1 emits _err() with 'PASSED' attribution",
+        )
+        check(
+            "-1 resolvido" in summary_line_t28 and "ausente" not in summary_line_t28,
+            "T28 ML-3A AC2: bucket 1 summary label says 'resolvido', not 'ausente'",
         )
 
         # ── D7 T29: active entry with reason present -> exit 0 (D7a) ────────────
@@ -2000,6 +2059,80 @@ def run_self_test() -> int:
         check(
             "::error::" in ann_d7d.getvalue() and not raised_unicode_error,
             "T32 D7d AC5: _err() called without UnicodeEncodeError (message is ASCII-safe)",
+        )
+
+        # ── ML-3A T33: bucket 2 in summary -> 'ausente', NOT 'resolvido' ────────────
+        # Asserts: when a known entry is absent from both FAIL and PASS output, the summary
+        # labels it '-1 ausente', not '-1 resolvido'. This is the critical AC: a reader
+        # seeing only the CI first-line summary must not conclude the entry resolved.
+        # Negative assertion ('resolvido' absent): live positive arm is T34 (same session,
+        # same fixture writer) which proves the channel can emit 'resolvido'.
+        _st_print("=== T33: ML-3A -- bucket 2 in summary -> 'ausente', not 'resolvido' ===")
+        entries_t33 = BASE_ENTRIES + [
+            {"name": "TestKnownButAbsent", "runtime": "go", "class": "assertion",
+             "reason": "T33 fixture: entry that vanishes from test results (bucket 2)"},
+        ]
+        write_list(entries_t33)
+        # TestKnownButAbsent absent from go output (neither FAIL nor PASS): bucket 2.
+        # TestFoo still fails -> artifact is non-vacuous (step 5b does not short-circuit).
+        write_artifacts(go=GO_FAIL)
+        buf_t33 = io.StringIO()
+        with _capture_annotations() as ann_t33:
+            with contextlib.redirect_stdout(buf_t33):
+                rc_t33 = run_check(list_path, go_path, tap_path, py_path)
+        summary_line_t33 = next(
+            (l for l in buf_t33.getvalue().splitlines() if l.startswith("ML-2A/2B:")), ""
+        )
+        check(rc_t33 == 1, "T33: bucket 2 -- entry absent from FAIL and PASS -> exit 1")
+        check(
+            "-1 ausente" in summary_line_t33,
+            "T33 ML-3A AC1: bucket 2 summary label contains '-1 ausente'",
+        )
+        check(
+            "resolvido" not in summary_line_t33,
+            "T33 ML-3A AC1: bucket 2 summary label does NOT contain 'resolvido'",
+        )
+
+        # ── ML-3A T34: both buckets in same class -> summary shows both terms ──────
+        # Asserts: when one Go entry passes (bucket 1) and another Go entry disappears
+        # without passing (bucket 2), the summary line shows both '-1 resolvido' and
+        # '-1 ausente' for the Go class. The two labels must coexist, not cancel.
+        # Uses exact label substrings to catch class-level leakage.
+        _st_print("=== T34: ML-3A -- bucket 1 + bucket 2 in same class -> both labels on summary ===")
+        entries_t34 = [
+            # TestStillFails: still failing -> bucket 3 (no label, keeps the class non-vacuous)
+            {"name": "TestStillFails",    "runtime": "go", "class": "assertion",
+             "reason": "T34 fixture: entry that keeps failing (bucket 3 anchor)"},
+            # TestResolved: will appear in go_passes -> bucket 1 (resolvido)
+            {"name": "TestResolved",      "runtime": "go", "class": "assertion",
+             "reason": "T34 fixture: entry that passed (bucket 1 = resolvido)"},
+            # TestAbsent: neither FAIL nor PASS -> bucket 2 (ausente)
+            {"name": "TestAbsent",        "runtime": "go", "class": "assertion",
+             "reason": "T34 fixture: entry that vanished (bucket 2 = ausente)"},
+            {"name": "sample assertion test",  "runtime": "node",   "class": "assertion",          "reason": "T34 fixture: Node sentinel"},
+            {"name": "broken.test.js",         "runtime": "node",   "class": "suite-load-failure", "reason": "T34 fixture: Node load sentinel"},
+            {"name": "test_foo.py::test_bar",  "runtime": "python", "class": "assertion",          "reason": "T34 fixture: Python sentinel"},
+        ]
+        write_list(entries_t34)
+        # TestStillFails in FAIL, TestResolved in PASS, TestAbsent absent entirely.
+        go_t34 = (
+            "--- FAIL: TestStillFails (0.01s)\n"
+            "--- PASS: TestResolved (0.01s)\n"
+        )
+        write_artifacts(go=go_t34)
+        buf_t34 = io.StringIO()
+        with _capture_annotations(), contextlib.redirect_stdout(buf_t34):
+            run_check(list_path, go_path, tap_path, py_path)
+        summary_line_t34 = next(
+            (l for l in buf_t34.getvalue().splitlines() if l.startswith("ML-2A/2B:")), ""
+        )
+        check(
+            "-1 resolvido" in summary_line_t34,
+            "T34 ML-3A AC3: both buckets in same class -> summary contains '-1 resolvido'",
+        )
+        check(
+            "-1 ausente" in summary_line_t34,
+            "T34 ML-3A AC3: both buckets in same class -> summary contains '-1 ausente'",
         )
 
     _st_print(f"\nSelf-test summary: {n_pass} PASS, {n_fail} FAIL")

@@ -2,6 +2,32 @@
 
 ---
 
+## 2026-09-29 — Artemis (fix/ratchet-windows-nao-colhe-melhoria — ML-3A Wave 3) — ENTREGUE
+
+**Inicio:** 2026-09-29 | **Fim:** 2026-09-29 | Branch: `fix/ratchet-windows-nao-colhe-melhoria`
+**Tarefa:** ML-3A — o rotulo `resolvido` no sumario agrega baldes 1 e 2; separar em `resolvido`/`ausente`.
+
+**Arquivos modificados:**
+- `scripts/check-windows-known-failures.py`: `_cls_label` recebe `passes_set`, split em `resolved`/`absent`; T24 atualizado; T26/T28 comentarios corrigidos; T33 e T34 adicionados.
+- `.github/windows-known-failures.json`: `TestStaleWIPReportsWIPWalkError` normalizado para `(MEASURED)`.
+- `docs/adr/ADR-2026-09-05-...-nunca-por-contagem.md`: Emenda 1 recebe nota de marcador canonico.
+- `docs/roadmaps/wip/ROADMAP-...ratchet....md`: ML-3A marcado Concluido, todos os ACs marcados.
+
+**Evidencias:**
+- self-test: 59/59 PASS sob UTF-8 (era 53; +6 por T28 ML-3A, T33 3 checks, T34 2 checks)
+- self-test: 59/59 PASS sob `PYTHONIOENCODING=cp1252 PYTHONUTF8=0`
+- `make quality` RC=0 — 347 OK, 0 FAIL
+- `trackfw validate`: 172 warnings (pre-existentes), 0 errors
+- `git diff trackfw.yaml`: vazio
+- `(MEASURED)` strict: 9 · INFER: 5 · soma: 14
+
+**Decisoes tecnicas:**
+- `node_load` passa `set()` (nao `node_passes`): TAP `ok N -` retorna nomes de assertion, nao basenames de arquivo; sem discriminante de passes para suite-load-failure (comentario pre-existente linha 944). Passa `set()` para tornar impossivel por construcao que node_load produza `resolvido`.
+- `has_imbalance` permanece identico: `bool(surplus or resolved or absent)` == `bool(surplus or (known - obs))` porque `resolved | absent == known - obs` exatamente.
+- T26 docstring e comentario inline corrigidos: NodeB e `ausente` (nao `resolvido`) porque nao aparece em `node_passes` nessa fixture.
+
+---
+
 ## 2026-09-29 — Hades (fix/ratchet-windows-nao-colhe-melhoria — ML-2A Wave 2 auditoria) — ENTREGUE
 
 **Inicio:** 2026-09-29 | **Fim:** 2026-09-29 | Branch: `fix/ratchet-windows-nao-colhe-melhoria`

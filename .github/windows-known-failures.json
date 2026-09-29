@@ -82,7 +82,7 @@
       "name": "TestStaleWIPReportsWIPWalkError",
       "runtime": "go",
       "class": "assertion",
-      "reason": "Group A: ENOTDIR equals ERROR_PATH_NOT_FOUND on Windows -- walk does not produce expected diagnostic when file is placed where directory is expected (MEASURED in ADR-2026-09-05 Adendo)"
+      "reason": "Group A: ENOTDIR equals ERROR_PATH_NOT_FOUND on Windows -- walk does not produce expected diagnostic when file is placed where directory is expected (MEASURED)"
     },
     {
       "name": "TestThirdPartyInstall_PassesValidateEndToEnd",
