@@ -18,7 +18,15 @@ D4  — removal_note enforcement (ML-2B):
           name must exist in the active entries for the same runtime.
         - removal_note='no-longer-runs': no further verification (cannot distinguish
           from 'corrected' definitively without collection data).
-Warn — known entry not observed (fixed/renamed) -> ::warning::, never exit 1.
+D6  — known entry not observed -> D6 ratchet (exit 1, bucket-attributed):
+        Bucket 1 (resolved): entry passed -> ::error:: "PASSED -- move to removed[]".
+        Bucket 2 (did not run): entry neither failed nor passed -> ::error:: "neither failed
+          nor passed -- skip, panic, or deleted".
+        Bucket 3 (still fails): entry is in obs set -> no action (exit 0 for this class).
+        Node suite-load-failure class has no pass discriminant; all unobserved load-failure
+        entries land in bucket 2.
+D7  — active entry has no 'reason' field -> ::error:: + exit 1.
+        reason must be ASCII only (self-test runs under cp1252 encoding).
 
 Discriminant measurement (ML-2B, 2026-09-10, macOS arm64):
   Go   (-v)     : '--- PASS: TestFoo (0.01s)' appears for passing tests.
@@ -574,6 +582,45 @@ def validate_removed(
     return ok
 
 
+def validate_active_entries(entries: list[dict]) -> bool:
+    """Validate active entries[] carry a 'reason' field with ASCII-only content (ADR D7).
+
+    Returns True if all entries are valid, False on any violation.
+
+    D7 requires every active entry to declare why the test fails on Windows so that
+    when D6 fires ("entry resolved"), the reviewer can judge whether the resolution
+    is genuine or environmental.
+
+    Restriction: reason must be ASCII-only.  The self-test runs under
+    PYTHONIOENCODING=cp1252 (quality.yml).  A non-ASCII reason embedded in an
+    _err() message would raise UnicodeEncodeError exactly when the checker needs
+    to speak.  Validate ASCII here and keep all _err() messages ASCII-safe.
+    """
+    ok = True
+    for entry in entries:
+        name = entry.get("name", "<unknown>")
+        runtime = entry.get("runtime", "<unknown>")
+        reason = entry.get("reason")
+        if not reason:
+            _err(
+                f"ML-D7: active entry '{name}' "
+                f"(runtime: {runtime}) has no 'reason' field. "
+                "Add the root cause (ASCII only) so a D6 trigger can be evaluated. "
+                "ADR D7: entries without reason must not persist."
+            )
+            ok = False
+        elif not reason.isascii():
+            _err(
+                f"ML-D7: active entry '{name}' "
+                f"(runtime: {runtime}) has non-ASCII 'reason'. "
+                "Reason must be ASCII only -- self-test runs under cp1252 encoding "
+                "and a non-ASCII reason in an _err() message raises UnicodeEncodeError. "
+                "ADR D7: rewrite reason using only ASCII characters."
+            )
+            ok = False
+    return ok
+
+
 def check_baseline_deletions(
     baseline_path: str,
     current_entries: list[dict],
@@ -662,6 +709,12 @@ def run_check(
     known_data = load_known_data(list_path)
     known = known_data.get("entries", [])
     removed = known_data.get("removed", [])
+
+    # 1b. D7: validate active entries carry an ASCII reason field.
+    #     Exit 1 immediately if any entry lacks or has non-ASCII reason so the
+    #     list cannot accumulate entries whose D6 trigger would be uninterpretable.
+    if not validate_active_entries(known):
+        return 1
 
     # Build lookup sets by runtime+class
     known_go_assert   = {e['name'] for e in known if e['runtime'] == 'go'     and e['class'] == 'assertion'}
@@ -873,32 +926,90 @@ def run_check(
         )
         has_new = True
 
-    # 7. Known entries NOT observed (fixed/renamed) -> ::warning:: only, never exit 1
-    #    Fixing a test must not break CI (that would make the ratchet a trap).
+    # 7. D6 — Known entries NOT observed: three-bucket ratchet (ADR Emenda 1, 2026-09-29).
+    #
+    #    The iteration set is (known - obs) for each class, i.e. entries that did NOT
+    #    appear in the failure output.  Within that set two buckets are discriminated:
+    #
+    #    Bucket 1 (resolved): name in passes -> test RAN and PASSED -> entry is stale.
+    #    Bucket 2 (did not run): name NOT in passes -> skip, package panic, or deleted.
+    #                            Cannot confirm resolution; investigation required.
+    #    Bucket 3 (still fails): name IS in obs -> not reached here (excluded by the set
+    #                            difference).  This is the status-quo path: entry is fine.
+    #
+    #    Both buckets 1 and 2 exit 1 (has_new = True) but with different attributions.
+    #    Attrition error is the defect the ADR paid three times in #274; the recorte
+    #    preserves the security invariant while fixing the discrimination.
+    #
+    #    Node suite-load-failure class: no pass discriminant exists (file basenames do
+    #    not appear in TAP "ok N -" lines).  All unobserved load-failure entries are
+    #    attributed to bucket 2.
+    #
+    #    Vacuity note: go_pass_vac/node_pass_vac/py_pass_vac=True implies empty obs sets,
+    #    so step 5b already fired and returned 1 before reaching here.  The pass sets may
+    #    be empty ({}) without vacuity when every test failed (no PASS lines) — in that
+    #    case unobserved known entries are correctly attributed to bucket 2.
+
     for name in sorted(known_go_assert - obs_go):
-        _warn(
-            f"ML-2A ratchet: Go assertion '{name}' is in the known list but did NOT fail. "
-            "Please move to the 'removed' section in .github/windows-known-failures.json "
-            "with a 'removal_note' field (ML-2B: corrected | renamed | no-longer-runs)."
-        )
+        if name in go_passes:
+            _err(
+                f"ML-D6: Go '{name}' is in the known list but PASSED -- "
+                "move to removed[] with removal_note (D4). "
+                "If the fix is in this PR, retire the entry now. "
+                "(ADR D6: resolved entry must be retired in the same PR.)"
+            )
+        else:
+            _err(
+                f"ML-D6: Go '{name}' neither failed nor passed -- "
+                "skip, package panic, or deleted. Not a resolution. "
+                "Investigate before removing from the known list. "
+                "(ADR D6 bucket 2: absent-without-passing is not the same as resolved.)"
+            )
+        has_new = True
 
     for name in sorted(known_node_assert - obs_node_assert):
-        _warn(
-            f"ML-2A ratchet: Node.js assertion '{name}' is in the known list but did NOT fail. "
-            "Please move to the 'removed' section with a 'removal_note' (ML-2B)."
-        )
+        if name in node_passes:
+            _err(
+                f"ML-D6: Node.js assertion '{name}' is in the known list but PASSED -- "
+                "move to removed[] with removal_note (D4). "
+                "(ADR D6: resolved entry must be retired in the same PR.)"
+            )
+        else:
+            _err(
+                f"ML-D6: Node.js assertion '{name}' neither failed nor passed -- "
+                "skip, package panic, or deleted. Not a resolution. "
+                "Investigate before removing from the known list. "
+                "(ADR D6 bucket 2)"
+            )
+        has_new = True
 
     for name in sorted(known_node_load - obs_node_load):
-        _warn(
-            f"ML-2A ratchet: Node.js suite-load-failure '{name}' is in the known list but did NOT fail. "
-            "Please move to the 'removed' section with a 'removal_note' (ML-2B)."
+        # No pass discriminant for suite-load-failure class: file basenames do not
+        # appear in TAP "ok N -" lines.  Attribute all unobserved load-failure entries
+        # to bucket 2 (neither observed failing nor confirmed passing).
+        _err(
+            f"ML-D6: Node.js suite-load-failure '{name}' not observed -- "
+            "file no longer fails or package did not run. "
+            "No pass discriminant for this class; investigate before removing. "
+            "(ADR D6 bucket 2: no pass set for suite-load-failure.)"
         )
+        has_new = True
 
     for name in sorted(known_py_assert - obs_py):
-        _warn(
-            f"ML-2A ratchet: Python assertion '{name}' is in the known list but did NOT fail. "
-            "Please move to the 'removed' section with a 'removal_note' (ML-2B)."
-        )
+        if name in py_passes:
+            _err(
+                f"ML-D6: Python '{name}' is in the known list but PASSED -- "
+                "move to removed[] with removal_note (D4). "
+                "(ADR D6: resolved entry must be retired in the same PR.)"
+            )
+        else:
+            _err(
+                f"ML-D6: Python '{name}' neither failed nor passed -- "
+                "skip, suite panic, or deleted. Not a resolution. "
+                "Investigate before removing from the known list. "
+                "(ADR D6 bucket 2)"
+            )
+        has_new = True
 
     # 8. ML-2B: baseline deletion check (D4 — silent deletion via git diff)
     if not check_baseline_deletions(baseline_path, known, removed):
@@ -929,28 +1040,52 @@ def run_check(
     total_known   = len(known)
     total_removed = len(removed)
 
-    def _cls_label(obs_set: set, known_set: set, prefix: str) -> tuple:
+    def _cls_label(obs_set: set, known_set: set, passes_set: set, prefix: str) -> tuple:
         """Build per-class label with direction indicator using set difference.
 
         Returns (label_string, has_imbalance).
-        Invariant: if steps 6/7 fire for this class, has_imbalance is True and the
-        label contains a direction tag — same set difference, same result.
+
+        Invariant 1 (boolean identity): has_imbalance is bit-identical to the old
+        code — bool(surplus or resolved or absent) == bool(surplus or (known_set -
+        obs_set)) — because resolved | absent == known_set - obs_set exactly.
+
+        Invariant 2 (per-class alignment): the bucket split here uses the same
+        discriminant as step 7 for each class:
+          - Go:          passes_set = go_passes   (same as 'if name in go_passes' at step 7)
+          - Node-assert: passes_set = node_passes (same discriminant)
+          - Python:      passes_set = py_passes   (same discriminant)
+          - Node-load:   passes_set = set()       — no pass discriminant exists for this
+                         class (TAP 'ok N -' lines are assertion names, not file basenames);
+                         all unobserved load-failure entries are attributed to 'ausente',
+                         matching the unconditional bucket-2 attribution at step 7 line 986.
+
+        Defect fixed (2026-09-29, ML-3A): the old code computed resolved = known - obs,
+        which is the union of D6 bucket 1 (passed) and bucket 2 (absent). Both buckets
+        print '-N resolvido'. A reader seeing only the CI first-line summary therefore
+        reached the same wrong conclusion that step 7 was built to prevent: that the entry
+        genuinely resolved and can be retired. The summary now names each bucket separately
+        so the first-line signal is consistent with the step-7 attribution.
         """
         surplus  = obs_set - known_set   # new failures in this class (step 6 direction)
-        resolved = known_set - obs_set   # debt paid in this class  (step 7 direction)
+        not_obs  = known_set - obs_set   # was in list, not observed failing
+        resolved = not_obs & passes_set  # bucket 1: ran and passed
+        absent   = not_obs - passes_set  # bucket 2: neither passed nor failed
         label = f"{prefix} {len(obs_set)}/{len(known_set)}"
-        if surplus and resolved:
-            label += f" [+{len(surplus)} NOVO, -{len(resolved)} resolvido]"
-        elif surplus:
-            label += f" [+{len(surplus)} NOVO]"
-        elif resolved:
-            label += f" [-{len(resolved)} resolvido]"
-        return label, bool(surplus or resolved)
+        parts = []
+        if surplus:
+            parts.append(f"+{len(surplus)} NOVO")
+        if resolved:
+            parts.append(f"-{len(resolved)} resolvido")
+        if absent:
+            parts.append(f"-{len(absent)} ausente")
+        if parts:
+            label += f" [{', '.join(parts)}]"
+        return label, bool(surplus or resolved or absent)
 
-    go_lbl, go_imb = _cls_label(obs_go,         known_go_assert,  "Go")
-    na_lbl, na_imb = _cls_label(obs_node_assert, known_node_assert, "Node-assert")
-    nl_lbl, nl_imb = _cls_label(obs_node_load,   known_node_load,  "Node-load")
-    py_lbl, py_imb = _cls_label(obs_py,          known_py_assert,  "Python")
+    go_lbl, go_imb = _cls_label(obs_go,         known_go_assert,  go_passes,   "Go")
+    na_lbl, na_imb = _cls_label(obs_node_assert, known_node_assert, node_passes, "Node-assert")
+    nl_lbl, nl_imb = _cls_label(obs_node_load,   known_node_load,  set(),       "Node-load")
+    py_lbl, py_imb = _cls_label(obs_py,          known_py_assert,  py_passes,   "Python")
 
     headline = (
         " — DESEQUILÍBRIO POR CLASSE"
@@ -985,8 +1120,11 @@ def run_self_test() -> int:
     T2 — 'new Go name not in list' -> exit 1
          Asserts: ADR D1 — a name outside the known set causes verifier to fail.
 
-    T3 — 'known entry missing from observed' -> exit 0 (warning only)
-         Asserts: fixing a test must not break CI; disappearance is a warning, not a block.
+    T3 — 'known entry absent from FAIL and PASS' -> exit 1 (D6 bucket 2)
+         Asserts: D6 -- a known entry that disappears from results without appearing in
+         passes is attributed to bucket 2 (neither failed nor passed) and causes exit 1.
+         Previously this was a warning/exit 0; D6 makes both bucket 1 and bucket 2 fatal
+         because absence without a pass is not a confirmed resolution (ADR D6 RECORTE).
 
     T4 — 'empty list' -> vacuity guard -> SystemExit(1)
          Asserts: an empty list with active debt passes everything silently — the guard
@@ -1121,8 +1259,64 @@ def run_self_test() -> int:
           print a clean headline while set-based detection exposes the surplus. This arm
           separates the correct fix from the plausible-wrong count-based alternative.
           Measurement: Node-assert known={A,B}, obs={A,C} → count 2/2 but surplus={C},
-          resolved={B} → '+1 NOVO, -1 resolvido' tag appears despite equal count.
+          absent={B} → '[+1 NOVO, -1 ausente]' tag appears despite equal count.
+          (NodeB is absent, not resolved: TAP output has no 'ok N - NodeB' line, so NodeB
+          is not in node_passes and lands in bucket 2.)
           [SYNTHETIC: Node-assert with two known entries, one replaced in observation]
+
+    ── D6 three-bucket ratchet (T28) ────────────────────────────────────────────
+
+    T28 — 'known Go entry PASSED' -> exit 1 (D6 bucket 1)
+          Asserts: D6 bucket 1 -- a known entry that appears in go_passes (i.e. the test
+          ran and passed) causes exit 1 with 'PASSED' attribution. The entry is genuinely
+          resolved and must be retired via D4. This is the bucket that makes the ratchet
+          bidirectional: it blocks CI until the resolved entry is moved to removed[].
+          Also asserts (ML-3A AC2): summary label says '-1 resolvido', not 'ausente'.
+          Counter-arms: T1 (bucket 3 -- entry still fails -> exit 0, D6 is not a trap);
+          T2 (D1 counter-arm -- new failure still exits 1 after D6 changes);
+          T3 (bucket 2 -- entry absent from FAIL and PASS -> exit 1, different message).
+          [SYNTHETIC: GO_PASS artifact; TestFoo passes, not fails]
+
+    ── D7 active-entry reason validation (T29-T32) ──────────────────────────────
+
+    T29 — 'active entry with reason present' -> exit 0 (D7a)
+          Asserts: validate_active_entries() returns True when all entries carry a non-empty
+          ASCII reason field. The vacuity guard for D7 itself: a valid entry must not be
+          rejected. Uses BASE_ENTRIES (all have reason) with default failing artifacts.
+
+    T30 — 'active entry without reason' -> exit 1 (D7b)
+          Asserts: validate_active_entries() fires _err() and returns False when an entry
+          has no 'reason' field, causing run_check() to return 1 immediately. The entry
+          name and runtime are cited in the error message.
+
+    T31 — 'removed[] entry without reason' -> exit 0 (D7c, optional)
+          Asserts: D7 applies only to entries[]; reason is optional in removed[]. The 24
+          existing removed entries have no reason field and must not trigger D7 validation.
+
+    T32 — 'non-ASCII reason value' -> exit 1, no UnicodeEncodeError (D7d)
+          Asserts: an entry with a non-ASCII reason (e.g. em-dash) causes D7 to emit
+          _err() with an ASCII-only message. Under cp1252 encoding (quality.yml:977), the
+          _err() call must not raise UnicodeEncodeError. The non-ASCII reason is rejected
+          (exit 1) but the error message itself is ASCII-safe.
+
+    ── ML-3A summary label split: 'resolvido' vs 'ausente' (T33-T34) ────────────
+
+    T33 — 'bucket 2 in summary' -> summary says 'ausente', not 'resolvido'
+          Asserts: ML-3A AC1 -- when a known entry is absent from both FAIL and PASS
+          output (bucket 2), the summary label is '-N ausente', NOT '-N resolvido'.
+          A reader seeing only the CI first-line summary must not conclude the entry
+          resolved. Negative assertion ('resolvido' absent) is kept live by T34
+          (positive arm for 'resolvido' in the same session).
+          [SYNTHETIC: BASE_ENTRIES + TestKnownButAbsent (go); GO_FAIL artifact keeps
+           TestFoo failing (non-vacuous); TestKnownButAbsent absent from all output]
+
+    T34 — 'bucket 1 + bucket 2 in same class' -> both labels on summary line
+          Asserts: ML-3A AC3 -- when one Go entry passes (bucket 1) and another
+          disappears without passing (bucket 2), the summary line shows both
+          '-1 resolvido' AND '-1 ausente' for the Go class. Uses exact label substrings
+          to detect class-level leakage.
+          [SYNTHETIC: 3 Go entries (TestStillFails=fail, TestResolved=pass,
+           TestAbsent=absent); Node/Python balanced]
     """
     n_pass = 0
     n_fail = 0
@@ -1176,10 +1370,10 @@ def run_self_test() -> int:
         )
 
         BASE_ENTRIES = [
-            {"name": "TestFoo",               "runtime": "go",     "class": "assertion"},
-            {"name": "sample assertion test",  "runtime": "node",   "class": "assertion"},
-            {"name": "broken.test.js",         "runtime": "node",   "class": "suite-load-failure"},
-            {"name": "test_foo.py::test_bar",  "runtime": "python", "class": "assertion"},
+            {"name": "TestFoo",               "runtime": "go",     "class": "assertion",            "reason": "self-test fixture: D6 and D7 falsification sentinel"},
+            {"name": "sample assertion test",  "runtime": "node",   "class": "assertion",            "reason": "self-test fixture: Node assertion sentinel"},
+            {"name": "broken.test.js",         "runtime": "node",   "class": "suite-load-failure",   "reason": "self-test fixture: Node load-failure sentinel"},
+            {"name": "test_foo.py::test_bar",  "runtime": "python", "class": "assertion",            "reason": "self-test fixture: Python assertion sentinel"},
         ]
 
         def write_list(entries: list[dict], removed: list[dict] | None = None) -> None:
@@ -1228,17 +1422,21 @@ def run_self_test() -> int:
         check(rc == 1, "T2: new Go failure -> exit 1")
         check("::error::" in ann.getvalue(), "T2 AC5: _err() called (error arm executed)")
 
-        # ── T3: known entry not observed -> warning, exit 0 ──────────────────
-        _st_print("=== T3: known entry missing from observed -> warning, exit 0 ===")
+        # ── T3: known entry absent from FAIL and PASS -> D6 bucket 2, exit 1 ────
+        # (Previously: known entry not observed -> warning, exit 0.  D6 changes this:
+        #  a known entry that disappears from results is NOT a silent green — it must be
+        #  investigated.  Bucket 2: neither failed nor passed -> exit 1.)
+        _st_print("=== T3: known entry absent from FAIL and PASS -> D6 bucket 2, exit 1 ===")
         extra = BASE_ENTRIES + [
-            {"name": "TestKnownButFixed", "runtime": "go", "class": "assertion"}
+            {"name": "TestKnownButFixed", "runtime": "go", "class": "assertion",
+             "reason": "D6 bucket 2 self-test: entry that vanishes from test results"}
         ]
         write_list(extra)
-        write_artifacts()  # TestKnownButFixed absent from go output
+        write_artifacts()  # TestKnownButFixed absent from go output (neither FAIL nor PASS)
         with _capture_annotations() as ann:
             rc = run_check(list_path, go_path, tap_path, py_path)
-        check(rc == 0, "T3: known entry not observed -> warning only, exit 0")
-        check("::warning::" in ann.getvalue(), "T3 AC5: _warn() called (warning arm executed)")
+        check(rc == 1, "T3: D6 bucket 2 -- known entry absent from FAIL and PASS -> exit 1")
+        check("::error::" in ann.getvalue(), "T3 AC5: D6 bucket 2 called _err() (not warning)")
 
         # ── T4: empty list -> vacuity guard -> SystemExit(1) ─────────────────
         _st_print("=== T4: empty list -> vacuity guard -> SystemExit(1) ===")
@@ -1310,6 +1508,7 @@ def run_self_test() -> int:
                 "name": "test_commands_basic.py::TestRealCommands::test_status_uses_real_handler",
                 "runtime": "python",
                 "class": "assertion",
+                "reason": "self-test fixture: Python class method normalization sentinel",
             }
         ]
         write_list(entries_with_class)
@@ -1326,10 +1525,10 @@ def run_self_test() -> int:
         _st_print("=== T9: non-ASCII name (em-dash, accents) round-trip ===")
         non_ascii_name = "sem identidade \u2014 sa\u00edda id\u00eantica ao comportamento pr\u00e9-existente (n\u00e3o-regress\u00e3o)"
         entries_utf8 = [
-            {"name": "TestFoo",              "runtime": "go",     "class": "assertion"},
-            {"name": non_ascii_name,          "runtime": "node",   "class": "assertion"},
-            {"name": "broken.test.js",        "runtime": "node",   "class": "suite-load-failure"},
-            {"name": "test_foo.py::test_bar", "runtime": "python", "class": "assertion"},
+            {"name": "TestFoo",              "runtime": "go",     "class": "assertion",           "reason": "self-test fixture: non-ASCII name round-trip sentinel"},
+            {"name": non_ascii_name,          "runtime": "node",   "class": "assertion",           "reason": "self-test fixture: non-ASCII name (reason is ASCII, name is not)"},
+            {"name": "broken.test.js",        "runtime": "node",   "class": "suite-load-failure",  "reason": "self-test fixture: load-failure in non-ASCII round-trip test"},
+            {"name": "test_foo.py::test_bar", "runtime": "python", "class": "assertion",           "reason": "self-test fixture: Python sentinel in non-ASCII round-trip test"},
         ]
         write_list(entries_utf8)
         non_ascii_tap = (
@@ -1585,10 +1784,10 @@ def run_self_test() -> int:
         _st_print("=== T23: cancel case (Node +1 NOVO, Python -1 resolvido, total balanced) "
                   "-> DESEQUILIBRIO on first line ===")
         entries_t23 = [
-            {"name": "TestFoo",              "runtime": "go",     "class": "assertion"},
-            {"name": "known_node_assert",    "runtime": "node",   "class": "assertion"},
-            {"name": "broken.test.js",       "runtime": "node",   "class": "suite-load-failure"},
-            {"name": "test_foo.py::test_bar","runtime": "python", "class": "assertion"},
+            {"name": "TestFoo",              "runtime": "go",     "class": "assertion",           "reason": "self-test fixture: T23 cancel-case sentinel"},
+            {"name": "known_node_assert",    "runtime": "node",   "class": "assertion",           "reason": "self-test fixture: T23 Node assertion sentinel"},
+            {"name": "broken.test.js",       "runtime": "node",   "class": "suite-load-failure",  "reason": "self-test fixture: T23 load-failure sentinel"},
+            {"name": "test_foo.py::test_bar","runtime": "python", "class": "assertion",           "reason": "self-test fixture: T23 Python sentinel"},
         ]
         write_list(entries_t23)
         cancel_tap = (
@@ -1608,7 +1807,8 @@ def run_self_test() -> int:
             "  exitCode: 1\n"
             "  ...\n"
         )
-        # Python: 0 failures observed → test_foo.py::test_bar "resolved" (warning only)
+        # Python: 0 failures observed, test_foo.py::test_bar in py_passes -> D6 bucket 1
+        # (resolved). D6 fires _err() for it. T23 only checks summary line content, not rc.
         write_artifacts(tap=cancel_tap, py="PASSED pypi/tests/test_foo.py::test_bar\n")
         buf = io.StringIO()
         with _capture_annotations(), contextlib.redirect_stdout(buf):
@@ -1642,8 +1842,9 @@ def run_self_test() -> int:
         check(
             "DESEQUIL" not in summary_line_t24
             and "NOVO" not in summary_line_t24
-            and "resolvido" not in summary_line_t24,
-            "T24: all classes balanced -> no 'DESEQUILIBRIO', 'NOVO', or 'resolvido' on summary line",
+            and "resolvido" not in summary_line_t24
+            and "ausente" not in summary_line_t24,
+            "T24: all classes balanced -> no 'DESEQUILIBRIO', 'NOVO', 'resolvido', or 'ausente' on summary line",
         )
 
         # ── Sumário T25: one class surplus, others balanced ───────────────────────────
@@ -1684,17 +1885,18 @@ def run_self_test() -> int:
         )
 
         # ── Sumário T26: equal count but different names in one class ─────────────────
-        # Asserts: set-based detection catches one-name replacement (surplus + resolved in
+        # Asserts: set-based detection catches one-name replacement (surplus + absent in
         # same class) even when obs count == known count. Count-based logic would see 2/2
-        # and print clean; set-based sees surplus={NodeC} → '[+1 NOVO, -1 resolvido]' tag.
+        # and print clean; set-based sees surplus={NodeC}, absent={NodeB} → '[+1 NOVO, -1 ausente]'
+        # tag. (NodeB is absent, not resolved: no 'ok N - NodeB' in TAP, so not in node_passes.)
         # This arm separates the correct (set-based) fix from the plausible-wrong (count-based).
         _st_print("=== T26: equal count, different names in a class -> [+1 NOVO] on summary line ===")
         entries_t26 = [
-            {"name": "TestFoo",              "runtime": "go",     "class": "assertion"},
-            {"name": "NodeA",                "runtime": "node",   "class": "assertion"},
-            {"name": "NodeB",                "runtime": "node",   "class": "assertion"},
-            {"name": "broken.test.js",       "runtime": "node",   "class": "suite-load-failure"},
-            {"name": "test_foo.py::test_bar","runtime": "python", "class": "assertion"},
+            {"name": "TestFoo",              "runtime": "go",     "class": "assertion",           "reason": "self-test fixture: T26 Go sentinel"},
+            {"name": "NodeA",                "runtime": "node",   "class": "assertion",           "reason": "self-test fixture: T26 NodeA (stays in known)"},
+            {"name": "NodeB",                "runtime": "node",   "class": "assertion",           "reason": "self-test fixture: T26 NodeB (replaced by NodeC in obs)"},
+            {"name": "broken.test.js",       "runtime": "node",   "class": "suite-load-failure",  "reason": "self-test fixture: T26 load-failure sentinel"},
+            {"name": "test_foo.py::test_bar","runtime": "python", "class": "assertion",           "reason": "self-test fixture: T26 Python sentinel"},
         ]
         write_list(entries_t26)
         # obs: NodeA (known) + NodeC (new, replaces NodeB) → obs count = known count = 2
@@ -1755,6 +1957,182 @@ def run_self_test() -> int:
         check(
             "::error::sentinel-ac4" in ac4_buf.getvalue(),
             "T27b AC4: _err() routes through _ANNOTATION_SINK -> '::error::sentinel-ac4' in sink",
+        )
+
+        # ── D6 T28: bucket 1 — known entry PASSED -> exit 1 ─────────────────────
+        # BASE_ENTRIES now carries reason fields (D7 passes). GO_PASS makes TestFoo
+        # appear only in go_passes (not in obs_go) -> bucket 1 -> exit 1.
+        # Counter-arms: T1 (bucket 3, entry still fails -> exit 0) and T2 (D1, new
+        # failure -> exit 1) are unchanged and still pass — see reconciliation docstring.
+        # ML-3A: also checks that the summary label says 'resolvido' (not 'ausente') for
+        # bucket 1 — the summary must agree with the step-7 attribution class by class.
+        _st_print("=== T28: D6 bucket 1 -- known Go entry PASSED -> exit 1 ===")
+        write_list(BASE_ENTRIES)
+        # GO_PASS: TestFoo in go_passes only, not in obs_go -> bucket 1 (resolved)
+        write_artifacts(go=GO_PASS)
+        buf_t28 = io.StringIO()
+        with _capture_annotations() as ann:
+            with contextlib.redirect_stdout(buf_t28):
+                rc = run_check(list_path, go_path, tap_path, py_path)
+        summary_line_t28 = next(
+            (l for l in buf_t28.getvalue().splitlines() if l.startswith("ML-2A/2B:")), ""
+        )
+        check(rc == 1, "T28: D6 bucket 1 -- TestFoo in go_passes, not in obs_go -> exit 1")
+        check(
+            "::error::" in ann.getvalue() and "PASSED" in ann.getvalue(),
+            "T28 AC5: D6 bucket 1 emits _err() with 'PASSED' attribution",
+        )
+        check(
+            "-1 resolvido" in summary_line_t28 and "ausente" not in summary_line_t28,
+            "T28 ML-3A AC2: bucket 1 summary label says 'resolvido', not 'ausente'",
+        )
+
+        # ── D7 T29: active entry with reason present -> exit 0 (D7a) ────────────
+        # BASE_ENTRIES already has reason on all 4 entries (updated above). Default
+        # artifacts have all entries failing. Validates D7 does not block valid entries.
+        _st_print("=== T29: D7a -- active entry with reason present -> exit 0 ===")
+        write_list(BASE_ENTRIES)
+        write_artifacts()  # all known entries observed failing -> exit 0
+        with _capture_annotations() as ann:
+            rc = run_check(list_path, go_path, tap_path, py_path)
+        check(rc == 0, "T29 D7a: all entries have reason, all entries observed failing -> exit 0")
+        check("::error::" not in ann.getvalue(), "T29 AC5: D7 did not fire _err() (reason present)")
+
+        # ── D7 T30: active entry without reason -> exit 1 (D7b) ─────────────────
+        # One entry lacks reason; D7 validation fires before any ratchet comparison.
+        _st_print("=== T30: D7b -- active entry without reason -> exit 1 ===")
+        entries_no_reason = [
+            {"name": "TestFoo", "runtime": "go", "class": "assertion"},  # no reason
+            {"name": "sample assertion test",  "runtime": "node",   "class": "assertion",           "reason": "D7 self-test: Node sentinel"},
+            {"name": "broken.test.js",         "runtime": "node",   "class": "suite-load-failure",  "reason": "D7 self-test: load sentinel"},
+            {"name": "test_foo.py::test_bar",  "runtime": "python", "class": "assertion",           "reason": "D7 self-test: Python sentinel"},
+        ]
+        write_list(entries_no_reason)
+        write_artifacts()
+        with _capture_annotations() as ann:
+            rc = run_check(list_path, go_path, tap_path, py_path)
+        check(rc == 1, "T30 D7b: TestFoo has no reason -> D7 fires, exit 1")
+        check(
+            "::error::" in ann.getvalue() and "TestFoo" in ann.getvalue() and "D7" in ann.getvalue(),
+            "T30 AC5: D7 _err() cites entry name 'TestFoo' and 'D7' label",
+        )
+
+        # ── D7 T31: removed[] entry without reason -> exit 0 (D7c) ──────────────
+        # D7 applies only to entries[]; reason is optional in removed[]. Existing
+        # removed entries (24) have no reason field and must not be rejected.
+        _st_print("=== T31: D7c -- removed[] entry without reason -> exit 0 (optional) ===")
+        active_t31 = [e for e in BASE_ENTRIES if e["name"] != "TestFoo"]
+        removed_no_reason_d7c = [
+            {"name": "TestFoo", "runtime": "go", "class": "assertion",
+             "removal_note": "corrected"},  # no reason field -- must not trigger D7
+        ]
+        write_list(active_t31, removed_no_reason_d7c)
+        write_baseline(BASE_ENTRIES)
+        write_artifacts(go=GO_PASS)  # TestFoo passes -> validates corrected claim
+        with _capture_annotations() as ann:
+            rc = run_check(list_path, go_path, tap_path, py_path, baseline_path=baseline_path)
+        check(rc == 0, "T31 D7c: removed[] entry without reason -> exit 0 (D7 only checks entries[])")
+        check("::error::" not in ann.getvalue(), "T31 AC5: D7 did not fire for removed[] entry")
+
+        # ── D7 T32: non-ASCII reason value -> exit 1, no UnicodeEncodeError (D7d) ─
+        # Entry has an em-dash in reason (non-ASCII). D7 rejects it. The _err() message
+        # must be ASCII-only so it does not raise UnicodeEncodeError under cp1252
+        # (quality.yml:977 runs self-test with PYTHONIOENCODING=cp1252 PYTHONUTF8=0).
+        _st_print("=== T32: D7d -- non-ASCII reason -> exit 1, no UnicodeEncodeError ===")
+        entries_nonascii_reason = [
+            # em-dash (U+2014) in reason -- not ASCII, D7 must reject it
+            {"name": "TestFoo", "runtime": "go", "class": "assertion",
+             "reason": "CRLF — renderer normalizer"},  # em-dash is non-ASCII
+            {"name": "sample assertion test",  "runtime": "node",   "class": "assertion",           "reason": "D7 ascii sentinel"},
+            {"name": "broken.test.js",         "runtime": "node",   "class": "suite-load-failure",  "reason": "D7 ascii sentinel"},
+            {"name": "test_foo.py::test_bar",  "runtime": "python", "class": "assertion",           "reason": "D7 ascii sentinel"},
+        ]
+        write_list(entries_nonascii_reason)
+        write_artifacts()
+        raised_unicode_error = False
+        try:
+            with _capture_annotations() as ann_d7d:
+                rc = run_check(list_path, go_path, tap_path, py_path)
+        except UnicodeEncodeError:
+            raised_unicode_error = True
+        check(rc == 1, "T32 D7d: non-ASCII reason -> D7 fires, exit 1")
+        check(
+            "::error::" in ann_d7d.getvalue() and not raised_unicode_error,
+            "T32 D7d AC5: _err() called without UnicodeEncodeError (message is ASCII-safe)",
+        )
+
+        # ── ML-3A T33: bucket 2 in summary -> 'ausente', NOT 'resolvido' ────────────
+        # Asserts: when a known entry is absent from both FAIL and PASS output, the summary
+        # labels it '-1 ausente', not '-1 resolvido'. This is the critical AC: a reader
+        # seeing only the CI first-line summary must not conclude the entry resolved.
+        # Negative assertion ('resolvido' absent): live positive arm is T34 (same session,
+        # same fixture writer) which proves the channel can emit 'resolvido'.
+        _st_print("=== T33: ML-3A -- bucket 2 in summary -> 'ausente', not 'resolvido' ===")
+        entries_t33 = BASE_ENTRIES + [
+            {"name": "TestKnownButAbsent", "runtime": "go", "class": "assertion",
+             "reason": "T33 fixture: entry that vanishes from test results (bucket 2)"},
+        ]
+        write_list(entries_t33)
+        # TestKnownButAbsent absent from go output (neither FAIL nor PASS): bucket 2.
+        # TestFoo still fails -> artifact is non-vacuous (step 5b does not short-circuit).
+        write_artifacts(go=GO_FAIL)
+        buf_t33 = io.StringIO()
+        with _capture_annotations() as ann_t33:
+            with contextlib.redirect_stdout(buf_t33):
+                rc_t33 = run_check(list_path, go_path, tap_path, py_path)
+        summary_line_t33 = next(
+            (l for l in buf_t33.getvalue().splitlines() if l.startswith("ML-2A/2B:")), ""
+        )
+        check(rc_t33 == 1, "T33: bucket 2 -- entry absent from FAIL and PASS -> exit 1")
+        check(
+            "-1 ausente" in summary_line_t33,
+            "T33 ML-3A AC1: bucket 2 summary label contains '-1 ausente'",
+        )
+        check(
+            "resolvido" not in summary_line_t33,
+            "T33 ML-3A AC1: bucket 2 summary label does NOT contain 'resolvido'",
+        )
+
+        # ── ML-3A T34: both buckets in same class -> summary shows both terms ──────
+        # Asserts: when one Go entry passes (bucket 1) and another Go entry disappears
+        # without passing (bucket 2), the summary line shows both '-1 resolvido' and
+        # '-1 ausente' for the Go class. The two labels must coexist, not cancel.
+        # Uses exact label substrings to catch class-level leakage.
+        _st_print("=== T34: ML-3A -- bucket 1 + bucket 2 in same class -> both labels on summary ===")
+        entries_t34 = [
+            # TestStillFails: still failing -> bucket 3 (no label, keeps the class non-vacuous)
+            {"name": "TestStillFails",    "runtime": "go", "class": "assertion",
+             "reason": "T34 fixture: entry that keeps failing (bucket 3 anchor)"},
+            # TestResolved: will appear in go_passes -> bucket 1 (resolvido)
+            {"name": "TestResolved",      "runtime": "go", "class": "assertion",
+             "reason": "T34 fixture: entry that passed (bucket 1 = resolvido)"},
+            # TestAbsent: neither FAIL nor PASS -> bucket 2 (ausente)
+            {"name": "TestAbsent",        "runtime": "go", "class": "assertion",
+             "reason": "T34 fixture: entry that vanished (bucket 2 = ausente)"},
+            {"name": "sample assertion test",  "runtime": "node",   "class": "assertion",          "reason": "T34 fixture: Node sentinel"},
+            {"name": "broken.test.js",         "runtime": "node",   "class": "suite-load-failure", "reason": "T34 fixture: Node load sentinel"},
+            {"name": "test_foo.py::test_bar",  "runtime": "python", "class": "assertion",          "reason": "T34 fixture: Python sentinel"},
+        ]
+        write_list(entries_t34)
+        # TestStillFails in FAIL, TestResolved in PASS, TestAbsent absent entirely.
+        go_t34 = (
+            "--- FAIL: TestStillFails (0.01s)\n"
+            "--- PASS: TestResolved (0.01s)\n"
+        )
+        write_artifacts(go=go_t34)
+        buf_t34 = io.StringIO()
+        with _capture_annotations(), contextlib.redirect_stdout(buf_t34):
+            run_check(list_path, go_path, tap_path, py_path)
+        summary_line_t34 = next(
+            (l for l in buf_t34.getvalue().splitlines() if l.startswith("ML-2A/2B:")), ""
+        )
+        check(
+            "-1 resolvido" in summary_line_t34,
+            "T34 ML-3A AC3: both buckets in same class -> summary contains '-1 resolvido'",
+        )
+        check(
+            "-1 ausente" in summary_line_t34,
+            "T34 ML-3A AC3: both buckets in same class -> summary contains '-1 ausente'",
         )
 
     _st_print(f"\nSelf-test summary: {n_pass} PASS, {n_fail} FAIL")

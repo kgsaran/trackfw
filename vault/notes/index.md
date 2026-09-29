@@ -4,6 +4,8 @@
 
 ## Índice
 
+- [windows-known-failures-14a-entrada-ausente-das-tabelas-wave0-2026-09-29](windows-known-failures-14a-entrada-ausente-das-tabelas-wave0-2026-09-29.md) — **Wave 0 triou 13 em 4 grupos (4+4+2+3); `TestUpdateMigratesKnownCodexAndPreservesUnknown` é a 14ª, ausente das tabelas** — causa inferida: `strings.Contains(manifest, backendPath)` falha porque `filepath.Join` emite `\` no Windows e o manifest armazena `/`; Grupo D, mecanismo distinto das entradas 8.3 short-name
+
 - [generate-lefthook-hook-segundo-sitio-a-destroi-config-consumidor-2026-09-28](generate-lefthook-hook-segundo-sitio-a-destroi-config-consumidor-2026-09-28.md) — 🔴 **`generateLefthookHook` (scaffold.go:2806) é segundo sítio (a): overwrite incondicional de `lefthook.yml`** — destrói hooks do consumidor na reexecução de `init`; a ordem de chamada (linha 165 antes de 169) confirma; AC "ponto único" da REQ-2026-09-28 requer ML adicional no roadmap antes de Wave 1; descoberto na Wave 0 de 2026-09-28
 
 - [winsymlink-gomod-governa-mode-de-juncao-2026-09-27](winsymlink-gomod-governa-mode-de-juncao-2026-09-27.md) — 🔴 **`go.mod` directive (`< 1.23` vs `>= 1.23`) determina se junção `mklink /J` aparece como `ModeSymlink` ou `ModeIrregular` no Go** — sonda standalone com `go 1.21` mede oposto da produção; no trackfw (`go 1.25.2`, `winsymlink=1`) junção = `ModeIrregular`; correção: testar `ModeSymlink | ModeIrregular`; A/B verificado na VM; fonte: `src/os/types_windows.go` Go 1.27.0

@@ -2,6 +2,91 @@
 
 ---
 
+## 2026-09-29 — Artemis (fix/ratchet-windows-nao-colhe-melhoria — ML-3A Wave 3) — ENTREGUE
+
+**Inicio:** 2026-09-29 | **Fim:** 2026-09-29 | Branch: `fix/ratchet-windows-nao-colhe-melhoria`
+**Tarefa:** ML-3A — o rotulo `resolvido` no sumario agrega baldes 1 e 2; separar em `resolvido`/`ausente`.
+
+**Arquivos modificados:**
+- `scripts/check-windows-known-failures.py`: `_cls_label` recebe `passes_set`, split em `resolved`/`absent`; T24 atualizado; T26/T28 comentarios corrigidos; T33 e T34 adicionados.
+- `.github/windows-known-failures.json`: `TestStaleWIPReportsWIPWalkError` normalizado para `(MEASURED)`.
+- `docs/adr/ADR-2026-09-05-...-nunca-por-contagem.md`: Emenda 1 recebe nota de marcador canonico.
+- `docs/roadmaps/wip/ROADMAP-...ratchet....md`: ML-3A marcado Concluido, todos os ACs marcados.
+
+**Evidencias:**
+- self-test: 59/59 PASS sob UTF-8 (era 53; +6 por T28 ML-3A, T33 3 checks, T34 2 checks)
+- self-test: 59/59 PASS sob `PYTHONIOENCODING=cp1252 PYTHONUTF8=0`
+- `make quality` RC=0 — 347 OK, 0 FAIL
+- `trackfw validate`: 172 warnings (pre-existentes), 0 errors
+- `git diff trackfw.yaml`: vazio
+- `(MEASURED)` strict: 9 · INFER: 5 · soma: 14
+
+**Decisoes tecnicas:**
+- `node_load` passa `set()` (nao `node_passes`): TAP `ok N -` retorna nomes de assertion, nao basenames de arquivo; sem discriminante de passes para suite-load-failure (comentario pre-existente linha 944). Passa `set()` para tornar impossivel por construcao que node_load produza `resolvido`.
+- `has_imbalance` permanece identico: `bool(surplus or resolved or absent)` == `bool(surplus or (known - obs))` porque `resolved | absent == known - obs` exatamente.
+- T26 docstring e comentario inline corrigidos: NodeB e `ausente` (nao `resolvido`) porque nao aparece em `node_passes` nessa fixture.
+
+---
+
+## 2026-09-29 — Hades (fix/ratchet-windows-nao-colhe-melhoria — ML-2A Wave 2 auditoria) — ENTREGUE
+
+**Inicio:** 2026-09-29 | **Fim:** 2026-09-29 | Branch: `fix/ratchet-windows-nao-colhe-melhoria`
+**Tarefa:** ML-2A — auditoria independente por reimplementacao do D6 tres baldes + D7 reason.
+
+**Metodo:** Nao li o diff. Li ADR+REQ, derivei o esperado, criei fixtures proprias (H1-H11),
+exercitei o checker como caixa-preta. Self-test oficial: 53/53 PASS.
+
+**Achados:**
+- H1-H8: 34 pass nos vetores de ataque proprios — tres baldes corretos, D1 nao desativado.
+- ACHADO MENOR (documentacao): `TestStaleWIPReportsWIPWalkError` usa `(MEASURED in ADR-2026-09-05 Adendo)` em vez de `(MEASURED)`. Contagem mecanica de `(MEASURED)` da 8, nao 9. ADR afirma 9 MEASURED/5 INFER. Ambos corretos pelo sentido, inconsistentes pelo marcador. Sem impacto funcional no checker (D7 valida apenas ASCII-only, nao o marcador).
+- Nenhum caminho pelo qual uma melhoria passe despercebida apos D6.
+
+**git diff trackfw.yaml:** vazio (confirmado)
+**Status:** CONCLUIDO — parecer em `docs/seguranca/2026-09-29-wave2-ratchet.md`.
+
+---
+
+## 2026-09-29 — Apolo (fix/ratchet-windows-nao-colhe-melhoria — ML-1A D6+D7) — ENTREGUE
+
+**Início:** 2026-09-29 | **Fim:** 2026-09-29 | Branch: `fix/ratchet-windows-nao-colhe-melhoria`
+**Tarefa:** ML-1A — D6 em três baldes + campo `reason` validado (D7).
+
+**Arquivos modificados:** `.github/windows-known-failures.json`, `scripts/check-windows-known-failures.py`
+
+**Evidências:**
+- self-test: 53/53 PASS sob UTF-8 e cp1252 (`SELFTEST_RC=0`, `CP1252_RC=0`)
+- `make quality RC=0` — 347 OK, 0 FAIL (gates falsify completos)
+- `trackfw validate`: 172 warnings (pré-existentes), 0 errors
+- `git diff trackfw.yaml`: vazio
+
+**Achados não óbvios:**
+- 14ª entrada (`TestUpdateMigratesKnownCodexAndPreservesUnknown`) ausente das tabelas Wave 0 — triada como INFER Grupo D. Nota em vault.
+- Node suite-load-failure não tem discriminante de passes (TAP `ok N` retorna assertion names, não basenames) — todas as entradas não observadas nessa classe vão para balde 2.
+- T3 invertido: de "exit 0 + warning" para "exit 1 + error" (D6 balde 2). Atualizado.
+
+---
+
+## 2026-09-29 — Hades (fix/ratchet-windows-nao-colhe-melhoria — ML-0A Wave 0 threat model) — ENTREGUE
+
+**Início:** 2026-09-29 | Branch: `fix/ratchet-windows-nao-colhe-melhoria`
+**Tarefa:** ML-0A — Wave 0 threat model: triar as 14 falhas, mapear o checker, vereditar D6, propor D7.
+
+**Log usado:** run 36608706692, job 109544299744 (windows-full-suites, 2026-09-29, main).
+**Gate W0:** `jq -r '.entries[]|.name' .github/windows-known-failures.json | wc -l` = 14. Passa.
+
+**Achados principais:**
+- 14 entradas = 4 causas-raiz: A=POSIX permissions (4), B=CRLF renderer (4, 2 infer), C=external command (2: symlink privilege + fork-bomb), D=path representation (3, 2 infer).
+- **Correcao da ADR:** bucket "bash ausente" previsto nao tem representante. FallbackWithoutJQ falha por Windows symlink privilege (test setup), nao por bash ausente.
+- Checker: step 6 = nova falha; step 7 = nao observada (warning hoje); step 10 = label informativo. D6 NAO e mudanca de uma linha.
+- **D6 precisa de tres baldes (medido):** package panic mid-run produz balde 2 (nao executou) e seria falsamente atribuido como "resolvido" com mudanca simples. Medido com fixture sintetica + verificacao de buckets. Ambos os baldes disparam exit 1 mas com mensagens distintas.
+- D7: `reason` ASCII obrigatorio em `entries[]` (nao em `removed[]`). ~20 fixtures no self-test precisam ser atualizados. `validate_active_entries()` analogous to `validate_removed()`.
+
+**Artefato:** `docs/seguranca/2026-09-29-wave0-ratchet.md`
+
+**git diff trackfw.yaml:** vazio.
+
+---
+
 ## 2026-09-29 — Hades (fix/orphan-req-reprova-estado-correto — ML-2A Wave 2 auditoria independente) — ENTREGUE
 
 **Início:** 2026-09-29 | Branch: `fix/orphan-req-reprova-estado-correto`

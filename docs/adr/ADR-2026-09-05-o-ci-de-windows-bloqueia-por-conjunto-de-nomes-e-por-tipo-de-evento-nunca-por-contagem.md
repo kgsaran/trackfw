@@ -79,6 +79,116 @@ Testes parametrizados e subtestes têm nome que muda com a tabela. Quem implemen
 trata isso (nome do teste de topo, normalização, ou exclusão explícita) — e a decisão fica escrita,
 não implícita no código.
 
+## 🔴 Emenda 1 (2026-09-29) — o ratchet passa a colher a melhoria, não só a bloquear a regressão
+
+**Origem:** #364, recapturado do #329 antes de fechá-lo.
+
+### O que faltava
+
+O **D4** já exige justificativa explícita para remover um nome da lista. Mas **nada obriga a remover**
+quando a falha resolve. O ratchet reporta `[-1 resolvido]` e esse sinal:
+
+- **não reprova** — corrida com falha resolvida é verde, igual a uma sem;
+- **não fecha** nada — ninguém remove a entrada por causa dele;
+- **persiste** — no #329, **4 corridas seguidas** reportaram o mesmo `-1`.
+
+🔴 **O ratchet aperta numa direção só:** bloqueia regressão nova e **nunca colhe a melhoria**. Uma
+entrada obsoleta fica indistinguível de uma legítima.
+
+### D6 — Falha declarada que RESOLVE reprova a corrida
+
+Quando um nome da lista passa a **passar**, o job **reprova**, nomeando a entrada e apontando o
+protocolo do **D4** (mover para `removed[]` com `removal_note`). A lista torna-se **autolimpante**: a
+atualização acontece no **mesmo PR** que produziu a correção, por quem tem o contexto.
+
+**Por que reprovar, e não abrir artefato ou remover automaticamente** — decidido **com a medição**
+(#364, 2026-09-29, dois runs da `main`):
+
+```
+1677 PASS · 14 FAIL · 14 são exatamente as entradas da lista · 0 obsoletas
+```
+
+| opção | com passivo | com **zero** passivo (o caso medido) |
+|---|---|---|
+| **reprovar** (D6) | exigiria limpar antes | 🔴 **custo de adoção zero, hoje** |
+| artefato com dono | daria destino ao passivo | resolve problema que não existe |
+| remoção automática | teste instável sai e volta | mesmo risco, sem ganho |
+
+🔴 **A opção adotada é a única que fica mais barata quanto mais cedo for adotada**, e está no seu
+ponto mais barato **agora**. Esperar acumula passivo e transforma a adoção numa limpeza prévia.
+
+**Risco aceito e declarado:** um teste **instável** que passe numa corrida reprova o job. É o mesmo
+risco da remoção automática, com desfecho melhor — uma reprovação **visível e corrigível**, não uma
+remoção silenciosa. E o **D5** já declara nomes instáveis como limite conhecido.
+
+#### 🔴 D6 exige RECORTE — a Wave 0 bloqueou a versão de uma linha
+
+Medido em 2026-09-29 com fixture sintética: um pacote com **`panic`** (sem marcador
+`[setup failed]`) faz o teste **sumir das observadas**. Um D6 ingênuo — trocar `_warn` por `_err` no
+passo que compara `known − observed` — diria **"resolveu"**. 🔴 **Atribuição falsa**, e é o mesmo
+erro de discriminação que o **D3** existe para evitar.
+
+Os passos 3 e 5b **não cobrem** esse caso: o 3a exige marcador explícito (o `panic` do Go não o
+escreve) e o 5b exige **zero** linhas FAIL/PASS (o pacote saudável produziu resultados).
+
+**D6 implementa-se em TRÊS baldes, não em um:**
+
+| balde | condição | ação | o que a mensagem diz |
+|---|---|---|---|
+| **1 — resolvido** | está na lista **e** passou | **reprova** | mova para `removed[]` com `removal_note` (**D4**) |
+| **2 — não executou** | está na lista, **não** passou **e não** falhou | **reprova** | *nem falhou nem passou* — skip, `panic` de pacote, ou deletado. **Não é resolução** |
+| **3 — ainda falha** | está na lista **e** falhou | passa | — |
+
+Os baldes 1 e 2 **ambos** reprovam. O que muda é a **atribuição** — e atribuição errada é o defeito
+que esta ADR já pagou três vezes no #274.
+
+### D7 — Cada entrada carrega a RAZÃO da falha
+
+Hoje uma entrada é `{name, runtime, class}` — **nenhuma diz por que falha no Windows**. Quem for
+atacar qualquer uma reinvestiga do zero, e é provável que as 14 tenham **poucas causas-raiz**
+(permissão POSIX, CRLF, `bash` ausente).
+
+As entradas passam a carregar a razão. **Sem isso o D6 não se sustenta na prática:** quando o job
+reprovar dizendo "esta entrada resolveu", quem não souber por que ela falhava não consegue julgar se
+resolveu de verdade ou se o ambiente mudou.
+
+🔴 **A razão é ASCII puro — restrição medida, não estilo.** O self-test roda sob
+`PYTHONIOENCODING=cp1252 PYTHONUTF8=0` (`quality.yml:977`). Um travessão, seta ou acento no campo
+causaria **`UnicodeEncodeError`** ao emitir `::error::` — o checker quebraria exatamente quando
+precisasse falar.
+
+⚠️ **Correção de uma suposição minha nesta Emenda:** eu escrevi que os mecanismos prováveis eram
+*"permissão POSIX, CRLF, `bash` ausente"*. A triagem mediu **4 grupos, e "bash ausente" não tem
+representante**:
+
+| grupo | n | mecanismo medido |
+|---|---|---|
+| **A — permissões POSIX** | 4 | `os.Chmod(0o600/0o000)` é **silencioso** em NTFS |
+| **B — CRLF no renderer** | 4 | *"CRLF source produced a different render than LF source"* |
+| **C — comando externo** | 2 | privilégio de **symlink** do Windows · defesa anti-fork-bomb do runner |
+| **D — representação de caminho** | **4** | `shasum` escapando `\` · provável short-name `8.3` (`RUNNER~1`) · separador em manifesto |
+
+🔴 **Correção de contagem (ML-1A, 2026-09-29):** a primeira versão desta tabela somava **13**
+(4+4+2+3) para **14** entradas. A triagem da Wave 0 deixou
+`TestUpdateMigratesKnownCodexAndPreservesUnknown` **fora das tabelas**, e eu copiei o total para cá
+**sem somar**. O grupo D tem **4**. Registrado em nota de vault.
+
+⚠️ **E a contagem de inferidas mudou, para mais honesta:** a Wave 0 relatou *"11 medidas, 3
+inferidas"*, mas duas entradas do `ThirdPartyInstall` eram **falha medida com causa inferida**. O
+artefato final marca **9 MEASURED / 5 INFER** — a distinção entre *"medi a falha"* e *"inferi a
+causa"* é exatamente o que o **D7** existe para preservar.
+
+O que eu chamei de *"`bash` ausente"* é, medido, **privilégio de symlink**: `os.Symlink` falha em
+silêncio, o diretório de binários falsos fica vazio, e o script cai no fallback.
+
+⚠️ **Normalização do marcador canônico (ML-3A, 2026-09-29):** o campo `reason` de cada entrada usa
+um marcador ao final para indicar se a causa foi medida ou inferida. O formato canônico é
+**`(MEASURED)`** e **`INFER Group ...`** (sem parênteses no INFER, conforme o padrão das 5 entradas
+existentes). A entrada `TestStaleWIPReportsWIPWalkError` usava `(MEASURED in ADR-2026-09-05 Adendo)`
+— normalizada para `(MEASURED)`. Após essa correção, a contagem por grep estrito é:
+`grep -c '(MEASURED)' .github/windows-known-failures.json` = **9** · `grep -c 'INFER'` = **5** ·
+soma = 14 (exatamente as entradas ativas).
+
 ## Consequências
 
 **O `continue-on-error: true` do `windows-full-suites` sai** — mas só depois de D1, D3 e D4 estarem
