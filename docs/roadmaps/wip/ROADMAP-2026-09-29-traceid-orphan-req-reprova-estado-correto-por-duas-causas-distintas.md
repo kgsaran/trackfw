@@ -1,0 +1,320 @@
+---
+status: wip
+date: 2026-09-29
+req: "docs/req/REQ-2026-09-25-regra-de-rastreabilidade-ignora-o-estado-da-req-e-acusa-backlog-como-orfao.md"
+squad: ""
+---
+
+# Roadmap: `traceid_orphan_req` reprova estado correto por duas causas distintas
+
+> Created: 2026-09-29 | Status: wip
+
+## Context
+<!-- Derived from REQ -->
+REQ: docs/req/REQ-2026-09-25-regra-de-rastreabilidade-ignora-o-estado-da-req-e-acusa-backlog-como-orfao.md  (vigente — a de 2026-09-29 era duplicata, abandonada)
+ADR: docs/adr/ADR-2026-09-29-quando-uma-req-deve-ter-roadmap-e-o-casamento-req-roadmap-nao-depende-de-req-id-no-roadmap.md
+Origem: **#435**. Duas causas reproduzidas na v9.1.0: REQ que ainda não começou, e par válido
+invisível porque `roadmap new` não escreve `req_id:`.
+
+## Acceptance Criteria
+<!-- Consolidados; detalhe por ML nas waves. -->
+- [x] Regras que decidem "esta REQ deveria ter roadmap?" enumeradas, com critério e divergências
+- [x] C1 fechada por recorte **semântico** (`status:`), nunca por pasta da REQ
+- [x] C2 fechada por casamento via vínculo real (`req:`), não só escrevendo `req_id:` no gerador
+- [x] Par já existente deixa de disparar **sem alterar arquivo nenhum**
+- [x] REQ `Done` sem roadmap **ainda** dispara — a regra continua servindo para algo
+- [x] Delta de violações medido no corpus, com a razão de cada uma que sair
+- [x] `make quality` e CI verdes
+
+## Status Legend
+⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
+
+## Wave 0 — Threat model: quantas regras decidem isso, e o que elas discordam
+> Dependências: nenhuma. 🔴 **Bloqueia a implementação.**
+
+**Gates da wave:**
+
+```bash
+n=$(grep -rn 'traceid_orphan_req\|req_has_roadmap' --include='*.go' internal/validator/ | grep -v _test | wc -l | tr -d ' '); test "$n" -gt 0 && echo "Gate W0: $n sitios das duas regras no produto — a triagem parte deste universo" || { echo "GATE FALHOU: zero sitios — a regua esta quebrada, nao o produto" >&2; exit 1; }
+```
+
+### ML-0A — enumerar as regras, medir a divergência e refutar a ADR
+**Owner:** `hades-tf`
+**Status:** ✅ Concluído — auditado em 2026-09-29 · 🔴 **refutou a ADR e achou duplicata minha**
+**Arquivos:** leitura de `internal/validator/`; escrita em `docs/seguranca/2026-09-29-wave0-orphan-req.md`
+
+**Tarefa:**
+1. Enumerar **todas** as regras que decidem *"esta REQ deveria ter roadmap?"* — pelo menos
+   `traceid_orphan_req` e `req_has_roadmap`. Para cada uma: critério exato, severidade efetiva,
+   isenções (cutoff, grandfathering, baseline) e **em que casos discordam entre si**.
+2. 🔴 **Medir a divergência numa fixture única** — o sintoma mais confiável de duas implementações.
+3. Medir o **corpus deste repositório**: quantas REQs disparariam cada regra hoje, e quantas
+   disparariam sob o critério proposto (`status: Done` sem roadmap).
+4. 🔴 **Refutar ou confirmar D3** — que casar pelo `req:` do roadmap resolve C2 **sem migração**.
+   Ataque: existe roadmap com `req:` **vazio**, **stale**, com caminho **relativo/absoluto**
+   divergente, ou apontando para REQ de **outro** agente? A REQ-2026-09-28 (#452) mexeu nessa
+   direção — **leia o que ela já resolveu** antes de presumir.
+5. **Decidir sobre o #273:** o issue o cita como parente. Meça — mesma causa, ou só sintoma parecido?
+   A Regra Dura exige medição escrita **tanto para separar quanto para juntar**.
+
+**Critérios de aceite:**
+- [x] **4 regras, não 2** — `req_has_roadmap`, `traceid_orphan_req`, `ref_targets_exist` (nenhuma
+      filtra por estado) e `req_roadmap_lifecycle` (**filtra** — só `Open`). O precedente de regra
+      consciente de estado **já existe** no produto
+- [x] Fixture única: par válido → `req_has_roadmap` **PASS** e `traceid_orphan_req` **FAIL**, na
+      mesma execução. Duas regras, mesmo fato, vereditos opostos
+- [x] Corpus de 237 REQs: hoje **0 violations / 13 warnings** grandfathered (3 `Done`, 10
+      `Superseded`); sob D2, **9 REQs `Done` pós-cutoff** continuariam violando — o sinal legítimo
+      sobrevive
+- [x] 🔴 **D3 confirmado PARCIALMENTE, com o limite medido:** fecha C2 para pares gerados pelo
+      `roadmap new`, mas **58 roadmaps** ficam fora (32 `req:` stale · 8 vazio/null · 18 sem campo).
+      E **exige `normalizeRefSeparator`** — um `req:` com `\` não casa sem ele. Tudo declarado na ADR
+- [x] **#273 fica FORA, e está CLOSED.** Medição: lá é algoritmo de match de slug em
+      `branch_has_wip_roadmap`, que **já é** consciente de estado. Falsificação nas duas direções —
+      corrigir C1/C2 não afeta slug matching, e vice-versa
+
+**Achados que mudaram a governança antes de qualquer código:**
+
+| # | veredito |
+|---|---|
+| **F5** | 🔴 **refutou a ADR** — "o cutoff ficaria redundante" é **falso**: 3 dos 13 grandfathered são `Done` |
+| **F2** | a ADR nomeava **2** regras; são **4** — D4 ampliado |
+| **F4** | `Superseded`/`Closed` sem comportamento declarado (14+2 no corpus) — decidido em **D2-bis**: não disparam |
+| **F3** | limite de D3 medido: **58 roadmaps** fora do alcance — declarado, não omitido |
+| **F1** | 🔴 **refutado pelo arquiteto:** o AC8 da REQ-2026-09-28 estava desmarcado por **negligência de registro**, não por trabalho faltando — o guard existe, tem teste, e o teste passa |
+| **F6** | 🔴 **duplicata minha** — ver a seção de consolidação na REQ vigente |
+
+🔴 **E a medição que refinou o desenho:** `e.state` **existe** no `reqIndex` e é consumido por
+`traceid_state_mismatch`. Eu ia recusá-lo só invocando a ADR-2026-09-03 D1. A razão real é melhor:
+**em layout plano ele é vazio** (`validator_traceid.go:77`), e a regra ficaria **inerte** no layout
+deste repositório. Ver **D1-bis** da ADR.
+
+## Wave 1 — o recorte semântico e o casamento por vínculo real
+> Dependências: **Wave 0 auditada.** O desenho dos MLs sai da Wave 0 — se ela refutar D3, este
+> bloco muda antes de ser despachado.
+
+**Ordem:** ML-1A sozinho (é o núcleo e define o predicado). Depois **ML-1B e ML-1C em paralelo** —
+arquivos disjuntos, e ambos consomem o predicado que o 1A cria.
+
+### ML-1A — o recorte semântico e o casamento por vínculo real, em `traceid_orphan_req`
+**Owner:** `apolo-tf`
+**Status:** ✅ Concluído — auditado em 2026-09-29
+**Arquivos:** `internal/validator/validator_traceid.go` + testes
+
+Cobre **as duas causas na mesma regra**, porque vivem no mesmo laço (`validator_traceid.go:262-277`):
+
+**C1 — recorte semântico.** O laço passa a disparar **apenas** para REQ com `status: Done`.
+🔴 **Pelo `status:` do frontmatter, NUNCA pela pasta** — `e.state` é **vazio em layout plano**
+(`validator_traceid.go:77`) e a regra ficaria inerte aqui. Reuse `reqStatusIsDone` (já existe,
+`EqualFold`). `Open`, `Superseded` e `Closed` **não** disparam (ADR **D2-bis**).
+
+**C2 — casamento por vínculo real.** Além do id, casar pelo campo `req:` do roadmap — que é o que o
+`roadmap new` **de fato** grava. 🔴 **Com `normalizeRefSeparator`** (`validator.go:3285`): medido, um
+`req:` com `\` não casa sem ele.
+
+**Critérios de aceite:**
+- [x] 🔴 **C1:** REQ `Open` com `req_id` e sem roadmap → **não** dispara
+- [x] 🔴 **Contra-braço — a regra continua servindo:** REQ **`Done`** sem roadmap → **ainda** dispara.
+      Se nada mais dispara, a correção virou remoção de regra, e isso seria outra decisão
+- [x] `Superseded` e `Closed` → não disparam
+- [x] 🔴 **C2, braço do passivo:** par REQ↔roadmap existente, roadmap **sem** `req_id` mas **com**
+      `req:` correto → deixa de disparar **sem alterar arquivo nenhum**
+- [x] **C2, separador:** `req: "docs\req\REQ-x.md"` casa igual
+- [x] 🔴 **Nenhuma decisão por diretório** — um teste deve falhar se alguém reintroduzir leitura da
+      pasta da REQ para decidir isso
+- [x] **Delta medido no corpus** deste repositório, antes/depois, com a razão de cada violação que sair
+- [x] Reconciliação: uma frase por teste, dizendo o que **mediu**
+
+**Auditoria do arquiteto — medido em fixture onde a regra VIVE.** ⚠️ O executor reportou
+*"delta zero no corpus"*, e foi honesto ao explicar: `traceid_orphan_req` é **inerte neste
+repositório** (sem `trace_id_field` no `trackfw.yaml`). **"Delta zero" ali não mede nada.** Medi numa
+fixture com `trace_id_field: req_id`:
+
+```
+REQ-A  Open,       sem roadmap          → silencia   C1
+REQ-B  Done,       sem roadmap          → DISPARA    contra-braço
+REQ-C  Superseded                        → silencia   D2-bis
+REQ-D  Closed                            → silencia   D2-bis
+REQ-E  Open, par via `req:` sem req_id   → silencia   C2, sem alterar arquivo
+```
+
+**Uma violação, e é a legítima.**
+
+⚠️ **Correção de uma afirmação do relatório:** ele lista *"AC8 de REQ-2026-09-28 aberto"* como risco.
+Isso vinha da Wave 0 e **eu já o refutei com medição**: o guard de namespace existe
+(`req_chain_ml4a.go`), tem teste, e o teste **passa**. O AC estava desmarcado por negligência de
+registro — já corrigido, com evidência.
+
+### ML-1B — `req_has_roadmap` aplica o mesmo critério (ADR D4)
+**Owner:** `apolo-tf`
+**Status:** ✅ Concluído — auditado em 2026-09-29
+**Arquivos:** `internal/validator/validator.go` (`validateREQsHaveRoadmap`) + testes
+**⚠️ Sequencial após ML-1A** (reusa o predicado) · **paralelo com ML-1C** (arquivos disjuntos)
+
+Hoje ela **não tem o estado disponível** — usa `resolveREQFiles`, que devolve só caminhos.
+
+**Critérios de aceite:**
+- [x] Mesmo critério do ML-1A: só `Done` dispara
+- [x] 🔴 **O cutoff de grandfathering PERMANECE** — a Wave 0 refutou que ficaria redundante: **3** dos
+      13 grandfathered são `Done` e voltariam a violar sem ele
+- [x] As duas regras **concordam** na fixture onde hoje discordam (par válido: `req_has_roadmap`
+      PASS × `traceid_orphan_req` FAIL)
+- [x] Delta medido no corpus, com razão
+
+### ML-1C — gate: regra de vínculo REQ↔roadmap não decide sem consultar `status`
+**Owner:** `apolo-tf`
+**Status:** ✅ Concluído — auditado em 2026-09-29
+**Arquivos:** `scripts/check-req-roadmap-rule-is-status-aware.sh` (novo) + `Makefile`
+**⚠️ 🔴 NÃO edite nenhum `.go`** — frente paralela no ML-1B
+
+**Critérios de aceite:**
+- [x] 🔴 **Falsificável nas duas direções**, execuções coladas
+- [x] **Anti-vacuidade:** declara quantos sítios examinou e **reprova se examinar zero**
+- [x] 🔴 **O discriminante IGNORA COMENTÁRIOS.** Esta base já pagou **quatro vezes** por gate
+      enganado por comentário — `check-crlf-normalize-capture.sh`, `check-init-preserves-user-config.sh`
+      (nas duas direções) e a própria fixture do `check-adr-enumeration-single-point.sh`.
+      **Falsifique este caso explicitamente.**
+- [x] Isenções explícitas e comentadas — `req_roadmap_lifecycle` **já** filtra por estado e não pode
+      ser acusado
+
+### ML-1D — corrigir fixture da suíte de falsificação que assumia comportamento pré-ML-1B
+**Owner:** `apolo-tf`
+**Status:** ✅ Concluído — 2026-09-29
+**Arquivos:** `scripts/check-gates-falsify.sh` (fixture `write_req_roadmap_prose_md_fixture`)
+
+`make quality` RC=2 — chunk_1 morria antes de CHUNK_COMPLETE. Causa raiz: o baseline do Cenário 192
+(Direção C) chamava `assert_fails_with ... "has no linked Roadmap"` contra uma fixture com REQ
+`status: Open`. ML-1B silenciou `req_has_roadmap` para Open — a fixture passou a retornar
+`✓ No violations found.` (RC=0) e o baseline falhou.
+
+🔴 **Refuta o handoff:** o relatório dizia que a *liveness* arm (`links to ADR`) era a falha. Medido
+no scratchpad: o binário corrompido A na fixture A produz `✗ ... links to ADR "<!--" which does not
+exist` — ambas as arms de direção A passariam. O FAIL real está antes: o baseline da Direção C
+(`assert_fails_with "roadmap-prose-md-baseline"`), terceira baseline no bloco, que mata o chunk com
+`exit 1` e impede as 4 labels de direção de serem registradas.
+
+**Critérios de aceite:**
+- [x] Causa nomeada com evidência (reproduzida no scratchpad)
+- [x] Correção na camada certa: fixture atualizada (`status: Done`), sem toque em código Go
+- [x] Fixture continua exercitando o seam: o corrupted-C RC=0 sem "has no linked Roadmap" (medido)
+- [x] `go test ./...` verde
+- [x] `make quality` RC=0 — 8 chunks, 347 OK, 0 FAIL, guarda OK
+
+**Por que `status: Done`:** `req_has_roadmap` (ML-1B) só dispara para `Done`. A regra
+`traceid_orphan_req` (ML-1A) não afeta porque `scaffold_adr_req_project` não define `trace_id_field`
+— `validateTraceId` retorna nil imediatamente.
+
+### ML-1D — a fixture S192 assumia o comportamento antigo e matou o chunk
+**Owner:** `apolo-tf`
+**Status:** ✅ Concluído — auditado em 2026-09-29 · 🔴 **refutou a hipótese do meu handoff**
+
+`make quality` reprovava com `chunk_1 nao chegou ao sentinela CHUNK_COMPLETE`, e **4 rótulos
+ausentes** — que eram **consequência** da morte do chunk, não 4 falhas.
+
+🔴 **Eu apontei a causa errada no handoff.** Escrevi que o suspeito era a *liveness arm*
+(`links to ADR`). O executor mediu e **refutou**: as duas arms de direção A passariam. A falha era na
+**terceira baseline** do bloco S192 (linha 7405), sobre a **fixture C**.
+
+**Causa real:** `write_req_roadmap_prose_md_fixture` escrevia `status: Open`. O ML-1B fez
+`req_has_roadmap` disparar **só** para `Done`. O `validate` saiu `✓ No violations found` com `RC=0`,
+o `assert_fails_with` esperava `RC≠0`, e o `exit 1` matou o chunk — explicando exatamente a última
+linha do log.
+
+**Corrigido na camada certa: a fixture.** O comportamento do ML-1B é o decidido na ADR e já auditado;
+quem assumia o comportamento antigo era o teste. E ele **provou que a fixture continua exercitando o
+alvo** — o seam de ancoragem de chave em `extractRefPath` segue discriminante com `Done`.
+
+**Critérios de aceite:**
+- [x] Causa nomeada **com evidência**, e ela **contrariou** a hipótese do handoff
+- [x] Correção na fixture, não no produto, com a razão escrita no próprio script
+- [x] A fixture continua testando o alvo — medido no scratchpad: baseline `RC=1` com
+      *"has no linked Roadmap"*; corrupted-C `RC=0` sem a mensagem
+- [x] `make quality` **RC=0** — verificado pelo arquiteto: 8 chunks, **347 OK, 0 FAIL**
+
+## Wave 2 — auditoria independente
+> Dependências: Wave 1 completa (incluindo ML-1D).
+
+### ML-2A — revisão por reimplementação
+**Owner:** `hades-tf`
+**Status:** ✅ Concluído — auditado em 2026-09-29 · 🔴 **D4 NÃO satisfeita: 2 gaps**
+**Método:** 🔴 **não conferir o diff.** Ler ADR e REQ, derivar o esperado, medir o binário.
+**Critérios de aceite:**
+- [x] Os dois cenários do #435 reconstruídos do zero
+- [x] Contra-braço: REQ `Done` sem roadmap **ainda** dispara
+- [x] Veredito: a regra continua detectando o que deveria, ou virou no-op?
+
+
+**Resultado da Wave 2 — C1 e C2 fechadas, D4 não.**
+
+| critério | medido | veredito |
+|---|---|---|
+| C1 · C2 (flat **e** by_agent) | não disparam | **FECHADAS** |
+| contra-braço `Done` sem roadmap | dispara nas duas | **PRESERVADO** |
+| `Superseded` / `Closed` | silenciam | correto |
+| **D1-bis** — REQ `Done` fisicamente em `req_dir/backlog/` | **dispara** | ✅ usa `status:`, não a pasta |
+| limite de D3 (`req:` vazio / sem campo) | ainda disparam | limite, não regressão |
+| **D4 — mesmo critério** | **discordam** | 🔴 **NÃO SATISFEITA** |
+
+🔴 **A prova de que D1-bis era a decisão certa:** uma REQ `Done` colocada **fisicamente** em
+`docs/req/backlog/` **dispara**. Se a regra usasse `e.state` (= `"backlog"`), silenciaria. O layout
+físico é irrelevante — é o `status:` que manda, como decidido.
+
+**Duas decisões minhas sobre os achados:**
+
+**A4 — `ref_targets_exist` SAI do escopo de D4.** Pô-la na tabela foi **erro meu** ao ampliar o D4
+na Wave 0. Ela pergunta *"o caminho declarado existe?"*, não *"deveria ter roadmap?"*. Uma REQ que
+declara `roadmap: X` inexistente tem defeito **em qualquer status** — silenciá-la para `Open`
+esconderia referência quebrada, o **oposto** do que a ADR quer. Corrigido na ADR, com a razão.
+
+**A3 — gap REAL, vira ML-1E.** Ver abaixo.
+
+**A2 (informativo, não corrigido):** `status: "Done "` — com aspas **e** espaço final — bypassa as
+duas regras, porque `EqualFold("Done ", "done")` é `false`. **Pré-existente**, consistente entre as
+duas, e fora da causa desta REQ. Registrado; candidato a issue se aparecer no mundo real.
+
+### ML-1E — 🔴 D4 é letra morta: as duas regras discordam do MESMO par
+**Owner:** `apolo-tf`
+**Status:** ✅ Concluído — auditado em 2026-09-29 · **D4 SATISFEITA**
+**Arquivos:** `internal/validator/validator.go` (`validateREQsHaveRoadmap`) + testes
+
+**Achado da Wave 2, confirmado pelo arquiteto em fixture própria:**
+
+```
+REQ Done, req_id: RX, SEM campo roadmap:
+Roadmap com req_id: RX              ← o vínculo EXISTE (roadmap → REQ)
+
+traceid_orphan_req  → silencia   (casou por req_id)
+req_has_roadmap     → ✗ "has no linked Roadmap"
+```
+
+🔴 **É o sintoma que originou esta REQ, sobrevivendo dentro dela.** O **D3** estabeleceu casamento
+por **vínculo real**, não por declaração unilateral. `traceid_orphan_req` passou a honrar isso;
+`req_has_roadmap` continuou exigindo a declaração **na REQ**. Uma aceita o vínculo reverso, a outra
+não — e "aplicam o mesmo critério" vira letra morta.
+
+**Critérios de aceite:**
+- [x] 🔴 **O braço do achado:** REQ `Done` sem campo `roadmap:`, com roadmap apontando para ela
+      (`req_id` **ou** `req:`) → **as duas regras silenciam**
+- [x] 🔴 **Contra-braço, e é o que impede virar remoção:** REQ `Done` **sem vínculo em direção
+      nenhuma** → **as duas disparam**
+- [x] O vínculo reverso vale nas **duas** grafias: `req_id:` e `req:` (com `normalizeRefSeparator`)
+- [x] O cutoff de grandfathering **permanece**
+- [x] **Delta medido** no corpus, antes/depois, com a razão de cada mudança
+- [x] Reconciliação: uma frase por teste, dizendo o que **mediu**
+
+
+**Auditoria do ML-1E — na fixture que EU montei antes de despachar:**
+
+```
+braço do achado   → nenhuma das duas dispara     (antes, req_has_roadmap disparava)
+contra-braço      → AS DUAS disparam             (removi o req_id do roadmap)
+```
+
+**D4 satisfeita.** `make quality` **RC=0** verificado por mim — 8 chunks, 347 OK, 0 FAIL.
+
+⚠️ **Correção de uma caracterização do relatório:** ele descreveu *"14 FAIL pré-existentes de
+write-containment e adr-single-point"*. Imprecisso — os `FAIL` vêm de `/var/folders/.../arm1|arm3|arm4|arm5/`,
+que são **fixtures dos self-tests** daqueles gates. Os gates em si reportam `OK`
+(`check-write-containment: OK — todos os sítios justificados (162 examinados)`). A diferença importa:
+"gate falhando" e "self-test do gate exercitando o braço negativo" têm o mesmo texto e significados
+opostos.

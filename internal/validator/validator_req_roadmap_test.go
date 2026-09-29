@@ -28,15 +28,17 @@ func buildReqRoadmapDir(t *testing.T) string {
 }
 
 // writeREQWithFields grava um arquivo REQ com frontmatter e/ou marcador de corpo configurável.
+// ML-1B: usa status: Done para que req_has_roadmap avalie a REQ — a regra agora só dispara
+// para Done; Open, Superseded e Closed são silenciados.
 func writeREQWithFields(t *testing.T, dir, name, fmRoadmap, bodyRoadmap string) {
 	t.Helper()
 	var fm string
 	if fmRoadmap != "" {
-		fm = "---\nstatus: Open\ndate: 2026-09-12\nroadmap: \"" + fmRoadmap + "\"\n---\n"
+		fm = "---\nstatus: Done\ndate: 2026-09-12\nroadmap: \"" + fmRoadmap + "\"\n---\n"
 	} else {
-		fm = "---\nstatus: Open\ndate: 2026-09-12\nroadmap: \"\"\n---\n"
+		fm = "---\nstatus: Done\ndate: 2026-09-12\nroadmap: \"\"\n---\n"
 	}
-	body := "\n# REQ: Fixture\n\n> Date: 2026-09-12 | Status: Open\n\n## Linked Roadmap\n"
+	body := "\n# REQ: Fixture\n\n> Date: 2026-09-12 | Status: Done\n\n## Linked Roadmap\n"
 	if bodyRoadmap != "" {
 		body += "Roadmap: " + bodyRoadmap + "\n"
 	} else {
@@ -311,4 +313,309 @@ func TestValidateREQRoadmapSync_PlaceholderFrontmatterIsNotDivergence(t *testing
 			t.Errorf("frontmatter com placeholder NÃO deve disparar req_roadmap_sync, obteve: %q", w)
 		}
 	}
+}
+
+// ---------------------------------------------------------------------------
+// ML-1B — req_has_roadmap aplica o mesmo critério do traceid_orphan_req (ADR D4):
+// só REQ com status: Done dispara; Open, Superseded e Closed silenciam.
+//
+// Reconciliação obrigatória (CLAUDE.md): cada teste declara em comentário qual conclusão
+// do ML-1B ele afirma.
+// ---------------------------------------------------------------------------
+
+// writeREQStatusOnly grava REQ com status configurável e SEM vínculo de roadmap.
+// Usado nos testes de ML-1B para exercitar o recorte semântico sem interferência de outros campos.
+func writeREQStatusOnly(t *testing.T, dir, name, status string) {
+	t.Helper()
+	content := "---\nstatus: " + status + "\ndate: 2026-09-12\nroadmap: \"\"\n---\n" +
+		"# REQ: " + name + "\n\nADR: ADR-001.md\n"
+	writeFile(t, dir, filepath.Join("docs/req", name), content)
+}
+
+// TestReqHasRoadmap_ML1B_OpenSilenced — afirma que REQ Open sem roadmap não dispara req_has_roadmap.
+// Reconciliação: afirma que o recorte semântico (status: Done) silencia REQ Open, alinhando
+// req_has_roadmap ao mesmo critério que traceid_orphan_req usa após ML-1A.
+func TestReqHasRoadmap_ML1B_OpenSilenced(t *testing.T) {
+	dir := buildReqRoadmapDir(t)
+	writeREQStatusOnly(t, dir, "REQ-open-no-roadmap.md", "Open")
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	if reqHasRoadmapFired(t) {
+		t.Error("REQ Open sem roadmap NÃO deve disparar req_has_roadmap (ML-1B: só Done dispara)")
+	}
+}
+
+// TestReqHasRoadmap_ML1B_SupersededSilenced — afirma que REQ Superseded sem roadmap não dispara.
+// Reconciliação: afirma que status Superseded é silenciado, mantendo paridade com traceid_orphan_req.
+func TestReqHasRoadmap_ML1B_SupersededSilenced(t *testing.T) {
+	dir := buildReqRoadmapDir(t)
+	writeREQStatusOnly(t, dir, "REQ-superseded-no-roadmap.md", "Superseded")
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	if reqHasRoadmapFired(t) {
+		t.Error("REQ Superseded sem roadmap NÃO deve disparar req_has_roadmap (ML-1B: só Done dispara)")
+	}
+}
+
+// TestReqHasRoadmap_ML1B_ClosedSilenced — afirma que REQ Closed sem roadmap não dispara.
+// Reconciliação: afirma que status Closed é silenciado, mantendo paridade com traceid_orphan_req.
+func TestReqHasRoadmap_ML1B_ClosedSilenced(t *testing.T) {
+	dir := buildReqRoadmapDir(t)
+	writeREQStatusOnly(t, dir, "REQ-closed-no-roadmap.md", "Closed")
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	if reqHasRoadmapFired(t) {
+		t.Error("REQ Closed sem roadmap NÃO deve disparar req_has_roadmap (ML-1B: só Done dispara)")
+	}
+}
+
+// TestReqHasRoadmap_ML1B_DoneStillFires — contra-braço: REQ Done sem roadmap AINDA dispara.
+// Reconciliação: afirma que o recorte por status não anula a regra — Done sem roadmap é
+// violation legítima (com grandfathering preservado para REQs pré-cutoff).
+func TestReqHasRoadmap_ML1B_DoneStillFires(t *testing.T) {
+	dir := buildReqRoadmapDir(t)
+	// REQ Done pós-cutoff (2026-09-12) → não grandfathered → violation
+	writeREQStatusOnly(t, dir, "REQ-done-no-roadmap.md", "Done")
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	if !reqHasRoadmapFired(t) {
+		t.Error("REQ Done sem roadmap DEVE disparar req_has_roadmap (contra-braço ML-1B)")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ML-1E — req_has_roadmap aceita vínculo reverso (roadmap → REQ satisfaz a obrigação).
+// O sintoma que originou esta REQ — duas regras, mesmo par, vereditos opostos — é
+// eliminado aqui: ambas silenciam quando o vínculo existe em qualquer direção.
+//
+// Reconciliação obrigatória (CLAUDE.md): cada teste declara qual conclusão do ML-1E afirma.
+// ---------------------------------------------------------------------------
+
+// writeREQDoneNoRoadmapWithTraceId grava REQ Done sem campo roadmap: mas com req_id (trace_id_field).
+// Usada nos testes do achado do ML-1E: a REQ é o "lado órfão" antes da correção.
+func writeREQDoneNoRoadmapWithTraceId(t *testing.T, dir, name, traceID string) {
+	t.Helper()
+	content := "---\nstatus: Done\ndate: 2026-09-29\nreq_id: \"" + traceID + "\"\nroadmap: \"\"\n---\n" +
+		"# REQ: " + name + "\n\n> Date: 2026-09-29 | Status: Done\n\nRoadmap: <!-- none -->\nADR: ADR-001.md\n"
+	writeFile(t, dir, filepath.Join("docs/req", name), content)
+}
+
+// writeRoadmapWithTraceId grava um roadmap com req_id (trace_id_field) para o achado do ML-1E.
+func writeRoadmapWithTraceId(t *testing.T, dir, state, name, traceID string) {
+	t.Helper()
+	content := "---\nstatus: " + state + "\nreq_id: \"" + traceID + "\"\n---\n" +
+		"# Roadmap: " + name + "\n\n## Acceptance Criteria\n- [ ] ok\n"
+	writeFile(t, dir, filepath.Join("docs/roadmaps", state, name), content)
+}
+
+// TestReqHasRoadmap_ML1E_VinculoReversoPorReqIdSilencia — BRAÇO DO ACHADO (grafia req_id:):
+// afirma a medição que originou o ML-1E: REQ Done sem campo roadmap:, com req_id, e roadmap que
+// tem o mesmo req_id — ANTES da correção, req_has_roadmap disparava; traceid_orphan_req silenciava.
+// Pós-ML-1E, as DUAS regras silenciam: req_has_roadmap encontra o par via buildRoadmapTraceIdIndex
+// (mecanismo 2 de reqHasReverseLink) e para.
+//
+// O trace_id_field é obrigatório no trackfw.yaml para tornar traceid_orphan_req ativa nesta fixture
+// — sem ele, a regra retorna nil e o contra-braço não prova liveness.
+func TestReqHasRoadmap_ML1E_VinculoReversoPorReqIdSilencia(t *testing.T) {
+	dir := buildReqRoadmapDir(t)
+	writeFile(t, dir, "trackfw.yaml", "trace_id_field: req_id\n")
+	writeREQDoneNoRoadmapWithTraceId(t, dir, "REQ-ml1e-traceid.md", "ML1E-001")
+	writeRoadmapWithTraceId(t, dir, "done", "ROADMAP-ml1e-traceid.md", "ML1E-001")
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	violations, warnings, err := ValidateUnfiltered()
+	if err != nil {
+		t.Fatalf("ValidateUnfiltered() erro: %v", err)
+	}
+	all := append(append([]string{}, violations...), warnings...)
+	for _, m := range all {
+		if hasViolation([]string{m}, "no linked Roadmap") {
+			t.Errorf("req_has_roadmap NÃO deve disparar quando roadmap aponta via req_id (vínculo reverso ML-1E), obteve: %q", m)
+		}
+		if hasViolation([]string{m}, "traceid_orphan_req") {
+			t.Errorf("traceid_orphan_req NÃO deve disparar quando par casado por req_id (ML-1E), obteve: %q", m)
+		}
+	}
+}
+
+// TestReqHasRoadmap_ML1E_VinculoReversoPorReqFieldSilencia — BRAÇO DO ACHADO (grafia req:):
+// afirma que req_has_roadmap também silencia quando o roadmap usa o campo req: do frontmatter
+// (mecanismo 1 de reqHasReverseLink, via buildRoadmapReqLinks). A REQ não tem roadmap: preenchido.
+// traceid_orphan_req silencia via C2 (buildRoadmapReqLinks). As duas regras concordam.
+func TestReqHasRoadmap_ML1E_VinculoReversoPorReqFieldSilencia(t *testing.T) {
+	dir := buildReqRoadmapDir(t)
+	writeFile(t, dir, "trackfw.yaml", "trace_id_field: req_id\n")
+	// REQ Done sem roadmap:, SEM req_id (garante que traceid_orphan_req só ativa via C2)
+	writeFile(t, dir, "docs/req/REQ-ml1e-reqfield.md",
+		"---\nstatus: Done\ndate: 2026-09-29\nroadmap: \"\"\n---\n"+
+			"# REQ: ML1E req-field\n\n> Date: 2026-09-29 | Status: Done\n\nRoadmap: <!-- none -->\nADR: ADR-001.md\n")
+	// Roadmap com req: apontando para a REQ (grafia C2)
+	writeFile(t, dir, "docs/roadmaps/done/ROADMAP-ml1e-reqfield.md",
+		"---\nstatus: done\nreq: \"docs/req/REQ-ml1e-reqfield.md\"\n---\n"+
+			"# Roadmap: ML1E req-field\n\n## Acceptance Criteria\n- [x] done\n")
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	violations, warnings, err := ValidateUnfiltered()
+	if err != nil {
+		t.Fatalf("ValidateUnfiltered() erro: %v", err)
+	}
+	all := append(append([]string{}, violations...), warnings...)
+	for _, m := range all {
+		if hasViolation([]string{m}, "no linked Roadmap") {
+			t.Errorf("req_has_roadmap NÃO deve disparar quando roadmap aponta via req: (vínculo reverso ML-1E), obteve: %q", m)
+		}
+		if hasViolation([]string{m}, "traceid_orphan_req") {
+			t.Errorf("traceid_orphan_req NÃO deve disparar quando par casado por req: C2 (ML-1E), obteve: %q", m)
+		}
+	}
+}
+
+// TestReqHasRoadmap_ML1E_SemVinculoNenhumAmbosDisparam — CONTRA-BRAÇO obrigatório:
+// afirma que a correção do ML-1E não tornou a regra permissiva: REQ Done com req_id mas SEM
+// nenhum roadmap que aponte para ela (nem por req_id, nem por req:) — AS DUAS regras disparam.
+// Sem este braço, "parou de reprovar" é indistinguível de "parou de funcionar".
+func TestReqHasRoadmap_ML1E_SemVinculoNenhumAmbosDisparam(t *testing.T) {
+	dir := buildReqRoadmapDir(t)
+	writeFile(t, dir, "trackfw.yaml", "trace_id_field: req_id\n")
+	// REQ Done sem roadmap e sem roadmap apontando para ela
+	writeREQDoneNoRoadmapWithTraceId(t, dir, "REQ-ml1e-orphan.md", "ML1E-ORPHAN")
+	// Nenhum roadmap com req_id: ML1E-ORPHAN, nenhum com req: apontando para esta REQ
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	violations, warnings, err := ValidateUnfiltered()
+	if err != nil {
+		t.Fatalf("ValidateUnfiltered() erro: %v", err)
+	}
+	all := append(append([]string{}, violations...), warnings...)
+	foundRoadmap := false
+	foundTraceid := false
+	for _, m := range all {
+		if hasViolation([]string{m}, "no linked Roadmap") {
+			foundRoadmap = true
+		}
+		if hasViolation([]string{m}, "traceid_orphan_req") {
+			foundTraceid = true
+		}
+	}
+	if !foundRoadmap {
+		t.Error("req_has_roadmap DEVE disparar para REQ Done sem nenhum vínculo (contra-braço ML-1E)")
+	}
+	if !foundTraceid {
+		t.Error("traceid_orphan_req DEVE disparar para REQ Done sem roadmap (contra-braço ML-1E)")
+	}
+}
+
+// TestReqHasRoadmap_ML1E_ReqFieldBackslashNormaliza — afirma que o vínculo reverso via req:
+// com separador Windows (\) é normalizado por normalizeRefSeparator e casa igual ao separador POSIX.
+// Reconciliação: afirma que a normalização de separador (já presente em buildRoadmapReqLinks)
+// funciona corretamente no caminho de req_has_roadmap (via reqHasReverseLink mecanismo 1).
+func TestReqHasRoadmap_ML1E_ReqFieldBackslashNormaliza(t *testing.T) {
+	dir := buildReqRoadmapDir(t)
+	// REQ Done sem roadmap:
+	writeFile(t, dir, "docs/req/REQ-ml1e-backslash.md",
+		"---\nstatus: Done\ndate: 2026-09-29\nroadmap: \"\"\n---\n"+
+			"# REQ: ML1E backslash\n\n> Date: 2026-09-29 | Status: Done\n\nRoadmap: <!-- none -->\nADR: ADR-001.md\n")
+	// Roadmap com req: usando separador Windows (\)
+	writeFile(t, dir, "docs/roadmaps/done/ROADMAP-ml1e-backslash.md",
+		"---\nstatus: done\nreq: \"docs\\req\\REQ-ml1e-backslash.md\"\n---\n"+
+			"# Roadmap: ML1E backslash\n\n## Acceptance Criteria\n- [x] done\n")
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	if reqHasRoadmapFired(t) {
+		t.Error("req_has_roadmap NÃO deve disparar quando req: usa separador Windows — normalizeRefSeparator deve normalizar (ML-1E)")
+	}
+}
+
+// TestReqHasRoadmap_ML1B_Concordance — afirma que as duas regras concordam para o par válido
+// (REQ Done com req_id, roadmap com req: mas sem req_id): req_has_roadmap PASS e traceid_orphan_req
+// PASS na mesma execução.
+//
+// Reconciliação: afirma que o par REQ↔roadmap vinculado via campo `req:` do roadmap (C2) não dispara
+// nenhuma das duas regras — traceid_orphan_req encontra o par via buildRoadmapReqLinks (C2) e para;
+// req_has_roadmap encontra o `roadmap:` preenchido e passa. Ambas as regras usam reqStatusIsDone
+// como predicado único (ADR D4).
+//
+// Contra-braço (sub-teste "sem_roadmap"): sem o arquivo de roadmap, ambas as regras disparam.
+func TestReqHasRoadmap_ML1B_Concordance(t *testing.T) {
+	t.Run("par_valido_ambas_passam", func(t *testing.T) {
+		dir := buildReqRoadmapDir(t)
+		// trace_id_field ativa traceid_orphan_req — exercita o predicado reqStatusIsDone em ambas as regras
+		writeFile(t, dir, "trackfw.yaml", "trace_id_field: req_id\n")
+		// REQ Done: tem req_id (entra em reqIndex) E tem roadmap: preenchido (passa req_has_roadmap)
+		writeFile(t, dir, "docs/req/REQ-concordance.md",
+			"---\nreq_id: CONC-001\nstatus: Done\ndate: 2026-09-29\nroadmap: \"docs/roadmaps/done/ROADMAP-concordance.md\"\n---\n# REQ: Concordance\n\nADR: ADR-001.md\n")
+		// Roadmap: tem req: NO FRONTMATTER (C2 link) mas SEM req_id —
+		// roadmapIndex[CONC-001] fica vazio, mas buildRoadmapReqLinks extrai `req:` via
+		// extractFrontmatterField → resultado[REQ-concordance.md]=true → traceid_orphan_req para na C2.
+		// 🔴 req: deve estar no frontmatter: buildRoadmapReqLinks usa extractFrontmatterField,
+		// não o leitor de corpo — REQ: no corpo é ignorado.
+		writeFile(t, dir, "docs/roadmaps/done/ROADMAP-concordance.md",
+			"---\nreq: REQ-concordance.md\nstatus: done\n---\n# Roadmap: Concordance\n\n## Acceptance Criteria\n- [x] done\n")
+		config.Reset()
+		chdir(t, dir)
+		t.Cleanup(config.Reset)
+
+		violations, warnings, err := ValidateUnfiltered()
+		if err != nil {
+			t.Fatalf("ValidateUnfiltered() erro: %v", err)
+		}
+		all := append(append([]string{}, violations...), warnings...)
+		for _, m := range all {
+			if hasViolation([]string{m}, "no linked Roadmap") {
+				t.Errorf("req_has_roadmap NÃO deve disparar para par válido (concordância ML-1B), obteve: %q", m)
+			}
+			if hasViolation([]string{m}, "traceid_orphan_req") {
+				t.Errorf("traceid_orphan_req NÃO deve disparar para par C2 válido (concordância ML-1A+1B), obteve: %q", m)
+			}
+		}
+	})
+
+	t.Run("sem_roadmap_ambas_disparam", func(t *testing.T) {
+		dir := buildReqRoadmapDir(t)
+		writeFile(t, dir, "trackfw.yaml", "trace_id_field: req_id\n")
+		// REQ Done com req_id mas SEM roadmap — ambas as regras disparam
+		writeFile(t, dir, "docs/req/REQ-concordance-orphan.md",
+			"---\nreq_id: CONC-002\nstatus: Done\ndate: 2026-09-29\nroadmap: \"\"\n---\n# REQ: Concordance Orphan\n\nADR: ADR-001.md\n")
+		config.Reset()
+		chdir(t, dir)
+		t.Cleanup(config.Reset)
+
+		violations, warnings, err := ValidateUnfiltered()
+		if err != nil {
+			t.Fatalf("ValidateUnfiltered() erro: %v", err)
+		}
+		all := append(append([]string{}, violations...), warnings...)
+		foundRoadmap := false
+		foundTraceid := false
+		for _, m := range all {
+			if hasViolation([]string{m}, "no linked Roadmap") {
+				foundRoadmap = true
+			}
+			if hasViolation([]string{m}, "traceid_orphan_req") {
+				foundTraceid = true
+			}
+		}
+		if !foundRoadmap {
+			t.Error("req_has_roadmap DEVE disparar para REQ Done sem roadmap (contra-braço concordância)")
+		}
+		if !foundTraceid {
+			t.Error("traceid_orphan_req DEVE disparar para REQ Done com req_id sem roadmap (contra-braço concordância)")
+		}
+	})
 }

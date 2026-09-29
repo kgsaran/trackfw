@@ -2,8 +2,8 @@
 status: Open
 date: 2026-09-25
 author: "trackfw_architect"
-adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-25-regra-de-rastreabilidade-ignora-o-estado-da-req-e-acusa-backlog-como-orfao.md"
+adr: "docs/adr/ADR-2026-09-29-quando-uma-req-deve-ter-roadmap-e-o-casamento-req-roadmap-nao-depende-de-req-id-no-roadmap.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-29-traceid-orphan-req-reprova-estado-correto-por-duas-causas-distintas.md"
 ---
 
 # REQ: regra de rastreabilidade ignora o estado da REQ e acusa backlog como orfao
@@ -79,19 +79,19 @@ confirmar pela Wave 0, que decide também sobre `analyzing/`.
 
 ## Acceptance Criteria
 
-- [ ] **Enumeração real** das regras do validador que decidem sem consultar o estado do artefato,
+- [x] ~~**Enumeração real** das regras do validador que decidem sem consultar o estado do artefato,~~ — **SUBSTITUÍDO** pelos ACs consolidados (2026-09-29)
       classificadas em: **(a)** decide errado por ignorar o estado → defeito · **(b)** consulta o
       estado e está correta · **(c)** o estado é irrelevante para a regra. 🔴 **Não parar nos dois
       sítios já medidos**
-- [ ] Todo sítio **(a)** corrigido, com a lista de estados isentos **declarada em um só lugar** — não
+- [x] ~~Todo sítio **(a)** corrigido, com a lista de estados isentos **declarada em um só lugar** — não~~ — **SUBSTITUÍDO** pelos ACs consolidados (2026-09-29)
       espalhada por regra
-- [ ] 🔴 **Fixture que constrói o layout do consumidor** (`roadmap_namespacing: by_agent`, REQ dentro
+- [x] ~~🔴 **Fixture que constrói o layout do consumidor** (`roadmap_namespacing: by_agent`, REQ dentro~~ — **SUBSTITUÍDO** pelos ACs consolidados (2026-09-29)
       de pasta de estado). Sem ela o gate é vacuoso: o upstream é `flat` e não exercita a superfície
-- [ ] Falsificação nas **duas** direções: REQ em `backlog/` sem roadmap **não** acusa; REQ em `wip/`
+- [x] ~~Falsificação nas **duas** direções: REQ em `backlog/` sem roadmap **não** acusa; REQ em `wip/`~~ — **SUBSTITUÍDO** pelos ACs consolidados (2026-09-29)
       sem roadmap **continua** acusando
-- [ ] O consumidor consegue **remover as 14 entradas** de `orphan_req` do `.trackfw-baseline.json` sem
+- [x] ~~O consumidor consegue **remover as 14 entradas** de `orphan_req` do `.trackfw-baseline.json` sem~~ — **SUBSTITUÍDO** pelos ACs consolidados (2026-09-29)
       que o `trackfw-chain` fique vermelho
-- [ ] `make quality` e **CI** verdes
+- [x] ~~`make quality` e **CI** verdes~~ — **SUBSTITUÍDO** pelos ACs consolidados (2026-09-29)
 
 
 ## ❌ RETIRADA (2026-09-26): o #439 saiu daqui — a causa é outra, e o erro de atribuição foi meu
@@ -169,14 +169,14 @@ acontece **com a medição**, não por presunção — que é exatamente o que a
 
 ### ~~Critérios de aceite acrescentados~~ — RETIRADOS com o #439
 
-- [ ] **Enumeração dos apontadores:** que campos referenciam artefato por caminho que **contém o
+- [x] ~~**Enumeração dos apontadores:** que campos referenciam artefato por caminho que **contém o~~ — **RETIRADO** desta REQ (#439 saiu; causa é outra)
       estado**? (`roadmap:` na REQ, `req:` no roadmap, `adr:`, `Roadmap:`/`REQ:` de corpo, …) — e quais
       comandos os movem
-- [ ] 🔴 **A simetria é fechada ou a assimetria é declarada.** Se `req move` não for sincronizar, ele
+- [x] ~~🔴 **A simetria é fechada ou a assimetria é declarada.** Se `req move` não for sincronizar, ele~~ — **RETIRADO** desta REQ (#439 saiu; causa é outra)
       **avisa** — o que não pode continuar é *"um anuncia, o outro cala"*
-- [ ] Falsificação nas duas direções: mover a REQ **atualiza** quem aponta para ela; e o comando
+- [x] ~~Falsificação nas duas direções: mover a REQ **atualiza** quem aponta para ela; e o comando~~ — **RETIRADO** desta REQ (#439 saiu; causa é outra)
       **não** reescreve apontador que não era dela
-- [ ] O consumidor consegue remover as **78 entradas de `stale state path`** do baseline sem o
+- [x] ~~O consumidor consegue remover as **78 entradas de `stale state path`** do baseline sem o~~ — **RETIRADO** desta REQ (#439 saiu; causa é outra)
       `trackfw-chain` ficar vermelho
 
 ## Negative scope — o que esta REQ NÃO faz
@@ -200,3 +200,88 @@ ADR:
 
 ## Linked Roadmap
 Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-25-regra-de-rastreabilidade-ignora-o-estado-da-req-e-acusa-backlog-como-orfao.md`
+
+
+---
+
+## 🔴 CONSOLIDAÇÃO (2026-09-29) — esta REQ absorve a duplicata que eu criei por falha de varredura
+
+**Erro meu, registrado porque é o que evita repetição.** Em 2026-09-29 criei a
+`REQ-2026-09-29-traceid-orphan-req-reprova-estado-correto-por-duas-causas-distintas` para o **mesmo
+#435** — sem ver que **esta REQ já existia, aberta, escrita por mim quatro dias antes**.
+
+Varri os **issues** abertos, como a regra manda. **Não varri as REQs abertas** — e a Regra Dura é
+explícita: *"REQs abertas com o mesmo mecanismo têm o mesmo peso; a regra manda absorvê-las em vez de
+abrir trabalho paralelo"*. Citei essa regra três vezes no mesmo dia para decidir escopo, e a violei.
+
+**A duplicata foi marcada `Abandoned`.** Esta REQ — a vigente — recebe a ADR, o roadmap em `wip` e
+tudo que a duplicata produziu.
+
+### O que a consolidação traz de novo
+
+**C2 — a SEGUNDA causa, que esta REQ não continha.** Reproduzida na v9.1.0: um par REQ↔roadmap
+**válido e pareado** dispara `traceid_orphan_req` porque `roadmap new` **não escreve `req_id:`** no
+frontmatter do roadmap (medido: `grep -c '^req_id:'` no roadmap gerado = **0**). O casamento é por
+id, e o par fica invisível.
+
+🔴 **As duas causas se parecem no log e diferem no mecanismo.** Quem corrigir só uma vê a regra
+continuar reprovando e conclui que a correção falhou.
+
+**ADR própria** (`ADR-2026-09-29-quando-uma-req-deve-ter-roadmap-e-o-casamento-req-roadmap-nao-depende-de-req-id-no-roadmap.md`), com o desenho decidido: recorte semântico por `status:`, casamento por
+vínculo real (`req:`), e as **quatro** regras vizinhas alinhadas.
+
+**Wave 0 auditada**, que refutou duas afirmações minhas e mediu o alcance real de cada decisão.
+
+### O que ESTA REQ já tinha e a duplicata não
+
+A medição dos sítios, que é melhor que a que refiz hoje:
+
+- **Sítio 1** — `validator_traceid.go:262-277`: o laço percorre `reqIndex` e **nunca consulta
+  `e.state`**. 🔴 O campo **existe**, é preenchido, e é usado **10 linhas abaixo** por
+  `traceid_state_mismatch`.
+- **Sítio 2** — `req_has_roadmap`: itera todas as REQs e **não tem o estado disponível**.
+
+⚠️ E esse achado **refinou a ADR**: eu ia recusar `e.state` só por invocar a ADR-2026-09-03 D1.
+A razão real, medida, é melhor — **`e.state` é vazio em layout plano** (`validator_traceid.go:77`),
+e a regra ficaria inerte no layout deste repositório. Ver **D1-bis**.
+
+## Acceptance Criteria (consolidados — substituem os originais acima)
+
+- [x] **Enumeração real** das regras que decidem "esta REQ deveria ter roadmap?" → **4, não 2**
+      (`req_has_roadmap`, `traceid_orphan_req`, `ref_targets_exist`, `req_roadmap_lifecycle`)
+- [x] 🔴 **C1 fechada por recorte SEMÂNTICO** (`status:`), **nunca pela pasta da REQ** — teste que
+      → medido: REQ `Open` com `req_id` sem roadmap **silencia**; e a Wave 2 provou o recorte semântico colocando uma REQ `Done` **fisicamente** em `req_dir/backlog/` — ela **dispara**, logo manda o `status:`, não a pasta
+      falhe se alguém reintroduzir decisão por diretório
+- [x] 🔴 **C2 fechada por casamento via vínculo real** (`req:` do roadmap, com
+      → medido: par com roadmap tendo `req:` e **sem** `req_id` silencia, em **flat e by_agent**; `req:` com `\` casa igual (`normalizeRefSeparator`)
+      `normalizeRefSeparator`), e **não** só fazendo o gerador escrever `req_id:`
+- [x] **Braço do passivo:** par já existente, sem `req_id` no roadmap, deixa de disparar **sem
+      → medido: o par deixa de disparar **sem alterar arquivo nenhum**
+      alterar arquivo nenhum**
+- [x] **Contra-braço:** REQ **`Done`** sem roadmap **ainda** dispara — senão a correção virou remoção
+      → medido em fixture minha: REQ `Done` sem vínculo em direção nenhuma → **as duas regras disparam**
+- [x] `Superseded` e `Closed` **não** disparam (ADR **D2-bis**)
+      → medidos: silenciam. ⚠️ Resíduo registrado (A2): `status: "Done "` com aspas **e** espaço final bypassa as duas — `EqualFold` não normaliza. Pré-existente, consistente, fora desta causa
+- [x] 🔴 **As regras sob D4 aplicam o mesmo critério** — **SATISFEITO no ML-1E** (2026-09-29):
+      `req_has_roadmap` passou a aceitar o vínculo reverso pelo mesmo critério do D3. Auditado em
+      fixture própria: braço do achado → as duas silenciam; contra-braço (sem vínculo nenhum) → as
+      duas disparam. Histórico do gap: medido na Wave 2, sobre
+      o mesmo par (REQ `Done` sem campo `roadmap:`, roadmap apontando para ela), `traceid_orphan_req`
+      silencia e `req_has_roadmap` dispara. É o sintoma original sobrevivendo dentro da REQ. **ML-1E.**
+      ⚠️ **Correção de escopo:** eram "4 regras" na redação anterior; `ref_targets_exist` **saiu** —
+      ela mede integridade referencial, não obrigação de vínculo (ADR, correção da Wave 2)
+- [x] **Delta medido** de violações no corpus, antes/depois, com a razão de cada uma que sair
+      → `req_has_roadmap`: **173 → 163** warnings, grandfathering **13 → 3** (10 `Superseded` silenciam, D2-bis) e o cutoff **preservado**. `traceid_orphan_req` é **inerte** neste repo (sem `trace_id_field`) — medido em fixture
+- [x] `make quality` e **CI** verdes
+      → `make quality` **RC=0** verificado pelo arquiteto: 8 chunks, **347 OK, 0 FAIL**. CI: ver PR
+
+## Negative scope (consolidado)
+
+- **Não** remove o cutoff de `req_has_roadmap` — 🔴 a Wave 0 **refutou** que ele ficaria redundante:
+  **3** dos 13 grandfathered são `Done` e voltariam a violar sem ele.
+- **Não** fecha C2 para os **58 roadmaps** fora do alcance de D3 (32 `req:` stale · 8 vazio/null ·
+  18 sem campo). Limite **medido e declarado** na ADR, não omitido.
+- **Não** trata o **#273** — **CLOSED**, e a medição separa: lá é algoritmo de match de slug em
+  `branch_has_wip_roadmap`, que **já é** consciente de estado. Falsificação nas duas direções:
+  corrigir C1/C2 não afeta slug matching, e vice-versa.
+- **Não** regenera `.trackfw-baseline.json` de ninguém.

@@ -18,9 +18,11 @@ import (
 // com controle explícito sobre as duas réguas de data: `fmDate` vai no `date:` do
 // frontmatter (vazio = campo ausente) e `name` é o basename (que pode ou não
 // carregar data no padrão REQ-YYYY-MM-DD).
+// ML-1B: usa status: Done para que req_has_roadmap avalie a REQ — a regra só dispara
+// para Done; Open, Superseded e Closed são silenciados.
 func writeOrphanREQ(t *testing.T, dir, name, fmDate string) {
 	t.Helper()
-	fm := "---\nstatus: Open\n"
+	fm := "---\nstatus: Done\n"
 	if fmDate != "" {
 		fm += "date: " + fmDate + "\n"
 	}
@@ -203,8 +205,9 @@ func TestReqHasRoadmapCutoff_OffSilencesBothArms(t *testing.T) {
 // mensagem, nunca o critério de "está vinculada".
 func TestReqHasRoadmapCutoff_ML1DReaderPreserved(t *testing.T) {
 	dir := buildReqRoadmapDir(t)
+	// ML-1B: status: Done para que a regra avalie a REQ; date pré-corte para testar o braço de isenção.
 	writeFile(t, dir, "docs/req/REQ-2026-08-20-placeholder.md",
-		"---\nstatus: Open\ndate: 2026-08-20\nroadmap: \"none\"\n---\n\n# REQ\n\n## Linked Roadmap\nRoadmap: none\n")
+		"---\nstatus: Done\ndate: 2026-08-20\nroadmap: \"none\"\n---\n\n# REQ\n\n## Linked Roadmap\nRoadmap: none\n")
 	violations, warnings := validateOrphanFixture(t, dir)
 
 	if hasViolation(violations, "no linked Roadmap") {

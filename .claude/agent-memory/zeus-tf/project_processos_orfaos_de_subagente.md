@@ -19,6 +19,7 @@ aparentemente ativos, **todos parados**. Ao matar os órfãos, o agente notifico
 | polling eterno | `until grep -q "EXIT=" arq; do sleep 20; done` | o dono morreu antes de escrever a condição; o arquivo existe mas nunca recebe o marcador |
 | polling por tamanho | `until [ $(wc -l < arq) -ge 2100 ]` | o arquivo parou em 316 linhas; ninguém mais escreve |
 | **bloqueio em pipe** | `cat "$OUTPUT"` no fim de script | saída grande, consumidor sumiu, fica em `S` esperando escrever — **1h43min** num caso |
+| **`tail -f`** | `tail -f .../make-quality.log` | 🔴 **nunca termina por construção** — o agente rodou `make quality` num log e ficou "acompanhando". Medido em 2026-09-29: **1h32min** de órfão, agente listado como ativo ~115 min depois de já ter entregue o relatório |
 
 **How to apply — diagnóstico em duas linhas:**
 
@@ -34,6 +35,15 @@ minutos de `etime` = travado. **Carga alta não distingue** — os loops também
 `wc -l` a cada 5s.
 
 Limpeza: `pkill -f '<padrão>'`, ou `kill <pid>` do filho.
+
+🔴 **E o erro de diagnóstico que custou caro em 2026-09-29: filtro estreito dando vazio parece
+confirmação.** Procurei por `go test|make quality|check-.*\.sh|go build` e obtive **nada** — concluí
+"sem agente vivo" e **commitei**. O órfão era `tail`, que não casava com nenhum padrão meu. Só
+apareceu num `ps -eo ... | grep -iE 'apolo|subagent|claude'`.
+
+**Regra:** para decidir "não há agente vivo", use busca **ampla** (`ps` + grep por `claude`/
+`shell-snapshots`), nunca a lista de comandos que você **espera**. E lembre que **ausência de
+notificação não é ausência de agente** — a notificação só dispara quando o último filho morre.
 
 **Consequência que não é só cosmética:** um dos loços esperava
 `internal/roadmapdoc/testdata/barrier-recapture.txt`, arquivo temporário de recaptura que um

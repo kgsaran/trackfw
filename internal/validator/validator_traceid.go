@@ -259,19 +259,37 @@ func validateTraceId(cfg config.ProjectConfig) (violations []string, warnings []
 	}
 	applyRule("traceid_orphan_roadmap", orphanRoadmapMsgs, &violations, &warnings)
 
-	// traceid_orphan_req: REQ com req_id que não existe em nenhum Roadmap
+	// traceid_orphan_req: REQ com req_id que não existe em nenhum Roadmap.
+	// C1 (ADR D1/D2): só dispara para REQ com status: Done — decidido pelo frontmatter,
+	// NUNCA pela pasta (e.state é vazio em layout plano; usar e.state tornaria a regra inerte).
+	// C2 (ADR D3): também considera casamento via campo req: do roadmap (o vínculo que
+	// roadmap new de fato escreve). normalizeRefSeparator garante compatibilidade Windows.
 	var orphanReqMsgs []string
+	roadmapLinksToReqBasename := buildRoadmapReqLinks(cfg, &warnings)
 	for id, list := range reqIndex {
 		if dupReqIDs[id] {
 			continue // já reportado como duplicata
 		}
-		if _, exists := roadmapIndex[id]; !exists {
-			for _, e := range list {
-				orphanReqMsgs = append(orphanReqMsgs, fmt.Sprintf(
-					"traceid_orphan_req: req %q has %s=%q but no Roadmap with same id",
-					filepath.Base(e.path), traceField, id,
-				))
+		if _, exists := roadmapIndex[id]; exists {
+			continue // pareado por req_id — não é órfã
+		}
+		for _, e := range list {
+			// C2: algum roadmap referencia esta REQ via campo req:?
+			if roadmapLinksToReqBasename[filepath.Base(e.path)] {
+				continue // par encontrado via req:
 			}
+			// C1: ler status da REQ — 🔴 usar reqStatusIsDone, NUNCA e.state
+			content, ok := readFileForRule("traceid_orphan_req", e.path, &warnings)
+			if !ok {
+				continue
+			}
+			if !reqStatusIsDone(string(content)) {
+				continue // Open, Superseded, Closed — não dispara
+			}
+			orphanReqMsgs = append(orphanReqMsgs, fmt.Sprintf(
+				"traceid_orphan_req: req %q has %s=%q but no Roadmap with same id",
+				filepath.Base(e.path), traceField, id,
+			))
 		}
 	}
 	applyRule("traceid_orphan_req", orphanReqMsgs, &violations, &warnings)
@@ -300,4 +318,47 @@ func validateTraceId(cfg config.ProjectConfig) (violations []string, warnings []
 	applyRule("traceid_state_mismatch", mismatchMsgs, &violations, &warnings)
 
 	return violations, warnings
+}
+
+// buildRoadmapReqLinks varre todos os arquivos de roadmap e retorna um conjunto de basenames de REQs
+// referenciadas via campo req: do frontmatter (ADR-2026-09-29 D3).
+// A comparação usa normalizeRefSeparator para compatibilidade com separadores Windows (\).
+// Este casamento é INDEPENDENTE do campo req_id: cobre o caso em que roadmap new escreve req: mas
+// não escreve req_id (medido: grep -c '^req_id:' nos roadmaps deste repositório = 0).
+// 🔴 A decisão é pelo conteúdo do arquivo, nunca pelo diretório — igual ao C1.
+func buildRoadmapReqLinks(cfg config.ProjectConfig, msgs *[]string) map[string]bool {
+	result := map[string]bool{}
+	stateDirs := []string{"wip", "done", "backlog", "analyzing", "blocked", "abandoned"}
+
+	var allFiles []string
+	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
+		agents := resolveAgentNamespaces(cfg, cfg.RoadmapDir)
+		for _, agent := range agents {
+			for _, state := range stateDirs {
+				files, _ := filepath.Glob(filepath.Join(cfg.RoadmapDir, agent, state, "*.md"))
+				allFiles = append(allFiles, files...)
+			}
+		}
+	} else {
+		for _, state := range stateDirs {
+			files, _ := filepath.Glob(filepath.Join(cfg.RoadmapDir, state, "*.md"))
+			allFiles = append(allFiles, files...)
+		}
+		// layout plano
+		files, _ := filepath.Glob(filepath.Join(cfg.RoadmapDir, "*.md"))
+		allFiles = append(allFiles, files...)
+	}
+
+	for _, f := range allFiles {
+		content, ok := readFileForRule("traceid_req_link_read", f, msgs)
+		if !ok {
+			continue
+		}
+		reqRef := normalizeRefSeparator(extractFrontmatterField(string(content), "req"))
+		if reqRef == "" {
+			continue
+		}
+		result[filepath.Base(reqRef)] = true
+	}
+	return result
 }

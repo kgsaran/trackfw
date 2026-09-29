@@ -2,6 +2,69 @@
 
 ---
 
+## 2026-09-29 — Hades (fix/orphan-req-reprova-estado-correto — ML-2A Wave 2 auditoria independente) — ENTREGUE
+
+**Início:** 2026-09-29 | Branch: `fix/orphan-req-reprova-estado-correto`
+**Tarefa:** ML-2A — auditoria independente por reimplementação. Leu ADR + REQ + Wave 0. Construiu binário. Mediu via black-box com fixtures no scratchpad.
+
+**Artefato:** `docs/seguranca/2026-09-29-wave2-orphan-req.md`
+
+**Veredito geral:** C1 fechada, C2 fechada, contra-braço preservado (caminho enforced pós-cutoff), D1-bis confirmada (status: não e.state), D4 satisfeita para os core cases. Quatro achados documentados: A1 (stale-path resolve mais do que limite declarado na ADR); A2 ("Done " bypass); A3 (assimetria D3: traceid_orphan_req aceita link reverso, req_has_roadmap não — gap D4); A4 (ref_targets_exist sem filtro de status, pré-existente).
+
+**git diff trackfw.yaml:** vazio.
+
+---
+
+## 2026-09-29 — Apolo (fix/orphan-req-reprova-estado-correto — ML-1D falsify fixture S192) — ENTREGUE
+
+**Início:** 2026-09-29 | Branch: `fix/orphan-req-reprova-estado-correto`
+**Tarefa:** ML-1D — corrigir fixture `write_req_roadmap_prose_md_fixture` em `check-gates-falsify.sh`.
+
+**Causa raiz (refuta o handoff):** o handoff apontava a liveness arm (`links to ADR`) como falha. Medido no scratchpad: o binário corrompido A sobre fixture A produz `✗ ... links to ADR "<!--" which does not exist` — ambas as arms de direção A passariam. A falha real estava no BASELINE da Direção C (`assert_fails_with "roadmap-prose-md-baseline"`), que é o terceiro baseline no bloco (linha 7405). A fixture C tinha `status: Open`; ML-1B silenciou `req_has_roadmap` para Open; validate retornou `✓ No violations found.` (RC=0); assert_fails_with esperava RC≠0 → FAIL → `exit 1` → chunk morreu → 4 labels de direção nunca registradas.
+
+**Correção:** `write_req_roadmap_prose_md_fixture` em `check-gates-falsify.sh`: `status: Open` → `status: Done` (frontmatter e heading). `traceid_orphan_req` não afeta porque `scaffold_adr_req_project` não define `trace_id_field` — `validateTraceId` retorna nil imediatamente.
+
+**Verificações:**
+- Baseline C com `status: Done`: RC=1, "has no linked Roadmap" ✓ (medido no scratchpad)
+- Direção C (corrupted-C) com `status: Done`: RC=0, sem "has no linked Roadmap" ✓ (medido)
+- `go test ./...`: verde
+- `make quality` RC=0 — 8 chunks, 347 OK, 0 FAIL, guarda OK
+- `git diff trackfw.yaml`: vazio
+
+**git diff --name-only (ML-1D apenas):** `scripts/check-gates-falsify.sh`, `docs/roadmaps/wip/ROADMAP-...md`, `docs/agents-working-context.md`
+
+---
+
+## 2026-09-29 — Apolo (fix/orphan-req-reprova-estado-correto — ML-1C gate req-roadmap-rule-is-status-aware) — ENTREGUE
+
+**Início:** 2026-09-29 | Branch: `fix/orphan-req-reprova-estado-correto`
+**Tarefa:** ML-1C — criar `scripts/check-req-roadmap-rule-is-status-aware.sh` e adicionar entrada no `Makefile` (parity-rest).
+
+**O que foi feito:**
+- Novo script `scripts/check-req-roadmap-rule-is-status-aware.sh`: gate com 4 braços de falsificação (arm1 FAIL, arm2 PASS, arm3a trailing-comment FAIL, arm3b full-line-comment FAIL, arm4 narrowing FAIL).
+- Extração narrow: ancora em `readFileForRule("rule")`, termina em primeiro `applyRule("rule")` ou próximo `^func` — impede decoy em bloco vizinho satisfazer o gate.
+- Makefile: entrada comentada em `parity-rest` com contexto (ML, isenções, recorte).
+- ML-1B estava já aplicado na branch: `req_has_roadmap` já tinha `reqStatusIsDone` quando o gate rodou contra a árvore real.
+
+**Falsificação executada:**
+- Cópia em scratchpad de `validator.go` SEM o bloco ML-1B (`reqStatusIsDone` removido) → gate FAIL nomeando `validator.go:2311`. Cópia não commitada, permanece apenas no scratchpad.
+- Árvore real → `RC=0` (ambas as regras passam).
+
+**Números medidos:**
+- Sites examinados: 2 / 2
+- Janela `traceid_orphan_req`: 282-295 (apertada — anchor → applyRule)
+- Janela `req_has_roadmap`: 2311-2339 (anchor → next func)
+
+**gate checks:**
+- `bash scripts/check-req-roadmap-rule-is-status-aware.sh --self-test`: SELFTEST_RC=0
+- `bash scripts/check-req-roadmap-rule-is-status-aware.sh`: RC=0
+- `bash scripts/check-orphan-gates.sh`: ORPHAN_RC=0
+
+**git diff --name-only (ML-1C apenas):** `scripts/check-req-roadmap-rule-is-status-aware.sh` (novo), `Makefile`, `docs/agents-working-context.md`
+**git diff trackfw.yaml:** vazio
+
+---
+
 ## 2026-09-29 — Apolo (fix/context-reporta-zero-adrs-onde-status-reporta-145 — ML-1D warnings duplicados com adr_dirs aninhadas) — CONCLUÍDO
 
 **Início:** 2026-09-29 | Branch: `fix/context-reporta-zero-adrs-onde-status-reporta-145`
@@ -42639,3 +42702,141 @@ Medições independentes sobre 10 casos de teste (cenário #450, score delta, de
 **Entregável:** `docs/seguranca/2026-09-29-wave2-auditoria-independente-adr.md`
 
 **git diff trackfw.yaml:** vazio
+
+---
+
+## hades-tf · ML-0A (REQ-2026-09-29-traceid-orphan-req) · 2026-09-29 — CONCLUÍDO
+
+**Início:** 2026-09-29 | Branch: `fix/orphan-req-reprova-estado-correto`
+**Tarefa:** Wave 0 — threat model para `traceid_orphan_req` reprova estado correto (C1+C2).
+
+**O que foi feito:**
+- Leu ADR-2026-09-29, REQ-2026-09-29, ADR-2026-09-03 na íntegra.
+- Build limpo: `go build -o bin/trackfw ./cmd/trackfw` — OK.
+- Enumerou as QUATRO regras sobre o vínculo REQ↔roadmap (ADR D4 subespecificada: declara 2, existem 4).
+- Construiu fixture em scratchpad com `trace_id_field` configurado; reproduziu C1 e C2 literalmente.
+- Adicionou ghost-path e Windows-separator ao fixture; mediu divergências.
+- Auditou `req:` field dos 234 roadmaps: 176 com target existente, 32 stale, 8 empty/null, 18 sem campo.
+- Verificou os 13 grandfathered: 3 `Done`, 10 `Superseded` — refuta "cutoff pode tornar-se redundante".
+- Leu issue #273 e REQ associada: mecanismo diferente, causa diferente — separação justificada.
+- Identificou Vetor E (AC8 REQ-2026-09-28, namespace cruzado) como pré-condição para D3 em `by_agent`.
+- Identificou REQ-2026-09-25 duplicata aberta para mesma causa — sinalizou para arquiteto.
+
+**Achados que bloqueiam ou restringem a implementação:**
+- F1 (BLOQUEADOR POTENCIAL): AC8 de REQ-2026-09-28 aberto — D3 herda bug de namespace cruzado em `by_agent`.
+- F2: ADR D4 subespecificada — nomeia 2 regras, existem 4.
+- F3: 32 roadmaps com `req:` stale + 18 sem `req:` — D3 não fecha C2 para esses pares.
+- F4: `Superseded`/`Closed` sem comportamento definido por D2 — decisão silenciosa no código.
+- F5 (REFUTAÇÃO): "cutoff redundante sob D1/D2" — REFUTADO; 3 `Done` grandfathered precisam do cutoff.
+
+**Entregável:** `docs/seguranca/2026-09-29-wave0-orphan-req.md`
+
+**git diff trackfw.yaml:** vazio
+
+**Veredito: APROVA COM RESSALVAS**
+
+10 casos medidos (caixa-preta). Nenhum defeito de produto nos ACs principais.
+
+**Achados que o arquiteto deve tratar:**
+- F1: Warnings duplicados com adr_dirs aninhadas — mesmo mecanismo que D4 (Regra Dura: mesma REQ).
+- F3: Gate tem 2 caminhos de evasão conhecidos; AC da REQ "impede reintrodução" está overstated.
+
+**Achados informacionais:**
+- F2: dir symlinks não seguidos por WalkDir — comportamento stdlib, sem requisito.
+- S7: verificação por inspeção + teste entregue (não black-box pura), limitação documentada.
+
+**Entregável:** `docs/seguranca/2026-09-29-wave2-auditoria-independente-adr.md`
+
+**git diff trackfw.yaml:** vazio
+
+---
+
+## 2026-09-29 — Apolo (fix/orphan-req-reprova-estado-correto — ML-1B req_has_roadmap aplica critério status:Done) — CONCLUÍDO
+
+**Início:** 2026-09-29 | Branch: `fix/orphan-req-reprova-estado-correto`
+**Tarefa:** ML-1B — aplicar o mesmo critério do `traceid_orphan_req` (ADR D4) em `validateREQsHaveRoadmap`: só REQ `Done` dispara.
+
+**Arquivos modificados:**
+- `internal/validator/validator.go`: adicionado guard `if !reqStatusIsDone(string(content)) { continue }` em `validateREQsHaveRoadmap`. `scanned++` mantido antes de `readFileForRule` (denominador = todos os REQs).
+- `internal/validator/validator_req_roadmap_test.go`: `writeREQWithFields` atualizado para `status: Done`; 5 novos testes ML-1B (`Open/Superseded/Closed silenciados`, `Done fires`, `Concordance` com 2 sub-testes) + helper `writeREQStatusOnly`.
+- `internal/validator/validator_req_roadmap_cutoff_ml4b_test.go`: `writeOrphanREQ` atualizado para `status: Done`; inline REQ em `ML1DReaderPreserved` corrigida para `status: Done`.
+- `internal/validator/validator_test.go`: fixture em `TestReqHasRoadmapConfiguravel/buildDir` atualizada para `status: Done`.
+- `internal/commands/req_chain_ml4a_test.go`: braço "deliberado" do `TestRunReqNew_IntegratedPath` atualizado para promover REQ para `Done` antes do validate (alinhado à semântica nova: Open REQs não são acusadas).
+
+**Números medidos:**
+- ANTES: 173 warnings, 13 `req_has_roadmap` warnings (10 Superseded + 3 Done, todos pré-cutoff), grandfathering: "13 exempt, 0 enforced, 237 scanned"
+- DEPOIS: 163 warnings, 3 `req_has_roadmap` warnings (3 Done, todos pré-cutoff), grandfathering: "3 exempt, 0 enforced, 237 scanned"
+- Delta: -10 warnings (os 10 Superseded silenciados). Grandfathering preservado para os 3 Done pré-cutoff.
+
+**Concordância C2 verificada (fixture manual):**
+- Par válido (trace_id_field: req_id, REQ Done com req_id, roadmap com req: no frontmatter sem req_id): `req_has_roadmap` PASS + `traceid_orphan_req` PASS na mesma execução
+- Contra-braço: sem roadmap → ambas disparam (violations)
+- `git diff trackfw.yaml`: VAZIO
+- `go test ./...`: VERDE (todos os pacotes)
+
+**Status:** CONCLUÍDO — aguardando auditoria e commit por trackfw_architect.
+
+---
+
+## 2026-09-29 — Apolo (fix/orphan-req-reprova-estado-correto — ML-1A recorte semântico + casamento por vínculo real) — EM ANDAMENTO
+
+**Início:** 2026-09-29 | Branch: `fix/orphan-req-reprova-estado-correto`
+**Tarefa:** ML-1A — corrigir `traceid_orphan_req` nas duas causas: C1 (REQ Open dispara) e C2 (par válido com req: mas sem req_id invisível).
+
+**Baseline medido:** 0 violations, 173 warnings. `traceid_orphan_req` inerte neste repo (sem `trace_id_field`).
+
+**O que foi feito:**
+- `validator_traceid.go`: substituiu o laço `traceid_orphan_req` por versão que:
+  - C1: lê frontmatter de cada REQ via `reqStatusIsDone` — só dispara para `Done`; `Open`, `Superseded`, `Closed` silenciosos
+  - C2: chama `buildRoadmapReqLinks` (nova func) que varre todos os roadmaps extraindo campo `req:` + `normalizeRefSeparator` → casamento por basename
+  - `e.state` deliberadamente não usado — comentado no código
+- `validator_traceid_test.go`: atualizou `TestTraceIdOrphanReq` e `TestTraceIdByAgent` para usar `status: Done`; adicionou 7 novos testes com reconciliação explícita.
+
+**Números medidos:**
+- `traceid_orphan_req` INERTO neste repositório (sem `trace_id_field`) — delta = 0.
+- `trackfw validate`: ANTES 173 warnings → DEPOIS 173 warnings (zero regressão).
+- Todos os testes do pacote `internal/validator/` passando.
+
+**git diff trackfw.yaml:** vazio (confirmado)
+**git diff --name-only (ML-1A):** `docs/agents-working-context.md`, `internal/validator/validator_traceid.go`, `internal/validator/validator_traceid_test.go`
+
+**Status (ML-1A):** CONCLUÍDO — aguardando auditoria e commit por trackfw_architect.
+
+---
+
+## 2026-09-29 — Apolo (fix/orphan-req-reprova-estado-correto — ML-1E: req_has_roadmap aceita vínculo reverso) — EM ANDAMENTO
+
+**Início:** 2026-09-29 | Branch: `fix/orphan-req-reprova-estado-correto`
+**Tarefa:** ML-1E — corrigir `req_has_roadmap` para aceitar vínculo reverso (roadmap → REQ satisfaz a obrigação, sem exigir campo `roadmap:` na REQ).
+
+**Status:** EM ANDAMENTO
+
+**O que foi feito (ML-1E):**
+- `internal/validator/validator_req_roadmap_reverse.go` (novo): implementa dois helpers:
+  - `buildRoadmapTraceIdIndex`: reutiliza `collectTraceIdEntries/ByAgent` para construir map de trace_id values cobertos por roadmaps (mecanismo 2).
+  - `reqHasReverseLink`: verifica os dois mecanismos reversos (req: por basename, req_id por trace value).
+  - `reqBasenameFromPath`: wrapper explícito para clareza de intenção.
+- `internal/validator/validator.go`: `validateREQsHaveRoadmap` passa a chamar `reqHasReverseLink` ANTES do grandfathering check. Constrói os dois índices UMA VEZ fora do loop. Usa sink separado para erros de leitura de roadmap.
+- `internal/validator/validator_req_roadmap_test.go`: 4 novos testes ML-1E:
+  - `TestReqHasRoadmap_ML1E_VinculoReversoPorReqIdSilencia` — BRAÇO DO ACHADO (req_id)
+  - `TestReqHasRoadmap_ML1E_VinculoReversoPorReqFieldSilencia` — BRAÇO DO ACHADO (req:)
+  - `TestReqHasRoadmap_ML1E_SemVinculoNenhumAmbosDisparam` — CONTRA-BRAÇO obrigatório
+  - `TestReqHasRoadmap_ML1E_ReqFieldBackslashNormaliza` — grafia Windows normalizada
+
+**Números medidos:**
+- Corpus ANTES: 164 warnings, 3 exempt, 0 enforced.
+- Corpus DEPOIS: 164 warnings, 3 exempt, 0 enforced. (Nenhum dos 3 grandfathered tem reverse link.)
+- `make quality`: QUALITY_RC=0 — 347 falsify OK, 0 FAIL.
+- `go test ./internal/validator/`: VERDE.
+- `go test ./...`: VERDE (todos os pacotes).
+
+**Braço do achado (scratchpad):**
+- Baseline: `✗ req "REQ-X.md" has no linked Roadmap` — 1 violation.
+- Post-fix: `✓ No violations found.` — 0 violations.
+- Contra-braço: `✗ req "REQ-Y.md" has no linked Roadmap` + `✗ traceid_orphan_req:...` — 2 violations.
+
+**git diff trackfw.yaml:** vazio (confirmado)
+**git diff --name-only:** `docs/agents-working-context.md`, `internal/validator/validator.go`, `internal/validator/validator_req_roadmap_test.go`
+**git status untracked:** `internal/validator/validator_req_roadmap_reverse.go` (arquivo novo)
+
+**Status:** CONCLUÍDO — aguardando auditoria e commit por trackfw_architect.

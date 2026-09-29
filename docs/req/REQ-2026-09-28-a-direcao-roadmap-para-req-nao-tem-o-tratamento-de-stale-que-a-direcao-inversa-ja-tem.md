@@ -96,7 +96,8 @@ invenção, é o padrão da casa.
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — a direção **Roadmap → REQ** classifica como a inversa já faz: *inexistente* ·
+- [x] **AC1** — a direção **Roadmap → REQ** classifica como a inversa já faz: *inexistente* ·
+      → `resolveREQRefStatus` existe em `validator.go` (verificado 2026-09-29: 1 definição) e classifica as três formas
       *stale* · *(ambíguo, se alcançável)*. **Espelhar `resolveRoadmapRefStatus`**, não escrever um
       segundo mecanismo
 - [x] **AC2 — medido, e a minha premissa CAIU.** Eu supus que o ramo fosse inalcançável a partir de
@@ -105,21 +106,27 @@ invenção, é o padrão da casa.
       entre namespaces**. 🔴 Confundi *ausência no meu corpus* — que é `flat` — com *impossibilidade
       no produto*. **O ramo entra.**
 
-- [ ] **AC7 (2026-09-28) — 🔴 o predicado NÃO é o do espelho.** `isStaleRoadmapStateRef` testa se o
+- [x] **AC7 (2026-09-28) — 🔴 o predicado NÃO é o do espelho.** `isStaleRoadmapStateRef` testa se o
+      → predicado próprio, **não** o espelho de `isStaleRoadmapStateRef` — aquele testa se o pai é estado, e `hefesto` não é
       pai do ref é um **estado**; no caso do #452 o pai é o **agente** (`hefesto`), e o fallback
       nunca roda. Copiar `resolveRoadmapRefStatus` entrega código que compila, passa todos os testes
       e **não corrige nada**. O predicado para REQ é `filepath.Dir(ref) != "."`
 
-- [ ] **AC8 (2026-09-28)** — `FindRoadmapLinkingREQ` **cruza namespace de agente**: a REQ do `apolo`
+- [x] **AC8 (2026-09-28)** — `FindRoadmapLinkingREQ` **cruza namespace de agente**: a REQ do `apolo`
+      → guard `byAgent && reqAgentOf(normalRef,…) != wantAgent` em `req_chain_ml4a.go`; `go test -run TestFindRoadmapLinkingREQ` **ok** (2026-09-29)
       foi vinculada ao roadmap do `hades` de mesmo basename. Mesma causa, mesmo mecanismo → entra
       aqui, não vira REQ nova
-- [ ] **AC3** — `links to ADR` (`validator.go:3192`) fica **fora**: ADR não tem dimensão de estado,
+- [x] **AC3** — `links to ADR` (`validator.go:3192`) fica **fora**: ADR não tem dimensão de estado,
+      → `links to ADR` intocado em `validator.go` (1 ocorrência, verificado 2026-09-29)
       logo não sofre deste defeito. Declarado, não esquecido
-- [ ] **AC4 — a cobertura parcial de `ref_targets_exist` é decidida:** ela só varre `wip` e
+- [x] **AC4 — a cobertura parcial de `ref_targets_exist` é decidida:** ela só varre `wip` e
+      → `validator.go:3206-3208` — `wip` + `blocked` + **`backlog`** + **`analyzing`**; `done`/`abandoned` declarados fora
       `blocked`. Roadmap em `backlog/` com `req:` roto **passa silencioso**. Ampliar ou **declarar**
-- [ ] **AC5 — falsificação nas duas direções:** REQ movida → **stale**, não violação; REQ apagada →
+- [x] **AC5 — falsificação nas duas direções:** REQ movida → **stale**, não violação; REQ apagada →
+      → `validator_stale_wip_contract_xfail_test.go` cobre as duas direções
       **violação**, como hoje
-- [ ] **AC6** — `make quality` e **CI** verdes
+- [x] **AC6** — `make quality` e **CI** verdes
+      → PR #464 **MERGED**, **20/20 checks SUCCESS** (verificado 2026-09-29)
 
 ## Negative scope — o que esta REQ NÃO faz
 

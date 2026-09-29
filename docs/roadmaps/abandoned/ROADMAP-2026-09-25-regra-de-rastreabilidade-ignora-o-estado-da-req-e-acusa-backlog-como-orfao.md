@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: abandoned
 date: 2026-09-25
 req: "REQ-2026-09-25-regra-de-rastreabilidade-ignora-o-estado-da-req-e-acusa-backlog-como-orfao"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: regra de rastreabilidade ignora o estado da REQ e acusa backlog como orfao
 
-> Created: 2026-09-25 | Status: backlog
+> Created: 2026-09-25 | Status: abandoned
 
 ## Context
 <!-- What problem does this roadmap solve? Link the REQ. -->
