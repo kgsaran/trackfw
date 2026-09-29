@@ -7,6 +7,61 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [9.1.0] - 2026-09-29
+
+### Added
+
+- `trackfw roadmap show --json` emite as waves e o **status de ML normalizado**. As 292 grafias de
+  status encontradas no corpus viram **3 categorias**, e o consumidor deixa de reimplementar o
+  dialeto — cujas regras não são óbvias (marcador pelo primeiro token, vocabulário fechado, `U+FE0F`
+  tolerado, marca combinante recusada, cerca de código ignorada, CRLF normalizado). (#461, parte 2 da #407)
+
+### Fixed
+
+- **`trackfw init` reexecutado deixa de destruir o `trackfw.yaml`.** Ele sobrescrevia a config com o
+  template fixo, sem ler nem mesclar. O dano não era a perda do arquivo: num repositório real, a
+  perda de `governance_mode: lenient` fez o `validate` ir de **170 warnings / exit 0** para
+  **156 violations / exit 1** — um repositório conforme passou a ser reprovado. Agora o `init`
+  preserva todo valor existente, **inclusive os comentários**, e acrescenta só as chaves ausentes.
+  (#467, fecha #445)
+- **`trackfw context` deixa de reportar `ADRs (0)` onde o `status` reporta 145.** O `context` lia
+  apenas a raiz de cada `adr_dirs`, sem descer nas subpastas de estado — e chegava a declarar zero
+  ADRs e **nomear um ADR** na mesma saída. Como o `context` é o comando que a documentação manda o
+  agente rodar primeiro, o efeito era induzir a conclusão de que não há decisões arquiteturais
+  registradas. Corrigido por ponto único compartilhado com o `status`, com dedup por caminho
+  absoluto. (#469, fecha #450)
+- `trackfw adr list` deixa de responder *"No ADRs found"* e `req new` deixa de criar rascunho de ADR
+  duplicado, em projetos com ADRs em subpastas de estado. (#469)
+- A direção **Roadmap → REQ** passa a classificar vínculo stale, com o predicado correto — não o
+  espelho literal da direção inversa. (#464, fecha #452)
+- O gate da **Wave 0** aceita prosa entre `**Gates da wave:**` e a cerca de código, e a mensagem
+  passa a **dizer a causa** em vez de culpar o conteúdo do gate. (#462, fecha #460)
+- A **contenção de escrita** passa a recusar **junção do Windows**, não só symlink. (#463, fecha #444)
+- O `trackfw-validate.yml` deste repositório alinha o gatilho ao template, eliminando execução
+  duplicada por push em PR. (#459)
+
+### Internal
+
+- As 3 variáveis MSYS do shim do `gh` ganham guarda: elas não eram exercitadas por CI nenhum, e
+  removê-las não reprovava nada. (#466, fecha #308)
+- Governança: fechamento das REQs de #452, #445, #450 e da contenção do Windows. (#465, #468, #472)
+
+### Notas de atualização
+
+Nenhuma mudança quebra compatibilidade, mas **dois números observáveis mudam** — e este projeto já
+aprendeu que número que muda sozinho entre versões gera issue:
+
+- **A contagem de ADRs sobe** em repositórios cujos ADRs vivem em subpastas de estado. É a correção
+  aparecendo, não regressão: eles sempre estiveram lá e não eram contados. O `Governance score` sobe
+  **20 pontos** nesses projetos, pela mesma razão.
+- **`trackfw init` reexecutado não redefine mais a config.** Quem dependia do `init` para restaurar
+  os defaults precisa apagar o `trackfw.yaml` antes — comportamento antigo não era intencional.
+
+**Limite conhecido, declarado:** qualquer `.md` dentro de `adr_dirs` continua sendo contado como ADR
+(um `NOTAS.md` soma 1 à contagem). É critério de identificação, causa distinta da corrigida aqui, e
+está registrado em #471.
+
+
 ## [9.0.1] - 2026-09-27
 
 ### Fixed
