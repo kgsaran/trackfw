@@ -79,6 +79,58 @@ Testes parametrizados e subtestes têm nome que muda com a tabela. Quem implemen
 trata isso (nome do teste de topo, normalização, ou exclusão explícita) — e a decisão fica escrita,
 não implícita no código.
 
+## 🔴 Emenda 1 (2026-09-29) — o ratchet passa a colher a melhoria, não só a bloquear a regressão
+
+**Origem:** #364, recapturado do #329 antes de fechá-lo.
+
+### O que faltava
+
+O **D4** já exige justificativa explícita para remover um nome da lista. Mas **nada obriga a remover**
+quando a falha resolve. O ratchet reporta `[-1 resolvido]` e esse sinal:
+
+- **não reprova** — corrida com falha resolvida é verde, igual a uma sem;
+- **não fecha** nada — ninguém remove a entrada por causa dele;
+- **persiste** — no #329, **4 corridas seguidas** reportaram o mesmo `-1`.
+
+🔴 **O ratchet aperta numa direção só:** bloqueia regressão nova e **nunca colhe a melhoria**. Uma
+entrada obsoleta fica indistinguível de uma legítima.
+
+### D6 — Falha declarada que RESOLVE reprova a corrida
+
+Quando um nome da lista passa a **passar**, o job **reprova**, nomeando a entrada e apontando o
+protocolo do **D4** (mover para `removed[]` com `removal_note`). A lista torna-se **autolimpante**: a
+atualização acontece no **mesmo PR** que produziu a correção, por quem tem o contexto.
+
+**Por que reprovar, e não abrir artefato ou remover automaticamente** — decidido **com a medição**
+(#364, 2026-09-29, dois runs da `main`):
+
+```
+1677 PASS · 14 FAIL · 14 são exatamente as entradas da lista · 0 obsoletas
+```
+
+| opção | com passivo | com **zero** passivo (o caso medido) |
+|---|---|---|
+| **reprovar** (D6) | exigiria limpar antes | 🔴 **custo de adoção zero, hoje** |
+| artefato com dono | daria destino ao passivo | resolve problema que não existe |
+| remoção automática | teste instável sai e volta | mesmo risco, sem ganho |
+
+🔴 **A opção adotada é a única que fica mais barata quanto mais cedo for adotada**, e está no seu
+ponto mais barato **agora**. Esperar acumula passivo e transforma a adoção numa limpeza prévia.
+
+**Risco aceito e declarado:** um teste **instável** que passe numa corrida reprova o job. É o mesmo
+risco da remoção automática, com desfecho melhor — uma reprovação **visível e corrigível**, não uma
+remoção silenciosa. E o **D5** já declara nomes instáveis como limite conhecido.
+
+### D7 — Cada entrada carrega a RAZÃO da falha
+
+Hoje uma entrada é `{name, runtime, class}` — **nenhuma diz por que falha no Windows**. Quem for
+atacar qualquer uma reinvestiga do zero, e é provável que as 14 tenham **poucas causas-raiz**
+(permissão POSIX, CRLF, `bash` ausente).
+
+As entradas passam a carregar a razão. **Sem isso o D6 não se sustenta na prática:** quando o job
+reprovar dizendo "esta entrada resolveu", quem não souber por que ela falhava não consegue julgar se
+resolveu de verdade ou se o ambiente mudou.
+
 ## Consequências
 
 **O `continue-on-error: true` do `windows-full-suites` sai** — mas só depois de D1, D3 e D4 estarem
