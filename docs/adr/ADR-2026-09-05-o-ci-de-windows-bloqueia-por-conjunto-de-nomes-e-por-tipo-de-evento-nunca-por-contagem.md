@@ -166,7 +166,17 @@ representante**:
 | **A — permissões POSIX** | 4 | `os.Chmod(0o600/0o000)` é **silencioso** em NTFS |
 | **B — CRLF no renderer** | 4 | *"CRLF source produced a different render than LF source"* |
 | **C — comando externo** | 2 | privilégio de **symlink** do Windows · defesa anti-fork-bomb do runner |
-| **D — representação de caminho** | 3 | `shasum` escapando `\` · provável short-name `8.3` (`RUNNER~1`) |
+| **D — representação de caminho** | **4** | `shasum` escapando `\` · provável short-name `8.3` (`RUNNER~1`) · separador em manifesto |
+
+🔴 **Correção de contagem (ML-1A, 2026-09-29):** a primeira versão desta tabela somava **13**
+(4+4+2+3) para **14** entradas. A triagem da Wave 0 deixou
+`TestUpdateMigratesKnownCodexAndPreservesUnknown` **fora das tabelas**, e eu copiei o total para cá
+**sem somar**. O grupo D tem **4**. Registrado em nota de vault.
+
+⚠️ **E a contagem de inferidas mudou, para mais honesta:** a Wave 0 relatou *"11 medidas, 3
+inferidas"*, mas duas entradas do `ThirdPartyInstall` eram **falha medida com causa inferida**. O
+artefato final marca **9 MEASURED / 5 INFER** — a distinção entre *"medi a falha"* e *"inferi a
+causa"* é exatamente o que o **D7** existe para preservar.
 
 O que eu chamei de *"`bash` ausente"* é, medido, **privilégio de symlink**: `os.Symlink` falha em
 silêncio, o diretório de binários falsos fica vazio, e o script cai no fallback.

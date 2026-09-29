@@ -70,7 +70,7 @@ n=$(jq -r '.entries[]|.name' .github/windows-known-failures.json 2>/dev/null | w
 
 ### ML-1A — D6 em três baldes, e o campo `reason` validado
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — 2026-09-29 · self-test 53/53 PASS (UTF-8 e cp1252) · make quality RC=0
 **Arquivos:** `scripts/check-windows-known-failures.py`, `.github/windows-known-failures.json`
 
 **O desenho saiu da Wave 0, não do plano.** Três coisas que ela fixou e que são AC:
@@ -91,17 +91,17 @@ class}` **sem** `reason`. Se a validação entrar no fluxo normal sem atualizá-
 fica vermelho na hora**. Atualizá-los é **parte deste ML**, não consequência dele.
 
 **Critérios de aceite:**
-- [ ] Os **três** baldes implementados, cada um com mensagem própria — a atribuição errada é o
+- [x] Os **três** baldes implementados, cada um com mensagem própria — a atribuição errada é o
       defeito que o **D3** existe para evitar, e que esta base já pagou 3× no #274
-- [ ] 🔴 **Falsificação por balde:** entrada que passou → reprova dizendo *resolveu* · entrada que
+- [x] 🔴 **Falsificação por balde:** entrada que passou → reprova dizendo *resolveu* · entrada que
       sumiu por `panic` → reprova dizendo *não executou* · entrada que falhou → passa
-- [ ] 🔴 **Contra-braço do D1:** **regressão nova continua reprovando** — o D6 não pode ter
+- [x] 🔴 **Contra-braço do D1:** **regressão nova continua reprovando** — o D6 não pode ter
       desligado o que já funcionava
-- [ ] `reason` obrigatório em `entries[]` e **validado**; ausência → reprova
-- [ ] 🔴 **ASCII puro**, verificado sob `PYTHONIOENCODING=cp1252 PYTHONUTF8=0`
-- [ ] **As 14 entradas recebem a razão** da triagem da Wave 0 — as 3 inferidas marcadas como tal
-- [ ] **Os ~20 fixtures do self-test atualizados**, e o `--self-test` verde
-- [ ] `make quality` **RC=0**
+- [x] `reason` obrigatório em `entries[]` e **validado**; ausência → reprova
+- [x] 🔴 **ASCII puro**, verificado sob `PYTHONIOENCODING=cp1252 PYTHONUTF8=0`
+- [x] **As 14 entradas recebem a razão** da triagem da Wave 0 — as 3 inferidas marcadas como tal
+- [x] **Os ~20 fixtures do self-test atualizados**, e o `--self-test` verde
+- [x] `make quality` **RC=0**
 
 ## Wave 2 — auditoria independente
 > Dependências: Wave 1 completa.

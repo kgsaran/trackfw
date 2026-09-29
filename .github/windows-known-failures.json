@@ -21,72 +21,86 @@
     {
       "name": "TestAttentionScripts_FallbackWithoutJQ",
       "runtime": "go",
-      "class": "assertion"
+      "class": "assertion",
+      "reason": "Group C: os.Symlink requires developer privilege on Windows -- fakeBinDir stays empty, script returns default 'Agent needs attention' instead of test fallback_tool value (MEASURED)"
     },
     {
       "name": "TestChecksum_StableAndMatchesSHA256Sum",
       "runtime": "go",
-      "class": "assertion"
+      "class": "assertion",
+      "reason": "Group D: shasum -a 256 with Windows backslash path prefixes hash with backslash -- extracted field[0] differs from Checksum() by leading backslash character (MEASURED)"
     },
     {
       "name": "TestFilenameUniqueness_DiretorioNaoLegivel_P2",
       "runtime": "go",
-      "class": "assertion"
+      "class": "assertion",
+      "reason": "Group A: os.Chmod(0o000) silently ignored on NTFS without ACL -- test expects unreadable dir, Windows runner returns accessible directory (MEASURED)"
     },
     {
       "name": "TestFolderStatus_DiretorioNaoLegivel_P2",
       "runtime": "go",
-      "class": "assertion"
+      "class": "assertion",
+      "reason": "Group A: os.Chmod(0o000) silently ignored on NTFS without ACL -- test expects unreadable dir warning, Windows runner returns accessible directory (MEASURED)"
     },
     {
       "name": "TestRenderOpenCodeAgent_CRLFSourceMatchesLF",
       "runtime": "go",
-      "class": "assertion"
+      "class": "assertion",
+      "reason": "Group B: CRLF normalizer does not cover all renderer code paths -- CRLF source produces different output than LF source on Windows runner (MEASURED)"
     },
     {
       "name": "TestRenderSubagentRouteInjectsIdentity_CRLFSourceMatchesLF",
       "runtime": "go",
-      "class": "assertion"
+      "class": "assertion",
+      "reason": "Group B: CRLF normalizer does not cover all renderer code paths -- CRLF source produces different Rota B output than LF source on Windows runner (MEASURED)"
     },
     {
       "name": "TestRenderWithoutIdentityMatchesFrozenGoldens",
       "runtime": "go",
-      "class": "assertion"
+      "class": "assertion",
+      "reason": "INFER Group B: frozen golden generated on macOS may diverge from Windows renderer output -- subtest subagent/architect likely produces CRLF difference in rendered content"
     },
     {
       "name": "TestResolveAgentModelMatchesRender",
       "runtime": "go",
-      "class": "assertion"
+      "class": "assertion",
+      "reason": "INFER Group B: 16 combinations (gemini/copilot/windsurf/kiro x 4 agents) fail -- rendered model field likely has CRLF causing present=true vs present=false mismatch"
     },
     {
       "name": "TestSave_WritesAtomicallyWithPermissions",
       "runtime": "go",
-      "class": "assertion"
+      "class": "assertion",
+      "reason": "Group A: os.Chmod(0o600) silently ignored on NTFS without ACL -- file permission remains 0666, expected 0600 (MEASURED)"
     },
     {
       "name": "TestShip_Integration_GracefulDegradation_RealBinary",
       "runtime": "go",
-      "class": "assertion"
+      "class": "assertion",
+      "reason": "Group C: fake git.exe in PATH triggers Windows runner anti-fork-bomb defense -- test cannot create binary impostor for graceful degradation (MEASURED)"
     },
     {
       "name": "TestStaleWIPReportsWIPWalkError",
       "runtime": "go",
-      "class": "assertion"
+      "class": "assertion",
+      "reason": "Group A: ENOTDIR equals ERROR_PATH_NOT_FOUND on Windows -- walk does not produce expected diagnostic when file is placed where directory is expected (MEASURED in ADR-2026-09-05 Adendo)"
     },
     {
       "name": "TestThirdPartyInstall_PassesValidateEndToEnd",
       "runtime": "go",
-      "class": "assertion"
+      "class": "assertion",
+      "reason": "INFER Group D: provenance key likely mismatches due to Windows 8.3 short-name path (e.g. RUNNER~1) -- filepath.Rel receives mixed long/short form paths producing unexpected relative key"
     },
     {
       "name": "TestThirdPartyInstall_TamperAfterInstallFailsValidateEndToEnd",
       "runtime": "go",
-      "class": "assertion"
+      "class": "assertion",
+      "reason": "INFER Group D: same 8.3 short-name path mismatch as TestThirdPartyInstall_PassesValidateEndToEnd -- provenance key lookup fails before tamper detection path is reached"
     },
     {
       "name": "TestUpdateMigratesKnownCodexAndPreservesUnknown",
       "runtime": "go",
-      "class": "assertion"
+      "class": "assertion",
+      "reason": "INFER Group D: manifest path uses normalized slash separator while backendPath uses Windows backslash -- strings.Contains check fails when manifest path format differs from filepath.Join form"
     }
   ],
   "removed": [

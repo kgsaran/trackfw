@@ -2,6 +2,26 @@
 
 ---
 
+## 2026-09-29 — Apolo (fix/ratchet-windows-nao-colhe-melhoria — ML-1A D6+D7) — ENTREGUE
+
+**Início:** 2026-09-29 | **Fim:** 2026-09-29 | Branch: `fix/ratchet-windows-nao-colhe-melhoria`
+**Tarefa:** ML-1A — D6 em três baldes + campo `reason` validado (D7).
+
+**Arquivos modificados:** `.github/windows-known-failures.json`, `scripts/check-windows-known-failures.py`
+
+**Evidências:**
+- self-test: 53/53 PASS sob UTF-8 e cp1252 (`SELFTEST_RC=0`, `CP1252_RC=0`)
+- `make quality RC=0` — 347 OK, 0 FAIL (gates falsify completos)
+- `trackfw validate`: 172 warnings (pré-existentes), 0 errors
+- `git diff trackfw.yaml`: vazio
+
+**Achados não óbvios:**
+- 14ª entrada (`TestUpdateMigratesKnownCodexAndPreservesUnknown`) ausente das tabelas Wave 0 — triada como INFER Grupo D. Nota em vault.
+- Node suite-load-failure não tem discriminante de passes (TAP `ok N` retorna assertion names, não basenames) — todas as entradas não observadas nessa classe vão para balde 2.
+- T3 invertido: de "exit 0 + warning" para "exit 1 + error" (D6 balde 2). Atualizado.
+
+---
+
 ## 2026-09-29 — Hades (fix/ratchet-windows-nao-colhe-melhoria — ML-0A Wave 0 threat model) — ENTREGUE
 
 **Início:** 2026-09-29 | Branch: `fix/ratchet-windows-nao-colhe-melhoria`
