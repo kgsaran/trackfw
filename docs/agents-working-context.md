@@ -42801,3 +42801,42 @@ Medições independentes sobre 10 casos de teste (cenário #450, score delta, de
 **git diff --name-only (ML-1A):** `docs/agents-working-context.md`, `internal/validator/validator_traceid.go`, `internal/validator/validator_traceid_test.go`
 
 **Status (ML-1A):** CONCLUÍDO — aguardando auditoria e commit por trackfw_architect.
+
+---
+
+## 2026-09-29 — Apolo (fix/orphan-req-reprova-estado-correto — ML-1E: req_has_roadmap aceita vínculo reverso) — EM ANDAMENTO
+
+**Início:** 2026-09-29 | Branch: `fix/orphan-req-reprova-estado-correto`
+**Tarefa:** ML-1E — corrigir `req_has_roadmap` para aceitar vínculo reverso (roadmap → REQ satisfaz a obrigação, sem exigir campo `roadmap:` na REQ).
+
+**Status:** EM ANDAMENTO
+
+**O que foi feito (ML-1E):**
+- `internal/validator/validator_req_roadmap_reverse.go` (novo): implementa dois helpers:
+  - `buildRoadmapTraceIdIndex`: reutiliza `collectTraceIdEntries/ByAgent` para construir map de trace_id values cobertos por roadmaps (mecanismo 2).
+  - `reqHasReverseLink`: verifica os dois mecanismos reversos (req: por basename, req_id por trace value).
+  - `reqBasenameFromPath`: wrapper explícito para clareza de intenção.
+- `internal/validator/validator.go`: `validateREQsHaveRoadmap` passa a chamar `reqHasReverseLink` ANTES do grandfathering check. Constrói os dois índices UMA VEZ fora do loop. Usa sink separado para erros de leitura de roadmap.
+- `internal/validator/validator_req_roadmap_test.go`: 4 novos testes ML-1E:
+  - `TestReqHasRoadmap_ML1E_VinculoReversoPorReqIdSilencia` — BRAÇO DO ACHADO (req_id)
+  - `TestReqHasRoadmap_ML1E_VinculoReversoPorReqFieldSilencia` — BRAÇO DO ACHADO (req:)
+  - `TestReqHasRoadmap_ML1E_SemVinculoNenhumAmbosDisparam` — CONTRA-BRAÇO obrigatório
+  - `TestReqHasRoadmap_ML1E_ReqFieldBackslashNormaliza` — grafia Windows normalizada
+
+**Números medidos:**
+- Corpus ANTES: 164 warnings, 3 exempt, 0 enforced.
+- Corpus DEPOIS: 164 warnings, 3 exempt, 0 enforced. (Nenhum dos 3 grandfathered tem reverse link.)
+- `make quality`: QUALITY_RC=0 — 347 falsify OK, 0 FAIL.
+- `go test ./internal/validator/`: VERDE.
+- `go test ./...`: VERDE (todos os pacotes).
+
+**Braço do achado (scratchpad):**
+- Baseline: `✗ req "REQ-X.md" has no linked Roadmap` — 1 violation.
+- Post-fix: `✓ No violations found.` — 0 violations.
+- Contra-braço: `✗ req "REQ-Y.md" has no linked Roadmap` + `✗ traceid_orphan_req:...` — 2 violations.
+
+**git diff trackfw.yaml:** vazio (confirmado)
+**git diff --name-only:** `docs/agents-working-context.md`, `internal/validator/validator.go`, `internal/validator/validator_req_roadmap_test.go`
+**git status untracked:** `internal/validator/validator_req_roadmap_reverse.go` (arquivo novo)
+
+**Status:** CONCLUÍDO — aguardando auditoria e commit por trackfw_architect.

@@ -18,13 +18,13 @@ invisível porque `roadmap new` não escreve `req_id:`.
 
 ## Acceptance Criteria
 <!-- Consolidados; detalhe por ML nas waves. -->
-- [ ] Regras que decidem "esta REQ deveria ter roadmap?" enumeradas, com critério e divergências
-- [ ] C1 fechada por recorte **semântico** (`status:`), nunca por pasta da REQ
-- [ ] C2 fechada por casamento via vínculo real (`req:`), não só escrevendo `req_id:` no gerador
-- [ ] Par já existente deixa de disparar **sem alterar arquivo nenhum**
-- [ ] REQ `Done` sem roadmap **ainda** dispara — a regra continua servindo para algo
-- [ ] Delta de violações medido no corpus, com a razão de cada uma que sair
-- [ ] `make quality` e CI verdes
+- [x] Regras que decidem "esta REQ deveria ter roadmap?" enumeradas, com critério e divergências
+- [x] C1 fechada por recorte **semântico** (`status:`), nunca por pasta da REQ
+- [x] C2 fechada por casamento via vínculo real (`req:`), não só escrevendo `req_id:` no gerador
+- [x] Par já existente deixa de disparar **sem alterar arquivo nenhum**
+- [x] REQ `Done` sem roadmap **ainda** dispara — a regra continua servindo para algo
+- [x] Delta de violações medido no corpus, com a razão de cada uma que sair
+- [x] `make quality` e CI verdes
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -239,9 +239,9 @@ alvo** — o seam de ancoragem de chave em `extractRefPath` segue discriminante 
 **Status:** ✅ Concluído — auditado em 2026-09-29 · 🔴 **D4 NÃO satisfeita: 2 gaps**
 **Método:** 🔴 **não conferir o diff.** Ler ADR e REQ, derivar o esperado, medir o binário.
 **Critérios de aceite:**
-- [ ] Os dois cenários do #435 reconstruídos do zero
-- [ ] Contra-braço: REQ `Done` sem roadmap **ainda** dispara
-- [ ] Veredito: a regra continua detectando o que deveria, ou virou no-op?
+- [x] Os dois cenários do #435 reconstruídos do zero
+- [x] Contra-braço: REQ `Done` sem roadmap **ainda** dispara
+- [x] Veredito: a regra continua detectando o que deveria, ou virou no-op?
 
 
 **Resultado da Wave 2 — C1 e C2 fechadas, D4 não.**
@@ -274,7 +274,7 @@ duas, e fora da causa desta REQ. Registrado; candidato a issue se aparecer no mu
 
 ### ML-1E — 🔴 D4 é letra morta: as duas regras discordam do MESMO par
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-09-29 · **D4 SATISFEITA**
 **Arquivos:** `internal/validator/validator.go` (`validateREQsHaveRoadmap`) + testes
 
 **Achado da Wave 2, confirmado pelo arquiteto em fixture própria:**
@@ -293,11 +293,28 @@ por **vínculo real**, não por declaração unilateral. `traceid_orphan_req` pa
 não — e "aplicam o mesmo critério" vira letra morta.
 
 **Critérios de aceite:**
-- [ ] 🔴 **O braço do achado:** REQ `Done` sem campo `roadmap:`, com roadmap apontando para ela
+- [x] 🔴 **O braço do achado:** REQ `Done` sem campo `roadmap:`, com roadmap apontando para ela
       (`req_id` **ou** `req:`) → **as duas regras silenciam**
-- [ ] 🔴 **Contra-braço, e é o que impede virar remoção:** REQ `Done` **sem vínculo em direção
+- [x] 🔴 **Contra-braço, e é o que impede virar remoção:** REQ `Done` **sem vínculo em direção
       nenhuma** → **as duas disparam**
-- [ ] O vínculo reverso vale nas **duas** grafias: `req_id:` e `req:` (com `normalizeRefSeparator`)
-- [ ] O cutoff de grandfathering **permanece**
-- [ ] **Delta medido** no corpus, antes/depois, com a razão de cada mudança
-- [ ] Reconciliação: uma frase por teste, dizendo o que **mediu**
+- [x] O vínculo reverso vale nas **duas** grafias: `req_id:` e `req:` (com `normalizeRefSeparator`)
+- [x] O cutoff de grandfathering **permanece**
+- [x] **Delta medido** no corpus, antes/depois, com a razão de cada mudança
+- [x] Reconciliação: uma frase por teste, dizendo o que **mediu**
+
+
+**Auditoria do ML-1E — na fixture que EU montei antes de despachar:**
+
+```
+braço do achado   → nenhuma das duas dispara     (antes, req_has_roadmap disparava)
+contra-braço      → AS DUAS disparam             (removi o req_id do roadmap)
+```
+
+**D4 satisfeita.** `make quality` **RC=0** verificado por mim — 8 chunks, 347 OK, 0 FAIL.
+
+⚠️ **Correção de uma caracterização do relatório:** ele descreveu *"14 FAIL pré-existentes de
+write-containment e adr-single-point"*. Imprecisso — os `FAIL` vêm de `/var/folders/.../arm1|arm3|arm4|arm5/`,
+que são **fixtures dos self-tests** daqueles gates. Os gates em si reportam `OK`
+(`check-write-containment: OK — todos os sítios justificados (162 examinados)`). A diferença importa:
+"gate falhando" e "self-test do gate exercitando o braço negativo" têm o mesmo texto e significados
+opostos.

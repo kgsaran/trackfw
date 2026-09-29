@@ -2307,6 +2307,17 @@ func validateREQsHaveRoadmap() (enforced []string, exempt []string, scanned int,
 		return []string{rErr.Error()}, nil, 0, nil
 	}
 
+	// ML-1E: construir os dois índices reversos UMA VEZ antes do loop (não uma vez por REQ):
+	//  - reqRoadmapLinks: roadmaps que apontam para a REQ via campo req: (ADR D3)
+	//  - roadmapTraceIdIndex: roadmaps com o mesmo trace_id_field value que a REQ (ADR D4)
+	// 🔴 Sink separado: readFileForRule em buildRoadmapReqLinks usa a regra "traceid_req_link_read"
+	// — essas mensagens não devem vazar para enforced/exempt de req_has_roadmap.
+	// Erros de leitura de roadmap são descartados aqui porque já são capturados por outras regras
+	// que varrem os mesmos arquivos (ref_targets_exist, traceid_orphan_roadmap).
+	var reverseSink []string
+	reqRoadmapLinks := buildRoadmapReqLinks(cfg, &reverseSink)
+	roadmapTraceIdIndex := buildRoadmapTraceIdIndex(cfg, &reverseSink)
+
 	for _, path := range files {
 		scanned++
 		content, ok := readFileForRule("req_has_roadmap", path, &enforced)
@@ -2321,14 +2332,21 @@ func validateREQsHaveRoadmap() (enforced []string, exempt []string, scanned int,
 		if !reqStatusIsDone(string(content)) {
 			continue
 		}
-		if !contentHasStructuredRefValue(string(content), cfg.LinkFieldsRoadmap) {
-			msg := fmt.Sprintf("req %q has no linked Roadmap (marker must start the line with a real, non-placeholder value)", filepath.Base(path))
-			if reqIsGrandfathered(string(content), path) {
-				exempt = append(exempt, msg+" — exempt as pre-cutoff ("+reqRoadmapCutoff+")")
-				continue
-			}
-			enforced = append(enforced, msg)
+		// ML-1E: a obrigação está satisfeita se a REQ declara o vínculo (direto) OU se algum
+		// roadmap aponta para ela (vínculo reverso — ADR D3/D4). O reverse check é anterior ao
+		// grandfathering: um reverse link silencia completamente, não isenta.
+		if contentHasStructuredRefValue(string(content), cfg.LinkFieldsRoadmap) {
+			continue
 		}
+		if reqHasReverseLink(reqBasenameFromPath(path), string(content), cfg, reqRoadmapLinks, roadmapTraceIdIndex) {
+			continue
+		}
+		msg := fmt.Sprintf("req %q has no linked Roadmap (marker must start the line with a real, non-placeholder value)", filepath.Base(path))
+		if reqIsGrandfathered(string(content), path) {
+			exempt = append(exempt, msg+" — exempt as pre-cutoff ("+reqRoadmapCutoff+")")
+			continue
+		}
+		enforced = append(enforced, msg)
 	}
 	return enforced, exempt, scanned, nil
 }
