@@ -371,6 +371,45 @@ func TestUpdateRegistersGlobalADRDirPreservingCommentsAndOtherKeys(t *testing.T)
 	}
 }
 
+// TestUpdateRegistersGlobalADRDirWhenADRsOnlyInSubdirectory — ML-1C (#450).
+// Asserts: ensureGlobalADRDirRegistered with ADRs only in a subdirectory of
+// ~/.trackfw/adr (e.g. ~/.trackfw/adr/done/ADR-*.md) REGISTERS the directory
+// in adr_dirs — the branch the old filepath.Glob root-only denied.
+func TestUpdateRegistersGlobalADRDirWhenADRsOnlyInSubdirectory(t *testing.T) {
+	config.Reset()
+	t.Cleanup(config.Reset)
+	root, home := t.TempDir(), t.TempDir()
+	t.Setenv("HOME", home)
+
+	// ADR only in a subdirectory — root has no ADR-*.md files.
+	globalDir := GlobalADRDir(home)
+	subDir := filepath.Join(globalDir, "done")
+	if err := os.MkdirAll(subDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(subDir, "ADR-2026-09-29-example.md"), []byte("# ADR in subdir\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	yamlPath := filepath.Join(root, "trackfw.yaml")
+	if err := os.WriteFile(yamlPath, []byte("hooks: none\nci: none\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Update(root); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(yamlPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "~/.trackfw/adr") {
+		t.Fatalf("~/.trackfw/adr was NOT registered even though ADRs exist in a subdirectory;\ntrackfw.yaml:\n%s", content)
+	}
+}
+
 func TestUpdateHarnessUnknownTargetIsUsageError(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

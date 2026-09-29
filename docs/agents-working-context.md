@@ -2,6 +2,25 @@
 
 ---
 
+## 2026-09-29 — Apolo (fix/context-reporta-zero-adrs-onde-status-reporta-145 — ML-1C ensureGlobalADRDirRegistered recursivo) — ENTREGUE
+
+**Início:** 2026-09-29 | Branch: `fix/context-reporta-zero-adrs-onde-status-reporta-145`
+**Tarefa:** ML-1C — substituir filepath.Glob raiz por validator.WalkADRFilePaths em ensureGlobalADRDirRegistered (update.go:302), remover isenção do gate, adicionar teste de braço do achado (ADRs em subpasta → diretório IS registrado).
+
+**Resultado:**
+- `internal/generators/update.go`: import `validator` adicionado; `filepath.Glob(globalDir, "ADR-*.md")` substituído por `validator.WalkADRFilePaths(globalDir)` (recursivo, semântica booleana preservada; dois no-ops mantidos).
+- `internal/generators/update_test.go`: `TestUpdateRegistersGlobalADRDirWhenADRsOnlyInSubdirectory` adicionado — ADR apenas em `done/` → diretório IS registrado (braço do achado).
+- `scripts/check-adr-enumeration-single-point.sh`: isenção de `generators/update.go` em PATTERN_C_EXEMPT removida; header atualizado; gate continua RC=0 (110 arquivos).
+- `go build ./...`: RC=0
+- `go test ./internal/generators/ ./internal/validator/`: RC=0 (ambos ok)
+- `bash scripts/check-adr-enumeration-single-point.sh`: GATE_RC=0
+- `bash scripts/check-adr-enumeration-single-point.sh --self-test`: SELFTEST_RC=0 (4 braços)
+- `make quality`: QUALITY_RC=0 (347 OK, 0 FAIL)
+- `git diff trackfw.yaml`: vazio
+- `git diff --name-only`: docs/agents-working-context.md, internal/generators/update.go, internal/generators/update_test.go, scripts/check-adr-enumeration-single-point.sh
+
+---
+
 ## 2026-09-29 — Apolo (fix/context-reporta-zero-adrs-onde-status-reporta-145 — ML-1B gate enumerador único ADR) — ENTREGUE
 
 **Início:** 2026-09-29 | Branch: `fix/context-reporta-zero-adrs-onde-status-reporta-145`

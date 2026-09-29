@@ -17,6 +17,7 @@ import (
 	"github.com/kgsaran/trackfw/internal/identity"
 	"github.com/kgsaran/trackfw/internal/integrations"
 	"github.com/kgsaran/trackfw/internal/pathguard"
+	"github.com/kgsaran/trackfw/internal/validator"
 )
 
 // loadUpdateConfig converts the Update namespace resolved by the single config
@@ -299,11 +300,9 @@ func ensureGlobalADRDirRegistered(cwd string) error {
 	if _, statErr := os.Stat(globalDir); statErr != nil {
 		return nil // global ADR dir doesn't exist — no-op
 	}
-	matches, globErr := filepath.Glob(filepath.Join(globalDir, "ADR-*.md"))
-	if globErr != nil {
-		return fmt.Errorf("checking for ADR files in %s: %w", globalDir, globErr)
-	}
-	if len(matches) == 0 {
+	// Use the recursive point-of-truth (ML-1C / #450): Glob root-only missed ADRs
+	// that live only in subdirectories (e.g. ~/.trackfw/adr/done/ADR-*.md).
+	if len(validator.WalkADRFilePaths(globalDir)) == 0 {
 		return nil // global ADR dir has no ADRs yet — no-op
 	}
 

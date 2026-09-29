@@ -23,7 +23,8 @@ Origem: **#450**. Causa: `context.go:39` faz `os.ReadDir(adrDir)` sem descer nas
 - [ ] A saída do `context` deixa de poder dizer `ADRs (0)` e nomear um ADR num warning
 - [ ] `Governance score` medido antes/depois: diferença de **exatamente 20 pontos**
 - [ ] Gate falsificável impedindo enumerador novo fora do ponto único
-- [ ] `make quality` e CI verdes
+- [x] `make quality` **RC=0** — rodado pelo arquiteto, 1381 `OK` (os `FAIL` do log são fixtures
+      dos braços de self-test). CI: ver PR
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -120,7 +121,7 @@ Precedente a copiar: `context.go:60`, que já usa `validator.ResolveREQFiles(cfg
 
 ### ML-1C — 🔴 `ensureGlobalADRDirRegistered` lê `~/.trackfw/adr` com `Glob` raiz, e o diretório global nunca é registrado
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-09-29
 **Arquivos:** `internal/generators/update.go` (~linha 302), teste; e a **isenção** correspondente em
 `scripts/check-adr-enumeration-single-point.sh`
 
@@ -148,14 +149,14 @@ mesmo mecanismo, mesma ADR. Um sítio conhecido e não corrigido deixaria a ADR 
 insatisfeita, que é o achado A1 que este projeto já pagou duas vezes.
 
 **Critérios de aceite:**
-- [ ] A verificação de existência passa a ser **recursiva**, preservando a semântica *"há algum ADR
+- [x] A verificação de existência passa a ser **recursiva**, preservando a semântica *"há algum ADR
       neste diretório?"* — não transforme em enumeração para contagem
-- [ ] 🔴 **Teste no braço do achado:** `~/.trackfw/adr` com ADRs **apenas em subpasta** → o diretório
+- [x] 🔴 **Teste no braço do achado:** `~/.trackfw/adr` com ADRs **apenas em subpasta** → o diretório
       **É** registrado em `adr_dirs`
-- [ ] **Contra-braço:** `~/.trackfw/adr` **vazio** ou inexistente → continua no-op, sem registrar
-- [ ] A **isenção deste sítio sai** do `check-adr-enumeration-single-point.sh`, e o gate continua
+- [x] **Contra-braço:** `~/.trackfw/adr` **vazio** ou inexistente → continua no-op, sem registrar
+- [x] A **isenção deste sítio sai** do `check-adr-enumeration-single-point.sh`, e o gate continua
       `RC=0` — se a isenção precisar ficar, a razão tem que ser outra, escrita
-- [ ] Reconciliação: uma frase por teste, dizendo o que **mediu**
+- [x] Reconciliação: uma frase por teste, dizendo o que **mediu**
 
 ## Wave 2 — auditoria independente
 > Dependências: Wave 1 completa e auditada.

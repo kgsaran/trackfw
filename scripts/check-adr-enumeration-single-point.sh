@@ -75,15 +75,9 @@
 #      adding them under the mistaken belief this gate requires it.
 #      *** This is a SECURITY BOUNDARY — do not rewrite it as an enumerator.
 #
-#   2. internal/generators/update.go — filepath.Glob(filepath.Join(globalDir,
-#      "ADR-*.md")) in ensureGlobalADRDirRegistered.
-#      REASON: globalDir = GlobalADRDir(home) = ~/.trackfw/adr — a flat global
-#      directory by design (no state subdirectories). Not a cfg.ADRDirs
-#      consumer; the "ADR-" pattern is incidental to its registration check.
-#      Exempted from Pattern C only. Patterns A/A'/B still apply if that
-#      function acquires a root-only ReadDir or a Glob on a cfg-derived dir.
-#      🔴 PROVISIONAL: if ~/.trackfw/adr ever gains subdirectory layout, this
-#      exemption must be revisited — the same root-only defect would apply.
+#   2. internal/generators/update.go — EXEMPTION REMOVED (ML-1C / #450).
+#      ensureGlobalADRDirRegistered previously used filepath.Glob root-only;
+#      now uses validator.WalkADRFilePaths (recursive). No exemption needed.
 #
 #   3. internal/discover/discover.go — pre-config scan; does NOT consume
 #      cfg.ADRDirs. Uses os.ReadDir(dir) with generic variable names (dir, d).
@@ -125,7 +119,8 @@ EXEMPT_MARKER="adr-single-point-exempt:"
 # These have a documented legitimate reason; see header.
 # Format: path relative to SCAN_ROOT/internal/
 PATTERN_C_EXEMPT=(
-    "generators/update.go"   # GlobalADRDir flat dir; not a cfg.ADRDirs consumer
+    # generators/update.go exemption removed in ML-1C (#450): now uses
+    # validator.WalkADRFilePaths (recursive) instead of filepath.Glob.
 )
 
 # ── helpers ─────────────────────────────────────────────────────────────────
