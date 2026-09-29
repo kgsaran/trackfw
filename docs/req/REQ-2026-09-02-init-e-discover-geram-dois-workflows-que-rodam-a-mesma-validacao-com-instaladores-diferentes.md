@@ -2,7 +2,7 @@
 status: Open
 date: 2026-09-02
 author: "zeus-tf"
-adr: ""
+adr: "docs/adr/ADR-2026-09-29-o-produto-entrega-um-workflow-de-governanca-por-projeto-e-nunca-adiciona-um-segundo-ao-lado-do-existente.md"
 roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-22-init-e-discover-geram-dois-workflows-que-rodam-a-mesma-validacao-com-instaladores-diferentes.md"
 ---
 
@@ -193,8 +193,10 @@ mas por outro caminho — não porque alguém conferiu a citação.
 
 ## Linked ADR
 
-ADR: <!-- avaliar na Wave 0: se a conclusão for que os dois caminhos atendem públicos distintos, isso
-é decisão de produto e merece registro. -->
+ADR: `docs/adr/ADR-2026-09-29-o-produto-entrega-um-workflow-de-governanca-por-projeto-e-nunca-adiciona-um-segundo-ao-lado-do-existente.md`
+
+> A Wave 0 respondeu: **não** atendem públicos distintos. A janela exclusiva é transiente e o
+> argumento do instalador não se sustenta. A decisão foi registrada — pela primeira vez.
 
 ## Linked Roadmap
 

@@ -42969,3 +42969,19 @@ Medido por mim antes de escrever:
 AC4 (paridade 3 CLIs) marcado **obsoleto pela v8**; substituído por AC4-bis. Acrescentados AC7 e AC8.
 Roadmap reescrito: Wave 0 real (o esqueleto gerado tinha gate `exit 1` placeholder), Wave 1 escrita
 só depois do veredito. Próximo: despachar ML-0A ao `hades-tf`.
+
+## 2026-09-29 — zeus-tf — Wave 0 do #451 auditada, ADR escrita, Wave 1 pronta
+
+Wave 0 (`hades-tf`) derrubou duas premissas minhas: (a) os dois workflows **não** diferem só no
+instalador — os **job ids** diferem (`governance-install-script` vs `governance-go-install`), e job id
+é o nome do check; verificado por mim: **os dois** em `.github/required-status-checks.txt:29-30`;
+(b) o argumento do instalador não se sustenta (`setup-go@v7` provisiona o toolchain). A janela
+exclusiva do `discover --init` existe mas fecha no primeiro `update` → o AC1 **não** fecha a REQ.
+
+Citação falsa da `ADR-2026-08-28`: **6 sítios** (Wave 0 achou 5; o 6º é meu — o escopo negativo da
+`REQ-2026-09-28`, onde ela me levou a concluir "REQ própria" para o #451).
+
+Decisão do KG: remédio **não instalar o segundo**, canônico **`trackfw-gate.yml`**. Gravada na
+`ADR-2026-09-29-o-produto-entrega-um-workflow-de-governanca-por-projeto-...` (D1–D5), que existe
+porque **não havia ADR**. Wave 1 escrita decision-complete: ML-1A (gerador + doctor) ∥ ML-1C (sítios
+3–6); ML-1B sequencial após o 1A por compartilhar `scaffold_doctor.go`.
