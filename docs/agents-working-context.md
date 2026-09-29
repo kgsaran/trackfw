@@ -42685,3 +42685,29 @@ Medições independentes sobre 10 casos de teste (cenário #450, score delta, de
 **Entregável:** `docs/seguranca/2026-09-29-wave2-auditoria-independente-adr.md`
 
 **git diff trackfw.yaml:** vazio
+
+---
+
+## 2026-09-29 — Apolo (fix/orphan-req-reprova-estado-correto — ML-1A recorte semântico + casamento por vínculo real) — EM ANDAMENTO
+
+**Início:** 2026-09-29 | Branch: `fix/orphan-req-reprova-estado-correto`
+**Tarefa:** ML-1A — corrigir `traceid_orphan_req` nas duas causas: C1 (REQ Open dispara) e C2 (par válido com req: mas sem req_id invisível).
+
+**Baseline medido:** 0 violations, 173 warnings. `traceid_orphan_req` inerte neste repo (sem `trace_id_field`).
+
+**O que foi feito:**
+- `validator_traceid.go`: substituiu o laço `traceid_orphan_req` por versão que:
+  - C1: lê frontmatter de cada REQ via `reqStatusIsDone` — só dispara para `Done`; `Open`, `Superseded`, `Closed` silenciosos
+  - C2: chama `buildRoadmapReqLinks` (nova func) que varre todos os roadmaps extraindo campo `req:` + `normalizeRefSeparator` → casamento por basename
+  - `e.state` deliberadamente não usado — comentado no código
+- `validator_traceid_test.go`: atualizou `TestTraceIdOrphanReq` e `TestTraceIdByAgent` para usar `status: Done`; adicionou 7 novos testes com reconciliação explícita.
+
+**Números medidos:**
+- `traceid_orphan_req` INERTO neste repositório (sem `trace_id_field`) — delta = 0.
+- `trackfw validate`: ANTES 173 warnings → DEPOIS 173 warnings (zero regressão).
+- Todos os testes do pacote `internal/validator/` passando.
+
+**git diff trackfw.yaml:** vazio (confirmado)
+**git diff --name-only:** `docs/agents-working-context.md`, `internal/validator/validator_traceid.go`, `internal/validator/validator_traceid_test.go`
+
+**Status:** CONCLUÍDO — aguardando auditoria e commit por trackfw_architect.

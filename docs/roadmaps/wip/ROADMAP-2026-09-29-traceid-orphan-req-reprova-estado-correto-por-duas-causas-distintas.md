@@ -98,7 +98,7 @@ arquivos disjuntos, e ambos consomem o predicado que o 1A cria.
 
 ### ML-1A — o recorte semântico e o casamento por vínculo real, em `traceid_orphan_req`
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-09-29
 **Arquivos:** `internal/validator/validator_traceid.go` + testes
 
 Cobre **as duas causas na mesma regra**, porque vivem no mesmo laço (`validator_traceid.go:262-277`):
@@ -113,17 +113,37 @@ Cobre **as duas causas na mesma regra**, porque vivem no mesmo laço (`validator
 `req:` com `\` não casa sem ele.
 
 **Critérios de aceite:**
-- [ ] 🔴 **C1:** REQ `Open` com `req_id` e sem roadmap → **não** dispara
-- [ ] 🔴 **Contra-braço — a regra continua servindo:** REQ **`Done`** sem roadmap → **ainda** dispara.
+- [x] 🔴 **C1:** REQ `Open` com `req_id` e sem roadmap → **não** dispara
+- [x] 🔴 **Contra-braço — a regra continua servindo:** REQ **`Done`** sem roadmap → **ainda** dispara.
       Se nada mais dispara, a correção virou remoção de regra, e isso seria outra decisão
-- [ ] `Superseded` e `Closed` → não disparam
-- [ ] 🔴 **C2, braço do passivo:** par REQ↔roadmap existente, roadmap **sem** `req_id` mas **com**
+- [x] `Superseded` e `Closed` → não disparam
+- [x] 🔴 **C2, braço do passivo:** par REQ↔roadmap existente, roadmap **sem** `req_id` mas **com**
       `req:` correto → deixa de disparar **sem alterar arquivo nenhum**
-- [ ] **C2, separador:** `req: "docs\req\REQ-x.md"` casa igual
-- [ ] 🔴 **Nenhuma decisão por diretório** — um teste deve falhar se alguém reintroduzir leitura da
+- [x] **C2, separador:** `req: "docs\req\REQ-x.md"` casa igual
+- [x] 🔴 **Nenhuma decisão por diretório** — um teste deve falhar se alguém reintroduzir leitura da
       pasta da REQ para decidir isso
-- [ ] **Delta medido no corpus** deste repositório, antes/depois, com a razão de cada violação que sair
-- [ ] Reconciliação: uma frase por teste, dizendo o que **mediu**
+- [x] **Delta medido no corpus** deste repositório, antes/depois, com a razão de cada violação que sair
+- [x] Reconciliação: uma frase por teste, dizendo o que **mediu**
+
+**Auditoria do arquiteto — medido em fixture onde a regra VIVE.** ⚠️ O executor reportou
+*"delta zero no corpus"*, e foi honesto ao explicar: `traceid_orphan_req` é **inerte neste
+repositório** (sem `trace_id_field` no `trackfw.yaml`). **"Delta zero" ali não mede nada.** Medi numa
+fixture com `trace_id_field: req_id`:
+
+```
+REQ-A  Open,       sem roadmap          → silencia   C1
+REQ-B  Done,       sem roadmap          → DISPARA    contra-braço
+REQ-C  Superseded                        → silencia   D2-bis
+REQ-D  Closed                            → silencia   D2-bis
+REQ-E  Open, par via `req:` sem req_id   → silencia   C2, sem alterar arquivo
+```
+
+**Uma violação, e é a legítima.**
+
+⚠️ **Correção de uma afirmação do relatório:** ele lista *"AC8 de REQ-2026-09-28 aberto"* como risco.
+Isso vinha da Wave 0 e **eu já o refutei com medição**: o guard de namespace existe
+(`req_chain_ml4a.go`), tem teste, e o teste **passa**. O AC estava desmarcado por negligência de
+registro — já corrigido, com evidência.
 
 ### ML-1B — `req_has_roadmap` aplica o mesmo critério (ADR D4)
 **Owner:** `apolo-tf`
