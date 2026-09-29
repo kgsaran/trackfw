@@ -2412,14 +2412,14 @@ func validateADRsAreReferenced() ([]string, error) {
 	cfg := config.Load()
 	var violations []string
 	var adrs []string
-	for _, adrDir := range cfg.ADRDirs {
-		paths := walkADRFilePathsForRule("adr_orphan", adrDir, &violations)
-		for _, p := range paths {
-			if isOutsideCWD(p) {
-				continue
-			}
-			adrs = append(adrs, filepath.Base(p))
+	// ResolveADRFiles deduplica por caminho absoluto — impede duplicatas de adr_dirs aninhadas
+	// (ex: [docs/adr/zeus, docs/adr/zeus/done]). Dois ADRs com mesmo basename em dirs distintos
+	// e NÃO aninhados continuam como entidades separadas (dedup é por caminho, não por basename).
+	for _, p := range ResolveADRFiles(cfg) {
+		if isOutsideCWD(p) {
+			continue
 		}
+		adrs = append(adrs, filepath.Base(p))
 	}
 
 	reqPaths, err := resolveREQFiles(cfg)
@@ -2827,21 +2827,16 @@ func validateFrontmatterPresence() []string {
 	cfg := config.Load()
 	var violations []string
 
-	// ADRs — busca recursiva em subpastas
-	for _, adrDir := range cfg.ADRDirs {
-		basenames := walkADRFiles(adrDir)
-		for _, basename := range basenames {
-			fullPath := findADRFile(basename, cfg.ADRDirs)
-			if fullPath == "" {
-				continue
-			}
-			content, ok := readFileForRule("frontmatter_presence", fullPath, &violations)
-			if !ok {
-				continue
-			}
-			if !strings.HasPrefix(string(content), "---") {
-				violations = append(violations, fmt.Sprintf("adr %q has no frontmatter block", basename))
-			}
+	// ADRs — busca recursiva em subpastas (deduplicado por caminho absoluto via ResolveADRFiles
+	// para evitar duplicatas de adr_dirs aninhadas, ex: [docs/adr/zeus, docs/adr/zeus/done])
+	for _, fullPath := range ResolveADRFiles(cfg) {
+		basename := filepath.Base(fullPath)
+		content, ok := readFileForRule("frontmatter_presence", fullPath, &violations)
+		if !ok {
+			continue
+		}
+		if !strings.HasPrefix(string(content), "---") {
+			violations = append(violations, fmt.Sprintf("adr %q has no frontmatter block", basename))
 		}
 	}
 

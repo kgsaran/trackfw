@@ -17,12 +17,12 @@ Origem: **#450**. Causa: `context.go:39` faz `os.ReadDir(adrDir)` sem descer nas
 
 ## Acceptance Criteria
 <!-- Consolidados; detalhe por ML nas waves. -->
-- [ ] Todos os sítios que enumeram ADR levantados e classificados
-- [ ] `context` e `status` consomem o **mesmo** resolvedor (ADR D3)
-- [ ] Layout plano continua funcionando **e** subpastas de estado passam a ser enumeradas
-- [ ] A saída do `context` deixa de poder dizer `ADRs (0)` e nomear um ADR num warning
-- [ ] `Governance score` medido antes/depois: diferença de **exatamente 20 pontos**
-- [ ] Gate falsificável impedindo enumerador novo fora do ponto único
+- [x] Todos os sítios que enumeram ADR levantados e classificados
+- [x] `context` e `status` consomem o **mesmo** resolvedor (ADR D3)
+- [x] Layout plano continua funcionando **e** subpastas de estado passam a ser enumeradas
+- [x] A saída do `context` deixa de poder dizer `ADRs (0)` e nomear um ADR num warning
+- [x] `Governance score` medido antes/depois: diferença de **exatamente 20 pontos**
+- [x] Gate falsificável impedindo enumerador novo fora do ponto único
 - [x] `make quality` **RC=0** — rodado pelo arquiteto, 1381 `OK` (os `FAIL` do log são fixtures
       dos braços de self-test). CI: ver PR
 
@@ -158,6 +158,80 @@ insatisfeita, que é o achado A1 que este projeto já pagou duas vezes.
       `RC=0` — se a isenção precisar ficar, a razão tem que ser outra, escrita
 - [x] Reconciliação: uma frase por teste, dizendo o que **mediu**
 
+### ML-1D — 🔴 os warnings duplicam com `adr_dirs` aninhadas (mesma causa do D4)
+**Owner:** `apolo-tf`
+**Status:** ✅ Concluído — auditado em 2026-09-29
+**Arquivos:** `internal/validator/` (regras `adr_orphan` e presença de frontmatter), teste
+**⚠️ Frente paralela ML-1E em `scripts/` — não toque lá.**
+
+**Achado da Wave 2, confirmado pelo arquiteto.** Com `adr_dirs: [zeus, zeus/done]` e **3** ADRs reais:
+
+```
+  ## ADRs (3)          ← contagem CORRETA (o D4 funcionou)
+  ## Warnings (6)      ← 🔴 cada ADR aparece DUAS vezes
+- adr "ADR-...-01-t.md" is not referenced by any REQ
+- adr "ADR-...-02-t.md" is not referenced by any REQ
+- adr "ADR-...-03-t.md" is not referenced by any REQ
+- adr "ADR-...-01-t.md" is not referenced by any REQ   ← duplicado
+...
+```
+
+Medido: **6 linhas** de warning para **3 ADRs únicos**.
+
+🔴 **Não é só UX — é uma NOVA contradição interna**, da mesma família da que originou o #450: o
+comando diz `## ADRs (3)` e emite **6** avisos sobre ADRs, na mesma saída.
+
+**Por que entra nesta REQ, e não vira issue:** as regras de validação iteram `cfg.ADRDirs`
+independentemente, **sem dedup por caminho absoluto** — **exatamente o mecanismo do D4**. Eu trouxe o
+D4 para esta REQ com esse argumento; recusar F1 agora seria inconsistente, e a Regra Dura é explícita
+que *"está fora do escopo declarado"* **não** justifica REQ nova: se a causa é a mesma, o escopo
+estava estreito demais.
+
+**Critérios de aceite:**
+- [x] As regras de ADR consomem o resolvedor deduplicado (ou deduplicam por caminho absoluto)
+- [x] 🔴 **Braço do achado:** `adr_dirs` aninhadas com N ADRs reais → **N** warnings, não 2N
+- [x] **Contra-braço:** dois ADRs de **mesmo basename** em dirs **distintos e não aninhados** →
+      **2** warnings, não 1. O dedup não pode suprimir avisos legítimos
+- [x] Contagem e score **não regridem** (continuam corretos)
+- [x] Reconciliação: uma frase por teste, dizendo o que **mediu**
+
+### ML-1E — o gate é evadido por variável intermediária, e o AC prometia demais
+**Owner:** `apolo-tf`
+**Status:** ✅ Concluído — auditado em 2026-09-29
+**Arquivos:** `scripts/check-adr-enumeration-single-point.sh` **apenas**
+**⚠️ Frente paralela ML-1D em `internal/` — 🔴 não edite nenhum `.go`.**
+
+**Achado da Wave 2, confirmado pelo arquiteto em fixture própria:**
+
+```go
+dirs := cfg.ADRDirs          // variável intermediária
+for _, d := range dirs {
+    entries, _ := os.ReadDir(d)   // → gate PASSA (RC=0). EVADIU.
+}
+```
+Controle, mesma fixture com `range cfg.ADRDirs` direto → gate **RC=1**, detecta.
+
+**Decisão do arquiteto — cobrir uma, declarar a outra:**
+- **Evasão 1 (variável intermediária): COBRIR.** É refator **plausível sem má-fé** — alguém extrai a
+  lista para uma variável e o gate silencia.
+- **Evasão 2 (helper em outro escopo): DECLARAR como limite.** Exigiria análise de fluxo, inviável
+  em análise textual. É a mesma classe do limite já declarado no
+  `check-init-preserves-user-config.sh` (*"estrutural, não semântico"*). **Limite conhecido se
+  declara; não se finge corrigir.**
+- **O AC da REQ foi AJUSTADO** para descrever o que o gate entrega. Um AC que promete mais do que o
+  artefato faz transforma "gate passou" em evidência de uma garantia que não existe.
+
+**Critérios de aceite:**
+- [x] Evasão por **variável intermediária** passa a ser detectada
+- [x] 🔴 **Falsificação nas duas direções:** a fixture da evasão → **REPROVA**; a árvore real e o
+      ponto único → **PASSAM** (`RC=0`, ~110 arquivos)
+- [x] **Braço do comentário preservado** — a evasão por comentário continua não reprovando
+- [x] **Limite declarado no header:** enumeração via helper em outro escopo **não** é detectada, com
+      a razão (análise textual não faz análise de fluxo)
+- [x] `--self-test` ganha braço para a evasão coberta, e ele é **discriminante**: rode-o contra o
+      script **pré-fix** e mostre que falharia
+- [x] `check-orphan-gates` OK
+
 ## Wave 2 — auditoria independente
 > Dependências: Wave 1 completa e auditada.
 
@@ -185,76 +259,39 @@ arquivo, espaço no caminho, barra final, `./`, `NOTAS.md` contado conforme decl
 `adr_dirs` apontando para symlink de dir acha 0 ADRs. Não está nos requisitos e não é regressão — o
 `Glob`/`ReadDir` anterior também não seguia. Registrado para rastreabilidade.
 
-### ML-1D — 🔴 os warnings duplicam com `adr_dirs` aninhadas (mesma causa do D4)
-**Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
-**Arquivos:** `internal/validator/` (regras `adr_orphan` e presença de frontmatter), teste
-**⚠️ Frente paralela ML-1E em `scripts/` — não toque lá.**
+---
 
-**Achado da Wave 2, confirmado pelo arquiteto.** Com `adr_dirs: [zeus, zeus/done]` e **3** ADRs reais:
+## 🔴 Achado de PRODUTO durante esta REQ — fora do escopo, issue própria
+
+**O `barrier` não é fence-aware.** Linhas que começam com `## ` **dentro de um bloco de código**
+são lidas como headings de seção. Medido em 2026-09-29, neste próprio roadmap:
 
 ```
-## ADRs (3)          ← contagem CORRETA (o D4 funcionou)
-## Warnings (6)      ← 🔴 cada ADR aparece DUAS vezes
-- adr "ADR-...-01-t.md" is not referenced by any REQ
-- adr "ADR-...-02-t.md" is not referenced by any REQ
-- adr "ADR-...-03-t.md" is not referenced by any REQ
-- adr "ADR-...-01-t.md" is not referenced by any REQ   ← duplicado
-...
+barrier --wave 1 → ✗ acceptance_evidence: blocked
+                     - ML-1D: no acceptance block
 ```
 
-Medido: **6 linhas** de warning para **3 ADRs únicos**.
+O ML-1D **tem** bloco de aceite. Mas o exemplo de saída dele contém:
 
-🔴 **Não é só UX — é uma NOVA contradição interna**, da mesma família da que originou o #450: o
-comando diz `## ADRs (3)` e emite **6** avisos sobre ADRs, na mesma saída.
-
-**Por que entra nesta REQ, e não vira issue:** as regras de validação iteram `cfg.ADRDirs`
-independentemente, **sem dedup por caminho absoluto** — **exatamente o mecanismo do D4**. Eu trouxe o
-D4 para esta REQ com esse argumento; recusar F1 agora seria inconsistente, e a Regra Dura é explícita
-que *"está fora do escopo declarado"* **não** justifica REQ nova: se a causa é a mesma, o escopo
-estava estreito demais.
-
-**Critérios de aceite:**
-- [ ] As regras de ADR consomem o resolvedor deduplicado (ou deduplicam por caminho absoluto)
-- [ ] 🔴 **Braço do achado:** `adr_dirs` aninhadas com N ADRs reais → **N** warnings, não 2N
-- [ ] **Contra-braço:** dois ADRs de **mesmo basename** em dirs **distintos e não aninhados** →
-      **2** warnings, não 1. O dedup não pode suprimir avisos legítimos
-- [ ] Contagem e score **não regridem** (continuam corretos)
-- [ ] Reconciliação: uma frase por teste, dizendo o que **mediu**
-
-### ML-1E — o gate é evadido por variável intermediária, e o AC prometia demais
-**Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
-**Arquivos:** `scripts/check-adr-enumeration-single-point.sh` **apenas**
-**⚠️ Frente paralela ML-1D em `internal/` — 🔴 não edite nenhum `.go`.**
-
-**Achado da Wave 2, confirmado pelo arquiteto em fixture própria:**
-
-```go
-dirs := cfg.ADRDirs          // variável intermediária
-for _, d := range dirs {
-    entries, _ := os.ReadDir(d)   // → gate PASSA (RC=0). EVADIU.
-}
 ```
-Controle, mesma fixture com `range cfg.ADRDirs` direto → gate **RC=1**, detecta.
+  ## ADRs (3)
+  ## Warnings (6)
+```
 
-**Decisão do arquiteto — cobrir uma, declarar a outra:**
-- **Evasão 1 (variável intermediária): COBRIR.** É refator **plausível sem má-fé** — alguém extrai a
-  lista para uma variável e o gate silencia.
-- **Evasão 2 (helper em outro escopo): DECLARAR como limite.** Exigiria análise de fluxo, inviável
-  em análise textual. É a mesma classe do limite já declarado no
-  `check-init-preserves-user-config.sh` (*"estrutural, não semântico"*). **Limite conhecido se
-  declara; não se finge corrigir.**
-- **O AC da REQ foi AJUSTADO** para descrever o que o gate entrega. Um AC que promete mais do que o
-  artefato faz transforma "gate passou" em evidência de uma garantia que não existe.
+…e o parser encerra a seção do ML ali, antes de chegar em `**Critérios de aceite:**`.
 
-**Critérios de aceite:**
-- [ ] Evasão por **variável intermediária** passa a ser detectada
-- [ ] 🔴 **Falsificação nas duas direções:** a fixture da evasão → **REPROVA**; a árvore real e o
-      ponto único → **PASSAM** (`RC=0`, ~110 arquivos)
-- [ ] **Braço do comentário preservado** — a evasão por comentário continua não reprovando
-- [ ] **Limite declarado no header:** enumeração via helper em outro escopo **não** é detectada, com
-      a razão (análise textual não faz análise de fluxo)
-- [ ] `--self-test` ganha braço para a evasão coberta, e ele é **discriminante**: rode-o contra o
-      script **pré-fix** e mostre que falharia
-- [ ] `check-orphan-gates` OK
+**Contorno aplicado aqui:** indentar as duas linhas dentro do fence (conteúdo intacto, deixa de
+parecer heading). **Não é correção** — é contorno, e está escrito para não ser confundido com uma.
+
+🔴 **Por que NÃO entra nesta REQ:** aplicando o teste da Regra Dura — *"se eu corrigir esta causa,
+exatamente estas falhas fecham"* — corrigir o parser do `barrier` **não** tem relação com enumeração
+de ADR. Causa distinta, superfície distinta, ADR distinta. **Issue própria.**
+
+**Por que vale a issue:** um roadmap que documenta saída de comando em bloco de código — que é
+prática **encorajada** neste projeto, porque evidência colada vale mais que prosa — pode ter MLs
+silenciosamente invisíveis ao `barrier`. O modo de falha é o pior possível: **o gate reporta
+`no acceptance block` para um ML que tem o bloco**, e o autor procura no lugar errado.
+
+⚠️ E o mesmo defeito apareceu no **meu próprio script de verificação** na mesma sessão, pela mesma
+razão. A lição é do domínio, não do trackfw: **parser de markdown ingênuo confunde conteúdo de fence
+com estrutura**.

@@ -30,11 +30,17 @@
 #     Does NOT catch: os.ReadDir(dir), os.ReadDir(parent), os.ReadDir(src).
 #     Rationale: explicit ADR-named variables are the common mistake.
 #
-#   Pattern A' (loop-context) — os.ReadDir(LOOPVAR) where LOOPVAR was bound by
-#     "for _, LOOPVAR := range ... ADRDirs" in the same file.
+#   Pattern A' (loop-context) — os.ReadDir(LOOPVAR) where LOOPVAR is bound by
+#     iterating over ADRDirs, either directly or via an intermediate variable.
+#     Two detection paths:
+#       (direct)   "for _, LOOPVAR := range ... ADRDirs" in the same file.
+#       (indirect) "IVAR := ...ADRDirs" then "for _, LOOPVAR := range IVAR".
 #     Catches: for _, d := range cfg.ADRDirs { os.ReadDir(d) }
-#     Rationale: short variable names (d, dir) would evade Pattern A.
-#     Note: file-level var extraction (not scope-tracked) may give false
+#             dirs := cfg.ADRDirs; for _, d := range dirs { os.ReadDir(d) }
+#     Rationale: short variable names (d, dir) would evade Pattern A; indirect
+#     variable extraction is a plausible refactor that would silence the original
+#     direct-only gate. ML-1E covers the indirect path.
+#     Note: file-level extraction (not scope-tracked) may give false
 #     positives if LOOPVAR is reused for a non-ADR ReadDir elsewhere in the
 #     same file. Use adr-single-point-exempt: marker to suppress if needed.
 #
@@ -86,8 +92,16 @@
 # ANTI-VACUITY: reports how many Go files were examined. FAILS if zero files
 #   are found in internal/ — refuses to report a vacuous pass.
 #
+# LIMITE CONHECIDO (Wave 2, 2026-09-29): este gate é TEXTUAL, não faz análise
+#   de fluxo. Ele detecta o padrão direto ("range cfg.ADRDirs" + os.ReadDir) e
+#   a variável intermediária ("dirs := cfg.ADRDirs"). NÃO detecta enumeração
+#   via helper em outro escopo — p.ex. `readHelper(dir)` chamado em loop sobre
+#   ADRDirs, com o os.ReadDir dentro do helper. Medido como evasão na auditoria
+#   independente. Cobrir isso exigiria análise de fluxo entre funções, fora do
+#   alcance de bash/awk.
+#
 # SELF-TEST (--self-test):
-#   Run four arms using mktemp fixtures (never mutates the live tree).
+#   Run five arms using mktemp fixtures (never mutates the live tree).
 #   Arm 1: new file with os.ReadDir(adrDir) → gate FAILS naming file:line.
 #   Arm 2: files with only WalkDir/buildAllowedDirs-style code → gate PASSES.
 #   Arm 3 (comment — BOTH directions):
@@ -95,6 +109,9 @@
 #     3b: real os.ReadDir(adrDir) with "// use WalkDir" comment above →
 #         gate still FAILS (comment does not excuse the real call).
 #   Arm 4: filepath.Glob( added to generators/adr.go → gate FAILS.
+#   Arm 5 (indirect variable — ML-1E, discriminant):
+#     5a: pre-fix simulation (direct Pattern A' only) → PASSES (evasion undetected).
+#     5b: fixed script → FAILS naming file:line (evasion detected).
 #
 # ENV VAR OVERRIDE: ADR_ENUM_SCAN_DIR — overrides the repo root used for the
 #   scan. Default: repo root (parent of scripts/). In self-test, set to a
@@ -215,16 +232,55 @@ run_scan() {
         done
 
         # ── Pattern A' (loop-context): os.ReadDir(LOOPVAR) ─────────────────
-        # Collect loop variables bound by "for _, VAR := range.*ADRDirs".
+        # Collects loop variables bound by iterating over ADRDirs, either:
+        #   (direct)   "for _, VAR := range ... ADRDirs"
+        #   (indirect) "IVAR := ...ADRDirs" then "for _, VAR := range IVAR"
         # File-level extraction (not scope-tracked): if VAR is reused for a
         # non-ADR ReadDir, use adr-single-point-exempt: to suppress.
         local loop_vars=()
+
+        # Direct: for _, d := range cfg.ADRDirs
         while IFS= read -r lv; do
             [[ -n "$lv" ]] && loop_vars+=("$lv")
         done < <( { \
             sed -n 's/.*for[[:space:]]*_[[:space:]]*,[[:space:]]*\([A-Za-z_][A-Za-z0-9_]*\)[[:space:]]*:=[[:space:]]*range[[:space:]].*ADRDirs.*/\1/p' "$f" \
             | sort -u; \
         } || true)
+
+        # Indirect: find vars assigned from ...ADRDirs (not via range),
+        # then collect loop vars that range over those intermediate vars.
+        local indirect_vars=()
+        while IFS= read -r iv; do
+            [[ -n "$iv" ]] && indirect_vars+=("$iv")
+        done < <( { \
+            grep -n 'ADRDirs' "$f" \
+            | grep -v ':=[[:space:]]*range[[:space:]]' \
+            | sed 's/^[0-9]*://' \
+            | grep -v '^[[:space:]]*//' \
+            | sed -n 's/^[[:space:]]*\([A-Za-z_][A-Za-z0-9_]*\)[[:space:]]*:=[[:space:]].*/\1/p' \
+            | sort -u; \
+        } || true)
+
+        for iv in "${indirect_vars[@]+"${indirect_vars[@]}"}"; do
+            while IFS= read -r lv; do
+                [[ -n "$lv" ]] && loop_vars+=("$lv")
+            done < <( { \
+                grep -n "range[[:space:]]*${iv}[^A-Za-z0-9_]" "$f" \
+                | sed 's/^[0-9]*://' \
+                | grep -v '^[[:space:]]*//' \
+                | sed -n "s/.*for[[:space:]]*_[[:space:]]*,[[:space:]]*\([A-Za-z_][A-Za-z0-9_]*\)[[:space:]]*:=[[:space:]]*range.*/\1/p" \
+                | sort -u; \
+            } || true)
+        done
+
+        # Deduplicate (a var may appear via both direct and indirect paths)
+        if [[ ${#loop_vars[@]} -gt 0 ]]; then
+            local _lv_dedup=()
+            while IFS= read -r _lv; do
+                [[ -n "$_lv" ]] && _lv_dedup+=("$_lv")
+            done < <(printf '%s\n' "${loop_vars[@]}" | sort -u)
+            loop_vars=("${_lv_dedup[@]+"${_lv_dedup[@]}"}")
+        fi
 
         for lv in "${loop_vars[@]+"${loop_vars[@]}"}"; do
             local lv_hits=()
@@ -245,7 +301,7 @@ run_scan() {
                         continue
                     fi
                     has_exempt_marker "$f" "$lineno" && continue
-                    echo "FAIL $f:$lineno [Pattern A'] os.ReadDir($lv) where $lv is a loop var from range.*ADRDirs — use walkADRFilePaths"
+                    echo "FAIL $f:$lineno [Pattern A'] os.ReadDir($lv) where $lv iterates over ADRDirs (directly or via intermediate variable) — use walkADRFilePaths"
                     echo "     line: $content"
                     violations=$((violations + 1))
                 fi
@@ -514,8 +570,108 @@ GOEOF
     fi
     echo ""
 
+    # ── Arm 5: indirect variable evasion (ML-1E) ─────────────────────────────
+    # 5a: pre-fix simulation (direct Pattern A' only) → MUST PASS (evasion undetected).
+    # 5b: fixed script → MUST FAIL naming indirect_var_fixture.go (evasion detected).
+    mkdir -p "$TMPDIR_ST/arm5/internal/generators"
+    cat > "$TMPDIR_ST/arm5/internal/generators/indirect_var_fixture.go" <<'GOEOF'
+package generators
+
+import (
+	"os"
+	"path/filepath"
+)
+
+// BAD: intermediate variable extraction — evades original direct Pattern A'.
+// The slice is extracted to a local var; the loop ranges over that local var.
+func badEnumerateViaIndirectVar(cfg someConfig) []string {
+	dirs := cfg.ADRDirs         // intermediate var: assigned from cfg.ADRDirs
+	var result []string
+	for _, d := range dirs {    // loop var: range over intermediate (not inline)
+		entries, _ := os.ReadDir(d)
+		for _, e := range entries {
+			if !e.IsDir() {
+				result = append(result, filepath.Join(d, e.Name()))
+			}
+		}
+	}
+	return result
+}
+GOEOF
+
+    echo "=== Arm 5: indirect variable evasion (ML-1E) ==="
+
+    # Pre-fix simulation: only detects direct "range.*ADRDirs" loop vars (no indirect).
+    cat > "$TMPDIR_ST/prefix-sim.sh" <<'SHELLEOF'
+#!/usr/bin/env bash
+set -uo pipefail
+SCAN_ROOT="${ADR_ENUM_SCAN_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+violations=0; files=0
+go_files=()
+while IFS= read -r f; do go_files+=("$f"); done \
+    < <(find "$SCAN_ROOT/internal" -name '*.go' ! -name '*_test.go' -print 2>/dev/null | sort || true)
+[[ ${#go_files[@]} -eq 0 ]] && { echo "FAIL: no go files" >&2; exit 1; }
+for f in "${go_files[@]}"; do
+  files=$((files+1))
+  # Pattern A: os.ReadDir with "adr" in argument
+  while IFS= read -r hit; do
+    lineno="${hit%%:*}"; content="${hit#*:}"
+    stripped="${content#"${content%%[![:space:]]*}"}"; [[ "$stripped" == //* ]] && continue
+    clean="${content%%//*}"
+    echo "$clean" | grep -qiE 'os\.ReadDir\([^)]*[Aa][Dd][Rr]' || continue
+    echo "FAIL $f:$lineno [Pattern A]"; violations=$((violations+1))
+  done < <(grep -n 'os\.ReadDir(' "$f" || true)
+  # Pattern A' DIRECT only — no indirect var detection (pre-fix behavior)
+  while IFS= read -r lv; do
+    [[ -z "$lv" ]] && continue
+    while IFS= read -r hit; do
+      lineno="${hit%%:*}"; content="${hit#*:}"
+      stripped="${content#"${content%%[![:space:]]*}"}"; [[ "$stripped" == //* ]] && continue
+      clean="${content%%//*}"
+      echo "$clean" | grep -qE "os\.ReadDir\\($lv\\)" || continue
+      echo "$clean" | grep -qiE 'os\.ReadDir\([^)]*[Aa][Dd][Rr]' && continue
+      echo "FAIL $f:$lineno [Pattern A' direct]"; violations=$((violations+1))
+    done < <(grep -n "os\.ReadDir($lv)" "$f" || true)
+  done < <(sed -n 's/.*for[[:space:]]*_[[:space:]]*,[[:space:]]*\([A-Za-z_][A-Za-z0-9_]*\)[[:space:]]*:=[[:space:]]*range[[:space:]].*ADRDirs.*/\1/p' "$f" | sort -u || true)
+done
+echo "Files examined: $files"
+[[ $violations -gt 0 ]] && { echo "FAIL: $violations violation(s)"; exit 1; }
+echo "PASS: no violations"; exit 0
+SHELLEOF
+    chmod +x "$TMPDIR_ST/prefix-sim.sh"
+
+    echo "--- 5a: pre-fix simulation (direct only) → MUST PASS (evasion undetected) ---"
+    arm5a_rc=0
+    arm5a_out=$(ADR_ENUM_SCAN_DIR="$TMPDIR_ST/arm5" bash "$TMPDIR_ST/prefix-sim.sh" 2>&1) || arm5a_rc=$?
+    echo "$arm5a_out"
+
+    echo "--- 5b: fixed script → MUST FAIL naming indirect_var_fixture.go ---"
+    arm5b_rc=0
+    arm5b_out=$(ADR_ENUM_SCAN_DIR="$TMPDIR_ST/arm5" bash "${BASH_SOURCE[0]}" 2>&1) || arm5b_rc=$?
+    echo "$arm5b_out"
+
+    arm5a_ok=0
+    arm5b_ok=0
+    [[ $arm5a_rc -eq 0 ]] && arm5a_ok=1
+    if [[ $arm5b_rc -ne 0 ]] && echo "$arm5b_out" | grep -q "FAIL.*indirect_var_fixture.go"; then
+        arm5b_ok=1
+    fi
+
+    if [[ $arm5a_ok -eq 1 && $arm5b_ok -eq 1 ]]; then
+        echo "SELF-TEST arm5: PASS (pre-fix evaded [5a rc=$arm5a_rc]; fixed detects [5b rc=$arm5b_rc])"
+    else
+        if [[ $arm5a_ok -eq 0 ]]; then
+            echo "SELF-TEST arm5: FAIL [5a] — pre-fix simulation unexpectedly caught the evasion (rc=$arm5a_rc)" >&2
+        fi
+        if [[ $arm5b_ok -eq 0 ]]; then
+            echo "SELF-TEST arm5: FAIL [5b] — fixed script did not detect indirect variable evasion (rc=$arm5b_rc)" >&2
+        fi
+        overall_rc=1
+    fi
+    echo ""
+
     if [[ $overall_rc -eq 0 ]]; then
-        echo "SELF-TEST: PASS (all 4 arms)"
+        echo "SELF-TEST: PASS (all 5 arms)"
     else
         echo "SELF-TEST: FAIL" >&2
     fi

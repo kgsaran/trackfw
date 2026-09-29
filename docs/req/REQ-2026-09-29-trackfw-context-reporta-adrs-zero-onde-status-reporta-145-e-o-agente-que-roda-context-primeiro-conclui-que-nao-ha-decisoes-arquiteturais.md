@@ -114,7 +114,7 @@ vez — ADR de ponto único marcada satisfeita com sítio sobrando.
       arquiteto: 3 ADRs reais → contagem **3** (correta) mas **6 warnings**, cada ADR repetido. É
       **uma nova contradição interna** — `## ADRs (3)` ao lado de 6 avisos sobre ADRs — e **a mesma
       causa** do D4: enumerador que itera `cfg.ADRDirs` sem deduplicar
-- [ ] `make quality` e **CI** verdes
+- [x] `make quality` **RC=0** — rodado pelo arquiteto. CI: ver PR
 
 ## Negative scope — o que esta REQ NÃO faz
 

@@ -2,6 +2,41 @@
 
 ---
 
+## 2026-09-29 — Apolo (fix/context-reporta-zero-adrs-onde-status-reporta-145 — ML-1D warnings duplicados com adr_dirs aninhadas) — CONCLUÍDO
+
+**Início:** 2026-09-29 | Branch: `fix/context-reporta-zero-adrs-onde-status-reporta-145`
+**Tarefa:** ML-1D — corrigir duplicação de warnings de `adr_orphan` e `frontmatter_presence` com `adr_dirs` aninhadas.
+
+**O que foi feito:**
+- `validateADRsAreReferenced`: substituiu o loop direto em `cfg.ADRDirs` por `ResolveADRFiles(cfg)` (dedup por caminho absoluto).
+- `validateFrontmatterPresence`: mesma substituição; eliminado o `findADRFile` intermediário (já temos o path completo).
+- Novo arquivo de testes: `validator_nested_adrdirs_ml1d_test.go` com 3 testes e reconciliação explícita.
+
+**Números medidos:**
+- Fixture aninhada (3 ADRs em zeus/done, adr_dirs=[zeus, zeus/done]): ANTES 6 warnings → DEPOIS 3 warnings.
+- Contra-braço (mesmo basename em zeus e athena distintos): ANTES 2 warnings → DEPOIS 2 warnings (preservado).
+- `trackfw validate` neste repo: ANTES 173 warnings → DEPOIS 173 warnings (sem regressão).
+
+**git diff --name-only:** `docs/agents-working-context.md`, `internal/validator/validator.go`
+**git diff trackfw.yaml:** vazio
+
+---
+
+## 2026-09-29 — Apolo (fix/context-reporta-zero-adrs-onde-status-reporta-145 — ML-1E evasão por variável intermediária) — ENTREGUE
+
+**Início:** 2026-09-29 | Branch: `fix/context-reporta-zero-adrs-onde-status-reporta-145`
+**Tarefa:** ML-1E — estender Pattern A' do gate `check-adr-enumeration-single-point.sh` para detectar evasão por variável intermediária (`dirs := cfg.ADRDirs`); declarar limite de helper em outro escopo no header; adicionar Arm 5 com prova de discriminância pré-fix.
+
+**Resultado:**
+- `scripts/check-adr-enumeration-single-point.sh`: Pattern A' estendido com detecção de vars intermediárias (indirect_vars); LIMITE CONHECIDO declarado no header; Arm 5 adicionado ao --self-test com prova discriminante pré-fix (5a=PASS evasão não detectada, 5b=FAIL evasão detectada); erro: ficheiro fixa que comentário `// range over intermediate var, not directly ADRDirs` na linha do for-range causava sed greedy a capturar `d` como loop var — corrigido retirando "ADRDirs" do comentário da linha do for.
+- `bash scripts/check-adr-enumeration-single-point.sh`: GATE_RC=0 (110 arquivos)
+- `bash scripts/check-adr-enumeration-single-point.sh --self-test`: SELFTEST_RC=0 (5 braços)
+- `bash scripts/check-orphan-gates.sh`: ORPHAN_RC=0
+- `git diff trackfw.yaml`: vazio
+- `git diff --name-only`: docs/agents-working-context.md, scripts/check-adr-enumeration-single-point.sh (+ internal/validator/validator.go da frente paralela ML-1D — não tocado por este ML)
+
+---
+
 ## 2026-09-29 — Apolo (fix/context-reporta-zero-adrs-onde-status-reporta-145 — ML-1C ensureGlobalADRDirRegistered recursivo) — ENTREGUE
 
 **Início:** 2026-09-29 | Branch: `fix/context-reporta-zero-adrs-onde-status-reporta-145`
