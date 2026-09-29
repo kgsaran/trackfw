@@ -2,6 +2,140 @@
 
 ---
 
+## 2026-09-28 — Apolo (fix/init-reexecutado-destroi-config-do-consumidor — ML-1G restaurar write-containment-allowed) — ENTREGUE
+
+**Início:** 2026-09-28 | Branch: `fix/init-reexecutado-destroi-config-do-consumidor`
+**Tarefa:** ML-1G — Restaurar o marcador `write-containment-allowed:` em `generateLefthookHook` (`internal/generators/scaffold.go`) que foi removido acidentalmente no ML-1D quando o arquiteto pediu remoção de `consumer-config-merge-allowed:`. Apenas edição de comentário; sem alteração de lógica.
+
+**Resultado:**
+- `internal/generators/scaffold.go`: adicionadas 3 linhas de comentário antes do `os.WriteFile` em `generateLefthookHook`: distinção entre os dois gates (write-containment vs config-preservation) e o marcador `write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site`. As 4 linhas de comentário pré-existentes foram mantidas intactas. Nenhuma ocorrência de `consumer-config-merge-allowed` no arquivo.
+- `go build ./...`: RC=0
+- `go test ./internal/generators/`: RC=0 (ok, 29.614s)
+- `bash scripts/check-init-preserves-user-config.sh`: RC=0 (4 sítios, todos PASS via `os.ReadFile precedes write`, não via marcador)
+- `bash scripts/check-init-preserves-user-config.sh --self-test`: SELFTEST_RC=0 (3 braços, todos PASS)
+- `make quality`: RC=0
+- `git diff trackfw.yaml`: vazio
+- Arquivos alterados: `docs/agents-working-context.md`, `internal/generators/scaffold.go`
+
+---
+
+## 2026-09-28 — Apolo (fix/init-reexecutado-destroi-config-do-consumidor — ML-1F comentário inline duplica entrada) — ENTREGUE
+
+**Início:** 2026-09-28 | Branch: `fix/init-reexecutado-destroi-config-do-consumidor`
+**Tarefa:** ML-1F — corrigir `lefthookValidatePresent` que trata `trackfw-validate: # comment` como ausente porque compara de forma exata sem truncar o comentário inline, causando duplicação da entrada quando o arquivo já tem o hook com comentário. Adicionar 4 braços de teste (tabela) e contra-braço de corrupção (contagem).
+
+**Resultado:**
+- `internal/generators/scaffold.go`: `lefthookValidatePresent` agora trunca comentário inline (` #` sequence) antes de comparar. Docblock declara caveat de string com `#` (valor citado). Restante da lógica (rastreamento de seção, ML-1E fix) intacto.
+- `internal/generators/lefthook_hook_merge_test.go`: T8 `FourArms` (tabela, 4 braços: limpo→presente, inline-comment→presente [o fix], só-pre-push→ausente [regressão ML-1E], espaço-no-fim→presente) e T9 `InlineCommentNoCorruption` (contra-braço: arquivo com `trackfw-validate: # cmt` já instalado → count=1 após merge).
+- `go build ./...`: RC=0 | `go test ./internal/generators/`: RC=0 (ok, 28.740s)
+- `bash scripts/check-init-preserves-user-config.sh`: RC=0 (4 sítios, todos PASS)
+- `bash scripts/check-init-preserves-user-config.sh --self-test`: SELFTEST_RC=0 (3 braços, todos PASS)
+- `git diff trackfw.yaml`: vazio.
+- Arquivos alterados: `docs/agents-working-context.md`, `internal/generators/scaffold.go`, `internal/generators/lefthook_hook_merge_test.go`.
+
+---
+
+## 2026-09-28 — Apolo (fix/init-reexecutado-destroi-config-do-consumidor — ML-1E predicado de idempotência) — ENTREGUE
+
+**Início:** 2026-09-28 | Branch: `fix/init-reexecutado-destroi-config-do-consumidor`
+**Tarefa:** ML-1E — corrigir o predicado de idempotência de `generateLefthookHook` que usava `strings.Contains(file, "trackfw-validate:")` e dava falso-positivo (hook sob `pre-push:` sendo tratado como "já instalado", impedindo a instalação em `pre-commit:`). Adicionar declaração de limite ao cabeçalho do gate.
+
+**Resultado:**
+- `internal/generators/scaffold.go`: função `lefthookValidatePresent(content string) bool` adicionada acima de `generateLefthookHook`. Usa o mesmo rastreamento de seção da rota de merge (iteração linha a linha, `inPreCommit` por chave de nível 0 não-comentário), verificando `trackfw-validate:` apenas dentro do bloco `pre-commit:`. Substitui `strings.Contains(existingStr, "trackfw-validate:")` por `lefthookValidatePresent(existingStr)`.
+- `internal/generators/lefthook_hook_merge_test.go`: dois testes novos (T6 e T7) com frases de reconciliação:
+  - T6 `PrePushOnlyInstallsPreCommit`: medindo que `trackfw-validate:` sob `pre-push:` é tratado como ausente pelo predicado corrigido → hook instalado dentro de `pre-commit:` (verificado por rastreamento de seção inline), `pre-push:` preservado, e 2ª chamada é byte-idêntica (contra-braço).
+  - T7 `CommentNotCounted`: medindo que `# trackfw-validate:` como comentário é tratado como ausente → hook instalado como entrada real indentada sob `pre-commit:`.
+- `scripts/check-init-preserves-user-config.sh`: declaração de limite estrutural (Wave 2, 2026-09-28) adicionada ao cabeçalho de comentários, antes de `set -uo pipefail`. Nenhuma lógica alterada.
+- `go build ./...`: RC=0 | `go test ./internal/generators/`: RC=0
+- `bash scripts/check-init-preserves-user-config.sh`: RC=0 (4 sítios, todos PASS)
+- `bash scripts/check-init-preserves-user-config.sh --self-test`: SELFTEST_RC=0 (3 braços, todos PASS)
+- `git diff trackfw.yaml`: vazio.
+- Arquivos alterados: `docs/agents-working-context.md`, `internal/generators/scaffold.go`, `internal/generators/lefthook_hook_merge_test.go`, `scripts/check-init-preserves-user-config.sh`.
+
+---
+
+## 2026-09-28 — Apolo (fix/init-reexecutado-destroi-config-do-consumidor — ML-1D falso verde em comentário) — ENTREGUE
+
+**Início:** 2026-09-28 | Branch: `fix/init-reexecutado-destroi-config-do-consumidor`
+**Tarefa:** ML-1D — corrigir falso verde no gate `check-init-preserves-user-config.sh` que aceitava `os.ReadFile` citado apenas em comentário como guarda válida; e o defeito espelho simétrico no lado da detecção de write-sites.
+
+**Resultado:**
+- `has_read` awk: agora pula linhas de comentário puro (`^[[:space:]]*//`) e faz strip de comentário inline (`sub(/[[:space:]]*\/\/.*$/, "")`) antes do match — `os.ReadFile` numa linha de comentário não satisfaz a condição 1.
+- Write-site detection: pipe adicional `grep -Ev '^[0-9]+:[[:space:]]*//'` filtra write sites em comentário, resolvendo o defeito espelho (write site comentado iludia anti-vacuidade e dava falso verde).
+- Arm 3 adicionado ao `--self-test`: fixture com dois sites `lefthook.yml[literal]` — um com ReadFile real (OK), outro com ReadFile só em comentário (FAIL). Verificação de dois lados: confirma que condição 1 está viva pós-fix.
+- Tratamento de comentário inline declarado explicitamente no header do script.
+- Falsificações (via `SCAFFOLD_FILE=`):
+  1. guarda real presente → PASS (RC=0) ✓
+  2. guarda removida, citada só em comentário → FAIL (RC=1), nomeando `lefthook.yml[literal]` ✓
+  3. write site comentado → FAIL anti-vacuidade (RC=1) ✓
+- Prova pré-fix: arm 3 com script original (`git show HEAD:...`) dava falso verde (RC=0, PRE_FIX_RC=0).
+- `check-init-preserves-user-config.sh`: RC=0 | `--self-test`: SELFTEST_RC=0 (all 3 arms) | `check-orphan-gates.sh`: ORPHAN_RC=0
+- `git diff trackfw.yaml`: vazio.
+- Arquivo alterado: `scripts/check-init-preserves-user-config.sh` (único).
+
+---
+
+## 2026-09-28 — Apolo (fix/init-reexecutado-destroi-config-do-consumidor — ML-1C correção de auditoria) — ENTREGUE
+
+**Início:** 2026-09-28 | Branch: `fix/init-reexecutado-destroi-config-do-consumidor`
+**Tarefa:** ML-1C (auditoria) — remover isenção `consumer-config-merge-allowed:` redundante em `generateLefthookHook` (scaffold.go) que enfraquecia o gate ML-1B.
+
+**Resultado:**
+- `internal/generators/scaffold.go`: comentário `// consumer-config-merge-allowed:` na linha 3012 (antes da edição) removido e substituído por comentário explicativo sem o marcador. Zero ocorrências do marcador na função.
+- `go build ./...`: RC=0 | `go test ./internal/generators/`: RC=0
+- Gate `check-init-preserves-user-config.sh`: RC=0 — passa pela condição ReadFile (linha 3016 em `generateLefthookHook`)
+- Gate `--self-test`: RC=0 — ambos os braços passaram
+- Falsificação (cópia sem ReadFile e sem marcador): gate REPROVADO (RC=1), nomeando `lefthook.yml[literal]` — prova que a correção fez diferença
+- Falsificação pré-fix simulada (sem ReadFile, com marcador): gate PASSOU (RC=0) — prova que o marcador redundante isentava o sítio mesmo sem guarda real
+- `git diff trackfw.yaml`: vazio
+- Arquivos alterados: `docs/agents-working-context.md`, `internal/generators/scaffold.go`
+- Nota: durante o trabalho foi detectado que o primeiro rascunho do comentário de substituição continha o texto `os.ReadFile` literalmente, o que fazia o gate detectar um falso positivo. Reescrito para evitar a string literal.
+
+---
+
+## 2026-09-28 — Apolo (fix/init-reexecutado-destroi-config-do-consumidor — ML-1B gate) — ENTREGUE
+
+**Início:** 2026-09-28 | Branch: `fix/init-reexecutado-destroi-config-do-consumidor`
+**Tarefa:** ML-1B — escrever `scripts/check-init-preserves-user-config.sh` (gate estático que impede reintrodução de overwrite incondicional em config do consumidor) e adicionar ao `Makefile` em `parity-rest`.
+
+**Resultado:**
+- `scripts/check-init-preserves-user-config.sh`: gate criado com predicado duplo (ReadFile no mesmo bloco OU marker `consumer-config-merge-allowed:`) + anti-vacuidade por alvo + `--self-test` com ambos os braços.
+- `Makefile`: gate adicionado em `parity-rest` com `--self-test` e chamada real, após `check-write-containment.sh`.
+- `check-orphan-gates.sh`: PASS — gate tem consumidor.
+- Self-test RC=0 — braço 1 reprova 3 sítios nomeando-os; braço 2 passa com sítio (b) intacto.
+- Gate na árvore atual: RC=1, 1 violação — linha 2967 `generateLefthookHook → lefthook.yml` (sítio (a) sem ML atribuído). `trackfw.yaml` PASSou: ML-1A já aplicou ReadFile guard (2 sítios, linhas 987 e 1025).
+- `git diff trackfw.yaml`: vazio.
+- Observação para o arquiteto: a linha 864 original (Wave 0) está agora nas linhas 987/1025 e já corrigida por ML-1A; a linha 2806 original está agora na linha 2967 e ainda é violação — o ML adicional para `generateLefthookHook` (item 1 de Wave 0 §7) precisa ser criado e atribuído antes de o gate poder PASSAR.
+
+---
+
+## 2026-09-28 — Apolo (fix/init-reexecutado-destroi-config-do-consumidor — ML-1A) — ENTREGUE
+
+**Início:** 2026-09-28 | Branch: `fix/init-reexecutado-destroi-config-do-consumidor`
+**Tarefa:** ML-1A — `writeTrackfwConfig` mescla em vez de truncar. Implementar merge textual por chave ausente (P1-P4) e testes.
+
+**Resultado:**
+- `internal/generators/scaffold.go`: adicionadas funções `presentTopLevelKeys`, `parseConfigBlocks`, `configBlock`. `writeTrackfwConfig` agora lê o arquivo existente antes de escrever; se ausente escreve template completo (comportamento preservado); se presente faz merge textual acrescentando apenas chaves faltantes (P1-P4).
+- `internal/generators/trackfw_config_merge_test.go`: 7 testes (T1-T7). AC principal: T2 (`PresenteTodasChavesNoOp`) falha contra a implementação antiga e passa contra a nova.
+- `go build ./...`: RC=0 | `go test ./internal/generators/`: RC=0 (todos os testes passam, incluindo existentes).
+- Gate ML-1B (`scripts/check-init-preserves-user-config.sh`): `trackfw.yaml` — 2 OK (ReadFile precede WriteFile). Falha em `generateLefthookHook` é ML-1C (fora deste escopo, conforme handoff).
+- `trackfw validate`: 173 warnings, RC=0.
+- `git diff trackfw.yaml`: vazio.
+
+---
+
+## 2026-09-28 — Hades (fix/init-reexecutado-destroi-config-do-consumidor — ML-0A Wave 0) — ENTREGUE
+
+**Início:** 2026-09-28 | Branch: `fix/init-reexecutado-destroi-config-do-consumidor`
+**Tarefa:** ML-0A — enumerar e classificar os 22 sítios de escrita de `scaffold.go`, verificar sítios (c), e confirmar ou refutar a premissa da ADR de que merge textual basta.
+
+**Resultado:**
+- `docs/seguranca/2026-09-28-wave0-init-destroi-config.md`: parecer completo com tabela dos 22 sítios, dois sítios (a) (linha 864 e linha 2806), todos os sítios (c) com ramos de merge completos, e confirmação da ADR com spec de implementação P1-P4.
+- Descoberta bloqueante: `generateLefthookHook` (linha 2806) é segundo sítio (a) — overwrite incondicional de `lefthook.yml`; a ordem de chamada (165 antes de 169) o confirma. Roadmap precisa de ML adicional antes de Wave 1.
+- `git diff trackfw.yaml`: vazio — produto não foi tocado.
+
+---
+
 ## 2026-09-28 — Apolo (fix/roadmap-para-req-sem-tratamento-de-stale — ML-1E reconciliação teste) — ENTREGUE
 
 **Início:** 2026-09-28 | Branch: `fix/roadmap-para-req-sem-tratamento-de-stale`
@@ -42261,3 +42395,100 @@ régua não muda veredito nenhum hoje.
 **Predicate proof:** `filepath.Dir(normalizeRefSeparator(ref)) == "."` bloqueia fallback para refs sem diretório (Cenário 25); deixa `docs/req/hefesto/REQ-X.md` entrar no fallback (caso motivador #452).
 
 **Delta validate:** 0 novas violações/warnings antes/depois em corpus real (176 linhas idênticas).
+
+## hefesto-tf · triagem-issues-abertas · 2026-09-28 — INICIADO
+
+**Branch:** `docs/fechamento-req-2026-09-28-stale-roadmap-para-req` (somente leitura — sem commits)
+**Escopo:** triagem das 12 issues abertas (#308, #364, #403, #407, #408, #421, #435, #443, #445, #450, #451, #460) por reprodução contra `./bin/trackfw` (v9.0.1)
+**Artefato:** `docs/seguranca/2026-09-28-triagem-issues-abertas.md`
+**Restrições:** NÃO commitar, NÃO criar branch, NÃO rodar `trackfw init` nesta árvore
+
+## hefesto-tf · triagem-issues-abertas · 2026-09-28 — CONCLUÍDO
+
+**Resultado:** Triagem completa das 12 issues abertas contra `./bin/trackfw` v9.0.1.
+
+**Resumo:**
+- (A) Corrigido: #407, #443, #460 (3 issues)
+- (B) Reproduz: #408 (BAIXA), #435 (MÉDIA), #445 (ALTA), #450 (ALTA) — 4 issues
+- (C) Parcial: #451 (MÉDIA) — 1 issue
+- (D) Não verificável macOS: #308, #364, #403, #421 — 4 issues
+
+**Artefato:** `docs/seguranca/2026-09-28-triagem-issues-abertas.md`
+**git diff trackfw.yaml:** vazio
+
+## apolo-tf · ML-1C (REQ-2026-09-28) · 2026-09-28 — INICIADO
+
+**Branch:** `fix/init-reexecutado-destroi-config-do-consumidor`
+**Escopo:** Corrigir `generateLefthookHook` — truncamento incondicional de `lefthook.yml` (sítio (a) #2)
+**Restrições:** NÃO commitar, NÃO criar branch, NÃO rodar `trackfw init` nesta árvore
+
+## apolo-tf · ML-1C (REQ-2026-09-28) · 2026-09-28 — CONCLUÍDO
+
+**Resultado:** Implementação completa. Gate RC=0. 5 novos testes verdes. Sem regressões.
+
+**Arquivos modificados:**
+- `internal/generators/scaffold.go` — `generateLefthookHook`: substituído truncamento incondicional por merge com read-before-write; 3 caminhos: (1) arquivo ausente → cria bloco completo; (2) pre-commit: ausente → acrescenta bloco com separador; (3) pre-commit: presente + commands: → insere trackfw-validate sob commands:; idempotente via `strings.Contains(existingStr, "trackfw-validate:")`
+- `internal/generators/lefthook_hook_merge_test.go` — 5 novos testes via `generateGitHooks(Config{Hooks:"lefthook"})` (caminho do wizard)
+
+**Gate:**
+- `bash scripts/check-init-preserves-user-config.sh` → RC=0, Sites examined: 4
+- `bash scripts/check-init-preserves-user-config.sh --self-test` → SELFTEST_RC=0
+
+**Frases de reconciliação por teste:**
+- T1 AbsentCreates: medindo que lefthook.yml é criado com trackfw-validate: como único pre-commit quando arquivo ausente
+- T2 ConsumerHooksPreserved: medindo que exatamente 1 top-level pre-commit: existe e lint: coexiste com trackfw-validate: sob ele
+- T3 Idempotent: medindo que bytes após run1 == bytes após run2
+- T4 NoneSkipsLefthook: medindo que Hooks:"none" não cria lefthook.yml (pina alcançabilidade)
+- T5 NoPreCommitAppends: medindo que pre-push: é preservado e exatamente 1 pre-commit: é acrescentado
+
+**git diff trackfw.yaml:** vazio
+**git diff --name-only:** `internal/generators/scaffold.go`
+**git status --short:** M scaffold.go + ?? lefthook_hook_merge_test.go
+
+## hades-tf · ML-2A (REQ-2026-09-28) · 2026-09-28 — INICIADO
+
+**Branch:** `fix/init-reexecutado-destroi-config-do-consumidor`
+**Escopo:** Auditoria independente por reimplementação — black-box measurement do binário contra ADR+REQ+Wave0
+**Restrições:** NÃO commitar, NÃO criar branch, NÃO rodar trackfw init nesta árvore
+
+## hades-tf · ML-2A (REQ-2026-09-28) · 2026-09-28 — CONCLUÍDO
+
+**Resultado:** Auditoria independente completa. 13 casos medidos (cenário real + 8 adversariais P1-P4 + gate + lefthook Go tests). Nenhum defeito encontrado.
+
+**Arquivos escritos:**
+- `docs/seguranca/2026-09-28-wave2-auditoria-independente-init.md` — parecer completo
+
+**Resumo dos achados:**
+- Cenário real (lenient+agent_models+comentários): validate byte-idêntico, CORRETO
+- Sítio (a) #2 lefthook.yml via Go tests: 5/5 PASS, CORRETO
+- Gate check-init-preserves-user-config.sh: RC=0, 4 sites guardados, CORRETO
+- P1 (coluna 0): chave dentro de bloco literal (indentada) ignorada corretamente
+- P2 (colon): roadmap_dir vs roadmap_namespacing distinguidos corretamente
+- P3 (comentário = ausente): # wip_limit: 3 tratado como ausente corretamente
+- P4 (newline guard): arquivo sem newline final tratado corretamente
+- CRLF: key detection funciona, mixed endings resultado (cosmético, não defeito)
+- TAB indentation: P1 explicitamente trata TAB
+- 1-space indentation: P1 ignora, duplicata resultado (YAML já inválido no consumer)
+- Literal block + column-0 key: YAML e merge concordam
+- discover --init guard: ainda ativo
+
+**ADR de ponto único:** satisfeita. Dois sítios (a), dois corrigidos, gate verde.
+
+**git diff trackfw.yaml:** vazio
+
+## hades-tf · ML-2A (REQ-2026-09-28) · 2026-09-28 — CONCLUÍDO (revisado)
+
+**Resultado:** Auditoria independente completa com 3 defeitos encontrados além dos casos corretos.
+
+**Defeitos reportados para Apolo:**
+
+**D1 — scaffold.go:2970** (DEFEITO PRODUTO):
+`strings.Contains(existingStr, "trackfw-validate:")` em `generateLefthookHook` viola P3: retorna true para `# trackfw-validate:` em comentário → hook silenciosamente não instalado.
+
+**D2 — gate check-init-preserves-user-config.sh** (DEFEITO GATE — FALSO NEGATIVO):
+Condição 1 ("os.ReadFile precede WriteFile na mesma função") aprovada por leitura decorativa + truncamento incondicional. Medido: decoy com `_ = len(existing)` + `os.WriteFile(template)` → gate RC=0.
+
+**D3 — sub-key delivery (LACUNA ADR)**:
+Consumer com `rules:` customizado nunca recebe novas sub-keys. `branch_has_wip_roadmap` ausente mesmo sendo novo. ADR não declarou este residual explicitamente. Arquiteto decide.
+
+**git diff trackfw.yaml:** vazio
