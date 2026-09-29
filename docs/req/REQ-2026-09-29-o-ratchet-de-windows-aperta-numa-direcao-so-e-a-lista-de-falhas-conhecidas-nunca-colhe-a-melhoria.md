@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-29
 author: "trackfw_architect"
 adr: "docs/adr/ADR-2026-09-05-o-ci-de-windows-bloqueia-por-conjunto-de-nomes-e-por-tipo-de-evento-nunca-por-contagem.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-29-o-ratchet-de-windows-aperta-numa-direcao-so-e-a-lista-nunca-colhe-a-melhoria.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-29-o-ratchet-de-windows-aperta-numa-direcao-so-e-a-lista-nunca-colhe-a-melhoria.md"
 ---
 
 # REQ: o ratchet de Windows aperta numa direção só, e a lista nunca colhe a melhoria
 
-> Date: 2026-09-29 | Status: Open
+> Date: 2026-09-29 | Status: Done
 | Linear Issue:
 | Jira Issue:
 
@@ -52,18 +52,39 @@ falhava **não consegue julgar** se resolveu de verdade ou se o ambiente mudou.
 
 ## Acceptance Criteria
 
-- [ ] 🔴 **D6 — falha declarada que resolve REPROVA o job**, nomeando a entrada e apontando o
+- [x] 🔴 **D6 — falha declarada que resolve REPROVA o job**, nomeando a entrada e apontando o
       protocolo do **D4** (mover para `removed[]` com `removal_note`)
-- [ ] 🔴 **Falsificação nas duas direções:** entrada que resolve → **reprova** · lista fiel ao
+- [x] 🔴 **Falsificação nas duas direções:** entrada que resolve → **reprova** · lista fiel ao
       observado → **passa**. E o contra-braço que importa: **regressão nova continua reprovando**
       (o D6 não pode ter desligado o D1)
-- [ ] 🔴 **D7 — as 14 entradas ganham a razão da falha**, e o esquema aceita o campo sem quebrar o
+- [x] 🔴 **D7 — as 14 entradas ganham a razão da falha**, e o esquema aceita o campo sem quebrar o
       checker existente
-- [ ] **Triagem por causa-raiz:** as 14 agrupadas por mecanismo (permissão POSIX · CRLF · `bash`
+- [x] **Triagem por causa-raiz:** as 14 agrupadas por mecanismo (permissão POSIX · CRLF · `bash`
       ausente · outro), com a razão **medida**, não presumida
-- [ ] **O checker valida o campo novo** — entrada sem razão reprova, senão o D7 degrada em opcional
-- [ ] `make quality` e **CI** verdes, **incluindo o `windows-full-suites`** — é o job que este
+- [x] **O checker valida o campo novo** — entrada sem razão reprova, senão o D7 degrada em opcional
+- [x] `make quality` e **CI** verdes, **incluindo o `windows-full-suites`** — é o job que este
       trabalho altera
+
+### Evidência (PR #479, mergeado em 2026-09-29)
+
+| AC | evidência |
+|---|---|
+| D6 reprova | `ML-D6: Go 'TestB1' is in the known list but PASSED -- move to removed[] with removal_note (D4)` |
+| falsificação nas 2 direções | B1 → reprova · lista fiel → **RC=0** · regressão nova → `[+1 NOVO]`, o D1 não foi desligado |
+| D7 nas 14 | 14/14 com `reason`, zero não-ASCII, **9 `(MEASURED)` / 5 `INFER`**, conferível por grep estrito |
+| triagem por causa-raiz | Wave 0 (`hades-tf`), grupos A=4 · B=4 · C=2 · D=4, **soma 14** — parecer em `docs/seguranca/2026-09-29-wave0-ratchet.md` |
+| checker valida o campo | `validate_active_entries()`; ausência → reprova; `removed[]` isento |
+| CI verde | **20 checks, 0 falhas**, incluindo `windows-full-suites` e `windows-gates-cp1252` |
+
+🔴 **O D6 nasceu com dois baldes e a Wave 0 bloqueou o roadmap** exigindo o terceiro: entrada que
+**sumiu sem passar** (skip, `panic`, rename) não é resolução. Sem ele, o gate mandaria retirar de
+`entries[]` dívida que apenas deixou de ser medida.
+
+🔴 **Achado extra, mesma causa, mesmo PR (Wave 3):** a Wave 2 aprovou o D6 por reimplementação — e na
+auditoria pós-ML a linha de **resumo** rotulava o balde 2 como `resolvido`, duas linhas abaixo da
+mensagem de erro que diz `Not a resolution`. `_cls_label` usava `known - obs`, a união dos baldes 1 e
+2. Partido pelo conjunto de PASS em `resolvido` vs `ausente`. Colhido no runner Windows real:
+`Go 1/2 [-1 ausente]`.
 
 ## Negative scope — o que esta REQ NÃO faz
 
@@ -84,4 +105,4 @@ ADR: docs/adr/ADR-2026-09-05-o-ci-de-windows-bloqueia-por-conjunto-de-nomes-e-po
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-29-o-ratchet-de-windows-aperta-numa-direcao-so-e-a-lista-nunca-colhe-a-melhoria.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-09-29-o-ratchet-de-windows-aperta-numa-direcao-so-e-a-lista-nunca-colhe-a-melhoria.md
