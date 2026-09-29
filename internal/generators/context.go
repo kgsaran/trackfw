@@ -34,23 +34,18 @@ type GovernanceContext struct {
 func GetContext(format string) error {
 	cfg := config.Load()
 
+	// ADRs — pelo PONTO ÚNICO de leitura (ADR-2026-09-29, D3): ResolveADRFiles varre todos os
+	// diretórios de cfg.ADRDirs recursivamente (layout plano + subpastas de estado) e deduplicaa
+	// por caminho absoluto (evita double-count com adr_dirs aninhados).
+	// Antes: os.ReadDir(adrDir) — raiz apenas → ADRs (0) em layout com subpastas.
 	var adrs []ContextEntry
-	for _, adrDir := range cfg.ADRDirs {
-		entries, err := os.ReadDir(adrDir)
-		if err != nil {
-			continue
+	for _, full := range validator.ResolveADRFiles(cfg) {
+		content, _ := os.ReadFile(full)
+		status := extractFrontmatterField(string(content), "status")
+		if status == "" {
+			status = extractInlineStatus(string(content))
 		}
-		for _, e := range entries {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
-				continue
-			}
-			content, _ := os.ReadFile(filepath.Join(adrDir, e.Name()))
-			status := extractFrontmatterField(string(content), "status")
-			if status == "" {
-				status = extractInlineStatus(string(content))
-			}
-			adrs = append(adrs, ContextEntry{Type: "ADR", File: e.Name(), Status: status})
-		}
+		adrs = append(adrs, ContextEntry{Type: "ADR", File: filepath.Base(full), Status: status})
 	}
 
 	// REQs — pelo PONTO ÚNICO de leitura (ADR-2026-09-03, D3/D4). Antes, o context montava a
