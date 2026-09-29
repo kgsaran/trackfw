@@ -96,6 +96,12 @@ parity-rest: build
 	# reintroducao de overwrite incondicional apos a correcao da Wave 1.
 	scripts/check-init-preserves-user-config.sh --self-test
 	scripts/check-init-preserves-user-config.sh
+	# ML-1B (REQ-2026-09-29 / ADR-2026-09-29 — context reporta zero ADRs onde status reporta 145):
+	# nenhum enumerador de ADR em internal/ usa os.ReadDir ou filepath.Glob raiz-only em vez de
+	# walkADRFilePaths/ResolveADRFiles. Impede reintroducao dos 3 sitios de classe-(iii)
+	# corrigidos por ML-1A (context.go, adr.go ListADRs, adr.go NewADRDraft).
+	scripts/check-adr-enumeration-single-point.sh --self-test
+	scripts/check-adr-enumeration-single-point.sh
 	# ML-1B (ROADMAP-2026-09-11-o-ciclo-testa-onde-funciona): toda criacao de
 	# symlink/fifo em arquivo de teste passa por guarda de capacidade (nao por
 	# guarda de plataforma). Gate impede a decima-primeira instancia da issue #315.

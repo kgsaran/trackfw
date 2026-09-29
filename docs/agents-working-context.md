@@ -2,6 +2,113 @@
 
 ---
 
+## 2026-09-29 — Apolo (fix/context-reporta-zero-adrs-onde-status-reporta-145 — ML-1D warnings duplicados com adr_dirs aninhadas) — CONCLUÍDO
+
+**Início:** 2026-09-29 | Branch: `fix/context-reporta-zero-adrs-onde-status-reporta-145`
+**Tarefa:** ML-1D — corrigir duplicação de warnings de `adr_orphan` e `frontmatter_presence` com `adr_dirs` aninhadas.
+
+**O que foi feito:**
+- `validateADRsAreReferenced`: substituiu o loop direto em `cfg.ADRDirs` por `ResolveADRFiles(cfg)` (dedup por caminho absoluto).
+- `validateFrontmatterPresence`: mesma substituição; eliminado o `findADRFile` intermediário (já temos o path completo).
+- Novo arquivo de testes: `validator_nested_adrdirs_ml1d_test.go` com 3 testes e reconciliação explícita.
+
+**Números medidos:**
+- Fixture aninhada (3 ADRs em zeus/done, adr_dirs=[zeus, zeus/done]): ANTES 6 warnings → DEPOIS 3 warnings.
+- Contra-braço (mesmo basename em zeus e athena distintos): ANTES 2 warnings → DEPOIS 2 warnings (preservado).
+- `trackfw validate` neste repo: ANTES 173 warnings → DEPOIS 173 warnings (sem regressão).
+
+**git diff --name-only:** `docs/agents-working-context.md`, `internal/validator/validator.go`
+**git diff trackfw.yaml:** vazio
+
+---
+
+## 2026-09-29 — Apolo (fix/context-reporta-zero-adrs-onde-status-reporta-145 — ML-1E evasão por variável intermediária) — ENTREGUE
+
+**Início:** 2026-09-29 | Branch: `fix/context-reporta-zero-adrs-onde-status-reporta-145`
+**Tarefa:** ML-1E — estender Pattern A' do gate `check-adr-enumeration-single-point.sh` para detectar evasão por variável intermediária (`dirs := cfg.ADRDirs`); declarar limite de helper em outro escopo no header; adicionar Arm 5 com prova de discriminância pré-fix.
+
+**Resultado:**
+- `scripts/check-adr-enumeration-single-point.sh`: Pattern A' estendido com detecção de vars intermediárias (indirect_vars); LIMITE CONHECIDO declarado no header; Arm 5 adicionado ao --self-test com prova discriminante pré-fix (5a=PASS evasão não detectada, 5b=FAIL evasão detectada); erro: ficheiro fixa que comentário `// range over intermediate var, not directly ADRDirs` na linha do for-range causava sed greedy a capturar `d` como loop var — corrigido retirando "ADRDirs" do comentário da linha do for.
+- `bash scripts/check-adr-enumeration-single-point.sh`: GATE_RC=0 (110 arquivos)
+- `bash scripts/check-adr-enumeration-single-point.sh --self-test`: SELFTEST_RC=0 (5 braços)
+- `bash scripts/check-orphan-gates.sh`: ORPHAN_RC=0
+- `git diff trackfw.yaml`: vazio
+- `git diff --name-only`: docs/agents-working-context.md, scripts/check-adr-enumeration-single-point.sh (+ internal/validator/validator.go da frente paralela ML-1D — não tocado por este ML)
+
+---
+
+## 2026-09-29 — Apolo (fix/context-reporta-zero-adrs-onde-status-reporta-145 — ML-1C ensureGlobalADRDirRegistered recursivo) — ENTREGUE
+
+**Início:** 2026-09-29 | Branch: `fix/context-reporta-zero-adrs-onde-status-reporta-145`
+**Tarefa:** ML-1C — substituir filepath.Glob raiz por validator.WalkADRFilePaths em ensureGlobalADRDirRegistered (update.go:302), remover isenção do gate, adicionar teste de braço do achado (ADRs em subpasta → diretório IS registrado).
+
+**Resultado:**
+- `internal/generators/update.go`: import `validator` adicionado; `filepath.Glob(globalDir, "ADR-*.md")` substituído por `validator.WalkADRFilePaths(globalDir)` (recursivo, semântica booleana preservada; dois no-ops mantidos).
+- `internal/generators/update_test.go`: `TestUpdateRegistersGlobalADRDirWhenADRsOnlyInSubdirectory` adicionado — ADR apenas em `done/` → diretório IS registrado (braço do achado).
+- `scripts/check-adr-enumeration-single-point.sh`: isenção de `generators/update.go` em PATTERN_C_EXEMPT removida; header atualizado; gate continua RC=0 (110 arquivos).
+- `go build ./...`: RC=0
+- `go test ./internal/generators/ ./internal/validator/`: RC=0 (ambos ok)
+- `bash scripts/check-adr-enumeration-single-point.sh`: GATE_RC=0
+- `bash scripts/check-adr-enumeration-single-point.sh --self-test`: SELFTEST_RC=0 (4 braços)
+- `make quality`: QUALITY_RC=0 (347 OK, 0 FAIL)
+- `git diff trackfw.yaml`: vazio
+- `git diff --name-only`: docs/agents-working-context.md, internal/generators/update.go, internal/generators/update_test.go, scripts/check-adr-enumeration-single-point.sh
+
+---
+
+## 2026-09-29 — Apolo (fix/context-reporta-zero-adrs-onde-status-reporta-145 — ML-1B gate enumerador único ADR) — ENTREGUE
+
+**Início:** 2026-09-29 | Branch: `fix/context-reporta-zero-adrs-onde-status-reporta-145`
+**Tarefa:** ML-1B — escrever `scripts/check-adr-enumeration-single-point.sh` e registrá-lo no Makefile. Gate que impede enumerador de ADR fora do ponto único (os.ReadDir/filepath.Glob em vez de walkADRFilePaths/ResolveADRFiles). Sem edição de arquivos .go.
+
+**Resultado:**
+- `scripts/check-adr-enumeration-single-point.sh` criado: 4 padrões (A name, A' loop-context, B file-scope adr.go, C ADR- glob), filtragem de comentários bidirecional, 4 braços de self-test, anti-vacuidade, env-var ADR_ENUM_SCAN_DIR documentado.
+- `Makefile`: gate registrado em `parity-rest` (--self-test + real run), sem GO_BIN.
+- Falsificação executada: arm1 (FAIL com os.ReadDir(adrDir)), arm2 (PASS com WalkDir), arm3a (PASS com comentário-only), arm3b (FAIL com chamada real + comentário WalkDir acima), arm4 (FAIL com Glob em adr.go), Pattern A' (FAIL com var de loop), Pattern C (FAIL em commands/, PASS em update.go isento).
+- `bash scripts/check-adr-enumeration-single-point.sh --self-test`: SELFTEST_RC=0 (4 braços)
+- `bash scripts/check-adr-enumeration-single-point.sh`: RC=0 (110 arquivos examinados — ML-1A já completado)
+- `bash scripts/check-orphan-gates.sh`: ORPHAN_RC=0
+- `trackfw validate`: sem violações bloqueantes (lenient mode, warnings apenas)
+- `git diff --name-only`: scripts/check-adr-enumeration-single-point.sh, Makefile, docs/agents-working-context.md (apenas arquivos do ML-1B; .go são do ML-1A)
+- Candidato S10 reportado: `update.go:302` filepath.Glob(GlobalADRDir) — isento provisório (dir plano por design), mas merece entrada no vault se GlobalADRDir ganhar subpastas no futuro.
+
+---
+
+## 2026-09-29 — Apolo (fix/context-reporta-zero-adrs-onde-status-reporta-145 — ML-1A resolvedor único de ADR) — ENTREGUE
+
+**Início:** 2026-09-29 | Branch: `fix/context-reporta-zero-adrs-onde-status-reporta-145`
+**Tarefa:** ML-1A — Implementar ponto único de leitura de ADR (ADR-2026-09-29, D3): substituir os 3 sítios errados (S1 context.go, S6 adr.go ListADRs, S7 adr.go NewADRDraft) por `ResolveADRFiles(cfg)` e `WalkADRFilePaths(dir)` no validator.
+
+**Resultado:**
+- `internal/validator/validator.go`: adicionados `WalkADRFilePaths(dir)` (wrapper exportado), `ResolveADRFiles(cfg)` (ponto único com dedup por caminho absoluto); `inventoryBlock` migrado para `ResolveADRFiles(cfg)` (corrige S2 double-count para adr_dirs aninhados)
+- `internal/generators/context.go`: loop `os.ReadDir` raiz substituído por `validator.ResolveADRFiles(cfg)` — corrige S1
+- `internal/generators/adr.go`: `ListADRs` usa `validator.WalkADRFilePaths(dir)` + sort (corrige S6); `NewADRDraft` usa scan recursivo + slug match (corrige S7)
+- 2 novos arquivos de teste: `validator_resolve_adr_test.go` (5 testes: layout plano, subpastas, dedup aninhado, dirs distintos, HasSuffix sem prefixo) e `context_adr_subpastas_test.go` (5 testes: NaoZero, ScoreDelta20, SemContradicao, ListADRs_Subpastas, NewADRDraft_NaoCriaDuplicado)
+- Build: verde. `go test ./internal/generators/ ./internal/validator/`: ambos ok
+- `git diff trackfw.yaml`: vazio
+- `git diff --name-only`: internal/generators/adr.go, internal/generators/context.go, internal/validator/validator.go (+ 2 novos arquivos de teste)
+
+---
+
+## 2026-09-29 — Hades (fix/context-reporta-zero-adrs-onde-status-reporta-145 — ML-0A Wave 0 threat model) — ENTREGUE
+
+**Início:** 2026-09-29 | Branch: `fix/context-reporta-zero-adrs-onde-status-reporta-145`
+**Tarefa:** ML-0A — Wave 0 (threat model) para REQ-2026-09-29 / ADR-2026-09-29. Enumeração de todos os sítios que leem/contam ADR no produto, medição de divergência em fixture, verificação do layout plano, e análise da premissa D3 (ponto único).
+
+**Resultado:**
+- Entregável: `docs/seguranca/2026-09-29-wave0-context-adr-zero.md`
+- 9 sítios enumerados: 3 classe (iii) errada (S1 context.go, S6 adr.go ListADRs, S7 adr.go NewADRDraft), 5 classe (ii) correta, 1 fora de escopo
+- ADR lista 2 sítios; medição encontrou 3 — Regra Dura exige que S6 e S7 entrem no ML-1A
+- Contradição interna reproduzida na fixture: `context` reporta ADRs(0) e nomeia 4 ADRs nos warnings
+- Double-count com `adr_dirs` aninhadas medido em `status` (7 onde correto é 4); o resolvedor compartilhado deve deduplicar por caminho absoluto
+- Afirmação da ADR sobre "filtro ADR- já existente em status" INCORRETA — nenhum sítio filtra por prefixo; implementador não deve adicionar filtro
+- D3 CONFIRMADA: `ResolveADRFiles(cfg)` + `walkADRFilePaths(dir)` servem todos os consumidores sem flags
+- Score AC: fixture → 40/100 atual, 60/100 após fix, delta = exatamente 20 pontos
+- Layout plano (este repositório, 74 ADRs): não afetado
+- `git diff trackfw.yaml`: vazio
+
+---
+
 ## 2026-09-28 — Apolo (fix/init-reexecutado-destroi-config-do-consumidor — ML-1G restaurar write-containment-allowed) — ENTREGUE
 
 **Início:** 2026-09-28 | Branch: `fix/init-reexecutado-destroi-config-do-consumidor`
@@ -42490,5 +42597,45 @@ Condição 1 ("os.ReadFile precede WriteFile na mesma função") aprovada por le
 
 **D3 — sub-key delivery (LACUNA ADR)**:
 Consumer com `rules:` customizado nunca recebe novas sub-keys. `branch_has_wip_roadmap` ausente mesmo sendo novo. ADR não declarou este residual explicitamente. Arquiteto decide.
+
+**git diff trackfw.yaml:** vazio
+
+## hades-tf · ML-2A (REQ-2026-09-29) · 2026-09-29 — INÍCIO
+
+Branch: fix/context-reporta-zero-adrs-onde-status-reporta-145
+Método: reimplementação independente (leitura ADR + REQ + Wave 0 → medição caixa-preta).
+
+## hades-tf · ML-2A (REQ-2026-09-29) · 2026-09-29 — CONCLUÍDO
+
+**Veredito: APROVA**
+
+Medições independentes sobre 10 casos de teste (cenário #450, score delta, dedup em 2 direções,
+10 layouts adversariais, global dir, ponto único com 110 arquivos). Nenhum defeito de produto.
+
+**Achados informacionais (não bloqueiam):**
+- I1: Warnings duplicados com adr_dirs aninhadas — dedup de warnings não feita no subsistema
+  de validate (pré-existente, fora do escopo). Candidato a issue própria.
+- I2: Dir symlink em adr_dirs não encontra ADRs — WalkDir não segue symlinks de dir (sem requisito).
+- I3: adr list mostra status "unknown" na fixture minimal — parseADRMeta (pré-existente).
+
+**Entregável:** `docs/seguranca/2026-09-29-wave2-auditoria-independente-adr.md`
+
+**git diff trackfw.yaml:** vazio
+
+## hades-tf · ML-2A (REQ-2026-09-29) · 2026-09-29 — CONCLUÍDO (revisado após advisor)
+
+**Veredito: APROVA COM RESSALVAS**
+
+10 casos medidos (caixa-preta). Nenhum defeito de produto nos ACs principais.
+
+**Achados que o arquiteto deve tratar:**
+- F1: Warnings duplicados com adr_dirs aninhadas — mesmo mecanismo que D4 (Regra Dura: mesma REQ).
+- F3: Gate tem 2 caminhos de evasão conhecidos; AC da REQ "impede reintrodução" está overstated.
+
+**Achados informacionais:**
+- F2: dir symlinks não seguidos por WalkDir — comportamento stdlib, sem requisito.
+- S7: verificação por inspeção + teste entregue (não black-box pura), limitação documentada.
+
+**Entregável:** `docs/seguranca/2026-09-29-wave2-auditoria-independente-adr.md`
 
 **git diff trackfw.yaml:** vazio
