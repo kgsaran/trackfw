@@ -6488,7 +6488,7 @@ tabela hoje.
 | `scripts/trackfw-credential-guard.sh` | sempre |
 | `scripts/trackfw-git-branch-guard.sh` | sempre |
 | `.claude/commands/trackfw/<cmd>.md` (9 arquivos) | somente se `.claude/commands/trackfw/` já existir (AC14: `discover --init` não escreve slash commands — ausência legítima) |
-| `.github/workflows/trackfw-gate.yml` | somente se `ci: github-actions` no `trackfw.yaml` (AC13) |
+| `.github/workflows/trackfw-gate.yml` | somente se `ci: github-actions` no `trackfw.yaml` (AC13) **E** `.github/workflows/trackfw-validate.yml` ausente (`ADR-2026-09-29` **D4**) — com o `validate.yml` presente, o `doctor` **não** acusa a ausência do `gate.yml`, porque o gerador deliberadamente não o escreve (**D2**). ⚠️ A supressão vale **só** para `scaffold-missing`: `gate.yml` presente e **defasado** continua sendo acusado |
 | `.gitlab-ci-trackfw.yml` | somente se `ci: gitlab-ci` no `trackfw.yaml` (AC13) |
 
 ### validate.sh — pertencimento a conjunto (set-membership, escopado)
@@ -6629,11 +6629,18 @@ que declara dependência desta REQ.
 
 Os dois workflows de CI que o produto gera (tabela da seção anterior) declaravam o **mesmo job id**
 `governance` nos 3 CLIs. `trackfw-validate.yml` dispara em `push` **e** `pull_request`; um projeto
-que rodou `init`/`update` (que instala `trackfw-gate.yml`) e também `discover --init` (que instala
-`trackfw-validate.yml`) produzia **três check-runs homônimos** por PR — confirmado ao vivo no PR
+que rodou `init`/`update` (que instalava `trackfw-gate.yml` — ver nota abaixo) e também
+`discover --init` (que instala `trackfw-validate.yml`) produzia **três check-runs homônimos** por PR — confirmado ao vivo no PR
 #241 deste repositório (`"governance=SUCCESS"` × 3 no mesmo push). O GitHub casa check exigido por
 **nome**, então `required_status_checks: [governance]` seria satisfeito por qualquer um dos três,
-imprevisivelmente — um portão que parece fechado sem estar. Paridade perfeita no erro: os 3 CLIs
+imprevisivelmente — um portão que parece fechado sem estar.
+
+> ⚠️ **Atualização 2026-09-29 (`ADR-2026-09-29`, D2):** o parágrafo acima descreve o estado que
+> produziu o defeito do PR #241, e está no passado de propósito. Desde a `ADR-2026-09-29`, `init` e
+> `update` **não** escrevem o `trackfw-gate.yml` quando o `trackfw-validate.yml` já existe — a
+> coexistência dos dois deixou de ser produzida pelo produto. Projeto que **já** tem os dois
+> instalados os mantém (D3: nada é removido automaticamente, porque o job id removido pode ser um
+> required check que o produto não tem como verificar), e o `doctor` **avisa**. Paridade perfeita no erro: os 3 CLIs
 concordavam entre si e os 3 estavam errados; nenhum gate de paridade byte-a-byte (inclusive
 `check-ci-workflow-pin-parity.sh` acima) pegaria isso, porque paridade mede concordância entre os
 runtimes, não correção do valor em si.

@@ -118,6 +118,24 @@ A classificação é por **natureza do conteúdo destruído**, não por forma da
   decisão de *qual artefato instalar*, governada pela **ADR-2026-08-28** (dois métodos de
   instalação). Aplicando o teste da Regra Dura — *"se eu corrigir esta causa, exatamente estas
   falhas fecham"* — o #451 não fecha. REQ própria.
+
+  > ⚠️ **RETRATAÇÃO 2026-09-29 (sítio 6 — ML-1C, ROADMAP-2026-09-22):** o parágrafo acima contém
+  > uma **premissa falsa** e, por isso, uma **conclusão de governança errada**.
+  >
+  > A premissa *"governada pela ADR-2026-08-28 (dois métodos de instalação)"* é falsa. Medido em
+  > 2026-09-29: aquela ADR tem **zero** ocorrências de `trackfw-validate.yml` — ela decide pino de
+  > versão e `TRACKFW_VERSION`. A coexistência **nunca foi decidida** por ninguém; a citação nasceu
+  > num comentário de `scaffold_doctor.go:334` e foi lida como decisão sem que ninguém abrisse a ADR.
+  >
+  > A conclusão *"REQ própria"* violou a Regra Dura de Causa Raiz: foi aplicada com uma premissa
+  > inventada, justamente na regra que existe para impedir trabalho paralelo sobre a mesma causa.
+  >
+  > **O #451 foi absorvido na `REQ-2026-09-02` em 2026-09-29**, e a `ADR-2026-09-29` decide o
+  > contrário do que a citação afirmava: o produto entrega **um** workflow de governança por projeto
+  > e nunca instala um segundo ao lado do existente.
+  >
+  > O texto original é preservado acima como evidência de como uma citação não conferida produziu
+  > uma decisão de governança errada por três semanas.
 - **Não** muda o comportamento dos sítios **(b)**. Sobrescrever script gerado é **como a correção
   chega** ao consumidor — foi assim que o fix de CRLF do #353 saiu daqui. Confundir (a) com (b)
   produziria o defeito oposto: congelar scripts defeituosos na máquina de quem instalou.

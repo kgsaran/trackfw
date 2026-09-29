@@ -23,12 +23,13 @@ import (
 // production code only reads it through checkMode below.
 var CurrentGOOS = runtime.GOOS
 
-// DiscoverGitHubActionsWorkflowPath is the canonical relative path of the second,
-// independent CI workflow trackfw writes: the one `trackfw discover --init` (and its
-// Node/Python equivalents) generates via InstallGates, distinct from
-// GitHubActionsWorkflowPath (trackfw-gate.yml, written by init/update). Both files can
-// coexist in the same project — ADR-2026-08-28 names this exact case as the motivation
-// for pinning both install mechanisms, not just the install.sh one.
+// DiscoverGitHubActionsWorkflowPath is the canonical relative path of the CI workflow
+// written by `trackfw discover --init` (InstallGates), distinct from
+// GitHubActionsWorkflowPath (trackfw-gate.yml, written by init/update).
+// ADR-2026-09-29 decides that the product delivers ONE governance workflow per project:
+// when this file already exists, generateGitHubActionsWorkflow (scaffold.go) does NOT
+// write trackfw-gate.yml (D2). A project that already has both keeps both until the
+// consumer acts (D3) — the doctor names that case via ML-1B.
 const DiscoverGitHubActionsWorkflowPath = ".github/workflows/trackfw-validate.yml"
 
 // BuildDiscoverGitHubActionsWorkflowContent returns the template content trackfw writes
@@ -317,6 +318,17 @@ func RunScaffoldDoctor(projectRoot string) ([]integrations.DoctorFinding, error)
 		path := filepath.Join(projectRoot, relPath)
 		f := checkScaffoldArtifact(path, relPath, []byte(buildGitHubActionsWorkflowContent(IsProducerGoMod(projectRoot))), true, false)
 		if f != nil {
+			// D4 (ADR-2026-09-29): suppress scaffold-missing for trackfw-gate.yml when
+			// trackfw-validate.yml is already present as a regular file. The generator
+			// (generateGitHubActionsWorkflow, scaffold.go) no longer writes gate.yml in
+			// that case (D2), so absence of gate.yml is expected — not a finding.
+			// A stale gate.yml (scaffold-divergent) is never suppressed: the file exists
+			// and must be kept current for the project's branch-protection contract.
+			// discoverWorkflowPresent uses os.Lstat, so a symlink is NOT treated as
+			// present and the finding is kept — consistent with the write-side predicate.
+			if f.FindingKind == integrations.DoctorScaffoldMissing && discoverWorkflowPresent(projectRoot) {
+				break
+			}
 			findings = append(findings, *f)
 		}
 	case "gitlab-ci":
@@ -331,12 +343,11 @@ func RunScaffoldDoctor(projectRoot string) ([]integrations.DoctorFinding, error)
 	// --- Discover CI workflow (second, independent install mechanism) ---
 	//
 	// trackfw-validate.yml (written by `trackfw discover --init`, InstallGates) is a
-	// separate artifact from trackfw-gate.yml above — both can coexist in the same
-	// project (ADR-2026-08-28). Only checked when the file is already present, mirroring
-	// the "conditional artifact" treatment of the trackfw-gate.yml case above but using
-	// presence-on-disk instead of cfg.CI, because InstallGates decides on its own
-	// DiscoveryResult.CISystem signal (github-actions detection), not on trackfw.yaml's
-	// `ci:` key — a project can have discover's workflow without cfg.CI ever being set.
+	// separate artifact from trackfw-gate.yml above. Only checked when the file is
+	// already present (presence-on-disk condition), because InstallGates decides on its
+	// own DiscoveryResult.CISystem signal, not on trackfw.yaml's `ci:` key — a project
+	// can have discover's workflow without cfg.CI ever being set.
+	// ADR-2026-09-29 D3: a project with both workflows keeps both; ML-1B handles that case.
 	discoverWorkflowPath := filepath.Join(projectRoot, DiscoverGitHubActionsWorkflowPath)
 	if _, err := os.Stat(discoverWorkflowPath); err == nil {
 		f := checkScaffoldArtifact(discoverWorkflowPath, DiscoverGitHubActionsWorkflowPath, []byte(BuildDiscoverGitHubActionsWorkflowContent(IsProducerGoMod(projectRoot))), true, false)

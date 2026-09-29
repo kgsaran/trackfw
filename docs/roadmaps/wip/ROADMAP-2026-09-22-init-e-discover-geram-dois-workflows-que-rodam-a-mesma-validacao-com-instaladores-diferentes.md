@@ -84,7 +84,7 @@ trackfw barrier ROADMAP-2026-09-22-init-e-discover-geram-dois-workflows-que-roda
 
 ### ML-1A — o gerador pergunta antes de escrever, e o `doctor` acompanha
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos:** `internal/generators/scaffold.go` · `internal/generators/scaffold_doctor.go`
 (+ testes dos dois)
 **Implementa:** **D2** e **D4** da ADR · AC2, AC7, AC8 · sítios **1** e **2** do AC9
@@ -101,16 +101,16 @@ trackfw barrier ROADMAP-2026-09-22-init-e-discover-geram-dois-workflows-que-roda
    `ADR-2026-08-28` **não** decide a coexistência. Aponte para a `ADR-2026-09-29` e o que ela decide.
 
 **Critérios de aceite:**
-- [ ] `validate.yml` presente → `gate.yml` **não** é escrito, e a razão é dita
-- [ ] 🔴 **Contra-braço:** `validate.yml` **ausente** → o `gate.yml` **continua** sendo escrito
+- [x] `validate.yml` presente → `gate.yml` **não** é escrito, e a razão é dita
+- [x] 🔴 **Contra-braço:** `validate.yml` **ausente** → o `gate.yml` **continua** sendo escrito
       (o comportamento de projeto novo não pode ter regredido)
-- [ ] `validate.yml` presente + `gate.yml` ausente → `doctor` **silencioso** quanto ao `gate.yml`
-- [ ] 🔴 **Contra-braço do `doctor`:** `gate.yml` ausente **e** `validate.yml` também ausente, com
+- [x] `validate.yml` presente + `gate.yml` ausente → `doctor` **silencioso** quanto ao `gate.yml`
+- [x] 🔴 **Contra-braço do `doctor`:** `gate.yml` ausente **e** `validate.yml` também ausente, com
       `ci: github-actions` → `doctor` **continua acusando** (o achado verdadeiro não pode ter sumido)
-- [ ] `gate.yml` presente e **defasado** → `doctor` continua acusando divergência de template
-- [ ] Nenhum comentário do arquivo atribui a coexistência à `ADR-2026-08-28`
-- [ ] `go build ./...` · `go test ./internal/generators/...` verdes
-- [ ] 🔴 **Regra Dura de Reconciliação:** por teste novo, **uma frase** dizendo qual conclusão do ML
+- [x] `gate.yml` presente e **defasado** → `doctor` continua acusando divergência de template
+- [x] Nenhum comentário do arquivo atribui a coexistência à `ADR-2026-08-28`
+- [x] `go build ./...` · `go test ./internal/generators/...` verdes
+- [x] 🔴 **Regra Dura de Reconciliação:** por teste novo, **uma frase** dizendo qual conclusão do ML
       aquele teste afirma
 
 ### ML-1B — o `doctor` nomeia a duplicação de quem já tem os dois
@@ -138,7 +138,7 @@ trackfw barrier ROADMAP-2026-09-22-init-e-discover-geram-dois-workflows-que-roda
 
 ### ML-1C — os 4 sítios restantes da citação falsa
 **Owner:** `artemis-tf`
-**Status:** ⬜ Pendente — **paralelo ao ML-1A** (arquivos disjuntos)
+**Status:** ✅ Concluído — **paralelo ao ML-1A** (arquivos disjuntos)
 **Arquivos:** `internal/generators/discover_workflow_trigger_test.go` ·
 `docs/seguranca/2026-09-28-triagem-issues-abertas.md` ·
 `docs/req/REQ-2026-09-28-trackfw-init-reexecutado-destroi-a-configuracao-do-consumidor-...md`
@@ -159,11 +159,11 @@ trackfw barrier ROADMAP-2026-09-22-init-e-discover-geram-dois-workflows-que-roda
    original** e marque-o como retratado.
 
 **Critérios de aceite:**
-- [ ] `grep -rn 'ADR-2026-08-28'` não devolve nenhum sítio que atribua a **coexistência** a ela,
+- [x] `grep -rn 'ADR-2026-08-28'` não devolve nenhum sítio que atribua a **coexistência** a ela,
       exceto dentro de texto explicitamente marcado como retratado
-- [ ] Nenhum sítio histórico foi apagado — os 3 estão retratados, não reescritos
-- [ ] Sítio 6 aponta a absorção do #451 na `REQ-2026-09-02`
-- [ ] 🔴 **Varredura própria:** confirme se existe um **7º** sítio (a Wave 0 disse 5, eu achei o 6º).
+- [x] Nenhum sítio histórico foi apagado — os 3 estão retratados, não reescritos
+- [x] Sítio 6 aponta a absorção do #451 na `REQ-2026-09-02`
+- [x] 🔴 **Varredura própria:** confirme se existe um **7º** sítio (a Wave 0 disse 5, eu achei o 6º).
       Diga o comando e o total
 
 ## Wave 2 — auditoria independente

@@ -2,6 +2,50 @@
 
 ---
 
+## 2026-09-29 — Apolo (fix/dois-workflows-rodam-a-mesma-validacao — ML-1A Wave 1) — ENTREGUE
+
+**Inicio:** 2026-09-29 | **Fim:** 2026-09-29 | Branch: `fix/dois-workflows-rodam-a-mesma-validacao`
+**Tarefa:** ML-1A — o gerador pergunta antes de escrever, e o `doctor` acompanha
+
+**Arquivos modificados:**
+- `internal/generators/scaffold.go`: `generateGitHubActionsWorkflow` — guard D2 via `discoverWorkflowPresent(ghRoot)` antes do `MkdirAll`; emite mensagem informativa se validate.yml presente.
+- `internal/generators/scaffold_doctor.go`: suprime `scaffold-missing` para gate.yml quando `discoverWorkflowPresent(projectRoot)` retorna true (D4); corrige comentários nos sítios 1 e 2 (citação falsa da ADR-2026-08-28 substituída por ADR-2026-09-29).
+- `internal/generators/scaffold_test.go`: 2 testes novos (skip quando presente; escreve quando ausente).
+- `internal/generators/scaffold_doctor_test.go`: 3 testes novos (silent quando validate presente; accuses quando ambos ausentes; accuses divergência quando stale). Importou `config` para `config.Reset()`.
+
+**Evidências:**
+- `go build ./...`: RC=0
+- `go test ./internal/generators/...`: `ok github.com/kgsaran/trackfw/internal/generators` (full suite)
+- 5 testes novos: todos PASS (isolado e no suite completo)
+- `git diff --stat trackfw.yaml`: vazio
+
+**Achados declarados:**
+- `docs/cli-parity.md` pode documentar a escrita incondicional de gate.yml (contrato de canal) — não verifiquei porque fora do meu escopo de arquivo; o arquiteto deve checar antes do commit.
+
+---
+
+## 2026-09-29 — Ártemis (fix/dois-workflows-rodam-a-mesma-validacao — ML-1C Wave 1) — ENTREGUE
+
+**Inicio:** 2026-09-29 | **Fim:** 2026-09-29 | Branch: `fix/dois-workflows-rodam-a-mesma-validacao`
+**Tarefa:** ML-1C — corrigir os 4 sítios restantes da citação falsa da ADR-2026-08-28 (sítios 3, 4, 5, 6). Varredura de 7º sítio.
+**Arquivos:** `internal/generators/discover_workflow_trigger_test.go` · `docs/seguranca/2026-09-28-triagem-issues-abertas.md` · `docs/req/REQ-2026-09-28-trackfw-init-reexecutado-...md`
+
+**Entregáveis:**
+- Sítio 3 (`discover_workflow_trigger_test.go:17`): comentário reescrito, aponta ADR-2026-09-29
+- Sítio 4 (`triagem-issues-abertas.md:221`): retratação datada adicionada, original preservado
+- Sítio 5 (`triagem-issues-abertas.md:245`): retratação datada adicionada, original preservado
+- Sítio 6 (`REQ-2026-09-28` escopo negativo): retratação datada adicionada, original preservado; aponta absorção do #451 na REQ-2026-09-02
+- Roadmap ML-1C: Status ✅ Concluído, todos os 4 ACs marcados `[x]`
+- `go test ./internal/generators/...`: `ok` (29.507s)
+
+**Varredura de 7º sítio:**
+Comando: `grep -rn "ADR-2026-08-28" <repo> --include=*.go --include=*.md [etc] | [excluindo docs/adr/, testdata, roadmap/REQ desta REQ, vault]`
+Total de sítios com mecanismo falso (atribuição de coexistência à ADR): **6** — sem 7º. As outras ocorrências fora da lista são citações legítimas (versão pinada, timeout), registros históricos que já documentam a retratação, ou o roadmap/REQ desta própria correção.
+
+**`git diff --stat trackfw.yaml`:** vazio (confirmado)
+
+---
+
 ## 2026-09-29 — Hades (fix/dois-workflows-rodam-a-mesma-validacao — ML-0A Wave 0) — ENTREGUE
 
 **Inicio:** 2026-09-29 | **Fim:** 2026-09-29 | Branch: `fix/dois-workflows-rodam-a-mesma-validacao`
