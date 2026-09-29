@@ -71,9 +71,22 @@ vez — ADR de ponto único marcada satisfeita com sítio sobrando.
 
 ## Acceptance Criteria
 
-- [ ] **Enumeração real** de todos os sítios que enumeram ADR (não só `context` e `status`),
-      classificados em: usa o ponto único · tem implementação própria correta · tem implementação
-      própria **errada** — entregável da Wave 0
+- [x] **Enumeração real** de todos os sítios que enumeram ADR — entregável da Wave 0
+      → **9 sítios**, dos quais **3 são classe (iii), errados**. 🔴 **A Wave 0 refutou esta REQ**, que
+      supunha 2 (`context` + `status`):
+
+      | sítio | mecanismo | efeito |
+      |---|---|---|
+      | `context.go:38` `GetContext` | `os.ReadDir` raiz | `ADRs (0)` + score −20 |
+      | `adr.go:189` `ListADRs` | `filepath.Glob` raiz | 🔴 `trackfw adr list` → **"No ADRs found"** |
+      | `adr.go:316` `NewADRDraft` | `filepath.Glob` raiz | 🔴 **rascunho duplicado** se o twin está em subpasta |
+
+- [ ] 🔴 **Os TRÊS sítios (iii) corrigidos no mesmo ML** (Regra Dura, mesma causa). `adr list`
+      silenciar **todos** os ADRs é, para o usuário, tão grave quanto o `context`
+- [ ] 🔴 **Dedup por caminho absoluto no resolvedor de nível-`cfg`.** Medido: `adr_dirs` **aninhadas**
+      (`[docs/adr/zeus, docs/adr/zeus/done]`) fazem o `status` reportar **7** onde o correto é **4** —
+      defeito que já existe hoje. Sem dedup, a correção faria `context` e `status` **concordarem no
+      número errado**
 - [ ] 🔴 **`context` e `status` consomem o MESMO resolvedor** (ADR D3). Não basta o `context`
       passar a descer: dois enumeradores que concordam hoje divergem amanhã
 - [ ] Layout **plano** (ADRs na raiz de `adr_dirs`) **continua funcionando** — é o layout deste
@@ -82,8 +95,14 @@ vez — ADR de ponto único marcada satisfeita com sítio sobrando.
 - [ ] 🔴 **O contra-braço que mede a contradição:** numa fixture com ADRs em subpastas, a saída do
       `context` **não** pode conter `## ADRs (0)` e, ao mesmo tempo, um warning nomeando um ADR.
       Este é o AC que mede o **efeito** — os outros são meios
-- [ ] **`Governance score` medido antes/depois** na mesma fixture: a diferença tem que ser
-      exatamente os **20 pontos** da categoria ADR, nem mais nem menos
+- [ ] **`Governance score` medido antes/depois**: diferença de exatamente **20 pontos**, nem mais
+      (medido na Wave 0: 40/100 → 60/100)
+      ⚠️ **Este AC NÃO discrimina sozinho:** num repositório sem `adr_dirs` aninhadas ele passa mesmo
+      sem o dedup do D4. Por isso o AC do dedup é **separado**, com fixture aninhada própria
+- [ ] 🔴 **O critério de identificação NÃO muda:** o resolvedor mantém `HasSuffix(".md")`, **sem**
+      filtro de prefixo `ADR-` — idêntico ao comportamento atual (`validator.go:3017`,
+      `context.go:44`). Esta REQ corrige **alcance da varredura**, não critério. Um teste deve fixar
+      isso, senão um refator futuro "melhora" o filtro e muda contagens em silêncio
 - [ ] 🔴 **Gate que impede a reintrodução**, falsificável nas duas direções: reprova quando um
       enumerador de ADR novo nascer sem passar pelo ponto único, e **não** reprova o ponto único
 - [ ] `make quality` e **CI** verdes
@@ -97,6 +116,11 @@ vez — ADR de ponto único marcada satisfeita com sítio sobrando.
   causas distintas. REQ própria.
 - **Não** muda o **formato** da saída do `context`, nem o critério dos 20 pontos por categoria. O
   score está errado porque o **insumo** está errado; mexer na fórmula mascararia a causa.
+- 🔴 **Não** corrige o **filtro frouxo**: com `HasSuffix(".md")`, um `NOTAS.md` na raiz de `adr_dir`
+  **é contado como ADR**. Medido pelo arquiteto em 2026-09-29: 4 ADRs reais → `status` reporta **8**
+  com um `NOTAS.md` presente e `adr_dirs` aninhadas. **Causa distinta** — critério de identificação,
+  não alcance de varredura —, e corrigir os dois juntos tornaria impossível atribuir qualquer
+  variação de contagem a uma das causas. **Candidato a issue própria.**
 - **Não** migra layout de ADR de ninguém. `adr_dirs` com ADRs na raiz continua válido — **D1** é
   união, não substituição.
 - **Não** estende a **ADR-2026-09-03** por analogia: o invariante dela é que *REQ não tem dimensão de

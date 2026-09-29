@@ -2,6 +2,25 @@
 
 ---
 
+## 2026-09-29 — Hades (fix/context-reporta-zero-adrs-onde-status-reporta-145 — ML-0A Wave 0 threat model) — ENTREGUE
+
+**Início:** 2026-09-29 | Branch: `fix/context-reporta-zero-adrs-onde-status-reporta-145`
+**Tarefa:** ML-0A — Wave 0 (threat model) para REQ-2026-09-29 / ADR-2026-09-29. Enumeração de todos os sítios que leem/contam ADR no produto, medição de divergência em fixture, verificação do layout plano, e análise da premissa D3 (ponto único).
+
+**Resultado:**
+- Entregável: `docs/seguranca/2026-09-29-wave0-context-adr-zero.md`
+- 9 sítios enumerados: 3 classe (iii) errada (S1 context.go, S6 adr.go ListADRs, S7 adr.go NewADRDraft), 5 classe (ii) correta, 1 fora de escopo
+- ADR lista 2 sítios; medição encontrou 3 — Regra Dura exige que S6 e S7 entrem no ML-1A
+- Contradição interna reproduzida na fixture: `context` reporta ADRs(0) e nomeia 4 ADRs nos warnings
+- Double-count com `adr_dirs` aninhadas medido em `status` (7 onde correto é 4); o resolvedor compartilhado deve deduplicar por caminho absoluto
+- Afirmação da ADR sobre "filtro ADR- já existente em status" INCORRETA — nenhum sítio filtra por prefixo; implementador não deve adicionar filtro
+- D3 CONFIRMADA: `ResolveADRFiles(cfg)` + `walkADRFilePaths(dir)` servem todos os consumidores sem flags
+- Score AC: fixture → 40/100 atual, 60/100 após fix, delta = exatamente 20 pontos
+- Layout plano (este repositório, 74 ADRs): não afetado
+- `git diff trackfw.yaml`: vazio
+
+---
+
 ## 2026-09-28 — Apolo (fix/init-reexecutado-destroi-config-do-consumidor — ML-1G restaurar write-containment-allowed) — ENTREGUE
 
 **Início:** 2026-09-28 | Branch: `fix/init-reexecutado-destroi-config-do-consumidor`

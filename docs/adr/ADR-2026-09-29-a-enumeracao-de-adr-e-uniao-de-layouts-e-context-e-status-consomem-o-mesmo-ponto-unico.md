@@ -75,6 +75,29 @@ adr_dir/<estado>/*.md         ← subpastas de estado (backlog, wip, done, …)
 estende por analogia** a ADRs, e é por isso que esta existe em vez de uma emenda. Um ADR vive em
 `done/` ou `wip/`, e o estado é informação legítima — não ruído de layout.
 
+**D2-bis — A população de sítios é MAIOR do que esta ADR supôs.** A primeira versão nomeava **2**
+sítios (`context` e `status`). A Wave 0 mediu **9 sítios** que leem ou contam ADR, dos quais **3 são
+classe (iii) — implementação própria errada**:
+
+| sítio | mecanismo | efeito |
+|---|---|---|
+| `context.go:38` `GetContext` | `os.ReadDir` raiz | `ADRs (0)` + score −20 |
+| `adr.go:189` `ListADRs` | `filepath.Glob` raiz | 🔴 `trackfw adr list` responde **"No ADRs found"** |
+| `adr.go:316` `NewADRDraft` | `filepath.Glob` raiz | 🔴 cria **rascunho duplicado** quando o twin está em subpasta |
+
+**Mesma causa, mesma REQ** (Regra Dura): os três entram no mesmo ML. `adr list` silenciar **todos**
+os ADRs é, para o usuário, tão grave quanto o `context` — e seria descoberto depois, numa fila.
+
+**D4 — O resolvedor de nível-`cfg` DEDUPLICA por caminho absoluto.** Medido na Wave 0 e confirmado
+pelo arquiteto: com `adr_dirs: [docs/adr/zeus, docs/adr/zeus/done]` — entradas **aninhadas** —, o
+`status` reporta **7** onde o correto é **4**. O defeito **já existe hoje** e é independente das
+subpastas.
+
+🔴 **Por que isto entra aqui e não vira resíduo:** sem dedup, a correção faria `context` e `status`
+passarem a **concordar no número errado** — e o AC *"delta de exatamente 20 pontos"* **passaria assim
+mesmo**, porque num repositório sem `adr_dirs` aninhadas ele não discrimina. Um AC que não distingue
+o certo do errado não é AC.
+
 **D3 — `context` e `status` consomem o MESMO ponto único.** Não é "corrigir o `context` para
 concordar com o `status`": é os dois passarem a perguntar ao mesmo resolvedor. Duas implementações
 que concordam hoje divergem amanhã, e a divergência entre comandos é o sintoma mais confiável de que
@@ -88,9 +111,29 @@ existem duas.
 - A contradição interna da saída (`ADRs (0)` + warning nomeando ADR) desaparece por construção.
 
 **Negativas e aceitas**
-- Um repositório com `.md` solto numa subpasta de `adr_dir` que **não** seja ADR passa a ser contado.
-  Mitigação: o filtro por prefixo `ADR-` já é o usado pelo `status`, e manter os dois no mesmo
-  resolvedor garante que a regra de filtragem seja **uma só**.
+- 🔴 **RETRATAÇÃO (2026-09-29, refutada pela Wave 0).** A primeira versão desta ADR afirmava que
+  *"o filtro por prefixo `ADR-` já é o usado pelo `status`"*. **É FALSO, e eu não havia medido.**
+  Medido: `validator.go:3017` e `context.go:44` usam ambos `strings.HasSuffix(path, ".md")` —
+  **sem filtro de prefixo nenhum**.
+
+  O risco de deixar a frase de pé era concreto: o implementador leria a ADR, acrescentaria filtro por
+  prefixo *"para preservar o comportamento"*, e mudaria **silenciosamente** a contagem de todo
+  repositório com `.md` não-ADR em `adr_dirs`. A regressão seria invisível **aqui** — neste
+  repositório não há `.md` fora do padrão na raiz de `docs/adr`.
+
+  **Decidido:** o resolvedor mantém `HasSuffix(".md")`, **sem** prefixo — idêntico ao comportamento
+  atual dos dois comandos. Esta REQ corrige **alcance da varredura**, não **critério de
+  identificação**; mudar os dois ao mesmo tempo tornaria impossível atribuir qualquer variação de
+  contagem a uma das causas.
+
+- 🔴 **Resíduo declarado, medido e NÃO corrigido aqui:** com `HasSuffix(".md")`, um `NOTAS.md` na
+  raiz de `adr_dir` **é contado como ADR**. Medido: 4 ADRs reais → `status` reporta **8** com um
+  `NOTAS.md` presente e `adr_dirs` aninhadas. É **causa distinta** (critério de identificação), fica
+  fora desta REQ por decisão, e é **candidato a issue própria**.
+
+- A contagem de ADRs de alguns repositórios **vai subir** após o upgrade. Isso é a correção
+  aparecendo, não regressão — e deve constar nas release notes, porque número que muda sozinho entre
+  versões gera issue.
 - A contagem de ADRs de alguns repositórios **vai subir** após o upgrade. Isso é a correção
   aparecendo, não regressão — e deve constar nas release notes, porque um número que muda sozinho
   entre versões é exatamente o tipo de coisa que gera issue.

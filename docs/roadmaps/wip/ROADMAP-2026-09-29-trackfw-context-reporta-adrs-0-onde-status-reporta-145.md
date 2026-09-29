@@ -39,7 +39,7 @@ n=$(grep -rn 'os.ReadDir\|filepath.WalkDir\|filepath.Glob' --include='*.go' inte
 
 ### ML-0A — enumerar os sítios que leem ADR e medir a divergência
 **Owner:** `hades-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-09-29 · 🔴 **refutou a ADR em dois pontos**
 **Arquivos:** leitura de `internal/`; escrita em `docs/seguranca/2026-09-29-wave0-context-adr-zero.md`
 
 **Tarefa:**
@@ -54,10 +54,30 @@ n=$(grep -rn 'os.ReadDir\|filepath.WalkDir\|filepath.Glob' --include='*.go' inte
    do status do frontmatter e o outro não), **diga agora** — isso muda o desenho do ML-1A.
 
 **Critérios de aceite:**
-- [ ] Todos os sítios enumerados com arquivo, linha e classe, **nenhum sem razão escrita**
-- [ ] Tabela de divergência medida numa fixture única, com os números lado a lado
-- [ ] Veredito explícito sobre a viabilidade do ponto único **antes** de alguém escrevê-lo
-- [ ] Verificação de que o layout **plano** deste repositório não regride sob a mudança proposta
+- [x] **9 sítios**, 3 classe (iii) — a ADR supunha 2. `context.go:38`, `adr.go:189` (`adr list`), `adr.go:316` (`NewADRDraft`)
+- [x] Fixture única, 4 ADRs em subpastas: `status`=**4** · `context`=**0** · `adr list`=**0** · `validate`=**4 nomeados**
+- [x] **D3 CONFIRMADA** — `walkADRFilePaths(dir)` (primitivo, já existe) + `ResolveADRFiles(cfg)` (wrapper com dedup). Precedente direto: `context.go:60` já usa `validator.ResolveREQFiles(cfg)` para REQ
+- [x] Layout plano (74 ADRs, sem subpastas): ambos os comandos corretos hoje, e o fix **não o afeta**
+
+**Os dois pontos em que a Wave 0 me refutou:**
+
+1. 🔴 **Afirmação FALSA na minha ADR.** Escrevi que *"o filtro por prefixo `ADR-` já é o usado pelo
+   `status`"*. **Inventei — não medi.** `validator.go:3017` e `context.go:44` usam ambos
+   `HasSuffix(".md")`, **sem prefixo**. O risco era concreto: o implementador acrescentaria o filtro
+   *"para preservar comportamento"* e mudaria contagens em silêncio. Retratado na ADR.
+
+2. **População 4,5× maior.** Eu nomeei 2 sítios; são 9, com 3 errados. `adr list` responde
+   **"No ADRs found"** e `NewADRDraft` cria **rascunho duplicado** — ambos mesma causa, entram no
+   mesmo ML pela Regra Dura.
+
+**E um achado que o AC não pegaria:** `adr_dirs` **aninhadas** fazem o `status` reportar **7** onde o
+correto é **4** (confirmado por mim). 🔴 Sem dedup, a correção faria os dois comandos **concordarem
+no número errado** — e o AC *"delta de 20 pontos"* passaria assim mesmo, porque sem `adr_dirs`
+aninhadas ele não discrimina. **Um AC que não distingue o certo do errado não é AC.**
+
+**Resíduo declarado:** um `NOTAS.md` na raiz de `adr_dir` **é contado como ADR** (4 reais → 8
+reportados). Causa distinta — critério de identificação, não alcance —, fora desta REQ, candidato a
+issue própria.
 
 ## Wave 1 — o ponto único, e o gate que o sustenta
 > Dependências: **Wave 0 auditada.** Os dois MLs tocam arquivos distintos → paralelos, **se** a
@@ -67,10 +87,20 @@ n=$(grep -rn 'os.ReadDir\|filepath.WalkDir\|filepath.Glob' --include='*.go' inte
 **Owner:** `apolo-tf`
 **Status:** ⬜ Pendente
 
+**Forma decidida pela Wave 0:** `walkADRFilePaths(dir) []string` (primitivo, já existe) +
+`ResolveADRFiles(cfg) []string` (wrapper: loop em `ADRDirs` + **dedup por caminho absoluto**).
+Precedente a copiar: `context.go:60`, que já usa `validator.ResolveREQFiles(cfg)` para REQ.
+
 **Critérios de aceite:**
 - [ ] Layout plano (`adr_dir/*.md`) **continua** funcionando — é o layout deste repositório
 - [ ] Layout com subpastas de estado passa a ser enumerado
 - [ ] `context` e `status` chamam o **mesmo** resolvedor
+- [ ] 🔴 **Os TRÊS sítios (iii)**: `context.go:38`, `adr.go:189` (`ListADRs`), `adr.go:316`
+      (`NewADRDraft`). Deixar `adr list` de fora entregaria meia correção
+- [ ] 🔴 **Dedup**, com fixture de `adr_dirs` **aninhadas**: `[docs/adr/zeus, docs/adr/zeus/done]`
+      com 4 ADRs reais tem que reportar **4**, não 7
+- [ ] 🔴 **O critério de identificação NÃO muda** — `HasSuffix(".md")`, **sem** filtro de prefixo.
+      Teste que fixe isso, senão um refator futuro "melhora" o filtro e muda contagens em silêncio
 - [ ] 🔴 **O teste que mede o efeito:** numa fixture com ADRs em subpastas, a saída do `context`
       **não** contém `## ADRs (0)` junto de um warning que nomeia um ADR
 - [ ] 🔴 **Score medido antes/depois:** diferença de **exatamente 20 pontos**. Nem mais — se subir
