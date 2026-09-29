@@ -30,7 +30,7 @@ REQ: docs/req/REQ-2026-09-02-init-e-discover-geram-dois-workflows-que-rodam-a-me
 
 ### ML-0A — a arqueologia do AC1, e o inventário de quem depende de qual
 **Owner:** `hades-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos de leitura:** `internal/generators/scaffold.go` (`generateGitHubActionsWorkflow`:2553) ·
 `internal/generators/scaffold_doctor.go` (:32, :59, :333) · `internal/discover/discover.go`
 (`InstallGates`:66) · `internal/generators/update.go` (:2189) · `docs/adr/`
@@ -61,12 +61,12 @@ citação, e atrás de **qualquer** ADR que decida a coexistência por outro nom
 real, é ela que governa, não a minha medição.
 
 **Critérios de aceite:**
-- [ ] Resposta à pergunta 1 **com o comando e a saída** — é a que decide o desenho
-- [ ] Tabela de equivalência dos dois workflows **gerados**, campo a campo
-- [ ] Inventário dos sítios que citam a decisão inexistente (esperado ≥ 2; **diga se achou mais**)
-- [ ] Veredito explícito: **os dois são necessários, ou não** — e o que falsificaria a resposta
-- [ ] 🔴 Se a medição refutar qualquer premissa da REQ, **diga**; Wave 0 que só concorda não mediu
-- [ ] Nenhuma linha de implementação escrita neste ML
+- [x] Resposta à pergunta 1 **com o comando e a saída** — é a que decide o desenho
+- [x] Tabela de equivalência dos dois workflows **gerados**, campo a campo
+- [x] Inventário dos sítios que citam a decisão inexistente (esperado ≥ 2; **achados: 5**)
+- [x] Veredito explícito: **os dois são necessários, ou não** — e o que falsificaria a resposta
+- [x] 🔴 Se a medição refutar qualquer premissa da REQ, **diga**; Wave 0 que só concorda não mediu
+- [x] Nenhuma linha de implementação escrita neste ML
 
 **Gate da wave:**
 ```bash

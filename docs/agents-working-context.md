@@ -2,6 +2,33 @@
 
 ---
 
+## 2026-09-29 — Hades (fix/dois-workflows-rodam-a-mesma-validacao — ML-0A Wave 0) — ENTREGUE
+
+**Inicio:** 2026-09-29 | **Fim:** 2026-09-29 | Branch: `fix/dois-workflows-rodam-a-mesma-validacao`
+**Tarefa:** ML-0A Wave 0 — arqueologia do AC1: por que existem dois workflows e o que quebra se um sair.
+
+**Entregáveis:**
+- `docs/seguranca/2026-09-29-wave0-dois-workflows.md` — parecer com as 4 perguntas, comandos, saídas literais e vereditos
+- Roadmap ML-0A: Status ✅ Concluído, todos os 6 ACs marcados `[x]`
+- `trackfw barrier --wave 0`: result: passed
+
+**Achados principais:**
+- Caminho exclusivo `discover --init` (sem trackfw.yaml preexistente) é **transiente**: escreve só
+  `trackfw-validate.yml`, mas `trackfw update` subsequente escreve `trackfw-gate.yml` (porque
+  discover gera `ci: github-actions` no yaml). É exatamente o mecanismo do #451.
+- `discover --init` com `trackfw.yaml` preexistente faz early-return — InstallGates não é chamado,
+  nenhum workflow escrito.
+- **Job IDs diferem**: `governance-install-script` (gate) vs `governance-go-install` (validate) —
+  dois contratos distintos de `required_status_checks`, não cópias do mesmo check.
+- **Triggers diferem**: gate cobre só pull_request; validate cobre push em main também.
+- **5 sítios** propagam a citação falsa da ADR-2026-08-28 (roadmap dizia 2). Sítio novo crítico:
+  `discover_workflow_trigger_test.go:17` — comentário de teste afirma a decisão inexistente.
+- **Premissa da REQ refutada**: "única diferença é o instalador" é falso; a diferença consequente é
+  o job ID (contrato de branch protection).
+- `git diff --stat trackfw.yaml`: vazio (confirmado)
+
+---
+
 ## 2026-09-29 — Artemis (fix/ratchet-windows-nao-colhe-melhoria — ML-3A Wave 3) — ENTREGUE
 
 **Inicio:** 2026-09-29 | **Fim:** 2026-09-29 | Branch: `fix/ratchet-windows-nao-colhe-melhoria`

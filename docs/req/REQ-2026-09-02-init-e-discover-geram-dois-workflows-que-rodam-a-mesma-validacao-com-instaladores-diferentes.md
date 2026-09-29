@@ -121,6 +121,70 @@ entre MLs, não um detalhe.
 - [ ] **AC8** — 🔴 **O `doctor` acompanha a decisão na mesma entrega.** Nenhum achado falso novo, e
       o contra-braço: o achado **verdadeiro** que ele já dá continua saindo
 
+## Wave 0 (2026-09-29) — duas premissas minhas caíram, e a citação falsa era maior
+
+### 🔴 Premissa refutada: "a única diferença real é o método de instalação"
+
+**Falso.** Os dois workflows gerados divergem no que mais importa — o **job id**, que é o nome do
+check:
+
+| | `trackfw-gate.yml` | `trackfw-validate.yml` |
+|---|---|---|
+| **job id / nome do check** | `governance-install-script` | `governance-go-install` |
+| `pull_request` | `branches: [main]` | irrestrito |
+| `push` | ausente | `branches: [main]` |
+| `timeout-minutes` | 10 | ausente |
+| instalação | `curl \| sh` + `TRACKFW_VERSION` | `go install @vX.Y.Z` via `setup-go@v7` |
+
+🔴 **Job id diferente = contrato de `required_status_checks` diferente.** Verificado por mim neste
+repositório: **os dois** estão declarados em `.github/required-status-checks.txt` (linhas 29-30).
+Num consumidor que configurou `governance-go-install` como required check, **remover o
+`trackfw-validate.yml` quebra a branch protection** — o job do `gate.yml` tem outro nome e não
+satisfaz o check exigido. Isso não é detalhe de implementação: é a diferença entre corrigir e
+derrubar o merge protection de quem já adotou.
+
+### A janela exclusiva existe, mas é transiente
+
+Medido com fixture real: `discover --init` em projeto **sem** `trackfw.yaml` escreve
+`trackfw-validate.yml` e **não** o `gate.yml` — mas grava `ci: github-actions`, então o **primeiro
+`trackfw update` escreve o `gate.yml`** e fecha a janela. É o mecanismo do #451. Com `trackfw.yaml`
+já presente, o `discover --init` faz early-return e não escreve workflow nenhum.
+
+**Portanto o AC1 NÃO fecha a REQ**: não há razão legítima de produto para a coexistência. Há
+sedimentação histórica, mascarada por uma citação falsa de ADR.
+
+### O instalador não discrimina público
+
+`actions/setup-go@v7` provisiona o toolchain; não há runner gerenciado do GitHub em que o
+`go install` falhe por ausência de Go. O argumento *"os dois instaladores atendem públicos
+diferentes"* **não se sustenta no ambiente onde os workflows rodam**.
+
+### A citação falsa: 6 sítios, não 2
+
+| # | sítio | o que afirma |
+|---|---|---|
+| 1 | `scaffold_doctor.go:29-31` | *"ADR-2026-08-28 names this exact case as the motivation"* |
+| 2 | `scaffold_doctor.go:334-335` | *"both can coexist (ADR-2026-08-28)"* — **fonte primária** |
+| 3 | `discover_workflow_trigger_test.go:17` | *"a coexistência é decidida e está escrita"* — em **comentário de teste** |
+| 4 | `docs/seguranca/2026-09-28-triagem-issues-abertas.md:221` | propagação |
+| 5 | idem `:245` | propagação |
+| 6 | 🔴 `REQ-2026-09-28-...init-reexecutado...md:118` | **usou a citação para justificar que o #451 era REQ própria** |
+
+🔴 **O sítio 6 é meu, e é o mais caro.** Na REQ do #445, no escopo negativo, escrevi que o #451
+*"pede uma decisão de qual artefato instalar, governada pela ADR-2026-08-28"* e concluí **"REQ
+própria"** — aplicando a Regra Dura de Causa Raiz com uma premissa falsa. A citação inventada não
+só travou a correção: ela **produziu uma decisão de governança errada**, justamente na regra que
+existe para impedir trabalho paralelo sobre a mesma causa. Corrigido hoje por absorção nesta REQ,
+mas por outro caminho — não porque alguém conferiu a citação.
+
+### AC novo
+
+- [ ] **AC9** — 🔴 **Os 6 sítios corrigidos**, incluindo o comentário de teste (sítio 3) e o escopo
+      negativo da `REQ-2026-09-28` (sítio 6). Comentário de teste que afirma decisão inexistente
+      viola a Regra Dura de Reconciliação quando o produto mudar.
+- [ ] **AC10** — 🔴 **Nenhum consumidor perde o check que já exigia.** A mudança preserva, ou migra
+      explicitamente, o nome do job que está em `required_status_checks` — medido, não presumido.
+
 ## Negative Scope
 
 - **Não** reverter os job ids únicos do ML-1A. Eles corrigem a ambiguidade **independentemente** de
