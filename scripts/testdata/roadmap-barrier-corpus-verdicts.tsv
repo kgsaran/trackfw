@@ -709,7 +709,7 @@ ROADMAP-2026-08-12-semantica-de-falha-de-hook-fail-open-vs-fail-closed-nucleo-em
 ROADMAP-2026-08-12-semantica-de-falha-de-hook-fail-open-vs-fail-closed-nucleo-empirico-no-codex.md	2-ter	mls_complete	evidence	ML-2B: ✅
 ROADMAP-2026-08-12-semantica-de-falha-de-hook-fail-open-vs-fail-closed-nucleo-empirico-no-codex.md	3	acceptance_evidence	evidence	ML-3A: 3 criteria met
 ROADMAP-2026-08-12-semantica-de-falha-de-hook-fail-open-vs-fail-closed-nucleo-empirico-no-codex.md	3	mls_complete	evidence	ML-3A: ✅
-ROADMAP-2026-08-13-fronteira-de-escrita-dos-agentes-auditores.md	1	acceptance_evidence	failure	ML-1A: no acceptance block
+ROADMAP-2026-08-13-fronteira-de-escrita-dos-agentes-auditores.md	1	acceptance_evidence	evidence	ML-1A: 7 criteria met
 ROADMAP-2026-08-13-fronteira-de-escrita-dos-agentes-auditores.md	1	mls_complete	evidence	ML-1A: ✅
 ROADMAP-2026-08-13-fronteira-de-escrita-dos-agentes-auditores.md	2	acceptance_evidence	evidence	ML-2A: 3 criteria met
 ROADMAP-2026-08-13-fronteira-de-escrita-dos-agentes-auditores.md	2	mls_complete	evidence	ML-2A: ✅
@@ -1053,9 +1053,6 @@ ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-
 ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md	1	mls_complete	evidence	ML-1A: ✅
 ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md	2	acceptance_evidence	failure	ML-2A: no acceptance block
 ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md	2	mls_complete	evidence	ML-2A: ✅
-ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md	2-bis	mls_complete	failure	wave 2-bis: no ML found
-ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md	3	mls_complete	failure	wave 3: no ML found
-ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md	4	mls_complete	failure	wave 4: no ML found
 ROADMAP-2026-08-23-agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global.md	0	acceptance_evidence	evidence	ML-0A: 3 criteria met
 ROADMAP-2026-08-23-agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global.md	0	mls_complete	evidence	ML-0A: ✅
 ROADMAP-2026-08-23-agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global.md	1	acceptance_evidence	failure	ML-1A: no acceptance block
@@ -1288,8 +1285,10 @@ roadmap-req-driven-adr-discovery-2026-06-12.md	1	acceptance_evidence	failure	ML-
 roadmap-req-driven-adr-discovery-2026-06-12.md	1	acceptance_evidence	failure	ML-1B: 4 unmet acceptance criteria
 roadmap-req-driven-adr-discovery-2026-06-12.md	1	mls_complete	evidence	ML-1A: ✅
 roadmap-req-driven-adr-discovery-2026-06-12.md	1	mls_complete	evidence	ML-1B: ✅
-roadmap-req-driven-adr-discovery-2026-06-12.md	2	acceptance_evidence	failure	ML-2A: no acceptance block
+roadmap-req-driven-adr-discovery-2026-06-12.md	2	acceptance_evidence	failure	ML-2A: 4 unmet acceptance criteria
+roadmap-req-driven-adr-discovery-2026-06-12.md	2	acceptance_evidence	failure	ML-2B: 5 unmet acceptance criteria
 roadmap-req-driven-adr-discovery-2026-06-12.md	2	mls_complete	evidence	ML-2A: ✅
+roadmap-req-driven-adr-discovery-2026-06-12.md	2	mls_complete	evidence	ML-2B: ✅
 roadmap-req-driven-adr-discovery-2026-06-12.md	3	acceptance_evidence	failure	ML-3A: 3 unmet acceptance criteria
 roadmap-req-driven-adr-discovery-2026-06-12.md	3	acceptance_evidence	failure	ML-3B: 3 unmet acceptance criteria
 roadmap-req-driven-adr-discovery-2026-06-12.md	3	mls_complete	evidence	ML-3A: ✅

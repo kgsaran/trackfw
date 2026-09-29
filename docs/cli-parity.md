@@ -2464,7 +2464,12 @@ These are literal parsing rules. All three runtimes must implement them identica
 
 1. **Wave heading.** A wave starts at a line matching `^## Wave <label> ` (H2, the literal word
    `Wave`, the **label**, then a space). The wave ends at the next `^## ` line or EOF. See
-   "Wave label grammar" below — the label is not necessarily an integer.
+   "Wave label grammar" below — the label is not necessarily an integer. **Fence-aware
+   (#470):** both readings consult the same mask as rule 2 — a `^## Wave <label> ` line inside
+   a fenced code block does not open a wave, and a `^## ` line inside one does not end the
+   preceding wave. Until #470 this rule was the only one outside the fence mask, and the
+   asymmetry was load-bearing in the wrong direction: the wave is the OUTER block, so a `## `
+   inside a fence closed it before rule 2's fence awareness could apply to the MLs inside.
 2. **ML heading.** Inside a wave, an ML starts at a line matching `^### ML-` (H3). The ML ends
    at the next `^### ` or `^## ` line or EOF. **Fence-aware (ADR-2026-08-29, decision 7):** a
    line matching this pattern **inside** a fenced code block is not a real ML heading — see
@@ -2634,10 +2639,21 @@ de status, ao ser ampliado para aceitar palavras além de um único emoji, teria
 discriminante: `⬜`, `não` e `pending` não são marcadores, não importa o que vier depois na
 linha.
 
-**3. Consciência de cerca de código — as três leituras (ADR-2026-08-29, decisão 7).**
-`mlHeadingRe`, `statusLineRe` e `criteriaHeaderRe`/`unmetCriterionRe` ignoram qualquer linha
-dentro de um bloco cercado ao procurar, respectivamente, o heading real de um ML, a linha real
-de `**Status:**`, e o bloco real de aceite. Regra CommonMark, não "conta até 3": um fence abre
+**3. Consciência de cerca de código — as quatro leituras (ADR-2026-08-29, decisão 7;
+estendida pela #470).** `waveHeadingRe` (com a varredura de fim de bloco), `mlHeadingRe`,
+`statusLineRe` e `criteriaHeaderRe`/`unmetCriterionRe` ignoram qualquer linha dentro de um
+bloco cercado ao procurar, respectivamente, o heading real de uma wave, o heading real de um
+ML, a linha real de `**Status:**`, e o bloco real de aceite.
+
+🔴 **A leitura de wave entrou depois, e por medição.** A decisão 7 original cobria três
+leituras; o comentário de `HasWave0` no Go declarava por escrito que deixar a wave de fora era
+aceitável porque o caso seria "theoretical". A #470 o mediu num roadmap real: o ML colava a
+saída de `trackfw context`, que emite `## ADRs (N)` e `## Warnings (N)`, e o `barrier` acusou
+`no acceptance block` num ML que **tem** o bloco — o pior modo de falha, porque acusa a
+ausência de algo que existe e manda o autor procurar no lugar errado. Duas consequências que a
+redação antiga não previa: (a) o defeito não precisa de `## Wave` cercado para disparar,
+qualquer `## ` serve; (b) `DuplicateWaveOrMLLabels` **já** pulava heading cercado, então dois
+leitores do mesmo literal, no mesmo arquivo, discordavam. Regra CommonMark, não "conta até 3": um fence abre
 com uma corrida de **3 ou mais** caracteres idênticos (` ``` ` ou `~~~`) no início da linha
 (após trim de espaço) e fecha com uma corrida do **mesmo caractere** de comprimento **maior ou
 igual** à de abertura — cobre os três casos falsificados pelo gate: 3 crases, til, e 4+ crases

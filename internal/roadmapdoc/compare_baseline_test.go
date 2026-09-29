@@ -136,6 +136,98 @@ func parseBaselineFile(t *testing.T, path string) []baselineRecord {
 	return records
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// Registros cujo baseline congelou o defeito da #470
+// ────────────────────────────────────────────────────────────────────────────
+//
+// O baseline foi capturado ANTES de ParseWaves consultar a mascara de cerca.
+// Nestes tres documentos do corpus, o "## " que fechava a wave cedo demais esta
+// DENTRO de um bloco cercado — entao o registro congelado descreve o defeito, e
+// nao o contrato. Cada entrada nomeia o sitio e o que mudou.
+//
+// 🔴 A lista tem guarda nos DOIS sentidos: mudou = ok, NAO mudou = reprova. Uma
+// lista de excecao que so perdoa apodrece — quando a causa sumir, ninguem percebe
+// que as entradas viraram mentira. Ver a checagem de "observados" no fim do teste.
+type registroCorrigido struct {
+	caminho string
+	wave    string
+	check   string // "wave_presence", "mls_complete" ou "acceptance_evidence"
+	motivo  string
+}
+
+var corrigidosPela470 = []registroCorrigido{
+	{
+		caminho: "docs/roadmaps/done/ROADMAP-2026-08-13-fronteira-de-escrita-dos-agentes-auditores.md",
+		wave:    "1",
+		check:   "acceptance_evidence",
+		motivo: "a linha 64 e um \"## Reporting boundary\" dentro da cerca markdown aberta na 63. " +
+			"A wave 1 terminava ali e o bloco de aceite do ML-1A ficava fora dela: o baseline " +
+			"congelou \"ML-1A: no acceptance block\" para um ML que tem 7 criterios marcados. " +
+			"E o sintoma exato da #470, no corpus do proprio produto.",
+	},
+	{
+		caminho: "docs/roadmaps/done/roadmap-req-driven-adr-discovery-2026-06-12.md",
+		wave:    "2",
+		check:   "mls_complete",
+		motivo: "as linhas 224 e 232 sao \"## Blocked by ADRs\" dentro de cercas markdown. A wave 2 " +
+			"terminava na 224 e so enxergava o ML-2A; agora vai ate a \"## Wave 3\" real (linha 297) " +
+			"e enxerga tambem o ML-2B.",
+	},
+	{
+		caminho: "docs/roadmaps/done/roadmap-req-driven-adr-discovery-2026-06-12.md",
+		wave:    "2",
+		check:   "acceptance_evidence",
+		motivo: "consequencia do registro acima: com o ML-2B dentro da wave, o aceite passa a reportar " +
+			"os dois MLs em vez de \"ML-2A: no acceptance block\".",
+	},
+	// ── as tres waves que DESAPARECEM, e por que isso melhora o veredito ──────
+	//
+	// Este terceiro documento tem as cercas DESBALANCEADAS por autoria: a linha 223
+	// abre ```, e a 227 escreve ```bash achando que abre outro bloco — mas em CommonMark
+	// uma linha com info string nao FECHA nada, entao ela e conteudo interior e quem fecha
+	// o bloco da 223 e a 231. Dali em diante o pareamento anda deslocado ate o fim do
+	// arquivo, e as waves 2-bis, 3 e 4 caem dentro de regioes cercadas.
+	//
+	// 🔴 Medido antes de aceitar: a onda que some NAO falha mais baixo, falha mais ALTO.
+	//   binario antigo:  barrier --wave 3  ->  rc=1  "mls_complete: blocked / wave 3: no ML found"
+	//   binario novo:    barrier --wave 3  ->  rc=2  "wave 3 not found in roadmap"
+	// Os dois bloqueiam; o novo e erro de uso, nomeia a causa e nao finge existir uma wave
+	// vazia. Nenhum caminho fail-open novo — era a duvida que fez esta medicao existir.
+	//
+	// A cerca nao terminada deste arquivo (linha 460) e defeito DIFERENTE e fica fora deste
+	// PR: a regra 6 do docs/cli-parity.md promete que cerca nao terminada e erro de uso
+	// (exit 2), e o produto so implementa isso para a cerca de gates ("unterminated gates
+	// fence"). Sao 2 arquivos em 193 do corpus. Causa outra, issue propria.
+	{
+		caminho: "docs/roadmaps/done/ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md",
+		wave:    "2-bis",
+		check:   "wave_presence",
+		motivo:  "heading dentro de regiao cercada por desbalanceamento de autoria (ver a nota acima)",
+	},
+	{
+		caminho: "docs/roadmaps/done/ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md",
+		wave:    "3",
+		check:   "wave_presence",
+		motivo:  "idem",
+	},
+	{
+		caminho: "docs/roadmaps/done/ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md",
+		wave:    "4",
+		check:   "wave_presence",
+		motivo:  "idem",
+	},
+}
+
+// corrigidoPela470 devolve o motivo quando o registro esta na lista.
+func corrigidoPela470(caminho, wave, check string) (string, bool) {
+	for _, r := range corrigidosPela470 {
+		if r.caminho == caminho && r.wave == wave && r.check == check {
+			return r.motivo, true
+		}
+	}
+	return "", false
+}
+
 // TestParsingMatchesBaseline re-parses each frozen roadmap with the roadmapdoc
 // functions and verifies the parsing results match the pre-refactor baseline.
 //
@@ -150,6 +242,15 @@ func TestParsingMatchesBaseline(t *testing.T) {
 
 	mismatches := 0
 	compared := 0
+	// observados[i] vira true quando o registro i da lista da #470 de fato divergiu.
+	observados := make([]bool, len(corrigidosPela470))
+	marcaObservado := func(caminho, wave, check string) {
+		for i, r := range corrigidosPela470 {
+			if r.caminho == caminho && r.wave == wave && r.check == check {
+				observados[i] = true
+			}
+		}
+	}
 
 	// Track skipped records with named reasons.
 	type skipEntry struct {
@@ -202,7 +303,7 @@ func TestParsingMatchesBaseline(t *testing.T) {
 
 		lines := SplitRoadmapLines(string(data))
 		fenced := FenceMask(lines)
-		waves, parseErr := ParseWaves(lines)
+		waves, parseErr := ParseWaves(lines, fenced)
 		if parseErr != nil {
 			// The frozen file has a malformed wave heading that WaveLabelRe still
 			// rejects (e.g. "## Wave reaberta" added to
@@ -223,6 +324,11 @@ func TestParsingMatchesBaseline(t *testing.T) {
 			}
 		}
 		if target == nil {
+			if motivo, ok := corrigidoPela470(rec.path, rec.wave, "wave_presence"); ok {
+				marcaObservado(rec.path, rec.wave, "wave_presence")
+				t.Logf("#470 %s wave=%s: %s", rec.path, rec.wave, motivo)
+				continue
+			}
 			t.Errorf("MISMATCH %s wave=%s: wave not found in re-parse (baseline has it)", rec.path, rec.wave)
 			mismatches++
 			continue
@@ -253,9 +359,14 @@ func TestParsingMatchesBaseline(t *testing.T) {
 			_ = ok
 		}
 		if !stringSliceEqual(gotMLEvidence, blMLS.Evidence) || !stringSliceEqual(gotMLFailures, blMLS.Failures) {
-			t.Errorf("mls_complete MISMATCH %s wave=%s\n  baseline evidence=%v failures=%v\n  got      evidence=%v failures=%v",
-				rec.path, rec.wave, blMLS.Evidence, blMLS.Failures, gotMLEvidence, gotMLFailures)
-			mismatches++
+			if motivo, ok := corrigidoPela470(rec.path, rec.wave, "mls_complete"); ok {
+				marcaObservado(rec.path, rec.wave, "mls_complete")
+				t.Logf("#470 %s wave=%s mls_complete: %s", rec.path, rec.wave, motivo)
+			} else {
+				t.Errorf("mls_complete MISMATCH %s wave=%s\n  baseline evidence=%v failures=%v\n  got      evidence=%v failures=%v",
+					rec.path, rec.wave, blMLS.Evidence, blMLS.Failures, gotMLEvidence, gotMLFailures)
+				mismatches++
+			}
 		}
 
 		// ── acceptance_evidence: compare evidence and failures ────────────────
@@ -273,9 +384,14 @@ func TestParsingMatchesBaseline(t *testing.T) {
 			}
 		}
 		if !stringSliceEqual(gotAccEvidence, blAcc.Evidence) || !stringSliceEqual(gotAccFailures, blAcc.Failures) {
-			t.Errorf("acceptance_evidence MISMATCH %s wave=%s\n  baseline evidence=%v failures=%v\n  got      evidence=%v failures=%v",
-				rec.path, rec.wave, blAcc.Evidence, blAcc.Failures, gotAccEvidence, gotAccFailures)
-			mismatches++
+			if motivo, ok := corrigidoPela470(rec.path, rec.wave, "acceptance_evidence"); ok {
+				marcaObservado(rec.path, rec.wave, "acceptance_evidence")
+				t.Logf("#470 %s wave=%s acceptance_evidence: %s", rec.path, rec.wave, motivo)
+			} else {
+				t.Errorf("acceptance_evidence MISMATCH %s wave=%s\n  baseline evidence=%v failures=%v\n  got      evidence=%v failures=%v",
+					rec.path, rec.wave, blAcc.Evidence, blAcc.Failures, gotAccEvidence, gotAccFailures)
+				mismatches++
+			}
 		}
 
 		// ── gates commands list: compare the COMMAND LIST only ────────────────
@@ -306,6 +422,16 @@ func TestParsingMatchesBaseline(t *testing.T) {
 	}
 
 	t.Logf("compared=%d skipped=%d mismatches=%d", compared, len(skippedList), mismatches)
+
+	// 🔴 Guarda do outro lado da lista da #470: uma entrada que NAO divergiu significa
+	// que a causa sumiu (o corpus mudou, ou alguem reverteu a mascara) e a entrada virou
+	// mentira. Perdoar em silencio e como o baseline congelou o defeito em primeiro lugar.
+	for i, r := range corrigidosPela470 {
+		if !observados[i] {
+			t.Errorf("lista da #470 apodreceu: %s wave=%s check=%s nao divergiu do baseline — "+
+				"remova a entrada ou descubra por que a causa sumiu", r.caminho, r.wave, r.check)
+		}
+	}
 
 	// Coverage floor: fail if the test stopped comparing enough pairs.
 	// Under the frozen corpus this count is deterministic; the floor catches

@@ -448,14 +448,35 @@ CORPUS_VERDICTS_PIN="$ROOT_DIR/scripts/testdata/roadmap-barrier-corpus-verdicts.
 # "## Wave reaberta" (sufixo alfabético puro) permanecem inválidos — correção no ML-4A.
 # PINNED_CORPUS_FILES/WAVES: inalterados (arquivos já estavam no snapshot; labels já eram
 # extraídos pelo grep — só saíam exit2 antes da correção da gramática).
-PINNED_CORPUS_HASH="a59927ef4bdc340983960f30575c7d76a4ca021c5675b75378fb87abfac51682"
+# #470 — ParseWaves passou a consultar a mascara de cerca (era a unica das quatro
+# leituras fora dela). Efeito intencional no corpus: 4 hunks em 3 arquivos, e as
+# quatro contagens reconciliam exatamente com eles.
+#   fronteira-de-escrita (wave 1): "ML-1A: no acceptance block" -> "ML-1A: 7 criteria
+#     met". O ML sempre teve o bloco; a linha 64 do roadmap e "## Reporting boundary"
+#     DENTRO da cerca aberta na 63, e a wave fechava ali.         acceptance evidence +1
+#   req-driven-adr-discovery (wave 2): as linhas 224 e 232 sao "## Blocked by ADRs"
+#     dentro de cercas markdown. A wave ia so ate a 224 e o ML-2B NUNCA foi auditado;
+#     agora vai ate a "## Wave 3" real.     mls evidence +1 · acceptance failure +2 -1
+#   wave-0-...-ensina-trackfw-push (waves 2-bis, 3, 4): -3 linhas, exit2 0 -> 3. Este
+#     arquivo tem as cercas DESBALANCEADAS por autoria (a linha 223 abre ```, a 227
+#     escreve ```bash, que em CommonMark nao FECHA nada), e as tres waves caem dentro
+#     de regiao cercada.                                                 mls failure -3
+#     🔴 Medido antes de aceitar, porque "never fail open" esta escrito no docstring da
+#     ParseWaves: o veredito nao afrouxa, endurece. Antes "rc=1 / wave 3: no ML found";
+#     agora "rc=2 / wave 3 not found in roadmap" — erro de uso que nomeia a causa em vez
+#     de fingir uma wave vazia. Por isso exit2 sobe: exit 2 nao gera linha na tabela.
+#   PINNED_CORPUS_FILES/WAVES: inalterados. Os labels continuam sendo extraidos pelo grep
+#     do snapshot; o que muda e o veredito de cada um.
+#   O hash foi conferido em DUAS maquinas independentes — o runner do CI e a do autor —
+#   derivando a mesma tabela a partir das mesmas 4 hunks.
+PINNED_CORPUS_HASH="b08dffce1b50abf9c5b3092a0a4edef401c132cf91dbc8516c1efc610e620427"
 PINNED_CORPUS_FILES=144
 PINNED_CORPUS_WAVES=432
-PINNED_CORPUS_EXIT2=0
-PINNED_CORPUS_LINES=1543
-PINNED_MLS_COMPLETE_EVIDENCE=655
-PINNED_MLS_COMPLETE_FAILURE=119
-PINNED_ACCEPTANCE_EVIDENCE_EVIDENCE=317
+PINNED_CORPUS_EXIT2=3
+PINNED_CORPUS_LINES=1542
+PINNED_MLS_COMPLETE_EVIDENCE=656
+PINNED_MLS_COMPLETE_FAILURE=116
+PINNED_ACCEPTANCE_EVIDENCE_EVIDENCE=318
 PINNED_ACCEPTANCE_EVIDENCE_FAILURE=452
 
 # HASH_CMD_BIN (ML-2E, sítio de mesma causa do parecer hades-tf sobre
@@ -552,7 +573,12 @@ elif [[ -n "${CORPUS_FILELIST:-}" ]]; then
         # seja notada. ML-1D (2026-09-18, REQ #392): WaveLabelRe agora aceita sufixo sem
         # hífen ("1b"), portanto convergencia-do-harness e serve-amarra deixam de ser
         # exit2. Os 2 arquivos com "## Wave reaberta" (sufixo alfabético puro sem dígito)
-        # permanecem inválidos mas NÃO estão no snapshot (144 arquivos); PINNED_CORPUS_EXIT2=0.
+        # permanecem inválidos mas NÃO estão no snapshot (144 arquivos).
+        # 🔴 #470: rc=2 deixou de ter UMA causa. Além do label rejeitado pelo
+        # WaveLabelRe, agora também sai 2 quando a wave pedida NÃO EXISTE por estar
+        # dentro de uma cerca — é o caso das waves 2-bis/3/4 de
+        # wave-0-...-trackfw-push, cujo arquivo tem as cercas desbalanceadas.
+        # Daí PINNED_CORPUS_EXIT2=3.
         # Correção dos arquivos reaberta: ML-4A.
         CORPUS_EXIT2=$((CORPUS_EXIT2 + 1))
         continue

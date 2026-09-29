@@ -281,7 +281,7 @@ func TestCorpusMeasurement_ReportOnly(t *testing.T) {
 
 		lines := SplitRoadmapLines(string(data))
 		fenced := FenceMask(lines)
-		waves, _ := ParseWaves(lines)
+		waves, _ := ParseWaves(lines, fenced)
 		anyNotComplete := false
 		for _, wave := range waves {
 			mls := ParseMLs(lines, fenced, wave.Start, wave.End)
@@ -359,7 +359,7 @@ func TestParseWaves_FailSafeIsUnfinished(t *testing.T) {
 	content := "# Roadmap\n\n## Wave abc — Invalid heading\n\n### ML-1A — Work\n**Status:** ✅ Concluído\n**Acceptance criteria:**\n- [x] done\n"
 
 	lines := SplitRoadmapLines(content)
-	_, malformed := ParseWaves(lines)
+	_, malformed := ParseWaves(lines, FenceMask(lines))
 	if len(malformed) == 0 {
 		t.Fatal("ParseWaves returned no MalformedWave for '## Wave abc', want one — counter-test: invalid label must stay reported")
 	}
@@ -516,14 +516,14 @@ func TestParseWaves_CascadeIsolated(t *testing.T) {
 		"**Acceptance criteria:**",
 		"- [x] done",
 		"",
-		"## Wave reaberta — Malformed Label",   // line 10
+		"## Wave reaberta — Malformed Label", // line 10
 		"",
 		"### ML-R — Unreachable",
 		"**Status:** ✅",
 	}, "\n")
 
 	lines := SplitRoadmapLines(content)
-	waves, malformed := ParseWaves(lines)
+	waves, malformed := ParseWaves(lines, FenceMask(lines))
 
 	// At least one valid wave must be returned.
 	if len(waves) == 0 {
