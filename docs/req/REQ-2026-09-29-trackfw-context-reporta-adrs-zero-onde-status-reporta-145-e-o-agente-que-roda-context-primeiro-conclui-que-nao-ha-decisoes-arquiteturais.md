@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-29
 author: "trackfw_architect"
 adr: "docs/adr/ADR-2026-09-29-a-enumeracao-de-adr-e-uniao-de-layouts-e-context-e-status-consomem-o-mesmo-ponto-unico.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-29-trackfw-context-reporta-adrs-0-onde-status-reporta-145.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-29-trackfw-context-reporta-adrs-0-onde-status-reporta-145.md"
 ---
 
 # REQ: `trackfw context` reporta `ADRs (0)` onde `status` reporta 145
 
-> Date: 2026-09-29 | Status: Open
+> Date: 2026-09-29 | Status: Done
 | Linear Issue:
 | Jira Issue:
 
@@ -142,4 +142,4 @@ ADR: docs/adr/ADR-2026-09-29-a-enumeracao-de-adr-e-uniao-de-layouts-e-context-e-
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-29-trackfw-context-reporta-adrs-0-onde-status-reporta-145.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-09-29-trackfw-context-reporta-adrs-0-onde-status-reporta-145.md

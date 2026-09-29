@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-29
 req: "docs/req/REQ-2026-09-29-trackfw-context-reporta-adrs-zero-onde-status-reporta-145-e-o-agente-que-roda-context-primeiro-conclui-que-nao-ha-decisoes-arquiteturais.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: `trackfw context` reporta `ADRs (0)` onde `status` reporta 145
 
-> Created: 2026-09-29 | Status: wip
+> Created: 2026-09-29 | Status: done
 
 ## Context
 <!-- Derived from REQ -->
