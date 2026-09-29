@@ -166,7 +166,7 @@ func parseMLProgressFull(path string) mlProgressResult {
 	}
 	lines := roadmapdoc.SplitRoadmapLines(string(data))
 	fenced := roadmapdoc.FenceMask(lines)
-	waves, malformed := roadmapdoc.ParseWaves(lines)
+	waves, malformed := roadmapdoc.ParseWaves(lines, fenced)
 
 	var res mlProgressResult
 	res.malformedWaves = len(malformed)

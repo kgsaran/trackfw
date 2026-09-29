@@ -39,7 +39,7 @@ func TestParseGates_AcceptsProseBetweenMarkerAndFence(t *testing.T) {
 	} {
 		t.Run(tc.nome, func(t *testing.T) {
 			lines := SplitRoadmapLines(roadmapComGate(tc.corpo))
-			waves, malformed := ParseWaves(lines)
+			waves, malformed := ParseWaves(lines, FenceMask(lines))
 			if len(malformed) != 0 || len(waves) != 1 {
 				t.Fatalf("fixture inválida: waves=%d malformed=%d", len(waves), len(malformed))
 			}
@@ -67,7 +67,7 @@ func TestParseGates_StopsAtTheNextHeading(t *testing.T) {
 		"Exemplo de uso:\n\n```bash\nrm -rf /\n```\n"
 
 	lines := SplitRoadmapLines(doc)
-	waves, _ := ParseWaves(lines)
+	waves, _ := ParseWaves(lines, FenceMask(lines))
 	if len(waves) != 1 {
 		t.Fatalf("fixture inválida: %d waves", len(waves))
 	}

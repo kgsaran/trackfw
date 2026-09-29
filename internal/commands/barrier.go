@@ -167,8 +167,8 @@ func fenceMask(lines []string) []bool {
 type waveBlock = roadmapdoc.WaveBlock
 type mlBlock = roadmapdoc.MLBlock
 
-func parseWaves(lines []string) ([]waveBlock, []roadmapdoc.MalformedWave) {
-	waves, malformed := roadmapdoc.ParseWaves(lines)
+func parseWaves(lines []string, fenced []bool) ([]waveBlock, []roadmapdoc.MalformedWave) {
+	waves, malformed := roadmapdoc.ParseWaves(lines, fenced)
 	return waves, malformed
 }
 
@@ -437,7 +437,7 @@ func runBarrier(cmd *cobra.Command, roadmapArg string, waveLabel string, jsonOut
 	lines := splitRoadmapLines(string(data))
 	fenced := fenceMask(lines)
 
-	waves, malformed := parseWaves(lines)
+	waves, malformed := parseWaves(lines, fenced)
 	// Report each malformed wave heading to stderr AND record in the wave_headings check
 	// (ML-1E, REQ #392). The stderr warning is kept so that users without --json also see
 	// the problem immediately; the check entry ensures the verdict is never "passed" while

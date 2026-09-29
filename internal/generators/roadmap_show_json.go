@@ -126,7 +126,7 @@ func ShowRoadmapJSON(name string) error {
 func buildRoadmapShowDoc(path, data string) roadmapShowDoc {
 	lines := roadmapdoc.SplitRoadmapLines(data)
 	fenced := roadmapdoc.FenceMask(lines)
-	waves, malformed := roadmapdoc.ParseWaves(lines)
+	waves, malformed := roadmapdoc.ParseWaves(lines, fenced)
 
 	doc := roadmapShowDoc{
 		Roadmap:        filepath.Base(path),
