@@ -331,6 +331,33 @@ func RunScaffoldDoctor(projectRoot string) ([]integrations.DoctorFinding, error)
 			}
 			findings = append(findings, *f)
 		}
+		// D3 (ADR-2026-09-29): when BOTH gate.yml and validate.yml are present as regular
+		// files, emit a migration advisory. gate.yml is canonical (D1); validate.yml is
+		// redundant and may be removed — but only after the consumer verifies that
+		// governance-go-install (the job id of validate.yml) is NOT in their repository's
+		// required_status_checks. The product cannot verify this from the repository alone,
+		// which is why D3 never removes automatically (alternative A, ADR-2026-09-29).
+		// os.Lstat is used for gate.yml, consistent with discoverWorkflowPresent which also
+		// uses Lstat for validate.yml: a symlink is treated as absent on both sides.
+		gateInfo, gateErr := os.Lstat(path)
+		gatePresent := gateErr == nil && gateInfo.Mode()&os.ModeSymlink == 0
+		if gatePresent && discoverWorkflowPresent(projectRoot) {
+			validateRelPath := DiscoverGitHubActionsWorkflowPath
+			remedy := fmt.Sprintf(
+				"%s (job: governance-install-script) and %s (job: governance-go-install) both run `trackfw validate` — %s is canonical (ADR-2026-09-29 D1). "+
+					"Before removing %s, verify that governance-go-install is NOT in your repository's required_status_checks: "+
+					"the product cannot check this for you. If it is not a required check, remove %s manually.",
+				GitHubActionsWorkflowPath, validateRelPath,
+				GitHubActionsWorkflowPath,
+				validateRelPath,
+				validateRelPath,
+			)
+			findings = append(findings, integrations.DoctorFinding{
+				FindingKind: integrations.DoctorScaffoldWorkflowDuplicated,
+				Destination: validateRelPath,
+				Remedy:      remedy,
+			})
+		}
 	case "gitlab-ci":
 		relPath := GitLabCIWorkflowPath
 		path := filepath.Join(projectRoot, relPath)

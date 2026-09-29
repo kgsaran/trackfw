@@ -115,7 +115,7 @@ trackfw barrier ROADMAP-2026-09-22-init-e-discover-geram-dois-workflows-que-roda
 
 ### ML-1B — o `doctor` nomeia a duplicação de quem já tem os dois
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente — 🔴 **sequencial: só começa após o ML-1A auditado** (mesmo arquivo)
+**Status:** ✅ Concluído
 **Arquivos:** `internal/generators/scaffold_doctor.go` (+ teste)
 **Implementa:** **D3** da ADR · AC5
 
@@ -129,12 +129,12 @@ trackfw barrier ROADMAP-2026-09-22-init-e-discover-geram-dois-workflows-que-roda
    (`governance-go-install` / `governance-install-script`) está no `required_status_checks` dele.
 
 **Critérios de aceite:**
-- [ ] Os dois presentes → achado de migração, nomeando ambos os arquivos e ambos os job ids
-- [ ] 🔴 **Contra-braço:** apenas **um** presente → **nenhum** achado de migração
-- [ ] O achado **não** é `error`/bloqueante e **não** sugere remoção incondicional
-- [ ] A mensagem menciona a checagem do `required_status_checks` antes de remover
-- [ ] `go test ./internal/generators/...` verde
-- [ ] Regra Dura de Reconciliação: uma frase por teste novo
+- [x] Os dois presentes → achado de migração, nomeando ambos os arquivos e ambos os job ids
+- [x] 🔴 **Contra-braço:** apenas **um** presente → **nenhum** achado de migração
+- [x] O achado **não** é `error`/bloqueante e **não** sugere remoção incondicional
+- [x] A mensagem menciona a checagem do `required_status_checks` antes de remover
+- [x] `go test ./internal/generators/...` verde
+- [x] Regra Dura de Reconciliação: uma frase por teste novo
 
 ### ML-1C — os 4 sítios restantes da citação falsa
 **Owner:** `artemis-tf`

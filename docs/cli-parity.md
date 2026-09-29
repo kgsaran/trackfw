@@ -6458,7 +6458,7 @@ hook, slash commands do Claude) são comparados contra o template que o binário
 usando o `trackfw.yaml` do próprio projeto. Nenhuma entrada é gravada no manifesto — propriedade
 por caminho, não por manifesto (ADR-2026-08-27).
 
-### As três classes de finding
+### As quatro classes de finding
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
@@ -6467,8 +6467,9 @@ por caminho, não por manifesto (ADR-2026-08-27).
 | `scaffold-divergent` | artefato de scaffold existe em disco mas o conteúdo difere do template que o binário atual geraria | `trackfw update` — a mensagem é neutra quanto à culpa (AC16): não há stamp de versão no artefato, então nem o binário nem o projeto podem ser identificados como o lado defasado |
 | `scaffold-missing` | artefato de scaffold que deveria existir está ausente do disco | `trackfw update` |
 | `scaffold-wrong-mode` | artefato de scaffold existe com conteúdo correto, mas o bit de execução do owner está ausente (`mode & 0o100 == 0`) em um artefato que deve ser executável | `trackfw update` — o `update` restaura o conteúdo **e** o modo (ver AC9 abaixo) |
+| `scaffold-workflow-duplicated` | `trackfw-gate.yml` e `trackfw-validate.yml` estão ambos presentes como arquivos regulares — executam o mesmo `trackfw validate` com instaladores diferentes (`ADR-2026-09-29` D3). **Advisory, não bloqueante.** O `gate.yml` é o canônico; o consumidor decide se remove o `validate.yml` **após verificar** que `governance-go-install` não está nos `required_status_checks` do repositório (o produto não pode verificar isso) | Nenhum comando automático — a mensagem descreve o que verificar antes de remover `trackfw-validate.yml` manualmente |
 
-As três classes têm `claim` zerado (`kind`, `item`, `target`, `surface`, `scope` = string vazia)
+As quatro classes têm `claim` zerado (`kind`, `item`, `target`, `surface`, `scope` = string vazia)
 — artefatos de scaffold nunca têm entrada no manifesto.
 
 ### Propriedade por caminho — artefatos cobertos pelos 3 CLIs
@@ -6488,7 +6489,7 @@ tabela hoje.
 | `scripts/trackfw-credential-guard.sh` | sempre |
 | `scripts/trackfw-git-branch-guard.sh` | sempre |
 | `.claude/commands/trackfw/<cmd>.md` (9 arquivos) | somente se `.claude/commands/trackfw/` já existir (AC14: `discover --init` não escreve slash commands — ausência legítima) |
-| `.github/workflows/trackfw-gate.yml` | somente se `ci: github-actions` no `trackfw.yaml` (AC13) **E** `.github/workflows/trackfw-validate.yml` ausente (`ADR-2026-09-29` **D4**) — com o `validate.yml` presente, o `doctor` **não** acusa a ausência do `gate.yml`, porque o gerador deliberadamente não o escreve (**D2**). ⚠️ A supressão vale **só** para `scaffold-missing`: `gate.yml` presente e **defasado** continua sendo acusado |
+| `.github/workflows/trackfw-gate.yml` | somente se `ci: github-actions` no `trackfw.yaml` (AC13) **E** `.github/workflows/trackfw-validate.yml` ausente (`ADR-2026-09-29` **D4**) — com o `validate.yml` presente, o `doctor` **não** acusa a ausência do `gate.yml`, porque o gerador deliberadamente não o escreve (**D2**). ⚠️ A supressão vale **só** para `scaffold-missing`: `gate.yml` presente e **defasado** continua sendo acusado. Quando **os dois** estão presentes, o `doctor` emite `scaffold-workflow-duplicated` para `.github/workflows/trackfw-validate.yml` (`ADR-2026-09-29` **D3**) |
 | `.gitlab-ci-trackfw.yml` | somente se `ci: gitlab-ci` no `trackfw.yaml` (AC13) |
 
 ### validate.sh — pertencimento a conjunto (set-membership, escopado)

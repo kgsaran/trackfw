@@ -2,6 +2,36 @@
 
 ---
 
+## 2026-09-29 — Apolo (fix/dois-workflows-rodam-a-mesma-validacao — ML-1B Wave 1) — ENTREGUE
+
+**Inicio:** 2026-09-29 | **Fim:** 2026-09-29 | Branch: `fix/dois-workflows-rodam-a-mesma-validacao`
+**Tarefa:** ML-1B — o `doctor` nomeia a duplicação de quem já tem os dois
+
+**Arquivos modificados:**
+- `internal/integrations/doctor.go`: novo kind `DoctorScaffoldWorkflowDuplicated = "scaffold-workflow-duplicated"`; `sortDoctorFindings` recebe `FindingKind` como tie-break final (determinismo quando dois findings têm mesmo Destination e Claim zerado)
+- `internal/commands/doctor.go`: counter `workflowDuplicated` adicionado ao switch + format string do header do relatório
+- `internal/generators/scaffold_doctor.go`: quando `ci: github-actions` e gate.yml + validate.yml presentes como arquivos regulares (Lstat, simetria com `discoverWorkflowPresent`), emite `DoctorScaffoldWorkflowDuplicated` para `DiscoverGitHubActionsWorkflowPath`
+- `internal/generators/scaffold_doctor_test.go`: 2 testes novos (`TestRunScaffoldDoctor_BothPresent_EmitsMigration`, `TestRunScaffoldDoctor_OnlyGateYml_NoMigration`)
+- `docs/cli-parity.md`: "três classes" → "quatro classes"; 4ª linha na tabela; linha 6491 atualizada
+
+**Evidências:**
+- `go build ./...`: RC=0
+- `go test ./internal/generators/...`: `ok github.com/kgsaran/trackfw/internal/generators` (full suite, 30s)
+- 5 testes ML-1A: todos PASS (contra-braço de regressão)
+- 2 testes ML-1B: PASS
+- `make quality`: EXIT=0, 1390 OK, 347 falsificações, 0 FAIL (coincide com referência do arquiteto)
+- `trackfw validate`: EXIT=0 (lenient mode, 171 warnings pré-existentes)
+- `git diff --stat trackfw.yaml`: vazio
+
+**Regra Dura de Reconciliação (por teste novo):**
+- `TestRunScaffoldDoctor_BothPresent_EmitsMigration`: afirma que ADR-2026-09-29 D3 está implementado — um projeto com os dois workflows recebe `scaffold-workflow-duplicated` nomeando ambos os arquivos, ambos os job ids e a checagem de `required_status_checks`
+- `TestRunScaffoldDoctor_OnlyGateYml_NoMigration`: afirma que D3 só dispara quando os DOIS workflows estão presentes — projeto com apenas gate.yml não recebe advisory
+
+**Escopo excedeu arquivos declarados no roadmap:**
+- `internal/integrations/doctor.go` e `internal/commands/doctor.go` não estavam na lista do roadmap. A adição é obrigatória: o novo kind `DoctorScaffoldWorkflowDuplicated` precisa ser declarado e contado nos dois arquivos — o switch de `printDoctorReport` falha silenciosamente sem o case, e o código tem comentário explicativo sobre isso. Mesma causa (D3), mesma REQ.
+
+---
+
 ## 2026-09-29 — Apolo (fix/dois-workflows-rodam-a-mesma-validacao — ML-1A Wave 1) — ENTREGUE
 
 **Inicio:** 2026-09-29 | **Fim:** 2026-09-29 | Branch: `fix/dois-workflows-rodam-a-mesma-validacao`
