@@ -42564,3 +42564,43 @@ Condição 1 ("os.ReadFile precede WriteFile na mesma função") aprovada por le
 Consumer com `rules:` customizado nunca recebe novas sub-keys. `branch_has_wip_roadmap` ausente mesmo sendo novo. ADR não declarou este residual explicitamente. Arquiteto decide.
 
 **git diff trackfw.yaml:** vazio
+
+## hades-tf · ML-2A (REQ-2026-09-29) · 2026-09-29 — INÍCIO
+
+Branch: fix/context-reporta-zero-adrs-onde-status-reporta-145
+Método: reimplementação independente (leitura ADR + REQ + Wave 0 → medição caixa-preta).
+
+## hades-tf · ML-2A (REQ-2026-09-29) · 2026-09-29 — CONCLUÍDO
+
+**Veredito: APROVA**
+
+Medições independentes sobre 10 casos de teste (cenário #450, score delta, dedup em 2 direções,
+10 layouts adversariais, global dir, ponto único com 110 arquivos). Nenhum defeito de produto.
+
+**Achados informacionais (não bloqueiam):**
+- I1: Warnings duplicados com adr_dirs aninhadas — dedup de warnings não feita no subsistema
+  de validate (pré-existente, fora do escopo). Candidato a issue própria.
+- I2: Dir symlink em adr_dirs não encontra ADRs — WalkDir não segue symlinks de dir (sem requisito).
+- I3: adr list mostra status "unknown" na fixture minimal — parseADRMeta (pré-existente).
+
+**Entregável:** `docs/seguranca/2026-09-29-wave2-auditoria-independente-adr.md`
+
+**git diff trackfw.yaml:** vazio
+
+## hades-tf · ML-2A (REQ-2026-09-29) · 2026-09-29 — CONCLUÍDO (revisado após advisor)
+
+**Veredito: APROVA COM RESSALVAS**
+
+10 casos medidos (caixa-preta). Nenhum defeito de produto nos ACs principais.
+
+**Achados que o arquiteto deve tratar:**
+- F1: Warnings duplicados com adr_dirs aninhadas — mesmo mecanismo que D4 (Regra Dura: mesma REQ).
+- F3: Gate tem 2 caminhos de evasão conhecidos; AC da REQ "impede reintrodução" está overstated.
+
+**Achados informacionais:**
+- F2: dir symlinks não seguidos por WalkDir — comportamento stdlib, sem requisito.
+- S7: verificação por inspeção + teste entregue (não black-box pura), limitação documentada.
+
+**Entregável:** `docs/seguranca/2026-09-29-wave2-auditoria-independente-adr.md`
+
+**git diff trackfw.yaml:** vazio

@@ -103,8 +103,17 @@ vez — ADR de ponto único marcada satisfeita com sítio sobrando.
       filtro de prefixo `ADR-` — idêntico ao comportamento atual (`validator.go:3017`,
       `context.go:44`). Esta REQ corrige **alcance da varredura**, não critério. Um teste deve fixar
       isso, senão um refator futuro "melhora" o filtro e muda contagens em silêncio
-- [ ] 🔴 **Gate que impede a reintrodução**, falsificável nas duas direções: reprova quando um
-      enumerador de ADR novo nascer sem passar pelo ponto único, e **não** reprova o ponto único
+- [ ] 🔴 **Gate que impede a reintrodução**, falsificável nas duas direções
+      ⚠️ **AC AJUSTADO pela Wave 2 (2026-09-29) — a redação original prometia mais do que qualquer
+      gate textual entrega.** O gate detecta o padrão **direto e nominal**
+      (`os.ReadDir(<var de ADRDirs>)`, `filepath.Glob` em `adr.go`) **e** a **variável intermediária**
+      (`dirs := cfg.ADRDirs`, medida como evasão e coberta no ML-1E). 🔴 **Não** detecta enumeração
+      via **helper em outro escopo** — isso exigiria análise de fluxo, e é **limite da técnica**,
+      declarado no header do gate em vez de prometido e não entregue
+- [ ] 🔴 **Warnings não duplicam com `adr_dirs` aninhadas.** Medido na Wave 2 e confirmado pelo
+      arquiteto: 3 ADRs reais → contagem **3** (correta) mas **6 warnings**, cada ADR repetido. É
+      **uma nova contradição interna** — `## ADRs (3)` ao lado de 6 avisos sobre ADRs — e **a mesma
+      causa** do D4: enumerador que itera `cfg.ADRDirs` sem deduplicar
 - [ ] `make quality` e **CI** verdes
 
 ## Negative scope — o que esta REQ NÃO faz
