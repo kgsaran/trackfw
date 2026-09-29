@@ -166,6 +166,61 @@ trackfw barrier ROADMAP-2026-09-22-init-e-discover-geram-dois-workflows-que-roda
 - [x] 🔴 **Varredura própria:** confirme se existe um **7º** sítio (a Wave 0 disse 5, eu achei o 6º).
       Diga o comando e o total
 
+## Wave 1-bis — o outro lado da assimetria, que eu não fechei
+> Dependências: Wave 2 (ML-2A) concluída. **Achado da auditoria independente, 2026-09-29.**
+> 🔴 Mesma causa, mesma REQ, **mesmo PR** — não vira REQ nova.
+
+### ML-1D — `discover --init` também precisa perguntar
+**Owner:** `apolo-tf`
+**Status:** ⬜ Pendente
+**Arquivos:** `internal/discover/discover.go` (`writeCIWorkflow`:346) ·
+`internal/generators/scaffold_doctor.go` (:379) (+ testes)
+
+**O defeito, confirmado por mim:** o **D2** nomeia a assimetria como o defeito, e o ML-1A a fechou
+**num lado só**.
+
+```
+generateGitHubActionsWorkflow (scaffold.go)  → verifica validate.yml antes de escrever gate.yml  ✅
+writeCIWorkflow (discover.go:371)            → verifica SÓ o dest (validate.yml); NUNCA olha o gate.yml  ❌
+```
+
+Caminho reproduzido pela Wave 2: `trackfw update` → `rm trackfw.yaml` → `trackfw discover --init`
+→ **os dois** workflows presentes, e o `doctor` emitindo `scaffold-workflow-duplicated`.
+
+🔴 **Isto NÃO está no residual declarado da ADR.** O **D3** fala de projeto que **já tem** os dois e
+por isso não remove; ele **não autoriza o produto a criar o segundo**. O **D1** diz *um workflow por
+projeto*. O produto continuava produzindo a duplicação que a ADR proíbe — pela outra porta.
+
+**Ações:**
+1. `writeCIWorkflow`: antes do bloco de idempotência do `validate.yml` (`discover.go:371`), verificar
+   `generators.GitHubActionsWorkflowPath` com `os.Lstat`. Presente como arquivo regular → **não
+   escrever** o `validate.yml`, e dizer a razão.
+   ⚠️ **Preserve o contrato de controle-fluxo deste sítio:** ele é *best-effort* e retorna `nil`
+   (não erro) em colisão — o comentário em `:357-362` explica por quê, e uma das cinco gramáticas de
+   recusa medidas foi unificada num emissor único. **Não crie uma sexta gramática**: use o emissor
+   existente.
+2. `scaffold_doctor.go:379`: trocar `os.Stat` por `os.Lstat` + rejeitar `ModeSymlink`, consistente
+   com **todos** os outros predicados do mesmo arquivo (`discoverWorkflowPresent`, o check do D3).
+   Hoje o `os.Stat` lê **através** do symlink, compara o alvo com o template e emite
+   `scaffold-divergent` cujo remédio (`trackfw update`) é **inoperante** — o `update` recusa escrever
+   através de symlink. Achado verdadeiro na forma, inútil no conteúdo.
+
+**Critérios de aceite:**
+- [ ] `gate.yml` presente → `discover --init` **não** escreve o `validate.yml`, e a razão é dita
+- [ ] 🔴 **Contra-braço:** `gate.yml` ausente → `discover --init` **continua** escrevendo o
+      `validate.yml` (o caminho brownfield não pode ter sido removido)
+- [ ] 🔴 **O caminho da Wave 2 fecha:** `update` → `rm trackfw.yaml` → `discover --init` resulta em
+      **um** workflow, e o `doctor` **não** emite `scaffold-workflow-duplicated`
+- [ ] Nenhuma gramática de recusa nova — a mensagem sai do emissor único já existente
+- [ ] `validate.yml` como **symlink** → `doctor` **não** emite `scaffold-divergent` com remédio
+      inoperante
+- [ ] 🔴 **Contra-braço:** `validate.yml` regular e **defasado** → `doctor` **continua** emitindo
+      `scaffold-divergent` (o achado verdadeiro não pode ter sumido)
+- [ ] Os **7** testes das Waves 1 (ML-1A e ML-1B) continuam passando, por nome
+- [ ] `make quality` **RC=0** (referência: 1390 OK, 347 falsificações, 0 FAIL)
+- [ ] 🔴 **Regra Dura de Reconciliação:** uma frase por teste novo
+- [ ] `docs/cli-parity.md` atualizado **na mesma entrega**, se o contrato do `discover --init` mudar
+
 ## Wave 2 — auditoria independente
 > Dependências: Wave 1 completa e auditada.
 

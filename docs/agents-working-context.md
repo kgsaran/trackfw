@@ -43059,3 +43059,27 @@ Decisão do KG: remédio **não instalar o segundo**, canônico **`trackfw-gate.
 `ADR-2026-09-29-o-produto-entrega-um-workflow-de-governanca-por-projeto-...` (D1–D5), que existe
 porque **não havia ADR**. Wave 1 escrita decision-complete: ML-1A (gerador + doctor) ∥ ML-1C (sítios
 3–6); ML-1B sequencial após o 1A por compartilhar `scaffold_doctor.go`.
+
+## 2026-09-29 — hades-tf (fix/dois-workflows-rodam-a-mesma-validacao — ML-2A Wave 2) — EM ANDAMENTO
+
+Auditoria independente por reimplementação. Método: caixa-preta, fixtures em scratchpad,
+sem leitura de diff. Referência: ADR-2026-09-29, REQ-2026-09-02 (ACs 7–10), cli-parity.md.
+
+## 2026-09-29 — hades-tf (fix/dois-workflows-rodam-a-mesma-validacao — ML-2A Wave 2) — ENTREGUE
+
+Auditoria independente por reimplementação concluída. Parecer:
+`docs/seguranca/2026-09-29-wave2-dois-workflows.md`.
+
+Resultado: nenhum achado bloqueante.
+- D2, D3, D4 medidos: todos conformes.
+- Symlink em validate.yml: gate.yml nasce, symlink recusado pelo pathguard — direção defensável.
+- 5 sequências de ataque testadas: 4 produzem 1 workflow, 1 (remoção manual de trackfw.yaml +
+  discover --init) produz 2 — coberto pelo residual declarado ADR D3 e pelo doctor advisory.
+- AC10 (D\W=∅): os dois job ids continuam emitidos pelos dois workflows neste repo.
+- Contagem do doctor fecha com o total (scaffold-workflow-duplicated tem case no switch).
+- Nenhuma premissa da ADR refutada.
+ Dois achados para o proprietário do código:
+ ACHADO-1 (média): `writeCIWorkflow` em discover.go não verifica gate.yml antes de escrever
+ validate.yml — assimetria D2 fechada em um lado só, ML adicional nesta REQ.
+ ACHADO-2 (baixa): scaffold_doctor.go:379 usa os.Stat (lê através de symlink) enquanto todos
+ os outros predicados usam Lstat — live symlink emite scaffold-divergent com remédio inoperante.
