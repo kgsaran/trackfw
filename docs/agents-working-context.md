@@ -2,6 +2,24 @@
 
 ---
 
+## 2026-09-29 — Hades (fix/ratchet-windows-nao-colhe-melhoria — ML-2A Wave 2 auditoria) — ENTREGUE
+
+**Inicio:** 2026-09-29 | **Fim:** 2026-09-29 | Branch: `fix/ratchet-windows-nao-colhe-melhoria`
+**Tarefa:** ML-2A — auditoria independente por reimplementacao do D6 tres baldes + D7 reason.
+
+**Metodo:** Nao li o diff. Li ADR+REQ, derivei o esperado, criei fixtures proprias (H1-H11),
+exercitei o checker como caixa-preta. Self-test oficial: 53/53 PASS.
+
+**Achados:**
+- H1-H8: 34 pass nos vetores de ataque proprios — tres baldes corretos, D1 nao desativado.
+- ACHADO MENOR (documentacao): `TestStaleWIPReportsWIPWalkError` usa `(MEASURED in ADR-2026-09-05 Adendo)` em vez de `(MEASURED)`. Contagem mecanica de `(MEASURED)` da 8, nao 9. ADR afirma 9 MEASURED/5 INFER. Ambos corretos pelo sentido, inconsistentes pelo marcador. Sem impacto funcional no checker (D7 valida apenas ASCII-only, nao o marcador).
+- Nenhum caminho pelo qual uma melhoria passe despercebida apos D6.
+
+**git diff trackfw.yaml:** vazio (confirmado)
+**Status:** CONCLUIDO — parecer em `docs/seguranca/2026-09-29-wave2-ratchet.md`.
+
+---
+
 ## 2026-09-29 — Apolo (fix/ratchet-windows-nao-colhe-melhoria — ML-1A D6+D7) — ENTREGUE
 
 **Início:** 2026-09-29 | **Fim:** 2026-09-29 | Branch: `fix/ratchet-windows-nao-colhe-melhoria`

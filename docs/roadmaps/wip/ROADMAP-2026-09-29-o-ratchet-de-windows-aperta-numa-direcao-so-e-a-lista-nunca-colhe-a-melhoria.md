@@ -108,9 +108,53 @@ fica vermelho na hora**. Atualizá-los é **parte deste ML**, não consequência
 
 ### ML-2A — revisão por reimplementação
 **Owner:** `hades-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — 2026-09-29 · 34/34 vetores PASS · self-test 53/53 · APROVA
 **Método:** 🔴 **não conferir o diff.** Ler ADR e REQ, derivar o esperado, medir o comportamento.
 **Critérios de aceite:**
-- [ ] Entrada que resolve → reprova · lista fiel → passa · **regressão nova continua reprovando**
-- [ ] Skip e rename **não** produzem falso positivo
-- [ ] Veredito: sobrou caminho pelo qual uma melhoria passe despercebida?
+- [x] Entrada que resolve → reprova · lista fiel → passa · **regressão nova continua reprovando**
+- [x] Skip e rename **não** produzem falso positivo
+- [x] Veredito: sobrou caminho pelo qual uma melhoria passe despercebida? **NÃO.**
+**Achado menor:** `TestStaleWIPReportsWIPWalkError` usa marcador `(MEASURED in ADR-2026-09-05 Adendo)` em vez de `(MEASURED)`. Contagem mecânica do marcador estrito dá 8, não 9. ADR diz "9 MEASURED / 5 INFER" — verdadeiro pelo sentido, inconsistente pelo marcador. Sem impacto funcional.
+**Parecer:** `docs/seguranca/2026-09-29-wave2-ratchet.md`
+
+## Wave 3 — o sumário contradiz o D6
+> Dependências: Wave 2 completa. Achado da auditoria do arquiteto, 2026-09-29.
+
+### ML-3A — o rótulo `resolvido` no sumário agrega os baldes 1 e 2
+**Owner:** `artemis-tf`
+**Status:** ⬜ Pendente
+**Arquivos:** `scripts/check-windows-known-failures.py` · `.github/windows-known-failures.json` ·
+`docs/adr/ADR-2026-09-05-...-nunca-por-contagem.md`
+
+**O defeito, medido:** `_cls_label()` (linha ~1050) calcula
+`resolved = known_set - obs_set` — *"está na lista e não foi observada falhando"*. Esse conjunto é a
+**união dos baldes 1 e 2** do D6. Resultado literal, com fixture própria:
+
+```
+entrada some sem passar (balde 2):
+  ::error:: ... "neither failed nor passed ... Not a resolution."   ← correto
+  resumo:   Go 1/2 [-1 resolvido]                                   ← afirma RESOLVIDO
+```
+
+🔴 É a **atribuição errada que o D6 existe para impedir**, sobrevivendo no agregado. Quem ler só a
+linha de resumo — que é o que aparece no topo do log de CI — move para `removed[]` um teste que
+apenas deixou de rodar.
+
+**Ações:**
+1. `_cls_label` passa a receber o conjunto de **PASS** da classe (já disponível: `go_passes`,
+   `node_passes`, `py_passes`) e separa `known - obs` em dois: **`-N resolvido`** (passou) e
+   **`-N ausente`** (nem passou nem falhou). Os dois podem coexistir na mesma classe.
+2. O termo `ausente` não pode conter a palavra `resolvido` — é o que o T24 contra-arma.
+3. Normalizar o marcador de `TestStaleWIPReportsWIPWalkError` para `(MEASURED)`, preservando o
+   texto da evidência; registrar na **Emenda 1** que o marcador canônico é `(MEASURED)`/`(INFER)`
+   e que a contagem `9/5` é conferível por grep estrito.
+
+**Critérios de aceite:**
+- [ ] Balde 2 isolado → resumo diz **`ausente`**, e **não** contém `resolvido`
+- [ ] Balde 1 isolado → resumo diz **`resolvido`**
+- [ ] 🔴 **Os dois na mesma classe** → resumo mostra os **dois** termos
+- [ ] Contra-braço: tudo equilibrado → nenhum dos dois termos (T24 continua válido)
+- [ ] Contra-braço do D1: regressão nova continua com `[+N NOVO]`
+- [ ] `grep -c '(MEASURED)'` nas `entries` = **9** · `(INFER)` = **5** · soma = 14
+- [ ] `--self-test` verde, com fixture nova por critério acima
+- [ ] `make quality` **RC=0**
