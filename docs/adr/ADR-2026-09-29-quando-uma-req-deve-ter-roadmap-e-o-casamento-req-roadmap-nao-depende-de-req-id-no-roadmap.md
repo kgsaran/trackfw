@@ -111,7 +111,18 @@ por vínculo real corrige o passivo **sem migração**.
 🔴 **A primeira versão desta ADR nomeava duas.** A quarta já filtra por estado — logo o precedente de
 "regra consciente de estado" **já existe no produto**, e o que falta é consistência, não invenção.
 
-As quatro aplicam o mesmo critério de "esta REQ deveria ter roadmap?". Duas regras com vereditos diferentes sobre a
+🔴 **CORREÇÃO (Wave 2, 2026-09-29) — `ref_targets_exist` NÃO está no escopo de D4.** Pô-la na
+tabela foi **erro meu** ao ampliar o D4: ela está na lista das que *opinam sobre o vínculo*, mas
+**não decide obrigação** — ela pergunta *"o caminho declarado existe?"*.
+
+**A pergunta é outra, e a resposta certa é outra.** Uma REQ que declara `roadmap: X` com `X`
+inexistente tem um defeito **real em qualquer status**: ou o caminho está errado, ou o arquivo
+sumiu. Silenciá-la para REQ `Open` esconderia referência quebrada — o **oposto** do que esta ADR
+quer. Medido na Wave 2: ela dispara para REQ `Open` com roadmap fantasma, e **está certa**.
+
+**D4 aplica-se às regras que decidem *obrigação de vínculo*: `req_has_roadmap` e
+`traceid_orphan_req`.** `req_roadmap_lifecycle` já filtra e está correta; `ref_targets_exist` mede
+**integridade referencial** e fica fora, por decisão escrita. Duas regras com vereditos diferentes sobre a
 mesma pergunta é a mesma classe de defeito do #450 (`context` × `status`), noutra superfície.
 
 ## Consequences
@@ -146,6 +157,30 @@ está escrito para que ninguém declare C2 fechada sem rodar o discriminador no 
   13 warnings grandfathered no corpus, **3 são `Done`** — sob D2 elas voltariam a ser **violations**
   se o cutoff sumisse. O cutoff **não** é redundante; permanece, e removê-lo continua sendo decisão
   própria.
+
+## 🔴 D4 ainda NÃO está satisfeita — gap medido na Wave 2 (2026-09-29)
+
+As duas regras sob D4 usam **noções diferentes de "existe vínculo"**, e discordam sobre o mesmo par.
+Medido:
+
+```
+REQ Done com req_id: RX, SEM campo roadmap:
+Roadmap com req_id: RX            ← o vínculo EXISTE, na direção roadmap→REQ
+
+traceid_orphan_req  → silencia  (casou por req_id)
+req_has_roadmap     → ✗ "has no linked Roadmap"
+```
+
+🔴 **É o sintoma que originou esta REQ, sobrevivendo dentro dela.** O **D3** estabeleceu que o
+casamento é por **vínculo real**, não por declaração unilateral — e `traceid_orphan_req` passou a
+honrar isso enquanto `req_has_roadmap` continuou exigindo a declaração **na REQ**. Uma regra aceita o
+vínculo reverso, a outra não.
+
+**Decidido:** `req_has_roadmap` passa a aceitar o vínculo reverso, pelo mesmo critério de D3. Sem
+isso, **D4 é letra morta** — duas regras que "aplicam o mesmo critério" mas discordam do mesmo par.
+
+**Fica como ML nesta REQ** (Regra Dura: mesma causa, mesma REQ), e o AC *"as regras sob D4 aplicam o
+mesmo critério"* **não pode ser marcado** enquanto este sítio existir.
 
 ## Alternatives Considered
 

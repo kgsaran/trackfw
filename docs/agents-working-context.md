@@ -2,6 +2,19 @@
 
 ---
 
+## 2026-09-29 — Hades (fix/orphan-req-reprova-estado-correto — ML-2A Wave 2 auditoria independente) — ENTREGUE
+
+**Início:** 2026-09-29 | Branch: `fix/orphan-req-reprova-estado-correto`
+**Tarefa:** ML-2A — auditoria independente por reimplementação. Leu ADR + REQ + Wave 0. Construiu binário. Mediu via black-box com fixtures no scratchpad.
+
+**Artefato:** `docs/seguranca/2026-09-29-wave2-orphan-req.md`
+
+**Veredito geral:** C1 fechada, C2 fechada, contra-braço preservado (caminho enforced pós-cutoff), D1-bis confirmada (status: não e.state), D4 satisfeita para os core cases. Quatro achados documentados: A1 (stale-path resolve mais do que limite declarado na ADR); A2 ("Done " bypass); A3 (assimetria D3: traceid_orphan_req aceita link reverso, req_has_roadmap não — gap D4); A4 (ref_targets_exist sem filtro de status, pré-existente).
+
+**git diff trackfw.yaml:** vazio.
+
+---
+
 ## 2026-09-29 — Apolo (fix/orphan-req-reprova-estado-correto — ML-1D falsify fixture S192) — ENTREGUE
 
 **Início:** 2026-09-29 | Branch: `fix/orphan-req-reprova-estado-correto`

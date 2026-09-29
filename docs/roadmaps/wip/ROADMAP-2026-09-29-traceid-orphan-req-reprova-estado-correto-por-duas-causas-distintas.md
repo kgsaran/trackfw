@@ -236,9 +236,68 @@ alvo** — o seam de ancoragem de chave em `extractRefPath` segue discriminante 
 
 ### ML-2A — revisão por reimplementação
 **Owner:** `hades-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-09-29 · 🔴 **D4 NÃO satisfeita: 2 gaps**
 **Método:** 🔴 **não conferir o diff.** Ler ADR e REQ, derivar o esperado, medir o binário.
 **Critérios de aceite:**
 - [ ] Os dois cenários do #435 reconstruídos do zero
 - [ ] Contra-braço: REQ `Done` sem roadmap **ainda** dispara
 - [ ] Veredito: a regra continua detectando o que deveria, ou virou no-op?
+
+
+**Resultado da Wave 2 — C1 e C2 fechadas, D4 não.**
+
+| critério | medido | veredito |
+|---|---|---|
+| C1 · C2 (flat **e** by_agent) | não disparam | **FECHADAS** |
+| contra-braço `Done` sem roadmap | dispara nas duas | **PRESERVADO** |
+| `Superseded` / `Closed` | silenciam | correto |
+| **D1-bis** — REQ `Done` fisicamente em `req_dir/backlog/` | **dispara** | ✅ usa `status:`, não a pasta |
+| limite de D3 (`req:` vazio / sem campo) | ainda disparam | limite, não regressão |
+| **D4 — mesmo critério** | **discordam** | 🔴 **NÃO SATISFEITA** |
+
+🔴 **A prova de que D1-bis era a decisão certa:** uma REQ `Done` colocada **fisicamente** em
+`docs/req/backlog/` **dispara**. Se a regra usasse `e.state` (= `"backlog"`), silenciaria. O layout
+físico é irrelevante — é o `status:` que manda, como decidido.
+
+**Duas decisões minhas sobre os achados:**
+
+**A4 — `ref_targets_exist` SAI do escopo de D4.** Pô-la na tabela foi **erro meu** ao ampliar o D4
+na Wave 0. Ela pergunta *"o caminho declarado existe?"*, não *"deveria ter roadmap?"*. Uma REQ que
+declara `roadmap: X` inexistente tem defeito **em qualquer status** — silenciá-la para `Open`
+esconderia referência quebrada, o **oposto** do que a ADR quer. Corrigido na ADR, com a razão.
+
+**A3 — gap REAL, vira ML-1E.** Ver abaixo.
+
+**A2 (informativo, não corrigido):** `status: "Done "` — com aspas **e** espaço final — bypassa as
+duas regras, porque `EqualFold("Done ", "done")` é `false`. **Pré-existente**, consistente entre as
+duas, e fora da causa desta REQ. Registrado; candidato a issue se aparecer no mundo real.
+
+### ML-1E — 🔴 D4 é letra morta: as duas regras discordam do MESMO par
+**Owner:** `apolo-tf`
+**Status:** ⬜ Pendente
+**Arquivos:** `internal/validator/validator.go` (`validateREQsHaveRoadmap`) + testes
+
+**Achado da Wave 2, confirmado pelo arquiteto em fixture própria:**
+
+```
+REQ Done, req_id: RX, SEM campo roadmap:
+Roadmap com req_id: RX              ← o vínculo EXISTE (roadmap → REQ)
+
+traceid_orphan_req  → silencia   (casou por req_id)
+req_has_roadmap     → ✗ "has no linked Roadmap"
+```
+
+🔴 **É o sintoma que originou esta REQ, sobrevivendo dentro dela.** O **D3** estabeleceu casamento
+por **vínculo real**, não por declaração unilateral. `traceid_orphan_req` passou a honrar isso;
+`req_has_roadmap` continuou exigindo a declaração **na REQ**. Uma aceita o vínculo reverso, a outra
+não — e "aplicam o mesmo critério" vira letra morta.
+
+**Critérios de aceite:**
+- [ ] 🔴 **O braço do achado:** REQ `Done` sem campo `roadmap:`, com roadmap apontando para ela
+      (`req_id` **ou** `req:`) → **as duas regras silenciam**
+- [ ] 🔴 **Contra-braço, e é o que impede virar remoção:** REQ `Done` **sem vínculo em direção
+      nenhuma** → **as duas disparam**
+- [ ] O vínculo reverso vale nas **duas** grafias: `req_id:` e `req:` (com `normalizeRefSeparator`)
+- [ ] O cutoff de grandfathering **permanece**
+- [ ] **Delta medido** no corpus, antes/depois, com a razão de cada mudança
+- [ ] Reconciliação: uma frase por teste, dizendo o que **mediu**

@@ -257,7 +257,11 @@ e a regra ficaria inerte no layout deste repositório. Ver **D1-bis**.
       alterar arquivo nenhum**
 - [ ] **Contra-braço:** REQ **`Done`** sem roadmap **ainda** dispara — senão a correção virou remoção
 - [ ] `Superseded` e `Closed` **não** disparam (ADR **D2-bis**)
-- [ ] As **4** regras aplicam o mesmo critério (ADR **D4**)
+- [ ] 🔴 **As regras sob D4 aplicam o mesmo critério** — **NÃO satisfeito**, medido na Wave 2: sobre
+      o mesmo par (REQ `Done` sem campo `roadmap:`, roadmap apontando para ela), `traceid_orphan_req`
+      silencia e `req_has_roadmap` dispara. É o sintoma original sobrevivendo dentro da REQ. **ML-1E.**
+      ⚠️ **Correção de escopo:** eram "4 regras" na redação anterior; `ref_targets_exist` **saiu** —
+      ela mede integridade referencial, não obrigação de vínculo (ADR, correção da Wave 2)
 - [ ] **Delta medido** de violações no corpus, antes/depois, com a razão de cada uma que sair
 - [ ] `make quality` e **CI** verdes
 
