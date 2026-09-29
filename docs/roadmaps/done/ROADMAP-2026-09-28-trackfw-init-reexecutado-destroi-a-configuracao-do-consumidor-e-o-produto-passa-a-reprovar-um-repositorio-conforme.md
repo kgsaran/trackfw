@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-28
 req: "docs/req/REQ-2026-09-28-trackfw-init-reexecutado-destroi-a-configuracao-do-consumidor-e-o-produto-passa-a-reprovar-um-repositorio-conforme.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: `trackfw init` reexecutado destrói a configuração do consumidor
 
-> Created: 2026-09-28 | Status: wip
+> Created: 2026-09-28 | Status: done
 
 ## Context
 <!-- Derived from REQ -->

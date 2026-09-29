@@ -27,3 +27,5 @@
 - [Upstream não exercita o layout do consumidor](project_upstream_nao_exercita_layout_do_consumidor.md) — req_dir flat aqui; #396 e #435 são a mesma família, e o sinal só chega de fora
 - [Nunca sobrepor o modelo do agente](feedback_nunca_sobrepor_o_modelo_do_agente.md) — 🔴 não passe `model` no Agent tool; o frontmatter decide, e o roteamento existe para economizar tokens
 - [Agente não roda init na árvore](feedback_agente_nao_roda_init_na_arvore.md) — `trackfw init` reescreve o `trackfw.yaml`; 170 warnings viraram 156 violations e o executor chamou de pré-existente
+- [Replace sem assert mente](feedback_replace_sem_assert_mente.md) — edição que não casa devolve o texto intacto; commitei dizendo que marquei ACs que não marquei
+- [Proibir make quality cega o executor](feedback_proibir_make_quality_cega_o_executor.md) — certo com frente paralela; autorize no ML final, senão regressão de gate vizinho só aparece no fim

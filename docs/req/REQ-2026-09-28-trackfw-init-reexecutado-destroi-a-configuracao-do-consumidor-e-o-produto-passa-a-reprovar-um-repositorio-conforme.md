@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-28
 author: "trackfw_architect"
 adr: "docs/adr/ADR-2026-09-28-trackfw-init-reexecutado-preserva-a-configuracao-autorada-pelo-consumidor.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-28-trackfw-init-reexecutado-destroi-a-configuracao-do-consumidor-e-o-produto-passa-a-reprovar-um-repositorio-conforme.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-28-trackfw-init-reexecutado-destroi-a-configuracao-do-consumidor-e-o-produto-passa-a-reprovar-um-repositorio-conforme.md"
 ---
 
 # REQ: `trackfw init` reexecutado destrói a configuração do consumidor, e o produto passa a reprovar um repositório conforme
 
-> Date: 2026-09-28 | Status: Open
+> Date: 2026-09-28 | Status: Done
 | Linear Issue:
 | Jira Issue:
 
@@ -135,4 +135,4 @@ ADR: docs/adr/ADR-2026-09-28-trackfw-init-reexecutado-preserva-a-configuracao-au
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-28-trackfw-init-reexecutado-destroi-a-configuracao-do-consumidor-e-o-produto-passa-a-reprovar-um-repositorio-conforme.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-09-28-trackfw-init-reexecutado-destroi-a-configuracao-do-consumidor-e-o-produto-passa-a-reprovar-um-repositorio-conforme.md
