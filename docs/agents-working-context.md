@@ -42925,3 +42925,20 @@ Medições independentes sobre 10 casos de teste (cenário #450, score delta, de
 **git status untracked:** `internal/validator/validator_req_roadmap_reverse.go` (arquivo novo)
 
 **Status:** CONCLUÍDO — aguardando auditoria e commit por trackfw_architect.
+
+## 2026-09-29 — zeus-tf — INÍCIO: REQ-2026-09-02 (dois workflows, mesma validação) — absorve o #451
+
+Branch `fix/dois-workflows-rodam-a-mesma-validacao`. O #451 e o comentário de terceiro nele são
+**mesma causa** da REQ-2026-09-02, já aberta com roadmap em `wip` — absorvidos ali, sem REQ nova.
+
+Medido por mim antes de escrever:
+- `ADR-2026-08-28` tem **zero** ocorrências de `trackfw-validate.yml`; a "decisão de coexistência"
+  citada em `scaffold_doctor.go:333` **não existe**, e a citação falsa havia sido copiada para a
+  cauda do próprio roadmap — retratação registrada lá e nota de vault criada.
+- assimetria: `generateGitHubActionsWorkflow` (scaffold.go:2553) escreve o `gate.yml`
+  **incondicionalmente**; `refreshDiscoverGitHubActionsWorkflowIfPresent` (update.go:2189) só
+  **atualiza** o `validate.yml` se presente.
+
+AC4 (paridade 3 CLIs) marcado **obsoleto pela v8**; substituído por AC4-bis. Acrescentados AC7 e AC8.
+Roadmap reescrito: Wave 0 real (o esqueleto gerado tinha gate `exit 1` placeholder), Wave 1 escrita
+só depois do veredito. Próximo: despachar ML-0A ao `hades-tf`.

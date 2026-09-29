@@ -14,91 +14,73 @@ squad: ""
 REQ: docs/req/REQ-2026-09-02-init-e-discover-geram-dois-workflows-que-rodam-a-mesma-validacao-com-instaladores-diferentes.md
 
 ## Acceptance Criteria
-<!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
-- [ ]
-- [ ]
+- [ ] **AC1** — por que existem dois, **com evidência**; razão legítima → a REQ fecha documentando
+- [ ] **AC2/AC7** — um único `trackfw validate` por evento, medido por **check-runs no mesmo SHA**
+- [ ] **AC3** — o caminho de adoção que depende do workflow tocado **continua funcionando**
+- [ ] **AC4-bis** — o comentário que cita decisão inexistente é corrigido
+- [ ] **AC5** — migração de quem **já tem os dois** instalados
+- [ ] **AC8** — o `doctor` acompanha na mesma entrega, sem achado falso novo
+- [ ] **AC6** — `make quality` e CI verdes
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
 
-## Wave 0 — Threat Model
-> Dependencies: none. Blocks all implementation.
+## Wave 0 — por que existem dois, e o que quebra se um sair
+> Dependências: nenhuma. 🔴 **BLOQUEIA toda implementação.**
 
-### ML-0A — Threat model for this roadmap
+### ML-0A — a arqueologia do AC1, e o inventário de quem depende de qual
+**Owner:** `hades-tf`
 **Status:** ⬜ Pendente
-**Files affected:**
-**Actions:**
-1. Enumeration completeness — is the list of surfaces in this roadmap complete? Name what is missing, or show the list is closed. Do not limit the search to the files already named by the REQ — before declaring the list closed, search the repository for other places that emit the same artifact or the same pattern (for example, grep for the literal the final artifact contains).
-2. Threat model — who empties this Wave 0 without breaking any written rule, and how?
-3. Falsification targets in both directions — for each surface, what breaks when the behavior regresses, and what breaks when it regresses the opposite way?
-4. Declared residual — what this design accepts not covering.
-**Acceptance criteria:**
-- [ ] The four sections above answered with evidence, not a one-line assertion
-- [ ] No implementation line written for this ML
+**Arquivos de leitura:** `internal/generators/scaffold.go` (`generateGitHubActionsWorkflow`:2553) ·
+`internal/generators/scaffold_doctor.go` (:32, :59, :333) · `internal/discover/discover.go`
+(`InstallGates`:66) · `internal/generators/update.go` (:2189) · `docs/adr/`
+**Método:** medir no código e no histórico. 🔴 **Não decidir o remédio** — a Wave 0 entrega a
+evidência sobre a qual a decisão é tomada, e tem autoridade para **bloquear** o roadmap.
 
-**Gates da wave:**
+**Perguntas, em ordem de peso:**
+
+1. 🔴 **Existe caminho de adoção que recebe `trackfw-validate.yml` e NUNCA receberia
+   `trackfw-gate.yml`?** É a pergunta que decide tudo. `discover --init` (`InstallGates`) decide por
+   `DiscoveryResult.CISystem`; o `gate.yml` sai de `generateGitHubActionsWorkflow`, guiado por
+   `cfg.CI` do `trackfw.yaml`. **Se houver projeto que satisfaz um e não o outro, os dois são
+   necessários** e o AC1 fecha a REQ documentando a razão.
+2. **Os dois arquivos são funcionalmente equivalentes hoje?** Compare o conteúdo **gerado**, não a
+   intenção: gatilhos, jobs, steps, e o que entra em `required_status_checks`.
+   ⚠️ `governance-go-install` é contrato de required check — se ele só nasce de um dos dois, remover
+   esse é quebrar merge protection de quem já depende dele. **Meça**, não presuma.
+3. **Instalador:** `go install` exige toolchain Go; o script `curl | sh`, não. Existe adotante sem Go
+   atendido **só** pelo `validate.yml`? E o inverso?
+4. **O que o `doctor` cobra de cada um**, e o que passa a cobrar errado se um deixar de ser escrito.
+
+**Ataque a premissa que eu trago — ela já esteve errada uma vez:**
+
+🔴 A afirmação *"a coexistência está decidida na `ADR-2026-08-28`"* aparece em **dois** sítios
+(`scaffold_doctor.go:333` e a cauda deste roadmap) e é **falsa** — medido: zero ocorrências de
+`trackfw-validate.yml` naquela ADR. **Varra o repositório atrás de um terceiro sítio** que repita a
+citação, e atrás de **qualquer** ADR que decida a coexistência por outro nome. Se existir decisão
+real, é ela que governa, não a minha medição.
+
+**Critérios de aceite:**
+- [ ] Resposta à pergunta 1 **com o comando e a saída** — é a que decide o desenho
+- [ ] Tabela de equivalência dos dois workflows **gerados**, campo a campo
+- [ ] Inventário dos sítios que citam a decisão inexistente (esperado ≥ 2; **diga se achou mais**)
+- [ ] Veredito explícito: **os dois são necessários, ou não** — e o que falsificaria a resposta
+- [ ] 🔴 Se a medição refutar qualquer premissa da REQ, **diga**; Wave 0 que só concorda não mediu
+- [ ] Nenhuma linha de implementação escrita neste ML
+
+**Gate da wave:**
 ```bash
-# Wave 0 gate — replace this placeholder with a project-specific check before
-# marking ML-0A done. Do not remove the gate; replace its command (AC13).
-exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli-parity.md
+trackfw barrier ROADMAP-2026-09-22-init-e-discover-geram-dois-workflows-que-rodam-a-mesma-validacao-com-instaladores-diferentes --wave 0 --trust-local-gates
 ```
 
-## Wave 1 — Implementation (derived from REQ criteria)
-> Dependencies: none
+## Wave 1 — o remédio
+> 🔴 **Dependências: Wave 0 auditada.** O conteúdo dos MLs depende do veredito do ML-0A e da decisão
+> de produto sobre ele — **escrito depois, não antes.** Os três remédios possíveis (não instalar o
+> segundo · desduplicar gatilho · cobertura de instalação só no CI do trackfw) levam a produtos
+> diferentes, e escolher antes de medir é exatamente o erro que esta REQ já cometeu ao herdar uma
+> citação falsa como decisão.
 
-### ML-1A — **AC1** — 🔴 **Determinar por que existem dois**, com evidência (histórico, ADR, comportamento
-**Status:** ⬜ Pendente
-**Files affected:**
-**Actions:**
-**Acceptance criteria:**
-- [ ] **AC1** — 🔴 **Determinar por que existem dois**, com evidência (histórico, ADR, comportamento
-- [ ] build passes
-- [ ] tests green
-
-### ML-1B — **AC2** — Se não houver: um único workflow gerado, com o instalador escolhido e **justificado**.
-**Status:** ⬜ Pendente
-**Files affected:**
-**Actions:**
-**Acceptance criteria:**
-- [ ] **AC2** — Se não houver: um único workflow gerado, com o instalador escolhido e **justificado**.
-- [ ] build passes
-- [ ] tests green
-
-### ML-1C — **AC3** — 🔴 **Controle:** o caminho de adoção que hoje depende do workflow removido **continua
-**Status:** ⬜ Pendente
-**Files affected:**
-**Actions:**
-**Acceptance criteria:**
-- [ ] **AC3** — 🔴 **Controle:** o caminho de adoção que hoje depende do workflow removido **continua
-- [ ] build passes
-- [ ] tests green
-
-### ML-1D — **AC4** — Paridade nos 3 CLIs — a duplicação existe nos três.
-**Status:** ⬜ Pendente
-**Files affected:**
-**Actions:**
-**Acceptance criteria:**
-- [ ] **AC4** — Paridade nos 3 CLIs — a duplicação existe nos três.
-- [ ] build passes
-- [ ] tests green
-
-### ML-1E — **AC5** — Migração para quem **já tem os dois** instalados: o update remove o obsoleto, ou o
-**Status:** ⬜ Pendente
-**Files affected:**
-**Actions:**
-**Acceptance criteria:**
-- [ ] **AC5** — Migração para quem **já tem os dois** instalados: o update remove o obsoleto, ou o
-- [ ] build passes
-- [ ] tests green
-
-### ML-1F — **AC6** — make quality e **CI** verdes.
-**Status:** ⬜ Pendente
-**Files affected:**
-**Actions:**
-**Acceptance criteria:**
-- [ ] **AC6** — make quality e **CI** verdes.
-- [ ] build passes
-- [ ] tests green
+**Status:** ⬜ Pendente — aguardando Wave 0
 
 ---
 
@@ -158,5 +140,25 @@ segundo, ou avisar que vai substituir* — **não** foi endereçada, nem aqui ne
 sobra, e é a parte que protege o consumidor que já está onboardado.
 
 ⚠️ E a redução é de **3 para 2** execuções por push em PR, não para 1. A issue pede economia de cota;
-2 ainda é duplicata. A coexistência dos dois arquivos está decidida na `ADR-2026-08-28`, então
-reduzir para 1 é mudança de decisão, não de implementação.
+2 ainda é duplicata.
+
+## 🔴 RETRATAÇÃO de 2026-09-29 — a frase seguinte estava errada, e travou a correção
+
+O parágrafo acima terminava assim:
+
+> *"A coexistência dos dois arquivos está decidida na `ADR-2026-08-28`, então reduzir para 1 é
+> mudança de decisão, não de implementação."*
+
+**Falso.** Medido em 2026-09-29: a `ADR-2026-08-28` tem **zero** ocorrências de
+`trackfw-validate.yml` — ela decide que o template de CI nasce pinado na versão que o gerou e que o
+`install.sh` honra `TRACKFW_VERSION`. O único ADR que cita o arquivo é a `ADR-2026-09-18`, e lá como
+caminho de exemplo. **A coexistência nunca foi decidida por ninguém.**
+
+🔴 **Como o erro entrou, que é o que importa:** a citação nasceu num **comentário de código**
+(`scaffold_doctor.go:333`), foi lida como decisão, e copiada para cá. Daqui passou a ser a razão pela
+qual a correção não avançava — *"é mudança de decisão"*. Uma citação de ADR que ninguém conferiu
+virou governança por três semanas, e quem a derrubou foi um **consumidor externo**
+(`lourivalgarciajunior`, no #451), não nós.
+
+**Lição operável:** citação de ADR dentro de comentário de código não é decisão — é afirmação a
+verificar. Ao encontrar uma, abra o ADR e confira antes de construir sobre ela.
