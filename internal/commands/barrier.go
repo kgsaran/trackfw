@@ -358,9 +358,90 @@ func roadmapTrustForGates(roadmapPath string, localContent []byte) gatesTrustVer
 // "Pinned failure strings for not_evaluated".
 const shMissingMsg = "gates not evaluated: sh not found in PATH — install a POSIX shell (e.g. Git Bash, WSL) to evaluate gates"
 
+// ────────────────────────────────────────────────────────────────────────────
+// Reentrance detection — ML-1A (#485)
+//
+// TRACKFW_BARRIER_STACK is a JSON array of {"roadmap":"<abs-path>","wave":"<label>"}
+// objects. It is injected into the child processes that execute gates, so that a
+// nested barrier invocation can detect whether it is being called from within an
+// enclosing evaluation of the same (roadmap, wave) pair.
+//
+// The roadmap key is the EvalSymlinks-resolved absolute path so that a symlink
+// pointing at the same file is recognised as the same entry. The wave key is the
+// normalised form "<int><suffix>" (no hyphen), so "1b" and "1-b" map to the same
+// key. Both normalisations follow the same conventions used by CompareWaveLabels.
+//
+// Residual (declared in docs/cli-parity.md and the Wave-0 threat model):
+// env-clearing environments (env -i, sudo -i, docker run without -e, ssh) discard
+// TRACKFW_BARRIER_STACK and bypass both the per-key check and the depth backstop.
+// ────────────────────────────────────────────────────────────────────────────
+
+// barrierStackVar is the environment variable name that carries the reentry stack.
+const barrierStackVar = "TRACKFW_BARRIER_STACK"
+
+// barrierStackEntry is one element in the reentry stack.
+type barrierStackEntry struct {
+	Roadmap string `json:"roadmap"`
+	Wave    string `json:"wave"`
+}
+
+// barrierReentryKey returns the canonical stack entry for the given roadmap path
+// and wave label. Uses filepath.Abs before EvalSymlinks so that a relative
+// roadmapPath (e.g. from a test that sets cmd.Dir) resolves to the same key as
+// an absolute path for the same file.
+func barrierReentryKey(roadmapPath, waveLabel string) barrierStackEntry {
+	abs, err := filepath.Abs(roadmapPath)
+	if err != nil {
+		abs = roadmapPath
+	}
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		// EvalSymlinks may fail if a path component does not exist on disk yet
+		// (e.g. inside a TempDir that was just created). Fall back to the abs path.
+		resolved = abs
+	}
+	n, suf := roadmapdoc.SplitWaveLabel(waveLabel)
+	return barrierStackEntry{
+		Roadmap: resolved,
+		Wave:    fmt.Sprintf("%d%s", n, suf),
+	}
+}
+
+// buildChildEnv constructs the environment to pass to gate child processes:
+// os.Environ() minus any existing TRACKFW_BARRIER_STACK entries (case-insensitive
+// on the variable name, for Windows compatibility), plus the updated stack that
+// includes the current (roadmap, wave) entry.
+//
+// The current barrier process does NOT call os.Setenv — the stack is only visible
+// to child processes that execute gates.
+func buildChildEnv(stack []barrierStackEntry) []string {
+	raw, err := json.Marshal(stack)
+	if err != nil {
+		// json.Marshal only fails on unmarshalable types; barrierStackEntry is
+		// plain strings, so this is unreachable in practice.
+		raw = []byte("[]")
+	}
+	newEntry := barrierStackVar + "=" + string(raw)
+
+	var childEnv []string
+	for _, e := range os.Environ() {
+		name, _, _ := strings.Cut(e, "=")
+		if strings.EqualFold(name, barrierStackVar) {
+			continue // drop all existing TRACKFW_BARRIER_STACK entries
+		}
+		childEnv = append(childEnv, e)
+	}
+	childEnv = append(childEnv, newEntry)
+	return childEnv
+}
+
 // runGateCommand executes one gate command from the repository root (the process's
 // current working directory) via `sh -c`. `sh` is resolved through $PATH
 // (exec.LookPath, the same as Go has always done) — NOT a fixed /bin/sh path.
+//
+// env is the explicit environment to pass to the child process; it must include
+// the updated TRACKFW_BARRIER_STACK so that nested barrier invocations can detect
+// reentrance. If env is nil, the child inherits the current process environment.
 //
 // Returns the exit code and spawnFailed, which is true only when the process
 // never started at all (e.g. `sh` missing from $PATH). This is distinct from the
@@ -368,8 +449,9 @@ const shMissingMsg = "gates not evaluated: sh not found in PATH — install a PO
 // exit 127 with spawnFailed=false — sh started and ran, then reported that its
 // child command doesn't exist. 127 is a normal (if unusual) exit code, never a
 // signal for "sh is missing" (measured in ML-0A).
-func runGateCommand(command string) (exitCode int, spawnFailed bool) {
+func runGateCommand(command string, env []string) (exitCode int, spawnFailed bool) {
 	c := exec.Command("sh", "-c", command)
+	c.Env = env
 	if err := c.Run(); err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			return exitErr.ExitCode(), false
@@ -386,11 +468,13 @@ func runGateCommand(command string) (exitCode int, spawnFailed bool) {
 // "could not measure" is distinct from "measured and failed" — and evaluation
 // stops immediately: gates after the spawn failure were never observed, so they
 // must not appear in evidence or failures.
-func evalGateCommands(gateCommands []string) (status string, evidence []string, failures []string) {
+//
+// env is passed to each gate child process (see runGateCommand).
+func evalGateCommands(gateCommands []string, env []string) (status string, evidence []string, failures []string) {
 	evidence = []string{}
 	failures = []string{}
 	for _, gcmd := range gateCommands {
-		exitCode, spawnFailed := runGateCommand(gcmd)
+		exitCode, spawnFailed := runGateCommand(gcmd, env)
 		if spawnFailed {
 			return "not_evaluated", []string{}, []string{shMissingMsg}
 		}
@@ -475,6 +559,36 @@ func runBarrier(cmd *cobra.Command, roadmapArg string, waveLabel string, jsonOut
 		return
 	}
 
+	// ── reentrance detection (ML-1A, #485) ──────────────────────────────────
+	// Read and validate TRACKFW_BARRIER_STACK before evaluating any check.
+	// "wave not found" (above) has precedence; all other errors come after.
+	var stack []barrierStackEntry
+	if raw := os.Getenv(barrierStackVar); raw != "" {
+		if err := json.Unmarshal([]byte(raw), &stack); err != nil {
+			usageExit(cmd, "TRACKFW_BARRIER_STACK is malformed: %s", err.Error())
+			return
+		}
+	}
+
+	currentKey := barrierReentryKey(roadmapPath, waveLabel)
+	for _, entry := range stack {
+		if entry.Roadmap == currentKey.Roadmap && entry.Wave == currentKey.Wave {
+			usageExit(cmd, "reentrant call — %s wave %s is already being evaluated by an enclosing barrier",
+				filepath.Base(roadmapPath), waveLabel)
+			return
+		}
+	}
+	if len(stack) >= 4 {
+		usageExit(cmd, "evaluation depth limit exceeded (%d nested barriers) — possible reentrant call via indirection",
+			len(stack))
+		return
+	}
+
+	// Build child env: current stack + current key, propagated to gate processes.
+	childStack := append(append([]barrierStackEntry{}, stack...), currentKey)
+	childEnv := buildChildEnv(childStack)
+	// ────────────────────────────────────────────────────────────────────────
+
 	mls := parseMLs(lines, fenced, target.Start, target.End)
 
 	// ── check: mls_complete ──────────────────────────────────────────────────
@@ -545,7 +659,7 @@ func runBarrier(cmd *cobra.Command, roadmapArg string, waveLabel string, jsonOut
 	// slash command for the WIP flow — AC12, AC15).
 	if trustLocalGates {
 		// Explicit consent: evaluate gates from local content.
-		status, evidence, failures := evalGateCommands(gateCommands)
+		status, evidence, failures := evalGateCommands(gateCommands, childEnv)
 		gatesCheck.Status = status
 		gatesCheck.Evidence = evidence
 		gatesCheck.Failures = failures
@@ -558,7 +672,7 @@ func runBarrier(cmd *cobra.Command, roadmapArg string, waveLabel string, jsonOut
 			gatesCheck.Failures = append(gatesCheck.Failures, verdict.failureMsg)
 		} else {
 			// Trusted (fail-open): evaluate gates.
-			status, evidence, failures := evalGateCommands(gateCommands)
+			status, evidence, failures := evalGateCommands(gateCommands, childEnv)
 			gatesCheck.Status = status
 			gatesCheck.Evidence = evidence
 			gatesCheck.Failures = failures

@@ -2215,6 +2215,87 @@ formatting differences before diffing (Go emits compact JSON, Node.js and Python
 `"wave":"1"` and `"wave": "1"` are equivalent for parity purposes. It deliberately does **not**
 `sort_keys` — declaration order is part of the contract. Do not "fix" the spacing.
 
+### Reentrance detection (ML-1A, #485)
+
+<!-- trackfw-contract: gap reason=contenção de reentrada; comportamento Go-only nesta versão (v8 tem implementação única em Go) -->
+
+`trackfw barrier` propagates a **reentrance stack** to the child processes that execute gates.
+This prevents a gate that calls `trackfw barrier` on the same `(roadmap, wave)` pair from
+recursing without limit.
+
+#### Environment variable: `TRACKFW_BARRIER_STACK`
+
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida; comportamento coberto por TestBarrierReentry_T* em internal/commands/barrier_reentry_test.go -->
+
+The stack is carried via the environment variable `TRACKFW_BARRIER_STACK`, whose value is a JSON
+array of objects:
+
+```
+[{"roadmap":"<abs-path>","wave":"<label>"},...]
+```
+
+- **`roadmap`** — absolute path, normalised by `filepath.EvalSymlinks` so that symlinks to the
+  same file produce the same key.
+- **`wave`** — normalised label `"<integer><suffix>"` (no hyphen), so `"1b"` and `"1-b"` are the
+  same key, matching `SplitWaveLabel`'s normalisation.
+
+The current barrier process does **not** call `os.Setenv`. The variable is only injected into the
+child processes that run gates (`runGateCommand` passes an explicit env slice built by
+`buildChildEnv`).
+
+#### Checks and messages
+
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida; mensagens pintadas em barrier_reentry_test.go T5 e T6 -->
+
+All three checks happen after the wave is found (wave-not-found error takes precedence) and
+before any other evaluation:
+
+1. **Malformed stack** — `TRACKFW_BARRIER_STACK` is present but not valid JSON:
+
+```
+trackfw barrier: TRACKFW_BARRIER_STACK is malformed: <json-error>
+```
+
+2. **Reentrant call** — the current `(roadmap, wave)` key is already in the stack:
+
+```
+trackfw barrier: reentrant call — <roadmap-basename> wave <label> is already being evaluated by an enclosing barrier
+```
+
+3. **Depth limit exceeded** — `len(stack) >= 4` (the backstop for reentrance via indirection):
+
+```
+trackfw barrier: evaluation depth limit exceeded (<n> nested barriers) — possible reentrant call via indirection
+```
+
+All three messages use **exit 2** (usage/resolution error, same as wave-not-found). The three
+runtimes must emit the text byte-for-byte on `stderr`. `<n>` is the current stack length at the
+time the limit fires.
+
+#### Backstop depth (N=4)
+
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida; coberto por TestBarrierReentry_T5_DepthLimitBackstop -->
+
+The limit N=4 was calibrated from the acervo (Wave-0 threat model, ML-0A). The deepest observed
+legitimate chain is length 2 (outer barrier → gate `make quality` → `check-barrier.sh` →
+inner barrier over a fixture). At depth 2 the stack length before push is 1. The backstop fires
+at `len(stack) >= 4`, giving 3 levels of headroom above the observed maximum.
+
+If a legitimate flow needs a stack depth ≥ 4, the limit must be revised and documented here.
+
+#### Residual — env-clearing (declared, no containment)
+
+<!-- trackfw-contract: none reason=resíduo declarado sem contenção (Wave-0 threat model, ML-0A); não há gate — contramedida seria mais custosa que o defeito no cenário delimitado -->
+
+`env -i`, `sudo -i`, `docker run` without `-e`, and `ssh` discard `TRACKFW_BARRIER_STACK`.
+Since **both** the per-key check and the depth backstop depend on this variable, neither defence
+functions under env-clearing. Recursion becomes unlimited again.
+
+Alternative backstops were evaluated (PPID chain inspection, lock files) and rejected for
+portability cost or adverse side-effects. This residual is **declared and unmitigated**.
+A benign author does not write `env -i trackfw barrier <same-roadmap>` as a gate; an author who
+does so is bypassing the protection intentionally.
+
 ### Wave label grammar
 
 <!-- trackfw-contract: gate=scripts/check-barrier.sh -->

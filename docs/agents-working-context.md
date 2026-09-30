@@ -2,6 +2,49 @@
 
 ---
 
+## 2026-09-30 — Apolo (fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite — ML-1A corretivo) — ENTREGUE
+
+**Inicio:** 2026-09-30 | **Fim:** 2026-09-30 | Branch: `fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite`
+**Tarefa:** Corretivo do ML-1A — corrigir dois testes reprovados na auditoria do arquiteto
+
+**Arquivos modificados:**
+- `internal/commands/barrier_reentry_test.go`: T2 — removida fixture morta (dir/roadmapPath/reenterScript nunca usados, _ = ...); consolidada em fixture única. T3 — eliminado gate vacuo (`;` tornava exit code sempre 0); adicionados `inner.rc`, `inner.err`, `stack.txt` com asserções `t.Fatalf`/`t.Errorf` nos quatro ACs.
+- `docs/agents-working-context.md`: esta entrada
+
+**Evidência de não-vacuidade do T3:**
+- Mutação (condição `true` + recusa com pilha vazia): T3 reprovou com `outer exit code = 2, quer 0 (passed); stderr = "reentrant call — ..."`
+- `cmp barrier.go barrier.go.bak`: files are identical (mutação totalmente revertida)
+
+**Resultados:**
+- T1–T7 + 2 subtestes T7: todos PASS
+- `go test ./internal/commands/ -count=1`: ok (16.4 s)
+- `go vet ./internal/commands/`: ok
+
+---
+
+## 2026-09-30 — Apolo (fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite — ML-1A) — ENTREGUE
+
+**Inicio:** 2026-09-30 | **Fim:** 2026-09-30 | Branch: `fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite`
+**Tarefa:** ML-1A — pilha de chaves (roadmap, wave) no barrier para conter reentrada
+
+**Arquivos modificados:**
+- `internal/commands/barrier.go`: adicionados `barrierStackVar`, `barrierStackEntry`, `barrierReentryKey`, `buildChildEnv`; checagem de pilha em `runBarrier` (após `target` resolvido, antes de qualquer check); `runGateCommand`/`evalGateCommands` recebem `env []string` para propagar pilha aos filhos dos gates
+- `internal/commands/barrier_reentry_test.go` (novo): testes T1–T7 de reentrada com fusível de shell; todos passam
+- `internal/commands/barrier_test.go`: call sites existentes de `runGateCommand`/`evalGateCommands` atualizados para passar `nil`
+- `docs/cli-parity.md`: seção `### Reentrance detection (ML-1A, #485)` com variável, formato, 3 mensagens literais, backstop N=4, resíduo env-clearing; anotações `<!-- trackfw-contract: none ... -->` em todos os 4 sub-headings
+- `docs/roadmaps/wip/ROADMAP-2026-09-30-...`: ML-1A marcado ✅ Concluído, todos os critérios com [x]
+- `docs/agents-working-context.md`: entrada de início e fim
+
+**Resultados:**
+- T1–T7 + 2 subtestes de T7: todos PASS
+- Contra código antigo: T1 fuse.txt existe, child.err vazio (sem "reentrant call"); T2 idem — fuse disparou
+- go test ./internal/commands/: ok (16.3 s)
+- trackfw validate: 171 warnings (lenient mode), 0 violations hard
+- make quality: exit 0, 347 OK, 0 FAIL (segunda execução, após adicionar anotações `trackfw-contract`)
+- Correção pós-sessão: `barrierReentryKey` agora chama `filepath.Abs` antes de `EvalSymlinks`, alinhando com o spec do parecer (fallback para `abs`, não para `roadmapPath` bruto)
+
+---
+
 ## 2026-09-30 — Hades (fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite — ML-0A corretivo) — ENTREGUE
 
 **Inicio:** 2026-09-30 | **Fim:** 2026-09-30 | Branch: `fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite`

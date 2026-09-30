@@ -120,7 +120,7 @@ print(n)
 
 ### ML-1A — pilha de chaves `(roadmap, wave)` no `barrier`
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** `internal/commands/barrier.go` · `internal/commands/barrier_reentry_test.go`
 (novo) · `docs/cli-parity.md` (§ `trackfw barrier`) · `scripts/check-barrier.sh` (só se o contrato
 fixar mensagens de exit 2 ali)
@@ -164,16 +164,16 @@ um `TRACKFW_BARRIER_STACK` de fora):
 - T7 canonicalização: reentrada pelo **symlink** do roadmap, e pela wave `1-b` contra `1b` → recusada
 
 **Critérios de aceite:**
-- [ ] T1–T7 existem e passam: `go test ./internal/commands/ -run 'Reentry' -v`, contando `^--- PASS`
+- [x] T1–T7 existem e passam: `go test ./internal/commands/ -run 'Reentry' -v`, contando `^--- PASS`
   (7 ou mais). `ok` sozinho não prova nada
-- [ ] Contra o binário **antigo** (antes da mudança), T1 e T2 reprovam pelo fusível (exit 99). A
+- [x] Contra o binário **antigo** (antes da mudança), T1 e T2 reprovam pelo fusível (exit 99). A
   saída é colada no relatório
-- [ ] `go build ./...` · `go test ./internal/commands/` verde
-- [ ] `docs/cli-parity.md` § `trackfw barrier`: a variável, o formato, as 3 mensagens literais, o
+- [x] `go build ./...` · `go test ./internal/commands/` verde
+- [x] `docs/cli-parity.md` § `trackfw barrier`: a variável, o formato, as 3 mensagens literais, o
   exit 2 e o resíduo do `env -i`
-- [ ] Gate da Wave 0 continua passando (acervo com 0 gates reentrantes)
-- [ ] `make quality` verde (autorizado neste ML: é a única frente ativa)
-- [ ] Relatório com uma frase por teste novo dizendo **qual conclusão** ele afirma (Regra de Reconciliação)
+- [x] Gate da Wave 0 continua passando (acervo com 0 gates reentrantes)
+- [x] `make quality` verde (autorizado neste ML: é a única frente ativa)
+- [x] Relatório com uma frase por teste novo dizendo **qual conclusão** ele afirma (Regra de Reconciliação)
 
 **Gates da wave:**
 ```bash
