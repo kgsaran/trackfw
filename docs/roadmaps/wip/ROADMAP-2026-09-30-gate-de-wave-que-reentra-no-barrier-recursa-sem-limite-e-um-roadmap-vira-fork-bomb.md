@@ -42,7 +42,7 @@ da `main` do ROADMAP-2026-09-22 (contra-braço: o detector acusa a mina quando e
 
 ### ML-0A — modelo de ameaça e escolha do discriminante
 **Owner:** `hades-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos de leitura:** `internal/commands/barrier.go` (`runGateCommand`, `evalGateCommands`,
 `runBarrier`, trust check) · `internal/commands/barrier_contract_test.go` (~:105, ~:258) ·
 `scripts/check-barrier.sh` · `scripts/check-roadmap-barrier-contract.sh` · `docs/cli-parity.md`
@@ -80,13 +80,13 @@ da `main` do ROADMAP-2026-09-22 (contra-braço: o detector acusa a mina quando e
 - Afirmo **0** gates reentrantes no acervo desta branch (medição acima). Reimplemente a contagem.
 
 **Critérios de aceite:**
-- [ ] Enumeração dos executores de gates, com `arquivo:linha`, declarada completa ou com o que falta
-- [ ] Cada candidato de discriminante com o contra-braço que o derruba ou o sustenta, **medido**
-- [ ] Contagem de gates do acervo que aninham `barrier` sobre outro roadmap
-- [ ] Exit code e mensagem propostos, com o motivo
-- [ ] Resíduo declarado
-- [ ] 🔴 Se a medição refutar qualquer premissa da REQ, **dizer**
-- [ ] Nenhuma linha de implementação escrita neste ML
+- [x] Enumeração dos executores de gates, com `arquivo:linha`, declarada completa ou com o que falta
+- [x] Cada candidato de discriminante com o contra-braço que o derruba ou o sustenta, **medido**
+- [x] Contagem de gates do acervo que aninham `barrier` sobre outro roadmap
+- [x] Exit code e mensagem propostos, com o motivo
+- [x] Resíduo declarado
+- [x] 🔴 Se a medição refutar qualquer premissa da REQ, **dizer**
+- [x] Nenhuma linha de implementação escrita neste ML
 
 **Gates da wave:**
 

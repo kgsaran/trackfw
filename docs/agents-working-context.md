@@ -2,6 +2,40 @@
 
 ---
 
+## 2026-09-30 — Hades (fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite — ML-0A corretivo) — ENTREGUE
+
+**Inicio:** 2026-09-30 | **Fim:** 2026-09-30 | Branch: `fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite`
+**Tarefa:** Corretivo do ML-0A (Wave 0, #485) — 3 pontos reprovados pela auditoria do arquiteto
+
+**Arquivos modificados:**
+- `docs/seguranca/2026-09-30-wave0-gate-reentrante-no-barrier.md`: 3 achados corrigidos
+- `docs/agents-working-context.md`: entrada de início e fim
+
+**Achado 1 — env-i:** Removida a afirmação falsa de "contador separado" e "backstop cobre o
+runaway". Texto correto: sob `env -i`/`sudo -i`/`docker run`/`ssh`, ambos os controles
+(dedup por chave e backstop) dependem de `TRACKFW_BARRIER_STACK` — quando apagada, não há
+freio. Avaliadas alternativas independentes de env (cadeia PPID; lock por chave de arquivo)
+e descartadas. Resíduo declarado sem contenção em ambos os lugares onde aparecia.
+
+**Achado 2 — reconciliação de contagens:**
+- "11 roadmaps" retratado. Medição correta (Python, extrator de bloco de gate): 10 gate-blocks
+  em 4 arquivos únicos `done/`. "11" era contagem irrestrita ao texto de gate — não reproduzível.
+- Tabela adicionada: 0 invocações diretas (regex, excluindo `#`); 10/4 com `make quality`;
+  3 com `grep -q check-roadmap-barrier-contract.sh` (não executam barrier).
+- "Zero colateral" para (c) mantido mas argumentado pelo mecanismo (chave absoluta distinta
+  entre roadmap real e fixture tmpdir), não pela contagem 0.
+
+**Achado 3 — N=4 medido:**
+- Cadeia máxima legítima: nível 1 (outer barrier) + nível 2 (make quality → fixture barrier,
+  pilha len=1). Nível 3 não existe: fixtures têm gates `exit 0`/`touch`/`true`/`false`.
+  Corpus snapshots verificados: nenhum tem `trackfw barrier` como gate.
+- Comprimento máximo de pilha ao iniciar o nível 2: 1. Backstop `len >= 4` dispara ao nível 5.
+  Folga: 3 níveis acima do máximo observado.
+
+**Checklist ML-0A:** todos os `[x]` sustentados. Nenhum revertido para `[ ]`.
+
+---
+
 ## 2026-09-29 — Apolo (fix/dois-workflows-rodam-a-mesma-validacao — ML-1D Wave 1) — ENTREGUE
 
 **Inicio:** 2026-09-29 | **Fim:** 2026-09-29 | Branch: `fix/dois-workflows-rodam-a-mesma-validacao`
@@ -43148,3 +43182,28 @@ da `main` → acusa 1.
 
 Próximo: ML-0A ao `hades-tf`. Contra-braço central: gates legítimos (`go test`, `check-barrier.sh`)
 aninham `barrier` sobre **outro** roadmap — um contador de profundidade cego os quebra.
+
+## 2026-09-30 — hades-tf — INÍCIO: ML-0A do #485 (gate reentrante no barrier)
+
+Branch `fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite`. Leitura: barrier.go,
+barrier_contract_test.go, scripts/check-barrier.sh, slash command, acervo de roadmaps.
+
+## 2026-09-30 — hades-tf — FIM: ML-0A concluído, Wave 0 aprovada
+
+Entregável: `docs/seguranca/2026-09-30-wave0-gate-reentrante-no-barrier.md`.
+Gate da Wave 0: PASSOU (parecer presente, 0 gates reentrantes no acervo).
+
+Achados principais:
+- Único executor de gate de produto: `barrier.go:371 runGateCommand` (via `sh -c`). Nenhum
+  outro comando do produto (roadmap move, commit, ship, validate) executa conteúdo de roadmap.
+- Discriminante (a) FALSIFICADO: `make quality` é gate real em 11 roadmaps done/ e chama
+  `check-barrier.sh` que por sua vez executa `trackfw barrier fixture` — um contador cego
+  quebra AC3 (gates legítimos).
+- Discriminante (c) APROVADO: pilha `(roadmap, wave)` herdada por env + backstop N=4.
+  Survives o contra-braço: check-barrier.sh e barrier_contract_test.go operam sobre fixtures
+  distintas (chaves diferentes), não caem no bloqueio.
+- barrier_contract_test.go (~:258 runBarrierCLI) NÃO seta cmd.Env — herda env do pai.
+  Premissa (ii) da REQ CONFIRMADA.
+- 0 gates no acervo desta branch invocam `trackfw barrier` (medido por extração de bloco).
+- Todas as 3 premissas da REQ confirmadas; nenhuma mudança de escopo.
+- Exit code recomendado: 2 (usage error), mensagem nomeia o ciclo explicitamente.
