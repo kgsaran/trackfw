@@ -16,11 +16,14 @@ package commands
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -120,6 +123,38 @@ func setupReentryFixture(t *testing.T, gateLines []string) (string, string) {
 	}
 	writeBarrierREQFixture(t, dir, roadmapRel)
 	return dir, roadmapPath
+}
+
+// symlinkOrSkip cria um symlink em link apontando para target. Se a criação
+// falhar por falta de privilégio (WinError 1314, ERROR_PRIVILEGE_NOT_HELD, ou
+// EPERM), pula o teste. Qualquer outro erro é um t.Fatalf.
+// Cópia intencional do helper definido em outros pacotes do repositório —
+// símbolos de _test.go não são importáveis entre pacotes no Go.
+func symlinkOrSkip(t *testing.T, target, link string) bool { //nolint:unparam
+	t.Helper()
+	err := os.Symlink(target, link)
+	if err == nil {
+		return true
+	}
+	if isSymlinkPrivilegeErrorReentry(err) {
+		t.Skipf("guarda de symlink não exercitada: criação de symlink exige privilégio: %v", err)
+		return false
+	}
+	t.Fatalf("os.Symlink(%q, %q): %v", target, link, err)
+	return false
+}
+
+// isSymlinkPrivilegeErrorReentry reporta se err é uma falha de privilégio de
+// symlink (EPERM, EACCES, ou WinError 1314 no Windows sem Developer Mode).
+func isSymlinkPrivilegeErrorReentry(err error) bool {
+	if os.IsPermission(err) {
+		return true
+	}
+	var e syscall.Errno
+	if errors.As(err, &e) && e == 1314 {
+		return true
+	}
+	return false
 }
 
 // stackJSON constrói o valor JSON para TRACKFW_BARRIER_STACK a partir de pares
@@ -330,33 +365,34 @@ func TestBarrierReentry_T4_SequentialCallsPass(t *testing.T) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// T5 — Backstop: pilha pré-carregada com 4 chaves distintas
-// Conclusão afirmada: quando TRACKFW_BARRIER_STACK já tem 4 entradas (nenhuma
-// a chave atual), o barrier recusa com "evaluation depth limit exceeded" antes
-// de executar qualquer gate (sentinel ausente).
+// T5 — Backstop: pilha pré-carregada com barrierMaxDepth chaves distintas
+// Conclusão afirmada: quando TRACKFW_BARRIER_STACK já tem barrierMaxDepth entradas
+// (nenhuma a chave atual), o barrier recusa com "evaluation depth limit exceeded"
+// antes de executar qualquer gate (sentinel ausente). O número de entradas é lido
+// da constante barrierMaxDepth, de modo que o teste se ajusta automaticamente se
+// o limite for revisado.
 // ────────────────────────────────────────────────────────────────────────────
 
 func TestBarrierReentry_T5_DepthLimitBackstop(t *testing.T) {
-	dir, roadmapPath := setupReentryFixture(t, nil)
+	dir2, roadmapPath2 := setupReentryFixture(t, nil)
 
 	// Gate que escreveria um sentinel — deve NÃO ser executado
-	sentinel := filepath.Join(dir, "sentinel.txt")
-	dir2, roadmapPath2 := setupReentryFixture(t, []string{`touch "` + sentinel + `"`})
-	_ = dir
-	_ = roadmapPath
+	sentinel := filepath.Join(dir2, "sentinel.txt")
+	dir3, roadmapPath3 := setupReentryFixture(t, []string{`touch "` + sentinel + `"`})
+	_ = dir2
+	_ = roadmapPath2
 
-	// Pilha com 4 chaves DISTINTAS (nenhuma é roadmapPath2 / wave "1")
-	preStack := stackJSON(t, [][2]string{
-		{"/fake/roadmap-a.md", "1"},
-		{"/fake/roadmap-b.md", "2"},
-		{"/fake/roadmap-c.md", "3"},
-		{"/fake/roadmap-d.md", "4"},
-	})
+	// Pilha com barrierMaxDepth chaves DISTINTAS (nenhuma é roadmapPath3 / wave "1")
+	entries := make([][2]string, barrierMaxDepth)
+	for i := 0; i < barrierMaxDepth; i++ {
+		entries[i] = [2]string{fmt.Sprintf("/fake/roadmap-%c.md", 'a'+i), fmt.Sprintf("%d", i+1)}
+	}
+	preStack := stackJSON(t, entries)
 
 	env := cleanEnvForReentry()
 	env = append(env, "TRACKFW_BARRIER_STACK="+preStack)
 
-	_, stderr, code := runBarrierReentry(t, dir2, env, roadmapPath2, "--wave", "1", "--trust-local-gates")
+	_, stderr, code := runBarrierReentry(t, dir3, env, roadmapPath3, "--wave", "1", "--trust-local-gates")
 
 	if code != 2 {
 		t.Errorf("T5: exit code = %d, quer 2; stderr = %q", code, stderr)
@@ -409,8 +445,8 @@ func TestBarrierReentry_T7_Canonicalization(t *testing.T) {
 
 		// Cria symlink apontando para o mesmo roadmap
 		symlinkPath := filepath.Join(dir, "docs/roadmaps/wip/ROADMAP-reentry-sym.md")
-		if err := os.Symlink(roadmapPath, symlinkPath); err != nil {
-			t.Skip("os.Symlink falhou: " + err.Error())
+		if !symlinkOrSkip(t, roadmapPath, symlinkPath) {
+			return
 		}
 
 		// Gate: chama barrier via symlink do mesmo roadmap, mesma wave
@@ -419,8 +455,8 @@ func TestBarrierReentry_T7_Canonicalization(t *testing.T) {
 
 		// Cria symlink no dir2 também
 		symInDir2 := filepath.Join(dir2, "docs/roadmaps/wip/ROADMAP-reentry-sym.md")
-		if err := os.Symlink(roadmapPath2, symInDir2); err != nil {
-			t.Skip("os.Symlink falhou no dir2: " + err.Error())
+		if !symlinkOrSkip(t, roadmapPath2, symInDir2) {
+			return
 		}
 
 		childErr := filepath.Join(dir2, "child.err")
@@ -511,4 +547,201 @@ func TestBarrierReentry_T7_Canonicalization(t *testing.T) {
 			t.Errorf("T7/wave: child.err = %q; quer conter \"reentrant call\"", string(childStderr))
 		}
 	})
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// T7c — Case alias via stack injection: stack tem "1b", call com --wave 1B
+// Conclusão afirmada: barrierReentryKey usa target.Label (o header parsed), não
+// waveLabel (o CLI arg); quando o stack já contém a chave canônica do header
+// ("1b"), uma chamada com --wave 1B deve ser recusada como reentrada (exit 2).
+// Sem a correção (F1), waveLabel="1B" → chave "1B" ≠ "1b" → bypass (exit 1).
+//
+// Usa injeção direta de TRACKFW_BARRIER_STACK (como T5/T6) para isolar o mecanismo
+// de chave sem envolver a cadeia de gate recursiva.
+// ────────────────────────────────────────────────────────────────────────────
+
+func TestBarrierReentry_T7c_CaseAlias(t *testing.T) {
+	// Monta fixture com Wave "1b" (header lowercase).
+	dir := t.TempDir()
+	for _, d := range []string{
+		"docs/roadmaps/wip", "docs/roadmaps/backlog", "docs/roadmaps/blocked",
+		"docs/roadmaps/done", "docs/roadmaps/abandoned", "docs/req", "docs/adr",
+	} {
+		if err := os.MkdirAll(filepath.Join(dir, d), 0755); err != nil {
+			t.Fatalf("T7c: mkdirs: %v", err)
+		}
+	}
+	roadmapRel := "docs/roadmaps/wip/ROADMAP-wave-case-fixture.md"
+	roadmapPath := filepath.Join(dir, roadmapRel)
+
+	var sb strings.Builder
+	sb.WriteString("---\nstatus: wip\ndate: 2026-09-30\n")
+	sb.WriteString("req: \"" + barrierFixtureREQRel + "\"\n---\n\n")
+	sb.WriteString("# Roadmap: Wave Case Fixture\n\n")
+	sb.WriteString("## Acceptance Criteria\n- [x] fixture\n\n")
+	sb.WriteString("## Wave 0 — Threat model\n> Dependências: nenhuma.\n\n")
+	sb.WriteString("### ML-0A — TM\n**Status:** ✅ Concluído\n\n")
+	sb.WriteString("**Gates da wave:**\n```bash\necho ok\n```\n\n")
+	// Wave header "1b" lowercase — target.Label = "1b"
+	sb.WriteString("## Wave 1b — Case alias wave\n> Dependências: nenhuma.\n\n")
+	sb.WriteString("**Gates da wave:**\n```bash\necho ok\n```\n\n")
+	sb.WriteString("### ML-1bA — Fixture ML\n**Status:** ✅ Concluído\n")
+	sb.WriteString("**Critérios de aceite:**\n- [x] fixture\n\n")
+
+	if err := os.WriteFile(roadmapPath, []byte(sb.String()), 0644); err != nil {
+		t.Fatalf("T7c: write roadmap: %v", err)
+	}
+	writeBarrierREQFixture(t, dir, roadmapRel)
+
+	// Resolve the roadmap path to the canonical key (same as barrierReentryKey does).
+	abs, _ := filepath.Abs(roadmapPath)
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		resolved = abs
+	}
+
+	// Pre-load stack with the canonical key for wave "1b" (lowercase, as the header has it).
+	// This is what the outer barrier puts in the stack when called with --wave 1b.
+	preStack := stackJSON(t, [][2]string{
+		{resolved, "1b"},
+	})
+
+	env := cleanEnvForReentry()
+	env = append(env, "TRACKFW_BARRIER_STACK="+preStack)
+
+	// Call with --wave 1B (uppercase).
+	// With F1 bug: barrierReentryKey uses waveLabel="1B" → key.Wave="1B" ≠ "1b" → bypass → exit 1.
+	// With F1 fix: barrierReentryKey uses target.Label="1b" (header) → key.Wave="1b" = "1b" → exit 2.
+	_, stderr, code := runBarrierReentry(t, dir, env, roadmapPath, "--wave", "1B", "--trust-local-gates")
+
+	if code != 2 {
+		t.Errorf("T7c: exit code = %d, quer 2 (reentrant call recusada); stderr = %q", code, stderr)
+	}
+	if !strings.Contains(stderr, "reentrant call") {
+		t.Errorf("T7c: stderr = %q; quer conter \"reentrant call\"", stderr)
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// T7d — Hardlink: dois nomes, mesmo inode
+// Conclusão afirmada: sameRoadmapFile usa os.SameFile (inode+device), de modo
+// que um gate que chama barrier com um hardlink do roadmap outer é detectado
+// como reentrada mesmo que EvalSymlinks retorne strings diferentes.
+// ────────────────────────────────────────────────────────────────────────────
+
+func TestBarrierReentry_T7d_Hardlink(t *testing.T) {
+	// Monta fixture com gate trivial (echo ok — passa normalmente se não houver reentrada).
+	dir2, roadmapPath2 := setupReentryFixture(t, []string{`echo ok`})
+
+	// Cria hardlink para roadmapPath2 no mesmo diretório.
+	hlPath2 := filepath.Join(filepath.Dir(roadmapPath2), "ROADMAP-reentry-hardlink.md")
+	if err := os.Link(roadmapPath2, hlPath2); err != nil {
+		t.Skipf("T7d: os.Link falhou (%v) — filesystem pode não suportar hardlinks", err)
+	}
+
+	// Resolve o hlPath2 para o path canônico (EvalSymlinks não resolve hardlinks —
+	// retorna o path como dado). Este é o path que o outer teria colocado na pilha
+	// se tivesse sido chamado com o hardlink.
+	absHl, _ := filepath.Abs(hlPath2)
+	resolvedHl, err := filepath.EvalSymlinks(absHl)
+	if err != nil {
+		resolvedHl = absHl
+	}
+
+	// Resolve também o path original, para comparar strings e confirmar que são DIFERENTES.
+	absOrig, _ := filepath.Abs(roadmapPath2)
+	resolvedOrig, err := filepath.EvalSymlinks(absOrig)
+	if err != nil {
+		resolvedOrig = absOrig
+	}
+
+	if resolvedHl == resolvedOrig {
+		// Filesystem resolveu os dois para o mesmo path (improvável em macOS/Linux via os.Link),
+		// o que tornaria o teste trivial — pular.
+		t.Skip("T7d: EvalSymlinks resolveu hardlink e original para o mesmo path — skip")
+	}
+
+	// Injetar stack com o path do HARDLINK (como se o outer tivesse sido chamado com hlPath2).
+	// Call com o path ORIGINAL (roadmapPath2).
+	// Com F2 bug (string compare): resolvedHl != resolvedOrig → sem match → bypass → exit 0.
+	// Com F2 fix (os.SameFile):   mesmo inode → match → "reentrant call" → exit 2.
+	preStack := stackJSON(t, [][2]string{
+		{resolvedHl, "1"},
+	})
+
+	env := cleanEnvForReentry()
+	env = append(env, "TRACKFW_BARRIER_STACK="+preStack)
+
+	_, stderr, code := runBarrierReentry(t, dir2, env, roadmapPath2, "--wave", "1", "--trust-local-gates")
+
+	if code != 2 {
+		t.Errorf("T7d: exit code = %d, quer 2 (reentrant call recusada); stderr = %q", code, stderr)
+	}
+	if !strings.Contains(stderr, "reentrant call") {
+		t.Errorf("T7d: stderr = %q; quer conter \"reentrant call\"", stderr)
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// T7e — APFS/case-insensitive: mesmo arquivo, basename com case diferente
+// Conclusão afirmada: em filesystem case-insensitive (APFS, HFS+), os.SameFile
+// retorna true para dois paths que diferem só em case e apontam ao mesmo inode,
+// de modo que a reentrada via nome alternativo é detectada.
+// O teste é pulado se o filesystem for case-sensitive (detectado via os.SameFile).
+// ────────────────────────────────────────────────────────────────────────────
+
+func TestBarrierReentry_T7e_APFSCaseInsensitive(t *testing.T) {
+	// Monta fixture com gate trivial.
+	dir2, roadmapPath2 := setupReentryFixture(t, []string{`echo ok`})
+
+	// Detecta se o filesystem é case-insensitive usando os.SameFile entre dois paths
+	// que diferem só em case. setupReentryFixture cria "ROADMAP-reentry-fixture.md";
+	// em APFS, os.Stat("ROADMAP-REENTRY-FIXTURE.MD") retorna o mesmo inode.
+	upperPath2 := filepath.Join(filepath.Dir(roadmapPath2), "ROADMAP-REENTRY-FIXTURE.MD")
+	fi2Lower, err2Lower := os.Stat(roadmapPath2)
+	fi2Upper, err2Upper := os.Stat(upperPath2)
+	if err2Lower != nil || err2Upper != nil || !os.SameFile(fi2Lower, fi2Upper) {
+		t.Skip("T7e: filesystem é case-sensitive ou path alternativo não acessível — skip")
+	}
+
+	// Resolve o path original para o canônico que o barrier colocaria na pilha.
+	absOrig, _ := filepath.Abs(roadmapPath2)
+	resolvedOrig, err := filepath.EvalSymlinks(absOrig)
+	if err != nil {
+		resolvedOrig = absOrig
+	}
+
+	// Resolve também o path uppercase para confirmar que EvalSymlinks retorna strings
+	// diferentes (APFS preserva o case fornecido, não normaliza).
+	absUpper, _ := filepath.Abs(upperPath2)
+	resolvedUpper, err := filepath.EvalSymlinks(absUpper)
+	if err != nil {
+		resolvedUpper = absUpper
+	}
+
+	if resolvedOrig == resolvedUpper {
+		// EvalSymlinks normalizou o case (Windows ou filesystem incomum) — o bypass não ocorreria,
+		// tornando o teste trivial. Pular.
+		t.Skip("T7e: EvalSymlinks normalizou case — skip (bypass não ocorreria)")
+	}
+
+	// Injetar stack com o path UPPERCASE (como se o outer tivesse sido chamado com upperPath2).
+	// Call com o path LOWERCASE (roadmapPath2).
+	// Com F2 bug (string compare): resolvedUpper != resolvedOrig → sem match → bypass → exit 0.
+	// Com F2 fix (os.SameFile):   mesmo inode (APFS case-insensitive) → match → exit 2.
+	preStack := stackJSON(t, [][2]string{
+		{resolvedUpper, "1"},
+	})
+
+	env := cleanEnvForReentry()
+	env = append(env, "TRACKFW_BARRIER_STACK="+preStack)
+
+	_, stderr, code := runBarrierReentry(t, dir2, env, roadmapPath2, "--wave", "1", "--trust-local-gates")
+
+	if code != 2 {
+		t.Errorf("T7e: exit code = %d, quer 2 (reentrant call recusada); stderr = %q", code, stderr)
+	}
+	if !strings.Contains(stderr, "reentrant call") {
+		t.Errorf("T7e: stderr = %q; quer conter \"reentrant call\"", stderr)
+	}
 }

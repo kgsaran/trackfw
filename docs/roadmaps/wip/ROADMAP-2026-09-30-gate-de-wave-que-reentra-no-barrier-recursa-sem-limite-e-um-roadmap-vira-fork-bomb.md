@@ -25,13 +25,13 @@ está **bloqueado atrás deste** (ver o roadmap dele, § BLOQUEADO).
 da `main` do ROADMAP-2026-09-22 (contra-braço: o detector acusa a mina quando ela existe).
 
 ## Acceptance Criteria
-- [ ] **AC1** — reentrada direta recusada antes de executar, sem multiplicar
-- [ ] **AC2** — reentrada por indireção contida
-- [ ] **AC3** — 🔴 gate legítimo continua rodando, inclusive o que aninha `barrier` sobre **outro** roadmap
-- [ ] **AC4** — duas invocações sequenciais continuam funcionando
-- [ ] **AC5** — todo outro executor de gates tem a mesma contenção
-- [ ] **AC6** — acervo com 0 gates reentrantes
-- [ ] **AC7** — `cli-parity.md` descreve contenção, exit code e mensagem
+- [x] **AC1** — reentrada direta recusada antes de executar, sem multiplicar
+- [x] **AC2** — reentrada por indireção contida
+- [x] **AC3** — 🔴 gate legítimo continua rodando, inclusive o que aninha `barrier` sobre **outro** roadmap
+- [x] **AC4** — duas invocações sequenciais continuam funcionando
+- [x] **AC5** — todo outro executor de gates tem a mesma contenção
+- [x] **AC6** — acervo com 0 gates reentrantes
+- [x] **AC7** — `cli-parity.md` descreve contenção, exit code e mensagem
 - [ ] **AC8** — `make quality` e CI verdes
 
 ## Status Legend
@@ -207,7 +207,7 @@ test -f docs/qualidade/2026-09-30-wave2-reentrada-barrier.md
 
 ### ML-2C — corrigir F1 (spec deviation) e F2 (os.SameFile) do ML-2A
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** `internal/commands/barrier.go` · `internal/commands/barrier_reentry_test.go` · `docs/cli-parity.md`
 
 **Achados que fecha:**
@@ -231,12 +231,12 @@ test -f docs/qualidade/2026-09-30-wave2-reentrada-barrier.md
    gate de fixture tem o fusível **na mesma linha** da chamada ao `barrier`.
 
 **Critérios de aceite:**
-- [ ] T7c/T7d/T7e existem e passam
-- [ ] Contra o binário ANTES de (1): T7c reprova (bypass medido)
-- [ ] `go test ./internal/commands/ -run 'Reentry' -count=1`: todos passam
-- [ ] `make quality` verde
-- [ ] Uma frase por teste novo afirmando a conclusão (Regra de Reconciliação)
-- [ ] `grep -c 'barrierMaxDepth' internal/commands/barrier.go` ≥ 2 e nenhum `>= 4` literal no backstop
+- [x] T7c/T7d/T7e existem e passam
+- [x] Contra o binário ANTES de (1): T7c reprova (bypass medido) — saída: exit=0, stderr="", quer exit=2 com "reentrant call"
+- [x] `go test ./internal/commands/ -run 'Reentry' -count=1`: todos passam (12 PASS: T1–T7 + T7c/T7d/T7e + 2 subtests)
+- [x] `make quality` verde (exit=0, 347 OK, 0 FAIL)
+- [x] Uma frase por teste novo afirmando a conclusão (Regra de Reconciliação) — ver relatório
+- [x] `grep -c 'barrierMaxDepth' internal/commands/barrier.go` ≥ 2 (medido: 4) e nenhum `>= 4` literal no backstop
 
 **Gates da wave:**
 ```bash

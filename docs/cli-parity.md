@@ -2272,24 +2272,31 @@ All three messages use **exit 2** (usage/resolution error, same as wave-not-foun
 runtimes must emit the text byte-for-byte on `stderr`. `<n>` is the current stack length at the
 time the limit fires.
 
-#### Backstop depth (N=4)
+#### Backstop depth (N=`barrierMaxDepth`=4)
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida; coberto por TestBarrierReentry_T5_DepthLimitBackstop -->
 
-The limit N=4 was calibrated from the acervo (Wave-0 threat model, ML-0A). The deepest observed
+The limit is defined as `const barrierMaxDepth = 4` in `internal/commands/barrier.go`.
+N=4 was calibrated from the acervo (Wave-0 threat model, ML-0A). The deepest observed
 legitimate chain is length 2 (outer barrier → gate `make quality` → `check-barrier.sh` →
 inner barrier over a fixture). At depth 2 the stack length before push is 1. The backstop fires
-at `len(stack) >= 4`, giving 3 levels of headroom above the observed maximum.
+at `len(stack) >= barrierMaxDepth`, giving 3 levels of headroom above the observed maximum.
 
-If a legitimate flow needs a stack depth ≥ 4, the limit must be revised and documented here.
+If a legitimate flow needs a stack depth ≥ `barrierMaxDepth`, the constant must be revised
+in `barrier.go` and this document updated consistently.
 
-#### Residual — env-clearing (declared, no containment)
+#### Residual — env-clearing and direct variable override (declared, no containment)
 
 <!-- trackfw-contract: none reason=resíduo declarado sem contenção (Wave-0 threat model, ML-0A); não há gate — contramedida seria mais custosa que o defeito no cenário delimitado -->
 
 `env -i`, `sudo -i`, `docker run` without `-e`, and `ssh` discard `TRACKFW_BARRIER_STACK`.
 Since **both** the per-key check and the depth backstop depend on this variable, neither defence
 functions under env-clearing. Recursion becomes unlimited again.
+
+Direct variable override achieves the same effect: `TRACKFW_BARRIER_STACK=` (empty string),
+`TRACKFW_BARRIER_STACK=null`, or `TRACKFW_BARRIER_STACK=[] cmd` all produce an empty or
+nil stack and bypass both checks. The variable name is visible in `--help` output and in this
+document; an author who sets it is bypassing the protection intentionally.
 
 Alternative backstops were evaluated (PPID chain inspection, lock files) and rejected for
 portability cost or adverse side-effects. This residual is **declared and unmitigated**.

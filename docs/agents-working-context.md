@@ -43294,3 +43294,42 @@ Achados principais:
   barrier recusar antes de rodar o gate.
 - 3 mensagens literais do cli-parity.md batem byte-a-byte com o código.
 - Veredito: APROVA. Sem bloqueantes.
+
+## 2026-09-30 — apolo-tf — INÍCIO: ML-2C (Wave 3 do #485)
+
+Branch `fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite`.
+Corretivo: F1 (spec deviation waveLabel→target.Label), F2 (os.SameFile para hardlink/APFS case),
+F3 (doc residual), A1 (barrierMaxDepth constante), A2 (comentário nil proibido em runBarrier).
+Testes T7c/T7d/T7e escritos antes da correção, reprovação registrada, correção aplicada.
+
+## 2026-09-30 — apolo-tf — FIM: ML-2C concluído
+
+Branch `fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite`.
+Arquivos alterados: `internal/commands/barrier.go` · `internal/commands/barrier_reentry_test.go` · `docs/cli-parity.md`.
+
+Correções aplicadas:
+- F1: `barrierReentryKey` agora usa `target.Label` (header parsed), não `waveLabel` (CLI arg) — elimina o bypass de case (1b vs 1B).
+- F2: `sameRoadmapFile(a, b)` usa `os.SameFile` — fecha bypass por hardlink e APFS case-insensitive.
+- F3 (doc): `docs/cli-parity.md` residual expandido com formas de override direto (`TRACKFW_BARRIER_STACK=""`, `=null`, `=[] cmd`).
+- A1: `const barrierMaxDepth = 4` substitui o literal 4 no backstop e em T5.
+- A2: comentário em `runGateCommand` documenta que `env == nil` é proibido dentro de `runBarrier`.
+- `symlinkOrSkip` helper adicionado (conformidade com check-symlink-privilege-guard.sh).
+
+Testes: T7c/T7d/T7e escritos; reprovação contra binário pré-fix registrada; 12 PASS pós-fix.
+Gates: `go build` OK · `go test -run Reentry` OK · `barrierMaxDepth` e `os.SameFile` OK · `make quality` OK (exit=0, 347 OK, 0 FAIL).
+
+## 2026-09-30 — zeus-tf — FIM (implementação): #485 pronto para PR
+
+Waves 0–3 auditadas; barrier real (binário com a correção) `passed` nas 4. AC1–AC7 marcados com
+evidência; **AC8 fica aberto até o CI** (make quality local 347 OK / 0 FAIL, rodado pelo executor).
+
+Duas reprovações de auditoria, as duas em teste que não afirmava nada: o T3 (braço do AC3) saía 0
+mesmo com o barrier interno recusado; e a 1ª entrega da Wave 0 dizia que o backstop segurava sob
+`env -i` (ele mora na mesma variável). O Hades da Wave 2 achou 2 contornos reais (1b/1B e
+hardlink/caixa) — fechados no ML-2C com testes que reprovavam antes.
+
+🔴 **Erro meu:** gate de várias linhas. O `ParseGates` executa **cada linha** como `sh -c`
+separado; o meu gate da Wave 0 passava com `bash` e reprovava com 13 falhas sob o barrier real.
+Reescrito. **O gate da Wave 0 do #476 tem o mesmo defeito** — corrigir quando aquela frente voltar.
+
+Pendente: CI verde → PR (só a pedido) → fechamento pós-merge. Depois, retomar o #476.

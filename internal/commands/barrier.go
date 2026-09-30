@@ -379,6 +379,13 @@ const shMissingMsg = "gates not evaluated: sh not found in PATH — install a PO
 // barrierStackVar is the environment variable name that carries the reentry stack.
 const barrierStackVar = "TRACKFW_BARRIER_STACK"
 
+// barrierMaxDepth is the maximum allowed nesting depth of barrier invocations.
+// When the stack already has barrierMaxDepth entries, the next call is refused
+// even if none of those entries match the current (roadmap, wave) pair — this
+// is the backstop against indirect reentrance (e.g. via a chain of different
+// roadmaps that forms a cycle). Documented in docs/cli-parity.md (ML-2C, #485).
+const barrierMaxDepth = 4
+
 // barrierStackEntry is one element in the reentry stack.
 type barrierStackEntry struct {
 	Roadmap string `json:"roadmap"`
@@ -405,6 +412,36 @@ func barrierReentryKey(roadmapPath, waveLabel string) barrierStackEntry {
 		Roadmap: resolved,
 		Wave:    fmt.Sprintf("%d%s", n, suf),
 	}
+}
+
+// sameRoadmapFile reports whether paths a and b refer to the same underlying file.
+// It is used for roadmap identity in the reentry stack comparison (F2 fix, ML-2C #485).
+//
+// String equality is the fast path: if the two EvalSymlinks-resolved paths are
+// identical, the files are the same without any syscall. When they differ, we fall
+// back to os.Stat + os.SameFile which compares inode+device on Unix and
+// volume+file-index on Windows. This catches:
+//   - hardlinks (two names, one inode)
+//   - APFS/HFS+ case-insensitive aliases (EvalSymlinks preserves the provided case,
+//     not the canonical on-disk case; os.SameFile uses the inode, not the path string)
+//
+// If os.Stat fails for either path (e.g. the file was deleted since the key was
+// built), sameRoadmapFile returns false and the caller falls through to the string
+// comparison already embedded in the fast path — meaning the entry is not treated
+// as a match, which is safe (worst case: one extra level before backstop triggers).
+func sameRoadmapFile(a, b string) bool {
+	if a == b {
+		return true // fast path: identical strings
+	}
+	fa, err := os.Stat(a)
+	if err != nil {
+		return false
+	}
+	fb, err := os.Stat(b)
+	if err != nil {
+		return false
+	}
+	return os.SameFile(fa, fb)
 }
 
 // buildChildEnv constructs the environment to pass to gate child processes:
@@ -442,6 +479,11 @@ func buildChildEnv(stack []barrierStackEntry) []string {
 // env is the explicit environment to pass to the child process; it must include
 // the updated TRACKFW_BARRIER_STACK so that nested barrier invocations can detect
 // reentrance. If env is nil, the child inherits the current process environment.
+//
+// 🔴 Inside runBarrier, env == nil is PROHIBITED after the reentry stack is built:
+// passing nil silently bypasses TRACKFW_BARRIER_STACK propagation, allowing nested
+// barriers to miss the stack and fail to detect reentrance. nil is only correct for
+// direct unit tests of runGateCommand itself, outside of runBarrier.
 //
 // Returns the exit code and spawnFailed, which is true only when the process
 // never started at all (e.g. `sh` missing from $PATH). This is distinct from the
@@ -570,15 +612,21 @@ func runBarrier(cmd *cobra.Command, roadmapArg string, waveLabel string, jsonOut
 		}
 	}
 
-	currentKey := barrierReentryKey(roadmapPath, waveLabel)
+	// F1 fix (ML-2C, #485): use target.Label (the section header as parsed), not
+	// waveLabel (the CLI argument). CompareWaveLabels normalises case when finding
+	// the wave, so "--wave 1B" resolves to a header "## Wave 1b" whose Label is "1b".
+	// Using waveLabel would produce key "1B", which differs from the outer's key "1b"
+	// and allow one extra level before detection. The error message still shows the
+	// CLI argument (waveLabel) so the user sees exactly what they typed.
+	currentKey := barrierReentryKey(roadmapPath, target.Label)
 	for _, entry := range stack {
-		if entry.Roadmap == currentKey.Roadmap && entry.Wave == currentKey.Wave {
+		if sameRoadmapFile(entry.Roadmap, currentKey.Roadmap) && entry.Wave == currentKey.Wave {
 			usageExit(cmd, "reentrant call — %s wave %s is already being evaluated by an enclosing barrier",
 				filepath.Base(roadmapPath), waveLabel)
 			return
 		}
 	}
-	if len(stack) >= 4 {
+	if len(stack) >= barrierMaxDepth {
 		usageExit(cmd, "evaluation depth limit exceeded (%d nested barriers) — possible reentrant call via indirection",
 			len(stack))
 		return
