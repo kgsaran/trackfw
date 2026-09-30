@@ -683,6 +683,100 @@ func TestRunScaffoldDoctor_BothPresent_EmitsMigration(t *testing.T) {
 	}
 }
 
+// ─── ML-1D (ADR-2026-09-29): doctor skips validate.yml when it is a symlink ──
+
+// TestRunScaffoldDoctor_DiscoverWorkflow_Symlink_Silent asserts that when
+// trackfw-validate.yml is a symlink (even pointing at stale content), the doctor emits
+// NO scaffold-divergent finding for it — the symlink case is silently skipped because
+// trackfw update refuses to write through symlinks, making scaffold-divergent's remedy
+// inoperable.
+//
+// The symlink target contains stale content (no match to any known template) so that
+// the pre-fix os.Stat path would have emitted scaffold-divergent; with os.Lstat + the
+// symlink exclusion the finding disappears. This makes the test a genuine falsifier.
+//
+// ML-1D Regra Dura de Reconciliação sentence: this test affirms that ML-1D's Lstat
+// change is effective — a symlink at validate.yml no longer generates a scaffold-divergent
+// finding with an inoperable remedy (trackfw update), consistent with the pattern used
+// by discoverWorkflowPresent and the D3 gatePresent check.
+func TestRunScaffoldDoctor_DiscoverWorkflow_Symlink_Silent(t *testing.T) {
+	dir := t.TempDir()
+	// trackfw.yaml required for RunScaffoldDoctor eligibility check.
+	// No ci: key so the gate.yml CI section does not run — only the discover section.
+	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte("backend: go\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wfDir := filepath.Join(dir, ".github", "workflows")
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Create a target with stale content — pre-fix os.Stat would follow the link,
+	// compare "stale: true\n" to the template, and emit scaffold-divergent.
+	outside := t.TempDir()
+	staleTarget := filepath.Join(outside, "stale-workflow.yml")
+	if err := os.WriteFile(staleTarget, []byte("stale: true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	validatePath := filepath.Join(wfDir, "trackfw-validate.yml")
+	symlinkOrSkip(t, staleTarget, validatePath)
+
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	findings, err := RunScaffoldDoctor(dir)
+	if err != nil {
+		t.Fatalf("RunScaffoldDoctor error: %v", err)
+	}
+	for _, f := range findings {
+		if f.Destination == DiscoverGitHubActionsWorkflowPath {
+			t.Errorf("unexpected finding for symlinked validate.yml — remedy would be inoperable: %+v", f)
+		}
+	}
+}
+
+// TestRunScaffoldDoctor_DiscoverWorkflow_RegularStale_Accuses is the counter-arm:
+// when validate.yml is a REGULAR FILE with stale content, the doctor must still emit
+// scaffold-divergent — the Lstat guard must not suppress real divergence.
+//
+// ML-1D Regra Dura de Reconciliação sentence: this test affirms that the Lstat change
+// is scoped to symlinks only — a regular file with wrong content is still accused,
+// preserving the doctor's ability to detect genuine drift in the validate.yml template.
+func TestRunScaffoldDoctor_DiscoverWorkflow_RegularStale_Accuses(t *testing.T) {
+	dir := t.TempDir()
+	// trackfw.yaml required for RunScaffoldDoctor eligibility check.
+	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte("backend: go\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wfDir := filepath.Join(dir, ".github", "workflows")
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Regular file with stale content — must still be accused.
+	if err := os.WriteFile(filepath.Join(wfDir, "trackfw-validate.yml"), []byte("stale: true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	findings, err := RunScaffoldDoctor(dir)
+	if err != nil {
+		t.Fatalf("RunScaffoldDoctor error: %v", err)
+	}
+	found := false
+	for _, f := range findings {
+		if f.Destination == DiscoverGitHubActionsWorkflowPath {
+			found = true
+			if f.FindingKind != integrations.DoctorScaffoldDivergent {
+				t.Errorf("expected DoctorScaffoldDivergent for stale regular validate.yml, got %v", f.FindingKind)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("counter-arm: expected scaffold-divergent for stale regular validate.yml; got none: %+v", findings)
+	}
+}
+
 // TestRunScaffoldDoctor_OnlyGateYml_NoMigration is the counter-arm: when only gate.yml
 // is present (validate.yml absent), no migration finding must be emitted.
 //

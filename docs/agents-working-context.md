@@ -2,6 +2,37 @@
 
 ---
 
+## 2026-09-29 — Apolo (fix/dois-workflows-rodam-a-mesma-validacao — ML-1D Wave 1) — ENTREGUE
+
+**Inicio:** 2026-09-29 | **Fim:** 2026-09-29 | Branch: `fix/dois-workflows-rodam-a-mesma-validacao`
+**Tarefa:** ML-1D — `discover --init` também precisa do guarda D2; `scaffold_doctor` usa `os.Lstat` para symlinks
+
+**Arquivos modificados:**
+- `internal/discover/discover.go`: assinatura `writeCIWorkflow(rootDir string, w io.Writer)` — guarda D2 (ADR-2026-09-29): se `gate.yml` existe como arquivo regular, `validate.yml` não é escrito e mensagem informativa vai ao writer
+- `internal/generators/scaffold_doctor.go`: `os.Stat` → `os.Lstat` + `ModeSymlink == 0` no predicado de `validate.yml` — evita `scaffold-divergent` com remédio inoperável para symlinks
+- `internal/discover/discover_test.go`: 2 testes novos (`TestInstallGates_GateYmlPresent_ValidateYmlNotWritten`, `TestInstallGates_GateYmlAbsent_ValidateYmlWritten`) + atualização do call site
+- `internal/discover/nonfatal_refusal_grammar_test.go`: call sites atualizados para nova assinatura `(dir, io.Discard)`
+- `internal/generators/scaffold_doctor_test.go`: 2 testes novos (`TestRunScaffoldDoctor_DiscoverWorkflow_Symlink_Silent`, `TestRunScaffoldDoctor_DiscoverWorkflow_RegularStale_Accuses`)
+- `docs/cli-parity.md`: D2 atualizado — "fechado em ambos os lados pelo ML-1D"
+
+**Evidências:**
+- `go build ./...`: RC=0
+- `go test ./internal/discover/... ./internal/generators/...`: ok (full suite)
+- 7 testes Wave-1 (ML-1A + ML-1B): todos PASS por nome
+- 4 testes ML-1D: PASS
+- Wave 2 path: BEFORE=2 workflows (defeito), AFTER=1 workflow + mensagem informativa (corrigido)
+- `make quality`: EXIT=0, 0 FAIL
+- `trackfw validate`: EXIT=0 (lenient mode, 171 warnings pré-existentes, 0 erros)
+- `git diff --stat trackfw.yaml`: vazio
+
+**Regra Dura de Reconciliação (por teste novo):**
+- `TestInstallGates_GateYmlPresent_ValidateYmlNotWritten`: afirma que D2 está fechado no lado `discover --init` — gate.yml presente impede escrita de validate.yml (assimetria ML-1D)
+- `TestInstallGates_GateYmlAbsent_ValidateYmlWritten`: contra-braço — gate.yml ausente, validate.yml é escrito normalmente
+- `TestRunScaffoldDoctor_DiscoverWorkflow_Symlink_Silent`: afirma que Lstat é efetivo — symlink em validate.yml não gera `scaffold-divergent` com remédio inoperável
+- `TestRunScaffoldDoctor_DiscoverWorkflow_RegularStale_Accuses`: contra-braço — arquivo regular desatualizado continua acusado
+
+---
+
 ## 2026-09-29 — Apolo (fix/dois-workflows-rodam-a-mesma-validacao — ML-1B Wave 1) — ENTREGUE
 
 **Inicio:** 2026-09-29 | **Fim:** 2026-09-29 | Branch: `fix/dois-workflows-rodam-a-mesma-validacao`

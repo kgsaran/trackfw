@@ -375,8 +375,13 @@ func RunScaffoldDoctor(projectRoot string) ([]integrations.DoctorFinding, error)
 	// own DiscoveryResult.CISystem signal, not on trackfw.yaml's `ci:` key — a project
 	// can have discover's workflow without cfg.CI ever being set.
 	// ADR-2026-09-29 D3: a project with both workflows keeps both; ML-1B handles that case.
+	// ML-1D: os.Lstat + ModeSymlink check, consistent with discoverWorkflowPresent and the
+	// D3 gatePresent check above. A symlink at validate.yml is NOT checked — os.Stat would
+	// follow it, compare the target's content against the template, and emit scaffold-divergent
+	// whose remedy (trackfw update) is inoperant because update refuses to write through a
+	// symlink. Achado verdadeiro na forma, inútil no conteúdo — skipped.
 	discoverWorkflowPath := filepath.Join(projectRoot, DiscoverGitHubActionsWorkflowPath)
-	if _, err := os.Stat(discoverWorkflowPath); err == nil {
+	if dInfo, err := os.Lstat(discoverWorkflowPath); err == nil && dInfo.Mode()&os.ModeSymlink == 0 {
 		f := checkScaffoldArtifact(discoverWorkflowPath, DiscoverGitHubActionsWorkflowPath, []byte(BuildDiscoverGitHubActionsWorkflowContent(IsProducerGoMod(projectRoot))), true, false)
 		if f != nil {
 			findings = append(findings, *f)

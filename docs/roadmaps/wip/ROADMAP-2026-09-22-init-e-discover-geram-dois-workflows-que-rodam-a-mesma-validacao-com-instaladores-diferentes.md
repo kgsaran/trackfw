@@ -172,7 +172,7 @@ trackfw barrier ROADMAP-2026-09-22-init-e-discover-geram-dois-workflows-que-roda
 
 ### ML-1D — `discover --init` também precisa perguntar
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos:** `internal/discover/discover.go` (`writeCIWorkflow`:346) ·
 `internal/generators/scaffold_doctor.go` (:379) (+ testes)
 

@@ -6636,15 +6636,21 @@ que rodou `init`/`update` (que instalava `trackfw-gate.yml` — ver nota abaixo)
 **nome**, então `required_status_checks: [governance]` seria satisfeito por qualquer um dos três,
 imprevisivelmente — um portão que parece fechado sem estar.
 
-> ⚠️ **Atualização 2026-09-29 (`ADR-2026-09-29`, D2):** o parágrafo acima descreve o estado que
-> produziu o defeito do PR #241, e está no passado de propósito. Desde a `ADR-2026-09-29`, `init` e
-> `update` **não** escrevem o `trackfw-gate.yml` quando o `trackfw-validate.yml` já existe — a
-> coexistência dos dois deixou de ser produzida pelo produto. Projeto que **já** tem os dois
-> instalados os mantém (D3: nada é removido automaticamente, porque o job id removido pode ser um
-> required check que o produto não tem como verificar), e o `doctor` **avisa**. Paridade perfeita no erro: os 3 CLIs
-concordavam entre si e os 3 estavam errados; nenhum gate de paridade byte-a-byte (inclusive
-`check-ci-workflow-pin-parity.sh` acima) pegaria isso, porque paridade mede concordância entre os
-runtimes, não correção do valor em si.
+> ⚠️ **Atualização 2026-09-29 (`ADR-2026-09-29`, D2 — fechado em ambos os lados pelo ML-1D):** o
+> parágrafo acima descreve o estado que produziu o defeito do PR #241, e está no passado de
+> propósito. Desde a `ADR-2026-09-29`:
+> - `init` e `update` **não** escrevem `trackfw-gate.yml` quando `trackfw-validate.yml` já existe
+>   como arquivo regular (ML-1A, `generateGitHubActionsWorkflow`, `scaffold.go`).
+> - `discover --init` **não** escreve `trackfw-validate.yml` quando `trackfw-gate.yml` já existe
+>   como arquivo regular (ML-1D, `writeCIWorkflow`, `discover.go`). Simetria com o ponto anterior —
+>   a assimetria (só um lado guardava) era o defeito.
+>
+> A coexistência dos dois deixou de ser produzida pelo produto pela outra porta. Projeto que **já**
+> tem os dois instalados os mantém (D3: nada é removido automaticamente, porque o job id removido
+> pode ser um required check que o produto não tem como verificar), e o `doctor` **avisa**. Paridade
+> perfeita no erro: os 3 CLIs concordavam entre si e os 3 estavam errados; nenhum gate de paridade
+> byte-a-byte (inclusive `check-ci-workflow-pin-parity.sh` acima) pegaria isso, porque paridade
+> mede concordância entre os runtimes, não correção do valor em si.
 
 **Os dois workflows verificam a mesma propriedade** (`trackfw validate` passa) por dois mecanismos
 de instalação diferentes — ver "O que cada template pina" acima. Os novos ids nomeiam o

@@ -29,3 +29,4 @@
 - [Agente não roda init na árvore](feedback_agente_nao_roda_init_na_arvore.md) — `trackfw init` reescreve o `trackfw.yaml`; 170 warnings viraram 156 violations e o executor chamou de pré-existente
 - [Replace sem assert mente](feedback_replace_sem_assert_mente.md) — edição que não casa devolve o texto intacto; commitei dizendo que marquei ACs que não marquei
 - [Proibir make quality cega o executor](feedback_proibir_make_quality_cega_o_executor.md) — certo com frente paralela; autorize no ML final, senão regressão de gate vizinho só aparece no fim
+- [Nome de teste no relatório se verifica](feedback_nome_de_teste_no_relatorio_se_verifica.md) — 3 de 7 nomes reportados como PASS não existiam; `go test -run` com nome inexistente imprime `ok`

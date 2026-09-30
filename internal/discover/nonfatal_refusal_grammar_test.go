@@ -1,6 +1,7 @@
 package discover
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -55,7 +56,7 @@ func TestWriteCIWorkflowRefusalUsesTheSingleGrammar(t *testing.T) {
 	clean := t.TempDir()
 	var cleanErr error
 	cleanOutput := captureStderrDiscover(t, func() {
-		cleanErr = writeCIWorkflow(clean)
+		cleanErr = writeCIWorkflow(clean, io.Discard)
 	})
 	if cleanErr != nil {
 		t.Fatalf("clean tree must install the workflow, got: %v", cleanErr)
@@ -78,7 +79,7 @@ func TestWriteCIWorkflowRefusalUsesTheSingleGrammar(t *testing.T) {
 
 	var err error
 	output := captureStderrDiscover(t, func() {
-		err = writeCIWorkflow(root)
+		err = writeCIWorkflow(root, io.Discard)
 	})
 
 	if err != nil {
