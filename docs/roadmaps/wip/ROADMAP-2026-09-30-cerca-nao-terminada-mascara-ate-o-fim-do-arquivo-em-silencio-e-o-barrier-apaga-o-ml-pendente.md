@@ -97,6 +97,20 @@ print(n)
 "); test "$n" = "5" && echo "Gate W0 OK: $n sítios com cerca aberta — é o universo que a Wave 1 corrige" || { echo "GATE FALHOU: esperava 5 sítios, contou $n — a população mudou, remeça a enumeração antes de implementar" >&2; exit 1; }
 ```
 
+## 🔴 BLOQUEADO em 2026-09-30 — aguarda o #485
+
+**Por quê:** a Wave 1 desta REQ altera `internal/commands/barrier.go` e
+`internal/roadmapdoc/roadmapdoc.go`. O **#485** (gate auto-referencial recursa sem limite) altera o
+**mesmo** `barrier.go`, na execução dos gates da wave. Arquivos compartilhados → **sequencial**, e a
+razão fica escrita, como a regra de paralelização exige.
+
+**Ordem:** #485 primeiro, por ser mais grave — DoS local acionável por um arquivo de texto, contra um
+defeito cujo dano hoje é diferido (as 5 caudas mascaradas são só prosa).
+
+**Descoberto aqui:** o #485 apareceu **ao escrever o gate da Wave 0 deste roadmap**. O gate era
+`trackfw barrier <este roadmap> --wave 0` — o executor dentro do bloco que ele executa. 3469
+processos em ~6 min. Substituído por um gate de verificação real, que passa.
+
 ## Wave 1 — a detecção
 > 🔴 **Dependências: Wave 0 auditada.** Os MLs saem do veredito do ML-0A e da decisão sobre o
 > comportamento do `serve` — **escritos depois, não antes.**
