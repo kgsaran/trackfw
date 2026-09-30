@@ -114,5 +114,102 @@ print(n)
 "); test "$n" = "0" && echo "Gate W0 OK: parecer presente, 0 gates reentrantes no acervo" || { echo "GATE FALHOU: $n gates que invocam barrier no acervo" >&2; exit 1; }
 ```
 
-## Wave 1 — Implementação
-> Dependências: Wave 0 auditada. MLs escritos pelo arquiteto **a partir do parecer**, não antes.
+## Wave 1 — Implementação (1 ML)
+> Dependências: Wave 0 auditada (✅, commit da Wave 0). Um só ML: código, testes, contrato e doc
+> compartilham `barrier.go` e o índice do git — dividir só serializaria.
+
+### ML-1A — pilha de chaves `(roadmap, wave)` no `barrier`
+**Owner:** `apolo-tf`
+**Status:** ⬜ Pendente
+**Arquivos afetados:** `internal/commands/barrier.go` · `internal/commands/barrier_reentry_test.go`
+(novo) · `docs/cli-parity.md` (§ `trackfw barrier`) · `scripts/check-barrier.sh` (só se o contrato
+fixar mensagens de exit 2 ali)
+**Desenho (do parecer `docs/seguranca/2026-09-30-wave0-gate-reentrante-no-barrier.md`):**
+
+1. **Variável:** `TRACKFW_BARRIER_STACK`, valor = **array JSON** de objetos
+   `{"roadmap":"<caminho>","wave":"<label canônico>"}`. JSON e não separador, porque caminho pode
+   conter `|`, `:` (Windows) ou qualquer outro caractere.
+2. **Chave:** `roadmap` = `filepath.EvalSymlinks(filepath.Abs(roadmapPath))` (se `EvalSymlinks`
+   falhar, usar o `Abs`); `wave` = `fmt.Sprintf("%d%s", SplitWaveLabel(target.Label))`, assim
+   `1b` e `1-b` viram a mesma chave, igual ao `CompareWaveLabels`.
+3. **Onde:** em `runBarrier`, **logo depois** de resolver `target` (o erro "wave not found" continua
+   com precedência) e **antes** de qualquer check. Ordem:
+   - variável presente e JSON inválido → `usageExit(cmd, "TRACKFW_BARRIER_STACK is malformed: %s", err)`
+   - chave atual já na pilha → `usageExit(cmd, "reentrant call — %s wave %s is already being evaluated by an enclosing barrier", filepath.Base(roadmapPath), waveLabel)`
+   - `len(pilha) >= 4` → `usageExit(cmd, "evaluation depth limit exceeded (%d nested barriers) — possible reentrant call via indirection", len(pilha))`
+4. **Propagação:** só para os **filhos dos gates**. `runGateCommand` passa a receber o ambiente
+   (`c.Env`), formado por `os.Environ()` **sem** entradas `TRACKFW_BARRIER_STACK` anteriores, mais a
+   pilha com a chave atual acrescentada. No Windows o nome de variável é case-insensitive: remova
+   comparando com `strings.EqualFold` no nome. O processo do próprio `barrier` não chama `os.Setenv`.
+5. **Resíduo, não implementar:** `env -i` apaga a pilha e o teto junto, e fica **sem** contenção
+   (parecer, § Resíduo 1).
+
+**🔴 Segurança operacional:** todo teste de reentrada usa um **fusível em shell** independente da
+correção: o gate da fixture começa com
+`[ "${T_FUSE:-0}" -lt 3 ] || exit 99; export T_FUSE=$(( ${T_FUSE:-0} + 1 ));`. Assim, contra o
+binário antigo o teste **reprova** com exit 99 em vez de virar fork bomb. Rode o teste **antes** de
+implementar e registre essa reprovação: é a prova de que o teste afirma algo. Cada `exec.Command`
+dos testes tem `context.WithTimeout` de 60 s. Contenção, se algo escapar: `pkill -9 -x trackfw`.
+Nunca use `pkill -f`.
+
+**Testes** (`barrier_reentry_test.go`, com `barrierBinary(t)` e `cmd.Env` explícito, **sem** herdar
+um `TRACKFW_BARRIER_STACK` de fora):
+- T1 reentrada direta: o gate chama o próprio roadmap e a própria wave → a externa sai 1, o gate
+  falha com `exit 2`, e o stderr do filho (redirecionado para arquivo) contém `reentrant call`
+- T2 indireção: o gate roda `sh ./reenter.sh`, que chama o mesmo par → mesma recusa
+- T3 🔴 legítimo aninhado: o gate chama `barrier` sobre **outro** roadmap que passa → a externa sai **0**
+- T4 duas execuções sequenciais do mesmo par → ambas 0
+- T5 backstop: `cmd.Env` com pilha de 4 chaves distintas → exit 2 e `evaluation depth limit exceeded`
+- T6 pilha malformada (`not-json`) → exit 2 e `is malformed`
+- T7 canonicalização: reentrada pelo **symlink** do roadmap, e pela wave `1-b` contra `1b` → recusada
+
+**Critérios de aceite:**
+- [ ] T1–T7 existem e passam: `go test ./internal/commands/ -run 'Reentry' -v`, contando `^--- PASS`
+  (7 ou mais). `ok` sozinho não prova nada
+- [ ] Contra o binário **antigo** (antes da mudança), T1 e T2 reprovam pelo fusível (exit 99). A
+  saída é colada no relatório
+- [ ] `go build ./...` · `go test ./internal/commands/` verde
+- [ ] `docs/cli-parity.md` § `trackfw barrier`: a variável, o formato, as 3 mensagens literais, o
+  exit 2 e o resíduo do `env -i`
+- [ ] Gate da Wave 0 continua passando (acervo com 0 gates reentrantes)
+- [ ] `make quality` verde (autorizado neste ML: é a única frente ativa)
+- [ ] Relatório com uma frase por teste novo dizendo **qual conclusão** ele afirma (Regra de Reconciliação)
+
+**Gates da wave:**
+```bash
+go build ./...
+go test ./internal/commands/ -run 'Reentry' -count=1
+n=$(go test ./internal/commands/ -run 'Reentry' -count=1 -v 2>&1 | grep -c '^--- PASS'); test "$n" -ge 7 || { echo "GATE FALHOU: $n testes de reentrada passaram, esperava >= 7" >&2; exit 1; }
+grep -q 'TRACKFW_BARRIER_STACK' docs/cli-parity.md
+```
+
+## Wave 2 — Revisão independente (2 MLs em paralelo, só leitura de código)
+> Dependências: Wave 1 auditada. Os dois escrevem **só** o próprio parecer: arquivos disjuntos.
+
+### ML-2A — segurança: reimplementar a partir da leitura
+**Owner:** `hades-tf`
+**Status:** ⬜ Pendente
+**Entregável:** `docs/seguranca/2026-09-30-wave2-revisao-reentrada-barrier.md`
+**Ações:** sem olhar os testes do ML-1A, derivar do código quais entradas contornam a pilha (fora o
+`env -i`, já declarado) e **tentar**: caminho com `..`, hardlink, roadmap em `done/` vs `wip/`,
+variável duplicada no env, JSON com chaves extras e Windows (case do nome da variável). Toda
+reprodução com fusível e `timeout`.
+**Critérios de aceite:**
+- [ ] Cada contorno tentado com o comando e a saída
+- [ ] Veredito: aprova, ou bloqueia com um ML corretivo proposto
+
+### ML-2B — qualidade de código
+**Owner:** `hefesto-tf`
+**Status:** ⬜ Pendente
+**Entregável:** `docs/qualidade/2026-09-30-wave2-reentrada-barrier.md`
+**Ações:** revisar o diff do ML-1A: assinatura do `runGateCommand`, duplicação, testes frágeis
+(tempo, ordem) e se o fusível pode mascarar uma falha real.
+**Critérios de aceite:**
+- [ ] Achados com `arquivo:linha` e severidade
+- [ ] Veredito: aprova ou bloqueia
+
+**Gates da wave:**
+```bash
+test -f docs/seguranca/2026-09-30-wave2-revisao-reentrada-barrier.md
+test -f docs/qualidade/2026-09-30-wave2-reentrada-barrier.md
+```
