@@ -90,28 +90,16 @@ da `main` do ROADMAP-2026-09-22 (contra-braço: o detector acusa a mina quando e
 
 **Gates da wave:**
 
+> ⚠️ **Reescrito em uma linha em 2026-09-30.** A versão original era um `python3 -c "..."` de
+> várias linhas e passava com `bash`, mas o `barrier` executa **cada linha** como um comando separado:
+> sob o barrier real ela reprovava com 13 falhas. Achado do ML-2A (F4); o erro de escrita era meu.
+
 > 🔴 **O gate de uma wave NUNCA pode ser `trackfw barrier` sobre a própria wave.** É o defeito que
 > este roadmap corrige.
 
 ```bash
 test -f docs/seguranca/2026-09-30-wave0-gate-reentrante-no-barrier.md || { echo "GATE FALHOU: parecer da Wave 0 ausente" >&2; exit 1; }
-n=$(python3 -c "
-import glob,re
-B=re.compile(r'^\s*(trackfw|\./bin/trackfw|bin/trackfw)\s+barrier\b')
-F=re.compile(r'^\s*(\`{3,}|~{3,})')
-n=0
-for f in glob.glob('docs/roadmaps/**/*.md',recursive=True):
-    L=open(f,encoding='utf-8',errors='replace').read().split(chr(10))
-    for i,l in enumerate(L):
-        if '**Gates da wave:**' not in l: continue
-        j=i+1
-        while j<len(L) and not F.match(L[j]): j+=1
-        j+=1
-        while j<len(L) and not re.match(r'^\s*(\`{3,}|~{3,})\s*$',L[j]):
-            if B.match(L[j]): n+=1
-            j+=1
-print(n)
-"); test "$n" = "0" && echo "Gate W0 OK: parecer presente, 0 gates reentrantes no acervo" || { echo "GATE FALHOU: $n gates que invocam barrier no acervo" >&2; exit 1; }
+n=$(python3 -c "import glob,re;B=re.compile(r'^\s*(trackfw|\./bin/trackfw|bin/trackfw)\s+barrier\b',re.M);G=re.compile(r'\*\*Gates da wave:\*\*.*?\n[ \t]*(\`{3,}|~{3,})[^\n]*\n(.*?)\n[ \t]*\1[ \t]*(?:\n|\Z)',re.S);print(sum(len(B.findall(m.group(2))) for f in glob.glob('docs/roadmaps/**/*.md',recursive=True) for m in G.finditer(open(f,encoding='utf-8',errors='replace').read())))"); test "$n" = "0" && echo "Gate W0 OK: parecer presente, 0 gates reentrantes no acervo" || { echo "GATE FALHOU: $n gates que invocam barrier no acervo" >&2; exit 1; }
 ```
 
 ## Wave 1 — Implementação (1 ML)
@@ -188,28 +176,72 @@ grep -q 'TRACKFW_BARRIER_STACK' docs/cli-parity.md
 
 ### ML-2A — segurança: reimplementar a partir da leitura
 **Owner:** `hades-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Entregável:** `docs/seguranca/2026-09-30-wave2-revisao-reentrada-barrier.md`
 **Ações:** sem olhar os testes do ML-1A, derivar do código quais entradas contornam a pilha (fora o
 `env -i`, já declarado) e **tentar**: caminho com `..`, hardlink, roadmap em `done/` vs `wip/`,
 variável duplicada no env, JSON com chaves extras e Windows (case do nome da variável). Toda
 reprodução com fusível e `timeout`.
 **Critérios de aceite:**
-- [ ] Cada contorno tentado com o comando e a saída
-- [ ] Veredito: aprova, ou bloqueia com um ML corretivo proposto
+- [x] Cada contorno tentado com o comando e a saída
+- [x] Veredito: aprova, ou bloqueia com um ML corretivo proposto
 
 ### ML-2B — qualidade de código
 **Owner:** `hefesto-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Entregável:** `docs/qualidade/2026-09-30-wave2-reentrada-barrier.md`
 **Ações:** revisar o diff do ML-1A: assinatura do `runGateCommand`, duplicação, testes frágeis
 (tempo, ordem) e se o fusível pode mascarar uma falha real.
 **Critérios de aceite:**
-- [ ] Achados com `arquivo:linha` e severidade
-- [ ] Veredito: aprova ou bloqueia
+- [x] Achados com `arquivo:linha` e severidade
+- [x] Veredito: aprova ou bloqueia
 
 **Gates da wave:**
 ```bash
 test -f docs/seguranca/2026-09-30-wave2-revisao-reentrada-barrier.md
 test -f docs/qualidade/2026-09-30-wave2-reentrada-barrier.md
+```
+
+## Wave 3 — Corretivo (bloqueador do ML-2A)
+> Dependências: Wave 2 auditada (ML-2A ✅, ML-2B ✅). Bloqueia: dois achados do ML-2A (F1 desvio de spec, F2 identidade por `os.SameFile`).
+
+### ML-2C — corrigir F1 (spec deviation) e F2 (os.SameFile) do ML-2A
+**Owner:** `apolo-tf`
+**Status:** ⬜ Pendente
+**Arquivos afetados:** `internal/commands/barrier.go` · `internal/commands/barrier_reentry_test.go` · `docs/cli-parity.md`
+
+**Achados que fecha:**
+- **F1 (spec deviation):** `barrier.go:573` usa `waveLabel` (CLI arg) em vez de `target.Label` (header parsed). `CompareWaveLabels` normaliza case para ENCONTRAR a wave, mas a chave usa `SplitWaveLabel(waveLabel)` que preserva case — `1b` e `1B` produzem chaves distintas. Fix: `barrierReentryKey(roadmapPath, target.Label)`.
+- **F2 (identidade por string):** comparação `entry.Roadmap == currentKey.Roadmap` falha para hardlinks e APFS basename case (EvalSymlinks preserva o case dado, não o canônico do disco; `os.SameFile(lower, upper) = true`). Fix: `sameRoadmapFile(a, b string) bool` usando `os.SameFile`.
+- **F3 (doc):** `docs/cli-parity.md` residual não lista `TRACKFW_BARRIER_STACK=""`, `=null`, `=[] cmd` como formas de override direto. Fix: documentação.
+
+**Ações:**
+1. `barrier.go:573`: mudar `barrierReentryKey(roadmapPath, waveLabel)` → `barrierReentryKey(roadmapPath, target.Label)`.
+2. `barrier.go`: adicionar `func sameRoadmapFile(a, b string) bool` com `os.SameFile` (fast path `a == b`).
+3. `barrier.go` loop (linhas ~574-578): mudar `entry.Roadmap == currentKey.Roadmap` → `sameRoadmapFile(entry.Roadmap, currentKey.Roadmap)`.
+4. `barrier_reentry_test.go`: subtestes T7c (1b/1B), T7d (hardlink), T7e (APFS case — skip se FS case-sensitive). **Fusível e chamada na mesma linha de gate.** Para cada teste, registrar no relatório que o vetor REPROVA antes da correção.
+5. `docs/cli-parity.md` § residual: acrescentar formas de override direto.
+6. **(Hefesto A1)** `barrier.go`: `const barrierMaxDepth = 4`, usada no backstop; o T5 monta a pilha
+   com `barrierMaxDepth` entradas; o `cli-parity.md` cita o nome da constante ao lado do número.
+7. **(Hefesto A2)** comentário de `runGateCommand`/`evalGateCommands`: dentro de `runBarrier` é
+   **proibido** passar `env == nil`, porque isso desliga a propagação da pilha em silêncio. `nil` só
+   é aceitável em teste unitário direto.
+8. 🔴 **Gate de uma linha só.** O `ParseGates` executa **cada linha** do bloco como um `sh -c`
+   separado (nota `vault/notes/parsegates-per-line-isolation-fuse-same-line-2026-09-30.md`). Todo
+   gate de fixture tem o fusível **na mesma linha** da chamada ao `barrier`.
+
+**Critérios de aceite:**
+- [ ] T7c/T7d/T7e existem e passam
+- [ ] Contra o binário ANTES de (1): T7c reprova (bypass medido)
+- [ ] `go test ./internal/commands/ -run 'Reentry' -count=1`: todos passam
+- [ ] `make quality` verde
+- [ ] Uma frase por teste novo afirmando a conclusão (Regra de Reconciliação)
+- [ ] `grep -c 'barrierMaxDepth' internal/commands/barrier.go` ≥ 2 e nenhum `>= 4` literal no backstop
+
+**Gates da wave:**
+```bash
+go build ./...
+go test ./internal/commands/ -run 'Reentry' -count=1
+grep -q 'barrierMaxDepth' internal/commands/barrier.go
+grep -q 'os.SameFile' internal/commands/barrier.go
 ```

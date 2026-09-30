@@ -2,6 +2,27 @@
 
 ---
 
+## 2026-09-30 — Hades (fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite — ML-2A) — ENTREGUE
+
+**Inicio:** 2026-09-30 | **Fim:** 2026-09-30 | Branch: `fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite`
+**Tarefa:** ML-2A — revisão independente de segurança (Wave 2, #485); reimplementar a partir do código sem ler os testes do ML-1A
+
+**Arquivos escritos:**
+- `docs/seguranca/2026-09-30-wave2-revisao-reentrada-barrier.md`: parecer com 13 vetores, 2 achados bloqueadores (F1, F2), 1 gap de doc (F3)
+- `docs/roadmaps/wip/ROADMAP-2026-09-30-...`: ML-2A marcado ✅ Concluído; ML-2C (Wave 3 corretiva) adicionado ⬜ Pendente
+
+**Veredito: BLOQUEIA**
+
+**Achados principais:**
+- F1: `barrier.go:573` usa `waveLabel` (CLI arg) em vez de `target.Label` (spec). Wave case mismatch (`1b` vs `1B`) não detectado na L2 — diferença de chave. Fix: 1 linha.
+- F2: Comparação de roadmap por string. `EvalSymlinks` preserva case em APFS; hardlinks têm paths diferentes. `os.SameFile` fecha ambos.
+- F3 (doc): formas de override direto da variável (`=""`, `=null`, `=[] cmd`) não listadas no residual. Sem mudança de código.
+- F4 (meta): T_FUSE multi-linha não funciona; teste 6b causou fork bomb ~120s sem contenção efetiva (pkill alvejou nome errado). Nenhum orphan confirmado pelo check pós-kill.
+
+**Incidente de contenção:** gate de teste multi-linha (fuse separado da chamada) + pkill com nome incorreto. Documentado no parecer.
+
+---
+
 ## 2026-09-30 — Apolo (fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite — ML-1A corretivo) — ENTREGUE
 
 **Inicio:** 2026-09-30 | **Fim:** 2026-09-30 | Branch: `fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite`
@@ -43250,3 +43271,26 @@ Achados principais:
 - 0 gates no acervo desta branch invocam `trackfw barrier` (medido por extração de bloco).
 - Todas as 3 premissas da REQ confirmadas; nenhuma mudança de escopo.
 - Exit code recomendado: 2 (usage error), mensagem nomeia o ciclo explicitamente.
+
+## 2026-09-30 — hefesto-tf — INÍCIO: ML-2B do #485 (revisão de qualidade de código)
+
+Branch `fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite`.
+Revisão do commit `231b2f4c`: `internal/commands/barrier.go`, `barrier_reentry_test.go`,
+`barrier_test.go`, `docs/cli-parity.md`.
+
+## 2026-09-30 — hefesto-tf — FIM: ML-2B concluído, APROVA
+
+Entregável: `docs/qualidade/2026-09-30-wave2-reentrada-barrier.md`.
+Medições: `go vet` limpo · `gofmt` limpo · 7/7 testes Reentry PASS (1.9s).
+
+Achados principais:
+- A1 (deveria): `barrier.go:581` literal `4` sem constante nomeada (`barrierMaxDepth`);
+  T5 e cli-parity.md têm o número solto, sem vínculo ao código.
+- A2 (deveria): assinatura `runGateCommand(cmd, nil)` — `nil` segue convenção Go stdlib mas
+  o contrato "nil só em unit tests diretos, nunca dentro de runBarrier pós-pilha" é implícito.
+- A3/A4 (opcionais): `roadmapPath` descartado em T5; `runBarrierReentry` vs `runBarrierCLI`
+  são diferenças legítimas, não duplicação.
+- T_FUSE não pode mascarar falha: o fusível só passa se NÃO disparar, e só não dispara se o
+  barrier recusar antes de rodar o gate.
+- 3 mensagens literais do cli-parity.md batem byte-a-byte com o código.
+- Veredito: APROVA. Sem bloqueantes.
