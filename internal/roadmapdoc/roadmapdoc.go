@@ -309,7 +309,41 @@ func DetectFenceMarker(trimmed string) (ch byte, length int, ok bool) {
 // ParseGates already has its own, independent fence-matching for the
 // "```bash ... ```" gates block and is untouched by this mask.
 func FenceMask(lines []string) []bool {
+	mask, _ := fenceScan(lines)
+	return mask
+}
+
+// UnterminatedFenceLine devolve o numero de linha (1-based) da ultima cerca que
+// ABRIU e nunca fechou, ou 0 quando todas fecham.
+//
+// Existe para a regra 6 do docs/cli-parity.md, que promete: "an unterminated fence
+// is a usage error (exit 2) with an explicit message naming the offending line
+// number — never a silent pass". Ate a #476, a unica implementacao dessa promessa
+// era a da cerca de GATES ("unterminated gates fence"); no nivel do documento o
+// FenceMask simplesmente mascarava ate o fim do arquivo, em silencio.
+//
+// 🔴 Medido na #476, com validate limpo nos dois bracos e UMA linha de diferenca:
+//
+//	cerca fecha  -> mls_complete blocked (ML pendente) · acceptance blocked · rc=1
+//	cerca ABERTA -> mls_complete passed             · acceptance passed  · rc=0
+//
+// Uma crase faltando fazia a wave PASSAR com um ML pendente e um criterio em
+// aberto dentro dela — o "silent pass" que a regra 6 nomeia e proibe.
+//
+// Sai da MESMA varredura que o FenceMask (fenceScan) de proposito: dois caminhos
+// que classificam cerca de forma independente podem divergir, e a divergencia
+// seria invisivel — a mascara diria "dentro", o detector diria "fechada", e
+// ninguem compara os dois.
+func UnterminatedFenceLine(lines []string) int {
+	_, aberta := fenceScan(lines)
+	return aberta
+}
+
+// fenceScan e a varredura unica. Devolve a mascara e, quando alguma cerca ficou
+// aberta ao fim do documento, a linha 1-based em que ela abriu (0 se nenhuma).
+func fenceScan(lines []string) ([]bool, int) {
 	mask := make([]bool, len(lines))
+	aberturaEmAberto := 0
 	fenced := false
 	var fenceChar byte
 	var fenceLen int
@@ -321,6 +355,7 @@ func FenceMask(lines []string) []bool {
 				fenced = true
 				fenceChar = ch
 				fenceLen = length
+				aberturaEmAberto = i + 1
 				continue
 			}
 			continue
@@ -341,11 +376,12 @@ func FenceMask(lines []string) []bool {
 		// an info string after the opening run (` ```bash `).
 		if isFence && ch == fenceChar && length >= fenceLen && length == len(trimmed) {
 			fenced = false
+			aberturaEmAberto = 0
 			continue
 		}
 		mask[i] = true
 	}
-	return mask
+	return mask, aberturaEmAberto
 }
 
 // ────────────────────────────────────────────────────────────────────────────

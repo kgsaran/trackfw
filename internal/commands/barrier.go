@@ -561,6 +561,25 @@ func runBarrier(cmd *cobra.Command, roadmapArg string, waveLabel string, jsonOut
 		return
 	}
 	lines := splitRoadmapLines(string(data))
+
+	// Regra 6 (docs/cli-parity.md): "an unterminated fence is a usage error (exit 2)
+	// with an explicit message naming the offending line number — never a silent pass".
+	// Ate a #476 a unica implementacao dessa promessa era a da cerca de GATES; no nivel
+	// do documento, o FenceMask mascarava ate o fim do arquivo em silencio.
+	//
+	// 🔴 A verificacao vem ANTES de qualquer parsing: com a cerca aberta, todo conteudo
+	// que vier depois dela esta mascarado, entao waves, MLs, status e aceite lidos dali
+	// em diante descrevem um documento truncado. Medido na #476, com validate limpo nos
+	// dois bracos e UMA linha de diferenca: a wave PASSOU (rc=0) com um ML pendente e um
+	// criterio em aberto dentro dela. Reprovar depois de parsear seria reprovar com o
+	// numero errado; reprovar aqui e recusar o documento.
+	if aberta := roadmapdoc.UnterminatedFenceLine(lines); aberta > 0 {
+		usageExit(cmd, "unterminated fence starting at line %d in roadmap %q: "+
+			"everything after it is masked as code, so waves, MLs and acceptance blocks "+
+			"below that line cannot be read (docs/cli-parity.md rule 6)", aberta, filepath.Base(roadmapPath))
+		return
+	}
+
 	fenced := fenceMask(lines)
 
 	waves, malformed := parseWaves(lines, fenced)

@@ -2545,7 +2545,7 @@ CLI, knowing what they accept.
 
 ### Roadmap parsing rules (string-level — no heuristics)
 
-<!-- trackfw-contract: gate=scripts/check-barrier.sh partial=regras 3, 4 e 5 são exercitadas cross-CLI pelos cenários isolated-check; a regra 6 (fence não-terminado, ML cujo corpo não pode ser delimitado como usage error nomeado) não tem cenário — grep por "unterminated"/"fence"/"cannot be delimited" no gate não retorna nada -->
+<!-- trackfw-contract: gate=scripts/check-barrier.sh partial=regras 3, 4 e 5 são exercitadas cross-CLI pelos cenários isolated-check; da regra 6, a metade do FENCE NÃO-TERMINADO passou a ter cobertura em internal/roadmapdoc/unterminated_fence_test.go (4 casos, um deles controle, falsificados por injeção — #476), mas ainda NÃO tem cenário no check-barrier.sh: grep por "unterminated" no gate continua não retornando nada. A outra metade (ML cujo corpo não pode ser delimitado como usage error nomeado) segue sem cobertura em qualquer lugar -->
 
 
 These are literal parsing rules. All three runtimes must implement them identically.
@@ -2607,6 +2607,23 @@ These are literal parsing rules. All three runtimes must implement them identica
 6. **Malformed input.** A wave heading whose number is not parseable, an ML whose body cannot
    be delimited, or an unterminated fence is a usage error (exit 2) with an explicit message
    naming the offending line number — never a silent pass.
+
+   **Unterminated fence, at the document level (#476).** Checked **before any parsing**, because
+   everything after an unclosed fence is masked as code: waves, MLs, `**Status:**` and acceptance
+   blocks below that line cannot be read at all. Until #476 this half of the rule had an
+   implementation only for the **gates** fence (`unterminated gates fence starting at line N`);
+   at the document level `FenceMask` masked to end-of-file in silence, and the promise
+   "never a silent pass" was false by measurement:
+
+   ```
+   two arms, validate clean in both, ONE line of difference (the closing ```)
+     fence closes  ->  mls_complete blocked (pending ML) · acceptance blocked · rc=1
+     fence OPEN    ->  mls_complete passed               · acceptance passed  · rc=0
+   ```
+
+   The detector (`roadmapdoc.UnterminatedFenceLine`) and `FenceMask` come out of the **same scan**
+   (`fenceScan`): two independent fence classifiers could disagree — the mask saying "inside", the
+   detector saying "closed" — and nothing would compare them.
 
 ### Wave gates are a portable POSIX-shell contract, not an OS script (ADR-2026-09-01)
 

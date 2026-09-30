@@ -469,15 +469,27 @@ CORPUS_VERDICTS_PIN="$ROOT_DIR/scripts/testdata/roadmap-barrier-corpus-verdicts.
 #     do snapshot; o que muda e o veredito de cada um.
 #   O hash foi conferido em DUAS maquinas independentes — o runner do CI e a do autor —
 #   derivando a mesma tabela a partir das mesmas 4 hunks.
-PINNED_CORPUS_HASH="b08dffce1b50abf9c5b3092a0a4edef401c132cf91dbc8516c1efc610e620427"
+# #476 — cerca nao terminada passou a ser erro de uso (exit 2), como a regra 6 do
+# docs/cli-parity.md sempre prometeu. O ROADMAP-2026-08-22-wave-0-...-trackfw-push.md
+# tem cerca aberta na linha 460, entao o documento inteiro e recusado antes do parsing
+# e exit 2 nao gera linha na tabela. Medido por efeito, wave a wave:
+#   waves 0, 1, 2      rc=1 com veredito  ->  rc=2     (-6 linhas na tabela)
+#   waves 2-bis, 3, 4  rc=2               ->  rc=2     (ja eram, desde o #470)
+# Dai exit2 3 -> 6: as seis waves do arquivo agora recusam.
+#   mls_complete        evidence -3   (waves 0, 1, 2)
+#   acceptance_evidence evidence -1 (wave 0) · failure -2 (waves 1 e 2)
+# 🔴 Diferente do #470, este hash NAO foi cruzado com o de um runner — o PR ainda nao
+# havia rodado quando ele foi derivado. Ele sai de uma maquina so; o CI e a segunda
+# fonte, e se divergir o proprio gate nomeia a linha.
+PINNED_CORPUS_HASH="6a69da211b80ae05a6180fde3b4e030375cc52e62aca3ed350074ebaac248f74"
 PINNED_CORPUS_FILES=144
 PINNED_CORPUS_WAVES=432
-PINNED_CORPUS_EXIT2=3
-PINNED_CORPUS_LINES=1542
-PINNED_MLS_COMPLETE_EVIDENCE=656
+PINNED_CORPUS_EXIT2=6
+PINNED_CORPUS_LINES=1536
+PINNED_MLS_COMPLETE_EVIDENCE=653
 PINNED_MLS_COMPLETE_FAILURE=116
-PINNED_ACCEPTANCE_EVIDENCE_EVIDENCE=318
-PINNED_ACCEPTANCE_EVIDENCE_FAILURE=452
+PINNED_ACCEPTANCE_EVIDENCE_EVIDENCE=317
+PINNED_ACCEPTANCE_EVIDENCE_FAILURE=450
 
 # HASH_CMD_BIN (ML-2E, sítio de mesma causa do parecer hades-tf sobre
 # TRACKFW_FALSIFY_SCRIPT/GEN): env vars não carregam array bash, então o
