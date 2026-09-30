@@ -43127,3 +43127,24 @@ cobria isso. Marquei os 13 com a evidência que eu mesmo medi.
 Achado de processo gravado em memória: o relatório do ML-1D citou 7 testes de regressão "PASS por
 nome" e **3 dos nomes não existiam** — `go test -run` com nome inexistente casa zero testes e imprime
 `ok` com RC=0. Contar `^--- PASS` é a verificação; `ok` não é.
+
+## 2026-09-30 — zeus-tf — INÍCIO: #485 (gate que reentra no barrier recursa sem limite)
+
+Branch `fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite`, a partir da `main`. REQ + roadmap
+em `wip`. O #476 fica bloqueado atrás deste (mesmo `barrier.go`); sua branch foi empurrada antes da
+troca.
+
+Varredura: nenhuma issue/REQ aberta com o mecanismo; a REQ-2026-09-11 não trata reentrada.
+
+🔴 **Reenquadrei o #485:** "DoS por arquivo de texto" não é propriedade que uma correção de
+profundidade entregue — o gate é `sh -c` arbitrário e o trust check não protege clone hostil. O
+defeito é de **robustez**: gate benigno se amplifica sem limite. Sandbox fica no escopo negativo.
+
+Trazidos da branch do #476 (mesma causa): desarme da mina do ROADMAP-2026-09-22 e a nota de vault —
+na `main` a mina ainda estava armada na linha 73.
+
+Gate da Wave 0 testado em 3 braços: sem parecer → falha · acervo desta branch → 0 · versão armada
+da `main` → acusa 1.
+
+Próximo: ML-0A ao `hades-tf`. Contra-braço central: gates legítimos (`go test`, `check-barrier.sh`)
+aninham `barrier` sobre **outro** roadmap — um contador de profundidade cego os quebra.
