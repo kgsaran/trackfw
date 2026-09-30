@@ -99,8 +99,207 @@ O bloqueio era por compartilhar `internal/commands/barrier.go` com o #485 (gate 
 Histórico: o #485 apareceu **ao escrever o gate da Wave 0 deste roadmap** — `trackfw barrier <este
 roadmap> --wave 0` dentro do próprio bloco de gates; 3469 processos em ~6 min.
 
-## Wave 1 — a detecção
-> 🔴 **Dependências: Wave 0 auditada.** Os MLs saem do veredito do ML-0A e da decisão sobre o
-> comportamento do `serve` — **escritos depois, não antes.**
+## Auditoria da Wave 0 — correções do arquiteto ao parecer
 
-**Status:** ⬜ Pendente — aguardando Wave 0
+O parecer foi aceito com **três correções medidas**, que os MLs abaixo já incorporam:
+
+1. **Sítio 3 não é `roadmap show`.** O único chamador de `pendingMLsForDone` é
+   `internal/generators/roadmap.go:739`, no caminho do **`roadmap move ... done`**. Cerca aberta ali
+   significa **recusar a transição para `done`**, e não exit 2 de leitura.
+2. **O board não mostra `malformed_waves`.** Nenhum arquivo em `internal/serve/static/` lê esse
+   campo; o parecer presumiu que sim. **Decisão do KG (2026-09-30):** o card ganha um **selo de
+   "roadmap malformado"**, que cobre tanto a cerca aberta quanto o `malformed_waves` já existente.
+   Isso cria o ML-4A, de UI.
+3. **Dos 5 sítios, 2 são acervo e 3 são fixture congelada:**
+   `scripts/testdata/roadmap-barrier-corpus-snapshot/…2026-08-22…` e as 2 cópias em
+   `internal/roadmapdoc/testdata/corpus/docs/roadmaps/done/`. A recomendação do parecer de "fechar a
+   cerca no snapshot" é opinião, não medição. **As fixtures ficam abertas**, e passam a servir de
+   regressão real. O que um consumidor delas mudar é medido e escrito no ML-1A.
+
+**Mensagem canônica** (molde do `ParseGates`, regra 6): `unterminated code fence starting at line <n>`.
+Cada superfície a prefixa do seu jeito, e o número da linha é 1-based.
+
+## Wave 1 — detecção no `roadmapdoc` e conserto do acervo (1 ML)
+> Dependências: Wave 0 auditada. Sozinha: todas as superfícies dependem do `FenceMaskCheck`.
+
+### ML-1A — `FenceMaskCheck`, predicados fail-closed e os 2 arquivos do acervo
+**Owner:** `apolo-tf`
+**Status:** ⬜ Pendente
+**Arquivos afetados:** `internal/roadmapdoc/roadmapdoc.go` · `internal/roadmapdoc/fencecheck_test.go`
+(novo) · `docs/roadmaps/done/ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md`
+· `docs/roadmaps/done/ROADMAP-2026-08-29-dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier.md`
+**Ações:**
+1. `func FenceMaskCheck(lines []string) (openLine int, err error)`, com a **mesma** gramática do
+   `FenceMask` (reuse `DetectFenceMarker` e a regra de fechamento; não duplique a lógica, extraia um
+   helper comum se precisar). Se a cerca fechar: `(0, nil)`. Se não:
+   `(n, fmt.Errorf("unterminated code fence starting at line %d", n))`.
+   **O `FenceMask` não muda de assinatura nem de comportamento.**
+2. Predicados **fail-closed** quando `FenceMaskCheck` falha, com o mesmo padrão que eles já usam para
+   `len(malformed) > 0`: `HasUnfinishedMLs` → `true` · `hasAnyNonPendingML` → `true` · `HasWave0` →
+   `false` · `Wave0GateDiagnosis` → não-OK, com a mensagem canônica. `DuplicateWaveOrMLLabels`
+   **não muda**, porque a regra nova do `validate` (ML-3B) cobre o caso.
+3. **Acervo (AC5):** feche a cerca dos 2 arquivos reais. Leia a cauda e ponha o fechador **onde o
+   bloco de código acaba de fato**, não no fim do arquivo. Depois disso, `FenceMaskCheck` tem de dar
+   `(0, nil)` nos dois. Registre no relatório a linha de abertura, onde você fechou e por quê.
+4. 🔴 **Consumidores das fixtures:** enumere todo teste ou script que lê as 3 cópias congeladas
+   (`compare_baseline_test.go`, `parsewaves_fence_test.go`, `wave0_gate_cause_test.go`,
+   `scripts/check-roadmap-barrier-contract.sh`, qualquer MANIFEST/sha256). **Não edite as
+   fixtures.** Se a mudança do item 2 alterar o resultado esperado de algum teste, atualize a
+   expectativa **com a medição antes e depois escrita no relatório**.
+
+**Testes** (`fencecheck_test.go`): cerca fechada → `(0,nil)` · aberta com crase → linha certa ·
+aberta com til · fechador **mais curto** não fecha · fechador de **outro caractere** não fecha ·
+🔴 **as 3 fixtures congeladas** dão exatamente as linhas `460`, `460` e `1044` · cada predicado do
+item 2 fail-closed com cerca aberta **e** inalterado com o mesmo documento fechado.
+🔴 **`TestAcervoSemCercaAberta`**: percorre `docs/roadmaps/**/*.md` a partir da raiz do módulo e
+falha nomeando arquivo e linha se `FenceMaskCheck` acusar cerca aberta. É o gate de acervo das
+Waves 1 e 4; **o nome é contrato**.
+
+**Critérios de aceite:**
+- [ ] `FenceMaskCheck` existe; `FenceMask` com assinatura e comportamento intactos (os testes existentes passam sem edição)
+- [ ] Os 4 predicados são fail-closed, com teste nos dois braços
+- [ ] Os 2 arquivos do acervo fecham, e o relatório diz onde e por quê
+- [ ] Consumidores das fixtures enumerados; toda expectativa alterada vem com a medição antes/depois
+- [ ] `go build ./...` · `go test ./internal/roadmapdoc/ ./internal/generators/ ./internal/validator/ -count=1` verdes
+- [ ] Uma frase por teste novo dizendo o que ele afirma
+
+**Gates da wave:**
+```bash
+go build ./...
+go test ./internal/roadmapdoc/ -count=1
+n=$(go test ./internal/roadmapdoc/ -run '^TestAcervoSemCercaAberta$' -count=1 -v 2>&1 | grep -c '^--- PASS: TestAcervoSemCercaAberta'); test "$n" = "1" || { echo "GATE FALHOU: TestAcervoSemCercaAberta nao passou (ou nao existe)" >&2; exit 1; }
+```
+
+## Wave 2 — CLI (2 MLs em paralelo)
+> Dependências: Wave 1 auditada. Arquivos disjuntos: `internal/commands/` × `internal/generators/`.
+
+### ML-2A — `barrier`: exit 2 pela cerca, antes de resolver a wave
+**Owner:** `apolo-tf`
+**Status:** ⬜ Pendente
+**Arquivos afetados:** `internal/commands/barrier.go` · `internal/commands/barrier_fence_test.go` (novo)
+**Ações:**
+1. Em `runBarrier`, logo **depois** de `splitRoadmapLines` e **antes** de `fenceMask`/`parseWaves`:
+   `if _, err := roadmapdoc.FenceMaskCheck(lines); err != nil { usageExit(cmd, "%s", err.Error()) }`.
+   🔴 **A posição é obrigatória:** uma cerca aberta antes do cabeçalho da wave pedida esconde a wave,
+   e o usuário receberia `wave X not found`, que é a mensagem **errada** com o mesmo exit 2. É o
+   oposto da precedência dada à checagem de reentrada no #485, e é de propósito.
+2. A mensagem final no stderr é `trackfw barrier: unterminated code fence starting at line <n>`.
+
+**Testes:** braço D da sonda (cerca aberta, ML pendente na cauda) → exit 2 e a mensagem com a linha
+certa · 🔴 **cerca abrindo ANTES do cabeçalho da wave pedida → mensagem da cerca, não `wave not
+found`** · roadmap bem-formado → comportamento inalterado (AC3) · `--json` também sai 2, sem documento.
+
+**Critérios de aceite:**
+- [ ] AC2/AC3/AC4 cobertos pelos testes acima; o AC4 medido com `barrier --json` sobre a fixture do braço D
+- [ ] `go test ./internal/commands/ -count=1` verde
+- [ ] Uma frase por teste novo
+
+### ML-2B — `roadmap move ... done` e `roadmap show`
+**Owner:** `apolo-tf`
+**Status:** ⬜ Pendente
+**Arquivos afetados:** `internal/generators/roadmap.go` · `internal/generators/roadmap_show_json.go` ·
+`internal/generators/roadmap_fence_test.go` (novo)
+**Ações:**
+1. `roadmap move <x> done` (bloco em `roadmap.go` ~:732): antes de `pendingMLsForDone`, chame
+   `FenceMaskCheck`; se falhar, **recuse a transição** com a mensagem canônica, no mesmo formato de
+   recusa que os outros bloqueadores já usam. O arquivo não se move.
+2. `roadmap show` e `roadmap show --json` (`buildRoadmapShowDoc` ~:128): com cerca aberta, **exit 2**
+   e a mensagem canônica no stderr, sem documento parcial.
+3. Verifique se `pendingMLsForDone` e `buildRoadmapShowDoc` têm outros chamadores (`grep`, fora de
+   `testdata/`) e registre no relatório.
+
+**Testes:** move→done recusado com cerca aberta e aceito com o mesmo arquivo fechado · show e show
+`--json` saem 2 com cerca aberta · roadmap bem-formado inalterado.
+
+**Critérios de aceite:**
+- [ ] Os 3 comportamentos cobertos nos dois braços
+- [ ] `go test ./internal/generators/ -count=1` verde
+- [ ] Uma frase por teste novo
+
+**Gates da wave:**
+```bash
+go build ./...
+go test ./internal/commands/ ./internal/generators/ -count=1
+```
+
+## Wave 3 — superfícies que não podem sair 2 (2 MLs em paralelo)
+> Dependências: Wave 2 auditada. Arquivos disjuntos: `internal/serve/api_board.go` × `internal/validator/` + `scripts/check-validate-rule-pins.sh`.
+
+### ML-3A — `serve`: campo na API, sem derrubar o servidor
+**Owner:** `apolo-tf`
+**Status:** ⬜ Pendente
+**Arquivos afetados:** `internal/serve/api_board.go` · teste em `internal/serve/`
+**Ações:** no item do board, o campo **`UnterminatedFenceLine int` com `json:"unterminated_fence_line,omitempty"`**,
+preenchido por `FenceMaskCheck` em `parseMLProgressFull`. **O nome JSON é contrato com o ML-4A: não
+renomeie.** O servidor loga uma linha e continua. `ml_total`/`ml_done` **não** são "corrigidos" por
+heurística; o selo é o sinal.
+
+**Critérios de aceite:**
+- [ ] Teste: `/api/board` com fixture de cerca aberta → 200, e o item traz `unterminated_fence_line` = linha certa · com fixture bem-formada o campo está ausente (AC6)
+- [ ] `go test ./internal/serve/ -count=1` verde
+- [ ] Uma frase por teste novo
+
+### ML-3B — `validate`: regra `roadmap_unterminated_fence`
+**Owner:** `apolo-tf`
+**Status:** ⬜ Pendente
+**Arquivos afetados:** `internal/validator/validator_roadmap_gates.go` (ou arquivo vizinho no mesmo
+padrão) · teste em `internal/validator/` · `scripts/check-validate-rule-pins.sh`
+**Ações:** regra nova `roadmap_unterminated_fence`, aplicada a **todos** os estados de roadmap, com a
+mensagem `<arquivo>: unterminated code fence starting at line <n>` e os mesmos helpers
+`readFileForRule`/`inspectionDiagnostic` das regras vizinhas. Em `governance_mode: lenient` ela vira
+warning, **como toda violation**. A premissa 4 da Wave 0 (sem leniência) vale para o usage error da
+CLI, não para o `validate`, e essa diferença vai para o `cli-parity` no ML-4B. Acrescente um pin em
+`check-validate-rule-pins.sh`. ⚠️ **Armadilha registrada no vault:** o script reusa `pin6`/`pin7`/`pin8`
+entre blocos, e um rótulo duplicado passa **sem detecção**. Use um rótulo inédito e confira com `grep`.
+
+**Critérios de aceite:**
+- [ ] Teste nos dois braços (cerca aberta → violation com a linha · fechada → nada)
+- [ ] `bash scripts/check-validate-rule-pins.sh` verde, com o pin novo contado
+- [ ] `go test ./internal/validator/ -count=1` verde
+- [ ] Uma frase por teste novo
+
+**Gates da wave:**
+```bash
+go build ./...
+go test ./internal/serve/ ./internal/validator/ -count=1
+bash scripts/check-validate-rule-pins.sh
+```
+
+## Wave 4 — selo no board e contrato (2 MLs em paralelo)
+> Dependências: Wave 3 auditada. Arquivos disjuntos: `internal/serve/static/` × `docs/cli-parity.md`.
+
+### ML-4A — selo de "roadmap malformado" no card
+**Owner:** `afrodite-tf`
+**Status:** ⬜ Pendente
+**Arquivos afetados:** `internal/serve/static/app.js` · `internal/serve/static/style.css`
+**Ações:** quando `card.unterminated_fence_line > 0` **ou** `card.malformed_waves > 0`, o card mostra
+um selo visível ("roadmap malformado"), com texto ou tooltip dizendo a causa e a linha. A barra de
+progresso **não** pode parecer completa quando o selo está presente. O board é **light-only**: sem
+`prefers-color-scheme`. Os estáticos são `go:embed`, e esta é a fonte canônica.
+
+**Critérios de aceite:**
+- [ ] 🔴 **Verificação visual em navegador real**, feita pelo arquiteto: `trackfw serve` sobre uma
+  árvore com uma fixture de cerca aberta, uma com `malformed_waves` e uma bem-formada; selo nas duas
+  primeiras, ausente na terceira
+- [ ] `go build ./...` (o embed compila)
+
+### ML-4B — `cli-parity.md` por superfície e `make quality`
+**Owner:** `apolo-tf`
+**Status:** ⬜ Pendente
+**Arquivos afetados:** `docs/cli-parity.md` (regra 6 em § *Roadmap parsing rules*, § `trackfw barrier`,
+§ `roadmap move`/`show`, § `serve`, § `validate`)
+**Ações:** a regra 6, cláusula 3, passa de promessa a descrição **por superfície**: `barrier`/`show`
+saem com exit 2 · `move done` recusa · `serve` usa campo e selo, nunca sai 2 · `validate` gera
+violation, warning em lenient. Cláusula 2 ("ML body cannot be delimited"): declare que é **letra
+morta** no parser atual. Atualize o comentário `trackfw-contract` da linha ~2548, que diz que a regra
+6 não tem cenário. Rode `make quality` (autorizado: ML final).
+
+**Critérios de aceite:**
+- [ ] AC7: cada superfície descrita com a mensagem literal
+- [ ] `make quality` verde (a última linha real no relatório)
+
+**Gates da wave:**
+```bash
+go build ./...
+n=$(go test ./internal/roadmapdoc/ -run '^TestAcervoSemCercaAberta$' -count=1 -v 2>&1 | grep -c '^--- PASS: TestAcervoSemCercaAberta'); test "$n" = "1" || { echo "GATE FALHOU: TestAcervoSemCercaAberta nao passou (ou nao existe)" >&2; exit 1; }
+```

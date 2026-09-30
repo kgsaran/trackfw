@@ -43380,3 +43380,13 @@ separado; o meu gate da Wave 0 passava com `bash` e reprovava com 13 falhas sob 
 Reescrito. **O gate da Wave 0 do #476 tem o mesmo defeito** — corrigir quando aquela frente voltar.
 
 Pendente: CI verde → PR (só a pedido) → fechamento pós-merge. Depois, retomar o #476.
+
+## 2026-09-30 — zeus-tf — RETOMADA: #476 (cerca não terminada), após o merge do #485
+
+`main` trazida (merge `218beb3c`); gate da Wave 0 reescrito (multilinha + afirmava a contagem que a
+Wave 1 existe para baixar). Waves 1–4 escritas a partir do parecer, com 3 correções minhas a ele:
+o sítio 3 é `roadmap move ... done` e não `roadmap show`; o board **não** lê `malformed_waves`
+(decisão do KG: selo no card, ML-4A de UI); das 5 cercas, 2 são acervo e 3 fixtures congeladas que
+ficam abertas como regressão.
+
+Próximo: ML-1A (`FenceMaskCheck` + predicados fail-closed + 2 arquivos do acervo) ao `apolo-tf`.
