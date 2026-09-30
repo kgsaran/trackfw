@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-22
 req: "docs/req/REQ-2026-09-02-init-e-discover-geram-dois-workflows-que-rodam-a-mesma-validacao-com-instaladores-diferentes.md"
 squad: ""
@@ -7,20 +7,20 @@ squad: ""
 
 # Roadmap: `init` e `discover` geram dois workflows que rodam a mesma validação, com instaladores diferentes
 
-> Created: 2026-09-22 | Status: wip
+> Created: 2026-09-22 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-09-02-init-e-discover-geram-dois-workflows-que-rodam-a-mesma-validacao-com-instaladores-diferentes.md -->
 REQ: docs/req/REQ-2026-09-02-init-e-discover-geram-dois-workflows-que-rodam-a-mesma-validacao-com-instaladores-diferentes.md
 
 ## Acceptance Criteria
-- [ ] **AC1** — por que existem dois, **com evidência**; razão legítima → a REQ fecha documentando
-- [ ] **AC2/AC7** — um único `trackfw validate` por evento, medido por **check-runs no mesmo SHA**
-- [ ] **AC3** — o caminho de adoção que depende do workflow tocado **continua funcionando**
-- [ ] **AC4-bis** — o comentário que cita decisão inexistente é corrigido
-- [ ] **AC5** — migração de quem **já tem os dois** instalados
-- [ ] **AC8** — o `doctor` acompanha na mesma entrega, sem achado falso novo
-- [ ] **AC6** — `make quality` e CI verdes
+- [x] **AC1** — por que existem dois, **com evidência**; razão legítima → a REQ fecha documentando
+- [x] **AC2/AC7** — um único `trackfw validate` por evento, medido por **check-runs no mesmo SHA**
+- [x] **AC3** — o caminho de adoção que depende do workflow tocado **continua funcionando**
+- [x] **AC4-bis** — o comentário que cita decisão inexistente é corrigido
+- [x] **AC5** — migração de quem **já tem os dois** instalados
+- [x] **AC8** — o `doctor` acompanha na mesma entrega, sem achado falso novo
+- [x] **AC6** — `make quality` e CI verdes
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -206,36 +206,50 @@ projeto*. O produto continuava produzindo a duplicação que a ADR proíbe — p
    através de symlink. Achado verdadeiro na forma, inútil no conteúdo.
 
 **Critérios de aceite:**
-- [ ] `gate.yml` presente → `discover --init` **não** escreve o `validate.yml`, e a razão é dita
-- [ ] 🔴 **Contra-braço:** `gate.yml` ausente → `discover --init` **continua** escrevendo o
+- [x] `gate.yml` presente → `discover --init` **não** escreve o `validate.yml`, e a razão é dita
+      → fixture `fx-a`: só `trackfw-gate.yml` no dir, mensagem `ℹ ... não será escrito (ADR-2026-09-29 D2)`
+- [x] 🔴 **Contra-braço:** `gate.yml` ausente → `discover --init` **continua** escrevendo o
+      → fixture `fx-b`: `trackfw-validate.yml` escrito normalmente
       `validate.yml` (o caminho brownfield não pode ter sido removido)
-- [ ] 🔴 **O caminho da Wave 2 fecha:** `update` → `rm trackfw.yaml` → `discover --init` resulta em
+- [x] 🔴 **O caminho da Wave 2 fecha:** `update` → `rm trackfw.yaml` → `discover --init` resulta em
+      → medido com binário compilado: **1** workflow, e o `doctor` não emite `scaffold-workflow-duplicated`
       **um** workflow, e o `doctor` **não** emite `scaffold-workflow-duplicated`
-- [ ] Nenhuma gramática de recusa nova — a mensagem sai do emissor único já existente
-- [ ] `validate.yml` como **symlink** → `doctor` **não** emite `scaffold-divergent` com remédio
+- [x] Nenhuma gramática de recusa nova — a mensagem sai do emissor único já existente
+      → reusa o prefixo `ℹ ` já presente no arquivo (`discover.go:192`); mensagem informativa, não um 6º emissor de recusa
+- [x] `validate.yml` como **symlink** → `doctor` **não** emite `scaffold-divergent` com remédio
+      → `TestRunScaffoldDoctor_DiscoverWorkflow_Symlink_Silent` PASS
       inoperante
-- [ ] 🔴 **Contra-braço:** `validate.yml` regular e **defasado** → `doctor` **continua** emitindo
+- [x] 🔴 **Contra-braço:** `validate.yml` regular e **defasado** → `doctor` **continua** emitindo
+      → `TestRunScaffoldDoctor_DiscoverWorkflow_RegularStale_Accuses` PASS
       `scaffold-divergent` (o achado verdadeiro não pode ter sumido)
-- [ ] Os **7** testes das Waves 1 (ML-1A e ML-1B) continuam passando, por nome
-- [ ] `make quality` **RC=0** (referência: 1390 OK, 347 falsificações, 0 FAIL)
-- [ ] 🔴 **Regra Dura de Reconciliação:** uma frase por teste novo
-- [ ] `docs/cli-parity.md` atualizado **na mesma entrega**, se o contrato do `discover --init` mudar
+- [x] Os **7** testes das Waves 1 (ML-1A e ML-1B) continuam passando, por nome
+      → 🔴 **11/11 PASS contados por mim** (`grep -c "^--- PASS"`), não pelo `ok`: 3 dos nomes que o relatório citou não existiam
+- [x] `make quality` **RC=0** (referência: 1390 OK, 347 falsificações, 0 FAIL)
+      → RC=0, **1390** `^OK `, 347 falsificações, **0 FAIL**
+- [x] 🔴 **Regra Dura de Reconciliação:** uma frase por teste novo
+      → 4 frases entregues, uma por teste novo
+- [x] `docs/cli-parity.md` atualizado **na mesma entrega**, se o contrato do `discover --init` mudar
+      → `cli-parity.md:6639` — *"D2 — fechado em ambos os lados pelo ML-1D"*
 
 ## Wave 2 — auditoria independente
 > Dependências: Wave 1 completa e auditada.
 
 ### ML-2A — revisão por reimplementação
 **Owner:** `hades-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — 2026-09-29 · 12 verificações CONFORMES · **2 achados**, ambos corrigidos na Wave 1-bis
 **Método:** 🔴 **não conferir o diff.** Ler a `ADR-2026-09-29` e a REQ, derivar o esperado, medir com
 fixture própria em diretório temporário.
 **Alvos:** os 4 contra-braços do ML-1A/1B (o comportamento de projeto novo e o achado verdadeiro do
 `doctor` não podem ter regredido) · o achado de migração não sugere remoção · nenhum required check
 declarado deste repositório deixou de ser produzido.
 **Critérios de aceite:**
-- [ ] Veredito explícito: sobrou caminho pelo qual um projeto novo receba **dois** workflows?
-- [ ] Veredito explícito: algum consumidor perde check que já exigia?
-- [ ] Se a medição refutar a ADR, **diga**
+- [x] Veredito explícito: sobrou caminho pelo qual um projeto novo receba **dois** workflows?
+     → 🔴 **SIM, sobrava:** `update` → `rm trackfw.yaml` → `discover --init`. `writeCIWorkflow` nunca olhava o `gate.yml` — eu havia fechado o D2 de um lado só. Corrigido no **ML-1D**; recontado por mim depois: **1** workflow
+- [x] Veredito explícito: algum consumidor perde check que já exigia?
+     → **NÃO.** `D\W=∅`, e o CI do PR #482 produziu **os dois** job ids (`governance-install-script` e `governance-go-install`), com `check-required-checks` verde
+- [x] Se a medição refutar a ADR, **diga**
+     → **nenhuma premissa da ADR refutada** — os 2 achados são de **implementação incompleta** dela. Segundo achado: `scaffold_doctor.go:379` usava `os.Stat` onde o resto do arquivo usa `os.Lstat`, emitindo `scaffold-divergent` com remédio inoperante sobre symlink
+**Parecer:** `docs/seguranca/2026-09-29-wave2-dois-workflows.md`
 
 ---
 

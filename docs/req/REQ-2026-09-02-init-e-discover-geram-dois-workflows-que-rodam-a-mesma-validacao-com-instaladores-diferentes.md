@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-02
 author: "zeus-tf"
 adr: "docs/adr/ADR-2026-09-29-o-produto-entrega-um-workflow-de-governanca-por-projeto-e-nunca-adiciona-um-segundo-ao-lado-do-existente.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-22-init-e-discover-geram-dois-workflows-que-rodam-a-mesma-validacao-com-instaladores-diferentes.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-22-init-e-discover-geram-dois-workflows-que-rodam-a-mesma-validacao-com-instaladores-diferentes.md"
 ---
 
 # REQ: `init` e `discover` geram dois workflows que rodam a mesma validação, com instaladores diferentes
 
-> Date: 2026-09-02 | Status: Open
+> Date: 2026-09-02 | Status: Done
 
 ## Motivation
 
@@ -53,24 +53,31 @@ real de adoção.
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — 🔴 **Determinar por que existem dois**, com evidência (histórico, ADR, comportamento
+- [x] **AC1** — 🔴 **Determinar por que existem dois**, com evidência (histórico, ADR, comportamento
+       → Wave 0: janela exclusiva do `discover --init` **transiente** (fecha no 1º `update`); instalador não discrimina público (`setup-go@v7` provisiona). **Não há razão legítima** → o AC1 **não** fechou a REQ, como previsto
       de `discover` em repo sem `init`). **Se houver razão legítima, a REQ fecha documentando-a** —
       não force unificação.
-- [ ] **AC2** — Se não houver: um único workflow gerado, com o instalador escolhido e **justificado**.
-- [ ] **AC3** — 🔴 **Controle:** o caminho de adoção que hoje depende do workflow removido **continua
+- [x] **AC2** — Se não houver: um único workflow gerado, com o instalador escolhido e **justificado**.
+       → D1/D2: canônico `trackfw-gate.yml`; os **dois** sítios de escrita passam a olhar o disco antes
+- [x] **AC3** — 🔴 **Controle:** o caminho de adoção que hoje depende do workflow removido **continua
+       → contra-braço medido em fixture `fx-b`: sem `gate.yml`, o `discover --init` **continua** escrevendo o `validate.yml` — brownfield intacto
       funcionando**. Remover CI de quem não rodou `init` seria trocar redundância por lacuna.
-- [ ] ~~**AC4** — Paridade nos 3 CLIs~~ → 🔴 **OBSOLETO pela v8.0.0**: existe **uma** implementação
+- [x] ~~**AC4** — Paridade nos 3 CLIs~~ → 🔴 **OBSOLETO pela v8.0.0**: existe **uma** implementação
+       → obsoleto pela v8 (implementação única em Go)
       em Go, entregue por três canais. Não há paridade a manter. Substituído pelo **AC4-bis**.
-- [ ] **AC4-bis** — 🔴 **O comentário do código que afirma decisão inexistente é corrigido.**
+- [x] **AC4-bis** — 🔴 **O comentário do código que afirma decisão inexistente é corrigido.**
+       → 6 sítios: 2 corrigidos (ML-1A), 4 retratados com data (ML-1C), originais preservados; 7º não existe
       `scaffold_doctor.go:333` afirma *"both can coexist in the same project (ADR-2026-08-28)"*;
       a `ADR-2026-08-28` tem **zero** ocorrências de `trackfw-validate.yml` — ela decide pino de
       versão e `TRACKFW_VERSION`. Medido: o único ADR que cita o arquivo é a `ADR-2026-09-18`, e lá
       como caminho de exemplo. **A coexistência nunca foi decidida**; o comentário fabrica a decisão
       e vinha travando a correção por engano.
-- [ ] **AC5** — Migração para quem **já tem os dois** instalados: o `update` remove o obsoleto, ou o
+- [x] **AC5** — Migração para quem **já tem os dois** instalados: o `update` remove o obsoleto, ou o
+       → `doctor` emite `scaffold-workflow-duplicated`, **advisory**: nomeia os 2 arquivos e os 2 job ids, e condiciona a remoção à checagem do `required_status_checks` (D3 — o produto não pode verificar isso)
       `doctor` acusa. **Deixar os dois em repositório existente e só corrigir o gerador resolveria
       apenas para projeto novo.**
-- [ ] **AC6** — `make quality` e **CI** verdes.
+- [x] **AC6** — `make quality` e **CI** verdes.
+       → `make quality` RC=0 (1390 OK, 347 falsificações, 0 FAIL) · **PR #482: 20 checks, 0 falhas**
 
 ## 🔴 AMPLIADA em 2026-09-29 — o #451 é esta causa, relatado de fora
 
@@ -116,9 +123,11 @@ entre MLs, não um detalhe.
 
 ### AC novo
 
-- [ ] **AC7** — 🔴 **Um único `trackfw validate` por evento no repositório do consumidor**, medido
+- [x] **AC7** — 🔴 **Um único `trackfw validate` por evento no repositório do consumidor**, medido
+       → medido com binário compilado, não por leitura de template: `gate.yml` presente → `discover --init` produz **1** workflow
       por contagem de check-runs no mesmo SHA — não por leitura do template
-- [ ] **AC8** — 🔴 **O `doctor` acompanha a decisão na mesma entrega.** Nenhum achado falso novo, e
+- [x] **AC8** — 🔴 **O `doctor` acompanha a decisão na mesma entrega.** Nenhum achado falso novo, e
+       → D4 na mesma entrega; contra-braços vivos: ambos ausentes → acusa · `gate.yml` defasado → `scaffold-divergent`
       o contra-braço: o achado **verdadeiro** que ele já dá continua saindo
 
 ## Wave 0 (2026-09-29) — duas premissas minhas caíram, e a citação falsa era maior
@@ -179,10 +188,12 @@ mas por outro caminho — não porque alguém conferiu a citação.
 
 ### AC novo
 
-- [ ] **AC9** — 🔴 **Os 6 sítios corrigidos**, incluindo o comentário de teste (sítio 3) e o escopo
+- [x] **AC9** — 🔴 **Os 6 sítios corrigidos**, incluindo o comentário de teste (sítio 3) e o escopo
+       → inclui o sítio 3 (comentário de teste) e o sítio 6 (escopo negativo da `REQ-2026-09-28`, que era meu)
       negativo da `REQ-2026-09-28` (sítio 6). Comentário de teste que afirma decisão inexistente
       viola a Regra Dura de Reconciliação quando o produto mudar.
-- [ ] **AC10** — 🔴 **Nenhum consumidor perde o check que já exigia.** A mudança preserva, ou migra
+- [x] **AC10** — 🔴 **Nenhum consumidor perde o check que já exigia.** A mudança preserva, ou migra
+       → o CI do PR #482 produziu **os dois** job ids, `check-required-checks` verde — caso real, não fixture
       explicitamente, o nome do job que está em `required_status_checks` — medido, não presumido.
 
 ## Negative Scope
@@ -200,4 +211,4 @@ ADR: `docs/adr/ADR-2026-09-29-o-produto-entrega-um-workflow-de-governanca-por-pr
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-22-init-e-discover-geram-dois-workflows-que-rodam-a-mesma-validacao-com-instaladores-diferentes.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-22-init-e-discover-geram-dois-workflows-que-rodam-a-mesma-validacao-com-instaladores-diferentes.md`
