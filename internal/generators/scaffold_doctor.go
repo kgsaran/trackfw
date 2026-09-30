@@ -331,33 +331,6 @@ func RunScaffoldDoctor(projectRoot string) ([]integrations.DoctorFinding, error)
 			}
 			findings = append(findings, *f)
 		}
-		// D3 (ADR-2026-09-29): when BOTH gate.yml and validate.yml are present as regular
-		// files, emit a migration advisory. gate.yml is canonical (D1); validate.yml is
-		// redundant and may be removed — but only after the consumer verifies that
-		// governance-go-install (the job id of validate.yml) is NOT in their repository's
-		// required_status_checks. The product cannot verify this from the repository alone,
-		// which is why D3 never removes automatically (alternative A, ADR-2026-09-29).
-		// os.Lstat is used for gate.yml, consistent with discoverWorkflowPresent which also
-		// uses Lstat for validate.yml: a symlink is treated as absent on both sides.
-		gateInfo, gateErr := os.Lstat(path)
-		gatePresent := gateErr == nil && gateInfo.Mode()&os.ModeSymlink == 0
-		if gatePresent && discoverWorkflowPresent(projectRoot) {
-			validateRelPath := DiscoverGitHubActionsWorkflowPath
-			remedy := fmt.Sprintf(
-				"%s (job: governance-install-script) and %s (job: governance-go-install) both run `trackfw validate` — %s is canonical (ADR-2026-09-29 D1). "+
-					"Before removing %s, verify that governance-go-install is NOT in your repository's required_status_checks: "+
-					"the product cannot check this for you. If it is not a required check, remove %s manually.",
-				GitHubActionsWorkflowPath, validateRelPath,
-				GitHubActionsWorkflowPath,
-				validateRelPath,
-				validateRelPath,
-			)
-			findings = append(findings, integrations.DoctorFinding{
-				FindingKind: integrations.DoctorScaffoldWorkflowDuplicated,
-				Destination: validateRelPath,
-				Remedy:      remedy,
-			})
-		}
 	case "gitlab-ci":
 		relPath := GitLabCIWorkflowPath
 		path := filepath.Join(projectRoot, relPath)
@@ -365,6 +338,51 @@ func RunScaffoldDoctor(projectRoot string) ([]integrations.DoctorFinding, error)
 		if f != nil {
 			findings = append(findings, *f)
 		}
+	}
+
+	// D3 (ADR-2026-09-29): when BOTH gate.yml and validate.yml are present as regular
+	// files, emit a migration advisory. gate.yml is canonical (D1); validate.yml is
+	// redundant and may be removed — but only after the consumer verifies that
+	// governance-go-install (the job id of validate.yml) is NOT in their repository's
+	// required_status_checks. The product cannot verify this from the repository alone,
+	// which is why D3 never removes automatically (alternative A, ADR-2026-09-29).
+	// os.Lstat is used for gate.yml, consistent with discoverWorkflowPresent which also
+	// uses Lstat for validate.yml: a symlink is treated as absent on both sides.
+	//
+	// 🔴 OUTSIDE the `switch cfg.CI` block (#484). This advisory used to live inside
+	// `case "github-actions":`, so a project with BOTH workflows on disk and no `ci:` key
+	// in trackfw.yaml never received it — and that is precisely the consumer fork, where
+	// the files arrive by MERGE rather than by `init`. Measured with three arms, same two
+	// files on disk, only the `ci:` line changing:
+	//
+	//	no `ci:`, both files        -> no advisory   (the blind spot)
+	//	`ci: github-actions`, both  -> advisory
+	//	`ci: github-actions`, gate only -> no advisory   (control: it does not fire blindly)
+	//
+	// The reasoning was already written one block below, for validate.yml: InstallGates
+	// decides on its own DiscoveryResult.CISystem signal, "a project can have discover's
+	// workflow without cfg.CI ever being set". Of the three sites involved, the reporting
+	// one was the only one still tied to `ci:`; the two writing sites never agreed on it.
+	// Presence-on-disk is therefore the right condition here too, and both predicates
+	// (gate and validate) already existed — only the placement changes.
+	gateInfo, gateErr := os.Lstat(filepath.Join(projectRoot, GitHubActionsWorkflowPath))
+	gatePresent := gateErr == nil && gateInfo.Mode()&os.ModeSymlink == 0
+	if gatePresent && discoverWorkflowPresent(projectRoot) {
+		validateRelPath := DiscoverGitHubActionsWorkflowPath
+		remedy := fmt.Sprintf(
+			"%s (job: governance-install-script) and %s (job: governance-go-install) both run `trackfw validate` — %s is canonical (ADR-2026-09-29 D1). "+
+				"Before removing %s, verify that governance-go-install is NOT in your repository's required_status_checks: "+
+				"the product cannot check this for you. If it is not a required check, remove %s manually.",
+			GitHubActionsWorkflowPath, validateRelPath,
+			GitHubActionsWorkflowPath,
+			validateRelPath,
+			validateRelPath,
+		)
+		findings = append(findings, integrations.DoctorFinding{
+			FindingKind: integrations.DoctorScaffoldWorkflowDuplicated,
+			Destination: validateRelPath,
+			Remedy:      remedy,
+		})
 	}
 
 	// --- Discover CI workflow (second, independent install mechanism) ---
