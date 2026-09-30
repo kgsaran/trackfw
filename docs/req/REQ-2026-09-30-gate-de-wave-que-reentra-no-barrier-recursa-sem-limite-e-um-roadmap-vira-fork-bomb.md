@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-30
 author: "zeus-tf"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-30-gate-de-wave-que-reentra-no-barrier-recursa-sem-limite-e-um-roadmap-vira-fork-bomb.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-30-gate-de-wave-que-reentra-no-barrier-recursa-sem-limite-e-um-roadmap-vira-fork-bomb.md"
 ---
 
 # REQ: gate de wave que reentra no barrier recursa sem limite e um roadmap vira fork bomb
 
-> Date: 2026-09-30 | Status: Open
+> Date: 2026-09-30 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 | GitHub Issue: #485
@@ -41,22 +41,30 @@ até o teto de PIDs da máquina, e a contenção óbvia (`pkill -f 'bin/trackfw 
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — gate que é `trackfw barrier` sobre a **mesma** wave do mesmo roadmap é recusado
+- [x] **AC1** — gate que é `trackfw barrier` sobre a **mesma** wave do mesmo roadmap é recusado
   **antes de executar**, com mensagem que nomeia a reentrada, e o processo termina sem multiplicar
-- [ ] **AC2** — reentrada por **indireção** (script, `make`, `sh -c` aninhado) é contida — não
+  ✅ Evidência: T1 (`TestBarrierReentry_T1_DirectReentrance`)
+- [x] **AC2** — reentrada por **indireção** (script, `make`, `sh -c` aninhado) é contida — não
   multiplica, termina com erro nomeado
-- [ ] **AC3** — 🔴 **gate legítimo continua rodando**, inclusive gate que aninha `barrier` sobre
+  ✅ Evidência: T2 (indireção via `reenter.sh`)
+- [x] **AC3** — 🔴 **gate legítimo continua rodando**, inclusive gate que aninha `barrier` sobre
   **outro** roadmap (ex.: `go test ./internal/commands/...`, `scripts/check-barrier.sh`, `make quality`).
   O comportamento do acervo real é medido antes e depois
-- [ ] **AC4** — `barrier` invocado duas vezes **em sequência** (não aninhado) continua funcionando
-- [ ] **AC5** — todo outro caminho do produto que execute gates de roadmap (enumerado na Wave 0) tem
+  ✅ Evidência: T3 + barrier real sobre a Wave 1 (roda `go test`, que aninha barrier) `passed`
+- [x] **AC4** — `barrier` invocado duas vezes **em sequência** (não aninhado) continua funcionando
+  ✅ Evidência: T4
+- [x] **AC5** — todo outro caminho do produto que execute gates de roadmap (enumerado na Wave 0) tem
   a mesma contenção, ou a ausência de risco é demonstrada
-- [ ] **AC6** — a mina do acervo (`done/ROADMAP-2026-09-22-...:73`) está desarmada neste PR, e o
+  ✅ Evidência: enumeração da Wave 0: `barrier.go` `runGateCommand` é o único executor
+- [x] **AC6** — a mina do acervo (`done/ROADMAP-2026-09-22-...:73`) está desarmada neste PR, e o
   acervo tem **0** gates que reentram na própria wave (medido com extração do primeiro bloco cercado
   após o marcador, não `grep` de janela)
-- [ ] **AC7** — `docs/cli-parity.md` (§ `trackfw barrier`) descreve a contenção, o exit code e a
+  ✅ Evidência: gate da Wave 0: 0 no acervo; mina do ROADMAP-2026-09-22 desarmada
+- [x] **AC7** — `docs/cli-parity.md` (§ `trackfw barrier`) descreve a contenção, o exit code e a
   mensagem; o código de saída segue a convenção existente (usage error ≠ `blocked`)
-- [ ] **AC8** — `make quality` e CI verdes
+  ✅ Evidência: `docs/cli-parity.md` § Reentrance detection
+- [x] **AC8** — `make quality` e CI verdes
+  ✅ Evidência: CI do PR #486 20/20 `pass`; `make quality` 347 OK / 0 FAIL
 
 ## Negative scope
 
@@ -75,4 +83,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-30-gate-de-wave-que-reentra-no-barrier-recursa-sem-limite-e-um-roadmap-vira-fork-bomb.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-09-30-gate-de-wave-que-reentra-no-barrier-recursa-sem-limite-e-um-roadmap-vira-fork-bomb.md
