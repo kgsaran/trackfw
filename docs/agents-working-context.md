@@ -43127,3 +43127,22 @@ cobria isso. Marquei os 13 com a evidência que eu mesmo medi.
 Achado de processo gravado em memória: o relatório do ML-1D citou 7 testes de regressão "PASS por
 nome" e **3 dos nomes não existiam** — `go test -run` com nome inexistente casa zero testes e imprime
 `ok` com RC=0. Contar `^--- PASS` é a verificação; `ok` não é.
+
+## 2026-09-30 — zeus-tf — INÍCIO: #476 (cerca não terminada mascara em silêncio)
+
+Branch `fix/cerca-nao-terminada-mascara-em-silencio`. REQ-2026-09-30 + roadmap em `wip`.
+
+Varri issues e REQs abertas: **nenhuma** com este mecanismo. O #470 está fechado e o PR #475
+mergeado — verifiquei por efeito que **não** fecha isto (sonda com binário da `main`, braço D
+continua `mls_complete: passed`), então é REQ nova e não absorção.
+
+Reproduzido por mim, fixture própria, diferença de **uma linha**: cerca aberta →
+`mls_complete: passed` e `acceptance_evidence: passed` num roadmap cujo ML-1B é `⬜ Pendente` com
+critério em aberto. O ML não é tolerado, é **apagado** da análise.
+
+Refinei o escopo do issue em dois pontos: (a) a detecção **já existe** no caminho de gates
+(`ParseGates`, mensagem no formato da regra 6) e falta no `FenceMask` — cobre 1 caminho de 2;
+(b) `FenceMask` tem **10 call sites**, e um é o `serve` (servidor HTTP, não pode sair 2) — o
+comportamento por superfície é entregável da Wave 0, não presunção.
+
+Próximo: despachar ML-0A ao `hades-tf`.
