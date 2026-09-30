@@ -69,8 +69,14 @@ real, é ela que governa, não a minha medição.
 - [x] Nenhuma linha de implementação escrita neste ML
 
 **Gates da wave:**
+> 🔴 **DESARMADO em 2026-09-30.** Este bloco continha `trackfw barrier ... --wave 0` — o **próprio
+> executor** dentro do bloco que ele executa. Em 2026-09-30, num roadmap novo, a mesma escrita
+> produziu **3469 processos** em ~6 min (load 12.9) antes de eu conter. Como este arquivo está em
+> `done/`, a mina nunca foi acionada, mas estava armada e na `main`. Defeito de produto (o `barrier`
+> não detecta auto-referência) registrado em issue própria; o erro de escrita era meu.
+
 ```bash
-trackfw barrier ROADMAP-2026-09-22-init-e-discover-geram-dois-workflows-que-rodam-a-mesma-validacao-com-instaladores-diferentes --wave 0 --trust-local-gates
+test -f .github/workflows/trackfw-gate.yml && test -f .github/workflows/trackfw-validate.yml && echo "Gate W0 OK: os dois workflows coexistem neste repo — é o universo que a REQ mede" || { echo "GATE FALHOU: esperava os dois workflows presentes" >&2; exit 1; }
 ```
 
 ## Wave 1 — o remédio
