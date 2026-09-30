@@ -677,18 +677,19 @@ func TestBarrierCheck_JSONKeyOrderMatchesCliParityContract(t *testing.T) {
 }
 
 func TestRunGateCommand_ExitCodes(t *testing.T) {
-	if code, spawnFailed := runGateCommand("true"); code != 0 || spawnFailed {
+	// nil env → child inherits current process environment (no TRACKFW_BARRIER_STACK needed here).
+	if code, spawnFailed := runGateCommand("true", nil); code != 0 || spawnFailed {
 		t.Fatalf("expected exit 0/spawnFailed=false for 'true', got %d/%v", code, spawnFailed)
 	}
-	if code, spawnFailed := runGateCommand("false"); code != 1 || spawnFailed {
+	if code, spawnFailed := runGateCommand("false", nil); code != 1 || spawnFailed {
 		t.Fatalf("expected exit 1/spawnFailed=false for 'false', got %d/%v", code, spawnFailed)
 	}
-	if code, spawnFailed := runGateCommand("exit 7"); code != 7 || spawnFailed {
+	if code, spawnFailed := runGateCommand("exit 7", nil); code != 7 || spawnFailed {
 		t.Fatalf("expected exit 7/spawnFailed=false for 'exit 7', got %d/%v", code, spawnFailed)
 	}
 	// exit 127 signals "tool not found inside sh" — sh itself started and ran.
 	// This must NEVER be confused with spawnFailed (ML-0A measurement).
-	if code, spawnFailed := runGateCommand("nosuchtool-xyz"); code != 127 || spawnFailed {
+	if code, spawnFailed := runGateCommand("nosuchtool-xyz", nil); code != 127 || spawnFailed {
 		t.Fatalf("expected exit 127/spawnFailed=false for a missing tool inside sh, got %d/%v", code, spawnFailed)
 	}
 }
@@ -699,7 +700,8 @@ func TestRunGateCommand_ExitCodes(t *testing.T) {
 func TestRunGateCommand_ShMissing_SpawnFailed(t *testing.T) {
 	curated := t.TempDir()
 	t.Setenv("PATH", curated)
-	code, spawnFailed := runGateCommand("true")
+	// nil env → child inherits the modified PATH from t.Setenv above.
+	code, spawnFailed := runGateCommand("true", nil)
 	if !spawnFailed {
 		t.Fatalf("expected spawnFailed=true when sh is absent from $PATH, got code=%d spawnFailed=%v", code, spawnFailed)
 	}
@@ -708,7 +710,8 @@ func TestRunGateCommand_ShMissing_SpawnFailed(t *testing.T) {
 func TestEvalGateCommands_ShMissing_NotEvaluated(t *testing.T) {
 	curated := t.TempDir()
 	t.Setenv("PATH", curated)
-	status, evidence, failures := evalGateCommands([]string{"true", "false"})
+	// nil env → child inherits the modified PATH from t.Setenv above.
+	status, evidence, failures := evalGateCommands([]string{"true", "false"}, nil)
 	if status != "not_evaluated" {
 		t.Fatalf("expected status not_evaluated, got %q", status)
 	}

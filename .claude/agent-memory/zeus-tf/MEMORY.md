@@ -30,3 +30,4 @@
 - [Replace sem assert mente](feedback_replace_sem_assert_mente.md) — edição que não casa devolve o texto intacto; commitei dizendo que marquei ACs que não marquei
 - [Proibir make quality cega o executor](feedback_proibir_make_quality_cega_o_executor.md) — certo com frente paralela; autorize no ML final, senão regressão de gate vizinho só aparece no fim
 - [Nome de teste no relatório se verifica](feedback_nome_de_teste_no_relatorio_se_verifica.md) — 3 de 7 nomes reportados como PASS não existiam; `go test -run` com nome inexistente imprime `ok`
+- [Gate de wave é uma linha por comando](feedback_gate_de_wave_e_uma_linha_por_comando.md) — barrier roda cada linha como sh -c; testei com bash e reprovava no real; conferir com o barrier

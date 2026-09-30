@@ -2,6 +2,104 @@
 
 ---
 
+## 2026-09-30 — Hades (fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite — ML-2A) — ENTREGUE
+
+**Inicio:** 2026-09-30 | **Fim:** 2026-09-30 | Branch: `fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite`
+**Tarefa:** ML-2A — revisão independente de segurança (Wave 2, #485); reimplementar a partir do código sem ler os testes do ML-1A
+
+**Arquivos escritos:**
+- `docs/seguranca/2026-09-30-wave2-revisao-reentrada-barrier.md`: parecer com 13 vetores, 2 achados bloqueadores (F1, F2), 1 gap de doc (F3)
+- `docs/roadmaps/wip/ROADMAP-2026-09-30-...`: ML-2A marcado ✅ Concluído; ML-2C (Wave 3 corretiva) adicionado ⬜ Pendente
+
+**Veredito: BLOQUEIA**
+
+**Achados principais:**
+- F1: `barrier.go:573` usa `waveLabel` (CLI arg) em vez de `target.Label` (spec). Wave case mismatch (`1b` vs `1B`) não detectado na L2 — diferença de chave. Fix: 1 linha.
+- F2: Comparação de roadmap por string. `EvalSymlinks` preserva case em APFS; hardlinks têm paths diferentes. `os.SameFile` fecha ambos.
+- F3 (doc): formas de override direto da variável (`=""`, `=null`, `=[] cmd`) não listadas no residual. Sem mudança de código.
+- F4 (meta): T_FUSE multi-linha não funciona; teste 6b causou fork bomb ~120s sem contenção efetiva (pkill alvejou nome errado). Nenhum orphan confirmado pelo check pós-kill.
+
+**Incidente de contenção:** gate de teste multi-linha (fuse separado da chamada) + pkill com nome incorreto. Documentado no parecer.
+
+---
+
+## 2026-09-30 — Apolo (fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite — ML-1A corretivo) — ENTREGUE
+
+**Inicio:** 2026-09-30 | **Fim:** 2026-09-30 | Branch: `fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite`
+**Tarefa:** Corretivo do ML-1A — corrigir dois testes reprovados na auditoria do arquiteto
+
+**Arquivos modificados:**
+- `internal/commands/barrier_reentry_test.go`: T2 — removida fixture morta (dir/roadmapPath/reenterScript nunca usados, _ = ...); consolidada em fixture única. T3 — eliminado gate vacuo (`;` tornava exit code sempre 0); adicionados `inner.rc`, `inner.err`, `stack.txt` com asserções `t.Fatalf`/`t.Errorf` nos quatro ACs.
+- `docs/agents-working-context.md`: esta entrada
+
+**Evidência de não-vacuidade do T3:**
+- Mutação (condição `true` + recusa com pilha vazia): T3 reprovou com `outer exit code = 2, quer 0 (passed); stderr = "reentrant call — ..."`
+- `cmp barrier.go barrier.go.bak`: files are identical (mutação totalmente revertida)
+
+**Resultados:**
+- T1–T7 + 2 subtestes T7: todos PASS
+- `go test ./internal/commands/ -count=1`: ok (16.4 s)
+- `go vet ./internal/commands/`: ok
+
+---
+
+## 2026-09-30 — Apolo (fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite — ML-1A) — ENTREGUE
+
+**Inicio:** 2026-09-30 | **Fim:** 2026-09-30 | Branch: `fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite`
+**Tarefa:** ML-1A — pilha de chaves (roadmap, wave) no barrier para conter reentrada
+
+**Arquivos modificados:**
+- `internal/commands/barrier.go`: adicionados `barrierStackVar`, `barrierStackEntry`, `barrierReentryKey`, `buildChildEnv`; checagem de pilha em `runBarrier` (após `target` resolvido, antes de qualquer check); `runGateCommand`/`evalGateCommands` recebem `env []string` para propagar pilha aos filhos dos gates
+- `internal/commands/barrier_reentry_test.go` (novo): testes T1–T7 de reentrada com fusível de shell; todos passam
+- `internal/commands/barrier_test.go`: call sites existentes de `runGateCommand`/`evalGateCommands` atualizados para passar `nil`
+- `docs/cli-parity.md`: seção `### Reentrance detection (ML-1A, #485)` com variável, formato, 3 mensagens literais, backstop N=4, resíduo env-clearing; anotações `<!-- trackfw-contract: none ... -->` em todos os 4 sub-headings
+- `docs/roadmaps/wip/ROADMAP-2026-09-30-...`: ML-1A marcado ✅ Concluído, todos os critérios com [x]
+- `docs/agents-working-context.md`: entrada de início e fim
+
+**Resultados:**
+- T1–T7 + 2 subtestes de T7: todos PASS
+- Contra código antigo: T1 fuse.txt existe, child.err vazio (sem "reentrant call"); T2 idem — fuse disparou
+- go test ./internal/commands/: ok (16.3 s)
+- trackfw validate: 171 warnings (lenient mode), 0 violations hard
+- make quality: exit 0, 347 OK, 0 FAIL (segunda execução, após adicionar anotações `trackfw-contract`)
+- Correção pós-sessão: `barrierReentryKey` agora chama `filepath.Abs` antes de `EvalSymlinks`, alinhando com o spec do parecer (fallback para `abs`, não para `roadmapPath` bruto)
+
+---
+
+## 2026-09-30 — Hades (fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite — ML-0A corretivo) — ENTREGUE
+
+**Inicio:** 2026-09-30 | **Fim:** 2026-09-30 | Branch: `fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite`
+**Tarefa:** Corretivo do ML-0A (Wave 0, #485) — 3 pontos reprovados pela auditoria do arquiteto
+
+**Arquivos modificados:**
+- `docs/seguranca/2026-09-30-wave0-gate-reentrante-no-barrier.md`: 3 achados corrigidos
+- `docs/agents-working-context.md`: entrada de início e fim
+
+**Achado 1 — env-i:** Removida a afirmação falsa de "contador separado" e "backstop cobre o
+runaway". Texto correto: sob `env -i`/`sudo -i`/`docker run`/`ssh`, ambos os controles
+(dedup por chave e backstop) dependem de `TRACKFW_BARRIER_STACK` — quando apagada, não há
+freio. Avaliadas alternativas independentes de env (cadeia PPID; lock por chave de arquivo)
+e descartadas. Resíduo declarado sem contenção em ambos os lugares onde aparecia.
+
+**Achado 2 — reconciliação de contagens:**
+- "11 roadmaps" retratado. Medição correta (Python, extrator de bloco de gate): 10 gate-blocks
+  em 4 arquivos únicos `done/`. "11" era contagem irrestrita ao texto de gate — não reproduzível.
+- Tabela adicionada: 0 invocações diretas (regex, excluindo `#`); 10/4 com `make quality`;
+  3 com `grep -q check-roadmap-barrier-contract.sh` (não executam barrier).
+- "Zero colateral" para (c) mantido mas argumentado pelo mecanismo (chave absoluta distinta
+  entre roadmap real e fixture tmpdir), não pela contagem 0.
+
+**Achado 3 — N=4 medido:**
+- Cadeia máxima legítima: nível 1 (outer barrier) + nível 2 (make quality → fixture barrier,
+  pilha len=1). Nível 3 não existe: fixtures têm gates `exit 0`/`touch`/`true`/`false`.
+  Corpus snapshots verificados: nenhum tem `trackfw barrier` como gate.
+- Comprimento máximo de pilha ao iniciar o nível 2: 1. Backstop `len >= 4` dispara ao nível 5.
+  Folga: 3 níveis acima do máximo observado.
+
+**Checklist ML-0A:** todos os `[x]` sustentados. Nenhum revertido para `[ ]`.
+
+---
+
 ## 2026-09-29 — Apolo (fix/dois-workflows-rodam-a-mesma-validacao — ML-1D Wave 1) — ENTREGUE
 
 **Inicio:** 2026-09-29 | **Fim:** 2026-09-29 | Branch: `fix/dois-workflows-rodam-a-mesma-validacao`
@@ -43175,3 +43273,110 @@ Próximo: despachar ML-0A ao `hades-tf`.
 **Gate (Wave 0):** `mls_complete: passed (ML-0A: ✅, 6 criteria met)` · gate bloqueou por auto-referência (gate IS the barrier — comportamento esperado para Wave 0 self-referencial)
 **`git diff --stat trackfw.yaml`:** vazio (confirmado)
 **Próximo:** arquiteto audita o parecer e, se aprovado, escreve MLs da Wave 1
+## 2026-09-30 — zeus-tf — INÍCIO: #485 (gate que reentra no barrier recursa sem limite)
+
+Branch `fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite`, a partir da `main`. REQ + roadmap
+em `wip`. O #476 fica bloqueado atrás deste (mesmo `barrier.go`); sua branch foi empurrada antes da
+troca.
+
+Varredura: nenhuma issue/REQ aberta com o mecanismo; a REQ-2026-09-11 não trata reentrada.
+
+🔴 **Reenquadrei o #485:** "DoS por arquivo de texto" não é propriedade que uma correção de
+profundidade entregue — o gate é `sh -c` arbitrário e o trust check não protege clone hostil. O
+defeito é de **robustez**: gate benigno se amplifica sem limite. Sandbox fica no escopo negativo.
+
+Trazidos da branch do #476 (mesma causa): desarme da mina do ROADMAP-2026-09-22 e a nota de vault —
+na `main` a mina ainda estava armada na linha 73.
+
+Gate da Wave 0 testado em 3 braços: sem parecer → falha · acervo desta branch → 0 · versão armada
+da `main` → acusa 1.
+
+Próximo: ML-0A ao `hades-tf`. Contra-braço central: gates legítimos (`go test`, `check-barrier.sh`)
+aninham `barrier` sobre **outro** roadmap — um contador de profundidade cego os quebra.
+
+## 2026-09-30 — hades-tf — INÍCIO: ML-0A do #485 (gate reentrante no barrier)
+
+Branch `fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite`. Leitura: barrier.go,
+barrier_contract_test.go, scripts/check-barrier.sh, slash command, acervo de roadmaps.
+
+## 2026-09-30 — hades-tf — FIM: ML-0A concluído, Wave 0 aprovada
+
+Entregável: `docs/seguranca/2026-09-30-wave0-gate-reentrante-no-barrier.md`.
+Gate da Wave 0: PASSOU (parecer presente, 0 gates reentrantes no acervo).
+
+Achados principais:
+- Único executor de gate de produto: `barrier.go:371 runGateCommand` (via `sh -c`). Nenhum
+  outro comando do produto (roadmap move, commit, ship, validate) executa conteúdo de roadmap.
+- Discriminante (a) FALSIFICADO: `make quality` é gate real em 11 roadmaps done/ e chama
+  `check-barrier.sh` que por sua vez executa `trackfw barrier fixture` — um contador cego
+  quebra AC3 (gates legítimos).
+- Discriminante (c) APROVADO: pilha `(roadmap, wave)` herdada por env + backstop N=4.
+  Survives o contra-braço: check-barrier.sh e barrier_contract_test.go operam sobre fixtures
+  distintas (chaves diferentes), não caem no bloqueio.
+- barrier_contract_test.go (~:258 runBarrierCLI) NÃO seta cmd.Env — herda env do pai.
+  Premissa (ii) da REQ CONFIRMADA.
+- 0 gates no acervo desta branch invocam `trackfw barrier` (medido por extração de bloco).
+- Todas as 3 premissas da REQ confirmadas; nenhuma mudança de escopo.
+- Exit code recomendado: 2 (usage error), mensagem nomeia o ciclo explicitamente.
+
+## 2026-09-30 — hefesto-tf — INÍCIO: ML-2B do #485 (revisão de qualidade de código)
+
+Branch `fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite`.
+Revisão do commit `231b2f4c`: `internal/commands/barrier.go`, `barrier_reentry_test.go`,
+`barrier_test.go`, `docs/cli-parity.md`.
+
+## 2026-09-30 — hefesto-tf — FIM: ML-2B concluído, APROVA
+
+Entregável: `docs/qualidade/2026-09-30-wave2-reentrada-barrier.md`.
+Medições: `go vet` limpo · `gofmt` limpo · 7/7 testes Reentry PASS (1.9s).
+
+Achados principais:
+- A1 (deveria): `barrier.go:581` literal `4` sem constante nomeada (`barrierMaxDepth`);
+  T5 e cli-parity.md têm o número solto, sem vínculo ao código.
+- A2 (deveria): assinatura `runGateCommand(cmd, nil)` — `nil` segue convenção Go stdlib mas
+  o contrato "nil só em unit tests diretos, nunca dentro de runBarrier pós-pilha" é implícito.
+- A3/A4 (opcionais): `roadmapPath` descartado em T5; `runBarrierReentry` vs `runBarrierCLI`
+  são diferenças legítimas, não duplicação.
+- T_FUSE não pode mascarar falha: o fusível só passa se NÃO disparar, e só não dispara se o
+  barrier recusar antes de rodar o gate.
+- 3 mensagens literais do cli-parity.md batem byte-a-byte com o código.
+- Veredito: APROVA. Sem bloqueantes.
+
+## 2026-09-30 — apolo-tf — INÍCIO: ML-2C (Wave 3 do #485)
+
+Branch `fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite`.
+Corretivo: F1 (spec deviation waveLabel→target.Label), F2 (os.SameFile para hardlink/APFS case),
+F3 (doc residual), A1 (barrierMaxDepth constante), A2 (comentário nil proibido em runBarrier).
+Testes T7c/T7d/T7e escritos antes da correção, reprovação registrada, correção aplicada.
+
+## 2026-09-30 — apolo-tf — FIM: ML-2C concluído
+
+Branch `fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite`.
+Arquivos alterados: `internal/commands/barrier.go` · `internal/commands/barrier_reentry_test.go` · `docs/cli-parity.md`.
+
+Correções aplicadas:
+- F1: `barrierReentryKey` agora usa `target.Label` (header parsed), não `waveLabel` (CLI arg) — elimina o bypass de case (1b vs 1B).
+- F2: `sameRoadmapFile(a, b)` usa `os.SameFile` — fecha bypass por hardlink e APFS case-insensitive.
+- F3 (doc): `docs/cli-parity.md` residual expandido com formas de override direto (`TRACKFW_BARRIER_STACK=""`, `=null`, `=[] cmd`).
+- A1: `const barrierMaxDepth = 4` substitui o literal 4 no backstop e em T5.
+- A2: comentário em `runGateCommand` documenta que `env == nil` é proibido dentro de `runBarrier`.
+- `symlinkOrSkip` helper adicionado (conformidade com check-symlink-privilege-guard.sh).
+
+Testes: T7c/T7d/T7e escritos; reprovação contra binário pré-fix registrada; 12 PASS pós-fix.
+Gates: `go build` OK · `go test -run Reentry` OK · `barrierMaxDepth` e `os.SameFile` OK · `make quality` OK (exit=0, 347 OK, 0 FAIL).
+
+## 2026-09-30 — zeus-tf — FIM (implementação): #485 pronto para PR
+
+Waves 0–3 auditadas; barrier real (binário com a correção) `passed` nas 4. AC1–AC7 marcados com
+evidência; **AC8 fica aberto até o CI** (make quality local 347 OK / 0 FAIL, rodado pelo executor).
+
+Duas reprovações de auditoria, as duas em teste que não afirmava nada: o T3 (braço do AC3) saía 0
+mesmo com o barrier interno recusado; e a 1ª entrega da Wave 0 dizia que o backstop segurava sob
+`env -i` (ele mora na mesma variável). O Hades da Wave 2 achou 2 contornos reais (1b/1B e
+hardlink/caixa) — fechados no ML-2C com testes que reprovavam antes.
+
+🔴 **Erro meu:** gate de várias linhas. O `ParseGates` executa **cada linha** como `sh -c`
+separado; o meu gate da Wave 0 passava com `bash` e reprovava com 13 falhas sob o barrier real.
+Reescrito. **O gate da Wave 0 do #476 tem o mesmo defeito** — corrigir quando aquela frente voltar.
+
+Pendente: CI verde → PR (só a pedido) → fechamento pós-merge. Depois, retomar o #476.
