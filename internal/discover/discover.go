@@ -71,7 +71,7 @@ func InstallGates(r DiscoveryResult, rootDir string, w io.Writer) error {
 		return err
 	}
 	if r.CISystem == "github-actions" {
-		if err := writeCIWorkflow(rootDir); err != nil {
+		if err := writeCIWorkflow(rootDir, w); err != nil {
 			return err
 		}
 	}
@@ -343,7 +343,7 @@ func installHuskyNPX(rootDir string, w io.Writer) error {
 	return nil
 }
 
-func writeCIWorkflow(rootDir string) error {
+func writeCIWorkflow(rootDir string, w io.Writer) error {
 	root := resolveRoot(rootDir)
 	// ML-8A / #402: every path written below is derived from `root` (the resolved
 	// form), not from `rootDir`. The guards were already on `root`, so a write
@@ -361,6 +361,22 @@ func writeCIWorkflow(rootDir string) error {
 	// own ("aviso: … não escreve através de symlinks"), which was the 5th of the 5
 	// measured grammars. The refusal now comes from the single emitter.
 	if guardErr := pathguard.RejectAndReport(root, filepath.Join(root, ".github", "workflows", "trackfw-validate.yml")); guardErr != nil {
+		return nil
+	}
+	// D2 (ADR-2026-09-29): the product delivers ONE governance workflow per project.
+	// If gate.yml (generators.GitHubActionsWorkflowPath, written by init/update) already
+	// exists as a regular file, skip writing validate.yml — this mirrors the guard in
+	// generateGitHubActionsWorkflow (scaffold.go) which checks for validate.yml before
+	// writing gate.yml; the asymmetry (this site not checking) was the defect closed by
+	// ML-1D. Non-fatal: control-flow property preserved (best-effort, nil on collision).
+	// os.Lstat so a symlink at gate.yml is treated as absent — consistent with
+	// discoverWorkflowPresent's predicate on the other side.
+	// Note: a symlinked gate.yml does NOT trigger this guard, so validate.yml is still
+	// written in that case. This is intentional and symmetric with discoverWorkflowPresent.
+	gateYmlPath := filepath.Join(root, generators.GitHubActionsWorkflowPath)
+	if gateInfo, gErr := os.Lstat(gateYmlPath); gErr == nil && gateInfo.Mode()&os.ModeSymlink == 0 {
+		fmt.Fprintf(w, "  ℹ %s já existe — %s não será escrito (ADR-2026-09-29 D2)\n",
+			generators.GitHubActionsWorkflowPath, generators.DiscoverGitHubActionsWorkflowPath)
 		return nil
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site

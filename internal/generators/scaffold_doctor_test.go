@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/integrations"
 )
 
@@ -492,5 +493,321 @@ func mustWriteGoMod(t *testing.T, dir, modulePath string) {
 	content := "module " + modulePath + "\n\ngo 1.25.2\n"
 	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// ─── ML-1A (ADR-2026-09-29 D4): doctor suppresses scaffold-missing for gate.yml ──
+
+// TestRunScaffoldDoctor_GateYmlMissing_ValidateYmlPresent_Silent asserts that when
+// trackfw-validate.yml is present and trackfw-gate.yml is absent (with ci: github-actions),
+// the doctor emits NO finding for gate.yml — the scaffold-missing finding is suppressed.
+//
+// ML-1A Regra Dura de Reconciliação sentence: this test affirms that ADR-2026-09-29 D4 is
+// implemented — skipping the gate.yml write (D2) does not trade a duplication for a false
+// scaffold-missing finding; the doctor is aware that validate.yml's presence makes gate.yml
+// absence expected.
+func TestRunScaffoldDoctor_GateYmlMissing_ValidateYmlPresent_Silent(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte("ci: github-actions\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wfDir := filepath.Join(dir, ".github", "workflows")
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Only validate.yml present — gate.yml intentionally absent.
+	if err := os.WriteFile(filepath.Join(wfDir, "trackfw-validate.yml"), []byte(BuildDiscoverGitHubActionsWorkflowContent(false)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Reset the config singleton so loadUpdateConfig() reads from dir's trackfw.yaml
+	// (not from a prior test's cached result — config.Load() is a singleton).
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	findings, err := RunScaffoldDoctor(dir)
+	if err != nil {
+		t.Fatalf("RunScaffoldDoctor error: %v", err)
+	}
+	for _, f := range findings {
+		if f.Destination == GitHubActionsWorkflowPath {
+			t.Errorf("unexpected finding for gate.yml when validate.yml is present: %+v", f)
+		}
+	}
+}
+
+// TestRunScaffoldDoctor_BothMissing_GitHubActions_Accuses is the counter-arm: when BOTH
+// workflows are absent (and ci: github-actions), the doctor MUST still accuse scaffold-missing
+// for gate.yml — the true finding must not have been erased.
+//
+// ML-1A Regra Dura de Reconciliação sentence: this test affirms that D4's suppression is
+// conditional on validate.yml's presence — when neither workflow exists, the missing-gate
+// finding is not suppressed, preserving the doctor's original behaviour for new projects
+// that ran init but somehow lost the workflow.
+func TestRunScaffoldDoctor_BothMissing_GitHubActions_Accuses(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte("ci: github-actions\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Neither gate.yml nor validate.yml present.
+
+	// Reset the config singleton so loadUpdateConfig() reads from dir's trackfw.yaml.
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	findings, err := RunScaffoldDoctor(dir)
+	if err != nil {
+		t.Fatalf("RunScaffoldDoctor error: %v", err)
+	}
+	found := false
+	for _, f := range findings {
+		if f.Destination == GitHubActionsWorkflowPath {
+			found = true
+			if f.FindingKind != integrations.DoctorScaffoldMissing {
+				t.Errorf("expected DoctorScaffoldMissing for gate.yml when both absent, got %v", f.FindingKind)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("counter-arm: expected scaffold-missing for gate.yml when both workflows absent; got none: %+v", findings)
+	}
+}
+
+// TestRunScaffoldDoctor_GateYmlStale_ValidateYmlPresent_Accuses is the counter-arm for
+// stale gate.yml: even when validate.yml is present, a STALE gate.yml must still be
+// accused (scaffold-divergent). Suppression is ONLY for scaffold-missing.
+//
+// ML-1A Regra Dura de Reconciliação sentence: this test affirms that D4's suppression
+// does not swallow scaffold-divergent findings — a gate.yml that exists but is outdated
+// remains a finding regardless of whether validate.yml is also present.
+func TestRunScaffoldDoctor_GateYmlStale_ValidateYmlPresent_Accuses(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte("ci: github-actions\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wfDir := filepath.Join(dir, ".github", "workflows")
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// validate.yml present (correct content).
+	if err := os.WriteFile(filepath.Join(wfDir, "trackfw-validate.yml"), []byte(BuildDiscoverGitHubActionsWorkflowContent(false)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// gate.yml present but obviously stale — content does not match any template.
+	if err := os.WriteFile(filepath.Join(wfDir, "trackfw-gate.yml"), []byte("stale: true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Reset the config singleton so loadUpdateConfig() reads from dir's trackfw.yaml.
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	findings, err := RunScaffoldDoctor(dir)
+	if err != nil {
+		t.Fatalf("RunScaffoldDoctor error: %v", err)
+	}
+	found := false
+	for _, f := range findings {
+		if f.Destination == GitHubActionsWorkflowPath {
+			found = true
+			if f.FindingKind != integrations.DoctorScaffoldDivergent {
+				t.Errorf("expected DoctorScaffoldDivergent for stale gate.yml, got %v", f.FindingKind)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("counter-arm: expected scaffold-divergent for stale gate.yml even when validate.yml present; got none: %+v", findings)
+	}
+}
+
+// ─── ML-1B (ADR-2026-09-29 D3): doctor names the duplication when both are present ──
+
+// TestRunScaffoldDoctor_BothPresent_EmitsMigration asserts that when both
+// trackfw-gate.yml and trackfw-validate.yml are present as regular files (and ci:
+// github-actions), the doctor emits a scaffold-workflow-duplicated finding, naming both
+// workflows, both job ids, and the required_status_checks check.
+//
+// ML-1B Regra Dura de Reconciliação sentence: this test affirms that ADR-2026-09-29 D3
+// is implemented — a project that already has both workflows receives a migration advisory
+// from the doctor, so the consumer knows the duplication exists and what to verify before
+// removing the redundant workflow.
+func TestRunScaffoldDoctor_BothPresent_EmitsMigration(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte("ci: github-actions\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wfDir := filepath.Join(dir, ".github", "workflows")
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Both workflows present as regular files with correct content.
+	if err := os.WriteFile(filepath.Join(wfDir, "trackfw-gate.yml"), []byte(buildGitHubActionsWorkflowContent(false)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wfDir, "trackfw-validate.yml"), []byte(BuildDiscoverGitHubActionsWorkflowContent(false)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	findings, err := RunScaffoldDoctor(dir)
+	if err != nil {
+		t.Fatalf("RunScaffoldDoctor error: %v", err)
+	}
+	var migration *integrations.DoctorFinding
+	for i := range findings {
+		if findings[i].FindingKind == integrations.DoctorScaffoldWorkflowDuplicated {
+			migration = &findings[i]
+			break
+		}
+	}
+	if migration == nil {
+		t.Fatalf("expected scaffold-workflow-duplicated finding when both workflows present; got none: %+v", findings)
+	}
+	// The finding must name both files and both job ids in the remedy.
+	for _, want := range []string{
+		GitHubActionsWorkflowPath,
+		DiscoverGitHubActionsWorkflowPath,
+		"governance-install-script",
+		"governance-go-install",
+		"required_status_checks",
+	} {
+		if !strings.Contains(migration.Remedy, want) {
+			t.Errorf("migration finding remedy missing %q; remedy: %s", want, migration.Remedy)
+		}
+	}
+	// The finding must not suggest unconditional removal — it is advisory.
+	if migration.FindingKind != integrations.DoctorScaffoldWorkflowDuplicated {
+		t.Errorf("expected DoctorScaffoldWorkflowDuplicated, got %v", migration.FindingKind)
+	}
+}
+
+// ─── ML-1D (ADR-2026-09-29): doctor skips validate.yml when it is a symlink ──
+
+// TestRunScaffoldDoctor_DiscoverWorkflow_Symlink_Silent asserts that when
+// trackfw-validate.yml is a symlink (even pointing at stale content), the doctor emits
+// NO scaffold-divergent finding for it — the symlink case is silently skipped because
+// trackfw update refuses to write through symlinks, making scaffold-divergent's remedy
+// inoperable.
+//
+// The symlink target contains stale content (no match to any known template) so that
+// the pre-fix os.Stat path would have emitted scaffold-divergent; with os.Lstat + the
+// symlink exclusion the finding disappears. This makes the test a genuine falsifier.
+//
+// ML-1D Regra Dura de Reconciliação sentence: this test affirms that ML-1D's Lstat
+// change is effective — a symlink at validate.yml no longer generates a scaffold-divergent
+// finding with an inoperable remedy (trackfw update), consistent with the pattern used
+// by discoverWorkflowPresent and the D3 gatePresent check.
+func TestRunScaffoldDoctor_DiscoverWorkflow_Symlink_Silent(t *testing.T) {
+	dir := t.TempDir()
+	// trackfw.yaml required for RunScaffoldDoctor eligibility check.
+	// No ci: key so the gate.yml CI section does not run — only the discover section.
+	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte("backend: go\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wfDir := filepath.Join(dir, ".github", "workflows")
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Create a target with stale content — pre-fix os.Stat would follow the link,
+	// compare "stale: true\n" to the template, and emit scaffold-divergent.
+	outside := t.TempDir()
+	staleTarget := filepath.Join(outside, "stale-workflow.yml")
+	if err := os.WriteFile(staleTarget, []byte("stale: true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	validatePath := filepath.Join(wfDir, "trackfw-validate.yml")
+	symlinkOrSkip(t, staleTarget, validatePath)
+
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	findings, err := RunScaffoldDoctor(dir)
+	if err != nil {
+		t.Fatalf("RunScaffoldDoctor error: %v", err)
+	}
+	for _, f := range findings {
+		if f.Destination == DiscoverGitHubActionsWorkflowPath {
+			t.Errorf("unexpected finding for symlinked validate.yml — remedy would be inoperable: %+v", f)
+		}
+	}
+}
+
+// TestRunScaffoldDoctor_DiscoverWorkflow_RegularStale_Accuses is the counter-arm:
+// when validate.yml is a REGULAR FILE with stale content, the doctor must still emit
+// scaffold-divergent — the Lstat guard must not suppress real divergence.
+//
+// ML-1D Regra Dura de Reconciliação sentence: this test affirms that the Lstat change
+// is scoped to symlinks only — a regular file with wrong content is still accused,
+// preserving the doctor's ability to detect genuine drift in the validate.yml template.
+func TestRunScaffoldDoctor_DiscoverWorkflow_RegularStale_Accuses(t *testing.T) {
+	dir := t.TempDir()
+	// trackfw.yaml required for RunScaffoldDoctor eligibility check.
+	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte("backend: go\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wfDir := filepath.Join(dir, ".github", "workflows")
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Regular file with stale content — must still be accused.
+	if err := os.WriteFile(filepath.Join(wfDir, "trackfw-validate.yml"), []byte("stale: true\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	findings, err := RunScaffoldDoctor(dir)
+	if err != nil {
+		t.Fatalf("RunScaffoldDoctor error: %v", err)
+	}
+	found := false
+	for _, f := range findings {
+		if f.Destination == DiscoverGitHubActionsWorkflowPath {
+			found = true
+			if f.FindingKind != integrations.DoctorScaffoldDivergent {
+				t.Errorf("expected DoctorScaffoldDivergent for stale regular validate.yml, got %v", f.FindingKind)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("counter-arm: expected scaffold-divergent for stale regular validate.yml; got none: %+v", findings)
+	}
+}
+
+// TestRunScaffoldDoctor_OnlyGateYml_NoMigration is the counter-arm: when only gate.yml
+// is present (validate.yml absent), no migration finding must be emitted.
+//
+// ML-1B Regra Dura de Reconciliação sentence: this test affirms that D3 fires only when
+// BOTH workflows are present — a project with only gate.yml (the normal post-migration
+// state) receives no advisory, preserving doctor's silence in the healthy single-workflow
+// case.
+func TestRunScaffoldDoctor_OnlyGateYml_NoMigration(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte("ci: github-actions\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wfDir := filepath.Join(dir, ".github", "workflows")
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Only gate.yml present — validate.yml intentionally absent.
+	if err := os.WriteFile(filepath.Join(wfDir, "trackfw-gate.yml"), []byte(buildGitHubActionsWorkflowContent(false)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	findings, err := RunScaffoldDoctor(dir)
+	if err != nil {
+		t.Fatalf("RunScaffoldDoctor error: %v", err)
+	}
+	for _, f := range findings {
+		if f.FindingKind == integrations.DoctorScaffoldWorkflowDuplicated {
+			t.Errorf("unexpected scaffold-workflow-duplicated finding when only gate.yml present: %+v", f)
+		}
 	}
 }

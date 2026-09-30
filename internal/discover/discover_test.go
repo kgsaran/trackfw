@@ -880,7 +880,7 @@ func TestWriteCIWorkflow_ProducerContext(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := writeCIWorkflow(dir); err != nil {
+	if err := writeCIWorkflow(dir, io.Discard); err != nil {
 		t.Fatalf("writeCIWorkflow: %v", err)
 	}
 
@@ -892,6 +892,67 @@ func TestWriteCIWorkflow_ProducerContext(t *testing.T) {
 	want := generators.BuildDiscoverGitHubActionsWorkflowContent(true)
 	if string(content) != want {
 		t.Errorf("producer context: writeCIWorkflow wrote consumer template instead of producer template.\ngot:\n%s\nwant:\n%s", content, want)
+	}
+}
+
+// ─── ML-1D (ADR-2026-09-29 D2): writeCIWorkflow skips validate.yml when gate.yml present ──
+
+// TestInstallGates_GateYmlPresent_ValidateYmlNotWritten asserts that when
+// trackfw-gate.yml is already present as a regular file, InstallGates does NOT write
+// trackfw-validate.yml — closing the D2 asymmetry on the discover side.
+//
+// ML-1D Regra Dura de Reconciliação sentence: this test affirms that ADR-2026-09-29 D2
+// is now enforced by writeCIWorkflow (discover.go) symmetrically with
+// generateGitHubActionsWorkflow (scaffold.go) — a project that already has gate.yml will
+// not receive a second governance workflow from `trackfw discover --init`.
+func TestInstallGates_GateYmlPresent_ValidateYmlNotWritten(t *testing.T) {
+	dir := t.TempDir()
+	mustMkdir(t, dir, ".github/workflows")
+	// gate.yml present as a regular file — this is the guard condition.
+	mustWriteFile(t, filepath.Join(dir, ".github/workflows/trackfw-gate.yml"), "# gate workflow\n")
+
+	var buf strings.Builder
+	r := DiscoveryResult{CISystem: "github-actions"}
+	if err := InstallGates(r, dir, &buf); err != nil {
+		t.Fatalf("InstallGates error: %v", err)
+	}
+
+	// validate.yml must NOT have been written.
+	validatePath := filepath.Join(dir, ".github", "workflows", "trackfw-validate.yml")
+	if _, err := os.Stat(validatePath); err == nil {
+		t.Errorf("validate.yml must not be written when gate.yml is present, but it was")
+	}
+
+	// The reason must have been communicated to the caller via w.
+	msg := buf.String()
+	if !strings.Contains(msg, generators.GitHubActionsWorkflowPath) {
+		t.Errorf("expected informational message to name gate.yml path, got: %q", msg)
+	}
+	if !strings.Contains(msg, generators.DiscoverGitHubActionsWorkflowPath) {
+		t.Errorf("expected informational message to name validate.yml path, got: %q", msg)
+	}
+}
+
+// TestInstallGates_GateYmlAbsent_ValidateYmlWritten is the counter-arm: when gate.yml
+// is absent, InstallGates MUST still write validate.yml. The brownfield onboarding path
+// must not have been removed by the D2 guard.
+//
+// ML-1D Regra Dura de Reconciliação sentence: this test affirms that the D2 guard is
+// conditional on gate.yml being present — a project without gate.yml (the normal
+// discover-onboarding case) still receives validate.yml from InstallGates.
+func TestInstallGates_GateYmlAbsent_ValidateYmlWritten(t *testing.T) {
+	dir := t.TempDir()
+	mustMkdir(t, dir, ".github/workflows")
+	// gate.yml intentionally absent.
+
+	r := DiscoveryResult{CISystem: "github-actions"}
+	if err := InstallGates(r, dir, io.Discard); err != nil {
+		t.Fatalf("InstallGates error: %v", err)
+	}
+
+	validatePath := filepath.Join(dir, ".github", "workflows", "trackfw-validate.yml")
+	if _, err := os.Stat(validatePath); err != nil {
+		t.Errorf("counter-arm: validate.yml must be written when gate.yml is absent, but it was not: %v", err)
 	}
 }
 

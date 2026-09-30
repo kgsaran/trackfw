@@ -781,3 +781,68 @@ func TestAttentionSignal_SpaceInRoadmapDir_NotBrokenByCRLFNorm(t *testing.T) {
 		t.Fatalf("JSON invalid for space roadmap_dir: %v\ncontent: %s", jsonErr, data)
 	}
 }
+
+// ─── ML-1A (ADR-2026-09-29 D2): generator skips gate.yml when validate.yml exists ──
+
+// TestGenerateGitHubActionsWorkflow_SkipsWhenValidateYmlPresent asserts that
+// generateGitHubActionsWorkflow does NOT write trackfw-gate.yml when
+// .github/workflows/trackfw-validate.yml already exists as a regular file.
+//
+// ML-1A Regra Dura de Reconciliação sentence: this test affirms that ADR-2026-09-29 D2
+// is implemented — the generator's asymmetry with refreshDiscoverGitHubActionsWorkflowIfPresent
+// is corrected: when validate.yml is present, gate.yml is NOT written and the function
+// returns nil (not an error, per the ADR: absence is expected, not a failure).
+func TestGenerateGitHubActionsWorkflow_SkipsWhenValidateYmlPresent(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	// Plant trackfw-validate.yml as a regular file (the discover-installed workflow).
+	wfDir := filepath.Join(dir, ".github", "workflows")
+	if err := os.MkdirAll(wfDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(wfDir, "trackfw-validate.yml"), []byte("name: trackfw validate\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := generateGitHubActionsWorkflow(Config{CI: "github-actions"})
+	if err != nil {
+		t.Fatalf("generateGitHubActionsWorkflow() returned error when validate.yml present, want nil: %v", err)
+	}
+
+	gatePath := filepath.Join(dir, ".github", "workflows", "trackfw-gate.yml")
+	if _, statErr := os.Stat(gatePath); statErr == nil {
+		t.Error("gate.yml was written even though validate.yml was present — D2 not implemented")
+	}
+}
+
+// TestGenerateGitHubActionsWorkflow_WritesWhenValidateYmlAbsent is the counter-arm:
+// when trackfw-validate.yml is absent, generateGitHubActionsWorkflow MUST still write
+// trackfw-gate.yml — the project-new path must not have regressed.
+//
+// ML-1A Regra Dura de Reconciliação sentence: this test affirms that the gate.yml write
+// path is intact for new projects, i.e. the D2 guard (validate.yml presence check) does
+// not suppress the write when validate.yml is absent — the pre-existing behavior is preserved.
+func TestGenerateGitHubActionsWorkflow_WritesWhenValidateYmlAbsent(t *testing.T) {
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+
+	// No validate.yml — clean new project.
+	err := generateGitHubActionsWorkflow(Config{CI: "github-actions"})
+	if err != nil {
+		t.Fatalf("generateGitHubActionsWorkflow() returned error for clean new project: %v", err)
+	}
+
+	gatePath := filepath.Join(dir, ".github", "workflows", "trackfw-gate.yml")
+	if _, statErr := os.Stat(gatePath); statErr != nil {
+		t.Errorf("gate.yml was NOT written for new project (validate.yml absent) — counter-arm: %v", statErr)
+	}
+}

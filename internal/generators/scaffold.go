@@ -2559,6 +2559,21 @@ func generateGitHubActionsWorkflow(cfg Config) error {
 	if err := rejectScaffoldPath(ghRoot, absGHDir); err != nil {
 		return err
 	}
+
+	// D2 (ADR-2026-09-29): the product delivers ONE governance workflow per project.
+	// If the discover-installed workflow (DiscoverGitHubActionsWorkflowPath,
+	// trackfw-validate.yml) already exists as a regular file, skip writing
+	// trackfw-gate.yml. This mirrors the cuidado that
+	// refreshDiscoverGitHubActionsWorkflowIfPresent (update.go) already has on
+	// the other side — the asymmetry was the defect.
+	// Uses discoverWorkflowPresent (os.Lstat) so a symlink at that path is NOT
+	// treated as present and gate.yml is still written — safe direction.
+	if discoverWorkflowPresent(ghRoot) {
+		fmt.Printf("  ℹ %s já existe — %s não será escrito (ADR-2026-09-29 D2)\n",
+			DiscoverGitHubActionsWorkflowPath, GitHubActionsWorkflowPath)
+		return nil
+	}
+
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.MkdirAll(".github/workflows", 0755); err != nil {
 		return err

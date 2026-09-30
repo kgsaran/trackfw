@@ -219,6 +219,13 @@ Diretório temp: `/private/tmp/claude-501/.../scratchpad/issue450`
 ## #451 — v9.0.0 instala `trackfw-gate.yml` ao lado do `trackfw-validate.yml` existente
 
 **Veredito:** (C) — Reproduz parcialmente; a coexistência dos dois arquivos é decidida (ADR-2026-08-28), o desperdício de 3x foi reduzido para 2x por #456  
+> ⚠️ **RETRATAÇÃO 2026-09-29 (sítio 4 — ML-1C, ROADMAP-2026-09-22):** a afirmação *"a coexistência
+> está decidida (ADR-2026-08-28)"* é **falsa**. Medido: aquela ADR tem zero ocorrências de
+> `trackfw-validate.yml` — ela decide pino de versão e `TRACKFW_VERSION`. A decisão que agora existe
+> é a `ADR-2026-09-29`, que resolve o contrário: o produto entrega **um** workflow por projeto e
+> nunca instala um segundo ao lado do existente. O #451 foi absorvido na `REQ-2026-09-02` em
+> 2026-09-29. O texto original é preservado acima como evidência de como a citação propagou.
+
 **Gravidade:** MÉDIA — consumidor em plano free paga 2 execuções por push num PR (era 3)
 
 **Reprodução executada:**
@@ -243,6 +250,10 @@ Diretório temp: `/private/tmp/claude-501/.../scratchpad/issue450`
 **O que fechou:** trigger `on: [push, pull_request]` gerava 2 execuções para 1 push numa branch com PR. Corrigido no template em #456 e na cópia versionada em #459. Resultado: 2x (uma de `trackfw-gate.yml`, uma de `trackfw-validate.yml`) em vez de 3x.
 
 **O que sobrou:** coexistência dos dois workflows (decisão da ADR-2026-08-28, para cobrir dois métodos de instalação). A detecção de workflow pré-existente para evitar instalar um segundo não foi implementada.
+> ⚠️ **RETRATAÇÃO 2026-09-29 (sítio 5 — ML-1C, ROADMAP-2026-09-22):** a afirmação *"decisão da
+> ADR-2026-08-28, para cobrir dois métodos de instalação"* é **falsa**. Aquela ADR não decide
+> coexistência. A `ADR-2026-09-29` decide o contrário: um workflow por projeto. A detecção de
+> workflow pré-existente foi implementada no ML-1A desta mesma REQ. Texto original preservado acima.
 
 ---
 

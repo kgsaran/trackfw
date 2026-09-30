@@ -14,91 +14,228 @@ squad: ""
 REQ: docs/req/REQ-2026-09-02-init-e-discover-geram-dois-workflows-que-rodam-a-mesma-validacao-com-instaladores-diferentes.md
 
 ## Acceptance Criteria
-<!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
-- [ ]
-- [ ]
+- [ ] **AC1** — por que existem dois, **com evidência**; razão legítima → a REQ fecha documentando
+- [ ] **AC2/AC7** — um único `trackfw validate` por evento, medido por **check-runs no mesmo SHA**
+- [ ] **AC3** — o caminho de adoção que depende do workflow tocado **continua funcionando**
+- [ ] **AC4-bis** — o comentário que cita decisão inexistente é corrigido
+- [ ] **AC5** — migração de quem **já tem os dois** instalados
+- [ ] **AC8** — o `doctor` acompanha na mesma entrega, sem achado falso novo
+- [ ] **AC6** — `make quality` e CI verdes
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
 
-## Wave 0 — Threat Model
-> Dependencies: none. Blocks all implementation.
+## Wave 0 — por que existem dois, e o que quebra se um sair
+> Dependências: nenhuma. 🔴 **BLOQUEIA toda implementação.**
 
-### ML-0A — Threat model for this roadmap
-**Status:** ⬜ Pendente
-**Files affected:**
-**Actions:**
-1. Enumeration completeness — is the list of surfaces in this roadmap complete? Name what is missing, or show the list is closed. Do not limit the search to the files already named by the REQ — before declaring the list closed, search the repository for other places that emit the same artifact or the same pattern (for example, grep for the literal the final artifact contains).
-2. Threat model — who empties this Wave 0 without breaking any written rule, and how?
-3. Falsification targets in both directions — for each surface, what breaks when the behavior regresses, and what breaks when it regresses the opposite way?
-4. Declared residual — what this design accepts not covering.
-**Acceptance criteria:**
-- [ ] The four sections above answered with evidence, not a one-line assertion
-- [ ] No implementation line written for this ML
+### ML-0A — a arqueologia do AC1, e o inventário de quem depende de qual
+**Owner:** `hades-tf`
+**Status:** ✅ Concluído
+**Arquivos de leitura:** `internal/generators/scaffold.go` (`generateGitHubActionsWorkflow`:2553) ·
+`internal/generators/scaffold_doctor.go` (:32, :59, :333) · `internal/discover/discover.go`
+(`InstallGates`:66) · `internal/generators/update.go` (:2189) · `docs/adr/`
+**Método:** medir no código e no histórico. 🔴 **Não decidir o remédio** — a Wave 0 entrega a
+evidência sobre a qual a decisão é tomada, e tem autoridade para **bloquear** o roadmap.
+
+**Perguntas, em ordem de peso:**
+
+1. 🔴 **Existe caminho de adoção que recebe `trackfw-validate.yml` e NUNCA receberia
+   `trackfw-gate.yml`?** É a pergunta que decide tudo. `discover --init` (`InstallGates`) decide por
+   `DiscoveryResult.CISystem`; o `gate.yml` sai de `generateGitHubActionsWorkflow`, guiado por
+   `cfg.CI` do `trackfw.yaml`. **Se houver projeto que satisfaz um e não o outro, os dois são
+   necessários** e o AC1 fecha a REQ documentando a razão.
+2. **Os dois arquivos são funcionalmente equivalentes hoje?** Compare o conteúdo **gerado**, não a
+   intenção: gatilhos, jobs, steps, e o que entra em `required_status_checks`.
+   ⚠️ `governance-go-install` é contrato de required check — se ele só nasce de um dos dois, remover
+   esse é quebrar merge protection de quem já depende dele. **Meça**, não presuma.
+3. **Instalador:** `go install` exige toolchain Go; o script `curl | sh`, não. Existe adotante sem Go
+   atendido **só** pelo `validate.yml`? E o inverso?
+4. **O que o `doctor` cobra de cada um**, e o que passa a cobrar errado se um deixar de ser escrito.
+
+**Ataque a premissa que eu trago — ela já esteve errada uma vez:**
+
+🔴 A afirmação *"a coexistência está decidida na `ADR-2026-08-28`"* aparece em **dois** sítios
+(`scaffold_doctor.go:333` e a cauda deste roadmap) e é **falsa** — medido: zero ocorrências de
+`trackfw-validate.yml` naquela ADR. **Varra o repositório atrás de um terceiro sítio** que repita a
+citação, e atrás de **qualquer** ADR que decida a coexistência por outro nome. Se existir decisão
+real, é ela que governa, não a minha medição.
+
+**Critérios de aceite:**
+- [x] Resposta à pergunta 1 **com o comando e a saída** — é a que decide o desenho
+- [x] Tabela de equivalência dos dois workflows **gerados**, campo a campo
+- [x] Inventário dos sítios que citam a decisão inexistente (esperado ≥ 2; **achados: 5**)
+- [x] Veredito explícito: **os dois são necessários, ou não** — e o que falsificaria a resposta
+- [x] 🔴 Se a medição refutar qualquer premissa da REQ, **diga**; Wave 0 que só concorda não mediu
+- [x] Nenhuma linha de implementação escrita neste ML
 
 **Gates da wave:**
 ```bash
-# Wave 0 gate — replace this placeholder with a project-specific check before
-# marking ML-0A done. Do not remove the gate; replace its command (AC13).
-exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli-parity.md
+trackfw barrier ROADMAP-2026-09-22-init-e-discover-geram-dois-workflows-que-rodam-a-mesma-validacao-com-instaladores-diferentes --wave 0 --trust-local-gates
 ```
 
-## Wave 1 — Implementation (derived from REQ criteria)
-> Dependencies: none
+## Wave 1 — o remédio
+> 🔴 **Dependências: Wave 0 auditada** (ML-0A ✅, barrier `passed`).
+> **Decisão do KG em 2026-09-29:** remédio **"não instalar o segundo"**, canônico **`trackfw-gate.yml`**.
+> Registrada em `docs/adr/ADR-2026-09-29-o-produto-entrega-um-workflow-de-governanca-por-projeto-...md`
+> (D1–D5). **A ADR é o contrato destes MLs** — leia-a antes de agir.
 
-### ML-1A — **AC1** — 🔴 **Determinar por que existem dois**, com evidência (histórico, ADR, comportamento
-**Status:** ⬜ Pendente
-**Files affected:**
-**Actions:**
-**Acceptance criteria:**
-- [ ] **AC1** — 🔴 **Determinar por que existem dois**, com evidência (histórico, ADR, comportamento
-- [ ] build passes
-- [ ] tests green
+> **Paralelismo:** ML-1A e ML-1C tocam arquivos **disjuntos** → paralelos.
+> 🔴 ML-1B toca `scaffold_doctor.go`, que o ML-1A também toca → **sequencial após o 1A**, nunca junto.
 
-### ML-1B — **AC2** — Se não houver: um único workflow gerado, com o instalador escolhido e **justificado**.
-**Status:** ⬜ Pendente
-**Files affected:**
-**Actions:**
-**Acceptance criteria:**
-- [ ] **AC2** — Se não houver: um único workflow gerado, com o instalador escolhido e **justificado**.
-- [ ] build passes
-- [ ] tests green
+### ML-1A — o gerador pergunta antes de escrever, e o `doctor` acompanha
+**Owner:** `apolo-tf`
+**Status:** ✅ Concluído
+**Arquivos:** `internal/generators/scaffold.go` · `internal/generators/scaffold_doctor.go`
+(+ testes dos dois)
+**Implementa:** **D2** e **D4** da ADR · AC2, AC7, AC8 · sítios **1** e **2** do AC9
 
-### ML-1C — **AC3** — 🔴 **Controle:** o caminho de adoção que hoje depende do workflow removido **continua
-**Status:** ⬜ Pendente
-**Files affected:**
-**Actions:**
-**Acceptance criteria:**
-- [ ] **AC3** — 🔴 **Controle:** o caminho de adoção que hoje depende do workflow removido **continua
-- [ ] build passes
-- [ ] tests green
+**Ações:**
+1. `generateGitHubActionsWorkflow` (`scaffold.go:2553`): **não escrever** o `trackfw-gate.yml` quando
+   `.github/workflows/trackfw-validate.yml` já existe. Espelhe o cuidado que
+   `refreshDiscoverGitHubActionsWorkflowIfPresent` (`update.go:2189`) já tem — **a assimetria é o
+   defeito**. Emita a razão ao usuário (não falhe): o arquivo existente é nomeado na mensagem.
+2. `doctor` (`scaffold_doctor.go`): com `validate.yml` **presente** e `gate.yml` **ausente**, **não**
+   acusar `scaffold-missing` para o `gate.yml`. Hoje ele cobra sempre que `cfg.CI == "github-actions"`.
+   🔴 **Sem isto, o passo 1 troca uma duplicação por um achado falso** — é dependência dura, não detalhe.
+3. Corrigir os comentários dos **sítios 1 e 2** (`scaffold_doctor.go:29-31` e `:334-335`): a
+   `ADR-2026-08-28` **não** decide a coexistência. Aponte para a `ADR-2026-09-29` e o que ela decide.
 
-### ML-1D — **AC4** — Paridade nos 3 CLIs — a duplicação existe nos três.
-**Status:** ⬜ Pendente
-**Files affected:**
-**Actions:**
-**Acceptance criteria:**
-- [ ] **AC4** — Paridade nos 3 CLIs — a duplicação existe nos três.
-- [ ] build passes
-- [ ] tests green
+**Critérios de aceite:**
+- [x] `validate.yml` presente → `gate.yml` **não** é escrito, e a razão é dita
+- [x] 🔴 **Contra-braço:** `validate.yml` **ausente** → o `gate.yml` **continua** sendo escrito
+      (o comportamento de projeto novo não pode ter regredido)
+- [x] `validate.yml` presente + `gate.yml` ausente → `doctor` **silencioso** quanto ao `gate.yml`
+- [x] 🔴 **Contra-braço do `doctor`:** `gate.yml` ausente **e** `validate.yml` também ausente, com
+      `ci: github-actions` → `doctor` **continua acusando** (o achado verdadeiro não pode ter sumido)
+- [x] `gate.yml` presente e **defasado** → `doctor` continua acusando divergência de template
+- [x] Nenhum comentário do arquivo atribui a coexistência à `ADR-2026-08-28`
+- [x] `go build ./...` · `go test ./internal/generators/...` verdes
+- [x] 🔴 **Regra Dura de Reconciliação:** por teste novo, **uma frase** dizendo qual conclusão do ML
+      aquele teste afirma
 
-### ML-1E — **AC5** — Migração para quem **já tem os dois** instalados: o update remove o obsoleto, ou o
-**Status:** ⬜ Pendente
-**Files affected:**
-**Actions:**
-**Acceptance criteria:**
-- [ ] **AC5** — Migração para quem **já tem os dois** instalados: o update remove o obsoleto, ou o
-- [ ] build passes
-- [ ] tests green
+### ML-1B — o `doctor` nomeia a duplicação de quem já tem os dois
+**Owner:** `apolo-tf`
+**Status:** ✅ Concluído
+**Arquivos:** `internal/generators/scaffold_doctor.go` (+ teste)
+**Implementa:** **D3** da ADR · AC5
 
-### ML-1F — **AC6** — make quality e **CI** verdes.
+**Ações:**
+1. Com **os dois** workflows presentes, o `doctor` emite achado de **migração**: nomeia os dois
+   arquivos, diz que executam o mesmo `trackfw validate`, e aponta o `gate.yml` como canônico.
+2. 🔴 **Não remova, não proponha comando que remova.** O nome do job do arquivo a remover pode ser um
+   required check, e o produto **não tem como verificar isso** lendo o repositório. O achado informa;
+   a remoção é do consumidor. A ADR declara esse residual — respeite-o.
+3. A mensagem deve dizer **o que o consumidor precisa checar antes** de remover: se o job id
+   (`governance-go-install` / `governance-install-script`) está no `required_status_checks` dele.
+
+**Critérios de aceite:**
+- [x] Os dois presentes → achado de migração, nomeando ambos os arquivos e ambos os job ids
+- [x] 🔴 **Contra-braço:** apenas **um** presente → **nenhum** achado de migração
+- [x] O achado **não** é `error`/bloqueante e **não** sugere remoção incondicional
+- [x] A mensagem menciona a checagem do `required_status_checks` antes de remover
+- [x] `go test ./internal/generators/...` verde
+- [x] Regra Dura de Reconciliação: uma frase por teste novo
+
+### ML-1C — os 4 sítios restantes da citação falsa
+**Owner:** `artemis-tf`
+**Status:** ✅ Concluído — **paralelo ao ML-1A** (arquivos disjuntos)
+**Arquivos:** `internal/generators/discover_workflow_trigger_test.go` ·
+`docs/seguranca/2026-09-28-triagem-issues-abertas.md` ·
+`docs/req/REQ-2026-09-28-trackfw-init-reexecutado-destroi-a-configuracao-do-consumidor-...md`
+🔴 **NÃO toque em `scaffold.go` nem em `scaffold_doctor.go`** — são do ML-1A, em execução paralela.
+**Implementa:** AC4-bis · sítios **3, 4, 5, 6** do AC9
+
+**Ações:**
+1. **Sítio 3** — `discover_workflow_trigger_test.go:17`: o comentário afirma *"a coexistência dos DOIS
+   arquivos é decidida e está escrita (ADR-2026-08-28)"*. 🔴 Reescreva apontando a `ADR-2026-09-29` e o
+   que ela decide de fato. **Verifique se a asserção do teste ainda afirma algo verdadeiro** depois do
+   ML-1A — se o teste passou a afirmar o contrário do produto, diga; não o conserte por conta própria.
+2. **Sítios 4 e 5** — parecer de 2026-09-28: são registro histórico. **Não reescreva o passado** —
+   acrescente nota de retratação datada, apontando esta ADR. Apagar evidência de como o erro
+   propagou destrói o valor do registro.
+3. **Sítio 6** — `REQ-2026-09-28`, escopo negativo: o parágrafo usa a citação falsa para concluir que
+   o #451 é "REQ própria". Acrescente retratação: o #451 **foi absorvido** na `REQ-2026-09-02` em
+   2026-09-29, a premissa era falsa, e a conclusão de governança estava errada. **Preserve o texto
+   original** e marque-o como retratado.
+
+**Critérios de aceite:**
+- [x] `grep -rn 'ADR-2026-08-28'` não devolve nenhum sítio que atribua a **coexistência** a ela,
+      exceto dentro de texto explicitamente marcado como retratado
+- [x] Nenhum sítio histórico foi apagado — os 3 estão retratados, não reescritos
+- [x] Sítio 6 aponta a absorção do #451 na `REQ-2026-09-02`
+- [x] 🔴 **Varredura própria:** confirme se existe um **7º** sítio (a Wave 0 disse 5, eu achei o 6º).
+      Diga o comando e o total
+
+## Wave 1-bis — o outro lado da assimetria, que eu não fechei
+> Dependências: Wave 2 (ML-2A) concluída. **Achado da auditoria independente, 2026-09-29.**
+> 🔴 Mesma causa, mesma REQ, **mesmo PR** — não vira REQ nova.
+
+### ML-1D — `discover --init` também precisa perguntar
+**Owner:** `apolo-tf`
+**Status:** ✅ Concluído
+**Arquivos:** `internal/discover/discover.go` (`writeCIWorkflow`:346) ·
+`internal/generators/scaffold_doctor.go` (:379) (+ testes)
+
+**O defeito, confirmado por mim:** o **D2** nomeia a assimetria como o defeito, e o ML-1A a fechou
+**num lado só**.
+
+```
+generateGitHubActionsWorkflow (scaffold.go)  → verifica validate.yml antes de escrever gate.yml  ✅
+writeCIWorkflow (discover.go:371)            → verifica SÓ o dest (validate.yml); NUNCA olha o gate.yml  ❌
+```
+
+Caminho reproduzido pela Wave 2: `trackfw update` → `rm trackfw.yaml` → `trackfw discover --init`
+→ **os dois** workflows presentes, e o `doctor` emitindo `scaffold-workflow-duplicated`.
+
+🔴 **Isto NÃO está no residual declarado da ADR.** O **D3** fala de projeto que **já tem** os dois e
+por isso não remove; ele **não autoriza o produto a criar o segundo**. O **D1** diz *um workflow por
+projeto*. O produto continuava produzindo a duplicação que a ADR proíbe — pela outra porta.
+
+**Ações:**
+1. `writeCIWorkflow`: antes do bloco de idempotência do `validate.yml` (`discover.go:371`), verificar
+   `generators.GitHubActionsWorkflowPath` com `os.Lstat`. Presente como arquivo regular → **não
+   escrever** o `validate.yml`, e dizer a razão.
+   ⚠️ **Preserve o contrato de controle-fluxo deste sítio:** ele é *best-effort* e retorna `nil`
+   (não erro) em colisão — o comentário em `:357-362` explica por quê, e uma das cinco gramáticas de
+   recusa medidas foi unificada num emissor único. **Não crie uma sexta gramática**: use o emissor
+   existente.
+2. `scaffold_doctor.go:379`: trocar `os.Stat` por `os.Lstat` + rejeitar `ModeSymlink`, consistente
+   com **todos** os outros predicados do mesmo arquivo (`discoverWorkflowPresent`, o check do D3).
+   Hoje o `os.Stat` lê **através** do symlink, compara o alvo com o template e emite
+   `scaffold-divergent` cujo remédio (`trackfw update`) é **inoperante** — o `update` recusa escrever
+   através de symlink. Achado verdadeiro na forma, inútil no conteúdo.
+
+**Critérios de aceite:**
+- [ ] `gate.yml` presente → `discover --init` **não** escreve o `validate.yml`, e a razão é dita
+- [ ] 🔴 **Contra-braço:** `gate.yml` ausente → `discover --init` **continua** escrevendo o
+      `validate.yml` (o caminho brownfield não pode ter sido removido)
+- [ ] 🔴 **O caminho da Wave 2 fecha:** `update` → `rm trackfw.yaml` → `discover --init` resulta em
+      **um** workflow, e o `doctor` **não** emite `scaffold-workflow-duplicated`
+- [ ] Nenhuma gramática de recusa nova — a mensagem sai do emissor único já existente
+- [ ] `validate.yml` como **symlink** → `doctor` **não** emite `scaffold-divergent` com remédio
+      inoperante
+- [ ] 🔴 **Contra-braço:** `validate.yml` regular e **defasado** → `doctor` **continua** emitindo
+      `scaffold-divergent` (o achado verdadeiro não pode ter sumido)
+- [ ] Os **7** testes das Waves 1 (ML-1A e ML-1B) continuam passando, por nome
+- [ ] `make quality` **RC=0** (referência: 1390 OK, 347 falsificações, 0 FAIL)
+- [ ] 🔴 **Regra Dura de Reconciliação:** uma frase por teste novo
+- [ ] `docs/cli-parity.md` atualizado **na mesma entrega**, se o contrato do `discover --init` mudar
+
+## Wave 2 — auditoria independente
+> Dependências: Wave 1 completa e auditada.
+
+### ML-2A — revisão por reimplementação
+**Owner:** `hades-tf`
 **Status:** ⬜ Pendente
-**Files affected:**
-**Actions:**
-**Acceptance criteria:**
-- [ ] **AC6** — make quality e **CI** verdes.
-- [ ] build passes
-- [ ] tests green
+**Método:** 🔴 **não conferir o diff.** Ler a `ADR-2026-09-29` e a REQ, derivar o esperado, medir com
+fixture própria em diretório temporário.
+**Alvos:** os 4 contra-braços do ML-1A/1B (o comportamento de projeto novo e o achado verdadeiro do
+`doctor` não podem ter regredido) · o achado de migração não sugere remoção · nenhum required check
+declarado deste repositório deixou de ser produzido.
+**Critérios de aceite:**
+- [ ] Veredito explícito: sobrou caminho pelo qual um projeto novo receba **dois** workflows?
+- [ ] Veredito explícito: algum consumidor perde check que já exigia?
+- [ ] Se a medição refutar a ADR, **diga**
 
 ---
 
@@ -158,5 +295,25 @@ segundo, ou avisar que vai substituir* — **não** foi endereçada, nem aqui ne
 sobra, e é a parte que protege o consumidor que já está onboardado.
 
 ⚠️ E a redução é de **3 para 2** execuções por push em PR, não para 1. A issue pede economia de cota;
-2 ainda é duplicata. A coexistência dos dois arquivos está decidida na `ADR-2026-08-28`, então
-reduzir para 1 é mudança de decisão, não de implementação.
+2 ainda é duplicata.
+
+## 🔴 RETRATAÇÃO de 2026-09-29 — a frase seguinte estava errada, e travou a correção
+
+O parágrafo acima terminava assim:
+
+> *"A coexistência dos dois arquivos está decidida na `ADR-2026-08-28`, então reduzir para 1 é
+> mudança de decisão, não de implementação."*
+
+**Falso.** Medido em 2026-09-29: a `ADR-2026-08-28` tem **zero** ocorrências de
+`trackfw-validate.yml` — ela decide que o template de CI nasce pinado na versão que o gerou e que o
+`install.sh` honra `TRACKFW_VERSION`. O único ADR que cita o arquivo é a `ADR-2026-09-18`, e lá como
+caminho de exemplo. **A coexistência nunca foi decidida por ninguém.**
+
+🔴 **Como o erro entrou, que é o que importa:** a citação nasceu num **comentário de código**
+(`scaffold_doctor.go:333`), foi lida como decisão, e copiada para cá. Daqui passou a ser a razão pela
+qual a correção não avançava — *"é mudança de decisão"*. Uma citação de ADR que ninguém conferiu
+virou governança por três semanas, e quem a derrubou foi um **consumidor externo**
+(`lourivalgarciajunior`, no #451), não nós.
+
+**Lição operável:** citação de ADR dentro de comentário de código não é decisão — é afirmação a
+verificar. Ao encontrar uma, abra o ADR e confira antes de construir sobre ela.

@@ -127,6 +127,7 @@ func printDoctorReport(cmd *cobra.Command, findings []integrations.DoctorFinding
 	// of silently inflating another kind's count.
 	var unregistered, handModified, unknownContent, scaffoldDivergent, scaffoldMissing, scaffoldWrongMode int
 	var requiredChecksMissing, enforceAdminsDisabled, hooksPathNeutralized, notEvaluated int
+	var workflowDuplicated int
 	for _, finding := range findings {
 		switch finding.FindingKind {
 		case integrations.DoctorUnregisteredWrite:
@@ -149,10 +150,12 @@ func printDoctorReport(cmd *cobra.Command, findings []integrations.DoctorFinding
 			hooksPathNeutralized++
 		case integrations.DoctorNotEvaluated:
 			notEvaluated++
+		case integrations.DoctorScaffoldWorkflowDuplicated:
+			workflowDuplicated++
 		}
 	}
-	fmt.Fprintf(out, "trackfw doctor: %d finding(s) -- %d unregistered-write, %d hand-modified, %d unknown-content, %d scaffold-divergent, %d scaffold-missing, %d scaffold-wrong-mode, %d required-status-checks-missing, %d enforce-admins-disabled, %d hooks-path-neutralized, %d not-evaluated\n\n",
-		len(findings), unregistered, handModified, unknownContent, scaffoldDivergent, scaffoldMissing, scaffoldWrongMode, requiredChecksMissing, enforceAdminsDisabled, hooksPathNeutralized, notEvaluated)
+	fmt.Fprintf(out, "trackfw doctor: %d finding(s) -- %d unregistered-write, %d hand-modified, %d unknown-content, %d scaffold-divergent, %d scaffold-missing, %d scaffold-wrong-mode, %d required-status-checks-missing, %d enforce-admins-disabled, %d hooks-path-neutralized, %d not-evaluated, %d scaffold-workflow-duplicated\n\n",
+		len(findings), unregistered, handModified, unknownContent, scaffoldDivergent, scaffoldMissing, scaffoldWrongMode, requiredChecksMissing, enforceAdminsDisabled, hooksPathNeutralized, notEvaluated, workflowDuplicated)
 	// One blank line BETWEEN findings, none trailing after the last one — matches Node's
 	// `lines.join('\n').replace(/\n$/, '')` and Python's `"\n".join(lines).rstrip("\n")`
 	// (npm/src/commands/doctor.js, pypi/trackfw/commands/doctor.py). A naive per-finding

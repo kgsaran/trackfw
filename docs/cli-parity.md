@@ -6458,7 +6458,7 @@ hook, slash commands do Claude) são comparados contra o template que o binário
 usando o `trackfw.yaml` do próprio projeto. Nenhuma entrada é gravada no manifesto — propriedade
 por caminho, não por manifesto (ADR-2026-08-27).
 
-### As três classes de finding
+### As quatro classes de finding
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
@@ -6467,8 +6467,9 @@ por caminho, não por manifesto (ADR-2026-08-27).
 | `scaffold-divergent` | artefato de scaffold existe em disco mas o conteúdo difere do template que o binário atual geraria | `trackfw update` — a mensagem é neutra quanto à culpa (AC16): não há stamp de versão no artefato, então nem o binário nem o projeto podem ser identificados como o lado defasado |
 | `scaffold-missing` | artefato de scaffold que deveria existir está ausente do disco | `trackfw update` |
 | `scaffold-wrong-mode` | artefato de scaffold existe com conteúdo correto, mas o bit de execução do owner está ausente (`mode & 0o100 == 0`) em um artefato que deve ser executável | `trackfw update` — o `update` restaura o conteúdo **e** o modo (ver AC9 abaixo) |
+| `scaffold-workflow-duplicated` | `trackfw-gate.yml` e `trackfw-validate.yml` estão ambos presentes como arquivos regulares — executam o mesmo `trackfw validate` com instaladores diferentes (`ADR-2026-09-29` D3). **Advisory, não bloqueante.** O `gate.yml` é o canônico; o consumidor decide se remove o `validate.yml` **após verificar** que `governance-go-install` não está nos `required_status_checks` do repositório (o produto não pode verificar isso) | Nenhum comando automático — a mensagem descreve o que verificar antes de remover `trackfw-validate.yml` manualmente |
 
-As três classes têm `claim` zerado (`kind`, `item`, `target`, `surface`, `scope` = string vazia)
+As quatro classes têm `claim` zerado (`kind`, `item`, `target`, `surface`, `scope` = string vazia)
 — artefatos de scaffold nunca têm entrada no manifesto.
 
 ### Propriedade por caminho — artefatos cobertos pelos 3 CLIs
@@ -6488,7 +6489,7 @@ tabela hoje.
 | `scripts/trackfw-credential-guard.sh` | sempre |
 | `scripts/trackfw-git-branch-guard.sh` | sempre |
 | `.claude/commands/trackfw/<cmd>.md` (9 arquivos) | somente se `.claude/commands/trackfw/` já existir (AC14: `discover --init` não escreve slash commands — ausência legítima) |
-| `.github/workflows/trackfw-gate.yml` | somente se `ci: github-actions` no `trackfw.yaml` (AC13) |
+| `.github/workflows/trackfw-gate.yml` | somente se `ci: github-actions` no `trackfw.yaml` (AC13) **E** `.github/workflows/trackfw-validate.yml` ausente (`ADR-2026-09-29` **D4**) — com o `validate.yml` presente, o `doctor` **não** acusa a ausência do `gate.yml`, porque o gerador deliberadamente não o escreve (**D2**). ⚠️ A supressão vale **só** para `scaffold-missing`: `gate.yml` presente e **defasado** continua sendo acusado. Quando **os dois** estão presentes, o `doctor` emite `scaffold-workflow-duplicated` para `.github/workflows/trackfw-validate.yml` (`ADR-2026-09-29` **D3**) |
 | `.gitlab-ci-trackfw.yml` | somente se `ci: gitlab-ci` no `trackfw.yaml` (AC13) |
 
 ### validate.sh — pertencimento a conjunto (set-membership, escopado)
@@ -6629,14 +6630,27 @@ que declara dependência desta REQ.
 
 Os dois workflows de CI que o produto gera (tabela da seção anterior) declaravam o **mesmo job id**
 `governance` nos 3 CLIs. `trackfw-validate.yml` dispara em `push` **e** `pull_request`; um projeto
-que rodou `init`/`update` (que instala `trackfw-gate.yml`) e também `discover --init` (que instala
-`trackfw-validate.yml`) produzia **três check-runs homônimos** por PR — confirmado ao vivo no PR
+que rodou `init`/`update` (que instalava `trackfw-gate.yml` — ver nota abaixo) e também
+`discover --init` (que instala `trackfw-validate.yml`) produzia **três check-runs homônimos** por PR — confirmado ao vivo no PR
 #241 deste repositório (`"governance=SUCCESS"` × 3 no mesmo push). O GitHub casa check exigido por
 **nome**, então `required_status_checks: [governance]` seria satisfeito por qualquer um dos três,
-imprevisivelmente — um portão que parece fechado sem estar. Paridade perfeita no erro: os 3 CLIs
-concordavam entre si e os 3 estavam errados; nenhum gate de paridade byte-a-byte (inclusive
-`check-ci-workflow-pin-parity.sh` acima) pegaria isso, porque paridade mede concordância entre os
-runtimes, não correção do valor em si.
+imprevisivelmente — um portão que parece fechado sem estar.
+
+> ⚠️ **Atualização 2026-09-29 (`ADR-2026-09-29`, D2 — fechado em ambos os lados pelo ML-1D):** o
+> parágrafo acima descreve o estado que produziu o defeito do PR #241, e está no passado de
+> propósito. Desde a `ADR-2026-09-29`:
+> - `init` e `update` **não** escrevem `trackfw-gate.yml` quando `trackfw-validate.yml` já existe
+>   como arquivo regular (ML-1A, `generateGitHubActionsWorkflow`, `scaffold.go`).
+> - `discover --init` **não** escreve `trackfw-validate.yml` quando `trackfw-gate.yml` já existe
+>   como arquivo regular (ML-1D, `writeCIWorkflow`, `discover.go`). Simetria com o ponto anterior —
+>   a assimetria (só um lado guardava) era o defeito.
+>
+> A coexistência dos dois deixou de ser produzida pelo produto pela outra porta. Projeto que **já**
+> tem os dois instalados os mantém (D3: nada é removido automaticamente, porque o job id removido
+> pode ser um required check que o produto não tem como verificar), e o `doctor` **avisa**. Paridade
+> perfeita no erro: os 3 CLIs concordavam entre si e os 3 estavam errados; nenhum gate de paridade
+> byte-a-byte (inclusive `check-ci-workflow-pin-parity.sh` acima) pegaria isso, porque paridade
+> mede concordância entre os runtimes, não correção do valor em si.
 
 **Os dois workflows verificam a mesma propriedade** (`trackfw validate` passa) por dois mecanismos
 de instalação diferentes — ver "O que cada template pina" acima. Os novos ids nomeiam o

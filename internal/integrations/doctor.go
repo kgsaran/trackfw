@@ -111,6 +111,16 @@ const (
 	// claims the control is actually missing when the truth is nobody checked. Remedy always
 	// names the exact next step.
 	DoctorNotEvaluated DoctorFindingKind = "not-evaluated"
+
+	// DoctorScaffoldWorkflowDuplicated: both trackfw-gate.yml (written by init/update,
+	// canonical per ADR-2026-09-29 D1) and trackfw-validate.yml (written by discover --init)
+	// are present on disk as regular files. The two workflows run the same `trackfw validate`
+	// with different installers and different job ids. The consumer should remove the redundant
+	// workflow — BUT only after verifying that its job id is NOT in their repository's
+	// required_status_checks (the product cannot verify this; ADR-2026-09-29 D3).
+	// Advisory only — never blocking; remedy is informational and never suggests removal
+	// without the required-check prerequisite.
+	DoctorScaffoldWorkflowDuplicated DoctorFindingKind = "scaffold-workflow-duplicated"
 )
 
 // DoctorFinding is one artifact requiring the user's attention, plus a
@@ -225,7 +235,13 @@ func sortDoctorFindings(findings []DoctorFinding) {
 		if a.Claim.Surface != b.Claim.Surface {
 			return a.Claim.Surface < b.Claim.Surface
 		}
-		return a.Claim.Scope < b.Claim.Scope
+		if a.Claim.Scope != b.Claim.Scope {
+			return a.Claim.Scope < b.Claim.Scope
+		}
+		// Final tie-break: FindingKind, so two scaffold findings at the same
+		// destination (e.g. validate.yml stale + scaffold-workflow-duplicated)
+		// produce deterministic output and are gate-comparable byte-for-byte.
+		return a.FindingKind < b.FindingKind
 	})
 }
 

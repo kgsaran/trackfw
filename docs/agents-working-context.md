@@ -2,6 +2,138 @@
 
 ---
 
+## 2026-09-29 — Apolo (fix/dois-workflows-rodam-a-mesma-validacao — ML-1D Wave 1) — ENTREGUE
+
+**Inicio:** 2026-09-29 | **Fim:** 2026-09-29 | Branch: `fix/dois-workflows-rodam-a-mesma-validacao`
+**Tarefa:** ML-1D — `discover --init` também precisa do guarda D2; `scaffold_doctor` usa `os.Lstat` para symlinks
+
+**Arquivos modificados:**
+- `internal/discover/discover.go`: assinatura `writeCIWorkflow(rootDir string, w io.Writer)` — guarda D2 (ADR-2026-09-29): se `gate.yml` existe como arquivo regular, `validate.yml` não é escrito e mensagem informativa vai ao writer
+- `internal/generators/scaffold_doctor.go`: `os.Stat` → `os.Lstat` + `ModeSymlink == 0` no predicado de `validate.yml` — evita `scaffold-divergent` com remédio inoperável para symlinks
+- `internal/discover/discover_test.go`: 2 testes novos (`TestInstallGates_GateYmlPresent_ValidateYmlNotWritten`, `TestInstallGates_GateYmlAbsent_ValidateYmlWritten`) + atualização do call site
+- `internal/discover/nonfatal_refusal_grammar_test.go`: call sites atualizados para nova assinatura `(dir, io.Discard)`
+- `internal/generators/scaffold_doctor_test.go`: 2 testes novos (`TestRunScaffoldDoctor_DiscoverWorkflow_Symlink_Silent`, `TestRunScaffoldDoctor_DiscoverWorkflow_RegularStale_Accuses`)
+- `docs/cli-parity.md`: D2 atualizado — "fechado em ambos os lados pelo ML-1D"
+
+**Evidências:**
+- `go build ./...`: RC=0
+- `go test ./internal/discover/... ./internal/generators/...`: ok (full suite)
+- 7 testes Wave-1 (ML-1A + ML-1B): todos PASS por nome
+- 4 testes ML-1D: PASS
+- Wave 2 path: BEFORE=2 workflows (defeito), AFTER=1 workflow + mensagem informativa (corrigido)
+- `make quality`: EXIT=0, 0 FAIL
+- `trackfw validate`: EXIT=0 (lenient mode, 171 warnings pré-existentes, 0 erros)
+- `git diff --stat trackfw.yaml`: vazio
+
+**Regra Dura de Reconciliação (por teste novo):**
+- `TestInstallGates_GateYmlPresent_ValidateYmlNotWritten`: afirma que D2 está fechado no lado `discover --init` — gate.yml presente impede escrita de validate.yml (assimetria ML-1D)
+- `TestInstallGates_GateYmlAbsent_ValidateYmlWritten`: contra-braço — gate.yml ausente, validate.yml é escrito normalmente
+- `TestRunScaffoldDoctor_DiscoverWorkflow_Symlink_Silent`: afirma que Lstat é efetivo — symlink em validate.yml não gera `scaffold-divergent` com remédio inoperável
+- `TestRunScaffoldDoctor_DiscoverWorkflow_RegularStale_Accuses`: contra-braço — arquivo regular desatualizado continua acusado
+
+---
+
+## 2026-09-29 — Apolo (fix/dois-workflows-rodam-a-mesma-validacao — ML-1B Wave 1) — ENTREGUE
+
+**Inicio:** 2026-09-29 | **Fim:** 2026-09-29 | Branch: `fix/dois-workflows-rodam-a-mesma-validacao`
+**Tarefa:** ML-1B — o `doctor` nomeia a duplicação de quem já tem os dois
+
+**Arquivos modificados:**
+- `internal/integrations/doctor.go`: novo kind `DoctorScaffoldWorkflowDuplicated = "scaffold-workflow-duplicated"`; `sortDoctorFindings` recebe `FindingKind` como tie-break final (determinismo quando dois findings têm mesmo Destination e Claim zerado)
+- `internal/commands/doctor.go`: counter `workflowDuplicated` adicionado ao switch + format string do header do relatório
+- `internal/generators/scaffold_doctor.go`: quando `ci: github-actions` e gate.yml + validate.yml presentes como arquivos regulares (Lstat, simetria com `discoverWorkflowPresent`), emite `DoctorScaffoldWorkflowDuplicated` para `DiscoverGitHubActionsWorkflowPath`
+- `internal/generators/scaffold_doctor_test.go`: 2 testes novos (`TestRunScaffoldDoctor_BothPresent_EmitsMigration`, `TestRunScaffoldDoctor_OnlyGateYml_NoMigration`)
+- `docs/cli-parity.md`: "três classes" → "quatro classes"; 4ª linha na tabela; linha 6491 atualizada
+
+**Evidências:**
+- `go build ./...`: RC=0
+- `go test ./internal/generators/...`: `ok github.com/kgsaran/trackfw/internal/generators` (full suite, 30s)
+- 5 testes ML-1A: todos PASS (contra-braço de regressão)
+- 2 testes ML-1B: PASS
+- `make quality`: EXIT=0, 1390 OK, 347 falsificações, 0 FAIL (coincide com referência do arquiteto)
+- `trackfw validate`: EXIT=0 (lenient mode, 171 warnings pré-existentes)
+- `git diff --stat trackfw.yaml`: vazio
+
+**Regra Dura de Reconciliação (por teste novo):**
+- `TestRunScaffoldDoctor_BothPresent_EmitsMigration`: afirma que ADR-2026-09-29 D3 está implementado — um projeto com os dois workflows recebe `scaffold-workflow-duplicated` nomeando ambos os arquivos, ambos os job ids e a checagem de `required_status_checks`
+- `TestRunScaffoldDoctor_OnlyGateYml_NoMigration`: afirma que D3 só dispara quando os DOIS workflows estão presentes — projeto com apenas gate.yml não recebe advisory
+
+**Escopo excedeu arquivos declarados no roadmap:**
+- `internal/integrations/doctor.go` e `internal/commands/doctor.go` não estavam na lista do roadmap. A adição é obrigatória: o novo kind `DoctorScaffoldWorkflowDuplicated` precisa ser declarado e contado nos dois arquivos — o switch de `printDoctorReport` falha silenciosamente sem o case, e o código tem comentário explicativo sobre isso. Mesma causa (D3), mesma REQ.
+
+---
+
+## 2026-09-29 — Apolo (fix/dois-workflows-rodam-a-mesma-validacao — ML-1A Wave 1) — ENTREGUE
+
+**Inicio:** 2026-09-29 | **Fim:** 2026-09-29 | Branch: `fix/dois-workflows-rodam-a-mesma-validacao`
+**Tarefa:** ML-1A — o gerador pergunta antes de escrever, e o `doctor` acompanha
+
+**Arquivos modificados:**
+- `internal/generators/scaffold.go`: `generateGitHubActionsWorkflow` — guard D2 via `discoverWorkflowPresent(ghRoot)` antes do `MkdirAll`; emite mensagem informativa se validate.yml presente.
+- `internal/generators/scaffold_doctor.go`: suprime `scaffold-missing` para gate.yml quando `discoverWorkflowPresent(projectRoot)` retorna true (D4); corrige comentários nos sítios 1 e 2 (citação falsa da ADR-2026-08-28 substituída por ADR-2026-09-29).
+- `internal/generators/scaffold_test.go`: 2 testes novos (skip quando presente; escreve quando ausente).
+- `internal/generators/scaffold_doctor_test.go`: 3 testes novos (silent quando validate presente; accuses quando ambos ausentes; accuses divergência quando stale). Importou `config` para `config.Reset()`.
+
+**Evidências:**
+- `go build ./...`: RC=0
+- `go test ./internal/generators/...`: `ok github.com/kgsaran/trackfw/internal/generators` (full suite)
+- 5 testes novos: todos PASS (isolado e no suite completo)
+- `git diff --stat trackfw.yaml`: vazio
+
+**Achados declarados:**
+- `docs/cli-parity.md` pode documentar a escrita incondicional de gate.yml (contrato de canal) — não verifiquei porque fora do meu escopo de arquivo; o arquiteto deve checar antes do commit.
+
+---
+
+## 2026-09-29 — Ártemis (fix/dois-workflows-rodam-a-mesma-validacao — ML-1C Wave 1) — ENTREGUE
+
+**Inicio:** 2026-09-29 | **Fim:** 2026-09-29 | Branch: `fix/dois-workflows-rodam-a-mesma-validacao`
+**Tarefa:** ML-1C — corrigir os 4 sítios restantes da citação falsa da ADR-2026-08-28 (sítios 3, 4, 5, 6). Varredura de 7º sítio.
+**Arquivos:** `internal/generators/discover_workflow_trigger_test.go` · `docs/seguranca/2026-09-28-triagem-issues-abertas.md` · `docs/req/REQ-2026-09-28-trackfw-init-reexecutado-...md`
+
+**Entregáveis:**
+- Sítio 3 (`discover_workflow_trigger_test.go:17`): comentário reescrito, aponta ADR-2026-09-29
+- Sítio 4 (`triagem-issues-abertas.md:221`): retratação datada adicionada, original preservado
+- Sítio 5 (`triagem-issues-abertas.md:245`): retratação datada adicionada, original preservado
+- Sítio 6 (`REQ-2026-09-28` escopo negativo): retratação datada adicionada, original preservado; aponta absorção do #451 na REQ-2026-09-02
+- Roadmap ML-1C: Status ✅ Concluído, todos os 4 ACs marcados `[x]`
+- `go test ./internal/generators/...`: `ok` (29.507s)
+
+**Varredura de 7º sítio:**
+Comando: `grep -rn "ADR-2026-08-28" <repo> --include=*.go --include=*.md [etc] | [excluindo docs/adr/, testdata, roadmap/REQ desta REQ, vault]`
+Total de sítios com mecanismo falso (atribuição de coexistência à ADR): **6** — sem 7º. As outras ocorrências fora da lista são citações legítimas (versão pinada, timeout), registros históricos que já documentam a retratação, ou o roadmap/REQ desta própria correção.
+
+**`git diff --stat trackfw.yaml`:** vazio (confirmado)
+
+---
+
+## 2026-09-29 — Hades (fix/dois-workflows-rodam-a-mesma-validacao — ML-0A Wave 0) — ENTREGUE
+
+**Inicio:** 2026-09-29 | **Fim:** 2026-09-29 | Branch: `fix/dois-workflows-rodam-a-mesma-validacao`
+**Tarefa:** ML-0A Wave 0 — arqueologia do AC1: por que existem dois workflows e o que quebra se um sair.
+
+**Entregáveis:**
+- `docs/seguranca/2026-09-29-wave0-dois-workflows.md` — parecer com as 4 perguntas, comandos, saídas literais e vereditos
+- Roadmap ML-0A: Status ✅ Concluído, todos os 6 ACs marcados `[x]`
+- `trackfw barrier --wave 0`: result: passed
+
+**Achados principais:**
+- Caminho exclusivo `discover --init` (sem trackfw.yaml preexistente) é **transiente**: escreve só
+  `trackfw-validate.yml`, mas `trackfw update` subsequente escreve `trackfw-gate.yml` (porque
+  discover gera `ci: github-actions` no yaml). É exatamente o mecanismo do #451.
+- `discover --init` com `trackfw.yaml` preexistente faz early-return — InstallGates não é chamado,
+  nenhum workflow escrito.
+- **Job IDs diferem**: `governance-install-script` (gate) vs `governance-go-install` (validate) —
+  dois contratos distintos de `required_status_checks`, não cópias do mesmo check.
+- **Triggers diferem**: gate cobre só pull_request; validate cobre push em main também.
+- **5 sítios** propagam a citação falsa da ADR-2026-08-28 (roadmap dizia 2). Sítio novo crítico:
+  `discover_workflow_trigger_test.go:17` — comentário de teste afirma a decisão inexistente.
+- **Premissa da REQ refutada**: "única diferença é o instalador" é falso; a diferença consequente é
+  o job ID (contrato de branch protection).
+- `git diff --stat trackfw.yaml`: vazio (confirmado)
+
+---
+
 ## 2026-09-29 — Artemis (fix/ratchet-windows-nao-colhe-melhoria — ML-3A Wave 3) — ENTREGUE
 
 **Inicio:** 2026-09-29 | **Fim:** 2026-09-29 | Branch: `fix/ratchet-windows-nao-colhe-melhoria`
@@ -42925,3 +43057,60 @@ Medições independentes sobre 10 casos de teste (cenário #450, score delta, de
 **git status untracked:** `internal/validator/validator_req_roadmap_reverse.go` (arquivo novo)
 
 **Status:** CONCLUÍDO — aguardando auditoria e commit por trackfw_architect.
+
+## 2026-09-29 — zeus-tf — INÍCIO: REQ-2026-09-02 (dois workflows, mesma validação) — absorve o #451
+
+Branch `fix/dois-workflows-rodam-a-mesma-validacao`. O #451 e o comentário de terceiro nele são
+**mesma causa** da REQ-2026-09-02, já aberta com roadmap em `wip` — absorvidos ali, sem REQ nova.
+
+Medido por mim antes de escrever:
+- `ADR-2026-08-28` tem **zero** ocorrências de `trackfw-validate.yml`; a "decisão de coexistência"
+  citada em `scaffold_doctor.go:333` **não existe**, e a citação falsa havia sido copiada para a
+  cauda do próprio roadmap — retratação registrada lá e nota de vault criada.
+- assimetria: `generateGitHubActionsWorkflow` (scaffold.go:2553) escreve o `gate.yml`
+  **incondicionalmente**; `refreshDiscoverGitHubActionsWorkflowIfPresent` (update.go:2189) só
+  **atualiza** o `validate.yml` se presente.
+
+AC4 (paridade 3 CLIs) marcado **obsoleto pela v8**; substituído por AC4-bis. Acrescentados AC7 e AC8.
+Roadmap reescrito: Wave 0 real (o esqueleto gerado tinha gate `exit 1` placeholder), Wave 1 escrita
+só depois do veredito. Próximo: despachar ML-0A ao `hades-tf`.
+
+## 2026-09-29 — zeus-tf — Wave 0 do #451 auditada, ADR escrita, Wave 1 pronta
+
+Wave 0 (`hades-tf`) derrubou duas premissas minhas: (a) os dois workflows **não** diferem só no
+instalador — os **job ids** diferem (`governance-install-script` vs `governance-go-install`), e job id
+é o nome do check; verificado por mim: **os dois** em `.github/required-status-checks.txt:29-30`;
+(b) o argumento do instalador não se sustenta (`setup-go@v7` provisiona o toolchain). A janela
+exclusiva do `discover --init` existe mas fecha no primeiro `update` → o AC1 **não** fecha a REQ.
+
+Citação falsa da `ADR-2026-08-28`: **6 sítios** (Wave 0 achou 5; o 6º é meu — o escopo negativo da
+`REQ-2026-09-28`, onde ela me levou a concluir "REQ própria" para o #451).
+
+Decisão do KG: remédio **não instalar o segundo**, canônico **`trackfw-gate.yml`**. Gravada na
+`ADR-2026-09-29-o-produto-entrega-um-workflow-de-governanca-por-projeto-...` (D1–D5), que existe
+porque **não havia ADR**. Wave 1 escrita decision-complete: ML-1A (gerador + doctor) ∥ ML-1C (sítios
+3–6); ML-1B sequencial após o 1A por compartilhar `scaffold_doctor.go`.
+
+## 2026-09-29 — hades-tf (fix/dois-workflows-rodam-a-mesma-validacao — ML-2A Wave 2) — EM ANDAMENTO
+
+Auditoria independente por reimplementação. Método: caixa-preta, fixtures em scratchpad,
+sem leitura de diff. Referência: ADR-2026-09-29, REQ-2026-09-02 (ACs 7–10), cli-parity.md.
+
+## 2026-09-29 — hades-tf (fix/dois-workflows-rodam-a-mesma-validacao — ML-2A Wave 2) — ENTREGUE
+
+Auditoria independente por reimplementação concluída. Parecer:
+`docs/seguranca/2026-09-29-wave2-dois-workflows.md`.
+
+Resultado: nenhum achado bloqueante.
+- D2, D3, D4 medidos: todos conformes.
+- Symlink em validate.yml: gate.yml nasce, symlink recusado pelo pathguard — direção defensável.
+- 5 sequências de ataque testadas: 4 produzem 1 workflow, 1 (remoção manual de trackfw.yaml +
+  discover --init) produz 2 — coberto pelo residual declarado ADR D3 e pelo doctor advisory.
+- AC10 (D\W=∅): os dois job ids continuam emitidos pelos dois workflows neste repo.
+- Contagem do doctor fecha com o total (scaffold-workflow-duplicated tem case no switch).
+- Nenhuma premissa da ADR refutada.
+ Dois achados para o proprietário do código:
+ ACHADO-1 (média): `writeCIWorkflow` em discover.go não verifica gate.yml antes de escrever
+ validate.yml — assimetria D2 fechada em um lado só, ML adicional nesta REQ.
+ ACHADO-2 (baixa): scaffold_doctor.go:379 usa os.Stat (lê através de symlink) enquanto todos
+ os outros predicados usam Lstat — live symlink emite scaffold-divergent com remédio inoperante.

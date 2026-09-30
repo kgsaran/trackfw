@@ -14,10 +14,11 @@ import (
 //	governance-install-script  1 execução    ← trackfw-gate.yml, pull_request
 //	                           3 no total
 //
-// A coexistência dos DOIS arquivos é decidida e está escrita (ADR-2026-08-28, citada
-// em scaffold_doctor.go); não se mexe nela aqui. O que este teste protege é a outra
-// metade, que mora dentro de um arquivo só: o gatilho em lista faz o MESMO commit
-// disparar dois eventos.
+// A ADR-2026-09-29 decide que o produto entrega UM workflow de governança por projeto
+// e nunca adiciona um segundo ao lado do existente. O ML-1A (ROADMAP-2026-09-22)
+// implementa essa decisão em generateGitHubActionsWorkflow/scaffold_doctor.go.
+// O que este teste protege é ortogonal: o gatilho em lista dentro do PRÓPRIO arquivo
+// faz o MESMO commit disparar dois eventos — defeito de disparo, não de coexistência.
 //
 // Reconciliação (Regra Dura): a frase de cada teste está no seu comentário.
 // ────────────────────────────────────────────────────────────────────────────

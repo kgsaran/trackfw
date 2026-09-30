@@ -23,12 +23,13 @@ import (
 // production code only reads it through checkMode below.
 var CurrentGOOS = runtime.GOOS
 
-// DiscoverGitHubActionsWorkflowPath is the canonical relative path of the second,
-// independent CI workflow trackfw writes: the one `trackfw discover --init` (and its
-// Node/Python equivalents) generates via InstallGates, distinct from
-// GitHubActionsWorkflowPath (trackfw-gate.yml, written by init/update). Both files can
-// coexist in the same project — ADR-2026-08-28 names this exact case as the motivation
-// for pinning both install mechanisms, not just the install.sh one.
+// DiscoverGitHubActionsWorkflowPath is the canonical relative path of the CI workflow
+// written by `trackfw discover --init` (InstallGates), distinct from
+// GitHubActionsWorkflowPath (trackfw-gate.yml, written by init/update).
+// ADR-2026-09-29 decides that the product delivers ONE governance workflow per project:
+// when this file already exists, generateGitHubActionsWorkflow (scaffold.go) does NOT
+// write trackfw-gate.yml (D2). A project that already has both keeps both until the
+// consumer acts (D3) — the doctor names that case via ML-1B.
 const DiscoverGitHubActionsWorkflowPath = ".github/workflows/trackfw-validate.yml"
 
 // BuildDiscoverGitHubActionsWorkflowContent returns the template content trackfw writes
@@ -317,7 +318,45 @@ func RunScaffoldDoctor(projectRoot string) ([]integrations.DoctorFinding, error)
 		path := filepath.Join(projectRoot, relPath)
 		f := checkScaffoldArtifact(path, relPath, []byte(buildGitHubActionsWorkflowContent(IsProducerGoMod(projectRoot))), true, false)
 		if f != nil {
+			// D4 (ADR-2026-09-29): suppress scaffold-missing for trackfw-gate.yml when
+			// trackfw-validate.yml is already present as a regular file. The generator
+			// (generateGitHubActionsWorkflow, scaffold.go) no longer writes gate.yml in
+			// that case (D2), so absence of gate.yml is expected — not a finding.
+			// A stale gate.yml (scaffold-divergent) is never suppressed: the file exists
+			// and must be kept current for the project's branch-protection contract.
+			// discoverWorkflowPresent uses os.Lstat, so a symlink is NOT treated as
+			// present and the finding is kept — consistent with the write-side predicate.
+			if f.FindingKind == integrations.DoctorScaffoldMissing && discoverWorkflowPresent(projectRoot) {
+				break
+			}
 			findings = append(findings, *f)
+		}
+		// D3 (ADR-2026-09-29): when BOTH gate.yml and validate.yml are present as regular
+		// files, emit a migration advisory. gate.yml is canonical (D1); validate.yml is
+		// redundant and may be removed — but only after the consumer verifies that
+		// governance-go-install (the job id of validate.yml) is NOT in their repository's
+		// required_status_checks. The product cannot verify this from the repository alone,
+		// which is why D3 never removes automatically (alternative A, ADR-2026-09-29).
+		// os.Lstat is used for gate.yml, consistent with discoverWorkflowPresent which also
+		// uses Lstat for validate.yml: a symlink is treated as absent on both sides.
+		gateInfo, gateErr := os.Lstat(path)
+		gatePresent := gateErr == nil && gateInfo.Mode()&os.ModeSymlink == 0
+		if gatePresent && discoverWorkflowPresent(projectRoot) {
+			validateRelPath := DiscoverGitHubActionsWorkflowPath
+			remedy := fmt.Sprintf(
+				"%s (job: governance-install-script) and %s (job: governance-go-install) both run `trackfw validate` — %s is canonical (ADR-2026-09-29 D1). "+
+					"Before removing %s, verify that governance-go-install is NOT in your repository's required_status_checks: "+
+					"the product cannot check this for you. If it is not a required check, remove %s manually.",
+				GitHubActionsWorkflowPath, validateRelPath,
+				GitHubActionsWorkflowPath,
+				validateRelPath,
+				validateRelPath,
+			)
+			findings = append(findings, integrations.DoctorFinding{
+				FindingKind: integrations.DoctorScaffoldWorkflowDuplicated,
+				Destination: validateRelPath,
+				Remedy:      remedy,
+			})
 		}
 	case "gitlab-ci":
 		relPath := GitLabCIWorkflowPath
@@ -331,14 +370,18 @@ func RunScaffoldDoctor(projectRoot string) ([]integrations.DoctorFinding, error)
 	// --- Discover CI workflow (second, independent install mechanism) ---
 	//
 	// trackfw-validate.yml (written by `trackfw discover --init`, InstallGates) is a
-	// separate artifact from trackfw-gate.yml above — both can coexist in the same
-	// project (ADR-2026-08-28). Only checked when the file is already present, mirroring
-	// the "conditional artifact" treatment of the trackfw-gate.yml case above but using
-	// presence-on-disk instead of cfg.CI, because InstallGates decides on its own
-	// DiscoveryResult.CISystem signal (github-actions detection), not on trackfw.yaml's
-	// `ci:` key — a project can have discover's workflow without cfg.CI ever being set.
+	// separate artifact from trackfw-gate.yml above. Only checked when the file is
+	// already present (presence-on-disk condition), because InstallGates decides on its
+	// own DiscoveryResult.CISystem signal, not on trackfw.yaml's `ci:` key — a project
+	// can have discover's workflow without cfg.CI ever being set.
+	// ADR-2026-09-29 D3: a project with both workflows keeps both; ML-1B handles that case.
+	// ML-1D: os.Lstat + ModeSymlink check, consistent with discoverWorkflowPresent and the
+	// D3 gatePresent check above. A symlink at validate.yml is NOT checked — os.Stat would
+	// follow it, compare the target's content against the template, and emit scaffold-divergent
+	// whose remedy (trackfw update) is inoperant because update refuses to write through a
+	// symlink. Achado verdadeiro na forma, inútil no conteúdo — skipped.
 	discoverWorkflowPath := filepath.Join(projectRoot, DiscoverGitHubActionsWorkflowPath)
-	if _, err := os.Stat(discoverWorkflowPath); err == nil {
+	if dInfo, err := os.Lstat(discoverWorkflowPath); err == nil && dInfo.Mode()&os.ModeSymlink == 0 {
 		f := checkScaffoldArtifact(discoverWorkflowPath, DiscoverGitHubActionsWorkflowPath, []byte(BuildDiscoverGitHubActionsWorkflowContent(IsProducerGoMod(projectRoot))), true, false)
 		if f != nil {
 			findings = append(findings, *f)
