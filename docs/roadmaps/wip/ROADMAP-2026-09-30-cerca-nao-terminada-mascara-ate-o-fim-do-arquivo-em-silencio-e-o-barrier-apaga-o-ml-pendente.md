@@ -79,37 +79,25 @@ REQ: docs/req/REQ-2026-09-30-cerca-nao-terminada-mascara-ate-o-fim-do-arquivo-em
 > O gate tem de ser um comando de **verificação**, não o executor que o invoca. Defeito de produto
 > registrado em issue própria; o erro de escrita era meu.
 
+> ⚠️ **Gate reescrito em 2026-09-30, por dois defeitos meus.** (1) Era um `python3 -c` de várias
+> linhas: o `barrier` executa **cada linha** como `sh -c` separado, e sob o barrier real ele reprovava.
+> (2) Afirmava `5` sítios de cerca aberta — número que a Wave 1 existe para **baixar**: ficaria
+> vermelho por construção assim que a correção entrasse. A contagem passou para o gate da Wave 1; o
+> gate da Wave 0 afirma só o que continua verdadeiro: o parecer existe e tem a tabela por superfície.
+
 ```bash
-n=$(python3 -c "
-import glob,re
-def openf(p):
-    fenced=False;ch=None;ln=0;st=0
-    for i,l in enumerate(open(p,encoding='utf-8',errors='replace').read().split(chr(10)),1):
-        t=l.strip(); m=re.match(r'^(\`{3,}|~{3,})',t)
-        if not fenced:
-            if m: fenced=True;ch=m.group(1)[0];ln=len(m.group(1));st=i
-        elif m and m.group(1)[0]==ch and len(m.group(1))>=ln and len(m.group(1))==len(t): fenced=False
-    return st if fenced else 0
-n=0
-for d in ['docs/roadmaps','scripts/testdata/roadmap-barrier-corpus-snapshot','internal/roadmapdoc/testdata']:
-    n+=sum(1 for f in glob.glob(d+'/**/*.md',recursive=True) if openf(f))
-print(n)
-"); test "$n" = "5" && echo "Gate W0 OK: $n sítios com cerca aberta — é o universo que a Wave 1 corrige" || { echo "GATE FALHOU: esperava 5 sítios, contou $n — a população mudou, remeça a enumeração antes de implementar" >&2; exit 1; }
+test -f docs/seguranca/2026-09-30-wave0-cerca-nao-terminada.md || { echo 'GATE FALHOU: parecer da Wave 0 ausente' >&2; exit 1; }
+grep -q '### Tabela de comportamento proposto' docs/seguranca/2026-09-30-wave0-cerca-nao-terminada.md || { echo 'GATE FALHOU: parecer sem a tabela por superficie' >&2; exit 1; }
 ```
 
-## 🔴 BLOQUEADO em 2026-09-30 — aguarda o #485
+## ✅ Desbloqueado em 2026-09-30 — o #485 foi mergeado
 
-**Por quê:** a Wave 1 desta REQ altera `internal/commands/barrier.go` e
-`internal/roadmapdoc/roadmapdoc.go`. O **#485** (gate auto-referencial recursa sem limite) altera o
-**mesmo** `barrier.go`, na execução dos gates da wave. Arquivos compartilhados → **sequencial**, e a
-razão fica escrita, como a regra de paralelização exige.
+O bloqueio era por compartilhar `internal/commands/barrier.go` com o #485 (gate reentrante). O PR
+**#486** foi mergeado em `255f1384` e a `main` foi trazida para esta branch (merge `218beb3c`). O
+`barrier.go` daqui já tem a pilha de reentrada.
 
-**Ordem:** #485 primeiro, por ser mais grave — DoS local acionável por um arquivo de texto, contra um
-defeito cujo dano hoje é diferido (as 5 caudas mascaradas são só prosa).
-
-**Descoberto aqui:** o #485 apareceu **ao escrever o gate da Wave 0 deste roadmap**. O gate era
-`trackfw barrier <este roadmap> --wave 0` — o executor dentro do bloco que ele executa. 3469
-processos em ~6 min. Substituído por um gate de verificação real, que passa.
+Histórico: o #485 apareceu **ao escrever o gate da Wave 0 deste roadmap** — `trackfw barrier <este
+roadmap> --wave 0` dentro do próprio bloco de gates; 3469 processos em ~6 min.
 
 ## Wave 1 — a detecção
 > 🔴 **Dependências: Wave 0 auditada.** Os MLs saem do veredito do ML-0A e da decisão sobre o
