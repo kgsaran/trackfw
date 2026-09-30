@@ -43114,3 +43114,16 @@ Resultado: nenhum achado bloqueante.
  validate.yml — assimetria D2 fechada em um lado só, ML adicional nesta REQ.
  ACHADO-2 (baixa): scaffold_doctor.go:379 usa os.Stat (lê através de symlink) enquanto todos
  os outros predicados usam Lstat — live symlink emite scaffold-divergent com remédio inoperante.
+
+## 2026-09-29 — zeus-tf — FIM: REQ-2026-09-02 / #451 fechada pós-merge (PR #482)
+
+Roadmap → `done`, REQ → `Done`, **11/11 ACs** com evidência individual.
+
+🔴 **O `trackfw roadmap move` me barrou, e estava certo:** o ML-1D tinha `Status: ✅` com os **10 ACs
+ainda `[ ]`**, e o ML-2A não havia sido tocado. Eu auditei o **código** do ML-1D e não conferi a
+**marcação** — é o mesmo "replace sem assert mente" acontecendo no executor, e a minha auditoria não
+cobria isso. Marquei os 13 com a evidência que eu mesmo medi.
+
+Achado de processo gravado em memória: o relatório do ML-1D citou 7 testes de regressão "PASS por
+nome" e **3 dos nomes não existiam** — `go test -run` com nome inexistente casa zero testes e imprime
+`ok` com RC=0. Contar `^--- PASS` é a verificação; `ok` não é.
