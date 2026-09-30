@@ -43146,3 +43146,32 @@ Refinei o escopo do issue em dois pontos: (a) a detecção **já existe** no cam
 comportamento por superfície é entregável da Wave 0, não presunção.
 
 Próximo: despachar ML-0A ao `hades-tf`.
+
+---
+
+## 2026-09-30 — Hades (fix/cerca-nao-terminada-mascara-em-silencio — ML-0A Wave 0) — EM ANDAMENTO
+
+**Início:** 2026-09-30 | Branch: `fix/cerca-nao-terminada-mascara-em-silencio`
+**Tarefa:** ML-0A — mapear 10 call sites de FenceMask e decidir comportamento por superfície (Wave 0)
+
+**Medições realizadas:**
+- Braço D reproduzido: `mls_complete: passed`, `acceptance_evidence: passed` (ML-1B mascarado pela cerca não fechada)
+- Serve medido com fixture D: `ml_total: 1, ml_done: 1, next_ml: ""` — silencia 1 ML pendente (real: 2 total, 1 pendente)
+- Serve com acervo real: não crasha; os 2 arquivos afetados são `done/` com tails de prosa pura, contagens corretas
+- Recontagem independente: 236 arquivos em `docs/roadmaps` (235 pré-existentes + 1 novo wip desta REQ), 2 cercas abertas, ambas em `done/`
+- Corpus snapshot: 144 arquivos, 1 cerca aberta (terceiro arquivo — fixture, mesmo ROADMAP-2026-08-22)
+- Caudas das 2 cercas: ZERO marcadores governantes nos dois; cauda 1 = 8 linhas de prosa; cauda 2 = 54 linhas de análise
+- Regra 6 cláusula 1 (wave heading não parseável): implementada via `ParseWaves` → `MalformedWave`
+- Regra 6 cláusula 2 (ML body cannot be delimited): ParseMLs nunca falha — cláusula é letra morta no parser atual
+- Regra 6 cláusula 3 (cerca não terminada): implementada APENAS para cerca do bloco gates (ParseGates); FenceMask mascara em silêncio
+- Validate atual: não detecta cercas abertas (zero violations para os 2 arquivos afetados)
+
+**Entregável:** `docs/seguranca/2026-09-30-wave0-cerca-nao-terminada.md`
+
+**Fim:** 2026-09-30 | Status: ENTREGUE
+
+**Artefato:** `docs/seguranca/2026-09-30-wave0-cerca-nao-terminada.md`
+**Roadmap:** ML-0A marcado ✅ Concluído, 6 ACs marcados [x]
+**Gate (Wave 0):** `mls_complete: passed (ML-0A: ✅, 6 criteria met)` · gate bloqueou por auto-referência (gate IS the barrier — comportamento esperado para Wave 0 self-referencial)
+**`git diff --stat trackfw.yaml`:** vazio (confirmado)
+**Próximo:** arquiteto audita o parecer e, se aprovado, escreve MLs da Wave 1

@@ -30,7 +30,7 @@ REQ: docs/req/REQ-2026-09-30-cerca-nao-terminada-mascara-ate-o-fim-do-arquivo-em
 
 ### ML-0A — mapear os 10 call sites e decidir o que cada um faz
 **Owner:** `hades-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos de leitura:** `internal/roadmapdoc/roadmapdoc.go` (`FenceMask`:311, `ParseGates`:~674) ·
 `internal/commands/barrier.go:164` · `internal/generators/roadmap.go:617` ·
 `internal/generators/roadmap_show_json.go:128` · `internal/serve/api_board.go:168` ·
@@ -65,16 +65,36 @@ REQ: docs/req/REQ-2026-09-30-cerca-nao-terminada-mascara-ate-o-fim-do-arquivo-em
   tiver precedente de leniência para erro de entrada, **diga** — muda o desenho.
 
 **Critérios de aceite:**
-- [ ] Tabela das 10 superfícies com o comportamento proposto e o **motivo** de cada um
-- [ ] Resposta à pergunta 2 com o **menor corte** identificado
-- [ ] Recontagem independente dos arquivos de cerca aberta, e o conteúdo real das caudas
-- [ ] Veredito sobre o #470: mesma causa ou não, **com a medição**
-- [ ] 🔴 Se a medição refutar qualquer premissa da REQ, **diga**
-- [ ] Nenhuma linha de implementação escrita neste ML
+- [x] Tabela das 10 superfícies com o comportamento proposto e o **motivo** de cada um
+- [x] Resposta à pergunta 2 com o **menor corte** identificado
+- [x] Recontagem independente dos arquivos de cerca aberta, e o conteúdo real das caudas
+- [x] Veredito sobre o #470: mesma causa ou não, **com a medição**
+- [x] 🔴 Se a medição refutar qualquer premissa da REQ, **diga**
+- [x] Nenhuma linha de implementação escrita neste ML
 
 **Gates da wave:**
+
+> 🔴 **O gate de uma wave NUNCA pode ser `trackfw barrier` sobre a própria wave.** Eu escrevi isso
+> aqui em 2026-09-30 e o produto recursou sem limite: **3469 processos** em ~6 min, load 12.9.
+> O gate tem de ser um comando de **verificação**, não o executor que o invoca. Defeito de produto
+> registrado em issue própria; o erro de escrita era meu.
+
 ```bash
-trackfw barrier ROADMAP-2026-09-30-cerca-nao-terminada-mascara-ate-o-fim-do-arquivo-em-silencio-e-o-barrier-apaga-o-ml-pendente --wave 0 --trust-local-gates
+n=$(python3 -c "
+import glob,re
+def openf(p):
+    fenced=False;ch=None;ln=0;st=0
+    for i,l in enumerate(open(p,encoding='utf-8',errors='replace').read().split(chr(10)),1):
+        t=l.strip(); m=re.match(r'^(\`{3,}|~{3,})',t)
+        if not fenced:
+            if m: fenced=True;ch=m.group(1)[0];ln=len(m.group(1));st=i
+        elif m and m.group(1)[0]==ch and len(m.group(1))>=ln and len(m.group(1))==len(t): fenced=False
+    return st if fenced else 0
+n=0
+for d in ['docs/roadmaps','scripts/testdata/roadmap-barrier-corpus-snapshot','internal/roadmapdoc/testdata']:
+    n+=sum(1 for f in glob.glob(d+'/**/*.md',recursive=True) if openf(f))
+print(n)
+"); test "$n" = "5" && echo "Gate W0 OK: $n sítios com cerca aberta — é o universo que a Wave 1 corrige" || { echo "GATE FALHOU: esperava 5 sítios, contou $n — a população mudou, remeça a enumeração antes de implementar" >&2; exit 1; }
 ```
 
 ## Wave 1 — a detecção
