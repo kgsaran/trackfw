@@ -282,7 +282,7 @@ heurística; o selo é o sinal.
 
 ### ML-3B — `validate`: regra `roadmap_unterminated_fence`
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** `internal/validator/validator_roadmap_gates.go` (ou arquivo vizinho no mesmo
 padrão) · teste em `internal/validator/` · `scripts/check-validate-rule-pins.sh`
 **Ações:** regra nova `roadmap_unterminated_fence`, aplicada a **todos** os estados de roadmap, com a
@@ -294,10 +294,20 @@ CLI, não para o `validate`, e essa diferença vai para o `cli-parity` no ML-4B.
 entre blocos, e um rótulo duplicado passa **sem detecção**. Use um rótulo inédito e confira com `grep`.
 
 **Critérios de aceite:**
-- [ ] Teste nos dois braços (cerca aberta → violation com a linha · fechada → nada)
-- [ ] `bash scripts/check-validate-rule-pins.sh` verde, com o pin novo contado
-- [ ] `go test ./internal/validator/ -count=1` verde
-- [ ] Uma frase por teste novo
+- [x] Teste nos dois braços (cerca aberta → violation com a linha · fechada → nada)
+- [x] `bash scripts/check-validate-rule-pins.sh` verde, com o pin novo contado
+- [x] `go test ./internal/validator/ -count=1` verde
+- [x] Uma frase por teste novo
+
+**Testes novos (3 testes — todos PASS):**
+- `TestRoadmapUnterminatedFence_OpenFence` — afirma que um roadmap em wip/ com cerca aberta na linha 5 produz uma violation da regra `roadmap_unterminated_fence` nomeando o arquivo e a linha.
+- `TestRoadmapUnterminatedFence_ClosedFence` — afirma que um roadmap com todas as cercas fechadas não produz nenhuma violation da regra `roadmap_unterminated_fence`.
+- `TestRoadmapUnterminatedFence_DoneState` — afirma que a regra cobre o estado done/ (não só wip/), provando cobertura universal de estados.
+
+**Pins (Block 5):** `pin26` (open fence → violation com linha) · `pin27` (closed fence → silêncio).
+`grep -c 'pin26' scripts/check-validate-rule-pins.sh` → 2 (header + OK print; sem duplicata entre blocos).
+
+**Acervo real:** `tf3b validate 2>&1 | grep -c roadmap_unterminated_fence` → 0 (ML-1A fechou os 2 arquivos).
 
 **Gates da wave:**
 ```bash
@@ -311,7 +321,7 @@ bash scripts/check-validate-rule-pins.sh
 
 ### ML-4A — selo de "roadmap malformado" no card
 **Owner:** `afrodite-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** `internal/serve/static/app.js` · `internal/serve/static/style.css`
 **Ações:** quando `card.unterminated_fence_line > 0` **ou** `card.malformed_waves > 0`, o card mostra
 um selo visível ("roadmap malformado"), com texto ou tooltip dizendo a causa e a linha. A barra de
@@ -319,10 +329,16 @@ progresso **não** pode parecer completa quando o selo está presente. O board �
 `prefers-color-scheme`. Os estáticos são `go:embed`, e esta é a fonte canônica.
 
 **Critérios de aceite:**
-- [ ] 🔴 **Verificação visual em navegador real**, feita pelo arquiteto: `trackfw serve` sobre uma
+- [x] 🔴 **Verificação visual em navegador real**, feita pelo arquiteto: `trackfw serve` sobre uma
   árvore com uma fixture de cerca aberta, uma com `malformed_waves` e uma bem-formada; selo nas duas
   primeiras, ausente na terceira
-- [ ] `go build ./...` (o embed compila)
+- [x] `go build ./...` (o embed compila)
+
+> ✅ **Verificação visual (arquiteto, 2026-10-01)**, com Chrome real em modo headless contra o `serve` de um
+> binário recém-buildado, sobre 4 roadmaps: wave inválida → selo · cerca aberta 0/1 → selo, `0/?` ·
+> 🔴 **cerca aberta escondendo ML pendente com os visíveis 1/1** → selo, `1/?` e barra listrada âmbar no
+> lugar da verde cheia (era o sintoma do #476) · bem-formado → sem selo, `1/1` verde. O 4º caso não
+> estava na fixture da executora; acrescentei porque é o que a REQ existe para pegar.
 
 ### ML-4B — `cli-parity.md` por superfície e `make quality`
 **Owner:** `apolo-tf`

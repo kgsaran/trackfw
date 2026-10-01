@@ -43501,3 +43501,20 @@ Movendo o exit 2 de `generators` para `commands`: `UsageError` em generators, ha
 Branch: `fix/cerca-nao-terminada-mascara-em-silencio`
 Escopo: `internal/generators/roadmap_show_json.go` · `internal/generators/roadmap.go` · `internal/generators/roadmap_fence_test.go` · `internal/commands/roadmap.go` · `internal/commands/roadmap_show_fence_test.go` (novo) · roadmap ML-2C
 Resultados: `go build ./...` ok · `go vet ./internal/generators/ ./internal/commands/` ok · 903 PASS, 0 FAIL (generators + commands) · greps de critério vazios · `trackfw validate` 0 violations
+
+---
+**Afrodite** | 2026-10-01 | ML-4A do #476 — EM ANDAMENTO (aguarda verificação visual do arquiteto)
+Branch: `fix/cerca-nao-terminada-mascara-em-silencio`
+Escopo: `internal/serve/static/app.js` · `internal/serve/static/style.css` · roadmap ML-4A
+Resultados: `go build ./...` ok · selo "⚠ roadmap malformado" renderizado em createCard quando `unterminated_fence_line > 0` ou `malformed_waves > 0` · barra de progresso usa classe `progress-bar-invalid` (xadrez âmbar) quando malformado · contagem exibe `done/?` · API confirmada: fence-open → unterminated_fence_line=18, bad-wave → malformed_waves=1, bem-formado → campos ausentes
+
+---
+**Apolo** | 2026-10-01 | ML-3B do #476 — INICIADO
+Branch: `fix/cerca-nao-terminada-mascara-em-silencio`
+Escopo: `internal/validator/validator_roadmap_gates.go` · `internal/validator/validator_unterminated_fence_ml3b_test.go` (novo) · `scripts/check-validate-rule-pins.sh` · roadmap ML-3B
+
+---
+**Apolo** | 2026-10-01 | ML-3B do #476 — CONCLUÍDO
+Branch: `fix/cerca-nao-terminada-mascara-em-silencio`
+Escopo: `internal/validator/validator_roadmap_gates.go` · `internal/validator/validator_unterminated_fence_ml3b_test.go` (novo) · `scripts/check-validate-rule-pins.sh` · roadmap ML-3B
+Resultados: `go build ./...` ok · `go vet ./internal/validator/` ok · `go test ./internal/validator/ -count=1` ok (3 novos PASS) · `bash scripts/check-validate-rule-pins.sh` ok (30 pins, block 5 pin26+pin27) · `tf3b validate | grep -c roadmap_unterminated_fence` → 0

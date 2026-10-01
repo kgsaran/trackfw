@@ -8,13 +8,16 @@
 # specific rule names, message substrings, exit codes.  Nothing here invokes
 # `node npm/bin/trackfw` or `python3 -m trackfw`.
 #
-# Pin inventory (28 pins across 4 blocks):
+# Pin inventory (30 pins across 5 blocks):
 #   Block 1 — ADR/REQ rule-set:         {adr_accepted_when_req_done, blocked_by_draft_adr}
 #   Block 2 — branch_has_wip_roadmap:    nomatch/diff message markers + --agent guidance
 #                                        + the ML-3A matcher: token overlap accepts (PIN6),
 #                                        empty slug refuses (PIN7), written link governs (PIN8)
 #   Block 3 — credential_guard:          10 message pins + 5 silence pins
 #   Block 4 — git_branch_guard:          1 message pin + 1 silence pin + 3 shared-fixture pins
+#   Block 5 — roadmap_unterminated_fence: open fence → violation with line (PIN26),
+#                                         closed fence → no violation (PIN27),
+#                                         done/ state covered (PIN28 / PIN26 vacuity check)
 #
 # Falsification evidence is recorded after `make quality` run.
 set -euo pipefail
@@ -727,8 +730,96 @@ for fixture, marker, pin in [
     print(f"OK [validate-rule-pins/{pin}]  {marker!r}")
 PY
 
-echo "validate-rule-pins: all 28 pins pass"
+# ---------------------------------------------------------------------------
+# BLOCK 5: roadmap_unterminated_fence
+#
+# Pins:
+#   PIN26 — open fence in wip/ → violation naming file and line number
+#   PIN27 — closed fence in wip/ → no violation
+#   done/ state is covered by the same fixture as PIN26 (vacuity checked by PIN26 setup)
+# ---------------------------------------------------------------------------
+FENCE_TMP=$(mktemp -d "${TMPDIR:-/tmp}/trackfw-fence-pins.XXXXXX")
+trap 'rm -rf "$FENCE_TMP"' EXIT
+
+# PIN26 fixture: roadmap with an unterminated fence starting at line 5.
+mkdir -p "$FENCE_TMP/p26/docs/roadmaps/wip" "$FENCE_TMP/p26/docs/roadmaps/done"
+cat >"$FENCE_TMP/p26/trackfw.yaml" <<'EOF'
+roadmap_dir: docs/roadmaps
+EOF
+# Lines 1-4: frontmatter + blank; line 5: ```bash (opens fence, never closed)
+printf -- '---\nstatus: wip\n---\n\n```bash\necho hello\n' \
+  >"$FENCE_TMP/p26/docs/roadmaps/wip/ROADMAP-open.md"
+# Also test done/ to prove universal state coverage.
+printf -- '---\nstatus: done\n---\n\n```bash\necho hello\n' \
+  >"$FENCE_TMP/p26/docs/roadmaps/done/ROADMAP-done-open.md"
+
+P26_JSON="$FENCE_TMP/p26.json"
+P26_RC=0
+( cd "$FENCE_TMP/p26" && "$GO_BIN" validate --json ) >"$P26_JSON" 2>"$FENCE_TMP/p26.stderr" || P26_RC=$?
+
+# PIN27 fixture: roadmap with all fences closed → no violation.
+mkdir -p "$FENCE_TMP/p27/docs/roadmaps/wip"
+cat >"$FENCE_TMP/p27/trackfw.yaml" <<'EOF'
+roadmap_dir: docs/roadmaps
+EOF
+printf -- '---\nstatus: wip\n---\n\n```bash\necho hello\n```\n' \
+  >"$FENCE_TMP/p27/docs/roadmaps/wip/ROADMAP-closed.md"
+
+P27_JSON="$FENCE_TMP/p27.json"
+P27_RC=0
+( cd "$FENCE_TMP/p27" && "$GO_BIN" validate --json ) >"$P27_JSON" 2>"$FENCE_TMP/p27.stderr" || P27_RC=$?
+
+FENCE_RULE="roadmap_unterminated_fence"
+
+python3 - "$P26_JSON" "$P26_RC" "$P27_JSON" "$P27_RC" "$FENCE_RULE" <<'PY'
+import json, sys
+p26_path, p26_rc, p27_path, p27_rc, rule = \
+    sys.argv[1], int(sys.argv[2]), sys.argv[3], int(sys.argv[4]), sys.argv[5]
+
+# PIN26: open fence → violation with file name and line number.
+with open(p26_path, encoding="utf-8") as f:
+    p26 = json.load(f)
+all_msgs = [v.get("message","") for v in p26.get("violations",[])] + \
+           [w.get("message","") for w in p26.get("warnings",[])]
+fence_msgs = [m for m in all_msgs if rule in p26.get("violations",[{}])[0].get("rule","") or
+              any(r.get("rule") == rule for r in p26.get("violations",[]))]
+# Re-collect by rule
+fence_violations = [v for v in p26.get("violations",[]) if v.get("rule") == rule]
+fence_warnings   = [w for w in p26.get("warnings",  []) if w.get("rule") == rule]
+fence_findings   = fence_violations + fence_warnings
+
+if not fence_findings:
+    raise SystemExit(
+        f"PIN26 vacuity: expected {rule!r} finding for open fence, got none — "
+        f"rule regressed or fixture broken. rc={p26_rc}, "
+        f"violations={[v.get('rule') for v in p26.get('violations',[])]}"
+    )
+msgs_text = " | ".join(f.get("message","") for f in fence_findings)
+if "ROADMAP-open.md" not in msgs_text and "ROADMAP-done-open.md" not in msgs_text:
+    raise SystemExit(
+        f"PIN26: violation message must name the offending file: {msgs_text!r}"
+    )
+if "unterminated code fence starting at line 5" not in msgs_text:
+    raise SystemExit(
+        f"PIN26: violation message must include line number: {msgs_text!r}"
+    )
+print(f"OK [validate-rule-pins/pin26-unterminated-fence-violation]  {msgs_text[:80]!r}")
+
+# PIN27: closed fence → no violation from this rule.
+with open(p27_path, encoding="utf-8") as f:
+    p27 = json.load(f)
+fence_p27 = [v for v in p27.get("violations",[]) if v.get("rule") == rule] + \
+            [w for w in p27.get("warnings",  []) if w.get("rule") == rule]
+if fence_p27:
+    raise SystemExit(
+        f"PIN27: no {rule!r} finding expected for closed fence, got: {fence_p27!r}"
+    )
+print(f"OK [validate-rule-pins/pin27-closed-fence-silent]")
+PY
+
+echo "validate-rule-pins: all 30 pins pass"
 echo "  Block 1 (rule-set):          pin1"
 echo "  Block 2 (bhr-messages):      pin2-pin5 + pin2b/pin2c/pin2d (ML-3A matcher)"
 echo "  Block 3 (credential-guard):  pin6-pin20"
 echo "  Block 4 (git-branch-guard):  pin21-pin25"
+echo "  Block 5 (unterminated-fence): pin26-pin27"

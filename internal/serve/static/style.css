@@ -295,3 +295,31 @@
 }
 .attention-banner-action { background-color: #f59e0b; color: #fff; }
 .attention-banner-info   { background-color: #3b82f6; color: #fff; }
+
+/* ─── Selo de roadmap malformado ─────────────────────────────────────────── */
+.badge-malformed {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  padding: 0.15rem 0.5rem;
+  border-radius: 3px;
+  background-color: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fbbf24;
+  white-space: nowrap;
+}
+
+/* Barra de progresso em estado inválido (roadmap malformado) */
+.progress-bar-invalid {
+  background: repeating-linear-gradient(
+    45deg,
+    #fbbf24,
+    #fbbf24 4px,
+    #fef3c7 4px,
+    #fef3c7 8px
+  );
+  opacity: 0.85;
+}
