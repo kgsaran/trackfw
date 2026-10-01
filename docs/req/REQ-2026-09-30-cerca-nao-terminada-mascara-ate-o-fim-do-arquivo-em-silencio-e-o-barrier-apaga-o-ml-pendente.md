@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-30
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-30-cerca-nao-terminada-mascara-ate-o-fim-do-arquivo-em-silencio-e-o-barrier-apaga-o-ml-pendente.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-30-cerca-nao-terminada-mascara-ate-o-fim-do-arquivo-em-silencio-e-o-barrier-apaga-o-ml-pendente.md"
 ---
 
 # REQ: cerca nao terminada mascara ate o fim do arquivo em silencio e o barrier apaga o ML pendente
 
-> Date: 2026-09-30 | Status: Open
+> Date: 2026-09-30 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -84,22 +84,30 @@ o mecanismo, intacto, esperando a primeira cauda com conteúdo.
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — 🔴 **Wave 0:** o comportamento correto **por superfície**, mapeado nos 10 call sites.
+- [x] **AC1** — 🔴 **Wave 0:** o comportamento correto **por superfície**, mapeado nos 10 call sites.
       `serve` não pode sair 2; diga o que ele faz. Se a medição indicar que algum call site não deve
       mudar, **diga e justifique**
-- [ ] **AC2** — cerca não terminada em comando CLI → **exit 2** com mensagem nomeando **a linha de
+      ✅ Evidência: parecer `docs/seguranca/2026-09-30-wave0-cerca-nao-terminada.md` (tabela das 10 superfícies), aceito com 3 correções medidas registradas no roadmap
+- [x] **AC2** — cerca não terminada em comando CLI → **exit 2** com mensagem nomeando **a linha de
       abertura**, no formato que a regra 6 escreve e que o `ParseGates` já usa como molde
-- [ ] **AC3** — 🔴 **Falsificação nas duas direções:** cerca aberta → reprova nomeando a linha ·
+      ✅ Evidência: `barrier` e `roadmap show`/`--json` saem 2 com `unterminated code fence starting at line <n>` — `barrier_fence_test.go`, `roadmap_show_fence_test.go`
+- [x] **AC3** — 🔴 **Falsificação nas duas direções:** cerca aberta → reprova nomeando a linha ·
       **roadmap bem-formado → continua passando**. O segundo braço é o que impede a correção de
       transformar todo roadmap em erro de uso
-- [ ] **AC4** — 🔴 **O braço D da sonda fecha:** o roadmap com cerca aberta e ML pendente **deixa de
+      ✅ Evidência: braço bem-formado em cada superfície (`TestBarrierFence_WellFormedRoadmapPassesThrough`, `TestRoadmapShowBinary_ClosedFence_Exit0`, `TestFenceMoveAcceptedOnClosedFence`)
+- [x] **AC4** — 🔴 **O braço D da sonda fecha:** o roadmap com cerca aberta e ML pendente **deixa de
       sair `passed`**. Medido por `barrier --json`, não por leitura de código
-- [ ] **AC5** — 🔴 **Os 2 arquivos do acervo corrigidos no MESMO PR.** A detecção os transforma em
+      ✅ Evidência: medido pelo binário: braço D era `mls_complete: passed`, agora exit 2 (relatório do ML-2A)
+- [x] **AC5** — 🔴 **Os 2 arquivos do acervo corrigidos no MESMO PR.** A detecção os transforma em
       `exit 2`; entregar a detecção sem o conserto é quebrar o acervo de propósito. São 2 linhas
-- [ ] **AC6** — o `serve` **não quebra** com um roadmap de cerca aberta no acervo — braço explícito
-- [ ] **AC7** — `docs/cli-parity.md`: a regra 6 deixa de ser promessa e passa a descrever o
+      ✅ Evidência: os 2 roadmaps de `done/` corrigidos com 4 crases no bloco externo (223–236, 948–963); `TestAcervoSemCercaAberta` verde
+- [x] **AC6** — o `serve` **não quebra** com um roadmap de cerca aberta no acervo — braço explícito
+      ✅ Evidência: `serve` devolve 200 com `unterminated_fence_line` e lista bem-formado e malformado juntos; selo verificado em Chrome real
+- [x] **AC7** — `docs/cli-parity.md`: a regra 6 deixa de ser promessa e passa a descrever o
       comportamento real, **por superfície**
-- [ ] **AC8** — `make quality` e **CI** verdes
+      ✅ Evidência: `docs/cli-parity.md` regra 6 por superfície; cláusula 2 declarada letra morta
+- [x] **AC8** — `make quality` e **CI** verdes
+      ✅ Evidência: `make quality` EXIT=0; CI do PR #492 20/20 `pass`; merge `e7595c4e`
 
 ## Negative scope — o que esta REQ NÃO faz
 

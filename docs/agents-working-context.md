@@ -43566,3 +43566,10 @@ final porque **eu** proibi `make quality` nos MLs paralelos da Wave 2, onde o ba
 
 Verificação visual do selo com Chrome headless; o caso que importa (1/1 visível escondendo ML
 pendente) não estava na fixture da executora e foi acrescentado por mim.
+
+## 2026-10-01 — zeus-tf — FIM: REQ-2026-09-30 / #476 fechada pós-merge (PR #492)
+
+Mergeado em `e7595c4e`, CI 20/20 `pass`, #476 fechada pelo GitHub. Roadmap → `done` (o próprio
+`roadmap move ... done` já roda a checagem de cerca nova), REQ → `Done`, **8/8 ACs** com evidência.
+
+Pendente do usuário: merge do #489 (fechamento do #485). Issues abertas desta frente: #490, #491.
