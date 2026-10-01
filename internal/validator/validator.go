@@ -1,6 +1,7 @@
 package validator
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -399,17 +400,22 @@ func scopeRedirectViolations(diskCfg *config.ProjectConfig) []string {
 	return out
 }
 
-// mdBasenamesInGitTree returns the set of .md file basenames committed in the given git ref
-// under the given directory prefix. Uses the same gitCommand wrapper as originMainTrackfwYAML.
-// Returns an empty (non-nil) set on error so callers can do set subtraction safely.
-func mdBasenamesInGitTree(ref, dirPrefix string) map[string]bool {
-	out, err := gitCommand(".", "ls-tree", "-r", "--name-only", ref, "--", dirPrefix).Output()
+// mdBasenamesInGitTreeWithError returns the set of .md file basenames committed in the given git
+// ref under the given directory prefix, and any error from git ls-tree.
+//
+// A1 (ADR-2026-10-01): uses `-z` (NUL-delimited output) and bytes.Split so that filenames with
+// non-ASCII or special characters are never quoted by git's core.quotepath mechanism. Without `-z`,
+// a roadmap named "ROADMAP-2026-09-01-com-ç-teste.md" would appear quoted in the output and
+// filepath.Base would return the escaped form, causing the file to appear absent from the base tree
+// and triggering a spurious "moved by this branch" acceptance.
+func mdBasenamesInGitTreeWithError(ref, dirPrefix string) (map[string]bool, error) {
+	out, err := gitCommand(".", "ls-tree", "-r", "-z", "--name-only", ref, "--", dirPrefix).Output()
 	set := make(map[string]bool)
 	if err != nil {
-		return set
+		return set, err
 	}
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		line = strings.TrimSpace(line)
+	for _, entry := range bytes.Split(out, []byte{0}) {
+		line := string(entry)
 		if line == "" {
 			continue
 		}
@@ -417,6 +423,15 @@ func mdBasenamesInGitTree(ref, dirPrefix string) map[string]bool {
 			set[filepath.Base(line)] = true
 		}
 	}
+	return set, nil
+}
+
+// mdBasenamesInGitTree returns the set of .md file basenames committed in the given git ref
+// under the given directory prefix. Uses the same gitCommand wrapper as originMainTrackfwYAML.
+// Returns an empty (non-nil) set on error so callers can do set subtraction safely.
+// Uses mdBasenamesInGitTreeWithError internally (A1: -z, NUL-delimited).
+func mdBasenamesInGitTree(ref, dirPrefix string) map[string]bool {
+	set, _ := mdBasenamesInGitTreeWithError(ref, dirPrefix)
 	return set
 }
 
@@ -1882,6 +1897,17 @@ func ResolveWIPDirs(cfg config.ProjectConfig) []string {
 // pacote validator (ex: comando `trackfw branch new`).
 func ResolveDoneDirs(cfg config.ProjectConfig) []string {
 	return resolveDoneDirs(cfg)
+}
+
+// resolveBlockedDirs retorna todos os diretórios blocked/ conforme o modo de namespacing.
+func resolveBlockedDirs(cfg config.ProjectConfig) []string {
+	return resolveStateDirs(cfg, "blocked")
+}
+
+// ResolveBlockedDirs é o wrapper exportado de resolveBlockedDirs, usado por consumidores fora do
+// pacote validator (ex: ResolveBranchRoadmapForExisting em branchlink.go e por testes externos).
+func ResolveBlockedDirs(cfg config.ProjectConfig) []string {
+	return resolveBlockedDirs(cfg)
 }
 
 // ListMDFiles lista os arquivos .md diretamente dentro de dir (sem subdiretórios, sem glob) —
@@ -3931,11 +3957,11 @@ func sharedTokenCount(a, b []string) int {
 	return count
 }
 
-// validateBranchHasWIPRoadmap verifica se a branch atual (feat/fix/refactor) tem ao menos um roadmap em wip/.
-// Retorna violation se a branch for de implementação mas wip/ estiver vazio — previne trabalho órfão.
-// It returns (violations, warnings, error): the warnings channel exists for the STALE WRITTEN LINK
-// (D1 of ADR-2026-09-26). A stale link must not be silent — and must not be a violation either, or
-// the additive order of D4 breaks.
+// validateBranchHasWIPRoadmap verifica se a branch atual (feat/fix/refactor) tem ao menos um
+// roadmap em wip/ (criação) ou wip/∪blocked/∪done/ com restrição de ls-tree (branch existente).
+// Retorna violation se a branch for de implementação sem roadmap governante.
+// It returns (violations, warnings, error): warnings carry non-fatal advisories (stale link, D3
+// unverifiable base). Neither must be silent (ADR-2026-10-01 D3, D4).
 func validateBranchHasWIPRoadmap() ([]string, []string, error) {
 	branch := firstNonEmpty(os.Getenv("TRACKFW_BRANCH"))
 	if branch == "" && isGitWorktree(".") {
@@ -3958,25 +3984,26 @@ func validateBranchHasWIPRoadmap() ([]string, []string, error) {
 
 	cfg := config.Load()
 	wipDirs := resolveWIPDirs(cfg)
+	blockedDirs := resolveBlockedDirs(cfg)
 	doneDirs := resolveDoneDirs(cfg)
 
-	// D1 resolution order: written link first, name inference as fallback.
-	res := ResolveBranchRoadmap(cfg, branch, wipDirs, doneDirs)
+	// D2 resolution for existing branch: wip∪blocked by inference; done only if moved by this branch.
+	res := ResolveBranchRoadmapForExisting(cfg, branch, wipDirs, blockedDirs, doneDirs)
 	if res.Matched {
 		return nil, res.Warnings, nil
 	}
 
 	if len(res.Candidates) == 0 {
-		return []string{BranchGovernanceOrientation(branch, cfg)}, res.Warnings, nil
+		return []string{BranchGovernanceOrientationForExisting(branch, cfg)}, res.Warnings, nil
 	}
-	return []string{BranchNoMatchingRoadmapMessage(branch, res.Candidates)}, res.Warnings, nil
+	return []string{BranchNoMatchingRoadmapMessageForExisting(branch, res.Candidates)}, res.Warnings, nil
 }
 
-// BranchGovernanceOrientation is the guidance message printed when a feat/fix/refactor branch
-// has no roadmap in wip/ nor done/ at all (candidates is empty). Shared by
-// validateBranchHasWIPRoadmap and `trackfw branch new` — never duplicate this string.
-// For by_agent projects with 2+ agents, the hint includes --agent so the user does not run
-// the command that now requires a flag (AC13, ML-3A).
+// BranchGovernanceOrientation is the guidance message for branches whose slug matches no roadmap
+// in wip/ or done/ at all.
+//
+// Deprecated: kept byte-identical with e104a7f7 so internal/commands/branch.go and commit.go
+// compile without modification until ML-1B updates them to BranchGovernanceOrientationForCreation.
 func BranchGovernanceOrientation(branch string, cfg config.ProjectConfig) string {
 	return fmt.Sprintf(
 		"branch %q is a feat/fix/refactor branch but no roadmap is in wip/ nor done/ — create governance artifacts first:\n  %s\n  %s\n  trackfw roadmap move <name> wip",
@@ -3984,9 +4011,37 @@ func BranchGovernanceOrientation(branch string, cfg config.ProjectConfig) string
 	)
 }
 
-// BranchNoMatchingRoadmapMessage is the guidance message printed when roadmaps exist in wip/ or
-// done/ but none of them match the branch's slug. Shared by validateBranchHasWIPRoadmap and
-// `trackfw branch new` — never duplicate this string. Does not mutate candidates.
+// BranchGovernanceOrientationForCreation is the guidance message for the CREATION context
+// (trackfw branch new): a feat/fix/refactor branch whose slug matches no roadmap in wip/.
+// doneMatches optionally names roadmaps found in done/ that would need a `roadmap move` first.
+// Used by ML-1B when updating branch.go.
+func BranchGovernanceOrientationForCreation(branch string, cfg config.ProjectConfig, doneMatches []string) string {
+	msg := fmt.Sprintf(
+		"branch %q is a feat/fix/refactor branch but no roadmap is in wip/ — create governance artifacts first:\n  %s\n  %s\n  trackfw roadmap move <name> wip",
+		branch, ReqNewLine(cfg), RoadmapNewLine(cfg),
+	)
+	if hint := doneMatchesHint(doneMatches); hint != "" {
+		msg += "\n" + hint
+	}
+	return msg
+}
+
+// BranchGovernanceOrientationForExisting is the guidance message for the EXISTING BRANCH context
+// (validate, commit, push, ship): a feat/fix/refactor branch with no roadmap in wip/, blocked/
+// nor done/ that was moved by this branch. Used by validateBranchHasWIPRoadmap.
+func BranchGovernanceOrientationForExisting(branch string, cfg config.ProjectConfig) string {
+	return fmt.Sprintf(
+		"branch %q is a feat/fix/refactor branch but no roadmap is in wip/, blocked/ nor done/ — create governance artifacts first:\n  %s\n  %s\n  trackfw roadmap move <name> wip",
+		branch, ReqNewLine(cfg), RoadmapNewLine(cfg),
+	)
+}
+
+// BranchNoMatchingRoadmapMessage is the guidance message for branches with roadmaps in wip/ or
+// done/ but none matching the branch slug.
+//
+// Deprecated: kept byte-identical with e104a7f7 so internal/commands/branch.go and commit.go
+// compile without modification until ML-1B updates them to BranchNoMatchingRoadmapMessageForCreation.
+// Does not mutate candidates.
 func BranchNoMatchingRoadmapMessage(branch string, candidates []string) string {
 	// P3: sort for deterministic output regardless of filesystem ordering.
 	sorted := make([]string, len(candidates))
@@ -4000,6 +4055,72 @@ func BranchNoMatchingRoadmapMessage(branch string, candidates []string) string {
 	}
 	return fmt.Sprintf(
 		"branch %q has no matching roadmap in wip/ nor done/ (found: %s%s) — include the branch slug in the roadmap filename or set TRACKFW_BRANCH explicitly in CI",
+		branch, strings.Join(display, ", "), suffix,
+	)
+}
+
+// BranchNoMatchingRoadmapMessageForCreation is the guidance message for the CREATION context
+// (trackfw branch new): roadmaps exist in wip/ but none match the branch slug.
+// doneMatches optionally names roadmaps found in done/ that would need a `roadmap move` first.
+// Used by ML-1B when updating branch.go. Does not mutate candidates or doneMatches.
+func BranchNoMatchingRoadmapMessageForCreation(branch string, candidates, doneMatches []string) string {
+	sorted := make([]string, len(candidates))
+	copy(sorted, candidates)
+	sort.Strings(sorted)
+	display := sorted
+	suffix := ""
+	if len(sorted) > 3 {
+		display = sorted[:3]
+		suffix = fmt.Sprintf(", e mais %d", len(sorted)-3)
+	}
+	msg := fmt.Sprintf(
+		"branch %q has no matching roadmap in wip/ (found: %s%s) — include the branch slug in the roadmap filename or set TRACKFW_BRANCH explicitly in CI",
+		branch, strings.Join(display, ", "), suffix,
+	)
+	if hint := doneMatchesHint(doneMatches); hint != "" {
+		msg += "\n" + hint
+	}
+	return msg
+}
+
+// doneMatchesHint returns a multi-line hint string listing done/ roadmaps that would need to be
+// moved to wip/ before `trackfw branch new` can proceed. Returns "" when doneMatches is empty.
+// Lists at most 3 names (sorted); names beyond 3 are summarised as "e mais N".
+func doneMatchesHint(doneMatches []string) string {
+	if len(doneMatches) == 0 {
+		return ""
+	}
+	sorted := make([]string, len(doneMatches))
+	copy(sorted, doneMatches)
+	sort.Strings(sorted)
+	display := sorted
+	suffix := ""
+	if len(sorted) > 3 {
+		display = sorted[:3]
+		suffix = fmt.Sprintf(", e mais %d", len(sorted)-3)
+	}
+	lines := make([]string, len(display))
+	for i, m := range display {
+		lines[i] = fmt.Sprintf("    trackfw roadmap move %s wip", m)
+	}
+	return fmt.Sprintf("(matched in done/: %s%s — move to wip first:\n%s)", strings.Join(display, ", "), suffix, strings.Join(lines, "\n"))
+}
+
+// BranchNoMatchingRoadmapMessageForExisting is the guidance message for the EXISTING BRANCH
+// context: roadmaps exist in wip/, blocked/ or done/ but none match the branch slug. Used by
+// validateBranchHasWIPRoadmap. Does not mutate candidates.
+func BranchNoMatchingRoadmapMessageForExisting(branch string, candidates []string) string {
+	sorted := make([]string, len(candidates))
+	copy(sorted, candidates)
+	sort.Strings(sorted)
+	display := sorted
+	suffix := ""
+	if len(sorted) > 3 {
+		display = sorted[:3]
+		suffix = fmt.Sprintf(", e mais %d", len(sorted)-3)
+	}
+	return fmt.Sprintf(
+		"branch %q has no matching roadmap in wip/, blocked/ nor done/ (found: %s%s) — include the branch slug in the roadmap filename or set TRACKFW_BRANCH explicitly in CI",
 		branch, strings.Join(display, ", "), suffix,
 	)
 }
@@ -4090,10 +4211,20 @@ func normalizeBranchSlug(value string) string {
 	return strings.Trim(out.String(), "-")
 }
 
-// GovernanceViolation holds the messages from a failed CheckShipGovernance call.
+// GovernanceViolation holds the messages from a CheckShipGovernance call.
+//
+// A2 (ADR-2026-10-01): Warnings carries non-fatal advisory messages (e.g.
+// branch_done_scope_unverifiable from D3) that must reach push/ship even when Missing is empty.
+// Contract: non-nil with empty Missing = "pass with warnings" (governance OK, degraded). The
+// Error() method deliberately omits Warnings — callers print them separately as "Governance:
+// degraded: …" to distinguish from hard violations.
 type GovernanceViolation struct {
 	// Missing contains human-readable violation messages, one per line.
 	Missing []string
+	// Warnings contains non-fatal advisory messages (e.g. branch_done_scope_unverifiable).
+	// A non-nil GovernanceViolation with empty Missing but non-empty Warnings means governance
+	// passed in degraded mode — the gate should allow the operation but print the warnings.
+	Warnings []string
 }
 
 func (e *GovernanceViolation) Error() string {
@@ -4106,21 +4237,27 @@ func (e *GovernanceViolation) Error() string {
 // governance regardless of project settings.
 //
 // It checks:
-//  1. The current branch has a matching roadmap in wip/ or done/ (branch_has_wip_roadmap)
+//  1. The current branch has a matching roadmap in wip/, blocked/ or done/ (branch_has_wip_roadmap)
 //  2. All WIP roadmaps have a linked REQ (wip_has_req)
 //
-// Returns nil when all checks pass. Returns *GovernanceViolation otherwise.
+// Returns nil when all checks pass AND there are no warnings.
+// Returns *GovernanceViolation with empty Missing (and non-empty Warnings) when governance
+// passes in degraded mode — e.g. origin unreachable, D3 of ADR-2026-10-01. ML-1B prints those
+// as "Governance: degraded: …" instead of "Governance: OK". Never returns a non-nil value with
+// both Missing and Warnings empty.
 func CheckShipGovernance() *GovernanceViolation {
 	var missing []string
+	var warnings []string
 
-	branchViolations, _, _ := validateBranchHasWIPRoadmap()
+	branchViolations, branchWarnings, _ := validateBranchHasWIPRoadmap()
 	missing = append(missing, branchViolations...)
+	warnings = append(warnings, branchWarnings...)
 
 	wipReqViolations, _ := validateWIPHasREQ()
 	missing = append(missing, wipReqViolations...)
 
-	if len(missing) == 0 {
+	if len(missing) == 0 && len(warnings) == 0 {
 		return nil
 	}
-	return &GovernanceViolation{Missing: missing}
+	return &GovernanceViolation{Missing: missing, Warnings: warnings}
 }

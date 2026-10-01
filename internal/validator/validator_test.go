@@ -970,8 +970,8 @@ func TestValidateBranchHasWIPRoadmap_Violation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}
-	if !hasViolation(violations, "no roadmap is in wip/ nor done/") {
-		t.Errorf("esperava violation de wip/done vazios, obteve: %v", violations)
+	if !hasViolation(violations, "no roadmap is in wip/, blocked/ nor done/") {
+		t.Errorf("esperava violation de wip/blocked/done vazios, obteve: %v", violations)
 	}
 }
 
@@ -1048,7 +1048,7 @@ func TestValidateBranchHasWIPRoadmap_DoneMismatch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("erro inesperado: %v", err)
 	}
-	if !hasViolation(violations, "no matching roadmap in wip/ nor done/") {
+	if !hasViolation(violations, "no matching roadmap in wip/, blocked/ nor done/") {
 		t.Errorf("roadmap em done/ com slug diferente deve reprovar, obteve: %v", violations)
 	}
 }

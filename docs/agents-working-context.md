@@ -43796,3 +43796,49 @@ Mesmo mecanismo: o conjunto de estados que o gate branch↔roadmap consulta. #49
 então commit/validate/push recusam o registro do bloqueio (reproduzido com o binário da `main`).
 Medido: 22 de 217 branches históricas casam com `done/` só por sobreposição de tokens; 126 casam com
 mais de um. Decisão do KG: fechar `done/` também nos gates de branch existente.
+
+## 2026-10-01 — apolo-tf — INÍCIO: ML-1C core.quotepath em gitLsTree
+
+Corrigindo `gitLsTree` em `internal/auditsurface/auditsurface.go` para usar `-z` (NUL-delimitado)
+em vez de `\n`, evitando corrupção de caminhos com caracteres não-ASCII quando `core.quotepath=true`.
+Criando teste com repositório git real e arquivo de nome acentuado.
+
+## 2026-10-01 — apolo-tf — FIM: ML-1C core.quotepath em gitLsTree
+
+Fix: `gitLsTree` passou a usar `-z` (NUL-delimitado) + `bytes.Split(out, []byte{0})`.
+Novo arquivo: `internal/auditsurface/gitlstree_test.go` (2 testes).
+Gates: `go build ./...` limpo · `go vet ./internal/auditsurface/` limpo · `go test ./internal/auditsurface/ -count=1` PASS.
+`getSymlinkTarget` (~linha 474) não sofre o mesmo defeito: só lê o campo antes do tab (modo), nunca o caminho após o tab.
+
+## 2026-10-01 — apolo-tf (fix/estado-que-governa-a-branch — ML-1A) — INÍCIO
+
+Escopo: ML-1A do ROADMAP-2026-10-01-o-estado-que-governa-a-branch.
+Arquivos: `internal/validator/branchlink.go`, `internal/validator/validator.go`,
+`internal/validator/validator_branch_existing_test.go` (novo), `internal/validator/validator_test.go`.
+Alvo: ResolveBlockedDirs, BranchLinkFor (escopo wip∪blocked∪done), RecordBranchLink (só wip),
+ResolveBranchRoadmapForExisting (D2: wip∪blocked + done restrito por ls-tree -z),
+GovernanceViolation.Warnings, CheckShipGovernance propagando warnings.
+
+## 2026-10-01 — apolo-tf (fix/estado-que-governa-a-branch — ML-1A) — FIM (revisado)
+
+Revisão pós-parecer do advisor (sessão de retomada). Alterações adicionais:
+
+1. Funções antigas `BranchGovernanceOrientation` / `BranchNoMatchingRoadmapMessage` revertidas
+   para texto original de `e104a7f7` ("in wip/ nor done/") marcadas `// Deprecated` — evita
+   mismatch texto/comportamento em branch.go e commit.go antes do ML-1B.
+2. Adicionadas `BranchGovernanceOrientationForCreation(branch, cfg, doneMatches)` e
+   `BranchNoMatchingRoadmapMessageForCreation(branch, candidates, doneMatches)` com hint de done/.
+3. `doneMatchesHint(doneMatches)` helper interno.
+4. `ResolveBranchRoadmap` passa a delegar para `ResolveBranchRoadmapForExisting` (fonte única).
+5. Teste acento corrigido: usa "ROADMAP-cache-de-sessao-revisão.md" (slug coincide), asserta
+   `Matched=false` + `Warnings=[]`; precondição do oldReader virou `t.Fatalf` (hard fail).
+6. Adicionados: `TestResolveBranchRoadmapForExisting_DoneMovedByBranchGovernsWithLink`,
+   `TestRecordBranchLink_DoneOnlyNoLink`, `TestRecordBranchLink_WipAndDonePicksWip`,
+   `TestBranchGovernanceOrientationForCreation_DoneHint` — total 12 testes novos.
+
+Gates finais: `go build ./...` limpo · `go test ./internal/validator/ -count=1` PASS (ok 10.1s) ·
+`go vet ./internal/validator/` limpo · `go build ./internal/commands/` limpo ·
+D6 intacto (diff grep vazio).
+
+Resíduos declarados para ML-1B: PIN3/PIN4 em check-validate-rule-pins.sh; branch.go/commit.go
+ainda usam as funções Deprecated.

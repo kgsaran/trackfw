@@ -82,7 +82,7 @@ grep -q "Veredito" docs/seguranca/2026-10-01-wave0-estado-que-governa-a-branch.m
 > Dependencies: Wave 0 auditada
 
 ### ML-1A — Resolução por consumidor no `validator`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Files affected:** `internal/validator/branchlink.go`, `internal/validator/validator.go`, testes em
 `internal/validator/*_test.go`
@@ -112,11 +112,14 @@ grep -q "Veredito" docs/seguranca/2026-10-01-wave0-estado-que-governa-a-branch.m
 8. 🔴 **Proibido** tocar `MatchRoadmapsForBranchSlug`, `branchRoadmapTokens`, `roadmapContentSlug`,
    `sharedTokenCount` e as duas constantes (D6).
 **Acceptance criteria:**
-- [ ] Testes com git real em diretório temporário: blocked governa (com e sem vínculo); `done/` movido
+- [x] Testes com git real em diretório temporário: blocked governa (com e sem vínculo); `done/` movido
       pela branch governa; `done/` presente na base não governa; sem `origin` → aviso, sem violação;
       vínculo para `blocked/` não é stale
-- [ ] `git diff e104a7f7 -- internal/validator/validator.go` não toca as funções do item 7
-- [ ] Relatório: uma frase por teste novo dizendo qual conclusão ele afirma
+- [x] `git diff e104a7f7 -- internal/validator/validator.go` não toca as funções do item 7
+- [x] Relatório: uma frase por teste novo dizendo qual conclusão ele afirma
+      ✅ Auditoria (arquiteto): 12 testes rodados por nome, todos PASS; grep do D6 vazio; leitor `-z` é
+      `mdBasenamesInGitTreeWithError`, com `mdBasenamesInGitTree` delegando a ele (A1 cobre os chamadores
+      antigos). Funções antigas de mensagem ficam como Deprecated até o ML-1B.
 **Gates da wave:**
 ```bash
 go build ./...
@@ -139,6 +142,9 @@ go test ./internal/validator/ -count=1
 4. Inverter o teste herdado da REQ-2026-08-04 ("match em `done/` cria a branch") para "match só em
    `done/` bloqueia e nomeia o roadmap". Não apagar.
 5. `check-validate-rule-pins.sh` PIN3/PIN4 e os marcadores `BHR_MARKER`/`MARKER_*`: textos novos.
+7. **Corretivo do ML-1C:** apagar `TestGitLsTree_AccentedFilename_OldBehavior` e o helper
+   `splitNewlines` de `internal/auditsurface/gitlstree_test.go` (testa uma cópia da função antiga, não
+   o produto). `TestGitLsTree_AccentedFilename` fica.
 6. `docs/cli-parity.md` (:1292, :1858, :4259-4260 e onde mais o grep achar): contrato novo por
    consumidor, o sinal "movido por esta branch" e o aviso `branch_done_scope_unverifiable`.
 **Acceptance criteria:**
@@ -155,7 +161,7 @@ GO_BIN=bin/trackfw scripts/check-validate-rule-pins.sh
 ```
 
 ### ML-1C — `gitLsTree` do `auditsurface` com `-z` (mesma causa do A1)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Files affected:** `internal/auditsurface/auditsurface.go` (`gitLsTree` ~:287), teste em
 `internal/auditsurface/*_test.go`
@@ -163,8 +169,12 @@ GO_BIN=bin/trackfw scripts/check-validate-rule-pins.sh
 **Actions:** `git ls-tree -r -z --name-only` + split em NUL; teste com caminho acentuado em
 repositório git temporário (falha sem `-z`, passa com ele).
 **Acceptance criteria:**
-- [ ] Teste falha no código de `e104a7f7` e passa no novo (provar as duas)
-- [ ] Relatório: uma frase por teste novo
+- [x] Teste falha no código de `e104a7f7` e passa no novo (provar as duas)
+      ✅ Medido pelo arquiteto: `TestGitLsTree_AccentedFilename` com o `auditsurface.go` de `e104a7f7`
+      via `go test -overlay` → FAIL (`"scripts/a\303\247\303\243o.md"`); com o novo → PASS.
+- [x] Relatório: uma frase por teste novo
+      ⚠️ `TestGitLsTree_AccentedFilename_OldBehavior` testa uma cópia da função antiga e o git, não o
+      produto: passa para sempre e não afirma conclusão do ML. Removido no ML-1B (corretivo).
 **Gates da wave:**
 ```bash
 go build ./...
