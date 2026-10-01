@@ -4250,18 +4250,21 @@ strings de aviso **byte-a-byte** entre os três runtimes.
 
 A regra verifica que toda branch `feat/`, `fix/` ou `refactor/` possui um roadmap cujo nome
 contém o slug da branch. Desde REQ-2026-07-26-robustez-dos-gates-de-governanca-e-paridade, a regra
-procura o slug em **`wip/` e `done/`**, não apenas em `wip/`.
+procura o slug em **`wip/` e `done/`**, não apenas em `wip/`; desde a #490 também em **`blocked/`**.
 
 | Cenário | Comportamento esperado (Go / Node.js / Python) |
 |---|---|
 | Roadmap em `wip/` com slug da branch | Sem violação — comportamento original preservado |
 | Roadmap em `done/` com slug da branch | Sem violação — permite encerrar o roadmap na própria branch (Definition of Done) |
-| Nenhum roadmap em `wip/` nem em `done/` | Violação com mensagem "no roadmap is in wip/ nor done/" + orientação de remediação |
-| Roadmap em `done/` com slug **diferente** da branch | Violação com mensagem "no matching roadmap in wip/ nor done/" — casamento de slug é obrigatório |
+| Roadmap em `blocked/` com slug da branch | Sem violação (#490) — permite REGISTRAR o bloqueio a partir da branch que o produziu; bloquear muda o estado do trabalho, não o dono da branch |
+| Nenhum roadmap em `wip/`, `done/` nem `blocked/` | Violação com mensagem "no roadmap is in wip/ nor done/" + orientação de remediação |
+| Roadmap em `done/` ou `blocked/` com slug **diferente** da branch | Violação com mensagem "no matching roadmap in wip/ nor done/" — casamento de slug é obrigatório |
 
-A resolução de diretórios (`wip/`, `done/`) é centralizada em `resolveStateDirs` (Go),
+A resolução de diretórios (`wip/`, `done/`, `blocked/`) é centralizada em `resolveStateDirs` (Go),
 `resolveStateDirs` (Node.js) e `_resolve_state_dirs` (Python) — as variantes por agente
-(`by_agent`) são suportadas via os mesmos wrappers `resolveWIPDirs`/`resolveDoneDirs`.
+(`by_agent`) são suportadas via os mesmos wrappers `resolveWIPDirs`/`resolveDoneDirs`, e `done/`
+com `blocked/` saem juntos de `ResolveSettledDirs` — os estados que não são "em curso" mas ainda
+governam a branch.
 
 O ID da regra (`branch_has_wip_roadmap`) e o mecanismo de severidade configurável (`rules:`) são
 preservados — a aceitação de `done/` não altera a config key nem o comportamento de `off`/`warning`.
@@ -4269,6 +4272,43 @@ preservados — a aceitação de `done/` não altera a config key nem o comporta
 `trackfw branch new` (ver "`trackfw branch new`" acima) aplica exatamente esta mesma regra **antes**
 da branch existir, chamando a mesma função de matching (`MatchRoadmapsForBranchSlug`, via
 `BranchSlugMatchesRoadmap`) que `validateBranchHasWIPRoadmap` chama aqui — não uma segunda implementação.
+
+#### 🔴 `blocked/` governa, mas `branch new` NÃO o aceita — e é deliberado
+
+A #490 mediu que `roadmap move <x> blocked` tirava o roadmap de `wip/` e, com isso, o **commit da
+própria transição** era recusado: o único roadmap que casava com a branch acabara de sair do
+conjunto. O efeito prático era pior que a recusa — o roadmap ficava em `wip/` e o bloqueio era
+declarado só na prosa, então a **pasta**, que é o estado que `status`, `context` e `serve` enxergam,
+mentia.
+
+Medido por efeito, com o estado do roadmap como **única** variável:
+
+| roadmap em | `commit` | `branch_has_wip_roadmap` | vínculo escrito |
+|---|---|---|---|
+| `wip/` | rc=0 | 0 ocorrências | resolve |
+| `blocked/` **antes** | rc=1 | 1 | **stale** |
+| `blocked/` **depois** | rc=0 | 0 | resolve |
+| `backlog/` | rc=1 | 1 | stale — e corretamente |
+
+**Eram dois mecanismos, não um.** Além do gate, o **vínculo escrito** conferia `wip/`+`done/` e
+virava `stale` na mesma transição — e a mensagem dele prescrevia `trackfw branch new`, que era
+recusado **pelo mesmo motivo**. Instrução circular, medida: `branch new <slug> --dry-run` saía `rc=1`
+com *"no roadmap is in wip/ nor done/"*. Com `blocked/` no escopo o vínculo não fica mais obsoleto
+nessa transição, e a circularidade desaparece sem afrouxar nada.
+
+🔴 **`trackfw branch new` continua recusando**, e isso não é omissão:
+
+| superfície | o que gateia | aceita `blocked/`? |
+|---|---|---|
+| `validate`, `commit`, vínculo escrito | uma branch que **já existe**, cujo roadmap mudou de estado | **sim** |
+| `branch new` | o **início** do trabalho | **não** — abrir frente nova sobre roadmap parado é o oposto da ordem que o comando existe para garantir |
+
+`backlog/` e `abandoned/` ficam fora pelo mesmo critério: não governam branch nenhuma. O aviso
+`branch_link_stale` continua disparando para eles, e há teste afirmando isso — sem esse controle, a
+correção poderia ter desligado o aviso.
+
+**Não medido:** o `barrier` recusa roadmap em `blocked/` com `not found in wip/ nor done/`. O mérito
+disso não foi medido aqui e fica fora desta mudança.
 
 ### Vínculo branch↔roadmap — relação ADITIVA, com vínculo escrito na frente
 
@@ -4279,7 +4319,8 @@ Desde o `ML-3A` da REQ-2026-09-09 (ADR-2026-09-26), a resolução tem **duas eta
 **1. Vínculo ESCRITO (fonte de verdade).** `trackfw branch new` grava
 `<roadmap_dir>/.trackfw-branch-links.json` (`{"version":1,"links":{"<branch>":"<ROADMAP-….md>"}}`)
 no instante em que cria a branch — o instante em que a informação ainda é exata. `validate`,
-`commit` e `ship` consultam esse vínculo. Se ele aponta para roadmap que **saiu de `wip/`+`done/`**,
+`commit` e `ship` consultam esse vínculo. Se ele aponta para roadmap que **saiu de
+`wip/`+`done/`+`blocked/`**,
 o vínculo está **obsoleto**: cai-se na inferência **e emite-se o aviso `branch_link_stale`** —
 nunca em silêncio. 🔴 O aviso **nunca** é violação: promovê-lo quebraria a ordem aditiva (uma branch
 que passa hoje começaria a falhar por causa de um registro obsoleto ao lado dela).

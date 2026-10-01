@@ -103,10 +103,12 @@ Create the governance artifacts first if this blocks you:
 			cmd.SilenceErrors = true
 
 			deps := commitDeps{
-				loadConfig:       config.Load,
-				currentBranch:    defaultCurrentBranch,
-				resolveWIPDirs:   validator.ResolveWIPDirs,
-				resolveDoneDirs:  validator.ResolveDoneDirs,
+				loadConfig:     config.Load,
+				currentBranch:  defaultCurrentBranch,
+				resolveWIPDirs: validator.ResolveWIPDirs,
+				// #490: done/ U blocked/. Um roadmap bloqueado continua sendo o dono da branch, e
+				// sem isto o commit da propria transicao para blocked/ era recusado.
+				resolveDoneDirs:  validator.ResolveSettledDirs,
 				matchSlug:        validator.BranchSlugMatchesRoadmap,
 				branchLink:       validator.BranchLinkFor,
 				execGitCommit:    defaultGitCommit,

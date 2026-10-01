@@ -100,8 +100,15 @@ Create the governance artifacts first if this blocks you:
 			cmd.SilenceErrors = true
 
 			deps := branchNewDeps{
-				loadConfig:      config.Load,
-				resolveWIPDirs:  validator.ResolveWIPDirs,
+				loadConfig:     config.Load,
+				resolveWIPDirs: validator.ResolveWIPDirs,
+				// 🔴 ResolveDoneDirs, NAO ResolveSettledDirs: `branch new` deliberadamente NAO
+				// aceita blocked/ (#490). `commit` e `validate` gateiam uma branch que JA existe,
+				// onde o roadmap bloqueado continua sendo o dono; este comando gateia o INICIO do
+				// trabalho, e abrir frente nova sobre roadmap parado e o oposto da ordem que ele
+				// existe para garantir. A circularidade que motivaria aceitar aqui — a mensagem de
+				// branch_link_stale prescrevia `branch new`, que era recusado — morreu porque o
+				// link passou a enxergar blocked/ e nao fica mais stale nessa transicao.
 				resolveDoneDirs: validator.ResolveDoneDirs,
 				matchSlug:       validator.BranchSlugMatchesRoadmap,
 				execGitCheckout: defaultGitCheckout,

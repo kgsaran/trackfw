@@ -228,21 +228,21 @@ var ruleDefaults = map[string]string{
 //
 // Quatro estados de currentOriginMain — regras de comportamento:
 //
-//   originAnchorNotSet / originAnchorNoGit / originAnchorNoRemote / originAnchorFileAbsent:
-//     disk only — diskRuleSeverity, idêntico ao comportamento pré-ADR-2026-08-12 para todas as
-//     ~38 regras. "Not set" é o valor zero, válido fora de Validate* (e.g. testes que chamam
-//     ruleSeverity diretamente).
+//	originAnchorNotSet / originAnchorNoGit / originAnchorNoRemote / originAnchorFileAbsent:
+//	  disk only — diskRuleSeverity, idêntico ao comportamento pré-ADR-2026-08-12 para todas as
+//	  ~38 regras. "Not set" é o valor zero, válido fora de Validate* (e.g. testes que chamam
+//	  ruleSeverity diretamente).
 //
-//   originAnchorRefUnreadable:
-//     FAIL CLOSED — ignora o bloco rules: do disco inteiramente, retorna o default built-in da
-//     regra (credentialGuardDefaultSeverity). Previne bypass via `rules: {<regra>: off}` commitado
-//     quando o âncora não pode ser verificada. Uma única mensagem de violação é emitida no topo de
-//     ValidateUnfiltered / validateUnfilteredTagged — não aqui, para evitar N mensagens.
+//	originAnchorRefUnreadable:
+//	  FAIL CLOSED — ignora o bloco rules: do disco inteiramente, retorna o default built-in da
+//	  regra (credentialGuardDefaultSeverity). Previne bypass via `rules: {<regra>: off}` commitado
+//	  quando o âncora não pode ser verificada. Uma única mensagem de violação é emitida no topo de
+//	  ValidateUnfiltered / validateUnfilteredTagged — não aqui, para evitar N mensagens.
 //
-//   originAnchorOK:
-//     stricter-wins — stricter of(origin/main severity, disk severity). A mais estrita vence;
-//     subir a severidade no disco É respeitado (o critério é "mais estrita vence", não
-//     "origin/main sempre vence").
+//	originAnchorOK:
+//	  stricter-wins — stricter of(origin/main severity, disk severity). A mais estrita vence;
+//	  subir a severidade no disco É respeitado (o critério é "mais estrita vence", não
+//	  "origin/main sempre vence").
 func ruleSeverity(name string) string {
 	switch currentOriginMain.state {
 	case originAnchorRefUnreadable:
@@ -701,12 +701,12 @@ func governanceModeFrom(cfg config.ProjectConfig) GovernanceMode {
 // isLenientFor is the pure, clock-injectable core of the leniency check. It is the single
 // place where all three rejection reasons live:
 //
-//   1. mode is not "lenient"
-//   2. lenient_until is absent (zero time) — treats no-deadline as strict (AC2 fix;
-//      pre-fix behaviour was to return true here — that was the bug closed by ML-2A)
-//   3. lenient_until is in the past (deadline expired)
-//   4. lenient_until is more than LenientHorizonDays days from now — treated the same
-//      as absent (AC2 ceiling; prevents 9999-12-31 from granting forever-leniency)
+//  1. mode is not "lenient"
+//  2. lenient_until is absent (zero time) — treats no-deadline as strict (AC2 fix;
+//     pre-fix behaviour was to return true here — that was the bug closed by ML-2A)
+//  3. lenient_until is in the past (deadline expired)
+//  4. lenient_until is more than LenientHorizonDays days from now — treated the same
+//     as absent (AC2 ceiling; prevents 9999-12-31 from granting forever-leniency)
 //
 // IsLenient() is the thin, config-reading wrapper around this function.
 // Tests should call isLenientFor() directly to avoid clock flake.
@@ -1884,6 +1884,33 @@ func ResolveDoneDirs(cfg config.ProjectConfig) []string {
 	return resolveDoneDirs(cfg)
 }
 
+// resolveBlockedDirs retorna todos os diretórios blocked/ conforme o modo de namespacing.
+func resolveBlockedDirs(cfg config.ProjectConfig) []string {
+	return resolveStateDirs(cfg, "blocked")
+}
+
+// ResolveSettledDirs devolve done/ ∪ blocked/ — os estados que não são "em curso" mas ainda
+// GOVERNAM a branch que produziu o roadmap.
+//
+// 🔴 Por que blocked/ entra (issue #490). `roadmap move <x> blocked` tira o arquivo de wip/, e o
+// gate do `commit` exigia wip/ ou done/ — então o único roadmap que casava com a branch acabava de
+// sair do conjunto, e o COMMIT DA PRÓPRIA TRANSIÇÃO era recusado. Medido por efeito, com o estado
+// do roadmap como única variável:
+//
+//	roadmap em wip/       commit rc=0   branch_has_wip_roadmap: 0 ocorrências
+//	roadmap em blocked/   commit rc=1   branch_has_wip_roadmap: 1
+//	de volta a wip/       commit rc=0   0 ocorrências
+//
+// O efeito prático era pior que a recusa: o roadmap ficava em wip/ e o bloqueio era declarado só
+// na prosa, então a PASTA — que é o estado que `status`, `context` e `serve` enxergam — mentia.
+//
+// Bloquear não muda o DONO da branch, muda o estado do trabalho. Daí done/ e blocked/ ficarem no
+// mesmo conjunto aqui, e `wip/` continuar separado: quem precisa distinguir "em curso" de
+// "assentado" recebe as duas listas, e é o que `branch new` faz.
+func ResolveSettledDirs(cfg config.ProjectConfig) []string {
+	return append(resolveDoneDirs(cfg), resolveBlockedDirs(cfg)...)
+}
+
 // ListMDFiles lista os arquivos .md diretamente dentro de dir (sem subdiretórios, sem glob) —
 // substitui filepath.Glob(filepath.Join(dir, "*.md")) em todo ponto onde um COMPONENTE do caminho
 // vem de um nome de diretório lido do disco (ex.: um namespace de agente resolvido por
@@ -2305,6 +2332,7 @@ func validateBlockedHasREQ() ([]string, error) {
 //     BLOQUEIA o fallback para o corpo — medido em 2026-09-26 nos 231 REQs deste repositório: zero
 //     casos (as 17 REQs com frontmatter vazio gravam `roadmap: ""`, que não é vazio para o
 //     extrator e cai no corpo normalmente).
+//
 // ML-4B: o retorno é PARTIDO em dois braços pelo corte de data (ver
 // validator_req_roadmap_cutoff.go). `enforced` vai pela severidade normal da regra
 // (default "error"); `exempt` é o passivo histórico e vai SEMPRE para warnings.
@@ -2411,8 +2439,8 @@ func validateREQRoadmapSync() ([]string, error) {
 		if fmRef == "" || bodyRef == "" {
 			continue // divergência requer os dois preenchidos com referência REAL
 		}
-		fmBase := filepath.Base(strings.Trim(fmRef, `"'` + "`"))
-		bodyBase := filepath.Base(strings.Trim(bodyRef, `"'` + "`"))
+		fmBase := filepath.Base(strings.Trim(fmRef, `"'`+"`"))
+		bodyBase := filepath.Base(strings.Trim(bodyRef, `"'`+"`"))
 		if fmBase != bodyBase {
 			warnings = append(warnings, fmt.Sprintf("req %q has divergent roadmap links: frontmatter=%q body=%q", filepath.Base(path), fmRef, bodyRef))
 		}
@@ -3204,7 +3232,7 @@ func extractRefPath(content, field string) string {
 //     texto que não seja um caminho de artefato;
 //   - casa a chave por EqualFold, então o `roadmap:` (minúsculo) do frontmatter e o `Roadmap:`
 //     (capital) do corpo são o MESMO campo;
-//   - remove backtick/aspas do primeiro token, então `` Roadmap: `docs/.../X.md` `` conta.
+//   - remove backtick/aspas do primeiro token, então “ Roadmap: `docs/.../X.md` “ conta.
 //
 // O que ele preserva de contentHasMarkerValue: a configurabilidade de link_fields (cada marker vira
 // o field do extrator, sem o ":" final) e a ancoragem por chave de linha — em extractRefPath a chave
@@ -3958,7 +3986,9 @@ func validateBranchHasWIPRoadmap() ([]string, []string, error) {
 
 	cfg := config.Load()
 	wipDirs := resolveWIPDirs(cfg)
-	doneDirs := resolveDoneDirs(cfg)
+	// blocked/ governa a branch como done/ governa — ver ResolveSettledDirs (#490). Sem isto,
+	// registrar o bloqueio de um roadmap era impossível a partir da branch que o produziu.
+	doneDirs := ResolveSettledDirs(cfg)
 
 	// D1 resolution order: written link first, name inference as fallback.
 	res := ResolveBranchRoadmap(cfg, branch, wipDirs, doneDirs)

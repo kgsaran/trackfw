@@ -95,7 +95,11 @@ func BranchLinkFor(cfg config.ProjectConfig, branch string, wipDirs, doneDirs []
 // stale accelerator entry exists next to it. Silence is what the ADR forbids, not leniency.
 func BranchLinkStaleWarning(cfg config.ProjectConfig, branch, roadmap string) string {
 	return fmt.Sprintf(
-		"branch_link_stale: the written link for branch %q names roadmap %q, which is no longer in wip/ nor done/ — falling back to name inference. Re-create the link with 'trackfw branch new', or drop the entry from %s",
+		// #490: `blocked/` entra na enumeração porque passou a estar no escopo (ResolveSettledDirs).
+		// Antes disso esta mensagem disparava ao bloquear um roadmap e prescrevia `trackfw branch
+		// new` — que era recusado pelo MESMO motivo, deixando a instrução circular. Medido por
+		// efeito: `branch new <slug> --dry-run` saía rc=1 com "no roadmap is in wip/ nor done/".
+		"branch_link_stale: the written link for branch %q names roadmap %q, which is no longer in wip/, done/ nor blocked/ — falling back to name inference. Re-create the link with 'trackfw branch new', or drop the entry from %s",
 		branch, roadmap, BranchLinkPath(cfg),
 	)
 }
@@ -109,7 +113,9 @@ func BranchLinkStaleWarning(cfg config.ProjectConfig, branch, roadmap string) st
 func RecordBranchLink(cfg config.ProjectConfig, branch string) error {
 	slug := NormalizeBranchSlug(branchSlugOf(branch))
 	wipDirs := ResolveWIPDirs(cfg)
-	doneDirs := ResolveDoneDirs(cfg)
+	// blocked/ entra junto com done/ (#490): o link e escrito na criacao, e o roadmap pode ser
+	// bloqueado depois sem deixar de ser o dono da branch.
+	doneDirs := ResolveSettledDirs(cfg)
 	matches, _ := MatchRoadmapsForBranchSlug(slug, wipDirs, doneDirs)
 	if len(matches) != 1 {
 		return nil
