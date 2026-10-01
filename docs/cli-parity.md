@@ -1842,10 +1842,12 @@ time.
 | Invocation | `trackfw branch new <type>/<slug>` |
 | `<type>` | One of `feat`, `fix`, `refactor`, `chore`, `docs` |
 | `<slug>` | Non-empty; for `feat`/`fix`/`refactor`, matched against roadmaps in `wip/` and `done/` the same way `branch_has_wip_roadmap` does. For `chore`/`docs`, no matching is performed. |
+| `--allow-done` | Accepts a CONCLUDED roadmap matched **only by token overlap** as the governing roadmap. Without it, that situation blocks (see "Concluded-only match" below). Has no effect when any match is in `wip/`, when a match is by containment, or for `chore`/`docs`. |
 | `--dry-run` | Reports whether the branch would be created or blocked, without executing `git` |
 | Exit 0 | `feat`/`fix`/`refactor` with a match, or any `chore`/`docs` spec — branch created (or `--dry-run` reports "would create") |
 | Exit non-zero, usage error | Malformed spec (missing `/`, empty slug, invalid `<type>` — error message lists the full vocabulary: `feat, fix, refactor, chore, docs`) |
 | Exit non-zero, blocked | `feat`/`fix`/`refactor` only: no matching roadmap in `wip/` nor `done/` — `git checkout -b` is **never** executed |
+| Exit non-zero, blocked | `feat`/`fix`/`refactor` only, without `--allow-done`: every match is a CONCLUDED roadmap reached only by token overlap — `git checkout -b` is **never** executed |
 | Exit = Git's own code | Match found (or `chore`/`docs`), `git checkout -b` ran and failed (e.g. branch already exists → Git's `128`) |
 
 ### Decision flow
@@ -1862,6 +1864,10 @@ time.
    never called.
 3. No match (feat|fix|refactor only): print the same governance orientation message
    trackfw validate already prints for this rule, exit non-zero, never invoke git.
+3b. Match, but EVERY matched roadmap is in done/ AND matched only by token overlap
+   (no containment), and --allow-done was not passed: print the matched roadmaps ORDERED
+   BY SHARED-TOKEN COVERAGE, exit non-zero, never invoke git. With --allow-done, or when
+   any match is in wip/ or by containment, this step does nothing.
 4. --dry-run with a match (or chore|docs): print "[dry-run] would create branch "<type>/<slug>"
    (git checkout -b <type>/<slug>)", exit 0, never invoke git.
 5. Match (or chore|docs), no --dry-run: run `git checkout -b <type>/<slug>` with inherited
@@ -1871,6 +1877,53 @@ time.
    A failure to record is printed and does not fail the command — the link is an accelerator,
    never a gate.
 ```
+
+### Concluded-only match — `--allow-done`
+
+<!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
+
+`done/` participates in the matching so that a **late fix** or a **post-merge closure** of a
+concluded roadmap can get a branch. The relation reaching it, however, is substring **or** token
+overlap — so a slug of a *new* subject that shares two words of the domain vocabulary with a
+finished roadmap of *another* subject also passed, and the branch was created with nothing in
+`wip/`: the exact ordering this command exists to enforce. That is issue #494.
+
+The discriminant is **not** stricter matching, and the reason is measured. Over the 160 merged
+`feat`/`fix`/`refactor` branches of this repository:
+
+| how the slug matched a roadmap | branches | |
+|---|---|---|
+| containment (slug verbatim in the filename) | 142 | 88.8% |
+| token overlap, some match in `wip/` | 0 | 0.0% |
+| token overlap, **all** matches in `done/` | 16 | 10.0% |
+| nothing matched (already blocked) | 2 | 1.2% |
+
+Requiring containment for `done/` would block those 16 — and in them the matched roadmap was the
+**right** one, because the slug was an abbreviation of its name
+(`fix/cerca-nao-terminada-mascara-em-silencio` →
+`ROADMAP-2026-09-30-cerca-nao-terminada-mascara-ate-o-fim-do-arquivo-…`). Overlap coverage does not
+separate the two classes either: those 16 span 25% to 100% of the slug's tokens. No threshold
+measured on this data tells an abbreviation from a vocabulary collision.
+
+So the command does not guess: it **names the candidates, ordered by coverage, and requires
+`--allow-done`**. Ordering is part of the contract because one real branch of this history matched
+**nine** concluded roadmaps, and an unordered list is not guidance.
+
+🔴 **The relation itself is unchanged.** `validate`, `commit` and the branch↔roadmap inference keep
+the exact same verdict for every input — `MatchRoadmapsForBranchSlug` still returns the same
+matches. What is new is `MatchRoadmapsForBranchSlugDetailed`, which reports *why* each roadmap
+matched, and a decision taken only in `branch new`. D3 of `ADR-2026-09-26` decides one
+implementation of the relation; exposing the reason must not fork it.
+
+**What stays creatable** — the counter-arm:
+
+| case | before | after |
+|---|---|---|
+| `chore/fecha-req-*` post-merge closure | created (type is not gated at all) | unchanged |
+| `fix/` whose slug contains the concluded roadmap's name | created | created, no flag |
+| `fix/` with a roadmap in `wip/` | created | created, no flag |
+| `fix/` of a concluded roadmap, slug abbreviated | created silently | created with `--allow-done` |
+| `fix/` of a NEW subject colliding on two words | created silently 🔴 | blocked, candidates named |
 
 ### Shared matching logic — never duplicated
 

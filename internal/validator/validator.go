@@ -228,21 +228,21 @@ var ruleDefaults = map[string]string{
 //
 // Quatro estados de currentOriginMain — regras de comportamento:
 //
-//   originAnchorNotSet / originAnchorNoGit / originAnchorNoRemote / originAnchorFileAbsent:
-//     disk only — diskRuleSeverity, idêntico ao comportamento pré-ADR-2026-08-12 para todas as
-//     ~38 regras. "Not set" é o valor zero, válido fora de Validate* (e.g. testes que chamam
-//     ruleSeverity diretamente).
+//	originAnchorNotSet / originAnchorNoGit / originAnchorNoRemote / originAnchorFileAbsent:
+//	  disk only — diskRuleSeverity, idêntico ao comportamento pré-ADR-2026-08-12 para todas as
+//	  ~38 regras. "Not set" é o valor zero, válido fora de Validate* (e.g. testes que chamam
+//	  ruleSeverity diretamente).
 //
-//   originAnchorRefUnreadable:
-//     FAIL CLOSED — ignora o bloco rules: do disco inteiramente, retorna o default built-in da
-//     regra (credentialGuardDefaultSeverity). Previne bypass via `rules: {<regra>: off}` commitado
-//     quando o âncora não pode ser verificada. Uma única mensagem de violação é emitida no topo de
-//     ValidateUnfiltered / validateUnfilteredTagged — não aqui, para evitar N mensagens.
+//	originAnchorRefUnreadable:
+//	  FAIL CLOSED — ignora o bloco rules: do disco inteiramente, retorna o default built-in da
+//	  regra (credentialGuardDefaultSeverity). Previne bypass via `rules: {<regra>: off}` commitado
+//	  quando o âncora não pode ser verificada. Uma única mensagem de violação é emitida no topo de
+//	  ValidateUnfiltered / validateUnfilteredTagged — não aqui, para evitar N mensagens.
 //
-//   originAnchorOK:
-//     stricter-wins — stricter of(origin/main severity, disk severity). A mais estrita vence;
-//     subir a severidade no disco É respeitado (o critério é "mais estrita vence", não
-//     "origin/main sempre vence").
+//	originAnchorOK:
+//	  stricter-wins — stricter of(origin/main severity, disk severity). A mais estrita vence;
+//	  subir a severidade no disco É respeitado (o critério é "mais estrita vence", não
+//	  "origin/main sempre vence").
 func ruleSeverity(name string) string {
 	switch currentOriginMain.state {
 	case originAnchorRefUnreadable:
@@ -701,12 +701,12 @@ func governanceModeFrom(cfg config.ProjectConfig) GovernanceMode {
 // isLenientFor is the pure, clock-injectable core of the leniency check. It is the single
 // place where all three rejection reasons live:
 //
-//   1. mode is not "lenient"
-//   2. lenient_until is absent (zero time) — treats no-deadline as strict (AC2 fix;
-//      pre-fix behaviour was to return true here — that was the bug closed by ML-2A)
-//   3. lenient_until is in the past (deadline expired)
-//   4. lenient_until is more than LenientHorizonDays days from now — treated the same
-//      as absent (AC2 ceiling; prevents 9999-12-31 from granting forever-leniency)
+//  1. mode is not "lenient"
+//  2. lenient_until is absent (zero time) — treats no-deadline as strict (AC2 fix;
+//     pre-fix behaviour was to return true here — that was the bug closed by ML-2A)
+//  3. lenient_until is in the past (deadline expired)
+//  4. lenient_until is more than LenientHorizonDays days from now — treated the same
+//     as absent (AC2 ceiling; prevents 9999-12-31 from granting forever-leniency)
 //
 // IsLenient() is the thin, config-reading wrapper around this function.
 // Tests should call isLenientFor() directly to avoid clock flake.
@@ -2305,6 +2305,7 @@ func validateBlockedHasREQ() ([]string, error) {
 //     BLOQUEIA o fallback para o corpo — medido em 2026-09-26 nos 231 REQs deste repositório: zero
 //     casos (as 17 REQs com frontmatter vazio gravam `roadmap: ""`, que não é vazio para o
 //     extrator e cai no corpo normalmente).
+//
 // ML-4B: o retorno é PARTIDO em dois braços pelo corte de data (ver
 // validator_req_roadmap_cutoff.go). `enforced` vai pela severidade normal da regra
 // (default "error"); `exempt` é o passivo histórico e vai SEMPRE para warnings.
@@ -2411,8 +2412,8 @@ func validateREQRoadmapSync() ([]string, error) {
 		if fmRef == "" || bodyRef == "" {
 			continue // divergência requer os dois preenchidos com referência REAL
 		}
-		fmBase := filepath.Base(strings.Trim(fmRef, `"'` + "`"))
-		bodyBase := filepath.Base(strings.Trim(bodyRef, `"'` + "`"))
+		fmBase := filepath.Base(strings.Trim(fmRef, `"'`+"`"))
+		bodyBase := filepath.Base(strings.Trim(bodyRef, `"'`+"`"))
 		if fmBase != bodyBase {
 			warnings = append(warnings, fmt.Sprintf("req %q has divergent roadmap links: frontmatter=%q body=%q", filepath.Base(path), fmRef, bodyRef))
 		}
@@ -3204,7 +3205,7 @@ func extractRefPath(content, field string) string {
 //     texto que não seja um caminho de artefato;
 //   - casa a chave por EqualFold, então o `roadmap:` (minúsculo) do frontmatter e o `Roadmap:`
 //     (capital) do corpo são o MESMO campo;
-//   - remove backtick/aspas do primeiro token, então `` Roadmap: `docs/.../X.md` `` conta.
+//   - remove backtick/aspas do primeiro token, então “ Roadmap: `docs/.../X.md` “ conta.
 //
 // O que ele preserva de contentHasMarkerValue: a configurabilidade de link_fields (cada marker vira
 // o field do extrator, sem o ":" final) e a ancoragem por chave de linha — em extractRefPath a chave
@@ -3832,26 +3833,88 @@ func BranchSlugMatchesRoadmap(branchSlug string, wipDirs, doneDirs []string) (ma
 // sibling site (findRoadmap) and the ADR declares the refusal as the written exception to the
 // additive order — there is no legitimate consumer of an empty branch slug.
 func MatchRoadmapsForBranchSlug(branchSlug string, wipDirs, doneDirs []string) (matches, candidates []string) {
-	dirs := append(append([]string{}, wipDirs...), doneDirs...)
+	detailed, candidates := MatchRoadmapsForBranchSlugDetailed(branchSlug, wipDirs, doneDirs)
+	for _, m := range detailed {
+		matches = append(matches, m.Name)
+	}
+	return matches, candidates
+}
+
+// RoadmapMatch is one roadmap that matched a branch slug, WITH the reason it matched. It exists
+// because `trackfw branch new` needs to tell two situations apart that the boolean cannot:
+//
+//	the branch is a late fix / post-merge closure of a CONCLUDED roadmap   — legitimate
+//	the slug merely shares two domain words with a concluded roadmap       — issue #494
+//
+// 🔴 It does NOT change the relation itself (D3: one implementation). `validate`, `commit` and the
+// branch↔roadmap inference keep the exact same verdict — only the explanation is new.
+type RoadmapMatch struct {
+	Name string
+	// InWIP is true when the roadmap was found in one of wipDirs.
+	InWIP bool
+	// ByContainment is true when the branch slug appears VERBATIM inside the normalized filename.
+	// Measured on 160 merged feat/fix/refactor branches of kgsaran/trackfw and 23 of a consumer
+	// fork: 142 (88.8%) and 23 (100%) match this way, so containment is the ordinary path and
+	// never needs a confirmation flag.
+	ByContainment bool
+	// SharedTokens / SlugTokens give the overlap coverage, used to ORDER the warning. A branch that
+	// matched 9 concluded roadmaps must not be reported as an unordered list: the one covering the
+	// most of the slug is the likely subject.
+	SharedTokens int
+	SlugTokens   int
+}
+
+// MatchRoadmapsForBranchSlugDetailed is MatchRoadmapsForBranchSlug plus the reason per match.
+func MatchRoadmapsForBranchSlugDetailed(branchSlug string, wipDirs, doneDirs []string) (matches []RoadmapMatch, candidates []string) {
 	slugTokens := branchRoadmapTokens(branchSlug)
 	empty := strings.TrimSpace(branchSlug) == ""
-	for _, dir := range dirs {
-		entries, _ := listDir(dir)
-		for _, name := range entries {
-			if !strings.HasSuffix(name, ".md") {
-				continue
-			}
-			candidates = append(candidates, name)
-			if empty {
-				continue
-			}
-			if strings.Contains(normalizeBranchSlug(name), branchSlug) ||
-				sharedTokenCount(slugTokens, branchRoadmapTokens(roadmapContentSlug(name))) >= branchRoadmapMinSharedTokens {
-				matches = append(matches, name)
+	scan := func(dirs []string, inWIP bool) {
+		for _, dir := range dirs {
+			entries, _ := listDir(dir)
+			for _, name := range entries {
+				if !strings.HasSuffix(name, ".md") {
+					continue
+				}
+				candidates = append(candidates, name)
+				if empty {
+					continue
+				}
+				contains := strings.Contains(normalizeBranchSlug(name), branchSlug)
+				shared := sharedTokenCount(slugTokens, branchRoadmapTokens(roadmapContentSlug(name)))
+				if contains || shared >= branchRoadmapMinSharedTokens {
+					matches = append(matches, RoadmapMatch{
+						Name:          name,
+						InWIP:         inWIP,
+						ByContainment: contains,
+						SharedTokens:  shared,
+						SlugTokens:    len(slugTokens),
+					})
+				}
 			}
 		}
 	}
+	// Order preserved from the previous implementation: wipDirs first, then doneDirs.
+	scan(wipDirs, true)
+	scan(doneDirs, false)
 	return matches, candidates
+}
+
+// BranchMatchNeedsDoneConfirmation reports whether EVERY match is a concluded roadmap reached ONLY
+// by token overlap — the situation issue #494 describes, where a slug that shares two words of the
+// domain vocabulary with a finished roadmap of another subject creates a branch with nothing in wip/.
+//
+// It is false when any match is in wip/ (the branch has live governance) and false when any match is
+// by containment (the slug names that roadmap). Both of those are the ordinary paths.
+func BranchMatchNeedsDoneConfirmation(matches []RoadmapMatch) bool {
+	if len(matches) == 0 {
+		return false
+	}
+	for _, m := range matches {
+		if m.InWIP || m.ByContainment {
+			return false
+		}
+	}
+	return true
 }
 
 // roadmapContentSlug strips the STRUCTURAL part of an artifact filename — the kind prefix
@@ -4002,6 +4065,41 @@ func BranchNoMatchingRoadmapMessage(branch string, candidates []string) string {
 		"branch %q has no matching roadmap in wip/ nor done/ (found: %s%s) — include the branch slug in the roadmap filename or set TRACKFW_BRANCH explicitly in CI",
 		branch, strings.Join(display, ", "), suffix,
 	)
+}
+
+// BranchOnlyConcludedByOverlapMessage is printed when the only roadmaps matching the branch are
+// CONCLUDED ones reached by token overlap. It names them ORDERED BY MATCH STRENGTH, because the
+// alternative is a list: one real branch of this repository's history matched NINE concluded
+// roadmaps, and "one of these nine, you decide" is not guidance.
+//
+// Shared by `trackfw branch new` — never duplicate this string.
+func BranchOnlyConcludedByOverlapMessage(branch string, matches []RoadmapMatch) string {
+	ordered := make([]RoadmapMatch, len(matches))
+	copy(ordered, matches)
+	sort.SliceStable(ordered, func(i, j int) bool {
+		// More of the slug covered first; name breaks ties so the output is deterministic
+		// regardless of filesystem ordering.
+		li := ordered[i].SharedTokens * ordered[j].SlugTokens
+		lj := ordered[j].SharedTokens * ordered[i].SlugTokens
+		if li != lj {
+			return li > lj
+		}
+		return ordered[i].Name < ordered[j].Name
+	})
+	var b strings.Builder
+	fmt.Fprintf(&b, "branch %q matches no roadmap in wip/ — only CONCLUDED roadmaps, and only by shared words:\n", branch)
+	for i, m := range ordered {
+		if i == 3 {
+			fmt.Fprintf(&b, "  … and %d more\n", len(ordered)-3)
+			break
+		}
+		fmt.Fprintf(&b, "  %s (%d of %d slug words)\n", m.Name, m.SharedTokens, m.SlugTokens)
+	}
+	b.WriteString("A concluded roadmap governs a branch only for a late fix or a post-merge closure of THAT roadmap.\n")
+	b.WriteString("If one of the above is really it, pass --allow-done. Otherwise move the roadmap of this task to wip/ first:\n")
+	b.WriteString("  trackfw roadmap move <name> wip\n")
+	b.WriteString("Housekeeping work needs no roadmap at all: use a chore/ or docs/ branch.")
+	return b.String()
 }
 
 func firstNonEmpty(values ...string) string {

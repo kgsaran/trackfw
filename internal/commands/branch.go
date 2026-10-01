@@ -45,6 +45,11 @@ type branchNewDeps struct {
 	// matchSlug checks whether the normalized slug matches any roadmap found in wipDirs/doneDirs
 	// (production: validator.BranchSlugMatchesRoadmap — the same logic `trackfw validate` uses).
 	matchSlug func(slug string, wipDirs, doneDirs []string) (matched bool, candidates []string)
+	// matchSlugDetailed returns the same matches WITH the reason each one matched (production:
+	// validator.MatchRoadmapsForBranchSlugDetailed). Used only to tell a late fix of a concluded
+	// roadmap apart from a slug that merely shares two domain words with one (issue #494). nil
+	// keeps the pre-#494 behaviour, which is what the older unit tests exercise.
+	matchSlugDetailed func(slug string, wipDirs, doneDirs []string) ([]validator.RoadmapMatch, []string)
 	// execGitCheckout runs `git checkout -b <branchName>` with inherited stdio, propagating Git's
 	// own output and exit code literally (production: defaultGitCheckout).
 	execGitCheckout func(branchName string) error
@@ -69,6 +74,7 @@ func newBranchCmd() *cobra.Command {
 
 func newBranchNewCmd() *cobra.Command {
 	var dryRun bool
+	var allowDone bool
 
 	cmd := &cobra.Command{
 		Use:   "new <type>/<slug>",
@@ -100,19 +106,22 @@ Create the governance artifacts first if this blocks you:
 			cmd.SilenceErrors = true
 
 			deps := branchNewDeps{
-				loadConfig:      config.Load,
-				resolveWIPDirs:  validator.ResolveWIPDirs,
-				resolveDoneDirs: validator.ResolveDoneDirs,
-				matchSlug:       validator.BranchSlugMatchesRoadmap,
-				execGitCheckout: defaultGitCheckout,
-				recordLink:      validator.RecordBranchLink,
-				out:             cmd.OutOrStdout(),
+				loadConfig:        config.Load,
+				resolveWIPDirs:    validator.ResolveWIPDirs,
+				resolveDoneDirs:   validator.ResolveDoneDirs,
+				matchSlug:         validator.BranchSlugMatchesRoadmap,
+				matchSlugDetailed: validator.MatchRoadmapsForBranchSlugDetailed,
+				execGitCheckout:   defaultGitCheckout,
+				recordLink:        validator.RecordBranchLink,
+				out:               cmd.OutOrStdout(),
 			}
-			return runBranchNew(args[0], dryRun, deps)
+			return runBranchNew(args[0], dryRun, allowDone, deps)
 		},
 	}
 
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Report whether the branch would be created or blocked, without executing git")
+	cmd.Flags().BoolVar(&allowDone, "allow-done", false,
+		"Accept a CONCLUDED roadmap matched only by shared words as the governing roadmap — for a late fix or a post-merge closure of that roadmap (issue #494)")
 
 	return cmd
 }
@@ -141,7 +150,7 @@ func defaultGitCheckout(branchName string) error {
 
 // runBranchNew implements the `trackfw branch new <type>/<slug>` flow described in
 // docs/req/REQ-2026-08-04-comando-trackfw-branch-new-para-bloquear-criacao-de-branch-sem-req-roadmap-em-wip.md.
-func runBranchNew(spec string, dryRun bool, deps branchNewDeps) error {
+func runBranchNew(spec string, dryRun, allowDone bool, deps branchNewDeps) error {
 	branchType, slug, err := parseBranchSpec(spec)
 	if err != nil {
 		return err
@@ -173,6 +182,32 @@ func runBranchNew(spec string, dryRun bool, deps branchNewDeps) error {
 				fmt.Fprintln(deps.out, msg)
 			}
 			return fmt.Errorf("blocked: no matching roadmap in wip/ nor done/ for %q", branchName)
+		}
+
+		// #494: the slug matched, but a match is not yet a reason. When EVERY matching roadmap is
+		// CONCLUDED and was reached only by shared words, the branch is being created with nothing
+		// in wip/ — which is the exact ordering this command exists to enforce.
+		//
+		// 🔴 Why a confirmation and not a stricter rule. Requiring containment for done/ was the
+		// first candidate and it is FALSIFIED by this repository's own history: of 160 merged
+		// feat/fix/refactor branches, 16 (10%) matched a concluded roadmap only by overlap, and the
+		// matched roadmap was the RIGHT one — the slug was an abbreviation of its name
+		// (fix/cerca-nao-terminada-mascara-em-silencio →
+		// ROADMAP-2026-09-30-cerca-nao-terminada-mascara-ate-o-fim-do-arquivo-…). Overlap coverage
+		// does not separate the two either: those 16 span 25% to 100%. So no threshold measured on
+		// this data tells an abbreviation from a vocabulary collision — what is left is to make the
+		// human look, naming the candidates ordered by strength.
+		if !allowDone && deps.matchSlugDetailed != nil {
+			detailed, _ := deps.matchSlugDetailed(normalizedSlug, wipDirs, doneDirs)
+			if validator.BranchMatchNeedsDoneConfirmation(detailed) {
+				msg := validator.BranchOnlyConcludedByOverlapMessage(branchName, detailed)
+				if dryRun {
+					fmt.Fprintf(deps.out, "[dry-run] would block: %s\n", msg)
+				} else {
+					fmt.Fprintln(deps.out, msg)
+				}
+				return fmt.Errorf("blocked: only concluded roadmaps match %q by shared words — pass --allow-done to accept one", branchName)
+			}
 		}
 	}
 

@@ -92,7 +92,7 @@ func TestParseBranchSpec_NoSlash(t *testing.T) {
 
 func TestRunBranchNew_MatchFound_ChecksOutBranch(t *testing.T) {
 	deps, out, calls := makeBranchDeps(true, nil)
-	err := runBranchNew("feat/my-slug", false, deps)
+	err := runBranchNew("feat/my-slug", false, false, deps)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestRunBranchNew_MatchFound_ChecksOutBranch(t *testing.T) {
 func TestRunBranchNew_MatchFound_WipRoadmap(t *testing.T) {
 	// Simulates a match found via a roadmap in wip/.
 	deps, _, calls := makeBranchDeps(true, []string{"ROADMAP-my-slug.md"})
-	if err := runBranchNew("fix/my-slug", false, deps); err != nil {
+	if err := runBranchNew("fix/my-slug", false, false, deps); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(*calls) != 1 {
@@ -119,7 +119,7 @@ func TestRunBranchNew_MatchFound_DoneRoadmap(t *testing.T) {
 	// Simulates a match found via a roadmap in done/ — matchSlug does not distinguish the
 	// source directory in its return value, mirroring validator.BranchSlugMatchesRoadmap.
 	deps, _, calls := makeBranchDeps(true, []string{"ROADMAP-my-slug.md"})
-	if err := runBranchNew("refactor/my-slug", false, deps); err != nil {
+	if err := runBranchNew("refactor/my-slug", false, false, deps); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(*calls) != 1 {
@@ -133,7 +133,7 @@ func TestRunBranchNew_MatchFound_DoneRoadmap(t *testing.T) {
 
 func TestRunBranchNew_NoMatch_NoCandidates_Blocks(t *testing.T) {
 	deps, out, calls := makeBranchDeps(false, nil)
-	err := runBranchNew("feat/orphan-slug", false, deps)
+	err := runBranchNew("feat/orphan-slug", false, false, deps)
 	if err == nil {
 		t.Fatal("expected error when no roadmap matches")
 	}
@@ -150,7 +150,7 @@ func TestRunBranchNew_NoMatch_NoCandidates_Blocks(t *testing.T) {
 func TestRunBranchNew_NoMatch_WithCandidates_Blocks(t *testing.T) {
 	candidates := []string{"ROADMAP-other-thing.md"}
 	deps, out, calls := makeBranchDeps(false, candidates)
-	err := runBranchNew("fix/orphan-slug", false, deps)
+	err := runBranchNew("fix/orphan-slug", false, false, deps)
 	if err == nil {
 		t.Fatal("expected error when no roadmap matches")
 	}
@@ -170,7 +170,7 @@ func TestRunBranchNew_NoMatch_WithCandidates_Blocks(t *testing.T) {
 
 func TestRunBranchNew_DryRun_Match_NeverCallsGit(t *testing.T) {
 	deps, out, calls := makeBranchDeps(true, nil)
-	err := runBranchNew("feat/my-slug", true, deps)
+	err := runBranchNew("feat/my-slug", true, false, deps)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -184,7 +184,7 @@ func TestRunBranchNew_DryRun_Match_NeverCallsGit(t *testing.T) {
 
 func TestRunBranchNew_DryRun_NoMatch_NeverCallsGit(t *testing.T) {
 	deps, out, calls := makeBranchDeps(false, nil)
-	err := runBranchNew("feat/orphan-slug", true, deps)
+	err := runBranchNew("feat/orphan-slug", true, false, deps)
 	if err == nil {
 		t.Fatal("expected error when dry-run would block")
 	}
@@ -207,7 +207,7 @@ func TestRunBranchNew_InvalidType_NeverCallsMatchOrGit(t *testing.T) {
 		matchCalled = true
 		return true, nil
 	}
-	err := runBranchNew("banana/my-slug", false, deps)
+	err := runBranchNew("banana/my-slug", false, false, deps)
 	if err == nil {
 		t.Fatal("expected error for invalid type")
 	}
@@ -231,7 +231,7 @@ func TestRunBranchNew_ChoreType_SkipsGate_ChecksOutBranch(t *testing.T) {
 		matchCalled = true
 		return false, nil
 	}
-	err := runBranchNew("chore/release-7.0.0", false, deps)
+	err := runBranchNew("chore/release-7.0.0", false, false, deps)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -253,7 +253,7 @@ func TestRunBranchNew_DocsType_SkipsGate_ChecksOutBranch(t *testing.T) {
 		matchCalled = true
 		return false, nil
 	}
-	err := runBranchNew("docs/atualiza-readme", false, deps)
+	err := runBranchNew("docs/atualiza-readme", false, false, deps)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -272,7 +272,7 @@ func TestRunBranchNew_DocsType_SkipsGate_ChecksOutBranch(t *testing.T) {
 
 func TestRunBranchNew_FeatWithoutRoadmap_StillBlocks_NonRegression(t *testing.T) {
 	deps, out, calls := makeBranchDeps(false, nil)
-	err := runBranchNew("feat/no-roadmap-for-this", false, deps)
+	err := runBranchNew("feat/no-roadmap-for-this", false, false, deps)
 	if err == nil {
 		t.Fatal("expected error: feat without a matching roadmap must still block")
 	}
@@ -293,7 +293,7 @@ func TestRunBranchNew_EmptySlug_NeverCallsMatchOrGit(t *testing.T) {
 		matchCalled = true
 		return true, nil
 	}
-	err := runBranchNew("feat/", false, deps)
+	err := runBranchNew("feat/", false, false, deps)
 	if err == nil {
 		t.Fatal("expected error for empty slug")
 	}
@@ -314,7 +314,7 @@ func TestRunBranchNew_BranchAlreadyExists_PropagatesGitError(t *testing.T) {
 	gitErr := errors.New("fatal: a branch named 'feat/my-slug' already exists")
 	deps.execGitCheckout = func(branchName string) error { return gitErr }
 
-	err := runBranchNew("feat/my-slug", false, deps)
+	err := runBranchNew("feat/my-slug", false, false, deps)
 	if err == nil {
 		t.Fatal("expected error propagated from git checkout")
 	}
@@ -334,7 +334,7 @@ func TestRunBranchNew_UsesNormalizedSlugForMatching(t *testing.T) {
 		receivedSlug = slug
 		return true, nil
 	}
-	if err := runBranchNew("feat/My_Weird--Slug", false, deps); err != nil {
+	if err := runBranchNew("feat/My_Weird--Slug", false, false, deps); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	want := validator.NormalizeBranchSlug("My_Weird--Slug")

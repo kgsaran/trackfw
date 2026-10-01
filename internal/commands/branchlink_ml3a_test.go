@@ -26,7 +26,7 @@ func TestBranchNew_RecordsLinkAfterCheckout(t *testing.T) {
 		order = append(order, "record:"+branch)
 		return nil
 	}
-	if err := runBranchNew("feat/minha-feature", false, deps); err != nil {
+	if err := runBranchNew("feat/minha-feature", false, false, deps); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(order) != 2 || order[0] != "checkout:feat/minha-feature" || order[1] != "record:feat/minha-feature" {
@@ -41,7 +41,7 @@ func TestBranchNew_RecordLinkFailureIsReportedNotFatal(t *testing.T) {
 	deps.recordLink = func(cfg config.ProjectConfig, branch string) error {
 		return fmt.Errorf("disk on fire")
 	}
-	if err := runBranchNew("feat/minha-feature", false, deps); err != nil {
+	if err := runBranchNew("feat/minha-feature", false, false, deps); err != nil {
 		t.Fatalf("recording failure must not fail the command, got %v", err)
 	}
 	if !bytes.Contains(out.Bytes(), []byte("disk on fire")) {
@@ -55,7 +55,7 @@ func TestBranchNew_BlockedRecordsNoLink(t *testing.T) {
 	deps, _, _ := makeBranchDeps(false, []string{"ROADMAP-outra.md"})
 	recorded := 0
 	deps.recordLink = func(cfg config.ProjectConfig, branch string) error { recorded++; return nil }
-	if err := runBranchNew("feat/minha-feature", false, deps); err == nil {
+	if err := runBranchNew("feat/minha-feature", false, false, deps); err == nil {
 		t.Fatal("expected the gate to block")
 	}
 	if recorded != 0 {
