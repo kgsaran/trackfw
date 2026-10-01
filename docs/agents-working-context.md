@@ -2,6 +2,23 @@
 
 ---
 
+## 2026-10-01 — Hades (fix/estado-que-governa-a-branch — ML-3A) — INÍCIO
+
+**Início:** 2026-10-01 | Branch: `fix/estado-que-governa-a-branch`
+**Tarefa:** ML-3A — Revisão de segurança independente (Wave 3) do diff `e104a7f7..HEAD`
+**Arquivos a modificar:** `docs/seguranca/2026-10-01-wave3-revisao-estado-que-governa-a-branch.md` · `docs/agents-working-context.md`
+
+---
+
+## 2026-10-01 — Hades (fix/estado-que-governa-a-branch — ML-3A) — FIM
+
+Parecer escrito em `docs/seguranca/2026-10-01-wave3-revisao-estado-que-governa-a-branch.md`.
+A1 (ls-tree -z), A2 (GovernanceViolation.Warnings em push/ship), A3 (resíduo vetor-e no ADR): todos verificados contra o binário e o código.
+Vetores (a)–(e) reproduzidos em repo temporário. Achado novo: RN1 (`--literal-pathspecs` ausente) — severidade baixa, sem bypass explorável.
+Veredito: APROVA COM AJUSTES (1 ajuste não-bloqueante: dívida técnica RN1).
+
+---
+
 ## 2026-10-01 — Ártemis (fix/estado-que-governa-a-branch — ML-2B) — INÍCIO
 
 **Início:** 2026-10-01 | Branch: `fix/estado-que-governa-a-branch`

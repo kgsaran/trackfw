@@ -259,26 +259,51 @@ go test ./internal/commands/ -count=1
 > Dependencies: Wave 2 auditada
 
 ### ML-3A — Revisão de segurança
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** hades-tf
 **Files affected:** `docs/seguranca/2026-10-01-wave3-revisao-estado-que-governa-a-branch.md`
 **Actions:** confrontar a implementação com os alvos do ML-0A; reimplementar a partir da leitura os
 vetores (a)–(e) contra o binário da branch.
 **Acceptance criteria:**
-- [ ] Veredito explícito
+- [x] Veredito explícito
+      ✅ APROVA COM AJUSTES: RN1 (`--literal-pathspecs`) absorvido no ML-3C, não em follow-up (Regra Dura).
 
 ### ML-3B — Revisão de qualidade e gate completo
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** hefesto-tf
 **Files affected:** `docs/qualidade/2026-10-01-revisao-estado-que-governa-a-branch.md`
 **Actions:** fonte única (nenhuma resolução reimplementada em `commands/`), D6 intacto, `make quality`
 completo.
 **Acceptance criteria:**
-- [ ] `make quality` EXIT=0 (saída completa, sem `| tail`)
-- [ ] Veredito explícito
+- [x] `make quality` EXIT=0 (saída completa, sem `| tail`)
+      ✅ Log conferido pelo arquiteto: falsify `347 OK, 0 FAIL`; as linhas `FAIL` do log são braços negativos dos autotestes de gate em diretório temporário. Corpus AC14: 205×201 sem divergência.
+- [x] Veredito explícito
+      ✅ APROVA COM AJUSTES: 5 comentários/ajudas desatualizados → ML-3C.
 
 **Gates da wave:**
 ```bash
 test -s docs/seguranca/2026-10-01-wave3-revisao-estado-que-governa-a-branch.md
 test -s docs/qualidade/2026-10-01-revisao-estado-que-governa-a-branch.md
+```
+
+### ML-3C — Corretivo da Wave 3: `--literal-pathspecs` e textos que mentem sobre o contrato
+**Status:** ⬜ Pendente
+**Squad:** apolo-tf
+**Origem:** RN1 do ML-3A (pathspec mágico como `:(exclude)` em `roadmap_dir` faz `ls-tree` sair rc=0
+com `fatal` no stderr, e o D3 não dispara) e os 5 achados do ML-3B (ajuda e comentários ainda dizem
+"wip/ or done/").
+**Files affected:** `internal/validator/validator.go` (`mdBasenamesInGitTreeWithError` ~:412),
+`internal/auditsurface/auditsurface.go` (`gitLsTree` ~:291), `internal/commands/branch.go` (:16, :28,
+:80 `Short`), `internal/commands/commit.go` (:23, :80 `Long`), testes dos dois primeiros pacotes.
+**Actions:** (1) `git --literal-pathspecs ls-tree …` nos dois leitores; (2) textos: criação = "in wip/"
+(done/ só nomeado na mensagem), branch existente = "wip/, blocked/ or done/"; (3) teste: `roadmap_dir`
+literal `:(exclude)rm` com roadmap em done/ na base → reconhecido como presente na base.
+**Acceptance criteria:**
+- [ ] O teste do item 3 falha sem `--literal-pathspecs` e passa com ele (provar)
+- [ ] `grep -n "wip/ or done/" internal/commands/branch.go internal/commands/commit.go` vazio
+- [ ] Relatório: uma frase por teste novo
+**Gates da wave:**
+```bash
+go build ./...
+go test ./internal/validator/ ./internal/auditsurface/ ./internal/commands/ -count=1
 ```
