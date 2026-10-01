@@ -124,7 +124,7 @@ Cada superfície a prefixa do seu jeito, e o número da linha é 1-based.
 
 ### ML-1A — `FenceMaskCheck`, predicados fail-closed e os 2 arquivos do acervo
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** `internal/roadmapdoc/roadmapdoc.go` · `internal/roadmapdoc/fencecheck_test.go`
 (novo) · `docs/roadmaps/done/ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md`
 · `docs/roadmaps/done/ROADMAP-2026-08-29-dialeto-canonico-do-roadmap-e-vocabulario-de-status-do-barrier.md`
@@ -156,12 +156,19 @@ falha nomeando arquivo e linha se `FenceMaskCheck` acusar cerca aberta. É o gat
 Waves 1 e 4; **o nome é contrato**.
 
 **Critérios de aceite:**
-- [ ] `FenceMaskCheck` existe; `FenceMask` com assinatura e comportamento intactos (os testes existentes passam sem edição)
-- [ ] Os 4 predicados são fail-closed, com teste nos dois braços
-- [ ] Os 2 arquivos do acervo fecham, e o relatório diz onde e por quê
-- [ ] Consumidores das fixtures enumerados; toda expectativa alterada vem com a medição antes/depois
-- [ ] `go build ./...` · `go test ./internal/roadmapdoc/ ./internal/generators/ ./internal/validator/ -count=1` verdes
-- [ ] Uma frase por teste novo dizendo o que ele afirma
+- [x] `FenceMaskCheck` existe; `FenceMask` com assinatura e comportamento intactos (os testes existentes passam sem edição)
+- [x] Os 4 predicados são fail-closed, com teste nos dois braços
+- [x] Os 2 arquivos do acervo fecham, e o relatório diz onde e por quê
+
+> 🔴 **Auditoria (arquiteto, 2026-10-01): o fechador do executor estava no lugar errado, e corrigi eu
+> mesmo.** Ele pôs um ```` ``` ```` perto da linha acusada (455 / 1034): a contagem fechava, mas os pares
+> continuavam deslocados, com prosa lida como código. A causa real era um bloco externo que transcreve
+> outra cerca (linhas **223–236** e **948–963**): o ```` ``` ```` interno fechava o externo. Remédio:
+> ```` ```` ```` no bloco externo. Todos os MLs dos dois roadmaps continuam `complete`. Nota:
+> `vault/notes/cerca-aberta-acusada-longe-da-causa-bloco-externo-sem-crase-extra-2026-10-01.md`.
+- [x] Consumidores das fixtures enumerados; toda expectativa alterada vem com a medição antes/depois
+- [x] `go build ./...` · `go test ./internal/roadmapdoc/ ./internal/generators/ ./internal/validator/ -count=1` verdes
+- [x] Uma frase por teste novo dizendo o que ele afirma
 
 **Gates da wave:**
 ```bash

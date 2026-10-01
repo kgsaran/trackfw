@@ -2,6 +2,35 @@
 
 ---
 
+## 2026-10-01 — Apolo (fix/cerca-nao-terminada-mascara-em-silencio — ML-1A) — ENTREGUE
+
+**Inicio:** 2026-09-30 | **Fim:** 2026-10-01 | Branch: `fix/cerca-nao-terminada-mascara-em-silencio`
+**Tarefa:** ML-1A — `FenceMaskCheck`, predicados fail-closed e os 2 arquivos do acervo
+**Arquivos afetados:** `internal/roadmapdoc/roadmapdoc.go` · `internal/roadmapdoc/fencecheck_test.go` (novo) · 2 roadmaps em `docs/roadmaps/done/`
+
+**Contexto:** Continuação de executor anterior que caiu por SSL antes de rodar build/testes. Código estava completo no índice; auditei, completei o que faltava e rodei todas as validações.
+
+**Trabalho do executor anterior (validado intacto):**
+- `scanFences(lines []string) (mask []bool, openLine int)` — helper interno extraído de `FenceMask`; `FenceMask` delega para ele preservando assinatura e comportamento (todos os testes existentes passam sem edição).
+- `FenceMaskCheck(lines []string) (int, error)` — nova função pública, reutiliza `scanFences`. Retorna `(0, nil)` quando todas as cercas fecham; `(n, error)` com mensagem canônica `"unterminated code fence starting at line %d"` quando não.
+- 4 predicados fail-closed: `HasUnfinishedMLs` → `true`, `hasAnyNonPendingML` → `true`, `HasWave0` → `false`, `Wave0GateDiagnosis` → `Wave0GateMalformed`.
+- 2 arquivos do acervo corrigidos: fechador adicionado no ponto onde o bloco de código acaba de fato, confirmado por `TestAcervoSemCercaAberta` (237 arquivos verificados, 0 falhas).
+- `fencecheck_test.go` (novo, 389 linhas): 18 testes, todos PASS.
+
+**Abertura e fechamento dos 2 arquivos do acervo:**
+- `ROADMAP-2026-08-22-wave-0…`: abre em linha 460 (original), fechador adicionado antes da linha 455 (original), restruturando o segundo bloco de código como 456-461 (1 linha inserida). `FenceMaskCheck` retorna `(0, nil)` na versão corrigida.
+- `ROADMAP-2026-08-29-dialeto…`: abre em linha 1044 (original), fechador adicionado antes da linha 1034 (original), restruturando o bloco de saída CLI como 1035-1045. `FenceMaskCheck` retorna `(0, nil)` na versão corrigida.
+
+**Consumidores das 3 fixtures congeladas:** `compare_baseline_test.go` (corpus interno, lê `testdata/corpus/`, não afetado pela mudança no acervo real) · `fencecheck_test.go` (pinos de regressão das 3 fixtures) · `scripts/check-roadmap-barrier-contract.sh` (snapshot versionado, não afetado). Nenhuma expectativa de teste existente foi alterada: as fixtures congeladas não mudam.
+
+**Resultados:**
+- `go build ./...`: ok
+- `go vet ./internal/roadmapdoc/`: ok
+- `go test ./internal/roadmapdoc/ ./internal/generators/ ./internal/validator/ ./internal/commands/ ./internal/serve/ -count=1`: todos ok
+- Gate da Wave 1: `TestAcervoSemCercaAberta` PASS (n=1)
+
+---
+
 ## 2026-09-30 — Hades (fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite — ML-2A) — ENTREGUE
 
 **Inicio:** 2026-09-30 | **Fim:** 2026-09-30 | Branch: `fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite`

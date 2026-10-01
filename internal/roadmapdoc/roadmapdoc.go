@@ -297,19 +297,21 @@ func DetectFenceMarker(trimmed string) (ch byte, length int, ok bool) {
 	return first, i, true
 }
 
-// FenceMask returns, for each line index, whether that line lies strictly
-// inside a fenced code block (``` ... ``` or ~~~ ... ~~~, per CommonMark: 3+
-// of the same fence character, closed by a run of the same character with
-// length >= the opening run's length). A line that is itself a fence
-// delimiter is never reported as "inside" — only the lines between an opening
-// and a closing delimiter are masked. ADR decision 7 / AC13: MLHeadingRe,
-// StatusLineRe and CriteriaHeaderRe must ignore documentation/examples inside
-// a cerca — otherwise a roadmap that cites those literals (as this very
-// roadmap, its REQ and its ADR do, repeatedly) is read as real ML content.
-// ParseGates already has its own, independent fence-matching for the
-// "```bash ... ```" gates block and is untouched by this mask.
-func FenceMask(lines []string) []bool {
-	mask := make([]bool, len(lines))
+// scanFences is the single fence-scanning kernel shared by FenceMask and
+// FenceMaskCheck. It walks lines once, applying DetectFenceMarker and the
+// CommonMark closing rules, and returns:
+//   - mask: for each line index, true if the line lies strictly INSIDE a fence
+//     (the opening and closing delimiter lines are NOT masked).
+//   - openLine: the 1-based line number of the LAST unclosed opener, or 0 if all
+//     fences closed. FenceMask ignores this; FenceMaskCheck returns an error when
+//     it is non-zero.
+//
+// Closing rule: a fence closes only when the closing line has the SAME character,
+// length >= the opening run, AND length == len(trimmed) (no trailing content). The
+// opening line MAY have an info string (` ```bash `). See FenceMask for the ADR
+// reference and the security-review motivation.
+func scanFences(lines []string) (mask []bool, openLine int) {
+	mask = make([]bool, len(lines))
 	fenced := false
 	var fenceChar byte
 	var fenceLen int
@@ -321,7 +323,7 @@ func FenceMask(lines []string) []bool {
 				fenced = true
 				fenceChar = ch
 				fenceLen = length
-				continue
+				openLine = i + 1 // 1-based
 			}
 			continue
 		}
@@ -341,11 +343,47 @@ func FenceMask(lines []string) []bool {
 		// an info string after the opening run (` ```bash `).
 		if isFence && ch == fenceChar && length >= fenceLen && length == len(trimmed) {
 			fenced = false
+			openLine = 0 // closed
 			continue
 		}
 		mask[i] = true
 	}
+	if !fenced {
+		openLine = 0
+	}
+	return mask, openLine
+}
+
+// FenceMask returns, for each line index, whether that line lies strictly
+// inside a fenced code block (``` ... ``` or ~~~ ... ~~~, per CommonMark: 3+
+// of the same fence character, closed by a run of the same character with
+// length >= the opening run's length). A line that is itself a fence
+// delimiter is never reported as "inside" — only the lines between an opening
+// and a closing delimiter are masked. ADR decision 7 / AC13: MLHeadingRe,
+// StatusLineRe and CriteriaHeaderRe must ignore documentation/examples inside
+// a cerca — otherwise a roadmap that cites those literals (as this very
+// roadmap, its REQ and its ADR do, repeatedly) is read as real ML content.
+// ParseGates already has its own, independent fence-matching for the
+// "```bash ... ```" gates block and is untouched by this mask.
+func FenceMask(lines []string) []bool {
+	mask, _ := scanFences(lines)
 	return mask
+}
+
+// FenceMaskCheck reports whether the document has any unterminated code fence,
+// using the same grammar as FenceMask (reuses scanFences). If all fences close
+// properly, it returns (0, nil). If a fence is opened but never closed, it returns
+// (openLine, err) where openLine is the 1-based line number of the unterminated
+// opener and the error message matches the canonical format from ParseGates:
+// "unterminated code fence starting at line <n>". FenceMask is unchanged;
+// FenceMaskCheck is a companion that adds error reporting without touching any
+// existing call site.
+func FenceMaskCheck(lines []string) (int, error) {
+	_, openLine := scanFences(lines)
+	if openLine != 0 {
+		return openLine, fmt.Errorf("unterminated code fence starting at line %d", openLine)
+	}
+	return 0, nil
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -745,6 +783,13 @@ const (
 // veredito que possam divergir.
 func Wave0GateDiagnosis(data string) Wave0GateCause {
 	lines := SplitRoadmapLines(data)
+	// Fail-closed on unterminated fence: a malformed document whose fence never
+	// closes can hide wave 0 entirely. Return Wave0GateMalformed — the cause that
+	// maps to "fence did not close before next heading or at all" (same enum value
+	// as the ParseGates error path below, same message in the validator).
+	if _, err := FenceMaskCheck(lines); err != nil {
+		return Wave0GateMalformed
+	}
 	waves, _ := ParseWaves(lines, FenceMask(lines))
 	for _, w := range waves {
 		if w.Label != "0" {
@@ -795,6 +840,11 @@ func Wave0HasPlaceholderOrMissingGate(data string) bool {
 // from one where work has started (placeholder gate is a violation).
 func hasAnyNonPendingML(data string) bool {
 	lines := SplitRoadmapLines(data)
+	// Fail-closed on unterminated fence: MLs hidden in the masked tail cannot be
+	// inspected; assume non-pending (same pattern as len(malformed) > 0 below).
+	if _, err := FenceMaskCheck(lines); err != nil {
+		return true
+	}
 	fenced := FenceMask(lines)
 	waves, malformed := ParseWaves(lines, fenced)
 	if len(malformed) > 0 {
@@ -839,6 +889,11 @@ func hasAnyNonPendingML(data string) bool {
 // has one. ParseWaves now takes the same FenceMask the other readings already used.
 func HasWave0(data string) bool {
 	lines := SplitRoadmapLines(data)
+	// Fail-closed on unterminated fence: wave 0 may be hidden in the masked tail.
+	// Return false conservatively so the validator surfaces the fence violation.
+	if _, err := FenceMaskCheck(lines); err != nil {
+		return false
+	}
 	waves, _ := ParseWaves(lines, FenceMask(lines))
 	for _, w := range waves {
 		if w.Label == "0" {
@@ -906,6 +961,11 @@ func DuplicateWaveOrMLLabels(data string) []string {
 // be applied to the roadmap as a whole, not to a single wave.
 func HasUnfinishedMLs(data string) bool {
 	lines := SplitRoadmapLines(data)
+	// Fail-closed on unterminated fence: MLs hidden in the masked tail cannot be
+	// proven complete — same principle as the len(malformed) > 0 guard below.
+	if _, err := FenceMaskCheck(lines); err != nil {
+		return true
+	}
 	fenced := FenceMask(lines)
 	waves, malformed := ParseWaves(lines, fenced)
 	if len(malformed) > 0 {
