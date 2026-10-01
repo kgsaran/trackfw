@@ -175,7 +175,7 @@ go test ./internal/roadmapdoc/ ./internal/generators/ -count=1
 
 ### ML-2A — `sh -n` por linha no caminho de avaliação dos gates
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** `internal/commands/barrier.go` · `internal/commands/barrier_fragment_test.go`
 (novo) · `docs/cli-parity.md` (§ `trackfw barrier`: a mensagem nova)
 **Ações:**
@@ -192,9 +192,9 @@ normalmente · bloco válido de vários comandos → evidência `<cmd>: exit N` 
 roadmap não confiável → `not_evaluated`, sem spawn de `sh -n`.
 
 **Critérios de aceite:**
-- [ ] Os 5 braços acima, com uma frase por teste
-- [ ] `make quality` com `EXIT=0` (autorizado: frente única), incluindo `check-roadmap-barrier-contract.sh` **sem** re-pin
-- [ ] Barrier real (binário novo) sobre as waves deste roadmap: `passed`
+- [x] Os 5 braços acima, com uma frase por teste
+- [x] `make quality` com `EXIT=0` (autorizado: frente única), incluindo `check-roadmap-barrier-contract.sh` **sem** re-pin
+- [x] Barrier real (binário novo) sobre as waves deste roadmap: `passed`
 
 **Gates da wave:**
 ```bash

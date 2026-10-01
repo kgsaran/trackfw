@@ -200,6 +200,74 @@ func parseGates(lines []string, waveStart, waveEnd int) ([]string, *barrierUsage
 	return cmds, nil
 }
 
+// parseGatesWithLines wraps roadmapdoc.ParseGatesLines for use inside runBarrier.
+// It preserves line-number information needed by the fragment check (ML-2A).
+func parseGatesWithLines(lines []string, waveStart, waveEnd int) ([]roadmapdoc.GateCmd, *barrierUsageError) {
+	gcmds, err := roadmapdoc.ParseGatesLines(lines, waveStart, waveEnd)
+	if err != nil {
+		return nil, &barrierUsageError{msg: err.Error()}
+	}
+	return gcmds, nil
+}
+
+// hasOddTrailingBackslashes reports whether text ends with an odd number of
+// consecutive backslashes. A trailing odd-\ is a shell line-continuation that
+// makes the line incomplete when run in a separate sh -c invocation (rule 5).
+// sh -n does not detect this case (measured FN — vault/notes/sh-n-misses-…).
+func hasOddTrailingBackslashes(text string) bool {
+	count := 0
+	for i := len(text) - 1; i >= 0; i-- {
+		if text[i] == '\\' {
+			count++
+		} else {
+			break
+		}
+	}
+	return count%2 == 1
+}
+
+// checkGateFragments runs the odd-\ rule and sh -n for every gate before any
+// gate is executed. It is called only inside trusted paths (after the trust
+// check) — untrusted roadmaps never reach this function.
+//
+// Returns:
+//   - "", nil      — every gate is syntactically complete; safe to execute
+//   - "blocked", failures — one or more fragments detected; failures has one
+//     entry per bad gate in the format pinned by docs/cli-parity.md (rule 5)
+//   - "not_evaluated", {shMissingMsg} — sh could not be spawned at all
+//
+// sh is resolved through $PATH (same as runGateCommand). c.Env is nil so the
+// child inherits the process environment — sh -n is a pure syntax check and
+// never executes any code, so TRACKFW_BARRIER_STACK propagation is unnecessary.
+func checkGateFragments(gcmds []roadmapdoc.GateCmd) (status string, failures []string) {
+	failures = []string{}
+	for _, gc := range gcmds {
+		// Fast path: odd trailing backslash — sh -n passes it (FN, measured),
+		// but it is always a fragment per rule 5.
+		if hasOddTrailingBackslashes(gc.Text) {
+			failures = append(failures, fmt.Sprintf(
+				"line %d: incomplete command — each line of the gates block runs as a separate sh -c (rule 5): %s",
+				gc.Line, gc.Text))
+			continue
+		}
+		c := exec.Command("sh", "-n", "-c", gc.Text)
+		if err := c.Run(); err != nil {
+			if _, ok := err.(*exec.ExitError); !ok {
+				// sh could not be spawned: same not_evaluated signal as evalGateCommands.
+				return "not_evaluated", []string{shMissingMsg}
+			}
+			// sh ran and reported a syntax error.
+			failures = append(failures, fmt.Sprintf(
+				"line %d: incomplete command — each line of the gates block runs as a separate sh -c (rule 5): %s",
+				gc.Line, gc.Text))
+		}
+	}
+	if len(failures) > 0 {
+		return "blocked", failures
+	}
+	return "", nil
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Roadmap trust check (AC11, AC12 — docs/cli-parity.md § Trust and --trust-local-gates)
 // ────────────────────────────────────────────────────────────────────────────
@@ -699,12 +767,16 @@ func runBarrier(cmd *cobra.Command, roadmapArg string, waveLabel string, jsonOut
 	}
 
 	// ── check: gates ──────────────────────────────────────────────────────────
-	gateCommands, gerr := parseGates(lines, target.Start, target.End)
+	gcmds, gerr := parseGatesWithLines(lines, target.Start, target.End)
 	if gerr != nil {
 		usageExit(cmd, "%s", gerr.Error())
 		return
 	}
-	gatesCmds := gateCommands
+	// Build the flat text slice for the Commands field (pinned contract: []string).
+	gatesCmds := make([]string, len(gcmds))
+	for i, gc := range gcmds {
+		gatesCmds[i] = gc.Text
+	}
 	gatesCheck := barrierCheck{
 		Name:     "gates",
 		Evidence: []string{},
@@ -716,24 +788,35 @@ func runBarrier(cmd *cobra.Command, roadmapArg string, waveLabel string, jsonOut
 	// --trust-local-gates bypasses the check (injected by the /trackfw:barrier
 	// slash command for the WIP flow — AC12, AC15).
 	if trustLocalGates {
-		// Explicit consent: evaluate gates from local content.
-		status, evidence, failures := evalGateCommands(gateCommands, childEnv)
-		gatesCheck.Status = status
-		gatesCheck.Evidence = evidence
-		gatesCheck.Failures = failures
+		// Explicit consent: check fragments (ML-2A) before executing.
+		if fragStatus, fragFails := checkGateFragments(gcmds); fragStatus != "" {
+			gatesCheck.Status = fragStatus
+			gatesCheck.Failures = fragFails
+		} else {
+			status, evidence, failures := evalGateCommands(gatesCmds, childEnv)
+			gatesCheck.Status = status
+			gatesCheck.Evidence = evidence
+			gatesCheck.Failures = failures
+		}
 	} else {
 		verdict := roadmapTrustForGates(roadmapPath, data)
 		if !verdict.trusted {
 			// Roadmap is not trusted: do not execute gates (AC3, AC14).
 			// Report as not_evaluated — distinct from passed and blocked (AC6).
+			// checkGateFragments is NOT called for untrusted roadmaps (ML-2A).
 			gatesCheck.Status = "not_evaluated"
 			gatesCheck.Failures = append(gatesCheck.Failures, verdict.failureMsg)
 		} else {
-			// Trusted (fail-open): evaluate gates.
-			status, evidence, failures := evalGateCommands(gateCommands, childEnv)
-			gatesCheck.Status = status
-			gatesCheck.Evidence = evidence
-			gatesCheck.Failures = failures
+			// Trusted: check fragments (ML-2A) before executing.
+			if fragStatus, fragFails := checkGateFragments(gcmds); fragStatus != "" {
+				gatesCheck.Status = fragStatus
+				gatesCheck.Failures = fragFails
+			} else {
+				status, evidence, failures := evalGateCommands(gatesCmds, childEnv)
+				gatesCheck.Status = status
+				gatesCheck.Evidence = evidence
+				gatesCheck.Failures = failures
+			}
 		}
 	}
 

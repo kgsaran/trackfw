@@ -2,6 +2,21 @@
 
 ---
 
+## 2026-10-01 — Apolo (fix/barrier-executa-cada-linha-do-bloco-de-gates — ML-2A) — ENTREGUE
+
+**Início:** 2026-10-01 | **Fim:** 2026-10-01 | Branch: `fix/barrier-executa-cada-linha-do-bloco-de-gates`
+**Tarefa:** ML-2A Wave 2 — `sh -n` por linha no caminho de avaliação dos gates
+**Arquivos afetados:** `internal/commands/barrier.go` · `internal/commands/barrier_fragment_test.go` (novo) · `docs/cli-parity.md` · roadmap ML-2A ✅ · `docs/agents-working-context.md`
+
+**Resultado:**
+- `parseGatesWithLines`, `hasOddTrailingBackslashes`, `checkGateFragments` adicionados a `barrier.go`
+- `runBarrier`: ambos os caminhos trusted chamam `checkGateFragments` antes de `evalGateCommands`; untrusted path inalterado
+- 5 testes Fragment: todos PASS (`go test ./internal/commands/ -run 'Fragment' -count=1`)
+- `make quality` EXIT=0, `check-roadmap-barrier-contract.sh` sem re-pin
+- Barrier real: Wave 0 result: passed · Wave 1 result: passed · Wave 2 result: passed
+
+---
+
 ## 2026-10-01 — Hades (fix/barrier-executa-cada-linha-do-bloco-de-gates — ML-0A) — ENTREGUE (v4)
 
 **Início:** 2026-10-01 | **Fim:** 2026-10-01 | Branch: `fix/barrier-executa-cada-linha-do-bloco-de-gates`

@@ -2924,7 +2924,7 @@ so that a diff of two runtimes' JSON output for the same fixture is empty:
 | `wave_headings` | _(none — passed means empty)_ | `line <n>: "<token>" is not a valid wave label` |
 | `mls_complete` | `<ML-id>: ✅` | `<ML-id>: not complete (status: <marker or "missing">)` |
 | `acceptance_evidence` | `<ML-id>: <n> criteria met` | `<ML-id>: <n> unmet acceptance criteria` or `<ML-id>: no acceptance block` |
-| `gates` | `<command>: exit 0` | `<command>: exit <code>` |
+| `gates` | `<command>: exit 0` | `<command>: exit <code>` · `line <n>: incomplete command — each line of the gates block runs as a separate sh -c (rule 5): <cmd>` (fragment detected by `sh -n` or odd-`\` rule before any gate executes; see rule 5) |
 | `validate` | `<v> violations, <w> warnings` | `<v> violations, <w> warnings` |
 
 Determinism contract:
