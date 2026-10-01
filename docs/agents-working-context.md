@@ -2,6 +2,32 @@
 
 ---
 
+## 2026-10-01 — Apolo (fix/cerca-nao-terminada-mascara-em-silencio — ML-2B) — ENTREGUE
+
+**Inicio:** 2026-10-01 | **Fim:** 2026-10-01 | Branch: `fix/cerca-nao-terminada-mascara-em-silencio`
+**Tarefa:** ML-2B — `roadmap move ... done` e `roadmap show` (fence gate)
+**Arquivos afetados:** `internal/generators/roadmap.go` · `internal/generators/roadmap_show_json.go` · `internal/generators/roadmap_fence_test.go` (novo)
+
+**Trabalho entregue:**
+- `roadmap.go`: FenceMaskCheck antes de pendingMLsForDone no bloco `state == "done"`. Retorno antecipado com `1 blocker(s):\n  unterminated code fence starting at line <n>`. Evita as mensagens espúrias de fail-closed (HasWave0 → false, MLs pendentes).
+- `roadmap_show_json.go`: helper `fenceExitUsage` (escreve para stderr, os.Exit(2)). `ShowRoadmapJSON`: FenceMaskCheck após ReadFile, antes de buildRoadmapShowDoc. `ShowRoadmap`: reordenado ReadFile antes do header print; FenceMaskCheck antes de qualquer saída.
+- `roadmap_fence_test.go` (novo, 6 testes): move→done recusado (A) e aceito (B) · show exit 2 (C) e passthrough (D) · show --json exit 2 (E) e passthrough (F). Testes C-F usam padrão re-exec via init() e env var TRACKFW_TEST_FENCE_HELPER.
+
+**Chamadores encontrados (grep excl. testdata):**
+- `pendingMLsForDone`: `roadmap.go:739` (único chamador)
+- `buildRoadmapShowDoc`: `roadmap_show_json.go:114` + `roadmap_show_json_test.go:23`
+- `ShowRoadmap`: `commands/roadmap.go:138`
+- `ShowRoadmapJSON`: `commands/roadmap.go:136`
+
+**Desvio documentado:** `fenceExitUsage` chama `os.Exit(2)` diretamente porque `root.go:131` mapeia toda error de RunE para exit 1, e `internal/commands/` estava fora do escopo do ML-2B. Mesmo padrão do barrier.go (linhas 81,86,95).
+
+**Resultados:**
+- `go build ./...`: ok
+- `go vet ./internal/generators/`: ok
+- `go test ./internal/generators/ -count=1`: ok (28s)
+
+---
+
 ## 2026-10-01 — Apolo (fix/cerca-nao-terminada-mascara-em-silencio — ML-1A) — ENTREGUE
 
 **Inicio:** 2026-09-30 | **Fim:** 2026-10-01 | Branch: `fix/cerca-nao-terminada-mascara-em-silencio`
@@ -43419,3 +43445,35 @@ o sítio 3 é `roadmap move ... done` e não `roadmap show`; o board **não** l�
 ficam abertas como regressão.
 
 Próximo: ML-1A (`FenceMaskCheck` + predicados fail-closed + 2 arquivos do acervo) ao `apolo-tf`.
+
+---
+
+## 2026-10-01 — Apolo (fix/cerca-nao-terminada-mascara-em-silencio — ML-2A) — ENTREGUE
+
+**Inicio:** 2026-10-01 | **Fim:** 2026-10-01 | Branch: `fix/cerca-nao-terminada-mascara-em-silencio`
+**Tarefa:** ML-2A — `barrier`: exit 2 pela cerca, antes de resolver a wave (#476)
+**Arquivos afetados:** `internal/commands/barrier.go` · `internal/commands/barrier_fence_test.go` (novo)
+
+**Mudança em `barrier.go`:** em `runBarrier`, logo depois de `splitRoadmapLines` e antes de `fenceMask`/`parseWaves`, adicionado:
+```go
+if _, err := roadmapdoc.FenceMaskCheck(lines); err != nil {
+    usageExit(cmd, "%s", err.Error())
+    return
+}
+```
+A posição garante que cerca aberta antes do cabeçalho da wave produz a mensagem correta (não `wave X not found`).
+
+**Testes novos (`barrier_fence_test.go`, 4 testes — todos PASS):**
+- `TestBarrierFence_OpenFencePendingMLInTail` — afirma que quando a cerca abre antes do ML pendente (braço D), o barrier sai com exit 2 e a mensagem com a linha correta, em vez de tratar o ML como completo.
+- `TestBarrierFence_FenceBeforeWaveHeaderGivesFenceMessage` — afirma que quando a cerca abre antes do cabeçalho da wave pedida (ocultando-o), a mensagem é da cerca, não `wave not found`.
+- `TestBarrierFence_WellFormedRoadmapPassesThrough` — afirma que roadmap bem-formado (todas as cercas fechadas) continua passando normalmente (AC3).
+- `TestBarrierFence_JsonFlagExits2WithoutDocument` — afirma que com `--json` e cerca aberta, o exit é 2 e o stdout não contém nenhum documento JSON.
+
+**AC4 medido:**
+- ANTES (binary sem a mudança): `{"mls_complete":{"status":"passed",...}}` — exit 1 (blocked por validate)
+- DEPOIS (binary com a mudança): `trackfw barrier: unterminated code fence starting at line 32` — exit 2
+
+**Resultados:**
+- `go build ./...`: ok
+- `go vet ./internal/commands/`: ok
+- `go test ./internal/commands/ -count=1`: ok (10.1 s)

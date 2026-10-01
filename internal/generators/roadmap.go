@@ -736,6 +736,17 @@ func MoveRoadmap(name, state string) error {
 			return fmt.Errorf("cannot verify readiness for done transition: %w", readErr)
 		}
 		content := string(rawContent)
+
+		// AC(ML-2B): unterminated fence is a blocker, and must be checked FIRST.
+		// Both pendingMLsForDone and HasWave0 are fail-closed when the fence is open
+		// (ML-1A made HasWave0 → false and hasAnyNonPendingML → true on a masked
+		// document), so running them after an open fence emits spurious blockers that
+		// name the wrong problem. Return early here with a single, accurate message.
+		lines := roadmapdoc.SplitRoadmapLines(content)
+		if _, fenceErr := roadmapdoc.FenceMaskCheck(lines); fenceErr != nil {
+			return fmt.Errorf("cannot move %q to done: 1 blocker(s):\n  %s", filepath.Base(src), fenceErr.Error())
+		}
+
 		blockers := pendingMLsForDone(content)
 
 		// AC7-bis: missing Wave 0 heading is a blocker.  Collect as a pseudo-entry
@@ -1096,11 +1107,16 @@ func ShowRoadmap(name string) error {
 	path := matches[0]
 	state := filepath.Base(filepath.Dir(path))
 	base := filepath.Base(path)
-	fmt.Printf("── %s ── [%s] ──────────────────────\n\n", base, strings.ToUpper(state))
+	// AC(ML-2B): read the file before printing anything so the fence check can
+	// refuse with exit 2 before any output reaches stdout.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
+	if _, fErr := roadmapdoc.FenceMaskCheck(roadmapdoc.SplitRoadmapLines(string(data))); fErr != nil {
+		fenceExitUsage(path, fErr)
+	}
+	fmt.Printf("── %s ── [%s] ──────────────────────\n\n", base, strings.ToUpper(state))
 	fmt.Println(string(data))
 	fmt.Printf("Location: %s\n", path)
 	return nil

@@ -182,7 +182,7 @@ n=$(go test ./internal/roadmapdoc/ -run '^TestAcervoSemCercaAberta$' -count=1 -v
 
 ### ML-2A — `barrier`: exit 2 pela cerca, antes de resolver a wave
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** `internal/commands/barrier.go` · `internal/commands/barrier_fence_test.go` (novo)
 **Ações:**
 1. Em `runBarrier`, logo **depois** de `splitRoadmapLines` e **antes** de `fenceMask`/`parseWaves`:
@@ -197,13 +197,13 @@ certa · 🔴 **cerca abrindo ANTES do cabeçalho da wave pedida → mensagem da
 found`** · roadmap bem-formado → comportamento inalterado (AC3) · `--json` também sai 2, sem documento.
 
 **Critérios de aceite:**
-- [ ] AC2/AC3/AC4 cobertos pelos testes acima; o AC4 medido com `barrier --json` sobre a fixture do braço D
-- [ ] `go test ./internal/commands/ -count=1` verde
-- [ ] Uma frase por teste novo
+- [x] AC2/AC3/AC4 cobertos pelos testes acima; o AC4 medido com `barrier --json` sobre a fixture do braço D
+- [x] `go test ./internal/commands/ -count=1` verde
+- [x] Uma frase por teste novo
 
 ### ML-2B — `roadmap move ... done` e `roadmap show`
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** `internal/generators/roadmap.go` · `internal/generators/roadmap_show_json.go` ·
 `internal/generators/roadmap_fence_test.go` (novo)
 **Ações:**
@@ -219,15 +219,39 @@ found`** · roadmap bem-formado → comportamento inalterado (AC3) · `--json` t
 `--json` saem 2 com cerca aberta · roadmap bem-formado inalterado.
 
 **Critérios de aceite:**
-- [ ] Os 3 comportamentos cobertos nos dois braços
-- [ ] `go test ./internal/generators/ -count=1` verde
-- [ ] Uma frase por teste novo
+- [x] Os 3 comportamentos cobertos nos dois braços
+- [x] `go test ./internal/generators/ -count=1` verde
+- [x] Uma frase por teste novo
 
 **Gates da wave:**
 ```bash
 go build ./...
 go test ./internal/commands/ ./internal/generators/ -count=1
 ```
+
+### ML-2C — o exit 2 do `show` sai do `generators` e vai para `commands`
+**Owner:** `apolo-tf`
+**Status:** ⬜ Pendente
+**Origem:** auditoria do ML-2B. O comportamento está certo, mas `roadmap_show_json.go` chama
+`os.Exit(2)` (`fenceExitUsage`), o que torna `generators` o único pacote fora de `commands` a sair
+do processo. E os testes precisam de um `init()` que reexecuta o binário de teste do pacote inteiro.
+**Arquivos afetados:** `internal/generators/roadmap_show_json.go` · `internal/generators/roadmap_fence_test.go` ·
+`internal/commands/roadmap.go` · um teste em `internal/commands/`
+**Ações:**
+1. Em `generators`: `type UsageError struct{ Msg string }` com `Error()`. `ShowRoadmap`/`ShowRoadmapJSON`
+   **retornam** `&UsageError{...}` com a mensagem canônica, sem imprimir no stdout. Remova `fenceExitUsage`
+   e todo `os.Exit` do pacote.
+2. Em `commands/roadmap.go` (~:136-138): `var ue *generators.UsageError; if errors.As(err, &ue)` →
+   stderr `trackfw roadmap: <msg>` e `os.Exit(2)`. Os outros erros seguem o caminho de hoje (exit 1).
+3. Testes do `generators` **em processo**: `errors.As(err, &ue)` com a mensagem e o stdout vazio. **Remova o
+   `init()` e o `TRACKFW_TEST_FENCE_HELPER`.**
+4. Um teste no nível do binário em `internal/commands/` (helper `barrierBinary(t)`, que já builda o
+   `trackfw`): `roadmap show <cerca aberta>` e `--json` saem **2**; com a cerca fechada saem 0.
+**Critérios de aceite:**
+- [ ] `grep -n 'os.Exit' internal/generators/*.go | grep -v _test` vazio
+- [ ] `grep -rn 'TRACKFW_TEST_FENCE_HELPER\|func init()' internal/generators/roadmap_fence_test.go` vazio
+- [ ] exit 2 medido no binário (teste do item 4) · `go test ./internal/commands/ ./internal/generators/ -count=1` verde
+- [ ] Uma frase por teste novo ou alterado
 
 ## Wave 3 — superfícies que não podem sair 2 (2 MLs em paralelo)
 > Dependências: Wave 2 auditada. Arquivos disjuntos: `internal/serve/api_board.go` × `internal/validator/` + `scripts/check-validate-rule-pins.sh`.

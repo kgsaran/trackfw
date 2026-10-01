@@ -561,6 +561,16 @@ func runBarrier(cmd *cobra.Command, roadmapArg string, waveLabel string, jsonOut
 		return
 	}
 	lines := splitRoadmapLines(string(data))
+	// ML-2A (#476): reject documents with an unterminated code fence before
+	// attempting to parse waves. A fence opened before a wave heading hides the
+	// heading entirely, so the user would receive "wave X not found" — the wrong
+	// message — instead of the underlying formatting error. This check takes
+	// precedence over all wave-level processing, but comes after file resolution
+	// and reading, matching the same fail-fast principle used by ParseGates.
+	if _, err := roadmapdoc.FenceMaskCheck(lines); err != nil {
+		usageExit(cmd, "%s", err.Error())
+		return
+	}
 	fenced := fenceMask(lines)
 
 	waves, malformed := parseWaves(lines, fenced)
