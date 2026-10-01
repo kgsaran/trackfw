@@ -148,10 +148,11 @@ go test ./internal/validator/ -count=1
 6. `docs/cli-parity.md` (:1292, :1858, :4259-4260 e onde mais o grep achar): contrato novo por
    consumidor, o sinal "movido por esta branch" e o aviso `branch_done_scope_unverifiable`.
 **Acceptance criteria:**
-- [ ] `grep -rn "nor done/" internal/commands/*.go` (fora de `_test`) só retorna o `barrier.go` (fora
+- [x] `grep -rn "nor done/" internal/commands/*.go` (fora de `_test`) só retorna o `barrier.go` (fora
       de escopo)
-- [ ] `make build && GO_BIN=bin/trackfw scripts/check-validate-rule-pins.sh` exit 0
-- [ ] Relatório: uma frase por teste novo
+- [x] `make build && GO_BIN=bin/trackfw scripts/check-validate-rule-pins.sh` exit 0
+- [x] Relatório: uma frase por teste novo
+      ✅ Auditoria (arquiteto): 5 testes por nome PASS; 30/30 pinos; grep só acha `barrier.go`; #490 e #494 reproduzidos com `bin/trackfw` e corrigidos.
 **Gates da wave:**
 ```bash
 go build ./...
@@ -195,8 +196,9 @@ se citar o texto.
 `(similar names in done/ — concluded roadmaps do not govern a new branch: <A>, <B>, <C>[, e mais N]. Only if this branch reopens one of them: trackfw roadmap move <name> wip)`
 Sem uma linha de comando pronta por roadmap casado.
 **Acceptance criteria:**
-- [ ] Nenhuma saída de `branch new` contém `trackfw roadmap move ROADMAP-` (comando com nome concreto)
-- [ ] Testes que afirmam a dica atualizados; uma frase por teste alterado
+- [x] Nenhuma saída de `branch new` contém `trackfw roadmap move ROADMAP-` (comando com nome concreto)
+- [x] Testes que afirmam a dica atualizados; uma frase por teste alterado
+      ✅ Auditoria: `bin/trackfw branch new fix/barrier-executa-…` no acervo real → 0 linhas com `trackfw roadmap move ROADMAP-`.
 **Gates da wave:**
 ```bash
 go build ./...
