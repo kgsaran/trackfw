@@ -181,6 +181,28 @@ go build ./...
 go test ./internal/auditsurface/ -count=1
 ```
 
+### ML-1D — Corretivo: a dica de `done/` não pode mandar reabrir roadmap alheio
+**Status:** ⬜ Pendente
+**Squad:** apolo-tf
+**Origem:** auditoria do ML-1B. Com o binário da branch, `branch new fix/barrier-executa-cada-linha-do-bloco-de-gates`
+bloqueia (correto), mas imprime `trackfw roadmap move <X> wip` pronto para cada um dos 3 casados, e 2
+deles são de outro assunto. Um agente que obedece a orientação reabre o roadmap errado e reproduz o
+#494 por outro caminho.
+**Files affected:** `internal/validator/validator.go` (`doneMatchesHint` ~:4054), testes que afirmam o
+texto antigo (`internal/validator/*_test.go`, `internal/commands/branch_test.go`), `docs/cli-parity.md`
+se citar o texto.
+**Actions:** a dica passa a ser exatamente:
+`(similar names in done/ — concluded roadmaps do not govern a new branch: <A>, <B>, <C>[, e mais N]. Only if this branch reopens one of them: trackfw roadmap move <name> wip)`
+Sem uma linha de comando pronta por roadmap casado.
+**Acceptance criteria:**
+- [ ] Nenhuma saída de `branch new` contém `trackfw roadmap move ROADMAP-` (comando com nome concreto)
+- [ ] Testes que afirmam a dica atualizados; uma frase por teste alterado
+**Gates da wave:**
+```bash
+go build ./...
+go test ./internal/validator/ ./internal/commands/ -count=1
+```
+
 ## Wave 2 — Ponta a ponta com o binário
 > Dependencies: Wave 1 auditada
 
