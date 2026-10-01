@@ -479,19 +479,21 @@ func mapKeys(m map[string]bool) []string {
 // ────────────────────────────────────────────────────────────────────────────
 
 // TestBranchGovernanceOrientationForCreation_DoneHint affirms: BranchGovernanceOrientationForCreation
-// lists at most 3 done/ matches (sorted) with "e mais N" and includes "roadmap move … wip"; nil
-// doneMatches produces no hint.
+// with 4 done/ matches produces a hint that (1) contains the first 3 sorted names, (2) "e mais 1",
+// (3) the phrase "do not govern a new branch", (4) the literal "<name>" placeholder, and
+// (5) never contains "trackfw roadmap move ROADMAP-" (no ready-to-run command with a concrete name).
+// nil doneMatches produces no hint.
 func TestBranchGovernanceOrientationForCreation_DoneHint(t *testing.T) {
 	cfg := config.ProjectConfig{}
 	branch := "feat/cache-de-sessao"
 
 	// nil → no hint
 	msg := BranchGovernanceOrientationForCreation(branch, cfg, nil)
-	if strings.Contains(msg, "matched in done/") {
+	if strings.Contains(msg, "do not govern a new branch") {
 		t.Errorf("nil doneMatches must produce no hint, got: %s", msg)
 	}
 
-	// 4 matches → 3 listed, "e mais 1", all contain "roadmap move"
+	// 4 matches → 3 listed, "e mais 1"; new safe format, no concrete roadmap command
 	doneMatches := []string{
 		"ROADMAP-delta.md",
 		"ROADMAP-alpha.md",
@@ -499,9 +501,11 @@ func TestBranchGovernanceOrientationForCreation_DoneHint(t *testing.T) {
 		"ROADMAP-beta.md",
 	}
 	msg = BranchGovernanceOrientationForCreation(branch, cfg, doneMatches)
-	if !strings.Contains(msg, "matched in done/") {
-		t.Errorf("expected done hint, got: %s", msg)
+	// affirms: hint announces that concluded roadmaps do not govern a new branch
+	if !strings.Contains(msg, "do not govern a new branch") {
+		t.Errorf("expected 'do not govern a new branch' in hint, got: %s", msg)
 	}
+	// affirms: overflow summarised correctly
 	if !strings.Contains(msg, "e mais 1") {
 		t.Errorf("expected 'e mais 1' for 4 matches, got: %s", msg)
 	}
@@ -512,7 +516,12 @@ func TestBranchGovernanceOrientationForCreation_DoneHint(t *testing.T) {
 	if strings.Contains(msg, "ROADMAP-gamma.md") {
 		t.Errorf("4th match (gamma) must be elided, got: %s", msg)
 	}
-	if !strings.Contains(msg, "roadmap move") {
-		t.Errorf("hint must include 'roadmap move', got: %s", msg)
+	// affirms: hint uses literal <name> placeholder, not a ready-to-run command with a concrete roadmap name
+	if !strings.Contains(msg, "trackfw roadmap move <name> wip") {
+		t.Errorf("hint must include literal '<name>' placeholder, got: %s", msg)
+	}
+	// affirms: no concrete roadmap command that could direct an agent to reopen the wrong roadmap
+	if strings.Contains(msg, "trackfw roadmap move ROADMAP-") {
+		t.Errorf("hint must NOT contain ready-to-run command with concrete roadmap name, got: %s", msg)
 	}
 }

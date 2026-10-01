@@ -4048,9 +4048,11 @@ func BranchNoMatchingRoadmapMessageForCreation(branch string, candidates, doneMa
 	return msg
 }
 
-// doneMatchesHint returns a multi-line hint string listing done/ roadmaps that would need to be
-// moved to wip/ before `trackfw branch new` can proceed. Returns "" when doneMatches is empty.
+// doneMatchesHint returns a single-line hint string listing done/ roadmaps that share the branch
+// slug but do not govern a new branch. Returns "" when doneMatches is empty.
 // Lists at most 3 names (sorted); names beyond 3 are summarised as "e mais N".
+// The hint uses the literal placeholder "<name>" — it never emits a ready-to-run command with a
+// concrete roadmap name, to avoid directing an agent to reopen the wrong roadmap.
 func doneMatchesHint(doneMatches []string) string {
 	if len(doneMatches) == 0 {
 		return ""
@@ -4064,11 +4066,7 @@ func doneMatchesHint(doneMatches []string) string {
 		display = sorted[:3]
 		suffix = fmt.Sprintf(", e mais %d", len(sorted)-3)
 	}
-	lines := make([]string, len(display))
-	for i, m := range display {
-		lines[i] = fmt.Sprintf("    trackfw roadmap move %s wip", m)
-	}
-	return fmt.Sprintf("(matched in done/: %s%s — move to wip first:\n%s)", strings.Join(display, ", "), suffix, strings.Join(lines, "\n"))
+	return fmt.Sprintf("(similar names in done/ — concluded roadmaps do not govern a new branch: %s%s. Only if this branch reopens one of them: trackfw roadmap move <name> wip)", strings.Join(display, ", "), suffix)
 }
 
 // BranchNoMatchingRoadmapMessageForExisting is the guidance message for the EXISTING BRANCH

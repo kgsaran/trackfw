@@ -30,6 +30,20 @@ Sítio adicional ausente da tabela: `GovernanceViolation`/`CheckShipGovernance` 
 
 ---
 
+## 2026-10-01 — Apolo (fix/estado-que-governa-a-branch — ML-1D) — INÍCIO
+
+**Início:** 2026-10-01 | Branch: `fix/estado-que-governa-a-branch`
+**Tarefa:** ML-1D corretivo — `doneMatchesHint` não deve sugerir `roadmap move <nome-concreto> wip`; nova mensagem genérica com literal `<name>`
+**Arquivos a modificar:** `internal/validator/validator.go` (`doneMatchesHint`), `internal/validator/validator_branch_existing_test.go`, `docs/agents-working-context.md`
+
+---
+
+## 2026-10-01 — Apolo (fix/estado-que-governa-a-branch — ML-1D) — FIM
+
+`doneMatchesHint` reescrita: nova mensagem genérica com literal `<name>`. Teste `TestBranchGovernanceOrientationForCreation_DoneHint` atualizado. Todos os gates passam (build, tests, grep vazio).
+
+---
+
 ## 2026-10-01 — Apolo (fix/barrier-executa-cada-linha-do-bloco-de-gates — ML-4B) — INÍCIO
 
 **Início:** 2026-10-01 | Branch: `fix/barrier-executa-cada-linha-do-bloco-de-gates`

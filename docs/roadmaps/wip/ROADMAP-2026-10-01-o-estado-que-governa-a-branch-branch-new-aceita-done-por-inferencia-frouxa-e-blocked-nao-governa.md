@@ -182,7 +182,7 @@ go test ./internal/auditsurface/ -count=1
 ```
 
 ### ML-1D — Corretivo: a dica de `done/` não pode mandar reabrir roadmap alheio
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Origem:** auditoria do ML-1B. Com o binário da branch, `branch new fix/barrier-executa-cada-linha-do-bloco-de-gates`
 bloqueia (correto), mas imprime `trackfw roadmap move <X> wip` pronto para cada um dos 3 casados, e 2
