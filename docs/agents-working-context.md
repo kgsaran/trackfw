@@ -43772,3 +43772,11 @@ Windows, medido pelo Lourival e reproduzido por mim na VM. Lição gravada em me
 Windows se reproduz na VM antes do despacho.
 
 Issues abertas desta frente: #490, #494.
+
+## 2026-10-01 — zeus-tf — INÍCIO: #494 + #490 na mesma REQ (estado que governa a branch)
+
+Mesmo mecanismo: o conjunto de estados que o gate branch↔roadmap consulta. #494: `branch new` aceita
+`done/` por inferência frouxa e cria branch sem nada em `wip/`. #490: `blocked/` não governa a branch,
+então commit/validate/push recusam o registro do bloqueio (reproduzido com o binário da `main`).
+Medido: 22 de 217 branches históricas casam com `done/` só por sobreposição de tokens; 126 casam com
+mais de um. Decisão do KG: fechar `done/` também nos gates de branch existente.
