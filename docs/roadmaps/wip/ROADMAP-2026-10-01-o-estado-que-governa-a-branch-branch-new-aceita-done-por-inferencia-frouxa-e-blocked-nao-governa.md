@@ -316,3 +316,26 @@ literal `:(exclude)rm` com roadmap em done/ na base → reconhecido como present
 go build ./...
 go test ./internal/validator/ ./internal/auditsurface/ ./internal/commands/ -count=1
 ```
+
+### ML-3D — Corretivo final: layout `by_agent`, Windows e asserções vácuas
+**Status:** ⬜ Pendente
+**Squad:** artemis-tf
+**Origem:** revisão final do arquiteto. (1) Quem reportou o #494 usa `roadmap_namespacing: by_agent`
+com `wip/` vazio, e todos os cenários novos são `flat`; o laço do `ls-tree` por `done/` resolvido nunca
+rodou com 2 agentes. (2) O NTFS reserva `:`, então o teste do `--literal-pathspecs` não consegue criar
+`:(exclude)rm` no `windows-full-suites`. (3) `validator_test.go` ~:1108 afirma a **ausência** do texto
+antigo `no roadmap is in wip/ nor done/`, que não existe mais: a asserção é vácua. Stubs de
+`push_test.go`/`ship_test.go` ainda carregam o texto antigo.
+**Files affected:** `internal/commands/branch_state_e2e_test.go`,
+`internal/validator/validator_literal_pathspecs_test.go`, `internal/validator/validator_test.go`,
+`internal/commands/push_test.go`, `internal/commands/ship_test.go`
+**Acceptance criteria:**
+- [ ] Cenários `by_agent` (2 agentes, `wip/` vazio) para AC2 e AC5b: reprovam no binário de `e104a7f7`, passam na branch
+- [ ] Teste do `--literal-pathspecs` com `t.Skip` em `windows`, com o motivo escrito
+- [ ] Asserção vácua trocada pelo texto atual; stubs com o texto atual
+- [ ] Relatório: uma frase por teste novo/alterado
+**Gates da wave:**
+```bash
+go build ./...
+go test ./internal/validator/ ./internal/commands/ -count=1
+```
