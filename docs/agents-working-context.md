@@ -2,6 +2,22 @@
 
 ---
 
+## 2026-10-01 — Ártemis (fix/estado-que-governa-a-branch — ML-2B) — INÍCIO
+
+**Início:** 2026-10-01 | Branch: `fix/estado-que-governa-a-branch`
+**Tarefa:** ML-2B Wave 2 — teste de `ship` degradado + remoção do teste informativo de medição
+**Arquivos a modificar:** `internal/commands/ship_test.go` · `internal/commands/branch_state_e2e_test.go` · roadmap · `docs/agents-working-context.md`
+
+---
+
+## 2026-10-01 — Ártemis (fix/estado-que-governa-a-branch — ML-2B) — FIM
+
+Adicionado `TestShip_GovernanceDegraded_PrintsDegradedNotOK` em `internal/commands/ship_test.go`.
+Removido `TestBranchStateE2E_InformativeMeasure217Branches` e seu bloco de comentário em `internal/commands/branch_state_e2e_test.go` (sem helpers exclusivos: todos os helpers eram compartilhados).
+Sabotagem confirmada (FAIL) e restauração confirmada (PASS). Todos os gates verdes: `go build ./...` OK · `go vet ./internal/commands/` OK · `go test ./internal/commands/ -count=1` OK · `git diff -- internal/commands/ship.go` VAZIO.
+
+---
+
 ## 2026-10-01 — Hades (fix/estado-que-governa-a-branch — ML-0A) — INÍCIO
 
 **Início:** 2026-10-01 | Branch: `fix/estado-que-governa-a-branch`

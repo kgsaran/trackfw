@@ -171,6 +171,45 @@ func TestShip_NoWIPRoadmap_Aborts(t *testing.T) {
 	}
 }
 
+// TestShip_GovernanceDegraded_PrintsDegradedNotOK asserts that when checkGovernance
+// returns a GovernanceViolation with non-empty Warnings and empty Missing (degraded — D3 of
+// ADR-2026-10-01: unresolvable base), ship prints "Governance: degraded:" and does NOT print
+// "Governance: OK", and execution continues (ship does not abort).
+//
+// Reconciliation: this test affirms that D3 of ADR-2026-10-01 is honoured — degraded governance
+// (e.g. branch_done_scope_unverifiable) never blocks ship; it warns and continues.
+func TestShip_GovernanceDegraded_PrintsDegradedNotOK(t *testing.T) {
+	t.Parallel()
+	d := shipDeps{
+		execGit: (&mockGit{branch: "feat/my-feature", stagedFiles: "file.go"}).exec,
+		checkGovernance: func() *validator.GovernanceViolation {
+			return &validator.GovernanceViolation{
+				Missing:  nil,
+				Warnings: []string{"branch_done_scope_unverifiable: teste"},
+			}
+		},
+		out:          &bytes.Buffer{},
+		configForge:  "",
+		repoDir:      "",
+		availFn:      func(string) bool { return false },
+		execForgeCLI: func(string, []string) error { return nil },
+	}
+	// runShip may return an error from commit/push (mocked), but must NOT return
+	// a governance error — degraded state is soft and execution continues past Step 2.
+	stdout := d.out.(*bytes.Buffer).String()
+	_ = runShip(shipOpts{message: "feat: x"}, d)
+	stdout = d.out.(*bytes.Buffer).String()
+	if !strings.Contains(stdout, "Governance: degraded:") {
+		t.Errorf("degraded governance must print 'Governance: degraded:', got: %q", stdout)
+	}
+	if !strings.Contains(stdout, "branch_done_scope_unverifiable: teste") {
+		t.Errorf("degraded governance must include the warning text, got: %q", stdout)
+	}
+	if strings.Contains(stdout, "Governance: OK") {
+		t.Errorf("degraded governance must NOT print 'Governance: OK', got: %q", stdout)
+	}
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Doc-only exception — Steps 1 & 2 skip branch-pattern and governance checks
 // ────────────────────────────────────────────────────────────────────────────

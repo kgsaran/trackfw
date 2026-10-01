@@ -235,7 +235,7 @@ go test ./internal/commands/ -count=1
 ```
 
 ### ML-2B — Corretivo: `ship` degradado sem teste; teste informativo sai da suíte
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** artemis-tf
 **Origem:** auditoria do ML-2A. O AC11 exige `ship` além de `push`, mas só o `push` tem teste do caminho
 `Governance: degraded`. E `TestBranchStateE2E_InformativeMeasure217Branches` é uma medição, não uma
@@ -245,8 +245,10 @@ asserção (sempre SKIP na suíte; o próprio comentário dele diz isso).
 a saída contém `Governance: degraded:` e não contém `Governance: OK`; (2) remover
 `TestBranchStateE2E_InformativeMeasure217Branches` e o que só ele usa.
 **Acceptance criteria:**
-- [ ] Teste novo falha se a linha `Governance: degraded` do `ship.go` for trocada por `Governance: OK` (provar)
-- [ ] Relatório: uma frase por teste novo
+- [x] Teste novo falha se a linha `Governance: degraded` do `ship.go` for trocada por `Governance: OK` (provar)
+      ✅ Sabotagem confirmada: `for _, w := range gv.Warnings { fmt.Fprintf(deps.out, "Governance: OK\n") }` → FAIL em 3 asserções; restaurado → PASS.
+- [x] Relatório: uma frase por teste novo
+      ✅ `TestShip_GovernanceDegraded_PrintsDegradedNotOK` afirma que D3 do ADR-2026-10-01 é honrado no `ship`: governança degradada nunca bloqueia a execução, imprime `Governance: degraded:` e nunca `Governance: OK`.
 **Gates da wave:**
 ```bash
 go build ./...
