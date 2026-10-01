@@ -6669,8 +6669,27 @@ tabela hoje.
 | `scripts/trackfw-credential-guard.sh` | sempre |
 | `scripts/trackfw-git-branch-guard.sh` | sempre |
 | `.claude/commands/trackfw/<cmd>.md` (9 arquivos) | somente se `.claude/commands/trackfw/` já existir (AC14: `discover --init` não escreve slash commands — ausência legítima) |
-| `.github/workflows/trackfw-gate.yml` | somente se `ci: github-actions` no `trackfw.yaml` (AC13) **E** `.github/workflows/trackfw-validate.yml` ausente (`ADR-2026-09-29` **D4**) — com o `validate.yml` presente, o `doctor` **não** acusa a ausência do `gate.yml`, porque o gerador deliberadamente não o escreve (**D2**). ⚠️ A supressão vale **só** para `scaffold-missing`: `gate.yml` presente e **defasado** continua sendo acusado. Quando **os dois** estão presentes, o `doctor` emite `scaffold-workflow-duplicated` para `.github/workflows/trackfw-validate.yml` (`ADR-2026-09-29` **D3**) |
+| `.github/workflows/trackfw-gate.yml` | somente se `ci: github-actions` no `trackfw.yaml` (AC13) **E** `.github/workflows/trackfw-validate.yml` ausente (`ADR-2026-09-29` **D4**) — com o `validate.yml` presente, o `doctor` **não** acusa a ausência do `gate.yml`, porque o gerador deliberadamente não o escreve (**D2**). ⚠️ A supressão vale **só** para `scaffold-missing`: `gate.yml` presente e **defasado** continua sendo acusado. 🔴 O `scaffold-workflow-duplicated` (D3) **não** depende desta linha nem da chave `ci:` — ver a nota abaixo da tabela |
 | `.gitlab-ci-trackfw.yml` | somente se `ci: gitlab-ci` no `trackfw.yaml` (AC13) |
+
+🔴 **`scaffold-workflow-duplicated` é presença-em-disco, não `ci:` (#484).** O aviso do D3 sai
+sempre que `trackfw-gate.yml` **e** `trackfw-validate.yml` existem como arquivos regulares — **mesmo
+que o `trackfw.yaml` não declare `ci:`**. Até a #484 ele vivia dentro do `switch cfg.CI`, e um
+projeto com os dois arquivos e sem a chave nunca o recebia. Medido com três braços, mesmos dois
+arquivos no disco, mudando só a linha `ci:`:
+
+```
+sem `ci:`, os dois arquivos        -> NÃO avisava   (o ponto cego)
+`ci: github-actions`, os dois      -> avisava
+`ci: github-actions`, só o gate    -> não avisa     (controle: não dispara a esmo)
+```
+
+**Por que a condição certa é o disco:** dos três sítios envolvidos, o que **reporta** era o único
+amarrado ao `ci:`. Os dois que **escrevem** nunca concordaram sobre ele — `generateGitHubActionsWorkflow`
+usa `cfg.CI`, e `InstallGates` decide pelo seu próprio `DiscoveryResult.CISystem`, "a project can have
+discover's workflow without cfg.CI ever being set" (comentário que já estava no `scaffold_doctor.go`,
+um bloco abaixo). E num fork consumidor os dois arquivos chegam por **merge**, não por `init` — então
+quem mais precisa do aviso era justamente quem não o recebia.
 
 ### validate.sh — pertencimento a conjunto (set-membership, escopado)
 
