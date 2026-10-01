@@ -252,6 +252,19 @@ func hasOddTrailingBackslashes(text string) bool {
 func checkGateFragments(gcmds []roadmapdoc.GateCmd) (status string, failures []string) {
 	failures = []string{}
 	for _, gc := range gcmds {
+		// Guard: multi-line gate text — invariant violation.
+		// The stdin transport is safe because ParseGatesLines cuts by line and
+		// TrimSpace removes \r — each gc.Text is one line in production. With
+		// more than one line, a gate that reads stdin (`read x`) would consume
+		// the next script line as its input (measured by Lourival, PR #495).
+		// Refuse without invoking sh; exit code 2 signals a usage error.
+		if strings.ContainsAny(gc.Text, "\n\r") {
+			failures = append(failures, fmt.Sprintf(
+				"line %d: gate text spans multiple lines — the transport reads one line per gate (rule 5)",
+				gc.Line))
+			continue
+		}
+
 		// Fast path: odd trailing backslash — sh -n passes it (FN, measured),
 		// but it is always a fragment per rule 5.
 		if hasOddTrailingBackslashes(gc.Text) {
@@ -581,6 +594,18 @@ func buildChildEnv(stack []barrierStackEntry) []string {
 // exit codes identical (stdin chosen; env-eval diverges on 5 vectors — exits 1 vs 2
 // for fragments). See vault/notes/windows-argv-troca-aspa-por-contrabarra-sem-espaco-2026-10-01.md.
 func runGateCommand(command string, env []string) (exitCode int, spawnFailed bool) {
+	// Guard: a gate text with embedded newlines spans multiple lines.
+	// The stdin transport is safe because ParseGatesLines (roadmapdoc) cuts by
+	// line and TrimSpace removes trailing \r — so each gate text is guaranteed to
+	// be one line in production. With more than one line, a gate that reads stdin
+	// (`read x`) would consume the NEXT line of the script as its input, as
+	// measured by Lourival in PR #495 (reproduced: `lido=[SEGUNDA_LINHA…]` and
+	// `command not found` for the line that sh tried to read as a command).
+	// Refuse without spawning sh; exit code 2 signals a usage/invariant error.
+	if strings.ContainsAny(command, "\n\r") {
+		return 2, false
+	}
+
 	c := exec.Command("sh")
 	c.Stdin = strings.NewReader(command)
 	c.Env = env

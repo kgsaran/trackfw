@@ -12,6 +12,31 @@
 
 ## 2026-10-01 — Apolo (fix/barrier-executa-cada-linha-do-bloco-de-gates — ML-4A) — FIM
 
+---
+
+## 2026-10-01 — Apolo (fix/barrier-executa-cada-linha-do-bloco-de-gates — ML-4B) — INÍCIO
+
+**Início:** 2026-10-01 | Branch: `fix/barrier-executa-cada-linha-do-bloco-de-gates`
+**Tarefa:** ML-4B Wave 4 — guardar o invariante "um gate = uma linha" em código; guard de `\n`/`\r` em `runGateCommand` e `checkGateFragments`
+**Arquivos a modificar:** `internal/commands/barrier.go` · `internal/commands/barrier_fragment_test.go` · roadmap wip · este arquivo
+
+---
+
+## 2026-10-01 — Apolo (fix/barrier-executa-cada-linha-do-bloco-de-gates — ML-4B) — FIM
+
+Guard de multi-linha adicionado em dois sítios de `barrier.go`:
+- `runGateCommand`: `strings.ContainsAny(command, "\n\r")` → retorna `(2, false)` sem spawn de sh.
+- `checkGateFragments`: mesma verificação no loop de gates → `"line N: gate text spans multiple lines — the transport reads one line per gate (rule 5)"`.
+
+Comentários em ambos os sítios citam a medição do Lourival no PR #495.
+
+Três testes novos em `barrier_fragment_test.go`:
+- `TestBarrierFragment_TransportMultiLineRunGate` — asserta que `runGateCommand` com texto de duas linhas retorna código ≠ 0, `spawnFailed=false`, sentinel ausente.
+- `TestBarrierFragment_TransportMultiLineCheckFragments` — asserta que `checkGateFragments` retorna `"blocked"` com a mensagem exata; sentinel ausente.
+- `TestBarrierFragment_TransportSingleLineReadContra` — asserta que `read x; test -z "$x"` (uma linha) sai 0.
+
+`go build ./...` limpo · `go vet ./internal/commands/` limpo · 390 testes PASS · `make quality` EXIT=0.
+
 Transporte stdin aplicado em dois sítios de `barrier.go`: `checkGateFragments` (`sh -n` via stdin)
 e `runGateCommand` (`sh` via stdin). Paridade medida em macOS sobre 12 vetores: stdin = argv em
 todos; env-eval diverge em 5 (exit 1 vs exit 2 para fragmentos). Stdin escolhido.

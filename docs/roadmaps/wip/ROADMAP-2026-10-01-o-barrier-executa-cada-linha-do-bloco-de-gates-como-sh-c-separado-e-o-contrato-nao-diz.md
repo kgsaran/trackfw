@@ -309,3 +309,31 @@ marcador). É defeito do teste, não do produto.
 go build ./...
 go test ./internal/commands/ -run 'Fragment|Transport' -count=1
 ```
+
+### ML-4B — invariante "um gate = uma linha" em código
+**Owner:** `apolo-tf`
+**Status:** ✅ Concluído
+**Arquivos afetados:** `internal/commands/barrier.go` (`runGateCommand`, `checkGateFragments`) ·
+`internal/commands/barrier_fragment_test.go`
+**Ações:**
+1. **Guard em `runGateCommand`:** se o texto contiver `\n` ou `\r`, retorna código **2** sem chamar o `sh`. Comentário: o stdin é seguro porque a regra 5 garante uma linha por gate; com mais de uma linha, um gate que lê stdin leria a própria próxima linha do script (medição do Lourival, PR #495).
+2. **Guard em `checkGateFragments`:** se `gc.Text` contiver `\n` ou `\r`, acrescenta `line <n>: gate text spans multiple lines — the transport reads one line per gate (rule 5)` às falhas e continua (`continue`). Mesmo comentário citando o PR #495.
+3. **Testes (nomes com `Transport`):**
+   - `TestBarrierFragment_TransportMultiLineRunGate`: `runGateCommand` com texto de duas linhas (segunda linha = `touch <sentinela>`) retorna código ≠ 0, `spawnFailed=false`, sentinela ausente.
+   - `TestBarrierFragment_TransportMultiLineCheckFragments`: `checkGateFragments` com `GateCmd{Text: "...\ntouch <sentinela>", Line: 42}` retorna `"blocked"` com a mensagem exata, sentinela ausente.
+   - `TestBarrierFragment_TransportSingleLineReadContra`: `read x; test -z "$x"` (uma linha) sai 0.
+
+**Critérios de aceite:**
+- [x] Guard em `runGateCommand`: texto com `\n`/`\r` → código 2, sem spawn de sh
+- [x] Guard em `checkGateFragments`: texto com `\n`/`\r` → "blocked" com mensagem exata
+- [x] Comentário nos dois sítios citando a medição do Lourival no PR #495
+- [x] Três testes novos: `TransportMultiLineRunGate`, `TransportMultiLineCheckFragments`, `TransportSingleLineReadContra`
+- [x] `go build ./...` limpo · `go vet ./internal/commands/` limpo · `go test ./internal/commands/ -count=1` verde
+- [x] `make quality` EXIT=0
+
+**Comandos de validação:**
+```bash
+go build ./...
+go vet ./internal/commands/
+go test ./internal/commands/ -count=1
+```

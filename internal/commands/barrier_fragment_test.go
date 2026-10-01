@@ -19,6 +19,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/kgsaran/trackfw/internal/roadmapdoc"
 )
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -379,5 +381,78 @@ func TestBarrierFragment_TransportNoArgvMangling(t *testing.T) {
 	// The sentinel must not exist: the touch on the second line must not have executed.
 	if _, err := os.Stat(sentinel); err == nil {
 		t.Error("sentinel exists — the touch gate executed despite a fragment on line 1")
+	}
+}
+
+// TestBarrierFragment_TransportMultiLineRunGate asserts that runGateCommand
+// rejects a gate text containing an embedded newline, returning exit code 2
+// without spawning sh. The guard fires before any sh invocation; the invariant
+// is that ParseGatesLines delivers one line per gate (rule 5). Measured by
+// Lourival in PR #495: with two lines, a gate that reads stdin (`read x`)
+// consumes the next script line, producing `lido=[SEGUNDA_LINHA…]`.
+func TestBarrierFragment_TransportMultiLineRunGate(t *testing.T) {
+	t.Parallel()
+	sentinel := filepath.Join(t.TempDir(), "multiline-rungatecommand-sentinel")
+	sentinelSlash := filepath.ToSlash(sentinel)
+	// Second line is a touch; it must not execute.
+	cmd := "read x; echo \"lido=[$x]\"\ntouch " + sentinelSlash
+	code, spawnFailed := runGateCommand(cmd, nil)
+	if code == 0 {
+		t.Errorf("runGateCommand: exit code = 0, want non-zero for multi-line gate")
+	}
+	if spawnFailed {
+		t.Errorf("runGateCommand: spawnFailed = true, want false — guard must fire before sh spawn")
+	}
+	if _, err := os.Stat(sentinel); err == nil {
+		t.Error("sentinel exists — sh was spawned and executed the second line despite the multi-line guard")
+	}
+}
+
+// TestBarrierFragment_TransportMultiLineCheckFragments asserts that
+// checkGateFragments rejects a GateCmd whose Text contains an embedded newline,
+// reporting "blocked" with the pinned message "gate text spans multiple lines".
+// The second line would be a sentinel touch; the sentinel being absent proves
+// sh was never invoked. Same invariant as TransportMultiLineRunGate.
+func TestBarrierFragment_TransportMultiLineCheckFragments(t *testing.T) {
+	t.Parallel()
+	sentinel := filepath.Join(t.TempDir(), "multiline-checkfragments-sentinel")
+	sentinelSlash := filepath.ToSlash(sentinel)
+	gcmds := []roadmapdoc.GateCmd{
+		{Text: "read x; echo \"lido=[$x]\"\ntouch " + sentinelSlash, Line: 42},
+	}
+	status, failures := checkGateFragments(gcmds)
+	if status != "blocked" {
+		t.Errorf("checkGateFragments: status = %q, want \"blocked\"", status)
+	}
+	want := "line 42: gate text spans multiple lines — the transport reads one line per gate (rule 5)"
+	found := false
+	for _, f := range failures {
+		if f == want {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected failure %q not found in failures: %v", want, failures)
+	}
+	if _, err := os.Stat(sentinel); err == nil {
+		t.Error("sentinel exists — sh was invoked despite the multi-line guard in checkGateFragments")
+	}
+}
+
+// TestBarrierFragment_TransportSingleLineReadContra asserts that a single-line
+// gate containing `read x; test -z "$x"` passes through runGateCommand with
+// exit 0, proving that the single-line invariant (rule 5) still permits
+// stdin-reading gates. sh reads the script from its own stdin; `read x` then
+// reads from the same (now-exhausted) stdin, x gets the empty string, and
+// `test -z ""` exits 0.
+func TestBarrierFragment_TransportSingleLineReadContra(t *testing.T) {
+	t.Parallel()
+	code, spawnFailed := runGateCommand(`read x; test -z "$x"`, nil)
+	if spawnFailed {
+		t.Skip("sh not found in PATH — skipping single-line read contra-arm")
+	}
+	if code != 0 {
+		t.Errorf("runGateCommand: exit code = %d, want 0 for single-line read gate", code)
 	}
 }
