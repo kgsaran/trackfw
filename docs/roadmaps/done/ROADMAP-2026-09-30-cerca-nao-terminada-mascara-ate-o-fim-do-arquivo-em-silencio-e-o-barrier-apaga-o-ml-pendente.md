@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-30
 req: "docs/req/REQ-2026-09-30-cerca-nao-terminada-mascara-ate-o-fim-do-arquivo-em-silencio-e-o-barrier-apaga-o-ml-pendente.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: cerca nao terminada mascara ate o fim do arquivo em silencio e o barrier apaga o ML pendente
 
-> Created: 2026-09-30 | Status: wip
+> Created: 2026-09-30 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-09-30-cerca-nao-terminada-mascara-ate-o-fim-do-arquivo-em-silencio-e-o-barrier-apaga-o-ml-pendente.md -->
@@ -20,7 +20,7 @@ REQ: docs/req/REQ-2026-09-30-cerca-nao-terminada-mascara-ate-o-fim-do-arquivo-em
 - [x] **AC5** — os 2 arquivos do acervo corrigidos **no mesmo PR**
 - [x] **AC6** — `serve` não quebra
 - [x] **AC7** — `cli-parity.md` descreve o real, por superfície
-- [ ] **AC8** — `make quality` e CI verdes
+- [x] **AC8** — `make quality` e CI verdes — local `EXIT=0` (347 OK / 0 FAIL); CI do PR #492: 20/20 `pass`, mergeado em `e7595c4e`
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
