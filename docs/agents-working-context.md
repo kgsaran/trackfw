@@ -43581,3 +43581,20 @@ Mergeado em `e7595c4e`, CI 20/20 `pass`, #476 fechada pelo GitHub. Roadmap → `
 `roadmap move ... done` já roda a checagem de cerca nova), REQ → `Done`, **8/8 ACs** com evidência.
 
 Pendente do usuário: merge do #489 (fechamento do #485). Issues abertas desta frente: #490, #491.
+
+## 2026-10-01 — zeus-tf — INÍCIO: #491 (o barrier executa cada linha do bloco de gates como sh -c separado)
+
+Branch `fix/barrier-executa-cada-linha-do-bloco-de-gates`, REQ + roadmap em `wip`.
+
+🔴 **Premissa do issue corrigida** (comentário no #491): a execução por linha **está** na regra 5 do
+`cli-parity.md`. O que falta é escrever a consequência (sem estado entre linhas, sem construção
+multilinha), avisar na superfície de autoria e distinguir "bloco malformado" de "gate reprovou".
+
+⚠️ `trackfw branch new` passou **antes** de o roadmap estar em `wip/` (o `roadmap move` tinha falhado
+por causa do alias de `ls` com ícone). O guard casou com algum roadmap em `done/` por sobreposição de
+tokens. Corrigido em seguida, mas fica a observação: com `done/` aceito, o guard de branch é fraco.
+
+Prune rodado só como relatório: apagaria só 1 branch; quase todas as squash-mergeadas aparecem como
+`keep — pending work` (é o #481). Nada aplicado.
+
+Próximo: ML-0A ao `hades-tf`.
