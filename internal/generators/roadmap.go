@@ -45,6 +45,7 @@ type RoadmapContent struct {
 const wave0GateFence = "```bash\n" +
 	"# Wave 0 gate — replace this placeholder with a project-specific check before\n" +
 	"# marking ML-0A done. Do not remove the gate; replace its command (AC13).\n" +
+	"# each line runs as a separate sh -c — see docs/cli-parity.md rule 5\n" +
 	"exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli-parity.md\n" +
 	"```\n"
 

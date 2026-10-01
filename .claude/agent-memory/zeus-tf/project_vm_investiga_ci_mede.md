@@ -35,5 +35,13 @@ triagem inteira de 512 falhas. Medindo no runner, essa dúvida não nasce. E a V
   🔴 A árvore da VM costuma ter **trabalho não commitado** — use `git worktree add --detach` em vez de
   `checkout`, que aborta (e, se não abortasse, descartaria).
 
+- 🔴 **Antes de dizer "só temos macOS", ligue a VM.** Em 2026-10-01 (#491) eu disse isso ao KG, mandei o
+  executor escolher um transporte "por paridade medida em macOS" para um defeito **que só existe no
+  Windows**, e o KG perguntou por que a VM não estava nas validações. Reproduzir na VM levou ~5 min.
+- **SSH recusado com a VM `started`:** o `sshd` parou. Sem console:
+  `utmctl exec Windows-Lab --cmd powershell.exe -NoProfile -Command "Start-Service sshd"`.
+  `utmctl ip-address Windows-Lab` confirma o IP. O `scp` aceita `Lab@…:C:/Users/Lab/x.sh` (não `/c/…`).
+  Em 2026-10-01: bash **5.3.15** (cygwin x86_64 emulado), `go1.27.0 windows/arm64`.
+
 Relacionado: [[medir-com-a-regra-nao-com-grep]] — mesma família: o instrumento tem que medir o
 objetivo, não um proxy conveniente.

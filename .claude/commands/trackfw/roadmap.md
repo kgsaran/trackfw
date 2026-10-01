@@ -48,6 +48,7 @@ Gere um roadmap de implementação em microlotes para uma REQ do projeto.
    ```bash
    # Wave 0 gate — replace this placeholder with a project-specific check before
    # marking ML-0A done. Do not remove the gate; replace its command (AC13).
+   # each line runs as a separate sh -c — see docs/cli-parity.md rule 5
    exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli-parity.md
    ```
 

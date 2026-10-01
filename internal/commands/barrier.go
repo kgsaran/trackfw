@@ -200,6 +200,99 @@ func parseGates(lines []string, waveStart, waveEnd int) ([]string, *barrierUsage
 	return cmds, nil
 }
 
+// parseGatesWithLines wraps roadmapdoc.ParseGatesLines for use inside runBarrier.
+// It preserves line-number information needed by the fragment check (ML-2A).
+func parseGatesWithLines(lines []string, waveStart, waveEnd int) ([]roadmapdoc.GateCmd, *barrierUsageError) {
+	gcmds, err := roadmapdoc.ParseGatesLines(lines, waveStart, waveEnd)
+	if err != nil {
+		return nil, &barrierUsageError{msg: err.Error()}
+	}
+	return gcmds, nil
+}
+
+// hasOddTrailingBackslashes reports whether text ends with an odd number of
+// consecutive backslashes. A trailing odd-\ is a shell line-continuation that
+// makes the line incomplete when run in a separate sh -c invocation (rule 5).
+// sh -n does not detect this case (measured FN — vault/notes/sh-n-misses-…).
+func hasOddTrailingBackslashes(text string) bool {
+	count := 0
+	for i := len(text) - 1; i >= 0; i-- {
+		if text[i] == '\\' {
+			count++
+		} else {
+			break
+		}
+	}
+	return count%2 == 1
+}
+
+// checkGateFragments runs the odd-\ rule and sh -n for every gate before any
+// gate is executed. It is called only inside trusted paths (after the trust
+// check) — untrusted roadmaps never reach this function.
+//
+// Returns:
+//   - "", nil      — every gate is syntactically complete; safe to execute
+//   - "blocked", failures — one or more fragments detected; failures has one
+//     entry per bad gate in the format pinned by docs/cli-parity.md (rule 5)
+//   - "not_evaluated", {shMissingMsg} — sh could not be spawned at all
+//
+// sh is resolved through $PATH (same as runGateCommand). c.Env is nil so the
+// child inherits the process environment — sh -n is a pure syntax check and
+// never executes any code, so TRACKFW_BARRIER_STACK propagation is unnecessary.
+//
+// Transport: the gate text is delivered to sh via stdin (c.Stdin), NOT via
+// argv ("-c", text). On Windows, Go's exec.Command applies EscapeArg to every
+// argument; MSYS reparsing then converts an unquoted `"` to `\`, so
+// `esperado="scaffold.go` arrives as `esperado=\scaffold.go` — a valid
+// assignment that exits 0 and is silently approved. Stdin is opaque to
+// EscapeArg and reaches sh byte-identical on every OS.
+// Parity measured on macOS over 12 vectors: `sh -n` with stdin and with argv
+// agree on all 12 (the argv mangling only manifests on Windows).
+// See vault/notes/windows-argv-troca-aspa-por-contrabarra-sem-espaco-2026-10-01.md.
+func checkGateFragments(gcmds []roadmapdoc.GateCmd) (status string, failures []string) {
+	failures = []string{}
+	for _, gc := range gcmds {
+		// Guard: multi-line gate text — invariant violation.
+		// The stdin transport is safe because ParseGatesLines cuts by line and
+		// TrimSpace removes \r — each gc.Text is one line in production. With
+		// more than one line, a gate that reads stdin (`read x`) would consume
+		// the next script line as its input (measured by Lourival, PR #495).
+		// Refuse without invoking sh; exit code 2 signals a usage error.
+		if strings.ContainsAny(gc.Text, "\n\r") {
+			failures = append(failures, fmt.Sprintf(
+				"line %d: gate text spans multiple lines — the transport reads one line per gate (rule 5)",
+				gc.Line))
+			continue
+		}
+
+		// Fast path: odd trailing backslash — sh -n passes it (FN, measured),
+		// but it is always a fragment per rule 5.
+		if hasOddTrailingBackslashes(gc.Text) {
+			failures = append(failures, fmt.Sprintf(
+				"line %d: incomplete command — each line of the gates block runs as a separate sh -c (rule 5): %s",
+				gc.Line, gc.Text))
+			continue
+		}
+		// Deliver the gate text via stdin, not argv — see transport comment above.
+		c := exec.Command("sh", "-n")
+		c.Stdin = strings.NewReader(gc.Text)
+		if err := c.Run(); err != nil {
+			if _, ok := err.(*exec.ExitError); !ok {
+				// sh could not be spawned: same not_evaluated signal as evalGateCommands.
+				return "not_evaluated", []string{shMissingMsg}
+			}
+			// sh ran and reported a syntax error.
+			failures = append(failures, fmt.Sprintf(
+				"line %d: incomplete command — each line of the gates block runs as a separate sh -c (rule 5): %s",
+				gc.Line, gc.Text))
+		}
+	}
+	if len(failures) > 0 {
+		return "blocked", failures
+	}
+	return "", nil
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Roadmap trust check (AC11, AC12 — docs/cli-parity.md § Trust and --trust-local-gates)
 // ────────────────────────────────────────────────────────────────────────────
@@ -491,8 +584,30 @@ func buildChildEnv(stack []barrierStackEntry) []string {
 // exit 127 with spawnFailed=false — sh started and ran, then reported that its
 // child command doesn't exist. 127 is a normal (if unusual) exit code, never a
 // signal for "sh is missing" (measured in ML-0A).
+//
+// Transport: the gate text is delivered via stdin (c.Stdin = strings.NewReader(command)),
+// NOT via argv. This is the same reason as checkGateFragments: on Windows, Go's
+// EscapeArg + MSYS reparse silently converts `esperado="scaffold.go` (a fragment) into
+// `esperado=\scaffold.go` (a valid assignment that exits 0), making a malformed gate
+// appear to pass. Stdin is byte-identical on all OSes.
+// Parity with the former `sh -c <argv>` form measured on macOS over 12 vectors: all
+// exit codes identical (stdin chosen; env-eval diverges on 5 vectors — exits 1 vs 2
+// for fragments). See vault/notes/windows-argv-troca-aspa-por-contrabarra-sem-espaco-2026-10-01.md.
 func runGateCommand(command string, env []string) (exitCode int, spawnFailed bool) {
-	c := exec.Command("sh", "-c", command)
+	// Guard: a gate text with embedded newlines spans multiple lines.
+	// The stdin transport is safe because ParseGatesLines (roadmapdoc) cuts by
+	// line and TrimSpace removes trailing \r — so each gate text is guaranteed to
+	// be one line in production. With more than one line, a gate that reads stdin
+	// (`read x`) would consume the NEXT line of the script as its input, as
+	// measured by Lourival in PR #495 (reproduced: `lido=[SEGUNDA_LINHA…]` and
+	// `command not found` for the line that sh tried to read as a command).
+	// Refuse without spawning sh; exit code 2 signals a usage/invariant error.
+	if strings.ContainsAny(command, "\n\r") {
+		return 2, false
+	}
+
+	c := exec.Command("sh")
+	c.Stdin = strings.NewReader(command)
 	c.Env = env
 	if err := c.Run(); err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
@@ -699,12 +814,16 @@ func runBarrier(cmd *cobra.Command, roadmapArg string, waveLabel string, jsonOut
 	}
 
 	// ── check: gates ──────────────────────────────────────────────────────────
-	gateCommands, gerr := parseGates(lines, target.Start, target.End)
+	gcmds, gerr := parseGatesWithLines(lines, target.Start, target.End)
 	if gerr != nil {
 		usageExit(cmd, "%s", gerr.Error())
 		return
 	}
-	gatesCmds := gateCommands
+	// Build the flat text slice for the Commands field (pinned contract: []string).
+	gatesCmds := make([]string, len(gcmds))
+	for i, gc := range gcmds {
+		gatesCmds[i] = gc.Text
+	}
 	gatesCheck := barrierCheck{
 		Name:     "gates",
 		Evidence: []string{},
@@ -716,24 +835,35 @@ func runBarrier(cmd *cobra.Command, roadmapArg string, waveLabel string, jsonOut
 	// --trust-local-gates bypasses the check (injected by the /trackfw:barrier
 	// slash command for the WIP flow — AC12, AC15).
 	if trustLocalGates {
-		// Explicit consent: evaluate gates from local content.
-		status, evidence, failures := evalGateCommands(gateCommands, childEnv)
-		gatesCheck.Status = status
-		gatesCheck.Evidence = evidence
-		gatesCheck.Failures = failures
+		// Explicit consent: check fragments (ML-2A) before executing.
+		if fragStatus, fragFails := checkGateFragments(gcmds); fragStatus != "" {
+			gatesCheck.Status = fragStatus
+			gatesCheck.Failures = fragFails
+		} else {
+			status, evidence, failures := evalGateCommands(gatesCmds, childEnv)
+			gatesCheck.Status = status
+			gatesCheck.Evidence = evidence
+			gatesCheck.Failures = failures
+		}
 	} else {
 		verdict := roadmapTrustForGates(roadmapPath, data)
 		if !verdict.trusted {
 			// Roadmap is not trusted: do not execute gates (AC3, AC14).
 			// Report as not_evaluated — distinct from passed and blocked (AC6).
+			// checkGateFragments is NOT called for untrusted roadmaps (ML-2A).
 			gatesCheck.Status = "not_evaluated"
 			gatesCheck.Failures = append(gatesCheck.Failures, verdict.failureMsg)
 		} else {
-			// Trusted (fail-open): evaluate gates.
-			status, evidence, failures := evalGateCommands(gateCommands, childEnv)
-			gatesCheck.Status = status
-			gatesCheck.Evidence = evidence
-			gatesCheck.Failures = failures
+			// Trusted: check fragments (ML-2A) before executing.
+			if fragStatus, fragFails := checkGateFragments(gcmds); fragStatus != "" {
+				gatesCheck.Status = fragStatus
+				gatesCheck.Failures = fragFails
+			} else {
+				status, evidence, failures := evalGateCommands(gatesCmds, childEnv)
+				gatesCheck.Status = status
+				gatesCheck.Evidence = evidence
+				gatesCheck.Failures = failures
+			}
 		}
 	}
 

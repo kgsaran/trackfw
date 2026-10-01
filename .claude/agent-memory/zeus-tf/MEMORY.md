@@ -17,7 +17,7 @@
 - [Agente nunca roda em background](feedback_agente_nao_roda_em_background.md) — background + fim de turno = órfão; e retomar é SendMessage, não Agent novo
 - [Branch por objetivo, não por REQ](feedback_branch_por_objetivo_nao_por_req.md) — várias REQs na mesma branch se o objetivo final é um; organizar o PR por REQ
 - [Sem PR aberto, a implementação é nossa](feedback_sem_pr_aberto_implementacao_e_nossa.md) — oferta ≠ PR; dizer no ticket que abrimos a REQ e vamos implementar
-- [VM investiga, CI mede](project_vm_investiga_ci_mede.md) — VM é ARM64 e runner é x64; número que vira afirmação sai do windows-census.yml, e diferença mede as duas pernas no mesmo runner
+- [VM investiga, CI mede](project_vm_investiga_ci_mede.md) — 🔴 defeito de Windows: ligue a VM antes de dizer "só macOS" (sshd via `utmctl exec`); número que vira afirmação sai do CI x64
 - [Palavra-chave de fechamento é em inglês](project_palavra_chave_de_fechamento_e_em_ingles.md) — "Fecha #N" não fecha; e o gate que checa isso é driblado por `Fecha **#N**` (markdown quebra a adjacência)
 - [O instrumento mente](feedback_o_instrumento_mente.md) — zsh sem word-splitting, `$?` do pipe e `ls` com alias; unanimidade num corpus é sinal de teste quebrado
 - [Ao publicar rc, verificar os três canais](feedback_rc_verificar_os_tres_canais.md) — GitHub erra por default (goreleaser `prerelease` ausente); npm/PyPI acertam sozinhos

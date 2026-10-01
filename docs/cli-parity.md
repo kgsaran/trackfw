@@ -2628,6 +2628,43 @@ These are literal parsing rules. All three runtimes must implement them identica
    A wave with no `**Gates da wave:**` block declares zero gates — that is legal and yields a
    `gates` check with `status: "passed"` and an empty `commands` array. The barrier **never**
    invents a gate.
+   **Consequence of per-line execution:** each gate command runs in its own `sh -c` process.
+   There is no shared state between lines: `export`, `cd`, and variable assignments do not
+   survive to the next line. Multi-line constructs — unbalanced quotes, `$(`, heredoc openers,
+   trailing `\` — do not produce a meaningful gate result.
+   Every line must be a **complete, independent command**.
+   **What the barrier checks before running any gate** (trusted roadmaps only, #491): each line
+   goes through `sh -n` (syntax only, nothing executes), and a line ending in an **odd** number
+   of `\` is a continuation. Any hit fails the `gates` check with
+   `line <n>: incomplete command — each line of the gates block runs as a separate sh -c (rule 5): <cmd>`
+   and **no** gate of the block runs.
+   **Transport:** both the fragment check (`sh -n`) and the gate execution (`sh`) receive the gate
+   text via **stdin**, not via argv. On Windows, Go's `EscapeArg` + MSYS reparse converts an
+   unquoted `"` in an argument without spaces (e.g. `esperado="scaffold.go`) to a `\`, producing a
+   valid assignment that exits 0 — a fragment silently approved. Stdin is opaque to `EscapeArg` and
+   arrives byte-identical on every OS. Parity with the former `sh -c <argv>` form was measured on
+   macOS over 12 vectors (all exit codes identical); the stdin form was chosen over
+   `sh -c 'eval "$TRACKFW_GATE_CMD"'` because that form produces exit 1 instead of exit 2 for
+   fragments (5 vectors diverge). See
+   `vault/notes/windows-argv-troca-aspa-por-contrabarra-sem-espaco-2026-10-01.md`.
+   **Declared residue** (0 occurrences in this repository's roadmaps, 2026-10-01):
+   - a **heredoc opener** (`cat <<EOF`) passes `sh -n` and runs with an empty body — a false green;
+   - a line whose trailing `\` sits **inside a comment** (`cmd # note \`) is flagged although `sh`
+     ignores it — a false positive; move the `\` or drop it;
+   - a **bashism** the local `sh` rejects (e.g. `<(…)` under `dash`) is reported as "incomplete
+     command", which names the wrong cause — gates are POSIX `sh` (ADR-2026-09-01).
+   Wrong (two lines; `$n` is empty on line 2):
+   ```
+   n=$(git rev-list --count HEAD)
+   test "$n" -gt 0 || { echo "no commits" >&2; exit 1; }
+   ```
+   Right (one line, joined with `;`):
+   ```
+   n=$(git rev-list --count HEAD); test "$n" -gt 0 || { echo "no commits" >&2; exit 1; }
+   ```
+   For gates with substantial logic, put the logic in a script under `scripts/` and call the
+   script from the gate line. See
+   `vault/notes/gates-da-wave-sao-um-comando-por-linha-2026-08-29.md`.
 6. **Malformed input.** A wave heading whose number is not parseable is a usage error (exit 2)
    per rule 3 above. Clause 2 ("ML whose body cannot be delimited") is **dead letter** in the
    current parser: `ParseMLs` never fails. An **unterminated code fence** is handled per surface:
@@ -2655,10 +2692,11 @@ These are literal parsing rules. All three runtimes must implement them identica
 
 The `**Gates da wave:**` block (rule 5 above) is a **contract written in POSIX shell**, not a
 script interpreted by whatever shell the host OS defaults to. All three CLIs execute it with
-`sh -c`, resolved through `$PATH`, on every operating system — the Go CLI has always done this
-(`exec.Command("sh", "-c", command)`); Node and Python previously used `spawnSync(cmd, { shell:
-true })` / `subprocess.run(cmd, shell=True)`, which run through the host shell — `cmd.exe` on
-Windows.
+`sh`, resolved through `$PATH`, on every operating system — the Go CLI delivers the gate text
+via **stdin** (`exec.Command("sh"); c.Stdin = strings.NewReader(command)`) rather than argv
+(`exec.Command("sh", "-c", command)`) to avoid Windows argv mangling (see rule 5 transport note
+above); Node and Python previously used `spawnSync(cmd, { shell: true })` /
+`subprocess.run(cmd, shell=True)`, which run through the host shell — `cmd.exe` on Windows.
 
 **The evidence that decided this, not a preference.** A scan of every `**Gates da wave:**` block
 across the project's roadmaps found **83 commands**: 35 `grep`/`sed`/`awk`, 14 `test`/`[`, 8
@@ -2907,7 +2945,7 @@ so that a diff of two runtimes' JSON output for the same fixture is empty:
 | `wave_headings` | _(none — passed means empty)_ | `line <n>: "<token>" is not a valid wave label` |
 | `mls_complete` | `<ML-id>: ✅` | `<ML-id>: not complete (status: <marker or "missing">)` |
 | `acceptance_evidence` | `<ML-id>: <n> criteria met` | `<ML-id>: <n> unmet acceptance criteria` or `<ML-id>: no acceptance block` |
-| `gates` | `<command>: exit 0` | `<command>: exit <code>` |
+| `gates` | `<command>: exit 0` | `<command>: exit <code>` · `line <n>: incomplete command — each line of the gates block runs as a separate sh -c (rule 5): <cmd>` (fragment detected by `sh -n` or odd-`\` rule before any gate executes; see rule 5) |
 | `validate` | `<v> violations, <w> warnings` | `<v> violations, <w> warnings` |
 
 Determinism contract:
@@ -4495,6 +4533,7 @@ REQ:
 ```bash
 # Wave 0 gate — replace this placeholder with a project-specific check before
 # marking ML-0A done. Do not remove the gate; replace its command (AC13).
+# each line runs as a separate sh -c — see docs/cli-parity.md rule 5
 exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli-parity.md
 ```
 

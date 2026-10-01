@@ -477,7 +477,7 @@ A wave passes only when **all four** built-in checks are green:
 |---|---|
 | `mls_complete` | The wave has at least one ML and every ML is marked `**Status:** ✅` |
 | `acceptance_evidence` | Every ML has a non-empty `**Critérios de aceite:**` block with no unchecked `- [ ]` line |
-| `gates` | Every command declared under the wave's `**Gates da wave:**` fenced block exits 0 — a wave with no such block declares zero gates, and the barrier never invents one |
+| `gates` | Every command declared under the wave's `**Gates da wave:**` fenced block exits 0 — a wave with no such block declares zero gates, and the barrier never invents one. 🔴 Each non-empty, non-comment line runs as a **separate `sh -c`** — there is no shared state between lines; see rule 5 in `docs/cli-parity.md`. |
 | `validate` | `trackfw validate --json` reports `violations: 0` |
 
 ### Exit codes

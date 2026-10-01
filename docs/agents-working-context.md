@@ -2,6 +2,95 @@
 
 ---
 
+## 2026-10-01 — Apolo (fix/barrier-executa-cada-linha-do-bloco-de-gates — ML-4A) — INÍCIO
+
+**Início:** 2026-10-01 | Branch: `fix/barrier-executa-cada-linha-do-bloco-de-gates`
+**Tarefa:** ML-4A Wave 4 — o texto do gate deixa de passar por argv; transporte stdin + teste portável do `sh` falso
+**Arquivos a modificar:** `internal/commands/barrier.go` · `internal/commands/barrier_fragment_test.go` · `docs/cli-parity.md` · `vault/notes/`
+
+---
+
+## 2026-10-01 — Apolo (fix/barrier-executa-cada-linha-do-bloco-de-gates — ML-4A) — FIM
+
+---
+
+## 2026-10-01 — Apolo (fix/barrier-executa-cada-linha-do-bloco-de-gates — ML-4B) — INÍCIO
+
+**Início:** 2026-10-01 | Branch: `fix/barrier-executa-cada-linha-do-bloco-de-gates`
+**Tarefa:** ML-4B Wave 4 — guardar o invariante "um gate = uma linha" em código; guard de `\n`/`\r` em `runGateCommand` e `checkGateFragments`
+**Arquivos a modificar:** `internal/commands/barrier.go` · `internal/commands/barrier_fragment_test.go` · roadmap wip · este arquivo
+
+---
+
+## 2026-10-01 — Apolo (fix/barrier-executa-cada-linha-do-bloco-de-gates — ML-4B) — FIM
+
+Guard de multi-linha adicionado em dois sítios de `barrier.go`:
+- `runGateCommand`: `strings.ContainsAny(command, "\n\r")` → retorna `(2, false)` sem spawn de sh.
+- `checkGateFragments`: mesma verificação no loop de gates → `"line N: gate text spans multiple lines — the transport reads one line per gate (rule 5)"`.
+
+Comentários em ambos os sítios citam a medição do Lourival no PR #495.
+
+Três testes novos em `barrier_fragment_test.go`:
+- `TestBarrierFragment_TransportMultiLineRunGate` — asserta que `runGateCommand` com texto de duas linhas retorna código ≠ 0, `spawnFailed=false`, sentinel ausente.
+- `TestBarrierFragment_TransportMultiLineCheckFragments` — asserta que `checkGateFragments` retorna `"blocked"` com a mensagem exata; sentinel ausente.
+- `TestBarrierFragment_TransportSingleLineReadContra` — asserta que `read x; test -z "$x"` (uma linha) sai 0.
+
+`go build ./...` limpo · `go vet ./internal/commands/` limpo · 390 testes PASS · `make quality` EXIT=0.
+
+Transporte stdin aplicado em dois sítios de `barrier.go`: `checkGateFragments` (`sh -n` via stdin)
+e `runGateCommand` (`sh` via stdin). Paridade medida em macOS sobre 12 vetores: stdin = argv em
+todos; env-eval diverge em 5 (exit 1 vs exit 2 para fragmentos). Stdin escolhido.
+
+Fake `sh` script trocado por binário Go (`buildFakeSh`) em `TestBarrierFragment_UntrustedRoadmap_ShNotCalled`;
+usa `FAKE_SH_MARKER` env var para o caminho do marcador; funciona em Windows (`sh.exe`).
+
+Novo teste `TestBarrierFragment_TransportNoArgvMangling`: gate `esperado="scaffold.go` → blocked
++ sentinel não executa. Roda em todo SO.
+
+Nota de vault: `windows-argv-troca-aspa-por-contrabarra-sem-espaco-2026-10-01.md`.
+`cli-parity.md`: transport note em rule 5 e no § POSIX shell contract.
+6 Fragment/Transport testes, todos PASS. `make quality` EXIT=0. Barrier real: waves 0–3 `passed`.
+AC6 (CI Windows) aguarda push do arquiteto.
+
+---
+
+## 2026-10-01 — Apolo (fix/barrier-executa-cada-linha-do-bloco-de-gates — ML-2A) — ENTREGUE
+
+**Início:** 2026-10-01 | **Fim:** 2026-10-01 | Branch: `fix/barrier-executa-cada-linha-do-bloco-de-gates`
+**Tarefa:** ML-2A Wave 2 — `sh -n` por linha no caminho de avaliação dos gates
+**Arquivos afetados:** `internal/commands/barrier.go` · `internal/commands/barrier_fragment_test.go` (novo) · `docs/cli-parity.md` · roadmap ML-2A ✅ · `docs/agents-working-context.md`
+
+**Resultado:**
+- `parseGatesWithLines`, `hasOddTrailingBackslashes`, `checkGateFragments` adicionados a `barrier.go`
+- `runBarrier`: ambos os caminhos trusted chamam `checkGateFragments` antes de `evalGateCommands`; untrusted path inalterado
+- 5 testes Fragment: todos PASS (`go test ./internal/commands/ -run 'Fragment' -count=1`)
+- `make quality` EXIT=0, `check-roadmap-barrier-contract.sh` sem re-pin
+- Barrier real: Wave 0 result: passed · Wave 1 result: passed · Wave 2 result: passed
+
+---
+
+## 2026-10-01 — Hades (fix/barrier-executa-cada-linha-do-bloco-de-gates — ML-0A) — ENTREGUE (v4)
+
+**Início:** 2026-10-01 | **Fim:** 2026-10-01 | Branch: `fix/barrier-executa-cada-linha-do-bloco-de-gates`
+**Tarefa:** ML-0A Wave 0 — medir o acervo e decidir entre (a), (b) e (c)
+**Arquivos afetados:** `docs/seguranca/2026-10-01-wave0-gate-por-linha.md` (criado, v3) · `vault/notes/sh-n-misses-heredoc-opener-e-trailing-backslash-2026-10-01.md` (criado) · `vault/notes/index.md` (atualizado) · `docs/roadmaps/wip/ROADMAP-2026-10-01-o-barrier-executa-cada-linha-do-bloco-de-gates-como-sh-c-separado-e-o-contrato-nao-diz.md` (ML-0A ✅)
+
+**Resultado final (v4, todos os números verificados com embedded scanner):**
+- docs/roadmaps: 86 blocos / 173 cmds / sh-n OK=162 FAIL=11 / (i)=1 (ii)=1 (iii)=41
+  - done/: 63 blocos, FAIL=11, bi=1, bii=1 (arquivo: ROADMAP-2026-08-28-gate-de-ci-pinado...)
+  - backlog/wip/abandoned: 23 blocos, FAIL=0, bi=0, bii=0
+- scripts/testdata: 15 blocos / 55 cmds / sh-n OK=44 FAIL=11 / (i)=1 (ii)=1 (iii)=13
+- internal/roadmapdoc/testdata: 42 blocos / 105 cmds / sh-n OK=94 FAIL=11 / (i)=1 (ii)=1 (iii)=26
+- bi/bii file (todas 3 universos): ROADMAP-2026-08-28-gate-de-ci-pinado-na-versao-geradora-e-install-sh-honrando-trackfw-version.md
+- sh-n medidos: trailing `&&`/`||`/`|` = TP (exit 2). FNs confirmados: trailing-`\` puro e heredoc opener.
+- trailing-`\` rule: ímpar count (não endswith). Heredoc: body lê da string `-c`, não stdin. Zero instâncias no corpus.
+- FenceMask: 1 gate em fence (ROADMAP-2026-08-22, Wave 2, em todos 3 universos — mesma cópia). Go e Python extraem igualmente. Findingo separado de #491.
+- PINNED_CORPUS_HASH: não muda com (b). Contrato `<cmd>: exit N` (barrier_test.go:639 + cli-parity.md:2620) preservado.
+- Trust check: whole-file byte compare (barrier.go:239,334). F1 invariant inalterado por (b). Sob (c): comentários executariam como no-ops.
+- **Recomendação: opção (b)** com (a) como pré-requisito. Scanner embedded no parecer com per-state tally e bi/bii filenames. Vault note criada.
+
+---
+
 ## 2026-10-01 — Apolo (fix/cerca-nao-terminada-mascara-em-silencio — ML-4B) — BLOQUEADO
 
 **Inicio:** 2026-10-01 | Branch: `fix/cerca-nao-terminada-mascara-em-silencio`
@@ -43581,3 +43670,94 @@ Mergeado em `e7595c4e`, CI 20/20 `pass`, #476 fechada pelo GitHub. Roadmap → `
 `roadmap move ... done` já roda a checagem de cerca nova), REQ → `Done`, **8/8 ACs** com evidência.
 
 Pendente do usuário: merge do #489 (fechamento do #485). Issues abertas desta frente: #490, #491.
+
+## 2026-10-01 — zeus-tf — INÍCIO: #491 (o barrier executa cada linha do bloco de gates como sh -c separado)
+
+Branch `fix/barrier-executa-cada-linha-do-bloco-de-gates`, REQ + roadmap em `wip`.
+
+🔴 **Premissa do issue corrigida** (comentário no #491): a execução por linha **está** na regra 5 do
+`cli-parity.md`. O que falta é escrever a consequência (sem estado entre linhas, sem construção
+multilinha), avisar na superfície de autoria e distinguir "bloco malformado" de "gate reprovou".
+
+⚠️ `trackfw branch new` passou **antes** de o roadmap estar em `wip/` (o `roadmap move` tinha falhado
+por causa do alias de `ls` com ícone). O guard casou com algum roadmap em `done/` por sobreposição de
+tokens. Corrigido em seguida, mas fica a observação: com `done/` aceito, o guard de branch é fraco.
+
+Prune rodado só como relatório: apagaria só 1 branch; quase todas as squash-mergeadas aparecem como
+`keep — pending work` (é o #481). Nada aplicado.
+
+Próximo: ML-0A ao `hades-tf`.
+
+---
+
+## 2026-10-01 — Apolo (fix/barrier-executa-cada-linha-do-bloco-de-gates — ML-1B) — ENTREGUE
+
+**Início:** 2026-10-01 | **Fim:** 2026-10-01 | Branch: `fix/barrier-executa-cada-linha-do-bloco-de-gates`
+**Tarefa:** ML-1B Wave 1 — a consequência escrita onde o autor aprende a escrever gate
+**Arquivos afetados:** `docs/cli-parity.md` (regra 5 + template) · `README.md` · `vault/notes/barrier-gate-auto-referencial-vira-fork-bomb-2026-09-30.md` · `docs/roadmaps/done/ROADMAP-2026-08-28-…` (reescrita do bloco de gates) · `internal/generators/roadmap.go` · `internal/generators/scaffold.go` · `.claude/commands/trackfw/roadmap.md` (artefato versionado do scaffold)
+
+**Resultado:** `go build ./...` OK · `go test ./internal/generators/ -count=1` verde (28s) · `sh -n` zero falhas em 162 comandos em `docs/roadmaps/`
+**Item 4 (medição):** comentário adicionado ao `wave0GateFence` — seguro porque nenhum teste importa a constante; `doctor` reportará drift em consumidores (comportamento correto, `trackfw update` sincroniza).
+**Desvio:** START foi appendado antes do FINISH; entrada corrigida in-place ao final.
+**Risco residual:** frozen corpus em `internal/roadmapdoc/testdata/corpus/` ainda tem o bloco antigo — será tratado por ML-1A junto com a atualização do `barrier-baseline.txt`. Contra a árvore v8, Gate 2 do ROADMAP-2026-08-28 falharia por conteúdo (npm/src e pypi/trackfw ausentes), não por sintaxe — preservado como registro histórico.
+
+---
+
+## 2026-10-01 — Apolo (fix/barrier-executa-cada-linha-do-bloco-de-gates — ML-1A) — INÍCIO
+
+**Início:** 2026-10-01 | Branch: `fix/barrier-executa-cada-linha-do-bloco-de-gates`
+**Tarefa:** ML-1A Wave 1 — `ParseGates` com número de linha e o marcador fora de cerca (F1)
+**Arquivos afetados:** `internal/roadmapdoc/roadmapdoc.go` · `internal/roadmapdoc/gates_lines_test.go` (novo) · `internal/roadmapdoc/testdata/barrier-baseline.txt`
+
+---
+
+## 2026-10-01 — Apolo (fix/barrier-executa-cada-linha-do-bloco-de-gates — ML-1A) — FIM
+
+`GateCmd` + `ParseGatesLines` adicionados em `roadmapdoc.go`; `ParseGates` virou wrapper.
+F1 (REQ #491): marcador `**Gates da wave:**` dentro de cerca mascarada por `FenceMask` é silenciado;
+varredura continua para o próximo marcador — Wave 2 do `done/ROADMAP-2026-08-22-…` passa de
+`[exit 1 # placeholder…]` para `[]`.
+Baseline atualizada (1 entrada: Wave 2 do arquivo citado).
+Diff before/after: exatamente 3 linhas (o arquivo + 2 cópias no corpus/snapshot), todas Wave 2.
+4 testes novos, todos PASS. `go test ./internal/roadmapdoc/ ./internal/commands/ ./internal/validator/ -count=1` verde.
+
+---
+
+## 2026-10-01 — Hades (fix/barrier-executa-cada-linha-do-bloco-de-gates — ML-3A) — INÍCIO
+
+**Início:** 2026-10-01 | Branch: `fix/barrier-executa-cada-linha-do-bloco-de-gates`
+**Tarefa:** ML-3A Wave 3 — revisão independente de segurança do spawn de `sh` (`checkGateFragments`, F1)
+**Arquivos de leitura:** `internal/commands/barrier.go` (~:229-270, ~:780-821) · `internal/roadmapdoc/roadmapdoc.go` (ParseGatesLines, FenceMask) · commits 175de3a4 e dab369dc
+
+---
+
+## 2026-10-01 — Hades (fix/barrier-executa-cada-linha-do-bloco-de-gates — ML-3A) — FIM
+
+**Veredito: APROVA.**
+
+Três propriedades verificadas por medição:
+1. `sh -n` roda somente em roadmaps trusted (ambos os caminhos). Fake-sh sentinela confirma ausência em untrusted.
+2. `sh -n -c '<cmd>'` não executa em nenhum vetor testado (command substitution, backtick, arith, trap, alias, function, dot, heredoc, process sub) em sh=bash3.2, bash --posix e dash.
+3. F1 não esconde gates legítimos: FenceMaskCheck bloqueia cerca não terminada upstream; `continue` no scanner garante marcador real após exemplo fenced é encontrado. 162 comandos do corpus inalterados.
+
+Dois resíduos aceitos (impacto zero no corpus, não requerem ML corretivo):
+- R1: `cmd # comentário \` — falso positivo do odd-`\` check (0 ocorrências no corpus). Declarar no cli-parity.md.
+- R2: bashism rejeitado por dash recebe mensagem "incomplete command" (causa errada, 0 ocorrências). Declarar no comentário do checkGateFragments.
+
+**Entregável:** `docs/seguranca/2026-10-01-wave3-revisao-sh-n.md`
+
+## 2026-10-01 — zeus-tf — FIM (implementação): #491 pronto para PR
+
+Waves 0–3 auditadas; barrier real (binário novo) `passed` nas 4; `make quality` EXIT=0 (ML-2A);
+Hades da Wave 3 **aprova**: nenhum de 11 vetores executa sob `sh -n` em bash 3.2, `bash --posix` e
+dash; F1 não esconde gate legítimo (só a Wave 2 do ROADMAP-2026-08-22 mudou, nas 3 cópias).
+
+Corrigi eu mesmo, no contrato: a regra 5 dizia que heredoc e `\` final "produzem erro no `sh -n`" —
+a medição da Wave 0 mostra que **não**; reescrito, com os 3 resíduos declarados (heredoc, `\` em
+comentário, bashism sob dash), todos com 0 ocorrência no acervo.
+
+Auditoria que quase me enganou: a contagem de comandos caiu 181 → 162. Rastreado: o bloco do
+`done/ROADMAP-2026-08-28` era **um** script de 22 linhas e virou 3 com as mesmas 3 asserções.
+
+AC1–AC5 marcados; AC6 aguarda o CI. Issue lateral aberta: #494 (guard do `branch new` aceita `done/`
+por sobreposição de tokens).
