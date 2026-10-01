@@ -14,6 +14,7 @@ import (
 	"github.com/kgsaran/trackfw/internal/forge"
 	"github.com/kgsaran/trackfw/internal/generators"
 	"github.com/kgsaran/trackfw/internal/pathguard"
+	"github.com/kgsaran/trackfw/internal/validator"
 )
 
 // resolveRoot canonicalizes rootDir for use as the pathguard root argument.
@@ -426,19 +427,56 @@ func Scan(rootDir string) (DiscoveryResult, error) {
 	// 1. trackfw.yaml e .trackfw-log
 	r.HasTrackfwYAML = fileExists(filepath.Join(rootDir, "trackfw.yaml"))
 
-	// 2. REQ dir — testa candidatos em ordem de preferência
-	for _, candidate := range []string{"docs/req", "docs/requisições", "docs/requirements", "docs/reqs"} {
-		full := filepath.Join(rootDir, candidate)
-		if dirExists(full) {
-			r.REQDir = candidate
-			r.REQCount = countMDFiles(full)
-			break
+	// A DECLARAÇÃO vence a sonda, quando ela existe e aponta para algo que existe.
+	//
+	// `discover` é um auto-detector e a sonda de caminhos convencionais é o desenho certo
+	// para projeto SEM trackfw.yaml. Mas quando o arquivo existe — e `detect` acabou de
+	// contá-lo em HasTrackfwYAML, valendo 20 pontos do Governance Score — ignorar o que ele
+	// declara faz o score descrever outro projeto. Medido (issue #471): com
+	// `adr_dirs: [docs/decisoes]` e um ADR real lá, `status`, `context` e `adr list` o veem e
+	// `discover` reporta a categoria ADR em ZERO, porque olhou só `docs/adr`.
+	//
+	// 🔴 Só sobrescreve quando o diretório declarado EXISTE. ParseDirsFromContent devolve
+	// defaults() para chave ausente, então "declarado" e "default" são indistinguíveis no
+	// retorno: sem essa condição, um projeto sem a chave `req_dir` e com `docs/requirements`
+	// no disco perderia a sonda de 4 candidatos.
+	declReq, declRoadmap, declADRs := declaredDirs(rootDir)
+
+	// 2. REQ dir — declaração, depois candidatos em ordem de preferência
+	if declReq != "" && dirExists(resolveDeclared(rootDir, declReq)) {
+		r.REQDir = declReq
+		r.REQCount = countMDFiles(resolveDeclared(rootDir, declReq))
+	} else {
+		for _, candidate := range []string{"docs/req", "docs/requisições", "docs/requirements", "docs/reqs"} {
+			full := filepath.Join(rootDir, candidate)
+			if dirExists(full) {
+				r.REQDir = candidate
+				r.REQCount = countMDFiles(full)
+				break
+			}
 		}
 	}
 
-	// 3. ADR dirs — procura docs/adr recursivamente
-	adrRoot := filepath.Join(rootDir, "docs", "adr")
-	if dirExists(adrRoot) {
+	// 3. ADR dirs — declaração, depois a sonda de docs/adr
+	//
+	// A contagem do caminho declarado passa por validator.ResolveADRFiles, que é o PONTO
+	// ÚNICO de leitura de ADR do D3 da ADR-2026-09-29: assim o critério de identificação —
+	// hoje "qualquer .md", e o que a #471 decidir amanhã — vale aqui sem segunda edição.
+	// Os diretórios vão ABSOLUTOS porque ResolveADRFiles resolve relativo ao CWD.
+	var declADRExistentes []string
+	for _, d := range declADRs {
+		if dirExists(resolveDeclared(rootDir, d)) {
+			declADRExistentes = append(declADRExistentes, d)
+		}
+	}
+	if len(declADRExistentes) > 0 {
+		var abs []string
+		for _, d := range declADRExistentes {
+			abs = append(abs, resolveDeclared(rootDir, d))
+		}
+		r.ADRDirs = declADRExistentes
+		r.ADRCount = len(validator.ResolveADRFiles(config.ProjectConfig{ADRDirs: abs}))
+	} else if adrRoot := filepath.Join(rootDir, "docs", "adr"); dirExists(adrRoot) {
 		subDirs, _ := listSubDirs(adrRoot)
 		if len(subDirs) > 0 {
 			// tem subdirs: usa cada uma como um adr dir
@@ -454,10 +492,16 @@ func Scan(rootDir string) (DiscoveryResult, error) {
 		}
 	}
 
-	// 4. Roadmap dir e namespacing
-	roadmapRoot := filepath.Join(rootDir, "docs", "roadmaps")
+	// 4. Roadmap dir e namespacing — declaração, depois o caminho convencional.
+	// Mesma causa dos dois acima; a detecção de namespacing e de agentes continua vindo do
+	// disco, que é o que ela sabe fazer e o que o trackfw.yaml não declara por diretório.
+	roadmapRel := "docs/roadmaps"
+	if declRoadmap != "" && dirExists(resolveDeclared(rootDir, declRoadmap)) {
+		roadmapRel = declRoadmap
+	}
+	roadmapRoot := resolveDeclared(rootDir, roadmapRel)
 	if dirExists(roadmapRoot) {
-		r.RoadmapDir = "docs/roadmaps"
+		r.RoadmapDir = roadmapRel
 
 		// detecta by_agent: existe docs/roadmaps/*/wip/ ?
 		agentDirs, _ := listSubDirs(roadmapRoot)
@@ -712,6 +756,34 @@ func fileExists(path string) bool {
 func dirExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && info.IsDir()
+}
+
+// declaredDirs lê as declarações de diretório de <rootDir>/trackfw.yaml.
+//
+// 🔴 NÃO usa config.Load(): aquele é um singleton que lê `trackfw.yaml` do CWD, e `detect`
+// recebe rootDir — os testes chamam Scan(tmpdir) SEM chdir, então Load() leria o
+// trackfw.yaml do próprio repositório enquanto varre a fixture, e envenenaria o singleton
+// para o resto do binário de teste. ParseDirsFromContent existe exatamente para esse
+// isolamento (é o que a guarda de scope-redirect do ML-2B usa).
+//
+// Devolve zeros quando não há arquivo — o chamador cai na sonda de disco de sempre.
+func declaredDirs(rootDir string) (reqDir, roadmapDir string, adrDirs []string) {
+	data, err := os.ReadFile(filepath.Join(rootDir, "trackfw.yaml"))
+	if err != nil {
+		return "", "", nil
+	}
+	return config.ParseDirsFromContent(string(data))
+}
+
+// resolveDeclared devolve o caminho de um diretório DECLARADO, ancorado no rootDir.
+// Respeita caminho absoluto e `~` (adr_dirs aceita `~/...`, usado para ADR global) e nunca
+// ancora no CWD, pelo mesmo motivo de declaredDirs.
+func resolveDeclared(rootDir, dir string) string {
+	expanded := config.ExpandPath(dir)
+	if filepath.IsAbs(expanded) {
+		return expanded
+	}
+	return filepath.Join(rootDir, expanded)
 }
 
 func countMDFiles(dir string) int {
