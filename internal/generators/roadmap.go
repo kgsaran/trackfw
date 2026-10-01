@@ -1107,14 +1107,15 @@ func ShowRoadmap(name string) error {
 	path := matches[0]
 	state := filepath.Base(filepath.Dir(path))
 	base := filepath.Base(path)
-	// AC(ML-2B): read the file before printing anything so the fence check can
-	// refuse with exit 2 before any output reaches stdout.
+	// AC(ML-2C): read the file before printing anything so the fence check can
+	// return UsageError before any output reaches stdout; commands/ writes the
+	// prefix and terminates with code 2.
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return err
 	}
 	if _, fErr := roadmapdoc.FenceMaskCheck(roadmapdoc.SplitRoadmapLines(string(data))); fErr != nil {
-		fenceExitUsage(path, fErr)
+		return &UsageError{Msg: filepath.Base(path) + ": " + fErr.Error()}
 	}
 	fmt.Printf("── %s ── [%s] ──────────────────────\n\n", base, strings.ToUpper(state))
 	fmt.Println(string(data))

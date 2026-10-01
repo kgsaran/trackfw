@@ -43477,3 +43477,27 @@ A posição garante que cerca aberta antes do cabeçalho da wave produz a mensag
 - `go build ./...`: ok
 - `go vet ./internal/commands/`: ok
 - `go test ./internal/commands/ -count=1`: ok (10.1 s)
+
+---
+**Apolo** | 2026-10-01 | ML-3A do #476 — INICIADO
+Branch: `fix/cerca-nao-terminada-mascara-em-silencio`
+Escopo: `internal/serve/api_board.go` · `internal/serve/api_board_test.go`
+Adicionando campo `UnterminatedFenceLine` ao `boardItem` e `mlProgressResult`, preenchido por `FenceMaskCheck` em `parseMLProgressFull`.
+
+---
+**Apolo** | 2026-10-01 | ML-3A do #476 — CONCLUÍDO
+Branch: `fix/cerca-nao-terminada-mascara-em-silencio`
+Escopo: `internal/serve/api_board.go` · `internal/serve/api_board_test.go` · roadmap ML-3A
+Resultados: `go build ./...` ok · `go vet ./internal/serve/` ok · `go test ./internal/serve/ -count=1` ok (12 novos PASS na suite, 3 novos testes do ML-3A)
+
+---
+**Apolo** | 2026-10-01 | ML-2C do #476 — INICIADO
+Branch: `fix/cerca-nao-terminada-mascara-em-silencio`
+Escopo: `internal/generators/roadmap_show_json.go` · `internal/generators/roadmap.go` · `internal/generators/roadmap_fence_test.go` · `internal/commands/roadmap.go` · `internal/commands/roadmap_show_fence_test.go` (novo)
+Movendo o exit 2 de `generators` para `commands`: `UsageError` em generators, handler com `errors.As` em commands. Removendo `fenceExitUsage` e o padrão re-exec (`init()` + `TRACKFW_TEST_FENCE_HELPER`).
+
+---
+**Apolo** | 2026-10-01 | ML-2C do #476 — CONCLUÍDO
+Branch: `fix/cerca-nao-terminada-mascara-em-silencio`
+Escopo: `internal/generators/roadmap_show_json.go` · `internal/generators/roadmap.go` · `internal/generators/roadmap_fence_test.go` · `internal/commands/roadmap.go` · `internal/commands/roadmap_show_fence_test.go` (novo) · roadmap ML-2C
+Resultados: `go build ./...` ok · `go vet ./internal/generators/ ./internal/commands/` ok · 903 PASS, 0 FAIL (generators + commands) · greps de critério vazios · `trackfw validate` 0 violations

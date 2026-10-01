@@ -75,6 +75,13 @@ type acceptanceJSON struct {
 	HasBlock bool `json:"has_block"`
 }
 
+// UsageError signals a usage-class error (exit 2) from roadmap show / show --json.
+// The caller in internal/commands writes the prefix and terminates with code 2;
+// generators itself never terminates the process.
+type UsageError struct{ Msg string }
+
+func (e *UsageError) Error() string { return e.Msg }
+
 // statusCatName traduz a categoria do produto para o nome estável do JSON.
 //
 // 🔴 São exatamente as três do roadmapdoc.StatusCat, nem uma a mais. Acrescentar
@@ -92,21 +99,6 @@ func statusCatName(c roadmapdoc.StatusCat) string {
 	}
 }
 
-// fenceExitUsage prints the canonical unterminated-fence message to stderr and
-// exits 2. It intentionally bypasses the cobra error-return pipeline, which
-// maps every error to exit 1; an unterminated fence is a usage error that
-// warrants exit 2 (same class as barrier's resolution errors — see usageExit
-// in internal/commands/barrier.go).
-//
-// Deviation from "siga o mesmo padrão": the current `show` text path returns
-// errors that root.go maps to exit 1. Exit 2 cannot be signalled through the
-// error-return pipeline without touching internal/commands/ (out of ML-2B
-// scope). The direct os.Exit(2) here matches the barrier pattern for this
-// class of error and is consistent with the spec requirement.
-func fenceExitUsage(path string, err error) {
-	fmt.Fprintf(os.Stderr, "trackfw roadmap show: %s: %s\n", filepath.Base(path), err.Error())
-	os.Exit(2)
-}
 
 // ShowRoadmapJSON emite o documento de um roadmap em JSON, sem rodar gate nenhum
 // e sem chamar o validate: é leitura.
@@ -127,9 +119,10 @@ func ShowRoadmapJSON(name string) error {
 		return err
 	}
 
-	// AC(ML-2B): refuse to emit a partial document when the fence is open.
+	// AC(ML-2C): refuse to emit a partial document when the fence is open;
+	// return UsageError so commands/ can write the prefix and exit 2.
 	if _, fErr := roadmapdoc.FenceMaskCheck(roadmapdoc.SplitRoadmapLines(string(data))); fErr != nil {
-		fenceExitUsage(path, fErr)
+		return &UsageError{Msg: filepath.Base(path) + ": " + fErr.Error()}
 	}
 
 	doc := buildRoadmapShowDoc(path, string(data))

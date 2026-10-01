@@ -231,7 +231,7 @@ go test ./internal/commands/ ./internal/generators/ -count=1
 
 ### ML-2C — o exit 2 do `show` sai do `generators` e vai para `commands`
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Origem:** auditoria do ML-2B. O comportamento está certo, mas `roadmap_show_json.go` chama
 `os.Exit(2)` (`fenceExitUsage`), o que torna `generators` o único pacote fora de `commands` a sair
 do processo. E os testes precisam de um `init()` que reexecuta o binário de teste do pacote inteiro.
@@ -248,27 +248,37 @@ do processo. E os testes precisam de um `init()` que reexecuta o binário de tes
 4. Um teste no nível do binário em `internal/commands/` (helper `barrierBinary(t)`, que já builda o
    `trackfw`): `roadmap show <cerca aberta>` e `--json` saem **2**; com a cerca fechada saem 0.
 **Critérios de aceite:**
-- [ ] `grep -n 'os.Exit' internal/generators/*.go | grep -v _test` vazio
-- [ ] `grep -rn 'TRACKFW_TEST_FENCE_HELPER\|func init()' internal/generators/roadmap_fence_test.go` vazio
-- [ ] exit 2 medido no binário (teste do item 4) · `go test ./internal/commands/ ./internal/generators/ -count=1` verde
-- [ ] Uma frase por teste novo ou alterado
+- [x] `grep -n 'os.Exit' internal/generators/*.go | grep -v _test` vazio
+- [x] `grep -rn 'TRACKFW_TEST_FENCE_HELPER\|func init()' internal/generators/roadmap_fence_test.go` vazio
+- [x] exit 2 medido no binário (teste do item 4) · `go test ./internal/commands/ ./internal/generators/ -count=1` verde
+- [x] Uma frase por teste novo ou alterado
 
 ## Wave 3 — superfícies que não podem sair 2 (2 MLs em paralelo)
 > Dependências: Wave 2 auditada. Arquivos disjuntos: `internal/serve/api_board.go` × `internal/validator/` + `scripts/check-validate-rule-pins.sh`.
 
 ### ML-3A — `serve`: campo na API, sem derrubar o servidor
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
-**Arquivos afetados:** `internal/serve/api_board.go` · teste em `internal/serve/`
+**Status:** ✅ Concluído
+**Arquivos afetados:** `internal/serve/api_board.go` · `internal/serve/api_board_test.go`
 **Ações:** no item do board, o campo **`UnterminatedFenceLine int` com `json:"unterminated_fence_line,omitempty"`**,
 preenchido por `FenceMaskCheck` em `parseMLProgressFull`. **O nome JSON é contrato com o ML-4A: não
 renomeie.** O servidor loga uma linha e continua. `ml_total`/`ml_done` **não** são "corrigidos" por
 heurística; o selo é o sinal.
 
 **Critérios de aceite:**
-- [ ] Teste: `/api/board` com fixture de cerca aberta → 200, e o item traz `unterminated_fence_line` = linha certa · com fixture bem-formada o campo está ausente (AC6)
-- [ ] `go test ./internal/serve/ -count=1` verde
-- [ ] Uma frase por teste novo
+- [x] Teste: `/api/board` com fixture de cerca aberta → 200, e o item traz `unterminated_fence_line` = linha certa · com fixture bem-formada o campo está ausente (AC6)
+- [x] `go test ./internal/serve/ -count=1` verde
+- [x] Uma frase por teste novo
+
+**Testes novos (3 testes — todos PASS):**
+- `TestBoardHandler_UnterminatedFence_FieldPresent` — afirma que quando um roadmap tem cerca aberta, o item no JSON do `/api/board` traz `unterminated_fence_line` com o número da linha onde a cerca foi aberta, e o servidor retorna 200.
+- `TestBoardHandler_WellFormedRoadmap_FenceFieldAbsent` — afirma que quando todas as cercas estão fechadas, o campo `unterminated_fence_line` está ausente do JSON (omitempty).
+- `TestBoardHandler_MalformedAndWellFormed_BothListed` — afirma que quando o diretório contém um roadmap malformado e um bem-formado, o servidor retorna 200 e lista os dois (AC6: nunca derruba nem omite itens por causa de cerca aberta).
+
+**Resultados:**
+- `go build ./...`: ok
+- `go vet ./internal/serve/`: ok
+- `go test ./internal/serve/ -count=1`: ok
 
 ### ML-3B — `validate`: regra `roadmap_unterminated_fence`
 **Owner:** `apolo-tf`
