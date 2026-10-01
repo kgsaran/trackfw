@@ -4,6 +4,8 @@
 
 ## Índice
 
+- [windows-argv-troca-aspa-por-contrabarra-sem-espaco-2026-10-01](windows-argv-troca-aspa-por-contrabarra-sem-espaco-2026-10-01.md) — 🔴 **Windows: EscapeArg + MSYS reparse converte `esperado="scaffold.go` em `esperado=\scaffold.go` — gate malformado sai 0** — discriminante: ausência de espaço; correção: stdin transport em `checkGateFragments` e `runGateCommand`; stdin tem paridade total com argv em macOS (12 vetores); env-eval diverge em 5
+
 - [sh-n-misses-heredoc-opener-e-trailing-backslash-2026-10-01](sh-n-misses-heredoc-opener-e-trailing-backslash-2026-10-01.md) — **`sh -n` não detecta heredoc opener puro nem trailing `\` isolado — FN medido em bash 3.2 e dash** — supplement para (b): `endswith('\\')` para trailing-`\` (zero FP no corpus); heredoc: omitir (zero instâncias, FP em `grep -q '<<EOF'` e aritmética `<<`)
 
 - [parsegates-per-line-isolation-fuse-same-line-2026-09-30](parsegates-per-line-isolation-fuse-same-line-2026-09-30.md) — **`ParseGates` executa cada linha do gate block como `sh -c` isolado — `export T_FUSE` em uma linha não sobrevive para a próxima** — fusível T_FUSE DEVE estar na MESMA LINHA que a chamada barrier; gate multi-linha causou fork bomb ~120s em ML-2A; `pkill -x trackfw` não mata `trackfw_bin`/`tf`

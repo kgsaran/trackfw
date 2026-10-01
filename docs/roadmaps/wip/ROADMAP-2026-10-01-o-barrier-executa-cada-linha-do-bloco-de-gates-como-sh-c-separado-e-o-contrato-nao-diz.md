@@ -247,13 +247,26 @@ Efeito nos dois sítios:
 🔴 **Por que só apareceu de fora:** todas as medições desta REQ rodaram em macOS (bash 3.2, `bash
 --posix`, dash). A Wave 0 declarou "zero instâncias" num ambiente em que essa forma não existe.
 
+**Classe de consequência, no acervo do consumidor** (fork do Lourival, 81 roadmaps fora dos nossos
+três universos): 18 blocos de gate, **5** afetados (16 linhas que falham `sh -n` e 3 com `\` final
+solto), todos de Wave 0, e 🔴 **quatro em `done/`**. Antes da correção, essas waves saíam `blocked` sem
+que o gate tivesse sido executado como escrito; uma wave foi fechada como concluída com um gate que
+nunca pôde passar.
+
+**Reproduzido pelo arquiteto na VM Windows** (2026-10-01, Windows 11 ARM64, bash 5.3.15 do Git, Go
+1.27, binário real de `1290231b`): `esperado="scaffold.go` e `x="ab` saem `gates: passed`;
+`echo "abre` sai `blocked`. Sonda das três formas de transporte: stdin e env+eval mantêm o
+comportamento de hoje em todos os outros vetores (incluindo `cat`, `read` e `$0`), e argv é a única que
+erra. Em macOS o executor mediu que o env+eval **diverge** (o `eval` do bash 3.2 sai 1 onde o `sh -c` sai
+2). **Escolha: stdin.**
+
 **CI do PR:** `TestBarrierFragment_UntrustedRoadmap_ShNotCalled` falha no Windows porque o `sh` falso
 do teste é um script que o Windows não executa (o braço "com trust, o marcador aparece" não encontra o
 marcador). É defeito do teste, não do produto.
 
 ### ML-4A — o texto do gate deixa de passar por argv
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** `internal/commands/barrier.go` (`checkGateFragments`, `runGateCommand`) ·
 `internal/commands/barrier_fragment_test.go` · um teste novo de transporte · `docs/cli-parity.md`
 (regra 5 e § POSIX shell contract) · `vault/notes/` (nota nova)
@@ -284,12 +297,12 @@ marcador). É defeito do teste, não do produto.
    mecanismo, a tabela e o crédito da medição.
 
 **Critérios de aceite:**
-- [ ] `sh -n` por stdin; a forma do `runGateCommand` escolhida com a tabela de paridade no relatório
-- [ ] O teste do vetor `esperado="scaffold.go` existe e roda em todo SO
-- [ ] O teste do `sh` falso usa um binário Go, e os dois braços valem em todo SO
-- [ ] `make quality` com `EXIT=0` (autorizado: frente única)
+- [x] `sh -n` por stdin; a forma do `runGateCommand` escolhida com a tabela de paridade no relatório
+- [x] O teste do vetor `esperado="scaffold.go` existe e roda em todo SO
+- [x] O teste do `sh` falso usa um binário Go, e os dois braços valem em todo SO
+- [x] `make quality` com `EXIT=0` (autorizado: frente única)
 - [ ] 🔴 CI do PR #495: `windows-full-suites` verde **sem** acrescentar nome a `.github/windows-known-failures.json`
-- [ ] Uma frase por teste novo
+- [x] Uma frase por teste novo
 
 **Gates da wave:**
 ```bash

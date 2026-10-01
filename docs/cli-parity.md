@@ -2634,10 +2634,19 @@ These are literal parsing rules. All three runtimes must implement them identica
    trailing `\` — do not produce a meaningful gate result.
    Every line must be a **complete, independent command**.
    **What the barrier checks before running any gate** (trusted roadmaps only, #491): each line
-   goes through `sh -n -c` (syntax only, nothing executes), and a line ending in an **odd** number
+   goes through `sh -n` (syntax only, nothing executes), and a line ending in an **odd** number
    of `\` is a continuation. Any hit fails the `gates` check with
    `line <n>: incomplete command — each line of the gates block runs as a separate sh -c (rule 5): <cmd>`
    and **no** gate of the block runs.
+   **Transport:** both the fragment check (`sh -n`) and the gate execution (`sh`) receive the gate
+   text via **stdin**, not via argv. On Windows, Go's `EscapeArg` + MSYS reparse converts an
+   unquoted `"` in an argument without spaces (e.g. `esperado="scaffold.go`) to a `\`, producing a
+   valid assignment that exits 0 — a fragment silently approved. Stdin is opaque to `EscapeArg` and
+   arrives byte-identical on every OS. Parity with the former `sh -c <argv>` form was measured on
+   macOS over 12 vectors (all exit codes identical); the stdin form was chosen over
+   `sh -c 'eval "$TRACKFW_GATE_CMD"'` because that form produces exit 1 instead of exit 2 for
+   fragments (5 vectors diverge). See
+   `vault/notes/windows-argv-troca-aspa-por-contrabarra-sem-espaco-2026-10-01.md`.
    **Declared residue** (0 occurrences in this repository's roadmaps, 2026-10-01):
    - a **heredoc opener** (`cat <<EOF`) passes `sh -n` and runs with an empty body — a false green;
    - a line whose trailing `\` sits **inside a comment** (`cmd # note \`) is flagged although `sh`
@@ -2683,10 +2692,11 @@ These are literal parsing rules. All three runtimes must implement them identica
 
 The `**Gates da wave:**` block (rule 5 above) is a **contract written in POSIX shell**, not a
 script interpreted by whatever shell the host OS defaults to. All three CLIs execute it with
-`sh -c`, resolved through `$PATH`, on every operating system — the Go CLI has always done this
-(`exec.Command("sh", "-c", command)`); Node and Python previously used `spawnSync(cmd, { shell:
-true })` / `subprocess.run(cmd, shell=True)`, which run through the host shell — `cmd.exe` on
-Windows.
+`sh`, resolved through `$PATH`, on every operating system — the Go CLI delivers the gate text
+via **stdin** (`exec.Command("sh"); c.Stdin = strings.NewReader(command)`) rather than argv
+(`exec.Command("sh", "-c", command)`) to avoid Windows argv mangling (see rule 5 transport note
+above); Node and Python previously used `spawnSync(cmd, { shell: true })` /
+`subprocess.run(cmd, shell=True)`, which run through the host shell — `cmd.exe` on Windows.
 
 **The evidence that decided this, not a preference.** A scan of every `**Gates da wave:**` block
 across the project's roadmaps found **83 commands**: 35 `grep`/`sed`/`awk`, 14 `test`/`[`, 8

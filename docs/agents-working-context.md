@@ -2,6 +2,33 @@
 
 ---
 
+## 2026-10-01 — Apolo (fix/barrier-executa-cada-linha-do-bloco-de-gates — ML-4A) — INÍCIO
+
+**Início:** 2026-10-01 | Branch: `fix/barrier-executa-cada-linha-do-bloco-de-gates`
+**Tarefa:** ML-4A Wave 4 — o texto do gate deixa de passar por argv; transporte stdin + teste portável do `sh` falso
+**Arquivos a modificar:** `internal/commands/barrier.go` · `internal/commands/barrier_fragment_test.go` · `docs/cli-parity.md` · `vault/notes/`
+
+---
+
+## 2026-10-01 — Apolo (fix/barrier-executa-cada-linha-do-bloco-de-gates — ML-4A) — FIM
+
+Transporte stdin aplicado em dois sítios de `barrier.go`: `checkGateFragments` (`sh -n` via stdin)
+e `runGateCommand` (`sh` via stdin). Paridade medida em macOS sobre 12 vetores: stdin = argv em
+todos; env-eval diverge em 5 (exit 1 vs exit 2 para fragmentos). Stdin escolhido.
+
+Fake `sh` script trocado por binário Go (`buildFakeSh`) em `TestBarrierFragment_UntrustedRoadmap_ShNotCalled`;
+usa `FAKE_SH_MARKER` env var para o caminho do marcador; funciona em Windows (`sh.exe`).
+
+Novo teste `TestBarrierFragment_TransportNoArgvMangling`: gate `esperado="scaffold.go` → blocked
++ sentinel não executa. Roda em todo SO.
+
+Nota de vault: `windows-argv-troca-aspa-por-contrabarra-sem-espaco-2026-10-01.md`.
+`cli-parity.md`: transport note em rule 5 e no § POSIX shell contract.
+6 Fragment/Transport testes, todos PASS. `make quality` EXIT=0. Barrier real: waves 0–3 `passed`.
+AC6 (CI Windows) aguarda push do arquiteto.
+
+---
+
 ## 2026-10-01 — Apolo (fix/barrier-executa-cada-linha-do-bloco-de-gates — ML-2A) — ENTREGUE
 
 **Início:** 2026-10-01 | **Fim:** 2026-10-01 | Branch: `fix/barrier-executa-cada-linha-do-bloco-de-gates`

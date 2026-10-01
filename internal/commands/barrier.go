@@ -239,6 +239,16 @@ func hasOddTrailingBackslashes(text string) bool {
 // sh is resolved through $PATH (same as runGateCommand). c.Env is nil so the
 // child inherits the process environment — sh -n is a pure syntax check and
 // never executes any code, so TRACKFW_BARRIER_STACK propagation is unnecessary.
+//
+// Transport: the gate text is delivered to sh via stdin (c.Stdin), NOT via
+// argv ("-c", text). On Windows, Go's exec.Command applies EscapeArg to every
+// argument; MSYS reparsing then converts an unquoted `"` to `\`, so
+// `esperado="scaffold.go` arrives as `esperado=\scaffold.go` — a valid
+// assignment that exits 0 and is silently approved. Stdin is opaque to
+// EscapeArg and reaches sh byte-identical on every OS.
+// Parity measured on macOS over 12 vectors: `sh -n` with stdin and with argv
+// agree on all 12 (the argv mangling only manifests on Windows).
+// See vault/notes/windows-argv-troca-aspa-por-contrabarra-sem-espaco-2026-10-01.md.
 func checkGateFragments(gcmds []roadmapdoc.GateCmd) (status string, failures []string) {
 	failures = []string{}
 	for _, gc := range gcmds {
@@ -250,7 +260,9 @@ func checkGateFragments(gcmds []roadmapdoc.GateCmd) (status string, failures []s
 				gc.Line, gc.Text))
 			continue
 		}
-		c := exec.Command("sh", "-n", "-c", gc.Text)
+		// Deliver the gate text via stdin, not argv — see transport comment above.
+		c := exec.Command("sh", "-n")
+		c.Stdin = strings.NewReader(gc.Text)
 		if err := c.Run(); err != nil {
 			if _, ok := err.(*exec.ExitError); !ok {
 				// sh could not be spawned: same not_evaluated signal as evalGateCommands.
@@ -559,8 +571,18 @@ func buildChildEnv(stack []barrierStackEntry) []string {
 // exit 127 with spawnFailed=false — sh started and ran, then reported that its
 // child command doesn't exist. 127 is a normal (if unusual) exit code, never a
 // signal for "sh is missing" (measured in ML-0A).
+//
+// Transport: the gate text is delivered via stdin (c.Stdin = strings.NewReader(command)),
+// NOT via argv. This is the same reason as checkGateFragments: on Windows, Go's
+// EscapeArg + MSYS reparse silently converts `esperado="scaffold.go` (a fragment) into
+// `esperado=\scaffold.go` (a valid assignment that exits 0), making a malformed gate
+// appear to pass. Stdin is byte-identical on all OSes.
+// Parity with the former `sh -c <argv>` form measured on macOS over 12 vectors: all
+// exit codes identical (stdin chosen; env-eval diverges on 5 vectors — exits 1 vs 2
+// for fragments). See vault/notes/windows-argv-troca-aspa-por-contrabarra-sem-espaco-2026-10-01.md.
 func runGateCommand(command string, env []string) (exitCode int, spawnFailed bool) {
-	c := exec.Command("sh", "-c", command)
+	c := exec.Command("sh")
+	c.Stdin = strings.NewReader(command)
 	c.Env = env
 	if err := c.Run(); err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
