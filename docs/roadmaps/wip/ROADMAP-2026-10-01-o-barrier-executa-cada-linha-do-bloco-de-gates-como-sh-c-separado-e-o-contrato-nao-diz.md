@@ -222,3 +222,77 @@ pode esconder um gate legítimo, um marcador real que agora seria lido como "den
 ```bash
 test -f docs/seguranca/2026-10-01-wave3-revisao-sh-n.md
 ```
+
+## Wave 4 — o argv do Windows aprova linha malformada (1 ML, corretivo)
+> Dependências: Wave 3 auditada. Origem: **medição externa** no PR #495 e no #491 (Lourival, Windows 11,
+> MINGW64, bash 5.2.26, Go 1.25.2) e o CI do PR (`windows-full-suites`).
+
+**Causa medida pelo consumidor, mesma REQ pela Regra Dura de Causa Raiz.** O texto do gate chega ao `sh`
+por **argv**. No Windows, o `EscapeArg` do Go não envolve em aspas um argumento **sem espaço** e
+escapa o `"` embutido; o reparse do MSYS devolve `\` no lugar da aspa:
+
+```
+enviado                 recebido pelo sh
+esperado="scaffold.go   esperado=\scaffold.go     ← atribuição VÁLIDA, sai 0
+x="ab                   x=\ab                     ← idem
+echo "abre              echo "abre                ← com espaço, ida e volta fiel
+```
+
+Efeito nos dois sítios:
+- `checkGateFragments` (`sh -n -c`, desta PR) **não vê** o fragmento que a tabela da Wave 0 lista
+  como verdadeiro positivo;
+- `runGateCommand` (`sh -c`, **anterior** a esta PR) **executa** a linha malformada e a aprova:
+  gate verde.
+
+🔴 **Por que só apareceu de fora:** todas as medições desta REQ rodaram em macOS (bash 3.2, `bash
+--posix`, dash). A Wave 0 declarou "zero instâncias" num ambiente em que essa forma não existe.
+
+**CI do PR:** `TestBarrierFragment_UntrustedRoadmap_ShNotCalled` falha no Windows porque o `sh` falso
+do teste é um script que o Windows não executa (o braço "com trust, o marcador aparece" não encontra o
+marcador). É defeito do teste, não do produto.
+
+### ML-4A — o texto do gate deixa de passar por argv
+**Owner:** `apolo-tf`
+**Status:** ⬜ Pendente
+**Arquivos afetados:** `internal/commands/barrier.go` (`checkGateFragments`, `runGateCommand`) ·
+`internal/commands/barrier_fragment_test.go` · um teste novo de transporte · `docs/cli-parity.md`
+(regra 5 e § POSIX shell contract) · `vault/notes/` (nota nova)
+**Ações:**
+1. **`sh -n` por stdin:** `c := exec.Command("sh", "-n"); c.Stdin = strings.NewReader(text)`. Nada
+   executa sob `-n`, então trocar o transporte não muda a semântica.
+2. **`runGateCommand`:** escolher, **por medição**, entre:
+   - (i) stdin: `exec.Command("sh")` com o texto no stdin;
+   - (ii) variável de ambiente: `exec.Command("sh", "-c", "eval \"$TRACKFW_GATE_CMD\"")`, com o texto
+     em `TRACKFW_GATE_CMD` no `c.Env` (variável de ambiente não passa pelo `EscapeArg`).
+
+   Critério: **paridade com o comportamento de hoje fora do Windows.** Meça em macOS, sobre os vetores
+   do comentário do Lourival na #491 (`esperado="scaffold.go`, `x="ab`, `echo "abre`, `a="x" b="y"`,
+   `esperado="scaffold go`, `false`, `true`, `exit 7`, `nosuchtool`) **e** sobre um gate que lê stdin
+   (`cat`, `read x; test -z "$x"`). Hoje o stdin do gate é o dispositivo nulo do Go. Escolha a forma
+   com paridade total e registre a tabela no relatório. Se nenhuma tiver paridade total, **pare e
+   reporte**.
+3. **Regressão do Windows nos dois sítios:** um teste que roda em **todo SO** com o vetor
+   `esperado="scaffold.go`: no `barrier`, `gates: blocked` com `incomplete command`, e nada executa.
+   No macOS e no Linux ele já passa hoje. O que ele afirma é que, no Windows, o transporte não troca a
+   aspa, e é o job `windows-full-suites` que mede isso.
+4. **Teste do `sh` falso portável:** troque o script por um binário Go buildado no teste (um `main`
+   mínimo que grava o marcador e sai 0), com o nome `sh` (`sh.exe` no Windows). Os dois braços valem
+   em todo SO.
+5. **Contrato:** a regra 5 e o § *POSIX shell contract* dizem que o texto do gate chega ao `sh` sem
+   passar por argv, e por quê (link para a nota nova).
+6. **Nota de vault:** `windows-argv-troca-aspa-por-contrabarra-sem-espaco-2026-10-01.md`, com o
+   mecanismo, a tabela e o crédito da medição.
+
+**Critérios de aceite:**
+- [ ] `sh -n` por stdin; a forma do `runGateCommand` escolhida com a tabela de paridade no relatório
+- [ ] O teste do vetor `esperado="scaffold.go` existe e roda em todo SO
+- [ ] O teste do `sh` falso usa um binário Go, e os dois braços valem em todo SO
+- [ ] `make quality` com `EXIT=0` (autorizado: frente única)
+- [ ] 🔴 CI do PR #495: `windows-full-suites` verde **sem** acrescentar nome a `.github/windows-known-failures.json`
+- [ ] Uma frase por teste novo
+
+**Gates da wave:**
+```bash
+go build ./...
+go test ./internal/commands/ -run 'Fragment|Transport' -count=1
+```
