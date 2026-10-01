@@ -945,7 +945,7 @@ ou por um PR hostil) passa a ser lido como **conteúdo real da ML**, não como i
 **Reprodução ao vivo, os 3 CLIs, mesmo arquivo** (`sonda-fence-full-bypass.md`, roadmap de sonda
 fora deste repositório):
 
-```
+````
 ### ML-1A — ML nao concluida, mas libera a wave
 Prosa introduzindo um exemplo do defeito que documentamos:
 ```
@@ -960,7 +960,7 @@ Conteúdo real da ML, fora do exemplo:
 **Status:** pending
 **Acceptance criteria:**
 - [ ] critério real não atendido
-```
+````
 
 ```
 $ ./hades-barrier barrier sonda-fence-full-bypass --wave 1        # Go, binário deste branch

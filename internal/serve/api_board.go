@@ -2,6 +2,7 @@ package serve
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -24,7 +25,8 @@ type boardItem struct {
 	MLDone         int    `json:"ml_done"`
 	ActiveML       string `json:"active_ml"`
 	NextML         string `json:"next_ml"`
-	MalformedWaves int    `json:"malformed_waves,omitempty"`
+	MalformedWaves       int `json:"malformed_waves,omitempty"`
+	UnterminatedFenceLine int `json:"unterminated_fence_line,omitempty"`
 }
 
 // boardResponse is the JSON shape returned by GET /api/board.
@@ -117,16 +119,17 @@ func readStateDir(dir, state, agent, rootDir string) []boardItem {
 		relPath = normalizeRefSeparator(relPath)
 		p := parseMLProgressFull(fullPath)
 		items = append(items, boardItem{
-			File:           e.Name(),
-			Title:          title,
-			State:          state,
-			Agent:          agent,
-			Path:           relPath,
-			MLTotal:        p.total,
-			MLDone:         p.done,
-			ActiveML:       p.activeML,
-			NextML:         p.nextML,
-			MalformedWaves: p.malformedWaves,
+			File:                  e.Name(),
+			Title:                 title,
+			State:                 state,
+			Agent:                 agent,
+			Path:                  relPath,
+			MLTotal:               p.total,
+			MLDone:                p.done,
+			ActiveML:              p.activeML,
+			NextML:                p.nextML,
+			MalformedWaves:        p.malformedWaves,
+			UnterminatedFenceLine: p.unterminatedFenceLine,
 		})
 	}
 	return items
@@ -135,6 +138,7 @@ func readStateDir(dir, state, agent, rootDir string) []boardItem {
 // mlProgressResult holds the parsed progress for a single roadmap file.
 type mlProgressResult struct {
 	total, done, malformedWaves int
+	unterminatedFenceLine       int
 	activeML, nextML            string
 }
 
@@ -170,6 +174,11 @@ func parseMLProgressFull(path string) mlProgressResult {
 
 	var res mlProgressResult
 	res.malformedWaves = len(malformed)
+
+	if fenceLine, fenceErr := roadmapdoc.FenceMaskCheck(lines); fenceErr != nil {
+		log.Printf("serve/board: %s: %v — continuing", path, fenceErr)
+		res.unterminatedFenceLine = fenceLine
+	}
 
 	for _, wave := range waves {
 		waveTitle := strings.TrimPrefix(lines[wave.Start], "## ")

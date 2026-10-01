@@ -218,7 +218,10 @@ function renderBoard(data, agentFilter) {
 }
 
 function createCard(card) {
-  const isActive = !!(card.active_ml) && card.state === 'wip';
+  const isActive   = !!(card.active_ml) && card.state === 'wip';
+  const fenceLine  = card.unterminated_fence_line || 0;
+  const badWaves   = card.malformed_waves         || 0;
+  const isMalformed = fenceLine > 0 || badWaves > 0;
 
   const div = document.createElement('div');
   div.className = `kanban-card bg-gray-50 border border-gray-200 rounded-md p-3 hover:bg-white${isActive ? ' card-active' : ''}`;
@@ -233,9 +236,13 @@ function createCard(card) {
   const nextML   = card.next_ml   || '';
   const pct      = total > 0 ? Math.round((done / total) * 100) : 0;
 
-  let barColor = 'bg-blue-500';
-  if (card.state === 'blocked') barColor = 'bg-red-400';
-  else if (done === total && total > 0) barColor = 'bg-green-500';
+  // Barra: se malformado, usa padrão xadrez âmbar em vez de cor sólida.
+  // Isso impede que a barra pareça "completa" quando o progresso é irreal
+  // — o roadmap malformado pode ter MLs mascarados não contabilizados.
+  let barClass = 'bg-blue-500';
+  if (isMalformed)             barClass = 'progress-bar-invalid';
+  else if (card.state === 'blocked') barClass = 'bg-red-400';
+  else if (done === total && total > 0) barClass = 'bg-green-500';
 
   const mlLabel = activeML
     ? `<p class="text-xs text-blue-600 mt-1 leading-snug truncate" title="${escapeHtml(activeML)}">▶ ${escapeHtml(activeML)}</p>`
@@ -243,17 +250,32 @@ function createCard(card) {
       ? `<p class="text-xs text-gray-400 mt-1 leading-snug truncate" title="${escapeHtml(nextML)}">→ ${escapeHtml(nextML)}</p>`
       : '';
 
+  // Contagem: quando malformado, exibe "?" como total para deixar claro
+  // que o número de MLs não é confiável.
+  const mlCountLabel = isMalformed
+    ? `${done}/<span aria-label="total desconhecido" title="total de MLs não confiável — roadmap malformado">?</span>`
+    : `${done}/${total}`;
+
   const progressHTML = total > 0 ? `
     <div class="mt-2 pt-2 border-t border-gray-100">
       <div class="flex items-center justify-between mb-1">
         <span class="text-xs text-gray-400">MLs</span>
-        <span class="text-xs font-medium text-gray-600">${done}/${total}</span>
+        <span class="text-xs font-medium text-gray-600">${mlCountLabel}</span>
       </div>
       <div class="w-full bg-gray-200 rounded-full h-1.5">
-        <div class="${barColor} h-1.5 rounded-full transition-all" style="width:${pct}%"></div>
+        <div class="${barClass} h-1.5 rounded-full transition-all" style="width:${pct}%"></div>
       </div>
       ${mlLabel}
     </div>` : '';
+
+  // Monta o tooltip de causa para o selo
+  const malformedCauses = [];
+  if (fenceLine > 0) malformedCauses.push(`cerca de código aberta na linha ${fenceLine}`);
+  if (badWaves  > 0) malformedCauses.push(`${badWaves} cabeçalho(s) de wave inválido(s)`);
+  const malformedTitle  = malformedCauses.join('; ');
+  const malformedBadge  = isMalformed
+    ? `<span class="badge-malformed" title="${escapeHtml(malformedTitle)}" aria-label="roadmap malformado: ${escapeHtml(malformedTitle)}">⚠ roadmap malformado</span>`
+    : '';
 
   div.innerHTML = `
     ${isActive ? '<span class="live-dot" aria-hidden="true"></span>' : ''}
@@ -262,6 +284,7 @@ function createCard(card) {
       ${card.agent ? `<span class="inline-block text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-medium">${escapeHtml(card.agent)}</span>` : ''}
       <span class="badge-${card.state} inline-block text-xs px-1.5 py-0.5 rounded font-medium">${stateLabel(card.state)}</span>
       ${isActive ? '<span class="inline-block text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded font-medium">ATIVO</span>' : ''}
+      ${malformedBadge}
     </div>
     ${progressHTML}`;
 

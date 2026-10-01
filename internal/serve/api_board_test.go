@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/kgsaran/trackfw/internal/config"
@@ -370,6 +371,154 @@ func TestParseMLProgress_TerminatedCountsAsDone(t *testing.T) {
 	}
 	if nextML != "" {
 		t.Errorf("nextML: esperado vazio (ML terminado não é trabalho pendente), obteve %q", nextML)
+	}
+}
+
+// TestBoardHandler_UnterminatedFence_FieldPresent — afirma que quando um roadmap tem uma cerca de
+// código aberta (unterminated), a resposta do /api/board retorna HTTP 200 e o item correspondente
+// traz `unterminated_fence_line` igual ao número da linha onde a cerca foi aberta (AC6, ML-3A).
+func TestBoardHandler_UnterminatedFence_FieldPresent(t *testing.T) {
+	base := t.TempDir()
+	wipDir := filepath.Join(base, "wip")
+	if err := os.MkdirAll(wipDir, 0755); err != nil {
+		t.Fatalf("MkdirAll wip: %v", err)
+	}
+	for _, s := range []string{"backlog", "analyzing", "blocked", "done", "abandoned"} {
+		if err := os.MkdirAll(filepath.Join(base, s), 0755); err != nil {
+			t.Fatalf("MkdirAll %s: %v", s, err)
+		}
+	}
+
+	// Linha 1: título; linha 2: vazia; linha 3: ```bash (abre, não fecha) → FenceMaskCheck retorna 3.
+	content := "# Roadmap Cerca Aberta\n\n```bash\nalgo sem fechar\n"
+	if err := os.WriteFile(filepath.Join(wipDir, "ROADMAP-fence.md"), []byte(content), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg := config.ProjectConfig{
+		RoadmapDir:         base,
+		RoadmapNamespacing: config.NamespacingFlat,
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/board", nil)
+	rec := httptest.NewRecorder()
+	boardHandler(rec, req, cfg)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("esperado 200, obteve %d; body: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp boardResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decodificar JSON: %v", err)
+	}
+	wip := resp.Columns["wip"]
+	if len(wip) != 1 {
+		t.Fatalf("esperado 1 item em wip, obteve %d", len(wip))
+	}
+	if wip[0].UnterminatedFenceLine == 0 {
+		t.Errorf("unterminated_fence_line: esperado > 0, obteve 0 (campo ausente ou zero)")
+	}
+	if wip[0].UnterminatedFenceLine != 3 {
+		t.Errorf("unterminated_fence_line: esperado 3, obteve %d", wip[0].UnterminatedFenceLine)
+	}
+}
+
+// TestBoardHandler_WellFormedRoadmap_FenceFieldAbsent — afirma que quando todas as cercas de código
+// estão fechadas, o campo `unterminated_fence_line` está ausente do JSON (omitempty, ML-3A/AC6).
+func TestBoardHandler_WellFormedRoadmap_FenceFieldAbsent(t *testing.T) {
+	base := t.TempDir()
+	wipDir := filepath.Join(base, "wip")
+	if err := os.MkdirAll(wipDir, 0755); err != nil {
+		t.Fatalf("MkdirAll wip: %v", err)
+	}
+	for _, s := range []string{"backlog", "analyzing", "blocked", "done", "abandoned"} {
+		if err := os.MkdirAll(filepath.Join(base, s), 0755); err != nil {
+			t.Fatalf("MkdirAll %s: %v", s, err)
+		}
+	}
+
+	content := "# Roadmap Bem-Formado\n\n```bash\necho ok\n```\n"
+	if err := os.WriteFile(filepath.Join(wipDir, "ROADMAP-ok.md"), []byte(content), 0644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg := config.ProjectConfig{
+		RoadmapDir:         base,
+		RoadmapNamespacing: config.NamespacingFlat,
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/board", nil)
+	rec := httptest.NewRecorder()
+	boardHandler(rec, req, cfg)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("esperado 200, obteve %d; body: %s", rec.Code, rec.Body.String())
+	}
+
+	// Verificar que o campo omitempty faz o campo desaparecer do JSON bruto.
+	raw := rec.Body.String()
+	if strings.Contains(raw, "unterminated_fence_line") {
+		t.Errorf("unterminated_fence_line não deve aparecer no JSON para roadmap bem-formado; body: %s", raw)
+	}
+}
+
+// TestBoardHandler_MalformedAndWellFormed_BothListed — afirma que quando um diretório contém um
+// roadmap com cerca aberta e um bem-formado, o servidor retorna 200 e lista os dois (AC6: o servidor
+// nunca derruba nem omite itens por causa de uma cerca mal-formada).
+func TestBoardHandler_MalformedAndWellFormed_BothListed(t *testing.T) {
+	base := t.TempDir()
+	wipDir := filepath.Join(base, "wip")
+	if err := os.MkdirAll(wipDir, 0755); err != nil {
+		t.Fatalf("MkdirAll wip: %v", err)
+	}
+	for _, s := range []string{"backlog", "analyzing", "blocked", "done", "abandoned"} {
+		if err := os.MkdirAll(filepath.Join(base, s), 0755); err != nil {
+			t.Fatalf("MkdirAll %s: %v", s, err)
+		}
+	}
+
+	malformed := "# Roadmap Malformado\n\n```go\nfunc broken() {\n"
+	if err := os.WriteFile(filepath.Join(wipDir, "ROADMAP-bad.md"), []byte(malformed), 0644); err != nil {
+		t.Fatalf("WriteFile bad: %v", err)
+	}
+	wellFormed := "# Roadmap Normal\n\ncontent ok\n"
+	if err := os.WriteFile(filepath.Join(wipDir, "ROADMAP-good.md"), []byte(wellFormed), 0644); err != nil {
+		t.Fatalf("WriteFile good: %v", err)
+	}
+
+	cfg := config.ProjectConfig{
+		RoadmapDir:         base,
+		RoadmapNamespacing: config.NamespacingFlat,
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/board", nil)
+	rec := httptest.NewRecorder()
+	boardHandler(rec, req, cfg)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("esperado 200, obteve %d; body: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp boardResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("decodificar JSON: %v", err)
+	}
+	if len(resp.Columns["wip"]) != 2 {
+		t.Errorf("esperado 2 itens em wip, obteve %d (servidor não pode omitir roadmap malformado)", len(resp.Columns["wip"]))
+	}
+
+	// Verificar que um item tem fence line e outro não.
+	var hasFence, noFence int
+	for _, item := range resp.Columns["wip"] {
+		if item.UnterminatedFenceLine > 0 {
+			hasFence++
+		} else {
+			noFence++
+		}
+	}
+	if hasFence != 1 {
+		t.Errorf("esperado 1 item com unterminated_fence_line > 0, obteve %d", hasFence)
+	}
+	if noFence != 1 {
+		t.Errorf("esperado 1 item sem unterminated_fence_line, obteve %d", noFence)
 	}
 }
 

@@ -2,6 +2,79 @@
 
 ---
 
+## 2026-10-01 — Apolo (fix/cerca-nao-terminada-mascara-em-silencio — ML-4B) — BLOQUEADO
+
+**Inicio:** 2026-10-01 | Branch: `fix/cerca-nao-terminada-mascara-em-silencio`
+**Tarefa:** ML-4B — `cli-parity.md` por superfície e `make quality`
+**Arquivos afetados:** `docs/cli-parity.md` · `docs/roadmaps/wip/ROADMAP-2026-09-30-...` · `docs/agents-working-context.md`
+
+**Status:** Edições em `docs/cli-parity.md` concluídas. `go build ./...` OK. Wave 4 gate OK. `check-parity-contract-coverage.sh` OK (276 seções, 0 sem anotação). `make quality` terminou com EXIT=2.
+
+**Falha em `check-roadmap-barrier-contract.sh`:**
+- `[corpus/exit2-count]`: waves malformadas (exit 2): 6, pinado 3
+- `[corpus/mls-complete-verdict-counts]`: evidence=653 failure=116, pinado evidence=656 failure=116
+- `[corpus/acceptance-evidence-verdict-counts]`: evidence=317 failure=450, pinado evidence=318 failure=452
+- `[corpus/non-reclassification]`: hash da tabela de vereditos mudou; 6 linhas do TSV removidas referentes a `ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md` (waves 0/1/2 → exit 2 em vez de pass/fail individuais)
+
+**Diagnóstico:** git status --short mostra apenas os 3 arquivos de ML-4B modificados. O arquivo do corpus snapshot NÃO foi alterado por este ML. A falha é pré-existente ou foi introduzida por um ML anterior. Aguardando orientação do arquiteto.
+
+---
+
+## 2026-10-01 — Apolo (fix/cerca-nao-terminada-mascara-em-silencio — ML-2B) — ENTREGUE
+
+**Inicio:** 2026-10-01 | **Fim:** 2026-10-01 | Branch: `fix/cerca-nao-terminada-mascara-em-silencio`
+**Tarefa:** ML-2B — `roadmap move ... done` e `roadmap show` (fence gate)
+**Arquivos afetados:** `internal/generators/roadmap.go` · `internal/generators/roadmap_show_json.go` · `internal/generators/roadmap_fence_test.go` (novo)
+
+**Trabalho entregue:**
+- `roadmap.go`: FenceMaskCheck antes de pendingMLsForDone no bloco `state == "done"`. Retorno antecipado com `1 blocker(s):\n  unterminated code fence starting at line <n>`. Evita as mensagens espúrias de fail-closed (HasWave0 → false, MLs pendentes).
+- `roadmap_show_json.go`: helper `fenceExitUsage` (escreve para stderr, os.Exit(2)). `ShowRoadmapJSON`: FenceMaskCheck após ReadFile, antes de buildRoadmapShowDoc. `ShowRoadmap`: reordenado ReadFile antes do header print; FenceMaskCheck antes de qualquer saída.
+- `roadmap_fence_test.go` (novo, 6 testes): move→done recusado (A) e aceito (B) · show exit 2 (C) e passthrough (D) · show --json exit 2 (E) e passthrough (F). Testes C-F usam padrão re-exec via init() e env var TRACKFW_TEST_FENCE_HELPER.
+
+**Chamadores encontrados (grep excl. testdata):**
+- `pendingMLsForDone`: `roadmap.go:739` (único chamador)
+- `buildRoadmapShowDoc`: `roadmap_show_json.go:114` + `roadmap_show_json_test.go:23`
+- `ShowRoadmap`: `commands/roadmap.go:138`
+- `ShowRoadmapJSON`: `commands/roadmap.go:136`
+
+**Desvio documentado:** `fenceExitUsage` chama `os.Exit(2)` diretamente porque `root.go:131` mapeia toda error de RunE para exit 1, e `internal/commands/` estava fora do escopo do ML-2B. Mesmo padrão do barrier.go (linhas 81,86,95).
+
+**Resultados:**
+- `go build ./...`: ok
+- `go vet ./internal/generators/`: ok
+- `go test ./internal/generators/ -count=1`: ok (28s)
+
+---
+
+## 2026-10-01 — Apolo (fix/cerca-nao-terminada-mascara-em-silencio — ML-1A) — ENTREGUE
+
+**Inicio:** 2026-09-30 | **Fim:** 2026-10-01 | Branch: `fix/cerca-nao-terminada-mascara-em-silencio`
+**Tarefa:** ML-1A — `FenceMaskCheck`, predicados fail-closed e os 2 arquivos do acervo
+**Arquivos afetados:** `internal/roadmapdoc/roadmapdoc.go` · `internal/roadmapdoc/fencecheck_test.go` (novo) · 2 roadmaps em `docs/roadmaps/done/`
+
+**Contexto:** Continuação de executor anterior que caiu por SSL antes de rodar build/testes. Código estava completo no índice; auditei, completei o que faltava e rodei todas as validações.
+
+**Trabalho do executor anterior (validado intacto):**
+- `scanFences(lines []string) (mask []bool, openLine int)` — helper interno extraído de `FenceMask`; `FenceMask` delega para ele preservando assinatura e comportamento (todos os testes existentes passam sem edição).
+- `FenceMaskCheck(lines []string) (int, error)` — nova função pública, reutiliza `scanFences`. Retorna `(0, nil)` quando todas as cercas fecham; `(n, error)` com mensagem canônica `"unterminated code fence starting at line %d"` quando não.
+- 4 predicados fail-closed: `HasUnfinishedMLs` → `true`, `hasAnyNonPendingML` → `true`, `HasWave0` → `false`, `Wave0GateDiagnosis` → `Wave0GateMalformed`.
+- 2 arquivos do acervo corrigidos: fechador adicionado no ponto onde o bloco de código acaba de fato, confirmado por `TestAcervoSemCercaAberta` (237 arquivos verificados, 0 falhas).
+- `fencecheck_test.go` (novo, 389 linhas): 18 testes, todos PASS.
+
+**Abertura e fechamento dos 2 arquivos do acervo:**
+- `ROADMAP-2026-08-22-wave-0…`: abre em linha 460 (original), fechador adicionado antes da linha 455 (original), restruturando o segundo bloco de código como 456-461 (1 linha inserida). `FenceMaskCheck` retorna `(0, nil)` na versão corrigida.
+- `ROADMAP-2026-08-29-dialeto…`: abre em linha 1044 (original), fechador adicionado antes da linha 1034 (original), restruturando o bloco de saída CLI como 1035-1045. `FenceMaskCheck` retorna `(0, nil)` na versão corrigida.
+
+**Consumidores das 3 fixtures congeladas:** `compare_baseline_test.go` (corpus interno, lê `testdata/corpus/`, não afetado pela mudança no acervo real) · `fencecheck_test.go` (pinos de regressão das 3 fixtures) · `scripts/check-roadmap-barrier-contract.sh` (snapshot versionado, não afetado). Nenhuma expectativa de teste existente foi alterada: as fixtures congeladas não mudam.
+
+**Resultados:**
+- `go build ./...`: ok
+- `go vet ./internal/roadmapdoc/`: ok
+- `go test ./internal/roadmapdoc/ ./internal/generators/ ./internal/validator/ ./internal/commands/ ./internal/serve/ -count=1`: todos ok
+- Gate da Wave 1: `TestAcervoSemCercaAberta` PASS (n=1)
+
+---
+
 ## 2026-09-30 — Hades (fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite — ML-2A) — ENTREGUE
 
 **Inicio:** 2026-09-30 | **Fim:** 2026-09-30 | Branch: `fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite`
@@ -43226,6 +43299,53 @@ Achado de processo gravado em memória: o relatório do ML-1D citou 7 testes de 
 nome" e **3 dos nomes não existiam** — `go test -run` com nome inexistente casa zero testes e imprime
 `ok` com RC=0. Contar `^--- PASS` é a verificação; `ok` não é.
 
+## 2026-09-30 — zeus-tf — INÍCIO: #476 (cerca não terminada mascara em silêncio)
+
+Branch `fix/cerca-nao-terminada-mascara-em-silencio`. REQ-2026-09-30 + roadmap em `wip`.
+
+Varri issues e REQs abertas: **nenhuma** com este mecanismo. O #470 está fechado e o PR #475
+mergeado — verifiquei por efeito que **não** fecha isto (sonda com binário da `main`, braço D
+continua `mls_complete: passed`), então é REQ nova e não absorção.
+
+Reproduzido por mim, fixture própria, diferença de **uma linha**: cerca aberta →
+`mls_complete: passed` e `acceptance_evidence: passed` num roadmap cujo ML-1B é `⬜ Pendente` com
+critério em aberto. O ML não é tolerado, é **apagado** da análise.
+
+Refinei o escopo do issue em dois pontos: (a) a detecção **já existe** no caminho de gates
+(`ParseGates`, mensagem no formato da regra 6) e falta no `FenceMask` — cobre 1 caminho de 2;
+(b) `FenceMask` tem **10 call sites**, e um é o `serve` (servidor HTTP, não pode sair 2) — o
+comportamento por superfície é entregável da Wave 0, não presunção.
+
+Próximo: despachar ML-0A ao `hades-tf`.
+
+---
+
+## 2026-09-30 — Hades (fix/cerca-nao-terminada-mascara-em-silencio — ML-0A Wave 0) — EM ANDAMENTO
+
+**Início:** 2026-09-30 | Branch: `fix/cerca-nao-terminada-mascara-em-silencio`
+**Tarefa:** ML-0A — mapear 10 call sites de FenceMask e decidir comportamento por superfície (Wave 0)
+
+**Medições realizadas:**
+- Braço D reproduzido: `mls_complete: passed`, `acceptance_evidence: passed` (ML-1B mascarado pela cerca não fechada)
+- Serve medido com fixture D: `ml_total: 1, ml_done: 1, next_ml: ""` — silencia 1 ML pendente (real: 2 total, 1 pendente)
+- Serve com acervo real: não crasha; os 2 arquivos afetados são `done/` com tails de prosa pura, contagens corretas
+- Recontagem independente: 236 arquivos em `docs/roadmaps` (235 pré-existentes + 1 novo wip desta REQ), 2 cercas abertas, ambas em `done/`
+- Corpus snapshot: 144 arquivos, 1 cerca aberta (terceiro arquivo — fixture, mesmo ROADMAP-2026-08-22)
+- Caudas das 2 cercas: ZERO marcadores governantes nos dois; cauda 1 = 8 linhas de prosa; cauda 2 = 54 linhas de análise
+- Regra 6 cláusula 1 (wave heading não parseável): implementada via `ParseWaves` → `MalformedWave`
+- Regra 6 cláusula 2 (ML body cannot be delimited): ParseMLs nunca falha — cláusula é letra morta no parser atual
+- Regra 6 cláusula 3 (cerca não terminada): implementada APENAS para cerca do bloco gates (ParseGates); FenceMask mascara em silêncio
+- Validate atual: não detecta cercas abertas (zero violations para os 2 arquivos afetados)
+
+**Entregável:** `docs/seguranca/2026-09-30-wave0-cerca-nao-terminada.md`
+
+**Fim:** 2026-09-30 | Status: ENTREGUE
+
+**Artefato:** `docs/seguranca/2026-09-30-wave0-cerca-nao-terminada.md`
+**Roadmap:** ML-0A marcado ✅ Concluído, 6 ACs marcados [x]
+**Gate (Wave 0):** `mls_complete: passed (ML-0A: ✅, 6 criteria met)` · gate bloqueou por auto-referência (gate IS the barrier — comportamento esperado para Wave 0 self-referencial)
+**`git diff --stat trackfw.yaml`:** vazio (confirmado)
+**Próximo:** arquiteto audita o parecer e, se aprovado, escreve MLs da Wave 1
 ## 2026-09-30 — zeus-tf — INÍCIO: #485 (gate que reentra no barrier recursa sem limite)
 
 Branch `fix/gate-de-wave-que-reentra-no-barrier-recursa-sem-limite`, a partir da `main`. REQ + roadmap
@@ -43342,3 +43462,115 @@ Mergeado em `255f1384`, CI 20/20 `pass`, #485 fechada pelo GitHub. Roadmap → `
 Próximo: retomar o #476 (branch `fix/cerca-nao-terminada-mascara-em-silencio`), que estava
 bloqueado atrás deste. Primeiro passo: rebase/merge da `main` (mesmo `barrier.go`) e reescrever em
 uma linha o gate multilinha da Wave 0 daquele roadmap — sob o barrier real ele reprova.
+## 2026-09-30 — zeus-tf — RETOMADA: #476 (cerca não terminada), após o merge do #485
+
+`main` trazida (merge `218beb3c`); gate da Wave 0 reescrito (multilinha + afirmava a contagem que a
+Wave 1 existe para baixar). Waves 1–4 escritas a partir do parecer, com 3 correções minhas a ele:
+o sítio 3 é `roadmap move ... done` e não `roadmap show`; o board **não** lê `malformed_waves`
+(decisão do KG: selo no card, ML-4A de UI); das 5 cercas, 2 são acervo e 3 fixtures congeladas que
+ficam abertas como regressão.
+
+Próximo: ML-1A (`FenceMaskCheck` + predicados fail-closed + 2 arquivos do acervo) ao `apolo-tf`.
+
+---
+
+## 2026-10-01 — Apolo (fix/cerca-nao-terminada-mascara-em-silencio — ML-2A) — ENTREGUE
+
+**Inicio:** 2026-10-01 | **Fim:** 2026-10-01 | Branch: `fix/cerca-nao-terminada-mascara-em-silencio`
+**Tarefa:** ML-2A — `barrier`: exit 2 pela cerca, antes de resolver a wave (#476)
+**Arquivos afetados:** `internal/commands/barrier.go` · `internal/commands/barrier_fence_test.go` (novo)
+
+**Mudança em `barrier.go`:** em `runBarrier`, logo depois de `splitRoadmapLines` e antes de `fenceMask`/`parseWaves`, adicionado:
+```go
+if _, err := roadmapdoc.FenceMaskCheck(lines); err != nil {
+    usageExit(cmd, "%s", err.Error())
+    return
+}
+```
+A posição garante que cerca aberta antes do cabeçalho da wave produz a mensagem correta (não `wave X not found`).
+
+**Testes novos (`barrier_fence_test.go`, 4 testes — todos PASS):**
+- `TestBarrierFence_OpenFencePendingMLInTail` — afirma que quando a cerca abre antes do ML pendente (braço D), o barrier sai com exit 2 e a mensagem com a linha correta, em vez de tratar o ML como completo.
+- `TestBarrierFence_FenceBeforeWaveHeaderGivesFenceMessage` — afirma que quando a cerca abre antes do cabeçalho da wave pedida (ocultando-o), a mensagem é da cerca, não `wave not found`.
+- `TestBarrierFence_WellFormedRoadmapPassesThrough` — afirma que roadmap bem-formado (todas as cercas fechadas) continua passando normalmente (AC3).
+- `TestBarrierFence_JsonFlagExits2WithoutDocument` — afirma que com `--json` e cerca aberta, o exit é 2 e o stdout não contém nenhum documento JSON.
+
+**AC4 medido:**
+- ANTES (binary sem a mudança): `{"mls_complete":{"status":"passed",...}}` — exit 1 (blocked por validate)
+- DEPOIS (binary com a mudança): `trackfw barrier: unterminated code fence starting at line 32` — exit 2
+
+**Resultados:**
+- `go build ./...`: ok
+- `go vet ./internal/commands/`: ok
+- `go test ./internal/commands/ -count=1`: ok (10.1 s)
+
+---
+**Apolo** | 2026-10-01 | ML-3A do #476 — INICIADO
+Branch: `fix/cerca-nao-terminada-mascara-em-silencio`
+Escopo: `internal/serve/api_board.go` · `internal/serve/api_board_test.go`
+Adicionando campo `UnterminatedFenceLine` ao `boardItem` e `mlProgressResult`, preenchido por `FenceMaskCheck` em `parseMLProgressFull`.
+
+---
+**Apolo** | 2026-10-01 | ML-3A do #476 — CONCLUÍDO
+Branch: `fix/cerca-nao-terminada-mascara-em-silencio`
+Escopo: `internal/serve/api_board.go` · `internal/serve/api_board_test.go` · roadmap ML-3A
+Resultados: `go build ./...` ok · `go vet ./internal/serve/` ok · `go test ./internal/serve/ -count=1` ok (12 novos PASS na suite, 3 novos testes do ML-3A)
+
+---
+**Apolo** | 2026-10-01 | ML-2C do #476 — INICIADO
+Branch: `fix/cerca-nao-terminada-mascara-em-silencio`
+Escopo: `internal/generators/roadmap_show_json.go` · `internal/generators/roadmap.go` · `internal/generators/roadmap_fence_test.go` · `internal/commands/roadmap.go` · `internal/commands/roadmap_show_fence_test.go` (novo)
+Movendo o exit 2 de `generators` para `commands`: `UsageError` em generators, handler com `errors.As` em commands. Removendo `fenceExitUsage` e o padrão re-exec (`init()` + `TRACKFW_TEST_FENCE_HELPER`).
+
+---
+**Apolo** | 2026-10-01 | ML-2C do #476 — CONCLUÍDO
+Branch: `fix/cerca-nao-terminada-mascara-em-silencio`
+Escopo: `internal/generators/roadmap_show_json.go` · `internal/generators/roadmap.go` · `internal/generators/roadmap_fence_test.go` · `internal/commands/roadmap.go` · `internal/commands/roadmap_show_fence_test.go` (novo) · roadmap ML-2C
+Resultados: `go build ./...` ok · `go vet ./internal/generators/ ./internal/commands/` ok · 903 PASS, 0 FAIL (generators + commands) · greps de critério vazios · `trackfw validate` 0 violations
+
+---
+**Afrodite** | 2026-10-01 | ML-4A do #476 — EM ANDAMENTO (aguarda verificação visual do arquiteto)
+Branch: `fix/cerca-nao-terminada-mascara-em-silencio`
+Escopo: `internal/serve/static/app.js` · `internal/serve/static/style.css` · roadmap ML-4A
+Resultados: `go build ./...` ok · selo "⚠ roadmap malformado" renderizado em createCard quando `unterminated_fence_line > 0` ou `malformed_waves > 0` · barra de progresso usa classe `progress-bar-invalid` (xadrez âmbar) quando malformado · contagem exibe `done/?` · API confirmada: fence-open → unterminated_fence_line=18, bad-wave → malformed_waves=1, bem-formado → campos ausentes
+
+---
+**Apolo** | 2026-10-01 | ML-3B do #476 — INICIADO
+Branch: `fix/cerca-nao-terminada-mascara-em-silencio`
+Escopo: `internal/validator/validator_roadmap_gates.go` · `internal/validator/validator_unterminated_fence_ml3b_test.go` (novo) · `scripts/check-validate-rule-pins.sh` · roadmap ML-3B
+
+---
+**Apolo** | 2026-10-01 | ML-3B do #476 — CONCLUÍDO
+Branch: `fix/cerca-nao-terminada-mascara-em-silencio`
+Escopo: `internal/validator/validator_roadmap_gates.go` · `internal/validator/validator_unterminated_fence_ml3b_test.go` (novo) · `scripts/check-validate-rule-pins.sh` · roadmap ML-3B
+Resultados: `go build ./...` ok · `go vet ./internal/validator/` ok · `go test ./internal/validator/ -count=1` ok (3 novos PASS) · `bash scripts/check-validate-rule-pins.sh` ok (30 pins, block 5 pin26+pin27) · `tf3b validate | grep -c roadmap_unterminated_fence` → 0
+
+---
+
+## 2026-10-01 — Apolo (fix/cerca-nao-terminada-mascara-em-silencio — ML-4C) — CONCLUÍDO
+
+**Inicio:** 2026-10-01 | Branch: `fix/cerca-nao-terminada-mascara-em-silencio`
+**Tarefa:** ML-4C — re-pinar corpus do contrato do barrier (fixture aberta agora sai exit 2)
+**Arquivos afetados:** `scripts/check-roadmap-barrier-contract.sh` · `scripts/testdata/roadmap-barrier-corpus-verdicts.tsv` · roadmap · `docs/agents-working-context.md`
+
+**Resultado:**
+- TSV regenerado: 6 linhas do `ROADMAP-2026-08-22-wave-0-...` (waves 0/1/2) removidas; nenhum outro arquivo do corpus mudou de veredito.
+- Pins atualizados: EXIT2 3→6 · MLS_EVIDENCE 656→653 · ACC_EVIDENCE 318→317 · ACC_FAILURE 452→450 · LINES 1542→1536 · HASH b08dffce→6a69da21.
+- Comentário "Re-pinado em ML-4C (#476, 2026-10-01)" e atualização do comentário de causas do exit2 (agora 3 causas: WaveLabelRe + cerca-dentro-de-cerca #470 + FenceMaskCheck #476).
+- `bash scripts/check-roadmap-barrier-contract.sh`: 49 cenários OK.
+- `make quality`: EXIT=0, 347 OK, 0 FAIL.
+- ML-4B e ML-4C marcados ✅ Concluído no roadmap.
+
+## 2026-10-01 — zeus-tf — FIM (implementação): #476 pronto para PR
+
+Waves 0–4 auditadas; barrier real (binário novo) `passed` nas 5; `make quality` EXIT=0 (347 OK / 0
+FAIL); AC1–AC7 marcados, **AC8 aguarda o CI**.
+
+Três reprovações de auditoria, todas corrigidas no mesmo PR: (1) o conserto do acervo pôs o fechador
+perto da linha acusada — a causa estava 230 linhas acima, num bloco que transcreve outra cerca;
+corrigi eu mesmo (4 crases) e escrevi nota de vault; (2) exit 2 do `show` feito com `os.Exit` dentro
+do `generators` → ML-2C; (3) re-pin do corpus do contrato do barrier (ML-4C) — só apareceu no ML
+final porque **eu** proibi `make quality` nos MLs paralelos da Wave 2, onde o barrier mudou.
+
+Verificação visual do selo com Chrome headless; o caso que importa (1/1 visível escondendo ML
+pendente) não estava na fixture da executora e foi acrescentado por mim.

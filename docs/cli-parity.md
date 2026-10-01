@@ -583,6 +583,11 @@ basenames through one shared decision point. The resolution is pinned as follows
 For these two commands the candidate list travels inside the returned error, not on stdout, so it
 lands on the command's error path.
 
+**`roadmap move <x> done` and unterminated fences (REQ #476, ML-2B):** before checking pending
+MLs or Wave 0, `roadmap move` runs `FenceMaskCheck`; an unterminated fence causes the transition
+to be refused with the canonical message embedded in the blockers list. The file is not moved.
+`req move` is not affected — the fence check is only in the `done`-state path of `roadmap move`.
+
 **`roadmap show <name>` shares only rule 1** (the empty-name refusal). It keeps its own
 `*<name>*.md` glob: it has **no** exact-basename precedence — measured, `roadmap show
 ROADMAP-2026-07-19-global-adrs-governance` refuses as ambiguous against the 3 files of that stem
@@ -595,7 +600,19 @@ ML-1C closed only the arm that could act on an arbitrary artifact.
 
 #### `roadmap show <name> --json` — o mesmo resolvedor, outra saída
 
-<!-- trackfw-contract: gate=internal/generators/roadmap_show_json_test.go partial=o gate cobre a normalizacao do vocabulario de status (as 8 grafias medidas na #407 nas 3 categorias), a cerca de codigo ignorada, a wave malformada exposta, o status ausente distinguivel e o heading cru; NAO cobre a divergencia de stdout na ambiguidade (o teste exercita buildRoadmapShowDoc, que e a montagem pura, e nao o caminho de resolucao de nome) -->
+<!-- trackfw-contract: gate=internal/generators/roadmap_show_json_test.go partial=o gate cobre a normalizacao do vocabulario de status (as 8 grafias medidas na #407 nas 3 categorias), a cerca de codigo ignorada, a wave malformada exposta, o status ausente distinguivel e o heading cru; NAO cobre a divergencia de stdout na ambiguidade (o teste exercita buildRoadmapShowDoc, que e a montagem pura, e nao o caminho de resolucao de nome); a checagem de cerca aberta (REQ #476, ML-2B/ML-2C) está em internal/commands/roadmap_show_fence_test.go -->
+
+**Unterminated fence (REQ #476, ML-2B/ML-2C):** `roadmap show` and `show --json` both return
+exit 2 when the roadmap contains an unterminated code fence, before any output is written.
+The message on stderr is:
+
+```
+trackfw roadmap: <basename>: unterminated code fence starting at line <n>
+```
+
+With `--json` stdout is empty (no partial document). A well-formed roadmap is unaffected. The
+fence check is performed in `generators` and surfaced as a `UsageError`; `commands/roadmap.go`
+intercepts that type and calls `os.Exit(2)` directly, bypassing cobra's exit-1 error path.
 
 `--json` emite as waves e, por wave, os MLs com `id`, `heading` cru, `line`, `status_marker` cru,
 `status_found` e `status` normalizado (`complete` | `pending` | `terminated`, as três categorias de
@@ -2179,16 +2196,23 @@ exit-2 assertion vacuously true before implementation. This is the exact false p
 while characterizing the contract in ML-1A; see
 `vault/notes/barrier-contract-xfail-false-positive-2026-07-29.md`.
 
-The two exit-2 messages are **pinned literally** — all three runtimes must emit these byte-for-byte
-on `stderr`. `<roadmap-arg>` is the argument exactly as the user typed it, with no `.md`
-normalization; `<roadmap-file>` is the resolved basename including `.md`:
+All exit-2 messages are **pinned literally** (Go-only in v8, which has a single implementation).
+`<roadmap-arg>` is the argument exactly as the user typed it, with no `.md` normalization;
+`<roadmap-file>` is the resolved basename including `.md`:
 
 ```
 trackfw barrier: roadmap "<roadmap-arg>" not found in wip/ nor done/ under <roadmap_dir>
 trackfw barrier: wave <label> not found in roadmap "<roadmap-file>"
 trackfw barrier: malformed wave heading at line <n>: "<token>" is not a valid wave label
 trackfw barrier: invalid --wave "<value>" — not a valid wave label
+trackfw barrier: unterminated code fence starting at line <n>
 ```
+
+The fifth message — an unterminated code fence anywhere in the roadmap — was added in REQ #476
+(ML-2A). The check runs **before** wave resolution: a fence that opens before the requested
+wave heading would otherwise hide the heading, producing `wave not found`, which is the wrong
+message. `<n>` is 1-based, matching the `FenceMaskCheck` contract in `roadmapdoc`. With `--json`
+the command still exits 2 without emitting a document.
 
 Pinning the text matters because these messages are the only observable difference between "the
 CLI does not implement barrier" and "barrier ran and could not resolve its input". A runtime that
@@ -2545,7 +2569,7 @@ CLI, knowing what they accept.
 
 ### Roadmap parsing rules (string-level — no heuristics)
 
-<!-- trackfw-contract: gate=scripts/check-barrier.sh partial=regras 3, 4 e 5 são exercitadas cross-CLI pelos cenários isolated-check; a regra 6 (fence não-terminado, ML cujo corpo não pode ser delimitado como usage error nomeado) não tem cenário — grep por "unterminated"/"fence"/"cannot be delimited" no gate não retorna nada -->
+<!-- trackfw-contract: gate=scripts/check-barrier.sh partial=regras 3, 4 e 5 são exercitadas cross-CLI pelos cenários isolated-check; a regra 6 (fence não-terminado) tem cenários Go: internal/commands/barrier_fence_test.go · internal/commands/roadmap_show_fence_test.go · internal/generators/roadmap_fence_test.go · internal/serve/api_board_test.go · internal/validator/validator_unterminated_fence_ml3b_test.go · internal/roadmapdoc/fencecheck_test.go; "ML cujo corpo não pode ser delimitado" é letra morta: ParseMLs nunca falha -->
 
 
 These are literal parsing rules. All three runtimes must implement them identically.
@@ -2604,9 +2628,26 @@ These are literal parsing rules. All three runtimes must implement them identica
    A wave with no `**Gates da wave:**` block declares zero gates — that is legal and yields a
    `gates` check with `status: "passed"` and an empty `commands` array. The barrier **never**
    invents a gate.
-6. **Malformed input.** A wave heading whose number is not parseable, an ML whose body cannot
-   be delimited, or an unterminated fence is a usage error (exit 2) with an explicit message
-   naming the offending line number — never a silent pass.
+6. **Malformed input.** A wave heading whose number is not parseable is a usage error (exit 2)
+   per rule 3 above. Clause 2 ("ML whose body cannot be delimited") is **dead letter** in the
+   current parser: `ParseMLs` never fails. An **unterminated code fence** is handled per surface:
+
+   | Surface | Behavior |
+   |---|---|
+   | `trackfw barrier` | exit 2, `trackfw barrier: unterminated code fence starting at line <n>`; check precedes wave resolution — a fence before the requested wave heading would wrongly produce `wave not found` otherwise |
+   | `trackfw roadmap show` / `show --json` | exit 2, `trackfw roadmap: <file>: unterminated code fence starting at line <n>`, stdout empty |
+   | `trackfw roadmap move <x> done` | transition refused with the canonical message embedded in the blockers list; file does not move |
+   | `trackfw serve` | **never** exits 2 — the `/api/board` item gains `unterminated_fence_line` (the 1-based line number), the server logs and continues; the card shows the "roadmap malformado" badge, a `done/?` count and a striped progress bar |
+   | `trackfw validate` | rule `roadmap_unterminated_fence`, covering all states; in `governance_mode: lenient` it becomes a warning, like every violation |
+
+   **CLI vs `validate` leniency:** CLI surfaces (`barrier`, `roadmap show/move`) treat an
+   unterminated fence as a usage error — no leniency applies. `trackfw validate` treats it as a
+   governance violation, subject to `governance_mode` and per-rule severity configuration.
+
+   🔴 **A fence reported as "open" near the end of the file often has its root cause much earlier:**
+   a block that transcribes another fence needs more backticks than the fence it contains
+   (CommonMark rule: the inner backtick run closes the outer block). See
+   `vault/notes/cerca-aberta-acusada-longe-da-causa-bloco-externo-sem-crase-extra-2026-10-01.md`.
 
 ### Wave gates are a portable POSIX-shell contract, not an OS script (ADR-2026-09-01)
 
@@ -4258,6 +4299,35 @@ mudam de veredito (`feat/v2.0-gaps` e `fix/v8-um-binario`, ambas com menos de 2 
 3+ caracteres no slug). Ou seja, em **203 dos 205** casos a sobreposição de tokens já **subsume** o
 substring, e o raio de alcance da etapa restritiva são exatamente essas duas branches — medido pelo
 braço `mutation/braco-substring-morto` do `--self-test`, não estimado.
+
+## Regra `roadmap_unterminated_fence` (REQ #476, ML-3B)
+
+<!-- trackfw-contract: gate=internal/validator/validator_unterminated_fence_ml3b_test.go -->
+
+`trackfw validate` enforces rule `roadmap_unterminated_fence` across **all** roadmap states
+(`backlog`, `analyzing`, `wip`, `blocked`, `done`, `abandoned`). An unterminated fence masks
+content to EOF regardless of workflow state — hiding ML status lines, acceptance criteria or
+gate blocks equally in `done/` as in `wip/`.
+
+**Violation message** (one per offending file):
+
+```
+<basename>: unterminated code fence starting at line <n>
+```
+
+In `governance_mode: lenient` the rule is downgraded to a warning, like every `validate`
+violation. **This is the key difference from CLI surfaces:** `barrier` and `roadmap show/move`
+treat an unterminated fence as a usage error — no leniency applies. `validate` routes it
+through `applyRule`, so `rules: {roadmap_unterminated_fence: warning}` and `off` are honoured.
+
+The two pre-existing unterminated-fence files in the acervo were closed by ML-1A; at the time
+ML-3B shipped `tf validate 2>&1 | grep -c roadmap_unterminated_fence` returned 0 on the live
+acervo.
+
+Gate: `internal/validator/validator_unterminated_fence_ml3b_test.go`
+(`TestRoadmapUnterminatedFence_OpenFence`, `TestRoadmapUnterminatedFence_ClosedFence`,
+`TestRoadmapUnterminatedFence_DoneState`) + pin `pin26`/`pin27` in
+`scripts/check-validate-rule-pins.sh`.
 
 ## Contrato de artefatos gerados (req, adr, roadmap, note)
 
@@ -6301,6 +6371,28 @@ código passaria mesmo com o bind efetivo quebrado.
 
 **Origem:** `serve` escutava em todas as interfaces sem autenticação no Go e no Python;
 `/api/chain` devolvia a cadeia de governança inteira para qualquer dispositivo da rede.
+
+### Roadmap malformado no board (REQ #476, ML-3A/ML-4A)
+
+<!-- trackfw-contract: gate=internal/serve/api_board_test.go -->
+
+`trackfw serve` **never** exits 2 when a roadmap contains an unterminated code fence — the
+board must remain available. Instead:
+
+- The `/api/board` item for the affected roadmap gains the field
+  `"unterminated_fence_line": <n>` (`int`, 1-based, `omitempty`). When all fences are closed
+  the field is absent.
+- The server logs one line per malformed roadmap and continues. `ml_total`/`ml_done` are not
+  adjusted by heuristic — the badge is the signal.
+- The JavaScript dashboard (`internal/serve/static/app.js`) shows a **"roadmap malformado"
+  badge** on the card whenever `card.unterminated_fence_line > 0` **or**
+  `card.malformed_waves > 0`; the progress bar is replaced with a striped amber bar.
+- The same badge and striped bar appear for `malformed_waves`, consolidating both malformed
+  conditions under one UI signal.
+
+Gate: `internal/serve/api_board_test.go` (`TestBoardHandler_UnterminatedFence_FieldPresent`,
+`TestBoardHandler_WellFormedRoadmap_FenceFieldAbsent`,
+`TestBoardHandler_MalformedAndWellFormed_BothListed`).
 
 ### Contrato pinado
 
