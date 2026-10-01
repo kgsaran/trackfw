@@ -408,8 +408,14 @@ func scopeRedirectViolations(diskCfg *config.ProjectConfig) []string {
 // a roadmap named "ROADMAP-2026-09-01-com-ç-teste.md" would appear quoted in the output and
 // filepath.Base would return the escaped form, causing the file to appear absent from the base tree
 // and triggering a spurious "moved by this branch" acceptance.
+//
+// RN1 (ML-3C, 2026-10-01): passes `--literal-pathspecs` as a git global option before the
+// subcommand so that pathspec magic tokens in roadmap_dir (e.g. ":(exclude)", ":(icase)", "[x]")
+// are never interpreted as patterns by git. Without it, a dir named ":(exclude)rm" or "[x]rm"
+// causes ls-tree to return rc=0 with an empty stdout and a fatal on stderr — D3 never fires,
+// the base tree silently appears empty, and the roadmap is accepted as "moved by this branch".
 func mdBasenamesInGitTreeWithError(ref, dirPrefix string) (map[string]bool, error) {
-	out, err := gitCommand(".", "ls-tree", "-r", "-z", "--name-only", ref, "--", dirPrefix).Output()
+	out, err := gitCommand(".", "--literal-pathspecs", "ls-tree", "-r", "-z", "--name-only", ref, "--", dirPrefix).Output()
 	set := make(map[string]bool)
 	if err != nil {
 		return set, err

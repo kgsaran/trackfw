@@ -34,42 +34,52 @@ para `done/` (ausente de `done/` na ponta da base).
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — 🔴 **Wave 0:** threat model do sinal "movido por esta branch" (ponta da base via
+- [x] **AC1** — 🔴 **Wave 0:** threat model do sinal "movido por esta branch" (ponta da base via
   `deriveOriginDefaultBranch` + `git ls-tree`) e da degradação do D3: quem obtém aceitação indevida
   sem quebrar regra escrita, e com que entrada (`trackfw.yaml` com `roadmap_dir` hostil, ref de
   `origin` forjada localmente, nome de arquivo com caractere especial no `ls-tree`). Parecer em
   `docs/seguranca/`.
-- [ ] **AC2** — **#494 fechado na criação:** em repositório temporário com os roadmaps de `done/`
+      ✅ Evidência: parecer da Wave 0 em `docs/seguranca/`
+- [x] **AC2** — **#494 fechado na criação:** em repositório temporário com os roadmaps de `done/`
   desta árvore e `wip/` vazio, `trackfw branch new fix/barrier-executa-cada-linha-do-bloco-de-gates`
   sai rc≠0, **não** cria a branch, e a mensagem nomeia o(s) roadmap(s) de `done/` casado(s) e
   `trackfw roadmap move <nome> wip`. Controle: o mesmo slug com um roadmap casando em `wip/` cria a
   branch.
-- [ ] **AC3** — `RecordBranchLink` grava só com exatamente um casamento em `wip/`. Com um casamento em
+      ✅ Evidência: `TestBranchStateE2E_AC2_DoneOnlyBlocksCreation` (binário, 211 roadmaps reais); reprova na `main`
+- [x] **AC3** — `RecordBranchLink` grava só com exatamente um casamento em `wip/`. Com um casamento em
   `wip/` e outro em `done/`, o vínculo aponta para o de `wip/`.
-- [ ] **AC4** — **#490 fechado:** em repositório temporário, `branch new` → `roadmap move <x>
+      ✅ Evidência: `TestRecordBranchLink_DoneOnlyNoLink`, `TestRecordBranchLink_WipAndDonePicksWip`
+- [x] **AC4** — **#490 fechado:** em repositório temporário, `branch new` → `roadmap move <x>
   blocked` → `trackfw commit` rc=0, `trackfw validate` sem violação de `branch_has_wip_roadmap` e sem
   `branch_link_stale`, `trackfw push --dry-run` com `Governance: OK`. Vale nos dois braços: **com**
   vínculo escrito e **sem** ele (só inferência).
-- [ ] **AC5** — **`done/` em branch existente:** (a) roadmap movido para `done/` **por esta branch**
+      ✅ Evidência: `TestBranchStateE2E_AC4_BlockedRoadmapGoverns_{WithLink,NoLink}`; reprovam na `main`
+- [x] **AC5** — **`done/` em branch existente:** (a) roadmap movido para `done/` **por esta branch**
   (ausente de `done/` em `origin/main`) e casando o slug → `commit`/`validate` passam, com e sem
   vínculo (é o caso da Definition of Done); (b) roadmap já em `done/` em `origin/main`, casando só por
   inferência e sem vínculo → `commit` rc≠0 e `validate` com violação.
-- [ ] **AC6** — **D3:** sem `origin` (ou sem ref default resolvível), o roadmap de `done/` casando por inferência passa como hoje
+      ✅ Evidência: `TestBranchStateE2E_AC5a_*` (passa) e `_AC5b_DoneAlreadyInBaseBlocks` (reprova na `main`)
+- [x] **AC6** — **D3:** sem `origin` (ou sem ref default resolvível), o roadmap de `done/` casando por inferência passa como hoje
   **e** emite `branch_done_scope_unverifiable` com a causa. É aviso, nunca violação.
-- [ ] **AC7** — Mensagens em fonte única no `validator`, parametrizadas por consumidor. Nenhum
+      ✅ Evidência: `TestBranchStateE2E_AC6_NoPushOriginDegrades`; `TestShip_GovernanceDegraded_PrintsDegradedNotOK`
+- [x] **AC7** — Mensagens em fonte única no `validator`, parametrizadas por consumidor. Nenhum
   literal de mensagem duplicado em `internal/commands/`. `scripts/check-validate-rule-pins.sh`
   (PIN3/PIN4) e `docs/cli-parity.md` atualizados e verdes.
-- [ ] **AC8** — **A relação não muda (D6):** `git diff` de `MatchRoadmapsForBranchSlug`,
+      ✅ Evidência: `check-validate-rule-pins.sh` 30/30; `grep "nor done/"` em `commands/` só acha `barrier.go`
+- [x] **AC8** — **A relação não muda (D6):** `git diff` de `MatchRoadmapsForBranchSlug`,
   `branchRoadmapTokens`, `roadmapContentSlug` e `sharedTokenCount` vazio, e o gate do corpus do
   ADR-2026-09-26 (AC14) verde sem mudança de veredito.
-- [ ] **AC9** — Todo teste novo declara, no relatório do ML, qual conclusão afirma. O teste da
+      ✅ Evidência: grep do D6 no diff vazio; `check-roadmap-slug-matching.sh` 205×201 sem divergência (ML-3B)
+- [x] **AC9** — Todo teste novo declara, no relatório do ML, qual conclusão afirma. O teste da
   `REQ-2026-08-04` que afirmava "match em `done/` cria a branch" é **invertido**, não apagado.
+      ✅ Evidência: uma frase por teste em todos os relatórios; 3 testes decorativos removidos na auditoria
 - [ ] **AC10** — `make quality` EXIT=0 e CI do PR verde, inclusive `windows-full-suites`.
-
-- [ ] **AC11** — (A2 da Wave 0) sem `origin`, `push --dry-run` e `ship --dry-run` **não** imprimem
+- [x] **AC11** — (A2 da Wave 0) sem `origin`, `push --dry-run` e `ship --dry-run` **não** imprimem
   `Governance: OK`; imprimem o aviso `branch_done_scope_unverifiable`.
-- [ ] **AC12** — (A1 da Wave 0) `mdBasenamesInGitTree` e `auditsurface.gitLsTree` usam `ls-tree -z`.
+      ✅ Evidência: `TestBranchStateE2E_AC6_NoPushOriginDegrades` (push) e `TestShip_GovernanceDegraded_PrintsDegradedNotOK` (sabotagem reprova)
+- [x] **AC12** — (A1 da Wave 0) `mdBasenamesInGitTree` e `auditsurface.gitLsTree` usam `ls-tree -z`.
   O teste com nome acentuado falha em `e104a7f7` e passa na branch.
+      ✅ Evidência: `TestGitLsTree_AccentedFilename` e `TestBranchStateE2E_AC12_*` reprovam em `e104a7f7`; `--literal-pathspecs` acrescentado (RN1)
 
 ## Escopo absorvido durante a execução
 

@@ -2,6 +2,24 @@
 
 ---
 
+## 2026-10-01 — Apolo (fix/estado-que-governa-a-branch — ML-3C) — INÍCIO
+
+**Início:** 2026-10-01 | Branch: `fix/estado-que-governa-a-branch`
+**Tarefa:** ML-3C corretivo — reescrever `internal/validator/validator_literal_pathspecs_test.go` para que o teste morda de verdade (prova com overlay)
+**Arquivos a modificar:** `internal/validator/validator_literal_pathspecs_test.go` · roadmap ML-3C · `docs/agents-working-context.md`
+
+---
+
+## 2026-10-01 — Apolo (fix/estado-que-governa-a-branch — ML-3C) — FIM
+
+Teste reescrito: `TestMdBasenamesInGitTree_LiteralPathspecDirName` com tabela `:(exclude)rm/done` e `:(icase)rm/done`.
+Prova de mordida: overlay sem `--literal-pathspecs` → FAIL (rc=128 em ambos os casos); produção → PASS.
+`mdBasenamesWithoutLiteralPathspecs` e subteste "bites" removidos; premissa falsa sobre macOS removida.
+Gates: `go build ./...` OK · `go vet ./internal/validator/` OK · `go test ./internal/validator/ ./internal/auditsurface/ ./internal/commands/` OK · grep vazio · `make build && check-validate-rule-pins.sh` exit 0 (30/30 pins).
+ML-3C marcado ✅ Concluído no roadmap.
+
+---
+
 ## 2026-10-01 — Hades (fix/estado-que-governa-a-branch — ML-3A) — INÍCIO
 
 **Início:** 2026-10-01 | Branch: `fix/estado-que-governa-a-branch`
@@ -43963,3 +43981,18 @@ ainda usam as funções Deprecated.
 
 **Status ML-2A:** atualizado de ⬜ Pendente → 🔄 Em andamento.
 **Próxima ação:** handoff para `trackfw_architect` para auditoria e commit.
+
+## 2026-10-01 — apolo-tf (fix/estado-que-governa-a-branch — ML-3C) — INÍCIO
+
+**Início:** 2026-10-01 | Branch: `fix/estado-que-governa-a-branch`
+**Tarefa:** ML-3C — Corretivo Wave 3: `--literal-pathspecs` e textos de contrato
+**Arquivos alvo:** `internal/validator/validator.go`, `internal/auditsurface/auditsurface.go`, `internal/commands/branch.go`, `internal/commands/commit.go`, `internal/commands/branch_test.go`, `internal/commands/branchlink_ml3a_test.go`, novo teste em `internal/validator/`
+**Origem:** RN1 do ML-3A + 5 achados do ML-3B
+
+## 2026-10-01 — zeus-tf — FIM (implementação): #494 + #490 prontos para PR
+
+Waves 0–3 com barrier `passed`. Corretivos abertos na auditoria: ML-1D (dica de `done/` mandava
+reabrir roadmap alheio), ML-2B (`ship` degradado sem teste), ML-3C (`--literal-pathspecs`, RN1 do
+Hades, absorvido em vez de follow-up). Três testes decorativos removidos; um teste reescrito porque
+não mordia e partia de premissa falsa (":" é válido em nome de diretório no macOS, medido).
+`make quality` EXIT=0 em `57aed5b4`; ML-3C coberto pelos testes dos 3 pacotes. AC10 aguarda o CI.

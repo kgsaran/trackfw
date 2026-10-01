@@ -20,7 +20,7 @@ var commitProtectedBranches = map[string]bool{
 }
 
 // commitGovernedPrefixes lists the branch-type prefixes that require a matching roadmap in
-// wip/ or done/ before a commit is allowed — the same vocabulary `trackfw branch new` and the
+// wip/, blocked/ or done/ before a commit is allowed — the same vocabulary `trackfw branch new` and the
 // branch_has_wip_roadmap governance rule already enforce.
 var commitGovernedPrefixes = []string{"feat/", "fix/", "refactor/"}
 
@@ -77,7 +77,7 @@ Behavioral steps:
   1. On 'main'/'master': always blocked — commit directly on the default branch is never
      permitted.
   2. On a feat/fix/refactor branch: requires a roadmap matching the branch slug already in
-     wip/ or done/ — the exact matching logic 'trackfw branch new' and 'trackfw validate'
+     wip/, blocked/ or done/ — the exact matching logic 'trackfw branch new' and 'trackfw validate'
      already use. Without a match, blocks with the same governance orientation message.
   3. On any other branch (e.g. doc/housekeeping branches): allowed without requiring a
      roadmap — a warning is logged, but the commit proceeds.

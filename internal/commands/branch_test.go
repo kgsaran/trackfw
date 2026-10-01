@@ -90,7 +90,7 @@ func TestParseBranchSpec_NoSlash(t *testing.T) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// runBranchNew — match found (wip/ or done/, no distinction at this layer since
+// runBranchNew — match found (wip/ only at creation; done/ distinction is in the orientation
 // matchSlug is injected — the real matching logic is covered by
 // internal/validator TestBranchSlugMatchesRoadmap-style tests).
 // ────────────────────────────────────────────────────────────────────────────

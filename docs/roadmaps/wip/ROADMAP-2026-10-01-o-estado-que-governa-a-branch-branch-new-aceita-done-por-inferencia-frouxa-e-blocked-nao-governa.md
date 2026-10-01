@@ -32,14 +32,22 @@ Mapa do código (lido em `e104a7f7`):
 ## Acceptance Criteria
 - [x] AC1 — Wave 0 auditada (parecer de segurança em `docs/seguranca/`)
       ✅ Evidência: `docs/seguranca/2026-10-01-wave0-estado-que-governa-a-branch.md`, APROVA COM AJUSTES (A1–A3 absorvidos no ML-1A/ML-1B/ML-1C e no ADR)
-- [ ] AC2 — #494 fechado na criação (binário, acervo real, `wip/` vazio)
-- [ ] AC3 — `RecordBranchLink` só com casamento único em `wip/`
-- [ ] AC4 — #490 fechado: commit/validate/push passam após `roadmap move … blocked`, com e sem vínculo
-- [ ] AC5 — `done/` em branch existente: aceita o roadmap movido pela própria branch e recusa o alheio
-- [ ] AC6 — base inverificável → aviso `branch_done_scope_unverifiable`, nunca violação
-- [ ] AC7 — mensagens em fonte única; pinos e `cli-parity.md` atualizados
-- [ ] AC8 — relação de casamento intocada; gate do corpus sem mudança de veredito
-- [ ] AC9 — teste novo declara o que afirma; teste da REQ-2026-08-04 invertido
+- [x] AC2 — #494 fechado na criação (binário, acervo real, `wip/` vazio)
+      ✅ `TestBranchStateE2E_AC2_DoneOnlyBlocksCreation` (binário, 211 roadmaps reais); reprova na `main`
+- [x] AC3 — `RecordBranchLink` só com casamento único em `wip/`
+      ✅ `TestRecordBranchLink_DoneOnlyNoLink`, `TestRecordBranchLink_WipAndDonePicksWip`
+- [x] AC4 — #490 fechado: commit/validate/push passam após `roadmap move … blocked`, com e sem vínculo
+      ✅ `TestBranchStateE2E_AC4_BlockedRoadmapGoverns_{WithLink,NoLink}`; reprovam na `main`
+- [x] AC5 — `done/` em branch existente: aceita o roadmap movido pela própria branch e recusa o alheio
+      ✅ `TestBranchStateE2E_AC5a_*` (passa) e `_AC5b_DoneAlreadyInBaseBlocks` (reprova na `main`)
+- [x] AC6 — base inverificável → aviso `branch_done_scope_unverifiable`, nunca violação
+      ✅ `TestBranchStateE2E_AC6_NoPushOriginDegrades`; `TestShip_GovernanceDegraded_PrintsDegradedNotOK`
+- [x] AC7 — mensagens em fonte única; pinos e `cli-parity.md` atualizados
+      ✅ `check-validate-rule-pins.sh` 30/30; `grep "nor done/"` em `commands/` só acha `barrier.go`
+- [x] AC8 — relação de casamento intocada; gate do corpus sem mudança de veredito
+      ✅ grep do D6 no diff vazio; `check-roadmap-slug-matching.sh` 205×201 sem divergência (ML-3B)
+- [x] AC9 — teste novo declara o que afirma; teste da REQ-2026-08-04 invertido
+      ✅ uma frase por teste em todos os relatórios; 3 testes decorativos removidos na auditoria
 - [ ] AC10 — `make quality` EXIT=0 e CI verde
 
 ## Status Legend
@@ -287,7 +295,7 @@ test -s docs/qualidade/2026-10-01-revisao-estado-que-governa-a-branch.md
 ```
 
 ### ML-3C — Corretivo da Wave 3: `--literal-pathspecs` e textos que mentem sobre o contrato
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Origem:** RN1 do ML-3A (pathspec mágico como `:(exclude)` em `roadmap_dir` faz `ls-tree` sair rc=0
 com `fatal` no stderr, e o D3 não dispara) e os 5 achados do ML-3B (ajuda e comentários ainda dizem
@@ -299,9 +307,10 @@ com `fatal` no stderr, e o D3 não dispara) e os 5 achados do ML-3B (ajuda e com
 (done/ só nomeado na mensagem), branch existente = "wip/, blocked/ or done/"; (3) teste: `roadmap_dir`
 literal `:(exclude)rm` com roadmap em done/ na base → reconhecido como presente na base.
 **Acceptance criteria:**
-- [ ] O teste do item 3 falha sem `--literal-pathspecs` e passa com ele (provar)
-- [ ] `grep -n "wip/ or done/" internal/commands/branch.go internal/commands/commit.go` vazio
-- [ ] Relatório: uma frase por teste novo
+- [x] O teste do item 3 falha sem `--literal-pathspecs` e passa com ele (provar)
+      ✅ Medido pelo arquiteto via overlay: sem a flag FAIL (`exit status 128`), com a flag PASS. Primeira versão do teste não mordia e partia de premissa falsa (":" proibido no macOS); reescrita.
+- [x] `grep -n "wip/ or done/" internal/commands/branch.go internal/commands/commit.go` vazio
+- [x] Relatório: uma frase por teste novo
 **Gates da wave:**
 ```bash
 go build ./...

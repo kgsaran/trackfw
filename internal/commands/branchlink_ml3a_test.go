@@ -65,7 +65,7 @@ func TestBranchNew_BlockedRecordsNoLink(t *testing.T) {
 
 // Affirms: D1 at commit time — the written link ADDS acceptance: a branch whose roadmap was renamed
 // out of inference reach stays governed because the link recorded at creation still names a roadmap
-// present in wip/ or done/.
+// present in wip/, blocked/ or done/.
 func TestCommit_WrittenLinkAcceptsWhenInferenceFails(t *testing.T) {
 	deps, out, calls := makeCommitDeps("feat/minha-feature", false, []string{"ROADMAP-renomeado.md"})
 	deps.resolveRoadmap = func(cfg config.ProjectConfig, branch string) validator.BranchRoadmapResolution {

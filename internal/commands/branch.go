@@ -13,7 +13,7 @@ import (
 )
 
 // branchValidTypes is the full vocabulary accepted by `trackfw branch new`. feat/fix/refactor are
-// gated on a matching REQ + roadmap already in wip/ or done/ (branchGatedTypes below); chore/docs
+// gated on a matching REQ + roadmap already in wip/ (branchGatedTypes below); chore/docs
 // are housekeeping types — already treated as roadmap-exempt by `trackfw ship` and `trackfw
 // commit` — and create the branch without that gate.
 var branchValidTypes = map[string]bool{
@@ -25,7 +25,7 @@ var branchValidTypes = map[string]bool{
 }
 
 // branchGatedTypes is the subset of branchValidTypes that requires a matching REQ + roadmap
-// already in wip/ or done/ before the branch is created. Keep this in sync with the pattern
+// already in wip/ before the branch is created. Keep this in sync with the pattern
 // `trackfw ship`/`trackfw commit` use to decide when the branch_has_wip_roadmap gate applies.
 var branchGatedTypes = map[string]bool{
 	"feat":     true,
@@ -77,7 +77,7 @@ func newBranchNewCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "new <type>/<slug>",
-		Short: "Create a feat/fix/refactor/chore/docs branch; feat/fix/refactor gated on a matching REQ + roadmap already in wip/ or done/",
+		Short: "Create a feat/fix/refactor/chore/docs branch; feat/fix/refactor gated on a matching REQ + roadmap already in wip/",
 		Long: `trackfw branch new moves the branch_has_wip_roadmap governance gate (already enforced
 by 'trackfw validate' and 'trackfw ship') to before branch creation, instead of after:
 
