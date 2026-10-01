@@ -101,7 +101,14 @@ Sem base resolvível (sem `origin`, ref ausente, `ls-tree` falha), o item 3 do D
 hoje (casa o slug em `done/`) **e** emite o aviso `branch_done_scope_unverifiable`, com a causa
 (qual ref, qual rc). Não vira violação, pela mesma razão do D4 do ADR-2026-09-26: um portão que
 reprova por falta de rede paralisa o commit da própria correção. Não fica silencioso, pela regra que
-esse ADR já escreveu para o vínculo stale.
+esse ADR já escreveu para o vínculo stale. O aviso precisa chegar às **quatro** portas: hoje
+`CheckShipGovernance` descarta os warnings (`branchViolations, _, _ :=`), e `push`/`ship` imprimiriam
+`Governance: OK` sobre uma decisão degradada. `GovernanceViolation` ganha `Warnings`, e as duas portas
+os imprimem (achado A2 da Wave 0).
+
+A leitura da árvore da base usa `git ls-tree -z` e reaproveita `mdBasenamesInGitTree`. Sem `-z`, um
+nome não-ASCII sai citado (`core.quotepath`) e parece ausente da base, o que aceita em vez de recusar
+(achado A1 da Wave 0). O mesmo defeito em `auditsurface.gitLsTree` é corrigido na mesma REQ.
 
 ### D4 — O vínculo escrito cobre `blocked/`; o aviso stale nomeia os três estados.
 
@@ -132,6 +139,13 @@ PIN3/PIN4) e `docs/cli-parity.md` mudam no mesmo PR.
   D6). Com `wip/` pequeno o risco é baixo, mas não é zero.
 - **Resíduo declarado:** com base inverificável, o item 3 degrada para a inferência de hoje, com
   aviso.
+- **Resíduo declarado (vetor (e) do threat model da Wave 0):** uma branch cujo slug casa um roadmap
+  alheio em `wip/` pode movê-lo para `done/` e passar no item 3 do D2, porque ele estará ausente da
+  base. A defesa é a revisão do diff (o PR mostra o `git mv`), não o gate.
+- **Resíduo declarado:** no `push`, a governança roda antes do `fetch`. Com `origin/main` local
+  desatualizado, um roadmap concluído na `main` depois do último fetch parece "movido por esta
+  branch". O erro é na direção frouxa e só local: no CI, o workflow gerado faz o fetch antes do
+  `validate`.
 - **Resíduo declarado:** em branch cuja base de PR não é a default de `origin`, "movido por esta
   branch" é medido contra a default. O erro é na direção frouxa: o roadmap pode estar ausente da
   default e presente na base real.

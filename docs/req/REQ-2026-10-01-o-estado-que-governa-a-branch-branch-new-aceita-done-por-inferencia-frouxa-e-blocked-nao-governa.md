@@ -66,6 +66,18 @@ para `done/` (ausente de `done/` na ponta da base).
   `REQ-2026-08-04` que afirmava "match em `done/` cria a branch" é **invertido**, não apagado.
 - [ ] **AC10** — `make quality` EXIT=0 e CI do PR verde, inclusive `windows-full-suites`.
 
+- [ ] **AC11** — (A2 da Wave 0) sem `origin`, `push --dry-run` e `ship --dry-run` **não** imprimem
+  `Governance: OK`; imprimem o aviso `branch_done_scope_unverifiable`.
+- [ ] **AC12** — (A1 da Wave 0) `mdBasenamesInGitTree` e `auditsurface.gitLsTree` usam `ls-tree -z`.
+  O teste com nome acentuado falha em `e104a7f7` e passa na branch.
+
+## Escopo absorvido durante a execução
+
+- **A1/A2 do threat model da Wave 0** (`docs/seguranca/2026-10-01-wave0-estado-que-governa-a-branch.md`).
+  O aviso do D3 seria descartado por `CheckShipGovernance`. A leitura de árvore sem `-z` erra nome
+  acentuado nos dois leitores que já existem. Entram aqui pela Regra Dura: o sinal do D2 depende dos
+  dois.
+
 ## Negative scope
 
 - **A relação de casamento** (braços substring/tokens, limiar 2, token mínimo 3): intocada (D6). A

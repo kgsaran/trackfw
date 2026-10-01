@@ -25,10 +25,13 @@ Mapa do código (lido em `e104a7f7`):
 | `internal/validator/validator.go` `validateBranchHasWIPRoadmap` (~:3934) | `ResolveBranchRoadmap(wip, done)` | resolução nova; usada por `CheckShipGovernance` → `push`/`ship` |
 | `internal/commands/commit.go` (~:356) | `matchSlug` + vínculo, `wip∪done` | mesma resolução do `validate` (fonte única) |
 | `BranchGovernanceOrientation` / `BranchNoMatchingRoadmapMessage` / `BranchLinkStaleWarning` | texto "wip/ nor done/" | parametrizado por consumidor (D5) |
+| `internal/validator/validator.go` `CheckShipGovernance` (~:4113) / `GovernanceViolation` | descarta os warnings de `validateBranchHasWIPRoadmap` | `Warnings` propagados e impressos por `push`/`ship` (A2 do ML-0A) |
+| `internal/validator/validator.go` `mdBasenamesInGitTree` (~:404), `internal/auditsurface/auditsurface.go` `gitLsTree` (~:287) | `ls-tree --name-only` sem `-z`: nome não-ASCII sai citado | `-z` + split em NUL (A1 do ML-0A) |
 | `scripts/check-validate-rule-pins.sh` PIN3/PIN4, `docs/cli-parity.md` (:1292, :1858, :4259-4260) | texto antigo | texto novo |
 
 ## Acceptance Criteria
-- [ ] AC1 — Wave 0 auditada (parecer de segurança em `docs/seguranca/`)
+- [x] AC1 — Wave 0 auditada (parecer de segurança em `docs/seguranca/`)
+      ✅ Evidência: `docs/seguranca/2026-10-01-wave0-estado-que-governa-a-branch.md`, APROVA COM AJUSTES (A1–A3 absorvidos no ML-1A/ML-1B/ML-1C e no ADR)
 - [ ] AC2 — #494 fechado na criação (binário, acervo real, `wip/` vazio)
 - [ ] AC3 — `RecordBranchLink` só com casamento único em `wip/`
 - [ ] AC4 — #490 fechado: commit/validate/push passam após `roadmap move … blocked`, com e sem vínculo
@@ -46,7 +49,7 @@ Mapa do código (lido em `e104a7f7`):
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model do conjunto de estados e do sinal "movido por esta branch"
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** hades-tf
 **Files affected:** `docs/seguranca/2026-10-01-wave0-estado-que-governa-a-branch.md` (único arquivo escrito)
 **Actions:**
@@ -65,9 +68,9 @@ Mapa do código (lido em `e104a7f7`):
 4. **Resíduo declarado:** o que o desenho aceita não cobrir. Diga se o D3 (fail-open com aviso) é
    aceitável ou se algum portão (`push`, que é hard gate) deveria falhar fechado.
 **Acceptance criteria:**
-- [ ] As quatro seções respondidas com evidência (comando + saída), não asserção de uma linha
-- [ ] Veredito explícito: APROVA / APROVA COM AJUSTES (listar) / REPROVA
-- [ ] Nenhuma linha de implementação escrita
+- [x] As quatro seções respondidas com evidência (comando + saída), não asserção de uma linha
+- [x] Veredito explícito: APROVA / APROVA COM AJUSTES (listar) / REPROVA
+- [x] Nenhuma linha de implementação escrita
 
 **Gates da wave:**
 ```bash
@@ -92,14 +95,21 @@ grep -q "Veredito" docs/seguranca/2026-10-01-wave0-estado-que-governa-a-branch.m
    assinatura pública ou uma nova; nenhum consumidor reimplementa): vínculo em escopo → governa;
    inferência em `wip∪blocked` → governa; inferência em `done` → governa só se o arquivo **não** está
    em `done/` na ponta de `deriveOriginDefaultBranch()` (`git ls-tree -z --name-only <ref> --
-   <done_dir>/`, via `gitCommand`). Para `by_agent`, cada `done/` resolvido é verificado.
+   <done_dir>/`). 🔴 **Reusar `mdBasenamesInGitTree`** (validator.go ~:404), não escrever outro
+   leitor de árvore; corrigi-lo para `ls-tree -z` + `bytes.Split(out, []byte{0})` (A1 do ML-0A:
+   com `core.quotepath` padrão, nome não-ASCII sai citado e `filepath.Base` erra → o roadmap parece
+   ausente da base → aceitação frouxa). Teste com nome de roadmap acentuado. Para `by_agent`, cada
+   `done/` resolvido é verificado.
 5. D3: ref não resolvível ou `ls-tree` com rc≠0 → aceita como hoje e acrescenta aviso
    `branch_done_scope_unverifiable: …` com ref e rc em `Warnings`. Nunca violação.
-6. D5: `BranchGovernanceOrientation`/`BranchNoMatchingRoadmapMessage` ganham o consumidor como
+6. A2 do ML-0A: `GovernanceViolation` ganha `Warnings []string`; `CheckShipGovernance` propaga o
+   segundo retorno de `validateBranchHasWIPRoadmap` (hoje descartado com `_`). Sem isso o aviso do D3
+   nunca chega a `push`/`ship`.
+7. D5: `BranchGovernanceOrientation`/`BranchNoMatchingRoadmapMessage` ganham o consumidor como
    parâmetro (criação → "in wip/"; existente → "in wip/, blocked/ nor done/"). Na criação, se houver
    casamentos em `done/`, a mensagem os nomeia (até 3, ordenados) e orienta `trackfw roadmap move
    <nome> wip`.
-7. 🔴 **Proibido** tocar `MatchRoadmapsForBranchSlug`, `branchRoadmapTokens`, `roadmapContentSlug`,
+8. 🔴 **Proibido** tocar `MatchRoadmapsForBranchSlug`, `branchRoadmapTokens`, `roadmapContentSlug`,
    `sharedTokenCount` e as duas constantes (D6).
 **Acceptance criteria:**
 - [ ] Testes com git real em diretório temporário: blocked governa (com e sem vínculo); `done/` movido
@@ -116,16 +126,20 @@ go test ./internal/validator/ -count=1
 ### ML-1B — Consumidores: `branch new`, `commit`, pinos e contrato
 **Status:** ⬜ Pendente
 **Squad:** apolo-tf
-**Files affected:** `internal/commands/branch.go`, `internal/commands/commit.go`, testes em
+**Files affected:** `internal/commands/branch.go`, `internal/commands/commit.go`,
+`internal/commands/push.go`, `internal/commands/ship.go`, testes em
 `internal/commands/*_test.go`, `scripts/check-validate-rule-pins.sh`, `docs/cli-parity.md`
 **Actions:**
 1. `runBranchNew`: guard contra `wip` só (D1). Os casamentos em `done/` só alimentam a mensagem.
-2. `commit.go`: substituir o par `matchSlug` + `branchLink` pela resolução de branch existente do
+2. `push.go`/`ship.go`: imprimir `GovernanceViolation.Warnings` mesmo com `Missing` vazio, como
+   `Governance: degraded: <aviso>` em vez de `Governance: OK` (A2 do ML-0A). Teste: sem `origin`,
+   `push --dry-run` não imprime `Governance: OK` e imprime `branch_done_scope_unverifiable`.
+3. `commit.go`: substituir o par `matchSlug` + `branchLink` pela resolução de branch existente do
    ML-1A (fonte única com o `validate`). Imprimir os `Warnings` dela.
-3. Inverter o teste herdado da REQ-2026-08-04 ("match em `done/` cria a branch") para "match só em
+4. Inverter o teste herdado da REQ-2026-08-04 ("match em `done/` cria a branch") para "match só em
    `done/` bloqueia e nomeia o roadmap". Não apagar.
-4. `check-validate-rule-pins.sh` PIN3/PIN4 e os marcadores `BHR_MARKER`/`MARKER_*`: textos novos.
-5. `docs/cli-parity.md` (:1292, :1858, :4259-4260 e onde mais o grep achar): contrato novo por
+5. `check-validate-rule-pins.sh` PIN3/PIN4 e os marcadores `BHR_MARKER`/`MARKER_*`: textos novos.
+6. `docs/cli-parity.md` (:1292, :1858, :4259-4260 e onde mais o grep achar): contrato novo por
    consumidor, o sinal "movido por esta branch" e o aviso `branch_done_scope_unverifiable`.
 **Acceptance criteria:**
 - [ ] `grep -rn "nor done/" internal/commands/*.go` (fora de `_test`) só retorna o `barrier.go` (fora
@@ -138,6 +152,23 @@ go build ./...
 go test ./internal/commands/ ./internal/validator/ -count=1
 make build
 GO_BIN=bin/trackfw scripts/check-validate-rule-pins.sh
+```
+
+### ML-1C — `gitLsTree` do `auditsurface` com `-z` (mesma causa do A1)
+**Status:** ⬜ Pendente
+**Squad:** apolo-tf
+**Files affected:** `internal/auditsurface/auditsurface.go` (`gitLsTree` ~:287), teste em
+`internal/auditsurface/*_test.go`
+**Paralelismo:** arquivos disjuntos do ML-1A; pode rodar junto dele. Não toca `internal/validator/`.
+**Actions:** `git ls-tree -r -z --name-only` + split em NUL; teste com caminho acentuado em
+repositório git temporário (falha sem `-z`, passa com ele).
+**Acceptance criteria:**
+- [ ] Teste falha no código de `e104a7f7` e passa no novo (provar as duas)
+- [ ] Relatório: uma frase por teste novo
+**Gates da wave:**
+```bash
+go build ./...
+go test ./internal/auditsurface/ -count=1
 ```
 
 ## Wave 2 — Ponta a ponta com o binário

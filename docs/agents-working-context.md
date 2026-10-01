@@ -2,6 +2,22 @@
 
 ---
 
+## 2026-10-01 — Hades (fix/estado-que-governa-a-branch — ML-0A) — INÍCIO
+
+**Início:** 2026-10-01 | Branch: `fix/estado-que-governa-a-branch`
+**Tarefa:** ML-0A Wave 0 — Threat model do conjunto de estados e do sinal "movido por esta branch"
+**Arquivos a modificar:** `docs/seguranca/2026-10-01-wave0-estado-que-governa-a-branch.md` · `docs/agents-working-context.md`
+
+---
+
+## 2026-10-01 — Hades (fix/estado-que-governa-a-branch — ML-0A) — FIM
+
+Entregue `docs/seguranca/2026-10-01-wave0-estado-que-governa-a-branch.md` com as 4 seções completas.
+Veredito: APROVA COM AJUSTES (3 ajustes obrigatórios: A1 `-z` em ls-tree, A2 `GovernanceViolation.Warnings`, A3 resíduo vetor-e no ADR).
+Sítio adicional ausente da tabela: `GovernanceViolation`/`CheckShipGovernance` descarta aviso D3 silenciosamente em push/ship.
+
+---
+
 ## 2026-10-01 — Apolo (fix/barrier-executa-cada-linha-do-bloco-de-gates — ML-4A) — INÍCIO
 
 **Início:** 2026-10-01 | Branch: `fix/barrier-executa-cada-linha-do-bloco-de-gates`
