@@ -4,6 +4,8 @@
 
 ## Índice
 
+- [sh-n-misses-heredoc-opener-e-trailing-backslash-2026-10-01](sh-n-misses-heredoc-opener-e-trailing-backslash-2026-10-01.md) — **`sh -n` não detecta heredoc opener puro nem trailing `\` isolado — FN medido em bash 3.2 e dash** — supplement para (b): `endswith('\\')` para trailing-`\` (zero FP no corpus); heredoc: omitir (zero instâncias, FP em `grep -q '<<EOF'` e aritmética `<<`)
+
 - [parsegates-per-line-isolation-fuse-same-line-2026-09-30](parsegates-per-line-isolation-fuse-same-line-2026-09-30.md) — **`ParseGates` executa cada linha do gate block como `sh -c` isolado — `export T_FUSE` em uma linha não sobrevive para a próxima** — fusível T_FUSE DEVE estar na MESMA LINHA que a chamada barrier; gate multi-linha causou fork bomb ~120s em ML-2A; `pkill -x trackfw` não mata `trackfw_bin`/`tf`
 
 - [windows-known-failures-14a-entrada-ausente-das-tabelas-wave0-2026-09-29](windows-known-failures-14a-entrada-ausente-das-tabelas-wave0-2026-09-29.md) — **Wave 0 triou 13 em 4 grupos (4+4+2+3); `TestUpdateMigratesKnownCodexAndPreservesUnknown` é a 14ª, ausente das tabelas** — causa inferida: `strings.Contains(manifest, backendPath)` falha porque `filepath.Join` emite `\` no Windows e o manifest armazena `/`; Grupo D, mecanismo distinto das entradas 8.3 short-name

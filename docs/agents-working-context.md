@@ -2,6 +2,28 @@
 
 ---
 
+## 2026-10-01 — Hades (fix/barrier-executa-cada-linha-do-bloco-de-gates — ML-0A) — ENTREGUE (v4)
+
+**Início:** 2026-10-01 | **Fim:** 2026-10-01 | Branch: `fix/barrier-executa-cada-linha-do-bloco-de-gates`
+**Tarefa:** ML-0A Wave 0 — medir o acervo e decidir entre (a), (b) e (c)
+**Arquivos afetados:** `docs/seguranca/2026-10-01-wave0-gate-por-linha.md` (criado, v3) · `vault/notes/sh-n-misses-heredoc-opener-e-trailing-backslash-2026-10-01.md` (criado) · `vault/notes/index.md` (atualizado) · `docs/roadmaps/wip/ROADMAP-2026-10-01-o-barrier-executa-cada-linha-do-bloco-de-gates-como-sh-c-separado-e-o-contrato-nao-diz.md` (ML-0A ✅)
+
+**Resultado final (v4, todos os números verificados com embedded scanner):**
+- docs/roadmaps: 86 blocos / 173 cmds / sh-n OK=162 FAIL=11 / (i)=1 (ii)=1 (iii)=41
+  - done/: 63 blocos, FAIL=11, bi=1, bii=1 (arquivo: ROADMAP-2026-08-28-gate-de-ci-pinado...)
+  - backlog/wip/abandoned: 23 blocos, FAIL=0, bi=0, bii=0
+- scripts/testdata: 15 blocos / 55 cmds / sh-n OK=44 FAIL=11 / (i)=1 (ii)=1 (iii)=13
+- internal/roadmapdoc/testdata: 42 blocos / 105 cmds / sh-n OK=94 FAIL=11 / (i)=1 (ii)=1 (iii)=26
+- bi/bii file (todas 3 universos): ROADMAP-2026-08-28-gate-de-ci-pinado-na-versao-geradora-e-install-sh-honrando-trackfw-version.md
+- sh-n medidos: trailing `&&`/`||`/`|` = TP (exit 2). FNs confirmados: trailing-`\` puro e heredoc opener.
+- trailing-`\` rule: ímpar count (não endswith). Heredoc: body lê da string `-c`, não stdin. Zero instâncias no corpus.
+- FenceMask: 1 gate em fence (ROADMAP-2026-08-22, Wave 2, em todos 3 universos — mesma cópia). Go e Python extraem igualmente. Findingo separado de #491.
+- PINNED_CORPUS_HASH: não muda com (b). Contrato `<cmd>: exit N` (barrier_test.go:639 + cli-parity.md:2620) preservado.
+- Trust check: whole-file byte compare (barrier.go:239,334). F1 invariant inalterado por (b). Sob (c): comentários executariam como no-ops.
+- **Recomendação: opção (b)** com (a) como pré-requisito. Scanner embedded no parecer com per-state tally e bi/bii filenames. Vault note criada.
+
+---
+
 ## 2026-10-01 — Apolo (fix/cerca-nao-terminada-mascara-em-silencio — ML-4B) — BLOQUEADO
 
 **Inicio:** 2026-10-01 | Branch: `fix/cerca-nao-terminada-mascara-em-silencio`

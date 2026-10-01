@@ -35,7 +35,7 @@ falta é a consequência, o aviso na superfície de autoria e a distinção entr
 
 ### ML-0A — medir o acervo e decidir entre (a), (b) e (c)
 **Owner:** `hades-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos de leitura:** `internal/roadmapdoc/roadmapdoc.go` (`ParseGates`) · `internal/commands/barrier.go`
 (`runGateCommand`, `evalGateCommands`) · `docs/cli-parity.md` (regra 5, ~:2619, e § *Wave gates are a
 portable POSIX-shell contract*) · ADR-2026-09-01 · o template de Wave 0 em `internal/generators/` ·
@@ -69,11 +69,11 @@ as duas notas de vault acima
   nem a evidência, **diga**.
 
 **Critérios de aceite:**
-- [ ] Contagens (i), (ii) e (iii) sobre o acervo, com o comando usado
-- [ ] (a), (b) e (c), cada um com o contra-braço medido e o veredito
-- [ ] Superfície de autoria enumerada com `arquivo:linha`
-- [ ] Recomendação, com o resíduo declarado
-- [ ] Nenhuma linha de implementação
+- [x] Contagens (i), (ii) e (iii) sobre o acervo, com o comando usado
+- [x] (a), (b) e (c), cada um com o contra-braço medido e o veredito
+- [x] Superfície de autoria enumerada com `arquivo:linha`
+- [x] Recomendação, com o resíduo declarado
+- [x] Nenhuma linha de implementação
 
 **Gates da wave:**
 
