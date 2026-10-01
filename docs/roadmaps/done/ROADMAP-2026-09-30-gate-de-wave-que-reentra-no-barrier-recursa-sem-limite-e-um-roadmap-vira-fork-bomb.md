@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-30
 req: "docs/req/REQ-2026-09-30-gate-de-wave-que-reentra-no-barrier-recursa-sem-limite-e-um-roadmap-vira-fork-bomb.md"
 squad: "hades-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf"
 
 # Roadmap: gate de wave que reentra no barrier recursa sem limite e um roadmap vira fork bomb
 
-> Created: 2026-09-30 | Status: wip
+> Created: 2026-09-30 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-09-30-gate-de-wave-que-reentra-no-barrier-recursa-sem-limite-e-um-roadmap-vira-fork-bomb.md
@@ -32,7 +32,7 @@ da `main` do ROADMAP-2026-09-22 (contra-braço: o detector acusa a mina quando e
 - [x] **AC5** — todo outro executor de gates tem a mesma contenção
 - [x] **AC6** — acervo com 0 gates reentrantes
 - [x] **AC7** — `cli-parity.md` descreve contenção, exit code e mensagem
-- [ ] **AC8** — `make quality` e CI verdes
+- [x] **AC8** — `make quality` e CI verdes — local 347 OK / 0 FAIL; CI do PR #486: 20/20 checks `pass`, mergeado em `255f1384`
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado

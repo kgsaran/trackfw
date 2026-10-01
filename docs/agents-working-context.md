@@ -43454,6 +43454,14 @@ Reescrito. **O gate da Wave 0 do #476 tem o mesmo defeito** — corrigir quando 
 
 Pendente: CI verde → PR (só a pedido) → fechamento pós-merge. Depois, retomar o #476.
 
+## 2026-09-30 — zeus-tf — FIM: REQ-2026-09-30 / #485 fechada pós-merge (PR #486)
+
+Mergeado em `255f1384`, CI 20/20 `pass`, #485 fechada pelo GitHub. Roadmap → `done`, REQ → `Done`,
+**8/8 ACs** com evidência individual.
+
+Próximo: retomar o #476 (branch `fix/cerca-nao-terminada-mascara-em-silencio`), que estava
+bloqueado atrás deste. Primeiro passo: rebase/merge da `main` (mesmo `barrier.go`) e reescrever em
+uma linha o gate multilinha da Wave 0 daquele roadmap — sob o barrier real ele reprova.
 ## 2026-09-30 — zeus-tf — RETOMADA: #476 (cerca não terminada), após o merge do #485
 
 `main` trazida (merge `218beb3c`); gate da Wave 0 reescrito (multilinha + afirmava a contagem que a
