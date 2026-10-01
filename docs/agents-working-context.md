@@ -43761,3 +43761,14 @@ Auditoria que quase me enganou: a contagem de comandos caiu 181 → 162. Rastrea
 
 AC1–AC5 marcados; AC6 aguarda o CI. Issue lateral aberta: #494 (guard do `branch new` aceita `done/`
 por sobreposição de tokens).
+
+## 2026-10-01 — zeus-tf — FIM: REQ-2026-10-01 / #491 fechada pós-merge (PR #495)
+
+Mergeado em `30f455c3`; CI inteiro `pass` no `9a1ae5ef`, inclusive `windows-full-suites`, sem nome novo
+na lista de falhas conhecidas. Roadmap → `done`, REQ → `Done`, 6/6 ACs com evidência.
+
+Escopo absorvido, registrado na REQ: F1 (marcador em bloco de exemplo) e o transporte por argv no
+Windows, medido pelo Lourival e reproduzido por mim na VM. Lição gravada em memória: defeito de
+Windows se reproduz na VM antes do despacho.
+
+Issues abertas desta frente: #490, #494.
