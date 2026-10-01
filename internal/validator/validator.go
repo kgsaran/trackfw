@@ -3999,18 +3999,6 @@ func validateBranchHasWIPRoadmap() ([]string, []string, error) {
 	return []string{BranchNoMatchingRoadmapMessageForExisting(branch, res.Candidates)}, res.Warnings, nil
 }
 
-// BranchGovernanceOrientation is the guidance message for branches whose slug matches no roadmap
-// in wip/ or done/ at all.
-//
-// Deprecated: kept byte-identical with e104a7f7 so internal/commands/branch.go and commit.go
-// compile without modification until ML-1B updates them to BranchGovernanceOrientationForCreation.
-func BranchGovernanceOrientation(branch string, cfg config.ProjectConfig) string {
-	return fmt.Sprintf(
-		"branch %q is a feat/fix/refactor branch but no roadmap is in wip/ nor done/ — create governance artifacts first:\n  %s\n  %s\n  trackfw roadmap move <name> wip",
-		branch, ReqNewLine(cfg), RoadmapNewLine(cfg),
-	)
-}
-
 // BranchGovernanceOrientationForCreation is the guidance message for the CREATION context
 // (trackfw branch new): a feat/fix/refactor branch whose slug matches no roadmap in wip/.
 // doneMatches optionally names roadmaps found in done/ that would need a `roadmap move` first.
@@ -4033,29 +4021,6 @@ func BranchGovernanceOrientationForExisting(branch string, cfg config.ProjectCon
 	return fmt.Sprintf(
 		"branch %q is a feat/fix/refactor branch but no roadmap is in wip/, blocked/ nor done/ — create governance artifacts first:\n  %s\n  %s\n  trackfw roadmap move <name> wip",
 		branch, ReqNewLine(cfg), RoadmapNewLine(cfg),
-	)
-}
-
-// BranchNoMatchingRoadmapMessage is the guidance message for branches with roadmaps in wip/ or
-// done/ but none matching the branch slug.
-//
-// Deprecated: kept byte-identical with e104a7f7 so internal/commands/branch.go and commit.go
-// compile without modification until ML-1B updates them to BranchNoMatchingRoadmapMessageForCreation.
-// Does not mutate candidates.
-func BranchNoMatchingRoadmapMessage(branch string, candidates []string) string {
-	// P3: sort for deterministic output regardless of filesystem ordering.
-	sorted := make([]string, len(candidates))
-	copy(sorted, candidates)
-	sort.Strings(sorted)
-	display := sorted
-	suffix := ""
-	if len(sorted) > 3 {
-		display = sorted[:3]
-		suffix = fmt.Sprintf(", e mais %d", len(sorted)-3)
-	}
-	return fmt.Sprintf(
-		"branch %q has no matching roadmap in wip/ nor done/ (found: %s%s) — include the branch slug in the roadmap filename or set TRACKFW_BRANCH explicitly in CI",
-		branch, strings.Join(display, ", "), suffix,
 	)
 }
 

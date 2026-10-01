@@ -33,20 +33,11 @@ type commitDeps struct {
 	// runs `git rev-parse --abbrev-ref HEAD`, with `symbolic-ref` as fallback for an
 	// unborn branch).
 	currentBranch func() (string, error)
-	// resolveWIPDirs / resolveDoneDirs resolve state directories from cfg (production:
-	// validator.ResolveWIPDirs / validator.ResolveDoneDirs).
-	resolveWIPDirs  func(config.ProjectConfig) []string
-	resolveDoneDirs func(config.ProjectConfig) []string
-	// matchSlug checks whether the normalized slug matches any roadmap found in wipDirs/doneDirs
-	// (production: validator.BranchSlugMatchesRoadmap — the same logic `trackfw branch new` and
-	// `trackfw validate` use).
-	matchSlug func(slug string, wipDirs, doneDirs []string) (matched bool, candidates []string)
-	// branchLink reads the WRITTEN branch↔roadmap link recorded by `trackfw branch new`
-	// (production: validator.BranchLinkFor). D1 of ADR-2026-09-26: the written link is the source of
-	// truth and inference is the fallback, so it is consulted before the branch is blocked. It can
-	// only ADD acceptance — it is what keeps a branch governed after its roadmap is renamed. nil
-	// skips the lookup.
-	branchLink func(cfg config.ProjectConfig, branch string, wipDirs, doneDirs []string) validator.BranchLinkStatus
+	// resolveRoadmap is the single source of truth for branch governance on existing branches
+	// (D2 of ADR-2026-10-01). It wraps ResolveBranchRoadmapForExisting with all three state
+	// dirs (wip, blocked, done) resolved from cfg. Production: defaultResolveRoadmap.
+	// nil falls back to unmatched — acceptable for tests that only exercise non-governed branches.
+	resolveRoadmap func(cfg config.ProjectConfig, branch string) validator.BranchRoadmapResolution
 	// execGitCommit runs `git commit -m <message>` with inherited stdio, propagating Git's own
 	// output and exit code literally (production: defaultGitCommit).
 	execGitCommit func(message string) error
@@ -55,6 +46,15 @@ type commitDeps struct {
 	// by the normal `-m` commit flow.
 	stagedNameStatus func() (string, error)
 	out              io.Writer
+}
+
+// defaultResolveRoadmap resolves branch governance for an existing branch (D2 of
+// ADR-2026-10-01). Single source of truth shared by commit, validate, push and ship.
+func defaultResolveRoadmap(cfg config.ProjectConfig, branch string) validator.BranchRoadmapResolution {
+	wipDirs := validator.ResolveWIPDirs(cfg)
+	blockedDirs := validator.ResolveBlockedDirs(cfg)
+	doneDirs := validator.ResolveDoneDirs(cfg)
+	return validator.ResolveBranchRoadmapForExisting(cfg, branch, wipDirs, blockedDirs, doneDirs)
 }
 
 func newCommitCmd() *cobra.Command {
@@ -105,10 +105,7 @@ Create the governance artifacts first if this blocks you:
 			deps := commitDeps{
 				loadConfig:       config.Load,
 				currentBranch:    defaultCurrentBranch,
-				resolveWIPDirs:   validator.ResolveWIPDirs,
-				resolveDoneDirs:  validator.ResolveDoneDirs,
-				matchSlug:        validator.BranchSlugMatchesRoadmap,
-				branchLink:       validator.BranchLinkFor,
+				resolveRoadmap:   defaultResolveRoadmap,
 				execGitCommit:    defaultGitCommit,
 				stagedNameStatus: defaultStagedNameStatus,
 				out:              cmd.OutOrStdout(),
@@ -353,39 +350,35 @@ func runCommit(message string, deps commitDeps) error {
 		return fmt.Errorf("blocked: commit directly on %q is not permitted", branch)
 	}
 
-	// (b) feat/fix/refactor: require a matching roadmap in wip/ or done/.
-	governedPrefix, isGoverned := commitGovernedBranchPrefix(branch)
+	// (b) feat/fix/refactor: require a matching roadmap in wip/, blocked/ or done/ (D2 of
+	// ADR-2026-10-01). Resolution is delegated to deps.resolveRoadmap — the single source of
+	// truth shared with validate, push and ship.
+	_, isGoverned := commitGovernedBranchPrefix(branch)
 	if isGoverned {
-		slug := strings.TrimPrefix(branch, governedPrefix)
 		cfg := deps.loadConfig()
-		wipDirs := deps.resolveWIPDirs(cfg)
-		doneDirs := deps.resolveDoneDirs(cfg)
-
-		normalizedSlug := validator.NormalizeBranchSlug(slug)
-		matched, candidates := deps.matchSlug(normalizedSlug, wipDirs, doneDirs)
-
-		// D1: the written link is consulted when inference did not match. A STALE link (recorded,
-		// but its roadmap left wip/+done/) never silently degrades — it is named in the output.
-		if !matched && deps.branchLink != nil {
-			link := deps.branchLink(cfg, branch, wipDirs, doneDirs)
-			switch {
-			case link.InScope:
-				matched = true
-				fmt.Fprintf(deps.out, "trackfw commit: branch %q governed by the written link to %q.\n", branch, link.Roadmap)
-			case link.Present:
-				fmt.Fprintln(deps.out, validator.BranchLinkStaleWarning(cfg, branch, link.Roadmap))
-			}
+		var res validator.BranchRoadmapResolution
+		if deps.resolveRoadmap != nil {
+			res = deps.resolveRoadmap(cfg, branch)
 		}
 
-		if !matched {
+		// Print any warnings (e.g. branch_done_scope_unverifiable, stale link).
+		for _, w := range res.Warnings {
+			fmt.Fprintf(deps.out, "trackfw commit: %s\n", w)
+		}
+
+		if res.Source == "written-link" {
+			fmt.Fprintf(deps.out, "trackfw commit: branch %q governed by the written link to %q.\n", branch, res.Roadmap)
+		}
+
+		if !res.Matched {
 			var msg string
-			if len(candidates) == 0 {
-				msg = validator.BranchGovernanceOrientation(branch, cfg)
+			if len(res.Candidates) == 0 {
+				msg = validator.BranchGovernanceOrientationForExisting(branch, cfg)
 			} else {
-				msg = validator.BranchNoMatchingRoadmapMessage(branch, candidates)
+				msg = validator.BranchNoMatchingRoadmapMessageForExisting(branch, res.Candidates)
 			}
 			fmt.Fprintln(deps.out, msg)
-			return fmt.Errorf("blocked: no matching roadmap in wip/ nor done/ for %q", branch)
+			return fmt.Errorf("blocked: no matching roadmap in wip/, blocked/ or done/ for %q", branch)
 		}
 	} else {
 		// (c) branches outside the feat/fix/refactor pattern (e.g. doc/housekeeping branches):

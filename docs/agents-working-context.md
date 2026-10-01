@@ -43842,3 +43842,53 @@ D6 intacto (diff grep vazio).
 
 Resíduos declarados para ML-1B: PIN3/PIN4 em check-validate-rule-pins.sh; branch.go/commit.go
 ainda usam as funções Deprecated.
+
+## 2026-10-01 — apolo-tf (fix/estado-que-governa-a-branch — ML-1B) — INÍCIO
+
+**Início:** 2026-10-01 | Branch: `fix/estado-que-governa-a-branch`
+**Tarefa:** ML-1B — Consumidores: `branch new`, `commit`, `push`, `ship`, pinos e contrato
+**Arquivos:** `internal/commands/branch.go`, `internal/commands/commit.go`, `internal/commands/push.go`,
+`internal/commands/ship.go`, testes em `internal/commands/*_test.go`,
+`internal/auditsurface/gitlstree_test.go` (corretivo ML-1C), `scripts/check-validate-rule-pins.sh`,
+`docs/cli-parity.md`, `internal/validator/validator.go` (remoção Deprecated).
+
+## 2026-10-01 — apolo-tf (fix/estado-que-governa-a-branch — ML-1B) — FIM
+
+**Fim:** 2026-10-01 | Branch: `fix/estado-que-governa-a-branch`
+**Tarefa:** ML-1B — CONCLUÍDO
+
+**Alterações:**
+1. `internal/commands/branch.go` `runBranchNew`: gate D1 só em `wip/`; `matchDone` dep para hint de done/.
+   Usa `BranchGovernanceOrientationForCreation` / `BranchNoMatchingRoadmapMessageForCreation`.
+   Erro: "blocked: no matching roadmap in wip/ for".
+2. `internal/commands/push.go` + `ship.go`: `checkGovernance` muda de `func() []string` para
+   `func() *validator.GovernanceViolation`. Degraded path: imprime `Governance: degraded: <warning>`
+   e continua. Hard fail só com `Missing` não-vazio.
+3. `internal/commands/commit.go`: 4 deps (matchSlug/branchLink/resolveWIPDirs/resolveDoneDirs)
+   substituídos por `resolveRoadmap func(...) BranchRoadmapResolution`. Fonte única com validate.
+   Usa `BranchGovernanceOrientationForExisting` / `BranchNoMatchingRoadmapMessageForExisting`.
+4. Testes em `internal/commands/*_test.go`: `makePushDeps`/`makeDeps`/`makeCommitDeps` e todos os
+   stubs atualizados; `branchlink_ml3a_test.go` migrado para `resolveRoadmap`.
+5. `TestRunBranchNew_MatchFound_DoneRoadmap` invertido em `TestRunBranchNew_DoneOnlyMatch_Blocks`.
+6. Novos testes: `TestPush_GovernanceDegraded_PrintsDegradedNotOK` (D3) e
+   `TestCommit_BlockedRoadmap_Passes` (D2).
+7. `internal/validator/validator.go`: removidas funções Deprecated `BranchGovernanceOrientation`
+   e `BranchNoMatchingRoadmapMessage` (sem chamadores em produção).
+8. `internal/validator/validator_orientation_helpers_test.go`: testes migrados para
+   `BranchGovernanceOrientationForCreation(branch, cfg, nil)`.
+9. `internal/auditsurface/gitlstree_test.go` (ML-1C corretivo): removidos
+   `TestGitLsTree_AccentedFilename_OldBehavior` e helper `splitNewlines`.
+10. `scripts/check-validate-rule-pins.sh`: `BHR_MARKER`, `MARKER_NOMATCH`, `MARKER_DIFF`,
+    `MARKER_EMPTY` e comentários PIN3/PIN4 atualizados para "wip/, blocked/ nor done/".
+11. `docs/cli-parity.md`: linhas ~1292, ~1858, ~4259-4260 — contrato por consumidor (criação vs
+    existente), `Governance: degraded:`, `branch_done_scope_unverifiable`.
+
+**Gates executados:**
+- `go build ./internal/commands/ ./internal/validator/ ./internal/auditsurface/` → limpo
+- `go vet ./internal/commands/ ./internal/validator/ ./internal/auditsurface/` → limpo
+- `go test ./internal/commands/ ./internal/validator/ ./internal/auditsurface/ -count=1` → ok (3/3)
+- `make build` → limpo
+- `GO_BIN=bin/trackfw scripts/check-validate-rule-pins.sh` → 30/30 pins PASS
+- `grep -rn "nor done/" internal/commands/*.go | grep -v _test.go` → só `barrier.go`
+
+**Resíduos declarados para ML-2A:** Cenários de ponta a ponta com o binário real (Wave 2).

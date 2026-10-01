@@ -68,8 +68,9 @@ func TestBranchNew_BlockedRecordsNoLink(t *testing.T) {
 // present in wip/ or done/.
 func TestCommit_WrittenLinkAcceptsWhenInferenceFails(t *testing.T) {
 	deps, out, calls := makeCommitDeps("feat/minha-feature", false, []string{"ROADMAP-renomeado.md"})
-	deps.branchLink = func(cfg config.ProjectConfig, branch string, wipDirs, doneDirs []string) validator.BranchLinkStatus {
-		return validator.BranchLinkStatus{Roadmap: "ROADMAP-renomeado.md", Present: true, InScope: true}
+	deps.resolveRoadmap = func(cfg config.ProjectConfig, branch string) validator.BranchRoadmapResolution {
+		// Simulates the resolver finding governance via the written link (inference would have failed).
+		return validator.BranchRoadmapResolution{Matched: true, Source: "written-link", Roadmap: "ROADMAP-renomeado.md"}
 	}
 	if err := runCommit("fix(x): y", deps); err != nil {
 		t.Fatalf("the written link must keep the branch governed: %v", err)
@@ -83,11 +84,16 @@ func TestCommit_WrittenLinkAcceptsWhenInferenceFails(t *testing.T) {
 }
 
 // Affirms: the ADR's forbidden answer is not taken — when the link is STALE and inference also
-// fails, the block names the stale target instead of degrading silently.
+// fails, the block names the stale target in the warnings instead of degrading silently.
 func TestCommit_StaleLinkIsNamedWhenBlocking(t *testing.T) {
 	deps, out, calls := makeCommitDeps("feat/minha-feature", false, []string{"ROADMAP-outra.md"})
-	deps.branchLink = func(cfg config.ProjectConfig, branch string, wipDirs, doneDirs []string) validator.BranchLinkStatus {
-		return validator.BranchLinkStatus{Roadmap: "ROADMAP-que-saiu-de-wip.md", Present: true}
+	deps.resolveRoadmap = func(cfg config.ProjectConfig, branch string) validator.BranchRoadmapResolution {
+		// Simulates a stale link warning emitted by the resolver (inference also failed).
+		return validator.BranchRoadmapResolution{
+			Matched:    false,
+			Candidates: []string{"ROADMAP-outra.md"},
+			Warnings:   []string{"branch-link STALE: ROADMAP-que-saiu-de-wip.md is no longer in scope"},
+		}
 	}
 	if err := runCommit("fix(x): y", deps); err == nil {
 		t.Fatal("expected the commit to be blocked")
@@ -96,24 +102,17 @@ func TestCommit_StaleLinkIsNamedWhenBlocking(t *testing.T) {
 		t.Fatalf("no commit must be executed, got %v", *calls)
 	}
 	if !bytes.Contains(out.Bytes(), []byte("ROADMAP-que-saiu-de-wip.md")) {
-		t.Fatalf("the stale target must be named, got %q", out.String())
+		t.Fatalf("the stale target must be named in warnings, got %q", out.String())
 	}
 }
 
-// Affirms: the link is only consulted when inference fails — a branch accepted by inference never
-// reads the link file, so the accelerator adds no behaviour to the path that already worked.
-func TestCommit_LinkNotConsultedWhenInferenceMatches(t *testing.T) {
+// Affirms: a branch accepted by resolveRoadmap commits without error; the single-resolver
+// design means inference-vs-link is transparent to commit.go (tested in validator tests).
+func TestCommit_ResolverAcceptsGovernedBranch(t *testing.T) {
 	deps, _, calls := makeCommitDeps("feat/minha-feature", true, nil)
-	consulted := 0
-	deps.branchLink = func(cfg config.ProjectConfig, branch string, wipDirs, doneDirs []string) validator.BranchLinkStatus {
-		consulted++
-		return validator.BranchLinkStatus{}
-	}
+	// makeCommitDeps already sets up resolveRoadmap to return Matched:true for this branch.
 	if err := runCommit("fix(x): y", deps); err != nil {
 		t.Fatalf("unexpected error: %v", err)
-	}
-	if consulted != 0 {
-		t.Fatalf("the link must not be read when inference already matched, got %d reads", consulted)
 	}
 	if len(*calls) != 1 {
 		t.Fatalf("commit must have been executed, got %v", *calls)

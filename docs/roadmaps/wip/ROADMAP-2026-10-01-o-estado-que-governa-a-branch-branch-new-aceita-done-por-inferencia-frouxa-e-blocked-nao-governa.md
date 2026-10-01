@@ -127,7 +127,7 @@ go test ./internal/validator/ -count=1
 ```
 
 ### ML-1B — Consumidores: `branch new`, `commit`, pinos e contrato
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Files affected:** `internal/commands/branch.go`, `internal/commands/commit.go`,
 `internal/commands/push.go`, `internal/commands/ship.go`, testes em

@@ -23,7 +23,12 @@ func makeBranchDeps(matched bool, candidates []string) (branchNewDeps, *bytes.Bu
 		resolveWIPDirs:  func(config.ProjectConfig) []string { return []string{"docs/roadmaps/wip"} },
 		resolveDoneDirs: func(config.ProjectConfig) []string { return []string{"docs/roadmaps/done"} },
 		matchSlug: func(slug string, wipDirs, doneDirs []string) (bool, []string) {
+			// D1: gate is wip-only; tests pass nil for doneDirs when calling the gate.
+			// matchDone below handles done/ hint separately.
 			return matched, candidates
+		},
+		matchDone: func(slug string, doneDirs []string) []string {
+			return nil // no done matches by default in fake helpers
 		},
 		execGitCheckout: func(branchName string) error {
 			checkoutCalls = append(checkoutCalls, branchName)
@@ -115,15 +120,44 @@ func TestRunBranchNew_MatchFound_WipRoadmap(t *testing.T) {
 	}
 }
 
-func TestRunBranchNew_MatchFound_DoneRoadmap(t *testing.T) {
-	// Simulates a match found via a roadmap in done/ — matchSlug does not distinguish the
-	// source directory in its return value, mirroring validator.BranchSlugMatchesRoadmap.
-	deps, _, calls := makeBranchDeps(true, []string{"ROADMAP-my-slug.md"})
-	if err := runBranchNew("refactor/my-slug", false, deps); err != nil {
-		t.Fatalf("unexpected error: %v", err)
+func TestRunBranchNew_DoneOnlyMatch_Blocks(t *testing.T) {
+	// D1 of ADR-2026-10-01: branch creation is gated on wip/ only.
+	// A match ONLY in done/ must block the branch and name the roadmap + suggest roadmap move.
+	// This test was formerly TestRunBranchNew_MatchFound_DoneRoadmap which asserted the
+	// OPPOSITE (done/ match creates the branch) — inverted in ML-1B (REQ-2026-10-01).
+	out := &bytes.Buffer{}
+	calls := []string{}
+	deps := branchNewDeps{
+		loadConfig:      func() config.ProjectConfig { return config.ProjectConfig{} },
+		resolveWIPDirs:  func(config.ProjectConfig) []string { return []string{"docs/roadmaps/wip"} },
+		resolveDoneDirs: func(config.ProjectConfig) []string { return []string{"docs/roadmaps/done"} },
+		matchSlug: func(slug string, wipDirs, doneDirs []string) (bool, []string) {
+			// D1 gate: only wip — no match in wip.
+			return false, nil
+		},
+		matchDone: func(slug string, doneDirs []string) []string {
+			// There IS a matching roadmap in done/.
+			return []string{"ROADMAP-my-slug.md"}
+		},
+		execGitCheckout: func(branchName string) error {
+			calls = append(calls, branchName)
+			return nil
+		},
+		out: out,
 	}
-	if len(*calls) != 1 {
-		t.Fatalf("expected checkout to run once, got %v", *calls)
+	err := runBranchNew("refactor/my-slug", false, deps)
+	if err == nil {
+		t.Fatal("expected error: done/-only match must block branch creation (D1)")
+	}
+	if len(calls) != 0 {
+		t.Fatalf("git checkout must not run when blocked, got calls: %v", calls)
+	}
+	got := out.String()
+	if !strings.Contains(got, "ROADMAP-my-slug.md") {
+		t.Fatalf("expected message to name the done/ roadmap, got:\n%s", got)
+	}
+	if !strings.Contains(got, "roadmap move") {
+		t.Fatalf("expected message to suggest roadmap move, got:\n%s", got)
 	}
 }
 
@@ -141,7 +175,7 @@ func TestRunBranchNew_NoMatch_NoCandidates_Blocks(t *testing.T) {
 		t.Fatalf("git checkout must not run when blocked, got calls: %v", *calls)
 	}
 	got := out.String()
-	want := validator.BranchGovernanceOrientation("feat/orphan-slug", config.ProjectConfig{})
+	want := validator.BranchGovernanceOrientationForCreation("feat/orphan-slug", config.ProjectConfig{}, nil)
 	if !strings.Contains(got, want) {
 		t.Fatalf("expected output to contain governance orientation message.\ngot: %q\nwant substring: %q", got, want)
 	}
@@ -158,7 +192,7 @@ func TestRunBranchNew_NoMatch_WithCandidates_Blocks(t *testing.T) {
 		t.Fatalf("git checkout must not run when blocked, got calls: %v", *calls)
 	}
 	got := out.String()
-	want := validator.BranchNoMatchingRoadmapMessage("fix/orphan-slug", candidates)
+	want := validator.BranchNoMatchingRoadmapMessageForCreation("fix/orphan-slug", candidates, nil)
 	if !strings.Contains(got, want) {
 		t.Fatalf("expected output to contain no-matching-roadmap message.\ngot: %q\nwant substring: %q", got, want)
 	}
@@ -280,7 +314,7 @@ func TestRunBranchNew_FeatWithoutRoadmap_StillBlocks_NonRegression(t *testing.T)
 		t.Fatalf("git checkout must not run when the gate blocks, got calls: %v", *calls)
 	}
 	got := out.String()
-	want := validator.BranchGovernanceOrientation("feat/no-roadmap-for-this", config.ProjectConfig{})
+	want := validator.BranchGovernanceOrientationForCreation("feat/no-roadmap-for-this", config.ProjectConfig{}, nil)
 	if !strings.Contains(got, want) {
 		t.Fatalf("expected output to still contain the governance orientation message.\ngot: %q\nwant substring: %q", got, want)
 	}
