@@ -43906,3 +43906,27 @@ ainda usam as funções Deprecated.
 - `grep -rn "nor done/" internal/commands/*.go | grep -v _test.go` → só `barrier.go`
 
 **Resíduos declarados para ML-2A:** Cenários de ponta a ponta com o binário real (Wave 2).
+
+## 2026-10-01 — artemis-tf (fix/estado-que-governa-a-branch — ML-2A) — INÍCIO
+
+**Início:** 2026-10-01 | Branch: `fix/estado-que-governa-a-branch`
+**Tarefa:** ML-2A — Cenários dos issues com o binário real (Wave 2)
+**Arquivo alvo:** `internal/commands/branch_state_e2e_test.go`
+**Harness:** reutiliza `barrierBinary(t)` de `barrier_contract_test.go` e `gitRepoIn` de `commit_unborn_branch_test.go` (mesmo pacote `commands`).
+**Cenários:** AC2 (done-only blocks), AC4 (blocked governa), AC5a (done movido pela branch), AC5b (done já na base bloqueia), AC6 (sem origin degrada), AC12 (roadmap acentuado na base não governa).
+
+## 2026-10-01 — artemis-tf (fix/estado-que-governa-a-branch — ML-2A) — FIM
+
+**Entregue:** `internal/commands/branch_state_e2e_test.go` (novo, 8 funções de teste)
+**Harness reutilizado:** `barrierBinary(t)` de `barrier_contract_test.go` (mesmo pacote `commands`).
+
+**Resultados dos gates:**
+- `go build ./...` → limpo
+- `go vet ./internal/commands/` → limpo
+- `go test ./internal/commands/ -run BranchStateE2E -count=1 -v` → 8 PASS, 1 SKIP (medição informativa)
+- `TRACKFW_E2E_BIN=<tfw 9.1.0/main e104a7f7> go test ...` → AC2 FAIL, AC4×2 FAIL, AC5b FAIL, AC6 FAIL, AC12 FAIL (5 testes falham; AC5a×2 passam como esperado)
+
+**Medição informativa:** 0 de 217 branches em `gated.txt` seriam permitidas por `branch new --dry-run` contra done/ com wip/ vazio (novo binário). Esperado: 0.
+
+**Status ML-2A:** atualizado de ⬜ Pendente → 🔄 Em andamento.
+**Próxima ação:** handoff para `trackfw_architect` para auditoria e commit.

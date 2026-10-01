@@ -209,7 +209,7 @@ go test ./internal/validator/ ./internal/commands/ -count=1
 > Dependencies: Wave 1 auditada
 
 ### ML-2A — Cenários dos issues com o binário real
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** artemis-tf
 **Files affected:** teste novo em `internal/commands/` (ou o harness ponta a ponta que já exista, a
 localizar e citar), fixtures em `testdata/` do mesmo pacote
@@ -223,7 +223,29 @@ localizar e citar), fixtures em `testdata/` do mesmo pacote
 4. Reexecutar a medição do Context do ADR (217 branches × `done/`) com a resolução de criação e
    reportar o número (informativo).
 **Acceptance criteria:**
-- [ ] Cada cenário falha com o binário da `main` `e104a7f7` e passa com o da branch (provar as duas)
+- [x] Cada cenário falha com o binário da `main` `e104a7f7` e passa com o da branch (provar as duas)
+      ✅ Rodado pelo arquiteto: branch 8/8 PASS; `main` 6 FAIL (AC2, AC4×2, AC5b, AC6, AC12) e 2 PASS
+      (AC5a×2, esperado: a `main` já aceitava `done/` frouxo). Medição: 0 de 217 branches históricas
+      criáveis contra `done/` com `wip/` vazio.
+- [x] Relatório: uma frase por teste novo
+**Gates da wave:**
+```bash
+go build ./...
+go test ./internal/commands/ -count=1
+```
+
+### ML-2B — Corretivo: `ship` degradado sem teste; teste informativo sai da suíte
+**Status:** ⬜ Pendente
+**Squad:** artemis-tf
+**Origem:** auditoria do ML-2A. O AC11 exige `ship` além de `push`, mas só o `push` tem teste do caminho
+`Governance: degraded`. E `TestBranchStateE2E_InformativeMeasure217Branches` é uma medição, não uma
+asserção (sempre SKIP na suíte; o próprio comentário dele diz isso).
+**Files affected:** `internal/commands/ship_test.go`, `internal/commands/branch_state_e2e_test.go`
+**Actions:** (1) teste de `runShip` com `checkGovernance` devolvendo `Missing` vazio e um warning:
+a saída contém `Governance: degraded:` e não contém `Governance: OK`; (2) remover
+`TestBranchStateE2E_InformativeMeasure217Branches` e o que só ele usa.
+**Acceptance criteria:**
+- [ ] Teste novo falha se a linha `Governance: degraded` do `ship.go` for trocada por `Governance: OK` (provar)
 - [ ] Relatório: uma frase por teste novo
 **Gates da wave:**
 ```bash
