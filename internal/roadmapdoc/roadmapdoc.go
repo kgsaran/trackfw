@@ -363,8 +363,8 @@ func scanFences(lines []string) (mask []bool, openLine int) {
 // StatusLineRe and CriteriaHeaderRe must ignore documentation/examples inside
 // a cerca — otherwise a roadmap that cites those literals (as this very
 // roadmap, its REQ and its ADR do, repeatedly) is read as real ML content.
-// ParseGates already has its own, independent fence-matching for the
-// "```bash ... ```" gates block and is untouched by this mask.
+// ParseGatesLines consults this mask to skip "**Gates da wave:**" markers that
+// appear inside an example fence (F1, REQ #491).
 func FenceMask(lines []string) []bool {
 	mask, _ := scanFences(lines)
 	return mask
@@ -659,11 +659,41 @@ func AcceptanceEvaluate(lines []string, fenced []bool, ml MLBlock) (met, unmet i
 	return total - unmetCount, unmetCount, true
 }
 
-// ParseGates implements rule 5. A wave with no "**Gates da wave:**" block returns an
-// empty, non-nil slice — zero gates is legal and the barrier never invents one.
-func ParseGates(lines []string, waveStart, waveEnd int) ([]string, error) {
+// GateCmd is a gate command together with its 1-based line number in the
+// roadmap document. ParseGatesLines returns one GateCmd per executable line
+// found inside the ```bash … ``` block that follows "**Gates da wave:**".
+type GateCmd struct {
+	Line int    // 1-based line number in the document
+	Text string // trimmed command text
+}
+
+// ParseGatesLines implements rule 5. It returns each gate command together
+// with its 1-based line number so that the caller can attribute fragments to
+// the exact source line.
+//
+// Grammar (same as ParseGates):
+//   - The marker "**Gates da wave:**" must not be inside a fenced code block
+//     (F1, REQ #491): FenceMask is consulted so that a marker inside an example
+//     fence is silently skipped rather than treated as a real gate declaration.
+//     The scan continues past a skipped marker — a real marker after an example
+//     marker in the same wave is found and used.
+//   - The ```bash fence is found by scanning forward to the next heading
+//     boundary (## / ###), same as before. Headings and fence-delimiter lines
+//     are never included.
+//   - Empty lines and lines whose first non-space character is '#' are ignored.
+//
+// A wave with no "**Gates da wave:**" block outside a fence returns an empty,
+// non-nil slice — zero gates is legal and the barrier never invents one.
+func ParseGatesLines(lines []string, waveStart, waveEnd int) ([]GateCmd, error) {
+	fenced := FenceMask(lines)
 	for i := waveStart; i < waveEnd; i++ {
 		if !GatesHeaderRe.MatchString(lines[i]) {
+			continue
+		}
+		// F1 (REQ #491): skip markers that appear inside an example fence.
+		// Use continue (not return) so that a real marker later in the same wave
+		// is still found.
+		if fenced[i] {
 			continue
 		}
 		// #460: a busca pula PROSA, nao so linha em branco. Escrever um gate real
@@ -694,7 +724,7 @@ func ParseGates(lines []string, waveStart, waveEnd int) ([]string, error) {
 			return nil, fmt.Errorf("gates block not found: '**Gates da wave:**' at line %d is not followed by a ```bash fence before the next heading", i+1)
 		}
 		fenceStart := j
-		var cmds []string
+		var cmds []GateCmd
 		k := j + 1
 		closed := false
 		for k < waveEnd {
@@ -704,7 +734,7 @@ func ParseGates(lines []string, waveStart, waveEnd int) ([]string, error) {
 			}
 			line := strings.TrimSpace(lines[k])
 			if line != "" && !strings.HasPrefix(line, "#") {
-				cmds = append(cmds, line)
+				cmds = append(cmds, GateCmd{Line: k + 1, Text: line})
 			}
 			k++
 		}
@@ -712,11 +742,28 @@ func ParseGates(lines []string, waveStart, waveEnd int) ([]string, error) {
 			return nil, fmt.Errorf("unterminated gates fence starting at line %d", fenceStart+1)
 		}
 		if cmds == nil {
-			cmds = []string{}
+			cmds = []GateCmd{}
 		}
 		return cmds, nil
 	}
-	return []string{}, nil
+	return []GateCmd{}, nil
+}
+
+// ParseGates implements rule 5. A wave with no "**Gates da wave:**" block
+// outside a fenced example returns an empty, non-nil slice — zero gates is
+// legal and the barrier never invents one. It is a thin wrapper around
+// ParseGatesLines that discards line-number information for callers that do
+// not need it.
+func ParseGates(lines []string, waveStart, waveEnd int) ([]string, error) {
+	gcmds, err := ParseGatesLines(lines, waveStart, waveEnd)
+	if err != nil {
+		return nil, err
+	}
+	cmds := make([]string, len(gcmds))
+	for i, gc := range gcmds {
+		cmds[i] = gc.Text
+	}
+	return cmds, nil
 }
 
 // ────────────────────────────────────────────────────────────────────────────

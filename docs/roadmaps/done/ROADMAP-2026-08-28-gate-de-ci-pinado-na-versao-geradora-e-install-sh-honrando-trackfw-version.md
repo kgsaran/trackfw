@@ -81,34 +81,23 @@ Consolidado — AC1 a AC15 da REQ. Detalhe por ML abaixo.
 # não hermético; (2) buscava só "releases/latest" e era cega para o segundo
 # mecanismo, `go install ...@latest` — a Wave 0 declarou enumeração fechada sobre
 # um padrão incompleto.
-set -eu
+#
+# CORREÇÃO 4 (apolo-tf, 2026-10-01, #491): reescrito em linhas independentes.
+# Cada linha é um sh -c próprio; variáveis e estado não persistem entre linhas.
+# set -eu removido: era no-op (cada linha é um processo separado). Consulte
+# docs/cli-parity.md regra 5.
+# Nota: contra o repositório atual (v8), a asserção 2 falharia POR CONTEÚDO
+# (npm/src e pypi/trackfw não existem na main), não por sintaxe. O conjunto
+# esperado é preservado como registra o que o gate afirmava em 2026-08-28.
 
 # 1. O defeito: instalação por go install sem pin, em código de produto.
-prod=$(git ls-files -z scripts internal npm/src pypi/trackfw \
-  | xargs -0 grep -l "trackfw@latest" 2>/dev/null \
-  | grep -v -e "_test\.go$" -e "\.test\.js$" -e "/tests/" || true)
-if [ -n "$prod" ]; then
-  echo "Wave 0: go install sem pin ainda presente em codigo de produto:" >&2
-  echo "$prod" >&2
-  exit 1
-fi
+test -z "$(git ls-files -z scripts internal npm/src pypi/trackfw | xargs -0 grep -l 'trackfw@latest' 2>/dev/null | grep -v -e '_test\.go$' -e '\.test\.js$' -e '/tests/')" || { echo "Wave 0: go install sem pin ainda presente em codigo de produto" >&2; exit 1; }
 
 # 2. O fetch do install.sh continua apontando para releases/latest — INTENCIONAL:
 #    o script e sempre o mais recente, e quem pina o binario e TRACKFW_VERSION.
 #    O conjunto e fechado nos 3 geradores; superficie nova aqui exige revisao.
-esperado="internal/generators/scaffold.go
-npm/src/generators/init.js
-pypi/trackfw/generators/init_gen.py"
-medido=$(git ls-files -z scripts internal npm/src pypi/trackfw \
-  | xargs -0 grep -l "releases/latest/download/install.sh" 2>/dev/null | sort)
-if [ "$medido" != "$esperado" ]; then
-  echo "Wave 0: conjunto de geradores que buscam install.sh mudou." >&2
-  echo "esperado:"; echo "$esperado" >&2
-  echo "medido:";   echo "$medido"   >&2
-  exit 1
-fi
-[ -n "$medido" ] || { echo "guarda de vacuidade: nenhum arquivo varrido" >&2; exit 1; }
-echo "Wave 0 gate OK — zero go install sem pin; 3 geradores buscando install.sh."
+test "$(git ls-files -z scripts internal npm/src pypi/trackfw | xargs -0 grep -l 'releases/latest/download/install.sh' 2>/dev/null | sort)" = "$(printf '%s\n' internal/generators/scaffold.go npm/src/generators/init.js pypi/trackfw/generators/init_gen.py)" || { echo "Wave 0: conjunto de geradores que buscam install.sh mudou" >&2; exit 1; }
+test -n "$(git ls-files -z scripts internal npm/src pypi/trackfw | xargs -0 grep -l 'releases/latest/download/install.sh' 2>/dev/null)" || { echo "guarda de vacuidade: nenhum arquivo varrido" >&2; exit 1; }
 ```
 
 #### Resultado do ML-0A (hades-tf, 2026-08-28)

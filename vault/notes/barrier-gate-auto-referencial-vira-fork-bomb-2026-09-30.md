@@ -47,9 +47,13 @@ recebe um comando de **verificação** — algo que mede um fato e sai 0 ou 1. `
 Molde que funciona (do `ROADMAP-2026-09-29` do #364):
 
 ```bash
-n=$(jq -r '.entries[]|.name' .github/windows-known-failures.json | wc -l | tr -d ' ')
-test "$n" = "14" && echo "Gate W0: $n entradas" || { echo "GATE FALHOU: esperava 14, contou $n" >&2; exit 1; }
+n=$(jq -r '.entries[]|.name' .github/windows-known-failures.json | wc -l | tr -d ' '); test "$n" = "14" && echo "Gate W0: $n entradas" || { echo "GATE FALHOU: esperava 14, contou $n" >&2; exit 1; }
 ```
+
+> **Nota (2026-10-01, #491):** o molde original usava duas linhas separadas (`n=$(...)` e depois
+> `test "$n" ...`). Como cada linha do bloco `**Gates da wave:**` roda num `sh -c` próprio, `$n` era
+> sempre vazio na segunda linha. O molde acima está corrigido com `;` para unir os dois comandos
+> numa única linha.
 
 ## População no acervo (medida em 2026-09-30)
 

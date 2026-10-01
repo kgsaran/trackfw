@@ -2628,6 +2628,23 @@ These are literal parsing rules. All three runtimes must implement them identica
    A wave with no `**Gates da wave:**` block declares zero gates — that is legal and yields a
    `gates` check with `status: "passed"` and an empty `commands` array. The barrier **never**
    invents a gate.
+   **Consequence of per-line execution:** each gate command runs in its own `sh -c` process.
+   There is no shared state between lines: `export`, `cd`, and variable assignments do not
+   survive to the next line. Multi-line constructs — unbalanced quotes, `$(`, heredoc openers,
+   trailing `\` — produce a syntax error (`sh -n` exit 2), not a meaningful gate result.
+   Every line must be a **complete, independent command**.
+   Wrong (two lines; `$n` is empty on line 2):
+   ```
+   n=$(git rev-list --count HEAD)
+   test "$n" -gt 0 || { echo "no commits" >&2; exit 1; }
+   ```
+   Right (one line, joined with `;`):
+   ```
+   n=$(git rev-list --count HEAD); test "$n" -gt 0 || { echo "no commits" >&2; exit 1; }
+   ```
+   For gates with substantial logic, put the logic in a script under `scripts/` and call the
+   script from the gate line. See
+   `vault/notes/gates-da-wave-sao-um-comando-por-linha-2026-08-29.md`.
 6. **Malformed input.** A wave heading whose number is not parseable is a usage error (exit 2)
    per rule 3 above. Clause 2 ("ML whose body cannot be delimited") is **dead letter** in the
    current parser: `ParseMLs` never fails. An **unterminated code fence** is handled per surface:
@@ -4495,6 +4512,7 @@ REQ:
 ```bash
 # Wave 0 gate — replace this placeholder with a project-specific check before
 # marking ML-0A done. Do not remove the gate; replace its command (AC13).
+# each line runs as a separate sh -c — see docs/cli-parity.md rule 5
 exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli-parity.md
 ```
 

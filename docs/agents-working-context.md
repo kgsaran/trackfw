@@ -43620,3 +43620,36 @@ Prune rodado só como relatório: apagaria só 1 branch; quase todas as squash-m
 `keep — pending work` (é o #481). Nada aplicado.
 
 Próximo: ML-0A ao `hades-tf`.
+
+---
+
+## 2026-10-01 — Apolo (fix/barrier-executa-cada-linha-do-bloco-de-gates — ML-1B) — ENTREGUE
+
+**Início:** 2026-10-01 | **Fim:** 2026-10-01 | Branch: `fix/barrier-executa-cada-linha-do-bloco-de-gates`
+**Tarefa:** ML-1B Wave 1 — a consequência escrita onde o autor aprende a escrever gate
+**Arquivos afetados:** `docs/cli-parity.md` (regra 5 + template) · `README.md` · `vault/notes/barrier-gate-auto-referencial-vira-fork-bomb-2026-09-30.md` · `docs/roadmaps/done/ROADMAP-2026-08-28-…` (reescrita do bloco de gates) · `internal/generators/roadmap.go` · `internal/generators/scaffold.go` · `.claude/commands/trackfw/roadmap.md` (artefato versionado do scaffold)
+
+**Resultado:** `go build ./...` OK · `go test ./internal/generators/ -count=1` verde (28s) · `sh -n` zero falhas em 162 comandos em `docs/roadmaps/`
+**Item 4 (medição):** comentário adicionado ao `wave0GateFence` — seguro porque nenhum teste importa a constante; `doctor` reportará drift em consumidores (comportamento correto, `trackfw update` sincroniza).
+**Desvio:** START foi appendado antes do FINISH; entrada corrigida in-place ao final.
+**Risco residual:** frozen corpus em `internal/roadmapdoc/testdata/corpus/` ainda tem o bloco antigo — será tratado por ML-1A junto com a atualização do `barrier-baseline.txt`. Contra a árvore v8, Gate 2 do ROADMAP-2026-08-28 falharia por conteúdo (npm/src e pypi/trackfw ausentes), não por sintaxe — preservado como registro histórico.
+
+---
+
+## 2026-10-01 — Apolo (fix/barrier-executa-cada-linha-do-bloco-de-gates — ML-1A) — INÍCIO
+
+**Início:** 2026-10-01 | Branch: `fix/barrier-executa-cada-linha-do-bloco-de-gates`
+**Tarefa:** ML-1A Wave 1 — `ParseGates` com número de linha e o marcador fora de cerca (F1)
+**Arquivos afetados:** `internal/roadmapdoc/roadmapdoc.go` · `internal/roadmapdoc/gates_lines_test.go` (novo) · `internal/roadmapdoc/testdata/barrier-baseline.txt`
+
+---
+
+## 2026-10-01 — Apolo (fix/barrier-executa-cada-linha-do-bloco-de-gates — ML-1A) — FIM
+
+`GateCmd` + `ParseGatesLines` adicionados em `roadmapdoc.go`; `ParseGates` virou wrapper.
+F1 (REQ #491): marcador `**Gates da wave:**` dentro de cerca mascarada por `FenceMask` é silenciado;
+varredura continua para o próximo marcador — Wave 2 do `done/ROADMAP-2026-08-22-…` passa de
+`[exit 1 # placeholder…]` para `[]`.
+Baseline atualizada (1 entrada: Wave 2 do arquivo citado).
+Diff before/after: exatamente 3 linhas (o arquivo + 2 cópias no corpus/snapshot), todas Wave 2.
+4 testes novos, todos PASS. `go test ./internal/roadmapdoc/ ./internal/commands/ ./internal/validator/ -count=1` verde.

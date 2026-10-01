@@ -111,8 +111,8 @@ Parecer aceito: **opção (b) + o componente documental de (a)**. Medi o acervo 
 
 ### ML-1A — `ParseGates` com número de linha e o marcador fora de cerca (F1)
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
-**Arquivos afetados:** `internal/roadmapdoc/roadmapdoc.go` · `internal/roadmapdoc/gates_lines_test.go` (novo)
+**Status:** ✅ Concluído
+**Arquivos afetados:** `internal/roadmapdoc/roadmapdoc.go` · `internal/roadmapdoc/gates_lines_test.go` (novo) · `internal/roadmapdoc/testdata/barrier-baseline.txt` (baseline atualizada para o delta F1)
 **Ações:**
 1. `type GateCmd struct{ Line int; Text string }` (linha 1-based) e
    `func ParseGatesLines(lines []string, waveStart, waveEnd int) ([]GateCmd, error)`, com a **mesma**
@@ -127,14 +127,14 @@ da cerca gera · medido no acervo real: `ParseGates` sobre a Wave 2 do `done/ROA
 a devolver `[]` · os testes existentes do `roadmapdoc` passam sem edição.
 
 **Critérios de aceite:**
-- [ ] `ParseGatesLines` e o wrapper existem; os chamadores compilam sem mudança
-- [ ] F1 coberto nos dois braços, mais a medição no arquivo real
-- [ ] `go test ./internal/roadmapdoc/ ./internal/commands/ ./internal/validator/ -count=1` verde
-- [ ] Uma frase por teste novo
+- [x] `ParseGatesLines` e o wrapper existem; os chamadores compilam sem mudança
+- [x] F1 coberto nos dois braços, mais a medição no arquivo real
+- [x] `go test ./internal/roadmapdoc/ ./internal/commands/ ./internal/validator/ -count=1` verde
+- [x] Uma frase por teste novo
 
 ### ML-1B — a consequência escrita onde o autor aprende a escrever gate
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** `docs/cli-parity.md` (regra 5, ~:2619) · `README.md` (~:480) ·
 `vault/notes/barrier-gate-auto-referencial-vira-fork-bomb-2026-09-30.md` (linhas ~49–52) ·
 `docs/roadmaps/done/ROADMAP-2026-08-28-gate-de-ci-pinado-na-versao-geradora-e-install-sh-honrando-trackfw-version.md` ·
@@ -158,11 +158,11 @@ a devolver `[]` · os testes existentes do `roadmapdoc` passam sem edição.
    independentes, preservando o que cada gate afirmava. Depois, `sh -n -c` passa em todas as linhas.
 
 **Critérios de aceite:**
-- [ ] Regra 5 e README com a consequência e o exemplo
-- [ ] Molde da nota de vault em uma linha
-- [ ] Item 4: a medição no relatório e a escolha justificada
-- [ ] O bloco do `ROADMAP-2026-08-28` passa no `sh -n` linha a linha (zero falhas no acervo)
-- [ ] `go test ./internal/generators/ -count=1` verde, se o item 4 tocar `generators`
+- [x] Regra 5 e README com a consequência e o exemplo
+- [x] Molde da nota de vault em uma linha
+- [x] Item 4: a medição no relatório e a escolha justificada
+- [x] O bloco do `ROADMAP-2026-08-28` passa no `sh -n` linha a linha (zero falhas no acervo)
+- [x] `go test ./internal/generators/ -count=1` verde, se o item 4 tocar `generators`
 
 **Gates da wave:**
 ```bash
