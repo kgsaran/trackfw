@@ -20,11 +20,11 @@ falta é a consequência, o aviso na superfície de autoria e a distinção entr
 "gate reprovou".
 
 ## Acceptance Criteria
-- [ ] **AC1** — decisão (a) documentar · (b) detectar fragmento · (c) bloco como script, com medição do acervo
-- [ ] **AC2** — regra 5 escreve a consequência, com exemplo
-- [ ] **AC3** — template e assets de autoria avisam no ponto em que o gate é escrito
-- [ ] **AC4** — comportamento do `barrier` conforme o AC1
-- [ ] **AC5** — 🔴 todo bloco do acervo que passa hoje continua passando
+- [x] **AC1** — decisão (a) documentar · (b) detectar fragmento · (c) bloco como script, com medição do acervo
+- [x] **AC2** — regra 5 escreve a consequência, com exemplo
+- [x] **AC3** — template e assets de autoria avisam no ponto em que o gate é escrito
+- [x] **AC4** — comportamento do `barrier` conforme o AC1
+- [x] **AC5** — 🔴 todo bloco do acervo que passa hoje continua passando
 - [ ] **AC6** — `make quality` e CI verdes
 
 ## Status Legend
@@ -207,7 +207,7 @@ go test ./internal/commands/ -run 'Fragment' -count=1
 
 ### ML-3A — revisão independente do novo spawn de `sh`
 **Owner:** `hades-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Entregável:** `docs/seguranca/2026-10-01-wave3-revisao-sh-n.md`
 **Ações:** a partir da leitura do código, sem olhar os testes primeiro: o `sh -n` roda **só** depois do
 trust check, em todos os caminhos? `sh -n` executa algo em algum `sh` real (dash, bash 3.2, busybox)?
@@ -215,8 +215,8 @@ Existe linha que passe no `sh -n` e mude de significado (por exemplo, uma intera
 pode esconder um gate legítimo, um marcador real que agora seria lido como "dentro de cerca"?
 
 **Critérios de aceite:**
-- [ ] Cada pergunta com o comando e a saída
-- [ ] Veredito: aprova, ou bloqueia com um ML corretivo
+- [x] Cada pergunta com o comando e a saída
+- [x] Veredito: aprova, ou bloqueia com um ML corretivo
 
 **Gates da wave:**
 ```bash

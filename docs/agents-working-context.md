@@ -43668,3 +43668,44 @@ varredura continua para o próximo marcador — Wave 2 do `done/ROADMAP-2026-08-
 Baseline atualizada (1 entrada: Wave 2 do arquivo citado).
 Diff before/after: exatamente 3 linhas (o arquivo + 2 cópias no corpus/snapshot), todas Wave 2.
 4 testes novos, todos PASS. `go test ./internal/roadmapdoc/ ./internal/commands/ ./internal/validator/ -count=1` verde.
+
+---
+
+## 2026-10-01 — Hades (fix/barrier-executa-cada-linha-do-bloco-de-gates — ML-3A) — INÍCIO
+
+**Início:** 2026-10-01 | Branch: `fix/barrier-executa-cada-linha-do-bloco-de-gates`
+**Tarefa:** ML-3A Wave 3 — revisão independente de segurança do spawn de `sh` (`checkGateFragments`, F1)
+**Arquivos de leitura:** `internal/commands/barrier.go` (~:229-270, ~:780-821) · `internal/roadmapdoc/roadmapdoc.go` (ParseGatesLines, FenceMask) · commits 175de3a4 e dab369dc
+
+---
+
+## 2026-10-01 — Hades (fix/barrier-executa-cada-linha-do-bloco-de-gates — ML-3A) — FIM
+
+**Veredito: APROVA.**
+
+Três propriedades verificadas por medição:
+1. `sh -n` roda somente em roadmaps trusted (ambos os caminhos). Fake-sh sentinela confirma ausência em untrusted.
+2. `sh -n -c '<cmd>'` não executa em nenhum vetor testado (command substitution, backtick, arith, trap, alias, function, dot, heredoc, process sub) em sh=bash3.2, bash --posix e dash.
+3. F1 não esconde gates legítimos: FenceMaskCheck bloqueia cerca não terminada upstream; `continue` no scanner garante marcador real após exemplo fenced é encontrado. 162 comandos do corpus inalterados.
+
+Dois resíduos aceitos (impacto zero no corpus, não requerem ML corretivo):
+- R1: `cmd # comentário \` — falso positivo do odd-`\` check (0 ocorrências no corpus). Declarar no cli-parity.md.
+- R2: bashism rejeitado por dash recebe mensagem "incomplete command" (causa errada, 0 ocorrências). Declarar no comentário do checkGateFragments.
+
+**Entregável:** `docs/seguranca/2026-10-01-wave3-revisao-sh-n.md`
+
+## 2026-10-01 — zeus-tf — FIM (implementação): #491 pronto para PR
+
+Waves 0–3 auditadas; barrier real (binário novo) `passed` nas 4; `make quality` EXIT=0 (ML-2A);
+Hades da Wave 3 **aprova**: nenhum de 11 vetores executa sob `sh -n` em bash 3.2, `bash --posix` e
+dash; F1 não esconde gate legítimo (só a Wave 2 do ROADMAP-2026-08-22 mudou, nas 3 cópias).
+
+Corrigi eu mesmo, no contrato: a regra 5 dizia que heredoc e `\` final "produzem erro no `sh -n`" —
+a medição da Wave 0 mostra que **não**; reescrito, com os 3 resíduos declarados (heredoc, `\` em
+comentário, bashism sob dash), todos com 0 ocorrência no acervo.
+
+Auditoria que quase me enganou: a contagem de comandos caiu 181 → 162. Rastreado: o bloco do
+`done/ROADMAP-2026-08-28` era **um** script de 22 linhas e virou 3 com as mesmas 3 asserções.
+
+AC1–AC5 marcados; AC6 aguarda o CI. Issue lateral aberta: #494 (guard do `branch new` aceita `done/`
+por sobreposição de tokens).

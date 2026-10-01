@@ -2631,8 +2631,19 @@ These are literal parsing rules. All three runtimes must implement them identica
    **Consequence of per-line execution:** each gate command runs in its own `sh -c` process.
    There is no shared state between lines: `export`, `cd`, and variable assignments do not
    survive to the next line. Multi-line constructs — unbalanced quotes, `$(`, heredoc openers,
-   trailing `\` — produce a syntax error (`sh -n` exit 2), not a meaningful gate result.
+   trailing `\` — do not produce a meaningful gate result.
    Every line must be a **complete, independent command**.
+   **What the barrier checks before running any gate** (trusted roadmaps only, #491): each line
+   goes through `sh -n -c` (syntax only, nothing executes), and a line ending in an **odd** number
+   of `\` is a continuation. Any hit fails the `gates` check with
+   `line <n>: incomplete command — each line of the gates block runs as a separate sh -c (rule 5): <cmd>`
+   and **no** gate of the block runs.
+   **Declared residue** (0 occurrences in this repository's roadmaps, 2026-10-01):
+   - a **heredoc opener** (`cat <<EOF`) passes `sh -n` and runs with an empty body — a false green;
+   - a line whose trailing `\` sits **inside a comment** (`cmd # note \`) is flagged although `sh`
+     ignores it — a false positive; move the `\` or drop it;
+   - a **bashism** the local `sh` rejects (e.g. `<(…)` under `dash`) is reported as "incomplete
+     command", which names the wrong cause — gates are POSIX `sh` (ADR-2026-09-01).
    Wrong (two lines; `$n` is empty on line 2):
    ```
    n=$(git rev-list --count HEAD)
