@@ -1005,6 +1005,11 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	applyRule("roadmap_gate_coverage", gateMsgs, &violations, &warnings)
 	applyRule("roadmap_duplicate_label", dupMsgs, &violations, &warnings)
 
+	// ML-3B (REQ #476): unterminated code fence — applies to ALL states.
+	// An open fence silently masks content to EOF. Lenient mode demotes to warning via applyRule.
+	fenceMsgs := validateRoadmapUnterminatedFence()
+	applyRule("roadmap_unterminated_fence", fenceMsgs, &violations, &warnings)
+
 	return violations, warnings, nil
 }
 
@@ -1359,6 +1364,11 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 	applyRuleTagged("roadmap_wave0_required", wave0MsgsT, &violations, &warnings)
 	applyRuleTagged("roadmap_gate_coverage", gateMsgsT, &violations, &warnings)
 	applyRuleTagged("roadmap_duplicate_label", dupMsgsT, &violations, &warnings)
+
+	// ML-3B (REQ #476): mirror of ValidateUnfiltered — same rule, same order.
+	// 🔴 Missing this site silences roadmap_unterminated_fence from --json output.
+	fenceMsgsT := validateRoadmapUnterminatedFence()
+	applyRuleTagged("roadmap_unterminated_fence", fenceMsgsT, &violations, &warnings)
 
 	return violations, warnings, nil
 }

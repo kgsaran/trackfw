@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -132,10 +133,21 @@ func newRoadmapShowCmd() *cobra.Command {
 		Short: "Show a roadmap by name (partial match)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			var err error
 			if jsonOut {
-				return generators.ShowRoadmapJSON(args[0])
+				err = generators.ShowRoadmapJSON(args[0])
+			} else {
+				err = generators.ShowRoadmap(args[0])
 			}
-			return generators.ShowRoadmap(args[0])
+			if err != nil {
+				var ue *generators.UsageError
+				if errors.As(err, &ue) {
+					fmt.Fprintf(os.Stderr, "trackfw roadmap: %s\n", ue.Msg)
+					os.Exit(2)
+				}
+				return err
+			}
+			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&jsonOut, "json", false, "Emit waves and per-ML status as a JSON document instead of the raw file")

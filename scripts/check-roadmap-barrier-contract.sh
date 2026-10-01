@@ -469,15 +469,25 @@ CORPUS_VERDICTS_PIN="$ROOT_DIR/scripts/testdata/roadmap-barrier-corpus-verdicts.
 #     do snapshot; o que muda e o veredito de cada um.
 #   O hash foi conferido em DUAS maquinas independentes — o runner do CI e a do autor —
 #   derivando a mesma tabela a partir das mesmas 4 hunks.
-PINNED_CORPUS_HASH="b08dffce1b50abf9c5b3092a0a4edef401c132cf91dbc8516c1efc610e620427"
+#
+# Re-pinado em ML-4C (#476, 2026-10-01): FenceMaskCheck no barrier (ML-2A do #476) faz
+# o barrier sair 2 em qualquer roadmap com cerca nao terminada, ANTES de resolver a wave.
+# O arquivo wave-0-...-trackfw-push.md tem cerca aberta na linha 460 (fixture congelada,
+# mantida aberta de proposito — decisao da auditoria da Wave 0 do #476). Com a nova checagem,
+# todas as 6 waves (0/1/2 passam para exit2; 2-bis/3/4 ja eram exit2 pelo #470) agora saem 2.
+# As 6 linhas TSV das waves 0/1/2 foram removidas; as waves 2-bis/3/4 ja estavam ausentes.
+# Antes -> depois: EXIT2 3->6 | MLS_EVIDENCE 656->653 | ACC_EVIDENCE 318->317 |
+# ACC_FAILURE 452->450 | LINES 1542->1536 | HASH mudou.
+# Nenhum outro arquivo do corpus mudou de veredito — verificado por diff do TSV.
+PINNED_CORPUS_HASH="6a69da211b80ae05a6180fde3b4e030375cc52e62aca3ed350074ebaac248f74"
 PINNED_CORPUS_FILES=144
 PINNED_CORPUS_WAVES=432
-PINNED_CORPUS_EXIT2=3
-PINNED_CORPUS_LINES=1542
-PINNED_MLS_COMPLETE_EVIDENCE=656
+PINNED_CORPUS_EXIT2=6
+PINNED_CORPUS_LINES=1536
+PINNED_MLS_COMPLETE_EVIDENCE=653
 PINNED_MLS_COMPLETE_FAILURE=116
-PINNED_ACCEPTANCE_EVIDENCE_EVIDENCE=318
-PINNED_ACCEPTANCE_EVIDENCE_FAILURE=452
+PINNED_ACCEPTANCE_EVIDENCE_EVIDENCE=317
+PINNED_ACCEPTANCE_EVIDENCE_FAILURE=450
 
 # HASH_CMD_BIN (ML-2E, sítio de mesma causa do parecer hades-tf sobre
 # TRACKFW_FALSIFY_SCRIPT/GEN): env vars não carregam array bash, então o
@@ -580,6 +590,12 @@ elif [[ -n "${CORPUS_FILELIST:-}" ]]; then
         # wave-0-...-trackfw-push, cujo arquivo tem as cercas desbalanceadas.
         # Daí PINNED_CORPUS_EXIT2=3.
         # Correção dos arquivos reaberta: ML-4A.
+        # 🔴 #476 ML-2A: rc=2 agora tem TRÊS causas. FenceMaskCheck no barrier
+        # detecta cerca não terminada ANTES de resolver a wave e sai 2 com a
+        # mensagem canônica. Para o wave-0-...-trackfw-push (cerca aberta linha
+        # 460, fixture mantida aberta de propósito), as waves 0/1/2 — que ficavam
+        # antes das cercas desbalanceadas — passam a sair 2 também. As waves
+        # 2-bis/3/4 já saíam 2 pelo #470. Total: PINNED_CORPUS_EXIT2=6.
         CORPUS_EXIT2=$((CORPUS_EXIT2 + 1))
         continue
       fi

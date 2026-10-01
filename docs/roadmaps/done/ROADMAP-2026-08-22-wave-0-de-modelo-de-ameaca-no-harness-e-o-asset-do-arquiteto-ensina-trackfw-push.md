@@ -220,7 +220,7 @@ relação com Wave 0.
 
 **ML-1A — auditoria por medição própria, incluindo o ataque que motivou o AC13:**
 
-```
+````
 $ trackfw roadmap new 'teste $(touch /tmp/INJETADO) `id` fim'
 
 **Gates da wave:**
@@ -233,7 +233,7 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it
 
 barrier --wave 0   go_exit=0 · node_exit=0 · py_exit=0   (ponta a ponta, roadmap real)
 asset do arquiteto  "trackfw push" x2 · "Wave 0" x2, nos 3 caminhos
-```
+````
 
 **Ele entregou melhor do que o AC pedia:** eu escrevi "gate não-vazio"; ele fez `exit 1` —
 **fail-closed**. Wave 0 gerada e não preenchida **reprova** no `barrier`, em vez de passar limpa. É o
