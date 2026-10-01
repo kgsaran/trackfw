@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-10-01
 req: "docs/req/REQ-2026-10-01-o-barrier-executa-cada-linha-do-bloco-de-gates-como-sh-c-separado-e-o-contrato-nao-diz.md"
 squad: "hades-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf"
 
 # Roadmap: o barrier executa cada linha do bloco de gates como sh -c separado e o contrato não diz a consequência
 
-> Created: 2026-10-01 | Status: wip
+> Created: 2026-10-01 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-10-01-o-barrier-executa-cada-linha-do-bloco-de-gates-como-sh-c-separado-e-o-contrato-nao-diz.md
@@ -25,7 +25,7 @@ falta é a consequência, o aviso na superfície de autoria e a distinção entr
 - [x] **AC3** — template e assets de autoria avisam no ponto em que o gate é escrito
 - [x] **AC4** — comportamento do `barrier` conforme o AC1
 - [x] **AC5** — 🔴 todo bloco do acervo que passa hoje continua passando
-- [ ] **AC6** — `make quality` e CI verdes
+- [x] **AC6** — `make quality` e CI verdes — `EXIT=0`; CI do PR #495 inteiro `pass` no `9a1ae5ef`, merge `30f455c3`
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -301,7 +301,7 @@ marcador). É defeito do teste, não do produto.
 - [x] O teste do vetor `esperado="scaffold.go` existe e roda em todo SO
 - [x] O teste do `sh` falso usa um binário Go, e os dois braços valem em todo SO
 - [x] `make quality` com `EXIT=0` (autorizado: frente única)
-- [ ] 🔴 CI do PR #495: `windows-full-suites` verde **sem** acrescentar nome a `.github/windows-known-failures.json`
+- [x] 🔴 CI do PR #495: `windows-full-suites` verde **sem** acrescentar nome a `.github/windows-known-failures.json` — `pass` (4m32s) no `9a1ae5ef`; diff da lista no merge: 0 linhas
 - [x] Uma frase por teste novo
 
 **Gates da wave:**
