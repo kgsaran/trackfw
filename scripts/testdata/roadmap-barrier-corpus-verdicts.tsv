@@ -1047,12 +1047,6 @@ ROADMAP-2026-08-22-validate-detecta-hook-com-pwd-que-falha-fora-da-raiz.md	3	acc
 ROADMAP-2026-08-22-validate-detecta-hook-com-pwd-que-falha-fora-da-raiz.md	3	mls_complete	evidence	ML-3A: ✅
 ROADMAP-2026-08-22-validate-detecta-hook-com-pwd-que-falha-fora-da-raiz.md	4	acceptance_evidence	evidence	ML-4A: 7 criteria met
 ROADMAP-2026-08-22-validate-detecta-hook-com-pwd-que-falha-fora-da-raiz.md	4	mls_complete	evidence	ML-4A: ✅
-ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md	0	acceptance_evidence	evidence	ML-0A: 4 criteria met
-ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md	0	mls_complete	evidence	ML-0A: ✅
-ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md	1	acceptance_evidence	failure	ML-1A: 1 unmet acceptance criteria
-ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md	1	mls_complete	evidence	ML-1A: ✅
-ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md	2	acceptance_evidence	failure	ML-2A: no acceptance block
-ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md	2	mls_complete	evidence	ML-2A: ✅
 ROADMAP-2026-08-23-agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global.md	0	acceptance_evidence	evidence	ML-0A: 3 criteria met
 ROADMAP-2026-08-23-agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global.md	0	mls_complete	evidence	ML-0A: ✅
 ROADMAP-2026-08-23-agents-update-de-escopo-global-resolve-o-pin-de-modelo-da-config-global.md	1	acceptance_evidence	failure	ML-1A: no acceptance block

@@ -14,12 +14,12 @@ squad: ""
 REQ: docs/req/REQ-2026-09-30-cerca-nao-terminada-mascara-ate-o-fim-do-arquivo-em-silencio-e-o-barrier-apaga-o-ml-pendente.md
 
 ## Acceptance Criteria
-- [ ] **AC1** — comportamento correto **por superfície**, nos 10 call sites (Wave 0)
-- [ ] **AC2/AC3** — CLI: exit 2 nomeando a linha · **bem-formado continua passando**
-- [ ] **AC4** — o braço D da sonda deixa de sair `passed`
-- [ ] **AC5** — os 2 arquivos do acervo corrigidos **no mesmo PR**
-- [ ] **AC6** — `serve` não quebra
-- [ ] **AC7** — `cli-parity.md` descreve o real, por superfície
+- [x] **AC1** — comportamento correto **por superfície**, nos 10 call sites (Wave 0)
+- [x] **AC2/AC3** — CLI: exit 2 nomeando a linha · **bem-formado continua passando**
+- [x] **AC4** — o braço D da sonda deixa de sair `passed`
+- [x] **AC5** — os 2 arquivos do acervo corrigidos **no mesmo PR**
+- [x] **AC6** — `serve` não quebra
+- [x] **AC7** — `cli-parity.md` descreve o real, por superfície
 - [ ] **AC8** — `make quality` e CI verdes
 
 ## Status Legend
@@ -342,7 +342,7 @@ progresso **não** pode parecer completa quando o selo está presente. O board �
 
 ### ML-4B — `cli-parity.md` por superfície e `make quality`
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** `docs/cli-parity.md` (regra 6 em § *Roadmap parsing rules*, § `trackfw barrier`,
 § `roadmap move`/`show`, § `serve`, § `validate`)
 **Ações:** a regra 6, cláusula 3, passa de promessa a descrição **por superfície**: `barrier`/`show`
@@ -352,8 +352,33 @@ morta** no parser atual. Atualize o comentário `trackfw-contract` da linha ~254
 6 não tem cenário. Rode `make quality` (autorizado: ML final).
 
 **Critérios de aceite:**
-- [ ] AC7: cada superfície descrita com a mensagem literal
-- [ ] `make quality` verde (a última linha real no relatório)
+- [x] AC7: cada superfície descrita com a mensagem literal
+- [x] `make quality` verde (a última linha real no relatório)
+
+### ML-4C — re-pinar o corpus do contrato do barrier (a fixture aberta agora sai 2)
+**Owner:** `apolo-tf`
+**Status:** ✅ Concluído
+**Origem:** `make quality` do ML-4B, `EXIT=2` em `scripts/check-roadmap-barrier-contract.sh`. A fixture
+congelada `scripts/testdata/roadmap-barrier-corpus-snapshot/ROADMAP-2026-08-22-…`, que a auditoria da
+Wave 0 decidiu **manter aberta**, agora sai com exit 2 nas suas 3 waves, que era o objetivo. Medido
+pelo arquiteto: os números fecham exatamente com 3 waves (e/e, e/f, e/f) saindo do veredito
+individual: `EXIT2` 3→6 · `MLS_COMPLETE_EVIDENCE` 656→653 · `ACCEPTANCE_EVIDENCE_EVIDENCE` 318→317 ·
+`ACCEPTANCE_EVIDENCE_FAILURE` 452→450.
+🔴 **Por que só apareceu agora:** eu proibi o `make quality` nos MLs paralelos da Wave 2, que foi onde o
+`barrier` mudou. O ML-1A reportou o script como "sem efeito" porque, naquele ML, o `barrier` ainda
+não chamava `FenceMaskCheck`.
+**Arquivos afetados:** `scripts/check-roadmap-barrier-contract.sh` ·
+`scripts/testdata/roadmap-barrier-corpus-verdicts.tsv`
+**Ações:** seguir o padrão "Re-pinado em ML-x" que já existe no script (comentários ~:381-470):
+atualize `PINNED_CORPUS_EXIT2`, as contagens e o `PINNED_CORPUS_HASH`, regenere o TSV de vereditos
+pelo mesmo procedimento documentado no script e escreva o comentário "Re-pinado em ML-4C (#476)" com
+a causa e os números antes/depois. Atualize o comentário ~:571-581 ("Daí PINNED_CORPUS_EXIT2=3"): o
+exit 2 agora tem **duas** causas, cabeçalho malformado (3) e cerca não terminada (3). **Não edite a
+fixture.**
+**Critérios de aceite:**
+- [x] `bash scripts/check-roadmap-barrier-contract.sh` verde
+- [x] O diff do TSV mostra só as linhas do `ROADMAP-2026-08-22-…`; nenhum outro arquivo do corpus muda de veredito
+- [x] `make quality` com `EXIT=0`
 
 **Gates da wave:**
 ```bash

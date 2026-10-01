@@ -2,6 +2,24 @@
 
 ---
 
+## 2026-10-01 — Apolo (fix/cerca-nao-terminada-mascara-em-silencio — ML-4B) — BLOQUEADO
+
+**Inicio:** 2026-10-01 | Branch: `fix/cerca-nao-terminada-mascara-em-silencio`
+**Tarefa:** ML-4B — `cli-parity.md` por superfície e `make quality`
+**Arquivos afetados:** `docs/cli-parity.md` · `docs/roadmaps/wip/ROADMAP-2026-09-30-...` · `docs/agents-working-context.md`
+
+**Status:** Edições em `docs/cli-parity.md` concluídas. `go build ./...` OK. Wave 4 gate OK. `check-parity-contract-coverage.sh` OK (276 seções, 0 sem anotação). `make quality` terminou com EXIT=2.
+
+**Falha em `check-roadmap-barrier-contract.sh`:**
+- `[corpus/exit2-count]`: waves malformadas (exit 2): 6, pinado 3
+- `[corpus/mls-complete-verdict-counts]`: evidence=653 failure=116, pinado evidence=656 failure=116
+- `[corpus/acceptance-evidence-verdict-counts]`: evidence=317 failure=450, pinado evidence=318 failure=452
+- `[corpus/non-reclassification]`: hash da tabela de vereditos mudou; 6 linhas do TSV removidas referentes a `ROADMAP-2026-08-22-wave-0-de-modelo-de-ameaca-no-harness-e-o-asset-do-arquiteto-ensina-trackfw-push.md` (waves 0/1/2 → exit 2 em vez de pass/fail individuais)
+
+**Diagnóstico:** git status --short mostra apenas os 3 arquivos de ML-4B modificados. O arquivo do corpus snapshot NÃO foi alterado por este ML. A falha é pré-existente ou foi introduzida por um ML anterior. Aguardando orientação do arquiteto.
+
+---
+
 ## 2026-10-01 — Apolo (fix/cerca-nao-terminada-mascara-em-silencio — ML-2B) — ENTREGUE
 
 **Inicio:** 2026-10-01 | **Fim:** 2026-10-01 | Branch: `fix/cerca-nao-terminada-mascara-em-silencio`
@@ -43518,3 +43536,33 @@ Escopo: `internal/validator/validator_roadmap_gates.go` · `internal/validator/v
 Branch: `fix/cerca-nao-terminada-mascara-em-silencio`
 Escopo: `internal/validator/validator_roadmap_gates.go` · `internal/validator/validator_unterminated_fence_ml3b_test.go` (novo) · `scripts/check-validate-rule-pins.sh` · roadmap ML-3B
 Resultados: `go build ./...` ok · `go vet ./internal/validator/` ok · `go test ./internal/validator/ -count=1` ok (3 novos PASS) · `bash scripts/check-validate-rule-pins.sh` ok (30 pins, block 5 pin26+pin27) · `tf3b validate | grep -c roadmap_unterminated_fence` → 0
+
+---
+
+## 2026-10-01 — Apolo (fix/cerca-nao-terminada-mascara-em-silencio — ML-4C) — CONCLUÍDO
+
+**Inicio:** 2026-10-01 | Branch: `fix/cerca-nao-terminada-mascara-em-silencio`
+**Tarefa:** ML-4C — re-pinar corpus do contrato do barrier (fixture aberta agora sai exit 2)
+**Arquivos afetados:** `scripts/check-roadmap-barrier-contract.sh` · `scripts/testdata/roadmap-barrier-corpus-verdicts.tsv` · roadmap · `docs/agents-working-context.md`
+
+**Resultado:**
+- TSV regenerado: 6 linhas do `ROADMAP-2026-08-22-wave-0-...` (waves 0/1/2) removidas; nenhum outro arquivo do corpus mudou de veredito.
+- Pins atualizados: EXIT2 3→6 · MLS_EVIDENCE 656→653 · ACC_EVIDENCE 318→317 · ACC_FAILURE 452→450 · LINES 1542→1536 · HASH b08dffce→6a69da21.
+- Comentário "Re-pinado em ML-4C (#476, 2026-10-01)" e atualização do comentário de causas do exit2 (agora 3 causas: WaveLabelRe + cerca-dentro-de-cerca #470 + FenceMaskCheck #476).
+- `bash scripts/check-roadmap-barrier-contract.sh`: 49 cenários OK.
+- `make quality`: EXIT=0, 347 OK, 0 FAIL.
+- ML-4B e ML-4C marcados ✅ Concluído no roadmap.
+
+## 2026-10-01 — zeus-tf — FIM (implementação): #476 pronto para PR
+
+Waves 0–4 auditadas; barrier real (binário novo) `passed` nas 5; `make quality` EXIT=0 (347 OK / 0
+FAIL); AC1–AC7 marcados, **AC8 aguarda o CI**.
+
+Três reprovações de auditoria, todas corrigidas no mesmo PR: (1) o conserto do acervo pôs o fechador
+perto da linha acusada — a causa estava 230 linhas acima, num bloco que transcreve outra cerca;
+corrigi eu mesmo (4 crases) e escrevi nota de vault; (2) exit 2 do `show` feito com `os.Exit` dentro
+do `generators` → ML-2C; (3) re-pin do corpus do contrato do barrier (ML-4C) — só apareceu no ML
+final porque **eu** proibi `make quality` nos MLs paralelos da Wave 2, onde o barrier mudou.
+
+Verificação visual do selo com Chrome headless; o caso que importa (1/1 visível escondendo ML
+pendente) não estava na fixture da executora e foi acrescentado por mim.
