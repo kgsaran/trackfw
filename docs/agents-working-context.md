@@ -44122,3 +44122,22 @@ O commit da evidência do AC10 (`99477f44`) ficou fora do merge e veio para esta
 
 Medição: não reproduz com a máquina ociosa (5/5 limpas; `make quality` 9 min 23 s). Decisão do KG: limite
 de tempo por chunk, para que um travamento vire FAIL nomeado com a árvore de processos, não 60 min de silêncio.
+
+## 2026-10-02 — hades-tf — INÍCIO: ML-0A Wave 0 (limite de tempo por chunk no driver de falsificação)
+
+Roadmap: ROADMAP-2026-10-02-driver-de-falsificacao-paralelo...
+Escrevendo parecer em `docs/seguranca/2026-10-02-wave0-limite-por-chunk.md`.
+Executando medições: tempo por chunk, kill de árvore no macOS, guarda de conjunto.
+
+## 2026-10-02 — hades-tf — FIM: ML-0A Wave 0 (limite de tempo por chunk) — final
+
+Parecer em `docs/seguranca/2026-10-02-wave0-limite-por-chunk.md` (533 linhas).
+Veredito: APROVA COM AJUSTES.
+Mecanismo: `set -m` + `PGID=$!` no launch + SIGTERM/SIGKILL ao grupo, `trap` INT/TERM/HUP (não EXIT).
+`</dev/null` explícito obrigatório (medido: set-m herda stdin do pai, não /dev/null).
+Limite 1200 s: 5,8× sobre 205 s medido (loaded), 3,3× sobre 360 s (issue).
+8 ajustes. Tabela vetores×métodos medida (kill_exp7/8/10):
+- grupo kill: cobre órfão (pai sai), nohup, grandchild, trap+SIGKILL; não alcança setsid
+- recursão: cobre grandchild, nohup, setsid (pai vivo); não alcança órfão sob PID 1
+- setsid ausente do script e do Go (grep confirmado); escolha: grupo kill
+Cause dos 3 travamentos: não medida (issue 504 explicita); causal overstatement removido.

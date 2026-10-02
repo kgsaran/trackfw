@@ -19,7 +19,8 @@ por chunk (`( TRACKFW_ROOT_DIR=… bash "$chunk" ) >"$log" 2>&1 &`), e o laço d
 bash 4+). Só o `make` local usa este driver; o CI usa `run-gates-falsify-shard.sh`.
 
 ## Acceptance Criteria
-- [ ] AC1 — Wave 0 auditada
+- [x] AC1 — Wave 0 auditada
+      ✅ `docs/seguranca/2026-10-02-wave0-limite-por-chunk.md`: APROVA COM AJUSTES. Chunk mais lento medido: 137 s ociosa, 205 s com carga; 1200 s mantido (5,8× de margem). Kill por grupo de processos (`set -m`), 8 ajustes absorvidos no ML-1A.
 - [ ] AC2 — chunk sintético travado: FAIL nomeado, árvore impressa, nenhum processo sobrevivente
 - [ ] AC3 — suíte real verde sem override (347/0)
 - [ ] AC4 — o teste reprova no driver de `0bf66679`
@@ -33,7 +34,7 @@ bash 4+). Só o `make` local usa este driver; o CI usa `run-gates-falsify-shard.
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — O que o limite pode esconder ou quebrar
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** hades-tf
 **Files affected:** `docs/seguranca/2026-10-02-wave0-limite-por-chunk.md` (único arquivo escrito)
 **Actions:**
@@ -42,9 +43,9 @@ bash 4+). Só o `make` local usa este driver; o CI usa `run-gates-falsify-shard.
 3. **Falsificação nas duas direções:** o limite dispara cedo demais (frouxo para a velocidade da máquina) e não dispara (o travamento volta a ser silêncio).
 4. **Resíduo declarado.**
 **Acceptance criteria:**
-- [ ] As quatro seções com evidência (comando + saída)
-- [ ] Veredito explícito, com o mecanismo de kill recomendado
-- [ ] Nenhuma linha de implementação
+- [x] As quatro seções com evidência (comando + saída)
+- [x] Veredito explícito, com o mecanismo de kill recomendado
+- [x] Nenhuma linha de implementação
 
 **Gates da wave:**
 ```bash
@@ -59,7 +60,16 @@ grep -q "Veredito" docs/seguranca/2026-10-02-wave0-limite-por-chunk.md
 **Status:** ⬜ Pendente
 **Squad:** ares-tf
 **Files affected:** `scripts/run-gates-falsify-parallel.sh`, script de teste novo (nome e ponto de ligação no `Makefile`/`parity-rest` a decidir lendo como os outros `check-*.sh` de autoteste são ligados), `docs/cli-parity.md` se descrever o driver
-**Actions:** conforme a REQ e o mecanismo de kill que a Wave 0 recomendar. `TRACKFW_FALSIFY_CHUNK_TIMEOUT` (padrão 1200), override denunciado no stderr. No estouro: árvore de processos do chunk, kill da árvore, `FAIL [falsify-driver/chunk-timeout] chunk <N> excedeu <T>s`, rc≠0, e a guarda de conjunto continua rodando.
+**Actions:** conforme a REQ, com o mecanismo e os 8 ajustes da Wave 0 (§ Veredito do parecer):
+1. `set -m` antes do disparo; `PGID=$!` **imediatamente** após o `&` (não por `ps -o pgid=` depois: há janela de corrida medida).
+2. Disparo com `</dev/null` explícito (sob `set -m`, o job assíncrono deixa de ganhar `/dev/null` implícito; medido).
+3. No estouro: árvore de processos do grupo, `kill -TERM -- -$PGID`, espera curta e `kill -9 -- -$PGID`, e nova varredura do PGID depois do `wait`.
+4. `trap` de `INT TERM HUP` no driver que mata os grupos vivos; **não** usar `EXIT`, que substituiria o `trap 'rm -rf "$WORKDIR"' EXIT` existente.
+5. Nenhum `exit` no caminho do estouro antes da guarda de conjunto: ela tem de rodar e acusar os rótulos do chunk morto.
+6. `TRACKFW_FALSIFY_CHUNK_TIMEOUT` validado contra `^[1-9][0-9]*$` (valor inválido aborta com mensagem; `$(( abc ))` avalia a 0).
+7. Declarar no cabeçalho que o driver requer bash 4+ (`mapfile`).
+8. Chunk sintético do teste com `sleep 999999` ou laço (no macOS não existe `sleep infinity` nem `timeout`).
+9. O autoteste roda no macOS e no Linux; no Git Bash/MSYS (`uname` com `MINGW`/`MSYS`), `t.Skip`/saída declarada, porque `kill -- -PGID` não existe lá (resíduo R4 da Wave 0). `TRACKFW_FALSIFY_CHUNK_TIMEOUT` (padrão 1200), override denunciado no stderr. No estouro: árvore de processos do chunk, kill da árvore, `FAIL [falsify-driver/chunk-timeout] chunk <N> excedeu <T>s`, rc≠0, e a guarda de conjunto continua rodando.
 **Acceptance criteria:**
 - [ ] Teste com chunk sintético (dorme para sempre, com um neto em background): rc≠0 em até T+10 s, linha FAIL, árvore impressa, 0 processos sobreviventes
 - [ ] O mesmo teste contra o driver de `0bf66679` (cópia, com teto externo) não termina dentro do teto: prova de que morde
