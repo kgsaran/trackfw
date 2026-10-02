@@ -2,6 +2,10 @@
 # Driver de paralelização do check-gates-falsify.sh (ML-2D,
 # ROADMAP-2026-09-06-perfil-e-aceleracao-do-check-gates-falsify).
 #
+# Requer bash 4+ (usa mapfile e arrays). /bin/bash no macOS é bash 3.2 e não
+# pode rodar este driver. Use o bash do PATH (Homebrew/bash 5+). O make usa
+# /usr/bin/env bash — desde que o bash do PATH seja ≥ 4, o make funciona.
+#
 # Mecanismo de isolamento: um processo bash por chunk. Cada chunk é o mesmo
 # preâmbulo do script original (byte a byte, via gen-falsify-chunks.py) —
 # então cada chunk cria seu PRÓPRIO $WORK (mktemp -d) e seu PRÓPRIO
@@ -23,6 +27,13 @@
 # Falha em qualquer chunk propaga: o driver agrega o exit code de todos os
 # processos e sai não-zero se qualquer um falhar (nunca mascara falha parcial
 # como sucesso do conjunto).
+#
+# Limite de tempo por chunk: TRACKFW_FALSIFY_CHUNK_TIMEOUT (padrão 1200 s).
+# Ao estourar, o driver imprime a árvore do grupo do chunk (via ps + PGID),
+# mata a árvore inteira com SIGTERM+SIGKILL e emite:
+#   FAIL [falsify-driver/chunk-timeout] chunk <N> excedeu <T>s
+# A guarda de conjunto continua rodando após o estouro — ela nomeia os
+# rótulos do chunk morto que ficaram sem emissão (incidente medido: ML-2D).
 #
 # Guarda de CONJUNTO (ML-2D, correção pós-reprovação): rc != 0 já denunciava
 # falha antes, mas não NOMEAVA cobertura perdida -- o incidente medido teve
@@ -95,6 +106,22 @@ else
   [[ "$JOBS" -gt 8 ]] && JOBS=8
 fi
 
+# Limite de tempo por chunk (ML-1A, REQ-2026-10-02). Validado contra
+# ^[1-9][0-9]*$: $(( abc )) avalia a 0 em bash (string não-numérica), logo
+# um valor não-numérico viraria timeout=0 e mataria o chunk imediatamente.
+# Declarado no stderr como os outros TRACKFW_FALSIFY_* overrides.
+DEFAULT_CHUNK_TIMEOUT=1200
+if [[ -n "${TRACKFW_FALSIFY_CHUNK_TIMEOUT:-}" ]]; then
+  if ! [[ "${TRACKFW_FALSIFY_CHUNK_TIMEOUT}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "run-gates-falsify-parallel: TRACKFW_FALSIFY_CHUNK_TIMEOUT='${TRACKFW_FALSIFY_CHUNK_TIMEOUT}' invalido -- deve ser um inteiro positivo (^[1-9][0-9]*$)" >&2
+    exit 1
+  fi
+  CHUNK_TIMEOUT="${TRACKFW_FALSIFY_CHUNK_TIMEOUT}"
+  echo "run-gates-falsify-parallel: TRACKFW_FALSIFY_CHUNK_TIMEOUT setada -- valor efetivo='$CHUNK_TIMEOUT' default='$DEFAULT_CHUNK_TIMEOUT'" >&2
+else
+  CHUNK_TIMEOUT="$DEFAULT_CHUNK_TIMEOUT"
+fi
+
 if [[ "$JOBS" -le 1 ]]; then
   echo "run-gates-falsify-parallel: JOBS=$JOBS -- executando serial (script original, sem split)" >&2
   exec bash "$SCRIPT"
@@ -137,27 +164,98 @@ if [[ ${#CHUNKS[@]} -eq 0 ]]; then
   exit 1
 fi
 
-echo "run-gates-falsify-parallel: ${#CHUNKS[@]} chunks (JOBS solicitado=$JOBS)" >&2
+echo "run-gates-falsify-parallel: ${#CHUNKS[@]} chunks (JOBS solicitado=$JOBS, CHUNK_TIMEOUT=${CHUNK_TIMEOUT}s)" >&2
+
+# CHUNK_PGIDS: PGIDs dos chunks lançados, para o trap INT/TERM/HUP.
+# Sob set -m, cada background job recebe PGID = seu próprio PID ($!).
+# O trap mata todos os grupos vivos se o driver for interrompido externamente.
+# NÃO usa EXIT (substituiria o 'rm -rf "$WORKDIR"' da linha trap EXIT acima).
+CHUNK_PGIDS=()
+trap 'for _pgid in "${CHUNK_PGIDS[@]:-}"; do
+        kill -TERM -- "-$_pgid" 2>/dev/null || true
+        kill -9   -- "-$_pgid" 2>/dev/null || true
+      done; exit 1' INT TERM HUP
 
 PIDS=()
+LAUNCH_TS=$(date +%s)
 for chunk in "${CHUNKS[@]}"; do
   log="${chunk%.sh}.log"
-  ( TRACKFW_ROOT_DIR="$ROOT_DIR" bash "$chunk" ) >"$log" 2>&1 &
-  PIDS+=("$!:$chunk:$log")
+  # set -m: bash atribui ao job um PGID = PID do subshell — capturado via $!
+  # imediatamente após o &, antes de set +m. Ajuste 2 (Wave 0):
+  # PGID consultado via ps -o pgid= depois que o processo saiu retorna vazio;
+  # $! capturado neste ponto não tem janela de corrida.
+  # </dev/null explícito: sem set -m, bash redireciona stdin de jobs
+  # assíncronos para /dev/null implicitamente. Com set -m ativo, o job herda
+  # o stdin do driver (medido: 3 bytes lidos vs 0 sem set -m). </dev/null
+  # restaura o isolamento de stdin. Ajuste 8 (Wave 0).
+  set -m
+  ( TRACKFW_ROOT_DIR="$ROOT_DIR" bash "$chunk" ) >"$log" 2>&1 </dev/null &
+  pid=$!
+  set +m
+  CHUNK_PGIDS+=("$pid")
+  PIDS+=("$pid:$chunk:$log")
 done
 
+# --- Coleta de resultados com limite de tempo por chunk --------------------
+# Deadline absoluto: todos os chunks foram lançados em LAUNCH_TS — o mesmo
+# T conta para todos, não T por chunk em série. Se N chunks estão travados,
+# o segundo é detectado quase imediatamente após o primeiro ser eliminado,
+# em vez de N×T. Ajuste 3 (Wave 0): SIGTERM → espera 2 s → SIGKILL.
 FAILED=0
+_pgid_i=0
 for entry in "${PIDS[@]}"; do
   pid="${entry%%:*}"
   rest="${entry#*:}"
   chunk="${rest%%:*}"
   log="${rest#*:}"
-  if ! wait "$pid"; then
+  pgid="${CHUNK_PGIDS[$_pgid_i]}"
+  _pgid_i=$((_pgid_i + 1))
+  idx=$(basename "$chunk" .sh)
+  idx="${idx#chunk_}"
+
+  # Polling com deadline absoluto.
+  timed_out=0
+  while kill -0 "$pid" 2>/dev/null; do
+    now=$(date +%s)
+    if [[ $((now - LAUNCH_TS)) -ge CHUNK_TIMEOUT ]]; then
+      timed_out=1
+      break
+    fi
+    sleep 1
+  done
+
+  if [[ "$timed_out" -eq 1 ]]; then
+    # Ajuste 3: imprimir árvore ANTES do kill (processos mortos não aparecem).
+    echo "run-gates-falsify-parallel: TIMEOUT -- chunk_$idx excedeu ${CHUNK_TIMEOUT}s -- arvore de processos do grupo $pgid:" >&2
+    ps -A -o pid= -o ppid= -o pgid= -o etime= -o command= 2>/dev/null \
+      | awk -v g="$pgid" 'NR>=1{if ($3+0==g+0) print}' >&2 || true
+    kill -TERM -- "-$pgid" 2>/dev/null || true
+    sleep 2
+    kill -9 -- "-$pgid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    # Varredura pós-kill: grandchildren que sobreviveram ao grupo kill
+    # (ex.: processos que chamaram setsid() — resíduo R3 declarado em Wave 0)
+    # são eliminados explicitamente. Não-bloqueante: kill -9 + sem espera.
+    # Ajuste 3 (nota final Wave 0).
+    kill -9 -- "-$pgid" 2>/dev/null || true
+    # FAIL nomeado — vai para stderr; a guarda de conjunto ainda roda abaixo.
+    # Ajuste 5 (Wave 0): sem exit aqui — a guarda nomeia os rótulos perdidos.
+    echo "FAIL [falsify-driver/chunk-timeout] chunk_$idx excedeu ${CHUNK_TIMEOUT}s" >&2
     FAILED=1
-    echo "run-gates-falsify-parallel: FALHOU $chunk -- log:" >&2
-    cat "$log" >&2
   else
-    cat "$log"
+    # Processo terminou no tempo: recolher exit code.
+    _rc=0
+    wait "$pid" || _rc=$?
+    if [[ "$_rc" -ne 0 ]]; then
+      FAILED=1
+      echo "run-gates-falsify-parallel: FALHOU $chunk -- log:" >&2
+      cat "$log" >&2
+    else
+      cat "$log"
+    fi
+    # Varredura pós-wait: grandchildren do chunk que possam ter sobrevivido.
+    kill -TERM -- "-$pgid" 2>/dev/null || true
+    kill -9   -- "-$pgid" 2>/dev/null || true
   fi
 done
 
@@ -222,8 +320,8 @@ fi
 # 20-30 dos 118 segmentos, não os 118), e nesse contexto essa frase describe
 # só aquela chunk -- não mais a suíte inteira. A guarda de conjunto acima já
 # provou a cobertura completa; este resumo é o que fala pela suíte.
-total_ok=$(cat "$WORKDIR"/chunk_*.log 2>/dev/null | grep -c '^OK' || true)
-total_fail=$(cat "$WORKDIR"/chunk_*.log 2>/dev/null | grep -c '^FAIL' || true)
+total_ok=$( { cat "$WORKDIR"/chunk_*.log 2>/dev/null | grep -c '^OK' || true; } )
+total_fail=$( { cat "$WORKDIR"/chunk_*.log 2>/dev/null | grep -c '^FAIL' || true; } )
 echo "run-gates-falsify-parallel: suite completa -- ${#CHUNKS[@]} chunks, ${total_ok} OK, ${total_fail} FAIL, guarda de conjunto OK (nenhum rotulo esperado ausente)" >&2
 
 exit 0

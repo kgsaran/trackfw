@@ -203,6 +203,14 @@ parity-rest: build
 	# esquecido no ambiente nao pode apontar o gate para outro corpus.
 	unset TRACKFW_SLUG_CORPUS_DIR && GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-roadmap-slug-matching.sh --self-test
 	unset TRACKFW_SLUG_CORPUS_DIR && GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/check-roadmap-slug-matching.sh
+	# ML-1A (REQ-2026-10-02-driver-de-falsificacao-paralelo-espera-para-sempre-por-chunk-
+	# que-nao-termina-limite-de-tempo-por-chunk-com-fail-nomeado.md): autoteste do limite
+	# de tempo por chunk em run-gates-falsify-parallel.sh. Exercita 5 bracos: timeout
+	# invalido aborta, chunks normais passam, chunk travado e morto com FAIL nomeado e
+	# arvore impressa, isolamento de stdin, e contra-braco (driver antigo 0bf66679 nao
+	# termina). Ligado SOMENTE em parity-rest (ubuntu-latest): kill -- -PGID nao existe
+	# em Git Bash / MSYS, o script skipa declaradamente nessa plataforma (residuo R4).
+	scripts/check-falsify-chunk-timeout.sh
 
 parity-falsify: build
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/run-gates-falsify-parallel.sh
