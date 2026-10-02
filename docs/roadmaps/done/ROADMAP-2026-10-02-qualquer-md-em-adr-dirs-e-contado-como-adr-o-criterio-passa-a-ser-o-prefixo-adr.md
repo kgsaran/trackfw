@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-10-02
 req: "docs/req/REQ-2026-10-02-qualquer-md-em-adr-dirs-e-contado-como-adr-o-criterio-passa-a-ser-o-prefixo-adr.md"
 squad: "hades-tf, apolo-tf, artemis-tf, hefesto-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf, artemis-tf, hefesto-tf"
 
 # Roadmap: qualquer .md em adr_dirs é contado como ADR — o critério passa a ser o prefixo ADR-
 
-> Created: 2026-10-02 | Status: wip
+> Created: 2026-10-02 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-10-02-qualquer-md-em-adr-dirs-e-contado-como-adr-o-criterio-passa-a-ser-o-prefixo-adr.md
@@ -45,7 +45,8 @@ Mapa dos sítios (lido em `44718ffc`):
       ✅ pinos 32/32 (pin28/pin29 novos); seção nova no `cli-parity.md`
 - [x] AC9 — teste novo declara o que afirma e reprova no critério antigo
       ✅ prova de mordida por overlay em todos os ML; uma frase por teste
-- [ ] AC10 — `make quality` EXIT=0 e CI verde
+- [x] AC10 — `make quality` EXIT=0 e CI verde
+      ✅ CI do PR #503 em c61300ca: 20/20 SUCCESS, inclusive windows-full-suites.
       ⏳ Local: `make quality` passou todas as etapas até a falsificação; a falsificação, rodada em 2 grupos de 4 chunks (o paralelo de 8 pendurou 3x nesta máquina), deu 347 OK / 0 FAIL, 8/8 CHUNK_COMPLETE. Falta o CI do PR.
 
 ## Status Legend

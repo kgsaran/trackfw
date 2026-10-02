@@ -1,15 +1,16 @@
 ---
-status: Open
+status: Done
 date: 2026-10-02
 author: "zeus-tf"
 adr: "docs/adr/ADR-2026-10-02-o-criterio-de-identificacao-de-adr-e-o-prefixo-adr-no-nome-do-arquivo-aplicado-no-primitivo-unico-de-enumeracao.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-10-02-qualquer-md-em-adr-dirs-e-contado-como-adr-o-criterio-passa-a-ser-o-prefixo-adr.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-10-02-qualquer-md-em-adr-dirs-e-contado-como-adr-o-criterio-passa-a-ser-o-prefixo-adr.md"
 ---
 
 # REQ: qualquer .md em adr_dirs é contado como ADR — o critério passa a ser o prefixo ADR-
 
-> Date: 2026-10-02 | Status: Open
+> Date: 2026-10-02 | Status: Done
 | GitHub Issue: #471
+| Mergeado: PR #503 em `2dd76b40` (2026-10-02); CI 20/20, inclusive `windows-full-suites`. #471 fechada pelo merge.
 
 ## Motivation
 
@@ -52,7 +53,8 @@ dois sítios de fora (`serve` e a sonda do `discover`) passam a usá-lo.
       ✅ Evidência: pinos 32/32 (pin28/pin29 novos); seção nova no `cli-parity.md`
 - [x] **AC9** — Todo teste novo declara a conclusão que afirma; cada um reprova com o critério antigo.
       ✅ Evidência: prova de mordida por overlay em todos os ML; uma frase por teste
-- [ ] **AC10** — `make quality` EXIT=0 e CI do PR verde, inclusive `windows-full-suites`.
+- [x] **AC10** — `make quality` EXIT=0 e CI do PR verde, inclusive `windows-full-suites`.
+      ✅ CI do PR #503 em c61300ca: 20/20 SUCCESS, inclusive windows-full-suites.
       ⏳ Local: `make quality` passou todas as etapas até a falsificação; a falsificação, rodada em 2 grupos de 4 chunks (o paralelo de 8 pendurou 3x nesta máquina), deu 347 OK / 0 FAIL, 8/8 CHUNK_COMPLETE. Falta o CI do PR.
 
 ## Negative scope
@@ -70,4 +72,4 @@ ADR: docs/adr/ADR-2026-10-02-o-criterio-de-identificacao-de-adr-e-o-prefixo-adr-
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-10-02-qualquer-md-em-adr-dirs-e-contado-como-adr-o-criterio-passa-a-ser-o-prefixo-adr.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-10-02-qualquer-md-em-adr-dirs-e-contado-como-adr-o-criterio-passa-a-ser-o-prefixo-adr.md
