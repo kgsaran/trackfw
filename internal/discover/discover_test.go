@@ -1103,6 +1103,70 @@ func TestWriteCIWorkflow_NeverWritesThroughDanglingSymlink(t *testing.T) {
 
 // helpers
 
+// TestScan_FallbackFlat_NotasNotCounted — afirma D3 (ADR-2026-10-02), layout plano sem
+// trackfw.yaml: NOTAS.md em docs/adr não é creditado como ADR (ADRCount == 0). O contra-braço
+// (ADR-001.md presente) confirma que a direção contrária — primitivo muito restrito — também
+// não ocorre. Depende de ML-1A: reprova enquanto WalkADRFilePaths ainda enumerar qualquer .md.
+func TestScan_FallbackFlat_NotasNotCounted(t *testing.T) {
+	dir := t.TempDir()
+	mustMkdir(t, dir, "docs/adr")
+
+	// Apenas NOTAS.md — ADRCount deve ser 0
+	mustWriteFile(t, filepath.Join(dir, "docs/adr/NOTAS.md"), "# Notas internas\n")
+
+	r, err := Scan(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.ADRCount != 0 {
+		t.Errorf("NOTAS.md não deve ser contado como ADR no layout plano; ADRCount=%d", r.ADRCount)
+	}
+
+	// Contra-braço: ADR-001.md ao lado → deve aparecer como 1
+	mustWriteFile(t, filepath.Join(dir, "docs/adr/ADR-001.md"), "---\nstatus: Accepted\n---\n# ADR 001\n")
+
+	r2, err := Scan(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r2.ADRCount != 1 {
+		t.Errorf("ADR-001.md deve ser contado como 1 ADR no layout plano; ADRCount=%d", r2.ADRCount)
+	}
+}
+
+// TestScan_FallbackSubdir_NotasNotCounted — afirma D3 (ADR-2026-10-02), layout por subpastas
+// sem trackfw.yaml: NOTAS.md dentro de docs/adr/zeus não é creditado como ADR (ADRCount == 0).
+// Nota: a fixture coloca NOTAS.md DENTRO do subdiretório; um NOTAS.md na raiz de docs/adr seria
+// ignorado pelo ramo de subpastas de qualquer forma (o loop itera subDirs, não docs/adr direto).
+// O contra-braço confirma que ADR-001.md no mesmo subdir é contado.
+// Depende de ML-1A: reprova enquanto WalkADRFilePaths ainda enumerar qualquer .md.
+func TestScan_FallbackSubdir_NotasNotCounted(t *testing.T) {
+	dir := t.TempDir()
+	mustMkdir(t, dir, "docs/adr/zeus")
+
+	// Apenas NOTAS.md dentro do subdir — ADRCount deve ser 0
+	mustWriteFile(t, filepath.Join(dir, "docs/adr/zeus/NOTAS.md"), "# Notas internas\n")
+
+	r, err := Scan(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.ADRCount != 0 {
+		t.Errorf("NOTAS.md não deve ser contado como ADR em layout de subpastas; ADRCount=%d", r.ADRCount)
+	}
+
+	// Contra-braço: ADR-001.md no mesmo subdir → deve aparecer como 1
+	mustWriteFile(t, filepath.Join(dir, "docs/adr/zeus/ADR-001.md"), "---\nstatus: Accepted\n---\n# ADR 001\n")
+
+	r2, err := Scan(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r2.ADRCount != 1 {
+		t.Errorf("ADR-001.md deve ser contado como 1 ADR em layout de subpastas; ADRCount=%d", r2.ADRCount)
+	}
+}
+
 func mustMkdir(t *testing.T, base, rel string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Join(base, rel), 0755); err != nil {

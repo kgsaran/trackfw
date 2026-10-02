@@ -85,9 +85,12 @@
 #      ensureGlobalADRDirRegistered previously used filepath.Glob root-only;
 #      now uses validator.WalkADRFilePaths (recursive). No exemption needed.
 #
-#   3. internal/discover/discover.go — pre-config scan; does NOT consume
-#      cfg.ADRDirs. Uses os.ReadDir(dir) with generic variable names (dir, d).
-#      Would not be caught by Patterns A/C anyway; documented for completeness.
+#   3. internal/discover/discover.go — fallback sonda usa validator.WalkADRFilePaths
+#      (D3 / ADR-2026-10-02): o countMDFiles foi substituído pelo primitivo nos dois
+#      chamadores de fallback (~:486 subpastas, ~:491 plano). O caminho declarado já
+#      usava ResolveADRFiles desde o #498. Usa filepath.WalkDir via o primitivo, com
+#      variáveis genéricas — não seria pego pelos Padrões A/C mesmo assim; documentado
+#      para completude.
 #
 # ANTI-VACUITY: reports how many Go files were examined. FAILS if zero files
 #   are found in internal/ — refuses to report a vacuous pass.

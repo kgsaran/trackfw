@@ -69,7 +69,7 @@ grep -q "Veredito" docs/seguranca/2026-10-02-wave0-criterio-de-adr.md
 > Dependencies: Wave 0 auditada
 
 ### ML-1A — Critério no primitivo + regra `adr_file_without_prefix`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Files affected:** `internal/validator/validator.go`, testes em `internal/validator/*_test.go`,
 `docs/cli-parity.md`, `scripts/check-validate-rule-pins.sh` (se o conjunto de regras for pinado)
@@ -78,9 +78,11 @@ grep -q "Veredito" docs/seguranca/2026-10-02-wave0-criterio-de-adr.md
 `ruleDefaults`) usando `resolveAdrStatus` (A2), nos dois caminhos de aplicação; comentários que dizem
 "sem filtro de prefixo" (ex.: `WalkADRFilePaths` ~:3068) corrigidos.
 **Acceptance criteria:**
-- [ ] Testes: `NOTAS.md` não é enumerado; `adr-001-x.md` é; `ADR-…` é; symlink de diretório `ADR-x.md` não é; regra D4 nos quatro braços (frontmatter `status:`, cabeçalho `| Status:`, `README.md` sem status, `ADR-…`)
-- [ ] A1 da Wave 0: REQ com `blocked_by:` para `decisao.md` (sem prefixo, Draft) continua disparando `blocked_by_draft_adr`
-- [ ] Cada teste reprova com o critério antigo (prova por overlay); uma frase por teste
+- [x] Testes: `NOTAS.md` não é enumerado; `adr-001-x.md` é; `ADR-…` é; symlink de diretório `ADR-x.md` não é; regra D4 nos quatro braços (frontmatter `status:`, cabeçalho `| Status:`, `README.md` sem status, `ADR-…`)
+- [x] A1 da Wave 0: REQ com `blocked_by:` para `decisao.md` (sem prefixo, Draft) continua disparando `blocked_by_draft_adr`
+- [x] Cada teste reprova com o critério antigo (prova por overlay); uma frase por teste
+      ✅ Auditoria (arquiteto): 10 testes rodados por nome, PASS; prova de mordida A–F por overlay no relatório; pinos 32/32.
+      ⚠️ `d.Type().IsRegular()` exclui também symlink de ARQUIVO, que antes contava e é legível por `readRegularFile` (segue o link): regressão na direção restrita → ML-1C.
 **Gates da wave:**
 ```bash
 go build ./...
@@ -88,7 +90,7 @@ go test ./internal/validator/ ./internal/generators/ -count=1
 ```
 
 ### ML-1B — `serve` e sonda do `discover` pelo primitivo
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Files affected:** `internal/serve/api_chain.go`, `internal/discover/discover.go`, testes dos dois pacotes,
 `scripts/check-adr-enumeration-single-point.sh` (só o comentário de isenção)
@@ -98,12 +100,31 @@ seguem como estão. No `discover`, a sonda de fallback conta ADR pelo primitivo 
 (subpastas e plano). Atualizar o comentário de isenção de `scripts/check-adr-enumeration-single-point.sh`
 (~:88) que deixa de ser verdade (A4).
 **Acceptance criteria:**
-- [ ] Testes: `/api/chain` sem nó para `NOTAS.md` **e** com os nós de REQ e roadmap intactos (A5); sonda do `discover` sem crédito no layout plano e no de subpastas; uma frase por teste
-- [ ] O gate de "ADR enumeration outside single point" do `check-gates-falsify.sh` segue verde
+- [x] Testes: `/api/chain` sem nó para `NOTAS.md` **e** com os nós de REQ e roadmap intactos (A5); sonda do `discover` sem crédito no layout plano e no de subpastas; uma frase por teste
+- [x] O gate de "ADR enumeration outside single point" do `check-gates-falsify.sh` segue verde
+      ✅ Auditoria: os 3 testes reprovavam antes do ML-1A (prova natural de mordida) e passam com ele; `check-adr-enumeration-single-point.sh` e `check-ref-separator-portability.sh` verdes.
 **Gates da wave:**
 ```bash
 go build ./...
 go test ./internal/serve/ ./internal/discover/ -count=1
+```
+
+### ML-1C — Corretivo: symlink de arquivo volta a contar; só symlink de diretório sai
+**Status:** ⬜ Pendente
+**Squad:** apolo-tf
+**Origem:** auditoria do ML-1A. A3 da Wave 0 pedia excluir o symlink de **diretório** `ADR-x.md`. O
+`d.Type().IsRegular()` (Lstat) exclui também o symlink de **arquivo** `ADR-x.md → ../shared/ADR-x.md`,
+que contava antes e que `readRegularFile` lê (`f.Stat()` segue o link). É regressão na direção restrita.
+**Files affected:** `internal/validator/validator.go` (`walkADRFilePathsForRule`), `internal/validator/validator_adr_prefix_test.go`
+**Actions:** quando `d.Type()&fs.ModeSymlink != 0`, decidir por `os.Stat(path)` (segue o link) e exigir
+`Mode().IsRegular()`; senão, `d.Type().IsRegular()`. Link quebrado não conta.
+**Acceptance criteria:**
+- [ ] Teste: symlink de arquivo `ADR-x.md` é enumerado; symlink de diretório `ADR-y.md` não; link quebrado não (skip em Windows se o symlink não puder ser criado)
+- [ ] O teste do symlink de arquivo reprova com o código atual (prova por overlay); uma frase por teste
+**Gates da wave:**
+```bash
+go build ./...
+go test ./internal/validator/ -count=1
 ```
 
 ## Wave 2 — Ponta a ponta com o binário

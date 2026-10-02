@@ -191,6 +191,10 @@ func isHTMLCommentOnlyValue(value string) bool {
 // Regras ausentes deste mapa usam "error" como default.
 var ruleDefaults = map[string]string{
 	"note_orphan": "warning",
+	// D4 (ADR-2026-10-02): warning para .md sem prefixo ADR- com status reconhecível.
+	// Nunca "error": o arquivo pode ser documento auxiliar legítimo; o aviso existe para
+	// o caso em que é um ADR mal nomeado. "off" silencia normalmente, como qualquer regra.
+	"adr_file_without_prefix": "warning",
 	// ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A,
 	// ADR-2026-08-12 Emenda 3: the script carries no version marker, so this rule cannot tell
 	// legitimate drift (trackfw not updated yet) from tampering — kept a warning, never an error.
@@ -855,6 +859,12 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	}
 	applyRule("adr_orphan", adrOrphanViolations, &violations, &warnings)
 
+	adrWithoutPrefixWarnings, e := validateADRFilesWithoutPrefix()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRule("adr_file_without_prefix", adrWithoutPrefixWarnings, &violations, &warnings)
+
 	criteriaViolations, e := validateWIPHasAcceptanceCriteria()
 	if e != nil {
 		return nil, nil, e
@@ -1209,6 +1219,12 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 		return nil, nil, e
 	}
 	applyRuleTagged("adr_orphan", adrOrphanViolations, &violations, &warnings)
+
+	adrWithoutPrefixWarningsT, e := validateADRFilesWithoutPrefix()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleTagged("adr_file_without_prefix", adrWithoutPrefixWarningsT, &violations, &warnings)
 
 	criteriaViolations, e := validateWIPHasAcceptanceCriteria()
 	if e != nil {
@@ -3059,16 +3075,18 @@ func resolvePhysical(p string) string {
 	}
 }
 
-// walkADRFilePaths retorna os caminhos completos de todos os arquivos .md encontrados recursivamente em adrDir.
+// walkADRFilePaths retorna os caminhos completos de todos os arquivos ADR encontrados recursivamente
+// em adrDir. Critério: D1 (ADR-2026-10-02) — basename com prefixo "ADR-" (case-insensitive) e
+// sufixo ".md", arquivo regular (isADRFileName + d.Type().IsRegular()).
 func walkADRFilePaths(adrDir string) []string {
 	return walkADRFilePathsForRule("", adrDir, nil)
 }
 
 // WalkADRFilePaths é o wrapper exportado de walkADRFilePaths — primitivo por diretório.
-// Retorna os caminhos completos de todos os arquivos .md encontrados recursivamente em adrDir.
+// Retorna os caminhos completos de todos os arquivos ADR encontrados recursivamente em adrDir.
 // Consumido por ListADRs e NewADRDraft (internal/generators/adr.go) para substituir filepath.Glob
-// raiz-only. Critério de identificação: strings.HasSuffix(path, ".md") sem filtro de prefixo —
-// idêntico ao comportamento existente de walkADRFilePaths.
+// raiz-only. Critério de identificação: D1 (ADR-2026-10-02) — basename com prefixo "ADR-"
+// (sem distinção de maiúsculas) e sufixo ".md", arquivo regular (não symlink de diretório).
 func WalkADRFilePaths(adrDir string) []string {
 	return walkADRFilePaths(adrDir)
 }
@@ -3104,6 +3122,15 @@ func ResolveADRFiles(cfg config.ProjectConfig) []string {
 	return files
 }
 
+// isADRFileName reports whether name (a file basename) identifies an ADR file under the
+// criterion of D1 (ADR-2026-10-02-o-criterio-de-identificacao-de-adr-e-o-prefixo-adr...):
+// the basename must begin with "ADR-" (without case distinction) and end with ".md".
+// Used by walkADRFilePathsForRule (the sole enumeration primitive) and by
+// validateADRFilesWithoutPrefix (rule adr_file_without_prefix, D4) as the complementary predicate.
+func isADRFileName(name string) bool {
+	return strings.HasPrefix(strings.ToUpper(name), "ADR-") && strings.HasSuffix(name, ".md")
+}
+
 func walkADRFilePathsForRule(rule, adrDir string, msgs *[]string) []string {
 	adrDir = config.ExpandPath(adrDir)
 	var paths []string
@@ -3114,12 +3141,66 @@ func walkADRFilePathsForRule(rule, adrDir string, msgs *[]string) []string {
 			}
 			return nil
 		}
-		if !d.IsDir() && strings.HasSuffix(path, ".md") {
+		// D1 (ADR-2026-10-02): file must be regular (d.Type().IsRegular() — excludes symlinks
+		// and directories without following the link) and basename must match isADRFileName.
+		if d.Type().IsRegular() && isADRFileName(filepath.Base(path)) {
 			paths = append(paths, path)
 		}
 		return nil
 	})
 	return paths
+}
+
+// validateADRFilesWithoutPrefix implements rule "adr_file_without_prefix" (D4,
+// ADR-2026-10-02): for each regular .md in adr_dirs whose basename does NOT satisfy
+// isADRFileName (i.e. no ADR- prefix) and whose content has a resolvable status via
+// resolveAdrStatus (frontmatter status: or | Status: header line), emit a warning.
+// The warning names the file and suggests renaming to ADR-<...>.md.
+// Files without any recognisable status (README.md, NOTAS.md without frontmatter)
+// do NOT trigger the warning — the rule targets mis-named ADRs, not auxiliary documents.
+// Deduplication by absolute path mirrors ResolveADRFiles to handle nested adr_dirs.
+func validateADRFilesWithoutPrefix() ([]string, error) {
+	cfg := config.Load()
+	seen := make(map[string]bool)
+	var warnings []string
+	for _, adrDir := range cfg.ADRDirs {
+		expanded := config.ExpandPath(adrDir)
+		_ = filepath.WalkDir(expanded, func(path string, d fs.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+			if !d.Type().IsRegular() {
+				return nil
+			}
+			name := filepath.Base(path)
+			if !strings.HasSuffix(name, ".md") {
+				return nil
+			}
+			if isADRFileName(name) {
+				return nil // ADR-prefixed: not the concern of this rule
+			}
+			key, kerr := filepath.Abs(path)
+			if kerr != nil {
+				key = filepath.Clean(path)
+			}
+			if seen[key] {
+				return nil
+			}
+			seen[key] = true
+			content, readErr := readRegularFile(path)
+			if readErr != nil {
+				return nil // unreadable file: ignore silently
+			}
+			if resolveAdrStatus(string(content)) != "" {
+				warnings = append(warnings, fmt.Sprintf(
+					`adr_file_without_prefix: %q declares a status but is not counted as an ADR — rename it to ADR-<...>.md if it is one`,
+					name,
+				))
+			}
+			return nil
+		})
+	}
+	return warnings, nil
 }
 
 // walkADRFiles retorna basenames de todos os arquivos .md encontrados recursivamente em adrDir.

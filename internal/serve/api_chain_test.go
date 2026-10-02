@@ -263,6 +263,115 @@ func TestChainHandler_NoEdgeInventedForUnresolvableRoadmapRef(t *testing.T) {
 	}
 }
 
+// TestChainHandler_ADRPrefixFilter_NoNotasNodeButADRReqRoadmapPresent — afirma D3
+// (ADR-2026-10-02): em uma fixture com NOTAS.md e ADR-001-x.md em adr_dirs, mais uma REQ e um
+// roadmap, /api/chain NÃO inclui nó para NOTAS.md (tipo "adr") e INCLUI nós para o ADR real,
+// a REQ e o roadmap. Afirma também que a aresta REQ→ADR existe (provando que a construção de
+// nós/arestas foi preservada).
+// Depende de ML-1A: reprova enquanto WalkADRFilePaths ainda enumerar qualquer .md.
+func TestChainHandler_ADRPrefixFilter_NoNotasNodeButADRReqRoadmapPresent(t *testing.T) {
+	base := t.TempDir()
+	adrDir := filepath.Join(base, "adr")
+	reqDir := filepath.Join(base, "req")
+	roadmapDir := filepath.Join(base, "roadmaps")
+	wipDir := filepath.Join(roadmapDir, "wip")
+	for _, d := range []string{adrDir, reqDir, wipDir} {
+		if err := os.MkdirAll(d, 0755); err != nil {
+			t.Fatalf("MkdirAll %s: %v", d, err)
+		}
+	}
+
+	// ADR real — deve aparecer como nó
+	adrPath := filepath.Join(adrDir, "ADR-001-x.md")
+	if err := os.WriteFile(adrPath, []byte("---\nstatus: Accepted\n---\n# ADR 001\n"), 0644); err != nil {
+		t.Fatalf("WriteFile ADR: %v", err)
+	}
+	// Documento auxiliar — NÃO deve aparecer como nó ADR
+	if err := os.WriteFile(filepath.Join(adrDir, "NOTAS.md"), []byte("# Notas\n"), 0644); err != nil {
+		t.Fatalf("WriteFile NOTAS: %v", err)
+	}
+	// Roadmap
+	roadmapPath := filepath.Join(wipDir, "ROADMAP-test.md")
+	if err := os.WriteFile(roadmapPath, []byte("# Roadmap test\n"), 0644); err != nil {
+		t.Fatalf("WriteFile roadmap: %v", err)
+	}
+	// REQ vinculada ao ADR real via corpo (formato canônico do gerador)
+	adrRef := filepath.ToSlash(adrPath)
+	reqContent := "---\nstatus: Open\nadr: \"\"\nroadmap: \"\"\n---\n# REQ test\n\n## Linked ADR\nADR: " + adrRef + "\n"
+	if err := os.WriteFile(filepath.Join(reqDir, "REQ-test.md"), []byte(reqContent), 0644); err != nil {
+		t.Fatalf("WriteFile REQ: %v", err)
+	}
+
+	cfg := config.ProjectConfig{
+		ADRDirs:            []string{adrDir},
+		REQDir:             reqDir,
+		RoadmapDir:         roadmapDir,
+		RoadmapNamespacing: config.NamespacingFlat,
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/chain", nil)
+	rec := httptest.NewRecorder()
+	chainHandler(rec, req, cfg)
+
+	var resp chainResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	// Nenhum nó ADR deve corresponder a NOTAS.md
+	for _, n := range resp.Nodes {
+		if n.Type == "adr" && strings.Contains(n.ID, "NOTAS.md") {
+			t.Errorf("NOTAS.md não deve aparecer como nó ADR; nodes: %+v", resp.Nodes)
+		}
+	}
+
+	// Deve haver nó ADR para ADR-001-x.md
+	var adrNodeID string
+	for _, n := range resp.Nodes {
+		if n.Type == "adr" && strings.Contains(n.ID, "ADR-001-x.md") {
+			adrNodeID = n.ID
+		}
+	}
+	if adrNodeID == "" {
+		t.Errorf("ADR-001-x.md não encontrado como nó ADR; nodes: %+v", resp.Nodes)
+	}
+
+	// Deve haver nó REQ
+	var hasREQ bool
+	for _, n := range resp.Nodes {
+		if n.Type == "req" {
+			hasREQ = true
+		}
+	}
+	if !hasREQ {
+		t.Errorf("nó REQ não encontrado; nodes: %+v", resp.Nodes)
+	}
+
+	// Deve haver nó roadmap
+	var hasRoadmap bool
+	for _, n := range resp.Nodes {
+		if n.Type == "roadmap" {
+			hasRoadmap = true
+		}
+	}
+	if !hasRoadmap {
+		t.Errorf("nó roadmap não encontrado; nodes: %+v", resp.Nodes)
+	}
+
+	// Aresta REQ→ADR deve existir (prova que a construção de arestas foi preservada)
+	if adrNodeID != "" {
+		var hasEdge bool
+		for _, e := range resp.Edges {
+			if e.To == adrNodeID {
+				hasEdge = true
+			}
+		}
+		if !hasEdge {
+			t.Errorf("aresta REQ→ADR não encontrada para node.ID=%q; edges: %+v", adrNodeID, resp.Edges)
+		}
+	}
+}
+
 // TestNormalizeRefSeparator_ControlDoesNotTouchUnrelatedValue — limite duro: a função só
 // converte "\" para "/"; não deve alterar nada além disso (não trunca, não mexe em outros
 // caracteres).
