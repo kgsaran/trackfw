@@ -17,7 +17,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -264,51 +263,6 @@ func moveRoadmapToDone(t *testing.T, repoDir, filename string) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// projectRoot returns the root of the trackfw repo (for copying real done/ files).
-// ────────────────────────────────────────────────────────────────────────────
-func e2eProjectRoot(t *testing.T) string {
-	t.Helper()
-	_, thisFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller unavailable")
-	}
-	dir := filepath.Dir(thisFile)
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			t.Fatal("go.mod not found: could not determine project root")
-		}
-		dir = parent
-	}
-}
-
-// copyDir copies all .md files from srcDir to dstDir.
-func copyDirMD(t *testing.T, srcDir, dstDir string) {
-	t.Helper()
-	entries, err := os.ReadDir(srcDir)
-	if err != nil {
-		t.Fatalf("readdir %s: %v", srcDir, err)
-	}
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
-			continue
-		}
-		src := filepath.Join(srcDir, e.Name())
-		dst := filepath.Join(dstDir, e.Name())
-		data, rerr := os.ReadFile(src)
-		if rerr != nil {
-			t.Fatalf("read %s: %v", src, rerr)
-		}
-		if werr := os.WriteFile(dst, data, 0644); werr != nil {
-			t.Fatalf("write %s: %v", dst, werr)
-		}
-	}
-}
-
-// ────────────────────────────────────────────────────────────────────────────
 // AC2 (#494) — done-only match blocks branch creation
 //
 // Reconciliation sentence: the test affirms that `branch new` blocks (rc≠0, no git branch
@@ -319,12 +273,13 @@ func copyDirMD(t *testing.T, srcDir, dstDir string) {
 func TestBranchStateE2E_AC2_DoneOnlyBlocksCreation(t *testing.T) {
 	repoDir, homeDir := makeE2ERepo(t)
 
-	root := e2eProjectRoot(t)
-	realDoneDir := filepath.Join(root, "docs", "roadmaps", "done")
+	// Synthetic fixture: the AC needs ONE roadmap in done/ whose slug contains the branch slug,
+	// not the real corpus. Layout-independent (works under roadmap_namespacing: by_agent, where
+	// the flat docs/roadmaps/done/ does not exist) and short-named, so MAX_PATH is not a factor.
+	// The by_agent sibling of this same AC already builds its fixture this way.
+	const roadmapFile = "ROADMAP-2026-10-01-barrier-executa-cada-linha-do-bloco-de-gates.md"
 	testDoneDir := filepath.Join(repoDir, "docs", "roadmaps", "done")
-
-	// Copy real done/ roadmaps into the test fixture (in time: no testdata with 211 files).
-	copyDirMD(t, realDoneDir, testDoneDir)
+	writeRoadmapDone(t, testDoneDir, roadmapFile)
 
 	gitE2E(t, repoDir, homeDir, "add", "-A")
 	gitE2E(t, repoDir, homeDir, "commit", "-q", "-m", "chore: add done/ corpus")
@@ -352,9 +307,8 @@ func TestBranchStateE2E_AC2_DoneOnlyBlocksCreation(t *testing.T) {
 	}
 
 	// ─── Positive control: add roadmap to wip/ → branch is allowed ──────────
-	const wipRoadmap = "ROADMAP-2026-10-01-barrier-executa-cada-linha-do-bloco-de-gates.md"
 	wipDir := filepath.Join(repoDir, "docs", "roadmaps", "wip")
-	writeRoadmap(t, wipDir, wipRoadmap)
+	writeRoadmap(t, wipDir, roadmapFile)
 	gitE2E(t, repoDir, homeDir, "add", "-A")
 	gitE2E(t, repoDir, homeDir, "commit", "-q", "-m", "chore: add wip roadmap for control")
 
