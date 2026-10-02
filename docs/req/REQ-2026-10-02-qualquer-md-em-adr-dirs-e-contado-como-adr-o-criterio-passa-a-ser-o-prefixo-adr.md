@@ -53,6 +53,7 @@ dois sítios de fora (`serve` e a sonda do `discover`) passam a usá-lo.
 - [x] **AC9** — Todo teste novo declara a conclusão que afirma; cada um reprova com o critério antigo.
       ✅ Evidência: prova de mordida por overlay em todos os ML; uma frase por teste
 - [ ] **AC10** — `make quality` EXIT=0 e CI do PR verde, inclusive `windows-full-suites`.
+      ⏳ Local: `make quality` passou todas as etapas até a falsificação; a falsificação, rodada em 2 grupos de 4 chunks (o paralelo de 8 pendurou 3x nesta máquina), deu 347 OK / 0 FAIL, 8/8 CHUNK_COMPLETE. Falta o CI do PR.
 
 ## Negative scope
 

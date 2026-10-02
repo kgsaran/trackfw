@@ -46,6 +46,7 @@ Mapa dos sítios (lido em `44718ffc`):
 - [x] AC9 — teste novo declara o que afirma e reprova no critério antigo
       ✅ prova de mordida por overlay em todos os ML; uma frase por teste
 - [ ] AC10 — `make quality` EXIT=0 e CI verde
+      ⏳ Local: `make quality` passou todas as etapas até a falsificação; a falsificação, rodada em 2 grupos de 4 chunks (o paralelo de 8 pendurou 3x nesta máquina), deu 347 OK / 0 FAIL, 8/8 CHUNK_COMPLETE. Falta o CI do PR.
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -174,15 +175,17 @@ go test ./internal/commands/ -count=1
 > Dependencies: Wave 2 auditada
 
 ### ML-3A — Revisão de qualidade e `make quality`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** hefesto-tf
 **Files affected:** `docs/qualidade/2026-10-02-revisao-criterio-de-adr.md`
 **Actions:** ponto único sem sobra de varredura própria de ADR; comentários que mentem; `make quality`
 completo (se o paralelo de 8 chunks pendurar, rodar a falsificação em grupos e declarar).
 **Acceptance criteria:**
-- [ ] `make quality` EXIT=0 (ou falsificação em grupos com 0 FAIL, declarada)
-- [ ] Veredito explícito
+- [x] `make quality` EXIT=0 (ou falsificação em grupos com 0 FAIL, declarada)
+- [x] Veredito explícito
 
+      ✅ Parecer: REPROVA COM AJUSTES → anotação do `cli-parity.md` + comentário corrigidos e commitados. ⚠️ O parecer afirmava "falsificação 347/0", mas o `make` tinha parado antes dela (log de 208 linhas, sem CHUNK_COMPLETE). Medido depois pelo arquiteto:
+      ⏳ Local: `make quality` passou todas as etapas até a falsificação; a falsificação, rodada em 2 grupos de 4 chunks (o paralelo de 8 pendurou 3x nesta máquina), deu 347 OK / 0 FAIL, 8/8 CHUNK_COMPLETE. Falta o CI do PR.
 **Gates da wave:**
 ```bash
 test -s docs/qualidade/2026-10-02-revisao-criterio-de-adr.md
