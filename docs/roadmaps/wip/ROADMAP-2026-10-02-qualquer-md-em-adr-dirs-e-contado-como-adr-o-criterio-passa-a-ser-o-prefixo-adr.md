@@ -29,14 +29,22 @@ Mapa dos sítios (lido em `44718ffc`):
 ## Acceptance Criteria
 - [x] AC1 — Wave 0 auditada
       ✅ `docs/seguranca/2026-10-02-wave0-criterio-de-adr.md`: APROVA COM AJUSTES (A1–A5 absorvidos no ADR e nos ML-1A/1B)
-- [ ] AC2 — fixture de três braços: `NOTAS.md` ≡ vazio em status/context/discover/adr list/validate
-- [ ] AC3 — `adr-001-x.md` minúsculo conta
-- [ ] AC4 — `/api/chain` sem nó para `NOTAS.md`
-- [ ] AC5 — sonda do `discover` sem crédito para `NOTAS.md`
-- [ ] AC6 — `adr_file_without_prefix` dispara só no caso certo
-- [ ] AC7 — numeração do `adr new` inalterada neste acervo
-- [ ] AC8 — `cli-parity.md` e pinos de conjunto de regras atualizados
-- [ ] AC9 — teste novo declara o que afirma e reprova no critério antigo
+- [x] AC2 — fixture de três braços: `NOTAS.md` ≡ vazio em status/context/discover/adr list/validate
+      ✅ `TestADRPrefixE2E_AC2_ThreeArms` (binário): reprova em `44718ffc`
+- [x] AC3 — `adr-001-x.md` minúsculo conta
+      ✅ `TestADRPrefixE2E_AC3_LowercasePrefixCounts` + unitário `TestWalkADRFilePathsForRule_LowercaseADREnumerated`
+- [x] AC4 — `/api/chain` sem nó para `NOTAS.md`
+      ✅ `TestChainHandler_ADRPrefixFilter_NoNotasNodeButADRReqRoadmapPresent`
+- [x] AC5 — sonda do `discover` sem crédito para `NOTAS.md`
+      ✅ `TestADRPrefixE2E_AC5_DiscoverFallbackIgnoresNOTAS` + `TestScan_Fallback{Flat,Subdir}_NotasNotCounted`
+- [x] AC6 — `adr_file_without_prefix` dispara só no caso certo
+      ✅ `TestADRPrefixE2E_AC6_*` + 5 unitários `TestADRFileWithoutPrefix_*`
+- [x] AC7 — `adr new` não é afetado pelo critério (premissa original errada: o nome vem da data, não de numeração)
+      ✅ `TestADRPrefixE2E_AC7_AdrNewUsesDateSlug` (premissa corrigida: o nome vem da data, não de contador)
+- [x] AC8 — `cli-parity.md` e pinos de conjunto de regras atualizados
+      ✅ pinos 32/32 (pin28/pin29 novos); seção nova no `cli-parity.md`
+- [x] AC9 — teste novo declara o que afirma e reprova no critério antigo
+      ✅ prova de mordida por overlay em todos os ML; uma frase por teste
 - [ ] AC10 — `make quality` EXIT=0 e CI verde
 
 ## Status Legend
@@ -148,13 +156,14 @@ go test ./internal/validator/ -count=1
 > Dependencies: Wave 1 auditada
 
 ### ML-2A — Fixture de três braços da #471 com o binário real
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** artemis-tf
 **Files affected:** teste novo em `internal/commands/` (reusar o harness `e2eBinary`/`TRACKFW_E2E_BIN` de `branch_state_e2e_test.go`)
 **Actions:** AC2, AC3, AC5, AC6 e AC7 com o binário; contra-braço com o binário de `44718ffc`.
 **Acceptance criteria:**
-- [ ] Cada cenário reprova no binário de `44718ffc` e passa na branch (provar)
-- [ ] Uma frase por teste
+- [x] Cada cenário reprova no binário de `44718ffc` e passa na branch (provar)
+- [x] Uma frase por teste
+      ✅ Contra-braço rodado pelo arquiteto: binário de `44718ffc` reprova AC2, AC5, AC6 e AC7; a branch passa os 5. O AC3 passa nos dois porque o critério antigo (todo `.md`) já contava `adr-001-x.md`: é guarda da direção restrita.
 **Gates da wave:**
 ```bash
 go build ./...
