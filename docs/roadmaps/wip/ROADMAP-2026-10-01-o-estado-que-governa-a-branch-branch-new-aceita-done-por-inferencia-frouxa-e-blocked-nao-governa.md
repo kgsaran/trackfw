@@ -49,6 +49,7 @@ Mapa do código (lido em `e104a7f7`):
 - [x] AC9 — teste novo declara o que afirma; teste da REQ-2026-08-04 invertido
       ✅ uma frase por teste em todos os relatórios; 3 testes decorativos removidos na auditoria
 - [ ] AC10 — `make quality` EXIT=0 e CI verde
+      ⏳ Local: make quality no HEAD final passou todas as etapas até a falsificação; a falsificação, rodada em grupos (o paralelo de 8 pendurou 2x na máquina), deu 347 OK / 0 FAIL — igual a 57aed5b4. Falta o CI do PR.
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
