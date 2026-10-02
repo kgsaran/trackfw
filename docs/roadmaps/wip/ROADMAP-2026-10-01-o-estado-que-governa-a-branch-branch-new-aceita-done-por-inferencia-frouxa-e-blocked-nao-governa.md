@@ -344,3 +344,27 @@ antigo `no roadmap is in wip/ nor done/`, que não existe mais: a asserção é 
 go build ./...
 go test ./internal/validator/ ./internal/commands/ -count=1
 ```
+
+### ML-3E — Corretivo do CI de Windows (PR #500): duas falhas novas, as duas no teste
+**Status:** ⬜ Pendente
+**Squad:** artemis-tf
+**Origem:** `windows-full-suites` do PR #500 (run 36998138033). O ratchet acusou 2 nomes novos; as
+outras 15 falhas do job já estão em `.github/windows-known-failures.json`.
+1. `TestGitLsTree_AccentedFilename`: `gitLsTree returned [scripts/ação.md]; want it to contain
+   "scripts\\ação.md"`. O git sempre emite `/`, e o teste montou o esperado com `filepath.Join`. É
+   defeito do teste, não do produto.
+2. `TestBranchStateE2E_AC2_DoneOnlyBlocksCreation`: `git add -A` → `fatal: unable to stat
+   'docs/roadmaps/done/ROADMAP-2026-09-17-jira-base-url-…': Filename too long`. O temp do runner
+   mais os nomes longos dos 211 roadmaps estouram o MAX_PATH do Git for Windows.
+**Files affected:** `internal/auditsurface/gitlstree_test.go`, `internal/commands/branch_state_e2e_test.go`
+**Actions:** (1) esperado com separador `/` (literal ou `path.Join`), nunca `filepath.Join`;
+(2) no repositório temporário do e2e, `git config core.longpaths true` logo após o `git init`, em
+todas as fixtures que copiam o acervo real. Proibido acrescentar os nomes ao `windows-known-failures.json`.
+**Acceptance criteria:**
+- [ ] `windows-full-suites` do PR sem nome novo no ratchet
+- [ ] Relatório: uma frase por teste alterado
+**Gates da wave:**
+```bash
+go build ./...
+go test ./internal/auditsurface/ ./internal/commands/ -count=1
+```
