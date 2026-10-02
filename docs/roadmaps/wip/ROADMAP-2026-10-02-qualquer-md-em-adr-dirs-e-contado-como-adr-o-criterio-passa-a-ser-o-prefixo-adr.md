@@ -1,0 +1,135 @@
+---
+status: wip
+date: 2026-10-02
+req: "docs/req/REQ-2026-10-02-qualquer-md-em-adr-dirs-e-contado-como-adr-o-criterio-passa-a-ser-o-prefixo-adr.md"
+squad: "hades-tf, apolo-tf, artemis-tf, hefesto-tf"
+---
+
+# Roadmap: qualquer .md em adr_dirs é contado como ADR — o critério passa a ser o prefixo ADR-
+
+> Created: 2026-10-02 | Status: wip
+
+## Context
+REQ: docs/req/REQ-2026-10-02-qualquer-md-em-adr-dirs-e-contado-como-adr-o-criterio-passa-a-ser-o-prefixo-adr.md
+ADR: docs/adr/ADR-2026-10-02-o-criterio-de-identificacao-de-adr-e-o-prefixo-adr-no-nome-do-arquivo-aplicado-no-primitivo-unico-de-enumeracao.md
+Issue: #471 (o PR fecha). Base: `main` em `44718ffc`.
+
+Mapa dos sítios (lido em `44718ffc`):
+
+| sítio | hoje | depois |
+|---|---|---|
+| `internal/validator/validator.go` `walkADRFilePathsForRule` (~:3107) | `strings.HasSuffix(path, ".md")` | basename com prefixo `ADR-` (sem distinção de maiúsculas) **e** `.md` (D1/D2) |
+| consumidores do primitivo: `ResolveADRFiles`, `WalkADRFilePaths` (`adr list`, `NewADRDraft`), `walkADRFiles`, regras do `validate` | herdam | herdam (sem mudança própria) |
+| `internal/validator/validator.go` `findADRFile` (~:3140) | varredura própria por basename | conferir se passa pelo critério (Wave 0 decide) |
+| `internal/serve/api_chain.go` `scanChainDir` (~:83), tipo `adr` | `WalkDir` próprio, `HasSuffix(".md")` | nós de ADR pelo primitivo (D3) |
+| `internal/discover/discover.go` sonda de fallback (~:480-491) | `countMDFiles(docs/adr…)` | contagem pelo primitivo (D3) |
+| regra nova `adr_file_without_prefix` | — | warning (D4), ligada nos **dois** caminhos de aplicação de regra do `validate` (`applyRule` ~:856 e `applyRuleTagged` ~:1211) |
+
+## Acceptance Criteria
+- [ ] AC1 — Wave 0 auditada
+- [ ] AC2 — fixture de três braços: `NOTAS.md` ≡ vazio em status/context/discover/adr list/validate
+- [ ] AC3 — `adr-001-x.md` minúsculo conta
+- [ ] AC4 — `/api/chain` sem nó para `NOTAS.md`
+- [ ] AC5 — sonda do `discover` sem crédito para `NOTAS.md`
+- [ ] AC6 — `adr_file_without_prefix` dispara só no caso certo
+- [ ] AC7 — numeração do `adr new` inalterada neste acervo
+- [ ] AC8 — `cli-parity.md` e pinos de conjunto de regras atualizados
+- [ ] AC9 — teste novo declara o que afirma e reprova no critério antigo
+- [ ] AC10 — `make quality` EXIT=0 e CI verde
+
+## Status Legend
+⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
+
+## Wave 0 — Threat Model
+> Dependencies: none. Blocks all implementation.
+
+### ML-0A — Completude dos sítios e modelo de ameaça do critério
+**Status:** ⬜ Pendente
+**Squad:** hades-tf
+**Files affected:** `docs/seguranca/2026-10-02-wave0-criterio-de-adr.md` (único arquivo escrito)
+**Actions:**
+1. **Completude:** procure todo sítio que enumera, conta, lista ou resolve ADR (`grep -rn "ADRDirs\|adr_dirs\|walkADR\|ResolveADRFiles\|findADRFile" internal/ scripts/`, e geradores de contexto/CLAUDE.md). Diga se a tabela do Context está fechada. Decida `findADRFile`: uma REQ que referencia um `.md` sem prefixo deve continuar resolvendo o vínculo ou não?
+2. **Ameaça:** quem faz o produto contar ADR que não existe, ou esconder ADR que existe, sem quebrar regra escrita? Mínimo: nome `ADR-` em diretório não-ADR alcançado por symlink; `ADR-.md` (prefixo sem corpo); maiúsculas mistas; arquivo `ADR-x.md` que é diretório; Unicode parecido com `A`/`D`/`R` (homoglifo).
+3. **Falsificação nas duas direções** por sítio: frouxo (volta a contar `NOTAS.md`) e restrito (deixa de contar `adr-001.md` ou `ADR-…` legítimo).
+4. **Resíduo declarado.**
+**Acceptance criteria:**
+- [ ] As quatro seções com evidência (comando + saída)
+- [ ] Veredito explícito
+- [ ] Nenhuma linha de implementação
+
+**Gates da wave:**
+```bash
+test -s docs/seguranca/2026-10-02-wave0-criterio-de-adr.md
+grep -q "Veredito" docs/seguranca/2026-10-02-wave0-criterio-de-adr.md
+```
+
+## Wave 1 — Implementação (2 MLs em paralelo: arquivos disjuntos)
+> Dependencies: Wave 0 auditada
+
+### ML-1A — Critério no primitivo + regra `adr_file_without_prefix`
+**Status:** ⬜ Pendente
+**Squad:** apolo-tf
+**Files affected:** `internal/validator/validator.go`, testes em `internal/validator/*_test.go`,
+`docs/cli-parity.md`, `scripts/check-validate-rule-pins.sh` (se o conjunto de regras for pinado)
+**Actions:** D1/D2 em `walkADRFilePathsForRule`; `findADRFile` conforme a decisão da Wave 0; regra D4
+(warning em `ruleDefaults`) nos dois caminhos de aplicação; comentários que dizem "sem filtro de
+prefixo" (ex.: `WalkADRFilePaths` ~:3068) corrigidos.
+**Acceptance criteria:**
+- [ ] Testes: `NOTAS.md` não é enumerado; `adr-001-x.md` é; `ADR-…` é; regra D4 nos três braços (com `status:`, `README.md` sem frontmatter, `ADR-…`)
+- [ ] Cada teste reprova com o critério antigo (prova por overlay); uma frase por teste
+**Gates da wave:**
+```bash
+go build ./...
+go test ./internal/validator/ ./internal/generators/ -count=1
+```
+
+### ML-1B — `serve` e sonda do `discover` pelo primitivo
+**Status:** ⬜ Pendente
+**Squad:** apolo-tf
+**Files affected:** `internal/serve/api_chain.go`, `internal/discover/discover.go`, testes dos dois pacotes
+**Paralelismo:** não toca `internal/validator/`; consome `validator.WalkADRFilePaths`/`ResolveADRFiles`, que já existem.
+**Actions:** D3. Em `scanChainDir`, para `nodeType == "adr"`, enumerar pelo primitivo; REQ e roadmap
+seguem como estão. No `discover`, a sonda de fallback conta ADR pelo primitivo.
+**Acceptance criteria:**
+- [ ] Testes: `/api/chain` sem nó para `NOTAS.md`; sonda do `discover` sem crédito; um teste por sítio, com uma frase cada
+- [ ] O gate de "ADR enumeration outside single point" do `check-gates-falsify.sh` segue verde
+**Gates da wave:**
+```bash
+go build ./...
+go test ./internal/serve/ ./internal/discover/ -count=1
+```
+
+## Wave 2 — Ponta a ponta com o binário
+> Dependencies: Wave 1 auditada
+
+### ML-2A — Fixture de três braços da #471 com o binário real
+**Status:** ⬜ Pendente
+**Squad:** artemis-tf
+**Files affected:** teste novo em `internal/commands/` (reusar o harness `e2eBinary`/`TRACKFW_E2E_BIN` de `branch_state_e2e_test.go`)
+**Actions:** AC2, AC3, AC5, AC6 e AC7 com o binário; contra-braço com o binário de `44718ffc`.
+**Acceptance criteria:**
+- [ ] Cada cenário reprova no binário de `44718ffc` e passa na branch (provar)
+- [ ] Uma frase por teste
+**Gates da wave:**
+```bash
+go build ./...
+go test ./internal/commands/ -count=1
+```
+
+## Wave 3 — Revisão e gate completo
+> Dependencies: Wave 2 auditada
+
+### ML-3A — Revisão de qualidade e `make quality`
+**Status:** ⬜ Pendente
+**Squad:** hefesto-tf
+**Files affected:** `docs/qualidade/2026-10-02-revisao-criterio-de-adr.md`
+**Actions:** ponto único sem sobra de varredura própria de ADR; comentários que mentem; `make quality`
+completo (se o paralelo de 8 chunks pendurar, rodar a falsificação em grupos e declarar).
+**Acceptance criteria:**
+- [ ] `make quality` EXIT=0 (ou falsificação em grupos com 0 FAIL, declarada)
+- [ ] Veredito explícito
+
+**Gates da wave:**
+```bash
+test -s docs/qualidade/2026-10-02-revisao-criterio-de-adr.md
+```

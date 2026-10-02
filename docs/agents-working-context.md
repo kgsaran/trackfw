@@ -44036,3 +44036,9 @@ REQ e roadmap → `done/` são pós-merge, em branch `chore/`.
 ## 2026-10-02 — zeus-tf — FIM: REQ-2026-10-01 (estado que governa a branch) fechada pós-merge
 
 PR #500 mergeado em `54c227d1`. Roadmap → `done/`, REQ → `Done`, label `req-aberta` removida de #494/#490.
+
+## 2026-10-02 — zeus-tf — INÍCIO: #471 (critério de identificação de ADR = prefixo `ADR-`)
+
+Decisão do KG: prefixo, sem distinção de maiúsculas. Custo medido pelo Lourival: 0 de 133 ADRs em 6 acervos.
+Critério no primitivo único `walkADRFilePathsForRule`; fora dele: `serve/api_chain.go scanChainDir` e a
+sonda de fallback de `discover`. Aviso novo para `.md` com cara de ADR (frontmatter `status:`) sem prefixo.
