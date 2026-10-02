@@ -2,6 +2,22 @@
 
 ---
 
+## 2026-10-02 — Apolo (fix/criterio-de-adr-por-prefixo — ML-1C) — INÍCIO
+
+**Início:** 2026-10-02 | Branch: `fix/criterio-de-adr-por-prefixo`
+**Tarefa:** ML-1C corretivo — symlink de arquivo ADR-x.md volta a contar em walkADRFilePathsForRule; apenas symlink de diretório e link quebrado excluídos
+**Arquivos a modificar:** `internal/validator/validator.go` · `internal/validator/validator_adr_prefix_test.go` · `docs/agents-working-context.md`
+
+---
+
+## 2026-10-02 — Apolo (fix/criterio-de-adr-por-prefixo — ML-1C) — FIM
+
+**Fim:** 2026-10-02 | Branch: `fix/criterio-de-adr-por-prefixo`
+**Entregues:** `walkADRFilePathsForRule` corrigido com ramo de symlink (`os.Stat` segue link); 2 testes novos (`SymlinkFileEnumerated`, `SymlinkBrokenNotEnumerated`); comentário de `SymlinkDirNotEnumerated` atualizado; prova de mordida com overlay FAIL/PASS.
+**Gates:** `go build ./...` ✅ · `go vet ./internal/validator/` ✅ · `go test ./internal/validator/ -count=1` ✅
+
+---
+
 ## 2026-10-01 — Ártemis (fix/estado-que-governa-a-branch — ML-3D) — INÍCIO
 
 **Início:** 2026-10-01 | Branch: `fix/estado-que-governa-a-branch`

@@ -110,7 +110,7 @@ go test ./internal/serve/ ./internal/discover/ -count=1
 ```
 
 ### ML-1C — Corretivo: symlink de arquivo volta a contar; só symlink de diretório sai
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Origem:** auditoria do ML-1A. A3 da Wave 0 pedia excluir o symlink de **diretório** `ADR-x.md`. O
 `d.Type().IsRegular()` (Lstat) exclui também o symlink de **arquivo** `ADR-x.md → ../shared/ADR-x.md`,
@@ -119,8 +119,24 @@ que contava antes e que `readRegularFile` lê (`f.Stat()` segue o link). É regr
 **Actions:** quando `d.Type()&fs.ModeSymlink != 0`, decidir por `os.Stat(path)` (segue o link) e exigir
 `Mode().IsRegular()`; senão, `d.Type().IsRegular()`. Link quebrado não conta.
 **Acceptance criteria:**
-- [ ] Teste: symlink de arquivo `ADR-x.md` é enumerado; symlink de diretório `ADR-y.md` não; link quebrado não (skip em Windows se o symlink não puder ser criado)
-- [ ] O teste do symlink de arquivo reprova com o código atual (prova por overlay); uma frase por teste
+- [x] Teste: symlink de arquivo `ADR-x.md` é enumerado; symlink de diretório `ADR-y.md` não; link quebrado não (skip em Windows se o symlink não puder ser criado)
+- [x] O teste do symlink de arquivo reprova com o código atual (prova por overlay); uma frase por teste
+      ✅ Auditoria: 3 testes de symlink PASS por nome; o de arquivo reprova com a condição Lstat (overlay). O de link quebrado passa nos dois (guarda, não prova de mordida). Sítio irmão em `validateADRFilesWithoutPrefix` (~:3189) → ML-1D.
+**Gates da wave:**
+```bash
+go build ./...
+go test ./internal/validator/ -count=1
+```
+
+### ML-1D — Corretivo: o mesmo teste de "arquivo ou link para arquivo" no aviso D4
+**Status:** ⬜ Pendente
+**Squad:** apolo-tf
+**Origem:** relatório do ML-1C. `validateADRFilesWithoutPrefix` (~:3189) ainda usa `d.Type().IsRegular()`: um `.md` sem prefixo que é symlink para um arquivo com status não dispara o aviso.
+**Files affected:** `internal/validator/validator.go`, `internal/validator/validator_adr_prefix_test.go`
+**Actions:** extrair o teste de tipo do ML-1C numa função única (ex.: `isRegularOrLinkToRegular(path, d)`) e usá-la nos dois sítios.
+**Acceptance criteria:**
+- [ ] Teste: symlink sem prefixo para arquivo com `status:` dispara o aviso; reprova com a condição atual (overlay)
+- [ ] Os dois sítios chamam a mesma função
 **Gates da wave:**
 ```bash
 go build ./...

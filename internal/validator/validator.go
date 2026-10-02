@@ -3077,7 +3077,8 @@ func resolvePhysical(p string) string {
 
 // walkADRFilePaths retorna os caminhos completos de todos os arquivos ADR encontrados recursivamente
 // em adrDir. Critério: D1 (ADR-2026-10-02) — basename com prefixo "ADR-" (case-insensitive) e
-// sufixo ".md", arquivo regular (isADRFileName + d.Type().IsRegular()).
+// sufixo ".md", arquivo regular ou symlink para arquivo regular (isADRFileName +
+// d.Type().IsRegular() ou os.Stat seguindo o link). Symlink para diretório e link quebrado não contam.
 func walkADRFilePaths(adrDir string) []string {
 	return walkADRFilePathsForRule("", adrDir, nil)
 }
@@ -3086,7 +3087,8 @@ func walkADRFilePaths(adrDir string) []string {
 // Retorna os caminhos completos de todos os arquivos ADR encontrados recursivamente em adrDir.
 // Consumido por ListADRs e NewADRDraft (internal/generators/adr.go) para substituir filepath.Glob
 // raiz-only. Critério de identificação: D1 (ADR-2026-10-02) — basename com prefixo "ADR-"
-// (sem distinção de maiúsculas) e sufixo ".md", arquivo regular (não symlink de diretório).
+// (sem distinção de maiúsculas) e sufixo ".md", arquivo regular ou symlink para arquivo regular
+// (symlink de diretório e link quebrado não contam).
 func WalkADRFilePaths(adrDir string) []string {
 	return walkADRFilePaths(adrDir)
 }
@@ -3141,11 +3143,26 @@ func walkADRFilePathsForRule(rule, adrDir string, msgs *[]string) []string {
 			}
 			return nil
 		}
-		// D1 (ADR-2026-10-02): file must be regular (d.Type().IsRegular() — excludes symlinks
-		// and directories without following the link) and basename must match isADRFileName.
-		if d.Type().IsRegular() && isADRFileName(filepath.Base(path)) {
-			paths = append(paths, path)
+		// D1 (ADR-2026-10-02): basename must match isADRFileName and the entry must
+		// resolve to a regular file. Three situations:
+		//   1. Regular file (not a symlink): d.Type().IsRegular() is true → counts.
+		//   2. Symlink to a regular file: d.Type() has ModeSymlink set; os.Stat follows
+		//      the link — if it resolves to a regular file, it counts. readRegularFile
+		//      (os.Open → f.Stat) also follows the link, so the content is readable.
+		//   3. Symlink to a directory, or broken symlink: os.Stat returns a directory
+		//      Mode or an error, respectively → does NOT count (A3 of Wave 0).
+		if !isADRFileName(filepath.Base(path)) {
+			return nil
 		}
+		if d.Type()&fs.ModeSymlink != 0 {
+			info, statErr := os.Stat(path)
+			if statErr != nil || !info.Mode().IsRegular() {
+				return nil
+			}
+		} else if !d.Type().IsRegular() {
+			return nil
+		}
+		paths = append(paths, path)
 		return nil
 	})
 	return paths

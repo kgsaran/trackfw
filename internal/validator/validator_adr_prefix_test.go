@@ -8,10 +8,12 @@ package validator
 //
 // Overlay proof (run externally; FAIL / PASS evidence in the ML report):
 //
-//	TestWalkADRFilePathsForRule_NotasNotEnumerated  — sabotage: old predicate (!d.IsDir() && HasSuffix(path,".md"))
-//	TestWalkADRFilePathsForRule_LowercaseADREnumerated — sabotage: case-sensitive HasPrefix(name,"ADR-") without ToUpper
-//	TestWalkADRFilePathsForRule_SymlinkDirNotEnumerated — sabotage: old predicate (no IsRegular check)
-//	TestADRFileWithoutPrefix_*                     — sabotage: remove isADRFileName guard in validateADRFilesWithoutPrefix
+//	TestWalkADRFilePathsForRule_NotasNotEnumerated         — sabotage: old predicate (!d.IsDir() && HasSuffix(path,".md"))
+//	TestWalkADRFilePathsForRule_LowercaseADREnumerated     — sabotage: case-sensitive HasPrefix(name,"ADR-") without ToUpper
+//	TestWalkADRFilePathsForRule_SymlinkDirNotEnumerated    — sabotage: old predicate (no IsRegular check)
+//	TestWalkADRFilePathsForRule_SymlinkFileEnumerated      — sabotage: ML-1C revert (d.Type().IsRegular() only, no symlink branch)
+//	TestWalkADRFilePathsForRule_SymlinkBrokenNotEnumerated — (passes with both old and new; broken link excluded by os.Stat error)
+//	TestADRFileWithoutPrefix_*                             — sabotage: remove isADRFileName guard in validateADRFilesWithoutPrefix
 
 import (
 	"os"
@@ -75,7 +77,7 @@ func TestWalkADRFilePathsForRule_UppercaseADREnumerated(t *testing.T) {
 // TestWalkADRFilePathsForRule_SymlinkDirNotEnumerated
 //
 // Asserts: a directory symlink named ADR-x.md in adr_dirs is NOT enumerated because
-// d.Type().IsRegular() is false for symlinks (WalkDir uses Lstat).
+// os.Stat follows the link and returns a directory Mode, which is not IsRegular().
 // Skipped when symlink creation fails (Windows without Developer Mode).
 func TestWalkADRFilePathsForRule_SymlinkDirNotEnumerated(t *testing.T) {
 	dir := t.TempDir()
@@ -104,6 +106,76 @@ func TestWalkADRFilePathsForRule_SymlinkDirNotEnumerated(t *testing.T) {
 	}
 	if len(got) != 1 {
 		t.Errorf("D1+A3: expected 1 ADR (ADR-2026-01-01-real.md) after excluding symlink dir, got %d: %v", len(got), got)
+	}
+}
+
+// TestWalkADRFilePathsForRule_SymlinkFileEnumerated — ML-1C
+//
+// Asserts: a symlink named ADR-link.md pointing to a regular .md file outside adr_dirs
+// IS enumerated, because os.Stat follows the link and returns a regular file Mode.
+// Skipped when symlink creation fails (Windows without Developer Mode).
+func TestWalkADRFilePathsForRule_SymlinkFileEnumerated(t *testing.T) {
+	dir := t.TempDir()
+	adrDir := filepath.Join(dir, "docs", "adr")
+	if err := os.MkdirAll(adrDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Real ADR file outside adr_dirs — this is the symlink target.
+	outsideDir := filepath.Join(dir, "outside")
+	if err := os.MkdirAll(outsideDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	realFile := filepath.Join(outsideDir, "ADR-real.md")
+	if err := os.WriteFile(realFile, []byte("---\nstatus: Accepted\n---\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	symlinkPath := filepath.Join(adrDir, "ADR-link.md")
+	if !symlinkOrSkip(t, realFile, symlinkPath) {
+		return
+	}
+
+	got := walkADRFilePaths(adrDir)
+	found := false
+	for _, p := range got {
+		if filepath.Base(p) == "ADR-link.md" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("ML-1C: symlink ADR-link.md → regular file must be enumerated, got: %v", got)
+	}
+}
+
+// TestWalkADRFilePathsForRule_SymlinkBrokenNotEnumerated — ML-1C
+//
+// Asserts: a broken symlink named ADR-quebrado.md in adr_dirs is NOT enumerated because
+// os.Stat returns an error for broken symlinks (target does not exist).
+// Skipped when symlink creation fails (Windows without Developer Mode).
+func TestWalkADRFilePathsForRule_SymlinkBrokenNotEnumerated(t *testing.T) {
+	dir := t.TempDir()
+	adrDir := filepath.Join(dir, "docs", "adr")
+	if err := os.MkdirAll(adrDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	// Real ADR file for vacuity: the enumerator must still work.
+	writeFile(t, dir, "docs/adr/ADR-2026-01-01-real.md", "---\nstatus: Accepted\n---\n")
+
+	// Create a broken symlink (target does not exist).
+	brokenTarget := filepath.Join(dir, "nonexistent", "ADR-real.md")
+	symlinkPath := filepath.Join(adrDir, "ADR-quebrado.md")
+	if !symlinkOrSkip(t, brokenTarget, symlinkPath) {
+		return
+	}
+
+	got := walkADRFilePaths(adrDir)
+	for _, p := range got {
+		if filepath.Base(p) == "ADR-quebrado.md" {
+			t.Errorf("ML-1C: broken symlink ADR-quebrado.md must not be enumerated, got: %v", got)
+		}
+	}
+	if len(got) != 1 {
+		t.Errorf("ML-1C: expected exactly 1 ADR (ADR-2026-01-01-real.md) with broken symlink excluded, got %d: %v", len(got), got)
 	}
 }
 
