@@ -48,7 +48,7 @@ func setupAccentedRepo(t *testing.T, dir string) (repoRoot, relPath string) {
 	mustRunGit(t, dir, "-c", "user.email=test@example.com", "-c", "user.name=Test",
 		"commit", "-m", "initial")
 
-	return dir, filepath.Join("scripts", fname)
+	return dir, "scripts/" + fname
 }
 
 // TestGitLsTree_AccentedFilename asserts that gitLsTree returns the exact repo-relative

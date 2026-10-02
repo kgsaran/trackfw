@@ -143,6 +143,8 @@ func makeE2ERepo(t *testing.T) (repoDir, homeDir string) {
 
 	// Initialize git
 	gitE2E(t, repoDir, homeDir, "init", "-q", "-b", "main", ".")
+	// On Windows, git add -A of the 211 real roadmaps can exceed MAX_PATH; longpaths prevents it.
+	gitE2E(t, repoDir, homeDir, "config", "core.longpaths", "true")
 	gitE2E(t, repoDir, homeDir, "config", "user.email", "e2e@localhost")
 	gitE2E(t, repoDir, homeDir, "config", "user.name", "E2E Test")
 	gitE2E(t, repoDir, homeDir, "config", "commit.gpgsign", "false")
@@ -822,6 +824,8 @@ func makeE2ERepoByAgent(t *testing.T, agentA, agentB string) (repoDir, homeDir s
 	repoDir = t.TempDir()
 
 	gitE2E(t, repoDir, homeDir, "init", "-q", "-b", "main", ".")
+	// On Windows, git add -A of the 211 real roadmaps can exceed MAX_PATH; longpaths prevents it.
+	gitE2E(t, repoDir, homeDir, "config", "core.longpaths", "true")
 	gitE2E(t, repoDir, homeDir, "config", "user.email", "e2e@localhost")
 	gitE2E(t, repoDir, homeDir, "config", "user.name", "E2E Test")
 	gitE2E(t, repoDir, homeDir, "config", "commit.gpgsign", "false")

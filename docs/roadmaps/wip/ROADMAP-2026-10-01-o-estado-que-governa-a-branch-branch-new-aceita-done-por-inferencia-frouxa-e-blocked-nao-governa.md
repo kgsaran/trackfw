@@ -346,7 +346,7 @@ go test ./internal/validator/ ./internal/commands/ -count=1
 ```
 
 ### ML-3E — Corretivo do CI de Windows (PR #500): duas falhas novas, as duas no teste
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** artemis-tf
 **Origem:** `windows-full-suites` do PR #500 (run 36998138033). O ratchet acusou 2 nomes novos; as
 outras 15 falhas do job já estão em `.github/windows-known-failures.json`.

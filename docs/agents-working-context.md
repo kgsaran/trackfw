@@ -44010,3 +44010,18 @@ não mordia e partia de premissa falsa (":" é válido em nome de diretório no 
 **Início:** 2026-10-01 | Branch: `fix/estado-que-governa-a-branch`
 **Tarefa:** ML-3D — Corretivo final: layout `by_agent`, Windows e asserções vácuas
 **Arquivos alvo:** `internal/commands/branch_state_e2e_test.go`, `internal/validator/validator_literal_pathspecs_test.go`, `internal/validator/validator_test.go`, `internal/commands/push_test.go`, `internal/commands/ship_test.go`
+
+## 2026-10-02 — artemis-tf (fix/estado-que-governa-a-branch — ML-3E) — INÍCIO
+
+**Início:** 2026-10-02 | Branch: `fix/estado-que-governa-a-branch`
+**Tarefa:** ML-3E — Corretivo do CI de Windows (PR #500): duas falhas novas, as duas no teste
+**Arquivos alvo:** `internal/auditsurface/gitlstree_test.go`, `internal/commands/branch_state_e2e_test.go`
+
+## 2026-10-02 — artemis-tf (fix/estado-que-governa-a-branch — ML-3E) — FIM
+
+**Fim:** 2026-10-02 | Branch: `fix/estado-que-governa-a-branch`
+**Tarefa:** ML-3E — Corretivo do CI de Windows (PR #500): duas falhas novas, as duas no teste
+**Edições:**
+1. `gitlstree_test.go:51` — `filepath.Join("scripts", fname)` → `"scripts/" + fname` (git emite `/`, não separador do SO)
+2. `branch_state_e2e_test.go` — `git config core.longpaths true` após os dois `git init` de repositórios de trabalho (linhas ~145 e ~824); evita `Filename too long` no Windows ao `git add -A` dos 211 roadmaps reais
+**Gates:** `go build ./...` OK · `go vet` OK · `go test ./internal/auditsurface/ -count=1` PASS · `go test ./internal/commands/ -run BranchStateE2E -count=1` PASS
