@@ -44175,3 +44175,8 @@ Achado A1 (médio): `_ok "contra-braco/skip"` (linha 330 de check-falsify-chunk-
 
 PR #506 mergeado em `f3d98639`, CI 20/20. Roadmap → `done/`, REQ → `Done`, label `req-aberta` removida.
 A memória de diagnóstico foi corrigida no próprio PR (pgid + marcador, não ppid), apontado pelo Lourival.
+
+## 2026-10-02 — zeus-tf — INÍCIO: #507 (guard de branch falha aberto sem jq)
+
+O fallback por `sed` não interpreta JSON: não desescapa `\n` (multilinha vira um segmento só) e para no
+primeiro `\"` (comando truncado). Sítio: o script do guard, que vive em 4 cópias byte-idênticas.

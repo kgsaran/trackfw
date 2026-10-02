@@ -1,0 +1,108 @@
+---
+status: wip
+date: 2026-10-02
+req: "docs/req/REQ-2026-10-02-trackfw-git-branch-guard-falha-aberto-sem-jq-o-fallback-por-sed-nao-interpreta-json.md"
+squad: "hades-tf, apolo-tf, hefesto-tf"
+---
+
+# Roadmap: trackfw-git-branch-guard falha aberto sem jq — o fallback por sed não interpreta JSON
+
+> Created: 2026-10-02 | Status: wip
+
+## Context
+REQ: docs/req/REQ-2026-10-02-trackfw-git-branch-guard-falha-aberto-sem-jq-o-fallback-por-sed-nao-interpreta-json.md
+ADR: docs/adr/ADR-2026-10-02-o-guard-de-branch-extrai-o-comando-do-payload-por-um-parser-json-de-verdade-e-falha-fechado-quando-nao-consegue.md
+Issue: #507 (o PR fecha). Base: `main` em `3b2eff09`.
+
+| sítio | papel |
+|---|---|
+| `internal/generators/scaffold.go` `gitBranchGuardScript` (~:1713; extração ~:1875-1879 do Go = linhas 163-176 do script) | **fonte** |
+| `internal/validator/validator_git_branch_guard_reference.go` `gitBranchGuardScriptReference` | cópia (integridade) |
+| `scripts/trackfw-git-branch-guard.sh` | cópia (hook vivo deste repositório) |
+| `scripts/check-gates-falsify.sh`, cenário que sabota o guard (`corrupt_literal`) | literal que tem de casar exatamente 1 vez |
+| `internal/generators/git_branch_guard_test.go` | tabela de testes, hoje só com `jq` |
+
+Notas do vault obrigatórias para quem mexer: `guard-aprova-quando-nao-conseguiu-ler-o-comando-orcamento-total-do-read-2026-09-24`
+(o dreno vive em 4 sítios byte-idênticos; o `corrupt_literal` já quebrou o gate 2 vezes) e
+`rodar-um-unico-cenario-de-check-gates-falsify-e-provar-que-a-sabotagem-nao-e-vacua-2026-09-24`.
+
+## Acceptance Criteria
+- [ ] AC1 — Wave 0 auditada
+- [ ] AC2 — multilinha e `\"` sem `jq` → rc=2; reprova em `3b2eff09`
+- [ ] AC3 — `-m "a\nb"` literal: mesmo veredito com e sem `jq`
+- [ ] AC4 — tabela inteira do guard com e sem `jq`
+- [ ] AC5 — indecodificável → rc=2 nomeado; chave ausente → como hoje
+- [ ] AC6 — 4 cópias iguais; cenário de falsificação segue provando a sabotagem
+- [ ] AC7 — teste novo declara o que afirma
+- [ ] AC8 — `make quality` EXIT=0 e CI verde
+
+## Status Legend
+⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
+
+## Wave 0 — Threat Model
+> Dependencies: none. Blocks all implementation.
+
+### ML-0A — Modelo de ameaça do extrator JSON em awk
+**Status:** ⬜ Pendente
+**Squad:** hades-tf
+**Files affected:** `docs/seguranca/2026-10-02-wave0-extrator-json-do-guard.md` (único arquivo escrito)
+**Actions:**
+1. **Completude:** confirme por efeito as duas formas de falha aberta (multilinha; `\"` truncando) com o script de `3b2eff09` e um `PATH` sem `jq`. Há outras? (por exemplo, `}` dentro da string antes da chave `command`, que o `[^}]*` da regex também corta).
+2. **Ameaça ao extrator novo:** que payload faz um extrator `awk` escolher o valor errado ou decodificar errado: chave `command` dentro de outra string; chave duplicada; `tool_input` aninhado; `\\"`; contrabarra final; `\u0000`; `\u000a`/`\u000d` (newline por `\u`); `\ud83d` (surrogate); 200 KB. Para cada um, diga qual decisão o extrator tem de tomar para não falhar aberto.
+3. **Diferenças entre `awk`:** BWK awk (macOS), gawk e mawk (Git Bash/Linux): `substr`, `index`, `split` com string vazia, `printf "%c"` com número. Meça no macOS o que puder; declare o resto como não medido.
+4. **Custo:** tempo de extração com payload de 200 KB, `sed` contra um protótipo `awk` descartável (no scratch, não na árvore).
+5. **Resíduo declarado.**
+**Acceptance criteria:**
+- [ ] Seções com evidência (comando + saída)
+- [ ] Veredito explícito, com a lista de casos que a tabela de testes do ML-1A tem de conter
+- [ ] Nenhuma linha de implementação na árvore
+
+**Gates da wave:**
+```bash
+test -s docs/seguranca/2026-10-02-wave0-extrator-json-do-guard.md
+grep -q "Veredito" docs/seguranca/2026-10-02-wave0-extrator-json-do-guard.md
+```
+
+## Wave 1 — Implementação
+> Dependencies: Wave 0 auditada
+
+### ML-1A — Extrator JSON em awk nas 4 cópias e tabela com e sem jq
+**Status:** ⬜ Pendente
+**Squad:** apolo-tf
+**Files affected:** os 5 sítios da tabela do Context
+**Actions:** D1–D4 do ADR, com a lista de casos da Wave 0. Teste sem `jq` por `PATH` curado num `t.TempDir()` (padrão do `TestAttentionScripts_FallbackWithoutJQ`), rodando a tabela inteira duas vezes.
+**Acceptance criteria:**
+- [ ] AC2–AC6 com testes por nome; prova de mordida contra o script de `3b2eff09`
+- [ ] Cenário de falsificação do guard rodado isolado (nota do vault) e provado não vácuo
+- [ ] Uma frase por teste novo
+**Gates da wave:**
+```bash
+go build ./...
+go test ./internal/generators/ ./internal/validator/ -count=1
+```
+
+## Wave 2 — Revisão independente e gate completo (paralela)
+> Dependencies: Wave 1 auditada
+
+### ML-2A — Revisão de segurança
+**Status:** ⬜ Pendente
+**Squad:** hades-tf
+**Files affected:** `docs/seguranca/2026-10-02-wave2-revisao-extrator-json-do-guard.md`
+**Actions:** reimplementar a partir da leitura os payloads do ML-0A contra o script novo, com e sem `jq`.
+**Acceptance criteria:**
+- [ ] Veredito explícito
+
+### ML-2B — Revisão de qualidade e `make quality`
+**Status:** ⬜ Pendente
+**Squad:** hefesto-tf
+**Files affected:** `docs/qualidade/2026-10-02-revisao-extrator-json-do-guard.md`
+**Actions:** revisão; `make quality` com a máquina ociosa, citando do log a linha da suíte de falsificação.
+**Acceptance criteria:**
+- [ ] `make quality` EXIT=0
+- [ ] Veredito explícito
+
+**Gates da wave:**
+```bash
+test -s docs/seguranca/2026-10-02-wave2-revisao-extrator-json-do-guard.md
+test -s docs/qualidade/2026-10-02-revisao-extrator-json-do-guard.md
+```
