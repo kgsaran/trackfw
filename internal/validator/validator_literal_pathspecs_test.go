@@ -10,10 +10,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
 func TestMdBasenamesInGitTree_LiteralPathspecDirName(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("NTFS reserva ':' em nome de arquivo — o diretório ':(exclude)rm' não pode existir, então o vetor RN1 não existe nesta plataforma")
+	}
 	cases := []struct {
 		dirPrefix string
 	}{

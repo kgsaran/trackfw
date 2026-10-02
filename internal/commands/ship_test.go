@@ -238,7 +238,7 @@ func TestShip_DocOnlyBranch_MissingRoadmap_GovernanceSkipped(t *testing.T) {
 		execGit: m.exec,
 		checkGovernance: func() *validator.GovernanceViolation {
 			called = true
-			return &validator.GovernanceViolation{Missing: []string{"no matching roadmap in wip/ nor done/"}}
+			return &validator.GovernanceViolation{Missing: []string{"no matching roadmap in wip/, blocked/ nor done/"}}
 		},
 		out:          &bytes.Buffer{},
 		availFn:      func(string) bool { return false },

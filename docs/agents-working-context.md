@@ -2,6 +2,14 @@
 
 ---
 
+## 2026-10-01 — Ártemis (fix/estado-que-governa-a-branch — ML-3D) — INÍCIO
+
+**Início:** 2026-10-01 | Branch: `fix/estado-que-governa-a-branch`
+**Tarefa:** ML-3D corretivo — Windows skip em literal_pathspecs_test, asserção vácua em validator_test, stubs desatualizados em push_test e ship_test
+**Arquivos a modificar:** `internal/validator/validator_literal_pathspecs_test.go` · `internal/validator/validator_test.go` · `internal/commands/push_test.go` · `internal/commands/ship_test.go` · roadmap ML-3D · `docs/agents-working-context.md`
+
+---
+
 ## 2026-10-01 — Apolo (fix/estado-que-governa-a-branch — ML-3C) — INÍCIO
 
 **Início:** 2026-10-01 | Branch: `fix/estado-que-governa-a-branch`

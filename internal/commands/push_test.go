@@ -118,7 +118,7 @@ func TestPush_InvalidBranch_Blocks(t *testing.T) {
 // ────────────────────────────────────────────────────────────────────────────
 
 func TestPush_FeatBranch_NoRoadmap_Blocks(t *testing.T) {
-	deps, _, out := makePushDeps("feat/my-feature", false, []string{"no roadmap found in wip/ nor done/"})
+	deps, _, out := makePushDeps("feat/my-feature", false, []string{"no roadmap found in wip/, blocked/ nor done/"})
 	err := runPush(pushOpts{dryRun: true}, deps)
 	if err == nil {
 		t.Fatal("expected governance error")
@@ -302,7 +302,7 @@ func TestPush_DryRun_PrintsFetchAndPush(t *testing.T) {
 // ────────────────────────────────────────────────────────────────────────────
 
 func TestPush_GovernanceMessage_SaysPush(t *testing.T) {
-	deps, _, out := makePushDeps("feat/orphan", false, []string{"no roadmap found in wip/ nor done/"})
+	deps, _, out := makePushDeps("feat/orphan", false, []string{"no roadmap found in wip/, blocked/ nor done/"})
 	_ = runPush(pushOpts{dryRun: true}, deps)
 	stdout := out.String()
 	if !strings.Contains(stdout, "trackfw push") {

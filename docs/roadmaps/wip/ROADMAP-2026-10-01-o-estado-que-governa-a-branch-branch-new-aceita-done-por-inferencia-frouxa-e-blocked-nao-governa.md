@@ -318,7 +318,7 @@ go test ./internal/validator/ ./internal/auditsurface/ ./internal/commands/ -cou
 ```
 
 ### ML-3D — Corretivo final: layout `by_agent`, Windows e asserções vácuas
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** artemis-tf
 **Origem:** revisão final do arquiteto. (1) Quem reportou o #494 usa `roadmap_namespacing: by_agent`
 com `wip/` vazio, e todos os cenários novos são `flat`; o laço do `ls-tree` por `done/` resolvido nunca
@@ -330,10 +330,14 @@ antigo `no roadmap is in wip/ nor done/`, que não existe mais: a asserção é 
 `internal/validator/validator_literal_pathspecs_test.go`, `internal/validator/validator_test.go`,
 `internal/commands/push_test.go`, `internal/commands/ship_test.go`
 **Acceptance criteria:**
-- [ ] Cenários `by_agent` (2 agentes, `wip/` vazio) para AC2 e AC5b: reprovam no binário de `e104a7f7`, passam na branch
-- [ ] Teste do `--literal-pathspecs` com `t.Skip` em `windows`, com o motivo escrito
-- [ ] Asserção vácua trocada pelo texto atual; stubs com o texto atual
-- [ ] Relatório: uma frase por teste novo/alterado
+- [x] Cenários `by_agent` (2 agentes, `wip/` vazio) para AC2 e AC5b: reprovam no binário de `e104a7f7`, passam na branch
+      ✅ auditado: 2 cenários passam na branch e reprovam no binário de `e104a7f7`
+- [x] Teste do `--literal-pathspecs` com `t.Skip` em `windows`, com o motivo escrito
+      ✅ `runtime.GOOS == "windows"` com o motivo NTFS
+- [x] Asserção vácua trocada pelo texto atual; stubs com o texto atual
+      ✅ `TestValidateBranchHasWIPRoadmap_RuleOff`: com a regra sabotada para `error` (overlay) FAIL; original PASS
+- [x] Relatório: uma frase por teste novo/alterado
+      ✅ a asserção do RuleOff afirma que a regra off silencia a mensagem atual, não um texto extinto
 **Gates da wave:**
 ```bash
 go build ./...

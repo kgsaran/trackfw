@@ -1105,7 +1105,7 @@ func TestValidateBranchHasWIPRoadmap_RuleOff(t *testing.T) {
 		t.Fatalf("erro inesperado: %v", err)
 	}
 	// com regra "off" não deve aparecer nem como violation nem como warning
-	if hasViolation(violations, "no roadmap is in wip/ nor done/") || hasWarning(warnings, "no roadmap is in wip/ nor done/") {
+	if hasViolation(violations, "no roadmap is in wip/, blocked/ nor done/") || hasWarning(warnings, "no roadmap is in wip/, blocked/ nor done/") {
 		t.Errorf("regra off deve suprimir a mensagem, obteve violations=%v warnings=%v", violations, warnings)
 	}
 }
