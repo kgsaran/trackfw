@@ -45,7 +45,8 @@ Mapa dos sítios (lido em `44718ffc`):
       ✅ pinos 32/32 (pin28/pin29 novos); seção nova no `cli-parity.md`
 - [x] AC9 — teste novo declara o que afirma e reprova no critério antigo
       ✅ prova de mordida por overlay em todos os ML; uma frase por teste
-- [ ] AC10 — `make quality` EXIT=0 e CI verde
+- [x] AC10 — `make quality` EXIT=0 e CI verde
+      ✅ CI do PR #503 em c61300ca: 20/20 SUCCESS, inclusive windows-full-suites.
       ⏳ Local: `make quality` passou todas as etapas até a falsificação; a falsificação, rodada em 2 grupos de 4 chunks (o paralelo de 8 pendurou 3x nesta máquina), deu 347 OK / 0 FAIL, 8/8 CHUNK_COMPLETE. Falta o CI do PR.
 
 ## Status Legend

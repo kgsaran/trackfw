@@ -44107,3 +44107,8 @@ sonda de fallback de `discover`. Aviso novo para `.md` com cara de ADR (frontmat
 - F1 (bloqueante): `docs/cli-parity.md` linhas 4385 e 4406 — duas `###` sem `trackfw-contract`; `make quality EXIT=2`
 - F2 (não-bloqueante): `validator.go:3236` comentário de `walkADRFiles` desatualizado
 **Parecer:** `docs/qualidade/2026-10-02-revisao-criterio-de-adr.md`
+
+## 2026-10-02 — zeus-tf — FIM: #471 (critério de ADR por prefixo) pronto para merge
+
+PR #503 com CI 20/20 em `c61300ca`. Barrier `passed` nas waves 0–3. Issue #504 aberta para o travamento
+do `parity-falsify` com 8 chunks em paralelo no macOS.
