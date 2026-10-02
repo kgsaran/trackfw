@@ -73,8 +73,9 @@ para `done/` (ausente de `done/` na ponta da base).
 - [x] **AC9** — Todo teste novo declara, no relatório do ML, qual conclusão afirma. O teste da
   `REQ-2026-08-04` que afirmava "match em `done/` cria a branch" é **invertido**, não apagado.
       ✅ Evidência: uma frase por teste em todos os relatórios; 3 testes decorativos removidos na auditoria
-- [ ] **AC10** — `make quality` EXIT=0 e CI do PR verde, inclusive `windows-full-suites`.
+- [x] **AC10** — `make quality` EXIT=0 e CI do PR verde, inclusive `windows-full-suites`.
       ⏳ Local: make quality no HEAD final passou todas as etapas até a falsificação; a falsificação, rodada em grupos (o paralelo de 8 pendurou 2x na máquina), deu 347 OK / 0 FAIL — igual a 57aed5b4. Falta o CI do PR.
+      ✅ CI do PR #500 em 837d6ed7: 20/20 SUCCESS, inclusive windows-full-suites (após o ML-3E).
 - [x] **AC11** — (A2 da Wave 0) sem `origin`, `push --dry-run` e `ship --dry-run` **não** imprimem
   `Governance: OK`; imprimem o aviso `branch_done_scope_unverifiable`.
       ✅ Evidência: `TestBranchStateE2E_AC6_NoPushOriginDegrades` (push) e `TestShip_GovernanceDegraded_PrintsDegradedNotOK` (sabotagem reprova)

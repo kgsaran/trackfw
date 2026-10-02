@@ -13,4 +13,6 @@ Política decidida pelo KG em 2026-10-02, ao fechar os PRs #497 e #499 do Louriv
 
 **Why:** dois trabalhos paralelos sobre a mesma causa no mesmo dia. A raiz foi nossa: abrimos a REQ e não avisamos na issue (ver [[feedback-sem-pr-aberto-implementacao-e-nossa]]).
 
-**How to apply:** ao abrir REQ para uma issue, comente na issue no mesmo momento. Ao avaliar PR externo, cheque primeiro se há REQ/branch nossa sobre a mesma causa. Gate vermelho bloqueia a recomendação de merge, seja qual for o mérito.
+4. Label **`req-aberta`** (criada em 2026-10-02 por sugestão do Lourival) marca a issue com REQ nossa aberta. É o sinal; a Discussion continua obrigatória (decisão do KG).
+
+**How to apply:** ao abrir REQ para uma issue, comente na issue **e aplique `req-aberta`** no mesmo momento; remova a label quando a REQ fechar. Ao avaliar PR externo, cheque primeiro se há REQ/branch nossa sobre a mesma causa. Gate vermelho bloqueia a recomendação de merge, seja qual for o mérito.

@@ -48,7 +48,7 @@ Mapa do código (lido em `e104a7f7`):
       ✅ grep do D6 no diff vazio; `check-roadmap-slug-matching.sh` 205×201 sem divergência (ML-3B)
 - [x] AC9 — teste novo declara o que afirma; teste da REQ-2026-08-04 invertido
       ✅ uma frase por teste em todos os relatórios; 3 testes decorativos removidos na auditoria
-- [ ] AC10 — `make quality` EXIT=0 e CI verde
+- [x] AC10 — `make quality` EXIT=0 e CI verde
       ⏳ Local: make quality no HEAD final passou todas as etapas até a falsificação; a falsificação, rodada em grupos (o paralelo de 8 pendurou 2x na máquina), deu 347 OK / 0 FAIL — igual a 57aed5b4. Falta o CI do PR.
 
 ## Status Legend
@@ -361,8 +361,9 @@ outras 15 falhas do job já estão em `.github/windows-known-failures.json`.
 (2) no repositório temporário do e2e, `git config core.longpaths true` logo após o `git init`, em
 todas as fixtures que copiam o acervo real. Proibido acrescentar os nomes ao `windows-known-failures.json`.
 **Acceptance criteria:**
-- [ ] `windows-full-suites` do PR sem nome novo no ratchet
-- [ ] Relatório: uma frase por teste alterado
+- [x] `windows-full-suites` do PR sem nome novo no ratchet
+      ✅ CI do PR #500 em 837d6ed7: 20/20 SUCCESS, inclusive windows-full-suites (após o ML-3E).
+- [x] Relatório: uma frase por teste alterado
 **Gates da wave:**
 ```bash
 go build ./...

@@ -44025,3 +44025,10 @@ não mordia e partia de premissa falsa (":" é válido em nome de diretório no 
 1. `gitlstree_test.go:51` — `filepath.Join("scripts", fname)` → `"scripts/" + fname` (git emite `/`, não separador do SO)
 2. `branch_state_e2e_test.go` — `git config core.longpaths true` após os dois `git init` de repositórios de trabalho (linhas ~145 e ~824); evita `Filename too long` no Windows ao `git add -A` dos 211 roadmaps reais
 **Gates:** `go build ./...` OK · `go vet` OK · `go test ./internal/auditsurface/ -count=1` PASS · `go test ./internal/commands/ -run BranchStateE2E -count=1` PASS
+
+## 2026-10-02 — zeus-tf — FIM: PR #500 verde, pronto para merge
+
+CI 20/20 em `837d6ed7` após o ML-3E (2 falhas novas de Windows, ambas no teste: separador `\\` no
+esperado e MAX_PATH no `git add` do e2e). Todos os ACs com evidência. #497 e #499 do Lourival
+fechados como superados; label `req-aberta` criada (Discussion continua obrigatória). Fechamento da
+REQ e roadmap → `done/` são pós-merge, em branch `chore/`.
