@@ -1,15 +1,16 @@
 ---
-status: Open
+status: Done
 date: 2026-10-01
 author: "zeus-tf"
 adr: "docs/adr/ADR-2026-10-01-estado-que-governa-a-branch-criacao-exige-wip-branch-existente-aceita-blocked-e-done-so-pelo-vinculo-ou-pela-propria-branch.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-10-01-o-estado-que-governa-a-branch-branch-new-aceita-done-por-inferencia-frouxa-e-blocked-nao-governa.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-10-01-o-estado-que-governa-a-branch-branch-new-aceita-done-por-inferencia-frouxa-e-blocked-nao-governa.md"
 ---
 
 # REQ: o estado que governa a branch — branch new aceita done por inferência frouxa e blocked não governa
 
-> Date: 2026-10-01 | Status: Open
+> Date: 2026-10-01 | Status: Done
 | GitHub Issue: #494, #490
+| Mergeado: PR #500 em `54c227d1` (2026-10-02); CI 20/20, inclusive `windows-full-suites`. #494 e #490 fechadas pelo merge.
 
 ## Motivation
 
@@ -111,4 +112,4 @@ ADR: docs/adr/ADR-2026-10-01-estado-que-governa-a-branch-criacao-exige-wip-branc
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-10-01-o-estado-que-governa-a-branch-branch-new-aceita-done-por-inferencia-frouxa-e-blocked-nao-governa.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-10-01-o-estado-que-governa-a-branch-branch-new-aceita-done-por-inferencia-frouxa-e-blocked-nao-governa.md
