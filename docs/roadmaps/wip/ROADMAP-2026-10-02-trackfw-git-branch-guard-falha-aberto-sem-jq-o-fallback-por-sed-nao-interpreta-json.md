@@ -68,15 +68,15 @@ grep -q "Veredito" docs/seguranca/2026-10-02-wave0-extrator-json-do-guard.md
 > Dependencies: Wave 0 auditada
 
 ### ML-1A — Extrator JSON em awk nas 4 cópias e tabela com e sem jq
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Files affected:** os 5 sítios da tabela do Context
 **Actions:** D1–D4, D2-bis e D2-ter do ADR. A tabela contém **os 21 casos C01–C21** da Wave 0 (§ tabela do parecer, com o rc esperado em cada caminho) **mais o C22**: `git push\u0000origin main` → rc=2 com e sem `jq`.
 🔴 Pré-condição do teste sem `jq`: o macOS tem `/usr/bin/jq`, então o `PATH` curado **não pode** incluir `/usr/bin` inteiro; o teste afirma `command -v jq` vazio dentro do ambiente curado antes de rodar a tabela. Teste sem `jq` por `PATH` curado num `t.TempDir()` (padrão do `TestAttentionScripts_FallbackWithoutJQ`), rodando a tabela inteira duas vezes.
 **Acceptance criteria:**
-- [ ] AC2–AC6 com testes por nome; prova de mordida contra o script de `3b2eff09`
-- [ ] Cenário de falsificação do guard rodado isolado (nota do vault) e provado não vácuo
-- [ ] Uma frase por teste novo
+- [x] AC2–AC6 com testes por nome; prova de mordida contra o script de `3b2eff09`
+- [x] Cenário de falsificação do guard rodado isolado (nota do vault) e provado não vácuo
+- [x] Uma frase por teste novo
       ✅ Auditoria parcial (arquiteto): C01–C22 passam com e sem `jq`, e a prova de mordida contra `3b2eff09` mede falha aberta em C02–C05, C12 e C22. C09–C11 **não** falhavam no `sed` antigo (medido pelo agente; a lista do handoff era hipótese). As 4 cópias são iguais.
       ❌ AC4 não entregue: os 44 testes que já existiam no guard continuam rodando só com o `PATH` do sistema (com `jq`). Vai para o ML-1B.
 **Gates da wave:**
@@ -86,13 +86,29 @@ go test ./internal/generators/ ./internal/validator/ -count=1
 ```
 
 ### ML-1B — Corretivo: a tabela que já existia roda também sem jq (AC4)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Files affected:** `internal/generators/git_branch_guard_test.go`
 **Actions:** `runGitBranchGuard` (~:140) executa o guard **duas vezes**, com o `PATH` do sistema e com o `PATH` curado sem `jq` do ML-1A (`makeCuratedPathWithoutJQ`, com `command -v jq` vazio afirmado), e reprova se o código de saída divergir. Devolve o resultado do caminho com `jq`. Assim todos os testes existentes passam a afirmar a equivalência dos dois extratores, incluindo o `TestGitBranchGuard_UnterminatedHeredocBeforeRealPush_StillBlocks` da #507. Testes que dependem de variáveis de ambiente específicas preservam essas variáveis nos dois modos.
 **Acceptance criteria:**
-- [ ] Os 44 testes `TestGitBranchGuard*` passam, cada um rodando nos dois modos
-- [ ] Prova: com o script de `3b2eff09` no lugar do novo (overlay ou cópia), o `TestGitBranchGuard_UnterminatedHeredocBeforeRealPush_StillBlocks` reprova por divergência entre os modos
+- [x] Os 44 testes `TestGitBranchGuard*` passam, cada um rodando nos dois modos
+- [x] Prova: com o script de `3b2eff09` no lugar do novo (overlay ou cópia), o `TestGitBranchGuard_UnterminatedHeredocBeforeRealPush_StillBlocks` reprova por divergência entre os modos
+      ✅ 50/50 `TestGitBranchGuard*` passam (44 antigos agora nos dois modos). Contra o script de `3b2eff09` (overlay), o `UnterminatedHeredoc…` da #507 reprova por divergência: rc=2 com `jq`, rc=0 sem. Os 6 testes do dreno de stdin (outro arquivo) seguem só com `jq`: declarado.
+**Gates da wave:**
+```bash
+go build ./...
+go test ./internal/generators/ -run 'TestGitBranchGuard' -count=1
+```
+
+### ML-1C — Corretivo: o PATH curado sem jq tem de funcionar no Windows
+**Status:** ⬜ Pendente
+**Squad:** apolo-tf
+**Origem:** relatório do ML-1B. `makeCuratedPathWithoutJQ` cria symlinks e, se `os.Symlink` falha (Windows sem Developer Mode, como nos runners), continua em silêncio com o diretório vazio. Agora os 44 testes antigos usam esse caminho, e o `windows-full-suites` roda `go test ./...`: seriam dezenas de nomes novos no ratchet.
+**Files affected:** `internal/generators/git_branch_guard_test.go`
+**Actions:** montar o ambiente sem `jq` **filtrando o PATH original**: tirar os diretórios que contêm um executável `jq` (`jq`, `jq.exe`). Para cada ferramenta de que o script precisa e que só existia num diretório removido (caso do `/usr/bin` do macOS), criar um shim num diretório próprio: symlink e, se falhar, cópia. Falha ao montar o ambiente → `t.Fatalf` com a causa, nunca diretório vazio em silêncio. Afirmar `command -v jq` vazio no ambiente final.
+**Acceptance criteria:**
+- [ ] macOS: 50/50 `TestGitBranchGuard*` passam
+- [ ] CI `windows-full-suites` sem nome novo no ratchet
 **Gates da wave:**
 ```bash
 go build ./...

@@ -137,12 +137,17 @@ func setupGitBranchGuardFixtureWithoutTrackfwYAML(t *testing.T) (dir, scriptPath
 	return dir, filepath.Join(dir, "scripts", "trackfw-git-branch-guard.sh")
 }
 
-func runGitBranchGuard(t *testing.T, dir, scriptPath string, args []string, stdin string) (exitCode int, stdout, stderr string) {
+// runGitBranchGuardImpl executa o guard com env explícito (nil = herdar do processo pai).
+// É o helper interno usado por runGitBranchGuard e outros.
+func runGitBranchGuardImpl(t *testing.T, dir, scriptPath string, args []string, stdin string, env []string) (exitCode int, stdout, stderr string) {
 	t.Helper()
 	cmdArgs := append([]string{scriptPath}, args...)
 	cmd := exec.Command("bash", cmdArgs...)
 	cmd.Dir = dir
 	cmd.Stdin = strings.NewReader(stdin)
+	if env != nil {
+		cmd.Env = env
+	}
 	var outBuf, errBuf strings.Builder
 	cmd.Stdout = &outBuf
 	cmd.Stderr = &errBuf
@@ -155,6 +160,57 @@ func runGitBranchGuard(t *testing.T, dir, scriptPath string, args []string, stdi
 	}
 	t.Fatalf("erro executando script: %v (stderr: %s)", err, errBuf.String())
 	return -1, "", ""
+}
+
+// makeEnvWithoutJQ devolve os.Environ() com PATH substituído pelo diretório curado
+// sem jq — garante que o braço awk do extrator é exercitado no segundo modo.
+// Pré-condição verificada em linha: command -v jq deve retornar vazio no PATH curado
+// (macOS tem /usr/bin/jq; inclusão acidental de /usr/bin causaria falso-positivo).
+func makeEnvWithoutJQ(t *testing.T) []string {
+	t.Helper()
+	fakeBinDir := makeCuratedPathWithoutJQ(t)
+	assertJQAbsentInPath(t, fakeBinDir)
+	result := make([]string, 0, len(os.Environ()))
+	for _, e := range os.Environ() {
+		if !strings.HasPrefix(e, "PATH=") {
+			result = append(result, e)
+		}
+	}
+	return append(result, "PATH="+fakeBinDir)
+}
+
+// runGitBranchGuardBothModes executa o guard duas vezes: (a) com os.Environ()+extraEnv
+// e (b) com makeEnvWithoutJQ+extraEnv. Se os exit codes divergirem, t.Errorf. Devolve (a).
+// Usado por runGitBranchGuard (extraEnv nil) e por testes com variáveis de ambiente próprias
+// (ex: TRACKFW_GIT_COMMAND) que precisam da mesma verificação de equivalência jq vs awk.
+func runGitBranchGuardBothModes(t *testing.T, dir, scriptPath string, args []string, stdin string, extraEnv []string) (exitCode int, stdout, stderr string) {
+	t.Helper()
+
+	// (a) PATH do sistema — jq disponível.
+	envA := append(os.Environ(), extraEnv...)
+	exitCode, stdout, stderr = runGitBranchGuardImpl(t, dir, scriptPath, args, stdin, envA)
+
+	// (b) PATH curado sem jq — exercita o extrator awk (D1/D2/D2-bis/D2-ter do ADR).
+	// As demais variáveis de ambiente são preservadas; PATH é substituído pelo curado sem jq.
+	noJQEnv := append(makeEnvWithoutJQ(t), extraEnv...)
+	exitCodeB, _, stderrB := runGitBranchGuardImpl(t, dir, scriptPath, args, stdin, noJQEnv)
+
+	if exitCode != exitCodeB {
+		t.Errorf("divergência de rc entre PATH do sistema (rc=%d, stderr=%q) e PATH sem jq (rc=%d, stderr=%q)",
+			exitCode, stderr, exitCodeB, stderrB)
+	}
+
+	return exitCode, stdout, stderr
+}
+
+// runGitBranchGuard executa o guard duas vezes — (a) com o PATH do sistema (jq disponível)
+// e (b) com um PATH curado sem jq (extrator awk). Se os exit codes divergirem, t.Errorf
+// reporta os dois códigos e os dois stderr. Devolve sempre o resultado de (a).
+// ML-1B: AC4 — todos os testes TestGitBranchGuard* passam a afirmar a equivalência dos
+// dois extratores (jq e awk) a cada invocação.
+func runGitBranchGuard(t *testing.T, dir, scriptPath string, args []string, stdin string) (exitCode int, stdout, stderr string) {
+	t.Helper()
+	return runGitBranchGuardBothModes(t, dir, scriptPath, args, stdin, nil)
 }
 
 // --- Bloqueio: git commit ---------------------------------------------------
@@ -539,25 +595,13 @@ func TestGitBranchGuard_SwitchWithoutCreateFlag_Allows(t *testing.T) {
 }
 
 func TestGitBranchGuard_EnvVarFallback_Blocks(t *testing.T) {
+	// Afirma que TRACKFW_GIT_COMMAND=git commit -m x bloqueia com e sem jq no PATH —
+	// a variável de ambiente é preservada nos dois modos pelo runGitBranchGuardBothModes.
 	dir, script := setupGitBranchGuardFixture(t)
 
-	cmd := exec.Command("bash", script)
-	cmd.Dir = dir
-	cmd.Env = append(os.Environ(), "TRACKFW_GIT_COMMAND=git commit -m x")
-	var outBuf, errBuf strings.Builder
-	cmd.Stdout = &outBuf
-	cmd.Stderr = &errBuf
-	err := cmd.Run()
-	exitCode := 0
-	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			exitCode = exitErr.ExitCode()
-		} else {
-			t.Fatalf("erro executando script: %v", err)
-		}
-	}
+	exitCode, _, stderr := runGitBranchGuardBothModes(t, dir, script, nil, "", []string{"TRACKFW_GIT_COMMAND=git commit -m x"})
 	if exitCode != 2 {
-		t.Fatalf("exit code: want 2 (fallback de env var), got %d (stderr: %s)", exitCode, errBuf.String())
+		t.Fatalf("exit code: want 2 (fallback de env var), got %d (stderr: %s)", exitCode, stderr)
 	}
 }
 
