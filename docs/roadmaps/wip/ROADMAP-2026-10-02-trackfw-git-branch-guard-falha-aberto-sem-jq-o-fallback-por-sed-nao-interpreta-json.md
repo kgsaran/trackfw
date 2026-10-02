@@ -27,7 +27,8 @@ Notas do vault obrigatórias para quem mexer: `guard-aprova-quando-nao-conseguiu
 `rodar-um-unico-cenario-de-check-gates-falsify-e-provar-que-a-sabotagem-nao-e-vacua-2026-09-24`.
 
 ## Acceptance Criteria
-- [ ] AC1 — Wave 0 auditada
+- [x] AC1 — Wave 0 auditada
+      ✅ `docs/seguranca/2026-10-02-wave0-extrator-json-do-guard.md`: APROVA COM AJUSTES. Formas de falha aberta confirmadas: `\n`, `\"`, `\t`, `\u000a`; e NUL, que passa até com `jq` (absorvido como AC5-bis/D2-bis).
 - [ ] AC2 — multilinha e `\"` sem `jq` → rc=2; reprova em `3b2eff09`
 - [ ] AC3 — `-m "a\nb"` literal: mesmo veredito com e sem `jq`
 - [ ] AC4 — tabela inteira do guard com e sem `jq`
@@ -43,7 +44,7 @@ Notas do vault obrigatórias para quem mexer: `guard-aprova-quando-nao-conseguiu
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Modelo de ameaça do extrator JSON em awk
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** hades-tf
 **Files affected:** `docs/seguranca/2026-10-02-wave0-extrator-json-do-guard.md` (único arquivo escrito)
 **Actions:**
@@ -53,9 +54,9 @@ Notas do vault obrigatórias para quem mexer: `guard-aprova-quando-nao-conseguiu
 4. **Custo:** tempo de extração com payload de 200 KB, `sed` contra um protótipo `awk` descartável (no scratch, não na árvore).
 5. **Resíduo declarado.**
 **Acceptance criteria:**
-- [ ] Seções com evidência (comando + saída)
-- [ ] Veredito explícito, com a lista de casos que a tabela de testes do ML-1A tem de conter
-- [ ] Nenhuma linha de implementação na árvore
+- [x] Seções com evidência (comando + saída)
+- [x] Veredito explícito, com a lista de casos que a tabela de testes do ML-1A tem de conter
+- [x] Nenhuma linha de implementação na árvore
 
 **Gates da wave:**
 ```bash
@@ -70,7 +71,8 @@ grep -q "Veredito" docs/seguranca/2026-10-02-wave0-extrator-json-do-guard.md
 **Status:** ⬜ Pendente
 **Squad:** apolo-tf
 **Files affected:** os 5 sítios da tabela do Context
-**Actions:** D1–D4 do ADR, com a lista de casos da Wave 0. Teste sem `jq` por `PATH` curado num `t.TempDir()` (padrão do `TestAttentionScripts_FallbackWithoutJQ`), rodando a tabela inteira duas vezes.
+**Actions:** D1–D4, D2-bis e D2-ter do ADR. A tabela contém **os 21 casos C01–C21** da Wave 0 (§ tabela do parecer, com o rc esperado em cada caminho) **mais o C22**: `git push\u0000origin main` → rc=2 com e sem `jq`.
+🔴 Pré-condição do teste sem `jq`: o macOS tem `/usr/bin/jq`, então o `PATH` curado **não pode** incluir `/usr/bin` inteiro; o teste afirma `command -v jq` vazio dentro do ambiente curado antes de rodar a tabela. Teste sem `jq` por `PATH` curado num `t.TempDir()` (padrão do `TestAttentionScripts_FallbackWithoutJQ`), rodando a tabela inteira duas vezes.
 **Acceptance criteria:**
 - [ ] AC2–AC6 com testes por nome; prova de mordida contra o script de `3b2eff09`
 - [ ] Cenário de falsificação do guard rodado isolado (nota do vault) e provado não vácuo

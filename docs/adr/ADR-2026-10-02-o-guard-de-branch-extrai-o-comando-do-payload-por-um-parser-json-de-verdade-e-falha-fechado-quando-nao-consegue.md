@@ -55,6 +55,25 @@ Se a chave do comando existe e o valor não pode ser decodificado (string não t
 inválido), o guard nega com `exit 2` e mensagem que nomeia a causa. É o mesmo contrato do dreno de
 stdin (payload ilegível → nega). **Chave ausente** mantém o comportamento de hoje: nada a guardar.
 
+### D2-bis — NUL no comando decodificado → **falha fechado, nos dois caminhos**. (Wave 0)
+
+`$()` descarta NUL: `git push\u0000origin main` vira `git pushorigin main` e passa **também com `jq`**
+(pré-existente, medido na Wave 0). A causa é a mesma (a extração entrega ao guard um comando diferente
+do que o shell executaria), então entra aqui. Nenhum comando legítimo contém NUL: o guard nega quando o
+valor decodificado contém `\u0000`, tanto no extrator `awk` quanto no caminho `jq` (por exemplo, um
+`jq -e '… | contains("\u0000")'` antes da extração).
+
+### D2-ter — Restrições de implementação medidas na Wave 0
+
+- **Chave duplicada: a última vence**, como no `jq`, para que os dois caminhos deem o mesmo veredito (D3).
+- **Prioridade exatamente igual à do `jq`**: `tool_input.command`, depois `command` na raiz,
+  `tool_info.command_line`, `hook_input.command`. A ordem do `sed` antigo era outra, e
+  `{"command":"git push","tool_info":{…}}` falhava aberto.
+- **Nada de `RS=""`** (modo parágrafo: uma linha em branco no JSON parte o payload). Acumular o
+  payload inteiro e processar no `END`.
+- **Nada de `strtonum()`** (não existe no awk do macOS); conversão hexadecimal por função própria.
+- **A chave só conta como chave**: `"command"` dentro de outra string não é chave (caso C08).
+
 ### D3 — `jq` continua sendo o primeiro caminho; o fallback passa a ser testado.
 
 Toda a tabela de testes do guard roda **duas vezes**: com `jq` e com um `PATH` curado sem `jq`, no

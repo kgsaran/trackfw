@@ -39,6 +39,8 @@ valor é indecodificável. Toda a tabela de testes do guard passa a rodar com e 
 - [ ] **AC6** — As 4 cópias iguais: `TestGitBranchGuardScriptReference_MatchesGenerator` verde,
   `trackfw validate` sem `git_branch_guard_script_integrity` neste repositório, e o cenário de
   falsificação que sabota o guard segue provando a sabotagem (`corrupt_literal` atualizado).
+- [ ] **AC5-bis** — NUL no comando decodificado (`git push\u0000origin main`) → rc=2 **com e sem `jq`**.
+  Hoje passa nos dois caminhos (Wave 0).
 - [ ] **AC7** — Cada teste novo declara a conclusão que afirma.
 - [ ] **AC8** — `make quality` EXIT=0 (máquina ociosa) e CI verde, inclusive `windows-full-suites`.
 
