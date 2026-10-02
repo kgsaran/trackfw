@@ -62,22 +62,31 @@ type BranchLinkStatus struct {
 	Roadmap string
 	// Present is true when a link is recorded for the branch.
 	Present bool
-	// InScope is true when the recorded roadmap is still a candidate in wip/ or done/.
-	// Present && !InScope is a STALE link — the roadmap was renamed, moved out of wip/+done/ or
-	// deleted. The ADR forbids answering a stale link with a silent fallback.
+	// InScope is true when the recorded roadmap is still in wip/, blocked/ or done/.
+	// Present && !InScope is a STALE link — the roadmap was renamed, moved out of
+	// wip/+blocked/+done/, or deleted. The ADR forbids answering a stale link with a silent
+	// fallback (D4 of ADR-2026-10-01).
 	InScope bool
 }
 
 // BranchLinkFor resolves the written link for branch against the roadmaps currently in
-// wipDirs+doneDirs. It is the single reader of the link file — `validate`, `commit` and `ship` all
-// go through here.
+// wipDirs, blocked/ (derived from cfg) and doneDirs. It is the single reader of the link file —
+// `validate`, `commit` and `ship` all go through here.
+//
+// D4 (ADR-2026-10-01): the scope was expanded from wip/+done/ to wip/+blocked/+done/ so that a
+// branch whose roadmap was moved to blocked/ is not reported as STALE. The blocked dirs are
+// resolved internally from cfg without changing the public signature — commit.go assigns
+// BranchLinkFor to a typed func field with the original 4-arg signature.
 func BranchLinkFor(cfg config.ProjectConfig, branch string, wipDirs, doneDirs []string) BranchLinkStatus {
 	recorded := strings.TrimSpace(readBranchLinks(cfg)[branch])
 	if recorded == "" {
 		return BranchLinkStatus{}
 	}
 	status := BranchLinkStatus{Roadmap: recorded, Present: true}
-	for _, dir := range append(append([]string{}, wipDirs...), doneDirs...) {
+	// Scope: wip/ ∪ blocked/ ∪ done/ (D4).
+	blockedDirs := resolveBlockedDirs(cfg)
+	allDirs := append(append(append([]string{}, wipDirs...), blockedDirs...), doneDirs...)
+	for _, dir := range allDirs {
 		entries, _ := listDir(dir)
 		for _, name := range entries {
 			if name == recorded {
@@ -90,27 +99,33 @@ func BranchLinkFor(cfg config.ProjectConfig, branch string, wipDirs, doneDirs []
 }
 
 // BranchLinkStaleWarning is the message emitted when a link names a roadmap that is no longer in
-// wip/ nor done/. It is a WARNING and never a violation, by decision: promoting it would break the
-// additive order of D4 — a branch that passes today by inference must not start failing because a
-// stale accelerator entry exists next to it. Silence is what the ADR forbids, not leniency.
+// wip/, blocked/ nor done/. It is a WARNING and never a violation: promoting it would break the
+// additive order of D4 of ADR-2026-10-01 — a branch that passes today by inference must not
+// start failing because a stale accelerator entry exists next to it. Silence is what the ADR
+// forbids, not leniency.
 func BranchLinkStaleWarning(cfg config.ProjectConfig, branch, roadmap string) string {
 	return fmt.Sprintf(
-		"branch_link_stale: the written link for branch %q names roadmap %q, which is no longer in wip/ nor done/ — falling back to name inference. Re-create the link with 'trackfw branch new', or drop the entry from %s",
+		"branch_link_stale: the written link for branch %q names roadmap %q, which is no longer in wip/, blocked/ nor done/ — falling back to name inference. Re-create the link with 'trackfw branch new', or drop the entry from %s",
 		branch, roadmap, BranchLinkPath(cfg),
 	)
 }
 
-// RecordBranchLink writes the branch↔roadmap link for branch, resolving the roadmap by inference at
-// the moment of creation — which is the moment the information is still exact.
+// RecordBranchLink writes the branch↔roadmap link for branch, resolving the roadmap by inference
+// at the moment of creation — which is the moment the information is still exact.
 //
-// It records ONLY when the inference identifies exactly ONE roadmap. With two or more, there is no
-// single truth to write, and inventing one by scan order is the very defect ML-1C removed from
-// findRoadmap. With none, `branch new` has already blocked and never reaches here.
+// D1 (ADR-2026-10-01): resolves ONLY against wip/. The old implementation also searched done/,
+// which could write a permanent link to a completed roadmap for a new branch that happened to
+// share its slug — promoting a spurious done/ match to a source of truth. Creating a new
+// feat/fix/refactor branch over concluded work always requires `trackfw roadmap move <name> wip`
+// first, so there is never a legitimate case for a link to a done/ roadmap at creation time.
+//
+// It records ONLY when the inference identifies exactly ONE roadmap in wip/. With two or more,
+// there is no single truth to write. With none, `branch new` has already blocked.
 func RecordBranchLink(cfg config.ProjectConfig, branch string) error {
 	slug := NormalizeBranchSlug(branchSlugOf(branch))
 	wipDirs := ResolveWIPDirs(cfg)
-	doneDirs := ResolveDoneDirs(cfg)
-	matches, _ := MatchRoadmapsForBranchSlug(slug, wipDirs, doneDirs)
+	// Resolve against wip/ only (D1) — no doneDirs passed.
+	matches, _ := MatchRoadmapsForBranchSlug(slug, wipDirs, nil)
 	if len(matches) != 1 {
 		return nil
 	}
@@ -174,36 +189,119 @@ type BranchRoadmapResolution struct {
 	Warnings   []string
 }
 
-// ResolveBranchRoadmap answers "is this branch governed, and by which roadmap?" in the order D1
-// decided:
+// ResolveBranchRoadmap answers "is this branch governed, and by which roadmap?" using the full D2
+// resolution order (written link → stale link warn → wip∪blocked inference → done/ only if absent
+// from origin/main base).
 //
-//  1. WRITTEN LINK — if a link is recorded and its target is still in wip/ or done/, that is the
-//     answer. No inference runs.
-//  2. STALE LINK — recorded but the target left wip/+done/: fall back to inference AND emit
-//     BranchLinkStaleWarning. 🔴 The ADR names silent fallback as the one answer not allowed here.
-//  3. INFERENCE — MatchRoadmapsForBranchSlug (substring ∪ token overlap).
+// It delegates to ResolveBranchRoadmapForExisting, resolving blocked/ dirs from cfg internally.
+// Callers in branch_roadmap_match_ml3a_test.go pass their own wip/done dir lists; those are
+// forwarded unchanged, and blocked/ is added from cfg (typically empty in test fixtures).
 func ResolveBranchRoadmap(cfg config.ProjectConfig, branch string, wipDirs, doneDirs []string) BranchRoadmapResolution {
-	slug := NormalizeBranchSlug(branchSlugOf(branch))
-	matches, candidates := MatchRoadmapsForBranchSlug(slug, wipDirs, doneDirs)
+	return ResolveBranchRoadmapForExisting(cfg, branch, wipDirs, resolveBlockedDirs(cfg), doneDirs)
+}
 
-	res := BranchRoadmapResolution{Candidates: candidates, Source: "none"}
+// ResolveBranchRoadmapForExisting answers "is this EXISTING branch governed?" for the
+// validate/commit/push/ship gates (D2 of ADR-2026-10-01). It is the single source of truth for
+// branch governance on existing branches; validateBranchHasWIPRoadmap delegates here.
+//
+// Resolution order:
+//
+//  1. WRITTEN LINK — target in wip/ ∪ blocked/ ∪ done/ (BranchLinkFor scope, D4) → governs.
+//  2. STALE LINK — target left scope → emit BranchLinkStaleWarning, fall through to inference.
+//  3. INFERENCE in wip/ ∪ blocked/ → governs (D2 item 2).
+//  4. INFERENCE in done/ → governs only when the roadmap is ABSENT from done/ in the base tree
+//     (deriveOriginDefaultBranch). "Absent from base" means "moved by this branch" (D2 item 3,
+//     Definition of Done path).
+//     D3: if the base ref is not resolvable, or git ls-tree fails for any done/ dir → accept +
+//     emit branch_done_scope_unverifiable warning. Never a violation. Never silent.
+//
+// 🔴 Must not touch MatchRoadmapsForBranchSlug, branchRoadmapTokens, roadmapContentSlug,
+// sharedTokenCount or the two constants (D6 of ADR-2026-10-01).
+func ResolveBranchRoadmapForExisting(cfg config.ProjectConfig, branch string, wipDirs, blockedDirs, doneDirs []string) BranchRoadmapResolution {
+	res := BranchRoadmapResolution{Source: "none"}
 
+	// Step 1 + 2: written link (BranchLinkFor internally checks wip∪blocked∪done, D4).
 	link := BranchLinkFor(cfg, branch, wipDirs, doneDirs)
-	switch {
-	case link.InScope:
+	if link.InScope {
 		res.Matched = true
 		res.Source = "written-link"
 		res.Roadmap = link.Roadmap
 		return res
-	case link.Present:
+	}
+	if link.Present {
+		// Stale: emit warning, fall through to inference.
 		res.Warnings = append(res.Warnings, BranchLinkStaleWarning(cfg, branch, link.Roadmap))
 	}
 
-	if len(matches) > 0 {
+	slug := NormalizeBranchSlug(branchSlugOf(branch))
+
+	// Build the combined candidates list (wip∪blocked∪done) for diagnostics.
+	allDirs := append(append(append([]string{}, wipDirs...), blockedDirs...), doneDirs...)
+	_, allCandidates := MatchRoadmapsForBranchSlug(slug, allDirs, nil)
+	res.Candidates = allCandidates
+
+	// Step 3: inference in wip∪blocked.
+	wipBlockedDirs := append(append([]string{}, wipDirs...), blockedDirs...)
+	wipBlockedMatches, _ := MatchRoadmapsForBranchSlug(slug, wipBlockedDirs, nil)
+	if len(wipBlockedMatches) > 0 {
 		res.Matched = true
 		res.Source = "inference"
-		if len(matches) == 1 {
-			res.Roadmap = matches[0]
+		if len(wipBlockedMatches) == 1 {
+			res.Roadmap = wipBlockedMatches[0]
+		}
+		return res
+	}
+
+	// Step 4: inference in done/ — only if roadmap was moved by this branch (absent in base).
+	doneMatches, _ := MatchRoadmapsForBranchSlug(slug, nil, doneDirs)
+	if len(doneMatches) == 0 {
+		return res // no matches anywhere
+	}
+
+	ref, refOK := deriveOriginDefaultBranch()
+	if !refOK {
+		// D3: no resolvable origin ref — accept + warn.
+		res.Matched = true
+		res.Source = "inference"
+		if len(doneMatches) == 1 {
+			res.Roadmap = doneMatches[0]
+		}
+		res.Warnings = append(res.Warnings,
+			"branch_done_scope_unverifiable: cannot verify done/ scope — no resolvable origin ref; accepting match in done/ with degraded confidence")
+		return res
+	}
+
+	// For each done match, determine whether it is absent from all done/ dirs in the base tree.
+	// Absent → moved by this branch → governs. Present in any → already done before this branch.
+	var movedByBranch []string
+	for _, match := range doneMatches {
+		inBase := false
+		lsTreeFailed := false
+		for _, doneDir := range doneDirs {
+			baseSet, err := mdBasenamesInGitTreeWithError(ref, doneDir)
+			if err != nil {
+				// D3: ls-tree failed for this dir — accept + warn (never deadlock).
+				lsTreeFailed = true
+				res.Warnings = append(res.Warnings, fmt.Sprintf(
+					"branch_done_scope_unverifiable: git ls-tree %s -- %s failed: %v; accepting match in done/ with degraded confidence",
+					ref, doneDir, err))
+				break
+			}
+			if baseSet[match] {
+				inBase = true
+				break
+			}
+		}
+		if lsTreeFailed || !inBase {
+			movedByBranch = append(movedByBranch, match)
+		}
+	}
+
+	if len(movedByBranch) > 0 {
+		res.Matched = true
+		res.Source = "inference"
+		if len(movedByBranch) == 1 {
+			res.Roadmap = movedByBranch[0]
 		}
 	}
 	return res

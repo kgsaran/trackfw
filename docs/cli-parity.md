@@ -1289,9 +1289,10 @@ change.
 
 ```
 1. Validates branch name — must match feat|fix|refactor|chore|docs/<slug>
-2. Validates governance — REQ + roadmap in wip/ or done/ must exist for feat/fix/refactor branches
-   (hard gate: not affected by lenient mode or per-rule severity); chore/docs branches skip this
-   check entirely, mirroring `trackfw commit`
+2. Validates governance — REQ + roadmap in wip/, blocked/, or done/ (if moved by this branch) must
+   exist for feat/fix/refactor branches (hard gate: not affected by lenient mode or per-rule severity;
+   unresolvable base → degraded with `Governance: degraded: <warning>`, execution continues);
+   chore/docs branches skip this check entirely, mirroring `trackfw commit`
 3. Detects pending squash-merges in other branches (advisory only)
 4. Reviews what is staged (git status --short + git diff --cached --stat)
 5. Commits with Conventional Commits format (-m is required)
@@ -1854,14 +1855,15 @@ time.
 
 ```
 1. Parse "<type>/<slug>" — <type> must be feat|fix|refactor|chore|docs, <slug> non-empty.
-2. For feat|fix|refactor only: normalize the slug and check whether it matches any roadmap
-   filename in wip/ or done/ — the same validator.MatchRoadmapsForBranchSlug the
-   trackfw validate rule branch_has_wip_roadmap calls (via BranchSlugMatchesRoadmap). Not a
-   reimplementation — the same function, imported. The relation is substring OR token overlap
-   (see "Vínculo branch↔roadmap" below). chore|docs skip this step entirely — matchSlug is
-   never called.
-3. No match (feat|fix|refactor only): print the same governance orientation message
-   trackfw validate already prints for this rule, exit non-zero, never invoke git.
+2. For feat|fix|refactor only (CREATION consumer — D1 of ADR-2026-10-01): normalize the slug and
+   check whether it matches any roadmap filename in wip/ ONLY — done/ roadmaps are not accepted
+   here; they need `trackfw roadmap move <name> wip` first. Uses validator.MatchRoadmapsForBranchSlug
+   (via BranchSlugMatchesRoadmap). Not a reimplementation — the same function, imported. The relation
+   is substring OR token overlap (see "Vínculo branch↔roadmap" below). chore|docs skip this step
+   entirely — matchSlug is never called.
+3. No match in wip/ (feat|fix|refactor only): print governance orientation via
+   BranchGovernanceOrientationForCreation (names any done/ roadmaps as hint for `roadmap move`),
+   exit non-zero, never invoke git.
 4. --dry-run with a match (or chore|docs): print "[dry-run] would create branch "<type>/<slug>"
    (git checkout -b <type>/<slug>)", exit 0, never invoke git.
 5. Match (or chore|docs), no --dry-run: run `git checkout -b <type>/<slug>` with inherited
@@ -4249,19 +4251,28 @@ strings de aviso **byte-a-byte** entre os três runtimes.
 
 
 A regra verifica que toda branch `feat/`, `fix/` ou `refactor/` possui um roadmap cujo nome
-contém o slug da branch. Desde REQ-2026-07-26-robustez-dos-gates-de-governanca-e-paridade, a regra
-procura o slug em **`wip/` e `done/`**, não apenas em `wip/`.
+contém o slug da branch. O comportamento depende do **consumidor** (D5 de ADR-2026-10-01):
 
-| Cenário | Comportamento esperado (Go / Node.js / Python) |
+- **Consumidor de criação** (`trackfw branch new`): gate em `wip/` apenas. Roadmaps em `done/`
+  precisam de `trackfw roadmap move <name> wip` antes de criar a branch. Mensagem via
+  `BranchGovernanceOrientationForCreation` (nomeia os roadmaps em `done/` como dica).
+- **Consumidor de branch existente** (`validate`, `commit`, `push`, `ship`): aceita `wip/` ∪
+  `blocked/` ∪ `done/` (restrito — done/ somente se a própria branch moveu o roadmap para lá).
+  Base não-resolvível → degraded com aviso `branch_done_scope_unverifiable`, execução continua.
+  Mensagem via `BranchGovernanceOrientationForExisting` / `BranchNoMatchingRoadmapMessageForExisting`.
+
+| Cenário (branch existente) | Comportamento esperado |
 |---|---|
 | Roadmap em `wip/` com slug da branch | Sem violação — comportamento original preservado |
-| Roadmap em `done/` com slug da branch | Sem violação — permite encerrar o roadmap na própria branch (Definition of Done) |
-| Nenhum roadmap em `wip/` nem em `done/` | Violação com mensagem "no roadmap is in wip/ nor done/" + orientação de remediação |
-| Roadmap em `done/` com slug **diferente** da branch | Violação com mensagem "no matching roadmap in wip/ nor done/" — casamento de slug é obrigatório |
+| Roadmap em `blocked/` com slug da branch | Sem violação — D2 de ADR-2026-10-01 |
+| Roadmap em `done/` movido pela própria branch | Sem violação — permite encerrar na branch |
+| Base não-resolvível + roadmap em `done/` | Degraded: `Governance: degraded: branch_done_scope_unverifiable` |
+| Nenhum roadmap em `wip/`, `blocked/` nem `done/` | Violação com mensagem "no roadmap is in wip/, blocked/ nor done/" + orientação |
+| Roadmap em `done/` com slug **diferente** (não movido por esta branch) | Violação com mensagem "no matching roadmap in wip/, blocked/ nor done/" |
 
-A resolução de diretórios (`wip/`, `done/`) é centralizada em `resolveStateDirs` (Go),
-`resolveStateDirs` (Node.js) e `_resolve_state_dirs` (Python) — as variantes por agente
-(`by_agent`) são suportadas via os mesmos wrappers `resolveWIPDirs`/`resolveDoneDirs`.
+A resolução de diretórios (`wip/`, `blocked/`, `done/`) é centralizada nos helpers
+`ResolveWIPDirs`/`ResolveBlockedDirs`/`ResolveDoneDirs` (Go) — as variantes por agente
+(`by_agent`) são suportadas via os mesmos wrappers.
 
 O ID da regra (`branch_has_wip_roadmap`) e o mecanismo de severidade configurável (`rules:`) são
 preservados — a aceitação de `done/` não altera a config key nem o comportamento de `off`/`warning`.

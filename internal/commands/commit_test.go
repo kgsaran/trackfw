@@ -17,12 +17,13 @@ func makeCommitDeps(branch string, matched bool, candidates []string) (commitDep
 	out := &bytes.Buffer{}
 	commitCalls := []string{}
 	d := commitDeps{
-		loadConfig:      func() config.ProjectConfig { return config.ProjectConfig{} },
-		currentBranch:   func() (string, error) { return branch, nil },
-		resolveWIPDirs:  func(config.ProjectConfig) []string { return []string{"docs/roadmaps/wip"} },
-		resolveDoneDirs: func(config.ProjectConfig) []string { return []string{"docs/roadmaps/done"} },
-		matchSlug: func(slug string, wipDirs, doneDirs []string) (bool, []string) {
-			return matched, candidates
+		loadConfig:    func() config.ProjectConfig { return config.ProjectConfig{} },
+		currentBranch: func() (string, error) { return branch, nil },
+		resolveRoadmap: func(cfg config.ProjectConfig, b string) validator.BranchRoadmapResolution {
+			if matched {
+				return validator.BranchRoadmapResolution{Matched: true, Source: "inference"}
+			}
+			return validator.BranchRoadmapResolution{Matched: false, Candidates: candidates}
 		},
 		execGitCommit: func(message string) error {
 			commitCalls = append(commitCalls, message)
@@ -78,7 +79,7 @@ func TestCommit_GovernedBranch_NoMatch_NoCandidates_Blocks(t *testing.T) {
 	if len(*calls) != 0 {
 		t.Fatalf("git commit must not run when blocked, got calls: %v", *calls)
 	}
-	want := validator.BranchGovernanceOrientation("feat/orphan-slug", config.ProjectConfig{})
+	want := validator.BranchGovernanceOrientationForExisting("feat/orphan-slug", config.ProjectConfig{})
 	if !strings.Contains(out.String(), want) {
 		t.Fatalf("expected output to contain governance orientation message.\ngot: %q\nwant substring: %q", out.String(), want)
 	}
@@ -94,7 +95,7 @@ func TestCommit_GovernedBranch_NoMatch_WithCandidates_Blocks(t *testing.T) {
 	if len(*calls) != 0 {
 		t.Fatalf("git commit must not run when blocked, got calls: %v", *calls)
 	}
-	want := validator.BranchNoMatchingRoadmapMessage("fix/orphan-slug", candidates)
+	want := validator.BranchNoMatchingRoadmapMessageForExisting("fix/orphan-slug", candidates)
 	if !strings.Contains(out.String(), want) {
 		t.Fatalf("expected output to contain no-matching-roadmap message.\ngot: %q\nwant substring: %q", out.String(), want)
 	}
@@ -127,23 +128,57 @@ func TestCommit_GovernedBranch_Match_FixAndRefactor(t *testing.T) {
 	}
 }
 
+// TestCommit_BlockedRoadmap_Passes asserts that when the resolver returns a match whose roadmap
+// lives in blocked/ (Source="inferred", Matched=true), commit proceeds without error.
+//
+// Reconciliation: this test affirms D2 of ADR-2026-10-01 — blocked/ governs an existing branch.
+// The resolver is the single source of truth; commit accepts any Matched=true resolution.
+func TestCommit_BlockedRoadmap_Passes(t *testing.T) {
+	t.Parallel()
+	out := &bytes.Buffer{}
+	commitCalls := []string{}
+	deps := commitDeps{
+		loadConfig:    func() config.ProjectConfig { return config.ProjectConfig{} },
+		currentBranch: func() (string, error) { return "fix/my-feature", nil },
+		resolveRoadmap: func(cfg config.ProjectConfig, branch string) validator.BranchRoadmapResolution {
+			// Simulate a roadmap found in blocked/ (moved there while work was paused).
+			return validator.BranchRoadmapResolution{
+				Matched: true,
+				Source:  "inferred",
+				Roadmap: "ROADMAP-2026-10-01-my-feature.md",
+			}
+		},
+		execGitCommit: func(message string) error {
+			commitCalls = append(commitCalls, message)
+			return nil
+		},
+		out: out,
+	}
+	if err := runCommit("fix: resume blocked work", deps); err != nil {
+		t.Fatalf("commit must succeed when roadmap is in blocked/: %v", err)
+	}
+	if len(commitCalls) != 1 {
+		t.Fatalf("expected exactly one git commit call, got %v", commitCalls)
+	}
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // runCommit — branches outside feat/fix/refactor: allowed without a roadmap, but warns
 // ────────────────────────────────────────────────────────────────────────────
 
 func TestCommit_UngovernedBranch_CommitsWithWarning(t *testing.T) {
-	matchCalled := false
+	resolverCalled := false
 	deps, out, calls := makeCommitDeps("docs/housekeeping", false, nil)
-	deps.matchSlug = func(slug string, wipDirs, doneDirs []string) (bool, []string) {
-		matchCalled = true
-		return false, nil
+	deps.resolveRoadmap = func(cfg config.ProjectConfig, branch string) validator.BranchRoadmapResolution {
+		resolverCalled = true
+		return validator.BranchRoadmapResolution{}
 	}
 	err := runCommit("docs: update readme", deps)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if matchCalled {
-		t.Fatal("matchSlug must not be called for a branch outside feat/fix/refactor")
+	if resolverCalled {
+		t.Fatal("resolveRoadmap must not be called for a branch outside feat/fix/refactor")
 	}
 	if len(*calls) != 1 || (*calls)[0] != "docs: update readme" {
 		t.Fatalf("expected git commit -m %q, got %v", "docs: update readme", *calls)
@@ -158,18 +193,20 @@ func TestCommit_UngovernedBranch_CommitsWithWarning(t *testing.T) {
 // ────────────────────────────────────────────────────────────────────────────
 
 func TestCommit_UsesNormalizedSlugForMatching(t *testing.T) {
-	var receivedSlug string
+	// Verifies that resolveRoadmap is called with the full branch name for a governed branch.
+	// Slug normalization is an internal detail of the production dep (defaultResolveRoadmap);
+	// the commit layer's contract is to forward the branch name unchanged.
+	var receivedBranch string
 	deps, _, _ := makeCommitDeps("feat/My_Weird--Slug", true, nil)
-	deps.matchSlug = func(slug string, wipDirs, doneDirs []string) (bool, []string) {
-		receivedSlug = slug
-		return true, nil
+	deps.resolveRoadmap = func(cfg config.ProjectConfig, branch string) validator.BranchRoadmapResolution {
+		receivedBranch = branch
+		return validator.BranchRoadmapResolution{Matched: true, Source: "inference"}
 	}
 	if err := runCommit("feat: msg", deps); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	want := validator.NormalizeBranchSlug("My_Weird--Slug")
-	if receivedSlug != want {
-		t.Fatalf("expected normalized slug %q, got %q", want, receivedSlug)
+	if receivedBranch != "feat/My_Weird--Slug" {
+		t.Fatalf("expected resolveRoadmap to receive full branch name %q, got %q", "feat/My_Weird--Slug", receivedBranch)
 	}
 }
 

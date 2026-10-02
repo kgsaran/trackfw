@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/kgsaran/trackfw/internal/forge"
+	"github.com/kgsaran/trackfw/internal/validator"
 )
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -74,7 +75,12 @@ func makeDeps(branch, staged string, violations []string) (shipDeps, *mockGit) {
 	m := &mockGit{branch: branch, stagedFiles: staged}
 	d := shipDeps{
 		execGit:         m.exec,
-		checkGovernance: func() []string { return violations },
+		checkGovernance: func() *validator.GovernanceViolation {
+			if violations == nil {
+				return nil
+			}
+			return &validator.GovernanceViolation{Missing: violations}
+		},
 		out:             &bytes.Buffer{},
 		// Step 7 safe defaults: CLI never invoked, no filesystem access.
 		configForge:  "",
@@ -165,6 +171,45 @@ func TestShip_NoWIPRoadmap_Aborts(t *testing.T) {
 	}
 }
 
+// TestShip_GovernanceDegraded_PrintsDegradedNotOK asserts that when checkGovernance
+// returns a GovernanceViolation with non-empty Warnings and empty Missing (degraded — D3 of
+// ADR-2026-10-01: unresolvable base), ship prints "Governance: degraded:" and does NOT print
+// "Governance: OK", and execution continues (ship does not abort).
+//
+// Reconciliation: this test affirms that D3 of ADR-2026-10-01 is honoured — degraded governance
+// (e.g. branch_done_scope_unverifiable) never blocks ship; it warns and continues.
+func TestShip_GovernanceDegraded_PrintsDegradedNotOK(t *testing.T) {
+	t.Parallel()
+	d := shipDeps{
+		execGit: (&mockGit{branch: "feat/my-feature", stagedFiles: "file.go"}).exec,
+		checkGovernance: func() *validator.GovernanceViolation {
+			return &validator.GovernanceViolation{
+				Missing:  nil,
+				Warnings: []string{"branch_done_scope_unverifiable: teste"},
+			}
+		},
+		out:          &bytes.Buffer{},
+		configForge:  "",
+		repoDir:      "",
+		availFn:      func(string) bool { return false },
+		execForgeCLI: func(string, []string) error { return nil },
+	}
+	// runShip may return an error from commit/push (mocked), but must NOT return
+	// a governance error — degraded state is soft and execution continues past Step 2.
+	stdout := d.out.(*bytes.Buffer).String()
+	_ = runShip(shipOpts{message: "feat: x"}, d)
+	stdout = d.out.(*bytes.Buffer).String()
+	if !strings.Contains(stdout, "Governance: degraded:") {
+		t.Errorf("degraded governance must print 'Governance: degraded:', got: %q", stdout)
+	}
+	if !strings.Contains(stdout, "branch_done_scope_unverifiable: teste") {
+		t.Errorf("degraded governance must include the warning text, got: %q", stdout)
+	}
+	if strings.Contains(stdout, "Governance: OK") {
+		t.Errorf("degraded governance must NOT print 'Governance: OK', got: %q", stdout)
+	}
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 // Doc-only exception — Steps 1 & 2 skip branch-pattern and governance checks
 // ────────────────────────────────────────────────────────────────────────────
@@ -191,9 +236,9 @@ func TestShip_DocOnlyBranch_MissingRoadmap_GovernanceSkipped(t *testing.T) {
 	m := &mockGit{branch: "feat/doc-fix", stagedFiles: "docs/req/REQ-x.md\nvault/notes/note.md"}
 	d := shipDeps{
 		execGit: m.exec,
-		checkGovernance: func() []string {
+		checkGovernance: func() *validator.GovernanceViolation {
 			called = true
-			return []string{"no matching roadmap in wip/ nor done/"}
+			return &validator.GovernanceViolation{Missing: []string{"no matching roadmap in wip/, blocked/ nor done/"}}
 		},
 		out:          &bytes.Buffer{},
 		availFn:      func(string) bool { return false },
@@ -254,9 +299,9 @@ func TestShip_ChoreBranch_MixedContent_GovernanceSkipped(t *testing.T) {
 	m := &mockGit{branch: "chore/release-x.y.z", stagedFiles: "internal/commands/ship.go"}
 	d := shipDeps{
 		execGit: m.exec,
-		checkGovernance: func() []string {
+		checkGovernance: func() *validator.GovernanceViolation {
 			called = true
-			return []string{"should never be called"}
+			return &validator.GovernanceViolation{Missing: []string{"should never be called"}}
 		},
 		out:          &bytes.Buffer{},
 		availFn:      func(string) bool { return false },
@@ -281,9 +326,9 @@ func TestShip_DocsBranch_MixedContent_GovernanceSkipped(t *testing.T) {
 	m := &mockGit{branch: "docs/update-readme", stagedFiles: "docs/note.md\ninternal/commands/ship.go"}
 	d := shipDeps{
 		execGit: m.exec,
-		checkGovernance: func() []string {
+		checkGovernance: func() *validator.GovernanceViolation {
 			called = true
-			return []string{"should never be called"}
+			return &validator.GovernanceViolation{Missing: []string{"should never be called"}}
 		},
 		out:          &bytes.Buffer{},
 		availFn:      func(string) bool { return false },
@@ -471,7 +516,7 @@ func TestShip_DryRun_PRBodyAggregatesCommitHistory(t *testing.T) {
 	}
 	d := shipDeps{
 		execGit:         m.exec,
-		checkGovernance: func() []string { return nil },
+		checkGovernance: func() *validator.GovernanceViolation { return nil },
 		out:             &bytes.Buffer{},
 		configForge:     "github",
 		availFn:         func(string) bool { return false },
@@ -528,7 +573,7 @@ func TestShip_DryRun_NoWriteCommandsExecuted(t *testing.T) {
 	m := &mockGit{branch: "feat/my-feature", stagedFiles: "file.go"}
 	d := shipDeps{
 		execGit:         m.exec,
-		checkGovernance: func() []string { return nil },
+		checkGovernance: func() *validator.GovernanceViolation { return nil },
 		out:             &bytes.Buffer{},
 		availFn:         func(string) bool { return false },
 		execForgeCLI:    func(string, []string) error { return nil },
@@ -590,7 +635,7 @@ func TestShip_ExecNeverReceivesGitAddAll(t *testing.T) {
 	m := &mockGit{branch: "feat/safe-check", stagedFiles: "internal/x.go"}
 	d := shipDeps{
 		execGit:         m.exec,
-		checkGovernance: func() []string { return nil },
+		checkGovernance: func() *validator.GovernanceViolation { return nil },
 		out:             &bytes.Buffer{},
 		availFn:         func(string) bool { return false },
 		execForgeCLI:    func(string, []string) error { return nil },
@@ -674,7 +719,7 @@ func makeStep7Deps(configForge string, forgeFlag string, availFn func(string) bo
 	}
 	d := shipDeps{
 		execGit:         g.exec,
-		checkGovernance: func() []string { return nil },
+		checkGovernance: func() *validator.GovernanceViolation { return nil },
 		out:             &bytes.Buffer{},
 		configForge:     configForge,
 		repoDir:         "",
@@ -1081,7 +1126,7 @@ func TestShip_ForgeMatrix(t *testing.T) {
 			}
 			d := shipDeps{
 				execGit:         g.exec,
-				checkGovernance: func() []string { return nil },
+				checkGovernance: func() *validator.GovernanceViolation { return nil },
 				out:             &bytes.Buffer{},
 				configForge:     tc.configForge,
 				repoDir:         "", // no CI file detection
@@ -1499,7 +1544,7 @@ func makeForceLeaseDeps(staged string, checkPROpen func(forge.Adapter, string) (
 	cli := &mockForgeCLI{}
 	d := shipDeps{
 		execGit:         g.exec,
-		checkGovernance: func() []string { return nil },
+		checkGovernance: func() *validator.GovernanceViolation { return nil },
 		out:             &bytes.Buffer{},
 		configForge:     "github",
 		repoDir:         "",
@@ -1567,7 +1612,7 @@ func TestShip_ForceWithLease_NothingStaged_NoFlag_StillAborts(t *testing.T) {
 	g := &mockGit{branch: "fix/rebase-test", stagedFiles: ""}
 	d := shipDeps{
 		execGit:         g.exec,
-		checkGovernance: func() []string { return nil },
+		checkGovernance: func() *validator.GovernanceViolation { return nil },
 		out:             &bytes.Buffer{},
 		availFn:         func(string) bool { return false },
 		execForgeCLI:    func(string, []string) error { return nil },
@@ -1601,7 +1646,7 @@ func TestShip_ForceWithLease_NoForgeCLI_RefusesWithoutDegrading(t *testing.T) {
 	g := &mockGit{branch: "fix/rebase-test", stagedFiles: "file.go", remoteURL: "https://github.com/org/repo.git"}
 	d := shipDeps{
 		execGit:         g.exec,
-		checkGovernance: func() []string { return nil },
+		checkGovernance: func() *validator.GovernanceViolation { return nil },
 		out:             &bytes.Buffer{},
 		configForge:     "github",
 		availFn:         func(string) bool { return false }, // CLI absent
@@ -1626,7 +1671,7 @@ func TestShip_ForceWithLease_ManualForge_Refuses(t *testing.T) {
 	g := &mockGit{branch: "fix/rebase-test", stagedFiles: "file.go"}
 	d := shipDeps{
 		execGit:         g.exec,
-		checkGovernance: func() []string { return nil },
+		checkGovernance: func() *validator.GovernanceViolation { return nil },
 		out:             &bytes.Buffer{},
 		availFn:         func(string) bool { return true },
 		execForgeCLI:    func(string, []string) error { return nil },
@@ -1679,7 +1724,7 @@ func TestShip_ForceWithLease_NormalPush_Unaffected(t *testing.T) {
 	g := &mockGit{branch: "fix/normal", stagedFiles: "file.go"}
 	d := shipDeps{
 		execGit:         g.exec,
-		checkGovernance: func() []string { return nil },
+		checkGovernance: func() *validator.GovernanceViolation { return nil },
 		out:             &bytes.Buffer{},
 		availFn:         func(string) bool { return false },
 		execForgeCLI:    func(string, []string) error { return nil },

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/kgsaran/trackfw/internal/forge"
+	"github.com/kgsaran/trackfw/internal/validator"
 )
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -56,7 +57,12 @@ func makePushDeps(branch string, hasUpstream bool, violations []string) (pushDep
 	m := &mockPushGit{branch: branch, hasUpstream: hasUpstream}
 	d := pushDeps{
 		execGit:         m.exec,
-		checkGovernance: func() []string { return violations },
+		checkGovernance: func() *validator.GovernanceViolation {
+			if violations == nil {
+				return nil
+			}
+			return &validator.GovernanceViolation{Missing: violations}
+		},
 		out:             out,
 		configForge:     "",
 		repoDir:         "",
@@ -112,7 +118,7 @@ func TestPush_InvalidBranch_Blocks(t *testing.T) {
 // ────────────────────────────────────────────────────────────────────────────
 
 func TestPush_FeatBranch_NoRoadmap_Blocks(t *testing.T) {
-	deps, _, out := makePushDeps("feat/my-feature", false, []string{"no roadmap found in wip/ nor done/"})
+	deps, _, out := makePushDeps("feat/my-feature", false, []string{"no roadmap found in wip/, blocked/ nor done/"})
 	err := runPush(pushOpts{dryRun: true}, deps)
 	if err == nil {
 		t.Fatal("expected governance error")
@@ -296,7 +302,7 @@ func TestPush_DryRun_PrintsFetchAndPush(t *testing.T) {
 // ────────────────────────────────────────────────────────────────────────────
 
 func TestPush_GovernanceMessage_SaysPush(t *testing.T) {
-	deps, _, out := makePushDeps("feat/orphan", false, []string{"no roadmap found in wip/ nor done/"})
+	deps, _, out := makePushDeps("feat/orphan", false, []string{"no roadmap found in wip/, blocked/ nor done/"})
 	_ = runPush(pushOpts{dryRun: true}, deps)
 	stdout := out.String()
 	if !strings.Contains(stdout, "trackfw push") {
@@ -304,5 +310,43 @@ func TestPush_GovernanceMessage_SaysPush(t *testing.T) {
 	}
 	if strings.Contains(stdout, "trackfw ship") {
 		t.Fatalf("governance message must NOT say 'trackfw ship', got: %q", stdout)
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Degraded governance (Warnings present, Missing empty) — D3 of ADR-2026-10-01
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestPush_GovernanceDegraded_PrintsDegradedNotOK asserts that when CheckShipGovernance
+// returns a GovernanceViolation with non-empty Warnings and empty Missing (degraded — D3 of
+// ADR-2026-10-01: unresolvable base), push prints "Governance: degraded:" and does NOT print
+// "Governance: OK", and execution continues (push proceeds).
+//
+// Reconciliation: this test affirms that D3 of ADR-2026-10-01 is honoured — degraded governance
+// (e.g. branch_done_scope_unverifiable) never blocks push; it warns and continues.
+func TestPush_GovernanceDegraded_PrintsDegradedNotOK(t *testing.T) {
+	t.Parallel()
+	out := &bytes.Buffer{}
+	m := &mockPushGit{branch: "feat/my-feature", hasUpstream: true}
+	deps := pushDeps{
+		execGit: m.exec,
+		checkGovernance: func() *validator.GovernanceViolation {
+			return &validator.GovernanceViolation{
+				Missing:  nil,
+				Warnings: []string{"branch_done_scope_unverifiable: cannot determine base commit"},
+			}
+		},
+		out: out,
+	}
+	err := runPush(pushOpts{}, deps)
+	if err != nil {
+		t.Fatalf("degraded governance must not block push, got error: %v", err)
+	}
+	stdout := out.String()
+	if !strings.Contains(stdout, "Governance: degraded:") {
+		t.Errorf("degraded governance must print 'Governance: degraded:', got: %q", stdout)
+	}
+	if strings.Contains(stdout, "Governance: OK") {
+		t.Errorf("degraded governance must NOT print 'Governance: OK', got: %q", stdout)
 	}
 }

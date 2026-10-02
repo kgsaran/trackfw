@@ -189,8 +189,8 @@ PY
 #
 # Pins:
 #   PIN2 — done/ with matching slug → no violation (acceptance behavior)
-#   PIN3 — empty wip/ and done/ → "no roadmap is in wip/ nor done/"
-#   PIN4 — done/ with different slug → "no matching roadmap in wip/ nor done/"
+#   PIN3 — empty wip/, blocked/ and done/ → "no roadmap is in wip/, blocked/ nor done/"
+#   PIN4 — done/ with different slug → "no matching roadmap in wip/, blocked/ nor done/"
 #   PIN5 — by_agent + 2 agents + no roadmap → message contains "--agent"
 #
 # ML-3A (ADR-2026-09-26, REQ-2026-09-09) added three pins to this block. They are an UPDATE of the
@@ -295,7 +295,7 @@ run_bhr "$TMP_DIR/bhr-link-noinfer-go.json" "$TMP_DIR/bhr-tokens" feat/nada-em-c
 python3 - "$TMP_DIR" <<'PY'
 import json, os, sys
 tmp = sys.argv[1]
-BHR_MARKER = "wip/ nor done/"
+BHR_MARKER = "wip/, blocked/ nor done/"
 
 def load_bhr(name):
     path = os.path.join(tmp, name)
@@ -318,28 +318,28 @@ if msgs:
     )
 print("OK [validate-rule-pins/pin2-bhr-match-accepted]")
 
-# PIN3: empty wip/ and done/ — message contains "no roadmap is in wip/ nor done/".
+# PIN3: empty wip/, blocked/ and done/ — message contains "no roadmap is in wip/, blocked/ nor done/".
 rc, msgs = load_bhr("bhr-nomatch-go.json")
 if not msgs:
     raise SystemExit(
         f"PIN3 vacuity: bhr-nomatch: expected branch_has_wip_roadmap violation, "
         f"none found (rc={rc}) — fixture broken or rule regressed"
     )
-MARKER_NOMATCH = "no roadmap is in wip/ nor done/"
+MARKER_NOMATCH = "no roadmap is in wip/, blocked/ nor done/"
 if not all(MARKER_NOMATCH in m for m in msgs):
     raise SystemExit(
         f"PIN3: bhr-nomatch: message lacks {MARKER_NOMATCH!r}: {msgs!r}"
     )
 print("OK [validate-rule-pins/pin3-bhr-nomatch-message]")
 
-# PIN4: done/ with different slug — message contains "no matching roadmap in wip/ nor done/".
+# PIN4: done/ with different slug — message contains "no matching roadmap in wip/, blocked/ nor done/".
 rc, msgs = load_bhr("bhr-diff-go.json")
 if not msgs:
     raise SystemExit(
         f"PIN4 vacuity: bhr-diff: expected branch_has_wip_roadmap violation, "
         f"none found (rc={rc}) — fixture broken or rule regressed"
     )
-MARKER_DIFF = "no matching roadmap in wip/ nor done/"
+MARKER_DIFF = "no matching roadmap in wip/, blocked/ nor done/"
 if not all(MARKER_DIFF in m for m in msgs):
     raise SystemExit(
         f"PIN4: bhr-diff: message lacks {MARKER_DIFF!r}: {msgs!r}"
@@ -382,7 +382,7 @@ if not msgs:
         f"PIN2C: bhr-empty: an empty branch slug must match NO roadmap — Contains(x, \"\") is always "
         f"true and used to accept any corpus vacuously (rc={rc})"
     )
-MARKER_EMPTY = "no matching roadmap in wip/ nor done/"
+MARKER_EMPTY = "no matching roadmap in wip/, blocked/ nor done/"
 if not all(MARKER_EMPTY in m for m in msgs):
     raise SystemExit(f"PIN2C: bhr-empty: message lacks {MARKER_EMPTY!r}: {msgs!r}")
 print("OK [validate-rule-pins/pin2c-empty-slug-refused]")

@@ -2,6 +2,81 @@
 
 ---
 
+## 2026-10-01 — Ártemis (fix/estado-que-governa-a-branch — ML-3D) — INÍCIO
+
+**Início:** 2026-10-01 | Branch: `fix/estado-que-governa-a-branch`
+**Tarefa:** ML-3D corretivo — Windows skip em literal_pathspecs_test, asserção vácua em validator_test, stubs desatualizados em push_test e ship_test
+**Arquivos a modificar:** `internal/validator/validator_literal_pathspecs_test.go` · `internal/validator/validator_test.go` · `internal/commands/push_test.go` · `internal/commands/ship_test.go` · roadmap ML-3D · `docs/agents-working-context.md`
+
+---
+
+## 2026-10-01 — Apolo (fix/estado-que-governa-a-branch — ML-3C) — INÍCIO
+
+**Início:** 2026-10-01 | Branch: `fix/estado-que-governa-a-branch`
+**Tarefa:** ML-3C corretivo — reescrever `internal/validator/validator_literal_pathspecs_test.go` para que o teste morda de verdade (prova com overlay)
+**Arquivos a modificar:** `internal/validator/validator_literal_pathspecs_test.go` · roadmap ML-3C · `docs/agents-working-context.md`
+
+---
+
+## 2026-10-01 — Apolo (fix/estado-que-governa-a-branch — ML-3C) — FIM
+
+Teste reescrito: `TestMdBasenamesInGitTree_LiteralPathspecDirName` com tabela `:(exclude)rm/done` e `:(icase)rm/done`.
+Prova de mordida: overlay sem `--literal-pathspecs` → FAIL (rc=128 em ambos os casos); produção → PASS.
+`mdBasenamesWithoutLiteralPathspecs` e subteste "bites" removidos; premissa falsa sobre macOS removida.
+Gates: `go build ./...` OK · `go vet ./internal/validator/` OK · `go test ./internal/validator/ ./internal/auditsurface/ ./internal/commands/` OK · grep vazio · `make build && check-validate-rule-pins.sh` exit 0 (30/30 pins).
+ML-3C marcado ✅ Concluído no roadmap.
+
+---
+
+## 2026-10-01 — Hades (fix/estado-que-governa-a-branch — ML-3A) — INÍCIO
+
+**Início:** 2026-10-01 | Branch: `fix/estado-que-governa-a-branch`
+**Tarefa:** ML-3A — Revisão de segurança independente (Wave 3) do diff `e104a7f7..HEAD`
+**Arquivos a modificar:** `docs/seguranca/2026-10-01-wave3-revisao-estado-que-governa-a-branch.md` · `docs/agents-working-context.md`
+
+---
+
+## 2026-10-01 — Hades (fix/estado-que-governa-a-branch — ML-3A) — FIM
+
+Parecer escrito em `docs/seguranca/2026-10-01-wave3-revisao-estado-que-governa-a-branch.md`.
+A1 (ls-tree -z), A2 (GovernanceViolation.Warnings em push/ship), A3 (resíduo vetor-e no ADR): todos verificados contra o binário e o código.
+Vetores (a)–(e) reproduzidos em repo temporário. Achado novo: RN1 (`--literal-pathspecs` ausente) — severidade baixa, sem bypass explorável.
+Veredito: APROVA COM AJUSTES (1 ajuste não-bloqueante: dívida técnica RN1).
+
+---
+
+## 2026-10-01 — Ártemis (fix/estado-que-governa-a-branch — ML-2B) — INÍCIO
+
+**Início:** 2026-10-01 | Branch: `fix/estado-que-governa-a-branch`
+**Tarefa:** ML-2B Wave 2 — teste de `ship` degradado + remoção do teste informativo de medição
+**Arquivos a modificar:** `internal/commands/ship_test.go` · `internal/commands/branch_state_e2e_test.go` · roadmap · `docs/agents-working-context.md`
+
+---
+
+## 2026-10-01 — Ártemis (fix/estado-que-governa-a-branch — ML-2B) — FIM
+
+Adicionado `TestShip_GovernanceDegraded_PrintsDegradedNotOK` em `internal/commands/ship_test.go`.
+Removido `TestBranchStateE2E_InformativeMeasure217Branches` e seu bloco de comentário em `internal/commands/branch_state_e2e_test.go` (sem helpers exclusivos: todos os helpers eram compartilhados).
+Sabotagem confirmada (FAIL) e restauração confirmada (PASS). Todos os gates verdes: `go build ./...` OK · `go vet ./internal/commands/` OK · `go test ./internal/commands/ -count=1` OK · `git diff -- internal/commands/ship.go` VAZIO.
+
+---
+
+## 2026-10-01 — Hades (fix/estado-que-governa-a-branch — ML-0A) — INÍCIO
+
+**Início:** 2026-10-01 | Branch: `fix/estado-que-governa-a-branch`
+**Tarefa:** ML-0A Wave 0 — Threat model do conjunto de estados e do sinal "movido por esta branch"
+**Arquivos a modificar:** `docs/seguranca/2026-10-01-wave0-estado-que-governa-a-branch.md` · `docs/agents-working-context.md`
+
+---
+
+## 2026-10-01 — Hades (fix/estado-que-governa-a-branch — ML-0A) — FIM
+
+Entregue `docs/seguranca/2026-10-01-wave0-estado-que-governa-a-branch.md` com as 4 seções completas.
+Veredito: APROVA COM AJUSTES (3 ajustes obrigatórios: A1 `-z` em ls-tree, A2 `GovernanceViolation.Warnings`, A3 resíduo vetor-e no ADR).
+Sítio adicional ausente da tabela: `GovernanceViolation`/`CheckShipGovernance` descarta aviso D3 silenciosamente em push/ship.
+
+---
+
 ## 2026-10-01 — Apolo (fix/barrier-executa-cada-linha-do-bloco-de-gates — ML-4A) — INÍCIO
 
 **Início:** 2026-10-01 | Branch: `fix/barrier-executa-cada-linha-do-bloco-de-gates`
@@ -11,6 +86,20 @@
 ---
 
 ## 2026-10-01 — Apolo (fix/barrier-executa-cada-linha-do-bloco-de-gates — ML-4A) — FIM
+
+---
+
+## 2026-10-01 — Apolo (fix/estado-que-governa-a-branch — ML-1D) — INÍCIO
+
+**Início:** 2026-10-01 | Branch: `fix/estado-que-governa-a-branch`
+**Tarefa:** ML-1D corretivo — `doneMatchesHint` não deve sugerir `roadmap move <nome-concreto> wip`; nova mensagem genérica com literal `<name>`
+**Arquivos a modificar:** `internal/validator/validator.go` (`doneMatchesHint`), `internal/validator/validator_branch_existing_test.go`, `docs/agents-working-context.md`
+
+---
+
+## 2026-10-01 — Apolo (fix/estado-que-governa-a-branch — ML-1D) — FIM
+
+`doneMatchesHint` reescrita: nova mensagem genérica com literal `<name>`. Teste `TestBranchGovernanceOrientationForCreation_DoneHint` atualizado. Todos os gates passam (build, tests, grep vazio).
 
 ---
 
@@ -43772,3 +43861,174 @@ Windows, medido pelo Lourival e reproduzido por mim na VM. Lição gravada em me
 Windows se reproduz na VM antes do despacho.
 
 Issues abertas desta frente: #490, #494.
+
+## 2026-10-01 — zeus-tf — INÍCIO: #494 + #490 na mesma REQ (estado que governa a branch)
+
+Mesmo mecanismo: o conjunto de estados que o gate branch↔roadmap consulta. #494: `branch new` aceita
+`done/` por inferência frouxa e cria branch sem nada em `wip/`. #490: `blocked/` não governa a branch,
+então commit/validate/push recusam o registro do bloqueio (reproduzido com o binário da `main`).
+Medido: 22 de 217 branches históricas casam com `done/` só por sobreposição de tokens; 126 casam com
+mais de um. Decisão do KG: fechar `done/` também nos gates de branch existente.
+
+## 2026-10-01 — apolo-tf — INÍCIO: ML-1C core.quotepath em gitLsTree
+
+Corrigindo `gitLsTree` em `internal/auditsurface/auditsurface.go` para usar `-z` (NUL-delimitado)
+em vez de `\n`, evitando corrupção de caminhos com caracteres não-ASCII quando `core.quotepath=true`.
+Criando teste com repositório git real e arquivo de nome acentuado.
+
+## 2026-10-01 — apolo-tf — FIM: ML-1C core.quotepath em gitLsTree
+
+Fix: `gitLsTree` passou a usar `-z` (NUL-delimitado) + `bytes.Split(out, []byte{0})`.
+Novo arquivo: `internal/auditsurface/gitlstree_test.go` (2 testes).
+Gates: `go build ./...` limpo · `go vet ./internal/auditsurface/` limpo · `go test ./internal/auditsurface/ -count=1` PASS.
+`getSymlinkTarget` (~linha 474) não sofre o mesmo defeito: só lê o campo antes do tab (modo), nunca o caminho após o tab.
+
+## 2026-10-01 — apolo-tf (fix/estado-que-governa-a-branch — ML-1A) — INÍCIO
+
+Escopo: ML-1A do ROADMAP-2026-10-01-o-estado-que-governa-a-branch.
+Arquivos: `internal/validator/branchlink.go`, `internal/validator/validator.go`,
+`internal/validator/validator_branch_existing_test.go` (novo), `internal/validator/validator_test.go`.
+Alvo: ResolveBlockedDirs, BranchLinkFor (escopo wip∪blocked∪done), RecordBranchLink (só wip),
+ResolveBranchRoadmapForExisting (D2: wip∪blocked + done restrito por ls-tree -z),
+GovernanceViolation.Warnings, CheckShipGovernance propagando warnings.
+
+## 2026-10-01 — apolo-tf (fix/estado-que-governa-a-branch — ML-1A) — FIM (revisado)
+
+Revisão pós-parecer do advisor (sessão de retomada). Alterações adicionais:
+
+1. Funções antigas `BranchGovernanceOrientation` / `BranchNoMatchingRoadmapMessage` revertidas
+   para texto original de `e104a7f7` ("in wip/ nor done/") marcadas `// Deprecated` — evita
+   mismatch texto/comportamento em branch.go e commit.go antes do ML-1B.
+2. Adicionadas `BranchGovernanceOrientationForCreation(branch, cfg, doneMatches)` e
+   `BranchNoMatchingRoadmapMessageForCreation(branch, candidates, doneMatches)` com hint de done/.
+3. `doneMatchesHint(doneMatches)` helper interno.
+4. `ResolveBranchRoadmap` passa a delegar para `ResolveBranchRoadmapForExisting` (fonte única).
+5. Teste acento corrigido: usa "ROADMAP-cache-de-sessao-revisão.md" (slug coincide), asserta
+   `Matched=false` + `Warnings=[]`; precondição do oldReader virou `t.Fatalf` (hard fail).
+6. Adicionados: `TestResolveBranchRoadmapForExisting_DoneMovedByBranchGovernsWithLink`,
+   `TestRecordBranchLink_DoneOnlyNoLink`, `TestRecordBranchLink_WipAndDonePicksWip`,
+   `TestBranchGovernanceOrientationForCreation_DoneHint` — total 12 testes novos.
+
+Gates finais: `go build ./...` limpo · `go test ./internal/validator/ -count=1` PASS (ok 10.1s) ·
+`go vet ./internal/validator/` limpo · `go build ./internal/commands/` limpo ·
+D6 intacto (diff grep vazio).
+
+Resíduos declarados para ML-1B: PIN3/PIN4 em check-validate-rule-pins.sh; branch.go/commit.go
+ainda usam as funções Deprecated.
+
+## 2026-10-01 — apolo-tf (fix/estado-que-governa-a-branch — ML-1B) — INÍCIO
+
+**Início:** 2026-10-01 | Branch: `fix/estado-que-governa-a-branch`
+**Tarefa:** ML-1B — Consumidores: `branch new`, `commit`, `push`, `ship`, pinos e contrato
+**Arquivos:** `internal/commands/branch.go`, `internal/commands/commit.go`, `internal/commands/push.go`,
+`internal/commands/ship.go`, testes em `internal/commands/*_test.go`,
+`internal/auditsurface/gitlstree_test.go` (corretivo ML-1C), `scripts/check-validate-rule-pins.sh`,
+`docs/cli-parity.md`, `internal/validator/validator.go` (remoção Deprecated).
+
+## 2026-10-01 — apolo-tf (fix/estado-que-governa-a-branch — ML-1B) — FIM
+
+**Fim:** 2026-10-01 | Branch: `fix/estado-que-governa-a-branch`
+**Tarefa:** ML-1B — CONCLUÍDO
+
+**Alterações:**
+1. `internal/commands/branch.go` `runBranchNew`: gate D1 só em `wip/`; `matchDone` dep para hint de done/.
+   Usa `BranchGovernanceOrientationForCreation` / `BranchNoMatchingRoadmapMessageForCreation`.
+   Erro: "blocked: no matching roadmap in wip/ for".
+2. `internal/commands/push.go` + `ship.go`: `checkGovernance` muda de `func() []string` para
+   `func() *validator.GovernanceViolation`. Degraded path: imprime `Governance: degraded: <warning>`
+   e continua. Hard fail só com `Missing` não-vazio.
+3. `internal/commands/commit.go`: 4 deps (matchSlug/branchLink/resolveWIPDirs/resolveDoneDirs)
+   substituídos por `resolveRoadmap func(...) BranchRoadmapResolution`. Fonte única com validate.
+   Usa `BranchGovernanceOrientationForExisting` / `BranchNoMatchingRoadmapMessageForExisting`.
+4. Testes em `internal/commands/*_test.go`: `makePushDeps`/`makeDeps`/`makeCommitDeps` e todos os
+   stubs atualizados; `branchlink_ml3a_test.go` migrado para `resolveRoadmap`.
+5. `TestRunBranchNew_MatchFound_DoneRoadmap` invertido em `TestRunBranchNew_DoneOnlyMatch_Blocks`.
+6. Novos testes: `TestPush_GovernanceDegraded_PrintsDegradedNotOK` (D3) e
+   `TestCommit_BlockedRoadmap_Passes` (D2).
+7. `internal/validator/validator.go`: removidas funções Deprecated `BranchGovernanceOrientation`
+   e `BranchNoMatchingRoadmapMessage` (sem chamadores em produção).
+8. `internal/validator/validator_orientation_helpers_test.go`: testes migrados para
+   `BranchGovernanceOrientationForCreation(branch, cfg, nil)`.
+9. `internal/auditsurface/gitlstree_test.go` (ML-1C corretivo): removidos
+   `TestGitLsTree_AccentedFilename_OldBehavior` e helper `splitNewlines`.
+10. `scripts/check-validate-rule-pins.sh`: `BHR_MARKER`, `MARKER_NOMATCH`, `MARKER_DIFF`,
+    `MARKER_EMPTY` e comentários PIN3/PIN4 atualizados para "wip/, blocked/ nor done/".
+11. `docs/cli-parity.md`: linhas ~1292, ~1858, ~4259-4260 — contrato por consumidor (criação vs
+    existente), `Governance: degraded:`, `branch_done_scope_unverifiable`.
+
+**Gates executados:**
+- `go build ./internal/commands/ ./internal/validator/ ./internal/auditsurface/` → limpo
+- `go vet ./internal/commands/ ./internal/validator/ ./internal/auditsurface/` → limpo
+- `go test ./internal/commands/ ./internal/validator/ ./internal/auditsurface/ -count=1` → ok (3/3)
+- `make build` → limpo
+- `GO_BIN=bin/trackfw scripts/check-validate-rule-pins.sh` → 30/30 pins PASS
+- `grep -rn "nor done/" internal/commands/*.go | grep -v _test.go` → só `barrier.go`
+
+**Resíduos declarados para ML-2A:** Cenários de ponta a ponta com o binário real (Wave 2).
+
+## 2026-10-01 — artemis-tf (fix/estado-que-governa-a-branch — ML-2A) — INÍCIO
+
+**Início:** 2026-10-01 | Branch: `fix/estado-que-governa-a-branch`
+**Tarefa:** ML-2A — Cenários dos issues com o binário real (Wave 2)
+**Arquivo alvo:** `internal/commands/branch_state_e2e_test.go`
+**Harness:** reutiliza `barrierBinary(t)` de `barrier_contract_test.go` e `gitRepoIn` de `commit_unborn_branch_test.go` (mesmo pacote `commands`).
+**Cenários:** AC2 (done-only blocks), AC4 (blocked governa), AC5a (done movido pela branch), AC5b (done já na base bloqueia), AC6 (sem origin degrada), AC12 (roadmap acentuado na base não governa).
+
+## 2026-10-01 — artemis-tf (fix/estado-que-governa-a-branch — ML-2A) — FIM
+
+**Entregue:** `internal/commands/branch_state_e2e_test.go` (novo, 8 funções de teste)
+**Harness reutilizado:** `barrierBinary(t)` de `barrier_contract_test.go` (mesmo pacote `commands`).
+
+**Resultados dos gates:**
+- `go build ./...` → limpo
+- `go vet ./internal/commands/` → limpo
+- `go test ./internal/commands/ -run BranchStateE2E -count=1 -v` → 8 PASS, 1 SKIP (medição informativa)
+- `TRACKFW_E2E_BIN=<tfw 9.1.0/main e104a7f7> go test ...` → AC2 FAIL, AC4×2 FAIL, AC5b FAIL, AC6 FAIL, AC12 FAIL (5 testes falham; AC5a×2 passam como esperado)
+
+**Medição informativa:** 0 de 217 branches em `gated.txt` seriam permitidas por `branch new --dry-run` contra done/ com wip/ vazio (novo binário). Esperado: 0.
+
+**Status ML-2A:** atualizado de ⬜ Pendente → 🔄 Em andamento.
+**Próxima ação:** handoff para `trackfw_architect` para auditoria e commit.
+
+## 2026-10-01 — apolo-tf (fix/estado-que-governa-a-branch — ML-3C) — INÍCIO
+
+**Início:** 2026-10-01 | Branch: `fix/estado-que-governa-a-branch`
+**Tarefa:** ML-3C — Corretivo Wave 3: `--literal-pathspecs` e textos de contrato
+**Arquivos alvo:** `internal/validator/validator.go`, `internal/auditsurface/auditsurface.go`, `internal/commands/branch.go`, `internal/commands/commit.go`, `internal/commands/branch_test.go`, `internal/commands/branchlink_ml3a_test.go`, novo teste em `internal/validator/`
+**Origem:** RN1 do ML-3A + 5 achados do ML-3B
+
+## 2026-10-01 — zeus-tf — FIM (implementação): #494 + #490 prontos para PR
+
+Waves 0–3 com barrier `passed`. Corretivos abertos na auditoria: ML-1D (dica de `done/` mandava
+reabrir roadmap alheio), ML-2B (`ship` degradado sem teste), ML-3C (`--literal-pathspecs`, RN1 do
+Hades, absorvido em vez de follow-up). Três testes decorativos removidos; um teste reescrito porque
+não mordia e partia de premissa falsa (":" é válido em nome de diretório no macOS, medido).
+`make quality` EXIT=0 em `57aed5b4`; ML-3C coberto pelos testes dos 3 pacotes. AC10 aguarda o CI.
+
+## 2026-10-01 — artemis-tf (fix/estado-que-governa-a-branch — ML-3D) — INÍCIO
+
+**Início:** 2026-10-01 | Branch: `fix/estado-que-governa-a-branch`
+**Tarefa:** ML-3D — Corretivo final: layout `by_agent`, Windows e asserções vácuas
+**Arquivos alvo:** `internal/commands/branch_state_e2e_test.go`, `internal/validator/validator_literal_pathspecs_test.go`, `internal/validator/validator_test.go`, `internal/commands/push_test.go`, `internal/commands/ship_test.go`
+
+## 2026-10-02 — artemis-tf (fix/estado-que-governa-a-branch — ML-3E) — INÍCIO
+
+**Início:** 2026-10-02 | Branch: `fix/estado-que-governa-a-branch`
+**Tarefa:** ML-3E — Corretivo do CI de Windows (PR #500): duas falhas novas, as duas no teste
+**Arquivos alvo:** `internal/auditsurface/gitlstree_test.go`, `internal/commands/branch_state_e2e_test.go`
+
+## 2026-10-02 — artemis-tf (fix/estado-que-governa-a-branch — ML-3E) — FIM
+
+**Fim:** 2026-10-02 | Branch: `fix/estado-que-governa-a-branch`
+**Tarefa:** ML-3E — Corretivo do CI de Windows (PR #500): duas falhas novas, as duas no teste
+**Edições:**
+1. `gitlstree_test.go:51` — `filepath.Join("scripts", fname)` → `"scripts/" + fname` (git emite `/`, não separador do SO)
+2. `branch_state_e2e_test.go` — `git config core.longpaths true` após os dois `git init` de repositórios de trabalho (linhas ~145 e ~824); evita `Filename too long` no Windows ao `git add -A` dos 211 roadmaps reais
+**Gates:** `go build ./...` OK · `go vet` OK · `go test ./internal/auditsurface/ -count=1` PASS · `go test ./internal/commands/ -run BranchStateE2E -count=1` PASS
+
+## 2026-10-02 — zeus-tf — FIM: PR #500 verde, pronto para merge
+
+CI 20/20 em `837d6ed7` após o ML-3E (2 falhas novas de Windows, ambas no teste: separador `\\` no
+esperado e MAX_PATH no `git add` do e2e). Todos os ACs com evidência. #497 e #499 do Lourival
+fechados como superados; label `req-aberta` criada (Discussion continua obrigatória). Fechamento da
+REQ e roadmap → `done/` são pós-merge, em branch `chore/`.

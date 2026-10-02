@@ -13,7 +13,7 @@ import (
 )
 
 // branchValidTypes is the full vocabulary accepted by `trackfw branch new`. feat/fix/refactor are
-// gated on a matching REQ + roadmap already in wip/ or done/ (branchGatedTypes below); chore/docs
+// gated on a matching REQ + roadmap already in wip/ (branchGatedTypes below); chore/docs
 // are housekeeping types — already treated as roadmap-exempt by `trackfw ship` and `trackfw
 // commit` — and create the branch without that gate.
 var branchValidTypes = map[string]bool{
@@ -25,7 +25,7 @@ var branchValidTypes = map[string]bool{
 }
 
 // branchGatedTypes is the subset of branchValidTypes that requires a matching REQ + roadmap
-// already in wip/ or done/ before the branch is created. Keep this in sync with the pattern
+// already in wip/ before the branch is created. Keep this in sync with the pattern
 // `trackfw ship`/`trackfw commit` use to decide when the branch_has_wip_roadmap gate applies.
 var branchGatedTypes = map[string]bool{
 	"feat":     true,
@@ -42,9 +42,14 @@ type branchNewDeps struct {
 	// validator.ResolveWIPDirs / validator.ResolveDoneDirs).
 	resolveWIPDirs  func(config.ProjectConfig) []string
 	resolveDoneDirs func(config.ProjectConfig) []string
-	// matchSlug checks whether the normalized slug matches any roadmap found in wipDirs/doneDirs
+	// matchSlug checks whether the normalized slug matches any roadmap found in wipDirs only
 	// (production: validator.BranchSlugMatchesRoadmap — the same logic `trackfw validate` uses).
+	// D1 of ADR-2026-10-01: branch creation is gated on wip/ only; doneDirs must be nil/empty.
 	matchSlug func(slug string, wipDirs, doneDirs []string) (matched bool, candidates []string)
+	// matchDone returns roadmap filenames in doneDirs that match the slug. Used only for the
+	// orientation message hint (D1: done/ roadmaps need `roadmap move` before `branch new`).
+	// nil skips the hint (pre-existing tests that don't exercise this path).
+	matchDone func(slug string, doneDirs []string) []string
 	// execGitCheckout runs `git checkout -b <branchName>` with inherited stdio, propagating Git's
 	// own output and exit code literally (production: defaultGitCheckout).
 	execGitCheckout func(branchName string) error
@@ -72,15 +77,16 @@ func newBranchNewCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "new <type>/<slug>",
-		Short: "Create a feat/fix/refactor/chore/docs branch; feat/fix/refactor gated on a matching REQ + roadmap already in wip/ or done/",
+		Short: "Create a feat/fix/refactor/chore/docs branch; feat/fix/refactor gated on a matching REQ + roadmap already in wip/",
 		Long: `trackfw branch new moves the branch_has_wip_roadmap governance gate (already enforced
 by 'trackfw validate' and 'trackfw ship') to before branch creation, instead of after:
 
   1. Validates <type> is one of feat, fix, refactor, chore, docs and <slug> is non-empty.
-  2. For feat, fix, refactor: checks whether a roadmap in wip/ or done/ matches the given slug —
+  2. For feat, fix, refactor: checks whether a roadmap in wip/ matches the given slug —
      the exact matching logic 'trackfw validate' already uses (normalized slug, filename contains
-     match). Without a match: blocks — 'git checkout -b' is never executed — and prints the same
-     governance orientation message 'trackfw validate' already prints for this rule.
+     match). Without a wip/ match: blocks — 'git checkout -b' is never executed — and prints the
+     governance orientation message. If done/ has matching roadmaps, the message names them and
+     suggests 'trackfw roadmap move <name> wip' (D1 of ADR-2026-10-01).
   3. For chore, docs: housekeeping types already treated as roadmap-exempt by 'trackfw ship' and
      'trackfw commit' — the branch is created without the roadmap gate.
   4. With a match (or for chore/docs): runs 'git checkout -b <type>/<slug>', propagating Git's own
@@ -104,6 +110,10 @@ Create the governance artifacts first if this blocks you:
 				resolveWIPDirs:  validator.ResolveWIPDirs,
 				resolveDoneDirs: validator.ResolveDoneDirs,
 				matchSlug:       validator.BranchSlugMatchesRoadmap,
+				matchDone: func(slug string, doneDirs []string) []string {
+					matches, _ := validator.MatchRoadmapsForBranchSlug(slug, nil, doneDirs)
+					return matches
+				},
 				execGitCheckout: defaultGitCheckout,
 				recordLink:      validator.RecordBranchLink,
 				out:             cmd.OutOrStdout(),
@@ -158,21 +168,27 @@ func runBranchNew(spec string, dryRun bool, deps branchNewDeps) error {
 		doneDirs := deps.resolveDoneDirs(cfg)
 
 		normalizedSlug := validator.NormalizeBranchSlug(slug)
-		matched, candidates := deps.matchSlug(normalizedSlug, wipDirs, doneDirs)
+		// D1: gate checks wip/ only. done/ roadmaps need `trackfw roadmap move` first.
+		matched, candidates := deps.matchSlug(normalizedSlug, wipDirs, nil)
 
 		if !matched {
+			// Compute done matches for the hint in the orientation message.
+			var doneMatches []string
+			if deps.matchDone != nil {
+				doneMatches = deps.matchDone(normalizedSlug, doneDirs)
+			}
 			var msg string
 			if len(candidates) == 0 {
-				msg = validator.BranchGovernanceOrientation(branchName, cfg)
+				msg = validator.BranchGovernanceOrientationForCreation(branchName, cfg, doneMatches)
 			} else {
-				msg = validator.BranchNoMatchingRoadmapMessage(branchName, candidates)
+				msg = validator.BranchNoMatchingRoadmapMessageForCreation(branchName, candidates, doneMatches)
 			}
 			if dryRun {
 				fmt.Fprintf(deps.out, "[dry-run] would block: %s\n", msg)
 			} else {
 				fmt.Fprintln(deps.out, msg)
 			}
-			return fmt.Errorf("blocked: no matching roadmap in wip/ nor done/ for %q", branchName)
+			return fmt.Errorf("blocked: no matching roadmap in wip/ for %q", branchName)
 		}
 	}
 

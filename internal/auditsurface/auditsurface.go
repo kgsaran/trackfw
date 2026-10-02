@@ -284,17 +284,24 @@ func gitShow(ref, path, gitRoot string) ([]byte, error) {
 }
 
 // gitLsTree lists files in a directory at a given ref, returning repo-relative paths.
+// The -z flag requests NUL-terminated output so that file names containing non-ASCII
+// characters are never quoted by git (core.quotepath=true is the default), which would
+// corrupt the returned paths.
+// The --literal-pathspecs global option disables pathspec magic so that directory names
+// containing git magic tokens (e.g. ":(exclude)", "[x]") are treated as literals.
+// Without it, such tokens cause ls-tree to return rc=0 with empty stdout and a fatal on
+// stderr, silently skipping the directory (RN1, ML-3C, 2026-10-01).
 func gitLsTree(ref, dir, gitRoot string) ([]string, error) {
-	cmd := exec.Command("git", "ls-tree", "-r", "--name-only", ref, "--", dir)
+	cmd := exec.Command("git", "--literal-pathspecs", "ls-tree", "-r", "-z", "--name-only", ref, "--", dir)
 	cmd.Dir = gitRoot
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, err
 	}
 	var files []string
-	for _, line := range strings.Split(string(bytes.TrimRight(out, "\n")), "\n") {
-		if line != "" {
-			files = append(files, line)
+	for _, entry := range bytes.Split(out, []byte{0}) {
+		if len(entry) > 0 {
+			files = append(files, string(entry))
 		}
 	}
 	return files, nil

@@ -109,53 +109,53 @@ func TestIsMultiAgentByAgent_fourCases(t *testing.T) {
 	}
 }
 
-// TestBranchGovernanceOrientation_byAgent2plus asserts that BranchGovernanceOrientation
-// embeds the --agent form when the project is by_agent with 2+ agents.
+// TestBranchGovernanceOrientationForCreation_byAgent2plus asserts that
+// BranchGovernanceOrientationForCreation embeds the --agent form when the project is by_agent
+// with 2+ agents.
 //
 // Reconciliation: this test affirms that the governance orientation message surfaced
-// to users of feat/fix/refactor branches correctly teaches `--agent` when applicable,
-// i.e. the callsite in validateBranchHasWIPRoadmap passes the real cfg.
-func TestBranchGovernanceOrientation_byAgent2plus(t *testing.T) {
+// to users of feat/fix/refactor branches correctly teaches `--agent` when applicable.
+func TestBranchGovernanceOrientationForCreation_byAgent2plus(t *testing.T) {
 	t.Parallel()
 	cfg := config.ProjectConfig{
 		RoadmapNamespacing: config.NamespacingByAgent,
 		Agents:             []string{"zeus", "apolo"},
 	}
-	msg := BranchGovernanceOrientation("feat/my-feature", cfg)
+	msg := BranchGovernanceOrientationForCreation("feat/my-feature", cfg, nil)
 
 	wantReq := `trackfw req new --agent <agent> "title"  # agents: zeus, apolo`
 	wantRM := `trackfw roadmap new --agent <agent> "title"`
 
 	if !strings.Contains(msg, wantReq) {
-		t.Errorf("BranchGovernanceOrientation (by_agent 2+): missing req line\n  want substring: %q\n  got:\n%s",
+		t.Errorf("BranchGovernanceOrientationForCreation (by_agent 2+): missing req line\n  want substring: %q\n  got:\n%s",
 			wantReq, msg)
 	}
 	if !strings.Contains(msg, wantRM) {
-		t.Errorf("BranchGovernanceOrientation (by_agent 2+): missing roadmap line\n  want substring: %q\n  got:\n%s",
+		t.Errorf("BranchGovernanceOrientationForCreation (by_agent 2+): missing roadmap line\n  want substring: %q\n  got:\n%s",
 			wantRM, msg)
 	}
 }
 
-// TestBranchGovernanceOrientation_flat asserts that BranchGovernanceOrientation
+// TestBranchGovernanceOrientationForCreation_flat asserts that BranchGovernanceOrientationForCreation
 // uses the flat form for projects without by_agent namespacing.
 //
 // Reconciliation: contra-braço — flat projects must NOT see --agent in the orientation.
-func TestBranchGovernanceOrientation_flat(t *testing.T) {
+func TestBranchGovernanceOrientationForCreation_flat(t *testing.T) {
 	t.Parallel()
-	msg := BranchGovernanceOrientation("feat/my-feature", config.ProjectConfig{})
+	msg := BranchGovernanceOrientationForCreation("feat/my-feature", config.ProjectConfig{}, nil)
 
 	wantReq := `trackfw req new "title"`
 	wantRM := `trackfw roadmap new "title"`
 
 	if !strings.Contains(msg, wantReq) {
-		t.Errorf("BranchGovernanceOrientation (flat): missing req line\n  want substring: %q\n  got:\n%s",
+		t.Errorf("BranchGovernanceOrientationForCreation (flat): missing req line\n  want substring: %q\n  got:\n%s",
 			wantReq, msg)
 	}
 	if !strings.Contains(msg, wantRM) {
-		t.Errorf("BranchGovernanceOrientation (flat): missing roadmap line\n  want substring: %q\n  got:\n%s",
+		t.Errorf("BranchGovernanceOrientationForCreation (flat): missing roadmap line\n  want substring: %q\n  got:\n%s",
 			wantRM, msg)
 	}
 	if strings.Contains(msg, "--agent") {
-		t.Errorf("BranchGovernanceOrientation (flat): must not contain --agent; got:\n%s", msg)
+		t.Errorf("BranchGovernanceOrientationForCreation (flat): must not contain --agent; got:\n%s", msg)
 	}
 }

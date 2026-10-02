@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/kgsaran/trackfw/internal/validator"
 )
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -44,7 +46,7 @@ func pushFailingGit(branch, hookStdout string) func(args ...string) (string, err
 func pushDepsFailing(branch, hookStdout string) pushDeps {
 	return pushDeps{
 		execGit:         pushFailingGit(branch, hookStdout),
-		checkGovernance: func() []string { return nil },
+		checkGovernance: func() *validator.GovernanceViolation { return nil },
 		out:             &bytes.Buffer{},
 	}
 }

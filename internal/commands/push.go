@@ -17,9 +17,10 @@ type pushDeps struct {
 	// execGit runs a git command and returns (trimmed-stdout, error).
 	execGit func(args ...string) (string, error)
 
-	// checkGovernance returns violation messages (nil or empty slice = pass).
+	// checkGovernance returns governance state. nil = pass. Non-nil with empty Missing = degraded
+	// (warnings printed, execution continues). Non-nil with non-empty Missing = hard failure.
 	// Injected so that tests do not depend on a real trackfw project layout.
-	checkGovernance func() []string
+	checkGovernance func() *validator.GovernanceViolation
 
 	// cfg is the project config used to compute governance remediation hints.
 	// Zero value (flat) is the correct default for tests that do not specify a project layout.
@@ -156,10 +157,14 @@ func runPush(opts pushOpts, deps pushDeps) error {
 		// `trackfw branch new` and `trackfw commit` — push without it too.
 		fmt.Fprintf(deps.out, "Governance: skipped (chore/docs branch)\n")
 	} else {
-		violations := deps.checkGovernance()
-		if len(violations) > 0 {
+		gv := deps.checkGovernance()
+		if gv != nil && len(gv.Missing) > 0 {
+			// Hard failure: print warnings first, then violations, then remediation.
+			for _, w := range gv.Warnings {
+				fmt.Fprintf(deps.out, "Governance: degraded: %s\n", w)
+			}
 			fmt.Fprintf(deps.out, "\nGovernance check failed:\n")
-			for _, v := range violations {
+			for _, v := range gv.Missing {
 				fmt.Fprintf(deps.out, "  %s\n", v)
 			}
 			fmt.Fprintf(deps.out, "\nCreate the required artifacts before running push:\n")
@@ -170,10 +175,16 @@ func runPush(opts pushOpts, deps pushDeps) error {
 			fmt.Fprintf(deps.out, "mode or per-rule severity configured in trackfw.yaml. If 'trackfw validate'\n")
 			fmt.Fprintf(deps.out, "passes but 'trackfw push' aborts here, you likely have lenient mode\n")
 			fmt.Fprintf(deps.out, "configured — push always requires REQ + roadmap in wip/.\n")
-			return fmt.Errorf("governance check failed: %d violation(s)", len(violations))
+			return fmt.Errorf("governance check failed: %d violation(s)", len(gv.Missing))
 		}
-
-		fmt.Fprintf(deps.out, "Governance: OK\n")
+		if gv != nil && len(gv.Warnings) > 0 {
+			// Degraded: warnings present, no hard violations — execution continues.
+			for _, w := range gv.Warnings {
+				fmt.Fprintf(deps.out, "Governance: degraded: %s\n", w)
+			}
+		} else {
+			fmt.Fprintf(deps.out, "Governance: OK\n")
+		}
 	}
 
 	// ─── Step 2.5: force-with-lease gate ──────────────────────────────────────
