@@ -129,14 +129,15 @@ go test ./internal/validator/ -count=1
 ```
 
 ### ML-1D — Corretivo: o mesmo teste de "arquivo ou link para arquivo" no aviso D4
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Origem:** relatório do ML-1C. `validateADRFilesWithoutPrefix` (~:3189) ainda usa `d.Type().IsRegular()`: um `.md` sem prefixo que é symlink para um arquivo com status não dispara o aviso.
 **Files affected:** `internal/validator/validator.go`, `internal/validator/validator_adr_prefix_test.go`
 **Actions:** extrair o teste de tipo do ML-1C numa função única (ex.: `isRegularOrLinkToRegular(path, d)`) e usá-la nos dois sítios.
 **Acceptance criteria:**
-- [ ] Teste: symlink sem prefixo para arquivo com `status:` dispara o aviso; reprova com a condição atual (overlay)
-- [ ] Os dois sítios chamam a mesma função
+- [x] Teste: symlink sem prefixo para arquivo com `status:` dispara o aviso; reprova com a condição atual (overlay)
+- [x] Os dois sítios chamam a mesma função
+      ✅ Prova refeita pelo arquiteto, sabotando SÓ a chamada do aviso (~:3202): FAIL; original PASS. (O sed do relatório trocava também a declaração da função, e o FAIL podia ser de compilação.)
 **Gates da wave:**
 ```bash
 go build ./...

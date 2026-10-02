@@ -2,6 +2,23 @@
 
 ---
 
+## 2026-10-02 — Apolo (fix/criterio-de-adr-por-prefixo — ML-1D) — INÍCIO
+
+**Início:** 2026-10-02 | Branch: `fix/criterio-de-adr-por-prefixo`
+**Tarefa:** ML-1D — extrair `isRegularOrLinkToRegular` e usá-la nos dois sítios; teste de symlink sem prefixo dispara `adr_file_without_prefix`
+**Arquivos a modificar:** `internal/validator/validator.go` · `internal/validator/validator_adr_prefix_test.go` · `docs/agents-working-context.md`
+
+---
+
+## 2026-10-02 — Apolo (fix/criterio-de-adr-por-prefixo — ML-1D) — FIM
+
+**Fim:** 2026-10-02 | Branch: `fix/criterio-de-adr-por-prefixo`
+**Entregues:** `isRegularOrLinkToRegular(path, d)` extraída após `isADRFileName`; usada nos dois sítios (`walkADRFilePathsForRule` e `validateADRFilesWithoutPrefix`); teste `TestADRFileWithoutPrefix_SymlinkSemPrefixoDispara` adicionado.
+**Gates:** `go build ./...` ✅ · `go vet ./internal/validator/` ✅ · `go test ./internal/validator/ -count=1` ✅
+**Prova de mordida:** overlay `sed 's/isRegularOrLinkToRegular/d.Type().IsRegular()/'` → FAIL em `TestADRFileWithoutPrefix_SymlinkSemPrefixoDispara`; sem overlay → PASS.
+
+---
+
 ## 2026-10-02 — Apolo (fix/criterio-de-adr-por-prefixo — ML-1C) — INÍCIO
 
 **Início:** 2026-10-02 | Branch: `fix/criterio-de-adr-por-prefixo`

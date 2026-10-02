@@ -3133,6 +3133,24 @@ func isADRFileName(name string) bool {
 	return strings.HasPrefix(strings.ToUpper(name), "ADR-") && strings.HasSuffix(name, ".md")
 }
 
+// isRegularOrLinkToRegular reports whether the entry at path should be treated as a
+// readable regular file. Three situations, used consistently in walkADRFilePathsForRule
+// and validateADRFilesWithoutPrefix:
+//
+//  1. Regular file (not a symlink): d.Type().IsRegular() is true → counts.
+//  2. Symlink to a regular file: d.Type() has ModeSymlink set; os.Stat follows the link —
+//     if it resolves to a regular file, it counts. readRegularFile (os.Open → f.Stat) also
+//     follows the link, so the content is readable.
+//  3. Symlink to a directory, or broken symlink: os.Stat returns a directory Mode or an
+//     error, respectively → does NOT count (A3 of Wave 0).
+func isRegularOrLinkToRegular(path string, d fs.DirEntry) bool {
+	if d.Type()&fs.ModeSymlink != 0 {
+		info, err := os.Stat(path)
+		return err == nil && info.Mode().IsRegular()
+	}
+	return d.Type().IsRegular()
+}
+
 func walkADRFilePathsForRule(rule, adrDir string, msgs *[]string) []string {
 	adrDir = config.ExpandPath(adrDir)
 	var paths []string
@@ -3154,12 +3172,7 @@ func walkADRFilePathsForRule(rule, adrDir string, msgs *[]string) []string {
 		if !isADRFileName(filepath.Base(path)) {
 			return nil
 		}
-		if d.Type()&fs.ModeSymlink != 0 {
-			info, statErr := os.Stat(path)
-			if statErr != nil || !info.Mode().IsRegular() {
-				return nil
-			}
-		} else if !d.Type().IsRegular() {
+		if !isRegularOrLinkToRegular(path, d) {
 			return nil
 		}
 		paths = append(paths, path)
@@ -3186,7 +3199,7 @@ func validateADRFilesWithoutPrefix() ([]string, error) {
 			if err != nil {
 				return nil
 			}
-			if !d.Type().IsRegular() {
+			if !isRegularOrLinkToRegular(path, d) {
 				return nil
 			}
 			name := filepath.Base(path)

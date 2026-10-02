@@ -319,3 +319,45 @@ Roadmap:
 		t.Errorf("A1: blocked_by_draft_adr must fire for decisao.md (no ADR- prefix, status: Draft); violations: %v", violations)
 	}
 }
+
+// TestADRFileWithoutPrefix_SymlinkSemPrefixoDispara — ML-1D
+//
+// Asserts: a symlink in adr_dirs WITHOUT ADR- prefix that points to a regular file with
+// frontmatter status: Draft fires adr_file_without_prefix — isRegularOrLinkToRegular
+// follows the link so validateADRFilesWithoutPrefix sees it as a readable file.
+// Skipped when symlink creation fails (Windows without Developer Mode).
+func TestADRFileWithoutPrefix_SymlinkSemPrefixoDispara(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+
+	// Target file lives outside adr_dirs so it is never walked on its own.
+	outsideDir := filepath.Join(dir, "outside")
+	if err := os.MkdirAll(outsideDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(outsideDir, "decisao-real.md")
+	if err := os.WriteFile(target, []byte("---\nstatus: Draft\n---\n# Decisão\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	writeFile(t, dir, "trackfw.yaml", "adr_dirs:\n  - docs/adr\n")
+	adrDir := filepath.Join(dir, "docs", "adr")
+	if err := os.MkdirAll(adrDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Symlink without ADR- prefix inside adr_dirs.
+	symlinkPath := filepath.Join(adrDir, "decisao-link.md")
+	if !symlinkOrSkip(t, target, symlinkPath) {
+		return
+	}
+
+	warnings, err := validateADRFilesWithoutPrefix()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !hasWarning(warnings, `"decisao-link.md"`) || !hasWarning(warnings, "declares a status") {
+		t.Errorf("ML-1D: symlink decisao-link.md → file with status: Draft must fire adr_file_without_prefix, got: %v", warnings)
+	}
+}
