@@ -44117,3 +44117,8 @@ do `parity-falsify` com 8 chunks em paralelo no macOS.
 
 PR #503 mergeado em `2dd76b40`. Roadmap → `done/`, REQ → `Done`, label `req-aberta` removida da #471.
 O commit da evidência do AC10 (`99477f44`) ficou fora do merge e veio para esta branch.
+
+## 2026-10-02 — zeus-tf — INÍCIO: #504 (limite de tempo por chunk no driver de falsificação)
+
+Medição: não reproduz com a máquina ociosa (5/5 limpas; `make quality` 9 min 23 s). Decisão do KG: limite
+de tempo por chunk, para que um travamento vire FAIL nomeado com a árvore de processos, não 60 min de silêncio.
