@@ -1873,19 +1873,114 @@ else
     \{*)
       CMD_RAW=""
       if command -v jq >/dev/null 2>&1; then
+        # D2-bis (jq): NUL em valor decodificado falha aberto via $(); verificar antes da extração
+        _TRACKFW_JQ_NUL=$(printf '%s' "$INPUT" | jq -r '(.tool_input.command // .command // .tool_info.command_line // .hook_input.command // empty) | if type == "string" then (explode | any(. == 0) | if . then "nul" else "ok" end) else "ok" end' 2>/dev/null || echo ok)
+        if [ "$_TRACKFW_JQ_NUL" = "nul" ]; then
+          _TRACKFW_NUL_REASON='trackfw git-branch-guard: RECUSADO — o comando contem NUL (\u0000) e nao pode ser interpretado com seguranca pelo shell. O guard recusa em vez de executar um comando corrompido.'
+          printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$_TRACKFW_NUL_REASON"
+          printf '%s\n' "$_TRACKFW_NUL_REASON" >&2
+          exit 2
+        fi
         CMD_RAW=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // .command // .tool_info.command_line // .hook_input.command // empty' 2>/dev/null || true)
       fi
       if [ -z "$CMD_RAW" ] || [ "$CMD_RAW" = "null" ]; then
-        CMD_RAW=$(printf '%s' "$INPUT" | sed -n 's/.*"tool_input"[[:space:]]*:[[:space:]]*{[^}]*"command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
-      fi
-      if [ -z "$CMD_RAW" ]; then
-        CMD_RAW=$(printf '%s' "$INPUT" | sed -n 's/.*"tool_info"[[:space:]]*:[[:space:]]*{[^}]*"command_line"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
-      fi
-      if [ -z "$CMD_RAW" ]; then
-        CMD_RAW=$(printf '%s' "$INPUT" | sed -n 's/.*"hook_input"[[:space:]]*:[[:space:]]*{[^}]*"command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
-      fi
-      if [ -z "$CMD_RAW" ]; then
-        CMD_RAW=$(printf '%s' "$INPUT" | sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+        # D1/D2/D2-bis/D2-ter: extrator JSON em awk (fallback sem jq) — acumulação no END,
+        # hex2dec sem strtonum, last-wins em chave duplicada, mesma prioridade do jq,
+        # chave só conta como chave (não dentro de valor de outra chave)
+        _TRACKFW_AWK_RC=0
+        CMD_RAW=$(printf '%s' "$INPUT" | awk '
+function hex2dec(h,    v,i,c,d) {
+  h=tolower(h); v=0
+  for(i=1;i<=length(h);i++){c=substr(h,i,1);d=index("0123456789abcdef",c)-1;if(d<0)return -1;v=v*16+d}
+  return v
+}
+function decode_str(raw,    out,i,n,c,nc,hs,v) {
+  out=""; _DECODE_ERR=""
+  n=length(raw); i=1
+  while(i<=n){
+    c=substr(raw,i,1)
+    if(c!="\\"){out=out c; i++; continue}
+    if(i>=n){_DECODE_ERR="truncated_escape"; return ""}
+    i++; nc=substr(raw,i,1)
+    if(nc=="\""){out=out "\""}
+    else if(nc=="\\"){out=out "\\"}
+    else if(nc=="/"){out=out "/"}
+    else if(nc=="b"){out=out "\b"}
+    else if(nc=="f"){out=out "\f"}
+    else if(nc=="n"){out=out "\n"}
+    else if(nc=="r"){out=out "\r"}
+    else if(nc=="t"){out=out "\t"}
+    else if(nc=="u"){
+      hs=substr(raw,i+1,4)
+      if(length(hs)!=4){_DECODE_ERR="incomplete_unicode"; return ""}
+      v=hex2dec(hs); if(v<0){_DECODE_ERR="invalid_unicode_hex"; return ""}
+      if(v==0){_DECODE_ERR="nul_in_value"; return ""}
+      if(v<128){out=out sprintf("%c",v)} else{out=out _UMARK}
+      i+=4
+    }
+    else{_DECODE_ERR="invalid_escape"; return ""}
+    i++
+  }
+  return out
+}
+BEGIN{_a=""; _UMARK=sprintf("%c",2)}
+{_a=_a $0 "\n"}
+END{
+  _n=length(_a); _i=1; _d=0
+  split("",_io); split("",_vn); split("",_pk); split("",_lk)
+  _p1=""; _p1s=0; _p2=""; _p2s=0; _p3=""; _p3s=0; _p4=""; _p4s=0
+  _e=""
+  while(_i<=_n && _e==""){
+    _c=substr(_a,_i,1)
+    if(_c=="\""){
+      _raw=""; _j=_i+1; _sc=""
+      while(_j<=_n){
+        _sc=substr(_a,_j,1)
+        if(_sc=="\\"){if(_j>=_n){_e="truncated_escape";break};_raw=_raw _sc substr(_a,_j+1,1);_j+=2}
+        else if(_sc=="\""){_j++;break}
+        else{_raw=_raw _sc;_j++}
+      }
+      if(_e!="")break
+      if(_sc!="\""){_e="unterminated_string";break}
+      _i=_j
+      if(_d>=1 && _io[_d]==1){
+        if(!_vn[_d]){_lk[_d]=_raw}
+        else{
+          _vn[_d]=0; _k=_lk[_d]; _par=_pk[_d]
+          if(_d==1 && _k=="command" && _par==""){
+            _v=decode_str(_raw); if(_DECODE_ERR!=""){_e=_DECODE_ERR;break}; _p2=_v; _p2s=1
+          } else if(_d==2 && _k=="command" && _par=="tool_input"){
+            _v=decode_str(_raw); if(_DECODE_ERR!=""){_e=_DECODE_ERR;break}; _p1=_v; _p1s=1
+          } else if(_d==2 && _k=="command_line" && _par=="tool_info"){
+            _v=decode_str(_raw); if(_DECODE_ERR!=""){_e=_DECODE_ERR;break}; _p3=_v; _p3s=1
+          } else if(_d==2 && _k=="command" && _par=="hook_input"){
+            _v=decode_str(_raw); if(_DECODE_ERR!=""){_e=_DECODE_ERR;break}; _p4=_v; _p4s=1
+          }
+        }
+      }
+      continue
+    }
+    if(_c=="{"){_d++;_io[_d]=1;_vn[_d]=0;_pk[_d]=(_d>1?_lk[_d-1]:"");_lk[_d]="";_i++;continue}
+    if(_c=="}"){_d--;if(_d>=1)_vn[_d]=0;_i++;continue}
+    if(_c=="["){_d++;_io[_d]=0;_vn[_d]=0;_pk[_d]="";_lk[_d]="";_i++;continue}
+    if(_c=="]"){_d--;if(_d>=1)_vn[_d]=0;_i++;continue}
+    if(_c==":"){if(_d>=1 && _io[_d]==1)_vn[_d]=1;_i++;continue}
+    if(_c==","){if(_d>=1)_vn[_d]=0;_i++;continue}
+    _i++
+  }
+  if(_e!=""){print "trackfw git-branch-guard: extrator JSON (sem jq): " _e > "/dev/stderr";exit 2}
+  if(_p1s){print _p1;exit 0}
+  if(_p2s){print _p2;exit 0}
+  if(_p3s){print _p3;exit 0}
+  if(_p4s){print _p4;exit 0}
+}
+        ') || _TRACKFW_AWK_RC=$?
+        if [ "$_TRACKFW_AWK_RC" -eq 2 ]; then
+          _TRACKFW_AWK_REASON='trackfw git-branch-guard: RECUSADO — o extrator JSON (sem jq) encontrou erro ao decodificar o campo de comando: string nao terminada, escape invalido ou NUL. O guard recusa em vez de aprovar um payload que nao pode ser lido com seguranca.'
+          printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"%s"}}\n' "$_TRACKFW_AWK_REASON"
+          printf '%s\n' "$_TRACKFW_AWK_REASON" >&2
+          exit 2
+        fi
       fi
       ;;
     *)

@@ -13,3 +13,4 @@
 - [Anotação de contrato exige ARQUIVO](feedback_anotacao_de_contrato_exige_arquivo.md) — `gate=<dir>` reprova em cli-parity; nomeie os arquivos da fixture
 - [Cenário 18 enumera gates que citam GO_BIN](project_cenario18_enumera_gates_com_go_bin.md) — gate novo entra sozinho na proibição de mutar a árvore; escreva só em mktemp
 - [config.Load() singleton exige Reset() em testes](feedback_config_load_singleton_reset.md) — tests com ci:/hooks: no fixture falham no suite completo sem config.Reset() antes de RunScaffoldDoctor
+- [Prova de mordida: lista do sed antigo diverge do medido](feedback_prova_de_mordida_sed_list.md) — C09, C10, C11 NÃO falham abertos com o sed antigo; medir antes de escrever os casos

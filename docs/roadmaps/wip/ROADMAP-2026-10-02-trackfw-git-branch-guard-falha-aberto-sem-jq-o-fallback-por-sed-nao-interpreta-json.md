@@ -68,7 +68,7 @@ grep -q "Veredito" docs/seguranca/2026-10-02-wave0-extrator-json-do-guard.md
 > Dependencies: Wave 0 auditada
 
 ### ML-1A — Extrator JSON em awk nas 4 cópias e tabela com e sem jq
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Squad:** apolo-tf
 **Files affected:** os 5 sítios da tabela do Context
 **Actions:** D1–D4, D2-bis e D2-ter do ADR. A tabela contém **os 21 casos C01–C21** da Wave 0 (§ tabela do parecer, com o rc esperado em cada caminho) **mais o C22**: `git push\u0000origin main` → rc=2 com e sem `jq`.
@@ -77,10 +77,26 @@ grep -q "Veredito" docs/seguranca/2026-10-02-wave0-extrator-json-do-guard.md
 - [ ] AC2–AC6 com testes por nome; prova de mordida contra o script de `3b2eff09`
 - [ ] Cenário de falsificação do guard rodado isolado (nota do vault) e provado não vácuo
 - [ ] Uma frase por teste novo
+      ✅ Auditoria parcial (arquiteto): C01–C22 passam com e sem `jq`, e a prova de mordida contra `3b2eff09` mede falha aberta em C02–C05, C12 e C22. C09–C11 **não** falhavam no `sed` antigo (medido pelo agente; a lista do handoff era hipótese). As 4 cópias são iguais.
+      ❌ AC4 não entregue: os 44 testes que já existiam no guard continuam rodando só com o `PATH` do sistema (com `jq`). Vai para o ML-1B.
 **Gates da wave:**
 ```bash
 go build ./...
 go test ./internal/generators/ ./internal/validator/ -count=1
+```
+
+### ML-1B — Corretivo: a tabela que já existia roda também sem jq (AC4)
+**Status:** ⬜ Pendente
+**Squad:** apolo-tf
+**Files affected:** `internal/generators/git_branch_guard_test.go`
+**Actions:** `runGitBranchGuard` (~:140) executa o guard **duas vezes**, com o `PATH` do sistema e com o `PATH` curado sem `jq` do ML-1A (`makeCuratedPathWithoutJQ`, com `command -v jq` vazio afirmado), e reprova se o código de saída divergir. Devolve o resultado do caminho com `jq`. Assim todos os testes existentes passam a afirmar a equivalência dos dois extratores, incluindo o `TestGitBranchGuard_UnterminatedHeredocBeforeRealPush_StillBlocks` da #507. Testes que dependem de variáveis de ambiente específicas preservam essas variáveis nos dois modos.
+**Acceptance criteria:**
+- [ ] Os 44 testes `TestGitBranchGuard*` passam, cada um rodando nos dois modos
+- [ ] Prova: com o script de `3b2eff09` no lugar do novo (overlay ou cópia), o `TestGitBranchGuard_UnterminatedHeredocBeforeRealPush_StillBlocks` reprova por divergência entre os modos
+**Gates da wave:**
+```bash
+go build ./...
+go test ./internal/generators/ -run 'TestGitBranchGuard' -count=1
 ```
 
 ## Wave 2 — Revisão independente e gate completo (paralela)

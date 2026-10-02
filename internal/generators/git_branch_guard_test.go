@@ -771,3 +771,227 @@ func TestGitBranchGuard_TrackfwYAMLInAncestor_SubdirectoryStillBlocks(t *testing
 		t.Fatalf("exit code: want 2 (subdiretório de projeto trackfw continua protegido), got %d (stderr: %s)", code, stderr)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// ML-1A (ROADMAP-2026-10-02-trackfw-git-branch-guard-falha-aberto-sem-jq):
+// tabela C01–C22 com jq e sem jq (extrator awk) + prova de mordida.
+// ADR: ADR-2026-10-02 — D1/D2/D2-bis/D2-ter.
+// ---------------------------------------------------------------------------
+
+// makeCuratedPathWithoutJQ cria um diretório temporário com symlinks para os
+// utilitários externos que o guard precisa (awk, sed, bash, head, find) mas
+// SEM jq — forçando o caminho do extrator awk (D1). O macOS tem /usr/bin/jq,
+// portanto PATH não pode incluir /usr/bin inteiro.
+func makeCuratedPathWithoutJQ(t *testing.T) string {
+	t.Helper()
+	fakeBinDir := t.TempDir()
+	for _, bin := range []string{"bash", "awk", "sed", "head", "tr", "find"} {
+		binPath, err := exec.LookPath(bin)
+		if err != nil {
+			continue // binário ausente no sistema — segue sem ele
+		}
+		dest := filepath.Join(fakeBinDir, bin)
+		if symlinkErr := os.Symlink(binPath, dest); symlinkErr != nil {
+			if !isSymlinkPrivilegeError(symlinkErr) {
+				t.Fatalf("makeCuratedPathWithoutJQ: os.Symlink(%q → %q): %v", binPath, dest, symlinkErr)
+			}
+		}
+	}
+	return fakeBinDir
+}
+
+// runGitBranchGuardWithEnv executa o guard com env explícito (para PATH curado sem jq).
+func runGitBranchGuardWithEnv(t *testing.T, dir, scriptPath string, env []string, stdin string) (exitCode int, stdout, stderr string) {
+	t.Helper()
+	cmd := exec.Command("bash", scriptPath)
+	cmd.Dir = dir
+	cmd.Stdin = strings.NewReader(stdin)
+	cmd.Env = env
+	var outBuf, errBuf strings.Builder
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
+	err := cmd.Run()
+	if err == nil {
+		return 0, outBuf.String(), errBuf.String()
+	}
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		return exitErr.ExitCode(), outBuf.String(), errBuf.String()
+	}
+	t.Fatalf("runGitBranchGuardWithEnv: exec error: %v (stderr: %s)", err, errBuf.String())
+	return -1, "", ""
+}
+
+// assertJQAbsentInPath verifica que `command -v jq` falha no fakeBinDir —
+// pré-condição obrigatória do braço sem jq (macOS ships /usr/bin/jq).
+func assertJQAbsentInPath(t *testing.T, fakeBinDir string) {
+	t.Helper()
+	cmd := exec.Command("bash", "-c", "command -v jq")
+	cmd.Env = []string{"PATH=" + fakeBinDir}
+	out, _ := cmd.Output()
+	if strings.TrimSpace(string(out)) != "" {
+		t.Fatalf("pré-condição violada: jq foi encontrado no PATH curado (%q). "+
+			"O braço sem-jq não está isolado — mac /usr/bin/jq vazou para o PATH.", strings.TrimSpace(string(out)))
+	}
+}
+
+// guardCasesC01C22 retorna os 22 casos obrigatórios da Wave 0 + C22 (NUL).
+// Payloads são raw strings Go: \n, \t, \u000a, etc. são os literais JSON correspondentes
+// (dois chars, não sequências de escape Go).
+func guardCasesC01C22() []struct {
+	id      string
+	payload string
+	wantRC  int
+} {
+	c10payload := "{\n\"tool_name\":\"Bash\",\n\n\"tool_input\":{\"command\":\"git push origin main\"}}"
+	return []struct {
+		id      string
+		payload string
+		wantRC  int
+	}{
+		// C01: baseline — git push simples é bloqueado.
+		{id: "C01", payload: `{"tool_input":{"command":"git push origin main"}}`, wantRC: 2},
+		// C02: JSON \n decodificado para newline separa segmentos; git push na linha 2 bloqueia (Forma A).
+		{id: "C02", payload: `{"tool_input":{"command":"echo oi\ngit push origin main"}}`, wantRC: 2},
+		// C03: JSON \" decodificado para aspa dupla; && git push visível após a aspa fechante (Forma B).
+		{id: "C03", payload: `{"tool_input":{"command":"echo \"hello\" && git push origin main"}}`, wantRC: 2},
+		// C04: JSON \t decodificado para tab; bash tokeniza git<TAB>push como git + push (Forma C).
+		{id: "C04", payload: `{"tool_input":{"command":"git\tpush origin main"}}`, wantRC: 2},
+		// C05: \u000a é newline (mesmo mecanismo de C02); bloqueia (Forma D).
+		{id: "C05", payload: `{"tool_input":{"command":"echo oi\u000agit push origin main"}}`, wantRC: 2},
+		// C06: \\n é backslash+n literal (não newline); todo o argumento fica dentro das aspas; permite.
+		{id: "C06", payload: `{"tool_input":{"command":"echo \"a\\ngit push origin main\""}}`, wantRC: 0},
+		// C07: git commit com -m "a\\nb" (backslash+n literal no argumento); primeiro token git commit; bloqueia.
+		{id: "C07", payload: `{"tool_input":{"command":"git commit -m \"a\\nb\""}}`, wantRC: 2},
+		// C08: chave command está em valor de string irmã (description); o campo command real é echo safe; permite.
+		{id: "C08", payload: `{"tool_input":{"description":"git push","command":"echo safe"}}`, wantRC: 0},
+		// C09: chave command duplicada — last-wins extrai git push; bloqueia (D2-ter: last-wins).
+		{id: "C09", payload: `{"command":"echo safe","command":"git push"}`, wantRC: 2},
+		// C10: linha em branco no JSON antes de command — awk acumula em END e não parte o payload (D2-ter: sem RS="").
+		{id: "C10", payload: c10payload, wantRC: 2},
+		// C11: flat command tem prioridade menor que tool_input.command; bloqueia pelo campo de maior prioridade.
+		{id: "C11", payload: `{"command":"echo safe","tool_input":{"command":"git push"}}`, wantRC: 2},
+		// C12: flat command tem prioridade maior que tool_info.command_line; git push no flat command bloqueia.
+		{id: "C12", payload: `{"command":"git push","tool_info":{"command_line":"echo"}}`, wantRC: 2},
+		// C13: surrogate \ud83d converte para marcador; "git push" no comando bloqueia.
+		{id: "C13", payload: `{"tool_input":{"command":"git push \ud83d"}}`, wantRC: 2},
+		// C14: evasão unicode — g é 'g'; git push decodificado corretamente e bloqueado.
+		{id: "C14", payload: `{"tool_input":{"command":"git push"}}`, wantRC: 2},
+		// C15: echo hello world — não é comando git; permite.
+		{id: "C15", payload: `{"tool_input":{"command":"echo hello world"}}`, wantRC: 0},
+		// C16: git status é read-only permitido; permite.
+		{id: "C16", payload: `{"tool_input":{"command":"git status"}}`, wantRC: 0},
+		// C17: payload sem chave command (tipo Read tool); permite (chave ausente → nada a bloquear).
+		{id: "C17", payload: `{"tool_name":"Read","tool_input":{"path":"/foo/bar"}}`, wantRC: 0},
+		// C18: string JSON não-terminada — extrator detecta unterminated_string; recusa (D2: indecodificável → fail-closed).
+		{id: "C18", payload: `{"tool_input":{"command":"git push origin main`, wantRC: 2},
+		// C19: tool_input aninhado em sub-objeto não conta como depth=2; o tool_input raiz com git push bloqueia.
+		{id: "C19", payload: `{"meta":{"tool_input":{"command":"echo safe"}},"tool_input":{"command":"git push"}}`, wantRC: 2},
+		// C20: trailing backslash — echo foo\ é string válida, D2 não dispara; permite.
+		{id: "C20", payload: `{"tool_input":{"command":"echo foo\\"}}`, wantRC: 0},
+		// C21: \u000d é CR — não é separador de segmento; echo oi<CR>git push permanece um segmento; primeiro token echo; permite.
+		{id: "C21", payload: `{"tool_input":{"command":"echo oi\u000dgit push origin main"}}`, wantRC: 0},
+		// C22: \u0000 (NUL) no valor — D2-bis recusa em ambos os caminhos (jq e awk) antes de $() descartar o NUL.
+		{id: "C22", payload: `{"tool_input":{"command":"git push\u0000origin main"}}`, wantRC: 2},
+	}
+}
+
+// TestGitBranchGuardAwk_C01C22_WithJQ roda a tabela C01–C22 com jq disponível
+// (PATH do sistema — macOS tem /usr/bin/jq).
+// AC4: mesma tabela nos dois caminhos.
+func TestGitBranchGuardAwk_C01C22_WithJQ(t *testing.T) {
+	// Pré-condição: jq deve estar no sistema.
+	if _, err := exec.LookPath("jq"); err != nil {
+		t.Skip("jq não encontrado no PATH do sistema — pulando tabela com-jq")
+	}
+	dir, script := setupGitBranchGuardFixture(t)
+	for _, tc := range guardCasesC01C22() {
+		tc := tc
+		t.Run(tc.id, func(t *testing.T) {
+			code, _, stderr := runGitBranchGuard(t, dir, script, nil, tc.payload)
+			if code != tc.wantRC {
+				t.Errorf("%s (+jq): rc want %d, got %d (stderr: %s)", tc.id, tc.wantRC, code, stderr)
+			}
+		})
+	}
+}
+
+// TestGitBranchGuardAwk_C01C22_WithoutJQ roda a tabela C01–C22 com PATH curado
+// que exclui jq — exercita o extrator awk (D1/D2/D2-bis/D2-ter).
+// AC2/AC3/AC4/AC5: cobre multilinha, \", literal \\n, indecodificável e NUL sem jq.
+// Pré-condição verificada: command -v jq deve retornar vazio no PATH curado.
+func TestGitBranchGuardAwk_C01C22_WithoutJQ(t *testing.T) {
+	dir, script := setupGitBranchGuardFixture(t)
+	fakeBinDir := makeCuratedPathWithoutJQ(t)
+	assertJQAbsentInPath(t, fakeBinDir)
+	env := []string{"PATH=" + fakeBinDir}
+	for _, tc := range guardCasesC01C22() {
+		tc := tc
+		t.Run(tc.id, func(t *testing.T) {
+			code, _, stderr := runGitBranchGuardWithEnv(t, dir, script, env, tc.payload)
+			if code != tc.wantRC {
+				t.Errorf("%s (-jq/awk): rc want %d, got %d (stderr: %s)", tc.id, tc.wantRC, code, stderr)
+			}
+		})
+	}
+}
+
+// TestGitBranchGuardAwk_ProvaDeMordida verifica que o script de 3b2eff09 falha
+// aberto (rc=0) nos casos onde o novo extrator awk bloqueia (rc=2) — prova que o
+// fallback antigo (sed) estava quebrado e que os novos testes não são vacuosos.
+// Casos medidos: C02-C05 (Formas A-D), C12 (prioridade invertida), C22 (NUL).
+// Observação: C09 e C11 NÃO falham abertos com o sed antigo (greedy/backtrack
+// encontra o campo correto) — medido com o script real, não inferido.
+func TestGitBranchGuardAwk_ProvaDeMordida(t *testing.T) {
+	// Obter o script antigo diretamente do objeto git.
+	oldScriptBytes, err := exec.Command("git", "-C",
+		"/Users/kgsaran/Sistemas/Desenvolvimento/workspace/trackfw",
+		"show", "3b2eff09:scripts/trackfw-git-branch-guard.sh").Output()
+	if err != nil {
+		t.Skipf("git show 3b2eff09: não disponível (%v) — pulando prova de mordida", err)
+	}
+
+	// Escrever o script antigo em arquivo temporário.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte("project_name: fixture\n"), 0644); err != nil {
+		t.Fatalf("WriteFile trackfw.yaml: %v", err)
+	}
+	oldScript := filepath.Join(dir, "old-guard.sh")
+	if err := os.WriteFile(oldScript, oldScriptBytes, 0755); err != nil {
+		t.Fatalf("WriteFile old-guard.sh: %v", err)
+	}
+
+	fakeBinDir := makeCuratedPathWithoutJQ(t)
+	assertJQAbsentInPath(t, fakeBinDir)
+	env := []string{"PATH=" + fakeBinDir}
+
+	// Casos que o sed antigo NÃO conseguia bloquear (fail-open = bug):
+	cases := []struct {
+		id      string
+		payload string
+	}{
+		// C02: JSON \n — sed não decodifica \n, extrai "echo oi\ngit push" como um token cujo primeiro elem é "echo".
+		{id: "C02", payload: `{"tool_input":{"command":"echo oi\ngit push origin main"}}`},
+		// C03: JSON \" — [^"]* para na aspa escapada, extrai "echo \" sem o git push.
+		{id: "C03", payload: `{"tool_input":{"command":"echo \"hello\" && git push origin main"}}`},
+		// C04: JSON \t — sed não decodifica \t; "git\tpush" não é reconhecido como "git" + "push".
+		{id: "C04", payload: `{"tool_input":{"command":"git\tpush origin main"}}`},
+		// C05: \u000a — mesmo mecanismo de C02; sed não decodifica unicode.
+		{id: "C05", payload: `{"tool_input":{"command":"echo oi\u000agit push origin main"}}`},
+		// C12: prioridade invertida — sed antigo extrai tool_info.command_line ("echo") quando
+		// flat command ("git push") deveria ter prioridade maior.
+		{id: "C12", payload: `{"command":"git push","tool_info":{"command_line":"echo"}}`},
+		// C22: NUL — $() descarta o NUL, "git pushorigin" não é reconhecido como "git push".
+		{id: "C22", payload: `{"tool_input":{"command":"git push\u0000origin main"}}`},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.id, func(t *testing.T) {
+			// O script ANTIGO deve retornar rc=0 (fail-open = bug que estamos corrigindo).
+			code, _, stderr := runGitBranchGuardWithEnv(t, dir, oldScript, env, tc.payload)
+			if code != 0 {
+				t.Errorf("prova de mordida %s: old script (3b2eff09) esperado rc=0 (fail-open), got rc=%d (stderr: %s)", tc.id, code, stderr)
+			}
+		})
+	}
+}
