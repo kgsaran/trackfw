@@ -44032,3 +44032,7 @@ CI 20/20 em `837d6ed7` após o ML-3E (2 falhas novas de Windows, ambas no teste:
 esperado e MAX_PATH no `git add` do e2e). Todos os ACs com evidência. #497 e #499 do Lourival
 fechados como superados; label `req-aberta` criada (Discussion continua obrigatória). Fechamento da
 REQ e roadmap → `done/` são pós-merge, em branch `chore/`.
+
+## 2026-10-02 — zeus-tf — FIM: REQ-2026-10-01 (estado que governa a branch) fechada pós-merge
+
+PR #500 mergeado em `54c227d1`. Roadmap → `done/`, REQ → `Done`, label `req-aberta` removida de #494/#490.

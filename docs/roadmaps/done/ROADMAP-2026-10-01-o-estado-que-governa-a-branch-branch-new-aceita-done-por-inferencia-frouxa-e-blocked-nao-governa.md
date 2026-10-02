@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-10-01
 req: "docs/req/REQ-2026-10-01-o-estado-que-governa-a-branch-branch-new-aceita-done-por-inferencia-frouxa-e-blocked-nao-governa.md"
 squad: "hades-tf, apolo-tf, artemis-tf, hefesto-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf, artemis-tf, hefesto-tf"
 
 # Roadmap: o estado que governa a branch — branch new aceita done por inferência frouxa e blocked não governa
 
-> Created: 2026-10-01 | Status: wip
+> Created: 2026-10-01 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-10-01-o-estado-que-governa-a-branch-branch-new-aceita-done-por-inferencia-frouxa-e-blocked-nao-governa.md
