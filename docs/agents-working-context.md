@@ -44112,3 +44112,8 @@ sonda de fallback de `discover`. Aviso novo para `.md` com cara de ADR (frontmat
 
 PR #503 com CI 20/20 em `c61300ca`. Barrier `passed` nas waves 0–3. Issue #504 aberta para o travamento
 do `parity-falsify` com 8 chunks em paralelo no macOS.
+
+## 2026-10-02 — zeus-tf — FIM: REQ-2026-10-02 (critério de ADR) fechada pós-merge
+
+PR #503 mergeado em `2dd76b40`. Roadmap → `done/`, REQ → `Done`, label `req-aberta` removida da #471.
+O commit da evidência do AC10 (`99477f44`) ficou fora do merge e veio para esta branch.

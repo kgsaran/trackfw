@@ -1,15 +1,16 @@
 ---
-status: Open
+status: Done
 date: 2026-10-02
 author: "zeus-tf"
 adr: "docs/adr/ADR-2026-10-02-o-criterio-de-identificacao-de-adr-e-o-prefixo-adr-no-nome-do-arquivo-aplicado-no-primitivo-unico-de-enumeracao.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-10-02-qualquer-md-em-adr-dirs-e-contado-como-adr-o-criterio-passa-a-ser-o-prefixo-adr.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-10-02-qualquer-md-em-adr-dirs-e-contado-como-adr-o-criterio-passa-a-ser-o-prefixo-adr.md"
 ---
 
 # REQ: qualquer .md em adr_dirs é contado como ADR — o critério passa a ser o prefixo ADR-
 
-> Date: 2026-10-02 | Status: Open
+> Date: 2026-10-02 | Status: Done
 | GitHub Issue: #471
+| Mergeado: PR #503 em `2dd76b40` (2026-10-02); CI 20/20, inclusive `windows-full-suites`. #471 fechada pelo merge.
 
 ## Motivation
 
@@ -71,4 +72,4 @@ ADR: docs/adr/ADR-2026-10-02-o-criterio-de-identificacao-de-adr-e-o-prefixo-adr-
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-10-02-qualquer-md-em-adr-dirs-e-contado-como-adr-o-criterio-passa-a-ser-o-prefixo-adr.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-10-02-qualquer-md-em-adr-dirs-e-contado-como-adr-o-criterio-passa-a-ser-o-prefixo-adr.md

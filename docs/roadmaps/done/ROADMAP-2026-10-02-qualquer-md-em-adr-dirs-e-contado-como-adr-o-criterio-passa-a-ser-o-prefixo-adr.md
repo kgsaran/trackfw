@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-10-02
 req: "docs/req/REQ-2026-10-02-qualquer-md-em-adr-dirs-e-contado-como-adr-o-criterio-passa-a-ser-o-prefixo-adr.md"
 squad: "hades-tf, apolo-tf, artemis-tf, hefesto-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf, artemis-tf, hefesto-tf"
 
 # Roadmap: qualquer .md em adr_dirs é contado como ADR — o critério passa a ser o prefixo ADR-
 
-> Created: 2026-10-02 | Status: wip
+> Created: 2026-10-02 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-10-02-qualquer-md-em-adr-dirs-e-contado-como-adr-o-criterio-passa-a-ser-o-prefixo-adr.md
