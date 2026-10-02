@@ -57,7 +57,7 @@ grep -q "Veredito" docs/seguranca/2026-10-02-wave0-limite-por-chunk.md
 > Dependencies: Wave 0 auditada
 
 ### ML-1A — Limite por chunk no driver e teste com chunk sintético
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** ares-tf
 **Files affected:** `scripts/run-gates-falsify-parallel.sh`, script de teste novo (nome e ponto de ligação no `Makefile`/`parity-rest` a decidir lendo como os outros `check-*.sh` de autoteste são ligados), `docs/cli-parity.md` se descrever o driver
 **Actions:** conforme a REQ, com o mecanismo e os 8 ajustes da Wave 0 (§ Veredito do parecer):
@@ -71,10 +71,11 @@ grep -q "Veredito" docs/seguranca/2026-10-02-wave0-limite-por-chunk.md
 8. Chunk sintético do teste com `sleep 999999` ou laço (no macOS não existe `sleep infinity` nem `timeout`).
 9. O autoteste roda no macOS e no Linux; no Git Bash/MSYS (`uname` com `MINGW`/`MSYS`), `t.Skip`/saída declarada, porque `kill -- -PGID` não existe lá (resíduo R4 da Wave 0). `TRACKFW_FALSIFY_CHUNK_TIMEOUT` (padrão 1200), override denunciado no stderr. No estouro: árvore de processos do chunk, kill da árvore, `FAIL [falsify-driver/chunk-timeout] chunk <N> excedeu <T>s`, rc≠0, e a guarda de conjunto continua rodando.
 **Acceptance criteria:**
-- [ ] Teste com chunk sintético (dorme para sempre, com um neto em background): rc≠0 em até T+10 s, linha FAIL, árvore impressa, 0 processos sobreviventes
-- [ ] O mesmo teste contra o driver de `0bf66679` (cópia, com teto externo) não termina dentro do teto: prova de que morde
-- [ ] Suíte real sem override: 347 OK / 0 FAIL
-- [ ] Uma frase por teste
+- [x] Teste com chunk sintético (dorme para sempre, com um neto em background): rc≠0 em até T+10 s, linha FAIL, árvore impressa, 0 processos sobreviventes
+- [x] O mesmo teste contra o driver de `0bf66679` (cópia, com teto externo) não termina dentro do teto: prova de que morde
+- [x] Suíte real sem override: 347 OK / 0 FAIL
+- [x] Uma frase por teste
+      ✅ Autoteste rodado pelo arquiteto: 10/10 OK, 0 sobreviventes no `ps` depois; contra-braço vivo em 15 s. ⚠️ Sem o commit antigo (clone raso), o braço 5 emite `OK [contra-braco/skip]`: um rótulo de sucesso para um braço que não rodou. Vai para a revisão do ML-2A.
 **Gates da wave:**
 ```bash
 bash -n scripts/run-gates-falsify-parallel.sh
