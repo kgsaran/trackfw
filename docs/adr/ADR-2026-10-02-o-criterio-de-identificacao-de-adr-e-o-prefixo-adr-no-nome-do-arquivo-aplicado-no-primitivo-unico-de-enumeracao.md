@@ -49,8 +49,17 @@ validade do frontmatter continua sendo trabalho das regras do `validate`, sobre 
 
 ### D2 — O critério vive em `walkADRFilePathsForRule`, e só lá.
 
-Todo consumidor que enumera ADR passa por ele: `ResolveADRFiles`, `WalkADRFilePaths` e
-`findADRFile`. Mudar o critério ali move contagem, listagem, numeração e regras **no mesmo gesto**.
+Todo consumidor que **enumera** ADR passa por ele: `ResolveADRFiles` e `WalkADRFilePaths`. Mudar o
+critério ali move contagem, listagem, numeração e regras **no mesmo gesto**.
+
+🔴 **Exceção, decidida pela Wave 0: `findADRFile` não aplica o critério.** Ele não enumera; ele
+**resolve uma referência explícita** de REQ (`adr:`, `blocked_by:`). Se aplicasse, um `blocked_by:` para
+um ADR legado sem prefixo deixaria de ser encontrado. `adrStatusForRule` trata "não encontrado" como
+sucesso, e o `blocked_by_draft_adr` deixaria de disparar em silêncio, um bypass sem sinal.
+
+Também pela Wave 0, o primitivo passa a exigir **arquivo regular**: um symlink de diretório chamado
+`ADR-x.md` era contado, porque o `WalkDir` o reporta com `IsDir()=false`. É o mesmo critério de
+identificação, então entra nesta REQ.
 O `NOTAS.md` deixa de ser contado **e** deixa de ser violação de frontmatter.
 
 ### D3 — Os dois sítios de fora passam a usar o primitivo.
@@ -65,7 +74,8 @@ Pela Regra Dura de Causa Raiz, o ponto único não está satisfeito enquanto sob
 
 O risco do D1 é um ADR real, fora do padrão de nome, sumir em silêncio. A regra nova
 `adr_file_without_prefix` (severidade **warning**) acusa, dentro de `adr_dirs`, o `.md` **sem**
-prefixo `ADR-` cujo frontmatter declara `status:`. A mensagem diz que o arquivo não é contado como
+prefixo `ADR-` cujo status é resolvível por `resolveAdrStatus` (frontmatter `status:` ou cabeçalho
+`| Status: X`, para cobrir ADR legado). A mensagem diz que o arquivo não é contado como
 ADR e que deve ser renomeado para `ADR-…` se for um.
 
 Os `README.md`/`index.md` sem frontmatter **não** disparam o aviso. Ele existe para o ADR mal nomeado,

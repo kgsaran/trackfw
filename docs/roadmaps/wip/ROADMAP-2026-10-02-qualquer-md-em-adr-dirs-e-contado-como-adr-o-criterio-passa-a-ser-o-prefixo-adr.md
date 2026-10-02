@@ -20,13 +20,15 @@ Mapa dos sítios (lido em `44718ffc`):
 |---|---|---|
 | `internal/validator/validator.go` `walkADRFilePathsForRule` (~:3107) | `strings.HasSuffix(path, ".md")` | basename com prefixo `ADR-` (sem distinção de maiúsculas) **e** `.md` (D1/D2) |
 | consumidores do primitivo: `ResolveADRFiles`, `WalkADRFilePaths` (`adr list`, `NewADRDraft`), `walkADRFiles`, regras do `validate` | herdam | herdam (sem mudança própria) |
-| `internal/validator/validator.go` `findADRFile` (~:3140) | varredura própria por basename | conferir se passa pelo critério (Wave 0 decide) |
+| `internal/validator/validator.go` `findADRFile` (~:3140) | varredura própria por basename | **não muda**: resolve referência explícita (decisão da Wave 0, ADR D2) |
+| `internal/validator/validator.go` `mdBasenamesOnDisk` (scope-redirect, ~:342/454) | todo `.md` | **não muda**: detecção de artefato perdido precisa ser larga |
 | `internal/serve/api_chain.go` `scanChainDir` (~:83), tipo `adr` | `WalkDir` próprio, `HasSuffix(".md")` | nós de ADR pelo primitivo (D3) |
-| `internal/discover/discover.go` sonda de fallback (~:480-491) | `countMDFiles(docs/adr…)` | contagem pelo primitivo (D3) |
+| `internal/discover/discover.go` sonda de fallback (~:486 subpastas e ~:491 plano) | `countMDFiles(docs/adr…)` | contagem pelo primitivo nos **dois** chamadores (D3) |
 | regra nova `adr_file_without_prefix` | — | warning (D4), ligada nos **dois** caminhos de aplicação de regra do `validate` (`applyRule` ~:856 e `applyRuleTagged` ~:1211) |
 
 ## Acceptance Criteria
-- [ ] AC1 — Wave 0 auditada
+- [x] AC1 — Wave 0 auditada
+      ✅ `docs/seguranca/2026-10-02-wave0-criterio-de-adr.md`: APROVA COM AJUSTES (A1–A5 absorvidos no ADR e nos ML-1A/1B)
 - [ ] AC2 — fixture de três braços: `NOTAS.md` ≡ vazio em status/context/discover/adr list/validate
 - [ ] AC3 — `adr-001-x.md` minúsculo conta
 - [ ] AC4 — `/api/chain` sem nó para `NOTAS.md`
@@ -44,7 +46,7 @@ Mapa dos sítios (lido em `44718ffc`):
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Completude dos sítios e modelo de ameaça do critério
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** hades-tf
 **Files affected:** `docs/seguranca/2026-10-02-wave0-criterio-de-adr.md` (único arquivo escrito)
 **Actions:**
@@ -53,9 +55,9 @@ Mapa dos sítios (lido em `44718ffc`):
 3. **Falsificação nas duas direções** por sítio: frouxo (volta a contar `NOTAS.md`) e restrito (deixa de contar `adr-001.md` ou `ADR-…` legítimo).
 4. **Resíduo declarado.**
 **Acceptance criteria:**
-- [ ] As quatro seções com evidência (comando + saída)
-- [ ] Veredito explícito
-- [ ] Nenhuma linha de implementação
+- [x] As quatro seções com evidência (comando + saída)
+- [x] Veredito explícito
+- [x] Nenhuma linha de implementação
 
 **Gates da wave:**
 ```bash
@@ -71,11 +73,13 @@ grep -q "Veredito" docs/seguranca/2026-10-02-wave0-criterio-de-adr.md
 **Squad:** apolo-tf
 **Files affected:** `internal/validator/validator.go`, testes em `internal/validator/*_test.go`,
 `docs/cli-parity.md`, `scripts/check-validate-rule-pins.sh` (se o conjunto de regras for pinado)
-**Actions:** D1/D2 em `walkADRFilePathsForRule`; `findADRFile` conforme a decisão da Wave 0; regra D4
-(warning em `ruleDefaults`) nos dois caminhos de aplicação; comentários que dizem "sem filtro de
-prefixo" (ex.: `WalkADRFilePaths` ~:3068) corrigidos.
+**Actions:** D1/D2 em `walkADRFilePathsForRule`, incluindo `d.Type().IsRegular()` (symlink de diretório
+`ADR-x.md` deixa de contar; A3 da Wave 0); `findADRFile` **intocado**; regra D4 (warning em
+`ruleDefaults`) usando `resolveAdrStatus` (A2), nos dois caminhos de aplicação; comentários que dizem
+"sem filtro de prefixo" (ex.: `WalkADRFilePaths` ~:3068) corrigidos.
 **Acceptance criteria:**
-- [ ] Testes: `NOTAS.md` não é enumerado; `adr-001-x.md` é; `ADR-…` é; regra D4 nos três braços (com `status:`, `README.md` sem frontmatter, `ADR-…`)
+- [ ] Testes: `NOTAS.md` não é enumerado; `adr-001-x.md` é; `ADR-…` é; symlink de diretório `ADR-x.md` não é; regra D4 nos quatro braços (frontmatter `status:`, cabeçalho `| Status:`, `README.md` sem status, `ADR-…`)
+- [ ] A1 da Wave 0: REQ com `blocked_by:` para `decisao.md` (sem prefixo, Draft) continua disparando `blocked_by_draft_adr`
 - [ ] Cada teste reprova com o critério antigo (prova por overlay); uma frase por teste
 **Gates da wave:**
 ```bash
@@ -86,12 +90,15 @@ go test ./internal/validator/ ./internal/generators/ -count=1
 ### ML-1B — `serve` e sonda do `discover` pelo primitivo
 **Status:** ⬜ Pendente
 **Squad:** apolo-tf
-**Files affected:** `internal/serve/api_chain.go`, `internal/discover/discover.go`, testes dos dois pacotes
+**Files affected:** `internal/serve/api_chain.go`, `internal/discover/discover.go`, testes dos dois pacotes,
+`scripts/check-adr-enumeration-single-point.sh` (só o comentário de isenção)
 **Paralelismo:** não toca `internal/validator/`; consome `validator.WalkADRFilePaths`/`ResolveADRFiles`, que já existem.
 **Actions:** D3. Em `scanChainDir`, para `nodeType == "adr"`, enumerar pelo primitivo; REQ e roadmap
-seguem como estão. No `discover`, a sonda de fallback conta ADR pelo primitivo.
+seguem como estão. No `discover`, a sonda de fallback conta ADR pelo primitivo nos dois chamadores
+(subpastas e plano). Atualizar o comentário de isenção de `scripts/check-adr-enumeration-single-point.sh`
+(~:88) que deixa de ser verdade (A4).
 **Acceptance criteria:**
-- [ ] Testes: `/api/chain` sem nó para `NOTAS.md`; sonda do `discover` sem crédito; um teste por sítio, com uma frase cada
+- [ ] Testes: `/api/chain` sem nó para `NOTAS.md` **e** com os nós de REQ e roadmap intactos (A5); sonda do `discover` sem crédito no layout plano e no de subpastas; uma frase por teste
 - [ ] O gate de "ADR enumeration outside single point" do `check-gates-falsify.sh` segue verde
 **Gates da wave:**
 ```bash
