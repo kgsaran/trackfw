@@ -43996,3 +43996,9 @@ reabrir roadmap alheio), ML-2B (`ship` degradado sem teste), ML-3C (`--literal-p
 Hades, absorvido em vez de follow-up). Três testes decorativos removidos; um teste reescrito porque
 não mordia e partia de premissa falsa (":" é válido em nome de diretório no macOS, medido).
 `make quality` EXIT=0 em `57aed5b4`; ML-3C coberto pelos testes dos 3 pacotes. AC10 aguarda o CI.
+
+## 2026-10-01 — artemis-tf (fix/estado-que-governa-a-branch — ML-3D) — INÍCIO
+
+**Início:** 2026-10-01 | Branch: `fix/estado-que-governa-a-branch`
+**Tarefa:** ML-3D — Corretivo final: layout `by_agent`, Windows e asserções vácuas
+**Arquivos alvo:** `internal/commands/branch_state_e2e_test.go`, `internal/validator/validator_literal_pathspecs_test.go`, `internal/validator/validator_test.go`, `internal/commands/push_test.go`, `internal/commands/ship_test.go`

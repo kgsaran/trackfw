@@ -793,4 +793,228 @@ func TestBranchStateE2E_AC12_AccentedRoadmapInBaseDoesNotGovern(t *testing.T) {
 	}
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// by_agent helpers
+// ────────────────────────────────────────────────────────────────────────────
+
+// minimalByAgentTrackfwYAML returns a strict-mode trackfw.yaml with roadmap_namespacing: by_agent
+// and the given agents. The flat state dirs (wip/, done/, etc.) are NOT created on disk so they
+// won't be picked up by resolveAgentNamespaces as accidental agent namespaces.
+func minimalByAgentTrackfwYAML(agentA, agentB string) string {
+	return "governance_mode: strict\n" +
+		"req_dir: docs/req\n" +
+		"roadmap_dir: docs/roadmaps\n" +
+		"roadmap_namespacing: by_agent\n" +
+		"agents:\n" +
+		"  - " + agentA + "\n" +
+		"  - " + agentB + "\n" +
+		"hooks: none\n" +
+		"ci: none\n" +
+		"forge: none\n"
+}
+
+// makeE2ERepoByAgent creates an isolated git repo with by_agent layout (2 agents: agentA, agentB).
+// Crucially, it does NOT create flat docs/roadmaps/{wip,done,...} dirs so they won't be treated
+// as agent namespaces by resolveAgentNamespaces.
+func makeE2ERepoByAgent(t *testing.T, agentA, agentB string) (repoDir, homeDir string) {
+	t.Helper()
+	homeDir = t.TempDir()
+	repoDir = t.TempDir()
+
+	gitE2E(t, repoDir, homeDir, "init", "-q", "-b", "main", ".")
+	gitE2E(t, repoDir, homeDir, "config", "user.email", "e2e@localhost")
+	gitE2E(t, repoDir, homeDir, "config", "user.name", "E2E Test")
+	gitE2E(t, repoDir, homeDir, "config", "commit.gpgsign", "false")
+	gitE2E(t, repoDir, homeDir, "config", "core.quotepath", "true")
+
+	// Create by_agent state dirs for each agent; no flat state dirs at root of roadmap_dir.
+	for _, agent := range []string{agentA, agentB} {
+		for _, state := range []string{"wip", "done", "blocked", "backlog", "abandoned"} {
+			d := filepath.Join(repoDir, "docs", "roadmaps", agent, state)
+			if err := os.MkdirAll(d, 0755); err != nil {
+				t.Fatalf("mkdirall %s: %v", d, err)
+			}
+		}
+	}
+	for _, d := range []string{"docs/req", "docs/adr"} {
+		if err := os.MkdirAll(filepath.Join(repoDir, d), 0755); err != nil {
+			t.Fatalf("mkdirall %s: %v", d, err)
+		}
+	}
+
+	if err := os.WriteFile(filepath.Join(repoDir, "trackfw.yaml"),
+		[]byte(minimalByAgentTrackfwYAML(agentA, agentB)), 0644); err != nil {
+		t.Fatalf("write trackfw.yaml: %v", err)
+	}
+
+	sentinel := filepath.Join(repoDir, "docs", ".gitkeep")
+	if err := os.WriteFile(sentinel, []byte{}, 0644); err != nil {
+		t.Fatalf("write docs/.gitkeep: %v", err)
+	}
+
+	gitE2E(t, repoDir, homeDir, "add", "-A")
+	gitE2E(t, repoDir, homeDir, "commit", "-q", "-m", "chore: init by_agent project layout")
+	return repoDir, homeDir
+}
+
+// writeRoadmapDoneInAgentDir writes a done/ roadmap for a specific agent.
+func writeRoadmapDoneInAgentDir(t *testing.T, repoDir, agent, filename string) {
+	t.Helper()
+	dir := filepath.Join(repoDir, "docs", "roadmaps", agent, "done")
+	writeRoadmapDone(t, dir, filename)
+}
+
+// writeRoadmapInAgentWip writes a wip/ roadmap for a specific agent.
+func writeRoadmapInAgentWip(t *testing.T, repoDir, agent, filename string) {
+	t.Helper()
+	dir := filepath.Join(repoDir, "docs", "roadmaps", agent, "wip")
+	writeRoadmap(t, dir, filename)
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// AC2-by_agent — done-only match in by_agent layout blocks branch creation
+//
+// Reconciliation sentence: the test affirms that `branch new` blocks when the slug
+// matches a roadmap only in a by_agent agent's done/ (with wip/ empty for both agents),
+// confirming that the done/ loop in `runBranchNew` iterates all agent-scoped done/ dirs,
+// not just the flat one — and that a wip/ match in any agent allows creation.
+// ────────────────────────────────────────────────────────────────────────────
+
+func TestBranchStateE2E_AC2_ByAgent_DoneOnlyBlocksCreation(t *testing.T) {
+	const agentA = "alpha"
+	const agentB = "beta"
+	repoDir, homeDir := makeE2ERepoByAgent(t, agentA, agentB)
+
+	// Use the same slug as the existing AC2 flat test to prove cross-namespacing.
+	const roadmapFile = "ROADMAP-2026-10-01-gateway-estado.md"
+	const branchSpec = "fix/gateway-estado"
+
+	// Put the matching roadmap in agentA's done/ (not wip/ for either agent)
+	writeRoadmapDoneInAgentDir(t, repoDir, agentA, roadmapFile)
+	gitE2E(t, repoDir, homeDir, "add", "-A")
+	gitE2E(t, repoDir, homeDir, "commit", "-q", "-m", "chore: roadmap in alpha/done/")
+
+	const branchRef = "refs/heads/fix/gateway-estado"
+
+	// ─── Negative arm: wip/ empty for both agents → blocked ─────────────────
+	out, rc := runTFW(t, repoDir, homeDir, "branch", "new", branchSpec)
+	t.Logf("AC2-by_agent blocked output:\n%s", out)
+
+	if rc == 0 {
+		t.Errorf("AC2-by_agent negative: expected rc≠0 (branch blocked), got rc=0\noutput: %s", out)
+	}
+	if !strings.Contains(out, "similar names in done/") {
+		t.Errorf("AC2-by_agent negative: expected 'similar names in done/' in output\noutput: %s", out)
+	}
+	if strings.Contains(out, "trackfw roadmap move ROADMAP-") {
+		t.Errorf("AC2-by_agent negative: output must NOT contain 'trackfw roadmap move ROADMAP-'\noutput: %s", out)
+	}
+
+	// Branch must not have been created.
+	if _, err := gitE2ECheck(repoDir, homeDir, "rev-parse", "--verify", branchRef); err == nil {
+		t.Errorf("AC2-by_agent negative: branch %q must not exist but git rev-parse succeeded", branchRef)
+	}
+
+	// ─── Positive control: add roadmap to beta/wip/ → branch is allowed ─────
+	writeRoadmapInAgentWip(t, repoDir, agentB, roadmapFile)
+	gitE2E(t, repoDir, homeDir, "add", "-A")
+	gitE2E(t, repoDir, homeDir, "commit", "-q", "-m", "chore: add roadmap to beta/wip/")
+
+	outCtrl, rcCtrl := runTFW(t, repoDir, homeDir, "branch", "new", branchSpec, "--dry-run")
+	t.Logf("AC2-by_agent control output:\n%s", outCtrl)
+
+	if rcCtrl != 0 {
+		t.Errorf("AC2-by_agent control: expected rc=0 (wip/ match in beta governs), got rc=%d\noutput: %s", rcCtrl, outCtrl)
+	}
+	if !strings.Contains(outCtrl, "[dry-run] would create branch") {
+		t.Errorf("AC2-by_agent control: expected '[dry-run] would create branch' in output\noutput: %s", outCtrl)
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// AC5b-by_agent — done/ already in origin/main (agent beta) does NOT govern
+//
+// Reconciliation sentence: the test affirms that when origin/main already has a
+// roadmap in a by_agent agent's done/ (agentB/done/) before the branch was created,
+// that roadmap does NOT govern — commit blocks (rc≠0) and validate in strict mode
+// reports a branch_has_wip_roadmap violation — confirming the ls-tree loop checks all
+// agent-scoped done/ dirs in origin/main, not just a flat done/.
+// ────────────────────────────────────────────────────────────────────────────
+
+func TestBranchStateE2E_AC5b_ByAgent_DoneAlreadyInBaseBlocks(t *testing.T) {
+	const agentA = "alpha"
+	const agentB = "beta"
+	repoDir, homeDir := makeE2ERepoByAgent(t, agentA, agentB)
+
+	// Reuse gateway-estado slug — proven to slug-match the roadmap filename.
+	const roadmapFile = "ROADMAP-2026-10-01-gateway-estado.md"
+	const branchSpec = "fix/gateway-estado"
+
+	// Put the roadmap in agentB/done/ on main (the last agent — catches a loop that
+	// only checks the first agent's done/).
+	writeRoadmapDoneInAgentDir(t, repoDir, agentB, roadmapFile)
+	gitE2E(t, repoDir, homeDir, "add", "-A")
+	gitE2E(t, repoDir, homeDir, "commit", "-q", "-m", "chore: roadmap in beta/done/ on main")
+
+	// Push to bare origin — origin/main now has the roadmap in beta/done/
+	makeBareOriginAndPush(t, repoDir, homeDir)
+
+	// Create branch WITHOUT trackfw branch new (to avoid the creation guard)
+	gitE2E(t, repoDir, homeDir, "checkout", "-b", branchSpec)
+
+	// Premise guard: slug "gateway-estado" must be a substring of normalized filename.
+	const normalizedSlug = "gateway-estado"
+	{
+		slug := strings.ToLower(roadmapFile)
+		var b bytes.Buffer
+		lastDash := false
+		for _, r := range slug {
+			if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+				b.WriteRune(r)
+				lastDash = false
+			} else if !lastDash {
+				b.WriteByte('-')
+				lastDash = true
+			}
+		}
+		s := strings.Trim(b.String(), "-")
+		if !strings.Contains(s, normalizedSlug) {
+			t.Fatalf("AC5b-by_agent premise: slug %q must be substring of normalized filename %q", normalizedSlug, s)
+		}
+	}
+
+	// Stage a sentinel so commit has staged content.
+	sentinel := filepath.Join(repoDir, "sentinel.txt")
+	if err := os.WriteFile(sentinel, []byte("ac5b-by-agent\n"), 0644); err != nil {
+		t.Fatalf("write sentinel: %v", err)
+	}
+	gitE2E(t, repoDir, homeDir, "add", "sentinel.txt")
+
+	// trackfw commit — must block (rc≠0) because roadmap is in beta/done/ on origin/main
+	out, rc := runTFW(t, repoDir, homeDir, "commit", "-m", "fix: this should be blocked")
+	t.Logf("AC5b-by_agent commit output:\n%s", out)
+	if rc == 0 {
+		t.Errorf("AC5b-by_agent: expected commit rc≠0 (done/ in base does not govern), got rc=0\noutput: %s", out)
+	}
+	// The roadmap filename must appear in the output — proving it was found in beta/done/
+	// and rejected because it's in base, not that it was invisible.
+	if !strings.Contains(out, roadmapFile) {
+		t.Errorf("AC5b-by_agent: roadmap filename %q must appear in commit output (found in beta/done/, rejected as in base)\noutput: %s", roadmapFile, out)
+	}
+
+	// trackfw validate — must report branch governance violation in strict mode
+	outV, rcV := runTFW(t, repoDir, homeDir, "validate")
+	t.Logf("AC5b-by_agent validate output:\n%s", outV)
+	if rcV == 0 {
+		t.Errorf("AC5b-by_agent: validate must exit non-zero (strict mode, no governing roadmap)\noutput: %s", outV)
+	}
+	if !strings.Contains(outV, "wip/, blocked/ nor done/") {
+		t.Errorf("AC5b-by_agent: validate must contain 'wip/, blocked/ nor done/'\noutput: %s", outV)
+	}
+	// The roadmap filename must appear in validate output too — proving the by_agent done/ was found.
+	if !strings.Contains(outV, roadmapFile) {
+		t.Errorf("AC5b-by_agent: roadmap filename %q must appear in validate output\noutput: %s", roadmapFile, outV)
+	}
+}
+
 

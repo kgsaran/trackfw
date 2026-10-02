@@ -318,7 +318,7 @@ go test ./internal/validator/ ./internal/auditsurface/ ./internal/commands/ -cou
 ```
 
 ### ML-3D — Corretivo final: layout `by_agent`, Windows e asserções vácuas
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Squad:** artemis-tf
 **Origem:** revisão final do arquiteto. (1) Quem reportou o #494 usa `roadmap_namespacing: by_agent`
 com `wip/` vazio, e todos os cenários novos são `flat`; o laço do `ls-tree` por `done/` resolvido nunca
