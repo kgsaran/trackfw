@@ -44170,3 +44170,8 @@ Parecer em `docs/qualidade/2026-10-02-revisao-limite-por-chunk.md`.
 Veredito: APROVA COM AJUSTES.
 9/9 ações do ML-1A conformes. `make quality` EXIT=0: suite 347 OK, 0 FAIL; autoteste 10/10 OK local.
 Achado A1 (médio): `_ok "contra-braco/skip"` (linha 330 de check-falsify-chunk-timeout.sh) conta skip como PASS; em CI (clone raso, fetch-depth=1), braço 5 sempre pula mas reporta "10/10 passaram". Correção: `_skip()` com contador separado, resumo "N/N bracos passaram (M skip)".
+
+## 2026-10-02 — zeus-tf — FIM: REQ-2026-10-02 (limite por chunk, #504) fechada pós-merge
+
+PR #506 mergeado em `f3d98639`, CI 20/20. Roadmap → `done/`, REQ → `Done`, label `req-aberta` removida.
+A memória de diagnóstico foi corrigida no próprio PR (pgid + marcador, não ppid), apontado pelo Lourival.

@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-10-02
 req: "docs/req/REQ-2026-10-02-driver-de-falsificacao-paralelo-espera-para-sempre-por-chunk-que-nao-termina-limite-de-tempo-por-chunk-com-fail-nomeado.md"
 squad: "hades-tf, ares-tf, hefesto-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, ares-tf, hefesto-tf"
 
 # Roadmap: driver de falsificação paralelo — limite de tempo por chunk com FAIL nomeado
 
-> Created: 2026-10-02 | Status: wip
+> Created: 2026-10-02 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-10-02-driver-de-falsificacao-paralelo-espera-para-sempre-por-chunk-que-nao-termina-limite-de-tempo-por-chunk-com-fail-nomeado.md
@@ -29,7 +29,8 @@ bash 4+). Só o `make` local usa este driver; o CI usa `run-gates-falsify-shard.
       ✅ braço 5: o driver de `0bf66679` continua vivo no teto de 15 s (SKIP declarado em clone raso)
 - [x] AC5 — bash declarado
       ✅ driver declara bash 4+ (`mapfile`); autoteste e driver rodam com o bash do PATH; pulam no MSYS
-- [ ] AC6 — `make quality` EXIT=0 e CI verde
+- [x] AC6 — `make quality` EXIT=0 e CI verde
+      ✅ CI do PR #506 em `279babf8`: 20/20 SUCCESS, inclusive `windows-full-suites`; `make quality` local com a máquina ociosa EXIT=0 (347/0)
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
