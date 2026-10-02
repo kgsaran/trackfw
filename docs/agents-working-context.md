@@ -2,6 +2,23 @@
 
 ---
 
+## 2026-10-02 — Apolo (fix/criterio-de-adr-por-prefixo — ajustes parecer) — INÍCIO
+
+**Início:** 2026-10-02 | Branch: `fix/criterio-de-adr-por-prefixo`
+**Tarefa:** Dois ajustes do parecer: anotação `trackfw-contract` em `### Critério D1` e `### Regra adr_file_without_prefix (D4)` em `docs/cli-parity.md`; correção do comentário de `walkADRFiles` em `internal/validator/validator.go`.
+
+---
+
+## 2026-10-02 — Apolo (fix/criterio-de-adr-por-prefixo — ajustes parecer) — FIM
+
+**Fim:** 2026-10-02 | Branch: `fix/criterio-de-adr-por-prefixo`
+**Entregues:**
+- `docs/cli-parity.md`: `### Critério D1 — \`isADRFileName\`` e `### Regra \`adr_file_without_prefix\` (D4)` receberam `<!-- trackfw-contract: gate=internal/validator/validator_adr_prefix_test.go,internal/commands/adr_prefix_e2e_test.go -->`.
+- `internal/validator/validator.go`: comentário de `walkADRFiles` corrigido de "todos os arquivos .md" para "todos os arquivos ADR (critério isADRFileName, arquivo regular ou symlink para arquivo regular)".
+**Gates:** `go build ./...` ✅ · `bash scripts/check-parity-contract-coverage.sh` ✅ (279 seções; sem anotação=0; inválida=0) · `go test ./internal/validator/ -count=1` ✅
+
+---
+
 ## 2026-10-02 — Apolo (fix/criterio-de-adr-por-prefixo — ML-1D) — INÍCIO
 
 **Início:** 2026-10-02 | Branch: `fix/criterio-de-adr-por-prefixo`
@@ -44075,3 +44092,18 @@ PR #500 mergeado em `54c227d1`. Roadmap → `done/`, REQ → `Done`, label `req-
 Decisão do KG: prefixo, sem distinção de maiúsculas. Custo medido pelo Lourival: 0 de 133 ADRs em 6 acervos.
 Critério no primitivo único `walkADRFilePathsForRule`; fora dele: `serve/api_chain.go scanChainDir` e a
 sonda de fallback de `discover`. Aviso novo para `.md` com cara de ADR (frontmatter `status:`) sem prefixo.
+
+## 2026-10-02 — hefesto-tf — INÍCIO: ML-3A revisão de qualidade (#471)
+
+**Início:** 2026-10-02 | Branch: `fix/criterio-de-adr-por-prefixo`
+**Tarefa:** ML-3A — Revisão de qualidade e `make quality`
+**Escopo:** ponto único sem sobra, comentários que mentem, `make quality`
+
+## 2026-10-02 — hefesto-tf — FIM: ML-3A — REPROVA COM AJUSTES
+
+**Fim:** 2026-10-02 | Branch: `fix/criterio-de-adr-por-prefixo`
+**Resultado:** REPROVA COM AJUSTES
+**Achados:**
+- F1 (bloqueante): `docs/cli-parity.md` linhas 4385 e 4406 — duas `###` sem `trackfw-contract`; `make quality EXIT=2`
+- F2 (não-bloqueante): `validator.go:3236` comentário de `walkADRFiles` desatualizado
+**Parecer:** `docs/qualidade/2026-10-02-revisao-criterio-de-adr.md`

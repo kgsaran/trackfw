@@ -3233,7 +3233,7 @@ func validateADRFilesWithoutPrefix() ([]string, error) {
 	return warnings, nil
 }
 
-// walkADRFiles retorna basenames de todos os arquivos .md encontrados recursivamente em adrDir.
+// walkADRFiles retorna basenames de todos os arquivos ADR (critério isADRFileName, arquivo regular ou symlink para arquivo regular) encontrados recursivamente em adrDir.
 func walkADRFiles(adrDir string) []string {
 	paths := walkADRFilePaths(adrDir)
 	var names []string

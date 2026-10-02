@@ -4384,6 +4384,8 @@ Gate: `internal/validator/validator_unterminated_fence_ml3b_test.go`
 
 ### Critério D1 — `isADRFileName`
 
+<!-- trackfw-contract: gate=internal/validator/validator_adr_prefix_test.go,internal/commands/adr_prefix_e2e_test.go -->
+
 Um arquivo é contado como ADR quando seu basename satisfaz simultaneamente:
 
 1. Começa com `ADR-` (sem distinção de maiúsculas: `strings.HasPrefix(strings.ToUpper(name), "ADR-")`).
@@ -4404,6 +4406,8 @@ medidos em 6 acervos usa `.MD`. Symlink de arquivo nomeado `ADR-*.md` apontando 
 `adr_dirs` é contado (pré-existente, não introduzido por D1).
 
 ### Regra `adr_file_without_prefix` (D4)
+
+<!-- trackfw-contract: gate=internal/validator/validator_adr_prefix_test.go,internal/commands/adr_prefix_e2e_test.go -->
 
 Severidade padrão: **warning** (configurável via `rules: {adr_file_without_prefix: off/error}`).
 
