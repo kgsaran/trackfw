@@ -8,7 +8,7 @@
 # specific rule names, message substrings, exit codes.  Nothing here invokes
 # `node npm/bin/trackfw` or `python3 -m trackfw`.
 #
-# Pin inventory (30 pins across 5 blocks):
+# Pin inventory (32 pins across 6 blocks):
 #   Block 1 — ADR/REQ rule-set:         {adr_accepted_when_req_done, blocked_by_draft_adr}
 #   Block 2 — branch_has_wip_roadmap:    nomatch/diff message markers + --agent guidance
 #                                        + the ML-3A matcher: token overlap accepts (PIN6),
@@ -18,6 +18,8 @@
 #   Block 5 — roadmap_unterminated_fence: open fence → violation with line (PIN26),
 #                                         closed fence → no violation (PIN27),
 #                                         done/ state covered (PIN28 / PIN26 vacuity check)
+#   Block 6 — adr_file_without_prefix:   non-prefixed .md with status → warning (PIN28),
+#                                         ADR-prefixed .md with status → no warning (PIN29)
 #
 # Falsification evidence is recorded after `make quality` run.
 set -euo pipefail
@@ -817,9 +819,102 @@ if fence_p27:
 print(f"OK [validate-rule-pins/pin27-closed-fence-silent]")
 PY
 
-echo "validate-rule-pins: all 30 pins pass"
+# ---------------------------------------------------------------------------
+# BLOCK 6: adr_file_without_prefix message pins
+#
+# PIN28 — non-prefixed .md with frontmatter status: → warning with rule name
+# PIN29 — ADR-prefixed .md with status: → no warning (silence)
+# ---------------------------------------------------------------------------
+mkdir -p \
+  "$TMP_DIR/p6/docs/adr" \
+  "$TMP_DIR/p6/docs/req" \
+  "$TMP_DIR/p6/docs/roadmaps"/{backlog,wip,blocked,done,abandoned}
+
+cat >"$TMP_DIR/p6/trackfw.yaml" <<'EOF'
+governance_mode: strict
+adr_dirs:
+  - docs/adr
+req_dir: docs/req
+roadmap_dir: docs/roadmaps
+EOF
+
+# Non-prefixed .md with status: Draft — should trigger warning
+cat >"$TMP_DIR/p6/docs/adr/decisao.md" <<'EOF'
+---
+status: Draft
+date: 2026-10-02
+author: ""
+---
+
+# Decisão: sem prefixo
+
+> Date: 2026-10-02 | Status: Draft
+
+## Context
+ctx
+EOF
+
+# ADR-prefixed .md with status: Draft — must NOT trigger the rule
+cat >"$TMP_DIR/p6/docs/adr/ADR-2026-10-02-prefixed.md" <<'EOF'
+---
+status: Draft
+date: 2026-10-02
+author: ""
+---
+
+# ADR: com prefixo
+
+> Date: 2026-10-02 | Status: Draft
+
+## Context
+ctx
+
+## Decision
+d
+EOF
+
+set +e
+(cd "$TMP_DIR/p6" && "$GO_BIN" validate --json) >"$TMP_DIR/p6.json" 2>"$TMP_DIR/p6.stderr"
+P6_RC=$?
+set -e
+
+python3 - "$TMP_DIR/p6.json" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as f:
+    payload = json.load(f)
+warnings = payload.get("warnings", [])
+rule = "adr_file_without_prefix"
+
+# PIN28: non-prefixed decisao.md with status: must produce warning
+found_decisao = any(
+    (item.get("rule") == rule or item.get("message", "").startswith(rule + ":"))
+    and "decisao.md" in item.get("message", "")
+    for item in warnings
+)
+if not found_decisao:
+    raise SystemExit(
+        f"PIN28: {rule!r} warning not found for decisao.md — "
+        f"rule not firing or message format changed. warnings: {warnings!r}"
+    )
+print(f"OK [validate-rule-pins/pin28-adr-without-prefix-fires]")
+
+# PIN29: ADR-prefixed file must NOT appear in the rule's warnings
+found_prefixed = any(
+    (item.get("rule") == rule or item.get("message", "").startswith(rule + ":"))
+    and "ADR-2026-10-02-prefixed.md" in item.get("message", "")
+    for item in warnings
+)
+if found_prefixed:
+    raise SystemExit(
+        f"PIN29: {rule!r} fired for ADR-prefixed file — rule must not flag files with ADR- prefix"
+    )
+print(f"OK [validate-rule-pins/pin29-adr-prefixed-silent]")
+PY
+
+echo "validate-rule-pins: all 32 pins pass"
 echo "  Block 1 (rule-set):          pin1"
 echo "  Block 2 (bhr-messages):      pin2-pin5 + pin2b/pin2c/pin2d (ML-3A matcher)"
 echo "  Block 3 (credential-guard):  pin6-pin20"
 echo "  Block 4 (git-branch-guard):  pin21-pin25"
 echo "  Block 5 (unterminated-fence): pin26-pin27"
+echo "  Block 6 (adr-without-prefix): pin28-pin29"

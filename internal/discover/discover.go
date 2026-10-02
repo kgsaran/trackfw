@@ -480,15 +480,19 @@ func Scan(rootDir string) (DiscoveryResult, error) {
 		subDirs, _ := listSubDirs(adrRoot)
 		if len(subDirs) > 0 {
 			// tem subdirs: usa cada uma como um adr dir
+			// D3 (ADR-2026-10-02): conta ADR pelo primitivo (critério de prefixo ADR-),
+			// não por countMDFiles (qualquer .md).
 			for _, sub := range subDirs {
 				rel := "docs/adr/" + sub
 				r.ADRDirs = append(r.ADRDirs, rel)
-				r.ADRCount += countMDFiles(filepath.Join(rootDir, rel))
+				r.ADRCount += len(validator.WalkADRFilePaths(filepath.Join(rootDir, rel)))
 			}
 		} else {
 			// plano: docs/adr diretamente
+			// D3 (ADR-2026-10-02): conta ADR pelo primitivo (critério de prefixo ADR-),
+			// não por countMDFiles (qualquer .md).
 			r.ADRDirs = []string{"docs/adr"}
-			r.ADRCount = countMDFiles(adrRoot)
+			r.ADRCount = len(validator.WalkADRFilePaths(adrRoot))
 		}
 	}
 

@@ -84,13 +84,26 @@ func scanChainDir(cfg config.ProjectConfig, root, nodeType string) ([]chainNode,
 	var nodes []chainNode
 	var edges []chainEdge
 
-	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !strings.HasSuffix(d.Name(), ".md") {
+	// D3 (ADR-2026-10-02): ADR nodes are enumerated by the shared primitive
+	// (validator.WalkADRFilePaths), which applies the ADR- prefix criterion.
+	// REQ and roadmap continue using a generic .md walk.
+	var filePaths []string
+	if nodeType == "adr" {
+		filePaths = validator.WalkADRFilePaths(root)
+	} else {
+		_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+			if err != nil || d.IsDir() || !strings.HasSuffix(d.Name(), ".md") {
+				return nil
+			}
+			filePaths = append(filePaths, path)
 			return nil
-		}
+		})
+	}
+
+	for _, path := range filePaths {
 		data, err := os.ReadFile(path)
 		if err != nil {
-			return nil
+			continue
 		}
 		content := string(data)
 
@@ -98,7 +111,7 @@ func scanChainDir(cfg config.ProjectConfig, root, nodeType string) ([]chainNode,
 		state := inferStateFromPath(path)
 
 		// Extract title
-		title := extractTitleFromContent(content, d.Name())
+		title := extractTitleFromContent(content, filepath.Base(path))
 
 		// Extract frontmatter fields
 		fm := parseFrontmatter(content)
@@ -169,9 +182,7 @@ func scanChainDir(cfg config.ProjectConfig, root, nodeType string) ([]chainNode,
 
 			edges = append(edges, chainEdge{From: nodeID, To: normalizeRefSeparator(val)})
 		}
-
-		return nil
-	})
+	}
 
 	return nodes, edges
 }

@@ -2,6 +2,56 @@
 
 ---
 
+## 2026-10-02 — Apolo (fix/criterio-de-adr-por-prefixo — ajustes parecer) — INÍCIO
+
+**Início:** 2026-10-02 | Branch: `fix/criterio-de-adr-por-prefixo`
+**Tarefa:** Dois ajustes do parecer: anotação `trackfw-contract` em `### Critério D1` e `### Regra adr_file_without_prefix (D4)` em `docs/cli-parity.md`; correção do comentário de `walkADRFiles` em `internal/validator/validator.go`.
+
+---
+
+## 2026-10-02 — Apolo (fix/criterio-de-adr-por-prefixo — ajustes parecer) — FIM
+
+**Fim:** 2026-10-02 | Branch: `fix/criterio-de-adr-por-prefixo`
+**Entregues:**
+- `docs/cli-parity.md`: `### Critério D1 — \`isADRFileName\`` e `### Regra \`adr_file_without_prefix\` (D4)` receberam `<!-- trackfw-contract: gate=internal/validator/validator_adr_prefix_test.go,internal/commands/adr_prefix_e2e_test.go -->`.
+- `internal/validator/validator.go`: comentário de `walkADRFiles` corrigido de "todos os arquivos .md" para "todos os arquivos ADR (critério isADRFileName, arquivo regular ou symlink para arquivo regular)".
+**Gates:** `go build ./...` ✅ · `bash scripts/check-parity-contract-coverage.sh` ✅ (279 seções; sem anotação=0; inválida=0) · `go test ./internal/validator/ -count=1` ✅
+
+---
+
+## 2026-10-02 — Apolo (fix/criterio-de-adr-por-prefixo — ML-1D) — INÍCIO
+
+**Início:** 2026-10-02 | Branch: `fix/criterio-de-adr-por-prefixo`
+**Tarefa:** ML-1D — extrair `isRegularOrLinkToRegular` e usá-la nos dois sítios; teste de symlink sem prefixo dispara `adr_file_without_prefix`
+**Arquivos a modificar:** `internal/validator/validator.go` · `internal/validator/validator_adr_prefix_test.go` · `docs/agents-working-context.md`
+
+---
+
+## 2026-10-02 — Apolo (fix/criterio-de-adr-por-prefixo — ML-1D) — FIM
+
+**Fim:** 2026-10-02 | Branch: `fix/criterio-de-adr-por-prefixo`
+**Entregues:** `isRegularOrLinkToRegular(path, d)` extraída após `isADRFileName`; usada nos dois sítios (`walkADRFilePathsForRule` e `validateADRFilesWithoutPrefix`); teste `TestADRFileWithoutPrefix_SymlinkSemPrefixoDispara` adicionado.
+**Gates:** `go build ./...` ✅ · `go vet ./internal/validator/` ✅ · `go test ./internal/validator/ -count=1` ✅
+**Prova de mordida:** overlay `sed 's/isRegularOrLinkToRegular/d.Type().IsRegular()/'` → FAIL em `TestADRFileWithoutPrefix_SymlinkSemPrefixoDispara`; sem overlay → PASS.
+
+---
+
+## 2026-10-02 — Apolo (fix/criterio-de-adr-por-prefixo — ML-1C) — INÍCIO
+
+**Início:** 2026-10-02 | Branch: `fix/criterio-de-adr-por-prefixo`
+**Tarefa:** ML-1C corretivo — symlink de arquivo ADR-x.md volta a contar em walkADRFilePathsForRule; apenas symlink de diretório e link quebrado excluídos
+**Arquivos a modificar:** `internal/validator/validator.go` · `internal/validator/validator_adr_prefix_test.go` · `docs/agents-working-context.md`
+
+---
+
+## 2026-10-02 — Apolo (fix/criterio-de-adr-por-prefixo — ML-1C) — FIM
+
+**Fim:** 2026-10-02 | Branch: `fix/criterio-de-adr-por-prefixo`
+**Entregues:** `walkADRFilePathsForRule` corrigido com ramo de symlink (`os.Stat` segue link); 2 testes novos (`SymlinkFileEnumerated`, `SymlinkBrokenNotEnumerated`); comentário de `SymlinkDirNotEnumerated` atualizado; prova de mordida com overlay FAIL/PASS.
+**Gates:** `go build ./...` ✅ · `go vet ./internal/validator/` ✅ · `go test ./internal/validator/ -count=1` ✅
+
+---
+
 ## 2026-10-01 — Ártemis (fix/estado-que-governa-a-branch — ML-3D) — INÍCIO
 
 **Início:** 2026-10-01 | Branch: `fix/estado-que-governa-a-branch`
@@ -44036,3 +44086,24 @@ REQ e roadmap → `done/` são pós-merge, em branch `chore/`.
 ## 2026-10-02 — zeus-tf — FIM: REQ-2026-10-01 (estado que governa a branch) fechada pós-merge
 
 PR #500 mergeado em `54c227d1`. Roadmap → `done/`, REQ → `Done`, label `req-aberta` removida de #494/#490.
+
+## 2026-10-02 — zeus-tf — INÍCIO: #471 (critério de identificação de ADR = prefixo `ADR-`)
+
+Decisão do KG: prefixo, sem distinção de maiúsculas. Custo medido pelo Lourival: 0 de 133 ADRs em 6 acervos.
+Critério no primitivo único `walkADRFilePathsForRule`; fora dele: `serve/api_chain.go scanChainDir` e a
+sonda de fallback de `discover`. Aviso novo para `.md` com cara de ADR (frontmatter `status:`) sem prefixo.
+
+## 2026-10-02 — hefesto-tf — INÍCIO: ML-3A revisão de qualidade (#471)
+
+**Início:** 2026-10-02 | Branch: `fix/criterio-de-adr-por-prefixo`
+**Tarefa:** ML-3A — Revisão de qualidade e `make quality`
+**Escopo:** ponto único sem sobra, comentários que mentem, `make quality`
+
+## 2026-10-02 — hefesto-tf — FIM: ML-3A — REPROVA COM AJUSTES
+
+**Fim:** 2026-10-02 | Branch: `fix/criterio-de-adr-por-prefixo`
+**Resultado:** REPROVA COM AJUSTES
+**Achados:**
+- F1 (bloqueante): `docs/cli-parity.md` linhas 4385 e 4406 — duas `###` sem `trackfw-contract`; `make quality EXIT=2`
+- F2 (não-bloqueante): `validator.go:3236` comentário de `walkADRFiles` desatualizado
+**Parecer:** `docs/qualidade/2026-10-02-revisao-criterio-de-adr.md`

@@ -4378,6 +4378,55 @@ Gate: `internal/validator/validator_unterminated_fence_ml3b_test.go`
 `TestRoadmapUnterminatedFence_DoneState`) + pin `pin26`/`pin27` in
 `scripts/check-validate-rule-pins.sh`.
 
+## Critério de identificação de ADR e regra `adr_file_without_prefix` (ADR-2026-10-02, ML-1A)
+
+<!-- trackfw-contract: gate=internal/validator/validator_adr_prefix_test.go -->
+
+### Critério D1 — `isADRFileName`
+
+<!-- trackfw-contract: gate=internal/validator/validator_adr_prefix_test.go,internal/commands/adr_prefix_e2e_test.go -->
+
+Um arquivo é contado como ADR quando seu basename satisfaz simultaneamente:
+
+1. Começa com `ADR-` (sem distinção de maiúsculas: `strings.HasPrefix(strings.ToUpper(name), "ADR-")`).
+2. Termina com `.md` (`strings.HasSuffix(name, ".md")`).
+3. É um arquivo regular (`d.Type().IsRegular()` — exclui symlinks de diretório e FIFOs; WalkDir usa Lstat).
+
+Este predicado é implementado em `isADRFileName(name string) bool` (`internal/validator/validator.go`)
+e aplicado exclusivamente em `walkADRFilePathsForRule` — o primitivo único de enumeração
+(ADR-2026-09-29 D3). Todos os consumidores (`ResolveADRFiles`, `WalkADRFilePaths`, regras do
+`validate`, `adr list`, numeração do `adr new`) herdam o critério via este primitivo.
+
+**Exceção: `findADRFile` não aplica o critério.** Ele resolve referências explícitas de REQ
+(`adr:`, `blocked_by:`). Aplicar o critério tornaria um ADR legado sem prefixo referenciavelmente
+invisível — bypass de governança silencioso (Wave 0, ADR D2).
+
+**Resíduo declarado:** `ADR-001.MD` (sufixo maiúsculo) não é contado. Nenhum dos 133 ADRs
+medidos em 6 acervos usa `.MD`. Symlink de arquivo nomeado `ADR-*.md` apontando para fora de
+`adr_dirs` é contado (pré-existente, não introduzido por D1).
+
+### Regra `adr_file_without_prefix` (D4)
+
+<!-- trackfw-contract: gate=internal/validator/validator_adr_prefix_test.go,internal/commands/adr_prefix_e2e_test.go -->
+
+Severidade padrão: **warning** (configurável via `rules: {adr_file_without_prefix: off/error}`).
+
+Acusa, dentro de `adr_dirs`, o `.md` regular **sem** prefixo `ADR-` cujo conteúdo tem status
+reconhecível via `resolveAdrStatus` (frontmatter `status:` ou linha `| Status: X` no cabeçalho).
+
+**Mensagem:**
+
+```
+adr_file_without_prefix: "filename.md" declares a status but is not counted as an ADR — rename it to ADR-<...>.md if it is one
+```
+
+Arquivos sem status (`README.md`, `index.md`, `NOTAS.md` sem frontmatter) **não** disparam.
+Arquivos `ADR-*.md` **não** disparam — o critério os captura como ADR.
+
+Gate: `internal/validator/validator_adr_prefix_test.go`
+(`TestADRFileWithoutPrefix_FrontmatterStatusDispara`, `TestADRFileWithoutPrefix_CabecalhoStatusDispara`,
+`TestADRFileWithoutPrefix_READMESemStatusNaoDispara`, `TestADRFileWithoutPrefix_ADRPrefixadoNaoDispara`).
+
 ## Contrato de artefatos gerados (req, adr, roadmap, note)
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->

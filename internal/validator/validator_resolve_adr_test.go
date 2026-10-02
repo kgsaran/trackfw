@@ -2,6 +2,7 @@ package validator
 
 import (
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/kgsaran/trackfw/internal/config"
@@ -136,15 +137,15 @@ func TestResolveADRFiles_DirsDistintosNaoAninhados(t *testing.T) {
 	}
 }
 
-// TestResolveADRFiles_HasSuffixSemPrefixo afirma que o critério de identificação é
-// strings.HasSuffix(".md") sem filtro de prefixo "ADR-" — comportamento declarado na ADR-2026-09-29
-// seção Consequências, resíduo aceito documentado.
+// TestResolveADRFiles_PrefixoADRExclui afirma que o critério de identificação de ADR é
+// o prefixo "ADR-" (case-insensitive) + sufixo ".md" — D1 (ADR-2026-10-02). Um arquivo
+// NOTAS.md em adr_dirs NÃO é mais contado como ADR.
 //
-// Reconciliação: este teste fixa que um arquivo NOTAS.md em adr_dirs É contado — não por engano,
-// mas porque este é o comportamento existente de walkADRFilePaths (validator.go:3017) e a ADR
-// decidiu explicitamente não mudar o critério de identificação nesta REQ. Mudar este comportamento
-// requer REQ própria com medição.
-func TestResolveADRFiles_HasSuffixSemPrefixo(t *testing.T) {
+// Reconciliação: este teste substitui TestResolveADRFiles_HasSuffixSemPrefixo, que afirmava
+// o comportamento oposto (NOTAS.md contava). A REQ que autorizou a mudança é
+// REQ-2026-10-02-qualquer-md-em-adr-dirs-e-contado-como-adr-o-criterio-passa-a-ser-o-prefixo-adr,
+// implementada neste roadmap. A stale cite "validator.go:3017" da versão anterior foi removida.
+func TestResolveADRFiles_PrefixoADRExclui(t *testing.T) {
 	dir := t.TempDir()
 	chdir(t, dir)
 	config.Reset()
@@ -157,11 +158,14 @@ func TestResolveADRFiles_HasSuffixSemPrefixo(t *testing.T) {
 		t.Fatalf("mkdir docs/adr: %v", err)
 	}
 	writeADRFixtureFile(t, dir, "docs/adr/ADR-2026-09-01-real.md")
-	writeADRFixtureFile(t, dir, "docs/adr/NOTAS.md") // não é ADR, mas DEVE ser contado (resíduo aceito)
+	writeADRFixtureFile(t, dir, "docs/adr/NOTAS.md") // não é ADR, NÃO deve ser contado (D1)
 
 	cfg := config.Load()
 	got := ResolveADRFiles(cfg)
-	if len(got) != 2 {
-		t.Errorf("HasSuffix sem prefixo: esperado 2 (incluindo NOTAS.md), obteve %d: %v", len(got), got)
+	if len(got) != 1 {
+		t.Errorf("prefixo ADR-: esperado 1 (apenas ADR-2026-09-01-real.md), obteve %d: %v", len(got), got)
+	}
+	if len(got) == 1 && filepath.Base(got[0]) != "ADR-2026-09-01-real.md" {
+		t.Errorf("prefixo ADR-: arquivo enumerado é %q, esperado ADR-2026-09-01-real.md", filepath.Base(got[0]))
 	}
 }
