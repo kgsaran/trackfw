@@ -2,6 +2,22 @@
 
 ---
 
+## 2026-10-02 — Ares (fix/limite-de-tempo-por-chunk-na-falsificacao — corretivo A1 parecer) — INÍCIO
+
+**Início:** 2026-10-02 | Branch: `fix/limite-de-tempo-por-chunk-na-falsificacao`
+**Tarefa:** Corretivo A1 do parecer `docs/qualidade/2026-10-02-revisao-limite-por-chunk.md`: substituir `_ok "contra-braco/skip"` por helper `_skip` com contador próprio em `scripts/check-falsify-chunk-timeout.sh`, e atualizar o resumo final para reportar `<PASS>/<executados> (<SKIP> skip)`.
+
+---
+
+## 2026-10-02 — Ares (fix/limite-de-tempo-por-chunk-na-falsificacao — corretivo A1 parecer) — FIM
+
+**Fim:** 2026-10-02 | Branch: `fix/limite-de-tempo-por-chunk-na-falsificacao`
+**Entregues:**
+- `scripts/check-falsify-chunk-timeout.sh`: adicionado `SKIP=0` e helper `_skip` (emite `SKIP [falsify-driver/<rótulo>] <motivo>`); braço 5 sem commit usa `_skip` em vez de `_ok`; resumo final reporta `<PASS>/<TOTAL> bracos passaram (<SKIP> skip)`.
+**Gates:** `bash -n` ✅ · caminho normal `10/10 bracos passaram (0 skip)` rc=0 ✅ · clone raso `9/9 bracos passaram (1 skip)` rc=0, linha `SKIP [falsify-driver/contra-braco]` presente ✅
+
+---
+
 ## 2026-10-02 — Apolo (fix/criterio-de-adr-por-prefixo — ajustes parecer) — INÍCIO
 
 **Início:** 2026-10-02 | Branch: `fix/criterio-de-adr-por-prefixo`
@@ -44141,3 +44157,16 @@ Limite 1200 s: 5,8× sobre 205 s medido (loaded), 3,3× sobre 360 s (issue).
 - recursão: cobre grandchild, nohup, setsid (pai vivo); não alcança órfão sob PID 1
 - setsid ausente do script e do Go (grep confirmado); escolha: grupo kill
 Cause dos 3 travamentos: não medida (issue 504 explicita); causal overstatement removido.
+
+## 2026-10-02 — hefesto-tf — INÍCIO: ML-2A (revisão de qualidade, limite por chunk)
+
+Roadmap: ROADMAP-2026-10-02-driver-de-falsificacao-paralelo...
+Tarefa: revisar diff scripts/ Makefile contra 9 ações do ML-1A e Wave 0; `make quality` completo.
+Escrevendo parecer em `docs/qualidade/2026-10-02-revisao-limite-por-chunk.md`.
+
+## 2026-10-02 — hefesto-tf — FIM: ML-2A (revisão de qualidade, limite por chunk)
+
+Parecer em `docs/qualidade/2026-10-02-revisao-limite-por-chunk.md`.
+Veredito: APROVA COM AJUSTES.
+9/9 ações do ML-1A conformes. `make quality` EXIT=0: suite 347 OK, 0 FAIL; autoteste 10/10 OK local.
+Achado A1 (médio): `_ok "contra-braco/skip"` (linha 330 de check-falsify-chunk-timeout.sh) conta skip como PASS; em CI (clone raso, fetch-depth=1), braço 5 sempre pula mas reporta "10/10 passaram". Correção: `_skip()` com contador separado, resumo "N/N bracos passaram (M skip)".

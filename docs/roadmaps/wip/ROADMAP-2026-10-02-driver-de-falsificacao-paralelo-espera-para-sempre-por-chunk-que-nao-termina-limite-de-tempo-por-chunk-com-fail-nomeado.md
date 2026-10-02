@@ -21,10 +21,14 @@ bash 4+). Só o `make` local usa este driver; o CI usa `run-gates-falsify-shard.
 ## Acceptance Criteria
 - [x] AC1 — Wave 0 auditada
       ✅ `docs/seguranca/2026-10-02-wave0-limite-por-chunk.md`: APROVA COM AJUSTES. Chunk mais lento medido: 137 s ociosa, 205 s com carga; 1200 s mantido (5,8× de margem). Kill por grupo de processos (`set -m`), 8 ajustes absorvidos no ML-1A.
-- [ ] AC2 — chunk sintético travado: FAIL nomeado, árvore impressa, nenhum processo sobrevivente
-- [ ] AC3 — suíte real verde sem override (347/0)
-- [ ] AC4 — o teste reprova no driver de `0bf66679`
-- [ ] AC5 — bash declarado
+- [x] AC2 — chunk sintético travado: FAIL nomeado, árvore impressa, nenhum processo sobrevivente
+      ✅ `check-falsify-chunk-timeout.sh` braço 3: 7 s, FAIL nomeado, árvore, 0 sobreviventes
+- [x] AC3 — suíte real verde sem override (347/0)
+      ✅ `make quality` com a máquina ociosa: 347 OK / 0 FAIL
+- [x] AC4 — o teste reprova no driver de `0bf66679`
+      ✅ braço 5: o driver de `0bf66679` continua vivo no teto de 15 s (SKIP declarado em clone raso)
+- [x] AC5 — bash declarado
+      ✅ driver declara bash 4+ (`mapfile`); autoteste e driver rodam com o bash do PATH; pulam no MSYS
 - [ ] AC6 — `make quality` EXIT=0 e CI verde
 
 ## Status Legend
@@ -86,14 +90,15 @@ make build
 > Dependencies: Wave 1 auditada
 
 ### ML-2A — Revisão de qualidade e `make quality`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** hefesto-tf
 **Files affected:** `docs/qualidade/2026-10-02-revisao-limite-por-chunk.md`
 **Actions:** revisão do diff; `make quality` completo **com a máquina ociosa** (conferir `ps` antes).
 **Acceptance criteria:**
-- [ ] `make quality` EXIT=0, com a linha `suite completa … 347 OK, 0 FAIL` citada do log
-- [ ] Veredito explícito
+- [x] `make quality` EXIT=0, com a linha `suite completa … 347 OK, 0 FAIL` citada do log
+- [x] Veredito explícito
 
+      ✅ Log conferido pelo arquiteto (`q504b.log`): linha 3000 `suite completa -- 8 chunks, 347 OK, 0 FAIL`; linha 1958 `10/10 bracos passaram`. Ajuste A1 (SKIP com contador próprio) aplicado: clone raso → `SKIP` + `9/9 (1 skip)`; árvore normal → `10/10 (0 skip)`.
 **Gates da wave:**
 ```bash
 test -s docs/qualidade/2026-10-02-revisao-limite-por-chunk.md

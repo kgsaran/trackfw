@@ -44,6 +44,7 @@ trap 'rm -rf "$SCRATCH"' EXIT
 
 PASS=0
 TOTAL=0
+SKIP=0
 
 _ok() {
   PASS=$((PASS + 1))
@@ -54,6 +55,11 @@ _ok() {
 _fail() {
   TOTAL=$((TOTAL + 1))
   echo "FAIL [falsify-driver/$1] $2" >&2
+}
+
+_skip() {
+  SKIP=$((SKIP + 1))
+  echo "SKIP [falsify-driver/$1] $2"
 }
 
 # gen_normal_gen <outdir>: escreve o gerador Python para chunks normais.
@@ -326,8 +332,7 @@ OLD_COMMIT="0bf66679"
 _git_ok=0
 git -C "$REPO_ROOT" cat-file -e "${OLD_COMMIT}^{commit}" 2>/dev/null && _git_ok=1 || true
 if [[ "$_git_ok" -eq 0 ]]; then
-  echo "check-falsify-chunk-timeout: contra-braco SKIP -- commit $OLD_COMMIT nao disponivel no objeto git local (shallow clone?)" >&2
-  _ok "contra-braco/skip" "commit $OLD_COMMIT nao disponivel -- skip declarado"
+  _skip "contra-braco" "commit $OLD_COMMIT nao disponivel no objeto git local (shallow clone?)"
 else
   # Montar copia do driver antigo em diretorio que respeita ROOT_DIR
   arm5_dir="$SCRATCH/arm5/scripts"
@@ -409,7 +414,7 @@ fi
 # Resultado final
 # ---------------------------------------------------------------------------
 echo ""
-echo "=== check-falsify-chunk-timeout: $PASS/$TOTAL bracos passaram ==="
+echo "=== check-falsify-chunk-timeout: $PASS/$TOTAL bracos passaram ($SKIP skip) ==="
 if [[ "$PASS" -ne "$TOTAL" ]]; then
   echo "check-falsify-chunk-timeout: FAIL -- $((TOTAL - PASS)) braco(s) reprovaram" >&2
   exit 1
