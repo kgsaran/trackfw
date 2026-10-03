@@ -817,13 +817,13 @@ func TestD1_RealGit_Case1_And_Case2(t *testing.T) {
 // ─── A4: upstream via for-each-ref, not @{u} ─────────────────────────────────────────────────
 
 // TestA4_UpstreamFor_ForEachRef asserts: upstreamFor uses `for-each-ref --format=%(upstream:short)`
-// and returns "" for a never-pushed branch (empty field) vs non-empty for a branch with upstream.
-// Sabotage: replace `for-each-ref` with `rev-parse @{u}` → the [gone] branch case returns an
-// error and is treated as "never pushed", but an actually-gone upstream would also fail, masking
-// the distinction. Test fails because upstreamFor("gone-branch") returns "" even though the
-// branch was pushed (its remote was just deleted).
-//
-// Note: this test uses the stub convention; the real `@{u}` behaviour is documented in A4.
+// and returns "" only for a branch with no upstream config (never pushed). A branch whose remote
+// was deleted after pushing ("gone") returns the tracking name (non-empty): for-each-ref reflects
+// what is in .git/config, independent of whether the remote ref still exists. This matches the
+// behavior measured live by Hades Wave 2 C7/L3: `%(upstream:short)` returns the name for [gone]
+// branches. Sabotage: replace `for-each-ref` with `rev-parse @{u}` → the [gone] branch returns
+// an error, is treated as "never pushed", and case 4 fires — masking the [gone]/never-pushed
+// distinction. Test fails because upstreamFor("feat/gone") returns "" even though it was pushed.
 func TestA4_UpstreamFor_ForEachRef(t *testing.T) {
 	gitExec := func(args ...string) (string, error) {
 		key := strings.Join(args, " ")
@@ -833,8 +833,11 @@ func TestA4_UpstreamFor_ForEachRef(t *testing.T) {
 		case key == "for-each-ref --format=%(upstream:short) refs/heads/feat/never-pushed":
 			return "", nil // empty → never pushed
 		case key == "for-each-ref --format=%(upstream:short) refs/heads/feat/gone":
-			// [gone] upstream: for-each-ref returns empty string (not an error, A4).
-			return "", nil
+			// [gone] upstream: for-each-ref returns the tracking name, NOT empty (A4, Wave 2 C7/L3).
+			// The remote branch was deleted and pruned, but .git/config still holds the tracking
+			// configuration → %(upstream:short) returns "origin/feat/gone".
+			// Contrast: rev-parse @{u} would fail with exit 128 for [gone] branches.
+			return "origin/feat/gone", nil
 		// Reject @{u} calls — would indicate wrong implementation.
 		case strings.Contains(key, "@{u}"):
 			return "", fmt.Errorf("A4: rev-parse @{u} must not be used — use for-each-ref")
@@ -848,8 +851,8 @@ func TestA4_UpstreamFor_ForEachRef(t *testing.T) {
 	if upstream := upstreamFor("feat/never-pushed", gitExec); upstream != "" {
 		t.Errorf("A4: upstreamFor must return empty for a never-pushed branch, got %q", upstream)
 	}
-	if upstream := upstreamFor("feat/gone", gitExec); upstream != "" {
-		t.Errorf("A4: upstreamFor must return empty for a [gone] branch (for-each-ref returns empty, not error), got %q", upstream)
+	if upstream := upstreamFor("feat/gone", gitExec); upstream == "" {
+		t.Error("A4: upstreamFor must return non-empty for a [gone] branch — %(upstream:short) returns the tracking name even after the remote branch is deleted and pruned")
 	}
 }
 
@@ -1101,5 +1104,272 @@ func TestRunBranchPrune_ForgeSignal_DeletesWithMergedPR_KeepsNeverPushed(t *test
 				t.Fatalf("runBranchPrune forge: %q appeared as delete: %q", neverPushed, line)
 			}
 		}
+	}
+}
+
+// ─── AJ1: never-pushed branch with MERGED PR in non-main base → no_pr_never_pushed ─────────────
+
+// TestAJ1_NeverPushed_MergedPRInNonMainBase_NoPRNeverPushed asserts: a branch with no upstream
+// (never pushed) receives no_pr_never_pushed even when it has a non-fork MERGED PR whose base is
+// not main (stacked PR). The PR does not appear in mergedValidBase (A2 filter), so hasPRs no
+// longer guards case 4 after AJ1 — upstream == "" alone triggers the guard.
+// Sabotage (reproduce pre-AJ1 code): restore `hasPRs := false`, `hasPRs = true` inside the loop,
+// and `!hasPRs && upstream == ""` as the case-4 condition. With that, hasPRs=true because the
+// non-fork MERGED PR is counted, so case 4 does not fire → falls to content heuristic →
+// no_own_work (deletable). Test fails with "no_own_work" instead of "no_pr_never_pushed".
+func TestAJ1_NeverPushed_MergedPRInNonMainBase_NoPRNeverPushed(t *testing.T) {
+	snapshot := makeSnapshotWith(
+		forgePR{
+			Number:            99,
+			State:             "MERGED",
+			HeadRefName:       "feat/stacked-never-pushed",
+			HeadRefOid:        "probe0001",
+			BaseRefName:       "develop", // not main → excluded from mergedValidBase
+			IsCrossRepository: false,
+		},
+	)
+	// The content heuristic stubs are provided so that if case 4 is incorrectly skipped,
+	// the test gets no_own_work (deletable) rather than an "unexpected gitExec" error —
+	// the failure message would then name the wrong decision, which is the clearest signal.
+	gitExec := func(args ...string) (string, error) {
+		key := strings.Join(args, " ")
+		switch {
+		case key == "merge-base origin/main feat/stacked-never-pushed":
+			return "probebase0", nil
+		case strings.HasPrefix(key, "diff --name-only -z probebase0"):
+			return "", nil // no own work → no_own_work if case 4 is bypassed
+		}
+		return "", fmt.Errorf("AJ1: unexpected gitExec: %v", args)
+	}
+	// upstream = "" means never pushed.
+	eval := evaluateBranchWithForge(
+		"feat/stacked-never-pushed", "feat/stacked-never-pushed", "", snapshot, gitExec,
+	)
+	if eval.Decision != branchPruneDecisionNoPRNeverPushed {
+		t.Fatalf("AJ1: expected no_pr_never_pushed for never-pushed branch regardless of hasPRs, got %q (%s)", eval.Decision, eval.Reason)
+	}
+	if eval.Decision.deletable() {
+		t.Fatal("AJ1: no_pr_never_pushed must not be deletable")
+	}
+}
+
+// ─── L1: case 1 with tip strictly behind prHead → delete ─────────────────────────────────────
+
+// TestL1_Case1_TipBehindPRHead_Delete asserts: when the local tip is a strict ancestor of the PR
+// head (tip ≠ prHead, but tip IS an ancestor of prHead), the decision is merged_pr (delete).
+// Sabotage: invert the is-ancestor argument order at the case-1 call site → `is-ancestor prHead tip`
+// returns exit 1 (prHead is NOT ancestor of tip), case 1 does not fire, and the branch falls to
+// case 2 (or diverged_from_merged_pr). Test fails because the decision is not merged_pr.
+// This is the L1 gap identified in Wave 2: the existing TestD1_Case1_MergedPR_Delete uses tip==prHead
+// (both argument orders give exit 0 for equal OIDs), masking the inversion for the strict ancestor case.
+func TestL1_Case1_TipBehindPRHead_Delete(t *testing.T) {
+	tip := "l1tipbehind"
+	prHead := "l1ahead0001"
+	snapshot := makeSnapshotWith(
+		forgePR{Number: 200, State: "MERGED", HeadRefName: "feat/l1", HeadRefOid: prHead, BaseRefName: "main"},
+	)
+	gitExec := func(args ...string) (string, error) {
+		key := strings.Join(args, " ")
+		switch {
+		case key == "rev-parse feat/l1":
+			return tip, nil
+		case key == "cat-file -e " + prHead + "^{commit}":
+			return "", nil
+		case key == "merge-base --is-ancestor " + tip + " " + prHead:
+			// tip IS a strict ancestor of prHead → exit 0 → case 1 (correct arg order).
+			return "", nil
+		case key == "merge-base --is-ancestor " + prHead + " " + tip:
+			// prHead is NOT an ancestor of tip → exit 1 (this call fires only if args inverted).
+			return "", fmt.Errorf("git merge-base --is-ancestor %s %s exited with 1", prHead, tip)
+		}
+		return "", fmt.Errorf("L1: unexpected gitExec: %v", args)
+	}
+	eval := evaluateBranchWithForge("feat/l1", "feat/l1", "origin/feat/l1", snapshot, gitExec)
+	if eval.Decision != branchPruneDecisionMergedPR {
+		t.Fatalf("L1: expected merged_pr for tip strictly behind prHead, got %q (%s)", eval.Decision, eval.Reason)
+	}
+	if !eval.Decision.deletable() {
+		t.Fatal("L1: merged_pr must be deletable")
+	}
+}
+
+// ─── L3: real git — upstreamFor distinguishes [gone] from never-pushed ───────────────────────
+
+// TestA4_RealGit_GoneVsNeverPushed creates a real temporary git repository with a bare remote,
+// pushes a branch, deletes the remote branch, prunes, and asserts that upstreamFor returns the
+// upstream name (non-empty) for the resulting [gone] branch. It also asserts that upstreamFor
+// returns empty for a branch that was never pushed.
+// This test closes L3 (Wave 2): TestA4_UpstreamFor_ForEachRef previously stubbed [gone] as
+// returning empty, contradicting the live measurement in C7. A saboteur that inverted the [gone]
+// treatment in upstreamFor (returning "" on non-empty for-each-ref output) would be caught here.
+func TestA4_RealGit_GoneVsNeverPushed(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not found in PATH")
+	}
+
+	bare := t.TempDir() // bare remote
+	work := t.TempDir() // working repo
+
+	// runGit runs git in dir with author env set; fails the test on error.
+	runGit := func(dir string, args ...string) string {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=Test",
+			"GIT_AUTHOR_EMAIL=test@test.com",
+			"GIT_COMMITTER_NAME=Test",
+			"GIT_COMMITTER_EMAIL=test@test.com",
+		)
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("git %v (in %s) failed: %v", args, dir, err)
+		}
+		return strings.TrimSpace(string(out))
+	}
+
+	// Init bare remote.
+	runGit(bare, "init", "--bare", "-b", "main")
+
+	// Init working repo with user config.
+	runGit(work, "init", "-b", "main")
+	runGit(work, "config", "user.email", "test@test.com")
+	runGit(work, "config", "user.name", "Test")
+	runGit(work, "remote", "add", "origin", bare)
+
+	// Initial commit on main and push.
+	if err := os.WriteFile(filepath.Join(work, "init.txt"), []byte("init"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(work, "add", ".")
+	runGit(work, "commit", "-m", "initial")
+	runGit(work, "push", "-u", "origin", "main")
+
+	// Create feat/gone-pushed, push with upstream tracking.
+	runGit(work, "checkout", "-b", "feat/gone-pushed")
+	if err := os.WriteFile(filepath.Join(work, "feat.txt"), []byte("feat"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(work, "add", ".")
+	runGit(work, "commit", "-m", "feat: add file")
+	runGit(work, "push", "--set-upstream", "origin", "feat/gone-pushed")
+
+	// Go back to main.
+	runGit(work, "checkout", "main")
+
+	// Delete the remote branch → prune local tracking ref → [gone] state.
+	runGit(work, "push", "origin", "--delete", "feat/gone-pushed")
+	runGit(work, "fetch", "--prune", "origin")
+
+	// Confirm the [gone] state: remote tracking ref must be absent.
+	revParseCmd := exec.Command("git", "rev-parse", "--verify", "-q", "refs/remotes/origin/feat/gone-pushed")
+	revParseCmd.Dir = work
+	if err := revParseCmd.Run(); err == nil {
+		t.Fatal("A4 real-git: refs/remotes/origin/feat/gone-pushed must not exist after prune")
+	}
+
+	// Confirm [gone] via upstream:track format.
+	trackOut := runGit(work, "for-each-ref", "--format=%(upstream:track)", "refs/heads/feat/gone-pushed")
+	if trackOut != "[gone]" {
+		t.Fatalf("A4 real-git: upstream:track must be '[gone]', got %q — test setup did not create expected [gone] state", trackOut)
+	}
+
+	// Create feat/never-pushed without checkout (no upstream configured).
+	runGit(work, "branch", "feat/never-pushed")
+
+	// Build gitExec pointing at the working repo.
+	gitExec := func(args ...string) (string, error) {
+		c := exec.Command("git", args...)
+		c.Dir = work
+		out, err := c.Output()
+		return strings.TrimSpace(string(out)), err
+	}
+
+	// [gone] branch: upstreamFor must return the exact tracking name.
+	if up := upstreamFor("feat/gone-pushed", gitExec); up != "origin/feat/gone-pushed" {
+		t.Errorf("A4 real-git: [gone] branch must return %q, got %q", "origin/feat/gone-pushed", up)
+	}
+
+	// Never-pushed branch: upstreamFor must return empty.
+	if up := upstreamFor("feat/never-pushed", gitExec); up != "" {
+		t.Errorf("A4 real-git: never-pushed branch must return empty upstream, got %q", up)
+	}
+}
+
+// ─── L4: defaultGitExec format bound to isNotAncestorError ───────────────────────────────────
+
+// TestL4_DefaultGitExec_IsAncestorFormat calls defaultGitExec (ship.go, production) directly in a
+// real temp git repository via t.Chdir. It asserts that:
+//   - exit 1 from merge-base --is-ancestor → isNotAncestorError returns true
+//   - exit 128 (invalid OID, non-empty stderr) → isNotAncestorError returns false
+//
+// This test pins the coupling between defaultGitExec's error format ("git … exited with %d") and
+// isNotAncestorError's HasSuffix("exited with 1") check. Any change to the format string in
+// defaultGitExec (ship.go) breaks this test directly — unlike TestD1_RealGit_Case1_And_Case2,
+// which uses an ad-hoc wrapper that would be changed alongside defaultGitExec (Hades Wave 2, L4).
+// Sabotage: changing "exited with %d" to "exited with code %d" in ship.go:defaultGitExec causes
+// both assertions to fail because isNotAncestorError no longer matches the message.
+func TestL4_DefaultGitExec_IsAncestorFormat(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not found in PATH")
+	}
+
+	dir := t.TempDir()
+
+	// runSetup runs git in dir (with author env) and fails the test on error.
+	runSetup := func(args ...string) string {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=Test",
+			"GIT_AUTHOR_EMAIL=test@test.com",
+			"GIT_COMMITTER_NAME=Test",
+			"GIT_COMMITTER_EMAIL=test@test.com",
+		)
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("git %v (setup) failed: %v", args, err)
+		}
+		return strings.TrimSpace(string(out))
+	}
+
+	// Bootstrap: init, configure, two linear commits C1 → C2.
+	runSetup("init", "-b", "main")
+	runSetup("config", "user.email", "test@test.com")
+	runSetup("config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runSetup("add", ".")
+	runSetup("commit", "-m", "C1")
+	c1 := runSetup("rev-parse", "HEAD")
+	if err := os.WriteFile(filepath.Join(dir, "b.txt"), []byte("b"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	runSetup("add", ".")
+	runSetup("commit", "-m", "C2")
+	c2 := runSetup("rev-parse", "HEAD")
+
+	// t.Chdir points defaultGitExec at the temp repo for the duration of this test.
+	// defaultGitExec has no dir parameter and runs git in the process working directory.
+	t.Chdir(dir)
+
+	// Case A: C2 is NOT an ancestor of C1 → exit 1 → isNotAncestorError must be true.
+	// (C1 is the parent commit, C2 is the child — C2 did not exist when C1 was made.)
+	_, err1 := defaultGitExec("merge-base", "--is-ancestor", c2, c1)
+	if err1 == nil {
+		t.Fatalf("L4: expected non-nil error for C2 not-ancestor-of C1 (C2=%s, C1=%s)", c2, c1)
+	}
+	if !isNotAncestorError(err1) {
+		t.Errorf("L4: isNotAncestorError must return true for exit-1 from defaultGitExec; error: %v", err1)
+	}
+
+	// Case B: invalid OID → exit 128 with non-empty stderr → isNotAncestorError must be false.
+	const badOid = "0000000000000000000000000000000000000000"
+	_, err2 := defaultGitExec("merge-base", "--is-ancestor", badOid, "HEAD")
+	if err2 == nil {
+		t.Fatalf("L4: expected non-nil error for invalid OID %q", badOid)
+	}
+	if isNotAncestorError(err2) {
+		t.Errorf("L4: isNotAncestorError must return false for exit-128 (invalid OID); error: %v", err2)
 	}
 }

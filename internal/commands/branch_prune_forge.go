@@ -277,7 +277,6 @@ func evaluateBranchWithForge(ref, prName, upstream string, snapshot *prSnapshot,
 	var openPRs []forgePR
 	var mergedValidBase []forgePR
 	var closedPRs []forgePR
-	hasPRs := false
 	for _, pr := range snapshot.prs {
 		if pr.HeadRefName != prName {
 			continue
@@ -287,7 +286,6 @@ func evaluateBranchWithForge(ref, prName, upstream string, snapshot *prSnapshot,
 			// the real safety guard is is-ancestor + baseRefName (see Wave 0 analysis).
 			continue
 		}
-		hasPRs = true
 		switch pr.State {
 		case "OPEN":
 			openPRs = append(openPRs, pr)
@@ -423,13 +421,18 @@ func evaluateBranchWithForge(ref, prName, upstream string, snapshot *prSnapshot,
 		}
 	}
 
-	// Case 4: no PR found anywhere (not even a closed one) and no upstream —
-	// the branch was never pushed. 🔴 Never deleted, even if content is identical
-	// (D1 §4, ADR-2026-10-03). A missing upstream is detected by upstreamFor
-	// returning "" via `for-each-ref --format=%(upstream:short)` (A4).
+	// Case 4: no upstream — the branch was never pushed. 🔴 Never deleted, even if
+	// content is identical (D1 §4, ADR-2026-10-03). The upstream check alone is the
+	// correct predicate: by this point every case that could delete a branch (case 0
+	// open_pr, cases 1/2/2b/head-absent from MERGED PRs with valid base, case 3
+	// closed_pr) has already returned. A non-fork MERGED PR whose base is not main is
+	// not in mergedValidBase, so its existence does NOT imply the work was integrated
+	// into main — and the local branch may be the only copy (AJ1, Wave 2 review).
+	// hasPRs is NOT checked here: the guard must fire for any branch with upstream==""
+	// regardless of whether it has PRs with a non-main base (stacked PRs etc.).
 	// Callers that iterate remote refs (detectPendingSquashMerges) must pass a
 	// non-empty upstream sentinel so this case never fires for remote branches.
-	if !hasPRs && upstream == "" {
+	if upstream == "" {
 		return branchPruneEvaluation{
 			Name:     ref,
 			Decision: branchPruneDecisionNoPRNeverPushed,
@@ -438,8 +441,10 @@ func evaluateBranchWithForge(ref, prName, upstream string, snapshot *prSnapshot,
 	}
 
 	// Case 5: no forge signal — fall back to the content heuristic (today's
-	// behaviour: evaluateBranchIntegration). Covers branches with no PRs but
-	// with an upstream, and branches whose only PRs have a base ≠ main (stacked
-	// PRs etc. — those are intentionally not considered "merged into main").
+	// behaviour: evaluateBranchIntegration). Covers:
+	//   - branches with no PRs but with an upstream (were pushed, no PR opened)
+	//   - branches whose non-fork PRs all have base ≠ main AND have an upstream
+	//     (stacked PRs etc. — not considered "merged into main"). Without an
+	//     upstream, case 4 has already returned above (AJ1, Wave 2 review).
 	return evaluateBranchIntegration(ref, gitExec)
 }

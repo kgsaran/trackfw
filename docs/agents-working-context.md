@@ -2,6 +2,21 @@
 
 ---
 
+## 2026-10-03 — Apolo (fix/branch-prune-consulta-o-estado-do-pr — ML-1B) — FIM
+
+**Início:** 2026-10-03 | Branch: `fix/branch-prune-consulta-o-estado-do-pr`
+**Tarefa:** ML-1B — Corretivo pós-Wave 2 do Hades. AJ1 (defeito no case 4), L1 (tip atrás do prHead), L3 (stub [gone] errado + real-git), L4 (acoplamento defaultGitExec/isNotAncestorError).
+**Arquivos modificados:** `internal/commands/branch_prune_forge.go`, `internal/commands/branch_prune_forge_test.go`
+**Entregues:**
+- AJ1: removido `hasPRs`, condição `if upstream == ""` no case 4, comentário atualizado, case 5 atualizado.
+- L1: `TestL1_Case1_TipBehindPRHead_Delete` — detecta inversão de args quando tip ≠ prHead.
+- L3: corrigido stub do `feat/gone` em `TestA4_UpstreamFor_ForEachRef` (agora retorna não-vazio); `TestA4_RealGit_GoneVsNeverPushed` real-git com repositório bare.
+- L4: `TestL4_DefaultGitExec_IsAncestorFormat` com `t.Chdir` + `defaultGitExec` real.
+**Provas de mordida:** AJ1 → `no_own_work`; L1 → `diverged_from_merged_pr`; L3 → `got ""`; L4 (S3) → `exited with code 1` — todas FAIL/EXIT:1.
+**Resultado final:** `go test ./internal/commands/ -count=1` EXIT:0; `go build ./...` EXIT:0; `go vet` EXIT:0. `ship.go` limpo (sabotagem S3 restaurada).
+
+---
+
 ## 2026-10-03 — Hades (fix/branch-prune-consulta-o-estado-do-pr — ML-2A) — FIM
 
 **Início:** 2026-10-03 | Branch: `fix/branch-prune-consulta-o-estado-do-pr`

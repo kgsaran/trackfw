@@ -124,13 +124,14 @@ go test ./internal/commands/ -run 'Prune|PendingSquash' -count=1
 > Dependências: Wave 1 auditada. O Hades lê; o Hefesto roda `make quality` com a máquina ociosa.
 
 ### ML-2A — Revisão de segurança contra o threat model
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** hades-tf
 **Files affected:** `docs/seguranca/2026-10-03-wave2-revisao-prune-estado-do-pr.md`
 **Actions:** confrontar cada cenário da Wave 0 com o código e os testes entregues. Tentar produzir um
 `delete` indevido com fixture própria.
 **Acceptance criteria:**
-- [ ] Cada cenário da Wave 0 com veredito, e um veredito final explícito
+- [x] Cada cenário da Wave 0 com veredito, e um veredito final explícito
+      ✅ APROVA COM AJUSTES. AJ1 (caso 4 ignorava branch nunca empurrada com PR MERGED em base não-main → podia virar delete) e lacunas L1/L3/L4 corrigidas no **ML-1B corretivo** (apolo-tf, `branch_prune_forge.go` e `_test.go`), com mordida provada. Medição real após o ML-1B: 49 delete + 3 keep, inalterada.
 
 ### ML-2B — Qualidade e gate completo
 **Status:** ⬜ Pendente
