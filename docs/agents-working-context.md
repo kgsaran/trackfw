@@ -44433,3 +44433,9 @@ Ajustes críticos: A1 (`--repo` explícito), A2 (`baseRefName` no filtro), A3 (`
 
 - REQ-2026-10-03 → Done, com evidência por AC (AC1–AC10); roadmap → `done/`. Label `req-aberta` removida da #481 (fechada pelo `Fixes #481`).
 - Vault: `gh-repo-desvia-gh-e-upstream-gone-nao-e-vazio-2026-10-03.md`.
+
+## 2026-10-03 — zeus-tf — INÍCIO: #403 (pesos do falsify recalibrados a partir do CI)
+
+- Medido: 106 rótulos sem peso calibrado; pesos de 2026-09-08 (#295); shards de CI 57–113 s contra `parity-other-gates` 150–200 s (o caminho crítico é este, não o falsify).
+- Decisão do KG: corrigir a fonte (o CI grava as marcas, `make falsify-recalibrate RUN=<id>`, recalibrar agora, linha de resumo sem gate).
+- #408 fechada sem mudança: a premissa foi falsificada (o número aparece no `windows-full-suites`).
