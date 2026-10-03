@@ -33,6 +33,23 @@
 ## Como verificar
 
 
+## Governança
+
+**REQ ligada:** 
+**Roadmap ligado:** 
+
+<!-- Dispensa (typo, doc sem afirmação de comportamento, revert — veja CONTRIBUTING.md): -->
+<!-- Dispensado: -->
+
+<!-- Estes campos não são verificados por gate automaticamente — quem revisa confere. -->
+
+## Falsificação nas duas direções
+
+**Braço positivo** — o defeito reproduzido é acusado:
+
+**Braço de controle** — o caso legítimo continua funcionando:
+
+
 <!-- Sintaxe do GitHub (inglês obrigatório) — troque o número, não a palavra. -->
 Closes #
 
