@@ -996,8 +996,8 @@ func guardCasesC01C22() []struct {
 		{id: "C12", payload: `{"command":"git push","tool_info":{"command_line":"echo"}}`, wantRC: 2},
 		// C13: surrogate \ud83d converte para marcador; "git push" no comando bloqueia.
 		{id: "C13", payload: `{"tool_input":{"command":"git push \ud83d"}}`, wantRC: 2},
-		// C14: evasão unicode — g é 'g'; git push decodificado corretamente e bloqueado.
-		{id: "C14", payload: `{"tool_input":{"command":"git push"}}`, wantRC: 2},
+		// C14: evasão unicode — \u0067 = 'g'; o extrator decodifica \u0067it push origin main para "git push origin main" e bloqueia.
+		{id: "C14", payload: `{"tool_input":{"command":"\u0067it push origin main"}}`, wantRC: 2},
 		// C15: echo hello world — não é comando git; permite.
 		{id: "C15", payload: `{"tool_input":{"command":"echo hello world"}}`, wantRC: 0},
 		// C16: git status é read-only permitido; permite.

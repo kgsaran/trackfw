@@ -133,14 +133,15 @@ go test ./internal/generators/ ./internal/validator/ -count=1
 ```
 
 ### ML-1E — Corretivo: o C14 não testa o que diz testar
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Origem:** relatório do ML-1D, confirmado pelo arquiteto. O comentário do C14 diz "evasão unicode `\u0067` = 'g'", mas o payload em `internal/generators/git_branch_guard_test.go` (~:1000) é `git push` literal: o escape se perdeu na escrita.
 **Files affected:** `internal/generators/git_branch_guard_test.go`
 **Actions:** C14 com o escape JSON real (`\u0067it push origin main` dentro do raw string), e varredura dos demais casos procurando a mesma perda (comentário que promete um escape que o payload não tem), com `od -c` ou equivalente.
 **Acceptance criteria:**
-- [ ] C14 rc=2 nos dois modos, e o payload contém a sequência de bytes `\u0067`
-- [ ] Lista dos casos conferidos, sem outra perda (ou corrigida)
+- [x] C14 rc=2 nos dois modos, e o payload contém a sequência de bytes `\u0067`
+- [x] Lista dos casos conferidos, sem outra perda (ou corrigida)
+      ✅ Bytes conferidos pelo arquiteto com `od -c`: `\ u 0 0 6 7`. C14 PASS nos dois modos; sem a decodificação de `\u` no valor ele dá rc=0 (prova do agente). Os outros 13 casos com escape foram conferidos, sem outra perda. Nota no vault.
 **Gates da wave:**
 ```bash
 go test ./internal/generators/ -run 'TestGitBranchGuardAwk' -count=1

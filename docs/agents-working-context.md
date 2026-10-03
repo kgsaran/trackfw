@@ -44219,3 +44219,20 @@ primeiro `\"` (comando truncado). Sítio: o script do guard, que vive em 4 cópi
 **Entregues:**
 - `docs/seguranca/2026-10-02-wave2-revisao-extrator-json-do-guard.md`: parecer ML-2A. C01–C22 todos passam sem divergência. R2–R5 confirmadas implementadas. Um achado novo: N03 (chave unicode-escaped no nome — `"command"` — diverge: jq bloqueia, awk passa no no-jq path). Fix de uma linha fornecido e testado (linha 235, 4 sítios). Veredito: APROVA COM AJUSTES.
 **Gates:** `test -s docs/seguranca/2026-10-02-wave2-revisao-extrator-json-do-guard.md` ✅
+
+---
+
+## 2026-10-03 — apolo-tf (fix/guard-de-branch-falha-aberto-sem-jq — ML-1E) — INÍCIO
+
+**Início:** 2026-10-03 | Branch: `fix/guard-de-branch-falha-aberto-sem-jq`
+**Tarefa:** ML-1E — Corrigir o payload do C14 ("evasão unicode") para conter os bytes literais `g` em vez do `g` que estava lá (o escape foi decodificado quando o teste foi escrito). Varrer C01–C22 e N01–N09.
+
+---
+
+## 2026-10-03 — apolo-tf (fix/guard-de-branch-falha-aberto-sem-jq — ML-1E) — FIM
+
+**Fim:** 2026-10-03 | Branch: `fix/guard-de-branch-falha-aberto-sem-jq`
+**Entregues:**
+- `internal/generators/git_branch_guard_test.go`: payload do C14 corrigido de `{"tool_input":{"command":"git push"}}` (sem escape) para `{"tool_input":{"command":"git push origin main"}}` com os 6 bytes literais `\`, `u`, `0`, `0`, `6`, `7` confirmados por `od -c`. Comentário do C14 atualizado. Todos os demais escapes (C02 `\n`, C04 `\t`, C05 `\u000a`, C06/C07 `\\n`, C13 `\ud83d`, C20 `\\`, C21 `\u000d`, C22 `\u0000`, N01 `\u00a`, N02 `\uzzzz`, N03 `a`, N09 `\\`) verificados com `od -c` — nenhum outro caso com perda.
+**Prova:** guard sem `\u` decoding (overlay no scratchpad) retorna rc=0 para o payload de C14; guard real retorna rc=2. C14 estava medindo o mesmo que C01.
+**Gates:** `go build ./...` ✅ · `go test ./internal/generators/ -run TestGitBranchGuard -count=1` 50/50 PASS ✅
