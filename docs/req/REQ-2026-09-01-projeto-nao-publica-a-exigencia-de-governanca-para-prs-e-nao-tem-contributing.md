@@ -1,14 +1,15 @@
 ---
-status: Open
+status: Done
 date: 2026-09-01
 author: "zeus-tf"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-01-publicar-a-exigencia-de-governanca-para-prs-no-contributing.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-01-publicar-a-exigencia-de-governanca-para-prs-no-contributing.md"
 ---
 
 # REQ: O projeto não publica a exigência de governança para PRs, e não tem `CONTRIBUTING.md`
 
-> Date: 2026-09-01 | Status: Open
+> Date: 2026-09-01 | Status: Done
+| Mergeado: PR #512 em `12e684c4` (2026-10-03); CI 20/20.
 
 ## Motivation
 
@@ -108,7 +109,7 @@ em runtime, isso é postura de projeto com consequência de comunidade, e merece
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-01-publicar-a-exigencia-de-governanca-para-prs-no-contributing.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-01-publicar-a-exigencia-de-governanca-para-prs-no-contributing.md`
 
 ---
 

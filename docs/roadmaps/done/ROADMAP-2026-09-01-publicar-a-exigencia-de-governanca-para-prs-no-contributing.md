@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-01
 req: "docs/req/REQ-2026-09-01-projeto-nao-publica-a-exigencia-de-governanca-para-prs-e-nao-tem-contributing.md"
 squad: "atena-tf, hefesto-tf"
@@ -7,7 +7,7 @@ squad: "atena-tf, hefesto-tf"
 
 # Roadmap: Publicar a exigência de governança para PRs no `CONTRIBUTING`
 
-> Created: 2026-09-01 | Status: wip
+> Created: 2026-09-01 | Status: done
 
 ## Context
 

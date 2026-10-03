@@ -44325,3 +44325,7 @@ ou em backlog, gate vermelho não mergeia, PR que colide é fechado com crédito
 
 REQ-2026-09-01: todos os ACs com evidência; barrier `passed` nas waves 0–2. Revisão do Hefesto pegou dois
 fatos errados (número de linhas dos PRs #238/#240; backlog opcional), corrigidos.
+
+## 2026-10-03 — zeus-tf — FIM: REQ-2026-09-01 (CONTRIBUTING) fechada pós-merge
+
+PR #512 mergeado em `12e684c4`. Roadmap → `done/`, REQ → `Done`.
