@@ -44282,3 +44282,8 @@ primeiro `\"` (comando truncado). Sítio: o script do guard, que vive em 4 cópi
 
 Waves 0–2 com barrier `passed`. Seis corretivos abertos na auditoria (ML-1B a ML-1F + achado N03 da revisão).
 `make quality` no HEAD `21beff11`, máquina ociosa: EXIT=0, 347/0. AC8 aguarda o CI.
+
+## 2026-10-03 — zeus-tf — FIM: REQ-2026-10-02 (guard sem jq, #507) fechada pós-merge
+
+PR #510 mergeado em `84b6f0a6`, CI 20/20 (Windows rodou os 31 casos sem jq). Roadmap → `done/`, REQ → `Done`,
+label removida. Próxima frente: o roadmap do CONTRIBUTING.

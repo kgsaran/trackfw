@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-10-02
 req: "docs/req/REQ-2026-10-02-trackfw-git-branch-guard-falha-aberto-sem-jq-o-fallback-por-sed-nao-interpreta-json.md"
 squad: "hades-tf, apolo-tf, hefesto-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf, hefesto-tf"
 
 # Roadmap: trackfw-git-branch-guard falha aberto sem jq — o fallback por sed não interpreta JSON
 
-> Created: 2026-10-02 | Status: wip
+> Created: 2026-10-02 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-10-02-trackfw-git-branch-guard-falha-aberto-sem-jq-o-fallback-por-sed-nao-interpreta-json.md
@@ -41,7 +41,8 @@ Notas do vault obrigatórias para quem mexer: `guard-aprova-quando-nao-conseguiu
       ✅ 3 cópias com o mesmo SHA-256 do bloco awk (ML-2B); `TestGitBranchGuardScriptReference_MatchesGenerator` PASS; `validate` sem `git_branch_guard_script_integrity`; cenário de falsificação do guard OK no `make quality`
 - [x] AC7 — teste novo declara o que afirma
       ✅ uma frase por teste nos relatórios; C14 corrigido (escape perdido na escrita)
-- [ ] AC8 — `make quality` EXIT=0 e CI verde
+- [x] AC8 — `make quality` EXIT=0 e CI verde
+      ✅ CI do PR #510 em `68c3ef2d`: 20/20 SUCCESS. No `windows-full-suites`, `TestGitBranchGuardAwk_C01C22_WithoutJQ` PASS (31 casos sem `jq` no Git Bash) e o `UnterminatedHeredoc…` da #507 PASS nos dois modos
       ⏳ Local: `make quality` no HEAD `21beff11`, máquina ociosa, rodado pelo arquiteto: EXIT=0; `suite completa -- 8 chunks, 347 OK, 0 FAIL`. Falta o CI do PR.
 
 ## Status Legend
