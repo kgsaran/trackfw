@@ -116,6 +116,21 @@ go build ./...
 go test ./internal/generators/ -run 'TestGitBranchGuard' -count=1
 ```
 
+### ML-1D — Corretivo: o nome da chave também é decodificado (achado N03 da revisão)
+**Status:** ⬜ Pendente
+**Squad:** apolo-tf
+**Origem:** ML-2A. `{"tool_input":{"comm\u0061nd":"git push origin main"}}`: com `jq` rc=2, sem `jq` rc=0. O extrator `awk` guarda o nome da chave cru (`_lk[_d]=_raw`, ~linha 235 do script) e compara com `command` sem decodificar.
+**Files affected:** os 4 sítios do Context; `internal/generators/git_branch_guard_test.go`
+**Actions:** decodificar o nome da chave com a mesma função do valor antes de comparar; nome com escape inválido → nome cru (não casa). Acrescentar à tabela C01–C22 os casos **N01–N09** da revisão (`\u` incompleto, `\uzzzz`, chave escapada, valor número/null/array, `tool_input` string, 50 KB sem fechamento, 10 000 contrabarras) com o rc esperado nos dois caminhos.
+**Acceptance criteria:**
+- [ ] N03 rc=2 com e sem `jq`; reprova sem a correção (prova por overlay)
+- [ ] N01–N09 na tabela, nos dois modos; 4 cópias iguais
+**Gates da wave:**
+```bash
+go build ./...
+go test ./internal/generators/ ./internal/validator/ -count=1
+```
+
 ## Wave 2 — Revisão independente e gate completo (paralela)
 > Dependencies: Wave 1 auditada
 
@@ -125,7 +140,8 @@ go test ./internal/generators/ -run 'TestGitBranchGuard' -count=1
 **Files affected:** `docs/seguranca/2026-10-02-wave2-revisao-extrator-json-do-guard.md`
 **Actions:** reimplementar a partir da leitura os payloads do ML-0A contra o script novo, com e sem `jq`.
 **Acceptance criteria:**
-- [ ] Veredito explícito
+- [x] Veredito explícito
+      ✅ APROVA COM AJUSTES: C01–C22 sem divergência jq×awk; achado novo **N03** (chave com escape unicode no nome, `"comm\\u0061nd"`): o `jq` decodifica e bloqueia, o `awk` não e deixa passar → ML-1D. Resíduo R1 do parecer está desatualizado (NUL já nega nos dois caminhos; nota do arquiteto no parecer).
 
 ### ML-2B — Revisão de qualidade e `make quality`
 **Status:** ⬜ Pendente

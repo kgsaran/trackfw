@@ -44196,3 +44196,26 @@ A memória de diagnóstico foi corrigida no próprio PR (pgid + marcador, não p
 
 O fallback por `sed` não interpreta JSON: não desescapa `\n` (multilinha vira um segmento só) e para no
 primeiro `\"` (comando truncado). Sítio: o script do guard, que vive em 4 cópias byte-idênticas.
+
+---
+
+## 2026-10-03 — hades-tf (fix/guard-de-branch-falha-aberto-sem-jq — ML-2A) — INÍCIO
+
+**Início:** 2026-10-03 | Branch: `fix/guard-de-branch-falha-aberto-sem-jq`
+**Tarefa:** ML-2A — Revisão de segurança independente do extrator awk no script novo. Reimplementar C01–C22 da Wave 0 mais casos novos (string enorme sem fechamento, `\u` incompleto, chave com escape, valor não-string, `tool_input` não-objeto) contra `scripts/trackfw-git-branch-guard.sh` HEAD, com e sem jq.
+
+---
+
+## 2026-10-03 — hades-tf (fix/guard-de-branch-falha-aberto-sem-jq — ML-2A) — INÍCIO
+
+**Início:** 2026-10-03 | Branch: `fix/guard-de-branch-falha-aberto-sem-jq`
+**Tarefa:** ML-2A — Revisão de segurança independente do extrator awk no script novo. Reimplementar C01–C22 da Wave 0 mais casos novos (string enorme sem fechamento, `\u` incompleto, chave com escape, valor não-string, `tool_input` não-objeto) contra `scripts/trackfw-git-branch-guard.sh` HEAD, com e sem jq.
+
+---
+
+## 2026-10-03 — hades-tf (fix/guard-de-branch-falha-aberto-sem-jq — ML-2A) — FIM
+
+**Fim:** 2026-10-03 | Branch: `fix/guard-de-branch-falha-aberto-sem-jq`
+**Entregues:**
+- `docs/seguranca/2026-10-02-wave2-revisao-extrator-json-do-guard.md`: parecer ML-2A. C01–C22 todos passam sem divergência. R2–R5 confirmadas implementadas. Um achado novo: N03 (chave unicode-escaped no nome — `"command"` — diverge: jq bloqueia, awk passa no no-jq path). Fix de uma linha fornecido e testado (linha 235, 4 sítios). Veredito: APROVA COM AJUSTES.
+**Gates:** `test -s docs/seguranca/2026-10-02-wave2-revisao-extrator-json-do-guard.md` ✅
