@@ -2,6 +2,7 @@ package generators
 
 import (
 	"encoding/json"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -822,26 +823,103 @@ func TestGitBranchGuard_TrackfwYAMLInAncestor_SubdirectoryStillBlocks(t *testing
 // ADR: ADR-2026-10-02 — D1/D2/D2-bis/D2-ter.
 // ---------------------------------------------------------------------------
 
-// makeCuratedPathWithoutJQ cria um diretório temporário com symlinks para os
-// utilitários externos que o guard precisa (awk, sed, bash, head, find) mas
-// SEM jq — forçando o caminho do extrator awk (D1). O macOS tem /usr/bin/jq,
-// portanto PATH não pode incluir /usr/bin inteiro.
+// makeCuratedPathWithoutJQ devolve um valor de PATH derivado do PATH original:
+// remove todos os diretórios que contêm um executável jq/jq.exe e, para cada
+// ferramenta necessária ao guard que ficou órfã (só existia nesses diretórios
+// removidos), cria um shim num diretório temporário próprio — symlink primeiro,
+// cópia como fallback (symlink exige Developer Mode no Windows).
+//
+// Qualquer falha ao montar o ambiente chama t.Fatalf; nunca retorna PATH vazio
+// em silêncio. Retorno: string pronta para "PATH=<valor>" (pode conter separadores
+// de PATH — os.PathListSeparator — quando o shim dir foi necessário).
 func makeCuratedPathWithoutJQ(t *testing.T) string {
 	t.Helper()
-	fakeBinDir := t.TempDir()
-	for _, bin := range []string{"bash", "awk", "sed", "head", "tr", "find"} {
-		binPath, err := exec.LookPath(bin)
-		if err != nil {
-			continue // binário ausente no sistema — segue sem ele
-		}
-		dest := filepath.Join(fakeBinDir, bin)
-		if symlinkErr := os.Symlink(binPath, dest); symlinkErr != nil {
-			if !isSymlinkPrivilegeError(symlinkErr) {
-				t.Fatalf("makeCuratedPathWithoutJQ: os.Symlink(%q → %q): %v", binPath, dest, symlinkErr)
+
+	// Passo 1: identificar quais dirs do PATH contêm jq ou jq.exe.
+	originalDirs := strings.Split(os.Getenv("PATH"), string(os.PathListSeparator))
+	jqDirs := make(map[string]bool)
+	for _, dir := range originalDirs {
+		for _, name := range []string{"jq", "jq.exe"} {
+			if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+				jqDirs[dir] = true
+				break
 			}
 		}
 	}
-	return fakeBinDir
+
+	// Passo 2: PATH filtrado — sem os dirs que têm jq.
+	var filteredDirs []string
+	for _, dir := range originalDirs {
+		if !jqDirs[dir] {
+			filteredDirs = append(filteredDirs, dir)
+		}
+	}
+
+	// Passo 3: para cada ferramenta de que o guard precisa, verificar se ainda é
+	// localizável no PATH filtrado. Se não for, criar shim num diretório próprio.
+	tools := []string{"bash", "awk", "sed", "head", "tr", "find"}
+	shimDir := t.TempDir()
+	shimUsed := false
+
+	for _, tool := range tools {
+		// Procurar o executável no PATH filtrado.
+		foundInFiltered := false
+		for _, dir := range filteredDirs {
+			for _, name := range []string{tool, tool + ".exe"} {
+				if _, err := os.Stat(filepath.Join(dir, name)); err == nil {
+					foundInFiltered = true
+					break
+				}
+			}
+			if foundInFiltered {
+				break
+			}
+		}
+		if foundInFiltered {
+			continue
+		}
+
+		// Ferramenta não disponível no PATH filtrado — precisa de shim.
+		binPath, err := exec.LookPath(tool)
+		if err != nil {
+			// Não encontrado em nenhum lugar do sistema: segue sem ele.
+			continue
+		}
+		dest := filepath.Join(shimDir, filepath.Base(binPath))
+		symlinkErr := os.Symlink(binPath, dest)
+		if symlinkErr != nil {
+			// Fallback: cópia com permissão de execução.
+			if copyErr := copyExecutableFile(binPath, dest); copyErr != nil {
+				t.Fatalf("makeCuratedPathWithoutJQ: shim para %q: symlink falhou (%v); cópia também falhou (%v)",
+					tool, symlinkErr, copyErr)
+			}
+		}
+		shimUsed = true
+	}
+
+	// Passo 4: montar o valor final do PATH.
+	filteredPATH := strings.Join(filteredDirs, string(os.PathListSeparator))
+	if shimUsed {
+		return shimDir + string(os.PathListSeparator) + filteredPATH
+	}
+	return filteredPATH
+}
+
+// copyExecutableFile copia src para dst com permissão 0755.
+// Usado como fallback quando os.Symlink falha (Windows sem Developer Mode).
+func copyExecutableFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	_, err = io.Copy(out, in)
+	return err
 }
 
 // runGitBranchGuardWithEnv executa o guard com env explícito (para PATH curado sem jq).

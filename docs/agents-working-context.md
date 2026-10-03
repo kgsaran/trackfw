@@ -2,6 +2,22 @@
 
 ---
 
+## 2026-10-02 — Apolo (fix/guard-de-branch-falha-aberto-sem-jq — ML-1C) — INÍCIO
+
+**Início:** 2026-10-02 | Branch: `fix/guard-de-branch-falha-aberto-sem-jq`
+**Tarefa:** ML-1C — Reescrever `makeCuratedPathWithoutJQ` para filtrar o PATH original em vez de criar diretório vazio, e criar shims (symlink → cópia) para ferramentas que só existiam em dirs removidos. Fatal em qualquer falha de montagem.
+
+---
+
+## 2026-10-02 — Apolo (fix/guard-de-branch-falha-aberto-sem-jq — ML-1C) — FIM
+
+**Fim:** 2026-10-02 | Branch: `fix/guard-de-branch-falha-aberto-sem-jq`
+**Entregues:**
+- `internal/generators/git_branch_guard_test.go`: `makeCuratedPathWithoutJQ` reescrita — filtra o PATH original removendo dirs com `jq`/`jq.exe`, cria shims (symlink→cópia) para ferramentas órfãs num `t.TempDir()`, retorna PATH composto (shimDir + separator + filteredDirs). Adicionado helper `copyExecutableFile`. Import `"io"` adicionado. Falha de montagem → `t.Fatalf`, nunca silêncio.
+**Gates:** `go build ./...` ✅ · `go vet ./internal/generators/` ✅ · `go test ./internal/generators/ -run TestGitBranchGuard -count=1` 50/50 PASS ✅ · `go test ./internal/generators/ -count=1` ok ✅ · `trackfw validate` lenient 174 warnings (pré-existentes) ✅
+
+---
+
 ## 2026-10-02 — Ares (fix/limite-de-tempo-por-chunk-na-falsificacao — corretivo A1 parecer) — INÍCIO
 
 **Início:** 2026-10-02 | Branch: `fix/limite-de-tempo-por-chunk-na-falsificacao`

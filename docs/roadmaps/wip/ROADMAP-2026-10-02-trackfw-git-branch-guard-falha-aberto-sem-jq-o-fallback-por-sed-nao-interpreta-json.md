@@ -101,14 +101,15 @@ go test ./internal/generators/ -run 'TestGitBranchGuard' -count=1
 ```
 
 ### ML-1C — Corretivo: o PATH curado sem jq tem de funcionar no Windows
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Origem:** relatório do ML-1B. `makeCuratedPathWithoutJQ` cria symlinks e, se `os.Symlink` falha (Windows sem Developer Mode, como nos runners), continua em silêncio com o diretório vazio. Agora os 44 testes antigos usam esse caminho, e o `windows-full-suites` roda `go test ./...`: seriam dezenas de nomes novos no ratchet.
 **Files affected:** `internal/generators/git_branch_guard_test.go`
 **Actions:** montar o ambiente sem `jq` **filtrando o PATH original**: tirar os diretórios que contêm um executável `jq` (`jq`, `jq.exe`). Para cada ferramenta de que o script precisa e que só existia num diretório removido (caso do `/usr/bin` do macOS), criar um shim num diretório próprio: symlink e, se falhar, cópia. Falha ao montar o ambiente → `t.Fatalf` com a causa, nunca diretório vazio em silêncio. Afirmar `command -v jq` vazio no ambiente final.
 **Acceptance criteria:**
-- [ ] macOS: 50/50 `TestGitBranchGuard*` passam
+- [x] macOS: 50/50 `TestGitBranchGuard*` passam
 - [ ] CI `windows-full-suites` sem nome novo no ratchet
+      ✅ macOS: 50/50 passam (rodado pelo arquiteto, 22 s). `assertJQAbsentInPath` usa `t.Fatalf` (asserção real). Windows: o braço de cópia não foi medido localmente; o AC do Windows fecha com o CI do PR.
 **Gates da wave:**
 ```bash
 go build ./...
