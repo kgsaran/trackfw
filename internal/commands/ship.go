@@ -50,6 +50,11 @@ type shipDeps struct {
 	// or its output could not be parsed — callers must treat that as "cannot verify",
 	// never silently as "no PR".
 	checkPROpen func(adapter forge.Adapter, branch string) (bool, error)
+
+	// ghExec runs `gh <args...>` for the detectPendingSquashMerges forge PR lookup (D4,
+	// ADR-2026-10-03). nil means "no gh available" → D2 degradation for that step only.
+	// Production: defaultGhExec. Tests pass nil or a stub returning pre-baked JSON.
+	ghExec ghExecFn
 }
 
 // shipOpts holds the parsed CLI flags for the ship command.
@@ -125,6 +130,7 @@ PR first. When nothing is staged, it pushes existing commits without requiring -
 				availFn:         nil, // forge.NewAdapter uses its own default when nil
 				execForgeCLI:    defaultExecForgeCLI,
 				checkPROpen:     nil, // defaultCheckPROpen
+				ghExec:          defaultGhExec,
 			}
 			return runShip(shipOpts{
 				message:        message,
@@ -386,7 +392,7 @@ func runShip(opts shipOpts, deps shipDeps) error {
 		if _, ferr := deps.execGit("fetch", "origin", "--prune"); ferr != nil {
 			fmt.Fprintf(deps.out, "Warning: could not fetch origin (offline or no remote); skipping squash-merge check.\n")
 		} else {
-			detectPendingSquashMerges(branch, deps.execGit, deps.out)
+			detectPendingSquashMerges(branch, deps.execGit, deps.ghExec, deps.out)
 		}
 	}
 
@@ -775,31 +781,42 @@ func isGitWriteCmd(args []string) bool {
 // detectPendingSquashMerges warns about branches that have genuinely pending work against
 // origin/main. Non-blocking — prints only.
 //
-// Reuses evaluateBranchIntegration (branch_prune.go) — the same touched-files heuristic
-// `trackfw branch prune` uses — instead of a naive bidirectional `git diff origin/main <branch>
-// --stat`. The naive check false-positives on a branch that was squash-merged and is now merely
-// stale (main advanced further afterwards): it always shows a non-empty diff even though nothing
-// from the branch is actually missing from main. Only branchPruneDecisionPendingWork — genuine,
-// unintegrated work — surfaces this warning; every other decision (no_own_work,
-// content_identical, review_doc_config, no_merge_base, eval_error) is silently kept quiet, same
-// posture the naive check had on error (skip, no warning).
-func detectPendingSquashMerges(currentBranch string, gitExec func(...string) (string, error), out io.Writer) {
+// Reuses evaluateBranchWithForge (branch_prune_forge.go), which applies the D1 PR-signal order
+// from ADR-2026-10-03 when a forge snapshot is available, and falls back to the touched-files
+// heuristic (evaluateBranchIntegration) otherwise. A single forge query covers all branches (D3,
+// D4 — same shared evaluation as branch prune, no second implementation).
+//
+// Warns for decisions that represent genuine pending work: pending_work (content heuristic),
+// commits_after_merged_pr (D1 case 2) and diverged_from_merged_pr (D1 case 2b). Does NOT warn
+// for open_pr (case 0 — normal unmerged branch) or merged_pr (case 1 — already integrated).
+// All other decisions (no_own_work, content_identical, no_merge_base, eval_error, etc.) are
+// silently skipped — same posture as before. A6, ADR-2026-10-03.
+func detectPendingSquashMerges(currentBranch string, gitExec func(...string) (string, error), ghExec ghExecFn, out io.Writer) {
 	remoteBranches, err := gitExec("branch", "-r", "--no-merged", "origin/main")
 	if err != nil || strings.TrimSpace(remoteBranches) == "" {
 		return
 	}
+
+	// D3/D4: one snapshot for all branches in this function (same policy as runBranchPrune).
+	snapshot, _ := queryForgePRs(gitExec, ghExec)
+
 	for _, raw := range strings.Split(remoteBranches, "\n") {
 		candidate := strings.TrimSpace(raw)
 		if candidate == "" || strings.Contains(candidate, "HEAD") {
 			continue
 		}
-		// The short name is candidate with "origin/" stripped.
+		// The short name is candidate with "origin/" stripped (A6: prName uses the short name).
 		shortName := strings.TrimPrefix(candidate, "origin/")
 		if shortName == currentBranch {
 			continue
 		}
-		eval := evaluateBranchIntegration(candidate, gitExec)
-		if eval.Decision == branchPruneDecisionPendingWork {
+		// Pass a non-empty upstream sentinel: candidate is a remote tracking branch and
+		// therefore by definition has been pushed — case 4 (no_pr_never_pushed) must not fire.
+		eval := evaluateBranchWithForge(candidate, shortName, "origin/"+shortName, snapshot, gitExec)
+		switch eval.Decision {
+		case branchPruneDecisionPendingWork,
+			branchPruneDecisionCommitsAfterMerged,
+			branchPruneDecisionDivergedFromMerged:
 			fmt.Fprintf(out, "Warning: branch %q appears to have unmerged changes vs origin/main.\n", shortName)
 		}
 	}

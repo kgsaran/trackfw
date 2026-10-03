@@ -74,7 +74,7 @@ test -s docs/seguranca/2026-10-03-wave0-prune-estado-do-pr.md
 > pacote. Dividir colocaria dois agentes no mesmo arquivo.
 
 ### ML-1A — Sinal de PR na avaliação compartilhada
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Files affected:**
 - `internal/commands/branch_prune.go`, `internal/commands/branch_prune_test.go`
@@ -102,14 +102,16 @@ test -s docs/seguranca/2026-10-03-wave0-prune-estado-do-pr.md
 8. **Aplicar a D5 do ADR (A1–A8) integralmente**; cada ajuste tem teste próprio.
 7. `docs/cli-parity.md`: documentar o contrato do `prune` e do aviso, com `trackfw-contract`.
 **Acceptance criteria:**
-- [ ] AC2: um teste por caso da D1, nomeado, que reprova sem a correção
-- [ ] AC3: PR MERGED de fork com o mesmo head **não** gera `delete`
-- [ ] AC4: sem `gh` ou com erro → veredito idêntico ao de hoje, com a linha de causa
-- [ ] AC5: o contador de chamadas da dependência == 1 com N branches; resposta truncada não vira "sem PR"
-- [ ] AC6: o aviso do push/ship silencia para a branch mergeada e continua para a pendente
-- [ ] AC9: no relatório, uma frase por teste novo dizendo o que ele afirma, mais a prova de mordida
+- [x] AC2: um teste por caso da D1, nomeado, que reprova sem a correção
+- [x] AC3: PR MERGED de fork com o mesmo head **não** gera `delete`
+- [x] AC4: sem `gh` ou com erro → veredito idêntico ao de hoje, com a linha de causa
+- [x] AC5: o contador de chamadas da dependência == 1 com N branches; resposta truncada não vira "sem PR"
+- [x] AC6: o aviso do push/ship silencia para a branch mergeada e continua para a pendente
+- [x] AC9: no relatório, uma frase por teste novo dizendo o que ele afirma, mais a prova de mordida
   (sabotar só o sítio de chamada, nunca a declaração)
-- [ ] `go build ./...` e `go test ./internal/commands/` verdes (**não** rodar `make quality`)
+- [x] `go build ./...` e `go test ./internal/commands/` verdes (**não** rodar `make quality`)
+
+      ✅ Auditoria do arquiteto: 22 testes conferidos por `go test -list`; medição real com o binário da branch = 49 delete + 3 keep ("commits after the merged PR"), igual à tabela do ADR; sem `gh` no PATH → linha `Note:` com a causa e veredito de hoje; `GH_REPO=cli/cli` não desvia (52 sinais de PR). Base `main` vem de `branchPruneDefaultLocalName`, a mesma constante que o prune já usava.
 
 **Gates da wave:**
 ```bash

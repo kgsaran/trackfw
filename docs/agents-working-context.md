@@ -2,6 +2,37 @@
 
 ---
 
+## 2026-10-03 — Apolo (fix/branch-prune-consulta-o-estado-do-pr — ML-1A) — FIM
+
+**Início:** 2026-10-03 | Branch: `fix/branch-prune-consulta-o-estado-do-pr`
+**Tarefa:** ML-1A — Sinal de PR no `branch prune` e no aviso do `push`/`ship`. Implementar os casos D1 (0–5), D2 (degradação), D3 (consulta única), D4 (aviso compartilhado) e D5 (A1–A8) do ADR-2026-10-03.
+**Entregues:**
+- `internal/commands/branch_prune_forge.go` (novo): `forgePR`, `prSnapshot`, `ghExecFn`, `defaultGhExec`, `parseHostOwnerRepo`, `queryForgePRs`, `upstreamFor`, `objectExists`, `isNotAncestorError`, `evaluateBranchWithForge`
+- `internal/commands/branch_prune.go`: novos 7 constants PR-signal, `isReviewDecision()`, `ghExec` em `branchPruneDeps`, `upstreamFor`/`evaluateBranchWithForge` no loop de `runBranchPrune`, `defaultGhExec` em `newBranchPruneCmd`, comentário do ADR atualizado
+- `internal/commands/ship.go`: `ghExec` em `shipDeps`, `detectPendingSquashMerges` atualizado com nova assinatura + casos 0/1/2/2b (D4/A6), `defaultGhExec` wired
+- `internal/commands/push.go`: `ghExec` em `pushDeps`, chamada de `detectPendingSquashMerges` atualizada, `defaultGhExec` wired
+- `internal/commands/branch_prune_forge_test.go` (novo): 21 testes cobrindo D1 casos 0–5, AC3, AC4, AC5, AC6, A1–A8, A3, A4, A5, D2, truncamento, parseHostOwnerRepo, isNotAncestorError, teste com git real, multi-PR, runBranchPrune integração
+- `internal/commands/ship_test.go`: AC6 adicionado; `nil` ghExec nos 2 testes existentes; import `encoding/json`
+- `internal/commands/branch_prune_test.go`: `ghExec: nil` explícito em `makePruneDeps`
+- `docs/cli-parity.md`: contrato de forge-pr-signal documentado com `trackfw-contract`
+**Correção pós-sessão anterior:** `TestAC4_Degradation_CauseLineAndContentHeuristic` falhava porque a comparação de verditos não removia linhas `Note:` do lado nil-ghExec; ambos os lados agora filtram `Note:` antes de comparar.
+**Gates (todos EXIT=0):**
+- `go build ./...` — EXIT: 0
+- `go vet ./internal/commands/` — EXIT: 0
+- `go test ./internal/commands/ -run 'Prune|PendingSquash' -count=1` — EXIT: 0 (todos os testes alvo passam)
+- `go test ./internal/commands/ -count=1` — EXIT: 0 (suite completa, 14.75s, sem regressões)
+- `trackfw validate` — 174 warnings (todos pré-existentes, lenient mode), 0 errors
+**Risco residual:** comportamento de produção exige `gh` autenticado — cobertura de testes é 100% via stubs; sem chamada de rede em nenhum teste. Validação de retorno real fica para ML-2A (barreira Hades) e ML-2C (medição de retorno).
+
+---
+
+## 2026-10-03 — Apolo (fix/branch-prune-consulta-o-estado-do-pr — ML-1A) — INÍCIO (histórico)
+
+**Início:** 2026-10-03 | Branch: `fix/branch-prune-consulta-o-estado-do-pr`
+**Tarefa:** ML-1A — Sinal de PR no `branch prune` e no aviso do `push`/`ship`. Implementar os casos D1 (0–5), D2 (degradação), D3 (consulta única), D4 (aviso compartilhado) e D5 (A1–A8) do ADR-2026-10-03.
+
+---
+
 ## 2026-10-03 — Atena (docs/contributing-regras-de-contribuicao — ajustes A1–A6) — INÍCIO/FIM
 
 **Início:** 2026-10-03 | Branch: `docs/contributing-regras-de-contribuicao`

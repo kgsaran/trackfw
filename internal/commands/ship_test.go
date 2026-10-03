@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -1486,7 +1487,7 @@ func TestDetectPendingSquashMerges_RealGitRepo_StaleIntegratedVsGenuinelyPending
 	// P4 detection: the fixed detectPendingSquashMerges must not warn about feat/a (stale but
 	// integrated) and must still warn about feat/pending (genuinely unmerged).
 	out := &bytes.Buffer{}
-	detectPendingSquashMerges("main", gitExec, out)
+	detectPendingSquashMerges("main", gitExec, nil, out)
 	got := out.String()
 
 	if strings.Contains(got, `"feat/a"`) {
@@ -1523,13 +1524,108 @@ func TestDetectPendingSquashMerges_CallsSharedEvaluateBranchIntegration(t *testi
 	}
 
 	out := &bytes.Buffer{}
-	detectPendingSquashMerges("main", gitExec, out)
+	detectPendingSquashMerges("main", gitExec, nil, out)
 
 	if out.Len() != 0 {
 		t.Fatalf("expected no warning when merge-base fails (routed through evaluateBranchIntegration -> no_merge_base), got:\n%s", out.String())
 	}
 	if calls["diff origin/main origin/feat/unrelated-history --stat"] > 0 {
 		t.Fatal("detectPendingSquashMerges must not run its own bidirectional diff --stat anymore — it must delegate entirely to evaluateBranchIntegration")
+	}
+}
+
+// ─── AC6: detectPendingSquashMerges silences warning for merged branch, continues for pending ──
+
+// TestAC6_DetectPendingSquashMerges_SilencesForMergedPR asserts:
+//  1. A branch with a MERGED PR whose head contains the tip (case 1) produces NO warning.
+//  2. A branch with a MERGED PR and commits after the head (case 2) DOES produce a warning.
+//  3. A branch with no PR and pending content-heuristic work DOES produce a warning.
+//
+// Sabotage target: change the warn switch in detectPendingSquashMerges to include merged_pr →
+// assertion 1 fails (spurious warning).
+// Bite mechanism: the merged branch has content-heuristic stubs returning pending_work, so the
+// old code (no forge signal) would warn for it. The fix silences it with the forge signal.
+// Without the stubs, the old code returns no_merge_base (no warning), masking the regression.
+func TestAC6_DetectPendingSquashMerges_SilencesForMergedPR(t *testing.T) {
+	const mergedHead = "ac6merged00"
+	const afterHead = "ac6afterPR0"  // MERGED PR head for feat/commits-after
+	const afterTip = "ac6afterTip0"  // tip has commits beyond afterHead
+	const pendingMB = "ac6pendbase"
+
+	gitExec := func(args ...string) (string, error) {
+		key := strings.Join(args, " ")
+		switch {
+		case key == "branch -r --no-merged origin/main":
+			return "  origin/feat/merged-pr\n  origin/feat/commits-after\n  origin/feat/pending-work\n", nil
+		case key == "remote get-url origin":
+			return "git@github.com:owner/repo.git", nil
+
+		// feat/merged-pr: case 1 (tip == head → silence).
+		case key == "rev-parse origin/feat/merged-pr":
+			return mergedHead, nil
+		case key == "cat-file -e " + mergedHead + "^{commit}":
+			return "", nil
+		case key == "merge-base --is-ancestor " + mergedHead + " " + mergedHead:
+			return "", nil // exit 0 → case 1
+
+		// feat/merged-pr heuristic stubs (reached when forge signal absent — the defect).
+		// Without the forge fix, these return pending_work and a warning fires. With the fix,
+		// case 1 short-circuits and these stubs are never called.
+		case key == "merge-base origin/main origin/feat/merged-pr":
+			return "ac6mrgbase", nil
+		case key == "diff --name-only -z ac6mrgbase origin/feat/merged-pr":
+			return "merged.go\x00", nil
+		case key == "diff --name-only -z origin/main origin/feat/merged-pr -- merged.go":
+			return "merged.go\x00", nil // pending_work in old code → warning without forge fix
+
+		// feat/commits-after: MERGED PR (afterHead) with tip beyond it → case 2 (warn).
+		case key == "rev-parse origin/feat/commits-after":
+			return afterTip, nil
+		case key == "cat-file -e " + afterHead + "^{commit}":
+			return "", nil
+		case key == "merge-base --is-ancestor " + afterTip + " " + afterHead:
+			// tip is NOT ≤ afterHead (tip has extra commits)
+			return "", fmt.Errorf("git merge-base --is-ancestor %s %s exited with 1", afterTip, afterHead)
+		case key == "merge-base --is-ancestor " + afterHead + " " + afterTip:
+			return "", nil // afterHead IS ≤ afterTip → case 2
+
+		// feat/pending-work: no PR → content heuristic → pending_work (warn).
+		case key == "merge-base origin/main origin/feat/pending-work":
+			return pendingMB, nil
+		case key == "diff --name-only -z " + pendingMB + " origin/feat/pending-work":
+			return "work.go\x00", nil
+		case key == "diff --name-only -z origin/main origin/feat/pending-work -- work.go":
+			return "work.go\x00", nil
+		}
+		return "", fmt.Errorf("unexpected gitExec in AC6 test: %v", args)
+	}
+
+	ghExec := func(args ...string) ([]byte, error) {
+		prs := []forgePR{
+			// Case 1: merged PR, tip == head.
+			{Number: 200, State: "MERGED", HeadRefName: "feat/merged-pr", HeadRefOid: mergedHead, BaseRefName: "main"},
+			// Case 2: merged PR, but tip has commits beyond head.
+			{Number: 201, State: "MERGED", HeadRefName: "feat/commits-after", HeadRefOid: afterHead, BaseRefName: "main"},
+		}
+		b, _ := json.Marshal(prs)
+		return b, nil
+	}
+
+	out := &bytes.Buffer{}
+	detectPendingSquashMerges("main", gitExec, ghExec, out)
+	got := out.String()
+
+	// Case 1: merged PR containing tip → no warning.
+	if strings.Contains(got, "feat/merged-pr") {
+		t.Fatalf("AC6: detectPendingSquashMerges must NOT warn for case-1 (merged PR contains tip). Output:\n%s", got)
+	}
+	// Case 2: merged PR with commits after → warning (A6: cases 2 and 2b warn).
+	if !strings.Contains(got, "feat/commits-after") {
+		t.Fatalf("AC6: detectPendingSquashMerges must warn for case-2 (commits after merged PR). Output:\n%s", got)
+	}
+	// Content heuristic: pending_work → warning.
+	if !strings.Contains(got, "feat/pending-work") {
+		t.Fatalf("AC6: detectPendingSquashMerges must warn for pending-work (content heuristic). Output:\n%s", got)
 	}
 }
 

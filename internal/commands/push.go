@@ -38,6 +38,11 @@ type pushDeps struct {
 	// checkPROpen queries the resolved forge for an open PR/MR whose source branch is `branch`.
 	// Only called when --force-with-lease is set. nil uses defaultCheckPROpen.
 	checkPROpen func(adapter forge.Adapter, branch string) (bool, error)
+
+	// ghExec runs `gh <args...>` for the detectPendingSquashMerges forge PR lookup (D4,
+	// ADR-2026-10-03). nil means "no gh available" → D2 degradation for that step only.
+	// Production: defaultGhExec. Tests pass nil or a stub returning pre-baked JSON.
+	ghExec ghExecFn
 }
 
 // pushOpts holds the parsed CLI flags for the push command.
@@ -101,6 +106,7 @@ PR first.`,
 				repoDir:         ".",
 				availFn:         nil,
 				checkPROpen:     nil,
+				ghExec:          defaultGhExec,
 			}
 			return runPush(pushOpts{dryRun: dryRun, forceWithLease: forceWithLease}, deps)
 		},
@@ -232,7 +238,7 @@ func runPush(opts pushOpts, deps pushDeps) error {
 		if _, ferr := deps.execGit("fetch", "origin", "--prune"); ferr != nil {
 			fmt.Fprintf(deps.out, "Warning: could not fetch origin (offline or no remote); skipping squash-merge check.\n")
 		} else {
-			detectPendingSquashMerges(branch, deps.execGit, deps.out)
+			detectPendingSquashMerges(branch, deps.execGit, deps.ghExec, deps.out)
 		}
 	}
 
