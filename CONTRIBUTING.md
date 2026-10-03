@@ -43,6 +43,20 @@ defeito era real. Isso é útil do mesmo jeito.
 
 ---
 
+## Antes de implementar uma issue
+
+Cheque a label antes de começar.
+
+A label **`req-aberta`** ("Já existe REQ aberta nossa para esta issue — abra uma Discussion antes de implementar") indica que há um plano em andamento. Dois esforços paralelos sobre a mesma causa é o padrão que [Mesma causa, mesma REQ](#mesma-causa-mesma-req) existe para evitar. Antes de implementar: abra uma [Discussion](https://github.com/kgsaran/trackfw/discussions), descreva o que planeja fazer, e aguarde. Se a issue não tiver essa label mas você tiver dúvida, a Discussion também é o caminho.
+
+**PR com gate vermelho não é aceito** — mesmo que o código esteja correto. A `main` exige os status checks e não permite bypass, inclusive para os mantenedores. Quem abre o PR acompanha o CI até ficar verde.
+
+**PR que colide com trabalho em andamento é fechado.** O motivo fica registrado, com crédito pelo que o PR trouxe — a contribuição não se perde. A falha de não ter comunicado antes foi nossa.
+
+⚠️ **Esta seção foi acrescentada em 2026-10-03.** Antes disso, essas combinações existiam mas não estavam escritas — e isso era nosso, não de quem contribuiu.
+
+---
+
 ## Se você vai mandar código
 
 ### A cadeia de governança vem antes do código
@@ -63,8 +77,18 @@ trackfw branch new fix/<slug>
 🔴 **Não é cerimônia.** `trackfw validate` reprova branch `feat/`/`fix/`/`refactor/` sem roadmap em
 `wip/` — o produto cobra de si o que cobra de quem o instala.
 
+Isso vale para os mantenedores também. A conclusão deste documento é governada por `docs/req/REQ-2026-09-01-projeto-nao-publica-a-exigencia-de-governanca-para-prs-e-nao-tem-contributing.md` — a REQ foi reaberta em 2026-10-03 porque uma versão anterior foi escrita fora da cadeia.
+
 **Dispensam REQ+roadmap** (lista fechada): typo, renomear variável local, mudança **doc-only**,
 ajuste de config sem efeito em runtime, `revert` direto, e responder pergunta.
+
+🔴 **Tamanho do diff não decide trivialidade.** A pergunta é se o arquivo participa de uma decisão de pass/fail em algum gate, teste ou CI. `scripts/`, `.github/workflows/` e os scripts que `trackfw init` gera são **nunca triviais** — mesmo em uma linha. Os PRs #238 e #240 eram correções de uma linha de gate: exigiram REQ mesmo assim.
+
+Dois casos que não cabem limpo na lista acima:
+
+- **String visível ao usuário** (mensagem de erro, saída do CLI): rode `grep -rn "texto antigo" .` antes de enviar e cole o resultado no PR. Resultado vazio, sem REQ. Resultado não-vazio, a mudança tem efeito fora do arquivo editado e exige REQ. Origem: REQ-2026-08-04 (um teste grudava no literal em inglês de uma mensagem de erro; uma correção de "typo" na string o quebrava sem aviso).
+
+- **Doc que afirma comportamento** (não estilo nem gramática): sem REQ, mas o PR inclui a evidência — comando rodado e saída, ou link para o teste que já prova a afirmação.
 
 ### Todo teste novo declara o que afirma
 
@@ -105,6 +129,21 @@ o arquiteto errado **catorze vezes** — inclusive quando o arquiteto indicou um
 correta"* que **não satisfazia o próprio analisador** do projeto.
 
 Divergir com medição é o comportamento esperado, não atrito.
+
+### Se você está adicionando um gate
+
+Um gate novo precisa de duas propriedades para contar:
+
+1. **Ligado** — aparece dentro de `make quality` no `Makefile` e num job de CI.
+2. **Reprova quando não mede nada** — um gate que retorna 0 com entrada vazia é inerte: existe, roda, produz um veredito correto — e não detecta nada. Dois gates chegaram aqui nessa condição e custaram um microlote corretivo cada. O terceiro nasceu correto porque a regra passou a ser comunicada.
+
+Quando o gate descreve um contrato documentado no `docs/cli-parity.md`, a seção correspondente exige a anotação como primeira linha não-vazia após o cabeçalho:
+
+```
+<!-- trackfw-contract: gate=<caminho> -->
+```
+
+As formas válidas são `gate=<caminhos>` (os caminhos precisam existir no disco), `gate=<caminhos> partial=<o que fica de fora>`, `gap reason=<motivo>` e `none reason=<motivo>`. O script `scripts/check-parity-contract-coverage.sh` verifica isso; seção sem anotação reprova.
 
 ---
 

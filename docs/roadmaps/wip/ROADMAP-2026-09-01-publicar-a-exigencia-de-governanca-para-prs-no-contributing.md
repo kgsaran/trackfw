@@ -81,7 +81,7 @@ grep -q "Residual" docs/qualidade/2026-09-01-custo-de-adocao-da-regra-de-governa
 > mais que completude.
 
 ### ML-1A — O que falta no `CONTRIBUTING.md`, no template de PR e no `README`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** atena-tf
 **Files affected:** `CONTRIBUTING.md`, `.github/PULL_REQUEST_TEMPLATE.md`, `README.md` (só o apontamento)
 **Actions** (cada item é um AC da REQ; o texto atual tem 154 linhas, e **não** se reescreve o que já está certo):
@@ -105,9 +105,11 @@ grep -q "Residual" docs/qualidade/2026-09-01-custo-de-adocao-da-regra-de-governa
    (c) PR que colide com trabalho em andamento é **fechado**, com o motivo e com crédito pelo que trouxe.
    Tom: o mesmo do documento. Fatos, sem culpar quem contribuiu: a falha de não ter avisado foi nossa.
 **Acceptance criteria:**
-- [ ] AC2 (completar), AC3, AC4, AC6, AC7 e AC8 da REQ presentes, cada um apontável por linha
-- [ ] Nenhuma seção existente perdeu conteúdo (diff mostra só acréscimos, salvo ajuste justificado)
-- [ ] `scripts/check-pr-closing-keyword.sh` continua verde com o template novo
+- [x] AC2 (completar), AC3, AC4, AC6, AC7 e AC8 da REQ presentes, cada um apontável por linha
+- [x] Nenhuma seção existente perdeu conteúdo (diff mostra só acréscimos, salvo ajuste justificado)
+- [x] `scripts/check-pr-closing-keyword.sh` continua verde com o template novo
+      ✅ Auditoria (arquiteto): 58 inserções, 0 deleções; gates OK; template com `Closes #` intacto (gate de palavra-chave verde). AC7 escrito na forma verdadeira (a versão anterior foi escrita fora da cadeia).
+      ⚠️ Para a revisão do ML-2A: (1) AC8(a) não diz que a label cobre também issue com REQ em **backlog**; (2) a frase "A falha de não ter comunicado antes foi nossa" está escrita como regra geral, quando foi o caso específico; (3) conferir o fato citado sobre os PRs #238 e #240.
 **Gates da wave:**
 ```bash
 test -f CONTRIBUTING.md

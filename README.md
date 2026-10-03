@@ -891,6 +891,8 @@ trackfw is the only open-source CLI that links ADRs to requirements, requirement
 
 ## Contributing
 
+Para contribuir com código, leia [CONTRIBUTING.md](CONTRIBUTING.md) (em português).
+
 ```bash
 git clone https://github.com/kgsaran/trackfw
 cd trackfw
