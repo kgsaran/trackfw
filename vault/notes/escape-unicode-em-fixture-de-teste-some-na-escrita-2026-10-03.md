@@ -4,8 +4,8 @@
 
 ## O que aconteceu
 
-O caso C14 da tabela do guard prometia, no comentário, "evasão unicode `g` = 'g'". O payload
-gravado no arquivo era `git push` **sem escape**, porque o `g` foi decodificado para `g` no
+O caso C14 da tabela do guard prometia, no comentário, "evasão unicode `\u0067` = 'g'". O payload
+gravado no arquivo era `git push` **sem escape**, porque o `\u0067` foi decodificado para `g` no
 caminho entre o agente e o disco. O teste passava, mas era uma cópia exata do C01 e **não exercitava**
 a decodificação de `\u` no valor. Nenhum teste falhou: só uma leitura do relatório pegou.
 
@@ -13,7 +13,7 @@ a decodificação de `\u` no valor. Nenhum teste falhou: só uma leitura do rela
 
 - a ferramenta de edição de arquivo do agente decodifica `\uXXXX` no texto a escrever;
 - o `zsh` também, em `printf`/`echo` com aspas que interpretam escape;
-- o próprio transporte do relatório do agente: no texto que chega ao arquiteto, `g` aparece como `g`.
+- o próprio transporte do relatório do agente: no texto que chega ao arquiteto, `\u0067` aparece como `g`.
 
 O ML-1E gravou os bytes com `python3` (`chr(92) + 'u0067'`) e conferiu com `od -c`.
 
