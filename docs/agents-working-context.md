@@ -2,6 +2,14 @@
 
 ---
 
+## 2026-10-03 — Atena (docs/contributing-regras-de-contribuicao — ajustes A1–A6) — INÍCIO/FIM
+
+**Início:** 2026-10-03 | Branch: `docs/contributing-regras-de-contribuicao`
+**Tarefa:** Aplicar os 6 ajustes do parecer `docs/qualidade/2026-10-03-revisao-contributing.md` em `CONTRIBUTING.md` e `README.md`.
+**Resultado:** A1 (correção factual das linhas #238/#240), A2 (reescrita do parágrafo req-aberta), A3 (remoção de "A falha de não ter comunicado"), A4 (simplificação da referência à REQ), A5 (contexto para docs/cli-parity.md), A6 (ponteiro do README em inglês). Todos os gates passaram.
+
+---
+
 ## 2026-10-03 — Apolo (fix/guard-de-branch-falha-aberto-sem-jq — ML-1F) — INÍCIO
 
 **Início:** 2026-10-03 | Branch: `fix/guard-de-branch-falha-aberto-sem-jq`
@@ -44293,3 +44301,27 @@ label removida. Próxima frente: o roadmap do CONTRIBUTING.
 O `CONTRIBUTING.md` e o template de PR já existiam (#255, #446), mas a REQ ficou `Open` em `backlog/`.
 Auditoria: AC1/AC5 cumpridos; AC2 parcial; AC3/4/6/7 não. Novo AC8: Discussion antes de issue com `req-aberta`
 ou em backlog, gate vermelho não mergeia, PR que colide é fechado com crédito.
+
+---
+
+## 2026-10-03 — hefesto-tf (docs/contributing-regras-de-contribuicao — ML-2A) — INÍCIO
+
+**Início:** 2026-10-03 | Branch: `docs/contributing-regras-de-contribuicao`
+**Tarefa:** ML-2A — Revisão de clareza e coerência do diff `git diff 95deba97..HEAD -- CONTRIBUTING.md README.md .github/PULL_REQUEST_TEMPLATE.md`
+**Entregável:** `docs/qualidade/2026-10-03-revisao-contributing.md`
+
+---
+
+## 2026-10-03 — hefesto-tf (docs/contributing-regras-de-contribuicao — ML-2A) — FIM
+
+**Fim:** 2026-10-03 | Branch: `docs/contributing-regras-de-contribuicao`
+**Entregue:** `docs/qualidade/2026-10-03-revisao-contributing.md`
+**Veredito:** APROVA COM AJUSTES — 2 bloqueantes (A1 fato errado, A2 gap vs. AC8(a)), 4 menores.
+- A1 (médio): "correções de uma linha" — PR #238 foi 8 linhas, PR #240 foi 7 linhas.
+- A2 (médio): AC8(a) exige Discussion também para issue em backlog; texto torna isso opcional.
+- A3–A6 (baixo): clareza para contribuidor externo, frase histórica mal scoped, README bilíngue.
+
+## 2026-10-03 — zeus-tf — FIM (implementação): CONTRIBUTING pronto para PR
+
+REQ-2026-09-01: todos os ACs com evidência; barrier `passed` nas waves 0–2. Revisão do Hefesto pegou dois
+fatos errados (número de linhas dos PRs #238/#240; backlog opcional), corrigidos.

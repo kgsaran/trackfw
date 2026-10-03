@@ -47,11 +47,11 @@ defeito era real. Isso é útil do mesmo jeito.
 
 Cheque a label antes de começar.
 
-A label **`req-aberta`** ("Já existe REQ aberta nossa para esta issue — abra uma Discussion antes de implementar") indica que há um plano em andamento. Dois esforços paralelos sobre a mesma causa é o padrão que [Mesma causa, mesma REQ](#mesma-causa-mesma-req) existe para evitar. Antes de implementar: abra uma [Discussion](https://github.com/kgsaran/trackfw/discussions), descreva o que planeja fazer, e aguarde. Se a issue não tiver essa label mas você tiver dúvida, a Discussion também é o caminho.
+A label **`req-aberta`** ("Já existe REQ aberta nossa para esta issue — abra uma Discussion antes de implementar") marca toda issue para a qual existe REQ nossa aberta, em andamento ou em backlog. Com a label, abra uma [Discussion](https://github.com/kgsaran/trackfw/discussions), descreva o que planeja fazer, e aguarde a resposta antes do código. Sem a label, se você suspeitar que há trabalho nosso sobre o mesmo problema, a Discussion também é o caminho. Dois esforços paralelos sobre a mesma causa é o padrão que [Mesma causa, mesma REQ](#mesma-causa-mesma-req) existe para evitar.
 
 **PR com gate vermelho não é aceito** — mesmo que o código esteja correto. A `main` exige os status checks e não permite bypass, inclusive para os mantenedores. Quem abre o PR acompanha o CI até ficar verde.
 
-**PR que colide com trabalho em andamento é fechado.** O motivo fica registrado, com crédito pelo que o PR trouxe — a contribuição não se perde. A falha de não ter comunicado antes foi nossa.
+**PR que colide com trabalho em andamento é fechado.** O motivo fica registrado, com crédito pelo que o PR trouxe — a contribuição não se perde.
 
 ⚠️ **Esta seção foi acrescentada em 2026-10-03.** Antes disso, essas combinações existiam mas não estavam escritas — e isso era nosso, não de quem contribuiu.
 
@@ -77,12 +77,12 @@ trackfw branch new fix/<slug>
 🔴 **Não é cerimônia.** `trackfw validate` reprova branch `feat/`/`fix/`/`refactor/` sem roadmap em
 `wip/` — o produto cobra de si o que cobra de quem o instala.
 
-Isso vale para os mantenedores também. A conclusão deste documento é governada por `docs/req/REQ-2026-09-01-projeto-nao-publica-a-exigencia-de-governanca-para-prs-e-nao-tem-contributing.md` — a REQ foi reaberta em 2026-10-03 porque uma versão anterior foi escrita fora da cadeia.
+Isso vale para os mantenedores também: este documento é governado pela REQ-2026-09-01, reaberta em 2026-10-03 porque uma versão anterior foi escrita fora da cadeia que ele descreve.
 
 **Dispensam REQ+roadmap** (lista fechada): typo, renomear variável local, mudança **doc-only**,
 ajuste de config sem efeito em runtime, `revert` direto, e responder pergunta.
 
-🔴 **Tamanho do diff não decide trivialidade.** A pergunta é se o arquivo participa de uma decisão de pass/fail em algum gate, teste ou CI. `scripts/`, `.github/workflows/` e os scripts que `trackfw init` gera são **nunca triviais** — mesmo em uma linha. Os PRs #238 e #240 eram correções de uma linha de gate: exigiram REQ mesmo assim.
+🔴 **Tamanho do diff não decide trivialidade.** A pergunta é se o arquivo participa de uma decisão de pass/fail em algum gate, teste ou CI. `scripts/`, `.github/workflows/` e os scripts que `trackfw init` gera são **nunca triviais** — mesmo em uma linha. Os PRs #238 e #240 eram mudanças pequenas (8 e 7 linhas) num script de gate: exigiram REQ mesmo assim.
 
 Dois casos que não cabem limpo na lista acima:
 
@@ -137,7 +137,7 @@ Um gate novo precisa de duas propriedades para contar:
 1. **Ligado** — aparece dentro de `make quality` no `Makefile` e num job de CI.
 2. **Reprova quando não mede nada** — um gate que retorna 0 com entrada vazia é inerte: existe, roda, produz um veredito correto — e não detecta nada. Dois gates chegaram aqui nessa condição e custaram um microlote corretivo cada. O terceiro nasceu correto porque a regra passou a ser comunicada.
 
-Quando o gate descreve um contrato documentado no `docs/cli-parity.md`, a seção correspondente exige a anotação como primeira linha não-vazia após o cabeçalho:
+Quando o gate descreve um contrato documentado no [`docs/cli-parity.md`](docs/cli-parity.md) — o contrato de comportamento do CLI, seção por seção —, a seção correspondente exige a anotação como primeira linha não-vazia após o cabeçalho:
 
 ```
 <!-- trackfw-contract: gate=<caminho> -->

@@ -26,12 +26,12 @@ governança se refutaria sozinho.
 
 ## Acceptance Criteria
 
-- [ ] `CONTRIBUTING.md` com a cadeia, os comandos e **quando** cada um é exigido
-- [ ] A **exceção de trivialidade** publicada junto — sem ela a regra é arbitrária
-- [ ] O **contrato de gates** movido para onde o contribuidor olha
-- [ ] Template de PR com REQ, roadmap e **falsificação nas duas direções**
-- [ ] A regra é **falsificável** — PR sem REQ é detectável
-- [ ] O documento declara que a regra vale **para os mantenedores também**
+- [x] `CONTRIBUTING.md` com a cadeia, os comandos e **quando** cada um é exigido
+- [x] A **exceção de trivialidade** publicada junto — sem ela a regra é arbitrária
+- [x] O **contrato de gates** movido para onde o contribuidor olha
+- [x] Template de PR com REQ, roadmap e **falsificação nas duas direções**
+- [x] A regra é **falsificável** — PR sem REQ é detectável
+- [x] O documento declara que a regra vale **para os mantenedores também**
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -121,16 +121,17 @@ grep -q "CONTRIBUTING" README.md
 > Dependências: Wave 1 auditada
 
 ### ML-2A — Revisão de clareza e coerência
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** hefesto-tf
 **Files affected:** `docs/qualidade/2026-10-03-revisao-contributing.md`
 **Actions:** confrontar cada regra escrita com o que o repositório **de fato** faz (a `main` exige quais checks?
 a label existe? os comandos citados existem?). Regra publicada que o repositório não cumpre é pior que regra
 ausente.
 **Acceptance criteria:**
-- [ ] Cada afirmação factual do texto novo conferida contra o repositório
-- [ ] Veredito explícito
+- [x] Cada afirmação factual do texto novo conferida contra o repositório
+- [x] Veredito explícito
 
+      ✅ Parecer `docs/qualidade/2026-10-03-revisao-contributing.md`: APROVA COM AJUSTES (A1 número de linhas errado; A2 backlog opcional; A3–A6 clareza). Ajustes aplicados pela Atena; A2 na forma decidida pelo arquiteto (a label cobre REQ em andamento **e** em backlog). O arquiteto corrigiu a ordem dos números (#238 = 8 linhas, #240 = 7).
 **Gates da wave:**
 ```bash
 test -s docs/qualidade/2026-10-03-revisao-contributing.md
