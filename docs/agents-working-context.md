@@ -44236,3 +44236,25 @@ primeiro `\"` (comando truncado). Sítio: o script do guard, que vive em 4 cópi
 - `internal/generators/git_branch_guard_test.go`: payload do C14 corrigido de `{"tool_input":{"command":"git push"}}` (sem escape) para `{"tool_input":{"command":"git push origin main"}}` com os 6 bytes literais `\`, `u`, `0`, `0`, `6`, `7` confirmados por `od -c`. Comentário do C14 atualizado. Todos os demais escapes (C02 `\n`, C04 `\t`, C05 `\u000a`, C06/C07 `\\n`, C13 `\ud83d`, C20 `\\`, C21 `\u000d`, C22 `\u0000`, N01 `\u00a`, N02 `\uzzzz`, N03 `a`, N09 `\\`) verificados com `od -c` — nenhum outro caso com perda.
 **Prova:** guard sem `\u` decoding (overlay no scratchpad) retorna rc=0 para o payload de C14; guard real retorna rc=2. C14 estava medindo o mesmo que C01.
 **Gates:** `go build ./...` ✅ · `go test ./internal/generators/ -run TestGitBranchGuard -count=1` 50/50 PASS ✅
+
+---
+
+## 2026-10-03 — hefesto-tf (fix/guard-de-branch-falha-aberto-sem-jq — ML-2B) — INÍCIO
+
+**Início:** 2026-10-03 | Branch: `fix/guard-de-branch-falha-aberto-sem-jq`
+**Tarefa:** ML-2B — Parecer do extrator `awk`: byte-identidade das 4 cópias, legibilidade, comentários, tabela de testes (C01–C22 + N01–N09 em modo duplo). `make quality` completo com log citado.
+
+---
+
+## 2026-10-03 — hefesto-tf (fix/guard-de-branch-falha-aberto-sem-jq — ML-2B) — FIM
+
+**Fim:** 2026-10-03 | Branch: `fix/guard-de-branch-falha-aberto-sem-jq`
+**Entregues:**
+- `docs/qualidade/2026-10-02-revisao-extrator-json-do-guard.md`: parecer ML-2B.
+  - Byte-identidade: 3 cópias confirmadas byte-idênticas (SHA256 idêntico); gate `check-git-branch-guard-hook-schema` confirma 3 sítios — a referência a "4 cópias" no task não tem correspondência no código.
+  - Tabela C01–C22 + N01–N09 (31 casos totais) em 2 testes (WithJQ + WithoutJQ) + 44 testes antigos em modo duplo via `runGitBranchGuardBothModes`. Prova de mordida OK.
+  - Comentário que mente (médio): `guardCasesC01C22` declara 22 casos mas retorna 31 (C01–C22 + N01–N09).
+  - Duplicação de helper (baixo): `runGitBranchGuardWithEnv` duplica `runGitBranchGuardImpl` com ordem de parâmetros invertida.
+  - `make quality` EXIT=2. Falha em `check-symlink-privilege-guard`: `os.Symlink` sem `symlinkOrSkip` na linha 889 de `git_branch_guard_test.go`. Suíte de falsificação não rodou (make parou antes de `parity-falsify`).
+**Veredito:** REPROVA — EXIT=2, bloqueante A1 em `internal/generators/git_branch_guard_test.go:889`.
+**Gates:** `test -s docs/qualidade/2026-10-02-revisao-extrator-json-do-guard.md` ✅
