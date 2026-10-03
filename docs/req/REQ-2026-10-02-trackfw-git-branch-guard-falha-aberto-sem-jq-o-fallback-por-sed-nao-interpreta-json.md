@@ -1,15 +1,16 @@
 ---
-status: Open
+status: Done
 date: 2026-10-02
 author: "zeus-tf"
 adr: "docs/adr/ADR-2026-10-02-o-guard-de-branch-extrai-o-comando-do-payload-por-um-parser-json-de-verdade-e-falha-fechado-quando-nao-consegue.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-10-02-trackfw-git-branch-guard-falha-aberto-sem-jq-o-fallback-por-sed-nao-interpreta-json.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-10-02-trackfw-git-branch-guard-falha-aberto-sem-jq-o-fallback-por-sed-nao-interpreta-json.md"
 ---
 
 # REQ: trackfw-git-branch-guard falha aberto sem jq — o fallback por sed não interpreta JSON
 
-> Date: 2026-10-02 | Status: Open
+> Date: 2026-10-02 | Status: Done
 | GitHub Issue: #507
+| Mergeado: PR #510 em `84b6f0a6` (2026-10-03). #507 fechada pelo merge.
 
 ## Motivation
 
@@ -50,8 +51,9 @@ valor é indecodificável. Toda a tabela de testes do guard passa a rodar com e 
       ✅ Evidência: C22 rc=2 com e sem `jq` (`TestGitBranchGuardAwk_C01C22_*/C22`)
 - [x] **AC7** — Cada teste novo declara a conclusão que afirma.
       ✅ Evidência: uma frase por teste nos relatórios; C14 corrigido (escape perdido na escrita)
-- [ ] **AC8** — `make quality` EXIT=0 (máquina ociosa) e CI verde, inclusive `windows-full-suites`.
+- [x] **AC8** — `make quality` EXIT=0 (máquina ociosa) e CI verde, inclusive `windows-full-suites`.
       ⏳ Local: `make quality` no HEAD `21beff11`, máquina ociosa, rodado pelo arquiteto: EXIT=0; `suite completa -- 8 chunks, 347 OK, 0 FAIL`. Falta o CI do PR.
+      ✅ Evidência: CI do PR #510 em `68c3ef2d`: 20/20 SUCCESS. No `windows-full-suites`, `TestGitBranchGuardAwk_C01C22_WithoutJQ` PASS (31 casos sem `jq` no Git Bash) e o `UnterminatedHeredoc…` da #507 PASS nos dois modos
 
 ## Negative scope
 
@@ -68,4 +70,4 @@ ADR: docs/adr/ADR-2026-10-02-o-guard-de-branch-extrai-o-comando-do-payload-por-u
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-10-02-trackfw-git-branch-guard-falha-aberto-sem-jq-o-fallback-por-sed-nao-interpreta-json.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-10-02-trackfw-git-branch-guard-falha-aberto-sem-jq-o-fallback-por-sed-nao-interpreta-json.md
