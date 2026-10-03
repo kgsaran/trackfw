@@ -17,7 +17,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -264,51 +263,6 @@ func moveRoadmapToDone(t *testing.T, repoDir, filename string) {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// projectRoot returns the root of the trackfw repo (for copying real done/ files).
-// ────────────────────────────────────────────────────────────────────────────
-func e2eProjectRoot(t *testing.T) string {
-	t.Helper()
-	_, thisFile, _, ok := runtime.Caller(0)
-	if !ok {
-		t.Fatal("runtime.Caller unavailable")
-	}
-	dir := filepath.Dir(thisFile)
-	for {
-		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			t.Fatal("go.mod not found: could not determine project root")
-		}
-		dir = parent
-	}
-}
-
-// copyDir copies all .md files from srcDir to dstDir.
-func copyDirMD(t *testing.T, srcDir, dstDir string) {
-	t.Helper()
-	entries, err := os.ReadDir(srcDir)
-	if err != nil {
-		t.Fatalf("readdir %s: %v", srcDir, err)
-	}
-	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
-			continue
-		}
-		src := filepath.Join(srcDir, e.Name())
-		dst := filepath.Join(dstDir, e.Name())
-		data, rerr := os.ReadFile(src)
-		if rerr != nil {
-			t.Fatalf("read %s: %v", src, rerr)
-		}
-		if werr := os.WriteFile(dst, data, 0644); werr != nil {
-			t.Fatalf("write %s: %v", dst, werr)
-		}
-	}
-}
-
-// ────────────────────────────────────────────────────────────────────────────
 // AC2 (#494) — done-only match blocks branch creation
 //
 // Reconciliation sentence: the test affirms that `branch new` blocks (rc≠0, no git branch
@@ -319,12 +273,22 @@ func copyDirMD(t *testing.T, srcDir, dstDir string) {
 func TestBranchStateE2E_AC2_DoneOnlyBlocksCreation(t *testing.T) {
 	repoDir, homeDir := makeE2ERepo(t)
 
-	root := e2eProjectRoot(t)
-	realDoneDir := filepath.Join(root, "docs", "roadmaps", "done")
+	// Synthetic fixture instead of the real corpus: layout-independent (works under
+	// roadmap_namespacing: by_agent, where the flat docs/roadmaps/done/ does not exist) and with no
+	// dependency on the 214 real roadmap names.
+	//
+	// 🔴 These two names are the ones from the original #494 case, and the choice is load-bearing:
+	// NEITHER contains the branch slug "barrier-executa-cada-linha-do-bloco-de-gates". They match
+	// only by SHARED TOKENS (barrier, executa, gate...), which is the shape of the defect this AC
+	// reproduces -- and there are TWO of them, so the "similar names in done/" hint is exercised in
+	// the plural. Do not "simplify" this fixture to one name that contains the slug: matching by
+	// containment is the easy case, and it would stop exercising overlap and the plural. If the
+	// match relation ever changes, overlap could govern branch creation again with no test noticing.
+	const roadmapOverlapA = "ROADMAP-2026-08-23-barrier-nao-executa-gate-de-roadmap-nao-confiavel-e-roadmap-new-sanitiza-o-titulo.md"
+	const roadmapOverlapB = "ROADMAP-2026-09-10-barrier-executa-gate-de-roadmap-nao-confiavel-porque-roadmaptrustforgates-falha-aberto-em-todo-caminho-de-erro.md"
 	testDoneDir := filepath.Join(repoDir, "docs", "roadmaps", "done")
-
-	// Copy real done/ roadmaps into the test fixture (in time: no testdata with 211 files).
-	copyDirMD(t, realDoneDir, testDoneDir)
+	writeRoadmapDone(t, testDoneDir, roadmapOverlapA)
+	writeRoadmapDone(t, testDoneDir, roadmapOverlapB)
 
 	gitE2E(t, repoDir, homeDir, "add", "-A")
 	gitE2E(t, repoDir, homeDir, "commit", "-q", "-m", "chore: add done/ corpus")
@@ -339,6 +303,12 @@ func TestBranchStateE2E_AC2_DoneOnlyBlocksCreation(t *testing.T) {
 	if rc == 0 {
 		t.Errorf("AC2 negative: expected rc≠0 (branch blocked), got rc=0\noutput: %s", out)
 	}
+	// The hint must name BOTH overlap matches, not just the first one.
+	for _, want := range []string{roadmapOverlapA, roadmapOverlapB} {
+		if !strings.Contains(out, want) {
+			t.Errorf("AC2 negative: hint must name %q\noutput: %s", want, out)
+		}
+	}
 	if !strings.Contains(out, "similar names in done/") {
 		t.Errorf("AC2 negative: expected 'similar names in done/' in output\noutput: %s", out)
 	}
@@ -352,6 +322,8 @@ func TestBranchStateE2E_AC2_DoneOnlyBlocksCreation(t *testing.T) {
 	}
 
 	// ─── Positive control: add roadmap to wip/ → branch is allowed ──────────
+	// Control arm keeps a name that matches by containment: that is the legitimate case, and the
+	// AC here is that a wip/ match allows creation regardless of HOW it matched.
 	const wipRoadmap = "ROADMAP-2026-10-01-barrier-executa-cada-linha-do-bloco-de-gates.md"
 	wipDir := filepath.Join(repoDir, "docs", "roadmaps", "wip")
 	writeRoadmap(t, wipDir, wipRoadmap)
