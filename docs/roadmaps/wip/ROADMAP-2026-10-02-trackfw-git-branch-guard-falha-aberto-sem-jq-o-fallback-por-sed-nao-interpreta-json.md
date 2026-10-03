@@ -135,7 +135,7 @@ go test ./internal/generators/ ./internal/validator/ -count=1
 > Dependencies: Wave 1 auditada
 
 ### ML-2A — Revisão de segurança
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** hades-tf
 **Files affected:** `docs/seguranca/2026-10-02-wave2-revisao-extrator-json-do-guard.md`
 **Actions:** reimplementar a partir da leitura os payloads do ML-0A contra o script novo, com e sem `jq`.
