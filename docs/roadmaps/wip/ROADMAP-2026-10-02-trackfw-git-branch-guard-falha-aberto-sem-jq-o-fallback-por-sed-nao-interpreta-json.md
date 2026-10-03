@@ -29,13 +29,20 @@ Notas do vault obrigatórias para quem mexer: `guard-aprova-quando-nao-conseguiu
 ## Acceptance Criteria
 - [x] AC1 — Wave 0 auditada
       ✅ `docs/seguranca/2026-10-02-wave0-extrator-json-do-guard.md`: APROVA COM AJUSTES. Formas de falha aberta confirmadas: `\n`, `\"`, `\t`, `\u000a`; e NUL, que passa até com `jq` (absorvido como AC5-bis/D2-bis).
-- [ ] AC2 — multilinha e `\"` sem `jq` → rc=2; reprova em `3b2eff09`
-- [ ] AC3 — `-m "a\nb"` literal: mesmo veredito com e sem `jq`
-- [ ] AC4 — tabela inteira do guard com e sem `jq`
-- [ ] AC5 — indecodificável → rc=2 nomeado; chave ausente → como hoje
-- [ ] AC6 — 4 cópias iguais; cenário de falsificação segue provando a sabotagem
-- [ ] AC7 — teste novo declara o que afirma
+- [x] AC2 — multilinha e `\"` sem `jq` → rc=2; reprova em `3b2eff09`
+      ✅ `TestGitBranchGuardAwk_ProvaDeMordida`: C02–C05, C12, C22 falham abertos no script de `3b2eff09` sem `jq`; passam (rc=2) no novo
+- [x] AC3 — `-m "a\nb"` literal: mesmo veredito com e sem `jq`
+      ✅ C06 e C07 (`\\n` literal) com o mesmo veredito nos dois modos
+- [x] AC4 — tabela inteira do guard com e sem `jq`
+      ✅ os 44 testes antigos rodam nos dois modos (`runGitBranchGuardBothModes`); contra `3b2eff09`, o teste da #507 reprova por divergência
+- [x] AC5 — indecodificável → rc=2 nomeado; chave ausente → como hoje
+      ✅ C18, N01, N02, N08 (indecodificável → rc=2); C17 (chave ausente → rc=0)
+- [x] AC6 — 4 cópias iguais; cenário de falsificação segue provando a sabotagem
+      ✅ 3 cópias com o mesmo SHA-256 do bloco awk (ML-2B); `TestGitBranchGuardScriptReference_MatchesGenerator` PASS; `validate` sem `git_branch_guard_script_integrity`; cenário de falsificação do guard OK no `make quality`
+- [x] AC7 — teste novo declara o que afirma
+      ✅ uma frase por teste nos relatórios; C14 corrigido (escape perdido na escrita)
 - [ ] AC8 — `make quality` EXIT=0 e CI verde
+      ⏳ Local: `make quality` no HEAD `21beff11`, máquina ociosa, rodado pelo arquiteto: EXIT=0; `suite completa -- 8 chunks, 347 OK, 0 FAIL`. Falta o CI do PR.
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -179,14 +186,15 @@ go test ./internal/generators/ -run 'TestGitBranchGuard' -count=1
       ✅ APROVA COM AJUSTES: C01–C22 sem divergência jq×awk; achado novo **N03** (chave com escape unicode no nome, `"comm\\u0061nd"`): o `jq` decodifica e bloqueia, o `awk` não e deixa passar → ML-1D. Resíduo R1 do parecer está desatualizado (NUL já nega nos dois caminhos; nota do arquiteto no parecer).
 
 ### ML-2B — Revisão de qualidade e `make quality`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** hefesto-tf
 **Files affected:** `docs/qualidade/2026-10-02-revisao-extrator-json-do-guard.md`
 **Actions:** revisão; `make quality` com a máquina ociosa, citando do log a linha da suíte de falsificação.
 **Acceptance criteria:**
-- [ ] `make quality` EXIT=0
-- [ ] Veredito explícito
+- [x] `make quality` EXIT=0
+- [x] Veredito explícito
 
+      ✅ Parecer REPROVA (gate de symlink, EXIT=2 antes da falsificação), corrigido no ML-1F. Depois: `make quality` no HEAD `21beff11`, máquina ociosa, rodado pelo arquiteto: EXIT=0; `suite completa -- 8 chunks, 347 OK, 0 FAIL`.
 **Gates da wave:**
 ```bash
 test -s docs/seguranca/2026-10-02-wave2-revisao-extrator-json-do-guard.md

@@ -23,26 +23,35 @@ valor é indecodificável. Toda a tabela de testes do guard passa a rodar com e 
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — 🔴 **Wave 0:** threat model do extrator (payloads hostis: aspas escapadas,
+- [x] **AC1** — 🔴 **Wave 0:** threat model do extrator (payloads hostis: aspas escapadas,
   contrabarra no fim, `\u0000`, `\u000a`, chave duplicada, chave em objeto aninhado errado, payload de
   200 KB); confirmação por efeito da forma 2 (truncagem no `\"`); e custo do `awk` com payload grande.
   Parecer em `docs/seguranca/`.
-- [ ] **AC2** — Sem `jq` (`PATH` curado): os 3 casos multilinha da #507 (`push`, `commit`,
+      ✅ Evidência: `docs/seguranca/2026-10-02-wave0-extrator-json-do-guard.md`, APROVA COM AJUSTES
+- [x] **AC2** — Sem `jq` (`PATH` curado): os 3 casos multilinha da #507 (`push`, `commit`,
   `checkout -b` na 2ª linha) → rc=2; `echo \"a\"; git push origin main` → rc=2; `git status` → rc=0.
   Reprova no script de `3b2eff09`.
-- [ ] **AC3** — `git commit -m "linha 1\nlinha 2"` com contrabarra literal (JSON `\\n`) **não** é
+      ✅ Evidência: `TestGitBranchGuardAwk_ProvaDeMordida`: C02–C05, C12, C22 falham abertos no script de `3b2eff09` sem `jq`; passam (rc=2) no novo
+- [x] **AC3** — `git commit -m "linha 1\nlinha 2"` com contrabarra literal (JSON `\\n`) **não** é
   fatiado: o resultado é igual com e sem `jq`.
-- [ ] **AC4** — Toda a tabela de testes existente do guard roda com e sem `jq`, com o mesmo veredito
+      ✅ Evidência: C06 e C07 (`\\n` literal) com o mesmo veredito nos dois modos
+- [x] **AC4** — Toda a tabela de testes existente do guard roda com e sem `jq`, com o mesmo veredito
   em cada caso.
-- [ ] **AC5** — Chave do comando presente e indecodificável → rc=2 com mensagem que nomeia a causa;
+      ✅ Evidência: os 44 testes antigos rodam nos dois modos (`runGitBranchGuardBothModes`); contra `3b2eff09`, o teste da #507 reprova por divergência
+- [x] **AC5** — Chave do comando presente e indecodificável → rc=2 com mensagem que nomeia a causa;
   chave ausente → comportamento de hoje.
-- [ ] **AC6** — As 4 cópias iguais: `TestGitBranchGuardScriptReference_MatchesGenerator` verde,
+      ✅ Evidência: C18, N01, N02, N08 (indecodificável → rc=2); C17 (chave ausente → rc=0)
+- [x] **AC6** — As 4 cópias iguais: `TestGitBranchGuardScriptReference_MatchesGenerator` verde,
   `trackfw validate` sem `git_branch_guard_script_integrity` neste repositório, e o cenário de
   falsificação que sabota o guard segue provando a sabotagem (`corrupt_literal` atualizado).
-- [ ] **AC5-bis** — NUL no comando decodificado (`git push\u0000origin main`) → rc=2 **com e sem `jq`**.
+      ✅ Evidência: 3 cópias com o mesmo SHA-256 do bloco awk (ML-2B); `TestGitBranchGuardScriptReference_MatchesGenerator` PASS; `validate` sem `git_branch_guard_script_integrity`; cenário de falsificação do guard OK no `make quality`
+- [x] **AC5-bis** — NUL no comando decodificado (`git push\u0000origin main`) → rc=2 **com e sem `jq`**.
   Hoje passa nos dois caminhos (Wave 0).
-- [ ] **AC7** — Cada teste novo declara a conclusão que afirma.
+      ✅ Evidência: C22 rc=2 com e sem `jq` (`TestGitBranchGuardAwk_C01C22_*/C22`)
+- [x] **AC7** — Cada teste novo declara a conclusão que afirma.
+      ✅ Evidência: uma frase por teste nos relatórios; C14 corrigido (escape perdido na escrita)
 - [ ] **AC8** — `make quality` EXIT=0 (máquina ociosa) e CI verde, inclusive `windows-full-suites`.
+      ⏳ Local: `make quality` no HEAD `21beff11`, máquina ociosa, rodado pelo arquiteto: EXIT=0; `suite completa -- 8 chunks, 347 OK, 0 FAIL`. Falta o CI do PR.
 
 ## Negative scope
 
