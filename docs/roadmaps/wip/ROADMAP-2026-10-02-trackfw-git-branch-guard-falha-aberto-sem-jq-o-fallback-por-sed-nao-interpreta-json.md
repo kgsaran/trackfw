@@ -117,18 +117,33 @@ go test ./internal/generators/ -run 'TestGitBranchGuard' -count=1
 ```
 
 ### ML-1D — Corretivo: o nome da chave também é decodificado (achado N03 da revisão)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Origem:** ML-2A. `{"tool_input":{"comm\u0061nd":"git push origin main"}}`: com `jq` rc=2, sem `jq` rc=0. O extrator `awk` guarda o nome da chave cru (`_lk[_d]=_raw`, ~linha 235 do script) e compara com `command` sem decodificar.
 **Files affected:** os 4 sítios do Context; `internal/generators/git_branch_guard_test.go`
 **Actions:** decodificar o nome da chave com a mesma função do valor antes de comparar; nome com escape inválido → nome cru (não casa). Acrescentar à tabela C01–C22 os casos **N01–N09** da revisão (`\u` incompleto, `\uzzzz`, chave escapada, valor número/null/array, `tool_input` string, 50 KB sem fechamento, 10 000 contrabarras) com o rc esperado nos dois caminhos.
 **Acceptance criteria:**
-- [ ] N03 rc=2 com e sem `jq`; reprova sem a correção (prova por overlay)
-- [ ] N01–N09 na tabela, nos dois modos; 4 cópias iguais
+- [x] N03 rc=2 com e sem `jq`; reprova sem a correção (prova por overlay)
+- [x] N01–N09 na tabela, nos dois modos; 4 cópias iguais
+      ✅ N03 reprova sem a correção (overlay: rc=0 sem `jq`) e passa com ela; N01–N09 na tabela, nos dois modos; 4 cópias iguais. ⚠️ Achado do relatório, confirmado pelo arquiteto com `od -c`: o payload do **C14** ("evasão unicode") é `git push` **sem escape**. O `\u0067` foi decodificado na escrita do teste, e o caso é uma cópia do C01. → ML-1E.
 **Gates da wave:**
 ```bash
 go build ./...
 go test ./internal/generators/ ./internal/validator/ -count=1
+```
+
+### ML-1E — Corretivo: o C14 não testa o que diz testar
+**Status:** ⬜ Pendente
+**Squad:** apolo-tf
+**Origem:** relatório do ML-1D, confirmado pelo arquiteto. O comentário do C14 diz "evasão unicode `\u0067` = 'g'", mas o payload em `internal/generators/git_branch_guard_test.go` (~:1000) é `git push` literal: o escape se perdeu na escrita.
+**Files affected:** `internal/generators/git_branch_guard_test.go`
+**Actions:** C14 com o escape JSON real (`\u0067it push origin main` dentro do raw string), e varredura dos demais casos procurando a mesma perda (comentário que promete um escape que o payload não tem), com `od -c` ou equivalente.
+**Acceptance criteria:**
+- [ ] C14 rc=2 nos dois modos, e o payload contém a sequência de bytes `\u0067`
+- [ ] Lista dos casos conferidos, sem outra perda (ou corrigida)
+**Gates da wave:**
+```bash
+go test ./internal/generators/ -run 'TestGitBranchGuardAwk' -count=1
 ```
 
 ## Wave 2 — Revisão independente e gate completo (paralela)

@@ -1014,6 +1014,24 @@ func guardCasesC01C22() []struct {
 		{id: "C21", payload: `{"tool_input":{"command":"echo oi\u000dgit push origin main"}}`, wantRC: 0},
 		// C22: \u0000 (NUL) no valor — D2-bis recusa em ambos os caminhos (jq e awk) antes de $() descartar o NUL.
 		{id: "C22", payload: `{"tool_input":{"command":"git push\u0000origin main"}}`, wantRC: 2},
+		// N01: \u com 3 dígitos hex no valor (escape incompleto) — awk detecta incomplete_unicode → exit 2; jq falha o parse → fallback awk → mesmo resultado.
+		{id: "N01", payload: `{"tool_input":{"command":"git push\u00a"}}`, wantRC: 2},
+		// N02: \uzzzz (4 dígitos não-hex) no valor — hex2dec retorna -1 → invalid_unicode_hex → exit 2 nos dois caminhos.
+		{id: "N02", payload: `{"tool_input":{"command":"git push\uzzzz"}}`, wantRC: 2},
+		// N03: chave "command" com escape unicode no nome (comm\u0061nd decodifica para "command") — após o fix, awk decodifica o nome antes de comparar → bloqueia nos dois caminhos.
+		{id: "N03", payload: `{"tool_input":{"comm` + `\u0061nd":"git push origin main"}}`, wantRC: 2},
+		// N04: valor numérico 123 — nem jq nem awk tratam número como string → sem comando detectado → permite.
+		{id: "N04", payload: `{"tool_input":{"command":123}}`, wantRC: 0},
+		// N05: valor null — token null não é string JSON → sem comando detectado → permite.
+		{id: "N05", payload: `{"tool_input":{"command":null}}`, wantRC: 0},
+		// N06: valor array — [ inicia array (não objeto); strings dentro não ativam captura de comando → permite.
+		{id: "N06", payload: `{"tool_input":{"command":["git","push","origin","main"]}}`, wantRC: 0},
+		// N07: tool_input como string (não objeto) — awk não encontra chave command no nível esperado → permite.
+		{id: "N07", payload: `{"tool_input":"git push origin main"}`, wantRC: 0},
+		// N08: string sem aspas de fechamento (50 000 bytes) — awk chega ao END com unterminated_string → exit 2; jq falha o parse → fallback awk → mesmo resultado.
+		{id: "N08", payload: `{"tool_input":{"command":"` + strings.Repeat("A", 50000), wantRC: 2},
+		// N09: 10 000 contrabarras (5 000 \\ no JSON) + "git push" no valor — valor decodificado começa com \\ × 5000 (não com "git"); comando não bloqueado → permite.
+		{id: "N09", payload: `{"tool_input":{"command":"` + strings.Repeat(`\\`, 5000) + `git push"}}`, wantRC: 0},
 	}
 }
 

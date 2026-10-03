@@ -258,7 +258,7 @@ END{
       if(_sc!="\""){_e="unterminated_string";break}
       _i=_j
       if(_d>=1 && _io[_d]==1){
-        if(!_vn[_d]){_lk[_d]=_raw}
+        if(!_vn[_d]){_dkn=decode_str(_raw);_lk[_d]=(_DECODE_ERR==""?_dkn:_raw);_DECODE_ERR=""}
         else{
           _vn[_d]=0; _k=_lk[_d]; _par=_pk[_d]
           if(_d==1 && _k=="command" && _par==""){
