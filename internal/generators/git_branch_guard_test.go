@@ -886,12 +886,15 @@ func makeCuratedPathWithoutJQ(t *testing.T) string {
 			continue
 		}
 		dest := filepath.Join(shimDir, filepath.Base(binPath))
-		symlinkErr := os.Symlink(binPath, dest)
-		if symlinkErr != nil {
-			// Fallback: cópia com permissão de execução.
-			if copyErr := copyExecutableFile(binPath, dest); copyErr != nil {
-				t.Fatalf("makeCuratedPathWithoutJQ: shim para %q: symlink falhou (%v); cópia também falhou (%v)",
-					tool, symlinkErr, copyErr)
+		if err := os.Symlink(binPath, dest); err != nil {
+			if isSymlinkPrivilegeError(err) {
+				// Sem privilégio de symlink (Windows sem Developer Mode): cópia.
+				if copyErr := copyExecutableFile(binPath, dest); copyErr != nil {
+					t.Fatalf("makeCuratedPathWithoutJQ: shim para %q: symlink sem privilégio (%v); cópia também falhou (%v)",
+						tool, err, copyErr)
+				}
+			} else {
+				t.Fatalf("makeCuratedPathWithoutJQ: shim para %q: os.Symlink falhou (%v)", tool, err)
 			}
 		}
 		shimUsed = true
@@ -923,24 +926,10 @@ func copyExecutableFile(src, dst string) error {
 }
 
 // runGitBranchGuardWithEnv executa o guard com env explícito (para PATH curado sem jq).
+// Wrapper de runGitBranchGuardImpl com args=nil e ordem (env, stdin) preservada para os chamadores.
 func runGitBranchGuardWithEnv(t *testing.T, dir, scriptPath string, env []string, stdin string) (exitCode int, stdout, stderr string) {
 	t.Helper()
-	cmd := exec.Command("bash", scriptPath)
-	cmd.Dir = dir
-	cmd.Stdin = strings.NewReader(stdin)
-	cmd.Env = env
-	var outBuf, errBuf strings.Builder
-	cmd.Stdout = &outBuf
-	cmd.Stderr = &errBuf
-	err := cmd.Run()
-	if err == nil {
-		return 0, outBuf.String(), errBuf.String()
-	}
-	if exitErr, ok := err.(*exec.ExitError); ok {
-		return exitErr.ExitCode(), outBuf.String(), errBuf.String()
-	}
-	t.Fatalf("runGitBranchGuardWithEnv: exec error: %v (stderr: %s)", err, errBuf.String())
-	return -1, "", ""
+	return runGitBranchGuardImpl(t, dir, scriptPath, nil, stdin, env)
 }
 
 // assertJQAbsentInPath verifica que `command -v jq` falha no fakeBinDir —
@@ -956,10 +945,11 @@ func assertJQAbsentInPath(t *testing.T, fakeBinDir string) {
 	}
 }
 
-// guardCasesC01C22 retorna os 22 casos obrigatórios da Wave 0 + C22 (NUL).
+// guardCasesTable retorna os 31 casos da tabela de testes do guard:
+// C01–C22 (22 casos da Wave 0, incluindo NUL) e N01–N09 (9 casos de limites e escapes).
 // Payloads são raw strings Go: \n, \t, \u000a, etc. são os literais JSON correspondentes
 // (dois chars, não sequências de escape Go).
-func guardCasesC01C22() []struct {
+func guardCasesTable() []struct {
 	id      string
 	payload string
 	wantRC  int
@@ -1035,7 +1025,7 @@ func guardCasesC01C22() []struct {
 	}
 }
 
-// TestGitBranchGuardAwk_C01C22_WithJQ roda a tabela C01–C22 com jq disponível
+// TestGitBranchGuardAwk_C01C22_WithJQ roda a tabela C01–C22 + N01–N09 com jq disponível
 // (PATH do sistema — macOS tem /usr/bin/jq).
 // AC4: mesma tabela nos dois caminhos.
 func TestGitBranchGuardAwk_C01C22_WithJQ(t *testing.T) {
@@ -1044,7 +1034,7 @@ func TestGitBranchGuardAwk_C01C22_WithJQ(t *testing.T) {
 		t.Skip("jq não encontrado no PATH do sistema — pulando tabela com-jq")
 	}
 	dir, script := setupGitBranchGuardFixture(t)
-	for _, tc := range guardCasesC01C22() {
+	for _, tc := range guardCasesTable() {
 		tc := tc
 		t.Run(tc.id, func(t *testing.T) {
 			code, _, stderr := runGitBranchGuard(t, dir, script, nil, tc.payload)
@@ -1055,7 +1045,7 @@ func TestGitBranchGuardAwk_C01C22_WithJQ(t *testing.T) {
 	}
 }
 
-// TestGitBranchGuardAwk_C01C22_WithoutJQ roda a tabela C01–C22 com PATH curado
+// TestGitBranchGuardAwk_C01C22_WithoutJQ roda a tabela C01–C22 + N01–N09 com PATH curado
 // que exclui jq — exercita o extrator awk (D1/D2/D2-bis/D2-ter).
 // AC2/AC3/AC4/AC5: cobre multilinha, \", literal \\n, indecodificável e NUL sem jq.
 // Pré-condição verificada: command -v jq deve retornar vazio no PATH curado.
@@ -1064,7 +1054,7 @@ func TestGitBranchGuardAwk_C01C22_WithoutJQ(t *testing.T) {
 	fakeBinDir := makeCuratedPathWithoutJQ(t)
 	assertJQAbsentInPath(t, fakeBinDir)
 	env := []string{"PATH=" + fakeBinDir}
-	for _, tc := range guardCasesC01C22() {
+	for _, tc := range guardCasesTable() {
 		tc := tc
 		t.Run(tc.id, func(t *testing.T) {
 			code, _, stderr := runGitBranchGuardWithEnv(t, dir, script, env, tc.payload)

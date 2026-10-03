@@ -2,6 +2,25 @@
 
 ---
 
+## 2026-10-03 — Apolo (fix/guard-de-branch-falha-aberto-sem-jq — ML-1F) — INÍCIO
+
+**Início:** 2026-10-03 | Branch: `fix/guard-de-branch-falha-aberto-sem-jq`
+**Tarefa:** ML-1F — Corretivo da revisão de qualidade: A1 (guarda de symlink), A2 (renomear `guardCasesC01C22`), A3 (unificar helpers).
+
+---
+
+## 2026-10-03 — Apolo (fix/guard-de-branch-falha-aberto-sem-jq — ML-1F) — FIM
+
+**Fim:** 2026-10-03 | Branch: `fix/guard-de-branch-falha-aberto-sem-jq`
+**Entregues:**
+- `internal/generators/git_branch_guard_test.go`:
+  - A1: `makeCuratedPathWithoutJQ` (~:889) — `os.Symlink` agora ramifica: `isSymlinkPrivilegeError` → `copyExecutableFile`; outro erro → `t.Fatalf`. Gate `check-symlink-privilege-guard` passa (EXIT 0).
+  - A2: `guardCasesC01C22` renomeada para `guardCasesTable` com comentário corrigido (31 casos: C01–C22 + N01–N09). Nomes `TestGitBranchGuardAwk_C01C22_*` preservados; comentários desses testes atualizados para mencionar N01–N09.
+  - A3: `runGitBranchGuardWithEnv` unificada como wrapper de uma linha de `runGitBranchGuardImpl`.
+**Gates:** `bash scripts/check-symlink-privilege-guard.sh` EXIT 0 ✅ · `go build ./...` ✅ · `go vet ./internal/generators/` ✅ · `go test ./internal/generators/ -run 'TestGitBranchGuard' -count=1` 50/50 PASS ✅
+
+---
+
 ## 2026-10-02 — Apolo (fix/guard-de-branch-falha-aberto-sem-jq — ML-1C) — INÍCIO
 
 **Início:** 2026-10-02 | Branch: `fix/guard-de-branch-falha-aberto-sem-jq`

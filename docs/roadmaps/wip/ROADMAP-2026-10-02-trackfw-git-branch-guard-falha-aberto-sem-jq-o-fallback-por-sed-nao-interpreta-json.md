@@ -148,7 +148,7 @@ go test ./internal/generators/ -run 'TestGitBranchGuardAwk' -count=1
 ```
 
 ### ML-1F — Corretivo da revisão de qualidade: gate de symlink e nomes da tabela
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Origem:** ML-2B, REPROVA. `make quality` EXIT=2 em `parity-rest`: o `scripts/check-symlink-privilege-guard.sh` acusa o `os.Symlink` de `makeCuratedPathWithoutJQ` (`internal/generators/git_branch_guard_test.go` ~:889) sem guarda de privilégio. A falsificação não chegou a rodar.
 **Files affected:** `internal/generators/git_branch_guard_test.go`
@@ -157,8 +157,9 @@ go test ./internal/generators/ -run 'TestGitBranchGuardAwk' -count=1
 2. A2: `guardCasesC01C22` devolve 31 casos (C01–C22 + N01–N09). Ajustar o nome e o comentário, e os nomes `TestGitBranchGuardAwk_C01C22_*` se o pacote não depender deles em outro lugar (`grep` antes; o roadmap e as notas citam esses nomes, então se renomear, liste os sítios de documentação que citam o nome antigo).
 3. A3: `runGitBranchGuardWithEnv` duplica `runGitBranchGuardImpl` com a ordem de parâmetros invertida; unificar num só helper.
 **Acceptance criteria:**
-- [ ] `bash scripts/check-symlink-privilege-guard.sh` exit 0
-- [ ] `go test ./internal/generators/ -run 'TestGitBranchGuard' -count=1` 50/50
+- [x] `bash scripts/check-symlink-privilege-guard.sh` exit 0
+- [x] `go test ./internal/generators/ -run 'TestGitBranchGuard' -count=1` 50/50
+      ✅ Gate de symlink OK (215 arquivos, rodado pelo arquiteto); privilégio → cópia, outro erro → Fatalf (sem `symlinkOrSkip`, para não pular no Windows). 50/50.
 **Gates da wave:**
 ```bash
 bash scripts/check-symlink-privilege-guard.sh
