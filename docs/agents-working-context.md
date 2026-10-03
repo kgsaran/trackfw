@@ -2,6 +2,19 @@
 
 ---
 
+## 2026-10-03 — Hades (fix/branch-prune-consulta-o-estado-do-pr — ML-2A) — FIM
+
+**Início:** 2026-10-03 | Branch: `fix/branch-prune-consulta-o-estado-do-pr`
+**Tarefa:** ML-2A — Revisão de segurança da implementação do ML-1A contra o threat model da Wave 0 (C1–C11).
+**Entregues:**
+- `docs/seguranca/2026-10-03-wave2-revisao-prune-estado-do-pr.md` — parecer completo com veredito por cenário, experimentos, sabotagens e lacunas declaradas
+- `docs/agents-working-context.md` — entrada de início e fim
+**Veredito:** APROVA COM AJUSTES. Defeito reproduzido por fixture: branch nunca empurrada com PR mergeado em base não-main recebe `no_own_work` (deletável), violando ADR D1 §4. Ajuste AJ1: mudar condição do case 4 em forge.go:432 de `!hasPRs && upstream == ""` para `upstream == ""`.
+**Lacunas de cobertura declaradas como resíduo:** L1 (case 1 com tip < prHead), L2 (fallback de truncamento), L3 (stub errado para [gone] no TestA4), L4 (acoplamento implícito defaultGitExec/isNotAncestorError).
+**Sabotagens executadas e restauradas:** S1 inversão is-ancestor (capturada por TestD1_Case2 e TestD1_RealGit); S2 omissão --repo (capturada por TestA1); S3 formato de msg defaultGitExec (nenhum teste reprovado — lacuna L4). Código restaurado: `git diff --stat -- internal/` vazio.
+
+---
+
 ## 2026-10-03 — Apolo (fix/branch-prune-consulta-o-estado-do-pr — ML-1A) — FIM
 
 **Início:** 2026-10-03 | Branch: `fix/branch-prune-consulta-o-estado-do-pr`
