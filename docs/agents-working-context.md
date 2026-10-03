@@ -44407,3 +44407,24 @@ Branch: `fix/branch-prune-consulta-o-estado-do-pr`
 Entregável: `docs/seguranca/2026-10-03-wave0-prune-estado-do-pr.md`
 Veredito: AC1 entregue. 7 ajustes para ML-1A (ver doc). Medição independente confirmou split 49/3 do arquiteto.
 Ajustes críticos: A1 (`--repo` explícito), A2 (`baseRefName` no filtro), A3 (`cat-file -e` antes de `is-ancestor`), A4 (upstream via `for-each-ref`).
+
+## 2026-10-03 — hefesto-tf (fix/branch-prune-consulta-o-estado-do-pr — ML-2B) — INÍCIO
+
+**Início:** 2026-10-03 | Branch: `fix/branch-prune-consulta-o-estado-do-pr`
+**Tarefa:** ML-2B — Revisão de qualidade + gate completo (manutenibilidade, cli-parity.md, L4, make quality)
+**Entregável:** `docs/qualidade/2026-10-03-revisao-prune-estado-do-pr.md`
+
+## 2026-10-03 — hefesto-tf (fix/branch-prune-consulta-o-estado-do-pr — ML-2B) — FIM
+
+**Fim:** 2026-10-03 | Branch: `fix/branch-prune-consulta-o-estado-do-pr`
+**Entregável:** `docs/qualidade/2026-10-03-revisao-prune-estado-do-pr.md`
+**Veredito:** APROVA COM AJUSTES — 1 ajuste menor (A1).
+- A1 (baixo): linha 1956 de `docs/cli-parity.md` — "no PR no upstream → keep" deve ser "no upstream → keep (even with PR to non-main base — AJ1)" para refletir o caso AJ1 corrigido.
+- Gate: EXIT=0, 3001 linhas, 14 FAIL todos em "gate must FAIL" (falsificação esperada), 347 OK, 0 FAIL real.
+
+## 2026-10-03 — zeus-tf — FIM (implementação): #481 (branch prune consulta o estado do PR)
+
+- Waves 0, 1 e 2 auditadas, barrier verde nas três. Corretivo ML-1B: o caso 4 (branch nunca empurrada) não depende mais de haver PR (AJ1 do Hades).
+- Medição de volta (binário da branch, dry-run): 49 delete + 3 keep "commits after the merged PR"; sem `gh` → `Note:` + veredito de hoje; `GH_REPO` não desvia.
+- `make quality` EXIT=0 (3001 linhas, falsify 347 OK / 0 FAIL).
+- Pendente: PR (quando o KG pedir), CI verde incluindo `windows-full-suites` (AC10), fechamento pós-merge com evidência por AC e remoção da label `req-aberta`.

@@ -25,7 +25,7 @@ Medido aqui em 2026-10-03, em 52 branches locais:
 Veredito atual: 1 delete, 25 review, o resto keep.
 
 ## Acceptance Criteria
-- [ ] AC1–AC10 da REQ, cada um com evidência apontável
+- [x] AC1–AC10 da REQ, cada um com evidência apontável
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -134,19 +134,21 @@ go test ./internal/commands/ -run 'Prune|PendingSquash' -count=1
       ✅ APROVA COM AJUSTES. AJ1 (caso 4 ignorava branch nunca empurrada com PR MERGED em base não-main → podia virar delete) e lacunas L1/L3/L4 corrigidas no **ML-1B corretivo** (apolo-tf, `branch_prune_forge.go` e `_test.go`), com mordida provada. Medição real após o ML-1B: 49 delete + 3 keep, inalterada.
 
 ### ML-2B — Qualidade e gate completo
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** hefesto-tf
 **Files affected:** `docs/qualidade/2026-10-03-revisao-prune-estado-do-pr.md`
 **Actions:** revisão de manutenibilidade. Rodar `make quality` com a máquina ociosa, registrando o EXIT e o
 número de linhas do log.
 **Acceptance criteria:**
-- [ ] `make quality` EXIT=0, com o log conferido (não só o resumo)
+- [x] `make quality` EXIT=0, com o log conferido (não só o resumo)
+      ✅ APROVA COM AJUSTES. `make quality` EXIT=0, log de 3001 linhas conferido pelo arquiteto: falsify "8 chunks, 347 OK, 0 FAIL". A1 (texto do caso 4 no `cli-parity.md`) aplicado pelo arquiteto, com a degradação silenciosa do push/ship declarada.
 
 ### ML-2C — Medição de volta (AC7)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** zeus-tf. Só leitura: `trackfw branch prune` em dry-run, com o binário da branch.
 **Acceptance criteria:**
-- [ ] A classificação bate com a tabela do ADR; nenhuma branch com trabalho não integrado em `delete`
+- [x] A classificação bate com a tabela do ADR; nenhuma branch com trabalho não integrado em `delete`
+      ✅ Binário da branch, dry-run, após o ML-1B: 49 delete (todas "merged PR #N contains this branch"), 3 keep "commits after the merged PR" (#415, #465, #503), mais a branch corrente e a `main`. Igual à tabela do ADR. Sem `gh`: linha `Note:` e veredito de hoje. `GH_REPO=cli/cli`: inalterado.
 
 **Gates da wave:**
 ```bash

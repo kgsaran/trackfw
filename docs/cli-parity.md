@@ -1954,9 +1954,11 @@ It decides whether each local branch is safe to delete relative to `origin/main`
 When `gh` is available and the origin remote points to GitHub, a **single** `gh pr list --state all`
 query provides the primary signal (ADR-2026-10-03, D1 order: open PR → keep; MERGED PR containing
 tip → delete; MERGED PR with commits after → keep; MERGED PR diverged → keep; closed PR → review;
-no PR no upstream → keep; no PR with upstream → content heuristic). On degradation (no `gh`,
-non-GitHub remote, error, or truncated response) the content heuristic below applies and one line
-naming the cause is printed. The command reports the decision for **every** local branch, always,
+no upstream → keep, even when a PR merged into a non-default base exists; no PR with upstream →
+content heuristic). On degradation (no `gh`, non-GitHub remote, error, or truncated response) the
+content heuristic below applies and `branch prune` prints one line naming the cause. The
+pending-work warning of `push`/`ship` uses the same evaluation but degrades silently, so that a push
+without `gh` does not gain an extra line. The command reports the decision for **every** local branch, always,
 with a reason. It does not remove human judgment from every case: a branch whose only remaining
 divergence is doc/config files is flagged for manual review, never deleted automatically (see
 "The review_doc_config category" below).
