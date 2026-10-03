@@ -44329,3 +44329,9 @@ fatos errados (número de linhas dos PRs #238/#240; backlog opcional), corrigido
 ## 2026-10-03 — zeus-tf — FIM: REQ-2026-09-01 (CONTRIBUTING) fechada pós-merge
 
 PR #512 mergeado em `12e684c4`. Roadmap → `done/`, REQ → `Done`.
+
+## 2026-10-03 — zeus-tf — INÍCIO: #481 (branch prune consulta o estado do PR)
+
+Medido neste repositório: 52 branches locais; o prune deleta 1, revisa 25 e mantém o resto. Com o estado do PR:
+48 têm upstream `[gone]` + PR MERGED + tip == head do PR mergeado. A REQ-2026-08-18 decidiu "sem forge" (offline,
+determinístico); o novo desenho usa o forge como sinal adicional e degrada declarando quando não há forge.
