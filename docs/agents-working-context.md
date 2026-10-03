@@ -2,6 +2,41 @@
 
 ---
 
+## 2026-10-03 — Apolo (fix/guard-de-branch-falha-aberto-sem-jq — ML-1F) — INÍCIO
+
+**Início:** 2026-10-03 | Branch: `fix/guard-de-branch-falha-aberto-sem-jq`
+**Tarefa:** ML-1F — Corretivo da revisão de qualidade: A1 (guarda de symlink), A2 (renomear `guardCasesC01C22`), A3 (unificar helpers).
+
+---
+
+## 2026-10-03 — Apolo (fix/guard-de-branch-falha-aberto-sem-jq — ML-1F) — FIM
+
+**Fim:** 2026-10-03 | Branch: `fix/guard-de-branch-falha-aberto-sem-jq`
+**Entregues:**
+- `internal/generators/git_branch_guard_test.go`:
+  - A1: `makeCuratedPathWithoutJQ` (~:889) — `os.Symlink` agora ramifica: `isSymlinkPrivilegeError` → `copyExecutableFile`; outro erro → `t.Fatalf`. Gate `check-symlink-privilege-guard` passa (EXIT 0).
+  - A2: `guardCasesC01C22` renomeada para `guardCasesTable` com comentário corrigido (31 casos: C01–C22 + N01–N09). Nomes `TestGitBranchGuardAwk_C01C22_*` preservados; comentários desses testes atualizados para mencionar N01–N09.
+  - A3: `runGitBranchGuardWithEnv` unificada como wrapper de uma linha de `runGitBranchGuardImpl`.
+**Gates:** `bash scripts/check-symlink-privilege-guard.sh` EXIT 0 ✅ · `go build ./...` ✅ · `go vet ./internal/generators/` ✅ · `go test ./internal/generators/ -run 'TestGitBranchGuard' -count=1` 50/50 PASS ✅
+
+---
+
+## 2026-10-02 — Apolo (fix/guard-de-branch-falha-aberto-sem-jq — ML-1C) — INÍCIO
+
+**Início:** 2026-10-02 | Branch: `fix/guard-de-branch-falha-aberto-sem-jq`
+**Tarefa:** ML-1C — Reescrever `makeCuratedPathWithoutJQ` para filtrar o PATH original em vez de criar diretório vazio, e criar shims (symlink → cópia) para ferramentas que só existiam em dirs removidos. Fatal em qualquer falha de montagem.
+
+---
+
+## 2026-10-02 — Apolo (fix/guard-de-branch-falha-aberto-sem-jq — ML-1C) — FIM
+
+**Fim:** 2026-10-02 | Branch: `fix/guard-de-branch-falha-aberto-sem-jq`
+**Entregues:**
+- `internal/generators/git_branch_guard_test.go`: `makeCuratedPathWithoutJQ` reescrita — filtra o PATH original removendo dirs com `jq`/`jq.exe`, cria shims (symlink→cópia) para ferramentas órfãs num `t.TempDir()`, retorna PATH composto (shimDir + separator + filteredDirs). Adicionado helper `copyExecutableFile`. Import `"io"` adicionado. Falha de montagem → `t.Fatalf`, nunca silêncio.
+**Gates:** `go build ./...` ✅ · `go vet ./internal/generators/` ✅ · `go test ./internal/generators/ -run TestGitBranchGuard -count=1` 50/50 PASS ✅ · `go test ./internal/generators/ -count=1` ok ✅ · `trackfw validate` lenient 174 warnings (pré-existentes) ✅
+
+---
+
 ## 2026-10-02 — Ares (fix/limite-de-tempo-por-chunk-na-falsificacao — corretivo A1 parecer) — INÍCIO
 
 **Início:** 2026-10-02 | Branch: `fix/limite-de-tempo-por-chunk-na-falsificacao`
@@ -44175,3 +44210,75 @@ Achado A1 (médio): `_ok "contra-braco/skip"` (linha 330 de check-falsify-chunk-
 
 PR #506 mergeado em `f3d98639`, CI 20/20. Roadmap → `done/`, REQ → `Done`, label `req-aberta` removida.
 A memória de diagnóstico foi corrigida no próprio PR (pgid + marcador, não ppid), apontado pelo Lourival.
+
+## 2026-10-02 — zeus-tf — INÍCIO: #507 (guard de branch falha aberto sem jq)
+
+O fallback por `sed` não interpreta JSON: não desescapa `\n` (multilinha vira um segmento só) e para no
+primeiro `\"` (comando truncado). Sítio: o script do guard, que vive em 4 cópias byte-idênticas.
+
+---
+
+## 2026-10-03 — hades-tf (fix/guard-de-branch-falha-aberto-sem-jq — ML-2A) — INÍCIO
+
+**Início:** 2026-10-03 | Branch: `fix/guard-de-branch-falha-aberto-sem-jq`
+**Tarefa:** ML-2A — Revisão de segurança independente do extrator awk no script novo. Reimplementar C01–C22 da Wave 0 mais casos novos (string enorme sem fechamento, `\u` incompleto, chave com escape, valor não-string, `tool_input` não-objeto) contra `scripts/trackfw-git-branch-guard.sh` HEAD, com e sem jq.
+
+---
+
+## 2026-10-03 — hades-tf (fix/guard-de-branch-falha-aberto-sem-jq — ML-2A) — INÍCIO
+
+**Início:** 2026-10-03 | Branch: `fix/guard-de-branch-falha-aberto-sem-jq`
+**Tarefa:** ML-2A — Revisão de segurança independente do extrator awk no script novo. Reimplementar C01–C22 da Wave 0 mais casos novos (string enorme sem fechamento, `\u` incompleto, chave com escape, valor não-string, `tool_input` não-objeto) contra `scripts/trackfw-git-branch-guard.sh` HEAD, com e sem jq.
+
+---
+
+## 2026-10-03 — hades-tf (fix/guard-de-branch-falha-aberto-sem-jq — ML-2A) — FIM
+
+**Fim:** 2026-10-03 | Branch: `fix/guard-de-branch-falha-aberto-sem-jq`
+**Entregues:**
+- `docs/seguranca/2026-10-02-wave2-revisao-extrator-json-do-guard.md`: parecer ML-2A. C01–C22 todos passam sem divergência. R2–R5 confirmadas implementadas. Um achado novo: N03 (chave unicode-escaped no nome — `"command"` — diverge: jq bloqueia, awk passa no no-jq path). Fix de uma linha fornecido e testado (linha 235, 4 sítios). Veredito: APROVA COM AJUSTES.
+**Gates:** `test -s docs/seguranca/2026-10-02-wave2-revisao-extrator-json-do-guard.md` ✅
+
+---
+
+## 2026-10-03 — apolo-tf (fix/guard-de-branch-falha-aberto-sem-jq — ML-1E) — INÍCIO
+
+**Início:** 2026-10-03 | Branch: `fix/guard-de-branch-falha-aberto-sem-jq`
+**Tarefa:** ML-1E — Corrigir o payload do C14 ("evasão unicode") para conter os bytes literais `g` em vez do `g` que estava lá (o escape foi decodificado quando o teste foi escrito). Varrer C01–C22 e N01–N09.
+
+---
+
+## 2026-10-03 — apolo-tf (fix/guard-de-branch-falha-aberto-sem-jq — ML-1E) — FIM
+
+**Fim:** 2026-10-03 | Branch: `fix/guard-de-branch-falha-aberto-sem-jq`
+**Entregues:**
+- `internal/generators/git_branch_guard_test.go`: payload do C14 corrigido de `{"tool_input":{"command":"git push"}}` (sem escape) para `{"tool_input":{"command":"git push origin main"}}` com os 6 bytes literais `\`, `u`, `0`, `0`, `6`, `7` confirmados por `od -c`. Comentário do C14 atualizado. Todos os demais escapes (C02 `\n`, C04 `\t`, C05 `\u000a`, C06/C07 `\\n`, C13 `\ud83d`, C20 `\\`, C21 `\u000d`, C22 `\u0000`, N01 `\u00a`, N02 `\uzzzz`, N03 `a`, N09 `\\`) verificados com `od -c` — nenhum outro caso com perda.
+**Prova:** guard sem `\u` decoding (overlay no scratchpad) retorna rc=0 para o payload de C14; guard real retorna rc=2. C14 estava medindo o mesmo que C01.
+**Gates:** `go build ./...` ✅ · `go test ./internal/generators/ -run TestGitBranchGuard -count=1` 50/50 PASS ✅
+
+---
+
+## 2026-10-03 — hefesto-tf (fix/guard-de-branch-falha-aberto-sem-jq — ML-2B) — INÍCIO
+
+**Início:** 2026-10-03 | Branch: `fix/guard-de-branch-falha-aberto-sem-jq`
+**Tarefa:** ML-2B — Parecer do extrator `awk`: byte-identidade das 4 cópias, legibilidade, comentários, tabela de testes (C01–C22 + N01–N09 em modo duplo). `make quality` completo com log citado.
+
+---
+
+## 2026-10-03 — hefesto-tf (fix/guard-de-branch-falha-aberto-sem-jq — ML-2B) — FIM
+
+**Fim:** 2026-10-03 | Branch: `fix/guard-de-branch-falha-aberto-sem-jq`
+**Entregues:**
+- `docs/qualidade/2026-10-02-revisao-extrator-json-do-guard.md`: parecer ML-2B.
+  - Byte-identidade: 3 cópias confirmadas byte-idênticas (SHA256 idêntico); gate `check-git-branch-guard-hook-schema` confirma 3 sítios — a referência a "4 cópias" no task não tem correspondência no código.
+  - Tabela C01–C22 + N01–N09 (31 casos totais) em 2 testes (WithJQ + WithoutJQ) + 44 testes antigos em modo duplo via `runGitBranchGuardBothModes`. Prova de mordida OK.
+  - Comentário que mente (médio): `guardCasesC01C22` declara 22 casos mas retorna 31 (C01–C22 + N01–N09).
+  - Duplicação de helper (baixo): `runGitBranchGuardWithEnv` duplica `runGitBranchGuardImpl` com ordem de parâmetros invertida.
+  - `make quality` EXIT=2. Falha em `check-symlink-privilege-guard`: `os.Symlink` sem `symlinkOrSkip` na linha 889 de `git_branch_guard_test.go`. Suíte de falsificação não rodou (make parou antes de `parity-falsify`).
+**Veredito:** REPROVA — EXIT=2, bloqueante A1 em `internal/generators/git_branch_guard_test.go:889`.
+**Gates:** `test -s docs/qualidade/2026-10-02-revisao-extrator-json-do-guard.md` ✅
+
+## 2026-10-03 — zeus-tf — FIM (implementação): #507 pronto para PR
+
+Waves 0–2 com barrier `passed`. Seis corretivos abertos na auditoria (ML-1B a ML-1F + achado N03 da revisão).
+`make quality` no HEAD `21beff11`, máquina ociosa: EXIT=0, 347/0. AC8 aguarda o CI.

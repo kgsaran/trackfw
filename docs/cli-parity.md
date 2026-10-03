@@ -5910,7 +5910,7 @@ dos 7 runtimes sem precisar de uma variante de script por runtime:
 
 1. **Argumentos de linha de comando** (`$1..$N`) — o comando git cru passado como argv.
 2. **Payload JSON via stdin** — tenta `.tool_input.command`, `.command` e `.hook_input.command`,
-   nessa ordem; usa `jq` quando disponível, com fallback grep/sed (sem exigir `jq` no PATH, mesmo
+   nessa ordem; usa `jq` quando disponível, com fallback awk (sem exigir `jq` no PATH, mesmo
    espírito de `credentialGuardDetectionCore`).
 3. **Texto cru via stdin**, ou `$TRACKFW_GIT_COMMAND` como último fallback.
 
