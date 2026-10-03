@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-10-03
 req: "docs/req/REQ-2026-10-03-branch-prune-classifica-branches-ja-mergeadas-como-pending-work-porque-nunca-consulta-o-estado-do-pr.md"
 squad: "hades-tf, apolo-tf, hefesto-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf, hefesto-tf"
 
 # Roadmap: branch prune classifica branches ja mergeadas como pending work porque nunca consulta o estado do PR
 
-> Created: 2026-10-03 | Status: wip
+> Created: 2026-10-03 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-10-03-branch-prune-classifica-branches-ja-mergeadas-como-pending-work-porque-nunca-consulta-o-estado-do-pr.md

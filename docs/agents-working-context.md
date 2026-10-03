@@ -44428,3 +44428,8 @@ Ajustes críticos: A1 (`--repo` explícito), A2 (`baseRefName` no filtro), A3 (`
 - Medição de volta (binário da branch, dry-run): 49 delete + 3 keep "commits after the merged PR"; sem `gh` → `Note:` + veredito de hoje; `GH_REPO` não desvia.
 - `make quality` EXIT=0 (3001 linhas, falsify 347 OK / 0 FAIL).
 - Pendente: PR (quando o KG pedir), CI verde incluindo `windows-full-suites` (AC10), fechamento pós-merge com evidência por AC e remoção da label `req-aberta`.
+
+## 2026-10-03 — zeus-tf — FECHAMENTO: #481 (PR #515 mergeado)
+
+- REQ-2026-10-03 → Done, com evidência por AC (AC1–AC10); roadmap → `done/`. Label `req-aberta` removida da #481 (fechada pelo `Fixes #481`).
+- Vault: `gh-repo-desvia-gh-e-upstream-gone-nao-e-vazio-2026-10-03.md`.
