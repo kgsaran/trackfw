@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: wip
 date: 2026-09-01
 req: "docs/req/REQ-2026-09-01-projeto-nao-publica-a-exigencia-de-governanca-para-prs-e-nao-tem-contributing.md"
 squad: "atena-tf, hefesto-tf"
@@ -40,7 +40,7 @@ governança se refutaria sozinho.
 > Dependências: nenhuma. Bloqueia a escrita.
 
 ### ML-0A — Custo de adoção e falsificabilidade da regra
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** `hefesto-tf`
 **Files affected:** nenhum (documento em `docs/qualidade/`)
 **Por que esta Wave 0 não é sobre segurança:** o risco aqui é **social e de processo**, não de
@@ -62,12 +62,13 @@ quatro PRs de alta qualidade de fora.
    ausência de REQ, porque **parece rastreabilidade**. Nomeie como distinguir.
 4. **Residual declarado.**
 **Critérios de aceite:**
-- [ ] Veredito sobre onde a régua cai, com os quatro casos concretos respondidos
-- [ ] Veredito sobre detectabilidade hoje, com evidência
-- [ ] O risco de "REQ decorativa" endereçado
-- [ ] Nenhuma linha de `CONTRIBUTING.md` escrita
-- [ ] Parecer em `docs/qualidade/2026-09-01-custo-de-adocao-da-regra-de-governanca.md`
+- [x] Veredito sobre onde a régua cai, com os quatro casos concretos respondidos
+- [x] Veredito sobre detectabilidade hoje, com evidência
+- [x] O risco de "REQ decorativa" endereçado
+- [x] Nenhuma linha de `CONTRIBUTING.md` escrita
+- [x] Parecer em `docs/qualidade/2026-09-01-custo-de-adocao-da-regra-de-governanca.md`
 
+      ✅ Parecer existente: `docs/qualidade/2026-09-01-custo-de-adocao-da-regra-de-governanca.md` (régua dos 4 casos, detectabilidade parcial, risco de REQ decorativa, resíduo). Auditado em 2026-10-03.
 **Gates da wave:**
 ```bash
 test -f docs/qualidade/2026-09-01-custo-de-adocao-da-regra-de-governanca.md
@@ -75,9 +76,63 @@ test -f docs/qualidade/2026-09-01-custo-de-adocao-da-regra-de-governanca.md
 grep -q "Residual" docs/qualidade/2026-09-01-custo-de-adocao-da-regra-de-governanca.md
 ```
 
-## Wave 1 — Escrever o documento
-> Dependências: Wave 0. `atena-tf` — é documento de **entrada**, e o público é quem nunca viu o
-> projeto. Clareza aqui vale mais que completude.
+## Wave 1 — Completar o documento (reabertura de 2026-10-03)
+> Dependências: Wave 0. `atena-tf`: documento de **entrada**, para quem nunca viu o projeto. Clareza vale
+> mais que completude.
+
+### ML-1A — O que falta no `CONTRIBUTING.md`, no template de PR e no `README`
+**Status:** ⬜ Pendente
+**Squad:** atena-tf
+**Files affected:** `CONTRIBUTING.md`, `.github/PULL_REQUEST_TEMPLATE.md`, `README.md` (só o apontamento)
+**Actions** (cada item é um AC da REQ; o texto atual tem 154 linhas, e **não** se reescreve o que já está certo):
+1. **AC2 (completar):** junto da lista "Dispensam REQ+roadmap", a orientação do parecer da Wave 0 (§1):
+   *tamanho do diff não decide trivialidade; a pergunta é se o arquivo participa de uma decisão de pass/fail
+   em algum gate, teste ou CI*, com `scripts/`, `.github/workflows/` e os geradores de gate como exemplos de
+   "nunca trivial".
+2. **AC3:** o **contrato de gates**: um gate novo tem de estar **ligado** (`Makefile`/CI) e **reprovar quando
+   não mede nada**, com a anotação `trackfw-contract` no `docs/cli-parity.md` quando descrever contrato.
+3. **AC4:** o template de PR ganha os campos REQ ligada, roadmap ligado e **"Falsificação nas duas
+   direções"** (incluindo o controle). O comentário em inglês da linha `Closes #` fica **intacto**.
+4. **AC6:** o `README.md` aponta para o `CONTRIBUTING.md` de forma visível (uma linha, perto do topo ou da
+   seção de contribuição, se existir).
+5. **AC7:** uma frase dizendo que a regra **vale para os mantenedores também**, e que este documento foi
+   escrito sob a cadeia (REQ-2026-09-01).
+6. **AC8:** uma seção curta, por exemplo "Antes de implementar uma issue", com:
+   (a) o que é a label `req-aberta` e que issue com ela **ou** em backlog pede uma **Discussion** antes do
+   código, e por quê (dois trabalhos paralelos sobre a mesma causa);
+   (b) **gate vermelho não mergeia**, mesmo correto: a `main` exige os status checks, e quem abre o PR
+   acompanha o CI até ficar verde;
+   (c) PR que colide com trabalho em andamento é **fechado**, com o motivo e com crédito pelo que trouxe.
+   Tom: o mesmo do documento. Fatos, sem culpar quem contribuiu: a falha de não ter avisado foi nossa.
+**Acceptance criteria:**
+- [ ] AC2 (completar), AC3, AC4, AC6, AC7 e AC8 da REQ presentes, cada um apontável por linha
+- [ ] Nenhuma seção existente perdeu conteúdo (diff mostra só acréscimos, salvo ajuste justificado)
+- [ ] `scripts/check-pr-closing-keyword.sh` continua verde com o template novo
+**Gates da wave:**
+```bash
+test -f CONTRIBUTING.md
+grep -q "req-aberta" CONTRIBUTING.md
+grep -q "CONTRIBUTING" README.md
+```
+
+## Wave 2 — Barreira
+> Dependências: Wave 1 auditada
+
+### ML-2A — Revisão de clareza e coerência
+**Status:** ⬜ Pendente
+**Squad:** hefesto-tf
+**Files affected:** `docs/qualidade/2026-10-03-revisao-contributing.md`
+**Actions:** confrontar cada regra escrita com o que o repositório **de fato** faz (a `main` exige quais checks?
+a label existe? os comandos citados existem?). Regra publicada que o repositório não cumpre é pior que regra
+ausente.
+**Acceptance criteria:**
+- [ ] Cada afirmação factual do texto novo conferida contra o repositório
+- [ ] Veredito explícito
+
+**Gates da wave:**
+```bash
+test -s docs/qualidade/2026-10-03-revisao-contributing.md
+```
 
 ## Verificação
 

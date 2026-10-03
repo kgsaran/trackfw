@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-01
 author: "zeus-tf"
 adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-01-publicar-a-exigencia-de-governanca-para-prs-no-contributing.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-01-publicar-a-exigencia-de-governanca-para-prs-no-contributing.md"
 ---
 
 # REQ: O projeto não publica a exigência de governança para PRs, e não tem `CONTRIBUTING.md`
@@ -49,9 +49,10 @@ uma afirmação factualmente errada em dois documentos — **nenhum deles aparec
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — `CONTRIBUTING.md` na raiz, publicando: a cadeia `ADR → REQ → ROADMAP`, os comandos
+- [x] **AC1** — `CONTRIBUTING.md` na raiz, publicando: a cadeia `ADR → REQ → ROADMAP`, os comandos
       exatos (`trackfw req new` / `roadmap new` / `roadmap move <nome> wip`), e **quando** cada um é
       exigido.
+      ✅ Evidência: `CONTRIBUTING.md` existe (154 linhas), seção "A cadeia de governança vem antes do código" com os comandos; auditado em 2026-10-03
 - [ ] **AC2** — 🔴 **A exceção de trivialidade é publicada junto.** Sem ela, a regra vira absurda —
       um typo não precisa de REQ. A lista fechada já existe internamente (`~/.claude/CLAUDE.md` §7);
       publicá-la é o que torna a exigência **defensável em vez de arbitrária**.
@@ -61,13 +62,31 @@ uma afirmação factualmente errada em dois documentos — **nenhum deles aparec
 - [ ] **AC4** — `.github/PULL_REQUEST_TEMPLATE.md` com os campos mínimos: REQ ligada, roadmap ligado,
       e a **falsificação nas duas direções** — incluindo o controle. É o item que mais falta nas
       contribuições, e o que mais barato é pedir no template.
-- [ ] **AC5** — 🔴 **Falsificação da própria regra:** um PR **sem** REQ ligada é detectável. Se a
+- [x] **AC5** — 🔴 **Falsificação da própria regra:** um PR **sem** REQ ligada é detectável. Se a
       exigência não for verificável, ela é decorativa — e estaríamos publicando um contrato sem gate,
       exatamente o que acabamos de criticar. Avaliar `trackfw validate` ou o job `governance`.
+      ✅ Evidência: avaliado em `docs/qualidade/2026-09-01-custo-de-adocao-da-regra-de-governanca.md` (parcialmente detectável). Fato novo em 2026-10-03: a `main` agora exige 9 status checks (`required_status_checks`), então PR vermelho não mergeia
 - [ ] **AC6** — O `README.md` aponta para o `CONTRIBUTING.md` de forma visível.
 - [ ] **AC7** — 🔴 **Coerência declarada:** o `CONTRIBUTING.md` diz que a regra **vale para os
       mantenedores também**, e cita que este próprio documento foi escrito sob a cadeia. Um guia de
       governança criado fora da governança se refutaria sozinho.
+
+- [ ] **AC8** — (2026-10-03) As regras combinadas com o primeiro contribuidor externo recorrente
+      ficam escritas no `CONTRIBUTING.md`:
+      (a) a label **`req-aberta`** marca issue com REQ nossa aberta, e quem for implementar issue com
+      essa label **ou** em backlog abre uma **Discussion** antes do código;
+      (b) **PR com gate vermelho não é aceito**, mesmo correto, e quem abre o PR **acompanha o CI** até
+      ficar verde (a `main` exige os checks);
+      (c) PR que **colide** com trabalho em andamento é **fechado** com o motivo e com crédito pelo que
+      trouxe.
+
+## Reabertura (2026-10-03)
+
+A REQ ficou `Open` com o roadmap em `backlog/`, mas o `CONTRIBUTING.md` e o template de PR foram
+escritos em outras frentes (#255, #446). Auditoria de 2026-10-03: AC1 e AC5 cumpridos; AC2 cumprido
+em parte (a lista existe, mas falta a orientação do parecer da Wave 0 de que **tamanho do diff não
+decide trivialidade**); AC3, AC4, AC6 e AC7 **não** cumpridos. O AC8 entra pela mesma causa: regras de
+contribuição que existem e não estão publicadas.
 
 ## Negative Scope
 
@@ -83,7 +102,7 @@ em runtime, isso é postura de projeto com consequência de comunidade, e merece
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-01-publicar-a-exigencia-de-governanca-para-prs-no-contributing.md`
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-01-publicar-a-exigencia-de-governanca-para-prs-no-contributing.md`
 
 ---
 

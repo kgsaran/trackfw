@@ -44287,3 +44287,9 @@ Waves 0–2 com barrier `passed`. Seis corretivos abertos na auditoria (ML-1B a 
 
 PR #510 mergeado em `84b6f0a6`, CI 20/20 (Windows rodou os 31 casos sem jq). Roadmap → `done/`, REQ → `Done`,
 label removida. Próxima frente: o roadmap do CONTRIBUTING.
+
+## 2026-10-03 — zeus-tf — INÍCIO: REQ-2026-09-01 reaberta (CONTRIBUTING)
+
+O `CONTRIBUTING.md` e o template de PR já existiam (#255, #446), mas a REQ ficou `Open` em `backlog/`.
+Auditoria: AC1/AC5 cumpridos; AC2 parcial; AC3/4/6/7 não. Novo AC8: Discussion antes de issue com `req-aberta`
+ou em backlog, gate vermelho não mergeia, PR que colide é fechado com crédito.
