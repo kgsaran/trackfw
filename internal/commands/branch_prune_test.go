@@ -201,6 +201,11 @@ func TestEvaluateBranchIntegration_NoMergeBase_Refuses(t *testing.T) {
 
 func makePruneDeps(out *bytes.Buffer) branchPruneDeps {
 	return branchPruneDeps{
+		// ghExec is nil: forces D2 degradation (content heuristic only, no forge call).
+		// Tests that exercise the PR-signal path create their own branchPruneDeps directly
+		// and provide a stub ghExec. Nil is the correct value for existing tests — they
+		// neither need nor stub a forge query.
+		ghExec: nil,
 		gitExec: func(args ...string) (string, error) {
 			if len(args) >= 3 && args[0] == "rev-parse" && args[1] == "--verify" {
 				return "abc123", nil // origin/main resolvable

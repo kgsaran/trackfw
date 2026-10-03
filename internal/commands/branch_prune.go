@@ -9,10 +9,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// branchPruneDefaultRemoteRef is the only source of truth this command consults: the local
-// tracking ref for the default branch. Per REQ-2026-08-18 decision 2, there is no forge lookup and
-// no network call — offline and deterministic by construction. If this ref cannot be resolved
-// (no remote configured, or never fetched), the whole command refuses and deletes nothing.
+// branchPruneDefaultRemoteRef is the primary source of truth this command consults: the local
+// tracking ref for the default branch. When the forge (GitHub) is reachable, a single `gh pr list`
+// query provides the PR signal used in the D1 order (ADR-2026-10-03); when it is not, the command
+// degrades to the content heuristic below and prints one line naming the cause (D2, same ADR —
+// revokes the "no forge lookup" clause of REQ-2026-08-18 decision 2).
+// If this ref cannot be resolved (no remote configured, or never fetched), the whole command
+// refuses and deletes nothing.
 const branchPruneDefaultRemoteRef = "origin/main"
 
 // branchPruneDefaultLocalName is the local branch name matching branchPruneDefaultRemoteRef. It is
@@ -44,14 +47,61 @@ const (
 	// no human in the loop by construction, so REQ-2026-08-18 (ML-1B) deliberately narrows that
 	// step to "flag for confirmation" instead of "delete automatically". See deletable() below.
 	branchPruneDecisionReviewDocConfig branchPruneDecision = "review_doc_config"
+
+	// PR-signal decisions (D1, ADR-2026-10-03). These are produced only when a forge snapshot
+	// is available (queryForgePRs returned non-nil). On degradation (D2) or truncation (A7),
+	// evaluateBranchWithForge falls back to evaluateBranchIntegration and no PR-signal decision
+	// is produced.
+
+	// branchPruneDecisionMergedPR is the forge-signal delete: a non-fork PR for this branch was
+	// merged into the default branch and its head commit contains the local tip (D1 case 1).
+	// This is the only new deletable category: see deletable() below.
+	branchPruneDecisionMergedPR branchPruneDecision = "merged_pr"
+
+	// branchPruneDecisionOpenPR means an OPEN, non-fork PR exists for this branch (D1 case 0).
+	// It takes priority over any old MERGED PR with the same head name — defence against reused
+	// branch names.
+	branchPruneDecisionOpenPR branchPruneDecision = "open_pr"
+
+	// branchPruneDecisionCommitsAfterMerged means a PR was merged but the local tip has commits
+	// beyond the PR head (D1 case 2): pending work added after the merge.
+	branchPruneDecisionCommitsAfterMerged branchPruneDecision = "commits_after_merged_pr"
+
+	// branchPruneDecisionDivergedFromMerged means a PR was merged but the local tip and the PR
+	// head are mutually diverged (D1 case 2b): e.g. rebase or amend after merge.
+	branchPruneDecisionDivergedFromMerged branchPruneDecision = "diverged_from_merged_pr"
+
+	// branchPruneDecisionMergedHeadAbsent means a PR was merged but the head commit is not
+	// available in the local object store (A3): review, never auto-deleted.
+	branchPruneDecisionMergedHeadAbsent branchPruneDecision = "merged_head_absent"
+
+	// branchPruneDecisionClosedPR means the only PR found was closed without merge (D1 case 3):
+	// review, never auto-deleted.
+	branchPruneDecisionClosedPR branchPruneDecision = "closed_pr"
+
+	// branchPruneDecisionNoPRNeverPushed means no PR was found and the branch has no upstream
+	// tracking ref — it was never pushed (D1 case 4). 🔴 NEVER auto-deleted: it is the only
+	// class where deleting loses work that exists in no other location.
+	branchPruneDecisionNoPRNeverPushed branchPruneDecision = "no_pr_never_pushed"
 )
 
 // branchPruneDeletable reports whether decision, on its own, makes a branch a deletion candidate.
-// Both no_own_work (squash-merge with no ancestry — the git branch -d false negative) and
-// content_identical (defasada porém integrada — the naive git diff false positive) are safe to
-// delete; every other decision keeps the branch.
+// no_own_work (squash-merge with no ancestry — the git branch -d false negative) and
+// content_identical (defasada porém integrada — the naive git diff false positive) are the
+// content-heuristic deletable decisions. merged_pr is the new forge-signal deletable decision:
+// a non-fork PR was merged into the default branch and the merged head contains the local tip.
+// Every other decision keeps the branch.
 func (d branchPruneDecision) deletable() bool {
-	return d == branchPruneDecisionNoOwnWork || d == branchPruneDecisionIdentical
+	return d == branchPruneDecisionNoOwnWork || d == branchPruneDecisionIdentical || d == branchPruneDecisionMergedPR
+}
+
+// isReviewDecision reports whether a branch should be flagged for manual review (never auto-deleted).
+// Covers both the content-heuristic category (review_doc_config) and the new forge-signal
+// categories where human review is required before acting (closed_pr, merged_head_absent).
+func isReviewDecision(d branchPruneDecision) bool {
+	return d == branchPruneDecisionReviewDocConfig ||
+		d == branchPruneDecisionClosedPR ||
+		d == branchPruneDecisionMergedHeadAbsent
 }
 
 // branchPruneEvaluation is the per-branch outcome of evaluateBranchIntegration.
@@ -242,10 +292,14 @@ func splitNulPaths(raw string) []string {
 }
 
 // branchPruneDeps holds injectable dependencies so runBranchPrune can be tested without touching a
-// real git repository.
+// real git repository or a live forge.
 type branchPruneDeps struct {
 	// gitExec runs `git <args...>` and returns (trimmed-stdout, error). Production: defaultGitExec.
 	gitExec func(args ...string) (string, error)
+	// ghExec runs `gh <args...>` and returns raw stdout bytes. Production: defaultGhExec.
+	// nil means "no forge CLI available" and forces D2 (content heuristic + one-line cause).
+	// Tests pass nil or a stub that returns pre-baked JSON; the forge is never hit in tests.
+	ghExec ghExecFn
 	// listLocalBranches returns every local branch name. Production: git branch --format=%(refname:short).
 	listLocalBranches func(gitExec func(args ...string) (string, error)) ([]string, error)
 	// currentBranch returns the checked-out branch name, or "" on detached HEAD.
@@ -308,6 +362,7 @@ squash-merged branches, which never have fast-forward ancestry with main.`,
 			cmd.SilenceErrors = true
 			deps := branchPruneDeps{
 				gitExec:           defaultGitExec,
+				ghExec:            defaultGhExec,
 				listLocalBranches: defaultListLocalBranches,
 				currentBranch:     defaultCurrentBranchForPrune,
 				worktreeBranches:  defaultWorktreeBranches,
@@ -351,6 +406,14 @@ func runBranchPrune(apply bool, deps branchPruneDeps) error {
 	current := deps.currentBranch(deps.gitExec)
 	worktreed := deps.worktreeBranches(deps.gitExec)
 
+	// D3 (ADR-2026-10-03): one forge query for all branches. queryForgePRs returns nil on
+	// degradation (D2) or truncation (A7) and prints one line explaining why; every branch then
+	// falls back to the content heuristic. The nil check is enforced inside evaluateBranchWithForge.
+	snapshot, degradeReason := queryForgePRs(deps.gitExec, deps.ghExec)
+	if snapshot == nil {
+		fmt.Fprintf(deps.out, "Note: forge PR signal not available — using content heuristic only. Cause: %s\n\n", degradeReason)
+	}
+
 	fmt.Fprintf(deps.out, "trackfw branch prune — evaluating %d local branch(es) against %s\n\n", len(branches), branchPruneDefaultRemoteRef)
 
 	var toDelete []string
@@ -365,7 +428,10 @@ func runBranchPrune(apply bool, deps branchPruneDeps) error {
 		case worktreed[b]:
 			eval = branchPruneEvaluation{Name: b, Decision: branchPruneDecisionWorktree, Reason: "checked out in another worktree — never pruned"}
 		default:
-			eval = evaluateBranchIntegration(b, deps.gitExec)
+			// A4 (ADR-2026-10-03): upstream via for-each-ref, not @{u}.
+			// D1 case 4 needs the upstream to distinguish "never pushed" from "pushed, no PR".
+			upstream := upstreamFor(b, deps.gitExec)
+			eval = evaluateBranchWithForge(b, b, upstream, snapshot, deps.gitExec)
 		}
 
 		action := "keep"
@@ -373,7 +439,7 @@ func runBranchPrune(apply bool, deps branchPruneDeps) error {
 		case eval.Decision.deletable():
 			action = "delete"
 			toDelete = append(toDelete, b)
-		case eval.Decision == branchPruneDecisionReviewDocConfig:
+		case isReviewDecision(eval.Decision):
 			action = "review"
 			toReview = append(toReview, b)
 		}
@@ -382,7 +448,7 @@ func runBranchPrune(apply bool, deps branchPruneDeps) error {
 
 	fmt.Fprintln(deps.out)
 	if len(toReview) > 0 {
-		fmt.Fprintf(deps.out, "%d branch(es) need manual review (only doc/config diverges, never auto-deleted): %s\n", len(toReview), strings.Join(toReview, ", "))
+		fmt.Fprintf(deps.out, "%d branch(es) need manual review (never auto-deleted): %s\n", len(toReview), strings.Join(toReview, ", "))
 	}
 	if !apply {
 		if len(toDelete) == 0 {

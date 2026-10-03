@@ -1950,11 +1950,21 @@ message is a scenario the gate is asserted to reject.
 `trackfw branch prune [--apply]` automates the "one active branch at a time" check documented in
 `CLAUDE.md` §1 ("Uma branch ativa por vez")
 (`docs/req/REQ-2026-08-18-trackfw-branch-prune-apaga-branch-local-ja-integrada-com-deteccao-correta-de-squash-merge.md`).
-It decides whether each local branch is safe to delete relative to `origin/main` — never a forge —
-and reports the decision for **every** local branch, always, with a reason. It does not remove
-human judgment from every case: a branch whose only remaining divergence is doc/config files is
-flagged for manual review, never deleted automatically (see "The review_doc_config category"
-below).
+It decides whether each local branch is safe to delete relative to `origin/main`.
+When `gh` is available and the origin remote points to GitHub, a **single** `gh pr list --state all`
+query provides the primary signal (ADR-2026-10-03, D1 order: open PR → keep; MERGED PR containing
+tip → delete; MERGED PR with commits after → keep; MERGED PR diverged → keep; closed PR → review;
+no upstream → keep, even when a PR merged into a non-default base exists; no PR with upstream →
+content heuristic). On degradation (no `gh`, non-GitHub remote, error, or truncated response) the
+content heuristic below applies and `branch prune` prints one line naming the cause. The
+pending-work warning of `push`/`ship` uses the same evaluation but degrades silently, so that a push
+without `gh` does not gain an extra line. The command reports the decision for **every** local branch, always,
+with a reason. It does not remove human judgment from every case: a branch whose only remaining
+divergence is doc/config files is flagged for manual review, never deleted automatically (see
+"The review_doc_config category" below).
+
+<!-- trackfw-contract: gap reason=forge-pr-signal-not-tested-by-a-script-gate; covered by go-test internal/commands/ D1-cases (branch_prune_forge_test.go); ADR-2026-10-03 D1-D5 -->
+<!-- trackfw-contract: gap reason=branch-prune-deletable-decisions-merged_pr+no_own_work+content_identical; tested in branch_prune_forge_test.go TestD1_Case1 and existing TestRunBranchPrune_Apply -->
 
 **`--dry-run` is the default.** Without `--apply`, nothing is ever deleted, even a branch decided
 as clearly integrated — the command only reports. `--apply` is the explicit opt-in required to
@@ -2053,26 +2063,29 @@ reported as `review_doc_config` or `pending_work`; a single non-doc/config file 
 `diverg`, or `diverg` equal to `touched`, keeps the branch in `pending_work`.
 
 The report groups these branches into a summary line separate from the `--apply`/dry-run delete
-summary: `N branch(es) need manual review (only doc/config diverges, never auto-deleted): <names>`.
+summary: `N branch(es) need manual review (never auto-deleted): <names>`. Review decisions include:
+`review_doc_config` (content heuristic — only doc/config diverges), `closed_pr` (PR closed without
+merge), and `merged_head_absent` (merged PR head commit not available locally).
 
 Both `diff` calls use `-z` (NUL-separated, unquoted paths) — without it, a filename with a space
 or non-ASCII byte would be mis-split by the pathspec on the second call, silently narrowing
 `diverg` to nothing and deleting a branch with real pending work in that file.
 
-This decision function — `evaluateBranchIntegration` (Go), `evaluateBranchIntegration` (Node.js),
-`evaluate_branch_integration` (Python) — is the **single shared implementation**. `trackfw ship`'s
-`detectPendingSquashMerges` (`ship.go`, `ship/runner.js`, `ship/runner.py`) calls it too (ML-2A,
-REQ-2026-08-18) instead of maintaining its own bidirectional diff: for each remote candidate
-returned by `git branch -r --no-merged origin/main`, it warns *only* when the decision is
-`pending_work` — every other decision (`no_own_work`, `content_identical`, `review_doc_config`,
-`no_merge_base`, `eval_error`) stays silent, the same posture the old naive check had on error
-(skip, no warning). This is advisory-only in `ship` (never blocks the commit/push), unlike `branch
-prune`, which is destructive; the two commands share the decision function but not its
-consequences. Node.js imports `evaluateBranchIntegration`/`DECISION` from `branch/prune.js`;
-Python late-imports `evaluate_branch_integration`/`BRANCH_PRUNE_DECISION_PENDING_WORK` from
-`trackfw.commands.branch` inside `_detect_pending_squash_merges` (mirroring `commands/branch.py`'s
-own existing late import of `ship/runner.py`, avoiding an import-time cycle between the two
-modules); Go needs no import — both functions live in the same `commands` package.
+This decision function — `evaluateBranchIntegration` (Go) — is the **single shared implementation**.
+`trackfw ship` and `trackfw push`'s `detectPendingSquashMerges` (`ship.go`) routes through
+`evaluateBranchWithForge` (ADR-2026-10-03 D4/A6, `branch_prune_forge.go`) for each remote candidate
+returned by `git branch -r --no-merged origin/main`. It warns when the decision is:
+- `pending_work` (content heuristic — no forge signal, or degraded)
+- `commits_after_merged_pr` (D1 case 2: commits added after the merged PR head)
+- `diverged_from_merged_pr` (D1 case 2b: rebased or amended after merge)
+
+It is **silent** for `merged_pr` (case 1 — already integrated, no warning needed) and `open_pr`
+(case 0 — normal unmerged branch). All other decisions (`no_own_work`, `content_identical`,
+`review_doc_config`, `no_merge_base`, `eval_error`) stay silent, same as before. This is
+advisory-only (never blocks the commit/push), unlike `branch prune`, which is destructive; the
+two commands share the evaluation function but not its consequences.
+
+<!-- trackfw-contract: gap reason=detectPendingSquashMerges-forge-signal-not-tested-by-script; covered by go-test TestAC6_DetectPendingSquashMerges_SilencesForMergedPR (ship_test.go); ADR-2026-10-03 D4/A6 -->
 
 ### Always-kept branches — never evaluated for deletion, never candidates
 

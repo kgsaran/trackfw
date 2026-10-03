@@ -2,6 +2,65 @@
 
 ---
 
+## 2026-10-03 — Apolo (fix/branch-prune-consulta-o-estado-do-pr — ML-1B) — FIM
+
+**Início:** 2026-10-03 | Branch: `fix/branch-prune-consulta-o-estado-do-pr`
+**Tarefa:** ML-1B — Corretivo pós-Wave 2 do Hades. AJ1 (defeito no case 4), L1 (tip atrás do prHead), L3 (stub [gone] errado + real-git), L4 (acoplamento defaultGitExec/isNotAncestorError).
+**Arquivos modificados:** `internal/commands/branch_prune_forge.go`, `internal/commands/branch_prune_forge_test.go`
+**Entregues:**
+- AJ1: removido `hasPRs`, condição `if upstream == ""` no case 4, comentário atualizado, case 5 atualizado.
+- L1: `TestL1_Case1_TipBehindPRHead_Delete` — detecta inversão de args quando tip ≠ prHead.
+- L3: corrigido stub do `feat/gone` em `TestA4_UpstreamFor_ForEachRef` (agora retorna não-vazio); `TestA4_RealGit_GoneVsNeverPushed` real-git com repositório bare.
+- L4: `TestL4_DefaultGitExec_IsAncestorFormat` com `t.Chdir` + `defaultGitExec` real.
+**Provas de mordida:** AJ1 → `no_own_work`; L1 → `diverged_from_merged_pr`; L3 → `got ""`; L4 (S3) → `exited with code 1` — todas FAIL/EXIT:1.
+**Resultado final:** `go test ./internal/commands/ -count=1` EXIT:0; `go build ./...` EXIT:0; `go vet` EXIT:0. `ship.go` limpo (sabotagem S3 restaurada).
+
+---
+
+## 2026-10-03 — Hades (fix/branch-prune-consulta-o-estado-do-pr — ML-2A) — FIM
+
+**Início:** 2026-10-03 | Branch: `fix/branch-prune-consulta-o-estado-do-pr`
+**Tarefa:** ML-2A — Revisão de segurança da implementação do ML-1A contra o threat model da Wave 0 (C1–C11).
+**Entregues:**
+- `docs/seguranca/2026-10-03-wave2-revisao-prune-estado-do-pr.md` — parecer completo com veredito por cenário, experimentos, sabotagens e lacunas declaradas
+- `docs/agents-working-context.md` — entrada de início e fim
+**Veredito:** APROVA COM AJUSTES. Defeito reproduzido por fixture: branch nunca empurrada com PR mergeado em base não-main recebe `no_own_work` (deletável), violando ADR D1 §4. Ajuste AJ1: mudar condição do case 4 em forge.go:432 de `!hasPRs && upstream == ""` para `upstream == ""`.
+**Lacunas de cobertura declaradas como resíduo:** L1 (case 1 com tip < prHead), L2 (fallback de truncamento), L3 (stub errado para [gone] no TestA4), L4 (acoplamento implícito defaultGitExec/isNotAncestorError).
+**Sabotagens executadas e restauradas:** S1 inversão is-ancestor (capturada por TestD1_Case2 e TestD1_RealGit); S2 omissão --repo (capturada por TestA1); S3 formato de msg defaultGitExec (nenhum teste reprovado — lacuna L4). Código restaurado: `git diff --stat -- internal/` vazio.
+
+---
+
+## 2026-10-03 — Apolo (fix/branch-prune-consulta-o-estado-do-pr — ML-1A) — FIM
+
+**Início:** 2026-10-03 | Branch: `fix/branch-prune-consulta-o-estado-do-pr`
+**Tarefa:** ML-1A — Sinal de PR no `branch prune` e no aviso do `push`/`ship`. Implementar os casos D1 (0–5), D2 (degradação), D3 (consulta única), D4 (aviso compartilhado) e D5 (A1–A8) do ADR-2026-10-03.
+**Entregues:**
+- `internal/commands/branch_prune_forge.go` (novo): `forgePR`, `prSnapshot`, `ghExecFn`, `defaultGhExec`, `parseHostOwnerRepo`, `queryForgePRs`, `upstreamFor`, `objectExists`, `isNotAncestorError`, `evaluateBranchWithForge`
+- `internal/commands/branch_prune.go`: novos 7 constants PR-signal, `isReviewDecision()`, `ghExec` em `branchPruneDeps`, `upstreamFor`/`evaluateBranchWithForge` no loop de `runBranchPrune`, `defaultGhExec` em `newBranchPruneCmd`, comentário do ADR atualizado
+- `internal/commands/ship.go`: `ghExec` em `shipDeps`, `detectPendingSquashMerges` atualizado com nova assinatura + casos 0/1/2/2b (D4/A6), `defaultGhExec` wired
+- `internal/commands/push.go`: `ghExec` em `pushDeps`, chamada de `detectPendingSquashMerges` atualizada, `defaultGhExec` wired
+- `internal/commands/branch_prune_forge_test.go` (novo): 21 testes cobrindo D1 casos 0–5, AC3, AC4, AC5, AC6, A1–A8, A3, A4, A5, D2, truncamento, parseHostOwnerRepo, isNotAncestorError, teste com git real, multi-PR, runBranchPrune integração
+- `internal/commands/ship_test.go`: AC6 adicionado; `nil` ghExec nos 2 testes existentes; import `encoding/json`
+- `internal/commands/branch_prune_test.go`: `ghExec: nil` explícito em `makePruneDeps`
+- `docs/cli-parity.md`: contrato de forge-pr-signal documentado com `trackfw-contract`
+**Correção pós-sessão anterior:** `TestAC4_Degradation_CauseLineAndContentHeuristic` falhava porque a comparação de verditos não removia linhas `Note:` do lado nil-ghExec; ambos os lados agora filtram `Note:` antes de comparar.
+**Gates (todos EXIT=0):**
+- `go build ./...` — EXIT: 0
+- `go vet ./internal/commands/` — EXIT: 0
+- `go test ./internal/commands/ -run 'Prune|PendingSquash' -count=1` — EXIT: 0 (todos os testes alvo passam)
+- `go test ./internal/commands/ -count=1` — EXIT: 0 (suite completa, 14.75s, sem regressões)
+- `trackfw validate` — 174 warnings (todos pré-existentes, lenient mode), 0 errors
+**Risco residual:** comportamento de produção exige `gh` autenticado — cobertura de testes é 100% via stubs; sem chamada de rede em nenhum teste. Validação de retorno real fica para ML-2A (barreira Hades) e ML-2C (medição de retorno).
+
+---
+
+## 2026-10-03 — Apolo (fix/branch-prune-consulta-o-estado-do-pr — ML-1A) — INÍCIO (histórico)
+
+**Início:** 2026-10-03 | Branch: `fix/branch-prune-consulta-o-estado-do-pr`
+**Tarefa:** ML-1A — Sinal de PR no `branch prune` e no aviso do `push`/`ship`. Implementar os casos D1 (0–5), D2 (degradação), D3 (consulta única), D4 (aviso compartilhado) e D5 (A1–A8) do ADR-2026-10-03.
+
+---
+
 ## 2026-10-03 — Atena (docs/contributing-regras-de-contribuicao — ajustes A1–A6) — INÍCIO/FIM
 
 **Início:** 2026-10-03 | Branch: `docs/contributing-regras-de-contribuicao`
@@ -44329,3 +44388,43 @@ fatos errados (número de linhas dos PRs #238/#240; backlog opcional), corrigido
 ## 2026-10-03 — zeus-tf — FIM: REQ-2026-09-01 (CONTRIBUTING) fechada pós-merge
 
 PR #512 mergeado em `12e684c4`. Roadmap → `done/`, REQ → `Done`.
+
+## 2026-10-03 — zeus-tf — INÍCIO: #481 (branch prune consulta o estado do PR)
+
+Medido neste repositório: 52 branches locais; o prune deleta 1, revisa 25 e mantém o resto. Com o estado do PR:
+48 têm upstream `[gone]` + PR MERGED + tip == head do PR mergeado. A REQ-2026-08-18 decidiu "sem forge" (offline,
+determinístico); o novo desenho usa o forge como sinal adicional e degrada declarando quando não há forge.
+
+## 2026-10-03 — hades-tf — INÍCIO: ML-0A Wave 0 (branch prune, estado do PR)
+
+Branch: `fix/branch-prune-consulta-o-estado-do-pr`
+Tarefa: threat model do sinal de PR no `branch prune` (REQ-2026-10-03 / #481)
+Entregável: `docs/seguranca/2026-10-03-wave0-prune-estado-do-pr.md`
+
+## 2026-10-03 — hades-tf — FIM: ML-0A Wave 0 (branch prune, estado do PR)
+
+Branch: `fix/branch-prune-consulta-o-estado-do-pr`
+Entregável: `docs/seguranca/2026-10-03-wave0-prune-estado-do-pr.md`
+Veredito: AC1 entregue. 7 ajustes para ML-1A (ver doc). Medição independente confirmou split 49/3 do arquiteto.
+Ajustes críticos: A1 (`--repo` explícito), A2 (`baseRefName` no filtro), A3 (`cat-file -e` antes de `is-ancestor`), A4 (upstream via `for-each-ref`).
+
+## 2026-10-03 — hefesto-tf (fix/branch-prune-consulta-o-estado-do-pr — ML-2B) — INÍCIO
+
+**Início:** 2026-10-03 | Branch: `fix/branch-prune-consulta-o-estado-do-pr`
+**Tarefa:** ML-2B — Revisão de qualidade + gate completo (manutenibilidade, cli-parity.md, L4, make quality)
+**Entregável:** `docs/qualidade/2026-10-03-revisao-prune-estado-do-pr.md`
+
+## 2026-10-03 — hefesto-tf (fix/branch-prune-consulta-o-estado-do-pr — ML-2B) — FIM
+
+**Fim:** 2026-10-03 | Branch: `fix/branch-prune-consulta-o-estado-do-pr`
+**Entregável:** `docs/qualidade/2026-10-03-revisao-prune-estado-do-pr.md`
+**Veredito:** APROVA COM AJUSTES — 1 ajuste menor (A1).
+- A1 (baixo): linha 1956 de `docs/cli-parity.md` — "no PR no upstream → keep" deve ser "no upstream → keep (even with PR to non-main base — AJ1)" para refletir o caso AJ1 corrigido.
+- Gate: EXIT=0, 3001 linhas, 14 FAIL todos em "gate must FAIL" (falsificação esperada), 347 OK, 0 FAIL real.
+
+## 2026-10-03 — zeus-tf — FIM (implementação): #481 (branch prune consulta o estado do PR)
+
+- Waves 0, 1 e 2 auditadas, barrier verde nas três. Corretivo ML-1B: o caso 4 (branch nunca empurrada) não depende mais de haver PR (AJ1 do Hades).
+- Medição de volta (binário da branch, dry-run): 49 delete + 3 keep "commits after the merged PR"; sem `gh` → `Note:` + veredito de hoje; `GH_REPO` não desvia.
+- `make quality` EXIT=0 (3001 linhas, falsify 347 OK / 0 FAIL).
+- Pendente: PR (quando o KG pedir), CI verde incluindo `windows-full-suites` (AC10), fechamento pós-merge com evidência por AC e remoção da label `req-aberta`.
