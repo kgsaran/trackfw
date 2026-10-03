@@ -44335,3 +44335,16 @@ PR #512 mergeado em `12e684c4`. Roadmap → `done/`, REQ → `Done`.
 Medido neste repositório: 52 branches locais; o prune deleta 1, revisa 25 e mantém o resto. Com o estado do PR:
 48 têm upstream `[gone]` + PR MERGED + tip == head do PR mergeado. A REQ-2026-08-18 decidiu "sem forge" (offline,
 determinístico); o novo desenho usa o forge como sinal adicional e degrada declarando quando não há forge.
+
+## 2026-10-03 — hades-tf — INÍCIO: ML-0A Wave 0 (branch prune, estado do PR)
+
+Branch: `fix/branch-prune-consulta-o-estado-do-pr`
+Tarefa: threat model do sinal de PR no `branch prune` (REQ-2026-10-03 / #481)
+Entregável: `docs/seguranca/2026-10-03-wave0-prune-estado-do-pr.md`
+
+## 2026-10-03 — hades-tf — FIM: ML-0A Wave 0 (branch prune, estado do PR)
+
+Branch: `fix/branch-prune-consulta-o-estado-do-pr`
+Entregável: `docs/seguranca/2026-10-03-wave0-prune-estado-do-pr.md`
+Veredito: AC1 entregue. 7 ajustes para ML-1A (ver doc). Medição independente confirmou split 49/3 do arquiteto.
+Ajustes críticos: A1 (`--repo` explícito), A2 (`baseRefName` no filtro), A3 (`cat-file -e` antes de `is-ancestor`), A4 (upstream via `for-each-ref`).

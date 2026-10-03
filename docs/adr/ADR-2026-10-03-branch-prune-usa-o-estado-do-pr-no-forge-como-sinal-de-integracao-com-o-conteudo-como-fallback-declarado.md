@@ -79,6 +79,27 @@ O aviso `appears to have unmerged changes` (`detectPendingSquashMerges`, `intern
 usa a mesma `evaluateBranchIntegration`. A causa é a mesma, então ele passa a consultar o estado do PR
 pela mesma função, sem segunda implementação. Ele também degrada quando não há forge.
 
+### D5 — Ajustes do threat model (Wave 0, `docs/seguranca/2026-10-03-wave0-prune-estado-do-pr.md`)
+
+- **A1 — Repositório explícito.** A consulta passa `--repo HOST/OWNER/REPO`, derivado de
+  `git remote get-url origin`. Se o host não for `github.com`, o comando degrada (D2). Medido: com
+  `GH_REPO=cli/cli`, o `gh` devolve PRs de outro repositório com exit 0, e o `--repo` prevalece sobre
+  `GH_REPO`.
+- **A2 — Base do PR.** O caso 1 exige `baseRefName` igual à branch default do `origin` (a mesma que
+  o `prune` já usa como referência). PR mergeado em outra base, como num PR empilhado, não apaga.
+- **A3 — Head ausente.** `git cat-file -e <headRefOid>^{commit}` antes do `is-ancestor`. Se o objeto
+  faltar, o veredito é `review`. O exit 1 do `is-ancestor` não pode ser confundido com o exit 128.
+- **A4 — Upstream.** "Sem upstream" se lê por `git for-each-ref --format=%(upstream:short)` (campo
+  vazio). `@{u}` falha com exit 128 em branch `[gone]`; medido.
+- **A5 — Erro.** Exit ≠ 0 ou JSON inválido → D2. `[]` com exit 0 é uma resposta legítima.
+- **A6 — Aviso do push/ship.** O casamento usa o nome curto (sem `origin/`). Avisam: os casos 2 e 2b e
+  o `pending_work` de hoje. Não avisam: o caso 0 (PR aberto) e o caso 1.
+- **A7 + A8 — Truncamento (decisão do arquiteto).** `--limit 3000`. Se a resposta trouxer itens ==
+  limite, a consulta inteira é tratada como **incompleta**: nenhuma branch recebe `delete` pelo sinal de
+  PR, tudo fica no veredito de hoje, e o relatório diz isso. É mais estrito que "só a branch ausente fica
+  no veredito de hoje", porque uma branch presente na janela pode ter outro PR do mesmo head fora dela.
+  Medido: 428 PRs em 2,3 s.
+
 ## Consequences
 
 - No acervo medido (2026-10-03, `merge-base --is-ancestor` nas duas direções), o `prune` passa a

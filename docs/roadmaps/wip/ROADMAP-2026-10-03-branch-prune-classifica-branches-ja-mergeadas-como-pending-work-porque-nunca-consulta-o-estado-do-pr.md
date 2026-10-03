@@ -34,7 +34,7 @@ Veredito atual: 1 delete, 25 review, o resto keep.
 > Dependências: nenhuma. Bloqueia toda implementação.
 
 ### ML-0A — Threat model do sinal de PR no `prune`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** hades-tf
 **Files affected:** `docs/seguranca/2026-10-03-wave0-prune-estado-do-pr.md` (único arquivo escrito)
 **Actions:**
@@ -56,9 +56,11 @@ Veredito atual: 1 delete, 25 review, o resto keep.
    reter branch mergeada.
 4. **Resíduo declarado.**
 **Acceptance criteria:**
-- [ ] As quatro seções respondidas com evidência (comando e saída), não com afirmação de uma linha
-- [ ] Cada cenário com veredito: coberto pelo ADR, coberto com ajuste (qual), ou resíduo
-- [ ] Nenhuma linha de implementação
+- [x] As quatro seções respondidas com evidência (comando e saída), não com afirmação de uma linha
+- [x] Cada cenário com veredito: coberto pelo ADR, coberto com ajuste (qual), ou resíduo
+- [x] Nenhuma linha de implementação
+
+      ✅ Parecer: 11 cenários, 8 ajustes (A1–A8) incorporados ao ADR como D5. O arquiteto conferiu por conta própria a medição de `GH_REPO`/`--repo`. Decisão A7: truncamento bloqueia todo `delete` pelo sinal de PR.
 
 **Gates da wave:**
 ```bash
@@ -97,6 +99,7 @@ test -s docs/seguranca/2026-10-03-wave0-prune-estado-do-pr.md
 5. D4: `detectPendingSquashMerges` usa a mesma avaliação e não avisa sobre branch cujo PR mergeado contém
    o tip.
 6. Remover o comentário "Per REQ-2026-08-18 decision 2, there is no forge lookup" e citar o ADR novo.
+8. **Aplicar a D5 do ADR (A1–A8) integralmente**; cada ajuste tem teste próprio.
 7. `docs/cli-parity.md`: documentar o contrato do `prune` e do aviso, com `trackfw-contract`.
 **Acceptance criteria:**
 - [ ] AC2: um teste por caso da D1, nomeado, que reprova sem a correção
