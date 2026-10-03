@@ -273,13 +273,22 @@ func moveRoadmapToDone(t *testing.T, repoDir, filename string) {
 func TestBranchStateE2E_AC2_DoneOnlyBlocksCreation(t *testing.T) {
 	repoDir, homeDir := makeE2ERepo(t)
 
-	// Synthetic fixture: the AC needs ONE roadmap in done/ whose slug contains the branch slug,
-	// not the real corpus. Layout-independent (works under roadmap_namespacing: by_agent, where
-	// the flat docs/roadmaps/done/ does not exist) and short-named, so MAX_PATH is not a factor.
-	// The by_agent sibling of this same AC already builds its fixture this way.
-	const roadmapFile = "ROADMAP-2026-10-01-barrier-executa-cada-linha-do-bloco-de-gates.md"
+	// Synthetic fixture instead of the real corpus: layout-independent (works under
+	// roadmap_namespacing: by_agent, where the flat docs/roadmaps/done/ does not exist) and with no
+	// dependency on the 214 real roadmap names.
+	//
+	// 🔴 These two names are the ones from the original #494 case, and the choice is load-bearing:
+	// NEITHER contains the branch slug "barrier-executa-cada-linha-do-bloco-de-gates". They match
+	// only by SHARED TOKENS (barrier, executa, gate...), which is the shape of the defect this AC
+	// reproduces -- and there are TWO of them, so the "similar names in done/" hint is exercised in
+	// the plural. Do not "simplify" this fixture to one name that contains the slug: matching by
+	// containment is the easy case, and it would stop exercising overlap and the plural. If the
+	// match relation ever changes, overlap could govern branch creation again with no test noticing.
+	const roadmapOverlapA = "ROADMAP-2026-08-23-barrier-nao-executa-gate-de-roadmap-nao-confiavel-e-roadmap-new-sanitiza-o-titulo.md"
+	const roadmapOverlapB = "ROADMAP-2026-09-10-barrier-executa-gate-de-roadmap-nao-confiavel-porque-roadmaptrustforgates-falha-aberto-em-todo-caminho-de-erro.md"
 	testDoneDir := filepath.Join(repoDir, "docs", "roadmaps", "done")
-	writeRoadmapDone(t, testDoneDir, roadmapFile)
+	writeRoadmapDone(t, testDoneDir, roadmapOverlapA)
+	writeRoadmapDone(t, testDoneDir, roadmapOverlapB)
 
 	gitE2E(t, repoDir, homeDir, "add", "-A")
 	gitE2E(t, repoDir, homeDir, "commit", "-q", "-m", "chore: add done/ corpus")
@@ -294,6 +303,12 @@ func TestBranchStateE2E_AC2_DoneOnlyBlocksCreation(t *testing.T) {
 	if rc == 0 {
 		t.Errorf("AC2 negative: expected rc≠0 (branch blocked), got rc=0\noutput: %s", out)
 	}
+	// The hint must name BOTH overlap matches, not just the first one.
+	for _, want := range []string{roadmapOverlapA, roadmapOverlapB} {
+		if !strings.Contains(out, want) {
+			t.Errorf("AC2 negative: hint must name %q\noutput: %s", want, out)
+		}
+	}
 	if !strings.Contains(out, "similar names in done/") {
 		t.Errorf("AC2 negative: expected 'similar names in done/' in output\noutput: %s", out)
 	}
@@ -307,8 +322,11 @@ func TestBranchStateE2E_AC2_DoneOnlyBlocksCreation(t *testing.T) {
 	}
 
 	// ─── Positive control: add roadmap to wip/ → branch is allowed ──────────
+	// Control arm keeps a name that matches by containment: that is the legitimate case, and the
+	// AC here is that a wip/ match allows creation regardless of HOW it matched.
+	const wipRoadmap = "ROADMAP-2026-10-01-barrier-executa-cada-linha-do-bloco-de-gates.md"
 	wipDir := filepath.Join(repoDir, "docs", "roadmaps", "wip")
-	writeRoadmap(t, wipDir, roadmapFile)
+	writeRoadmap(t, wipDir, wipRoadmap)
 	gitE2E(t, repoDir, homeDir, "add", "-A")
 	gitE2E(t, repoDir, homeDir, "commit", "-q", "-m", "chore: add wip roadmap for control")
 
