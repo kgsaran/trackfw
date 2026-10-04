@@ -22,7 +22,8 @@ Every piece of work traces back to a decision. Every decision links to a require
 > The CLIs install on Windows and core governance commands run — but the generated
 > guard hooks are POSIX shell scripts, and **on several agent CLIs they do not execute
 > on Windows.** They are written to disk and reported as installed while never running.
-> Native Windows hooks are in progress.
+> Native Windows hooks are planned, not yet in progress (tracked in
+> [REQ-2026-09-05](docs/req/REQ-2026-09-05-os-hooks-de-guard-nao-executam-no-windows-na-maioria-dos-clis-de-agente-e-o-validate-reporta-instalado.md)).
 > **Read [Windows support (partial)](#windows-support-partial) before adopting on Windows.**
 
 ---
@@ -117,8 +118,8 @@ Shared behavior follows the [command contract](docs/cli-parity.md).
 
 ### Windows support (partial)
 
-🚧 **Windows support is partial and in progress. Read this before adopting `trackfw`
-on Windows.**
+🚧 **Windows support is partial. Native Windows hooks are planned but not yet being
+worked on. Read this before adopting `trackfw` on Windows.**
 
 We publish a Windows binary and the npm/pip packages install on Windows. That is not
 the same as the tool working end to end, and we would rather tell you where the edges
