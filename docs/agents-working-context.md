@@ -44753,3 +44753,8 @@ Achados notáveis para o apolo-tf:
   - a primeira medição contou 113/196 por aceitar só `status: Done` exato;
   - um commit saiu com o barrier bloqueado porque o `| tail` mascarou o exit code.
 - `make quality` EXIT=0 (2933 linhas). Pendente: PR, quando o KG pedir.
+
+## 2026-10-04 — zeus-tf — FECHAMENTO: #514 (PR #519 mergeado)
+
+- REQ-2026-10-04 (critério caducado e cortes) → Done, com evidência por AC (AC1–AC9 e AC5b); roadmap → `done/`; label `req-aberta` removida da #514; o Lourival foi avisado na issue.
+- Issues abertas restantes: #421 (exige a VM Windows).

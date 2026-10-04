@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-10-04
 req: "docs/req/REQ-2026-10-04-nao-ha-como-fechar-req-com-criterio-de-aceite-permanentemente-inverificavel-sem-afirmar-algo-falso-e-a-exigencia-de-wave-0-vale-para-roadmap-anterior-a-adr-que-a-criou.md"
 squad: "hades-tf, apolo-tf, hefesto-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf, hefesto-tf"
 
 # Roadmap: nao ha como fechar REQ com criterio de aceite permanentemente inverificavel sem afirmar algo falso, e a exigencia de Wave 0 vale para roadmap anterior a ADR que a criou
 
-> Created: 2026-10-04 | Status: wip
+> Created: 2026-10-04 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-10-04-nao-ha-como-fechar-req-com-criterio-de-aceite-permanentemente-inverificavel-sem-afirmar-algo-falso-e-a-exigencia-de-wave-0-vale-para-roadmap-anterior-a-adr-que-a-criou.md
