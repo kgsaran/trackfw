@@ -629,6 +629,58 @@ nome vazio, o glob e a contagem de casamentos não podem divergir.
 `:`, nenhum); `heading` carrega a linha como ela é, sem o `### `. Inventar essa régua seria criar um
 dialeto para descrever um dialeto, que é o defeito que esta saída existe para eliminar.
 
+**`acceptance.lapsed` — critérios caducados (D3, ADR-2026-10-04, REQ #514 ML-1B):** o campo
+`lapsed` expõe a contagem de itens `- [ ]` com uma linha de continuação `Caducou:` válida (D3).
+Estes itens **não** são `unmet` — eles foram explicitamente reconhecidos como permanentemente
+inverificáveis com justificativa. A forma do marcador é:
+
+```markdown
+- [ ] critério que nunca poderá ser verificado
+  Caducou: <justificativa obrigatória — linha seguinte, ≥ 2 espaços, sem linha em branco entre elas>
+```
+
+Regras do parser (`AcceptanceEvaluateFull`, `internal/roadmapdoc`):
+- A linha `Caducou:` deve estar imediatamente após o `- [ ]`, sem linha em branco intercalada.
+- A linha `Caducou:` deve ter ≥ 2 espaços de indentação (não pode estar na coluna 0).
+- `Caducou:` sem texto após os dois-pontos não é aceito — a justificativa é obrigatória (D2).
+- `Caducou:` dentro de cerca de código (```` ``` ````) é ignorado pelo fence-mask.
+- O campo `unmet` do JSON agora é estrito: só conta `- [ ]` sem continuação `Caducou:` válida.
+  Consumidores que dependiam do comportamento anterior (`unmet = unmet + lapsed`) devem somar
+  `unmet + lapsed` para recuperar a semântica antiga.
+
+<!-- trackfw-contract: gate=internal/roadmapdoc/acceptance_lapsed_test.go,internal/generators/roadmap_show_json_test.go partial=o gate de show --json cobre o campo lapsed na saída JSON (presença e valor); o acceptance_lapsed_test.go cobre as regras do parser (adjacência, indentação, justificativa obrigatória, fence-mask) -->
+
+### `req_done_open_criteria` — REQ Done com critério aberto (D4, ADR-2026-10-04, REQ #514 ML-1B)
+
+<!-- trackfw-contract: gate=internal/validator/validator_req_done_criteria_test.go partial=nenhum gate de shell exercita a regra pela superfície do CLI; a falsificação dos dois braços é feita em Go, exercitando countREQOpenCriteria diretamente (prova de mordida) e via ValidateUnfiltered com fixtures de corte -->
+
+**Severity: warning** (registered in `ruleDefaults`, `internal/validator/validator.go`).
+
+A REQ with `Status: Done` that contains at least one acceptance-criteria checkbox `- [ ]` **without**
+a valid `Caducou:` continuation fires this rule. The check reads only the `## Acceptance Criteria`
+(or `## Critérios de aceite`) section of the REQ — checkboxes elsewhere in the document are not
+counted.
+
+**Cutoff: 2026-10-04** (the date this rule was introduced). REQs created strictly before this date
+are exempt (forward cutoff — charging retroactively is prohibited). This is the **opposite** direction
+from `req_has_roadmap`: that rule existed before and the cutoff grants amnesty to the old backlog; this
+rule is new and the cutoff is the entry date.
+
+**Aggregated notice** (always emitted when at least one Done REQ was scanned):
+
+```
+⚠  req_done_open_criteria: 126 Done REQ(s) with open criteria exempt as created before cutoff
+   2026-10-04, 0 enforced, 211 Done REQ(s) scanned (cutoff declared in
+   internal/validator/validator_req_done_criteria.go)
+```
+
+Measured on corpus (2026-10-04): 126 Done REQs with open boxes, all dated before 2026-10-04 →
+0 individual warnings, 1 aggregated notice.
+
+Date ruler: `date:` frontmatter first, `REQ-YYYY-MM-DD-` filename prefix as fallback — same
+precedence as `req_has_roadmap`. Unreadable date → fail-closed (treated as post-cutoff, charged).
+`rules: {req_done_open_criteria: off}` silences all arms including the aggregated notice.
+
 ### `req list` / `req move` — discovery layouts and conditional physical move
 
 <!-- trackfw-contract: gap reason=nenhum gate cross-CLI exercita req list/req move — nem a descoberta por layout (flat/by_agent) nem a discriminação in-place-vs-physical-move são comparadas entre Go, Node.js e Python -->
@@ -2902,6 +2954,29 @@ all other checks (`wave_headings`, `mls_complete`, `acceptance_evidence`, `gates
 add `## Wave 0 — Threat Model` with a real gate (not `exit 1` placeholder) before any
 implementation wave. The `roadmap new` template already emits `## Wave 0` with an `exit 1`
 placeholder gate (fails-closed until replaced). See ADR-2026-09-18 breaking-change section.
+
+**Date cutoff for Wave 0 requirement (D5, ADR-2026-10-04, REQ #514 ML-1B):** roadmaps created
+**strictly before** `2026-09-18` (the ADR date) are exempt from `roadmap_wave0_required` in both
+callers: the validator rule and the `move → done` gate. The exemption is visible — a single
+aggregated warning line counts the exempt roadmaps:
+
+```
+⚠  roadmap_wave0_required: 4 roadmap(s) in wip/ exempt from Wave 0 requirement as dated before
+   2026-09-18 (ADR-2026-09-18 decision 8; cutoff declared in
+   internal/validator/validator_req_roadmap_cutoff.go)
+```
+
+Date ruler (D6/T7): `date:` frontmatter first, then the **first** `YYYY-MM-DD` in the file's
+basename (covering both `ROADMAP-YYYY-MM-DD-slug.md` and `slug-YYYY-MM-DD.md`). Unreadable date →
+fail-closed (not exempt — same semantics as `req_has_roadmap`). Roadmaps dated exactly on
+`2026-09-18` are **not** exempt (strict `<`, not `≤`).
+
+Measured on corpus (2026-10-04): 4 roadmaps outside `done/` have no `## Wave 0` heading, all dated
+between `2026-09-08` and `2026-09-12` — all exempt. The `move → done` gate prints
+`Wave 0 not required: roadmap dated YYYY-MM-DD, before 2026-09-18 (ADR-2026-09-18 decision 8)`
+and skips the Wave 0 blocker for those files.
+
+<!-- trackfw-contract: gate=internal/validator/validator_roadmap_wave0_cutoff_test.go,internal/generators/roadmap_move_test.go partial=o validator_roadmap_wave0_cutoff_test.go cobre o corte nos dois braços (pré, on-cutoff, pós, fail-closed, frontmatter-first); o gate de generators cobre o move→done; nenhum gate de shell exerce o corte pela superfície do CLI -->
 
 ### JSON document
 

@@ -72,6 +72,12 @@ type mlJSON struct {
 type acceptanceJSON struct {
 	Met      int  `json:"met"`
 	Unmet    int  `json:"unmet"`
+	// Lapsed is the count of - [ ] criteria with a valid Caducou: continuation
+	// (D3, ADR-2026-10-04, REQ #514 ML-1B). These are not Unmet — they are explicitly
+	// acknowledged as permanently unverifiable. Existing consumers relying on
+	// Unmet = unmet-only should add Lapsed to recover the old AcceptanceEvaluate
+	// semantics (Unmet + Lapsed was the old single "unmet" count).
+	Lapsed   int  `json:"lapsed"`
 	HasBlock bool `json:"has_block"`
 }
 
@@ -161,7 +167,10 @@ func buildRoadmapShowDoc(path, data string) roadmapShowDoc {
 		wj := waveJSON{Label: w.Label, Line: w.Start + 1, MLs: []mlJSON{}}
 		for _, ml := range roadmapdoc.ParseMLs(lines, fenced, w.Start, w.End) {
 			marker, found := roadmapdoc.MLStatusMarker(lines, fenced, ml)
-			met, unmet, hasBlock := roadmapdoc.AcceptanceEvaluate(lines, fenced, ml)
+			// D3 (ADR-2026-10-04, REQ #514 ML-1B): use AcceptanceEvaluateFull to expose
+			// lapsed criteria separately. Unmet in the JSON is strict (no Caducou:) —
+			// consumers relying on the old "unmet = unmet+lapsed" should sum both fields.
+			detail := roadmapdoc.AcceptanceEvaluateFull(lines, fenced, ml)
 			wj.MLs = append(wj.MLs, mlJSON{
 				ID:           ml.ID,
 				Heading:      headingText(lines, ml.Start),
@@ -169,7 +178,7 @@ func buildRoadmapShowDoc(path, data string) roadmapShowDoc {
 				StatusMarker: marker,
 				StatusFound:  found,
 				Status:       statusCatName(roadmapdoc.StatusCategory(marker)),
-				Acceptance:   acceptanceJSON{Met: met, Unmet: unmet, HasBlock: hasBlock},
+				Acceptance:   acceptanceJSON{Met: detail.Met, Unmet: detail.Unmet, Lapsed: detail.Lapsed, HasBlock: detail.HasBlock},
 			})
 		}
 		doc.Waves = append(doc.Waves, wj)

@@ -44592,3 +44592,46 @@ Achados notáveis para o apolo-tf:
 - `go vet ./internal/roadmapdoc/ ./internal/commands/` — exit 0
 - `go test ./internal/roadmapdoc/ ./internal/commands/ -count=1` — exit 0
 - `bash scripts/check-roadmap-barrier-contract.sh` — exit 0 (49 cenários OK)
+
+## 2026-10-04 — apolo-tf (fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel — ML-1B) — INÍCIO
+
+**Início:** 2026-10-04 | Branch: `fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel`
+**Tarefa:** ML-1B da REQ-2026-10-04 (#514): regra `req_done_open_criteria` (D4), corte por data para Wave 0 (D5), `roadmapCreationDate` (D6/T7), `roadmap show --json` com `lapsed`, `docs/cli-parity.md`.
+**Medições:**
+- 211 Done REQs; 126 com `- [ ]` na seção AC; 0 com data ≥ 2026-10-04 → 126 isentas, 0 individuais
+- 4 roadmaps fora de `done/` sem Wave 0 (datas: 2026-09-08, 2026-09-09, 2026-09-12 × 2) — todos < 2026-09-18
+- `Wave0GateDiagnosis` sem Wave 0 → `Wave0GateOK` (sem conflito com gate_coverage)
+- Fixture existente `date: 2026-09-18` → NÃO isenta (< estrito), testes passam
+**Escopo:**
+- `internal/validator/validator_req_done_criteria.go` (novo): D4 rule, helper `countREQOpenCriteria`
+- `internal/validator/validator_req_roadmap_cutoff.go`: adiciona `roadmapWave0Cutoff`, `RoadmapCreationDate`, `RoadmapWave0CutoffDate`
+- `internal/validator/validator_roadmap_gates.go`: cutoff D5 no wave0_required
+- `internal/validator/validator.go`: ruleDefaults + wiring (2 sites)
+- `internal/generators/roadmap.go`: cutoff D5 no move→done
+- `internal/generators/roadmap_show_json.go`: `Lapsed` field, `AcceptanceEvaluateFull`
+- `docs/cli-parity.md`: Caducou:, req_done_open_criteria, cortes
+- Testes: `validator_req_done_criteria_test.go`, `validator_roadmap_wave0_cutoff_test.go`
+
+## 2026-10-04 — apolo-tf (fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel — ML-1B) — FIM
+
+**Fim:** 2026-10-04 | Branch: `fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel`
+**Status:** ML-1B ✅ Concluído
+**Evidências:**
+- `go build ./...` → exit 0
+- `go vet ./...` → exit 0
+- `go test ./... -count=1` → all packages OK (validator 13.452s, generators 34.366s)
+- `make parity-rest` → EXIT=0
+- `trackfw validate` → 0 violations, 165 warnings (126 do req_done_open_criteria notice correto)
+- D5 measurement: 4 roadmaps pré-cutoff passam no move→done com "Wave 0 not required: roadmap dated YYYY-MM-DD, before 2026-09-18"
+- 20 novos testes: 10 D4 (validator_req_done_criteria_test.go) + 10 D5 (validator_roadmap_wave0_cutoff_test.go) — todos verdes
+**Arquivos modificados:**
+- `internal/validator/validator_req_done_criteria.go` (novo)
+- `internal/validator/validator_req_done_criteria_test.go` (novo)
+- `internal/validator/validator_roadmap_wave0_cutoff_test.go` (novo)
+- `internal/validator/validator_req_roadmap_cutoff.go` (D5: RoadmapWave0Cutoff, RoadmapCreationDate, roadmapWave0ExemptNotice)
+- `internal/validator/validator_roadmap_gates.go` (D5 cutoff, novo retorno wave0ExemptNotice)
+- `internal/validator/validator.go` (ruleDefaults + wiring D4)
+- `internal/generators/roadmap.go` (D5 cutoff no move→done)
+- `internal/generators/roadmap_show_json.go` (Lapsed field, AcceptanceEvaluateFull)
+- `docs/cli-parity.md` (Caducou: contract, req_done_open_criteria, Wave 0 date cutoff)
+- `docs/roadmaps/wip/ROADMAP-2026-10-04-…md` (ML-1B → ✅)

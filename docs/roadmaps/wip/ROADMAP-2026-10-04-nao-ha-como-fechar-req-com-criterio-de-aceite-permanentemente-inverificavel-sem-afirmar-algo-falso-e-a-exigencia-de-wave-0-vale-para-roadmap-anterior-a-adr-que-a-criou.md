@@ -92,7 +92,7 @@ go test ./internal/roadmapdoc/ ./internal/commands/ -count=1
 ```
 
 ### ML-1B — Regra `req_done_open_criteria` (D4) e corte do Wave 0 (D5)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Files affected:** `internal/validator/` (regra nova, corte e testes), `internal/generators/roadmap.go` (gate
 do `done`), `internal/validator/validator_roadmap_gates.go`, `docs/cli-parity.md`
@@ -104,9 +104,9 @@ do `done`), `internal/validator/validator_roadmap_gates.go`, `docs/cli-parity.md
 - Último ML da wave: `make parity-rest` e `go test ./...` são **autorizados e obrigatórios**, e o executor
   repete até ficar verde.
 **Acceptance criteria:**
-- [ ] AC4 e AC5 medidos neste repositório: contagem da linha agregada e os 4 roadmaps sem Wave 0
-- [ ] AC6
-- [ ] `make parity-rest` EXIT=0 e `go test ./...` verde
+- [x] AC4 e AC5 medidos neste repositório: contagem da linha agregada e os 4 roadmaps sem Wave 0
+- [x] AC6
+- [x] `make parity-rest` EXIT=0 e `go test ./...` verde
 
 **Gates da wave:**
 ```bash

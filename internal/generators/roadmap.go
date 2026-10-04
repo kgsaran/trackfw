@@ -752,7 +752,17 @@ func MoveRoadmap(name, state string) error {
 
 		// AC7-bis: missing Wave 0 heading is a blocker.  Collect as a pseudo-entry
 		// so the refusal message names it alongside any pending MLs.
+		// D5 (ADR-2026-10-04, REQ #514 ML-1B): roadmaps dated strictly before
+		// roadmapWave0Cutoff (2026-09-18) are exempt from the Wave 0 requirement.
 		missingWave0 := !roadmapdoc.HasWave0(content)
+		if missingWave0 {
+			if d, ok := validator.RoadmapCreationDate(content, src); ok && d.Before(validator.RoadmapWave0CutoffDate()) {
+				// Pre-cutoff: print a one-line notice and clear the blocker.
+				fmt.Printf("Wave 0 not required: roadmap dated %s, before %s (ADR-2026-09-18 decision 8)\n",
+					d.Format("2006-01-02"), validator.RoadmapWave0Cutoff)
+				missingWave0 = false
+			}
+		}
 
 		if len(blockers) > 0 || missingWave0 {
 			totalCount := len(blockers)

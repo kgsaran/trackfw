@@ -28,7 +28,7 @@ afirmaria algo falso. Deixar `[ ]` hoje tem o seguinte efeito.
 
 Então o caminho honesto é deixar a caixa aberta e marcar o ML como bloqueado, e esse caminho trava o
 `barrier` e o `done`. O caminho que passa é mentir na caixa. A #514 descreve isso pela REQ, mas **o lado
-que trava é o roadmap**. Pela REQ, o produto não impede nada, e é por isso que **113 das 196 REQs `Done`
+que trava é o roadmap**. Pela REQ, o produto não impede nada, e é por isso que **126 das 211 REQs `Done` (contagem do validator; a primeira medição do arquiteto, 113 de 196, só aceitava `status: Done` exato)
 deste repositório têm caixa aberta**. Hoje, uma caixa de AC numa REQ fechada não significa nada.
 
 Segundo achado da #514: a exigência de `## Wave 0` (ADR-2026-09-18, decisão 8) vale no `move … done` sem
@@ -105,7 +105,7 @@ exigência), com a mesma régua de data. Vale em **todo** chamador da exigência
 
 - O consumidor fecha os 4 roadmaps da #514 sem mentir: cada AC caducado ganha `Caducou:`, o `barrier`
   passa, o ML pode ficar `✅`, e a REQ fecha `Done`.
-- As 113 REQs `Done` com caixa aberta deste repositório **não são editadas** (D4 as isenta, com uma
+- As 126 REQs `Done` com caixa aberta deste repositório **não são editadas** (D4 as isenta, com uma
   linha agregada).
 - **Resíduo declarado:** `date:` é editável. Um roadmap novo com data retroativa escapa da D5, e uma REQ
   nova com data retroativa escapa da D4. É o mesmo resíduo já declarado no `req_has_roadmap`.

@@ -45,8 +45,9 @@ import (
 )
 
 // validateRoadmapGatesCoverage checks roadmaps in wip/ (and blocked/ for duplicate labels)
-// for the three gate-coverage rules.  Returns three slices: wave0Msgs, gateMsgs, dupMsgs.
-// Each is independently routed through applyRule/applyRuleTagged by the caller.
+// for the three gate-coverage rules.  Returns four slices: wave0Msgs, wave0ExemptNotice,
+// gateMsgs, dupMsgs. Each is independently routed through applyRule/applyRuleTagged by the
+// caller; wave0ExemptNotice is routed through applyRuleWarnOnly.
 //
 // State coverage per rule:
 //
@@ -54,10 +55,15 @@ import (
 //	roadmap_gate_coverage   → wip/ only  (see header comment)
 //	roadmap_duplicate_label → wip/ + blocked/
 //
+// D5 (ADR-2026-10-04, REQ #514 ML-1B): roadmaps dated strictly before
+// roadmapWave0Cutoff (2026-09-18) are exempt from roadmap_wave0_required.
+// Isenção visível: counted in a single wave0ExemptNotice string.
+//
 // The function never returns a non-nil error: read errors become diagnostic messages
 // inside the relevant slice (following the pattern of other validator functions here).
-func validateRoadmapGatesCoverage() (wave0Msgs []string, gateMsgs []string, dupMsgs []string) {
+func validateRoadmapGatesCoverage() (wave0Msgs []string, wave0ExemptNotice []string, gateMsgs []string, dupMsgs []string) {
 	cfg := config.Load()
+	wave0ExemptCount := 0
 
 	// roadmap_wave0_required and roadmap_gate_coverage: wip/ only.
 	for _, dir := range resolveStateDirs(cfg, "wip") {
@@ -80,12 +86,18 @@ func validateRoadmapGatesCoverage() (wave0Msgs []string, gateMsgs []string, dupM
 			data := string(rawBytes)
 			base := e.Name()
 
-			// AC7-bis: Wave 0 heading must exist in wip.
+			// AC7-bis: Wave 0 heading must exist in wip — unless the roadmap predates
+			// the Wave 0 requirement (D5, ADR-2026-10-04: cutoff 2026-09-18).
 			if !roadmapdoc.HasWave0(data) {
-				wave0Msgs = append(wave0Msgs, fmt.Sprintf(
-					"roadmap %q (wip) has no ## Wave 0 heading; wip roadmaps must have a Wave 0 threat-model section (ADR-2026-09-18 decision 8)",
-					base,
-				))
+				if d, ok := RoadmapCreationDate(data, path); ok && d.Before(RoadmapWave0CutoffDate()) {
+					// Pre-cutoff: exempt, count for the aggregated notice.
+					wave0ExemptCount++
+				} else {
+					wave0Msgs = append(wave0Msgs, fmt.Sprintf(
+						"roadmap %q (wip) has no ## Wave 0 heading; wip roadmaps must have a Wave 0 threat-model section (ADR-2026-09-18 decision 8)",
+						base,
+					))
+				}
 			}
 
 			// AC7: Wave 0 gate must be real — not a placeholder, not absent.
@@ -146,6 +158,11 @@ func validateRoadmapGatesCoverage() (wave0Msgs []string, gateMsgs []string, dupM
 	sort.Strings(wave0Msgs)
 	sort.Strings(gateMsgs)
 	sort.Strings(dupMsgs)
+
+	// D5: emit the aggregated exemption notice if any wip roadmaps were exempted.
+	if wave0ExemptCount > 0 {
+		wave0ExemptNotice = []string{roadmapWave0ExemptNotice(wave0ExemptCount)}
+	}
 	return
 }
 

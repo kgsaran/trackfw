@@ -38,7 +38,7 @@ novo, uma linha `Caducou:` com justificativa, e cortes por data declarados.
   código **não** conta como caducado.
 - [ ] **AC4** — D4: a regra `req_done_open_criteria` (warning) dispara para REQ `Done` com `- [ ]` sem
   `Caducou:` e data ≥ 2026-10-04. REQ anterior → isenta, numa linha agregada com a contagem. Medido neste
-  repositório: 0 avisos individuais, e uma linha agregada com as 113 isentas.
+  repositório: 0 avisos individuais, e uma linha agregada com as isentas (126, medido pelo validator).
 - [ ] **AC5** — D5: roadmap com data < 2026-09-18 sem `## Wave 0` vai para `done/` com uma linha de
   isenção. Com data ≥ 2026-09-18, continua bloqueado. O mesmo corte vale no `roadmap_wave0_required`.
   Medido: os 4 roadmaps daqui sem Wave 0 fora de `done/` passam no gate em dry-run, ou num teste com
@@ -57,7 +57,7 @@ novo, uma linha `Caducou:` com justificativa, e cortes por data declarados.
 ## Negative scope
 
 - **Estado novo de roadmap.**
-- **Editar as 113 REQs `Done` existentes** com caixa aberta.
+- **Editar as REQs `Done` existentes** com caixa aberta.
 - **Token novo de caixa** (`[~]` e afins).
 - **Verificar se a justificativa é verdadeira.**
 - **Endurecer `req_done_open_criteria` para erro.**
