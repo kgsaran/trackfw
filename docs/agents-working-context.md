@@ -44798,3 +44798,9 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-04 — zeus-tf — FIM (implementação): #421 (pin7 no Windows)
 
 - No Windows, o pin7 afirma o comportamento guardado (discriminante `go version -m`, anti-vacuidade explícita pelo pin6 do mesmo run). Medido pelo arquiteto: 32 OK no macOS e 32 OK na VM; os pins 8–20 rodam no Windows pela primeira vez, todos verdes. `make parity-rest` EXIT=0. Pendente: PR, quando o KG pedir.
+
+## 2026-10-04 — zeus-tf — FECHAMENTO: #421 (PR #522 mergeado)
+
+- A REQ-2026-10-04 (pin7 no Windows) passou para Done, com evidência por AC; o roadmap foi para `done/`, e a label `req-aberta` saiu da #421.
+- Também nesta sessão: o README deixou de dizer que os hooks nativos de Windows estão "in progress" (PR #521); eles estão planejados, com a REQ-2026-09-05 e o roadmap em backlog.
+- Nenhuma issue aberta restante.
