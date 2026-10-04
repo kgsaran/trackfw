@@ -44665,3 +44665,27 @@ Achados notáveis para o apolo-tf:
 - `internal/validator/validator_req_done_criteria_test.go` (removido ProvaDeModida; header corrigido)
 - `internal/validator/validator_roadmap_wave0_cutoff_test.go` (removido ProvaDeModida + import time; header corrigido)
 - `docs/agents-working-context.md` (este arquivo)
+
+## 2026-10-04 — hades-tf (fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel — ML-2A) — INÍCIO
+
+**Início:** 2026-10-04 | Branch: `fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel`
+**Status:** ML-2A 🔄 Em andamento
+**Escopo:** Revisão de segurança Wave 2 — veredito por cenário T1–T8, R1–R6, D4/D5
+**Trabalho em progresso:**
+- Binário compilado em /private/tmp/claude-501/tf514h
+- 17 vetores de falsificação executados com saídas verificadas
+- Escrevendo docs/seguranca/2026-10-04-wave2-revisao-criterio-caducado.md
+
+## 2026-10-04 — hades-tf (fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel — ML-2A) — FIM
+
+**Fim:** 2026-10-04 | Branch: `fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel`
+**Status:** ML-2A ✅ Concluído
+**Evidências:**
+- 17 vetores executados: T1-a/b/c/d/e/f/g/h/i, T3 tilde/dash, T8 wave0-lapsed, D5-A/B/C, D4-A/B/C
+- Todos os resíduos R3/R5/R6 da Wave 0 confirmados como ELIMINADOS
+- Resíduos R1/R2/R4 confirmados como permanentes e dentro do escopo declarado pela ADR
+- Nenhum bypass encontrado além dos resíduos declarados
+- Veredito: APROVA COM AJUSTE (1 ajuste de visibilidade, não de segurança)
+**Arquivos criados:**
+- `docs/seguranca/2026-10-04-wave2-revisao-criterio-caducado.md`
+- `docs/agents-working-context.md` (este arquivo)
