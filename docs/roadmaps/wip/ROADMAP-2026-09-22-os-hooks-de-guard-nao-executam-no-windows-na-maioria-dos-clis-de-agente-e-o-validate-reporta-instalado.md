@@ -134,15 +134,17 @@ test -s docs/seguranca/2026-10-04-wave0-guard-em-go.md
 > parser de payload; 1C exercita os dois.
 
 ### ML-1D — Medições residuais na VM (antes do ML-2A; em paralelo ao ML-1A)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** ares-tf
 **Files affected:** `docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md` (seção nova "ML-1D")
 **Actions:** (1) Mark-of-the-Web do shim do npm: `Get-Item "$(npm prefix -g)\trackfw.ps1" -Stream Zone.Identifier`; e, sob `Set-ExecutionPolicy RemoteSigned -Scope Process` com **cmd como pai**, o `trackfw.ps1` roda e o sufixo `; exit $LASTEXITCODE` devolve 2 com um `.exe` que sai 2? (2) O que um `.exe` recebe em `cmd /c "probe.exe git-branch; exit $LASTEXITCODE"` (argv literal). (3) Stdin vindo do PowerShell (`'payload' | probe.exe`): há BOM UTF-8 ou UTF-16? O pipe fecha dentro de 2 s?
 **Acceptance criteria:**
-- [ ] Os três itens com o comando e a saída literal; `%ERRORLEVEL%` lido em arquivo `.cmd`, linha a linha (na mesma linha ele expande antes de executar)
+- [x] Os três itens com o comando e a saída literal; `%ERRORLEVEL%` lido em arquivo `.cmd`, linha a linha (na mesma linha ele expande antes de executar)
+
+      ✅ (1) O shim do npm não tem MoTW; sob `RemoteSigned` roda e devolve 2. 🔴 Sob `Restricted` **com** o sufixo, sai **0** (a PSSecurityException não atualiza `$LASTEXITCODE`): falha aberta também no Copilot, que sem o sufixo negaria. Vai para o ML-2B. (2) No `cmd`, o binário recebe `["git-branch;","exit","$LASTEXITCODE"]`: o sufixo fica proibido para Kiro e Amazon Q, como previsto. (3) A forma do Cursor entrega o stdin com BOM UTF-8 (`EF BB BF`): o parser precisa descartá-lo, senão nega todo comando do Cursor. Correção autorizada no ML-1B (`payload.go`), não é melhoria.
 
 ### ML-1A — `trackfw guard git-branch`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Files affected:** `internal/guard/` (pacote novo: `payload.go`, `gitbranch.go` e testes),
 `internal/commands/guard.go` (novo), registro em `internal/commands/root.go`
@@ -155,16 +157,18 @@ a última; leitura por `map[string]json.RawMessage`), dreno em janelas de 2 s, s
 `hookSpecificOutput`. Nenhuma evasão declarada no cabeçalho passa a ser fechada. Sem `jq`, sem `awk`:
 `encoding/json`.
 **Acceptance criteria:**
-- [ ] `go build ./...` sem erro
-- [ ] `go test ./internal/guard/... -count=1` verde, com testes que nomeiam cada regra do `.sh`
-- [ ] Os três gates da Wave 0: (i) subcomando/flag inválido → exit 2; (ii) `"Command"` não sobrescreve `"command"`; (iii) `(payload; sleep 3)` libera e `(payload; sleep 6)` nega
-- [ ] Relatório com a frase por teste novo (Regra Dura de Reconciliação)
+- [x] `go build ./...` sem erro
+- [x] `go test ./internal/guard/... -count=1` verde, com testes que nomeiam cada regra do `.sh`
+- [x] Os três gates da Wave 0: (i) subcomando/flag inválido → exit 2; (ii) `"Command"` não sobrescreve `"command"`; (iii) `(payload; sleep 3)` libera e `(payload; sleep 6)` nega
+- [x] Relatório com a frase por teste novo (Regra Dura de Reconciliação)
+
+      ✅ Auditoria: a primeira entrega reprovou. O gate (iii) divergia (`sleep 3`: sh rc=0, Go rc=2), porque o dreno reiniciava o prazo a cada leitura, e o teste que dizia cobrir o caso usava EOF imediato. Um corretivo trocou o dreno para janela fixa, com uma goroutine só, e 4 dos 7 testes de tempo passaram a reprovar no código antigo. Remedido pelo arquiteto com o binário: `sleep 3` → 0 e `sleep 6` → 2, igual ao sh; `go test -race ./internal/guard/... -count=3` verde. Nota no vault: `powershell-command-converte-exit-2-e-bash-read-t-e-janela-fixa-2026-10-04`.
 
 ### ML-1B — `trackfw guard credential`
 **Status:** ⬜ Pendente
 **Squad:** apolo-tf
 **Files affected:** `internal/guard/credential.go` (+ teste), `internal/commands/guard.go`
-**Actions:** portar `scripts/trackfw-credential-guard.sh` com comportamento igual (cwd only, sem subida; lê o stdin inteiro **antes** de olhar o projeto; sem timeout, resíduo declarado na D9): padrões JWT/AWS,
+**Actions:** (a) em `internal/guard/payload.go`, descartar um BOM UTF-8 inicial (`EF BB BF`) do stdin antes de decodificar, nos dois guards, com teste (ML-1D, item 3); (b) portar `scripts/trackfw-credential-guard.sh` com comportamento igual (cwd only, sem subida; lê o stdin inteiro **antes** de olhar o projeto; sem timeout, resíduo declarado na D9): padrões JWT/AWS,
 isenção de destino efêmero, `credential_guard.mode` `warn`/`block` do `trackfw.yaml`, o arquivo
 `.trackfw-credential-guard.json` em `roadmap_dir` com a mesma normalização de caminho e CRLF.
 **Acceptance criteria:**
@@ -220,7 +224,7 @@ campo `command` (AC1); `migrateHookCommand` troca as formas antigas pela nova no
 **Status:** ⬜ Pendente
 **Squad:** apolo-tf
 **Files affected:** `internal/validator/validator_credential_guard*.go`, `internal/validator/validator_git_branch_guard*.go` (+ testes)
-**Actions:** `*_hook_resolvable` compara a linha **exata** da D2 revista (hoje é `strings.Contains`, que aceitaria qualquer sufixo); versão mínima do `trackfw` resolvido; `trackfw.exe`/`trackfw.cmd`/`trackfw.bat` na raiz do projeto é violation (o `cmd.exe` procura no cwd antes do PATH); uma config que ainda aponta para o `.sh`
+**Actions:** `*_hook_resolvable` compara a linha **exata** da D2 revista (hoje é `strings.Contains`, que aceitaria qualquer sufixo); versão mínima do `trackfw` resolvido; no Windows, `trackfw` resolvido para `.ps1` com a política efetiva `Restricted` é violation com orientação `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` (ML-1D: com o sufixo, sai 0 = falha aberta); `trackfw.exe`/`trackfw.cmd`/`trackfw.bat` na raiz do projeto é violation (o `cmd.exe` procura no cwd antes do PATH); uma config que ainda aponta para o `.sh`
 recebe um aviso de que não executa no Windows fora do Git Bash; `trackfw` resolvido sem o subcomando
 `guard` vira violation. A mitigação do binário velho segue o que a Wave 0 decidir.
 **Acceptance criteria:**

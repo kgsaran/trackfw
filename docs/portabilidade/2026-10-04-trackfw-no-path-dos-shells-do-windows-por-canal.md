@@ -247,3 +247,151 @@ Quando PowerShell e iniciado com `-ExecutionPolicy Bypass`, ele exporta `$env:PS
 ### Surpresa — Git Bash tem binario antigo em ~/bin
 
 O Git Bash prepende `/c/Users/Lab/bin` ao PATH do Windows, e esse diretorio contem um `trackfw` `8.0.0-rc2` de setembro. Esse binario NAO e atualizado por `pip install` nem `npm install -g`. Um deployment que atualiza apenas os canais pip/npm deixa o Git Bash com versao desatualizada, a menos que `C:\Users\Lab\bin` seja limpo.
+
+---
+
+## ML-1D — Medicoes residuais
+
+**Data:** 2026-10-04 | **Squad:** ares-tf | **VM:** UTM ARM64 (Windows 11, PS 5.1.26100, cmd.exe)
+
+### 1. Mark-of-the-Web do shim do npm
+
+**Comando:**
+```powershell
+Get-Item 'C:\Users\Lab\AppData\Roaming\npm\trackfw.ps1' -Stream Zone.Identifier -ErrorAction Stop
+```
+
+**Saida literal:**
+```
+ZONE_STREAM_NOT_FOUND: Não foi possível abrir fluxo de dados alternados 'Zone.Identifier' do arquivo
+'C:\Users\Lab\AppData\Roaming\npm\trackfw.ps1'.
+```
+
+**Veredito:** O shim `trackfw.ps1` gerado por `npm install -g` NAO tem Mark-of-the-Web (sem stream Zone.Identifier). Como `RemoteSigned` trata arquivos sem ZoneId como locais (nao baixados da internet), o shim **roda** sob RemoteSigned.
+
+---
+
+**Teste RemoteSigned — cmd como pai (sem heranca de PSExecutionPolicyPreference=Bypass):**
+
+Arquivo `m1b_exact.cmd` (linha a linha; `%ERRORLEVEL%` nunca na mesma linha com `&`):
+```cmd
+powershell.exe -NoProfile -ExecutionPolicy RemoteSigned -Command "$env:PATH = '%PROBEPATH%;' + $env:PATH; probe; exit $LASTEXITCODE"
+set REMOTESIGNED_EXIT=%ERRORLEVEL%
+echo REMOTESIGNED_EXIT: %REMOTESIGNED_EXIT%
+```
+
+**Saida:**
+```
+ARGS_JSON: ["C:\\Users\\Lab\\probe-shim\\probe.exe"]
+STDIN_FIRST8_HEX: []
+STDIN_TOTAL_BYTES: 0
+STDIN_EOF_ELAPSED_MS: 0
+REMOTESIGNED_EXIT: 2
+```
+
+**Veredito:** Sob RemoteSigned (sem MoTW no shim), `probe.ps1` executa e o exit code 2 e propagado corretamente via `exit $LASTEXITCODE`. O canal npm e viavel com `RemoteSigned`.
+
+---
+
+**Teste Restricted — cmd como pai:**
+
+```cmd
+powershell.exe -NoProfile -Command "$env:PATH = '%PROBEPATH%;' + $env:PATH; probe; exit $LASTEXITCODE"
+set RESTRICTED_EXIT=%ERRORLEVEL%
+echo RESTRICTED_EXIT: %RESTRICTED_EXIT%
+```
+
+**Saida:**
+```
+probe : O arquivo C:\Users\Lab\probe-shim\probe.ps1 não pode ser carregado porque a execução de scripts foi
+desabilitada neste sistema.
+    + FullyQualifiedErrorId : UnauthorizedAccess
+RESTRICTED_EXIT: 0
+```
+
+**Veredito:** Sob Restricted, `probe.ps1` e bloqueado (PSSecurityException). Mas `RESTRICTED_EXIT: 0` — **FALHA ABERTA**. Motivo: a excecao nao atualiza `$LASTEXITCODE` (que permanece 0 do estado anterior); a instrucao `exit $LASTEXITCODE` a seguir executa normalmente e retorna 0. Isto contrasta com o resultado do ML-0B (sem o sufixo `; exit $LASTEXITCODE`, a excecao resulta em exit 1). O sufixo **piora** o comportamento sob Restricted: de exit 1 (falha fechada) para exit 0 (falha aberta). Impacto para ML-2A: CLIs que usam PS como shell de hook e recebem a linha `trackfw guard git-branch; exit $LASTEXITCODE` — se `trackfw` resolver para `.ps1` (npm, Restricted) — sairao com exit 0 ao inves de exit 1.
+
+---
+
+### 2. argv recebido por `probe.exe` em `cmd /c "probe.exe git-branch; exit $LASTEXITCODE"`
+
+Arquivo `m2_argv.cmd`:
+```cmd
+cmd /c "C:\Users\Lab\probe.exe git-branch; exit $LASTEXITCODE" < nul
+set M2_EXIT=%ERRORLEVEL%
+echo M2_EXIT: %M2_EXIT%
+```
+
+**Saida literal:**
+```
+ARGS_JSON: ["C:\\Users\\Lab\\probe.exe","git-branch;","exit","$LASTEXITCODE"]
+STDIN_FIRST8_HEX: []
+STDIN_TOTAL_BYTES: 0
+STDIN_EOF_ELAPSED_MS: 0
+M2_EXIT: 2
+```
+
+**Baseline (sem ponto-e-virgula):** `cmd /c C:\Users\Lab\probe.exe git-branch` → `ARGS_JSON: ["C:\\Users\\Lab\\probe.exe","git-branch"]`, `M2B_EXIT: 2`.
+
+**Veredito:** Em `cmd.exe`, `;` NAO e separador de comandos — e um caractere literal. A linha `"probe.exe git-branch; exit $LASTEXITCODE"` passa os tokens `"git-branch;"`, `"exit"`, `"$LASTEXITCODE"` como argumentos ao binario. Se a linha de hook `trackfw guard git-branch; exit $LASTEXITCODE` for executada diretamente por `cmd.exe` (Kiro, Amazon Q), o guard recebera esses tres argumentos extras → cobra nao reconhece → help → exit 0 → **falha aberta**. CONFIRMA (por medicao primaria na VM) a hipotese do ML-0B e do working context: o sufixo `; exit $LASTEXITCODE` NAO deve ser emitido para CLIs que usam `cmd.exe` como executor de hook.
+
+---
+
+### 3. stdin vindo do PowerShell — encoding, BOM e EOF
+
+Todos os testes usam `probe.exe` (exit 2 por padrao via `PROBE_EXIT`).
+
+**3a — Pipe basico (encoding padrao do PS 5.1):**
+```powershell
+'{"a":1}' | & $probe
+```
+Saida: `STDIN_FIRST8_HEX: [7B 22 61 22 3A 31 7D 0D]` | `STDIN_TOTAL_BYTES: 9` | `STDIN_EOF_ELAPSED_MS: 0`
+
+Bytes: `{"a":1}` (7 bytes) + `0D 0A` (CRLF). Sem BOM.
+
+**3b — Com `$OutputEncoding=[System.Text.UTF8Encoding]::new($false)` (UTF-8 sem BOM):**
+```powershell
+$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+'{"a":1}' | & $probe
+```
+Saida: `STDIN_FIRST8_HEX: [7B 22 61 22 3A 31 7D 0D]` | `STDIN_TOTAL_BYTES: 9` | `STDIN_EOF_ELAPSED_MS: 0`
+
+Identico a 3a. Sem BOM.
+
+**3e — Forma exata do Cursor (arquivo escrito sem BOM por Node.js, `Get-Content -Raw` com `$OutputEncoding = [System.Text.Encoding]::UTF8`):**
+
+Arquivo gravado com `[System.IO.File]::WriteAllText(path, '{"a":1}', UTF8NoBom)`:
+```
+FILE_BYTES_HEX: [7B 22 61 22 3A 31 7D]   ← sem BOM no arquivo
+```
+
+Script Cursor executado:
+```powershell
+$OutputEncoding = [System.Text.Encoding]::UTF8
+Get-Content -LiteralPath $tmpFile -Raw | & { $input | & $probe }
+```
+
+Saida: `STDIN_FIRST8_HEX: [EF BB BF 7B 22 61 22 3A]` | `STDIN_TOTAL_BYTES: 12` | `STDIN_EOF_ELAPSED_MS: 0`
+
+**BOM UTF-8 (EF BB BF) presente, mesmo com arquivo sem BOM.** Total: BOM(3) + `{"a":1}`(7) + CRLF(2) = 12 bytes.
+
+**Motivo:** `[System.Text.Encoding]::UTF8` em .NET e a variante UTF-8 COM BOM. Ao serializar a string obtida do `Get-Content -Raw` para o pipe externo, o PS prefixa o BOM. O `[System.Text.UTF8Encoding]::new($false)` (sem BOM) nao causa este problema — mas o Cursor usa a propriedade estatica `.UTF8` que tem BOM.
+
+**Veredito 3:** O Cursor injeta BOM UTF-8 (EF BB BF) no stdin do guard, independentemente do conteudo do arquivo temporario, porque `$OutputEncoding = [System.Text.Encoding]::UTF8` e a variante com BOM. O guard Go **deve descartar o BOM** (se presente) antes de decodificar JSON. EOF chega em <1ms em todos os casos — sem risco de timeout no lado do PS.
+
+Contexto arquiteto (nao refazer): PS 5.1.26100 — `powershell -NoProfile -Command "cmd /c exit 2"` retorna exit 1; `"cmd /c exit 2; exit $LASTEXITCODE"` retorna exit 2 (LASTEXITCODE e atualizado por processos nativos externos, confirmando que o sufixo propaga corretamente para executaveis — o problema do item 1 e especifico a excecoes PS, nao a processos externos).
+
+---
+
+### Resumo dos tres vereditos
+
+| Item | Comando chave | Veredito |
+|------|--------------|---------|
+| 1. MoTW + RemoteSigned | `Get-Item ... -Stream Zone.Identifier` | Sem MoTW: `.ps1` roda sob RemoteSigned (exit 2 propagado). Sob Restricted com sufixo `; exit $LASTEXITCODE`: **falha aberta** (exit 0, nao 1) |
+| 2. argv em cmd | `cmd /c "probe.exe git-branch; exit $LASTEXITCODE"` | `;` e literal: `os.Args = ["probe.exe","git-branch;","exit","$LASTEXITCODE"]` — confirmacao primaria: sufixo proibido para Kiro/Amazon Q |
+| 3. stdin BOM/EOF | Forma exata do Cursor | **BOM UTF-8 (EF BB BF) sempre presente** via `[System.Text.Encoding]::UTF8`; EOF <1ms |
+
+### O que muda para ML-2A e ML-2B
+
+- **ML-2A (emissao):** confirma que a linha de hook para Kiro e Amazon Q deve ser `trackfw guard <nome>` **sem** `; exit $LASTEXITCODE`. Para CLIs PS (Claude Code, Codex, Gemini, Cursor, Copilot, Windsurf), o sufixo e necessario para propagar o exit de processos externos — mas nao resolve o bloqueio do `.ps1` sob Restricted (que ja era conhecido). RemoteSigned mitiga o canal npm (sem MoTW = roda).
+- **ML-1A (guard Go):** deve descartar BOM UTF-8 (EF BB BF) no inicio do stdin antes de decodificar JSON — obrigatorio para o Cursor. Sem este tratamento, `json.Unmarshal` falha com "invalid character" no primeiro byte e o guard nega (falha fechada — erro na direcao segura, mas rejeita comandos legitimos do Cursor).

@@ -14,3 +14,4 @@
 - [Cenário 18 enumera gates que citam GO_BIN](project_cenario18_enumera_gates_com_go_bin.md) — gate novo entra sozinho na proibição de mutar a árvore; escreva só em mktemp
 - [config.Load() singleton exige Reset() em testes](feedback_config_load_singleton_reset.md) — tests com ci:/hooks: no fixture falham no suite completo sem config.Reset() antes de RunScaffoldDoctor
 - [Prova de mordida: lista do sed antigo diverge do medido](feedback_prova_de_mordida_sed_list.md) — C09, C10, C11 NÃO falham abertos com o sed antigo; medir antes de escrever os casos
+- [Guard Go: map não struct, idleTimeout parametrizado, os.Exit direto no deny](project_guard_go_contract.md) — map[string]json.RawMessage (case-sensitive), RunGitBranch recebe idleTimeout para testabilidade, deny usa os.Exit direto (não return error) para não poluir stderr com "Error:"

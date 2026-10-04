@@ -4,6 +4,8 @@
 
 ## Índice
 
+- [powershell-command-converte-exit-2-e-bash-read-t-e-janela-fixa-2026-10-04](powershell-command-converte-exit-2-e-bash-read-t-e-janela-fixa-2026-10-04.md) — 🔴 **`powershell -Command` transforma o exit 2 do binário em 1**; o sufixo `; exit $LASTEXITCODE` preserva o 2 em PS/sh/bash/Git Bash, mas vira argumento no `cmd.exe` e sai 0 sob `Restricted` com shim `.ps1`; `%ERRORLEVEL%` na mesma linha mente; `read -t` do bash é janela fixa, não timer de ociosidade
+
 - [ps-args-self-match-e-tmpdir-padrao-em-grep-de-autoteste-2026-10-02](ps-args-self-match-e-tmpdir-padrao-em-grep-de-autoteste-2026-10-02.md) — 🔴 **Dois falsos positivos em autotestes de scripts:** (1) `grep -qF "chunk-timeout"` casa o diretório `check-falsify-chunk-timeout.XXXXXX` — usar padrão completo `FAIL [falsify-driver/chunk-timeout]`; (2) `ps | awk '/sleep 9981743/'` casa awk/bash/zsh que têm o padrão em seus próprios `args=` — capturar ps para arquivo antes de rodar awk, e filtrar `comm=` pelo executável
 
 - [windows-argv-troca-aspa-por-contrabarra-sem-espaco-2026-10-01](windows-argv-troca-aspa-por-contrabarra-sem-espaco-2026-10-01.md) — 🔴 **Windows: EscapeArg + MSYS reparse converte `esperado="scaffold.go` em `esperado=\scaffold.go` — gate malformado sai 0** — discriminante: ausência de espaço; correção: stdin transport em `checkGateFragments` e `runGateCommand`; stdin tem paridade total com argv em macOS (12 vetores); env-eval diverge em 5

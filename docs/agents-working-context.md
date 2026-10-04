@@ -2,6 +2,65 @@
 
 ---
 
+## 2026-10-04 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-1A corretivo) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** Corretivo do ML-1A — reescrever `DrainStdin` com semântica de janelas fixas (porta fiel ao loop bash `read -t 2 -d ''`), eliminar corrida de dados no buffer `tmp`, e corrigir/adicionar testes que reconciliam o que cada um afirma com o que exercita.
+**Escopo:** `internal/guard/payload.go`, `internal/guard/payload_test.go`, `internal/guard/gitbranch_test.go`, `docs/agents-working-context.md`.
+**Resultado:**
+- `go build ./...` — exit=0
+- `go vet ./internal/guard/` — exit=0
+- `go test -race ./internal/guard/... -count=1` — PASS (73 testes, 0 FAIL, 0 data race). O ML-1A FIM anterior declarou 60 testes; a contagem real antes deste corretivo era 71 (38 MatchSubcommand, 12 RunGitBranch, 3 DrainStdin, 12 ExtractCommand, 3 QuoteAwareSplit, 3 QuoteAwareSplit). Agora são 73: 2 novos (EOFInSecondWindow, ChunkedDataNotTruncated), 5 alterados (Truncated, IdleNoData, TruncatedDeny, EarlyEOFAllow, EOF).
+- `trackfw validate` — 165 warnings, 0 violations, exit=0
+- Matriz sh/go × sleep-3/sleep-6 (via /usr/bin/time -p): sleep-3 → sh rc=0 real 3.04s / go rc=0 real 3.01s; sleep-6 → sh rc=2 real 4.02s / go rc=2 real 4.01s — idênticos; go nega em ~4s (2 janelas), não em 6s; rc=2 do go confirmado como truncation deny (grep 'nenhum byte chegou' retornou 1 match).
+- Bite proof (old code, 7 testes, 4 FAIL, 3 PASS por construção): TestDrainStdin_EOF PASS (EOF imediato encerra janela 1 em ambas as implementações), TestDrainStdin_Truncated FAIL (elapsed 102ms < 150ms = 1.5W), TestDrainStdin_IdleNoData PASS (sem bytes — ambas truncam em 1W), TestDrainStdin_EOFInSecondWindow FAIL (truncated=true), TestDrainStdin_ChunkedDataNotTruncated PASS (gaps 0.5W não ativam rolling timer), TestRunGitBranch_TruncatedDeny FAIL (elapsed 102ms < 150ms), TestRunGitBranch_EarlyEOFAllow FAIL (rc=2 em vez de 0).
+
+## 2026-10-04 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-1A corretivo) — INÍCIO
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** Corretivo do ML-1A — reescrever `DrainStdin` com semântica de janelas fixas (porta fiel ao loop bash `read -t 2 -d ''`), eliminar corrida de dados no buffer `tmp`, e corrigir/adicionar testes que reconciliam o que cada um afirma com o que exercita.
+**Escopo:** `internal/guard/payload.go`, `internal/guard/payload_test.go`, `internal/guard/gitbranch_test.go`, `docs/agents-working-context.md`.
+
+---
+
+## 2026-10-04 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-1A) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** ML-1A — portar `trackfw guard git-branch` em Go: pacote `internal/guard/` (payload.go, gitbranch.go, testes), comando cobra `internal/commands/guard.go`, registro em root.go.
+**Escopo:** porta fiel do `scripts/trackfw-git-branch-guard.sh` (756 linhas), contrato ADR-2026-10-04 D7–D9, ADR-2026-10-02 D1–D3.
+**Arquivos produzidos:** `internal/guard/payload.go`, `internal/guard/gitbranch.go`, `internal/guard/payload_test.go`, `internal/guard/gitbranch_test.go`, `internal/commands/guard.go`, `internal/commands/guard_test.go`; modificações em `internal/commands/root.go`.
+**Resultado:**
+- `go build ./...` — sem erros
+- `go vet ./internal/guard/ ./internal/commands/` — sem erros
+- `go test ./internal/guard/... -count=1` — PASS (60 testes: 38 MatchSubcommand, 11 RunGitBranch, 8 payload, 3 DrainStdin)
+- `go test ./internal/commands/ -count=1` — PASS (sem regressões)
+- `trackfw validate` — 165 warnings (lenient), 0 violations
+- stdout binário == stdout .sh para push (confirmado manualmente)
+- exit 2 para deny/D7; exit 0 para allow; exit 2 para args/flags inválidos
+
+## 2026-10-04 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-1A) — INÍCIO
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** ML-1A — portar `trackfw guard git-branch` em Go: pacote `internal/guard/` (payload.go, gitbranch.go, testes), comando cobra `internal/commands/guard.go`, registro em root.go.
+**Escopo:** porta fiel do `scripts/trackfw-git-branch-guard.sh` (756 linhas), contrato ADR-2026-10-04 D7–D9, ADR-2026-10-02 D1–D3.
+
+---
+
+## 2026-10-04 — ares-tf (feat/hooks-de-guard-executam-no-windows — ML-1D) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** ML-1D — Medições residuais na VM Windows: MoTW do shim npm, argv em cmd, stdin do PowerShell (BOM/encoding/EOF).
+**Arquivo produzido:** `docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md` (seção "ML-1D — Medicoes residuais")
+**Resultado:** `trackfw validate` 165 warnings, zero violations.
+**Vereditos:**
+- **MoTW:** shim npm trackfw.ps1 sem Zone.Identifier → RemoteSigned suficiente (exit 2 propagado). Restricted + sufixo `; exit $LASTEXITCODE` → FALHA ABERTA (exit 0, não 1): PSSecurityException não atualiza `$LASTEXITCODE`, `exit $LASTEXITCODE` executa e retorna 0.
+- **argv cmd:** `;` é literal em cmd.exe — `cmd /c "probe.exe git-branch; exit $LASTEXITCODE"` → os.Args = `["probe.exe","git-branch;","exit","$LASTEXITCODE"]`. Sufixo proibido para Kiro/Amazon Q (confirmação primária na VM).
+- **stdin BOM:** Cursor usa `$OutputEncoding = [System.Text.Encoding]::UTF8` (.NET UTF-8 com BOM) → stdin sempre inicia com `EF BB BF`, mesmo quando o arquivo temporário não tem BOM. EOF <1ms. Go guard deve descartar BOM antes de `json.Unmarshal`.
+**Impacto ML-1A:** guard Go deve strip BOM UTF-8 no stdin.
+**Impacto ML-2A:** confirma: Kiro/Amazon Q sem `; exit $LASTEXITCODE`; PS CLIs com sufixo.
+
+---
+
 ## 2026-10-04 — hades-tf (feat/hooks-de-guard-executam-no-windows — ML-0A) — FIM
 
 **Branch:** `feat/hooks-de-guard-executam-no-windows`
