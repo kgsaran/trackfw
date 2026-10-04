@@ -131,3 +131,70 @@ subcomando". O arquivo `.sh` presente deixa de ser evidência de proteção.
 ## Linked REQ
 
 `docs/req/REQ-2026-09-05-os-hooks-de-guard-nao-executam-no-windows-na-maioria-dos-clis-de-agente-e-o-validate-reporta-instalado.md`
+
+---
+
+## Adendo — 2026-10-04 (Wave 0): a linha de hook tem duas formas, por família de shell
+
+Medido na VM (Windows 11 ARM64, PowerShell **5.1.26100**), por um `.cmd` que lê `%ERRORLEVEL%` linha a
+linha:
+
+```
+cmd /c exit 2                                                → 2   (controle)
+powershell -NoProfile -Command "cmd /c exit 2"               → 1   ← o exit 2 vira 1
+powershell -NoProfile -Command "cmd /c exit 2; exit $LASTEXITCODE" → 2
+```
+
+E o mesmo sufixo em `sh`, `bash` (macOS) e Git Bash (VM): `<cmd que sai 2>; exit $LASTEXITCODE` → 2,
+e `<cmd que sai 0>; …` → 0, porque `$LASTEXITCODE` é vazio e `exit` sem argumento devolve o status do
+último comando.
+
+🔴 Sem o sufixo, **todo CLI que roda o hook por `powershell -Command` recebe 1 no lugar de 2**, e só
+o exit 2 bloqueia nos CLIs de PowerShell. O guard decidiria bloquear, e o CLI deixaria passar.
+
+### D2 revista — duas formas, nenhuma escolhida pelo SO
+
+| família | CLIs | linha emitida |
+|---|---|---|
+| PowerShell **ou** POSIX | Claude Code, Codex, Gemini, Cursor, Copilot (`command`), Windsurf | `trackfw guard <nome>; exit $LASTEXITCODE` |
+| `cmd.exe` | Kiro, Amazon Q | `trackfw guard <nome>` |
+
+A escolha é **por CLI** (um fato do fornecedor, fixo), não por SO. Isso preserva o argumento central
+da D2: a config versionada serve ao time misto. O Claude Code, que alterna entre Git Bash e
+PowerShell na mesma máquina, funciona nos dois com a mesma linha.
+
+### D7 — Todo erro sob `trackfw guard` sai com 2
+
+Erro de cobra sob `guard` (subcomando desconhecido, flag inválida, argumento posicional) sai com
+**exit 2** e motivo no stderr, nunca 1. Motivo: no `cmd.exe`, `;` não separa comandos, então se a
+forma POSIX/PowerShell cair num `cmd` (fallback de borda do Codex), o binário recebe `git-branch;` e
+deve **negar** em vez de liberar.
+
+### D8 — O comando por argumento vira flag
+
+O `.sh` aceita o comando em argv (`CMD_RAW="$*"`). No Go isso vira `--command "<cmd>"`; argumento
+posicional é erro (D7). O invólucro `.sh` traduz `"$@"` para `--command`.
+
+### D9 — Porta fiel onde a Wave 0 achou assimetria
+
+- git-branch sobe até achar `trackfw.yaml`; credential só olha o cwd e lê o stdin **antes** de olhar
+  o projeto. Os dois preservados como estão.
+- O dreno de stdin do git-branch é em **janelas de 2 s** (não `io.ReadAll`): `(payload; sleep 3)`
+  libera e `(payload; sleep 6)` nega em cerca de 4 s. O Go reproduz isso.
+- O credential lê sem timeout (`cat`). Porta fiel; **resíduo declarado**: um pipe que nunca fecha
+  deixa a decisão para o timeout do CLI.
+- O parser JSON lê por `map[string]json.RawMessage`, não por struct. O `encoding/json` casa chave
+  sem diferenciar maiúsculas em struct (`"Command"` sobrescreveria `"command"`, medido pela Wave 0).
+
+### Riscos da D5 depois da Wave 0
+
+- **Binário velho:** continua sendo falha aberta em 6 de 8 CLIs. Mitigação: o `validate` exige
+  versão mínima e o subcomando; neste repositório, `make install` antes de migrar as próprias configs
+  (gate `trackfw guard --help` = 0 antes do ML-2A).
+- **npm sob `Restricted`:** decisão adiada até a medição de Mark-of-the-Web do shim (ML-1D). A
+  recomendação é o `validate` orientar `RemoteSigned`, que o próprio npm já exige para rodar no
+  PowerShell.
+- **`cmd.exe` procura no cwd antes do PATH:** um `trackfw.exe`/`trackfw.cmd` na raiz do repositório
+  é executado pelo Kiro e pelo Amazon Q. O `validate` denuncia (ML-2B).
+
+Parecer completo: `docs/seguranca/2026-10-04-wave0-guard-em-go.md`.

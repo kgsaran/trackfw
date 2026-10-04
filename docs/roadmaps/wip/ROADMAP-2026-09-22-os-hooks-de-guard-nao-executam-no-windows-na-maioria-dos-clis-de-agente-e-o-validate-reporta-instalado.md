@@ -69,10 +69,10 @@ negativo da REQ), a jornada de instalação no Windows e os `attention-*`.
    `go test ./internal/generators/ -run 'Guard|Credential' -count=1 2>&1 | tail -3` e
    `go test ./internal/commands/ -count=1 2>&1 | tail -3`; registre a saída literal e o commit (`git rev-parse HEAD`).
 **Acceptance criteria:**
-- [ ] Tabela canal × shell com exit code e arquivo resolvido, medida e não inferida
-- [ ] Veredito explícito: "o shim do npm sob Restricted no PowerShell bloqueia: sim/não"
-- [ ] Exit code do binário velho, por shell
-- [ ] Nenhum arquivo do repositório alterado além do documento
+- [x] Tabela canal × shell com exit code e arquivo resolvido, medida e não inferida
+- [x] Veredito explícito: "o shim do npm sob Restricted no PowerShell bloqueia: sim/não"
+- [x] Exit code do binário velho, por shell
+- [x] Nenhum arquivo do repositório alterado além do documento
 
 ### ML-0C — Remedição dos schemas de hook dos CLIs de agente
 **Status:** ✅ Concluído
@@ -89,12 +89,12 @@ negativo da REQ), a jornada de instalação no Windows e os `attention-*`.
 3. Responda se a string nua `trackfw guard git-branch`, sem caminho nem variável, é aceita como
    `command` por cada CLI, e qual é o cwd do processo do hook. O guard precisa achar `trackfw.yaml`.
 **Acceptance criteria:**
-- [ ] 8 linhas na tabela, cada uma com fonte e data
-- [ ] As diferenças em relação a 2026-09-05 explicitadas, ou "sem mudança" com fonte
-- [ ] Nenhum arquivo além do documento
+- [x] 8 linhas na tabela, cada uma com fonte e data
+- [x] As diferenças em relação a 2026-09-05 explicitadas, ou "sem mudança" com fonte
+- [x] Nenhum arquivo além do documento
 
 ### ML-0A — Threat model do guard em Go
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** hades-tf
 **Files affected:** `docs/seguranca/2026-10-04-wave0-guard-em-go.md` (único arquivo)
 **Actions:** (lê os documentos de ML-0B e ML-0C, a ADR-2026-10-04 e a ADR-2026-10-02)
@@ -111,9 +111,11 @@ negativo da REQ), a jornada de instalação no Windows e os `attention-*`.
    CLI, migração no `update` e o relato do `validate`.
 4. **Resíduo declarado.**
 **Acceptance criteria:**
-- [ ] As quatro seções com evidência (comando e saída)
-- [ ] Lista de sítios fechada, com o veredito por sítio
-- [ ] Um veredito por risco da D5: "bloqueia o desenho" ou "mitigação X, entra no ML Y"
+- [x] As quatro seções com evidência (comando e saída)
+- [x] Lista de sítios fechada, com o veredito por sítio
+- [x] Um veredito por risco da D5: "bloqueia o desenho" ou "mitigação X, entra no ML Y"
+
+      ✅ Parecer: nenhum risco bloqueia o desenho. O arquiteto confirmou na VM o achado (b-1): `powershell -Command` transforma o exit 2 em 1 (PS 5.1.26100), e o sufixo `; exit $LASTEXITCODE` preserva o 2 em PS, sh, bash e Git Bash. Decisões no adendo da ADR-2026-10-04 (D2 revista, D7–D9).
 
 **Gates da wave:**
 ```bash
@@ -128,30 +130,41 @@ test -s docs/seguranca/2026-10-04-wave0-guard-em-go.md
 
 ## Wave 1 — O guard em Go
 > Dependências: Wave 0 auditada.
-> Ordem: ML-1A → ML-1B → ML-1C, em sequência. 1A e 1B compartilham `internal/commands/guard.go` e o
+> Ordem: ML-1D ∥ ML-1A (VM × código, disjuntos) → ML-1B → ML-1C. Entre 1A, 1B e 1C, em sequência. 1A e 1B compartilham `internal/commands/guard.go` e o
 > parser de payload; 1C exercita os dois.
+
+### ML-1D — Medições residuais na VM (antes do ML-2A; em paralelo ao ML-1A)
+**Status:** ⬜ Pendente
+**Squad:** ares-tf
+**Files affected:** `docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md` (seção nova "ML-1D")
+**Actions:** (1) Mark-of-the-Web do shim do npm: `Get-Item "$(npm prefix -g)\trackfw.ps1" -Stream Zone.Identifier`; e, sob `Set-ExecutionPolicy RemoteSigned -Scope Process` com **cmd como pai**, o `trackfw.ps1` roda e o sufixo `; exit $LASTEXITCODE` devolve 2 com um `.exe` que sai 2? (2) O que um `.exe` recebe em `cmd /c "probe.exe git-branch; exit $LASTEXITCODE"` (argv literal). (3) Stdin vindo do PowerShell (`'payload' | probe.exe`): há BOM UTF-8 ou UTF-16? O pipe fecha dentro de 2 s?
+**Acceptance criteria:**
+- [ ] Os três itens com o comando e a saída literal; `%ERRORLEVEL%` lido em arquivo `.cmd`, linha a linha (na mesma linha ele expande antes de executar)
 
 ### ML-1A — `trackfw guard git-branch`
 **Status:** ⬜ Pendente
 **Squad:** apolo-tf
 **Files affected:** `internal/guard/` (pacote novo: `payload.go`, `gitbranch.go` e testes),
 `internal/commands/guard.go` (novo), registro em `internal/commands/root.go`
-**Actions:** portar `scripts/trackfw-git-branch-guard.sh`, ou seja, a constante `gitBranchGuardScript`,
+**Actions:** (contrato completo: adendo da ADR-2026-10-04, D7–D9, e `docs/seguranca/2026-10-04-wave0-guard-em-go.md` §2(e)(f) e §3)
+portar `scripts/trackfw-git-branch-guard.sh`, ou seja, a constante `gitBranchGuardScript`,
 **com comportamento igual**: leitura do stdin com orçamento, extração do comando nas chaves e na
 prioridade da ADR-2026-10-02 (falha fechada em chave indecodificável e em NUL, chave duplicada: vence
-a última), no-op fora de projeto, as mesmas mensagens `REASON`, exit 2 + stderr e a mesma saída
+a última; leitura por `map[string]json.RawMessage`), dreno em janelas de 2 s, subida até
+`trackfw.yaml`, `--command` no lugar de argv, todo erro sob `guard` → exit 2 (D7), no-op fora de projeto, as mesmas mensagens `REASON`, exit 2 + stderr e a mesma saída
 `hookSpecificOutput`. Nenhuma evasão declarada no cabeçalho passa a ser fechada. Sem `jq`, sem `awk`:
 `encoding/json`.
 **Acceptance criteria:**
 - [ ] `go build ./...` sem erro
 - [ ] `go test ./internal/guard/... -count=1` verde, com testes que nomeiam cada regra do `.sh`
+- [ ] Os três gates da Wave 0: (i) subcomando/flag inválido → exit 2; (ii) `"Command"` não sobrescreve `"command"`; (iii) `(payload; sleep 3)` libera e `(payload; sleep 6)` nega
 - [ ] Relatório com a frase por teste novo (Regra Dura de Reconciliação)
 
 ### ML-1B — `trackfw guard credential`
 **Status:** ⬜ Pendente
 **Squad:** apolo-tf
 **Files affected:** `internal/guard/credential.go` (+ teste), `internal/commands/guard.go`
-**Actions:** portar `scripts/trackfw-credential-guard.sh` com comportamento igual: padrões JWT/AWS,
+**Actions:** portar `scripts/trackfw-credential-guard.sh` com comportamento igual (cwd only, sem subida; lê o stdin inteiro **antes** de olhar o projeto; sem timeout, resíduo declarado na D9): padrões JWT/AWS,
 isenção de destino efêmero, `credential_guard.mode` `warn`/`block` do `trackfw.yaml`, o arquivo
 `.trackfw-credential-guard.json` em `roadmap_dir` com a mesma normalização de caminho e CRLF.
 **Acceptance criteria:**
@@ -163,7 +176,9 @@ isenção de destino efêmero, `credential_guard.mode` `warn`/`block` do `trackf
 **Squad:** artemis-tf
 **Files affected:** `internal/generators/git_branch_guard_test.go`, `credential_guard_test.go`,
 `git_branch_guard_dedup_test.go`, `git_branch_guard_stdin_drain_test.go` (só testes)
-**Actions:** fazer os cenários que hoje executam `bash <script>` rodarem também contra o binário
+**Actions:** primeiro, congelar o `.sh` atual (756 linhas) e o credential como fixtures em
+`internal/generators/testdata/guard-sh-reference/`, com o sha256 afirmado num teste: depois do ML-2A o
+`.sh` vira invólucro, e sem a fixture a paridade compararia Go com Go. Depois, fazer os cenários que hoje executam `bash <script>` rodarem também contra o binário
 `trackfw guard <nome>` compilado no teste, comparando exit code, stderr e stdout. Divergência
 reprova. Contar e reportar quantos cenários rodam nos dois braços.
 **Acceptance criteria:**
@@ -188,7 +203,11 @@ go test ./internal/generators/ -count=1
 **Files affected:** `internal/generators/agentfiles.go`, `internal/generators/scaffold.go`,
 `internal/generators/update.go`, `internal/generators/scaffold_doctor.go`, `scripts/trackfw-git-branch-guard.sh`,
 `scripts/trackfw-credential-guard.sh`, `docs/cli-parity.md` (+ testes de generators), e os sítios a mais que a Wave 0 enumerar
-**Actions:** os 8 `Inject*Hooks` e os caminhos globais emitem a string nova; o Copilot passa a usar o
+**Pré-condição (gate):** `trackfw guard --help` sai 0 com o binário do PATH (`make install` da branch) e o ML-1D está auditado.
+**Actions:** os 8 `Inject*Hooks` e os caminhos globais emitem a linha da D2 revista
+(`trackfw guard <nome>; exit $LASTEXITCODE` para Claude, Codex, Gemini, Cursor, Copilot e Windsurf; `trackfw guard <nome>` para Kiro e Amazon Q);
+atualizar `scripts/check-git-branch-guard-hook-schema.sh` para exercitar o binário; migrar as configs deste
+repositório (`.claude/settings.json`, `.codex/hooks.json`, `.gemini/settings.json`); o Copilot passa a usar o
 campo `command` (AC1); `migrateHookCommand` troca as formas antigas pela nova no `trackfw update`;
 `gitBranchGuardScript` e a constante do credential viram `#!/usr/bin/env bash` +
 `exec trackfw guard <nome> "$@"`.
@@ -201,7 +220,7 @@ campo `command` (AC1); `migrateHookCommand` troca as formas antigas pela nova no
 **Status:** ⬜ Pendente
 **Squad:** apolo-tf
 **Files affected:** `internal/validator/validator_credential_guard*.go`, `internal/validator/validator_git_branch_guard*.go` (+ testes)
-**Actions:** `*_hook_resolvable` aceita a string nova; uma config que ainda aponta para o `.sh`
+**Actions:** `*_hook_resolvable` compara a linha **exata** da D2 revista (hoje é `strings.Contains`, que aceitaria qualquer sufixo); versão mínima do `trackfw` resolvido; `trackfw.exe`/`trackfw.cmd`/`trackfw.bat` na raiz do projeto é violation (o `cmd.exe` procura no cwd antes do PATH); uma config que ainda aponta para o `.sh`
 recebe um aviso de que não executa no Windows fora do Git Bash; `trackfw` resolvido sem o subcomando
 `guard` vira violation. A mitigação do binário velho segue o que a Wave 0 decidir.
 **Acceptance criteria:**

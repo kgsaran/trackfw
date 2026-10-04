@@ -2,6 +2,30 @@
 
 ---
 
+## 2026-10-04 — hades-tf (feat/hooks-de-guard-executam-no-windows — ML-0A) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** ML-0A do ROADMAP-2026-09-22 — Wave 0, threat model do guard em Go (ADR-2026-10-04).
+**Arquivo produzido:** `docs/seguranca/2026-10-04-wave0-guard-em-go.md`
+**Resultado:** Parecer concluido. Nenhum codigo de produto alterado.
+**Achados principais:**
+- **(b-1) Exit code PS — A CONFIRMAR (nao critico ate ML-0D):** `powershell.exe -Command "native.exe"` documentado para PS 7 como convertendo exit 2 -> 1. PS 5.1 e hipotese, nao medido ao vivo. Sufixo `; exit $LASTEXITCODE` funciona em POSIX (bash/sh/zsh medido: exit 2 preservado); NAO usar em cmd.exe (`;` e separador de tokens, nao de comandos -- proxy medido: cobra recebe args extras -> help -> exit 0 -> fail-open). D2 sobrevive por linha de hook por CLI, nao como string universal -- se isso satisfaz o enunciado literal de D2 e decisao do arquiteto. ML-0D decide.
+- **(a) npm+PS+Restricted:** 3 CLIs fail-open (Codex, Windsurf, Claude Code PS fallback); Copilot deny-all; Cursor (Bypass) e Kiro/Amazon Q (cmd.exe) nao afetados. RemoteSigned pode resolver se shim sem MoTW — ML-0D verifica. Decisao de suporte unsupported cabe ao KG.
+- **(c) PATH dependency — aumento estrito:** `grep -o` (ocorrencias) medido: 44 no git-branch (reproduz ADR), 8 no credential — todas strings, nenhuma invoca o binario. Dependencia de PATH e nova. cmd.exe busca cwd antes do PATH — Kiro/Amazon Q vulneraveis a trackfw.exe na raiz do repo.
+- **(e) Dois guards, comportamentos diferentes:** git-branch walk-up (L96-130 medido); credential cwd-only (L8 medido). ML-1B NAO deve herdar funcao de walk-up do ML-1A.
+- **Adicoes ao escopo do ML-2A:** `scripts/check-git-branch-guard-hook-schema.sh` (quebra apos ML-2A), 3 configs de hook do repo (`.claude/`, `.codex/`, `.gemini/`), `globalCredentialGuardScript` (sem porta no roadmap).
+- **Gate pre-ML-2A obrigatorio:** payload de deny -> `.sh` atual -> exit 2 (medido). Gate deve confirmar binario com `guard` antes de despachar ML-2A — sem isso o agente nao consegue usar o shell.
+- **cmd.exe NAO usa `;` como separador [inferido; hipotese ate ML-0D arm 8]:** sufixo `; exit $LASTEXITCODE` NAO deve ser emitido para Kiro/Amazon Q -- passaria argumentos literais ao binario -> cobra help -> exit 0 -> fail-open. Proxy macOS medido: `trackfw roadmap 'move;' exit '$LASTEXITCODE'` -> cobra help -> exit 0; tokenizacao exata do cmd.exe nao confirmada por fonte primaria. D2 sobrevive por linha de hook por CLI, nao como string universal.
+- **Sufixo do Gemini e PS-only:** `; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }` causa syntax error em bash -> bash exit 2 -> deny-all incondicional para qualquer CLI bash-only (medido).
+- **Canais de entrada -- nova superficie:** git-branch guard tem timeout de 2s em stdin ocioso (medido: nega exit 2 apos 2s); suporta argv e TRACKFW_GIT_COMMAND como canais de fallback (medidos). Credential guard usa `cat` sem timeout (medido: aguarda EOF, ~3s com `(sleep 3) |`, exit 0). Go deve replicar: timeout de 2s para git-branch; await-EOF para credential. `io.ReadAll` simples em git-branch causaria hang -> CLI timeout -> fail-open (Copilot permite).
+- **argv_overrides_stdin:0 -- FN CONFIRMADO NO .SH (medido):** `printf '{"tool_input":{"command":"git push origin main"}}' | bash scripts/trackfw-git-branch-guard.sh exit '$LASTEXITCODE'` -> exit 0. Se argv presente, script usa CMD_RAW="$*" (L157) e ignora stdin completamente. "exit $LASTEXITCODE" nao e git bloqueado -> permite. Gate ML-1A: guard em modo hook deve rejeitar argv OU arquiteto decide comportamento.
+- **validateGuardHookResolvable usa `strings.Contains` -- substring match (medido L282/L290):** pos-migracao, `trackfw guard git-branch; exit $LASTEXITCODE` passa validate (contem marker). Gate ML-2B: comparacao exata ou regex com sufixo permitido.
+- **Grep de dependencia de PATH -- 44+8 ocorrencias (grep -o, medido):** ADR afirma 44 e 8 -- reproduz exatamente com `grep -o`. `grep -c` (linhas) da 29. 0 das 44 ocorrencias invoca o binario. Dependencia de PATH e nova.
+- **late_eof FP medido (git-branch, bash 5.3.20):** `(payload; sleep 6)` -> nega benigno em ~4s (late_eof_benign:2). Semantica: guard nega quando janela de 2s retorna vazia, NAO quando EOF > 2s do ultimo byte. Gate paridade ML-1A: sleep 3 -> allow; sleep 6 -> deny ~4s.
+- **credential hang FN condicional (hang medido):** `(payload; sleep 6) | credential` -> exit 0 em 6s (cred_late:0). FN condicional a politica de timeout do CLI. Copilot documentado; outros nao determinados (ML-0D). Mesmo vetor, direcao oposta ao git-branch. Decisao arquitetural (porta fiel vs. timeout).
+
+---
+
 ## 2026-10-04 — prometeu-tf (feat/hooks-de-guard-executam-no-windows — ML-0C) — FIM
 
 **Branch:** `feat/hooks-de-guard-executam-no-windows`
