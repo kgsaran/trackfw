@@ -44804,3 +44804,9 @@ Achados notáveis para o apolo-tf:
 - A REQ-2026-10-04 (pin7 no Windows) passou para Done, com evidência por AC; o roadmap foi para `done/`, e a label `req-aberta` saiu da #421.
 - Também nesta sessão: o README deixou de dizer que os hooks nativos de Windows estão "in progress" (PR #521); eles estão planejados, com a REQ-2026-09-05 e o roadmap em backlog.
 - Nenhuma issue aberta restante.
+
+## 2026-10-04 — zeus-tf — INÍCIO: REQ-2026-09-05 (hooks de guard nativos no Windows)
+
+- Escopo pedido pelo KG: implementar a REQ e ajustar o roadmap (gerado automaticamente, sem arquivos nem comandos).
+- Achado antes de qualquer código: as configs de hook são versionadas (`.claude/settings.json`, `.codex/hooks.json`, `.gemini/settings.json`), logo escolher `.sh`/`.ps1` pelo SO no `init` quebra time misto. A linha da D7 (`powershell … -File …ps1`) tem a mesma falha. Candidato: o hook chama `trackfw guard <nome>` (Go), string idêntica em sh/PowerShell/cmd/Git Bash. Decisão do KG pendente; derruba a D7, vira adendo à ADR.
+- O guard tem 756 linhas hoje (a REQ cita 561).
