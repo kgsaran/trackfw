@@ -7,6 +7,74 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [9.2.0] - 2026-10-04
+
+### Added
+
+- **Critério de aceite caducado.** Um critério que ficou permanentemente inverificável (o artefato foi
+  removido, ou o número literal caducou) agora fecha sem afirmar algo falso. A caixa continua `- [ ]` e
+  ganha, logo abaixo, uma linha indentada `Caducou: <motivo>`. O `barrier` conta esse critério como
+  **lapsed**, e não como unmet, e mostra a justificativa (`line N: Caducou: …`; `lapsed_details` no
+  JSON). Um ML só de critérios caducados continua bloqueado. Não há estado novo de roadmap. (#519,
+  fecha #514)
+- **Regra `req_done_open_criteria` (warning).** Acusa REQ `Done` com critério `- [ ]` sem `Caducou:`. O
+  corte é em 2026-10-04, a data de entrada da regra, e REQs anteriores ficam isentas numa única linha
+  agregada. (#519)
+- **`trackfw roadmap show --json`** ganha o campo `lapsed`. (#519)
+- **`trackfw branch prune` consulta o estado do PR no GitHub.** Uma consulta por execução, com `--repo`
+  derivado do `origin`; um PR mergeado cujo head contém o tip libera a branch. Branch nunca empurrada
+  nunca é apagada. Sem `gh` ou com resposta truncada, o comando mantém o veredito por conteúdo e diz
+  por quê. O aviso de "unmerged changes" do `push`/`ship` usa a mesma avaliação. Medido num
+  repositório real: de 52 branches, a liberação passou de 1 para 49. (#515, fecha #481)
+- **`make falsify-recalibrate RUN=<id>`.** Recalibra os pesos do balanceador de falsificação a partir de
+  um run de CI, que agora grava o arquivo de tempos em todo shard. O gerador imprime
+  `N de M rotulos sem peso calibrado (X%)`. (#517, fecha #403)
+
+### Changed
+
+- 🔴 **Só `[x]`/`[X]` contam como critério atendido.** `[~]`, `[-]`, `[?]` e qualquer outra caixa
+  contavam como atendidos, sem justificativa. Agora contam como pendentes, e o `barrier` nomeia a linha
+  ("unrecognized checkbox"). (#519)
+- 🔴 **`roadmap show --json`: o campo `unmet` não inclui mais critérios caducados.** Quem precisa do
+  total antigo soma `unmet + lapsed`. Isso só afeta documentos que usam `Caducou:`. (#519)
+- **`trackfw branch new` só aceita roadmap em `wip/`.** Uma branch existente é governada por `wip/` ∪
+  `blocked/`, e por `done/` só pelo vínculo escrito ou quando a própria branch moveu o roadmap. Quando
+  a base não é resolvível, o comando avisa (`branch_done_scope_unverifiable`). (#500, fecha #494 e
+  #490)
+- **A exigência de `## Wave 0` ganhou corte por data.** Ela vale só para roadmap datado a partir de
+  2026-09-18 (a ADR que a criou), no `move … done` e na regra `roadmap_wave0_required`, com isenção
+  visível. Roadmaps antigos voltam a poder ir para `done/`. (#519)
+- **ADR é identificado pelo prefixo `ADR-`** num primitivo único, usado também pelo `serve` e pelo
+  `discover`. (#503, fecha #471)
+- **O gerador pergunta antes de escrever um segundo workflow de governança** no projeto. (#482)
+
+### Fixed
+
+- **Barrier:**
+  - um gate que reentra no mesmo (roadmap, wave) é recusado, em vez de recursar sem limite (#486);
+  - uma linha de gate incompleta reprova antes de executar, e um marcador dentro de exemplo deixa de
+    virar gate (#495, fecha #491).
+- **Cerca de código não terminada** deixa de apagar em silêncio um ML pendente (#492, fecha #476), e o
+  `ParseWaves` passa a respeitar a máscara de cerca (#475, fecha #470).
+- **`doctor`:** o aviso de workflow duplicado sai de dentro do `switch cfg.CI` (#488, fecha #484).
+- **`discover`:** a declaração do `trackfw.yaml` vence a sonda de caminho convencional (#498).
+- **Guard de branch sem `jq`:** extrai o comando por um parser JSON em awk e falha fechado. A tabela de
+  testes roda com e sem `jq` (#510, fecha #507).
+- **`traceid_orphan_req`** deixa de reprovar estado correto, e o baseline deixa de ser o mecanismo de
+  convivência (#477).
+- **Driver de falsificação paralelo:** cada chunk tem limite de tempo, com `FAIL` nomeado e a árvore de
+  processos impressa (#506, fecha #504).
+- **Gate de pins no Windows:** o `pin7` afirma o comportamento guardado da regra (o bit de execução
+  não é representável no NTFS), e os pins 8–20 voltam a rodar lá (#522, fecha #421).
+
+### Internal
+
+- O ratchet da lista de falhas conhecidas de Windows aperta numa direção só (#479). O teste do
+  `branch new` usa uma fixture sintética (#509).
+- `CONTRIBUTING.md` publicado: Discussion antes de implementar issue com `req-aberta`, e gate vermelho
+  não mergeia (#512). O README diz que os hooks nativos de Windows estão planejados, não em andamento
+  (#521).
+
 ## [9.1.0] - 2026-09-29
 
 ### Added
