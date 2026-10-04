@@ -44513,3 +44513,10 @@ Ajustes críticos: A1 (`--repo` explícito), A2 (`baseRefName` no filtro), A3 (`
 **Veredito:** REPROVA — EXIT=2.
 - A1 (bloqueador): `scripts/check-falsify-recalibrate.sh:131` — caminho `$DEST1` interpolado dentro do corpo Python (`open('$DEST1')`). Gate `check-interpolated-path-in-python` falha. Correção: `open(sys.argv[1])` + `"$DEST1"` como argumento.
 - Todo o restante do diff (falsify-recalibrate.sh, gen-falsify-scenario-weights.py, gen-falsify-chunks.py, quality.yml, Makefile) está correto e condizente com ADR D1–D5. O autoteste passa 6/6 isoladamente.
+
+## 2026-10-04 — zeus-tf — FIM (implementação): #403 (pesos do falsify recalibrados a partir do CI)
+
+- O CI grava `timing_<n>.log` em todo shard; `make falsify-recalibrate RUN=<id>` recusa run de fork, shard faltando e `ts` malformado; pesos recalibrados do run 37198827365: 0 de 204 rótulos sem peso (antes 106).
+- Resíduo medido: 3 blocos sem rótulo dividem um fallback de 69 s; dois levam ~2 s e, com N=8, ocupam um worker cada.
+- Dois gates vizinhos reprovaram o autoteste em sequência (CRLF, depois caminho interpolado). O executor estava proibido de rodar `make quality`. Corrigido com `make parity-rest` autorizado no corretivo.
+- `make quality` EXIT=0; CI do PR #517: 20/20. Pendente: merge e fechamento.

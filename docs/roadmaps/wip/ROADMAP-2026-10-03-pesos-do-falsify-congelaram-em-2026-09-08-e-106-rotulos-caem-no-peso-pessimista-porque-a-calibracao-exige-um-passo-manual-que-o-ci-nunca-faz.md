@@ -24,7 +24,7 @@ Medido em 2026-10-03:
   `falsify-shard-<n>` (`quality.yml:785`).
 
 ## Acceptance Criteria
-- [ ] AC1–AC9 da REQ, cada um com evidência apontável
+- [x] AC1–AC9 da REQ, cada um com evidência apontável
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -141,11 +141,13 @@ python3 -c "import yaml,sys; yaml.safe_load(open('.github/workflows/quality.yml'
 > Dependências: Wave 2 auditada.
 
 ### ML-3A — Qualidade e gate completo
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** hefesto-tf
 **Files affected:** `docs/qualidade/2026-10-03-revisao-recalibracao-pesos-falsify.md`
 **Acceptance criteria:**
-- [ ] Revisão do diff; `make quality` EXIT=0 com a máquina ociosa e o log conferido
+- [x] Revisão do diff; `make quality` EXIT=0 com a máquina ociosa e o log conferido
+
+      ✅ Parecer do Hefesto: REPROVA por um gate vizinho (`check-interpolated-path-in-python` no autoteste). Corretivo do Ares: caminho por argv + `PYTHONIOENCODING`; `make parity-rest` EXIT=0. `make quality` rodado pelo arquiteto com a máquina ociosa: EXIT=0, 2930 linhas, falsify 347 OK / 0 FAIL, `check-falsify-recalibrate: OK`. CI do PR #517: 20/20.
 
 **Gates da wave:**
 ```bash
