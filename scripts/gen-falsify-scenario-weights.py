@@ -50,10 +50,13 @@ import re
 import json
 import collections
 import datetime
+import math
+import os
 
 MARK = re.compile(
     r'^FALSIFY_TIMING phase=(start|end) block=(\S+) labels=(\S+) ts=([0-9.]+)$'
 )
+_TS_VALID = re.compile(r'^[0-9]+(\.[0-9]+)?$')
 
 
 def parse_marks(path):
@@ -77,24 +80,42 @@ def parse_marks(path):
     unmatched = 0
     total_pairs = 0
     with open(path, encoding='utf-8') as fh:
-        for raw in fh:
+        for lineno, raw in enumerate(fh, 1):
             m = MARK.match(raw.strip())
             if not m:
                 continue
             phase, block_id, labels_csv, ts_s = m.groups()
+            if not _TS_VALID.match(ts_s):
+                sys.exit(
+                    f"gen-falsify-scenario-weights: ts invalido em '{path}' "
+                    f"linha {lineno}: '{ts_s}' nao corresponde a [0-9]+(.[0-9]+)?"
+                )
             ts = float(ts_s)
             labels = [l for l in labels_csv.split(',') if l and l != 'none']
             if phase == 'start':
-                starts[block_id] = (ts, labels)
+                starts[block_id] = (ts, labels, lineno)
                 continue
             if block_id not in starts:
                 unmatched += 1
                 continue
-            start_ts, start_labels = starts.pop(block_id)
+            start_ts, start_labels, start_lineno = starts.pop(block_id)
             duration = ts - start_ts
+            if not math.isfinite(duration):
+                sys.exit(
+                    f"gen-falsify-scenario-weights: duracao nao finita para bloco '{block_id}' "
+                    f"em '{path}' (start linha {start_lineno}, end linha {lineno}): {duration}"
+                )
             if duration < 0:
-                unmatched += 1
-                continue
+                sys.exit(
+                    f"gen-falsify-scenario-weights: duracao negativa para bloco '{block_id}' "
+                    f"em '{path}' (start linha {start_lineno}, end linha {lineno}): {duration:.6f}s"
+                )
+            if duration == 0:
+                sys.stderr.write(
+                    f"gen-falsify-scenario-weights: AVISO duracao zero para bloco '{block_id}' "
+                    f"em '{path}' linha {lineno} -- usando 0.001s para evitar sublocacao\n"
+                )
+                duration = 0.001
             labels = labels or start_labels
             if not labels:
                 unlabeled_durations.append(duration)
@@ -156,9 +177,19 @@ def main():
         "_calibrated_from": timing_path,
         "weights": weights,
     }
-    with open(out_path, 'w', encoding='utf-8') as fh:
-        json.dump(payload, fh, indent=2, sort_keys=True, ensure_ascii=False)
-        fh.write('\n')
+    out_dir = os.path.dirname(os.path.abspath(out_path))
+    tmp_fd, tmp_path = __import__('tempfile').mkstemp(dir=out_dir, suffix='.tmp')
+    try:
+        with os.fdopen(tmp_fd, 'w', encoding='utf-8') as fh:
+            json.dump(payload, fh, indent=2, sort_keys=True, ensure_ascii=False)
+            fh.write('\n')
+        os.replace(tmp_path, out_path)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
     print(
         f"gen-falsify-scenario-weights: {len(weights)} rotulos calibrados "

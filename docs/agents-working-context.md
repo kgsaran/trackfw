@@ -2,6 +2,52 @@
 
 ---
 
+## 2026-10-04 — Ares (fix/pesos-do-falsify-recalibrados-do-ci — corretivo ML-3A) — FIM
+
+**Início:** 2026-10-04 | Branch: `fix/pesos-do-falsify-recalibrados-do-ci`
+**Tarefa:** Corretivo ML-3A da REQ-2026-10-03 (#403) — dois defeitos em `check-falsify-recalibrate.sh` apontados por `make quality`: (A1) caminho interpolado dentro do código Python (`open('$DEST1')`), viola `check-interpolated-path-in-python`; (A2) ausência de `export PYTHONIOENCODING=utf-8`, viola `check-output-encoding-declared`.
+**Arquivos modificados:**
+- `scripts/check-falsify-recalibrate.sh` — linha 129: `open('$DEST1')` → `open(sys.argv[1])` com `"$DEST1"` passado por argv; adicionado `export PYTHONIOENCODING=utf-8` após `set -euo pipefail`.
+**Resultado:** check-interpolated-path-in-python rc=0; check-falsify-recalibrate 6/6 PASS rc=0; parity-rest EXIT=0 (1971 linhas).
+
+---
+
+## 2026-10-04 — Ares (fix/pesos-do-falsify-recalibrados-do-ci — corretivo+ML-2A) — FIM
+
+**Início:** 2026-10-04 | Branch: `fix/pesos-do-falsify-recalibrados-do-ci`
+**Tarefa:** Corretivo do CI do PR #517 (strip_cr ausente em check-falsify-recalibrate.sh) + ML-2A (recalibrar pesos a partir do run 37198827365).
+**Arquivos modificados:**
+- `scripts/check-falsify-recalibrate.sh` — adicionado source lib-crlf-normalize.sh; captura python3 na linha 133 corrigida com `| strip_cr`.
+- `scripts/falsify-scenario-weights.json` — 204 rótulos recalibrados (fallback=69.11s); peso max/chunk para N=4 caiu de 1557s para 102s.
+**Resultado:** check-crlf-normalize-capture rc=0; check-falsify-recalibrate 6/6 PASS rc=0; recalibrate rc=0; 0/204 rótulos sem peso.
+
+---
+
+## 2026-10-04 — Ares (fix/pesos-do-falsify-recalibrados-do-ci — ML-1A corretivo parte 2) — FIM
+
+**Início:** 2026-10-04 | Branch: `fix/pesos-do-falsify-recalibrados-do-ci`
+**Tarefa:** Corretivo ML-1A parte 2 da REQ-2026-10-03 (#403) — dois defeitos: (1) autoteste não ligado no CI/parity-rest e comentário falso no Makefile; (2) provas de mordida S1/S2 gravam arquivo sabotado dentro de scripts/ podendo entrar num git add se abortadas.
+**Arquivos modificados:**
+- `Makefile` — adicionado `scripts/check-falsify-recalibrate.sh` ao alvo `parity-rest` (depois de `check-falsify-chunk-timeout.sh`); removida chamada do autoteste do alvo `falsify-recalibrate`; comentário corrigido.
+- `scripts/check-falsify-recalibrate.sh` — SABOTADO movido para `$SCRATCH`; trap simplificado; `FALSIFY_REPO_ROOT` passado nas execuções S1/S2.
+- `scripts/falsify-recalibrate.sh` — suporte a `FALSIFY_REPO_ROOT`: quando definido, deriva SCRIPT_DIR e REPO_ROOT a partir dele (sabotado em $SCRATCH encontra gen-falsify-scenario-weights.py no repo real).
+**Resultado:** 6/6 PASS; nenhum arquivo em scripts/ após autoteste; parity-rest contém check-falsify-recalibrate.sh (1 linha); make falsify-recalibrate sem RUN → exit 2.
+
+---
+
+## 2026-10-04 — Ares (fix/pesos-do-falsify-recalibrados-do-ci — ML-1A parte 2) — FIM
+
+**Início:** 2026-10-04 | Branch: `fix/pesos-do-falsify-recalibrados-do-ci`
+**Tarefa:** ML-1A parte 2/2 da REQ-2026-10-03 (#403) — workflow, script de recalibração, Makefile e autoteste.
+**Arquivos modificados:**
+- `.github/workflows/quality.yml` — adicionada `FALSIFY_TIMING_FILE` ao env do step do shard
+- `scripts/falsify-recalibrate.sh` — novo; baixa timing logs do CI e regenera weights.json
+- `scripts/check-falsify-recalibrate.sh` — novo autoteste com 4 braços + 2 provas de mordida
+- `Makefile` — alvo `falsify-recalibrate:` adicionado ao `.PHONY` e implementado
+**Resultado final:** `bash scripts/check-falsify-recalibrate.sh` → 6/6 PASS; YAML válido; `make -n falsify-recalibrate RUN=1` → exit 0; `make falsify-recalibrate` (sem RUN) → exit 2 com mensagem.
+
+---
+
 ## 2026-10-03 — Apolo (fix/branch-prune-consulta-o-estado-do-pr — ML-1B) — FIM
 
 **Início:** 2026-10-03 | Branch: `fix/branch-prune-consulta-o-estado-do-pr`
@@ -27,6 +73,20 @@
 **Veredito:** APROVA COM AJUSTES. Defeito reproduzido por fixture: branch nunca empurrada com PR mergeado em base não-main recebe `no_own_work` (deletável), violando ADR D1 §4. Ajuste AJ1: mudar condição do case 4 em forge.go:432 de `!hasPRs && upstream == ""` para `upstream == ""`.
 **Lacunas de cobertura declaradas como resíduo:** L1 (case 1 com tip < prHead), L2 (fallback de truncamento), L3 (stub errado para [gone] no TestA4), L4 (acoplamento implícito defaultGitExec/isNotAncestorError).
 **Sabotagens executadas e restauradas:** S1 inversão is-ancestor (capturada por TestD1_Case2 e TestD1_RealGit); S2 omissão --repo (capturada por TestA1); S3 formato de msg defaultGitExec (nenhum teste reprovado — lacuna L4). Código restaurado: `git diff --stat -- internal/` vazio.
+
+---
+
+## 2026-10-03 — Hades (fix/pesos-do-falsify-recalibrados-do-ci — ML-0A) — FIM
+
+**Início:** 2026-10-03 | Branch: `fix/pesos-do-falsify-recalibrados-do-ci`
+**Tarefa:** ML-0A — Wave 0 threat model da instrumentação no CI e da recalibração dos pesos do falsify (REQ-2026-10-03, ADR-2026-10-03, Issue #403).
+**Arquivo entregue:** `docs/seguranca/2026-10-03-wave0-recalibracao-pesos-falsify.md`
+**Medições executadas:**
+- Shard real (chunk_0, 1217 linhas) com e sem `FALSIFY_TIMING_FILE`: labels e rc idênticos; 0 linhas FALSIFY_TIMING no log; timing file com 26 linhas (13 start+13 end), 0 unmatched.
+- Pesos zero, negativos, NaN, string, 1e9: nenhum perde cenários (guarda completude independe de peso); string → gen exit 1; NaN → distribuição assimétrica.
+- `gh run download` com run bogus (HTTP 404, exit 1) e run expirado ("no valid artifacts", exit 1).
+- `head_repository.full_name` via `gh api` sobre run real: confirma mecanismo de detecção de fork.
+**Veredito:** 4 ajustes para ML-1A (AJ-T3, AJ-T4, AJ-T6, AJ-T7, AJ-T8); 5 resíduos declarados.
 
 ---
 
@@ -44433,3 +44493,30 @@ Ajustes críticos: A1 (`--repo` explícito), A2 (`baseRefName` no filtro), A3 (`
 
 - REQ-2026-10-03 → Done, com evidência por AC (AC1–AC10); roadmap → `done/`. Label `req-aberta` removida da #481 (fechada pelo `Fixes #481`).
 - Vault: `gh-repo-desvia-gh-e-upstream-gone-nao-e-vazio-2026-10-03.md`.
+
+## 2026-10-03 — zeus-tf — INÍCIO: #403 (pesos do falsify recalibrados a partir do CI)
+
+- Medido: 106 rótulos sem peso calibrado; pesos de 2026-09-08 (#295); shards de CI 57–113 s contra `parity-other-gates` 150–200 s (o caminho crítico é este, não o falsify).
+- Decisão do KG: corrigir a fonte (o CI grava as marcas, `make falsify-recalibrate RUN=<id>`, recalibrar agora, linha de resumo sem gate).
+- #408 fechada sem mudança: a premissa foi falsificada (o número aparece no `windows-full-suites`).
+
+## 2026-10-04 — hefesto-tf (fix/pesos-do-falsify-recalibrados-do-ci — ML-3A) — INÍCIO
+
+**Início:** 2026-10-04 | Branch: `fix/pesos-do-falsify-recalibrados-do-ci`
+**Tarefa:** ML-3A — Revisão de qualidade + gate completo (REQ-2026-10-03, #403)
+**Entregável:** `docs/qualidade/2026-10-03-revisao-recalibracao-pesos-falsify.md`
+
+## 2026-10-04 — hefesto-tf (fix/pesos-do-falsify-recalibrados-do-ci — ML-3A) — FIM
+
+**Fim:** 2026-10-04 | Branch: `fix/pesos-do-falsify-recalibrados-do-ci`
+**Entregável:** `docs/qualidade/2026-10-03-revisao-recalibracao-pesos-falsify.md`
+**Veredito:** REPROVA — EXIT=2.
+- A1 (bloqueador): `scripts/check-falsify-recalibrate.sh:131` — caminho `$DEST1` interpolado dentro do corpo Python (`open('$DEST1')`). Gate `check-interpolated-path-in-python` falha. Correção: `open(sys.argv[1])` + `"$DEST1"` como argumento.
+- Todo o restante do diff (falsify-recalibrate.sh, gen-falsify-scenario-weights.py, gen-falsify-chunks.py, quality.yml, Makefile) está correto e condizente com ADR D1–D5. O autoteste passa 6/6 isoladamente.
+
+## 2026-10-04 — zeus-tf — FIM (implementação): #403 (pesos do falsify recalibrados a partir do CI)
+
+- O CI grava `timing_<n>.log` em todo shard; `make falsify-recalibrate RUN=<id>` recusa run de fork, shard faltando e `ts` malformado; pesos recalibrados do run 37198827365: 0 de 204 rótulos sem peso (antes 106).
+- Resíduo medido: 3 blocos sem rótulo dividem um fallback de 69 s; dois levam ~2 s e, com N=8, ocupam um worker cada.
+- Dois gates vizinhos reprovaram o autoteste em sequência (CRLF, depois caminho interpolado). O executor estava proibido de rodar `make quality`. Corrigido com `make parity-rest` autorizado no corretivo.
+- `make quality` EXIT=0; CI do PR #517: 20/20. Pendente: merge e fechamento.

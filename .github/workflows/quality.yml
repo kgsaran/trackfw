@@ -777,6 +777,7 @@ jobs:
           SHARD_INDEX: ${{ matrix.shard }}
           SHARD_COUNT: ${{ env.FALSIFY_SHARD_COUNT }}
           OUTPUT_DIR: falsify-shard-out
+          FALSIFY_TIMING_FILE: ${{ github.workspace }}/falsify-shard-out/timing_${{ matrix.shard }}.log
       # if: always() -- sobe o log/rótulos mesmo se o shard reprovou: é
       # exatamente o que o job de agregação `parity` precisa para NOMEAR
       # qual shard falhou (em vez de só herdar um "algo falhou" genérico).
