@@ -44758,3 +44758,8 @@ Achados notáveis para o apolo-tf:
 
 - REQ-2026-10-04 (critério caducado e cortes) → Done, com evidência por AC (AC1–AC9 e AC5b); roadmap → `done/`; label `req-aberta` removida da #514; o Lourival foi avisado na issue.
 - Issues abertas restantes: #421 (exige a VM Windows).
+
+## 2026-10-04 — zeus-tf — INÍCIO: #421 (pin7 no Windows)
+
+- Reproduzido na VM: o `pin7-noexec` exige uma violação que a regra declina por desenho no Windows (`goos.go`), e o `SystemExit` aborta os pins 8–20.
+- A causa veio do consumidor na issue. Os testes Go já cobrem os dois lados pelo `CurrentGOOS`. Correção só no gate de shell: no Windows, o pin7 afirma o comportamento guardado (não é skip).
