@@ -2,6 +2,18 @@
 
 ---
 
+## 2026-10-04 — hades-tf (fix/pin7-do-gate-de-pins-no-windows — ML-0A) — FIM
+
+**Início:** 2026-10-04 | Branch: `fix/pin7-do-gate-de-pins-no-windows`
+**Tarefa:** ML-0A da REQ-2026-10-04 (#421) — Wave 0, threat model do discriminante de plataforma e vacuidade do braço guardado do pin7.
+**Arquivo produzido:** `docs/seguranca/2026-10-04-wave0-pin7-windows-guardado.md`
+**Resultado:** Gate `test -s docs/seguranca/2026-10-04-wave0-pin7-windows-guardado.md` passa.
+**Discriminante recomendado:** `go version -m "$GO_BIN" | awk '$1=="build" && $2~/^GOOS=/{sub(/GOOS=/,"",$2);print $2}'` — lê GOOS do binário; imune ao nome do arquivo, ao shell host e a `GOOS=` exportada no ambiente. O sufixo `.exe` é insuficiente: `go build -o trackfw-go` em Windows produz `trackfw-go` (sem `.exe`) mesmo sendo um binário Windows (medido na VM).
+**Vacuidade:** pin6 (mesmo laço, mesma regra, fixture `absent`) precede pin7 e é a prova estrutural de que a regra está ativa. Braço guardado confirma rc=0 e matching=[]. Vide seção 3 do threat model para os 4 vetores de vacuidade e quais estão cobertos pela invariante de ordenação do laço.
+**Residual declarado:** (a) toolchain ausente com GO_BIN externo pode silenciar o discriminante — requer guard `[[ -n "$BIN_GOOS" ]]`; (b) pins 8–20 não medidos individualmente em Windows por bloqueio do SystemExit — AC2 fecha quando ares-tf rodar o gate na VM.
+
+---
+
 ## 2026-10-04 — Apolo (fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel — ML-1A) — FIM
 
 **Início:** 2026-10-04 | Branch: `fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel`

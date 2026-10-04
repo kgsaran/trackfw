@@ -29,7 +29,7 @@ Script de reprodução na VM: `scratchpad/vm421.sh`.
 > Dependências: nenhuma.
 
 ### ML-0A — Discriminante de plataforma e vacuidade do braço guardado
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** hades-tf
 **Files affected:** `docs/seguranca/2026-10-04-wave0-pin7-windows-guardado.md` (único arquivo)
 **Actions:**
@@ -38,8 +38,13 @@ Script de reprodução na VM: `scratchpad/vm421.sh`.
 - O braço guardado pode ficar vacuoso (fixture ausente, regra removida, JSON vazio)?
 - Responda com medição, com o comando e a saída.
 **Acceptance criteria:**
-- [ ] Discriminante recomendado, com a falsificação nas duas direções
-- [ ] Vacuidade do braço guardado tratada
+- [x] Discriminante recomendado, com a falsificação nas duas direções
+- [x] Vacuidade do braço guardado tratada
+
+      ✅ Parecer: o discriminante é `go version -m "$GO_BIN"` (o GOOS gravado no binário, imune ao nome do arquivo e ao `GOOS` do ambiente). Saída vazia → aborta, e não silencia.
+      O arquiteto conferiu: nativo chamado `.exe` → `darwin`; build cruzado sem `.exe` → `windows`.
+      Ajuste do arquiteto: a anti-vacuidade não depende da ordem do laço. O braço guardado confere **explicitamente** que, no mesmo run, a fixture `absent` (pin6) acusou a regra e que o JSON da `noexec` é válido, com `violations` como lista, e rc==0.
+      Pin14 medido na VM: não depende de `chmod` e acusa corretamente.
 
 **Gates da wave:**
 ```bash
@@ -58,6 +63,7 @@ test -s docs/seguranca/2026-10-04-wave0-pin7-windows-guardado.md
   com `OK [validate-rule-pins/pin7-noexec-windows-guarded]` nomeando `internal/validator/goos.go`.
 - Fora do Windows, o comportamento é o de hoje.
 - A mensagem de vacuidade nomeia o terceiro estado.
+- Use o discriminante e as conferências anti-vacuidade do parecer da Wave 0, mais o ajuste anotado no ML-0A.
 - Rode o gate na VM (`scratchpad/vm421.sh`, apontando para a branch) e no macOS.
 - `make parity-rest` é autorizado e obrigatório.
 **Acceptance criteria:**
