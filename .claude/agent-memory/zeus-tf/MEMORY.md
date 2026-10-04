@@ -28,7 +28,7 @@
 - [Nunca sobrepor o modelo do agente](feedback_nunca_sobrepor_o_modelo_do_agente.md) — 🔴 não passe `model` no Agent tool; o frontmatter decide, e o roteamento existe para economizar tokens
 - [Agente não roda init na árvore](feedback_agente_nao_roda_init_na_arvore.md) — `trackfw init` reescreve o `trackfw.yaml`; 170 warnings viraram 156 violations e o executor chamou de pré-existente
 - [Replace sem assert mente](feedback_replace_sem_assert_mente.md) — edição que não casa devolve o texto intacto; commitei dizendo que marquei ACs que não marquei
-- [Proibir make quality cega o executor](feedback_proibir_make_quality_cega_o_executor.md) — certo com frente paralela; autorize no ML final, senão regressão de gate vizinho só aparece no fim
+- [Proibir make quality cega o executor](feedback_proibir_make_quality_cega_o_executor.md) — certo com frente paralela; autorize no ML final; script novo → `make parity-rest` no handoff (2x no #517)
 - [Nome de teste no relatório se verifica](feedback_nome_de_teste_no_relatorio_se_verifica.md) — 3 de 7 nomes reportados como PASS não existiam; `go test -run` com nome inexistente imprime `ok`
 - [Gate de wave é uma linha por comando](feedback_gate_de_wave_e_uma_linha_por_comando.md) — barrier roda cada linha como sh -c; testei com bash e reprovava no real; conferir com o barrier
 - [Contribuição externa: Discussion antes, gate verde sempre](project_contribuicao_externa_discussion_e_gates.md) — REQ nossa/backlog exige Discussion; PR vermelho não entra; avisar na issue ao abrir REQ

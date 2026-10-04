@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-10-03
 req: "docs/req/REQ-2026-10-03-pesos-do-falsify-congelaram-em-2026-09-08-e-106-rotulos-caem-no-peso-pessimista-porque-a-calibracao-exige-um-passo-manual-que-o-ci-nunca-faz.md"
 squad: "hades-tf, ares-tf, hefesto-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, ares-tf, hefesto-tf"
 
 # Roadmap: pesos do falsify congelaram em 2026-09-08 e 106 rotulos caem no peso pessimista porque a calibracao exige um passo manual que o CI nunca faz
 
-> Created: 2026-10-03 | Status: wip
+> Created: 2026-10-03 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-10-03-pesos-do-falsify-congelaram-em-2026-09-08-e-106-rotulos-caem-no-peso-pessimista-porque-a-calibracao-exige-um-passo-manual-que-o-ci-nunca-faz.md

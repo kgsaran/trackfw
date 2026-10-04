@@ -44520,3 +44520,9 @@ Ajustes críticos: A1 (`--repo` explícito), A2 (`baseRefName` no filtro), A3 (`
 - Resíduo medido: 3 blocos sem rótulo dividem um fallback de 69 s; dois levam ~2 s e, com N=8, ocupam um worker cada.
 - Dois gates vizinhos reprovaram o autoteste em sequência (CRLF, depois caminho interpolado). O executor estava proibido de rodar `make quality`. Corrigido com `make parity-rest` autorizado no corretivo.
 - `make quality` EXIT=0; CI do PR #517: 20/20. Pendente: merge e fechamento.
+
+## 2026-10-04 — zeus-tf — FECHAMENTO: #403 (PR #517 mergeado)
+
+- REQ-2026-10-03 (pesos do falsify) → Done, com evidência por AC (AC1–AC9); roadmap → `done/`; label `req-aberta` removida da #403.
+- Vault: `recalibrar-pesos-do-falsify-exige-run-de-pr-e-blocos-sem-rotulo-dividem-um-peso-2026-10-04.md`.
+- Issues abertas restantes: #421 (exige a VM Windows).
