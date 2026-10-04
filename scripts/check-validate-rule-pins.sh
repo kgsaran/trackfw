@@ -46,6 +46,17 @@ elif [[ "$GO_BIN" != /* ]]; then
   GO_BIN="$ROOT_DIR/$GO_BIN"
 fi
 
+# Discriminant: GOOS of the binary under test (not the calling shell).
+# go version -m reads the build metadata embedded by the Go toolchain — immune
+# to the binary filename and to the GOOS environment variable of the shell.
+# The || BIN_GOOS="" absorbs pipefail in case go version -m exits nonzero.
+BIN_GOOS=$(go version -m "$GO_BIN" 2>/dev/null \
+  | awk '$1=="build" && $2 ~ /^GOOS=/{sub(/GOOS=/,"",$2); print $2}') || BIN_GOOS=""
+if [[ -z "$BIN_GOOS" ]]; then
+  echo "[pin7] ABORT: go version -m '$GO_BIN' returned empty GOOS — toolchain absent or GO_BIN is not a Go binary" >&2
+  exit 1
+fi
+
 # Normalize TMP_DIR path (macOS $TMPDIR may have trailing /) — same reasoning as
 # check-validate-parity.sh (Go collapses via filepath.Join; Python does not).
 CG_TMP=$(printf '%s' "$TMP_DIR" | sed 's#//*#/#g')
@@ -579,9 +590,10 @@ for fix in cg-claude-absent cg-claude-present cg-claude-noexec cg-claude-notype 
   run_cg "$CG_TMP/$fix-go.json" "$CG_TMP/$fix"
 done
 
-python3 - "$CG_TMP" <<'PY'
+python3 - "$CG_TMP" "$BIN_GOOS" <<'PY'
 import json, os, sys
 tmp = sys.argv[1]
+BIN_GOOS = sys.argv[2]
 CG_RULE = "credential_guard_hook_resolvable"
 
 def load_cg(name):
@@ -596,6 +608,7 @@ def load_cg(name):
 
 # PIN6-PIN15: expect violations with specific message markers.
 # Each tuple: (fixture-go-json, pin-label, message-marker)
+# pin7-noexec is removed from this list on Windows and handled separately below.
 expect_violation = [
     ("cg-claude-absent-go.json",       "pin6-absent",        "but the script does not exist"),
     ("cg-claude-noexec-go.json",       "pin7-noexec",        "not executable"),
@@ -608,19 +621,69 @@ expect_violation = [
     ("cg-claude-unreadable-go.json",   "pin14-unreadable",   "could not be read"),
     ("cg-claude-utf16-go.json",        "pin15-utf16",        "is not valid UTF-8"),
 ]
+# On Windows the rule declines exec-bit checks by design; pin7 is affirmed separately.
+if BIN_GOOS == "windows":
+    expect_violation = [t for t in expect_violation if t[1] != "pin7-noexec"]
 
 for name, label, marker in expect_violation:
     rc, msgs = load_cg(name)
     if not msgs:
         raise SystemExit(
             f"[{label}] vacuity: {name}: expected {CG_RULE!r} violation, "
-            f"none found (rc={rc}) — fixture broken or rule regressed"
+            f"none found (rc={rc}) — fixture broken, rule regressed, "
+            f"or the rule is guarded on this platform — see the platform-guarded pins"
         )
     if not all(marker in m for m in msgs):
         raise SystemExit(
             f"[{label}]: {name}: message does not contain {marker!r}: {msgs!r}"
         )
     print(f"OK [validate-rule-pins/{label}]  {marker!r}")
+
+# PIN7 — platform-guarded branch.
+# On Windows, credential_guard_hook_resolvable declines exec-bit checks by design
+# (internal/validator/goos.go). Affirm the guarded behavior: zero violations for noexec.
+if BIN_GOOS == "windows":
+    # (c) Anti-vacuity: confirm that the absent fixture (pin6) produced at least one
+    # violation of this rule in its violations list. This proves the rule is live and
+    # that the JSON output schema is valid before asserting silence for noexec.
+    absent_path = os.path.join(tmp, "cg-claude-absent-go.json")
+    with open(absent_path, encoding="utf-8") as f:
+        absent_payload = json.load(f)
+    absent_violations = [v for v in absent_payload.get("violations", [])
+                         if v.get("rule") == CG_RULE]
+    if not absent_violations:
+        raise SystemExit(
+            f"[pin7-noexec-windows-guarded] anti-vacuity: pin6 (absent) produced no violations "
+            f"of {CG_RULE!r} in the violations list — rule may be inoperative"
+        )
+
+    # (a) noexec fixture: rc==0 and JSON has 'violations' as list.
+    noexec_path = os.path.join(tmp, "cg-claude-noexec-go.json")
+    with open(noexec_path, encoding="utf-8") as f:
+        noexec_payload = json.load(f)
+    if not isinstance(noexec_payload.get("violations"), list):
+        raise SystemExit(
+            f"[pin7-noexec-windows-guarded] JSON schema: expected 'violations' as list, "
+            f"got: {noexec_payload!r}"
+        )
+    with open(noexec_path + ".exit") as f:
+        noexec_rc = int(f.read().strip())
+    if noexec_rc != 0:
+        raise SystemExit(
+            f"[pin7-noexec-windows-guarded] expected rc=0 for noexec fixture on windows, "
+            f"got rc={noexec_rc}"
+        )
+
+    # (b) No violation or warning from this rule for the noexec fixture.
+    _, noexec_msgs = load_cg("cg-claude-noexec-go.json")
+    if noexec_msgs:
+        raise SystemExit(
+            f"[pin7-noexec-windows-guarded] expected no {CG_RULE!r} violations/warnings "
+            f"on windows for noexec fixture, but got: {noexec_msgs!r}"
+        )
+
+    print("OK [validate-rule-pins/pin7-noexec-windows-guarded]"
+          "  rule declines exec-bit check on windows by design (internal/validator/goos.go)")
 
 # PIN16-PIN20: expect silence (no violation from this rule).
 expect_silent = [

@@ -44775,3 +44775,26 @@ Achados notáveis para o apolo-tf:
 
 - Reproduzido na VM: o `pin7-noexec` exige uma violação que a regra declina por desenho no Windows (`goos.go`), e o `SystemExit` aborta os pins 8–20.
 - A causa veio do consumidor na issue. Os testes Go já cobrem os dois lados pelo `CurrentGOOS`. Correção só no gate de shell: no Windows, o pin7 afirma o comportamento guardado (não é skip).
+
+## 2026-10-04 — ares-tf — INÍCIO: ML-1A do roadmap pin7-windows (#421)
+
+- Branch: `fix/pin7-do-gate-de-pins-no-windows`
+- Arquivo sob modificação: `scripts/check-validate-rule-pins.sh`
+- Objetivo: braço guardado no pin7 para Windows; discriminante `go version -m`; mensagem de vacuidade com terceiro estado; falsificação nas duas direções.
+
+## 2026-10-04 — ares-tf — FIM: ML-1A do roadmap pin7-windows (#421)
+
+- Entregue: braço guardado no `scripts/check-validate-rule-pins.sh`.
+  - Discriminante: `go version -m "$GO_BIN"` (imune ao nome do arquivo e ao `GOOS` do shell); aborta com mensagem nomeada se vazio.
+  - BIN_GOOS passado ao Python como `sys.argv[2]` (nunca interpolado dentro do código Python — gate `check-interpolated-path-in-python` limpo).
+  - Windows: pin7 sai de `expect_violation`, braço guardado afirma silêncio com anti-vacuidade explícita (pin6, rc==0, violations como lista); imprime `OK [validate-rule-pins/pin7-noexec-windows-guarded]  rule declines exec-bit check on windows by design (internal/validator/goos.go)`.
+  - POSIX: comportamento idêntico ao de hoje.
+  - Vacuidade: mensagem cita terceiro estado ("or the rule is guarded on this platform — see the platform-guarded pins").
+- Medições: macOS rc=0; VM Windows rc=0, pins 8-20 todos OK (antes eram abortados).
+- Falsificação: POSIX com BIN_GOOS=windows → rc=1 (rule accuses violation); VM com BIN_GOOS=linux → rc=1 (vacuity, rule silent by design).
+- `make parity-rest` EXIT=0.
+- Roadmap ML-1A → ✅ Concluído.
+
+## 2026-10-04 — zeus-tf — FIM (implementação): #421 (pin7 no Windows)
+
+- No Windows, o pin7 afirma o comportamento guardado (discriminante `go version -m`, anti-vacuidade explícita pelo pin6 do mesmo run). Medido pelo arquiteto: 32 OK no macOS e 32 OK na VM; os pins 8–20 rodam no Windows pela primeira vez, todos verdes. `make parity-rest` EXIT=0. Pendente: PR, quando o KG pedir.

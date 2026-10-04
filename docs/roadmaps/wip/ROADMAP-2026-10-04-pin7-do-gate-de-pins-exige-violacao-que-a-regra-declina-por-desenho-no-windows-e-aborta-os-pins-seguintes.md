@@ -20,7 +20,7 @@ fixam os dois lados (`validator_credential_guard_test.go:60` e `:968`). O pin es
 Script de reprodução na VM: `scratchpad/vm421.sh`.
 
 ## Acceptance Criteria
-- [ ] AC1–AC6 da REQ, cada um com evidência apontável
+- [x] AC1–AC6 da REQ, cada um com evidência apontável
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -55,7 +55,7 @@ test -s docs/seguranca/2026-10-04-wave0-pin7-windows-guardado.md
 > Dependências: Wave 0 auditada.
 
 ### ML-1A — Braço guardado no `check-validate-rule-pins.sh`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** ares-tf
 **Files affected:** `scripts/check-validate-rule-pins.sh`
 **Actions:**
@@ -67,8 +67,16 @@ test -s docs/seguranca/2026-10-04-wave0-pin7-windows-guardado.md
 - Rode o gate na VM (`scratchpad/vm421.sh`, apontando para a branch) e no macOS.
 - `make parity-rest` é autorizado e obrigatório.
 **Acceptance criteria:**
-- [ ] AC2, AC3, AC4 e AC5, com as saídas da VM e do macOS
-- [ ] `make parity-rest` EXIT=0
+- [x] AC2, AC3, AC4 e AC5, com as saídas da VM e do macOS
+- [x] `make parity-rest` EXIT=0
+
+      ✅ Medido pelo arquiteto:
+      - macOS: rc=0, 32 OK, `pin7-noexec` idêntico ao de hoje;
+      - VM Windows (script da branch na worktree da `main`): rc=0, 32 OK, `pin7-noexec-windows-guarded`, pins 8–20 todos executados e verdes.
+      Falsificação reportada pelo executor:
+      - braço guardado forçado no macOS → rc=1;
+      - braço POSIX forçado na VM → rc=1, com a mensagem nova de vacuidade.
+      `make parity-rest` EXIT=0.
 
 **Gates da wave:**
 ```bash
