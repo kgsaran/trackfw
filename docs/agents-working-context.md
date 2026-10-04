@@ -2,6 +2,17 @@
 
 ---
 
+## 2026-10-04 — Ares (fix/pesos-do-falsify-recalibrados-do-ci — corretivo+ML-2A) — FIM
+
+**Início:** 2026-10-04 | Branch: `fix/pesos-do-falsify-recalibrados-do-ci`
+**Tarefa:** Corretivo do CI do PR #517 (strip_cr ausente em check-falsify-recalibrate.sh) + ML-2A (recalibrar pesos a partir do run 37198827365).
+**Arquivos modificados:**
+- `scripts/check-falsify-recalibrate.sh` — adicionado source lib-crlf-normalize.sh; captura python3 na linha 133 corrigida com `| strip_cr`.
+- `scripts/falsify-scenario-weights.json` — 204 rótulos recalibrados (fallback=69.11s); peso max/chunk para N=4 caiu de 1557s para 102s.
+**Resultado:** check-crlf-normalize-capture rc=0; check-falsify-recalibrate 6/6 PASS rc=0; recalibrate rc=0; 0/204 rótulos sem peso.
+
+---
+
 ## 2026-10-04 — Ares (fix/pesos-do-falsify-recalibrados-do-ci — ML-1A corretivo parte 2) — FIM
 
 **Início:** 2026-10-04 | Branch: `fix/pesos-do-falsify-recalibrados-do-ci`

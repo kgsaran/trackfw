@@ -108,7 +108,7 @@ python3 -c "import yaml,sys; yaml.safe_load(open('.github/workflows/quality.yml'
 > Dependências: Wave 1 commitada e empurrada; o run de CI do PR concluído com os 4 shards verdes.
 
 ### ML-2A — Recalibração e medição de volta
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** ares-tf
 **Files affected:** `scripts/falsify-scenario-weights.json`
 **Actions:**
@@ -117,8 +117,25 @@ python3 -c "import yaml,sys; yaml.safe_load(open('.github/workflows/quality.yml'
 3. AC4: rodar o gerador de novo e contar os avisos "sem peso calibrado".
 4. AC7: tabela de peso, rótulos e linhas por chunk (4 e 8 chunks), antes e depois.
 **Acceptance criteria:**
-- [ ] Rótulos sem peso = 0, ou o resto nomeado
-- [ ] Tabela antes/depois com o desvio máximo/mínimo
+- [x] Rótulos sem peso = 0, ou o resto nomeado
+- [x] Tabela antes/depois com o desvio máximo/mínimo
+      ✅ `make falsify-recalibrate RUN=37198827365` rc=0: 204 rótulos calibrados de 47 blocos. Linha de resumo:
+      "0 de 204 rotulos sem peso calibrado (0.0%)" (antes: 106 de 204, 52%). Soma medida dos blocos: 275 s.
+      Corretivo do gate CRLF (`strip_cr` na captura do autoteste) aplicado no mesmo ML.
+
+      | N | peso por chunk antes | depois | linhas max−min antes | depois |
+      |---|---|---|---|---|
+      | 4 | ~1557 s (fantasma) | ~102 s | 1582 | 704 |
+      | 8 | 703–1192 s | 40–69 s | 1342 | 2018 |
+
+      🔴 **Resíduo medido (N=8, o `make quality` local):** há 3 blocos sem rótulo (linhas 1814, 4977 e 6925 do
+      `check-gates-falsify.sh`), e todos recebem o mesmo fallback `_fallback_weight_for_unlabeled` = 69,11 s.
+      Medido no arquivo de marcas: o bloco 1814 leva **69,11 s** de verdade, o maior bloco do falsify (25% do
+      total); os outros dois levam **2,17 s e 1,95 s**. Com N=8, o empacotador põe cada um num chunk próprio,
+      e **2 dos 8 workers locais ficam com cerca de 2 s de trabalho**. Isso explica o aumento de linhas
+      max−min. O piso de tempo de parede local é o próprio bloco 1814 (69 s). Corrigir exige dar rótulo ou
+      chave aos blocos sem rótulo, o que está fora do escopo declarado (fallback e empacotamento). Fica
+      registrado como medido.
 
 ## Wave 3 — Barreira
 > Dependências: Wave 2 auditada.

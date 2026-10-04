@@ -22,6 +22,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# shellcheck source=scripts/lib-crlf-normalize.sh
+. "$SCRIPT_DIR/lib-crlf-normalize.sh"
 RECALIBRATE="$SCRIPT_DIR/falsify-recalibrate.sh"
 
 # ---------------------------------------------------------------------------
@@ -130,7 +132,7 @@ d = json.load(open('$DEST1'))
 w = d.get('weights', d)
 sys.exit(0 if 'r0' in w else 1)
 " 2>/dev/null; then
-  _fail "completo/json-r0" "JSON nao contem chave r0 em weights: $(cat "$DEST1" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(list(d.get("weights",d).keys()))' 2>/dev/null || cat "$DEST1")"
+  _fail "completo/json-r0" "JSON nao contem chave r0 em weights: $(cat "$DEST1" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(list(d.get("weights",d).keys()))' 2>/dev/null | strip_cr || cat "$DEST1")"
 else
   _ok "completo" "exit 0 e JSON contem weights.r0"
 fi
