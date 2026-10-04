@@ -30,7 +30,7 @@ O corte existente a imitar é `internal/validator/validator_req_roadmap_cutoff.g
 `date:` primeiro, nome do arquivo como fallback).
 
 ## Acceptance Criteria
-- [ ] AC1–AC9 da REQ, cada um com evidência apontável
+- [x] AC1–AC9 da REQ, cada um com evidência apontável
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -135,11 +135,15 @@ go test ./internal/... -count=1
       O ajuste (o barrier mostrar a justificativa) entrou no **ML-1D** (apolo-tf): `line N: Caducou: <texto>` no texto e `lapsed_details` no JSON, com corte em 120 caracteres. O arquiteto conferiu na fixture.
 
 ### ML-2B — Qualidade e gate completo
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** hefesto-tf
 **Files affected:** `docs/qualidade/2026-10-04-revisao-criterio-caducado.md`
 **Acceptance criteria:**
-- [ ] `make quality` EXIT=0 com a máquina ociosa e o log conferido
+- [x] `make quality` EXIT=0 com a máquina ociosa e o log conferido
+
+      ✅ APROVA. `make quality` EXIT=0: 2933 linhas, falsify 347 OK / 0 FAIL, com o log conferido pelo arquiteto.
+      O `cli-parity.md` cobre os 9 itens, inclusive a mudança de semântica do `unmet` no `show --json`.
+      Achado baixo, que não bloqueia: ~7 linhas de parse de `date:` duplicadas entre `reqCreationDate` e `RoadmapCreationDate`.
 
 **Gates da wave:**
 ```bash

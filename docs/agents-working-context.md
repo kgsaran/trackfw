@@ -44690,6 +44690,14 @@ Achados notáveis para o apolo-tf:
 - `docs/seguranca/2026-10-04-wave2-revisao-criterio-caducado.md`
 - `docs/agents-working-context.md` (este arquivo)
 
+## 2026-10-04 — hefesto-tf (fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel — ML-2B) — INÍCIO
+
+**Início:** 2026-10-04 | Branch: `fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel`
+**Status:** ML-2B 🔄 Em andamento
+**Escopo:** Revisão de qualidade + gate completo dos MLs 1A–1D (REQ #514)
+
+---
+
 ## 2026-10-04 — apolo-tf (fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel — ML-1D) — INÍCIO
 
 **Início:** 2026-10-04 | Branch: `fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel`
@@ -44700,6 +44708,19 @@ Achados notáveis para o apolo-tf:
 - barrierCheck ganha LapsedDetails []barrierLapsedDetail (JSON: lapsed_details)
 - printBarrierText imprime `      line N: Caducou: <text>` após cada grupo de ~ lapsed
 - 2 testes novos + prova de mordida
+
+## 2026-10-04 — hefesto-tf (fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel — ML-2B) — FIM
+
+**Fim:** 2026-10-04 | Branch: `fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel`
+**Status:** ML-2B ✅ Concluído
+**Veredito:** APROVA
+**Evidências:**
+- `make quality` EXIT=0, 18/18 packages, suite completa 347 OK / 0 FAIL
+- cli-parity.md declara mudança de semântica do `unmet` e todos os novos contratos
+- Achado BAIXO: duplicação de ~7 linhas de frontmatter parsing entre `reqCreationDate` e `RoadmapCreationDate` — não bloqueante
+- Relatório em `docs/qualidade/2026-10-04-revisao-criterio-caducado.md`
+
+---
 
 ## 2026-10-04 — apolo-tf (fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel — ML-1D) — FIM
 
@@ -44719,3 +44740,16 @@ Achados notáveis para o apolo-tf:
 - `internal/commands/barrier_lapsed_test.go` (TestBarrierLapsed_JustificationInTextAndJSON, TestBarrierLapsed_JustificationTruncatedAt120)
 - `docs/cli-parity.md` (frase sobre lapsed_details na seção Caducou:)
 - `docs/agents-working-context.md` (este arquivo)
+
+## 2026-10-04 — zeus-tf — FIM (implementação): #514 (critério caducado e cortes por data)
+
+- Entregue:
+  - `Caducou:` com justificativa conta como "lapsed" no `barrier`, que mostra a justificativa; só `[x]`/`[X]` contam como atendido, e `[~]` passou a bloquear (era um atalho pré-existente, absorvido); ML só de caducados bloqueia;
+  - `req_done_open_criteria`: warning, com corte em 2026-10-04; 126 isentas numa linha agregada;
+  - corte de 2026-09-18 da exigência de Wave 0, nos dois chamadores, com `RoadmapCreationDate` própria;
+  - `show --json` com `lapsed`.
+- Corretivos: ML-1C (testes do `move … done` e mordida de verdade) e ML-1D (justificativa visível).
+- Erros meus:
+  - a primeira medição contou 113/196 por aceitar só `status: Done` exato;
+  - um commit saiu com o barrier bloqueado porque o `| tail` mascarou o exit code.
+- `make quality` EXIT=0 (2933 linhas). Pendente: PR, quando o KG pedir.
