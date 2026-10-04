@@ -1,0 +1,84 @@
+---
+status: wip
+date: 2026-10-04
+req: "docs/req/REQ-2026-10-04-pin7-do-gate-de-pins-exige-violacao-que-a-regra-declina-por-desenho-no-windows-e-aborta-os-pins-seguintes.md"
+squad: "hades-tf, ares-tf"
+---
+
+# Roadmap: pin7 do gate de pins exige violacao que a regra declina por desenho no Windows e aborta os pins seguintes
+
+> Created: 2026-10-04 | Status: wip
+
+## Context
+REQ: docs/req/REQ-2026-10-04-pin7-do-gate-de-pins-exige-violacao-que-a-regra-declina-por-desenho-no-windows-e-aborta-os-pins-seguintes.md
+Issue: #421 (label `req-aberta`). Fecha #421.
+
+Reproduzido na VM: `pin6` OK; `pin7` falha com `vacuity … none found (rc=0)`; os pins 8–20 não rodam.
+A regra declina por desenho (`validator_credential_guard.go:493`, garantia em `goos.go`). Os testes Go já
+fixam os dois lados (`validator_credential_guard_test.go:60` e `:968`). O pin está em
+`scripts/check-validate-rule-pins.sh:~601` (lista `expect_violation`) e na mensagem de ~:615.
+Script de reprodução na VM: `scratchpad/vm421.sh`.
+
+## Acceptance Criteria
+- [x] AC1–AC6 da REQ, cada um com evidência apontável
+
+## Status Legend
+⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
+
+## Wave 0 — Threat model
+> Dependências: nenhuma.
+
+### ML-0A — Discriminante de plataforma e vacuidade do braço guardado
+**Status:** ✅ Concluído
+**Squad:** hades-tf
+**Files affected:** `docs/seguranca/2026-10-04-wave0-pin7-windows-guardado.md` (único arquivo)
+**Actions:**
+- Como o gate pode saber o GOOS do **binário** sob teste, e não do shell?
+- Cada candidato pode errar silenciando o pin7 num host POSIX?
+- O braço guardado pode ficar vacuoso (fixture ausente, regra removida, JSON vazio)?
+- Responda com medição, com o comando e a saída.
+**Acceptance criteria:**
+- [x] Discriminante recomendado, com a falsificação nas duas direções
+- [x] Vacuidade do braço guardado tratada
+
+      ✅ Parecer: o discriminante é `go version -m "$GO_BIN"` (o GOOS gravado no binário, imune ao nome do arquivo e ao `GOOS` do ambiente). Saída vazia → aborta, e não silencia.
+      O arquiteto conferiu: nativo chamado `.exe` → `darwin`; build cruzado sem `.exe` → `windows`.
+      Ajuste do arquiteto: a anti-vacuidade não depende da ordem do laço. O braço guardado confere **explicitamente** que, no mesmo run, a fixture `absent` (pin6) acusou a regra e que o JSON da `noexec` é válido, com `violations` como lista, e rc==0.
+      Pin14 medido na VM: não depende de `chmod` e acusa corretamente.
+
+**Gates da wave:**
+```bash
+test -s docs/seguranca/2026-10-04-wave0-pin7-windows-guardado.md
+```
+
+## Wave 1 — Pin7 afirma o comportamento guardado no Windows
+> Dependências: Wave 0 auditada.
+
+### ML-1A — Braço guardado no `check-validate-rule-pins.sh`
+**Status:** ✅ Concluído
+**Squad:** ares-tf
+**Files affected:** `scripts/check-validate-rule-pins.sh`
+**Actions:**
+- Use o discriminante da Wave 0. No Windows, o pin7 afirma silêncio da regra para a fixture `noexec`,
+  com `OK [validate-rule-pins/pin7-noexec-windows-guarded]` nomeando `internal/validator/goos.go`.
+- Fora do Windows, o comportamento é o de hoje.
+- A mensagem de vacuidade nomeia o terceiro estado.
+- Use o discriminante e as conferências anti-vacuidade do parecer da Wave 0, mais o ajuste anotado no ML-0A.
+- Rode o gate na VM (`scratchpad/vm421.sh`, apontando para a branch) e no macOS.
+- `make parity-rest` é autorizado e obrigatório.
+**Acceptance criteria:**
+- [x] AC2, AC3, AC4 e AC5, com as saídas da VM e do macOS
+- [x] `make parity-rest` EXIT=0
+
+      ✅ Medido pelo arquiteto:
+      - macOS: rc=0, 32 OK, `pin7-noexec` idêntico ao de hoje;
+      - VM Windows (script da branch na worktree da `main`): rc=0, 32 OK, `pin7-noexec-windows-guarded`, pins 8–20 todos executados e verdes.
+      Falsificação reportada pelo executor:
+      - braço guardado forçado no macOS → rc=1;
+      - braço POSIX forçado na VM → rc=1, com a mensagem nova de vacuidade.
+      `make parity-rest` EXIT=0.
+
+**Gates da wave:**
+```bash
+bash -c 'GO_BIN=bin/trackfw scripts/check-validate-rule-pins.sh'
+```
