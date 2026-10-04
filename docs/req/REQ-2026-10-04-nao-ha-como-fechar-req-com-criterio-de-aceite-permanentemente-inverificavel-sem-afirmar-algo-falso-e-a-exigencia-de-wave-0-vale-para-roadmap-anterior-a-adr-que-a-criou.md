@@ -43,6 +43,9 @@ novo, uma linha `Caducou:` com justificativa, e cortes por data declarados.
   isenção. Com data ≥ 2026-09-18, continua bloqueado. O mesmo corte vale no `roadmap_wave0_required`.
   Medido: os 4 roadmaps daqui sem Wave 0 fora de `done/` passam no gate em dry-run, ou num teste com
   cópia.
+- [ ] **AC5b** — D6/T3: caixa com caractere fora de ` `/`x`/`X` conta como pendente, e o `barrier` nomeia
+  a linha. D6/T8: um ML só com critérios caducados (0 atendidos) fica `blocked`. D6/T7: a data do
+  roadmap vem de `date:` ou da primeira `AAAA-MM-DD` do nome, incluindo o formato com data no sufixo.
 - [ ] **AC6** — `docs/cli-parity.md` documenta a forma `Caducou:`, a regra nova e os dois cortes, com
   `trackfw-contract`.
 - [ ] **AC7** — Os templates de roadmap e REQ gerados não mudam de forma. A documentação do que fazer com

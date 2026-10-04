@@ -44535,3 +44535,21 @@ Ajustes críticos: A1 (`--repo` explícito), A2 (`baseRefName` no filtro), A3 (`
   - linha `Caducou:`, sem token novo;
   - regra nova `req_done_open_criteria` como warning, com corte na data de entrada (2026-10-04; direção oposta à do `req_has_roadmap`);
   - corte de 2026-09-18 para a exigência de Wave 0.
+
+## 2026-10-04 — hades-tf — INÍCIO: ML-0A da REQ-2026-10-04 (#514 — critério caducado e cortes)
+
+- Lendo ADR D1–D5 e roadmap ML-0A; rodando fixture fx514.sh; enumerando parsers em `internal/` e `scripts/`.
+
+## 2026-10-04 — hades-tf — FECHAMENTO: ML-0A da REQ-2026-10-04 (#514)
+
+Arquivo produzido: `docs/seguranca/2026-10-04-wave0-criterio-caducado-e-cortes.md` (363 linhas).
+
+Parsers fechados (7): P1 `roadmapdoc.AcceptanceEvaluate` e P2 `barrier` precisam reconhecer
+`Caducou:` (D2/D3); P4 e P6 precisam do corte D5; P3, P5, P7 não precisam.
+
+Achados notáveis para o apolo-tf:
+- `[~]`, `[-]`, `[?]` contam como met (bypass pré-existente mais barato que Caducou:).
+- `reqFilenameDateRe = ^REQ-(\d{4}-\d{2}-\d{2})` não casa roadmaps — exige `roadmapCreationDate` separada.
+- 33 roadmaps em done/ com data no sufixo sem fm date ficam ilegíveis para o corte D5.
+- Wave 0 all-lapsed → passed com zero evidência após D3 (resíduo R5, mitigação recomendada para ML-2A).
+- `scripts/check-roadmap-barrier-contract.sh:984` pina "unmet acceptance criteria" e precisará atualização.

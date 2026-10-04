@@ -39,12 +39,12 @@ O corte existente a imitar é `internal/validator/validator_req_roadmap_cutoff.g
 > Dependências: nenhuma. Bloqueia toda implementação.
 
 ### ML-0A — Parsers de caixa, abuso do `Caducou:` e datas retroativas
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** hades-tf
 **Files affected:** `docs/seguranca/2026-10-04-wave0-criterio-caducado-e-cortes.md` (único arquivo)
 **Actions:**
 1. **Completude:** listar **todo** parser de caixa de critério em `internal/` e `scripts/`, excluindo testdata
-   de corpus. Para cada um, dizer o que faz hoje com `- [ ]` e se precisa reconhecer `Caducou:`: barrier,
+   de corpus. Para cada um, dizer o que faz hoje com `- [x]` e se precisa reconhecer `Caducou:`: barrier,
    `serve/api_board.go`, `roadmapdoc`, o gate de placeholder de scaffold e os gates em `scripts/`.
 2. **Threat model:**
    - `Caducou:` vazio, em comentário HTML, em cerca de código, colado em item que não é critério, ou com
@@ -55,8 +55,10 @@ O corte existente a imitar é `internal/validator/validator_req_roadmap_cutoff.g
 3. **Alvos de falsificação nas duas direções**, por superfície.
 4. **Resíduo declarado.**
 **Acceptance criteria:**
-- [ ] As quatro seções com evidência (comando e saída)
-- [ ] Lista de parsers fechada, com o veredito "precisa reconhecer / não precisa" para cada um
+- [x] As quatro seções com evidência (comando e saída)
+- [x] Lista de parsers fechada, com o veredito "precisa reconhecer / não precisa" para cada um
+
+      ✅ Parecer: 7 parsers enumerados (só o `AcceptanceEvaluate` e o `barrier` contam critério). Os achados T3, T7 e T8 foram incorporados ao ADR como D6. O arquiteto conferiu o T3 no código (`roadmapdoc.go:46` e :640-655) e mediu 0 caixas fora de `[ ]`/`[x]` no acervo.
 
 **Gates da wave:**
 ```bash
@@ -76,6 +78,7 @@ demais parsers que a Wave 0 marcar como "precisa reconhecer".
 - Um helper único em `roadmapdoc` decide se um item `- [ ]` é caducado: linha de continuação indentada
   `Caducou: <texto não vazio>`, fora de cerca de código e de comentário.
 - O `barrier` conta "lapsed" à parte, no texto e no JSON.
+- **D6 (T3 e T8):** só `[x]`/`[X]` contam como atendido, e qualquer outra caixa conta como pendente, com a linha nomeada. ML com 0 atendidos e ≥ 1 caducado fica `blocked`. O texto "unmet acceptance criteria" não muda (pinado em `check-roadmap-barrier-contract.sh:984`).
 **Acceptance criteria:**
 - [ ] AC2 e AC3 com testes, mais uma fixture de ponta a ponta com o binário
 - [ ] Baseline do barrier (`internal/roadmapdoc/testdata/barrier-baseline.txt`) inalterado onde não há
@@ -96,7 +99,7 @@ do `done`), `internal/validator/validator_roadmap_gates.go`, `docs/cli-parity.md
 **Actions:**
 - Regra D4 como warning, com corte em 2026-10-04 e uma linha agregada. Usa o helper do ML-1A e a régua
   `reqCreationDate`.
-- Corte D5 (2026-09-18) nos dois chamadores de `HasWave0`, com isenção visível.
+- Corte D5 (2026-09-18) nos dois chamadores de `HasWave0`, com isenção visível. A data do roadmap vem de uma `roadmapCreationDate` própria (D6/T7): `date:` primeiro, depois a primeira `AAAA-MM-DD` do nome. Sem data → sem isenção (fail-closed).
 - Contrato no `cli-parity.md`.
 - Último ML da wave: `make parity-rest` e `go test ./...` são **autorizados e obrigatórios**, e o executor
   repete até ficar verde.

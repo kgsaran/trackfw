@@ -78,6 +78,29 @@ exigência), com a mesma régua de data. Vale em **todo** chamador da exigência
 `move … done` e a regra `roadmap_wave0_required` (`wip/`), que dispara quando um roadmap antigo volta a
 `wip/` pela Regra Dura. Isenção visível: uma linha no `move`, e uma linha agregada no `validate`.
 
+### D6 — Ajustes do threat model (Wave 0, `docs/seguranca/2026-10-04-wave0-criterio-caducado-e-cortes.md`)
+
+- **T3 — caixa com caractere arbitrário conta como atendida (pré-existente, absorvido pela Regra Dura).**
+  `CriterionLineRe = ^- \[.\]` (`roadmapdoc.go:46`) aceita qualquer caractere, e só `[ ]` conta como
+  pendente. Medido: `[~]`, `[-]` e `[?]` dão `result: passed`. É um atalho **sem justificativa**, mais
+  barato que o `Caducou:`, e anularia a D3. Mesmo parser e mesmo mecanismo, então entra nesta REQ.
+  **Decisão:**
+  - atendido = `[x]` ou `[X]`; pendente = `[ ]`;
+  - qualquer outro caractere conta como **pendente**, e o `barrier` nomeia a linha
+    ("unrecognized checkbox").
+  Medido neste acervo: **0** caixas fora de `[ ]`/`[x]`.
+- **T7 — data de roadmap.** O `reqFilenameDateRe` casa só `REQ-AAAA-MM-DD`. Em `done/`, 33 roadmaps têm a
+  data no **sufixo** do nome e não têm `date:`. A D5 usa uma `roadmapCreationDate` própria: `date:` do
+  frontmatter primeiro, depois a primeira `AAAA-MM-DD` do nome do arquivo. Sem data legível, o roadmap
+  fica **sem isenção** (fail-closed), e a mensagem diz isso.
+- **T8 — ML só de caducados.** Depois da D3, um ML em que todos os critérios caducaram passaria com zero
+  evidência. **ML com 0 atendidos e ≥ 1 caducado → `blocked`** ("all criteria lapsed"). Entregar
+  exige pelo menos um critério verificado.
+- **Fixture pinada:** `scripts/check-roadmap-barrier-contract.sh:984` pina "1 unmet acceptance criteria".
+  O texto existente para critério pendente **não muda**, e "lapsed" é texto novo.
+- T1 e T4 (HTML e cerca de código): `Caducou:` em comentário, em cerca de código ou vazio **não conta**.
+  O tratamento de comentário HTML em caixas (T4, pré-existente) fica como resíduo.
+
 ## Consequences
 
 - O consumidor fecha os 4 roadmaps da #514 sem mentir: cada AC caducado ganha `Caducou:`, o `barrier`
