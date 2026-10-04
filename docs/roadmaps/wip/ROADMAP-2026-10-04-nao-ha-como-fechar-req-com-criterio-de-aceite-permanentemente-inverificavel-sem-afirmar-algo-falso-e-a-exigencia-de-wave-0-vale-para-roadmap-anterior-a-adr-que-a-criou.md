@@ -70,7 +70,7 @@ test -s docs/seguranca/2026-10-04-wave0-criterio-caducado-e-cortes.md
 > ML-1A cria em `roadmapdoc`, e os dois tocam o mesmo pacote de testes.
 
 ### ML-1A — Reconhecer `Caducou:` (D2) e o `barrier` (D3)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Files affected:** `internal/roadmapdoc/` (helper e testes), `internal/commands/barrier.go` e testes, e os
 demais parsers que a Wave 0 marcar como "precisa reconhecer".

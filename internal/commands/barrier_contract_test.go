@@ -237,6 +237,7 @@ type barrierCheckDoc struct {
 	Evidence []string `json:"evidence"`
 	Failures []string `json:"failures"`
 	Commands []string `json:"commands,omitempty"`
+	Lapsed   []string `json:"lapsed,omitempty"` // D3, REQ #514 / ML-1A
 }
 
 type barrierResultDoc struct {

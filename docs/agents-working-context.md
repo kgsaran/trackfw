@@ -2,6 +2,20 @@
 
 ---
 
+## 2026-10-04 — Apolo (fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel — ML-1A) — FIM
+
+**Início:** 2026-10-04 | Branch: `fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel`
+**Tarefa:** ML-1A da REQ-2026-10-04 (#514) — reconhecimento de critério caducado (`Caducou:`), breakdown 3 classes (met/unmet/lapsed), D6/T3 (checkbox não reconhecido), D6/T8 (todos caducados bloqueia).
+**Arquivos modificados:**
+- `internal/roadmapdoc/roadmapdoc.go` — adicionados `MetCriterionRe`, `LapsedContinuationRe`, struct `AcceptanceDetail`, funções `htmlCommentMask`, `acceptanceHeader`, `AcceptanceEvaluateFull`; `AcceptanceEvaluate` virou wrapper thin.
+- `internal/commands/barrier.go` — campo `Lapsed []string` em `barrierCheck`, lógica de 3 classes no loop de MLs, render `~ ` em `printBarrierText`.
+- `internal/commands/barrier_contract_test.go` — campo `Lapsed` em `barrierCheckDoc`.
+- `internal/roadmapdoc/acceptance_lapsed_test.go` — 15 testes novos (arquivo novo).
+- `internal/commands/barrier_lapsed_test.go` — 4 testes E2E (arquivo novo).
+**Resultado:** go build PASS · go vet PASS · go test ./internal/roadmapdoc/ ./internal/commands/ PASS · check-roadmap-barrier-contract 49 cenários OK. Prova de mordida: 13 sabotagens executadas, todas com FAIL set previsto.
+
+---
+
 ## 2026-10-04 — Ares (fix/pesos-do-falsify-recalibrados-do-ci — corretivo ML-3A) — FIM
 
 **Início:** 2026-10-04 | Branch: `fix/pesos-do-falsify-recalibrados-do-ci`
@@ -44553,3 +44567,28 @@ Achados notáveis para o apolo-tf:
 - 33 roadmaps em done/ com data no sufixo sem fm date ficam ilegíveis para o corte D5.
 - Wave 0 all-lapsed → passed com zero evidência após D3 (resíduo R5, mitigação recomendada para ML-2A).
 - `scripts/check-roadmap-barrier-contract.sh:984` pina "unmet acceptance criteria" e precisará atualização.
+
+## 2026-10-04 — apolo-tf (fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel — ML-1A) — INÍCIO
+
+**Início:** 2026-10-04 | Branch: `fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel`
+**Tarefa:** ML-1A da REQ-2026-10-04 (#514) — parser reconhece critério caducado (`Caducou:`), `barrier` passa a contar "lapsed", reconhecer só `[ ]`/`[x]`/`[X]` e bloquear ML onde todos os critérios caducaram.
+**Escopo:**
+- `internal/roadmapdoc/roadmapdoc.go`: `AcceptanceEvaluateFull` (novo), `AcceptanceEvaluate` vira wrapper, `MetCriterionRe` e `LapsedContinuationRe` novos, `htmlCommentMask` novo.
+- `internal/commands/barrier.go`: `barrierCheck.Lapsed`, lógica de aceite, `printBarrierText`.
+- Testes novos em `internal/roadmapdoc/` e `internal/commands/`.
+- Sem tocar `validators/`, `generators/roadmap.go` — escopo do ML-1B.
+
+## 2026-10-04 — apolo-tf (fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel — ML-1A) — FIM
+
+**Fim:** 2026-10-04 | Branch: `fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel`
+**Arquivos modificados:**
+- `internal/roadmapdoc/roadmapdoc.go` — novos: `MetCriterionRe`, `LapsedContinuationRe`, tipo `AcceptanceDetail`, funções `htmlCommentMask`, `acceptanceHeader`, `AcceptanceEvaluateFull`; `AcceptanceEvaluate` virou wrapper sobre `AcceptanceEvaluateFull`.
+- `internal/commands/barrier.go` — `barrierCheck.Lapsed`, wrapper `acceptanceEvaluateDetail`, lógica do loop de aceite, `printBarrierText` (renderiza `~ <lapsed>`).
+- `internal/commands/barrier_contract_test.go` — campo `Lapsed []string` adicionado a `barrierCheckDoc`.
+- `internal/roadmapdoc/acceptance_lapsed_test.go` — 13 novos testes unitários (D2/D3/D6/T3).
+- `internal/commands/barrier_lapsed_test.go` — 3 novos testes E2E (D3 passed, T3 blocked, T8 blocked).
+**Gates:**
+- `go build ./...` — exit 0
+- `go vet ./internal/roadmapdoc/ ./internal/commands/` — exit 0
+- `go test ./internal/roadmapdoc/ ./internal/commands/ -count=1` — exit 0
+- `bash scripts/check-roadmap-barrier-contract.sh` — exit 0 (49 cenários OK)

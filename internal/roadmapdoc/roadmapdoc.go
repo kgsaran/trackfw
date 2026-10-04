@@ -43,9 +43,19 @@ var (
 	StatusLineRe     = regexp.MustCompile(`^\*\*Status:\*\*(.*)$`)
 	CriteriaHeaderRe = regexp.MustCompile(`^\*\*(?:Acceptance criteria|Crit[eé]rios de aceite):\*\*`)
 	UnmetCriterionRe = regexp.MustCompile(`^- \[ \]`)
-	CriterionLineRe  = regexp.MustCompile(`^- \[.\]`)
-	BoldLineRe       = regexp.MustCompile(`^\*\*`)
-	GatesHeaderRe    = regexp.MustCompile(`^\*\*Gates da wave:\*\*`)
+	// MetCriterionRe matches a criterion line with an explicitly met checkbox ([x] or [X]).
+	// D6/T3 (REQ #514 / ML-1A): only [x] and [X] are met; any other character is unrecognized.
+	MetCriterionRe = regexp.MustCompile(`^- \[[xX]\]`)
+	CriterionLineRe = regexp.MustCompile(`^- \[.\]`)
+	BoldLineRe      = regexp.MustCompile(`^\*\*`)
+	GatesHeaderRe   = regexp.MustCompile(`^\*\*Gates da wave:\*\*`)
+	// LapsedContinuationRe matches a valid Caducou: continuation line (D2, REQ #514 / ML-1A):
+	// ≥2 leading spaces (not tabs), "Caducou:", optional whitespace, then at least one
+	// non-whitespace character. Using \s* (not \s+) allows "Caducou:text" (no space), which
+	// is valid per D2 ("texto não vazio depois dos dois-pontos"). A bare "  Caducou:" or
+	// "  Caducou:\r" still fails: \r is whitespace, so \s* consumes it, but then \S requires
+	// a real (non-whitespace) character which is absent.
+	LapsedContinuationRe = regexp.MustCompile(`^ {2,}Caducou:\s*\S`)
 )
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -604,17 +614,57 @@ func MLStatusMarker(lines []string, fenced []bool, ml MLBlock) (marker string, f
 	return "", false
 }
 
-// AcceptanceEvaluate implements rule 4. hasBlock is false both when the
-// acceptance header (English or Portuguese) is absent and when it is present but
-// the body between it and the next "**" line (or ML boundary) contains zero
-// "- [...]" criterion lines — an empty block is not vacuously passed, per the
-// contract. Lines inside a fenced code block are ignored throughout — for the
-// header search, for the "**" block-end boundary, and for counting criterion
-// lines — otherwise a cerca citing "**Critérios de aceite:**"/"- [x]" as an
-// example would forge acceptance evidence (ADR decision 7, AC13-a).
-func AcceptanceEvaluate(lines []string, fenced []bool, ml MLBlock) (met, unmet int, hasBlock bool) {
-	headerLine := -1
-	for i := ml.Start; i < ml.End; i++ {
+// AcceptanceDetail is the full per-ML breakdown returned by AcceptanceEvaluateFull.
+// It is the canonical result; AcceptanceEvaluate is a thin backward-compat wrapper.
+//
+// D6/T3 (REQ #514 / ML-1A): only [x] and [X] are Met; [ ] with a valid Caducou:
+// continuation is Lapsed; [ ] without one, and any other character, are Unmet.
+// UnrecognizedLines records the 1-based document line numbers of the unrecognized
+// checkboxes so that the barrier can name them in its failure messages.
+type AcceptanceDetail struct {
+	Met               int
+	Unmet             int   // includes unrecognized checkbox characters
+	Lapsed            int   // [ ] immediately followed by a valid Caducou: continuation
+	HasBlock          bool
+	UnrecognizedLines []int // 1-based; empty (never nil) when no unrecognized boxes present
+}
+
+// htmlCommentMask returns a boolean slice (same length as lines) where true means the
+// line is inside an HTML comment block (<!-- ... -->). Used only by AcceptanceEvaluateFull
+// to prevent a Caducou: line that happens to appear inside a comment from counting as a
+// valid lapsed continuation. Fenced lines are never considered inside a comment.
+//
+// A line that opens AND closes on the same line (<!-- foo -->) is marked true and the
+// comment state resets, so subsequent lines are unaffected.
+// T4 (HTML [ ] counting) is a pre-existing residual and is NOT fixed here — this mask
+// applies only to the Caducou: detection path.
+func htmlCommentMask(lines []string, fenced []bool) []bool {
+	mask := make([]bool, len(lines))
+	inComment := false
+	for i, line := range lines {
+		if fenced[i] {
+			continue
+		}
+		if inComment {
+			mask[i] = true
+			if strings.Contains(line, "-->") {
+				inComment = false
+			}
+		} else if strings.Contains(line, "<!--") {
+			mask[i] = true
+			if !strings.Contains(line, "-->") {
+				inComment = true
+			}
+		}
+	}
+	return mask
+}
+
+// acceptanceHeader scans [start, end) for the criteria header line index, and the
+// block-end boundary. Both skip fenced lines. Returns headerLine=-1 if absent.
+func acceptanceHeader(lines []string, fenced []bool, start, end int) (headerLine, blockEnd int) {
+	headerLine = -1
+	for i := start; i < end; i++ {
 		if fenced[i] {
 			continue
 		}
@@ -624,10 +674,10 @@ func AcceptanceEvaluate(lines []string, fenced []bool, ml MLBlock) (met, unmet i
 		}
 	}
 	if headerLine < 0 {
-		return 0, 0, false
+		return -1, end
 	}
-	blockEnd := ml.End
-	for j := headerLine + 1; j < ml.End; j++ {
+	blockEnd = end
+	for j := headerLine + 1; j < end; j++ {
 		if fenced[j] {
 			continue
 		}
@@ -636,27 +686,87 @@ func AcceptanceEvaluate(lines []string, fenced []bool, ml MLBlock) (met, unmet i
 			break
 		}
 	}
+	return headerLine, blockEnd
+}
+
+// AcceptanceEvaluateFull implements rule 4 with the three-class breakdown introduced by
+// D2/D3/D6 (REQ #514 / ML-1A).
+//
+// Classification (D6/T3):
+//   - [x] or [X]                                        → Met
+//   - [ ] immediately followed (no blank line) by a     → Lapsed
+//     valid Caducou: continuation (≥2 leading spaces,
+//     non-empty text, not fenced, not HTML-commented)
+//   - [ ] without a valid Caducou: continuation         → Unmet
+//   - any other single character in [.]                 → Unmet +
+//     1-based line number recorded in UnrecognizedLines
+//
+// HasBlock is false when the header is absent or the criterion block is empty (same
+// anti-vacuity rule as AcceptanceEvaluate).
+//
+// Lines inside a fenced code block are skipped throughout (ADR decision 7, AC13-a).
+func AcceptanceEvaluateFull(lines []string, fenced []bool, ml MLBlock) AcceptanceDetail {
+	detail := AcceptanceDetail{UnrecognizedLines: []int{}}
+
+	headerLine, blockEnd := acceptanceHeader(lines, fenced, ml.Start, ml.End)
+	if headerLine < 0 {
+		return detail
+	}
+
+	htmlMask := htmlCommentMask(lines, fenced)
 
 	total := 0
-	unmetCount := 0
 	for i := headerLine + 1; i < blockEnd; i++ {
 		if fenced[i] {
 			continue
 		}
 		line := lines[i]
-		if UnmetCriterionRe.MatchString(line) {
-			total++
-			unmetCount++
+		if !CriterionLineRe.MatchString(line) {
 			continue
 		}
-		if CriterionLineRe.MatchString(line) {
-			total++
+		total++
+
+		switch {
+		case MetCriterionRe.MatchString(line):
+			detail.Met++
+
+		case UnmetCriterionRe.MatchString(line):
+			// Check for valid Caducou: continuation on the very next line.
+			next := i + 1
+			if next < blockEnd && !fenced[next] && !htmlMask[next] &&
+				LapsedContinuationRe.MatchString(lines[next]) {
+				detail.Lapsed++
+			} else {
+				detail.Unmet++
+			}
+
+		default:
+			// Unrecognized checkbox character (D6/T3): counts as pending.
+			detail.Unmet++
+			detail.UnrecognizedLines = append(detail.UnrecognizedLines, i+1)
 		}
 	}
-	if total == 0 {
-		return 0, 0, false
-	}
-	return total - unmetCount, unmetCount, true
+
+	detail.HasBlock = total > 0
+	return detail
+}
+
+// AcceptanceEvaluate implements rule 4. hasBlock is false both when the
+// acceptance header (English or Portuguese) is absent and when it is present but
+// the body between it and the next "**" line (or ML boundary) contains zero
+// "- [...]" criterion lines — an empty block is not vacuously passed, per the
+// contract. Lines inside a fenced code block are ignored throughout — for the
+// header search, for the "**" block-end boundary, and for counting criterion
+// lines — otherwise a cerca citing "**Critérios de aceite:**"/"- [x]" as an
+// example would forge acceptance evidence (ADR decision 7, AC13-a).
+//
+// Backward-compat wrapper over AcceptanceEvaluateFull. Lapsed criteria are
+// counted as unmet in this view — "toda contagem existente continua verdadeira"
+// (D2, REQ #514): the box is genuinely open. Callers that need the three-class
+// breakdown (barrier) use AcceptanceEvaluateFull directly.
+func AcceptanceEvaluate(lines []string, fenced []bool, ml MLBlock) (met, unmet int, hasBlock bool) {
+	d := AcceptanceEvaluateFull(lines, fenced, ml)
+	return d.Met, d.Unmet + d.Lapsed, d.HasBlock
 }
 
 // GateCmd is a gate command together with its 1-based line number in the

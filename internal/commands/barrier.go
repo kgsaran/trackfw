@@ -29,12 +29,17 @@ import (
 // Commands uses a pointer so that omitempty only suppresses the field when nil
 // (never present) — the gates check always sets a non-nil pointer, even to an
 // empty slice, so "commands" is always emitted for it and never for the others.
+//
+// Lapsed is a new field (D3, REQ #514 / ML-1A): informational messages for
+// acceptance criteria marked Caducou:. Present only on acceptance_evidence when
+// at least one lapsed criterion exists; omitempty keeps baseline JSON unchanged.
 type barrierCheck struct {
 	Name     string    `json:"name"`
 	Status   string    `json:"status"`
 	Commands *[]string `json:"commands,omitempty"`
 	Evidence []string  `json:"evidence"`
 	Failures []string  `json:"failures"`
+	Lapsed   []string  `json:"lapsed,omitempty"`
 }
 
 // barrierResult is the root JSON document emitted by --json.
@@ -190,6 +195,12 @@ func statusIsComplete(marker string) bool {
 
 func acceptanceEvaluate(lines []string, fenced []bool, ml mlBlock) (int, int, bool) {
 	return roadmapdoc.AcceptanceEvaluate(lines, fenced, ml)
+}
+
+// acceptanceEvaluateDetail wraps roadmapdoc.AcceptanceEvaluateFull for use inside
+// runBarrier. Returns the three-class breakdown (D3, REQ #514 / ML-1A).
+func acceptanceEvaluateDetail(lines []string, fenced []bool, ml mlBlock) roadmapdoc.AcceptanceDetail {
+	return roadmapdoc.AcceptanceEvaluateFull(lines, fenced, ml)
 }
 
 func parseGates(lines []string, waveStart, waveEnd int) ([]string, *barrierUsageError) {
@@ -795,16 +806,36 @@ func runBarrier(cmd *cobra.Command, roadmapArg string, waveLabel string, jsonOut
 	accCheck := barrierCheck{Name: "acceptance_evidence", Evidence: []string{}, Failures: []string{}}
 	accOK := len(mls) > 0
 	for _, ml := range mls {
-		met, unmet, hasBlock := acceptanceEvaluate(lines, fenced, ml)
+		detail := acceptanceEvaluateDetail(lines, fenced, ml)
 		switch {
-		case !hasBlock:
+		case !detail.HasBlock:
 			accOK = false
 			accCheck.Failures = append(accCheck.Failures, fmt.Sprintf("%s: no acceptance block", ml.ID))
-		case unmet > 0:
+
+		case detail.Unmet > 0:
+			// Pending (and unrecognized) criteria block the wave. Lapsed are shown
+			// separately even in a blocked ML, for visibility (T2, REQ #514).
 			accOK = false
-			accCheck.Failures = append(accCheck.Failures, fmt.Sprintf("%s: %d unmet acceptance criteria", ml.ID, unmet))
+			accCheck.Failures = append(accCheck.Failures, fmt.Sprintf("%s: %d unmet acceptance criteria", ml.ID, detail.Unmet))
+			for _, ln := range detail.UnrecognizedLines {
+				accCheck.Failures = append(accCheck.Failures, fmt.Sprintf("%s: unrecognized checkbox at line %d", ml.ID, ln))
+			}
+			if detail.Lapsed > 0 {
+				accCheck.Lapsed = append(accCheck.Lapsed, fmt.Sprintf("%s: %d lapsed acceptance criteria", ml.ID, detail.Lapsed))
+			}
+
+		case detail.Met == 0 && detail.Lapsed > 0:
+			// T8 (REQ #514 / ML-1A): all criteria lapsed — no real evidence. Blocked.
+			accOK = false
+			accCheck.Failures = append(accCheck.Failures, fmt.Sprintf("%s: all acceptance criteria lapsed", ml.ID))
+			accCheck.Lapsed = append(accCheck.Lapsed, fmt.Sprintf("%s: %d lapsed acceptance criteria", ml.ID, detail.Lapsed))
+
 		default:
-			accCheck.Evidence = append(accCheck.Evidence, fmt.Sprintf("%s: %d criteria met", ml.ID, met))
+			// At least one criterion met; lapsed ones are informational.
+			accCheck.Evidence = append(accCheck.Evidence, fmt.Sprintf("%s: %d criteria met", ml.ID, detail.Met))
+			if detail.Lapsed > 0 {
+				accCheck.Lapsed = append(accCheck.Lapsed, fmt.Sprintf("%s: %d lapsed acceptance criteria", ml.ID, detail.Lapsed))
+			}
 		}
 	}
 	if accOK {
@@ -931,6 +962,10 @@ func printBarrierText(cmd *cobra.Command, result barrierResult) {
 		fmt.Fprintf(out, "%s %s: %s\n", symbol, c.Name, c.Status)
 		for _, f := range c.Failures {
 			fmt.Fprintf(out, "    - %s\n", f)
+		}
+		// Lapsed criteria are informational ("~" prefix, distinct from "- " failures).
+		for _, l := range c.Lapsed {
+			fmt.Fprintf(out, "    ~ %s\n", l)
 		}
 	}
 	fmt.Fprintf(out, "\nresult: %s\n", result.Status)
