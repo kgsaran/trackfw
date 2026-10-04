@@ -80,10 +80,12 @@ demais parsers que a Wave 0 marcar como "precisa reconhecer".
 - O `barrier` conta "lapsed" à parte, no texto e no JSON.
 - **D6 (T3 e T8):** só `[x]`/`[X]` contam como atendido, e qualquer outra caixa conta como pendente, com a linha nomeada. ML com 0 atendidos e ≥ 1 caducado fica `blocked`. O texto "unmet acceptance criteria" não muda (pinado em `check-roadmap-barrier-contract.sh:984`).
 **Acceptance criteria:**
-- [ ] AC2 e AC3 com testes, mais uma fixture de ponta a ponta com o binário
-- [ ] Baseline do barrier (`internal/roadmapdoc/testdata/barrier-baseline.txt`) inalterado onde não há
+- [x] AC2 e AC3 com testes, mais uma fixture de ponta a ponta com o binário
+- [x] Baseline do barrier (`internal/roadmapdoc/testdata/barrier-baseline.txt`) inalterado onde não há
   `Caducou:`
-- [ ] `go test ./internal/roadmapdoc/ ./internal/commands/` verde
+- [x] `go test ./internal/roadmapdoc/ ./internal/commands/` verde
+
+      ✅ Auditoria do arquiteto, com o binário da branch e a fixture `scratchpad/fx514.sh`: ML `✅` com `[x]` + `[ ]`/`Caducou:` → "~ 1 lapsed" e não bloqueia; `[~]` → bloqueia nomeando a linha. 19 testes conferidos por `go test -list`. `git diff` em `internal/roadmapdoc/testdata/` vazio, ou seja, o baseline está intocado.
 
 **Gates da wave:**
 ```bash
