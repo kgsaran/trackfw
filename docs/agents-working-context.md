@@ -2,6 +2,16 @@
 
 ---
 
+## 2026-10-04 — Ares (fix/pesos-do-falsify-recalibrados-do-ci — corretivo ML-3A) — FIM
+
+**Início:** 2026-10-04 | Branch: `fix/pesos-do-falsify-recalibrados-do-ci`
+**Tarefa:** Corretivo ML-3A da REQ-2026-10-03 (#403) — dois defeitos em `check-falsify-recalibrate.sh` apontados por `make quality`: (A1) caminho interpolado dentro do código Python (`open('$DEST1')`), viola `check-interpolated-path-in-python`; (A2) ausência de `export PYTHONIOENCODING=utf-8`, viola `check-output-encoding-declared`.
+**Arquivos modificados:**
+- `scripts/check-falsify-recalibrate.sh` — linha 129: `open('$DEST1')` → `open(sys.argv[1])` com `"$DEST1"` passado por argv; adicionado `export PYTHONIOENCODING=utf-8` após `set -euo pipefail`.
+**Resultado:** check-interpolated-path-in-python rc=0; check-falsify-recalibrate 6/6 PASS rc=0; parity-rest EXIT=0 (1971 linhas).
+
+---
+
 ## 2026-10-04 — Ares (fix/pesos-do-falsify-recalibrados-do-ci — corretivo+ML-2A) — FIM
 
 **Início:** 2026-10-04 | Branch: `fix/pesos-do-falsify-recalibrados-do-ci`
@@ -44489,3 +44499,17 @@ Ajustes críticos: A1 (`--repo` explícito), A2 (`baseRefName` no filtro), A3 (`
 - Medido: 106 rótulos sem peso calibrado; pesos de 2026-09-08 (#295); shards de CI 57–113 s contra `parity-other-gates` 150–200 s (o caminho crítico é este, não o falsify).
 - Decisão do KG: corrigir a fonte (o CI grava as marcas, `make falsify-recalibrate RUN=<id>`, recalibrar agora, linha de resumo sem gate).
 - #408 fechada sem mudança: a premissa foi falsificada (o número aparece no `windows-full-suites`).
+
+## 2026-10-04 — hefesto-tf (fix/pesos-do-falsify-recalibrados-do-ci — ML-3A) — INÍCIO
+
+**Início:** 2026-10-04 | Branch: `fix/pesos-do-falsify-recalibrados-do-ci`
+**Tarefa:** ML-3A — Revisão de qualidade + gate completo (REQ-2026-10-03, #403)
+**Entregável:** `docs/qualidade/2026-10-03-revisao-recalibracao-pesos-falsify.md`
+
+## 2026-10-04 — hefesto-tf (fix/pesos-do-falsify-recalibrados-do-ci — ML-3A) — FIM
+
+**Fim:** 2026-10-04 | Branch: `fix/pesos-do-falsify-recalibrados-do-ci`
+**Entregável:** `docs/qualidade/2026-10-03-revisao-recalibracao-pesos-falsify.md`
+**Veredito:** REPROVA — EXIT=2.
+- A1 (bloqueador): `scripts/check-falsify-recalibrate.sh:131` — caminho `$DEST1` interpolado dentro do corpo Python (`open('$DEST1')`). Gate `check-interpolated-path-in-python` falha. Correção: `open(sys.argv[1])` + `"$DEST1"` como argumento.
+- Todo o restante do diff (falsify-recalibrate.sh, gen-falsify-scenario-weights.py, gen-falsify-chunks.py, quality.yml, Makefile) está correto e condizente com ADR D1–D5. O autoteste passa 6/6 isoladamente.

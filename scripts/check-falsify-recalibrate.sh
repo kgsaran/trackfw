@@ -19,6 +19,7 @@
 #   S2: desativa a verificação de timing ausente (passo d) e mostra que o braço
 #       do shard faltando REPROVA (o script aceita shard ausente → era o passo (d)).
 set -euo pipefail
+export PYTHONIOENCODING=utf-8
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -128,10 +129,10 @@ elif [[ ! -f "$DEST1" ]]; then
   _fail "completo/json-exists" "JSON de destino nao foi criado"
 elif ! python3 -c "
 import json, sys
-d = json.load(open('$DEST1'))
+d = json.load(open(sys.argv[1]))
 w = d.get('weights', d)
 sys.exit(0 if 'r0' in w else 1)
-" 2>/dev/null; then
+" "$DEST1" 2>/dev/null; then
   _fail "completo/json-r0" "JSON nao contem chave r0 em weights: $(cat "$DEST1" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(list(d.get("weights",d).keys()))' 2>/dev/null | strip_cr || cat "$DEST1")"
 else
   _ok "completo" "exit 0 e JSON contem weights.r0"
