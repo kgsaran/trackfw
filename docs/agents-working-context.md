@@ -2,6 +2,20 @@
 
 ---
 
+## 2026-10-04 — Apolo (fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel — ML-1A) — FIM
+
+**Início:** 2026-10-04 | Branch: `fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel`
+**Tarefa:** ML-1A da REQ-2026-10-04 (#514) — reconhecimento de critério caducado (`Caducou:`), breakdown 3 classes (met/unmet/lapsed), D6/T3 (checkbox não reconhecido), D6/T8 (todos caducados bloqueia).
+**Arquivos modificados:**
+- `internal/roadmapdoc/roadmapdoc.go` — adicionados `MetCriterionRe`, `LapsedContinuationRe`, struct `AcceptanceDetail`, funções `htmlCommentMask`, `acceptanceHeader`, `AcceptanceEvaluateFull`; `AcceptanceEvaluate` virou wrapper thin.
+- `internal/commands/barrier.go` — campo `Lapsed []string` em `barrierCheck`, lógica de 3 classes no loop de MLs, render `~ ` em `printBarrierText`.
+- `internal/commands/barrier_contract_test.go` — campo `Lapsed` em `barrierCheckDoc`.
+- `internal/roadmapdoc/acceptance_lapsed_test.go` — 15 testes novos (arquivo novo).
+- `internal/commands/barrier_lapsed_test.go` — 4 testes E2E (arquivo novo).
+**Resultado:** go build PASS · go vet PASS · go test ./internal/roadmapdoc/ ./internal/commands/ PASS · check-roadmap-barrier-contract 49 cenários OK. Prova de mordida: 13 sabotagens executadas, todas com FAIL set previsto.
+
+---
+
 ## 2026-10-04 — Ares (fix/pesos-do-falsify-recalibrados-do-ci — corretivo ML-3A) — FIM
 
 **Início:** 2026-10-04 | Branch: `fix/pesos-do-falsify-recalibrados-do-ci`
@@ -44526,3 +44540,216 @@ Ajustes críticos: A1 (`--repo` explícito), A2 (`baseRefName` no filtro), A3 (`
 - REQ-2026-10-03 (pesos do falsify) → Done, com evidência por AC (AC1–AC9); roadmap → `done/`; label `req-aberta` removida da #403.
 - Vault: `recalibrar-pesos-do-falsify-exige-run-de-pr-e-blocos-sem-rotulo-dividem-um-peso-2026-10-04.md`.
 - Issues abertas restantes: #421 (exige a VM Windows).
+
+## 2026-10-04 — zeus-tf — INÍCIO: #514 (critério caducado e cortes por data)
+
+- Medido com o binário da `main` numa fixture: quem trava é o `barrier` (conta `- [ ]` em ML `✅`) e o `move … done` (ML `❌`), não o `validate`. Das 196 REQs `Done`, 113 têm caixa aberta. Há 4 roadmaps fora de `done/` sem Wave 0, e eles não chegam lá.
+- Decisão do KG: nenhum estado novo.
+- ADR:
+  - linha `Caducou:`, sem token novo;
+  - regra nova `req_done_open_criteria` como warning, com corte na data de entrada (2026-10-04; direção oposta à do `req_has_roadmap`);
+  - corte de 2026-09-18 para a exigência de Wave 0.
+
+## 2026-10-04 — hades-tf — INÍCIO: ML-0A da REQ-2026-10-04 (#514 — critério caducado e cortes)
+
+- Lendo ADR D1–D5 e roadmap ML-0A; rodando fixture fx514.sh; enumerando parsers em `internal/` e `scripts/`.
+
+## 2026-10-04 — hades-tf — FECHAMENTO: ML-0A da REQ-2026-10-04 (#514)
+
+Arquivo produzido: `docs/seguranca/2026-10-04-wave0-criterio-caducado-e-cortes.md` (363 linhas).
+
+Parsers fechados (7): P1 `roadmapdoc.AcceptanceEvaluate` e P2 `barrier` precisam reconhecer
+`Caducou:` (D2/D3); P4 e P6 precisam do corte D5; P3, P5, P7 não precisam.
+
+Achados notáveis para o apolo-tf:
+- `[~]`, `[-]`, `[?]` contam como met (bypass pré-existente mais barato que Caducou:).
+- `reqFilenameDateRe = ^REQ-(\d{4}-\d{2}-\d{2})` não casa roadmaps — exige `roadmapCreationDate` separada.
+- 33 roadmaps em done/ com data no sufixo sem fm date ficam ilegíveis para o corte D5.
+- Wave 0 all-lapsed → passed com zero evidência após D3 (resíduo R5, mitigação recomendada para ML-2A).
+- `scripts/check-roadmap-barrier-contract.sh:984` pina "unmet acceptance criteria" e precisará atualização.
+
+## 2026-10-04 — apolo-tf (fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel — ML-1A) — INÍCIO
+
+**Início:** 2026-10-04 | Branch: `fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel`
+**Tarefa:** ML-1A da REQ-2026-10-04 (#514) — parser reconhece critério caducado (`Caducou:`), `barrier` passa a contar "lapsed", reconhecer só `[ ]`/`[x]`/`[X]` e bloquear ML onde todos os critérios caducaram.
+**Escopo:**
+- `internal/roadmapdoc/roadmapdoc.go`: `AcceptanceEvaluateFull` (novo), `AcceptanceEvaluate` vira wrapper, `MetCriterionRe` e `LapsedContinuationRe` novos, `htmlCommentMask` novo.
+- `internal/commands/barrier.go`: `barrierCheck.Lapsed`, lógica de aceite, `printBarrierText`.
+- Testes novos em `internal/roadmapdoc/` e `internal/commands/`.
+- Sem tocar `validators/`, `generators/roadmap.go` — escopo do ML-1B.
+
+## 2026-10-04 — apolo-tf (fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel — ML-1A) — FIM
+
+**Fim:** 2026-10-04 | Branch: `fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel`
+**Arquivos modificados:**
+- `internal/roadmapdoc/roadmapdoc.go` — novos: `MetCriterionRe`, `LapsedContinuationRe`, tipo `AcceptanceDetail`, funções `htmlCommentMask`, `acceptanceHeader`, `AcceptanceEvaluateFull`; `AcceptanceEvaluate` virou wrapper sobre `AcceptanceEvaluateFull`.
+- `internal/commands/barrier.go` — `barrierCheck.Lapsed`, wrapper `acceptanceEvaluateDetail`, lógica do loop de aceite, `printBarrierText` (renderiza `~ <lapsed>`).
+- `internal/commands/barrier_contract_test.go` — campo `Lapsed []string` adicionado a `barrierCheckDoc`.
+- `internal/roadmapdoc/acceptance_lapsed_test.go` — 13 novos testes unitários (D2/D3/D6/T3).
+- `internal/commands/barrier_lapsed_test.go` — 3 novos testes E2E (D3 passed, T3 blocked, T8 blocked).
+**Gates:**
+- `go build ./...` — exit 0
+- `go vet ./internal/roadmapdoc/ ./internal/commands/` — exit 0
+- `go test ./internal/roadmapdoc/ ./internal/commands/ -count=1` — exit 0
+- `bash scripts/check-roadmap-barrier-contract.sh` — exit 0 (49 cenários OK)
+
+## 2026-10-04 — apolo-tf (fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel — ML-1B) — INÍCIO
+
+**Início:** 2026-10-04 | Branch: `fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel`
+**Tarefa:** ML-1B da REQ-2026-10-04 (#514): regra `req_done_open_criteria` (D4), corte por data para Wave 0 (D5), `roadmapCreationDate` (D6/T7), `roadmap show --json` com `lapsed`, `docs/cli-parity.md`.
+**Medições:**
+- 211 Done REQs; 126 com `- [ ]` na seção AC; 0 com data ≥ 2026-10-04 → 126 isentas, 0 individuais
+- 4 roadmaps fora de `done/` sem Wave 0 (datas: 2026-09-08, 2026-09-09, 2026-09-12 × 2) — todos < 2026-09-18
+- `Wave0GateDiagnosis` sem Wave 0 → `Wave0GateOK` (sem conflito com gate_coverage)
+- Fixture existente `date: 2026-09-18` → NÃO isenta (< estrito), testes passam
+**Escopo:**
+- `internal/validator/validator_req_done_criteria.go` (novo): D4 rule, helper `countREQOpenCriteria`
+- `internal/validator/validator_req_roadmap_cutoff.go`: adiciona `roadmapWave0Cutoff`, `RoadmapCreationDate`, `RoadmapWave0CutoffDate`
+- `internal/validator/validator_roadmap_gates.go`: cutoff D5 no wave0_required
+- `internal/validator/validator.go`: ruleDefaults + wiring (2 sites)
+- `internal/generators/roadmap.go`: cutoff D5 no move→done
+- `internal/generators/roadmap_show_json.go`: `Lapsed` field, `AcceptanceEvaluateFull`
+- `docs/cli-parity.md`: Caducou:, req_done_open_criteria, cortes
+- Testes: `validator_req_done_criteria_test.go`, `validator_roadmap_wave0_cutoff_test.go`
+
+## 2026-10-04 — apolo-tf (fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel — ML-1B) — FIM
+
+**Fim:** 2026-10-04 | Branch: `fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel`
+**Status:** ML-1B ✅ Concluído
+**Evidências:**
+- `go build ./...` → exit 0
+- `go vet ./...` → exit 0
+- `go test ./... -count=1` → all packages OK (validator 13.452s, generators 34.366s)
+- `make parity-rest` → EXIT=0
+- `trackfw validate` → 0 violations, 165 warnings (126 do req_done_open_criteria notice correto)
+- D5 measurement: 4 roadmaps pré-cutoff passam no move→done com "Wave 0 not required: roadmap dated YYYY-MM-DD, before 2026-09-18"
+- 20 novos testes: 10 D4 (validator_req_done_criteria_test.go) + 10 D5 (validator_roadmap_wave0_cutoff_test.go) — todos verdes
+**Arquivos modificados:**
+- `internal/validator/validator_req_done_criteria.go` (novo)
+- `internal/validator/validator_req_done_criteria_test.go` (novo)
+- `internal/validator/validator_roadmap_wave0_cutoff_test.go` (novo)
+- `internal/validator/validator_req_roadmap_cutoff.go` (D5: RoadmapWave0Cutoff, RoadmapCreationDate, roadmapWave0ExemptNotice)
+- `internal/validator/validator_roadmap_gates.go` (D5 cutoff, novo retorno wave0ExemptNotice)
+- `internal/validator/validator.go` (ruleDefaults + wiring D4)
+- `internal/generators/roadmap.go` (D5 cutoff no move→done)
+- `internal/generators/roadmap_show_json.go` (Lapsed field, AcceptanceEvaluateFull)
+- `docs/cli-parity.md` (Caducou: contract, req_done_open_criteria, Wave 0 date cutoff)
+- `docs/roadmaps/wip/ROADMAP-2026-10-04-…md` (ML-1B → ✅)
+
+## 2026-10-04 — apolo-tf (fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel — ML-1C) — INÍCIO
+
+**Início:** 2026-10-04 | Branch: `fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel`
+**Status:** ML-1C 🔄 Em andamento
+**Escopo:** Corretivo ML-1B — 2 chamadores sem teste + provas de mordida sem sabotagem real
+**Trabalho em progresso:**
+- 4 testes de gate D5 no move→done em `internal/generators/` (novo arquivo roadmap_move_wave0_cutoff_test.go)
+- 1 teste do campo `lapsed` no show --json (adicionado a roadmap_show_json_test.go)
+- 6 sabotagens executadas e restauradas (S1–S6), todas derrubam pelo menos 1 teste
+- Remoção dos dois TestXxx_ProvaDeModida que não sabotavam; correção dos header comments
+
+## 2026-10-04 — apolo-tf (fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel — ML-1C) — FIM
+
+**Fim:** 2026-10-04 | Branch: `fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel`
+**Status:** ML-1C ✅ Concluído
+**Evidências:**
+- `go build ./...` → EXIT=0
+- `go vet ./...` → EXIT=0
+- `go test ./internal/... -count=1` → todos os packages OK
+- `make parity-rest` → EXIT=0
+- `trackfw validate` → 0 violations, 174 warnings (mesmos que ML-1B)
+- 6 sabotagens (S1–S6) aplicadas, testadas e restauradas; todas derrubam ≥1 teste
+- `git diff --stat HEAD` → apenas test files + docs/agents-working-context.md; nenhum production file alterado
+**Arquivos modificados:**
+- `internal/generators/roadmap_move_wave0_cutoff_test.go` (novo — 4 testes D5 gate no move→done)
+- `internal/generators/roadmap_show_json_test.go` (+ TestRoadmapShowJSON_LapsedFieldIsPopulated)
+- `internal/validator/validator_req_done_criteria_test.go` (removido ProvaDeModida; header corrigido)
+- `internal/validator/validator_roadmap_wave0_cutoff_test.go` (removido ProvaDeModida + import time; header corrigido)
+- `docs/agents-working-context.md` (este arquivo)
+
+## 2026-10-04 — hades-tf (fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel — ML-2A) — INÍCIO
+
+**Início:** 2026-10-04 | Branch: `fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel`
+**Status:** ML-2A 🔄 Em andamento
+**Escopo:** Revisão de segurança Wave 2 — veredito por cenário T1–T8, R1–R6, D4/D5
+**Trabalho em progresso:**
+- Binário compilado em /private/tmp/claude-501/tf514h
+- 17 vetores de falsificação executados com saídas verificadas
+- Escrevendo docs/seguranca/2026-10-04-wave2-revisao-criterio-caducado.md
+
+## 2026-10-04 — hades-tf (fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel — ML-2A) — FIM
+
+**Fim:** 2026-10-04 | Branch: `fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel`
+**Status:** ML-2A ✅ Concluído
+**Evidências:**
+- 17 vetores executados: T1-a/b/c/d/e/f/g/h/i, T3 tilde/dash, T8 wave0-lapsed, D5-A/B/C, D4-A/B/C
+- Todos os resíduos R3/R5/R6 da Wave 0 confirmados como ELIMINADOS
+- Resíduos R1/R2/R4 confirmados como permanentes e dentro do escopo declarado pela ADR
+- Nenhum bypass encontrado além dos resíduos declarados
+- Veredito: APROVA COM AJUSTE (1 ajuste de visibilidade, não de segurança)
+**Arquivos criados:**
+- `docs/seguranca/2026-10-04-wave2-revisao-criterio-caducado.md`
+- `docs/agents-working-context.md` (este arquivo)
+
+## 2026-10-04 — hefesto-tf (fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel — ML-2B) — INÍCIO
+
+**Início:** 2026-10-04 | Branch: `fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel`
+**Status:** ML-2B 🔄 Em andamento
+**Escopo:** Revisão de qualidade + gate completo dos MLs 1A–1D (REQ #514)
+
+---
+
+## 2026-10-04 — apolo-tf (fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel — ML-1D) — INÍCIO
+
+**Início:** 2026-10-04 | Branch: `fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel`
+**Status:** ML-1D 🔄 Em andamento
+**Escopo:** Ajuste 1 da Wave 2 — barrier exibe justificativas dos critérios caducados (texto + linha) no texto e no JSON
+**Trabalho em progresso:**
+- AcceptanceDetail ganha LapsedReasons []LapsedReason
+- barrierCheck ganha LapsedDetails []barrierLapsedDetail (JSON: lapsed_details)
+- printBarrierText imprime `      line N: Caducou: <text>` após cada grupo de ~ lapsed
+- 2 testes novos + prova de mordida
+
+## 2026-10-04 — hefesto-tf (fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel — ML-2B) — FIM
+
+**Fim:** 2026-10-04 | Branch: `fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel`
+**Status:** ML-2B ✅ Concluído
+**Veredito:** APROVA
+**Evidências:**
+- `make quality` EXIT=0, 18/18 packages, suite completa 347 OK / 0 FAIL
+- cli-parity.md declara mudança de semântica do `unmet` e todos os novos contratos
+- Achado BAIXO: duplicação de ~7 linhas de frontmatter parsing entre `reqCreationDate` e `RoadmapCreationDate` — não bloqueante
+- Relatório em `docs/qualidade/2026-10-04-revisao-criterio-caducado.md`
+
+---
+
+## 2026-10-04 — apolo-tf (fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel — ML-1D) — FIM
+
+**Fim:** 2026-10-04 | Branch: `fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel`
+**Status:** ML-1D ✅ Concluído
+**Evidências:**
+- `go build ./...` → EXIT=0
+- `go vet ./...` → EXIT=0
+- `go test ./internal/... -count=1` → todos os 20 packages OK
+- `make parity-rest` → EXIT=0
+- Sabotagem S1 (appendLapsedDetails retorna nil): TestBarrierLapsed_JustificationInTextAndJSON e TestBarrierLapsed_JustificationTruncatedAt120 falharam; restaurado e tudo verde
+- Baseline barrier-baseline.txt: 0 ocorrências de lapsed/Caducou/lapsed_details (inalterado)
+**Arquivos modificados:**
+- `internal/roadmapdoc/roadmapdoc.go` (LapsedReason struct, LapsedReasons field em AcceptanceDetail, extractLapsedReason helper, AcceptanceEvaluateFull popula LapsedReasons)
+- `internal/commands/barrier.go` (barrierLapsedDetail struct, LapsedDetails field em barrierCheck, appendLapsedDetails helper, 3 sítios de chamada, printBarrierText imprime `      line N: Caducou: <text>`)
+- `internal/commands/barrier_contract_test.go` (barrierLapsedDetailDoc struct, LapsedDetails field em barrierCheckDoc)
+- `internal/commands/barrier_lapsed_test.go` (TestBarrierLapsed_JustificationInTextAndJSON, TestBarrierLapsed_JustificationTruncatedAt120)
+- `docs/cli-parity.md` (frase sobre lapsed_details na seção Caducou:)
+- `docs/agents-working-context.md` (este arquivo)
+
+## 2026-10-04 — zeus-tf — FIM (implementação): #514 (critério caducado e cortes por data)
+
+- Entregue:
+  - `Caducou:` com justificativa conta como "lapsed" no `barrier`, que mostra a justificativa; só `[x]`/`[X]` contam como atendido, e `[~]` passou a bloquear (era um atalho pré-existente, absorvido); ML só de caducados bloqueia;
+  - `req_done_open_criteria`: warning, com corte em 2026-10-04; 126 isentas numa linha agregada;
+  - corte de 2026-09-18 da exigência de Wave 0, nos dois chamadores, com `RoadmapCreationDate` própria;
+  - `show --json` com `lapsed`.
+- Corretivos: ML-1C (testes do `move … done` e mordida de verdade) e ML-1D (justificativa visível).
+- Erros meus:
+  - a primeira medição contou 113/196 por aceitar só `status: Done` exato;
+  - um commit saiu com o barrier bloqueado porque o `| tail` mascarou o exit code.
+- `make quality` EXIT=0 (2933 linhas). Pendente: PR, quando o KG pedir.

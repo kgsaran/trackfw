@@ -127,3 +127,71 @@ func reqRoadmapGrandfatherNotice(exempt, enforced, scanned int) string {
 		exempt, reqRoadmapCutoff, enforced, scanned,
 	)
 }
+
+// ---------------------------------------------------------------------------
+// D5 (ADR-2026-10-04, REQ #514 ML-1B) — corte por data da exigência de Wave 0.
+//
+// Roadmap com data ESTRITAMENTE ANTES de 2026-09-18 (data da ADR-2026-09-18 que
+// criou a exigência) fica isento da exigência de ## Wave 0, em todos os chamadores:
+// o gate do `move … done` e a regra `roadmap_wave0_required`.
+//
+// Medido: 4 roadmaps fora de done/ sem Wave 0 (3 backlog/, 1 blocked/), datas entre
+// 2026-09-08 e 2026-09-12 — todos antes do corte.
+//
+// Régua de data (D6/T7): `date:` do frontmatter primeiro, depois a PRIMEIRA
+// `AAAA-MM-DD` no basename do arquivo. Cobre tanto `ROADMAP-AAAA-MM-DD-slug.md`
+// quanto `slug-AAAA-MM-DD.md`. Sem data legível → sem isenção (fail-closed).
+// ---------------------------------------------------------------------------
+
+// RoadmapWave0Cutoff é a data de entrada da exigência de Wave 0 (ADR-2026-09-18).
+// Roadmaps com data ESTRITAMENTE ANTES desta data são isentos.
+// Exported so generators/roadmap.go can use it in the exemption notice.
+const RoadmapWave0Cutoff = "2026-09-18"
+
+// RoadmapWave0CutoffDate devolve o corte parseado. Literal constante e validado
+// por teste; em caso de edição inválida devolve zero de time.Time (fail-closed:
+// torna TODOS os roadmaps não-isentos).
+func RoadmapWave0CutoffDate() time.Time {
+	d, err := time.Parse("2006-01-02", RoadmapWave0Cutoff)
+	if err != nil {
+		return time.Time{}
+	}
+	return d
+}
+
+// roadmapFilenameDateRe casa a PRIMEIRA ocorrência de AAAA-MM-DD no basename.
+// Diferente do reqFilenameDateRe (âncora ^REQ-), aqui não há âncora, pois a data
+// pode aparecer em qualquer posição: `ROADMAP-AAAA-MM-DD-slug.md` ou
+// `slug-AAAA-MM-DD.md`.
+var roadmapFilenameDateRe = regexp.MustCompile(`(\d{4}-\d{2}-\d{2})`)
+
+// RoadmapCreationDate resolve a data de criação de um roadmap: `date:` do
+// frontmatter primeiro, primeira AAAA-MM-DD do basename como fallback. O segundo
+// retorno é false quando nenhuma das duas é legível — e o chamador trata isso como
+// pós-corte (fail-closed, mesma semântica do reqCreationDate).
+func RoadmapCreationDate(content, path string) (time.Time, bool) {
+	if raw := strings.TrimSpace(extractFrontmatterField(content, "date")); raw != "" {
+		v := strings.Trim(raw, "\"'`")
+		if len(v) >= 10 {
+			if d, err := time.Parse("2006-01-02", v[:10]); err == nil {
+				return d, true
+			}
+		}
+	}
+	if m := roadmapFilenameDateRe.FindStringSubmatch(filepath.Base(path)); m != nil {
+		if d, err := time.Parse("2006-01-02", m[1]); err == nil {
+			return d, true
+		}
+	}
+	return time.Time{}, false
+}
+
+// roadmapWave0ExemptNotice é a mensagem que torna a isenção do Wave 0 VISÍVEL.
+// Emitida uma única vez como warning (applyRuleWarnOnly) quando pelo menos um
+// roadmap wip/ foi isento do roadmap_wave0_required.
+func roadmapWave0ExemptNotice(count int) string {
+	return fmt.Sprintf(
+		"roadmap_wave0_required: %d roadmap(s) in wip/ exempt from Wave 0 requirement as dated before %s (ADR-2026-09-18 decision 8; cutoff declared in internal/validator/validator_req_roadmap_cutoff.go)",
+		count, RoadmapWave0Cutoff,
+	)
+}

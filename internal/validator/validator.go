@@ -220,6 +220,9 @@ var ruleDefaults = map[string]string{
 	"req_roadmap_sync": "warning",
 	// roadmap_wave0_required, roadmap_gate_coverage, roadmap_duplicate_label are absent:
 	// they fall through to "error" (ML-4A, REQ #392 — all pre-existing sítios sanitized).
+	// D4 (ADR-2026-10-04, REQ #514 ML-1B): new rule, born as warning — endure in "error" is a
+	// future decision. Corte retroativo proibido (113 REQs Done com caixa aberta, pré-corte).
+	"req_done_open_criteria": "warning",
 }
 
 // ruleSeverity retorna a severidade configurada para a regra.
@@ -896,6 +899,16 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	}
 	applyRule("adr_accepted_when_req_done", adrAcceptedViolations, &violations, &warnings)
 
+	// D4 (ADR-2026-10-04, REQ #514 ML-1B): req_done_open_criteria — Done REQ with open AC box.
+	// Severity "warning" (ruleDefaults). Pre-cutoff REQs are exempt; visible in notice.
+	reqDoneOpenViolations, reqDoneOpenExempt, reqDoneOpenEnforced, reqDoneOpenScanned, e := validateREQDoneOpenCriteria()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRule("req_done_open_criteria", reqDoneOpenViolations, &violations, &warnings)
+	// Aggregated notice: always emitted when Done REQs were scanned (even with 0 exempt).
+	applyRuleWarnOnly("req_done_open_criteria", reqDoneOpenCriteriaAlwaysWarn(reqDoneOpenViolations, reqDoneOpenExempt, reqDoneOpenEnforced, reqDoneOpenScanned), &warnings)
+
 	frontmatterViolations := validateFrontmatterPresence()
 	violations = append(violations, frontmatterViolations...) // sem regra configurável
 
@@ -1031,8 +1044,11 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	// validator_roadmap_gates.go header for the retroactivity argument).
 	// duplicate_label: wip/ + blocked/ (structural error, not convention-age-sensitive).
 	// None applies to backlog/analyzing (decision 6-bis) or done/ (decision 7/8).
-	wave0Msgs, gateMsgs, dupMsgs := validateRoadmapGatesCoverage()
+	wave0Msgs, wave0ExemptNotice, gateMsgs, dupMsgs := validateRoadmapGatesCoverage()
 	applyRule("roadmap_wave0_required", wave0Msgs, &violations, &warnings)
+	// D5: the exemption notice is always a warning (isenção visível), regardless of
+	// the roadmap_wave0_required severity, so it goes through applyRuleWarnOnly.
+	applyRuleWarnOnly("roadmap_wave0_required", wave0ExemptNotice, &warnings)
 	applyRule("roadmap_gate_coverage", gateMsgs, &violations, &warnings)
 	applyRule("roadmap_duplicate_label", dupMsgs, &violations, &warnings)
 
@@ -1259,6 +1275,15 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 	}
 	applyRuleTagged("adr_accepted_when_req_done", adrAcceptedViolations, &violations, &warnings)
 
+	// D4 (ADR-2026-10-04, REQ #514 ML-1B): tagged mirror of ValidateUnfiltered block.
+	// 🔴 Forgetting this Tagged site makes req_done_open_criteria vanish from --json.
+	reqDoneOpenViolationsT, reqDoneOpenExemptT, reqDoneOpenEnforcedT, reqDoneOpenScannedT, e := validateREQDoneOpenCriteria()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleTagged("req_done_open_criteria", reqDoneOpenViolationsT, &violations, &warnings)
+	applyRuleWarnOnlyTagged("req_done_open_criteria", reqDoneOpenCriteriaAlwaysWarn(reqDoneOpenViolationsT, reqDoneOpenExemptT, reqDoneOpenEnforcedT, reqDoneOpenScannedT), &warnings)
+
 	frontmatterViolations := validateFrontmatterPresence()
 	for _, m := range frontmatterViolations {
 		violations = append(violations, TaggedMsg{Rule: "", Msg: m})
@@ -1397,8 +1422,10 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 
 	// ML-3B/ML-4B (REQ #392): mirror of ValidateUnfiltered block — same rules, same order.
 	// 🔴 Forgetting this Tagged site makes the rules vanish from --json without a compile error.
-	wave0MsgsT, gateMsgsT, dupMsgsT := validateRoadmapGatesCoverage()
+	wave0MsgsT, wave0ExemptNoticeT, gateMsgsT, dupMsgsT := validateRoadmapGatesCoverage()
 	applyRuleTagged("roadmap_wave0_required", wave0MsgsT, &violations, &warnings)
+	// D5: same as the untagged site — exemption notice is always a warning.
+	applyRuleWarnOnlyTagged("roadmap_wave0_required", wave0ExemptNoticeT, &warnings)
 	applyRuleTagged("roadmap_gate_coverage", gateMsgsT, &violations, &warnings)
 	applyRuleTagged("roadmap_duplicate_label", dupMsgsT, &violations, &warnings)
 

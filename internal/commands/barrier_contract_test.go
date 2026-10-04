@@ -231,12 +231,19 @@ func setupBarrierFixture(t *testing.T, cfg barrierFixtureConfig) (string, string
 // Documento JSON — espelha o contrato de docs/cli-parity.md
 // ────────────────────────────────────────────────────────────────────────────
 
+type barrierLapsedDetailDoc struct {
+	Line int    `json:"line"`
+	Text string `json:"text"`
+}
+
 type barrierCheckDoc struct {
-	Name     string   `json:"name"`
-	Status   string   `json:"status"`
-	Evidence []string `json:"evidence"`
-	Failures []string `json:"failures"`
-	Commands []string `json:"commands,omitempty"`
+	Name          string                   `json:"name"`
+	Status        string                   `json:"status"`
+	Evidence      []string                 `json:"evidence"`
+	Failures      []string                 `json:"failures"`
+	Commands      []string                 `json:"commands,omitempty"`
+	Lapsed        []string                 `json:"lapsed,omitempty"`        // D3, REQ #514 / ML-1A
+	LapsedDetails []barrierLapsedDetailDoc `json:"lapsed_details,omitempty"` // ML-1D, REQ #514
 }
 
 type barrierResultDoc struct {

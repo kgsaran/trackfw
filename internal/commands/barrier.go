@@ -25,16 +25,32 @@ import (
 // JSON result document — field order and shape pinned by docs/cli-parity.md.
 // ────────────────────────────────────────────────────────────────────────────
 
+// barrierLapsedDetail carries the 1-based document line number and trimmed
+// justification text for one lapsed acceptance criterion (ML-1D, REQ #514).
+// Emitted in JSON as {"line": N, "text": "..."}.
+type barrierLapsedDetail struct {
+	Line int    `json:"line"`
+	Text string `json:"text"`
+}
+
 // barrierCheck is one evaluated check inside the result document.
 // Commands uses a pointer so that omitempty only suppresses the field when nil
 // (never present) — the gates check always sets a non-nil pointer, even to an
 // empty slice, so "commands" is always emitted for it and never for the others.
+//
+// Lapsed is a new field (D3, REQ #514 / ML-1A): informational messages for
+// acceptance criteria marked Caducou:. Present only on acceptance_evidence when
+// at least one lapsed criterion exists; omitempty keeps baseline JSON unchanged.
+// LapsedDetails (ML-1D, REQ #514): per-criterion justification objects; parallel
+// to Lapsed, present only when at least one lapsed criterion exists.
 type barrierCheck struct {
-	Name     string    `json:"name"`
-	Status   string    `json:"status"`
-	Commands *[]string `json:"commands,omitempty"`
-	Evidence []string  `json:"evidence"`
-	Failures []string  `json:"failures"`
+	Name          string                `json:"name"`
+	Status        string                `json:"status"`
+	Commands      *[]string             `json:"commands,omitempty"`
+	Evidence      []string              `json:"evidence"`
+	Failures      []string              `json:"failures"`
+	Lapsed        []string              `json:"lapsed,omitempty"`
+	LapsedDetails []barrierLapsedDetail `json:"lapsed_details,omitempty"`
 }
 
 // barrierResult is the root JSON document emitted by --json.
@@ -190,6 +206,22 @@ func statusIsComplete(marker string) bool {
 
 func acceptanceEvaluate(lines []string, fenced []bool, ml mlBlock) (int, int, bool) {
 	return roadmapdoc.AcceptanceEvaluate(lines, fenced, ml)
+}
+
+// acceptanceEvaluateDetail wraps roadmapdoc.AcceptanceEvaluateFull for use inside
+// runBarrier. Returns the three-class breakdown (D3, REQ #514 / ML-1A).
+func acceptanceEvaluateDetail(lines []string, fenced []bool, ml mlBlock) roadmapdoc.AcceptanceDetail {
+	return roadmapdoc.AcceptanceEvaluateFull(lines, fenced, ml)
+}
+
+// appendLapsedDetails converts roadmapdoc.LapsedReason values into barrierLapsedDetail
+// entries and appends them to dst. It is the single mapping site between the
+// roadmapdoc layer and the barrier JSON contract (ML-1D, REQ #514).
+func appendLapsedDetails(dst []barrierLapsedDetail, reasons []roadmapdoc.LapsedReason) []barrierLapsedDetail {
+	for _, r := range reasons {
+		dst = append(dst, barrierLapsedDetail{Line: r.Line, Text: r.Text})
+	}
+	return dst
 }
 
 func parseGates(lines []string, waveStart, waveEnd int) ([]string, *barrierUsageError) {
@@ -795,16 +827,39 @@ func runBarrier(cmd *cobra.Command, roadmapArg string, waveLabel string, jsonOut
 	accCheck := barrierCheck{Name: "acceptance_evidence", Evidence: []string{}, Failures: []string{}}
 	accOK := len(mls) > 0
 	for _, ml := range mls {
-		met, unmet, hasBlock := acceptanceEvaluate(lines, fenced, ml)
+		detail := acceptanceEvaluateDetail(lines, fenced, ml)
 		switch {
-		case !hasBlock:
+		case !detail.HasBlock:
 			accOK = false
 			accCheck.Failures = append(accCheck.Failures, fmt.Sprintf("%s: no acceptance block", ml.ID))
-		case unmet > 0:
+
+		case detail.Unmet > 0:
+			// Pending (and unrecognized) criteria block the wave. Lapsed are shown
+			// separately even in a blocked ML, for visibility (T2, REQ #514).
 			accOK = false
-			accCheck.Failures = append(accCheck.Failures, fmt.Sprintf("%s: %d unmet acceptance criteria", ml.ID, unmet))
+			accCheck.Failures = append(accCheck.Failures, fmt.Sprintf("%s: %d unmet acceptance criteria", ml.ID, detail.Unmet))
+			for _, ln := range detail.UnrecognizedLines {
+				accCheck.Failures = append(accCheck.Failures, fmt.Sprintf("%s: unrecognized checkbox at line %d", ml.ID, ln))
+			}
+			if detail.Lapsed > 0 {
+				accCheck.Lapsed = append(accCheck.Lapsed, fmt.Sprintf("%s: %d lapsed acceptance criteria", ml.ID, detail.Lapsed))
+				accCheck.LapsedDetails = appendLapsedDetails(accCheck.LapsedDetails, detail.LapsedReasons)
+			}
+
+		case detail.Met == 0 && detail.Lapsed > 0:
+			// T8 (REQ #514 / ML-1A): all criteria lapsed — no real evidence. Blocked.
+			accOK = false
+			accCheck.Failures = append(accCheck.Failures, fmt.Sprintf("%s: all acceptance criteria lapsed", ml.ID))
+			accCheck.Lapsed = append(accCheck.Lapsed, fmt.Sprintf("%s: %d lapsed acceptance criteria", ml.ID, detail.Lapsed))
+			accCheck.LapsedDetails = appendLapsedDetails(accCheck.LapsedDetails, detail.LapsedReasons)
+
 		default:
-			accCheck.Evidence = append(accCheck.Evidence, fmt.Sprintf("%s: %d criteria met", ml.ID, met))
+			// At least one criterion met; lapsed ones are informational.
+			accCheck.Evidence = append(accCheck.Evidence, fmt.Sprintf("%s: %d criteria met", ml.ID, detail.Met))
+			if detail.Lapsed > 0 {
+				accCheck.Lapsed = append(accCheck.Lapsed, fmt.Sprintf("%s: %d lapsed acceptance criteria", ml.ID, detail.Lapsed))
+				accCheck.LapsedDetails = appendLapsedDetails(accCheck.LapsedDetails, detail.LapsedReasons)
+			}
 		}
 	}
 	if accOK {
@@ -931,6 +986,16 @@ func printBarrierText(cmd *cobra.Command, result barrierResult) {
 		fmt.Fprintf(out, "%s %s: %s\n", symbol, c.Name, c.Status)
 		for _, f := range c.Failures {
 			fmt.Fprintf(out, "    - %s\n", f)
+		}
+		// Lapsed criteria are informational ("~" prefix, distinct from "- " failures).
+		for _, l := range c.Lapsed {
+			fmt.Fprintf(out, "    ~ %s\n", l)
+		}
+		// Per-criterion justification lines (ML-1D, REQ #514): indented 6 spaces,
+		// format "line N: Caducou: <text>". Allows reviewer to audit without opening
+		// the roadmap file.
+		for _, d := range c.LapsedDetails {
+			fmt.Fprintf(out, "      line %d: Caducou: %s\n", d.Line, d.Text)
 		}
 	}
 	fmt.Fprintf(out, "\nresult: %s\n", result.Status)
