@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-10-04
 req: "docs/req/REQ-2026-10-04-pin7-do-gate-de-pins-exige-violacao-que-a-regra-declina-por-desenho-no-windows-e-aborta-os-pins-seguintes.md"
 squad: "hades-tf, ares-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, ares-tf"
 
 # Roadmap: pin7 do gate de pins exige violacao que a regra declina por desenho no Windows e aborta os pins seguintes
 
-> Created: 2026-10-04 | Status: wip
+> Created: 2026-10-04 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-10-04-pin7-do-gate-de-pins-exige-violacao-que-a-regra-declina-por-desenho-no-windows-e-aborta-os-pins-seguintes.md

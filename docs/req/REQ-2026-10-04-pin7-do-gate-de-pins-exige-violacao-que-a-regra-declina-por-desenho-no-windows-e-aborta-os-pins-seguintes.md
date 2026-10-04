@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-10-04
 author: "zeus-tf"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-10-04-pin7-do-gate-de-pins-exige-violacao-que-a-regra-declina-por-desenho-no-windows-e-aborta-os-pins-seguintes.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-10-04-pin7-do-gate-de-pins-exige-violacao-que-a-regra-declina-por-desenho-no-windows-e-aborta-os-pins-seguintes.md"
 ---
 
 # REQ: pin7 do gate de pins exige violacao que a regra declina por desenho no Windows e aborta os pins seguintes
 
-> Date: 2026-10-04 | Status: Open
+> Date: 2026-10-04 | Status: Done
 | GitHub Issue: #421
 
 ## Motivation
@@ -52,21 +52,27 @@ pelo `[ -x ]` do bash.
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — 🔴 **Wave 0:** threat model curto, com parecer em `docs/seguranca/`. O discriminante de
+- [x] **AC1** — 🔴 **Wave 0:** threat model curto, com parecer em `docs/seguranca/`. O discriminante de
   plataforma pode errar e silenciar o pin7 numa plataforma POSIX? O pin "guardado" pode ficar vacuoso,
   por exemplo com a fixture ausente?
-- [ ] **AC2** — Na VM Windows, `check-validate-rule-pins.sh` sai com rc=0, e o log mostra
+      ✅ Evidência: `docs/seguranca/2026-10-04-wave0-pin7-windows-guardado.md`: discriminante `go version -m` (conferido pelo arquiteto: nativo `.exe` → darwin, cruzado sem `.exe` → windows) e anti-vacuidade
+- [x] **AC2** — Na VM Windows, `check-validate-rule-pins.sh` sai com rc=0, e o log mostra
   `OK [validate-rule-pins/pin7-noexec-windows-guarded]` **e** os pins 8 a 20 executados. Se algum pin de
   8 a 20 falhar no Windows, ele entra nesta REQ (Regra Dura) com a causa medida.
-- [ ] **AC3** — No macOS/Linux, a saída do gate fica idêntica à de hoje para o pin7 (`OK
+      ✅ Evidência: VM Windows ARM64, `/tmp` em NTFS `noacl`, medido pelo arquiteto: rc=0, 32 OK, `pin7-noexec-windows-guarded`, pins 8–20 executados e verdes
+- [x] **AC3** — No macOS/Linux, a saída do gate fica idêntica à de hoje para o pin7 (`OK
   [validate-rule-pins/pin7-noexec]`).
-- [ ] **AC4** — Falsificação nas duas direções:
+      ✅ Evidência: macOS, medido pelo arquiteto: rc=0, 32 OK, `OK [validate-rule-pins/pin7-noexec]` igual ao de antes
+- [x] **AC4** — Falsificação nas duas direções:
   - forçar o discriminante para "windows" num host POSIX faz o braço guardado reprovar, porque a regra
     acusa a violação;
   - forçar "não windows" na VM faz o braço POSIX reprovar, como hoje.
-- [ ] **AC5** — A mensagem de vacuidade do pin deixa de oferecer só a dicotomia "fixture broken or rule
+      ✅ Evidência: braço guardado forçado no macOS → rc=1 (a regra acusa); braço POSIX forçado na VM → rc=1
+- [x] **AC5** — A mensagem de vacuidade do pin deixa de oferecer só a dicotomia "fixture broken or rule
   regressed" quando a plataforma guardada for possível; ela nomeia o terceiro estado.
-- [ ] **AC6** — `make parity-rest` EXIT=0 no macOS; CI verde.
+      ✅ Evidência: mensagem de vacuidade: "fixture broken, rule regressed, or the rule is guarded on this platform — see the platform-guarded pins"
+- [x] **AC6** — `make parity-rest` EXIT=0 no macOS; CI verde.
+      ✅ Evidência: `make parity-rest` EXIT=0; CI do PR #522: 20/20
 
 ## Negative scope
 
@@ -82,4 +88,4 @@ pelo `[ -x ]` do bash.
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-10-04-pin7-do-gate-de-pins-exige-violacao-que-a-regra-declina-por-desenho-no-windows-e-aborta-os-pins-seguintes.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-10-04-pin7-do-gate-de-pins-exige-violacao-que-a-regra-declina-por-desenho-no-windows-e-aborta-os-pins-seguintes.md
