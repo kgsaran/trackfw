@@ -213,6 +213,131 @@ func TestBarrierLapsed_TextModePrintsLapsedLine(t *testing.T) {
 	}
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ML-1D: justification text appears in text output and JSON (Ajuste 1, Wave 2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// TestBarrierLapsed_JustificationInTextAndJSON asserts that the barrier prints the
+// Caducou: justification text in both the text-mode output (indented "line N: Caducou:
+// <text>") and in the JSON lapsed_details field (ML-1D, REQ #514).
+//
+// Reconciliation: this test asserts that the Ajuste 1 gap (Wave 2 security review) is
+// closed — the reviewer can see the lapsed justification without opening the roadmap.
+func TestBarrierLapsed_JustificationInTextAndJSON(t *testing.T) {
+	const justification = "a v8 removeu o CLI Python (#365)"
+	criteriaA := []string{
+		"- [x] build passes",
+		"- [ ] suíte pypi sem regressão",
+		"  Caducou: " + justification,
+	}
+	criteriaB := []string{"- [x] tests pass"}
+	content := buildLapsedRoadmap(criteriaA, criteriaB)
+	dir, _ := setupLapsedFixture(t, content)
+
+	// ── text mode: justification must appear as "line N: Caducou: <text>" ────
+	stdout, stderr, code := runBarrierCLI(t, dir, "ROADMAP-lapsed-fixture", "--wave", "1", "--trust-local-gates")
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	wantFragment := "Caducou: " + justification
+	if !strings.Contains(stdout, wantFragment) {
+		t.Fatalf("text output must contain justification %q\nstdout: %s", wantFragment, stdout)
+	}
+	// The line must be indented with "      line N:" prefix.
+	if !strings.Contains(stdout, "      line ") {
+		t.Fatalf("text output must contain '      line N: Caducou: ...' indented block\nstdout: %s", stdout)
+	}
+
+	// ── JSON mode: lapsed_details must contain line and text ─────────────────
+	jsonOut, _, code2 := runBarrierCLI(t, dir, "ROADMAP-lapsed-fixture", "--wave", "1", "--json", "--trust-local-gates")
+	if code2 != 0 {
+		t.Fatalf("expected exit 0, got %d\nstdout: %s", code2, jsonOut)
+	}
+	var doc barrierResultDoc
+	if err := json.Unmarshal([]byte(strings.TrimSpace(jsonOut)), &doc); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %s", err, jsonOut)
+	}
+	for _, c := range doc.Checks {
+		if c.Name != "acceptance_evidence" {
+			continue
+		}
+		if len(c.LapsedDetails) == 0 {
+			t.Fatalf("expected lapsed_details to be populated, got empty\nJSON: %s", jsonOut)
+		}
+		found := false
+		for _, d := range c.LapsedDetails {
+			if d.Line > 0 && strings.Contains(d.Text, justification) {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("lapsed_details must contain {line>0, text containing %q}, got %+v", justification, c.LapsedDetails)
+		}
+	}
+}
+
+// TestBarrierLapsed_JustificationTruncatedAt120 asserts that a Caducou: justification
+// longer than 120 runes is truncated with "…" in both text and JSON output (ML-1D, REQ #514).
+//
+// Reconciliation: this test asserts that the 120-rune limit in extractLapsedReason prevents
+// excessively long justifications from polluting the barrier output.
+func TestBarrierLapsed_JustificationTruncatedAt120(t *testing.T) {
+	// Build a justification of exactly 125 runes (first 120 visible + 5 cut).
+	longText := strings.Repeat("a", 120) + "XXXXX" // 125 ASCII chars
+	criteriaA := []string{
+		"- [x] build passes",
+		"- [ ] long justification test",
+		"  Caducou: " + longText,
+	}
+	criteriaB := []string{"- [x] tests pass"}
+	content := buildLapsedRoadmap(criteriaA, criteriaB)
+	dir, _ := setupLapsedFixture(t, content)
+
+	// ── text mode ─────────────────────────────────────────────────────────────
+	stdout, stderr, code := runBarrierCLI(t, dir, "ROADMAP-lapsed-fixture", "--wave", "1", "--trust-local-gates")
+	if code != 0 {
+		t.Fatalf("expected exit 0, got %d\nstdout: %s\nstderr: %s", code, stdout, stderr)
+	}
+	// The text must NOT contain the 5 trailing 'X' characters (truncated).
+	if strings.Contains(stdout, "XXXXX") {
+		t.Fatalf("text output must not contain the truncated suffix 'XXXXX'\nstdout: %s", stdout)
+	}
+	// The text MUST contain the truncation marker "…".
+	if !strings.Contains(stdout, "…") {
+		t.Fatalf("text output must contain truncation marker '…'\nstdout: %s", stdout)
+	}
+
+	// ── JSON mode ─────────────────────────────────────────────────────────────
+	jsonOut, _, code2 := runBarrierCLI(t, dir, "ROADMAP-lapsed-fixture", "--wave", "1", "--json", "--trust-local-gates")
+	if code2 != 0 {
+		t.Fatalf("expected exit 0, got %d\nstdout: %s", code2, jsonOut)
+	}
+	var doc barrierResultDoc
+	if err := json.Unmarshal([]byte(strings.TrimSpace(jsonOut)), &doc); err != nil {
+		t.Fatalf("stdout is not valid JSON: %v\nstdout: %s", err, jsonOut)
+	}
+	for _, c := range doc.Checks {
+		if c.Name != "acceptance_evidence" {
+			continue
+		}
+		if len(c.LapsedDetails) == 0 {
+			t.Fatalf("expected lapsed_details to be populated, got empty\nJSON: %s", jsonOut)
+		}
+		for _, d := range c.LapsedDetails {
+			if strings.Contains(d.Text, "XXXXX") {
+				t.Fatalf("lapsed_details text must not contain truncated suffix 'XXXXX', got %q", d.Text)
+			}
+			if strings.Contains(d.Text, longText[:10]) && !strings.HasSuffix(d.Text, "…") {
+				t.Fatalf("lapsed_details text must end with '…' when truncated, got %q", d.Text)
+			}
+		}
+	}
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// D6/T8: all-lapsed ML is blocked
+// ─────────────────────────────────────────────────────────────────────────────
+
 // TestBarrierLapsed_AllLapsedBlocked asserts that the barrier reports
 // acceptance_evidence=blocked with "all acceptance criteria lapsed" when an ML has
 // Met=0 and Lapsed≥1 (T8: delivering requires at least one verified criterion).

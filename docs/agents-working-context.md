@@ -44689,3 +44689,33 @@ Achados notáveis para o apolo-tf:
 **Arquivos criados:**
 - `docs/seguranca/2026-10-04-wave2-revisao-criterio-caducado.md`
 - `docs/agents-working-context.md` (este arquivo)
+
+## 2026-10-04 — apolo-tf (fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel — ML-1D) — INÍCIO
+
+**Início:** 2026-10-04 | Branch: `fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel`
+**Status:** ML-1D 🔄 Em andamento
+**Escopo:** Ajuste 1 da Wave 2 — barrier exibe justificativas dos critérios caducados (texto + linha) no texto e no JSON
+**Trabalho em progresso:**
+- AcceptanceDetail ganha LapsedReasons []LapsedReason
+- barrierCheck ganha LapsedDetails []barrierLapsedDetail (JSON: lapsed_details)
+- printBarrierText imprime `      line N: Caducou: <text>` após cada grupo de ~ lapsed
+- 2 testes novos + prova de mordida
+
+## 2026-10-04 — apolo-tf (fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel — ML-1D) — FIM
+
+**Fim:** 2026-10-04 | Branch: `fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel`
+**Status:** ML-1D ✅ Concluído
+**Evidências:**
+- `go build ./...` → EXIT=0
+- `go vet ./...` → EXIT=0
+- `go test ./internal/... -count=1` → todos os 20 packages OK
+- `make parity-rest` → EXIT=0
+- Sabotagem S1 (appendLapsedDetails retorna nil): TestBarrierLapsed_JustificationInTextAndJSON e TestBarrierLapsed_JustificationTruncatedAt120 falharam; restaurado e tudo verde
+- Baseline barrier-baseline.txt: 0 ocorrências de lapsed/Caducou/lapsed_details (inalterado)
+**Arquivos modificados:**
+- `internal/roadmapdoc/roadmapdoc.go` (LapsedReason struct, LapsedReasons field em AcceptanceDetail, extractLapsedReason helper, AcceptanceEvaluateFull popula LapsedReasons)
+- `internal/commands/barrier.go` (barrierLapsedDetail struct, LapsedDetails field em barrierCheck, appendLapsedDetails helper, 3 sítios de chamada, printBarrierText imprime `      line N: Caducou: <text>`)
+- `internal/commands/barrier_contract_test.go` (barrierLapsedDetailDoc struct, LapsedDetails field em barrierCheckDoc)
+- `internal/commands/barrier_lapsed_test.go` (TestBarrierLapsed_JustificationInTextAndJSON, TestBarrierLapsed_JustificationTruncatedAt120)
+- `docs/cli-parity.md` (frase sobre lapsed_details na seção Caducou:)
+- `docs/agents-working-context.md` (este arquivo)

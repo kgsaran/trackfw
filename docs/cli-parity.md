@@ -647,6 +647,11 @@ Regras do parser (`AcceptanceEvaluateFull`, `internal/roadmapdoc`):
 - O campo `unmet` do JSON agora é estrito: só conta `- [ ]` sem continuação `Caducou:` válida.
   Consumidores que dependiam do comportamento anterior (`unmet = unmet + lapsed`) devem somar
   `unmet + lapsed` para recuperar a semântica antiga.
+- O campo `lapsed_details` no JSON do `barrier` (ML-1D, REQ #514) expõe, para cada critério
+  caducado, um objeto `{"line": N, "text": "<justificativa>"}` onde `line` é o número de linha
+  (1-based) da continuação `Caducou:` e `text` é o texto trimado após os dois-pontos, truncado
+  a 120 caracteres Unicode com `…`; o campo é omitido quando não há critérios caducados
+  (`omitempty`). Na saída textual, cada justificativa aparece como `      line N: Caducou: <text>`.
 
 <!-- trackfw-contract: gate=internal/roadmapdoc/acceptance_lapsed_test.go,internal/generators/roadmap_show_json_test.go partial=o gate de show --json cobre o campo lapsed na saída JSON (presença e valor); o acceptance_lapsed_test.go cobre as regras do parser (adjacência, indentação, justificativa obrigatória, fence-mask) -->
 

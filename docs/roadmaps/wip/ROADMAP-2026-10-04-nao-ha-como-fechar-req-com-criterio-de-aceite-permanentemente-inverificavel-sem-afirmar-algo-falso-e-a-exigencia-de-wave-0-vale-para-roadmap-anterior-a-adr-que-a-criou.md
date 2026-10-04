@@ -125,12 +125,14 @@ go test ./internal/... -count=1
 > Dependências: Wave 1 auditada. Primeiro o Hades, depois o Hefesto.
 
 ### ML-2A — Revisão de segurança contra o threat model
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** hades-tf
 **Files affected:** `docs/seguranca/2026-10-04-wave2-revisao-criterio-caducado.md`
 **Acceptance criteria:**
-- [ ] Cada cenário da Wave 0 com veredito, e uma tentativa de fazer o `barrier` passar com `Caducou:`
+- [x] Cada cenário da Wave 0 com veredito, e uma tentativa de fazer o `barrier` passar com `Caducou:`
   inválido
+      ✅ APROVA COM AJUSTE. Foram 17 vetores contra o binário da branch, e nenhum passou. Os resíduos R3 (`[~]`), R5 (ML só de caducados) e R6 (data no sufixo) foram eliminados.
+      O ajuste (o barrier mostrar a justificativa) entrou no **ML-1D** (apolo-tf): `line N: Caducou: <texto>` no texto e `lapsed_details` no JSON, com corte em 120 caracteres. O arquiteto conferiu na fixture.
 
 ### ML-2B — Qualidade e gate completo
 **Status:** ⬜ Pendente

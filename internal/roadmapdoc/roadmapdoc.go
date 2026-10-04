@@ -614,6 +614,14 @@ func MLStatusMarker(lines []string, fenced []bool, ml MLBlock) (marker string, f
 	return "", false
 }
 
+// LapsedReason carries the 1-based document line number of a Caducou: continuation
+// and the trimmed justification text (the part after "Caducou:", truncated at 120
+// runes with "…") for one lapsed acceptance criterion (ML-1D, REQ #514).
+type LapsedReason struct {
+	Line int    // 1-based line number of the Caducou: continuation line
+	Text string // trimmed text after "Caducou:", at most 120 runes (appends "…" when cut)
+}
+
 // AcceptanceDetail is the full per-ML breakdown returned by AcceptanceEvaluateFull.
 // It is the canonical result; AcceptanceEvaluate is a thin backward-compat wrapper.
 //
@@ -621,12 +629,15 @@ func MLStatusMarker(lines []string, fenced []bool, ml MLBlock) (marker string, f
 // continuation is Lapsed; [ ] without one, and any other character, are Unmet.
 // UnrecognizedLines records the 1-based document line numbers of the unrecognized
 // checkboxes so that the barrier can name them in its failure messages.
+// LapsedReasons carries one entry per lapsed criterion (ML-1D, REQ #514), nil when
+// Lapsed == 0.
 type AcceptanceDetail struct {
 	Met               int
-	Unmet             int   // includes unrecognized checkbox characters
-	Lapsed            int   // [ ] immediately followed by a valid Caducou: continuation
+	Unmet             int          // includes unrecognized checkbox characters
+	Lapsed            int          // [ ] immediately followed by a valid Caducou: continuation
 	HasBlock          bool
-	UnrecognizedLines []int // 1-based; empty (never nil) when no unrecognized boxes present
+	UnrecognizedLines []int        // 1-based; empty (never nil) when no unrecognized boxes present
+	LapsedReasons     []LapsedReason // one entry per lapsed criterion; nil when Lapsed==0
 }
 
 // htmlCommentMask returns a boolean slice (same length as lines) where true means the
@@ -658,6 +669,24 @@ func htmlCommentMask(lines []string, fenced []bool) []bool {
 		}
 	}
 	return mask
+}
+
+// extractLapsedReason parses a valid Caducou: continuation line (already matched
+// by LapsedContinuationRe) and returns a LapsedReason for AcceptanceEvaluateFull.
+// lineNo is 1-based. The text is the trimmed content after "Caducou:", truncated at
+// 120 runes with "…" (ML-1D, REQ #514).
+func extractLapsedReason(line string, lineNo int) LapsedReason {
+	const prefix = "Caducou:"
+	idx := strings.Index(line, prefix)
+	text := ""
+	if idx >= 0 {
+		text = strings.TrimSpace(line[idx+len(prefix):])
+	}
+	runes := []rune(text)
+	if len(runes) > 120 {
+		text = string(runes[:120]) + "…"
+	}
+	return LapsedReason{Line: lineNo, Text: text}
 }
 
 // acceptanceHeader scans [start, end) for the criteria header line index, and the
@@ -736,6 +765,7 @@ func AcceptanceEvaluateFull(lines []string, fenced []bool, ml MLBlock) Acceptanc
 			if next < blockEnd && !fenced[next] && !htmlMask[next] &&
 				LapsedContinuationRe.MatchString(lines[next]) {
 				detail.Lapsed++
+				detail.LapsedReasons = append(detail.LapsedReasons, extractLapsedReason(lines[next], next+1))
 			} else {
 				detail.Unmet++
 			}
