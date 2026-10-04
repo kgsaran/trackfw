@@ -44635,3 +44635,33 @@ Achados notáveis para o apolo-tf:
 - `internal/generators/roadmap_show_json.go` (Lapsed field, AcceptanceEvaluateFull)
 - `docs/cli-parity.md` (Caducou: contract, req_done_open_criteria, Wave 0 date cutoff)
 - `docs/roadmaps/wip/ROADMAP-2026-10-04-…md` (ML-1B → ✅)
+
+## 2026-10-04 — apolo-tf (fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel — ML-1C) — INÍCIO
+
+**Início:** 2026-10-04 | Branch: `fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel`
+**Status:** ML-1C 🔄 Em andamento
+**Escopo:** Corretivo ML-1B — 2 chamadores sem teste + provas de mordida sem sabotagem real
+**Trabalho em progresso:**
+- 4 testes de gate D5 no move→done em `internal/generators/` (novo arquivo roadmap_move_wave0_cutoff_test.go)
+- 1 teste do campo `lapsed` no show --json (adicionado a roadmap_show_json_test.go)
+- 6 sabotagens executadas e restauradas (S1–S6), todas derrubam pelo menos 1 teste
+- Remoção dos dois TestXxx_ProvaDeModida que não sabotavam; correção dos header comments
+
+## 2026-10-04 — apolo-tf (fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel — ML-1C) — FIM
+
+**Fim:** 2026-10-04 | Branch: `fix/fechar-req-com-criterio-de-aceite-permanentemente-inverificavel`
+**Status:** ML-1C ✅ Concluído
+**Evidências:**
+- `go build ./...` → EXIT=0
+- `go vet ./...` → EXIT=0
+- `go test ./internal/... -count=1` → todos os packages OK
+- `make parity-rest` → EXIT=0
+- `trackfw validate` → 0 violations, 174 warnings (mesmos que ML-1B)
+- 6 sabotagens (S1–S6) aplicadas, testadas e restauradas; todas derrubam ≥1 teste
+- `git diff --stat HEAD` → apenas test files + docs/agents-working-context.md; nenhum production file alterado
+**Arquivos modificados:**
+- `internal/generators/roadmap_move_wave0_cutoff_test.go` (novo — 4 testes D5 gate no move→done)
+- `internal/generators/roadmap_show_json_test.go` (+ TestRoadmapShowJSON_LapsedFieldIsPopulated)
+- `internal/validator/validator_req_done_criteria_test.go` (removido ProvaDeModida; header corrigido)
+- `internal/validator/validator_roadmap_wave0_cutoff_test.go` (removido ProvaDeModida + import time; header corrigido)
+- `docs/agents-working-context.md` (este arquivo)

@@ -1,14 +1,15 @@
 package validator
 
-// validator_req_done_criteria_test.go — D4 (ADR-2026-10-04, REQ #514 ML-1B).
+// validator_req_done_criteria_test.go — D4 (ADR-2026-10-04, REQ #514 ML-1C).
 //
 // Reconciliação obrigatória (CLAUDE.md): cada teste declara, em uma frase, qual
-// conclusão do próprio ML-1B ele afirma.
+// conclusão do próprio ML-1B/ML-1C ele afirma.
 //
-// Prova de mordida declarada: sabota o sítio de chamada de countREQOpenCriteria
-// em validateREQDoneOpenCriteria (substitui pelo literal 0) e verifica que o braço
-// de enforcement deixa de disparar — provando que o teste não passa pela fixture
-// mas pela contagem real do parser.
+// Sabotagens cobertas:
+//   S1 (cutoff < → <=): derruba TestReqDoneOpenCriteria_PostCutoffIsWarning e
+//      TestReqDoneOpenCriteria_EnforcedCountInNotice.
+//   S2 (Unmet+Lapsed em vez de Unmet): derruba TestReqDoneOpenCriteria_LapsedDoesNotFire
+//      e TestReqDoneOpenCriteria_SectionScanCountsOnlyUnmet.
 
 import (
 	"strings"
@@ -223,17 +224,3 @@ func TestReqDoneOpenCriteria_SectionScanCountsOnlyUnmet(t *testing.T) {
 	}
 }
 
-// TestReqDoneOpenCriteria_ProvaDeModida — PROVA DE MORDIDA: afirma que os testes
-// de enforcement acima DEPENDEM de countREQOpenCriteria retornar > 0. Se a função
-// retornar 0 (como um stub que ignorasse o conteúdo), nenhuma REQ pós-cutoff seria
-// cobrada — o teste TestReqDoneOpenCriteria_PostCutoffIsWarning falharia.
-// Este teste mede countREQOpenCriteria DIRETAMENTE para provar que o sítio de
-// chamada não pode ser sabotado com retorno 0 sem quebrar a detecção.
-func TestReqDoneOpenCriteria_ProvaDeModida(t *testing.T) {
-	// Fixture: seção AC com 1 critério aberto. countREQOpenCriteria deve retornar >= 1.
-	content := "---\nstatus: Done\ndate: 2026-10-04\n---\n\n# REQ\n\n## Acceptance Criteria\n\n- [ ] critério aberto sem Caducou:\n"
-	got := countREQOpenCriteria(content)
-	if got == 0 {
-		t.Errorf("PROVA DE MORDIDA FALHOU: countREQOpenCriteria retornou 0 para fixture com critério aberto — o sítio de chamada estaria sabotado")
-	}
-}

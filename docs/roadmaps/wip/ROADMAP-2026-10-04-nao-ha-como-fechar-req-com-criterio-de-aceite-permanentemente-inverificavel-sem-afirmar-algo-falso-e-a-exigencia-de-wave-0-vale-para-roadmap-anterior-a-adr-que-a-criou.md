@@ -108,6 +108,11 @@ do `done`), `internal/validator/validator_roadmap_gates.go`, `docs/cli-parity.md
 - [x] AC6
 - [x] `make parity-rest` EXIT=0 e `go test ./...` verde
 
+      ✅ Auditoria do arquiteto: a contagem da D4 (126 de 211) corrige a medição inicial do arquiteto (113 de 196), que só aceitava `status: Done` exato.
+      Corretivo **ML-1C** (apolo-tf, só testes): o corte da D5 no `move … done` não tinha teste, nem o `lapsed` do `show --json`, e as duas "ProvaDeModida" não sabotavam nada.
+      Seis sabotagens de produção (S1–S6), cada uma derrubando ≥ 1 teste; 5 testes novos; as provas decorativas foram removidas.
+      `go test ./internal/...` e `make parity-rest` verdes.
+
 **Gates da wave:**
 ```bash
 go build ./...

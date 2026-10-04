@@ -139,3 +139,39 @@ func TestRoadmapShowJSON_HeadingIsRaw(t *testing.T) {
 		t.Fatalf("heading saiu %q, queria %q", got.Waves[0].MLs[0].Heading, want)
 	}
 }
+
+// AFIRMA (ML-1C, D3): o campo `lapsed` do JSON conta separadamente os critérios
+// "- [ ]" com Caducou: na linha seguinte. Com 1 met, 1 lapsed e 1 unmet, os três
+// campos saem distintos (met=1, unmet=1, lapsed=1) — provando que AcceptanceEvaluateFull
+// é chamado (não o antigo AcceptanceEvaluate, que colapsaria lapsed em unmet).
+//
+// Sabotagem S6: se Lapsed não for preenchido no JSON, lapsed sairia 0 enquanto
+// unmet sairia 2 — e este teste falharia.
+func TestRoadmapShowJSON_LapsedFieldIsPopulated(t *testing.T) {
+	// Fixture: 1 met [x], 1 lapsed [ ] com Caducou:, 1 unmet [ ] sem Caducou:
+	body := "# R\n\n## Wave 1 — w\n\n### ML-1A — ac\n" +
+		"**Acceptance criteria:**\n" +
+		"- [x] critério atendido\n" +
+		"- [ ] critério caducado\n" +
+		"  Caducou: substituído por nova abordagem\n" +
+		"- [ ] critério aberto sem Caducou:\n" +
+		"**Status:** ⬜ Pendente\n"
+
+	got := doc(t, body)
+	if len(got.Waves) != 1 || len(got.Waves[0].MLs) != 1 {
+		t.Fatalf("estrutura inesperada: %+v", got)
+	}
+	ac := got.Waves[0].MLs[0].Acceptance
+	if ac.Met != 1 {
+		t.Errorf("met esperado 1, obteve %d", ac.Met)
+	}
+	if ac.Unmet != 1 {
+		t.Errorf("unmet esperado 1 (só o genuinamente aberto), obteve %d — se fosse 2, AcceptanceEvaluate (sem Lapsed) está sendo chamado", ac.Unmet)
+	}
+	if ac.Lapsed != 1 {
+		t.Errorf("lapsed esperado 1, obteve %d — campo não preenchido ou AcceptanceEvaluate antigo usado", ac.Lapsed)
+	}
+	if !ac.HasBlock {
+		t.Error("has_block esperado true (há critérios no ML), obteve false")
+	}
+}

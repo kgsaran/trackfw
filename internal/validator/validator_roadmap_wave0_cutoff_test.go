@@ -1,21 +1,24 @@
 package validator
 
-// validator_roadmap_wave0_cutoff_test.go — D5 (ADR-2026-10-04, REQ #514 ML-1B).
+// validator_roadmap_wave0_cutoff_test.go — D5 (ADR-2026-10-04, REQ #514 ML-1C).
 //
 // Testa o corte por data da exigência de Wave 0 (2026-09-18) em:
 //   1. A regra roadmap_wave0_required no validator (validateRoadmapGatesCoverage).
 //   2. O gate do `move … done` em generators/roadmap.go (coberto em generators/).
 //
 // Reconciliação obrigatória (CLAUDE.md): cada teste declara, em uma frase, qual
-// conclusão do próprio ML-1B ele afirma.
+// conclusão do próprio ML-1B/ML-1C ele afirma.
 //
-// Prova de mordida: sabota RoadmapCreationDate para retornar sempre "sem data" e
-// verifica que roadmaps sem data falham fechados (não são isentos).
+// Sabotagens cobertas:
+//   S3 (isenção ignorada no validator): derruba TestRoadmapWave0Cutoff_PreCutoffIsExempt
+//      e TestRoadmapWave0Cutoff_FrontmatterDateWins.
+//   S5 (frontmatter ignorado em RoadmapCreationDate): derruba
+//      TestRoadmapWave0Cutoff_FrontmatterDateWins, TestRoadmapWave0Cutoff_RoadmapCreationDateFrontmatterFirst
+//      e TestMoveDoneWave0Cutoff_FrontmatterDateWins (generators/).
 
 import (
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/kgsaran/trackfw/internal/config"
 )
@@ -231,24 +234,3 @@ func TestRoadmapWave0Cutoff_RoadmapCreationDateFrontmatterFirst(t *testing.T) {
 	})
 }
 
-// TestRoadmapWave0Cutoff_ProvaDeModida — PROVA DE MORDIDA: sabota RoadmapCreationDate
-// passando conteúdo vazio e nome sem data, confirmando que ok=false (fail-closed) é
-// retornado — provando que o braço de isenção NÃO é disparado sem data legível.
-func TestRoadmapWave0Cutoff_ProvaDeModida(t *testing.T) {
-	_, ok := RoadmapCreationDate("", "ROADMAP-sem-data.md")
-	if ok {
-		t.Error("PROVA DE MORDIDA: RoadmapCreationDate com entrada vazia/sem data deve retornar ok=false (fail-closed)")
-	}
-	// Garante que "sem data" NÃO é antes do cutoff
-	exemptIfNoDate := func() bool {
-		d, ok := RoadmapCreationDate("", "ROADMAP-sem-data.md")
-		if !ok {
-			return false // fail-closed: não isento
-		}
-		return d.Before(RoadmapWave0CutoffDate())
-	}
-	if exemptIfNoDate() {
-		t.Error("PROVA DE MORDIDA: sem data legível não deve resultar em isenção (fail-closed)")
-	}
-	_ = time.Now() // suppress unused import warning if any
-}
