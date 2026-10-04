@@ -2,6 +2,53 @@
 
 ---
 
+## 2026-10-04 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-1B corretivo) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** Corretivo ML-1B — (1) glob expansion em `credSecondLayer`; (2) `RunCredentialGlobal` / `--global`.
+**Resultado:**
+- `go build ./...` — exit=0
+- `go vet ./internal/guard/ ./internal/commands/` — exit=0
+- `go test -race ./internal/guard/... -count=1` — PASS (94 testes, 0 FAIL, 0 race). 10 novos testes neste corretivo: GlobCatStarBlocksInBlockMode, GlobNoMatchKeepsLiteral, GlobMatchesCleanFileAllows, GlobMalformedBracketKeepsLiteral, GlobDotfileNotMatched, Global_JWTDefaultBlocks, Global_CleanPayloadAllows, Global_WarnModeFromYamlWritesJSON, Global_WarnNoDirNoFileCreated; + GlobalFlagRegistered em commands.
+- `go test ./internal/commands/ -count=1` — PASS, exit=0
+- `bash scripts/check-write-containment.sh` — 164 sítios, todos justificados, exit=0
+- `trackfw validate` — 165 warnings, 0 violations, exit=0
+- Matriz sh/go × glob/literal (block mode): `cat *.txt` sh rc=2 go rc=2; `cat token.txt` sh rc=2 go rc=2 — alinhados
+- Comparação global: JWT payload sh rc=2 go rc=2; clean payload sh rc=0 go rc=0 — idênticos
+- `credReadMode` refatorado para delegar em `credReadModeWithDefault(yamlPath, defaultMode)`.
+- Quarta diferença entre global e projeto: não encontrada; diff instalado vs constante confirma exatamente 3 diferenças.
+
+## 2026-10-04 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-1B corretivo) — INÍCIO
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** Corretivo ML-1B — (1) glob expansion em `credSecondLayer` (`cat *.txt` ≠ bash sem `set -f`); (2) portar variante global como `RunCredentialGlobal` / `--global`.
+**Escopo:** `internal/guard/credential.go`, `internal/guard/credential_test.go`, `internal/commands/guard.go`, `internal/commands/guard_test.go`, `docs/agents-working-context.md`.
+
+---
+
+## 2026-10-04 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-1B) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** ML-1B — portar `trackfw guard credential` em Go.
+**Escopo:** `internal/guard/credential.go`, `internal/guard/credential_test.go`, `internal/commands/guard.go`, `internal/commands/guard_test.go`, `internal/guard/payload_test.go` (testTimingWindow 100→200ms), `internal/guard/gitbranch_test.go` (comentários).
+**Resultado:**
+- `go build ./...` — exit=0
+- `go vet ./internal/guard/ ./internal/commands/` — exit=0
+- `go test -race ./internal/guard/... -count=1` — PASS (84 testes, 0 FAIL, 0 race). 11 novos: JWTBlocksInBlockMode, AWSBlocksInBlockMode, WarnWritesJSONAndExits0, EphemeralTargetExempt, MixedTargetAppliesRule, OutsideProjectNoOp, InvalidModeFallsToWarn, RoadmapDirDotDotFallback, CRLFYamlModeNoBlock, SecondLayerRedirectFile, SecondLayerCatArg.
+- `go test ./internal/commands/ -count=1` — PASS, exit=0
+- `trackfw validate` — 165 warnings, 0 violations, exit=0
+- Tabela sh × Go (block mode): JWT rc=2/2, AWS rc=2/2, JWT>/dev/null rc=0/0, clean rc=0/0 — idênticos
+- warn mode: rc=0/0, JSON idêntico (campos tool/message/level/timestamp) ignorando timestamp value
+- globalCredentialGuardScript difere em 3 pontos: (1) ausência do guard `[ -f trackfw.yaml ] || exit 0`; (2) DEFAULT_MODE="block" vs "warn"; (3) ROADMAP_DIR hardcoded "docs/roadmaps" com `[ ! -d ] && exit 0` em vez de leitura dinâmica + `mkdir -p`. Não portado conforme instrução.
+
+## 2026-10-04 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-1B) — INÍCIO
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** ML-1B — portar `trackfw guard credential` em Go: `internal/guard/credential.go` (+ teste), atualizar `internal/commands/guard.go` (+ teste), subir `testTimingWindow` de 100ms para 200ms em `payload_test.go`.
+**Escopo:** porta fiel do `scripts/trackfw-credential-guard.sh` (152 linhas), contrato ADR-2026-10-04 D7–D9, escopo de projeto apenas.
+
+---
+
 ## 2026-10-04 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-1A corretivo) — FIM
 
 **Branch:** `feat/hooks-de-guard-executam-no-windows`

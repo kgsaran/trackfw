@@ -477,7 +477,7 @@ func TestRunGitBranch_TruncatedDeny(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(origDir) })
 
 	// delayReader sends payload then blocks indefinitely — simulates "sleep 6" after payload.
-	// Using testTimingWindow (100ms) for a measurable elapsed lower bound.
+	// Using testTimingWindow (200ms) for a measurable elapsed lower bound.
 	r, _ := newDelayReader([]byte(`{"tool_input":{"command":"echo ok"}}`))
 
 	start := time.Now()
@@ -494,7 +494,7 @@ func TestRunGitBranch_TruncatedDeny(t *testing.T) {
 }
 
 // TestRunGitBranch_EarlyEOFAllow asserts that payload + EOF-in-second-window → allow for benign command.
-// Uses testTimingWindow (100ms) so EOF at 1.5×window gives ≥50ms margin under -race.
+// Uses testTimingWindow (200ms) so EOF at 1.5×window gives ≥100ms margin under -race.
 // Assertion: (payload; sleep 3) | guard → allow: payload in window 1, EOF arrives at 1.5×window
 // (mid-second-window), so no idle window ever fires and guard reads a complete payload.
 func TestRunGitBranch_EarlyEOFAllow(t *testing.T) {

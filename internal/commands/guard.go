@@ -21,6 +21,7 @@ and deny operations that are blocked by trackfw governance rules.
 Denied commands exit with code 2 (ADR-2026-10-04 D7).`,
 	}
 	cmd.AddCommand(newGuardGitBranchCmd())
+	cmd.AddCommand(newGuardCredentialCmd())
 	return cmd
 }
 
@@ -71,6 +72,61 @@ Positional arguments are not accepted; pass the command via --command.`,
 	}
 
 	cmd.Flags().StringVar(&commandFlag, "command", "", "command to guard (bypasses stdin)")
+	return cmd
+}
+
+// newGuardCredentialCmd returns the `trackfw guard credential` subcommand.
+// It is a faithful Go port of scripts/trackfw-credential-guard.sh (project scope).
+// With --global it ports globalCredentialGuardScript (DEFAULT_MODE=block, fixed
+// docs/roadmaps, no trackfw.yaml required).
+func newGuardCredentialCmd() *cobra.Command {
+	var globalFlag bool
+
+	cmd := &cobra.Command{
+		Use:   "credential",
+		Short: "Guard that blocks credential patterns in tool payloads",
+		Long: `credential reads a hook payload from stdin, scans for JWT or AWS access key
+patterns, and either blocks (exit 2) or emits a warning (exit 0 with attention signal)
+depending on credential_guard.mode in trackfw.yaml.
+
+Install as a pre-tool-use or post-tool-use hook (see docs/cli-parity.md).
+
+Allowed/warn  → exit 0 (nothing printed on stdout)
+Blocked       → exit 2, message to stderr
+No-op         → exit 0 (no credential found; project scope: also outside a trackfw project)
+
+Use --global for the global scope variant:
+  - runs in any directory (no trackfw.yaml required)
+  - default mode is "block" (vs "warn" in project scope)
+  - writes attention JSON only to docs/roadmaps if that directory already exists
+
+Positional arguments are not accepted.`,
+		// D8: positional args are an error (guard accepts no positional args).
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) > 0 {
+				return &guardError{"trackfw guard credential: positional arguments are not accepted (ADR-2026-10-04 D8)"}
+			}
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			var code int
+			if globalFlag {
+				code = guard.RunCredentialGlobal(os.Stdin, os.Stdout, os.Stderr)
+			} else {
+				code = guard.RunCredential(os.Stdin, os.Stdout, os.Stderr)
+			}
+			if code != 0 {
+				// Exit immediately with the guard exit code (2 = deny).
+				// We use os.Exit directly here rather than returning an error
+				// because cobra would otherwise print "Error: exit status 2"
+				// to stderr, which must stay clean for the credential guard protocol.
+				os.Exit(code)
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().BoolVar(&globalFlag, "global", false, "run as global scope guard (no trackfw.yaml required, default mode block, fixed docs/roadmaps dir)")
 	return cmd
 }
 

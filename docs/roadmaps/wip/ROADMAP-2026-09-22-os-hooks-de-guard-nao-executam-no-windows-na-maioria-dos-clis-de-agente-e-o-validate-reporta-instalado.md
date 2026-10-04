@@ -165,15 +165,17 @@ a última; leitura por `map[string]json.RawMessage`), dreno em janelas de 2 s, s
       ✅ Auditoria: a primeira entrega reprovou. O gate (iii) divergia (`sleep 3`: sh rc=0, Go rc=2), porque o dreno reiniciava o prazo a cada leitura, e o teste que dizia cobrir o caso usava EOF imediato. Um corretivo trocou o dreno para janela fixa, com uma goroutine só, e 4 dos 7 testes de tempo passaram a reprovar no código antigo. Remedido pelo arquiteto com o binário: `sleep 3` → 0 e `sleep 6` → 2, igual ao sh; `go test -race ./internal/guard/... -count=3` verde. Nota no vault: `powershell-command-converte-exit-2-e-bash-read-t-e-janela-fixa-2026-10-04`.
 
 ### ML-1B — `trackfw guard credential`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Files affected:** `internal/guard/credential.go` (+ teste), `internal/commands/guard.go`
 **Actions:** (a) em `internal/guard/payload.go`, descartar um BOM UTF-8 inicial (`EF BB BF`) do stdin antes de decodificar, nos dois guards, com teste (ML-1D, item 3); (b) portar `scripts/trackfw-credential-guard.sh` com comportamento igual (cwd only, sem subida; lê o stdin inteiro **antes** de olhar o projeto; sem timeout, resíduo declarado na D9): padrões JWT/AWS,
 isenção de destino efêmero, `credential_guard.mode` `warn`/`block` do `trackfw.yaml`, o arquivo
 `.trackfw-credential-guard.json` em `roadmap_dir` com a mesma normalização de caminho e CRLF.
 **Acceptance criteria:**
-- [ ] `go build ./...` e `go test ./internal/guard/... -count=1` verdes
-- [ ] Frase por teste novo
+- [x] `go build ./...` e `go test ./internal/guard/... -count=1` verdes
+- [x] Frase por teste novo
+
+      ✅ Auditoria: a primeira entrega reprovou. Com `cat *.txt`, o sh dava rc=2 e o Go rc=0 (falha aberta): o `set -- $CMD_LINE` do .sh expande glob, e o Go não. O corretivo portou o glob e a variante global como `--global` (default block, sem checagem de projeto, `docs/roadmaps` fixo e sem mkdir), decisão do arquiteto. Remedido pelo arquiteto com o binário: o glob dá 2 nos dois lados; o global com JWT, fora de projeto, também dá 2 nos dois lados; `-race` verde.
 
 ### ML-1C — Paridade `.sh` ↔ Go pelo corpus existente (AC4)
 **Status:** ⬜ Pendente

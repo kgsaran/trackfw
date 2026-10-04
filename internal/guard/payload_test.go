@@ -9,8 +9,8 @@ import (
 
 // testTimingWindow is the window used for timing-sensitive DrainStdin tests and
 // for TestRunGitBranch_EarlyEOFAllow. It is larger than testIdleTimeout (50ms) to
-// give sufficient margin under -race (≥50ms between sleep boundaries).
-const testTimingWindow = 100 * time.Millisecond
+// give sufficient margin under -race (≥100ms between sleep boundaries).
+const testTimingWindow = 200 * time.Millisecond
 
 // timedEOFReader sends data on the first Read call, then sleeps eofDelay before
 // returning EOF on every subsequent call. It simulates a writer that closes its

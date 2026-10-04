@@ -191,9 +191,12 @@ posicional é erro (D7). O invólucro `.sh` traduz `"$@"` para `--command`.
 - **Binário velho:** continua sendo falha aberta em 6 de 8 CLIs. Mitigação: o `validate` exige
   versão mínima e o subcomando; neste repositório, `make install` antes de migrar as próprias configs
   (gate `trackfw guard --help` = 0 antes do ML-2A).
-- **npm sob `Restricted`:** decisão adiada até a medição de Mark-of-the-Web do shim (ML-1D). A
-  recomendação é o `validate` orientar `RemoteSigned`, que o próprio npm já exige para rodar no
-  PowerShell.
+- **npm sob `Restricted`:** decidido pelo KG em 2026-10-04 (ML-1D medido). O `validate` trata como
+  violation o `trackfw` resolvido para o shim `.ps1` com a política efetiva `Restricted`, e orienta
+  `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`. O shim não tem Mark-of-the-Web e, sob
+  `RemoteSigned`, roda e devolve 2. É a mesma exigência que o próprio `npm.ps1` já impõe para rodar
+  no PowerShell. 🔴 Sob `Restricted`, com o sufixo, a linha sai 0: falha aberta, inclusive no
+  Copilot. Por isso é violation, e não aviso.
 - **`cmd.exe` procura no cwd antes do PATH:** um `trackfw.exe`/`trackfw.cmd` na raiz do repositório
   é executado pelo Kiro e pelo Amazon Q. O `validate` denuncia (ML-2B).
 
