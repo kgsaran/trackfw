@@ -77,6 +77,7 @@ import re
 import sys
 import os
 import json
+import math
 
 # ML-2C (ROADMAP-2026-09-23-a-apuracao-do-censo-morre-no-shard-limpo...): o
 # padrão exigia que o travessão viesse IMEDIATAMENTE depois do número, e o
@@ -499,7 +500,41 @@ def load_weights():
     fallback_unlabeled = payload.get("_fallback_weight_for_unlabeled")
     if fallback_unlabeled is not None:
         fallback_unlabeled = float(fallback_unlabeled)
-    return {k: float(v) for k, v in weights.items()}, fallback_unlabeled, path, True
+    validated = {}
+    for k, v in weights.items():
+        try:
+            fv = float(v)
+        except (ValueError, TypeError):
+            sys.exit(
+                f"gen-falsify-chunks: peso invalido para rotulo '{k}': {v!r} nao e numerico"
+            )
+        if math.isnan(fv):
+            sys.exit(
+                f"gen-falsify-chunks: peso invalido para rotulo '{k}': {v!r} e NaN"
+            )
+        if math.isinf(fv):
+            sys.exit(
+                f"gen-falsify-chunks: peso invalido para rotulo '{k}': {v!r} e infinito"
+            )
+        if fv < 0:
+            sys.exit(
+                f"gen-falsify-chunks: peso invalido para rotulo '{k}': {fv} e negativo"
+            )
+        validated[k] = fv
+    if fallback_unlabeled is not None:
+        if math.isnan(fallback_unlabeled):
+            sys.exit(
+                "gen-falsify-chunks: _fallback_weight_for_unlabeled e NaN"
+            )
+        if math.isinf(fallback_unlabeled):
+            sys.exit(
+                "gen-falsify-chunks: _fallback_weight_for_unlabeled e infinito"
+            )
+        if fallback_unlabeled < 0:
+            sys.exit(
+                f"gen-falsify-chunks: _fallback_weight_for_unlabeled e negativo ({fallback_unlabeled})"
+            )
+    return validated, fallback_unlabeled, path, True
 
 
 def assign_weights(fused, weights, fallback_unlabeled, weights_exist):
@@ -527,6 +562,8 @@ def assign_weights(fused, weights, fallback_unlabeled, weights_exist):
         return
 
     pessimistic = max(weights.values()) if weights else 0.0
+    n_keys_total = sum(len(f["weight_keys"]) for f in fused)
+    n_missing_total = 0
     for f in fused:
         if not f["weight_keys"]:
             # ML-2H, correção pós-auditoria: peso SEGUNDOS aqui, nunca linha
@@ -557,6 +594,7 @@ def assign_weights(fused, weights, fallback_unlabeled, weights_exist):
                 total += pessimistic
                 missing.append(k)
         if missing:
+            n_missing_total += len(missing)
             for k in missing:
                 sys.stderr.write(
                     f"gen-falsify-chunks: AVISO rotulo '{k}' (bloco linha {f['start']}) "
@@ -568,6 +606,10 @@ def assign_weights(fused, weights, fallback_unlabeled, weights_exist):
         else:
             f["weight_source"] = "time"
         f["weight"] = total
+    pct = (n_missing_total / n_keys_total * 100) if n_keys_total > 0 else 0.0
+    sys.stderr.write(
+        f"gen-falsify-chunks: {n_missing_total} de {n_keys_total} rotulos sem peso calibrado ({pct:.1f}%)\n"
+    )
 
 
 def main():
