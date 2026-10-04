@@ -50,6 +50,30 @@ O consumidor também mediu que trocar o fallback pelo valor da **mediana** conse
   resumo**: `N de M rótulos sem peso calibrado (X%)`. **Não reprova** (decisão do KG em 2026-10-03:
   um teto reprovaria PR que só acrescenta cenário).
 
+### D5 — Ajustes do threat model (Wave 0, `docs/seguranca/2026-10-03-wave0-recalibracao-pesos-falsify.md`)
+
+- **T1/T2 — cobertos, medidos.** Com a variável setada, o log do shard fica idêntico (207 linhas, nenhuma
+  `FALSIFY_TIMING`). A variável chega ao chunk, porque não há `env -i`.
+- **AJ-T3:** o `FALSIFY_TIMING_FILE` do workflow aponta para dentro do `$OUTPUT_DIR`, que o
+  `run-gates-falsify-shard.sh:96` cria antes do chunk. O caminho tem de ser exatamente esse diretório.
+- **AJ-T4:** `--repo` não exclui fork, porque runs de PR de fork ficam sob o repositório base (medido:
+  `cli/cli` run 37123041664, `head_repository=bodapatisaikrishna/cli`). O script exige
+  `gh api repos/kgsaran/trackfw/actions/runs/<id> --jq .head_repository.full_name` == `kgsaran/trackfw`
+  antes de baixar. Se divergir, sai com exit 1 e mensagem.
+- **AJ-T5:** a cadeia `ts` forjado → todos os pesos 0 → tudo num chunk foi medida. O impacto é de
+  disponibilidade; a cobertura não muda. Regras:
+  - `gen-falsify-scenario-weights.py` rejeita duração negativa ou não finita, e eleva duração 0 a
+    0,001 s, com aviso;
+  - escreve o JSON de forma atômica (arquivo temporário + rename);
+  - `load_weights` do `gen-falsify-chunks.py` rejeita, com erro nomeado, peso não finito, negativo ou
+    não numérico. Isso fecha o resíduo do NaN, que contaminaria o fallback pessimista inteiro.
+- **AJ-T6:** o `ts` tem validação explícita de formato antes do `float()`, e o erro nomeia o arquivo, a
+  linha e o valor.
+- **AJ-T7:** os `timing_<n>.log` não vazios para todo n em `0..FALSIFY_SHARD_COUNT-1` são exigidos, com
+  o valor lido do `quality.yml`. Quando falta algum, o JSON existente não é tocado.
+- **AJ-T8:** a linha de resumo do D4 vai para **stderr**. O stdout do gerador é o manifest que o
+  `run-gates-falsify-shard.sh:87` consome.
+
 ## Consequences
 
 - A recalibração deixa de depender de lembrar uma receita: o dado está em todo run de CI dos últimos 7

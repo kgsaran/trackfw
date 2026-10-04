@@ -33,7 +33,7 @@ Medido em 2026-10-03:
 > Dependências: nenhuma. Bloqueia toda implementação.
 
 ### ML-0A — Threat model da instrumentação no CI e da recalibração
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** hades-tf
 **Files affected:** `docs/seguranca/2026-10-03-wave0-recalibracao-pesos-falsify.md` (único arquivo)
 **Actions:**
@@ -48,8 +48,10 @@ Medido em 2026-10-03:
 3. **Alvos de falsificação nas duas direções.**
 4. **Resíduo declarado.**
 **Acceptance criteria:**
-- [ ] As quatro seções com evidência (comando e saída)
-- [ ] Veredito por cenário: coberto, requer ajuste (qual), ou resíduo
+- [x] As quatro seções com evidência (comando e saída)
+- [x] Veredito por cenário: coberto, requer ajuste (qual), ou resíduo
+
+      ✅ Parecer: 8 ameaças, T1/T2 cobertas por medição e 6 ajustes (AJ-T3..T8) incorporados ao ADR como D5. O arquiteto conferiu o `head_repository` do run de fork citado.
 
 **Gates da wave:**
 ```bash
@@ -66,7 +68,8 @@ test -s docs/seguranca/2026-10-03-wave0-recalibracao-pesos-falsify.md
 - `.github/workflows/quality.yml` (só o job `parity-falsify-shard`)
 - `Makefile`
 - `scripts/falsify-recalibrate.sh` (novo)
-- `scripts/gen-falsify-chunks.py` (só a linha de resumo)
+- `scripts/gen-falsify-chunks.py` (linha de resumo e validação no `load_weights`)
+- `scripts/gen-falsify-scenario-weights.py` (validação do `ts` e da duração, escrita atômica)
 - um autoteste do script novo, ligado no `Makefile` como os `check-*.sh` existentes
 **Actions:**
 1. ADR D1: no step do shard, `FALSIFY_TIMING_FILE: ${{ github.workspace }}/falsify-shard-out/timing_${{ matrix.shard }}.log`.
@@ -81,6 +84,7 @@ test -s docs/seguranca/2026-10-03-wave0-recalibracao-pesos-falsify.md
    - Alvo `make falsify-recalibrate RUN=<id>`.
 3. ADR D4: no `gen-falsify-chunks.py`, uma linha final em stderr: `N de M rotulos sem peso calibrado (X%)`.
    O exit code não muda.
+5. **Aplicar a D5 do ADR (AJ-T3..T8) integralmente**; cada ajuste com braço de teste.
 4. Autoteste do script: `gh` falso via PATH, com os dois braços:
    - artefatos completos → json escrito;
    - um shard sem marcas → reprova, e o json não é tocado.

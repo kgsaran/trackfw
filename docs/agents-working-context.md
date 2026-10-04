@@ -30,6 +30,20 @@
 
 ---
 
+## 2026-10-03 — Hades (fix/pesos-do-falsify-recalibrados-do-ci — ML-0A) — FIM
+
+**Início:** 2026-10-03 | Branch: `fix/pesos-do-falsify-recalibrados-do-ci`
+**Tarefa:** ML-0A — Wave 0 threat model da instrumentação no CI e da recalibração dos pesos do falsify (REQ-2026-10-03, ADR-2026-10-03, Issue #403).
+**Arquivo entregue:** `docs/seguranca/2026-10-03-wave0-recalibracao-pesos-falsify.md`
+**Medições executadas:**
+- Shard real (chunk_0, 1217 linhas) com e sem `FALSIFY_TIMING_FILE`: labels e rc idênticos; 0 linhas FALSIFY_TIMING no log; timing file com 26 linhas (13 start+13 end), 0 unmatched.
+- Pesos zero, negativos, NaN, string, 1e9: nenhum perde cenários (guarda completude independe de peso); string → gen exit 1; NaN → distribuição assimétrica.
+- `gh run download` com run bogus (HTTP 404, exit 1) e run expirado ("no valid artifacts", exit 1).
+- `head_repository.full_name` via `gh api` sobre run real: confirma mecanismo de detecção de fork.
+**Veredito:** 4 ajustes para ML-1A (AJ-T3, AJ-T4, AJ-T6, AJ-T7, AJ-T8); 5 resíduos declarados.
+
+---
+
 ## 2026-10-03 — Apolo (fix/branch-prune-consulta-o-estado-do-pr — ML-1A) — FIM
 
 **Início:** 2026-10-03 | Branch: `fix/branch-prune-consulta-o-estado-do-pr`
