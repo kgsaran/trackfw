@@ -19,6 +19,14 @@ Nenhum executor podia ver: os comandos que autorizei (`go build`, `go test`, o g
 **todos passavam**. Só apareceu quando **eu** rodei `make quality` no fim, e custou mais um ciclo de
 ML.
 
+**Reincidência em 2026-10-04 (#403, PR #517):** o handoff proibia `make quality` e eu não o autorizei em
+nenhum ML, mesmo sem nenhuma frente paralela. O mesmo autoteste novo reprovou duas vezes seguidas em gates
+vizinhos: `check-crlf-normalize-capture` no CI e depois `check-interpolated-path-in-python` no Hefesto.
+Foram dois ciclos a mais. O que fechou foi `make parity-rest` autorizado, com a instrução "repita até
+EXIT=0". 🔴 **Script novo em `scripts/` sempre passa pelos gates de forma de script** (CRLF, caminho
+interpolado, `PYTHONIOENCODING`). O handoff de quem cria script autoriza `make parity-rest`, que custa cerca
+de 2 min e não roda Go.
+
 **How to apply:**
 - MLs em paralelo → proibido `make quality` (a razão original continua válida)
 - **último ML da wave, sem frente paralela → autorize, e diga que é o AC principal**
