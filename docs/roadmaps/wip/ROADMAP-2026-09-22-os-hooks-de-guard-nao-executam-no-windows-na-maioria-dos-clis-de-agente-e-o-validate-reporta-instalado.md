@@ -47,7 +47,7 @@ negativo da REQ), a jornada de instalação no Windows e os `attention-*`.
 > Ordem: ML-0B ∥ ML-0C (arquivos e máquinas disjuntos) → ML-0A (o threat model consome as duas medições).
 
 ### ML-0B — Medição na VM: o `trackfw` no PATH de cada shell, por canal
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** ares-tf
 **Files affected:** `docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md` (único arquivo escrito no repositório)
 **Actions:**
@@ -75,7 +75,7 @@ negativo da REQ), a jornada de instalação no Windows e os `attention-*`.
 - [ ] Nenhum arquivo do repositório alterado além do documento
 
 ### ML-0C — Remedição dos schemas de hook dos CLIs de agente
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** prometeu-tf
 **Files affected:** `docs/portabilidade/2026-10-04-remedicao-do-schema-de-hook-dos-clis-de-agente.md` (único arquivo)
 **Actions:**

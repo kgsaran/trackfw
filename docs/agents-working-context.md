@@ -2,6 +2,44 @@
 
 ---
 
+## 2026-10-04 — prometeu-tf (feat/hooks-de-guard-executam-no-windows — ML-0C) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** ML-0C — Remedição do schema de hook dos 8 CLIs de agente para a ADR-2026-10-04 (guard Go, string nua `trackfw guard <nome>`)
+**Arquivo produzido:** `docs/portabilidade/2026-10-04-remedicao-do-schema-de-hook-dos-clis-de-agente.md`
+**Resultado:** Investigação pura concluída. 8 CLIs medidos (inclui Windsurf e Amazon Q — primeiras medições). Nenhum código alterado.
+**Achados principais:**
+- String nua `trackfw guard git-branch` aceita por todos os 8 CLIs sem exceção — ADR-2026-10-04 D2 verificável.
+- **Copilot:** exit code MUDOU desde 2026-09-05: preToolUse agora fail-closed para qualquer exit ≠ 0 (exceto timeout).
+- **Kiro:** fail-closed confirmado via doc oficial — qualquer exit ≠ 0 bloqueia PreToolUse.
+- **Windsurf:** schema `command`/`powershell` (como Copilot). Campo `command` = cross-platform via `bash -c` (Unix) ou `powershell -Command` (Windows).
+- **Amazon Q:** `cmd.exe /C` em Rust explícito. cwd do processo filho NÃO setado (herda cwd do Q CLI).
+- **Risco D5 validado:** fail-open em 6 de 8 CLIs (Claude Code, Codex, Gemini, Cursor, Windsurf, Amazon Q); fail-closed em Kiro e Copilot.
+- **Residuais:** cwd não determinado no Cursor e Amazon Q (requer experimento mínimo: registrar `pwd`/`%CD%` em hook de teste na VM Windows).
+
+---
+
+## 2026-10-04 — ares-tf (feat/hooks-de-guard-executam-no-windows — ML-0B) — FIM
+
+**Início:** 2026-10-04 | Branch: `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** ML-0B do ROADMAP-2026-09-22 — medição na VM Windows: `trackfw` no PATH de cada shell, por canal de instalação; falha aberta por binário velho; Git Bash + jq; custo de startup; linha de base POSIX no macOS.
+**Arquivo produzido:** `docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md`
+**Resultado:**
+- Gate `test -s docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md`: PASS
+- `trackfw validate`: 165 warnings (lenient mode), zero violations
+- Canais atualizados na VM: pip `8.0.0-rc2` → `9.2.0`, npm `8.0.0-rc2` → `9.2.0`; GitHub `.exe` `9.2.0` copiado para `C:\Users\Lab\trackfw-github-9.2.0.exe`
+**Vereditos principais:**
+- Shim npm sob Restricted bloqueia: **SIM** (quando npm é primeiro no PATH) — confirmado de cmd pai (sem herança de Bypass)
+- Binário sem `guard`: exit **1** em todos os shells — falha aberta (D5 da ADR confirmado)
+- Git Bash: binário antigo `8.0.0-rc2` em `~/bin` não atualizado pelos canais; jq **ausente**
+- guard script `.sh` sem jq: funciona (awk fallback bloqueia `git push`, exit 2)
+- pwsh: **não instalado**
+- Startup mediana: pip/GitHub Go exe ~20.6ms; npm via cmd ~137.9ms
+- Linha de base POSIX: generators Guard/Credential `ok 24.014s`; commands `ok 16.170s`; commit `d53ebfe6`
+**Surpresa:** `PSExecutionPolicyPreference=Bypass` é herdado via env por processos filhos; testes de Restricted precisam usar cmd como pai.
+
+---
+
 ## 2026-10-04 — hades-tf (fix/pin7-do-gate-de-pins-no-windows — ML-0A) — FIM
 
 **Início:** 2026-10-04 | Branch: `fix/pin7-do-gate-de-pins-no-windows`

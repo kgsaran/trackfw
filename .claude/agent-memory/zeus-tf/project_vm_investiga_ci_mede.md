@@ -25,7 +25,7 @@ triagem inteira de 512 falhas. Medindo no runner, essa dúvida não nasce. E a V
   precisa de PR próprio antes de poder rodar (foi o PR #303).
 - Recriar a VM: `docs/portabilidade/2026-09-09-vm-de-windows-para-medicao-instalacao-e-ssh.md`.
   ⚠️ **Disco em volume externo é decisão TOMADA do KG (2026-09-26)** — ele consultou e a movimentação
-  foi recomendada sem ressalvas. A VM atual roda de `/Volumes/External/`. 🔴 **Não levante isso como
+  foi recomendada sem ressalvas. A VM atual roda de `/Volumes/Externo/virtual-machines/Windows-Lab.utm` (corrigido em 2026-10-04; não é `External`). Se `utmctl list` vier vazio, o UTM não está aberto: `open -a UTM <caminho .utm>` e depois `utmctl start Windows-Lab`. 🔴 **Não levante isso como
   risco de novo**; a doc foi corrigida e o alarme já foi dado uma vez. O que sobrevive da lição
   antiga é **snapshot depois de configurar**, que não depende de onde o disco está.
 - Acesso medido em 2026-09-26: `Lab@192.168.64.6`, chave já aceita, repo em `C:\Users\Lab\trackfw`,
