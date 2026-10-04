@@ -44526,3 +44526,12 @@ Ajustes críticos: A1 (`--repo` explícito), A2 (`baseRefName` no filtro), A3 (`
 - REQ-2026-10-03 (pesos do falsify) → Done, com evidência por AC (AC1–AC9); roadmap → `done/`; label `req-aberta` removida da #403.
 - Vault: `recalibrar-pesos-do-falsify-exige-run-de-pr-e-blocos-sem-rotulo-dividem-um-peso-2026-10-04.md`.
 - Issues abertas restantes: #421 (exige a VM Windows).
+
+## 2026-10-04 — zeus-tf — INÍCIO: #514 (critério caducado e cortes por data)
+
+- Medido com o binário da `main` numa fixture: quem trava é o `barrier` (conta `- [ ]` em ML `✅`) e o `move … done` (ML `❌`), não o `validate`. Das 196 REQs `Done`, 113 têm caixa aberta. Há 4 roadmaps fora de `done/` sem Wave 0, e eles não chegam lá.
+- Decisão do KG: nenhum estado novo.
+- ADR:
+  - linha `Caducou:`, sem token novo;
+  - regra nova `req_done_open_criteria` como warning, com corte na data de entrada (2026-10-04; direção oposta à do `req_has_roadmap`);
+  - corte de 2026-09-18 para a exigência de Wave 0.
