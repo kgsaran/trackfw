@@ -2,7 +2,7 @@ BINARY=trackfw
 BUILD_DIR=bin
 HASH_CMD := $(shell command -v sha256sum >/dev/null 2>&1 && echo sha256sum || echo "shasum -a 256")
 
-.PHONY: build test parity parity-rest parity-falsify self-governance lint quality install clean check-integration-assets package-smoke check-required-full check-gates-remutation gen-manifests
+.PHONY: build test parity parity-rest parity-falsify falsify-recalibrate self-governance lint quality install clean check-integration-assets package-smoke check-required-full check-gates-remutation gen-manifests
 
 build:
 	go build -o $(BUILD_DIR)/$(BINARY) ./cmd/trackfw
@@ -211,9 +211,23 @@ parity-rest: build
 	# termina). Ligado SOMENTE em parity-rest (ubuntu-latest): kill -- -PGID nao existe
 	# em Git Bash / MSYS, o script skipa declaradamente nessa plataforma (residuo R4).
 	scripts/check-falsify-chunk-timeout.sh
+	# ML-1A (REQ-2026-10-03, #403): autoteste da recalibracao dos pesos do falsify.
+	# Exercita 4 bracos (run completo, shard ausente, fork, ts invalido) e 2 provas
+	# de mordida (S1: guarda do fork; S2: guarda do shard ausente). Sem RUN real:
+	# usa gh falso em $SCRATCH, nao chama a API do GitHub.
+	scripts/check-falsify-recalibrate.sh
 
 parity-falsify: build
 	GO_BIN=$(BUILD_DIR)/$(BINARY) scripts/run-gates-falsify-parallel.sh
+
+# ML-1A (REQ-2026-10-03, #403): recalibracao dos pesos do falsify a partir de
+# timing logs do CI. Requer RUN=<run-id> (ex: make falsify-recalibrate RUN=1234567890).
+# Autoteste: check-falsify-recalibrate.sh, ligado em parity-rest (roda no CI a cada push).
+falsify-recalibrate:
+ifndef RUN
+	$(error RUN nao definido -- use: make falsify-recalibrate RUN=<run-id>)
+endif
+	bash scripts/falsify-recalibrate.sh $(RUN)
 
 # ML-1B-bis (ROADMAP-2026-09-22-teste-e-gate-leem-a-arvore-de-governanca-do-
 # repositorio-onde-rodam-e-o-consumidor-nao-consegue-rodar-a-suite.md):

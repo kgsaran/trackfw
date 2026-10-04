@@ -2,6 +2,31 @@
 
 ---
 
+## 2026-10-04 — Ares (fix/pesos-do-falsify-recalibrados-do-ci — ML-1A corretivo parte 2) — FIM
+
+**Início:** 2026-10-04 | Branch: `fix/pesos-do-falsify-recalibrados-do-ci`
+**Tarefa:** Corretivo ML-1A parte 2 da REQ-2026-10-03 (#403) — dois defeitos: (1) autoteste não ligado no CI/parity-rest e comentário falso no Makefile; (2) provas de mordida S1/S2 gravam arquivo sabotado dentro de scripts/ podendo entrar num git add se abortadas.
+**Arquivos modificados:**
+- `Makefile` — adicionado `scripts/check-falsify-recalibrate.sh` ao alvo `parity-rest` (depois de `check-falsify-chunk-timeout.sh`); removida chamada do autoteste do alvo `falsify-recalibrate`; comentário corrigido.
+- `scripts/check-falsify-recalibrate.sh` — SABOTADO movido para `$SCRATCH`; trap simplificado; `FALSIFY_REPO_ROOT` passado nas execuções S1/S2.
+- `scripts/falsify-recalibrate.sh` — suporte a `FALSIFY_REPO_ROOT`: quando definido, deriva SCRIPT_DIR e REPO_ROOT a partir dele (sabotado em $SCRATCH encontra gen-falsify-scenario-weights.py no repo real).
+**Resultado:** 6/6 PASS; nenhum arquivo em scripts/ após autoteste; parity-rest contém check-falsify-recalibrate.sh (1 linha); make falsify-recalibrate sem RUN → exit 2.
+
+---
+
+## 2026-10-04 — Ares (fix/pesos-do-falsify-recalibrados-do-ci — ML-1A parte 2) — FIM
+
+**Início:** 2026-10-04 | Branch: `fix/pesos-do-falsify-recalibrados-do-ci`
+**Tarefa:** ML-1A parte 2/2 da REQ-2026-10-03 (#403) — workflow, script de recalibração, Makefile e autoteste.
+**Arquivos modificados:**
+- `.github/workflows/quality.yml` — adicionada `FALSIFY_TIMING_FILE` ao env do step do shard
+- `scripts/falsify-recalibrate.sh` — novo; baixa timing logs do CI e regenera weights.json
+- `scripts/check-falsify-recalibrate.sh` — novo autoteste com 4 braços + 2 provas de mordida
+- `Makefile` — alvo `falsify-recalibrate:` adicionado ao `.PHONY` e implementado
+**Resultado final:** `bash scripts/check-falsify-recalibrate.sh` → 6/6 PASS; YAML válido; `make -n falsify-recalibrate RUN=1` → exit 0; `make falsify-recalibrate` (sem RUN) → exit 2 com mensagem.
+
+---
+
 ## 2026-10-03 — Apolo (fix/branch-prune-consulta-o-estado-do-pr — ML-1B) — FIM
 
 **Início:** 2026-10-03 | Branch: `fix/branch-prune-consulta-o-estado-do-pr`

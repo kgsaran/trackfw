@@ -62,7 +62,7 @@ test -s docs/seguranca/2026-10-03-wave0-recalibracao-pesos-falsify.md
 > Dependências: Wave 0 auditada. Um ML só: o workflow, o `Makefile` e os scripts formam um caminho único.
 
 ### ML-1A — CI grava as marcas, `make falsify-recalibrate`, resumo da fração
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** ares-tf
 **Files affected:**
 - `.github/workflows/quality.yml` (só o job `parity-falsify-shard`)
@@ -89,12 +89,14 @@ test -s docs/seguranca/2026-10-03-wave0-recalibracao-pesos-falsify.md
    - artefatos completos → json escrito;
    - um shard sem marcas → reprova, e o json não é tocado.
 **Acceptance criteria:**
-- [ ] AC3 e AC5 com o autoteste nos dois braços; cada braço declara o que afirma, e o autoteste reprova
+- [x] AC3 e AC5 com o autoteste nos dois braços; cada braço declara o que afirma, e o autoteste reprova
   sem a correção
-- [ ] `actionlint` (se disponível) ou `python3 -c "import yaml..."` sobre o `quality.yml`
-- [ ] `python3 scripts/gen-falsify-chunks.py scripts/check-gates-falsify.sh <tmp> 4` imprime a linha de
+- [x] `actionlint` (se disponível) ou `python3 -c "import yaml..."` sobre o `quality.yml`
+- [x] `python3 scripts/gen-falsify-chunks.py scripts/check-gates-falsify.sh <tmp> 4` imprime a linha de
   resumo, com exit inalterado
-- [ ] `scripts/check-falsify-shard-coverage.sh` verde (**não** rodar `make quality`)
+- [x] `scripts/check-falsify-shard-coverage.sh` verde (**não** rodar `make quality`)
+
+      ✅ Entregue em duas partes depois de 3 travamentos do agente por watchdog de stream, sem escrita. Auditoria: (1) NaN/negativo/infinito como número reprovam nomeando o rótulo (conferido pelo arquiteto); (2) linha de resumo em stderr: "106 de 204 rotulos sem peso calibrado (52.0%)"; (3) autoteste 6/6 PASS rodado pelo arquiteto. Corretivo: o autoteste estava ligado só em `falsify-recalibrate` (nunca rodaria no CI, e o comentário afirmava o contrário; o handoff do arquiteto era ambíguo) → movido para `parity-rest`; a cópia sabotada saiu de `scripts/` para o scratch.
 
 **Gates da wave:**
 ```bash
