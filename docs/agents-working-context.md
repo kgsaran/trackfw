@@ -2,6 +2,66 @@
 
 ---
 
+## 2026-10-04 — artemis-tf (feat/hooks-de-guard-executam-no-windows — ML-1C) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** ML-1C — Paridade `.sh` ↔ Go pelo corpus existente (AC4).
+**Resultado:**
+- `go build ./...` — exit=0 (antes e depois de cada mutação na falsificação)
+- `go vet ./internal/generators/` — exit=0
+- `go test -race ./internal/guard/... -count=1` — PASS
+- `go test ./internal/generators/ -count=1` — **FAIL intencional**: 3 testes falham por divergências reais (ver seção de divergências abaixo). Suprimir seria mascarar gap de contrato.
+- `git diff --stat -- internal/guard scripts internal/generators/scaffold.go` — vazio (nenhuma alteração em produção)
+- `trackfw validate` — 165 warnings pré-existentes, 0 violations, exit=0
+
+**Artefatos entregues:**
+- `internal/generators/testdata/guard-sh-reference/git-branch-guard.sh` (sha256: f51ee1f9...)
+- `internal/generators/testdata/guard-sh-reference/credential-guard-project.sh` (sha256: e73d6502...)
+- `internal/generators/testdata/guard-sh-reference/credential-guard-global.sh` (sha256: af21a577...)
+- `internal/generators/guard_parity_helper_test.go` (novo): TestMain + sync.Once build, runners, assertGuardParity, isCurrentGuardScript, TestGuardShReferenceFixtures_Sha256
+- Modificados: `git_branch_guard_test.go` (braço Go em runGitBranchGuardImpl), `credential_guard_test.go` (braço Go em runCredentialGuard), `git_branch_guard_stdin_drain_test.go` (braço Go em runGuardWithPipe)
+
+**Cenários com braço duplo (bash + Go):**
+- `git_branch_guard_test.go`: 118 cenários/subtests rodam nos dois braços
+- `git_branch_guard_stdin_drain_test.go`: 6 testes com pipe real nos dois braços
+- `credential_guard_test.go`: 46 cenários/subtests nos dois braços
+- `TestGuardShReferenceFixtures_Sha256`: 1 teste de sha256 (braço único, pin de fixture)
+- Total: 171 cenários de dois braços
+
+**Divergências descobertas (FALHAS INTENCIONAIS — não suprimir):**
+
+**Grupo A — Segurança: Go não bloqueia `git push` em comando multi-linha** (rc diverge)
+- `TestGitBranchGuardAwk_C01C22_WithJQ/C02` e `WithoutJQ/C02`: payload `"echo oi\ngit push origin main"` → bash rc=2, Go rc=0 vazio
+- `TestGitBranchGuardAwk_C01C22_WithJQ/C05` e `WithoutJQ/C05`: mesmo bug com `\u000a` (escape Unicode de LF)
+- `TestGitBranchGuard_UnterminatedHeredocBeforeRealPush_StillBlocks`: heredoc mal-formado ocultando `git push` → bash rc=2, Go rc=0 vazio
+- **Causa:** Go não itera linhas dentro do campo `command`; bash split/grep correto.
+- **Severidade: CRÍTICA** — falso negativo de segurança.
+
+**Grupo B — NUL/decode: razão diferente, mesma decisão** (rc=2 ambos, stdout/stderr divergem)
+- `C22` (WithJQ e WithoutJQ): `"git push\u0000origin main"` → bash usa `reasonIndecodeable` + prefixo awk; Go usa `reasonNUL` (mais preciso). Ambos negam.
+- `C18`, `N01`, `N02`, `N08` (WithJQ e WithoutJQ): payloads malformados → bash awk emite linha diagnóstica extra no stderr; Go não emite. Mesma decisão (rc=2, mesmo stdout).
+
+**Grupo C — Tipo não-string no campo `command`** (rc diverge)
+- `N04` (WithJQ e WithoutJQ): `{"command":123}` → bash rc=0 (permite — sem comando), Go rc=2 (trata como erro de decode)
+- `N06` (WithJQ e WithoutJQ): `{"command":["git","push","origin","main"]}` → mesmo
+- **Causa:** `encoding/json` com valor não-string dispara `reasonIndecodeable` no Go em vez de "sem comando detectado → permitir".
+- **Severidade:** média — Go mais restritivo que o contrato bash.
+
+**Falsificação executada:**
+- Mutou `reasonCommit` em `internal/guard/gitbranch.go` (prefixo "FALSIFICAÇÃO:") → `TestGitBranchGuard_Commit_StdinJSON_ToolInputCommand_Blocks` reprovado com divergência de stdout/stderr Go × bash visível.
+- Mutou mensagem de "blocked" em `internal/guard/credential.go` → `TestCredentialGuardScript_BlockMode_ExitsWithCode2` reprovado.
+- Ambos revertidos; `git diff internal/guard/` vazio ao final.
+
+---
+
+## 2026-10-04 — artemis-tf (feat/hooks-de-guard-executam-no-windows — ML-1C) — INÍCIO
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** ML-1C — congelar fixtures .sh, criar helper de paridade (sync.Once + go build), adicionar braço Go a todos os runners existentes, falsificação por mutação.
+**Escopo:** `internal/generators/` (só testes), `docs/agents-working-context.md`.
+
+---
+
 ## 2026-10-04 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-1B corretivo) — FIM
 
 **Branch:** `feat/hooks-de-guard-executam-no-windows`
@@ -44978,3 +45038,16 @@ Achados notáveis para o apolo-tf:
 - Escopo pedido pelo KG: implementar a REQ e ajustar o roadmap (gerado automaticamente, sem arquivos nem comandos).
 - Achado antes de qualquer código: as configs de hook são versionadas (`.claude/settings.json`, `.codex/hooks.json`, `.gemini/settings.json`), logo escolher `.sh`/`.ps1` pelo SO no `init` quebra time misto. A linha da D7 (`powershell … -File …ps1`) tem a mesma falha. Candidato: o hook chama `trackfw guard <nome>` (Go), string idêntica em sh/PowerShell/cmd/Git Bash. Decisão do KG pendente; derruba a D7, vira adendo à ADR.
 - O guard tem 756 linhas hoje (a REQ cita 561).
+
+## 2026-10-04 — artemis-tf — INÍCIO: ML-1C (paridade .sh ↔ Go pelo corpus existente — AC4)
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** ML-1C do ROADMAP-2026-09-22: congelar fixtures dos scripts, helper de paridade, ligar corpus existente em dois braços (.sh via bash + Go via binário compilado), falsificação.
+**Escopo:** `internal/generators/testdata/guard-sh-reference/`, `internal/generators/guard_parity_helper_test.go`, modificações nos três runners (`runGitBranchGuardImpl`, `runCredentialGuard`, `runGuardWithPipe`).
+
+## 2026-10-04 — zeus-tf — PAUSA: REQ-2026-09-05 (guard em Go), sessão encerrada pelo KG
+
+- Branch `feat/hooks-de-guard-executam-no-windows`, enviada ao remoto.
+- Feito: ADR-2026-10-04 com adendo (D2 revista: duas formas de linha por família de shell; D7–D9; npm sob Restricted vira violation que orienta RemoteSigned, decisão do KG). Wave 0 completa (ML-0A/0B/0C), ML-1D, ML-1A e ML-1B auditados e commitados, cada um depois de um corretivo.
+- Em aberto: o ML-1C foi commitado com a suíte de paridade VERMELHA de propósito (3 grupos A/B/C, descritos no roadmap). O próximo passo é o corretivo ao apolo-tf; depois, o barrier da wave 1 e a Wave 2.
+- VM Windows-Lab: `/Volumes/Externo/virtual-machines/Windows-Lab.utm`, desligada ao encerrar.

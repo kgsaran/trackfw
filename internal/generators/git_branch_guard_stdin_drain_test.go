@@ -68,7 +68,23 @@ func runGuardWithPipe(t *testing.T, dir, scriptPath string, args []string, write
 		}
 		exitCode = exitErr.ExitCode()
 	}
-	return exitCode, outBuf.String(), errBuf.String(), writeErr
+
+	shRC, shOut, shErr := exitCode, outBuf.String(), errBuf.String()
+
+	// ML-1C — braço Go com pipe real (espelha a mesma semântica de EPIPE).
+	if isCurrentGuardScript(scriptPath) {
+		goRC, goOut, goErr, goWriteErr := runGuardBinaryGitBranchWithPipe(t, dir, args, writeFn)
+		assertGuardParity(t, t.Name(), shRC, shOut, shErr, goRC, goOut, goErr, nil)
+		// EPIPE: ambos os braços devem concordar sobre se o escritor recebeu erro.
+		shWE := writeErr != nil
+		goWE := goWriteErr != nil
+		if shWE != goWE {
+			t.Errorf("[paridade pipe .sh↔Go] %s: bash writeErr=%v, go writeErr=%v",
+				t.Name(), writeErr, goWriteErr)
+		}
+	}
+
+	return shRC, shOut, shErr, writeErr
 }
 
 // largeGuardPayload monta um payload JSON de hook com ~200 KB — o mesmo tamanho do fixture do

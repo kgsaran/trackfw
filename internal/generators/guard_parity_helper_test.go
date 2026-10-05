@@ -1,0 +1,337 @@
+// guard_parity_helper_test.go — ML-1C: paridade .sh ↔ Go (AC4).
+//
+// Responsabilidades deste arquivo:
+//
+//  1. TestMain — compila o binário do trackfw uma vez e registra o cleanup.
+//  2. Funções de conveniência usadas pelos runners modificados:
+//     - compiledGuardBinary(t) → caminho absoluto do binário já compilado.
+//     - runGuardBinaryGitBranch(…) → roda "trackfw guard git-branch [--command …]".
+//     - runGuardBinaryCredential(…) → roda "trackfw guard credential [--global]".
+//     - assertGuardParity(…) → compara (rc, stdout, stderr) e reporta divergência.
+//  3. Teste das fixtures congeladas (sha256 pinado):
+//     - TestGuardShReferenceFixtures_Sha256 — reprova se um ML futuro mudar as fixtures.
+//
+// NOTA PARA O ML-2A: depois que os scripts .sh virarem `exec trackfw guard …`, os braços
+// bash e Go passarão a ser idênticos por construção.  Os testes de paridade continuarão
+// verdes, mas a comparação se tornará vacuosa.  O TestGuardShReferenceFixtures_Sha256
+// sinalizará essa mudança (sha256 divergirá das fixtures congeladas aqui).
+package generators
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+)
+
+// ---------------------------------------------------------------------------
+// Variáveis de pacote — binário compilado uma vez para toda a execução.
+// ---------------------------------------------------------------------------
+
+var (
+	guardBinaryOnce sync.Once
+	guardBinaryDir  string // diretório persistente; apagado no TestMain cleanup
+	guardBinaryPath string // caminho absoluto do binário compilado
+	guardBinaryErr  error  // erro de compilação, se houver
+)
+
+// moduleRootForTests devolve a raiz do módulo Go deduzida a partir do caminho
+// deste arquivo-fonte.  Usa runtime.Caller para ser imune a os.Chdir() que os
+// testes de fixture chamam.
+func moduleRootForTests() string {
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		panic("runtime.Caller falhou")
+	}
+	// thisFile = …/trackfw/internal/generators/guard_parity_helper_test.go
+	// subir 3 níveis: generators → internal → trackfw
+	return filepath.Dir(filepath.Dir(filepath.Dir(thisFile)))
+}
+
+// testdataGuardRefDir devolve o caminho absoluto de
+// internal/generators/testdata/guard-sh-reference/.
+func testdataGuardRefDir() string {
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		panic("runtime.Caller falhou")
+	}
+	return filepath.Join(filepath.Dir(thisFile), "testdata", "guard-sh-reference")
+}
+
+// buildGuardBinary compila o binário uma vez. Chamado por TestMain.
+func buildGuardBinary() {
+	guardBinaryOnce.Do(func() {
+		dir, err := os.MkdirTemp("", "trackfw-guard-bin-*")
+		if err != nil {
+			guardBinaryErr = fmt.Errorf("MkdirTemp: %w", err)
+			return
+		}
+		guardBinaryDir = dir
+
+		binName := "trackfw"
+		if runtime.GOOS == "windows" {
+			binName = "trackfw.exe"
+		}
+		guardBinaryPath = filepath.Join(dir, binName)
+
+		modRoot := moduleRootForTests()
+		cmd := exec.Command("go", "build", "-o", guardBinaryPath, "./cmd/trackfw")
+		cmd.Dir = modRoot
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			guardBinaryErr = fmt.Errorf("go build falhou:\n%s\n%w", out, err)
+		}
+	})
+}
+
+// cleanupGuardBinary apaga o diretório do binário. Chamado por TestMain.
+func cleanupGuardBinary() {
+	if guardBinaryDir != "" {
+		_ = os.RemoveAll(guardBinaryDir)
+	}
+}
+
+// compiledGuardBinary devolve o caminho do binário compilado.
+// Chama t.Fatalf se a compilação falhou.
+func compiledGuardBinary(t *testing.T) string {
+	t.Helper()
+	if guardBinaryErr != nil {
+		t.Fatalf("binário do trackfw não compilou: %v", guardBinaryErr)
+	}
+	return guardBinaryPath
+}
+
+// TestMain — compila o binário uma vez antes de todos os testes do pacote.
+func TestMain(m *testing.M) {
+	buildGuardBinary()
+	code := m.Run()
+	cleanupGuardBinary()
+	os.Exit(code)
+}
+
+// ---------------------------------------------------------------------------
+// Auxiliares de execução do binário.
+// ---------------------------------------------------------------------------
+
+// runGuardBinaryGitBranch executa "trackfw guard git-branch [--command …]".
+//   - dir: cwd do processo (mesmo do braço bash).
+//   - args: se não vazio, passado como --command "<args joined by space>".
+//   - stdin: conteúdo injetado no stdin do binário.
+//   - env: slice de env para o processo (nil = herdar do pai).
+func runGuardBinaryGitBranch(t *testing.T, dir string, args []string, stdin string, env []string) (exitCode int, stdout, stderr string) {
+	t.Helper()
+
+	binPath := compiledGuardBinary(t)
+	cmdArgs := []string{"guard", "git-branch"}
+	if len(args) > 0 {
+		// Bash usa "$*" para juntar args separados por IFS (espaço por padrão).
+		cmdArgs = append(cmdArgs, "--command", strings.Join(args, " "))
+	}
+	cmd := exec.Command(binPath, cmdArgs...)
+	cmd.Dir = dir
+	cmd.Stdin = strings.NewReader(stdin)
+	if env != nil {
+		cmd.Env = env
+	}
+	var outBuf, errBuf strings.Builder
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
+
+	err := cmd.Run()
+	if err == nil {
+		return 0, outBuf.String(), errBuf.String()
+	}
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		return exitErr.ExitCode(), outBuf.String(), errBuf.String()
+	}
+	t.Fatalf("erro executando binário guard git-branch: %v (stderr: %s)", err, errBuf.String())
+	return -1, "", ""
+}
+
+// runGuardBinaryCredential executa "trackfw guard credential [--global]".
+//   - dir: cwd do processo.
+//   - stdin: conteúdo injetado no stdin.
+//   - global: se true, passa --global.
+func runGuardBinaryCredential(t *testing.T, dir, stdin string, global bool) (exitCode int, stdout, stderr string) {
+	t.Helper()
+
+	binPath := compiledGuardBinary(t)
+	cmdArgs := []string{"guard", "credential"}
+	if global {
+		cmdArgs = append(cmdArgs, "--global")
+	}
+	cmd := exec.Command(binPath, cmdArgs...)
+	cmd.Dir = dir
+	cmd.Stdin = strings.NewReader(stdin)
+	var outBuf, errBuf strings.Builder
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
+
+	err := cmd.Run()
+	if err == nil {
+		return 0, outBuf.String(), errBuf.String()
+	}
+	if exitErr, ok := err.(*exec.ExitError); ok {
+		return exitErr.ExitCode(), outBuf.String(), errBuf.String()
+	}
+	t.Fatalf("erro executando binário guard credential: %v (stderr: %s)", err, errBuf.String())
+	return -1, "", ""
+}
+
+// runGuardBinaryGitBranchWithPipe executa "trackfw guard git-branch [--command …]"
+// com um pipe real no stdin, espelhando o padrão de runGuardWithPipe.
+// Retorna (exitCode, stdout, stderr, writeErr).
+func runGuardBinaryGitBranchWithPipe(t *testing.T, dir string, args []string, writeFn func(w *os.File) error) (exitCode int, stdout, stderr string, writeErr error) {
+	t.Helper()
+
+	binPath := compiledGuardBinary(t)
+	cmdArgs := []string{"guard", "git-branch"}
+	if len(args) > 0 {
+		cmdArgs = append(cmdArgs, "--command", strings.Join(args, " "))
+	}
+
+	pr, pw, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe (Go arm): %v", err)
+	}
+
+	cmd := exec.Command(binPath, cmdArgs...)
+	cmd.Dir = dir
+	cmd.Stdin = pr
+	var outBuf, errBuf strings.Builder
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
+
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("erro iniciando binário guard git-branch: %v", err)
+	}
+	_ = pr.Close()
+
+	done := make(chan error, 1)
+	go func() { done <- writeFn(pw) }()
+
+	waitErr := cmd.Wait()
+	_ = pw.Close()
+
+	select {
+	case writeErr = <-done:
+	case <-time.After(15 * time.Second):
+		t.Fatalf("escritor (braço Go) não terminou em 15s")
+	}
+
+	exitCode = 0
+	if waitErr != nil {
+		exitErr, ok := waitErr.(*exec.ExitError)
+		if !ok {
+			t.Fatalf("erro executando binário guard git-branch: %v (stderr: %s)", waitErr, errBuf.String())
+		}
+		exitCode = exitErr.ExitCode()
+	}
+	return exitCode, outBuf.String(), errBuf.String(), writeErr
+}
+
+// ---------------------------------------------------------------------------
+// Comparação de paridade.
+// ---------------------------------------------------------------------------
+
+// assertGuardParity compara os resultados bash e Go e reporta divergência.
+// Se divergirem, o teste REPROVA — não é normalizado.
+// normalizations lista as substituições aplicadas às strings de saída antes
+// da comparação (ex: trocar caminhos de temp dir específicos por <TMPDIR>).
+func assertGuardParity(t *testing.T, testName string, shRC int, shStdout, shStderr string, goRC int, goStdout, goStderr string, normalizations []normalization) {
+	t.Helper()
+
+	shOut := applyNormalizations(shStdout, normalizations)
+	shErr := applyNormalizations(shStderr, normalizations)
+	goOut := applyNormalizations(goStdout, normalizations)
+	goErr := applyNormalizations(goStderr, normalizations)
+
+	if shRC != goRC || shOut != goOut || shErr != goErr {
+		t.Errorf("[paridade .sh↔Go] %s\n"+
+			"  bash  rc=%d stdout=%q stderr=%q\n"+
+			"  go    rc=%d stdout=%q stderr=%q\n"+
+			"  normalizações: %v",
+			testName, shRC, shOut, shErr, goRC, goOut, goErr, normalizations)
+	}
+}
+
+// normalization é um par (old, new) aplicado como strings.ReplaceAll às saídas.
+type normalization struct {
+	Old, New string
+}
+
+func applyNormalizations(s string, ns []normalization) string {
+	for _, n := range ns {
+		s = strings.ReplaceAll(s, n.Old, n.New)
+	}
+	return s
+}
+
+// isCurrentGuardScript verifica se scriptPath aponta para um dos scripts de guarda
+// canônicos (nome de arquivo esperado).  Retorna false para scripts históricos como
+// old-guard.sh, que são exercitados por TestGitBranchGuardAwk_ProvaDeMordida.
+func isCurrentGuardScript(scriptPath string) bool {
+	base := filepath.Base(scriptPath)
+	return base == "trackfw-git-branch-guard.sh" || base == "trackfw-credential-guard.sh"
+}
+
+// isGlobalCredentialScript detecta se scriptPath é a variante global do credential
+// guard (vive em /.trackfw/scripts/ dentro do HOME de fixture).
+func isGlobalCredentialScript(scriptPath string) bool {
+	// A variante global é gravada em <fakeHome>/.trackfw/scripts/trackfw-credential-guard.sh
+	return strings.Contains(scriptPath, string(filepath.Separator)+".trackfw"+string(filepath.Separator)+"scripts"+string(filepath.Separator))
+}
+
+// ---------------------------------------------------------------------------
+// Teste das fixtures congeladas — sha256 pinado.
+// ---------------------------------------------------------------------------
+
+// TestGuardShReferenceFixtures_Sha256 afirma que as três fixtures congeladas em
+// testdata/guard-sh-reference/ correspondem byte-a-byte aos scripts de guarda
+// vigentes no momento do ML-1C (2026-10-04).
+//
+// Após o ML-2A, quando os .sh virarem `exec trackfw guard …`, estes hashes vão
+// divergir — e é CORRETO que este teste reprove: o ML-2A deve então atualizar
+// as fixtures e os hashes abaixo (parte da sua entrega).
+//
+// AFIRMA: que as fixtures congeladas não foram alteradas desde o ML-1C, garantindo
+// que o braço bash da paridade continua rodando o script original (completo) e não
+// um invólucro que chama Go.
+func TestGuardShReferenceFixtures_Sha256(t *testing.T) {
+	expected := map[string]string{
+		"git-branch-guard.sh":       "f51ee1f93a168a19a5e03090f38543409702c03044f7807f3ff5bb3a1f3232a3",
+		"credential-guard-project.sh": "e73d6502f851fee4ca304c1e8e8a60485f1339714734fb09d89a514dea65a4f7",
+		"credential-guard-global.sh":  "af21a5772a2edeba738db454771e8347b6300b4272a17c447f68a921b9c3cc43",
+	}
+
+	dir := testdataGuardRefDir()
+	for name, want := range expected {
+		path := filepath.Join(dir, name)
+		f, err := os.Open(path)
+		if err != nil {
+			t.Errorf("fixture %s: não abrível: %v", name, err)
+			continue
+		}
+		h := sha256.New()
+		if _, err := io.Copy(h, f); err != nil {
+			_ = f.Close()
+			t.Errorf("fixture %s: leitura falhou: %v", name, err)
+			continue
+		}
+		_ = f.Close()
+		got := hex.EncodeToString(h.Sum(nil))
+		if got != want {
+			t.Errorf("fixture %s: sha256 divergiu\n  want %s\n  got  %s\n"+
+				"  → o script mudou. Se o ML-2A foi aplicado (script virou invólucro),\n"+
+				"    regenere as fixtures e atualize os hashes aqui.", name, want, got)
+		}
+	}
+}

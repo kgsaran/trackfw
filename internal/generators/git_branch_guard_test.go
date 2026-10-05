@@ -154,13 +154,23 @@ func runGitBranchGuardImpl(t *testing.T, dir, scriptPath string, args []string, 
 	cmd.Stderr = &errBuf
 	err := cmd.Run()
 	if err == nil {
-		return 0, outBuf.String(), errBuf.String()
+		exitCode, stdout, stderr = 0, outBuf.String(), errBuf.String()
+	} else if exitErr, ok := err.(*exec.ExitError); ok {
+		exitCode, stdout, stderr = exitErr.ExitCode(), outBuf.String(), errBuf.String()
+	} else {
+		t.Fatalf("erro executando script: %v (stderr: %s)", err, errBuf.String())
+		return -1, "", ""
 	}
-	if exitErr, ok := err.(*exec.ExitError); ok {
-		return exitErr.ExitCode(), outBuf.String(), errBuf.String()
+
+	// ML-1C — braço Go: compara saída do binário trackfw com o resultado bash.
+	// Pulado para scripts históricos (ex: old-guard.sh do TestGitBranchGuardAwk_ProvaDeMordida).
+	if isCurrentGuardScript(scriptPath) {
+		goRC, goOut, goErr := runGuardBinaryGitBranch(t, dir, args, stdin, env)
+		// Normalização: nenhuma para git-branch (saída determinística, sem timestamps ou paths).
+		assertGuardParity(t, t.Name(), exitCode, stdout, stderr, goRC, goOut, goErr, nil)
 	}
-	t.Fatalf("erro executando script: %v (stderr: %s)", err, errBuf.String())
-	return -1, "", ""
+
+	return exitCode, stdout, stderr
 }
 
 // makeEnvWithoutJQ devolve os.Environ() com PATH substituído pelo diretório curado

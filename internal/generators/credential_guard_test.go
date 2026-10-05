@@ -372,13 +372,24 @@ func runCredentialGuard(t *testing.T, dir, scriptPath, stdin string) (exitCode i
 	cmd.Stderr = &errBuf
 	err := cmd.Run()
 	if err == nil {
-		return 0, outBuf.String(), errBuf.String()
+		exitCode, stdout, stderr = 0, outBuf.String(), errBuf.String()
+	} else if exitErr, ok := err.(*exec.ExitError); ok {
+		exitCode, stdout, stderr = exitErr.ExitCode(), outBuf.String(), errBuf.String()
+	} else {
+		t.Fatalf("erro executando script: %v (stderr: %s)", err, errBuf.String())
+		return -1, "", ""
 	}
-	if exitErr, ok := err.(*exec.ExitError); ok {
-		return exitErr.ExitCode(), outBuf.String(), errBuf.String()
+
+	// ML-1C — braço Go: compara saída do binário trackfw com o resultado bash.
+	if isCurrentGuardScript(scriptPath) {
+		global := isGlobalCredentialScript(scriptPath)
+		goRC, goOut, goErr := runGuardBinaryCredential(t, dir, stdin, global)
+		// Normalização: nenhuma para as saídas stderr/stdout (sem timestamps nem paths nas
+		// mensagens de blocked/warning). O arquivo de attention é um side-effect não comparado aqui.
+		assertGuardParity(t, t.Name(), exitCode, stdout, stderr, goRC, goOut, goErr, nil)
 	}
-	t.Fatalf("erro executando script: %v (stderr: %s)", err, errBuf.String())
-	return -1, "", ""
+
+	return exitCode, stdout, stderr
 }
 
 func attentionFileExists(dir string) bool {
