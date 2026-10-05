@@ -45118,3 +45118,8 @@ Achados notáveis para o apolo-tf:
 
 - Medido antes do despacho: `go test ./internal/generators/ -count=1` FAIL em 3 testes; subtestes vermelhos C02, C05, C18, C22, N01, N02, N04, N06, N08 (com e sem jq) + `TestGitBranchGuard_UnterminatedHeredocBeforeRealPush_StillBlocks`.
 - Despacho: corretivo ao apolo-tf em `internal/guard/gitbranch.go` + `internal/generators/guard_parity_helper_test.go`.
+
+## 2026-10-05 — zeus-tf — WAVE 1 FECHADA, INÍCIO da Wave 2
+
+- ML-1C auditado e commitado (8b68bff9); barrier da wave 1 passou com `--trust-local-gates`; push feito. `trackfw.yaml` (+12 do init) e `.trackfw-credential-guard.json` descartados com autorização do KG.
+- ML-2B despachado ao apolo-tf. ML-2A bloqueado: o gate `trackfw guard --help` = 0 falha (PATH resolve /opt/homebrew/bin/trackfw 9.2.0) e o `make install` da ADR grava em /usr/local/bin, que fica DEPOIS do homebrew no PATH — a mitigação escrita não funciona nesta máquina. Decisão de onde instalar o build da branch pendente com o KG.

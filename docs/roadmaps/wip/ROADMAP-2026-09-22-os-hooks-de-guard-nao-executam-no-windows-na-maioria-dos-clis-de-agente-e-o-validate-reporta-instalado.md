@@ -228,12 +228,15 @@ campo `command` (AC1); `migrateHookCommand` troca as formas antigas pela nova no
 - [ ] `go test ./internal/generators/ -count=1` verde
 
 ### ML-2B — `validate` relata se o hook pode executar (AC7)
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Squad:** apolo-tf
 **Files affected:** `internal/validator/validator_credential_guard*.go`, `internal/validator/validator_git_branch_guard*.go` (+ testes)
 **Actions:** `*_hook_resolvable` compara a linha **exata** da D2 revista (hoje é `strings.Contains`, que aceitaria qualquer sufixo); versão mínima do `trackfw` resolvido; no Windows, `trackfw` resolvido para `.ps1` com a política efetiva `Restricted` é violation com orientação `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` (ML-1D: com o sufixo, sai 0 = falha aberta); `trackfw.exe`/`trackfw.cmd`/`trackfw.bat` na raiz do projeto é violation (o `cmd.exe` procura no cwd antes do PATH); uma config que ainda aponta para o `.sh`
 recebe um aviso de que não executa no Windows fora do Git Bash; `trackfw` resolvido sem o subcomando
 `guard` vira violation. A mitigação do binário velho segue o que a Wave 0 decidir.
+**Decisão do arquiteto (2026-10-05):** a "versão mínima" da ADR é atendida pela sonda do subcomando
+(`<trackfw resolvido> guard --help` sai 0). O `guard` estreia numa única versão, então todo binário que o
+tem já atende o mínimo, e uma constante de versão reprovaria os builds de desenvolvimento (que reportam 9.2.0).
 **Acceptance criteria:**
 - [ ] Falsificação nas duas direções por regra
 - [ ] `go test ./internal/validator/ -count=1` verde
