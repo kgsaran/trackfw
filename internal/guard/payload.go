@@ -135,7 +135,9 @@ func DrainStdin(r io.Reader, idleTimeout time.Duration) ([]byte, bool) {
 //     case-sensitive and exact (e.g. "Command" never overwrites "command").
 //   - Duplicate keys: last value wins (Go map semantics; matches jq).
 //   - Key present with value null → treated as absent (try next priority).
-//   - Key present, value not a JSON string → ErrIndecodeable (fail-closed).
+//   - Key present, value not a JSON string (number, array, object, bool) →
+//     treated as absent (matches awk extractor, which only captures string-quoted
+//     values; try next priority key).
 //   - Decoded string contains NUL → ErrNULInCommand (fail-closed).
 //   - UTF-8 BOM stripped before parsing (PowerShell may emit one).
 //
@@ -168,11 +170,15 @@ func ExtractCommand(data []byte) (string, error) {
 
 	// Priority 2: command (root-level)
 	if raw, ok := root["command"]; ok && !isJSONNull(raw) {
-		var cmd string
-		if err := json.Unmarshal(raw, &cmd); err != nil {
-			return "", fmt.Errorf("%w: %s", ErrIndecodeable, err)
+		// Non-string value → treat as absent (matches awk extractor behavior).
+		trimmedRaw := bytes.TrimLeft(raw, " \t\r\n")
+		if len(trimmedRaw) > 0 && trimmedRaw[0] == '"' {
+			var cmd string
+			if err := json.Unmarshal(raw, &cmd); err != nil {
+				return "", fmt.Errorf("%w: %s", ErrIndecodeable, err)
+			}
+			return checkNUL(cmd)
 		}
-		return checkNUL(cmd)
 	}
 
 	// Priority 3: tool_info.command_line
@@ -208,6 +214,12 @@ func extractNested(root map[string]json.RawMessage, objKey, fieldKey string) (st
 	}
 	rawField, ok := nested[fieldKey]
 	if !ok || isJSONNull(rawField) {
+		return "", false, nil
+	}
+	// Non-string JSON value (number, array, object, bool) → treat as absent.
+	// Matches the bash awk extractor which only captures string-quoted values.
+	trimmedRaw := bytes.TrimLeft(rawField, " \t\r\n")
+	if len(trimmedRaw) == 0 || trimmedRaw[0] != '"' {
 		return "", false, nil
 	}
 	var val string

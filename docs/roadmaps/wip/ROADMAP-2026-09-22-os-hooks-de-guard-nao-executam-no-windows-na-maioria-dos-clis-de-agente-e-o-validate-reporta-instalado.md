@@ -178,7 +178,7 @@ isenção de destino efêmero, `credential_guard.mode` `warn`/`block` do `trackf
       ✅ Auditoria: a primeira entrega reprovou. Com `cat *.txt`, o sh dava rc=2 e o Go rc=0 (falha aberta): o `set -- $CMD_LINE` do .sh expande glob, e o Go não. O corretivo portou o glob e a variante global como `--global` (default block, sem checagem de projeto, `docs/roadmaps` fixo e sem mkdir), decisão do arquiteto. Remedido pelo arquiteto com o binário: o glob dá 2 nos dois lados; o global com JWT, fora de projeto, também dá 2 nos dois lados; `-race` verde.
 
 ### ML-1C — Paridade `.sh` ↔ Go pelo corpus existente (AC4)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** artemis-tf
 **Files affected:** `internal/generators/git_branch_guard_test.go`, `credential_guard_test.go`,
 `git_branch_guard_dedup_test.go`, `git_branch_guard_stdin_drain_test.go` (só testes)
@@ -188,15 +188,14 @@ isenção de destino efêmero, `credential_guard.mode` `warn`/`block` do `trackf
 `trackfw guard <nome>` compilado no teste, comparando exit code, stderr e stdout. Divergência
 reprova. Contar e reportar quantos cenários rodam nos dois braços.
 **Acceptance criteria:**
-- [ ] Os dois braços rodam em todo cenário (número reportado e conferido pelo arquiteto)
-- [ ] Falsificação: alterar uma `REASON` no Go faz o teste de paridade reprovar
-- [ ] `go test ./internal/generators/ -count=1` verde
+- [x] Os dois braços rodam em todo cenário — 244 chamadas de `assertGuardParity` no pacote (contador temporário, medido pelo apolo-tf; o modo com/sem jq conta 2 por subteste). Número não reconferido de forma independente pelo arquiteto.
+- [x] Falsificação: trocar `reasonPush` reprova C01; trocar `reasonNUL` reprova C22 (a normalização do C22 não engole o caso)
+- [x] `go test ./internal/generators/ -count=1` verde — medido pelo arquiteto em 2026-10-05: `ok … 61.020s`; `go test ./internal/guard/...` ok
 
-      🔄 Estado em 2026-10-04 (sessão encerrada): a suíte de paridade foi entregue e morde (170 cenários nos dois braços; a falsificação de uma REASON reprova). Ela está **vermelha de propósito**, por 3 grupos de divergência:
-      **A** (falha aberta): o Go libera `git push` numa segunda linha do comando (`"echo oi\ngit push …"`; C02, C05 e `TestGitBranchGuard_UnterminatedHeredocBeforeRealPush_StillBlocks`); o sh bloqueia.
-      **B**: `command` não-string (N04, N06): o corpus afirma rc=0, e o Go nega. A decisão é fidelidade ao sh.
-      **C**: mesma decisão, outra mensagem. Normalizar só as linhas diagnósticas do awk no stderr do braço bash; no C22, o Go deve devolver o texto do braço com jq.
-      **Próximo passo:** redespachar o corretivo ao apolo-tf (`internal/guard/gitbranch.go` + `guard_parity_helper_test.go`), com o critério `go test ./internal/generators/ -count=1` verde. O primeiro despacho foi parado antes de editar qualquer arquivo.
+      ✅ Fechado em 2026-10-05 (dois corretivos do apolo-tf):
+      **A**: `quoteAwareSplit` trata LF fora de aspas como separador de segmento; `git push` na segunda linha bloqueia (teste `TestMatchSubcommand_MultilineNewlineBlocksSecondSegment`).
+      **B**: valor não-string em `command` é tratado como ausente (`payload.go`), igual ao awk.
+      **C**: linhas diagnósticas do awk removidas só do stderr do bash. C22: com jq, o próprio `.sh` devolve a REASON de NUL, igual ao Go. Sem jq, o awk do `.sh` diverge só no texto (rc=2 nos dois). Normalização estreita acionada só pelo `nul_in_value` (2 acionamentos, ambos C22).
 
 **Gates da wave:**
 ```bash

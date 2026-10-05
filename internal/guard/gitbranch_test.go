@@ -334,6 +334,16 @@ func TestMatchSubcommand_PipeBlocked(t *testing.T) {
 	}
 }
 
+// TestMatchSubcommand_MultilineNewlineBlocksSecondSegment asserts that a newline outside
+// quotes creates a segment boundary, so git push in the second segment is blocked.
+// Assertion: Group A — Go analyzes multiline commands segment-by-segment; a bare LF
+// outside quotes is equivalent to `;` (bash quote_aware_split awk behavior).
+func TestMatchSubcommand_MultilineNewlineBlocksSecondSegment(t *testing.T) {
+	if got := MatchSubcommand("echo oi\ngit push origin main"); got != "push" {
+		t.Fatalf("got %q want %q (newline outside quotes must create segment boundary)", got, "push")
+	}
+}
+
 // --- RunGitBranch integration tests ---
 
 // TestRunGitBranch_DenyPush asserts that a push payload from stdin → exit 2.
@@ -451,14 +461,15 @@ func TestRunGitBranch_NULDeny(t *testing.T) {
 	}
 }
 
-// TestRunGitBranch_IndecodableDeny asserts indecodeable command key → deny (D2).
-// Assertion: fail-closed on indecodeable field.
-func TestRunGitBranch_IndecodableDeny(t *testing.T) {
+// TestRunGitBranch_NonStringCommandAbsent asserts that a non-string command value is
+// treated as absent (no-op), matching the bash awk extractor behavior.
+// Assertion: Group B — {"command":99} → absent → guard is a no-op → rc=0.
+func TestRunGitBranch_NonStringCommandAbsent(t *testing.T) {
 	dir := makeProjectDir(t)
 	payload := `{"command":99}`
 	code, _, _ := runWith(t, dir, payload, "")
-	if code != 2 {
-		t.Fatalf("indecodeable key: expected exit 2, got %d", code)
+	if code != 0 {
+		t.Fatalf("non-string command: expected exit 0 (no-op), got %d", code)
 	}
 }
 

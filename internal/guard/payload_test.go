@@ -292,13 +292,22 @@ func TestExtractCommand_NUL(t *testing.T) {
 	}
 }
 
-// TestExtractCommand_Indecodeable confirms ADR-2026-10-02 D2 fail-closed.
-// Assertion: command key present with non-string value → ErrIndecodeable.
-func TestExtractCommand_Indecodeable(t *testing.T) {
-	input := `{"command":12345}`
-	_, err := ExtractCommand([]byte(input))
-	if err == nil {
-		t.Fatal("expected error for non-string command value, got nil")
+// TestExtractCommand_NonStringAbsent confirms that a non-string command value is treated
+// as absent (matches awk extractor which only captures string-quoted values).
+// Assertion: Group B — {"command":12345} → absent → ("", nil), not ErrIndecodeable.
+func TestExtractCommand_NonStringAbsent(t *testing.T) {
+	for _, input := range []string{
+		`{"command":12345}`,
+		`{"command":true}`,
+		`{"command":["git","push"]}`,
+	} {
+		cmd, err := ExtractCommand([]byte(input))
+		if err != nil {
+			t.Fatalf("input %s: unexpected error %v (should be treated as absent)", input, err)
+		}
+		if cmd != "" {
+			t.Fatalf("input %s: got cmd %q, want empty (non-string → absent)", input, cmd)
+		}
 	}
 }
 

@@ -2,6 +2,68 @@
 
 ---
 
+## 2026-10-05 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-1C corretivo 2) — INÍCIO
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** Segundo corretivo ML-1C — fechar C22 (normalização estreita para awk NUL vs jq NUL).
+**Escopo:** `internal/generators/guard_parity_helper_test.go`.
+
+---
+
+## 2026-10-05 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-1C corretivo 2) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** Segundo corretivo ML-1C — normalização estreita C22 em `guard_parity_helper_test.go`.
+**Resultado:**
+- `go build ./...` — exit=0
+- `go test ./internal/guard/... -count=1` — ok
+- `go test ./internal/generators/ -count=1` — ok (C22 verde nos dois braços)
+- Falsificação reasonPush: `FALSIFICATION_SENTINEL` → C01/WithJQ reprovar → restaurado → `git diff --stat internal/guard/gitbranch.go` = `1 file changed, 6 insertions(+)` (inalterado).
+- Falsificação reasonNUL: `FALSIFICATION_SENTINEL_NUL` → C22/WithJQ reprovar → restaurado → diff stat idêntico.
+- `trackfw validate` — 165 warnings, 0 violations.
+
+**Fix entregue:**
+- `internal/generators/guard_parity_helper_test.go`: constantes `c22AwkNulSentinel`, `c22IndecodeableReason`, `c22NULReason`; em `assertGuardParity`, quando o stderr bash RAW contém a linha `extrator JSON (sem jq): nul_in_value`, adiciona normalização estreita que substitui `reasonIndecodeable` por `reasonNUL` antes da comparação (roadmap ML-1C, grupo C, C22). Contador temporário adicionado e removido.
+
+**Contagem de cenários de dois braços:**
+- Método: `atomic.Int64` em `assertGuardParity`, impresso no `TestMain`, removido após medição.
+- Total `assertGuardParity` calls no suite completo `./internal/generators/`: **244**.
+- Acionamentos da normalização C22: **2** (um por modo: WithJQ via runGitBranchGuardBothModes/noJQ, e WithoutJQ direto). Nenhum outro cenário acionou.
+- Relação com referência anterior (171 cenários artemis): `runGitBranchGuardBothModes` gera 2 calls por cenário; `runCredentialGuard` gera 1. O valor de 244 inclui ambas as contagens.
+
+**`trackfw.yaml`: +12 linhas geradas por `trackfw init` durante este ciclo; reversão pendente com o arquiteto.**
+
+---
+
+## 2026-10-05 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-1C corretivo) — INÍCIO
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** Corretivo ML-1C — fechar Grupo A (segurança), Grupo B (tipo não-string), Grupo C (diagnóstico awk).
+**Escopo:** `internal/guard/gitbranch.go`, `internal/guard/payload.go`, `internal/guard/gitbranch_test.go`, `internal/guard/payload_test.go`, `internal/generators/guard_parity_helper_test.go`.
+
+---
+
+## 2026-10-05 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-1C corretivo) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** Corretivo ML-1C — fechar Grupo A (segurança multi-linha), Grupo B (tipo não-string → ausente), Grupo C (normalização diagnóstico awk).
+**Resultado:**
+- `go build ./...` — exit=0
+- `go test ./internal/guard/... -count=1` — PASS (todos os testes, incluindo novos)
+- `go test ./internal/generators/ -count=1` — 1 FAIL intencional: C22 nos dois braços (WithJQ e WithoutJQ). Todos os outros 60 cenários de C01-C21 e N01-N09 passam nos dois braços.
+- Falsificação: `reasonPush` substituído por FALSIFICATION_SENTINEL → C01/WithJQ reprovado; restaurado → PASS.
+
+**Fixes entregues:**
+- `internal/guard/gitbranch.go`: `quoteAwareSplit` — `\n` fora de aspas agora emite separador de segmento (Grupo A).
+- `internal/guard/payload.go`: `extractNested` e root-level `command` — valor JSON não-string → tratado como ausente, não `ErrIndecodeable` (Grupo B). Doc comment atualizado.
+- `internal/generators/guard_parity_helper_test.go`: `assertGuardParity` aplica automaticamente 6 normalizações de linhas diagnósticas do extrator awk do bash (Grupo C).
+- `internal/guard/gitbranch_test.go`: novo `TestMatchSubcommand_MultilineNewlineBlocksSecondSegment` (afirmação Grupo A); `TestRunGitBranch_IndecodableDeny` renomeado/atualizado para `TestRunGitBranch_NonStringCommandAbsent` (afirmação Grupo B).
+- `internal/guard/payload_test.go`: `TestExtractCommand_Indecodeable` renomeado/atualizado para `TestExtractCommand_NonStringAbsent` (afirmação Grupo B).
+
+**`trackfw.yaml`: +12 linhas geradas por `trackfw init` durante este ciclo; reversão pendente com o arquiteto.**
+
+---
+
 ## 2026-10-04 — artemis-tf (feat/hooks-de-guard-executam-no-windows — ML-1C) — FIM
 
 **Branch:** `feat/hooks-de-guard-executam-no-windows`
@@ -45051,3 +45113,8 @@ Achados notáveis para o apolo-tf:
 - Feito: ADR-2026-10-04 com adendo (D2 revista: duas formas de linha por família de shell; D7–D9; npm sob Restricted vira violation que orienta RemoteSigned, decisão do KG). Wave 0 completa (ML-0A/0B/0C), ML-1D, ML-1A e ML-1B auditados e commitados, cada um depois de um corretivo.
 - Em aberto: o ML-1C foi commitado com a suíte de paridade VERMELHA de propósito (3 grupos A/B/C, descritos no roadmap). O próximo passo é o corretivo ao apolo-tf; depois, o barrier da wave 1 e a Wave 2.
 - VM Windows-Lab: `/Volumes/Externo/virtual-machines/Windows-Lab.utm`, desligada ao encerrar.
+
+## 2026-10-05 — zeus-tf — RETOMADA: REQ-2026-09-05, corretivo do ML-1C
+
+- Medido antes do despacho: `go test ./internal/generators/ -count=1` FAIL em 3 testes; subtestes vermelhos C02, C05, C18, C22, N01, N02, N04, N06, N08 (com e sem jq) + `TestGitBranchGuard_UnterminatedHeredocBeforeRealPush_StillBlocks`.
+- Despacho: corretivo ao apolo-tf em `internal/guard/gitbranch.go` + `internal/generators/guard_parity_helper_test.go`.

@@ -581,6 +581,12 @@ func quoteAwareSplit(s string) []string {
 		case c == ';' || c == '|':
 			segments = append(segments, cur.String())
 			cur.Reset()
+		case c == '\n':
+			// Newline outside quotes acts as a segment separator, matching the bash
+			// quote_aware_split awk function which passes \n through unchanged and
+			// the caller iterates with `while IFS= read -r seg`.
+			segments = append(segments, cur.String())
+			cur.Reset()
 		default:
 			cur.WriteRune(c)
 		}

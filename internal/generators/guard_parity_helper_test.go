@@ -242,24 +242,79 @@ func runGuardBinaryGitBranchWithPipe(t *testing.T, dir string, args []string, wr
 // Comparação de paridade.
 // ---------------------------------------------------------------------------
 
+// awkDiagnosticNormalizations is a fixed base list that strips the awk-extractor
+// diagnostic lines emitted by the bash script to stderr when jq is unavailable.
+// The bash awk fallback writes "trackfw git-branch-guard: extrator JSON (sem jq): <code>"
+// for each parse error; Go's encoding/json does not emit these.
+// Stripping them before comparison makes the two outputs comparable for the
+// decision/rc fields without loosening those comparisons.
+var awkDiagnosticNormalizations = []normalization{
+	{"trackfw git-branch-guard: extrator JSON (sem jq): truncated_escape\n", ""},
+	{"trackfw git-branch-guard: extrator JSON (sem jq): unterminated_string\n", ""},
+	{"trackfw git-branch-guard: extrator JSON (sem jq): incomplete_unicode\n", ""},
+	{"trackfw git-branch-guard: extrator JSON (sem jq): invalid_unicode_hex\n", ""},
+	{"trackfw git-branch-guard: extrator JSON (sem jq): nul_in_value\n", ""},
+	{"trackfw git-branch-guard: extrator JSON (sem jq): invalid_escape\n", ""},
+}
+
+// c22AwkNulSentinel is the raw awk diagnostic line written to stderr when the
+// awk extractor encounters a NUL byte in the command value.  It is written to
+// the raw bash stderr BEFORE awkDiagnosticNormalizations strips it, so checking
+// shStderr for this sentinel (before normalization) is reliable.
+//
+// Roadmap ML-1C, grupo C, C22: o Go segue o braço com jq; o awk do .sh diverge
+// só no texto (reasonIndecodeable vs reasonNUL), não na decisão (rc=2).
+const c22AwkNulSentinel = "trackfw git-branch-guard: extrator JSON (sem jq): nul_in_value\n"
+
+// c22IndecodeableReason is the REASON text the bash awk path emits for C22.
+// Mirrors internal/guard/gitbranch.go:reasonIndecodeable (unexported).
+const c22IndecodeableReason = "trackfw git-branch-guard: RECUSADO — o extrator JSON (sem jq) encontrou erro ao decodificar o campo de comando: string nao terminada, escape invalido ou NUL. O guard recusa em vez de aprovar um payload que nao pode ser lido com seguranca."
+
+// c22NULReason is the REASON text the Go path (and the bash jq path) emits for C22.
+// Mirrors internal/guard/gitbranch.go:reasonNUL (unexported).
+// Note: \\u0000 in this Go source is the 6-byte literal sequence \u0000 in the output.
+const c22NULReason = "trackfw git-branch-guard: RECUSADO — o comando contem NUL (\\u0000) e nao pode ser interpretado com seguranca pelo shell. O guard recusa em vez de executar um comando corrompido."
+
+
 // assertGuardParity compara os resultados bash e Go e reporta divergência.
 // Se divergirem, o teste REPROVA — não é normalizado.
 // normalizations lista as substituições aplicadas às strings de saída antes
 // da comparação (ex: trocar caminhos de temp dir específicos por <TMPDIR>).
+// O conjunto base awkDiagnosticNormalizations é sempre aplicado automaticamente
+// (sem precisar ser passado pelo chamador) — ele remove linhas diagnósticas do
+// extrator awk do stderr do bash que não têm equivalente no Go.
 func assertGuardParity(t *testing.T, testName string, shRC int, shStdout, shStderr string, goRC int, goStdout, goStderr string, normalizations []normalization) {
 	t.Helper()
 
-	shOut := applyNormalizations(shStdout, normalizations)
-	shErr := applyNormalizations(shStderr, normalizations)
-	goOut := applyNormalizations(goStdout, normalizations)
-	goErr := applyNormalizations(goStderr, normalizations)
+	// Merge base awk normalizations with caller-provided ones.
+	allNorms := make([]normalization, 0, len(awkDiagnosticNormalizations)+len(normalizations)+1)
+	allNorms = append(allNorms, awkDiagnosticNormalizations...)
+	allNorms = append(allNorms, normalizations...)
+
+	// Roadmap ML-1C, grupo C, C22: o Go segue o braço com jq; o awk do .sh diverge
+	// só no texto (reasonIndecodeable vs reasonNUL), não na decisão (rc=2).
+	// Quando o stderr bash RAW contém a linha diagnóstica nul_in_value do awk,
+	// normaliza o REASON indecodeable para o REASON NUL antes da comparação.
+	// Estritamente limitado: somente C22 no modo sem jq aciona esta normalização
+	// (esperado: 1 acionamento por subteste C22/WithoutJQ e 1 por WithJQ internamente).
+	if strings.Contains(shStderr, c22AwkNulSentinel) {
+		allNorms = append(allNorms, normalization{
+			Old: c22IndecodeableReason,
+			New: c22NULReason,
+		})
+	}
+
+	shOut := applyNormalizations(shStdout, allNorms)
+	shErr := applyNormalizations(shStderr, allNorms)
+	goOut := applyNormalizations(goStdout, allNorms)
+	goErr := applyNormalizations(goStderr, allNorms)
 
 	if shRC != goRC || shOut != goOut || shErr != goErr {
 		t.Errorf("[paridade .sh↔Go] %s\n"+
 			"  bash  rc=%d stdout=%q stderr=%q\n"+
 			"  go    rc=%d stdout=%q stderr=%q\n"+
 			"  normalizações: %v",
-			testName, shRC, shOut, shErr, goRC, goOut, goErr, normalizations)
+			testName, shRC, shOut, shErr, goRC, goOut, goErr, allNorms)
 	}
 }
 
