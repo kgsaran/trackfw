@@ -153,7 +153,7 @@ rc=0
 | cmd /c via .cmd | npm 9.2.0 | `{}` | — | `Error: unknown command "guard" for "trackfw"\nRun 'trackfw --help' for usage.` | 1 |
 | Git Bash | bin/ 8.0.0-rc2 | `{}` | — | `Error: unknown command "guard" for "trackfw"\nRun 'trackfw --help' for usage.` | 1 |
 
-**Conclusao:** exit code **1** em todos os casos (cobra command padrao para subcomando desconhecido). Isso e FALHA ABERTA: CLIs de agente interpretam qualquer exit code != 2 como "permitir". O D5 da ADR-2026-10-04 esta confirmado como risco real.
+**Conclusao:** exit code **1** em todos os casos (cobra command padrao para subcomando desconhecido). **FALHA ABERTA em 6 de 8 CLIs** (Claude Code, Codex, Gemini, Cursor, Windsurf, Amazon Q — criterio de bloqueio e exit 2 especificamente; exit 1 = "hook falhou por erro, mas segue"). Kiro e Copilot sao excecoes: bloqueiam para qualquer exit ≠ 0, mas o resultado e FP operacional (deny-all ate o binario ser atualizado). O D5 da ADR-2026-10-04 esta confirmado como risco real para a maioria dos CLIs.
 
 **Nota:** o mesmo resultado ocorre com o `guard credential` (nao medido separadamente, mesmo mecanismo).
 
@@ -395,3 +395,196 @@ Contexto arquiteto (nao refazer): PS 5.1.26100 — `powershell -NoProfile -Comma
 
 - **ML-2A (emissao):** confirma que a linha de hook para Kiro e Amazon Q deve ser `trackfw guard <nome>` **sem** `; exit $LASTEXITCODE`. Para CLIs PS (Claude Code, Codex, Gemini, Cursor, Copilot, Windsurf), o sufixo e necessario para propagar o exit de processos externos — mas nao resolve o bloqueio do `.ps1` sob Restricted (que ja era conhecido). RemoteSigned mitiga o canal npm (sem MoTW = roda).
 - **ML-1A (guard Go):** deve descartar BOM UTF-8 (EF BB BF) no inicio do stdin antes de decodificar JSON — obrigatorio para o Cursor. Sem este tratamento, `json.Unmarshal` falha com "invalid character" no primeiro byte e o guard nega (falha fechada — erro na direcao segura, mas rejeita comandos legitimos do Cursor).
+
+---
+
+## ML-3A — prova do guard em Go (2026-10-06)
+
+**Commit medido:** `a2e485f34bc43d3674b64e1c5662c2b2371a40d9`
+**Binario:** `GOOS=windows GOARCH=arm64 go build ./cmd/trackfw` → `trackfw.exe` 18 MB
+**VM:** Windows 11 ARM64 (UTM), `ssh Lab@192.168.64.6`
+**Diretorio de teste:** `C:\Users\Lab\guard-ml3a\proj\` com `trackfw.yaml` minimo (`req_dir: docs/req`, `roadmap_dir: docs/roadmaps`)
+**Binario da branch:** `C:\Users\Lab\guard-ml3a\bin\trackfw.exe` — prefixado ao PATH antes de cada caso Windows
+
+### 1. Resolucao de binario por shell
+
+| Shell | Resolucao padrao (antes de alterar PATH) | Versao |
+|-------|------------------------------------------|--------|
+| PowerShell 5.1 | `C:\Users\Lab\guard-ml3a\bin\trackfw.exe` (apos prefixo) | 9.2.0 |
+| pwsh | **AUSENTE** — `pwsh` nao instalado na VM | — |
+| cmd.exe | `C:\Users\Lab\guard-ml3a\bin\trackfw.exe` (apos prefixo) | 9.2.0 |
+| Git Bash | `/c/Users/Lab/bin/trackfw` (binario antigo, 8.0.0-rc2) | 8.0.0-rc2 |
+
+Observacao Git Bash: o PATH do Git Bash tem `/c/Users/Lab/bin` prefixado pelo proprio Git Bash (`git-bash.ini`/`.bash_profile`), tornando o binario antigo vencedor independente do PATH do processo pai (PS). Isso nao e novidade — confirmado no ML-0B (Secao 4). Os casos do Git Bash a seguir usam o caminho explicito `/c/Users/Lab/guard-ml3a/bin/trackfw` para isolar a medicao do binario da branch.
+
+### 2. Matriz de casos — shell x (bloqueia / libera)
+
+Payloads:
+- BLOCK: `{"tool_input":{"command":"git push origin main"}}`
+- ALLOW: `{"tool_input":{"command":"ls"}}`
+
+#### Caso 1 — `powershell -NoProfile -Command "trackfw guard git-branch; exit $LASTEXITCODE"`
+
+| Payload | stdout | stderr | exit | OK? |
+|---------|--------|--------|------|-----|
+| BLOCK | `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"trackfw: git push bruto bloqueado..."}}` | mesma mensagem | **2** | OK |
+| ALLOW | (vazio) | (vazio) | **0** | OK |
+
+#### Caso 2 — `pwsh -NoProfile -Command "..."` (mesma linha)
+
+**pwsh AUSENTE** na VM — nao medido.
+
+#### Caso 3 — `cmd /c "trackfw guard git-branch"` (sem sufixo — correto para cmd)
+
+| Payload | stdout | stderr | exit | OK? |
+|---------|--------|--------|------|-----|
+| BLOCK | (idem caso 1) | (idem) | **2** | OK |
+| ALLOW | (vazio) | (vazio) | **0** | OK |
+
+#### Caso 4 — Git Bash com linha exata do contrato (`trackfw guard git-branch; exit $LASTEXITCODE`)
+
+Medido com script `.sh` copiado por scp (sem aninhamento PS, evitando interpolacao de variaveis PS).
+Script: `printf '%s' "$PAYLOAD" | bash -c 'trackfw guard git-branch; exit $LASTEXITCODE'; echo rc=$?`
+
+**Nota sobre `$LASTEXITCODE` em bash:** em bash, `$LASTEXITCODE` nao e uma variavel predefinida.
+Se nao estiver definida, `exit $LASTEXITCODE` = `exit ""` = bash sai com o exit code do ultimo
+comando (mesmo comportamento de `exit $?`). Portanto, `; exit $LASTEXITCODE` em bash propaga
+corretamente o exit code do guard — resultado identico a `; exit $?`.
+
+**Condicao (a) — bash nao-login, `PATH=/c/Users/Lab/guard-ml3a/bin:$PATH` (exportado no script)**
+
+Resolucao: `command -v trackfw` → `/c/Users/Lab/guard-ml3a/bin/trackfw`, versao `9.2.0`
+
+| Payload | `bash -c '...exit $LASTEXITCODE'` | direto | OK? |
+|---------|-----------------------------------|--------|-----|
+| BLOCK | **2** | **2** | OK |
+| ALLOW | **0** | **0** | OK |
+
+**Condicao (b) — `bash -l` (login), perfil adiciona `/c/Users/Lab/bin` ao PATH**
+
+Resolucao: `command -v trackfw` → `/c/Users/Lab/bin/trackfw`, versao `8.0.0-rc2`
+
+| Payload | `bash -c '...exit $LASTEXITCODE'` | direto | Interpretacao |
+|---------|-----------------------------------|--------|---------------|
+| BLOCK | **1** | **1** | Binario antigo (cobra "unknown command"), fail-open em 6/8 CLIs |
+| ALLOW | **1** | **1** | Idem — exit 1 para todos os payloads (nao e decisao do guard) |
+
+**Achado residual:** `C:\Users\Lab\bin` NAO esta no Windows PATH (confirmado via `cmd /c echo %PATH%`).
+O `trackfw validate` rule `hook_guard_binary_version` usa Go `exec.LookPath` (Windows PATH) e ve
+9.2.0 (pip, em `...\Python312-arm64\Scripts\`), nao o 8.0.0-rc2 de `~/bin`. Um usuario que
+instalou via GitHub release em `~/bin` e usa Git Bash (login) pode ter hooks fail-open sem
+que `validate` detecte — o `validate` reporta "OK" enquanto o hook na pratica resolve o binario antigo.
+
+**Sobre a forma original (caminho explicito sem sufixo):** a entrega anterior usou
+`/c/Users/Lab/guard-ml3a/bin/trackfw guard git-branch` (sem `; exit $?`) para evitar
+interpolacao do `$?` pelo PS. Com script `.sh`, o problema de interpolacao nao existe — a linha
+do contrato pode ser testada diretamente. O resultado com sufixo (condicao a) e identico ao sem sufixo.
+
+#### Caso 5 — controle negativo: Caso 1 SEM o sufixo `; exit $LASTEXITCODE`
+
+`powershell -NoProfile -Command "trackfw guard git-branch"`
+
+| Payload | exit | OK? | Interpretacao |
+|---------|------|-----|---------------|
+| BLOCK | **1** | OK (esperado 1) | PS5 converte exit 2 de processo externo em 1 sem o sufixo — confirmacao primaria do achado do ML-0B |
+| ALLOW | **0** | OK | Nao bloqueado |
+
+Confirma por que o sufixo `; exit $LASTEXITCODE` e obrigatorio nos hooks PS5: sem ele, exit 2 (deny) vira exit 1, que alguns CLIs interpretam como erro (nao como negacao de permissao).
+
+#### Caso 6 — fallback: binario antigo (8.0.0-rc2, sem comando `guard`) no PATH
+
+PATH com `C:\Users\Lab\bin` primeiro (binario antigo). Resolucao: `C:\Users\Lab\bin\trackfw.exe` 8.0.0-rc2.
+
+**6a — `powershell -NoProfile -Command "trackfw guard git-branch; exit $LASTEXITCODE"` (BLOCK):**
+```
+STDERR: Error: unknown command "guard" for "trackfw"
+        Run 'trackfw --help' for usage.
+EXIT: 1
+```
+
+**6b — `cmd /c trackfw guard git-branch` (BLOCK):**
+```
+STDERR: Error: unknown command "guard" for "trackfw"
+        Run 'trackfw --help' for usage.
+EXIT: 1
+```
+
+**Achado: exit 1, nao exit 0. FALHA ABERTA em 6 de 8 CLIs.** O binario antigo (cobra) retorna exit 1 para comando desconhecido. No caso PS5+sufixo, `$LASTEXITCODE` e atualizado para 1 pelo exit do processo externo (diferente do caso de excecao PSSecurityException, que NAO atualiza `$LASTEXITCODE` — ver vault/notes/restricted-exit-lastexitcode-failopen).
+
+**Interpretacao por CLI:**
+- **Claude Code, Codex, Gemini, Cursor, Windsurf, Amazon Q** (6 de 8): criterio de bloqueio e exit 2 especificamente. Exit 1 = "hook falhou por erro, mas segue" = **fail-open**. O guard NAO bloqueia nesses CLIs com o binario antigo.
+- **Kiro, Copilot** (2 de 8): bloqueiam para qualquer exit ≠ 0. Exit 1 bloqueia — mas pela razao errada (erro de cobra "unknown command", nao decisao do guard). Resultado: **FP operacional** (deny-all ate o binario ser atualizado).
+
+O `trackfw validate` rule `hook_guard_binary_version` (ML-2B) e o mecanismo correto para detectar esta situacao antes de confiar no guard.
+
+#### Caso 7 — `trackfw guard credential` com payload `{"tool_input":{"command":"echo ok"}}`
+
+| Shell | exit | OK? |
+|-------|------|-----|
+| PS5 `powershell -NoProfile -Command "trackfw guard credential; exit $LASTEXITCODE"` | **0** | OK |
+| cmd `cmd /c trackfw guard credential` | **0** | OK |
+| Git Bash (caminho explicito, sem sufixo) | **0** | OK |
+
+#### Caso 8 — CLIs de agente instalados na VM
+
+```
+claude      nao instalado
+codex       nao instalado
+gemini      nao instalado
+copilot     nao instalado
+kiro        nao instalado
+windsurf    nao instalado
+cursor      nao instalado
+```
+
+Nenhum CLI de agente presente. Medicao de hook real via agente nao realizada. Nenhum foi instalado (conforme instrucao do ML-3A).
+
+### 3. POSIX — linha de base macOS (AC5)
+
+**Versao instalada:** `~/.local/bin/trackfw 9.2.0` (binario da branch, commit `a2e485f3`)
+
+**Testes unitarios:**
+```
+go test ./internal/generators/ -run 'Guard|Credential' -count=1
+ok    github.com/kgsaran/trackfw/internal/generators  43.938s
+
+go test ./internal/commands/ -count=1
+ok    github.com/kgsaran/trackfw/internal/commands    15.071s
+```
+
+**Linhas de hook POSIX:**
+
+Forma 1 (`sh -c "trackfw guard git-branch; exit $?"`):
+- BLOCK: stdout JSON deny + stderr mensagem, exit **2**
+- ALLOW: (vazio), exit **0**
+
+Forma 4 (`bash -c "trackfw guard git-branch; exit $?"`):
+- BLOCK: stdout JSON deny + stderr mensagem, exit **2**
+- ALLOW: (vazio), exit **0**
+
+Credential (`bash -c "trackfw guard credential; exit $?"`):
+- CRED (`echo ok`): exit **0**
+
+**Comparacao com ML-0B (Secao 6):** linha de base idêntica. ML-0B mediu o `.sh` com fallback awk, sem jq; ML-3A mede o binario Go diretamente. Ambos exitam 2/0 para os mesmos payloads. Diferenca esperada e confirmada: o `.sh` produzia mensagem de erro diferente (texto do script), o binario Go produz JSON `hookSpecificOutput` com `permissionDecision: "deny"`. Nenhuma regressao detectada.
+
+### 4. Resumo da matriz
+
+| # | Forma | Shell | BLOCK exit | ALLOW exit | OK? |
+|---|-------|-------|-----------|-----------|-----|
+| 1 | `trackfw guard git-branch; exit $LASTEXITCODE` | PS5 | 2 | 0 | OK |
+| 2 | idem | pwsh | — | — | ausente |
+| 3 | `trackfw guard git-branch` (sem sufixo) | cmd | 2 | 0 | OK |
+| 4a | `trackfw guard git-branch; exit $LASTEXITCODE` (script .sh, PATH=guard-ml3a/bin, nao-login) | Git Bash | 2 | 0 | OK |
+| 4b | idem (login, resolve 8.0.0-rc2 de ~/bin; validate nao ve este binario) | Git Bash | 1 | 1 | fail-open 6/8 CLIs |
+| 5 | `trackfw guard git-branch` (sem sufixo) | PS5 | 1 | 0 | confirma necessidade do sufixo |
+| 6a | `trackfw guard git-branch; exit $LASTEXITCODE` (old bin) | PS5 | 1 | — | fail-open em 6/8 CLIs; FP deny-all em Kiro/Copilot |
+| 6b | `trackfw guard git-branch` (old bin) | cmd | 1 | — | idem |
+| 7 | `trackfw guard credential` | PS5/cmd/Git Bash | — | 0 | OK |
+
+### 5. Conclusao
+
+**AC3 (guard bloqueia no Windows): CONFIRMADO.** O binario Go da branch bloqueia `git push origin main` (exit 2) e libera `ls` (exit 0) nos tres shells testados (PS5, cmd, Git Bash nao-login com PATH explicito). A forma de hook sem sufixo e a correta para cmd e Git Bash (bash propaga exit code do processo externo diretamente, e `exit $LASTEXITCODE` com variavel indefinida tem o mesmo efeito em bash); o sufixo `; exit $LASTEXITCODE` e necessario apenas para PS5/pwsh.
+
+**AC5 (linha de base POSIX): CONFIRMADO.** Testes unitarios verdes; formas sh e bash exitam 2/0 identicamente ao ML-0B.
+
+**Achado — fallback e fail-open em 6 de 8 CLIs:** o binario antigo (8.0.0-rc2) sem o comando `guard` retorna exit 1 (cobra "unknown command"), nao exit 0. Para 6 CLIs (Claude Code, Codex, Gemini, Cursor, Windsurf, Amazon Q) cujo criterio de bloqueio e exit 2 especificamente, exit 1 = "hook falhou por erro, mas segue" = **fail-open**. Kiro e Copilot bloqueiam (FP operacional: deny-all pela razao errada). O `trackfw validate` rule `hook_guard_binary_version` e o mecanismo correto de deteccao, com ressalva: a sonda nao ve o binario do Git Bash login (ver abaixo).

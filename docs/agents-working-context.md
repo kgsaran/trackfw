@@ -2,6 +2,30 @@
 
 ---
 
+## 2026-10-06 — ares-tf (feat/hooks-de-guard-executam-no-windows — ML-3A corretivo) — INÍCIO
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** Corretivo ML-3A (REQ-2026-09-05): (1) corrigir interpretação inversa da nota do vault e Caso 6 — exit 1 do binário antigo é fail-open para 6 de 8 CLIs; (2) medir linha exata do contrato no Git Bash com script .sh (sem aninhamento PS), condições (a) não-login com PATH explícito e (b) login com binário antigo.
+
+---
+
+## 2026-10-06 — ares-tf (feat/hooks-de-guard-executam-no-windows — ML-3A corretivo) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** Corretivo ML-3A — concluído.
+**Resultado:**
+- Problema 1 (interpretação invertida): corrigido em `docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md` — Seção 7, Caso 6 e Conclusão ML-3A agora refletem que exit 1 = fail-open em 6/8 CLIs; Kiro/Copilot = FP operacional.
+- Problema 2 (linha do contrato Git Bash): medido com script `.sh` (sem aninhamento PS). Condição (a): `trackfw guard git-branch; exit $LASTEXITCODE` → BLOCK=2, ALLOW=0 (correto; `$LASTEXITCODE` indefinido em bash = `exit ""` = propaga exit code do último comando). Condição (b): login bash → binário antigo 8.0.0-rc2 de `~/bin`, exit 1 para todos os payloads (fail-open 6/8 CLIs). Achado residual: `C:\Users\Lab\bin` não está no Windows PATH; sonda do `validate` via `exec.LookPath` vê 9.2.0 (pip), não o antigo de `~/bin`.
+- Nota do vault: arquivo antigo (`guard-fallback-old-binary-exit1-nao-fail-open-2026-10-06.md`) removido; novo arquivo criado (`guard-fallback-old-binary-exit1-fail-open-6-clis-2026-10-06.md`) com interpretação correta.
+
+**Artefatos modificados:**
+- `docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md` — Seção 7 (Caso 6), ML-3A Caso 4 (expandido com (a)/(b)), tabela resumo (linha 4→4a/4b), Conclusão
+- `vault/notes/guard-fallback-old-binary-exit1-fail-open-6-clis-2026-10-06.md` — novo (substituição)
+- `vault/notes/index.md` — entrada atualizada
+- `docs/agents-working-context.md` — este arquivo
+
+---
+
 ## 2026-10-06 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-1E) — INÍCIO
 
 **Branch:** `feat/hooks-de-guard-executam-no-windows`
@@ -45188,3 +45212,17 @@ Achados notáveis para o apolo-tf:
 
 - ML-2B: três despachos (dois travaram por watchdog do agente, sem erro de código). 21 testes novos conferidos por nome; `go test ./internal/validator/` ok, `go vet` limpo. Build da branch instalado em `~/.local/bin/trackfw` por decisão do KG (gate do ML-2A: `trackfw guard --help` = 0).
 - Achado do ML-2B: o validator não lê `.windsurf/hooks.json` nem `.amazonq/cli-agents/*.json`, e o gerador emite hooks para os dois. Mesma causa → ML-2C nesta REQ, antes do ML-2A.
+
+## 2026-10-06 — ares-tf — INÍCIO: ML-3A (prova do guard em Go na VM Windows + linha de base POSIX)
+
+- Branch: `feat/hooks-de-guard-executam-no-windows`
+- Tarefa: medir na VM Windows que `trackfw guard` dispara e bloqueia (AC3); repetir linha de base POSIX (AC5). Sem código de produto.
+- Escopo de escrita: seção nova em `docs/portabilidade/2026-10-04-...md`; vault note se causa não-óbvia.
+
+## 2026-10-06 — ares-tf — FIM: ML-3A (prova do guard em Go na VM Windows + linha de base POSIX)
+
+- Medicao concluida. Secao "ML-3A — prova do guard em Go (2026-10-06)" adicionada ao documento de portabilidade.
+- Nota de vault criada: `guard-fallback-old-binary-exit1-nao-fail-open-2026-10-06.md`
+- Achado relevante: fallback (binario antigo) sai exit 1, nao exit 0 como documentado anteriormente — fail-closed por erro, nao fail-open.
+- AC3 confirmado (PS5 e cmd bloqueiam com exit 2); AC5 confirmado (POSIX identico a ML-0B).
+- Git status: 3 arquivos modificados, 1 novo (vault note). Sem edicao de codigo de produto.

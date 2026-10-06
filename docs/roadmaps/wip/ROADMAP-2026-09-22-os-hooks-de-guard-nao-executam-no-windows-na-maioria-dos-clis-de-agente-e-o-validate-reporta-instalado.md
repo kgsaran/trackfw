@@ -296,7 +296,7 @@ go test ./internal/generators/ ./internal/validator/ -count=1
 > Dependências: Wave 2 auditada.
 
 ### ML-3A — Guard disparando e bloqueando na VM (AC3) e controle POSIX (AC5)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** ares-tf
 **Files affected:** `docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md` (seção nova), `vault/notes/` (nota, se a causa for não óbvia)
 **Actions:** com o binário da branch na VM: `git push` bruto bloqueado (exit 2) e comando inofensivo
@@ -304,11 +304,15 @@ liberado, em `powershell -NoProfile -Command`, `pwsh`, `cmd /c` e Git Bash; e pe
 de agente de PowerShell e no Kiro, se estiverem instalados na VM. No macOS: repetir a linha de base do
 ML-0B e comparar.
 **Acceptance criteria:**
-- [ ] Matriz shell × (bloqueia / libera) com saída literal
-- [ ] Linha de base POSIX idêntica, ou diferença explicada pela mudança
+- [x] Matriz shell × (bloqueia / libera) com saída literal — PS5 e cmd: 2/0; Git Bash não-login com a linha do contrato: 2/0; sem o sufixo, PS5 dá 1 (controle); `pwsh` e CLIs de agente ausentes na VM
+- [x] Linha de base POSIX idêntica (sh/bash 2/0; testes de generators e commands ok)
+      Auditoria (um corretivo): a primeira entrega leu o exit 1 do binário velho como bloqueio; corrigido —
+      falha aberta em 6 de 8 CLIs, negar-tudo em Kiro/Copilot. Resíduo para a Wave 4: o `bash -l` do Git Bash
+      põe `~/bin` na frente do PATH e resolveu um 8.0.0-rc2 que a sonda do `validate` (PATH do Windows) não vê.
+      Nota: `vault/notes/guard-fallback-old-binary-exit1-fail-open-6-clis-2026-10-06.md`.
 
 ### ML-3B — README e docs do usuário
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Squad:** prometeu-tf
 **Files affected:** `README.md` (seção de hooks/Windows)
 **Actions:** trocar "planejado" por estado medido, por CLI, conforme a matriz do ML-3A.
