@@ -13,7 +13,7 @@
       {
         "hooks": [
           {
-            "command": "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh",
+            "command": "trackfw guard credential; exit $LASTEXITCODE",
             "type": "command"
           }
         ],
@@ -22,7 +22,7 @@
       {
         "hooks": [
           {
-            "command": "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh",
+            "command": "trackfw guard credential; exit $LASTEXITCODE",
             "type": "command"
           }
         ],
@@ -31,7 +31,7 @@
       {
         "hooks": [
           {
-            "command": "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh",
+            "command": "trackfw guard credential; exit $LASTEXITCODE",
             "type": "command"
           }
         ],
@@ -51,11 +51,11 @@
       {
         "hooks": [
           {
-            "command": "$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh",
+            "command": "trackfw guard git-branch; exit $LASTEXITCODE",
             "type": "command"
           },
           {
-            "command": "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh",
+            "command": "trackfw guard credential; exit $LASTEXITCODE",
             "type": "command"
           }
         ],
@@ -64,7 +64,7 @@
       {
         "hooks": [
           {
-            "command": "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh",
+            "command": "trackfw guard credential; exit $LASTEXITCODE",
             "type": "command"
           }
         ],
@@ -73,7 +73,7 @@
       {
         "hooks": [
           {
-            "command": "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh",
+            "command": "trackfw guard credential; exit $LASTEXITCODE",
             "type": "command"
           }
         ],

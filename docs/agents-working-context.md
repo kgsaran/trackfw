@@ -2,6 +2,29 @@
 
 ---
 
+## 2026-10-06 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-1E) — INÍCIO
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** ML-1E — adicionar guarda de contenção em `credWriteAttention` para satisfazer o analisador AST de P1.
+
+---
+
+## 2026-10-06 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-1E) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** ML-1E — guarda de contenção em `credWriteAttention` implementada e testada.
+**Resultado:**
+- `go build ./...` — exit=0
+- `go test ./internal/pathguard/ -count=1` — ok (0 findings inesperados, 15 blind spots pinados)
+- `go test ./internal/guard/... -count=1` — ok
+- `trackfw validate` — 167 warnings, 0 violations
+
+**Artefatos modificados:**
+- `internal/guard/credential.go` — nova assinatura `credWriteAttention(cwd, roadmapDir, match)`, guarda via `pathguard.ResolveRoot` + `pathguard.RejectAndReport`, dois callers atualizados
+- `internal/guard/credential_test.go` — novo `TestRunCredential_RoadmapDirSymlinkEscapeIsRefused` + helper `isCredSymlinkPrivilegeError`
+
+---
+
 ## 2026-10-06 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-2A) — INÍCIO
 
 **Branch:** `feat/hooks-de-guard-executam-no-windows`

@@ -205,7 +205,7 @@ go test ./internal/generators/ -count=1
 ```
 
 ### ML-1E — O credential em Go grava o sinal de atenção sem guarda de contenção
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Por que o escopo original não previa:** achado na auditoria do ML-2A (2026-10-06).
 `go test ./internal/pathguard/ -run TestContainmentAnalyserOverTheLiveTree` reprova: `credWriteAttention()`
@@ -214,15 +214,15 @@ guarda de contenção dominando o fluxo. Veio do ML-1B (commit 87fd87d0); os gat
 pacote `pathguard`. Não é pré-existente na `main`.
 **Files affected:** `internal/guard/credential.go` (+ teste)
 **Acceptance criteria:**
-- [ ] `go test ./internal/pathguard/ -count=1` verde sem acrescentar o sítio à lista de exceções, a menos que o relatório prove que o `.sh` de referência tinha a mesma escrita e a exceção é a porta fiel
-- [ ] `go test ./internal/guard/... -count=1` verde
+- [x] `go test ./internal/pathguard/ -count=1` verde sem acrescentar o sítio à lista de exceções, a menos que o relatório prove que o `.sh` de referência tinha a mesma escrita e a exceção é a porta fiel
+- [x] `go test ./internal/guard/... -count=1` verde — os dois medidos pelo arquiteto em 2026-10-06; sem exceção nova. `credWriteAttention` passa por `pathguard.ResolveRoot` + `RejectAndReport` (o `.sh` escrevia sem guarda: endurecimento deliberado, rc inalterado). Teste `TestRunCredential_RoadmapDirSymlinkEscapeIsRefused`. Para a Wave 4: na recusa, `RejectAndReport` escreve uma linha no `os.Stderr` real.
 
 ## Wave 2 — Emissão, migração e relato
 > Dependências: Wave 1 auditada. Execução real (2026-10-06): ML-2B → ML-2C → ML-2A, em sequência, porque o validator guarda cópias literais dos `.sh` com teste de igualdade contra o gerador. Plano original: ML-2A ∥ ML-2B (arquivos disjuntos; o contrato entre eles é a string
 > exata `trackfw guard git-branch` / `trackfw guard credential`).
 
 ### ML-2A — Toda config emite `trackfw guard <nome>`; `.sh` vira invólucro; `update` migra
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Files affected:** `internal/generators/agentfiles.go`, `internal/generators/scaffold.go`,
 `internal/generators/update.go`, `internal/generators/scaffold_doctor.go`, `scripts/trackfw-git-branch-guard.sh`,
@@ -236,9 +236,9 @@ campo `command` (AC1); `migrateHookCommand` troca as formas antigas pela nova no
 `gitBranchGuardScript` e a constante do credential viram `#!/usr/bin/env bash` +
 `exec trackfw guard <nome> "$@"`.
 **Acceptance criteria:**
-- [ ] Teste por CLI afirmando a string emitida; teste de schema do Copilot (AC1, nas duas direções)
-- [ ] `update` sobre uma config antiga produz a nova (teste)
-- [ ] `go test ./internal/generators/ -count=1` verde
+- [x] Teste por CLI afirmando a string emitida; teste de schema do Copilot (AC1, nas duas direções)
+- [x] `update` sobre uma config antiga produz a nova (teste), idempotente
+- [x] `go test ./internal/generators/ -count=1` verde
 
       🔄 Parte 1 auditada em 2026-10-06 (um corretivo): os 8 `Inject*Hooks` e o harness global emitem a
       linha da D2 revista; os `.sh` viram invólucro que falha FECHADO (sem `trackfw` ou sem `guard` → 2,
@@ -247,6 +247,10 @@ campo `command` (AC1); `migrateHookCommand` troca as formas antigas pela nova no
       `go test ./internal/generators/ ./internal/validator/ ./internal/commands/ ./internal/guard/...` ok.
       Parte 2 pendente: configs deste repositório, `scripts/check-git-branch-guard-hook-schema.sh`,
       `docs/cli-parity.md` (inclusive a pendência do ML-2C).
+      ✅ Parte 2 auditada em 2026-10-06: `.claude/settings.json`, `.codex/hooks.json` e `.gemini/settings.json`
+      chamam `trackfw guard <nome>; exit $LASTEXITCODE` (attention hooks inalterados); pela linha real,
+      `git push` → 2 e `ls` → 0; `scripts/check-git-branch-guard-hook-schema.sh` → 0; `docs/cli-parity.md` atualizado
+      (inclusive a pendência do ML-2C).
 
 ### ML-2B — `validate` relata se o hook pode executar (AC7)
 **Status:** ✅ Concluído
