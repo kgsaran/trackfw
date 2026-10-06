@@ -8,7 +8,7 @@
 # specific rule names, message substrings, exit codes.  Nothing here invokes
 # `node npm/bin/trackfw` or `python3 -m trackfw`.
 #
-# Pin inventory (32 pins across 6 blocks):
+# Pin inventory (34 pins across 6 blocks):
 #   Block 1 — ADR/REQ rule-set:         {adr_accepted_when_req_done, blocked_by_draft_adr}
 #   Block 2 — branch_has_wip_roadmap:    nomatch/diff message markers + --agent guidance
 #                                        + the ML-3A matcher: token overlap accepts (PIN6),
@@ -435,7 +435,8 @@ for fix in cg-claude-absent cg-claude-present cg-claude-noexec cg-claude-notype 
            cg-claude-relativo cg-claude-pwd cg-claude-absoluto cg-claude-windows-drive \
            cg-claude-invalid-json cg-claude-unreadable cg-claude-utf16 \
            cg-claude-tilde-quoted cg-claude-tilde-user \
-           cg-cursor-present cg-copilot-relativo-present; do
+           cg-cursor-present cg-copilot-relativo-present \
+           cg-claude-guard-subcmd; do
   make_cg_base "$fix"
 done
 
@@ -556,6 +557,12 @@ with open(sys.argv[1], 'w') as f:
     json.dump(d, f)
 PY
 
+# cg-claude-guard-subcmd: new "trackfw guard credential" subcommand form → no Windows migration warning.
+mkdir -p "$CG_TMP/cg-claude-guard-subcmd/.claude"
+cat >"$CG_TMP/cg-claude-guard-subcmd/.claude/settings.json" <<'EOF'
+{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"trackfw guard credential; exit $LASTEXITCODE"}]}]}}
+EOF
+
 # cg-cursor-present: Cursor with script present → silent.
 mkdir -p "$CG_TMP/cg-cursor-present/.cursor" "$CG_TMP/cg-cursor-present/scripts"
 cat >"$CG_TMP/cg-cursor-present/.cursor/hooks.json" <<'EOF'
@@ -586,7 +593,8 @@ for fix in cg-claude-absent cg-claude-present cg-claude-noexec cg-claude-notype 
            cg-claude-relativo cg-claude-pwd cg-claude-absoluto cg-claude-windows-drive \
            cg-claude-invalid-json cg-claude-unreadable cg-claude-utf16 \
            cg-claude-tilde-quoted cg-claude-tilde-user \
-           cg-cursor-present cg-copilot-relativo-present; do
+           cg-cursor-present cg-copilot-relativo-present \
+           cg-claude-guard-subcmd; do
   run_cg "$CG_TMP/$fix-go.json" "$CG_TMP/$fix"
 done
 
@@ -595,8 +603,24 @@ import json, os, sys
 tmp = sys.argv[1]
 BIN_GOOS = sys.argv[2]
 CG_RULE = "credential_guard_hook_resolvable"
+CG_WINDOWS_SH_MARKER = "does not execute on Windows outside Git Bash"
 
 def load_cg(name):
+    """Returns (rc, violation_messages) for CG_RULE — violations only, not warnings.
+    Used by expect_violation and expect_silent loops: violations drive pass/fail,
+    warnings (e.g. the Windows migration hint) are not mixed in."""
+    path = os.path.join(tmp, name)
+    with open(path, encoding="utf-8") as f:
+        payload = json.load(f)
+    with open(path + ".exit") as f:
+        rc = int(f.read().strip())
+    matching = [item for item in payload.get("violations", []) if item.get("rule") == CG_RULE]
+    return rc, sorted(item["message"] for item in matching)
+
+def load_cg_any(name):
+    """Returns (rc, combined violation+warning messages) for CG_RULE.
+    Used where silence means neither a violation nor a warning from this rule
+    (e.g. Windows pin7-noexec-guarded branch)."""
     path = os.path.join(tmp, name)
     with open(path, encoding="utf-8") as f:
         payload = json.load(f)
@@ -605,6 +629,33 @@ def load_cg(name):
     all_items = payload.get("violations", []) + payload.get("warnings", [])
     matching = [item for item in all_items if item.get("rule") == CG_RULE]
     return rc, sorted(item["message"] for item in matching)
+
+def load_cg_non_legacy(name):
+    """Returns (rc, messages) for CG_RULE — violations PLUS warnings that are NOT
+    the legacy Windows migration hint. Preserves the original silence-pin semantics
+    (no real issue allowed) while ignoring the always-on legacy advisory that fires
+    for any .sh reference regardless of GOOS. Used by expect_silent and Windows pin7
+    arm (b)."""
+    path = os.path.join(tmp, name)
+    with open(path, encoding="utf-8") as f:
+        payload = json.load(f)
+    with open(path + ".exit") as f:
+        rc = int(f.read().strip())
+    all_items = payload.get("violations", []) + payload.get("warnings", [])
+    matching = [
+        item for item in all_items
+        if item.get("rule") == CG_RULE
+        and CG_WINDOWS_SH_MARKER not in item.get("message", "")
+    ]
+    return rc, sorted(item["message"] for item in matching)
+
+def load_cg_warnings(name):
+    """Returns warning_messages for CG_RULE only (no violations)."""
+    path = os.path.join(tmp, name)
+    with open(path, encoding="utf-8") as f:
+        payload = json.load(f)
+    matching = [item for item in payload.get("warnings", []) if item.get("rule") == CG_RULE]
+    return sorted(item["message"] for item in matching)
 
 # PIN6-PIN15: expect violations with specific message markers.
 # Each tuple: (fixture-go-json, pin-label, message-marker)
@@ -674,18 +725,23 @@ if BIN_GOOS == "windows":
             f"got rc={noexec_rc}"
         )
 
-    # (b) No violation or warning from this rule for the noexec fixture.
-    _, noexec_msgs = load_cg("cg-claude-noexec-go.json")
+    # (b) No violation or non-legacy warning from this rule for the noexec fixture.
+    # The .sh form emits the Windows migration advisory regardless of GOOS; that legacy
+    # warning is not about exec-bit and must not mask the guarded-silence assertion.
+    _, noexec_msgs = load_cg_non_legacy("cg-claude-noexec-go.json")
     if noexec_msgs:
         raise SystemExit(
-            f"[pin7-noexec-windows-guarded] expected no {CG_RULE!r} violations/warnings "
+            f"[pin7-noexec-windows-guarded] expected no non-legacy {CG_RULE!r} violations/warnings "
             f"on windows for noexec fixture, but got: {noexec_msgs!r}"
         )
 
     print("OK [validate-rule-pins/pin7-noexec-windows-guarded]"
           "  rule declines exec-bit check on windows by design (internal/validator/goos.go)")
 
-# PIN16-PIN20: expect silence (no violation from this rule).
+# PIN16-PIN20: expect silence — no violation AND no non-legacy warning from this rule.
+# The legacy Windows migration advisory (CG_WINDOWS_SH_MARKER) is tested separately
+# by pin20b/pin20c and is excluded here so the .sh-form presence check doesn't mask
+# real silent-path violations (e.g., pin17 absoluto, pin18 windows-drive).
 expect_silent = [
     ("cg-claude-present-go.json",          "pin16-present-silent"),
     ("cg-claude-absoluto-go.json",          "pin17-absoluto-silent"),
@@ -695,12 +751,35 @@ expect_silent = [
 ]
 
 for name, label in expect_silent:
-    rc, msgs = load_cg(name)
+    rc, msgs = load_cg_non_legacy(name)
     if msgs:
         raise SystemExit(
-            f"[{label}]: {name}: no {CG_RULE!r} violation expected, but got: {msgs!r}"
+            f"[{label}]: {name}: no non-legacy {CG_RULE!r} violation/warning expected, "
+            f"but got: {msgs!r}"
         )
     print(f"OK [validate-rule-pins/{label}]")
+
+# PIN20B (ML-4C corretivo): Windows migration warning — .sh form emits it, subcommand form does not.
+# The validator emits a CG_RULE warning when the command references the legacy .sh script,
+# regardless of whether the script exists, to prompt migration to `trackfw guard credential`.
+# The subcommand form must NOT trigger this warning.
+warn_sh = load_cg_warnings("cg-claude-absent-go.json")
+if not any(CG_WINDOWS_SH_MARKER in w for w in warn_sh):
+    raise SystemExit(
+        f"[pin20b-windows-sh-warning] vacuity: cg-claude-absent: expected {CG_RULE!r} warning "
+        f"containing {CG_WINDOWS_SH_MARKER!r}, got warnings: {warn_sh!r}"
+    )
+print(f"OK [validate-rule-pins/pin20b-windows-sh-warning]  {CG_WINDOWS_SH_MARKER!r}")
+
+# PIN20C (ML-4C corretivo, contra-braço): "trackfw guard credential; exit $LASTEXITCODE"
+# must NOT emit the Windows migration warning — it IS the migration target.
+warn_subcmd = load_cg_warnings("cg-claude-guard-subcmd-go.json")
+if any(CG_WINDOWS_SH_MARKER in w for w in warn_subcmd):
+    raise SystemExit(
+        f"[pin20c-guard-subcmd-no-warning]: cg-claude-guard-subcmd must NOT emit the Windows "
+        f"migration warning, but got: {warn_subcmd!r}"
+    )
+print(f"OK [validate-rule-pins/pin20c-guard-subcmd-no-warning]  no {CG_WINDOWS_SH_MARKER!r}")
 PY
 
 # ---------------------------------------------------------------------------
@@ -746,13 +825,31 @@ run_cg "$CG_TMP/gbg-cursor-relativo-present-go.json"  "$CG_TMP/gbg-cursor-relati
 python3 - "$CG_TMP" "$GBG_RULE" <<'PY'
 import json, os, sys
 tmp, GBG_RULE = sys.argv[1], sys.argv[2]
+GBG_WINDOWS_SH_MARKER = "does not execute on Windows outside Git Bash"
 
 def load_gbg(name):
+    """Returns violation_messages for GBG_RULE only (not warnings).
+    The Windows migration warning fires for any .sh reference and must not be
+    mixed into violation marker checks."""
+    path = os.path.join(tmp, name)
+    with open(path, encoding="utf-8") as f:
+        payload = json.load(f)
+    matching = [item for item in payload.get("violations", []) if item.get("rule") == GBG_RULE]
+    return sorted(item["message"] for item in matching)
+
+def load_gbg_non_legacy(name):
+    """Returns messages for GBG_RULE — violations PLUS warnings that are NOT the
+    legacy Windows migration hint. Used by pin22 to preserve the original silence
+    semantics (no real issue from this rule)."""
     path = os.path.join(tmp, name)
     with open(path, encoding="utf-8") as f:
         payload = json.load(f)
     all_items = payload.get("violations", []) + payload.get("warnings", [])
-    matching = [item for item in all_items if item.get("rule") == GBG_RULE]
+    matching = [
+        item for item in all_items
+        if item.get("rule") == GBG_RULE
+        and GBG_WINDOWS_SH_MARKER not in item.get("message", "")
+    ]
     return sorted(item["message"] for item in matching)
 
 # PIN21: gbg-claude-relativo — "with a bare relative path".
@@ -769,10 +866,14 @@ if not all("with a bare relative path" in m for m in msgs):
 print("OK [validate-rule-pins/pin21-gbg-relativo]")
 
 # PIN22: gbg-cursor-relativo-present — silent (Cursor relative is the correct form).
-msgs = load_gbg("gbg-cursor-relativo-present-go.json")
+# Uses load_gbg_non_legacy: the Cursor fixture uses the .sh form, which emits the
+# Windows migration advisory; that legacy warning is pinned by the CG block (pin20b)
+# and is excluded here so a real non-legacy issue would still be caught.
+msgs = load_gbg_non_legacy("gbg-cursor-relativo-present-go.json")
 if msgs:
     raise SystemExit(
-        f"PIN22: gbg-cursor-relativo-present: no violation expected, got: {msgs!r}"
+        f"PIN22: gbg-cursor-relativo-present: no non-legacy {GBG_RULE!r} violation/warning "
+        f"expected, got: {msgs!r}"
     )
 print("OK [validate-rule-pins/pin22-gbg-cursor-silent]")
 
@@ -974,10 +1075,10 @@ if found_prefixed:
 print(f"OK [validate-rule-pins/pin29-adr-prefixed-silent]")
 PY
 
-echo "validate-rule-pins: all 32 pins pass"
+echo "validate-rule-pins: all 34 pins pass"
 echo "  Block 1 (rule-set):          pin1"
 echo "  Block 2 (bhr-messages):      pin2-pin5 + pin2b/pin2c/pin2d (ML-3A matcher)"
-echo "  Block 3 (credential-guard):  pin6-pin20"
+echo "  Block 3 (credential-guard):  pin6-pin20 + pin20b/pin20c (ML-4C Windows migration warning)"
 echo "  Block 4 (git-branch-guard):  pin21-pin25"
 echo "  Block 5 (unterminated-fence): pin26-pin27"
 echo "  Block 6 (adr-without-prefix): pin28-pin29"

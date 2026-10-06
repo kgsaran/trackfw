@@ -3,11 +3,13 @@ package guard
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"testing"
 )
 
@@ -524,7 +526,7 @@ func TestRunCredential_RoadmapDirSymlinkEscapeIsRefused(t *testing.T) {
 	// docs/roadmaps → outside/ (symlink to a directory outside the project root).
 	link := filepath.Join(docsDir, "roadmaps")
 	if err := os.Symlink(outside, link); err != nil {
-		if isCredSymlinkPrivilegeError(err) {
+		if isSymlinkPrivilegeError(err) {
 			t.Skipf("symlink privilege not available on this platform: %v", err)
 		}
 		t.Fatalf("os.Symlink: %v", err)
@@ -549,17 +551,20 @@ func TestRunCredential_RoadmapDirSymlinkEscapeIsRefused(t *testing.T) {
 	}
 }
 
-// isCredSymlinkPrivilegeError reports whether err indicates that symlink
-// creation requires elevated privileges (Windows without Developer Mode).
-// Detection by condition, not by runtime.GOOS, so Developer Mode Windows runs
-// the test normally.
-func isCredSymlinkPrivilegeError(err error) bool {
-	if err == nil {
-		return false
+// isSymlinkPrivilegeError reports whether err is the "process lacks privilege
+// to create symlinks" failure — WinError 1314 on Windows without Developer
+// Mode/elevation, or permission-denied on any platform. Detection is by
+// condition, not by runtime.GOOS: a Windows host with Developer Mode enabled
+// creates symlinks successfully and the test runs normally.
+func isSymlinkPrivilegeError(err error) bool {
+	if os.IsPermission(err) {
+		return true
 	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "privilege") || strings.Contains(msg, "1314") ||
-		strings.Contains(msg, "operation not permitted") || strings.Contains(msg, "not supported")
+	var e syscall.Errno
+	if errors.As(err, &e) && e == 1314 {
+		return true
+	}
+	return false
 }
 
 // TestRunCredentialGlobal_WarnNoDirNoFileCreated asserts that in global warn mode
