@@ -44,12 +44,12 @@ func TestGBGDedup_Claude_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	}
 
 	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
-	if helperHasClaudeHook(data, "PreToolUse", "Bash", claudeGitGuardCmd) {
+	if helperHasClaudeHook(data, "PreToolUse", "Bash", guardGitBranchCmdPSPOSIX) {
 		t.Error("project-scope git-branch-guard entry should have been skipped (global already installed)")
 	}
 	// credential-guard (global not installed in this fixture) and
 	// attention-signal must still be added — dedup is per-guard, not global.
-	if !helperHasClaudeHook(data, "PreToolUse", "Bash", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh") {
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", guardCredentialCmdPSPOSIX) {
 		t.Error("credential-guard entry must still be added (its own global dedup was not triggered by this fixture)")
 	}
 	if !helperHasClaudeHook(data, "PreToolUse", "AskUserQuestion", "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh") {
@@ -77,10 +77,10 @@ func TestGBGDedup_Codex_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	}
 
 	data := helperReadJSON(t, filepath.Join(dir, ".codex", "hooks.json"))
-	if helperHasClaudeHook(data, "PreToolUse", "Bash", codexGitGuardCmd) {
+	if helperHasClaudeHook(data, "PreToolUse", "Bash", guardGitBranchCmdPSPOSIX) {
 		t.Error("project-scope git-branch-guard entry should have been skipped (global already installed)")
 	}
-	if !helperHasClaudeHook(data, "PreToolUse", "Bash", codexGuardCmd) {
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", guardCredentialCmdPSPOSIX) {
 		t.Error("credential-guard entry must still be added (its own global dedup was not triggered by this fixture)")
 	}
 }
@@ -105,10 +105,10 @@ func TestGBGDedup_Gemini_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	}
 
 	data := helperReadJSON(t, filepath.Join(dir, ".gemini", "settings.json"))
-	if helperHasClaudeHook(data, "BeforeTool", "run_shell_command", geminiGitGuardCmd) {
+	if helperHasClaudeHook(data, "BeforeTool", "run_shell_command", guardGitBranchCmdPSPOSIX) {
 		t.Error("project-scope git-branch-guard entry should have been skipped (global already installed)")
 	}
-	if !helperHasClaudeHook(data, "BeforeTool", "run_shell_command", geminiGuardCmd) {
+	if !helperHasClaudeHook(data, "BeforeTool", "run_shell_command", guardCredentialCmdPSPOSIX) {
 		t.Error("credential-guard entry must still be added (its own global dedup was not triggered by this fixture)")
 	}
 }
@@ -137,7 +137,7 @@ func TestGBGDedup_Cursor_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	// the git-branch-guard global entry was planted), so beforeShellExecution
 	// must contain exactly the credential-guard entry — git-branch-guard is
 	// skipped, credential-guard is not.
-	if len(before) != 1 || before[0].(map[string]interface{})["command"] != "scripts/trackfw-credential-guard.sh" {
+	if len(before) != 1 || before[0].(map[string]interface{})["command"] != guardCredentialCmdPSPOSIX {
 		t.Errorf("expected only the credential-guard beforeShellExecution entry (git-branch-guard skipped, global already installed), got %v", before)
 	}
 }
@@ -193,13 +193,13 @@ func TestGBGDedup_Copilot_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	hooks, _ := data["hooks"].(map[string]interface{})
 	pre, _ := hooks["preToolUse"].([]interface{})
 	for _, item := range pre {
-		if item.(map[string]interface{})["bash"] == "scripts/trackfw-git-branch-guard.sh" {
+		if item.(map[string]interface{})["command"] == guardGitBranchCmdPSPOSIX {
 			t.Errorf("project-scope git-branch-guard entry should have been skipped (global already installed), got %v", pre)
 		}
 	}
 	foundCG := false
 	for _, item := range pre {
-		if item.(map[string]interface{})["bash"] == "scripts/trackfw-credential-guard.sh" {
+		if item.(map[string]interface{})["command"] == guardCredentialCmdPSPOSIX {
 			foundCG = true
 		}
 	}
@@ -237,7 +237,7 @@ func TestGBGDedup_Claude_SkipsProjectEntry_ToleratesDoubleSlashInStoredCommand(t
 	}
 
 	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
-	if helperHasClaudeHook(data, "PreToolUse", "Bash", claudeGitGuardCmd) {
+	if helperHasClaudeHook(data, "PreToolUse", "Bash", guardGitBranchCmdPSPOSIX) {
 		t.Error("project-scope git-branch-guard entry should have been skipped despite the // formatting in the stored global command")
 	}
 }
@@ -278,7 +278,7 @@ func TestGBGDedup_Claude_ReWiresProjectEntryWhenGlobalEntryMissingType(t *testin
 	}
 
 	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
-	if !helperHasClaudeHook(data, "PreToolUse", "Bash", claudeGitGuardCmd) {
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", guardGitBranchCmdPSPOSIX) {
 		t.Error("project-scope git-branch-guard entry should have been RE-WIRED: the global entry is missing \"type\":\"command\" and Claude Code will never execute it, so treating it as \"installed\" would leave both scopes unprotected (hades-tf ML-4A barrier finding)")
 	}
 }
@@ -306,7 +306,7 @@ func TestGBGDedup_Copilot_ReWiresProjectEntryWhenGlobalEntryMissingType(t *testi
 	pre, _ := hooks["preToolUse"].([]interface{})
 	found := false
 	for _, item := range pre {
-		if item.(map[string]interface{})["bash"] == "scripts/trackfw-git-branch-guard.sh" {
+		if item.(map[string]interface{})["command"] == guardGitBranchCmdPSPOSIX {
 			found = true
 		}
 	}
@@ -364,7 +364,7 @@ func TestGBGDedup_MalformedGlobalEntry_ProjectStillProtects(t *testing.T) {
 	)
 	resolved := make([]string, 0, len(executable))
 	for _, p := range executable {
-		if !strings.Contains(p, "trackfw-git-branch-guard.sh") {
+		if !strings.Contains(p, "trackfw-git-branch-guard.sh") && !strings.Contains(p, "trackfw guard git-branch") {
 			continue
 		}
 		resolved = append(resolved, strings.ReplaceAll(p, "$CLAUDE_PROJECT_DIR", projectDir))
@@ -388,7 +388,7 @@ func TestGBGDedup_FailOpen_NoGlobalFile(t *testing.T) {
 	}
 
 	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
-	if !helperHasClaudeHook(data, "PreToolUse", "Bash", claudeGitGuardCmd) {
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", guardGitBranchCmdPSPOSIX) {
 		t.Error("expected project-scope git-branch-guard entry to be added when no global file exists (fail-open)")
 	}
 }
@@ -409,7 +409,7 @@ func TestGBGDedup_FailOpen_CorruptedGlobalFile(t *testing.T) {
 	}
 
 	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
-	if !helperHasClaudeHook(data, "PreToolUse", "Bash", claudeGitGuardCmd) {
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", guardGitBranchCmdPSPOSIX) {
 		t.Error("expected project-scope git-branch-guard entry to be added when global file is corrupted (fail-open)")
 	}
 }
@@ -437,7 +437,16 @@ func runGitBranchGuardEntries(t *testing.T, projectDir string, scriptPaths []str
 	t.Helper()
 	count := 0
 	for _, script := range scriptPaths {
-		cmd := exec.Command("bash", script, "git", "push")
+		var cmd *exec.Cmd
+		if strings.Contains(script, "trackfw guard git-branch") {
+			// inline command form (ML-2A): simulate agent runtime invoking the
+			// hook with "git push" as the blocked command. The inline hook does
+			// not receive positional args, so we pass via --command.
+			cmd = exec.Command("bash", "-c", `trackfw guard git-branch --command "git push"; exit $?`)
+			cmd.Env = injectGuardBinaryPath(t, os.Environ())
+		} else {
+			cmd = exec.Command("bash", script, "git", "push")
+		}
 		cmd.Dir = projectDir
 		var stderr strings.Builder
 		cmd.Stderr = &stderr

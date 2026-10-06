@@ -175,15 +175,15 @@ func TestGlobalCredentialGuardScript_ParityAcrossStacks(t *testing.T) {
 	}
 }
 
-// TestCredentialGuardScript_DetectionCoreIdenticalBetweenProjectAndGlobal prova que a variante de
-// projeto e a variante global do script Go compartilham EXATAMENTE o mesmo núcleo de detecção
-// (JWT/AWS-key + exceção de destino efêmero) — não há duas cópias divergentes da regex.
+// TestCredentialGuardScript_DetectionCoreIdenticalBetweenProjectAndGlobal prova que as variantes de
+// projeto e global delegam para o mesmo subcomando `trackfw guard credential` — sem núcleo de
+// detecção duplicado em bash (ML-2A: detecção migrou para o binário Go).
 func TestCredentialGuardScript_DetectionCoreIdenticalBetweenProjectAndGlobal(t *testing.T) {
-	if !strings.Contains(credentialGuardScript, credentialGuardDetectionCore) {
-		t.Error("credentialGuardScript (projeto) não contém credentialGuardDetectionCore")
+	if !strings.Contains(credentialGuardScript, "trackfw guard credential") {
+		t.Error("credentialGuardScript (projeto) deve delegar para 'trackfw guard credential'")
 	}
-	if !strings.Contains(globalCredentialGuardScript, credentialGuardDetectionCore) {
-		t.Error("globalCredentialGuardScript não contém credentialGuardDetectionCore")
+	if !strings.Contains(globalCredentialGuardScript, "trackfw guard credential") {
+		t.Error("globalCredentialGuardScript deve delegar para 'trackfw guard credential'")
 	}
 }
 
@@ -198,10 +198,8 @@ func TestCredentialGuardScript_DetectionCoreIdenticalBetweenProjectAndGlobal(t *
 func setupGlobalCredentialGuardFixture(t *testing.T) (cwd, scriptPath string) {
 	t.Helper()
 	fakeHome := t.TempDir()
-	if err := GenerateGlobalCredentialGuardScript(fakeHome); err != nil {
-		t.Fatalf("GenerateGlobalCredentialGuardScript erro: %v", err)
-	}
-	scriptPath = filepath.Join(fakeHome, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	// ML-2A corretivo (Defeito 2): usa a FIXTURE CONGELADA para o braço bash da paridade.
+	scriptPath = copyFrozenCredentialGuardFixture(t, fakeHome, true)
 	cwd = t.TempDir()
 	return cwd, scriptPath
 }
@@ -342,13 +340,12 @@ const syntheticAWSKey = "AKIAABCDEFGHIJKLMNOP"
 func setupCredentialGuardFixture(t *testing.T, trackfwYAML string) (dir, scriptPath string) {
 	t.Helper()
 	dir = t.TempDir()
-	orig, _ := os.Getwd()
-	_ = os.Chdir(dir)
-	defer func() { _ = os.Chdir(orig) }()
 
-	if err := GenerateCredentialGuardScript(""); err != nil {
-		t.Fatalf("GenerateCredentialGuardScript erro: %v", err)
-	}
+	// ML-2A corretivo (Defeito 2): usa a FIXTURE CONGELADA (testdata/guard-sh-reference/) em vez
+	// do invólucro gerado, para que o braço bash da paridade exercite o script original (Go-against-
+	// bash real) e não o invólucro que chama Go (paridade vacuosa).
+	scriptPath = copyFrozenCredentialGuardFixture(t, dir, false)
+
 	if trackfwYAML != "" {
 		if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte(trackfwYAML), 0644); err != nil {
 			t.Fatal(err)
@@ -359,7 +356,37 @@ func setupCredentialGuardFixture(t *testing.T, trackfwYAML string) (dir, scriptP
 		}
 	}
 
-	return dir, filepath.Join(dir, "scripts", "trackfw-credential-guard.sh")
+	return dir, scriptPath
+}
+
+// copyFrozenCredentialGuardFixture copia a fixture congelada de credential guard para
+// <dir>/scripts/trackfw-credential-guard.sh (global=false) ou
+// <dir>/.trackfw/scripts/trackfw-credential-guard.sh (global=true).
+// Devolve o caminho absoluto do script copiado.
+func copyFrozenCredentialGuardFixture(t *testing.T, dir string, global bool) string {
+	t.Helper()
+	var fixtureName string
+	var destDir string
+	if global {
+		fixtureName = "credential-guard-global.sh"
+		destDir = filepath.Join(dir, ".trackfw", "scripts")
+	} else {
+		fixtureName = "credential-guard-project.sh"
+		destDir = filepath.Join(dir, "scripts")
+	}
+	src := filepath.Join(testdataGuardRefDir(), fixtureName)
+	content, err := os.ReadFile(src)
+	if err != nil {
+		t.Fatalf("lendo fixture congelada %s: %v", fixtureName, err)
+	}
+	if err := os.MkdirAll(destDir, 0755); err != nil {
+		t.Fatalf("MkdirAll %s: %v", destDir, err)
+	}
+	dst := filepath.Join(destDir, "trackfw-credential-guard.sh")
+	if err := os.WriteFile(dst, content, 0755); err != nil {
+		t.Fatalf("escrevendo fixture congelada: %v", err)
+	}
+	return dst
 }
 
 func runCredentialGuard(t *testing.T, dir, scriptPath, stdin string) (exitCode int, stdout, stderr string) {
@@ -367,6 +394,11 @@ func runCredentialGuard(t *testing.T, dir, scriptPath, stdin string) (exitCode i
 	cmd := exec.Command("bash", scriptPath)
 	cmd.Dir = dir
 	cmd.Stdin = strings.NewReader(stdin)
+	// ML-2A: thin-wrapper scripts call `trackfw guard credential`; inject the
+	// compiled binary dir into PATH so the wrapper finds the right binary.
+	if isCurrentGuardScript(scriptPath) {
+		cmd.Env = injectGuardBinaryPath(t, os.Environ())
+	}
 	var outBuf, errBuf strings.Builder
 	cmd.Stdout = &outBuf
 	cmd.Stderr = &errBuf

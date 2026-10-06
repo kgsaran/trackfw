@@ -882,7 +882,8 @@ func harnessCredentialGuardTargetClaude(home string, opts UpdateOptions) TargetR
 	if result, guarded := rejectHarnessSymlink(home, path, id, displayPath); guarded {
 		return result
 	}
-	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	// ML-2A: global configs now emit the inline command instead of an absolute .sh path.
+	legacyScriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
 
 	raw, err := os.ReadFile(path)
 	switch {
@@ -894,7 +895,7 @@ func harnessCredentialGuardTargetClaude(home string, opts UpdateOptions) TargetR
 			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 		}
 		root := make(map[string]interface{})
-		mergeCredentialGuardClaudeHooks(root, scriptPath)
+		mergeCredentialGuardClaudeHooks(root, guardCredentialGlobalCmdPSPOSIX)
 		desired, marshalErr := json.MarshalIndent(root, "", "  ")
 		if marshalErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
@@ -921,7 +922,12 @@ func harnessCredentialGuardTargetClaude(home string, opts UpdateOptions) TargetR
 	if root == nil {
 		root = make(map[string]interface{})
 	}
-	mergeCredentialGuardClaudeHooks(root, scriptPath)
+	// ML-2A: migrate any pre-ML-2A global entry (abs .sh path → inline command).
+	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
+		migrateHookCommand(hooks["PreToolUse"], "Bash", legacyScriptPath, guardCredentialGlobalCmdPSPOSIX)
+		migrateHookCommand(hooks["PostToolUse"], "Bash", legacyScriptPath, guardCredentialGlobalCmdPSPOSIX)
+	}
+	mergeCredentialGuardClaudeHooks(root, guardCredentialGlobalCmdPSPOSIX)
 
 	out, marshalErr := json.MarshalIndent(root, "", "  ")
 	if marshalErr != nil {
@@ -996,7 +1002,8 @@ func harnessCredentialGuardTargetCodex(home string, opts UpdateOptions) TargetRe
 	if result, guarded := rejectHarnessSymlink(home, path, id, displayPath); guarded {
 		return result
 	}
-	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	// ML-2A: global configs now emit the inline command instead of an absolute .sh path.
+	legacyScriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
 
 	raw, err := os.ReadFile(path)
 	switch {
@@ -1008,7 +1015,7 @@ func harnessCredentialGuardTargetCodex(home string, opts UpdateOptions) TargetRe
 			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 		}
 		root := make(map[string]interface{})
-		mergeCredentialGuardClaudeHooks(root, scriptPath)
+		mergeCredentialGuardClaudeHooks(root, guardCredentialGlobalCmdPSPOSIX)
 		desired, marshalErr := json.MarshalIndent(root, "", "  ")
 		if marshalErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
@@ -1035,7 +1042,12 @@ func harnessCredentialGuardTargetCodex(home string, opts UpdateOptions) TargetRe
 	if root == nil {
 		root = make(map[string]interface{})
 	}
-	mergeCredentialGuardClaudeHooks(root, scriptPath)
+	// ML-2A: migrate any pre-ML-2A global entry (abs .sh path → inline command).
+	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
+		migrateHookCommand(hooks["PreToolUse"], "Bash", legacyScriptPath, guardCredentialGlobalCmdPSPOSIX)
+		migrateHookCommand(hooks["PostToolUse"], "Bash", legacyScriptPath, guardCredentialGlobalCmdPSPOSIX)
+	}
+	mergeCredentialGuardClaudeHooks(root, guardCredentialGlobalCmdPSPOSIX)
 
 	out, marshalErr := json.MarshalIndent(root, "", "  ")
 	if marshalErr != nil {
@@ -1096,7 +1108,8 @@ func harnessCredentialGuardTargetGemini(home string, opts UpdateOptions) TargetR
 	if result, guarded := rejectHarnessSymlink(home, path, id, displayPath); guarded {
 		return result
 	}
-	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	// ML-2A: global configs now emit the inline command instead of an absolute .sh path.
+	legacyScriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
 
 	raw, err := os.ReadFile(path)
 	switch {
@@ -1108,7 +1121,7 @@ func harnessCredentialGuardTargetGemini(home string, opts UpdateOptions) TargetR
 			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 		}
 		root := make(map[string]interface{})
-		mergeCredentialGuardGeminiHooks(root, scriptPath)
+		mergeCredentialGuardGeminiHooks(root, guardCredentialGlobalCmdPSPOSIX)
 		desired, marshalErr := json.MarshalIndent(root, "", "  ")
 		if marshalErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
@@ -1135,7 +1148,12 @@ func harnessCredentialGuardTargetGemini(home string, opts UpdateOptions) TargetR
 	if root == nil {
 		root = make(map[string]interface{})
 	}
-	mergeCredentialGuardGeminiHooks(root, scriptPath)
+	// ML-2A: migrate any pre-ML-2A global entry (abs .sh path → inline command).
+	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
+		migrateHookCommand(hooks["BeforeTool"], "run_shell_command", legacyScriptPath, guardCredentialGlobalCmdPSPOSIX)
+		migrateHookCommand(hooks["AfterTool"], "run_shell_command", legacyScriptPath, guardCredentialGlobalCmdPSPOSIX)
+	}
+	mergeCredentialGuardGeminiHooks(root, guardCredentialGlobalCmdPSPOSIX)
 
 	out, marshalErr := json.MarshalIndent(root, "", "  ")
 	if marshalErr != nil {
@@ -1207,7 +1225,16 @@ func harnessCredentialGuardTargetCursor(home string, opts UpdateOptions) TargetR
 	if result, guarded := rejectHarnessSymlink(home, path, id, displayPath); guarded {
 		return result
 	}
-	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	// ML-2A: global configs now emit the inline command instead of an absolute .sh path.
+	legacyScriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	cursorGetCmd := func(item interface{}) string {
+		obj, ok := item.(map[string]interface{})
+		if !ok {
+			return ""
+		}
+		cmd, _ := obj["command"].(string)
+		return cmd
+	}
 
 	raw, err := os.ReadFile(path)
 	switch {
@@ -1219,7 +1246,7 @@ func harnessCredentialGuardTargetCursor(home string, opts UpdateOptions) TargetR
 			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 		}
 		root := make(map[string]interface{})
-		mergeCredentialGuardCursorHooks(root, scriptPath)
+		mergeCredentialGuardCursorHooks(root, guardCredentialGlobalCmdPSPOSIX)
 		desired, marshalErr := json.MarshalIndent(root, "", "  ")
 		if marshalErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
@@ -1246,7 +1273,12 @@ func harnessCredentialGuardTargetCursor(home string, opts UpdateOptions) TargetR
 	if root == nil {
 		root = make(map[string]interface{})
 	}
-	mergeCredentialGuardCursorHooks(root, scriptPath)
+	// ML-2A: migrate any pre-ML-2A global entry (abs .sh path → inline command).
+	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
+		migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyScriptPath, guardCredentialGlobalCmdPSPOSIX, cursorGetCmd)
+		migrateCursorSimpleCommand(hooks["afterShellExecution"], legacyScriptPath, guardCredentialGlobalCmdPSPOSIX, cursorGetCmd)
+	}
+	mergeCredentialGuardCursorHooks(root, guardCredentialGlobalCmdPSPOSIX)
 
 	out, marshalErr := json.MarshalIndent(root, "", "  ")
 	if marshalErr != nil {
@@ -1351,7 +1383,8 @@ func harnessCredentialGuardTargetCopilot(home string, opts UpdateOptions) Target
 	if result, guarded := rejectHarnessSymlink(home, path, id, displayPath); guarded {
 		return result
 	}
-	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	// ML-2A: global configs now emit the inline command instead of an absolute .sh path.
+	legacyScriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
 
 	raw, err := os.ReadFile(path)
 	switch {
@@ -1363,7 +1396,7 @@ func harnessCredentialGuardTargetCopilot(home string, opts UpdateOptions) Target
 			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 		}
 		root := make(map[string]interface{})
-		mergeCredentialGuardCopilotHooks(root, scriptPath)
+		mergeCredentialGuardCopilotHooks(root, guardCredentialGlobalCmdPSPOSIX)
 		desired, marshalErr := json.MarshalIndent(root, "", "  ")
 		if marshalErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
@@ -1390,7 +1423,23 @@ func harnessCredentialGuardTargetCopilot(home string, opts UpdateOptions) Target
 	if root == nil {
 		root = make(map[string]interface{})
 	}
-	mergeCredentialGuardCopilotHooks(root, scriptPath)
+	// ML-2A: migrate any pre-ML-2A global entry (abs .sh path → inline command).
+	// Copilot entries use "bash" key (not "command"), so inline migration is needed.
+	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
+		for _, eventKey := range []string{"preToolUse", "postToolUse"} {
+			arr, _ := hooks[eventKey].([]interface{})
+			for _, item := range arr {
+				obj, ok := item.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				if bash, _ := obj["bash"].(string); bash == legacyScriptPath {
+					obj["bash"] = guardCredentialGlobalCmdPSPOSIX
+				}
+			}
+		}
+	}
+	mergeCredentialGuardCopilotHooks(root, guardCredentialGlobalCmdPSPOSIX)
 
 	out, marshalErr := json.MarshalIndent(root, "", "  ")
 	if marshalErr != nil {
@@ -1466,8 +1515,8 @@ func harnessCredentialGuardTargetKiro(home string, opts UpdateOptions) TargetRes
 	if result, guarded := rejectHarnessSymlink(home, path, id, displayPath); guarded {
 		return result
 	}
-	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
-
+	// ML-2A: global configs now emit the inline command instead of an absolute .sh path.
+	// Kiro/Amazon Q are CmdExe-family: no "exit $LASTEXITCODE" suffix.
 	content := map[string]interface{}{
 		"version": "v1",
 		"hooks": []interface{}{
@@ -1476,14 +1525,14 @@ func harnessCredentialGuardTargetKiro(home string, opts UpdateOptions) TargetRes
 				"description": "Blocks/warns on possible plaintext credential materialization before a shell command executes (global, all projects)",
 				"trigger":     "PreToolUse",
 				"matcher":     "shell",
-				"action":      map[string]interface{}{"type": "command", "command": scriptPath},
+				"action":      map[string]interface{}{"type": "command", "command": guardCredentialGlobalCmdCmdExe},
 			},
 			map[string]interface{}{
 				"name":        "trackfw-credential-guard-global-post",
 				"description": "Warns on possible plaintext credential materialization after a shell command executes (global, all projects)",
 				"trigger":     "PostToolUse",
 				"matcher":     "shell",
-				"action":      map[string]interface{}{"type": "command", "command": scriptPath},
+				"action":      map[string]interface{}{"type": "command", "command": guardCredentialGlobalCmdCmdExe},
 			},
 		},
 	}
@@ -1563,7 +1612,8 @@ func harnessGitBranchGuardTargetClaude(home string, opts UpdateOptions) TargetRe
 	if result, guarded := rejectHarnessSymlink(home, path, id, displayPath); guarded {
 		return result
 	}
-	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+	// ML-2A: global configs now emit the inline command instead of an absolute .sh path.
+	legacyScriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
 
 	raw, err := os.ReadFile(path)
 	switch {
@@ -1575,7 +1625,7 @@ func harnessGitBranchGuardTargetClaude(home string, opts UpdateOptions) TargetRe
 			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 		}
 		root := make(map[string]interface{})
-		mergeCredentialGuardClaudeHooks(root, scriptPath)
+		mergeCredentialGuardClaudeHooks(root, guardGitBranchCmdPSPOSIX)
 		desired, marshalErr := json.MarshalIndent(root, "", "  ")
 		if marshalErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
@@ -1602,7 +1652,12 @@ func harnessGitBranchGuardTargetClaude(home string, opts UpdateOptions) TargetRe
 	if root == nil {
 		root = make(map[string]interface{})
 	}
-	mergeCredentialGuardClaudeHooks(root, scriptPath)
+	// ML-2A: migrate any pre-ML-2A global entry (abs .sh path → inline command).
+	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
+		migrateHookCommand(hooks["PreToolUse"], "Bash", legacyScriptPath, guardGitBranchCmdPSPOSIX)
+		migrateHookCommand(hooks["PostToolUse"], "Bash", legacyScriptPath, guardGitBranchCmdPSPOSIX)
+	}
+	mergeCredentialGuardClaudeHooks(root, guardGitBranchCmdPSPOSIX)
 
 	out, marshalErr := json.MarshalIndent(root, "", "  ")
 	if marshalErr != nil {
@@ -1635,7 +1690,8 @@ func harnessGitBranchGuardTargetCodex(home string, opts UpdateOptions) TargetRes
 	if result, guarded := rejectHarnessSymlink(home, path, id, displayPath); guarded {
 		return result
 	}
-	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+	// ML-2A: global configs now emit the inline command instead of an absolute .sh path.
+	legacyScriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
 
 	raw, err := os.ReadFile(path)
 	switch {
@@ -1647,7 +1703,7 @@ func harnessGitBranchGuardTargetCodex(home string, opts UpdateOptions) TargetRes
 			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 		}
 		root := make(map[string]interface{})
-		mergeCredentialGuardClaudeHooks(root, scriptPath)
+		mergeCredentialGuardClaudeHooks(root, guardGitBranchCmdPSPOSIX)
 		desired, marshalErr := json.MarshalIndent(root, "", "  ")
 		if marshalErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
@@ -1674,7 +1730,12 @@ func harnessGitBranchGuardTargetCodex(home string, opts UpdateOptions) TargetRes
 	if root == nil {
 		root = make(map[string]interface{})
 	}
-	mergeCredentialGuardClaudeHooks(root, scriptPath)
+	// ML-2A: migrate any pre-ML-2A global entry (abs .sh path → inline command).
+	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
+		migrateHookCommand(hooks["PreToolUse"], "Bash", legacyScriptPath, guardGitBranchCmdPSPOSIX)
+		migrateHookCommand(hooks["PostToolUse"], "Bash", legacyScriptPath, guardGitBranchCmdPSPOSIX)
+	}
+	mergeCredentialGuardClaudeHooks(root, guardGitBranchCmdPSPOSIX)
 
 	out, marshalErr := json.MarshalIndent(root, "", "  ")
 	if marshalErr != nil {
@@ -1707,7 +1768,8 @@ func harnessGitBranchGuardTargetGemini(home string, opts UpdateOptions) TargetRe
 	if result, guarded := rejectHarnessSymlink(home, path, id, displayPath); guarded {
 		return result
 	}
-	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+	// ML-2A: global configs now emit the inline command instead of an absolute .sh path.
+	legacyScriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
 
 	raw, err := os.ReadFile(path)
 	switch {
@@ -1719,7 +1781,7 @@ func harnessGitBranchGuardTargetGemini(home string, opts UpdateOptions) TargetRe
 			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 		}
 		root := make(map[string]interface{})
-		mergeCredentialGuardGeminiHooks(root, scriptPath)
+		mergeCredentialGuardGeminiHooks(root, guardGitBranchCmdPSPOSIX)
 		desired, marshalErr := json.MarshalIndent(root, "", "  ")
 		if marshalErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
@@ -1746,7 +1808,12 @@ func harnessGitBranchGuardTargetGemini(home string, opts UpdateOptions) TargetRe
 	if root == nil {
 		root = make(map[string]interface{})
 	}
-	mergeCredentialGuardGeminiHooks(root, scriptPath)
+	// ML-2A: migrate any pre-ML-2A global entry (abs .sh path → inline command).
+	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
+		migrateHookCommand(hooks["BeforeTool"], "run_shell_command", legacyScriptPath, guardGitBranchCmdPSPOSIX)
+		migrateHookCommand(hooks["AfterTool"], "run_shell_command", legacyScriptPath, guardGitBranchCmdPSPOSIX)
+	}
+	mergeCredentialGuardGeminiHooks(root, guardGitBranchCmdPSPOSIX)
 
 	out, marshalErr := json.MarshalIndent(root, "", "  ")
 	if marshalErr != nil {
@@ -1779,7 +1846,16 @@ func harnessGitBranchGuardTargetCursor(home string, opts UpdateOptions) TargetRe
 	if result, guarded := rejectHarnessSymlink(home, path, id, displayPath); guarded {
 		return result
 	}
-	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+	// ML-2A: global configs now emit the inline command instead of an absolute .sh path.
+	legacyScriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+	cursorGetCmd := func(item interface{}) string {
+		obj, ok := item.(map[string]interface{})
+		if !ok {
+			return ""
+		}
+		cmd, _ := obj["command"].(string)
+		return cmd
+	}
 
 	raw, err := os.ReadFile(path)
 	switch {
@@ -1791,7 +1867,7 @@ func harnessGitBranchGuardTargetCursor(home string, opts UpdateOptions) TargetRe
 			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 		}
 		root := make(map[string]interface{})
-		mergeCredentialGuardCursorHooks(root, scriptPath)
+		mergeCredentialGuardCursorHooks(root, guardGitBranchCmdPSPOSIX)
 		desired, marshalErr := json.MarshalIndent(root, "", "  ")
 		if marshalErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
@@ -1818,7 +1894,12 @@ func harnessGitBranchGuardTargetCursor(home string, opts UpdateOptions) TargetRe
 	if root == nil {
 		root = make(map[string]interface{})
 	}
-	mergeCredentialGuardCursorHooks(root, scriptPath)
+	// ML-2A: migrate any pre-ML-2A global entry (abs .sh path → inline command).
+	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
+		migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyScriptPath, guardGitBranchCmdPSPOSIX, cursorGetCmd)
+		migrateCursorSimpleCommand(hooks["afterShellExecution"], legacyScriptPath, guardGitBranchCmdPSPOSIX, cursorGetCmd)
+	}
+	mergeCredentialGuardCursorHooks(root, guardGitBranchCmdPSPOSIX)
 
 	out, marshalErr := json.MarshalIndent(root, "", "  ")
 	if marshalErr != nil {
@@ -1851,7 +1932,8 @@ func harnessGitBranchGuardTargetCopilot(home string, opts UpdateOptions) TargetR
 	if result, guarded := rejectHarnessSymlink(home, path, id, displayPath); guarded {
 		return result
 	}
-	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
+	// ML-2A: global configs now emit the inline command instead of an absolute .sh path.
+	legacyScriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
 
 	raw, err := os.ReadFile(path)
 	switch {
@@ -1863,7 +1945,7 @@ func harnessGitBranchGuardTargetCopilot(home string, opts UpdateOptions) TargetR
 			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 		}
 		root := make(map[string]interface{})
-		mergeCredentialGuardCopilotHooks(root, scriptPath)
+		mergeCredentialGuardCopilotHooks(root, guardGitBranchCmdPSPOSIX)
 		desired, marshalErr := json.MarshalIndent(root, "", "  ")
 		if marshalErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
@@ -1890,7 +1972,23 @@ func harnessGitBranchGuardTargetCopilot(home string, opts UpdateOptions) TargetR
 	if root == nil {
 		root = make(map[string]interface{})
 	}
-	mergeCredentialGuardCopilotHooks(root, scriptPath)
+	// ML-2A: migrate any pre-ML-2A global entry (abs .sh path → inline command).
+	// Copilot entries use "bash" key (not "command"), so inline migration is needed.
+	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
+		for _, eventKey := range []string{"preToolUse", "postToolUse"} {
+			arr, _ := hooks[eventKey].([]interface{})
+			for _, item := range arr {
+				obj, ok := item.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				if bash, _ := obj["bash"].(string); bash == legacyScriptPath {
+					obj["bash"] = guardGitBranchCmdPSPOSIX
+				}
+			}
+		}
+	}
+	mergeCredentialGuardCopilotHooks(root, guardGitBranchCmdPSPOSIX)
 
 	out, marshalErr := json.MarshalIndent(root, "", "  ")
 	if marshalErr != nil {
@@ -1936,8 +2034,8 @@ func harnessGitBranchGuardTargetKiro(home string, opts UpdateOptions) TargetResu
 	if result, guarded := rejectHarnessSymlink(home, path, id, displayPath); guarded {
 		return result
 	}
-	scriptPath := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
-
+	// ML-2A: global configs now emit the inline command instead of an absolute .sh path.
+	// Kiro/Amazon Q are CmdExe-family: no "exit $LASTEXITCODE" suffix.
 	content := map[string]interface{}{
 		"version": "v1",
 		"hooks": []interface{}{
@@ -1946,14 +2044,14 @@ func harnessGitBranchGuardTargetKiro(home string, opts UpdateOptions) TargetResu
 				"description": "Blocks branch-creation git subcommands issued outside trackfw branch new (global, all trackfw projects)",
 				"trigger":     "PreToolUse",
 				"matcher":     "shell",
-				"action":      map[string]interface{}{"type": "command", "command": scriptPath},
+				"action":      map[string]interface{}{"type": "command", "command": guardGitBranchCmdCmdExe},
 			},
 			map[string]interface{}{
 				"name":        "trackfw-git-branch-guard-global-post",
 				"description": "Warns on branch-creation git subcommands issued outside trackfw branch new (global, all trackfw projects)",
 				"trigger":     "PostToolUse",
 				"matcher":     "shell",
-				"action":      map[string]interface{}{"type": "command", "command": scriptPath},
+				"action":      map[string]interface{}{"type": "command", "command": guardGitBranchCmdCmdExe},
 			},
 		},
 	}

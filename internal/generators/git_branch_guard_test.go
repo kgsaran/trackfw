@@ -113,29 +113,53 @@ func TestGenerateGitBranchGuardScript_DoesNotWireIntoAnyHooksFile(t *testing.T) 
 // cabeado-com-no-op-fora-de-projeto-trackfw.md). Todos os testes de bloqueio/allow pré-existentes
 // (que verificam comportamento DENTRO de projeto trackfw) dependem deste arquivo existir; os
 // testes específicos do no-op (fora de projeto) usam setupGitBranchGuardFixtureWithoutTrackfwYAML.
+//
+// ML-2A corretivo (Defeito 2): usa a FIXTURE CONGELADA (testdata/guard-sh-reference/) em vez do
+// invólucro gerado, para que o braço bash da paridade exercite o script original (Go-against-bash
+// real) e não o invólucro que por sua vez chama o Go (paridade vacuosa).
 func setupGitBranchGuardFixture(t *testing.T) (dir, scriptPath string) {
 	t.Helper()
 	dir = t.TempDir()
-	if err := GenerateGitBranchGuardScript(dir); err != nil {
-		t.Fatalf("GenerateGitBranchGuardScript erro: %v", err)
-	}
+	scriptPath = copyFrozenGitBranchGuardFixture(t, dir)
 	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte("project_name: fixture\n"), 0644); err != nil {
 		t.Fatalf("erro escrevendo trackfw.yaml de fixture: %v", err)
 	}
-	return dir, filepath.Join(dir, "scripts", "trackfw-git-branch-guard.sh")
+	return dir, scriptPath
 }
 
 // setupGitBranchGuardFixtureWithoutTrackfwYAML é o par de setupGitBranchGuardFixture SEM
 // trackfw.yaml — usado pelos testes de no-op (ML-1A). t.TempDir() garante isolamento do repo
 // real (ver TestGitBranchGuard_FixtureHasNoTrackfwYAMLAncestor, que prova a premissa em vez de
 // presumi-la).
+//
+// ML-2A corretivo (Defeito 2): usa a FIXTURE CONGELADA — mesmo racional de setupGitBranchGuardFixture.
 func setupGitBranchGuardFixtureWithoutTrackfwYAML(t *testing.T) (dir, scriptPath string) {
 	t.Helper()
 	dir = t.TempDir()
-	if err := GenerateGitBranchGuardScript(dir); err != nil {
-		t.Fatalf("GenerateGitBranchGuardScript erro: %v", err)
+	scriptPath = copyFrozenGitBranchGuardFixture(t, dir)
+	return dir, scriptPath
+}
+
+// copyFrozenGitBranchGuardFixture copia a fixture congelada de git-branch guard para
+// <dir>/scripts/trackfw-git-branch-guard.sh e devolve o caminho do script.
+// Usado pelos dois setups de fixture para garantir que o braço bash executa o script
+// original (completo), não o invólucro gerado pelo ML-2A.
+func copyFrozenGitBranchGuardFixture(t *testing.T, dir string) string {
+	t.Helper()
+	src := filepath.Join(testdataGuardRefDir(), "git-branch-guard.sh")
+	content, err := os.ReadFile(src)
+	if err != nil {
+		t.Fatalf("lendo fixture congelada git-branch-guard.sh: %v", err)
 	}
-	return dir, filepath.Join(dir, "scripts", "trackfw-git-branch-guard.sh")
+	scriptsDir := filepath.Join(dir, "scripts")
+	if err := os.MkdirAll(scriptsDir, 0755); err != nil {
+		t.Fatalf("MkdirAll scripts: %v", err)
+	}
+	dst := filepath.Join(scriptsDir, "trackfw-git-branch-guard.sh")
+	if err := os.WriteFile(dst, content, 0755); err != nil {
+		t.Fatalf("escrevendo fixture congelada: %v", err)
+	}
+	return dst
 }
 
 // runGitBranchGuardImpl executa o guard com env explícito (nil = herdar do processo pai).
@@ -146,7 +170,15 @@ func runGitBranchGuardImpl(t *testing.T, dir, scriptPath string, args []string, 
 	cmd := exec.Command("bash", cmdArgs...)
 	cmd.Dir = dir
 	cmd.Stdin = strings.NewReader(stdin)
-	if env != nil {
+	// ML-2A: thin-wrapper scripts call `trackfw guard git-branch`; inject the
+	// compiled binary dir into PATH so the wrapper finds the right binary.
+	if isCurrentGuardScript(scriptPath) {
+		baseEnv := env
+		if baseEnv == nil {
+			baseEnv = os.Environ()
+		}
+		cmd.Env = injectGuardBinaryPath(t, baseEnv)
+	} else if env != nil {
 		cmd.Env = env
 	}
 	var outBuf, errBuf strings.Builder

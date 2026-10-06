@@ -11,10 +11,11 @@
 //  3. Teste das fixtures congeladas (sha256 pinado):
 //     - TestGuardShReferenceFixtures_Sha256 — reprova se um ML futuro mudar as fixtures.
 //
-// NOTA PARA O ML-2A: depois que os scripts .sh virarem `exec trackfw guard …`, os braços
-// bash e Go passarão a ser idênticos por construção.  Os testes de paridade continuarão
-// verdes, mas a comparação se tornará vacuosa.  O TestGuardShReferenceFixtures_Sha256
-// sinalizará essa mudança (sha256 divergirá das fixtures congeladas aqui).
+// ML-2A: os scripts .sh ao vivo viraram invólucros finos (exec trackfw guard …). Os braços
+// bash da paridade continuam usando as fixtures CONGELADAS do ML-1C
+// (testdata/guard-sh-reference/), por isso a comparação continua significativa — ela afirma
+// que o comportamento do novo binário Go é equivalente ao dos scripts originais completos.
+// O TestGuardShReferenceFixtures_Sha256 reprova se as fixtures forem alteradas.
 package generators
 
 import (
@@ -97,6 +98,29 @@ func cleanupGuardBinary() {
 	if guardBinaryDir != "" {
 		_ = os.RemoveAll(guardBinaryDir)
 	}
+}
+
+// injectGuardBinaryPath prepends the directory containing the compiled trackfw binary
+// to the PATH variable in baseEnv, so thin-wrapper scripts can call `trackfw guard …`
+// using the binary compiled by TestMain rather than any system-installed trackfw.
+// ML-2A: required after scripts became thin wrappers that invoke the binary.
+func injectGuardBinaryPath(t *testing.T, baseEnv []string) []string {
+	t.Helper()
+	binDir := filepath.Dir(compiledGuardBinary(t))
+	result := make([]string, 0, len(baseEnv))
+	pathInjected := false
+	for _, e := range baseEnv {
+		if strings.HasPrefix(e, "PATH=") {
+			result = append(result, "PATH="+binDir+string(filepath.ListSeparator)+strings.TrimPrefix(e, "PATH="))
+			pathInjected = true
+		} else {
+			result = append(result, e)
+		}
+	}
+	if !pathInjected {
+		result = append(result, "PATH="+binDir)
+	}
+	return result
 }
 
 // compiledGuardBinary devolve o caminho do binário compilado.
@@ -361,8 +385,12 @@ func isGlobalCredentialScript(scriptPath string) bool {
 // que o braço bash da paridade continua rodando o script original (completo) e não
 // um invólucro que chama Go.
 func TestGuardShReferenceFixtures_Sha256(t *testing.T) {
+	// ML-1C: hashes of the original full .sh scripts, frozen at the ML-1C commit.
+	// These must NOT change — the frozen fixture is the bash parity arm's reference.
+	// The live scripts/trackfw-*.sh are now thin wrappers (ML-2A); the fixtures remain
+	// the original full scripts so the parity comparison stays meaningful.
 	expected := map[string]string{
-		"git-branch-guard.sh":       "f51ee1f93a168a19a5e03090f38543409702c03044f7807f3ff5bb3a1f3232a3",
+		"git-branch-guard.sh":         "f51ee1f93a168a19a5e03090f38543409702c03044f7807f3ff5bb3a1f3232a3",
 		"credential-guard-project.sh": "e73d6502f851fee4ca304c1e8e8a60485f1339714734fb09d89a514dea65a4f7",
 		"credential-guard-global.sh":  "af21a5772a2edeba738db454771e8347b6300b4272a17c447f68a921b9c3cc43",
 	}

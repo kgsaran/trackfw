@@ -809,10 +809,8 @@ func TestUpdateHarnessCredentialGuardClaudeInstallsAbsolutePathWithInstallMissin
 		t.Fatalf("invalid JSON written: %v", err)
 	}
 
-	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
-	if !filepath.IsAbs(wantScript) {
-		t.Fatalf("test setup error: expected script path to be absolute: %s", wantScript)
-	}
+	// ML-2A: harness now emits inline command instead of abs .sh path.
+	wantCmd := "trackfw guard credential --global; exit $LASTEXITCODE"
 	for _, event := range []string{"PreToolUse", "PostToolUse"} {
 		hooks, _ := doc["hooks"].(map[string]interface{})
 		if hooks == nil {
@@ -828,13 +826,13 @@ func TestUpdateHarnessCredentialGuardClaudeInstallsAbsolutePathWithInstallMissin
 			innerHooks, _ := obj["hooks"].([]interface{})
 			for _, h := range innerHooks {
 				hObj, _ := h.(map[string]interface{})
-				if hObj["command"] == wantScript {
+				if hObj["command"] == wantCmd {
 					found = true
 				}
 			}
 		}
 		if !found {
-			t.Fatalf("%s[matcher=Bash] does not point at the absolute global script path %s: %v", event, wantScript, doc)
+			t.Fatalf("%s[matcher=Bash] does not contain inline global command %q: %v", event, wantCmd, doc)
 		}
 	}
 }
@@ -1018,10 +1016,8 @@ func TestUpdateHarnessCredentialGuardCodexInstallsAbsolutePathWithInstallMissing
 		t.Fatalf("invalid JSON written: %v", err)
 	}
 
-	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
-	if !filepath.IsAbs(wantScript) {
-		t.Fatalf("test setup error: expected script path to be absolute: %s", wantScript)
-	}
+	// ML-2A: harness now emits inline command instead of abs .sh path.
+	wantCmd := "trackfw guard credential --global; exit $LASTEXITCODE"
 	for _, event := range []string{"PreToolUse", "PostToolUse"} {
 		hooks, _ := doc["hooks"].(map[string]interface{})
 		if hooks == nil {
@@ -1037,13 +1033,13 @@ func TestUpdateHarnessCredentialGuardCodexInstallsAbsolutePathWithInstallMissing
 			innerHooks, _ := obj["hooks"].([]interface{})
 			for _, h := range innerHooks {
 				hObj, _ := h.(map[string]interface{})
-				if hObj["command"] == wantScript {
+				if hObj["command"] == wantCmd {
 					found = true
 				}
 			}
 		}
 		if !found {
-			t.Fatalf("%s[matcher=Bash] does not point at the absolute global script path %s: %v", event, wantScript, doc)
+			t.Fatalf("%s[matcher=Bash] does not contain inline global command %q: %v", event, wantCmd, doc)
 		}
 	}
 }
@@ -1231,10 +1227,8 @@ func TestUpdateHarnessCredentialGuardGeminiInstallsAbsolutePathWithInstallMissin
 		t.Fatalf("invalid JSON written: %v", err)
 	}
 
-	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
-	if !filepath.IsAbs(wantScript) {
-		t.Fatalf("test setup error: expected script path to be absolute: %s", wantScript)
-	}
+	// ML-2A: harness now emits inline command instead of abs .sh path.
+	wantCmd := "trackfw guard credential --global; exit $LASTEXITCODE"
 	for _, event := range []string{"BeforeTool", "AfterTool"} {
 		hooks, _ := doc["hooks"].(map[string]interface{})
 		if hooks == nil {
@@ -1250,13 +1244,13 @@ func TestUpdateHarnessCredentialGuardGeminiInstallsAbsolutePathWithInstallMissin
 			innerHooks, _ := obj["hooks"].([]interface{})
 			for _, h := range innerHooks {
 				hObj, _ := h.(map[string]interface{})
-				if hObj["command"] == wantScript {
+				if hObj["command"] == wantCmd {
 					found = true
 				}
 			}
 		}
 		if !found {
-			t.Fatalf("%s[matcher=run_shell_command] does not point at the absolute global script path %s: %v", event, wantScript, doc)
+			t.Fatalf("%s[matcher=run_shell_command] does not contain inline global command %q: %v", event, wantCmd, doc)
 		}
 	}
 }
@@ -1448,10 +1442,8 @@ func TestUpdateHarnessCredentialGuardCursorInstallsAbsolutePathWithInstallMissin
 		t.Fatalf("version = %v, want 1", doc["version"])
 	}
 
-	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
-	if !filepath.IsAbs(wantScript) {
-		t.Fatalf("test setup error: expected script path to be absolute: %s", wantScript)
-	}
+	// ML-2A: harness now emits inline command instead of abs .sh path.
+	wantCmd := "trackfw guard credential --global; exit $LASTEXITCODE"
 	for _, event := range []string{"beforeShellExecution", "afterShellExecution"} {
 		hooks, _ := doc["hooks"].(map[string]interface{})
 		if hooks == nil {
@@ -1461,12 +1453,12 @@ func TestUpdateHarnessCredentialGuardCursorInstallsAbsolutePathWithInstallMissin
 		found := false
 		for _, item := range arr {
 			obj, _ := item.(map[string]interface{})
-			if obj["command"] == wantScript {
+			if obj["command"] == wantCmd {
 				found = true
 			}
 		}
 		if !found {
-			t.Fatalf("%s does not contain a {command} entry pointing at the absolute global script path %s: %v", event, wantScript, doc)
+			t.Fatalf("%s does not contain a {command} entry with inline global command %q: %v", event, wantCmd, doc)
 		}
 	}
 }
@@ -1503,18 +1495,19 @@ func TestUpdateHarnessCredentialGuardCursorIsIdempotent(t *testing.T) {
 	if err := json.Unmarshal(secondRun, &doc); err != nil {
 		t.Fatal(err)
 	}
+	// ML-2A: harness now emits inline command.
 	hooks, _ := doc["hooks"].(map[string]interface{})
 	arr, _ := hooks["beforeShellExecution"].([]interface{})
-	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	wantCmd := "trackfw guard credential --global; exit $LASTEXITCODE"
 	shellEntries := 0
 	for _, item := range arr {
 		obj, _ := item.(map[string]interface{})
-		if obj["command"] == wantScript {
+		if obj["command"] == wantCmd {
 			shellEntries++
 		}
 	}
 	if shellEntries != 1 {
-		t.Fatalf("expected exactly one beforeShellExecution entry, got %d: %v", shellEntries, doc)
+		t.Fatalf("expected exactly one beforeShellExecution entry with inline command, got %d: %v", shellEntries, doc)
 	}
 }
 
@@ -1585,17 +1578,18 @@ func TestUpdateHarnessCredentialGuardCursorPreservesExistingContent(t *testing.T
 	if len(preArr) != 1 {
 		t.Fatalf("pre-existing preToolUse entry was dropped: %v", hooks)
 	}
+	// ML-2A: harness now emits inline command.
 	beforeArr, _ := hooks["beforeShellExecution"].([]interface{})
-	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	wantCmd := "trackfw guard credential --global; exit $LASTEXITCODE"
 	hasShell := false
 	for _, item := range beforeArr {
 		obj, _ := item.(map[string]interface{})
-		if obj["command"] == wantScript {
+		if obj["command"] == wantCmd {
 			hasShell = true
 		}
 	}
 	if !hasShell {
-		t.Fatalf("expected beforeShellExecution entry to be added: %v", beforeArr)
+		t.Fatalf("expected beforeShellExecution entry with inline command to be added: %v", beforeArr)
 	}
 }
 
@@ -1644,10 +1638,8 @@ func TestUpdateHarnessCredentialGuardCopilotInstallsAbsolutePathWithInstallMissi
 		t.Fatalf("~/.copilot/settings.json is a general config file, not a dedicated hooks file — must not gain an unconfirmed top-level \"version\" key: %v", doc)
 	}
 
-	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
-	if !filepath.IsAbs(wantScript) {
-		t.Fatalf("test setup error: expected script path to be absolute: %s", wantScript)
-	}
+	// ML-2A: harness now emits inline command instead of abs .sh path.
+	wantCmd := "trackfw guard credential --global; exit $LASTEXITCODE"
 	for _, event := range []string{"preToolUse", "postToolUse"} {
 		hooks, _ := doc["hooks"].(map[string]interface{})
 		if hooks == nil {
@@ -1657,7 +1649,7 @@ func TestUpdateHarnessCredentialGuardCopilotInstallsAbsolutePathWithInstallMissi
 		found := false
 		for _, item := range arr {
 			obj, _ := item.(map[string]interface{})
-			if obj["bash"] == wantScript {
+			if obj["bash"] == wantCmd {
 				if obj["type"] != "command" {
 					t.Fatalf("%s entry missing type=command: %v", event, obj)
 				}
@@ -1668,7 +1660,7 @@ func TestUpdateHarnessCredentialGuardCopilotInstallsAbsolutePathWithInstallMissi
 			}
 		}
 		if !found {
-			t.Fatalf("%s does not contain a {bash} entry pointing at the absolute global script path %s: %v", event, wantScript, doc)
+			t.Fatalf("%s does not contain a {bash} entry with inline global command %q: %v", event, wantCmd, doc)
 		}
 	}
 }
@@ -1705,18 +1697,19 @@ func TestUpdateHarnessCredentialGuardCopilotIsIdempotent(t *testing.T) {
 	if err := json.Unmarshal(secondRun, &doc); err != nil {
 		t.Fatal(err)
 	}
+	// ML-2A: harness now emits inline command.
 	hooks, _ := doc["hooks"].(map[string]interface{})
 	arr, _ := hooks["preToolUse"].([]interface{})
-	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	wantCmd := "trackfw guard credential --global; exit $LASTEXITCODE"
 	shellEntries := 0
 	for _, item := range arr {
 		obj, _ := item.(map[string]interface{})
-		if obj["bash"] == wantScript {
+		if obj["bash"] == wantCmd {
 			shellEntries++
 		}
 	}
 	if shellEntries != 1 {
-		t.Fatalf("expected exactly one preToolUse entry, got %d: %v", shellEntries, doc)
+		t.Fatalf("expected exactly one preToolUse entry with inline command, got %d: %v", shellEntries, doc)
 	}
 }
 
@@ -1792,16 +1785,17 @@ func TestUpdateHarnessCredentialGuardCopilotPreservesExistingContent(t *testing.
 	if len(preArr) != 2 {
 		t.Fatalf("pre-existing preToolUse entry was dropped or credential-guard entry not appended: %v", hooks)
 	}
-	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
+	// ML-2A: harness now emits inline command.
+	wantCmd := "trackfw guard credential --global; exit $LASTEXITCODE"
 	hasGuard := false
 	for _, item := range preArr {
 		obj, _ := item.(map[string]interface{})
-		if obj["bash"] == wantScript {
+		if obj["bash"] == wantCmd {
 			hasGuard = true
 		}
 	}
 	if !hasGuard {
-		t.Fatalf("expected preToolUse entry to be added: %v", preArr)
+		t.Fatalf("expected preToolUse entry with inline command to be added: %v", preArr)
 	}
 }
 
@@ -1859,10 +1853,8 @@ func TestUpdateHarnessCredentialGuardKiroInstallsAbsolutePathWithInstallMissing(
 	if v, _ := doc["version"].(string); v != "v1" {
 		t.Fatalf(`expected "version":"v1", got %v`, doc["version"])
 	}
-	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
-	if !filepath.IsAbs(wantScript) {
-		t.Fatalf("test setup error: expected script path to be absolute: %s", wantScript)
-	}
+	// ML-2A: Kiro/Amazon Q are CmdExe-family — no "exit $LASTEXITCODE" suffix.
+	wantCmd := "trackfw guard credential --global"
 	hooks, _ := doc["hooks"].([]interface{})
 	if len(hooks) != 2 {
 		t.Fatalf("expected 2 hooks (pre/post), got %d: %v", len(hooks), doc)
@@ -1877,8 +1869,8 @@ func TestUpdateHarnessCredentialGuardKiroInstallsAbsolutePathWithInstallMissing(
 			t.Fatalf("hook entry matcher = %v, want \"shell\": %v", entry["matcher"], entry)
 		}
 		action, _ := entry["action"].(map[string]interface{})
-		if action == nil || action["type"] != "command" || action["command"] != wantScript {
-			t.Fatalf("hook entry action does not point at the absolute global script path %s: %v", wantScript, entry)
+		if action == nil || action["type"] != "command" || action["command"] != wantCmd {
+			t.Fatalf("hook entry action does not contain inline global command %q: %v", wantCmd, entry)
 		}
 		switch entry["trigger"] {
 		case "PreToolUse":

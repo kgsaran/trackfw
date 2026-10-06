@@ -48,10 +48,10 @@ func TestDedup_Claude_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	}
 
 	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
-	if helperHasClaudeHook(data, "PreToolUse", "Bash", "scripts/trackfw-credential-guard.sh") {
+	if helperHasClaudeHook(data, "PreToolUse", "Bash", guardCredentialCmdPSPOSIX) {
 		t.Error("project-scope credential-guard entry should have been skipped (global already installed)")
 	}
-	if helperHasClaudeHook(data, "PostToolUse", "Bash", "scripts/trackfw-credential-guard.sh") {
+	if helperHasClaudeHook(data, "PostToolUse", "Bash", guardCredentialCmdPSPOSIX) {
 		t.Error("project-scope PostToolUse credential-guard entry should have been skipped")
 	}
 	if !helperHasClaudeHook(data, "PreToolUse", "AskUserQuestion", "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh") {
@@ -82,10 +82,10 @@ func TestDedup_Codex_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	}
 
 	data := helperReadJSON(t, filepath.Join(dir, ".codex", "hooks.json"))
-	if helperHasClaudeHook(data, "PreToolUse", "Bash", codexGuardCmd) {
+	if helperHasClaudeHook(data, "PreToolUse", "Bash", guardCredentialCmdPSPOSIX) {
 		t.Error("project-scope credential-guard entry should have been skipped (global already installed)")
 	}
-	if helperHasClaudeHook(data, "PostToolUse", "Bash", codexGuardCmd) {
+	if helperHasClaudeHook(data, "PostToolUse", "Bash", guardCredentialCmdPSPOSIX) {
 		t.Error("project-scope PostToolUse credential-guard entry should have been skipped")
 	}
 	if !helperHasClaudeHook(data, "PermissionRequest", ".*", codexSignalCmd) {
@@ -116,10 +116,10 @@ func TestDedup_Gemini_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	}
 
 	data := helperReadJSON(t, filepath.Join(dir, ".gemini", "settings.json"))
-	if helperHasClaudeHook(data, "BeforeTool", "run_shell_command", geminiGuardCmd) {
+	if helperHasClaudeHook(data, "BeforeTool", "run_shell_command", guardCredentialCmdPSPOSIX) {
 		t.Error("project-scope credential-guard entry should have been skipped (global already installed)")
 	}
-	if helperHasClaudeHook(data, "AfterTool", "run_shell_command", geminiGuardCmd) {
+	if helperHasClaudeHook(data, "AfterTool", "run_shell_command", guardCredentialCmdPSPOSIX) {
 		t.Error("project-scope AfterTool credential-guard entry should have been skipped")
 	}
 	if !helperHasClaudeHook(data, "Notification", "ToolPermission", geminiSignalCmd) {
@@ -156,7 +156,7 @@ func TestDedup_Cursor_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	// the global credential-guard dedup state exercised by this test —
 	// exactly 1 beforeShellExecution entry (git-branch-guard), 0 for
 	// credential-guard (skipped, global installed).
-	if len(before) != 1 || before[0].(map[string]interface{})["command"] != "scripts/trackfw-git-branch-guard.sh" {
+	if len(before) != 1 || before[0].(map[string]interface{})["command"] != guardGitBranchCmdPSPOSIX {
 		t.Errorf("expected only the git-branch-guard beforeShellExecution entry (credential-guard skipped, global already installed), got %v", before)
 	}
 	if len(after) != 0 {
@@ -203,12 +203,12 @@ func TestDedup_Copilot_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	}
 	foundGitGuard := false
 	for _, item := range pre {
-		if item.(map[string]interface{})["bash"] == "scripts/trackfw-git-branch-guard.sh" {
+		if item.(map[string]interface{})["command"] == guardGitBranchCmdPSPOSIX {
 			foundGitGuard = true
 		}
 	}
 	if !foundGitGuard {
-		t.Errorf("expected preToolUse to contain the git-branch-guard entry, got %v", pre)
+		t.Errorf("expected preToolUse to contain the git-branch-guard entry (command field), got %v", pre)
 	}
 	if len(post) != 1 || post[0].(map[string]interface{})["bash"] != "scripts/trackfw-attention-cleanup.sh" {
 		t.Errorf("expected only the attention-cleanup entry in postToolUse (global credential-guard installed), got %v", post)
@@ -232,8 +232,10 @@ func TestDedup_Kiro_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 
 	data := helperReadJSON(t, filepath.Join(dir, ".kiro", "hooks", "trackfw-attention.json"))
 	hooks, _ := data["hooks"].([]interface{})
-	if len(hooks) != 2 {
-		t.Fatalf("expected only 2 hooks (signal, cleanup) when global credential-guard is installed, got %d: %v", len(hooks), hooks)
+	// git-branch-guard is always added for Kiro (no global-scope dedup target),
+	// so 3 entries: signal + cleanup + git-branch-guard.
+	if len(hooks) != 3 {
+		t.Fatalf("expected 3 hooks (signal, cleanup, git-branch-guard) when global credential-guard is installed, got %d: %v", len(hooks), hooks)
 	}
 	for _, h := range hooks {
 		entry, _ := h.(map[string]interface{})
@@ -256,7 +258,7 @@ func TestDedup_FailOpen_NoGlobalFile(t *testing.T) {
 	}
 
 	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
-	if !helperHasClaudeHook(data, "PreToolUse", "Bash", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh") {
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", guardCredentialCmdPSPOSIX) {
 		t.Error("expected project-scope credential-guard entry to be added when no global file exists (fail-open)")
 	}
 }
@@ -277,7 +279,7 @@ func TestDedup_FailOpen_CorruptedGlobalFile(t *testing.T) {
 	}
 
 	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
-	if !helperHasClaudeHook(data, "PreToolUse", "Bash", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh") {
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", guardCredentialCmdPSPOSIX) {
 		t.Error("expected project-scope credential-guard entry to be added when global file is corrupted (fail-open)")
 	}
 }
@@ -299,7 +301,7 @@ func TestDedup_FailOpen_UnreadableGlobalFile(t *testing.T) {
 	}
 
 	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
-	if !helperHasClaudeHook(data, "PreToolUse", "Bash", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh") {
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", guardCredentialCmdPSPOSIX) {
 		t.Error("expected project-scope credential-guard entry to be added when global file is unreadable (fail-open)")
 	}
 }

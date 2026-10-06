@@ -59,21 +59,23 @@ func copilotHookEntrySet(t *testing.T, entries interface{}) []map[string]interfa
 	return out
 }
 
-func assertCopilotHookEntry(t *testing.T, stack string, entries []map[string]interface{}, bash string, wantMatcher interface{}) {
+// assertCopilotHookEntry looks for a hook entry whose "bash" OR "command" field matches val.
+// Attention signal/cleanup use "bash" field; guard entries use "command" field (ADR-2026-10-04 D4).
+func assertCopilotHookEntry(t *testing.T, stack string, entries []map[string]interface{}, val string, wantMatcher interface{}) {
 	t.Helper()
 	for _, e := range entries {
-		if e["bash"] != bash {
+		if e["bash"] != val && e["command"] != val {
 			continue
 		}
 		if e["type"] != "command" {
-			t.Errorf("%s: entrada bash=%s tem type=%v, esperado \"command\"", stack, bash, e["type"])
+			t.Errorf("%s: entrada val=%s tem type=%v, esperado \"command\"", stack, val, e["type"])
 		}
 		if got := e["matcher"]; !reflect.DeepEqual(got, wantMatcher) {
-			t.Errorf("%s: entrada bash=%s tem matcher=%v, esperado %v", stack, bash, got, wantMatcher)
+			t.Errorf("%s: entrada val=%s tem matcher=%v, esperado %v", stack, val, got, wantMatcher)
 		}
 		return
 	}
-	t.Errorf("%s: entrada bash=%s não encontrada", stack, bash)
+	t.Errorf("%s: entrada val=%s não encontrada", stack, val)
 }
 
 func TestInjectCopilotHooks_StructuralParityAcrossStacks(t *testing.T) {
@@ -105,14 +107,14 @@ func TestInjectCopilotHooks_StructuralParityAcrossStacks(t *testing.T) {
 		// preToolUse: all three stacks carry the git-branch-guard "bash" entry
 		// (ROADMAP-2026-08-14 ML-3A/ML-3B/ML-3C), so all three have 5 entries.
 		wantPre := 5
-		assertCopilotHookEntry(t, name, pre, "scripts/trackfw-git-branch-guard.sh", "bash")
+		assertCopilotHookEntry(t, name, pre, guardGitBranchCmdPSPOSIX, "bash")
 		if len(pre) != wantPre {
 			t.Errorf("%s: preToolUse deveria ter %d entradas, obteve %d", name, wantPre, len(pre))
 		}
 
 		assertCopilotHookEntry(t, name, pre, "scripts/trackfw-attention-signal.sh", nil)
-		assertCopilotHookEntry(t, name, pre, "scripts/trackfw-credential-guard.sh", "bash")
+		assertCopilotHookEntry(t, name, pre, guardCredentialCmdPSPOSIX, "bash")
 		assertCopilotHookEntry(t, name, post, "scripts/trackfw-attention-cleanup.sh", nil)
-		assertCopilotHookEntry(t, name, post, "scripts/trackfw-credential-guard.sh", "bash")
+		assertCopilotHookEntry(t, name, post, guardCredentialCmdPSPOSIX, "bash")
 	}
 }

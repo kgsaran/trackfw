@@ -2,6 +2,43 @@
 
 ---
 
+## 2026-10-06 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-2A) — INÍCIO
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** ML-2A — converter todas as 8 configs de hook de agente do apontamento para `.sh` para emitir `trackfw guard <name>` inline; `.sh` vira thin wrapper; `trackfw update` migra configs antigas.
+
+---
+
+## 2026-10-06 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-2A) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** ML-2A — toda config emite `trackfw guard <nome>`; `.sh` vira thin wrapper; `update` migra.
+**Resultado:**
+- `go build ./...` — exit=0
+- `go test ./internal/generators/ ./internal/validator/ -count=1` — **ok** (generators: 53s, validator: 14s)
+- `trackfw validate` — 167 warnings, 0 violations (lenient mode)
+
+**Artefatos modificados neste microlote (continuação da sessão anterior):**
+- `internal/generators/agentfiles.go` — constantes `guardGitBranchCmdPSPOSIX/CmdExe`, `guardCredentialCmd*`, migration helpers; 8 `Inject*Hooks` emitem inline commands; Copilot usa campo `command` (D4); Kiro recebe git-branch-guard incondicional
+- `internal/generators/scaffold.go` — `gitBranchGuardScript`, `credentialGuardScript`, `globalCredentialGuardScript` como thin wrappers
+- `scripts/trackfw-git-branch-guard.sh`, `scripts/trackfw-credential-guard.sh` — thin wrappers
+- `internal/validator/validator_*_reference.go` (3 arquivos) — referências atualizadas para thin wrapper
+- `internal/generators/testdata/guard-sh-reference/*.sh` (3 arquivos) — sha256 atualizados
+- `internal/generators/agentfiles_test.go` — todas as assertions de Cursor, Amazon Q, Kiro, Copilot, Gemini, Codex, Windsurf, Claude atualizadas
+- `internal/generators/credential_guard_dedup_test.go` — dedup negativo atualizado para nova forma
+- `internal/generators/credential_guard_sabotage_test.go` — Claude, Cursor, Kiro atualizados
+- `internal/generators/git_branch_guard_dedup_test.go` — filtro e `runGitBranchGuardEntries` com suporte a inline; Cursor, Copilot, MalformedGlobalEntry fixados
+- `internal/generators/copilot_hooks_parity_test.go` — `assertCopilotHookEntry` busca `bash` OU `command`
+- `internal/generators/guard_parity_helper_test.go` — sha256 atualizados; `injectGuardBinaryPath` adicionado
+
+**Riscos / pendências para o arquiteto:**
+1. `trackfw validate` emite 2 warns de divergência de template para os `.sh` (esperado: binário instalado é pré-ML-2A; some após `make install` na branch)
+2. `docs/cli-parity.md` ~linha 5372 ainda lista 6 entradas antigas — pendência documentada no roadmap para este ML
+3. `internal/generators/update.go` / `scaffold_doctor.go` — migration de configs existentes (`migrateHookCommand`) não foi implementada neste ciclo; está listada no ML-2A mas dependente de auditoria do arquiteto antes de implementar
+4. Testes de migração para Cursor e Amazon Q (`migrateCursorSimpleCommand`) não adicionados — pendência registrada no roadmap
+
+---
+
 ## 2026-10-05 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-1C corretivo 2) — INÍCIO
 
 **Branch:** `feat/hooks-de-guard-executam-no-windows`

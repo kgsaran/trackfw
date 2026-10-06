@@ -239,9 +239,10 @@ func TestUpdateHarnessCmd_CredentialGuardClaudeInstallsViaCLI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("~/.claude/settings.json was not written: %v", err)
 	}
-	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
-	if countJSONLeafMatches(t, data, wantScript) == 0 {
-		t.Fatalf("settings.json does not reference the absolute global script path %s (decoded JSON has no leaf equal to it):\n%s", wantScript, data)
+	// ML-2A: harness now emits inline command instead of abs .sh path.
+	wantCmd := "trackfw guard credential --global; exit $LASTEXITCODE"
+	if countJSONLeafMatches(t, data, wantCmd) == 0 {
+		t.Fatalf("settings.json does not contain inline global command %q (decoded JSON has no leaf equal to it):\n%s", wantCmd, data)
 	}
 }
 
@@ -286,9 +287,10 @@ func TestUpdateHarnessCmd_CredentialGuardCodexInstallsViaCLI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("~/.codex/hooks.json was not written: %v", err)
 	}
-	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
-	if countJSONLeafMatches(t, data, wantScript) == 0 {
-		t.Fatalf("hooks.json does not reference the absolute global script path %s (decoded JSON has no leaf equal to it):\n%s", wantScript, data)
+	// ML-2A: harness now emits inline command instead of abs .sh path.
+	wantCmd := "trackfw guard credential --global; exit $LASTEXITCODE"
+	if countJSONLeafMatches(t, data, wantCmd) == 0 {
+		t.Fatalf("hooks.json does not contain inline global command %q (decoded JSON has no leaf equal to it):\n%s", wantCmd, data)
 	}
 }
 
@@ -333,9 +335,10 @@ func TestUpdateHarnessCmd_CredentialGuardGeminiInstallsViaCLI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("~/.gemini/settings.json was not written: %v", err)
 	}
-	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
-	if countJSONLeafMatches(t, data, wantScript) == 0 {
-		t.Fatalf("settings.json does not reference the absolute global script path %s (decoded JSON has no leaf equal to it):\n%s", wantScript, data)
+	// ML-2A: harness now emits inline command instead of abs .sh path.
+	wantCmd := "trackfw guard credential --global; exit $LASTEXITCODE"
+	if countJSONLeafMatches(t, data, wantCmd) == 0 {
+		t.Fatalf("settings.json does not contain inline global command %q (decoded JSON has no leaf equal to it):\n%s", wantCmd, data)
 	}
 }
 
@@ -380,9 +383,10 @@ func TestUpdateHarnessCmd_CredentialGuardCursorInstallsViaCLI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("~/.cursor/hooks.json was not written: %v", err)
 	}
-	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
-	if countJSONLeafMatches(t, data, wantScript) == 0 {
-		t.Fatalf("hooks.json does not reference the absolute global script path %s (decoded JSON has no leaf equal to it):\n%s", wantScript, data)
+	// ML-2A: harness now emits inline command instead of abs .sh path.
+	wantCmd := "trackfw guard credential --global; exit $LASTEXITCODE"
+	if countJSONLeafMatches(t, data, wantCmd) == 0 {
+		t.Fatalf("hooks.json does not contain inline global command %q (decoded JSON has no leaf equal to it):\n%s", wantCmd, data)
 	}
 }
 
@@ -427,9 +431,10 @@ func TestUpdateHarnessCmd_CredentialGuardCopilotInstallsViaCLI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("~/.copilot/settings.json was not written: %v", err)
 	}
-	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
-	if countJSONLeafMatches(t, data, wantScript) == 0 {
-		t.Fatalf("settings.json does not reference the absolute global script path %s (decoded JSON has no leaf equal to it):\n%s", wantScript, data)
+	// ML-2A: harness now emits inline command instead of abs .sh path.
+	wantCmd := "trackfw guard credential --global; exit $LASTEXITCODE"
+	if countJSONLeafMatches(t, data, wantCmd) == 0 {
+		t.Fatalf("settings.json does not contain inline global command %q (decoded JSON has no leaf equal to it):\n%s", wantCmd, data)
 	}
 }
 
@@ -476,9 +481,10 @@ func TestUpdateHarnessCmd_CredentialGuardKiroInstallsViaCLI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("~/.kiro/hooks/trackfw-credential-guard.json was not written: %v", err)
 	}
-	wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
-	if countJSONLeafMatches(t, data, wantScript) == 0 {
-		t.Fatalf("trackfw-credential-guard.json does not reference the absolute global script path %s (decoded JSON has no leaf equal to it):\n%s", wantScript, data)
+	// ML-2A: Kiro/Amazon Q are CmdExe-family — no "exit $LASTEXITCODE" suffix.
+	wantCmd := "trackfw guard credential --global"
+	if countJSONLeafMatches(t, data, wantCmd) == 0 {
+		t.Fatalf("trackfw-credential-guard.json does not contain inline global command %q (decoded JSON has no leaf equal to it):\n%s", wantCmd, data)
 	}
 }
 
@@ -545,19 +551,25 @@ func TestUpdateHarnessCmd_GitBranchGuardInstallsViaCLI(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%s was not written: %v", tc.relPath, err)
 			}
-			wantScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
-			if countJSONLeafMatches(t, data, wantScript) == 0 {
-				t.Fatalf("%s does not reference the absolute global script path %s (decoded JSON has no leaf equal to it):\n%s", tc.relPath, wantScript, data)
+			// ML-2A: harness now emits inline command. Kiro is CmdExe-family (no exit suffix).
+			var wantCmd string
+			if tc.tool == "kiro" {
+				wantCmd = "trackfw guard git-branch"
+			} else {
+				wantCmd = "trackfw guard git-branch; exit $LASTEXITCODE"
+			}
+			if countJSONLeafMatches(t, data, wantCmd) == 0 {
+				t.Fatalf("%s does not contain inline global command %q (decoded JSON has no leaf equal to it):\n%s", tc.relPath, wantCmd, data)
 			}
 
 			// Non-regression: credential-guard's own file (shared for the
 			// merge-based tools; Kiro's is a separate dedicated file with a
 			// different name and is never even touched here) never got its
-			// own script reference injected by the git-branch-guard target.
+			// own command injected by the git-branch-guard target.
 			if tc.tool != "kiro" {
-				credScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
-				if countJSONLeafMatches(t, data, credScript) != 0 {
-					t.Fatalf("%s unexpectedly references trackfw-credential-guard.sh — git-branch-guard target should not install credential-guard wiring", tc.relPath)
+				credCmd := "trackfw guard credential --global; exit $LASTEXITCODE"
+				if countJSONLeafMatches(t, data, credCmd) != 0 {
+					t.Fatalf("%s unexpectedly contains credential-guard command — git-branch-guard target should not install credential-guard wiring", tc.relPath)
 				}
 			}
 		})
@@ -612,18 +624,19 @@ func TestUpdateHarnessCmd_GitBranchGuardAndCredentialGuardCoexistIdempotently(t 
 	if err != nil {
 		t.Fatalf("~/.claude/settings.json not written: %v", err)
 	}
-	credScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh")
-	branchScript := filepath.Join(home, ".trackfw", "scripts", "trackfw-git-branch-guard.sh")
-	credCount := countJSONLeafMatches(t, claudeData, credScript)
-	branchCount := countJSONLeafMatches(t, claudeData, branchScript)
+	// ML-2A: harness now emits inline commands instead of abs .sh paths.
+	credCmd := "trackfw guard credential --global; exit $LASTEXITCODE"
+	branchCmd := "trackfw guard git-branch; exit $LASTEXITCODE"
+	credCount := countJSONLeafMatches(t, claudeData, credCmd)
+	branchCount := countJSONLeafMatches(t, claudeData, branchCmd)
 	if credCount == 0 || branchCount == 0 {
-		t.Fatalf("~/.claude/settings.json missing one of the two guard script references (decoded JSON leaf count credential=%d, git-branch=%d):\n%s", credCount, branchCount, claudeData)
+		t.Fatalf("~/.claude/settings.json missing one of the two guard inline commands (decoded JSON leaf count credential=%d, git-branch=%d):\n%s", credCount, branchCount, claudeData)
 	}
 	if credCount != 2 { // PreToolUse + PostToolUse
-		t.Fatalf("~/.claude/settings.json expected exactly 2 references to %s (Pre+Post), got %d:\n%s", credScript, credCount, claudeData)
+		t.Fatalf("~/.claude/settings.json expected exactly 2 references to %q (Pre+Post), got %d:\n%s", credCmd, credCount, claudeData)
 	}
 	if branchCount != 2 {
-		t.Fatalf("~/.claude/settings.json expected exactly 2 references to %s (Pre+Post), got %d:\n%s", branchScript, branchCount, claudeData)
+		t.Fatalf("~/.claude/settings.json expected exactly 2 references to %q (Pre+Post), got %d:\n%s", branchCmd, branchCount, claudeData)
 	}
 
 	kiroCredFile := filepath.Join(home, ".kiro", "hooks", "trackfw-credential-guard.json")

@@ -204,12 +204,25 @@ go test ./internal/guard/... -count=1
 go test ./internal/generators/ -count=1
 ```
 
+### ML-1E — O credential em Go grava o sinal de atenção sem guarda de contenção
+**Status:** ⬜ Pendente
+**Squad:** apolo-tf
+**Por que o escopo original não previa:** achado na auditoria do ML-2A (2026-10-06).
+`go test ./internal/pathguard/ -run TestContainmentAnalyserOverTheLiveTree` reprova: `credWriteAttention()`
+em `internal/guard/credential.go:534/536` faz `os.MkdirAll`/`os.WriteFile` de caminho derivado da raiz sem
+guarda de contenção dominando o fluxo. Veio do ML-1B (commit 87fd87d0); os gates da Wave 1 não incluíam o
+pacote `pathguard`. Não é pré-existente na `main`.
+**Files affected:** `internal/guard/credential.go` (+ teste)
+**Acceptance criteria:**
+- [ ] `go test ./internal/pathguard/ -count=1` verde sem acrescentar o sítio à lista de exceções, a menos que o relatório prove que o `.sh` de referência tinha a mesma escrita e a exceção é a porta fiel
+- [ ] `go test ./internal/guard/... -count=1` verde
+
 ## Wave 2 — Emissão, migração e relato
 > Dependências: Wave 1 auditada. Execução real (2026-10-06): ML-2B → ML-2C → ML-2A, em sequência, porque o validator guarda cópias literais dos `.sh` com teste de igualdade contra o gerador. Plano original: ML-2A ∥ ML-2B (arquivos disjuntos; o contrato entre eles é a string
 > exata `trackfw guard git-branch` / `trackfw guard credential`).
 
 ### ML-2A — Toda config emite `trackfw guard <nome>`; `.sh` vira invólucro; `update` migra
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Squad:** apolo-tf
 **Files affected:** `internal/generators/agentfiles.go`, `internal/generators/scaffold.go`,
 `internal/generators/update.go`, `internal/generators/scaffold_doctor.go`, `scripts/trackfw-git-branch-guard.sh`,
@@ -226,6 +239,14 @@ campo `command` (AC1); `migrateHookCommand` troca as formas antigas pela nova no
 - [ ] Teste por CLI afirmando a string emitida; teste de schema do Copilot (AC1, nas duas direções)
 - [ ] `update` sobre uma config antiga produz a nova (teste)
 - [ ] `go test ./internal/generators/ -count=1` verde
+
+      🔄 Parte 1 auditada em 2026-10-06 (um corretivo): os 8 `Inject*Hooks` e o harness global emitem a
+      linha da D2 revista; os `.sh` viram invólucro que falha FECHADO (sem `trackfw` ou sem `guard` → 2,
+      medido); o `update` migra as formas antigas; as fixtures congeladas voltaram ao HEAD e a paridade
+      roda contra elas (trocar a REASON de push reprova C01–C04, medido pelo arquiteto). Gates:
+      `go test ./internal/generators/ ./internal/validator/ ./internal/commands/ ./internal/guard/...` ok.
+      Parte 2 pendente: configs deste repositório, `scripts/check-git-branch-guard-hook-schema.sh`,
+      `docs/cli-parity.md` (inclusive a pendência do ML-2C).
 
 ### ML-2B — `validate` relata se o hook pode executar (AC7)
 **Status:** ✅ Concluído
