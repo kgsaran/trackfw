@@ -2,6 +2,23 @@
 
 ---
 
+## 2026-10-06 — prometeu-tf (feat/hooks-de-guard-executam-no-windows — ML-3B) — INÍCIO
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** ML-3B (REQ-2026-09-05): atualizar a seção de guard hooks no Windows do `README.md` para o estado medido — guard é `trackfw guard <nome>` (Go), medido em PS5/cmd/Git Bash. Edita somente `README.md`.
+
+---
+
+## 2026-10-06 — prometeu-tf (feat/hooks-de-guard-executam-no-windows — ML-3B) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Resultado:** `README.md` atualizado.
+- Aviso do topo: substituído "planned, not yet in progress" e a explicação do `.sh` pelo estado medido (Go binary, PS5/cmd/Git Bash, next release).
+- Seção "Windows support (partial)" → guard hooks: tabela de 8 CLIs com shell/linha/basis; medição exata declarada (PS5/cmd/Git Bash não-login medidos; pwsh ausente; CLI de agente não disparado end-to-end); `trackfw update` migra configs; 3 violations novas do `validate` documentadas.
+**Artefatos modificados:** `README.md`, `docs/agents-working-context.md`
+
+---
+
 ## 2026-10-06 — ares-tf (feat/hooks-de-guard-executam-no-windows — ML-3A corretivo) — INÍCIO
 
 **Branch:** `feat/hooks-de-guard-executam-no-windows`

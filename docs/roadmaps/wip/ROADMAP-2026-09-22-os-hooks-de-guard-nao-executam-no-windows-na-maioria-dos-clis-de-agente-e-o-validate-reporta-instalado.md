@@ -312,12 +312,12 @@ ML-0B e comparar.
       Nota: `vault/notes/guard-fallback-old-binary-exit1-fail-open-6-clis-2026-10-06.md`.
 
 ### ML-3B — README e docs do usuário
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** prometeu-tf
 **Files affected:** `README.md` (seção de hooks/Windows)
 **Actions:** trocar "planejado" por estado medido, por CLI, conforme a matriz do ML-3A.
 **Acceptance criteria:**
-- [ ] Cada afirmação aponta para uma linha da matriz
+- [x] Cada afirmação aponta para uma linha da matriz — tabela afirmação→fonte conferida pelo arquiteto; o README diz o que foi medido (shells) e o que não foi (CLI de agente de ponta a ponta, `pwsh`). Ajuste do arquiteto: "a mesma linha em todo shell" vale por CLI (D2 revista tem duas formas)
 
 ## Wave 4 — Red team e qualidade
 > Dependências: Wave 3 auditada. ML-4A ∥ ML-4B (somente leitura + parecer).
