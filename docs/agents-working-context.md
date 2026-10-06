@@ -2,6 +2,30 @@
 
 ---
 
+## 2026-10-06 — hefesto-tf (feat/hooks-de-guard-executam-no-windows — ML-4B) — INÍCIO
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** ML-4B (REQ-2026-09-05): revisão de qualidade do guard de hook em Go — cobertura, duplicação, arquitetura, testes.
+
+---
+
+## 2026-10-06 — hefesto-tf (feat/hooks-de-guard-executam-no-windows — ML-4B) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Veredito:** LIBERA O PR.
+**Resultado:**
+- Cobertura total `internal/guard`: 81.0%. Funções de decisão principais: `applyRule` 91.7%, `RunCredential` 96.6%, `RunCredentialGlobal` 90.0%.
+- 5 achados, nenhum bloqueante: M1 (`findSubcommand` 50%), M2 (`parseHeredocDelim` 20%, `stripHeredocBodies` 55.6%), B1 (`credReadMode` 0% — código morto), B2 (nome de arquivo com sufixo ML), I1 (dois sítios para string de hook).
+- `go vet` limpo em ambos os pacotes.
+- Falsificação confirmada para 3 testes novos (T1, T2, T3 — todos não-vacuosos).
+- Duplicação nos `*_reference.go` e fixtures congeladas: intencional e documentada.
+
+**Artefatos:**
+- `docs/qualidade/2026-10-04-guard-em-go.md` — relatório completo
+- `docs/agents-working-context.md` — este arquivo
+
+---
+
 ## 2026-10-06 — prometeu-tf (feat/hooks-de-guard-executam-no-windows — ML-3B) — INÍCIO
 
 **Branch:** `feat/hooks-de-guard-executam-no-windows`
