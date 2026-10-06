@@ -977,6 +977,18 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 		return nil, nil, e
 	}
 	applyRule("credential_guard_hook_resolvable", append(credentialGuardHookMsgs, credentialGuardGlobalHookMsgs...), &violations, &warnings)
+	// ML-2B: aviso (always-warning) para configs que ainda usam a forma legada .sh —
+	// não executa no Windows fora do Git Bash. Roteado via applyRuleWarnOnly para nunca
+	// elevar a um erro, independentemente da severidade da regra.
+	credentialGuardHookLegacyWarn, e := validateCredentialGuardHookResolvableLegacyWarnings()
+	if e != nil {
+		return nil, nil, e
+	}
+	credentialGuardGlobalHookLegacyWarn, e := validateCredentialGuardGlobalHookResolvableLegacyWarnings()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleWarnOnly("credential_guard_hook_resolvable", append(credentialGuardHookLegacyWarn, credentialGuardGlobalHookLegacyWarn...), &warnings)
 
 	// ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A:
 	// detecta adulteração do credential-guard, âncora por alvo (ADR-2026-08-12 Emenda 1).
@@ -1008,6 +1020,16 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 		return nil, nil, e
 	}
 	applyRule("git_branch_guard_hook_resolvable", append(gitBranchGuardHookMsgs, gitBranchGuardGlobalHookMsgs...), &violations, &warnings)
+	// ML-2B: aviso (always-warning) para configs que ainda usam a forma legada .sh.
+	gitBranchGuardHookLegacyWarn, e := validateGitBranchGuardHookResolvableLegacyWarnings()
+	if e != nil {
+		return nil, nil, e
+	}
+	gitBranchGuardGlobalHookLegacyWarn, e := validateGitBranchGuardGlobalHookResolvableLegacyWarnings()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleWarnOnly("git_branch_guard_hook_resolvable", append(gitBranchGuardHookLegacyWarn, gitBranchGuardGlobalHookLegacyWarn...), &warnings)
 
 	gitBranchGuardScriptMsgs, e := validateGitBranchGuardScriptIntegrity()
 	if e != nil {
@@ -1018,6 +1040,13 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 		return nil, nil, e
 	}
 	applyRule("git_branch_guard_script_integrity", append(gitBranchGuardScriptMsgs, gitBranchGuardGlobalScriptMsgs...), &violations, &warnings)
+
+	// ML-2B: detecta trackfw.exe/.cmd/.bat na raiz do projeto (cmd.exe busca no cwd antes do PATH).
+	binaryInRootMsgs, e := validateTrackfwBinaryInProjectRoot()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRule("trackfw_binary_in_project_root", binaryInRootMsgs, &violations, &warnings)
 
 	// ADR-2026-08-15-gate-de-duas-fases-..., ML-3A (D2): git-anchored detection behind the
 	// TRACKFW_ORCHESTRATOR_SESSION guardrail — flags a third-party artifact claim with no
@@ -1363,6 +1392,17 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 		return nil, nil, e
 	}
 	applyRuleTagged("credential_guard_hook_resolvable", append(credentialGuardHookMsgsT, credentialGuardGlobalHookMsgsT...), &violations, &warnings)
+	// ML-2B: mirror of ValidateUnfiltered legacy-warn block.
+	// 🔴 Missing this site silences credential .sh legacy warnings from --json output.
+	credentialGuardHookLegacyWarnT, e := validateCredentialGuardHookResolvableLegacyWarnings()
+	if e != nil {
+		return nil, nil, e
+	}
+	credentialGuardGlobalHookLegacyWarnT, e := validateCredentialGuardGlobalHookResolvableLegacyWarnings()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleWarnOnlyTagged("credential_guard_hook_resolvable", append(credentialGuardHookLegacyWarnT, credentialGuardGlobalHookLegacyWarnT...), &warnings)
 
 	// ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A:
 	// detecta adulteração do credential-guard, âncora por alvo (ADR-2026-08-12 Emenda 1).
@@ -1394,6 +1434,17 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 		return nil, nil, e
 	}
 	applyRuleTagged("git_branch_guard_hook_resolvable", append(gitBranchGuardHookMsgsT, gitBranchGuardGlobalHookMsgsT...), &violations, &warnings)
+	// ML-2B: mirror of ValidateUnfiltered legacy-warn block.
+	// 🔴 Missing this site silences git-branch .sh legacy warnings from --json output.
+	gitBranchGuardHookLegacyWarnT, e := validateGitBranchGuardHookResolvableLegacyWarnings()
+	if e != nil {
+		return nil, nil, e
+	}
+	gitBranchGuardGlobalHookLegacyWarnT, e := validateGitBranchGuardGlobalHookResolvableLegacyWarnings()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleWarnOnlyTagged("git_branch_guard_hook_resolvable", append(gitBranchGuardHookLegacyWarnT, gitBranchGuardGlobalHookLegacyWarnT...), &warnings)
 
 	gitBranchGuardScriptMsgsT, e := validateGitBranchGuardScriptIntegrity()
 	if e != nil {
@@ -1404,6 +1455,14 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 		return nil, nil, e
 	}
 	applyRuleTagged("git_branch_guard_script_integrity", append(gitBranchGuardScriptMsgsT, gitBranchGuardGlobalScriptMsgsT...), &violations, &warnings)
+
+	// ML-2B: mirror of ValidateUnfiltered binary-in-root block.
+	// 🔴 Missing this site silences trackfw_binary_in_project_root from --json output.
+	binaryInRootMsgsT, e := validateTrackfwBinaryInProjectRoot()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleTagged("trackfw_binary_in_project_root", binaryInRootMsgsT, &violations, &warnings)
 
 	thirdPartyProvenanceMsgsT, e := validateThirdPartyArtifactHasProvenance()
 	if e != nil {

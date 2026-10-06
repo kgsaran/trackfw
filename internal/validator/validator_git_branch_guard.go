@@ -75,6 +75,9 @@ type globalGuardConfigFile struct {
 	path                string // relative to $HOME
 	cli                 string
 	requiresCommandType bool
+	// family classifica o ambiente de shell (ML-2B, ADR-2026-10-04 D2 revista).
+	// Tabela normativa em guardShellFamily (validator_guard_binary_probe_ml2b.go).
+	family guardShellFamily
 }
 
 // globalGuardConfigFiles is the closed list of GLOBAL hook/settings files `trackfw update harness`
@@ -85,12 +88,13 @@ type globalGuardConfigFile struct {
 // note on credentialGuardScriptReference — so this list is validator's own, independently
 // maintained copy of the same 6 paths).
 var globalGuardConfigFiles = []globalGuardConfigFile{
-	{".claude/settings.json", "Claude Code", true},
-	{".codex/hooks.json", "Codex CLI", true},
-	{".gemini/settings.json", "Gemini CLI", true},
-	{".cursor/hooks.json", "Cursor", false},
-	{".copilot/settings.json", "GitHub Copilot CLI", true},
-	{".kiro/hooks/trackfw-credential-guard.json", "Kiro", true},
+	// ML-2B: `family` campo normativo — ADR-2026-10-04 D2 revista.
+	{".claude/settings.json", "Claude Code", true, guardShellFamilyPSPosix},
+	{".codex/hooks.json", "Codex CLI", true, guardShellFamilyPSPosix},
+	{".gemini/settings.json", "Gemini CLI", true, guardShellFamilyPSPosix},
+	{".cursor/hooks.json", "Cursor", false, guardShellFamilyPSPosix},
+	{".copilot/settings.json", "GitHub Copilot CLI", true, guardShellFamilyPSPosix},
+	{".kiro/hooks/trackfw-credential-guard.json", "Kiro", true, guardShellFamilyCmdExe},
 }
 
 // globalGuardConfigPath resolves the actual on-disk path (relative to $HOME) that
@@ -150,13 +154,20 @@ func globalGuardConfigPath(gf globalGuardConfigFile, scriptMarker string) string
 // (guard never installed for this CLI, or filesystem race). Invalid JSON no longer does — see
 // ROADMAP-2026-09-06-fecha-o-fail-open-do-guard-config-ilegivel-deixa-de-ser-silencio, ML-1A, and
 // the json.Unmarshal error branch below for the decision and its measurement.
-func validateGuardGlobalHookResolvable(ruleName, scriptMarker string) ([]string, error) {
+// validateGuardGlobalHookResolvable is the GLOBAL-scope counterpart of validateGuardHookResolvable
+// (validator_credential_guard.go). Extended in ML-2B to also handle the new `trackfw guard`
+// subcommand form: subcmdMarker and subcmdName work the same way as in validateGuardHookResolvable.
+// For credential global scope, subcmdName is "credential --global"; for git-branch, "git-branch".
+func validateGuardGlobalHookResolvable(ruleName, scriptMarker, subcmdMarker, subcmdName string) ([]string, error) {
 	home, err := homedir.Dir()
 	if err != nil || home == "" {
 		return nil, nil
 	}
 
 	var msgs []string
+	// anySubcmdFormFound e hasPSPosixSubcmd rastreiam o uso da nova forma de subcomando Go.
+	var anySubcmdFormFound bool
+	var hasPSPosixSubcmd bool
 	for _, gf := range globalGuardConfigFiles {
 		relPath := globalGuardConfigPath(gf, scriptMarker)
 		fullPath := filepath.Join(home, relPath)
@@ -270,9 +281,93 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker string) ([]string,
 				))
 			}
 		}
+
+		// --- NOVA FORMA (subcomando Go) global --- ML-2B, ADR-2026-10-04 D6 ---
+		if subcmdMarker != "" {
+			var subcmdCommands []guardCommandMatch
+			collectCommandsWithMarker(parsed, subcmdMarker, &subcmdCommands)
+			expectedLine := guardExpectedLine(subcmdName, gf.family)
+
+			seenSubcmd := make(map[string]bool, len(subcmdCommands))
+			for _, m := range subcmdCommands {
+				seenKey := m.raw + "\x00" + strconv.FormatBool(m.typeIsCommand)
+				if seenSubcmd[seenKey] {
+					continue
+				}
+				seenSubcmd[seenKey] = true
+
+				if gf.requiresCommandType && !m.typeIsCommand {
+					msgs = append(msgs, fmt.Sprintf(
+						`~/%s (%s, global scope) references %q, but the hook entry is missing "type":"command" (or has an invalid type) — %s will silently never execute it; run `+"`trackfw update harness`"+` to regenerate it`,
+						relPath, gf.cli, m.raw, gf.cli,
+					))
+					continue
+				}
+
+				if m.raw == expectedLine {
+					anySubcmdFormFound = true
+					if gf.family == guardShellFamilyPSPosix {
+						hasPSPosixSubcmd = true
+					}
+				} else {
+					msgs = append(msgs, fmt.Sprintf(
+						"~/%s (%s, global scope) has %q but the expected form for this CLI is %q — "+
+							"run `trackfw update harness` to regenerate",
+						relPath, gf.cli, m.raw, expectedLine,
+					))
+					anySubcmdFormFound = true
+					if gf.family == guardShellFamilyPSPosix {
+						hasPSPosixSubcmd = true
+					}
+				}
+			}
+		}
+	}
+
+	// Sonda do binário — uma vez se qualquer arquivo global usa a nova forma.
+	if anySubcmdFormFound {
+		probeMsgs := guardBinaryProbeOnce(hasPSPosixSubcmd)
+		msgs = append(msgs, probeMsgs...)
 	}
 
 	return msgs, nil
+}
+
+// validateGuardGlobalHookShLegacyWarnings retorna avisos (always-warning) para configs globais
+// que ainda usam a forma legada .sh (não executa no Windows fora do Git Bash).
+func validateGuardGlobalHookShLegacyWarnings(scriptMarker string) ([]string, error) {
+	home, err := homedir.Dir()
+	if err != nil || home == "" {
+		return nil, nil
+	}
+
+	var warnings []string
+	for _, gf := range globalGuardConfigFiles {
+		relPath := globalGuardConfigPath(gf, scriptMarker)
+		fullPath := filepath.Join(home, relPath)
+		content, readErr := readRegularFile(fullPath)
+		if readErr != nil {
+			continue
+		}
+		var parsed interface{}
+		if json.Unmarshal(content, &parsed) != nil {
+			continue
+		}
+
+		var commands []guardCommandMatch
+		collectCommandsWithMarker(parsed, scriptMarker, &commands)
+
+		for _, m := range commands {
+			_ = m
+			warnings = append(warnings, fmt.Sprintf(
+				"~/%s (%s, global scope) references %s — this script does not execute on Windows "+
+					"outside Git Bash; run `trackfw update harness` to migrate to the `trackfw guard` subcommand form",
+				relPath, gf.cli, scriptMarker,
+			))
+			break // um aviso por arquivo é suficiente
+		}
+	}
+	return warnings, nil
 }
 
 // validateGuardGlobalScriptIntegrity is the GLOBAL-scope counterpart of
@@ -351,7 +446,13 @@ func validateGuardGlobalScriptIntegrity(scriptFileName, referenceContent string)
 // nova sem seguir o padrão existente" / roadmap ML-1A step 6: "não inventar um mecanismo de
 // configuração novo").
 func validateCredentialGuardGlobalHookResolvable() ([]string, error) {
-	return validateGuardGlobalHookResolvable("credential_guard_hook_resolvable", credentialGuardScriptMarker)
+	return validateGuardGlobalHookResolvable("credential_guard_hook_resolvable", credentialGuardScriptMarker, credentialGuardSubcmdMarker, "credential --global")
+}
+
+// validateCredentialGuardGlobalHookResolvableLegacyWarnings retorna os avisos de forma legada
+// (.sh não executa no Windows) para configs globais de credential-guard.
+func validateCredentialGuardGlobalHookResolvableLegacyWarnings() ([]string, error) {
+	return validateGuardGlobalHookShLegacyWarnings(credentialGuardScriptMarker)
 }
 
 func validateCredentialGuardGlobalScriptIntegrity() ([]string, error) {
@@ -359,7 +460,13 @@ func validateCredentialGuardGlobalScriptIntegrity() ([]string, error) {
 }
 
 func validateGitBranchGuardGlobalHookResolvable() ([]string, error) {
-	return validateGuardGlobalHookResolvable("git_branch_guard_hook_resolvable", gitBranchGuardScriptMarker)
+	return validateGuardGlobalHookResolvable("git_branch_guard_hook_resolvable", gitBranchGuardScriptMarker, gitBranchGuardSubcmdMarker, "git-branch")
+}
+
+// validateGitBranchGuardGlobalHookResolvableLegacyWarnings retorna os avisos de forma legada
+// (.sh não executa no Windows) para configs globais de git-branch-guard.
+func validateGitBranchGuardGlobalHookResolvableLegacyWarnings() ([]string, error) {
+	return validateGuardGlobalHookShLegacyWarnings(gitBranchGuardScriptMarker)
 }
 
 func validateGitBranchGuardGlobalScriptIntegrity() ([]string, error) {

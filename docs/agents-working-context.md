@@ -45123,3 +45123,8 @@ Achados notáveis para o apolo-tf:
 
 - ML-1C auditado e commitado (8b68bff9); barrier da wave 1 passou com `--trust-local-gates`; push feito. `trackfw.yaml` (+12 do init) e `.trackfw-credential-guard.json` descartados com autorização do KG.
 - ML-2B despachado ao apolo-tf. ML-2A bloqueado: o gate `trackfw guard --help` = 0 falha (PATH resolve /opt/homebrew/bin/trackfw 9.2.0) e o `make install` da ADR grava em /usr/local/bin, que fica DEPOIS do homebrew no PATH — a mitigação escrita não funciona nesta máquina. Decisão de onde instalar o build da branch pendente com o KG.
+
+## 2026-10-06 — zeus-tf — ML-2B auditado; ML-2C aberto
+
+- ML-2B: três despachos (dois travaram por watchdog do agente, sem erro de código). 21 testes novos conferidos por nome; `go test ./internal/validator/` ok, `go vet` limpo. Build da branch instalado em `~/.local/bin/trackfw` por decisão do KG (gate do ML-2A: `trackfw guard --help` = 0).
+- Achado do ML-2B: o validator não lê `.windsurf/hooks.json` nem `.amazonq/cli-agents/*.json`, e o gerador emite hooks para os dois. Mesma causa → ML-2C nesta REQ, antes do ML-2A.

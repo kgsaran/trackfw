@@ -22,6 +22,14 @@ const credentialGuardScriptMarker = "trackfw-credential-guard.sh"
 // credentialGuardScriptMarker — só o nome do arquivo muda.
 const gitBranchGuardScriptMarker = "trackfw-git-branch-guard.sh"
 
+// credentialGuardSubcmdMarker é o prefixo do subcomando Go para o credential-guard
+// (ADR-2026-10-04, ML-2B). Usado para detectar a NOVA forma de hook.
+const credentialGuardSubcmdMarker = "trackfw guard credential"
+
+// gitBranchGuardSubcmdMarker é o prefixo do subcomando Go para o git-branch-guard
+// (ADR-2026-10-04, ML-2B).
+const gitBranchGuardSubcmdMarker = "trackfw guard git-branch"
+
 // credentialGuardHookFile associa um arquivo de hook de projeto ao CLI que o consome, para
 // compor mensagens de violação acionáveis.
 //
@@ -47,6 +55,10 @@ type credentialGuardHookFile struct {
 	cli                      string
 	requiresCommandType      bool
 	requiresVarOrShellPrefix bool
+	// family classifica o ambiente de shell que executa este hook (ML-2B, ADR-2026-10-04 D2
+	// revista). Determina a linha exata esperada quando a config usa o subcomando Go.
+	// Tabela normativa em guardShellFamily (validator_guard_binary_probe_ml2b.go).
+	family guardShellFamily
 }
 
 // credentialGuardHookFiles é a lista fechada dos arquivos de hook de PROJETO que o trackfw
@@ -56,12 +68,14 @@ type credentialGuardHookFile struct {
 // repositório do usuário, e a checagem de dedup globalCredentialGuardInstalled*() já os pula de
 // propósito nas entradas de projeto.
 var credentialGuardHookFiles = []credentialGuardHookFile{
-	{".claude/settings.json", "Claude Code", true, true},
-	{".codex/hooks.json", "Codex CLI", true, true},
-	{".gemini/settings.json", "Gemini CLI", true, true},
-	{".cursor/hooks.json", "Cursor", false, false},
-	{".github/hooks/trackfw-attention.json", "GitHub Copilot CLI", true, false},
-	{".kiro/hooks/trackfw-attention.json", "Kiro", true, false},
+	// ML-2B: `family` campo normativo — ADR-2026-10-04 D2 revista.
+	// PS/POSIX: linha com "; exit $LASTEXITCODE". cmd.exe: linha sem sufixo.
+	{".claude/settings.json", "Claude Code", true, true, guardShellFamilyPSPosix},
+	{".codex/hooks.json", "Codex CLI", true, true, guardShellFamilyPSPosix},
+	{".gemini/settings.json", "Gemini CLI", true, true, guardShellFamilyPSPosix},
+	{".cursor/hooks.json", "Cursor", false, false, guardShellFamilyPSPosix},
+	{".github/hooks/trackfw-attention.json", "GitHub Copilot CLI", true, false, guardShellFamilyPSPosix},
+	{".kiro/hooks/trackfw-attention.json", "Kiro", true, false, guardShellFamilyCmdExe},
 }
 
 // hookAnchorageClass classifica a semântica de ancoragem de um valor de comando de hook.
@@ -321,7 +335,24 @@ func collectCommandsWithMarker(v interface{}, marker string, out *[]guardCommand
 //     arquivo de hook presente mas com JSON inválido deixou de ser pulado em silêncio — ver o
 //     comentário no branch de erro do json.Unmarshal, abaixo, para a decisão e a medição que a
 //     sustentam.
-func validateGuardHookResolvable(ruleName, scriptMarker string) ([]string, error) {
+// validateGuardHookResolvable é a implementação genérica compartilhada pelas regras
+// "credential_guard_hook_resolvable" e "git_branch_guard_hook_resolvable": para cada arquivo de
+// hook de PROJETO que existir, extrai os comandos que referenciam scriptMarker (forma .sh legada)
+// ou subcmdMarker (nova forma de subcomando Go), e:
+//
+// Para entradas .sh (scriptMarker): mantém o comportamento existente — verifica existência e
+// executabilidade do script referenciado. A mensagem de aviso sobre Windows (a forma .sh não
+// executa no Windows fora do Git Bash) é retornada por validateGuardHookShLegacyWarnings,
+// roteada via applyRuleWarnOnly em validator.go para não elevar aviso a violação.
+//
+// Para entradas de subcomando (subcmdMarker, ML-2B, ADR-2026-10-04 D6):
+//   - Linha exata da família do CLI → OK (contabilizado para sonda do binário).
+//   - Contém subcmdMarker mas não é a linha exata → violation citando a linha esperada.
+//   - Sonda do binário: resolve `trackfw` no PATH, verifica que tem o subcomando guard.
+//   - Windows + família PS/POSIX + shim .ps1 + política Restricted → violation.
+//
+// subcmdName é o nome do subcomando (ex.: "credential", "git-branch").
+func validateGuardHookResolvable(ruleName, scriptMarker, subcmdMarker, subcmdName string) ([]string, error) {
 	root, err := os.Getwd()
 	if err != nil {
 		return nil, err
@@ -338,6 +369,10 @@ func validateGuardHookResolvable(ruleName, scriptMarker string) ([]string, error
 	}
 
 	var msgs []string
+	// anySubcmdFormFound e hasPSPosixSubcmd rastreiam se algum arquivo usa a nova forma de
+	// subcomando Go, para acionar a sonda do binário uma única vez ao final do loop (ML-2B).
+	var anySubcmdFormFound bool
+	var hasPSPosixSubcmd bool
 	for _, hf := range credentialGuardHookFiles {
 		fullPath := filepath.Join(root, hf.path)
 		content, readErr := readRegularFile(fullPath)
@@ -429,6 +464,7 @@ func validateGuardHookResolvable(ruleName, scriptMarker string) ([]string, error
 			continue
 		}
 
+		// --- FORMA LEGADA (.sh) --- mantem comportamento existente ---
 		var commands []guardCommandMatch
 		collectCommandsWithMarker(parsed, scriptMarker, &commands)
 
@@ -497,19 +533,125 @@ func validateGuardHookResolvable(ruleName, scriptMarker string) ([]string, error
 				))
 			}
 		}
+
+		// --- NOVA FORMA (subcomando Go) --- ML-2B, ADR-2026-10-04 D6 ---
+		if subcmdMarker != "" {
+			var subcmdCommands []guardCommandMatch
+			collectCommandsWithMarker(parsed, subcmdMarker, &subcmdCommands)
+			expectedLine := guardExpectedLine(subcmdName, hf.family)
+
+			seenSubcmd := make(map[string]bool, len(subcmdCommands))
+			for _, m := range subcmdCommands {
+				seenKey := m.raw + "\x00" + strconv.FormatBool(m.typeIsCommand)
+				if seenSubcmd[seenKey] {
+					continue
+				}
+				seenSubcmd[seenKey] = true
+
+				// Aplicar o mesmo filtro requiresCommandType da forma .sh: uma entrada sem
+				// "type":"command" num CLI que o exige nunca executa — viola antes de checar a linha.
+				if hf.requiresCommandType && !m.typeIsCommand {
+					msgs = append(msgs, fmt.Sprintf(
+						`%s (%s) references %q, but the hook entry is missing "type":"command" (or has an invalid type) — %s will silently never execute it; run `+"`trackfw update`"+` to regenerate it`,
+						hf.path, hf.cli, m.raw, hf.cli,
+					))
+					continue
+				}
+
+				if m.raw == expectedLine {
+					// Linha exata para a família deste CLI → OK; marcar para sonda do binário.
+					anySubcmdFormFound = true
+					if hf.family == guardShellFamilyPSPosix {
+						hasPSPosixSubcmd = true
+					}
+				} else {
+					// Contém o marcador mas não é a linha exata → violation com linha esperada.
+					msgs = append(msgs, fmt.Sprintf(
+						"%s (%s) has %q but the expected form for this CLI is %q — "+
+							"run `trackfw update` to regenerate",
+						hf.path, hf.cli, m.raw, expectedLine,
+					))
+					anySubcmdFormFound = true
+					if hf.family == guardShellFamilyPSPosix {
+						hasPSPosixSubcmd = true
+					}
+				}
+			}
+		}
+	}
+
+	// Sonda do binário — executada uma vez se qualquer arquivo de hook usa a nova forma.
+	if anySubcmdFormFound {
+		probeMsgs := guardBinaryProbeOnce(hasPSPosixSubcmd)
+		msgs = append(msgs, probeMsgs...)
 	}
 
 	return msgs, nil
 }
 
+// validateGuardHookShLegacyWarnings retorna avisos (always-warning, roteados via
+// applyRuleWarnOnly) para arquivos de hook de PROJETO que ainda usam a forma legada .sh.
+// A forma .sh não executa no Windows fora do Git Bash (ADR-2026-10-04, D5/D6).
+// Os avisos são separados das violations para não elevar o nível da regra.
+func validateGuardHookShLegacyWarnings(scriptMarker string) ([]string, error) {
+	root, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+
+	var warnings []string
+	for _, hf := range credentialGuardHookFiles {
+		fullPath := filepath.Join(root, hf.path)
+		content, readErr := readRegularFile(fullPath)
+		if readErr != nil {
+			continue // arquivos ilegíveis/ausentes já são tratados pela função principal
+		}
+		var parsed interface{}
+		if json.Unmarshal(content, &parsed) != nil {
+			continue // JSON inválido já é tratado pela função principal
+		}
+
+		var commands []guardCommandMatch
+		collectCommandsWithMarker(parsed, scriptMarker, &commands)
+
+		seen := make(map[string]bool, len(commands))
+		for _, m := range commands {
+			seenKey := m.raw
+			if seen[seenKey] {
+				continue
+			}
+			seen[seenKey] = true
+			warnings = append(warnings, fmt.Sprintf(
+				"%s (%s) references %s — this script does not execute on Windows outside Git Bash; "+
+					"run `trackfw update` to migrate to the `trackfw guard` subcommand form",
+				hf.path, hf.cli, scriptMarker,
+			))
+			break // um aviso por arquivo é suficiente
+		}
+	}
+	return warnings, nil
+}
+
 // validateCredentialGuardHookResolvable é a regra "credential_guard_hook_resolvable" — ver
 // validateGuardHookResolvable para a implementação compartilhada.
 func validateCredentialGuardHookResolvable() ([]string, error) {
-	return validateGuardHookResolvable("credential_guard_hook_resolvable", credentialGuardScriptMarker)
+	return validateGuardHookResolvable("credential_guard_hook_resolvable", credentialGuardScriptMarker, credentialGuardSubcmdMarker, "credential")
+}
+
+// validateCredentialGuardHookResolvableLegacyWarnings retorna os avisos de forma legada
+// (.sh não executa no Windows) para a regra credential_guard_hook_resolvable.
+func validateCredentialGuardHookResolvableLegacyWarnings() ([]string, error) {
+	return validateGuardHookShLegacyWarnings(credentialGuardScriptMarker)
 }
 
 // validateGitBranchGuardHookResolvable é a regra "git_branch_guard_hook_resolvable" — ver
 // validateGuardHookResolvable para a implementação compartilhada.
 func validateGitBranchGuardHookResolvable() ([]string, error) {
-	return validateGuardHookResolvable("git_branch_guard_hook_resolvable", gitBranchGuardScriptMarker)
+	return validateGuardHookResolvable("git_branch_guard_hook_resolvable", gitBranchGuardScriptMarker, gitBranchGuardSubcmdMarker, "git-branch")
+}
+
+// validateGitBranchGuardHookResolvableLegacyWarnings retorna os avisos de forma legada
+// (.sh não executa no Windows) para a regra git_branch_guard_hook_resolvable.
+func validateGitBranchGuardHookResolvableLegacyWarnings() ([]string, error) {
+	return validateGuardHookShLegacyWarnings(gitBranchGuardScriptMarker)
 }

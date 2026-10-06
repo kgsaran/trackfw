@@ -205,7 +205,7 @@ go test ./internal/generators/ -count=1
 ```
 
 ## Wave 2 — Emissão, migração e relato
-> Dependências: Wave 1 auditada. ML-2A ∥ ML-2B (arquivos disjuntos; o contrato entre eles é a string
+> Dependências: Wave 1 auditada. Execução real (2026-10-06): ML-2B → ML-2C → ML-2A, em sequência, porque o validator guarda cópias literais dos `.sh` com teste de igualdade contra o gerador. Plano original: ML-2A ∥ ML-2B (arquivos disjuntos; o contrato entre eles é a string
 > exata `trackfw guard git-branch` / `trackfw guard credential`).
 
 ### ML-2A — Toda config emite `trackfw guard <nome>`; `.sh` vira invólucro; `update` migra
@@ -228,7 +228,7 @@ campo `command` (AC1); `migrateHookCommand` troca as formas antigas pela nova no
 - [ ] `go test ./internal/generators/ -count=1` verde
 
 ### ML-2B — `validate` relata se o hook pode executar (AC7)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Files affected:** `internal/validator/validator_credential_guard*.go`, `internal/validator/validator_git_branch_guard*.go` (+ testes)
 **Actions:** `*_hook_resolvable` compara a linha **exata** da D2 revista (hoje é `strings.Contains`, que aceitaria qualquer sufixo); versão mínima do `trackfw` resolvido; no Windows, `trackfw` resolvido para `.ps1` com a política efetiva `Restricted` é violation com orientação `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` (ML-1D: com o sufixo, sai 0 = falha aberta); `trackfw.exe`/`trackfw.cmd`/`trackfw.bat` na raiz do projeto é violation (o `cmd.exe` procura no cwd antes do PATH); uma config que ainda aponta para o `.sh`
@@ -238,7 +238,22 @@ recebe um aviso de que não executa no Windows fora do Git Bash; `trackfw` resol
 (`<trackfw resolvido> guard --help` sai 0). O `guard` estreia numa única versão, então todo binário que o
 tem já atende o mínimo, e uma constante de versão reprovaria os builds de desenvolvimento (que reportam 9.2.0).
 **Acceptance criteria:**
-- [ ] Falsificação nas duas direções por regra
+- [x] Falsificação nas duas direções por regra — 21 testes novos em `internal/validator/validator_guard_binary_probe_ml2b_test.go`, nomes conferidos pelo arquiteto; trocar o sufixo em `guardExpectedLine` reprova os dois testes de linha exata
+- [x] `go test ./internal/validator/ -count=1` verde — medido pelo arquiteto em 2026-10-06: `ok … 14.487s`; `go vet` limpo
+
+### ML-2C — O `validate` lê as configs de Windsurf e Amazon Q
+**Status:** ⬜ Pendente
+**Squad:** apolo-tf
+**Por que o escopo original não previa:** o ML-2B achou que `.windsurf/hooks.json` e
+`.amazonq/cli-agents/<agente>.json` são emitidos por `InjectWindsurfHooks`/`InjectAmazonQHooks`, mas
+não constam de `credentialGuardHookFiles`/`globalGuardConfigFiles`. O `validate` fica mudo para 2 dos 8
+CLIs. É a mesma causa da REQ (o `validate` não relata se o hook executa), então entra aqui (Regra Dura de
+Causa Raiz).
+**Files affected:** `internal/validator/validator_credential_guard.go`, `internal/validator/validator_git_branch_guard.go`,
+`internal/validator/validator_guard_binary_probe_ml2b*.go` (+ testes). Antes do ML-2A: o ML-2A muda os `.sh`
+e as referências do validator, e os testes dos dois pacotes se cruzam.
+**Acceptance criteria:**
+- [ ] Windsurf (família PS/POSIX) e Amazon Q (família cmd.exe) lidos pelas `*_hook_resolvable`, com falsificação nas duas direções
 - [ ] `go test ./internal/validator/ -count=1` verde
 
 **Gates da wave:**
