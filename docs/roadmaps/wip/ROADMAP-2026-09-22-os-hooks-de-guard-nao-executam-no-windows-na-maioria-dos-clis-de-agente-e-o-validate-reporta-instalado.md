@@ -373,7 +373,7 @@ de referência (C2: `&` não separa comando; falha aberta herdada do `.sh`, agor
 Era resíduo declarado na ADR-2026-08-12; o KG decidiu fechar (D10).
 **Files affected:** `internal/guard/gitbranch.go` (+ testes); testes de paridade em `internal/generators/` se o corpus tiver casos com aspas.
 **Acceptance criteria:**
-- [ ] As quatro formas acima e `"C:\Program Files\Git\bin\git.exe" push` / `& "…git.exe" push` bloqueiam; `echo "git push"`, `git commit -m "fix: push"` (sem subcomando proibido fora da mensagem) e `ls "a b"` mantêm o comportamento de hoje
+- [ ] As quatro formas acima e `"C:\Program Files\Git\bin\git.exe" push` / `& "…git.exe" push` bloqueiam; `echo "git push"`, `git log --grep "push"` e `ls "a b"` mantêm o comportamento de hoje
 - [ ] Divergências da fixture `.sh` listadas por id, deliberadas e no sentido seguro
 - [ ] `go test ./internal/guard/... ./internal/generators/ -count=1` verde; `make quality` verde pelo arquiteto
 
