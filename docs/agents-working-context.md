@@ -45331,3 +45331,18 @@ Achados notáveis para o apolo-tf:
 - Lição: três vezes um agente chamou de "pré-existente" uma falha causada pela branch. Exigir a mesma medição em `origin/main` antes de aceitar o rótulo.
 - Binário da branch em `~/.local/bin/trackfw` (decisão do KG); remover após o release.
 - Aberta à parte: REQ-2026-10-06 (credential guard ausente em Windsurf e Amazon Q), em backlog.
+
+## 2026-10-06 — apolo-tf — INÍCIO: corretivo CI (PR #527 — dedup tests)
+
+- Branch: `feat/hooks-de-guard-executam-no-windows`
+- Tarefa: corrigir `TestGBGDedup_MessageAppearsOnceWhenBothScopesInstalled` e `TestGBGDedup_MessageAppearsOnceWhenBothScopesInstalled_NonVacuous` que falham no CI porque `runGitBranchGuardEntries` não injeta o binário compilado no PATH para o braço `else` (script .sh), apenas para o braço inline ("trackfw guard git-branch").
+- Escopo: `internal/generators/git_branch_guard_dedup_test.go` e `git_branch_guard_stdin_drain_test.go`.
+
+## 2026-10-06 — apolo-tf — FIM: corretivo CI (PR #527 — dedup tests)
+
+- `git_branch_guard_dedup_test.go`: movido `cmd.Env = injectGuardBinaryPath(t, os.Environ())` para fora do `if/else` em `runGitBranchGuardEntries` — garante injeção tanto para o braço inline quanto para o braço `.sh`.
+- `git_branch_guard_stdin_drain_test.go`: adicionado `bashMajorVersion()` helper; em `runGuardWithPipe` retorna o braço Go como resultado canônico quando bash < 4 (macOS `/bin/bash` 3.2), evitando divergência de paridade que só ocorre localmente com PATH limpo.
+- Censo final com PATH limpo: `ok` em todos os 19 pacotes de `internal/...`, sem `--- FAIL`.
+- Testes com PATH normal: `ok github.com/kgsaran/trackfw/internal/generators`.
+- Falsificação: removida a injeção temporariamente → ambos os testes reprovaram com "trackfw not found in PATH"; injeção revertida.
+- `git status --short`: M docs/agents-working-context.md, M internal/generators/git_branch_guard_dedup_test.go, M internal/generators/git_branch_guard_stdin_drain_test.go.

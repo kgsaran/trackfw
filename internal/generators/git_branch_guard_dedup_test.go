@@ -443,10 +443,15 @@ func runGitBranchGuardEntries(t *testing.T, projectDir string, scriptPaths []str
 			// hook with "git push" as the blocked command. The inline hook does
 			// not receive positional args, so we pass via --command.
 			cmd = exec.Command("bash", "-c", `trackfw guard git-branch --command "git push"; exit $?`)
-			cmd.Env = injectGuardBinaryPath(t, os.Environ())
 		} else {
 			cmd = exec.Command("bash", script, "git", "push")
 		}
+		// Both the inline command form and .sh thin-wrapper scripts invoke
+		// `trackfw guard git-branch`. Inject the binary compiled by TestMain so
+		// CI (where no system trackfw is installed) can resolve it. Without this,
+		// wrapper scripts exit 2 with "trackfw not found in PATH" before ever
+		// reaching the blocking logic.
+		cmd.Env = injectGuardBinaryPath(t, os.Environ())
 		cmd.Dir = projectDir
 		var stderr strings.Builder
 		cmd.Stderr = &stderr
