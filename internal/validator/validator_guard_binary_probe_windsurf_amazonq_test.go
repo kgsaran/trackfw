@@ -1,6 +1,6 @@
 package validator
 
-// validator_guard_binary_probe_ml2c_test.go — ML-2C (REQ-2026-09-05)
+// validator_guard_binary_probe_windsurf_amazonq_test.go — ML-2C (REQ-2026-09-05)
 //
 // Testes para a leitura das configs de hook de Windsurf e Amazon Q pelo validator:
 //   (a) Windsurf: linha exata PS/POSIX → ok; linha cmd.exe (família errada) → violation;

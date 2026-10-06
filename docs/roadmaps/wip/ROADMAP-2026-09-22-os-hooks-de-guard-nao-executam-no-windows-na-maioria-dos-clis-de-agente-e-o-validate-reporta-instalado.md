@@ -346,12 +346,19 @@ de referência (C2: `&` não separa comando; falha aberta herdada do `.sh`, agor
 **Files affected:** `internal/commands/guard.go`, `internal/guard/gitbranch.go`, `internal/guard/credential.go` (+ testes);
 `internal/validator/validator_guard_binary_probe*.go` (renomear) e um teste de concordância gerador↔validator.
 **Acceptance criteria:**
-- [ ] C1: `guard <desconhecido>`, `guard 'git-branch;'` e `guard` sem subcomando saem 2; `guard --help` sai 0 (testes de subprocesso)
-- [ ] C2: `&` fora de aspas separa comando (exceto redirecionamentos `2>&1`, `>&2`, `&>`, `|&`); `& git push` e `git.exe push` bloqueiam; testes nas duas direções
-- [ ] B3 (ML-4A): `TestRunCredential_OutsideProjectNoOp` deixa de ser vacuo (falsificação mostrada)
-- [ ] M1/M2 (ML-4B): ramos de `findSubcommand` e de heredoc (`<<-`, delimitador entre aspas, sem fechamento) testados
-- [ ] B1/B2/I1 (ML-4B): `credReadMode` morto removido; arquivo sem sufixo de ML; teste amarrando as strings do gerador e do validator
+- [x] C1: `guard <desconhecido>`, `guard 'git-branch;'` e `guard` sem subcomando saem 2; `guard --help` sai 0 (testes de subprocesso)
+- [x] C2: `&` fora de aspas separa comando (exceto redirecionamentos `2>&1`, `>&2`, `&>`, `|&`); `& git push` e `git.exe push` bloqueiam; testes nas duas direções
+- [x] B3 (ML-4A): `TestRunCredential_OutsideProjectNoOp` deixa de ser vacuo (falsificação mostrada)
+- [x] M1/M2 (ML-4B): ramos de `findSubcommand` e de heredoc (`<<-`, delimitador entre aspas, sem fechamento) testados
+- [x] B1/B2/I1 (ML-4B): `credReadMode` morto removido; arquivo sem sufixo de ML; teste amarrando as strings do gerador e do validator
 - [ ] `go test` dos pacotes tocados verde; depois, `make quality` pelo arquiteto com a máquina ociosa
+      Auditoria (2026-10-06): o arquiteto mediu com o binário da branch — `guard nao-existe`, `guard 'git-branch;'` e `guard`
+      → 2; `guard --help` → 0; `echo ok & git push origin main` → 2; `git.exe push` → 2; `git status 2>&1` → 0.
+      Falsificações executadas pelos agentes: exit 2→1 no `root.go` reprova 4 testes de subprocesso; remover o separador `&`
+      e a exceção de redirecionamento reprovam os testes; B3 reprova sem a checagem de cwd; o teste de concordância
+      gerador↔validator reprova com o sufixo quebrado (11 testes PS/POSIX). Divergências deliberadas da fixture `.sh`: `&`,
+      `git.exe`, `GIT` maiúsculo (falha fechada); resíduo: `^&` do `cmd.exe` vira falso positivo (nega).
+      Nota: `vault/notes/cobra-pai-sem-rune-sai-0-com-argumento-invalido-2026-10-06.md`.
 
 **Gates da wave:**
 ```bash

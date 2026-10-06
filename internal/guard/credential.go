@@ -387,12 +387,6 @@ func credIsAllEphemeral(rawStr string, redirectMatches []string) bool {
 	return hasRedirect && allEphemeral
 }
 
-// credReadMode reads credential_guard.mode from trackfw.yaml with default "warn".
-// Project scope wrapper; see credReadModeWithDefault for the shared logic.
-func credReadMode(yamlPath string) string {
-	return credReadModeWithDefault(yamlPath, "warn")
-}
-
 // credReadModeWithDefault reads credential_guard.mode from trackfw.yaml.
 // Returns defaultMode when the file is absent, unreadable, or the mode value is not
 // "warn" or "block".

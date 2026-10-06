@@ -529,3 +529,291 @@ func TestRunGitBranch_EarlyEOFAllow(t *testing.T) {
 		t.Fatalf("sleep-3 analog (EOF in second window): expected exit 0, got %d (stdout=%q)", code, stdout.String())
 	}
 }
+
+// --- M1: findSubcommand coverage ---
+
+// TestMatchSubcommand_GlobalFlagAsLastToken_NoPanic asserts that a -C flag as the
+// final token (no argument following) does not panic and returns no subcommand (no-op).
+// Assertion: the fallback branch tokens=tokens[1:] in findSubcommand is reachable and
+// safe; a truncated git command line does not cause a slice-out-of-bounds panic.
+func TestMatchSubcommand_GlobalFlagAsLastToken_NoPanic(t *testing.T) {
+	got := MatchSubcommand("git -C")
+	if got != "" {
+		t.Fatalf("git -C (flag as last token): expected allow, got %q", got)
+	}
+}
+
+// TestMatchSubcommand_GlobalFlagWithArg_BlocksPush asserts that "git -C dir push"
+// skips the -C flag and its value and correctly identifies push as the subcommand.
+// Assertion: findSubcommand correctly skips the -C flag+value pair, leaving push as
+// the subcommand, which applyRule then maps to the "push" block tag.
+func TestMatchSubcommand_GlobalFlagWithArg_BlocksPush(t *testing.T) {
+	got := MatchSubcommand("git -C /some/dir push origin main")
+	if got != "push" {
+		t.Fatalf("git -C dir push: expected block (push), got %q", got)
+	}
+}
+
+// --- M2: parseHeredocDelim and stripHeredocBodies coverage ---
+
+// TestParseHeredocDelim_IndentedHeredoc asserts that <<-EOF (indented heredoc) is
+// recognized: the '-' is stripped and the delimiter "EOF" is returned.
+// Assertion: the <<- branch in parseHeredocDelim is reachable and correctly strips
+// the dash, allowing stripHeredocBodies to recognize and remove the heredoc body.
+func TestParseHeredocDelim_IndentedHeredoc(t *testing.T) {
+	got := parseHeredocDelim("cat <<-EOF")
+	if got != "EOF" {
+		t.Fatalf("parseHeredocDelim(<<-EOF): want %q, got %q", "EOF", got)
+	}
+}
+
+// TestParseHeredocDelim_SingleQuotedDelim asserts that <<'EOF' strips the single
+// quotes from the delimiter and returns "EOF".
+// Assertion: the single-quote stripping in parseHeredocDelim is reachable; without it
+// the stored delimiter would be "'EOF'" and the terminator "EOF" would never match.
+func TestParseHeredocDelim_SingleQuotedDelim(t *testing.T) {
+	got := parseHeredocDelim("cat <<'EOF'")
+	if got != "EOF" {
+		t.Fatalf("parseHeredocDelim(<<'EOF'): want %q, got %q", "EOF", got)
+	}
+}
+
+// TestParseHeredocDelim_DoubleQuotedDelim asserts that <<"EOF" strips double quotes.
+// Assertion: same mechanism as single-quote stripping, double-quote variant.
+func TestParseHeredocDelim_DoubleQuotedDelim(t *testing.T) {
+	got := parseHeredocDelim(`cat <<"EOF"`)
+	if got != "EOF" {
+		t.Fatalf("parseHeredocDelim(<<\"EOF\"): want %q, got %q", "EOF", got)
+	}
+}
+
+// TestMatchSubcommand_HeredocIndented_BodyStripped asserts that cat <<-EOF with a
+// tab-indented body containing "git push" is allowed: the body is stripped before
+// segment analysis (verified against the .sh fixture: exit 0).
+// Assertion: stripHeredocBodies recognizes <<- and removes the tab-indented body so
+// the cat opener is analyzed as a harmless command and MatchSubcommand returns "".
+func TestMatchSubcommand_HeredocIndented_BodyStripped(t *testing.T) {
+	cmd := "cat <<-EOF\n\tgit push\nEOF"
+	got := MatchSubcommand(cmd)
+	if got != "" {
+		t.Fatalf("<<-EOF with tab-indented body: expected allow, got %q", got)
+	}
+}
+
+// TestMatchSubcommand_HeredocSingleQuotedDelim_BodyStripped asserts that cat <<'EOF'
+// with a body containing "git push" is allowed after body stripping (verified against
+// the .sh fixture: exit 0).
+// Assertion: parseHeredocDelim strips single quotes from "'EOF'" so the stored
+// delimiter is "EOF", the body is stripped, and the opener is harmless.
+func TestMatchSubcommand_HeredocSingleQuotedDelim_BodyStripped(t *testing.T) {
+	cmd := "cat <<'EOF'\ngit push\nEOF"
+	got := MatchSubcommand(cmd)
+	if got != "" {
+		t.Fatalf("<<'EOF' with body: expected allow, got %q", got)
+	}
+}
+
+// TestMatchSubcommand_HeredocDoubleQuotedDelim_BodyStripped asserts that cat <<"EOF"
+// with a body containing "git push" is allowed after body stripping (verified against
+// the .sh fixture: exit 0).
+// Assertion: parseHeredocDelim strips double quotes from the delimiter; same mechanism
+// as single-quote variant.
+func TestMatchSubcommand_HeredocDoubleQuotedDelim_BodyStripped(t *testing.T) {
+	cmd := "cat <<\"EOF\"\ngit push\nEOF"
+	got := MatchSubcommand(cmd)
+	if got != "" {
+		t.Fatalf("<<\"EOF\" with body: expected allow, got %q", got)
+	}
+}
+
+// TestMatchSubcommand_UnterminatedHeredoc_ReturnsOriginal asserts that an unclosed
+// heredoc causes stripHeredocBodies to return the original string, so a "git push"
+// appearing after the unclosed opener is not hidden (verified against the .sh
+// fixture: exit 2, push reason).
+// Assertion: the never-closed branch in stripHeredocBodies returns the original
+// string, preserving "git push origin main" so the guard correctly blocks it.
+func TestMatchSubcommand_UnterminatedHeredoc_ReturnsOriginal(t *testing.T) {
+	cmd := "cat <<'EOF'\ngit push\nNOTEOF\ngit push origin main"
+	got := MatchSubcommand(cmd)
+	if got != "push" {
+		t.Fatalf("unclosed heredoc before git push: expected block (push), got %q", got)
+	}
+}
+
+// --- C2: single & operator and git.exe ---
+// NOTE: These cases intentionally diverge from the .sh fixture (which treats bare
+// & as opaque / allow). The .sh was written for bash semantics and never covered
+// cmd.exe or PowerShell. The Go guard adds these as deliberate hardening for
+// Windows platforms. The parity corpus contains no bare-& cases so parity tests
+// remain green.
+
+// TestMatchSubcommand_AmpersandSeparator_Blocks asserts that "echo ok & git push"
+// is blocked: the bare `&` splits the command into two segments and the second
+// segment contains "git push" which is blocked.
+// Assertion: C2 fix — `&` outside quotes and not adjacent to `>/<` is a segment
+// separator; cmd.exe uses `&` to chain commands, so `echo ok & git push` chains
+// two commands and the guard must see both segments.
+func TestMatchSubcommand_AmpersandSeparator_Blocks(t *testing.T) {
+	got := MatchSubcommand("echo ok & git push origin main")
+	if got != "push" {
+		t.Fatalf("echo ok & git push: expected block (push), got %q", got)
+	}
+}
+
+// TestMatchSubcommand_PSCallOperator_Blocks asserts that "& git push origin main"
+// is blocked. In PowerShell, `&` is the call operator and `& git push` invokes
+// git push. The leading `&` splits into an empty first segment and a second segment
+// " git push origin main" which is blocked.
+// Assertion: C2 fix — leading `&` as PS call operator is handled by the separator
+// logic; the resulting segment contains "git push" and is blocked.
+func TestMatchSubcommand_PSCallOperator_Blocks(t *testing.T) {
+	got := MatchSubcommand("& git push origin main")
+	if got != "push" {
+		t.Fatalf("& git push: expected block (push), got %q", got)
+	}
+}
+
+// TestMatchSubcommand_GitExe_Blocks asserts that "git.exe push origin main" is
+// blocked. On Windows, `git.exe` is the idiomatic form of the git binary name.
+// Assertion: C2 fix — .exe suffix is stripped and lowercased before the "git"
+// basename check so `git.exe push` is treated identically to `git push`.
+func TestMatchSubcommand_GitExe_Blocks(t *testing.T) {
+	got := MatchSubcommand("git.exe push origin main")
+	if got != "push" {
+		t.Fatalf("git.exe push: expected block (push), got %q", got)
+	}
+}
+
+// TestMatchSubcommand_GitExeUppercase_Blocks asserts that "GIT.EXE push" is blocked.
+// Assertion: case-insensitive normalization treats GIT.EXE as git; same mechanism as
+// git.exe.
+func TestMatchSubcommand_GitExeUppercase_Blocks(t *testing.T) {
+	got := MatchSubcommand("GIT.EXE push origin main")
+	if got != "push" {
+		t.Fatalf("GIT.EXE push: expected block (push), got %q", got)
+	}
+}
+
+// TestMatchSubcommand_RedirectAmpersand_Allow asserts that "git status 2>&1" is
+// allowed: the `&` is preceded by `>` and not a separator, so the command is
+// analyzed as a single segment containing "git status" which is not blocked.
+// Assertion: no false positive end-to-end — git status with 2>&1 redirect is not
+// blocked. (Discriminating proof is TestQuoteAwareSplit_RedirectPreservesSegment below.)
+func TestMatchSubcommand_RedirectAmpersand_Allow(t *testing.T) {
+	got := MatchSubcommand("git status 2>&1")
+	if got != "" {
+		t.Fatalf("git status 2>&1: expected allow, got %q", got)
+	}
+}
+
+// TestMatchSubcommand_AmpersandGtFile_Allow asserts that "ls &> /tmp/log" is
+// allowed: `&>` is bash's stdout+stderr redirect; no blocked git command is present.
+// Assertion: no false positive end-to-end. (Discriminating proof is
+// TestQuoteAwareSplit_AmpGtPreservesSegment below.)
+func TestMatchSubcommand_AmpersandGtFile_Allow(t *testing.T) {
+	got := MatchSubcommand("ls &> /tmp/log")
+	if got != "" {
+		t.Fatalf("ls &> /tmp/log: expected allow, got %q", got)
+	}
+}
+
+// --- C2: |& pipe operator ---
+
+// TestMatchSubcommand_PipeAmpersand_Blocks asserts that "ls |& git push origin main"
+// is blocked. In bash, `|&` pipes both stdout and stderr into the next command.
+// The `|` splits into a first segment "ls " and a second segment "& git push ...".
+// The leading `&` in the second segment is stripped (MatchSubcommand's segment-level
+// strip), leaving "git push origin main" which is blocked.
+// Assertion: `|&` does not create a fail-open path; the leading `&` left by `|`
+// is stripped from the segment before analysis.
+func TestMatchSubcommand_PipeAmpersand_Blocks(t *testing.T) {
+	got := MatchSubcommand("ls |& git push origin main")
+	if got != "push" {
+		t.Fatalf("ls |& git push: expected block (push), got %q", got)
+	}
+}
+
+// TestMatchSubcommand_PipeAmpersandNoSpace_Blocks asserts that "ls |&git push" is
+// blocked: the `&g` has no space so the leading-& strip must work on characters,
+// not tokens.
+// Assertion: character-level leading-`&` strip in MatchSubcommand handles the
+// no-space form as well as the spaced form.
+func TestMatchSubcommand_PipeAmpersandNoSpace_Blocks(t *testing.T) {
+	got := MatchSubcommand("ls |&git push origin main")
+	if got != "push" {
+		t.Fatalf("ls |&git push (no space): expected block (push), got %q", got)
+	}
+}
+
+// --- quoteAwareSplit segment tests for redirect exception ---
+// These tests are the discriminating proofs for TestMatchSubcommand_RedirectAmpersand_Allow
+// and TestMatchSubcommand_AmpersandGtFile_Allow. They fail if the redirect exception
+// is removed from quoteAwareSplit.
+
+// TestQuoteAwareSplit_RedirectPreservesSegment asserts that "git status 2>&1" is
+// one segment. If the redirect exception were removed, `&` preceded by `>` would
+// become a separator: ["git status 2>", "1"].
+// Assertion: C2 redirect exception — `&` preceded by `>` is not a separator;
+// without it, `2>&1` is split and the test produces 2 segments, not 1.
+func TestQuoteAwareSplit_RedirectPreservesSegment(t *testing.T) {
+	parts := quoteAwareSplit("git status 2>&1")
+	if len(parts) != 1 {
+		t.Fatalf("git status 2>&1: expected 1 segment, got %d: %q", len(parts), parts)
+	}
+	if parts[0] != "git status 2>&1" {
+		t.Fatalf("segment mismatch: got %q, want %q", parts[0], "git status 2>&1")
+	}
+}
+
+// TestQuoteAwareSplit_AmpGtPreservesSegment asserts that "make &> log" is one segment.
+// If the redirect exception were removed, `&` followed by `>` would become a separator.
+// Assertion: C2 redirect exception — `&` followed by `>` is not a separator.
+func TestQuoteAwareSplit_AmpGtPreservesSegment(t *testing.T) {
+	parts := quoteAwareSplit("make &> log")
+	if len(parts) != 1 {
+		t.Fatalf("make &> log: expected 1 segment, got %d: %q", len(parts), parts)
+	}
+	if parts[0] != "make &> log" {
+		t.Fatalf("segment mismatch: got %q, want %q", parts[0], "make &> log")
+	}
+}
+
+// TestQuoteAwareSplit_PipeAmpersandSplitsOnPipe asserts that "ls |& cat" produces
+// two segments: ["ls ", "& cat"]. The `|` splits; the resulting `& cat` segment
+// retains the `&` which is then stripped by MatchSubcommand's per-segment strip.
+// Assertion: `|&` splits on `|` (not on `&`), leaving the leading `&` in the
+// second segment for MatchSubcommand to strip.
+func TestQuoteAwareSplit_PipeAmpersandSplitsOnPipe(t *testing.T) {
+	parts := quoteAwareSplit("ls |& cat")
+	if len(parts) != 2 {
+		t.Fatalf("ls |& cat: expected 2 segments, got %d: %q", len(parts), parts)
+	}
+	if parts[0] != "ls " {
+		t.Fatalf("first segment: got %q, want %q", parts[0], "ls ")
+	}
+	if parts[1] != "& cat" {
+		t.Fatalf("second segment: got %q, want %q", parts[1], "& cat")
+	}
+}
+
+// TestMatchSubcommand_QuotedAmpersand_Allow asserts that `echo "a & git push"` is
+// allowed: the `&` is inside double quotes and quoteAwareSplit must not split there.
+// Assertion: the quote-aware scanner ignores special characters inside quotes; a
+// bare `&` inside a string literal is not a command separator.
+func TestMatchSubcommand_QuotedAmpersand_Allow(t *testing.T) {
+	got := MatchSubcommand(`echo "a & git push"`)
+	if got != "" {
+		t.Fatalf(`echo "a & git push": expected allow, got %q`, got)
+	}
+}
+
+// TestMatchSubcommand_DoubleAmpersand_Allow asserts that "echo ok && ls" is allowed
+// and that the existing `&&` separator behavior is not broken by the C2 change.
+// Assertion: `&&` continues to split as before; neither side contains a blocked git
+// command in this input.
+func TestMatchSubcommand_DoubleAmpersand_Allow(t *testing.T) {
+	got := MatchSubcommand("echo ok && ls")
+	if got != "" {
+		t.Fatalf("echo ok && ls: expected allow, got %q", got)
+	}
+}

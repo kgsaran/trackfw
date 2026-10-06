@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/kgsaran/trackfw/internal/guard"
@@ -19,6 +20,23 @@ They read the tool invocation from stdin (JSON payload), extract the command,
 and deny operations that are blocked by trackfw governance rules.
 
 Denied commands exit with code 2 (ADR-2026-10-04 D7).`,
+		// D7: unknown subcommand passed as positional arg (e.g. cmd.exe tokenises
+		// "trackfw guard git-branch;" as argv: guard, "git-branch;", ...).
+		// Without Args + RunE, cobra swallows flag.ErrHelp and exits 0 silently.
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) > 0 {
+				return &guardError{fmt.Sprintf(
+					"trackfw guard: unknown subcommand %q — use `trackfw guard git-branch` or `trackfw guard credential`",
+					args[0],
+				)}
+			}
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return &guardError{
+				"trackfw guard: requires a subcommand (git-branch or credential)",
+			}
+		},
 	}
 	cmd.AddCommand(newGuardGitBranchCmd())
 	cmd.AddCommand(newGuardCredentialCmd())

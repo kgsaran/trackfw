@@ -76,7 +76,7 @@ type globalGuardConfigFile struct {
 	cli                 string
 	requiresCommandType bool
 	// family classifica o ambiente de shell (ML-2B, ADR-2026-10-04 D2 revista).
-	// Tabela normativa em guardShellFamily (validator_guard_binary_probe_ml2b.go).
+	// Tabela normativa em guardShellFamily (validator_guard_binary_probe.go).
 	family guardShellFamily
 }
 

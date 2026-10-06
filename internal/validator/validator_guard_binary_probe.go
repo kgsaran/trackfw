@@ -1,6 +1,6 @@
 package validator
 
-// validator_guard_binary_probe_ml2b.go — ML-2B (REQ-2026-09-05)
+// validator_guard_binary_probe.go — ML-2B (REQ-2026-09-05)
 //
 // Infraestrutura partilhada pela nova lógica de validação do subcomando `trackfw guard`:
 //   - Tipo guardShellFamily e mapeamento normativo de CLI → família (um sítio só).

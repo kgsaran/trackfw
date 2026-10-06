@@ -179,17 +179,44 @@ func TestRunCredential_MixedTargetAppliesRule(t *testing.T) {
 	}
 }
 
-// TestRunCredential_OutsideProjectNoOp asserts that the guard is a no-op when
-// there is no trackfw.yaml in the cwd.
-// Assertion: absent trackfw.yaml → exit 0 regardless of payload (cwd-only check).
-// Also confirms stdin is drained before returning (no EPIPE to the caller).
+// TestRunCredential_OutsideProjectNoOp asserts that the credential guard is a no-op
+// when there is no trackfw.yaml in the cwd: exit 0, empty stderr, and no attention
+// file written even though the payload contains a JWT.
+//
+// Assertion: the cwd-only trackfw.yaml check fires before any detection or write;
+// a JWT payload in a directory without trackfw.yaml produces exit 0, empty stderr,
+// and leaves docs/roadmaps/ empty. Falsification: removing the cwd check causes
+// warn-mode to trigger — stderr becomes non-empty and an attention file is created.
 func TestRunCredential_OutsideProjectNoOp(t *testing.T) {
 	// t.TempDir() has no trackfw.yaml.
+	// Pre-create docs/roadmaps so credWriteAttention would write there if the
+	// cwd check were absent (mode defaults to warn → writes attention JSON).
 	dir := t.TempDir()
+	roadmapsDir := filepath.Join(dir, "docs", "roadmaps")
+	if err := os.MkdirAll(roadmapsDir, 0755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
 	payload := `{"tool_input":{"command":"echo ` + jwtToken + `"}}`
-	code, _, _ := runCred(t, dir, payload)
+	code, _, errOut := runCred(t, dir, payload)
+
 	if code != 0 {
 		t.Fatalf("expected exit 0 outside project, got %d", code)
+	}
+	if errOut != "" {
+		t.Fatalf("expected empty stderr outside project (cwd-check must fire), got %q", errOut)
+	}
+	// If the cwd-check were absent, credWriteAttention would create a file here.
+	entries, err := os.ReadDir(roadmapsDir)
+	if err != nil {
+		t.Fatalf("ReadDir docs/roadmaps: %v", err)
+	}
+	if len(entries) != 0 {
+		var names []string
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Fatalf("docs/roadmaps should be empty outside project, found: %v", names)
 	}
 }
 

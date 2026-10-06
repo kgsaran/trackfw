@@ -4,6 +4,8 @@
 
 ## Índice
 
+- [cobra-pai-sem-rune-sai-0-com-argumento-invalido-2026-10-06](cobra-pai-sem-rune-sai-0-com-argumento-invalido-2026-10-06.md) — 🔴 **comando pai cobra sem `RunE` sai 0 com subcomando inválido** (`flag.ErrHelp` engolido); `trackfw guard 'git-branch;'` liberava tudo no `cmd.exe`; teste o exit code do pai por subprocesso
+
 - [guard-fallback-old-binary-exit1-fail-open-6-clis-2026-10-06](guard-fallback-old-binary-exit1-fail-open-6-clis-2026-10-06.md) — **binário antigo (sem `guard`) sai exit 1 = fail-open em 6 de 8 CLIs** (exit 2 = criterio em Claude Code/Codex/Gemini/Cursor/Windsurf/AmazonQ); Kiro e Copilot bloqueiam por FP (deny-all); sonda do validate nao ve o binario do Git Bash login
 
 - [powershell-command-converte-exit-2-e-bash-read-t-e-janela-fixa-2026-10-04](powershell-command-converte-exit-2-e-bash-read-t-e-janela-fixa-2026-10-04.md) — 🔴 **`powershell -Command` transforma o exit 2 do binário em 1**; o sufixo `; exit $LASTEXITCODE` preserva o 2 em PS/sh/bash/Git Bash, mas vira argumento no `cmd.exe` e sai 0 sob `Restricted` com shim `.ps1`; `%ERRORLEVEL%` na mesma linha mente; `read -t` do bash é janela fixa, não timer de ociosidade

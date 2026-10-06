@@ -57,7 +57,7 @@ type credentialGuardHookFile struct {
 	requiresVarOrShellPrefix bool
 	// family classifica o ambiente de shell que executa este hook (ML-2B, ADR-2026-10-04 D2
 	// revista). Determina a linha exata esperada quando a config usa o subcomando Go.
-	// Tabela normativa em guardShellFamily (validator_guard_binary_probe_ml2b.go).
+	// Tabela normativa em guardShellFamily (validator_guard_binary_probe.go).
 	family guardShellFamily
 }
 

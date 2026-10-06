@@ -195,6 +195,13 @@ func MatchSubcommand(cmdRaw string) string {
 
 	for _, seg := range segments {
 		seg = strings.TrimLeft(seg, " \t")
+		// Strip a single leading '&' character: left by the bash/PS |& pipe
+		// operator after '|' splits the segment, or by the PS call operator
+		// when '&' is adjacent to a redirect and was not consumed as a separator.
+		// Strip characters, not tokens, so "|&git push" (no space) is also caught.
+		if len(seg) > 0 && seg[0] == '&' {
+			seg = strings.TrimLeft(seg[1:], " \t")
+		}
 		if seg == "" {
 			continue
 		}
@@ -210,7 +217,11 @@ func MatchSubcommand(cmdRaw string) string {
 		}
 
 		// First token must be "git" (by basename, so /usr/bin/git also works).
+		// Case-insensitive and strip .exe so git.exe / GIT.EXE (Windows idiom)
+		// are treated identically to "git" (C2 fix, ADR-2026-10-04).
 		base := filepath.Base(tokens[0])
+		base = strings.ToLower(base)
+		base = strings.TrimSuffix(base, ".exe")
 		if base != "git" {
 			continue
 		}
@@ -581,6 +592,24 @@ func quoteAwareSplit(s string) []string {
 		case c == ';' || c == '|':
 			segments = append(segments, cur.String())
 			cur.Reset()
+		case c == '&':
+			// Single `&` outside quotes: shell control operator (cmd.exe command
+			// chaining, PS call operator). Split into a new segment UNLESS the `&`
+			// is part of a shell redirection: `2>&1`, `>&2`, `&>file`, `|&`.
+			// Adjacency rule: skip separator when `&` is directly preceded or followed
+			// by `>` or `<`, or preceded by `|`.
+			prevIsRedirect := false
+			if i > 0 {
+				p := runes[i-1]
+				prevIsRedirect = p == '>' || p == '<' || p == '|'
+			}
+			nextIsRedirect := i+1 < n && (runes[i+1] == '>' || runes[i+1] == '<')
+			if prevIsRedirect || nextIsRedirect {
+				cur.WriteRune(c) // redirect context: keep as-is
+			} else {
+				segments = append(segments, cur.String())
+				cur.Reset()
+			}
 		case c == '\n':
 			// Newline outside quotes acts as a segment separator, matching the bash
 			// quote_aware_split awk function which passes \n through unchanged and

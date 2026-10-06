@@ -45267,3 +45267,17 @@ Achados notáveis para o apolo-tf:
 - Achado relevante: fallback (binario antigo) sai exit 1, nao exit 0 como documentado anteriormente — fail-closed por erro, nao fail-open.
 - AC3 confirmado (PS5 e cmd bloqueiam com exit 2); AC5 confirmado (POSIX identico a ML-0B).
 - Git status: 3 arquivos modificados, 1 novo (vault note). Sem edicao de codigo de produto.
+
+## 2026-10-06 — apolo-tf — INÍCIO: ML-4C frente B (qualidade validator)
+
+- Branch: `feat/hooks-de-guard-executam-no-windows`
+- Escopo: `internal/validator/` apenas.
+- Tarefas: B2 (renomear 3 arquivos com sufixo ml2b/ml2c) + I1 (teste de concordância gerador/validator).
+
+## 2026-10-06 — apolo-tf — FIM: ML-4C frente B
+
+- B2: renomeados `validator_guard_binary_probe_ml2b.go → validator_guard_binary_probe.go`, `*_ml2b_test.go → *_test.go`, `*_ml2c_test.go → *_windsurf_amazonq_test.go`. Comentários de cabeçalho e cross-references em `validator_credential_guard.go` e `validator_git_branch_guard.go` atualizados. `grep -rn '_ml2b\|_ml2c' internal/` retorna vazio.
+- I1: criado `validator_guard_hook_concordance_external_test.go` (14 testes, `package validator_test`). Adicionados 5 exports em `export_test.go`: `ValidateGitBranchGuardHookResolvableForTest`, `ValidateCredentialGuardHookResolvableForTest`, `StubProbeOKForTest`, `ChdirForTest`. Cobre 8 CLIs (Claude, Codex, Gemini, Kiro, Copilot, Cursor, Windsurf, Amazon Q) em 14 testes.
+- Falsificação: `; exit $LASTEXITCODE` → `; exit_DELIBERATELY_BROKEN` → 11/14 testes falharam (todos PS/POSIX); 3 cmd.exe passaram. Revertido. `git diff --stat` limpo.
+- Gates: `go build ./...` ok; `go vet ./internal/validator/` ok; `go test ./internal/validator/ -count=1` ok (10.662s); `trackfw validate` — sem violations, 175 warnings esperados (lenient mode).
+- `ls internal/validator/ | grep -i ml2` retorna apenas `validator_lenient_ml2a_test.go` (outro escopo, correto).

@@ -1,6 +1,6 @@
 package validator
 
-// validator_guard_binary_probe_ml2b_test.go — ML-2B (REQ-2026-09-05)
+// validator_guard_binary_probe_test.go — ML-2B (REQ-2026-09-05)
 //
 // Testes das novas regras e costuras introduzidas em ML-2B:
 //   (a) linha exata de hook → ok; sufixo extra → violation; família errada → violation;
