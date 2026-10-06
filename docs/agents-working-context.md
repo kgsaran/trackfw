@@ -2,6 +2,19 @@
 
 ---
 
+## 2026-10-06 — apolo-tf (feat/hooks-de-guard-executam-no-windows — corretivo CI PR #527 WindowsGitExePath) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Resultado:** APROVADO — `go test ./internal/guard/... -count=1` exit=0; `GOOS=windows go vet ./internal/guard/` exit=0; `GOOS=windows go test -c -o /dev/null ./internal/guard/` exit=0.
+**Arquivo editado:** `internal/guard/gitbranch_test.go` — `TestMatchSubcommand_WindowsGitExePath_Push_Blocks`: removido `C:\Program Files\Git\bin\git.exe push origin main` (falha no Windows por space splitting); substituído por três casos sem espaço no caminho: `C:\Git\cmd\git push origin main`, `C:\Git\cmd\git.exe push origin main`, `C:\PROGRA~1\Git\bin\git.exe push origin main`. Comentário atualizado com explicação do mecanismo e referência à ADR-2026-08-12 (citation evasion declarada fora de escopo).
+
+## 2026-10-06 — apolo-tf (feat/hooks-de-guard-executam-no-windows — corretivo CI PR #527 WindowsGitExePath) — INÍCIO
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** `TestMatchSubcommand_WindowsGitExePath_Push_Blocks` reprova no `windows-full-suites`: caso `C:\Program Files\Git\bin\git.exe push origin main` usa `strings.Fields` que parte no espaço, `tokens[0]` vira `C:\Program`, `filepath.Base` retorna `Program` (não `git`), guard não dispara.
+
+---
+
 ## 2026-10-06 — apolo-tf (feat/hooks-de-guard-executam-no-windows — corretivo CI PR #527 N09) — FIM
 
 **Branch:** `feat/hooks-de-guard-executam-no-windows`

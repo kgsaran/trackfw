@@ -820,11 +820,25 @@ func TestMatchSubcommand_DoubleAmpersand_Allow(t *testing.T) {
 }
 
 // TestMatchSubcommand_WindowsGitExePath_Push_Blocks asserts that on Windows, full
-// paths to git.exe are recognised and a blocked subcommand causes rc=2.
-// filepath.Base("C:\\Program Files\\Git\\bin\\git.exe") returns "git.exe"; after
-// strings.TrimSuffix(".exe") it is "git" — the guard fires.
-// Assertion: on Windows, a real Windows git path followed by a blocked subcommand
-// is blocked by MatchSubcommand (deliberate divergence from POSIX N09 behaviour —
+// paths to git (without spaces) are recognised and a blocked subcommand causes rc=2.
+//
+// How each case produces base=="git" on Windows:
+//   - C:\Git\cmd\git push origin main      → tokens[0]="C:\Git\cmd\git";
+//     filepath.Base returns "git"; ToLower+TrimSuffix(".exe") → "git". Guard fires.
+//   - C:\Git\cmd\git.exe push origin main  → tokens[0]="C:\Git\cmd\git.exe";
+//     filepath.Base returns "git.exe"; TrimSuffix(".exe") → "git". Guard fires.
+//   - C:\PROGRA~1\Git\bin\git.exe push … → tokens[0]="C:\PROGRA~1\Git\bin\git.exe";
+//     filepath.Base returns "git.exe"; TrimSuffix(".exe") → "git". Guard fires.
+//
+// NOTE: paths with spaces (e.g. "C:\Program Files\Git\bin\git.exe push") require shell
+// quoting ("C:\Program Files\Git\bin\git.exe" push) to survive strings.Fields without
+// splitting the path at the first space. Quoted paths constitute citation evasion and
+// are intentionally out of scope for this guard, as declared in ADR-2026-08-12 and
+// documented in the .sh fixture header (lines 5–17): tokenising like the shell does is
+// a residual open item.
+//
+// Assertion: on Windows, space-free git paths followed by a blocked subcommand are
+// blocked by MatchSubcommand (deliberate divergence from POSIX N09 behaviour —
 // see PR #527, ADR-2026-10-04).
 func TestMatchSubcommand_WindowsGitExePath_Push_Blocks(t *testing.T) {
 	if runtime.GOOS != "windows" {
@@ -834,8 +848,9 @@ func TestMatchSubcommand_WindowsGitExePath_Push_Blocks(t *testing.T) {
 		cmd  string
 		want string
 	}{
-		{`C:\Program Files\Git\bin\git.exe push origin main`, "push"},
-		{`C:\Git\cmd\git push`, "push"},
+		{`C:\Git\cmd\git push origin main`, "push"},
+		{`C:\Git\cmd\git.exe push origin main`, "push"},
+		{`C:\PROGRA~1\Git\bin\git.exe push origin main`, "push"},
 	}
 	for _, tc := range cases {
 		if got := MatchSubcommand(tc.cmd); got != tc.want {
