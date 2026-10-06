@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -1079,6 +1080,21 @@ func TestGitBranchGuardAwk_C01C22_WithJQ(t *testing.T) {
 	for _, tc := range guardCasesTable() {
 		tc := tc
 		t.Run(tc.id, func(t *testing.T) {
+			// N09 on Windows: deliberate divergence — filepath.Base treats '\' as a path
+			// separator, so a token like `\\\...git` has basename "git" and the Go guard
+			// blocks (rc=2); bash on POSIX sees '\\' as a literal character, the token is
+			// not "git", and allows (rc=0). This divergence is intentional and in the safe
+			// direction: on Windows C:\...\git.exe is a real git path, so blocking is
+			// correct. Bash parity comparison is skipped for N09 on Windows only.
+			// Reference: PR #527 CI failure, ADR-2026-10-04.
+			if tc.id == "N09" && runtime.GOOS == "windows" {
+				goRC, _, _ := runGuardBinaryGitBranch(t, dir, nil, tc.payload, nil)
+				if goRC != 2 {
+					t.Errorf("N09 (+jq, windows): Go rc want 2 (divergência deliberada: "+
+						"filepath.Base trata '\\' como separador; caminho Windows até o git bloqueia), got %d", goRC)
+				}
+				return
+			}
 			code, _, stderr := runGitBranchGuard(t, dir, script, nil, tc.payload)
 			if code != tc.wantRC {
 				t.Errorf("%s (+jq): rc want %d, got %d (stderr: %s)", tc.id, tc.wantRC, code, stderr)
@@ -1099,6 +1115,16 @@ func TestGitBranchGuardAwk_C01C22_WithoutJQ(t *testing.T) {
 	for _, tc := range guardCasesTable() {
 		tc := tc
 		t.Run(tc.id, func(t *testing.T) {
+			// N09 on Windows: same deliberate divergence as WithJQ — see comment there.
+			// Bash parity comparison is skipped; only the Go binary result is asserted.
+			if tc.id == "N09" && runtime.GOOS == "windows" {
+				goRC, _, _ := runGuardBinaryGitBranch(t, dir, nil, tc.payload, nil)
+				if goRC != 2 {
+					t.Errorf("N09 (-jq/awk, windows): Go rc want 2 (divergência deliberada: "+
+						"filepath.Base trata '\\' como separador; caminho Windows até o git bloqueia), got %d", goRC)
+				}
+				return
+			}
 			code, _, stderr := runGitBranchGuardWithEnv(t, dir, script, env, tc.payload)
 			if code != tc.wantRC {
 				t.Errorf("%s (-jq/awk): rc want %d, got %d (stderr: %s)", tc.id, tc.wantRC, code, stderr)

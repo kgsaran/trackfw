@@ -2,6 +2,24 @@
 
 ---
 
+## 2026-10-06 — apolo-tf (feat/hooks-de-guard-executam-no-windows — corretivo CI PR #527 N09) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Resultado:** APROVADO — `go test ./internal/guard/... -count=1` exit=0; `go test ./internal/generators/ -count=1 -run 'C01C22|Guard'` exit=0; `GOOS=windows go vet` exit=0; `GOOS=windows go test -c` em ambos os pacotes exit=0.
+**Arquivos editados:**
+- `internal/generators/git_branch_guard_test.go`: `runtime` adicionado aos imports; exceção `tc.id == "N09" && runtime.GOOS == "windows"` adicionada em `TestGitBranchGuardAwk_C01C22_WithJQ` e `_WithoutJQ` — pula paridade bash e afirma Go rc=2.
+- `internal/guard/gitbranch_test.go`: `runtime` adicionado aos imports; `TestMatchSubcommand_WindowsGitExePath_Push_Blocks` (windows-only, afirma que C:\...\git.exe bloqueia) e `TestMatchSubcommand_BackslashPrefixed_PosixNotGit` (posix-only, afirma que `\\git push` não é bloqueado) adicionados.
+
+---
+
+## 2026-10-06 — apolo-tf (feat/hooks-de-guard-executam-no-windows — corretivo CI PR #527 N09) — INÍCIO
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** Corretivo de CI: `TestGitBranchGuardAwk_C01C22_WithJQ/N09` e `_WithoutJQ/N09` reprovam no Windows porque `filepath.Base` trata `\` como separador (divergência deliberada, sentido seguro). Adicionar exceção por id em `git_branch_guard_test.go` e dois novos testes em `internal/guard/gitbranch_test.go`.
+**Arquivos editáveis:** `internal/generators/git_branch_guard_test.go`, `internal/generators/guard_parity_helper_test.go`, `internal/guard/gitbranch_test.go`.
+
+---
+
 ## 2026-10-06 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-4C corretivo) — FIM
 
 **Branch:** `feat/hooks-de-guard-executam-no-windows`

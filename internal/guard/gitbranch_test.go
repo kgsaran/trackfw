@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -815,5 +816,45 @@ func TestMatchSubcommand_DoubleAmpersand_Allow(t *testing.T) {
 	got := MatchSubcommand("echo ok && ls")
 	if got != "" {
 		t.Fatalf("echo ok && ls: expected allow, got %q", got)
+	}
+}
+
+// TestMatchSubcommand_WindowsGitExePath_Push_Blocks asserts that on Windows, full
+// paths to git.exe are recognised and a blocked subcommand causes rc=2.
+// filepath.Base("C:\\Program Files\\Git\\bin\\git.exe") returns "git.exe"; after
+// strings.TrimSuffix(".exe") it is "git" — the guard fires.
+// Assertion: on Windows, a real Windows git path followed by a blocked subcommand
+// is blocked by MatchSubcommand (deliberate divergence from POSIX N09 behaviour —
+// see PR #527, ADR-2026-10-04).
+func TestMatchSubcommand_WindowsGitExePath_Push_Blocks(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-only: filepath.Base trata '\\' como separador")
+	}
+	cases := []struct {
+		cmd  string
+		want string
+	}{
+		{`C:\Program Files\Git\bin\git.exe push origin main`, "push"},
+		{`C:\Git\cmd\git push`, "push"},
+	}
+	for _, tc := range cases {
+		if got := MatchSubcommand(tc.cmd); got != tc.want {
+			t.Errorf("%q: got %q want %q", tc.cmd, got, tc.want)
+		}
+	}
+}
+
+// TestMatchSubcommand_BackslashPrefixed_PosixNotGit asserts that on POSIX (non-Windows),
+// a token like "\\git" (backslash-prefixed) is NOT treated as "git" by MatchSubcommand.
+// On POSIX, filepath.Base does not treat '\' as a path separator, so the entire token
+// "\\git" remains intact and does not equal "git" — the command is allowed.
+// Assertion: POSIX behaviour — N09 backslash-prefixed token is not blocked (the POSIX
+// side of the deliberate divergence documented in PR #527, ADR-2026-10-04).
+func TestMatchSubcommand_BackslashPrefixed_PosixNotGit(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX-only: on Windows filepath.Base('\\\\git') returns 'git' — divergence is intentional")
+	}
+	if got := MatchSubcommand(`\\git push`); got != "" {
+		t.Fatalf(`\\git push: expected allow on POSIX (backslash not a path separator), got %q`, got)
 	}
 }
