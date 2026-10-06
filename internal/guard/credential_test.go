@@ -476,6 +476,65 @@ func TestRunCredentialGlobal_WarnModeFromYamlWritesJSON(t *testing.T) {
 	}
 }
 
+// TestRunCredential_RoadmapDirSymlinkEscapeIsRefused asserts that when
+// roadmap_dir is (or resolves through) a symlink pointing outside the project
+// root, the attention JSON is NOT written outside the root, and the guard's
+// rc (0) and stderr warning message are unchanged from the no-symlink case.
+//
+// Assertion: credWriteAttention calls pathguard.RejectAndReport — a roadmapDir
+// whose filesystem path escapes the project root via a symlink is refused
+// silently; the warn message and exit 0 are the same as the control arm.
+func TestRunCredential_RoadmapDirSymlinkEscapeIsRefused(t *testing.T) {
+	// "outside" directory lives next to the project, not inside it.
+	outside := t.TempDir()
+
+	proj := makeCredProjectDir(t, "credential_guard:\n  mode: warn\nroadmap_dir: docs/roadmaps\n")
+	docsDir := filepath.Join(proj, "docs")
+	if err := os.MkdirAll(docsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// docs/roadmaps → outside/ (symlink to a directory outside the project root).
+	link := filepath.Join(docsDir, "roadmaps")
+	if err := os.Symlink(outside, link); err != nil {
+		if isCredSymlinkPrivilegeError(err) {
+			t.Skipf("symlink privilege not available on this platform: %v", err)
+		}
+		t.Fatalf("os.Symlink: %v", err)
+	}
+
+	payload := `{"tool_input":{"command":"echo ` + jwtToken + `"}}`
+	code, _, errOut := runCred(t, proj, payload)
+
+	// rc and warning message must be unchanged (the guard refusal is a side
+	// effect on the attention write, not on the guard decision itself).
+	if code != 0 {
+		t.Fatalf("symlink escape: expected exit 0 (warn mode), got %d (stderr=%q)", code, errOut)
+	}
+	if !strings.Contains(errOut, "trackfw-credential-guard: warning - possible JWT") {
+		t.Errorf("symlink escape: expected warning message unchanged, got %q", errOut)
+	}
+
+	// The file must NOT appear in outside/.
+	escapedJSON := filepath.Join(outside, ".trackfw-credential-guard.json")
+	if _, err := os.Stat(escapedJSON); err == nil {
+		t.Errorf("symlink escape: attention JSON written outside project root at %s — containment guard failed", escapedJSON)
+	}
+}
+
+// isCredSymlinkPrivilegeError reports whether err indicates that symlink
+// creation requires elevated privileges (Windows without Developer Mode).
+// Detection by condition, not by runtime.GOOS, so Developer Mode Windows runs
+// the test normally.
+func isCredSymlinkPrivilegeError(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "privilege") || strings.Contains(msg, "1314") ||
+		strings.Contains(msg, "operation not permitted") || strings.Contains(msg, "not supported")
+}
+
 // TestRunCredentialGlobal_WarnNoDirNoFileCreated asserts that in global warn mode
 // when docs/roadmaps does not exist, no file or directory is created and exit is 0.
 // Assertion: RunCredentialGlobal warn mode + absent docs/roadmaps → no write + exit 0.

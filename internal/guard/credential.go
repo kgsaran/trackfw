@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/kgsaran/trackfw/internal/pathguard"
 )
 
 var (
@@ -111,7 +113,7 @@ func RunCredential(stdin io.Reader, stdout, stderr io.Writer) int {
 
 	fmt.Fprintf(stderr, "trackfw-credential-guard: warning - possible %s detected in tool payload.\n", match)
 	roadmapDir := credReadRoadmapDir(filepath.Join(cwd, "trackfw.yaml"))
-	credWriteAttention(roadmapDir, match)
+	credWriteAttention(cwd, roadmapDir, match)
 
 	return 0
 }
@@ -183,13 +185,12 @@ func RunCredentialGlobal(stdin io.Reader, stdout, stderr io.Writer) int {
 
 	// Global scope: write attention JSON only if docs/roadmaps already exists as a directory.
 	// Faithful port of: ROADMAP_DIR="docs/roadmaps"; if [ ! -d "$ROADMAP_DIR" ]; then exit 0; fi
-	// write-containment-allowed: roadmapDir is the hardcoded constant "docs/roadmaps"
 	const roadmapDir = "docs/roadmaps"
 	fi, statErr := os.Stat(roadmapDir)
 	if statErr != nil || !fi.IsDir() {
 		return 0
 	}
-	credWriteAttention(roadmapDir, match)
+	credWriteAttention(cwd, roadmapDir, match)
 
 	return 0
 }
@@ -502,10 +503,16 @@ func credReadRoadmapDir(yamlPath string) string {
 // <roadmapDir>/.trackfw-credential-guard.json.
 // Faithful port of .sh L143–151 (warn path).
 //
-// The roadmapDir argument must be safe before calling:
-//   - project scope: validated by credReadRoadmapDir (path-traversal patterns).
-//   - global scope: hardcoded constant "docs/roadmaps" in RunCredentialGlobal.
-func credWriteAttention(roadmapDir, match string) {
+// cwd is the process working directory; roadmapDir is the relative path read
+// from trackfw.yaml (or the hardcoded fallback "docs/roadmaps"). The write is
+// a best-effort side effect: any error (including containment refusal when
+// roadmapDir is a symlink pointing outside the project) is silently ignored.
+// The guard and rc are NOT affected.
+//
+// Hardening beyond the .sh: pathguard.RejectAndReport refuses a roadmapDir
+// whose resolved path escapes the project root via a symlink — the .sh wrote
+// to a relative path with no such check.
+func credWriteAttention(cwd, roadmapDir, match string) {
 	ts := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 	msg := "Possible " + match + " detected in tool payload - review before materializing credentials in plain text."
 
@@ -530,8 +537,22 @@ func credWriteAttention(roadmapDir, match string) {
 		msgEsc.String(), ts,
 	)
 
-	// write-containment-allowed: roadmapDir validated before calling (see function doc)
-	_ = os.MkdirAll(roadmapDir, 0755)
-	// write-containment-allowed: roadmapDir validated before calling (see function doc)
-	_ = os.WriteFile(filepath.Join(roadmapDir, ".trackfw-credential-guard.json"), []byte(content), 0644)
+	// Resolve the project root so that the containment guard operates in the
+	// same namespace as the paths it walks. Silent on failure: the attention
+	// write is a side effect and must not alter the guard's rc or output.
+	root, err := pathguard.ResolveRoot(cwd)
+	if err != nil {
+		return
+	}
+	target := filepath.Join(root, roadmapDir, ".trackfw-credential-guard.json")
+	// RejectAndReport dominates both writes below in this flow.
+	// It prints "trackfw: refusing write to …" to os.Stderr if the path escapes
+	// the root (e.g. roadmapDir is a symlink pointing outside the project).
+	if err := pathguard.RejectAndReport(root, target); err != nil {
+		return
+	}
+	// write-containment-allowed: pathguard.RejectAndReport(root, target) dominates this write
+	_ = os.MkdirAll(filepath.Dir(target), 0755)
+	// write-containment-allowed: pathguard.RejectAndReport(root, target) dominates this write
+	_ = os.WriteFile(target, []byte(content), 0644)
 }
