@@ -323,14 +323,14 @@ ML-0B e comparar.
 > Dependências: Wave 3 auditada. ML-4A ∥ ML-4B (somente leitura + parecer).
 
 ### ML-4A — Red team do diff
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Squad:** hades-tf
 **Files affected:** `docs/seguranca/2026-10-04-red-team-guard-em-go.md`
 **Acceptance criteria:**
 - [ ] Cada risco da Wave 0 reconfirmado contra o código entregue
 
 ### ML-4B — Revisão de qualidade
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Squad:** hefesto-tf
 **Files affected:** `docs/qualidade/2026-10-04-guard-em-go.md`
 **Acceptance criteria:**
