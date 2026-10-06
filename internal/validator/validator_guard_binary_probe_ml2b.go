@@ -31,8 +31,8 @@ import (
 //	  Linha emitida: "trackfw guard <nome>" (sem sufixo)
 //	  CLIs: Kiro, Amazon Q
 //
-// Nota: Windsurf e Amazon Q não estão em credentialGuardHookFiles / globalGuardConfigFiles
-// nesta versão — não foram adicionados arquivos novos neste ML. Gap declarado.
+// ML-2C: Windsurf e Amazon Q foram adicionados a credentialGuardHookFiles (validator_credential_guard.go).
+// globalGuardConfigFiles não os inclui: o gerador não emite harness global para nenhum dos dois.
 type guardShellFamily int
 
 const (

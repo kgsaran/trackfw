@@ -76,6 +76,27 @@ var credentialGuardHookFiles = []credentialGuardHookFile{
 	{".cursor/hooks.json", "Cursor", false, false, guardShellFamilyPSPosix},
 	{".github/hooks/trackfw-attention.json", "GitHub Copilot CLI", true, false, guardShellFamilyPSPosix},
 	{".kiro/hooks/trackfw-attention.json", "Kiro", true, false, guardShellFamilyCmdExe},
+	// ML-2C: Windsurf and Amazon Q — project-scope only (no global harness target for either).
+	// Both generators only inject git-branch-guard (not credential guard), so the
+	// credential_guard_hook_resolvable rule silently skips their files (no credentialGuardScriptMarker
+	// present); this entry is load-bearing only for git_branch_guard_hook_resolvable.
+	//
+	// Windsurf: hooks.pre_run_command[{"command":"…","show_output":true}] — no "type" field;
+	//   requiresVarOrShellPrefix=false: the legacy form is "bash scripts/…" (relative), and the
+	//   anchorage check runs before path resolution; requiresVarOrShellPrefix=false keeps the
+	//   legacy form in the warning path (not the cwd-dependent violation path) while
+	//   resolveCredentialGuardHookPath's new "bash " case strips the prefix and resolves correctly.
+	//   requiresCommandType=false (schema has no "type" discriminant);
+	//   family=PS/POSIX: ADR-2026-10-04 D2 — hook executed via bash-compatible shell.
+	{".windsurf/hooks.json", "Windsurf", false, false, guardShellFamilyPSPosix},
+	// Amazon Q: hooks.preToolUse[{matcher:"execute_bash",hooks:[{command:"…"}]}] — no "type" field;
+	//   File is always q_cli_default.json (mirrors amazonQDefaultAgentFile = "q_cli_default.json",
+	//   internal/generators/agentfiles.go:1492 — only this one file, not a wildcard *.json).
+	//   requiresVarOrShellPrefix=false: legacy form is "scripts/…" (plain relative path), same
+	//   reasoning as Windsurf — must stay in warning path, not cwd-dependent violation path.
+	//   requiresCommandType=false (schema has no "type" discriminant in inner command objects);
+	//   family=cmd.exe: ADR-2026-10-04 D2 — Amazon Q invokes hooks without a shell suffix.
+	{".amazonq/cli-agents/q_cli_default.json", "Amazon Q", false, false, guardShellFamilyCmdExe},
 }
 
 // hookAnchorageClass classifica a semântica de ancoragem de um valor de comando de hook.
@@ -214,7 +235,7 @@ func cwdDependentReason(rawStripped string) string {
 // }
 
 // resolveCredentialGuardHookPath resolve o valor bruto de um comando de hook (string extraída do
-// JSON) para um caminho de arquivo absoluto, usando exatamente as 3 formas de prefixo que o
+// JSON) para um caminho de arquivo absoluto, usando as formas de prefixo que o
 // trackfw emite hoje (docs/cli-parity.md, "Mecanismo de resolução de caminho dos hooks de
 // projeto, por CLI"):
 //
@@ -223,8 +244,10 @@ func cwdDependentReason(rawStripped string) string {
 //  2. "\"$(git rev-parse --show-toplevel)/…\"" — substituição de shell entre aspas literais
 //     (Codex). As aspas fazem parte do valor emitido (ver internal/generators/agentfiles.go,
 //     const codexRoot) e são removidas antes de resolver contra a raiz do projeto.
-//  3. Caminho relativo puro, sem prefixo nenhum (Cursor/Copilot/Kiro) — resolvido diretamente
-//     contra a raiz do projeto.
+//  3. "bash <relpath>" — forma legada do Windsurf (windsurfGitGuardCmd = "bash scripts/…"). O
+//     prefixo "bash " é removido e o restante resolvido como caminho relativo (caso 4).
+//  4. Caminho relativo puro, sem prefixo nenhum (Cursor/Copilot/Kiro/Amazon Q) — resolvido
+//     diretamente contra a raiz do projeto.
 //
 // Qualquer valor que não bata em nenhuma das 3 formas retorna ok=false — o chamador NÃO deve
 // tratar isso como violação. Não é função desta regra adivinhar wiring próprio de um usuário fora
@@ -242,9 +265,20 @@ func resolveCredentialGuardHookPath(raw, root string) (resolved string, ok bool)
 	case strings.HasPrefix(raw, codexPrefix) && strings.HasSuffix(raw, `"`):
 		inner := strings.TrimSuffix(strings.TrimPrefix(raw, codexPrefix), `"`)
 		return filepath.Join(root, inner), true
+	case strings.HasPrefix(raw, "bash "):
+		// Windsurf legacy form: "bash scripts/trackfw-git-branch-guard.sh" — strip the "bash "
+		// interpreter prefix and resolve the remaining path token as a relative path (Windsurf runs
+		// hooks from the project root, so a bare relative path is safe here). Only simple single-token
+		// paths are handled; if the remainder still looks like an env-var, absolute, or tilde path
+		// we fall through to ok=false rather than guess.
+		rest := raw[len("bash "):]
+		if !strings.HasPrefix(rest, "$") && !strings.HasPrefix(rest, `"`) && !pathanchor.IsAnchored(rest) && !strings.HasPrefix(rest, "~/") {
+			return filepath.Join(root, rest), true
+		}
+		return "", false
 	case !strings.HasPrefix(raw, "$") && !strings.HasPrefix(raw, `"`) && !pathanchor.IsAnchored(raw) && !strings.HasPrefix(raw, "~/"):
 		// Caminho relativo puro — Cursor (beforeShellExecution/preToolUse), GitHub Copilot CLI
-		// (campo "bash"), Kiro (action.command).
+		// (campo "bash"), Kiro (action.command), Amazon Q (command inside preToolUse hooks).
 		// ~/… é excluído: é classe 1 (tilde expande para $HOME — ancorado) mas não é uma forma
 		// que o validator consegue resolver sem expandir o til; ok=false silencia sem acusar.
 		return filepath.Join(root, raw), true
@@ -428,7 +462,7 @@ func validateGuardHookResolvable(ruleName, scriptMarker, subcmdMarker, subcmdNam
 			// ML-1A: was a silent `continue` (fail-open) — a corrupted hook file made this rule
 			// report health about wiring it never actually inspected. Decision (measured, not
 			// assumed): accuse as a violation of THIS rule, not a separate diagnostic. Measurement:
-			// credentialGuardHookFiles is a closed, enumerable list (6 entries) of files trackfw
+			// credentialGuardHookFiles is a closed, enumerable list of files trackfw
 			// itself either writes or merges into — none of them is third-party or free-form
 			// config trackfw doesn't own the schema of. Invalid JSON in any of them is never a
 			// legitimate state: the owning CLI (hf.cli) requires strict JSON to load ITS OWN hooks

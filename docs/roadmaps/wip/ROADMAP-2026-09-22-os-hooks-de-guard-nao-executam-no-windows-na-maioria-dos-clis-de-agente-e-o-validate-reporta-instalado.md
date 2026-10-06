@@ -242,7 +242,7 @@ tem já atende o mínimo, e uma constante de versão reprovaria os builds de des
 - [x] `go test ./internal/validator/ -count=1` verde — medido pelo arquiteto em 2026-10-06: `ok … 14.487s`; `go vet` limpo
 
 ### ML-2C — O `validate` lê as configs de Windsurf e Amazon Q
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Por que o escopo original não previa:** o ML-2B achou que `.windsurf/hooks.json` e
 `.amazonq/cli-agents/<agente>.json` são emitidos por `InjectWindsurfHooks`/`InjectAmazonQHooks`, mas
@@ -253,8 +253,13 @@ Causa Raiz).
 `internal/validator/validator_guard_binary_probe_ml2b*.go` (+ testes). Antes do ML-2A: o ML-2A muda os `.sh`
 e as referências do validator, e os testes dos dois pacotes se cruzam.
 **Acceptance criteria:**
-- [ ] Windsurf (família PS/POSIX) e Amazon Q (família cmd.exe) lidos pelas `*_hook_resolvable`, com falsificação nas duas direções
-- [ ] `go test ./internal/validator/ -count=1` verde
+- [x] Windsurf (família PS/POSIX) e Amazon Q (família cmd.exe) lidos pelas `*_hook_resolvable`, com falsificação nas duas direções — 6 testes em `validator_guard_binary_probe_ml2c_test.go`, nomes conferidos; os dois arquivos só são de projeto (o gerador não emite global para eles)
+- [x] `go test ./internal/validator/ -count=1` verde — medido pelo arquiteto em 2026-10-06: `ok … 15.442s`
+
+      Observação: o gerador só instala o git-branch guard para Windsurf e Amazon Q, nunca o credential guard. É
+      cobertura, não execução no Windows (outra causa): registrado para o KG, fora desta REQ até decisão.
+      Pendência para o ML-2A: `docs/cli-parity.md` (~linha 5372) ainda lista 6 entradas em
+      `credentialGuardHookFiles` e "3 formas de prefixo" no resolvedor; agora são 8 entradas e 4 formas (`bash <rel>`).
 
 **Gates da wave:**
 ```bash
