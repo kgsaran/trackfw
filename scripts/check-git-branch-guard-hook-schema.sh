@@ -277,6 +277,29 @@ run_discover_init() {
 self_test() {
   local failures=0
 
+  # --- Pré-requisito: binário Go para Cenário B --------------------------------
+  # ML-2A: o thin wrapper chama `exec trackfw guard git-branch`, então o Cenário
+  # B (schema CERTO) precisa de `trackfw` no PATH.  O modo principal do script
+  # garante isso depois de --self-test retornar; o self-test precisa construir o
+  # binário por conta própria quando GO_BIN não está definido (ex.: CI runner ou
+  # invocação direta com PATH limpo). Miramos a variável GO_BIN já declarada
+  # externamente (CI passa GO_BIN=bin/trackfw, por exemplo) para não recompilar
+  # desnecessariamente; se ausente, compilamos em $WORK/trackfw-self-test.
+  # O diretório $WORK/self-test-bin recebe um symlink `trackfw → <binário>` e é
+  # injetado no PATH SOMENTE no Cenário B — Cenário A usa seu próprio fake
+  # (injetado com PATH="$fake_bin_dir:..." antes do fake bin dir) e os cenários
+  # D/C3 invocam o gate completo como subprocesso (que monta o próprio PATH).
+  local _self_test_go_bin="${GO_BIN:-}"
+  if [[ -z "$_self_test_go_bin" ]]; then
+    _self_test_go_bin="$WORK/trackfw-self-test"
+    (cd "$ROOT_DIR" && GOCACHE="$WORK/go-build-cache" go build -o "$_self_test_go_bin" ./cmd/trackfw)
+  elif [[ "$_self_test_go_bin" != /* ]]; then
+    _self_test_go_bin="$ROOT_DIR/$_self_test_go_bin"
+  fi
+  local _self_test_bin_dir="$WORK/self-test-bin"
+  mkdir -p "$_self_test_bin_dir"
+  ln -sf "$_self_test_go_bin" "$_self_test_bin_dir/trackfw"
+
   # --- Cenário A: schema ERRADO ⇒ reprova, nomeando o sítio -----------------
   # ML-2A: o schema é emitido pelo binário Go, não pelo wrapper .sh. Para
   # injetar o schema errado, cria-se um `trackfw` falso que emite
@@ -323,7 +346,7 @@ FAKE_EOF
   echo "namespace: prometeu-tf" >"$ok_dir/trackfw.yaml"
   cp "$ROOT_DIR/scripts/trackfw-git-branch-guard.sh" "$ok_dir/scripts/trackfw-git-branch-guard.sh"
   set +e
-  out=$(cd "$ok_dir" && bash scripts/trackfw-git-branch-guard.sh "git commit -m x" 2>/dev/null </dev/null)
+  out=$(cd "$ok_dir" && PATH="$_self_test_bin_dir:$PATH" bash scripts/trackfw-git-branch-guard.sh "git commit -m x" 2>/dev/null </dev/null)
   status=$?
   set -e
   if [[ "$status" -ne 2 ]]; then
