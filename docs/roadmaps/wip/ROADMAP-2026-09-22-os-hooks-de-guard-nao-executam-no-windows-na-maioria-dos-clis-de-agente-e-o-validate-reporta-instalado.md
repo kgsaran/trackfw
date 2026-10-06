@@ -296,7 +296,7 @@ go test ./internal/generators/ ./internal/validator/ -count=1
 > Dependências: Wave 2 auditada.
 
 ### ML-3A — Guard disparando e bloqueando na VM (AC3) e controle POSIX (AC5)
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Squad:** ares-tf
 **Files affected:** `docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md` (seção nova), `vault/notes/` (nota, se a causa for não óbvia)
 **Actions:** com o binário da branch na VM: `git push` bruto bloqueado (exit 2) e comando inofensivo
