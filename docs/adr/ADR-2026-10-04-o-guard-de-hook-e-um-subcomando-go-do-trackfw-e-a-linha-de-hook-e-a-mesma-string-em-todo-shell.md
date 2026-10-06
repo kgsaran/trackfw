@@ -201,3 +201,24 @@ posicional é erro (D7). O invólucro `.sh` traduz `"$@"` para `--command`.
   é executado pelo Kiro e pelo Amazon Q. O `validate` denuncia (ML-2B).
 
 Parecer completo: `docs/seguranca/2026-10-04-wave0-guard-em-go.md`.
+
+---
+
+## Adendo — 2026-10-06 (CI do PR #527): a palavra de comando perde as aspas
+
+Medido com o binário da branch: `"git" push`, `git "push"`, `'git' push` e `git p""ush` saem **0**
+(o `.sh` da `main` também). No Windows isso não é ofuscação: `"C:\Program Files\Git\bin\git.exe" push`
+é a forma normal de chamar o git pelo caminho completo, e o guard não a via.
+
+### D10 — Remoção de aspas na tokenização das palavras de comando
+
+Decisão do KG em 2026-10-06. Ao dividir um segmento em palavras, o guard em Go aplica a remoção de
+aspas do shell: espaço dentro de `'…'` ou `"…"` não separa palavra, e as aspas saem da palavra
+(`g""it` → `git`, `"C:\Program Files\Git\bin\git.exe"` → um token, base `git`). Vale para a palavra
+de comando, para o subcomando e para os prefixos `env`/`command`.
+
+**Revê em parte a ADR-2026-08-12:** a classe "evasão por citação" (`g""it push`) deixa de ser resíduo.
+Continuam abertas, por decisão daquela ADR: `git${IFS}push`, expansão de chaves (`{git,push}`), barra
+invertida (`g\it`), variáveis e subshell (`$(echo git) push`), `env`/`command` com flags.
+
+Divergência deliberada da fixture `.sh` congelada, no sentido seguro (nega onde o `.sh` liberava).
