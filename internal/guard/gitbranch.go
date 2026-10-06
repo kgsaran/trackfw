@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // Reason messages — byte-for-byte identical to the bash REASON variables in
@@ -205,7 +206,7 @@ func MatchSubcommand(cmdRaw string) string {
 		if seg == "" {
 			continue
 		}
-		tokens := strings.Fields(seg)
+		tokens := shellTokenize(seg)
 		if len(tokens) == 0 {
 			continue
 		}
@@ -537,6 +538,56 @@ func parseHeredocDelim(line string) string {
 	return rest
 }
 
+// shellTokenize splits a command segment into words using shell quoting semantics
+// (ADR-2026-10-04, D10). Rules:
+//   - Unicode whitespace outside quotes separates words (unicode.IsSpace).
+//   - Inside '…' or "…": whitespace does not separate; quotes are stripped.
+//   - Adjacent quoted/unquoted parts concatenate: g""it → git, "a b"c → a bc.
+//   - Unclosed quotes: the remainder is treated as one word (no panic).
+//   - Backslash is NOT treated as an escape here; inside "…", quoteAwareSplit only
+//     consumed the backslash for the POSIX special set ($, `, ", \, newline) — any
+//     other backslash (e.g. Windows path separators) reaches this function intact.
+//
+// This replaces strings.Fields, which left quote characters inside tokens and
+// prevented "git", 'git', and g""it from being recognised as the git binary.
+func shellTokenize(s string) []string {
+	var words []string
+	var cur strings.Builder
+	var q rune // current quote char; 0 = unquoted
+	inWord := false
+	for _, c := range s {
+		if q != 0 {
+			// Inside a quoted region.
+			if c == q {
+				q = 0 // closing quote — strip it, stay in word
+			} else {
+				cur.WriteRune(c)
+			}
+			continue
+		}
+		// Outside quotes.
+		switch {
+		case c == '\'' || c == '"':
+			q = c   // open quote — strip it, start/continue word
+			inWord = true
+		case unicode.IsSpace(c):
+			if inWord {
+				words = append(words, cur.String())
+				cur.Reset()
+				inWord = false
+			}
+		default:
+			cur.WriteRune(c)
+			inWord = true
+		}
+	}
+	// Flush the last (or only) word; also handles unclosed-quote remainder.
+	if inWord || cur.Len() > 0 {
+		words = append(words, cur.String())
+	}
+	return words
+}
+
 // quoteAwareSplit splits cmdRaw on `;`, `&&`, `||`, `|` outside of single or
 // double quotes. Newlines inside quotes become spaces. The result is a list
 // of command segments. Mirrors the bash quote_aware_split() awk function
@@ -555,9 +606,15 @@ func quoteAwareSplit(s string) []string {
 			// Inside quotes.
 			if q == '"' && c == '\\' && i+1 < n {
 				next := runes[i+1]
-				if next == '\n' {
+				// POSIX: inside "…", backslash only escapes $, `, ", \, and newline.
+				// Before any other character the backslash is literal (written as-is).
+				switch next {
+				case '$', '`', '"', '\\':
+					cur.WriteRune(next)
+				case '\n':
 					cur.WriteRune(' ')
-				} else {
+				default:
+					cur.WriteRune('\\')
 					cur.WriteRune(next)
 				}
 				i++

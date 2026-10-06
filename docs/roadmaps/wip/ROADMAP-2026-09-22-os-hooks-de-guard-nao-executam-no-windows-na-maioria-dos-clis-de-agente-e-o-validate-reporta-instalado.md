@@ -366,16 +366,21 @@ de referência (C2: `&` não separa comando; falha aberta herdada do `.sh`, agor
       três vezes, sem medir na `main`.
 
 ### ML-4D — A palavra de comando perde as aspas (ADR-2026-10-04, D10)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Por que o escopo original não previa:** achado no CI do PR #527 (2026-10-06). `"git" push`, `git "push"`,
 `'git' push` e `git p""ush` saem 0 no Go e no `.sh` da `main`; no Windows o caminho com espaço exige aspas.
 Era resíduo declarado na ADR-2026-08-12; o KG decidiu fechar (D10).
 **Files affected:** `internal/guard/gitbranch.go` (+ testes); testes de paridade em `internal/generators/` se o corpus tiver casos com aspas.
 **Acceptance criteria:**
-- [ ] As quatro formas acima e `"C:\Program Files\Git\bin\git.exe" push` / `& "…git.exe" push` bloqueiam; `echo "git push"`, `git log --grep "push"` e `ls "a b"` mantêm o comportamento de hoje
-- [ ] Divergências da fixture `.sh` listadas por id, deliberadas e no sentido seguro
-- [ ] `go test ./internal/guard/... ./internal/generators/ -count=1` verde; `make quality` verde pelo arquiteto
+- [x] As quatro formas acima e `"C:\Program Files\Git\bin\git.exe" push` / `& "…git.exe" push` bloqueiam; `echo "git push"`, `git log --grep "push"` e `ls "a b"` mantêm o comportamento de hoje
+- [x] Divergências da fixture `.sh` listadas por id, deliberadas e no sentido seguro
+- [x] `go test ./internal/guard/... ./internal/generators/ -count=1` verde; `make quality` verde pelo arquiteto
+      Auditoria (2026-10-06): medido com o binário — as quatro formas, `env "git" push`, `command 'git' push` e
+      `"/usr/bin/git" push` → 2; `echo "git push"`, `git log --grep "push"`, `ls "a b"` → 0. Nenhuma divergência da fixture.
+      Complemento: `quoteAwareSplit` consumia toda `\` dentro de `"…"` (errado também no POSIX); agora só antes de
+      `$ \` " \\` e newline, e `"C:\Program Files\…\git.exe" push` (cmd e PowerShell) fica coberto por teste que só
+      roda no Windows (confirmação no CI). Falsificações executadas nas duas partes.
 
 **Gates da wave:**
 ```bash

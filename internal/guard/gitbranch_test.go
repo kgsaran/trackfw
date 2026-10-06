@@ -830,12 +830,12 @@ func TestMatchSubcommand_DoubleAmpersand_Allow(t *testing.T) {
 //   - C:\PROGRA~1\Git\bin\git.exe push … → tokens[0]="C:\PROGRA~1\Git\bin\git.exe";
 //     filepath.Base returns "git.exe"; TrimSuffix(".exe") → "git". Guard fires.
 //
-// NOTE: paths with spaces (e.g. "C:\Program Files\Git\bin\git.exe push") require shell
-// quoting ("C:\Program Files\Git\bin\git.exe" push) to survive strings.Fields without
-// splitting the path at the first space. Quoted paths constitute citation evasion and
-// are intentionally out of scope for this guard, as declared in ADR-2026-08-12 and
-// documented in the .sh fixture header (lines 5–17): tokenising like the shell does is
-// a residual open item.
+// NOTE: paths with spaces inside double-quoted strings (e.g.
+// "C:\Program Files\Git\bin\git.exe" push) are handled by the D10 POSIX fix in
+// quoteAwareSplit (ADR-2026-10-04): \ before non-special chars is now preserved
+// inside "…", so shellTokenize sees the full backslash-separated path and
+// filepath.Base on Windows returns "git.exe". See
+// TestMatchSubcommand_D10_WindowsQuotedPathWithSpaces_Blocks.
 //
 // Assertion: on Windows, space-free git paths followed by a blocked subcommand are
 // blocked by MatchSubcommand (deliberate divergence from POSIX N09 behaviour —
@@ -871,5 +871,220 @@ func TestMatchSubcommand_BackslashPrefixed_PosixNotGit(t *testing.T) {
 	}
 	if got := MatchSubcommand(`\\git push`); got != "" {
 		t.Fatalf(`\\git push: expected allow on POSIX (backslash not a path separator), got %q`, got)
+	}
+}
+
+// --- D10: shell quoting — remoção de aspas na tokenização (ADR-2026-10-04) ---
+
+// TestMatchSubcommand_D10_DoubleQuotedGit_Blocks asserts that double-quoting the git
+// binary word ("git" push) is recognised and blocked after shell dequoting.
+// Assertion: D10 — shellTokenize strips quotes from "git" → git; guard fires on push.
+func TestMatchSubcommand_D10_DoubleQuotedGit_Blocks(t *testing.T) {
+	if got := MatchSubcommand(`"git" push origin main`); got != "push" {
+		t.Fatalf(`"git" push origin main: expected block (push), got %q`, got)
+	}
+}
+
+// TestMatchSubcommand_D10_DoubleQuotedSubcommand_Blocks asserts that double-quoting
+// the subcommand word (git "push") is recognised and blocked after shell dequoting.
+// Assertion: D10 — shellTokenize strips quotes from "push" → push; applyRule fires.
+func TestMatchSubcommand_D10_DoubleQuotedSubcommand_Blocks(t *testing.T) {
+	if got := MatchSubcommand(`git "push" origin main`); got != "push" {
+		t.Fatalf(`git "push" origin main: expected block (push), got %q`, got)
+	}
+}
+
+// TestMatchSubcommand_D10_SingleQuotedGit_Blocks asserts that single-quoting the git
+// binary word ('git' push) is recognised and blocked after shell dequoting.
+// Assertion: D10 — shellTokenize strips single quotes from 'git' → git; guard fires.
+func TestMatchSubcommand_D10_SingleQuotedGit_Blocks(t *testing.T) {
+	if got := MatchSubcommand(`'git' push`); got != "push" {
+		t.Fatalf(`'git' push: expected block (push), got %q`, got)
+	}
+}
+
+// TestMatchSubcommand_D10_EmptyQuotedMiddle_Blocks asserts that an empty double-quoted
+// string spliced into a word (git p""ush) is recognised after concatenation.
+// Assertion: D10 — shellTokenize concatenates p + "" + ush → push; applyRule fires.
+func TestMatchSubcommand_D10_EmptyQuotedMiddle_Blocks(t *testing.T) {
+	if got := MatchSubcommand(`git p""ush`); got != "push" {
+		t.Fatalf(`git p""ush: expected block (push), got %q`, got)
+	}
+}
+
+// TestMatchSubcommand_D10_EnvDoubleQuotedGit_Blocks asserts that "git" with env prefix
+// is blocked after shell dequoting and env stripping.
+// Assertion: D10 — env "git" push: shellTokenize → ["env","git","push"]; env stripped;
+// base "git" fires.
+func TestMatchSubcommand_D10_EnvDoubleQuotedGit_Blocks(t *testing.T) {
+	if got := MatchSubcommand(`env "git" push`); got != "push" {
+		t.Fatalf(`env "git" push: expected block (push), got %q`, got)
+	}
+}
+
+// TestMatchSubcommand_D10_CommandSingleQuotedGit_Blocks asserts that 'git' with
+// command prefix is blocked after shell dequoting.
+// Assertion: D10 — command 'git' push: shellTokenize → ["command","git","push"];
+// command stripped; base "git" fires.
+func TestMatchSubcommand_D10_CommandSingleQuotedGit_Blocks(t *testing.T) {
+	if got := MatchSubcommand(`command 'git' push`); got != "push" {
+		t.Fatalf(`command 'git' push: expected block (push), got %q`, got)
+	}
+}
+
+// TestMatchSubcommand_D10_AbsPathDoubleQuoted_Blocks asserts that "/usr/bin/git" push
+// is blocked on all platforms: quoteAwareSplit does not corrupt POSIX paths (no
+// backslashes), shellTokenize dequotes the token, filepath.Base returns "git".
+// Assertion: D10 — "/usr/bin/git" push: shellTokenize → ["/usr/bin/git","push"];
+// filepath.Base("/usr/bin/git")="git"; guard fires.
+func TestMatchSubcommand_D10_AbsPathDoubleQuoted_Blocks(t *testing.T) {
+	if got := MatchSubcommand(`"/usr/bin/git" push origin main`); got != "push" {
+		t.Fatalf(`"/usr/bin/git" push origin main: expected block (push), got %q`, got)
+	}
+}
+
+// TestMatchSubcommand_D10_EchoDoubleQuotedGitPush_Allows asserts that a command string
+// where "git push" appears only inside a quoted echo argument is allowed.
+// Assertion: D10 does not widen blocking to quoted arguments; echo is not git.
+func TestMatchSubcommand_D10_EchoDoubleQuotedGitPush_Allows(t *testing.T) {
+	if got := MatchSubcommand(`echo "git push"`); got != "" {
+		t.Fatalf(`echo "git push": expected allow (git push is an argument, not a command), got %q`, got)
+	}
+}
+
+// TestMatchSubcommand_D10_GitLogGrep_Allows asserts that "push" as an argument to
+// --grep (git log --grep "push") is not treated as a subcommand and is allowed.
+// Assertion: D10 does not change subcommand matching; dequoted "push" is an arg, not sub.
+func TestMatchSubcommand_D10_GitLogGrep_Allows(t *testing.T) {
+	if got := MatchSubcommand(`git log --grep "push"`); got != "" {
+		t.Fatalf(`git log --grep "push": expected allow (log is not a blocked sub), got %q`, got)
+	}
+}
+
+// TestMatchSubcommand_D10_LsQuotedPath_Allows asserts that ls "a b" is allowed.
+// Assertion: D10 does not affect non-git commands; first token ls ≠ git.
+func TestMatchSubcommand_D10_LsQuotedPath_Allows(t *testing.T) {
+	if got := MatchSubcommand(`ls "a b"`); got != "" {
+		t.Fatalf(`ls "a b": expected allow (ls is not git), got %q`, got)
+	}
+}
+
+// TestMatchSubcommand_D10_EchoSingleQuotedRedirect_Allows asserts that
+// echo 'git push' > f is allowed.
+// Assertion: D10 does not block; first token echo ≠ git.
+func TestMatchSubcommand_D10_EchoSingleQuotedRedirect_Allows(t *testing.T) {
+	if got := MatchSubcommand(`echo 'git push' > f`); got != "" {
+		t.Fatalf(`echo 'git push' > f: expected allow (echo is not git), got %q`, got)
+	}
+}
+
+// TestMatchSubcommand_D10_UnclosedDoubleQuote_NoPanic asserts that an unclosed
+// double-quote string ("git push) does not panic and returns a stable result.
+// Assertion: D10 — unclosed quote: shellTokenize treats remainder as one word;
+// the word is "git push" (with space inside), filepath.Base="git push" ≠ "git" → allow.
+func TestMatchSubcommand_D10_UnclosedDoubleQuote_NoPanic(t *testing.T) {
+	// Must not panic. The result (allow or block) depends on how the unclosed-quote
+	// remainder is tokenised: the entire remainder "git push" is one token, whose
+	// filepath.Base is "git push" (≠ "git"), so the guard allows it.
+	got := MatchSubcommand(`"git push`)
+	if got != "" {
+		t.Fatalf(`"git push (unclosed): expected allow (remainder is one token "git push" ≠ "git"), got %q`, got)
+	}
+}
+
+// --- D10/quoteAwareSplit: POSIX backslash rules inside "…" (ADR-2026-10-04, D10 fix) ---
+
+// TestQuoteAwareSplit_BackslashBeforeNonSpecial_Preserved asserts that inside "…",
+// a backslash before a non-special character is preserved literally as '\' + char.
+// POSIX rule: only $, `, ", \, and newline are escaped by \ inside "…"; before any
+// other character the backslash is retained.
+// echo "a\b" → segment = `echo "a\b"` (backslash before 'b' is not consumed).
+// Assertion: D10 fix — \b inside "…" produces \b (not just b); without the fix the
+// segment would be `echo "ab"` and this test fails.
+func TestQuoteAwareSplit_BackslashBeforeNonSpecial_Preserved(t *testing.T) {
+	parts := quoteAwareSplit(`echo "a\b"`)
+	if len(parts) != 1 {
+		t.Fatalf(`echo "a\b": expected 1 segment, got %d: %v`, len(parts), parts)
+	}
+	// With the fix, quoteAwareSplit preserves the backslash; the segment is unchanged.
+	if parts[0] != `echo "a\b"` {
+		t.Fatalf(`echo "a\b": expected segment %q, got %q`, `echo "a\b"`, parts[0])
+	}
+}
+
+// TestQuoteAwareSplit_EscapedQuoteInsideDoubleQuote_OneSegment asserts that \" inside
+// "…" does not close the quoted region; the ; that follows remains inside the string.
+// echo "a\"b; git push" → one segment (the \" is an escaped quote, not a closer).
+// Assertion: D10 fix preserves the existing behavior for \" (special-set character
+// that was already consumed before the fix); this test is a non-regression guard.
+func TestQuoteAwareSplit_EscapedQuoteInsideDoubleQuote_OneSegment(t *testing.T) {
+	parts := quoteAwareSplit(`echo "a\"b; git push"`)
+	if len(parts) != 1 {
+		t.Fatalf(`echo "a\"b; git push": expected 1 segment, got %d: %v`, len(parts), parts)
+	}
+}
+
+// TestQuoteAwareSplit_DoubleBackslashClosesString_TwoSegments asserts that \\ inside
+// "…" produces a single \ and the next " properly closes the string; the ; after is
+// then a segment separator. The second segment contains "git push" which is blocked.
+// echo "x\\"; git push → two segments, second blocks.
+// Assertion: D10 fix preserves the existing behavior for \\ (special-set character
+// that was already consumed before the fix); this test is a non-regression guard.
+func TestQuoteAwareSplit_DoubleBackslashClosesString_TwoSegments(t *testing.T) {
+	parts := quoteAwareSplit(`echo "x\\"; git push`)
+	if len(parts) != 2 {
+		t.Fatalf(`echo "x\\"; git push: expected 2 segments, got %d: %v`, len(parts), parts)
+	}
+	if got := MatchSubcommand(`echo "x\\"; git push`); got != "push" {
+		t.Fatalf(`echo "x\\"; git push: expected block (push), got %q`, got)
+	}
+}
+
+// TestQuoteAwareSplit_D10_WindowsPathBackslashPreserved asserts that quoteAwareSplit
+// followed by shellTokenize produces the correct token for a Windows path inside "…".
+// This cross-platform test verifies the tokenisation mechanism; the Windows-only
+// end-to-end blocking test is TestMatchSubcommand_D10_WindowsQuotedPathWithSpaces_Blocks.
+// Assertion: D10 fix — \P inside "…" writes \P (not P); shellTokenize receives the
+// full backslash-separated path as one token. Without the fix, tokens[0] would be
+// "C:Program FilesGitbingit.exe" (backslashes stripped).
+func TestQuoteAwareSplit_D10_WindowsPathBackslashPreserved(t *testing.T) {
+	seg := quoteAwareSplit(`"C:\Program Files\Git\bin\git.exe" push`)
+	if len(seg) != 1 {
+		t.Fatalf(`expected 1 segment, got %d: %v`, len(seg), seg)
+	}
+	tokens := shellTokenize(seg[0])
+	if len(tokens) < 1 {
+		t.Fatalf("expected at least 1 token, got 0")
+	}
+	want := `C:\Program Files\Git\bin\git.exe`
+	if tokens[0] != want {
+		t.Fatalf("first token: got %q, want %q", tokens[0], want)
+	}
+}
+
+// TestMatchSubcommand_D10_WindowsQuotedPathWithSpaces_Blocks asserts that on Windows,
+// a double-quoted Windows path that contains spaces is correctly tokenised after the
+// D10 POSIX fix and a blocked subcommand causes MatchSubcommand to return "push".
+// On Windows, filepath.Base treats \ as a separator, so the token
+// "C:\Program Files\Git\bin\git.exe" has base "git.exe" → stripped to "git" → BLOCK.
+// On POSIX, filepath.Base does not treat \ as a separator, so the whole token is
+// "C:\Program Files\Git\bin\git.exe" (no slash), base ≠ "git" → ALLOW (correct).
+// Assertion: D10 fix — Windows path with spaces in "…" is blocked on Windows only;
+// the fix makes this case work by preserving backslashes inside "…".
+func TestMatchSubcommand_D10_WindowsQuotedPathWithSpaces_Blocks(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-only: filepath.Base treats '\\' as separator (D10, ADR-2026-10-04)")
+	}
+	cases := []struct {
+		cmd  string
+		want string
+	}{
+		{`"C:\Program Files\Git\bin\git.exe" push origin main`, "push"},
+		{`& "C:\Program Files\Git\bin\git.exe" push origin main`, "push"},
+	}
+	for _, tc := range cases {
+		if got := MatchSubcommand(tc.cmd); got != tc.want {
+			t.Errorf("%q: got %q want %q", tc.cmd, got, tc.want)
+		}
 	}
 }

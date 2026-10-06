@@ -45377,3 +45377,19 @@ Achados notáveis para o apolo-tf:
 - Testes com PATH normal: `ok github.com/kgsaran/trackfw/internal/generators`.
 - Falsificação: removida a injeção temporariamente → ambos os testes reprovaram com "trackfw not found in PATH"; injeção revertida.
 - `git status --short`: M docs/agents-working-context.md, M internal/generators/git_branch_guard_dedup_test.go, M internal/generators/git_branch_guard_stdin_drain_test.go.
+
+## 2026-10-06 — apolo-tf — INÍCIO: ML-4D — Remoção de aspas na tokenização (D10)
+
+- Branch: `feat/hooks-de-guard-executam-no-windows`
+- Escopo: `internal/guard/gitbranch.go`, `internal/guard/gitbranch_test.go`
+- Objetivo: substituir `strings.Fields` por `shellTokenize` que remove aspas e concatena partes adjacentes
+- Pré-condição verificada: `quoteAwareSplit` corrompe paths Windows com `\` dentro de aspas duplas (backslashes consumidos); casos POSIX intactos
+
+## 2026-10-06 — apolo-tf — FIM: ML-4D — Remoção de aspas na tokenização (D10)
+
+- `shellTokenize` adicionado em `internal/guard/gitbranch.go` (46 linhas); substitui `strings.Fields` em `MatchSubcommand`; usa `unicode.IsSpace` para não regredir C04/C21.
+- 11 testes novos em `internal/guard/gitbranch_test.go` (D10, todos verdes).
+- Parity generators: 0 divergências novas em C01–C22.
+- Divergência residual não implementada: `"C:\Program Files\Git\bin\git.exe" push` (Windows) requer fix em `quoteAwareSplit` (backslashes consumidos dentro de `"…"`). Reportado ao arquiteto.
+- `go build ./...` ✓; `go vet ./internal/guard/` ✓; `go test ./internal/guard/... -count=1` ok (2.7s); `go test ./internal/generators/ -count=1` ok (51s); `GOOS=windows go vet` ✓; `GOOS=windows go test -c -o /dev/null` ✓.
+- `git status --short`: M docs/agents-working-context.md, M internal/guard/gitbranch.go, M internal/guard/gitbranch_test.go.
