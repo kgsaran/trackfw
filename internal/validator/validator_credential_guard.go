@@ -752,8 +752,15 @@ func validateClaudeGuardHookMatcherWarningsInFile(parsed interface{}, displayPat
 			if !hasGuard {
 				continue
 			}
-			// Guard hook found — verify the matcher covers PowerShell.
-			if !strings.Contains(matcher, "PowerShell") {
+			// Guard hook found — only shell-tool groups need PowerShell coverage.
+			// Claude Code uses "Bash" (case-sensitive) as the discriminant for shell
+			// matchers; groups like "Read" or "Write|Edit" cover non-shell tools and
+			// are intentionally not "Bash|PowerShell". Flagging them would produce
+			// unfixable false-positive warnings on every project initialised with
+			// `trackfw init`, because `trackfw update` does not change those groups
+			// (issue #530). Only warn when the matcher contains "Bash" and is missing
+			// "PowerShell".
+			if strings.Contains(matcher, "Bash") && !strings.Contains(matcher, "PowerShell") {
 				warnings = append(warnings, fmt.Sprintf(
 					"%s: Claude Code guard hook has matcher %q — "+
 						"PowerShell is not covered; the hook will not fire on Windows "+

@@ -469,7 +469,7 @@ seguiu, e o `validate` (que sonda o PATH do Windows com `exec.LookPath`) disse O
 - [x] Claude Code e Codex marcados como provados de ponta a ponta no Windows (com a fonte); Copilot e Amazon Q "não verificados (sem conta)"; Kiro "não medido (sem CLI ARM64)"; o matcher `Bash|PowerShell` do Claude Code e a armadilha do `~/bin` do Git Bash explicados
 
 ### ML-5F — A regra de matcher só olha grupos de shell (issue #530)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Por que o escopo original não previa:** reaberto pela issue #530 (lourivalgarciajunior, 2026-10-07), sobre a v9.3.0.
 `validateClaudeGuardHookMatcherWarningsInFile` avisa para todo grupo com comando de guard cujo matcher não contém
@@ -479,8 +479,12 @@ zera. Os testes do ML-5A usaram fixture só com os grupos de shell — falha de 
 (AC7: o `validate` relatar corretamente se o hook executa) → mesma REQ.
 **Files affected:** `internal/validator/validator_credential_guard.go` (+ testes)
 **Acceptance criteria:**
-- [ ] A regra só avalia grupos cujo matcher endereça shell (contém `Bash`); grupos `Read`, `Write|Edit` e afins não geram aviso
-- [ ] Teste com a estrutura INTEIRA que o `InjectClaudeHooks` escreve (gerada pela própria função, `HOME` isolado para desarmar o dedup global): zero avisos; e o mesmo arquivo com o grupo de shell em `Bash` puro: exatamente um aviso por fase
-- [ ] Falsificação: voltar ao critério "todo grupo com guard" reprova o teste da estrutura inteira
-- [ ] `go test ./internal/validator/ ./internal/generators/ -count=1` e `make quality` (sem `~/.local/bin` no PATH) verdes
+- [x] A regra só avalia grupos cujo matcher endereça shell (contém `Bash`); grupos `Read`, `Write|Edit` e afins não geram aviso
+- [x] Teste com a estrutura INTEIRA que o `InjectClaudeHooks` escreve (gerada pela própria função, `HOME` isolado para desarmar o dedup global): zero avisos; e o mesmo arquivo com o grupo de shell em `Bash` puro: exatamente um aviso por fase
+- [x] Falsificação: voltar ao critério "todo grupo com guard" reprova o teste da estrutura inteira
+- [x] `go test ./internal/validator/ ./internal/generators/ -count=1` e `make quality` (sem `~/.local/bin` no PATH) verdes
+      Auditoria (2026-10-07): `TestClaudeGuardHookMatcherWarning_CanonicalOutputZeroWarnings` gera o arquivo com a função real,
+      `HOME` isolado, afirma a presença dos grupos `Read` e `Write|Edit` com guard (anti-vacuidade) e conta 0 avisos; com o
+      grupo de shell em `Bash`, 2 (um por fase). Critério antigo → o teste reprova com os 2 avisos do relator. E2E:
+      `init` + `validate` sem linha "PowerShell". `make quality` exit 0 (agente); testes reconferidos pelo arquiteto.
 

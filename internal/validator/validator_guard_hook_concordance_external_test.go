@@ -16,6 +16,10 @@ package validator_test
 // "Reconciliação:" on each function.
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/kgsaran/trackfw/internal/generators"
@@ -236,4 +240,123 @@ func TestGuardHookConcordance_AmazonQ_GitBranch(t *testing.T) {
 		t.Fatalf("InjectAmazonQHooks: %v", err)
 	}
 	assertZeroGitBranchViolations(t)
+}
+
+// --------------------------------------------------------------------------
+// ML-5F — matcher warning rule only fires for shell groups (issue #530)
+// --------------------------------------------------------------------------
+
+// assertZeroMatcherWarnings fails if ValidateClaudeGuardHookMatcherWarningsForTest
+// returns any warnings.
+func assertZeroMatcherWarnings(t *testing.T) {
+	t.Helper()
+	warns, err := validator.ValidateClaudeGuardHookMatcherWarningsForTest()
+	if err != nil {
+		t.Fatalf("ValidateClaudeGuardHookMatcherWarnings: unexpected error: %v", err)
+	}
+	if len(warns) != 0 {
+		t.Errorf("expected zero matcher warnings; got %d:\n%v", len(warns), warns)
+	}
+}
+
+// TestClaudeGuardHookMatcherWarning_CanonicalOutputZeroWarnings calls InjectClaudeHooks
+// on a fresh temp dir and asserts that validateClaudeGuardHookMatcherWarnings produces
+// zero warnings. The generated settings.json includes groups "Read" and "Write|Edit"
+// with guard commands but without "Bash" in the matcher — the fix must not flag them.
+//
+// Reconciliação: afirma que a regra de aviso de matcher é silenciosa para a saída
+// canônica de InjectClaudeHooks, incluindo grupos Read e Write|Edit que contêm guard
+// mas não contêm "Bash" no matcher — esses grupos não precisam de cobertura PowerShell
+// porque endereçam ferramentas de leitura/escrita, não shells (issue #530).
+//
+// Adicionalmente, afirma que ao trocar o matcher do grupo de shell de "Bash|PowerShell"
+// para "Bash", exatamente 2 avisos são emitidos (um por fase com grupo de shell+guard),
+// confirmando que a regra ainda detecta o defeito real para matchers de shell.
+func TestClaudeGuardHookMatcherWarning_CanonicalOutputZeroWarnings(t *testing.T) {
+	dir := setupConcordanceDir(t)
+	if err := generators.InjectClaudeHooks(dir); err != nil {
+		t.Fatalf("InjectClaudeHooks: %v", err)
+	}
+
+	// Non-vacuity: verify that "Read" and "Write|Edit" groups with guard ARE present
+	// in the generated file. If they are absent, "zero warnings" is trivially true and
+	// the test does not prove that the fix suppresses those specific groups.
+	settingsPath := filepath.Join(dir, ".claude", "settings.json")
+	raw, readErr := os.ReadFile(settingsPath)
+	if readErr != nil {
+		t.Fatalf("read .claude/settings.json: %v", readErr)
+	}
+	var root map[string]interface{}
+	if jsonErr := json.Unmarshal(raw, &root); jsonErr != nil {
+		t.Fatalf("unmarshal .claude/settings.json: %v", jsonErr)
+	}
+	hooks, _ := root["hooks"].(map[string]interface{})
+	guardMarkers := []string{"trackfw guard credential", "trackfw guard git-branch"}
+	foundReadGroup := false
+	foundWriteEditGroup := false
+	for _, phase := range []string{"PreToolUse", "PostToolUse"} {
+		arr, _ := hooks[phase].([]interface{})
+		for _, item := range arr {
+			obj, hOk := item.(map[string]interface{})
+			if !hOk {
+				continue
+			}
+			matcher, _ := obj["matcher"].(string)
+			innerHooks, _ := obj["hooks"].([]interface{})
+			hasGuard := false
+			for _, h := range innerHooks {
+				hObj, hOk2 := h.(map[string]interface{})
+				if !hOk2 {
+					continue
+				}
+				cmd, _ := hObj["command"].(string)
+				for _, marker := range guardMarkers {
+					if strings.Contains(cmd, marker) {
+						hasGuard = true
+						break
+					}
+				}
+				if hasGuard {
+					break
+				}
+			}
+			if hasGuard {
+				switch matcher {
+				case "Read":
+					foundReadGroup = true
+				case "Write|Edit":
+					foundWriteEditGroup = true
+				}
+			}
+		}
+	}
+	if !foundReadGroup {
+		t.Fatal("non-vacuity: no 'Read' group with guard found in generated settings.json — fix cannot be tested")
+	}
+	if !foundWriteEditGroup {
+		t.Fatal("non-vacuity: no 'Write|Edit' group with guard found in generated settings.json — fix cannot be tested")
+	}
+
+	// With the canonical output (shell groups use "Bash|PowerShell"), the rule must
+	// produce zero warnings.
+	assertZeroMatcherWarnings(t)
+
+	// After downgrading the shell matcher from "Bash|PowerShell" to "Bash" only, the
+	// rule must emit exactly one warning per phase that has a shell group with guard.
+	// InjectClaudeHooks emits one "Bash|PowerShell" shell group in PreToolUse and one
+	// in PostToolUse, so the expected count is 2 (one per phase, capped by the
+	// break-per-phase logic in validateClaudeGuardHookMatcherWarningsInFile).
+	modified := strings.ReplaceAll(string(raw), `"Bash|PowerShell"`, `"Bash"`)
+	if writeErr := os.WriteFile(settingsPath, []byte(modified), 0644); writeErr != nil {
+		t.Fatalf("write modified settings.json: %v", writeErr)
+	}
+	warns, warnErr := validator.ValidateClaudeGuardHookMatcherWarningsForTest()
+	if warnErr != nil {
+		t.Fatalf("ValidateClaudeGuardHookMatcherWarnings after shell-matcher downgrade: %v", warnErr)
+	}
+	const wantWarnings = 2
+	if len(warns) != wantWarnings {
+		t.Errorf("after downgrading shell matcher to 'Bash': expected %d warnings, got %d: %v",
+			wantWarnings, len(warns), warns)
+	}
 }
