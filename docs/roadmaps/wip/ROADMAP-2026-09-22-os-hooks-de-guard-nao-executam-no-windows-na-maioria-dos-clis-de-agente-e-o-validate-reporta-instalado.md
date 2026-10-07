@@ -327,7 +327,7 @@ o AC3 pede o hook real disparando em pelo menos um CLI de PowerShell e no Kiro. 
 medir antes de fechar a REQ.
 **Files affected:** `docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md` (seção nova)
 **Acceptance criteria:**
-- [x] Em um CLI de agente de PowerShell e no Kiro, na VM, o hook gerado pelo binário da `main` bloqueia `git push` e libera um comando inofensivo, com a evidência do próprio CLI (saída/log), não só do shell
+- [ ] Em um CLI de agente de PowerShell e no Kiro — **parcial**: PowerShell provado (Claude Code e Codex); Kiro não medido (ver abaixo), na VM, o hook gerado pelo binário da `main` bloqueia `git push` e libera um comando inofensivo, com a evidência do próprio CLI (saída/log), não só do shell
 - [x] O que exigiu login ou conta, registrado; o que não pôde ser medido, com o motivo
       🔴 Fase 2a (2026-10-07, ares-tf, transcript `cea67981-…`): no Claude Code 2.1.292 no Windows a ferramenta de shell
       primária é `PowerShell` (`tool_name: "PowerShell"`, `tool_input.command` igual ao do Bash). O `trackfw init` emite
