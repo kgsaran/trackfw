@@ -446,16 +446,20 @@ make quality
 
 
 ### ML-5D — `validate` sonda o `trackfw` que o Git Bash resolve no Windows
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Por que:** ML-5B (2026-10-07): o Claude Code roda o comando do hook pelo Git Bash (`/usr/bin/bash`), cujo perfil de
 login põe `~/bin` na frente do PATH; ali havia um `trackfw` 8.0.0-rc2 sem `guard` → exit 1 não bloqueante → `git push`
 seguiu, e o `validate` (que sonda o PATH do Windows com `exec.LookPath`) disse OK. Mesma causa da REQ (AC7).
 **Files affected:** `internal/validator/validator_guard_binary_probe.go` (+ testes)
 **Acceptance criteria:**
-- [ ] No Windows, com Git Bash presente e alguma config de guard na forma nova, o `validate` resolve `trackfw` como o Git Bash de login resolve (`bash -lc 'command -v trackfw'`) e sonda `guard --help` nesse binário; sem `guard` → violation nomeando o caminho e explicando o `~/bin`
-- [ ] Costuras substituíveis em teste; testes nas duas direções; não-Windows ou sem Git Bash → sonda não roda
-- [ ] `go test ./internal/validator/ -count=1` verde
+- [x] No Windows, com Git Bash presente e alguma config de guard na forma nova, o `validate` resolve `trackfw` como o Git Bash de login resolve (`bash -lc 'command -v trackfw'`) e sonda `guard --help` nesse binário; sem `guard` → violation nomeando o caminho e explicando o `~/bin`
+- [x] Costuras substituíveis em teste; testes nas duas direções; não-Windows ou sem Git Bash → sonda não roda
+- [x] `go test ./internal/validator/ -count=1` verde
+      Medido pelo arquiteto na VM (2026-10-07), com o `trackfw` 8.0.0-rc2 ainda em `C:\Users\Lab\bin`: `trackfw validate` no
+      projeto de teste → "✗ the Git Bash login shell (used by Claude Code on Windows to run hooks) resolves
+      C:\Users\Lab\bin\trackfw, which does not have the guard subcommand — the hook will fail open…", 2 violations (uma por guard).
+
 
 ### ML-5E — README: estado medido por CLI depois da prova real
 **Status:** ✅ Concluído
