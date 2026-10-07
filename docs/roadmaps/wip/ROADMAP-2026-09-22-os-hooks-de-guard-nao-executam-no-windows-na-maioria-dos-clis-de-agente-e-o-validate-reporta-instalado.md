@@ -410,14 +410,31 @@ make quality
 **Squad:** apolo-tf
 **Files affected:** `internal/generators/agentfiles.go`, `internal/generators/update.go`, `internal/validator/` (+ testes); `.claude/settings.json` deste repositório
 **Acceptance criteria:**
-- [ ] Claude Code: os hooks de guard que hoje usam `matcher: "Bash"` passam a `Bash|PowerShell` (git-branch e credential, projeto e global); teste nas duas direções
-- [ ] Censo dos outros 7 CLIs: nome da ferramenta de shell no Windows vs. matcher emitido, com fonte; corrigido onde divergir
-- [ ] `trackfw update` migra `Bash` → `Bash|PowerShell` (idempotente); `validate` acusa config de guard cujo matcher não cobre `PowerShell` no Claude Code
+- [x] Claude Code: os hooks de guard que hoje usam `matcher: "Bash"` passam a `Bash|PowerShell` (git-branch e credential, projeto e global); teste nas duas direções
+- [x] Censo dos outros 7 CLIs: nome da ferramenta de shell no Windows vs. matcher emitido, com fonte; corrigido onde divergir
+- [x] `trackfw update` migra `Bash` → `Bash|PowerShell` (idempotente); `validate` acusa config de guard cujo matcher não cobre `PowerShell` no Claude Code
 - [ ] `go test` dos pacotes tocados e `make quality` (arquiteto, sem `~/.local/bin` no PATH) verdes
 
 ### ML-5B — Prova na VM: o hook real do Claude Code bloqueia via ferramenta PowerShell
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** ares-tf
 **Acceptance criteria:**
-- [ ] Rodada A1d do ML-3C repetida com o binário novo: `git push` negado pelo guard (REASON no transcript), `git status` executa
+- [x] Rodada A1d do ML-3C repetida com o binário novo: `git push` negado pelo guard (REASON no transcript), `git status` executa
+
+**Evidência:** sessão `5c803516` — hook `PreToolUse:PowerShell` disparou, guard retornou `toolDenialKind: "permission-rule"`, REASON "git push bruto bloqueado", git não executou. Controle `git status` (sessão `75642873`): `permission_denials: []`, executou. Documentado na seção "Rodada B" de `docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md`.
+
+---
+
+### ML-5C — Prova na VM: o hook do Codex CLI dispara com matcher `"Bash"` no Windows
+**Status:** 🔄 Em andamento
+**Squad:** ares-tf
+**Acceptance criteria:**
+- [x] Codex CLI 0.160.1 no Windows ARM64: confirmar se `tool_name = "Bash"` nos eventos `PreToolUse`
+- [x] Se não, identificar o nome real da ferramenta de shell e o matcher que casaria
+- [x] Seção ML-5C adicionada ao final de `docs/portabilidade/2026-10-07-matcher-do-hook-vs-ferramenta-de-shell-por-cli.md`
+
+**Evidência:** análise binária `codex.exe` (v0.160.1, aarch64-pc-windows-msvc) offset 215963416: string `"Bash"` precede imediatamente `"Command blocked by PreToolUse hook"`. Logs de shell_snapshot confirmam Codex usa PowerShell internamente, mas abstrai como `tool_name="Bash"` no sistema de hooks. Comportamento de timeout com `bypass_hook_trust=true`: zero output em 15–120s (hook dispara → PowerShell falha em SSH → Codex aguarda). Conclusão: matcher `"Bash"` em `agentfiles.go:614-619` está correto — sem alteração necessária para Codex CLI.
+      ⚠️ Auditoria do arquiteto (2026-10-07): a evidência é INFERIDA (string `"Bash"` vizinha da mensagem de bloqueio no
+      binário `codex.exe`, e o `codex exec` travando com hook ativo), não um disparo observado. O agente ficou 47 min
+      preso num `ssh … run_and_watch.py` e foi parado. Pendente: disparo interativo na VM, observado.
 

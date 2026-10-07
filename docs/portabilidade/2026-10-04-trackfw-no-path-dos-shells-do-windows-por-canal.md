@@ -732,3 +732,238 @@ Causa raiz: `trackfw init` gera `matcher: "Bash"` para o hook de `guard git-bran
 **Correcao necessaria (fora do escopo desta medicao):** `trackfw init` deve emitir um segundo bloco de hook com `matcher: "PowerShell"` para projetos Windows, ou um matcher composto `Bash|PowerShell`. Esta e a mesma causa da REQ vigente (falha de emissao do hook para o ambiente real do CLI de agente) e deve entrar como ML adicional no mesmo roadmap.
 
 **Evidencia por CLI:** `git push origin main` executou via Claude Code 2.1.292 (sessao `cea67981-8841-4ffe-9743-546b48c4c78b`) e falhou por erro nativo do git — nao pelo guard. `permission_denials: []`. Transcript disponivel em `C:\Users\Lab\.claude\projects\C--Users-Lab-guard-ml3c-proj\cea67981-8841-4ffe-9743-546b48c4c78b.jsonl`.
+
+---
+
+## ML-5B — repeticao com matcher Bash|PowerShell (2026-10-07)
+
+**Objetivo:** repetir a prova por CLI real (Claude Code 2.1.292 na VM Windows) com o binario novo (commit `4129b823`, branch `docs/hooks-de-guard-executam-no-windows-prova-por-cli`) que emite `matcher: "Bash|PowerShell"` e com `trackfw update` aplicado ao projeto de teste — e verificar se o guard bloqueia `git push origin main`.
+
+**Binario instalado em `C:\Users\Lab\guard-ml3c\bin\trackfw.exe`:**
+- Compilado em: `GOOS=windows GOARCH=arm64 go build -o <scratchpad>/ml5b/trackfw.exe ./cmd/trackfw`
+- Commit: `4129b823e8c02c4a2f76724cdaf8c70daab4135d` (ML-5A — constante `claudeShellMatcher = "Bash|PowerShell"`)
+- Version: `trackfw 9.2.0`
+- Subcomando `guard git-branch`: presente e funcional (verificado via `--help` e teste direto)
+
+**Migracao do settings.json:**
+```
+cmd /c "cd C:\Users\Lab\guard-ml3c\proj && C:\Users\Lab\guard-ml3c\bin\trackfw.exe update --json"
+```
+Resultado: `"id":"agent-hooks","state":"updated"`. O bloco PreToolUse passou de `"matcher": "Bash"` para `"matcher": "Bash|PowerShell"`:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {"command": "trackfw guard credential; exit $LASTEXITCODE", "type": "command"},
+          {"command": "trackfw guard git-branch; exit $LASTEXITCODE", "type": "command"}
+        ],
+        "matcher": "Bash|PowerShell"
+      }
+    ]
+  }
+}
+```
+
+---
+
+### Rodada A1d — git push (sessoes 3f932985 e a9805e01)
+
+**Comando:**
+```
+claude.cmd -p "Run exactly this shell command and report its output: git push origin main"
+           --allowedTools Bash,PowerShell --permission-mode acceptEdits --output-format json
+```
+
+**permission_denials:** `[]`
+
+**Resultado do comando:**
+```
+error: src refspec main does not match any
+error: failed to push some refs to 'origin'
+```
+(falha nativa do git — sem remoto configurado; NAO bloqueio do guard)
+
+**Evento de hook no transcript (sessao `3f932985`):**
+```json
+{
+  "type": "hook_non_blocking_error",
+  "hookName": "PreToolUse:PowerShell",
+  "command": "trackfw guard git-branch; exit $LASTEXITCODE",
+  "exitCode": 1,
+  "stderr": "Failed with non-blocking status code: Error: unknown command \"guard\" for \"trackfw\"\nRun 'trackfw --help' for usage."
+}
+```
+
+**Interpretacao:** o matcher `Bash|PowerShell` funcionou — `hookName: "PreToolUse:PowerShell"` prova que o hook disparou para a ferramenta PowerShell. Porem o hook resolveu um binario sem o subcomando `guard` (exit 1, non-blocking), e o Claude Code prosseguiu.
+
+**Causa raiz da falha do hook:** confirmada por medicao direta (sessao `848be0d2`, settings.json diagnostico com `exit %ERRORLEVEL%`):
+
+```
+Error: unknown command "guard" for "trackfw"
+Run 'trackfw --help' for usage.
+/usr/bin/bash: line 1: exit: %ERRORLEVEL%: numeric argument required
+```
+
+O Claude Code executa o comando de hook via `/usr/bin/bash` (Git Bash), nao via PowerShell ou cmd.exe. O PATH do Git Bash tem `/c/Users/Lab/bin` prefixado (conforme ML-3A Caso 4b), onde reside `trackfw 8.0.0-rc2` sem o subcomando `guard`. O `validate` reporta o binario correto (`guard-ml3c\bin\trackfw.exe`, via Windows PATH), mas o subprocess do hook usa o PATH do Git Bash — divergencia nao detectada.
+
+**Binario resolvido pelo hook:** `C:\Users\Lab\bin\trackfw.exe`, versao `8.0.0-rc2` (confirmado via `ssh … 'C:\Users\Lab\bin\trackfw.exe --version'` → `trackfw 8.0.0-rc2`), sem subcomando `guard`. O erro "unknown command 'guard' for 'trackfw'" e cobra-standard para subcomando desconhecido na raiz do CLI — nao no nivel `guard`.
+
+**Contexto:** o `where trackfw` via ferramenta Bash (sessao `28509933`) retornou `C:\Users\Lab\bin\trackfw.exe` primeiro — confirmado como ferramenta Bash pelo campo `tool_use.name = "Bash"` no transcript. O PATH via ferramenta PowerShell (sessao `1ab52245`) tem `C:\Users\Lab\guard-ml3c\bin` na posicao 10 (sem `C:\Users\Lab\bin`) — correto. A divergencia existe porque Git Bash injeta `C:\Users\Lab\bin` no PATH, e Claude Code usa Git Bash para executar hooks.
+
+---
+
+### Rodada controle — git status (sessao 0a3ad770)
+
+**Comando:**
+```
+claude.cmd -p "Run exactly this shell command and report its output: git status --short"
+           --allowedTools Bash,PowerShell --permission-mode acceptEdits --output-format json
+```
+
+**Resultado:** ` M .claude/settings.json` — executou (o arquivo de settings estava modificado pelo diagnostico).
+
+**Eventos de hook:**
+```
+hookName: PreToolUse:Bash   → exitCode: 1 (non-blocking, mesmo binario antigo)
+hookName: PostToolUse:Bash  → exitCode: 1 (non-blocking)
+```
+
+O `git status --short` usou a ferramenta `Bash` (nao `PowerShell`). O hook disparou para ambas as ferramentas (via `Bash|PowerShell`), mas com exit 1 non-blocking em todos os casos pelo mesmo motivo: Git Bash resolve `~/bin/trackfw 8.0.0-rc2`.
+
+---
+
+### Veredito ML-5B
+
+| Questao | Veredito |
+|---------|---------|
+| Matcher `Bash|PowerShell` dispara para ferramenta PowerShell? | **SIM** (`hookName: PreToolUse:PowerShell`) |
+| guard bloqueia `git push` via CLI real? | **NAO** |
+| `git status` executou? | **SIM** (hook exit 1 non-blocking, nao por decisao do guard) |
+| Causa da falha: | Hook roda via `/usr/bin/bash` (Git Bash); `~/bin/trackfw 8.0.0-rc2` sem `guard` e resolvido primeiro |
+| REASON nova (`git push bruto bloqueado`) observada? | **NAO** — binario 8.0.0-rc2 nunca chegou ao guard |
+
+**Criterio de aceite do ML-5B nao atendido.** O matcher foi corrigido (ML-5A confirmado), mas o fail-open persiste por causa da resolucao de binario no subprocess bash do hook. Esta e uma segunda camada do mesmo mecanismo: o hook agora dispara para a ferramenta certa, mas o binario errado e resolvido na hora da execucao.
+
+**Achado novo (mesma causa — Regra Dura):** o Claude Code executa hooks via Git Bash, cujo PATH diverge do Windows PATH inspecionado pelo `validate`. O `validate rule hook_guard_binary_version` usa `exec.LookPath` (Windows PATH) e reporta "OK" enquanto o hook real usa o binario antigo de `~/bin`. Este sítio de falha deve entrar como ML adicional na REQ vigente.
+
+---
+
+### Rodada B — remocao do binario antigo de `~/bin` (2026-10-07)
+
+**Hipotese:** se `C:\Users\Lab\bin\trackfw.exe` (8.0.0-rc2, sem `guard`) for removido do PATH do Git Bash, o hook resolverá `C:\Users\Lab\guard-ml3c\bin\trackfw.exe` (9.2.0, com `guard`) e bloqueará o `git push`.
+
+**Preparacao:**
+
+Listagem inicial de `C:\Users\Lab\bin\` (Git Bash):
+```
+total 12524
+-rwxr-xr-x 1 Lab 197121 12824064 set 16 15:41 trackfw.exe
+```
+
+Renomeado para `trackfw.exe.old-8.0.0-rc2` via `cmd /c rename`:
+```
+cmd /c "rename C:\Users\Lab\bin\trackfw.exe trackfw.exe.old-8.0.0-rc2"
+```
+
+Verificacao pos-renomeacao — resolucao no Git Bash login:
+```
+bash -lc 'command -v trackfw; trackfw --version'
+→ /c/Users/Lab/guard-ml3c/bin/trackfw
+→ trackfw 9.2.0
+```
+
+O Git Bash login agora resolve `C:\Users\Lab\guard-ml3c\bin\trackfw.exe` (9.2.0, com `guard`). Copia adicional nao necessaria.
+
+---
+
+**Teste A1d repetido (sessao `5c803516-05f0-4879-a2b1-b72328e29ca1`):**
+
+Script executado (via `run5b.cmd`):
+```cmd
+cd C:\Users\Lab\guard-ml3c\proj
+claude.cmd -p "Run exactly this shell command and report its output: git push origin main"
+          --allowedTools Bash,PowerShell --permission-mode acceptEdits --output-format json
+```
+
+**Ferramenta usada pelo modelo:**
+```json
+{"type":"tool_use","name":"PowerShell","id":"toolu_01EddriffTguDv866qpw1p1q",
+ "input":{"command":"git push origin main","description":"Push main branch to origin"}}
+```
+
+**Evento de hook (tool_result, `is_error: true`, `toolDenialKind: "permission-rule"`):**
+```
+PreToolUse:PowerShell hook error: trackfw: git push bruto bloqueado. Use `trackfw push`
+(para empurrar commits ja criados), `trackfw ship` (para commit+push+PR em uma etapa) ou
+`trackfw release tag` (para publicar uma tag de release). Nada antes deste comando foi
+executado (comando composto e bloqueado por inteiro). Ver CLAUDE.md §1.
+```
+
+**permission_denials (JSON de saida):**
+```json
+[{"tool_name":"PowerShell","tool_use_id":"toolu_01EddriffTguDv866qpw1p1q",
+  "tool_input":{"command":"git push origin main","description":"Push main branch to origin"}}]
+```
+
+**git nao executou** — ausencia de "src refspec" no transcript. O `git push origin main` foi interceptado pelo guard antes de chegar ao git.
+
+---
+
+**Controle — `git status` (sessao `75642873-1c71-4674-8c79-0ad1c522c54c`):**
+
+```cmd
+claude.cmd -p "Run exactly this shell command and report its output: git status"
+          --allowedTools Bash,PowerShell --permission-mode acceptEdits --output-format json
+```
+
+**permission_denials:** `[]`
+
+**Saida reportada pelo modelo:**
+```
+On branch master
+Changes not staged for commit:
+        modified:   .claude/settings.json
+
+Untracked files:
+        "C\357\200\272UsersLabhook_trackfw_resolution.txt"
+
+no changes added to commit (use "git add" and/or "git commit -a")
+```
+
+`git status` executou sem bloqueio — comportamento correto.
+
+---
+
+**Desfazimento:**
+
+`trackfw.exe.old-8.0.0-rc2` renomeado de volta para `trackfw.exe`:
+```
+cmd /c "rename C:\Users\Lab\bin\trackfw.exe.old-8.0.0-rc2 trackfw.exe"
+```
+
+Listagem final de `C:\Users\Lab\bin\` — identica a inicial:
+```
+total 12524
+-rwxr-xr-x 1 Lab 197121 12824064 set 16 15:41 trackfw.exe
+```
+
+Nenhum arquivo do repositorio Mac foi alterado durante a rodada B.
+
+---
+
+### Veredito Rodada B
+
+| Questao | Veredito |
+|---------|---------|
+| `C:\Users\Lab\bin\trackfw.exe` renomeado para `.old-8.0.0-rc2`? | **SIM** |
+| Git Bash login resolve 9.2.0 apos renomeacao? | **SIM** (`/c/Users/Lab/guard-ml3c/bin/trackfw 9.2.0`) |
+| Matcher `Bash\|PowerShell` dispara para ferramenta PowerShell? | **SIM** (`PreToolUse:PowerShell hook error`) |
+| guard bloqueia `git push` via CLI real? | **SIM** — `toolDenialKind: "permission-rule"`, REASON "git push bruto bloqueado" |
+| git chegou a executar? | **NAO** — sem "src refspec" no transcript |
+| `git status` executou? | **SIM** — `permission_denials: []` |
+| `C:\Users\Lab\bin\` restaurado ao estado inicial? | **SIM** — listagem final identica |
+
+**Criterio de aceite do ML-5B: ATENDIDO na Rodada B.** Com o binario antigo removido do PATH do Git Bash, o hook resolveu o binario correto (9.2.0 com `guard`) e bloqueou `git push origin main` via `PreToolUse:PowerShell` com `permissionDecision: deny` e REASON "git push bruto bloqueado". A causa raiz identificada na Rodada A (binario antigo em `~/bin` prefixado no PATH do Git Bash) e confirmada como a unica barreira que restava.
