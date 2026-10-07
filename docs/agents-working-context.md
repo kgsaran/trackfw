@@ -2,6 +2,22 @@
 
 ---
 
+## 2026-10-07 — apolo-tf (fix/hooks-de-guard-executam-no-windows-trackfw-ausente — ML-6B corretivo global D2) — FIM
+
+**Branch:** `fix/hooks-de-guard-executam-no-windows-trackfw-ausente`
+**Resultado:** `validateGuardGlobalHookD2InlineWarnings(scriptMarker, subcmdMarker, subcmdName)` implementada em `validator_git_branch_guard.go`. Thin wrappers `validateCredentialGuardGlobalHookD2InlineWarnings` (subcmdName="credential --global") e `validateGitBranchGuardGlobalHookD2InlineWarnings` (subcmdName="git-branch"). Wiring em `validator.go` folded nos dois `applyRuleWarnOnly`/`applyRuleWarnOnlyTagged` existentes de D2 (plain + Tagged). 5 testes novos: D2 credential global → 1 aviso; D11 credential global → silêncio; D2 Kiro git-branch (cmd.exe) → 1 aviso (cobre trap ML-3B); HOME vazio → silêncio; wiring Plain+Tagged → warnings, não violations. Falsificação: `return nil,nil` antecipado → 3 testes FAIL, 2 pass corretamente; revertido → 5 PASS. `go build ./...` ok; `go vet ./internal/validator/` ok; `go test ./internal/validator/ -count=1` ok (11.5s).
+**Arquivos afetados:** `internal/validator/validator_git_branch_guard.go`, `internal/validator/validator.go`, `internal/validator/validator_git_branch_guard_test.go`
+
+---
+
+## 2026-10-07 — apolo-tf (fix/hooks-de-guard-executam-no-windows-trackfw-ausente — ML-6B) — FIM
+
+**Branch:** `fix/hooks-de-guard-executam-no-windows-trackfw-ausente`
+**Resultado:** D11 implementada end-to-end. Gerador emite linha fail-closed (PS/POSIX poliglota + cmd.exe `|| exit 2`). `marshalJSONNoEscape` evita HTML-escape de `>`. D2 aceita sem violation com aviso "linha antiga". Wiring em `validator.go` (plain + Tagged). 3 testes de validator atualizados, N testes de harness em `update_test.go` e `update_harness_test.go` atualizados. Novo `fail_closed_d11_behavior_test.go` (A=ausente→2, B=deny→2, C=allow→0). Configs vivas migradas. `docs/cli-parity.md` e `README.md` atualizados. `go test ./internal/generators/ ./internal/validator/ ./internal/commands/`: ok (3/3). `make quality`: exit 0. `trackfw validate`: 0 violations (LENIENT MODE).
+**Arquivos afetados:** `internal/generators/agentfiles.go`, `internal/generators/update.go`, `internal/generators/json_helpers.go` (novo), `internal/generators/fail_closed_d11_behavior_test.go` (novo), `internal/generators/update_test.go`, `internal/validator/validator_guard_binary_probe.go`, `internal/validator/validator_credential_guard.go`, `internal/validator/validator_git_branch_guard.go`, `internal/validator/validator_guard_binary_probe_test.go`, `internal/validator/validator_guard_binary_probe_windsurf_amazonq_test.go`, `internal/commands/update_harness_test.go`, `internal/validator/validator.go`, `.claude/settings.json`, `.codex/hooks.json`, `.gemini/settings.json`, `scripts/check-validate-rule-pins.sh`, `docs/cli-parity.md`, `README.md`
+
+---
+
 ## 2026-10-07 — apolo-tf (fix/hooks-de-guard-executam-no-windows-aviso-de-matcher — ML-5F) — FIM
 
 **Branch:** `fix/hooks-de-guard-executam-no-windows-aviso-de-matcher`
@@ -45585,3 +45601,44 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-07 — zeus-tf — #530 corrigida (PR #533); REQ-2026-09-05 fechada de novo; bump 9.3.1
 
 - ML-5F: aviso de matcher só em grupos de shell. REQ de volta a Done, roadmap em `done/`, label `req-aberta` retirada da #530. Bump 9.3.1 com `make parity-rest` EXIT=0 e `check-required-full` OK.
+
+## 2026-10-07 — ares-tf — INÍCIO: ML-6A — Medição de candidatos de linha de hook fail-closed sem trackfw no PATH
+
+- Branch: `fix/hooks-de-guard-executam-no-windows-trackfw-ausente`
+- Escopo: medição pura — proibido alterar código, configs, roadmap; proibido git ops
+- Objetivo: medir candidatos de linha de hook que falham fechados (exit 2) quando `trackfw` ausente do PATH; sem perder B=2 e C=0
+- Entrega: `docs/portabilidade/2026-10-07-linha-de-hook-fail-closed-sem-trackfw.md`
+
+## 2026-10-07 — ares-tf — FIM: ML-6A — Medição de candidatos fail-closed sem trackfw no PATH
+
+- Documento de medição criado: `docs/portabilidade/2026-10-07-linha-de-hook-fail-closed-sem-trackfw.md`
+- Escopo cumprido: somente o documento de portabilidade foi escrito (vault note criada em erro foi deletada; índice de vault restaurado ao estado commitado)
+- VM limpa: `C:\Users\Lab\ml6a` apagado + bat files de home apagados (incluindo v10.bat) após conclusão dos testes
+- Achado crítico 1: Claude Code executa hooks via `/usr/bin/bash` (Git Bash), não via PowerShell — confirmado ML-5B (`3f932985`); `hookName: PreToolUse:PowerShell` indica o trigger, não o executor
+- Achado crítico 2: **polyglot PS/POSIX existe** — `$LASTEXITCODE=2; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE` passa 2/2/0 em sh, bash, Git Bash e PS 5.1; **não funciona em cmd** (A=1, B=1, C=1 — `$LASTEXITCODE=2` é nome de comando em cmd, trackfw nunca invocado)
+- Achado crítico 3: **Cpoly requer escopo global PS** — em script blocks (`& { }`): `$LASTEXITCODE=2` cria variável local; `exit $LASTEXITCODE` lê local (sempre 2) → **deny-all** (C=2 em vez de 0). Medido: A=2, B=2, C=2.
+- Achado crítico 4: **C1 com sufixo em cmd é deny-all** quando binário presente — `;` não separa em cmd; trackfw recebe `git-branch;` como arg; cobra D7 → exit 2 para B e C (A=1 fail-open)
+- `||` em C3 é ParseError em PS 5.1 — **confirma** a afirmação da wave 0 de que C3 não funciona em PS; Cpoly **falsifica** a afirmação de que nenhuma string fail-closed existe para PS+POSIX
+- C3 permanece melhor para família cmd (Kiro, Amazon Q); Cpoly cobre bash+PS em escopo global
+- git status --short: `docs/portabilidade/2026-10-07-linha-de-hook-fail-closed-sem-trackfw.md` (new) + `docs/agents-working-context.md` (modified)
+
+## 2026-10-07 — ares-tf — INÍCIO: ML-6A Rodada 2 — Silenciar o polyglot Cpoly
+
+- Branch: `fix/hooks-de-guard-executam-no-windows-trackfw-ausente`
+- Escopo: medição pura — proibido alterar código, configs, roadmap; proibido git ops
+- Objetivo: achar variante de Cpoly com stderr vazio (ou mínimo) mantendo 2/2/0 em sh, bash, Git Bash não-login e PS 5.1
+- Entrega: nova seção "Rodada 2 — silenciar o polyglot (2026-10-07)" no mesmo doc de portabilidade
+
+## 2026-10-07 — ares-tf — FIM: ML-6A Rodada 2 — Silenciar o polyglot (atualizado com C_NULL)
+
+- Seção "Rodada 2 — silenciar o polyglot (2026-10-07)" adicionada e corrigida no doc de portabilidade
+- **Achado principal (revisado)**: C_NULL é estritamente melhor que Cpoly para bash B/C
+- **C_NULL**: `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
+  - bash: `${null-/dev/null}` = `/dev/null` (parameter expansion, null unset) → silencia seed B/C ✓
+  - PS: `${null-/dev/null}` resolve para null/empty → redirect silencioso para null-stream → atribuição executa ✓
+  - bash B/C: 0 ruído (vs 1 no Cpoly) ✓. PS: 1 ruído/cenário (igual ao Cpoly). A=2 em todos os shells ✓
+- **Correções ao rascunho anterior**: R1 PS B/C tinha 2 msgs de ruído (não 1 como truncado); EAP suprime a mensagem mas não restaura a atribuição
+- **Git Bash confirmado**: `${null-/dev/null}` = `/dev/null` medido via `cnull_test.sh` na VM; C_NULL A: exit=2, 1 ruído
+- R1, R_EAP, C2-colon: mesma conclusão que rascunho anterior
+- VM limpa: `C:\Users\Lab\ml6a2` removido (confirmado)
+- git status --short: docs/portabilidade/doc atualizado + docs/agents-working-context.md modificado

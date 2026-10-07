@@ -26,3 +26,6 @@ docs/roadmaps/.trackfw-branch-links.json
 
 # Residuo de PoC de agente — nunca versionado
 .agents/
+
+# sinal de atenção do credential guard (efêmero, gravado pelo hook)
+docs/roadmaps/.trackfw-credential-guard.json

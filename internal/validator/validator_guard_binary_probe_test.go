@@ -85,9 +85,9 @@ func stubProbeOK(t *testing.T) {
 // (a) Linha exata / sufixo extra / família errada / legado / --global
 // --------------------------------------------------------------------------
 
-// Reconciliação: afirma que a linha exata PS/POSIX para git-branch
-// ("trackfw guard git-branch; exit $LASTEXITCODE") em .claude/settings.json
-// não gera violation nem warning de nova forma.
+// Reconciliação: afirma que a linha exata PS/POSIX D11 para git-branch
+// ("$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE")
+// em .claude/settings.json não gera violation (ML-6B: D11 fail-closed).
 func TestGuardHookResolvable_ExatoPSPosix_Ok(t *testing.T) {
 	CurrentGOOS = "linux"
 	t.Cleanup(func() { CurrentGOOS = runtime.GOOS })
@@ -96,7 +96,7 @@ func TestGuardHookResolvable_ExatoPSPosix_Ok(t *testing.T) {
 	stubProbeOK(t)
 
 	writeFile(t, dir, ".claude/settings.json",
-		claudeSettingsWithSubcmd("trackfw guard git-branch; exit $LASTEXITCODE"))
+		claudeSettingsWithSubcmd(`$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`))
 
 	msgs, err := validateGitBranchGuardHookResolvable()
 	if err != nil {
@@ -208,8 +208,9 @@ func TestGuardHookResolvable_LegadoSh_Warning(t *testing.T) {
 	}
 }
 
-// Reconciliação: afirma que a variante global credential com "--global" na linha esperada
-// ("trackfw guard credential --global; exit $LASTEXITCODE") é aceita sem violation.
+// Reconciliação: afirma que a variante global credential D11 com "--global" na linha esperada
+// ("$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE")
+// é aceita sem violation (ML-6B: D11 fail-closed).
 func TestGuardGlobalHookResolvable_CredentialComGlobal_Ok(t *testing.T) {
 	CurrentGOOS = "linux"
 	t.Cleanup(func() { CurrentGOOS = runtime.GOOS })
@@ -218,13 +219,13 @@ func TestGuardGlobalHookResolvable_CredentialComGlobal_Ok(t *testing.T) {
 	stubProbeOK(t)
 	home := globalGuardHome(t)
 
-	// ~/.claude/settings.json com linha global correta.
+	// ~/.claude/settings.json com linha global correta (D11).
 	claudePath := filepath.Join(home, ".claude", "settings.json")
 	if err := os.MkdirAll(filepath.Dir(claudePath), 0755); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
 	if err := os.WriteFile(claudePath,
-		[]byte(claudeSettingsWithSubcmd("trackfw guard credential --global; exit $LASTEXITCODE")),
+		[]byte(claudeSettingsWithSubcmd(`$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`)),
 		0644); err != nil {
 		t.Fatalf("write: %v", err)
 	}

@@ -240,7 +240,7 @@ func TestUpdateHarnessCmd_CredentialGuardClaudeInstallsViaCLI(t *testing.T) {
 		t.Fatalf("~/.claude/settings.json was not written: %v", err)
 	}
 	// ML-2A: harness now emits inline command instead of abs .sh path.
-	wantCmd := "trackfw guard credential --global; exit $LASTEXITCODE"
+	wantCmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
 	if countJSONLeafMatches(t, data, wantCmd) == 0 {
 		t.Fatalf("settings.json does not contain inline global command %q (decoded JSON has no leaf equal to it):\n%s", wantCmd, data)
 	}
@@ -288,7 +288,7 @@ func TestUpdateHarnessCmd_CredentialGuardCodexInstallsViaCLI(t *testing.T) {
 		t.Fatalf("~/.codex/hooks.json was not written: %v", err)
 	}
 	// ML-2A: harness now emits inline command instead of abs .sh path.
-	wantCmd := "trackfw guard credential --global; exit $LASTEXITCODE"
+	wantCmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
 	if countJSONLeafMatches(t, data, wantCmd) == 0 {
 		t.Fatalf("hooks.json does not contain inline global command %q (decoded JSON has no leaf equal to it):\n%s", wantCmd, data)
 	}
@@ -336,7 +336,7 @@ func TestUpdateHarnessCmd_CredentialGuardGeminiInstallsViaCLI(t *testing.T) {
 		t.Fatalf("~/.gemini/settings.json was not written: %v", err)
 	}
 	// ML-2A: harness now emits inline command instead of abs .sh path.
-	wantCmd := "trackfw guard credential --global; exit $LASTEXITCODE"
+	wantCmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
 	if countJSONLeafMatches(t, data, wantCmd) == 0 {
 		t.Fatalf("settings.json does not contain inline global command %q (decoded JSON has no leaf equal to it):\n%s", wantCmd, data)
 	}
@@ -384,7 +384,7 @@ func TestUpdateHarnessCmd_CredentialGuardCursorInstallsViaCLI(t *testing.T) {
 		t.Fatalf("~/.cursor/hooks.json was not written: %v", err)
 	}
 	// ML-2A: harness now emits inline command instead of abs .sh path.
-	wantCmd := "trackfw guard credential --global; exit $LASTEXITCODE"
+	wantCmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
 	if countJSONLeafMatches(t, data, wantCmd) == 0 {
 		t.Fatalf("hooks.json does not contain inline global command %q (decoded JSON has no leaf equal to it):\n%s", wantCmd, data)
 	}
@@ -432,7 +432,7 @@ func TestUpdateHarnessCmd_CredentialGuardCopilotInstallsViaCLI(t *testing.T) {
 		t.Fatalf("~/.copilot/settings.json was not written: %v", err)
 	}
 	// ML-2A: harness now emits inline command instead of abs .sh path.
-	wantCmd := "trackfw guard credential --global; exit $LASTEXITCODE"
+	wantCmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
 	if countJSONLeafMatches(t, data, wantCmd) == 0 {
 		t.Fatalf("settings.json does not contain inline global command %q (decoded JSON has no leaf equal to it):\n%s", wantCmd, data)
 	}
@@ -481,8 +481,8 @@ func TestUpdateHarnessCmd_CredentialGuardKiroInstallsViaCLI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("~/.kiro/hooks/trackfw-credential-guard.json was not written: %v", err)
 	}
-	// ML-2A: Kiro/Amazon Q are CmdExe-family — no "exit $LASTEXITCODE" suffix.
-	wantCmd := "trackfw guard credential --global"
+	// ML-6B: Kiro/Amazon Q are CmdExe-family — D11 cmd.exe form uses "|| exit 2".
+	wantCmd := "trackfw guard credential --global || exit 2"
 	if countJSONLeafMatches(t, data, wantCmd) == 0 {
 		t.Fatalf("trackfw-credential-guard.json does not contain inline global command %q (decoded JSON has no leaf equal to it):\n%s", wantCmd, data)
 	}
@@ -551,12 +551,12 @@ func TestUpdateHarnessCmd_GitBranchGuardInstallsViaCLI(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%s was not written: %v", tc.relPath, err)
 			}
-			// ML-2A: harness now emits inline command. Kiro is CmdExe-family (no exit suffix).
+			// ML-6B: harness emits D11 inline command. Kiro is CmdExe-family ("|| exit 2").
 			var wantCmd string
 			if tc.tool == "kiro" {
-				wantCmd = "trackfw guard git-branch"
+				wantCmd = "trackfw guard git-branch || exit 2"
 			} else {
-				wantCmd = "trackfw guard git-branch; exit $LASTEXITCODE"
+				wantCmd = `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
 			}
 			if countJSONLeafMatches(t, data, wantCmd) == 0 {
 				t.Fatalf("%s does not contain inline global command %q (decoded JSON has no leaf equal to it):\n%s", tc.relPath, wantCmd, data)
@@ -567,7 +567,7 @@ func TestUpdateHarnessCmd_GitBranchGuardInstallsViaCLI(t *testing.T) {
 			// different name and is never even touched here) never got its
 			// own command injected by the git-branch-guard target.
 			if tc.tool != "kiro" {
-				credCmd := "trackfw guard credential --global; exit $LASTEXITCODE"
+				credCmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
 				if countJSONLeafMatches(t, data, credCmd) != 0 {
 					t.Fatalf("%s unexpectedly contains credential-guard command — git-branch-guard target should not install credential-guard wiring", tc.relPath)
 				}
@@ -624,9 +624,9 @@ func TestUpdateHarnessCmd_GitBranchGuardAndCredentialGuardCoexistIdempotently(t 
 	if err != nil {
 		t.Fatalf("~/.claude/settings.json not written: %v", err)
 	}
-	// ML-2A: harness now emits inline commands instead of abs .sh paths.
-	credCmd := "trackfw guard credential --global; exit $LASTEXITCODE"
-	branchCmd := "trackfw guard git-branch; exit $LASTEXITCODE"
+	// ML-6B: harness emits D11 inline commands (fail-closed PS/POSIX form).
+	credCmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
+	branchCmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
 	credCount := countJSONLeafMatches(t, claudeData, credCmd)
 	branchCount := countJSONLeafMatches(t, claudeData, branchCmd)
 	if credCount == 0 || branchCount == 0 {

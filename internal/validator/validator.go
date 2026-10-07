@@ -1000,6 +1000,25 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 		return nil, nil, e
 	}
 	applyRuleWarnOnly("credential_guard_hook_resolvable", append(claudeMatcherWarn, claudeMatcherGlobalWarn...), &warnings)
+	// ML-6B: warn when project-scope OR global-scope hook still uses D2 revised form (fail-open without trackfw in PATH).
+	credentialGuardD2Warn, e := validateCredentialGuardHookD2InlineWarnings()
+	if e != nil {
+		return nil, nil, e
+	}
+	credentialGuardGlobalD2Warn, e := validateCredentialGuardGlobalHookD2InlineWarnings()
+	if e != nil {
+		return nil, nil, e
+	}
+	gitBranchGuardD2Warn, e := validateGitBranchGuardHookD2InlineWarnings()
+	if e != nil {
+		return nil, nil, e
+	}
+	gitBranchGuardGlobalD2Warn, e := validateGitBranchGuardGlobalHookD2InlineWarnings()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleWarnOnly("credential_guard_hook_resolvable", append(credentialGuardD2Warn, credentialGuardGlobalD2Warn...), &warnings)
+	applyRuleWarnOnly("git_branch_guard_hook_resolvable", append(gitBranchGuardD2Warn, gitBranchGuardGlobalD2Warn...), &warnings)
 
 	// ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A:
 	// detecta adulteração do credential-guard, âncora por alvo (ADR-2026-08-12 Emenda 1).
@@ -1424,6 +1443,25 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 		return nil, nil, e
 	}
 	applyRuleWarnOnlyTagged("credential_guard_hook_resolvable", append(claudeMatcherWarnT, claudeMatcherGlobalWarnT...), &warnings)
+	// ML-6B: warn when project-scope OR global-scope hook still uses D2 revised form (Tagged path).
+	credentialGuardD2WarnT, e := validateCredentialGuardHookD2InlineWarnings()
+	if e != nil {
+		return nil, nil, e
+	}
+	credentialGuardGlobalD2WarnT, e := validateCredentialGuardGlobalHookD2InlineWarnings()
+	if e != nil {
+		return nil, nil, e
+	}
+	gitBranchGuardD2WarnT, e := validateGitBranchGuardHookD2InlineWarnings()
+	if e != nil {
+		return nil, nil, e
+	}
+	gitBranchGuardGlobalD2WarnT, e := validateGitBranchGuardGlobalHookD2InlineWarnings()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleWarnOnlyTagged("credential_guard_hook_resolvable", append(credentialGuardD2WarnT, credentialGuardGlobalD2WarnT...), &warnings)
+	applyRuleWarnOnlyTagged("git_branch_guard_hook_resolvable", append(gitBranchGuardD2WarnT, gitBranchGuardGlobalD2WarnT...), &warnings)
 
 	// ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A:
 	// detecta adulteração do credential-guard, âncora por alvo (ADR-2026-08-12 Emenda 1).

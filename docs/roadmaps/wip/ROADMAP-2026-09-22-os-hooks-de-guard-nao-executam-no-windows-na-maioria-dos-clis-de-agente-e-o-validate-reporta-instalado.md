@@ -1,5 +1,5 @@
 ---
-status: done
+status: wip
 date: 2026-09-22
 req: "docs/req/REQ-2026-09-05-os-hooks-de-guard-nao-executam-no-windows-na-maioria-dos-clis-de-agente-e-o-validate-reporta-instalado.md"
 squad: "hades-tf, ares-tf, prometeu-tf, apolo-tf, artemis-tf, hefesto-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, ares-tf, prometeu-tf, apolo-tf, artemis-tf, hefesto-tf"
 
 # Roadmap: os hooks de guard nao executam no Windows na maioria dos CLIs de agente e o validate reporta instalado
 
-> Created: 2026-09-22 | Reescrito: 2026-10-04 | Status: done
+> Created: 2026-09-22 | Reescrito: 2026-10-04 | Status: wip
 
 ## Context
 REQ: docs/req/REQ-2026-09-05-os-hooks-de-guard-nao-executam-no-windows-na-maioria-dos-clis-de-agente-e-o-validate-reporta-instalado.md
@@ -487,4 +487,37 @@ zera. Os testes do ML-5A usaram fixture só com os grupos de shell — falha de 
       `HOME` isolado, afirma a presença dos grupos `Read` e `Write|Edit` com guard (anti-vacuidade) e conta 0 avisos; com o
       grupo de shell em `Bash`, 2 (um por fase). Critério antigo → o teste reprova com os 2 avisos do relator. E2E:
       `init` + `validate` sem linha "PowerShell". `make quality` exit 0 (agente); testes reconferidos pelo arquiteto.
+
+## Wave 6 — A linha de hook falha fechada quando o `trackfw` falta (issue #535)
+> Reaberta em 2026-10-07. É o risco (d) do threat model da Wave 0 ("`trackfw` ausente do PATH", severidade alta),
+> aceito com a mitigação errada: o `validate` sonda o PATH do terminal, e o hook roda no PATH de quem o executa
+> (app GUI no macOS recebe `/usr/bin:/bin:/usr/sbin:/sbin`, medido na Wave 0). Com o binário ausente a linha sai
+> 127 → erro não bloqueante → guard desligado sem aviso. A Wave 0 registrou que uma string única fail-closed em
+> todo shell é impossível no PS 5.1 (`||` não existe) — por isso a Wave 6 mede antes de decidir.
+
+### ML-6A — Medição: candidatos de linha que falham fechada sem o binário
+**Status:** ✅ Concluído
+**Squad:** ares-tf
+**Files affected:** `docs/portabilidade/2026-10-07-linha-de-hook-fail-closed-sem-trackfw.md` (novo)
+**Acceptance criteria:**
+- [x] Matriz candidato × shell (sh, bash macOS, Git Bash, PowerShell 5.1, `cmd.exe`) × cenário (binário ausente; guard nega; guard libera), com exit code literal
+- [x] Veredito: existe linha única para a família PS/POSIX que dá 2/2/0? Se não, o shell que cada CLI usa para rodar o hook (medido ou com fonte) e a linha por CLI que dá 2/2/0
+- [x] Família `cmd.exe`: veredito para `trackfw guard <nome> || exit /b 2`
+      Resultado: polyglot `$LASTEXITCODE=2; trackfw guard <n>; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE` dá 2/2/0 em sh,
+      bash, Git Bash e PS 5.1 (`-Command`, escopo global) — falsifica a "impossibilidade" da Wave 0. Custos: ruído no stderr
+      em toda execução (`=2: command not found` no sh; CommandNotFound no PS) e, dentro de bloco `& { }`/`.ps1`, nega tudo.
+      `cmd`: `trackfw guard <n> || exit 2` dá 2/2/0. Decisão (D11) pendente com o KG.
+
+### ML-6B — Implementação da D11 (ADR-2026-10-04, adendo de 2026-10-07)
+**Status:** ✅ Concluído
+**Squad:** apolo-tf
+**Files affected:** `internal/generators/` (constantes da linha, migração do `update`), `internal/validator/` (linha esperada por família), configs deste repositório, `scripts/check-*.sh` que afirmem a linha, `docs/cli-parity.md`, `README.md`
+**Acceptance criteria:**
+- [x] Gerador emite as linhas da D11 (sítio único); `update` migra as duas formas anteriores (D2 revista e `.sh`), idempotente
+- [x] `validate` aceita exatamente as linhas da D11 e acusa as anteriores (aviso para migrar) — teste de concordância gerador↔validator verde
+- [x] Teste de comportamento: a linha emitida, rodada por `sh -c` e `bash -c` com PATH sem `trackfw`, sai 2; com o binário, 2 (nega) e 0 (libera)
+- [x] `make quality` verde sem `~/.local/bin` no PATH
+      Auditoria (2026-10-07): linhas vivas dos 3 configs deste repo medidas pelo arquiteto — ausente 2, nega 2, libera 0,
+      stderr vazio; `TestD11FailClosed_*` (sh/bash); aviso de linha antiga também nas configs globais (corretivo);
+      `make quality` pelo arquiteto: exit 0, 347 OK, 0 GUARDA. O "exit 0" do primeiro relatório do ML-6B era falso (s67).
 

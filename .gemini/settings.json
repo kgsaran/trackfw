@@ -13,7 +13,7 @@
       {
         "hooks": [
           {
-            "command": "trackfw guard credential; exit $LASTEXITCODE",
+            "command": "$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE",
             "type": "command"
           }
         ],
@@ -22,7 +22,7 @@
       {
         "hooks": [
           {
-            "command": "trackfw guard credential; exit $LASTEXITCODE",
+            "command": "$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE",
             "type": "command"
           }
         ],
@@ -31,7 +31,7 @@
       {
         "hooks": [
           {
-            "command": "trackfw guard credential; exit $LASTEXITCODE",
+            "command": "$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE",
             "type": "command"
           }
         ],
@@ -42,11 +42,11 @@
       {
         "hooks": [
           {
-            "command": "trackfw guard git-branch; exit $LASTEXITCODE",
+            "command": "$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE",
             "type": "command"
           },
           {
-            "command": "trackfw guard credential; exit $LASTEXITCODE",
+            "command": "$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE",
             "type": "command"
           }
         ],
@@ -55,7 +55,7 @@
       {
         "hooks": [
           {
-            "command": "trackfw guard credential; exit $LASTEXITCODE",
+            "command": "$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE",
             "type": "command"
           }
         ],
@@ -64,7 +64,7 @@
       {
         "hooks": [
           {
-            "command": "trackfw guard credential; exit $LASTEXITCODE",
+            "command": "$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE",
             "type": "command"
           }
         ],
