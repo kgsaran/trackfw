@@ -2,6 +2,22 @@
 
 ---
 
+## 2026-10-07 — prometeu-tf (docs/readme-windows-apos-9-3-0) — FIM
+
+**Branch:** `docs/readme-windows-apos-9-3-0`
+**Resultado:** README.md atualizado — 5 pontos corrigidos: aviso do topo, nota npm, cabeçalho da seção Windows, cabeçalho "Guard hooks on Windows", caveat `~/bin`. Todas as ocorrências de "from the next release", "not yet being worked on" e "do not run on" removidas; substituídas por referências a v9.3.0. `grep` confirma zero remanescentes.
+**Arquivos afetados:** `README.md`
+
+---
+
+## 2026-10-07 — prometeu-tf (docs/readme-windows-apos-9-3-0) — INÍCIO
+
+**Branch:** `docs/readme-windows-apos-9-3-0`
+**Tarefa:** Atualizar ressalvas de Windows do README.md pós-v9.3.0: substituir "from the next release" / "not yet being worked on" / "do not run on Windows" por afirmações verdadeiras com referência à v9.3.0.
+**Arquivos afetados:** `README.md`
+
+---
+
 ## 2026-10-07 — apolo-tf (docs/hooks-de-guard-executam-no-windows-prova-por-cli — corretivo parity-falsify) — FIM
 
 **Branch:** `docs/hooks-de-guard-executam-no-windows-prova-por-cli`
