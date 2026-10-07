@@ -2,6 +2,22 @@
 
 ---
 
+## 2026-10-07 — apolo-tf (fix/hooks-de-guard-executam-no-windows-aviso-de-matcher — ML-5F) — FIM
+
+**Branch:** `fix/hooks-de-guard-executam-no-windows-aviso-de-matcher`
+**Resultado:** Condição corrigida em `validateClaudeGuardHookMatcherWarningsInFile`: `!strings.Contains(matcher, "PowerShell")` → `strings.Contains(matcher, "Bash") && !strings.Contains(matcher, "PowerShell")`. Test novo `TestClaudeGuardHookMatcherWarning_CanonicalOutputZeroWarnings` com prova de não-vacuidade (Read/Write|Edit com guard presentes) + falsificação confirmada (old criterion → FAIL). `go test ./internal/validator/ ./internal/generators/` ok. `make quality` exit 0 (347 OK, 0 FAIL, 8 chunks). E2e: `tfw5f init` + `tfw5f validate` → zero linhas "PowerShell".
+**Arquivos afetados:** `internal/validator/validator_credential_guard.go`, `internal/validator/export_test.go`, `internal/validator/validator_guard_hook_concordance_external_test.go`
+
+---
+
+## 2026-10-07 — apolo-tf (fix/hooks-de-guard-executam-no-windows-aviso-de-matcher — ML-5F) — INÍCIO
+
+**Branch:** `fix/hooks-de-guard-executam-no-windows-aviso-de-matcher`
+**Tarefa:** ML-5F — regra de aviso de matcher só avisa grupos que endereçam shell (`Bash` no matcher). Grupos `Read` e `Write|Edit` não disparam mais falso-positivo (issue #530).
+**Arquivos afetados:** `internal/validator/validator_credential_guard.go`, `internal/validator/export_test.go`, `internal/validator/validator_guard_hook_concordance_external_test.go`
+
+---
+
 ## 2026-10-07 — prometeu-tf (docs/readme-windows-apos-9-3-0) — FIM
 
 **Branch:** `docs/readme-windows-apos-9-3-0`

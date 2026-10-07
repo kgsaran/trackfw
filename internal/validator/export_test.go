@@ -61,6 +61,15 @@ func ValidateCredentialGuardHookResolvableForTest() ([]string, error) {
 	return validateCredentialGuardHookResolvable()
 }
 
+// ValidateClaudeGuardHookMatcherWarningsForTest exposes validateClaudeGuardHookMatcherWarnings
+// to the external test package (package validator_test) — standard "export_test.go" pattern.
+// The caller must have chdired into a directory that contains .claude/settings.json before
+// calling; ChdirForTest handles this in concordance tests.
+// Used by ML-5F concordance test (validator_guard_hook_concordance_external_test.go).
+func ValidateClaudeGuardHookMatcherWarningsForTest() ([]string, error) {
+	return validateClaudeGuardHookMatcherWarnings()
+}
+
 // StubProbeOKForTest replaces the binary-probe seam vars so any call to guardBinaryProbeOnce
 // succeeds (binary found, guard subcommand present, no Git Bash divergence). Restores the
 // originals via t.Cleanup. Used by the concordance test so it does not depend on a real
