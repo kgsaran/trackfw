@@ -2,6 +2,22 @@
 
 ---
 
+## 2026-10-07 — prometeu-tf (docs/hooks-de-guard-executam-no-windows-prova-por-cli — ML-5E) — FIM
+
+**Branch:** `docs/hooks-de-guard-executam-no-windows-prova-por-cli`
+**Resultado:** ML-5E concluído. README.md atualizado: tabela end-to-end adicionada (Claude Code ✅, Codex ✅, outros sem agente real ou sem conta), explicação 3 frases do matcher `Bash|PowerShell`, caveat `~/bin` com "from the next release". Seção "Guard hooks on Windows" preservada; estilo e inglês mantidos.
+**Arquivos afetados:** `README.md`, `docs/agents-working-context.md`
+
+---
+
+## 2026-10-07 — prometeu-tf (docs/hooks-de-guard-executam-no-windows-prova-por-cli — ML-5E) — INÍCIO
+
+**Branch:** `docs/hooks-de-guard-executam-no-windows-prova-por-cli`
+**Tarefa:** ML-5E — atualizar README.md com provas end-to-end no Windows (Claude Code + Codex), matcher `Bash|PowerShell`, caveat `~/bin`.
+**Arquivos afetados:** `README.md`, `docs/agents-working-context.md`
+
+---
+
 ## 2026-10-07 — ares-tf (docs/hooks-de-guard-executam-no-windows-prova-por-cli — ML-5B rodada B) — FIM
 
 **Branch:** `docs/hooks-de-guard-executam-no-windows-prova-por-cli`

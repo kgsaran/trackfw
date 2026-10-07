@@ -10,6 +10,7 @@ package validator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -73,6 +74,74 @@ var guardRunProbe = func(bin string) error {
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	return cmd.Run()
+}
+
+// guardFindGitBashExe finds the bash.exe from Git for Windows.
+// Resolution order:
+//  1. exec.LookPath("bash") — used if the resolved path contains "/git/" (case-insensitive,
+//     forward-slash normalized), indicating it is from a Git for Windows installation.
+//  2. Known installation paths via %ProgramFiles%, %ProgramFiles(x86)%, %LOCALAPPDATA%.
+//
+// Returns "" when Git Bash is not found.
+// Only called when CurrentGOOS == "windows". Replaced in tests.
+var guardFindGitBashExe = func() string {
+	if p, err := exec.LookPath("bash"); err == nil {
+		if strings.Contains(strings.ToLower(filepath.ToSlash(p)), "/git/") {
+			return p
+		}
+	}
+	for _, spec := range []struct{ envKey, rel string }{
+		{"ProgramFiles", filepath.Join("Git", "bin", "bash.exe")},
+		{"ProgramFiles(x86)", filepath.Join("Git", "bin", "bash.exe")},
+		{"LOCALAPPDATA", filepath.Join("Programs", "Git", "bin", "bash.exe")},
+	} {
+		if base := os.Getenv(spec.envKey); base != "" {
+			candidate := filepath.Join(base, spec.rel)
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate
+			}
+		}
+	}
+	return ""
+}
+
+// guardRunBashLoginProbe runs `<bashExe> -lc 'command -v trackfw'` with a 5 s timeout
+// and no inherited stdin or stderr. Returns the trimmed path resolved by the Git Bash
+// login shell, plus a boolean indicating whether bash actually ran:
+//
+//   - ("path", true)  — bash ran (exit 0), path is the last non-empty output line.
+//   - ("", true)      — bash ran (exit non-zero), trackfw was not found in login PATH.
+//   - ("", false)     — bash could not start, or the context deadline expired.
+//
+// Login profile noise is handled by taking the last non-empty line of stdout.
+// WaitDelay ensures the 5 s context deadline applies even if a grandchild holds the pipe open.
+// Only called when CurrentGOOS == "windows". Replaced in tests.
+var guardRunBashLoginProbe = func(bashExe string) (resolved string, ran bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	// #nosec G204 — bashExe comes from guardFindGitBashExe, not user input
+	cmd := exec.CommandContext(ctx, bashExe, "-lc", "command -v trackfw") //nolint:gosec
+	cmd.Stdin = nil
+	cmd.Stderr = nil
+	cmd.WaitDelay = 5 * time.Second
+	out, err := cmd.Output()
+	if err != nil {
+		var exitErr *exec.ExitError
+		if !errors.As(err, &exitErr) {
+			// Bash couldn't start or timed out — skip entirely.
+			return "", false
+		}
+		// Bash ran but command -v exited non-zero: trackfw not found.
+		return "", true
+	}
+	// Take the last non-empty line to skip any profile noise printed to stdout.
+	lines := strings.Split(strings.TrimRight(string(out), "\r\n"), "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if line := strings.TrimSpace(lines[i]); line != "" {
+			return line, true
+		}
+	}
+	return "", true
 }
 
 // guardFindTrackfwForPS walks PATH the way PowerShell resolves a command: for each directory
@@ -152,9 +221,15 @@ func guardBinaryProbeOnce(hasPSPosixEntry bool) []string {
 		)}
 	}
 
-	// Windows-only PS1 check — only relevant when a PS/POSIX-family entry exists.
+	// Windows-only checks — only relevant when a PS/POSIX-family entry exists.
 	if CurrentGOOS == "windows" && hasPSPosixEntry {
 		if msgs := guardCheckPS1RestrictedPolicy(); len(msgs) > 0 {
+			return msgs
+		}
+		// ML-5D: also probe the binary that the Git Bash login shell resolves, because
+		// Claude Code runs hook commands via Git Bash whose login profile can prepend ~/bin
+		// to PATH, placing an old (no-guard) binary ahead of the one exec.LookPath sees.
+		if msgs := guardGitBashBinaryProbe(bin); len(msgs) > 0 {
 			return msgs
 		}
 	}
@@ -176,6 +251,110 @@ func guardCheckPS1RestrictedPolicy() []string {
 				"the hook will fail open (exit 0 instead of exit 2); run: " +
 				"Set-ExecutionPolicy -Scope CurrentUser RemoteSigned",
 		}
+	}
+	return nil
+}
+
+// --------------------------------------------------------------------------
+// guardPosixToWindowsPath, guardStripExe — helpers
+// --------------------------------------------------------------------------
+
+// guardPosixToWindowsPath converts a Git Bash POSIX-style path like /c/Users/Lab/bin/trackfw
+// to a Windows path C:\Users\Lab\bin\trackfw. Returns the input unchanged if it does not
+// match the /X/... pattern (single drive letter followed by /), so paths like /usr/bin/...
+// or /mingw64/... are passed through as-is (and callers should then skip probing them).
+func guardPosixToWindowsPath(posix string) string {
+	// Must match /X/... where X is a single ASCII drive letter.
+	if len(posix) < 3 || posix[0] != '/' || posix[2] != '/' {
+		return posix
+	}
+	drive := posix[1]
+	if !((drive >= 'a' && drive <= 'z') || (drive >= 'A' && drive <= 'Z')) {
+		return posix
+	}
+	rest := strings.ReplaceAll(posix[3:], "/", "\\")
+	return strings.ToUpper(string(drive)) + ":\\" + rest
+}
+
+// guardStripExe strips a trailing ".exe" (case-insensitive) from path.
+// Used to normalise Git Bash output (/c/tools/trackfw → C:\tools\trackfw) against
+// exec.LookPath output (C:\tools\trackfw.exe) before comparing.
+func guardStripExe(path string) string {
+	if strings.HasSuffix(strings.ToLower(path), ".exe") {
+		return path[:len(path)-4]
+	}
+	return path
+}
+
+// --------------------------------------------------------------------------
+// guardGitBashBinaryProbe — ML-5D (REQ-2026-09-05)
+// --------------------------------------------------------------------------
+
+// guardGitBashBinaryProbe checks whether the trackfw binary resolved by the Git Bash
+// login shell diverges from windowsResolvedBin (the binary already probed via exec.LookPath)
+// and, if so, whether that login-resolved binary has the guard subcommand.
+//
+// Background (ML-5B, 2026-10-07): Claude Code runs hook commands via Git Bash
+// (/usr/bin/bash). The Git Bash login profile prepends ~/bin to PATH, which can place an
+// old trackfw binary (without guard) ahead of the one exec.LookPath sees. The main probe
+// in guardBinaryProbeOnce reports "OK" while the hook fails open.
+//
+// Decision rules:
+//   - Git Bash not found → skip (nil).
+//   - bash ran, trackfw not found in login PATH → violation (hook exits 127, fail-open).
+//   - bash ran, path not convertible to a Windows path → skip (MSYS /usr/ or /mingw64/).
+//   - same binary as windowsResolvedBin (EqualFold, .exe stripped) → skip (already probed).
+//   - different binary, guard --help fails → violation naming the Git Bash-resolved path.
+//   - different binary, guard --help passes → nil (no problem).
+//
+// Only called when CurrentGOOS == "windows" and hasPSPosixEntry is true.
+func guardGitBashBinaryProbe(windowsResolvedBin string) []string {
+	bashExe := guardFindGitBashExe()
+	if bashExe == "" {
+		return nil
+	}
+
+	loginPath, ran := guardRunBashLoginProbe(bashExe)
+	if !ran {
+		// Bash could not start or timed out — skip; don't emit a false positive.
+		return nil
+	}
+
+	if loginPath == "" {
+		// Bash ran but trackfw was not found in the Git Bash login PATH.
+		return []string{
+			"the Git Bash login shell (used by Claude Code on Windows to run hooks) " +
+				"cannot find trackfw in its PATH — the hook will fail open (exit 127); " +
+				"install trackfw on a path that the Git Bash login profile resolves " +
+				"(the login profile prepends ~/bin to PATH — add a current trackfw there or " +
+				"ensure the installed binary is on a PATH entry that login inherits)",
+		}
+	}
+
+	// Normalise the POSIX-style Git Bash path to a Windows path.
+	winPath := guardPosixToWindowsPath(loginPath)
+
+	// If the path could not be converted (e.g. /usr/bin/trackfw, /mingw64/bin/trackfw),
+	// we cannot reliably probe it as a Windows executable — skip.
+	if !strings.Contains(winPath, ":\\") {
+		return nil
+	}
+
+	// If it's the same binary (ignoring case and the optional .exe extension), it was already
+	// probed by guardBinaryProbeOnce — no additional check needed.
+	if strings.EqualFold(guardStripExe(winPath), guardStripExe(windowsResolvedBin)) {
+		return nil
+	}
+
+	// Different binary — probe it for the guard subcommand.
+	if probeErr := guardRunProbe(winPath); probeErr != nil {
+		return []string{fmt.Sprintf(
+			"the Git Bash login shell (used by Claude Code on Windows to run hooks) resolves %s, "+
+				"which does not have the guard subcommand — the hook will fail open; "+
+				"remove or update that binary "+
+				"(the Git Bash login profile prepends ~/bin to PATH)",
+			winPath,
+		)}
 	}
 	return nil
 }

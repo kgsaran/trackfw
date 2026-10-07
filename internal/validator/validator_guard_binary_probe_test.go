@@ -62,17 +62,22 @@ func kiroAttentionWithSubcmd(command string) string {
 `
 }
 
-// stubProbeOK substitui guardLookupBinary e guardRunProbe por stubs que retornam sucesso
-// e restaura os originais ao fim do teste.
+// stubProbeOK substitui guardLookupBinary, guardRunProbe e guardFindGitBashExe por stubs que
+// retornam sucesso (ou "sem Git Bash") e restaura os originais ao fim do teste.
+// guardFindGitBashExe é stubado para retornar "" para garantir que o probe do Git Bash não
+// execute em runners Windows reais onde um Git Bash pode estar instalado.
 func stubProbeOK(t *testing.T) {
 	t.Helper()
 	origLookup := guardLookupBinary
 	origRun := guardRunProbe
+	origFindGitBash := guardFindGitBashExe
 	guardLookupBinary = func(name string) (string, error) { return "/usr/local/bin/trackfw", nil }
 	guardRunProbe = func(bin string) error { return nil }
+	guardFindGitBashExe = func() string { return "" }
 	t.Cleanup(func() {
 		guardLookupBinary = origLookup
 		guardRunProbe = origRun
+		guardFindGitBashExe = origFindGitBash
 	})
 }
 
@@ -381,15 +386,18 @@ func TestGuardBinaryProbeOnce_WindowsPS1RemoteSigned_Ok(t *testing.T) {
 	origRun := guardRunProbe
 	origFind := guardFindTrackfwForPS
 	origPolicy := guardGetPSPolicy
+	origFindGitBash := guardFindGitBashExe
 	guardLookupBinary = func(name string) (string, error) { return `C:\tools\trackfw.exe`, nil }
 	guardRunProbe = func(bin string) error { return nil }
 	guardFindTrackfwForPS = func() string { return `C:\npm\trackfw.ps1` }
 	guardGetPSPolicy = func() string { return "RemoteSigned" }
+	guardFindGitBashExe = func() string { return "" } // isolate from real Git Bash on Windows CI
 	t.Cleanup(func() {
 		guardLookupBinary = origLookup
 		guardRunProbe = origRun
 		guardFindTrackfwForPS = origFind
 		guardGetPSPolicy = origPolicy
+		guardFindGitBashExe = origFindGitBash
 	})
 
 	msgs := guardBinaryProbeOnce(true /* hasPSPosixEntry */)
@@ -439,15 +447,18 @@ func TestGuardBinaryProbeOnce_WindowsExeRestrictedOk(t *testing.T) {
 	origRun := guardRunProbe
 	origFind := guardFindTrackfwForPS
 	origPolicy := guardGetPSPolicy
+	origFindGitBash := guardFindGitBashExe
 	guardLookupBinary = func(name string) (string, error) { return `C:\tools\trackfw.exe`, nil }
 	guardRunProbe = func(bin string) error { return nil }
 	guardFindTrackfwForPS = func() string { return `C:\tools\trackfw.exe` } // .exe, não .ps1
 	guardGetPSPolicy = func() string { return "Restricted" }
+	guardFindGitBashExe = func() string { return "" } // isolate from real Git Bash on Windows CI
 	t.Cleanup(func() {
 		guardLookupBinary = origLookup
 		guardRunProbe = origRun
 		guardFindTrackfwForPS = origFind
 		guardGetPSPolicy = origPolicy
+		guardFindGitBashExe = origFindGitBash
 	})
 
 	msgs := guardBinaryProbeOnce(true /* hasPSPosixEntry */)
