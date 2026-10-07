@@ -2,6 +2,14 @@
 
 ---
 
+## 2026-10-07 — apolo-tf (fix/hooks-de-guard-executam-no-windows-trackfw-ausente — ML-6B) — FIM
+
+**Branch:** `fix/hooks-de-guard-executam-no-windows-trackfw-ausente`
+**Resultado:** D11 implementada end-to-end. Gerador emite linha fail-closed (PS/POSIX poliglota + cmd.exe `|| exit 2`). `marshalJSONNoEscape` evita HTML-escape de `>`. D2 aceita sem violation com aviso "linha antiga". Wiring em `validator.go` (plain + Tagged). 3 testes de validator atualizados, N testes de harness em `update_test.go` e `update_harness_test.go` atualizados. Novo `fail_closed_d11_behavior_test.go` (A=ausente→2, B=deny→2, C=allow→0). Configs vivas migradas. `docs/cli-parity.md` e `README.md` atualizados. `go test ./internal/generators/ ./internal/validator/ ./internal/commands/`: ok (3/3). `make quality`: exit 0. `trackfw validate`: 0 violations (LENIENT MODE).
+**Arquivos afetados:** `internal/generators/agentfiles.go`, `internal/generators/update.go`, `internal/generators/json_helpers.go` (novo), `internal/generators/fail_closed_d11_behavior_test.go` (novo), `internal/generators/update_test.go`, `internal/validator/validator_guard_binary_probe.go`, `internal/validator/validator_credential_guard.go`, `internal/validator/validator_git_branch_guard.go`, `internal/validator/validator_guard_binary_probe_test.go`, `internal/validator/validator_guard_binary_probe_windsurf_amazonq_test.go`, `internal/commands/update_harness_test.go`, `internal/validator/validator.go`, `.claude/settings.json`, `.codex/hooks.json`, `.gemini/settings.json`, `scripts/check-validate-rule-pins.sh`, `docs/cli-parity.md`, `README.md`
+
+---
+
 ## 2026-10-07 — apolo-tf (fix/hooks-de-guard-executam-no-windows-aviso-de-matcher — ML-5F) — FIM
 
 **Branch:** `fix/hooks-de-guard-executam-no-windows-aviso-de-matcher`

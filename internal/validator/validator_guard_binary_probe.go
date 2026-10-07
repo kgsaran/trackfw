@@ -43,9 +43,19 @@ const (
 	guardShellFamilyCmdExe
 )
 
-// guardExpectedLine retorna a linha exata de hook para a família de shell e nome de subcomando
-// dados. O subcmdName pode incluir flags (ex.: "credential --global").
+// guardExpectedLine retorna a linha exata de hook D11 fail-closed para a família de shell e nome
+// de subcomando dados (ML-6B / ADR-2026-10-04 D11). O subcmdName pode incluir flags (ex.:
+// "credential --global").
 func guardExpectedLine(subcmdName string, fam guardShellFamily) string {
+	if fam == guardShellFamilyCmdExe {
+		return "trackfw guard " + subcmdName + " || exit 2"
+	}
+	return `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard ` + subcmdName + `; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
+}
+
+// guardD2LegacyLine retorna a linha D2-revised (pré-ML-6B) para a família de shell e nome de
+// subcomando dados. Usada para distinguir a forma legada (warning) de uma violação.
+func guardD2LegacyLine(subcmdName string, fam guardShellFamily) string {
 	if fam == guardShellFamilyCmdExe {
 		return "trackfw guard " + subcmdName
 	}

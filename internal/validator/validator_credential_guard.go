@@ -592,8 +592,16 @@ func validateGuardHookResolvable(ruleName, scriptMarker, subcmdMarker, subcmdNam
 					continue
 				}
 
+				legacyD2Line := guardD2LegacyLine(subcmdName, hf.family)
 				if m.raw == expectedLine {
-					// Linha exata para a família deste CLI → OK; marcar para sonda do binário.
+					// Linha exata D11 fail-closed → OK; marcar para sonda do binário.
+					anySubcmdFormFound = true
+					if hf.family == guardShellFamilyPSPosix {
+						hasPSPosixSubcmd = true
+					}
+				} else if m.raw == legacyD2Line {
+					// ML-6B: D2 revised form — fail-open quando trackfw ausente do PATH.
+					// Tratada como warning (via validateGuardHookD2InlineWarnings), não violation.
 					anySubcmdFormFound = true
 					if hf.family == guardShellFamilyPSPosix {
 						hasPSPosixSubcmd = true
@@ -688,6 +696,59 @@ func validateGitBranchGuardHookResolvable() ([]string, error) {
 // (.sh não executa no Windows) para a regra git_branch_guard_hook_resolvable.
 func validateGitBranchGuardHookResolvableLegacyWarnings() ([]string, error) {
 	return validateGuardHookShLegacyWarnings(gitBranchGuardScriptMarker)
+}
+
+// validateGuardHookD2InlineWarnings retorna avisos (always-warning, roteados via applyRuleWarnOnly)
+// para arquivos de hook de PROJETO que ainda usam a forma D2-revised inline
+// ("trackfw guard <nome>; exit $LASTEXITCODE" / "trackfw guard <nome>").
+// A forma D2 falha aberta quando trackfw está ausente do PATH (ADR-2026-10-04 D11 / ML-6B).
+func validateGuardHookD2InlineWarnings(subcmdMarker, subcmdName string) ([]string, error) {
+	root, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+	if resolvedRoot, symErr := filepath.EvalSymlinks(root); symErr == nil {
+		root = resolvedRoot
+	}
+	var warnings []string
+	for _, hf := range credentialGuardHookFiles {
+		fullPath := filepath.Join(root, hf.path)
+		content, readErr := readRegularFile(fullPath)
+		if readErr != nil {
+			continue
+		}
+		var parsed interface{}
+		if json.Unmarshal(content, &parsed) != nil {
+			continue
+		}
+		var subcmdCommands []guardCommandMatch
+		collectCommandsWithMarker(parsed, subcmdMarker, &subcmdCommands)
+		legacyD2Line := guardD2LegacyLine(subcmdName, hf.family)
+		expectedLine := guardExpectedLine(subcmdName, hf.family)
+		for _, m := range subcmdCommands {
+			if m.raw == legacyD2Line && m.raw != expectedLine {
+				warnings = append(warnings, fmt.Sprintf(
+					"%s (%s) has %q — linha antiga, falha aberta sem o trackfw no PATH; "+
+						"rode `trackfw update` para migrar para a forma D11 fail-closed",
+					hf.path, hf.cli, m.raw,
+				))
+				break // um aviso por arquivo é suficiente
+			}
+		}
+	}
+	return warnings, nil
+}
+
+// validateCredentialGuardHookD2InlineWarnings retorna os avisos de forma D2 legada
+// para a regra credential_guard_hook_resolvable.
+func validateCredentialGuardHookD2InlineWarnings() ([]string, error) {
+	return validateGuardHookD2InlineWarnings(credentialGuardSubcmdMarker, "credential")
+}
+
+// validateGitBranchGuardHookD2InlineWarnings retorna os avisos de forma D2 legada
+// para a regra git_branch_guard_hook_resolvable.
+func validateGitBranchGuardHookD2InlineWarnings() ([]string, error) {
+	return validateGuardHookD2InlineWarnings(gitBranchGuardSubcmdMarker, "git-branch")
 }
 
 // claudeGuardPowerShellSubcmdMarkers is the set of Claude Code guard subcmd prefixes

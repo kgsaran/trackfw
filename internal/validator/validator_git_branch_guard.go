@@ -304,7 +304,16 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker, subcmdMarker, sub
 					continue
 				}
 
+				legacyD2Line := guardD2LegacyLine(subcmdName, gf.family)
 				if m.raw == expectedLine {
+					// Linha exata D11 fail-closed → OK.
+					anySubcmdFormFound = true
+					if gf.family == guardShellFamilyPSPosix {
+						hasPSPosixSubcmd = true
+					}
+				} else if m.raw == legacyD2Line {
+					// ML-6B: D2 revised form — fail-open quando trackfw ausente do PATH.
+					// Tratada como warning (via validateGuardGlobalHookD2InlineWarnings), não violation.
 					anySubcmdFormFound = true
 					if gf.family == guardShellFamilyPSPosix {
 						hasPSPosixSubcmd = true
