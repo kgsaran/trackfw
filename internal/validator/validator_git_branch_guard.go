@@ -379,6 +379,62 @@ func validateGuardGlobalHookShLegacyWarnings(scriptMarker string) ([]string, err
 	return warnings, nil
 }
 
+// validateGuardGlobalHookD2InlineWarnings retorna avisos (always-warning) para configs GLOBAIS que
+// ainda usam a forma D2-revised ("trackfw guard <nome>; exit $LASTEXITCODE" / "trackfw guard <nome>")
+// — fail-open quando o trackfw está ausente do PATH (ADR-2026-10-04 D11 / ML-6B).
+// Contrapartida global de validateGuardHookD2InlineWarnings (validator_credential_guard.go).
+//
+// scriptMarker é necessário para resolver o caminho correto no Kiro (globalGuardConfigPath separa
+// trackfw-credential-guard.json de trackfw-git-branch-guard.json); sem ele o Kiro git-branch seria
+// silenciado — exato defeito que ML-3B documenta para a função irmã validateGuardGlobalHookResolvable.
+func validateGuardGlobalHookD2InlineWarnings(scriptMarker, subcmdMarker, subcmdName string) ([]string, error) {
+	home, err := homedir.Dir()
+	if err != nil || home == "" {
+		return nil, nil
+	}
+
+	var warnings []string
+	for _, gf := range globalGuardConfigFiles {
+		relPath := globalGuardConfigPath(gf, scriptMarker)
+		fullPath := filepath.Join(home, relPath)
+		content, readErr := readRegularFile(fullPath)
+		if readErr != nil {
+			continue // ausente ou ilegível — já tratado pela regra resolvable
+		}
+		var parsed interface{}
+		if json.Unmarshal(content, &parsed) != nil {
+			continue // JSON inválido — já tratado pela regra resolvable
+		}
+		var subcmdCommands []guardCommandMatch
+		collectCommandsWithMarker(parsed, subcmdMarker, &subcmdCommands)
+		legacyD2Line := guardD2LegacyLine(subcmdName, gf.family)
+		expectedLine := guardExpectedLine(subcmdName, gf.family)
+		for _, m := range subcmdCommands {
+			if m.raw == legacyD2Line && m.raw != expectedLine {
+				warnings = append(warnings, fmt.Sprintf(
+					"~/%s (%s, global scope) has %q — linha antiga, falha aberta sem o trackfw no PATH; "+
+						"rode `trackfw update harness` para migrar para a forma D11 fail-closed",
+					relPath, gf.cli, m.raw,
+				))
+				break // um aviso por arquivo é suficiente
+			}
+		}
+	}
+	return warnings, nil
+}
+
+// validateCredentialGuardGlobalHookD2InlineWarnings retorna os avisos de forma D2 legada
+// para configs globais de credential-guard.
+func validateCredentialGuardGlobalHookD2InlineWarnings() ([]string, error) {
+	return validateGuardGlobalHookD2InlineWarnings(credentialGuardScriptMarker, credentialGuardSubcmdMarker, "credential --global")
+}
+
+// validateGitBranchGuardGlobalHookD2InlineWarnings retorna os avisos de forma D2 legada
+// para configs globais de git-branch-guard.
+func validateGitBranchGuardGlobalHookD2InlineWarnings() ([]string, error) {
+	return validateGuardGlobalHookD2InlineWarnings(gitBranchGuardScriptMarker, gitBranchGuardSubcmdMarker, "git-branch")
+}
+
 // validateGuardGlobalScriptIntegrity is the GLOBAL-scope counterpart of
 // validateCredentialGuardScriptIntegrity/validateGitBranchGuardScriptIntegrity: verifies the
 // content of ~/.trackfw/scripts/<scriptFileName> (the fixed location GenerateGlobal*Script writes

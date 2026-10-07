@@ -2,6 +2,14 @@
 
 ---
 
+## 2026-10-07 — apolo-tf (fix/hooks-de-guard-executam-no-windows-trackfw-ausente — ML-6B corretivo global D2) — FIM
+
+**Branch:** `fix/hooks-de-guard-executam-no-windows-trackfw-ausente`
+**Resultado:** `validateGuardGlobalHookD2InlineWarnings(scriptMarker, subcmdMarker, subcmdName)` implementada em `validator_git_branch_guard.go`. Thin wrappers `validateCredentialGuardGlobalHookD2InlineWarnings` (subcmdName="credential --global") e `validateGitBranchGuardGlobalHookD2InlineWarnings` (subcmdName="git-branch"). Wiring em `validator.go` folded nos dois `applyRuleWarnOnly`/`applyRuleWarnOnlyTagged` existentes de D2 (plain + Tagged). 5 testes novos: D2 credential global → 1 aviso; D11 credential global → silêncio; D2 Kiro git-branch (cmd.exe) → 1 aviso (cobre trap ML-3B); HOME vazio → silêncio; wiring Plain+Tagged → warnings, não violations. Falsificação: `return nil,nil` antecipado → 3 testes FAIL, 2 pass corretamente; revertido → 5 PASS. `go build ./...` ok; `go vet ./internal/validator/` ok; `go test ./internal/validator/ -count=1` ok (11.5s).
+**Arquivos afetados:** `internal/validator/validator_git_branch_guard.go`, `internal/validator/validator.go`, `internal/validator/validator_git_branch_guard_test.go`
+
+---
+
 ## 2026-10-07 — apolo-tf (fix/hooks-de-guard-executam-no-windows-trackfw-ausente — ML-6B) — FIM
 
 **Branch:** `fix/hooks-de-guard-executam-no-windows-trackfw-ausente`

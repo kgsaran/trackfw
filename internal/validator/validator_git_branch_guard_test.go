@@ -1284,3 +1284,226 @@ func TestGuardHookResolvable_ProjectSingleInvalidUTF8Byte_NaoDisparaNenhumaViola
 		t.Errorf("1 byte inválido dentro de JSON por lo mais válido não deveria acusar (paridade com a coerção de Go/Node): %v", cgMsgs)
 	}
 }
+
+// ---- Avisos de forma D2 em configs GLOBAIS (ML-6B corretivo) ----
+
+// globalClaudeSettingsWithSubcmdD2Credential monta ~/.claude/settings.json com a linha D2-revised
+// de credential (PS/POSIX family: "trackfw guard credential --global; exit $LASTEXITCODE").
+// Usada apenas para os testes abaixo — valor hardcoded para não ser tautológico com guardD2LegacyLine.
+func globalClaudeSettingsWithSubcmdD2Credential() string {
+	const d2Line = "trackfw guard credential --global; exit $LASTEXITCODE"
+	return `{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {"command": ` + jsonStringLiteral(d2Line) + `, "type": "command"}
+        ]
+      }
+    ]
+  }
+}`
+}
+
+// globalKiroGitBranchWithSubcmdD2 monta ~/.kiro/hooks/trackfw-git-branch-guard.json com a linha
+// D2-revised de git-branch para família cmd.exe: "trackfw guard git-branch" (sem sufixo).
+func globalKiroGitBranchWithSubcmdD2() string {
+	const d2Line = "trackfw guard git-branch"
+	return `{
+  "actions": [
+    {
+      "type": "command",
+      "command": ` + jsonStringLiteral(d2Line) + `
+    }
+  ]
+}`
+}
+
+// globalClaudeSettingsWithSubcmdD11Credential monta ~/.claude/settings.json com a linha D11
+// fail-closed de credential (PS/POSIX): a forma correta, esperada sem aviso.
+func globalClaudeSettingsWithSubcmdD11Credential() string {
+	const d11Line = `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
+	return `{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {"command": ` + jsonStringLiteral(d11Line) + `, "type": "command"}
+        ]
+      }
+    ]
+  }
+}`
+}
+
+// TestGuardGlobalHookD2InlineWarnings_CredentialD2_EmiteUmAviso afirma que uma config global
+// ~/.claude/settings.json com a linha D2-revised de credential-guard emite exatamente 1 aviso
+// nomeando o arquivo e instruindo `trackfw update harness`.
+// Reconciliação: a função detecta a forma D2 em escopo global — a lacuna que o ML-6B deixou em aberto.
+func TestGuardGlobalHookD2InlineWarnings_CredentialD2_EmiteUmAviso(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	home := globalGuardHome(t)
+	t.Cleanup(config.Reset)
+
+	settingsPath := filepath.Join(home, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(settingsPath, []byte(globalClaudeSettingsWithSubcmdD2Credential()), 0644); err != nil {
+		t.Fatalf("write global settings: %v", err)
+	}
+
+	warns, err := validateCredentialGuardGlobalHookD2InlineWarnings()
+	if err != nil {
+		t.Fatalf("validateCredentialGuardGlobalHookD2InlineWarnings() erro: %v", err)
+	}
+	if len(warns) != 1 {
+		t.Fatalf("esperado 1 aviso para config global com linha D2, obteve %d: %v", len(warns), warns)
+	}
+	if !hasWarning(warns, "~/.claude/settings.json") {
+		t.Errorf("aviso deve citar ~/.claude/settings.json, obteve: %v", warns)
+	}
+	if !hasWarning(warns, "trackfw update harness") {
+		t.Errorf("aviso deve citar `trackfw update harness`, obteve: %v", warns)
+	}
+}
+
+// TestGuardGlobalHookD2InlineWarnings_CredentialD11_Silencio afirma que a linha D11 (forma correta)
+// em ~/.claude/settings.json não emite aviso algum.
+// Reconciliação: só a forma D2 dispara aviso — D11 está correta e é silenciada por construção.
+func TestGuardGlobalHookD2InlineWarnings_CredentialD11_Silencio(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	home := globalGuardHome(t)
+	t.Cleanup(config.Reset)
+
+	settingsPath := filepath.Join(home, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(settingsPath, []byte(globalClaudeSettingsWithSubcmdD11Credential()), 0644); err != nil {
+		t.Fatalf("write global settings: %v", err)
+	}
+
+	warns, err := validateCredentialGuardGlobalHookD2InlineWarnings()
+	if err != nil {
+		t.Fatalf("validateCredentialGuardGlobalHookD2InlineWarnings() erro: %v", err)
+	}
+	if len(warns) != 0 {
+		t.Errorf("linha D11 não deve emitir aviso, obteve: %v", warns)
+	}
+}
+
+// TestGuardGlobalHookD2InlineWarnings_KiroGitBranchD2_EmiteUmAviso afirma que ~/.kiro/hooks/
+// trackfw-git-branch-guard.json com a linha D2-revised de git-branch (família cmd.exe:
+// "trackfw guard git-branch" sem sufixo) emite exatamente 1 aviso. Também cobre o defeito
+// documentado no ML-3B: globalGuardConfigPath deve retornar o caminho Kiro específico para
+// git-branch (trackfw-git-branch-guard.json, não trackfw-credential-guard.json).
+// Reconciliação: globalGuardConfigPath(Kiro, gitBranchGuardScriptMarker) devolve o arquivo correto;
+// sem scriptMarker na assinatura esse caso seria sempre silenciado.
+func TestGuardGlobalHookD2InlineWarnings_KiroGitBranchD2_EmiteUmAviso(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	home := globalGuardHome(t)
+	t.Cleanup(config.Reset)
+
+	kiroPath := filepath.Join(home, ".kiro", "hooks", "trackfw-git-branch-guard.json")
+	if err := os.MkdirAll(filepath.Dir(kiroPath), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(kiroPath, []byte(globalKiroGitBranchWithSubcmdD2()), 0644); err != nil {
+		t.Fatalf("write kiro git-branch: %v", err)
+	}
+
+	warns, err := validateGitBranchGuardGlobalHookD2InlineWarnings()
+	if err != nil {
+		t.Fatalf("validateGitBranchGuardGlobalHookD2InlineWarnings() erro: %v", err)
+	}
+	if len(warns) != 1 {
+		t.Fatalf("esperado 1 aviso para Kiro global com linha D2 de git-branch, obteve %d: %v", len(warns), warns)
+	}
+	if !hasWarning(warns, ".kiro/hooks/trackfw-git-branch-guard.json") {
+		t.Errorf("aviso deve citar .kiro/hooks/trackfw-git-branch-guard.json, obteve: %v", warns)
+	}
+	if !hasWarning(warns, "trackfw update harness") {
+		t.Errorf("aviso deve citar `trackfw update harness`, obteve: %v", warns)
+	}
+}
+
+// TestGuardGlobalHookD2InlineWarnings_SemConfigGlobal_Silencio afirma que $HOME vazio (nenhuma
+// config global presente) produz zero avisos.
+// Reconciliação: ausência de config é estado legítimo ("guard global nunca instalado") — silêncio.
+func TestGuardGlobalHookD2InlineWarnings_SemConfigGlobal_Silencio(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	globalGuardHome(t)
+	t.Cleanup(config.Reset)
+
+	credWarn, err := validateCredentialGuardGlobalHookD2InlineWarnings()
+	if err != nil {
+		t.Fatalf("credential global D2 erro: %v", err)
+	}
+	gbWarn, err := validateGitBranchGuardGlobalHookD2InlineWarnings()
+	if err != nil {
+		t.Fatalf("git-branch global D2 erro: %v", err)
+	}
+	if len(credWarn)+len(gbWarn) != 0 {
+		t.Errorf("esperado silêncio sem config global, obteve cred=%v gb=%v", credWarn, gbWarn)
+	}
+}
+
+// TestGuardGlobalHookD2InlineWarnings_Wiring_PlainETagged afirma que o aviso de D2 global chega
+// até os chamadores ValidateUnfiltered e ValidateUnfilteredTagged (os dois sítios de wiring em
+// validator.go que o ML-6B não cobriu). O aviso deve aparecer em warnings, nunca em violations.
+// Reconciliação: um sítio de wiring omitido silencia o aviso no output --json — o mesmo padrão
+// do bug documentado no comentário da linha 1481 do validator.go.
+func TestGuardGlobalHookD2InlineWarnings_Wiring_PlainETagged(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	home := globalGuardHome(t)
+	t.Cleanup(config.Reset)
+
+	settingsPath := filepath.Join(home, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(settingsPath, []byte(globalClaudeSettingsWithSubcmdD2Credential()), 0644); err != nil {
+		t.Fatalf("write global settings: %v", err)
+	}
+
+	// Plain path — ValidateUnfiltered
+	violations, warnings, err := ValidateUnfiltered()
+	if err != nil {
+		t.Fatalf("ValidateUnfiltered() erro: %v", err)
+	}
+	if hasViolation(violations, "linha antiga") {
+		t.Errorf("D2 global deve ser warning, não violation: %v", violations)
+	}
+	if !hasWarning(warnings, "linha antiga") || !hasWarning(warnings, "~/.claude/settings.json") {
+		t.Errorf("esperado aviso de D2 global em warnings (plain), obteve: %v", warnings)
+	}
+
+	// Tagged path — ValidateTagged (que passa por validateUnfilteredTagged internamente)
+	violationsT, warningsT, errT := ValidateTagged()
+	if errT != nil {
+		t.Fatalf("ValidateTagged() erro: %v", errT)
+	}
+	for _, v := range violationsT {
+		if contains(v.Msg, "linha antiga") {
+			t.Errorf("D2 global deve ser warning, não violation (Tagged): %v", v)
+		}
+	}
+	found := false
+	for _, w := range warningsT {
+		if contains(w.Msg, "linha antiga") && contains(w.Msg, "~/.claude/settings.json") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("esperado aviso de D2 global em warnings (Tagged), obteve: %v", warningsT)
+	}
+}
