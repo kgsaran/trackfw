@@ -45393,3 +45393,7 @@ Achados notáveis para o apolo-tf:
 - Divergência residual não implementada: `"C:\Program Files\Git\bin\git.exe" push` (Windows) requer fix em `quoteAwareSplit` (backslashes consumidos dentro de `"…"`). Reportado ao arquiteto.
 - `go build ./...` ✓; `go vet ./internal/guard/` ✓; `go test ./internal/guard/... -count=1` ok (2.7s); `go test ./internal/generators/ -count=1` ok (51s); `GOOS=windows go vet` ✓; `GOOS=windows go test -c -o /dev/null` ✓.
 - `git status --short`: M docs/agents-working-context.md, M internal/guard/gitbranch.go, M internal/guard/gitbranch_test.go.
+
+## 2026-10-06 — zeus-tf — INÍCIO: prova por CLI de agente na VM (AC3 da REQ-2026-09-05)
+
+- PR #527 mergeado (782f5767). Antes de fechar a REQ, o AC3 pede o hook disparando via CLI real (PowerShell + Kiro); o ML-3A só mediu shells. Decisão do KG: medir agora. ML-3C aberto, branch `docs/hooks-de-guard-executam-no-windows-prova-por-cli`.
