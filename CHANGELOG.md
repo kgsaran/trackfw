@@ -7,6 +7,50 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [9.3.0] - 2026-10-07
+
+### Added
+
+- **`trackfw guard git-branch` e `trackfw guard credential`.** Os guards de hook passam a ser
+  subcomandos do binário, em Go, em vez de scripts `.sh`. O comportamento é o do `.sh` (paridade
+  verificada por gate contra a versão congelada do script), e todo erro sob `guard` sai com 2, inclusive
+  subcomando inválido. Os hooks executam no Windows, onde antes o `.sh` não rodava na maioria dos CLIs
+  de agente. (#527, REQ-2026-09-05)
+- **Linha de hook por família de shell.** Claude Code, Codex, Gemini, Cursor, Copilot (campo `command`)
+  e Windsurf recebem `trackfw guard <nome>; exit $LASTEXITCODE`; Kiro e Amazon Q, `trackfw guard <nome>`.
+  O sufixo preserva o exit 2 no PowerShell, que sem ele vira 1. (#527)
+- **O `validate` relata se o hook pode executar**, não só se o arquivo existe: linha exata por CLI;
+  sonda de `trackfw guard --help` no `trackfw` resolvido; no Windows, o shim `.ps1` do npm sob
+  `ExecutionPolicy Restricted` e o `trackfw` que o Git Bash de login resolve (o perfil põe `~/bin` na
+  frente do PATH). Regra nova `trackfw_binary_in_project_root`: `trackfw.exe`/`.cmd`/`.bat` na raiz do
+  projeto (o `cmd.exe` procura no cwd antes do PATH). Windsurf e Amazon Q passam a ser lidos. (#527, #528)
+- Provado com CLI de agente real no Windows 11: **Claude Code** e **Codex** negam `git push` pelo guard e
+  liberam `git status`. Kiro não medido (sem CLI para ARM64); Copilot e Amazon Q não verificados. (#528)
+
+### Changed
+
+- 🔴 **Os `.sh` dos guards viram invólucros** que chamam `trackfw guard <nome>`. Sem `trackfw` no PATH, ou
+  com um `trackfw` sem o subcomando `guard`, eles saem 2 (falha fechada). Atualize o `trackfw` antes de
+  rodar `trackfw update`. (#527)
+- **`trackfw update` migra** as configs de hook antigas para a linha nova, e o matcher `Bash` dos guards
+  do Claude Code para `Bash|PowerShell`. (#527, #528)
+- 🔴 **Novas violations no `validate`** podem aparecer em projetos existentes: binário `trackfw` na raiz,
+  `trackfw` sem `guard` no PATH quando a config já usa a linha nova, e o shim `.ps1` sob `Restricted`.
+  Configs que ainda apontam para o `.sh` recebem um aviso (warning). (#527, #528)
+- **Remoção de aspas na palavra de comando do guard git-branch:** `"git" push`, `git "push"`, `g""it push`
+  e `"C:\Program Files\Git\bin\git.exe" push` passam a ser bloqueados. Revê em parte a ADR-2026-08-12;
+  `${IFS}`, chaves, barra invertida e `$(…)` continuam fora. (#527)
+
+### Fixed
+
+- **O hook do Claude Code não disparava no Windows**: lá a ferramenta de shell é `PowerShell`, e o
+  matcher era só `Bash`. (#528)
+- **`&` não separava comando no guard git-branch** (`echo ok & git push` passava); `& git push` e
+  `git.exe push` também passam a ser bloqueados. Redirecionamentos como `2>&1` continuam liberados. (#527)
+- **Barra invertida dentro de aspas duplas** segue a regra POSIX no guard (só escapa `$`, `` ` ``, `"`,
+  `\` e newline). (#527)
+- **O sinal de atenção do credential guard** só é gravado dentro da raiz do projeto, sem seguir symlink. (#527)
+
 ## [9.2.0] - 2026-10-04
 
 ### Added
