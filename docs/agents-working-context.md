@@ -2,6 +2,20 @@
 
 ---
 
+## 2026-10-06 — ares-tf (docs/hooks-de-guard-executam-no-windows-prova-por-cli — ML-3C FASE 1) — FIM
+
+**Branch:** `docs/hooks-de-guard-executam-no-windows-prova-por-cli`
+**Resultado:** Fase 1 concluída. Binário `trackfw 9.2.0` arm64 (commit `a730bf1a`) instalado em `C:\Users\Lab\guard-ml3c\bin\`, PATH do usuário atualizado (HKCU, REG_EXPAND_SZ, sem aspas). Claude Code 2.1.292 e Gemini CLI 0.63.0 instalados via npm. Kiro confirmado como IDE-only para ARM64 (sem CLI). Projeto de teste `C:\Users\Lab\guard-ml3c\proj\` criado com `trackfw init`. Hook configs verificados para os 3 CLIs. Viabilidade por CLI documentada; riscos críticos da Fase 2 identificados (Git Bash resolve binário antigo; `; exit $LASTEXITCODE` fail-open em bash). Portabilidade doc não modificada (seção ML-3C revertida integralmente).
+**Arquivos afetados:** `docs/agents-working-context.md`
+
+## 2026-10-06 — ares-tf (docs/hooks-de-guard-executam-no-windows-prova-por-cli — ML-3C FASE 1) — INÍCIO
+
+**Branch:** `docs/hooks-de-guard-executam-no-windows-prova-por-cli`
+**Tarefa:** ML-3C Fase 1 — instalação e viabilidade. Compilar binário Windows ARM64 da branch atual, instalar no PATH da VM, instalar Claude Code + Gemini CLI via npm, verificar Kiro, gerar projeto de teste com `trackfw init`, e documentar o que cada CLI precisa para executar uma ferramenta de shell (login, chave de API, modo não interativo).
+**Arquivos afetados:** `docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md` (seção ML-3C nova), `docs/agents-working-context.md`
+
+---
+
 ## 2026-10-06 — apolo-tf (feat/hooks-de-guard-executam-no-windows — corretivo CI PR #527 WindowsGitExePath) — FIM
 
 **Branch:** `feat/hooks-de-guard-executam-no-windows`
