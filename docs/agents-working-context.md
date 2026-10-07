@@ -45585,3 +45585,23 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-07 — zeus-tf — #530 corrigida (PR #533); REQ-2026-09-05 fechada de novo; bump 9.3.1
 
 - ML-5F: aviso de matcher só em grupos de shell. REQ de volta a Done, roadmap em `done/`, label `req-aberta` retirada da #530. Bump 9.3.1 com `make parity-rest` EXIT=0 e `check-required-full` OK.
+
+## 2026-10-07 — ares-tf — INÍCIO: ML-6A — Medição de candidatos de linha de hook fail-closed sem trackfw no PATH
+
+- Branch: `fix/hooks-de-guard-executam-no-windows-trackfw-ausente`
+- Escopo: medição pura — proibido alterar código, configs, roadmap; proibido git ops
+- Objetivo: medir candidatos de linha de hook que falham fechados (exit 2) quando `trackfw` ausente do PATH; sem perder B=2 e C=0
+- Entrega: `docs/portabilidade/2026-10-07-linha-de-hook-fail-closed-sem-trackfw.md`
+
+## 2026-10-07 — ares-tf — FIM: ML-6A — Medição de candidatos fail-closed sem trackfw no PATH
+
+- Documento de medição criado: `docs/portabilidade/2026-10-07-linha-de-hook-fail-closed-sem-trackfw.md`
+- Escopo cumprido: somente o documento de portabilidade foi escrito (vault note criada em erro foi deletada; índice de vault restaurado ao estado commitado)
+- VM limpa: `C:\Users\Lab\ml6a` apagado + bat files de home apagados (incluindo v10.bat) após conclusão dos testes
+- Achado crítico 1: Claude Code executa hooks via `/usr/bin/bash` (Git Bash), não via PowerShell — confirmado ML-5B (`3f932985`); `hookName: PreToolUse:PowerShell` indica o trigger, não o executor
+- Achado crítico 2: **polyglot PS/POSIX existe** — `$LASTEXITCODE=2; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE` passa 2/2/0 em sh, bash, Git Bash e PS 5.1; **não funciona em cmd** (A=1, B=1, C=1 — `$LASTEXITCODE=2` é nome de comando em cmd, trackfw nunca invocado)
+- Achado crítico 3: **Cpoly requer escopo global PS** — em script blocks (`& { }`): `$LASTEXITCODE=2` cria variável local; `exit $LASTEXITCODE` lê local (sempre 2) → **deny-all** (C=2 em vez de 0). Medido: A=2, B=2, C=2.
+- Achado crítico 4: **C1 com sufixo em cmd é deny-all** quando binário presente — `;` não separa em cmd; trackfw recebe `git-branch;` como arg; cobra D7 → exit 2 para B e C (A=1 fail-open)
+- `||` em C3 é ParseError em PS 5.1 — **confirma** a afirmação da wave 0 de que C3 não funciona em PS; Cpoly **falsifica** a afirmação de que nenhuma string fail-closed existe para PS+POSIX
+- C3 permanece melhor para família cmd (Kiro, Amazon Q); Cpoly cobre bash+PS em escopo global
+- git status --short: `docs/portabilidade/2026-10-07-linha-de-hook-fail-closed-sem-trackfw.md` (new) + `docs/agents-working-context.md` (modified)

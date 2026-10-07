@@ -496,13 +496,17 @@ zera. Os testes do ML-5A usaram fixture só com os grupos de shell — falha de 
 > todo shell é impossível no PS 5.1 (`||` não existe) — por isso a Wave 6 mede antes de decidir.
 
 ### ML-6A — Medição: candidatos de linha que falham fechada sem o binário
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** ares-tf
 **Files affected:** `docs/portabilidade/2026-10-07-linha-de-hook-fail-closed-sem-trackfw.md` (novo)
 **Acceptance criteria:**
-- [ ] Matriz candidato × shell (sh, bash macOS, Git Bash, PowerShell 5.1, `cmd.exe`) × cenário (binário ausente; guard nega; guard libera), com exit code literal
-- [ ] Veredito: existe linha única para a família PS/POSIX que dá 2/2/0? Se não, o shell que cada CLI usa para rodar o hook (medido ou com fonte) e a linha por CLI que dá 2/2/0
-- [ ] Família `cmd.exe`: veredito para `trackfw guard <nome> || exit /b 2`
+- [x] Matriz candidato × shell (sh, bash macOS, Git Bash, PowerShell 5.1, `cmd.exe`) × cenário (binário ausente; guard nega; guard libera), com exit code literal
+- [x] Veredito: existe linha única para a família PS/POSIX que dá 2/2/0? Se não, o shell que cada CLI usa para rodar o hook (medido ou com fonte) e a linha por CLI que dá 2/2/0
+- [x] Família `cmd.exe`: veredito para `trackfw guard <nome> || exit /b 2`
+      Resultado: polyglot `$LASTEXITCODE=2; trackfw guard <n>; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE` dá 2/2/0 em sh,
+      bash, Git Bash e PS 5.1 (`-Command`, escopo global) — falsifica a "impossibilidade" da Wave 0. Custos: ruído no stderr
+      em toda execução (`=2: command not found` no sh; CommandNotFound no PS) e, dentro de bloco `& { }`/`.ps1`, nega tudo.
+      `cmd`: `trackfw guard <n> || exit 2` dá 2/2/0. Decisão (D11) pendente com o KG.
 
 ### ML-6B — Implementação (após decisão registrada como D11 na ADR-2026-10-04)
 **Status:** ⬜ Pendente
