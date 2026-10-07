@@ -19,12 +19,12 @@ ADR → REQ → ROADMAP → backlog / wip / blocked / done / abandoned
 Every piece of work traces back to a decision. Every decision links to a requirement. Every requirement lands in a roadmap. No orphan work, no undocumented choices.
 
 > 🚧 **Platform support: Linux and macOS are supported. Windows support is partial.**
-> The CLIs install on Windows and core governance commands run. From the next release,
-> guard hooks call `trackfw guard <name>` (the Go binary) instead of a POSIX shell
-> script — measured blocking and allowing correctly in PowerShell 5, cmd.exe, and Git
-> Bash (non-login) on Windows. Windows CI still reports known test failures. There are
-> limits worth knowing; **read [Windows support (partial)](#windows-support-partial)
-> before adopting on Windows.**
+> The CLIs install on Windows and core governance commands run. Since v9.3.0, guard
+> hooks call `trackfw guard <name>` (the Go binary) instead of a POSIX shell script —
+> measured blocking and allowing correctly in PowerShell 5, cmd.exe, and Git Bash on
+> Windows; Claude Code and Codex CLI proven end-to-end. Windows CI still reports known
+> test failures. There are limits worth knowing; **read
+> [Windows support (partial)](#windows-support-partial) before adopting on Windows.**
 
 ---
 
@@ -112,14 +112,17 @@ declaration.
 
 Shared behavior follows the [command contract](docs/cli-parity.md).
 
-> **The CLI installs on Node ≥ 18 alone — the generated guard hooks do not run on
-> Node alone.** They are POSIX shell scripts and need a POSIX shell to execute. On
-> Windows, see [Windows support](#windows-support-partial) before relying on them.
+> **The npm package delivers the same Go binary, and the guard hooks run it from `PATH`.**
+> Since v9.3.0, hooks call `trackfw guard <name>` directly; no POSIX shell is needed. On
+> Windows, the npm shim is a `.ps1` that PowerShell's `ExecutionPolicy Restricted` blocks —
+> see [Windows support](#windows-support-partial) before relying on the hooks.
 
 ### Windows support (partial)
 
-🚧 **Windows support is partial. Native Windows hooks are planned but not yet being
-worked on. Read this before adopting `trackfw` on Windows.**
+🚧 **Windows support is partial. Read this before adopting `trackfw` on Windows.**
+
+Since v9.3.0, guard hooks call `trackfw guard <name>` (the Go binary) and run on
+Windows. Windows CI still reports known test failures mapped by root cause.
 
 We publish a Windows binary and the npm/pip packages install on Windows. That is not
 the same as the tool working end to end, and we would rather tell you where the edges
@@ -138,10 +141,10 @@ are than let you find them after adoption.
 
 - Our Windows CI still reports **known test failures**. They are mapped by root cause,
   not unknown — but they are not zero.
-**Guard hooks on Windows — measured state (from the next release)**
+**Guard hooks on Windows — measured state (since v9.3.0)**
 
-From the next release, guard hooks call `trackfw guard <name>` (the Go binary) instead
-of a `.sh` script. The same binary runs in every shell; for a given agent CLI, the hook
+Since v9.3.0, guard hooks call `trackfw guard <name>` (the Go binary) instead of a
+`.sh` script. The same binary runs in every shell; for a given agent CLI, the hook
 line in the committed config is the same string across PowerShell, cmd.exe, and Git
 Bash — a team with mixed OS can commit one config and have it work on all machines.
 
@@ -192,7 +195,7 @@ Code names the tool `Bash`) and Windows (where it names it `PowerShell`). Run
 through Git Bash (login shell), whose login profile puts `~/bin` at the front of `PATH`.
 If an older trackfw binary (without the `guard` subcommand) lives in `~/bin`, the hook
 exits 1 ("unknown command") and fails open on most CLIs — remove or update that binary.
-`trackfw validate` will report this condition from the next release.
+Since v9.3.0, `trackfw validate` reports this condition.
 
 **The guard requires a `trackfw` binary with the `guard` subcommand in the PATH of the
 agent CLI's process.** `trackfw validate` now reports three new conditions:
