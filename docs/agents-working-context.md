@@ -45642,3 +45642,7 @@ Achados notáveis para o apolo-tf:
 - R1, R_EAP, C2-colon: mesma conclusão que rascunho anterior
 - VM limpa: `C:\Users\Lab\ml6a2` removido (confirmado)
 - git status --short: docs/portabilidade/doc atualizado + docs/agents-working-context.md modificado
+
+## 2026-10-07 — zeus-tf — #535 corrigida (PR #536); REQ-2026-09-05 fechada de novo; bump 9.3.2
+
+- D11: linha de hook fail-closed sem o `trackfw` no PATH (2/2/0 em sh, bash, Git Bash, PS 5.1 e `cmd`). REQ de volta a Done, roadmap em `done/`, label `req-aberta` retirada da #535. Lição: o primeiro relatório do ML-6B afirmou `make quality` exit 0 com saída truncada; o arquiteto mediu e era falso (s67). Só aceitar exit code medido pelo arquiteto.

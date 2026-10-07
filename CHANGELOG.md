@@ -7,6 +7,26 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [9.3.2] - 2026-10-07
+
+### Fixed
+
+- 🔴 **A linha de hook dos guards falha fechada quando o `trackfw` não está no PATH** de quem executa o hook (app
+  GUI no macOS, máquina nova, binário removido). Antes, o hook saía com 127 — erro não bloqueante — e o guard
+  desligava sem aviso. Linha nova (ADR-2026-10-04, D11), medida 2/2/0 (ausente/nega/libera) em sh, bash, Git
+  Bash, PowerShell 5.1 e `cmd`:
+  - Claude Code, Codex, Gemini, Cursor, Copilot, Windsurf:
+    `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard <nome>; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
+  - Kiro, Amazon Q: `trackfw guard <nome> || exit 2`
+
+  Rode `trackfw update` (e `trackfw update harness` para os hooks globais) para migrar; o `validate` avisa
+  configs com a linha anterior. No PowerShell 5.1 a linha imprime um `CommandNotFound` no stderr a cada
+  execução (custo aceito). (#536, fecha #535)
+
+### Changed
+
+- O JSON gerado para configs de hook deixa de escapar `>` e `&` como `\u003e`/`\u0026`. (#536)
+
 ## [9.3.1] - 2026-10-07
 
 ### Fixed
