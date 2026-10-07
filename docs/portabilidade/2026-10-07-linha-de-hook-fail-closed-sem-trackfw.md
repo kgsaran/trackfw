@@ -344,3 +344,197 @@ Cpoly FAIL em cmd: `$LASTEXITCODE=2` é nome de comando em cmd → ERRORLEVEL=1;
 - poly.sh: `$LASTEXITCODE=2; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
 - trackfw.yaml de teste: `C:\Users\Lab\ml6a\testdir\trackfw.yaml` (req_dir/roadmap_dir minimal)
 - Pasta limpa no fim: `C:\Users\Lab\ml6a` apagada; bat files de home apagados (incluindo v10.bat)
+
+---
+
+## Rodada 2 — silenciar o polyglot (2026-10-07)
+
+> Objetivo: eliminar o ruído de stderr nos cenários B e C do Cpoly (mantendo o REASON do guard em B),
+> com A aceitando erro curto.
+> Meta: 2/2/0 nos mesmos 4 shells e stderr vazio em B/C.
+
+### Binários e ambiente
+
+- Binário macOS: `go build -o <scratchpad>/ml6a2/trackfw ./cmd/trackfw` → trackfw 9.3.1
+- Binário Windows: `GOOS=windows GOARCH=arm64 go build -o <scratchpad>/ml6a2/trackfw.exe ./cmd/trackfw` → trackfw 9.3.1
+- VM: `C:\Users\Lab\ml6a2\` (limpo ao final)
+- testdir: `trackfw.yaml` minimal + `deny.json` + `allow.json`
+
+### Análise de compatibilidade de redirecionamento (pré-medição)
+
+Antes de testar candidatos, foi levantada a matriz de viabilidade de redirecionamento cross-shell:
+
+| Redirect | macOS sh/bash | Git Bash (Windows) | PS 5.1 (Windows) |
+|---|---|---|---|
+| `2>/dev/null` | ✓ null device | ✓ MinGW null device | ✗ `DirectoryNotFoundException` (`C:\dev\null` não existe) |
+| `2>nul` | Cria arquivo `nul` no diretório (silencia, mas efeito colateral) | ✓ Windows null device | ✗ `NotSupportedException` ("FileStream foi solicitado a abrir um dispositivo que não era um arquivo") |
+| `2>$null` (`null` unset) | ✗ "ambiguous redirect" (bash expande `$null` = vazio → `2>""`) | ✗ idem | ✓ redireciona para stream nulo PS |
+| `2>$null` (`null=/dev/null`) | ✓ funciona | ✓ funciona | ✓ funciona |
+
+**Conclusão da análise**: não existe redirect sintético único que seja um null device válido em bash/sh E PS 5.1.
+A única combinação que funcionaria exigiria pré-setar `null=/dev/null` em bash — mas esse comando (`null=/dev/null`)
+é CommandNotFound em PS, gerando novo ruído.
+
+### Candidatos testados
+
+| ID | Linha | Raciocínio |
+|---|---|---|
+| **R1** | `$LASTEXITCODE=2 2>/dev/null; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE` | Redirecionar ruído da semente em bash via `2>/dev/null` |
+| **R_EAP** | `$ErrorActionPreference='SilentlyContinue'; $LASTEXITCODE=2; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE` | Suprimir CommandNotFound em PS via `$ErrorActionPreference` |
+| **C2-colon** | `: $LASTEXITCODE=2; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE` | Substituir semente por `:` (no-op bash, silencia `=2:`) |
+| **C_NULL** | `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE` | `${null-/dev/null}`: em bash = `/dev/null` (param expansion); em PS = variável nula → redirect silencioso |
+
+### Matriz de resultados
+
+Formato: `exit / noise_msgs_stderr`. Meta: `2 / 0` em B e C (exceto REASON em B).
+
+#### R1 — `$LASTEXITCODE=2 2>/dev/null; ...`
+
+| Shell | A | B | C |
+|---|---|---|---|
+| macOS sh | 2 / `trackfw: not found` | 2 / 0 (só REASON) ✓ | 0 / 0 ✓ |
+| macOS bash | 2 / `trackfw: not found` | 2 / 0 (só REASON) ✓ | 0 / 0 ✓ |
+| Git Bash não-login | 2 / `trackfw: not found` (inferido¹) | 2 / 0 (só REASON) (inferido¹) | 0 / 0 (inferido¹) |
+| **PS 5.1** | **0 (FAIL-OPEN)** / `out-file: DirectoryNotFoundException` | 2 / 2 msgs (`out-file: DirectoryNotFoundException` + `LASTEXITCODE=...: CommandNotFound`) | 0 / 2 msgs (idem) |
+
+¹ Git Bash usa bash com `/dev/null` disponível (MinGW); comportamento idêntico ao macOS bash, conforme padrão estabelecido na Rodada 1. `${null-/dev/null}` = `/dev/null` confirmado diretamente no Git Bash da VM nesta rodada.
+
+**Correção Rodada 1 (PS B/C)**: a medição inicial de B/C PS mostrava `head -c 200` truncado. A medição completa (Rodada 2) confirma 2 mensagens de ruído por cenário: `out-file: DirectoryNotFoundException` + `LASTEXITCODE=$((2*!!$?)): CommandNotFound`.
+
+**Mecanismo PS**: `$LASTEXITCODE=2 2>/dev/null` em PS tenta abrir `C:\dev\null` para escrita antes de executar
+a atribuição. Como `C:\dev\` não existe, `out-file` lança `FileOpenFailure / DirectoryNotFoundException`.
+A atribuição **não executa** — `$LASTEXITCODE` permanece 0. Sem a semente, o cenário A sai 0 (fail-open).
+
+**Nota sobre EAP e DirectoryNotFoundException**: `$ErrorActionPreference='SilentlyContinue'` **suprime a mensagem** do `FileOpenFailure` (medido: sem output de erro, execução continua). Mas a **atribuição ainda não executa** — o redirect falhado aborta a declaração inteira antes de executar o lado esquerdo. Resultado: mesmo com EAP, A é fail-open e B/C ficam silenciosas mas com semente inoperante. EAP e o redirect `2>/dev/null` são mutuamente exclusivos: não existe combinação que resolva bash e PS ao mesmo tempo (detalhado na seção "Combinações tentadas").
+
+**Veredito R1**: Silencia bash B e C perfeitamente (**meta atingida para bash**), mas QUEBRA PS —
+falha na abertura do redirect impede a semente, tornando A fail-open. Não viável como linha única cross-shell.
+
+#### R_EAP — `$ErrorActionPreference='SilentlyContinue'; $LASTEXITCODE=2; ...`
+
+| Shell | A | B | C |
+|---|---|---|---|
+| macOS sh | 2 / 3 msgs (`=SilentlyContinue:` + `=2:` + `trackfw:`) | 2 / 2 msgs (`=SilentlyContinue:` + `=2:`) + REASON | 0 / 2 msgs (`=SilentlyContinue:` + `=2:`) |
+| macOS bash | 2 / 3 msgs | 2 / 2 msgs + REASON | 0 / 2 msgs |
+| Git Bash não-login | 2 / 3 msgs (inferido) | 2 / 2 msgs + REASON (inferido) | 0 / 2 msgs (inferido) |
+| **PS 5.1** | **2 / 0 ✓** | **2 / 0 (só REASON) ✓** | **0 / 0 ✓** |
+
+**Mecanismo PS**: Confirmado que `$ErrorActionPreference='SilentlyContinue'` suprime erros
+CommandNotFoundException (não terminantes) em PS 5.1. Após EAP setado:
+- `$LASTEXITCODE=2` → atribuição válida (silenciosa) ✓
+- `trackfw guard git-branch` ausente → CommandNotFound suprimido por EAP ✓
+- `LASTEXITCODE=$((2*!!$?))` → CommandNotFound suprimido por EAP ✓
+- `exit $LASTEXITCODE` → sai com o valor da semente ou do trackfw ✓
+
+**Mecanismo bash**: `$ErrorActionPreference='SilentlyContinue'` expande `$ErrorActionPreference`
+(não setado → vazio) → tenta executar comando `='SilentlyContinue'` → `command not found`. NOVO ruído.
+Total: 2 mensagens de ruído em B e C (vs. 1 do Cpoly original).
+
+**Veredito R_EAP**: Silencia PS totalmente (meta PS atingida), mas **piora bash** — de 1 mensagem de
+ruído por cenário (Cpoly) para 2. Troca de perspectiva, não melhoria global.
+
+#### C2-colon — `: $LASTEXITCODE=2; ...`
+
+| Shell | A | B | C |
+|---|---|---|---|
+| macOS sh | 2 / `trackfw: not found` (1 msg) | 2 / 0 (só REASON) ✓ | 0 / 0 ✓ |
+| macOS bash | 2 / `trackfw: not found` (1 msg) | 2 / 0 (só REASON) ✓ | 0 / 0 ✓ |
+| **PS 5.1** | **0 (FAIL-OPEN)** / `: CommandNotFound` | 2 / `: CommandNotFound` + REASON | 0 / `: CommandNotFound` |
+
+**Mecanismo bash**: `:` é builtin no-op do bash. Seus argumentos são expandidos mas descartados silenciosamente.
+`: $LASTEXITCODE=2` → `:` recebe argumento `=2` (expansão com LASTEXITCODE não setado) → descartado sem ruído.
+`$LASTEXITCODE` NÃO é setado (não é necessário — bash usa `$?` na aritmética).
+B e C ficam limpos.
+
+**Mecanismo PS**: `:` não é cmdlet/função PS → CommandNotFound. `$LASTEXITCODE` não é setado.
+Sem semente, A = fail-open (0). Idêntico ao problema do R1.
+
+**Veredito C2-colon**: Resolve o ruído da semente em bash para B e C (melhor que Cpoly para bash),
+mas QUEBRA PS da mesma forma que R1 — sem semente, A é fail-open.
+
+#### C_NULL — `$LASTEXITCODE=2 2>${null-/dev/null}; ...`
+
+**Mecanismo de `${null-/dev/null}`**:
+- **bash/sh**: `${null-/dev/null}` é parameter expansion. `null` não está definido → substitui pelo default `/dev/null`. Resultado: `2>/dev/null`. Confirmado em macOS bash, macOS sh e Git Bash da VM (`echo ${null-/dev/null}` → `/dev/null`).
+- **PS 5.1**: `${null-/dev/null}` em PS resolve para variável `null-/dev/null` (braces permitem caracteres especiais em nomes de variável PS). A variável é indefinida → valor nulo/empty. `2>$empty` em PS → redireciona para o stream nulo PS (sem criar arquivo, sem erro). Confirmado: `Write-Error x 2>${null-/dev/null}; Write-Host after` → output `after`, sem erro, sem arquivo criado, exit 0.
+
+| Shell | A | B | C |
+|---|---|---|---|
+| macOS sh | 2 / `trackfw: not found` (1 msg) | 2 / 0 (só REASON) ✓ | 0 / 0 ✓ |
+| macOS bash | 2 / `trackfw: not found` (1 msg) | 2 / 0 (só REASON) ✓ | 0 / 0 ✓ |
+| Git Bash não-login | 2 / `trackfw: not found` (1 msg) ²✓ | 2 / 0 (só REASON) ✓ ² | 0 / 0 ✓ ² |
+| **PS 5.1** | **2 / 2 msgs** (`trackfw:CommandNotFound` + `LASTEXITCODE=...:CommandNotFound`) | 2 / 1 msg (`LASTEXITCODE=...:CommandNotFound`) | 0 / 1 msg (`LASTEXITCODE=...:CommandNotFound`) |
+
+² Git Bash A medido diretamente na VM: `cnull_test.sh` → exit=2, `=2:` ruído silenciado (TRACKFW_EC=127, sem mensagem de redirect), 1 msg de ruído restante (`trackfw: command not found`). B/C idênticos ao macOS bash (mesmo engine, `/dev/null` confirmado).
+
+**PS mecanismo C_NULL**:
+- `$LASTEXITCODE=2 2>${null-/dev/null}` → `${null-/dev/null}` é null/empty em PS → redirect para stream nulo → **atribuição executa** (`$LASTEXITCODE=2`) sem ruído ✓
+- Diferente de R1 onde `2>/dev/null` causava DirectoryNotFoundException que abortava a atribuição.
+- PS A: `$LASTEXITCODE=2` seed sobrevive; `trackfw` ausente → CommandNotFound (não atualiza `$LASTEXITCODE`) → sai 2 ✓
+- PS B/C: idêntico ao Cpoly (semente depois sobrescrita pelo trackfw exitcode; `LASTEXITCODE=$((2*!!$?))` é CommandNotFound mas não altera `$LASTEXITCODE`) ✓
+
+**Veredito C_NULL**: **Estritamente melhor que Cpoly para bash B/C** (0 noise vs 1). PS fica com noise idêntico ao Cpoly (1 msg por cenário B/C). Correctness completa em todos os 4 shells. A semente sobrevive em PS porque `${null-/dev/null}` resolve para null-redirect (não arquivo), diferente de `2>/dev/null` (R1) que tenta abrir `C:\dev\null`.
+
+### Combinações tentadas e por que falham
+
+**R1 + R_EAP** (redirect bash + EAP PS):
+`$ErrorActionPreference='SilentlyContinue'; $LASTEXITCODE=2 2>/dev/null; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
+
+- bash: `$ErrorActionPreference='SilentlyContinue'` ainda gera ruído (não tem redirect). 1 ruído restante em B/C.
+- PS: EAP setado, mas `$LASTEXITCODE=2 2>/dev/null` → PS tenta abrir `C:\dev\null`. Com EAP=SilentlyContinue, a mensagem de erro é suprimida — mas **a atribuição ainda não executa** (o redirect falhado aborta o statement inteiro antes de executar a LHS). Medido: `$ErrorActionPreference='SilentlyContinue'; $LASTEXITCODE=2 2>'/dev/null'; Write-Host ('AFTER, LASTEXITCODE=' + $LASTEXITCODE)` → `AFTER, LASTEXITCODE=` (vazio), exit 0. EAP silencia a mensagem; a semente ainda falha → A fail-open.
+
+**C2-colon + R_EAP** (`: $ErrorActionPreference='SilentlyContinue'` como no-op bash + EAP PS):
+Teria de ser `: $ErrorActionPreference='SilentlyContinue'; $LASTEXITCODE=2; ...`
+- bash: `: $ErrorActionPreference=...` → `:` builtin, silencioso ✓. `$LASTEXITCODE=2` → ruído ainda presente.
+- PS: `:` → CommandNotFound antes de EAP ser setado. EAP não chega a ser ativado.
+
+**Raiz da incompatibilidade para R1/C2-colon**: O redirect `2>/dev/null` é necessário para silenciar bash, mas
+quebra o mecanismo de semente em PS (statement abortado, mesmo com EAP). O EAP é necessário para
+silenciar PS, mas é invisível ao bash (que trata o prefixo como comando inexistente, gerando ruído adicional).
+As duas soluções exigem mecanismos de shells opostos, sem sintaxe que satisfaça os dois simultaneamente.
+
+**C_NULL escapa dessa incompatibilidade**: `${null-/dev/null}` usa mecanismos distintos em cada shell
+sem conflito — em bash é parameter expansion (`/dev/null`), em PS é variável undefined (null-redirect).
+Resultado: semente executa em PS (sem erro) e ruído é silenciado em bash (sem afetar PS).
+
+### Tabela consolidada de trade-offs
+
+| Candidato | bash B/C noise | PS B/C noise | Correctness (A=2 em todos) |
+|---|---|---|---|
+| **Cpoly (baseline)** | 1 msg (`=2:`) | 1 msg (`LASTEXITCODE=...:`) | ✓ |
+| **R1** | **0** ✓ | 2 msgs (`out-file:` + `LASTEXITCODE=...:`) + A fail-open | ✗ PS A=0 |
+| **R_EAP** | **2 msgs** ✗ (pior) | **0** ✓ | ✓ |
+| **C2-colon** | **0** ✓ | 1 msg + A fail-open | ✗ PS A=0 |
+| **C_NULL** | **0** ✓ | 1 msg (`LASTEXITCODE=...:`) | **✓ A=2 em todos** |
+
+### Veredito final (atualizado — Rodada 2 completa)
+
+**C_NULL é estritamente melhor que Cpoly** para bash B/C (0 ruído vs. 1) sem perder correctness.
+
+```
+$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE
+```
+
+| Shell | A | B | C | Ruído B/C |
+|---|---|---|---|---|
+| macOS sh | 2 ✓ | 2 ✓ | 0 ✓ | **0** (só REASON em B) |
+| macOS bash | 2 ✓ | 2 ✓ | 0 ✓ | **0** (só REASON em B) |
+| Git Bash não-login | 2 ✓ | 2 ✓ | 0 ✓ | **0** (só REASON em B) |
+| PS 5.1 | 2 ✓ | 2 ✓ | 0 ✓ | 1 msg (`LASTEXITCODE=...:CommandNotFound`) |
+
+**Ruído residual**:
+- bash/sh: `trackfw: not found` em A (1 msg, irreducível — o binário não está no PATH)
+- PS: `LASTEXITCODE=$((2*!!$?)) : O termo '...' não é reconhecido...` em todos os cenários (A, B, C) — idêntico ao Cpoly
+
+**Melhoria sobre Cpoly**: elimina `=2: command not found` do bash B e C (1 msg/cenário). O `${null-/dev/null}` silencia a semente em bash via `/dev/null` e não cria ruído em PS (resolve para null-redirect).
+
+**Ruído de A não é eliminável**: `trackfw: command not found` em bash A é gerado pelo próprio trackfw ausente, não pela semente — nenhuma variante de semente resolve isso.
+
+**Ressalva de correctness PS (herdada do Cpoly)**: se trackfw sair com exit 1 (erro, não deny), C_NULL sai 1 em PS (fail-open para CLIs com critério exit-2). C5 é mais estrito para esse caso.
+
+### Artifacts desta rodada
+
+- Binário macOS: `go build -o <scratchpad>/ml6a2/trackfw ./cmd/trackfw` → trackfw 9.3.1
+- Binário Windows: `GOOS=windows GOARCH=arm64 go build -o <scratchpad>/ml6a2/trackfw.exe ./cmd/trackfw` → trackfw 9.3.1
+- Scripts de teste Windows: `test_eap2.bat` (R_EAP A/B/C + Cpoly baseline), `test_eap.bat` (descartado — PS sem caminho completo), `cnull_test.sh` (C_NULL Git Bash A), `probes.bat` (probes PS para ${null-/dev/null} e EAP+redirect)
+- Pasta limpa: `C:\Users\Lab\ml6a2` apagada ao fim desta rodada

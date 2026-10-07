@@ -45605,3 +45605,24 @@ Achados notáveis para o apolo-tf:
 - `||` em C3 é ParseError em PS 5.1 — **confirma** a afirmação da wave 0 de que C3 não funciona em PS; Cpoly **falsifica** a afirmação de que nenhuma string fail-closed existe para PS+POSIX
 - C3 permanece melhor para família cmd (Kiro, Amazon Q); Cpoly cobre bash+PS em escopo global
 - git status --short: `docs/portabilidade/2026-10-07-linha-de-hook-fail-closed-sem-trackfw.md` (new) + `docs/agents-working-context.md` (modified)
+
+## 2026-10-07 — ares-tf — INÍCIO: ML-6A Rodada 2 — Silenciar o polyglot Cpoly
+
+- Branch: `fix/hooks-de-guard-executam-no-windows-trackfw-ausente`
+- Escopo: medição pura — proibido alterar código, configs, roadmap; proibido git ops
+- Objetivo: achar variante de Cpoly com stderr vazio (ou mínimo) mantendo 2/2/0 em sh, bash, Git Bash não-login e PS 5.1
+- Entrega: nova seção "Rodada 2 — silenciar o polyglot (2026-10-07)" no mesmo doc de portabilidade
+
+## 2026-10-07 — ares-tf — FIM: ML-6A Rodada 2 — Silenciar o polyglot (atualizado com C_NULL)
+
+- Seção "Rodada 2 — silenciar o polyglot (2026-10-07)" adicionada e corrigida no doc de portabilidade
+- **Achado principal (revisado)**: C_NULL é estritamente melhor que Cpoly para bash B/C
+- **C_NULL**: `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
+  - bash: `${null-/dev/null}` = `/dev/null` (parameter expansion, null unset) → silencia seed B/C ✓
+  - PS: `${null-/dev/null}` resolve para null/empty → redirect silencioso para null-stream → atribuição executa ✓
+  - bash B/C: 0 ruído (vs 1 no Cpoly) ✓. PS: 1 ruído/cenário (igual ao Cpoly). A=2 em todos os shells ✓
+- **Correções ao rascunho anterior**: R1 PS B/C tinha 2 msgs de ruído (não 1 como truncado); EAP suprime a mensagem mas não restaura a atribuição
+- **Git Bash confirmado**: `${null-/dev/null}` = `/dev/null` medido via `cnull_test.sh` na VM; C_NULL A: exit=2, 1 ruído
+- R1, R_EAP, C2-colon: mesma conclusão que rascunho anterior
+- VM limpa: `C:\Users\Lab\ml6a2` removido (confirmado)
+- git status --short: docs/portabilidade/doc atualizado + docs/agents-working-context.md modificado
