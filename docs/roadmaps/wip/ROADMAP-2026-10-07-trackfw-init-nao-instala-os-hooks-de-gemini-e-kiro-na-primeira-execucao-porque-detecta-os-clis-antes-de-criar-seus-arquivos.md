@@ -33,7 +33,7 @@ e `discover` (`commands/discover.go:161`).
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model for this roadmap
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** hades-tf
 **Files affected:** `docs/seguranca/2026-10-07-wave0-init-instala-hooks-pedidos.md`
 **Actions:**
@@ -42,27 +42,45 @@ e `discover` (`commands/discover.go:161`).
 3. Falsification targets in both directions — for each surface, what breaks when the behavior regresses, and what breaks when it regresses the opposite way?
 4. Declared residual — what this design accepts not covering.
 **Acceptance criteria:**
-- [ ] The four sections above answered with evidence, not a one-line assertion
-- [ ] No implementation line written for this ML
+- [x] The four sections above answered with evidence, not a one-line assertion
+- [x] No implementation line written for this ML
+      ✅ Parecer do hades-tf (`docs/seguranca/2026-10-07-wave0-init-instala-hooks-pedidos.md`): **libera a Wave 1**.
+      🔴 O defeito é maior que a REQ dizia: na 1ª execução de `init --ai-tools <cli>` (HOME isolado), **7 de 8 CLIs** ficam
+      sem guard — codex, gemini, kiro, copilot, cursor, windsurf, amazonq; só o claude funciona, por acaso (o `CLAUDE.md`
+      é criado antes da detecção). Kiro fica sem guard também na 2ª execução (`.kiro/` nunca é criado). Mesma causa no
+      `install` de agents/skills (`integrations_flags.go`) → ML-1B. O `validate` não acusa guard ausente (observação).
 
 **Gates da wave:**
 ```bash
 # each line runs as a separate sh -c — see docs/cli-parity.md rule 5
 test -s docs/seguranca/2026-10-07-wave0-init-instala-hooks-pedidos.md
+grep -q "Veredito" docs/seguranca/2026-10-07-wave0-init-instala-hooks-pedidos.md
 ```
 
 ## Wave 1 — Implementation (derived from REQ criteria)
 > Dependencies: Wave 0 auditada.
 
 ### ML-1A — O `init` instala o hook de cada CLI pedido em `--ai-tools`, numa execução só
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Squad:** apolo-tf
 **Files affected:** `internal/commands/init.go`, `internal/generators/hooks.go`, `internal/generators/scaffold.go` (+ testes); `discover`/`update` só se a varredura achar a mesma causa
 **Acceptance criteria:**
-- [ ] Teste por CLI de `--ai-tools`, a partir de diretório vazio (`git init`, `HOME` isolado), uma execução: o arquivo de hook do CLI existe e contém a linha de guard da D11
+- [ ] Teste por CLI de `--ai-tools` para os 8 CLIs, a partir de diretório vazio (`git init`, `t.Setenv("HOME", t.TempDir())` por CLI), uma execução: o arquivo de hook do CLI existe e contém a linha de guard da D11
+- [ ] Kiro em modo não interativo, sem `.kiro/` pré-existente: guard instalado na 1ª execução; o relatório diz qual mecanismo fecha esse caso (a reordenação sozinha não cria `.kiro/`)
+- [ ] `trackfw update --targets agent-hooks` num projeto Kiro iniciado pelo `init` corrigido reporta `updated`, não `skipped`
+- [ ] Corrigir o comentário de `internal/generators/agentfiles.go` (~2422) que diz que o `InjectKiroHooks` nunca instala o git-branch-guard (instala)
 - [ ] Varredura de `update` e `discover` com resultado escrito; mesma causa → corrigida aqui com teste
-- [ ] Falsificação: voltar a ordem antiga (detectar antes de criar os arquivos) reprova o teste
+- [ ] Falsificação: voltar a ordem antiga reprova o teste dos 7 CLIs afetados (o claude passa na ordem antiga e não serve de prova)
 - [ ] `go test ./internal/commands/ ./internal/generators/ -count=1` e `make quality` (arquiteto, sem `~/.local/bin` no PATH) verdes
+
+### ML-1B — `install` de agents/skills: mesma causa (Wave 0)
+**Status:** 🔄 Em andamento
+**Squad:** apolo-tf (mesmo despacho do ML-1A, em sequência)
+**Por que o escopo original não previa:** achado da Wave 0 — `internal/commands/integrations_flags.go` cria os arquivos
+de instrução do CLI (ex.: `GEMINI.md`) e nunca chama a injeção de hooks depois. Mesma causa → mesma REQ.
+**Acceptance criteria:**
+- [ ] Teste: o caminho de `install` que cria os arquivos de um CLI deixa o hook de guard desse CLI instalado, numa execução
+- [ ] Falsificação: remover a injeção reprova o teste
 
 **Gates da wave:**
 ```bash
