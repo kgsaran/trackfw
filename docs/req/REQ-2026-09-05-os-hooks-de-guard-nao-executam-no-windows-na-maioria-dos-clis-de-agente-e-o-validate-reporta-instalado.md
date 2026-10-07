@@ -1,14 +1,14 @@
 ---
-status: Done
+status: Open
 date: 2026-09-05
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/done/ROADMAP-2026-09-22-os-hooks-de-guard-nao-executam-no-windows-na-maioria-dos-clis-de-agente-e-o-validate-reporta-instalado.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-22-os-hooks-de-guard-nao-executam-no-windows-na-maioria-dos-clis-de-agente-e-o-validate-reporta-instalado.md"
 ---
 
 # REQ: os hooks de guard nao executam no Windows na maioria dos CLIs de agente e o validate reporta instalado
 
-> Date: 2026-09-05 | Status: Done
+> Date: 2026-09-05 | Status: Open
 | Linear Issue: 
 | Jira Issue: 
 
@@ -71,11 +71,12 @@ Os originais pediam um `.ps1` (AC2) e paridade nos 3 CLIs (AC8), que deixaram de
       inclui Windsurf e Amazon Q. Cursor e Kiro foram medidos no adendo de 2026-09-06 e recebem a
       mesma string.
       ✅ Evidência: os 8 `Inject*Hooks` emitem a linha da D2 revista (ML-2A); o `validate` lê também Windsurf e Amazon Q (ML-2C); teste de concordância gerador↔validator por CLI (ML-4C).
-- [x] **AC7** — 🔴 **O `validate` relata se o hook pode executar.** Config apontando para `.sh` num
+- [ ] **AC7** — 🔴 **O `validate` relata se o hook pode executar.** Config apontando para `.sh` num
       contexto em que ele não executa, ou `trackfw` resolvido sem o subcomando `guard`, não é
       "instalado".
       ✅ Evidência: linha exata por família, sonda de `trackfw guard --help`, `.ps1` sob `Restricted`, `trackfw.exe/.cmd/.bat` na raiz (ML-2B); matcher sem `PowerShell` no Claude Code (ML-5A); `trackfw` sem `guard` resolvido pelo Git Bash de login — medido na VM: 2 violations (ML-5D).
       🔴 Reaberto em 2026-10-07 pela issue #530: a regra de matcher do ML-5A avisa nos grupos `Read` e `Write|Edit` que o próprio `init` escreve, e o `trackfw update` não limpa o aviso. Corrigido no ML-5F: a regra só avalia grupos de shell (matcher com `Bash`); a saída canônica do `init` não gera aviso (PR #533, fecha #530; lançado na 9.3.1).
+      🔴 Reaberto em 2026-10-07 pela issue #535: com o `trackfw` ausente do PATH de quem executa o hook (app GUI, máquina nova), a linha sai 127 — erro não bloqueante — e o guard desliga sem aviso. O `validate` roda no PATH do terminal e não vê esse caso. Wave 6.
 - [x] **AC8** — **Os `.sh` viram invólucro** (`exec trackfw guard <nome> "$@"`) nas 4 cópias
       (projeto, global, template do `scaffold.go` e o que mais a Wave 0 enumerar). O `trackfw update`
       migra as configs existentes para a string nova.
@@ -107,4 +108,4 @@ ADR: docs/adr/ADR-2026-10-04-o-guard-de-hook-e-um-subcomando-go-do-trackfw-e-a-l
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-22-os-hooks-de-guard-nao-executam-no-windows-na-maioria-dos-clis-de-agente-e-o-validate-reporta-instalado.md`
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-22-os-hooks-de-guard-nao-executam-no-windows-na-maioria-dos-clis-de-agente-e-o-validate-reporta-instalado.md`
