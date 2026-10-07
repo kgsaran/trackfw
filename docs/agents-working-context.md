@@ -2,6 +2,22 @@
 
 ---
 
+## 2026-10-07 — apolo-tf (docs/hooks-de-guard-executam-no-windows-prova-por-cli — corretivo parity-falsify) — FIM
+
+**Branch:** `docs/hooks-de-guard-executam-no-windows-prova-por-cli`
+**Resultado:** `corrupt_literal` do cenário s67 atualizado para o corpo atual de `globalGitBranchGuardInstalledClaude` (ML-5A adicionou linha de retorno com `claudeShellMatcher` e dois comentários ML-5A). `make parity-falsify` → exit 0, 347 OK, 0 FAIL, CHUNK_COMPLETE 6 atingido. `make quality` → exit 0.
+**Arquivos afetados:** `scripts/check-gates-falsify.sh`
+
+---
+
+## 2026-10-07 — apolo-tf (docs/hooks-de-guard-executam-no-windows-prova-por-cli — corretivo parity-falsify) — INÍCIO
+
+**Branch:** `docs/hooks-de-guard-executam-no-windows-prova-por-cli`
+**Tarefa:** Corretivo de gate: `make quality` reprovava em `parity-falsify` (chunk_6 não chegava ao sentinela CHUNK_COMPLETE). Causa: ML-5A mudou o corpo de `globalGitBranchGuardInstalledClaude`; o `corrupt_literal` do s67 procurava o texto antigo (2 `hookArrayHasCommand` com `"Bash"`); o novo corpo tem 3 chamadas (incluindo `claudeShellMatcher`) e dois comentários ML-5A adicionais.
+**Arquivos afetados:** `scripts/check-gates-falsify.sh`
+
+---
+
 ## 2026-10-07 — prometeu-tf (docs/hooks-de-guard-executam-no-windows-prova-por-cli — ML-5E) — FIM
 
 **Branch:** `docs/hooks-de-guard-executam-no-windows-prova-por-cli`

@@ -410,14 +410,14 @@ make quality
 > Dependências: ML-3C fase 2a. Achado pós-merge do PR #527; mesma causa da REQ (o hook não executa no Windows).
 
 ### ML-5A — Matchers por CLI incluem a ferramenta de shell do Windows; `update` migra; `validate` acusa
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Files affected:** `internal/generators/agentfiles.go`, `internal/generators/update.go`, `internal/validator/` (+ testes); `.claude/settings.json` deste repositório
 **Acceptance criteria:**
 - [x] Claude Code: os hooks de guard que hoje usam `matcher: "Bash"` passam a `Bash|PowerShell` (git-branch e credential, projeto e global); teste nas duas direções
 - [x] Censo dos outros 7 CLIs: nome da ferramenta de shell no Windows vs. matcher emitido, com fonte; corrigido onde divergir
 - [x] `trackfw update` migra `Bash` → `Bash|PowerShell` (idempotente); `validate` acusa config de guard cujo matcher não cobre `PowerShell` no Claude Code
-- [ ] `go test` dos pacotes tocados e `make quality` (arquiteto, sem `~/.local/bin` no PATH) verdes
+- [x] `go test` dos pacotes tocados e `make quality` (arquiteto, sem `~/.local/bin` no PATH) verdes
 
 ### ML-5B — Prova na VM: o hook real do Claude Code bloqueia via ferramenta PowerShell
 **Status:** ✅ Concluído
