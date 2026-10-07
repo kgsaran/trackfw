@@ -167,11 +167,32 @@ need the suffix.
 **What was measured in the VM (Windows 11 ARM64, 2026-10-06):** PowerShell 5, cmd.exe,
 and Git Bash (non-login, explicit PATH to the branch binary) all block
 `git push origin main` (exit 2) and allow `ls` (exit 0) correctly. `pwsh` (PowerShell 7)
-was not installed on the VM — not measured. No agent CLI was installed in the VM:
-measurement is of the hook line run directly in each shell; end-to-end dispatch from
-agent CLIs was not run.
+was not installed on the VM — not measured. Subsequent testing with real agent CLIs on the
+same VM proved end-to-end blocking and allowing for two CLIs; the remaining CLIs have the
+hook line verified in each shell but were not run agent-to-end:
 
-`trackfw update` migrates existing configs from the old `.sh` form to the new hook line.
+| Agent CLI | End-to-end proven on Windows | Evidence |
+|---|---|---|
+| Claude Code | ✅ real agent — `git push` blocked by guard, `git status` allowed | Claude Code 2.1.292, 2026-10-07 (ML-5B) |
+| Codex CLI | ✅ real agent — `git push` blocked ("Blocked by hook" + guard REASON), `git status` allowed | Codex CLI 0.160.1, KG interactive session, 2026-10-07 (ML-5C) |
+| Cursor | Hook line measured in shell; agent not run end-to-end | — |
+| Windsurf | Hook line measured in shell; agent not run end-to-end | — |
+| Gemini CLI | Hook line measured in shell; agent not run end-to-end | — |
+| Kiro | Hook line measured in `cmd.exe`; agent not measured (no Windows ARM64 CLI; the IDE needs an AWS Builder ID account) | — |
+| GitHub Copilot | Not verified (no account) | — |
+| Amazon Q | Not verified (no account) | — |
+
+**Claude Code on Windows uses the PowerShell shell tool**, not Bash. The hook emitted by
+trackfw carries `matcher: "Bash|PowerShell"` so it fires on both macOS/Linux (where Claude
+Code names the tool `Bash`) and Windows (where it names it `PowerShell`). Run
+`trackfw update` to migrate existing configs that carry only `"Bash"` — it also handles the
+`.sh`-to-binary-hook migration.
+
+**Caveat — old trackfw binary in Git Bash's PATH:** Claude Code runs the hook command
+through Git Bash (login shell), whose login profile puts `~/bin` at the front of `PATH`.
+If an older trackfw binary (without the `guard` subcommand) lives in `~/bin`, the hook
+exits 1 ("unknown command") and fails open on most CLIs — remove or update that binary.
+`trackfw validate` will report this condition from the next release.
 
 **The guard requires a `trackfw` binary with the `guard` subcommand in the PATH of the
 agent CLI's process.** `trackfw validate` now reports three new conditions:

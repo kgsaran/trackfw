@@ -458,8 +458,8 @@ seguiu, e o `validate` (que sonda o PATH do Windows com `exec.LookPath`) disse O
 - [ ] `go test ./internal/validator/ -count=1` verde
 
 ### ML-5E — README: estado medido por CLI depois da prova real
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** prometeu-tf
 **Files affected:** `README.md`
 **Acceptance criteria:**
-- [ ] Claude Code e Codex marcados como provados de ponta a ponta no Windows (com a fonte); Copilot e Amazon Q "não verificados (sem conta)"; Kiro "não medido (sem CLI ARM64)"; o matcher `Bash|PowerShell` do Claude Code e a armadilha do `~/bin` do Git Bash explicados
+- [x] Claude Code e Codex marcados como provados de ponta a ponta no Windows (com a fonte); Copilot e Amazon Q "não verificados (sem conta)"; Kiro "não medido (sem CLI ARM64)"; o matcher `Bash|PowerShell` do Claude Code e a armadilha do `~/bin` do Git Bash explicados
