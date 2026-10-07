@@ -2,6 +2,22 @@
 
 ---
 
+## 2026-10-07 — apolo-tf (docs/hooks-de-guard-executam-no-windows-prova-por-cli — ML-5A) — FIM
+
+**Branch:** `docs/hooks-de-guard-executam-no-windows-prova-por-cli`
+**Resultado:** ML-5A implementado. Constante `claudeShellMatcher = "Bash|PowerShell"` adicionada como única fonte de verdade. `InjectClaudeHooks` e `harnessCredentialGuardTargetClaude`/`harnessGitBranchGuardTargetClaude` emitem e migram hooks sob o novo matcher. `migrateGuardHookMatcher` implementada: bloco todo-guard → renomeia matcher; bloco misto → extrai guards. Dedup (`globalGitBranchGuardInstalledClaude`, `globalCredentialGuardInstalledClaude`) reconhece ambos os matchers. Validator (`validateClaudeGuardHookMatcherWarningsInFile`) emite aviso quando matcher não cobre PowerShell. `.claude/settings.json` do projeto atualizado. Todos os testes existentes passando; 7 novos testes adicionados (3 unit + 1 integração em generators; 3 validator). Falsificação confirmada: `TestInjectClaudeHooks_MigratesLegacyBashMatcherToClaudeShellMatcher` falha ao reverter `claudeShellMatcher = "Bash"`. Build e suite completa verdes.
+**Arquivos afetados:** `internal/generators/agentfiles.go`, `internal/generators/update.go`, `internal/validator/validator.go`, `internal/validator/validator_credential_guard.go`, `.claude/settings.json`, e arquivos de teste correspondentes.
+
+---
+
+## 2026-10-07 — apolo-tf (docs/hooks-de-guard-executam-no-windows-prova-por-cli — ML-5A) — INÍCIO
+
+**Branch:** `docs/hooks-de-guard-executam-no-windows-prova-por-cli`
+**Tarefa:** ML-5A — corrigir `InjectClaudeHooks` e harness global para emitir `matcher: "Bash|PowerShell"` em vez de `"Bash"` nos hooks de guard do Claude Code, migrar configs existentes, e adicionar alerta no `validate`.
+**Arquivos afetados:** `internal/generators/agentfiles.go`, `internal/generators/update.go`, `internal/validator/`, `.claude/settings.json`
+
+---
+
 ## 2026-10-07 — ares-tf (docs/hooks-de-guard-executam-no-windows-prova-por-cli — ML-3C FASE 2a) — FIM
 
 **Branch:** `docs/hooks-de-guard-executam-no-windows-prova-por-cli`

@@ -990,3 +990,95 @@ func TestCredentialGuardHookResolvable_WindowsNaoDisparaBitDeExecucao(t *testing
 		t.Errorf("script existe; violation de ausência não deveria aparecer: %v", msgs)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// ML-5A / REQ-2026-09-05 — validateClaudeGuardHookMatcherWarningsInFile
+// ---------------------------------------------------------------------------
+
+// TestClaudeGuardHookMatcherWarning_BashMatcherEmitsWarning asserts that a
+// .claude/settings.json entry with matcher "Bash" (not covering PowerShell)
+// containing a Claude guard command produces a warning.
+// What this test asserts: validateClaudeGuardHookMatcherWarningsInFile emits a
+// warning when a Claude Code guard hook uses a matcher that does not cover
+// PowerShell, so the user knows to run `trackfw update`.
+func TestClaudeGuardHookMatcherWarning_BashMatcherEmitsWarning(t *testing.T) {
+	input := map[string]interface{}{
+		"hooks": map[string]interface{}{
+			"PreToolUse": []interface{}{
+				map[string]interface{}{
+					"matcher": "Bash",
+					"hooks": []interface{}{
+						map[string]interface{}{"type": "command", "command": "trackfw guard credential; exit $LASTEXITCODE"},
+					},
+				},
+			},
+		},
+	}
+	warns := validateClaudeGuardHookMatcherWarningsInFile(input, ".claude/settings.json")
+	if len(warns) == 0 {
+		t.Error("expected a PowerShell-matcher warning for a Bash-only guard hook, got none")
+	}
+	for _, w := range warns {
+		if !strings.Contains(w, "PowerShell") {
+			t.Errorf("warning does not mention PowerShell: %q", w)
+		}
+	}
+}
+
+// TestClaudeGuardHookMatcherWarning_BashPowerShellMatcherNoWarning asserts that
+// a .claude/settings.json entry with matcher "Bash|PowerShell" does NOT produce
+// a warning.
+// What this test asserts: validateClaudeGuardHookMatcherWarningsInFile is silent
+// when the guard hook already uses claudeShellMatcher ("Bash|PowerShell"),
+// meaning the hook will fire on both POSIX and Windows.
+func TestClaudeGuardHookMatcherWarning_BashPowerShellMatcherNoWarning(t *testing.T) {
+	input := map[string]interface{}{
+		"hooks": map[string]interface{}{
+			"PreToolUse": []interface{}{
+				map[string]interface{}{
+					"matcher": "Bash|PowerShell",
+					"hooks": []interface{}{
+						map[string]interface{}{"type": "command", "command": "trackfw guard git-branch; exit $LASTEXITCODE"},
+						map[string]interface{}{"type": "command", "command": "trackfw guard credential; exit $LASTEXITCODE"},
+					},
+				},
+			},
+			"PostToolUse": []interface{}{
+				map[string]interface{}{
+					"matcher": "Bash|PowerShell",
+					"hooks": []interface{}{
+						map[string]interface{}{"type": "command", "command": "trackfw guard credential; exit $LASTEXITCODE"},
+					},
+				},
+			},
+		},
+	}
+	warns := validateClaudeGuardHookMatcherWarningsInFile(input, ".claude/settings.json")
+	if len(warns) != 0 {
+		t.Errorf("expected no warning for Bash|PowerShell matcher, got: %v", warns)
+	}
+}
+
+// TestClaudeGuardHookMatcherWarning_NonGuardHookNoWarning asserts that hooks
+// under "Bash" that do NOT contain trackfw guard commands are not flagged.
+// What this test asserts: validateClaudeGuardHookMatcherWarningsInFile does not
+// produce false positives for third-party hooks that happen to use the "Bash"
+// matcher without containing any trackfw guard command.
+func TestClaudeGuardHookMatcherWarning_NonGuardHookNoWarning(t *testing.T) {
+	input := map[string]interface{}{
+		"hooks": map[string]interface{}{
+			"PreToolUse": []interface{}{
+				map[string]interface{}{
+					"matcher": "Bash",
+					"hooks": []interface{}{
+						map[string]interface{}{"type": "command", "command": "scripts/other.sh"},
+					},
+				},
+			},
+		},
+	}
+	warns := validateClaudeGuardHookMatcherWarningsInFile(input, ".claude/settings.json")
+	if len(warns) != 0 {
+		t.Errorf("expected no warning for non-guard Bash hook, got: %v", warns)
+	}
+}

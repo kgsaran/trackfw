@@ -989,6 +989,17 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 		return nil, nil, e
 	}
 	applyRuleWarnOnly("credential_guard_hook_resolvable", append(credentialGuardHookLegacyWarn, credentialGuardGlobalHookLegacyWarn...), &warnings)
+	// ML-5A (REQ-2026-09-05): warn when a Claude Code guard hook uses a matcher that does not
+	// cover PowerShell — the guard will silently never fire on Windows (Claude 2.1.292+).
+	claudeMatcherWarn, e := validateClaudeGuardHookMatcherWarnings()
+	if e != nil {
+		return nil, nil, e
+	}
+	claudeMatcherGlobalWarn, e := validateClaudeGuardHookMatcherGlobalWarnings()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleWarnOnly("credential_guard_hook_resolvable", append(claudeMatcherWarn, claudeMatcherGlobalWarn...), &warnings)
 
 	// ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A:
 	// detecta adulteração do credential-guard, âncora por alvo (ADR-2026-08-12 Emenda 1).
@@ -1403,6 +1414,16 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 		return nil, nil, e
 	}
 	applyRuleWarnOnlyTagged("credential_guard_hook_resolvable", append(credentialGuardHookLegacyWarnT, credentialGuardGlobalHookLegacyWarnT...), &warnings)
+	// ML-5A (REQ-2026-09-05): Tagged path mirror of the plain path block above.
+	claudeMatcherWarnT, e := validateClaudeGuardHookMatcherWarnings()
+	if e != nil {
+		return nil, nil, e
+	}
+	claudeMatcherGlobalWarnT, e := validateClaudeGuardHookMatcherGlobalWarnings()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleWarnOnlyTagged("credential_guard_hook_resolvable", append(claudeMatcherWarnT, claudeMatcherGlobalWarnT...), &warnings)
 
 	// ROADMAP-2026-08-12-deteccao-de-adulteracao-do-credential-guard-regra-de-validate, ML-1A:
 	// detecta adulteração do credential-guard, âncora por alvo (ADR-2026-08-12 Emenda 1).

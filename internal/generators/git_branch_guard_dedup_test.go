@@ -49,7 +49,7 @@ func TestGBGDedup_Claude_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	}
 	// credential-guard (global not installed in this fixture) and
 	// attention-signal must still be added — dedup is per-guard, not global.
-	if !helperHasClaudeHook(data, "PreToolUse", "Bash", guardCredentialCmdPSPOSIX) {
+	if !helperHasClaudeHook(data, "PreToolUse", claudeShellMatcher, guardCredentialCmdPSPOSIX) {
 		t.Error("credential-guard entry must still be added (its own global dedup was not triggered by this fixture)")
 	}
 	if !helperHasClaudeHook(data, "PreToolUse", "AskUserQuestion", "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh") {
@@ -278,7 +278,7 @@ func TestGBGDedup_Claude_ReWiresProjectEntryWhenGlobalEntryMissingType(t *testin
 	}
 
 	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
-	if !helperHasClaudeHook(data, "PreToolUse", "Bash", guardGitBranchCmdPSPOSIX) {
+	if !helperHasClaudeHook(data, "PreToolUse", claudeShellMatcher, guardGitBranchCmdPSPOSIX) {
 		t.Error("project-scope git-branch-guard entry should have been RE-WIRED: the global entry is missing \"type\":\"command\" and Claude Code will never execute it, so treating it as \"installed\" would leave both scopes unprotected (hades-tf ML-4A barrier finding)")
 	}
 }
@@ -358,10 +358,14 @@ func TestGBGDedup_MalformedGlobalEntry_ProjectStillProtects(t *testing.T) {
 	projectData := helperReadJSON(t, filepath.Join(projectDir, ".claude", "settings.json"))
 	globalData := helperReadJSON(t, filepath.Join(home, ".claude", "settings.json"))
 
+	// ML-5A: project file now uses claudeShellMatcher ("Bash|PowerShell") for guard
+	// hooks; global file still uses "Bash" (legacy, not yet updated by harness).
+	// Collect from both matchers in the project data so we capture the re-wired entry.
 	executable := append(
 		helperClaudeHookCommandsWithType(t, projectData, "PreToolUse", "Bash"),
-		helperClaudeHookCommandsWithType(t, globalData, "PreToolUse", "Bash")...,
+		helperClaudeHookCommandsWithType(t, projectData, "PreToolUse", claudeShellMatcher)...,
 	)
+	executable = append(executable, helperClaudeHookCommandsWithType(t, globalData, "PreToolUse", "Bash")...)
 	resolved := make([]string, 0, len(executable))
 	for _, p := range executable {
 		if !strings.Contains(p, "trackfw-git-branch-guard.sh") && !strings.Contains(p, "trackfw guard git-branch") {
@@ -388,7 +392,7 @@ func TestGBGDedup_FailOpen_NoGlobalFile(t *testing.T) {
 	}
 
 	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
-	if !helperHasClaudeHook(data, "PreToolUse", "Bash", guardGitBranchCmdPSPOSIX) {
+	if !helperHasClaudeHook(data, "PreToolUse", claudeShellMatcher, guardGitBranchCmdPSPOSIX) {
 		t.Error("expected project-scope git-branch-guard entry to be added when no global file exists (fail-open)")
 	}
 }
@@ -409,7 +413,7 @@ func TestGBGDedup_FailOpen_CorruptedGlobalFile(t *testing.T) {
 	}
 
 	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
-	if !helperHasClaudeHook(data, "PreToolUse", "Bash", guardGitBranchCmdPSPOSIX) {
+	if !helperHasClaudeHook(data, "PreToolUse", claudeShellMatcher, guardGitBranchCmdPSPOSIX) {
 		t.Error("expected project-scope git-branch-guard entry to be added when global file is corrupted (fail-open)")
 	}
 }

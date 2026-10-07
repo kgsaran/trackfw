@@ -98,10 +98,10 @@ func TestSabotage_ClaudeCode_WiringReferencesRealScript(t *testing.T) {
 	dir, _ := setupSabotageFixture(t, InjectClaudeHooks, "")
 
 	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
-	if !helperHasClaudeHook(data, "PreToolUse", "Bash", guardCredentialCmdPSPOSIX) {
+	if !helperHasClaudeHook(data, "PreToolUse", claudeShellMatcher, guardCredentialCmdPSPOSIX) {
 		t.Fatal("wiring do Claude Code não referencia o comando inline trackfw guard credential em PreToolUse[Bash]")
 	}
-	if !helperHasClaudeHook(data, "PostToolUse", "Bash", guardCredentialCmdPSPOSIX) {
+	if !helperHasClaudeHook(data, "PostToolUse", claudeShellMatcher, guardCredentialCmdPSPOSIX) {
 		t.Fatal("wiring do Claude Code não referencia o comando inline trackfw guard credential em PostToolUse[Bash]")
 	}
 }

@@ -895,7 +895,7 @@ func harnessCredentialGuardTargetClaude(home string, opts UpdateOptions) TargetR
 			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 		}
 		root := make(map[string]interface{})
-		mergeCredentialGuardClaudeHooks(root, guardCredentialGlobalCmdPSPOSIX)
+		mergeCredentialGuardClaudeHooks(root, claudeShellMatcher, guardCredentialGlobalCmdPSPOSIX)
 		desired, marshalErr := json.MarshalIndent(root, "", "  ")
 		if marshalErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
@@ -923,11 +923,14 @@ func harnessCredentialGuardTargetClaude(home string, opts UpdateOptions) TargetR
 		root = make(map[string]interface{})
 	}
 	// ML-2A: migrate any pre-ML-2A global entry (abs .sh path → inline command).
+	// ML-5A: also migrate the "Bash" matcher → claudeShellMatcher for guard entries.
 	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
 		migrateHookCommand(hooks["PreToolUse"], "Bash", legacyScriptPath, guardCredentialGlobalCmdPSPOSIX)
 		migrateHookCommand(hooks["PostToolUse"], "Bash", legacyScriptPath, guardCredentialGlobalCmdPSPOSIX)
+		migrateGuardHookMatcher(hooks["PreToolUse"], "Bash", claudeShellMatcher, guardCredentialGlobalCmdPSPOSIX)
+		migrateGuardHookMatcher(hooks["PostToolUse"], "Bash", claudeShellMatcher, guardCredentialGlobalCmdPSPOSIX)
 	}
-	mergeCredentialGuardClaudeHooks(root, guardCredentialGlobalCmdPSPOSIX)
+	mergeCredentialGuardClaudeHooks(root, claudeShellMatcher, guardCredentialGlobalCmdPSPOSIX)
 
 	out, marshalErr := json.MarshalIndent(root, "", "  ")
 	if marshalErr != nil {
@@ -947,24 +950,28 @@ func harnessCredentialGuardTargetClaude(home string, opts UpdateOptions) TargetR
 	return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 }
 
-// mergeCredentialGuardClaudeHooks merges the credential-guard PreToolUse/
-// PostToolUse[matcher:"Bash"] entries into root["hooks"], preserving any
-// other hook groups/matchers already present (same merge contract as
-// InjectClaudeHooks, minus the attention-signal/cleanup entries which stay
-// project-scope only). Despite the name (kept for git-blame continuity with
-// ML-2A), this helper is shape-agnostic — it only touches
-// root["hooks"]["PreToolUse"/"PostToolUse"] with matcher "Bash", the exact
-// same JSON shape Codex's .codex/hooks.json (InjectCodexHooks,
-// agentfiles.go) already uses for its own PreToolUse/PostToolUse[Bash]
-// entries — so harnessCredentialGuardTargetCodex below reuses it verbatim
-// instead of duplicating the merge logic.
-func mergeCredentialGuardClaudeHooks(root map[string]interface{}, scriptPath string) {
+// mergeCredentialGuardClaudeHooks merges the guard PreToolUse/PostToolUse[matcher]
+// entries into root["hooks"], preserving any other hook groups/matchers already
+// present (same merge contract as InjectClaudeHooks, minus the attention-signal/
+// cleanup entries which stay project-scope only). Despite the name (kept for
+// git-blame continuity with ML-2A), this helper is shape-agnostic — it only
+// touches root["hooks"]["PreToolUse"/"PostToolUse"] with the given matcher.
+//
+// The matcher parameter controls which tool name is intercepted:
+//   - Claude Code callers (harnessCredentialGuardTargetClaude,
+//     harnessGitBranchGuardTargetClaude): pass claudeShellMatcher
+//     ("Bash|PowerShell") so the guard fires on both POSIX and Windows
+//     (ML-5A / REQ-2026-09-05).
+//   - Codex callers (harnessCredentialGuardTargetCodex,
+//     harnessGitBranchGuardTargetCodex): pass "Bash" — Codex's tool
+//     name does not vary by platform.
+func mergeCredentialGuardClaudeHooks(root map[string]interface{}, matcher, scriptPath string) {
 	hooks, _ := root["hooks"].(map[string]interface{})
 	if hooks == nil {
 		hooks = make(map[string]interface{})
 	}
-	hooks["PreToolUse"] = mergeClaudeHookArray(hooks["PreToolUse"], "Bash", scriptPath)
-	hooks["PostToolUse"] = mergeClaudeHookArray(hooks["PostToolUse"], "Bash", scriptPath)
+	hooks["PreToolUse"] = mergeClaudeHookArray(hooks["PreToolUse"], matcher, scriptPath)
+	hooks["PostToolUse"] = mergeClaudeHookArray(hooks["PostToolUse"], matcher, scriptPath)
 	root["hooks"] = hooks
 }
 
@@ -1015,7 +1022,7 @@ func harnessCredentialGuardTargetCodex(home string, opts UpdateOptions) TargetRe
 			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 		}
 		root := make(map[string]interface{})
-		mergeCredentialGuardClaudeHooks(root, guardCredentialGlobalCmdPSPOSIX)
+		mergeCredentialGuardClaudeHooks(root, "Bash", guardCredentialGlobalCmdPSPOSIX)
 		desired, marshalErr := json.MarshalIndent(root, "", "  ")
 		if marshalErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
@@ -1047,7 +1054,7 @@ func harnessCredentialGuardTargetCodex(home string, opts UpdateOptions) TargetRe
 		migrateHookCommand(hooks["PreToolUse"], "Bash", legacyScriptPath, guardCredentialGlobalCmdPSPOSIX)
 		migrateHookCommand(hooks["PostToolUse"], "Bash", legacyScriptPath, guardCredentialGlobalCmdPSPOSIX)
 	}
-	mergeCredentialGuardClaudeHooks(root, guardCredentialGlobalCmdPSPOSIX)
+	mergeCredentialGuardClaudeHooks(root, "Bash", guardCredentialGlobalCmdPSPOSIX)
 
 	out, marshalErr := json.MarshalIndent(root, "", "  ")
 	if marshalErr != nil {
@@ -1625,7 +1632,7 @@ func harnessGitBranchGuardTargetClaude(home string, opts UpdateOptions) TargetRe
 			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 		}
 		root := make(map[string]interface{})
-		mergeCredentialGuardClaudeHooks(root, guardGitBranchCmdPSPOSIX)
+		mergeCredentialGuardClaudeHooks(root, claudeShellMatcher, guardGitBranchCmdPSPOSIX)
 		desired, marshalErr := json.MarshalIndent(root, "", "  ")
 		if marshalErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
@@ -1653,11 +1660,14 @@ func harnessGitBranchGuardTargetClaude(home string, opts UpdateOptions) TargetRe
 		root = make(map[string]interface{})
 	}
 	// ML-2A: migrate any pre-ML-2A global entry (abs .sh path → inline command).
+	// ML-5A: also migrate the "Bash" matcher → claudeShellMatcher for guard entries.
 	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
 		migrateHookCommand(hooks["PreToolUse"], "Bash", legacyScriptPath, guardGitBranchCmdPSPOSIX)
 		migrateHookCommand(hooks["PostToolUse"], "Bash", legacyScriptPath, guardGitBranchCmdPSPOSIX)
+		migrateGuardHookMatcher(hooks["PreToolUse"], "Bash", claudeShellMatcher, guardGitBranchCmdPSPOSIX)
+		migrateGuardHookMatcher(hooks["PostToolUse"], "Bash", claudeShellMatcher, guardGitBranchCmdPSPOSIX)
 	}
-	mergeCredentialGuardClaudeHooks(root, guardGitBranchCmdPSPOSIX)
+	mergeCredentialGuardClaudeHooks(root, claudeShellMatcher, guardGitBranchCmdPSPOSIX)
 
 	out, marshalErr := json.MarshalIndent(root, "", "  ")
 	if marshalErr != nil {
@@ -1703,7 +1713,7 @@ func harnessGitBranchGuardTargetCodex(home string, opts UpdateOptions) TargetRes
 			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
 		}
 		root := make(map[string]interface{})
-		mergeCredentialGuardClaudeHooks(root, guardGitBranchCmdPSPOSIX)
+		mergeCredentialGuardClaudeHooks(root, "Bash", guardGitBranchCmdPSPOSIX)
 		desired, marshalErr := json.MarshalIndent(root, "", "  ")
 		if marshalErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
@@ -1735,7 +1745,7 @@ func harnessGitBranchGuardTargetCodex(home string, opts UpdateOptions) TargetRes
 		migrateHookCommand(hooks["PreToolUse"], "Bash", legacyScriptPath, guardGitBranchCmdPSPOSIX)
 		migrateHookCommand(hooks["PostToolUse"], "Bash", legacyScriptPath, guardGitBranchCmdPSPOSIX)
 	}
-	mergeCredentialGuardClaudeHooks(root, guardGitBranchCmdPSPOSIX)
+	mergeCredentialGuardClaudeHooks(root, "Bash", guardGitBranchCmdPSPOSIX)
 
 	out, marshalErr := json.MarshalIndent(root, "", "  ")
 	if marshalErr != nil {
