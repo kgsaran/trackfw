@@ -509,12 +509,15 @@ zera. Os testes do ML-5A usaram fixture só com os grupos de shell — falha de 
       `cmd`: `trackfw guard <n> || exit 2` dá 2/2/0. Decisão (D11) pendente com o KG.
 
 ### ML-6B — Implementação da D11 (ADR-2026-10-04, adendo de 2026-10-07)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Files affected:** `internal/generators/` (constantes da linha, migração do `update`), `internal/validator/` (linha esperada por família), configs deste repositório, `scripts/check-*.sh` que afirmem a linha, `docs/cli-parity.md`, `README.md`
 **Acceptance criteria:**
-- [ ] Gerador emite as linhas da D11 (sítio único); `update` migra as duas formas anteriores (D2 revista e `.sh`), idempotente
-- [ ] `validate` aceita exatamente as linhas da D11 e acusa as anteriores (aviso para migrar) — teste de concordância gerador↔validator verde
-- [ ] Teste de comportamento: a linha emitida, rodada por `sh -c` e `bash -c` com PATH sem `trackfw`, sai 2; com o binário, 2 (nega) e 0 (libera)
-- [ ] `make quality` verde sem `~/.local/bin` no PATH
+- [x] Gerador emite as linhas da D11 (sítio único); `update` migra as duas formas anteriores (D2 revista e `.sh`), idempotente
+- [x] `validate` aceita exatamente as linhas da D11 e acusa as anteriores (aviso para migrar) — teste de concordância gerador↔validator verde
+- [x] Teste de comportamento: a linha emitida, rodada por `sh -c` e `bash -c` com PATH sem `trackfw`, sai 2; com o binário, 2 (nega) e 0 (libera)
+- [x] `make quality` verde sem `~/.local/bin` no PATH
+      Auditoria (2026-10-07): linhas vivas dos 3 configs deste repo medidas pelo arquiteto — ausente 2, nega 2, libera 0,
+      stderr vazio; `TestD11FailClosed_*` (sh/bash); aviso de linha antiga também nas configs globais (corretivo);
+      `make quality` pelo arquiteto: exit 0, 347 OK, 0 GUARDA. O "exit 0" do primeiro relatório do ML-6B era falso (s67).
 
