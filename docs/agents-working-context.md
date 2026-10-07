@@ -45539,3 +45539,7 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-06 — zeus-tf — INÍCIO: prova por CLI de agente na VM (AC3 da REQ-2026-09-05)
 
 - PR #527 mergeado (782f5767). Antes de fechar a REQ, o AC3 pede o hook disparando via CLI real (PowerShell + Kiro); o ML-3A só mediu shells. Decisão do KG: medir agora. ML-3C aberto, branch `docs/hooks-de-guard-executam-no-windows-prova-por-cli`.
+
+## 2026-10-07 — zeus-tf — PR #528 aberto; CI preso por incidente do GitHub
+
+- PR #528 (Wave 5: matcher `Bash|PowerShell`, sonda do Git Bash no `validate`, provas de CLI real) aberto às 15:07 UTC. As 4 runs ficaram em `queued` sem jobs; `gh run cancel` devolveu HTTP 500. Incidente do GitHub "Git Operations, Pull Requests and Actions" (15:14 UTC; Actions/Webhooks major outage), mitigado às 15:49 UTC. Este commit existe para disparar runs novas.
