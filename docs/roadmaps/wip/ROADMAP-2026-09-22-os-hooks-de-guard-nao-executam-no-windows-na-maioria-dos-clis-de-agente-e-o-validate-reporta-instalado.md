@@ -440,3 +440,22 @@ make quality
       ✅ Reteste interativo pelo KG (2026-10-07 11:21): `git push origin main` → "Blocked by hook" com a REASON do guard;
       `git status` → executou. Matcher `Bash` casa no Windows; H3 (nega tudo via cmd.exe) refutada pelo controle.
 
+
+### ML-5D — `validate` sonda o `trackfw` que o Git Bash resolve no Windows
+**Status:** 🔄 Em andamento
+**Squad:** apolo-tf
+**Por que:** ML-5B (2026-10-07): o Claude Code roda o comando do hook pelo Git Bash (`/usr/bin/bash`), cujo perfil de
+login põe `~/bin` na frente do PATH; ali havia um `trackfw` 8.0.0-rc2 sem `guard` → exit 1 não bloqueante → `git push`
+seguiu, e o `validate` (que sonda o PATH do Windows com `exec.LookPath`) disse OK. Mesma causa da REQ (AC7).
+**Files affected:** `internal/validator/validator_guard_binary_probe.go` (+ testes)
+**Acceptance criteria:**
+- [ ] No Windows, com Git Bash presente e alguma config de guard na forma nova, o `validate` resolve `trackfw` como o Git Bash de login resolve (`bash -lc 'command -v trackfw'`) e sonda `guard --help` nesse binário; sem `guard` → violation nomeando o caminho e explicando o `~/bin`
+- [ ] Costuras substituíveis em teste; testes nas duas direções; não-Windows ou sem Git Bash → sonda não roda
+- [ ] `go test ./internal/validator/ -count=1` verde
+
+### ML-5E — README: estado medido por CLI depois da prova real
+**Status:** 🔄 Em andamento
+**Squad:** prometeu-tf
+**Files affected:** `README.md`
+**Acceptance criteria:**
+- [ ] Claude Code e Codex marcados como provados de ponta a ponta no Windows (com a fonte); Copilot e Amazon Q "não verificados (sem conta)"; Kiro "não medido (sem CLI ARM64)"; o matcher `Bash|PowerShell` do Claude Code e a armadilha do `~/bin` do Git Bash explicados
