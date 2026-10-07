@@ -4,6 +4,8 @@
 
 ## Índice
 
+- [claude-code-bash-matcher-nao-cobre-powershell-2026-10-07](claude-code-bash-matcher-nao-cobre-powershell-2026-10-07.md) — 🔴 **`"matcher": "Bash"` não casa `PowerShell` no Windows** — guard não dispara; corrigido para `"Bash|PowerShell"` via `claudeShellMatcher`; inventário de 7 outros CLIs incluído
+
 - [cobra-pai-sem-rune-sai-0-com-argumento-invalido-2026-10-06](cobra-pai-sem-rune-sai-0-com-argumento-invalido-2026-10-06.md) — 🔴 **comando pai cobra sem `RunE` sai 0 com subcomando inválido** (`flag.ErrHelp` engolido); `trackfw guard 'git-branch;'` liberava tudo no `cmd.exe`; teste o exit code do pai por subprocesso
 
 - [guard-fallback-old-binary-exit1-fail-open-6-clis-2026-10-06](guard-fallback-old-binary-exit1-fail-open-6-clis-2026-10-06.md) — **binário antigo (sem `guard`) sai exit 1 = fail-open em 6 de 8 CLIs** (exit 2 = criterio em Claude Code/Codex/Gemini/Cursor/Windsurf/AmazonQ); Kiro e Copilot bloqueiam por FP (deny-all); sonda do validate nao ve o binario do Git Bash login

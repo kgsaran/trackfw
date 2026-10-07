@@ -319,23 +319,41 @@ func InjectClaudeHooks(rootDir string) error {
 	// ML-2A: migrate any pre-ML-2A credential-guard entries (both bare
 	// relative path and $CLAUDE_PROJECT_DIR-pinned form) to the new inline
 	// guard command (ADR-2026-10-04 D2 revised).
+	// Note: legacy entries only ever used "Bash" as matcher; "Read"/"Write|Edit"
+	// migration is kept for completeness but is a no-op on pre-ML-2A configs.
 	for _, matcher := range []string{"Bash", "Read", "Write|Edit"} {
 		migrateHookCommand(hooks["PreToolUse"], matcher, legacyBareCredGuardCmd, guardCredentialCmdPSPOSIX)
 		migrateHookCommand(hooks["PreToolUse"], matcher, legacyClaudeCredGuardCmd, guardCredentialCmdPSPOSIX)
 		migrateHookCommand(hooks["PostToolUse"], matcher, legacyBareCredGuardCmd, guardCredentialCmdPSPOSIX)
 		migrateHookCommand(hooks["PostToolUse"], matcher, legacyClaudeCredGuardCmd, guardCredentialCmdPSPOSIX)
 	}
+	// Git branch guard command migration (must run BEFORE the combined matcher
+	// migration below so that legacy path forms are in their current inline
+	// form when migrateGuardHookMatcher checks command strings).
+	migrateHookCommand(hooks["PreToolUse"], "Bash", legacyClaudeGitGuardCmd, guardGitBranchCmdPSPOSIX)
+
+	// ML-5A (REQ-2026-09-05): upgrade "Bash" matcher → claudeShellMatcher
+	// ("Bash|PowerShell") for all guard hook blocks.
+	// Claude Code 2.1.292+ on Windows uses "PowerShell" as the primary shell
+	// tool name; hooks with matcher "Bash" never fire there. The combined call
+	// passes all known guard commands so that a shared "Bash" block
+	// (git-branch + credential in the same entry) is identified as all-guard
+	// and simply renamed, rather than split in a mixed-case pass.
+	migrateGuardHookMatcher(hooks["PreToolUse"], "Bash", claudeShellMatcher,
+		guardGitBranchCmdPSPOSIX, guardCredentialCmdPSPOSIX)
+	migrateGuardHookMatcher(hooks["PostToolUse"], "Bash", claudeShellMatcher,
+		guardCredentialCmdPSPOSIX)
 
 	// Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda
 	// 7/ROADMAP-2026-08-08 Wave 2 to Read/Write|Edit): skip the project-scope
 	// credential-guard entry when the global one is already installed
 	// (`trackfw update harness --targets claude-credential-guard`), so the
-	// guard doesn't run twice per Bash call. attention-signal/cleanup above
-	// and below are unaffected — they are inherently project-scope.
+	// guard doesn't run twice per Bash/PowerShell call. attention-signal/cleanup
+	// above and below are unaffected — they are inherently project-scope.
 	if !globalCredentialGuardInstalledClaude() {
 		hooks["PreToolUse"] = mergeClaudeHookArray(
 			hooks["PreToolUse"],
-			"Bash",
+			claudeShellMatcher,
 			guardCredentialCmdPSPOSIX,
 		)
 		// Read/Write/Edit coverage (ADR-2026-08-06 emenda 7, 2026-08-08):
@@ -353,19 +371,17 @@ func InjectClaudeHooks(rootDir string) error {
 		)
 	}
 
-	// Git branch guard (ROADMAP-2026-08-14 ML-3A / ML-2A): migrate any
-	// pre-ML-2A entry ($CLAUDE_PROJECT_DIR path form) to the new inline guard
-	// command, then emit or dedup (same pattern as credential-guard above).
-	migrateHookCommand(hooks["PreToolUse"], "Bash", legacyClaudeGitGuardCmd, guardGitBranchCmdPSPOSIX)
+	// Git branch guard (ROADMAP-2026-08-14 ML-3A / ML-2A / ML-5A): dedup or emit
+	// under claudeShellMatcher so the guard fires on both Bash (POSIX) and
+	// PowerShell (Windows).
 	// Dedup (ROADMAP-2026-08-17 Wave 2/ML-2B): skip the project-scope
 	// git-branch-guard entry when the global one is already installed
 	// (`trackfw update harness --targets claude-git-branch-guard`), so the
-	// guard doesn't fire twice per Bash call and print the block message
-	// twice.
+	// guard doesn't fire twice per shell call and print the block message twice.
 	if !globalGitBranchGuardInstalledClaude() {
 		hooks["PreToolUse"] = mergeClaudeHookArray(
 			hooks["PreToolUse"],
-			"Bash",
+			claudeShellMatcher,
 			guardGitBranchCmdPSPOSIX,
 		)
 	}
@@ -380,7 +396,7 @@ func InjectClaudeHooks(rootDir string) error {
 	if !globalCredentialGuardInstalledClaude() {
 		hooks["PostToolUse"] = mergeClaudeHookArray(
 			hooks["PostToolUse"],
-			"Bash",
+			claudeShellMatcher,
 			guardCredentialCmdPSPOSIX,
 		)
 		hooks["PostToolUse"] = mergeClaudeHookArray(
@@ -452,6 +468,14 @@ const (
 	guardGitBranchCmdCmdExe        = "trackfw guard git-branch"
 	guardCredentialCmdCmdExe       = "trackfw guard credential"
 	guardCredentialGlobalCmdCmdExe = "trackfw guard credential --global"
+
+	// claudeShellMatcher is the single canonical matcher for Claude Code shell-tool
+	// guard hooks (git-branch and credential). Claude Code names its primary shell tool
+	// "Bash" on POSIX/macOS and "PowerShell" on Windows; using the combined regex
+	// ensures the guard fires on both platforms (ML-5A / REQ-2026-09-05).
+	// This is the only place in the codebase where this string is defined — all emit
+	// and migration paths consume this constant.
+	claudeShellMatcher = "Bash|PowerShell"
 )
 
 // --- Legacy command paths — kept for migrateHookCommand calls only. ---
@@ -1388,6 +1412,81 @@ func migrateHookCommand(existing interface{}, matcher, oldCommand, newCommand st
 	}
 }
 
+// migrateGuardHookMatcher rewrites the "matcher" field of any hook group in the
+// existing PreToolUse/PostToolUse array whose current matcher is oldMatcher and
+// whose inner hooks array contains at least one command from guardCmds (ML-5A,
+// REQ-2026-09-05 — Claude Code on Windows uses "PowerShell" as tool name).
+//
+// Must be called AFTER all migrateHookCommand calls (command migration first) so
+// that by the time matcher migration runs, inner command strings are in their
+// current form and can be matched against guardCmds.
+//
+// Two cases are handled in-place:
+//   - All-guard block: every inner hook command is in guardCmds → rename matcher.
+//   - Mixed block: some are in guardCmds, others not → remove guard entries from
+//     the existing block (leaving third-party hooks in the old matcher block);
+//     the subsequent mergeClaudeHookArray call will add them under newMatcher.
+//   - No-guard block: no inner hook matches guardCmds → untouched.
+//
+// Idempotent: a second call finds no oldMatcher block containing guard commands
+// (they have already been renamed or extracted), so it is a no-op.
+func migrateGuardHookMatcher(existing interface{}, oldMatcher, newMatcher string, guardCmds ...string) {
+	arr, _ := existing.([]interface{})
+	guardSet := make(map[string]bool, len(guardCmds))
+	for _, cmd := range guardCmds {
+		guardSet[cmd] = true
+	}
+
+	for _, item := range arr {
+		obj, ok := item.(map[string]interface{})
+		if !ok || obj["matcher"] != oldMatcher {
+			continue
+		}
+		innerHooks, _ := obj["hooks"].([]interface{})
+
+		// Categorize inner hooks as guard or non-guard.
+		allGuard := len(innerHooks) > 0
+		hasGuard := false
+		for _, h := range innerHooks {
+			hObj, hOk := h.(map[string]interface{})
+			if !hOk {
+				allGuard = false
+				continue
+			}
+			cmd, _ := hObj["command"].(string)
+			if guardSet[cmd] {
+				hasGuard = true
+			} else {
+				allGuard = false
+			}
+		}
+		if !hasGuard {
+			continue
+		}
+		if allGuard {
+			// Simple case: every inner hook is a guard — rename the matcher.
+			obj["matcher"] = newMatcher
+		} else {
+			// Mixed case: leave non-guard hooks in the old matcher block;
+			// guard hooks are removed and will be re-added under newMatcher
+			// by the subsequent mergeClaudeHookArray call.
+			var remaining []interface{}
+			for _, h := range innerHooks {
+				hObj, hOk := h.(map[string]interface{})
+				if !hOk {
+					remaining = append(remaining, h)
+					continue
+				}
+				cmd, _ := hObj["command"].(string)
+				if !guardSet[cmd] {
+					remaining = append(remaining, h)
+				}
+			}
+			obj["hooks"] = remaining
+		}
+	}
+}
+
 // migrateCursorSimpleCommand rewrites a single stale command string to a new
 // one in a flat `[]interface{}` array where each item is a map with a "command"
 // key — the format used by Cursor's beforeShellExecution/afterShellExecution/
@@ -2105,8 +2204,9 @@ func simpleArrayHasValue(existing interface{}, field, value string, requireComma
 }
 
 // globalCredentialGuardInstalledClaude checks ~/.claude/settings.json for
-// the PreToolUse[matcher:"Bash"] entry harnessCredentialGuardTargetClaude
-// writes. Fail-open: any read/parse error → false.
+// the PreToolUse[matcher:claudeShellMatcher] entry harnessCredentialGuardTargetClaude
+// writes. Also accepts the legacy "Bash"-only matcher for configs not yet migrated.
+// Fail-open: any read/parse error → false.
 func globalCredentialGuardInstalledClaude() bool {
 	scriptPath, ok := globalCredentialGuardScriptPath()
 	if !ok {
@@ -2118,8 +2218,12 @@ func globalCredentialGuardInstalledClaude() bool {
 	}
 	hooks, _ := root["hooks"].(map[string]interface{})
 	// ML-2A: accept both old abs .sh path and new inline command form.
+	// ML-5A: also accept the new claudeShellMatcher ("Bash|PowerShell") in addition
+	// to the legacy "Bash" matcher so that a global config already migrated by
+	// `trackfw update harness` still dedups the project-scope entry.
 	return hookArrayHasCommand(hooks["PreToolUse"], "Bash", scriptPath) ||
-		hookArrayHasCommand(hooks["PreToolUse"], "Bash", guardCredentialGlobalCmdPSPOSIX)
+		hookArrayHasCommand(hooks["PreToolUse"], "Bash", guardCredentialGlobalCmdPSPOSIX) ||
+		hookArrayHasCommand(hooks["PreToolUse"], claudeShellMatcher, guardCredentialGlobalCmdPSPOSIX)
 }
 
 // globalCredentialGuardInstalledCodex checks ~/.codex/hooks.json for the
@@ -2251,7 +2355,8 @@ func globalGitBranchGuardScriptPath() (path string, ok bool) {
 }
 
 // globalGitBranchGuardInstalledClaude checks ~/.claude/settings.json for the
-// PreToolUse[matcher:"Bash"] entry harnessGitBranchGuardTargetClaude writes.
+// PreToolUse[matcher:claudeShellMatcher] entry harnessGitBranchGuardTargetClaude
+// writes. Also accepts the legacy "Bash"-only matcher for configs not yet migrated.
 // Fail-open: any read/parse error → false.
 func globalGitBranchGuardInstalledClaude() bool {
 	scriptPath, ok := globalGitBranchGuardScriptPath()
@@ -2264,8 +2369,12 @@ func globalGitBranchGuardInstalledClaude() bool {
 	}
 	hooks, _ := root["hooks"].(map[string]interface{})
 	// ML-2A: accept both old abs .sh path and new inline command form.
+	// ML-5A: also accept the new claudeShellMatcher ("Bash|PowerShell") in addition
+	// to the legacy "Bash" matcher so that a global config already migrated by
+	// `trackfw update harness` still dedups the project-scope entry.
 	return hookArrayHasCommand(hooks["PreToolUse"], "Bash", scriptPath) ||
-		hookArrayHasCommand(hooks["PreToolUse"], "Bash", guardGitBranchCmdPSPOSIX)
+		hookArrayHasCommand(hooks["PreToolUse"], "Bash", guardGitBranchCmdPSPOSIX) ||
+		hookArrayHasCommand(hooks["PreToolUse"], claudeShellMatcher, guardGitBranchCmdPSPOSIX)
 }
 
 // globalGitBranchGuardInstalledCodex checks ~/.codex/hooks.json for the

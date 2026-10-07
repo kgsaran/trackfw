@@ -62,17 +62,23 @@ func ValidateCredentialGuardHookResolvableForTest() ([]string, error) {
 }
 
 // StubProbeOKForTest replaces the binary-probe seam vars so any call to guardBinaryProbeOnce
-// succeeds (binary found, guard subcommand present). Restores the originals via t.Cleanup.
-// Used by the concordance test so it does not depend on a real trackfw binary in PATH.
+// succeeds (binary found, guard subcommand present, no Git Bash divergence). Restores the
+// originals via t.Cleanup. Used by the concordance test so it does not depend on a real
+// trackfw binary in PATH.
+// guardFindGitBashExe is stubbed to "" to prevent the Git Bash login-probe from running on
+// Windows CI runners where Git for Windows may be installed.
 func StubProbeOKForTest(t testing.TB) {
 	t.Helper()
 	origLookup := guardLookupBinary
 	origRun := guardRunProbe
+	origFindGitBash := guardFindGitBashExe
 	guardLookupBinary = func(_ string) (string, error) { return "/usr/local/bin/trackfw", nil }
 	guardRunProbe = func(_ string) error { return nil }
+	guardFindGitBashExe = func() string { return "" }
 	t.Cleanup(func() {
 		guardLookupBinary = origLookup
 		guardRunProbe = origRun
+		guardFindGitBashExe = origFindGitBash
 	})
 }
 

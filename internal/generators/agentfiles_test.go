@@ -72,10 +72,10 @@ func TestInjectClaudeHooks_Create(t *testing.T) {
 	if !helperHasClaudeHook(data, "PostToolUse", "AskUserQuestion", "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh") {
 		t.Error("PostToolUse[AskUserQuestion] → cleanup.sh missing")
 	}
-	if !helperHasClaudeHook(data, "PreToolUse", "Bash", guardCredentialCmdPSPOSIX) {
+	if !helperHasClaudeHook(data, "PreToolUse", claudeShellMatcher, guardCredentialCmdPSPOSIX) {
 		t.Error("PreToolUse[Bash] → credential-guard missing")
 	}
-	if !helperHasClaudeHook(data, "PostToolUse", "Bash", guardCredentialCmdPSPOSIX) {
+	if !helperHasClaudeHook(data, "PostToolUse", claudeShellMatcher, guardCredentialCmdPSPOSIX) {
 		t.Error("PostToolUse[Bash] → credential-guard missing")
 	}
 }
@@ -112,27 +112,30 @@ func TestInjectClaudeHooks_MergeAndIdempotent(t *testing.T) {
 	if !helperHasClaudeHook(data, "PreToolUse", "AskUserQuestion", "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh") {
 		t.Error("PreToolUse signal hook missing")
 	}
-	if !helperHasClaudeHook(data, "PreToolUse", "Bash", guardCredentialCmdPSPOSIX) {
+	if !helperHasClaudeHook(data, "PreToolUse", claudeShellMatcher, guardCredentialCmdPSPOSIX) {
 		t.Error("PreToolUse credential-guard hook missing")
 	}
 	if !helperHasClaudeHook(data, "PostToolUse", "AskUserQuestion", "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh") {
 		t.Error("PostToolUse cleanup hook missing")
 	}
-	if !helperHasClaudeHook(data, "PostToolUse", "Bash", guardCredentialCmdPSPOSIX) {
+	if !helperHasClaudeHook(data, "PostToolUse", claudeShellMatcher, guardCredentialCmdPSPOSIX) {
 		t.Error("PostToolUse credential-guard hook missing")
 	}
 
 	hooks, _ := data["hooks"].(map[string]interface{})
 	pr, _ := hooks["PreToolUse"].([]interface{})
-	// A pre-existing "Bash" matcher entry (third-party hook) must be merged with
-	// (not duplicated by) the new credential-guard "Bash" entry: 4 entries total
-	// -- {Bash: [other.sh, credential-guard.sh]}, {AskUserQuestion: [signal.sh]},
-	// {Read: [credential-guard.sh]}, {Write|Edit: [credential-guard.sh]}
-	// (ADR-2026-08-06 emenda 7/ROADMAP-2026-08-08 Wave 2).
-	if len(pr) != 4 {
-		t.Errorf("expected 4 PreToolUse entries, got %d", len(pr))
+	// ML-5A: a pre-existing "Bash" matcher entry (third-party hook) stays under
+	// its original "Bash" key; guard hooks go under "Bash|PowerShell" in a
+	// separate entry: 5 PreToolUse entries total:
+	// -- {Bash: [other.sh]}, {Bash|PowerShell: [credential-guard, git-branch-guard]},
+	// {AskUserQuestion: [signal.sh]}, {Read: [credential-guard.sh]},
+	// {Write|Edit: [credential-guard.sh]} (ML-5A / REQ-2026-09-05).
+	if len(pr) != 5 {
+		t.Errorf("expected 5 PreToolUse entries (Bash=other, Bash|PowerShell=guards, AskUserQuestion, Read, Write|Edit), got %d", len(pr))
 	}
 	post, _ := hooks["PostToolUse"].([]interface{})
+	// PostToolUse: 4 entries — {Bash|PowerShell: [credential-guard]},
+	// {AskUserQuestion: [cleanup.sh]}, {Read: [credential-guard]}, {Write|Edit: [credential-guard]}
 	if len(post) != 4 {
 		t.Errorf("expected 4 PostToolUse entries, got %d", len(post))
 	}
@@ -189,7 +192,7 @@ func TestInjectClaudeHooks_MigratesLegacyRelativeCredentialGuardCommand(t *testi
 	if helperHasClaudeHook(data, "PostToolUse", "Write|Edit", "scripts/trackfw-credential-guard.sh") {
 		t.Error("stale relative-path PostToolUse[Write|Edit] entry survived the upgrade")
 	}
-	if !helperHasClaudeHook(data, "PreToolUse", "Bash", guardCredentialCmdPSPOSIX) {
+	if !helperHasClaudeHook(data, "PreToolUse", claudeShellMatcher, guardCredentialCmdPSPOSIX) {
 		t.Error("PreToolUse[Bash] was not upgraded to the inline trackfw guard credential command")
 	}
 	if !helperHasClaudeHook(data, "PreToolUse", "Read", guardCredentialCmdPSPOSIX) {
@@ -201,17 +204,16 @@ func TestInjectClaudeHooks_MigratesLegacyRelativeCredentialGuardCommand(t *testi
 
 	// No duplicate hooks left behind inside the migrated matcher entries: exactly
 	// one credential-guard command per matcher after the rewrite, not two (old +
-	// new side by side). PreToolUse[Bash] additionally carries the git-branch-guard
-	// command (ROADMAP-2026-08-14 ML-3A) merged into the same matcher entry, so its
-	// expected count is 2 (credential-guard + git-branch-guard), not 1.
+	// new side by side). PreToolUse[Bash|PowerShell] (ML-5A) carries both the
+	// credential-guard and the git-branch-guard commands, so its expected count is 2.
 	pre, _ := hooks["PreToolUse"].([]interface{})
 	for _, item := range pre {
 		obj, _ := item.(map[string]interface{})
 		innerHooks, _ := obj["hooks"].([]interface{})
 		switch obj["matcher"] {
-		case "Bash":
+		case claudeShellMatcher:
 			if len(innerHooks) != 2 {
-				t.Errorf("PreToolUse[Bash] expected exactly 2 hooks (credential-guard + git-branch-guard) after migration, got %d", len(innerHooks))
+				t.Errorf("PreToolUse[%s] expected exactly 2 hooks (credential-guard + git-branch-guard) after migration, got %d", claudeShellMatcher, len(innerHooks))
 			}
 		case "Read":
 			if len(innerHooks) != 1 {
@@ -219,8 +221,8 @@ func TestInjectClaudeHooks_MigratesLegacyRelativeCredentialGuardCommand(t *testi
 			}
 		}
 	}
-	if !helperHasClaudeHook(data, "PreToolUse", "Bash", guardGitBranchCmdPSPOSIX) {
-		t.Error("PreToolUse[Bash] missing the git-branch-guard command")
+	if !helperHasClaudeHook(data, "PreToolUse", claudeShellMatcher, guardGitBranchCmdPSPOSIX) {
+		t.Errorf("PreToolUse[%s] missing the git-branch-guard command", claudeShellMatcher)
 	}
 }
 
@@ -1349,5 +1351,150 @@ func TestInjectHooksDetected_DispatchesAmazonQWhenDirExists(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, ".amazonq", "cli-agents", "q_cli_default.json")); err != nil {
 		t.Errorf("expected .amazonq/cli-agents/q_cli_default.json to be written by InjectHooksDetected, got: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ML-5A / REQ-2026-09-05 — migrateGuardHookMatcher
+// ---------------------------------------------------------------------------
+
+// TestMigrateGuardHookMatcher_AllGuard_RenamesMatcher asserts that an entry
+// whose "hooks" array contains ONLY guard commands has its "matcher" field
+// renamed from "Bash" to claudeShellMatcher ("Bash|PowerShell").
+// What this test asserts: migrateGuardHookMatcher renames an all-guard "Bash"
+// block to claudeShellMatcher so Claude Code fires the hook on Windows.
+func TestMigrateGuardHookMatcher_AllGuard_RenamesMatcher(t *testing.T) {
+	input := []interface{}{
+		map[string]interface{}{
+			"matcher": "Bash",
+			"hooks": []interface{}{
+				map[string]interface{}{"type": "command", "command": guardGitBranchCmdPSPOSIX},
+				map[string]interface{}{"type": "command", "command": guardCredentialCmdPSPOSIX},
+			},
+		},
+	}
+	migrateGuardHookMatcher(input, "Bash", claudeShellMatcher,
+		guardGitBranchCmdPSPOSIX, guardCredentialCmdPSPOSIX)
+	obj, _ := input[0].(map[string]interface{})
+	if obj["matcher"] != claudeShellMatcher {
+		t.Errorf("matcher = %q, want %q", obj["matcher"], claudeShellMatcher)
+	}
+}
+
+// TestMigrateGuardHookMatcher_MixedBlock_RemovesGuardEntries asserts that a
+// mixed block (guard + non-guard commands) has guard entries removed from the
+// old "Bash" block (leaving third-party entries intact) so a subsequent
+// mergeClaudeHookArray call can add them under claudeShellMatcher.
+// What this test asserts: migrateGuardHookMatcher strips guard entries from a
+// mixed "Bash" block, preserving third-party hooks, to enable clean re-injection
+// under claudeShellMatcher.
+func TestMigrateGuardHookMatcher_MixedBlock_RemovesGuardEntries(t *testing.T) {
+	input := []interface{}{
+		map[string]interface{}{
+			"matcher": "Bash",
+			"hooks": []interface{}{
+				map[string]interface{}{"type": "command", "command": "scripts/other.sh"},
+				map[string]interface{}{"type": "command", "command": guardCredentialCmdPSPOSIX},
+			},
+		},
+	}
+	migrateGuardHookMatcher(input, "Bash", claudeShellMatcher, guardCredentialCmdPSPOSIX)
+	obj, _ := input[0].(map[string]interface{})
+	// Matcher must remain "Bash" (third-party entry stays under old matcher).
+	if obj["matcher"] != "Bash" {
+		t.Errorf("matcher = %q, want Bash (mixed block must keep old matcher)", obj["matcher"])
+	}
+	innerHooks, _ := obj["hooks"].([]interface{})
+	if len(innerHooks) != 1 {
+		t.Errorf("inner hooks len = %d, want 1 (only other.sh should remain)", len(innerHooks))
+		return
+	}
+	remaining, _ := innerHooks[0].(map[string]interface{})
+	if remaining["command"] != "scripts/other.sh" {
+		t.Errorf("remaining command = %q, want scripts/other.sh", remaining["command"])
+	}
+}
+
+// TestMigrateGuardHookMatcher_Idempotent asserts that calling
+// migrateGuardHookMatcher twice does not produce a double rename or data
+// corruption (already at claudeShellMatcher → no-op on second call).
+// What this test asserts: migrateGuardHookMatcher is safe to call twice;
+// a block already at claudeShellMatcher is left untouched on the second pass.
+func TestMigrateGuardHookMatcher_Idempotent(t *testing.T) {
+	input := []interface{}{
+		map[string]interface{}{
+			"matcher": "Bash",
+			"hooks": []interface{}{
+				map[string]interface{}{"type": "command", "command": guardGitBranchCmdPSPOSIX},
+			},
+		},
+	}
+	migrateGuardHookMatcher(input, "Bash", claudeShellMatcher, guardGitBranchCmdPSPOSIX)
+	migrateGuardHookMatcher(input, "Bash", claudeShellMatcher, guardGitBranchCmdPSPOSIX)
+	if len(input) != 1 {
+		t.Fatalf("expected 1 entry after two calls, got %d", len(input))
+	}
+	obj, _ := input[0].(map[string]interface{})
+	if obj["matcher"] != claudeShellMatcher {
+		t.Errorf("matcher = %q after idempotency check, want %q", obj["matcher"], claudeShellMatcher)
+	}
+}
+
+// TestInjectClaudeHooks_MigratesLegacyBashMatcherToClaudeShellMatcher asserts
+// that calling InjectClaudeHooks on a settings.json that already has guard hooks
+// under the old "Bash" matcher migrates those hooks to claudeShellMatcher
+// ("Bash|PowerShell") without duplicating them.
+// What this test asserts: InjectClaudeHooks rewrites the "Bash" matcher to
+// "Bash|PowerShell" for Claude guard hooks, enabling the guard to fire on Windows.
+func TestInjectClaudeHooks_MigratesLegacyBashMatcherToClaudeShellMatcher(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+
+	legacy := map[string]interface{}{
+		"hooks": map[string]interface{}{
+			"PreToolUse": []interface{}{
+				map[string]interface{}{
+					"matcher": "Bash",
+					"hooks": []interface{}{
+						map[string]interface{}{"type": "command", "command": guardGitBranchCmdPSPOSIX},
+						map[string]interface{}{"type": "command", "command": guardCredentialCmdPSPOSIX},
+					},
+				},
+			},
+			"PostToolUse": []interface{}{
+				map[string]interface{}{
+					"matcher": "Bash",
+					"hooks": []interface{}{
+						map[string]interface{}{"type": "command", "command": guardCredentialCmdPSPOSIX},
+					},
+				},
+			},
+		},
+	}
+	helperWriteJSON(t, filepath.Join(dir, ".claude", "settings.json"), legacy)
+
+	if err := InjectClaudeHooks(dir); err != nil {
+		t.Fatalf("InjectClaudeHooks failed: %v", err)
+	}
+
+	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
+
+	// Guard hooks must now be under claudeShellMatcher.
+	if !helperHasClaudeHook(data, "PreToolUse", claudeShellMatcher, guardGitBranchCmdPSPOSIX) {
+		t.Errorf("PreToolUse[%s] git-branch-guard missing after matcher migration", claudeShellMatcher)
+	}
+	if !helperHasClaudeHook(data, "PreToolUse", claudeShellMatcher, guardCredentialCmdPSPOSIX) {
+		t.Errorf("PreToolUse[%s] credential-guard missing after matcher migration", claudeShellMatcher)
+	}
+	if !helperHasClaudeHook(data, "PostToolUse", claudeShellMatcher, guardCredentialCmdPSPOSIX) {
+		t.Errorf("PostToolUse[%s] credential-guard missing after matcher migration", claudeShellMatcher)
+	}
+
+	// No duplicate under old "Bash" matcher.
+	if helperHasClaudeHook(data, "PreToolUse", "Bash", guardGitBranchCmdPSPOSIX) {
+		t.Error("PreToolUse[Bash] still has git-branch-guard after migration — expected it to be removed")
+	}
+	if helperHasClaudeHook(data, "PostToolUse", "Bash", guardCredentialCmdPSPOSIX) {
+		t.Error("PostToolUse[Bash] still has credential-guard after migration — expected it to be removed")
 	}
 }

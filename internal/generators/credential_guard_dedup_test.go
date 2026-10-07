@@ -258,7 +258,7 @@ func TestDedup_FailOpen_NoGlobalFile(t *testing.T) {
 	}
 
 	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
-	if !helperHasClaudeHook(data, "PreToolUse", "Bash", guardCredentialCmdPSPOSIX) {
+	if !helperHasClaudeHook(data, "PreToolUse", claudeShellMatcher, guardCredentialCmdPSPOSIX) {
 		t.Error("expected project-scope credential-guard entry to be added when no global file exists (fail-open)")
 	}
 }
@@ -279,7 +279,7 @@ func TestDedup_FailOpen_CorruptedGlobalFile(t *testing.T) {
 	}
 
 	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
-	if !helperHasClaudeHook(data, "PreToolUse", "Bash", guardCredentialCmdPSPOSIX) {
+	if !helperHasClaudeHook(data, "PreToolUse", claudeShellMatcher, guardCredentialCmdPSPOSIX) {
 		t.Error("expected project-scope credential-guard entry to be added when global file is corrupted (fail-open)")
 	}
 }
@@ -301,7 +301,7 @@ func TestDedup_FailOpen_UnreadableGlobalFile(t *testing.T) {
 	}
 
 	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
-	if !helperHasClaudeHook(data, "PreToolUse", "Bash", guardCredentialCmdPSPOSIX) {
+	if !helperHasClaudeHook(data, "PreToolUse", claudeShellMatcher, guardCredentialCmdPSPOSIX) {
 		t.Error("expected project-scope credential-guard entry to be added when global file is unreadable (fail-open)")
 	}
 }

@@ -689,3 +689,120 @@ func validateGitBranchGuardHookResolvable() ([]string, error) {
 func validateGitBranchGuardHookResolvableLegacyWarnings() ([]string, error) {
 	return validateGuardHookShLegacyWarnings(gitBranchGuardScriptMarker)
 }
+
+// claudeGuardPowerShellSubcmdMarkers is the set of Claude Code guard subcmd prefixes
+// that must be covered by the "Bash|PowerShell" matcher (ML-5A / REQ-2026-09-05).
+// Using the same marker strings as credentialGuardSubcmdMarker / gitBranchGuardSubcmdMarker.
+var claudeGuardPowerShellSubcmdMarkers = []string{
+	credentialGuardSubcmdMarker, // "trackfw guard credential"
+	gitBranchGuardSubcmdMarker,  // "trackfw guard git-branch"
+}
+
+// validateClaudeGuardHookMatcherWarningsInFile walks a single parsed Claude Code
+// settings.json (decoded as interface{}) and returns a warning for every hook group
+// that (a) contains a trackfw guard command AND (b) has a matcher that does not
+// cover PowerShell. Returns nil when the file looks correct (all guard hooks use
+// "Bash|PowerShell" or similar), or when no guard hooks are found.
+//
+// The check is intentionally narrow: it only looks at top-level
+// root["hooks"]["PreToolUse"] and root["hooks"]["PostToolUse"] arrays (the only
+// paths InjectClaudeHooks writes), and only for objects with a string "matcher"
+// field and a "hooks" array — the canonical Claude Code hook-group shape.
+func validateClaudeGuardHookMatcherWarningsInFile(parsed interface{}, displayPath string) []string {
+	root, ok := parsed.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	hooksRoot, ok := root["hooks"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+
+	var warnings []string
+	for _, phase := range []string{"PreToolUse", "PostToolUse"} {
+		arr, _ := hooksRoot[phase].([]interface{})
+		for _, item := range arr {
+			obj, ok := item.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			matcher, _ := obj["matcher"].(string)
+			if matcher == "" {
+				continue
+			}
+			// Check if this group contains any Claude guard command.
+			innerHooks, _ := obj["hooks"].([]interface{})
+			hasGuard := false
+			for _, h := range innerHooks {
+				hObj, hOk := h.(map[string]interface{})
+				if !hOk {
+					continue
+				}
+				cmd, _ := hObj["command"].(string)
+				for _, marker := range claudeGuardPowerShellSubcmdMarkers {
+					if strings.Contains(cmd, marker) {
+						hasGuard = true
+						break
+					}
+				}
+				if hasGuard {
+					break
+				}
+			}
+			if !hasGuard {
+				continue
+			}
+			// Guard hook found — verify the matcher covers PowerShell.
+			if !strings.Contains(matcher, "PowerShell") {
+				warnings = append(warnings, fmt.Sprintf(
+					"%s: Claude Code guard hook has matcher %q — "+
+						"PowerShell is not covered; the hook will not fire on Windows "+
+						"(run `trackfw update` to migrate to \"Bash|PowerShell\")",
+					displayPath, matcher,
+				))
+				break // one warning per phase per file is enough
+			}
+		}
+	}
+	return warnings
+}
+
+// validateClaudeGuardHookMatcherWarnings checks the project-scope .claude/settings.json
+// for Claude Code guard hooks whose matcher does not cover PowerShell (ML-5A /
+// REQ-2026-09-05). Returns always-warnings (never violations) via applyRuleWarnOnly.
+func validateClaudeGuardHookMatcherWarnings() ([]string, error) {
+	root, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+	path := filepath.Join(root, ".claude", "settings.json")
+	content, readErr := readRegularFile(path)
+	if readErr != nil {
+		return nil, nil // absent / unreadable — not this rule's concern
+	}
+	var parsed interface{}
+	if json.Unmarshal(content, &parsed) != nil {
+		return nil, nil // invalid JSON — handled by the resolvable rule
+	}
+	return validateClaudeGuardHookMatcherWarningsInFile(parsed, ".claude/settings.json"), nil
+}
+
+// validateClaudeGuardHookMatcherGlobalWarnings checks the global ~/.claude/settings.json
+// for Claude Code guard hooks whose matcher does not cover PowerShell (ML-5A /
+// REQ-2026-09-05). Returns always-warnings (never violations) via applyRuleWarnOnly.
+func validateClaudeGuardHookMatcherGlobalWarnings() ([]string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, nil
+	}
+	path := filepath.Join(home, ".claude", "settings.json")
+	content, readErr := readRegularFile(path)
+	if readErr != nil {
+		return nil, nil // absent / unreadable — not this rule's concern
+	}
+	var parsed interface{}
+	if json.Unmarshal(content, &parsed) != nil {
+		return nil, nil // invalid JSON — handled by the resolvable rule
+	}
+	return validateClaudeGuardHookMatcherWarningsInFile(parsed, "~/.claude/settings.json"), nil
+}

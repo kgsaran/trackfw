@@ -319,6 +319,24 @@ ML-0B e comparar.
 **Acceptance criteria:**
 - [x] Cada afirmação aponta para uma linha da matriz — tabela afirmação→fonte conferida pelo arquiteto; o README diz o que foi medido (shells) e o que não foi (CLI de agente de ponta a ponta, `pwsh`). Ajuste do arquiteto: "a mesma linha em todo shell" vale por CLI (D2 revista tem duas formas)
 
+### ML-3C — Prova de ponta a ponta por CLI de agente na VM (AC3, pós-merge do PR #527)
+**Status:** ✅ Concluído
+**Squad:** ares-tf
+**Por que o escopo original não previa:** o ML-3A mediu os shells; nenhum CLI de agente estava instalado na VM, e
+o AC3 pede o hook real disparando em pelo menos um CLI de PowerShell e no Kiro. Decisão do KG em 2026-10-06:
+medir antes de fechar a REQ.
+**Files affected:** `docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md` (seção nova)
+**Acceptance criteria:**
+- [ ] Em um CLI de agente de PowerShell e no Kiro — **parcial**: PowerShell provado (Claude Code e Codex); Kiro não medido (ver abaixo), na VM, o hook gerado pelo binário da `main` bloqueia `git push` e libera um comando inofensivo, com a evidência do próprio CLI (saída/log), não só do shell
+- [x] O que exigiu login ou conta, registrado; o que não pôde ser medido, com o motivo
+      🔴 Fase 2a (2026-10-07, ares-tf, transcript `cea67981-…`): no Claude Code 2.1.292 no Windows a ferramenta de shell
+      primária é `PowerShell` (`tool_name: "PowerShell"`, `tool_input.command` igual ao do Bash). O `trackfw init` emite
+      `matcher: "Bash"`, o hook nunca dispara e o `git push` EXECUTA (falha aberta). Mesma causa da REQ → Wave 5.
+      ✅ Fechamento (2026-10-07): provado de ponta a ponta no Claude Code (ML-5B, rodada B) e no Codex (ML-5C, reteste do KG).
+      **Kiro: NÃO MEDIDO**, decisão do KG — não há CLI para Windows ARM64 (só x86_64) e o IDE exige conta AWS Builder ID,
+      que não temos. Copilot e Amazon Q: não verificados (sem conta). Gemini: login indisponível.
+
+
 ## Wave 4 — Red team e qualidade
 > Dependências: Wave 3 auditada. ML-4A ∥ ML-4B (somente leitura + parecer).
 
@@ -387,3 +405,65 @@ Era resíduo declarado na ADR-2026-08-12; o KG decidiu fechar (D10).
 test -s docs/seguranca/2026-10-04-red-team-guard-em-go.md
 make quality
 ```
+
+## Wave 5 — O matcher do hook cobre a ferramenta de shell do Windows
+> Dependências: ML-3C fase 2a. Achado pós-merge do PR #527; mesma causa da REQ (o hook não executa no Windows).
+
+### ML-5A — Matchers por CLI incluem a ferramenta de shell do Windows; `update` migra; `validate` acusa
+**Status:** ✅ Concluído
+**Squad:** apolo-tf
+**Files affected:** `internal/generators/agentfiles.go`, `internal/generators/update.go`, `internal/validator/` (+ testes); `.claude/settings.json` deste repositório
+**Acceptance criteria:**
+- [x] Claude Code: os hooks de guard que hoje usam `matcher: "Bash"` passam a `Bash|PowerShell` (git-branch e credential, projeto e global); teste nas duas direções
+- [x] Censo dos outros 7 CLIs: nome da ferramenta de shell no Windows vs. matcher emitido, com fonte; corrigido onde divergir
+- [x] `trackfw update` migra `Bash` → `Bash|PowerShell` (idempotente); `validate` acusa config de guard cujo matcher não cobre `PowerShell` no Claude Code
+- [x] `go test` dos pacotes tocados e `make quality` (arquiteto, sem `~/.local/bin` no PATH) verdes
+
+### ML-5B — Prova na VM: o hook real do Claude Code bloqueia via ferramenta PowerShell
+**Status:** ✅ Concluído
+**Squad:** ares-tf
+**Acceptance criteria:**
+- [x] Rodada A1d do ML-3C repetida com o binário novo: `git push` negado pelo guard (REASON no transcript), `git status` executa
+
+**Evidência:** sessão `5c803516` — hook `PreToolUse:PowerShell` disparou, guard retornou `toolDenialKind: "permission-rule"`, REASON "git push bruto bloqueado", git não executou. Controle `git status` (sessão `75642873`): `permission_denials: []`, executou. Documentado na seção "Rodada B" de `docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md`.
+
+---
+
+### ML-5C — Prova na VM: o hook do Codex CLI dispara com matcher `"Bash"` no Windows
+**Status:** ✅ Concluído
+**Squad:** ares-tf
+**Acceptance criteria:**
+- [x] Codex CLI 0.160.1 no Windows ARM64: confirmar se `tool_name = "Bash"` nos eventos `PreToolUse`
+- [x] Se não, identificar o nome real da ferramenta de shell e o matcher que casaria
+- [x] Seção ML-5C adicionada ao final de `docs/portabilidade/2026-10-07-matcher-do-hook-vs-ferramenta-de-shell-por-cli.md`
+
+**Evidência:** análise binária `codex.exe` (v0.160.1, aarch64-pc-windows-msvc) offset 215963416: string `"Bash"` precede imediatamente `"Command blocked by PreToolUse hook"`. Logs de shell_snapshot confirmam Codex usa PowerShell internamente, mas abstrai como `tool_name="Bash"` no sistema de hooks. Comportamento de timeout com `bypass_hook_trust=true`: zero output em 15–120s (hook dispara → PowerShell falha em SSH → Codex aguarda). Conclusão: matcher `"Bash"` em `agentfiles.go:614-619` está correto — sem alteração necessária para Codex CLI.
+      ⚠️ Auditoria do arquiteto (2026-10-07): a evidência é INFERIDA (string `"Bash"` vizinha da mensagem de bloqueio no
+      binário `codex.exe`, e o `codex exec` travando com hook ativo), não um disparo observado. O agente ficou 47 min
+      preso num `ssh … run_and_watch.py` e foi parado. Pendente: disparo interativo na VM, observado.
+      ✅ Reteste interativo pelo KG (2026-10-07 11:21): `git push origin main` → "Blocked by hook" com a REASON do guard;
+      `git status` → executou. Matcher `Bash` casa no Windows; H3 (nega tudo via cmd.exe) refutada pelo controle.
+
+
+### ML-5D — `validate` sonda o `trackfw` que o Git Bash resolve no Windows
+**Status:** ✅ Concluído
+**Squad:** apolo-tf
+**Por que:** ML-5B (2026-10-07): o Claude Code roda o comando do hook pelo Git Bash (`/usr/bin/bash`), cujo perfil de
+login põe `~/bin` na frente do PATH; ali havia um `trackfw` 8.0.0-rc2 sem `guard` → exit 1 não bloqueante → `git push`
+seguiu, e o `validate` (que sonda o PATH do Windows com `exec.LookPath`) disse OK. Mesma causa da REQ (AC7).
+**Files affected:** `internal/validator/validator_guard_binary_probe.go` (+ testes)
+**Acceptance criteria:**
+- [x] No Windows, com Git Bash presente e alguma config de guard na forma nova, o `validate` resolve `trackfw` como o Git Bash de login resolve (`bash -lc 'command -v trackfw'`) e sonda `guard --help` nesse binário; sem `guard` → violation nomeando o caminho e explicando o `~/bin`
+- [x] Costuras substituíveis em teste; testes nas duas direções; não-Windows ou sem Git Bash → sonda não roda
+- [x] `go test ./internal/validator/ -count=1` verde
+      Medido pelo arquiteto na VM (2026-10-07), com o `trackfw` 8.0.0-rc2 ainda em `C:\Users\Lab\bin`: `trackfw validate` no
+      projeto de teste → "✗ the Git Bash login shell (used by Claude Code on Windows to run hooks) resolves
+      C:\Users\Lab\bin\trackfw, which does not have the guard subcommand — the hook will fail open…", 2 violations (uma por guard).
+
+
+### ML-5E — README: estado medido por CLI depois da prova real
+**Status:** ✅ Concluído
+**Squad:** prometeu-tf
+**Files affected:** `README.md`
+**Acceptance criteria:**
+- [x] Claude Code e Codex marcados como provados de ponta a ponta no Windows (com a fonte); Copilot e Amazon Q "não verificados (sem conta)"; Kiro "não medido (sem CLI ARM64)"; o matcher `Bash|PowerShell` do Claude Code e a armadilha do `~/bin` do Git Bash explicados

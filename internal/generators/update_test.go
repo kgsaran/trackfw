@@ -820,7 +820,7 @@ func TestUpdateHarnessCredentialGuardClaudeInstallsAbsolutePathWithInstallMissin
 		found := false
 		for _, item := range arr {
 			obj, _ := item.(map[string]interface{})
-			if obj["matcher"] != "Bash" {
+			if obj["matcher"] != claudeShellMatcher {
 				continue
 			}
 			innerHooks, _ := obj["hooks"].([]interface{})
@@ -832,7 +832,7 @@ func TestUpdateHarnessCredentialGuardClaudeInstallsAbsolutePathWithInstallMissin
 			}
 		}
 		if !found {
-			t.Fatalf("%s[matcher=Bash] does not contain inline global command %q: %v", event, wantCmd, doc)
+			t.Fatalf("%s[matcher=%s] does not contain inline global command %q: %v", event, claudeShellMatcher, wantCmd, doc)
 		}
 	}
 }
@@ -874,12 +874,12 @@ func TestUpdateHarnessCredentialGuardClaudeIsIdempotent(t *testing.T) {
 	bashEntries := 0
 	for _, item := range arr {
 		obj, _ := item.(map[string]interface{})
-		if obj["matcher"] == "Bash" {
+		if obj["matcher"] == claudeShellMatcher {
 			bashEntries++
 		}
 	}
 	if bashEntries != 1 {
-		t.Fatalf("expected exactly one PreToolUse[matcher=Bash] entry, got %d: %v", bashEntries, doc)
+		t.Fatalf("expected exactly one PreToolUse[matcher=claudeShellMatcher] entry, got %d: %v", bashEntries, doc)
 	}
 }
 
@@ -957,20 +957,21 @@ func TestUpdateHarnessCredentialGuardClaudePreservesExistingContent(t *testing.T
 		obj, _ := item.(map[string]interface{})
 		matchers = append(matchers, fmt.Sprintf("%v", obj["matcher"]))
 	}
-	hasAskUserQuestion, hasBash := false, false
+	// ML-5A: claudeShellMatcher ("Bash|PowerShell") replaces bare "Bash" for Claude guard hooks.
+	hasAskUserQuestion, hasClaudeShell := false, false
 	for _, m := range matchers {
 		if m == "AskUserQuestion" {
 			hasAskUserQuestion = true
 		}
-		if m == "Bash" {
-			hasBash = true
+		if m == claudeShellMatcher {
+			hasClaudeShell = true
 		}
 	}
 	if !hasAskUserQuestion {
 		t.Fatalf("pre-existing PreToolUse[matcher=AskUserQuestion] entry was dropped: %v", matchers)
 	}
-	if !hasBash {
-		t.Fatalf("expected PreToolUse[matcher=Bash] entry to be added: %v", matchers)
+	if !hasClaudeShell {
+		t.Fatalf("expected PreToolUse[matcher=%s] entry to be added: %v", claudeShellMatcher, matchers)
 	}
 }
 

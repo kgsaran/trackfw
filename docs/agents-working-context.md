@@ -2,6 +2,148 @@
 
 ---
 
+## 2026-10-07 — apolo-tf (docs/hooks-de-guard-executam-no-windows-prova-por-cli — corretivo parity-falsify) — FIM
+
+**Branch:** `docs/hooks-de-guard-executam-no-windows-prova-por-cli`
+**Resultado:** `corrupt_literal` do cenário s67 atualizado para o corpo atual de `globalGitBranchGuardInstalledClaude` (ML-5A adicionou linha de retorno com `claudeShellMatcher` e dois comentários ML-5A). `make parity-falsify` → exit 0, 347 OK, 0 FAIL, CHUNK_COMPLETE 6 atingido. `make quality` → exit 0.
+**Arquivos afetados:** `scripts/check-gates-falsify.sh`
+
+---
+
+## 2026-10-07 — apolo-tf (docs/hooks-de-guard-executam-no-windows-prova-por-cli — corretivo parity-falsify) — INÍCIO
+
+**Branch:** `docs/hooks-de-guard-executam-no-windows-prova-por-cli`
+**Tarefa:** Corretivo de gate: `make quality` reprovava em `parity-falsify` (chunk_6 não chegava ao sentinela CHUNK_COMPLETE). Causa: ML-5A mudou o corpo de `globalGitBranchGuardInstalledClaude`; o `corrupt_literal` do s67 procurava o texto antigo (2 `hookArrayHasCommand` com `"Bash"`); o novo corpo tem 3 chamadas (incluindo `claudeShellMatcher`) e dois comentários ML-5A adicionais.
+**Arquivos afetados:** `scripts/check-gates-falsify.sh`
+
+---
+
+## 2026-10-07 — prometeu-tf (docs/hooks-de-guard-executam-no-windows-prova-por-cli — ML-5E) — FIM
+
+**Branch:** `docs/hooks-de-guard-executam-no-windows-prova-por-cli`
+**Resultado:** ML-5E concluído. README.md atualizado: tabela end-to-end adicionada (Claude Code ✅, Codex ✅, outros sem agente real ou sem conta), explicação 3 frases do matcher `Bash|PowerShell`, caveat `~/bin` com "from the next release". Seção "Guard hooks on Windows" preservada; estilo e inglês mantidos.
+**Arquivos afetados:** `README.md`, `docs/agents-working-context.md`
+
+---
+
+## 2026-10-07 — prometeu-tf (docs/hooks-de-guard-executam-no-windows-prova-por-cli — ML-5E) — INÍCIO
+
+**Branch:** `docs/hooks-de-guard-executam-no-windows-prova-por-cli`
+**Tarefa:** ML-5E — atualizar README.md com provas end-to-end no Windows (Claude Code + Codex), matcher `Bash|PowerShell`, caveat `~/bin`.
+**Arquivos afetados:** `README.md`, `docs/agents-working-context.md`
+
+---
+
+## 2026-10-07 — ares-tf (docs/hooks-de-guard-executam-no-windows-prova-por-cli — ML-5B rodada B) — FIM
+
+**Branch:** `docs/hooks-de-guard-executam-no-windows-prova-por-cli`
+**Resultado:** Rodada B executada. `C:\Users\Lab\bin\trackfw.exe` (8.0.0-rc2) renomeado para `.old-8.0.0-rc2` durante o teste; Git Bash login passou a resolver `guard-ml3c/bin/trackfw 9.2.0`. A1d repetida (sessao `5c803516`): hook `PreToolUse:PowerShell` disparou, guard retornou `toolDenialKind: "permission-rule"`, REASON "git push bruto bloqueado" — git nao executou (sem "src refspec"). Controle `git status` (sessao `75642873`): `permission_denials: []`, executou. `C:\Users\Lab\bin\` restaurado ao estado inicial. Criterio de aceite do ML-5B atendido na Rodada B. Secao "Rodada B" adicionada ao final da subsecao ML-5B no documento.
+**Arquivos afetados:** `docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md`, `docs/agents-working-context.md`
+
+---
+
+## 2026-10-07 — ares-tf (docs/hooks-de-guard-executam-no-windows-prova-por-cli — ML-5B rodada B) — INÍCIO
+
+**Branch:** `docs/hooks-de-guard-executam-no-windows-prova-por-cli`
+**Tarefa:** ML-5B Rodada B — remover `C:\Users\Lab\bin\trackfw.exe` (8.0.0-rc2) do PATH do Git Bash, garantindo que hooks resolvam o binário com `guard`, e verificar se o guard agora bloqueia `git push origin main` via Claude Code real na VM.
+**Arquivos afetados:** `docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md`, `docs/agents-working-context.md`
+
+---
+
+## 2026-10-07 — ares-tf (docs/hooks-de-guard-executam-no-windows-prova-por-cli — ML-5C) — FIM
+
+**Branch:** `docs/hooks-de-guard-executam-no-windows-prova-por-cli`
+**Resultado:** ML-5C concluído. Codex CLI 0.160.1 investigado na VM Windows 11 ARM64. Análise binária (`codex.exe` offset 215963416): string `"Bash"` precede imediatamente `"Command blocked by PreToolUse hook"` — prova que o Codex usa `tool_name="Bash"` nos eventos de hook, independente do shell interno. Confirmado por: logs de shell snapshot (`codex_core::shell_snapshot` — "not supported yet for PowerShell"), session JSONL (`powershell.exe -Command` via `unified_exec_startup`, exit code `STATUS_DLL_INIT_FAILED` em SSH), e comportamento de timeout com hooks ativos (zero output = hook disparou, PowerShell falhou, Codex aguardou). Conclusão: matcher `"Bash"` no `agentfiles.go:614` está correto — nenhuma alteração necessária. Seção "ML-5C" adicionada ao final de `docs/portabilidade/2026-10-07-matcher-do-hook-vs-ferramenta-de-shell-por-cli.md`.
+**Arquivos afetados:** `docs/portabilidade/2026-10-07-matcher-do-hook-vs-ferramenta-de-shell-por-cli.md`, `docs/agents-working-context.md`
+
+---
+
+## 2026-10-07 — ares-tf (docs/hooks-de-guard-executam-no-windows-prova-por-cli — ML-5C) — INÍCIO
+
+**Branch:** `docs/hooks-de-guard-executam-no-windows-prova-por-cli`
+**Tarefa:** ML-5C — disparar o hook real do Codex CLI na VM Windows ARM64 e verificar se o matcher `"Bash"` (agentfiles.go:614) dispara. Se não, identificar o nome real da ferramenta de shell usada pelo Codex e qual matcher casaria.
+**Arquivos afetados:** `docs/portabilidade/2026-10-07-matcher-do-hook-vs-ferramenta-de-shell-por-cli.md`, `docs/agents-working-context.md`
+
+---
+
+## 2026-10-07 — prometeu-tf (docs/hooks-de-guard-executam-no-windows-prova-por-cli — ML-5A-bis) — FIM
+
+**Branch:** `docs/hooks-de-guard-executam-no-windows-prova-por-cli`
+**Resultado:** Censo completo de 8 CLIs. Documento novo: `docs/portabilidade/2026-10-07-matcher-do-hook-vs-ferramenta-de-shell-por-cli.md`. Claude Code **Sim** (após ML-5A, `"Bash|PowerShell"`); Gemini CLI, Cursor, Windsurf, Kiro **Sim** (esperado ou evento sem matcher); Codex, Copilot, Amazon Q **Não verificável** (documentação oficial não especifica tool name no Windows). `docs/cli-parity.md` atualizado em 3 pontos (linhas ≈3687, ≈3943, ≈4108) — `"Bash|PowerShell"` + referência ao doc novo.
+**Arquivos afetados:** `docs/portabilidade/2026-10-07-matcher-do-hook-vs-ferramenta-de-shell-por-cli.md` (novo), `docs/cli-parity.md`, `docs/agents-working-context.md`
+
+---
+
+## 2026-10-07 — prometeu-tf (docs/hooks-de-guard-executam-no-windows-prova-por-cli — ML-5A-bis) — INÍCIO
+
+**Branch:** `docs/hooks-de-guard-executam-no-windows-prova-por-cli`
+**Tarefa:** ML-5A-bis — censo, por CLI de agente, de se o hook de guard que o trackfw emite dispara para a ferramenta de shell que o CLI usa no Windows. Leitura do código atual (`internal/generators/agentfiles.go`), confronto com documentação oficial de cada CLI, tabela de resultado, e atualização de `docs/cli-parity.md` com matcher correto para Claude Code. Produz `docs/portabilidade/2026-10-07-matcher-do-hook-vs-ferramenta-de-shell-por-cli.md`.
+**Arquivos afetados:** `docs/portabilidade/2026-10-07-matcher-do-hook-vs-ferramenta-de-shell-por-cli.md` (novo), `docs/cli-parity.md`, `docs/agents-working-context.md`
+
+---
+
+## 2026-10-07 — ares-tf (docs/hooks-de-guard-executam-no-windows-prova-por-cli — ML-5B) — FIM
+
+**Branch:** `docs/hooks-de-guard-executam-no-windows-prova-por-cli`
+**Resultado:** ML-5B executado. Binario `trackfw 9.2.0` (commit `4129b823`, `Bash|PowerShell`) compilado e instalado em `C:\Users\Lab\guard-ml3c\bin\`. `trackfw update` aplicou o novo matcher ao settings.json do projeto de teste. Rodada A1d repetida: matcher `Bash|PowerShell` funcionou (`hookName: PreToolUse:PowerShell` — hook dispara para ferramenta PowerShell), MAS hook resolveu `C:\Users\Lab\bin\trackfw.exe` (8.0.0-rc2 sem `guard`) via Git Bash PATH → exit 1 non-blocking → push nao foi bloqueado pelo guard (falhou por erro nativo do git). Causa raiz confirmada por medicao direta: Claude Code executa hooks via `/usr/bin/bash` (Git Bash), cujo PATH prefixado com `/c/Users/Lab/bin` diverge do Windows PATH inspecionado pelo `validate`. `git status --short` executou (hook exit 1 non-blocking). Criterio de aceite do ML-5B nao atendido. Achado novo reportado para o arquiteto: hook_guard_binary_version do validate usa exec.LookPath (Windows PATH) e nao detecta o binario do Git Bash. Subseção ML-5B adicionada ao final de `docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md`.
+**Arquivos afetados:** `docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md`, `docs/agents-working-context.md`
+
+---
+
+## 2026-10-07 — ares-tf (docs/hooks-de-guard-executam-no-windows-prova-por-cli — ML-5B) — INÍCIO
+
+**Branch:** `docs/hooks-de-guard-executam-no-windows-prova-por-cli`
+**Tarefa:** ML-5B — repetir a prova por CLI real (Claude Code na VM Windows) com o binário novo (commit `4129b823`, matcher `Bash|PowerShell`). Provar que o guard agora bloqueia `git push` e libera `git status`.
+**Arquivos afetados:** `docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md`, `docs/agents-working-context.md`
+
+---
+
+## 2026-10-07 — apolo-tf (docs/hooks-de-guard-executam-no-windows-prova-por-cli — ML-5A) — FIM
+
+**Branch:** `docs/hooks-de-guard-executam-no-windows-prova-por-cli`
+**Resultado:** ML-5A implementado. Constante `claudeShellMatcher = "Bash|PowerShell"` adicionada como única fonte de verdade. `InjectClaudeHooks` e `harnessCredentialGuardTargetClaude`/`harnessGitBranchGuardTargetClaude` emitem e migram hooks sob o novo matcher. `migrateGuardHookMatcher` implementada: bloco todo-guard → renomeia matcher; bloco misto → extrai guards. Dedup (`globalGitBranchGuardInstalledClaude`, `globalCredentialGuardInstalledClaude`) reconhece ambos os matchers. Validator (`validateClaudeGuardHookMatcherWarningsInFile`) emite aviso quando matcher não cobre PowerShell. `.claude/settings.json` do projeto atualizado. Todos os testes existentes passando; 7 novos testes adicionados (3 unit + 1 integração em generators; 3 validator). Falsificação confirmada: `TestInjectClaudeHooks_MigratesLegacyBashMatcherToClaudeShellMatcher` falha ao reverter `claudeShellMatcher = "Bash"`. Build e suite completa verdes.
+**Arquivos afetados:** `internal/generators/agentfiles.go`, `internal/generators/update.go`, `internal/validator/validator.go`, `internal/validator/validator_credential_guard.go`, `.claude/settings.json`, e arquivos de teste correspondentes.
+
+---
+
+## 2026-10-07 — apolo-tf (docs/hooks-de-guard-executam-no-windows-prova-por-cli — ML-5A) — INÍCIO
+
+**Branch:** `docs/hooks-de-guard-executam-no-windows-prova-por-cli`
+**Tarefa:** ML-5A — corrigir `InjectClaudeHooks` e harness global para emitir `matcher: "Bash|PowerShell"` em vez de `"Bash"` nos hooks de guard do Claude Code, migrar configs existentes, e adicionar alerta no `validate`.
+**Arquivos afetados:** `internal/generators/agentfiles.go`, `internal/generators/update.go`, `internal/validator/`, `.claude/settings.json`
+
+---
+
+## 2026-10-07 — ares-tf (docs/hooks-de-guard-executam-no-windows-prova-por-cli — ML-3C FASE 2a) — FIM
+
+**Branch:** `docs/hooks-de-guard-executam-no-windows-prova-por-cli`
+**Resultado:** FAIL-OPEN documentado. `trackfw init` emite `matcher: "Bash"` mas Claude Code 2.1.292 no Windows usa ferramenta `PowerShell` como primaria. Hook nunca disparou. `git push origin main` executou via CLI real (sessao `cea67981`) sem bloqueio do guard. Quatro rodadas medidas (A1, A1c, A1d, A2). Secao "ML-3C — hook real disparado por CLI de agente (2026-10-07)" adicionada ao final de `docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md`. Correcao necessaria identificada: `trackfw init` precisa emitir matcher `PowerShell` para Windows — novo ML na REQ vigente (Regra Dura de Causa Raiz).
+**Arquivos afetados:** `docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md`, `docs/agents-working-context.md`
+
+---
+
+## 2026-10-07 — ares-tf (docs/hooks-de-guard-executam-no-windows-prova-por-cli — ML-3C FASE 2a) — INÍCIO
+
+**Branch:** `docs/hooks-de-guard-executam-no-windows-prova-por-cli`
+**Tarefa:** ML-3C Fase 2a — disparar o hook real do Claude Code na VM Windows e provar que `trackfw guard git-branch` bloqueia `git push` e libera `git status`. Escrever seção "ML-3C — hook real disparado por CLI de agente (2026-10-07)" no final de `docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md`.
+**Arquivos afetados:** `docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md`, `docs/agents-working-context.md`
+
+---
+
+## 2026-10-06 — ares-tf (docs/hooks-de-guard-executam-no-windows-prova-por-cli — ML-3C FASE 1) — FIM
+
+**Branch:** `docs/hooks-de-guard-executam-no-windows-prova-por-cli`
+**Resultado:** Fase 1 concluída. Binário `trackfw 9.2.0` arm64 (commit `a730bf1a`) instalado em `C:\Users\Lab\guard-ml3c\bin\`, PATH do usuário atualizado (HKCU, REG_EXPAND_SZ, sem aspas). Claude Code 2.1.292 e Gemini CLI 0.63.0 instalados via npm. Kiro confirmado como IDE-only para ARM64 (sem CLI). Projeto de teste `C:\Users\Lab\guard-ml3c\proj\` criado com `trackfw init`. Hook configs verificados para os 3 CLIs. Viabilidade por CLI documentada; riscos críticos da Fase 2 identificados (Git Bash resolve binário antigo; `; exit $LASTEXITCODE` fail-open em bash). Portabilidade doc não modificada (seção ML-3C revertida integralmente).
+**Arquivos afetados:** `docs/agents-working-context.md`
+
+## 2026-10-06 — ares-tf (docs/hooks-de-guard-executam-no-windows-prova-por-cli — ML-3C FASE 1) — INÍCIO
+
+**Branch:** `docs/hooks-de-guard-executam-no-windows-prova-por-cli`
+**Tarefa:** ML-3C Fase 1 — instalação e viabilidade. Compilar binário Windows ARM64 da branch atual, instalar no PATH da VM, instalar Claude Code + Gemini CLI via npm, verificar Kiro, gerar projeto de teste com `trackfw init`, e documentar o que cada CLI precisa para executar uma ferramenta de shell (login, chave de API, modo não interativo).
+**Arquivos afetados:** `docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md` (seção ML-3C nova), `docs/agents-working-context.md`
+
+---
+
 ## 2026-10-06 — apolo-tf (feat/hooks-de-guard-executam-no-windows — corretivo CI PR #527 WindowsGitExePath) — FIM
 
 **Branch:** `feat/hooks-de-guard-executam-no-windows`
@@ -45393,3 +45535,11 @@ Achados notáveis para o apolo-tf:
 - Divergência residual não implementada: `"C:\Program Files\Git\bin\git.exe" push` (Windows) requer fix em `quoteAwareSplit` (backslashes consumidos dentro de `"…"`). Reportado ao arquiteto.
 - `go build ./...` ✓; `go vet ./internal/guard/` ✓; `go test ./internal/guard/... -count=1` ok (2.7s); `go test ./internal/generators/ -count=1` ok (51s); `GOOS=windows go vet` ✓; `GOOS=windows go test -c -o /dev/null` ✓.
 - `git status --short`: M docs/agents-working-context.md, M internal/guard/gitbranch.go, M internal/guard/gitbranch_test.go.
+
+## 2026-10-06 — zeus-tf — INÍCIO: prova por CLI de agente na VM (AC3 da REQ-2026-09-05)
+
+- PR #527 mergeado (782f5767). Antes de fechar a REQ, o AC3 pede o hook disparando via CLI real (PowerShell + Kiro); o ML-3A só mediu shells. Decisão do KG: medir agora. ML-3C aberto, branch `docs/hooks-de-guard-executam-no-windows-prova-por-cli`.
+
+## 2026-10-07 — zeus-tf — PR #528 aberto; CI preso por incidente do GitHub
+
+- PR #528 (Wave 5: matcher `Bash|PowerShell`, sonda do Git Bash no `validate`, provas de CLI real) aberto às 15:07 UTC. As 4 runs ficaram em `queued` sem jobs; `gh run cancel` devolveu HTTP 500. Incidente do GitHub "Git Operations, Pull Requests and Actions" (15:14 UTC; Actions/Webhooks major outage), mitigado às 15:49 UTC. Este commit existe para disparar runs novas.

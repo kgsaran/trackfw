@@ -3684,7 +3684,7 @@ documenta com a fonte primária (doc oficial do CLI) e o teste que o comprova.
 
 | CLI | Evento pré-execução | Evento pós-execução | Matcher/filtro | Bloqueio | Sabotagem e2e testada? |
 |---|---|---|---|---|---|
-| Claude Code | `PreToolUse` | `PostToolUse` | `matcher: "Bash"` (contra `tool_name`) | `exit 2` (`block`) | **Sim** — ML-4A |
+| Claude Code | `PreToolUse` | `PostToolUse` | `matcher: "Bash\|PowerShell"` (contra `tool_name`; ML-5A: Claude Code 2.1.292+ usa `PowerShell` no Windows — ver `docs/portabilidade/2026-10-07-matcher-do-hook-vs-ferramenta-de-shell-por-cli.md`) | `exit 2` (`block`) | **Sim** — ML-4A |
 | Codex ([ML-2B](#codex-wiring-ml-2b--pretoolusepostotooluse-matcher-bash)) | `PreToolUse` | `PostToolUse` | `matcher: "Bash"` (contra `tool_name`); distinto de `PermissionRequest` (só dispara em prompts de aprovação, não em todo comando) | `exit 2` + stderr, ou `hookSpecificOutput.permissionDecision: "deny"` | Não — doc oficial não expõe um exemplo de payload de stdin em runtime |
 | Gemini CLI ([ML-2C](#gemini-cli-wiring-ml-2c--beforetoolaftertool-matcher-run_shell_command)) | `BeforeTool` | `AfterTool` | `matcher` regex `"run_shell_command"` (contra `tool_name`) | `exit 2` (`decision: "deny"`/`"block"`) | Não — doc oficial não expõe um exemplo de payload de stdin em runtime |
 | GitHub Copilot ([ML-2D](#github-copilot-wiring-ml-2d--githubhookstrackfw-attentionjson-format-correction--matcher-bash)) | `preToolUse` | `postToolUse` | `matcher: "bash"` (contra `toolName`, regex ancorado `^(?:PATTERN)$`) | qualquer exit ≠ 0 bloqueia (`preToolUse` é fail-closed) | Não — doc confirma só o nome de um campo (`toolName`); payload completo de stdin não confirmado, formato depende do casing do evento (camelCase/PascalCase) |
@@ -3940,7 +3940,7 @@ Claude Code — `ROADMAP-2026-08-06-hooks-de-credential-guard-como-escopo-global
 ML-2A), `claude-git-branch-guard` (global-scope git-branch-guard wiring for Claude Code —
 `ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-projeto-e-integridade-independente-de-fiacao.md`,
 Wave 2/ML-2A — merges into the SAME `~/.claude/settings.json` hooks.PreToolUse/PostToolUse[matcher:
-"Bash"] arrays claude-credential-guard already writes into, as a second, distinct command entry),
+"Bash|PowerShell"] arrays claude-credential-guard already writes into, as a second, distinct command entry),
 `claude-agents`, `claude-skills`, `codex-credential-guard` (same wave, ML-2B — global-scope
 credential-guard wiring for Codex CLI, `~/.codex/hooks.json`), `codex-git-branch-guard` (same
 `~/.codex/hooks.json` file), `codex-agents`, `codex-skills`,
@@ -4105,7 +4105,7 @@ de um roadmap anterior e não relacionado
 
 | CLI | Arquivo global | Merge ou overwrite total | Path do comando | Pré-requisito de versão |
 |---|---|---|---|---|
-| Claude Code | `~/.claude/settings.json` | Merge (`PreToolUse`/`PostToolUse[matcher:"Bash"]`, `mergeClaudeHookArray`) — ver "Declared harness targets — pinned list" (ML-2A) | Absoluto, `~/.trackfw/scripts/trackfw-credential-guard.sh` | Nenhum |
+| Claude Code | `~/.claude/settings.json` | Merge (`PreToolUse`/`PostToolUse[matcher:"Bash\|PowerShell"]`, `mergeClaudeHookArray`) — ver "Declared harness targets — pinned list" (ML-2A); ML-5A: Claude Code 2.1.292+ usa `PowerShell` no Windows | Absoluto, `~/.trackfw/scripts/trackfw-credential-guard.sh` | Nenhum |
 | Codex | `~/.codex/hooks.json` | Merge (`PreToolUse`/`PostToolUse[matcher:"Bash"]`) — ver "Declared harness targets — pinned list" (ML-2B) | Absoluto, mesmo script | Nenhum — investigação `codex_hooks` resolvida (hooks habilitados por padrão) |
 | Gemini CLI | `~/.gemini/settings.json` | Merge (`BeforeTool`/`AfterTool[matcher:"run_shell_command"]`) — ver "Declared harness targets — pinned list" (ML-2C) | Absoluto, mesmo script | Nenhum |
 | Cursor | `~/.cursor/hooks.json` | Merge (`hooks.beforeShellExecution`/`hooks.afterShellExecution`, entradas planas `{"command":...}`, sem `matcher`) — ver "Declared harness targets — pinned list" (ML-2D) | Absoluto, mesmo script | Nenhum |
