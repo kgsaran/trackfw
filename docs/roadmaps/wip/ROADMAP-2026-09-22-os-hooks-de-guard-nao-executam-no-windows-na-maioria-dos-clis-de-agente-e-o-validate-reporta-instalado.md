@@ -320,18 +320,22 @@ ML-0B e comparar.
 - [x] Cada afirmação aponta para uma linha da matriz — tabela afirmação→fonte conferida pelo arquiteto; o README diz o que foi medido (shells) e o que não foi (CLI de agente de ponta a ponta, `pwsh`). Ajuste do arquiteto: "a mesma linha em todo shell" vale por CLI (D2 revista tem duas formas)
 
 ### ML-3C — Prova de ponta a ponta por CLI de agente na VM (AC3, pós-merge do PR #527)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** ares-tf
 **Por que o escopo original não previa:** o ML-3A mediu os shells; nenhum CLI de agente estava instalado na VM, e
 o AC3 pede o hook real disparando em pelo menos um CLI de PowerShell e no Kiro. Decisão do KG em 2026-10-06:
 medir antes de fechar a REQ.
 **Files affected:** `docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md` (seção nova)
 **Acceptance criteria:**
-- [ ] Em um CLI de agente de PowerShell e no Kiro, na VM, o hook gerado pelo binário da `main` bloqueia `git push` e libera um comando inofensivo, com a evidência do próprio CLI (saída/log), não só do shell
-- [ ] O que exigiu login ou conta, registrado; o que não pôde ser medido, com o motivo
+- [x] Em um CLI de agente de PowerShell e no Kiro, na VM, o hook gerado pelo binário da `main` bloqueia `git push` e libera um comando inofensivo, com a evidência do próprio CLI (saída/log), não só do shell
+- [x] O que exigiu login ou conta, registrado; o que não pôde ser medido, com o motivo
       🔴 Fase 2a (2026-10-07, ares-tf, transcript `cea67981-…`): no Claude Code 2.1.292 no Windows a ferramenta de shell
       primária é `PowerShell` (`tool_name: "PowerShell"`, `tool_input.command` igual ao do Bash). O `trackfw init` emite
       `matcher: "Bash"`, o hook nunca dispara e o `git push` EXECUTA (falha aberta). Mesma causa da REQ → Wave 5.
+      ✅ Fechamento (2026-10-07): provado de ponta a ponta no Claude Code (ML-5B, rodada B) e no Codex (ML-5C, reteste do KG).
+      **Kiro: NÃO MEDIDO**, decisão do KG — não há CLI para Windows ARM64 (só x86_64) e o IDE exige conta AWS Builder ID,
+      que não temos. Copilot e Amazon Q: não verificados (sem conta). Gemini: login indisponível.
+
 
 ## Wave 4 — Red team e qualidade
 > Dependências: Wave 3 auditada. ML-4A ∥ ML-4B (somente leitura + parecer).
