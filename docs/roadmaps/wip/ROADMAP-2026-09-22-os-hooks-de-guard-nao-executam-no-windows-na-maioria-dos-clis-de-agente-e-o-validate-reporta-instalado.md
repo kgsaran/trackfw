@@ -426,7 +426,7 @@ make quality
 ---
 
 ### ML-5C — Prova na VM: o hook do Codex CLI dispara com matcher `"Bash"` no Windows
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** ares-tf
 **Acceptance criteria:**
 - [x] Codex CLI 0.160.1 no Windows ARM64: confirmar se `tool_name = "Bash"` nos eventos `PreToolUse`
@@ -437,4 +437,6 @@ make quality
       ⚠️ Auditoria do arquiteto (2026-10-07): a evidência é INFERIDA (string `"Bash"` vizinha da mensagem de bloqueio no
       binário `codex.exe`, e o `codex exec` travando com hook ativo), não um disparo observado. O agente ficou 47 min
       preso num `ssh … run_and_watch.py` e foi parado. Pendente: disparo interativo na VM, observado.
+      ✅ Reteste interativo pelo KG (2026-10-07 11:21): `git push origin main` → "Blocked by hook" com a REASON do guard;
+      `git status` → executou. Matcher `Bash` casa no Windows; H3 (nega tudo via cmd.exe) refutada pelo controle.
 

@@ -506,3 +506,283 @@ A linha do Codex CLI passa de **"Não verificável"** para **"Sim (inferido por 
 | CLI | Evento + matcher | Ferramenta de shell no Windows | Dispara? |
 |---|---|---|---|
 | Codex CLI | `PreToolUse` + `"Bash"` (`agentfiles.go:614`) | `PowerShell` internamente; hook abstrai como `"Bash"` (binário offset 215963416) | **Sim** (inferido — análise de binário + timeout com hook ativo) |
+
+---
+
+## ML-5C — diagnóstico (2026-10-07)
+
+> Esta subseção **supera a conclusão anterior** ("inferido por análise de binário") com evidência
+> de runtime coletada a partir da sessão interativa do próprio KG.
+
+### Premissa invalidada
+
+A conclusão do ares-tf ("hook dispara — inferido por análise de binário + timeout") era
+**tecnicamente correta quanto ao matcher**, mas partia de uma premissa falsa sobre o estado do
+`hooks.json` na VM: o arquivo havia sido substituído por comandos de diagnóstico (`echo`) durante
+testes SSH do próprio ares-tf, de modo que o teste interativo do KG rodou com os hooks de echo,
+não com os hooks de guard do trackfw.
+
+### Diagrama causal
+
+```
+KG rodou `codex.cmd --no-daemon` interativamente (07/10/2026 ~10:38 UTC)
+  → pediu "Run exactly this shell command: git push origin main"
+  → Codex disparou PreToolUse com tool_name = "Bash" (OS-agnóstico)
+  → hooks.json tinha 3 grupos: "Bash" → echo, "exec" → echo, ".*" → echo
+  → todos os echo saem 0 (exit 0 = allow)
+  → Codex tentou executar: powershell.exe -Command "git push origin main"
+  → Git recusou: "fatal: detected dubious ownership" (safe.directory, não hook)
+  → Codex fez 2.ª tentativa com sandbox_permissions: "require_escalated"
+  → KG viu o diálogo de aprovação — esse é o "pedido de aprovação", não um bloqueio de hook
+```
+
+### H1 — confiança (trust): DESCARTADA
+
+O `config.toml` da VM (`C:\Users\Lab\.codex\config.toml`) contém três entradas
+`trusted_hash` correspondentes aos três grupos do `hooks.json` de diagnóstico:
+
+```toml
+[hooks.state.'C:\Users\Lab\guard-ml5c\proj\.codex\hooks.json:pre_tool_use:0:0']
+trusted_hash = "sha256:45460258f286e63978df355bc217ad4be3fb3e52eeda189c2afb2c63437cf1d1"
+[hooks.state.'C:\Users\Lab\guard-ml5c\proj\.codex\hooks.json:pre_tool_use:1:0']
+trusted_hash = "sha256:59080e71ac1928c2cd80299ac7f69089bafec226a2e9c806596c2924d916dbe3"
+[hooks.state.'C:\Users\Lab\guard-ml5c\proj\.codex\hooks.json:pre_tool_use:2:0']
+trusted_hash = "sha256:542b0e0c76734604b24a8b7feabb5fe4ba5bce9784efb2ff77f3a2e74e767d08"
+```
+
+O campo `bypass_hook_trust` não está presente — os hooks foram aprovados pelo TUI do Codex
+normalmente. O gate de confiança estava ativo e satisfeito. Fonte:
+`codex-rs/hooks/src/engine/discovery.rs` (commit `d27764b82f7118f674371e6d6e76271d9d606edb`):
+
+```rust
+if enabled
+    && (source.bypass_hook_trust
+        || matches!(
+            trust_status,
+            HookTrustStatus::Managed | HookTrustStatus::Trusted
+        ))
+{
+    handlers.push(ConfiguredHandler { ... });
+}
+```
+
+URL: `https://github.com/openai/codex/blob/d27764b82f7118f674371e6d6e76271d9d606edb/codex-rs/hooks/src/engine/discovery.rs`
+
+### H2 — matcher ("exec" em vez de "Bash"): DESCARTADA com prova de runtime
+
+Os arquivos criados pelos hooks de echo são a prova direta:
+
+| Arquivo | Existe? | Matcher que criou | Conclusão |
+|---|---|---|---|
+| `C:\Users\Lab\guard-ml5c\hook_bash_fired.txt` | **Sim** (07/10/2026 10:38) | `"Bash"` | tool_name IS "Bash" no Windows |
+| `C:\Users\Lab\guard-ml5c\hook_any_fired.txt` | **Sim** (07/10/2026 10:38) | `".*"` | regex de fallback também disparou |
+| `C:\Users\Lab\guard-ml5c\hook_exec_fired.txt` | **Não existe** | `"exec"` | "exec" NÃO é o tool_name |
+
+`hook_bash_fired.txt` contém a string `HOOK_FIRED_BASH` — prova direta de runtime de que o
+Codex envia `tool_name = "Bash"` no Windows para comandos de shell, independentemente do shell
+do SO.
+
+Confirmação na fonte: `codex-rs/core/src/tools/hook_names.rs`:
+
+```rust
+/// Returns the hook identity historically used for shell-like tools.
+pub(crate) fn bash() -> Self {
+    Self::new("Bash")
+}
+```
+
+URL: `https://github.com/openai/codex/blob/d27764b82f7118f674371e6d6e76271d9d606edb/codex-rs/core/src/tools/hook_names.rs`
+
+E o call site em `codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs` (linha 528):
+`tool_name: HookToolName::bash()` — aplica a PreToolUse, não só PostToolUse.
+
+URL: `https://github.com/openai/codex/blob/d27764b82f7118f674371e6d6e76271d9d606edb/codex-rs/core/src/tools/handlers/unified_exec/exec_command.rs`
+
+O matcher `"Bash"` em `agentfiles.go` está correto. **Nenhuma alteração em `agentfiles.go` é
+necessária para o Codex CLI.**
+
+### Causa real: hooks.json substituído por comandos de diagnóstico
+
+O `hooks.json` no projeto de teste (`C:\Users\Lab\guard-ml5c\proj\.codex\hooks.json`) continha:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {"matcher": "Bash",  "hooks": [{"type": "command", "command": "echo HOOK_FIRED_BASH > C:\\Users\\Lab\\guard-ml5c\\hook_bash_fired.txt"}]},
+      {"matcher": "exec",  "hooks": [{"type": "command", "command": "echo HOOK_FIRED_EXEC > C:\\Users\\Lab\\guard-ml5c\\hook_exec_fired.txt"}]},
+      {"matcher": ".*",    "hooks": [{"type": "command", "command": "echo HOOK_FIRED_ANY  > C:\\Users\\Lab\\guard-ml5c\\hook_any_fired.txt"}]}
+    ]
+  }
+}
+```
+
+Este arquivo foi gerado pelo ares-tf durante testes SSH. Ele **não é** o hooks.json gerado pelo
+`trackfw init`. O comando de hook do guard correto é:
+
+```
+trackfw guard git-branch; exit $LASTEXITCODE
+```
+
+Como os hooks de echo saem com exit 0, o Codex não tem razão para bloquear — comportamento
+correto, causa diferente do esperado.
+
+### Evidência da sessão JSONL (ID: 01a11696-3557-72b0-b0dc-28b8aa2f71b6)
+
+Sessão gravada em `C:\Users\Lab\AppData\Local\OpenAI\codex\rollout-2026-10-07T10-38-25-01a11696-3557-72b0-b0dc-28b8aa2f71b6.jsonl` (21 eventos):
+
+- Ordinal 12: `custom_tool_call name="exec"` → `tools.exec_command({cmd:"git push origin main", workdir:"C:\\Users\\Lab\\guard-ml5c\\proj"})` — confirma que o Codex usa `exec` como nome interno de ferramenta, mas envia `tool_name = "Bash"` para o sistema de hooks (comportamento OS-agnóstico por design, conforme `hook_names.rs`)
+- Ordinal 14: `CommandExecution` via `powershell.exe -Command "git push origin main"` → status: `"failed"` → `"fatal: detected dubious ownership"` — este é o erro do git, não de hook
+- Ordinal 19: segunda tentativa com `sandbox_permissions: "require_escalated"` — este é o "pedido de aprovação" que KG viu, não um bloqueio de hook
+- **Nenhum evento `hook_started`/`hook_completed`** na sessão — esperado: hooks que saem 0 não emitem esses eventos no JSONL
+
+### Nota: shell de execução do hook no Windows (H3 — comportamento cmd.exe)
+
+O shell padrão para hooks no Windows é determinado por `COMSPEC` (normalmente `cmd.exe`).
+Fonte: `codex-rs/hooks/src/engine/command_runner.rs`:
+
+```rust
+#[cfg(windows)]
+let (environment_variable, fallback_program) = ("COMSPEC", "cmd.exe");
+```
+
+URL: `https://github.com/openai/codex/blob/d27764b82f7118f674371e6d6e76271d9d606edb/codex-rs/hooks/src/engine/command_runner.rs`
+
+O `commandWindows` (`#[serde(rename = "commandWindows")]` em `hook_config.rs`) permite sobrescrever
+o `command` no Windows, mas o trackfw não usa esse campo em `InjectCodexHooks` (`agentfiles.go:525`).
+
+Consequência prática: o hook roda como:
+```
+cmd.exe /C "trackfw guard git-branch; exit $LASTEXITCODE"
+```
+
+O `cmd.exe` tokeniza `;` como parte do argumento, não como separador de comando. Cobra recebe:
+`guard "git-branch;" exit $LASTEXITCODE`. A validação de argumentos em `guard.go` detecta o arg
+posicional inválido e retorna um `guardError` (D7, ADR-2026-10-04). O `isCommandUnderGuard` em
+`root.go` faz exit 2 — o Codex interpreta exit 2 como deny e bloqueia.
+
+**O bloqueio ocorre, mas pela razão errada** (D7 de arg parsing, não pela regra de governança).
+A correção robusta seria adicionar `commandWindows` ao hook do Codex em `agentfiles.go`, mas
+isso está fora do escopo desta REQ: o objetivo era provar que o hook dispara, e ele dispara.
+
+### Estado atual na VM — o que precisa ser feito antes do reteste
+
+> A VM (192.168.64.3/192.168.64.6) estava inacessível por SSH no momento da escrita desta subseção
+> (timeout). Os passos abaixo são para KG executar manualmente antes de repetir o teste.
+
+**Passo 1 — corrigir safe.directory** (permite que o git funcione no projeto de teste):
+
+```powershell
+git config --global --add safe.directory C:/Users/Lab/guard-ml5c/proj
+```
+
+**Passo 2 — restaurar hooks.json com o comando de guard correto** (substituir os hooks de echo):
+
+Execute em um diretório scratch para gerar um hooks.json via `trackfw init`, depois copie:
+
+```powershell
+# Criar projeto scratch com trackfw
+mkdir C:\Users\Lab\scratch-init
+cd C:\Users\Lab\scratch-init
+git init
+trackfw init   # responder: Codex como único CLI
+# Copiar o hooks.json gerado
+copy .codex\hooks.json C:\Users\Lab\guard-ml5c\proj\.codex\hooks.json
+```
+
+Alternativa direta (sobrescrever com o conteúdo correto):
+
+```powershell
+$h = @'
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "trackfw guard git-branch; exit $LASTEXITCODE"
+          }
+        ]
+      }
+    ]
+  }
+}
+'@
+$h | Set-Content C:\Users\Lab\guard-ml5c\proj\.codex\hooks.json
+```
+
+**Passo 3 — aprovar o novo hooks.json no TUI do Codex**:
+
+Abrir o Codex normalmente em `C:\Users\Lab\guard-ml5c\proj`. O Codex detectará que o hash do
+`hooks.json` mudou e exibirá o diálogo de confiança. Aprovar. O `config.toml` será atualizado
+com o novo `trusted_hash`.
+
+> NÃO adicionar `bypass_hook_trust` ao config. A aprovação via TUI é o fluxo correto.
+
+**Passo 4 — verificar versão do trackfw na PATH**:
+
+```powershell
+Get-Command trackfw | Select-Object -ExpandProperty Source
+trackfw --version
+```
+
+Esperado: v9.2.0 ou superior.
+
+**Passo 5 — repetir o teste interativo**:
+
+```powershell
+cd C:\Users\Lab\guard-ml5c\proj
+codex.cmd --no-daemon
+# Pedir: "Run exactly this shell command: git push origin main"
+```
+
+**Resultado esperado agora**: o Codex deve bloquear com mensagem de deny do guard
+(ou exit 2 do D7 de arg parsing — ver nota sobre cmd.exe acima). O diálogo de aprovação de
+sandbox NÃO deve aparecer antes do bloqueio de hook.
+
+### Nota metodológica: `timeout` indisponível no macOS
+
+Os comandos SSH desta investigação foram executados com `-o ConnectTimeout=10` mas sem
+`timeout 60` (envoltório de processo), pois o comando `timeout` do GNU não está disponível no
+macOS (`CLAUDE.md` pedia `timeout 60 ssh ...`). A mitigação correta para sessões futuras é:
+
+```bash
+perl -e 'alarm shift; exec @ARGV' 60 ssh -o ConnectTimeout=10 Lab@<vm> '<cmd>'
+```
+
+### Resumo dos vereditos
+
+| Hipótese | Veredito | Prova |
+|---|---|---|
+| H1: hooks não carregados por falta de confiança | **Descartada** | `config.toml` tem `trusted_hash` para os 3 grupos; `bypass_hook_trust` ausente (gate ativo e satisfeito) |
+| H2: matcher incorreto (`"exec"` em vez de `"Bash"`) | **Descartada** | `hook_bash_fired.txt` criado; `hook_exec_fired.txt` ausente; `hook_names.rs` confirma `"Bash"` para todos os comandos de shell, OS-agnóstico |
+| Causa real: hooks.json substituído por echo (exit 0) | **Confirmada** | Conteúdo do `hooks.json` + arquivos criados + sessão JSONL sem bloqueio |
+| H3: cmd.exe + D7 (arg parsing) | **Confirmado por análise de código** | `command_runner.rs` + `guard.go`; D7 faz exit 2, mas pela razão errada — bloqueio acontece |
+
+**Conclusão desta subseção**: o matcher `"Bash"` do trackfw está correto para o Codex CLI.
+O hook dispara — prova de runtime via `hook_bash_fired.txt`. O non-block visto pelo KG foi
+causado por hooks.json substituído com comandos de echo (exit 0), não por falha de matcher ou
+de trust.
+
+## ML-5C — reteste interativo pelo KG (2026-10-07, 11:21) — PROVA OBSERVADA
+
+Executado pelo KG direto na VM, `codex.cmd --no-daemon` (Codex CLI 0.160.1) em `C:\Users\Lab\guard-ml5c\proj`,
+depois de restaurar o `.codex/hooks.json` com `PreToolUse` + `"matcher": "Bash"` +
+`trackfw guard git-branch; exit $LASTEXITCODE` (o arquivo estava com hooks de diagnóstico `echo` deixados
+por um teste anterior — por isso o primeiro teste interativo não bloqueou) e o `safe.directory` corrigido.
+
+Captura: `docs/portabilidade/2026-10-07-codex-hook-real-bloqueia-git-push.png`.
+
+| pedido | resultado no Codex |
+|---|---|
+| `git push origin main` | **"Blocked by hook"** + `trackfw: git push bruto bloqueado. Use 'trackfw push' …` — nada executado |
+| `git status` (controle) | **"Ran git status"**, saída normal do git |
+
+Conclusões medidas:
+- O matcher `"Bash"` casa a ferramenta de shell do Codex no Windows (o hook disparou).
+- O guard devolveu a REASON da regra de governança, não o erro da D7: a linha chegou inteira ao `trackfw`,
+  então o Codex **não** roda o hook pelo `cmd.exe` cru. A hipótese H3 do diagnóstico (bloqueio pela D7, que
+  negaria todo comando) está **refutada** pelo controle `git status`, que executou.
+- AC3 da REQ-2026-09-05: CLI de agente real bloqueando e liberando no Windows — **provado no Codex e no Claude Code**.
