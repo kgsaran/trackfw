@@ -7,6 +7,15 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [9.3.1] - 2026-10-07
+
+### Fixed
+
+- **O `validate` não avisa mais "PowerShell is not covered" nos grupos `Read` e `Write|Edit`** do credential
+  guard do Claude Code. O aviso de matcher da 9.3.0 só vale para grupos de hook de shell (matcher com
+  `Bash`); a saída canônica do `trackfw init` gerava dois avisos que o `trackfw update` não limpava.
+  Relatado por @lourivalgarciajunior. (#533, fecha #530)
+
 ## [9.3.0] - 2026-10-07
 
 ### Added

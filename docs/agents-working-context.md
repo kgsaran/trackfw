@@ -45581,3 +45581,7 @@ Achados notáveis para o apolo-tf:
 - REQ para Done com evidência por AC; roadmap em `done/`. AC3 fica **parcial e sem marcar**: shells, Claude Code e Codex provados de ponta a ponta no Windows; Kiro não medido (sem CLI ARM64, sem conta AWS — decisão do KG); Copilot e Amazon Q não verificados.
 - Abertas em backlog: REQ-2026-10-06 (credential guard em Windsurf/Amazon Q) e REQ-2026-10-07 (`init` não instala hooks de Gemini/Kiro na 1ª execução).
 - Pendente fora de REQ: apagar `~/.local/bin/trackfw` após o release; investigar o falso positivo de "JWT" do credential guard global em `~/.trackfw/scripts/`.
+
+## 2026-10-07 — zeus-tf — #530 corrigida (PR #533); REQ-2026-09-05 fechada de novo; bump 9.3.1
+
+- ML-5F: aviso de matcher só em grupos de shell. REQ de volta a Done, roadmap em `done/`, label `req-aberta` retirada da #530. Bump 9.3.1 com `make parity-rest` EXIT=0 e `check-required-full` OK.
