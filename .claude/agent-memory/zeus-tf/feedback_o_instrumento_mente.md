@@ -81,3 +81,9 @@ entra para "encurtar a saída" e leva o rc junto.
 
 **Regra operacional:** se a linha seguinte à do comando usa `$?`, o comando **não pode** ter cano.
 Redirecione para arquivo e leia depois.
+
+**Quinta ocorrência (2026-10-07):** concluí que o `Quality` não rodava em push na `main` desde 18/09 e
+levei isso ao KG como achado de pré-release. Era o `gh run list --branch main --limit 20` (e
+`--event push --limit 8`) **sem `--workflow`**: a janela curta e misturada devolveu só runs antigas.
+Com `gh run list --workflow quality.yml --limit 200` filtrando `event=="push" and headBranch=="main"`,
+os três merges tinham run verde. 🔴 Para afirmar "não roda", filtre pelo workflow e alargue a janela.
