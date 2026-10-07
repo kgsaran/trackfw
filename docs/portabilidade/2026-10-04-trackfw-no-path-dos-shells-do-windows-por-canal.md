@@ -588,3 +588,147 @@ Credential (`bash -c "trackfw guard credential; exit $?"`):
 **AC5 (linha de base POSIX): CONFIRMADO.** Testes unitarios verdes; formas sh e bash exitam 2/0 identicamente ao ML-0B.
 
 **Achado — fallback e fail-open em 6 de 8 CLIs:** o binario antigo (8.0.0-rc2) sem o comando `guard` retorna exit 1 (cobra "unknown command"), nao exit 0. Para 6 CLIs (Claude Code, Codex, Gemini, Cursor, Windsurf, Amazon Q) cujo criterio de bloqueio e exit 2 especificamente, exit 1 = "hook falhou por erro, mas segue" = **fail-open**. Kiro e Copilot bloqueiam (FP operacional: deny-all pela razao errada). O `trackfw validate` rule `hook_guard_binary_version` e o mecanismo correto de deteccao, com ressalva: a sonda nao ve o binario do Git Bash login (ver abaixo).
+
+---
+
+## ML-3C — hook real disparado por CLI de agente (2026-10-07)
+
+**Objetivo:** provar que `trackfw guard git-branch` bloqueia `git push` e libera comando inofensivo quando disparado pelo Claude Code real na VM Windows.
+
+**Versoes:**
+- Claude Code: `2.1.292`
+- trackfw em `C:\Users\Lab\guard-ml3c\bin\trackfw.exe`: `9.2.0` (build do commit `782f5767`, branch `docs/hooks-de-guard-executam-no-windows-prova-por-cli`)
+- Projeto de teste: `C:\Users\Lab\guard-ml3c\proj\` (git init + trackfw init, commit inicial `c9ea032`)
+- VM: Windows 11 ARM64 (UTM), `ssh Lab@192.168.64.6`, `ExecutionPolicy Restricted`
+- `claude.cmd` em `C:\Users\Lab\AppData\Roaming\npm\claude.cmd` (claude.ps1 bloqueado pelo Restricted)
+
+**PATH do processo SSH (cmd.exe):**
+```
+C:\WINDOWS\system32 ... C:\Program Files\Git\cmd ... C:\Program Files\nodejs\
+C:\Users\Lab\guard-ml3c\bin           ← trackfw 9.2.0 (com guard), primeiro
+C:\Users\Lab\AppData\Local\Programs\Python\Python312-arm64\Scripts\
+C:\Users\Lab\AppData\Roaming\npm
+```
+
+**settings.json gerado pelo `trackfw init` (hook de PreToolUse relevante):**
+```json
+{
+  "matcher": "Bash",
+  "hooks": [
+    {"command": "trackfw guard credential; exit $LASTEXITCODE", "type": "command"},
+    {"command": "trackfw guard git-branch; exit $LASTEXITCODE", "type": "command"}
+  ]
+}
+```
+
+**Shell reportado pelo Claude Code no Windows:**
+```
+"shell":"PowerShell (primary); Bash tool also available for POSIX scripts — each takes its own syntax."
+```
+(trecho do `snapshot.shell` do attachment de ambiente na sessao `c02866c7-c01c-46e2-8d89-ef68f0f849ed`)
+
+---
+
+### Rodada A1 — `--allowedTools Bash --permission-mode acceptEdits`
+
+**Comando:**
+```
+claude.cmd -p "Run exactly this shell command and report its output: git push origin main"
+           --allowedTools Bash --output-format json --permission-mode acceptEdits
+```
+
+**Nota:** sem `--permission-mode`, o comando travou (sem resposta apos 120s). `--permission-mode acceptEdits` foi o minimo necessario para modo nao-interativo via SSH.
+
+**Resultado (trecho de `permission_denials` do JSON de saida):**
+```json
+"permission_denials": [
+  {
+    "tool_name": "PowerShell",
+    "tool_use_id": "toolu_01XNKQ8bvauQcpFmf6q5WAUt",
+    "tool_input": {"command": "git push origin main", "description": "Push main branch to origin"}
+  }
+]
+```
+
+**Interpretacao:** o modelo tentou usar a ferramenta `PowerShell` (nao `Bash`). Como `--allowedTools Bash` nao incluia `PowerShell`, o sistema de permissoes do Claude Code recusou **antes de qualquer hook disparar**. O guard nunca foi consultado. Nenhum evento de hook aparece no transcript (`c02866c7-c01c-46e2-8d89-ef68f0f849ed.jsonl`, 29 linhas, zero entradas de tipo `hookEvent` ou `hookSpecificOutput`).
+
+---
+
+### Rodada A1c (discriminador) — `--allowedTools PowerShell --permission-mode acceptEdits`
+
+**Resultado:**
+```json
+"permission_denials": [
+  {
+    "tool_name": "Bash",
+    "tool_use_id": "toolu_01NSPY3bSyWUYeCYrNSEzjFr",
+    "tool_input": {"command": "git push origin main", "description": "Push main branch to origin"}
+  }
+]
+```
+
+**Interpretacao:** o modelo **trocou de ferramenta** — usou `Bash` quando `PowerShell` estava na lista. Como `Bash` nao estava permitido, foi recusado pela mesma razao. Nenhum hook disparou. **A selecao de ferramenta pelo modelo e nao-deterministica em funcao das ferramentas permitidas.** Com cada lista de um unico elemento, o modelo escolhe a ferramenta fora da lista.
+
+---
+
+### Rodada A1d (prova de fail-open) — `--allowedTools Bash,PowerShell --permission-mode acceptEdits`
+
+**Resultado:**
+```json
+"permission_denials": []
+```
+
+**Resultado do comando:** `git push origin main` executou e falhou com o erro nativo do git:
+```
+error: src refspec main does not match any
+error: failed to push some refs to 'origin'
+```
+(sem remote configurado; o push falhou pelo git, NAO pelo guard)
+
+**Ferramenta usada (do transcript `cea67981-8841-4ffe-9743-546b48c4c78b.jsonl`):**
+```
+TOOL_USE: name=PowerShell id=toolu_01TP8RRTs6rcPMvSLwN3ApaU
+          input={'command': 'git push origin main', 'description': 'Push main branch to origin'}
+TOOL_RESULT: Exit code 1
+             error: src refspec main does not match any
+             error: failed to push some refs to 'origin'
+```
+
+**Interpretacao:** com ambas as ferramentas permitidas, o modelo escolheu `PowerShell`. O hook `matcher: "Bash"` **nao combinou** com o nome de ferramenta `PowerShell`, portanto o hook nunca disparou. O guard foi completamente contornado. `git push origin main` chegou ao git sem nenhuma intercepcao. **FAIL-OPEN: a configuracao gerada por `trackfw init` nao protege o Claude Code no Windows.**
+
+---
+
+### Rodada A2 — `git status` com `--allowedTools Bash,PowerShell --permission-mode acceptEdits`
+
+**Resultado:**
+```json
+"permission_denials": []
+```
+
+**Saida:** `"On branch master\nnothing to commit, working tree clean"`
+
+**Interpretacao:** comando inofensivo executou sem bloqueio — esperado. Nao prova que o guard libera (hook nao disparou), apenas confirma que o CLI funciona no projeto de teste.
+
+---
+
+### Qual shell o hook usou / qual binario foi resolvido
+
+**Nao observavel.** O hook nao disparou em nenhuma das rodadas. A causa e estrutural: `trackfw init` emite `matcher: "Bash"` no `settings.json`, mas o Claude Code 2.1.292 no Windows usa a ferramenta `PowerShell` como primaria. Sem um matcher `PowerShell` no settings, o PreToolUse hook de `guard git-branch` nunca e invocado.
+
+---
+
+### Rodada B — pulada
+
+**Precondicio:** "Rodada A mostrou que o hook resolveu o binario velho." O hook nao resolveu nenhum binario; foi completamente ignorado. Rodada B nao tem precondicio satisfeita. Pulada.
+
+---
+
+### Conclusao de ML-3C
+
+**"guard bloqueia via CLI real no Windows": NAO PODE SER PROVADO com a configuracao atual.**
+
+Causa raiz: `trackfw init` gera `matcher: "Bash"` para o hook de `guard git-branch`. No Claude Code 2.1.292 no Windows, a ferramenta de shell primaria chama-se `PowerShell` (cf. `snapshot.shell: "PowerShell (primary)"`). O matcher `Bash` nao casa com `PowerShell`, logo o hook nunca e invocado. A protecao e silenciosamente ausente.
+
+**Correcao necessaria (fora do escopo desta medicao):** `trackfw init` deve emitir um segundo bloco de hook com `matcher: "PowerShell"` para projetos Windows, ou um matcher composto `Bash|PowerShell`. Esta e a mesma causa da REQ vigente (falha de emissao do hook para o ambiente real do CLI de agente) e deve entrar como ML adicional no mesmo roadmap.
+
+**Evidencia por CLI:** `git push origin main` executou via Claude Code 2.1.292 (sessao `cea67981-8841-4ffe-9743-546b48c4c78b`) e falhou por erro nativo do git — nao pelo guard. `permission_denials: []`. Transcript disponivel em `C:\Users\Lab\.claude\projects\C--Users-Lab-guard-ml3c-proj\cea67981-8841-4ffe-9743-546b48c4c78b.jsonl`.

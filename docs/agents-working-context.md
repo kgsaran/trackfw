@@ -2,6 +2,22 @@
 
 ---
 
+## 2026-10-07 — ares-tf (docs/hooks-de-guard-executam-no-windows-prova-por-cli — ML-3C FASE 2a) — FIM
+
+**Branch:** `docs/hooks-de-guard-executam-no-windows-prova-por-cli`
+**Resultado:** FAIL-OPEN documentado. `trackfw init` emite `matcher: "Bash"` mas Claude Code 2.1.292 no Windows usa ferramenta `PowerShell` como primaria. Hook nunca disparou. `git push origin main` executou via CLI real (sessao `cea67981`) sem bloqueio do guard. Quatro rodadas medidas (A1, A1c, A1d, A2). Secao "ML-3C — hook real disparado por CLI de agente (2026-10-07)" adicionada ao final de `docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md`. Correcao necessaria identificada: `trackfw init` precisa emitir matcher `PowerShell` para Windows — novo ML na REQ vigente (Regra Dura de Causa Raiz).
+**Arquivos afetados:** `docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md`, `docs/agents-working-context.md`
+
+---
+
+## 2026-10-07 — ares-tf (docs/hooks-de-guard-executam-no-windows-prova-por-cli — ML-3C FASE 2a) — INÍCIO
+
+**Branch:** `docs/hooks-de-guard-executam-no-windows-prova-por-cli`
+**Tarefa:** ML-3C Fase 2a — disparar o hook real do Claude Code na VM Windows e provar que `trackfw guard git-branch` bloqueia `git push` e libera `git status`. Escrever seção "ML-3C — hook real disparado por CLI de agente (2026-10-07)" no final de `docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md`.
+**Arquivos afetados:** `docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md`, `docs/agents-working-context.md`
+
+---
+
 ## 2026-10-06 — ares-tf (docs/hooks-de-guard-executam-no-windows-prova-por-cli — ML-3C FASE 1) — FIM
 
 **Branch:** `docs/hooks-de-guard-executam-no-windows-prova-por-cli`

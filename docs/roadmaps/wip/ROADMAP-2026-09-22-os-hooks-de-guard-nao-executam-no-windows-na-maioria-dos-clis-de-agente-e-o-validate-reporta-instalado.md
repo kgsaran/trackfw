@@ -329,6 +329,9 @@ medir antes de fechar a REQ.
 **Acceptance criteria:**
 - [ ] Em um CLI de agente de PowerShell e no Kiro, na VM, o hook gerado pelo binário da `main` bloqueia `git push` e libera um comando inofensivo, com a evidência do próprio CLI (saída/log), não só do shell
 - [ ] O que exigiu login ou conta, registrado; o que não pôde ser medido, com o motivo
+      🔴 Fase 2a (2026-10-07, ares-tf, transcript `cea67981-…`): no Claude Code 2.1.292 no Windows a ferramenta de shell
+      primária é `PowerShell` (`tool_name: "PowerShell"`, `tool_input.command` igual ao do Bash). O `trackfw init` emite
+      `matcher: "Bash"`, o hook nunca dispara e o `git push` EXECUTA (falha aberta). Mesma causa da REQ → Wave 5.
 
 ## Wave 4 — Red team e qualidade
 > Dependências: Wave 3 auditada. ML-4A ∥ ML-4B (somente leitura + parecer).
@@ -398,3 +401,23 @@ Era resíduo declarado na ADR-2026-08-12; o KG decidiu fechar (D10).
 test -s docs/seguranca/2026-10-04-red-team-guard-em-go.md
 make quality
 ```
+
+## Wave 5 — O matcher do hook cobre a ferramenta de shell do Windows
+> Dependências: ML-3C fase 2a. Achado pós-merge do PR #527; mesma causa da REQ (o hook não executa no Windows).
+
+### ML-5A — Matchers por CLI incluem a ferramenta de shell do Windows; `update` migra; `validate` acusa
+**Status:** 🔄 Em andamento
+**Squad:** apolo-tf
+**Files affected:** `internal/generators/agentfiles.go`, `internal/generators/update.go`, `internal/validator/` (+ testes); `.claude/settings.json` deste repositório
+**Acceptance criteria:**
+- [ ] Claude Code: os hooks de guard que hoje usam `matcher: "Bash"` passam a `Bash|PowerShell` (git-branch e credential, projeto e global); teste nas duas direções
+- [ ] Censo dos outros 7 CLIs: nome da ferramenta de shell no Windows vs. matcher emitido, com fonte; corrigido onde divergir
+- [ ] `trackfw update` migra `Bash` → `Bash|PowerShell` (idempotente); `validate` acusa config de guard cujo matcher não cobre `PowerShell` no Claude Code
+- [ ] `go test` dos pacotes tocados e `make quality` (arquiteto, sem `~/.local/bin` no PATH) verdes
+
+### ML-5B — Prova na VM: o hook real do Claude Code bloqueia via ferramenta PowerShell
+**Status:** ⬜ Pendente
+**Squad:** ares-tf
+**Acceptance criteria:**
+- [ ] Rodada A1d do ML-3C repetida com o binário novo: `git push` negado pelo guard (REASON no transcript), `git status` executa
+
