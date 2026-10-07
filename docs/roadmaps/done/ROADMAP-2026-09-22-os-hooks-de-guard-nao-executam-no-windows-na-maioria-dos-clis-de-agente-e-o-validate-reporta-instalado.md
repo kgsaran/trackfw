@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-22
 req: "docs/req/REQ-2026-09-05-os-hooks-de-guard-nao-executam-no-windows-na-maioria-dos-clis-de-agente-e-o-validate-reporta-instalado.md"
 squad: "hades-tf, ares-tf, prometeu-tf, apolo-tf, artemis-tf, hefesto-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, ares-tf, prometeu-tf, apolo-tf, artemis-tf, hefesto-tf"
 
 # Roadmap: os hooks de guard nao executam no Windows na maioria dos CLIs de agente e o validate reporta instalado
 
-> Created: 2026-09-22 | Reescrito: 2026-10-04 | Status: wip
+> Created: 2026-09-22 | Reescrito: 2026-10-04 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-09-05-os-hooks-de-guard-nao-executam-no-windows-na-maioria-dos-clis-de-agente-e-o-validate-reporta-instalado.md
@@ -35,9 +35,9 @@ as configs são versionadas e servem ao time misto. Os `.sh` viram invólucro
 negativo da REQ), a jornada de instalação no Windows e os `attention-*`.
 
 ## Acceptance Criteria
-- [ ] AC1–AC9 da REQ, cada um fechado pelo ML que o cita
-- [ ] `make quality` EXIT=0 com a máquina ociosa, no fim
-- [ ] Medição na VM Windows: o guard dispara e bloqueia em PowerShell, `cmd.exe` e Git Bash
+- [x] AC1–AC9 da REQ, cada um fechado pelo ML que o cita — evidência por AC na REQ; AC3 parcial (Kiro não medido, decisão do KG)
+- [x] `make quality` EXIT=0 com a máquina ociosa, no fim — arquiteto, sem `~/.local/bin` no PATH; CI do PR #528: 20/20
+- [x] Medição na VM Windows: o guard dispara e bloqueia em PowerShell, `cmd.exe` e Git Bash — ML-3A (shells), ML-5B (Claude Code real) e ML-5C (Codex real)
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
