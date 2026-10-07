@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -113,29 +114,53 @@ func TestGenerateGitBranchGuardScript_DoesNotWireIntoAnyHooksFile(t *testing.T) 
 // cabeado-com-no-op-fora-de-projeto-trackfw.md). Todos os testes de bloqueio/allow pré-existentes
 // (que verificam comportamento DENTRO de projeto trackfw) dependem deste arquivo existir; os
 // testes específicos do no-op (fora de projeto) usam setupGitBranchGuardFixtureWithoutTrackfwYAML.
+//
+// ML-2A corretivo (Defeito 2): usa a FIXTURE CONGELADA (testdata/guard-sh-reference/) em vez do
+// invólucro gerado, para que o braço bash da paridade exercite o script original (Go-against-bash
+// real) e não o invólucro que por sua vez chama o Go (paridade vacuosa).
 func setupGitBranchGuardFixture(t *testing.T) (dir, scriptPath string) {
 	t.Helper()
 	dir = t.TempDir()
-	if err := GenerateGitBranchGuardScript(dir); err != nil {
-		t.Fatalf("GenerateGitBranchGuardScript erro: %v", err)
-	}
+	scriptPath = copyFrozenGitBranchGuardFixture(t, dir)
 	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte("project_name: fixture\n"), 0644); err != nil {
 		t.Fatalf("erro escrevendo trackfw.yaml de fixture: %v", err)
 	}
-	return dir, filepath.Join(dir, "scripts", "trackfw-git-branch-guard.sh")
+	return dir, scriptPath
 }
 
 // setupGitBranchGuardFixtureWithoutTrackfwYAML é o par de setupGitBranchGuardFixture SEM
 // trackfw.yaml — usado pelos testes de no-op (ML-1A). t.TempDir() garante isolamento do repo
 // real (ver TestGitBranchGuard_FixtureHasNoTrackfwYAMLAncestor, que prova a premissa em vez de
 // presumi-la).
+//
+// ML-2A corretivo (Defeito 2): usa a FIXTURE CONGELADA — mesmo racional de setupGitBranchGuardFixture.
 func setupGitBranchGuardFixtureWithoutTrackfwYAML(t *testing.T) (dir, scriptPath string) {
 	t.Helper()
 	dir = t.TempDir()
-	if err := GenerateGitBranchGuardScript(dir); err != nil {
-		t.Fatalf("GenerateGitBranchGuardScript erro: %v", err)
+	scriptPath = copyFrozenGitBranchGuardFixture(t, dir)
+	return dir, scriptPath
+}
+
+// copyFrozenGitBranchGuardFixture copia a fixture congelada de git-branch guard para
+// <dir>/scripts/trackfw-git-branch-guard.sh e devolve o caminho do script.
+// Usado pelos dois setups de fixture para garantir que o braço bash executa o script
+// original (completo), não o invólucro gerado pelo ML-2A.
+func copyFrozenGitBranchGuardFixture(t *testing.T, dir string) string {
+	t.Helper()
+	src := filepath.Join(testdataGuardRefDir(), "git-branch-guard.sh")
+	content, err := os.ReadFile(src)
+	if err != nil {
+		t.Fatalf("lendo fixture congelada git-branch-guard.sh: %v", err)
 	}
-	return dir, filepath.Join(dir, "scripts", "trackfw-git-branch-guard.sh")
+	scriptsDir := filepath.Join(dir, "scripts")
+	if err := os.MkdirAll(scriptsDir, 0755); err != nil {
+		t.Fatalf("MkdirAll scripts: %v", err)
+	}
+	dst := filepath.Join(scriptsDir, "trackfw-git-branch-guard.sh")
+	if err := os.WriteFile(dst, content, 0755); err != nil {
+		t.Fatalf("escrevendo fixture congelada: %v", err)
+	}
+	return dst
 }
 
 // runGitBranchGuardImpl executa o guard com env explícito (nil = herdar do processo pai).
@@ -146,7 +171,15 @@ func runGitBranchGuardImpl(t *testing.T, dir, scriptPath string, args []string, 
 	cmd := exec.Command("bash", cmdArgs...)
 	cmd.Dir = dir
 	cmd.Stdin = strings.NewReader(stdin)
-	if env != nil {
+	// ML-2A: thin-wrapper scripts call `trackfw guard git-branch`; inject the
+	// compiled binary dir into PATH so the wrapper finds the right binary.
+	if isCurrentGuardScript(scriptPath) {
+		baseEnv := env
+		if baseEnv == nil {
+			baseEnv = os.Environ()
+		}
+		cmd.Env = injectGuardBinaryPath(t, baseEnv)
+	} else if env != nil {
 		cmd.Env = env
 	}
 	var outBuf, errBuf strings.Builder
@@ -154,13 +187,23 @@ func runGitBranchGuardImpl(t *testing.T, dir, scriptPath string, args []string, 
 	cmd.Stderr = &errBuf
 	err := cmd.Run()
 	if err == nil {
-		return 0, outBuf.String(), errBuf.String()
+		exitCode, stdout, stderr = 0, outBuf.String(), errBuf.String()
+	} else if exitErr, ok := err.(*exec.ExitError); ok {
+		exitCode, stdout, stderr = exitErr.ExitCode(), outBuf.String(), errBuf.String()
+	} else {
+		t.Fatalf("erro executando script: %v (stderr: %s)", err, errBuf.String())
+		return -1, "", ""
 	}
-	if exitErr, ok := err.(*exec.ExitError); ok {
-		return exitErr.ExitCode(), outBuf.String(), errBuf.String()
+
+	// ML-1C — braço Go: compara saída do binário trackfw com o resultado bash.
+	// Pulado para scripts históricos (ex: old-guard.sh do TestGitBranchGuardAwk_ProvaDeMordida).
+	if isCurrentGuardScript(scriptPath) {
+		goRC, goOut, goErr := runGuardBinaryGitBranch(t, dir, args, stdin, env)
+		// Normalização: nenhuma para git-branch (saída determinística, sem timestamps ou paths).
+		assertGuardParity(t, t.Name(), exitCode, stdout, stderr, goRC, goOut, goErr, nil)
 	}
-	t.Fatalf("erro executando script: %v (stderr: %s)", err, errBuf.String())
-	return -1, "", ""
+
+	return exitCode, stdout, stderr
 }
 
 // makeEnvWithoutJQ devolve os.Environ() com PATH substituído pelo diretório curado
@@ -1037,6 +1080,21 @@ func TestGitBranchGuardAwk_C01C22_WithJQ(t *testing.T) {
 	for _, tc := range guardCasesTable() {
 		tc := tc
 		t.Run(tc.id, func(t *testing.T) {
+			// N09 on Windows: deliberate divergence — filepath.Base treats '\' as a path
+			// separator, so a token like `\\\...git` has basename "git" and the Go guard
+			// blocks (rc=2); bash on POSIX sees '\\' as a literal character, the token is
+			// not "git", and allows (rc=0). This divergence is intentional and in the safe
+			// direction: on Windows C:\...\git.exe is a real git path, so blocking is
+			// correct. Bash parity comparison is skipped for N09 on Windows only.
+			// Reference: PR #527 CI failure, ADR-2026-10-04.
+			if tc.id == "N09" && runtime.GOOS == "windows" {
+				goRC, _, _ := runGuardBinaryGitBranch(t, dir, nil, tc.payload, nil)
+				if goRC != 2 {
+					t.Errorf("N09 (+jq, windows): Go rc want 2 (divergência deliberada: "+
+						"filepath.Base trata '\\' como separador; caminho Windows até o git bloqueia), got %d", goRC)
+				}
+				return
+			}
 			code, _, stderr := runGitBranchGuard(t, dir, script, nil, tc.payload)
 			if code != tc.wantRC {
 				t.Errorf("%s (+jq): rc want %d, got %d (stderr: %s)", tc.id, tc.wantRC, code, stderr)
@@ -1057,6 +1115,16 @@ func TestGitBranchGuardAwk_C01C22_WithoutJQ(t *testing.T) {
 	for _, tc := range guardCasesTable() {
 		tc := tc
 		t.Run(tc.id, func(t *testing.T) {
+			// N09 on Windows: same deliberate divergence as WithJQ — see comment there.
+			// Bash parity comparison is skipped; only the Go binary result is asserted.
+			if tc.id == "N09" && runtime.GOOS == "windows" {
+				goRC, _, _ := runGuardBinaryGitBranch(t, dir, nil, tc.payload, nil)
+				if goRC != 2 {
+					t.Errorf("N09 (-jq/awk, windows): Go rc want 2 (divergência deliberada: "+
+						"filepath.Base trata '\\' como separador; caminho Windows até o git bloqueia), got %d", goRC)
+				}
+				return
+			}
 			code, _, stderr := runGitBranchGuardWithEnv(t, dir, script, env, tc.payload)
 			if code != tc.wantRC {
 				t.Errorf("%s (-jq/awk): rc want %d, got %d (stderr: %s)", tc.id, tc.wantRC, code, stderr)

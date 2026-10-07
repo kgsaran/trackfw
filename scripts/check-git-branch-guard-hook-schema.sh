@@ -277,40 +277,66 @@ run_discover_init() {
 self_test() {
   local failures=0
 
+  # --- Pré-requisito: binário Go para Cenário B --------------------------------
+  # ML-2A: o thin wrapper chama `exec trackfw guard git-branch`, então o Cenário
+  # B (schema CERTO) precisa de `trackfw` no PATH.  O modo principal do script
+  # garante isso depois de --self-test retornar; o self-test precisa construir o
+  # binário por conta própria quando GO_BIN não está definido (ex.: CI runner ou
+  # invocação direta com PATH limpo). Miramos a variável GO_BIN já declarada
+  # externamente (CI passa GO_BIN=bin/trackfw, por exemplo) para não recompilar
+  # desnecessariamente; se ausente, compilamos em $WORK/trackfw-self-test.
+  # O diretório $WORK/self-test-bin recebe um symlink `trackfw → <binário>` e é
+  # injetado no PATH SOMENTE no Cenário B — Cenário A usa seu próprio fake
+  # (injetado com PATH="$fake_bin_dir:..." antes do fake bin dir) e os cenários
+  # D/C3 invocam o gate completo como subprocesso (que monta o próprio PATH).
+  local _self_test_go_bin="${GO_BIN:-}"
+  if [[ -z "$_self_test_go_bin" ]]; then
+    _self_test_go_bin="$WORK/trackfw-self-test"
+    (cd "$ROOT_DIR" && GOCACHE="$WORK/go-build-cache" go build -o "$_self_test_go_bin" ./cmd/trackfw)
+  elif [[ "$_self_test_go_bin" != /* ]]; then
+    _self_test_go_bin="$ROOT_DIR/$_self_test_go_bin"
+  fi
+  local _self_test_bin_dir="$WORK/self-test-bin"
+  mkdir -p "$_self_test_bin_dir"
+  ln -sf "$_self_test_go_bin" "$_self_test_bin_dir/trackfw"
+
   # --- Cenário A: schema ERRADO ⇒ reprova, nomeando o sítio -----------------
-  # Cópia de scratch do script real, com a linha do printf revertida para o
-  # schema legado que o Claude Code rejeita ({"decision":"block","reason":
-  # "..."}) — o schema exato que causou o defeito original desta REQ.
+  # ML-2A: o schema é emitido pelo binário Go, não pelo wrapper .sh. Para
+  # injetar o schema errado, cria-se um `trackfw` falso que emite
+  # {"decision":"block","reason":"..."} (schema legado) e sai com exit 2.
+  # O wrapper .sh encontra o falso em PATH, repassa a chamada, e o gate deve
+  # detectar o schema errado — provando que decode_shape() é sensível ao schema,
+  # não só ao exit code.
   local mut_dir="$WORK/self-test/wrong-schema"
-  mkdir -p "$mut_dir/scripts"
+  local fake_bin_dir="$WORK/self-test/wrong-schema-bin"
+  mkdir -p "$mut_dir/scripts" "$fake_bin_dir"
   echo "namespace: prometeu-tf" >"$mut_dir/trackfw.yaml"
   cp "$ROOT_DIR/scripts/trackfw-git-branch-guard.sh" "$mut_dir/scripts/trackfw-git-branch-guard.sh"
-  sed -i.bak \
-    's/^printf .{"hookSpecificOutput":.*$/printf '"'"'{"decision":"block","reason":"%s"}\\n'"'"' "$REASON"/' \
-    "$mut_dir/scripts/trackfw-git-branch-guard.sh"
-  rm -f "$mut_dir/scripts/trackfw-git-branch-guard.sh.bak"
-  if ! grep -q '"decision":"block"' "$mut_dir/scripts/trackfw-git-branch-guard.sh"; then
-    echo "FAIL [self-test/wrong-schema/setup]: a mutação por sed não pegou — a linha do printf mudou de forma no script real e este self-test precisa ser atualizado" >&2
+  cat >"$fake_bin_dir/trackfw" <<'FAKE_EOF'
+#!/usr/bin/env bash
+# Fake trackfw que emite o schema legado rejeitado pelo Claude Code.
+if [[ "${1:-}" == "guard" && "${2:-}" == "--help" ]]; then exit 0; fi
+printf '{"decision":"block","reason":"test-wrong-schema"}\n'
+exit 2
+FAKE_EOF
+  chmod +x "$fake_bin_dir/trackfw"
+  set +e
+  out=$(cd "$mut_dir" && PATH="$fake_bin_dir:$PATH" bash scripts/trackfw-git-branch-guard.sh "git commit -m x" 2>/dev/null </dev/null)
+  status=$?
+  set -e
+  if [[ "$status" -ne 2 ]]; then
+    echo "FAIL [self-test/wrong-schema]: esperava rc=2 mesmo com schema errado (fail-closed não deveria depender do JSON), obteve rc=$status" >&2
     failures=$((failures + 1))
   else
     set +e
-    out=$(cd "$mut_dir" && bash scripts/trackfw-git-branch-guard.sh "git commit -m x" 2>/dev/null </dev/null)
-    status=$?
+    decode_out=$(printf '%s' "$out" | decode_shape)
+    decode_status=$?
     set -e
-    if [[ "$status" -ne 2 ]]; then
-      echo "FAIL [self-test/wrong-schema]: esperava rc=2 mesmo com schema errado (fail-closed não deveria depender do JSON), obteve rc=$status" >&2
+    if [[ "$decode_status" -eq 0 ]]; then
+      echo "FAIL [self-test/wrong-schema]: decode_shape aprovou um schema que deveria reprovar — o próprio gate está cego para a regressão que ele existe para pegar" >&2
       failures=$((failures + 1))
     else
-      set +e
-      decode_out=$(printf '%s' "$out" | decode_shape)
-      decode_status=$?
-      set -e
-      if [[ "$decode_status" -eq 0 ]]; then
-        echo "FAIL [self-test/wrong-schema]: decode_shape aprovou um schema que deveria reprovar — o próprio gate está cego para a regressão que ele existe para pegar" >&2
-        failures=$((failures + 1))
-      else
-        echo "OK   [self-test/wrong-schema]: gate reprova o schema legado, nomeando o sítio ($mut_dir/scripts/trackfw-git-branch-guard.sh) — motivo: $decode_out"
-      fi
+      echo "OK   [self-test/wrong-schema]: gate reprova o schema legado (via fake trackfw) — motivo: $decode_out"
     fi
   fi
 
@@ -320,7 +346,7 @@ self_test() {
   echo "namespace: prometeu-tf" >"$ok_dir/trackfw.yaml"
   cp "$ROOT_DIR/scripts/trackfw-git-branch-guard.sh" "$ok_dir/scripts/trackfw-git-branch-guard.sh"
   set +e
-  out=$(cd "$ok_dir" && bash scripts/trackfw-git-branch-guard.sh "git commit -m x" 2>/dev/null </dev/null)
+  out=$(cd "$ok_dir" && PATH="$_self_test_bin_dir:$PATH" bash scripts/trackfw-git-branch-guard.sh "git commit -m x" 2>/dev/null </dev/null)
   status=$?
   set -e
   if [[ "$status" -ne 2 ]]; then
@@ -353,7 +379,10 @@ self_test() {
   # `pypi/build/lib/...` e `.gitignore` no CI: presente no disco, ausente da
   # árvore versionada.
   local build_root="$WORK/self-test/ignored-build-artifact"
-  # ML-3A (v8): npm/src/ and pypi/trackfw/ removed; only Go generator site remains
+  # ML-3A (v8): npm/src/ and pypi/trackfw/ removed; only Go generator site remains.
+  # ML-2A: scripts/trackfw-git-branch-guard.sh is now a thin wrapper without
+  # permissionDecisionReason — tracked but NOT a site anymore. Only
+  # internal/generators/scaffold.go (stub) carries the marker → 1 tracked site.
   mkdir -p "$build_root/scripts" "$build_root/internal/generators" \
     "$build_root/pypi/build/lib/trackfw/generators"
   (cd "$build_root" && git init -q && git config user.email t@t && git config user.name t)
@@ -372,16 +401,16 @@ self_test() {
   if grep -qF 'pypi/build' <<<"$out"; then
     echo "FAIL [self-test/ignora-artefato-de-build]: artefato ignorado pelo git (pypi/build/lib/...) apareceu na saída do gate — a derivação voltou a contar arquivo não versionado como sítio" >&2
     failures=$((failures + 1))
-  elif ! grep -qF '2 sítio(s) derivado(s)' <<<"$out"; then
-    echo "FAIL [self-test/ignora-artefato-de-build]: esperava exatamente 2 sítio(s) derivado(s) (os tracked — v8: Go only), saída não confirma" >&2
+  elif ! grep -qF '1 sítio(s) derivado(s)' <<<"$out"; then
+    echo "FAIL [self-test/ignora-artefato-de-build]: esperava exatamente 1 sítio(s) derivado(s) (scaffold.go tracked — v8+ML-2A: thin wrapper não tem o marcador), saída não confirma" >&2
     printf '%s\n' "$out" | sed 's/^/    /' >&2
     failures=$((failures + 1))
   elif ! grep -qF 'reconciliação ok' <<<"$out"; then
-    echo "FAIL [self-test/ignora-artefato-de-build]: reconciliação não passou com os 4 sítios tracked — a derivação por git ls-files não bateu com EXECUTED_HERE" >&2
+    echo "FAIL [self-test/ignora-artefato-de-build]: reconciliação não passou com o sítio tracked — a derivação por git ls-files não bateu com EXECUTED_HERE" >&2
     printf '%s\n' "$out" | sed 's/^/    /' >&2
     failures=$((failures + 1))
   else
-    echo "OK   [self-test/ignora-artefato-de-build]: gate deriva 2 sítios (só os tracked — v8: Go only) e reconcilia — o artefato ignorado pelo git (pypi/build/lib/...) não vira sítio nem reprova"
+    echo "OK   [self-test/ignora-artefato-de-build]: gate deriva 1 sítio (só o tracked scaffold.go — thin wrapper sem o marcador) e reconcilia — o artefato ignorado pelo git (pypi/build/lib/...) não vira sítio nem reprova"
   fi
 
   # --- Cenário D2: sítio TRACKED sem cobertura ainda reprova no ramo git ----
@@ -562,9 +591,15 @@ echo
 # aqui).
 # ---------------------------------------------------------------------------
 # ML-3A (v8): npm/src/generators/hooks.js and pypi/trackfw/generators/init_gen.py removed
-EXECUTED_HERE="scripts/trackfw-git-branch-guard.sh internal/generators/scaffold.go"
+# ML-2A: internal/guard/gitbranch.go added — it is the implementation invoked when
+#   scripts/trackfw-git-branch-guard.sh (thin wrapper) calls `exec trackfw guard git-branch`.
+#   Running the thin wrapper in check_site() exercises this site transitively.
+EXECUTED_HERE="scripts/trackfw-git-branch-guard.sh internal/generators/scaffold.go internal/guard/gitbranch.go"
 # ML-3A (v8): pypi/trackfw/validator.py and npm/src/validator/index.js removed
-COVERED_BY_BYTE_IDENTITY_TEST="internal/validator/validator_git_branch_guard_reference.go"
+# ML-2A: internal/generators/testdata/guard-sh-reference/git-branch-guard.sh is the frozen
+#   full-script fixture (pre-thin-wrapper content). Covered by TestGuardShReferenceFixtures_Sha256
+#   in internal/generators/guard_parity_helper_test.go (SHA-256 byte-identity check).
+COVERED_BY_BYTE_IDENTITY_TEST="internal/validator/validator_git_branch_guard_reference.go internal/generators/testdata/guard-sh-reference/git-branch-guard.sh"
 
 UNACCOUNTED=""
 while IFS= read -r site; do
@@ -605,6 +640,16 @@ if [[ ! -x "$GO_BIN" ]]; then
   echo "check-git-branch-guard-hook-schema: binário Go não encontrado/executável em $GO_BIN" >&2
   exit 1
 fi
+
+# ML-2A: o hook agora chama `exec trackfw guard …` via thin wrapper.
+# Para garantir que o binário recém-compilado (não o instalado no sistema)
+# seja usado, criamos um symlink `trackfw → $GO_BIN` e o colocamos PRIMEIRO
+# no PATH. Isso vale tanto para check_site (que roda o wrapper) quanto para
+# run_discover_init (que chama `$GO_BIN discover --init` diretamente).
+WORK_BIN="$WORK/bin"
+mkdir -p "$WORK_BIN"
+ln -sf "$GO_BIN" "$WORK_BIN/trackfw"
+export PATH="$WORK_BIN:$PATH"
 
 BLOCK_ARG="git commit -m teste-check-git-branch-guard-hook-schema"
 

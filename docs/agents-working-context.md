@@ -2,6 +2,495 @@
 
 ---
 
+## 2026-10-06 — apolo-tf (feat/hooks-de-guard-executam-no-windows — corretivo CI PR #527 WindowsGitExePath) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Resultado:** APROVADO — `go test ./internal/guard/... -count=1` exit=0; `GOOS=windows go vet ./internal/guard/` exit=0; `GOOS=windows go test -c -o /dev/null ./internal/guard/` exit=0.
+**Arquivo editado:** `internal/guard/gitbranch_test.go` — `TestMatchSubcommand_WindowsGitExePath_Push_Blocks`: removido `C:\Program Files\Git\bin\git.exe push origin main` (falha no Windows por space splitting); substituído por três casos sem espaço no caminho: `C:\Git\cmd\git push origin main`, `C:\Git\cmd\git.exe push origin main`, `C:\PROGRA~1\Git\bin\git.exe push origin main`. Comentário atualizado com explicação do mecanismo e referência à ADR-2026-08-12 (citation evasion declarada fora de escopo).
+
+## 2026-10-06 — apolo-tf (feat/hooks-de-guard-executam-no-windows — corretivo CI PR #527 WindowsGitExePath) — INÍCIO
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** `TestMatchSubcommand_WindowsGitExePath_Push_Blocks` reprova no `windows-full-suites`: caso `C:\Program Files\Git\bin\git.exe push origin main` usa `strings.Fields` que parte no espaço, `tokens[0]` vira `C:\Program`, `filepath.Base` retorna `Program` (não `git`), guard não dispara.
+
+---
+
+## 2026-10-06 — apolo-tf (feat/hooks-de-guard-executam-no-windows — corretivo CI PR #527 N09) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Resultado:** APROVADO — `go test ./internal/guard/... -count=1` exit=0; `go test ./internal/generators/ -count=1 -run 'C01C22|Guard'` exit=0; `GOOS=windows go vet` exit=0; `GOOS=windows go test -c` em ambos os pacotes exit=0.
+**Arquivos editados:**
+- `internal/generators/git_branch_guard_test.go`: `runtime` adicionado aos imports; exceção `tc.id == "N09" && runtime.GOOS == "windows"` adicionada em `TestGitBranchGuardAwk_C01C22_WithJQ` e `_WithoutJQ` — pula paridade bash e afirma Go rc=2.
+- `internal/guard/gitbranch_test.go`: `runtime` adicionado aos imports; `TestMatchSubcommand_WindowsGitExePath_Push_Blocks` (windows-only, afirma que C:\...\git.exe bloqueia) e `TestMatchSubcommand_BackslashPrefixed_PosixNotGit` (posix-only, afirma que `\\git push` não é bloqueado) adicionados.
+
+---
+
+## 2026-10-06 — apolo-tf (feat/hooks-de-guard-executam-no-windows — corretivo CI PR #527 N09) — INÍCIO
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** Corretivo de CI: `TestGitBranchGuardAwk_C01C22_WithJQ/N09` e `_WithoutJQ/N09` reprovam no Windows porque `filepath.Base` trata `\` como separador (divergência deliberada, sentido seguro). Adicionar exceção por id em `git_branch_guard_test.go` e dois novos testes em `internal/guard/gitbranch_test.go`.
+**Arquivos editáveis:** `internal/generators/git_branch_guard_test.go`, `internal/generators/guard_parity_helper_test.go`, `internal/guard/gitbranch_test.go`.
+
+---
+
+## 2026-10-06 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-4C corretivo) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Resultado:** APROVADO — `make parity-falsify` exit=0 (GUARDA=0, FAIL=0); `make quality` exit=0; `trackfw validate` exit=0.
+**Arquivo editado:** `scripts/check-gates-falsify.sh` (somente este).
+**Correções aplicadas:**
+- 8 asserções grep: marcadores `.sh` substituídos pelas formas inline `trackfw guard git-branch` / `trackfw guard credential;` / `trackfw guard credential --global`.
+- `corrupt_literal` do Cenário 67: literal da função `globalGitBranchGuardInstalledClaude` atualizado para incluir as adições do ML-2A.
+- `corrupt_literal` do Cenário 69 (`kiro-dedicated-file/detected`): sabotagem alterada para escrever entry de abs-path legada antes de remover o script; contagem `s69bad_gbg_count` filtrada para linhas de violação `does not exist` (evita contar warning legado como violação extra).
+- `corrupt_literal` do Cenário 74d (`reset --hard`): literal ampliado para incluir `for _, t := range rest {` — evita "declared and not used: t" no Go corrompido.
+- `corrupt_literal` do Cenário 74i (`checkout -- <path>`): mesmo padrão do 74d — literal ampliado para incluir a linha do `for`.
+
+---
+
+## 2026-10-06 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-4C corretivo) — INÍCIO
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** Corretivo ML-4C (REQ-2026-09-05): censar e corrigir asserções em `scripts/check-gates-falsify.sh` que buscam `trackfw-git-branch-guard.sh` / `trackfw-credential-guard.sh` dentro de arquivos de config de CLI. A entrada nova é `trackfw guard git-branch` / `trackfw guard credential`. Edita somente o script.
+
+---
+
+## 2026-10-06 — hefesto-tf (feat/hooks-de-guard-executam-no-windows — ML-4B) — INÍCIO
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** ML-4B (REQ-2026-09-05): revisão de qualidade do guard de hook em Go — cobertura, duplicação, arquitetura, testes.
+
+---
+
+## 2026-10-06 — hefesto-tf (feat/hooks-de-guard-executam-no-windows — ML-4B) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Veredito:** LIBERA O PR.
+**Resultado:**
+- Cobertura total `internal/guard`: 81.0%. Funções de decisão principais: `applyRule` 91.7%, `RunCredential` 96.6%, `RunCredentialGlobal` 90.0%.
+- 5 achados, nenhum bloqueante: M1 (`findSubcommand` 50%), M2 (`parseHeredocDelim` 20%, `stripHeredocBodies` 55.6%), B1 (`credReadMode` 0% — código morto), B2 (nome de arquivo com sufixo ML), I1 (dois sítios para string de hook).
+- `go vet` limpo em ambos os pacotes.
+- Falsificação confirmada para 3 testes novos (T1, T2, T3 — todos não-vacuosos).
+- Duplicação nos `*_reference.go` e fixtures congeladas: intencional e documentada.
+
+**Artefatos:**
+- `docs/qualidade/2026-10-04-guard-em-go.md` — relatório completo
+- `docs/agents-working-context.md` — este arquivo
+
+---
+
+## 2026-10-06 — prometeu-tf (feat/hooks-de-guard-executam-no-windows — ML-3B) — INÍCIO
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** ML-3B (REQ-2026-09-05): atualizar a seção de guard hooks no Windows do `README.md` para o estado medido — guard é `trackfw guard <nome>` (Go), medido em PS5/cmd/Git Bash. Edita somente `README.md`.
+
+---
+
+## 2026-10-06 — prometeu-tf (feat/hooks-de-guard-executam-no-windows — ML-3B) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Resultado:** `README.md` atualizado.
+- Aviso do topo: substituído "planned, not yet in progress" e a explicação do `.sh` pelo estado medido (Go binary, PS5/cmd/Git Bash, next release).
+- Seção "Windows support (partial)" → guard hooks: tabela de 8 CLIs com shell/linha/basis; medição exata declarada (PS5/cmd/Git Bash não-login medidos; pwsh ausente; CLI de agente não disparado end-to-end); `trackfw update` migra configs; 3 violations novas do `validate` documentadas.
+**Artefatos modificados:** `README.md`, `docs/agents-working-context.md`
+
+---
+
+## 2026-10-06 — ares-tf (feat/hooks-de-guard-executam-no-windows — ML-3A corretivo) — INÍCIO
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** Corretivo ML-3A (REQ-2026-09-05): (1) corrigir interpretação inversa da nota do vault e Caso 6 — exit 1 do binário antigo é fail-open para 6 de 8 CLIs; (2) medir linha exata do contrato no Git Bash com script .sh (sem aninhamento PS), condições (a) não-login com PATH explícito e (b) login com binário antigo.
+
+---
+
+## 2026-10-06 — ares-tf (feat/hooks-de-guard-executam-no-windows — ML-3A corretivo) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** Corretivo ML-3A — concluído.
+**Resultado:**
+- Problema 1 (interpretação invertida): corrigido em `docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md` — Seção 7, Caso 6 e Conclusão ML-3A agora refletem que exit 1 = fail-open em 6/8 CLIs; Kiro/Copilot = FP operacional.
+- Problema 2 (linha do contrato Git Bash): medido com script `.sh` (sem aninhamento PS). Condição (a): `trackfw guard git-branch; exit $LASTEXITCODE` → BLOCK=2, ALLOW=0 (correto; `$LASTEXITCODE` indefinido em bash = `exit ""` = propaga exit code do último comando). Condição (b): login bash → binário antigo 8.0.0-rc2 de `~/bin`, exit 1 para todos os payloads (fail-open 6/8 CLIs). Achado residual: `C:\Users\Lab\bin` não está no Windows PATH; sonda do `validate` via `exec.LookPath` vê 9.2.0 (pip), não o antigo de `~/bin`.
+- Nota do vault: arquivo antigo (`guard-fallback-old-binary-exit1-nao-fail-open-2026-10-06.md`) removido; novo arquivo criado (`guard-fallback-old-binary-exit1-fail-open-6-clis-2026-10-06.md`) com interpretação correta.
+
+**Artefatos modificados:**
+- `docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md` — Seção 7 (Caso 6), ML-3A Caso 4 (expandido com (a)/(b)), tabela resumo (linha 4→4a/4b), Conclusão
+- `vault/notes/guard-fallback-old-binary-exit1-fail-open-6-clis-2026-10-06.md` — novo (substituição)
+- `vault/notes/index.md` — entrada atualizada
+- `docs/agents-working-context.md` — este arquivo
+
+---
+
+## 2026-10-06 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-4C corretivo) — INÍCIO
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** Corretivo ML-4C: renomear `isCredSymlinkPrivilegeError` → `isSymlinkPrivilegeError` em `internal/guard/credential_test.go` e adotar a implementação canônica do projeto (`os.IsPermission` + `syscall.Errno(1314)`) para que o gate `check-symlink-privilege-guard.sh` reconheça o helper.
+
+---
+
+## 2026-10-06 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-4C corretivo) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** Corretivo ML-4C — concluído.
+**Resultado:**
+- `bash scripts/check-symlink-privilege-guard.sh` — exit=0 (231 arquivos verificados, zero sítios desguardados)
+- `go test ./internal/guard/... -count=1` — ok
+- `go vet ./internal/guard/...` — exit=0
+- `make quality` — reprova em `parity-falsify` (chunks 0, 1, 3, 4, 6 morrem com `expected exactly 1 occurrence of pattern, got 0`); esse gate é pré-existente e fora do escopo do corretivo — reportado ao arquiteto.
+
+**Artefatos modificados:**
+- `internal/guard/credential_test.go` — renomeado `isCredSymlinkPrivilegeError` → `isSymlinkPrivilegeError`; implementação substituída por `os.IsPermission` + `errors.As/syscall.Errno(1314)`; adicionados imports `errors` e `syscall`
+
+---
+
+## 2026-10-06 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-1E) — INÍCIO
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** ML-1E — adicionar guarda de contenção em `credWriteAttention` para satisfazer o analisador AST de P1.
+
+---
+
+## 2026-10-06 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-1E) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** ML-1E — guarda de contenção em `credWriteAttention` implementada e testada.
+**Resultado:**
+- `go build ./...` — exit=0
+- `go test ./internal/pathguard/ -count=1` — ok (0 findings inesperados, 15 blind spots pinados)
+- `go test ./internal/guard/... -count=1` — ok
+- `trackfw validate` — 167 warnings, 0 violations
+
+**Artefatos modificados:**
+- `internal/guard/credential.go` — nova assinatura `credWriteAttention(cwd, roadmapDir, match)`, guarda via `pathguard.ResolveRoot` + `pathguard.RejectAndReport`, dois callers atualizados
+- `internal/guard/credential_test.go` — novo `TestRunCredential_RoadmapDirSymlinkEscapeIsRefused` + helper `isCredSymlinkPrivilegeError`
+
+---
+
+## 2026-10-06 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-2A) — INÍCIO
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** ML-2A — converter todas as 8 configs de hook de agente do apontamento para `.sh` para emitir `trackfw guard <name>` inline; `.sh` vira thin wrapper; `trackfw update` migra configs antigas.
+
+---
+
+## 2026-10-06 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-2A) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** ML-2A — toda config emite `trackfw guard <nome>`; `.sh` vira thin wrapper; `update` migra.
+**Resultado:**
+- `go build ./...` — exit=0
+- `go test ./internal/generators/ ./internal/validator/ -count=1` — **ok** (generators: 53s, validator: 14s)
+- `trackfw validate` — 167 warnings, 0 violations (lenient mode)
+
+**Artefatos modificados neste microlote (continuação da sessão anterior):**
+- `internal/generators/agentfiles.go` — constantes `guardGitBranchCmdPSPOSIX/CmdExe`, `guardCredentialCmd*`, migration helpers; 8 `Inject*Hooks` emitem inline commands; Copilot usa campo `command` (D4); Kiro recebe git-branch-guard incondicional
+- `internal/generators/scaffold.go` — `gitBranchGuardScript`, `credentialGuardScript`, `globalCredentialGuardScript` como thin wrappers
+- `scripts/trackfw-git-branch-guard.sh`, `scripts/trackfw-credential-guard.sh` — thin wrappers
+- `internal/validator/validator_*_reference.go` (3 arquivos) — referências atualizadas para thin wrapper
+- `internal/generators/testdata/guard-sh-reference/*.sh` (3 arquivos) — sha256 atualizados
+- `internal/generators/agentfiles_test.go` — todas as assertions de Cursor, Amazon Q, Kiro, Copilot, Gemini, Codex, Windsurf, Claude atualizadas
+- `internal/generators/credential_guard_dedup_test.go` — dedup negativo atualizado para nova forma
+- `internal/generators/credential_guard_sabotage_test.go` — Claude, Cursor, Kiro atualizados
+- `internal/generators/git_branch_guard_dedup_test.go` — filtro e `runGitBranchGuardEntries` com suporte a inline; Cursor, Copilot, MalformedGlobalEntry fixados
+- `internal/generators/copilot_hooks_parity_test.go` — `assertCopilotHookEntry` busca `bash` OU `command`
+- `internal/generators/guard_parity_helper_test.go` — sha256 atualizados; `injectGuardBinaryPath` adicionado
+
+**Riscos / pendências para o arquiteto:**
+1. `trackfw validate` emite 2 warns de divergência de template para os `.sh` (esperado: binário instalado é pré-ML-2A; some após `make install` na branch)
+2. `docs/cli-parity.md` ~linha 5372 ainda lista 6 entradas antigas — pendência documentada no roadmap para este ML
+3. `internal/generators/update.go` / `scaffold_doctor.go` — migration de configs existentes (`migrateHookCommand`) não foi implementada neste ciclo; está listada no ML-2A mas dependente de auditoria do arquiteto antes de implementar
+4. Testes de migração para Cursor e Amazon Q (`migrateCursorSimpleCommand`) não adicionados — pendência registrada no roadmap
+
+---
+
+## 2026-10-05 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-1C corretivo 2) — INÍCIO
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** Segundo corretivo ML-1C — fechar C22 (normalização estreita para awk NUL vs jq NUL).
+**Escopo:** `internal/generators/guard_parity_helper_test.go`.
+
+---
+
+## 2026-10-05 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-1C corretivo 2) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** Segundo corretivo ML-1C — normalização estreita C22 em `guard_parity_helper_test.go`.
+**Resultado:**
+- `go build ./...` — exit=0
+- `go test ./internal/guard/... -count=1` — ok
+- `go test ./internal/generators/ -count=1` — ok (C22 verde nos dois braços)
+- Falsificação reasonPush: `FALSIFICATION_SENTINEL` → C01/WithJQ reprovar → restaurado → `git diff --stat internal/guard/gitbranch.go` = `1 file changed, 6 insertions(+)` (inalterado).
+- Falsificação reasonNUL: `FALSIFICATION_SENTINEL_NUL` → C22/WithJQ reprovar → restaurado → diff stat idêntico.
+- `trackfw validate` — 165 warnings, 0 violations.
+
+**Fix entregue:**
+- `internal/generators/guard_parity_helper_test.go`: constantes `c22AwkNulSentinel`, `c22IndecodeableReason`, `c22NULReason`; em `assertGuardParity`, quando o stderr bash RAW contém a linha `extrator JSON (sem jq): nul_in_value`, adiciona normalização estreita que substitui `reasonIndecodeable` por `reasonNUL` antes da comparação (roadmap ML-1C, grupo C, C22). Contador temporário adicionado e removido.
+
+**Contagem de cenários de dois braços:**
+- Método: `atomic.Int64` em `assertGuardParity`, impresso no `TestMain`, removido após medição.
+- Total `assertGuardParity` calls no suite completo `./internal/generators/`: **244**.
+- Acionamentos da normalização C22: **2** (um por modo: WithJQ via runGitBranchGuardBothModes/noJQ, e WithoutJQ direto). Nenhum outro cenário acionou.
+- Relação com referência anterior (171 cenários artemis): `runGitBranchGuardBothModes` gera 2 calls por cenário; `runCredentialGuard` gera 1. O valor de 244 inclui ambas as contagens.
+
+**`trackfw.yaml`: +12 linhas geradas por `trackfw init` durante este ciclo; reversão pendente com o arquiteto.**
+
+---
+
+## 2026-10-05 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-1C corretivo) — INÍCIO
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** Corretivo ML-1C — fechar Grupo A (segurança), Grupo B (tipo não-string), Grupo C (diagnóstico awk).
+**Escopo:** `internal/guard/gitbranch.go`, `internal/guard/payload.go`, `internal/guard/gitbranch_test.go`, `internal/guard/payload_test.go`, `internal/generators/guard_parity_helper_test.go`.
+
+---
+
+## 2026-10-05 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-1C corretivo) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** Corretivo ML-1C — fechar Grupo A (segurança multi-linha), Grupo B (tipo não-string → ausente), Grupo C (normalização diagnóstico awk).
+**Resultado:**
+- `go build ./...` — exit=0
+- `go test ./internal/guard/... -count=1` — PASS (todos os testes, incluindo novos)
+- `go test ./internal/generators/ -count=1` — 1 FAIL intencional: C22 nos dois braços (WithJQ e WithoutJQ). Todos os outros 60 cenários de C01-C21 e N01-N09 passam nos dois braços.
+- Falsificação: `reasonPush` substituído por FALSIFICATION_SENTINEL → C01/WithJQ reprovado; restaurado → PASS.
+
+**Fixes entregues:**
+- `internal/guard/gitbranch.go`: `quoteAwareSplit` — `\n` fora de aspas agora emite separador de segmento (Grupo A).
+- `internal/guard/payload.go`: `extractNested` e root-level `command` — valor JSON não-string → tratado como ausente, não `ErrIndecodeable` (Grupo B). Doc comment atualizado.
+- `internal/generators/guard_parity_helper_test.go`: `assertGuardParity` aplica automaticamente 6 normalizações de linhas diagnósticas do extrator awk do bash (Grupo C).
+- `internal/guard/gitbranch_test.go`: novo `TestMatchSubcommand_MultilineNewlineBlocksSecondSegment` (afirmação Grupo A); `TestRunGitBranch_IndecodableDeny` renomeado/atualizado para `TestRunGitBranch_NonStringCommandAbsent` (afirmação Grupo B).
+- `internal/guard/payload_test.go`: `TestExtractCommand_Indecodeable` renomeado/atualizado para `TestExtractCommand_NonStringAbsent` (afirmação Grupo B).
+
+**`trackfw.yaml`: +12 linhas geradas por `trackfw init` durante este ciclo; reversão pendente com o arquiteto.**
+
+---
+
+## 2026-10-04 — artemis-tf (feat/hooks-de-guard-executam-no-windows — ML-1C) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** ML-1C — Paridade `.sh` ↔ Go pelo corpus existente (AC4).
+**Resultado:**
+- `go build ./...` — exit=0 (antes e depois de cada mutação na falsificação)
+- `go vet ./internal/generators/` — exit=0
+- `go test -race ./internal/guard/... -count=1` — PASS
+- `go test ./internal/generators/ -count=1` — **FAIL intencional**: 3 testes falham por divergências reais (ver seção de divergências abaixo). Suprimir seria mascarar gap de contrato.
+- `git diff --stat -- internal/guard scripts internal/generators/scaffold.go` — vazio (nenhuma alteração em produção)
+- `trackfw validate` — 165 warnings pré-existentes, 0 violations, exit=0
+
+**Artefatos entregues:**
+- `internal/generators/testdata/guard-sh-reference/git-branch-guard.sh` (sha256: f51ee1f9...)
+- `internal/generators/testdata/guard-sh-reference/credential-guard-project.sh` (sha256: e73d6502...)
+- `internal/generators/testdata/guard-sh-reference/credential-guard-global.sh` (sha256: af21a577...)
+- `internal/generators/guard_parity_helper_test.go` (novo): TestMain + sync.Once build, runners, assertGuardParity, isCurrentGuardScript, TestGuardShReferenceFixtures_Sha256
+- Modificados: `git_branch_guard_test.go` (braço Go em runGitBranchGuardImpl), `credential_guard_test.go` (braço Go em runCredentialGuard), `git_branch_guard_stdin_drain_test.go` (braço Go em runGuardWithPipe)
+
+**Cenários com braço duplo (bash + Go):**
+- `git_branch_guard_test.go`: 118 cenários/subtests rodam nos dois braços
+- `git_branch_guard_stdin_drain_test.go`: 6 testes com pipe real nos dois braços
+- `credential_guard_test.go`: 46 cenários/subtests nos dois braços
+- `TestGuardShReferenceFixtures_Sha256`: 1 teste de sha256 (braço único, pin de fixture)
+- Total: 171 cenários de dois braços
+
+**Divergências descobertas (FALHAS INTENCIONAIS — não suprimir):**
+
+**Grupo A — Segurança: Go não bloqueia `git push` em comando multi-linha** (rc diverge)
+- `TestGitBranchGuardAwk_C01C22_WithJQ/C02` e `WithoutJQ/C02`: payload `"echo oi\ngit push origin main"` → bash rc=2, Go rc=0 vazio
+- `TestGitBranchGuardAwk_C01C22_WithJQ/C05` e `WithoutJQ/C05`: mesmo bug com `\u000a` (escape Unicode de LF)
+- `TestGitBranchGuard_UnterminatedHeredocBeforeRealPush_StillBlocks`: heredoc mal-formado ocultando `git push` → bash rc=2, Go rc=0 vazio
+- **Causa:** Go não itera linhas dentro do campo `command`; bash split/grep correto.
+- **Severidade: CRÍTICA** — falso negativo de segurança.
+
+**Grupo B — NUL/decode: razão diferente, mesma decisão** (rc=2 ambos, stdout/stderr divergem)
+- `C22` (WithJQ e WithoutJQ): `"git push\u0000origin main"` → bash usa `reasonIndecodeable` + prefixo awk; Go usa `reasonNUL` (mais preciso). Ambos negam.
+- `C18`, `N01`, `N02`, `N08` (WithJQ e WithoutJQ): payloads malformados → bash awk emite linha diagnóstica extra no stderr; Go não emite. Mesma decisão (rc=2, mesmo stdout).
+
+**Grupo C — Tipo não-string no campo `command`** (rc diverge)
+- `N04` (WithJQ e WithoutJQ): `{"command":123}` → bash rc=0 (permite — sem comando), Go rc=2 (trata como erro de decode)
+- `N06` (WithJQ e WithoutJQ): `{"command":["git","push","origin","main"]}` → mesmo
+- **Causa:** `encoding/json` com valor não-string dispara `reasonIndecodeable` no Go em vez de "sem comando detectado → permitir".
+- **Severidade:** média — Go mais restritivo que o contrato bash.
+
+**Falsificação executada:**
+- Mutou `reasonCommit` em `internal/guard/gitbranch.go` (prefixo "FALSIFICAÇÃO:") → `TestGitBranchGuard_Commit_StdinJSON_ToolInputCommand_Blocks` reprovado com divergência de stdout/stderr Go × bash visível.
+- Mutou mensagem de "blocked" em `internal/guard/credential.go` → `TestCredentialGuardScript_BlockMode_ExitsWithCode2` reprovado.
+- Ambos revertidos; `git diff internal/guard/` vazio ao final.
+
+---
+
+## 2026-10-04 — artemis-tf (feat/hooks-de-guard-executam-no-windows — ML-1C) — INÍCIO
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** ML-1C — congelar fixtures .sh, criar helper de paridade (sync.Once + go build), adicionar braço Go a todos os runners existentes, falsificação por mutação.
+**Escopo:** `internal/generators/` (só testes), `docs/agents-working-context.md`.
+
+---
+
+## 2026-10-04 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-1B corretivo) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** Corretivo ML-1B — (1) glob expansion em `credSecondLayer`; (2) `RunCredentialGlobal` / `--global`.
+**Resultado:**
+- `go build ./...` — exit=0
+- `go vet ./internal/guard/ ./internal/commands/` — exit=0
+- `go test -race ./internal/guard/... -count=1` — PASS (94 testes, 0 FAIL, 0 race). 10 novos testes neste corretivo: GlobCatStarBlocksInBlockMode, GlobNoMatchKeepsLiteral, GlobMatchesCleanFileAllows, GlobMalformedBracketKeepsLiteral, GlobDotfileNotMatched, Global_JWTDefaultBlocks, Global_CleanPayloadAllows, Global_WarnModeFromYamlWritesJSON, Global_WarnNoDirNoFileCreated; + GlobalFlagRegistered em commands.
+- `go test ./internal/commands/ -count=1` — PASS, exit=0
+- `bash scripts/check-write-containment.sh` — 164 sítios, todos justificados, exit=0
+- `trackfw validate` — 165 warnings, 0 violations, exit=0
+- Matriz sh/go × glob/literal (block mode): `cat *.txt` sh rc=2 go rc=2; `cat token.txt` sh rc=2 go rc=2 — alinhados
+- Comparação global: JWT payload sh rc=2 go rc=2; clean payload sh rc=0 go rc=0 — idênticos
+- `credReadMode` refatorado para delegar em `credReadModeWithDefault(yamlPath, defaultMode)`.
+- Quarta diferença entre global e projeto: não encontrada; diff instalado vs constante confirma exatamente 3 diferenças.
+
+## 2026-10-04 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-1B corretivo) — INÍCIO
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** Corretivo ML-1B — (1) glob expansion em `credSecondLayer` (`cat *.txt` ≠ bash sem `set -f`); (2) portar variante global como `RunCredentialGlobal` / `--global`.
+**Escopo:** `internal/guard/credential.go`, `internal/guard/credential_test.go`, `internal/commands/guard.go`, `internal/commands/guard_test.go`, `docs/agents-working-context.md`.
+
+---
+
+## 2026-10-04 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-1B) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** ML-1B — portar `trackfw guard credential` em Go.
+**Escopo:** `internal/guard/credential.go`, `internal/guard/credential_test.go`, `internal/commands/guard.go`, `internal/commands/guard_test.go`, `internal/guard/payload_test.go` (testTimingWindow 100→200ms), `internal/guard/gitbranch_test.go` (comentários).
+**Resultado:**
+- `go build ./...` — exit=0
+- `go vet ./internal/guard/ ./internal/commands/` — exit=0
+- `go test -race ./internal/guard/... -count=1` — PASS (84 testes, 0 FAIL, 0 race). 11 novos: JWTBlocksInBlockMode, AWSBlocksInBlockMode, WarnWritesJSONAndExits0, EphemeralTargetExempt, MixedTargetAppliesRule, OutsideProjectNoOp, InvalidModeFallsToWarn, RoadmapDirDotDotFallback, CRLFYamlModeNoBlock, SecondLayerRedirectFile, SecondLayerCatArg.
+- `go test ./internal/commands/ -count=1` — PASS, exit=0
+- `trackfw validate` — 165 warnings, 0 violations, exit=0
+- Tabela sh × Go (block mode): JWT rc=2/2, AWS rc=2/2, JWT>/dev/null rc=0/0, clean rc=0/0 — idênticos
+- warn mode: rc=0/0, JSON idêntico (campos tool/message/level/timestamp) ignorando timestamp value
+- globalCredentialGuardScript difere em 3 pontos: (1) ausência do guard `[ -f trackfw.yaml ] || exit 0`; (2) DEFAULT_MODE="block" vs "warn"; (3) ROADMAP_DIR hardcoded "docs/roadmaps" com `[ ! -d ] && exit 0` em vez de leitura dinâmica + `mkdir -p`. Não portado conforme instrução.
+
+## 2026-10-04 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-1B) — INÍCIO
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** ML-1B — portar `trackfw guard credential` em Go: `internal/guard/credential.go` (+ teste), atualizar `internal/commands/guard.go` (+ teste), subir `testTimingWindow` de 100ms para 200ms em `payload_test.go`.
+**Escopo:** porta fiel do `scripts/trackfw-credential-guard.sh` (152 linhas), contrato ADR-2026-10-04 D7–D9, escopo de projeto apenas.
+
+---
+
+## 2026-10-04 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-1A corretivo) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** Corretivo do ML-1A — reescrever `DrainStdin` com semântica de janelas fixas (porta fiel ao loop bash `read -t 2 -d ''`), eliminar corrida de dados no buffer `tmp`, e corrigir/adicionar testes que reconciliam o que cada um afirma com o que exercita.
+**Escopo:** `internal/guard/payload.go`, `internal/guard/payload_test.go`, `internal/guard/gitbranch_test.go`, `docs/agents-working-context.md`.
+**Resultado:**
+- `go build ./...` — exit=0
+- `go vet ./internal/guard/` — exit=0
+- `go test -race ./internal/guard/... -count=1` — PASS (73 testes, 0 FAIL, 0 data race). O ML-1A FIM anterior declarou 60 testes; a contagem real antes deste corretivo era 71 (38 MatchSubcommand, 12 RunGitBranch, 3 DrainStdin, 12 ExtractCommand, 3 QuoteAwareSplit, 3 QuoteAwareSplit). Agora são 73: 2 novos (EOFInSecondWindow, ChunkedDataNotTruncated), 5 alterados (Truncated, IdleNoData, TruncatedDeny, EarlyEOFAllow, EOF).
+- `trackfw validate` — 165 warnings, 0 violations, exit=0
+- Matriz sh/go × sleep-3/sleep-6 (via /usr/bin/time -p): sleep-3 → sh rc=0 real 3.04s / go rc=0 real 3.01s; sleep-6 → sh rc=2 real 4.02s / go rc=2 real 4.01s — idênticos; go nega em ~4s (2 janelas), não em 6s; rc=2 do go confirmado como truncation deny (grep 'nenhum byte chegou' retornou 1 match).
+- Bite proof (old code, 7 testes, 4 FAIL, 3 PASS por construção): TestDrainStdin_EOF PASS (EOF imediato encerra janela 1 em ambas as implementações), TestDrainStdin_Truncated FAIL (elapsed 102ms < 150ms = 1.5W), TestDrainStdin_IdleNoData PASS (sem bytes — ambas truncam em 1W), TestDrainStdin_EOFInSecondWindow FAIL (truncated=true), TestDrainStdin_ChunkedDataNotTruncated PASS (gaps 0.5W não ativam rolling timer), TestRunGitBranch_TruncatedDeny FAIL (elapsed 102ms < 150ms), TestRunGitBranch_EarlyEOFAllow FAIL (rc=2 em vez de 0).
+
+## 2026-10-04 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-1A corretivo) — INÍCIO
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** Corretivo do ML-1A — reescrever `DrainStdin` com semântica de janelas fixas (porta fiel ao loop bash `read -t 2 -d ''`), eliminar corrida de dados no buffer `tmp`, e corrigir/adicionar testes que reconciliam o que cada um afirma com o que exercita.
+**Escopo:** `internal/guard/payload.go`, `internal/guard/payload_test.go`, `internal/guard/gitbranch_test.go`, `docs/agents-working-context.md`.
+
+---
+
+## 2026-10-04 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-1A) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** ML-1A — portar `trackfw guard git-branch` em Go: pacote `internal/guard/` (payload.go, gitbranch.go, testes), comando cobra `internal/commands/guard.go`, registro em root.go.
+**Escopo:** porta fiel do `scripts/trackfw-git-branch-guard.sh` (756 linhas), contrato ADR-2026-10-04 D7–D9, ADR-2026-10-02 D1–D3.
+**Arquivos produzidos:** `internal/guard/payload.go`, `internal/guard/gitbranch.go`, `internal/guard/payload_test.go`, `internal/guard/gitbranch_test.go`, `internal/commands/guard.go`, `internal/commands/guard_test.go`; modificações em `internal/commands/root.go`.
+**Resultado:**
+- `go build ./...` — sem erros
+- `go vet ./internal/guard/ ./internal/commands/` — sem erros
+- `go test ./internal/guard/... -count=1` — PASS (60 testes: 38 MatchSubcommand, 11 RunGitBranch, 8 payload, 3 DrainStdin)
+- `go test ./internal/commands/ -count=1` — PASS (sem regressões)
+- `trackfw validate` — 165 warnings (lenient), 0 violations
+- stdout binário == stdout .sh para push (confirmado manualmente)
+- exit 2 para deny/D7; exit 0 para allow; exit 2 para args/flags inválidos
+
+## 2026-10-04 — apolo-tf (feat/hooks-de-guard-executam-no-windows — ML-1A) — INÍCIO
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** ML-1A — portar `trackfw guard git-branch` em Go: pacote `internal/guard/` (payload.go, gitbranch.go, testes), comando cobra `internal/commands/guard.go`, registro em root.go.
+**Escopo:** porta fiel do `scripts/trackfw-git-branch-guard.sh` (756 linhas), contrato ADR-2026-10-04 D7–D9, ADR-2026-10-02 D1–D3.
+
+---
+
+## 2026-10-04 — ares-tf (feat/hooks-de-guard-executam-no-windows — ML-1D) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** ML-1D — Medições residuais na VM Windows: MoTW do shim npm, argv em cmd, stdin do PowerShell (BOM/encoding/EOF).
+**Arquivo produzido:** `docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md` (seção "ML-1D — Medicoes residuais")
+**Resultado:** `trackfw validate` 165 warnings, zero violations.
+**Vereditos:**
+- **MoTW:** shim npm trackfw.ps1 sem Zone.Identifier → RemoteSigned suficiente (exit 2 propagado). Restricted + sufixo `; exit $LASTEXITCODE` → FALHA ABERTA (exit 0, não 1): PSSecurityException não atualiza `$LASTEXITCODE`, `exit $LASTEXITCODE` executa e retorna 0.
+- **argv cmd:** `;` é literal em cmd.exe — `cmd /c "probe.exe git-branch; exit $LASTEXITCODE"` → os.Args = `["probe.exe","git-branch;","exit","$LASTEXITCODE"]`. Sufixo proibido para Kiro/Amazon Q (confirmação primária na VM).
+- **stdin BOM:** Cursor usa `$OutputEncoding = [System.Text.Encoding]::UTF8` (.NET UTF-8 com BOM) → stdin sempre inicia com `EF BB BF`, mesmo quando o arquivo temporário não tem BOM. EOF <1ms. Go guard deve descartar BOM antes de `json.Unmarshal`.
+**Impacto ML-1A:** guard Go deve strip BOM UTF-8 no stdin.
+**Impacto ML-2A:** confirma: Kiro/Amazon Q sem `; exit $LASTEXITCODE`; PS CLIs com sufixo.
+
+---
+
+## 2026-10-04 — hades-tf (feat/hooks-de-guard-executam-no-windows — ML-0A) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** ML-0A do ROADMAP-2026-09-22 — Wave 0, threat model do guard em Go (ADR-2026-10-04).
+**Arquivo produzido:** `docs/seguranca/2026-10-04-wave0-guard-em-go.md`
+**Resultado:** Parecer concluido. Nenhum codigo de produto alterado.
+**Achados principais:**
+- **(b-1) Exit code PS — A CONFIRMAR (nao critico ate ML-0D):** `powershell.exe -Command "native.exe"` documentado para PS 7 como convertendo exit 2 -> 1. PS 5.1 e hipotese, nao medido ao vivo. Sufixo `; exit $LASTEXITCODE` funciona em POSIX (bash/sh/zsh medido: exit 2 preservado); NAO usar em cmd.exe (`;` e separador de tokens, nao de comandos -- proxy medido: cobra recebe args extras -> help -> exit 0 -> fail-open). D2 sobrevive por linha de hook por CLI, nao como string universal -- se isso satisfaz o enunciado literal de D2 e decisao do arquiteto. ML-0D decide.
+- **(a) npm+PS+Restricted:** 3 CLIs fail-open (Codex, Windsurf, Claude Code PS fallback); Copilot deny-all; Cursor (Bypass) e Kiro/Amazon Q (cmd.exe) nao afetados. RemoteSigned pode resolver se shim sem MoTW — ML-0D verifica. Decisao de suporte unsupported cabe ao KG.
+- **(c) PATH dependency — aumento estrito:** `grep -o` (ocorrencias) medido: 44 no git-branch (reproduz ADR), 8 no credential — todas strings, nenhuma invoca o binario. Dependencia de PATH e nova. cmd.exe busca cwd antes do PATH — Kiro/Amazon Q vulneraveis a trackfw.exe na raiz do repo.
+- **(e) Dois guards, comportamentos diferentes:** git-branch walk-up (L96-130 medido); credential cwd-only (L8 medido). ML-1B NAO deve herdar funcao de walk-up do ML-1A.
+- **Adicoes ao escopo do ML-2A:** `scripts/check-git-branch-guard-hook-schema.sh` (quebra apos ML-2A), 3 configs de hook do repo (`.claude/`, `.codex/`, `.gemini/`), `globalCredentialGuardScript` (sem porta no roadmap).
+- **Gate pre-ML-2A obrigatorio:** payload de deny -> `.sh` atual -> exit 2 (medido). Gate deve confirmar binario com `guard` antes de despachar ML-2A — sem isso o agente nao consegue usar o shell.
+- **cmd.exe NAO usa `;` como separador [inferido; hipotese ate ML-0D arm 8]:** sufixo `; exit $LASTEXITCODE` NAO deve ser emitido para Kiro/Amazon Q -- passaria argumentos literais ao binario -> cobra help -> exit 0 -> fail-open. Proxy macOS medido: `trackfw roadmap 'move;' exit '$LASTEXITCODE'` -> cobra help -> exit 0; tokenizacao exata do cmd.exe nao confirmada por fonte primaria. D2 sobrevive por linha de hook por CLI, nao como string universal.
+- **Sufixo do Gemini e PS-only:** `; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }` causa syntax error em bash -> bash exit 2 -> deny-all incondicional para qualquer CLI bash-only (medido).
+- **Canais de entrada -- nova superficie:** git-branch guard tem timeout de 2s em stdin ocioso (medido: nega exit 2 apos 2s); suporta argv e TRACKFW_GIT_COMMAND como canais de fallback (medidos). Credential guard usa `cat` sem timeout (medido: aguarda EOF, ~3s com `(sleep 3) |`, exit 0). Go deve replicar: timeout de 2s para git-branch; await-EOF para credential. `io.ReadAll` simples em git-branch causaria hang -> CLI timeout -> fail-open (Copilot permite).
+- **argv_overrides_stdin:0 -- FN CONFIRMADO NO .SH (medido):** `printf '{"tool_input":{"command":"git push origin main"}}' | bash scripts/trackfw-git-branch-guard.sh exit '$LASTEXITCODE'` -> exit 0. Se argv presente, script usa CMD_RAW="$*" (L157) e ignora stdin completamente. "exit $LASTEXITCODE" nao e git bloqueado -> permite. Gate ML-1A: guard em modo hook deve rejeitar argv OU arquiteto decide comportamento.
+- **validateGuardHookResolvable usa `strings.Contains` -- substring match (medido L282/L290):** pos-migracao, `trackfw guard git-branch; exit $LASTEXITCODE` passa validate (contem marker). Gate ML-2B: comparacao exata ou regex com sufixo permitido.
+- **Grep de dependencia de PATH -- 44+8 ocorrencias (grep -o, medido):** ADR afirma 44 e 8 -- reproduz exatamente com `grep -o`. `grep -c` (linhas) da 29. 0 das 44 ocorrencias invoca o binario. Dependencia de PATH e nova.
+- **late_eof FP medido (git-branch, bash 5.3.20):** `(payload; sleep 6)` -> nega benigno em ~4s (late_eof_benign:2). Semantica: guard nega quando janela de 2s retorna vazia, NAO quando EOF > 2s do ultimo byte. Gate paridade ML-1A: sleep 3 -> allow; sleep 6 -> deny ~4s.
+- **credential hang FN condicional (hang medido):** `(payload; sleep 6) | credential` -> exit 0 em 6s (cred_late:0). FN condicional a politica de timeout do CLI. Copilot documentado; outros nao determinados (ML-0D). Mesmo vetor, direcao oposta ao git-branch. Decisao arquitetural (porta fiel vs. timeout).
+
+---
+
+## 2026-10-04 — prometeu-tf (feat/hooks-de-guard-executam-no-windows — ML-0C) — FIM
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** ML-0C — Remedição do schema de hook dos 8 CLIs de agente para a ADR-2026-10-04 (guard Go, string nua `trackfw guard <nome>`)
+**Arquivo produzido:** `docs/portabilidade/2026-10-04-remedicao-do-schema-de-hook-dos-clis-de-agente.md`
+**Resultado:** Investigação pura concluída. 8 CLIs medidos (inclui Windsurf e Amazon Q — primeiras medições). Nenhum código alterado.
+**Achados principais:**
+- String nua `trackfw guard git-branch` aceita por todos os 8 CLIs sem exceção — ADR-2026-10-04 D2 verificável.
+- **Copilot:** exit code MUDOU desde 2026-09-05: preToolUse agora fail-closed para qualquer exit ≠ 0 (exceto timeout).
+- **Kiro:** fail-closed confirmado via doc oficial — qualquer exit ≠ 0 bloqueia PreToolUse.
+- **Windsurf:** schema `command`/`powershell` (como Copilot). Campo `command` = cross-platform via `bash -c` (Unix) ou `powershell -Command` (Windows).
+- **Amazon Q:** `cmd.exe /C` em Rust explícito. cwd do processo filho NÃO setado (herda cwd do Q CLI).
+- **Risco D5 validado:** fail-open em 6 de 8 CLIs (Claude Code, Codex, Gemini, Cursor, Windsurf, Amazon Q); fail-closed em Kiro e Copilot.
+- **Residuais:** cwd não determinado no Cursor e Amazon Q (requer experimento mínimo: registrar `pwd`/`%CD%` em hook de teste na VM Windows).
+
+---
+
+## 2026-10-04 — ares-tf (feat/hooks-de-guard-executam-no-windows — ML-0B) — FIM
+
+**Início:** 2026-10-04 | Branch: `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** ML-0B do ROADMAP-2026-09-22 — medição na VM Windows: `trackfw` no PATH de cada shell, por canal de instalação; falha aberta por binário velho; Git Bash + jq; custo de startup; linha de base POSIX no macOS.
+**Arquivo produzido:** `docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md`
+**Resultado:**
+- Gate `test -s docs/portabilidade/2026-10-04-trackfw-no-path-dos-shells-do-windows-por-canal.md`: PASS
+- `trackfw validate`: 165 warnings (lenient mode), zero violations
+- Canais atualizados na VM: pip `8.0.0-rc2` → `9.2.0`, npm `8.0.0-rc2` → `9.2.0`; GitHub `.exe` `9.2.0` copiado para `C:\Users\Lab\trackfw-github-9.2.0.exe`
+**Vereditos principais:**
+- Shim npm sob Restricted bloqueia: **SIM** (quando npm é primeiro no PATH) — confirmado de cmd pai (sem herança de Bypass)
+- Binário sem `guard`: exit **1** em todos os shells — falha aberta (D5 da ADR confirmado)
+- Git Bash: binário antigo `8.0.0-rc2` em `~/bin` não atualizado pelos canais; jq **ausente**
+- guard script `.sh` sem jq: funciona (awk fallback bloqueia `git push`, exit 2)
+- pwsh: **não instalado**
+- Startup mediana: pip/GitHub Go exe ~20.6ms; npm via cmd ~137.9ms
+- Linha de base POSIX: generators Guard/Credential `ok 24.014s`; commands `ok 16.170s`; commit `d53ebfe6`
+**Surpresa:** `PSExecutionPolicyPreference=Bypass` é herdado via env por processos filhos; testes de Restricted precisam usar cmd como pai.
+
+---
+
 ## 2026-10-04 — hades-tf (fix/pin7-do-gate-de-pins-no-windows — ML-0A) — FIM
 
 **Início:** 2026-10-04 | Branch: `fix/pin7-do-gate-de-pins-no-windows`
@@ -44804,3 +45293,103 @@ Achados notáveis para o apolo-tf:
 - A REQ-2026-10-04 (pin7 no Windows) passou para Done, com evidência por AC; o roadmap foi para `done/`, e a label `req-aberta` saiu da #421.
 - Também nesta sessão: o README deixou de dizer que os hooks nativos de Windows estão "in progress" (PR #521); eles estão planejados, com a REQ-2026-09-05 e o roadmap em backlog.
 - Nenhuma issue aberta restante.
+
+## 2026-10-04 — zeus-tf — INÍCIO: REQ-2026-09-05 (hooks de guard nativos no Windows)
+
+- Escopo pedido pelo KG: implementar a REQ e ajustar o roadmap (gerado automaticamente, sem arquivos nem comandos).
+- Achado antes de qualquer código: as configs de hook são versionadas (`.claude/settings.json`, `.codex/hooks.json`, `.gemini/settings.json`), logo escolher `.sh`/`.ps1` pelo SO no `init` quebra time misto. A linha da D7 (`powershell … -File …ps1`) tem a mesma falha. Candidato: o hook chama `trackfw guard <nome>` (Go), string idêntica em sh/PowerShell/cmd/Git Bash. Decisão do KG pendente; derruba a D7, vira adendo à ADR.
+- O guard tem 756 linhas hoje (a REQ cita 561).
+
+## 2026-10-04 — artemis-tf — INÍCIO: ML-1C (paridade .sh ↔ Go pelo corpus existente — AC4)
+
+**Branch:** `feat/hooks-de-guard-executam-no-windows`
+**Tarefa:** ML-1C do ROADMAP-2026-09-22: congelar fixtures dos scripts, helper de paridade, ligar corpus existente em dois braços (.sh via bash + Go via binário compilado), falsificação.
+**Escopo:** `internal/generators/testdata/guard-sh-reference/`, `internal/generators/guard_parity_helper_test.go`, modificações nos três runners (`runGitBranchGuardImpl`, `runCredentialGuard`, `runGuardWithPipe`).
+
+## 2026-10-04 — zeus-tf — PAUSA: REQ-2026-09-05 (guard em Go), sessão encerrada pelo KG
+
+- Branch `feat/hooks-de-guard-executam-no-windows`, enviada ao remoto.
+- Feito: ADR-2026-10-04 com adendo (D2 revista: duas formas de linha por família de shell; D7–D9; npm sob Restricted vira violation que orienta RemoteSigned, decisão do KG). Wave 0 completa (ML-0A/0B/0C), ML-1D, ML-1A e ML-1B auditados e commitados, cada um depois de um corretivo.
+- Em aberto: o ML-1C foi commitado com a suíte de paridade VERMELHA de propósito (3 grupos A/B/C, descritos no roadmap). O próximo passo é o corretivo ao apolo-tf; depois, o barrier da wave 1 e a Wave 2.
+- VM Windows-Lab: `/Volumes/Externo/virtual-machines/Windows-Lab.utm`, desligada ao encerrar.
+
+## 2026-10-05 — zeus-tf — RETOMADA: REQ-2026-09-05, corretivo do ML-1C
+
+- Medido antes do despacho: `go test ./internal/generators/ -count=1` FAIL em 3 testes; subtestes vermelhos C02, C05, C18, C22, N01, N02, N04, N06, N08 (com e sem jq) + `TestGitBranchGuard_UnterminatedHeredocBeforeRealPush_StillBlocks`.
+- Despacho: corretivo ao apolo-tf em `internal/guard/gitbranch.go` + `internal/generators/guard_parity_helper_test.go`.
+
+## 2026-10-05 — zeus-tf — WAVE 1 FECHADA, INÍCIO da Wave 2
+
+- ML-1C auditado e commitado (8b68bff9); barrier da wave 1 passou com `--trust-local-gates`; push feito. `trackfw.yaml` (+12 do init) e `.trackfw-credential-guard.json` descartados com autorização do KG.
+- ML-2B despachado ao apolo-tf. ML-2A bloqueado: o gate `trackfw guard --help` = 0 falha (PATH resolve /opt/homebrew/bin/trackfw 9.2.0) e o `make install` da ADR grava em /usr/local/bin, que fica DEPOIS do homebrew no PATH — a mitigação escrita não funciona nesta máquina. Decisão de onde instalar o build da branch pendente com o KG.
+
+## 2026-10-06 — zeus-tf — ML-2B auditado; ML-2C aberto
+
+- ML-2B: três despachos (dois travaram por watchdog do agente, sem erro de código). 21 testes novos conferidos por nome; `go test ./internal/validator/` ok, `go vet` limpo. Build da branch instalado em `~/.local/bin/trackfw` por decisão do KG (gate do ML-2A: `trackfw guard --help` = 0).
+- Achado do ML-2B: o validator não lê `.windsurf/hooks.json` nem `.amazonq/cli-agents/*.json`, e o gerador emite hooks para os dois. Mesma causa → ML-2C nesta REQ, antes do ML-2A.
+
+## 2026-10-06 — ares-tf — INÍCIO: ML-3A (prova do guard em Go na VM Windows + linha de base POSIX)
+
+- Branch: `feat/hooks-de-guard-executam-no-windows`
+- Tarefa: medir na VM Windows que `trackfw guard` dispara e bloqueia (AC3); repetir linha de base POSIX (AC5). Sem código de produto.
+- Escopo de escrita: seção nova em `docs/portabilidade/2026-10-04-...md`; vault note se causa não-óbvia.
+
+## 2026-10-06 — ares-tf — FIM: ML-3A (prova do guard em Go na VM Windows + linha de base POSIX)
+
+- Medicao concluida. Secao "ML-3A — prova do guard em Go (2026-10-06)" adicionada ao documento de portabilidade.
+- Nota de vault criada: `guard-fallback-old-binary-exit1-nao-fail-open-2026-10-06.md`
+- Achado relevante: fallback (binario antigo) sai exit 1, nao exit 0 como documentado anteriormente — fail-closed por erro, nao fail-open.
+- AC3 confirmado (PS5 e cmd bloqueiam com exit 2); AC5 confirmado (POSIX identico a ML-0B).
+- Git status: 3 arquivos modificados, 1 novo (vault note). Sem edicao de codigo de produto.
+
+## 2026-10-06 — apolo-tf — INÍCIO: ML-4C frente B (qualidade validator)
+
+- Branch: `feat/hooks-de-guard-executam-no-windows`
+- Escopo: `internal/validator/` apenas.
+- Tarefas: B2 (renomear 3 arquivos com sufixo ml2b/ml2c) + I1 (teste de concordância gerador/validator).
+
+## 2026-10-06 — apolo-tf — FIM: ML-4C frente B
+
+- B2: renomeados `validator_guard_binary_probe_ml2b.go → validator_guard_binary_probe.go`, `*_ml2b_test.go → *_test.go`, `*_ml2c_test.go → *_windsurf_amazonq_test.go`. Comentários de cabeçalho e cross-references em `validator_credential_guard.go` e `validator_git_branch_guard.go` atualizados. `grep -rn '_ml2b\|_ml2c' internal/` retorna vazio.
+- I1: criado `validator_guard_hook_concordance_external_test.go` (14 testes, `package validator_test`). Adicionados 5 exports em `export_test.go`: `ValidateGitBranchGuardHookResolvableForTest`, `ValidateCredentialGuardHookResolvableForTest`, `StubProbeOKForTest`, `ChdirForTest`. Cobre 8 CLIs (Claude, Codex, Gemini, Kiro, Copilot, Cursor, Windsurf, Amazon Q) em 14 testes.
+- Falsificação: `; exit $LASTEXITCODE` → `; exit_DELIBERATELY_BROKEN` → 11/14 testes falharam (todos PS/POSIX); 3 cmd.exe passaram. Revertido. `git diff --stat` limpo.
+- Gates: `go build ./...` ok; `go vet ./internal/validator/` ok; `go test ./internal/validator/ -count=1` ok (10.662s); `trackfw validate` — sem violations, 175 warnings esperados (lenient mode).
+- `ls internal/validator/ | grep -i ml2` retorna apenas `validator_lenient_ml2a_test.go` (outro escopo, correto).
+
+## 2026-10-06 — zeus-tf — WAVE 4 FECHADA: REQ-2026-09-05 pronta para PR
+
+- Waves 0–4 concluídas. `make quality` pelo arquiteto, máquina ociosa: exit 0. Red team (ML-4A) bloqueou por C1 (pai `guard` saía 0 com subcomando inválido) e C2 (`&` não separava comando); corrigidos no ML-4C e medidos com o binário.
+- Lição: três vezes um agente chamou de "pré-existente" uma falha causada pela branch. Exigir a mesma medição em `origin/main` antes de aceitar o rótulo.
+- Binário da branch em `~/.local/bin/trackfw` (decisão do KG); remover após o release.
+- Aberta à parte: REQ-2026-10-06 (credential guard ausente em Windsurf e Amazon Q), em backlog.
+
+## 2026-10-06 — apolo-tf — INÍCIO: corretivo CI (PR #527 — dedup tests)
+
+- Branch: `feat/hooks-de-guard-executam-no-windows`
+- Tarefa: corrigir `TestGBGDedup_MessageAppearsOnceWhenBothScopesInstalled` e `TestGBGDedup_MessageAppearsOnceWhenBothScopesInstalled_NonVacuous` que falham no CI porque `runGitBranchGuardEntries` não injeta o binário compilado no PATH para o braço `else` (script .sh), apenas para o braço inline ("trackfw guard git-branch").
+- Escopo: `internal/generators/git_branch_guard_dedup_test.go` e `git_branch_guard_stdin_drain_test.go`.
+
+## 2026-10-06 — apolo-tf — FIM: corretivo CI (PR #527 — dedup tests)
+
+- `git_branch_guard_dedup_test.go`: movido `cmd.Env = injectGuardBinaryPath(t, os.Environ())` para fora do `if/else` em `runGitBranchGuardEntries` — garante injeção tanto para o braço inline quanto para o braço `.sh`.
+- `git_branch_guard_stdin_drain_test.go`: adicionado `bashMajorVersion()` helper; em `runGuardWithPipe` retorna o braço Go como resultado canônico quando bash < 4 (macOS `/bin/bash` 3.2), evitando divergência de paridade que só ocorre localmente com PATH limpo.
+- Censo final com PATH limpo: `ok` em todos os 19 pacotes de `internal/...`, sem `--- FAIL`.
+- Testes com PATH normal: `ok github.com/kgsaran/trackfw/internal/generators`.
+- Falsificação: removida a injeção temporariamente → ambos os testes reprovaram com "trackfw not found in PATH"; injeção revertida.
+- `git status --short`: M docs/agents-working-context.md, M internal/generators/git_branch_guard_dedup_test.go, M internal/generators/git_branch_guard_stdin_drain_test.go.
+
+## 2026-10-06 — apolo-tf — INÍCIO: ML-4D — Remoção de aspas na tokenização (D10)
+
+- Branch: `feat/hooks-de-guard-executam-no-windows`
+- Escopo: `internal/guard/gitbranch.go`, `internal/guard/gitbranch_test.go`
+- Objetivo: substituir `strings.Fields` por `shellTokenize` que remove aspas e concatena partes adjacentes
+- Pré-condição verificada: `quoteAwareSplit` corrompe paths Windows com `\` dentro de aspas duplas (backslashes consumidos); casos POSIX intactos
+
+## 2026-10-06 — apolo-tf — FIM: ML-4D — Remoção de aspas na tokenização (D10)
+
+- `shellTokenize` adicionado em `internal/guard/gitbranch.go` (46 linhas); substitui `strings.Fields` em `MatchSubcommand`; usa `unicode.IsSpace` para não regredir C04/C21.
+- 11 testes novos em `internal/guard/gitbranch_test.go` (D10, todos verdes).
+- Parity generators: 0 divergências novas em C01–C22.
+- Divergência residual não implementada: `"C:\Program Files\Git\bin\git.exe" push` (Windows) requer fix em `quoteAwareSplit` (backslashes consumidos dentro de `"…"`). Reportado ao arquiteto.
+- `go build ./...` ✓; `go vet ./internal/guard/` ✓; `go test ./internal/guard/... -count=1` ok (2.7s); `go test ./internal/generators/ -count=1` ok (51s); `GOOS=windows go vet` ✓; `GOOS=windows go test -c -o /dev/null` ✓.
+- `git status --short`: M docs/agents-working-context.md, M internal/guard/gitbranch.go, M internal/guard/gitbranch_test.go.

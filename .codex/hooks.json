@@ -24,7 +24,7 @@
       {
         "hooks": [
           {
-            "command": "\"$(git rev-parse --show-toplevel)/scripts/trackfw-credential-guard.sh\"",
+            "command": "trackfw guard credential; exit $LASTEXITCODE",
             "type": "command"
           }
         ],
@@ -33,7 +33,7 @@
       {
         "hooks": [
           {
-            "command": "\"$(git rev-parse --show-toplevel)/scripts/trackfw-credential-guard.sh\"",
+            "command": "trackfw guard credential; exit $LASTEXITCODE",
             "type": "command"
           }
         ],
@@ -44,11 +44,11 @@
       {
         "hooks": [
           {
-            "command": "\"$(git rev-parse --show-toplevel)/scripts/trackfw-git-branch-guard.sh\"",
+            "command": "trackfw guard git-branch; exit $LASTEXITCODE",
             "type": "command"
           },
           {
-            "command": "\"$(git rev-parse --show-toplevel)/scripts/trackfw-credential-guard.sh\"",
+            "command": "trackfw guard credential; exit $LASTEXITCODE",
             "type": "command"
           }
         ],
@@ -57,7 +57,7 @@
       {
         "hooks": [
           {
-            "command": "\"$(git rev-parse --show-toplevel)/scripts/trackfw-credential-guard.sh\"",
+            "command": "trackfw guard credential; exit $LASTEXITCODE",
             "type": "command"
           }
         ],

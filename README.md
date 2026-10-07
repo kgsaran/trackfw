@@ -19,12 +19,12 @@ ADR → REQ → ROADMAP → backlog / wip / blocked / done / abandoned
 Every piece of work traces back to a decision. Every decision links to a requirement. Every requirement lands in a roadmap. No orphan work, no undocumented choices.
 
 > 🚧 **Platform support: Linux and macOS are supported. Windows support is partial.**
-> The CLIs install on Windows and core governance commands run — but the generated
-> guard hooks are POSIX shell scripts, and **on several agent CLIs they do not execute
-> on Windows.** They are written to disk and reported as installed while never running.
-> Native Windows hooks are planned, not yet in progress (tracked in
-> [REQ-2026-09-05](docs/req/REQ-2026-09-05-os-hooks-de-guard-nao-executam-no-windows-na-maioria-dos-clis-de-agente-e-o-validate-reporta-instalado.md)).
-> **Read [Windows support (partial)](#windows-support-partial) before adopting on Windows.**
+> The CLIs install on Windows and core governance commands run. From the next release,
+> guard hooks call `trackfw guard <name>` (the Go binary) instead of a POSIX shell
+> script — measured blocking and allowing correctly in PowerShell 5, cmd.exe, and Git
+> Bash (non-login) on Windows. Windows CI still reports known test failures. There are
+> limits worth knowing; **read [Windows support (partial)](#windows-support-partial)
+> before adopting on Windows.**
 
 ---
 
@@ -138,32 +138,58 @@ are than let you find them after adoption.
 
 - Our Windows CI still reports **known test failures**. They are mapped by root cause,
   not unknown — but they are not zero.
-**Guard hooks on Windows — measured, per agent CLI**
+**Guard hooks on Windows — measured state (from the next release)**
 
-The guard hooks are `.sh` scripts, executed by *your* AI agent CLI. Which shell that CLI
-uses on Windows decides whether they run at all. We measured it:
+From the next release, guard hooks call `trackfw guard <name>` (the Go binary) instead
+of a `.sh` script. The same binary runs in every shell; for a given agent CLI, the hook
+line in the committed config is the same string across PowerShell, cmd.exe, and Git
+Bash — a team with mixed OS can commit one config and have it work on all machines.
 
-| Agent CLI | Shell on Windows | Do the hooks run? | Basis |
+The hook line emitted depends on the shell the agent CLI uses on Windows — a fact of
+the vendor, not of the OS:
+
+| Agent CLI | Shell on Windows | Hook line emitted | Basis |
 |---|---|---|---|
-| Gemini CLI | PowerShell, always | ❌ **No** | measured in vendor source |
-| Codex CLI | PowerShell on the normal path | ❌ **No** | measured in vendor source |
-| GitHub Copilot CLI | — | ❌ **No** — we populate the wrong config field | vendor docs + our code |
-| Claude Code | Git Bash if installed, else PowerShell | ⚠️ **Only with Git Bash** | vendor documentation |
-| Cursor · Kiro | unknown | ❓ **Unknown** | closed, undocumented |
+| Claude Code | Git Bash (if installed), else PowerShell | `trackfw guard <name>; exit $LASTEXITCODE` | vendor docs (2026-10-04) |
+| Codex CLI | PowerShell | `trackfw guard <name>; exit $LASTEXITCODE` | vendor source (2026-10-04) |
+| Gemini CLI | PowerShell | `trackfw guard <name>; exit $LASTEXITCODE` | vendor source (2026-10-04) |
+| Cursor | PowerShell | `trackfw guard <name>; exit $LASTEXITCODE` | vendor bundle (2026-09-06) |
+| Windsurf | PowerShell | `trackfw guard <name>; exit $LASTEXITCODE` | vendor docs (2026-10-04) |
+| GitHub Copilot | PowerShell / cross-platform `command` field | `trackfw guard <name>; exit $LASTEXITCODE` | vendor docs (2026-10-04) |
+| Kiro | cmd.exe | `trackfw guard <name>` | vendor docs (2026-10-04) |
+| Amazon Q | cmd.exe | `trackfw guard <name>` | vendor source (2026-10-04) |
 
-🔴 **This is the failure mode we care most about, because it is silent.** A guard that
-never executes still reports health over something it never inspected. On the CLIs marked
-❌, `trackfw validate` will tell you the hook is installed — and it will never fire.
+The `; exit $LASTEXITCODE` suffix is required for PowerShell 5: without it, PowerShell
+converts exit 2 (deny) from the child process into exit 1, and 6 of 8 CLIs treat exit 1
+as a non-blocking error. cmd.exe and bash propagate the exit code directly; they do not
+need the suffix.
 
-**Until native Windows hooks ship, do not rely on `credential_guard` or
-`git_branch_guard` as an enforced control on Windows.** Treat them as documentation of
-intent, not as enforcement.
+**What was measured in the VM (Windows 11 ARM64, 2026-10-06):** PowerShell 5, cmd.exe,
+and Git Bash (non-login, explicit PATH to the branch binary) all block
+`git push origin main` (exit 2) and allow `ls` (exit 0) correctly. `pwsh` (PowerShell 7)
+was not installed on the VM — not measured. No agent CLI was installed in the VM:
+measurement is of the hook line run directly in each shell; end-to-end dispatch from
+agent CLIs was not run.
 
-We are **not** going to answer this by requiring Git Bash: it would fix one CLI out of
-six and push the cost onto you. Windows hooks should run on Windows. Native hook
-generation is the direction — see
-[`docs/portabilidade/2026-09-05-contrato-de-execucao-de-hook-por-cli-de-agente-no-windows.md`](docs/portabilidade/2026-09-05-contrato-de-execucao-de-hook-por-cli-de-agente-no-windows.md)
-for the full measurement, per CLI, with the level of certainty of each row.
+`trackfw update` migrates existing configs from the old `.sh` form to the new hook line.
+
+**The guard requires a `trackfw` binary with the `guard` subcommand in the PATH of the
+agent CLI's process.** `trackfw validate` now reports three new conditions:
+
+- **Old binary in PATH** (no `guard` subcommand — exits 1 with "unknown command"):
+  fail-open on 6 of 8 CLIs. Claude Code, Codex, Gemini, Cursor, Windsurf, and Amazon Q
+  treat exit 2 as the only blocking exit — exit 1 passes through. Kiro and Copilot
+  block any non-zero exit, so they block for the wrong reason (deny-all until updated).
+  `trackfw validate` reports a violation when the binary in PATH does not support
+  `guard`. **Caveat:** if Git Bash resolves a different binary (e.g. one installed in
+  `~/bin` that is absent from the Windows PATH), the probe does not see it — that
+  binary's version is not checked.
+- **npm channel under `ExecutionPolicy Restricted`**: the `.ps1` shim is blocked by
+  PowerShell; validate reports a violation and recommends
+  `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
+- **`trackfw.exe`, `trackfw.cmd`, or `trackfw.bat` in the project root**: cmd.exe (used
+  by Kiro and Amazon Q) searches the current directory before PATH — validate reports a
+  violation for each file found.
 
 **If you are on Windows**, we want your report. The Windows defects fixed so far came
 from a user running the tool on real Windows 11 and measuring before reporting — open

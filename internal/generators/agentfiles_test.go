@@ -72,11 +72,11 @@ func TestInjectClaudeHooks_Create(t *testing.T) {
 	if !helperHasClaudeHook(data, "PostToolUse", "AskUserQuestion", "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh") {
 		t.Error("PostToolUse[AskUserQuestion] → cleanup.sh missing")
 	}
-	if !helperHasClaudeHook(data, "PreToolUse", "Bash", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh") {
-		t.Error("PreToolUse[Bash] → credential-guard.sh missing")
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", guardCredentialCmdPSPOSIX) {
+		t.Error("PreToolUse[Bash] → credential-guard missing")
 	}
-	if !helperHasClaudeHook(data, "PostToolUse", "Bash", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh") {
-		t.Error("PostToolUse[Bash] → credential-guard.sh missing")
+	if !helperHasClaudeHook(data, "PostToolUse", "Bash", guardCredentialCmdPSPOSIX) {
+		t.Error("PostToolUse[Bash] → credential-guard missing")
 	}
 }
 
@@ -112,13 +112,13 @@ func TestInjectClaudeHooks_MergeAndIdempotent(t *testing.T) {
 	if !helperHasClaudeHook(data, "PreToolUse", "AskUserQuestion", "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh") {
 		t.Error("PreToolUse signal hook missing")
 	}
-	if !helperHasClaudeHook(data, "PreToolUse", "Bash", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh") {
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", guardCredentialCmdPSPOSIX) {
 		t.Error("PreToolUse credential-guard hook missing")
 	}
 	if !helperHasClaudeHook(data, "PostToolUse", "AskUserQuestion", "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh") {
 		t.Error("PostToolUse cleanup hook missing")
 	}
-	if !helperHasClaudeHook(data, "PostToolUse", "Bash", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh") {
+	if !helperHasClaudeHook(data, "PostToolUse", "Bash", guardCredentialCmdPSPOSIX) {
 		t.Error("PostToolUse credential-guard hook missing")
 	}
 
@@ -189,14 +189,14 @@ func TestInjectClaudeHooks_MigratesLegacyRelativeCredentialGuardCommand(t *testi
 	if helperHasClaudeHook(data, "PostToolUse", "Write|Edit", "scripts/trackfw-credential-guard.sh") {
 		t.Error("stale relative-path PostToolUse[Write|Edit] entry survived the upgrade")
 	}
-	if !helperHasClaudeHook(data, "PreToolUse", "Bash", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh") {
-		t.Error("PreToolUse[Bash] was not upgraded to the $CLAUDE_PROJECT_DIR-prefixed command")
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", guardCredentialCmdPSPOSIX) {
+		t.Error("PreToolUse[Bash] was not upgraded to the inline trackfw guard credential command")
 	}
-	if !helperHasClaudeHook(data, "PreToolUse", "Read", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh") {
-		t.Error("PreToolUse[Read] was not upgraded to the $CLAUDE_PROJECT_DIR-prefixed command")
+	if !helperHasClaudeHook(data, "PreToolUse", "Read", guardCredentialCmdPSPOSIX) {
+		t.Error("PreToolUse[Read] was not upgraded to the inline trackfw guard credential command")
 	}
-	if !helperHasClaudeHook(data, "PostToolUse", "Write|Edit", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh") {
-		t.Error("PostToolUse[Write|Edit] was not upgraded to the $CLAUDE_PROJECT_DIR-prefixed command")
+	if !helperHasClaudeHook(data, "PostToolUse", "Write|Edit", guardCredentialCmdPSPOSIX) {
+		t.Error("PostToolUse[Write|Edit] was not upgraded to the inline trackfw guard credential command")
 	}
 
 	// No duplicate hooks left behind inside the migrated matcher entries: exactly
@@ -219,7 +219,7 @@ func TestInjectClaudeHooks_MigratesLegacyRelativeCredentialGuardCommand(t *testi
 			}
 		}
 	}
-	if !helperHasClaudeHook(data, "PreToolUse", "Bash", claudeGitGuardCmd) {
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", guardGitBranchCmdPSPOSIX) {
 		t.Error("PreToolUse[Bash] missing the git-branch-guard command")
 	}
 }
@@ -311,17 +311,17 @@ func TestInjectClaudeHooks_ReadWriteEditMatchersRegisteredForCredentialGuard(t *
 
 	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
 
-	if !helperHasClaudeHook(data, "PreToolUse", "Read", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh") {
-		t.Error("PreToolUse[Read] → credential-guard.sh missing (Read tool calls never reach the guard without this entry)")
+	if !helperHasClaudeHook(data, "PreToolUse", "Read", guardCredentialCmdPSPOSIX) {
+		t.Error("PreToolUse[Read] → credential-guard missing (Read tool calls never reach the guard without this entry)")
 	}
-	if !helperHasClaudeHook(data, "PostToolUse", "Read", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh") {
-		t.Error("PostToolUse[Read] → credential-guard.sh missing")
+	if !helperHasClaudeHook(data, "PostToolUse", "Read", guardCredentialCmdPSPOSIX) {
+		t.Error("PostToolUse[Read] → credential-guard missing")
 	}
-	if !helperHasClaudeHook(data, "PreToolUse", "Write|Edit", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh") {
-		t.Error("PreToolUse[Write|Edit] → credential-guard.sh missing (Write/Edit tool calls never reach the guard without this entry)")
+	if !helperHasClaudeHook(data, "PreToolUse", "Write|Edit", guardCredentialCmdPSPOSIX) {
+		t.Error("PreToolUse[Write|Edit] → credential-guard missing (Write/Edit tool calls never reach the guard without this entry)")
 	}
-	if !helperHasClaudeHook(data, "PostToolUse", "Write|Edit", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh") {
-		t.Error("PostToolUse[Write|Edit] → credential-guard.sh missing")
+	if !helperHasClaudeHook(data, "PostToolUse", "Write|Edit", guardCredentialCmdPSPOSIX) {
+		t.Error("PostToolUse[Write|Edit] → credential-guard missing")
 	}
 }
 
@@ -337,16 +337,16 @@ func TestInjectGeminiHooks_ReadWriteMatchersRegisteredForCredentialGuard(t *test
 
 	data := helperReadJSON(t, filepath.Join(dir, ".gemini", "settings.json"))
 
-	if !helperHasClaudeHook(data, "BeforeTool", "read_file|read_many_files", geminiGuardCmd) {
+	if !helperHasClaudeHook(data, "BeforeTool", "read_file|read_many_files", guardCredentialCmdPSPOSIX) {
 		t.Error("BeforeTool[read_file|read_many_files] → credential-guard.sh missing")
 	}
-	if !helperHasClaudeHook(data, "AfterTool", "read_file|read_many_files", geminiGuardCmd) {
+	if !helperHasClaudeHook(data, "AfterTool", "read_file|read_many_files", guardCredentialCmdPSPOSIX) {
 		t.Error("AfterTool[read_file|read_many_files] → credential-guard.sh missing")
 	}
-	if !helperHasClaudeHook(data, "BeforeTool", "write_file|replace", geminiGuardCmd) {
+	if !helperHasClaudeHook(data, "BeforeTool", "write_file|replace", guardCredentialCmdPSPOSIX) {
 		t.Error("BeforeTool[write_file|replace] → credential-guard.sh missing")
 	}
-	if !helperHasClaudeHook(data, "AfterTool", "write_file|replace", geminiGuardCmd) {
+	if !helperHasClaudeHook(data, "AfterTool", "write_file|replace", guardCredentialCmdPSPOSIX) {
 		t.Error("AfterTool[write_file|replace] → credential-guard.sh missing")
 	}
 }
@@ -367,13 +367,13 @@ func TestInjectCodexHooks(t *testing.T) {
 	if !helperHasClaudeHook(data, "PermissionRequest", ".*", codexSignalCmd) {
 		t.Error("Codex PermissionRequest hook missing")
 	}
-	if !helperHasClaudeHook(data, "PreToolUse", "Bash", codexGuardCmd) {
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", guardCredentialCmdPSPOSIX) {
 		t.Error("Codex PreToolUse[Bash] credential-guard hook missing")
 	}
 	if !helperHasClaudeHook(data, "PostToolUse", ".*", codexCleanupCmd) {
 		t.Error("Codex PostToolUse hook missing")
 	}
-	if !helperHasClaudeHook(data, "PostToolUse", "Bash", codexGuardCmd) {
+	if !helperHasClaudeHook(data, "PostToolUse", "Bash", guardCredentialCmdPSPOSIX) {
 		t.Error("Codex PostToolUse[Bash] credential-guard hook missing")
 	}
 
@@ -420,7 +420,7 @@ func TestInjectCodexHooks_PreservesExistingBashEntry(t *testing.T) {
 	if !helperHasClaudeHook(data, "PreToolUse", "Bash", "scripts/other.sh") {
 		t.Error("existing Bash hook lost during merge")
 	}
-	if !helperHasClaudeHook(data, "PreToolUse", "Bash", codexGuardCmd) {
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", guardCredentialCmdPSPOSIX) {
 		t.Error("PreToolUse[Bash] credential-guard hook missing after merge")
 	}
 
@@ -498,12 +498,12 @@ func TestInjectCodexHooks_MigrationWiringRewritesInPlaceNotDuplicate(t *testing.
 		}
 	}
 	checkOne("PermissionRequest", ".*", codexSignalCmd, 1)
-	checkOne("PreToolUse", "Bash", codexGuardCmd, 2)
-	checkOne("PreToolUse", "apply_patch", codexGuardCmd, 1)
+	checkOne("PreToolUse", "Bash", guardCredentialCmdPSPOSIX, 2)
+	checkOne("PreToolUse", "apply_patch", guardCredentialCmdPSPOSIX, 1)
 	checkOne("PostToolUse", ".*", codexCleanupCmd, 1)
-	checkOne("PostToolUse", "Bash", codexGuardCmd, 1)
-	checkOne("PostToolUse", "apply_patch", codexGuardCmd, 1)
-	if !helperHasClaudeHook(data, "PreToolUse", "Bash", codexGitGuardCmd) {
+	checkOne("PostToolUse", "Bash", guardCredentialCmdPSPOSIX, 1)
+	checkOne("PostToolUse", "apply_patch", guardCredentialCmdPSPOSIX, 1)
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", guardGitBranchCmdPSPOSIX) {
 		t.Error("PreToolUse[Bash]: expected git-branch-guard command missing")
 	}
 }
@@ -527,10 +527,10 @@ func TestInjectGeminiHooks(t *testing.T) {
 	if !helperHasClaudeHook(data, "AfterTool", "*", geminiCleanupCmd) {
 		t.Error("Gemini AfterTool[*] cleanup hook missing")
 	}
-	if !helperHasClaudeHook(data, "BeforeTool", "run_shell_command", geminiGuardCmd) {
+	if !helperHasClaudeHook(data, "BeforeTool", "run_shell_command", guardCredentialCmdPSPOSIX) {
 		t.Error("Gemini BeforeTool[run_shell_command] credential-guard hook missing")
 	}
-	if !helperHasClaudeHook(data, "AfterTool", "run_shell_command", geminiGuardCmd) {
+	if !helperHasClaudeHook(data, "AfterTool", "run_shell_command", guardCredentialCmdPSPOSIX) {
 		t.Error("Gemini AfterTool[run_shell_command] credential-guard hook missing")
 	}
 
@@ -576,7 +576,7 @@ func TestInjectGeminiHooks_PreservesExistingBeforeToolEntry(t *testing.T) {
 	if !helperHasClaudeHook(data, "BeforeTool", "run_shell_command", "scripts/other.sh") {
 		t.Error("existing BeforeTool[run_shell_command] hook lost during merge")
 	}
-	if !helperHasClaudeHook(data, "BeforeTool", "run_shell_command", geminiGuardCmd) {
+	if !helperHasClaudeHook(data, "BeforeTool", "run_shell_command", guardCredentialCmdPSPOSIX) {
 		t.Error("BeforeTool[run_shell_command] credential-guard hook missing after merge")
 	}
 
@@ -654,14 +654,14 @@ func TestInjectGeminiHooks_MigrationWiringRewritesInPlaceNotDuplicate(t *testing
 		}
 	}
 	checkOne("Notification", "ToolPermission", geminiSignalCmd, 1)
-	checkOne("BeforeTool", "run_shell_command", geminiGuardCmd, 2)
-	checkOne("BeforeTool", "read_file|read_many_files", geminiGuardCmd, 1)
-	checkOne("BeforeTool", "write_file|replace", geminiGuardCmd, 1)
+	checkOne("BeforeTool", "run_shell_command", guardCredentialCmdPSPOSIX, 2)
+	checkOne("BeforeTool", "read_file|read_many_files", guardCredentialCmdPSPOSIX, 1)
+	checkOne("BeforeTool", "write_file|replace", guardCredentialCmdPSPOSIX, 1)
 	checkOne("AfterTool", "*", geminiCleanupCmd, 1)
-	checkOne("AfterTool", "run_shell_command", geminiGuardCmd, 1)
-	checkOne("AfterTool", "read_file|read_many_files", geminiGuardCmd, 1)
-	checkOne("AfterTool", "write_file|replace", geminiGuardCmd, 1)
-	if !helperHasClaudeHook(data, "BeforeTool", "run_shell_command", geminiGitGuardCmd) {
+	checkOne("AfterTool", "run_shell_command", guardCredentialCmdPSPOSIX, 1)
+	checkOne("AfterTool", "read_file|read_many_files", guardCredentialCmdPSPOSIX, 1)
+	checkOne("AfterTool", "write_file|replace", guardCredentialCmdPSPOSIX, 1)
+	if !helperHasClaudeHook(data, "BeforeTool", "run_shell_command", guardGitBranchCmdPSPOSIX) {
 		t.Error("BeforeTool[run_shell_command]: expected git-branch-guard command missing")
 	}
 }
@@ -697,10 +697,11 @@ func TestInjectKiroHooks(t *testing.T) {
 		t.Fatalf("expected version \"v1\", got %v", data["version"])
 	}
 	hooks, _ := data["hooks"].([]interface{})
-	// 8 entries: signal, cleanup, credential-guard shell pre/post, read pre/post,
-	// write pre/post (ADR-2026-08-06 emenda 7/ROADMAP-2026-08-08 Wave 2).
-	if len(hooks) != 8 {
-		t.Fatalf("expected 8 hooks in Kiro config (signal, cleanup, credential-guard shell/read/write pre/post), got %d", len(hooks))
+	// 9 entries: signal, cleanup, credential-guard shell pre/post, read pre/post,
+	// write pre/post (ADR-2026-08-06 emenda 7/ROADMAP-2026-08-08 Wave 2) +
+	// git-branch-guard (ADR-2026-10-04, cmd.exe family — no suffix).
+	if len(hooks) != 9 {
+		t.Fatalf("expected 9 hooks in Kiro config (signal, cleanup, credential-guard shell/read/write pre/post + git-branch-guard), got %d", len(hooks))
 	}
 
 	sawGuardPre, sawGuardPost := false, false
@@ -789,7 +790,8 @@ func TestInjectCopilotHooks(t *testing.T) {
 		t.Fatalf("expected postToolUse array of size 4, got %v", hooks["postToolUse"])
 	}
 
-	helperFindCopilotEntry := func(arr []interface{}, bash string) map[string]interface{} {
+	// helperFindCopilotByBash finds by "bash" field (attention signal/cleanup use old field name).
+	helperFindCopilotByBash := func(arr []interface{}, bash string) map[string]interface{} {
 		for _, item := range arr {
 			obj, ok := item.(map[string]interface{})
 			if ok && obj["bash"] == bash {
@@ -798,8 +800,18 @@ func TestInjectCopilotHooks(t *testing.T) {
 		}
 		return nil
 	}
+	// helperFindCopilotByCommand finds by "command" field (guard entries use new field per ADR-2026-10-04 D4).
+	helperFindCopilotByCommand := func(arr []interface{}, cmd string) map[string]interface{} {
+		for _, item := range arr {
+			obj, ok := item.(map[string]interface{})
+			if ok && obj["command"] == cmd {
+				return obj
+			}
+		}
+		return nil
+	}
 
-	signal := helperFindCopilotEntry(pre, "scripts/trackfw-attention-signal.sh")
+	signal := helperFindCopilotByBash(pre, "scripts/trackfw-attention-signal.sh")
 	if signal == nil {
 		t.Fatal("preToolUse missing attention-signal entry")
 	}
@@ -807,7 +819,7 @@ func TestInjectCopilotHooks(t *testing.T) {
 		t.Errorf("attention-signal entry should not have a matcher, got %v", signal["matcher"])
 	}
 
-	guardPre := helperFindCopilotEntry(pre, "scripts/trackfw-credential-guard.sh")
+	guardPre := helperFindCopilotByCommand(pre, guardCredentialCmdPSPOSIX)
 	if guardPre == nil {
 		t.Fatal("preToolUse missing credential-guard entry")
 	}
@@ -815,12 +827,12 @@ func TestInjectCopilotHooks(t *testing.T) {
 		t.Errorf("credential-guard preToolUse entry should have matcher=bash, got %v", guardPre["matcher"])
 	}
 
-	cleanup := helperFindCopilotEntry(post, "scripts/trackfw-attention-cleanup.sh")
+	cleanup := helperFindCopilotByBash(post, "scripts/trackfw-attention-cleanup.sh")
 	if cleanup == nil {
 		t.Fatal("postToolUse missing attention-cleanup entry")
 	}
 
-	guardPost := helperFindCopilotEntry(post, "scripts/trackfw-credential-guard.sh")
+	guardPost := helperFindCopilotByCommand(post, guardCredentialCmdPSPOSIX)
 	if guardPost == nil {
 		t.Fatal("postToolUse missing credential-guard entry")
 	}
@@ -880,20 +892,20 @@ func TestInjectCursorHooks(t *testing.T) {
 	if len(before) != 2 || len(after) != 1 {
 		t.Fatalf("expected 2 beforeShellExecution and 1 afterShellExecution entry, got %d before, %d after", len(before), len(after))
 	}
-	if before[0].(map[string]interface{})["command"] != "scripts/trackfw-credential-guard.sh" {
-		t.Errorf("beforeShellExecution[0] should be the credential-guard script, got %v", before[0])
+	if before[0].(map[string]interface{})["command"] != guardCredentialCmdPSPOSIX {
+		t.Errorf("beforeShellExecution[0] should be the credential-guard command, got %v", before[0])
 	}
 	foundGitGuard := false
 	for _, item := range before {
-		if item.(map[string]interface{})["command"] == "scripts/trackfw-git-branch-guard.sh" {
+		if item.(map[string]interface{})["command"] == guardGitBranchCmdPSPOSIX {
 			foundGitGuard = true
 		}
 	}
 	if !foundGitGuard {
 		t.Error("beforeShellExecution missing the git-branch-guard entry")
 	}
-	if after[0].(map[string]interface{})["command"] != "scripts/trackfw-credential-guard.sh" {
-		t.Errorf("afterShellExecution[0] should be the credential-guard script, got %v", after[0])
+	if after[0].(map[string]interface{})["command"] != guardCredentialCmdPSPOSIX {
+		t.Errorf("afterShellExecution[0] should be the credential-guard command, got %v", after[0])
 	}
 }
 
@@ -1014,8 +1026,8 @@ func TestInjectWindsurfHooks_WritesGitBranchGuardHook(t *testing.T) {
 		t.Fatalf("expected exactly 1 pre_run_command entry (idempotent across 2 runs), got %v", hooksMap["pre_run_command"])
 	}
 	entry, _ := pre[0].(map[string]interface{})
-	if entry["command"] != "bash scripts/trackfw-git-branch-guard.sh" {
-		t.Errorf("expected command to be the git-branch-guard script, got %v", entry["command"])
+	if entry["command"] != guardGitBranchCmdPSPOSIX {
+		t.Errorf("expected command to be the inline trackfw guard git-branch command, got %v", entry["command"])
 	}
 	if entry["show_output"] != true {
 		t.Errorf("expected show_output=true, got %v", entry["show_output"])
@@ -1077,7 +1089,7 @@ func TestInjectWindsurfHooks_PreservesOtherEvents(t *testing.T) {
 		switch obj["command"] {
 		case "some-other-tool-hook":
 			foundExisting = true
-		case "bash scripts/trackfw-git-branch-guard.sh":
+		case guardGitBranchCmdPSPOSIX:
 			foundNew = true
 		}
 	}
@@ -1108,7 +1120,7 @@ func TestInjectAmazonQHooks_CreateAndIdempotent(t *testing.T) {
 		t.Errorf("expected tools=[\"*\"], got %v", data["tools"])
 	}
 
-	if !helperHasClaudeHook(data, "preToolUse", "execute_bash", "scripts/trackfw-git-branch-guard.sh") {
+	if !helperHasClaudeHook(data, "preToolUse", "execute_bash", guardGitBranchCmdCmdExe) {
 		t.Error("hooks.preToolUse[execute_bash] missing the git-branch-guard command")
 	}
 	hooks, _ := data["hooks"].(map[string]interface{})
@@ -1170,6 +1182,160 @@ func TestInjectAmazonQHooks_PreservesExistingSettings(t *testing.T) {
 	}
 	if !foundNew {
 		t.Error("git-branch-guard deniedCommands entry was not added")
+	}
+}
+
+// TestInjectCursorHooks_MigratesWindsurfLegacyGitBranchGuardCmd verifies that a
+// pre-existing "bash scripts/trackfw-git-branch-guard.sh" entry (Windsurf legacy form)
+// in hooks.beforeShellExecution is rewritten to the inline command form by InjectCursorHooks.
+//
+// AFIRMA: que InjectCursorHooks migra o comando legado Windsurf
+// ("bash scripts/trackfw-git-branch-guard.sh") para a forma inline atual,
+// evitando que instalações anteriores fiquem presas com o path de script obsoleto.
+func TestInjectCursorHooks_MigratesWindsurfLegacyGitBranchGuardCmd(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("HOME", t.TempDir()) // isolate global guard dedup from real $HOME
+
+	cursorDir := filepath.Join(dir, ".cursor")
+	if err := os.MkdirAll(cursorDir, 0755); err != nil {
+		t.Fatalf("mkdir .cursor: %v", err)
+	}
+	// Seed with the Windsurf legacy command form under hooks.beforeShellExecution.
+	legacy := `{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {"command": "bash scripts/trackfw-git-branch-guard.sh"}
+    ]
+  }
+}`
+	if err := os.WriteFile(filepath.Join(cursorDir, "hooks.json"), []byte(legacy), 0644); err != nil {
+		t.Fatalf("seed hooks.json: %v", err)
+	}
+
+	if err := InjectCursorHooks(dir); err != nil {
+		t.Fatalf("InjectCursorHooks failed: %v", err)
+	}
+
+	data := helperReadJSON(t, filepath.Join(cursorDir, "hooks.json"))
+	hooks, _ := data["hooks"].(map[string]interface{})
+	before, _ := hooks["beforeShellExecution"].([]interface{})
+	foundNew := false
+	for _, item := range before {
+		obj, _ := item.(map[string]interface{})
+		if obj["command"] == guardGitBranchCmdPSPOSIX {
+			foundNew = true
+		}
+		if obj["command"] == "bash scripts/trackfw-git-branch-guard.sh" {
+			t.Error("legacy Windsurf command was not migrated and is still present")
+		}
+	}
+	if !foundNew {
+		t.Errorf("expected inline git-branch-guard command %q to be present after migration, got: %v", guardGitBranchCmdPSPOSIX, before)
+	}
+}
+
+// TestInjectWindsurfHooks_MigratesLegacyGitBranchGuardCmd verifies that a pre-existing
+// "bash scripts/trackfw-git-branch-guard.sh" entry in hooks.pre_run_command is rewritten
+// to the inline command form by InjectWindsurfHooks.
+//
+// AFIRMA: que InjectWindsurfHooks migra o comando legado
+// ("bash scripts/trackfw-git-branch-guard.sh") para a forma inline atual em pre_run_command,
+// evitando entrada duplicada com o path de script obsoleto.
+func TestInjectWindsurfHooks_MigratesLegacyGitBranchGuardCmd(t *testing.T) {
+	dir := t.TempDir()
+	helperWriteJSON(t, filepath.Join(dir, ".windsurf", "hooks.json"), map[string]interface{}{
+		"hooks": map[string]interface{}{
+			"pre_run_command": []interface{}{
+				map[string]interface{}{"command": "bash scripts/trackfw-git-branch-guard.sh", "show_output": false},
+			},
+		},
+	})
+
+	if err := InjectWindsurfHooks(dir); err != nil {
+		t.Fatalf("InjectWindsurfHooks failed: %v", err)
+	}
+
+	data := helperReadJSON(t, filepath.Join(dir, ".windsurf", "hooks.json"))
+	hooksMap, _ := data["hooks"].(map[string]interface{})
+	pre, _ := hooksMap["pre_run_command"].([]interface{})
+	foundNew := false
+	for _, item := range pre {
+		obj, _ := item.(map[string]interface{})
+		if obj["command"] == guardGitBranchCmdPSPOSIX {
+			foundNew = true
+		}
+		if obj["command"] == "bash scripts/trackfw-git-branch-guard.sh" {
+			t.Error("legacy Windsurf git-branch-guard command was not migrated and is still present")
+		}
+	}
+	if !foundNew {
+		t.Errorf("expected inline git-branch-guard command %q to be present after migration, got: %v", guardGitBranchCmdPSPOSIX, pre)
+	}
+	// Must not have duplicate entries (migration rewrites, merge adds if absent).
+	count := 0
+	for _, item := range pre {
+		obj, _ := item.(map[string]interface{})
+		if obj["command"] == guardGitBranchCmdPSPOSIX {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("expected exactly 1 inline git-branch-guard entry after migration, got %d", count)
+	}
+}
+
+// TestInjectAmazonQHooks_MigratesLegacyGitBranchGuardCmd verifies that a pre-existing
+// "scripts/trackfw-git-branch-guard.sh" command in hooks.preToolUse[execute_bash] is
+// rewritten to the inline CmdExe-family form by InjectAmazonQHooks.
+//
+// AFIRMA: que InjectAmazonQHooks migra o comando legado Amazon Q
+// ("scripts/trackfw-git-branch-guard.sh") para a forma inline CmdExe atual,
+// sem sufixo "; exit $LASTEXITCODE", evitando duplicata com o path de script obsoleto.
+func TestInjectAmazonQHooks_MigratesLegacyGitBranchGuardCmd(t *testing.T) {
+	dir := t.TempDir()
+	// Seed with the legacy script path form in preToolUse[execute_bash].
+	helperWriteJSON(t, filepath.Join(dir, ".amazonq", "cli-agents", "q_cli_default.json"), map[string]interface{}{
+		"name":  "q_cli_default",
+		"tools": []interface{}{"*"},
+		"hooks": map[string]interface{}{
+			"preToolUse": []interface{}{
+				map[string]interface{}{
+					"matcher": "execute_bash",
+					"hooks": []interface{}{
+						map[string]interface{}{"command": "scripts/trackfw-git-branch-guard.sh"},
+					},
+				},
+			},
+		},
+	})
+
+	if err := InjectAmazonQHooks(dir); err != nil {
+		t.Fatalf("InjectAmazonQHooks failed: %v", err)
+	}
+
+	data := helperReadJSON(t, filepath.Join(dir, ".amazonq", "cli-agents", "q_cli_default.json"))
+	if !helperHasClaudeHook(data, "preToolUse", "execute_bash", guardGitBranchCmdCmdExe) {
+		t.Errorf("expected inline git-branch-guard command %q to be present after migration", guardGitBranchCmdCmdExe)
+	}
+	// The legacy script path must have been replaced, not duplicated.
+	hooks, _ := data["hooks"].(map[string]interface{})
+	pre, _ := hooks["preToolUse"].([]interface{})
+	for _, item := range pre {
+		obj, _ := item.(map[string]interface{})
+		if obj["matcher"] != "execute_bash" {
+			continue
+		}
+		innerHooks, _ := obj["hooks"].([]interface{})
+		if len(innerHooks) != 1 {
+			t.Errorf("expected exactly 1 inner hook after migration (not duplicate), got %d: %v", len(innerHooks), innerHooks)
+		}
+		for _, h := range innerHooks {
+			hObj, _ := h.(map[string]interface{})
+			if hObj["command"] == "scripts/trackfw-git-branch-guard.sh" {
+				t.Error("legacy Amazon Q script path was not migrated and is still present")
+			}
+		}
 	}
 }
 

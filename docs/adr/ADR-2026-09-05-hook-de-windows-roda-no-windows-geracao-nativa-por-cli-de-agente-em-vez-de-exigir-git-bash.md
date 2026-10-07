@@ -160,3 +160,14 @@ que invocamos**, e o script é gerado por nós, com integridade já verificada p
 - Se o Kiro e os demais **propagam** o exit code do hook até a decisão de bloquear a ferramenta.
   Medimos que o exit code sobrevive à **cadeia de shell**; não que o CLI o **honra**.
 - O comportamento com caminho contendo **espaço** (`C:\Program Files\...`) e **acento**.
+
+---
+
+## Adendo — 2026-10-04: D6 e D7 substituídas
+
+A linha `powershell … -File <…>.ps1` da D7 quebra o time misto, porque as configs de hook são
+versionadas e a mesma string é lida em `sh` e em PowerShell. **D6 e D7 foram substituídas, e a D3
+reformada**, por
+`docs/adr/ADR-2026-10-04-o-guard-de-hook-e-um-subcomando-go-do-trackfw-e-a-linha-de-hook-e-a-mesma-string-em-todo-shell.md`:
+o guard vira `trackfw guard <nome>`, e a mesma string vale em todo shell. D1, D2, D4 e D5 continuam
+valendo.

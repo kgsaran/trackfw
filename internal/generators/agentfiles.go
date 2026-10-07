@@ -316,9 +316,14 @@ func InjectClaudeHooks(rootDir string) error {
 	// stale relative-path entry from an older trackfw run before merging the
 	// fixed command, so upgrading doesn't just append a second, still-broken
 	// entry alongside the new one.
+	// ML-2A: migrate any pre-ML-2A credential-guard entries (both bare
+	// relative path and $CLAUDE_PROJECT_DIR-pinned form) to the new inline
+	// guard command (ADR-2026-10-04 D2 revised).
 	for _, matcher := range []string{"Bash", "Read", "Write|Edit"} {
-		migrateHookCommand(hooks["PreToolUse"], matcher, "scripts/trackfw-credential-guard.sh", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh")
-		migrateHookCommand(hooks["PostToolUse"], matcher, "scripts/trackfw-credential-guard.sh", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh")
+		migrateHookCommand(hooks["PreToolUse"], matcher, legacyBareCredGuardCmd, guardCredentialCmdPSPOSIX)
+		migrateHookCommand(hooks["PreToolUse"], matcher, legacyClaudeCredGuardCmd, guardCredentialCmdPSPOSIX)
+		migrateHookCommand(hooks["PostToolUse"], matcher, legacyBareCredGuardCmd, guardCredentialCmdPSPOSIX)
+		migrateHookCommand(hooks["PostToolUse"], matcher, legacyClaudeCredGuardCmd, guardCredentialCmdPSPOSIX)
 	}
 
 	// Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda
@@ -331,7 +336,7 @@ func InjectClaudeHooks(rootDir string) error {
 		hooks["PreToolUse"] = mergeClaudeHookArray(
 			hooks["PreToolUse"],
 			"Bash",
-			"$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh",
+			guardCredentialCmdPSPOSIX,
 		)
 		// Read/Write/Edit coverage (ADR-2026-08-06 emenda 7, 2026-08-08):
 		// extraction via a direct file read, or materialization via write/edit,
@@ -339,25 +344,19 @@ func InjectClaudeHooks(rootDir string) error {
 		hooks["PreToolUse"] = mergeClaudeHookArray(
 			hooks["PreToolUse"],
 			"Read",
-			"$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh",
+			guardCredentialCmdPSPOSIX,
 		)
 		hooks["PreToolUse"] = mergeClaudeHookArray(
 			hooks["PreToolUse"],
 			"Write|Edit",
-			"$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh",
+			guardCredentialCmdPSPOSIX,
 		)
 	}
 
-	// Git branch guard (ROADMAP-2026-08-14 ML-3A): blocks raw `git commit`/
-	// `git push`/`git checkout -b` for Bash calls.
-	// migrateHookCommand is a deliberate old==new no-op today (see its doc
-	// comment / the Gemini injector for the same pattern): it proves the call
-	// point exists and runs before the merge, so a future ML that changes
-	// this command string only needs to update oldCommand here instead of
-	// adding the call from scratch. Always runs regardless of dedup state
-	// below (a migration must fire even when the project-scope entry is
-	// about to be skipped, so a stale entry never lingers unmigrated).
-	migrateHookCommand(hooks["PreToolUse"], "Bash", claudeGitGuardCmd, claudeGitGuardCmd)
+	// Git branch guard (ROADMAP-2026-08-14 ML-3A / ML-2A): migrate any
+	// pre-ML-2A entry ($CLAUDE_PROJECT_DIR path form) to the new inline guard
+	// command, then emit or dedup (same pattern as credential-guard above).
+	migrateHookCommand(hooks["PreToolUse"], "Bash", legacyClaudeGitGuardCmd, guardGitBranchCmdPSPOSIX)
 	// Dedup (ROADMAP-2026-08-17 Wave 2/ML-2B): skip the project-scope
 	// git-branch-guard entry when the global one is already installed
 	// (`trackfw update harness --targets claude-git-branch-guard`), so the
@@ -367,7 +366,7 @@ func InjectClaudeHooks(rootDir string) error {
 		hooks["PreToolUse"] = mergeClaudeHookArray(
 			hooks["PreToolUse"],
 			"Bash",
-			claudeGitGuardCmd,
+			guardGitBranchCmdPSPOSIX,
 		)
 	}
 
@@ -382,17 +381,17 @@ func InjectClaudeHooks(rootDir string) error {
 		hooks["PostToolUse"] = mergeClaudeHookArray(
 			hooks["PostToolUse"],
 			"Bash",
-			"$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh",
+			guardCredentialCmdPSPOSIX,
 		)
 		hooks["PostToolUse"] = mergeClaudeHookArray(
 			hooks["PostToolUse"],
 			"Read",
-			"$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh",
+			guardCredentialCmdPSPOSIX,
 		)
 		hooks["PostToolUse"] = mergeClaudeHookArray(
 			hooks["PostToolUse"],
 			"Write|Edit",
-			"$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh",
+			guardCredentialCmdPSPOSIX,
 		)
 	}
 
@@ -420,7 +419,6 @@ const codexRoot = `"$(git rev-parse --show-toplevel)`
 var (
 	codexSignalCmd  = codexRoot + `/scripts/trackfw-attention-signal.sh"`
 	codexCleanupCmd = codexRoot + `/scripts/trackfw-attention-cleanup.sh"`
-	codexGuardCmd   = codexRoot + `/scripts/trackfw-credential-guard.sh"`
 )
 
 // ROADMAP-2026-08-11 ML-4A: Gemini CLI documents $GEMINI_PROJECT_DIR (distinct
@@ -432,23 +430,52 @@ var (
 const (
 	geminiSignalCmd  = `$GEMINI_PROJECT_DIR/scripts/trackfw-attention-signal.sh`
 	geminiCleanupCmd = `$GEMINI_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh`
-	geminiGuardCmd   = `$GEMINI_PROJECT_DIR/scripts/trackfw-credential-guard.sh`
 )
 
-// --- Git branch guard command paths (ROADMAP-2026-08-14 ML-3A) ---
+// --- Guard hook lines — ADR-2026-10-04 D2 revised (Adendo). ---
 //
-// Wires scripts/trackfw-git-branch-guard.sh (generated by
-// GenerateGitBranchGuardScript, internal/generators/scaffold.go) into every
-// runtime's PreToolUse-equivalent hook, using the exact same project-root
-// resolution mechanism already proven for the credential-guard above (per
-// runtime: $CLAUDE_PROJECT_DIR, `$(git rev-parse --show-toplevel)`,
-// $GEMINI_PROJECT_DIR). Unlike credential-guard, this guard is block-only
-// (no "warn" mode) and only needs to run *before* the tool call — no
-// PostToolUse/afterShellExecution wiring is added for it.
+// Single site for all six emitted strings (ML-2A). Family is a property of
+// the CLI vendor, not the OS; the config file is version-controlled and must
+// serve a mixed-OS team from the same string.
+//
+// PS/POSIX family (Claude Code, Codex, Gemini, Cursor, Copilot command field,
+// Windsurf): PowerShell wraps the invocation in `powershell -Command "…"`,
+// which maps exit 2 → 1 without the "; exit $LASTEXITCODE" suffix.
+//
+// cmd.exe family (Kiro, Amazon Q): the "; " separator is not valid in cmd.exe
+// and would be passed as literal tokens to the binary, so no suffix.
 const (
-	claudeGitGuardCmd = "$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh"
-	codexGitGuardCmd  = codexRoot + `/scripts/trackfw-git-branch-guard.sh"`
-	geminiGitGuardCmd = `$GEMINI_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh`
+	guardGitBranchCmdPSPOSIX        = "trackfw guard git-branch; exit $LASTEXITCODE"
+	guardCredentialCmdPSPOSIX       = "trackfw guard credential; exit $LASTEXITCODE"
+	guardCredentialGlobalCmdPSPOSIX = "trackfw guard credential --global; exit $LASTEXITCODE"
+
+	guardGitBranchCmdCmdExe        = "trackfw guard git-branch"
+	guardCredentialCmdCmdExe       = "trackfw guard credential"
+	guardCredentialGlobalCmdCmdExe = "trackfw guard credential --global"
+)
+
+// --- Legacy command paths — kept for migrateHookCommand calls only. ---
+//
+// These are the exact strings that older trackfw versions wrote into hook
+// configs. migrateHookCommand rewrites them to the new guard hook lines above
+// when InjectClaudeHooks/InjectCodexHooks/InjectGeminiHooks/InjectAmazonQHooks
+// runs.  They are NEVER used as the "new" command in any emit path.
+const (
+	// git-branch guard legacy paths
+	legacyClaudeGitGuardCmd = "$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh"
+	legacyCodexGitGuardCmd  = codexRoot + `/scripts/trackfw-git-branch-guard.sh"`
+	legacyGeminiGitGuardCmd = `$GEMINI_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh`
+
+	// credential guard legacy paths (all CLIs used relative or env-var paths)
+	legacyClaudeCredGuardCmd = "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh"
+	legacyCodexCredGuardCmd  = codexRoot + `/scripts/trackfw-credential-guard.sh"`
+	legacyGeminiCredGuardCmd = `$GEMINI_PROJECT_DIR/scripts/trackfw-credential-guard.sh`
+	legacyBareCredGuardCmd   = "scripts/trackfw-credential-guard.sh"
+	legacyBareGitGuardCmd    = "scripts/trackfw-git-branch-guard.sh"
+	legacyWindsurfGitGuardCmd = "bash scripts/trackfw-git-branch-guard.sh"
+
+	// Amazon Q used a bare relative path (cmd.exe family)
+	legacyAmazonQGitGuardCmd = "scripts/trackfw-git-branch-guard.sh"
 )
 
 // InjectCodexHooks injects Codex CLI attention hooks into .codex/hooks.json.
@@ -519,11 +546,16 @@ func InjectCodexHooks(rootDir string) error {
 	// `trackfw update` doesn't just append the new $(git rev-parse ...) entry
 	// alongside the still-cwd-fragile old one.
 	migrateHookCommand(hooks["PermissionRequest"], ".*", "scripts/trackfw-attention-signal.sh", codexSignalCmd)
-	migrateHookCommand(hooks["PreToolUse"], "Bash", "scripts/trackfw-credential-guard.sh", codexGuardCmd)
-	migrateHookCommand(hooks["PreToolUse"], "apply_patch", "scripts/trackfw-credential-guard.sh", codexGuardCmd)
+	// ML-2A: migrate pre-ML-2A credential-guard entries to the new inline form.
+	migrateHookCommand(hooks["PreToolUse"], "Bash", legacyBareCredGuardCmd, guardCredentialCmdPSPOSIX)
+	migrateHookCommand(hooks["PreToolUse"], "Bash", legacyCodexCredGuardCmd, guardCredentialCmdPSPOSIX)
+	migrateHookCommand(hooks["PreToolUse"], "apply_patch", legacyBareCredGuardCmd, guardCredentialCmdPSPOSIX)
+	migrateHookCommand(hooks["PreToolUse"], "apply_patch", legacyCodexCredGuardCmd, guardCredentialCmdPSPOSIX)
 	migrateHookCommand(hooks["PostToolUse"], ".*", "scripts/trackfw-attention-cleanup.sh", codexCleanupCmd)
-	migrateHookCommand(hooks["PostToolUse"], "Bash", "scripts/trackfw-credential-guard.sh", codexGuardCmd)
-	migrateHookCommand(hooks["PostToolUse"], "apply_patch", "scripts/trackfw-credential-guard.sh", codexGuardCmd)
+	migrateHookCommand(hooks["PostToolUse"], "Bash", legacyBareCredGuardCmd, guardCredentialCmdPSPOSIX)
+	migrateHookCommand(hooks["PostToolUse"], "Bash", legacyCodexCredGuardCmd, guardCredentialCmdPSPOSIX)
+	migrateHookCommand(hooks["PostToolUse"], "apply_patch", legacyBareCredGuardCmd, guardCredentialCmdPSPOSIX)
+	migrateHookCommand(hooks["PostToolUse"], "apply_patch", legacyCodexCredGuardCmd, guardCredentialCmdPSPOSIX)
 
 	hooks["PermissionRequest"] = mergeClaudeHookArray(
 		hooks["PermissionRequest"],
@@ -540,25 +572,18 @@ func InjectCodexHooks(rootDir string) error {
 		hooks["PreToolUse"] = mergeClaudeHookArray(
 			hooks["PreToolUse"],
 			"Bash",
-			codexGuardCmd,
+			guardCredentialCmdPSPOSIX,
 		)
 		hooks["PreToolUse"] = mergeClaudeHookArray(
 			hooks["PreToolUse"],
 			"apply_patch",
-			codexGuardCmd,
+			guardCredentialCmdPSPOSIX,
 		)
 	}
 
-	// Git branch guard (ROADMAP-2026-08-14 ML-3A): wired via the same
-	// PreToolUse/Bash hook mechanism already proven stable for
-	// credential-guard above (this file's own doc comment on InjectCodexHooks
-	// confirms Codex hooks are enabled by default, not opt-in/experimental —
-	// so the roadmap's "Rules vs experimental hook" fork resolves to "hook",
-	// consistent with the rest of this function; see docs/cli-parity.md for
-	// the recorded decision). Only "Bash" matters here (apply_patch never
-	// carries a raw git subcommand). migrateHookCommand always runs
-	// regardless of the dedup check below (ROADMAP-2026-08-17 Wave 2/ML-2B).
-	migrateHookCommand(hooks["PreToolUse"], "Bash", codexGitGuardCmd, codexGitGuardCmd)
+	// Git branch guard (ROADMAP-2026-08-14 ML-3A / ML-2A): migrate
+	// pre-ML-2A entry then emit or dedup.
+	migrateHookCommand(hooks["PreToolUse"], "Bash", legacyCodexGitGuardCmd, guardGitBranchCmdPSPOSIX)
 	// Dedup (ROADMAP-2026-08-17 Wave 2/ML-2B): skip the project-scope
 	// git-branch-guard entry when the global one is already installed
 	// (`trackfw update harness --targets codex-git-branch-guard`).
@@ -566,7 +591,7 @@ func InjectCodexHooks(rootDir string) error {
 		hooks["PreToolUse"] = mergeClaudeHookArray(
 			hooks["PreToolUse"],
 			"Bash",
-			codexGitGuardCmd,
+			guardGitBranchCmdPSPOSIX,
 		)
 	}
 
@@ -579,12 +604,12 @@ func InjectCodexHooks(rootDir string) error {
 		hooks["PostToolUse"] = mergeClaudeHookArray(
 			hooks["PostToolUse"],
 			"Bash",
-			codexGuardCmd,
+			guardCredentialCmdPSPOSIX,
 		)
 		hooks["PostToolUse"] = mergeClaudeHookArray(
 			hooks["PostToolUse"],
 			"apply_patch",
-			codexGuardCmd,
+			guardCredentialCmdPSPOSIX,
 		)
 	}
 
@@ -682,13 +707,20 @@ func InjectGeminiHooks(rootDir string) error {
 	// here instead of adding this call from scratch — without it, the merge's
 	// exact-string dedup would append a duplicate alongside the stale entry.
 	migrateHookCommand(hooks["Notification"], "ToolPermission", "scripts/trackfw-attention-signal.sh", geminiSignalCmd)
-	migrateHookCommand(hooks["BeforeTool"], "run_shell_command", "scripts/trackfw-credential-guard.sh", geminiGuardCmd)
-	migrateHookCommand(hooks["BeforeTool"], "read_file|read_many_files", "scripts/trackfw-credential-guard.sh", geminiGuardCmd)
-	migrateHookCommand(hooks["BeforeTool"], "write_file|replace", "scripts/trackfw-credential-guard.sh", geminiGuardCmd)
+	// ML-2A: migrate pre-ML-2A credential-guard entries to the new inline form.
+	migrateHookCommand(hooks["BeforeTool"], "run_shell_command", "scripts/trackfw-credential-guard.sh", guardCredentialCmdPSPOSIX)
+	migrateHookCommand(hooks["BeforeTool"], "run_shell_command", legacyGeminiCredGuardCmd, guardCredentialCmdPSPOSIX)
+	migrateHookCommand(hooks["BeforeTool"], "read_file|read_many_files", "scripts/trackfw-credential-guard.sh", guardCredentialCmdPSPOSIX)
+	migrateHookCommand(hooks["BeforeTool"], "read_file|read_many_files", legacyGeminiCredGuardCmd, guardCredentialCmdPSPOSIX)
+	migrateHookCommand(hooks["BeforeTool"], "write_file|replace", "scripts/trackfw-credential-guard.sh", guardCredentialCmdPSPOSIX)
+	migrateHookCommand(hooks["BeforeTool"], "write_file|replace", legacyGeminiCredGuardCmd, guardCredentialCmdPSPOSIX)
 	migrateHookCommand(hooks["AfterTool"], "*", "scripts/trackfw-attention-cleanup.sh", geminiCleanupCmd)
-	migrateHookCommand(hooks["AfterTool"], "run_shell_command", "scripts/trackfw-credential-guard.sh", geminiGuardCmd)
-	migrateHookCommand(hooks["AfterTool"], "read_file|read_many_files", "scripts/trackfw-credential-guard.sh", geminiGuardCmd)
-	migrateHookCommand(hooks["AfterTool"], "write_file|replace", "scripts/trackfw-credential-guard.sh", geminiGuardCmd)
+	migrateHookCommand(hooks["AfterTool"], "run_shell_command", "scripts/trackfw-credential-guard.sh", guardCredentialCmdPSPOSIX)
+	migrateHookCommand(hooks["AfterTool"], "run_shell_command", legacyGeminiCredGuardCmd, guardCredentialCmdPSPOSIX)
+	migrateHookCommand(hooks["AfterTool"], "read_file|read_many_files", "scripts/trackfw-credential-guard.sh", guardCredentialCmdPSPOSIX)
+	migrateHookCommand(hooks["AfterTool"], "read_file|read_many_files", legacyGeminiCredGuardCmd, guardCredentialCmdPSPOSIX)
+	migrateHookCommand(hooks["AfterTool"], "write_file|replace", "scripts/trackfw-credential-guard.sh", guardCredentialCmdPSPOSIX)
+	migrateHookCommand(hooks["AfterTool"], "write_file|replace", legacyGeminiCredGuardCmd, guardCredentialCmdPSPOSIX)
 
 	hooks["Notification"] = mergeClaudeHookArray(
 		hooks["Notification"],
@@ -706,35 +738,23 @@ func InjectGeminiHooks(rootDir string) error {
 		hooks["BeforeTool"] = mergeClaudeHookArray(
 			hooks["BeforeTool"],
 			"run_shell_command",
-			geminiGuardCmd,
+			guardCredentialCmdPSPOSIX,
 		)
 		hooks["BeforeTool"] = mergeClaudeHookArray(
 			hooks["BeforeTool"],
 			"read_file|read_many_files",
-			geminiGuardCmd,
+			guardCredentialCmdPSPOSIX,
 		)
 		hooks["BeforeTool"] = mergeClaudeHookArray(
 			hooks["BeforeTool"],
 			"write_file|replace",
-			geminiGuardCmd,
+			guardCredentialCmdPSPOSIX,
 		)
 	}
 
-	// Git branch guard (ROADMAP-2026-08-14 ML-3A): only "run_shell_command"
-	// can ever carry a raw git subcommand, so unlike credential-guard this is
-	// not also wired to the read_file/write_file matchers.
-	//
-	// Native subagent toolset restriction (REQ acceptance criterion — Gemini
-	// CLI supports per-agent restricted toolsets, keeping the architect
-	// unrestricted): NOT implemented here. No generator for Gemini custom
-	// subagent definitions (`.gemini/agents` or equivalent) exists anywhere
-	// in this codebase (confirmed via grep across internal/generators before
-	// writing this function) — building one from scratch is out of scope for
-	// this ML per the roadmap's own instruction ("não invente um gerador de
-	// subagentes do zero, fora de escopo"). This hook therefore applies
-	// uniformly to every Gemini agent, architect included, exactly like the
-	// pre-existing credential-guard hook above. See docs/cli-parity.md.
-	migrateHookCommand(hooks["BeforeTool"], "run_shell_command", geminiGitGuardCmd, geminiGitGuardCmd)
+	// Git branch guard (ROADMAP-2026-08-14 ML-3A / ML-2A): only
+	// "run_shell_command" can ever carry a raw git subcommand.
+	migrateHookCommand(hooks["BeforeTool"], "run_shell_command", legacyGeminiGitGuardCmd, guardGitBranchCmdPSPOSIX)
 	// Dedup (ROADMAP-2026-08-17 Wave 2/ML-2B): skip the project-scope
 	// git-branch-guard entry when the global one is already installed
 	// (`trackfw update harness --targets gemini-git-branch-guard`).
@@ -742,7 +762,7 @@ func InjectGeminiHooks(rootDir string) error {
 		hooks["BeforeTool"] = mergeClaudeHookArray(
 			hooks["BeforeTool"],
 			"run_shell_command",
-			geminiGitGuardCmd,
+			guardGitBranchCmdPSPOSIX,
 		)
 	}
 
@@ -755,17 +775,17 @@ func InjectGeminiHooks(rootDir string) error {
 		hooks["AfterTool"] = mergeClaudeHookArray(
 			hooks["AfterTool"],
 			"run_shell_command",
-			geminiGuardCmd,
+			guardCredentialCmdPSPOSIX,
 		)
 		hooks["AfterTool"] = mergeClaudeHookArray(
 			hooks["AfterTool"],
 			"read_file|read_many_files",
-			geminiGuardCmd,
+			guardCredentialCmdPSPOSIX,
 		)
 		hooks["AfterTool"] = mergeClaudeHookArray(
 			hooks["AfterTool"],
 			"write_file|replace",
-			geminiGuardCmd,
+			guardCredentialCmdPSPOSIX,
 		)
 	}
 
@@ -870,6 +890,7 @@ func InjectKiroHooks(rootDir string) error {
 	// credential-guard entries when the global one is already installed
 	// (`trackfw update harness --targets kiro-credential-guard`,
 	// ~/.kiro/hooks/trackfw-credential-guard.json).
+	// ML-2A: Kiro uses cmd.exe family — no `; exit $LASTEXITCODE` suffix.
 	if !globalCredentialGuardInstalledKiro() {
 		hooks = append(hooks,
 			map[string]interface{}{
@@ -877,14 +898,14 @@ func InjectKiroHooks(rootDir string) error {
 				"description": "Blocks/warns on possible plaintext credential materialization before a shell command executes",
 				"trigger":     "PreToolUse",
 				"matcher":     "shell",
-				"action":      map[string]interface{}{"type": "command", "command": "scripts/trackfw-credential-guard.sh"},
+				"action":      map[string]interface{}{"type": "command", "command": guardCredentialCmdCmdExe},
 			},
 			map[string]interface{}{
 				"name":        "trackfw-credential-guard-post",
 				"description": "Warns on possible plaintext credential materialization after a shell command executes",
 				"trigger":     "PostToolUse",
 				"matcher":     "shell",
-				"action":      map[string]interface{}{"type": "command", "command": "scripts/trackfw-credential-guard.sh"},
+				"action":      map[string]interface{}{"type": "command", "command": guardCredentialCmdCmdExe},
 			},
 			// Read/Write coverage (ADR-2026-08-06 emenda 7, 2026-08-08): "read"
 			// and "write" are the documented Kiro tool-category aliases
@@ -894,31 +915,44 @@ func InjectKiroHooks(rootDir string) error {
 				"description": "Blocks/warns on possible plaintext credential materialization before a file read",
 				"trigger":     "PreToolUse",
 				"matcher":     "read",
-				"action":      map[string]interface{}{"type": "command", "command": "scripts/trackfw-credential-guard.sh"},
+				"action":      map[string]interface{}{"type": "command", "command": guardCredentialCmdCmdExe},
 			},
 			map[string]interface{}{
 				"name":        "trackfw-credential-guard-read-post",
 				"description": "Warns on possible plaintext credential materialization after a file read",
 				"trigger":     "PostToolUse",
 				"matcher":     "read",
-				"action":      map[string]interface{}{"type": "command", "command": "scripts/trackfw-credential-guard.sh"},
+				"action":      map[string]interface{}{"type": "command", "command": guardCredentialCmdCmdExe},
 			},
 			map[string]interface{}{
 				"name":        "trackfw-credential-guard-write-pre",
 				"description": "Blocks/warns on possible plaintext credential materialization before a file write",
 				"trigger":     "PreToolUse",
 				"matcher":     "write",
-				"action":      map[string]interface{}{"type": "command", "command": "scripts/trackfw-credential-guard.sh"},
+				"action":      map[string]interface{}{"type": "command", "command": guardCredentialCmdCmdExe},
 			},
 			map[string]interface{}{
 				"name":        "trackfw-credential-guard-write-post",
 				"description": "Warns on possible plaintext credential materialization after a file write",
 				"trigger":     "PostToolUse",
 				"matcher":     "write",
-				"action":      map[string]interface{}{"type": "command", "command": "scripts/trackfw-credential-guard.sh"},
+				"action":      map[string]interface{}{"type": "command", "command": guardCredentialCmdCmdExe},
 			},
 		)
 	}
+
+	// Git branch guard (ML-2A): Kiro uses cmd.exe family; PreToolUse only
+	// (PostToolUse is audit-only, can't block). No global harness target exists
+	// for Kiro git-branch-guard, so no dedup check is needed here.
+	hooks = append(hooks,
+		map[string]interface{}{
+			"name":        "trackfw-git-branch-guard",
+			"description": "Blocks disallowed git branch operations before a shell command executes",
+			"trigger":     "PreToolUse",
+			"matcher":     "shell",
+			"action":      map[string]interface{}{"type": "command", "command": guardGitBranchCmdCmdExe},
+		},
+	)
 
 	content := map[string]interface{}{
 		"version": "v1",
@@ -1018,46 +1052,48 @@ func InjectCopilotHooks(rootDir string) error {
 	// `create -> Write`, `edit -> Edit` — "view" is the read matcher,
 	// "create|edit" the write/edit matcher, same lowercase-runtime-name
 	// convention already used for "bash" above.
+	// ML-2A: Copilot uses `command` field (not `bash`) per ADR-2026-10-04 D4.
+	// PS/POSIX family — includes `; exit $LASTEXITCODE` suffix.
 	if !globalCredentialGuardInstalledCopilot() {
 		preToolUse = append(preToolUse, map[string]interface{}{
 			"type":       "command",
 			"matcher":    "bash",
-			"bash":       "scripts/trackfw-credential-guard.sh",
+			"command":    guardCredentialCmdPSPOSIX,
 			"cwd":        ".",
 			"timeoutSec": 10,
 		})
 		preToolUse = append(preToolUse, map[string]interface{}{
 			"type":       "command",
 			"matcher":    "view",
-			"bash":       "scripts/trackfw-credential-guard.sh",
+			"command":    guardCredentialCmdPSPOSIX,
 			"cwd":        ".",
 			"timeoutSec": 10,
 		})
 		preToolUse = append(preToolUse, map[string]interface{}{
 			"type":       "command",
 			"matcher":    "create|edit",
-			"bash":       "scripts/trackfw-credential-guard.sh",
+			"command":    guardCredentialCmdPSPOSIX,
 			"cwd":        ".",
 			"timeoutSec": 10,
 		})
 		postToolUse = append(postToolUse, map[string]interface{}{
 			"type":       "command",
 			"matcher":    "bash",
-			"bash":       "scripts/trackfw-credential-guard.sh",
+			"command":    guardCredentialCmdPSPOSIX,
 			"cwd":        ".",
 			"timeoutSec": 10,
 		})
 		postToolUse = append(postToolUse, map[string]interface{}{
 			"type":       "command",
 			"matcher":    "view",
-			"bash":       "scripts/trackfw-credential-guard.sh",
+			"command":    guardCredentialCmdPSPOSIX,
 			"cwd":        ".",
 			"timeoutSec": 10,
 		})
 		postToolUse = append(postToolUse, map[string]interface{}{
 			"type":       "command",
 			"matcher":    "create|edit",
-			"bash":       "scripts/trackfw-credential-guard.sh",
+			"command":    guardCredentialCmdPSPOSIX,
 			"cwd":        ".",
 			"timeoutSec": 10,
 		})
@@ -1082,7 +1118,7 @@ func InjectCopilotHooks(rootDir string) error {
 		preToolUse = append(preToolUse, map[string]interface{}{
 			"type":       "command",
 			"matcher":    "bash",
-			"bash":       "scripts/trackfw-git-branch-guard.sh",
+			"command":    guardGitBranchCmdPSPOSIX,
 			"cwd":        ".",
 			"timeoutSec": 10,
 		})
@@ -1225,9 +1261,12 @@ func InjectCursorHooks(rootDir string) error {
 	// preToolUse/postToolUse events): skip the project-scope credential-guard
 	// entries when the global one is already installed
 	// (`trackfw update harness --targets cursor-credential-guard`).
+	// ML-2A: migrate pre-ML-2A Cursor credential-guard entries to the new inline form.
+	migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyBareCredGuardCmd, guardCredentialCmdPSPOSIX, getCmd)
+	migrateCursorSimpleCommand(hooks["afterShellExecution"], legacyBareCredGuardCmd, guardCredentialCmdPSPOSIX, getCmd)
 	if !globalCredentialGuardInstalledCursor() {
-		hooks["beforeShellExecution"] = mergeSimpleCommandArray(hooks["beforeShellExecution"], "scripts/trackfw-credential-guard.sh", makeEntry, getCmd)
-		hooks["afterShellExecution"] = mergeSimpleCommandArray(hooks["afterShellExecution"], "scripts/trackfw-credential-guard.sh", makeEntry, getCmd)
+		hooks["beforeShellExecution"] = mergeSimpleCommandArray(hooks["beforeShellExecution"], guardCredentialCmdPSPOSIX, makeEntry, getCmd)
+		hooks["afterShellExecution"] = mergeSimpleCommandArray(hooks["afterShellExecution"], guardCredentialCmdPSPOSIX, makeEntry, getCmd)
 
 		// Read/Write coverage (ADR-2026-08-06 emenda 7, 2026-08-08): wired via
 		// the generic preToolUse/postToolUse events (distinct from
@@ -1238,10 +1277,10 @@ func InjectCursorHooks(rootDir string) error {
 		// (command-only dedup) is not enough here — both the unfiltered
 		// signal entry and these matcher-scoped guard entries share the same
 		// array, so dedup must also check "matcher".
-		hooks["preToolUse"] = mergeCursorGuardMatcherEntry(hooks["preToolUse"], "Read", "scripts/trackfw-credential-guard.sh")
-		hooks["preToolUse"] = mergeCursorGuardMatcherEntry(hooks["preToolUse"], "Write", "scripts/trackfw-credential-guard.sh")
-		hooks["postToolUse"] = mergeCursorGuardMatcherEntry(hooks["postToolUse"], "Read", "scripts/trackfw-credential-guard.sh")
-		hooks["postToolUse"] = mergeCursorGuardMatcherEntry(hooks["postToolUse"], "Write", "scripts/trackfw-credential-guard.sh")
+		hooks["preToolUse"] = mergeCursorGuardMatcherEntry(hooks["preToolUse"], "Read", guardCredentialCmdPSPOSIX)
+		hooks["preToolUse"] = mergeCursorGuardMatcherEntry(hooks["preToolUse"], "Write", guardCredentialCmdPSPOSIX)
+		hooks["postToolUse"] = mergeCursorGuardMatcherEntry(hooks["postToolUse"], "Read", guardCredentialCmdPSPOSIX)
+		hooks["postToolUse"] = mergeCursorGuardMatcherEntry(hooks["postToolUse"], "Write", guardCredentialCmdPSPOSIX)
 	}
 
 	// Git branch guard (ROADMAP-2026-08-14 ML-3A): wired via
@@ -1276,8 +1315,11 @@ func InjectCursorHooks(rootDir string) error {
 	// credential-guard dedup above already produces in the equivalent case,
 	// which check-agent-hooks-parity.sh's structural comparator treats as
 	// significant (absent key vs empty array is drift, not noise).
+	// ML-2A: migrate pre-ML-2A Cursor git-branch-guard entry to the new inline form.
+	migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyBareGitGuardCmd, guardGitBranchCmdPSPOSIX, getCmd)
+	migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyWindsurfGitGuardCmd, guardGitBranchCmdPSPOSIX, getCmd)
 	if !globalGitBranchGuardInstalledCursor() {
-		hooks["beforeShellExecution"] = mergeSimpleCommandArray(hooks["beforeShellExecution"], "scripts/trackfw-git-branch-guard.sh", makeEntry, getCmd)
+		hooks["beforeShellExecution"] = mergeSimpleCommandArray(hooks["beforeShellExecution"], guardGitBranchCmdPSPOSIX, makeEntry, getCmd)
 	}
 
 	root["hooks"] = hooks
@@ -1346,11 +1388,31 @@ func migrateHookCommand(existing interface{}, matcher, oldCommand, newCommand st
 	}
 }
 
+// migrateCursorSimpleCommand rewrites a single stale command string to a new
+// one in a flat `[]interface{}` array where each item is a map with a "command"
+// key — the format used by Cursor's beforeShellExecution/afterShellExecution/
+// pre_run_command hook arrays and Windsurf's pre_run_command. Analogous to
+// migrateHookCommand but for the flat-array (no matcher envelope) shape used
+// by those CLIs' hook events. Must be called before the corresponding
+// mergeSimpleCommandArray call to avoid a duplicate stale+new entry.
+func migrateCursorSimpleCommand(existing interface{}, oldCommand, newCommand string, getCmd func(interface{}) string) {
+	arr, _ := existing.([]interface{})
+	for _, item := range arr {
+		obj, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		if getCmd(item) == oldCommand {
+			obj["command"] = newCommand
+		}
+	}
+}
+
 // windsurfGitGuardCmd is the command entry trackfw registers under
-// `hooks.pre_run_command` in `.windsurf/hooks.json`. Windsurf invokes the
-// hook via a shell (see InjectWindsurfHooks doc), so the guard script is
-// wrapped in `bash <path>` rather than invoked directly.
-const windsurfGitGuardCmd = "bash scripts/trackfw-git-branch-guard.sh"
+// `hooks.pre_run_command` in `.windsurf/hooks.json`. Windsurf executes
+// pre_run_command via a shell, so the guard can be called as an inline
+// `trackfw guard` subcommand (ADR-2026-10-04 D2 / ML-2A). PS/POSIX family.
+const windsurfGitGuardCmd = guardGitBranchCmdPSPOSIX
 
 // legacyWindsurfHooksFile is the path this same function wrote to before the
 // path/schema fix documented below (ROADMAP-2026-08-14 ML-3A originally
@@ -1457,23 +1519,27 @@ func InjectWindsurfHooks(rootDir string) error {
 		hooks = make(map[string]interface{})
 	}
 
+	windsurfGetCmd := func(item interface{}) string {
+		obj, ok := item.(map[string]interface{})
+		if !ok {
+			return ""
+		}
+		s, _ := obj["command"].(string)
+		return s
+	}
+	windsurfMakeEntry := func(cmd string) interface{} {
+		return map[string]interface{}{
+			"command":     cmd,
+			"show_output": true,
+		}
+	}
+	// ML-2A: migrate pre-ML-2A Windsurf git-branch-guard entry to the new inline form.
+	migrateCursorSimpleCommand(hooks["pre_run_command"], legacyWindsurfGitGuardCmd, windsurfGitGuardCmd, windsurfGetCmd)
 	hooks["pre_run_command"] = mergeSimpleCommandArray(
 		hooks["pre_run_command"],
 		windsurfGitGuardCmd,
-		func(cmd string) interface{} {
-			return map[string]interface{}{
-				"command":     cmd,
-				"show_output": true,
-			}
-		},
-		func(item interface{}) string {
-			obj, ok := item.(map[string]interface{})
-			if !ok {
-				return ""
-			}
-			s, _ := obj["command"].(string)
-			return s
-		},
+		windsurfMakeEntry,
+		windsurfGetCmd,
 	)
 	root["hooks"] = hooks
 
@@ -1615,13 +1681,13 @@ func InjectAmazonQHooks(rootDir string) error {
 		hooks = make(map[string]interface{})
 	}
 
-	const amazonQGitGuardCmd = "scripts/trackfw-git-branch-guard.sh"
-
-	migrateHookCommand(hooks["preToolUse"], "execute_bash", amazonQGitGuardCmd, amazonQGitGuardCmd)
+	// ML-2A: Amazon Q uses cmd.exe family — no `; exit $LASTEXITCODE` suffix.
+	// Migrate pre-ML-2A entry (script path) to the new inline form.
+	migrateHookCommand(hooks["preToolUse"], "execute_bash", legacyAmazonQGitGuardCmd, guardGitBranchCmdCmdExe)
 	hooks["preToolUse"] = mergeClaudeHookArray(
 		hooks["preToolUse"],
 		"execute_bash",
-		amazonQGitGuardCmd,
+		guardGitBranchCmdCmdExe,
 	)
 	root["hooks"] = hooks
 
@@ -2051,7 +2117,9 @@ func globalCredentialGuardInstalledClaude() bool {
 		return false
 	}
 	hooks, _ := root["hooks"].(map[string]interface{})
-	return hookArrayHasCommand(hooks["PreToolUse"], "Bash", scriptPath)
+	// ML-2A: accept both old abs .sh path and new inline command form.
+	return hookArrayHasCommand(hooks["PreToolUse"], "Bash", scriptPath) ||
+		hookArrayHasCommand(hooks["PreToolUse"], "Bash", guardCredentialGlobalCmdPSPOSIX)
 }
 
 // globalCredentialGuardInstalledCodex checks ~/.codex/hooks.json for the
@@ -2067,7 +2135,9 @@ func globalCredentialGuardInstalledCodex() bool {
 		return false
 	}
 	hooks, _ := root["hooks"].(map[string]interface{})
-	return hookArrayHasCommand(hooks["PreToolUse"], "Bash", scriptPath)
+	// ML-2A: accept both old abs .sh path and new inline command form.
+	return hookArrayHasCommand(hooks["PreToolUse"], "Bash", scriptPath) ||
+		hookArrayHasCommand(hooks["PreToolUse"], "Bash", guardCredentialGlobalCmdPSPOSIX)
 }
 
 // globalCredentialGuardInstalledGemini checks ~/.gemini/settings.json for
@@ -2084,7 +2154,9 @@ func globalCredentialGuardInstalledGemini() bool {
 		return false
 	}
 	hooks, _ := root["hooks"].(map[string]interface{})
-	return hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", scriptPath)
+	// ML-2A: accept both old abs .sh path and new inline command form.
+	return hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", scriptPath) ||
+		hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", guardCredentialGlobalCmdPSPOSIX)
 }
 
 // globalCredentialGuardInstalledCursor checks ~/.cursor/hooks.json for the
@@ -2100,7 +2172,9 @@ func globalCredentialGuardInstalledCursor() bool {
 		return false
 	}
 	hooks, _ := root["hooks"].(map[string]interface{})
-	return simpleArrayHasValue(hooks["beforeShellExecution"], "command", scriptPath, false)
+	// ML-2A: accept both old abs .sh path and new inline command form.
+	return simpleArrayHasValue(hooks["beforeShellExecution"], "command", scriptPath, false) ||
+		simpleArrayHasValue(hooks["beforeShellExecution"], "command", guardCredentialGlobalCmdPSPOSIX, false)
 }
 
 // globalCredentialGuardInstalledCopilot checks ~/.copilot/settings.json for
@@ -2116,7 +2190,9 @@ func globalCredentialGuardInstalledCopilot() bool {
 		return false
 	}
 	hooks, _ := root["hooks"].(map[string]interface{})
-	return simpleArrayHasValue(hooks["preToolUse"], "bash", scriptPath, true)
+	// ML-2A: accept both old abs .sh path and new inline command form.
+	return simpleArrayHasValue(hooks["preToolUse"], "bash", scriptPath, true) ||
+		simpleArrayHasValue(hooks["preToolUse"], "bash", guardCredentialGlobalCmdPSPOSIX, true)
 }
 
 // globalCredentialGuardInstalledKiro checks whether
@@ -2187,7 +2263,9 @@ func globalGitBranchGuardInstalledClaude() bool {
 		return false
 	}
 	hooks, _ := root["hooks"].(map[string]interface{})
-	return hookArrayHasCommand(hooks["PreToolUse"], "Bash", scriptPath)
+	// ML-2A: accept both old abs .sh path and new inline command form.
+	return hookArrayHasCommand(hooks["PreToolUse"], "Bash", scriptPath) ||
+		hookArrayHasCommand(hooks["PreToolUse"], "Bash", guardGitBranchCmdPSPOSIX)
 }
 
 // globalGitBranchGuardInstalledCodex checks ~/.codex/hooks.json for the
@@ -2203,7 +2281,9 @@ func globalGitBranchGuardInstalledCodex() bool {
 		return false
 	}
 	hooks, _ := root["hooks"].(map[string]interface{})
-	return hookArrayHasCommand(hooks["PreToolUse"], "Bash", scriptPath)
+	// ML-2A: accept both old abs .sh path and new inline command form.
+	return hookArrayHasCommand(hooks["PreToolUse"], "Bash", scriptPath) ||
+		hookArrayHasCommand(hooks["PreToolUse"], "Bash", guardGitBranchCmdPSPOSIX)
 }
 
 // globalGitBranchGuardInstalledGemini checks ~/.gemini/settings.json for the
@@ -2219,7 +2299,9 @@ func globalGitBranchGuardInstalledGemini() bool {
 		return false
 	}
 	hooks, _ := root["hooks"].(map[string]interface{})
-	return hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", scriptPath)
+	// ML-2A: accept both old abs .sh path and new inline command form.
+	return hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", scriptPath) ||
+		hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", guardGitBranchCmdPSPOSIX)
 }
 
 // globalGitBranchGuardInstalledCursor checks ~/.cursor/hooks.json for the
@@ -2235,7 +2317,9 @@ func globalGitBranchGuardInstalledCursor() bool {
 		return false
 	}
 	hooks, _ := root["hooks"].(map[string]interface{})
-	return simpleArrayHasValue(hooks["beforeShellExecution"], "command", scriptPath, false)
+	// ML-2A: accept both old abs .sh path and new inline command form.
+	return simpleArrayHasValue(hooks["beforeShellExecution"], "command", scriptPath, false) ||
+		simpleArrayHasValue(hooks["beforeShellExecution"], "command", guardGitBranchCmdPSPOSIX, false)
 }
 
 // globalGitBranchGuardInstalledCopilot checks ~/.copilot/settings.json for
@@ -2251,5 +2335,7 @@ func globalGitBranchGuardInstalledCopilot() bool {
 		return false
 	}
 	hooks, _ := root["hooks"].(map[string]interface{})
-	return simpleArrayHasValue(hooks["preToolUse"], "bash", scriptPath, true)
+	// ML-2A: accept both old abs .sh path and new inline command form.
+	return simpleArrayHasValue(hooks["preToolUse"], "bash", scriptPath, true) ||
+		simpleArrayHasValue(hooks["preToolUse"], "bash", guardGitBranchCmdPSPOSIX, true)
 }

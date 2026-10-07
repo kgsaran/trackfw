@@ -98,11 +98,11 @@ func TestSabotage_ClaudeCode_WiringReferencesRealScript(t *testing.T) {
 	dir, _ := setupSabotageFixture(t, InjectClaudeHooks, "")
 
 	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
-	if !helperHasClaudeHook(data, "PreToolUse", "Bash", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh") {
-		t.Fatal("wiring do Claude Code não referencia $CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh em PreToolUse[Bash]")
+	if !helperHasClaudeHook(data, "PreToolUse", "Bash", guardCredentialCmdPSPOSIX) {
+		t.Fatal("wiring do Claude Code não referencia o comando inline trackfw guard credential em PreToolUse[Bash]")
 	}
-	if !helperHasClaudeHook(data, "PostToolUse", "Bash", "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh") {
-		t.Fatal("wiring do Claude Code não referencia $CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh em PostToolUse[Bash]")
+	if !helperHasClaudeHook(data, "PostToolUse", "Bash", guardCredentialCmdPSPOSIX) {
+		t.Fatal("wiring do Claude Code não referencia o comando inline trackfw guard credential em PostToolUse[Bash]")
 	}
 }
 
@@ -175,12 +175,12 @@ func TestSabotage_Cursor_WiringReferencesRealScript(t *testing.T) {
 	found := false
 	for _, item := range before {
 		obj, ok := item.(map[string]interface{})
-		if ok && obj["command"] == "scripts/trackfw-credential-guard.sh" {
+		if ok && obj["command"] == guardCredentialCmdPSPOSIX {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatal("wiring do Cursor não referencia scripts/trackfw-credential-guard.sh em hooks.beforeShellExecution")
+		t.Fatal("wiring do Cursor não referencia o comando inline trackfw guard credential em hooks.beforeShellExecution")
 	}
 }
 
@@ -258,7 +258,7 @@ func TestSabotage_Kiro_WiringReferencesRealScript(t *testing.T) {
 			continue
 		}
 		action, _ := entry["action"].(map[string]interface{})
-		if action == nil || action["command"] != "scripts/trackfw-credential-guard.sh" {
+		if action == nil || action["command"] != guardCredentialCmdCmdExe {
 			continue
 		}
 		switch entry["trigger"] {
@@ -269,7 +269,7 @@ func TestSabotage_Kiro_WiringReferencesRealScript(t *testing.T) {
 		}
 	}
 	if !sawPre || !sawPost {
-		t.Fatalf("wiring do Kiro não referencia scripts/trackfw-credential-guard.sh em PreToolUse/PostToolUse (pre=%v post=%v)", sawPre, sawPost)
+		t.Fatalf("wiring do Kiro não referencia o comando inline trackfw guard credential em PreToolUse/PostToolUse (pre=%v post=%v)", sawPre, sawPost)
 	}
 }
 

@@ -242,6 +242,11 @@ else
 fi
 export FALSIFY_GO_BIN
 
+# Add bin/ to PATH so the thin-wrapper guard scripts find the locally-built
+# binary (after ML-2A the guard calls `exec trackfw guard git-branch`).
+# Placed AFTER FALSIFY_GO_BIN is resolved above so the dirname is valid.
+export PATH="$(dirname "$FALSIFY_GO_BIN"):$PATH"
+
 # ---------------------------------------------------------------------------
 # ML-2B (mesma ROADMAP-2026-09-07-gates-rodam-no-windows..., Wave 2 revisada
 # pelo arquiteto): modo de ENUMERAÇÃO REPRODUZÍVEL. Substitui a sonda
@@ -624,6 +629,33 @@ assert_guard_exit() {
   local out status
   set +e
   out=$(bash "$script" <<<"$payload" 2>&1)
+  status=$?
+  set -e
+  if [[ "$status" -ne "$want" ]]; then
+    echo "FAIL [falsify/$label]: exit $status, esperava $want" >&2
+    echo "  payload: $payload" >&2
+    echo "  output: $out" >&2
+    falsify_count_failure
+    [[ "$TRACKFW_FALSIFY_ENUMERATE" == "1" ]] && return 0
+    exit 1
+  fi
+  falsify_count_success
+  echo "OK   [falsify/$label]: exit $status"
+}
+
+# assert_guard_bin_exit: invoca o binário trackfw diretamente (sem wrapper
+# bash) com payload JSON via stdin e afirma o exit code esperado.
+# Usado pelos Cenários s60-s65/s74a-j pós-ML-2A: o guard virou thin-wrapper
+# que delega ao Go -- a mutação vai em internal/guard/gitbranch.go, e o
+# binário corrompido é chamado direto (não via .sh).
+assert_guard_bin_exit() {
+  local label=$1
+  local bin=$2
+  local payload=$3
+  local want=$4
+  local out status
+  set +e
+  out=$("$bin" guard git-branch <<<"$payload" 2>&1)
   status=$?
   set -e
   if [[ "$status" -ne "$want" ]]; then
@@ -4363,16 +4395,17 @@ cp "$ROOT_DIR/go.mod" "$T60_MOD/go.mod"
 cp "$ROOT_DIR/go.sum" "$T60_MOD/go.sum"
 
 corrupt_literal \
-  "$ROOT_DIR/internal/generators/scaffold.go" "$T60_MOD/internal/generators/scaffold.go" \
-  '-c|-C|--create|--create=*|--force-create|--force-create=*)' \
-  '--never-matches-anything-s58)' \
+  "$ROOT_DIR/internal/guard/gitbranch.go" "$T60_MOD/internal/guard/gitbranch.go" \
+  $'case "-c", "-C", "--create", "--force-create":' \
+  $'case "__never-matches-s60__":' \
   "s60-go-switch-c-detection-removed"
 
-T60_OUT="$WORK/s60-out"
-run_go_guard_dump "setup-s60-go-corrupted-build" "$T60_MOD" "$T60_OUT"
+T60_BIN="$WORK/s60-bin/trackfw"
+mkdir -p "$(dirname "$T60_BIN")"
+build_go_or_fail "setup-s60-go-corrupted-build" "$T60_MOD" "$T60_BIN"
 
-assert_guard_exit "git-branch-guard/switch-c/detection-catches-bypass" \
-  "$T60_OUT/scripts/trackfw-git-branch-guard.sh" \
+assert_guard_bin_exit "git-branch-guard/switch-c/detection-catches-bypass" \
+  "$T60_BIN" \
   '{"tool_input":{"command":"git switch -c feat/x"}}' \
   0
 
@@ -4434,17 +4467,17 @@ cp "$ROOT_DIR/go.mod" "$T61_MOD/go.mod"
 cp "$ROOT_DIR/go.sum" "$T61_MOD/go.sum"
 
 corrupt_literal \
-  "$ROOT_DIR/internal/generators/scaffold.go" "$T61_MOD/internal/generators/scaffold.go" \
-  'normalized=$(strip_heredoc_bodies "$1")
-  normalized=$(quote_aware_split "$normalized")' \
-  'normalized=$(printf '"'"'%s'"'"' "$1" | sed -e '"'"'s/&&/\n/g'"'"' -e '"'"'s/||/\n/g'"'"' -e '"'"'s/[;|]/\n/g'"'"')' \
+  "$ROOT_DIR/internal/guard/gitbranch.go" "$T61_MOD/internal/guard/gitbranch.go" \
+  $'\tnormalized := stripHeredocBodies(cmdRaw)\n\tsegments := quoteAwareSplit(normalized)' \
+  $'\tnormalized := cmdRaw\n\tsegments := strings.Split(normalized, "\\n")' \
   "s61-go-quote-aware-split-reverted"
 
-T61_OUT="$WORK/s61-out"
-run_go_guard_dump "setup-s61-go-corrupted-build" "$T61_MOD" "$T61_OUT"
+T61_BIN="$WORK/s61-bin/trackfw"
+mkdir -p "$(dirname "$T61_BIN")"
+build_go_or_fail "setup-s61-go-corrupted-build" "$T61_MOD" "$T61_BIN"
 
-assert_guard_exit "git-branch-guard/prose-in-message/detection-catches-regression" \
-  "$T61_OUT/scripts/trackfw-git-branch-guard.sh" \
+assert_guard_bin_exit "git-branch-guard/prose-in-message/detection-catches-regression" \
+  "$T61_BIN" \
   "$PROSE_PAYLOAD" \
   2
 
@@ -4492,21 +4525,22 @@ cp "$ROOT_DIR/go.mod" "$T62A_MOD/go.mod"
 cp "$ROOT_DIR/go.sum" "$T62A_MOD/go.sum"
 
 corrupt_literal \
-  "$ROOT_DIR/internal/generators/scaffold.go" "$T62A_MOD/internal/generators/scaffold.go" \
-  'while [ "$base" = "env" ] || [ "$base" = "command" ]; do' \
-  'while [ "$base" = "__never-matches-s62a__" ]; do' \
+  "$ROOT_DIR/internal/guard/gitbranch.go" "$T62A_MOD/internal/guard/gitbranch.go" \
+  $'func stripEnvCommandPrefix(tokens []string) []string {\n\tfor len(tokens) > 0 {' \
+  $'func stripEnvCommandPrefix(tokens []string) []string {\n\treturn tokens // [falsified s62a: env/command prefix stripping disabled]\n\tfor len(tokens) > 0 {' \
   "s62a-go-env-command-prefix-stripping-removed"
 
-T62A_OUT="$WORK/s62a-out"
-run_go_guard_dump "setup-s62a-go-corrupted-build" "$T62A_MOD" "$T62A_OUT"
+T62A_BIN="$WORK/s62a-bin/trackfw"
+mkdir -p "$(dirname "$T62A_BIN")"
+build_go_or_fail "setup-s62a-go-corrupted-build" "$T62A_MOD" "$T62A_BIN"
 
-assert_guard_exit "git-branch-guard/env-command-prefix/detection-catches-bypass-env" \
-  "$T62A_OUT/scripts/trackfw-git-branch-guard.sh" \
+assert_guard_bin_exit "git-branch-guard/env-command-prefix/detection-catches-bypass-env" \
+  "$T62A_BIN" \
   '{"tool_input":{"command":"env git commit -m \"x\""}}' \
   0
 
-assert_guard_exit "git-branch-guard/env-command-prefix/detection-catches-bypass-command" \
-  "$T62A_OUT/scripts/trackfw-git-branch-guard.sh" \
+assert_guard_bin_exit "git-branch-guard/env-command-prefix/detection-catches-bypass-command" \
+  "$T62A_BIN" \
   '{"tool_input":{"command":"command git push"}}' \
   0
 
@@ -4516,8 +4550,8 @@ assert_guard_exit "git-branch-guard/env-command-prefix/detection-catches-bypass-
 # errado. `git push` puro (sem prefixo) contra o MESMO build corrompido
 # precisa continuar bloqueado — isola a corrupção ao stripping de
 # env/command, não a uma quebra geral do matcher.
-assert_guard_exit "git-branch-guard/env-command-prefix/detection-does-not-break-plain-push" \
-  "$T62A_OUT/scripts/trackfw-git-branch-guard.sh" \
+assert_guard_bin_exit "git-branch-guard/env-command-prefix/detection-does-not-break-plain-push" \
+  "$T62A_BIN" \
   '{"tool_input":{"command":"git push"}}' \
   2
 
@@ -4558,35 +4592,22 @@ cp "$ROOT_DIR/go.sum" "$T62B_MOD/go.sum"
 # apagaria a detecção de `checkout -b` simples (o que tornaria o cenário
 # indistinguível de "checkout detection sumiu inteira").
 corrupt_literal \
-  "$ROOT_DIR/internal/generators/scaffold.go" "$T62B_MOD/internal/generators/scaffold.go" \
-  '      checkout)
-        for tok2 in "$@"; do
-          case "$tok2" in
-            -b|-B|--orphan|--orphan=*)
-              echo "checkout-b"
-              return 0
-              ;;
-          esac
-        done
-' \
-  '      checkout)
-        if [ "${1:-}" = "-b" ]; then
-          echo "checkout-b"
-          return 0
-        fi
-' \
+  "$ROOT_DIR/internal/guard/gitbranch.go" "$T62B_MOD/internal/guard/gitbranch.go" \
+  $'\t\tfor _, t := range rest {\n\t\t\tswitch t {\n\t\t\tcase "-b", "-B", "--orphan":\n\t\t\t\treturn "checkout-b"\n\t\t\t}\n\t\t\tif strings.HasPrefix(t, "--orphan=") {\n\t\t\t\treturn "checkout-b"\n\t\t\t}\n\t\t}' \
+  $'\t\tif len(rest) > 0 && rest[0] == "-b" { // [falsified s62b: first-token-only, pre-ML-4B]\n\t\t\treturn "checkout-b"\n\t\t}' \
   "s62b-go-checkout-token-scan-reverted-to-pre-ml4b"
 
-T62B_OUT="$WORK/s62b-out"
-run_go_guard_dump "setup-s62b-go-corrupted-build" "$T62B_MOD" "$T62B_OUT"
+T62B_BIN="$WORK/s62b-bin/trackfw"
+mkdir -p "$(dirname "$T62B_BIN")"
+build_go_or_fail "setup-s62b-go-corrupted-build" "$T62B_MOD" "$T62B_BIN"
 
-assert_guard_exit "git-branch-guard/checkout-flag-position/detection-catches-bypass-q-b" \
-  "$T62B_OUT/scripts/trackfw-git-branch-guard.sh" \
+assert_guard_bin_exit "git-branch-guard/checkout-flag-position/detection-catches-bypass-q-b" \
+  "$T62B_BIN" \
   '{"tool_input":{"command":"git checkout -q -b nova"}}' \
   0
 
-assert_guard_exit "git-branch-guard/checkout-flag-position/detection-catches-bypass-no-track" \
-  "$T62B_OUT/scripts/trackfw-git-branch-guard.sh" \
+assert_guard_bin_exit "git-branch-guard/checkout-flag-position/detection-catches-bypass-no-track" \
+  "$T62B_BIN" \
   '{"tool_input":{"command":"git checkout --no-track -b nova"}}' \
   0
 
@@ -4595,8 +4616,8 @@ assert_guard_exit "git-branch-guard/checkout-flag-position/detection-catches-byp
 # precisa continuar bloqueado. Prova que a corrupção isola exatamente o
 # token-scan que o ML-4B acrescentou, não a detecção de checkout -b como um
 # todo.
-assert_guard_exit "git-branch-guard/checkout-flag-position/detection-does-not-break-plain-checkout-b" \
-  "$T62B_OUT/scripts/trackfw-git-branch-guard.sh" \
+assert_guard_bin_exit "git-branch-guard/checkout-flag-position/detection-does-not-break-plain-checkout-b" \
+  "$T62B_BIN" \
   '{"tool_input":{"command":"git checkout -b nova"}}' \
   2
 
@@ -4658,26 +4679,17 @@ cp "$ROOT_DIR/go.sum" "$T63A_MOD/go.sum"
 # exatamente desse literal, e não derruba -c/-C/-m/-M nem -d/-D (asserção de
 # auto-discriminação abaixo).
 corrupt_literal \
-  "$ROOT_DIR/internal/generators/scaffold.go" "$T63A_MOD/internal/generators/scaffold.go" \
-  '            *)
-              saw_positional=1
-              ;;
-          esac
-        done
-        if [ "$has_delete" != "1" ]; then' \
-  '            *)
-              saw_positional=0
-              ;;
-          esac
-        done
-        if [ "$has_delete" != "1" ]; then' \
+  "$ROOT_DIR/internal/guard/gitbranch.go" "$T63A_MOD/internal/guard/gitbranch.go" \
+  $'sawPositional = true' \
+  $'sawPositional = false // [falsified s63a]' \
   "s63a-go-branch-positional-detection-removed"
 
-T63A_OUT="$WORK/s63a-out"
-run_go_guard_dump "setup-s63a-go-corrupted-build" "$T63A_MOD" "$T63A_OUT"
+T63A_BIN="$WORK/s63a-bin/trackfw"
+mkdir -p "$(dirname "$T63A_BIN")"
+build_go_or_fail "setup-s63a-go-corrupted-build" "$T63A_MOD" "$T63A_BIN"
 
-assert_guard_exit "git-branch-guard/branch-create/detection-catches-bypass-positional" \
-  "$T63A_OUT/scripts/trackfw-git-branch-guard.sh" \
+assert_guard_bin_exit "git-branch-guard/branch-create/detection-catches-bypass-positional" \
+  "$T63A_BIN" \
   '{"tool_input":{"command":"git branch nova"}}' \
   0
 
@@ -4686,13 +4698,13 @@ assert_guard_exit "git-branch-guard/branch-create/detection-catches-bypass-posit
 # (leitura/delete, nunca deveria bloquear) precisam se comportar
 # exatamente como antes — prova que a corrupção isola só o caminho de
 # argumento posicional puro.
-assert_guard_exit "git-branch-guard/branch-create/detection-does-not-break-dash-c" \
-  "$T63A_OUT/scripts/trackfw-git-branch-guard.sh" \
+assert_guard_bin_exit "git-branch-guard/branch-create/detection-does-not-break-dash-c" \
+  "$T63A_BIN" \
   '{"tool_input":{"command":"git branch -c origem nova"}}' \
   2
 
-assert_guard_exit "git-branch-guard/branch-create/detection-does-not-break-delete" \
-  "$T63A_OUT/scripts/trackfw-git-branch-guard.sh" \
+assert_guard_bin_exit "git-branch-guard/branch-create/detection-does-not-break-delete" \
+  "$T63A_BIN" \
   '{"tool_input":{"command":"git branch -d nome"}}' \
   0
 
@@ -4725,26 +4737,25 @@ cp "$ROOT_DIR/go.mod" "$T63B_MOD/go.mod"
 cp "$ROOT_DIR/go.sum" "$T63B_MOD/go.sum"
 
 corrupt_literal \
-  "$ROOT_DIR/internal/generators/scaffold.go" "$T63B_MOD/internal/generators/scaffold.go" \
-  '      worktree)
-        if [ "${1:-}" = "add" ]; then' \
-  '      worktree)
-        if [ "${1:-}" = "__never-matches-s63b__" ]; then' \
+  "$ROOT_DIR/internal/guard/gitbranch.go" "$T63B_MOD/internal/guard/gitbranch.go" \
+  $'\tcase "add":\n\t\t\tfor _, t := range rest {' \
+  $'\tcase "__never_matches_s63b__":\n\t\t\tfor _, t := range rest {' \
   "s63b-go-worktree-add-detection-removed"
 
-T63B_OUT="$WORK/s63b-out"
-run_go_guard_dump "setup-s63b-go-corrupted-build" "$T63B_MOD" "$T63B_OUT"
+T63B_BIN="$WORK/s63b-bin/trackfw"
+mkdir -p "$(dirname "$T63B_BIN")"
+build_go_or_fail "setup-s63b-go-corrupted-build" "$T63B_MOD" "$T63B_BIN"
 
-assert_guard_exit "git-branch-guard/worktree-add-b/detection-catches-bypass" \
-  "$T63B_OUT/scripts/trackfw-git-branch-guard.sh" \
+assert_guard_bin_exit "git-branch-guard/worktree-add-b/detection-catches-bypass" \
+  "$T63B_BIN" \
   '{"tool_input":{"command":"git worktree add -b nova ../nova"}}' \
   0
 
 # Auto-discriminação: contra o MESMO build corrompido, `git push` puro
 # continua bloqueado — isola a corrupção ao worktree add -b, não uma
 # quebra geral do matcher.
-assert_guard_exit "git-branch-guard/worktree-add-b/detection-does-not-break-plain-push" \
-  "$T63B_OUT/scripts/trackfw-git-branch-guard.sh" \
+assert_guard_bin_exit "git-branch-guard/worktree-add-b/detection-does-not-break-plain-push" \
+  "$T63B_BIN" \
   '{"tool_input":{"command":"git push"}}' \
   2
 
@@ -4782,21 +4793,22 @@ cp "$ROOT_DIR/go.mod" "$T63C_MOD/go.mod"
 cp "$ROOT_DIR/go.sum" "$T63C_MOD/go.sum"
 
 corrupt_literal \
-  "$ROOT_DIR/internal/generators/scaffold.go" "$T63C_MOD/internal/generators/scaffold.go" \
-  '      if [ "$is_env" = "env" ]; then' \
-  '      if [ "$is_env" = "__never-matches-s63c__" ]; then' \
+  "$ROOT_DIR/internal/guard/gitbranch.go" "$T63C_MOD/internal/guard/gitbranch.go" \
+  $'tokens = tokens[1:] // KEY=value: skip' \
+  $'break // [falsified s63c: stop instead of skipping KEY=val]' \
   "s63c-go-env-var-assignment-stripping-removed"
 
-T63C_OUT="$WORK/s63c-out"
-run_go_guard_dump "setup-s63c-go-corrupted-build" "$T63C_MOD" "$T63C_OUT"
+T63C_BIN="$WORK/s63c-bin/trackfw"
+mkdir -p "$(dirname "$T63C_BIN")"
+build_go_or_fail "setup-s63c-go-corrupted-build" "$T63C_MOD" "$T63C_BIN"
 
-assert_guard_exit "git-branch-guard/env-var-assignment/detection-catches-bypass-single" \
-  "$T63C_OUT/scripts/trackfw-git-branch-guard.sh" \
+assert_guard_bin_exit "git-branch-guard/env-var-assignment/detection-catches-bypass-single" \
+  "$T63C_BIN" \
   '{"tool_input":{"command":"env FOO=bar git push"}}' \
   0
 
-assert_guard_exit "git-branch-guard/env-var-assignment/detection-catches-bypass-multiple" \
-  "$T63C_OUT/scripts/trackfw-git-branch-guard.sh" \
+assert_guard_bin_exit "git-branch-guard/env-var-assignment/detection-catches-bypass-multiple" \
+  "$T63C_BIN" \
   '{"tool_input":{"command":"env FOO=bar BAZ=qux git commit -m x"}}' \
   0
 
@@ -4804,8 +4816,8 @@ assert_guard_exit "git-branch-guard/env-var-assignment/detection-catches-bypass-
 # atribuição de variável) `env git push`, fechada pelo ML-4B, precisa
 # continuar bloqueada — isola a corrupção ao stripping de CHAVE=valor, não
 # ao stripping de env/command como um todo.
-assert_guard_exit "git-branch-guard/env-var-assignment/detection-does-not-break-bare-env-prefix" \
-  "$T63C_OUT/scripts/trackfw-git-branch-guard.sh" \
+assert_guard_bin_exit "git-branch-guard/env-var-assignment/detection-does-not-break-bare-env-prefix" \
+  "$T63C_BIN" \
   '{"tool_input":{"command":"env git push"}}' \
   2
 
@@ -4864,17 +4876,18 @@ cp "$ROOT_DIR/go.mod" "$T64_MOD/go.mod"
 cp "$ROOT_DIR/go.sum" "$T64_MOD/go.sum"
 
 corrupt_literal \
-  "$ROOT_DIR/internal/generators/scaffold.go" "$T64_MOD/internal/generators/scaffold.go" \
-  '[ "$_TRACKFW_FOUND" -eq 1 ] || exit 0' \
-  '[ "$_TRACKFW_FOUND" -eq 1 ] || true' \
+  "$ROOT_DIR/internal/guard/gitbranch.go" "$T64_MOD/internal/guard/gitbranch.go" \
+  $'_, found := FindProjectRoot(cwd)\n\tif !found {\n\t\treturn 0 // not inside a trackfw project' \
+  $'_, _ = FindProjectRoot(cwd) // [falsified s64: found discarded]\n\tif false {\n\t\treturn 0 // [falsified s64]' \
   "s64-go-noop-probe-removed"
 
-T64_OUT="$WORK/s64-out"
-run_go_guard_dump "setup-s64-go-corrupted-build" "$T64_MOD" "$T64_OUT"
+T64_BIN="$WORK/s64-bin/trackfw"
+mkdir -p "$(dirname "$T64_BIN")"
+build_go_or_fail "setup-s64-go-corrupted-build" "$T64_MOD" "$T64_BIN"
 
 (
-  cd "$T64_NO_YAML_DIR" && assert_guard_exit "git-branch-guard/no-op-outside-project/detection-catches-bypass-without-trackfw-yaml" \
-    "$T64_OUT/scripts/trackfw-git-branch-guard.sh" \
+  cd "$T64_NO_YAML_DIR" && assert_guard_bin_exit "git-branch-guard/no-op-outside-project/detection-catches-bypass-without-trackfw-yaml" \
+    "$T64_BIN" \
     '{"tool_input":{"command":"git push"}}' \
     2
 )
@@ -4883,8 +4896,8 @@ run_go_guard_dump "setup-s64-go-corrupted-build" "$T64_MOD" "$T64_OUT"
 # trackfw o guard precisa continuar bloqueando exatamente como antes —
 # isola a corrupção ao probe do no-op, não a uma quebra geral do matcher.
 (
-  cd "$T64_WITH_YAML_DIR" && assert_guard_exit "git-branch-guard/no-op-outside-project/detection-does-not-break-inside-project" \
-    "$T64_OUT/scripts/trackfw-git-branch-guard.sh" \
+  cd "$T64_WITH_YAML_DIR" && assert_guard_bin_exit "git-branch-guard/no-op-outside-project/detection-does-not-break-inside-project" \
+    "$T64_BIN" \
     '{"tool_input":{"command":"git push"}}' \
     2
 )
@@ -4958,19 +4971,31 @@ cp "$ROOT_DIR/go.mod" "$T65_MOD/go.mod"
 cp "$ROOT_DIR/go.sum" "$T65_MOD/go.sum"
 
 corrupt_literal \
-  "$ROOT_DIR/internal/generators/scaffold.go" "$T65_MOD/internal/generators/scaffold.go" \
-  "IFS= read -r -t 2 -d '' _TRACKFW_STDIN_CHUNK || _TRACKFW_STDIN_RC=\$?" \
-  "true" \
+  "$ROOT_DIR/internal/guard/gitbranch.go" "$T65_MOD/internal/guard/gitbranch.go" \
+  $'stdinData, truncated := DrainStdin(stdin, idleTimeout)' \
+  $'stdinData, truncated := []byte(""), false // [falsified s65]' \
   "s65-go-stdin-drain-removed"
 
-T65_OUT="$WORK/s65-out"
-run_go_guard_dump "setup-s65-go-corrupted-build" "$T65_MOD" "$T65_OUT"
+T65_BIN="$WORK/s65-bin/trackfw"
+mkdir -p "$(dirname "$T65_BIN")"
+build_go_or_fail "setup-s65-go-corrupted-build" "$T65_MOD" "$T65_BIN"
+# PATH shim: makes the thin-wrapper guard script invoke the corrupted binary
+# when it calls `exec trackfw guard git-branch`.
+T65_SHIM_DIR="$WORK/s65-shim"
+mkdir -p "$T65_SHIM_DIR"
+ln -sf "$T65_BIN" "$T65_SHIM_DIR/trackfw"
 
+# PATH shim ensures the thin-wrapper script calls the corrupted Go binary.
+# Large payload (200 KB) is required: a 35-byte payload fits in the 64 KB pipe
+# buffer so Python finishes writing BEFORE the guard exits, regardless of
+# whether it drains stdin — the test would be vacuous.  With 200 KB, Python
+# blocks mid-write waiting for the pipe to drain.  The corrupted binary exits
+# without draining, the read-end closes, and Python gets EPIPE.
 (
-  cd "$T65_NO_YAML_DIR" && assert_writer_no_epipe \
+  cd "$T65_NO_YAML_DIR" && PATH="$T65_SHIM_DIR:$PATH" assert_writer_no_epipe \
     "git-branch-guard/stdin-drain-before-noop/detection-catches-epipe-regression" \
-    "$T65_OUT/scripts/trackfw-git-branch-guard.sh" \
-    '{"tool_input":{"command":"git push"}}' \
+    "$T64_BASE_OUT/scripts/trackfw-git-branch-guard.sh" \
+    "$T65_BIG_PAYLOAD" \
     0 0
 )
 
@@ -5085,7 +5110,11 @@ if [[ $s67b_status -ne 0 ]]; then
 fi
 
 s67b_settings="$T67_PROJECT_DIR/.claude/settings.json"
-if grep -qF 'trackfw-git-branch-guard.sh' "$s67b_settings"; then
+# ML-4C: marker atualizado para o formato inline emitido pelo ML-2A
+# ('trackfw guard git-branch; exit $LASTEXITCODE'); o antigo
+# 'trackfw-git-branch-guard.sh' nunca aparece em configs de projeto desde ML-2A,
+# tornando a asserção de ausência vacuamente verde.
+if grep -qF 'trackfw guard git-branch' "$s67b_settings"; then
   echo "FAIL [falsify/git-branch-guard-dedup/baseline-skips-project-entry]: entrada de git-branch-guard presente em $s67b_settings com a fiação global instalada" >&2
   cat "$s67b_settings" >&2
   falsify_fail_point
@@ -5094,7 +5123,10 @@ else
   echo "OK   [falsify/git-branch-guard-dedup/baseline-skips-project-entry]"
 fi
 
-if ! grep -qF 'trackfw-credential-guard.sh' "$s67b_settings"; then
+# ML-4C: marker atualizado; a entrada de projeto usa 'trackfw guard credential;'
+# (sem --global); usar '; exit' como âncora evita falso-positivo caso o formulário
+# '--global' fosse indevidamente escrito na config de projeto.
+if ! grep -qF 'trackfw guard credential;' "$s67b_settings"; then
   echo "FAIL [falsify/git-branch-guard-dedup/baseline-credential-guard-unaffected]: entrada de credential-guard ausente — o skip não deveria afetar o outro guard" >&2
   cat "$s67b_settings" >&2
   falsify_fail_point
@@ -5121,7 +5153,8 @@ if [[ $s67rv_status -ne 0 ]]; then
 fi
 
 s67rv_settings="$T67_PROJECT_DIR_RV/.claude/settings.json"
-if ! grep -qF 'trackfw-git-branch-guard.sh' "$s67rv_settings"; then
+# ML-4C: marker atualizado para formato inline ML-2A.
+if ! grep -qF 'trackfw guard git-branch' "$s67rv_settings"; then
   echo "FAIL [falsify/git-branch-guard-dedup/reverse-vacuity]: entrada de git-branch-guard ausente com \$HOME vazio (sem fiação global) — o skip não deveria acontecer aqui" >&2
   cat "$s67rv_settings" >&2
   falsify_fail_point
@@ -5140,7 +5173,7 @@ cp "$ROOT_DIR/go.sum" "$T67_MOD/go.sum"
 
 corrupt_literal \
   "$ROOT_DIR/internal/generators/agentfiles.go" "$T67_MOD/internal/generators/agentfiles.go" \
-  $'func globalGitBranchGuardInstalledClaude() bool {\n\tscriptPath, ok := globalGitBranchGuardScriptPath()\n\tif !ok {\n\t\treturn false\n\t}\n\troot, ok := readGlobalHookJSON(".claude", "settings.json")\n\tif !ok {\n\t\treturn false\n\t}\n\thooks, _ := root["hooks"].(map[string]interface{})\n\treturn hookArrayHasCommand(hooks["PreToolUse"], "Bash", scriptPath)\n}' \
+  $'func globalGitBranchGuardInstalledClaude() bool {\n\tscriptPath, ok := globalGitBranchGuardScriptPath()\n\tif !ok {\n\t\treturn false\n\t}\n\troot, ok := readGlobalHookJSON(".claude", "settings.json")\n\tif !ok {\n\t\treturn false\n\t}\n\thooks, _ := root["hooks"].(map[string]interface{})\n\t// ML-2A: accept both old abs .sh path and new inline command form.\n\treturn hookArrayHasCommand(hooks["PreToolUse"], "Bash", scriptPath) ||\n\t\thookArrayHasCommand(hooks["PreToolUse"], "Bash", guardGitBranchCmdPSPOSIX)\n}' \
   $'func globalGitBranchGuardInstalledClaude() bool {\n\treturn false\n}' \
   "s67-go-claude-git-branch-guard-dedup-always-false"
 
@@ -5163,7 +5196,8 @@ if [[ $s67d_status -ne 0 ]]; then
 fi
 
 s67d_settings="$T67_PROJECT_DIR_DET/.claude/settings.json"
-if ! grep -qF 'trackfw-git-branch-guard.sh' "$s67d_settings"; then
+# ML-4C: marker atualizado para formato inline ML-2A.
+if ! grep -qF 'trackfw guard git-branch' "$s67d_settings"; then
   echo "FAIL [falsify/git-branch-guard-dedup/detection-catches-regression]: com o dedup neutralizado (sempre 'não instalado'), a entrada de projeto deveria REAPARECER mesmo com a fiação global instalada — não reapareceu" >&2
   cat "$s67d_settings" >&2
   falsify_fail_point
@@ -5224,7 +5258,8 @@ if [[ $s67s_status -ne 0 ]]; then
 fi
 
 s67s_settings="$T67_PROJECT_DIR_SLASH/.claude/settings.json"
-if grep -qF 'trackfw-git-branch-guard.sh' "$s67s_settings"; then
+# ML-4C: marker atualizado para formato inline ML-2A.
+if grep -qF 'trackfw guard git-branch' "$s67s_settings"; then
   echo "FAIL [falsify/git-branch-guard-dedup/double-slash-tolerance]: entrada de git-branch-guard presente em $s67s_settings mesmo com // no comando gravado do HOME global — a comparação deveria normalizar antes de comparar" >&2
   cat "$s67s_settings" >&2
   falsify_fail_point
@@ -5375,8 +5410,10 @@ if [[ $s68dupgbg_setup_status -ne 0 ]]; then
   falsify_fail_point
 fi
 T68_DUP_SCRIPT="$T68_DUP_HOME/.trackfw/scripts/trackfw-git-branch-guard.sh"
-if ! grep -qF 'trackfw-git-branch-guard.sh' "$T68_DUP_HOME/.claude/settings.json" || \
-   ! grep -qF 'trackfw-git-branch-guard.sh' "$T68_DUP_HOME/.codex/hooks.json"; then
+# ML-4C: 'update harness --targets claude-git-branch-guard,codex-git-branch-guard'
+# escreve 'trackfw guard git-branch; exit $LASTEXITCODE' desde ML-2A.
+if ! grep -qF 'trackfw guard git-branch' "$T68_DUP_HOME/.claude/settings.json" || \
+   ! grep -qF 'trackfw guard git-branch' "$T68_DUP_HOME/.codex/hooks.json"; then
   echo "FAIL [falsify/git-branch-guard-global-script-integrity/no-double-report-setup]: fiação em Claude E Codex não foi instalada — não é o fixture de 2 configs pretendido" >&2
   falsify_fail_point
 fi
@@ -5424,8 +5461,11 @@ if [[ $s68dupcg_setup_status -ne 0 ]]; then
   falsify_fail_point
 fi
 T68_DUP_SCRIPT_CG="$T68_DUP_HOME_CG/.trackfw/scripts/trackfw-credential-guard.sh"
-if ! grep -qF 'trackfw-credential-guard.sh' "$T68_DUP_HOME_CG/.claude/settings.json" || \
-   ! grep -qF 'trackfw-credential-guard.sh' "$T68_DUP_HOME_CG/.codex/hooks.json"; then
+# ML-4C: 'update harness --targets claude-credential-guard,codex-credential-guard'
+# escreve 'trackfw guard credential --global; exit $LASTEXITCODE' desde ML-2A.
+# Usar '--global' como âncora distingue a forma global da forma de projeto.
+if ! grep -qF 'trackfw guard credential --global' "$T68_DUP_HOME_CG/.claude/settings.json" || \
+   ! grep -qF 'trackfw guard credential --global' "$T68_DUP_HOME_CG/.codex/hooks.json"; then
   echo "FAIL [falsify/credential-guard-global-script-integrity/no-double-report-setup]: fiação em Claude E Codex não foi instalada — não é o fixture de 2 configs pretendido" >&2
   falsify_fail_point
 fi
@@ -5524,7 +5564,26 @@ fi
 # --- braço de detecção: script referenciado pelo arquivo DEDICADO do Kiro
 # some do disco -> validate deve acusar, citando o arquivo do Kiro — o
 # discriminante central deste ML (antes dele, esta checagem nunca lia esse
-# arquivo, então nenhuma acusação era possível aqui) -----------------------
+# arquivo, então nenhuma acusação era possível aqui)
+# ML-4C: o Kiro hook desde ML-2A usa forma inline ('trackfw guard git-branch',
+# cmd.exe-family, sem '; exit $LASTEXITCODE') — remover o .sh não aciona mais
+# 'hook_resolvable' porque não há caminho absoluto no hook para checar existência.
+# Para manter o seam ativo: reescrevemos o hook dedicado com a forma legada de
+# caminho absoluto (marker 'trackfw-git-branch-guard.sh' + type:"command") e
+# DEPOIS removemos o .sh — a checagem de existência de arquivo dispara como antes.
+cat > "$T69_GBG_HOOKS" <<EOF
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "trackfw-git-branch-guard-global-pre",
+      "trigger": "PreToolUse",
+      "matcher": "shell",
+      "action": {"type": "command", "command": "$T69_GBG_SCRIPT"}
+    }
+  ]
+}
+EOF
 rm -f "$T69_GBG_SCRIPT"
 
 T69_BAD="$WORK/s69-project-bad"
@@ -5557,7 +5616,12 @@ fi
 # é o dado que a asserção abaixo quer medir, virava morte do processo. 🔴 NÃO
 # usar `|| echo 0` (é o defeito da Wave 1: `grep -c` já emite e a captura vira
 # $'0\n0') nem `${VAR:-0}` (guarda sobre captura é o padrão que gerou tudo isto).
-s69bad_gbg_count=$( { grep -oF 'trackfw-git-branch-guard.json' <<<"$s69bad_out" || true; } | wc -l | tr -d ' ')
+# ML-4C: com a sabotagem de forma legada (caminho abs + "does not exist"), o aviso
+# de forma legada ("this script does not execute on Windows") também menciona
+# trackfw-git-branch-guard.json — se contarmos todas as ocorrências do nome de
+# arquivo, o resultado é 2 (1 aviso + 1 violação). O no-double-report testa só
+# VIOLAÇÕES; filtramos para linhas que contenham também "does not exist".
+s69bad_gbg_count=$( { grep -F 'trackfw-git-branch-guard.json' <<<"$s69bad_out" | grep -oF 'does not exist' || true; } | wc -l | tr -d ' ')
 # ML-2D: duas checagens, um rótulo de sucesso. Flag (não `elif`) para que as
 # duas continuem emitindo diagnóstico em TRACKFW_FALSIFY_ENUMERATE=1; o
 # sucesso passa a ser condicional às duas passarem.
@@ -5627,16 +5691,15 @@ cp -r "$ROOT_DIR/internal/." "$T74A_MOD/internal/"
 cp "$ROOT_DIR/go.mod" "$T74A_MOD/go.mod"
 cp "$ROOT_DIR/go.sum" "$T74A_MOD/go.sum"
 corrupt_literal \
-  "$ROOT_DIR/internal/generators/scaffold.go" "$T74A_MOD/internal/generators/scaffold.go" \
-  '      stash)
-' \
-  '      __never_matches_s74a__)
-' \
+  "$ROOT_DIR/internal/guard/gitbranch.go" "$T74A_MOD/internal/guard/gitbranch.go" \
+  $'\tcase "stash":\n\t\t// Allow only list and show.' \
+  $'\tcase "__never_matches_s74a__":\n\t\t// Allow only list and show.' \
   "s74a-go-stash-case-label-removed"
-T74A_OUT="$WORK/s74a-out"
-run_go_guard_dump "setup-s74a-go-corrupted-build" "$T74A_MOD" "$T74A_OUT"
-assert_guard_exit "git-branch-guard/stash/detection-catches-bypass" \
-  "$T74A_OUT/scripts/trackfw-git-branch-guard.sh" \
+T74A_BIN="$WORK/s74a-bin/trackfw"
+mkdir -p "$(dirname "$T74A_BIN")"
+build_go_or_fail "setup-s74a-go-corrupted-build" "$T74A_MOD" "$T74A_BIN"
+assert_guard_bin_exit "git-branch-guard/stash/detection-catches-bypass" \
+  "$T74A_BIN" \
   '{"tool_input":{"command":"git stash"}}' 0
 
 T74B_MOD="$WORK/s74b-mod"
@@ -5646,16 +5709,15 @@ cp -r "$ROOT_DIR/internal/." "$T74B_MOD/internal/"
 cp "$ROOT_DIR/go.mod" "$T74B_MOD/go.mod"
 cp "$ROOT_DIR/go.sum" "$T74B_MOD/go.sum"
 corrupt_literal \
-  "$ROOT_DIR/internal/generators/scaffold.go" "$T74B_MOD/internal/generators/scaffold.go" \
-  '          list|show)
-' \
-  '          __never_matches_s74b__)
-' \
+  "$ROOT_DIR/internal/guard/gitbranch.go" "$T74B_MOD/internal/guard/gitbranch.go" \
+  $'\tcase "list", "show":\n\t\t\treturn ""' \
+  $'\tcase "__never_matches_s74b__":\n\t\t\treturn ""' \
   "s74b-go-stash-allowlist-removed"
-T74B_OUT="$WORK/s74b-out"
-run_go_guard_dump "setup-s74b-go-corrupted-build" "$T74B_MOD" "$T74B_OUT"
-assert_guard_exit "git-branch-guard/stash/detection-catches-overblock-list" \
-  "$T74B_OUT/scripts/trackfw-git-branch-guard.sh" \
+T74B_BIN="$WORK/s74b-bin/trackfw"
+mkdir -p "$(dirname "$T74B_BIN")"
+build_go_or_fail "setup-s74b-go-corrupted-build" "$T74B_MOD" "$T74B_BIN"
+assert_guard_bin_exit "git-branch-guard/stash/detection-catches-overblock-list" \
+  "$T74B_BIN" \
   '{"tool_input":{"command":"git stash list"}}' 2
 
 # --- 74c — git reset --hard bloqueia; --soft/--mixed/sem flag livres --------
@@ -5673,16 +5735,15 @@ cp -r "$ROOT_DIR/internal/." "$T74C_MOD/internal/"
 cp "$ROOT_DIR/go.mod" "$T74C_MOD/go.mod"
 cp "$ROOT_DIR/go.sum" "$T74C_MOD/go.sum"
 corrupt_literal \
-  "$ROOT_DIR/internal/generators/scaffold.go" "$T74C_MOD/internal/generators/scaffold.go" \
-  '      reset)
-' \
-  '      __never_matches_s74c__)
-' \
+  "$ROOT_DIR/internal/guard/gitbranch.go" "$T74C_MOD/internal/guard/gitbranch.go" \
+  $'\tcase "reset":' \
+  $'\tcase "__never_matches_s74c__":' \
   "s74c-go-reset-case-label-removed"
-T74C_OUT="$WORK/s74c-out"
-run_go_guard_dump "setup-s74c-go-corrupted-build" "$T74C_MOD" "$T74C_OUT"
-assert_guard_exit "git-branch-guard/reset-hard/detection-catches-bypass" \
-  "$T74C_OUT/scripts/trackfw-git-branch-guard.sh" \
+T74C_BIN="$WORK/s74c-bin/trackfw"
+mkdir -p "$(dirname "$T74C_BIN")"
+build_go_or_fail "setup-s74c-go-corrupted-build" "$T74C_MOD" "$T74C_BIN"
+assert_guard_bin_exit "git-branch-guard/reset-hard/detection-catches-bypass" \
+  "$T74C_BIN" \
   '{"tool_input":{"command":"git reset --hard"}}' 0
 
 T74D_MOD="$WORK/s74d-mod"
@@ -5692,16 +5753,15 @@ cp -r "$ROOT_DIR/internal/." "$T74D_MOD/internal/"
 cp "$ROOT_DIR/go.mod" "$T74D_MOD/go.mod"
 cp "$ROOT_DIR/go.sum" "$T74D_MOD/go.sum"
 corrupt_literal \
-  "$ROOT_DIR/internal/generators/scaffold.go" "$T74D_MOD/internal/generators/scaffold.go" \
-  '            --hard)
-' \
-  '            *)
-' \
+  "$ROOT_DIR/internal/guard/gitbranch.go" "$T74D_MOD/internal/guard/gitbranch.go" \
+  $'for _, t := range rest {\n\t\t\tif t == "--hard" {' \
+  $'for range rest {\n\t\t\tif true { // [falsified s74d: always hard]' \
   "s74d-go-reset-hard-discriminant-widened"
-T74D_OUT="$WORK/s74d-out"
-run_go_guard_dump "setup-s74d-go-corrupted-build" "$T74D_MOD" "$T74D_OUT"
-assert_guard_exit "git-branch-guard/reset-hard/detection-catches-overblock-soft" \
-  "$T74D_OUT/scripts/trackfw-git-branch-guard.sh" \
+T74D_BIN="$WORK/s74d-bin/trackfw"
+mkdir -p "$(dirname "$T74D_BIN")"
+build_go_or_fail "setup-s74d-go-corrupted-build" "$T74D_MOD" "$T74D_BIN"
+assert_guard_bin_exit "git-branch-guard/reset-hard/detection-catches-overblock-soft" \
+  "$T74D_BIN" \
   '{"tool_input":{"command":"git reset --soft HEAD~1"}}' 2
 
 # --- 74e — git clean -f/-x bloqueia; -n/--dry-run livre (inclusive quando -n
@@ -5720,16 +5780,15 @@ cp -r "$ROOT_DIR/internal/." "$T74E_MOD/internal/"
 cp "$ROOT_DIR/go.mod" "$T74E_MOD/go.mod"
 cp "$ROOT_DIR/go.sum" "$T74E_MOD/go.sum"
 corrupt_literal \
-  "$ROOT_DIR/internal/generators/scaffold.go" "$T74E_MOD/internal/generators/scaffold.go" \
-  '      clean)
-' \
-  '      __never_matches_s74e__)
-' \
+  "$ROOT_DIR/internal/guard/gitbranch.go" "$T74E_MOD/internal/guard/gitbranch.go" \
+  $'\tcase "clean":' \
+  $'\tcase "__never_matches_s74e__":' \
   "s74e-go-clean-case-label-removed"
-T74E_OUT="$WORK/s74e-out"
-run_go_guard_dump "setup-s74e-go-corrupted-build" "$T74E_MOD" "$T74E_OUT"
-assert_guard_exit "git-branch-guard/clean-force/detection-catches-bypass" \
-  "$T74E_OUT/scripts/trackfw-git-branch-guard.sh" \
+T74E_BIN="$WORK/s74e-bin/trackfw"
+mkdir -p "$(dirname "$T74E_BIN")"
+build_go_or_fail "setup-s74e-go-corrupted-build" "$T74E_MOD" "$T74E_BIN"
+assert_guard_bin_exit "git-branch-guard/clean-force/detection-catches-bypass" \
+  "$T74E_BIN" \
   '{"tool_input":{"command":"git clean -fd"}}' 0
 
 T74F_MOD="$WORK/s74f-mod"
@@ -5739,16 +5798,15 @@ cp -r "$ROOT_DIR/internal/." "$T74F_MOD/internal/"
 cp "$ROOT_DIR/go.mod" "$T74F_MOD/go.mod"
 cp "$ROOT_DIR/go.sum" "$T74F_MOD/go.sum"
 corrupt_literal \
-  "$ROOT_DIR/internal/generators/scaffold.go" "$T74F_MOD/internal/generators/scaffold.go" \
-  '            -n|--dry-run)
-' \
-  '            __never_matches_s74f__)
-' \
+  "$ROOT_DIR/internal/guard/gitbranch.go" "$T74F_MOD/internal/guard/gitbranch.go" \
+  $'case t == "-n" || t == "--dry-run":' \
+  $'case false: // [falsified s74f]' \
   "s74f-go-clean-dry-run-guard-removed"
-T74F_OUT="$WORK/s74f-out"
-run_go_guard_dump "setup-s74f-go-corrupted-build" "$T74F_MOD" "$T74F_OUT"
-assert_guard_exit "git-branch-guard/clean-force/detection-catches-overblock-dry-run-plus-force" \
-  "$T74F_OUT/scripts/trackfw-git-branch-guard.sh" \
+T74F_BIN="$WORK/s74f-bin/trackfw"
+mkdir -p "$(dirname "$T74F_BIN")"
+build_go_or_fail "setup-s74f-go-corrupted-build" "$T74F_MOD" "$T74F_BIN"
+assert_guard_bin_exit "git-branch-guard/clean-force/detection-catches-overblock-dry-run-plus-force" \
+  "$T74F_BIN" \
   '{"tool_input":{"command":"git clean -n -f"}}' 2
 
 # --- 74g — git restore <path> bloqueia; --staged livre ----------------------
@@ -5764,16 +5822,15 @@ cp -r "$ROOT_DIR/internal/." "$T74G_MOD/internal/"
 cp "$ROOT_DIR/go.mod" "$T74G_MOD/go.mod"
 cp "$ROOT_DIR/go.sum" "$T74G_MOD/go.sum"
 corrupt_literal \
-  "$ROOT_DIR/internal/generators/scaffold.go" "$T74G_MOD/internal/generators/scaffold.go" \
-  '      restore)
-' \
-  '      __never_matches_s74g__)
-' \
+  "$ROOT_DIR/internal/guard/gitbranch.go" "$T74G_MOD/internal/guard/gitbranch.go" \
+  $'\tcase "restore":' \
+  $'\tcase "__never_matches_s74g__":' \
   "s74g-go-restore-case-label-removed"
-T74G_OUT="$WORK/s74g-out"
-run_go_guard_dump "setup-s74g-go-corrupted-build" "$T74G_MOD" "$T74G_OUT"
-assert_guard_exit "git-branch-guard/restore-path/detection-catches-bypass" \
-  "$T74G_OUT/scripts/trackfw-git-branch-guard.sh" \
+T74G_BIN="$WORK/s74g-bin/trackfw"
+mkdir -p "$(dirname "$T74G_BIN")"
+build_go_or_fail "setup-s74g-go-corrupted-build" "$T74G_MOD" "$T74G_BIN"
+assert_guard_bin_exit "git-branch-guard/restore-path/detection-catches-bypass" \
+  "$T74G_BIN" \
   '{"tool_input":{"command":"git restore foo.txt"}}' 0
 
 T74H_MOD="$WORK/s74h-mod"
@@ -5783,16 +5840,15 @@ cp -r "$ROOT_DIR/internal/." "$T74H_MOD/internal/"
 cp "$ROOT_DIR/go.mod" "$T74H_MOD/go.mod"
 cp "$ROOT_DIR/go.sum" "$T74H_MOD/go.sum"
 corrupt_literal \
-  "$ROOT_DIR/internal/generators/scaffold.go" "$T74H_MOD/internal/generators/scaffold.go" \
-  '            --staged)
-' \
-  '            __never_matches_s74h__)
-' \
+  "$ROOT_DIR/internal/guard/gitbranch.go" "$T74H_MOD/internal/guard/gitbranch.go" \
+  $'case t == "--staged":' \
+  $'case false: // [falsified s74h]' \
   "s74h-go-restore-staged-guard-removed"
-T74H_OUT="$WORK/s74h-out"
-run_go_guard_dump "setup-s74h-go-corrupted-build" "$T74H_MOD" "$T74H_OUT"
-assert_guard_exit "git-branch-guard/restore-path/detection-catches-overblock-staged" \
-  "$T74H_OUT/scripts/trackfw-git-branch-guard.sh" \
+T74H_BIN="$WORK/s74h-bin/trackfw"
+mkdir -p "$(dirname "$T74H_BIN")"
+build_go_or_fail "setup-s74h-go-corrupted-build" "$T74H_MOD" "$T74H_BIN"
+assert_guard_bin_exit "git-branch-guard/restore-path/detection-catches-overblock-staged" \
+  "$T74H_BIN" \
   '{"tool_input":{"command":"git restore --staged foo.txt"}}' 2
 
 # --- 74h-bis — --staged NUNCA basta sozinho para liberar quando --worktree/-W
@@ -5810,23 +5866,22 @@ cp -r "$ROOT_DIR/internal/." "$T74H2_MOD/internal/"
 cp "$ROOT_DIR/go.mod" "$T74H2_MOD/go.mod"
 cp "$ROOT_DIR/go.sum" "$T74H2_MOD/go.sum"
 corrupt_literal \
-  "$ROOT_DIR/internal/generators/scaffold.go" "$T74H2_MOD/internal/generators/scaffold.go" \
-  '            --worktree|-W)
-' \
-  '            __never_matches_s74h2__)
-' \
+  "$ROOT_DIR/internal/guard/gitbranch.go" "$T74H2_MOD/internal/guard/gitbranch.go" \
+  $'case t == "--worktree" || t == "-W":' \
+  $'case false: // [falsified s74h2]' \
   "s74h2-go-restore-worktree-discriminant-removed"
-T74H2_OUT="$WORK/s74h2-out"
-run_go_guard_dump "setup-s74h2-go-corrupted-build" "$T74H2_MOD" "$T74H2_OUT"
-assert_guard_exit "git-branch-guard/restore-path/detection-catches-underblock-staged-plus-worktree" \
-  "$T74H2_OUT/scripts/trackfw-git-branch-guard.sh" \
+T74H2_BIN="$WORK/s74h2-bin/trackfw"
+mkdir -p "$(dirname "$T74H2_BIN")"
+build_go_or_fail "setup-s74h2-go-corrupted-build" "$T74H2_MOD" "$T74H2_BIN"
+assert_guard_bin_exit "git-branch-guard/restore-path/detection-catches-underblock-staged-plus-worktree" \
+  "$T74H2_BIN" \
   '{"tool_input":{"command":"git restore --staged --worktree foo.txt"}}' 0
 
 # Auto-discriminação: contra o MESMO build corrompido, "--staged" sozinho
 # (sem --worktree) precisa continuar livre — prova que a corrupção isola só o
 # discriminante --worktree/-W, não a liberação de --staged como um todo.
-assert_guard_exit "git-branch-guard/restore-path/detection-does-not-break-staged-alone" \
-  "$T74H2_OUT/scripts/trackfw-git-branch-guard.sh" \
+assert_guard_bin_exit "git-branch-guard/restore-path/detection-does-not-break-staged-alone" \
+  "$T74H2_BIN" \
   '{"tool_input":{"command":"git restore --staged foo.txt"}}' 0
 
 # --- 74i — git checkout -- <path> | checkout . bloqueia; checkout <branch> livre
@@ -5844,16 +5899,15 @@ cp -r "$ROOT_DIR/internal/." "$T74I_MOD/internal/"
 cp "$ROOT_DIR/go.mod" "$T74I_MOD/go.mod"
 cp "$ROOT_DIR/go.sum" "$T74I_MOD/go.sum"
 corrupt_literal \
-  "$ROOT_DIR/internal/generators/scaffold.go" "$T74I_MOD/internal/generators/scaffold.go" \
-  '            --|.)
-' \
-  '            __never_matches_s74i__)
-' \
+  "$ROOT_DIR/internal/guard/gitbranch.go" "$T74I_MOD/internal/guard/gitbranch.go" \
+  $'for _, t := range rest {\n\t\t\tif t == "--" || t == "." {' \
+  $'for range rest {\n\t\t\tif false { // [falsified s74i]' \
   "s74i-go-checkout-path-discriminant-removed"
-T74I_OUT="$WORK/s74i-out"
-run_go_guard_dump "setup-s74i-go-corrupted-build" "$T74I_MOD" "$T74I_OUT"
-assert_guard_exit "git-branch-guard/checkout-path/detection-catches-bypass" \
-  "$T74I_OUT/scripts/trackfw-git-branch-guard.sh" \
+T74I_BIN="$WORK/s74i-bin/trackfw"
+mkdir -p "$(dirname "$T74I_BIN")"
+build_go_or_fail "setup-s74i-go-corrupted-build" "$T74I_MOD" "$T74I_BIN"
+assert_guard_bin_exit "git-branch-guard/checkout-path/detection-catches-bypass" \
+  "$T74I_BIN" \
   '{"tool_input":{"command":"git checkout -- foo.txt"}}' 0
 
 T74J_MOD="$WORK/s74j-mod"
@@ -5863,16 +5917,15 @@ cp -r "$ROOT_DIR/internal/." "$T74J_MOD/internal/"
 cp "$ROOT_DIR/go.mod" "$T74J_MOD/go.mod"
 cp "$ROOT_DIR/go.sum" "$T74J_MOD/go.sum"
 corrupt_literal \
-  "$ROOT_DIR/internal/generators/scaffold.go" "$T74J_MOD/internal/generators/scaffold.go" \
-  '            --|.)
-' \
-  '            *)
-' \
+  "$ROOT_DIR/internal/guard/gitbranch.go" "$T74J_MOD/internal/guard/gitbranch.go" \
+  $'if t == "--" || t == "." {' \
+  $'if t != "" { // [falsified s74j: match any non-empty token]' \
   "s74j-go-checkout-path-discriminant-widened"
-T74J_OUT="$WORK/s74j-out"
-run_go_guard_dump "setup-s74j-go-corrupted-build" "$T74J_MOD" "$T74J_OUT"
-assert_guard_exit "git-branch-guard/checkout-path/detection-catches-overblock-branch" \
-  "$T74J_OUT/scripts/trackfw-git-branch-guard.sh" \
+T74J_BIN="$WORK/s74j-bin/trackfw"
+mkdir -p "$(dirname "$T74J_BIN")"
+build_go_or_fail "setup-s74j-go-corrupted-build" "$T74J_MOD" "$T74J_BIN"
+assert_guard_bin_exit "git-branch-guard/checkout-path/detection-catches-overblock-branch" \
+  "$T74J_BIN" \
   '{"tool_input":{"command":"git checkout main"}}' 2
 
 # ---------------------------------------------------------------------------

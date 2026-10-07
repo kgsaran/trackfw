@@ -5370,24 +5370,28 @@ coisa que sobrou no escopo de projeto**. O risco real de documentação é algu�
 como as demais regras do validador — `applyRule`/`applyRuleTagged`, `internal/validator/validator.go:120,136`):
 
 - Para cada arquivo de hook de **projeto** que **existir** — a lista fechada `credentialGuardHookFiles`
-  em `validator_credential_guard.go:28-35`: `.claude/settings.json`, `.codex/hooks.json`,
-  `.gemini/settings.json`, `.cursor/hooks.json`, `.github/hooks/trackfw-attention.json`,
-  `.kiro/hooks/trackfw-attention.json` — varre recursivamente o JSON já decodificado
+  em `validator_credential_guard.go:64-107` (ML-2C: 8 entradas): `.claude/settings.json`,
+  `.codex/hooks.json`, `.gemini/settings.json`, `.cursor/hooks.json`,
+  `.github/hooks/trackfw-attention.json`, `.kiro/hooks/trackfw-attention.json`,
+  `.windsurf/hooks.json` (adicionado ML-2C), `.amazonq/cli-agents/q_cli_default.json`
+  (adicionado ML-2C) — varre recursivamente o JSON já decodificado
   (`collectCredentialGuardCommands`) e coleta todo valor-string que referencia
   `trackfw-credential-guard.sh`, independentemente do nome do campo (`command`, `bash`,
   `action.command` — varredura por valor, não por schema, decisão de design registrada no
   comentário de `collectCredentialGuardCommands`).
-- **Resolve o caminho** usando exatamente as 3 formas que o trackfw emite hoje (ver acima,
+- **Resolve o caminho** usando exatamente as 4 formas que o trackfw emite hoje (ver acima,
   §"Mecanismo de resolução de caminho dos hooks de projeto, por CLI"): `$CLAUDE_PROJECT_DIR/…` /
   `$GEMINI_PROJECT_DIR/…` substituído pela raiz do projeto; `"$(git rev-parse --show-toplevel)/…"`
   substituído pela raiz do projeto com as aspas literais removidas; caminho relativo puro
-  (Cursor/Copilot/Kiro) resolvido contra a raiz do projeto.
+  (Cursor/Copilot/Kiro) resolvido contra a raiz do projeto; `bash <caminho-relativo>` (Windsurf —
+  `resolveCredentialGuardHookPath` caso 4: remove o prefixo `"bash "` e resolve o restante como
+  caminho relativo, `validator_credential_guard.go:268-277`).
 - Verifica que o script resolvido **existe** (`os.Stat`) e é **executável** (`info.Mode()&0111 != 0`).
 - Mensagem de violação acionável: arquivo de hook, CLI, caminho resolvido, e a ação (`trackfw update`
   regenera o script).
 - Hook ausente ou JSON inválido é **pulado em silêncio** — não é responsabilidade desta regra garantir
   a existência ou a forma do arquivo de hook.
-- Comando que não casa nenhuma das 3 formas de prefixo é **ignorado de propósito** —
+- Comando que não casa nenhuma das 4 formas de prefixo é **ignorado de propósito** —
   `resolveCredentialGuardHookPath` retorna `ok=false` e o chamador não trata isso como violação.
   Não é função desta regra adivinhar wiring próprio do usuário fora dos formatos que o trackfw gera.
 - **Ausência de entrada de guard não é violação** — é o estado legítimo de quem usa só o guard
@@ -5971,6 +5975,25 @@ script canônico Go (`internal/generators/scaffold.go`, const `gitBranchGuardScr
 `trackfw update`/`trackfw update harness` nos 3 CLIs, e está ligado (wiring de hook/deny real) nos 7
 runtimes.
 
+**ML-2A (ADR-2026-10-04, ROADMAP-2026-09-22):** a linha de hook emitida pelo gerador deixou de ser
+um caminho para o `.sh` e passou a ser um comando inline idêntico em todos os shells (mesma string em
+todo CLI de agente), via subcomando Go `trackfw guard`:
+
+| Família de shell | Linha de hook emitida |
+|---|---|
+| PS/POSIX (Claude Code, Codex, Gemini CLI, Cursor, Copilot, Windsurf) | `trackfw guard git-branch; exit $LASTEXITCODE` |
+| cmd.exe (Kiro, Amazon Q) | `trackfw guard git-branch` |
+| Idem para credential-guard | `trackfw guard credential; exit $LASTEXITCODE` / `trackfw guard credential` |
+
+O sufixo `; exit $LASTEXITCODE` é obrigatório na família PS/POSIX: sem o sufixo, o PowerShell envolve
+a invocação em `powershell -Command "…"`, o que mapeia exit 2 → 1 internamente; o sufixo captura o
+exit code real em `$LASTEXITCODE` e o propaga, preservando o exit 2 do guard. Em bash o sufixo é
+inócuo — `$LASTEXITCODE` não é especial e o exit code do último comando já é o do processo.
+`internal/validator/validator_guard_binary_probe_ml2b.go:guardExpectedLine` é o único sítio que
+define a linha por família (`guardShellFamily`), evitando divergência entre gerador e validador.
+
+Os arquivos de configuração deste repositório foram migrados neste ML para a nova forma inline.
+
 | Runtime | Mecanismo | Isolamento do arquiteto |
 |---|---|---|
 | Claude Code | hook `PreToolUse` | **deny global** (decisão 2026-08-14, ver abaixo) |
@@ -6040,6 +6063,68 @@ Mensagem de bloqueio por subcomando (todas referenciam CLAUDE.md §1):
 | `switch -c`/`-C`/`--create` | `trackfw branch new <type>/<slug>` |
 | `commit` | `trackfw commit -m '<mensagem>'` (comando novo, Wave 2 deste roadmap) |
 | `push` | `trackfw ship` |
+
+### Invólucro `.sh` — contrato do thin wrapper (ML-2A, ADR-2026-10-04)
+
+<!-- trackfw-contract: gate=internal/generators/guard_thin_wrapper_test.go partial=testes fail-closed (trackfw ausente/sem subcomando guard) e delegate (binário real bloqueia/permite) — veja comentários AFIRMA em cada teste -->
+
+Os arquivos `scripts/trackfw-git-branch-guard.sh` e `scripts/trackfw-credential-guard.sh` são agora
+**invólucros finos** (thin wrappers) gerados por `internal/generators/scaffold.go`. Contrato (ML-2A):
+
+1. **Sonda do subcomando** — executa `trackfw guard --help` ao iniciar. Se `trackfw` não estiver no
+   PATH ou o subcomando `guard` não existir, o script sai com **exit 2** (fail-closed) em vez de
+   silenciar.
+2. **Passagem de argumentos** — argumentos posicionais (`$1`, `$2`, …) são repassados como
+   `--command "<arg1> <arg2>"`. Quando stdin é um payload JSON (modo hook de agente), o script executa
+   `exec trackfw guard <nome>` sem `--command`; o próprio binário lê e extrai o campo de comando do
+   JSON via stdin.
+3. **exec sem fork extra** — uma vez confirmado que `guard` está disponível, o script usa
+   `exec trackfw guard <nome>` para substituir o processo, não lançar um subprocesso adicional.
+4. **Sem dependência de `$CLAUDE_PROJECT_DIR` nem `git rev-parse`** — o invólucro não precisa saber
+   onde está o repositório; o binário Go resolve o cwd por conta própria.
+
+O comportamento fail-closed do invólucro (sem `trackfw` no PATH, sem subcomando `guard`) é verificado
+por `internal/generators/guard_thin_wrapper_test.go` (ML-2A). As fixtures congeladas em
+`internal/generators/testdata/guard-sh-reference/` são os scripts pré-ML-2A; o teste
+`TestGuardShReferenceFixtures_Sha256` pina o sha256 delas para detectar alteração acidental —
+mas não cobre o invólucro atual.
+
+### Regras do `validate` adicionadas em ML-2B e ML-2C (ADR-2026-10-04)
+
+<!-- trackfw-contract: gate=scripts/check-gates-falsify.sh partial=cenários ML-2B/2C específicos exercem cada uma das novas regras -->
+
+Quatro conjuntos de verificações adicionadas ao validador. ML-2B adicionou a linha exata por família,
+a sonda do binário, a regra `trackfw_binary_in_project_root` e o aviso legado para `.sh`. ML-2C
+adicionou Windsurf e Amazon Q à lista `credentialGuardHookFiles`:
+
+**1. Linha exata por família (`validateGuardHookResolvable`):**
+O validador coleta entradas de hook que contenham `trackfw guard git-branch` ou `trackfw guard
+credential` e verifica se a linha é **exatamente** a esperada para a família de shell daquele CLI
+(`guardExpectedLine` em `validator_guard_binary_probe_ml2b.go:47`):
+- PS/POSIX → `trackfw guard <nome>; exit $LASTEXITCODE`
+- cmd.exe → `trackfw guard <nome>` (sem sufixo)
+
+Se o marcador está presente mas a linha diverge, o validador acusa com a linha esperada e pede
+`trackfw update` para regenerar.
+
+**2. Sonda do subcomando binário (`guardBinaryProbeOnce`):**
+Quando qualquer arquivo de hook usa a nova forma, o validador verifica **uma vez** se:
+- `trackfw` está no PATH (via `exec.LookPath`).
+- `trackfw guard --help` sai com exit 0 (subcomando guard disponível).
+- No Windows, se `trackfw` resolve para um `.ps1` sob política `Restricted`: o sufixo
+  `; exit $LASTEXITCODE` faz a PSSecurityException sair 0 em vez de 2 — **fail-open**; o
+  validador acusa e orienta `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
+
+**3. Regra `trackfw_binary_in_project_root` (`validateTrackfwBinaryInProjectRoot`):**
+Detecta `trackfw.exe`, `trackfw.cmd` ou `trackfw.bat` na raiz do projeto. No Windows, cmd.exe
+busca o CWD antes do PATH — Kiro e Amazon Q executariam o binário local em vez do instalado.
+Violação nomeada por arquivo encontrado; severity padrão `error`.
+
+**4. Aviso legado para `.sh` (`validateGuardHookShLegacyWarnings`):**
+Arquivos de hook de projeto que ainda referenciam `trackfw-git-branch-guard.sh` ou
+`trackfw-credential-guard.sh` recebem um **aviso** (não violation) de que o script não executa no
+Windows fora do Git Bash, com orientação `trackfw update` para migrar. Aviso separado das violations
+para não elevar a severidade da regra (o hook ainda funciona em POSIX/macOS).
 
 ### Caminhos confirmados — Windsurf e Amazon Q (apolo-tf, 2026-08-14, correção pós-auditoria do ML-3A)
 

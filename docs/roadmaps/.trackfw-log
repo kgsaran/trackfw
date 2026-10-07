@@ -392,3 +392,4 @@
 2026-10-04 15:19  ROADMAP-2026-10-04-nao-ha-como-fechar-req-com-criterio-de-aceite-permanentemente-inverificavel-sem-afirmar-algo-falso-e-a-exigencia-de-wave-0-vale-para-roadmap-anterior-a-adr-que-a-criou.md  wip → done  -0300  (kgsaran@gmail.com)
 2026-10-04 15:37  ROADMAP-2026-10-04-pin7-do-gate-de-pins-exige-violacao-que-a-regra-declina-por-desenho-no-windows-e-aborta-os-pins-seguintes.md  backlog → wip  -0300  (kgsaran@gmail.com)
 2026-10-04 16:11  ROADMAP-2026-10-04-pin7-do-gate-de-pins-exige-violacao-que-a-regra-declina-por-desenho-no-windows-e-aborta-os-pins-seguintes.md  wip → done  -0300  (kgsaran@gmail.com)
+2026-10-04 17:17  ROADMAP-2026-09-22-os-hooks-de-guard-nao-executam-no-windows-na-maioria-dos-clis-de-agente-e-o-validate-reporta-instalado.md  backlog → wip  -0300  (kgsaran@gmail.com)

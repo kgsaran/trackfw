@@ -81,6 +81,7 @@ Run 'trackfw init' to set up governance in your project.`,
 		newChangelogCmd(),
 		newDoctorCmd(),
 		newAuditSurfaceCmd(),
+		newGuardCmd(),
 	)
 
 	// trackfw expõe uma única superfície explícita de ajuda ("help").
@@ -128,8 +129,25 @@ func Execute() {
 				fmt.Fprintln(os.Stderr, cmd.UsageString())
 			}
 		}
-		os.Exit(1)
+		// D7 (ADR-2026-10-04): all errors from commands under `trackfw guard`
+		// exit with code 2, not 1. This matches the deny exit code of the guard
+		// itself and lets callers distinguish "guard denied" from "trackfw error".
+		exitCode := 1
+		if isCommandUnderGuard(cmd) {
+			exitCode = 2
+		}
+		os.Exit(exitCode)
 	}
+}
+
+// isCommandUnderGuard reports whether cmd lives in the `trackfw guard` subtree.
+// Used by Execute() to apply D7: exit 2 (instead of 1) for all guard errors.
+func isCommandUnderGuard(cmd *cobra.Command) bool {
+	if cmd == nil {
+		return false
+	}
+	path := cmd.CommandPath()
+	return strings.HasPrefix(path, "trackfw guard")
 }
 
 // formatUnknownCommandError recognizes cobra's own "unknown command %q for %q..."
