@@ -45543,3 +45543,9 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-07 — zeus-tf — PR #528 aberto; CI preso por incidente do GitHub
 
 - PR #528 (Wave 5: matcher `Bash|PowerShell`, sonda do Git Bash no `validate`, provas de CLI real) aberto às 15:07 UTC. As 4 runs ficaram em `queued` sem jobs; `gh run cancel` devolveu HTTP 500. Incidente do GitHub "Git Operations, Pull Requests and Actions" (15:14 UTC; Actions/Webhooks major outage), mitigado às 15:49 UTC. Este commit existe para disparar runs novas.
+
+## 2026-10-07 — zeus-tf — FECHAMENTO: REQ-2026-09-05 (PRs #527 e #528 mergeados)
+
+- REQ para Done com evidência por AC; roadmap em `done/`. AC3 fica **parcial e sem marcar**: shells, Claude Code e Codex provados de ponta a ponta no Windows; Kiro não medido (sem CLI ARM64, sem conta AWS — decisão do KG); Copilot e Amazon Q não verificados.
+- Abertas em backlog: REQ-2026-10-06 (credential guard em Windsurf/Amazon Q) e REQ-2026-10-07 (`init` não instala hooks de Gemini/Kiro na 1ª execução).
+- Pendente fora de REQ: apagar `~/.local/bin/trackfw` após o release; investigar o falso positivo de "JWT" do credential guard global em `~/.trackfw/scripts/`.
