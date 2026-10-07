@@ -222,3 +222,41 @@ Continuam abertas, por decisão daquela ADR: `git${IFS}push`, expansão de chave
 invertida (`g\it`), variáveis e subshell (`$(echo git) push`), `env`/`command` com flags.
 
 Divergência deliberada da fixture `.sh` congelada, no sentido seguro (nega onde o `.sh` liberava).
+
+---
+
+## Adendo — 2026-10-07 (issue #535): a linha de hook falha fechada quando o `trackfw` falta
+
+Com o `trackfw` ausente do PATH de quem executa o hook (app GUI no macOS recebe `/usr/bin:/bin:/usr/sbin:/sbin`;
+máquina nova; binário removido), a linha da D2 revista saía **127** no sh/bash — erro não bloqueante — e o guard
+desligava sem aviso. O `validate` não vê esse caso: ele roda no PATH do terminal. Medição completa em
+`docs/portabilidade/2026-10-07-linha-de-hook-fail-closed-sem-trackfw.md` (ML-6A, duas rodadas, macOS e VM Windows).
+
+### D11 — Linha fail-closed por família, ainda uma string só por CLI
+
+Decisão do KG em 2026-10-07 ("tentar silenciar; se não houver variante silenciosa, adotar a de menor ruído").
+
+| família | CLIs | linha emitida |
+|---|---|---|
+| PowerShell **ou** POSIX | Claude Code, Codex, Gemini, Cursor, Copilot (`command`), Windsurf | `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard <nome>; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE` |
+| `cmd.exe` | Kiro, Amazon Q | `trackfw guard <nome> \|\| exit 2` |
+
+Medido (binário ausente / guard nega / guard libera): **2 / 2 / 0** em sh e bash (macOS), Git Bash, PowerShell 5.1
+(`-Command`) e `cmd /c`.
+
+Como funciona a linha PS/POSIX:
+- **sh/bash:** `$LASTEXITCODE` é vazio, então a semente vira o comando `=2`, que falha em silêncio (`${null-/dev/null}`
+  expande para `/dev/null`); `LASTEXITCODE=$((2*!!$?))` vale 2 para qualquer saída ≠ 0 do `trackfw` (127 se ausente,
+  2 se negou) e 0 se liberou.
+- **PowerShell:** a semente atribui 2 a `$LASTEXITCODE`; se o `trackfw` não existe, o valor não muda e sai 2; se existe,
+  vale a saída dele. O trecho `LASTEXITCODE=…` não é atribuição no PS (vira comando inexistente) e não altera nada.
+
+**Custos aceitos (medidos):**
+- No PowerShell 5.1, uma linha de erro `CommandNotFound` no stderr em toda execução (o trecho `LASTEXITCODE=…`); no
+  sh/bash, stderr limpo nos casos B e C.
+- Dentro de bloco `& { … }`, `-File` ou `.ps1`, a semente vira variável local e a linha **nega tudo** — falha no sentido
+  seguro. Os CLIs medidos rodam o hook como string de comando (`-Command`/`bash -c`).
+- A string é críptica. Fica num sítio único no gerador e é afirmada por teste de concordância gerador↔validator.
+
+Revê o registro da Wave 0 de que uma string fail-closed universal seria impossível no PS 5.1: o `|| exit 2` de fato
+não parseia lá, mas a semente em `$LASTEXITCODE` resolve sem ele.

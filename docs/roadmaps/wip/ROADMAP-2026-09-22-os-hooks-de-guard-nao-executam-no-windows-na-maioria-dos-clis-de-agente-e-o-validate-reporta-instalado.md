@@ -508,6 +508,13 @@ zera. Os testes do ML-5A usaram fixture só com os grupos de shell — falha de 
       em toda execução (`=2: command not found` no sh; CommandNotFound no PS) e, dentro de bloco `& { }`/`.ps1`, nega tudo.
       `cmd`: `trackfw guard <n> || exit 2` dá 2/2/0. Decisão (D11) pendente com o KG.
 
-### ML-6B — Implementação (após decisão registrada como D11 na ADR-2026-10-04)
-**Status:** ⬜ Pendente
+### ML-6B — Implementação da D11 (ADR-2026-10-04, adendo de 2026-10-07)
+**Status:** 🔄 Em andamento
+**Squad:** apolo-tf
+**Files affected:** `internal/generators/` (constantes da linha, migração do `update`), `internal/validator/` (linha esperada por família), configs deste repositório, `scripts/check-*.sh` que afirmem a linha, `docs/cli-parity.md`, `README.md`
+**Acceptance criteria:**
+- [ ] Gerador emite as linhas da D11 (sítio único); `update` migra as duas formas anteriores (D2 revista e `.sh`), idempotente
+- [ ] `validate` aceita exatamente as linhas da D11 e acusa as anteriores (aviso para migrar) — teste de concordância gerador↔validator verde
+- [ ] Teste de comportamento: a linha emitida, rodada por `sh -c` e `bash -c` com PATH sem `trackfw`, sai 2; com o binário, 2 (nega) e 0 (libera)
+- [ ] `make quality` verde sem `~/.local/bin` no PATH
 
