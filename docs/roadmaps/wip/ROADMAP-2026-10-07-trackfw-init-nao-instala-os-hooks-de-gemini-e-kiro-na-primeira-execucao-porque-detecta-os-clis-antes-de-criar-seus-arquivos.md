@@ -22,9 +22,9 @@ e `discover` (`commands/discover.go:161`).
 
 ## Acceptance Criteria
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
-- [ ] Uma única execução de `trackfw init --ai-tools <lista>` instala o hook de guard de cada CLI pedido (AC2 da REQ)
-- [ ] `update` e `discover` varridos: mesma causa corrigida aqui, com teste (AC3)
-- [ ] Falsificação: voltar a ordem antiga reprova o teste (AC4)
+- [x] Uma única execução de `trackfw init --ai-tools <lista>` instala o hook de guard de cada CLI pedido (AC2 da REQ)
+- [x] `update` e `discover` varridos: mesma causa corrigida aqui, com teste (AC3)
+- [x] Falsificação: voltar a ordem antiga reprova o teste (AC4)
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -61,7 +61,7 @@ grep -q "Veredito" docs/seguranca/2026-10-07-wave0-init-instala-hooks-pedidos.md
 > Dependencies: Wave 0 auditada.
 
 ### ML-1A — O `init` instala o hook de cada CLI pedido em `--ai-tools`, numa execução só
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Files affected:** `internal/commands/init.go`, `internal/generators/hooks.go`, `internal/generators/scaffold.go` (+ testes); `discover`/`update` só se a varredura achar a mesma causa
 **Acceptance criteria:**
@@ -71,12 +71,12 @@ grep -q "Veredito" docs/seguranca/2026-10-07-wave0-init-instala-hooks-pedidos.md
 - [x] Corrigir o comentário de `internal/generators/agentfiles.go` (~2422) que diz que o `InjectKiroHooks` nunca instala o git-branch-guard (instala)
 - [x] Varredura de `update` e `discover` com resultado escrito; mesma causa → corrigida aqui com teste — `update` e `discover` rodam depois que os arquivos existem (detecção funciona); `discover --init` chama duas vezes de forma idempotente (Wave 0); a mesma causa estava no `install` → ML-1B
 - [x] Falsificação: voltar a ordem antiga reprova o teste dos 7 CLIs afetados (o claude passa na ordem antiga e não serve de prova)
-- [ ] `go test ./internal/commands/ ./internal/generators/ -count=1` e `make quality` (arquiteto, sem `~/.local/bin` no PATH) verdes
+- [x] `go test ./internal/commands/ ./internal/generators/ -count=1` e `make quality` (arquiteto, sem `~/.local/bin` no PATH) verdes
       Auditoria (2026-10-07): mecanismo = despacho por nome (`InjectHooksForTools`, no fim do `installAITools`), não
       reordenação — a reordenação não cobriria o Kiro com escopo global. Tabela remedida com o binário: guard na 1ª
       execução nos 8 CLIs (eram 1). 15 subtestes conferidos pelo arquiteto. Observação: o `agents install` num projeto
       sem `init` cria o hook de attention que aponta para `scripts/trackfw-attention-*.sh` ainda inexistentes (o guard
-      chama o `trackfw` direto e funciona). Falta só `make quality`.
+      chama o `trackfw` direto e funciona). `make quality` pelo arquiteto (sem `~/.local/bin` no PATH): exit 0, 0 GUARDA.
 
 ### ML-1B — `install` de agents/skills: mesma causa (Wave 0)
 **Status:** ✅ Concluído
