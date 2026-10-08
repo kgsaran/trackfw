@@ -7,6 +7,29 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [9.4.0] - 2026-10-08
+
+### Added
+
+- **`req_done_open_criteria` mostra quantas REQs isentas são herdadas do upstream.** Num fork com remote `upstream`
+  (diferente do `origin`), a linha agregada ganha `(K inherited from upstream/<ramo>)`, por basename contra o
+  `req_dir` do próprio upstream. Sem `upstream`, a saída é byte-idêntica. Nenhuma decisão da regra muda. Relatado
+  por @lourivalgarciajunior. (#545, closes #542, REQ-2026-10-08)
+
+### Fixed
+
+- 🔴 **Credential guard no Windsurf e no Amazon Q.** `init`/`update` instalam o guard em Windsurf `pre_run_command` e
+  `pre_write_code` (projeto e harness global `~/.codeium/windsurf/hooks.json`) e em Amazon Q `preToolUse`
+  `execute_bash` e `fs_write`; o `validate` deixa de silenciar esses arquivos. (#543, REQ-2026-10-06)
+- 🔴 **Bypasses do credential guard em modo `block`, inclusive no Claude Code.** O guard lê o payload por JSON
+  (`command`/`command_line` em qualquer profundidade, com BOM); a isenção de `> /dev/null` vale só para `echo`/`printf`
+  simples. Antes passavam: Write/Edit com credencial e `> /dev/null` no conteúdo, `cat "arquivo"` entre aspas,
+  `| tee arquivo > /dev/null`, `dd`, `python -c`. Em `block`, um `curl` com token literal e saída em `/dev/null` passa
+  a bloquear. (#543)
+- 🔴 **Windows: caminho Git Bash e redirecionamento com letra de unidade.** `cat /c/Users/...` (e `/C/`, `/cygdrive/c/`)
+  e `> C:\...` agora são varridos; um ADS nomeado (`arq:stream`) varre o arquivo base. Tradução só no Windows e
+  fora do PowerShell. Relatado por @lourivalgarciajunior. (#546, closes #544)
+
 ## [9.3.3] - 2026-10-08
 
 ### Fixed
