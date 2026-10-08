@@ -538,3 +538,191 @@ $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2
 - Binário Windows: `GOOS=windows GOARCH=arm64 go build -o <scratchpad>/ml6a2/trackfw.exe ./cmd/trackfw` → trackfw 9.3.1
 - Scripts de teste Windows: `test_eap2.bat` (R_EAP A/B/C + Cpoly baseline), `test_eap.bat` (descartado — PS sem caminho completo), `cnull_test.sh` (C_NULL Git Bash A), `probes.bat` (probes PS para ${null-/dev/null} e EAP+redirect)
 - Pasta limpa: `C:\Users\Lab\ml6a2` apagada ao fim desta rodada
+
+---
+
+## ML-6C — saída ≠ 0 do trackfw no PowerShell (2026-10-07)
+
+> REQ: REQ-2026-09-05 (issue #538)
+> Branch: `fix/hooks-de-guard-executam-no-windows-saida-nao-zero-no-powershell`
+> Objetivo: confirmar que D11 (C_NULL, emitida na 9.3.2) é fail-open quando `trackfw` sai com
+> código ∉ {0, 2} em PowerShell 5.1; medir candidatos que normalizam qualquer saída ≠ 0 para 2.
+
+### Problema medido (baseline D11)
+
+A issue #538 reporta: `trackfw` saindo com exit 1 ou 3 em PS 5.1 atravessa o código íntegro — fail-open.
+Em bash/sh, `LASTEXITCODE=$((2*!!$?))` normaliza qualquer `$?` ≠ 0 para 2.
+Em PS, `LASTEXITCODE=$((2*!!$?))` é CommandNotFound e **não atualiza `$LASTEXITCODE`** — o valor do
+`trackfw` vaza direto para o `exit`.
+
+### Ambiente
+
+- macOS (host): sh (POSIX mode), bash 3.2.57
+- VM: PowerShell 5.1.26100.9549, Git Bash (`/usr/bin/bash`), cmd.exe
+- Stubs: macOS — script `sh` lê `$FAKE_RC`; Windows — `trackfw.cmd` lê `%FAKE_RC%` (cmd/PS),
+  `trackfw` sh (sem extensão) lê `$FAKE_RC` (Git Bash)
+- PATH presente: `C:\Users\Lab\ml6c\bin` primeiro; PATH ausente: apenas system PATH
+- Pasta VM: `C:\Users\Lab\ml6c` — criada para a medição, apagada ao final
+
+### Candidatos
+
+| ID | Linha exata |
+|---|---|
+| **D11** (baseline) | `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE` |
+| **D11P** (arquiteto) | `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE` |
+| **D11PP** (variante) | `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)) 2>${null-/dev/null}; $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE` |
+| **C5** (PS-only) | `trackfw guard git-branch; if (-not $?) { exit 2 }; exit $LASTEXITCODE` |
+
+**D11P** acrescenta um 4º trecho ao D11: `$LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}`.
+- Em PS: atribuição válida — `2*!!$LASTEXITCODE` = `2*(bool)$LASTEXITCODE` → 0 se 0, 2 se ≠ 0.
+- Em bash/sh: expande para um comando como `2=2*!!2 2>/dev/null` — inerte, silenciado (ver glob).
+
+**D11PP** tenta também suprimir o ruído da 3ª instrução em PS com `2>${null-/dev/null}`, mas a
+medição mostra que isso NÃO suprime o erro (mesma contagem que D11P — ver stderr).
+
+**C5** como string única: `if (-not $?) { exit 2 }` é sintaxe PS válida, mas em bash/sh `{` sem
+`then` causa `syntax error near unexpected token '{'` → **DENY-ALL** em bash/sh.
+
+### Análise de glob no D11P (bash/sh)
+
+A 4ª instrução expande em bash (ex. FAKE_RC=1: `LASTEXITCODE=2` após passo 3):
+`$LASTEXITCODE=2*!!$LASTEXITCODE 2>/dev/null` → `2=2*!!2 2>/dev/null`
+
+O `*` em `2=2*!!2` passa por glob expansion. Para confirmar que casamentos reais não afetam o
+resultado, arquivos de nomes casando (`2=2abc!!2`, `0=2abc!!0`) foram criados no CWD e o teste foi
+re-executado:
+
+| Shell | RC=0 | RC=1 | RC=2 | RC=3 | ausente |
+|---|---|---|---|---|---|
+| sh (cwd com `2=2abc!!2`) | 0 | 2 | 2 | 2 | 2 |
+| bash (cwd com `2=2abc!!2`) | 0 | 2 | 2 | 2 | 2 |
+
+**Resultado:** idêntico ao caso sem arquivos. Motivo: o arquivo criado por `touch` não tem bit +x;
+bash tenta executá-lo, falha com "permission denied" (exit 126), e o erro é silenciado por
+`2>/dev/null`. A variável `LASTEXITCODE` (atribuída no passo 3) não é alterada.
+Mesmo que o arquivo fosse executável, `exit $LASTEXITCODE` lê a variável (não `$?`), que permanece
+com o valor do passo 3. O glob é inerte.
+
+### Matriz de resultados
+
+Formato `exit` por cenário. Meta: `0` quando `trackfw` sai 0; `2` em todos os demais.
+
+#### macOS sh (`sh -c`)
+
+| Candidato | RC=0 | RC=1 | RC=2 | RC=3 | ausente | Meta? |
+|---|---|---|---|---|---|---|
+| D11 | 0 | 2 | 2 | 2 | 2 | ✓ |
+| D11P | 0 | 2 | 2 | 2 | 2 | ✓ |
+| C5 | 2 | 2 | 2 | 2 | 2 | ✗ DENY-ALL |
+
+stderr C5: `sh: syntax error near unexpected token '{'` em todos os cenários.
+stderr D11/D11P: silencioso para RC=0..3; `trackfw: command not found` para ausente.
+
+#### macOS bash (`bash -c`) — idêntico ao sh
+
+D11/D11P: PASS (2/2/2/2). C5: DENY-ALL.
+
+#### Git Bash não-login (`/usr/bin/bash -c`, PATH forçado)
+
+| Candidato | RC=0 | RC=1 | RC=2 | RC=3 | ausente | Meta? |
+|---|---|---|---|---|---|---|
+| D11 | 0 | 2 | 2 | 2 | 2 | ✓ |
+| D11P | 0 | 2 | 2 | 2 | 2 | ✓ |
+| C5 | 2 | 2 | 2 | 2 | 2 | ✗ DENY-ALL |
+
+**Nota:** D11 já normaliza RC=1→2 e RC=3→2 em Git Bash via `LASTEXITCODE=$((2*!!$?))`. O defeito
+reportado em #538 existe somente na família PowerShell.
+
+#### PowerShell 5.1 (`powershell -NoProfile -Command`, escopo global)
+
+Teste via `powershell -EncodedCommand <b64>` chamado por bat, com PATH e FAKE_RC embutidos no
+comando codificado. Stderr capturado em arquivos CLIXML por `2>file.txt` no bat.
+
+| Candidato | RC=0 | RC=1 | RC=2 | RC=3 | ausente | Meta? |
+|---|---|---|---|---|---|---|
+| D11 | 0 | **1** | 2 | **3** | 2 | ✗ FAIL-OPEN RC=1,3 |
+| D11P | 0 | **2** | 2 | **2** | 2 | ✓ |
+| D11PP | 0 | 2 | 2 | 2 | 2 | ✓ |
+| C5 | 0 | 2 | 2 | 2 | 2 | ✓ |
+
+**D11 confirma o defeito:** RC=1→1, RC=3→3 (fail-open). Única falha: PS não executa
+`LASTEXITCODE=$((2*!!$?))` como atribuição, então o valor do `trackfw` não é normalizado.
+
+**D11P corrige o defeito:** `$LASTEXITCODE=2*!!$LASTEXITCODE` é atribuição PS válida.
+Mecanismo: `!!1` = True = 1; `2*1` = 2. `!!3` = True = 1; `2*1` = 2. `!!0` = False = 0; `2*0` = 0.
+
+**D11PP** corrige igualmente. Não suprime ruído adicional vs D11P (ver stderr abaixo).
+
+**C5** corrige via `if (-not $?)` — mas DENY-ALL em bash/sh.
+
+**Stderr PS por candidato (medido via CLIXML — campos `S="Error"` por arquivo de 2>):**
+
+| Candidato | RC=0..3 presente | ausente |
+|---|---|---|
+| D11 | 9 campos — 1 erro: `LASTEXITCODE=$((2*!!$?)) CommandNotFound` | 17 campos — 2 erros: trackfw + LASTEXITCODE |
+| D11P | 9 campos — mesma msg (4ª instrução = atribuição válida, sem erro) | 17 campos — idem |
+| D11PP | 9 campos — mesma msg (redirect no passo 3 NÃO suprime o erro em PS) | 17 campos — idem |
+| C5 | **0 campos** — silencioso | ~15 linhas CLIXML — 1 erro: trackfw CommandNotFound |
+
+**Erro literal E1** (D11/D11P/D11PP, cenários presente):
+```
+LASTEXITCODE=$((2*!!$?)) : O termo 'LASTEXITCODE=$((2*!!$?))' não é reconhecido como
+nome de cmdlet, função, arquivo de script ou programa operável.
+```
+
+**Erro literal E2** (D11/D11P/D11PP, cenário ausente — adicional ao E1):
+```
+trackfw : O termo 'trackfw' não é reconhecido como nome de cmdlet, função, arquivo
+de script ou programa operável.
+```
+
+Nota sobre D11PP: adicionar `2>${null-/dev/null}` na 3ª instrução (`LASTEXITCODE=$((2*!!$?)) 2>...`)
+não suprime o erro E1 em PS — contagem de campos S="Error" idêntica à do D11P.
+
+#### cmd (`cmd /c "trackfw guard git-branch || exit 2"`) — C3, família Kiro
+
+| Cenário | RC=0 | RC=1 | RC=2 | RC=3 | ausente | Meta? |
+|---|---|---|---|---|---|---|
+| C3 exit | 0 | **2** | 2 | **2** | 2 | ✓ |
+
+C3 normaliza RC=1→2 e RC=3→2 via `||` do cmd. Ausente: `trackfw` não encontrado (msg no stdout do
+cmd), `|| exit 2` é executado, sai 2. **C3 fecha a classe inteira em cmd, incluindo RC=1 e RC=3.**
+
+D11/D11P em `cmd /c`: sempre saem 1 (`;` não separa em cmd; `$LASTEXITCODE=2` é comando inexistente
+→ ERRORLEVEL=1). Não projetados para cmd; C3 permanece a linha correta para Kiro e Amazon Q.
+
+### Veredito
+
+**D11P cumpre a meta (exit=0/2/2/2/2) em todos os shells da família bash+PS.**
+
+```
+$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE
+```
+
+| Shell | RC=0 | RC=1 | RC=2 | RC=3 | ausente | Meta |
+|---|---|---|---|---|---|---|
+| macOS sh | 0 | 2 | 2 | 2 | 2 | ✓ |
+| macOS bash | 0 | 2 | 2 | 2 | 2 | ✓ |
+| Git Bash | 0 | 2 | 2 | 2 | 2 | ✓ |
+| PS 5.1 | 0 | 2 | 2 | 2 | 2 | ✓ |
+| cmd (C3) | 0 | 2 | 2 | 2 | 2 | ✓ (linha diferente, inalterada) |
+
+**Ruído PS:** idêntico ao D11 — 1 erro E1 por cenário presente; 2 erros (E2+E1) para ausente.
+A 4ª instrução de D11P não acrescenta ruído: é atribuição PS válida.
+
+**D11PP**: mesma correctness, mesmo ruído. Não há ganho em adicionar redirect à 3ª instrução.
+
+**C5 PS-only**: silenciosa para RC=0..3 mas deny-all em bash/sh. Não viável como string única.
+
+**Precondição PS (herdada do D11/C_NULL):** funciona somente em escopo global (`-Command` direto).
+Script blocks (`& { }`), `-File` ou `.ps1` → deny-all por scoping de `$LASTEXITCODE`.
+
+### Artifacts desta rodada
+
+- Stubs macOS: `trackfw` sh lê `$FAKE_RC`
+- Stubs Windows: `trackfw.cmd` (lê `%FAKE_RC%`), `trackfw` sh (lê `$FAKE_RC`)
+- Bat principal: `ml6c_v2.bat` — cmd C3 + PS D11/D11P/D11PP/C5 via `-EncodedCommand`, stderr `2>file.txt`
+- Git Bash: `gb_test2.sh` com `export PATH=...` e `/usr/bin/bash -c`
+- PS aux: `ps_test_simple.ps1` (exit-only), `ps_parse_clixml.ps1` (CLIXML S="Error" count)
+- Glob check: arquivos `2=2abc!!2` e `0=2abc!!0` criados/apagados em scratchpad/ml6c/
+- Pasta VM criada e apagada: `C:\Users\Lab\ml6c`

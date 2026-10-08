@@ -45647,6 +45647,55 @@ Achados notáveis para o apolo-tf:
 
 - D11: linha de hook fail-closed sem o `trackfw` no PATH (2/2/0 em sh, bash, Git Bash, PS 5.1 e `cmd`). REQ de volta a Done, roadmap em `done/`, label `req-aberta` retirada da #535. Lição: o primeiro relatório do ML-6B afirmou `make quality` exit 0 com saída truncada; o arquiteto mediu e era falso (s67). Só aceitar exit code medido pelo arquiteto.
 
+## 2026-10-07 — ares-tf — INÍCIO: ML-6C — Medição de saída ≠ 0 do trackfw no PowerShell (issue #538)
+
+- Branch: `fix/hooks-de-guard-executam-no-windows-saida-nao-zero-no-powershell` (worktree trackfw-538)
+- Escopo: medição pura — proibido alterar código, configs, roadmap; proibido git ops
+- Objetivo: medir D11 baseline + candidatos para normalizar exit ≠ {0,2} no PowerShell 5.1; FAKE_RC = 0,1,2,3,ausente
+- Entrega: seção nova "ML-6C — saída ≠ 0 do trackfw no PowerShell (2026-10-07)" no doc de portabilidade
+
+## 2026-10-07 — ares-tf — FIM: ML-6C — Medição saída ≠ 0 do trackfw no PowerShell (issue #538)
+
+- Seção "ML-6C — saída ≠ 0 do trackfw no PowerShell (2026-10-07)" adicionada ao doc de portabilidade
+- **D11 confirmado fail-open em PS:** RC=1→1, RC=3→3 (reproduz exatamente o defeito da issue #538)
+- **D11P (arquiteto) PASSA:** `$LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}` no 4º slot normaliza qualquer RC≠0 para 2 em PS; em bash/sh instrução silenciada (inerte)
+- D11P macro-resultado: 0/2/2/2/2 em sh, bash, Git Bash e PS 5.1
+- **D11PP** (4º candidato): redireciona passo 3 em PS — mesma correctness que D11P, mesmo ruído (redirect não suprime E1 em PS)
+- **Ruído PS (CLIXML S="Error" fields):** D11/D11P/D11PP presentes = 9 campos (1 erro E1: LASTEXITCODE CommandNotFound); ausente = 17 campos (2 erros: E2 trackfw + E1)
+- **C5 PS-only:** correta e silenciosa em PS (0 campos para RC=0..3), mas deny-all em bash/sh (syntax error `{`)
+- **cmd C3 medido:** `trackfw guard git-branch || exit 2` → 0/2/2/2/2 em cmd; confirma que família cmd/Kiro usa C3 sem mudança
+- **Glob confirmado com arquivos casantes:** `2=2abc!!2` e `0=2abc!!0` no CWD — resultado idêntico (inerte, +x ausente → exit 126, silenciado)
+- VM limpa: `C:\Users\Lab\ml6c` apagado
+- Artefatos medição em scratchpad/ml6c/ (sessão encerrada)
+- git status --short: docs/portabilidade/doc atualizado + docs/agents-working-context.md modificado
+
+## 2026-10-07 — apolo-tf — INÍCIO: ML-6C Implementação — D11 revista com 4º trecho PS
+
+- Branch: `fix/hooks-de-guard-executam-no-windows-saida-nao-zero-no-powershell` (worktree trackfw-538)
+- Escopo: implementar D11 revista (4º trecho `$LASTEXITCODE=2*!!$LASTEXITCODE`) no gerador, update, validate, configs e testes
+- String alvo (PS/POSIX): `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard <nome>; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+- Arquivos afetados: agentfiles.go, update.go, validator_guard_binary_probe.go, validator_credential_guard.go, configs JSON, scripts, docs
+
+## 2026-10-07 — apolo-tf — FIM: ML-6C Implementação — D11 revista com 4º trecho PS
+
+- Branch: `fix/hooks-de-guard-executam-no-windows-saida-nao-zero-no-powershell` (worktree trackfw-538)
+- Status: CONCLUÍDO — build OK, 3/3 pacotes verdes, falsificações confirmadas
+- Arquivos modificados:
+  - `internal/generators/agentfiles.go`: 3 constantes PS/POSIX atualizadas + bloco legacyD11 adicionado
+  - `internal/generators/update.go`: migrações old-D11 → new-D11 em todos os CLIs (Claude, Codex, Gemini, Cursor, Windsurf, Copilot)
+  - `internal/generators/fail_closed_d11_behavior_test.go`: reescrito — `d11LineFor` usa constantes do gerador; tabela RC=0,1,2,3,absent × sh × bash × pwsh
+  - `internal/validator/validator_guard_binary_probe.go`: `guardExpectedLine` retorna new D11; `guardD11LegacyLine` adicionado
+  - `internal/validator/validator_credential_guard.go`: `validateGuardHookResolvable` + D11 legacy warning functions
+  - `internal/validator/validator_git_branch_guard.go`: `validateGuardGlobalHookResolvable` + D11 legacy warning functions
+  - `internal/validator/validator.go`: chamadas às novas funções D11 legacy warning
+  - `internal/commands/update_harness_test.go`, `internal/generators/update_test.go`: 9 wantCmd cada → new D11
+  - `internal/validator/validator_guard_binary_probe_test.go`: 4 strings → new D11
+  - `internal/validator/validator_guard_binary_probe_windsurf_amazonq_test.go`: 2 strings → new D11
+  - `internal/validator/validator_git_branch_guard_test.go`: fixture D11 atualizada; novo helper legacyD11; novo teste legacy D11 warning
+  - `.claude/settings.json`, `.codex/hooks.json`, `.gemini/settings.json`: 7/5/7 linhas → new D11
+  - `scripts/check-validate-rule-pins.sh`: fixture D11 → new D11
+  - `docs/cli-parity.md`, `README.md`: tabelas e descrição D11 atualizadas (ML-6C)
+- Falsificações: (1) remover 4º segmento → PS RC=1 e RC=3 falham; (2) `$?` no lugar de `2*!!$?` → sh/bash RC=1, RC=3, absent falham
 ## 2026-10-07 — zeus-tf — INÍCIO: REQ-2026-10-07 (init não instala hooks de Gemini e Kiro na 1ª execução)
 
 - Roadmap em wip, branch `fix/trackfw-init-nao-instala-os-hooks-de-gemini-e-kiro`. Causa lida: `Scaffold` → `InjectHooksDetected` antes de `installAITools`; Kiro detectado só por `.kiro`. Wave 0 (hades-tf) despachada.

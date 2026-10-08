@@ -810,7 +810,7 @@ func TestUpdateHarnessCredentialGuardClaudeInstallsAbsolutePathWithInstallMissin
 	}
 
 	// ML-2A: harness now emits inline command instead of abs .sh path.
-	wantCmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
+	wantCmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
 	for _, event := range []string{"PreToolUse", "PostToolUse"} {
 		hooks, _ := doc["hooks"].(map[string]interface{})
 		if hooks == nil {
@@ -1018,7 +1018,7 @@ func TestUpdateHarnessCredentialGuardCodexInstallsAbsolutePathWithInstallMissing
 	}
 
 	// ML-2A: harness now emits inline command instead of abs .sh path.
-	wantCmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
+	wantCmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
 	for _, event := range []string{"PreToolUse", "PostToolUse"} {
 		hooks, _ := doc["hooks"].(map[string]interface{})
 		if hooks == nil {
@@ -1229,7 +1229,7 @@ func TestUpdateHarnessCredentialGuardGeminiInstallsAbsolutePathWithInstallMissin
 	}
 
 	// ML-2A: harness now emits inline command instead of abs .sh path.
-	wantCmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
+	wantCmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
 	for _, event := range []string{"BeforeTool", "AfterTool"} {
 		hooks, _ := doc["hooks"].(map[string]interface{})
 		if hooks == nil {
@@ -1444,7 +1444,7 @@ func TestUpdateHarnessCredentialGuardCursorInstallsAbsolutePathWithInstallMissin
 	}
 
 	// ML-2A: harness now emits inline command instead of abs .sh path.
-	wantCmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
+	wantCmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
 	for _, event := range []string{"beforeShellExecution", "afterShellExecution"} {
 		hooks, _ := doc["hooks"].(map[string]interface{})
 		if hooks == nil {
@@ -1499,7 +1499,7 @@ func TestUpdateHarnessCredentialGuardCursorIsIdempotent(t *testing.T) {
 	// ML-2A: harness now emits inline command.
 	hooks, _ := doc["hooks"].(map[string]interface{})
 	arr, _ := hooks["beforeShellExecution"].([]interface{})
-	wantCmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
+	wantCmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
 	shellEntries := 0
 	for _, item := range arr {
 		obj, _ := item.(map[string]interface{})
@@ -1581,7 +1581,7 @@ func TestUpdateHarnessCredentialGuardCursorPreservesExistingContent(t *testing.T
 	}
 	// ML-2A: harness now emits inline command.
 	beforeArr, _ := hooks["beforeShellExecution"].([]interface{})
-	wantCmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
+	wantCmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
 	hasShell := false
 	for _, item := range beforeArr {
 		obj, _ := item.(map[string]interface{})
@@ -1640,7 +1640,7 @@ func TestUpdateHarnessCredentialGuardCopilotInstallsAbsolutePathWithInstallMissi
 	}
 
 	// ML-2A: harness now emits inline command instead of abs .sh path.
-	wantCmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
+	wantCmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
 	for _, event := range []string{"preToolUse", "postToolUse"} {
 		hooks, _ := doc["hooks"].(map[string]interface{})
 		if hooks == nil {
@@ -1701,7 +1701,7 @@ func TestUpdateHarnessCredentialGuardCopilotIsIdempotent(t *testing.T) {
 	// ML-2A: harness now emits inline command.
 	hooks, _ := doc["hooks"].(map[string]interface{})
 	arr, _ := hooks["preToolUse"].([]interface{})
-	wantCmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
+	wantCmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
 	shellEntries := 0
 	for _, item := range arr {
 		obj, _ := item.(map[string]interface{})
@@ -1787,7 +1787,7 @@ func TestUpdateHarnessCredentialGuardCopilotPreservesExistingContent(t *testing.
 		t.Fatalf("pre-existing preToolUse entry was dropped or credential-guard entry not appended: %v", hooks)
 	}
 	// ML-2A: harness now emits inline command.
-	wantCmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
+	wantCmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
 	hasGuard := false
 	for _, item := range preArr {
 		obj, _ := item.(map[string]interface{})

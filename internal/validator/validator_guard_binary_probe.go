@@ -43,11 +43,22 @@ const (
 	guardShellFamilyCmdExe
 )
 
-// guardExpectedLine retorna a linha exata de hook D11 fail-closed para a família de shell e nome
-// de subcomando dados (ML-6B / ADR-2026-10-04 D11). O subcmdName pode incluir flags (ex.:
-// "credential --global").
+// guardExpectedLine retorna a linha exata de hook D11 revised fail-closed para a família de shell
+// e nome de subcomando dados (ML-6C / ADR-2026-10-04 D11 revised). O subcmdName pode incluir
+// flags (ex.: "credential --global").
 func guardExpectedLine(subcmdName string, fam guardShellFamily) string {
 	if fam == guardShellFamilyCmdExe {
+		return "trackfw guard " + subcmdName + " || exit 2"
+	}
+	return `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard ` + subcmdName + `; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+}
+
+// guardD11LegacyLine retorna a linha D11 pré-ML-6C (sem o 4º trecho de normalização PowerShell)
+// para a família de shell e nome de subcomando dados. Usada para distinguir a forma D11 legada
+// (warning de migração) de uma violação. Só relevante para a família PS/POSIX.
+func guardD11LegacyLine(subcmdName string, fam guardShellFamily) string {
+	if fam == guardShellFamilyCmdExe {
+		// cmd.exe family did not change between D11 and D11 revised.
 		return "trackfw guard " + subcmdName + " || exit 2"
 	}
 	return `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard ` + subcmdName + `; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
