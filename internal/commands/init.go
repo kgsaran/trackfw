@@ -459,5 +459,17 @@ func installAITools(aiTools []string, cwd string, scope string) error {
 	for _, tool := range aiTools {
 		fmt.Printf("  ✓ %s agents and skills\n", tool)
 	}
+	// Inject guard hooks for every CLI that was just installed. Name-based
+	// dispatch (not detection-based) closes two gaps at once:
+	//   (a) ordering: Scaffold ran InjectHooksDetected before this function
+	//       created the detection signals, so 7 of 8 CLIs were skipped;
+	//   (b) kiro global scope: installAITools with scope="global" installs into
+	//       ~/.kiro/, never creates .kiro/ in the project — InjectKiroHooks
+	//       calls MkdirAll(.kiro/hooks/) itself and closes this gap.
+	// Non-fatal: a hook-injection failure must not abort scaffolding (mirrors
+	// the same non-fatal call in Scaffold, scaffold.go:197).
+	if err := generators.InjectHooksForTools(aiTools, cwd); err != nil {
+		fmt.Fprintf(os.Stderr, "  ⚠ agent hooks: %v\n", err)
+	}
 	return nil
 }

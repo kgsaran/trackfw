@@ -279,6 +279,13 @@ func executeIntegrationMutation(cmd *cobra.Command, kind integrations.ItemKind, 
 				return fmt.Errorf("install %s auxiliary rules: %w", target, err)
 			}
 		}
+		// Inject guard hooks for each installed CLI (ML-1B / REQ-2026-10-07).
+		// Same cause as init: install creates the CLI's files but never called
+		// InjectHooksForTools. Non-fatal: a hook-injection failure must not abort
+		// the install (mirrors installAITools in init.go).
+		if err := generators.InjectHooksForTools(opts.targets, manager.ProjectRoot); err != nil {
+			fmt.Fprintf(os.Stderr, "  ⚠ agent hooks: %v\n", err)
+		}
 	}
 	// AC1-AC3, AC8 (ML-2A): register installed agents in trackfw.yaml agents: list
 	// so that by_agent projects stay synchronised without a manual discover --init.
