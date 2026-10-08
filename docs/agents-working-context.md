@@ -2,6 +2,28 @@
 
 ---
 
+## 2026-10-08 — hades-tf (feat/req-done-open-criteria-decompoe-herdadas — ML-2A) — FIM
+
+**Branch:** `feat/req-done-open-criteria-decompoe-herdadas`
+**Entregável produzido:** `docs/seguranca/2026-10-08-red-team-req-done-open-criteria-herdadas.md`
+**Veredito:** NÃO LIBERA — F1 (MEDIUM) requer corretivo antes do merge.
+
+**Achados:**
+- F1 (MEDIUM): `upstreamSymrefShort()` não sanitiza `"` do nome do ramo; `extractFile` extrai path falso do JSON `warnings[].file`. Violação da restrição §6.2 da Wave 0. Fix: `strings.ReplaceAll(shortRef, `"`, "")`. Só reachable via fallback HEAD (não afeta upstream/main normal).
+- F2 (INFO): `git show <ref>:trackfw.yaml` sem limite de tamanho: 47MB = 510ms. Aceito como residual (mesma classe dos demais .Output() do pacote).
+
+**Todos os outros vetores confirmados seguros:** injeção via reqDir (-opção, /abs, ../trav, :(magic)) bloqueados por `--` e `--literal-pathspecs`; GIT_DIR/GIT_WORK_TREE bloqueados por cleanGitEnv(); byte-identidade sem upstream CONFIRMADA; K não altera decisão/exit code CONFIRMADO; custo +32ms em fork/; worktree/submodulo/sem-git/shallow/unresolvable/ramo-com-slash todos corretos. 5 testes AC3/AC4/Unresolvable usam ValidateTagged, passam, são não-tautológicos.
+
+---
+
+## 2026-10-08 — hades-tf (feat/req-done-open-criteria-decompoe-herdadas — ML-2A) — INÍCIO
+
+**Branch:** `feat/req-done-open-criteria-decompoe-herdadas`
+**Tarefa:** ML-2A — Red-team independente do diff `internal/` contra Wave 0 (ML-0A). Vetores: injeção via git (opções `-`, pathspec mágico, path fora do repo, stall), mudança de decisão de regra, ambiente adverso (GIT_DIR/GIT_WORK_TREE, sem git, worktree, submódulo, shallow, ref unresolvable, ramo com `/`), custo, byte-identidade sem upstream.
+**Não altera código de produto.**
+
+---
+
 ## 2026-10-08 — apolo-tf (feat/req-done-open-criteria-decompoe-herdadas — ML-1A) — FIM
 
 **Branch:** `feat/req-done-open-criteria-decompoe-herdadas`

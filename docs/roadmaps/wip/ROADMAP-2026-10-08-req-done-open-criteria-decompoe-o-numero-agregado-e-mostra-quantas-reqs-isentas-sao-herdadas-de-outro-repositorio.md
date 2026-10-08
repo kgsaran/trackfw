@@ -65,6 +65,18 @@ test -n "$(ls docs/seguranca/*wave0-req-done-open-criteria-herdadas.md 2>/dev/nu
 
 ## Wave 2 — Red-team e fechamento
 ### ML-2A — Red-team do diff
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** hades-tf
-- [ ] Parecer sobre o diff contra o threat model
+- [x] Parecer sobre o diff contra o threat model
+      Veredito do hades-tf (`docs/seguranca/2026-10-08-red-team-req-done-open-criteria-herdadas.md`): **não libera**.
+      F1 (médio): nome de ramo com `"` vindo de `refs/remotes/upstream/HEAD` entra na parentética e o `--json` extrai um
+      `warnings[].file` falso (viola §6.2 da Wave 0). F2 (info, residual): `trackfw.yaml` de 47 MB no upstream custa
+      510 ms. Byte-identidade sem upstream, injeção por req_dir/pathspec, GIT_* e decisões da regra: medidos, sem achado.
+
+### ML-2B — Corretivo F1
+**Status:** 🔄 Em andamento
+**Squad:** apolo-tf
+- [ ] O nome do ramo na parentética só aceita caracteres seguros; fora disso, cai para a variante sem nome
+- [ ] Teste com ramo contendo `"`: `warnings[].file` não é afetado no `--json`; falsificação
+- [ ] `go test ./internal/validator/`; `make quality` (arquiteto)
+
