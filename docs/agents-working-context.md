@@ -45849,3 +45849,7 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-08 — zeus-tf — FIM: REQ-2026-10-06 implementada (aguarda PR)
 
 - Credential guard instalado e auditado em Windsurf (pre_run_command, pre_write_code, harness global) e Amazon Q (execute_bash, fs_write). O guard lê o payload por JSON (BOM, command/command_line em qualquer profundidade) e a isenção de /dev/null só vale para echo/printf simples — fechou bypasses que valiam também no Claude Code. Red-team reprovou 1x (F1-F4), corrigido. Prova em CLI real: impossível (sem contas). `make quality` EXIT=0.
+
+## 2026-10-08 — zeus-tf — REQ-2026-10-06 Done (PR #543); INÍCIO: REQ-2026-10-08 (#542)
+
+- REQ-2026-10-06 fechada com evidência por AC, roadmap em `done/`. Branch `feat/req-done-open-criteria-decompoe-herdadas`: a linha agregada de `req_done_open_criteria` passa a mostrar quantas REQs são herdadas (saída 2 da #542, decisão do KG). Wave 0 (hades-tf) despachada.
