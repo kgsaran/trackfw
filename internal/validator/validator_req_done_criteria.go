@@ -180,8 +180,25 @@ func upstreamRefExistsAsCommit(projectRoot, ref string) bool {
 	return err == nil
 }
 
+// shortRefSafeRe is the allowlist for branch short-names that may appear in the
+// upstream parenthetical. Only ASCII alphanumerics plus ".", "_", "/", and "-"
+// are accepted. A leading dash is also rejected (option-injection guard).
+// This prevents branch names with `"` from polluting the JSON warnings[].file
+// field extracted by extractFile in result.go (regex `"([^"]+)"`).
+var shortRefSafeRe = regexp.MustCompile(`^[A-Za-z0-9._/-]+$`)
+
+// shortRefSafe reports whether s is safe to embed in the upstream parenthetical.
+func shortRefSafe(s string) bool {
+	if s == "" || strings.HasPrefix(s, "-") {
+		return false
+	}
+	return shortRefSafeRe.MatchString(s)
+}
+
 // upstreamSymrefShort tries to dereference a symbolic ref and return its short name
 // (e.g. "upstream/main"). Falls back to shortening the symbolic ref itself on error.
+// The caller is responsible for validating the returned value with shortRefSafe before
+// embedding it in user-visible output.
 func upstreamSymrefShort(projectRoot, symref string) string {
 	out, err := gitCommand(projectRoot, "symbolic-ref", "--short", symref).Output()
 	if err == nil {
@@ -268,9 +285,17 @@ func upstreamInheritedInfo(exemptBasenames map[string]struct{}) (parenthetical s
 	}
 
 	// Step 4: fall back to refs/remotes/upstream/HEAD.
+	// The short name is validated via shortRefSafe before use: git allows `"` and other
+	// special characters in branch names. An unsafe name would pollute warnings[].file
+	// in JSON output (extractFile regex "([^"]+)" in result.go). Failing the allowlist
+	// falls through directly to the unresolvable variant — main and master were already
+	// tried above, so there are no further fallbacks.
 	headRef := "refs/remotes/upstream/HEAD"
 	if upstreamRefExistsAsCommit(projectRoot, headRef) {
 		shortRef := upstreamSymrefShort(projectRoot, headRef)
+		if !shortRefSafe(shortRef) {
+			return "(upstream tried main, master: ref unresolvable)", 0
+		}
 		upBasenames := upstreamReqBasenames(projectRoot, headRef)
 		k = countBaselineIntersection(upBasenames, exemptBasenames)
 		return fmt.Sprintf("(%d inherited from %s)", k, shortRef), k

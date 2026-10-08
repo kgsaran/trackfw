@@ -22,14 +22,31 @@ em vez de `""`.
 - Só reachable via fallback HEAD (step 4 de `upstreamInheritedInfo`): upstream/main e
   upstream/master ausentes. Caminho normal não é afetado.
 
-## Fix
+## Fix (implementado em ML-2B)
 
-Em `upstreamSymrefShort()`, após obter o short name:
+Allowlist em `upstreamInheritedInfo` (step 4), não remoção pontual de `"`.
+Em `validator_req_done_criteria.go`:
+
 ```go
-return strings.ReplaceAll(s, `"`, "")
+var shortRefSafeRe = regexp.MustCompile(`^[A-Za-z0-9._/-]+$`)
+
+func shortRefSafe(s string) bool {
+    if s == "" || strings.HasPrefix(s, "-") {
+        return false
+    }
+    return shortRefSafeRe.MatchString(s)
+}
 ```
 
-Acrescentar teste `TestReqDoneOpenCriteria_DoubleQuoteBranchName` que:
-1. Cria `$fork/.git/refs/remotes/upstream/HEAD → refs/remotes/upstream/main"evil"`
-2. Cria `$fork/.git/refs/remotes/upstream/main"evil"` apontando para um commit real
-3. Verifica `file == ""` no JSON (não `evil`)
+No step 4 de `upstreamInheritedInfo`, após `upstreamSymrefShort`:
+```go
+if !shortRefSafe(shortRef) {
+    return "(upstream tried main, master: ref unresolvable)", 0
+}
+```
+
+Testes acrescentados:
+- `TestReqDoneOpenCriteria_DoubleQuoteBranchName`: cria ref files diretamente, verifica
+  parentética = unresolvable e `RuleItem.File == ""` no JSON.
+- `TestReqDoneOpenCriteria_SpecialBranchNamePassesAllowlist`: direção oposta —
+  `feature/special-branch` continua aparecendo via step 4 (HEAD fallback).

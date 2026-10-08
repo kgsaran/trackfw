@@ -14,11 +14,16 @@ package validator
 // Sabotagens cobertas (ML-1A — upstream inheritance):
 //   S3 (remover T1): derruba TestReqDoneOpenCriteria_AC4b_T1_UpstreamEqualsOrigin.
 //   S4 (path match em vez de basename): derruba TestReqDoneOpenCriteria_AC4a_InheritedByBasename.
+//
+// Sabotagem coberta (ML-2B — sanitização de shortRef):
+//   S5 (remover allowlist shortRefSafe): derruba TestReqDoneOpenCriteria_DoubleQuoteBranchName
+//      (a parentética exibiria `"evil"` e File no JSON viria "evil" em vez de "").
 
 import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -506,6 +511,168 @@ func TestReqDoneOpenCriteria_UpstreamRefUnresolvable(t *testing.T) {
 
 	if !strings.Contains(notice, "(upstream tried main, master: ref unresolvable)") {
 		t.Errorf("ref unresolvable: notice deve conter a variante de irresolvível, obteve: %q", notice)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Testes de ML-2B — sanitização de shortRef (F1 do red-team)
+// ---------------------------------------------------------------------------
+
+// TestReqDoneOpenCriteria_DoubleQuoteBranchName — AFIRMA que um nome de ramo com `"`
+// (fora da allowlist shortRefSafe) é tratado como irresolvível: a parentética contém
+// a variante unresolvable e não contém `"`, e o campo File do RuleItem JSON fica vazio.
+// Falsificação: remover shortRefSafe em upstreamInheritedInfo → shortRef cru `upstream/main"evil"`
+// é usado na parentética → extractFile extrai "evil" → File = "evil" ≠ "" → teste reprova.
+func TestReqDoneOpenCriteria_DoubleQuoteBranchName(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("NTFS não permite `\"` em nomes de arquivo; ataque não é montável nessa plataforma")
+	}
+
+	forkDir := buildReqRoadmapDir(t)
+	writeFile(t, forkDir, "docs/roadmaps/done/ROADMAP-x.md", "# Fixture\n")
+	initGitRepo(t, forkDir, "main")
+
+	// Adiciona remote upstream sem fazer fetch (main/master refs ausentes).
+	// origin ausente não dispara T1 (guard só quando err == nil).
+	runGit := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = forkDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %s", args, out)
+		}
+	}
+	runGit("remote", "add", "upstream", "https://example.invalid/upstream.git")
+
+	// Obtém o hash do commit inicial do fork para usar no ref file.
+	hashOut, err := exec.Command("git", "-C", forkDir, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatalf("rev-parse HEAD: %v", err)
+	}
+	commitHash := strings.TrimRight(string(hashOut), "\n")
+
+	// Escreve os ref files diretamente (git aceita `"` em nomes de ramo: exit=0).
+	refDir := filepath.Join(forkDir, ".git", "refs", "remotes", "upstream")
+	if err := os.MkdirAll(refDir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	// refs/remotes/upstream/main"evil" → hash real
+	if err := os.WriteFile(filepath.Join(refDir, `main"evil"`), []byte(commitHash+"\n"), 0o644); err != nil {
+		t.Fatalf("write ref main\"evil\": %v", err)
+	}
+	// refs/remotes/upstream/HEAD → symref para main"evil"
+	headContent := "ref: refs/remotes/upstream/main\"evil\"\n"
+	if err := os.WriteFile(filepath.Join(refDir, "HEAD"), []byte(headContent), 0o644); err != nil {
+		t.Fatalf("write HEAD: %v", err)
+	}
+
+	// Pré-condição 1: HEAD deve resolver como commit (arma o ataque).
+	verifyOut, verifyErr := exec.Command("git", "-C", forkDir, "rev-parse", "--verify", "--quiet",
+		"refs/remotes/upstream/HEAD^{commit}").Output()
+	if verifyErr != nil || strings.TrimSpace(string(verifyOut)) == "" {
+		t.Fatalf("pré-condição: refs/remotes/upstream/HEAD^{commit} não resolveu — ataque não armado: %v", verifyErr)
+	}
+
+	// Pré-condição 2: symbolic-ref --short deve retornar exatamente upstream/main"evil".
+	symrefOut, symrefErr := exec.Command("git", "-C", forkDir, "symbolic-ref", "--short",
+		"refs/remotes/upstream/HEAD").Output()
+	if symrefErr != nil {
+		t.Fatalf("pré-condição: symbolic-ref --short falhou: %v", symrefErr)
+	}
+	gotShort := strings.TrimRight(string(symrefOut), "\n")
+	wantShort := `upstream/main"evil"`
+	if gotShort != wantShort {
+		t.Fatalf("pré-condição: symbolic-ref retornou %q, esperado %q — ataque não armado", gotShort, wantShort)
+	}
+
+	writeDoneREQWithOpenCriteria(t, forkDir, "REQ-2026-10-03-x.md", "2026-10-03")
+
+	violations, warnings := validateTaggedFixture(t, forkDir)
+	result := BuildResultTagged(violations, warnings, false)
+
+	// Localiza o RuleItem da linha D4 nos warnings JSON.
+	var d4Item *RuleItem
+	for i := range result.Warnings {
+		if strings.Contains(result.Warnings[i].Message, reqDoneOpenCriteriaNoticeSubstr) {
+			d4Item = &result.Warnings[i]
+			break
+		}
+	}
+	if d4Item == nil {
+		t.Fatalf("RuleItem req_done_open_criteria ausente dos warnings: %+v", result.Warnings)
+	}
+
+	// A parentética deve ser a variante unresolvable (allowlist rejeitou o nome com `"`).
+	if !strings.Contains(d4Item.Message, "(upstream tried main, master: ref unresolvable)") {
+		t.Errorf("DoubleQuoteBranch: esperava variante unresolvable, obteve: %q", d4Item.Message)
+	}
+	// A mensagem não deve conter aspas duplas na parentética.
+	if strings.Contains(d4Item.Message, `"evil"`) {
+		t.Errorf("DoubleQuoteBranch: mensagem contém `\"evil\"` — allowlist não aplicada: %q", d4Item.Message)
+	}
+	// O campo File JSON deve ser vazio (nenhum caminho falso extraído).
+	if d4Item.File != "" {
+		t.Errorf("DoubleQuoteBranch: File deve ser \"\", obteve %q", d4Item.File)
+	}
+}
+
+// TestReqDoneOpenCriteria_SpecialBranchNamePassesAllowlist — AFIRMA que a allowlist
+// não rejeita nomes legítimos com `/` e `-`: `feature/special-branch` continua aparecendo
+// na parentética via step 4 (HEAD fallback, quando main/master ausentes).
+// Falsificação: remover `/` da allowlist → shortRefSafe rejeita `upstream/feature/special-branch`
+// → parentética vira unresolvable → teste reprova.
+func TestReqDoneOpenCriteria_SpecialBranchNamePassesAllowlist(t *testing.T) {
+	// Fork com docs/req (padrão).
+	forkDir := buildReqRoadmapDir(t)
+	writeFile(t, forkDir, "docs/roadmaps/done/ROADMAP-x.md", "# Fixture\n")
+	initGitRepo(t, forkDir, "main")
+
+	// Upstream criado com ramo feature/special-branch (sem main nem master).
+	upstreamDir := t.TempDir()
+	runIn := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v in %s: %s", args, dir, out)
+		}
+	}
+	runIn(upstreamDir, "init", "-b", "feature/special-branch")
+	runIn(upstreamDir, "config", "user.email", "test@test.com")
+	runIn(upstreamDir, "config", "user.name", "test")
+	runIn(upstreamDir, "config", "commit.gpgsign", "false")
+	// Upstream tem uma REQ com mesmo basename da REQ local do fork.
+	reqPath := filepath.Join(upstreamDir, "docs", "req", "REQ-2026-10-03-shared.md")
+	if err := os.MkdirAll(filepath.Dir(reqPath), 0o755); err != nil {
+		t.Fatalf("mkdir upstream req: %v", err)
+	}
+	if err := os.WriteFile(reqPath, []byte("# upstream req\n"), 0o644); err != nil {
+		t.Fatalf("write upstream req: %v", err)
+	}
+	runIn(upstreamDir, "add", "docs/req/REQ-2026-10-03-shared.md")
+	runIn(upstreamDir, "commit", "--allow-empty", "-m", "init")
+
+	// Adiciona upstream ao fork e faz fetch.
+	runIn(forkDir, "remote", "add", "upstream", upstreamDir)
+	runIn(forkDir, "fetch", "upstream")
+
+	// Garante que HEAD aponta para feature/special-branch.
+	runIn(forkDir, "remote", "set-head", "upstream", "feature/special-branch")
+
+	// Pré-condição: refs/remotes/upstream/main não deve existir (garante step 4).
+	if _, err := exec.Command("git", "-C", forkDir, "rev-parse", "--verify", "--quiet",
+		"refs/remotes/upstream/main^{commit}").Output(); err == nil {
+		t.Fatal("pré-condição: refs/remotes/upstream/main existe — step 3 vai curto-circuitar o teste")
+	}
+
+	// REQ local com mesmo basename do upstream (isenta: pré-cutoff).
+	writeDoneREQWithOpenCriteria(t, forkDir, "REQ-2026-10-03-shared.md", "2026-10-03")
+
+	_, warnings := validateTaggedFixture(t, forkDir)
+	notice := findD4NoticeFromTagged(t, warnings)
+
+	if !strings.Contains(notice, "(1 inherited from upstream/feature/special-branch)") {
+		t.Errorf("SpecialBranch: notice deve conter \"(1 inherited from upstream/feature/special-branch)\", obteve: %q", notice)
 	}
 }
 

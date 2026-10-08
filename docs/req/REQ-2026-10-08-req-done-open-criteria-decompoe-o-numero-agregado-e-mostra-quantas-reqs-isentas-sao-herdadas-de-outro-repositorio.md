@@ -31,10 +31,10 @@ regra muda (quem é cobrado, quem é isento, severidade).
 contagem `enforced`; não muda outras regras; não importa nem remove REQs de forks.
 
 ## Acceptance Criteria
-- [ ] AC1 — Wave 0 decide o discriminante de "herdada" com medição: derivado (o arquivo existe no ramo padrão do remote `upstream`, como o `check-inherited-req.sh` do fork) e/ou declarado (frontmatter `upstream_origin`, que hoje é invenção do fork). Preferência: derivado, sem conceito novo no frontmatter; custo de git medido (uma chamada por validate, não por REQ); sem remote `upstream` → linha idêntica à atual
-- [ ] AC2 — A linha agregada reporta o recorte de herdadas (ex.: `22 ... exempt (22 inherited from upstream)`), e a mesma informação sai no `--json`
-- [ ] AC3 — Repositório sem remote `upstream` (este, por exemplo): saída byte-idêntica à atual — teste
-- [ ] AC4 — Teste com repo temporário com remote `upstream` contendo parte das REQs: o recorte bate com as REQs que existem no upstream, nas duas direções (REQ local não conta como herdada; REQ do upstream conta)
+- [x] AC1 — Wave 0 decide o discriminante de "herdada" com medição: derivado (o arquivo existe no ramo padrão do remote `upstream`, como o `check-inherited-req.sh` do fork) e/ou declarado (frontmatter `upstream_origin`, que hoje é invenção do fork). Preferência: derivado, sem conceito novo no frontmatter; custo de git medido (uma chamada por validate, não por REQ); sem remote `upstream` → linha idêntica à atual
+- [x] AC2 — A linha agregada reporta o recorte de herdadas (ex.: `22 ... exempt (22 inherited from upstream)`), e a mesma informação sai no `--json`
+- [x] AC3 — Repositório sem remote `upstream` (este, por exemplo): saída byte-idêntica à atual — teste
+- [x] AC4 — Teste com repo temporário com remote `upstream` contendo parte das REQs: o recorte bate com as REQs que existem no upstream, nas duas direções (REQ local não conta como herdada; REQ do upstream conta)
 - [ ] AC5 — Comentário na #542 com o resultado; `docs/cli-parity.md` atualizado se documenta a linha
 
 ## Linked ADR

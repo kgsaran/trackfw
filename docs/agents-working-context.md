@@ -45928,3 +45928,7 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-08 — zeus-tf — REQ-2026-10-06 Done (PR #543); INÍCIO: REQ-2026-10-08 (#542)
 
 - REQ-2026-10-06 fechada com evidência por AC, roadmap em `done/`. Branch `feat/req-done-open-criteria-decompoe-herdadas`: a linha agregada de `req_done_open_criteria` passa a mostrar quantas REQs são herdadas (saída 2 da #542, decisão do KG). Wave 0 (hades-tf) despachada.
+
+## 2026-10-08 — zeus-tf — FIM: REQ-2026-10-08 implementada (#542), aguarda PR
+
+- Linha agregada de `req_done_open_criteria` ganha `(K inherited from upstream/<ramo>)` com remote upstream ≠ origin; sem upstream, byte-idêntica. Medido no fork do relator: 22 (22 inherited). Red-team reprovou 1x (aspa no nome do ramo → `file` falso no JSON), corrigido por allowlist. `make quality` EXIT=0.

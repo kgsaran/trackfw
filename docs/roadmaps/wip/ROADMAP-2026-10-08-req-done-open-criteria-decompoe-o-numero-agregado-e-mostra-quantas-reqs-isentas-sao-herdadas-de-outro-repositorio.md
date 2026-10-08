@@ -14,7 +14,7 @@ squad: ""
 REQ: 
 
 ## Acceptance Criteria
-- [ ] AC1–AC5 da REQ
+- [x] AC1–AC4 da REQ (AC5 — comentário na #542 — no PR)
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -74,9 +74,11 @@ test -n "$(ls docs/seguranca/*wave0-req-done-open-criteria-herdadas.md 2>/dev/nu
       510 ms. Byte-identidade sem upstream, injeção por req_dir/pathspec, GIT_* e decisões da regra: medidos, sem achado.
 
 ### ML-2B — Corretivo F1
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
-- [ ] O nome do ramo na parentética só aceita caracteres seguros; fora disso, cai para a variante sem nome
-- [ ] Teste com ramo contendo `"`: `warnings[].file` não é afetado no `--json`; falsificação
-- [ ] `go test ./internal/validator/`; `make quality` (arquiteto)
+- [x] O nome do ramo na parentética só aceita caracteres seguros; fora disso, cai para a variante sem nome
+- [x] Teste com ramo contendo `"`: `warnings[].file` não é afetado no `--json`; falsificação
+- [x] `go test ./internal/validator/`; `make quality` (arquiteto)
+      Auditoria (2026-10-08): allowlist `^[A-Za-z0-9._/-]+$` (sem `-` inicial); 2 testes conferidos por nome, falsificação
+      registrada (sem a allowlist, `File` = "evil"). `make quality` (arquiteto) EXIT=0, 347 OK / 0 FAIL.
 
