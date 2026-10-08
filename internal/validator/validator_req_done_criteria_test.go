@@ -1,17 +1,24 @@
 package validator
 
-// validator_req_done_criteria_test.go — D4 (ADR-2026-10-04, REQ #514 ML-1C).
+// validator_req_done_criteria_test.go — D4 (ADR-2026-10-04, REQ #514 ML-1B/ML-1C/ML-1A).
 //
 // Reconciliação obrigatória (CLAUDE.md): cada teste declara, em uma frase, qual
-// conclusão do próprio ML-1B/ML-1C ele afirma.
+// conclusão do próprio ML-1B/ML-1C/ML-1A ele afirma.
 //
-// Sabotagens cobertas:
+// Sabotagens cobertas (ML-1B/1C):
 //   S1 (cutoff < → <=): derruba TestReqDoneOpenCriteria_PostCutoffIsWarning e
 //      TestReqDoneOpenCriteria_EnforcedCountInNotice.
 //   S2 (Unmet+Lapsed em vez de Unmet): derruba TestReqDoneOpenCriteria_LapsedDoesNotFire
 //      e TestReqDoneOpenCriteria_SectionScanCountsOnlyUnmet.
+//
+// Sabotagens cobertas (ML-1A — upstream inheritance):
+//   S3 (remover T1): derruba TestReqDoneOpenCriteria_AC4b_T1_UpstreamEqualsOrigin.
+//   S4 (path match em vez de basename): derruba TestReqDoneOpenCriteria_AC4a_InheritedByBasename.
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -221,6 +228,284 @@ func TestReqDoneOpenCriteria_SectionScanCountsOnlyUnmet(t *testing.T) {
 	got := countREQOpenCriteria(content)
 	if got != 2 {
 		t.Errorf("countREQOpenCriteria deve retornar 2 (unmet), obteve %d", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Helpers para testes de herança upstream (ML-1A, issue #542, REQ-2026-10-08)
+// ---------------------------------------------------------------------------
+
+// validateTaggedFixture executa ValidateTagged no diretório dir (site B — caminho do CLI).
+// Usado pelos novos testes de herança: sítio A (ValidateUnfiltered) prova que baseline
+// propaga o recorte; sítio B prova que `trackfw validate` (e --json) o faz.
+func validateTaggedFixture(t *testing.T, dir string) (violations, warnings []TaggedMsg) {
+	t.Helper()
+	config.Reset()
+	chdir(t, dir)
+	t.Cleanup(config.Reset)
+	v, w, err := ValidateTagged()
+	if err != nil {
+		t.Fatalf("ValidateTagged() erro: %v", err)
+	}
+	return v, w
+}
+
+// findD4NoticeFromTagged localiza a linha de aviso req_done_open_criteria: nos warnings tagged.
+func findD4NoticeFromTagged(t *testing.T, warnings []TaggedMsg) string {
+	t.Helper()
+	for _, w := range warnings {
+		if strings.Contains(w.Msg, reqDoneOpenCriteriaNoticeSubstr) {
+			return w.Msg
+		}
+	}
+	t.Fatalf("aviso req_done_open_criteria ausente dos warnings tagged: %v", warnings)
+	return ""
+}
+
+// writeDoneREQWithOpenCriteriaIn é como writeDoneREQWithOpenCriteria mas escreve em reqSubdir
+// em vez de docs/req/. Usado para forks com req_dir personalizado (ex: docs/requisições/).
+func writeDoneREQWithOpenCriteriaIn(t *testing.T, dir, reqSubdir, name, fmDate string) {
+	t.Helper()
+	fm := "---\nstatus: Done\n"
+	if fmDate != "" {
+		fm += "date: " + fmDate + "\n"
+	}
+	fm += "roadmap: \"docs/roadmaps/done/ROADMAP-x.md\"\n---\n"
+	body := "\n# REQ: Fixture D4 upstream\n\n## Acceptance Criteria\n\n- [x] Critério atendido\n- [ ] Critério aberto sem Caducou:\n\n## Linked Roadmap\nRoadmap: docs/roadmaps/done/ROADMAP-x.md\n"
+	writeFile(t, dir, reqSubdir+"/"+name, fm+body)
+}
+
+// initUpstreamForInheritance cria um repositório git em upstreamDir com os arquivos
+// indicados commitados no ramo main, e adiciona-o como remote "upstream" de forkDir com fetch.
+// Requer git >= 2.28 (git init -b main); confirmado na versão 2.54.0 do ambiente.
+func initUpstreamForInheritance(t *testing.T, forkDir, upstreamDir string, files map[string]string) {
+	t.Helper()
+	runIn := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v in %s: %s", args, dir, out)
+		}
+	}
+
+	runIn(upstreamDir, "init", "-b", "main")
+	runIn(upstreamDir, "config", "user.email", "test@test.com")
+	runIn(upstreamDir, "config", "user.name", "test")
+	runIn(upstreamDir, "config", "commit.gpgsign", "false")
+
+	for rel, content := range files {
+		path := filepath.Join(upstreamDir, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("writeFile %s: %v", path, err)
+		}
+		runIn(upstreamDir, "add", rel)
+	}
+	runIn(upstreamDir, "commit", "--allow-empty", "-m", "init")
+
+	runIn(forkDir, "remote", "add", "upstream", upstreamDir)
+	runIn(forkDir, "fetch", "upstream")
+}
+
+// buildForkDirWithReqDir cria um diretório de fixture com req_dir personalizado e git init.
+// Usado pelos testes de herança upstream onde o fork tem req_dir diferente do upstream.
+func buildForkDirWithReqDir(t *testing.T, reqDir string) string {
+	t.Helper()
+	dir := t.TempDir()
+	mkdirs(t, dir,
+		reqDir,
+		"docs/roadmaps/wip",
+		"docs/roadmaps/backlog",
+		"docs/roadmaps/blocked",
+		"docs/roadmaps/done",
+		"docs/adr",
+	)
+	writeFile(t, dir, "trackfw.yaml", "req_dir: "+reqDir+"\n")
+	writeFile(t, dir, "docs/roadmaps/done/ROADMAP-x.md", "# Fixture\n")
+	initGitRepo(t, dir, "main")
+	return dir
+}
+
+// ---------------------------------------------------------------------------
+// Testes de herança upstream (ML-1A, issue #542, REQ-2026-10-08)
+// ---------------------------------------------------------------------------
+
+// wantD4NoticeAC3 é o texto literal esperado quando não há upstream — byte-idêntico
+// ao formato anterior ao ML-1A. Hard-coded para não ser tautológico após o refactor.
+// Sabotagem: inserir "inherited" aqui quebraria o controle de AC3.
+const wantD4NoticeAC3Prefix = "req_done_open_criteria: 2 Done REQ(s) with open criteria exempt as created before cutoff 2026-10-04, 0 enforced, 2 Done REQ(s) scanned (cutoff declared in internal/validator/validator_req_done_criteria.go)"
+
+// TestReqDoneOpenCriteria_AC3_NoUpstreamByteIdentical — AFIRMA que sem remote upstream,
+// o aviso agregado é byte-idêntico ao formato anterior ao ML-1A (sem parentética).
+// Sítio B (ValidateTagged) — caminho do CLI.
+func TestReqDoneOpenCriteria_AC3_NoUpstreamByteIdentical(t *testing.T) {
+	// buildReqRoadmapDir não inicializa git — simula repositório sem upstream.
+	dir := buildReqRoadmapDir(t)
+	writeFile(t, dir, "docs/roadmaps/done/ROADMAP-x.md", "# Fixture\n")
+	writeDoneREQWithOpenCriteria(t, dir, "REQ-2026-10-03-a.md", "2026-10-03")
+	writeDoneREQWithOpenCriteria(t, dir, "REQ-2026-10-03-b.md", "2026-10-03")
+
+	_, warnings := validateTaggedFixture(t, dir)
+	notice := findD4NoticeFromTagged(t, warnings)
+
+	if notice != wantD4NoticeAC3Prefix {
+		t.Errorf("AC3: aviso deve ser byte-idêntico ao formato pré-ML-1A.\nquer: %q\nobteve: %q", wantD4NoticeAC3Prefix, notice)
+	}
+	if strings.Contains(notice, "inherited") || strings.Contains(notice, "(upstream") {
+		t.Errorf("AC3: aviso NÃO deve conter parentética de herança, obteve: %q", notice)
+	}
+}
+
+// TestReqDoneOpenCriteria_AC4a_InheritedByBasename — AFIRMA que o discriminante de herança
+// usa basename (não caminho completo): fork com req_dir diferente do upstream ainda conta
+// K=2 para REQs com mesmo basename. Falsificação: trocar basename por path → K=0, teste reprova.
+// Sítio B (ValidateTagged) — caminho do CLI.
+func TestReqDoneOpenCriteria_AC4a_InheritedByBasename(t *testing.T) {
+	// Fork com req_dir: docs/requisições (diferente do upstream que usa docs/req).
+	forkDir := buildForkDirWithReqDir(t, "docs/requisições")
+
+	// Upstream tem 2 REQs em docs/req/ — req_dir padrão.
+	upstreamDir := t.TempDir()
+	initUpstreamForInheritance(t, forkDir, upstreamDir, map[string]string{
+		"docs/req/REQ-2026-10-03-up1.md": "# upstream req 1\n",
+		"docs/req/REQ-2026-10-03-up2.md": "# upstream req 2\n",
+	})
+
+	// Fork tem 3 REQs em docs/requisições/:
+	// - up1 e up2 com mesmo basename do upstream (herdadas)
+	// - local com basename único (não herdada)
+	writeDoneREQWithOpenCriteriaIn(t, forkDir, "docs/requisições", "REQ-2026-10-03-up1.md", "2026-10-03")
+	writeDoneREQWithOpenCriteriaIn(t, forkDir, "docs/requisições", "REQ-2026-10-03-up2.md", "2026-10-03")
+	writeDoneREQWithOpenCriteriaIn(t, forkDir, "docs/requisições", "REQ-2026-10-03-local.md", "2026-10-03")
+
+	_, warnings := validateTaggedFixture(t, forkDir)
+	notice := findD4NoticeFromTagged(t, warnings)
+
+	for _, want := range []string{
+		"3 Done REQ(s) with open criteria exempt",
+		"(2 inherited from upstream/main)",
+		"0 enforced",
+		"3 Done REQ(s) scanned",
+	} {
+		if !strings.Contains(notice, want) {
+			t.Errorf("AC4a: notice deve conter %q, obteve: %q", want, notice)
+		}
+	}
+	// A REQ local (basename único) NÃO deve ser contada em K.
+	if strings.Contains(notice, "(3 inherited") {
+		t.Errorf("AC4a: REQ local NÃO deve ser contada como herdada, obteve: %q", notice)
+	}
+}
+
+// TestReqDoneOpenCriteria_AC4b_T1_UpstreamEqualsOrigin — AFIRMA que quando upstream.url ==
+// origin.url a parentética é suprimida (T1 guard). Falsificação: remover T1 → upstream/main
+// existe e K > 0 → notice teria "(2 inherited...)" → teste reprova.
+// Sítio B (ValidateTagged) — caminho do CLI.
+func TestReqDoneOpenCriteria_AC4b_T1_UpstreamEqualsOrigin(t *testing.T) {
+	// Fork usa docs/req (padrão).
+	forkDir := buildReqRoadmapDir(t)
+	writeFile(t, forkDir, "docs/roadmaps/done/ROADMAP-x.md", "# Fixture\n")
+	initGitRepo(t, forkDir, "main")
+
+	// Upstream tem REQs com mesmo basename dos locais.
+	upstreamDir := t.TempDir()
+	initUpstreamForInheritance(t, forkDir, upstreamDir, map[string]string{
+		"docs/req/REQ-2026-10-03-a.md": "# upstream req a\n",
+		"docs/req/REQ-2026-10-03-b.md": "# upstream req b\n",
+	})
+
+	// Adiciona origin apontando para o mesmo upstream → T1.
+	runGit := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = forkDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %s", args, out)
+		}
+	}
+	runGit("remote", "add", "origin", upstreamDir)
+
+	// Fork REQs com mesmo basename do upstream (mas T1 deve suprimir K).
+	writeDoneREQWithOpenCriteria(t, forkDir, "REQ-2026-10-03-a.md", "2026-10-03")
+	writeDoneREQWithOpenCriteria(t, forkDir, "REQ-2026-10-03-b.md", "2026-10-03")
+
+	_, warnings := validateTaggedFixture(t, forkDir)
+	notice := findD4NoticeFromTagged(t, warnings)
+
+	if strings.Contains(notice, "inherited") || strings.Contains(notice, "(upstream") {
+		t.Errorf("AC4b T1: upstream==origin deve suprimir parentética, obteve: %q", notice)
+	}
+}
+
+// TestReqDoneOpenCriteria_AC4c_InheritedPostCutoffInEnforced — AFIRMA que REQ herdada
+// pós-cutoff fica em enforced (não em exempt) e não é contada em K.
+// K é subconjunto de exempt: só REQs isentas podem ser herdadas no recorte.
+// Sítio B (ValidateTagged) — caminho do CLI.
+func TestReqDoneOpenCriteria_AC4c_InheritedPostCutoffInEnforced(t *testing.T) {
+	forkDir := buildReqRoadmapDir(t)
+	writeFile(t, forkDir, "docs/roadmaps/done/ROADMAP-x.md", "# Fixture\n")
+	initGitRepo(t, forkDir, "main")
+
+	upstreamDir := t.TempDir()
+	// Upstream tem 2 REQs: uma pré-cutoff e uma pós-cutoff (2026-11-01).
+	initUpstreamForInheritance(t, forkDir, upstreamDir, map[string]string{
+		"docs/req/REQ-2026-10-03-pre.md":  "# upstream pre-cutoff\n",
+		"docs/req/REQ-2026-11-01-post.md": "# upstream post-cutoff\n",
+	})
+
+	// Fork: REQ pré-cutoff (isenta → K conta); REQ pós-cutoff (enforced → K não conta).
+	writeDoneREQWithOpenCriteria(t, forkDir, "REQ-2026-10-03-pre.md", "2026-10-03")
+	writeDoneREQWithOpenCriteria(t, forkDir, "REQ-2026-11-01-post.md", "2026-11-01")
+
+	_, warnings := validateTaggedFixture(t, forkDir)
+	notice := findD4NoticeFromTagged(t, warnings)
+
+	// K=1 (só a pré-cutoff é inherited e isenta); enforced=1 (a pós-cutoff dispara).
+	for _, want := range []string{
+		"1 Done REQ(s) with open criteria exempt",
+		"(1 inherited from upstream/main)",
+		"1 enforced",
+		"2 Done REQ(s) scanned",
+	} {
+		if !strings.Contains(notice, want) {
+			t.Errorf("AC4c: notice deve conter %q, obteve: %q", want, notice)
+		}
+	}
+}
+
+// TestReqDoneOpenCriteria_UpstreamRefUnresolvable — AFIRMA que quando upstream está
+// configurado mas nenhuma ref (main, master, HEAD) resolve, a parentética indica
+// explicitamente que as refs foram tentadas mas não resolveram.
+// Sítio B (ValidateTagged) — caminho do CLI.
+func TestReqDoneOpenCriteria_UpstreamRefUnresolvable(t *testing.T) {
+	forkDir := buildReqRoadmapDir(t)
+	writeFile(t, forkDir, "docs/roadmaps/done/ROADMAP-x.md", "# Fixture\n")
+	initGitRepo(t, forkDir, "main")
+
+	// Adiciona remote "upstream" mas NÃO faz fetch → refs/remotes/upstream/* inexistentes.
+	runGit := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = forkDir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %s", args, out)
+		}
+	}
+	// Usa um path que existe para que "git remote add" não reclame.
+	runGit("remote", "add", "upstream", t.TempDir())
+	// Adiciona origin diferente do upstream para não disparar T1.
+	runGit("remote", "add", "origin", "https://example.invalid/origin.git")
+
+	writeDoneREQWithOpenCriteria(t, forkDir, "REQ-2026-10-03-x.md", "2026-10-03")
+
+	_, warnings := validateTaggedFixture(t, forkDir)
+	notice := findD4NoticeFromTagged(t, warnings)
+
+	if !strings.Contains(notice, "(upstream tried main, master: ref unresolvable)") {
+		t.Errorf("ref unresolvable: notice deve conter a variante de irresolvível, obteve: %q", notice)
 	}
 }
 

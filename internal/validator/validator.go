@@ -901,13 +901,15 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 
 	// D4 (ADR-2026-10-04, REQ #514 ML-1B): req_done_open_criteria — Done REQ with open AC box.
 	// Severity "warning" (ruleDefaults). Pre-cutoff REQs are exempt; visible in notice.
-	reqDoneOpenViolations, reqDoneOpenExempt, reqDoneOpenEnforced, reqDoneOpenScanned, e := validateREQDoneOpenCriteria()
+	// parenthetical carries upstream inheritance info when a different upstream remote is
+	// configured (issue #542, REQ-2026-10-08); empty string when absent or upstream==origin.
+	reqDoneOpenViolations, reqDoneOpenExempt, reqDoneOpenEnforced, reqDoneOpenScanned, reqDoneOpenParenthetical, e := validateREQDoneOpenCriteria()
 	if e != nil {
 		return nil, nil, e
 	}
 	applyRule("req_done_open_criteria", reqDoneOpenViolations, &violations, &warnings)
 	// Aggregated notice: always emitted when Done REQs were scanned (even with 0 exempt).
-	applyRuleWarnOnly("req_done_open_criteria", reqDoneOpenCriteriaAlwaysWarn(reqDoneOpenViolations, reqDoneOpenExempt, reqDoneOpenEnforced, reqDoneOpenScanned), &warnings)
+	applyRuleWarnOnly("req_done_open_criteria", reqDoneOpenCriteriaAlwaysWarn(reqDoneOpenViolations, reqDoneOpenExempt, reqDoneOpenEnforced, reqDoneOpenScanned, reqDoneOpenParenthetical), &warnings)
 
 	frontmatterViolations := validateFrontmatterPresence()
 	violations = append(violations, frontmatterViolations...) // sem regra configurável
@@ -1356,12 +1358,12 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 
 	// D4 (ADR-2026-10-04, REQ #514 ML-1B): tagged mirror of ValidateUnfiltered block.
 	// 🔴 Forgetting this Tagged site makes req_done_open_criteria vanish from --json.
-	reqDoneOpenViolationsT, reqDoneOpenExemptT, reqDoneOpenEnforcedT, reqDoneOpenScannedT, e := validateREQDoneOpenCriteria()
+	reqDoneOpenViolationsT, reqDoneOpenExemptT, reqDoneOpenEnforcedT, reqDoneOpenScannedT, reqDoneOpenParentheticalT, e := validateREQDoneOpenCriteria()
 	if e != nil {
 		return nil, nil, e
 	}
 	applyRuleTagged("req_done_open_criteria", reqDoneOpenViolationsT, &violations, &warnings)
-	applyRuleWarnOnlyTagged("req_done_open_criteria", reqDoneOpenCriteriaAlwaysWarn(reqDoneOpenViolationsT, reqDoneOpenExemptT, reqDoneOpenEnforcedT, reqDoneOpenScannedT), &warnings)
+	applyRuleWarnOnlyTagged("req_done_open_criteria", reqDoneOpenCriteriaAlwaysWarn(reqDoneOpenViolationsT, reqDoneOpenExemptT, reqDoneOpenEnforcedT, reqDoneOpenScannedT, reqDoneOpenParentheticalT), &warnings)
 
 	frontmatterViolations := validateFrontmatterPresence()
 	for _, m := range frontmatterViolations {

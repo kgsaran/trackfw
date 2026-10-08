@@ -50,17 +50,21 @@ test -n "$(ls docs/seguranca/*wave0-req-done-open-criteria-herdadas.md 2>/dev/nu
 > Dependencies: Wave 0 auditada.
 
 ### ML-1A — Recorte na linha agregada (AC2–AC4)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Files affected:** `internal/validator/validator_req_done_criteria.go`, testes, `docs/cli-parity.md` se documenta a linha
 **Acceptance criteria:**
-- [ ] Sem remote `upstream`: saída byte-idêntica (teste)
-- [ ] Com `upstream`: recorte correto nas duas direções (teste com repo temporário)
-- [ ] Falsificação e frase de reconciliação por teste novo
-- [ ] `make quality` (arquiteto)
+- [x] Sem remote `upstream`: saída byte-idêntica (teste)
+- [x] Com `upstream`: recorte correto nas duas direções (teste com repo temporário)
+- [x] Falsificação e frase de reconciliação por teste novo
+- [x] `make quality` (arquiteto)
+      Auditoria (2026-10-08): 5 testes conferidos por nome. Artefato real: clone do fork `lourivalgarciajunior/trackfw`
+      com o binário desta branch — sem `upstream`: linha idêntica à atual (22 exempt, 77 scanned); com `upstream` = este
+      repo + fetch: `22 ... (22 inherited from upstream/main)`, o mesmo número da issue. `--json` leva o recorte em
+      `warnings[].message` (sem campo novo — documentado no cli-parity). `make quality` EXIT=0 (executor), 347 OK / 0 FAIL.
 
 ## Wave 2 — Red-team e fechamento
 ### ML-2A — Red-team do diff
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Squad:** hades-tf
 - [ ] Parecer sobre o diff contra o threat model

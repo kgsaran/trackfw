@@ -2,6 +2,32 @@
 
 ---
 
+## 2026-10-08 — apolo-tf (feat/req-done-open-criteria-decompoe-herdadas — ML-1A) — FIM
+
+**Branch:** `feat/req-done-open-criteria-decompoe-herdadas`
+**Entregáveis produzidos:**
+- `internal/validator/validator_req_done_criteria.go` — discriminante upstream: 5 git calls locais, T1 guard (upstream==origin), basename matching, fallback HEAD, variante unresolvable.
+- `internal/validator/validator_req_done_criteria_test.go` — AC3 (byte-identical sem upstream), AC4a (fork req_dir divergente, K por basename), AC4b (T1 guard), AC4c (pós-cutoff fica em enforced, não em K), UpstreamRefUnresolvable.
+- `docs/cli-parity.md` — seção `req_done_open_criteria` atualizada com formatos fork/plain, T1 guard, basename matching, constraint §5.4.
+- `docs/agents-working-context.md` — esta entrada.
+
+**Gates:**
+- `go build ./...`: PASS
+- `go test ./internal/validator/`: PASS (todos os 5 novos testes + regressão)
+- `make quality`: EXIT=0 — suite completa — 8 chunks, 347 OK, 0 FAIL, guarda de conjunto OK (nenhum rótulo esperado ausente)
+
+**Riscos residuais declarados:** §5.1–§5.6 da Wave 0 permanecem como design constraints documentados, não defeitos a corrigir neste ML.
+
+---
+
+## 2026-10-08 — apolo-tf (feat/req-done-open-criteria-decompoe-herdadas — ML-1A) — INÍCIO
+
+**Branch:** `feat/req-done-open-criteria-decompoe-herdadas`
+**Tarefa:** ML-1A — Implementar discriminante derivado de herança upstream em `req_done_open_criteria`: decompor o número agregado de REQs isentas indicando quantas são herdadas do upstream (issue #542, REQ-2026-10-08).
+**Arquivos a modificar:** `internal/validator/validator_req_done_criteria.go`, `internal/validator/validator_req_done_criteria_test.go`, `docs/cli-parity.md`.
+
+---
+
 ## 2026-10-08 — hades-tf (feat/req-done-open-criteria-decompoe-herdadas — ML-0A) — FIM
 
 **Branch:** `feat/req-done-open-criteria-decompoe-herdadas`
