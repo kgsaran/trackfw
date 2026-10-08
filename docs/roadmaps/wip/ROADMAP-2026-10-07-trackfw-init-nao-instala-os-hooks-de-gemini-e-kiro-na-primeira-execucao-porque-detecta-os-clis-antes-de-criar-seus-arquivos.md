@@ -65,22 +65,27 @@ grep -q "Veredito" docs/seguranca/2026-10-07-wave0-init-instala-hooks-pedidos.md
 **Squad:** apolo-tf
 **Files affected:** `internal/commands/init.go`, `internal/generators/hooks.go`, `internal/generators/scaffold.go` (+ testes); `discover`/`update` só se a varredura achar a mesma causa
 **Acceptance criteria:**
-- [ ] Teste por CLI de `--ai-tools` para os 8 CLIs, a partir de diretório vazio (`git init`, `t.Setenv("HOME", t.TempDir())` por CLI), uma execução: o arquivo de hook do CLI existe e contém a linha de guard da D11
-- [ ] Kiro em modo não interativo, sem `.kiro/` pré-existente: guard instalado na 1ª execução; o relatório diz qual mecanismo fecha esse caso (a reordenação sozinha não cria `.kiro/`)
-- [ ] `trackfw update --targets agent-hooks` num projeto Kiro iniciado pelo `init` corrigido reporta `updated`, não `skipped`
-- [ ] Corrigir o comentário de `internal/generators/agentfiles.go` (~2422) que diz que o `InjectKiroHooks` nunca instala o git-branch-guard (instala)
-- [ ] Varredura de `update` e `discover` com resultado escrito; mesma causa → corrigida aqui com teste
-- [ ] Falsificação: voltar a ordem antiga reprova o teste dos 7 CLIs afetados (o claude passa na ordem antiga e não serve de prova)
+- [x] Teste por CLI de `--ai-tools` para os 8 CLIs, a partir de diretório vazio (`git init`, `t.Setenv("HOME", t.TempDir())` por CLI), uma execução: o arquivo de hook do CLI existe e contém a linha de guard da D11
+- [x] Kiro em modo não interativo, sem `.kiro/` pré-existente: guard instalado na 1ª execução; o relatório diz qual mecanismo fecha esse caso (a reordenação sozinha não cria `.kiro/`)
+- [x] `trackfw update --targets agent-hooks` num projeto Kiro iniciado pelo `init` corrigido reconhece o Kiro — **AC reescrito na auditoria**: logo depois do `init` o hook já existe e o `update` reporta `skipped` (nada a mudar, correto). O teste falsificável é o de reparo: hook removido, `.kiro/` mantido → `updated=1`; no código antigo (sem `.kiro/`), `skipped`
+- [x] Corrigir o comentário de `internal/generators/agentfiles.go` (~2422) que diz que o `InjectKiroHooks` nunca instala o git-branch-guard (instala)
+- [x] Varredura de `update` e `discover` com resultado escrito; mesma causa → corrigida aqui com teste — `update` e `discover` rodam depois que os arquivos existem (detecção funciona); `discover --init` chama duas vezes de forma idempotente (Wave 0); a mesma causa estava no `install` → ML-1B
+- [x] Falsificação: voltar a ordem antiga reprova o teste dos 7 CLIs afetados (o claude passa na ordem antiga e não serve de prova)
 - [ ] `go test ./internal/commands/ ./internal/generators/ -count=1` e `make quality` (arquiteto, sem `~/.local/bin` no PATH) verdes
+      Auditoria (2026-10-07): mecanismo = despacho por nome (`InjectHooksForTools`, no fim do `installAITools`), não
+      reordenação — a reordenação não cobriria o Kiro com escopo global. Tabela remedida com o binário: guard na 1ª
+      execução nos 8 CLIs (eram 1). 15 subtestes conferidos pelo arquiteto. Observação: o `agents install` num projeto
+      sem `init` cria o hook de attention que aponta para `scripts/trackfw-attention-*.sh` ainda inexistentes (o guard
+      chama o `trackfw` direto e funciona). Falta só `make quality`.
 
 ### ML-1B — `install` de agents/skills: mesma causa (Wave 0)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** apolo-tf (mesmo despacho do ML-1A, em sequência)
 **Por que o escopo original não previa:** achado da Wave 0 — `internal/commands/integrations_flags.go` cria os arquivos
 de instrução do CLI (ex.: `GEMINI.md`) e nunca chama a injeção de hooks depois. Mesma causa → mesma REQ.
 **Acceptance criteria:**
-- [ ] Teste: o caminho de `install` que cria os arquivos de um CLI deixa o hook de guard desse CLI instalado, numa execução
-- [ ] Falsificação: remover a injeção reprova o teste
+- [x] Teste: o caminho de `install` que cria os arquivos de um CLI deixa o hook de guard desse CLI instalado, numa execução
+- [x] Falsificação: remover a injeção reprova o teste
 
 **Gates da wave:**
 ```bash
