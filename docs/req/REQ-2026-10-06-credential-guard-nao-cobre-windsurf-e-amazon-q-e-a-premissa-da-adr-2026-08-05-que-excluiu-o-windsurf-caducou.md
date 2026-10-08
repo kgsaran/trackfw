@@ -1,14 +1,14 @@
 ---
-status: Done
+status: Open
 date: 2026-10-06
 author: "zeus-tf"
 adr: ""
-roadmap: "docs/roadmaps/done/ROADMAP-2026-10-06-credential-guard-nao-cobre-windsurf-e-amazon-q-e-a-premissa-da-adr-2026-08-05-que-excluiu-o-windsurf-caducou.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-10-06-credential-guard-nao-cobre-windsurf-e-amazon-q-e-a-premissa-da-adr-2026-08-05-que-excluiu-o-windsurf-caducou.md"
 ---
 
 # REQ: credential guard nao cobre Windsurf e Amazon Q, e a premissa da ADR-2026-08-05 que excluiu o Windsurf caducou
 
-> Date: 2026-10-06 | Status: Done
+> Date: 2026-10-06 | Status: Open
 | Linear Issue: 
 | Jira Issue: 
 
@@ -47,6 +47,7 @@ guard; não trata outros CLIs; não reabre a decisão de modo avisador por padr�
       ✅ Evidência: PR #543 — `credExtractCmdAndCwd`/`credDeepScan`/`credIsSimpleCmd` em `internal/guard/credential.go`; 32 combinações medidas com o binário (projeto/global × BOM); `windows-full-suites` verde após ML-2E.
 - [x] AC4 — Prova de disparo real em ao menos um dos dois CLIs, ou a impossibilidade de prova declarada com o motivo
       ✅ Evidência: impossibilidade declarada (sem conta de Windsurf/Amazon Q); medido no lugar o binário com payload documentado e o artefato gerado (roadmap, ML-2A).
+- [ ] AC6 — Reaberto em 2026-10-08 pela issue #544: no Windows, a 2ª camada resolve o caminho na forma em que o CLI o escreve — Git Bash (`/c/Users/...`, `/C/...`), nativo (`C:\...`) e `C:/...` — tanto em argumento (`cat <caminho>`) quanto em alvo de redirecionamento (`> C:\...` era cortado no `:`); medido na VM e no CI de Windows lendo stderr, não só rc
 
 ## Linked ADR
 <!-- Reference the ADR that governs this requirement -->
@@ -59,4 +60,4 @@ Depende da REQ-2026-09-05 (a linha `trackfw guard credential` precisa existir).
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/done/ROADMAP-2026-10-06-credential-guard-nao-cobre-windsurf-e-amazon-q-e-a-premissa-da-adr-2026-08-05-que-excluiu-o-windsurf-caducou.md
+Roadmap: docs/roadmaps/wip/ROADMAP-2026-10-06-credential-guard-nao-cobre-windsurf-e-amazon-q-e-a-premissa-da-adr-2026-08-05-que-excluiu-o-windsurf-caducou.md

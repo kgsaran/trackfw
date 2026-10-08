@@ -45932,3 +45932,7 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-08 — zeus-tf — FIM: REQ-2026-10-08 implementada (#542), aguarda PR
 
 - Linha agregada de `req_done_open_criteria` ganha `(K inherited from upstream/<ramo>)` com remote upstream ≠ origin; sem upstream, byte-idêntica. Medido no fork do relator: 22 (22 inherited). Red-team reprovou 1x (aspa no nome do ramo → `file` falso no JSON), corrigido por allowlist. `make quality` EXIT=0.
+
+## 2026-10-08 — zeus-tf — REQ-2026-10-08 Done (PR #545); REQ-2026-10-06 reaberta pela #544
+
+- REQ-2026-10-08 fechada com evidência, roadmap em `done/`, `req-aberta` retirada da #542. REQ-2026-10-06 reaberta (AC6, Wave 3): caminho Git Bash `/c/...` e redirecionamento `C:\...` não varridos na 2ª camada no Windows. Branch `fix/credential-guard-caminho-git-bash-windows`. ML-3A (hades-tf) despachado.

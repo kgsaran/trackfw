@@ -1,5 +1,5 @@
 ---
-status: done
+status: wip
 date: 2026-10-06
 req: "docs/req/REQ-2026-10-06-credential-guard-nao-cobre-windsurf-e-amazon-q-e-a-premissa-da-adr-2026-08-05-que-excluiu-o-windsurf-caducou.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: credential guard nao cobre Windsurf e Amazon Q, e a premissa da ADR-2026-08-05 que excluiu o Windsurf caducou
 
-> Created: 2026-10-06 | Status: done
+> Created: 2026-10-06 | Status: wip
 
 ## Context
 <!-- Derived from REQ: REQ-2026-10-06-credential-guard-nao-cobre-windsurf-e-amazon-q-e-a-premissa-da-adr-2026-08-05-que-excluiu-o-windsurf-caducou.md -->
@@ -173,4 +173,31 @@ regex sobre o texto bruto (que tolerava isso) por JSON parse sem fallback. E, co
       refutada: com JSON válido o caminho decodificado funciona. Correção: payload inválido volta à extração da main;
       testes com `json.Marshal`; VM 168 PASS / 0 FAIL. Auditoria: 2 nomes da tabela de reconciliação não existem
       (`TestRunCredential_BOMPrefix`, `_QuotedPath` — os testes descritos existem com outros nomes). `make quality` EXIT=0.
+
+## Wave 3 — Reabertura pela issue #544 (forma de caminho Windows na 2ª camada)
+> Dependencies: PR #543 mergeado. Reaberto em 2026-10-08.
+**Por que o escopo original não previa:** o ML-1C criou `credResolveArg` resolvendo argumento com `filepath.IsAbs`, que
+no Windows é false para `/c/Users/...` (forma natural do Git Bash, que o Claude Code usa no Windows) → caminho colado
+no cwd, arquivo não achado, sem aviso. E o ML-2E registrou como limitação que `credRedirectRe` corta `C:\...` no `:`.
+Mesma causa da REQ (o guard não lê o payload pelo que o CLI escreve) → mesma REQ. Relatado por @lourivalgarciajunior.
+
+### ML-3A — Threat model da reabertura
+**Status:** 🔄 Em andamento
+**Squad:** hades-tf
+- [ ] Enumeração de todo sítio da 2ª camada que interpreta caminho (argumento, redirecionamento, glob, cwd do payload, `tool_info.cwd`) e de quais formas de caminho cada CLI escreve no Windows (Git Bash `/c/`, MSYS `/cygdrive/c/`?, `C:\`, `C:/`, UNC `\\server\share`, `~`)
+- [ ] Alvos de falsificação nas duas direções (forma não detectada; forma POSIX legítima `/c/...` num Linux real, onde `/c` é diretório de verdade)
+- [ ] Medição na VM com o binário de `main`, lendo stderr, em modo `warn` e `block`
+
+### ML-3B — Correção e testes
+**Status:** ⬜ Pendente
+**Squad:** apolo-tf
+- [ ] Toda forma listada no ML-3A detectada no Windows (argumento e redirecionamento), projeto e global
+- [ ] POSIX sem regressão (`/c/...` continua absoluto)
+- [ ] Testes por forma de caminho; verdes no `windows-full-suites` e na VM; falsificação; frase de reconciliação
+- [ ] `make quality` (arquiteto)
+
+### ML-3C — Red-team
+**Status:** ⬜ Pendente
+**Squad:** hades-tf
+- [ ] Parecer sobre o diff da Wave 3
 
