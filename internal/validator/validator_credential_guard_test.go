@@ -1097,10 +1097,12 @@ func TestClaudeGuardHookMatcherWarning_NonGuardHookNoWarning(t *testing.T) {
 
 // windsurfGlobalHooksJSON builds the ~/.codeium/windsurf/hooks.json content
 // with the global credential guard subcommand in both events (or only one).
+// ML-2C F1: uses the exact D11 revised form (guardExpectedLine) — legacy D2 form
+// ("trackfw guard credential --global; exit $LASTEXITCODE") is no longer accepted
+// as "fully installed global".
 func windsurfGlobalHooksJSON(preRun, preWrite bool) []byte {
-	// Use the full global subcommand; "trackfw guard credential --global" is the
-	// relevant substring (credentialGuardGlobalSubcmdMarker).
-	globalCmd := "trackfw guard credential " + "--global" + "; exit $LASTEXITCODE"
+	// D11 revised (current form): exact match required by credentialGuardGlobalInstalledWindsurf.
+	globalCmd := credentialGuardGlobalExpectedCmdWindsurf()
 	hookEntry := map[string]interface{}{
 		"command":     globalCmd,
 		"show_output": true,
@@ -1222,5 +1224,106 @@ func TestCredentialGuardPresenceRequired_Windsurf_GlobalSoPre_RunCommand_Violati
 	}
 	if !hasViolation(msgs, ".windsurf/hooks.json") {
 		t.Errorf("expected violation for .windsurf/hooks.json with global only partially installed, got: %v", msgs)
+	}
+}
+
+// --------------------------------------------------------------------------
+// F1 tests (ML-2C): exact-match requirement for global Windsurf harness
+// --------------------------------------------------------------------------
+
+// windsurfGlobalHooksJSONWithCmd builds ~/.codeium/windsurf/hooks.json content
+// with a specific raw command string in BOTH events (used to test legacy forms).
+func windsurfGlobalHooksJSONWithCmd(cmd string) []byte {
+	hookEntry := map[string]interface{}{"command": cmd, "show_output": true}
+	hooks := map[string]interface{}{
+		"pre_run_command": []interface{}{hookEntry},
+		"pre_write_code":  []interface{}{hookEntry},
+	}
+	b, _ := json.Marshal(map[string]interface{}{"hooks": hooks})
+	return b
+}
+
+// writeWindsurfGlobalHooksWithCmd writes the global Windsurf hooks.json with a
+// specific raw command string in both events.
+func writeWindsurfGlobalHooksWithCmd(t *testing.T, home, cmd string) {
+	t.Helper()
+	path := filepath.Join(home, ".codeium", "windsurf", "hooks.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatalf("mkdir global windsurf: %v", err)
+	}
+	if err := os.WriteFile(path, windsurfGlobalHooksJSONWithCmd(cmd), 0644); err != nil {
+		t.Fatalf("write global windsurf hooks with cmd: %v", err)
+	}
+}
+
+// Reconciliação: afirma que credentialGuardGlobalInstalledWindsurf retorna false
+// quando o global hooks.json contém a forma D2 legada ("trackfw guard credential
+// --global; exit $LASTEXITCODE") — apenas a forma D11 revised é aceita (F1/ML-2C).
+// Falsificação RC: trocar credentialGuardGlobalMatchesExpected por substring match
+// → este teste falha (D2 passa a ser aceita; violation suprimida).
+func TestCredentialGuardGlobalInstalled_D2Legacy_NotAccepted(t *testing.T) {
+	home := isolateHome(t)
+	d2Cmd := "trackfw guard credential " + "--global" + "; exit $LASTEXITCODE"
+	writeWindsurfGlobalHooksWithCmd(t, home, d2Cmd)
+
+	if credentialGuardGlobalInstalledWindsurf() {
+		t.Errorf("credentialGuardGlobalInstalledWindsurf must return false for D2 legacy form %q"+
+			" — only the D11 revised form is accepted", d2Cmd)
+	}
+}
+
+// Reconciliação: afirma que credentialGuardGlobalInstalledWindsurf retorna false
+// quando o global hooks.json contém a forma D11 pré-ML-6C (sem o 4º trecho de
+// normalização PowerShell) — apenas a forma D11 revised (com o 4º trecho) é aceita.
+// Falsificação RC: aceitar strings.HasPrefix → este teste falha.
+func TestCredentialGuardGlobalInstalled_D11Legacy_NotAccepted(t *testing.T) {
+	home := isolateHome(t)
+	// D11 legacy: sem o 4º trecho "$LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null};"
+	d11Legacy := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential ` + `--global; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
+	writeWindsurfGlobalHooksWithCmd(t, home, d11Legacy)
+
+	if credentialGuardGlobalInstalledWindsurf() {
+		t.Errorf("credentialGuardGlobalInstalledWindsurf must return false for D11 legacy form"+
+			" — only the D11 revised form is accepted")
+	}
+}
+
+// Reconciliação: afirma que credentialGuardGlobalInstalledWindsurf retorna true
+// quando o global hooks.json contém a forma D11 revised exata em ambos os eventos —
+// base da correção F1/ML-2C.
+// Falsificação RC: remover a verificação de pre_write_code → este teste ainda passa
+// (só pre_run é verificado); o teste TestCredentialGuardPresenceRequired_Windsurf_GlobalSoPre_RunCommand_Violation
+// detecta a regressão nesse caso.
+func TestCredentialGuardGlobalInstalled_D11Revised_Accepted(t *testing.T) {
+	home := isolateHome(t)
+	d11Revised := credentialGuardGlobalExpectedCmdWindsurf()
+	writeWindsurfGlobalHooksWithCmd(t, home, d11Revised)
+
+	if !credentialGuardGlobalInstalledWindsurf() {
+		t.Errorf("credentialGuardGlobalInstalledWindsurf must return true for D11 revised form %q", d11Revised)
+	}
+}
+
+// Reconciliação: afirma que validateCredentialGuardPresenceRequired emite violation
+// para .windsurf/hooks.json quando o global harness usa a forma D2 legada — o projeto
+// deve instalar a cobertura local pois o global é insuficiente.
+func TestCredentialGuardPresenceRequired_Windsurf_GlobalD2Legacy_Violation(t *testing.T) {
+	home := isolateHome(t)
+	d2Cmd := "trackfw guard credential " + "--global" + "; exit $LASTEXITCODE"
+	writeWindsurfGlobalHooksWithCmd(t, home, d2Cmd)
+
+	dir := t.TempDir()
+	chdir(t, dir)
+	stubProbeOK(t)
+
+	writeFile(t, dir, ".windsurf/hooks.json",
+		windsurfHooksWithSubcmd(`$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`))
+
+	msgs, err := validateCredentialGuardPresenceRequired()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !hasViolation(msgs, ".windsurf/hooks.json") {
+		t.Errorf("expected violation for .windsurf/hooks.json with D2 legacy global, got: %v", msgs)
 	}
 }

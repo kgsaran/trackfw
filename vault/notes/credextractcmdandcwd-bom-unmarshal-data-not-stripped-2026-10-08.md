@@ -59,4 +59,4 @@ sub-elementos extraídos de `root`, não sobre `data` bruto. Não afetadas.
 
 ## Status
 
-Não corrigido. ML-2C desta REQ contém o fix.
+Corrigido em ML-2C (2026-10-08). `json.Unmarshal(data, &root)` → `json.Unmarshal(stripped, &root)` em `credExtractCmdAndCwd`. Build limpo, testes verdes.

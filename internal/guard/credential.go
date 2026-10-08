@@ -100,22 +100,31 @@ func RunCredential(stdin io.Reader, stdout, stderr io.Writer) int {
 		match = credSecondLayer(shellCmd, shellCwd, contextStr, redirectMatches)
 	}
 
+	// F4: if Layer 1 + primary Layer 2 found nothing, deep-scan all command/command_line
+	// values at any depth in the JSON payload (catches non-standard schemas like
+	// {"params":{"command":"cat secret.txt"}} used by Cursor/Copilot/Kiro/Gemini).
+	if match == "" && isJSON {
+		match = credDeepScan(data, shellCwd)
+	}
+
 	if match == "" {
 		return 0
 	}
 
-	// Ephemeral exemption: for JSON payloads, only exempt when the matched
-	// credential was found inside the shell command itself — not in write
-	// content (new_str, content, edits[*].new_string). For non-JSON payloads
-	// the original exemption logic is preserved.
+	// F2 shape-based ephemeral exemption: for JSON payloads, only exempt when:
+	//   (a) the credential was found in the primary shell command itself,
+	//   (b) there are no shell metacharacters (argv0 ∈ {echo, printf}),
+	//   (c) all redirect targets are exactly "/dev/null".
+	// For non-JSON payloads, apply the same argv0 shape gate to the raw context string.
 	if isJSON {
 		cmdHasMatch := (match == "JWT" && credJWTRe.MatchString(shellCmd)) ||
 			(match == "AWS access key" && credAWSRe.MatchString(shellCmd))
-		if cmdHasMatch && credIsAllEphemeral(contextStr, redirectMatches) {
+		if cmdHasMatch && credIsAllEphemeral(contextStr, redirectMatches) &&
+			credIsSimpleCmd(shellCmd) && credAllTargetsAreDevNull(redirectMatches) {
 			return 0
 		}
 	} else {
-		if credIsAllEphemeral(contextStr, redirectMatches) {
+		if credIsAllEphemeral(contextStr, redirectMatches) && credIsSimpleCmd(contextStr) {
 			return 0
 		}
 	}
@@ -179,18 +188,25 @@ func RunCredentialGlobal(stdin io.Reader, stdout, stderr io.Writer) int {
 		match = credSecondLayer(shellCmd, shellCwd, contextStr, redirectMatches)
 	}
 
+	// F4: deep-scan all command/command_line values (same as RunCredential).
+	if match == "" && isJSON {
+		match = credDeepScan(data, shellCwd)
+	}
+
 	if match == "" {
 		return 0
 	}
 
+	// F2 shape-based exemption (same conditions as RunCredential).
 	if isJSON {
 		cmdHasMatch := (match == "JWT" && credJWTRe.MatchString(shellCmd)) ||
 			(match == "AWS access key" && credAWSRe.MatchString(shellCmd))
-		if cmdHasMatch && credIsAllEphemeral(contextStr, redirectMatches) {
+		if cmdHasMatch && credIsAllEphemeral(contextStr, redirectMatches) &&
+			credIsSimpleCmd(shellCmd) && credAllTargetsAreDevNull(redirectMatches) {
 			return 0
 		}
 	} else {
-		if credIsAllEphemeral(contextStr, redirectMatches) {
+		if credIsAllEphemeral(contextStr, redirectMatches) && credIsSimpleCmd(contextStr) {
 			return 0
 		}
 	}
@@ -370,7 +386,7 @@ func credExtractCmdAndCwd(data []byte) (shellCmd, cwd string, isJSON bool) {
 		return "", "", false
 	}
 	var root map[string]json.RawMessage
-	if err := json.Unmarshal(data, &root); err != nil {
+	if err := json.Unmarshal(stripped, &root); err != nil { // F3: use stripped (no BOM)
 		return "", "", false
 	}
 
@@ -532,6 +548,180 @@ func credIsAllEphemeral(rawStr string, redirectMatches []string) bool {
 	}
 
 	return hasRedirect && allEphemeral
+}
+
+// --------------------------------------------------------------------------
+// F2: shape-based exemption gate (ML-2D)
+// --------------------------------------------------------------------------
+
+// credIsRedirectAmpersand reports whether the '&' at position i in cmd is an
+// fd-duplication redirect (e.g. 2>&1, >&2) and should NOT be treated as a
+// background metacharacter. Only returns true for [0-9]*>&[0-9-]; '>&word'
+// (non-digit word) is a file redirect in bash and IS treated as metachar.
+func credIsRedirectAmpersand(cmd string, i int) bool {
+	if i == 0 {
+		return false
+	}
+	// Scan backward past optional digits.
+	j := i - 1
+	for j >= 0 && cmd[j] >= '0' && cmd[j] <= '9' {
+		j--
+	}
+	if j < 0 || cmd[j] != '>' {
+		return false
+	}
+	// The character after '&' must be a digit or '-' for it to be an fd-dup.
+	if i+1 >= len(cmd) {
+		return false
+	}
+	next := cmd[i+1]
+	return (next >= '0' && next <= '9') || next == '-'
+}
+
+// credHasShellMeta reports whether cmd contains a shell metacharacter that
+// indicates a compound or pipeline command:
+//   |, ;, \n, standalone & (not [0-9]*>&[0-9-]), $(, backtick, <(, >(
+//
+// Intentionally quote-unaware — fails closed (conservative).
+func credHasShellMeta(cmd string) bool {
+	for i := 0; i < len(cmd); i++ {
+		switch cmd[i] {
+		case '|', ';', '\n':
+			return true
+		case '&':
+			if !credIsRedirectAmpersand(cmd, i) {
+				return true
+			}
+		case '$':
+			if i+1 < len(cmd) && cmd[i+1] == '(' {
+				return true
+			}
+		case '`':
+			return true
+		case '<', '>':
+			if i+1 < len(cmd) && cmd[i+1] == '(' {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// credIsSimpleCmd reports whether shellCmd is a simple command suitable for the
+// ephemeral exemption: no shell metacharacters and argv[0] (basename, without
+// .exe suffix) is in {echo, printf}.
+func credIsSimpleCmd(shellCmd string) bool {
+	if credHasShellMeta(shellCmd) {
+		return false
+	}
+	fields := strings.Fields(shellCmd)
+	if len(fields) == 0 {
+		return false
+	}
+	argv0 := filepath.Base(fields[0])
+	argv0 = strings.TrimSuffix(argv0, ".exe") // Windows
+	switch argv0 {
+	case "echo", "printf":
+		return true
+	}
+	return false
+}
+
+// credAllTargetsAreDevNull reports whether ALL redirect targets equal "/dev/null"
+// exactly. Used as an additional guard inside the shape-based exemption to close
+// the mktemp-filename bypass: a file named "mktemp.txt" satisfies
+// credIsEphemeralTarget but materialises the token.
+func credAllTargetsAreDevNull(redirectMatches []string) bool {
+	for _, rm := range redirectMatches {
+		target := credRedirectTarget(rm)
+		target = strings.Map(func(r rune) rune {
+			if r == '"' || r == '\'' {
+				return -1
+			}
+			return r
+		}, target)
+		target = strings.TrimRight(target, "},")
+		if target != "/dev/null" {
+			return false
+		}
+	}
+	return true
+}
+
+// --------------------------------------------------------------------------
+// F4: deep walk of all command/command_line values (ML-2C)
+// --------------------------------------------------------------------------
+
+const (
+	credDeepWalkMaxDepth = 20
+	credDeepWalkMaxCount = 50
+)
+
+// credDeepScan walks all string values at "command" or "command_line" keys at any
+// depth in the decoded JSON payload and runs credSecondLayer on each unique value.
+// Returns the first credential match found, or "" if none.
+//
+// Exclusion: when tool_name == "fs_write", tool_input is removed from the walk
+// tree (its "command" value is an enum tag, not a shell command).
+//
+// Depth limit: credDeepWalkMaxDepth. Count limit: credDeepWalkMaxCount.
+// Exceeding a limit is fail-open for scanning (we stop early) but fail-closed
+// for the exemption (exemption is based on primary shellCmd, never on deep walk).
+func credDeepScan(data []byte, shellCwd string) string {
+	stripped := bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF})
+	var iface interface{}
+	if json.Unmarshal(stripped, &iface) != nil {
+		return ""
+	}
+
+	// For fs_write payloads, remove tool_input (its "command" is an enum tag).
+	if m, ok := iface.(map[string]interface{}); ok {
+		if toolName, _ := m["tool_name"].(string); toolName == "fs_write" {
+			delete(m, "tool_input")
+		}
+	}
+
+	// Collect unique command strings via a depth-limited recursive walk.
+	seen := make(map[string]bool)
+	var cmds []string
+	count := 0
+
+	var walk func(v interface{}, depth int)
+	walk = func(v interface{}, depth int) {
+		if depth > credDeepWalkMaxDepth || count >= credDeepWalkMaxCount {
+			return
+		}
+		switch tv := v.(type) {
+		case map[string]interface{}:
+			for k, val := range tv {
+				if k == "command" || k == "command_line" {
+					if s, ok := val.(string); ok && s != "" && !strings.ContainsRune(s, '\x00') {
+						if !seen[s] {
+							seen[s] = true
+							cmds = append(cmds, s)
+							count++
+						}
+					}
+					// Do not recurse into the value of a command key.
+				} else {
+					walk(val, depth+1)
+				}
+			}
+		case []interface{}:
+			for _, item := range tv {
+				walk(item, depth+1)
+			}
+		}
+	}
+	walk(iface, 0)
+
+	for _, cmd := range cmds {
+		redirects := credRedirectRe.FindAllString(cmd, -1)
+		if m := credSecondLayer(cmd, shellCwd, cmd, redirects); m != "" {
+			return m
+		}
+	}
+	return ""
 }
 
 // credReadModeWithDefault reads credential_guard.mode from trackfw.yaml.

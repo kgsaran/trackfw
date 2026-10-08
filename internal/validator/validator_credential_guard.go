@@ -786,15 +786,35 @@ func extractCredentialGuardCommandsFromEvent(parsed interface{}, event credentia
 	return nil
 }
 
+// credentialGuardGlobalExpectedCmdWindsurf returns the exact command string that the
+// generator writes for the Windsurf global credential guard harness (D11 revised /
+// ML-6C form for the PS/POSIX shell family). This is the ONLY form accepted as
+// "fully installed global" — legacy forms (D11 pre-ML-6C, D2) require `trackfw update`.
+//
+// The value equals guardCredentialGlobalCmdPSPOSIX in internal/generators/agentfiles.go.
+// The validator cannot import generators (import cycle), so we derive it via
+// guardExpectedLine which is in the same package.
+func credentialGuardGlobalExpectedCmdWindsurf() string {
+	return guardExpectedLine("credential --global", guardShellFamilyPSPosix)
+}
+
+// credentialGuardGlobalMatchesExpected reports whether the given command string is
+// exactly equal to the current D11 revised global credential guard command for Windsurf.
+func credentialGuardGlobalMatchesExpected(cmd string) bool {
+	return cmd == credentialGuardGlobalExpectedCmdWindsurf()
+}
+
 // credentialGuardGlobalInstalledWindsurf reports whether the Windsurf global harness
-// (~/.codeium/windsurf/hooks.json) is FULLY installed: the global form of the credential
-// guard subcommand ("trackfw guard credential --global") must be present in BOTH
-// hooks.pre_run_command AND hooks.pre_write_code.
+// (~/.codeium/windsurf/hooks.json) is FULLY installed with the CURRENT form:
+// the D11 revised command (guardExpectedLine("credential --global", guardShellFamilyPSPosix))
+// must be present by EXACT EQUALITY in BOTH hooks.pre_run_command AND hooks.pre_write_code.
 //
 // This mirrors globalCredentialGuardInstalledWindsurf() in internal/generators/agentfiles.go —
 // the validator cannot import generators (import cycle; see credentialGuardScriptReference's
 // doc comment for the full explanation). The hardened definition (both events required) is
-// ML-1D's correction of the original (pre_run_command only).
+// ML-1D's correction; exact-match requirement is ML-2C's correction (F1).
+//
+// Legacy forms (D11 pre-ML-6C, D2) are NOT accepted — they require `trackfw update`.
 //
 // Fail-open: any read/parse/home-resolve error → false (treat as not installed, emit violation).
 func credentialGuardGlobalInstalledWindsurf() bool {
@@ -812,14 +832,37 @@ func credentialGuardGlobalInstalledWindsurf() bool {
 		return false
 	}
 	hooks, _ := root["hooks"].(map[string]interface{})
-	var preRun []guardCommandMatch
-	collectCommandsWithMarker(hooks["pre_run_command"], credentialGuardGlobalSubcmdMarker, &preRun)
-	if len(preRun) == 0 {
+	if !credentialGuardGlobalExactMatchInEvent(hooks["pre_run_command"]) {
 		return false
 	}
-	var preWrite []guardCommandMatch
-	collectCommandsWithMarker(hooks["pre_write_code"], credentialGuardGlobalSubcmdMarker, &preWrite)
-	return len(preWrite) > 0
+	return credentialGuardGlobalExactMatchInEvent(hooks["pre_write_code"])
+}
+
+// credentialGuardGlobalExactMatchInEvent reports whether the given hook event value
+// (which may be an array of command objects or a string) contains the exact expected
+// global credential guard command string.
+func credentialGuardGlobalExactMatchInEvent(v interface{}) bool {
+	expected := credentialGuardGlobalExpectedCmdWindsurf()
+	switch tv := v.(type) {
+	case []interface{}:
+		for _, item := range tv {
+			if m, ok := item.(map[string]interface{}); ok {
+				if cmd, _ := m["command"].(string); cmd == expected {
+					return true
+				}
+			}
+			if s, ok := item.(string); ok && s == expected {
+				return true
+			}
+		}
+	case string:
+		return tv == expected
+	case map[string]interface{}:
+		if cmd, _ := tv["command"].(string); cmd == expected {
+			return true
+		}
+	}
+	return false
 }
 
 // validateCredentialGuardPresenceRequired emite violations quando um arquivo de hook dos CLIs em

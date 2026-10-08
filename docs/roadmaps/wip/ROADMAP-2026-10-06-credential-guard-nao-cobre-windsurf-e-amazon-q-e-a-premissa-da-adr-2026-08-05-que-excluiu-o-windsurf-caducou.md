@@ -19,7 +19,7 @@ REQ: docs/req/REQ-2026-10-06-credential-guard-nao-cobre-windsurf-e-amazon-q-e-a-
 - [x] AC2 da REQ — adendo à ADR-2026-08-05 com a decisão por CLI (ML-1A)
 - [x] AC3 da REQ — `init`/`update`/`update harness` emitem o credential guard para cada CLI decidido "instalar"; `validate` deixa de silenciar; teste nas duas direções (ML-1B)
 - [x] AC5 da REQ — o guard lê o payload de cada CLI (ML-1C)
-- [ ] AC4 da REQ — prova de disparo real ou impossibilidade declarada com motivo (ML-2A)
+- [x] AC4 da REQ — prova de disparo real ou impossibilidade declarada com motivo (ML-2A)
 - [x] `make quality` verde (arquiteto, sem `~/.local/bin` no PATH)
 
 ## Status Legend
@@ -113,10 +113,13 @@ projeto; e "global instalado" contava só pre_run_command, deixando pre_write_co
 > Dependencies: Wave 1 auditada.
 
 ### ML-2A — Prova de disparo real (AC4)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** zeus-tf
 **Acceptance criteria:**
-- [ ] Disparo real medido em ao menos um CLI, ou impossibilidade declarada (sem conta de Windsurf/Amazon Q, decisão do usuário)
+- [x] Disparo real medido em ao menos um CLI, ou impossibilidade declarada (sem conta de Windsurf/Amazon Q, decisão do usuário)
+      Impossibilidade declarada (2026-10-08): sem conta de Windsurf nem de Amazon Q (KG: "os demais não tenho assinatura").
+      O que foi medido no lugar: o binário com o payload documentado de cada CLI (Wave 0 corrigida, ML-2D) e o artefato
+      gerado por `init`/`update`/`validate` num projeto real (ML-1B). Não medido: o CLI real invocar o hook.
 
 ### ML-2B — Red-team do diff
 **Status:** ✅ Concluído
@@ -130,21 +133,25 @@ projeto; e "global instalado" contava só pre_run_command, deixando pre_write_co
       lido. Mesma causa (o guard e o validate lendo o payload/arquivo pelo que ele é) → ML-2C/2D aqui.
 
 ### ML-2C — Corretivo F1, F3, F4
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** apolo-tf (mesmo despacho do ML-2D, em sequência: ambos tocam `internal/guard/credential.go`)
-- [ ] F3: parse do payload sem BOM; teste com BOM em cada caso do ML-1C (projeto e global)
-- [ ] F4: 2ª camada e varredura de redirecionamento sobre TODOS os valores string de `command`/`command_line` em qualquer profundidade (exceto o enum do `fs_write`); `{"params":{"command":"cat arq"}}` → 2
-- [ ] F1: "global instalado" (validate) e presença no projeto exigem a linha de hook esperada (igualdade, como o gerador), não substring; `echo trackfw guard credential --global` não satisfaz
-- [ ] Falsificação de cada um, frase de reconciliação por teste
+- [x] F3: parse do payload sem BOM; teste com BOM em cada caso do ML-1C (projeto e global)
+- [x] F4: 2ª camada e varredura de redirecionamento sobre TODOS os valores string de `command`/`command_line` em qualquer profundidade (exceto o enum do `fs_write`); `{"params":{"command":"cat arq"}}` → 2
+- [x] F1: "global instalado" (validate) e presença no projeto exigem a linha de hook esperada (igualdade, como o gerador), não substring; `echo trackfw guard credential --global` não satisfaz
+- [x] Falsificação de cada um, frase de reconciliação por teste
 
 ### ML-2D — Corretivo F2: isenção efêmera só para comando simples
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Decisão do arquiteto:** a isenção existe porque `> /dev/null` não materializa nada. Ela só vale quando nada mais pode
 materializar: um único comando de shell, simples (sem `|`, `;`, `&&`, `||`, `&`, `$(`, crase, `<(`/`>(`, quebra de linha),
 argv[0] ∈ {echo, printf}, todos os redirecionamentos efêmeros, e o JWT dentro desse comando. Qualquer outra forma bloqueia
 em `block` (fail-closed); em `warn` só avisa. Registrado no adendo da ADR-2026-08-05.
-- [ ] `echo <JWT> > /dev/null` continua isento; `| tee arq`, `dd of=`, `python3 -c ... > /dev/null`, `& writer` → 2
-- [ ] Falsificação nas duas direções
-- [ ] `make quality` (arquiteto)
-
+- [x] `echo <JWT> > /dev/null` continua isento; `| tee arq`, `dd of=`, `python3 -c ... > /dev/null`, `& writer` → 2
+- [x] Falsificação nas duas direções
+- [x] `make quality` (arquiteto)
+      Auditoria (2026-10-08): 18 testes novos conferidos por nome; binário medido em 32 combinações (8 comandos × projeto/
+      global × com/sem BOM: echo/printf para /dev/null → 0; tee, dd, python -c, &, ;, cat de arquivo → 2), sem divergência.
+      F1 do lado do projeto já era coberto pela checagem de forma (`echo trackfw guard credential` → ✗, medido). A isenção
+      ficou mais estrita que o pedido (só `/dev/null`, não `$(mktemp)`) — aceito, fail-closed. `make quality` EXIT=0,
+      falsify 347 OK / 0 FAIL.

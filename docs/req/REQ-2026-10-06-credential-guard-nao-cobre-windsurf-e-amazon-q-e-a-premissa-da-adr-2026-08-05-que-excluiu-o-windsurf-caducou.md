@@ -41,7 +41,7 @@ guard; não trata outros CLIs; não reabre a decisão de modo avisador por padr�
 - [x] AC2 — Adendo à ADR-2026-08-05 revendo a premissa do Windsurf, com a decisão por CLI (instalar, ou manter fora com o motivo medido)
 - [x] AC3 — Para cada CLI decidido "instalar": `trackfw init`/`update` emitem o credential guard na forma da D2 revista da ADR-2026-10-04, e o `validate` deixa de silenciar o arquivo (teste nas duas direções)
 - [x] AC5 — O guard lê `command`/`command_line` por JSON parse e a isenção de redirecionamento efêmero vale só para o comando de shell; teste com payload real de cada CLI nas duas direções
-- [ ] AC4 — Prova de disparo real em ao menos um dos dois CLIs, ou a impossibilidade de prova declarada com o motivo
+- [x] AC4 — Prova de disparo real em ao menos um dos dois CLIs, ou a impossibilidade de prova declarada com o motivo
 
 ## Linked ADR
 <!-- Reference the ADR that governs this requirement -->

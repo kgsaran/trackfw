@@ -360,3 +360,73 @@ func TestClaudeGuardHookMatcherWarning_CanonicalOutputZeroWarnings(t *testing.T)
 			wantWarnings, len(warns), warns)
 	}
 }
+
+// --------------------------------------------------------------------------
+// ML-2C F1: global command concordance — validator expected == generator constant
+// --------------------------------------------------------------------------
+
+// TestCredentialGuardGlobalCmdWindsurf_ValidatorMatchesGenerator pins that the
+// validator's expected Windsurf global command (credentialGuardGlobalExpectedCmdWindsurf)
+// equals the generator's guardCredentialGlobalCmdPSPOSIX constant — ensuring that
+// InjectWindsurfHooks deduplicates when the validator's string is already present
+// and that validateCredentialGuardPresenceRequired emits no violation.
+//
+// Reconciliação: afirma que a string esperada pelo validator para o global Windsurf
+// é aceita pelo mecanismo de dedup do gerador e gera zero violations de presença —
+// se as duas constantes divergirem, o gerador adicionará uma entrada duplicada.
+func TestCredentialGuardGlobalCmdWindsurf_ValidatorMatchesGenerator(t *testing.T) {
+	// Use an isolated HOME so the validator/generator see a clean state.
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // Windows
+
+	projectDir := setupConcordanceDir(t)
+
+	// Write the validator's expected command into the global Windsurf hooks file
+	// in BOTH required events.
+	expectedCmd := validator.CredentialGuardGlobalExpectedCmdWindsurfForTest()
+	hookEntry := map[string]interface{}{"command": expectedCmd, "show_output": true}
+	hooksContent, _ := json.Marshal(map[string]interface{}{
+		"hooks": map[string]interface{}{
+			"pre_run_command": []interface{}{hookEntry},
+			"pre_write_code":  []interface{}{hookEntry},
+		},
+	})
+	globalDir := filepath.Join(home, ".codeium", "windsurf")
+	if err := os.MkdirAll(globalDir, 0755); err != nil {
+		t.Fatalf("mkdir global windsurf: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(globalDir, "hooks.json"), hooksContent, 0644); err != nil {
+		t.Fatalf("write global windsurf hooks: %v", err)
+	}
+
+	// Run the generator on the project directory.
+	if err := generators.InjectWindsurfHooks(projectDir); err != nil {
+		t.Fatalf("InjectWindsurfHooks: %v", err)
+	}
+
+	// The generator should have deduped: because the global is fully installed with
+	// the exact expected form, no global credential guard entry should appear in the
+	// project-scoped .windsurf/hooks.json.
+	windsurf := filepath.Join(projectDir, ".windsurf", "hooks.json")
+	raw, err := os.ReadFile(windsurf)
+	if err != nil {
+		t.Fatalf("read .windsurf/hooks.json: %v", err)
+	}
+	if strings.Contains(string(raw), "--global") {
+		t.Errorf("generator wrote global credential guard entry to project wiring —\n"+
+			"validator expected string does not match generator constant.\n"+
+			"validator expected: %q", expectedCmd)
+	}
+
+	// The validator must report zero presence violations for this project.
+	msgs, err := validator.ValidateCredentialGuardHookResolvableForTest()
+	if err != nil {
+		t.Fatalf("ValidateCredentialGuardHookResolvable: %v", err)
+	}
+	for _, m := range msgs {
+		if strings.Contains(m, ".windsurf/hooks.json") {
+			t.Errorf("unexpected presence violation: %s", m)
+		}
+	}
+}

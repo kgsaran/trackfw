@@ -2,6 +2,28 @@
 
 ---
 
+## 2026-10-08 — apolo-tf (fix/credential-guard-nao-cobre-windsurf-e-amazon-q — ML-2C + ML-2D) — FIM
+
+**Branch:** `fix/credential-guard-nao-cobre-windsurf-e-amazon-q`
+**Resultado:** ML-2C (F1+F3+F4) e ML-2D (F2) implementados e testados. Build limpo. `go test ./internal/guard/ ./internal/validator/ ./internal/generators/` verde. `trackfw validate` 167 warnings, 0 errors (lenient, todos pré-existentes).
+**Mudanças entregues:**
+- F3: `json.Unmarshal(data→stripped)` em `credExtractCmdAndCwd` — BOM não desativa mais Layer 2
+- F4: `credDeepScan` — caminha todos os valores command/command_line em qualquer profundidade (maxDepth=20, maxCount=50), exclui tool_input quando tool_name==fs_write, deduplicado via map seen
+- F1: `credentialGuardGlobalInstalledWindsurf` refatorado — exact match com `guardExpectedLine("credential --global", guardShellFamilyPSPosix)`, forma D2 legacy rejeitada
+- F2: `credIsSimpleCmd` (argv0 ∈ {echo,printf}, sem metacaracteres) + `credAllTargetsAreDevNull` (todos redirecionamentos para /dev/null exatamente, sem mktemp bypass) + `credIsRedirectAmpersand` para distinguir fd-dup de redirect de arquivo
+- 2 testes de generators atualizados: `_Ephemeral_NoAlert` → `_MetaChar_WarnMode` (F2 fecha isenção mktemp; bash frozen diverge intencionalmente; testes exercitam só binário Go)
+**Arquivos modificados:** `internal/guard/credential.go`, `internal/guard/credential_test.go`, `internal/validator/validator_credential_guard.go`, `internal/validator/export_test.go`, `internal/validator/validator_credential_guard_test.go`, `internal/validator/validator_guard_hook_concordance_external_test.go`, `internal/generators/credential_guard_test.go`
+
+---
+
+## 2026-10-08 — apolo-tf (fix/credential-guard-nao-cobre-windsurf-e-amazon-q — ML-2C + ML-2D) — INÍCIO
+
+**Branch:** `fix/credential-guard-nao-cobre-windsurf-e-amazon-q`
+**Tarefa:** ML-2C (F1+F3+F4) e ML-2D (F2) — corretivos do red-team REQ-2026-10-06, em sequência. F3: `json.Unmarshal(data→stripped)` em credExtractCmdAndCwd. F4: deep walk de todos os valores command/command_line em qualquer profundidade (all-values-always). F1: exact match em credentialGuardGlobalInstalledWindsurf (só forma D11 revised). F2: gate de forma simples (argv0 ∈ {echo,printf}, sem metacaracteres de shell, todos os redirecionamentos para /dev/null exatamente).
+**Arquivos afetados:** `internal/guard/credential.go`, `internal/validator/validator_credential_guard.go`, `internal/validator/export_test.go`, `internal/validator/validator_credential_guard_test.go`, `internal/validator/validator_guard_hook_concordance_external_test.go`, `internal/guard/credential_test.go`, `docs/agents-working-context.md`
+
+---
+
 ## 2026-10-08 — hades-tf (fix/credential-guard-nao-cobre-windsurf-e-amazon-q — ML-2B) — FIM
 
 **Branch:** `fix/credential-guard-nao-cobre-windsurf-e-amazon-q`
