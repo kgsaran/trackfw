@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-10-07
 author: "zeus-tf"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-10-07-trackfw-init-nao-instala-os-hooks-de-gemini-e-kiro-na-primeira-execucao-porque-detecta-os-clis-antes-de-criar-seus-arquivos.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-10-07-trackfw-init-nao-instala-os-hooks-de-gemini-e-kiro-na-primeira-execucao-porque-detecta-os-clis-antes-de-criar-seus-arquivos.md"
 ---
 
 # REQ: trackfw init nao instala os hooks de Gemini e Kiro na primeira execucao porque detecta os CLIs antes de criar seus arquivos
 
-> Date: 2026-10-07 | Status: Open
+> Date: 2026-10-07 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -36,10 +36,14 @@ nem no `discover`, a menos que a medição mostre a mesma causa (aí entra nesta
 dos que o `--ai-tools` aceita.
 
 ## Acceptance Criteria
-- [ ] AC1 — Causa confirmada no código, com a ordem real das chamadas do `init` e o critério de detecção de cada CLI
-- [ ] AC2 — Uma única execução de `trackfw init --ai-tools <lista>` instala o hook de cada CLI pedido (teste por CLI, a partir de diretório vazio)
-- [ ] AC3 — Varredura dos outros caminhos que usam a mesma detecção (`update`, `discover`): mesma causa entra aqui, com teste
-- [ ] AC4 — Falsificação: voltar a ordem antiga reprova o teste do AC2
+- [x] AC1 — Causa confirmada no código, com a ordem real das chamadas do `init` e o critério de detecção de cada CLI
+      ✅ Evidência: Wave 0 (`docs/seguranca/2026-10-07-wave0-init-instala-hooks-pedidos.md`): `Scaffold` → `InjectHooksDetected` antes de `installAITools`; detectores em `internal/generators/hooks.go` (Kiro só por `.kiro/`); medido com o binário: 1 de 8 CLIs com guard na 1ª execução.
+- [x] AC2 — Uma única execução de `trackfw init --ai-tools <lista>` instala o hook de cada CLI pedido (teste por CLI, a partir de diretório vazio)
+      ✅ Evidência: `TestInitAIToolsInstallsGuardHooksFirstRun` (8 subtestes, HOME isolado) e `TestInitKiroFirstRunCreatesHookDir`; tabela remedida com o binário: 8 de 8 na 1ª execução (PR #539).
+- [x] AC3 — Varredura dos outros caminhos que usam a mesma detecção (`update`, `discover`): mesma causa entra aqui, com teste
+      ✅ Evidência: `update` e `discover` rodam depois que os arquivos existem (detecção funciona; `discover --init` idempotente); a mesma causa estava no `agents|skills install` → ML-1B, `TestAgentsInstallInjectsGuardHooks`.
+- [x] AC4 — Falsificação: voltar a ordem antiga reprova o teste do AC2
+      ✅ Evidência: removida a injeção, os 7 CLIs afetados e o reparo do Kiro reprovam; removida a do `install`, `TestAgentsInstallInjectsGuardHooks` reprova (o claude passa na ordem antiga e não serve de prova).
 
 ## Linked ADR
 <!-- Reference the ADR that governs this requirement -->
@@ -50,4 +54,4 @@ ADR:
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-10-07-trackfw-init-nao-instala-os-hooks-de-gemini-e-kiro-na-primeira-execucao-porque-detecta-os-clis-antes-de-criar-seus-arquivos.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-10-07-trackfw-init-nao-instala-os-hooks-de-gemini-e-kiro-na-primeira-execucao-porque-detecta-os-clis-antes-de-criar-seus-arquivos.md

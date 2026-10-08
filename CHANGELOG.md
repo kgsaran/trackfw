@@ -7,6 +7,22 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [9.3.3] - 2026-10-08
+
+### Fixed
+
+- 🔴 **O `trackfw init --ai-tools <cli>` instala o hook de guard de cada CLI pedido na primeira execução.** Antes, 7 de 8
+  CLIs (Codex, Gemini, Kiro, Copilot, Cursor, Windsurf, Amazon Q) ficavam sem guard na 1ª execução, porque a detecção
+  rodava antes de o `init` criar os arquivos que ela procura; o Kiro não recebia nunca. O `agents|skills install`
+  tinha o mesmo defeito. A injeção agora é feita pelo nome do CLI pedido. (#539, REQ-2026-10-07)
+- 🔴 **No PowerShell, toda saída ≠ 0 do `trackfw` faz o hook negar.** A linha da 9.3.2 só falhava fechada com o binário
+  ausente; um `trackfw` presente que saía 1 ou 3 (ex.: versão antiga sem `guard`) atravessava e o guard liberava.
+  Linha nova da família PowerShell/POSIX: `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard <nome>;
+  LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE` — sai 0 só quando
+  o `trackfw` sai 0, e 2 em todo outro caso, em sh, bash, Git Bash e PowerShell 5.1. Rode `trackfw update` e
+  `trackfw update harness` para migrar; o `validate` avisa a linha anterior. Relatado por @lourivalgarciajunior.
+  (#540, fecha #538)
+
 ## [9.3.2] - 2026-10-07
 
 ### Fixed

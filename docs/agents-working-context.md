@@ -45699,3 +45699,7 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-07 — zeus-tf — INÍCIO: REQ-2026-10-07 (init não instala hooks de Gemini e Kiro na 1ª execução)
 
 - Roadmap em wip, branch `fix/trackfw-init-nao-instala-os-hooks-de-gemini-e-kiro`. Causa lida: `Scaffold` → `InjectHooksDetected` antes de `installAITools`; Kiro detectado só por `.kiro`. Wave 0 (hades-tf) despachada.
+
+## 2026-10-08 — zeus-tf — #538 e REQ-2026-10-07 entregues (PRs #539, #540); bump 9.3.3
+
+- REQ-2026-10-07 Done (init instala o guard de cada CLI pedido na 1ª execução; eram 1 de 8) e REQ-2026-09-05 Done de novo (no PowerShell toda saída ≠ 0 vira 2). Roadmaps em `done/`, label `req-aberta` retirada da #538. O s67 do `parity-falsify` passou a se ancorar na assinatura (quebrou 3 vezes por literal).
