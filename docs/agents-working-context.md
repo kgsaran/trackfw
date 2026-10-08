@@ -45703,3 +45703,7 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-08 — zeus-tf — #538 e REQ-2026-10-07 entregues (PRs #539, #540); bump 9.3.3
 
 - REQ-2026-10-07 Done (init instala o guard de cada CLI pedido na 1ª execução; eram 1 de 8) e REQ-2026-09-05 Done de novo (no PowerShell toda saída ≠ 0 vira 2). Roadmaps em `done/`, label `req-aberta` retirada da #538. O s67 do `parity-falsify` passou a se ancorar na assinatura (quebrou 3 vezes por literal).
+
+## 2026-10-08 — zeus-tf — INÍCIO: REQ-2026-10-06 (credential guard não cobre Windsurf e Amazon Q)
+
+- 9.3.3 publicada nos 3 canais (verificação do PyPI reexecutada: atraso de índice de 3 min). Roadmap em wip, branch `fix/credential-guard-nao-cobre-windsurf-e-amazon-q`. Wave 0 (hades-tf): threat model + remedição dos eventos de hook com fonte oficial.
