@@ -400,3 +400,5 @@
 2026-10-07 19:39  ROADMAP-2026-09-22-os-hooks-de-guard-nao-executam-no-windows-na-maioria-dos-clis-de-agente-e-o-validate-reporta-instalado.md  wip → done  -0300  (kgsaran@gmail.com)
 2026-10-07 20:28  ROADMAP-2026-09-22-os-hooks-de-guard-nao-executam-no-windows-na-maioria-dos-clis-de-agente-e-o-validate-reporta-instalado.md  done → wip  -0300  (kgsaran@gmail.com)
 2026-10-07 20:03  ROADMAP-2026-10-07-trackfw-init-nao-instala-os-hooks-de-gemini-e-kiro-na-primeira-execucao-porque-detecta-os-clis-antes-de-criar-seus-arquivos.md  backlog → wip  -0300  (kgsaran@gmail.com)
+2026-10-08 08:10  ROADMAP-2026-09-22-os-hooks-de-guard-nao-executam-no-windows-na-maioria-dos-clis-de-agente-e-o-validate-reporta-instalado.md  wip → done  -0300  (kgsaran@gmail.com)
+2026-10-08 08:10  ROADMAP-2026-10-07-trackfw-init-nao-instala-os-hooks-de-gemini-e-kiro-na-primeira-execucao-porque-detecta-os-clis-antes-de-criar-seus-arquivos.md  wip → done  -0300  (kgsaran@gmail.com)

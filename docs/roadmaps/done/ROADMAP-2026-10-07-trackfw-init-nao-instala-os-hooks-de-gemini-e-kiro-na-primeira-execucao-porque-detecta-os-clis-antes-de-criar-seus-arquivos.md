@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-10-07
 req: "docs/req/REQ-2026-10-07-trackfw-init-nao-instala-os-hooks-de-gemini-e-kiro-na-primeira-execucao-porque-detecta-os-clis-antes-de-criar-seus-arquivos.md"
 squad: "hades-tf, apolo-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf"
 
 # Roadmap: trackfw init nao instala os hooks de Gemini e Kiro na primeira execucao porque detecta os CLIs antes de criar seus arquivos
 
-> Created: 2026-10-07 | Status: wip
+> Created: 2026-10-07 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-10-07-trackfw-init-nao-instala-os-hooks-de-gemini-e-kiro-na-primeira-execucao-porque-detecta-os-clis-antes-de-criar-seus-arquivos.md -->

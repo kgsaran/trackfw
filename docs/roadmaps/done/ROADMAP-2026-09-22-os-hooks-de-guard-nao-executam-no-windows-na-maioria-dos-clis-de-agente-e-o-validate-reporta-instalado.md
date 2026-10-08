@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-22
 req: "docs/req/REQ-2026-09-05-os-hooks-de-guard-nao-executam-no-windows-na-maioria-dos-clis-de-agente-e-o-validate-reporta-instalado.md"
 squad: "hades-tf, ares-tf, prometeu-tf, apolo-tf, artemis-tf, hefesto-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, ares-tf, prometeu-tf, apolo-tf, artemis-tf, hefesto-tf"
 
 # Roadmap: os hooks de guard nao executam no Windows na maioria dos CLIs de agente e o validate reporta instalado
 
-> Created: 2026-09-22 | Reescrito: 2026-10-04 | Status: wip
+> Created: 2026-09-22 | Reescrito: 2026-10-04 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-09-05-os-hooks-de-guard-nao-executam-no-windows-na-maioria-dos-clis-de-agente-e-o-validate-reporta-instalado.md
