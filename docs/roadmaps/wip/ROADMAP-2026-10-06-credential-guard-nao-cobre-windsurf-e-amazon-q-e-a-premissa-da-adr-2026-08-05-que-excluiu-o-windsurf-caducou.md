@@ -17,10 +17,10 @@ REQ: docs/req/REQ-2026-10-06-credential-guard-nao-cobre-windsurf-e-amazon-q-e-a-
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
 - [x] AC1 da REQ — eventos de hook do Windsurf e do Amazon Q remedidos com fonte oficial e data (ML-0B)
 - [x] AC2 da REQ — adendo à ADR-2026-08-05 com a decisão por CLI (ML-1A)
-- [ ] AC3 da REQ — `init`/`update`/`update harness` emitem o credential guard para cada CLI decidido "instalar"; `validate` deixa de silenciar; teste nas duas direções (ML-1B)
-- [ ] AC5 da REQ — o guard lê o payload de cada CLI (ML-1C)
+- [x] AC3 da REQ — `init`/`update`/`update harness` emitem o credential guard para cada CLI decidido "instalar"; `validate` deixa de silenciar; teste nas duas direções (ML-1B)
+- [x] AC5 da REQ — o guard lê o payload de cada CLI (ML-1C)
 - [ ] AC4 da REQ — prova de disparo real ou impossibilidade declarada com motivo (ML-2A)
-- [ ] `make quality` verde (arquiteto, sem `~/.local/bin` no PATH)
+- [x] `make quality` verde (arquiteto, sem `~/.local/bin` no PATH)
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -73,27 +73,41 @@ grep -q "Veredito" docs/seguranca/2026-10-08-wave0-credential-guard-windsurf-ama
 - [x] Adendo datado revendo a premissa do Windsurf e avaliando o Amazon Q, decisão por CLI citando o ML-0B
 
 ### ML-1B — Gerador, update, harness e validate (AC3)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Files affected:** `internal/generators/agentfiles.go`, `internal/generators/update.go`, `internal/validator/validator_credential_guard.go`, `internal/validator/validator_guard_binary_probe.go` (se preciso), testes desses pacotes, `.windsurf/hooks.json`/`.amazonq/...` deste repo se existirem, `docs/cli-parity.md`. **Não toca `internal/guard/`** (ML-1C, paralelo).
 **Eventos:** Windsurf `pre_run_command` + `pre_write_code`; Amazon Q `preToolUse` matchers `execute_bash` + `fs_write`. Nunca `pre_read_code`/`fs_read`. Harness `windsurf-credential-guard` (`~/.codeium/windsurf/hooks.json`); Amazon Q só projeto.
 **Acceptance criteria:**
-- [ ] Teste: `init`/`update` emitem a linha D11 revista do credential guard no evento decidido, por CLI decidido
-- [ ] Teste: `validate` acusa o arquivo sem o credential guard (antes silenciado) e não acusa o arquivo correto
-- [ ] Falsificação nas duas direções, com a frase de reconciliação por teste novo
-- [ ] Configs deste repo e `docs/cli-parity.md` atualizados
+- [x] Teste: `init`/`update` emitem a linha D11 revista do credential guard no evento decidido, por CLI decidido
+- [x] Teste: `validate` acusa o arquivo sem o credential guard (antes silenciado) e não acusa o arquivo correto
+- [x] Falsificação nas duas direções, com a frase de reconciliação por teste novo
+- [x] Configs deste repo e `docs/cli-parity.md` atualizados
+      Auditoria (2026-10-08): 18 testes novos conferidos por nome; artefato real medido com o binário (init
+      `--ai-tools windsurf,amazonq`, HOME isolado): guard em pre_run_command/pre_write_code e execute_bash/fs_write, ausente
+      em pre_read_code; tirar pre_write_code → validate acusa; `update` repõe → 0 achados. Reprovado 1x: o validate não
+      olhava o global do Windsurf (violação que o `update` nunca corrige) → ML-1D.
 
 ### ML-1C — O guard lê o payload de cada CLI (AC5)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** apolo-tf (paralelo ao ML-1B: arquivos disjuntos)
 **Por que o escopo original não previa:** achados da Wave 0 (ver ML-0B). A REQ dizia "não muda o guard"; a medição
 mostrou que o guard não entende o payload dos CLIs que esta REQ cobre, e que a mesma causa já abria o Claude Code.
 **Files affected:** `internal/guard/credential.go` e testes em `internal/guard/`. Nada fora de `internal/guard/`.
 **Acceptance criteria:**
-- [ ] 2ª camada extrai o comando por JSON parse de `tool_input.command` e `tool_info.command_line` (e `command` no topo, se algum CLI usar); `cat "arquivo"` e `cat 'arquivo'` detectados
-- [ ] Isenção efêmera (`> /dev/null` etc.) avaliada só sobre o comando de shell extraído; payload de escrita (Write/Edit do Claude, `pre_write_code`, `fs_write`) com JWT + `> /dev/null` → 2 em `block`, nos escopos projeto e global
-- [ ] `echo <JWT> > /dev/null` num comando de shell continua isento (direção oposta)
-- [ ] Testes com payload real de Claude Code, Codex, Windsurf e Amazon Q; falsificação nas duas direções; frase de reconciliação por teste novo
+- [x] 2ª camada extrai o comando por JSON parse de `tool_input.command` e `tool_info.command_line` (e `command` no topo, se algum CLI usar); `cat "arquivo"` e `cat 'arquivo'` detectados
+- [x] Isenção efêmera (`> /dev/null` etc.) avaliada só sobre o comando de shell extraído; payload de escrita (Write/Edit do Claude, `pre_write_code`, `fs_write`) com JWT + `> /dev/null` → 2 em `block`, nos escopos projeto e global
+- [x] `echo <JWT> > /dev/null` num comando de shell continua isento (direção oposta)
+- [x] Testes com payload real de Claude Code, Codex, Windsurf e Amazon Q; falsificação nas duas direções; frase de reconciliação por teste novo
+
+### ML-1D — Corretivo da auditoria da Wave 1
+**Status:** ✅ Concluído
+**Squad:** apolo-tf
+**Por que:** (1) o gerador pulava o guard de projeto do Windsurf com o global instalado, mas o validate exigia no
+projeto; e "global instalado" contava só pre_run_command, deixando pre_write_code descoberto num global parcial;
+(2) faltou o teste com payload do Codex pedido no AC5.
+- [x] Validate respeita o global completo (pre_run_command E pre_write_code), mesma definição do gerador; 3 testes + falsificação
+- [x] 3 testes de payload do Codex (cat, cat com aspas, echo > /dev/null isento)
+- [x] `make quality` (arquiteto, máquina ociosa, sem `~/.local/bin`): EXIT=0, falsify 347 OK / 0 FAIL
 
 ## Wave 2 — Prova e red-team
 > Dependencies: Wave 1 auditada.

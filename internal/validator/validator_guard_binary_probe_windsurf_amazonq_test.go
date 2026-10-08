@@ -273,3 +273,196 @@ func TestGuardHookResolvable_AmazonQ_LegadoSh_Warning(t *testing.T) {
 		t.Errorf("não esperado violation para .sh legado Amazon Q com script presente, obteve: %v", msgs)
 	}
 }
+
+// --------------------------------------------------------------------------
+// ML-1B (REQ-2026-10-06) — credential guard presence check
+// Windsurf e Amazon Q: arquivo presente sem credential guard → violation.
+// Arquivo com credential guard correto → sem violation.
+// --------------------------------------------------------------------------
+
+// windsurfHooksWithCredentialGuard monta um .windsurf/hooks.json com entradas
+// de credential guard em pre_run_command e pre_write_code, usando a linha
+// PS/POSIX esperada pelo ML-1B.
+func windsurfHooksWithCredentialGuard() string {
+	cmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+	return `{
+  "hooks": {
+    "pre_run_command": [
+      {"command": "` + cmd + `", "show_output": true}
+    ],
+    "pre_write_code": [
+      {"command": "` + cmd + `", "show_output": true}
+    ]
+  }
+}
+`
+}
+
+// amazonQAgentWithCredentialGuard monta um .amazonq/cli-agents/q_cli_default.json
+// com entries de credential guard em execute_bash e fs_write.
+func amazonQAgentWithCredentialGuard() string {
+	cmd := "trackfw guard credential || exit 2"
+	return `{
+  "name": "q_cli_default",
+  "tools": ["*"],
+  "hooks": {
+    "preToolUse": [
+      {
+        "matcher": "execute_bash",
+        "hooks": [{"command": "` + cmd + `"}]
+      },
+      {
+        "matcher": "fs_write",
+        "hooks": [{"command": "` + cmd + `"}]
+      }
+    ]
+  }
+}
+`
+}
+
+// Reconciliação: afirma que validateCredentialGuardHookResolvable emite violation
+// quando .windsurf/hooks.json existe mas tem apenas git-branch guard, sem credential
+// guard (ficheiro típico de instalação anterior ao ML-1B).
+// S3 falsification target: este teste deve FALHAR antes do ML-1B e PASSAR depois.
+func TestCredentialGuardHookResolvable_Windsurf_SemGuard_Violation(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	stubProbeOK(t)
+
+	// Só git-branch guard — sem credential guard.
+	writeFile(t, dir, ".windsurf/hooks.json",
+		windsurfHooksWithSubcmd(`$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`))
+
+	msgs, err := validateCredentialGuardHookResolvable()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if !hasViolation(msgs, ".windsurf/hooks.json") {
+		t.Errorf("esperado violation nomeando .windsurf/hooks.json (sem credential guard), obteve: %v", msgs)
+	}
+	if !hasViolation(msgs, "credential guard") {
+		t.Errorf("esperado violation mencionando 'credential guard', obteve: %v", msgs)
+	}
+}
+
+// Reconciliação: afirma que validateCredentialGuardHookResolvable NÃO emite
+// nenhuma mensagem que nomeie .windsurf/hooks.json quando o arquivo contém o
+// credential guard nos dois eventos corretos (arquivo instalado pelo ML-1B).
+func TestCredentialGuardHookResolvable_Windsurf_ComGuard_Ok(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	stubProbeOK(t)
+
+	writeFile(t, dir, ".windsurf/hooks.json", windsurfHooksWithCredentialGuard())
+
+	msgs, err := validateCredentialGuardHookResolvable()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	for _, m := range msgs {
+		if hasViolation([]string{m}, ".windsurf/hooks.json") {
+			t.Errorf("violation inesperada nomeando .windsurf/hooks.json com credential guard correto: %v", m)
+		}
+	}
+}
+
+// Reconciliação: afirma que validateCredentialGuardHookResolvable emite violation
+// para Windsurf quando o credential guard está em pre_run_command mas ausente em
+// pre_write_code — cobertura parcial não é suficiente (Wave 0: "nos eventos decididos").
+func TestCredentialGuardHookResolvable_Windsurf_SoPreRunCommand_Violation(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	stubProbeOK(t)
+
+	cmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+	// Só pre_run_command — pre_write_code ausente.
+	writeFile(t, dir, ".windsurf/hooks.json", `{
+  "hooks": {
+    "pre_run_command": [{"command": "`+cmd+`", "show_output": true}]
+  }
+}
+`)
+	msgs, err := validateCredentialGuardHookResolvable()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if !hasViolation(msgs, "pre_write_code") {
+		t.Errorf("esperado violation para pre_write_code ausente em .windsurf/hooks.json, obteve: %v", msgs)
+	}
+}
+
+// Reconciliação: afirma que validateCredentialGuardHookResolvable emite violation
+// quando .amazonq/cli-agents/q_cli_default.json existe mas tem apenas git-branch
+// guard, sem credential guard (ficheiro típico de instalação anterior ao ML-1B).
+func TestCredentialGuardHookResolvable_AmazonQ_SemGuard_Violation(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	stubProbeOK(t)
+
+	// Só git-branch guard — sem credential guard.
+	writeFile(t, dir, ".amazonq/cli-agents/q_cli_default.json",
+		amazonQAgentWithSubcmd("trackfw guard git-branch || exit 2"))
+
+	msgs, err := validateCredentialGuardHookResolvable()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if !hasViolation(msgs, ".amazonq/cli-agents/q_cli_default.json") {
+		t.Errorf("esperado violation nomeando .amazonq/cli-agents/q_cli_default.json (sem credential guard), obteve: %v", msgs)
+	}
+	if !hasViolation(msgs, "credential guard") {
+		t.Errorf("esperado violation mencionando 'credential guard', obteve: %v", msgs)
+	}
+}
+
+// Reconciliação: afirma que validateCredentialGuardHookResolvable NÃO emite
+// nenhuma mensagem que nomeie .amazonq/cli-agents/q_cli_default.json quando o
+// arquivo contém o credential guard nos dois eventos corretos (arquivo instalado
+// pelo ML-1B).
+func TestCredentialGuardHookResolvable_AmazonQ_ComGuard_Ok(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	stubProbeOK(t)
+
+	writeFile(t, dir, ".amazonq/cli-agents/q_cli_default.json", amazonQAgentWithCredentialGuard())
+
+	msgs, err := validateCredentialGuardHookResolvable()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	for _, m := range msgs {
+		if hasViolation([]string{m}, ".amazonq/cli-agents/q_cli_default.json") {
+			t.Errorf("violation inesperada nomeando .amazonq/cli-agents/q_cli_default.json com credential guard correto: %v", m)
+		}
+	}
+}
+
+// Reconciliação: afirma que validateCredentialGuardHookResolvable emite violation
+// para Amazon Q quando o credential guard está em execute_bash mas ausente em
+// fs_write — cobertura parcial não é suficiente (Wave 0: "nos eventos decididos").
+func TestCredentialGuardHookResolvable_AmazonQ_SoExecuteBash_Violation(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	stubProbeOK(t)
+
+	cmd := "trackfw guard credential || exit 2"
+	// Só execute_bash — fs_write ausente.
+	writeFile(t, dir, ".amazonq/cli-agents/q_cli_default.json", `{
+  "name": "q_cli_default",
+  "tools": ["*"],
+  "hooks": {
+    "preToolUse": [
+      {"matcher": "execute_bash", "hooks": [{"command": "`+cmd+`"}]}
+    ]
+  }
+}
+`)
+	msgs, err := validateCredentialGuardHookResolvable()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if !hasViolation(msgs, "fs_write") {
+		t.Errorf("esperado violation para fs_write ausente em .amazonq/cli-agents/q_cli_default.json, obteve: %v", msgs)
+	}
+}

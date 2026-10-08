@@ -1735,6 +1735,33 @@ func InjectWindsurfHooks(rootDir string) error {
 		windsurfMakeEntry,
 		windsurfGetCmd,
 	)
+	// ML-1B (REQ-2026-10-06): wire credential guard.
+	// globalCredentialGuardInstalledWindsurf checks ~/.codeium/windsurf/hooks.json
+	// for the global form (guardCredentialGlobalCmdPSPOSIX). If the global harness is
+	// already installed, the project-scope wiring is skipped to avoid double-firing —
+	// same dedup pattern as Cursor/Claude/Codex/Gemini/Copilot.
+	if !globalCredentialGuardInstalledWindsurf() {
+		// pre_run_command: credential guard in addition to git-branch guard (already wired above).
+		// Credential guard is merged AFTER git-branch so that a fresh init and an update of a
+		// git-branch-only file produce identical byte order: [git-branch, credential] in both cases.
+		hooks["pre_run_command"] = mergeSimpleCommandArray(
+			hooks["pre_run_command"],
+			guardCredentialCmdPSPOSIX,
+			windsurfMakeEntry,
+			windsurfGetCmd,
+		)
+		// pre_write_code: credential guard only (git-branch is irrelevant for write events).
+		// Wave 0 ML-0B: pre_write_code carries edits[*].new_string — the most critical event for
+		// credential materialization. Layer 1 (brute scan) detects JWTs in the payload (Vector H
+		// confirmed: RC=2). NÃO instalar em pre_read_code: payload contains only file_path, not
+		// content — installing there would be false protection (Wave 0 residual R2).
+		hooks["pre_write_code"] = mergeSimpleCommandArray(
+			hooks["pre_write_code"],
+			guardCredentialCmdPSPOSIX,
+			windsurfMakeEntry,
+			windsurfGetCmd,
+		)
+	}
 	root["hooks"] = hooks
 
 	// ML-6B: marshalJSONNoEscape so '>' in D11 survives as a literal redirect.
@@ -1862,7 +1889,7 @@ func InjectAmazonQHooks(rootDir string) error {
 	// other merge-based injector in this file.
 	defaults := map[string]interface{}{
 		"name":        "q_cli_default",
-		"description": "trackfw-managed default agent — wires the git branch guard hook/denylist. See docs/cli-parity.md.",
+		"description": "trackfw-managed default agent — wires the credential guard and git branch guard hooks/denylist. See docs/cli-parity.md.",
 		"tools":       []interface{}{"*"},
 	}
 	for k, v := range defaults {
@@ -1885,6 +1912,27 @@ func InjectAmazonQHooks(rootDir string) error {
 		hooks["preToolUse"],
 		"execute_bash",
 		guardGitBranchCmdCmdExe,
+	)
+	// ML-1B (REQ-2026-10-06): wire credential guard.
+	// execute_bash: credential guard in addition to git-branch guard (already wired above).
+	// Credential guard is merged AFTER git-branch so that a fresh init and an update of a
+	// git-branch-only file produce identical byte order: git-branch entry first, credential
+	// second inside the same matcher's inner hooks array.
+	hooks["preToolUse"] = mergeClaudeHookArray(
+		hooks["preToolUse"],
+		"execute_bash",
+		guardCredentialCmdCmdExe,
+	)
+	// fs_write: credential guard only (git-branch guard is irrelevant for write events).
+	// Wave 0 ML-0B: fs_write carries file_text/new_str content variants — Layer 1 detects
+	// JWTs in the payload (Vector G confirmed: RC=2). NÃO instalar em fs_read: payload contains
+	// only path, not content — false protection (Wave 0 residual R2).
+	// Bypass EE4 (JWT + "> /dev/null" in new_str → credIsAllEphemeral → RC=0) is a known gap
+	// documented in Wave 0 and to be addressed by ML-1C.
+	hooks["preToolUse"] = mergeClaudeHookArray(
+		hooks["preToolUse"],
+		"fs_write",
+		guardCredentialCmdCmdExe,
 	)
 	root["hooks"] = hooks
 
@@ -2439,6 +2487,29 @@ func globalCredentialGuardInstalledKiro() bool {
 		return false
 	}
 	return info.Size() > 0
+}
+
+// globalCredentialGuardInstalledWindsurf checks ~/.codeium/windsurf/hooks.json
+// for the hooks.pre_run_command AND hooks.pre_write_code entries that
+// harnessCredentialGuardTargetWindsurf writes (ML-1B, REQ-2026-10-06).
+//
+// ML-1D fix: both events are required. The old behavior (checking only
+// pre_run_command) allowed a partially-initialized global file (one that only
+// got pre_run_command, e.g. from a partial `trackfw update harness` run) to
+// cause InjectWindsurfHooks to skip project-scope wiring for BOTH events,
+// leaving pre_write_code uncovered in project and global alike.
+// harnessCredentialGuardTargetWindsurf always writes both events atomically;
+// a global file with only one is partially initialized and InjectWindsurfHooks
+// must fill in the project file.
+// Fail-open: any read/parse error → false.
+func globalCredentialGuardInstalledWindsurf() bool {
+	root, ok := readGlobalHookJSON(".codeium", "windsurf", "hooks.json")
+	if !ok {
+		return false
+	}
+	hooks, _ := root["hooks"].(map[string]interface{})
+	return simpleArrayHasValue(hooks["pre_run_command"], "command", guardCredentialGlobalCmdPSPOSIX, false) &&
+		simpleArrayHasValue(hooks["pre_write_code"], "command", guardCredentialGlobalCmdPSPOSIX, false)
 }
 
 // --- git-branch-guard global-installed dedup (ROADMAP-2026-08-17 Wave 2/

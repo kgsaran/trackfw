@@ -3968,8 +3968,10 @@ git-branch-guard wiring (ROADMAP-2026-08-17 Wave 2/ML-2A)" below),
 `kiro-agents`, `kiro-skills`. Each `<tool>-credential-guard`/`<tool>-git-branch-guard` id (where it
 exists) is always positioned immediately BEFORE that tool's own `<tool>-agents`/`<tool>-skills` pair,
 never after, and within a tool credential-guard always precedes git-branch-guard — `kiro-git-branch-
-guard` is the last guard target of this wave (Windsurf has no native hook mechanism and stays out per
-the ADR).
+guard` is the last guard target before Windsurf — `windsurf-credential-guard` (ML-1B,
+REQ-2026-10-06) is the last guard target of this wave. The premise "Windsurf has no native hook
+mechanism" was revised by the ADR-2026-08-05 adendo (ML-1A): Windsurf exposes `pre_run_command` and
+`pre_write_code` events; `windsurf-credential-guard` installs to `~/.codeium/windsurf/hooks.json`.
 
 ### Kiro global-scope git-branch-guard wiring (ROADMAP-2026-08-17 Wave 2/ML-2A) — `~/.kiro/hooks/trackfw-git-branch-guard.json`, dedicated file
 

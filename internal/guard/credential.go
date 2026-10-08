@@ -5,6 +5,7 @@ package guard
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -34,9 +35,6 @@ var (
 	// credVarRefRe matches a shell variable reference like $TMPFILE or ${TMPFILE}.
 	credVarRefRe = regexp.MustCompile(`^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?$`)
 
-	// credCmdLineRe extracts the "command" JSON field value from a line.
-	// Faithful port of sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'.
-	credCmdLineRe = regexp.MustCompile(`"command"[ \t]*:[ \t]*"([^"]*)"`)
 )
 
 const credMaxFileSize = 1048576 // 1 MiB
@@ -80,26 +78,46 @@ func RunCredential(stdin io.Reader, stdout, stderr io.Writer) int {
 		match = "AWS access key"
 	}
 
-	// Step 4: Unescape \" → " (RAW variable in .sh).
-	rawBytes := bytes.ReplaceAll(data, []byte(`\"`), []byte(`"`))
-	rawStr := string(rawBytes)
-
-	// Step 5: Extract redirect matches.
-	redirectMatches := credRedirectRe.FindAllString(rawStr, -1)
-
-	// Step 6: Layer 2 — scan files when layer 1 found nothing.
-	if match == "" {
-		match = credSecondLayer(rawStr, redirectMatches)
+	// Steps 4–8: Extract shell command, scan for redirects, run Layer 2, apply
+	// ephemeral exemption.
+	//
+	// For valid JSON payloads the redirect scan and Layer 2b operate on the
+	// decoded shell command (fixes R1a/R1e/EE4). For non-JSON payloads the legacy
+	// raw-string path is preserved unchanged.
+	shellCmd, shellCwd, isJSON := credExtractCmdAndCwd(data)
+	var contextStr string
+	var redirectMatches []string
+	if isJSON {
+		contextStr = shellCmd
+		redirectMatches = credRedirectRe.FindAllString(shellCmd, -1)
+	} else {
+		rawBytes := bytes.ReplaceAll(data, []byte(`\"`), []byte(`"`))
+		contextStr = string(rawBytes)
+		redirectMatches = credRedirectRe.FindAllString(contextStr, -1)
 	}
 
-	// Step 7: No match → allow.
+	if match == "" {
+		match = credSecondLayer(shellCmd, shellCwd, contextStr, redirectMatches)
+	}
+
 	if match == "" {
 		return 0
 	}
 
-	// Step 8: Exemption — all redirects point to ephemeral destinations.
-	if credIsAllEphemeral(rawStr, redirectMatches) {
-		return 0
+	// Ephemeral exemption: for JSON payloads, only exempt when the matched
+	// credential was found inside the shell command itself — not in write
+	// content (new_str, content, edits[*].new_string). For non-JSON payloads
+	// the original exemption logic is preserved.
+	if isJSON {
+		cmdHasMatch := (match == "JWT" && credJWTRe.MatchString(shellCmd)) ||
+			(match == "AWS access key" && credAWSRe.MatchString(shellCmd))
+		if cmdHasMatch && credIsAllEphemeral(contextStr, redirectMatches) {
+			return 0
+		}
+	} else {
+		if credIsAllEphemeral(contextStr, redirectMatches) {
+			return 0
+		}
 	}
 
 	// Step 9: Read credential_guard.mode from trackfw.yaml (default "warn").
@@ -144,26 +162,37 @@ func RunCredentialGlobal(stdin io.Reader, stdout, stderr io.Writer) int {
 		match = "AWS access key"
 	}
 
-	// Step 4: Unescape \" → " (RAW variable in .sh).
-	rawBytes := bytes.ReplaceAll(data, []byte(`\"`), []byte(`"`))
-	rawStr := string(rawBytes)
-
-	// Step 5: Extract redirect matches.
-	redirectMatches := credRedirectRe.FindAllString(rawStr, -1)
-
-	// Step 6: Layer 2 — scan files when layer 1 found nothing.
-	if match == "" {
-		match = credSecondLayer(rawStr, redirectMatches)
+	// Steps 4–8: same logic as RunCredential (JSON-aware extraction and exemption).
+	shellCmd, shellCwd, isJSON := credExtractCmdAndCwd(data)
+	var contextStr string
+	var redirectMatches []string
+	if isJSON {
+		contextStr = shellCmd
+		redirectMatches = credRedirectRe.FindAllString(shellCmd, -1)
+	} else {
+		rawBytes := bytes.ReplaceAll(data, []byte(`\"`), []byte(`"`))
+		contextStr = string(rawBytes)
+		redirectMatches = credRedirectRe.FindAllString(contextStr, -1)
 	}
 
-	// Step 7: No match → allow.
+	if match == "" {
+		match = credSecondLayer(shellCmd, shellCwd, contextStr, redirectMatches)
+	}
+
 	if match == "" {
 		return 0
 	}
 
-	// Step 8: Exemption — all redirects point to ephemeral destinations.
-	if credIsAllEphemeral(rawStr, redirectMatches) {
-		return 0
+	if isJSON {
+		cmdHasMatch := (match == "JWT" && credJWTRe.MatchString(shellCmd)) ||
+			(match == "AWS access key" && credAWSRe.MatchString(shellCmd))
+		if cmdHasMatch && credIsAllEphemeral(contextStr, redirectMatches) {
+			return 0
+		}
+	} else {
+		if credIsAllEphemeral(contextStr, redirectMatches) {
+			return 0
+		}
 	}
 
 	// Step 9: Read credential_guard.mode; default is "block" (global scope).
@@ -314,13 +343,132 @@ func credScanFile(path string) string {
 	return ""
 }
 
+// credExtractCmdAndCwd parses a JSON hook payload and returns the shell command
+// and the working directory declared in the payload (tool_info.cwd).
+//
+// Key-extraction priority mirrors ExtractCommand in payload.go:
+//  1. tool_input.command
+//  2. command (root-level)
+//  3. tool_info.command_line
+//  4. hook_input.command
+//
+// Special case: when tool_name == "fs_write" (Amazon Q write tool), the
+// tool_input.command value is an enum tag ("create"/"str_replace"/…), not a
+// shell command. credExtractCmdAndCwd returns ("", cwd, true) for fs_write.
+//
+// Non-JSON payload (does not start with '{') or invalid JSON: returns
+// ("", "", false). Callers use the legacy raw-string path in that case.
+// Current behavior for non-JSON: credCmdLineRe finds no "command" key →
+// Layer 2b is a no-op; credRedirectRe scans the raw text for redirects.
+//
+// A NUL byte in the decoded command string is treated as absent — the guard
+// becomes a no-op for that key and tries the next lower-priority key.
+func credExtractCmdAndCwd(data []byte) (shellCmd, cwd string, isJSON bool) {
+	stripped := bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF})
+	trimmed := bytes.TrimLeft(stripped, " \t\r\n")
+	if len(trimmed) == 0 || trimmed[0] != '{' {
+		return "", "", false
+	}
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(data, &root); err != nil {
+		return "", "", false
+	}
+
+	// fs_write: "command" carries an enum tag, not a shell command.
+	if rawTool, ok := root["tool_name"]; ok {
+		var toolName string
+		if err := json.Unmarshal(rawTool, &toolName); err == nil && toolName == "fs_write" {
+			return "", credExtractToolInfoCwd(root), true
+		}
+	}
+
+	cwd = credExtractToolInfoCwd(root)
+
+	// Priority 1: tool_input.command
+	if cmd, found, _ := extractNested(root, "tool_input", "command"); found && cmd != "" && !strings.ContainsRune(cmd, '\x00') {
+		return cmd, cwd, true
+	}
+	// Priority 2: command (root-level)
+	if raw, ok := root["command"]; ok && !isJSONNull(raw) {
+		trimmedRaw := bytes.TrimLeft(raw, " \t\r\n")
+		if len(trimmedRaw) > 0 && trimmedRaw[0] == '"' {
+			var cmd string
+			if err := json.Unmarshal(raw, &cmd); err == nil && !strings.ContainsRune(cmd, '\x00') {
+				return cmd, cwd, true
+			}
+		}
+	}
+	// Priority 3: tool_info.command_line
+	if cmd, found, _ := extractNested(root, "tool_info", "command_line"); found && cmd != "" && !strings.ContainsRune(cmd, '\x00') {
+		return cmd, cwd, true
+	}
+	// Priority 4: hook_input.command
+	if cmd, found, _ := extractNested(root, "hook_input", "command"); found && cmd != "" && !strings.ContainsRune(cmd, '\x00') {
+		return cmd, cwd, true
+	}
+
+	return "", cwd, true // valid JSON, no command field found
+}
+
+// credExtractToolInfoCwd reads the cwd from tool_info.cwd in a parsed root map.
+func credExtractToolInfoCwd(root map[string]json.RawMessage) string {
+	rawInfo, ok := root["tool_info"]
+	if !ok || isJSONNull(rawInfo) {
+		return ""
+	}
+	var info map[string]json.RawMessage
+	if err := json.Unmarshal(rawInfo, &info); err != nil {
+		return ""
+	}
+	rawCwd, ok := info["cwd"]
+	if !ok || isJSONNull(rawCwd) {
+		return ""
+	}
+	var cwd string
+	if err := json.Unmarshal(rawCwd, &cwd); err != nil {
+		return ""
+	}
+	return cwd
+}
+
+// credResolveArg strips JSON noise (quotes, trailing "},) from arg and resolves
+// a relative path against baseCwd when provided.
+//
+// The cleaned string is safe to pass to credScanFile, which will not find
+// additional noise to strip. If baseCwd is empty the function still strips
+// quotes — this ensures that quoted paths like `"JWTFILE"` (from a JSON-decoded
+// shell command) are handled correctly.
+func credResolveArg(arg, baseCwd string) string {
+	clean := strings.Map(func(r rune) rune {
+		if r == '"' || r == '\'' {
+			return -1
+		}
+		return r
+	}, arg)
+	clean = strings.TrimRight(clean, "},")
+	if clean == "" {
+		return arg // keep original so credScanFile can handle the empty-path case
+	}
+	if baseCwd != "" && !filepath.IsAbs(clean) {
+		return filepath.Join(baseCwd, clean)
+	}
+	return clean
+}
+
 // credSecondLayer runs layer 2 detection when layer 1 found no match.
-// Faithful port of .sh L71–97:
-//   - 2a: scan non-ephemeral redirect target files.
-//   - 2b: extract CMD_LINE, expand tokens via credGlobToken (porting bash `set -- $CMD_LINE`
-//     glob expansion, including POSIX [!] negation and dotfile filtering), and scan file
-//     arguments of cat/head/tail/jq/grep.
-func credSecondLayer(rawStr string, redirectMatches []string) string {
+//
+// Layer 2a: scan non-ephemeral redirect target files (same as the .sh).
+// Layer 2b: tokenise shellCmd (JSON-decoded; already handles tool_input.command,
+//   tool_info.command_line, etc.), glob-expand each token (porting bash
+//   `set -- $CMD_LINE` without set -f), and scan file arguments of
+//   cat/head/tail/jq/grep. When shellCmd is empty (write payloads, fs_write),
+//   Layer 2b is a no-op.
+//
+// contextStr is used by credIsEphemeralTarget for the $(mktemp) variable check;
+//   it equals shellCmd for JSON payloads and rawStr for non-JSON payloads.
+// shellCwd is the working directory from tool_info.cwd in the payload, used to
+//   resolve relative paths (e.g. "cat token.txt" when cwd="/project").
+func credSecondLayer(shellCmd, shellCwd, contextStr string, redirectMatches []string) string {
 	// 2a — scan non-ephemeral redirect targets.
 	for _, rm := range redirectMatches {
 		if rm == "" {
@@ -330,36 +478,35 @@ func credSecondLayer(rawStr string, redirectMatches []string) string {
 		if target == "" {
 			continue
 		}
-		if !credIsEphemeralTarget(rawStr, target) {
-			if m := credScanFile(target); m != "" {
+		if !credIsEphemeralTarget(contextStr, target) {
+			if m := credScanFile(credResolveArg(target, shellCwd)); m != "" {
 				return m
 			}
 		}
 	}
 
-	// 2b — extract command value from JSON, glob-expand each token (porting
-	// `set -- $CMD_LINE` without set -f), and scan file arguments.
-	matches := credCmdLineRe.FindAllStringSubmatch(rawStr, -1)
-	for _, cm := range matches {
-		cmdLine := cm[1]
-		rawTokens := strings.Fields(cmdLine)
-		if len(rawTokens) == 0 {
-			continue
-		}
-		// Apply glob expansion per token, matching bash `set -- $CMD_LINE`.
-		var tokens []string
-		for _, t := range rawTokens {
-			tokens = append(tokens, credGlobToken(t)...)
-		}
-		if len(tokens) == 0 {
-			continue
-		}
-		switch tokens[0] {
-		case "cat", "head", "tail", "jq", "grep":
-			for _, tok := range tokens[1:] {
-				if m := credScanFile(tok); m != "" {
-					return m
-				}
+	// 2b — tokenise shellCmd, glob-expand, scan file arguments.
+	// shellCmd is "" for payloads without a shell command (Write/Edit/fs_write).
+	if shellCmd == "" {
+		return ""
+	}
+	rawTokens := strings.Fields(shellCmd)
+	if len(rawTokens) == 0 {
+		return ""
+	}
+	// Apply glob expansion per token, matching bash `set -- $CMD_LINE` without set -f.
+	var tokens []string
+	for _, t := range rawTokens {
+		tokens = append(tokens, credGlobToken(t)...)
+	}
+	if len(tokens) == 0 {
+		return ""
+	}
+	switch tokens[0] {
+	case "cat", "head", "tail", "jq", "grep":
+		for _, tok := range tokens[1:] {
+			if m := credScanFile(credResolveArg(tok, shellCwd)); m != "" {
+				return m
 			}
 		}
 	}

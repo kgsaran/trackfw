@@ -305,3 +305,85 @@ func TestDedup_FailOpen_UnreadableGlobalFile(t *testing.T) {
 		t.Error("expected project-scope credential-guard entry to be added when global file is unreadable (fail-open)")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// ML-1B (REQ-2026-10-06) — Windsurf global dedup
+// ---------------------------------------------------------------------------
+
+// Reconciliação: afirma que InjectWindsurfHooks NÃO adiciona entradas de credential
+// guard em pre_run_command nem pre_write_code quando a instalação global
+// (~/.codeium/windsurf/hooks.json) já contém o global form (guardCredentialGlobalCmdPSPOSIX).
+// Isso evita disparo duplo quando o harness windsurf-credential-guard está ativo.
+func TestDedup_Windsurf_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
+	home := dedupFixtureHome(t)
+	// Simula a instalação global via harnessCredentialGuardTargetWindsurf.
+	helperWriteJSON(t, filepath.Join(home, ".codeium", "windsurf", "hooks.json"), map[string]interface{}{
+		"hooks": map[string]interface{}{
+			"pre_run_command": []interface{}{
+				map[string]interface{}{"command": guardCredentialGlobalCmdPSPOSIX, "show_output": true},
+			},
+			"pre_write_code": []interface{}{
+				map[string]interface{}{"command": guardCredentialGlobalCmdPSPOSIX, "show_output": true},
+			},
+		},
+	})
+
+	dir := t.TempDir()
+	if err := InjectWindsurfHooks(dir); err != nil {
+		t.Fatalf("InjectWindsurfHooks failed: %v", err)
+	}
+
+	data := helperReadJSON(t, filepath.Join(dir, ".windsurf", "hooks.json"))
+	hooksMap, _ := data["hooks"].(map[string]interface{})
+
+	// project-scope credential guard must NOT be added
+	for _, event := range []string{"pre_run_command", "pre_write_code"} {
+		arr, _ := hooksMap[event].([]interface{})
+		for _, item := range arr {
+			obj, _ := item.(map[string]interface{})
+			if obj["command"] == guardCredentialCmdPSPOSIX {
+				t.Errorf("project-scope credential-guard entry should have been skipped in %s (global already installed)", event)
+			}
+		}
+	}
+
+	// git-branch guard must still be present (dedup only applies to credential)
+	pre, _ := hooksMap["pre_run_command"].([]interface{})
+	found := false
+	for _, item := range pre {
+		obj, _ := item.(map[string]interface{})
+		if obj["command"] == guardGitBranchCmdPSPOSIX {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("git-branch guard in pre_run_command must still be added even when global credential-guard is installed")
+	}
+}
+
+// Reconciliação: afirma que InjectWindsurfHooks adiciona o credential guard
+// em pre_run_command e pre_write_code quando a global está ausente (fail-open).
+func TestDedup_Windsurf_FailOpenWhenGlobalMissing(t *testing.T) {
+	dedupFixtureHome(t) // HOME → temp dir, ~/.codeium/windsurf/hooks.json not present
+	dir := t.TempDir()
+	if err := InjectWindsurfHooks(dir); err != nil {
+		t.Fatalf("InjectWindsurfHooks failed: %v", err)
+	}
+
+	data := helperReadJSON(t, filepath.Join(dir, ".windsurf", "hooks.json"))
+	hooksMap, _ := data["hooks"].(map[string]interface{})
+
+	for _, event := range []string{"pre_run_command", "pre_write_code"} {
+		arr, _ := hooksMap[event].([]interface{})
+		found := false
+		for _, item := range arr {
+			obj, _ := item.(map[string]interface{})
+			if obj["command"] == guardCredentialCmdPSPOSIX {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("expected project-scope credential-guard in %s when global is absent (fail-open)", event)
+		}
+	}
+}

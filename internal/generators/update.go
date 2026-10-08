@@ -493,7 +493,7 @@ var harnessCatalogTargetOrder = []string{
 }
 
 // HarnessTargetIDs is the fixed, declared order of `trackfw update harness`
-// targets: 33 ids — "claude-skill", then "claude-credential-guard" and
+// targets: 34 ids — "claude-skill", then "claude-credential-guard" and
 // "claude-git-branch-guard" (global hook wiring for Claude Code — placed
 // immediately after claude-skill since all three are Claude-Code-scoped
 // global artifacts), then for each catalog target in
@@ -506,16 +506,21 @@ var harnessCatalogTargetOrder = []string{
 // "cursor-git-branch-guard" inserted immediately BEFORE "cursor-agents"/
 // "cursor-skills" (ML-2D), and "copilot-credential-guard"/
 // "copilot-git-branch-guard" inserted immediately BEFORE "copilot-agents"/
-// "copilot-skills" (ML-2E), and "kiro-credential-guard"/
+// "copilot-skills" (ML-2E), "windsurf-credential-guard" inserted immediately
+// BEFORE "windsurf-agents"/"windsurf-skills" (ML-1B, REQ-2026-10-06 — global
+// credential guard for Windsurf at ~/.codeium/windsurf/hooks.json; Windsurf
+// now has pre_run_command and pre_write_code hooks so the ADR-2026-08-05
+// premise that excluded Windsurf has been superseded — see adendo 2026-10-08;
+// NO windsurf-git-branch-guard global target: Windsurf does not have a
+// documented global git-branch-guard hook path equivalent to the project-scope
+// .windsurf/hooks.json), and "kiro-credential-guard"/
 // "kiro-git-branch-guard" inserted immediately BEFORE "kiro-agents"/
-// "kiro-skills" (ML-2F, the last guard pair of this wave — Windsurf has no
-// native hook mechanism and stays out per the ADR). Within each tool,
-// credential-guard always precedes git-branch-guard, which always precedes
-// that tool's own agents/skills pair, never follows it. Order here is
-// authoritative for both JSON output and iteration — it must never be
-// derived from the filesystem or from what happens to be installed on a
-// given machine (see docs/cli-parity.md, "targets follows the declared
-// target order, not filesystem order").
+// "kiro-skills" (ML-2F). Within each tool, credential-guard always precedes
+// git-branch-guard (where it exists), which always precedes that tool's own
+// agents/skills pair, never follows it. Order here is authoritative for both
+// JSON output and iteration — it must never be derived from the filesystem or
+// from what happens to be installed on a given machine (see docs/cli-parity.md,
+// "targets follows the declared target order, not filesystem order").
 var HarnessTargetIDs = buildHarnessTargetIDs()
 
 func buildHarnessTargetIDs() []string {
@@ -538,6 +543,9 @@ func buildHarnessTargetIDs() []string {
 		}
 		if tool == "copilot" {
 			ids = append(ids, "copilot-credential-guard", "copilot-git-branch-guard")
+		}
+		if tool == "windsurf" {
+			ids = append(ids, "windsurf-credential-guard")
 		}
 		if tool == "kiro" {
 			ids = append(ids, "kiro-credential-guard", "kiro-git-branch-guard")
@@ -656,6 +664,10 @@ func UpdateHarness(opts UpdateOptions) (UpdateReport, error) {
 		}
 		if id == "copilot-git-branch-guard" {
 			results = append(results, harnessGitBranchGuardTargetCopilot(home, opts))
+			continue
+		}
+		if id == "windsurf-credential-guard" {
+			results = append(results, harnessCredentialGuardTargetWindsurf(home, opts))
 			continue
 		}
 		if id == "kiro-credential-guard" {
@@ -1474,6 +1486,124 @@ func harnessCredentialGuardTargetCopilot(home string, opts UpdateOptions) Target
 		}
 	}
 	mergeCredentialGuardCopilotHooks(root, guardCredentialGlobalCmdPSPOSIX)
+
+	out, marshalErr := marshalJSONNoEscape(root)
+	if marshalErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+	}
+	desired := append(out, '\n')
+	if string(desired) == string(raw) {
+		return TargetResult{ID: id, State: TargetSkipped, Path: displayPath}
+	}
+	if opts.DryRun {
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	}
+	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+	}
+	return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+}
+
+// harnessCredentialGuardTargetWindsurf evaluates (and, unless DryRun, applies)
+// the global-scope credential-guard hook wiring for Windsurf at
+// ~/.codeium/windsurf/hooks.json. This is the standard Windsurf user-scope
+// hooks file (same schema as the project-scope .windsurf/hooks.json, which
+// InjectWindsurfHooks manages). Uses mergeSimpleCommandArray — the same
+// idempotent merge InjectWindsurfHooks uses for project-scope files — so any
+// pre-existing entries from other tools or a prior trackfw run are preserved.
+//
+// Two events are wired with guardCredentialGlobalCmdPSPOSIX (PS/POSIX family,
+// same as every other global credential-guard target):
+//   - pre_run_command: guards shell commands before execution (Layer 1 + gap R1).
+//   - pre_write_code: guards file writes before content is written (Layer 1).
+//
+// Note: there is NO windsurf-git-branch-guard global target. Windsurf's
+// documented global hook path is ~/.codeium/windsurf/hooks.json, which this
+// target owns. Adding a separate git-branch-guard global target would require
+// a second schema for the same file or a wholesale-rewrite approach — neither
+// has been confirmed against official documentation (R4-equivalent). Declared
+// as an open gap (ML-1B, REQ-2026-10-06).
+func harnessCredentialGuardTargetWindsurf(home string, opts UpdateOptions) TargetResult {
+	const id = "windsurf-credential-guard"
+	const displayPath = "~/.codeium/windsurf/hooks.json"
+
+	path := filepath.Join(home, ".codeium", "windsurf", "hooks.json")
+	// Guard: reject writes through symlinks before any filesystem mutation
+	// (ADR-2026-09-18 / ML-1B).
+	if result, guarded := rejectHarnessSymlink(home, path, id, displayPath); guarded {
+		return result
+	}
+
+	windsurfGetCmd := func(item interface{}) string {
+		obj, ok := item.(map[string]interface{})
+		if !ok {
+			return ""
+		}
+		s, _ := obj["command"].(string)
+		return s
+	}
+	windsurfMakeEntry := func(cmd string) interface{} {
+		return map[string]interface{}{
+			"command":     cmd,
+			"show_output": true,
+		}
+	}
+
+	raw, err := os.ReadFile(path)
+	switch {
+	case os.IsNotExist(err):
+		if !opts.InstallMissing {
+			return TargetResult{ID: id, State: TargetMissing, Path: displayPath}
+		}
+		if opts.DryRun {
+			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+		}
+		root := make(map[string]interface{})
+		hooks := make(map[string]interface{})
+		for _, event := range []string{"pre_run_command", "pre_write_code"} {
+			hooks[event] = mergeSimpleCommandArray(
+				hooks[event], guardCredentialGlobalCmdPSPOSIX, windsurfMakeEntry, windsurfGetCmd,
+			)
+		}
+		root["hooks"] = hooks
+		desired, marshalErr := marshalJSONNoEscape(root)
+		if marshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: marshalErr.Error()}
+		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+		if mkErr := os.MkdirAll(filepath.Dir(path), 0755); mkErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: mkErr.Error()}
+		}
+		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
+		if writeErr := os.WriteFile(path, append(desired, '\n'), 0644); writeErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
+		}
+		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	case err != nil:
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}
+	}
+
+	var root map[string]interface{}
+	if len(raw) > 0 {
+		if unmarshalErr := json.Unmarshal(raw, &root); unmarshalErr != nil {
+			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: unmarshalErr.Error()}
+		}
+	}
+	if root == nil {
+		root = make(map[string]interface{})
+	}
+
+	hooks, _ := root["hooks"].(map[string]interface{})
+	if hooks == nil {
+		hooks = make(map[string]interface{})
+	}
+	for _, event := range []string{"pre_run_command", "pre_write_code"} {
+		hooks[event] = mergeSimpleCommandArray(
+			hooks[event], guardCredentialGlobalCmdPSPOSIX, windsurfMakeEntry, windsurfGetCmd,
+		)
+	}
+	root["hooks"] = hooks
 
 	out, marshalErr := marshalJSONNoEscape(root)
 	if marshalErr != nil {
