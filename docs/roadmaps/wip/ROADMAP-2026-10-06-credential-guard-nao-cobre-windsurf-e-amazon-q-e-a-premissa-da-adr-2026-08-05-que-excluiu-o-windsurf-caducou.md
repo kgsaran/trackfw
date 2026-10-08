@@ -119,7 +119,32 @@ projeto; e "global instalado" contava só pre_run_command, deixando pre_write_co
 - [ ] Disparo real medido em ao menos um CLI, ou impossibilidade declarada (sem conta de Windsurf/Amazon Q, decisão do usuário)
 
 ### ML-2B — Red-team do diff
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** hades-tf
 **Acceptance criteria:**
-- [ ] Parecer sobre o diff da Wave 1 contra o threat model do ML-0A; achados corrigidos nesta REQ
+- [x] Parecer sobre o diff da Wave 1 contra o threat model do ML-0A; achados corrigidos nesta REQ
+      Veredito do hades-tf (`docs/seguranca/2026-10-08-red-team-credential-guard-windsurf-amazonq.md`): **não libera**.
+      F1 (alto) validate aceita `echo` do marcador global do Windsurf; F2 (médio, anterior à REQ) isenção efêmera ignora
+      sink secundário (`| tee arq > /dev/null`, `dd of=`, interpretador inline); F3 (alto, regressão) BOM faz o parse JSON
+      falhar e desliga a 2ª camada — abaixo da main; F4 (baixo, regressão) `command` fora dos 4 caminhos fixos deixou de ser
+      lido. Mesma causa (o guard e o validate lendo o payload/arquivo pelo que ele é) → ML-2C/2D aqui.
+
+### ML-2C — Corretivo F1, F3, F4
+**Status:** 🔄 Em andamento
+**Squad:** apolo-tf (mesmo despacho do ML-2D, em sequência: ambos tocam `internal/guard/credential.go`)
+- [ ] F3: parse do payload sem BOM; teste com BOM em cada caso do ML-1C (projeto e global)
+- [ ] F4: 2ª camada e varredura de redirecionamento sobre TODOS os valores string de `command`/`command_line` em qualquer profundidade (exceto o enum do `fs_write`); `{"params":{"command":"cat arq"}}` → 2
+- [ ] F1: "global instalado" (validate) e presença no projeto exigem a linha de hook esperada (igualdade, como o gerador), não substring; `echo trackfw guard credential --global` não satisfaz
+- [ ] Falsificação de cada um, frase de reconciliação por teste
+
+### ML-2D — Corretivo F2: isenção efêmera só para comando simples
+**Status:** 🔄 Em andamento
+**Squad:** apolo-tf
+**Decisão do arquiteto:** a isenção existe porque `> /dev/null` não materializa nada. Ela só vale quando nada mais pode
+materializar: um único comando de shell, simples (sem `|`, `;`, `&&`, `||`, `&`, `$(`, crase, `<(`/`>(`, quebra de linha),
+argv[0] ∈ {echo, printf}, todos os redirecionamentos efêmeros, e o JWT dentro desse comando. Qualquer outra forma bloqueia
+em `block` (fail-closed); em `warn` só avisa. Registrado no adendo da ADR-2026-08-05.
+- [ ] `echo <JWT> > /dev/null` continua isento; `| tee arq`, `dd of=`, `python3 -c ... > /dev/null`, `& writer` → 2
+- [ ] Falsificação nas duas direções
+- [ ] `make quality` (arquiteto)
+

@@ -140,3 +140,11 @@ Linha de hook: a da D11 revista da ADR-2026-10-04 (família PS/POSIX no Windsurf
 
 **Escopo global.** Windsurf ganha alvo de harness `windsurf-credential-guard` em `~/.codeium/windsurf/hooks.json`.
 Amazon Q não documenta arquivo de hooks global: fica só no escopo de projeto (residual declarado).
+
+**Emenda (red-team, mesmo dia).** A isenção de redirecionamento efêmero passa a exigir forma mínima: um único comando de
+shell simples (sem pipe, `;`, `&&`, `||`, `&`, substituição de comando ou de processo, quebra de linha), cujo argv[0] é
+`echo` ou `printf`, com todos os redirecionamentos efêmeros e o JWT dentro desse comando. Motivo medido
+(`docs/seguranca/2026-10-08-red-team-credential-guard-windsurf-amazonq.md`, F2): `echo <JWT> | tee arq > /dev/null`,
+`dd of=`, `python3 -c '...' > /dev/null` e `& <escritor>` saíam 0 em `block` — o `> /dev/null` do fim isentava um comando
+que materializava a credencial noutro lugar. Trade-off aceito: em `block`, um `curl` com token literal e saída em
+`/dev/null` passa a bloquear; em `warn` (padrão) só avisa.
