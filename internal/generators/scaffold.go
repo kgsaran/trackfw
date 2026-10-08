@@ -1382,7 +1382,7 @@ is_ephemeral_target() {
   return 1
 }
 
-REDIRECTS=$(printf '%s' "$RAW" | grep -oE '[0-9]?>>?[[:space:]]*[^[:space:]|&;,:]+' || true)
+REDIRECTS=$(printf '%s' "$RAW" | grep -oE '[0-9]?>>?[[:space:]]*[^[:space:]|&;,]+' || true)
 
 # Second detection layer: only runs when the payload scan above found nothing -- keeps the common
 # case (match already found) cheap and avoids reading files unnecessarily. Files above the size cap

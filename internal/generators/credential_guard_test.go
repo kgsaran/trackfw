@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -728,5 +729,66 @@ func TestCredentialGuardScript_NoOpOutsideProjectRoot(t *testing.T) {
 	}
 	if attentionFileExists(dir) {
 		t.Error("sem trackfw.yaml, o script deve ser no-op")
+	}
+}
+
+// TestCredentialGuardScript_GeneratedScript_WindowsPathRedirectDetectsJWTInFile asserts that
+// the generated thin-wrapper script (which delegates to trackfw guard credential) detects a
+// JWT stored in a file when the redirect target uses a Windows-style colon path
+// (e.g. C:/Users/x/s.env).
+//
+// Assertion: this test affirms that the BUG-2 fix (ML-3B, credRedirectRe removing ':' from
+// the exclusion class) is active — only with the fix does 'C:/Users/x/s.env' get extracted
+// as the redirect target; without it, only 'C' is extracted and the JWT in the file is missed.
+//
+// Falsification: reverting ML-3B (restoring ':' to credRedirectRe in internal/guard/credential.go)
+// causes the Go binary to extract only 'C', miss the JWT file, and return rc=0 instead of rc=2.
+//
+// On POSIX, 'C:' is a legal directory-name component, so the fixture path resolves to a real
+// file. The test is skipped on Windows because ':' is not valid in a filename there.
+func TestCredentialGuardScript_GeneratedScript_WindowsPathRedirectDetectsJWTInFile(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("':' is not valid in a filename on Windows — fixture cannot be created")
+	}
+
+	dir := t.TempDir()
+	if err := GenerateCredentialGuardScript(dir); err != nil {
+		t.Fatalf("GenerateCredentialGuardScript erro: %v", err)
+	}
+	scriptPath := filepath.Join(dir, "scripts", "trackfw-credential-guard.sh")
+
+	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte("credential_guard:\n  mode: block\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create the Windows-style colon path as a relative POSIX path (legal on macOS/Linux).
+	// On POSIX 'C:' is a legal directory name; the resulting relative path C:/Users/x/s.env
+	// is what the guard would receive as a redirect target for a Windows command like
+	// 'echo x > C:/Users/x/s.env'.
+	jwtFile := filepath.Join(dir, "C:", "Users", "x", "s.env")
+	if err := os.MkdirAll(filepath.Dir(jwtFile), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(jwtFile, []byte(syntheticJWT+"\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// docs/roadmaps must exist so the thin wrapper (block mode) can write the attention file.
+	if err := os.MkdirAll(filepath.Join(dir, "docs", "roadmaps"), 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Payload mirrors the real-world hook scenario: 'echo x' (no credential in the command)
+	// redirecting to a Windows-style path. Detection can only succeed if the full path
+	// C:/Users/x/s.env is extracted (not just 'C'), allowing the second-layer file scan.
+	payload := `{"tool_input":{"command":"echo x > C:/Users/x/s.env"}}`
+	code, _, stderr := runCredentialGuard(t, dir, scriptPath, payload)
+
+	if code != 2 {
+		t.Errorf("block mode: exit code want 2 (JWT detected in redirect target file), got %d (stderr: %s)",
+			code, stderr)
+	}
+	if !strings.Contains(stderr, "JWT") {
+		t.Errorf("esperava menção de JWT em stderr (segunda camada detectou via redirect), got: %s", stderr)
 	}
 }

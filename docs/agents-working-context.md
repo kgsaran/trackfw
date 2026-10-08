@@ -2,6 +2,32 @@
 
 ---
 
+## 2026-10-08 — hades-tf (fix/credential-guard-caminho-git-bash-windows — ML-3C) — FIM
+
+**Branch:** `fix/credential-guard-caminho-git-bash-windows`
+**Entregável produzido:** `docs/seguranca/2026-10-08-red-team-wave3-credential-guard-caminho-windows.md`
+**Veredito:** LIBERA COM RESSALVA.
+
+**Achados:**
+- F1 (LOW): ADS stream nomeado não existente (`file.txt:stream`) — main detectava via truncação acidental, branch extrai caminho completo e `os.Stat` falha. Discriminador `::$DATA` confirma: branch MELHOR que main para stream padrão (absoluto: main rc=0, branch rc=2). Wave 3 §2.7 aceitou como residual; evidência numérica agora documentada.
+- O1 (INFO, pré-existente): `NUL` não isentado por `credAllTargetsAreDevNull` — ambos rc=2.
+- R1 (residual): `pwsh` ausente no VM — deny-list específica para `pwsh` não medida diretamente.
+
+**Suíte completa guard (sem filtro):** branch e main: 1 falha cada — `TestRunGitBranch_NoOpOutsideProject` (pré-existente, não relacionada ao credential guard, idêntica nos dois binários). 10 testes Windows-specific novos: PASS (branch).
+
+**POSIX:** `go test ./internal/...` — 20 pacotes OK.
+**VM:** `C:\Users\Lab\tf-ml3c\` deletada. `if exist ... (echo PRESENT) else (echo ABSENT)` → ABSENT.
+
+---
+
+## 2026-10-08 — hades-tf (fix/credential-guard-caminho-git-bash-windows — ML-3C) — INÍCIO
+
+**Branch:** `fix/credential-guard-caminho-git-bash-windows`
+**Tarefa:** ML-3C — Red-team independente do diff `internal/` do HEAD (`fix(guard): caminho Git Bash`) contra o parecer Wave 3 (ML-3A). Vetores: FP/FN de tradução `/x/...`, deny-list PowerShell, regex sem `:`, regressão POSIX, suíte completa na VM.
+**Não altera código de produto.**
+
+---
+
 ## 2026-10-08 — hades-tf (feat/req-done-open-criteria-decompoe-herdadas — ML-2A) — FIM
 
 **Branch:** `feat/req-done-open-criteria-decompoe-herdadas`
@@ -45932,3 +45958,27 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-08 — zeus-tf — FIM: REQ-2026-10-08 implementada (#542), aguarda PR
 
 - Linha agregada de `req_done_open_criteria` ganha `(K inherited from upstream/<ramo>)` com remote upstream ≠ origin; sem upstream, byte-idêntica. Medido no fork do relator: 22 (22 inherited). Red-team reprovou 1x (aspa no nome do ramo → `file` falso no JSON), corrigido por allowlist. `make quality` EXIT=0.
+
+## 2026-10-08 — zeus-tf — REQ-2026-10-08 Done (PR #545); REQ-2026-10-06 reaberta pela #544
+
+- REQ-2026-10-08 fechada com evidência, roadmap em `done/`, `req-aberta` retirada da #542. REQ-2026-10-06 reaberta (AC6, Wave 3): caminho Git Bash `/c/...` e redirecionamento `C:\...` não varridos na 2ª camada no Windows. Branch `fix/credential-guard-caminho-git-bash-windows`. ML-3A (hades-tf) despachado.
+
+## 2026-10-08 — hades-tf — INÍCIO: ML-3A REQ-2026-10-06 (threat model caminho Windows 2ª camada)
+
+- Lendo issue #544, roadmap Wave 3, credential.go, ADR-2026-09-04 (IsAbs). Compilando binário para VM Windows e medindo formas de caminho na 2ª camada (argumento e redirecionamento). Entregável: docs/seguranca/2026-10-08-wave3-credential-guard-caminho-windows.md.
+
+## 2026-10-08 — hades-tf — FIM: ML-3A REQ-2026-10-06 (threat model caminho Windows 2ª camada)
+
+- Entregue docs/seguranca/2026-10-08-wave3-credential-guard-caminho-windows.md + vault note. Dois bugs confirmados e medidos na VM (Windows 11 ARM64, trackfw v9.3.3, commit a3f98e99):
+  - BUG-1 (dois sub-casos): (A) sem tool_info.cwd — path `/c/...` devolvido como-está → `os.Stat("/c/...")` → Windows vê `C:\c\...` → não existe → não detecta (`filepath.IsAbs` nem consultado); (B) com cwd nativo — `filepath.IsAbs("/c/...")=false` → `filepath.Join("C:\\...", "/c/...")` = `C:\c\...` → stat falha. Ambos medidos (rc=0 detected=false).
+  - BUG-2: `credRedirectRe` exclui `:` → redirect `C:\...` ou `C:/...` extraído como `C` → arquivo `C` no cwd procurado (prova: arquivo `C` com chave no cwd → rc=2 detected=true para o arquivo errado).
+  - UNC: detectado (rc=2 detected=true) quando admin share acessível — sem defeito estrutural.
+  - Warn = block em padrão de detecção; rc=0 para todos em warn; /c/ FN persiste em ambos os modos.
+  - PowerShell path (medido §2.10, `powershell.exe` via ssh): `GetFullPath('/c/Users/Lab')` = `C:\c\Users\Lab`. Residual pós-fix em duas direções: FP + FN regressão. Gate deny-list `strings.EqualFold(toolName, "PowerShell")` fecha para Claude Code (`"PowerShell"` confirmado); ABERTO para Codex (emite `"Bash"` mesmo em PS — forma de caminho não medida) e Windsurf (sem tool_name).
+  - POSIX (macOS): `filepath.IsAbs("/c/...")=true`; `cat <abspath>/s.env` → detected=true; gate GOOS obrigatório.
+  - Spec ML-3B: `credNormalizeWindowsPath(path, goos, toolName string) string` — só strings/regexp (sem path/filepath); saída forward-slash `C:/...`; gate `EqualFold(toolName,"PowerShell")`; cadeia: `credExtractCmdAndCwd` retorna `toolName string`; assinaturas reais lidas de credential.go; unit tests 12 linhas; par de integração toolName Bash/PowerShell obrigatório.
+  - VM limpa: tf-ml3a, tf-ml3a4, tf-ml3a5, tf-ml3a6 apagados; tf.exe apagado; measure4/5/6.sh apagados; /tmp/ml3a_se.txt apagado. Verificado: measure*.ps1 da listagem são de 2026-10-04, não desta sessão.
+
+## 2026-10-08 — zeus-tf — FIM: Wave 3 da REQ-2026-10-06 (#544), aguarda PR
+
+- Guard varre `/c/`, `/C/`, `/cygdrive/c/` (só Windows, fora do PowerShell/pwsh) e `> C:\...` inteiro; ADS nomeado volta a varrer o arquivo base. Medido na VM (12/12) com falsificação. Red-team liberou com ressalva; ressalvas corrigidas (ML-3E). `make quality` EXIT=0.

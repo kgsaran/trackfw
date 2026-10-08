@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"syscall"
 	"testing"
@@ -1303,4 +1304,503 @@ func TestRunCredential_DdHeredocJWT_NotExempt(t *testing.T) {
 	if code != 2 {
 		t.Fatalf("dd heredoc: expected RC=2 (dd not in allowlist), got %d (stderr=%q)", code, errOut)
 	}
+}
+
+// --------------------------------------------------------------------------
+// ML-3B tests: Windows path normalization (BUG-1 + BUG-2)
+// --------------------------------------------------------------------------
+
+// TestCredNormalizeWindowsPath asserts the translation rules of credNormalizeWindowsPath
+// for every combination of goos and toolName that matters.
+//
+// This is a pure unit test with no I/O — it runs on every OS, including macOS/Linux
+// CI where the Windows path forms cannot be opened but can still be verified as strings.
+//
+// Assertion per row is noted in the "frase de reconciliação" column in the spec table.
+func TestCredNormalizeWindowsPath(t *testing.T) {
+	cases := []struct {
+		path     string
+		goos     string
+		toolName string
+		want     string
+		note     string
+	}{
+		// Git-Bash lower case drive
+		{"/c/Users/x/s.env", "windows", "Bash", "C:/Users/x/s.env",
+			"normalização ativa no Windows com toolName=Bash"},
+		// Git-Bash upper case drive
+		{"/C/Users/x/s.env", "windows", "Bash", "C:/Users/x/s.env",
+			"case-insensitive na regex (letra de drive maiúscula)"},
+		// Cygwin mount
+		{"/cygdrive/c/Users/x", "windows", "Bash", "C:/Users/x",
+			"prefixo /cygdrive/c/ traduzido"},
+		// GOOS gate: Linux must be unchanged
+		{"/c/Users/x/s.env", "linux", "Bash", "/c/Users/x/s.env",
+			"gate GOOS removido causaria FN em POSIX"},
+		// GOOS gate: darwin must be unchanged
+		{"/c/Users/x/s.env", "darwin", "Bash", "/c/Users/x/s.env",
+			"gate GOOS removido causaria FN em macOS"},
+		// MSYS path without drive letter: unchanged
+		{"/tmp/s.env", "windows", "Bash", "/tmp/s.env",
+			"regex over-broad causaria FN para caminhos MSYS sem drive"},
+		{"/home/user/s.env", "windows", "Bash", "/home/user/s.env",
+			"idem para /home"},
+		// Windows-native paths: unchanged
+		{`C:\Users\x\s.env`, "windows", "Bash", `C:\Users\x\s.env`,
+			"regressão: forma nativa backslash não alterada"},
+		{"C:/Users/x/s.env", "windows", "Bash", "C:/Users/x/s.env",
+			"regressão: forma nativa forward-slash não alterada"},
+		// Relative path: unchanged
+		{"relative/s.env", "windows", "Bash", "relative/s.env",
+			"regressão: relativo não alterado"},
+		// PowerShell deny-list (exact case)
+		{"/c/Users/x/s.env", "windows", "PowerShell", "/c/Users/x/s.env",
+			"deny-list PS (EqualFold): tradução não aplicada para PowerShell"},
+		// PowerShell deny-list (lowercase — EqualFold)
+		{"/c/Users/x/s.env", "windows", "powershell", "/c/Users/x/s.env",
+			"EqualFold: variação lowercase de PowerShell também excluída"},
+		// Amazon Q tool_name (deny-list only excludes PS)
+		{"/c/Users/x/s.env", "windows", "execute_bash", "C:/Users/x/s.env",
+			"Amazon Q (deny-list só exclui PS) → traduz"},
+		// Windsurf (tool_name absent → "")
+		{"/c/Users/x/s.env", "windows", "", "C:/Users/x/s.env",
+			"Windsurf (tool_name ausente → \"\") cai no deny-list → traduzido"},
+		// Bare drive letter alone
+		{"/c", "windows", "Bash", "C:/",
+			"/c sozinho → C:/ (não C: que é drive-relative)"},
+		// Cygdrive bare
+		{"/cygdrive/c", "windows", "Bash", "C:/",
+			"/cygdrive/c sozinho → C:/"},
+		// UNC: unchanged
+		{`\\server\share\file`, "windows", "Bash", `\\server\share\file`,
+			"UNC não alterado"},
+		// R1: pwsh and powershell.exe added to deny-list (PowerShell 7 uses PS provider semantics)
+		{"/c/Users/x/s.env", "windows", "pwsh", "/c/Users/x/s.env",
+			"R1: pwsh (PowerShell 7) na deny-list — não traduz /c/..."},
+		{"/c/Users/x/s.env", "windows", "pwsh.exe", "/c/Users/x/s.env",
+			"R1: pwsh.exe na deny-list — não traduz /c/..."},
+		{"/c/Users/x/s.env", "windows", "powershell.exe", "/c/Users/x/s.env",
+			"R1: powershell.exe na deny-list — não traduz /c/..."},
+		{"/c/Users/x/s.env", "windows", "PWSH.EXE", "/c/Users/x/s.env",
+			"R1: PWSH.EXE (EqualFold) na deny-list — não traduz /c/..."},
+		// Control: non-PS tool still translates after R1 deny-list expansion
+		{"/c/Users/x/s.env", "windows", "Bash", "C:/Users/x/s.env",
+			"R1 controle: Bash não está na deny-list → traduz normalmente"},
+	}
+
+	for _, tc := range cases {
+		got := credNormalizeWindowsPath(tc.path, tc.goos, tc.toolName)
+		if got != tc.want {
+			t.Errorf("credNormalizeWindowsPath(%q, %q, %q) = %q; want %q — %s",
+				tc.path, tc.goos, tc.toolName, got, tc.want, tc.note)
+		}
+	}
+}
+
+// TestCredRedirectRe_WindowsPathExtractedFull asserts that credRedirectRe extracts
+// the FULL Windows drive path (not just the drive letter) from redirect expressions.
+//
+// Assertion: removing ':' from the exclusion class allows credRedirectRe to capture
+// C:\... and C:/... in redirect targets — BUG-2 fix. Falsification: restoring ':'
+// to the class causes this test to fail because the match is truncated to "C".
+func TestCredRedirectRe_WindowsPathExtractedFull(t *testing.T) {
+	cases := []struct {
+		input string
+		want  string // expected path after stripping redirect prefix
+	}{
+		{`echo hi > C:\Users\x\s.env`, `C:\Users\x\s.env`},
+		{`echo hi > C:/Users/x/s.env`, `C:/Users/x/s.env`},
+		{`echo hi > /c/Users/x/s.env`, `/c/Users/x/s.env`},
+		{`echo hi > /dev/null`, `/dev/null`},
+		{`echo hi > s.env`, `s.env`},
+	}
+	for _, tc := range cases {
+		matches := credRedirectRe.FindAllString(tc.input, -1)
+		if len(matches) == 0 {
+			t.Errorf("no match in %q", tc.input)
+			continue
+		}
+		got := credRedirectTarget(matches[0])
+		if got != tc.want {
+			t.Errorf("redirect target from %q = %q; want %q", tc.input, got, tc.want)
+		}
+	}
+}
+
+// TestCredRedirectRe_DevNullExemptionUnchanged asserts that /dev/null extraction is
+// unaffected by the BUG-2 regex change (removing ':' does not affect /dev/null).
+//
+// Assertion: credAllTargetsAreDevNull relies on credRedirectTarget returning "/dev/null";
+// if '/dev/null' extraction changed after the regex fix this test would catch it.
+// Falsification: restoring ':' changes the match for C:\ but not for /dev/null — this
+// test passes in both cases, confirming the fix has no effect on the /dev/null exemption.
+func TestCredRedirectRe_DevNullExemptionUnchanged(t *testing.T) {
+	inputs := []string{
+		`echo key > /dev/null`,
+		`echo key > /dev/null 2>&1`,
+		`printf key > /dev/null`,
+	}
+	for _, input := range inputs {
+		matches := credRedirectRe.FindAllString(input, -1)
+		found := false
+		for _, m := range matches {
+			target := credRedirectTarget(m)
+			target = strings.Map(func(r rune) rune {
+				if r == '"' || r == '\'' { return -1 }
+				return r
+			}, target)
+			target = strings.TrimRight(target, "},")
+			if target == "/dev/null" {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("input %q: /dev/null not extracted from redirects %v", input, matches)
+		}
+	}
+}
+
+// TestCredResolveArg_GitBashPath_POSIXUnchanged asserts that on non-Windows systems
+// credResolveArg returns the POSIX absolute path unchanged — the GOOS gate in
+// credNormalizeWindowsPath must not translate /c/... on macOS/Linux.
+//
+// Assertion: goos gate prevents credNormalizeWindowsPath from running on POSIX →
+// credResolveArg("/c/Users/x/s.env", "/some/cwd", "Bash") == "/c/Users/x/s.env".
+// Falsification: removing the goos gate → output "C:/Users/x/s.env" on macOS, which
+// filepath.IsAbs returns false for → path treated as relative → join with cwd → miss.
+func TestCredResolveArg_GitBashPath_POSIXUnchanged(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX test — skipped on Windows")
+	}
+	// On POSIX, /c/... is a valid absolute path; it must not be translated.
+	got := credResolveArg("/c/Users/x/s.env", "/some/cwd", "Bash")
+	if got != "/c/Users/x/s.env" {
+		t.Errorf("POSIX: credResolveArg(/c/Users/x/s.env) = %q; want %q (goos gate broken)", got, "/c/Users/x/s.env")
+	}
+	// With a relative arg, cwd join must still work normally.
+	got2 := credResolveArg("s.env", "/some/cwd", "Bash")
+	if got2 != "/some/cwd/s.env" {
+		t.Errorf("POSIX relative resolution: credResolveArg(s.env, /some/cwd) = %q; want /some/cwd/s.env", got2)
+	}
+}
+
+// --- Windows-only integration tests ---
+// These tests skip on non-Windows because the file paths they create via t.TempDir()
+// are POSIX, and they require os.Stat to open Windows-native paths.
+// Using t.Skip (not build tags) so that `go test -run '^Name$' -v` reports "SKIP"
+// on macOS rather than silently not finding the test.
+
+// TestRunCredential_GitBashArgSubcaseA_Windows asserts that when tool_info.cwd is
+// absent from the payload (sub-caso A, baseCwd=""), a Git-Bash path in the "cat"
+// argument is still detected on Windows after path normalization.
+//
+// Assertion: credNormalizeWindowsPath translates /c/...→C:/... before the
+// credScanFile call — os.Stat succeeds — AWS key found → RC=2 (sub-caso A coberto).
+// Falsification: removing credNormalizeWindowsPath call in credResolveArg → RC=0.
+func TestRunCredential_GitBashArgSubcaseA_Windows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-only integration test")
+	}
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	tokenFile := filepath.Join(dir, "s.env")
+	key := "AKIA" + "TESTKEYTESTKEY12"
+	if err := os.WriteFile(tokenFile, []byte("aws_access_key_id = "+key), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Convert C:\path\s.env to /c/path/s.env (Git-Bash form)
+	gitBashPath := windowsPathToGitBash(tokenFile)
+	// No tool_info.cwd in payload — sub-caso A
+	payload := `{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"cat ` + jsonStr(gitBashPath) + `"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("sub-caso A /c/ arg: expected RC=2 (normalização → C:/…), got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_GitBashArgSubcaseB_Windows asserts that when tool_info.cwd is
+// present as a native Windows path (sub-caso B), a Git-Bash argument is detected.
+//
+// Assertion: credNormalizeWindowsPath translates /c/...→C:/... → IsAbs=true →
+// cwd join skipped — credScanFile finds file — AWS key detected → RC=2 (sub-caso B coberto).
+// Falsification: removing credNormalizeWindowsPath → IsAbs("/c/...")=false on Windows
+// → filepath.Join("C:\\...", "/c/...") = "C:\c\..." → stat fails → RC=0.
+func TestRunCredential_GitBashArgSubcaseB_Windows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-only integration test")
+	}
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	tokenFile := filepath.Join(dir, "s.env")
+	key := "AKIA" + "TESTKEYTESTKEY12"
+	if err := os.WriteFile(tokenFile, []byte("aws_access_key_id = "+key), 0644); err != nil {
+		t.Fatal(err)
+	}
+	gitBashPath := windowsPathToGitBash(tokenFile)
+	// tool_info.cwd is native Windows — sub-caso B
+	payload := `{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"cat ` + jsonStr(gitBashPath) + `"},"tool_info":{"cwd":"` + jsonStr(dir) + `"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("sub-caso B /c/ arg + cwd nativo: expected RC=2 (normalização → IsAbs=true), got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_GitBashUppercaseArg_Windows asserts that /C/... (uppercase drive)
+// is detected on Windows.
+//
+// Assertion: case-insensitive regex in credNormalizeWindowsPath handles /C/ → C:/
+// — AWS key found → RC=2.
+// Falsification: case-sensitive regex for drive letter → /C/ unmatched → RC=0.
+func TestRunCredential_GitBashUppercaseArg_Windows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-only integration test")
+	}
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	tokenFile := filepath.Join(dir, "s.env")
+	key := "AKIA" + "TESTKEYTESTKEY12"
+	if err := os.WriteFile(tokenFile, []byte("aws_access_key_id = "+key), 0644); err != nil {
+		t.Fatal(err)
+	}
+	gitBashPath := windowsPathToGitBash(tokenFile)
+	// Convert /c/ to /C/ (uppercase)
+	gitBashPathUpper := strings.Replace(gitBashPath, "/c/", "/C/", 1)
+	payload := `{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"cat ` + jsonStr(gitBashPathUpper) + `"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("/C/ uppercase arg: expected RC=2, got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_CygdriveArg_Windows asserts that /cygdrive/c/... is detected on Windows.
+//
+// Assertion: credNormalizeWindowsPath translates /cygdrive/c/ → C:/ → stat succeeds → RC=2.
+// Falsification: removing cygdrive pattern in credNormalizeWindowsPath → RC=0.
+func TestRunCredential_CygdriveArg_Windows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-only integration test")
+	}
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	tokenFile := filepath.Join(dir, "s.env")
+	key := "AKIA" + "TESTKEYTESTKEY12"
+	if err := os.WriteFile(tokenFile, []byte("aws_access_key_id = "+key), 0644); err != nil {
+		t.Fatal(err)
+	}
+	gitBashPath := windowsPathToGitBash(tokenFile)
+	// /c/... → /cygdrive/c/...
+	cygdrivePath := strings.Replace(gitBashPath, "/c/", "/cygdrive/c/", 1)
+	payload := `{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"cat ` + jsonStr(cygdrivePath) + `"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("/cygdrive/c/ arg: expected RC=2, got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_GitBashCwd_Windows asserts that /c/... as tool_info.cwd (with
+// a relative argument) is detected on Windows.
+//
+// Assertion: credExtractToolInfoCwd normalizes /c/... cwd → C:/... → relative arg
+// is joined against correct cwd → credScanFile finds file → RC=2.
+// Falsification: removing normalization in credExtractToolInfoCwd → cwd remains
+// /c/... → filepath.Join("/c/..", "s.env") = "/c/../s.env" → stat fails → RC=0.
+func TestRunCredential_GitBashCwd_Windows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-only integration test")
+	}
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	tokenFile := filepath.Join(dir, "s.env")
+	key := "AKIA" + "TESTKEYTESTKEY12"
+	if err := os.WriteFile(tokenFile, []byte("aws_access_key_id = "+key), 0644); err != nil {
+		t.Fatal(err)
+	}
+	gitBashDir := windowsPathToGitBash(dir)
+	// tool_info.cwd is Git-Bash form; arg is relative
+	payload := `{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"cat s.env"},"tool_info":{"cwd":"` + jsonStr(gitBashDir) + `"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("/c/ cwd + relative arg: expected RC=2 (cwd normalizado), got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_RedirectWindowsNative_Windows asserts that Layer 2a detects an
+// AWS key in a file referenced by a native Windows redirect (C:\... or C:/...).
+//
+// Assertion: BUG-2 fix (removing ':' from credRedirectRe) extracts the full Windows
+// path → credResolveArg normalizes (no-op for C:/..., already native) → credScanFile
+// finds file → RC=2.
+// Falsification: restoring ':' to credRedirectRe → redirect target truncated to "C" →
+// credScanFile("C") fails → RC=0.
+func TestRunCredential_RedirectWindowsNative_Windows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-only integration test")
+	}
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	tokenFile := filepath.Join(dir, "s.env")
+	key := "AKIA" + "TESTKEYTESTKEY12"
+	if err := os.WriteFile(tokenFile, []byte("aws_access_key_id = "+key), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Use forward-slash native Windows path (avoid JSON backslash complexity)
+	fwdSlashPath := strings.ReplaceAll(tokenFile, `\`, `/`)
+	// Layer 2a: no key in command itself, key is in redirect target file
+	payload := `{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"echo hi > ` + jsonStr(fwdSlashPath) + `"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("redirect C:/... native: expected RC=2 (BUG-2 fix), got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_RedirectGitBash_Windows asserts that Layer 2a detects an AWS key
+// in a file referenced by a Git-Bash redirect (/c/...).
+//
+// Assertion: regex extracts full /c/... target → credNormalizeWindowsPath → C:/... →
+// credScanFile finds file → RC=2.
+// Falsification: removing credNormalizeWindowsPath in credResolveArg → os.Stat("/c/...")
+// fails on Windows → RC=0.
+func TestRunCredential_RedirectGitBash_Windows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-only integration test")
+	}
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	tokenFile := filepath.Join(dir, "s.env")
+	key := "AKIA" + "TESTKEYTESTKEY12"
+	if err := os.WriteFile(tokenFile, []byte("aws_access_key_id = "+key), 0644); err != nil {
+		t.Fatal(err)
+	}
+	gitBashPath := windowsPathToGitBash(tokenFile)
+	payload := `{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"echo hi > ` + jsonStr(gitBashPath) + `"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("redirect /c/ git-bash: expected RC=2, got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_PowerShellGitBashPath_Windows asserts that a PowerShell payload
+// with a /c/... path is NOT detected (expected miss — PS opens C:\c\..., not C:\...).
+//
+// Assertion: deny-list gate strings.EqualFold("PowerShell") suppresses translation →
+// credResolveArg("/c/...", ..., "PowerShell") = "/c/..." → os.Stat fails on Windows →
+// RC=0. This is the CORRECT behavior: PS would open C:\c\... but we can't scan that
+// without false-positive risk on legitimate PS paths. Falsification: removing deny-list
+// → translation fires → guard scans C:/... instead of C:\c\... → RC=2 (wrong scan).
+func TestRunCredential_PowerShellGitBashPath_Windows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-only integration test")
+	}
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	tokenFile := filepath.Join(dir, "s.env")
+	key := "AKIA" + "TESTKEYTESTKEY12"
+	if err := os.WriteFile(tokenFile, []byte("aws_access_key_id = "+key), 0644); err != nil {
+		t.Fatal(err)
+	}
+	gitBashPath := windowsPathToGitBash(tokenFile)
+	// tool_name = "PowerShell" → deny-list → no translation → miss (expected)
+	payload := `{"hook_event_name":"PreToolUse","tool_name":"PowerShell","tool_input":{"command":"cat ` + jsonStr(gitBashPath) + `"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 0 {
+		t.Fatalf("PowerShell /c/ path: expected RC=0 (deny-list: PS uses C:\\c\\... semantics), got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_DevNullExempt_Windows asserts that the /dev/null exemption
+// is unaffected by the BUG-2 regex change on Windows.
+//
+// Assertion: echo <key> > /dev/null on Windows — credAllTargetsAreDevNull returns
+// true → F2 exemption fires → RC=0. The regex fix does not change /dev/null extraction.
+// Falsification: restoring ':' to credRedirectRe changes C:\ extracts but /dev/null
+// is still "/dev/null" (no ':') — this test passes in both states, confirming no regression.
+func TestRunCredential_DevNullExempt_Windows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-only integration test")
+	}
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	awsKeyVal := "AKIA" + "TESTKEYTESTKEY12"
+	// AWS key in the command → Layer 1 matches; but redirect is /dev/null → F2 exempts
+	payload := `{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"echo ` + awsKeyVal + ` > /dev/null"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 0 {
+		t.Fatalf("Windows /dev/null exemption: expected RC=0 (F2 exemption preserved), got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestCredWindowsADSBase asserts the NTFS Alternate Data Stream base-path extractor.
+//
+// Assertion: credWindowsADSBase returns the segment before the ADS colon for each
+// Windows path with a qualifying colon, and returns ("", false) for paths without
+// an ADS suffix or when goos≠"windows".
+// Falsification: removing the startSearch drive-skip causes "C:/x/a.txt" to produce
+// ("C", true) from the drive colon — the "C:/x/a.txt (no ADS)" row catches that.
+func TestCredWindowsADSBase(t *testing.T) {
+	cases := []struct {
+		path string
+		goos string
+		want string
+		ok   bool
+		note string
+	}{
+		{"arq.txt:stream", "windows", "arq.txt", true,
+			"stream nomeado — colon não é drive-letter → base extraída"},
+		{"arq.txt::$DATA", "windows", "arq.txt", true,
+			"::$DATA (stream padrão) → base extraída"},
+		{"C:/x/a.txt:s", "windows", "C:/x/a.txt", true,
+			"colon de drive (idx 1) ignorado; colon ADS após .txt extraído"},
+		{"C:/x/a.txt", "windows", "", false,
+			"sem ADS — nenhum colon fora da posição de drive → false"},
+		{"C:", "windows", "", false,
+			"bare drive letter — sem colon fora de idx 1 → false"},
+		{`\\server\share\a:s`, "windows", `\\server\share\a`, true,
+			"UNC: sem drive-letter colon; primeiro colon é ADS"},
+		{"relative/s.env", "windows", "", false,
+			"relativo sem colon → false"},
+		{"/c/Users/x/s.env:stream", "linux", "", false,
+			"goos linux → false (POSIX gate)"},
+	}
+	for _, tc := range cases {
+		got, ok := credWindowsADSBase(tc.path, tc.goos)
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("credWindowsADSBase(%q, %q) = (%q, %v); want (%q, %v) — %s",
+				tc.path, tc.goos, got, ok, tc.want, tc.ok, tc.note)
+		}
+	}
+}
+
+// TestRunCredential_ADSNamedStreamFallback_Windows asserts that Layer 2a detects an
+// AWS key in "s.env" when the redirect target is "s.env:stream" (a named NTFS ADS
+// that does not exist on disk) via the F1 ADS fallback in credSecondLayer.
+//
+// Assertion: credWindowsADSBase("C:/.../s.env:stream", "windows")="C:/.../s.env" →
+// os.Stat("C:/.../s.env:stream") fails → credScanFile scans the base file and finds
+// the AWS key → RC=2.
+// Falsification: removing the ADS fallback block (the runtime.GOOS=="windows" block
+// in credSecondLayer 2a) → os.Stat fails, no fallback → RC=0.
+func TestRunCredential_ADSNamedStreamFallback_Windows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-only integration test")
+	}
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	tokenFile := filepath.Join(dir, "s.env")
+	key := "AKIA" + "TESTKEYTESTKEY12"
+	if err := os.WriteFile(tokenFile, []byte("aws_access_key_id = "+key), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// ADS target: C:/.../s.env:stream — the stream does not exist; the base s.env has the key.
+	// Use forward-slash path (avoids JSON backslash escaping complexity).
+	fwdSlashBase := strings.ReplaceAll(tokenFile, `\`, `/`)
+	adsTarget := fwdSlashBase + ":stream"
+	payload := `{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"echo hi > ` + jsonStr(adsTarget) + `"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("ADS redirect s.env:stream: expected RC=2 (F1 fallback scans base), got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// windowsPathToGitBash converts a Windows absolute path (C:\path\to\file) to the
+// Git-Bash mount point form (/c/path/to/file). Only for test use on Windows.
+func windowsPathToGitBash(winPath string) string {
+	// Replace backslashes with forward slashes
+	p := strings.ReplaceAll(winPath, `\`, `/`)
+	// C:/path/file → /c/path/file
+	if len(p) >= 2 && p[1] == ':' {
+		drive := strings.ToLower(string(p[0]))
+		rest := p[2:] // "/path/file"
+		return "/" + drive + rest
+	}
+	return p
 }

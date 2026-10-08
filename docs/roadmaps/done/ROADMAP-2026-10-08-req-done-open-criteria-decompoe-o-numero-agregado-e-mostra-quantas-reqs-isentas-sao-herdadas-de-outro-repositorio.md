@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-10-08
 req: "docs/req/REQ-2026-10-08-req-done-open-criteria-decompoe-o-numero-agregado-e-mostra-quantas-reqs-isentas-sao-herdadas-de-outro-repositorio.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: req_done_open_criteria decompoe o numero agregado e mostra quantas REQs isentas sao herdadas de outro repositorio
 
-> Created: 2026-10-08 | Status: wip
+> Created: 2026-10-08 | Status: done
 
 ## Context
 <!-- What problem does this roadmap solve? Link the REQ. -->

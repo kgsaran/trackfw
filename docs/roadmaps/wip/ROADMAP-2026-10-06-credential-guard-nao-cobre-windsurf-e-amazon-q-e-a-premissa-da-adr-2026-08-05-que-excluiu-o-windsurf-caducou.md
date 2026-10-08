@@ -1,5 +1,5 @@
 ---
-status: done
+status: wip
 date: 2026-10-06
 req: "docs/req/REQ-2026-10-06-credential-guard-nao-cobre-windsurf-e-amazon-q-e-a-premissa-da-adr-2026-08-05-que-excluiu-o-windsurf-caducou.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: credential guard nao cobre Windsurf e Amazon Q, e a premissa da ADR-2026-08-05 que excluiu o Windsurf caducou
 
-> Created: 2026-10-06 | Status: done
+> Created: 2026-10-06 | Status: wip
 
 ## Context
 <!-- Derived from REQ: REQ-2026-10-06-credential-guard-nao-cobre-windsurf-e-amazon-q-e-a-premissa-da-adr-2026-08-05-que-excluiu-o-windsurf-caducou.md -->
@@ -173,4 +173,66 @@ regex sobre o texto bruto (que tolerava isso) por JSON parse sem fallback. E, co
       refutada: com JSON válido o caminho decodificado funciona. Correção: payload inválido volta à extração da main;
       testes com `json.Marshal`; VM 168 PASS / 0 FAIL. Auditoria: 2 nomes da tabela de reconciliação não existem
       (`TestRunCredential_BOMPrefix`, `_QuotedPath` — os testes descritos existem com outros nomes). `make quality` EXIT=0.
+
+## Wave 3 — Reabertura pela issue #544 (forma de caminho Windows na 2ª camada)
+> Dependencies: PR #543 mergeado. Reaberto em 2026-10-08.
+**Por que o escopo original não previa:** o ML-1C criou `credResolveArg` resolvendo argumento com `filepath.IsAbs`, que
+no Windows é false para `/c/Users/...` (forma natural do Git Bash, que o Claude Code usa no Windows) → caminho colado
+no cwd, arquivo não achado, sem aviso. E o ML-2E registrou como limitação que `credRedirectRe` corta `C:\...` no `:`.
+Mesma causa da REQ (o guard não lê o payload pelo que o CLI escreve) → mesma REQ. Relatado por @lourivalgarciajunior.
+
+### ML-3A — Threat model da reabertura
+**Status:** ✅ Concluído
+**Squad:** hades-tf
+- [x] Enumeração de todo sítio da 2ª camada que interpreta caminho (argumento, redirecionamento, glob, cwd do payload, `tool_info.cwd`) e de quais formas de caminho cada CLI escreve no Windows (Git Bash `/c/`, MSYS `/cygdrive/c/`?, `C:\`, `C:/`, UNC `\\server\share`, `~`)
+- [x] Alvos de falsificação nas duas direções (forma não detectada; forma POSIX legítima `/c/...` num Linux real, onde `/c` é diretório de verdade)
+- [x] Medição na VM com o binário de `main`, lendo stderr, em modo `warn` e `block`
+      Parecer (`docs/seguranca/2026-10-08-wave3-credential-guard-caminho-windows.md`), medido na VM com o binário da main:
+      BUG-1 `/c/`, `/C/`, `/cygdrive/c/` não detectados no argumento (sem cwd: `os.Stat("/c/...")` vira `C:\c\...`; com cwd:
+      `IsAbs` false → join quebrado); BUG-2 `credRedirectRe` exclui `:` → `> C:\...` vira o arquivo `C` (prova: arquivo `C`
+      no cwd é varrido). `C:\`, `C:/`, UNC e relativo detectam. macOS: `/c/...` absoluto, sem regressão possível se a
+      tradução for só no Windows. Decisão do arquiteto: tradução só com GOOS windows e tool_name ≠ PowerShell (o PowerShell
+      lê `/c/x` como `C:\c\x`); Codex manda "Bash" mesmo no PowerShell — traduzir ali é fail-closed (no pior caso um falso
+      positivo). Auditoria: o agente escreveu fora da pasta autorizada da VM (tf-ml3a4..6, /tmp) e declarou; conferido limpo.
+
+### ML-3B — Correção e testes
+**Status:** ✅ Concluído
+**Squad:** apolo-tf
+- [x] Toda forma listada no ML-3A detectada no Windows (argumento e redirecionamento), projeto e global
+- [x] POSIX sem regressão (`/c/...` continua absoluto)
+- [x] Testes por forma de caminho; verdes no `windows-full-suites` e na VM; falsificação; frase de reconciliação
+- [x] `make quality` (arquiteto)
+      Auditoria (2026-10-08): o relatório citou 12 de 13 nomes de teste inexistentes; os testes reais
+      (`TestCredNormalizeWindowsPath`, `TestCredRedirectRe_*`, `TestRunCredential_*_Windows`) rodados pelo arquiteto na VM:
+      todos PASS, suíte do guard PASS. Falsificação na VM pelo arquiteto: sem a normalização em `credResolveArg`, reprovam
+      SubcaseA, SubcaseB, Uppercase, Cygdrive e RedirectGitBash. `make quality` EXIT=0, 347 OK / 0 FAIL.
+
+### ML-3D — Mesmo padrão no `credentialGuardDetectionCore` do scaffold
+**Status:** ✅ Concluído
+**Squad:** apolo-tf
+**Premissa do arquiteto errada, corrigida pela medição:** o script gerado é um wrapper que chama `trackfw guard credential`;
+o `credentialGuardDetectionCore` é código morto desde o ML-2A. Corrigido o padrão ali (alinhamento, sem efeito em runtime);
+fixtures congeladas em `testdata/guard-sh-reference/` mantidas. Teste novo
+`TestCredentialGuardScript_GeneratedScript_WindowsPathRedirectDetectsJWTInFile` (executa o script gerado; prova o ML-3B
+através do wrapper). Remoção do código morto: fora do escopo, registrada.
+
+### ML-3C — Red-team
+**Status:** ✅ Concluído
+**Squad:** hades-tf
+- [x] Parecer sobre o diff da Wave 3
+      Veredito do hades-tf (`docs/seguranca/2026-10-08-red-team-wave3-credential-guard-caminho-windows.md`): libera com
+      ressalva. F1 (baixo, regressão): `> arq.txt:stream` (ADS nomeado) — a main detectava por acaso (cortava no `:`), a
+      branch não acha o arquivo. R1: `pwsh` fora da exceção do PowerShell. O1: `> NUL` não é isento — pré-existente e
+      fail-closed (bloqueia a mais), mantido. Decisão do arquiteto: F1 e R1 entram aqui (ML-3E), mesma causa.
+
+### ML-3E — Corretivo do red-team da Wave 3
+**Status:** ✅ Concluído
+**Squad:** apolo-tf
+- [x] Windows: alvo `arq:stream` cujo stat falha → varre também `arq` (base do ADS); `C:/x` (letra de unidade) não é confundido com ADS
+- [x] `pwsh` (e `pwsh.exe`/`powershell.exe`, EqualFold) na exceção de tradução
+- [x] Testes, falsificação, VM
+      Auditoria (2026-10-08): nomes conferidos (`TestCredWindowsADSBase`, `TestRunCredential_ADSNamedStreamFallback_Windows`,
+      linhas novas em `TestCredNormalizeWindowsPath`); VM 12/12 PASS; sem o fallback, a integração reprova na VM.
+      Limitação registrada: prefixo `\\?\` não é tratado pelo fallback de ADS (sem regressão: só deixa de achar).
+      `make quality` EXIT=0, 347 OK / 0 FAIL.
 
