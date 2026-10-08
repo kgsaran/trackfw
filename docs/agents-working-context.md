@@ -2,6 +2,32 @@
 
 ---
 
+## 2026-10-08 — hades-tf (fix/credential-guard-caminho-git-bash-windows — ML-3C) — FIM
+
+**Branch:** `fix/credential-guard-caminho-git-bash-windows`
+**Entregável produzido:** `docs/seguranca/2026-10-08-red-team-wave3-credential-guard-caminho-windows.md`
+**Veredito:** LIBERA COM RESSALVA.
+
+**Achados:**
+- F1 (LOW): ADS stream nomeado não existente (`file.txt:stream`) — main detectava via truncação acidental, branch extrai caminho completo e `os.Stat` falha. Discriminador `::$DATA` confirma: branch MELHOR que main para stream padrão (absoluto: main rc=0, branch rc=2). Wave 3 §2.7 aceitou como residual; evidência numérica agora documentada.
+- O1 (INFO, pré-existente): `NUL` não isentado por `credAllTargetsAreDevNull` — ambos rc=2.
+- R1 (residual): `pwsh` ausente no VM — deny-list específica para `pwsh` não medida diretamente.
+
+**Suíte completa guard (sem filtro):** branch e main: 1 falha cada — `TestRunGitBranch_NoOpOutsideProject` (pré-existente, não relacionada ao credential guard, idêntica nos dois binários). 10 testes Windows-specific novos: PASS (branch).
+
+**POSIX:** `go test ./internal/...` — 20 pacotes OK.
+**VM:** `C:\Users\Lab\tf-ml3c\` deletada. `if exist ... (echo PRESENT) else (echo ABSENT)` → ABSENT.
+
+---
+
+## 2026-10-08 — hades-tf (fix/credential-guard-caminho-git-bash-windows — ML-3C) — INÍCIO
+
+**Branch:** `fix/credential-guard-caminho-git-bash-windows`
+**Tarefa:** ML-3C — Red-team independente do diff `internal/` do HEAD (`fix(guard): caminho Git Bash`) contra o parecer Wave 3 (ML-3A). Vetores: FP/FN de tradução `/x/...`, deny-list PowerShell, regex sem `:`, regressão POSIX, suíte completa na VM.
+**Não altera código de produto.**
+
+---
+
 ## 2026-10-08 — hades-tf (feat/req-done-open-criteria-decompoe-herdadas — ML-2A) — FIM
 
 **Branch:** `feat/req-done-open-criteria-decompoe-herdadas`

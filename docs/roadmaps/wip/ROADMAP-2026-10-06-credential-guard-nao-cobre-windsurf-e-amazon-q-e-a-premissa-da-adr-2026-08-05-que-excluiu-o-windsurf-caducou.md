@@ -217,7 +217,18 @@ fixtures congeladas em `testdata/guard-sh-reference/` mantidas. Teste novo
 através do wrapper). Remoção do código morto: fora do escopo, registrada.
 
 ### ML-3C — Red-team
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** hades-tf
-- [ ] Parecer sobre o diff da Wave 3
+- [x] Parecer sobre o diff da Wave 3
+      Veredito do hades-tf (`docs/seguranca/2026-10-08-red-team-wave3-credential-guard-caminho-windows.md`): libera com
+      ressalva. F1 (baixo, regressão): `> arq.txt:stream` (ADS nomeado) — a main detectava por acaso (cortava no `:`), a
+      branch não acha o arquivo. R1: `pwsh` fora da exceção do PowerShell. O1: `> NUL` não é isento — pré-existente e
+      fail-closed (bloqueia a mais), mantido. Decisão do arquiteto: F1 e R1 entram aqui (ML-3E), mesma causa.
+
+### ML-3E — Corretivo do red-team da Wave 3
+**Status:** 🔄 Em andamento
+**Squad:** apolo-tf
+- [ ] Windows: alvo `arq:stream` cujo stat falha → varre também `arq` (base do ADS); `C:/x` (letra de unidade) não é confundido com ADS
+- [ ] `pwsh` (e `pwsh.exe`/`powershell.exe`, EqualFold) na exceção de tradução
+- [ ] Testes, falsificação, VM
 
