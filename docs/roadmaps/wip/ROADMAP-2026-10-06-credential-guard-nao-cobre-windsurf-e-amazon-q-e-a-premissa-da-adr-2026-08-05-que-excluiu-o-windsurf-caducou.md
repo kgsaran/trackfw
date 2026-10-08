@@ -226,9 +226,13 @@ através do wrapper). Remoção do código morto: fora do escopo, registrada.
       fail-closed (bloqueia a mais), mantido. Decisão do arquiteto: F1 e R1 entram aqui (ML-3E), mesma causa.
 
 ### ML-3E — Corretivo do red-team da Wave 3
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
-- [ ] Windows: alvo `arq:stream` cujo stat falha → varre também `arq` (base do ADS); `C:/x` (letra de unidade) não é confundido com ADS
-- [ ] `pwsh` (e `pwsh.exe`/`powershell.exe`, EqualFold) na exceção de tradução
-- [ ] Testes, falsificação, VM
+- [x] Windows: alvo `arq:stream` cujo stat falha → varre também `arq` (base do ADS); `C:/x` (letra de unidade) não é confundido com ADS
+- [x] `pwsh` (e `pwsh.exe`/`powershell.exe`, EqualFold) na exceção de tradução
+- [x] Testes, falsificação, VM
+      Auditoria (2026-10-08): nomes conferidos (`TestCredWindowsADSBase`, `TestRunCredential_ADSNamedStreamFallback_Windows`,
+      linhas novas em `TestCredNormalizeWindowsPath`); VM 12/12 PASS; sem o fallback, a integração reprova na VM.
+      Limitação registrada: prefixo `\\?\` não é tratado pelo fallback de ADS (sem regressão: só deixa de achar).
+      `make quality` EXIT=0, 347 OK / 0 FAIL.
 

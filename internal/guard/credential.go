@@ -419,6 +419,20 @@ func credScanFile(path string) string {
 	return ""
 }
 
+// credIsPowerShellTool reports whether toolName is any spelling of PowerShell
+// or pwsh. Used to suppress Git-Bash→Windows path translation because both
+// PowerShell 5.x and PowerShell 7 (pwsh) resolve /c/Users/... to C:\c\Users\...
+// via the PowerShell provider API, not to C:\Users\... like Git Bash does.
+// Translating those paths would scan the wrong file (FP or FN).
+//
+// Spellings covered (all EqualFold): "PowerShell", "powershell.exe", "pwsh", "pwsh.exe".
+func credIsPowerShellTool(name string) bool {
+	return strings.EqualFold(name, "PowerShell") ||
+		strings.EqualFold(name, "powershell.exe") ||
+		strings.EqualFold(name, "pwsh") ||
+		strings.EqualFold(name, "pwsh.exe")
+}
+
 // credNormalizeWindowsPath translates a Git-Bash or Cygwin drive path to the
 // Windows-native forward-slash form so that credScanFile can open the file via
 // os.Stat on a Windows host.
@@ -427,9 +441,9 @@ func credScanFile(path string) string {
 //   - goos == "windows": on POSIX, /c/... is an already-valid absolute path.
 //     Translating it would produce C:\... which filepath.IsAbs returns false for
 //     on POSIX, causing it to be incorrectly treated as relative — a detection miss.
-//   - strings.EqualFold(toolName, "PowerShell") == false: PowerShell resolves
-//     /c/Users/... to C:\c\Users\... via its own provider API (not to C:\Users\...).
-//     Translating PS paths would scan the wrong file (FP or FN).
+//   - credIsPowerShellTool(toolName) == false: PowerShell 5.x and PowerShell 7
+//     (pwsh/pwsh.exe) resolve /c/Users/... to C:\c\Users\... via their own provider
+//     API (not to C:\Users\...). Translating PS paths would scan the wrong file.
 //
 // Translations applied when gates pass:
 //   /[a-zA-Z]/rest        → X:/rest    (Git-Bash per-drive mount point)
@@ -446,7 +460,7 @@ func credNormalizeWindowsPath(path, goos, toolName string) string {
 	if goos != "windows" {
 		return path
 	}
-	if strings.EqualFold(toolName, "PowerShell") {
+	if credIsPowerShellTool(toolName) {
 		return path
 	}
 	// /cygdrive/[a-zA-Z]/rest or /cygdrive/[a-zA-Z]
@@ -468,6 +482,57 @@ func credNormalizeWindowsPath(path, goos, toolName string) string {
 		return drive + ":" + rest
 	}
 	return path
+}
+
+// credWindowsADSBase returns the base file path that precedes an NTFS Alternate
+// Data Stream suffix (":stream-name" or "::$DATA") when goos is "windows" and the
+// path contains a colon that is not in the drive-letter position.
+//
+// "Drive-letter position" is index 1 when path[0] is an ASCII letter and path[1]
+// is ':' — e.g. the colon in "C:\x\a.txt:s" at index 1 is the drive separator, not
+// an ADS delimiter. All other colons in the path are ADS delimiters.
+//
+// Examples:
+//
+//	arq.txt:stream      → arq.txt         (no drive letter; colon at idx 7 is ADS)
+//	arq.txt::$DATA      → arq.txt         (double-colon default stream)
+//	C:/x/a.txt:s        → C:/x/a.txt      (drive at idx 1 skipped; colon after .txt is ADS)
+//	C:/x/a.txt          → ("", false)     (no ADS colon)
+//	C:                  → ("", false)     (bare drive, no ADS)
+//	\\server\share\a:s  → \\server\share\a (UNC; no drive colon; first colon is ADS)
+//
+// Returns ("", false) when goos≠"windows", when no qualifying colon is found,
+// or when the derived base would be the empty string.
+func credWindowsADSBase(path, goos string) (string, bool) {
+	if goos != "windows" {
+		return "", false
+	}
+	if len(path) < 2 {
+		return "", false
+	}
+
+	// Skip the drive-letter colon at index 1 when path[0] is an ASCII letter.
+	startSearch := 0
+	if path[1] == ':' {
+		b := path[0]
+		if (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') {
+			startSearch = 2
+		}
+	}
+
+	idx := strings.Index(path[startSearch:], ":")
+	if idx < 0 {
+		return "", false
+	}
+	colonPos := startSearch + idx
+	if colonPos == 0 {
+		return "", false
+	}
+	base := path[:colonPos]
+	if base == "" {
+		return "", false
+	}
+	return base, true
 }
 
 // credExtractCmdAndCwd parses a JSON hook payload and returns the shell command
@@ -623,8 +688,24 @@ func credSecondLayer(shellCmd, shellCwd, contextStr, toolName string, redirectMa
 			continue
 		}
 		if !credIsEphemeralTarget(contextStr, target) {
-			if m := credScanFile(credResolveArg(target, shellCwd, toolName)); m != "" {
+			resolved := credResolveArg(target, shellCwd, toolName)
+			if m := credScanFile(resolved); m != "" {
 				return m
+			}
+			// F1: NTFS ADS fallback — when the redirect target is a named ADS
+			// ("arq.txt:stream") and os.Stat fails, scan the base file instead.
+			// Active on Windows only (credWindowsADSBase gate). Not applied when stat
+			// succeeds: an existing clean stream or an oversized file must not fall
+			// back to the base. Layer 2b is unaffected — bash `strings.Fields` treats
+			// "a.txt:stream" as a single token and the main never cut it either.
+			if runtime.GOOS == "windows" {
+				if _, statErr := os.Stat(resolved); statErr != nil {
+					if base, ok := credWindowsADSBase(resolved, runtime.GOOS); ok {
+						if m := credScanFile(base); m != "" {
+							return m
+						}
+					}
+				}
 			}
 		}
 	}

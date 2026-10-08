@@ -45978,3 +45978,7 @@ Achados notáveis para o apolo-tf:
   - POSIX (macOS): `filepath.IsAbs("/c/...")=true`; `cat <abspath>/s.env` → detected=true; gate GOOS obrigatório.
   - Spec ML-3B: `credNormalizeWindowsPath(path, goos, toolName string) string` — só strings/regexp (sem path/filepath); saída forward-slash `C:/...`; gate `EqualFold(toolName,"PowerShell")`; cadeia: `credExtractCmdAndCwd` retorna `toolName string`; assinaturas reais lidas de credential.go; unit tests 12 linhas; par de integração toolName Bash/PowerShell obrigatório.
   - VM limpa: tf-ml3a, tf-ml3a4, tf-ml3a5, tf-ml3a6 apagados; tf.exe apagado; measure4/5/6.sh apagados; /tmp/ml3a_se.txt apagado. Verificado: measure*.ps1 da listagem são de 2026-10-04, não desta sessão.
+
+## 2026-10-08 — zeus-tf — FIM: Wave 3 da REQ-2026-10-06 (#544), aguarda PR
+
+- Guard varre `/c/`, `/C/`, `/cygdrive/c/` (só Windows, fora do PowerShell/pwsh) e `> C:\...` inteiro; ADS nomeado volta a varrer o arquivo base. Medido na VM (12/12) com falsificação. Red-team liberou com ressalva; ressalvas corrigidas (ML-3E). `make quality` EXIT=0.

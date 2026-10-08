@@ -1374,6 +1374,18 @@ func TestCredNormalizeWindowsPath(t *testing.T) {
 		// UNC: unchanged
 		{`\\server\share\file`, "windows", "Bash", `\\server\share\file`,
 			"UNC não alterado"},
+		// R1: pwsh and powershell.exe added to deny-list (PowerShell 7 uses PS provider semantics)
+		{"/c/Users/x/s.env", "windows", "pwsh", "/c/Users/x/s.env",
+			"R1: pwsh (PowerShell 7) na deny-list — não traduz /c/..."},
+		{"/c/Users/x/s.env", "windows", "pwsh.exe", "/c/Users/x/s.env",
+			"R1: pwsh.exe na deny-list — não traduz /c/..."},
+		{"/c/Users/x/s.env", "windows", "powershell.exe", "/c/Users/x/s.env",
+			"R1: powershell.exe na deny-list — não traduz /c/..."},
+		{"/c/Users/x/s.env", "windows", "PWSH.EXE", "/c/Users/x/s.env",
+			"R1: PWSH.EXE (EqualFold) na deny-list — não traduz /c/..."},
+		// Control: non-PS tool still translates after R1 deny-list expansion
+		{"/c/Users/x/s.env", "windows", "Bash", "C:/Users/x/s.env",
+			"R1 controle: Bash não está na deny-list → traduz normalmente"},
 	}
 
 	for _, tc := range cases {
@@ -1705,6 +1717,77 @@ func TestRunCredential_DevNullExempt_Windows(t *testing.T) {
 	code, _, errOut := runCred(t, dir, payload)
 	if code != 0 {
 		t.Fatalf("Windows /dev/null exemption: expected RC=0 (F2 exemption preserved), got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestCredWindowsADSBase asserts the NTFS Alternate Data Stream base-path extractor.
+//
+// Assertion: credWindowsADSBase returns the segment before the ADS colon for each
+// Windows path with a qualifying colon, and returns ("", false) for paths without
+// an ADS suffix or when goos≠"windows".
+// Falsification: removing the startSearch drive-skip causes "C:/x/a.txt" to produce
+// ("C", true) from the drive colon — the "C:/x/a.txt (no ADS)" row catches that.
+func TestCredWindowsADSBase(t *testing.T) {
+	cases := []struct {
+		path string
+		goos string
+		want string
+		ok   bool
+		note string
+	}{
+		{"arq.txt:stream", "windows", "arq.txt", true,
+			"stream nomeado — colon não é drive-letter → base extraída"},
+		{"arq.txt::$DATA", "windows", "arq.txt", true,
+			"::$DATA (stream padrão) → base extraída"},
+		{"C:/x/a.txt:s", "windows", "C:/x/a.txt", true,
+			"colon de drive (idx 1) ignorado; colon ADS após .txt extraído"},
+		{"C:/x/a.txt", "windows", "", false,
+			"sem ADS — nenhum colon fora da posição de drive → false"},
+		{"C:", "windows", "", false,
+			"bare drive letter — sem colon fora de idx 1 → false"},
+		{`\\server\share\a:s`, "windows", `\\server\share\a`, true,
+			"UNC: sem drive-letter colon; primeiro colon é ADS"},
+		{"relative/s.env", "windows", "", false,
+			"relativo sem colon → false"},
+		{"/c/Users/x/s.env:stream", "linux", "", false,
+			"goos linux → false (POSIX gate)"},
+	}
+	for _, tc := range cases {
+		got, ok := credWindowsADSBase(tc.path, tc.goos)
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("credWindowsADSBase(%q, %q) = (%q, %v); want (%q, %v) — %s",
+				tc.path, tc.goos, got, ok, tc.want, tc.ok, tc.note)
+		}
+	}
+}
+
+// TestRunCredential_ADSNamedStreamFallback_Windows asserts that Layer 2a detects an
+// AWS key in "s.env" when the redirect target is "s.env:stream" (a named NTFS ADS
+// that does not exist on disk) via the F1 ADS fallback in credSecondLayer.
+//
+// Assertion: credWindowsADSBase("C:/.../s.env:stream", "windows")="C:/.../s.env" →
+// os.Stat("C:/.../s.env:stream") fails → credScanFile scans the base file and finds
+// the AWS key → RC=2.
+// Falsification: removing the ADS fallback block (the runtime.GOOS=="windows" block
+// in credSecondLayer 2a) → os.Stat fails, no fallback → RC=0.
+func TestRunCredential_ADSNamedStreamFallback_Windows(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows-only integration test")
+	}
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	tokenFile := filepath.Join(dir, "s.env")
+	key := "AKIA" + "TESTKEYTESTKEY12"
+	if err := os.WriteFile(tokenFile, []byte("aws_access_key_id = "+key), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// ADS target: C:/.../s.env:stream — the stream does not exist; the base s.env has the key.
+	// Use forward-slash path (avoids JSON backslash escaping complexity).
+	fwdSlashBase := strings.ReplaceAll(tokenFile, `\`, `/`)
+	adsTarget := fwdSlashBase + ":stream"
+	payload := `{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"echo hi > ` + jsonStr(adsTarget) + `"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("ADS redirect s.env:stream: expected RC=2 (F1 fallback scans base), got %d (stderr=%q)", code, errOut)
 	}
 }
 
