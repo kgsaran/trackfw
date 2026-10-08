@@ -45668,3 +45668,31 @@ Achados notáveis para o apolo-tf:
 - VM limpa: `C:\Users\Lab\ml6c` apagado
 - Artefatos medição em scratchpad/ml6c/ (sessão encerrada)
 - git status --short: docs/portabilidade/doc atualizado + docs/agents-working-context.md modificado
+
+## 2026-10-07 — apolo-tf — INÍCIO: ML-6C Implementação — D11 revista com 4º trecho PS
+
+- Branch: `fix/hooks-de-guard-executam-no-windows-saida-nao-zero-no-powershell` (worktree trackfw-538)
+- Escopo: implementar D11 revista (4º trecho `$LASTEXITCODE=2*!!$LASTEXITCODE`) no gerador, update, validate, configs e testes
+- String alvo (PS/POSIX): `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard <nome>; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+- Arquivos afetados: agentfiles.go, update.go, validator_guard_binary_probe.go, validator_credential_guard.go, configs JSON, scripts, docs
+
+## 2026-10-07 — apolo-tf — FIM: ML-6C Implementação — D11 revista com 4º trecho PS
+
+- Branch: `fix/hooks-de-guard-executam-no-windows-saida-nao-zero-no-powershell` (worktree trackfw-538)
+- Status: CONCLUÍDO — build OK, 3/3 pacotes verdes, falsificações confirmadas
+- Arquivos modificados:
+  - `internal/generators/agentfiles.go`: 3 constantes PS/POSIX atualizadas + bloco legacyD11 adicionado
+  - `internal/generators/update.go`: migrações old-D11 → new-D11 em todos os CLIs (Claude, Codex, Gemini, Cursor, Windsurf, Copilot)
+  - `internal/generators/fail_closed_d11_behavior_test.go`: reescrito — `d11LineFor` usa constantes do gerador; tabela RC=0,1,2,3,absent × sh × bash × pwsh
+  - `internal/validator/validator_guard_binary_probe.go`: `guardExpectedLine` retorna new D11; `guardD11LegacyLine` adicionado
+  - `internal/validator/validator_credential_guard.go`: `validateGuardHookResolvable` + D11 legacy warning functions
+  - `internal/validator/validator_git_branch_guard.go`: `validateGuardGlobalHookResolvable` + D11 legacy warning functions
+  - `internal/validator/validator.go`: chamadas às novas funções D11 legacy warning
+  - `internal/commands/update_harness_test.go`, `internal/generators/update_test.go`: 9 wantCmd cada → new D11
+  - `internal/validator/validator_guard_binary_probe_test.go`: 4 strings → new D11
+  - `internal/validator/validator_guard_binary_probe_windsurf_amazonq_test.go`: 2 strings → new D11
+  - `internal/validator/validator_git_branch_guard_test.go`: fixture D11 atualizada; novo helper legacyD11; novo teste legacy D11 warning
+  - `.claude/settings.json`, `.codex/hooks.json`, `.gemini/settings.json`: 7/5/7 linhas → new D11
+  - `scripts/check-validate-rule-pins.sh`: fixture D11 → new D11
+  - `docs/cli-parity.md`, `README.md`: tabelas e descrição D11 atualizadas (ML-6C)
+- Falsificações: (1) remover 4º segmento → PS RC=1 e RC=3 falham; (2) `$?` no lugar de `2*!!$?` → sh/bash RC=1, RC=3, absent falham

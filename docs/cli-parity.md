@@ -5979,11 +5979,11 @@ runtimes.
 um caminho para o `.sh` e passou a ser um comando inline idêntico em todos os shells (mesma string em
 todo CLI de agente), via subcomando Go `trackfw guard`:
 
-| Família de shell | Linha de hook emitida (D11, ML-6B) |
+| Família de shell | Linha de hook emitida (D11, ML-6C) |
 |---|---|
-| PS/POSIX (Claude Code, Codex, Gemini CLI, Cursor, Copilot, Windsurf) | `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE` |
+| PS/POSIX (Claude Code, Codex, Gemini CLI, Cursor, Copilot, Windsurf) | `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE` |
 | cmd.exe (Kiro, Amazon Q) | `trackfw guard git-branch \|\| exit 2` |
-| Idem para credential-guard | `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE` / `trackfw guard credential \|\| exit 2` |
+| Idem para credential-guard | `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE` / `trackfw guard credential \|\| exit 2` |
 
 **D11 — fail-closed sem o trackfw no PATH (ADR-2026-10-04, ML-6B, issue #535):**
 A linha D11 resolve o problema da D2 que era **fail-open** quando `trackfw` estava ausente do PATH:
@@ -6000,16 +6000,21 @@ Mecanismo da linha PS/POSIX (poliglota sh/bash/PowerShell 5.1):
 - `trackfw guard <nome>` — o comando real do guard; se o binário está ausente, sh/bash retorna
   exit 127 (não encontrado); PS 5.1 lança exceção e a expressão seguinte lê o `$LASTEXITCODE=2`
   já semeado.
-- `LASTEXITCODE=$((2*!!$?))` — normaliza qualquer saída não-zero para 2: `$?` é o exit do
-  guard em sh/bash; `$LASTEXITCODE` em PS 5.1. A aritmética `2*!!n` → 0 se n=0, 2 se n≠0.
+- `LASTEXITCODE=$((2*!!$?))` — normaliza qualquer saída não-zero para 2 em sh/bash: `$?` é o exit do
+  guard; a aritmética `2*!!n` → 0 se n=0, 2 se n≠0. Em PS 5.1 este segmento é CommandNotFound
+  (inert — o `$LASTEXITCODE` seminal já vale 2 neste ponto).
+- `$LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}` — 4º segmento PS (ML-6C): em PS 5.1 é
+  uma atribuição válida que normaliza qualquer RC não-zero para 2 (`2*!!n` funciona via `!` como
+  `-not` booleano em PS); em sh/bash é CommandNotFound (inert, stderr descartado pelo redirecionamento).
 - `exit $LASTEXITCODE` — propaga o código normalizado.
 
 Linha cmd.exe: `trackfw guard <nome> || exit 2` — o `||` é o short-circuit nativo do cmd.exe;
 se o guard falha ou o binário não existe, `exit 2` é executado imediatamente.
 
 A D2 revisada (pre-ML-6B: `trackfw guard <nome>; exit $LASTEXITCODE` / `trackfw guard <nome>`)
-**não gera violation** no `trackfw validate` — é aceita como forma conhecida —, mas gera aviso
-solicitando `trackfw update` para migrar para D11.
+e a D11 legada (pre-ML-6C: sem o 4º segmento PS) **não geram violation** no `trackfw validate`
+— são aceitas como formas conhecidas —, mas geram aviso solicitando `trackfw update` para migrar
+para a nova D11.
 
 `internal/validator/validator_guard_binary_probe.go:guardExpectedLine` é o único sítio que
 define a linha por família (`guardShellFamily`), evitando divergência entre gerador e validador.
@@ -6123,11 +6128,12 @@ adicionou Windsurf e Amazon Q à lista `credentialGuardHookFiles`:
 O validador coleta entradas de hook que contenham `trackfw guard git-branch` ou `trackfw guard
 credential` e verifica se a linha é **exatamente** a esperada para a família de shell daquele CLI
 (`guardExpectedLine` em `validator_guard_binary_probe.go`):
-- PS/POSIX (D11) → `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard <nome>; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
+- PS/POSIX (D11) → `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard <nome>; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
 - cmd.exe (D11) → `trackfw guard <nome> || exit 2`
 
-A D2 revisada (`trackfw guard <nome>; exit $LASTEXITCODE` / `trackfw guard <nome>`) é aceita sem
-violation mas gera aviso (`linha antiga, falha aberta sem o trackfw no PATH; rode \`trackfw update\``).
+A D2 revisada (`trackfw guard <nome>; exit $LASTEXITCODE` / `trackfw guard <nome>`) e a D11
+legada (sem o 4º segmento PS) são aceitas sem violation mas geram aviso (`linha antiga; rode
+\`trackfw update harness\` para migrar`).
 
 Se o marcador está presente mas a linha não corresponde nem a D11 nem a D2, o validador acusa com a
 linha esperada e pede `trackfw update` para regenerar.

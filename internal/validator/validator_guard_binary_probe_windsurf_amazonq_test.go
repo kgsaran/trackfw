@@ -65,7 +65,7 @@ func amazonQAgentWithSubcmd(command string) string {
 // --------------------------------------------------------------------------
 
 // Reconciliação: afirma que a linha exata PS/POSIX D11 para git-branch
-// ("$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE")
+// ("$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE")
 // em .windsurf/hooks.json é reconhecida como forma correta (arquivo lido — sonda do binário disparada)
 // e não gera violation (ML-6B: D11 fail-closed).
 func TestGuardHookResolvable_Windsurf_ExatoPSPosix_Ok(t *testing.T) {
@@ -91,7 +91,7 @@ func TestGuardHookResolvable_Windsurf_ExatoPSPosix_Ok(t *testing.T) {
 	})
 
 	writeFile(t, dir, ".windsurf/hooks.json",
-		windsurfHooksWithSubcmd(`$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`))
+		windsurfHooksWithSubcmd(`$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`))
 
 	msgs, err := validateGitBranchGuardHookResolvable()
 	if err != nil {

@@ -305,8 +305,16 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker, subcmdMarker, sub
 				}
 
 				legacyD2Line := guardD2LegacyLine(subcmdName, gf.family)
+				legacyD11Line := guardD11LegacyLine(subcmdName, gf.family)
 				if m.raw == expectedLine {
-					// Linha exata D11 fail-closed → OK.
+					// Linha exata D11 revised fail-closed → OK.
+					anySubcmdFormFound = true
+					if gf.family == guardShellFamilyPSPosix {
+						hasPSPosixSubcmd = true
+					}
+				} else if m.raw == legacyD11Line && m.raw != expectedLine {
+					// ML-6C: D11 pré-ML-6C (sem 4º trecho PS) — fail-open em PS para RC≠{0,2}.
+					// Tratada como warning (via validateGuardGlobalHookD11LegacyWarnings), não violation.
 					anySubcmdFormFound = true
 					if gf.family == guardShellFamilyPSPosix {
 						hasPSPosixSubcmd = true
@@ -433,6 +441,57 @@ func validateCredentialGuardGlobalHookD2InlineWarnings() ([]string, error) {
 // para configs globais de git-branch-guard.
 func validateGitBranchGuardGlobalHookD2InlineWarnings() ([]string, error) {
 	return validateGuardGlobalHookD2InlineWarnings(gitBranchGuardScriptMarker, gitBranchGuardSubcmdMarker, "git-branch")
+}
+
+// validateGuardGlobalHookD11LegacyWarnings retorna avisos (always-warning) para configs GLOBAIS
+// que ainda usam a forma D11 pré-ML-6C (sem o 4º trecho de normalização PowerShell).
+// Contrapartida global de validateGuardHookD11LegacyWarnings (validator_credential_guard.go).
+func validateGuardGlobalHookD11LegacyWarnings(scriptMarker, subcmdMarker, subcmdName string) ([]string, error) {
+	home, err := homedir.Dir()
+	if err != nil || home == "" {
+		return nil, nil
+	}
+
+	var warnings []string
+	for _, gf := range globalGuardConfigFiles {
+		relPath := globalGuardConfigPath(gf, scriptMarker)
+		fullPath := filepath.Join(home, relPath)
+		content, readErr := readRegularFile(fullPath)
+		if readErr != nil {
+			continue
+		}
+		var parsed interface{}
+		if json.Unmarshal(content, &parsed) != nil {
+			continue
+		}
+		var subcmdCommands []guardCommandMatch
+		collectCommandsWithMarker(parsed, subcmdMarker, &subcmdCommands)
+		legacyD11Line := guardD11LegacyLine(subcmdName, gf.family)
+		expectedLine := guardExpectedLine(subcmdName, gf.family)
+		for _, m := range subcmdCommands {
+			if m.raw == legacyD11Line && m.raw != expectedLine {
+				warnings = append(warnings, fmt.Sprintf(
+					"~/%s (%s, global scope) has %q — forma D11 pré-ML-6C, passa saídas ≠{0,2} íntegras no PowerShell; "+
+						"rode `trackfw update harness` para migrar para a forma D11 revista",
+					relPath, gf.cli, m.raw,
+				))
+				break // um aviso por arquivo é suficiente
+			}
+		}
+	}
+	return warnings, nil
+}
+
+// validateCredentialGuardGlobalHookD11LegacyWarnings retorna os avisos de forma D11 pré-ML-6C
+// para configs globais de credential-guard.
+func validateCredentialGuardGlobalHookD11LegacyWarnings() ([]string, error) {
+	return validateGuardGlobalHookD11LegacyWarnings(credentialGuardScriptMarker, credentialGuardSubcmdMarker, "credential --global")
+}
+
+// validateGitBranchGuardGlobalHookD11LegacyWarnings retorna os avisos de forma D11 pré-ML-6C
+// para configs globais de git-branch-guard.
+func validateGitBranchGuardGlobalHookD11LegacyWarnings() ([]string, error) {
+	return validateGuardGlobalHookD11LegacyWarnings(gitBranchGuardScriptMarker, gitBranchGuardSubcmdMarker, "git-branch")
 }
 
 // validateGuardGlobalScriptIntegrity is the GLOBAL-scope counterpart of

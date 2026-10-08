@@ -1321,9 +1321,9 @@ func globalKiroGitBranchWithSubcmdD2() string {
 }
 
 // globalClaudeSettingsWithSubcmdD11Credential monta ~/.claude/settings.json com a linha D11
-// fail-closed de credential (PS/POSIX): a forma correta, esperada sem aviso.
+// fail-closed de credential (PS/POSIX): a nova forma correta (ML-6C), esperada sem aviso.
 func globalClaudeSettingsWithSubcmdD11Credential() string {
-	const d11Line = `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
+	const d11Line = `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
 	return `{
   "hooks": {
     "PreToolUse": [
@@ -1331,6 +1331,25 @@ func globalClaudeSettingsWithSubcmdD11Credential() string {
         "matcher": "Bash|PowerShell",
         "hooks": [
           {"command": ` + jsonStringLiteral(d11Line) + `, "type": "command"}
+        ]
+      }
+    ]
+  }
+}`
+}
+
+// globalClaudeSettingsWithSubcmdLegacyD11Credential monta ~/.claude/settings.json com a linha D11
+// legada (pré-ML-6C) de credential (PS/POSIX): sem o 4º segmento PS.
+// Usada para testar que o validate emite um aviso de migração para a forma nova.
+func globalClaudeSettingsWithSubcmdLegacyD11Credential() string {
+	const legacyD11Line = `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
+	return `{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {"command": ` + jsonStringLiteral(legacyD11Line) + `, "type": "command"}
         ]
       }
     ]
@@ -1371,9 +1390,9 @@ func TestGuardGlobalHookD2InlineWarnings_CredentialD2_EmiteUmAviso(t *testing.T)
 	}
 }
 
-// TestGuardGlobalHookD2InlineWarnings_CredentialD11_Silencio afirma que a linha D11 (forma correta)
-// em ~/.claude/settings.json não emite aviso algum.
-// Reconciliação: só a forma D2 dispara aviso — D11 está correta e é silenciada por construção.
+// TestGuardGlobalHookD2InlineWarnings_CredentialD11_Silencio afirma que a nova linha D11 (forma
+// correta, ML-6C) em ~/.claude/settings.json não emite aviso de D2 algum.
+// Reconciliação: só a forma D2 dispara o aviso D2 — nova D11 está correta e é silenciada por construção.
 func TestGuardGlobalHookD2InlineWarnings_CredentialD11_Silencio(t *testing.T) {
 	dir := t.TempDir()
 	chdir(t, dir)
@@ -1393,7 +1412,40 @@ func TestGuardGlobalHookD2InlineWarnings_CredentialD11_Silencio(t *testing.T) {
 		t.Fatalf("validateCredentialGuardGlobalHookD2InlineWarnings() erro: %v", err)
 	}
 	if len(warns) != 0 {
-		t.Errorf("linha D11 não deve emitir aviso, obteve: %v", warns)
+		t.Errorf("nova linha D11 não deve emitir aviso D2, obteve: %v", warns)
+	}
+}
+
+// TestGuardGlobalHookD11LegacyWarnings_CredentialLegacyD11_EmiteUmAviso afirma que a linha D11
+// legada (pré-ML-6C, sem o 4º segmento PS) em ~/.claude/settings.json emite exatamente 1 aviso
+// nomeando o arquivo e instruindo `trackfw update harness`.
+// Reconciliação: ML-6C eleva a forma D11 sem 4º segmento a legado — o validator emite aviso de migração.
+func TestGuardGlobalHookD11LegacyWarnings_CredentialLegacyD11_EmiteUmAviso(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	home := globalGuardHome(t)
+	t.Cleanup(config.Reset)
+
+	settingsPath := filepath.Join(home, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(settingsPath, []byte(globalClaudeSettingsWithSubcmdLegacyD11Credential()), 0644); err != nil {
+		t.Fatalf("write global settings: %v", err)
+	}
+
+	warns, err := validateCredentialGuardGlobalHookD11LegacyWarnings()
+	if err != nil {
+		t.Fatalf("validateCredentialGuardGlobalHookD11LegacyWarnings() erro: %v", err)
+	}
+	if len(warns) != 1 {
+		t.Fatalf("esperado 1 aviso para config global com linha D11 legada, obteve %d: %v", len(warns), warns)
+	}
+	if !hasWarning(warns, "~/.claude/settings.json") {
+		t.Errorf("aviso deve citar ~/.claude/settings.json, obteve: %v", warns)
+	}
+	if !hasWarning(warns, "trackfw update harness") {
+		t.Errorf("aviso deve citar `trackfw update harness`, obteve: %v", warns)
 	}
 }
 

@@ -151,24 +151,25 @@ Bash — a team with mixed OS can commit one config and have it work on all mach
 The hook line emitted depends on the shell the agent CLI uses on Windows — a fact of
 the vendor, not of the OS:
 
-| Agent CLI | Shell on Windows | Hook line emitted (D11, ML-6B) | Basis |
+| Agent CLI | Shell on Windows | Hook line emitted (D11, ML-6C) | Basis |
 |---|---|---|---|
-| Claude Code | Git Bash (if installed), else PowerShell | `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard <name>; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE` | vendor docs (2026-10-04) |
-| Codex CLI | PowerShell | `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard <name>; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE` | vendor source (2026-10-04) |
-| Gemini CLI | PowerShell | `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard <name>; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE` | vendor source (2026-10-04) |
-| Cursor | PowerShell | `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard <name>; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE` | vendor bundle (2026-09-06) |
-| Windsurf | PowerShell | `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard <name>; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE` | vendor docs (2026-10-04) |
-| GitHub Copilot | PowerShell / cross-platform `command` field | `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard <name>; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE` | vendor docs (2026-10-04) |
+| Claude Code | Git Bash (if installed), else PowerShell | `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard <name>; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE` | vendor docs (2026-10-04) |
+| Codex CLI | PowerShell | `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard <name>; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE` | vendor source (2026-10-04) |
+| Gemini CLI | PowerShell | `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard <name>; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE` | vendor source (2026-10-04) |
+| Cursor | PowerShell | `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard <name>; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE` | vendor bundle (2026-09-06) |
+| Windsurf | PowerShell | `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard <name>; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE` | vendor docs (2026-10-04) |
+| GitHub Copilot | PowerShell / cross-platform `command` field | `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard <name>; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE` | vendor docs (2026-10-04) |
 | Kiro | cmd.exe | `trackfw guard <name> \|\| exit 2` | vendor docs (2026-10-04) |
 | Amazon Q | cmd.exe | `trackfw guard <name> \|\| exit 2` | vendor source (2026-10-04) |
 
-The D11 line (ML-6B, issue #535) is **fail-closed**: if `trackfw` is absent from `PATH`,
-the hook exits with code 2 instead of 0. The seed `$LASTEXITCODE=2` is a PowerShell
-automatic-variable assignment; in sh/bash the resulting `=2: command not found` error is
-silently discarded by `2>${null-/dev/null}` (where `${null-/dev/null}` expands to
-`/dev/null` via bash parameter expansion, and to nothing in PowerShell). When the binary is
-absent, `LASTEXITCODE=$((2*!!$?))` normalizes any non-zero exit to 2; when the guard
-succeeds, it normalizes to 0. For cmd.exe: `|| exit 2` is the native short-circuit.
+The D11 line (ML-6C, issue #538) is **fail-closed** for both POSIX shells and PowerShell:
+if `trackfw` is absent from `PATH`, the hook exits with code 2 instead of 0. The seed
+`$LASTEXITCODE=2` is a PowerShell assignment; in sh/bash the `=2: command not found` error
+is silently discarded by `2>${null-/dev/null}`. `LASTEXITCODE=$((2*!!$?))` normalizes any
+non-zero exit to 2 in sh/bash. The 4th segment `$LASTEXITCODE=2*!!$LASTEXITCODE
+2>${null-/dev/null}` provides the same normalization in PowerShell (via `!` as `-not`),
+and is inert (CommandNotFound, stderr suppressed) in sh/bash. For cmd.exe: `|| exit 2` is
+the native short-circuit.
 
 **What was measured in the VM (Windows 11 ARM64, 2026-10-06):** PowerShell 5, cmd.exe,
 and Git Bash (non-login, explicit PATH to the branch binary) all block

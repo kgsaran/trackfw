@@ -332,15 +332,19 @@ func InjectClaudeHooks(rootDir string) error {
 	// form when migrateGuardHookMatcher checks command strings).
 	migrateHookCommand(hooks["PreToolUse"], "Bash", legacyClaudeGitGuardCmd, guardGitBranchCmdPSPOSIX)
 
-	// ML-6B: migrate D2-revised inline forms → fail-closed D11 forms.
-	// Must run BEFORE migrateGuardHookMatcher so that D2 commands are already
-	// D11 when the all-guard renaming logic inspects them.
+	// ML-6B/ML-6C: migrate D2-revised and pre-ML-6C D11 inline forms → D11 revised forms.
+	// Must run BEFORE migrateGuardHookMatcher so that legacy commands are already
+	// D11 revised when the all-guard renaming logic inspects them.
 	for _, matcher := range []string{claudeShellMatcher, "Bash", "Read", "Write|Edit"} {
 		migrateHookCommand(hooks["PreToolUse"], matcher, legacyD2CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
 		migrateHookCommand(hooks["PostToolUse"], matcher, legacyD2CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
+		migrateHookCommand(hooks["PreToolUse"], matcher, legacyD11CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
+		migrateHookCommand(hooks["PostToolUse"], matcher, legacyD11CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
 	}
 	migrateHookCommand(hooks["PreToolUse"], claudeShellMatcher, legacyD2GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
 	migrateHookCommand(hooks["PreToolUse"], "Bash", legacyD2GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
+	migrateHookCommand(hooks["PreToolUse"], claudeShellMatcher, legacyD11GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
+	migrateHookCommand(hooks["PreToolUse"], "Bash", legacyD11GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
 
 	// ML-5A (REQ-2026-09-05): upgrade "Bash" matcher → claudeShellMatcher
 	// ("Bash|PowerShell") for all guard hook blocks.
@@ -473,7 +477,7 @@ const (
 // cmd.exe family (Kiro, Amazon Q): the "; " separator is not valid in cmd.exe
 // and would be passed as literal tokens to the binary, so no suffix.
 const (
-	// D11 fail-closed forms (ML-6B / REQ-2026-09-05 / ADR-2026-10-04 D11).
+	// D11 revised fail-closed forms (ML-6C / REQ-2026-09-05 / ADR-2026-10-04 D11 revised).
 	//
 	// PS/POSIX family (Claude Code, Codex, Gemini, Cursor, Copilot, Windsurf):
 	//   - In bash/sh: "$LASTEXITCODE=2" is CommandNotFound (bash has no $LASTEXITCODE
@@ -481,19 +485,22 @@ const (
 	//     expansion: $null is unset → default /dev/null). The arithmetic
 	//     "LASTEXITCODE=$((2*!!$?))" normalises any non-zero to 2 via $?, which captures
 	//     the exit of `trackfw guard …` (or 127 when absent). "exit $LASTEXITCODE" exits
-	//     with that value.
-	//   - In PowerShell 5.1: "$LASTEXITCODE=2" is a valid PS assignment (seeds the value
-	//     to 2). "LASTEXITCODE=$((2*!!$?))" (no leading $) is a
-	//     CommandNotFound and does NOT update $LASTEXITCODE, so the seed of 2 survives
-	//     when trackfw is absent from PATH. When trackfw is present, `trackfw guard …`
-	//     sets $LASTEXITCODE to the real exit code; the arithmetic line is then
-	//     CommandNotFound again and the real code survives.
+	//     with that value. The 4th trecho "$LASTEXITCODE=2*!!$LASTEXITCODE 2>..." is
+	//     CommandNotFound in bash/sh (inert): it is silenced by the redirect and leaves
+	//     $LASTEXITCODE unchanged.
+	//   - In PowerShell 5.1: "$LASTEXITCODE=2" seeds the value to 2.
+	//     "LASTEXITCODE=$((2*!!$?))" (no leading $) is CommandNotFound — $LASTEXITCODE
+	//     stays at whatever trackfw set (or the seed 2 if absent).
+	//     The 4th trecho "$LASTEXITCODE=2*!!$LASTEXITCODE" IS a valid PS assignment:
+	//     it normalises any non-zero integer to 2 (2*!!N where N!=0 → 2*1 = 2; N=0 → 0).
+	//     This fixes the D11 pre-ML-6C defect where trackfw exiting 1 or 3 passed through
+	//     unchanged in PowerShell. Measured in ML-6C with a fake trackfw stub.
 	//
 	// cmd.exe family (Kiro, Amazon Q): "||" is a cmd.exe conditional separator;
 	//   when trackfw is absent or exits non-zero, "exit 2" fires.
-	guardGitBranchCmdPSPOSIX        = `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
-	guardCredentialCmdPSPOSIX       = `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
-	guardCredentialGlobalCmdPSPOSIX = `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
+	guardGitBranchCmdPSPOSIX        = `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+	guardCredentialCmdPSPOSIX       = `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+	guardCredentialGlobalCmdPSPOSIX = `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
 
 	guardGitBranchCmdCmdExe        = "trackfw guard git-branch || exit 2"
 	guardCredentialCmdCmdExe       = "trackfw guard credential || exit 2"
@@ -544,6 +551,15 @@ const (
 	legacyD2GitBranchCmdCmdExe        = "trackfw guard git-branch"
 	legacyD2CredentialCmdCmdExe       = "trackfw guard credential"
 	legacyD2CredentialGlobalCmdCmdExe = "trackfw guard credential --global"
+)
+
+// D11 pre-ML-6C inline forms (the D11 form WITHOUT the 4th PowerShell normalisation trecho).
+// These were written by trackfw v9.3.x before the ML-6C upgrade. Kept for
+// migrateHookCommand / dedup recognition. Never used as the "new" command in any emit path.
+const (
+	legacyD11GitBranchCmdPSPOSIX        = `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
+	legacyD11CredentialCmdPSPOSIX       = `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
+	legacyD11CredentialGlobalCmdPSPOSIX = `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
 )
 
 // InjectCodexHooks injects Codex CLI attention hooks into .codex/hooks.json.
@@ -652,12 +668,15 @@ func InjectCodexHooks(rootDir string) error {
 	// Git branch guard (ROADMAP-2026-08-14 ML-3A / ML-2A): migrate
 	// pre-ML-2A entry then emit or dedup.
 	migrateHookCommand(hooks["PreToolUse"], "Bash", legacyCodexGitGuardCmd, guardGitBranchCmdPSPOSIX)
-	// ML-6B: migrate D2 inline forms → D11 fail-closed forms.
+	// ML-6B/ML-6C: migrate D2 and pre-ML-6C D11 inline forms → D11 revised fail-closed forms.
 	for _, matcher := range []string{"Bash", "apply_patch"} {
 		migrateHookCommand(hooks["PreToolUse"], matcher, legacyD2CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
 		migrateHookCommand(hooks["PostToolUse"], matcher, legacyD2CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
+		migrateHookCommand(hooks["PreToolUse"], matcher, legacyD11CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
+		migrateHookCommand(hooks["PostToolUse"], matcher, legacyD11CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
 	}
 	migrateHookCommand(hooks["PreToolUse"], "Bash", legacyD2GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
+	migrateHookCommand(hooks["PreToolUse"], "Bash", legacyD11GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
 	// Dedup (ROADMAP-2026-08-17 Wave 2/ML-2B): skip the project-scope
 	// git-branch-guard entry when the global one is already installed
 	// (`trackfw update harness --targets codex-git-branch-guard`).
@@ -827,12 +846,15 @@ func InjectGeminiHooks(rootDir string) error {
 		)
 	}
 
-	// ML-6B: migrate D2 inline forms → D11 fail-closed forms.
+	// ML-6B/ML-6C: migrate D2 and pre-ML-6C D11 inline forms → D11 revised fail-closed forms.
 	for _, matcher := range []string{"run_shell_command", "read_file|read_many_files", "write_file|replace"} {
 		migrateHookCommand(hooks["BeforeTool"], matcher, legacyD2CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
 		migrateHookCommand(hooks["AfterTool"], matcher, legacyD2CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
+		migrateHookCommand(hooks["BeforeTool"], matcher, legacyD11CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
+		migrateHookCommand(hooks["AfterTool"], matcher, legacyD11CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
 	}
 	migrateHookCommand(hooks["BeforeTool"], "run_shell_command", legacyD2GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
+	migrateHookCommand(hooks["BeforeTool"], "run_shell_command", legacyD11GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
 
 	// Git branch guard (ROADMAP-2026-08-14 ML-3A / ML-2A): only
 	// "run_shell_command" can ever carry a raw git subcommand.
@@ -1349,9 +1371,11 @@ func InjectCursorHooks(rootDir string) error {
 	// ML-2A: migrate pre-ML-2A Cursor credential-guard entries to the new inline form.
 	migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyBareCredGuardCmd, guardCredentialCmdPSPOSIX, getCmd)
 	migrateCursorSimpleCommand(hooks["afterShellExecution"], legacyBareCredGuardCmd, guardCredentialCmdPSPOSIX, getCmd)
-	// ML-6B: migrate D2 inline forms → D11 fail-closed forms.
+	// ML-6B/ML-6C: migrate D2 and pre-ML-6C D11 inline forms → D11 revised fail-closed forms.
 	migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyD2CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX, getCmd)
 	migrateCursorSimpleCommand(hooks["afterShellExecution"], legacyD2CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX, getCmd)
+	migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyD11CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX, getCmd)
+	migrateCursorSimpleCommand(hooks["afterShellExecution"], legacyD11CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX, getCmd)
 	if !globalCredentialGuardInstalledCursor() {
 		hooks["beforeShellExecution"] = mergeSimpleCommandArray(hooks["beforeShellExecution"], guardCredentialCmdPSPOSIX, makeEntry, getCmd)
 		hooks["afterShellExecution"] = mergeSimpleCommandArray(hooks["afterShellExecution"], guardCredentialCmdPSPOSIX, makeEntry, getCmd)
@@ -1406,8 +1430,9 @@ func InjectCursorHooks(rootDir string) error {
 	// ML-2A: migrate pre-ML-2A Cursor git-branch-guard entry to the new inline form.
 	migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyBareGitGuardCmd, guardGitBranchCmdPSPOSIX, getCmd)
 	migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyWindsurfGitGuardCmd, guardGitBranchCmdPSPOSIX, getCmd)
-	// ML-6B: migrate D2 git-branch inline form → D11 fail-closed form.
+	// ML-6B/ML-6C: migrate D2 and pre-ML-6C D11 git-branch inline form → D11 revised fail-closed form.
 	migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyD2GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX, getCmd)
+	migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyD11GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX, getCmd)
 	if !globalGitBranchGuardInstalledCursor() {
 		hooks["beforeShellExecution"] = mergeSimpleCommandArray(hooks["beforeShellExecution"], guardGitBranchCmdPSPOSIX, makeEntry, getCmd)
 	}
@@ -1701,8 +1726,9 @@ func InjectWindsurfHooks(rootDir string) error {
 	}
 	// ML-2A: migrate pre-ML-2A Windsurf git-branch-guard entry to the new inline form.
 	migrateCursorSimpleCommand(hooks["pre_run_command"], legacyWindsurfGitGuardCmd, windsurfGitGuardCmd, windsurfGetCmd)
-	// ML-6B: migrate D2 inline form → D11 fail-closed form.
+	// ML-6B/ML-6C: migrate D2 and pre-ML-6C D11 inline form → D11 revised fail-closed form.
 	migrateCursorSimpleCommand(hooks["pre_run_command"], legacyD2GitBranchCmdPSPOSIX, windsurfGitGuardCmd, windsurfGetCmd)
+	migrateCursorSimpleCommand(hooks["pre_run_command"], legacyD11GitBranchCmdPSPOSIX, windsurfGitGuardCmd, windsurfGetCmd)
 	hooks["pre_run_command"] = mergeSimpleCommandArray(
 		hooks["pre_run_command"],
 		windsurfGitGuardCmd,
@@ -2297,11 +2323,15 @@ func globalCredentialGuardInstalledClaude() bool {
 	// `trackfw update harness` still dedups the project-scope entry.
 	// ML-6B: also accept D2 revised form so that a global config not yet migrated
 	// to D11 still dedups the project-scope entry.
+	// ML-6C: also accept pre-ML-6C D11 (without 4th PS trecho) so that a global
+	// config not yet migrated to D11 revised still dedups the project-scope entry.
 	return hookArrayHasCommand(hooks["PreToolUse"], "Bash", scriptPath) ||
 		hookArrayHasCommand(hooks["PreToolUse"], "Bash", guardCredentialGlobalCmdPSPOSIX) ||
 		hookArrayHasCommand(hooks["PreToolUse"], claudeShellMatcher, guardCredentialGlobalCmdPSPOSIX) ||
 		hookArrayHasCommand(hooks["PreToolUse"], "Bash", legacyD2CredentialGlobalCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["PreToolUse"], claudeShellMatcher, legacyD2CredentialGlobalCmdPSPOSIX)
+		hookArrayHasCommand(hooks["PreToolUse"], claudeShellMatcher, legacyD2CredentialGlobalCmdPSPOSIX) ||
+		hookArrayHasCommand(hooks["PreToolUse"], "Bash", legacyD11CredentialGlobalCmdPSPOSIX) ||
+		hookArrayHasCommand(hooks["PreToolUse"], claudeShellMatcher, legacyD11CredentialGlobalCmdPSPOSIX)
 }
 
 // globalCredentialGuardInstalledCodex checks ~/.codex/hooks.json for the
@@ -2319,9 +2349,11 @@ func globalCredentialGuardInstalledCodex() bool {
 	hooks, _ := root["hooks"].(map[string]interface{})
 	// ML-2A: accept both old abs .sh path and new inline command form.
 	// ML-6B: also accept D2 revised form.
+	// ML-6C: also accept pre-ML-6C D11 form.
 	return hookArrayHasCommand(hooks["PreToolUse"], "Bash", scriptPath) ||
 		hookArrayHasCommand(hooks["PreToolUse"], "Bash", guardCredentialGlobalCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["PreToolUse"], "Bash", legacyD2CredentialGlobalCmdPSPOSIX)
+		hookArrayHasCommand(hooks["PreToolUse"], "Bash", legacyD2CredentialGlobalCmdPSPOSIX) ||
+		hookArrayHasCommand(hooks["PreToolUse"], "Bash", legacyD11CredentialGlobalCmdPSPOSIX)
 }
 
 // globalCredentialGuardInstalledGemini checks ~/.gemini/settings.json for
@@ -2340,9 +2372,11 @@ func globalCredentialGuardInstalledGemini() bool {
 	hooks, _ := root["hooks"].(map[string]interface{})
 	// ML-2A: accept both old abs .sh path and new inline command form.
 	// ML-6B: also accept D2 revised form.
+	// ML-6C: also accept pre-ML-6C D11 form.
 	return hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", scriptPath) ||
 		hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", guardCredentialGlobalCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", legacyD2CredentialGlobalCmdPSPOSIX)
+		hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", legacyD2CredentialGlobalCmdPSPOSIX) ||
+		hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", legacyD11CredentialGlobalCmdPSPOSIX)
 }
 
 // globalCredentialGuardInstalledCursor checks ~/.cursor/hooks.json for the
@@ -2360,9 +2394,11 @@ func globalCredentialGuardInstalledCursor() bool {
 	hooks, _ := root["hooks"].(map[string]interface{})
 	// ML-2A: accept both old abs .sh path and new inline command form.
 	// ML-6B: also accept D2 revised form.
+	// ML-6C: also accept pre-ML-6C D11 form.
 	return simpleArrayHasValue(hooks["beforeShellExecution"], "command", scriptPath, false) ||
 		simpleArrayHasValue(hooks["beforeShellExecution"], "command", guardCredentialGlobalCmdPSPOSIX, false) ||
-		simpleArrayHasValue(hooks["beforeShellExecution"], "command", legacyD2CredentialGlobalCmdPSPOSIX, false)
+		simpleArrayHasValue(hooks["beforeShellExecution"], "command", legacyD2CredentialGlobalCmdPSPOSIX, false) ||
+		simpleArrayHasValue(hooks["beforeShellExecution"], "command", legacyD11CredentialGlobalCmdPSPOSIX, false)
 }
 
 // globalCredentialGuardInstalledCopilot checks ~/.copilot/settings.json for
@@ -2380,9 +2416,11 @@ func globalCredentialGuardInstalledCopilot() bool {
 	hooks, _ := root["hooks"].(map[string]interface{})
 	// ML-2A: accept both old abs .sh path and new inline command form.
 	// ML-6B: also accept D2 revised form.
+	// ML-6C: also accept pre-ML-6C D11 form.
 	return simpleArrayHasValue(hooks["preToolUse"], "bash", scriptPath, true) ||
 		simpleArrayHasValue(hooks["preToolUse"], "bash", guardCredentialGlobalCmdPSPOSIX, true) ||
-		simpleArrayHasValue(hooks["preToolUse"], "bash", legacyD2CredentialGlobalCmdPSPOSIX, true)
+		simpleArrayHasValue(hooks["preToolUse"], "bash", legacyD2CredentialGlobalCmdPSPOSIX, true) ||
+		simpleArrayHasValue(hooks["preToolUse"], "bash", legacyD11CredentialGlobalCmdPSPOSIX, true)
 }
 
 // globalCredentialGuardInstalledKiro checks whether
@@ -2463,7 +2501,9 @@ func globalGitBranchGuardInstalledClaude() bool {
 		hookArrayHasCommand(hooks["PreToolUse"], "Bash", guardGitBranchCmdPSPOSIX) ||
 		hookArrayHasCommand(hooks["PreToolUse"], claudeShellMatcher, guardGitBranchCmdPSPOSIX) ||
 		hookArrayHasCommand(hooks["PreToolUse"], "Bash", legacyD2GitBranchCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["PreToolUse"], claudeShellMatcher, legacyD2GitBranchCmdPSPOSIX)
+		hookArrayHasCommand(hooks["PreToolUse"], claudeShellMatcher, legacyD2GitBranchCmdPSPOSIX) ||
+		hookArrayHasCommand(hooks["PreToolUse"], "Bash", legacyD11GitBranchCmdPSPOSIX) ||
+		hookArrayHasCommand(hooks["PreToolUse"], claudeShellMatcher, legacyD11GitBranchCmdPSPOSIX)
 }
 
 // globalGitBranchGuardInstalledCodex checks ~/.codex/hooks.json for the
@@ -2481,9 +2521,11 @@ func globalGitBranchGuardInstalledCodex() bool {
 	hooks, _ := root["hooks"].(map[string]interface{})
 	// ML-2A: accept both old abs .sh path and new inline command form.
 	// ML-6B: also accept D2 revised form.
+	// ML-6C: also accept pre-ML-6C D11 form.
 	return hookArrayHasCommand(hooks["PreToolUse"], "Bash", scriptPath) ||
 		hookArrayHasCommand(hooks["PreToolUse"], "Bash", guardGitBranchCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["PreToolUse"], "Bash", legacyD2GitBranchCmdPSPOSIX)
+		hookArrayHasCommand(hooks["PreToolUse"], "Bash", legacyD2GitBranchCmdPSPOSIX) ||
+		hookArrayHasCommand(hooks["PreToolUse"], "Bash", legacyD11GitBranchCmdPSPOSIX)
 }
 
 // globalGitBranchGuardInstalledGemini checks ~/.gemini/settings.json for the
@@ -2501,9 +2543,11 @@ func globalGitBranchGuardInstalledGemini() bool {
 	hooks, _ := root["hooks"].(map[string]interface{})
 	// ML-2A: accept both old abs .sh path and new inline command form.
 	// ML-6B: also accept D2 revised form.
+	// ML-6C: also accept pre-ML-6C D11 form.
 	return hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", scriptPath) ||
 		hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", guardGitBranchCmdPSPOSIX) ||
-		hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", legacyD2GitBranchCmdPSPOSIX)
+		hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", legacyD2GitBranchCmdPSPOSIX) ||
+		hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", legacyD11GitBranchCmdPSPOSIX)
 }
 
 // globalGitBranchGuardInstalledCursor checks ~/.cursor/hooks.json for the
@@ -2521,9 +2565,11 @@ func globalGitBranchGuardInstalledCursor() bool {
 	hooks, _ := root["hooks"].(map[string]interface{})
 	// ML-2A: accept both old abs .sh path and new inline command form.
 	// ML-6B: also accept D2 revised form.
+	// ML-6C: also accept pre-ML-6C D11 form.
 	return simpleArrayHasValue(hooks["beforeShellExecution"], "command", scriptPath, false) ||
 		simpleArrayHasValue(hooks["beforeShellExecution"], "command", guardGitBranchCmdPSPOSIX, false) ||
-		simpleArrayHasValue(hooks["beforeShellExecution"], "command", legacyD2GitBranchCmdPSPOSIX, false)
+		simpleArrayHasValue(hooks["beforeShellExecution"], "command", legacyD2GitBranchCmdPSPOSIX, false) ||
+		simpleArrayHasValue(hooks["beforeShellExecution"], "command", legacyD11GitBranchCmdPSPOSIX, false)
 }
 
 // globalGitBranchGuardInstalledCopilot checks ~/.copilot/settings.json for
@@ -2541,7 +2587,9 @@ func globalGitBranchGuardInstalledCopilot() bool {
 	hooks, _ := root["hooks"].(map[string]interface{})
 	// ML-2A: accept both old abs .sh path and new inline command form.
 	// ML-6B: also accept D2 revised form.
+	// ML-6C: also accept pre-ML-6C D11 form.
 	return simpleArrayHasValue(hooks["preToolUse"], "bash", scriptPath, true) ||
 		simpleArrayHasValue(hooks["preToolUse"], "bash", guardGitBranchCmdPSPOSIX, true) ||
-		simpleArrayHasValue(hooks["preToolUse"], "bash", legacyD2GitBranchCmdPSPOSIX, true)
+		simpleArrayHasValue(hooks["preToolUse"], "bash", legacyD2GitBranchCmdPSPOSIX, true) ||
+		simpleArrayHasValue(hooks["preToolUse"], "bash", legacyD11GitBranchCmdPSPOSIX, true)
 }

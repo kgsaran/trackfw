@@ -86,7 +86,7 @@ func stubProbeOK(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // Reconciliação: afirma que a linha exata PS/POSIX D11 para git-branch
-// ("$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE")
+// ("$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE")
 // em .claude/settings.json não gera violation (ML-6B: D11 fail-closed).
 func TestGuardHookResolvable_ExatoPSPosix_Ok(t *testing.T) {
 	CurrentGOOS = "linux"
@@ -96,7 +96,7 @@ func TestGuardHookResolvable_ExatoPSPosix_Ok(t *testing.T) {
 	stubProbeOK(t)
 
 	writeFile(t, dir, ".claude/settings.json",
-		claudeSettingsWithSubcmd(`$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`))
+		claudeSettingsWithSubcmd(`$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`))
 
 	msgs, err := validateGitBranchGuardHookResolvable()
 	if err != nil {
@@ -209,7 +209,7 @@ func TestGuardHookResolvable_LegadoSh_Warning(t *testing.T) {
 }
 
 // Reconciliação: afirma que a variante global credential D11 com "--global" na linha esperada
-// ("$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE")
+// ("$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE")
 // é aceita sem violation (ML-6B: D11 fail-closed).
 func TestGuardGlobalHookResolvable_CredentialComGlobal_Ok(t *testing.T) {
 	CurrentGOOS = "linux"
@@ -225,7 +225,7 @@ func TestGuardGlobalHookResolvable_CredentialComGlobal_Ok(t *testing.T) {
 		t.Fatalf("mkdir: %v", err)
 	}
 	if err := os.WriteFile(claudePath,
-		[]byte(claudeSettingsWithSubcmd(`$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`)),
+		[]byte(claudeSettingsWithSubcmd(`$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`)),
 		0644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
