@@ -155,3 +155,16 @@ em `block` (fail-closed); em `warn` só avisa. Registrado no adendo da ADR-2026-
       F1 do lado do projeto já era coberto pela checagem de forma (`echo trackfw guard credential` → ✗, medido). A isenção
       ficou mais estrita que o pedido (só `/dev/null`, não `$(mktemp)`) — aceito, fail-closed. `make quality` EXIT=0,
       falsify 347 OK / 0 FAIL.
+
+### ML-2E — Windows: payload inválido e caminho com barra invertida
+**Status:** 🔄 Em andamento
+**Squad:** apolo-tf
+**Por que o escopo original não previa:** o `windows-full-suites` do PR #543 reprovou 13 testes do guard, incluindo 2
+anteriores ao PR (`TestRunCredential_SecondLayerCatArg`, `TestRunCredential_SecondLayerRedirectFile`) que passavam na
+main. Hipótese a medir: o teste monta o JSON concatenando `C:\Users\...` sem escapar → JSON inválido; o ML-1C trocou o
+regex sobre o texto bruto (que tolerava isso) por JSON parse sem fallback. E, com JSON válido, o caminho decodificado
+`C:\Users\...` pode perder as barras no tokenizador de shell da 2ª camada — o regex antigo acertava por acaso.
+- [ ] Causa medida no Windows (CI ou VM), escrita no relatório
+- [ ] Payload que não é JSON válido: mesma extração da main (sem regressão)
+- [ ] Payload JSON válido com caminho Windows (`C:\\Users\\...` escapado): 2ª camada acha o arquivo
+- [ ] Testes montam payload com `json.Marshal`; os 13 passam no `windows-full-suites`
