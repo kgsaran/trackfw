@@ -45982,3 +45982,7 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-08 — zeus-tf — FIM: Wave 3 da REQ-2026-10-06 (#544), aguarda PR
 
 - Guard varre `/c/`, `/C/`, `/cygdrive/c/` (só Windows, fora do PowerShell/pwsh) e `> C:\...` inteiro; ADS nomeado volta a varrer o arquivo base. Medido na VM (12/12) com falsificação. Red-team liberou com ressalva; ressalvas corrigidas (ML-3E). `make quality` EXIT=0.
+
+## 2026-10-08 — zeus-tf — bump 9.4.0; REQ-2026-10-06 Done de novo (#546)
+
+- Release 9.4.0 (#543, #545, #546). REQ-2026-10-06 fechada com evidência do AC6, roadmap em `done/`, `req-aberta` retirada da #544. Gates: parity-rest EXIT=0, check-required-full OK.
