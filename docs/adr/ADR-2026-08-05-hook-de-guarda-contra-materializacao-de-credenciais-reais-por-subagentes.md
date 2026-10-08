@@ -108,3 +108,43 @@ Python, estrutura de JSON diferente para Copilot) que nenhum gate atual detecta.
   scripts shell byte-a-byte; os hooks.json por CLI têm formatos nativamente diferentes entre CLIs
   (não é possível comparação byte-a-byte entre eles) e já divergem hoje entre Go/Node/Python sem
   detecção — reusar sem estender deixaria a mesma lacuna que motivou a REQ anterior.
+
+## Adendo 2026-10-08 — Windsurf e Amazon Q entram; a premissa do Windsurf caducou (REQ-2026-10-06)
+
+**Premissa revista.** A linha da tabela do Context e a alternativa rejeitada "Incluir Windsurf na wave 1" partiam de
+"o Windsurf não tem hook pré-execução". Isso deixou de valer: a documentação oficial dos Cascade hooks
+(https://docs.devin.ai/desktop/cascade/hooks, redirecionada de docs.windsurf.com, acesso 2026-10-08) documenta
+`pre_run_command`, `pre_write_code` e `pre_read_code`, com bloqueio por exit 2, e escopo de usuário em
+`~/.codeium/windsurf/hooks.json`. O próprio trackfw já emitia `pre_run_command` para o git-branch guard. O Amazon Q
+entrou no gerador depois desta ADR e nunca foi avaliado: `preToolUse` com exit 2 bloqueando (docs/hooks.md e
+`crates/chat-cli/src/cli/chat/tools/fs_write.rs` de github.com/aws/amazon-q-developer-cli, acesso 2026-10-08).
+Medição: `docs/seguranca/2026-10-08-wave0-credential-guard-windsurf-amazonq.md`.
+
+**Decisão por CLI.**
+
+| CLI | Instalar o credential guard em | Fora, com motivo medido |
+|---|---|---|
+| Windsurf | `pre_run_command` (`tool_info.command_line`), `pre_write_code` (`tool_info.edits[].new_string`) | `pre_read_code`: payload só tem `file_path` — o hook não vê conteúdo; instalar daria proteção aparente |
+| Amazon Q | `preToolUse` matcher `execute_bash` (`tool_input.command`), matcher `fs_write` (`file_text`/`new_str`) | `fs_read`: mesmo motivo do `pre_read_code` |
+
+Linha de hook: a da D11 revista da ADR-2026-10-04 (família PS/POSIX no Windsurf, cmd no Amazon Q).
+
+**O guard passa a entender o payload de cada CLI** (mudança no `internal/guard/credential.go`, mesma REQ — a meta
+é cobrir esses CLIs, e um hook que não lê o payload não cobre):
+1. A segunda camada lê o comando de `command` **e** de `command_line`, por JSON parse, não regex sobre o JSON bruto —
+   o regex trunca argumento entre aspas (`cat "arquivo"` passava, medido também no Claude Code).
+2. A isenção de redirecionamento efêmero (`> /dev/null`) só vale para o **comando de shell** extraído, nunca para o
+   payload inteiro. Medido em 2026-10-08: `Write`/`Edit` do Claude Code e `fs_write` do Amazon Q com um JWT e o texto
+   `> /dev/null` no conteúdo saíam 0 em modo `block`. Defeito anterior a esta REQ, mesma causa (o guard tratando payload
+   de escrita como se fosse linha de comando), corrigido aqui.
+
+**Escopo global.** Windsurf ganha alvo de harness `windsurf-credential-guard` em `~/.codeium/windsurf/hooks.json`.
+Amazon Q não documenta arquivo de hooks global: fica só no escopo de projeto (residual declarado).
+
+**Emenda (red-team, mesmo dia).** A isenção de redirecionamento efêmero passa a exigir forma mínima: um único comando de
+shell simples (sem pipe, `;`, `&&`, `||`, `&`, substituição de comando ou de processo, quebra de linha), cujo argv[0] é
+`echo` ou `printf`, com todos os redirecionamentos efêmeros e o JWT dentro desse comando. Motivo medido
+(`docs/seguranca/2026-10-08-red-team-credential-guard-windsurf-amazonq.md`, F2): `echo <JWT> | tee arq > /dev/null`,
+`dd of=`, `python3 -c '...' > /dev/null` e `& <escritor>` saíam 0 em `block` — o `> /dev/null` do fim isentava um comando
+que materializava a credencial noutro lugar. Trade-off aceito: em `block`, um `curl` com token literal e saída em
+`/dev/null` passa a bloquear; em `warn` (padrão) só avisa.

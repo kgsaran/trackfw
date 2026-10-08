@@ -1082,3 +1082,248 @@ func TestClaudeGuardHookMatcherWarning_NonGuardHookNoWarning(t *testing.T) {
 		t.Errorf("expected no warning for non-guard Bash hook, got: %v", warns)
 	}
 }
+
+// --------------------------------------------------------------------------
+// ML-1D (REQ-2026-10-06) — Windsurf global harness bypass
+//
+// The Windsurf global harness (~/.codeium/windsurf/hooks.json) covers BOTH
+// pre_run_command and pre_write_code. When it is fully installed the validator
+// must NOT emit a violation for a project file without the credential guard —
+// InjectWindsurfHooks dedup'd it out intentionally. Three directions tested:
+//   (a) global fully installed → no violation;
+//   (b) global absent → violation;
+//   (c) global only pre_run_command → violation (partial install is not enough).
+// --------------------------------------------------------------------------
+
+// windsurfGlobalHooksJSON builds the ~/.codeium/windsurf/hooks.json content
+// with the global credential guard subcommand in both events (or only one).
+// ML-2C F1: uses the exact D11 revised form (guardExpectedLine) — legacy D2 form
+// ("trackfw guard credential --global; exit $LASTEXITCODE") is no longer accepted
+// as "fully installed global".
+func windsurfGlobalHooksJSON(preRun, preWrite bool) []byte {
+	// D11 revised (current form): exact match required by credentialGuardGlobalInstalledWindsurf.
+	globalCmd := credentialGuardGlobalExpectedCmdWindsurf()
+	hookEntry := map[string]interface{}{
+		"command":     globalCmd,
+		"show_output": true,
+	}
+	hooks := map[string]interface{}{}
+	if preRun {
+		hooks["pre_run_command"] = []interface{}{hookEntry}
+	}
+	if preWrite {
+		hooks["pre_write_code"] = []interface{}{hookEntry}
+	}
+	b, _ := json.Marshal(map[string]interface{}{"hooks": hooks})
+	return b
+}
+
+// writeWindsurfGlobalHooks writes the global Windsurf hooks.json under the
+// given home directory, creating the directory tree as needed.
+func writeWindsurfGlobalHooks(t *testing.T, home string, preRun, preWrite bool) {
+	t.Helper()
+	path := filepath.Join(home, ".codeium", "windsurf", "hooks.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatalf("mkdir global windsurf: %v", err)
+	}
+	if err := os.WriteFile(path, windsurfGlobalHooksJSON(preRun, preWrite), 0644); err != nil {
+		t.Fatalf("write global windsurf hooks: %v", err)
+	}
+}
+
+// isolateHome sets HOME (and USERPROFILE on Windows) to a fresh temp dir for the
+// duration of the test, preventing the real global Windsurf hooks.json from
+// affecting the outcome. Returns the new home path.
+func isolateHome(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // Windows
+	return home
+}
+
+// Reconciliação: afirma que validateCredentialGuardPresenceRequired NÃO emite
+// violation para .windsurf/hooks.json sem credential guard quando o global harness
+// está completamente instalado (pre_run_command + pre_write_code no global) —
+// InjectWindsurfHooks desduplicou intencionalmente, portanto a ausência no projeto
+// não é um defeito.
+// ML-1D: antes desta correção, a presença do global era ignorada e a violation era emitida.
+// Falsificação RC: comentar `entry.globalInstalled != nil && entry.globalInstalled()` no
+// loop de validateCredentialGuardPresenceRequired → este teste falha (violation emitida).
+func TestCredentialGuardPresenceRequired_Windsurf_GlobalCompleto_SemViolation(t *testing.T) {
+	home := isolateHome(t)
+	writeWindsurfGlobalHooks(t, home, true, true) // both events installed globally
+
+	dir := t.TempDir()
+	chdir(t, dir)
+	stubProbeOK(t)
+
+	// Project file has only git-branch guard (no credential guard).
+	writeFile(t, dir, ".windsurf/hooks.json",
+		windsurfHooksWithSubcmd(`$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`))
+
+	msgs, err := validateCredentialGuardPresenceRequired()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, m := range msgs {
+		if hasViolation([]string{m}, ".windsurf/hooks.json") {
+			t.Errorf("unexpected violation for .windsurf/hooks.json with global harness fully installed: %v", m)
+		}
+	}
+}
+
+// Reconciliação: afirma que validateCredentialGuardPresenceRequired emite violation
+// para .windsurf/hooks.json sem credential guard quando o global harness está AUSENTE
+// (HOME limpo, sem ~/.codeium/windsurf/hooks.json) — o projeto não tem cobertura.
+// Falsificação RC: criar o arquivo global vazio → credentialGuardGlobalInstalledWindsurf
+// retorna false → violation emitida (RC não muda; o teste deve passar igualmente).
+func TestCredentialGuardPresenceRequired_Windsurf_GlobalAusente_Violation(t *testing.T) {
+	isolateHome(t) // empty HOME — no global Windsurf file
+
+	dir := t.TempDir()
+	chdir(t, dir)
+	stubProbeOK(t)
+
+	// Project file has only git-branch guard (no credential guard).
+	writeFile(t, dir, ".windsurf/hooks.json",
+		windsurfHooksWithSubcmd(`$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`))
+
+	msgs, err := validateCredentialGuardPresenceRequired()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !hasViolation(msgs, ".windsurf/hooks.json") {
+		t.Errorf("expected violation for .windsurf/hooks.json with global absent, got: %v", msgs)
+	}
+}
+
+// Reconciliação: afirma que validateCredentialGuardPresenceRequired emite violation
+// para .windsurf/hooks.json sem credential guard quando o global harness tem APENAS
+// pre_run_command (instalação parcial) — pre_write_code fica descoberto, logo o
+// projeto ainda precisa de cobertura.
+// ML-1D: o endurecimento da definição de "global instalado" (exigir ambos os eventos)
+// é o mesmo nos dois lados (gerador e validator). Um global parcial não conta.
+// Falsificação RC: mudar && para || em credentialGuardGlobalInstalledWindsurf →
+// este teste falha (violation suprimida indevidamente).
+func TestCredentialGuardPresenceRequired_Windsurf_GlobalSoPre_RunCommand_Violation(t *testing.T) {
+	home := isolateHome(t)
+	writeWindsurfGlobalHooks(t, home, true, false) // only pre_run_command in global
+
+	dir := t.TempDir()
+	chdir(t, dir)
+	stubProbeOK(t)
+
+	// Project file has only git-branch guard (no credential guard).
+	writeFile(t, dir, ".windsurf/hooks.json",
+		windsurfHooksWithSubcmd(`$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`))
+
+	msgs, err := validateCredentialGuardPresenceRequired()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !hasViolation(msgs, ".windsurf/hooks.json") {
+		t.Errorf("expected violation for .windsurf/hooks.json with global only partially installed, got: %v", msgs)
+	}
+}
+
+// --------------------------------------------------------------------------
+// F1 tests (ML-2C): exact-match requirement for global Windsurf harness
+// --------------------------------------------------------------------------
+
+// windsurfGlobalHooksJSONWithCmd builds ~/.codeium/windsurf/hooks.json content
+// with a specific raw command string in BOTH events (used to test legacy forms).
+func windsurfGlobalHooksJSONWithCmd(cmd string) []byte {
+	hookEntry := map[string]interface{}{"command": cmd, "show_output": true}
+	hooks := map[string]interface{}{
+		"pre_run_command": []interface{}{hookEntry},
+		"pre_write_code":  []interface{}{hookEntry},
+	}
+	b, _ := json.Marshal(map[string]interface{}{"hooks": hooks})
+	return b
+}
+
+// writeWindsurfGlobalHooksWithCmd writes the global Windsurf hooks.json with a
+// specific raw command string in both events.
+func writeWindsurfGlobalHooksWithCmd(t *testing.T, home, cmd string) {
+	t.Helper()
+	path := filepath.Join(home, ".codeium", "windsurf", "hooks.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		t.Fatalf("mkdir global windsurf: %v", err)
+	}
+	if err := os.WriteFile(path, windsurfGlobalHooksJSONWithCmd(cmd), 0644); err != nil {
+		t.Fatalf("write global windsurf hooks with cmd: %v", err)
+	}
+}
+
+// Reconciliação: afirma que credentialGuardGlobalInstalledWindsurf retorna false
+// quando o global hooks.json contém a forma D2 legada ("trackfw guard credential
+// --global; exit $LASTEXITCODE") — apenas a forma D11 revised é aceita (F1/ML-2C).
+// Falsificação RC: trocar credentialGuardGlobalMatchesExpected por substring match
+// → este teste falha (D2 passa a ser aceita; violation suprimida).
+func TestCredentialGuardGlobalInstalled_D2Legacy_NotAccepted(t *testing.T) {
+	home := isolateHome(t)
+	d2Cmd := "trackfw guard credential " + "--global" + "; exit $LASTEXITCODE"
+	writeWindsurfGlobalHooksWithCmd(t, home, d2Cmd)
+
+	if credentialGuardGlobalInstalledWindsurf() {
+		t.Errorf("credentialGuardGlobalInstalledWindsurf must return false for D2 legacy form %q"+
+			" — only the D11 revised form is accepted", d2Cmd)
+	}
+}
+
+// Reconciliação: afirma que credentialGuardGlobalInstalledWindsurf retorna false
+// quando o global hooks.json contém a forma D11 pré-ML-6C (sem o 4º trecho de
+// normalização PowerShell) — apenas a forma D11 revised (com o 4º trecho) é aceita.
+// Falsificação RC: aceitar strings.HasPrefix → este teste falha.
+func TestCredentialGuardGlobalInstalled_D11Legacy_NotAccepted(t *testing.T) {
+	home := isolateHome(t)
+	// D11 legacy: sem o 4º trecho "$LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null};"
+	d11Legacy := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential ` + `--global; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
+	writeWindsurfGlobalHooksWithCmd(t, home, d11Legacy)
+
+	if credentialGuardGlobalInstalledWindsurf() {
+		t.Errorf("credentialGuardGlobalInstalledWindsurf must return false for D11 legacy form"+
+			" — only the D11 revised form is accepted")
+	}
+}
+
+// Reconciliação: afirma que credentialGuardGlobalInstalledWindsurf retorna true
+// quando o global hooks.json contém a forma D11 revised exata em ambos os eventos —
+// base da correção F1/ML-2C.
+// Falsificação RC: remover a verificação de pre_write_code → este teste ainda passa
+// (só pre_run é verificado); o teste TestCredentialGuardPresenceRequired_Windsurf_GlobalSoPre_RunCommand_Violation
+// detecta a regressão nesse caso.
+func TestCredentialGuardGlobalInstalled_D11Revised_Accepted(t *testing.T) {
+	home := isolateHome(t)
+	d11Revised := credentialGuardGlobalExpectedCmdWindsurf()
+	writeWindsurfGlobalHooksWithCmd(t, home, d11Revised)
+
+	if !credentialGuardGlobalInstalledWindsurf() {
+		t.Errorf("credentialGuardGlobalInstalledWindsurf must return true for D11 revised form %q", d11Revised)
+	}
+}
+
+// Reconciliação: afirma que validateCredentialGuardPresenceRequired emite violation
+// para .windsurf/hooks.json quando o global harness usa a forma D2 legada — o projeto
+// deve instalar a cobertura local pois o global é insuficiente.
+func TestCredentialGuardPresenceRequired_Windsurf_GlobalD2Legacy_Violation(t *testing.T) {
+	home := isolateHome(t)
+	d2Cmd := "trackfw guard credential " + "--global" + "; exit $LASTEXITCODE"
+	writeWindsurfGlobalHooksWithCmd(t, home, d2Cmd)
+
+	dir := t.TempDir()
+	chdir(t, dir)
+	stubProbeOK(t)
+
+	writeFile(t, dir, ".windsurf/hooks.json",
+		windsurfHooksWithSubcmd(`$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`))
+
+	msgs, err := validateCredentialGuardPresenceRequired()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !hasViolation(msgs, ".windsurf/hooks.json") {
+		t.Errorf("expected violation for .windsurf/hooks.json with D2 legacy global, got: %v", msgs)
+	}
+}

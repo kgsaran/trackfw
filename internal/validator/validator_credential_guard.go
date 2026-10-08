@@ -26,6 +26,12 @@ const gitBranchGuardScriptMarker = "trackfw-git-branch-guard.sh"
 // (ADR-2026-10-04, ML-2B). Usado para detectar a NOVA forma de hook.
 const credentialGuardSubcmdMarker = "trackfw guard credential"
 
+// credentialGuardGlobalSubcmdMarker is the substring present in the GLOBAL form of the
+// credential guard subcommand ("trackfw guard credential --global"). It is a more specific
+// marker than credentialGuardSubcmdMarker and only matches global-scope entries, which is
+// what credentialGuardGlobalInstalledWindsurf needs.
+const credentialGuardGlobalSubcmdMarker = "trackfw guard credential --global"
+
 // gitBranchGuardSubcmdMarker é o prefixo do subcomando Go para o git-branch-guard
 // (ADR-2026-10-04, ML-2B).
 const gitBranchGuardSubcmdMarker = "trackfw guard git-branch"
@@ -76,10 +82,17 @@ var credentialGuardHookFiles = []credentialGuardHookFile{
 	{".cursor/hooks.json", "Cursor", false, false, guardShellFamilyPSPosix},
 	{".github/hooks/trackfw-attention.json", "GitHub Copilot CLI", true, false, guardShellFamilyPSPosix},
 	{".kiro/hooks/trackfw-attention.json", "Kiro", true, false, guardShellFamilyCmdExe},
-	// ML-2C: Windsurf and Amazon Q — project-scope only (no global harness target for either).
-	// Both generators only inject git-branch-guard (not credential guard), so the
-	// credential_guard_hook_resolvable rule silently skips their files (no credentialGuardScriptMarker
-	// present); this entry is load-bearing only for git_branch_guard_hook_resolvable.
+	// ML-2C / ML-1B (REQ-2026-10-06): Windsurf and Amazon Q — project-scope only.
+	// ML-1B wires the credential guard for both CLIs (InjectWindsurfHooks, InjectAmazonQHooks).
+	// validateCredentialGuardHookResolvable now enforces the credential guard is present
+	// (validateCredentialGuardPresenceRequired). The stale premise "Both generators only inject
+	// git-branch-guard (not credential guard)" was correct before ML-1B and is now obsolete.
+	// Amazon Q has no documented global hook scope (Wave 0 residual R4), so the project file
+	// is the sole credential guard install point for Amazon Q.
+	// Windsurf has a global harness target (windsurf-credential-guard → ~/.codeium/windsurf/
+	// hooks.json), but the presence check here is on the PROJECT file; a user with only
+	// the global harness installed will still see a violation until the project file is
+	// updated — this is intentional: project-scope install is the defence-in-depth layer.
 	//
 	// Windsurf: hooks.pre_run_command[{"command":"…","show_output":true}] — no "type" field;
 	//   requiresVarOrShellPrefix=false: the legacy form is "bash scripts/…" (relative), and the
@@ -682,10 +695,248 @@ func validateGuardHookShLegacyWarnings(scriptMarker string) ([]string, error) {
 	return warnings, nil
 }
 
+// credentialGuardRequiredEvent describes a single event or matcher within a hook file where the
+// credential guard MUST be present after ML-1B (REQ-2026-10-06). For Windsurf, events are top-level
+// keys under "hooks"; for Amazon Q, events are "matcher" values inside hooks.preToolUse entries.
+type credentialGuardRequiredEvent struct {
+	// hookEvent is the event key within the top-level "hooks" object (e.g. "pre_run_command").
+	hookEvent string
+	// amazonQMatcher, when non-empty, switches to Amazon Q's preToolUse[matcher] extraction mode:
+	// instead of hooks[hookEvent], we look for preToolUse entries with this "matcher" value.
+	amazonQMatcher string
+}
+
+// credentialGuardRequiredEntry pairs a hook file with the list of events that must carry the guard.
+type credentialGuardRequiredEntry struct {
+	hookFile credentialGuardHookFile
+	events   []credentialGuardRequiredEvent
+	// globalInstalled, when non-nil, is called before per-event checks. If it returns true
+	// the global harness fully covers this CLI (all required events are wired in the global
+	// config) and the project file may legitimately lack the project-scope credential guard —
+	// trackfw update dedup'd it out. validateCredentialGuardPresenceRequired skips the
+	// entire entry in that case, suppressing the "run `trackfw update`" violation.
+	// nil means no global harness target exists for this CLI (Amazon Q).
+	globalInstalled func() bool
+}
+
+// credentialGuardRequiredEntries is the closed list of (file, events) pairs where the credential
+// guard is MANDATORY (ML-1B, REQ-2026-10-06). Each event is checked independently; a file that
+// has the guard in pre_run_command but not in pre_write_code still emits a violation for the
+// missing event (Wave 0 requirement: "credential guard nos eventos decididos").
+var credentialGuardRequiredEntries = []credentialGuardRequiredEntry{
+	{
+		hookFile: credentialGuardHookFile{".windsurf/hooks.json", "Windsurf", false, false, guardShellFamilyPSPosix},
+		events: []credentialGuardRequiredEvent{
+			{hookEvent: "pre_run_command"},
+			{hookEvent: "pre_write_code"},
+		},
+		// ML-1D (REQ-2026-10-06): Windsurf has a global harness target
+		// (windsurf-credential-guard → ~/.codeium/windsurf/hooks.json). When the global harness is
+		// FULLY installed (both pre_run_command and pre_write_code have the --global form),
+		// InjectWindsurfHooks dedup's out the project-scope entries — the project file legitimately
+		// has no credential guard. validateCredentialGuardPresenceRequired must not emit a violation
+		// in that case, using the same "fully installed" definition as the generator.
+		globalInstalled: credentialGuardGlobalInstalledWindsurf,
+	},
+	{
+		hookFile: credentialGuardHookFile{".amazonq/cli-agents/q_cli_default.json", "Amazon Q", false, false, guardShellFamilyCmdExe},
+		events: []credentialGuardRequiredEvent{
+			{hookEvent: "preToolUse", amazonQMatcher: "execute_bash"},
+			{hookEvent: "preToolUse", amazonQMatcher: "fs_write"},
+		},
+		// Amazon Q has no documented global hook scope (Wave 0 residual R4); globalInstalled is nil.
+	},
+}
+
+// extractCredentialGuardCommandsFromEvent extracts all command strings from a single event slot.
+// For Windsurf-style: parsed["hooks"][event] is a []interface{} of {"command":...} objects.
+// For Amazon Q-style: parsed["hooks"]["preToolUse"] is a []interface{} of {matcher:...,hooks:[...]}
+// entries; we locate the entry whose "matcher" equals amazonQMatcher and recurse into its "hooks".
+func extractCredentialGuardCommandsFromEvent(parsed interface{}, event credentialGuardRequiredEvent, marker string) []guardCommandMatch {
+	root, ok := parsed.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	hooks, _ := root["hooks"].(map[string]interface{})
+	if hooks == nil {
+		return nil
+	}
+
+	if event.amazonQMatcher == "" {
+		// Windsurf-style: hooks[event] is a flat command array.
+		var out []guardCommandMatch
+		collectCommandsWithMarker(hooks[event.hookEvent], marker, &out)
+		return out
+	}
+
+	// Amazon Q-style: hooks.preToolUse is [{matcher:..., hooks:[{command:...}]}, ...]
+	preToolUse, _ := hooks[event.hookEvent].([]interface{})
+	for _, item := range preToolUse {
+		obj, _ := item.(map[string]interface{})
+		if obj == nil {
+			continue
+		}
+		if obj["matcher"] != event.amazonQMatcher {
+			continue
+		}
+		var out []guardCommandMatch
+		collectCommandsWithMarker(obj["hooks"], marker, &out)
+		return out
+	}
+	return nil
+}
+
+// credentialGuardGlobalExpectedCmdWindsurf returns the exact command string that the
+// generator writes for the Windsurf global credential guard harness (D11 revised /
+// ML-6C form for the PS/POSIX shell family). This is the ONLY form accepted as
+// "fully installed global" — legacy forms (D11 pre-ML-6C, D2) require `trackfw update`.
+//
+// The value equals guardCredentialGlobalCmdPSPOSIX in internal/generators/agentfiles.go.
+// The validator cannot import generators (import cycle), so we derive it via
+// guardExpectedLine which is in the same package.
+func credentialGuardGlobalExpectedCmdWindsurf() string {
+	return guardExpectedLine("credential --global", guardShellFamilyPSPosix)
+}
+
+// credentialGuardGlobalMatchesExpected reports whether the given command string is
+// exactly equal to the current D11 revised global credential guard command for Windsurf.
+func credentialGuardGlobalMatchesExpected(cmd string) bool {
+	return cmd == credentialGuardGlobalExpectedCmdWindsurf()
+}
+
+// credentialGuardGlobalInstalledWindsurf reports whether the Windsurf global harness
+// (~/.codeium/windsurf/hooks.json) is FULLY installed with the CURRENT form:
+// the D11 revised command (guardExpectedLine("credential --global", guardShellFamilyPSPosix))
+// must be present by EXACT EQUALITY in BOTH hooks.pre_run_command AND hooks.pre_write_code.
+//
+// This mirrors globalCredentialGuardInstalledWindsurf() in internal/generators/agentfiles.go —
+// the validator cannot import generators (import cycle; see credentialGuardScriptReference's
+// doc comment for the full explanation). The hardened definition (both events required) is
+// ML-1D's correction; exact-match requirement is ML-2C's correction (F1).
+//
+// Legacy forms (D11 pre-ML-6C, D2) are NOT accepted — they require `trackfw update`.
+//
+// Fail-open: any read/parse/home-resolve error → false (treat as not installed, emit violation).
+func credentialGuardGlobalInstalledWindsurf() bool {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return false
+	}
+	path := filepath.Join(home, ".codeium", "windsurf", "hooks.json")
+	content, readErr := readRegularFile(path)
+	if readErr != nil {
+		return false
+	}
+	var root map[string]interface{}
+	if json.Unmarshal(content, &root) != nil {
+		return false
+	}
+	hooks, _ := root["hooks"].(map[string]interface{})
+	if !credentialGuardGlobalExactMatchInEvent(hooks["pre_run_command"]) {
+		return false
+	}
+	return credentialGuardGlobalExactMatchInEvent(hooks["pre_write_code"])
+}
+
+// credentialGuardGlobalExactMatchInEvent reports whether the given hook event value
+// (which may be an array of command objects or a string) contains the exact expected
+// global credential guard command string.
+func credentialGuardGlobalExactMatchInEvent(v interface{}) bool {
+	expected := credentialGuardGlobalExpectedCmdWindsurf()
+	switch tv := v.(type) {
+	case []interface{}:
+		for _, item := range tv {
+			if m, ok := item.(map[string]interface{}); ok {
+				if cmd, _ := m["command"].(string); cmd == expected {
+					return true
+				}
+			}
+			if s, ok := item.(string); ok && s == expected {
+				return true
+			}
+		}
+	case string:
+		return tv == expected
+	case map[string]interface{}:
+		if cmd, _ := tv["command"].(string); cmd == expected {
+			return true
+		}
+	}
+	return false
+}
+
+// validateCredentialGuardPresenceRequired emite violations quando um arquivo de hook dos CLIs em
+// credentialGuardRequiredEntries existe no disco mas falta o credential guard em algum dos eventos
+// obrigatórios. Cada evento ausente produz uma mensagem separada (nomeando arquivo + evento).
+// Isso captura arquivos gerados por versões anteriores ao ML-1B que só têm o git-branch guard, bem
+// como arquivos com o guard em pre_run_command mas não em pre_write_code (ou vice-versa).
+//
+// ML-1D: skips the entire entry when entry.globalInstalled is non-nil and returns true — the
+// global harness covers all required events for that CLI (InjectWindsurfHooks dedup'd the
+// project-scope entries). This resolves the generator×validator contradiction where a user
+// with a fully installed Windsurf global harness would receive a violation that `trackfw
+// update` could never fix (because the generator intentionally omits the project wiring).
+func validateCredentialGuardPresenceRequired() ([]string, error) {
+	root, err := os.Getwd()
+	if err != nil {
+		return nil, err
+	}
+	if resolvedRoot, symErr := filepath.EvalSymlinks(root); symErr == nil {
+		root = resolvedRoot
+	}
+
+	var msgs []string
+	for _, entry := range credentialGuardRequiredEntries {
+		// ML-1D: if the global harness is fully installed for this CLI, the project file
+		// is legitimately missing the credential guard — skip without violation.
+		if entry.globalInstalled != nil && entry.globalInstalled() {
+			continue
+		}
+		hf := entry.hookFile
+		fullPath := filepath.Join(root, hf.path)
+		content, readErr := readRegularFile(fullPath)
+		if readErr != nil {
+			// Arquivo ausente ou ilegível: já tratado por validateGuardHookResolvable; não duplicar.
+			continue
+		}
+		var parsed interface{}
+		if json.Unmarshal(content, &parsed) != nil {
+			// JSON inválido: já tratado por validateGuardHookResolvable.
+			continue
+		}
+
+		for _, ev := range entry.events {
+			shCmds := extractCredentialGuardCommandsFromEvent(parsed, ev, credentialGuardScriptMarker)
+			subcmdCmds := extractCredentialGuardCommandsFromEvent(parsed, ev, credentialGuardSubcmdMarker)
+
+			if len(shCmds) == 0 && len(subcmdCmds) == 0 {
+				eventDesc := ev.hookEvent
+				if ev.amazonQMatcher != "" {
+					eventDesc = ev.hookEvent + "[" + ev.amazonQMatcher + "]"
+				}
+				msgs = append(msgs, fmt.Sprintf(
+					"%s (%s) is present but has no credential guard entry in event %s — "+
+						"run `trackfw update` to add the credential guard wiring",
+					hf.path, hf.cli, eventDesc,
+				))
+			}
+		}
+	}
+	return msgs, nil
+}
+
 // validateCredentialGuardHookResolvable é a regra "credential_guard_hook_resolvable" — ver
 // validateGuardHookResolvable para a implementação compartilhada.
 func validateCredentialGuardHookResolvable() ([]string, error) {
-	return validateGuardHookResolvable("credential_guard_hook_resolvable", credentialGuardScriptMarker, credentialGuardSubcmdMarker, "credential")
+	formMsgs, err := validateGuardHookResolvable("credential_guard_hook_resolvable", credentialGuardScriptMarker, credentialGuardSubcmdMarker, "credential")
+	if err != nil {
+		return nil, err
+	}
+	presenceMsgs, err := validateCredentialGuardPresenceRequired()
+	if err != nil {
+		return nil, err
+	}
+	return append(formMsgs, presenceMsgs...), nil
 }
 
 // validateCredentialGuardHookResolvableLegacyWarnings retorna os avisos de forma legada

@@ -4,6 +4,10 @@
 
 ## Índice
 
+- [credextractcmdandcwd-bom-unmarshal-data-not-stripped-2026-10-08](credextractcmdandcwd-bom-unmarshal-data-not-stripped-2026-10-08.md) — 🔴 **`credExtractCmdAndCwd` passa `data` (com BOM) em vez de `stripped` para `json.Unmarshal`** — BOM desativa Layer 2b inteiramente; todos os fixes do ML-1C regridem; fix: trocar `data` por `stripped` na linha ~373; PowerShell como trigger documentado
+
+- [credential-guard-ephemeral-bypass-json-structure-2026-10-08](credential-guard-ephemeral-bypass-json-structure-2026-10-08.md) — 🔴 **`credIsAllEphemeral` dispara mesmo quando Layer 1 já encontrou JWT** — `> /dev/null` em `new_str` Amazon Q `fs_write` (estrutura `"}}`) → exemption → RC=0; Windsurf `pre_write_code` não afetada (estrutura `"]}}` impede strip); correção: não chamar `credIsAllEphemeral` quando Layer 1 encontrou match; ML-1C REQ-2026-10-06
+
 - [claude-code-bash-matcher-nao-cobre-powershell-2026-10-07](claude-code-bash-matcher-nao-cobre-powershell-2026-10-07.md) — 🔴 **`"matcher": "Bash"` não casa `PowerShell` no Windows** — guard não dispara; corrigido para `"Bash|PowerShell"` via `claudeShellMatcher`; inventário de 7 outros CLIs incluído
 
 - [cobra-pai-sem-rune-sai-0-com-argumento-invalido-2026-10-06](cobra-pai-sem-rune-sai-0-com-argumento-invalido-2026-10-06.md) — 🔴 **comando pai cobra sem `RunE` sai 0 com subcomando inválido** (`flag.ErrHelp` engolido); `trackfw guard 'git-branch;'` liberava tudo no `cmd.exe`; teste o exit code do pai por subprocesso

@@ -1023,16 +1023,25 @@ func TestInjectWindsurfHooks_WritesGitBranchGuardHook(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected top-level \"hooks\" object, got %v", data["hooks"])
 	}
+	// ML-1B (REQ-2026-10-06): pre_run_command now has 2 entries — git-branch first, then
+	// credential — same byte order whether init or update (mergeSimpleCommandArray is idempotent).
 	pre, ok := hooksMap["pre_run_command"].([]interface{})
-	if !ok || len(pre) != 1 {
-		t.Fatalf("expected exactly 1 pre_run_command entry (idempotent across 2 runs), got %v", hooksMap["pre_run_command"])
+	if !ok || len(pre) != 2 {
+		t.Fatalf("expected exactly 2 pre_run_command entries (git-branch + credential, idempotent across 2 runs), got %v", hooksMap["pre_run_command"])
 	}
-	entry, _ := pre[0].(map[string]interface{})
-	if entry["command"] != guardGitBranchCmdPSPOSIX {
-		t.Errorf("expected command to be the inline trackfw guard git-branch command, got %v", entry["command"])
+	gitEntry, _ := pre[0].(map[string]interface{})
+	if gitEntry["command"] != guardGitBranchCmdPSPOSIX {
+		t.Errorf("expected pre_run_command[0] to be the git-branch-guard command, got %v", gitEntry["command"])
 	}
-	if entry["show_output"] != true {
-		t.Errorf("expected show_output=true, got %v", entry["show_output"])
+	if gitEntry["show_output"] != true {
+		t.Errorf("expected pre_run_command[0].show_output=true, got %v", gitEntry["show_output"])
+	}
+	credEntry, _ := pre[1].(map[string]interface{})
+	if credEntry["command"] != guardCredentialCmdPSPOSIX {
+		t.Errorf("expected pre_run_command[1] to be the credential-guard command, got %v", credEntry["command"])
+	}
+	if credEntry["show_output"] != true {
+		t.Errorf("expected pre_run_command[1].show_output=true, got %v", credEntry["show_output"])
 	}
 }
 
@@ -1081,25 +1090,31 @@ func TestInjectWindsurfHooks_PreservesOtherEvents(t *testing.T) {
 	if len(post) != 1 {
 		t.Errorf("expected pre-existing post_run_command entry to survive, got %v", post)
 	}
+	// ML-1B (REQ-2026-10-06): now 3 entries — pre-existing + git-branch + credential.
 	pre, _ := hooksMap["pre_run_command"].([]interface{})
-	if len(pre) != 2 {
-		t.Fatalf("expected 2 pre_run_command entries (pre-existing + git-guard), got %v", pre)
+	if len(pre) != 3 {
+		t.Fatalf("expected 3 pre_run_command entries (pre-existing + git-guard + credential), got %v", pre)
 	}
-	foundExisting, foundNew := false, false
+	foundExisting, foundGitBranch, foundCredential := false, false, false
 	for _, item := range pre {
 		obj, _ := item.(map[string]interface{})
 		switch obj["command"] {
 		case "some-other-tool-hook":
 			foundExisting = true
 		case guardGitBranchCmdPSPOSIX:
-			foundNew = true
+			foundGitBranch = true
+		case guardCredentialCmdPSPOSIX:
+			foundCredential = true
 		}
 	}
 	if !foundExisting {
 		t.Error("pre-existing pre_run_command entry was lost")
 	}
-	if !foundNew {
+	if !foundGitBranch {
 		t.Error("git-branch-guard pre_run_command entry was not added")
+	}
+	if !foundCredential {
+		t.Error("credential-guard pre_run_command entry was not added (ML-1B)")
 	}
 }
 
@@ -1125,15 +1140,29 @@ func TestInjectAmazonQHooks_CreateAndIdempotent(t *testing.T) {
 	if !helperHasClaudeHook(data, "preToolUse", "execute_bash", guardGitBranchCmdCmdExe) {
 		t.Error("hooks.preToolUse[execute_bash] missing the git-branch-guard command")
 	}
+	// ML-1B (REQ-2026-10-06): credential guard added to execute_bash and fs_write.
+	if !helperHasClaudeHook(data, "preToolUse", "execute_bash", guardCredentialCmdCmdExe) {
+		t.Error("hooks.preToolUse[execute_bash] missing the credential-guard command (ML-1B)")
+	}
+	if !helperHasClaudeHook(data, "preToolUse", "fs_write", guardCredentialCmdCmdExe) {
+		t.Error("hooks.preToolUse[fs_write] missing the credential-guard command (ML-1B)")
+	}
 	hooks, _ := data["hooks"].(map[string]interface{})
 	pre, _ := hooks["preToolUse"].([]interface{})
-	if len(pre) != 1 {
-		t.Errorf("expected exactly 1 preToolUse matcher entry (idempotent across 2 runs), got %d", len(pre))
+	// 2 matchers: execute_bash (git-branch + credential) and fs_write (credential only).
+	if len(pre) != 2 {
+		t.Errorf("expected exactly 2 preToolUse matcher entries (execute_bash + fs_write, idempotent across 2 runs), got %d", len(pre))
 	}
-	obj, _ := pre[0].(map[string]interface{})
-	inner, _ := obj["hooks"].([]interface{})
-	if len(inner) != 1 {
-		t.Errorf("expected exactly 1 command inside preToolUse[execute_bash] (idempotent across 2 runs), got %d", len(inner))
+	// find execute_bash matcher and assert it has exactly 2 inner hooks
+	for _, item := range pre {
+		obj, _ := item.(map[string]interface{})
+		if obj["matcher"] != "execute_bash" {
+			continue
+		}
+		inner, _ := obj["hooks"].([]interface{})
+		if len(inner) != 2 {
+			t.Errorf("expected exactly 2 commands inside preToolUse[execute_bash] (git-branch + credential, idempotent across 2 runs), got %d", len(inner))
+		}
 	}
 
 	toolsSettings, _ := data["toolsSettings"].(map[string]interface{})
@@ -1329,8 +1358,9 @@ func TestInjectAmazonQHooks_MigratesLegacyGitBranchGuardCmd(t *testing.T) {
 			continue
 		}
 		innerHooks, _ := obj["hooks"].([]interface{})
-		if len(innerHooks) != 1 {
-			t.Errorf("expected exactly 1 inner hook after migration (not duplicate), got %d: %v", len(innerHooks), innerHooks)
+		// ML-1B (REQ-2026-10-06): execute_bash now has 2 inner hooks: migrated git-branch + new credential.
+		if len(innerHooks) != 2 {
+			t.Errorf("expected exactly 2 inner hooks after migration (git-branch migrated + credential added, not duplicate), got %d: %v", len(innerHooks), innerHooks)
 		}
 		for _, h := range innerHooks {
 			hObj, _ := h.(map[string]interface{})

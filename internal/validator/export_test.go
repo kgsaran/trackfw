@@ -91,6 +91,14 @@ func StubProbeOKForTest(t testing.TB) {
 	})
 }
 
+// CredentialGuardGlobalExpectedCmdWindsurfForTest exposes the exact D11 revised global
+// credential guard command for Windsurf to the external test package (package validator_test).
+// Used by the ML-2C concordance test to verify that the validator and generator agree on the
+// same command string without importing generators (which would create an import cycle).
+func CredentialGuardGlobalExpectedCmdWindsurfForTest() string {
+	return credentialGuardGlobalExpectedCmdWindsurf()
+}
+
 // ChdirForTest changes the working directory to dir and resets the config singleton (required
 // because Validate* functions call os.Getwd() which is cached by config.Load). Restores both
 // on t.Cleanup. Safe to use from external test package (package validator_test).

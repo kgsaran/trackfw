@@ -499,21 +499,31 @@ func TestCredentialGuardScript_RedirectedToDevNull_Ephemeral_NoAlert(t *testing.
 	}
 }
 
-func TestCredentialGuardScript_RedirectedToMktempDirect_Ephemeral_NoAlert(t *testing.T) {
-	dir, script := setupCredentialGuardFixture(t, "")
+// TestCredentialGuardScript_RedirectedToMktempDirect_MetaChar_WarnMode afirma:
+// F2 (ML-2D): `echo JWT > $(mktemp)` contém `$(` (substituição de processo = metachar de shell)
+// → credIsSimpleCmd=false → isenção de forma ignorada → binário Go emite aviso (rc=0)
+// e escreve o arquivo de atenção. O script .sh (frozen) diverge intencionalmente (comportamento
+// pré-F2); por isso este teste exercita apenas o binário Go diretamente.
+func TestCredentialGuardScript_RedirectedToMktempDirect_MetaChar_WarnMode(t *testing.T) {
+	dir, _ := setupCredentialGuardFixture(t, "")
 	payload := `{"tool_name":"Bash","tool_input":{"command":"echo ` + syntheticJWT + ` > $(mktemp)"}}`
 
-	code, _, stderr := runCredentialGuard(t, dir, script, payload)
+	code, _, stderr := runGuardBinaryCredential(t, dir, payload, false)
 	if code != 0 {
-		t.Errorf("exit code: want 0, got %d (stderr: %s)", code, stderr)
+		t.Errorf("modo warn: exit code want 0, got %d (stderr: %s)", code, stderr)
 	}
-	if attentionFileExists(dir) {
-		t.Error("destino $(mktemp) deveria ser tratado como efêmero (sem alerta)")
+	if !attentionFileExists(dir) {
+		t.Error("F2: $(mktemp) contém metachar $( → não isento → arquivo de atenção deve existir")
 	}
 }
 
-func TestCredentialGuardScript_RedirectedToMktempVariable_Ephemeral_NoAlert(t *testing.T) {
-	dir, script := setupCredentialGuardFixture(t, "")
+// TestCredentialGuardScript_RedirectedToMktempVariable_MetaChar_WarnMode afirma:
+// F2 (ML-2D): `TMPFILE=$(mktemp); echo JWT > "$TMPFILE"` contém `;` (comando composto = metachar)
+// → credIsSimpleCmd=false → isenção de forma ignorada → binário Go emite aviso (rc=0)
+// e escreve o arquivo de atenção. O script .sh (frozen) diverge intencionalmente (comportamento
+// pré-F2); por isso este teste exercita apenas o binário Go diretamente.
+func TestCredentialGuardScript_RedirectedToMktempVariable_MetaChar_WarnMode(t *testing.T) {
+	dir, _ := setupCredentialGuardFixture(t, "")
 	cmd := `TMPFILE=$(mktemp); echo ` + syntheticJWT + ` > "$TMPFILE"`
 	// encoding/json.Marshal HTML-escapes '>' (>) by default — not representative of the
 	// raw JSON a hook harness sends over stdin. Use an Encoder with SetEscapeHTML(false) so the
@@ -528,12 +538,12 @@ func TestCredentialGuardScript_RedirectedToMktempVariable_Ephemeral_NoAlert(t *t
 		t.Fatal(err)
 	}
 
-	code, _, stderr := runCredentialGuard(t, dir, script, buf.String())
+	code, _, stderr := runGuardBinaryCredential(t, dir, buf.String(), false)
 	if code != 0 {
-		t.Errorf("exit code: want 0, got %d (stderr: %s)", code, stderr)
+		t.Errorf("modo warn: exit code want 0, got %d (stderr: %s)", code, stderr)
 	}
-	if attentionFileExists(dir) {
-		t.Error("variável atribuída via $(mktemp) deveria ser tratada como efêmera (sem alerta)")
+	if !attentionFileExists(dir) {
+		t.Error("F2: ; (ponto-e-vírgula) é metachar → não isento → arquivo de atenção deve existir")
 	}
 }
 

@@ -22,6 +22,23 @@ var jwtToken = "eyJ" + "TESTTOKEN" + "." + "TESTPAYLOAD12345" + "." + "TESTSIG67
 // Pattern: AKIA[0-9A-Z]{16}
 var awsKey = "AKIA" + "TESTKEYTESTKEY12"
 
+// jsonStr returns the JSON-encoded content of s, suitable for embedding inside
+// a JSON string literal (without the surrounding double-quote characters).
+//
+// On Windows, filepath separators (\) in paths must be JSON-encoded as \\
+// before concatenation into a JSON template string; otherwise the resulting
+// payload is syntactically invalid JSON and credExtractCmdAndCwd falls back
+// to the non-JSON path where "command_line" and "cwd" keys are not accessible.
+//
+// Note: json.Marshal escapes '<', '>', '&' to \uXXXX for HTML safety. Paths
+// never contain those characters, so this is not an issue for file-path args.
+// If you need to embed a general string that may contain those characters, use
+// json.NewEncoder with SetEscapeHTML(false) instead.
+func jsonStr(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b[1 : len(b)-1]) // strip surrounding quotes
+}
+
 // makeCredProjectDir creates a temp directory with a minimal trackfw.yaml.
 func makeCredProjectDir(t *testing.T, yamlContent string) string {
 	t.Helper()
@@ -296,8 +313,19 @@ func TestRunCredential_CRLFYamlModeNoBlock(t *testing.T) {
 
 // TestRunCredential_SecondLayerRedirectFile asserts that the second detection layer
 // scans non-ephemeral redirect target files for credential patterns.
+//
 // Assertion: payload without literal credential but redirecting to a file containing
-// a JWT → layer 2a finds the match → applies mode.
+// a JWT → Layer 2 finds the match → RC=2.
+// On POSIX, Layer 2a finds it (redirect target is an absolute path with no ':').
+// On Windows, credRedirectRe excludes ':' so the redirect target is truncated to
+// the drive letter only (e.g. "C"); Layer 2a misses it. Layer 2b rescues: "cat"
+// is argv0 and the absolute path appears as a subsequent token after tokenisation
+// by strings.Fields — credScanFile finds the file. This is the pre-PR (main)
+// behaviour: main's credCmdLineRe extracted the same command and Layer 2b did the
+// same scan. The test assertion (RC=2) is correct on both platforms; the layer
+// responsible differs.
+// Falsification: remove credNonJSONLayerTwoB call + disable Layer 2b for non-JSON →
+// RC=0 on Windows (because Layer 2a truncates at ':' and the non-JSON fallback is gone).
 func TestRunCredential_SecondLayerRedirectFile(t *testing.T) {
 	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
 
@@ -308,7 +336,8 @@ func TestRunCredential_SecondLayerRedirectFile(t *testing.T) {
 	}
 
 	// Payload: redirects to the token file (no JWT in the payload itself).
-	payload := `{"tool_input":{"command":"cat secret > ` + tokenFile + `"}}`
+	// jsonStr encodes backslashes in Windows paths so the payload is valid JSON.
+	payload := `{"tool_input":{"command":"cat secret > ` + jsonStr(tokenFile) + `"}}`
 	code, _, errOut := runCred(t, dir, payload)
 
 	if code != 2 {
@@ -318,7 +347,13 @@ func TestRunCredential_SecondLayerRedirectFile(t *testing.T) {
 
 // TestRunCredential_SecondLayerCatArg asserts that the second detection layer (2b)
 // scans file arguments of cat/head/tail/jq/grep for credential patterns.
-// Assertion: "cat /path/to/token.txt" where the file contains a JWT → layer 2b finds match.
+//
+// Assertion: "cat /path/to/token.txt" where the file contains a JWT → Layer 2b
+// tokenises the JSON-decoded command; credScanFile receives the decoded path
+// as-is (no backslash-escape processing) and opens the file → JWT found → RC=2.
+// On Windows the decoded path has backslash separators; os.Stat handles them
+// natively without any additional unescaping (H2 measurement for ML-2E).
+// Falsification: strip backslash-prefixed chars from Layer 2b tokens → RC=0 on Windows.
 func TestRunCredential_SecondLayerCatArg(t *testing.T) {
 	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
 
@@ -328,11 +363,41 @@ func TestRunCredential_SecondLayerCatArg(t *testing.T) {
 	}
 
 	// Payload: command is "cat <file>" — no JWT literal in the payload.
-	payload := `{"tool_input":{"command":"cat ` + tokenFile + `"}}`
+	// jsonStr encodes backslashes in Windows paths so the payload is valid JSON.
+	payload := `{"tool_input":{"command":"cat ` + jsonStr(tokenFile) + `"}}`
 	code, _, errOut := runCred(t, dir, payload)
 
 	if code != 2 {
 		t.Fatalf("layer 2b: expected exit 2 for cat of JWT file, got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_InvalidJSONFallback_LayerTwoB asserts that when the JSON
+// payload contains a syntactically invalid escape sequence ("\q" is not a valid
+// JSON escape), credExtractCmdAndCwd returns isJSON=false, but credNonJSONLayerTwoB
+// still extracts the "command" field via credCmdLineRe and runs Layer 2b — finding
+// the JWT file referenced in the command.
+//
+// Reconciliation: asserts that credNonJSONLayerTwoB extracts the command via regex
+// from non-JSON text and Layer 2b scans the referenced file, returning RC=2.
+// This is the production fix for the non-JSON fallback path (ML-2E H1): any
+// payload that fails JSON parsing (not just Windows paths) retains Layer 2b coverage
+// for "command" field values.
+// Falsification: remove the credNonJSONLayerTwoB call in RunCredential → RC=0 (Layer
+// 2b silent; Layer 1 found nothing in the payload; no other layer catches the file).
+func TestRunCredential_InvalidJSONFallback_LayerTwoB(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	tokenFile := filepath.Join(dir, "secret.txt")
+	if err := os.WriteFile(tokenFile, []byte(jwtToken), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// "\q" is not a valid JSON escape — this makes the JSON invalid on every platform.
+	// The file path itself has no backslashes (uses the platform separator from TempDir),
+	// so the regex extraction works and credScanFile finds the file.
+	invalidJSON := `{"x":"\q","tool_input":{"command":"cat ` + tokenFile + `"}}`
+	code, _, errOut := runCred(t, dir, invalidJSON)
+	if code != 2 {
+		t.Fatalf("invalid JSON fallback: expected RC=2 (credNonJSONLayerTwoB extracts command via regex), got %d (stderr=%q)", code, errOut)
 	}
 }
 
@@ -583,5 +648,659 @@ func TestRunCredentialGlobal_WarnNoDirNoFileCreated(t *testing.T) {
 	// docs/roadmaps must not have been created.
 	if _, err := os.Stat(filepath.Join(dir, "docs", "roadmaps")); err == nil {
 		t.Error("global guard must NOT create docs/roadmaps when it doesn't exist")
+	}
+}
+
+// --- ML-1C tests: JSON payload extraction and ephemeral exemption fix ---
+//
+// The tests below cover three classes of defect corrected in ML-1C:
+//
+//   R1a: credCmdLineRe did not match "tool_info.command_line" (Windsurf schema),
+//        so Layer 2b was blind to files referenced via Windsurf pre_run_command.
+//   R1e: credCmdLineRe stopped at the first unescaped " in the raw JSON, so
+//        cat "JWTFILE" was truncated to cat and the file was not scanned.
+//   EE4: credIsAllEphemeral was evaluated on the entire raw JSON, so "> /dev/null"
+//        appearing in write content (new_str, content, edits[*].new_string)
+//        triggered the ephemeral exemption even when no shell command was present.
+//
+// Falsification directions referenced in individual tests:
+//   (a) Revert to exemption on raw JSON → Write/Edit/fs_write EE4 cases give RC=0.
+//   (b) Remove exemption entirely → echo JWT > /dev/null cases give RC=2.
+//   (c) Revert Layer 2b to credCmdLineRe → R1a and R1e cases give RC=0.
+
+// TestRunCredential_WindsurfPreRunCommandCatFile_R1aFix asserts that a Windsurf
+// pre_run_command payload with a file path in tool_info.command_line is detected
+// by Layer 2b after JSON extraction of the command_line field.
+//
+// Assertion: JSON parse extracts tool_info.command_line; Layer 2b scans the
+// referenced file and finds the JWT — ML-1C fix for R1a (pre-fix RC=0).
+// Falsification (c): reverting Layer 2b to credCmdLineRe gives RC=0.
+func TestRunCredential_WindsurfPreRunCommandCatFile_R1aFix(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	tokenFile := filepath.Join(dir, "jwtfile.txt")
+	if err := os.WriteFile(tokenFile, []byte(jwtToken), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Windsurf pre_run_command payload: command is in tool_info.command_line, not tool_input.command.
+	// jsonStr encodes backslashes in Windows paths so the payload is valid JSON.
+	payload := `{"agent_action_name":"pre_run_command","tool_info":{"command_line":"cat ` + jsonStr(tokenFile) + `","cwd":"` + jsonStr(dir) + `"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("R1a: expected RC=2 (Layer 2b via tool_info.command_line), got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_WindsurfPreRunCommandClean_Allows asserts that a Windsurf
+// pre_run_command payload with a clean command_line (no credential) gives RC=0.
+//
+// Assertion: JSON extraction of tool_info.command_line does not produce false
+// positives — no JWT in the referenced file → RC=0.
+func TestRunCredential_WindsurfPreRunCommandClean_Allows(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	cleanFile := filepath.Join(dir, "clean.txt")
+	if err := os.WriteFile(cleanFile, []byte("no secrets here"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	payload := `{"agent_action_name":"pre_run_command","tool_info":{"command_line":"cat ` + jsonStr(cleanFile) + `","cwd":"` + jsonStr(dir) + `"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 0 {
+		t.Fatalf("Windsurf clean command_line: expected RC=0, got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_AmazonQExecuteBashCatQuotedPath_R1eFix asserts that a quoted
+// file path in Amazon Q execute_bash command is correctly unescaped via JSON decode
+// and the file is scanned by Layer 2b.
+//
+// Assertion: JSON decode of tool_input.command converts \" to "; credResolveArg
+// strips the surrounding quotes; credScanFile opens the file and finds JWT —
+// ML-1C fix for R1e (pre-fix RC=0 because credCmdLineRe stopped at first ").
+// Falsification (c): reverting Layer 2b to credCmdLineRe gives RC=0.
+func TestRunCredential_AmazonQExecuteBashCatQuotedPath_R1eFix(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	tokenFile := filepath.Join(dir, "secret.txt")
+	if err := os.WriteFile(tokenFile, []byte(jwtToken), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// The JSON value for command has escaped quotes around the path: "cat \"secret.txt\""
+	// After JSON decode by credExtractCmdAndCwd, shellCmd = cat "secret.txt".
+	// credResolveArg strips the surrounding quotes → secret.txt → scanned.
+	// jsonStr encodes backslashes in Windows paths so the payload is valid JSON.
+	payload := `{"hook_event_name":"PreToolUse","tool_name":"execute_bash","tool_input":{"command":"cat \"` + jsonStr(tokenFile) + `\""}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("R1e: expected RC=2 (quoted path unescaped via JSON decode), got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_ClaudeCodeWriteJWTDevNull_EE4Fix asserts that a Claude Code
+// Write payload with a JWT and "> /dev/null" embedded in the file content is
+// blocked: the ephemeral exemption must NOT fire for write payloads.
+//
+// Assertion: Write payload has no tool_input.command field; shellCmd is ""; the
+// redirect scan on "" finds no redirect; credIsAllEphemeral returns false; Layer 1
+// detected the JWT → RC=2 — ML-1C fix for EE4 (pre-fix RC=0).
+// Falsification (a): reverting to exemption on raw JSON gives RC=0 (this test fails).
+func TestRunCredential_ClaudeCodeWriteJWTDevNull_EE4Fix(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	// NOTE: "> /dev/null" is part of the file *content* being written, not a shell redirect.
+	payload := `{"tool_name":"Write","tool_input":{"file_path":"/tmp/x.py","content":"` + jwtToken + ` > /dev/null"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("EE4 Write: expected RC=2 (no exemption for write content), got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_ClaudeCodeEditJWTDevNull_EE4Fix asserts that a Claude Code
+// Edit payload with a JWT and "> /dev/null" embedded in new_string is blocked.
+//
+// Assertion: Edit payload has no tool_input.command field; same mechanism as
+// Write — ephemeral exemption does not fire → RC=2 — ML-1C fix for EE4.
+// Falsification (a): reverting to exemption on raw JSON gives RC=0 (this test fails).
+func TestRunCredential_ClaudeCodeEditJWTDevNull_EE4Fix(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	payload := `{"tool_name":"Edit","tool_input":{"file_path":"/tmp/x.py","new_string":"` + jwtToken + ` > /dev/null","old_string":"old"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("EE4 Edit: expected RC=2 (no exemption for edit content), got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_AmazonQFsWriteJWTDevNull_EE4Fix asserts that an Amazon Q
+// fs_write str_replace payload with a JWT and "> /dev/null" in new_str is blocked.
+//
+// Assertion: tool_name "fs_write" causes credExtractCmdAndCwd to return shellCmd="";
+// redirect scan on "" finds no redirect; credIsAllEphemeral returns false; Layer 1
+// detected the JWT → RC=2 — ML-1C fix for Vector EE4 (pre-fix RC=0).
+// Falsification (a): reverting to exemption on raw JSON gives RC=0 (this test fails).
+func TestRunCredential_AmazonQFsWriteJWTDevNull_EE4Fix(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	// new_str contains JWT + "> /dev/null" — an attempted bypass via EE4.
+	payload := `{"hook_event_name":"PreToolUse","tool_name":"fs_write","tool_input":{"command":"str_replace","path":"/p/f.py","old_str":"old","new_str":"` + jwtToken + ` > /dev/null"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("EE4 fs_write: expected RC=2 (tool_name fs_write, no shell exemption), got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_AmazonQExecuteBashEchoJWTDevNull_ExemptionPreserved asserts
+// that the ephemeral exemption is preserved for Amazon Q execute_bash when the
+// JWT is inlined in the shell command redirected only to /dev/null.
+//
+// Assertion: shellCmd extracted via tool_input.command contains the JWT; redirect
+// scan on shellCmd finds "> /dev/null"; credIsAllEphemeral returns true; ML-1C
+// must not regress the bash-echo exemption for execute_bash — RC=0.
+// Falsification (b): removing the exemption gives RC=2 (this test fails).
+func TestRunCredential_AmazonQExecuteBashEchoJWTDevNull_ExemptionPreserved(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	payload := `{"hook_event_name":"PreToolUse","tool_name":"execute_bash","tool_input":{"command":"echo ` + jwtToken + ` > /dev/null"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 0 {
+		t.Fatalf("execute_bash echo to /dev/null: expected RC=0 (ephemeral exemption), got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_WindsurfEchoJWTDevNull_ExemptionPreserved asserts that the
+// ephemeral exemption is preserved for Windsurf pre_run_command when the JWT is
+// inlined in the command_line value redirected only to /dev/null.
+//
+// Assertion: shellCmd extracted via tool_info.command_line contains the JWT;
+// redirect scan on shellCmd finds "> /dev/null"; credIsAllEphemeral returns true;
+// ML-1C must not regress the echo exemption for Windsurf — RC=0.
+// Falsification (b): removing the exemption gives RC=2 (this test fails).
+func TestRunCredential_WindsurfEchoJWTDevNull_ExemptionPreserved(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	// jsonStr encodes backslashes in Windows paths so the cwd field is valid JSON
+	// and credExtractCmdAndCwd returns isJSON=true, enabling the correct JSON
+	// exemption path (credIsSimpleCmd on the extracted command, not on raw text).
+	payload := `{"agent_action_name":"pre_run_command","tool_info":{"command_line":"echo ` + jwtToken + ` > /dev/null","cwd":"` + jsonStr(dir) + `"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 0 {
+		t.Fatalf("Windsurf echo to /dev/null: expected RC=0 (ephemeral exemption), got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_WindsurfPreWriteCodeSingleEdit_Blocks asserts that a Windsurf
+// pre_write_code payload with a single edit containing a JWT is blocked.
+//
+// Assertion: pre_write_code has no command field; shellCmd is ""; Layer 1 detects
+// the JWT; no ephemeral exemption fires → RC=2. This matches the pre-ML-1C
+// behavior (the single-edit case was already RC=2 by accident of JSON structure,
+// now it is RC=2 by correct logic).
+func TestRunCredential_WindsurfPreWriteCodeSingleEdit_Blocks(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	payload := `{"agent_action_name":"pre_write_code","tool_info":{"file_path":"/f.py","edits":[{"old_string":"old","new_string":"` + jwtToken + `"}]}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("Windsurf pre_write_code single edit: expected RC=2, got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_WindsurfPreWriteCodeTwoEditsJWTDevNull_Blocks asserts that a
+// Windsurf pre_write_code payload with TWO edits — the first containing a JWT and
+// "> /dev/null" — is blocked.
+//
+// Assertion: In the pre-ML-1C code, the redirect regex stopped at the "," separator
+// between edits, leaving "> /dev/null"}" whose target cleaned to "/dev/null",
+// triggering the ephemeral exemption (RC=0). With ML-1C, shellCmd is "" for
+// pre_write_code; redirect scan on "" finds no redirect; exemption does not fire →
+// RC=2. This is a new finding: the two-edit case was a bypass in the pre-fix code.
+// Falsification (a): reverting to exemption on raw JSON gives RC=0 (this test fails).
+func TestRunCredential_WindsurfPreWriteCodeTwoEditsJWTDevNull_Blocks(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	// Two edits: first has JWT + "> /dev/null", second is clean.
+	// The "> /dev/null"," pattern in raw JSON was exploitable pre-ML-1C.
+	payload := `{"agent_action_name":"pre_write_code","tool_info":{"file_path":"/f.py","edits":[{"old_string":"","new_string":"` + jwtToken + ` > /dev/null"},{"new_string":"second"}]}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("Windsurf pre_write_code two-edits bypass: expected RC=2 (ML-1C structurally correct), got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_WindsurfCommandLineCwdResolution asserts that a relative path
+// in tool_info.command_line is resolved against tool_info.cwd (not the process cwd).
+//
+// Assertion: the process cwd is a project dir without token.txt; tool_info.cwd
+// points to a separate dir containing token.txt; "cat token.txt" is resolved to
+// cwd/token.txt via credResolveArg; credScanFile finds JWT → RC=2.
+func TestRunCredential_WindsurfCommandLineCwdResolution(t *testing.T) {
+	projDir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+
+	// Separate dir with the token file — not in the process cwd.
+	tokenDir := t.TempDir()
+	tokenFile := filepath.Join(tokenDir, "token.txt")
+	if err := os.WriteFile(tokenFile, []byte(jwtToken), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// command_line uses a relative path; cwd points to tokenDir.
+	// jsonStr encodes backslashes in Windows paths so the payload is valid JSON.
+	payload := `{"agent_action_name":"pre_run_command","tool_info":{"command_line":"cat token.txt","cwd":"` + jsonStr(tokenDir) + `"}}`
+	code, _, errOut := runCred(t, projDir, payload)
+	if code != 2 {
+		t.Fatalf("cwd resolution: expected RC=2 (relative path resolved via tool_info.cwd), got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_CwdResolution_MissWithoutCwd asserts that the same relative
+// path WITHOUT a tool_info.cwd is not found when the token file is in a
+// different directory than the process cwd.
+//
+// Assertion: without cwd, "cat token.txt" resolves against the process cwd
+// (projDir); token.txt is in tokenDir only → credScanFile finds no file → RC=0.
+// This confirms that cwd resolution is the mechanism that makes the previous
+// test pass, not an accidental match.
+func TestRunCredential_CwdResolution_MissWithoutCwd(t *testing.T) {
+	projDir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+
+	tokenDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(tokenDir, "token.txt"), []byte(jwtToken), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// No cwd field — relative path resolves against process cwd (projDir), token.txt absent there.
+	payload := `{"agent_action_name":"pre_run_command","tool_info":{"command_line":"cat token.txt"}}`
+	code, _, _ := runCred(t, projDir, payload)
+	if code != 0 {
+		t.Fatalf("no cwd: expected RC=0 (relative path not found in process cwd), got %d", code)
+	}
+}
+
+// TestRunCredential_AmazonQFsWriteClean_Allows asserts that an Amazon Q fs_write
+// payload without a JWT in the content is allowed.
+//
+// Assertion: tool_name "fs_write" → shellCmd=""; Layer 1 finds no JWT → RC=0.
+// No false positive from the fs_write tool_name exclusion.
+func TestRunCredential_AmazonQFsWriteClean_Allows(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	payload := `{"hook_event_name":"PreToolUse","tool_name":"fs_write","tool_input":{"command":"create","path":"/p/f.py","file_text":"hello world"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 0 {
+		t.Fatalf("fs_write clean: expected RC=0, got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_AmazonQFsWriteJWTCreate_Blocks asserts that an Amazon Q
+// fs_write "create" payload with a JWT in file_text is blocked by Layer 1.
+//
+// Assertion: tool_name "fs_write" → shellCmd=""; Layer 1 finds JWT in file_text;
+// no ephemeral exemption → RC=2.
+func TestRunCredential_AmazonQFsWriteJWTCreate_Blocks(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	payload := `{"hook_event_name":"PreToolUse","tool_name":"fs_write","tool_input":{"command":"create","path":"/p/f.py","file_text":"` + jwtToken + `"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("fs_write JWT in file_text: expected RC=2, got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// --- Global scope (RunCredentialGlobal) variants ---
+
+// TestRunCredentialGlobal_AmazonQFsWriteJWTDevNull_EE4Fix asserts that the EE4
+// fix applies in global scope as well as project scope.
+//
+// Assertion: RunCredentialGlobal has the same JSON-aware extraction and exemption
+// logic as RunCredential; fs_write with JWT + "> /dev/null" → RC=2.
+// Falsification (a): reverting global scope to raw-JSON exemption gives RC=0.
+func TestRunCredentialGlobal_AmazonQFsWriteJWTDevNull_EE4Fix(t *testing.T) {
+	// No trackfw.yaml → global default mode = "block".
+	dir := t.TempDir()
+	payload := `{"hook_event_name":"PreToolUse","tool_name":"fs_write","tool_input":{"command":"str_replace","path":"/p/f.py","old_str":"old","new_str":"` + jwtToken + ` > /dev/null"}}`
+	code, _, errOut := runCredGlobal(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("global EE4 fs_write: expected RC=2, got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredentialGlobal_WindsurfCatFile_R1aFix asserts that the R1a fix applies
+// in global scope.
+//
+// Assertion: RunCredentialGlobal extracts tool_info.command_line via JSON parse;
+// Layer 2b scans the referenced file; JWT found → RC=2.
+// Falsification (c): reverting Layer 2b to credCmdLineRe gives RC=0.
+func TestRunCredentialGlobal_WindsurfCatFile_R1aFix(t *testing.T) {
+	dir := t.TempDir() // no trackfw.yaml → global default block
+	tokenFile := filepath.Join(dir, "jwtfile.txt")
+	if err := os.WriteFile(tokenFile, []byte(jwtToken), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// jsonStr encodes backslashes in Windows paths so the payload is valid JSON.
+	payload := `{"agent_action_name":"pre_run_command","tool_info":{"command_line":"cat ` + jsonStr(tokenFile) + `","cwd":"` + jsonStr(dir) + `"}}`
+	code, _, errOut := runCredGlobal(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("global R1a: expected RC=2, got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// --------------------------------------------------------------------------
+// ML-1D (REQ-2026-10-06) AC5 — Codex PreToolUse payload tests
+//
+// Codex CLI uses PreToolUse[matcher:"Bash"] with tool_input.command (string).
+// The hook payload schema is identical to Claude Code for the command field.
+// Source: internal/generators/agentfiles.go (InjectCodexHooks), docs/pesquisa/
+// 2026-08-12-semantica-de-falha-de-hook-codex.md. tool_input.command is a
+// string (not an array) in PreToolUse payloads; extractNested returns "" for
+// non-string values (see payload.go:219 "Non-string JSON value → treat as absent").
+// --------------------------------------------------------------------------
+
+// TestRunCredential_CodexPreToolUseCatFile_Blocks asserts that a Codex PreToolUse
+// payload with tool_input.command = "cat <file>" where the file contains a JWT
+// is blocked.
+//
+// Assertion: credExtractCmdAndCwd extracts shellCmd via tool_input.command; Layer 2b
+// glob-expands the path and scans the file; JWT found → RC=2. This is the same
+// mechanism as Claude Code tests using tool_input.command (same schema).
+// Falsification (d): write an empty tool_input.command → extractor blind → RC=0.
+func TestRunCredential_CodexPreToolUseCatFile_Blocks(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	tokenFile := filepath.Join(dir, "secret.txt")
+	if err := os.WriteFile(tokenFile, []byte(jwtToken), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Codex PreToolUse payload: hook_event_name PreToolUse, tool_name Bash,
+	// tool_input.command is a plain cat command with the absolute path.
+	// jsonStr encodes backslashes in Windows paths so the payload is valid JSON.
+	payload := `{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"cat ` + jsonStr(tokenFile) + `"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("Codex cat file: expected RC=2 (JWT in file), got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_CodexPreToolUseCatQuotedFile_Blocks asserts that a Codex
+// PreToolUse payload with a JSON-escaped quoted path ("cat \"<file>\"") is blocked.
+//
+// Assertion: JSON decode of tool_input.command unescapes \" → "; credResolveArg
+// strips the surrounding quotes → plain path → Layer 2b scans the file → RC=2.
+// Same mechanism as TestRunCredential_AmazonQExecuteBashCatQuotedPath_R1eFix.
+// Falsification (d): reverting to credCmdLineRe (which stopped at first ") → RC=0.
+func TestRunCredential_CodexPreToolUseCatQuotedFile_Blocks(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	tokenFile := filepath.Join(dir, "secret.txt")
+	if err := os.WriteFile(tokenFile, []byte(jwtToken), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// JSON-encoded: command = cat "<tokenFile>" — the file path is quoted.
+	// jsonStr encodes backslashes in Windows paths so the payload is valid JSON.
+	payload := `{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"cat \"` + jsonStr(tokenFile) + `\""}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("Codex cat quoted file: expected RC=2 (JWT in file), got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_CodexPreToolUseEchoJWTDevNull_Exempt asserts that the
+// ephemeral exemption fires for a Codex PreToolUse echo command that redirects
+// the JWT only to /dev/null (no credential materialization).
+//
+// Assertion: credExtractCmdAndCwd extracts shellCmd via tool_input.command;
+// redirect scan on shellCmd finds "> /dev/null"; credIsAllEphemeral returns true;
+// Layer 1 found the JWT but all redirects are ephemeral → RC=0.
+// Same mechanism as Claude Code echo-to-devnull exemption.
+// Falsification (b): removing credIsAllEphemeral check → RC=2 (this test fails).
+func TestRunCredential_CodexPreToolUseEchoJWTDevNull_Exempt(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	payload := `{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"echo ` + jwtToken + ` > /dev/null"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 0 {
+		t.Fatalf("Codex echo to /dev/null: expected RC=0 (ephemeral exemption), got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// --------------------------------------------------------------------------
+// F3 tests (ML-2C): BOM in JSON payload must not disable Layer 2b
+// --------------------------------------------------------------------------
+
+// TestRunCredential_BOMPayload_LayerTwoStillActive asserts that a UTF-8 BOM
+// prepended to a valid JSON payload does not disable Layer 2b — the cat-file
+// command must still be detected and blocked.
+//
+// Reconciliação: afirma que `json.Unmarshal(stripped, &root)` (não `data`) é
+// usado em credExtractCmdAndCwd — BOM não desativa Layer 2b — cat de arquivo
+// com JWT com BOM deve retornar RC=2 (regressão do ML-1C).
+// Falsificação: reverter para json.Unmarshal(data, &root) → isJSON=false → RC=0.
+func TestRunCredential_BOMPayload_LayerTwoStillActive(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	tokenFile := filepath.Join(dir, "secret.txt")
+	if err := os.WriteFile(tokenFile, []byte(jwtToken), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// Prepend UTF-8 BOM (0xEF 0xBB 0xBF) to the JSON payload.
+	// jsonStr encodes backslashes in Windows paths so the payload is valid JSON.
+	bom := []byte{0xEF, 0xBB, 0xBF}
+	payload := string(bom) + `{"tool_input":{"command":"cat ` + jsonStr(tokenFile) + `"}}`
+
+	var stdout, stderr bytes.Buffer
+	origDir, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+
+	code := RunCredential(bytes.NewReader([]byte(payload)), &stdout, &stderr)
+	if code != 2 {
+		t.Fatalf("BOM + cat file: expected RC=2 (Layer 2b active despite BOM), got %d (stderr=%q)", code, stderr.String())
+	}
+}
+
+// TestRunCredential_BOMPayload_EchoDevNull_StillExempt asserts that the ephemeral
+// exemption still fires for a BOM-prefixed echo-to-/dev/null payload (BOM fix
+// does not regress the exemption).
+//
+// Reconciliação: afirma que BOM não destrói a isenção efêmera — echo JWT >
+// /dev/null com BOM deve retornar RC=0 (a isenção depende de credIsSimpleCmd +
+// credAllTargetsAreDevNull, não de isJSON falso).
+func TestRunCredential_BOMPayload_EchoDevNull_StillExempt(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	bom := []byte{0xEF, 0xBB, 0xBF}
+	payload := string(bom) + `{"tool_input":{"command":"echo ` + jwtToken + ` > /dev/null"}}`
+
+	var stdout, stderr bytes.Buffer
+	origDir, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origDir) })
+
+	code := RunCredential(bytes.NewReader([]byte(payload)), &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("BOM + echo to /dev/null: expected RC=0 (ephemeral exemption), got %d (stderr=%q)", code, stderr.String())
+	}
+}
+
+// --------------------------------------------------------------------------
+// F4 tests (ML-2C): deep walk of all command/command_line values
+// --------------------------------------------------------------------------
+
+// TestRunCredential_DeepCommand_NonStandardSchema_Blocks asserts that a payload
+// with "command" nested under a non-standard key ("params") is detected by the
+// F4 deep walk and blocked.
+//
+// Reconciliação: afirma que credDeepScan encontra "cat <file>" em params.command
+// e retorna match — RC=2 (antes do F4: RC=0, os 4 paths fixos não cobriam params).
+// Falsificação: remover credDeepScan call → RC=0.
+func TestRunCredential_DeepCommand_NonStandardSchema_Blocks(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	tokenFile := filepath.Join(dir, "secret.txt")
+	if err := os.WriteFile(tokenFile, []byte(jwtToken), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// jsonStr encodes backslashes in Windows paths so the payload is valid JSON.
+	payload := `{"params":{"command":"cat ` + jsonStr(tokenFile) + `"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("deep params.command cat file: expected RC=2, got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_PriorityOneCommandWithSecondaryMalicious_Blocks asserts that a
+// payload with tool_input.command="echo hi" (primary, no JWT) AND
+// tool_info.command_line="cat <file>" (secondary, JWT in file) is blocked — F4
+// changes the previous "Priority-1 wins" RC=0 to RC=2 (intended by ML-2C).
+//
+// Reconciliação: afirma que credDeepScan varre também o command_line secundário —
+// o arquivo referenciado tem JWT → RC=2 (comportamento anterior: RC=0 pois Layer 2b
+// só via primary shellCmd="echo hi" → no match).
+// Falsificação: remover credDeepScan call → RC=0.
+func TestRunCredential_PriorityOneCommandWithSecondaryMalicious_Blocks(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	tokenFile := filepath.Join(dir, "secret.txt")
+	if err := os.WriteFile(tokenFile, []byte(jwtToken), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// jsonStr encodes backslashes in Windows paths so the payload is valid JSON.
+	payload := `{"tool_input":{"command":"echo hi"},"tool_info":{"command_line":"cat ` + jsonStr(tokenFile) + `"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("priority-1 echo + secondary cat file: expected RC=2 (F4), got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_FSWriteDeepScan_Excluded asserts that an fs_write payload with
+// a "command" field inside tool_input is NOT scanned for credentials — the fs_write
+// exclusion prevents treating the enum tag as a shell command in the deep walk.
+//
+// Reconciliação: afirma que credDeepScan exclui tool_input de payloads fs_write —
+// um arquivo com JWT não é detectado via tool_input.command="str_replace" → RC=0.
+// Falsificação: remover o delete(m, "tool_input") em credDeepScan → se o arquivo
+// existe, RC=2 (falso positivo para fs_write).
+func TestRunCredential_FSWriteDeepScan_Excluded(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	// fs_write: tool_input.command carries the enum tag "str_replace", not a shell command.
+	// The payload itself does not contain any JWT pattern.
+	payload := `{"tool_name":"fs_write","tool_input":{"command":"str_replace","path":"/tmp/f","old_str":"a","new_str":"b"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 0 {
+		t.Fatalf("fs_write deep scan excluded: expected RC=0, got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// --------------------------------------------------------------------------
+// F2 tests (ML-2D): shape-based exemption gate
+// --------------------------------------------------------------------------
+
+// TestRunCredential_EchoPipe_NotExempt asserts that "echo JWT | tee out.txt > /dev/null"
+// is NOT exempt because '|' is a pipeline metacharacter → credIsSimpleCmd=false → RC=2.
+//
+// Reconciliação: afirma que credHasShellMeta detecta '|' → credIsSimpleCmd=false →
+// exemption não dispara → RC=2.
+// Falsificação: remover '|' do credHasShellMeta switch → RC=0 (bypass).
+func TestRunCredential_EchoPipe_NotExempt(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	payload := `{"tool_input":{"command":"echo ` + jwtToken + ` | tee out.txt > /dev/null"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("echo pipe tee: expected RC=2 (pipeline meta), got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_PrintfDevNullFdDup_Exempt asserts that
+// "printf JWT > /dev/null 2>&1" IS exempt — 2>&1 is an fd-dup redirect
+// (credIsRedirectAmpersand returns true), not a metacharacter, and printf is in
+// the argv0 allowlist.
+//
+// Reconciliação: afirma que credIsRedirectAmpersand identifica '&' em 2>&1 como
+// fd-dup (não meta), argv0="printf" está na allowlist, target="/dev/null" exato →
+// RC=0.
+// Falsificação: tratar '&' em 2>&1 como meta → RC=2.
+func TestRunCredential_PrintfDevNullFdDup_Exempt(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	payload := `{"tool_input":{"command":"printf ` + jwtToken + ` > /dev/null 2>&1"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 0 {
+		t.Fatalf("printf > /dev/null 2>&1: expected RC=0 (fd-dup not meta, printf in allowlist), got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_EchoBackground_NotExempt asserts that
+// "echo JWT > /dev/null & python3 -c 'x'" is NOT exempt because '&' (background
+// operator) is a standalone shell metacharacter → credIsSimpleCmd=false → RC=2.
+//
+// Reconciliação: afirma que '&' não precedido por '>' é meta (background op) →
+// credHasShellMeta=true → RC=2.
+// Falsificação: tratar todo '&' como fd-dup → RC=0 (bypass).
+func TestRunCredential_EchoBackground_NotExempt(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	payload := `{"tool_input":{"command":"echo ` + jwtToken + ` > /dev/null & python3 -c 'x'"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("echo background: expected RC=2 (background meta), got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_EchoSemicolon_NotExempt asserts that
+// "echo JWT > /dev/null; cat arq" is NOT exempt because ';' is a command
+// separator metacharacter → credIsSimpleCmd=false → RC=2.
+//
+// Reconciliação: afirma que ';' → credHasShellMeta=true → RC=2.
+// Falsificação: remover ';' do credHasShellMeta switch → RC=0.
+func TestRunCredential_EchoSemicolon_NotExempt(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	payload := `{"tool_input":{"command":"echo ` + jwtToken + ` > /dev/null; cat arq"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("echo semicolon cat: expected RC=2 (semicolon meta), got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_Python3_NotExempt asserts that "python3 -c 'print(JWT)' > /dev/null"
+// is NOT exempt because argv0="python3" is not in {echo, printf} → credIsSimpleCmd=false → RC=2.
+//
+// Reconciliação: afirma que argv0="python3" ∉ {echo,printf} → credIsSimpleCmd=false → RC=2.
+// Falsificação: expandir allowlist para incluir python3 → RC=0 (bypass).
+func TestRunCredential_Python3_NotExempt(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	payload := `{"tool_input":{"command":"python3 -c 'print(` + jwtToken + `)' > /dev/null"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("python3 not in allowlist: expected RC=2, got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_EchoMktempFile_NotExempt asserts that "echo JWT > mktemp.txt"
+// is NOT exempt because the target "/dev/null" requirement fails for "mktemp.txt"
+// (credAllTargetsAreDevNull closes the mktemp-filename bypass).
+//
+// Reconciliação: afirma que credAllTargetsAreDevNull rejeita "mktemp.txt" como alvo —
+// even though credIsEphemeralTarget sees "mktemp" substring and returns true,
+// credAllTargetsAreDevNull requires exactly "/dev/null" → RC=2.
+// Falsificação: remover credAllTargetsAreDevNull check → RC=0 (bypass via filename).
+func TestRunCredential_EchoMktempFile_NotExempt(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	payload := `{"tool_input":{"command":"echo ` + jwtToken + ` > mktemp.txt"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("echo to mktemp.txt: expected RC=2 (mktemp filename bypass closed), got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_EchoFileRedirectAmpersand_NotExempt asserts that
+// "echo JWT > /dev/null >&out.txt" is NOT exempt: '>&out.txt' has '&' preceded
+// by '>' but followed by 'o' (non-digit, non-'-') so credIsRedirectAmpersand
+// returns false → credHasShellMeta=true → RC=2.
+//
+// Reconciliação: afirma que '>&word' (non-digit word) é meta (file redirect em bash,
+// não fd-dup) → credHasShellMeta=true → RC=2.
+// Falsificação: aceitar qualquer '&' precedido por '>' como fd-dup → RC=0 (bypass).
+func TestRunCredential_EchoFileRedirectAmpersand_NotExempt(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	payload := `{"tool_input":{"command":"echo ` + jwtToken + ` > /dev/null >&out.txt"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("echo >&out.txt: expected RC=2 (file redirect ampersand is meta), got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_DdHeredocJWT_NotExempt asserts that "dd of=arq <<< JWT > /dev/null"
+// is NOT exempt because argv0="dd" is not in {echo, printf}.
+//
+// Reconciliação: afirma que argv0="dd" ∉ {echo,printf} → credIsSimpleCmd=false → RC=2.
+// Falsificação: expandir allowlist para incluir dd → RC=0.
+func TestRunCredential_DdHeredocJWT_NotExempt(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	payload := `{"tool_input":{"command":"dd of=arq <<< ` + jwtToken + ` > /dev/null"}}`
+	code, _, errOut := runCred(t, dir, payload)
+	if code != 2 {
+		t.Fatalf("dd heredoc: expected RC=2 (dd not in allowlist), got %d (stderr=%q)", code, errOut)
 	}
 }

@@ -3,7 +3,7 @@ status: Open
 date: 2026-10-06
 author: "zeus-tf"
 adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-10-06-credential-guard-nao-cobre-windsurf-e-amazon-q-e-a-premissa-da-adr-2026-08-05-que-excluiu-o-windsurf-caducou.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-10-06-credential-guard-nao-cobre-windsurf-e-amazon-q-e-a-premissa-da-adr-2026-08-05-que-excluiu-o-windsurf-caducou.md"
 ---
 
 # REQ: credential guard nao cobre Windsurf e Amazon Q, e a premissa da ADR-2026-08-05 que excluiu o Windsurf caducou
@@ -28,14 +28,20 @@ gerador depois das duas ADRs e não foi avaliado para o credential guard.
 Não é a causa da REQ-2026-09-05 (lá: o hook não executa no Windows). Aqui: o hook nunca é instalado.
 Por isso, REQ própria.
 
-**Escopo negativo:** não muda o credential guard em si (padrões, modo block, cwd); não muda o git-branch
+**Escopo corrigido em 2026-10-08 (Wave 0, Regra Dura de Causa Raiz):** o guard não entendia o payload do Windsurf
+(`command_line`), truncava argumento entre aspas e aplicava a isenção de `> /dev/null` ao payload de escrita inteiro —
+medido: `Write`/`Edit` do Claude Code e `fs_write` do Amazon Q com JWT + `> /dev/null` no conteúdo saíam 0 em `block`.
+Mesma causa (o guard não lê o payload de cada CLI pelo que ele é) → entra aqui como ML-1C.
+
+**Escopo negativo:** não muda os padrões de detecção nem o modo block/warn do credential guard; não muda a regra de cwd; não muda o git-branch
 guard; não trata outros CLIs; não reabre a decisão de modo avisador por padrão da ADR-2026-08-05.
 
 ## Acceptance Criteria
-- [ ] AC1 — Remedição, com fonte oficial e data: quais eventos de hook do Windsurf e do Amazon Q recebem o payload da tool call (comando e/ou conteúdo escrito) e se um exit code bloqueia ou só avisa
-- [ ] AC2 — Adendo à ADR-2026-08-05 revendo a premissa do Windsurf, com a decisão por CLI (instalar, ou manter fora com o motivo medido)
-- [ ] AC3 — Para cada CLI decidido "instalar": `trackfw init`/`update` emitem o credential guard na forma da D2 revista da ADR-2026-10-04, e o `validate` deixa de silenciar o arquivo (teste nas duas direções)
-- [ ] AC4 — Prova de disparo real em ao menos um dos dois CLIs, ou a impossibilidade de prova declarada com o motivo
+- [x] AC1 — Remedição, com fonte oficial e data: quais eventos de hook do Windsurf e do Amazon Q recebem o payload da tool call (comando e/ou conteúdo escrito) e se um exit code bloqueia ou só avisa
+- [x] AC2 — Adendo à ADR-2026-08-05 revendo a premissa do Windsurf, com a decisão por CLI (instalar, ou manter fora com o motivo medido)
+- [x] AC3 — Para cada CLI decidido "instalar": `trackfw init`/`update` emitem o credential guard na forma da D2 revista da ADR-2026-10-04, e o `validate` deixa de silenciar o arquivo (teste nas duas direções)
+- [x] AC5 — O guard lê `command`/`command_line` por JSON parse e a isenção de redirecionamento efêmero vale só para o comando de shell; teste com payload real de cada CLI nas duas direções
+- [x] AC4 — Prova de disparo real em ao menos um dos dois CLIs, ou a impossibilidade de prova declarada com o motivo
 
 ## Linked ADR
 <!-- Reference the ADR that governs this requirement -->
@@ -48,4 +54,4 @@ Depende da REQ-2026-09-05 (a linha `trackfw guard credential` precisa existir).
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/backlog/ROADMAP-2026-10-06-credential-guard-nao-cobre-windsurf-e-amazon-q-e-a-premissa-da-adr-2026-08-05-que-excluiu-o-windsurf-caducou.md
+Roadmap: docs/roadmaps/wip/ROADMAP-2026-10-06-credential-guard-nao-cobre-windsurf-e-amazon-q-e-a-premissa-da-adr-2026-08-05-que-excluiu-o-windsurf-caducou.md

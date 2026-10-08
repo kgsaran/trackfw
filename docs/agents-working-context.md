@@ -2,6 +2,144 @@
 
 ---
 
+## 2026-10-08 — apolo-tf (fix/credential-guard-nao-cobre-windsurf-e-amazon-q — ML-2E) — FIM
+
+**Branch:** `fix/credential-guard-nao-cobre-windsurf-e-amazon-q`
+**Resultado:** 12 testes corrigidos (CI reportou 13, medido como 12 em internal/guard/). Build limpo. `go test ./internal/guard/` verde macOS (168 PASS) e VM Windows ARM64 (168 PASS, 0 FAIL, 1 SKIP).
+**Causa raiz medida:**
+- H1 confirmada: testes construíam JSON com caminhos Windows brutos (`C:\Users\...` sem escapar `\`) → JSON inválido → `credExtractCmdAndCwd` retornava `isJSON=false` → `shellCmd=""` → Layer 2b no-op → RC=0 em vez de RC=2. Regressão dos testes pré-PR (SecondLayerCatArg/SecondLayerRedirectFile) causada pela troca de `credCmdLineRe` por JSON parse no ML-1C.
+- H2 refutada por medição: após encoding correto, `os.Stat(caminhoComBackslash)` funciona no Windows sem nenhum processamento adicional de `\`.
+- Layer 2a com `:` excluído: `credRedirectRe` trunca caminhos Windows em redirects no caractere `:`. Pre-existente em main. Layer 2b resgata (cat + file-arg tokenization). Medido em ambos os binários.
+**Mudanças entregues:**
+- `internal/guard/credential.go`: (1) `credCmdLineRe` restaurado; (2) `credNonJSONLayerTwoB` — fallback Layer 2b para payloads com JSON inválido via regex; (3) Non-JSON exemption corrigida: itera sobre comandos extraídos pelo regex (não sobre contextStr inteiro); aplicado em RunCredential e RunCredentialGlobal.
+- `internal/guard/credential_test.go`: (1) Helper `jsonStr` adicionado — encode correto de caminhos em JSON templates; (2) 12 payloads de testes corrigidos com `jsonStr`; (3) `TestRunCredential_InvalidJSONFallback_LayerTwoB` (H1 OS-independente via `\q`); (4) Comentários de reconciliação atualizados em SecondLayerCatArg (H2) e SecondLayerRedirectFile (Layer 2b resgata Layer 2a no Windows).
+**Arquivos modificados:** `internal/guard/credential.go`, `internal/guard/credential_test.go`, `docs/agents-working-context.md`
+
+---
+
+## 2026-10-08 — apolo-tf (fix/credential-guard-nao-cobre-windsurf-e-amazon-q — ML-2E) — INÍCIO
+
+**Branch:** `fix/credential-guard-nao-cobre-windsurf-e-amazon-q`
+**Tarefa:** ML-2E — corretivos do windows-full-suites (CI PR #543). 13 testes falharam. Hipóteses H1 (JSON inválido no Windows → 2ª camada perdida) e H2 (tokenizador de shell destrói caminho Windows com backslash). Medir com VM Windows, corrigir, re-validar.
+**Arquivos afetados:** `internal/guard/credential.go`, `internal/guard/credential_test.go`, `docs/agents-working-context.md`
+
+---
+
+## 2026-10-08 — apolo-tf (fix/credential-guard-nao-cobre-windsurf-e-amazon-q — ML-2C + ML-2D) — FIM
+
+**Branch:** `fix/credential-guard-nao-cobre-windsurf-e-amazon-q`
+**Resultado:** ML-2C (F1+F3+F4) e ML-2D (F2) implementados e testados. Build limpo. `go test ./internal/guard/ ./internal/validator/ ./internal/generators/` verde. `trackfw validate` 167 warnings, 0 errors (lenient, todos pré-existentes).
+**Mudanças entregues:**
+- F3: `json.Unmarshal(data→stripped)` em `credExtractCmdAndCwd` — BOM não desativa mais Layer 2
+- F4: `credDeepScan` — caminha todos os valores command/command_line em qualquer profundidade (maxDepth=20, maxCount=50), exclui tool_input quando tool_name==fs_write, deduplicado via map seen
+- F1: `credentialGuardGlobalInstalledWindsurf` refatorado — exact match com `guardExpectedLine("credential --global", guardShellFamilyPSPosix)`, forma D2 legacy rejeitada
+- F2: `credIsSimpleCmd` (argv0 ∈ {echo,printf}, sem metacaracteres) + `credAllTargetsAreDevNull` (todos redirecionamentos para /dev/null exatamente, sem mktemp bypass) + `credIsRedirectAmpersand` para distinguir fd-dup de redirect de arquivo
+- 2 testes de generators atualizados: `_Ephemeral_NoAlert` → `_MetaChar_WarnMode` (F2 fecha isenção mktemp; bash frozen diverge intencionalmente; testes exercitam só binário Go)
+**Arquivos modificados:** `internal/guard/credential.go`, `internal/guard/credential_test.go`, `internal/validator/validator_credential_guard.go`, `internal/validator/export_test.go`, `internal/validator/validator_credential_guard_test.go`, `internal/validator/validator_guard_hook_concordance_external_test.go`, `internal/generators/credential_guard_test.go`
+
+---
+
+## 2026-10-08 — apolo-tf (fix/credential-guard-nao-cobre-windsurf-e-amazon-q — ML-2C + ML-2D) — INÍCIO
+
+**Branch:** `fix/credential-guard-nao-cobre-windsurf-e-amazon-q`
+**Tarefa:** ML-2C (F1+F3+F4) e ML-2D (F2) — corretivos do red-team REQ-2026-10-06, em sequência. F3: `json.Unmarshal(data→stripped)` em credExtractCmdAndCwd. F4: deep walk de todos os valores command/command_line em qualquer profundidade (all-values-always). F1: exact match em credentialGuardGlobalInstalledWindsurf (só forma D11 revised). F2: gate de forma simples (argv0 ∈ {echo,printf}, sem metacaracteres de shell, todos os redirecionamentos para /dev/null exatamente).
+**Arquivos afetados:** `internal/guard/credential.go`, `internal/validator/validator_credential_guard.go`, `internal/validator/export_test.go`, `internal/validator/validator_credential_guard_test.go`, `internal/validator/validator_guard_hook_concordance_external_test.go`, `internal/guard/credential_test.go`, `docs/agents-working-context.md`
+
+---
+
+## 2026-10-08 — hades-tf (fix/credential-guard-nao-cobre-windsurf-e-amazon-q — ML-2B) — FIM
+
+**Branch:** `fix/credential-guard-nao-cobre-windsurf-e-amazon-q`
+**Resultado:** ML-2B parecer entregue. Veredito: NAO LIBERA. 4 achados bloqueantes:
+- F1 (ALTO): divergência generator×validator para global Windsurf — substring match aceita `echo trackfw guard credential --global`; generator usa igualdade exata. echo global + sem credential no projeto → validate exit 0, nenhum guard executa. Nova em ML-1D.
+- F2 (MÉDIO, pré-existente): isenção efêmera cega a sinks secundários em pipeline — `echo JWT | tee out.txt > /dev/null` → RC=0 em ambos binários. ML-1C reworkou o mecanismo; pertence a esta REQ pela Regra Dura.
+- F3 (ALTO, regressão): BOM UTF-8 desativa Layer 2b inteiramente no branch — reverte os 3 fixes do ML-1C (B1, R1e, EE4). `credExtractCmdAndCwd` passa `data` (com BOM) ao invés de `stripped` para `json.Unmarshal`. Comentário de código commit 782f5767 documenta PowerShell como trigger. Medido: BOM+cat secret → Branch 0, Main 2; BOM+R1e → Branch 0 (sem BOM: 2); BOM+EE4+devnull → Branch 0 (sem BOM: 2); BOM+global → Branch 0, Main 2. Fix de uma linha; cobre ambos escopos.
+- F4 (BAIXO, regressão): arbitrary depth narrowing — `{"params":{"command":"cat secret.txt"}}` → Branch 0, Main 2. Para CLIs com formato fora dos 4 paths fixos (Cursor/Copilot/Kiro/Gemini: não confirmados), branch cai abaixo de main. ML-2C adiciona fallback de caminhamento JSON.
+48 vetores medidos (43 na tabela + 5 nos achados/BCs; Gemini não medido). Behavior changes B1/B2/B3/B4. Residuais R2/R4. R5→F4 (bloqueante); R6 removido (main nunca emitiu credential guard para Windsurf). ML-2D respec: allowlist argv0 {echo,printf} + metachar `&` adicionado; python3-c e background-& medidos (RC=0). Roadmap: diff zero. MLs corretivos: ML-2C (F1+F3+F4) e ML-2D (F2, shape-based + argv0 allowlist). Vault: nota F3 criada. Memory: entry adicionada.
+**Arquivos afetados:** `docs/seguranca/2026-10-08-red-team-credential-guard-windsurf-amazonq.md` (criado+atualizado), `docs/agents-working-context.md`
+
+---
+
+## 2026-10-08 — hades-tf (fix/credential-guard-nao-cobre-windsurf-e-amazon-q — ML-2B) — INÍCIO
+
+**Branch:** `fix/credential-guard-nao-cobre-windsurf-e-amazon-q`
+**Tarefa:** ML-2B — Red-team do diff (Wave 1 completa). Revisão independente: reimplementação a partir da leitura do código, não conferência do diff. Escopo: `internal/generators/agentfiles.go`, `update.go`, `internal/guard/credential.go`, `internal/validator/validator_credential_guard.go` e testes. Ataques medidos: prioridade de campos em `credExtractCmdAndCwd`, isenção efêmera, `tool_info.cwd` controlado por payload, idempotência e validate com entradas de terceiros, residuais R4/R2.
+**Arquivos afetados:** `docs/seguranca/2026-10-08-red-team-credential-guard-windsurf-amazonq.md` (novo), `docs/agents-working-context.md`
+
+---
+
+## 2026-10-08 — apolo-tf (fix/credential-guard-nao-cobre-windsurf-e-amazon-q — ML-1D) — FIM
+
+**Branch:** `fix/credential-guard-nao-cobre-windsurf-e-amazon-q`
+**Resultado:** ML-1D concluído (aguarda auditoria do arquiteto). Defeito 1 corrigido: (a) `internal/generators/agentfiles.go` — `globalCredentialGuardInstalledWindsurf()` endurecida: agora exige AMBOS `pre_run_command` E `pre_write_code` no global (antes só pré-run); um global parcial passa a ser tratado como não instalado, forçando o gerador a instalar no projeto. (b) `internal/validator/validator_credential_guard.go` — `credentialGuardGlobalSubcmdMarker` adicionado; `credentialGuardRequiredEntry` ganhou campo `globalInstalled func() bool`; `credentialGuardGlobalInstalledWindsurf()` implementada (lê `~/.codeium/windsurf/hooks.json`, verifica os dois eventos com `collectCommandsWithMarker`); `credentialGuardRequiredEntries`: entrada Windsurf vinculada a `credentialGuardGlobalInstalledWindsurf`; `validateCredentialGuardPresenceRequired()` pula entrada quando `globalInstalled()` retorna true. Defeito 2 corrigido: `internal/guard/credential_test.go` — 3 testes Codex adicionados (cat file → 2, cat quoted file → 2, echo devnull → 0). Testes novos: 6 validator (3), generators (3), guard (3) — todos passam. `go build ./...` limpo. `go test ./internal/validator/ ./internal/generators/ ./internal/guard/` verde. `trackfw validate` exit 0, 167 avisos lenient.
+**Arquivos afetados:** `internal/generators/agentfiles.go`, `internal/generators/credential_guard_windsurf_amazonq_ml1b_test.go`, `internal/validator/validator_credential_guard.go`, `internal/validator/validator_credential_guard_test.go`, `internal/guard/credential_test.go`, `docs/agents-working-context.md`
+
+---
+
+## 2026-10-08 — apolo-tf (fix/credential-guard-nao-cobre-windsurf-e-amazon-q — ML-1D) — INÍCIO
+
+**Branch:** `fix/credential-guard-nao-cobre-windsurf-e-amazon-q`
+**Tarefa:** ML-1D (corretivo da auditoria ML-1B/ML-1C). Defeito 1: contradição gerador×validate — `globalCredentialGuardInstalledWindsurf()` checava só `pre_run_command` (deveria exigir ambos os eventos) e `validateCredentialGuardPresenceRequired` acusava ausência no projeto mesmo com global completamente instalado. Defeito 2: AC5 pendente — testes de payload real Codex ausentes em credential_test.go.
+**Arquivos afetados:** `internal/generators/agentfiles.go`, `internal/generators/credential_guard_windsurf_amazonq_ml1b_test.go`, `internal/validator/validator_credential_guard.go`, `internal/validator/validator_credential_guard_test.go`, `internal/guard/credential_test.go`, `docs/agents-working-context.md`
+
+---
+
+## 2026-10-08 — apolo-tf (fix/credential-guard-nao-cobre-windsurf-e-amazon-q — ML-1C) — FIM
+
+**Branch:** `fix/credential-guard-nao-cobre-windsurf-e-amazon-q-e-a-premissa-da-adr-2026-08-05-que-excluiu-o-windsurf-caducou`
+**Resultado:** ML-1C concluído. `internal/guard/credential.go`: (1) `credCmdLineRe` removido; `encoding/json` adicionado. (2) `credExtractCmdAndCwd`: extrai shellCmd e shellCwd por JSON parse com 4 prioridades (tool_input.command > command raiz > tool_info.command_line > hook_input.command); `tool_name == "fs_write"` → shellCmd="". (3) `credExtractToolInfoCwd`: lê tool_info.cwd para resolução de caminhos relativos. (4) `credResolveArg`: strip de aspas + filepath.Join contra shellCwd. (5) `credSecondLayer` nova assinatura `(shellCmd, shellCwd, contextStr string, redirectMatches []string)`; Layer 2b usa shellCmd direto em vez do regex. (6) `RunCredential`/`RunCredentialGlobal`: contexto de redirecionamento baseado em shellCmd (JSON) ou rawBytes (não-JSON); exemption efêmera avaliada sobre shellCmd, não sobre o JSON bruto; `cmdHasMatch` exigido antes de isentar. R1a/R1e/EE4 corrigidos, direção oposta (echo JWT > /dev/null) preservada. 16 novos testes (todos passam); 21 testes pré-existentes continuam verdes. `go build ./...` limpo, `go test ./internal/guard/` verde (0.099s, 37 testes, 1 skip).
+**Arquivos afetados:** `internal/guard/credential.go`, `internal/guard/credential_test.go`, `docs/roadmaps/wip/ROADMAP-2026-10-06-*.md`, `docs/agents-working-context.md`
+
+---
+
+## 2026-10-08 — apolo-tf (fix/credential-guard-nao-cobre-windsurf-e-amazon-q — ML-1B) — FIM (v2 pós-advisor)
+
+**Branch:** `fix/credential-guard-nao-cobre-windsurf-e-amazon-q`
+**Resultado:** ML-1B concluído (aguarda auditoria do arquiteto). (1) `InjectWindsurfHooks`: credential guard em `pre_run_command` + `pre_write_code` com dedup global (`globalCredentialGuardInstalledWindsurf()` checa `~/.codeium/windsurf/hooks.json`); `pre_read_code` omitido (Wave 0 residual R2). (2) `InjectAmazonQHooks`: credential guard em `execute_bash` + `fs_write`; `fs_read` omitido. (3) `update.go`: `harnessCredentialGuardTargetWindsurf` (merge-style, `~/.codeium/windsurf/hooks.json`); "33 ids" → "34 ids". (4) `validator_credential_guard.go`: `credentialGuardRequiredEntries` + `extractCredentialGuardCommandsFromEvent()` + `validateCredentialGuardPresenceRequired()` verificação por evento; `validateCredentialGuardHookResolvable` agrega forma + ausência. (5) `docs/cli-parity.md` corrigido. (6) Falsificação documentada: ausência (4 validator), emissão (2 generator), harness (1), R2 read (2) — todos confirmados com saída de falha real. Build limpo, `go test ./internal/generators/ ./internal/validator/ ./internal/commands/` verde (54s+13s+18s), `./cmd/trackfw validate` exit 0, 167 avisos lenient.
+**Arquivos afetados:** `internal/generators/agentfiles.go`, `internal/generators/update.go`, `internal/validator/validator_credential_guard.go`, `internal/generators/agentfiles_test.go`, `internal/generators/credential_guard_windsurf_amazonq_ml1b_test.go` (novo), `internal/generators/credential_guard_dedup_test.go`, `internal/validator/validator_guard_binary_probe_windsurf_amazonq_test.go`, `docs/cli-parity.md`, `docs/roadmaps/wip/ROADMAP-2026-10-06-*.md`, `docs/agents-working-context.md`
+
+---
+
+## 2026-10-08 — apolo-tf (fix/credential-guard-nao-cobre-windsurf-e-amazon-q — ML-1B) — INÍCIO
+
+**Branch:** `fix/credential-guard-nao-cobre-windsurf-e-amazon-q`
+**Tarefa:** ML-1B da REQ-2026-10-06: instalar e auditar o credential guard para Windsurf e Amazon Q. (1) Gerador: `InjectWindsurfHooks` adiciona credential guard em `pre_run_command` + `pre_write_code`; `InjectAmazonQHooks` em `preToolUse[execute_bash]` + `preToolUse[fs_write]`; nunca em eventos de leitura. (2) Update: adicionar `windsurf-credential-guard` ao harness global (`~/.codeium/windsurf/hooks.json`); migrar arquivos existentes com só git-branch guard. (3) Validate: remover silenciamento de Windsurf/AmazonQ; arquivo sem credential guard → violation; arquivo correto → nenhum achado. (4) Docs: corrigir comentários obsoletos em `update.go:511` e `cli-parity.md:3971`. NÃO toca `internal/guard/` (ML-1C paralelo).
+**Arquivos afetados:** `internal/generators/agentfiles.go`, `internal/generators/update.go`, `internal/validator/validator_credential_guard.go`, testes dos pacotes, `docs/cli-parity.md`, `docs/agents-working-context.md`
+
+---
+
+## 2026-10-08 — hades-tf (fix/credential-guard-nao-cobre-windsurf-e-amazon-q — Wave 0 ML corretivo) — FIM
+
+**Branch:** `fix/credential-guard-nao-cobre-windsurf-e-amazon-q`
+**Resultado:** Documento Wave 0 corrigido. Achados principais: (1) Windsurf `pre_write_code`: campo real é `edits[*].new_string`, não `content`; `agent_action_name` de `pre_run_command` era `"execute_bash"`, correto é `"pre_run_command"`; `pre_read_code` era `"read_code"`, correto é `"pre_read_code"`. Fonte: docs.devin.ai/desktop/cascade/hooks, verificado 2026-10-08. (2) Amazon Q `fs_write`: enum com `tag="command"`, variantes `create`/`str_replace`/`insert`/`append`; campos `file_text` e `new_str`, não `content`. Fonte: `fs_write.rs` verificado via curl. (3) Layer 2b com `"command":"create"/"str_replace"`: sem falso positivo — valores não estão no switch cat/head/tail; RC=0 (correto). (4) R1 reclassificado de REQ separada para ML-1C; especificação completa (campo `command_line`, `cwd`, abordagem JSON unmarshal, Item 4 — bypass EE4). (5) EE4 — falso negativo NOVO: JWT + `> /dev/null` em `new_str` Amazon Q `fs_write` → RC=0 (`credIsAllEphemeral` dispara porque `"}}` sem `]` permite strip exato para `/dev/null`); Windsurf `pre_write_code` não afetada (estrutura `"]}}` impede). (6) R1c medido: Layer 2a (credRedirectRe) captura `>` dentro de `command_line` Windsurf → RC=2 (proteção mais ampla que prevista). (7) Vector G corrigido: Layer 1 apenas, não "Layer 1 + credCmdLineRe". (8) Vault note criada para EE4.
+**Arquivos afetados:** `docs/seguranca/2026-10-08-wave0-credential-guard-windsurf-amazonq.md`, `docs/agents-working-context.md`, `vault/notes/credential-guard-ephemeral-bypass-json-structure-2026-10-08.md`, `vault/notes/index.md`
+
+---
+
+## 2026-10-08 — hades-tf (fix/credential-guard-nao-cobre-windsurf-e-amazon-q — Wave 0 ML corretivo) — INÍCIO
+
+**Branch:** `fix/credential-guard-nao-cobre-windsurf-e-amazon-q`
+**Tarefa:** Correção do documento Wave 0 (`docs/seguranca/2026-10-08-wave0-credential-guard-windsurf-amazonq.md`): (1) corrigir formato de payload de escrita inventado para Windsurf (`pre_write_code`) e Amazon Q (`fs_write`); (2) medir comportamento da Layer 2b com `"command":"create"` / `"command":"str_replace"`; (3) reclassificar R1 (Layer 2b não extrai `tool_info.command_line`) de REQ separada para ML-1C desta REQ.
+**Arquivos afetados:** `docs/seguranca/2026-10-08-wave0-credential-guard-windsurf-amazonq.md`, `docs/agents-working-context.md`
+
+---
+
+## 2026-10-08 — hades-tf (fix/credential-guard-nao-cobre-windsurf-e-amazon-q — Wave 0 ML-0A + ML-0B) — FIM
+
+**Branch:** `fix/credential-guard-nao-cobre-windsurf-e-amazon-q`
+**Resultado:** Entregue `docs/seguranca/2026-10-08-wave0-credential-guard-windsurf-amazonq.md`. Gates passaram: arquivo existe e contém "Veredito". Achados principais: (1) as constantes `guardCredentialCmdPSPOSIX`/`CmdExe` existem em `agentfiles.go:502-507` mas nunca são conectadas a `InjectWindsurfHooks`/`InjectAmazonQHooks`; (2) Vector C medido — Windsurf `pre_read_code` com JWT apenas no arquivo referenciado → RC=0 (Layer 2b cega para `tool_info.file_path`); (3) Windsurf `pre_write_code` com JWT no campo `content` → RC=2 (Layer 1 funciona); (4) Amazon Q `preToolUse[execute_bash]` com JWT inline → RC=2 (Layer 1 + Layer 2b funcionam); (5) comentários obsoletos em `update.go:511` e `cli-parity.md:3971`. Veredito: Wave 1 liberada; instalar credential guard em Windsurf `pre_run_command` + `pre_write_code` e Amazon Q `preToolUse[execute_bash]` + `preToolUse[fs_write]`; NÃO instalar em eventos de leitura (falsa proteção); Layer 2b gap para Windsurf `pre_run_command` é residual declarado — requer REQ separada.
+**Arquivos afetados:** `docs/seguranca/2026-10-08-wave0-credential-guard-windsurf-amazonq.md` (novo), `docs/agents-working-context.md`
+
+---
+
+## 2026-10-08 — hades-tf (fix/credential-guard-nao-cobre-windsurf-e-amazon-q — Wave 0 ML-0A + ML-0B) — INÍCIO
+
+**Branch:** `fix/credential-guard-nao-cobre-windsurf-e-amazon-q`
+**Tarefa:** Wave 0 (threat model + remedição de eventos) da REQ-2026-10-06. Produzir `docs/seguranca/2026-10-08-wave0-credential-guard-windsurf-amazonq.md` com: (1) enumeração completa de sítios que emitem/auditam credential guard; (2) threat model de quem esvazia a Wave 0 sem quebrar regra; (3) alvos de falsificação nas duas direções; (4) residual declarado; (5) remedição dos eventos por CLI com fonte oficial e data; (6) veredito.
+**Arquivos afetados:** `docs/seguranca/2026-10-08-wave0-credential-guard-windsurf-amazonq.md` (novo), `docs/agents-working-context.md`
+
+---
+
 ## 2026-10-07 — apolo-tf (fix/hooks-de-guard-executam-no-windows-trackfw-ausente — ML-6B corretivo global D2) — FIM
 
 **Branch:** `fix/hooks-de-guard-executam-no-windows-trackfw-ausente`
@@ -45703,3 +45841,11 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-08 — zeus-tf — #538 e REQ-2026-10-07 entregues (PRs #539, #540); bump 9.3.3
 
 - REQ-2026-10-07 Done (init instala o guard de cada CLI pedido na 1ª execução; eram 1 de 8) e REQ-2026-09-05 Done de novo (no PowerShell toda saída ≠ 0 vira 2). Roadmaps em `done/`, label `req-aberta` retirada da #538. O s67 do `parity-falsify` passou a se ancorar na assinatura (quebrou 3 vezes por literal).
+
+## 2026-10-08 — zeus-tf — INÍCIO: REQ-2026-10-06 (credential guard não cobre Windsurf e Amazon Q)
+
+- 9.3.3 publicada nos 3 canais (verificação do PyPI reexecutada: atraso de índice de 3 min). Roadmap em wip, branch `fix/credential-guard-nao-cobre-windsurf-e-amazon-q`. Wave 0 (hades-tf): threat model + remedição dos eventos de hook com fonte oficial.
+
+## 2026-10-08 — zeus-tf — FIM: REQ-2026-10-06 implementada (aguarda PR)
+
+- Credential guard instalado e auditado em Windsurf (pre_run_command, pre_write_code, harness global) e Amazon Q (execute_bash, fs_write). O guard lê o payload por JSON (BOM, command/command_line em qualquer profundidade) e a isenção de /dev/null só vale para echo/printf simples — fechou bypasses que valiam também no Claude Code. Red-team reprovou 1x (F1-F4), corrigido. Prova em CLI real: impossível (sem contas). `make quality` EXIT=0.
