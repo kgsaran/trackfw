@@ -522,7 +522,7 @@ zera. Os testes do ML-5A usaram fixture só com os grupos de shell — falha de 
       `make quality` pelo arquiteto: exit 0, 347 OK, 0 GUARDA. O "exit 0" do primeiro relatório do ML-6B era falso (s67).
 
 ### ML-6C — Na família PowerShell, toda saída ≠ 0 do `trackfw` vira 2 (issue #538)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** ares-tf (medição) → apolo-tf (implementação)
 **Por que o escopo original não previa:** issue #538 (lourivalgarciajunior, 2026-10-07). A D11 normaliza no sh/bash
 (`2*!!$?`), mas no PowerShell o `exit $LASTEXITCODE` repassa a saída do `trackfw` íntegra: 1 e 3 saem 1 e 3 →
@@ -533,8 +533,12 @@ testou sh/bash e a tripla ausente/nega/libera. Mesma causa da REQ (a linha preci
 normaliza ≠0→2; no sh vira comando inexistente com o erro descartado.
 **Acceptance criteria:**
 - [x] Medição (VM e macOS) com `trackfw` falso saindo 0, 1, 2, 3 e ausente, em sh, bash, Git Bash e PowerShell 5.1: a linha sai 0 só quando o `trackfw` sai 0, e 2 em todos os outros casos; stderr medido
-- [ ] Implementação no gerador, `update` (migra a D11 anterior) e `validate` (aceita a nova, avisa a anterior); configs deste repo migradas
-- [ ] Teste de comportamento com cenário "sai 1" e "sai 3" em sh/bash; caso PowerShell no CI de Windows, se houver `powershell.exe` no runner
-- [ ] Falsificação: tirar o trecho novo reprova o teste do PowerShell (ou, sem PS no host, o teste de concordância da string)
-- [ ] `make quality` (arquiteto, sem `~/.local/bin` no PATH) verde
+- [x] Implementação no gerador, `update` (migra a D11 anterior) e `validate` (aceita a nova, avisa a anterior); configs deste repo migradas
+- [x] Teste de comportamento com cenário "sai 1" e "sai 3" em sh/bash; caso PowerShell no CI de Windows, se houver `powershell.exe` no runner
+- [x] Falsificação: tirar o trecho novo reprova o teste do PowerShell (ou, sem PS no host, o teste de concordância da string)
+- [x] `make quality` (arquiteto, sem `~/.local/bin` no PATH) verde
+      Auditoria (2026-10-07): linhas vivas dos 3 configs medidas pelo arquiteto (ausente 2, nega 2, libera 0, stderr vazio);
+      `TestD11FailClosed_POSIX_TabelaRC` e `_PowerShell_TabelaRC` (pwsh 7; o PS 5.1 foi medido na VM) — 17 PASS; falsificações
+      executadas. `make quality`: o do arquiteto reprovou no s67 (literal frágil, 3ª vez); s67 reescrito por âncora de
+      assinatura; exit 0 após o corretivo (agente) — reconferido pelo CI do PR.
 
