@@ -2,6 +2,27 @@
 
 ---
 
+## 2026-10-08 — hades-tf (fix/credential-guard-nao-cobre-windsurf-e-amazon-q — ML-2B) — FIM
+
+**Branch:** `fix/credential-guard-nao-cobre-windsurf-e-amazon-q`
+**Resultado:** ML-2B parecer entregue. Veredito: NAO LIBERA. 4 achados bloqueantes:
+- F1 (ALTO): divergência generator×validator para global Windsurf — substring match aceita `echo trackfw guard credential --global`; generator usa igualdade exata. echo global + sem credential no projeto → validate exit 0, nenhum guard executa. Nova em ML-1D.
+- F2 (MÉDIO, pré-existente): isenção efêmera cega a sinks secundários em pipeline — `echo JWT | tee out.txt > /dev/null` → RC=0 em ambos binários. ML-1C reworkou o mecanismo; pertence a esta REQ pela Regra Dura.
+- F3 (ALTO, regressão): BOM UTF-8 desativa Layer 2b inteiramente no branch — reverte os 3 fixes do ML-1C (B1, R1e, EE4). `credExtractCmdAndCwd` passa `data` (com BOM) ao invés de `stripped` para `json.Unmarshal`. Comentário de código commit 782f5767 documenta PowerShell como trigger. Medido: BOM+cat secret → Branch 0, Main 2; BOM+R1e → Branch 0 (sem BOM: 2); BOM+EE4+devnull → Branch 0 (sem BOM: 2); BOM+global → Branch 0, Main 2. Fix de uma linha; cobre ambos escopos.
+- F4 (BAIXO, regressão): arbitrary depth narrowing — `{"params":{"command":"cat secret.txt"}}` → Branch 0, Main 2. Para CLIs com formato fora dos 4 paths fixos (Cursor/Copilot/Kiro/Gemini: não confirmados), branch cai abaixo de main. ML-2C adiciona fallback de caminhamento JSON.
+48 vetores medidos (43 na tabela + 5 nos achados/BCs; Gemini não medido). Behavior changes B1/B2/B3/B4. Residuais R2/R4. R5→F4 (bloqueante); R6 removido (main nunca emitiu credential guard para Windsurf). ML-2D respec: allowlist argv0 {echo,printf} + metachar `&` adicionado; python3-c e background-& medidos (RC=0). Roadmap: diff zero. MLs corretivos: ML-2C (F1+F3+F4) e ML-2D (F2, shape-based + argv0 allowlist). Vault: nota F3 criada. Memory: entry adicionada.
+**Arquivos afetados:** `docs/seguranca/2026-10-08-red-team-credential-guard-windsurf-amazonq.md` (criado+atualizado), `docs/agents-working-context.md`
+
+---
+
+## 2026-10-08 — hades-tf (fix/credential-guard-nao-cobre-windsurf-e-amazon-q — ML-2B) — INÍCIO
+
+**Branch:** `fix/credential-guard-nao-cobre-windsurf-e-amazon-q`
+**Tarefa:** ML-2B — Red-team do diff (Wave 1 completa). Revisão independente: reimplementação a partir da leitura do código, não conferência do diff. Escopo: `internal/generators/agentfiles.go`, `update.go`, `internal/guard/credential.go`, `internal/validator/validator_credential_guard.go` e testes. Ataques medidos: prioridade de campos em `credExtractCmdAndCwd`, isenção efêmera, `tool_info.cwd` controlado por payload, idempotência e validate com entradas de terceiros, residuais R4/R2.
+**Arquivos afetados:** `docs/seguranca/2026-10-08-red-team-credential-guard-windsurf-amazonq.md` (novo), `docs/agents-working-context.md`
+
+---
+
 ## 2026-10-08 — apolo-tf (fix/credential-guard-nao-cobre-windsurf-e-amazon-q — ML-1D) — FIM
 
 **Branch:** `fix/credential-guard-nao-cobre-windsurf-e-amazon-q`
