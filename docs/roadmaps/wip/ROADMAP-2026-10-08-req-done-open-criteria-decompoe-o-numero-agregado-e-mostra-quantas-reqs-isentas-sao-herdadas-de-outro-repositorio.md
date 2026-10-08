@@ -1,7 +1,7 @@
 ---
 status: wip
 date: 2026-10-08
-req: ""
+req: "docs/req/REQ-2026-10-08-req-done-open-criteria-decompoe-o-numero-agregado-e-mostra-quantas-reqs-isentas-sao-herdadas-de-outro-repositorio.md"
 squad: ""
 ---
 
@@ -11,7 +11,7 @@ squad: ""
 
 ## Context
 <!-- What problem does this roadmap solve? Link the REQ. -->
-REQ: 
+REQ: docs/req/REQ-2026-10-08-req-done-open-criteria-decompoe-o-numero-agregado-e-mostra-quantas-reqs-isentas-sao-herdadas-de-outro-repositorio.md
 
 ## Acceptance Criteria
 - [x] AC1–AC4 da REQ (AC5 — comentário na #542 — no PR)
