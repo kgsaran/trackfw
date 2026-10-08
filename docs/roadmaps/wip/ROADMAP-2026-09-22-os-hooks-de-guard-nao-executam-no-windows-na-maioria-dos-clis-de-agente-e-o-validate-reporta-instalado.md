@@ -528,10 +528,11 @@ zera. Os testes do ML-5A usaram fixture só com os grupos de shell — falha de 
 (`2*!!$?`), mas no PowerShell o `exit $LASTEXITCODE` repassa a saída do `trackfw` íntegra: 1 e 3 saem 1 e 3 →
 erro não bloqueante. Binário antigo sem `guard` (sai 1) é caso vivido (npm 9.1.0 no PATH de um fork). O ML-6B só
 testou sh/bash e a tripla ausente/nega/libera. Mesma causa da REQ (a linha precisa falhar fechada) → mesma REQ.
+**Medido (ares-tf, 2026-10-07):** o candidato abaixo (D11P) dá 0/2/2/2/2 em sh, bash, Git Bash e PS 5.1, sem ruído novo; D11 revista na ADR.
 **Candidato do arquiteto:** acrescentar `$LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null};` antes do `exit` — no PS
 normaliza ≠0→2; no sh vira comando inexistente com o erro descartado.
 **Acceptance criteria:**
-- [ ] Medição (VM e macOS) com `trackfw` falso saindo 0, 1, 2, 3 e ausente, em sh, bash, Git Bash e PowerShell 5.1: a linha sai 0 só quando o `trackfw` sai 0, e 2 em todos os outros casos; stderr medido
+- [x] Medição (VM e macOS) com `trackfw` falso saindo 0, 1, 2, 3 e ausente, em sh, bash, Git Bash e PowerShell 5.1: a linha sai 0 só quando o `trackfw` sai 0, e 2 em todos os outros casos; stderr medido
 - [ ] Implementação no gerador, `update` (migra a D11 anterior) e `validate` (aceita a nova, avisa a anterior); configs deste repo migradas
 - [ ] Teste de comportamento com cenário "sai 1" e "sai 3" em sh/bash; caso PowerShell no CI de Windows, se houver `powershell.exe` no runner
 - [ ] Falsificação: tirar o trecho novo reprova o teste do PowerShell (ou, sem PS no host, o teste de concordância da string)

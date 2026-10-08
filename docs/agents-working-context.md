@@ -45646,3 +45646,25 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-07 — zeus-tf — #535 corrigida (PR #536); REQ-2026-09-05 fechada de novo; bump 9.3.2
 
 - D11: linha de hook fail-closed sem o `trackfw` no PATH (2/2/0 em sh, bash, Git Bash, PS 5.1 e `cmd`). REQ de volta a Done, roadmap em `done/`, label `req-aberta` retirada da #535. Lição: o primeiro relatório do ML-6B afirmou `make quality` exit 0 com saída truncada; o arquiteto mediu e era falso (s67). Só aceitar exit code medido pelo arquiteto.
+
+## 2026-10-07 — ares-tf — INÍCIO: ML-6C — Medição de saída ≠ 0 do trackfw no PowerShell (issue #538)
+
+- Branch: `fix/hooks-de-guard-executam-no-windows-saida-nao-zero-no-powershell` (worktree trackfw-538)
+- Escopo: medição pura — proibido alterar código, configs, roadmap; proibido git ops
+- Objetivo: medir D11 baseline + candidatos para normalizar exit ≠ {0,2} no PowerShell 5.1; FAKE_RC = 0,1,2,3,ausente
+- Entrega: seção nova "ML-6C — saída ≠ 0 do trackfw no PowerShell (2026-10-07)" no doc de portabilidade
+
+## 2026-10-07 — ares-tf — FIM: ML-6C — Medição saída ≠ 0 do trackfw no PowerShell (issue #538)
+
+- Seção "ML-6C — saída ≠ 0 do trackfw no PowerShell (2026-10-07)" adicionada ao doc de portabilidade
+- **D11 confirmado fail-open em PS:** RC=1→1, RC=3→3 (reproduz exatamente o defeito da issue #538)
+- **D11P (arquiteto) PASSA:** `$LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}` no 4º slot normaliza qualquer RC≠0 para 2 em PS; em bash/sh instrução silenciada (inerte)
+- D11P macro-resultado: 0/2/2/2/2 em sh, bash, Git Bash e PS 5.1
+- **D11PP** (4º candidato): redireciona passo 3 em PS — mesma correctness que D11P, mesmo ruído (redirect não suprime E1 em PS)
+- **Ruído PS (CLIXML S="Error" fields):** D11/D11P/D11PP presentes = 9 campos (1 erro E1: LASTEXITCODE CommandNotFound); ausente = 17 campos (2 erros: E2 trackfw + E1)
+- **C5 PS-only:** correta e silenciosa em PS (0 campos para RC=0..3), mas deny-all em bash/sh (syntax error `{`)
+- **cmd C3 medido:** `trackfw guard git-branch || exit 2` → 0/2/2/2/2 em cmd; confirma que família cmd/Kiro usa C3 sem mudança
+- **Glob confirmado com arquivos casantes:** `2=2abc!!2` e `0=2abc!!0` no CWD — resultado idêntico (inerte, +x ausente → exit 126, silenciado)
+- VM limpa: `C:\Users\Lab\ml6c` apagado
+- Artefatos medição em scratchpad/ml6c/ (sessão encerrada)
+- git status --short: docs/portabilidade/doc atualizado + docs/agents-working-context.md modificado

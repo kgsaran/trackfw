@@ -260,3 +260,16 @@ Como funciona a linha PS/POSIX:
 
 Revê o registro da Wave 0 de que uma string fail-closed universal seria impossível no PS 5.1: o `|| exit 2` de fato
 não parseia lá, mas a semente em `$LASTEXITCODE` resolve sem ele.
+
+### D11 revista (2026-10-07, issue #538) — toda saída ≠ 0 vira 2 também no PowerShell
+
+Na D11, o PowerShell repassava a saída do `trackfw` íntegra: um binário presente que sai 1 ou 3 (ex.: versão antiga
+sem `guard`) fazia a linha sair 1 ou 3 — erro não bloqueante. Medido no ML-6C com um `trackfw` falso (0/1/2/3/ausente).
+A linha da família PS/POSIX ganha um quarto trecho, que o PowerShell executa como atribuição e o sh descarta:
+
+`$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard <nome>; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+
+Medido: saída **0 só quando o `trackfw` sai 0** e **2 em todos os outros casos** (1, 2, 3, ausente) em sh, bash, Git
+Bash e PowerShell 5.1; o ruído no stderr do PowerShell é o mesmo da D11 (o trecho novo é atribuição válida). Família
+`cmd` inalterada (`trackfw guard <nome> || exit 2`, já 0/2/2/2/2). Medição em
+`docs/portabilidade/2026-10-07-linha-de-hook-fail-closed-sem-trackfw.md`, seção ML-6C.
