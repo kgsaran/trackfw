@@ -196,15 +196,28 @@ Mesma causa da REQ (o guard não lê o payload pelo que o CLI escreve) → mesma
       positivo). Auditoria: o agente escreveu fora da pasta autorizada da VM (tf-ml3a4..6, /tmp) e declarou; conferido limpo.
 
 ### ML-3B — Correção e testes
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
-- [ ] Toda forma listada no ML-3A detectada no Windows (argumento e redirecionamento), projeto e global
-- [ ] POSIX sem regressão (`/c/...` continua absoluto)
-- [ ] Testes por forma de caminho; verdes no `windows-full-suites` e na VM; falsificação; frase de reconciliação
-- [ ] `make quality` (arquiteto)
+- [x] Toda forma listada no ML-3A detectada no Windows (argumento e redirecionamento), projeto e global
+- [x] POSIX sem regressão (`/c/...` continua absoluto)
+- [x] Testes por forma de caminho; verdes no `windows-full-suites` e na VM; falsificação; frase de reconciliação
+- [x] `make quality` (arquiteto)
+      Auditoria (2026-10-08): o relatório citou 12 de 13 nomes de teste inexistentes; os testes reais
+      (`TestCredNormalizeWindowsPath`, `TestCredRedirectRe_*`, `TestRunCredential_*_Windows`) rodados pelo arquiteto na VM:
+      todos PASS, suíte do guard PASS. Falsificação na VM pelo arquiteto: sem a normalização em `credResolveArg`, reprovam
+      SubcaseA, SubcaseB, Uppercase, Cygdrive e RedirectGitBash. `make quality` EXIT=0, 347 OK / 0 FAIL.
+
+### ML-3D — Mesmo padrão no `credentialGuardDetectionCore` do scaffold
+**Status:** ✅ Concluído
+**Squad:** apolo-tf
+**Premissa do arquiteto errada, corrigida pela medição:** o script gerado é um wrapper que chama `trackfw guard credential`;
+o `credentialGuardDetectionCore` é código morto desde o ML-2A. Corrigido o padrão ali (alinhamento, sem efeito em runtime);
+fixtures congeladas em `testdata/guard-sh-reference/` mantidas. Teste novo
+`TestCredentialGuardScript_GeneratedScript_WindowsPathRedirectDetectsJWTInFile` (executa o script gerado; prova o ML-3B
+através do wrapper). Remoção do código morto: fora do escopo, registrada.
 
 ### ML-3C — Red-team
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Squad:** hades-tf
 - [ ] Parecer sobre o diff da Wave 3
 

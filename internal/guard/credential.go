@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 
@@ -25,9 +26,21 @@ var (
 	credAWSRe = regexp.MustCompile(`AKIA[0-9A-Z]{16}`)
 
 	// credRedirectRe extracts redirect targets from RAW.
-	// Faithful port of grep -oE '[0-9]?>>?[[:space:]]*[^[:space:]|&;,:]+'.
-	// Uses [ \t\r\n] for [[:space:]] — equivalent because GNU grep stops a match at newline.
-	credRedirectRe = regexp.MustCompile(`[0-9]?>>?[ \t]*[^ \t\r\n|&;,:]+`)
+	// Port of grep -oE '[0-9]?>>?[[:space:]]*[^[:space:]|&;,:]+' — BUG-2 fix:
+	// ':' removed from exclusion class so that Windows paths (C:\..., C:/...) are
+	// extracted in full rather than truncated to the drive letter alone.
+	// NTFS ADS (file.txt:stream) side-effect: extração completa; os.Stat fails
+	// gracefully for unknown stream names — not a functional regression.
+	credRedirectRe = regexp.MustCompile(`[0-9]?>>?[ \t]*[^ \t\r\n|&;,]+`)
+
+	// credGitBashDriveRe matches a Git-Bash drive mount: /[a-zA-Z]/rest or /[a-zA-Z].
+	// Group 1: drive letter; Group 2: /rest (may be absent for bare drive).
+	// Does not match /tmp, /home, /cygdrive, /dev/null, //UNC, etc.
+	credGitBashDriveRe = regexp.MustCompile(`^/([a-zA-Z])(/.*)?$`)
+
+	// credCygdrivePrefixRe matches a Cygwin mount: /cygdrive/[a-zA-Z]/rest or /cygdrive/[a-zA-Z].
+	// Group 1: drive letter; Group 2: /rest (may be absent).
+	credCygdrivePrefixRe = regexp.MustCompile(`^/cygdrive/([a-zA-Z])(/.*)?$`)
 
 	// credRedirectPfxRe strips the redirect operator prefix from a match.
 	credRedirectPfxRe = regexp.MustCompile(`^[0-9]?>>?[ \t]*`)
@@ -89,7 +102,7 @@ func RunCredential(stdin io.Reader, stdout, stderr io.Writer) int {
 	// For valid JSON payloads the redirect scan and Layer 2b operate on the
 	// decoded shell command (fixes R1a/R1e/EE4). For non-JSON payloads the legacy
 	// raw-string path is preserved unchanged.
-	shellCmd, shellCwd, isJSON := credExtractCmdAndCwd(data)
+	shellCmd, shellCwd, toolName, isJSON := credExtractCmdAndCwd(data)
 	var contextStr string
 	var redirectMatches []string
 	if isJSON {
@@ -102,7 +115,7 @@ func RunCredential(stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 
 	if match == "" {
-		match = credSecondLayer(shellCmd, shellCwd, contextStr, redirectMatches)
+		match = credSecondLayer(shellCmd, shellCwd, contextStr, toolName, redirectMatches)
 	}
 
 	// Non-JSON fallback: restore Layer 2b via legacy credCmdLineRe extraction.
@@ -199,7 +212,7 @@ func RunCredentialGlobal(stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 
 	// Steps 4–8: same logic as RunCredential (JSON-aware extraction and exemption).
-	shellCmd, shellCwd, isJSON := credExtractCmdAndCwd(data)
+	shellCmd, shellCwd, toolName, isJSON := credExtractCmdAndCwd(data)
 	var contextStr string
 	var redirectMatches []string
 	if isJSON {
@@ -212,7 +225,7 @@ func RunCredentialGlobal(stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 
 	if match == "" {
-		match = credSecondLayer(shellCmd, shellCwd, contextStr, redirectMatches)
+		match = credSecondLayer(shellCmd, shellCwd, contextStr, toolName, redirectMatches)
 	}
 
 	// Non-JSON fallback: same as RunCredential — restore Layer 2b via credCmdLineRe.
@@ -291,16 +304,21 @@ func RunCredentialGlobal(stdin io.Reader, stdout, stderr io.Writer) int {
 //   - Malformed pattern (ErrBadPattern, e.g. an unclosed `[`) → keep token literal.
 //   - No matches → keep token literal (bash without nullglob).
 //
+// toolName is passed to credNormalizeWindowsPath to translate Git-Bash glob patterns
+// (e.g. /c/Users/*.env) to Windows-native form (C:/Users/*.env) before expansion.
+// Normalization is applied AFTER the early ContainsAny return so that tokens without
+// glob metacharacters are handled by credResolveArg further downstream.
+//
 // Declared residual: POSIX character classes such as [[:alpha:]] are not supported by
 // Go's filepath.Glob and return ErrBadPattern; such patterns keep the literal token.
 //
 // Returns a slice of >= 1 element (always at least the original token).
-func credGlobToken(token string) []string {
+func credGlobToken(token, toolName string) []string {
 	if !strings.ContainsAny(token, "*?[") {
 		return []string{token}
 	}
-	// Translate POSIX [! negation to Go [^ negation.
-	pattern := strings.ReplaceAll(token, "[!", "[^")
+	// Translate POSIX [! negation to Go [^ negation, then normalize drive path.
+	pattern := credNormalizeWindowsPath(strings.ReplaceAll(token, "[!", "[^"), runtime.GOOS, toolName)
 	matches, err := filepath.Glob(pattern)
 	if err != nil || len(matches) == 0 {
 		return []string{token}
@@ -401,6 +419,57 @@ func credScanFile(path string) string {
 	return ""
 }
 
+// credNormalizeWindowsPath translates a Git-Bash or Cygwin drive path to the
+// Windows-native forward-slash form so that credScanFile can open the file via
+// os.Stat on a Windows host.
+//
+// Gate conditions (both must be satisfied for translation to occur):
+//   - goos == "windows": on POSIX, /c/... is an already-valid absolute path.
+//     Translating it would produce C:\... which filepath.IsAbs returns false for
+//     on POSIX, causing it to be incorrectly treated as relative — a detection miss.
+//   - strings.EqualFold(toolName, "PowerShell") == false: PowerShell resolves
+//     /c/Users/... to C:\c\Users\... via its own provider API (not to C:\Users\...).
+//     Translating PS paths would scan the wrong file (FP or FN).
+//
+// Translations applied when gates pass:
+//   /[a-zA-Z]/rest        → X:/rest    (Git-Bash per-drive mount point)
+//   /[a-zA-Z]             → X:/        (bare drive letter — avoid C: which is drive-relative)
+//   /cygdrive/[a-zA-Z]/rest → X:/rest  (Cygwin mount point)
+//   /cygdrive/[a-zA-Z]   → X:/
+//
+// Output uses forward slash (X:/rest) rather than filepath.FromSlash: the latter
+// is OS-dependent and would produce X:\rest on POSIX cross-compile tests, breaking
+// test expectations. C:/... is accepted by os.Stat on Windows (§2.2 measured).
+//
+// All other paths (relative, UNC \\server\share, /tmp, /home, C:\...) are returned unchanged.
+func credNormalizeWindowsPath(path, goos, toolName string) string {
+	if goos != "windows" {
+		return path
+	}
+	if strings.EqualFold(toolName, "PowerShell") {
+		return path
+	}
+	// /cygdrive/[a-zA-Z]/rest or /cygdrive/[a-zA-Z]
+	if m := credCygdrivePrefixRe.FindStringSubmatch(path); m != nil {
+		drive := strings.ToUpper(m[1])
+		rest := m[2] // "/rest" including leading slash, or ""
+		if rest == "" {
+			return drive + ":/"
+		}
+		return drive + ":" + rest
+	}
+	// /[a-zA-Z]/rest or /[a-zA-Z]
+	if m := credGitBashDriveRe.FindStringSubmatch(path); m != nil {
+		drive := strings.ToUpper(m[1])
+		rest := m[2] // "/rest" including leading slash, or ""
+		if rest == "" {
+			return drive + ":/"
+		}
+		return drive + ":" + rest
+	}
+	return path
+}
+
 // credExtractCmdAndCwd parses a JSON hook payload and returns the shell command
 // and the working directory declared in the payload (tool_info.cwd).
 //
@@ -421,30 +490,33 @@ func credScanFile(path string) string {
 //
 // A NUL byte in the decoded command string is treated as absent — the guard
 // becomes a no-op for that key and tries the next lower-priority key.
-func credExtractCmdAndCwd(data []byte) (shellCmd, cwd string, isJSON bool) {
+func credExtractCmdAndCwd(data []byte) (shellCmd, cwd, toolName string, isJSON bool) {
 	stripped := bytes.TrimPrefix(data, []byte{0xEF, 0xBB, 0xBF})
 	trimmed := bytes.TrimLeft(stripped, " \t\r\n")
 	if len(trimmed) == 0 || trimmed[0] != '{' {
-		return "", "", false
+		return "", "", "", false
 	}
 	var root map[string]json.RawMessage
 	if err := json.Unmarshal(stripped, &root); err != nil { // F3: use stripped (no BOM)
-		return "", "", false
+		return "", "", "", false
+	}
+
+	// Extract tool_name for routing, cwd normalization, and propagation to callers.
+	// Ignore unmarshal errors: toolName="" is a safe default (deny-list never fires for "").
+	if rawTool, ok := root["tool_name"]; ok {
+		_ = json.Unmarshal(rawTool, &toolName)
 	}
 
 	// fs_write: "command" carries an enum tag, not a shell command.
-	if rawTool, ok := root["tool_name"]; ok {
-		var toolName string
-		if err := json.Unmarshal(rawTool, &toolName); err == nil && toolName == "fs_write" {
-			return "", credExtractToolInfoCwd(root), true
-		}
+	if toolName == "fs_write" {
+		return "", credExtractToolInfoCwd(root, toolName), toolName, true
 	}
 
-	cwd = credExtractToolInfoCwd(root)
+	cwd = credExtractToolInfoCwd(root, toolName)
 
 	// Priority 1: tool_input.command
 	if cmd, found, _ := extractNested(root, "tool_input", "command"); found && cmd != "" && !strings.ContainsRune(cmd, '\x00') {
-		return cmd, cwd, true
+		return cmd, cwd, toolName, true
 	}
 	// Priority 2: command (root-level)
 	if raw, ok := root["command"]; ok && !isJSONNull(raw) {
@@ -452,24 +524,26 @@ func credExtractCmdAndCwd(data []byte) (shellCmd, cwd string, isJSON bool) {
 		if len(trimmedRaw) > 0 && trimmedRaw[0] == '"' {
 			var cmd string
 			if err := json.Unmarshal(raw, &cmd); err == nil && !strings.ContainsRune(cmd, '\x00') {
-				return cmd, cwd, true
+				return cmd, cwd, toolName, true
 			}
 		}
 	}
 	// Priority 3: tool_info.command_line
 	if cmd, found, _ := extractNested(root, "tool_info", "command_line"); found && cmd != "" && !strings.ContainsRune(cmd, '\x00') {
-		return cmd, cwd, true
+		return cmd, cwd, toolName, true
 	}
 	// Priority 4: hook_input.command
 	if cmd, found, _ := extractNested(root, "hook_input", "command"); found && cmd != "" && !strings.ContainsRune(cmd, '\x00') {
-		return cmd, cwd, true
+		return cmd, cwd, toolName, true
 	}
 
-	return "", cwd, true // valid JSON, no command field found
+	return "", cwd, toolName, true // valid JSON, no command field found
 }
 
 // credExtractToolInfoCwd reads the cwd from tool_info.cwd in a parsed root map.
-func credExtractToolInfoCwd(root map[string]json.RawMessage) string {
+// The extracted cwd is normalized for Windows paths via credNormalizeWindowsPath
+// so that relative arguments resolved against it produce valid paths on Windows.
+func credExtractToolInfoCwd(root map[string]json.RawMessage, toolName string) string {
 	rawInfo, ok := root["tool_info"]
 	if !ok || isJSONNull(rawInfo) {
 		return ""
@@ -486,17 +560,21 @@ func credExtractToolInfoCwd(root map[string]json.RawMessage) string {
 	if err := json.Unmarshal(rawCwd, &cwd); err != nil {
 		return ""
 	}
-	return cwd
+	return credNormalizeWindowsPath(cwd, runtime.GOOS, toolName)
 }
 
-// credResolveArg strips JSON noise (quotes, trailing "},) from arg and resolves
-// a relative path against baseCwd when provided.
+// credResolveArg strips JSON noise (quotes, trailing "},) from arg, translates
+// Git-Bash/Cygwin drive paths to the Windows-native form, and resolves a relative
+// path against baseCwd when provided.
 //
 // The cleaned string is safe to pass to credScanFile, which will not find
 // additional noise to strip. If baseCwd is empty the function still strips
 // quotes — this ensures that quoted paths like `"JWTFILE"` (from a JSON-decoded
 // shell command) are handled correctly.
-func credResolveArg(arg, baseCwd string) string {
+//
+// toolName is forwarded to credNormalizeWindowsPath to suppress translation for
+// PowerShell payloads (which use Windows-native path semantics for /c/...).
+func credResolveArg(arg, baseCwd, toolName string) string {
 	clean := strings.Map(func(r rune) rune {
 		if r == '"' || r == '\'' {
 			return -1
@@ -507,6 +585,12 @@ func credResolveArg(arg, baseCwd string) string {
 	if clean == "" {
 		return arg // keep original so credScanFile can handle the empty-path case
 	}
+	// BUG-1 fix: translate /c/..., /cygdrive/c/... → C:/... before the IsAbs check.
+	// Must be called AFTER TrimRight so quotes/noise do not interfere with the regex.
+	// Covers both sub-cases:
+	//   A (baseCwd=""): returns path directly; os.Stat("/c/...") failed on Windows.
+	//   B (baseCwd≠""): IsAbs("/c/...")=false on Windows → wrong join; after fix IsAbs=true.
+	clean = credNormalizeWindowsPath(clean, runtime.GOOS, toolName)
 	if baseCwd != "" && !filepath.IsAbs(clean) {
 		return filepath.Join(baseCwd, clean)
 	}
@@ -526,7 +610,9 @@ func credResolveArg(arg, baseCwd string) string {
 //   it equals shellCmd for JSON payloads and rawStr for non-JSON payloads.
 // shellCwd is the working directory from tool_info.cwd in the payload, used to
 //   resolve relative paths (e.g. "cat token.txt" when cwd="/project").
-func credSecondLayer(shellCmd, shellCwd, contextStr string, redirectMatches []string) string {
+// toolName is forwarded to credResolveArg and credGlobToken for Windows path
+//   normalization — prevents incorrect translation for PowerShell payloads.
+func credSecondLayer(shellCmd, shellCwd, contextStr, toolName string, redirectMatches []string) string {
 	// 2a — scan non-ephemeral redirect targets.
 	for _, rm := range redirectMatches {
 		if rm == "" {
@@ -537,7 +623,7 @@ func credSecondLayer(shellCmd, shellCwd, contextStr string, redirectMatches []st
 			continue
 		}
 		if !credIsEphemeralTarget(contextStr, target) {
-			if m := credScanFile(credResolveArg(target, shellCwd)); m != "" {
+			if m := credScanFile(credResolveArg(target, shellCwd, toolName)); m != "" {
 				return m
 			}
 		}
@@ -555,7 +641,7 @@ func credSecondLayer(shellCmd, shellCwd, contextStr string, redirectMatches []st
 	// Apply glob expansion per token, matching bash `set -- $CMD_LINE` without set -f.
 	var tokens []string
 	for _, t := range rawTokens {
-		tokens = append(tokens, credGlobToken(t)...)
+		tokens = append(tokens, credGlobToken(t, toolName)...)
 	}
 	if len(tokens) == 0 {
 		return ""
@@ -563,7 +649,7 @@ func credSecondLayer(shellCmd, shellCwd, contextStr string, redirectMatches []st
 	switch tokens[0] {
 	case "cat", "head", "tail", "jq", "grep":
 		for _, tok := range tokens[1:] {
-			if m := credScanFile(credResolveArg(tok, shellCwd)); m != "" {
+			if m := credScanFile(credResolveArg(tok, shellCwd, toolName)); m != "" {
 				return m
 			}
 		}
@@ -717,8 +803,11 @@ func credDeepScan(data []byte, shellCwd string) string {
 	}
 
 	// For fs_write payloads, remove tool_input (its "command" is an enum tag).
+	// Extract tool_name for Windows path normalization in credSecondLayer.
+	var deepToolName string
 	if m, ok := iface.(map[string]interface{}); ok {
-		if toolName, _ := m["tool_name"].(string); toolName == "fs_write" {
+		deepToolName, _ = m["tool_name"].(string)
+		if deepToolName == "fs_write" {
 			delete(m, "tool_input")
 		}
 	}
@@ -759,7 +848,7 @@ func credDeepScan(data []byte, shellCwd string) string {
 
 	for _, cmd := range cmds {
 		redirects := credRedirectRe.FindAllString(cmd, -1)
-		if m := credSecondLayer(cmd, shellCwd, cmd, redirects); m != "" {
+		if m := credSecondLayer(cmd, shellCwd, cmd, deepToolName, redirects); m != "" {
 			return m
 		}
 	}
@@ -789,7 +878,9 @@ func credNonJSONLayerTwoB(contextStr, shellCwd string) string {
 			continue
 		}
 		// Pass nil for redirectMatches: Layer 2a already ran in the caller.
-		if match := credSecondLayer(cmd, shellCwd, contextStr, nil); match != "" {
+		// toolName="" — non-JSON payloads have no parseable tool_name; deny-list
+		// skips PowerShell only when toolName=="PowerShell" (EqualFold); "" is safe.
+		if match := credSecondLayer(cmd, shellCwd, contextStr, "", nil); match != "" {
 			return match
 		}
 	}
