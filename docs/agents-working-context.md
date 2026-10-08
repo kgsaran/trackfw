@@ -2,6 +2,81 @@
 
 ---
 
+## 2026-10-08 — hades-tf (feat/req-done-open-criteria-decompoe-herdadas — ML-2A) — FIM
+
+**Branch:** `feat/req-done-open-criteria-decompoe-herdadas`
+**Entregável produzido:** `docs/seguranca/2026-10-08-red-team-req-done-open-criteria-herdadas.md`
+**Veredito:** NÃO LIBERA — F1 (MEDIUM) requer corretivo antes do merge.
+
+**Achados:**
+- F1 (MEDIUM): `upstreamSymrefShort()` não sanitiza `"` do nome do ramo; `extractFile` extrai path falso do JSON `warnings[].file`. Violação da restrição §6.2 da Wave 0. Fix: `strings.ReplaceAll(shortRef, `"`, "")`. Só reachable via fallback HEAD (não afeta upstream/main normal).
+- F2 (INFO): `git show <ref>:trackfw.yaml` sem limite de tamanho: 47MB = 510ms. Aceito como residual (mesma classe dos demais .Output() do pacote).
+
+**Todos os outros vetores confirmados seguros:** injeção via reqDir (-opção, /abs, ../trav, :(magic)) bloqueados por `--` e `--literal-pathspecs`; GIT_DIR/GIT_WORK_TREE bloqueados por cleanGitEnv(); byte-identidade sem upstream CONFIRMADA; K não altera decisão/exit code CONFIRMADO; custo +32ms em fork/; worktree/submodulo/sem-git/shallow/unresolvable/ramo-com-slash todos corretos. 5 testes AC3/AC4/Unresolvable usam ValidateTagged, passam, são não-tautológicos.
+
+---
+
+## 2026-10-08 — hades-tf (feat/req-done-open-criteria-decompoe-herdadas — ML-2A) — INÍCIO
+
+**Branch:** `feat/req-done-open-criteria-decompoe-herdadas`
+**Tarefa:** ML-2A — Red-team independente do diff `internal/` contra Wave 0 (ML-0A). Vetores: injeção via git (opções `-`, pathspec mágico, path fora do repo, stall), mudança de decisão de regra, ambiente adverso (GIT_DIR/GIT_WORK_TREE, sem git, worktree, submódulo, shallow, ref unresolvable, ramo com `/`), custo, byte-identidade sem upstream.
+**Não altera código de produto.**
+
+---
+
+## 2026-10-08 — apolo-tf (feat/req-done-open-criteria-decompoe-herdadas — ML-1A) — FIM
+
+**Branch:** `feat/req-done-open-criteria-decompoe-herdadas`
+**Entregáveis produzidos:**
+- `internal/validator/validator_req_done_criteria.go` — discriminante upstream: 5 git calls locais, T1 guard (upstream==origin), basename matching, fallback HEAD, variante unresolvable.
+- `internal/validator/validator_req_done_criteria_test.go` — AC3 (byte-identical sem upstream), AC4a (fork req_dir divergente, K por basename), AC4b (T1 guard), AC4c (pós-cutoff fica em enforced, não em K), UpstreamRefUnresolvable.
+- `docs/cli-parity.md` — seção `req_done_open_criteria` atualizada com formatos fork/plain, T1 guard, basename matching, constraint §5.4.
+- `docs/agents-working-context.md` — esta entrada.
+
+**Gates:**
+- `go build ./...`: PASS
+- `go test ./internal/validator/`: PASS (todos os 5 novos testes + regressão)
+- `make quality`: EXIT=0 — suite completa — 8 chunks, 347 OK, 0 FAIL, guarda de conjunto OK (nenhum rótulo esperado ausente)
+
+**Riscos residuais declarados:** §5.1–§5.6 da Wave 0 permanecem como design constraints documentados, não defeitos a corrigir neste ML.
+
+---
+
+## 2026-10-08 — apolo-tf (feat/req-done-open-criteria-decompoe-herdadas — ML-1A) — INÍCIO
+
+**Branch:** `feat/req-done-open-criteria-decompoe-herdadas`
+**Tarefa:** ML-1A — Implementar discriminante derivado de herança upstream em `req_done_open_criteria`: decompor o número agregado de REQs isentas indicando quantas são herdadas do upstream (issue #542, REQ-2026-10-08).
+**Arquivos a modificar:** `internal/validator/validator_req_done_criteria.go`, `internal/validator/validator_req_done_criteria_test.go`, `docs/cli-parity.md`.
+
+---
+
+## 2026-10-08 — hades-tf (feat/req-done-open-criteria-decompoe-herdadas — ML-0A) — FIM
+
+**Branch:** `feat/req-done-open-criteria-decompoe-herdadas`
+**Entregável produzido:** `docs/seguranca/2026-10-08-wave0-req-done-open-criteria-herdadas.md`
+**Veredito:** LIBERA Wave 1 (ML-1A / apolo-tf).
+
+Achados principais:
+- Discriminante derivado recomendado: 5 chamadas git locais (~37ms total; ~8ms ls-tree sobre 251 arquivos). Concordância 100% com discriminante declarado (`upstream_origin`) sobre corpus do relator (28/28 arquivos).
+- Dois sítios de emissão (A=baseline.go linha 910, B=validateUnfilteredTagged linha 1364) são paralelos. Novos testes de AC2/AC4 devem usar `ValidateTagged()` (sítio B), não `validateD4Fixture` (sítio A).
+- Proteção T1 obrigatória: `remote.upstream.url == remote.origin.url` → sem parentética. Sem ela: 251/252 REQs aparecem como "herdadas".
+- Basename matching obrigatório: fork do relator tem `req_dir: docs/requisições/` vs upstream `docs/req/` — path match = 0; basename = 28. Ler `req_dir` do upstream via `git show <ref>:trackfw.yaml`.
+- K real no fork do relator (estado atual): N_exempt=4, K=3 (relator reportou 22 na issue; fork avançou).
+- `filterBaselineTagged` filtra warnings por texto exato — confirma que §5.4 (baseline instável por fetch) é design constraint real para ML-1A. Exit code permanece 0.
+- AC4 exige fixture com `req_dir` diferente entre fork e upstream (caso principal), fixture T1, e fixture pós-cutoff (K não inclui REQs em `enforced`).
+- Formato da linha: 3 variantes. Nenhuma aspa dupla na parentética (restrição `extractFile`).
+- Residuais declarados: §5.1 (URLs equivalentes), §5.2 (colisão basename), §5.3 (upstream sem trackfw.yaml), §5.4 (baseline instável), §5.5 (enforced não decomposto), §5.6 (HEAD em repos locais).
+
+---
+
+## 2026-10-08 — hades-tf (feat/req-done-open-criteria-decompoe-herdadas — ML-0A) — INÍCIO
+
+**Branch:** `feat/req-done-open-criteria-decompoe-herdadas`
+**Tarefa:** Wave 0 / ML-0A — Threat model e discriminante para `req_done_open_criteria` recorte "herdadas de upstream".
+**Entregável:** `docs/seguranca/2026-10-08-wave0-req-done-open-criteria-herdadas.md`
+
+---
+
 ## 2026-10-08 — apolo-tf (fix/credential-guard-nao-cobre-windsurf-e-amazon-q — ML-2E) — FIM
 
 **Branch:** `fix/credential-guard-nao-cobre-windsurf-e-amazon-q`
@@ -45849,3 +45924,11 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-08 — zeus-tf — FIM: REQ-2026-10-06 implementada (aguarda PR)
 
 - Credential guard instalado e auditado em Windsurf (pre_run_command, pre_write_code, harness global) e Amazon Q (execute_bash, fs_write). O guard lê o payload por JSON (BOM, command/command_line em qualquer profundidade) e a isenção de /dev/null só vale para echo/printf simples — fechou bypasses que valiam também no Claude Code. Red-team reprovou 1x (F1-F4), corrigido. Prova em CLI real: impossível (sem contas). `make quality` EXIT=0.
+
+## 2026-10-08 — zeus-tf — REQ-2026-10-06 Done (PR #543); INÍCIO: REQ-2026-10-08 (#542)
+
+- REQ-2026-10-06 fechada com evidência por AC, roadmap em `done/`. Branch `feat/req-done-open-criteria-decompoe-herdadas`: a linha agregada de `req_done_open_criteria` passa a mostrar quantas REQs são herdadas (saída 2 da #542, decisão do KG). Wave 0 (hades-tf) despachada.
+
+## 2026-10-08 — zeus-tf — FIM: REQ-2026-10-08 implementada (#542), aguarda PR
+
+- Linha agregada de `req_done_open_criteria` ganha `(K inherited from upstream/<ramo>)` com remote upstream ≠ origin; sem upstream, byte-idêntica. Medido no fork do relator: 22 (22 inherited). Red-team reprovou 1x (aspa no nome do ramo → `file` falso no JSON), corrigido por allowlist. `make quality` EXIT=0.

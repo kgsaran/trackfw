@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-10-06
 req: "docs/req/REQ-2026-10-06-credential-guard-nao-cobre-windsurf-e-amazon-q-e-a-premissa-da-adr-2026-08-05-que-excluiu-o-windsurf-caducou.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: credential guard nao cobre Windsurf e Amazon Q, e a premissa da ADR-2026-08-05 que excluiu o Windsurf caducou
 
-> Created: 2026-10-06 | Status: wip
+> Created: 2026-10-06 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-10-06-credential-guard-nao-cobre-windsurf-e-amazon-q-e-a-premissa-da-adr-2026-08-05-que-excluiu-o-windsurf-caducou.md -->

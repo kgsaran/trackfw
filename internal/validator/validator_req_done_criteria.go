@@ -21,21 +21,29 @@ package validator
 //
 // Severity: "warning" (registered in ruleDefaults in validator.go).
 //
+// Upstream inheritance decomposition (issue #542, REQ-2026-10-08, ML-1A):
+// When the repository has a remote "upstream" pointing to a different repository,
+// the aggregated notice reports how many of the exempt REQs have the same basename
+// as REQs committed in upstream/<branch> — making inherited debt visible to the
+// fork's owner without changing any enforcement decision.
+//
 // How open criteria in a REQ are counted:
-//   1. Find the AC section heading (## Acceptance Criteria or ## Critérios de aceite).
-//   2. Find the end boundary (next ## heading or EOF).
-//   3. Build a synthetic slice with "**Acceptance criteria:**" prepended, so
-//      roadmapdoc.AcceptanceEvaluateFull can find the header via CriteriaHeaderRe.
-//   4. Call AcceptanceEvaluateFull(sub, subFenced, MLBlock{Start:0, End:len(sub)}).
-//      detail.Unmet is the count of open criteria (lapsed ones are NOT open).
+//  1. Find the AC section heading (## Acceptance Criteria or ## Critérios de aceite).
+//  2. Find the end boundary (next ## heading or EOF).
+//  3. Build a synthetic slice with "**Acceptance criteria:**" prepended, so
+//     roadmapdoc.AcceptanceEvaluateFull can find the header via CriteriaHeaderRe.
+//  4. Call AcceptanceEvaluateFull(sub, subFenced, MLBlock{Start:0, End:len(sub)}).
+//     detail.Unmet is the count of open criteria (lapsed ones are NOT open).
 //
 // This reuses the HTML-comment mask and fence logic inside AcceptanceEvaluateFull
 // without adding new code to the roadmapdoc package.
 
 import (
+	"bytes"
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/kgsaran/trackfw/internal/config"
@@ -136,6 +144,179 @@ func countREQOpenCriteria(content string) int {
 }
 
 // ---------------------------------------------------------------------------
+// Upstream inheritance detection (issue #542, REQ-2026-10-08)
+// ---------------------------------------------------------------------------
+//
+// All git calls go through gitCommand() (validator_git_exec.go), never via
+// exec.Command("git", ...) directly — see that file for the rationale.
+//
+// Algorithm (5 local git calls, O(1) per validate invocation):
+//  1. git config remote.upstream.url  → absent: no parenthetical (AC3)
+//  2. git config remote.origin.url    → equal: no parenthetical (T1 guard)
+//  3. For ref in [refs/remotes/upstream/main, refs/remotes/upstream/master]:
+//     a. rev-parse --verify --quiet <ref>^{commit}  → resolves: proceed
+//     b. show <ref>:trackfw.yaml  → parse req_dir (fallback "docs/req")
+//     c. ls-tree -r -z --name-only <ref> -- <req_dir>  → upstream basenames
+//     d. count intersection with local exempt basenames; return parenthetical
+//  4. Try refs/remotes/upstream/HEAD as last fallback.
+//  5. Nothing resolved → "(upstream tried main, master: ref unresolvable)"
+//
+// K counts only exempt REQs that are inherited; post-cutoff (enforced) REQs
+// with shared basenames are NOT counted in K (§5.5 of Wave 0 threat model).
+
+// upstreamGitConfigGet reads a git config key in projectRoot.
+// Returns ("", error) when the key is absent or git exits non-zero.
+func upstreamGitConfigGet(projectRoot, key string) (string, error) {
+	out, err := gitCommand(projectRoot, "config", key).Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimRight(string(out), "\n"), nil
+}
+
+// upstreamRefExistsAsCommit returns true when <ref>^{commit} resolves without error.
+func upstreamRefExistsAsCommit(projectRoot, ref string) bool {
+	_, err := gitCommand(projectRoot, "rev-parse", "--verify", "--quiet", ref+"^{commit}").Output()
+	return err == nil
+}
+
+// shortRefSafeRe is the allowlist for branch short-names that may appear in the
+// upstream parenthetical. Only ASCII alphanumerics plus ".", "_", "/", and "-"
+// are accepted. A leading dash is also rejected (option-injection guard).
+// This prevents branch names with `"` from polluting the JSON warnings[].file
+// field extracted by extractFile in result.go (regex `"([^"]+)"`).
+var shortRefSafeRe = regexp.MustCompile(`^[A-Za-z0-9._/-]+$`)
+
+// shortRefSafe reports whether s is safe to embed in the upstream parenthetical.
+func shortRefSafe(s string) bool {
+	if s == "" || strings.HasPrefix(s, "-") {
+		return false
+	}
+	return shortRefSafeRe.MatchString(s)
+}
+
+// upstreamSymrefShort tries to dereference a symbolic ref and return its short name
+// (e.g. "upstream/main"). Falls back to shortening the symbolic ref itself on error.
+// The caller is responsible for validating the returned value with shortRefSafe before
+// embedding it in user-visible output.
+func upstreamSymrefShort(projectRoot, symref string) string {
+	out, err := gitCommand(projectRoot, "symbolic-ref", "--short", symref).Output()
+	if err == nil {
+		if s := strings.TrimRight(string(out), "\n"); s != "" {
+			return s
+		}
+	}
+	// Fallback: strip "refs/remotes/" prefix if present.
+	const pfx = "refs/remotes/"
+	if strings.HasPrefix(symref, pfx) {
+		return symref[len(pfx):]
+	}
+	return symref
+}
+
+// upstreamReqBasenames returns the set of .md basenames committed under the
+// upstream's req_dir in the given ref. It reads req_dir from the upstream's
+// trackfw.yaml (fallback "docs/req" when the file is absent or unparseable).
+func upstreamReqBasenames(projectRoot, ref string) map[string]struct{} {
+	result := make(map[string]struct{})
+
+	// Read req_dir from upstream's trackfw.yaml.
+	reqDir := "docs/req"
+	showOut, err := gitCommand(projectRoot, "show", ref+":trackfw.yaml").Output()
+	if err == nil {
+		if parsed, _, _ := config.ParseDirsFromContent(string(showOut)); parsed != "" {
+			reqDir = parsed
+		}
+	}
+
+	// List all files under req_dir in the upstream ref.
+	// --literal-pathspecs guards against pathspec-magic in directory names.
+	lsOut, err := gitCommand(projectRoot, "--literal-pathspecs", "ls-tree",
+		"-r", "-z", "--name-only", ref, "--", reqDir).Output()
+	if err != nil {
+		return result
+	}
+
+	for _, entry := range bytes.Split(lsOut, []byte{0}) {
+		name := string(entry)
+		if name == "" {
+			continue
+		}
+		if filepath.Ext(name) == ".md" {
+			result[filepath.Base(name)] = struct{}{}
+		}
+	}
+	return result
+}
+
+// upstreamInheritedInfo computes the upstream parenthetical and the count K of
+// exempt REQs whose basename appears in the upstream repository.
+//
+// Returns ("", 0) when the repository has no upstream remote or when upstream
+// equals origin (T1 guard). Returns a non-empty parenthetical with the resolved
+// ref name (e.g. "(3 inherited from upstream/main)") on success.
+//
+// Uses "." as projectRoot (the current working directory, anchored by gitCommand).
+func upstreamInheritedInfo(exemptBasenames map[string]struct{}) (parenthetical string, k int) {
+	const projectRoot = "."
+
+	// Step 1: check for remote.upstream.url — absent means plain clone (AC3).
+	upstreamURL, err := upstreamGitConfigGet(projectRoot, "remote.upstream.url")
+	if err != nil || upstreamURL == "" {
+		return "", 0
+	}
+
+	// Step 2: T1 guard — upstream pointing at itself.
+	originURL, err := upstreamGitConfigGet(projectRoot, "remote.origin.url")
+	if err == nil && upstreamURL == originURL {
+		return "", 0
+	}
+
+	// Step 3: try main, then master.
+	for _, branch := range []string{"main", "master"} {
+		refFull := "refs/remotes/upstream/" + branch
+		if !upstreamRefExistsAsCommit(projectRoot, refFull) {
+			continue
+		}
+		upBasenames := upstreamReqBasenames(projectRoot, refFull)
+		k = countBaselineIntersection(upBasenames, exemptBasenames)
+		shortRef := "upstream/" + branch
+		return fmt.Sprintf("(%d inherited from %s)", k, shortRef), k
+	}
+
+	// Step 4: fall back to refs/remotes/upstream/HEAD.
+	// The short name is validated via shortRefSafe before use: git allows `"` and other
+	// special characters in branch names. An unsafe name would pollute warnings[].file
+	// in JSON output (extractFile regex "([^"]+)" in result.go). Failing the allowlist
+	// falls through directly to the unresolvable variant — main and master were already
+	// tried above, so there are no further fallbacks.
+	headRef := "refs/remotes/upstream/HEAD"
+	if upstreamRefExistsAsCommit(projectRoot, headRef) {
+		shortRef := upstreamSymrefShort(projectRoot, headRef)
+		if !shortRefSafe(shortRef) {
+			return "(upstream tried main, master: ref unresolvable)", 0
+		}
+		upBasenames := upstreamReqBasenames(projectRoot, headRef)
+		k = countBaselineIntersection(upBasenames, exemptBasenames)
+		return fmt.Sprintf("(%d inherited from %s)", k, shortRef), k
+	}
+
+	// No resolvable ref found.
+	return "(upstream tried main, master: ref unresolvable)", 0
+}
+
+// countBaselineIntersection counts how many keys in `b` also appear in `a`.
+func countBaselineIntersection(a, b map[string]struct{}) int {
+	n := 0
+	for key := range b {
+		if _, ok := a[key]; ok {
+			n++
+		}
+	}
+	return n
+}
+
+// ---------------------------------------------------------------------------
 // Validator
 // ---------------------------------------------------------------------------
 
@@ -147,13 +328,22 @@ func countREQOpenCriteria(content string) int {
 //   - exemptCount: REQs skipped because they pre-date the cutoff.
 //   - enforcedCount: REQs that fired (len(violations)).
 //   - scannedCount: total Done REQs inspected.
+//   - parenthetical: upstream inheritance annotation, e.g. "(3 inherited from upstream/main)".
+//     Empty when the repository has no upstream remote (AC3) or upstream == origin (T1).
 //   - err: configuration or filesystem error.
-func validateREQDoneOpenCriteria() (violations []string, exemptCount, enforcedCount, scannedCount int, err error) {
+//
+// issue #542 / REQ-2026-10-08: parenthetical is computed once per invocation via
+// upstreamInheritedInfo, which performs 5 local git calls (~37ms total).
+func validateREQDoneOpenCriteria() (violations []string, exemptCount, enforcedCount, scannedCount int, parenthetical string, err error) {
 	cfg := config.Load()
 	files, filesErr := resolveREQFiles(cfg)
 	if filesErr != nil {
-		return nil, 0, 0, 0, filesErr
+		return nil, 0, 0, 0, "", filesErr
 	}
+
+	// exemptBasenames collects the basenames of exempt REQs so that
+	// upstreamInheritedInfo can intersect them with upstream basenames.
+	exemptBasenames := make(map[string]struct{})
 
 	for _, path := range files {
 		rawBytes, ok := readFileForRule("req_done_open_criteria", path, &violations)
@@ -175,6 +365,7 @@ func validateREQDoneOpenCriteria() (violations []string, exemptCount, enforcedCo
 		if reqDoneOpenCriteriaExempt(s, path) {
 			// Has open criteria but pre-dates the rule — exempt.
 			exemptCount++
+			exemptBasenames[filepath.Base(path)] = struct{}{}
 			continue
 		}
 
@@ -184,27 +375,41 @@ func validateREQDoneOpenCriteria() (violations []string, exemptCount, enforcedCo
 		))
 		enforcedCount++
 	}
-	return violations, exemptCount, enforcedCount, scannedCount, nil
+
+	parenthetical, _ = upstreamInheritedInfo(exemptBasenames)
+	return violations, exemptCount, enforcedCount, scannedCount, parenthetical, nil
 }
 
 // reqDoneOpenCriteriaNotice is the aggregated single-line notice that makes
 // the exemption VISIBLE. Emitted unconditionally after any Done REQ scan
 // (even with 0 exempt), so the denominator (scanned) prevents vacuous silence.
-func reqDoneOpenCriteriaNotice(exempt, enforced, scanned int) string {
+//
+// parenthetical is the upstream inheritance annotation, e.g. "(3 inherited from
+// upstream/main)". It is inserted after the cutoff date and before the comma.
+// An empty parenthetical produces the byte-identical pre-upstream format (AC3).
+// No double-quotes appear in the parenthetical (extractFile constraint in result.go).
+func reqDoneOpenCriteriaNotice(exempt, enforced, scanned int, parenthetical string) string {
+	exemptPart := fmt.Sprintf(
+		"%d Done REQ(s) with open criteria exempt as created before cutoff %s",
+		exempt, reqDoneOpenCriteriaCutoff,
+	)
+	if parenthetical != "" {
+		exemptPart += " " + parenthetical
+	}
 	return fmt.Sprintf(
-		"req_done_open_criteria: %d Done REQ(s) with open criteria exempt as created before cutoff %s, %d enforced, %d Done REQ(s) scanned (cutoff declared in internal/validator/validator_req_done_criteria.go)",
-		exempt, reqDoneOpenCriteriaCutoff, enforced, scanned,
+		"req_done_open_criteria: %s, %d enforced, %d Done REQ(s) scanned (cutoff declared in internal/validator/validator_req_done_criteria.go)",
+		exemptPart, enforced, scanned,
 	)
 }
 
 // reqDoneOpenCriteriaAlwaysWarn generates the aggregated notice that is ALWAYS
 // emitted via applyRuleWarnOnly when at least one Done REQ was scanned.
 // Returns nil (empty) if no Done REQs were scanned — then there is nothing to report.
-func reqDoneOpenCriteriaAlwaysWarn(violations []string, exempt, enforced, scanned int) []string {
+func reqDoneOpenCriteriaAlwaysWarn(violations []string, exempt, enforced, scanned int, parenthetical string) []string {
 	if scanned == 0 {
 		return nil
 	}
-	return []string{reqDoneOpenCriteriaNotice(exempt, enforced, scanned)}
+	return []string{reqDoneOpenCriteriaNotice(exempt, enforced, scanned, parenthetical)}
 }
 
 // reqDoneOpenCriteriaNoticeSubstr is a unique substring of the notice line, used

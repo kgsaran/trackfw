@@ -655,9 +655,9 @@ Regras do parser (`AcceptanceEvaluateFull`, `internal/roadmapdoc`):
 
 <!-- trackfw-contract: gate=internal/roadmapdoc/acceptance_lapsed_test.go,internal/generators/roadmap_show_json_test.go partial=o gate de show --json cobre o campo lapsed na saída JSON (presença e valor); o acceptance_lapsed_test.go cobre as regras do parser (adjacência, indentação, justificativa obrigatória, fence-mask) -->
 
-### `req_done_open_criteria` — REQ Done com critério aberto (D4, ADR-2026-10-04, REQ #514 ML-1B)
+### `req_done_open_criteria` — REQ Done com critério aberto (D4, ADR-2026-10-04, REQ #514 ML-1B; upstream decomposition REQ-2026-10-08 ML-1A)
 
-<!-- trackfw-contract: gate=internal/validator/validator_req_done_criteria_test.go partial=nenhum gate de shell exercita a regra pela superfície do CLI; a falsificação dos dois braços é feita em Go, exercitando countREQOpenCriteria diretamente (prova de mordida) e via ValidateUnfiltered com fixtures de corte -->
+<!-- trackfw-contract: gate=internal/validator/validator_req_done_criteria_test.go partial=nenhum gate de shell exercita a regra pela superfície do CLI; ML-1B/1C falsifica via ValidateUnfiltered (sítio A); ML-1A (herança upstream) falsifica via ValidateTagged (sítio B — caminho do CLI) com fixtures git reais -->
 
 **Severity: warning** (registered in `ruleDefaults`, `internal/validator/validator.go`).
 
@@ -671,13 +671,48 @@ are exempt (forward cutoff — charging retroactively is prohibited). This is th
 from `req_has_roadmap`: that rule existed before and the cutoff grants amnesty to the old backlog; this
 rule is new and the cutoff is the entry date.
 
-**Aggregated notice** (always emitted when at least one Done REQ was scanned):
+**Aggregated notice** — plain repository (no `upstream` remote, or `upstream == origin`):
 
 ```
 ⚠  req_done_open_criteria: 126 Done REQ(s) with open criteria exempt as created before cutoff
    2026-10-04, 0 enforced, 211 Done REQ(s) scanned (cutoff declared in
    internal/validator/validator_req_done_criteria.go)
 ```
+
+**Aggregated notice** — fork with `upstream` configured pointing at a different repository:
+
+```
+⚠  req_done_open_criteria: 22 Done REQ(s) with open criteria exempt as created before cutoff
+   2026-10-04 (22 inherited from upstream/main), 0 enforced, 84 Done REQ(s) scanned (cutoff
+   declared in internal/validator/validator_req_done_criteria.go)
+```
+
+The parenthetical `(K inherited from upstream/<branch>)` is inserted after the cutoff date when:
+1. `remote.upstream.url` exists in the local git config, **and**
+2. `remote.upstream.url != remote.origin.url` (T1 guard: prevents 251/252 REQs appearing as
+   inherited when the repository is its own upstream), **and**
+3. At least one of `refs/remotes/upstream/main`, `refs/remotes/upstream/master` resolves locally
+   (or `refs/remotes/upstream/HEAD` as last fallback).
+
+If none of the refs resolve: `(upstream tried main, master: ref unresolvable)`.
+
+**K counts only exempt REQs** (pre-cutoff with open criteria). Post-cutoff inherited REQs remain in
+`enforced` and are not decomposed (issue #542 scope negative — §5.5 Wave 0 threat model).
+
+**Upstream matching uses basenames** (not full paths). Forks with a different `req_dir` (e.g.
+`docs/requisições/` vs `docs/req/`) are correctly handled: the upstream's `req_dir` is read from
+`git show <ref>:trackfw.yaml` (fallback `docs/req`), and only basenames are intersected.
+
+**JSON output** (`trackfw validate --json`): the `warnings[].message` field carries the full
+parenthetical text. `warnings[].file` remains `""` (no double-quotes in the parenthetical — the
+`extractFile` parser in `result.go` requires quoted tokens). No new fields are added to `ValidateResult`.
+
+**Baseline stability** (§5.4 design constraint): `K` is computed from local git refs
+(`refs/remotes/upstream/*`), not from committed content. The same commit produces different
+parentheticals in CI (no upstream → no parenthetical) and dev (with upstream). `filterBaselineTagged`
+uses exact-text matching, so the notice fluctuates between "in baseline" and "net-new" after each
+`git fetch upstream`. Exit code remains 0 in both cases. Baselines are effectively per-environment
+when `upstream` is configured.
 
 Measured on corpus (2026-10-04): 126 Done REQs with open boxes, all dated before 2026-10-04 →
 0 individual warnings, 1 aggregated notice.
