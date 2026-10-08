@@ -5171,11 +5171,39 @@ cp -r "$ROOT_DIR/internal/." "$T67_MOD/internal/"
 cp "$ROOT_DIR/go.mod" "$T67_MOD/go.mod"
 cp "$ROOT_DIR/go.sum" "$T67_MOD/go.sum"
 
-corrupt_literal \
-  "$ROOT_DIR/internal/generators/agentfiles.go" "$T67_MOD/internal/generators/agentfiles.go" \
-  $'func globalGitBranchGuardInstalledClaude() bool {\n\tscriptPath, ok := globalGitBranchGuardScriptPath()\n\tif !ok {\n\t\treturn false\n\t}\n\troot, ok := readGlobalHookJSON(".claude", "settings.json")\n\tif !ok {\n\t\treturn false\n\t}\n\thooks, _ := root["hooks"].(map[string]interface{})\n\t// ML-2A: accept both old abs .sh path and new inline command form.\n\t// ML-5A: also accept the new claudeShellMatcher ("Bash|PowerShell") in addition\n\t// to the legacy "Bash" matcher so that a global config already migrated by\n\t// `trackfw update harness` still dedups the project-scope entry.\n\t// ML-6B: also accept D2 revised form.\n\treturn hookArrayHasCommand(hooks["PreToolUse"], "Bash", scriptPath) ||\n\t\thookArrayHasCommand(hooks["PreToolUse"], "Bash", guardGitBranchCmdPSPOSIX) ||\n\t\thookArrayHasCommand(hooks["PreToolUse"], claudeShellMatcher, guardGitBranchCmdPSPOSIX) ||\n\t\thookArrayHasCommand(hooks["PreToolUse"], "Bash", legacyD2GitBranchCmdPSPOSIX) ||\n\t\thookArrayHasCommand(hooks["PreToolUse"], claudeShellMatcher, legacyD2GitBranchCmdPSPOSIX)\n}' \
-  $'func globalGitBranchGuardInstalledClaude() bool {\n\treturn false\n}' \
-  "s67-go-claude-git-branch-guard-dedup-always-false"
+# Corrompe globalGitBranchGuardInstalledClaude() por âncora estável (assinatura
+# da função), não por literal do corpo — robusto a adições futuras de legacyD*
+# (ML-5A→ML-6B→ML-6C cada uma alterou o corpo e quebrou o corrupt_literal
+# anterior). Garante: exatamente 1 ocorrência da assinatura; span não invade a
+# próxima função; arquivo resultante difere do original.
+"$PY_BIN" - \
+  "$ROOT_DIR/internal/generators/agentfiles.go" \
+  "$T67_MOD/internal/generators/agentfiles.go" <<'PY'
+import pathlib, sys
+
+sig = "func globalGitBranchGuardInstalledClaude() bool {"
+src, dest = sys.argv[1], sys.argv[2]
+source = pathlib.Path(src).read_text(encoding="utf-8")
+count = source.count(sig)
+if count != 1:
+    raise SystemExit(f"[s67-go-claude-git-branch-guard-dedup-always-false] expected exactly 1 occurrence of pattern, got {count}")
+start = source.index(sig)
+# gofmt: top-level func closes with \n}\n (column-0 brace); inner braces are
+# always indented, so the first \n}\n after the opening line is the closer.
+try:
+    close = source.index("\n}\n", start + len(sig))
+except ValueError:
+    raise SystemExit("[s67-go-claude-git-branch-guard-dedup-always-false] closing brace marker not found after signature")
+end = close + 3  # consume the \n after }
+body_span = source[start:end]
+if "\nfunc " in body_span:
+    raise SystemExit("[s67-go-claude-git-branch-guard-dedup-always-false] span contains 'func ' — overshot into next function")
+replacement = sig + "\n\treturn false\n}\n"
+result = source[:start] + replacement + source[end:]
+if result == source:
+    raise SystemExit("[s67-go-claude-git-branch-guard-dedup-always-false] output unchanged — corruption had no effect")
+pathlib.Path(dest).write_text(result, encoding="utf-8")
+PY
 
 T67_BIN="$WORK/s67-corrupt-go-bin/trackfw"
 mkdir -p "$(dirname "$T67_BIN")"
