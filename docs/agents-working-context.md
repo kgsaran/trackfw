@@ -2,6 +2,33 @@
 
 ---
 
+## 2026-10-08 — hades-tf (feat/req-done-open-criteria-decompoe-herdadas — ML-0A) — FIM
+
+**Branch:** `feat/req-done-open-criteria-decompoe-herdadas`
+**Entregável produzido:** `docs/seguranca/2026-10-08-wave0-req-done-open-criteria-herdadas.md`
+**Veredito:** LIBERA Wave 1 (ML-1A / apolo-tf).
+
+Achados principais:
+- Discriminante derivado recomendado: 5 chamadas git locais (~37ms total; ~8ms ls-tree sobre 251 arquivos). Concordância 100% com discriminante declarado (`upstream_origin`) sobre corpus do relator (28/28 arquivos).
+- Dois sítios de emissão (A=baseline.go linha 910, B=validateUnfilteredTagged linha 1364) são paralelos. Novos testes de AC2/AC4 devem usar `ValidateTagged()` (sítio B), não `validateD4Fixture` (sítio A).
+- Proteção T1 obrigatória: `remote.upstream.url == remote.origin.url` → sem parentética. Sem ela: 251/252 REQs aparecem como "herdadas".
+- Basename matching obrigatório: fork do relator tem `req_dir: docs/requisições/` vs upstream `docs/req/` — path match = 0; basename = 28. Ler `req_dir` do upstream via `git show <ref>:trackfw.yaml`.
+- K real no fork do relator (estado atual): N_exempt=4, K=3 (relator reportou 22 na issue; fork avançou).
+- `filterBaselineTagged` filtra warnings por texto exato — confirma que §5.4 (baseline instável por fetch) é design constraint real para ML-1A. Exit code permanece 0.
+- AC4 exige fixture com `req_dir` diferente entre fork e upstream (caso principal), fixture T1, e fixture pós-cutoff (K não inclui REQs em `enforced`).
+- Formato da linha: 3 variantes. Nenhuma aspa dupla na parentética (restrição `extractFile`).
+- Residuais declarados: §5.1 (URLs equivalentes), §5.2 (colisão basename), §5.3 (upstream sem trackfw.yaml), §5.4 (baseline instável), §5.5 (enforced não decomposto), §5.6 (HEAD em repos locais).
+
+---
+
+## 2026-10-08 — hades-tf (feat/req-done-open-criteria-decompoe-herdadas — ML-0A) — INÍCIO
+
+**Branch:** `feat/req-done-open-criteria-decompoe-herdadas`
+**Tarefa:** Wave 0 / ML-0A — Threat model e discriminante para `req_done_open_criteria` recorte "herdadas de upstream".
+**Entregável:** `docs/seguranca/2026-10-08-wave0-req-done-open-criteria-herdadas.md`
+
+---
+
 ## 2026-10-08 — apolo-tf (fix/credential-guard-nao-cobre-windsurf-e-amazon-q — ML-2E) — FIM
 
 **Branch:** `fix/credential-guard-nao-cobre-windsurf-e-amazon-q`

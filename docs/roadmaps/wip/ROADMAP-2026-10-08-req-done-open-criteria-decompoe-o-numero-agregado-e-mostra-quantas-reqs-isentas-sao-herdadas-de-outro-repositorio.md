@@ -23,7 +23,7 @@ REQ:
 > Dependencies: PR #543 mergeado (ok, 2026-10-08). Blocks all implementation.
 
 ### ML-0A — Threat model e escolha do discriminante (AC1)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** hades-tf
 **Files affected:** `docs/seguranca/<data>-wave0-req-done-open-criteria-herdadas.md`
 **Actions:**
@@ -33,18 +33,24 @@ REQ:
 4. Declared residual.
 5. Medir custo e semântica do discriminante derivado (`git ls-tree` no ramo padrão de `upstream`, ref ausente, fetch velho, shallow clone) vs declarado (`upstream_origin`).
 **Acceptance criteria:**
-- [ ] Seções respondidas com evidência e recomendação do discriminante
+- [x] Seções respondidas com evidência e recomendação do discriminante
 
 **Gates da wave:**
 ```bash
 test -n "$(ls docs/seguranca/*wave0-req-done-open-criteria-herdadas.md 2>/dev/null)"
 ```
 
+      Auditoria (2026-10-08): veredito do hades-tf aceito — discriminante derivado (basename da REQ presente no `req_dir`
+      do próprio upstream, lido de `<ref>:trackfw.yaml`), ~37 ms medido no fork do relator, concordância 28/28 com o
+      `upstream_origin` dele. Decisões do arquiteto sobre §5.4: o baseline já é instável a qualquer mudança de contagem desta
+      linha; a parentética só acrescenta a dependência do fetch — documentar, não normalizar. Variante "ref unresolvable"
+      aceita (diz por que o recorte falta, em vez de silenciar).
+
 ## Wave 1 — Implementação
 > Dependencies: Wave 0 auditada.
 
 ### ML-1A — Recorte na linha agregada (AC2–AC4)
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Squad:** apolo-tf
 **Files affected:** `internal/validator/validator_req_done_criteria.go`, testes, `docs/cli-parity.md` se documenta a linha
 **Acceptance criteria:**
