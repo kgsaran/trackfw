@@ -2,6 +2,29 @@
 
 ---
 
+## 2026-10-08 — apolo-tf (fix/credential-guard-nao-cobre-windsurf-e-amazon-q — ML-2E) — FIM
+
+**Branch:** `fix/credential-guard-nao-cobre-windsurf-e-amazon-q`
+**Resultado:** 12 testes corrigidos (CI reportou 13, medido como 12 em internal/guard/). Build limpo. `go test ./internal/guard/` verde macOS (168 PASS) e VM Windows ARM64 (168 PASS, 0 FAIL, 1 SKIP).
+**Causa raiz medida:**
+- H1 confirmada: testes construíam JSON com caminhos Windows brutos (`C:\Users\...` sem escapar `\`) → JSON inválido → `credExtractCmdAndCwd` retornava `isJSON=false` → `shellCmd=""` → Layer 2b no-op → RC=0 em vez de RC=2. Regressão dos testes pré-PR (SecondLayerCatArg/SecondLayerRedirectFile) causada pela troca de `credCmdLineRe` por JSON parse no ML-1C.
+- H2 refutada por medição: após encoding correto, `os.Stat(caminhoComBackslash)` funciona no Windows sem nenhum processamento adicional de `\`.
+- Layer 2a com `:` excluído: `credRedirectRe` trunca caminhos Windows em redirects no caractere `:`. Pre-existente em main. Layer 2b resgata (cat + file-arg tokenization). Medido em ambos os binários.
+**Mudanças entregues:**
+- `internal/guard/credential.go`: (1) `credCmdLineRe` restaurado; (2) `credNonJSONLayerTwoB` — fallback Layer 2b para payloads com JSON inválido via regex; (3) Non-JSON exemption corrigida: itera sobre comandos extraídos pelo regex (não sobre contextStr inteiro); aplicado em RunCredential e RunCredentialGlobal.
+- `internal/guard/credential_test.go`: (1) Helper `jsonStr` adicionado — encode correto de caminhos em JSON templates; (2) 12 payloads de testes corrigidos com `jsonStr`; (3) `TestRunCredential_InvalidJSONFallback_LayerTwoB` (H1 OS-independente via `\q`); (4) Comentários de reconciliação atualizados em SecondLayerCatArg (H2) e SecondLayerRedirectFile (Layer 2b resgata Layer 2a no Windows).
+**Arquivos modificados:** `internal/guard/credential.go`, `internal/guard/credential_test.go`, `docs/agents-working-context.md`
+
+---
+
+## 2026-10-08 — apolo-tf (fix/credential-guard-nao-cobre-windsurf-e-amazon-q — ML-2E) — INÍCIO
+
+**Branch:** `fix/credential-guard-nao-cobre-windsurf-e-amazon-q`
+**Tarefa:** ML-2E — corretivos do windows-full-suites (CI PR #543). 13 testes falharam. Hipóteses H1 (JSON inválido no Windows → 2ª camada perdida) e H2 (tokenizador de shell destrói caminho Windows com backslash). Medir com VM Windows, corrigir, re-validar.
+**Arquivos afetados:** `internal/guard/credential.go`, `internal/guard/credential_test.go`, `docs/agents-working-context.md`
+
+---
+
 ## 2026-10-08 — apolo-tf (fix/credential-guard-nao-cobre-windsurf-e-amazon-q — ML-2C + ML-2D) — FIM
 
 **Branch:** `fix/credential-guard-nao-cobre-windsurf-e-amazon-q`

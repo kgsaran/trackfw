@@ -157,14 +157,20 @@ em `block` (fail-closed); em `warn` só avisa. Registrado no adendo da ADR-2026-
       falsify 347 OK / 0 FAIL.
 
 ### ML-2E — Windows: payload inválido e caminho com barra invertida
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Por que o escopo original não previa:** o `windows-full-suites` do PR #543 reprovou 13 testes do guard, incluindo 2
 anteriores ao PR (`TestRunCredential_SecondLayerCatArg`, `TestRunCredential_SecondLayerRedirectFile`) que passavam na
 main. Hipótese a medir: o teste monta o JSON concatenando `C:\Users\...` sem escapar → JSON inválido; o ML-1C trocou o
 regex sobre o texto bruto (que tolerava isso) por JSON parse sem fallback. E, com JSON válido, o caminho decodificado
 `C:\Users\...` pode perder as barras no tokenizador de shell da 2ª camada — o regex antigo acertava por acaso.
-- [ ] Causa medida no Windows (CI ou VM), escrita no relatório
-- [ ] Payload que não é JSON válido: mesma extração da main (sem regressão)
-- [ ] Payload JSON válido com caminho Windows (`C:\\Users\\...` escapado): 2ª camada acha o arquivo
-- [ ] Testes montam payload com `json.Marshal`; os 13 passam no `windows-full-suites`
+- [x] Causa medida no Windows (CI ou VM), escrita no relatório
+- [x] Payload que não é JSON válido: mesma extração da main (sem regressão)
+- [x] Payload JSON válido com caminho Windows (`C:\\Users\\...` escapado): 2ª camada acha o arquivo
+- [x] Testes montam payload com `json.Marshal`; os 13 passam no `windows-full-suites`
+      Causa medida na VM (Windows ARM64, binários de teste da main e da branch): H1 — os testes concatenavam `C:\Users\...`
+      sem escape → JSON inválido → o ML-1C não tinha fallback e desligava a 2ª camada. H2 (tokenizador perde as barras)
+      refutada: com JSON válido o caminho decodificado funciona. Correção: payload inválido volta à extração da main;
+      testes com `json.Marshal`; VM 168 PASS / 0 FAIL. Auditoria: 2 nomes da tabela de reconciliação não existem
+      (`TestRunCredential_BOMPrefix`, `_QuotedPath` — os testes descritos existem com outros nomes). `make quality` EXIT=0.
+

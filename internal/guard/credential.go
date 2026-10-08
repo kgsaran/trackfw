@@ -35,6 +35,11 @@ var (
 	// credVarRefRe matches a shell variable reference like $TMPFILE or ${TMPFILE}.
 	credVarRefRe = regexp.MustCompile(`^\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?$`)
 
+	// credCmdLineRe extracts the "command" JSON field value from raw text.
+	// Faithful port of sed -n 's/.*"command"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'.
+	// Used as a fallback when JSON parsing fails (e.g. unescaped backslashes in
+	// Windows paths) to restore Layer 2b detection on the raw text.
+	credCmdLineRe = regexp.MustCompile(`"command"[ \t]*:[ \t]*"([^"]*)"`)
 )
 
 const credMaxFileSize = 1048576 // 1 MiB
@@ -100,6 +105,16 @@ func RunCredential(stdin io.Reader, stdout, stderr io.Writer) int {
 		match = credSecondLayer(shellCmd, shellCwd, contextStr, redirectMatches)
 	}
 
+	// Non-JSON fallback: restore Layer 2b via legacy credCmdLineRe extraction.
+	// When JSON parsing fails (e.g. unescaped backslashes in Windows paths),
+	// shellCmd is "" and credSecondLayer's Layer 2b is a no-op. credNonJSONLayerTwoB
+	// extracts "command" field values from the raw text and runs Layer 2b on each,
+	// matching main's credCmdLineRe behaviour. Does not cover "command_line" keys —
+	// Windsurf/Amazon-Q payloads require valid JSON for full coverage.
+	if match == "" && !isJSON {
+		match = credNonJSONLayerTwoB(contextStr, "")
+	}
+
 	// F4: if Layer 1 + primary Layer 2 found nothing, deep-scan all command/command_line
 	// values at any depth in the JSON payload (catches non-standard schemas like
 	// {"params":{"command":"cat secret.txt"}} used by Cursor/Copilot/Kiro/Gemini).
@@ -115,7 +130,9 @@ func RunCredential(stdin io.Reader, stdout, stderr io.Writer) int {
 	//   (a) the credential was found in the primary shell command itself,
 	//   (b) there are no shell metacharacters (argv0 ∈ {echo, printf}),
 	//   (c) all redirect targets are exactly "/dev/null".
-	// For non-JSON payloads, apply the same argv0 shape gate to the raw context string.
+	// For non-JSON payloads, apply the same 3-part predicate to each
+	// regex-extracted "command" value (never to the raw contextStr as a whole,
+	// because argv0 of the full raw payload is always '{').
 	if isJSON {
 		cmdHasMatch := (match == "JWT" && credJWTRe.MatchString(shellCmd)) ||
 			(match == "AWS access key" && credAWSRe.MatchString(shellCmd))
@@ -124,8 +141,18 @@ func RunCredential(stdin io.Reader, stdout, stderr io.Writer) int {
 			return 0
 		}
 	} else {
-		if credIsAllEphemeral(contextStr, redirectMatches) && credIsSimpleCmd(contextStr) {
-			return 0
+		for _, m := range credCmdLineRe.FindAllStringSubmatch(contextStr, -1) {
+			cmd := m[1]
+			if cmd == "" {
+				continue
+			}
+			cmdHasMatch := (match == "JWT" && credJWTRe.MatchString(cmd)) ||
+				(match == "AWS access key" && credAWSRe.MatchString(cmd))
+			cmdRedirects := credRedirectRe.FindAllString(cmd, -1)
+			if cmdHasMatch && credIsAllEphemeral(cmd, cmdRedirects) &&
+				credIsSimpleCmd(cmd) && credAllTargetsAreDevNull(cmdRedirects) {
+				return 0
+			}
 		}
 	}
 
@@ -188,6 +215,11 @@ func RunCredentialGlobal(stdin io.Reader, stdout, stderr io.Writer) int {
 		match = credSecondLayer(shellCmd, shellCwd, contextStr, redirectMatches)
 	}
 
+	// Non-JSON fallback: same as RunCredential — restore Layer 2b via credCmdLineRe.
+	if match == "" && !isJSON {
+		match = credNonJSONLayerTwoB(contextStr, "")
+	}
+
 	// F4: deep-scan all command/command_line values (same as RunCredential).
 	if match == "" && isJSON {
 		match = credDeepScan(data, shellCwd)
@@ -206,8 +238,18 @@ func RunCredentialGlobal(stdin io.Reader, stdout, stderr io.Writer) int {
 			return 0
 		}
 	} else {
-		if credIsAllEphemeral(contextStr, redirectMatches) && credIsSimpleCmd(contextStr) {
-			return 0
+		for _, m := range credCmdLineRe.FindAllStringSubmatch(contextStr, -1) {
+			cmd := m[1]
+			if cmd == "" {
+				continue
+			}
+			cmdHasMatch := (match == "JWT" && credJWTRe.MatchString(cmd)) ||
+				(match == "AWS access key" && credAWSRe.MatchString(cmd))
+			cmdRedirects := credRedirectRe.FindAllString(cmd, -1)
+			if cmdHasMatch && credIsAllEphemeral(cmd, cmdRedirects) &&
+				credIsSimpleCmd(cmd) && credAllTargetsAreDevNull(cmdRedirects) {
+				return 0
+			}
 		}
 	}
 
@@ -719,6 +761,36 @@ func credDeepScan(data []byte, shellCwd string) string {
 		redirects := credRedirectRe.FindAllString(cmd, -1)
 		if m := credSecondLayer(cmd, shellCwd, cmd, redirects); m != "" {
 			return m
+		}
+	}
+	return ""
+}
+
+// credNonJSONLayerTwoB runs Layer 2b for non-JSON (or invalid-JSON) payloads.
+//
+// ML-1C replaced credCmdLineRe with JSON parsing. For payloads that fail JSON
+// decoding — such as those with unescaped backslashes in Windows paths — JSON
+// parsing returns isJSON=false, shellCmd="", and Layer 2b becomes a no-op.
+// credNonJSONLayerTwoB restores main's behaviour: it extracts all "command"
+// field values from the raw text via credCmdLineRe and runs the file-argument
+// scan of credSecondLayer on each extracted command.
+//
+// Limitation: only covers keys named exactly "command" (not "command_line").
+// This matches main's scope. Payloads using "command_line" (Windsurf) require
+// valid JSON for Layer 2b coverage — the test encoding fix ensures this.
+//
+// contextStr is the raw payload after `\"` → `"` substitution.
+// shellCwd is typically "" for non-JSON payloads (tool_info.cwd is unavailable
+// without successful JSON parsing).
+func credNonJSONLayerTwoB(contextStr, shellCwd string) string {
+	for _, m := range credCmdLineRe.FindAllStringSubmatch(contextStr, -1) {
+		cmd := m[1]
+		if cmd == "" {
+			continue
+		}
+		// Pass nil for redirectMatches: Layer 2a already ran in the caller.
+		if match := credSecondLayer(cmd, shellCwd, contextStr, nil); match != "" {
+			return match
 		}
 	}
 	return ""

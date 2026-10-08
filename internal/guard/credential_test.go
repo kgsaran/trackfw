@@ -22,6 +22,23 @@ var jwtToken = "eyJ" + "TESTTOKEN" + "." + "TESTPAYLOAD12345" + "." + "TESTSIG67
 // Pattern: AKIA[0-9A-Z]{16}
 var awsKey = "AKIA" + "TESTKEYTESTKEY12"
 
+// jsonStr returns the JSON-encoded content of s, suitable for embedding inside
+// a JSON string literal (without the surrounding double-quote characters).
+//
+// On Windows, filepath separators (\) in paths must be JSON-encoded as \\
+// before concatenation into a JSON template string; otherwise the resulting
+// payload is syntactically invalid JSON and credExtractCmdAndCwd falls back
+// to the non-JSON path where "command_line" and "cwd" keys are not accessible.
+//
+// Note: json.Marshal escapes '<', '>', '&' to \uXXXX for HTML safety. Paths
+// never contain those characters, so this is not an issue for file-path args.
+// If you need to embed a general string that may contain those characters, use
+// json.NewEncoder with SetEscapeHTML(false) instead.
+func jsonStr(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b[1 : len(b)-1]) // strip surrounding quotes
+}
+
 // makeCredProjectDir creates a temp directory with a minimal trackfw.yaml.
 func makeCredProjectDir(t *testing.T, yamlContent string) string {
 	t.Helper()
@@ -296,8 +313,19 @@ func TestRunCredential_CRLFYamlModeNoBlock(t *testing.T) {
 
 // TestRunCredential_SecondLayerRedirectFile asserts that the second detection layer
 // scans non-ephemeral redirect target files for credential patterns.
+//
 // Assertion: payload without literal credential but redirecting to a file containing
-// a JWT → layer 2a finds the match → applies mode.
+// a JWT → Layer 2 finds the match → RC=2.
+// On POSIX, Layer 2a finds it (redirect target is an absolute path with no ':').
+// On Windows, credRedirectRe excludes ':' so the redirect target is truncated to
+// the drive letter only (e.g. "C"); Layer 2a misses it. Layer 2b rescues: "cat"
+// is argv0 and the absolute path appears as a subsequent token after tokenisation
+// by strings.Fields — credScanFile finds the file. This is the pre-PR (main)
+// behaviour: main's credCmdLineRe extracted the same command and Layer 2b did the
+// same scan. The test assertion (RC=2) is correct on both platforms; the layer
+// responsible differs.
+// Falsification: remove credNonJSONLayerTwoB call + disable Layer 2b for non-JSON →
+// RC=0 on Windows (because Layer 2a truncates at ':' and the non-JSON fallback is gone).
 func TestRunCredential_SecondLayerRedirectFile(t *testing.T) {
 	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
 
@@ -308,7 +336,8 @@ func TestRunCredential_SecondLayerRedirectFile(t *testing.T) {
 	}
 
 	// Payload: redirects to the token file (no JWT in the payload itself).
-	payload := `{"tool_input":{"command":"cat secret > ` + tokenFile + `"}}`
+	// jsonStr encodes backslashes in Windows paths so the payload is valid JSON.
+	payload := `{"tool_input":{"command":"cat secret > ` + jsonStr(tokenFile) + `"}}`
 	code, _, errOut := runCred(t, dir, payload)
 
 	if code != 2 {
@@ -318,7 +347,13 @@ func TestRunCredential_SecondLayerRedirectFile(t *testing.T) {
 
 // TestRunCredential_SecondLayerCatArg asserts that the second detection layer (2b)
 // scans file arguments of cat/head/tail/jq/grep for credential patterns.
-// Assertion: "cat /path/to/token.txt" where the file contains a JWT → layer 2b finds match.
+//
+// Assertion: "cat /path/to/token.txt" where the file contains a JWT → Layer 2b
+// tokenises the JSON-decoded command; credScanFile receives the decoded path
+// as-is (no backslash-escape processing) and opens the file → JWT found → RC=2.
+// On Windows the decoded path has backslash separators; os.Stat handles them
+// natively without any additional unescaping (H2 measurement for ML-2E).
+// Falsification: strip backslash-prefixed chars from Layer 2b tokens → RC=0 on Windows.
 func TestRunCredential_SecondLayerCatArg(t *testing.T) {
 	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
 
@@ -328,11 +363,41 @@ func TestRunCredential_SecondLayerCatArg(t *testing.T) {
 	}
 
 	// Payload: command is "cat <file>" — no JWT literal in the payload.
-	payload := `{"tool_input":{"command":"cat ` + tokenFile + `"}}`
+	// jsonStr encodes backslashes in Windows paths so the payload is valid JSON.
+	payload := `{"tool_input":{"command":"cat ` + jsonStr(tokenFile) + `"}}`
 	code, _, errOut := runCred(t, dir, payload)
 
 	if code != 2 {
 		t.Fatalf("layer 2b: expected exit 2 for cat of JWT file, got %d (stderr=%q)", code, errOut)
+	}
+}
+
+// TestRunCredential_InvalidJSONFallback_LayerTwoB asserts that when the JSON
+// payload contains a syntactically invalid escape sequence ("\q" is not a valid
+// JSON escape), credExtractCmdAndCwd returns isJSON=false, but credNonJSONLayerTwoB
+// still extracts the "command" field via credCmdLineRe and runs Layer 2b — finding
+// the JWT file referenced in the command.
+//
+// Reconciliation: asserts that credNonJSONLayerTwoB extracts the command via regex
+// from non-JSON text and Layer 2b scans the referenced file, returning RC=2.
+// This is the production fix for the non-JSON fallback path (ML-2E H1): any
+// payload that fails JSON parsing (not just Windows paths) retains Layer 2b coverage
+// for "command" field values.
+// Falsification: remove the credNonJSONLayerTwoB call in RunCredential → RC=0 (Layer
+// 2b silent; Layer 1 found nothing in the payload; no other layer catches the file).
+func TestRunCredential_InvalidJSONFallback_LayerTwoB(t *testing.T) {
+	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
+	tokenFile := filepath.Join(dir, "secret.txt")
+	if err := os.WriteFile(tokenFile, []byte(jwtToken), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// "\q" is not a valid JSON escape — this makes the JSON invalid on every platform.
+	// The file path itself has no backslashes (uses the platform separator from TempDir),
+	// so the regex extraction works and credScanFile finds the file.
+	invalidJSON := `{"x":"\q","tool_input":{"command":"cat ` + tokenFile + `"}}`
+	code, _, errOut := runCred(t, dir, invalidJSON)
+	if code != 2 {
+		t.Fatalf("invalid JSON fallback: expected RC=2 (credNonJSONLayerTwoB extracts command via regex), got %d (stderr=%q)", code, errOut)
 	}
 }
 
@@ -617,7 +682,8 @@ func TestRunCredential_WindsurfPreRunCommandCatFile_R1aFix(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Windsurf pre_run_command payload: command is in tool_info.command_line, not tool_input.command.
-	payload := `{"agent_action_name":"pre_run_command","tool_info":{"command_line":"cat ` + tokenFile + `","cwd":"` + dir + `"}}`
+	// jsonStr encodes backslashes in Windows paths so the payload is valid JSON.
+	payload := `{"agent_action_name":"pre_run_command","tool_info":{"command_line":"cat ` + jsonStr(tokenFile) + `","cwd":"` + jsonStr(dir) + `"}}`
 	code, _, errOut := runCred(t, dir, payload)
 	if code != 2 {
 		t.Fatalf("R1a: expected RC=2 (Layer 2b via tool_info.command_line), got %d (stderr=%q)", code, errOut)
@@ -635,7 +701,7 @@ func TestRunCredential_WindsurfPreRunCommandClean_Allows(t *testing.T) {
 	if err := os.WriteFile(cleanFile, []byte("no secrets here"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	payload := `{"agent_action_name":"pre_run_command","tool_info":{"command_line":"cat ` + cleanFile + `","cwd":"` + dir + `"}}`
+	payload := `{"agent_action_name":"pre_run_command","tool_info":{"command_line":"cat ` + jsonStr(cleanFile) + `","cwd":"` + jsonStr(dir) + `"}}`
 	code, _, errOut := runCred(t, dir, payload)
 	if code != 0 {
 		t.Fatalf("Windsurf clean command_line: expected RC=0, got %d (stderr=%q)", code, errOut)
@@ -659,7 +725,8 @@ func TestRunCredential_AmazonQExecuteBashCatQuotedPath_R1eFix(t *testing.T) {
 	// The JSON value for command has escaped quotes around the path: "cat \"secret.txt\""
 	// After JSON decode by credExtractCmdAndCwd, shellCmd = cat "secret.txt".
 	// credResolveArg strips the surrounding quotes → secret.txt → scanned.
-	payload := `{"hook_event_name":"PreToolUse","tool_name":"execute_bash","tool_input":{"command":"cat \"` + tokenFile + `\""}}`
+	// jsonStr encodes backslashes in Windows paths so the payload is valid JSON.
+	payload := `{"hook_event_name":"PreToolUse","tool_name":"execute_bash","tool_input":{"command":"cat \"` + jsonStr(tokenFile) + `\""}}`
 	code, _, errOut := runCred(t, dir, payload)
 	if code != 2 {
 		t.Fatalf("R1e: expected RC=2 (quoted path unescaped via JSON decode), got %d (stderr=%q)", code, errOut)
@@ -743,7 +810,10 @@ func TestRunCredential_AmazonQExecuteBashEchoJWTDevNull_ExemptionPreserved(t *te
 // Falsification (b): removing the exemption gives RC=2 (this test fails).
 func TestRunCredential_WindsurfEchoJWTDevNull_ExemptionPreserved(t *testing.T) {
 	dir := makeCredProjectDir(t, "credential_guard:\n  mode: block\nroadmap_dir: docs/roadmaps\n")
-	payload := `{"agent_action_name":"pre_run_command","tool_info":{"command_line":"echo ` + jwtToken + ` > /dev/null","cwd":"` + dir + `"}}`
+	// jsonStr encodes backslashes in Windows paths so the cwd field is valid JSON
+	// and credExtractCmdAndCwd returns isJSON=true, enabling the correct JSON
+	// exemption path (credIsSimpleCmd on the extracted command, not on raw text).
+	payload := `{"agent_action_name":"pre_run_command","tool_info":{"command_line":"echo ` + jwtToken + ` > /dev/null","cwd":"` + jsonStr(dir) + `"}}`
 	code, _, errOut := runCred(t, dir, payload)
 	if code != 0 {
 		t.Fatalf("Windsurf echo to /dev/null: expected RC=0 (ephemeral exemption), got %d (stderr=%q)", code, errOut)
@@ -804,7 +874,8 @@ func TestRunCredential_WindsurfCommandLineCwdResolution(t *testing.T) {
 	}
 
 	// command_line uses a relative path; cwd points to tokenDir.
-	payload := `{"agent_action_name":"pre_run_command","tool_info":{"command_line":"cat token.txt","cwd":"` + tokenDir + `"}}`
+	// jsonStr encodes backslashes in Windows paths so the payload is valid JSON.
+	payload := `{"agent_action_name":"pre_run_command","tool_info":{"command_line":"cat token.txt","cwd":"` + jsonStr(tokenDir) + `"}}`
 	code, _, errOut := runCred(t, projDir, payload)
 	if code != 2 {
 		t.Fatalf("cwd resolution: expected RC=2 (relative path resolved via tool_info.cwd), got %d (stderr=%q)", code, errOut)
@@ -893,7 +964,8 @@ func TestRunCredentialGlobal_WindsurfCatFile_R1aFix(t *testing.T) {
 	if err := os.WriteFile(tokenFile, []byte(jwtToken), 0644); err != nil {
 		t.Fatal(err)
 	}
-	payload := `{"agent_action_name":"pre_run_command","tool_info":{"command_line":"cat ` + tokenFile + `","cwd":"` + dir + `"}}`
+	// jsonStr encodes backslashes in Windows paths so the payload is valid JSON.
+	payload := `{"agent_action_name":"pre_run_command","tool_info":{"command_line":"cat ` + jsonStr(tokenFile) + `","cwd":"` + jsonStr(dir) + `"}}`
 	code, _, errOut := runCredGlobal(t, dir, payload)
 	if code != 2 {
 		t.Fatalf("global R1a: expected RC=2, got %d (stderr=%q)", code, errOut)
@@ -927,7 +999,8 @@ func TestRunCredential_CodexPreToolUseCatFile_Blocks(t *testing.T) {
 	}
 	// Codex PreToolUse payload: hook_event_name PreToolUse, tool_name Bash,
 	// tool_input.command is a plain cat command with the absolute path.
-	payload := `{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"cat ` + tokenFile + `"}}`
+	// jsonStr encodes backslashes in Windows paths so the payload is valid JSON.
+	payload := `{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"cat ` + jsonStr(tokenFile) + `"}}`
 	code, _, errOut := runCred(t, dir, payload)
 	if code != 2 {
 		t.Fatalf("Codex cat file: expected RC=2 (JWT in file), got %d (stderr=%q)", code, errOut)
@@ -948,7 +1021,8 @@ func TestRunCredential_CodexPreToolUseCatQuotedFile_Blocks(t *testing.T) {
 		t.Fatal(err)
 	}
 	// JSON-encoded: command = cat "<tokenFile>" — the file path is quoted.
-	payload := `{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"cat \"` + tokenFile + `\""}}`
+	// jsonStr encodes backslashes in Windows paths so the payload is valid JSON.
+	payload := `{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"cat \"` + jsonStr(tokenFile) + `\""}}`
 	code, _, errOut := runCred(t, dir, payload)
 	if code != 2 {
 		t.Fatalf("Codex cat quoted file: expected RC=2 (JWT in file), got %d (stderr=%q)", code, errOut)
@@ -992,8 +1066,9 @@ func TestRunCredential_BOMPayload_LayerTwoStillActive(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Prepend UTF-8 BOM (0xEF 0xBB 0xBF) to the JSON payload.
+	// jsonStr encodes backslashes in Windows paths so the payload is valid JSON.
 	bom := []byte{0xEF, 0xBB, 0xBF}
-	payload := string(bom) + `{"tool_input":{"command":"cat ` + tokenFile + `"}}`
+	payload := string(bom) + `{"tool_input":{"command":"cat ` + jsonStr(tokenFile) + `"}}`
 
 	var stdout, stderr bytes.Buffer
 	origDir, _ := os.Getwd()
@@ -1050,7 +1125,8 @@ func TestRunCredential_DeepCommand_NonStandardSchema_Blocks(t *testing.T) {
 	if err := os.WriteFile(tokenFile, []byte(jwtToken), 0644); err != nil {
 		t.Fatal(err)
 	}
-	payload := `{"params":{"command":"cat ` + tokenFile + `"}}`
+	// jsonStr encodes backslashes in Windows paths so the payload is valid JSON.
+	payload := `{"params":{"command":"cat ` + jsonStr(tokenFile) + `"}}`
 	code, _, errOut := runCred(t, dir, payload)
 	if code != 2 {
 		t.Fatalf("deep params.command cat file: expected RC=2, got %d (stderr=%q)", code, errOut)
@@ -1072,7 +1148,8 @@ func TestRunCredential_PriorityOneCommandWithSecondaryMalicious_Blocks(t *testin
 	if err := os.WriteFile(tokenFile, []byte(jwtToken), 0644); err != nil {
 		t.Fatal(err)
 	}
-	payload := `{"tool_input":{"command":"echo hi"},"tool_info":{"command_line":"cat ` + tokenFile + `"}}`
+	// jsonStr encodes backslashes in Windows paths so the payload is valid JSON.
+	payload := `{"tool_input":{"command":"echo hi"},"tool_info":{"command_line":"cat ` + jsonStr(tokenFile) + `"}}`
 	code, _, errOut := runCred(t, dir, payload)
 	if code != 2 {
 		t.Fatalf("priority-1 echo + secondary cat file: expected RC=2 (F4), got %d (stderr=%q)", code, errOut)
