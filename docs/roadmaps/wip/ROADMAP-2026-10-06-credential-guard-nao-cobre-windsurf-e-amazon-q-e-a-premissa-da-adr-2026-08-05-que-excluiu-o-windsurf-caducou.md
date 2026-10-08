@@ -182,14 +182,21 @@ no cwd, arquivo não achado, sem aviso. E o ML-2E registrou como limitação que
 Mesma causa da REQ (o guard não lê o payload pelo que o CLI escreve) → mesma REQ. Relatado por @lourivalgarciajunior.
 
 ### ML-3A — Threat model da reabertura
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** hades-tf
-- [ ] Enumeração de todo sítio da 2ª camada que interpreta caminho (argumento, redirecionamento, glob, cwd do payload, `tool_info.cwd`) e de quais formas de caminho cada CLI escreve no Windows (Git Bash `/c/`, MSYS `/cygdrive/c/`?, `C:\`, `C:/`, UNC `\\server\share`, `~`)
-- [ ] Alvos de falsificação nas duas direções (forma não detectada; forma POSIX legítima `/c/...` num Linux real, onde `/c` é diretório de verdade)
-- [ ] Medição na VM com o binário de `main`, lendo stderr, em modo `warn` e `block`
+- [x] Enumeração de todo sítio da 2ª camada que interpreta caminho (argumento, redirecionamento, glob, cwd do payload, `tool_info.cwd`) e de quais formas de caminho cada CLI escreve no Windows (Git Bash `/c/`, MSYS `/cygdrive/c/`?, `C:\`, `C:/`, UNC `\\server\share`, `~`)
+- [x] Alvos de falsificação nas duas direções (forma não detectada; forma POSIX legítima `/c/...` num Linux real, onde `/c` é diretório de verdade)
+- [x] Medição na VM com o binário de `main`, lendo stderr, em modo `warn` e `block`
+      Parecer (`docs/seguranca/2026-10-08-wave3-credential-guard-caminho-windows.md`), medido na VM com o binário da main:
+      BUG-1 `/c/`, `/C/`, `/cygdrive/c/` não detectados no argumento (sem cwd: `os.Stat("/c/...")` vira `C:\c\...`; com cwd:
+      `IsAbs` false → join quebrado); BUG-2 `credRedirectRe` exclui `:` → `> C:\...` vira o arquivo `C` (prova: arquivo `C`
+      no cwd é varrido). `C:\`, `C:/`, UNC e relativo detectam. macOS: `/c/...` absoluto, sem regressão possível se a
+      tradução for só no Windows. Decisão do arquiteto: tradução só com GOOS windows e tool_name ≠ PowerShell (o PowerShell
+      lê `/c/x` como `C:\c\x`); Codex manda "Bash" mesmo no PowerShell — traduzir ali é fail-closed (no pior caso um falso
+      positivo). Auditoria: o agente escreveu fora da pasta autorizada da VM (tf-ml3a4..6, /tmp) e declarou; conferido limpo.
 
 ### ML-3B — Correção e testes
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Squad:** apolo-tf
 - [ ] Toda forma listada no ML-3A detectada no Windows (argumento e redirecionamento), projeto e global
 - [ ] POSIX sem regressão (`/c/...` continua absoluto)

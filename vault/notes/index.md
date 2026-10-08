@@ -4,6 +4,8 @@
 
 ## Índice
 
+- [credential-guard-windows-path-forms-layer2-2026-10-08](credential-guard-windows-path-forms-layer2-2026-10-08.md) — 🔴 **Dois bugs independentes na Layer 2: BUG-1 dois sub-casos (A: path devolvido como-está → os.Stat falha; B: IsAbs=false → join errado); BUG-2: credRedirectRe trunca `C:\path` em `C` por exclusão de `:`** — Git Bash `/c/...` e redirects com letra de unidade passam sem detecção; warn=block em padrão; POSIX seguro (IsAbs=true); PowerShell-nativo-com-POSIX-path = residual; fix: credNormalizeWindowsPath(path, goos) após TrimRight + regex sem `:`; ML-3B REQ-2026-10-06
+
 - [credextractcmdandcwd-bom-unmarshal-data-not-stripped-2026-10-08](credextractcmdandcwd-bom-unmarshal-data-not-stripped-2026-10-08.md) — 🔴 **`credExtractCmdAndCwd` passa `data` (com BOM) em vez de `stripped` para `json.Unmarshal`** — BOM desativa Layer 2b inteiramente; todos os fixes do ML-1C regridem; fix: trocar `data` por `stripped` na linha ~373; PowerShell como trigger documentado
 
 - [credential-guard-ephemeral-bypass-json-structure-2026-10-08](credential-guard-ephemeral-bypass-json-structure-2026-10-08.md) — 🔴 **`credIsAllEphemeral` dispara mesmo quando Layer 1 já encontrou JWT** — `> /dev/null` em `new_str` Amazon Q `fs_write` (estrutura `"}}`) → exemption → RC=0; Windsurf `pre_write_code` não afetada (estrutura `"]}}` impede strip); correção: não chamar `credIsAllEphemeral` quando Layer 1 encontrou match; ML-1C REQ-2026-10-06

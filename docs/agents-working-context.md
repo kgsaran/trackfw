@@ -45936,3 +45936,19 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-08 — zeus-tf — REQ-2026-10-08 Done (PR #545); REQ-2026-10-06 reaberta pela #544
 
 - REQ-2026-10-08 fechada com evidência, roadmap em `done/`, `req-aberta` retirada da #542. REQ-2026-10-06 reaberta (AC6, Wave 3): caminho Git Bash `/c/...` e redirecionamento `C:\...` não varridos na 2ª camada no Windows. Branch `fix/credential-guard-caminho-git-bash-windows`. ML-3A (hades-tf) despachado.
+
+## 2026-10-08 — hades-tf — INÍCIO: ML-3A REQ-2026-10-06 (threat model caminho Windows 2ª camada)
+
+- Lendo issue #544, roadmap Wave 3, credential.go, ADR-2026-09-04 (IsAbs). Compilando binário para VM Windows e medindo formas de caminho na 2ª camada (argumento e redirecionamento). Entregável: docs/seguranca/2026-10-08-wave3-credential-guard-caminho-windows.md.
+
+## 2026-10-08 — hades-tf — FIM: ML-3A REQ-2026-10-06 (threat model caminho Windows 2ª camada)
+
+- Entregue docs/seguranca/2026-10-08-wave3-credential-guard-caminho-windows.md + vault note. Dois bugs confirmados e medidos na VM (Windows 11 ARM64, trackfw v9.3.3, commit a3f98e99):
+  - BUG-1 (dois sub-casos): (A) sem tool_info.cwd — path `/c/...` devolvido como-está → `os.Stat("/c/...")` → Windows vê `C:\c\...` → não existe → não detecta (`filepath.IsAbs` nem consultado); (B) com cwd nativo — `filepath.IsAbs("/c/...")=false` → `filepath.Join("C:\\...", "/c/...")` = `C:\c\...` → stat falha. Ambos medidos (rc=0 detected=false).
+  - BUG-2: `credRedirectRe` exclui `:` → redirect `C:\...` ou `C:/...` extraído como `C` → arquivo `C` no cwd procurado (prova: arquivo `C` com chave no cwd → rc=2 detected=true para o arquivo errado).
+  - UNC: detectado (rc=2 detected=true) quando admin share acessível — sem defeito estrutural.
+  - Warn = block em padrão de detecção; rc=0 para todos em warn; /c/ FN persiste em ambos os modos.
+  - PowerShell path (medido §2.10, `powershell.exe` via ssh): `GetFullPath('/c/Users/Lab')` = `C:\c\Users\Lab`. Residual pós-fix em duas direções: FP + FN regressão. Gate deny-list `strings.EqualFold(toolName, "PowerShell")` fecha para Claude Code (`"PowerShell"` confirmado); ABERTO para Codex (emite `"Bash"` mesmo em PS — forma de caminho não medida) e Windsurf (sem tool_name).
+  - POSIX (macOS): `filepath.IsAbs("/c/...")=true`; `cat <abspath>/s.env` → detected=true; gate GOOS obrigatório.
+  - Spec ML-3B: `credNormalizeWindowsPath(path, goos, toolName string) string` — só strings/regexp (sem path/filepath); saída forward-slash `C:/...`; gate `EqualFold(toolName,"PowerShell")`; cadeia: `credExtractCmdAndCwd` retorna `toolName string`; assinaturas reais lidas de credential.go; unit tests 12 linhas; par de integração toolName Bash/PowerShell obrigatório.
+  - VM limpa: tf-ml3a, tf-ml3a4, tf-ml3a5, tf-ml3a6 apagados; tf.exe apagado; measure4/5/6.sh apagados; /tmp/ml3a_se.txt apagado. Verificado: measure*.ps1 da listagem são de 2026-10-04, não desta sessão.
