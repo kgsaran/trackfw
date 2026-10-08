@@ -2456,11 +2456,11 @@ func globalCredentialGuardInstalledKiro() bool {
 // against the git-branch-guard scriptPath.
 //
 // Only 5 of the 6 credential-guard dedup targets have a git-branch-guard
-// counterpart: Kiro's project-scope injector (InjectKiroHooks) never wires
-// git-branch-guard at all (it is not one of the CLIs InjectKiroHooks covers
-// for this guard — see its doc comment), so there is nothing to dedup there
-// and no globalGitBranchGuardInstalledKiro function exists. Windsurf/AmazonQ
-// wire git-branch-guard at project scope but have no global-scope target
+// counterpart: Kiro's project-scope injector (InjectKiroHooks) wires
+// git-branch-guard at project scope (agentfiles.go:1027–1038), but has no
+// GLOBAL harness target (no ~/.kiro/hooks/ harness was added by ML-2A) — so
+// no globalGitBranchGuardInstalledKiro function exists and no dedup is needed.
+// Windsurf/AmazonQ wire git-branch-guard at project scope but have no global-scope target
 // (ML-2A only added targets for the 6 CLIs above) and no credential-guard
 // dedup precedent either — consistent, not a gap.
 

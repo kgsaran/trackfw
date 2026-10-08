@@ -45696,3 +45696,6 @@ Achados notáveis para o apolo-tf:
   - `scripts/check-validate-rule-pins.sh`: fixture D11 → new D11
   - `docs/cli-parity.md`, `README.md`: tabelas e descrição D11 atualizadas (ML-6C)
 - Falsificações: (1) remover 4º segmento → PS RC=1 e RC=3 falham; (2) `$?` no lugar de `2*!!$?` → sh/bash RC=1, RC=3, absent falham
+## 2026-10-07 — zeus-tf — INÍCIO: REQ-2026-10-07 (init não instala hooks de Gemini e Kiro na 1ª execução)
+
+- Roadmap em wip, branch `fix/trackfw-init-nao-instala-os-hooks-de-gemini-e-kiro`. Causa lida: `Scaffold` → `InjectHooksDetected` antes de `installAITools`; Kiro detectado só por `.kiro`. Wave 0 (hades-tf) despachada.
