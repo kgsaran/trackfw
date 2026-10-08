@@ -45822,3 +45822,7 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-08 — zeus-tf — INÍCIO: REQ-2026-10-06 (credential guard não cobre Windsurf e Amazon Q)
 
 - 9.3.3 publicada nos 3 canais (verificação do PyPI reexecutada: atraso de índice de 3 min). Roadmap em wip, branch `fix/credential-guard-nao-cobre-windsurf-e-amazon-q`. Wave 0 (hades-tf): threat model + remedição dos eventos de hook com fonte oficial.
+
+## 2026-10-08 — zeus-tf — FIM: REQ-2026-10-06 implementada (aguarda PR)
+
+- Credential guard instalado e auditado em Windsurf (pre_run_command, pre_write_code, harness global) e Amazon Q (execute_bash, fs_write). O guard lê o payload por JSON (BOM, command/command_line em qualquer profundidade) e a isenção de /dev/null só vale para echo/printf simples — fechou bypasses que valiam também no Claude Code. Red-team reprovou 1x (F1-F4), corrigido. Prova em CLI real: impossível (sem contas). `make quality` EXIT=0.
