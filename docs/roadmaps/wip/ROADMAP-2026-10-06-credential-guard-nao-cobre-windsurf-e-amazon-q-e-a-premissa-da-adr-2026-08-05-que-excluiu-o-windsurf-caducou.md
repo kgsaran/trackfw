@@ -15,9 +15,10 @@ REQ: docs/req/REQ-2026-10-06-credential-guard-nao-cobre-windsurf-e-amazon-q-e-a-
 
 ## Acceptance Criteria
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
-- [ ] AC1 da REQ — eventos de hook do Windsurf e do Amazon Q remedidos com fonte oficial e data (ML-0B)
-- [ ] AC2 da REQ — adendo à ADR-2026-08-05 com a decisão por CLI (ML-1A)
+- [x] AC1 da REQ — eventos de hook do Windsurf e do Amazon Q remedidos com fonte oficial e data (ML-0B)
+- [x] AC2 da REQ — adendo à ADR-2026-08-05 com a decisão por CLI (ML-1A)
 - [ ] AC3 da REQ — `init`/`update`/`update harness` emitem o credential guard para cada CLI decidido "instalar"; `validate` deixa de silenciar; teste nas duas direções (ML-1B)
+- [ ] AC5 da REQ — o guard lê o payload de cada CLI (ML-1C)
 - [ ] AC4 da REQ — prova de disparo real ou impossibilidade declarada com motivo (ML-2A)
 - [ ] `make quality` verde (arquiteto, sem `~/.local/bin` no PATH)
 
@@ -28,7 +29,7 @@ REQ: docs/req/REQ-2026-10-06-credential-guard-nao-cobre-windsurf-e-amazon-q-e-a-
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model for this roadmap
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** hades-tf
 **Files affected:** `docs/seguranca/2026-10-08-wave0-credential-guard-windsurf-amazonq.md` (novo)
 **Actions:**
@@ -37,17 +38,23 @@ REQ: docs/req/REQ-2026-10-06-credential-guard-nao-cobre-windsurf-e-amazon-q-e-a-
 3. Falsification targets in both directions — por superfície: o que quebra se o guard deixar de ser emitido, e o que quebra se for emitido num evento que não bloqueia (falsa sensação de proteção) ou que bloqueia tudo (deny-all).
 4. Declared residual.
 **Acceptance criteria:**
-- [ ] The four sections above answered with evidence, not a one-line assertion
-- [ ] No implementation line written for this ML
+- [x] The four sections above answered with evidence, not a one-line assertion
+- [x] No implementation line written for this ML
 
 ### ML-0B — Remedição dos eventos de hook (AC1 da REQ)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** hades-tf
 **Files affected:** mesmo documento do ML-0A, seção "Remedição"
 **Actions:** por CLI (Windsurf, Amazon Q CLI), com URL da documentação oficial e data de acesso: quais eventos existem antes de ler arquivo, escrever arquivo e executar comando; que payload chega no stdin (comando? caminho? conteúdo escrito?); exit code que bloqueia vs só avisa; se há escopo global (arquivo de usuário) além do de projeto. Confrontar com o que o gerador emite hoje.
 **Acceptance criteria:**
-- [ ] Tabela por CLI × evento com fonte e data; cada célula "bloqueia/avisa/não existe" tem citação
-- [ ] Recomendação por CLI: instalar (em qual evento e com qual nome de guard) ou manter fora (motivo medido)
+- [x] Tabela por CLI × evento com fonte e data; cada célula "bloqueia/avisa/não existe" tem citação
+- [x] Recomendação por CLI: instalar (em qual evento e com qual nome de guard) ou manter fora (motivo medido)
+
+      Auditoria (2026-10-08): 1º parecer reprovado — payload de escrita inventado (`content`) nos dois CLIs; ML corretivo
+      remediu com payload real (Windsurf `edits[].new_string`, Amazon Q `fs_write` tag `command`). Veredito mantido.
+      Achados novos, conferidos pelo arquiteto com binário desta árvore em projeto `mode: block`: JWT + `> /dev/null` no
+      conteúdo de `Write`/`Edit` do Claude Code e `fs_write` do Amazon Q → RC 0 (isenção efêmera aplicada ao payload
+      inteiro); `cat "arquivo"` (aspas) passa na 2ª camada; Windsurf `command_line` não é lido. Mesma causa → ML-1C.
 
 **Gates da wave:**
 ```bash
@@ -59,21 +66,34 @@ grep -q "Veredito" docs/seguranca/2026-10-08-wave0-credential-guard-windsurf-ama
 > Dependencies: Wave 0 auditada. O detalhe dos MLs é fechado a partir do parecer da Wave 0.
 
 ### ML-1A — Adendo à ADR-2026-08-05 (AC2)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Squad:** zeus-tf
 **Files affected:** `docs/adr/ADR-2026-08-05-hook-de-guarda-contra-materializacao-de-credenciais-reais-por-subagentes.md`
 **Acceptance criteria:**
-- [ ] Adendo datado revendo a premissa do Windsurf e avaliando o Amazon Q, decisão por CLI citando o ML-0B
+- [x] Adendo datado revendo a premissa do Windsurf e avaliando o Amazon Q, decisão por CLI citando o ML-0B
 
 ### ML-1B — Gerador, update, harness e validate (AC3)
 **Status:** ⬜ Pendente
 **Squad:** apolo-tf
-**Files affected:** a fechar após Wave 0 (`internal/generators/agentfiles.go`, `internal/generators/update.go`, `internal/validator/validator_credential_guard.go` e testes)
+**Files affected:** `internal/generators/agentfiles.go`, `internal/generators/update.go`, `internal/validator/validator_credential_guard.go`, `internal/validator/validator_guard_binary_probe.go` (se preciso), testes desses pacotes, `.windsurf/hooks.json`/`.amazonq/...` deste repo se existirem, `docs/cli-parity.md`. **Não toca `internal/guard/`** (ML-1C, paralelo).
+**Eventos:** Windsurf `pre_run_command` + `pre_write_code`; Amazon Q `preToolUse` matchers `execute_bash` + `fs_write`. Nunca `pre_read_code`/`fs_read`. Harness `windsurf-credential-guard` (`~/.codeium/windsurf/hooks.json`); Amazon Q só projeto.
 **Acceptance criteria:**
 - [ ] Teste: `init`/`update` emitem a linha D11 revista do credential guard no evento decidido, por CLI decidido
 - [ ] Teste: `validate` acusa o arquivo sem o credential guard (antes silenciado) e não acusa o arquivo correto
 - [ ] Falsificação nas duas direções, com a frase de reconciliação por teste novo
 - [ ] Configs deste repo e `docs/cli-parity.md` atualizados
+
+### ML-1C — O guard lê o payload de cada CLI (AC5)
+**Status:** ⬜ Pendente
+**Squad:** apolo-tf (paralelo ao ML-1B: arquivos disjuntos)
+**Por que o escopo original não previa:** achados da Wave 0 (ver ML-0B). A REQ dizia "não muda o guard"; a medição
+mostrou que o guard não entende o payload dos CLIs que esta REQ cobre, e que a mesma causa já abria o Claude Code.
+**Files affected:** `internal/guard/credential.go` e testes em `internal/guard/`. Nada fora de `internal/guard/`.
+**Acceptance criteria:**
+- [ ] 2ª camada extrai o comando por JSON parse de `tool_input.command` e `tool_info.command_line` (e `command` no topo, se algum CLI usar); `cat "arquivo"` e `cat 'arquivo'` detectados
+- [ ] Isenção efêmera (`> /dev/null` etc.) avaliada só sobre o comando de shell extraído; payload de escrita (Write/Edit do Claude, `pre_write_code`, `fs_write`) com JWT + `> /dev/null` → 2 em `block`, nos escopos projeto e global
+- [ ] `echo <JWT> > /dev/null` num comando de shell continua isento (direção oposta)
+- [ ] Testes com payload real de Claude Code, Codex, Windsurf e Amazon Q; falsificação nas duas direções; frase de reconciliação por teste novo
 
 ## Wave 2 — Prova e red-team
 > Dependencies: Wave 1 auditada.

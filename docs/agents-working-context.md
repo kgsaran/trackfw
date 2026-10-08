@@ -2,6 +2,38 @@
 
 ---
 
+## 2026-10-08 — hades-tf (fix/credential-guard-nao-cobre-windsurf-e-amazon-q — Wave 0 ML corretivo) — FIM
+
+**Branch:** `fix/credential-guard-nao-cobre-windsurf-e-amazon-q`
+**Resultado:** Documento Wave 0 corrigido. Achados principais: (1) Windsurf `pre_write_code`: campo real é `edits[*].new_string`, não `content`; `agent_action_name` de `pre_run_command` era `"execute_bash"`, correto é `"pre_run_command"`; `pre_read_code` era `"read_code"`, correto é `"pre_read_code"`. Fonte: docs.devin.ai/desktop/cascade/hooks, verificado 2026-10-08. (2) Amazon Q `fs_write`: enum com `tag="command"`, variantes `create`/`str_replace`/`insert`/`append`; campos `file_text` e `new_str`, não `content`. Fonte: `fs_write.rs` verificado via curl. (3) Layer 2b com `"command":"create"/"str_replace"`: sem falso positivo — valores não estão no switch cat/head/tail; RC=0 (correto). (4) R1 reclassificado de REQ separada para ML-1C; especificação completa (campo `command_line`, `cwd`, abordagem JSON unmarshal, Item 4 — bypass EE4). (5) EE4 — falso negativo NOVO: JWT + `> /dev/null` em `new_str` Amazon Q `fs_write` → RC=0 (`credIsAllEphemeral` dispara porque `"}}` sem `]` permite strip exato para `/dev/null`); Windsurf `pre_write_code` não afetada (estrutura `"]}}` impede). (6) R1c medido: Layer 2a (credRedirectRe) captura `>` dentro de `command_line` Windsurf → RC=2 (proteção mais ampla que prevista). (7) Vector G corrigido: Layer 1 apenas, não "Layer 1 + credCmdLineRe". (8) Vault note criada para EE4.
+**Arquivos afetados:** `docs/seguranca/2026-10-08-wave0-credential-guard-windsurf-amazonq.md`, `docs/agents-working-context.md`, `vault/notes/credential-guard-ephemeral-bypass-json-structure-2026-10-08.md`, `vault/notes/index.md`
+
+---
+
+## 2026-10-08 — hades-tf (fix/credential-guard-nao-cobre-windsurf-e-amazon-q — Wave 0 ML corretivo) — INÍCIO
+
+**Branch:** `fix/credential-guard-nao-cobre-windsurf-e-amazon-q`
+**Tarefa:** Correção do documento Wave 0 (`docs/seguranca/2026-10-08-wave0-credential-guard-windsurf-amazonq.md`): (1) corrigir formato de payload de escrita inventado para Windsurf (`pre_write_code`) e Amazon Q (`fs_write`); (2) medir comportamento da Layer 2b com `"command":"create"` / `"command":"str_replace"`; (3) reclassificar R1 (Layer 2b não extrai `tool_info.command_line`) de REQ separada para ML-1C desta REQ.
+**Arquivos afetados:** `docs/seguranca/2026-10-08-wave0-credential-guard-windsurf-amazonq.md`, `docs/agents-working-context.md`
+
+---
+
+## 2026-10-08 — hades-tf (fix/credential-guard-nao-cobre-windsurf-e-amazon-q — Wave 0 ML-0A + ML-0B) — FIM
+
+**Branch:** `fix/credential-guard-nao-cobre-windsurf-e-amazon-q`
+**Resultado:** Entregue `docs/seguranca/2026-10-08-wave0-credential-guard-windsurf-amazonq.md`. Gates passaram: arquivo existe e contém "Veredito". Achados principais: (1) as constantes `guardCredentialCmdPSPOSIX`/`CmdExe` existem em `agentfiles.go:502-507` mas nunca são conectadas a `InjectWindsurfHooks`/`InjectAmazonQHooks`; (2) Vector C medido — Windsurf `pre_read_code` com JWT apenas no arquivo referenciado → RC=0 (Layer 2b cega para `tool_info.file_path`); (3) Windsurf `pre_write_code` com JWT no campo `content` → RC=2 (Layer 1 funciona); (4) Amazon Q `preToolUse[execute_bash]` com JWT inline → RC=2 (Layer 1 + Layer 2b funcionam); (5) comentários obsoletos em `update.go:511` e `cli-parity.md:3971`. Veredito: Wave 1 liberada; instalar credential guard em Windsurf `pre_run_command` + `pre_write_code` e Amazon Q `preToolUse[execute_bash]` + `preToolUse[fs_write]`; NÃO instalar em eventos de leitura (falsa proteção); Layer 2b gap para Windsurf `pre_run_command` é residual declarado — requer REQ separada.
+**Arquivos afetados:** `docs/seguranca/2026-10-08-wave0-credential-guard-windsurf-amazonq.md` (novo), `docs/agents-working-context.md`
+
+---
+
+## 2026-10-08 — hades-tf (fix/credential-guard-nao-cobre-windsurf-e-amazon-q — Wave 0 ML-0A + ML-0B) — INÍCIO
+
+**Branch:** `fix/credential-guard-nao-cobre-windsurf-e-amazon-q`
+**Tarefa:** Wave 0 (threat model + remedição de eventos) da REQ-2026-10-06. Produzir `docs/seguranca/2026-10-08-wave0-credential-guard-windsurf-amazonq.md` com: (1) enumeração completa de sítios que emitem/auditam credential guard; (2) threat model de quem esvazia a Wave 0 sem quebrar regra; (3) alvos de falsificação nas duas direções; (4) residual declarado; (5) remedição dos eventos por CLI com fonte oficial e data; (6) veredito.
+**Arquivos afetados:** `docs/seguranca/2026-10-08-wave0-credential-guard-windsurf-amazonq.md` (novo), `docs/agents-working-context.md`
+
+---
+
 ## 2026-10-07 — apolo-tf (fix/hooks-de-guard-executam-no-windows-trackfw-ausente — ML-6B corretivo global D2) — FIM
 
 **Branch:** `fix/hooks-de-guard-executam-no-windows-trackfw-ausente`
