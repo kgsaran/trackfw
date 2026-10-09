@@ -291,7 +291,7 @@ func NewRoadmapFromContent(content RoadmapContent) error {
 				// Opção B (idempotente): pular criação, verificar/reparar vínculos, reportar.
 				fmt.Fprintf(os.Stderr, "roadmap %s já existe em %s (criada por `trackfw req new`?) — nada sobrescrito; use --force para recriar\n",
 					basename, existingPath)
-				linkREQToRoadmap(content.REQPath, normalizeRefSeparator(filename))
+				reconcileExistingRoadmapLink(content.REQPath, normalizeRefSeparator(filename), cfg)
 				return nil
 			}
 			// --force no mesmo caminho: cai no write abaixo (O_TRUNC via os.WriteFile).
@@ -303,7 +303,7 @@ func NewRoadmapFromContent(content RoadmapContent) error {
 			}
 			fmt.Fprintf(os.Stderr, "roadmap %s já existe em %s — nada sobrescrito; use --force para recriar (apenas no mesmo estado)\n",
 				basename, existingPath)
-			linkREQToRoadmap(content.REQPath, normalizeRefSeparator(existingPath))
+			reconcileExistingRoadmapLink(content.REQPath, normalizeRefSeparator(existingPath), cfg)
 			return nil
 		}
 	}
@@ -370,7 +370,7 @@ REQ: %s
 			if errors.Is(createErr, fs.ErrExist) {
 				// TOCTOU: arquivo criado entre a checagem e o open — tratar como já existente.
 				fmt.Fprintf(os.Stderr, "roadmap %s já existe — nada sobrescrito; use --force para recriar\n", filename)
-				linkREQToRoadmap(content.REQPath, normalizeRefSeparator(filename))
+				reconcileExistingRoadmapLink(content.REQPath, normalizeRefSeparator(filename), cfg)
 				return nil
 			}
 			return fmt.Errorf("writing roadmap: %w", createErr)
@@ -1660,6 +1660,155 @@ func linkREQToRoadmap(reqPath, roadmapPath string) {
 	}
 
 	fmt.Printf("✓ linked %s → %s\n", filepath.Base(absReq), roadmapPath)
+}
+
+// ─── Reparo de elo nos caminhos "já existe" (ML-6D, A2/A4) ─────────────────
+
+// findREQsPointingToRoadmap retorna os caminhos relativos de todas as REQs em req_dir
+// cujo frontmatter `roadmap:` tem basename igual a roadmapBasename.
+// Reutiliza scanREQFiles (ponto único, ADR-2026-09-03) e o mesmo predicado de basename
+// que syncREQReferences usa em :1507.
+func findREQsPointingToRoadmap(roadmapBasename string, cfg config.ProjectConfig) []string {
+	reqFiles, err := scanREQFiles(cfg)
+	if err != nil {
+		return nil
+	}
+	var found []string
+	for _, reqPath := range reqFiles {
+		data, readErr := os.ReadFile(reqPath)
+		if readErr != nil {
+			continue
+		}
+		fmVal := extractFrontmatterRoadmap(string(data))
+		if fmVal == "" {
+			continue
+		}
+		if filepath.Base(normalizeRefSeparator(fmVal)) == roadmapBasename {
+			found = append(found, reqPath)
+		}
+	}
+	return found
+}
+
+// reconcileExistingRoadmapLink substitui as chamadas diretas a linkREQToRoadmap nos
+// três caminhos "já existe" de NewRoadmapFromContent (mesmo estado, outro estado, TOCTOU).
+//
+// A4 (ML-6D): quando --req R é passado e o roadmap existente já tem req: apontando para
+// OUTRA REQ, avisa em stderr e retorna sem escrever nada — nem a REQ R nem o roadmap são
+// alterados. "Outra" é definida por basename, como syncREQReferences e rewriteRoadmapREQRef
+// fazem, para tolerar formas diferentes do mesmo caminho (relativo, ./prefixado).
+//
+// A2 (ML-6D): quando --req não é passado e o roadmap tem req: vazio, verifica quantas REQs
+// em req_dir apontam para ele. Se exatamente uma, repara req: e a linha REQ: do corpo.
+// Se zero ou mais de uma, avisa e não toca o arquivo.
+//
+// Comportamento padrão (nem A4 nem A2 se aplicam): delega para linkREQToRoadmap.
+//
+// Nunca é fatal: falhas de leitura/escrita saem em stderr e retornam silenciosamente,
+// espelhando o contrato de não-fatalidade de linkREQToRoadmap.
+func reconcileExistingRoadmapLink(reqPath, existingPath string, cfg config.ProjectConfig) {
+	roadmapData, readErr := os.ReadFile(existingPath)
+
+	// A4: --req passado
+	if reqPath != "" {
+		if readErr != nil {
+			// Fail closed: sem o conteúdo do roadmap não é possível verificar vínculo.
+			fmt.Fprintf(os.Stderr, "trackfw roadmap new: cannot verify ownership of %s: %v — link skipped\n",
+				filepath.Base(existingPath), readErr)
+			return
+		}
+		existingREQ := extractFrontmatterReq(string(roadmapData))
+		if !reqRoadmapFMIsFillable(existingREQ) {
+			// roadmap tem req: preenchido — verificar se é a mesma REQ (por basename).
+			if filepath.Base(normalizeRefSeparator(existingREQ)) != filepath.Base(normalizeRefSeparator(reqPath)) {
+				fmt.Fprintf(os.Stderr, "trackfw roadmap new: %s already belongs to %s — link to %s not created\n",
+					filepath.Base(existingPath), existingREQ, filepath.Base(reqPath))
+				return
+			}
+		}
+		// req: vazio ou igual → completar o elo dos dois lados.
+		// Lado REQ→roadmap (já existia antes deste complemento).
+		linkREQToRoadmap(reqPath, normalizeRefSeparator(existingPath))
+		// Lado roadmap→REQ: quando req: está vazio, preencher com reqPath.
+		// Complemento do ML-6D: o lado REQ recebia o vínculo mas o roadmap
+		// continuava órfão do seu próprio req: — a lacuna declarada no relatório.
+		if reqRoadmapFMIsFillable(existingREQ) {
+			fmFillable := func(plainVal string) bool { return reqRoadmapFMIsFillable(plainVal) }
+			updated, changed := rewriteREQRoadmapRefWith(roadmapData, fmFillable, reqRoadmapBodyIsFillable,
+				"req", "REQ", true, normalizeRefSeparator(reqPath))
+			if changed {
+				root, rootErr := projectRoot()
+				if rootErr != nil {
+					fmt.Fprintf(os.Stderr, "trackfw roadmap new: skipped req: fill for %s: %v\n",
+						filepath.Base(existingPath), rootErr)
+					return
+				}
+				absExisting := filepath.Join(root, existingPath)
+				// write-containment-allowed: guarded by pathguard.RejectAndReport below
+				if guardErr := pathguard.RejectAndReport(root, absExisting); guardErr != nil {
+					return
+				}
+				// write-containment-allowed: guarded by pathguard.RejectAndReport above
+				if err := os.WriteFile(existingPath, updated, 0644); err != nil {
+					fmt.Fprintf(os.Stderr, "trackfw roadmap new: failed to fill req: in %s: %v\n",
+						filepath.Base(existingPath), err)
+					return
+				}
+				fmt.Printf("✓ linked %s → %s\n", filepath.Base(existingPath), reqPath)
+			}
+		}
+		return
+	}
+
+	// A2: --req não passado
+	if readErr != nil {
+		// Não conseguiu ler o roadmap — não tenta reparar.
+		return
+	}
+	existingREQ := extractFrontmatterReq(string(roadmapData))
+	if !reqRoadmapFMIsFillable(existingREQ) {
+		// roadmap já tem req: preenchido — nada a fazer.
+		return
+	}
+	// req: vazio → procurar REQs que apontam para este roadmap.
+	roadmapBasename := filepath.Base(normalizeRefSeparator(existingPath))
+	pointing := findREQsPointingToRoadmap(roadmapBasename, cfg)
+	switch len(pointing) {
+	case 0:
+		fmt.Fprintf(os.Stderr, "trackfw roadmap new: %s has empty req: and no REQ points to it — use --req to link\n",
+			roadmapBasename)
+	case 1:
+		// Exatamente 1 REQ aponta → reparar req: e corpo REQ: do roadmap.
+		reqRel := pointing[0]
+		fmFillable := func(plainVal string) bool {
+			return !strings.HasSuffix(strings.TrimSpace(plainVal), ".md")
+		}
+		updated, changed := rewriteREQRoadmapRefWith(roadmapData, fmFillable, reqRoadmapBodyIsFillable,
+			"req", "REQ", true, normalizeRefSeparator(reqRel))
+		if !changed {
+			fmt.Fprintf(os.Stderr, "trackfw roadmap new: %s has empty req: but repair produced no change — edit manually\n",
+				roadmapBasename)
+			return
+		}
+		root, rootErr := projectRoot()
+		if rootErr != nil {
+			fmt.Fprintf(os.Stderr, "trackfw roadmap new: skipped req: repair for %s: %v\n", roadmapBasename, rootErr)
+			return
+		}
+		absExisting := filepath.Join(root, existingPath)
+		if guardErr := pathguard.RejectAndReport(root, absExisting); guardErr != nil {
+			return
+		}
+		// write-containment-allowed: guarded by pathguard.RejectAndReport above
+		if err := os.WriteFile(existingPath, updated, 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "trackfw roadmap new: failed to repair req: in %s: %v\n", roadmapBasename, err)
+			return
+		}
+		fmt.Printf("✓ repaired req: in %s → %s\n", roadmapBasename, reqRel)
+	default:
+		fmt.Fprintf(os.Stderr, "trackfw roadmap new: %s has empty req: and %d REQs point to it — use --req to link explicitly\n",
+			roadmapBasename, len(pointing))
+	}
 }
 
 // ─── Backlink roadmap←REQ no MOVIMENTO (ML-6A, AC16) ────────────────────────

@@ -1781,10 +1781,14 @@ recusa era o roadmap estar em `blocked/`, que o guard não aceita, **não** o ca
       com `--agent` diferente cria órfã noutro namespace, sem perda) → residual; o validate acusa.
 
 ### ML-6D — Corretivo do red-team: vínculo no caminho "já existe"
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
-- [ ] A2: roadmap existente com `req: ""` e exatamente uma REQ apontando para ela → `req:` reparado sem `--req`
-- [ ] A4: `--req` diferente do `req:` já gravado → não vincula, avisa; nenhuma das duas REQs alterada
-- [ ] A3: help do `--force` diz que o vínculo é recriado só com `--req`
-- [ ] Testes nas duas direções, falsificação; `make quality` (arquiteto)
+- [x] A2: roadmap existente com `req: ""` e exatamente uma REQ apontando para ela → `req:` reparado sem `--req`
+- [x] A4: `--req` diferente do `req:` já gravado → não vincula, avisa; nenhuma das duas REQs alterada
+- [x] A3: help do `--force` diz que o vínculo é recriado só com `--req`
+- [x] Testes nas duas direções, falsificação; `make quality` (arquiteto)
+      Auditoria (2026-10-09): 6 testes conferidos por nome (A2 ×3, A4 ×3 incluindo `TestRoadmapNew_A4_OrphanRoadmap_GetsReqFilled`
+      — complemento pedido pelo arquiteto: `--req R` sobre roadmap órfã também grava `req:` na roadmap); falsificações de A2,
+      A4 e do complemento registradas; árvore só com os arquivos declarados. `make quality` (arquiteto) EXIT=0, 347 OK.
+      Residual: by_agent com `--agent` diferente (A1) — o validate acusa a órfã.
 

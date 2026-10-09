@@ -46077,3 +46077,33 @@ Achados notáveis para o apolo-tf:
   - Superfícies limpas: flat, by_agent mesmo agente, roadmap_dir custom, diretórios ausentes, symlink folha, case-insensitive FS, --from-req, wizard, texto de protocolo, exit code/Scenario 13.
   - 21 testes AC8 + protocol text: todos PASS.
   - Veredito: APROVA COM RESSALVAS.
+
+---
+
+## 2026-10-09 — apolo-tf (fix/req-nasce-orfa-roadmap-new-sobrescreve — ML-6D) — INÍCIO
+
+**Branch:** `fix/req-nasce-orfa-roadmap-new-sobrescreve`
+**Escopo:** `internal/generators/roadmap.go` · `internal/commands/roadmap.go` · `internal/generators/roadmap_idempotent_ac8_test.go`
+**Objetivo:** corretivos do red-team ML-6C (A2, A3, A4) — caminho "roadmap já existe" do `roadmap new`
+- A2: repara req: vazio no roadmap quando exatamente 1 REQ aponta para ele
+- A4: não vincula REQ-R ao roadmap que já pertence a outra REQ
+- A3: texto do --force help diz que req: só é preservado com --req
+
+---
+
+## 2026-10-09 — apolo-tf (fix/req-nasce-orfa-roadmap-new-sobrescreve — ML-6D) — FIM
+
+**Branch:** `fix/req-nasce-orfa-roadmap-new-sobrescreve`
+**Arquivos modificados:** `internal/generators/roadmap.go` · `internal/commands/roadmap.go` · `internal/generators/roadmap_idempotent_ac8_test.go`
+**Entregável:**
+- `reconcileExistingRoadmapLink(reqPath, existingPath, cfg)` — substitui as 3 chamadas diretas a `linkREQToRoadmap` nos caminhos "já existe"
+- `findREQsPointingToRoadmap(basename, cfg)` — scanner de REQs cujo `roadmap:` aponta para o basename
+- A2: reparo de `req:` vazio quando exatamente 1 REQ aponta → `rewriteREQRoadmapRefWith` + write-containment-guard
+- A4: guarda de vínculo cruzado por basename — avisa e retorna sem escrever quando `req:` ≠ REQ passada
+- A3: texto de `--force` atualizado na flag de `commands/roadmap.go`
+- 5 testes novos + 2 falsificações documentadas
+**Gates:** `go build ./...` limpo · `go test ./internal/generators/ ./internal/commands/` ok (generators 56s, commands 21s)
+
+## 2026-10-09 — zeus-tf — FIM: REQ-2026-09-09 AC8 implementado, aguarda PR
+
+- `roadmap new` idempotente (não sobrescreve roadmap de mesmo nome em qualquer estado; repara vínculo; não cria vínculo falso; `--force` só no mesmo caminho) e protocolo gerado sem `roadmap new` após `req new`. Red-team aprovou com ressalvas; A2/A3/A4 corrigidos. `make quality` EXIT=0.

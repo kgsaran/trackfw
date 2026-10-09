@@ -115,7 +115,7 @@ func newRoadmapNewCmd() *cobra.Command {
 	cmd.Flags().StringVarP(&reqPath, "req", "r", "", "Path to the linked REQ file")
 	cmd.Flags().StringVar(&fromReq, "from-req", "", "Generate roadmap with ML stubs from REQ acceptance criteria")
 	cmd.Flags().StringVar(&agentFlag, "agent", "", "Agent namespace in by_agent projects")
-	cmd.Flags().BoolVar(&forceFlag, "force", false, "Overwrite existing roadmap at the same path (backlog/); refused if the roadmap is in another state")
+	cmd.Flags().BoolVar(&forceFlag, "force", false, "Recreate the roadmap from scratch at the same path (backlog/); refused if the roadmap is in another state. The req: link is only written if --req is also provided.")
 	return cmd
 }
 

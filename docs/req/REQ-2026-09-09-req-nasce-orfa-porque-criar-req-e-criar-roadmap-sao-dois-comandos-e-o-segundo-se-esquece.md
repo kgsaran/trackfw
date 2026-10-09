@@ -85,7 +85,7 @@ ignorar. E é a crítica que o autor do issue #275 fez sobre contagem.
       *"`make quality` verde e CI verde na implementação única em Go"*, que é o que o `ML-5B` mede.
       Justificativa completa no roadmap, seção *Auditoria pré-PR das 16 ACs*.
 
-- [ ] **AC8** — 🔴 Reaberto em 2026-10-09: `trackfw req new` já cria a roadmap vinculada (AC1), mas rodar em
+- [x] **AC8** — 🔴 Reaberto em 2026-10-09: `trackfw req new` já cria a roadmap vinculada (AC1), mas rodar em
       seguida `trackfw roadmap new "<mesmo título>"` — o que o protocolo escrito ainda manda — **sobrescreve em
       silêncio** essa roadmap com `req: ""` e `REQ: ` vazios. O `validate` só avisa; o hard gate do `push` barra dois
       commits depois. Medido em 2026-10-08 na REQ-2026-10-08 (#542). `roadmap new` não pode destruir uma roadmap
