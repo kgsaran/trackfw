@@ -24,12 +24,16 @@ REQ: docs/req/REQ-2026-10-08-push-e-ship-avisam-sobre-branch-de-outro-remote-com
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model e sítios multi-remote (AC1)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** hades-tf
 **Files affected:** `docs/seguranca/2026-10-08-wave0-push-ship-outro-remote.md`
-- [ ] Enumeração fechada por grep (`branch", "-r"`, `"origin/"`, `--no-merged`, `TrimPrefix`) em internal/
-- [ ] Medição com repositório temporário de dois remotes, nas duas direções, com o binário da main
-- [ ] Threat model (o recorte esconde trabalho nosso? remote chamado diferente de `origin`?), residual, Veredito
+- [x] Enumeração fechada por grep (`branch", "-r"`, `"origin/"`, `--no-merged`, `TrimPrefix`) em internal/
+- [x] Medição com repositório temporário de dois remotes, nas duas direções, com o binário da main
+- [x] Threat model (o recorte esconde trabalho nosso? remote chamado diferente de `origin`?), residual, Veredito
+      Auditoria (2026-10-08): sítio único (`detectPendingSquashMerges`), defeito medido com dois remotes bare (aviso falso
+      para `upstream/fix/...`, verdadeiro para `origin/feat/pending`, silêncio para `upstream/main`). Achado R3 no mesmo
+      laço: `strings.Contains(candidate, "HEAD")` descarta `origin/fix/HEADER-parse` — mesma causa (população de
+      candidatos recortada por predicado de string frouxo) → entra no ML-1A, não fica fora.
 
 **Gates da wave:**
 ```bash
@@ -41,7 +45,7 @@ grep -q Veredito docs/seguranca/2026-10-08-wave0-push-ship-outro-remote.md
 > Dependencies: Wave 0 auditada.
 
 ### ML-1A — Recorte por remote e fixture multi-remote (AC2, AC3)
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Squad:** apolo-tf
 - [ ] Testes nas duas direções com dois remotes; falsificação; frase de reconciliação
 

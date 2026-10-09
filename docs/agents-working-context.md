@@ -2,6 +2,32 @@
 
 ---
 
+## 2026-10-08 — hades-tf (fix/push-e-ship-avisam-sobre-branch-de-outro-remote — ML-0A) — FIM
+
+**Branch:** `fix/push-e-ship-avisam-sobre-branch-de-outro-remote`
+**Entregável produzido:** `docs/seguranca/2026-10-08-wave0-push-ship-outro-remote.md`
+**Veredito:** DEFEITO CONFIRMADO. Sítio único: `detectPendingSquashMerges` em `ship.go:795–821`. Defeito medido ao vivo com fixture de dois remotes.
+
+**Achados:**
+- Sítio defeituoso único: `internal/commands/ship.go`, `detectPendingSquashMerges` (linhas 795, 809, 815–821).
+- `git branch -r --no-merged origin/main` retorna refs de TODOS os remotes; `TrimPrefix(candidate, "origin/")` não altera refs `upstream/*`; heurística de conteúdo produz `pending_work` → aviso falso.
+- Confirmado ao vivo: `tf push` emitiu "Warning: branch \"upstream/fix/some-feature\" appears to have unmerged changes vs origin/main." no fixture com dois remotes.
+- Forge path (D1) e degradação (D2) ambos produzem o mesmo resultado para upstream/*.
+- Achado pré-existente (R3): `strings.Contains(candidate, "HEAD")` silencia `origin/fix/HEADER-parse` — medido ao vivo, fora do escopo desta REQ.
+- Correção mínima: `if !strings.HasPrefix(candidate, "origin/") { continue }` após filtro de HEAD.
+- Sem `--list 'origin/*'`: incompatível com stubs de teste por chave de argv.
+- Spec de fixture para ML-1A: stub retorna `origin/feat/Y + upstream/fix/X`; dois vetores de direção + controle negativo.
+
+## 2026-10-08 — hades-tf (fix/push-e-ship-avisam-sobre-branch-de-outro-remote — ML-0A) — INÍCIO
+
+**Branch:** `fix/push-e-ship-avisam-sobre-branch-de-outro-remote`
+**Tarefa:** ML-0A — Wave 0: threat model e enumeração de sítios multi-remote para push/ship.
+**Lê:** issue #547, REQ, roadmap, ship.go, push.go, branch_prune.go, vault/notes/index.md.
+**Entregável:** `docs/seguranca/2026-10-08-wave0-push-ship-outro-remote.md`
+**Não altera código de produto.**
+
+---
+
 ## 2026-10-08 — hades-tf (fix/credential-guard-caminho-git-bash-windows — ML-3C) — FIM
 
 **Branch:** `fix/credential-guard-caminho-git-bash-windows`
