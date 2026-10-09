@@ -53,6 +53,20 @@ grep -q Veredito docs/seguranca/2026-10-09-wave0-verificacao-canais-indice-pypi.
 
 ## Wave 2 — Red-team
 ### ML-2A — Red-team do diff
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** hades-tf
-- [ ] Parecer
+- [x] Parecer
+      Veredito do hades-tf (`docs/seguranca/2026-10-09-red-team-verificacao-canais.md`): aprova com ressalvas. A1 (médio)
+      sha256 da JSON API não conferido após o download; A2 (baixo) lista `urls` parcial reprova sem retry; A3 (baixo)
+      variáveis de injeção ativas fora do self-test; e etiqueta de wheel inesperada só avisa. Decisão do arquiteto (regra
+      do KG: defeito conhecido se corrige agora): todos entram no ML-2B; nenhum fica como residual.
+
+### ML-2B — Corretivo do red-team
+**Status:** 🔄 Em andamento
+**Squad:** ares-tf
+- [ ] A1: sha256 de cada wheel conferido contra `digests.sha256` da JSON API; host do download restrito a `files.pythonhosted.org` (inclusive após redirect)
+- [ ] A2: lista `urls` com menos wheels que o esperado entra no retry (não reprova cedo)
+- [ ] A3: `PYPI_JSON_CMD`/`FETCH_CMD`/`NPM_PACK_CMD`/relógio injetável só valem no `--self-test`; no `--published` são ignorados (e avisados)
+- [ ] Etiqueta inesperada reprova (a lista e o release têm de concordar)
+- [ ] Braços de self-test para cada um; falsificação; `make quality` (arquiteto)
+

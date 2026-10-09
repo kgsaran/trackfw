@@ -2,6 +2,26 @@
 
 ---
 
+## 2026-10-09 — hades-tf (fix/verificacao-canais-indice-pypi — ML-2A red-team) — FIM
+
+**Branch:** `fix/verificacao-canais-indice-pypi`
+**Escopo:** `scripts/check-channels-content.sh` · `.github/workflows/release.yml`
+**Entregável:** `docs/seguranca/2026-10-09-red-team-verificacao-canais.md`
+**Veredito:** APROVA COM RESSALVAS
+**Execuções:** `--self-test` 9/9 · `--published 9.4.1` 10/10
+**Achados abertos (devem entrar como MLs na REQ vigente):**
+- A1 (MÉDIO): SHA256 da JSON API nunca verificado após download de wheels via `_do_fetch`
+- A2 (BAIXO): `urls` parcial na JSON API retorna 0 do retry, tag-checker falha sem nova tentativa
+- A3 (BAIXO): injetáveis ativos em `--published` sem guarda — residual documentado
+
+## 2026-10-09 — hades-tf (fix/verificacao-canais-indice-pypi — ML-2A red-team) — INÍCIO
+
+**Branch:** `fix/verificacao-canais-indice-pypi`
+**Escopo:** `scripts/check-channels-content.sh` · `.github/workflows/release.yml`
+**Objetivo:** revisão independente do HEAD (verificação de canais com retry) contra Wave 0 e decisões do ML-0A
+
+---
+
 ## 2026-10-09 — hades-tf (fix/verificacao-canais-indice-pypi — ML-0A Wave 0) — FIM
 
 **Branch:** `fix/verificacao-canais-indice-pypi`
