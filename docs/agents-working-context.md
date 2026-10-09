@@ -46062,3 +46062,18 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-09 — zeus-tf — REQ da #547 Done (PR #549); REQ-2026-09-09 reaberta (AC8)
 
 - REQ da #547 fechada com evidência, roadmap em `done/`, `req-aberta` retirada. REQ-2026-09-09 reaberta: `roadmap new` sobrescreve em silêncio a roadmap que o `req new` criou vinculada, e o protocolo gerado manda rodar os dois. Branch `fix/req-nasce-orfa-roadmap-new-sobrescreve`. ML-6A (hades-tf) despachado.
+
+## 2026-10-09 — hades-tf — INÍCIO: ML-6C REQ-2026-09-09 (red-team roadmap new sobrescreve)
+
+- Red-team do commit b8b3c4e0 contra docs/seguranca/2026-10-09-wave6-roadmap-new-sobrescreve.md. Atacando: findRoadmapByBasename (by_agent, roadmap_dir customizado, symlink, case), reparo de vínculo (req: "" e req pertencente a outra REQ), --force, --from-req e wizard, texto de protocolo, exit code. Entregável: docs/seguranca/2026-10-09-red-team-roadmap-new-sobrescreve.md.
+
+## 2026-10-09 — hades-tf — FIM: ML-6C REQ-2026-09-09 (red-team roadmap new sobrescreve)
+
+- Entregue docs/seguranca/2026-10-09-red-team-roadmap-new-sobrescreve.md. Seis superfícies atacadas; quatro achados todos severidade BAIXO; nenhuma superfície reproduz o defeito original.
+  - A1: by_agent cross-namespace cria órfã (não sobrescreve original); validate detecta.
+  - A2: linkREQToRoadmap não repara roadmap→REQ sem --req explícito; wip_has_req detecta.
+  - A3: --force sem --req destrói req: (declarado; opt-in); --force --req preserva.
+  - A4: --req REQ-B sobre roadmap de REQ-A vincula REQ-B falsamente; req_roadmap_sync detecta.
+  - Superfícies limpas: flat, by_agent mesmo agente, roadmap_dir custom, diretórios ausentes, symlink folha, case-insensitive FS, --from-req, wizard, texto de protocolo, exit code/Scenario 13.
+  - 21 testes AC8 + protocol text: todos PASS.
+  - Veredito: APROVA COM RESSALVAS.

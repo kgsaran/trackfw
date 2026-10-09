@@ -1771,7 +1771,20 @@ recusa era o roadmap estar em `blocked/`, que o guard não aceita, **não** o ca
       pypi/AGENTS.md e README.
 
 ### ML-6C — Red-team
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** hades-tf
-- [ ] Parecer sobre o diff
+- [x] Parecer sobre o diff
+      Veredito do hades-tf (`docs/seguranca/2026-10-09-red-team-roadmap-new-sobrescreve.md`): aprova com ressalvas, 4
+      achados baixos. Decisão do arquiteto: A2 (roadmap deixada com `req: ""` pela versão antiga não é reparada sem
+      `--req`) e A4 (`--req REQ-B` sobre roadmap de REQ-A cria vínculo falso) são a mesma causa — o caminho "já existe"
+      escrevendo/deixando vínculo errado → ML-6D. A3 (`--force` sem `--req` zera o vínculo) → texto do help. A1 (by_agent
+      com `--agent` diferente cria órfã noutro namespace, sem perda) → residual; o validate acusa.
+
+### ML-6D — Corretivo do red-team: vínculo no caminho "já existe"
+**Status:** 🔄 Em andamento
+**Squad:** apolo-tf
+- [ ] A2: roadmap existente com `req: ""` e exatamente uma REQ apontando para ela → `req:` reparado sem `--req`
+- [ ] A4: `--req` diferente do `req:` já gravado → não vincula, avisa; nenhuma das duas REQs alterada
+- [ ] A3: help do `--force` diz que o vínculo é recriado só com `--req`
+- [ ] Testes nas duas direções, falsificação; `make quality` (arquiteto)
 
