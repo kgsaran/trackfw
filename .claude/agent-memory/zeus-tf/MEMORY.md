@@ -34,3 +34,4 @@
 - [Contribuição externa: Discussion antes, gate verde sempre](project_contribuicao_externa_discussion_e_gates.md) — REQ nossa/backlog exige Discussion; PR vermelho não entra; avisar na issue ao abrir REQ
 - [Pré-existente exige medição na main](feedback_preexistente_exige_medicao_na_main.md) — 4 "pré-existentes" falsos na REQ-2026-09-05; mesmo gate em worktree de origin/main ou não vale
 - [make quality com máquina ociosa](feedback_make_quality_com_maquina_ociosa.md) — #504: 5/5 limpas ociosa; as 3 "penduradas" tinham concorrência; capture ps antes de matar
+- [req new já cria a roadmap](project_req_new_ja_cria_roadmap.md) — `roadmap new` depois sobrescreve sem vínculo; só o push pega; não rode os dois

@@ -2,6 +2,41 @@
 
 ---
 
+## 2026-10-08 — apolo-tf (fix/push-e-ship-avisam-sobre-branch-de-outro-remote — ML-1A) — FIM
+
+**Branch:** `fix/push-e-ship-avisam-sobre-branch-de-outro-remote`
+**Escopo:** `internal/commands/ship.go` + `internal/commands/ship_test.go`
+**Entregável:** correção de `detectPendingSquashMerges` (HasPrefix origin/ + predicado exato HEAD) + teste `TestDetectPendingSquashMerges_Issue547_MultiRemote`
+**Gates:** `go build ./...` limpo · `go test ./internal/commands/` ok 18.552s · `make quality` EXIT=0, suite completa 347 OK 0 FAIL
+
+---
+
+## 2026-10-08 — hades-tf (fix/push-e-ship-avisam-sobre-branch-de-outro-remote — ML-0A) — FIM
+
+**Branch:** `fix/push-e-ship-avisam-sobre-branch-de-outro-remote`
+**Entregável produzido:** `docs/seguranca/2026-10-08-wave0-push-ship-outro-remote.md`
+**Veredito:** DEFEITO CONFIRMADO. Sítio único: `detectPendingSquashMerges` em `ship.go:795–821`. Defeito medido ao vivo com fixture de dois remotes.
+
+**Achados:**
+- Sítio defeituoso único: `internal/commands/ship.go`, `detectPendingSquashMerges` (linhas 795, 809, 815–821).
+- `git branch -r --no-merged origin/main` retorna refs de TODOS os remotes; `TrimPrefix(candidate, "origin/")` não altera refs `upstream/*`; heurística de conteúdo produz `pending_work` → aviso falso.
+- Confirmado ao vivo: `tf push` emitiu "Warning: branch \"upstream/fix/some-feature\" appears to have unmerged changes vs origin/main." no fixture com dois remotes.
+- Forge path (D1) e degradação (D2) ambos produzem o mesmo resultado para upstream/*.
+- Achado pré-existente (R3): `strings.Contains(candidate, "HEAD")` silencia `origin/fix/HEADER-parse` — medido ao vivo, fora do escopo desta REQ.
+- Correção mínima: `if !strings.HasPrefix(candidate, "origin/") { continue }` após filtro de HEAD.
+- Sem `--list 'origin/*'`: incompatível com stubs de teste por chave de argv.
+- Spec de fixture para ML-1A: stub retorna `origin/feat/Y + upstream/fix/X`; dois vetores de direção + controle negativo.
+
+## 2026-10-08 — hades-tf (fix/push-e-ship-avisam-sobre-branch-de-outro-remote — ML-0A) — INÍCIO
+
+**Branch:** `fix/push-e-ship-avisam-sobre-branch-de-outro-remote`
+**Tarefa:** ML-0A — Wave 0: threat model e enumeração de sítios multi-remote para push/ship.
+**Lê:** issue #547, REQ, roadmap, ship.go, push.go, branch_prune.go, vault/notes/index.md.
+**Entregável:** `docs/seguranca/2026-10-08-wave0-push-ship-outro-remote.md`
+**Não altera código de produto.**
+
+---
+
 ## 2026-10-08 — hades-tf (fix/credential-guard-caminho-git-bash-windows — ML-3C) — FIM
 
 **Branch:** `fix/credential-guard-caminho-git-bash-windows`
@@ -45986,3 +46021,15 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-08 — zeus-tf — bump 9.4.0; REQ-2026-10-06 Done de novo (#546)
 
 - Release 9.4.0 (#543, #545, #546). REQ-2026-10-06 fechada com evidência do AC6, roadmap em `done/`, `req-aberta` retirada da #544. Gates: parity-rest EXIT=0, check-required-full OK.
+
+## 2026-10-08 — zeus-tf — 9.4.0 publicada; INÍCIO: REQ da #547 (push/ship e branch de outro remote)
+
+- 9.4.0 nos 3 canais. Branch `fix/push-e-ship-avisam-sobre-branch-de-outro-remote`; saída 1 da issue (recortar candidatos ao remote `origin`). Wave 0 (hades-tf) despachada.
+
+## 2026-10-08 — hades-tf — INÍCIO: ML-2A REQ #547 (red-team push/ship outro remote)
+
+- Red-team do commit 4c8ade8e contra docs/seguranca/2026-10-08-wave0-push-ship-outro-remote.md. Atacando: HEAD discard (strings.Cut), HasPrefix("origin/"), outros callers, mutações. Entregável: docs/seguranca/2026-10-08-red-team-push-ship-outro-remote.md.
+
+## 2026-10-08 — hades-tf — FIM: ML-2A REQ #547 (red-team push/ship outro remote)
+
+- Entregue docs/seguranca/2026-10-08-red-team-push-ship-outro-remote.md. Quatro ataques executados: HEAD descarte (6 casos), HasPrefix esconde trabalho, enumeração de callers, mutações. Baseline PASS, mutação-1 (HasPrefix removido) FAIL corretamente, mutação-2 (Contains revertido) FAIL corretamente. Veredito: APROVA. Sem achados de severidade; R3 fechado pelo próprio commit; residuais R2/R4 pré-existentes inalterados.

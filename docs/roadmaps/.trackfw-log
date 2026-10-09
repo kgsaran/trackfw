@@ -408,3 +408,4 @@
 2026-10-08 16:52  ROADMAP-2026-10-08-req-done-open-criteria-decompoe-o-numero-agregado-e-mostra-quantas-reqs-isentas-sao-herdadas-de-outro-repositorio.md  wip → done  -0300  (kgsaran@gmail.com)
 2026-10-08 16:52  ROADMAP-2026-10-06-credential-guard-nao-cobre-windsurf-e-amazon-q-e-a-premissa-da-adr-2026-08-05-que-excluiu-o-windsurf-caducou.md  done → wip  -0300  (kgsaran@gmail.com)
 2026-10-08 20:38  ROADMAP-2026-10-06-credential-guard-nao-cobre-windsurf-e-amazon-q-e-a-premissa-da-adr-2026-08-05-que-excluiu-o-windsurf-caducou.md  wip → done  -0300  (kgsaran@gmail.com)
+2026-10-08 21:22  ROADMAP-2026-10-08-push-e-ship-avisam-sobre-branch-de-outro-remote-como-trabalho-nao-mesclado.md  backlog → wip  -0300  (kgsaran@gmail.com)

@@ -1840,6 +1840,108 @@ func TestShip_ForceWithLease_NormalPush_Unaffected(t *testing.T) {
 	}
 }
 
+// ─── issue #547: detectPendingSquashMerges skips non-origin remotes and exact HEAD predicate ───
+
+// TestDetectPendingSquashMerges_Issue547_MultiRemote exercises the two fixes introduced by #547:
+//
+//  1. HasPrefix("origin/") guard (direction 1): candidates from remotes other than origin must NOT
+//     produce a warning. Without the guard, "upstream/fix/some-feature" passes all prior checks,
+//     reaches evaluateBranchIntegration, and produces a false warning.
+//
+//  2. Exact /HEAD predicate (R3, direction 3): branches whose name contains "HEAD" in a non-suffix
+//     position (e.g. "origin/fix/HEADER-parse") must NOT be silenced. The old
+//     strings.Contains(candidate, "HEAD") predicate caused silent false-negatives for them.
+//
+// Reconciliation (Regra Dura de Reconciliação):
+//
+//   - Direction 1 assertion: this test affirms that the HasPrefix("origin/") guard is the sole
+//     reason "upstream/fix/some-feature" does not produce a warning. Mutant: delete the guard →
+//     the upstream candidate reaches evaluation (generic stubs return pending_work) → warning fires
+//     → the "no upstream warning" assertion fails.
+//
+//   - Direction 2 assertion: this test affirms that "origin/feat/pending" (a genuine origin branch)
+//     still produces a warning after the fix; TrimPrefix is a true strip by construction.
+//
+//   - Direction 3 (R3) assertion: this test affirms that "origin/fix/HEADER-parse" is NOT silenced
+//     by the exact /HEAD suffix predicate. Mutant: revert to strings.Contains(candidate, "HEAD") →
+//     the HEADER-parse candidate is skipped → its warning is absent → the assertion fails.
+//
+// The stub is intentionally generic for all merge-base and diff calls so that every candidate that
+// reaches evaluateBranchIntegration appears as pending_work. The filters are then the only
+// mechanism deciding who warns — making the assertions non-vacuous (the advisor's point about
+// masking via no_merge_base / eval_error).
+//
+// detectPendingSquashMerges is called from both runPush (push.go:241) and runShip (ship.go:395)
+// with an identical signature. Testing the function directly covers both callers.
+func TestDetectPendingSquashMerges_Issue547_MultiRemote(t *testing.T) {
+	const pendMB = "i547pendbase"
+	const hdrMB = "i547hdrbase0"
+
+	gitExec := func(args ...string) (string, error) {
+		key := strings.Join(args, " ")
+		switch {
+		case key == "branch -r --no-merged origin/main":
+			// Four representative lines: origin branch with work, non-origin branch,
+			// symbolic-ref pointer, and origin branch with "HEAD" in the middle of the name.
+			return "  origin/feat/pending\n  upstream/fix/some-feature\n  origin/HEAD -> origin/main\n  origin/fix/HEADER-parse\n", nil
+
+		// origin/feat/pending — content heuristic → pending_work (direction 2: must warn).
+		case key == "merge-base origin/main origin/feat/pending":
+			return pendMB, nil
+		case key == "diff --name-only -z "+pendMB+" origin/feat/pending":
+			return "pending.go\x00", nil
+		case key == "diff --name-only -z origin/main origin/feat/pending -- pending.go":
+			return "pending.go\x00", nil
+
+		// origin/fix/HEADER-parse — content heuristic → pending_work (R3: must NOT be silenced).
+		case key == "merge-base origin/main origin/fix/HEADER-parse":
+			return hdrMB, nil
+		case key == "diff --name-only -z "+hdrMB+" origin/fix/HEADER-parse":
+			return "header.go\x00", nil
+		case key == "diff --name-only -z origin/main origin/fix/HEADER-parse -- header.go":
+			return "header.go\x00", nil
+
+		// Generic fallback: any candidate that passes the filters and reaches
+		// evaluateBranchIntegration with an uncovered key gets pending_work via the diff paths.
+		// This ensures that if the HasPrefix guard is removed, upstream/fix/some-feature
+		// produces a warning (making the direction-1 assertion non-vacuous).
+		case strings.HasPrefix(key, "merge-base origin/main "):
+			return "genericbase0", nil
+		case strings.HasPrefix(key, "diff --name-only -z genericbase0 "):
+			return "work.go\x00", nil
+		case strings.HasPrefix(key, "diff --name-only -z origin/main "):
+			return "work.go\x00", nil
+		}
+		return "", nil
+	}
+
+	out := &bytes.Buffer{}
+	detectPendingSquashMerges("main", gitExec, nil, out)
+	got := out.String()
+
+	// Direction 2: origin/feat/pending must still produce a warning.
+	if !strings.Contains(got, `"feat/pending"`) {
+		t.Errorf("issue #547 direction 2: must warn for origin/feat/pending; got: %q", got)
+	}
+	// Direction 3 (R3): origin/fix/HEADER-parse must produce a warning (not silenced by HEAD predicate).
+	if !strings.Contains(got, `"fix/HEADER-parse"`) {
+		t.Errorf("issue #547 R3: must warn for origin/fix/HEADER-parse; got: %q", got)
+	}
+	// Direction 1: upstream/fix/some-feature must NOT produce a warning.
+	if strings.Contains(got, "upstream/fix/some-feature") || strings.Contains(got, `"fix/some-feature"`) {
+		t.Errorf("issue #547 direction 1: must NOT warn for upstream/fix/some-feature; got: %q", got)
+	}
+	// Sanity: the HEAD symbolic-ref pointer line must not appear verbatim in output.
+	if strings.Contains(got, "HEAD -> origin/main") {
+		t.Errorf("issue #547: must NOT warn for symbolic-ref pointer line; got: %q", got)
+	}
+	// Exactly 2 warning lines: feat/pending and fix/HEADER-parse.
+	warnCount := strings.Count(got, "Warning: branch")
+	if warnCount != 2 {
+		t.Errorf("issue #547: expected exactly 2 Warning lines; got %d. Output:\n%s", warnCount, got)
+	}
+}
+
 func TestShip_ForceFlagDoesNotExist(t *testing.T) {
 	cmd := newShipCmd()
 	if flag := cmd.Flags().Lookup("force"); flag != nil {
