@@ -802,10 +802,27 @@ func detectPendingSquashMerges(currentBranch string, gitExec func(...string) (st
 
 	for _, raw := range strings.Split(remoteBranches, "\n") {
 		candidate := strings.TrimSpace(raw)
-		if candidate == "" || strings.Contains(candidate, "HEAD") {
+		if candidate == "" {
+			continue
+		}
+		// Discard the symbolic-ref pointer line (e.g. "origin/HEAD -> origin/main").
+		// strings.Contains(candidate, "HEAD") is too broad: it silences any branch whose
+		// name contains "HEAD" (e.g. "origin/fix/HEADER-parse"). Discard only when the
+		// ref name (before " -> ", if any) resolves to exactly "<remote>/HEAD" — i.e. the
+		// part after the first slash is exactly "HEAD". R3, issue #547.
+		refName, _, _ := strings.Cut(candidate, " -> ")
+		if _, after, ok := strings.Cut(refName, "/"); ok && after == "HEAD" {
+			continue
+		}
+		// Skip candidates from remotes other than origin: git branch -r --no-merged returns
+		// refs from ALL configured remotes, not just origin. TrimPrefix("origin/", ...) leaves
+		// non-origin refs unchanged, producing false "unmerged changes" warnings for branches
+		// that belong to other remotes (e.g. "upstream/fix/some-feature"). AC2, issue #547.
+		if !strings.HasPrefix(candidate, "origin/") {
 			continue
 		}
 		// The short name is candidate with "origin/" stripped (A6: prName uses the short name).
+		// TrimPrefix is a true strip here by construction (HasPrefix verified above).
 		shortName := strings.TrimPrefix(candidate, "origin/")
 		if shortName == currentBranch {
 			continue

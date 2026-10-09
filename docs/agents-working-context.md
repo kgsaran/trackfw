@@ -2,6 +2,15 @@
 
 ---
 
+## 2026-10-08 — apolo-tf (fix/push-e-ship-avisam-sobre-branch-de-outro-remote — ML-1A) — FIM
+
+**Branch:** `fix/push-e-ship-avisam-sobre-branch-de-outro-remote`
+**Escopo:** `internal/commands/ship.go` + `internal/commands/ship_test.go`
+**Entregável:** correção de `detectPendingSquashMerges` (HasPrefix origin/ + predicado exato HEAD) + teste `TestDetectPendingSquashMerges_Issue547_MultiRemote`
+**Gates:** `go build ./...` limpo · `go test ./internal/commands/` ok 18.552s · `make quality` EXIT=0, suite completa 347 OK 0 FAIL
+
+---
+
 ## 2026-10-08 — hades-tf (fix/push-e-ship-avisam-sobre-branch-de-outro-remote — ML-0A) — FIM
 
 **Branch:** `fix/push-e-ship-avisam-sobre-branch-de-outro-remote`

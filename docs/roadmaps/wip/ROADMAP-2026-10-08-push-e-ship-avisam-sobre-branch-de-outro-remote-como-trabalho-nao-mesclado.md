@@ -45,12 +45,17 @@ grep -q Veredito docs/seguranca/2026-10-08-wave0-push-ship-outro-remote.md
 > Dependencies: Wave 0 auditada.
 
 ### ML-1A — Recorte por remote e fixture multi-remote (AC2, AC3)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
-- [ ] Testes nas duas direções com dois remotes; falsificação; frase de reconciliação
+- [x] Testes nas duas direções com dois remotes; falsificação; frase de reconciliação
+      Auditoria (2026-10-08): `TestDetectPendingSquashMerges_Issue547_MultiRemote` conferido por nome; diff lido (HasPrefix
+      `origin/` + descarte exato de `<remote>/HEAD`); falsificações nas duas direções registradas pelo executor; `make
+      quality` EXIT=0 (executor), 347 OK. Reprodução com repositório real de dois remotes pelo arquiteto: não feita — o
+      guard do projeto bloqueia `git update-ref`/`git commit` crus, e não foi contornado; a medição ao vivo do defeito é a
+      da Wave 0. Agente parado com TaskStop (ficou preso após o relatório).
 
 ## Wave 2 — Red-team
 ### ML-2A — Red-team do diff
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Squad:** hades-tf
 - [ ] Parecer sobre o diff
