@@ -2,6 +2,50 @@
 
 ---
 
+## 2026-10-09 — hades-tf (fix/verificacao-canais-indice-pypi — ML-2A red-team) — FIM
+
+**Branch:** `fix/verificacao-canais-indice-pypi`
+**Escopo:** `scripts/check-channels-content.sh` · `.github/workflows/release.yml`
+**Entregável:** `docs/seguranca/2026-10-09-red-team-verificacao-canais.md`
+**Veredito:** APROVA COM RESSALVAS
+**Execuções:** `--self-test` 9/9 · `--published 9.4.1` 10/10
+**Achados abertos (devem entrar como MLs na REQ vigente):**
+- A1 (MÉDIO): SHA256 da JSON API nunca verificado após download de wheels via `_do_fetch`
+- A2 (BAIXO): `urls` parcial na JSON API retorna 0 do retry, tag-checker falha sem nova tentativa
+- A3 (BAIXO): injetáveis ativos em `--published` sem guarda — residual documentado
+
+## 2026-10-09 — hades-tf (fix/verificacao-canais-indice-pypi — ML-2A red-team) — INÍCIO
+
+**Branch:** `fix/verificacao-canais-indice-pypi`
+**Escopo:** `scripts/check-channels-content.sh` · `.github/workflows/release.yml`
+**Objetivo:** revisão independente do HEAD (verificação de canais com retry) contra Wave 0 e decisões do ML-0A
+
+---
+
+## 2026-10-09 — hades-tf (fix/verificacao-canais-indice-pypi — ML-0A Wave 0) — FIM
+
+**Branch:** `fix/verificacao-canais-indice-pypi`
+**Entregável produzido:** `docs/seguranca/2026-10-09-wave0-verificacao-canais-indice-pypi.md`
+**Veredito:** DEFEITO CONFIRMADO. `pip download` em D7 usa o índice simples do PyPI (CDN, propagação independente da JSON API confirmada pelo passo anterior). Dois runs falhados: v9.3.3 (165 s pós-upload) e v9.4.1 (193 s pós-upload); reexecução manual passou sem alteração de código.
+
+**Achados:**
+- Sítio defeituoso: `scripts/check-channels-content.sh`, modo `--published`, linha 467–483 — `pip download` sem retry.
+- Endpoint confirmado pelo passo 3 (JSON API: `/pypi/trackfw/json`) ≠ endpoint lido pelo passo 5 (índice simples: `/simple/trackfw/`, CDN Fastly com `max-age=600`).
+- `npm pack` em D7 também sem retry (superfície, não falhou ainda).
+- Comentário do workflow (`read-after-write is resolved`) incorreto para o índice simples.
+- Especificação ML-1A: retry 10→30 s, deadline 300 s, `VERIFY_CONTENT_DEADLINE` env var, self-test arms A/B por injeção de `NPM_PACK_CMD`/`PIP_DOWNLOAD_CMD`, correção do comentário do workflow.
+- Gates: `test -s` e `grep -q Veredito` — ambos PASS.
+
+---
+
+## 2026-10-09 — hades-tf (fix/verificacao-canais-indice-pypi — ML-0A Wave 0) — INÍCIO
+
+**Branch:** `fix/verificacao-canais-indice-pypi`
+**Escopo:** Wave 0 — Threat model e medição (AC1)
+**Objetivo:** Evidenciar os dois runs reprovados (v9.3.3 e v9.4.1), mapear endpoints, enumerar passos sem retry, especificar ML-1A, threat model do retry
+
+---
+
 ## 2026-10-09 — apolo-tf (fix/req-nasce-orfa-roadmap-new-sobrescreve — corretivo s25/s26 falsify) — FIM
 
 **Branch:** `fix/req-nasce-orfa-roadmap-new-sobrescreve`
@@ -46157,3 +46201,11 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-09 — zeus-tf — bump 9.4.1; REQ-2026-09-09 Done (#550)
 
 - Release 9.4.1 (#549, #550). REQ-2026-09-09 fechada com evidência do AC8, roadmap em `done/` (o status do ML-6B tinha ficado "em andamento" e o `roadmap move` bloqueou — corrigido). Gates: parity-rest EXIT=0, check-required-full OK.
+
+## 2026-10-09 — zeus-tf — 9.4.1 publicada; INÍCIO: REQ da verificação de canais (índice simples do PyPI)
+
+- 9.4.1 nos 3 canais (verify reexecutado: mesmo atraso do índice simples da 9.3.3). REQ nova: `check-channels-content --published` usa `pip download` (índice simples, CDN) sem retry, depois de confirmar pela JSON API. Branch `fix/verificacao-canais-indice-pypi`. Wave 0 (hades-tf).
+
+## 2026-10-09 — zeus-tf — FIM: REQ da verificação de canais, aguarda PR
+
+- D7 baixa as 8 wheels pela JSON API (sha256 conferido, host restrito, lista parcial espera), retry com prazo 900 s também no npm pack; etiqueta inesperada reprova; injeções só no self-test. Era 1 de 8 wheels inspecionada. `make quality` EXIT=0.
