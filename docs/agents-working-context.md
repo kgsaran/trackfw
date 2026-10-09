@@ -2,6 +2,34 @@
 
 ---
 
+## 2026-10-09 — apolo-tf (fix/req-nasce-orfa-roadmap-new-sobrescreve — corretivo s25/s26 falsify) — FIM
+
+**Branch:** `fix/req-nasce-orfa-roadmap-new-sobrescreve`
+**Arquivos modificados:**
+- `scripts/check-gates-falsify.sh` — literais de busca/corrupção s25 (~2280-2281) e s26 (~2366-2367) atualizados para `portableReqPath`/`portableREQPath`; comentário 🔴 s25 ganhou nota ML-6F
+**Causa raiz:** ML-6F renomeou `reqPath`→`portableReqPath` (NewRoadmapFromREQ, linha 620) e `content.REQPath`→`portableREQPath` (NewRoadmapFromContent, linha 433); os literais do falsify permaneceram com os nomes antigos → `grep -cF` retornava 0 → `corrupt_literal` falhava com "expected exactly 1 occurrence"
+**Gates:** `make parity-falsify` → EXIT=0 · suite completa: 8 chunks, 347 OK, 0 FAIL · roadmap-req-frontmatter-path/go/from-req OK, roadmap-req-frontmatter-path/go/simple-detects-regression OK
+
+---
+
+## 2026-10-09 — apolo-tf (fix/req-nasce-orfa-roadmap-new-sobrescreve — corretivo ML-6F) — INÍCIO
+
+**Branch:** `fix/req-nasce-orfa-roadmap-new-sobrescreve`
+**Escopo:** `internal/generators/roadmap_idempotent_ac8_test.go`
+**Objetivo:** Corrigir regressão Windows introduzida pelo ML-6F: testes `TestRoadmapNew_SkipsWhenExistsInBacklog` e `TestRoadmapNew_A1_ByAgent_DifferentAgentDetectsExisting` comparavam `req:` gravado pelo gerador usando separador nativo (`\`) em vez de `/`
+
+---
+
+## 2026-10-09 — apolo-tf (fix/req-nasce-orfa-roadmap-new-sobrescreve — corretivo ML-6F) — FIM
+
+**Branch:** `fix/req-nasce-orfa-roadmap-new-sobrescreve`
+**Arquivos modificados:**
+- `internal/generators/roadmap_idempotent_ac8_test.go` — 3 asserções: `filepath.ToSlash()` aplicado a `reqRel` (linhas 175, 195, 196) e `reqPath` (linha 746)
+**Causa raiz:** ML-6F fez o gerador gravar sempre `/`; os testes comparavam o conteúdo gerado com `reqRel`/`reqPath` construídos por `filepath.Join` (separador nativo `\` no Windows)
+**Gates:** `go build ./...` limpo · `go test ./internal/generators/ ./internal/commands/ ./internal/validator/` PASS no macOS · VM Windows: dois testes alvo PASS confirmados
+
+---
+
 ## 2026-10-08 — apolo-tf (fix/push-e-ship-avisam-sobre-branch-de-outro-remote — ML-1A) — FIM
 
 **Branch:** `fix/push-e-ship-avisam-sobre-branch-de-outro-remote`
@@ -26,6 +54,31 @@
 - Correção mínima: `if !strings.HasPrefix(candidate, "origin/") { continue }` após filtro de HEAD.
 - Sem `--list 'origin/*'`: incompatível com stubs de teste por chave de argv.
 - Spec de fixture para ML-1A: stub retorna `origin/feat/Y + upstream/fix/X`; dois vetores de direção + controle negativo.
+
+## 2026-10-09 — hades-tf (fix/req-nasce-orfa-roadmap-new-sobrescreve — ML-6A) — FIM
+
+**Branch:** `fix/req-nasce-orfa-roadmap-new-sobrescreve`
+**Escopo:** leitura, medição e parecer — sem alteração de código de produto
+**Entregável:** `docs/seguranca/2026-10-09-wave6-roadmap-new-sobrescreve.md`
+
+**Achados principais:**
+- Sítio único: `internal/generators/roadmap.go:300` — `os.WriteFile` sem checagem de existência.
+- Sítio de instrução gerada (vai para consumidores): `internal/generators/agentfiles.go:59-60,86` (Agent Protocol nas 5 variantes de IDE/agente) + `internal/generators/claudemd.go:74,77-78` (CLAUDE.md).
+- Sítios neste repo (não gerados): `CLAUDE.md:332` e `README.md:258-261`.
+- `validate` não detecta o problema enquanto a roadmap está em `backlog/`; `wip_has_req` detecta ao mover para `wip/`.
+- Recomendação: Opção B (idempotente: pular com aviso) + Opção C (`--force`).
+- Gates do artefato: `test -s` ✅ e `grep -q Veredito` ✅.
+
+---
+
+## 2026-10-09 — hades-tf (fix/req-nasce-orfa-roadmap-new-sobrescreve — ML-6A) — INÍCIO
+
+**Branch:** `fix/req-nasce-orfa-roadmap-new-sobrescreve`
+**Escopo:** leitura, medição e parecer — sem alteração de código de produto
+**Tarefa:** threat model e enumeração para AC8 (roadmap new sobrescreve roadmap criada pelo req new)
+**Artefato alvo:** `docs/seguranca/2026-10-09-wave6-roadmap-new-sobrescreve.md`
+
+---
 
 ## 2026-10-08 — hades-tf (fix/push-e-ship-avisam-sobre-branch-de-outro-remote — ML-0A) — INÍCIO
 
@@ -46033,3 +46086,70 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-08 — hades-tf — FIM: ML-2A REQ #547 (red-team push/ship outro remote)
 
 - Entregue docs/seguranca/2026-10-08-red-team-push-ship-outro-remote.md. Quatro ataques executados: HEAD descarte (6 casos), HasPrefix esconde trabalho, enumeração de callers, mutações. Baseline PASS, mutação-1 (HasPrefix removido) FAIL corretamente, mutação-2 (Contains revertido) FAIL corretamente. Veredito: APROVA. Sem achados de severidade; R3 fechado pelo próprio commit; residuais R2/R4 pré-existentes inalterados.
+
+## 2026-10-09 — zeus-tf — REQ da #547 Done (PR #549); REQ-2026-09-09 reaberta (AC8)
+
+- REQ da #547 fechada com evidência, roadmap em `done/`, `req-aberta` retirada. REQ-2026-09-09 reaberta: `roadmap new` sobrescreve em silêncio a roadmap que o `req new` criou vinculada, e o protocolo gerado manda rodar os dois. Branch `fix/req-nasce-orfa-roadmap-new-sobrescreve`. ML-6A (hades-tf) despachado.
+
+## 2026-10-09 — hades-tf — INÍCIO: ML-6C REQ-2026-09-09 (red-team roadmap new sobrescreve)
+
+- Red-team do commit b8b3c4e0 contra docs/seguranca/2026-10-09-wave6-roadmap-new-sobrescreve.md. Atacando: findRoadmapByBasename (by_agent, roadmap_dir customizado, symlink, case), reparo de vínculo (req: "" e req pertencente a outra REQ), --force, --from-req e wizard, texto de protocolo, exit code. Entregável: docs/seguranca/2026-10-09-red-team-roadmap-new-sobrescreve.md.
+
+## 2026-10-09 — hades-tf — FIM: ML-6C REQ-2026-09-09 (red-team roadmap new sobrescreve)
+
+- Entregue docs/seguranca/2026-10-09-red-team-roadmap-new-sobrescreve.md. Seis superfícies atacadas; quatro achados todos severidade BAIXO; nenhuma superfície reproduz o defeito original.
+  - A1: by_agent cross-namespace cria órfã (não sobrescreve original); validate detecta.
+  - A2: linkREQToRoadmap não repara roadmap→REQ sem --req explícito; wip_has_req detecta.
+  - A3: --force sem --req destrói req: (declarado; opt-in); --force --req preserva.
+  - A4: --req REQ-B sobre roadmap de REQ-A vincula REQ-B falsamente; req_roadmap_sync detecta.
+  - Superfícies limpas: flat, by_agent mesmo agente, roadmap_dir custom, diretórios ausentes, symlink folha, case-insensitive FS, --from-req, wizard, texto de protocolo, exit code/Scenario 13.
+  - 21 testes AC8 + protocol text: todos PASS.
+  - Veredito: APROVA COM RESSALVAS.
+
+---
+
+## 2026-10-09 — apolo-tf (fix/req-nasce-orfa-roadmap-new-sobrescreve — ML-6D) — INÍCIO
+
+**Branch:** `fix/req-nasce-orfa-roadmap-new-sobrescreve`
+**Escopo:** `internal/generators/roadmap.go` · `internal/commands/roadmap.go` · `internal/generators/roadmap_idempotent_ac8_test.go`
+**Objetivo:** corretivos do red-team ML-6C (A2, A3, A4) — caminho "roadmap já existe" do `roadmap new`
+- A2: repara req: vazio no roadmap quando exatamente 1 REQ aponta para ele
+- A4: não vincula REQ-R ao roadmap que já pertence a outra REQ
+- A3: texto do --force help diz que req: só é preservado com --req
+
+---
+
+## 2026-10-09 — apolo-tf (fix/req-nasce-orfa-roadmap-new-sobrescreve — ML-6D) — FIM
+
+**Branch:** `fix/req-nasce-orfa-roadmap-new-sobrescreve`
+**Arquivos modificados:** `internal/generators/roadmap.go` · `internal/commands/roadmap.go` · `internal/generators/roadmap_idempotent_ac8_test.go`
+**Entregável:**
+- `reconcileExistingRoadmapLink(reqPath, existingPath, cfg)` — substitui as 3 chamadas diretas a `linkREQToRoadmap` nos caminhos "já existe"
+- `findREQsPointingToRoadmap(basename, cfg)` — scanner de REQs cujo `roadmap:` aponta para o basename
+- A2: reparo de `req:` vazio quando exatamente 1 REQ aponta → `rewriteREQRoadmapRefWith` + write-containment-guard
+- A4: guarda de vínculo cruzado por basename — avisa e retorna sem escrever quando `req:` ≠ REQ passada
+- A3: texto de `--force` atualizado na flag de `commands/roadmap.go`
+- 5 testes novos + 2 falsificações documentadas
+**Gates:** `go build ./...` limpo · `go test ./internal/generators/ ./internal/commands/` ok (generators 56s, commands 21s)
+
+## 2026-10-09 — zeus-tf — FIM: REQ-2026-09-09 AC8 implementado, aguarda PR
+
+- `roadmap new` idempotente (não sobrescreve roadmap de mesmo nome em qualquer estado; repara vínculo; não cria vínculo falso; `--force` só no mesmo caminho) e protocolo gerado sem `roadmap new` após `req new`. Red-team aprovou com ressalvas; A2/A3/A4 corrigidos. `make quality` EXIT=0.
+
+---
+
+## 2026-10-09 — apolo-tf (fix/req-nasce-orfa-roadmap-new-sobrescreve — ML-6F) — INÍCIO
+
+**Branch:** `fix/req-nasce-orfa-roadmap-new-sobrescreve`
+**Escopo:** `internal/generators/roadmap.go` · `internal/generators/roadmap_separator_ml6f_test.go`
+**Objetivo:** ML-6F — separador do vínculo REQ↔roadmap no Windows; gravar sempre "/" na criação
+
+---
+
+## 2026-10-09 — apolo-tf (fix/req-nasce-orfa-roadmap-new-sobrescreve — ML-6F) — FIM
+
+**Branch:** `fix/req-nasce-orfa-roadmap-new-sobrescreve`
+**Arquivos modificados:**
+- `internal/generators/roadmap.go` — 2 sítios normalizados: `NewRoadmapFromContent` (portableREQPath) e `NewRoadmapFromREQ` (portableReqPath)
+- `internal/generators/roadmap_separator_ml6f_test.go` — 3 testes novos
+**Gates:** `go build ./...` limpo · `go test ./internal/generators/ ./internal/commands/` ok · `make quality` EXIT=0 · VM Windows PASS · falsificação reprova no Windows

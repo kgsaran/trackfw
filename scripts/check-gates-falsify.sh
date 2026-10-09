@@ -2269,6 +2269,8 @@ assert_lacks_pattern "roadmap-req-frontmatter-path/go/from-req-baseline" \
 # fmt.Sprintf do template --from-req: qualquer argumento novo nesse Sprintf quebra o casamento e o
 # cenário morre em `expected exactly 1 occurrence of pattern, got 0` — fail-closed, mas por motivo
 # alheio ao que ele mede. Ao tocar esse Sprintf, atualize as duas linhas abaixo.
+# 🔴 ML-6F (2026-10-09): `reqPath` → `portableReqPath` (separador normalizado para '/'); atualizar
+# as duas linhas abaixo ao tocar esses argumentos.
 T25G_MOD="$WORK/s25-go-mod"
 mkdir -p "$T25G_MOD/cmd" "$T25G_MOD/internal"
 cp -r "$ROOT_DIR/cmd/." "$T25G_MOD/cmd/"
@@ -2277,8 +2279,8 @@ cp "$ROOT_DIR/go.mod" "$T25G_MOD/go.mod"
 cp "$ROOT_DIR/go.sum" "$T25G_MOD/go.sum"
 corrupt_literal \
   "$ROOT_DIR/internal/generators/roadmap.go" "$T25G_MOD/internal/generators/roadmap.go" \
-  'date, reqPath, squadVal, title, date, filepath.Base(reqPath), reqPath, adrRef, acBlock, mlSection.String())' \
-  'date, filepath.Base(reqPath), squadVal, title, date, filepath.Base(reqPath), reqPath, adrRef, acBlock, mlSection.String())' \
+  'date, portableReqPath, squadVal, title, date, filepath.Base(portableReqPath), portableReqPath, adrRef, acBlock, mlSection.String())' \
+  'date, filepath.Base(portableReqPath), squadVal, title, date, filepath.Base(portableReqPath), portableReqPath, adrRef, acBlock, mlSection.String())' \
   "s25-go"
 
 T25G_BIN="$WORK/s25-go-bin/trackfw"
@@ -2363,8 +2365,8 @@ cp "$ROOT_DIR/go.mod" "$T26C_GO_MOD/go.mod"
 cp "$ROOT_DIR/go.sum" "$T26C_GO_MOD/go.sum"
 corrupt_literal \
   "$ROOT_DIR/internal/generators/roadmap.go" "$T26C_GO_MOD/internal/generators/roadmap.go" \
-  ', date, content.REQPath, squadVal, content.Title, date, content.REQPath)' \
-  ', date, "", squadVal, content.Title, date, content.REQPath)' \
+  ', date, portableREQPath, squadVal, content.Title, date, portableREQPath)' \
+  ', date, "", squadVal, content.Title, date, portableREQPath)' \
   "s26-go"
 
 T26C_GO_BIN="$WORK/s26-corrupt-go-bin/trackfw"

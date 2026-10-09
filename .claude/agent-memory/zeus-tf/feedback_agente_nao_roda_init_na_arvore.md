@@ -38,3 +38,8 @@ de casa. A issue tinha reprodução sintética; este caso deu dano real com a li
 
 Relacionado: [[o-instrumento-mente]] — medir depois de alterar o ambiente e chamar o resultado de
 "pré-existente" é a mesma família.
+
+**Reincidência (2026-10-09, REQ-2026-09-09 ML-6C):** mesmo com o handoff proibindo `init`/`req new`/`roadmap new`
+na árvore, o red-team criou `docs/roadmaps/backlog/ROADMAP-2026-10-09-agent-feature.md` nela, e o meu `git add -A`
+o commitou. A proibição no handoff não basta: **antes de `git add -A`, leia o `git status --short` e confira cada
+arquivo novo contra a lista que o agente reportou** — arquivo `??` que ninguém declarou é sinal de vazamento.

@@ -1,14 +1,14 @@
 ---
-status: Done
+status: Open
 date: 2026-09-09
 author: ""
 adr: "docs/adr/ADR-2026-09-26-precisao-do-vinculo-branch-roadmap-escrever-em-vez-de-inferir.md"
-roadmap: "docs/roadmaps/done/ROADMAP-2026-09-09-req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos-e-o-segundo-se-esquece.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-09-req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos-e-o-segundo-se-esquece.md"
 ---
 
 # REQ: REQ nasce orfa porque criar REQ e criar roadmap sao dois comandos e o segundo se esquece
 
-> Date: 2026-09-09 | Status: Done
+> Date: 2026-09-09 | Status: Open
 | Linear Issue: 
 | Jira Issue: 
 
@@ -84,6 +84,14 @@ ignorar. E é a crítica que o autor do issue #275 fez sobre contagem.
       (`2eae0a44`) removeu os CLIs Node e Python; não há três saídas para comparar. Lido como
       *"`make quality` verde e CI verde na implementação única em Go"*, que é o que o `ML-5B` mede.
       Justificativa completa no roadmap, seção *Auditoria pré-PR das 16 ACs*.
+
+- [x] **AC8** — 🔴 Reaberto em 2026-10-09: `trackfw req new` já cria a roadmap vinculada (AC1), mas rodar em
+      seguida `trackfw roadmap new "<mesmo título>"` — o que o protocolo escrito ainda manda — **sobrescreve em
+      silêncio** essa roadmap com `req: ""` e `REQ: ` vazios. O `validate` só avisa; o hard gate do `push` barra dois
+      commits depois. Medido em 2026-10-08 na REQ-2026-10-08 (#542). `roadmap new` não pode destruir uma roadmap
+      existente sem aviso, e o texto de protocolo gerado pelo trackfw (bloco "Agent Protocol" do CLAUDE.md/AGENTS.md
+      e equivalentes) deixa de mandar rodar os dois comandos. Mesma causa da REQ (criar REQ+roadmap pelo caminho
+      ensinado produz REQ órfã) → mesma REQ.
 
 ## Negative Scope
 

@@ -1,5 +1,5 @@
 ---
-status: done
+status: wip
 date: 2026-09-09
 req: "docs/req/REQ-2026-09-09-req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos-e-o-segundo-se-esquece.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: REQ nasce orfa porque criar REQ e criar roadmap sao dois comandos e o segundo se esquece
 
-> Created: 2026-09-09 | Reestruturado: 2026-09-12 (absorção da REQ-2026-08-20) | Status: done
+> Created: 2026-09-09 | Reestruturado: 2026-09-12 (absorção da REQ-2026-08-20) | Status: wip
 
 ## Context
 REQ: docs/req/REQ-2026-09-09-req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos-e-o-segundo-se-esquece.md
@@ -1495,6 +1495,13 @@ próprio template** — minha régua marcou o padrão, não a anomalia. **Nenhum
 o risco residual é contido pelo cross-link guard, que só reescreve se o basename casar.
 
 ---
+      Parecer (`docs/seguranca/2026-10-09-wave6-roadmap-new-sobrescreve.md`): `internal/generators/roadmap.go:300`
+      `os.WriteFile` sem checagem de existência; medido: sobrescreve a vinculada (`req: ""`), destrói edição manual
+      imprimindo `✓ created`, e com a roadmap já em wip cria uma segunda em backlog. Texto gerado que manda rodar os dois:
+      `agentfiles.go` (AGENTS/GEMINI/copilot/windsurf/cursor), `claudemd.go`, mais `CLAUDE.md` e `README.md` deste repo.
+      Decisão do arquiteto: opção B (idempotente — existe roadmap com o mesmo nome-base em QUALQUER estado → não
+      escreve, avisa e repara o vínculo de volta) + C (`--force` só sobrescreve no mesmo caminho). Criação com
+      `O_EXCL` em vez de Stat+Write (fecha o TOCTOU).
 
 ### ML-6B — os 4 testes do vínculo comparavam separador nativo com valor portável
 **Status:** ✅ Concluído — auditado em 2026-09-26 · 🔴 **e refutou a minha hipótese**
@@ -1740,3 +1747,91 @@ reproduzira o #273 ao vivo. Refeito depois do `roadmap move … wip`: **passou**
 recusa era o roadmap estar em `blocked/`, que o guard não aceita, **não** o casamento de slug.
 🔴 **Não afirmei o que não medi.**
 
+## Wave 6 — Reabertura (AC8): `roadmap new` sobrescreve a roadmap que o `req new` criou
+> Reaberto em 2026-10-09. **Por que o escopo original não previa:** o AC1 fez o `req new` criar a roadmap, mas o
+> `roadmap new` e o texto de protocolo gerado continuaram como antes — a sequência ensinada destrói o vínculo.
+
+### ML-6A — Threat model e enumeração
+**Status:** ✅ Concluído
+**Squad:** hades-tf
+- [x] Medição com o binário da main: `req new` + `roadmap new` mesmo título; título diferente; `--from-req`; roadmap já em wip/done; o que o `roadmap new` faz hoje com arquivo existente (sobrescreve? em que caminho do código?)
+- [x] Enumeração de todo texto gerado que manda rodar `req new` e depois `roadmap new` (templates de CLAUDE.md, AGENTS.md, GEMINI.md, regras de Cursor/Windsurf/Kiro/Copilot, skills, docs) — por grep, não por memória
+- [x] Decisão recomendada (recusar com erro? vincular sem sobrescrever? `--force`?) e Veredito
+
+### ML-6B — Correção
+**Status:** 🔄 Em andamento
+**Squad:** apolo-tf
+- [x] `roadmap new` nunca sobrescreve roadmap existente sem opt-in explícito; teste nas duas direções com falsificação
+- [x] Texto de protocolo gerado atualizado em todos os sítios do ML-6A; testes que pinam o texto ajustados
+- [x] `make quality` (arquiteto)
+      Auditoria (2026-10-09): 5 testes conferidos por nome. Binário real num projeto temporário: `req new "Teste T"` +
+      edição à mão + `roadmap new "Teste T"` → aviso, arquivo byte-idêntico (hash igual), nota manual e `req:` preservados;
+      com a roadmap em wip → nenhuma cópia em backlog; `--force` com a existente em wip → erro. `make quality` EXIT=0
+      (executor), 347 OK. Texto de protocolo atualizado em agentfiles.go, claudemd.go, CLAUDE.md, AGENTS.md, GEMINI.md,
+      pypi/AGENTS.md e README.
+
+### ML-6C — Red-team
+**Status:** ✅ Concluído
+**Squad:** hades-tf
+- [x] Parecer sobre o diff
+      Veredito do hades-tf (`docs/seguranca/2026-10-09-red-team-roadmap-new-sobrescreve.md`): aprova com ressalvas, 4
+      achados baixos. Decisão do arquiteto: A2 (roadmap deixada com `req: ""` pela versão antiga não é reparada sem
+      `--req`) e A4 (`--req REQ-B` sobre roadmap de REQ-A cria vínculo falso) são a mesma causa — o caminho "já existe"
+      escrevendo/deixando vínculo errado → ML-6D. A3 (`--force` sem `--req` zera o vínculo) → texto do help. A1 (by_agent
+      com `--agent` diferente cria órfã noutro namespace, sem perda) → residual; o validate acusa.
+
+### ML-6D — Corretivo do red-team: vínculo no caminho "já existe"
+**Status:** ✅ Concluído
+**Squad:** apolo-tf
+- [x] A2: roadmap existente com `req: ""` e exatamente uma REQ apontando para ela → `req:` reparado sem `--req`
+- [x] A4: `--req` diferente do `req:` já gravado → não vincula, avisa; nenhuma das duas REQs alterada
+- [x] A3: help do `--force` diz que o vínculo é recriado só com `--req`
+- [x] Testes nas duas direções, falsificação; `make quality` (arquiteto)
+      Auditoria (2026-10-09): 6 testes conferidos por nome (A2 ×3, A4 ×3 incluindo `TestRoadmapNew_A4_OrphanRoadmap_GetsReqFilled`
+      — complemento pedido pelo arquiteto: `--req R` sobre roadmap órfã também grava `req:` na roadmap); falsificações de A2,
+      A4 e do complemento registradas; árvore só com os arquivos declarados. `make quality` (arquiteto) EXIT=0, 347 OK.
+      Residual: by_agent com `--agent` diferente (A1) — o validate acusa a órfã.
+
+
+### ML-6E — A1: by_agent com `--agent` diferente
+**Status:** ✅ Concluído
+**Squad:** apolo-tf
+**Por que:** decisão do KG (2026-10-09): o residual A1 vira erro em breve — corrigir aqui.
+**Decisão do arquiteto:** em `roadmap_namespacing: by_agent`, a procura por roadmap de mesmo nome-base varre TODOS os
+namespaces de agente (e as pastas de estado flat, se existirem). Achou noutro agente → mesmo tratamento de "já existe
+em outro estado": não grava, avisa nomeando o caminho e o agente, repara vínculo pelas regras A2/A4; `--force` recusa.
+- [x] `req new --agent A T` + `roadmap new --agent B T` → nenhuma roadmap nova em B; aviso; vínculo íntegro
+- [x] Mesmo agente e flat continuam como no ML-6B/6D (sem regressão)
+- [x] Testes, falsificação; `make quality` (arquiteto)
+      Auditoria (2026-10-09): 5 testes A1; binário num projeto by_agent: `roadmap new --agent apolo-tf` com a roadmap em
+      zeus-tf → aviso nomeando o dono, nada criado; `--force` → exit 1. Falsificação registrada. Bomba-relógio achada pelo
+      executor nos testes A2/A4 do ML-6D (data do dia fixa no nome do arquivo — reprovariam a partir de 2026-10-10;
+      falha de auditoria minha): corrigida com `ac8Today()`. `make quality` (arquiteto) EXIT=0, 347 OK.
+
+
+### ML-6F — Separador de caminho no vínculo REQ↔roadmap (Windows)
+**Status:** ✅ Concluído
+**Squad:** apolo-tf
+**Por que:** visto na correção do `windows-full-suites` do #550: o caminho de criação (`NewRoadmapFromREQ`/template)
+grava `REQ:`/`req:` com o separador nativo (`docs\req\...` no Windows), o de reparo (`reconcileExistingRoadmapLink`)
+grava sempre `/`. Decisão do KG (2026-10-09): defeito conhecido se corrige agora.
+- [x] Todo sítio que grava vínculo REQ↔roadmap (frontmatter e linha do corpo, nos dois sentidos — req new, roadmap new,
+      roadmap move, reparos) grava com `/`; enumeração por grep
+- [x] Leitura/comparação do vínculo continua aceitando `\` já gravado (projetos existentes no Windows)
+- [x] Testes que rodam no Windows (VM) provando `/` nos arquivos gerados; falsificação; `make quality` (arquiteto)
+      Auditoria (2026-10-09): 2 sítios de criação não normalizavam (`NewRoadmapFromContent`, `NewRoadmapFromREQ`) —
+      corrigidos; os 7 demais já gravavam `/`. Vínculo legado com `\` é reconhecido e curado ao ser tocado. 3 testes
+      conferidos por nome; VM: PASS, e sem a normalização reprova com `req: "docs\req\..."`. VM limpa. `make quality`
+      EXIT=0 (executor).
+
+
+### ML-6G — Corretivo do CI do ML-6F
+**Status:** ✅ Concluído
+**Squad:** apolo-tf
+**Por que:** o ML-6F reprovou no CI em dois pontos que a auditoria não pegou (falha do arquiteto: commitou sem rodar o
+`make quality` próprio e aceitou VM só com os testes novos): (1) três asserções do AC8 montavam o esperado com
+`filepath.Join` (`\` no Windows) contra o `req:` agora gravado com `/`; (2) as âncoras literais de `s25`/`s26` em
+`scripts/check-gates-falsify.sh` apontavam para os argumentos antigos do Sprintf (`reqPath`, `content.REQPath`).
+- [x] Asserções com `filepath.ToSlash`; os dois testes passam na VM
+- [x] Âncoras s25/s26 atualizadas (contagem 1 cada); `make parity-falsify` 347 OK
+- [x] `make quality` (arquiteto) EXIT=0, 347 OK / 0 FAIL

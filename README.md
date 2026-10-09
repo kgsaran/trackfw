@@ -254,11 +254,11 @@ trackfw init
 # 2. Document an architectural decision
 trackfw adr new "Use PostgreSQL as primary database"
 
-# 3. Create a requirement — wizard detects domains and proposes ADR drafts
+# 3. Create a requirement with linked roadmap — wizard detects domains and proposes ADR drafts
 trackfw req new "User authentication"
 
-# 4. Once ADRs are accepted, plan the work
-trackfw roadmap new "Auth service"
+# 4. Move the roadmap to work-in-progress
+trackfw roadmap move user-authentication wip
 
 # 5. Check governance health
 trackfw validate

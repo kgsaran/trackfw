@@ -54,10 +54,12 @@ func trackfwRulesBlock(agentConventions, namespacing string, agents []string) st
 
 	// Compute the step-1 command sequence, conditional on by_agent 2+.
 	// The named predicate is validator.IsMultiAgentByAgent; the same check governs the
-	// ambiguity error in `req new` / `roadmap new` (Wave 1). Using it here ensures the
-	// documentation matches the command behaviour exactly.
+	// ambiguity error in `req new` (Wave 1). Using it here ensures the documentation
+	// matches the command behaviour exactly.
+	//
+	// AC8 (REQ-2026-09-09): `req new` already creates the linked roadmap; `roadmap new` is
+	// no longer in the protocol step — it is for standalone roadmaps without a new REQ.
 	step1Req := "`trackfw req new \"title\"`"
-	step1Roadmap := "`trackfw roadmap new \"title\"`"
 	step1Note := ""
 
 	if namespacing == config.NamespacingByAgent {
@@ -70,7 +72,6 @@ func trackfwRulesBlock(agentConventions, namespacing string, agents []string) st
 		if len(nonEmpty) >= 2 {
 			agentList := strings.Join(nonEmpty, ", ")
 			step1Req = "`trackfw req new --agent <agent> \"title\"`"
-			step1Roadmap = "`trackfw roadmap new --agent <agent> \"title\"`"
 			step1Note = "\n   ⚠️ `--agent` is required for this project (agents: " + agentList + ")"
 		}
 	}
@@ -83,7 +84,7 @@ Chain: ` + "`ADR → REQ → ROADMAP`" + ` · States: ` + "`backlog / analyzing 
 
 ### Agent Protocol
 1. **Before any implementation (mandatory):** create governance artifacts FIRST, then branch:
-   ` + step1Req + ` → ` + step1Roadmap + ` → ` + "`trackfw roadmap move <name> wip`" + ` → ` + "`git checkout -b feat/<branch>`" + step1Note + `
+   ` + step1Req + ` → ` + "`trackfw roadmap move <name> wip`" + ` → ` + "`trackfw branch new <type>/<slug>`" + step1Note + `
    ❌ Never create a branch before REQ + ROADMAP are in wip/
    ❌ Never defer REQ/ROADMAP creation to a future task — they are prerequisites, not deliverables
    ✓ ` + "`trackfw validate`" + ` enforces this via ` + "`branch_has_wip_roadmap`" + ` rule (v2.7.0+)

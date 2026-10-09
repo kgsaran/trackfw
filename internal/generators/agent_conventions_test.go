@@ -103,28 +103,36 @@ func TestInjectOrUpdateRules_WithAgentConventions_SectionInjected(t *testing.T) 
 // --agent variant in step-1 of the Agent Protocol when namespacing=by_agent and 2 non-empty
 // agents are declared, including the ⚠️ note listing both agent names.
 //
-// Reconciliation: this test affirms the central conclusion of ML-3A — that generators emit
-// `trackfw req new --agent <agent> "title"` for by_agent+2 projects, matching the same condition
-// in validator.ReqNewLine (IsMultiAgentByAgent).
+// Reconciliation (ML-3A + AC8): generators emit `trackfw req new --agent <agent> "title"` for
+// by_agent+2 projects (matching validator.ReqNewLine / IsMultiAgentByAgent), and since AC8
+// removed `roadmap new` from the protocol step (`req new` already creates the linked roadmap),
+// the step-1 line must NOT contain `roadmap new`.
 func TestTrackfwRulesBlock_ByAgent2plus_Step1Block(t *testing.T) {
 	t.Parallel()
 	block := trackfwRulesBlock("", "by_agent", []string{"zeus", "apolo"})
 
 	wantReq := "`trackfw req new --agent <agent> \"title\"`"
-	wantRM := "`trackfw roadmap new --agent <agent> \"title\"`"
 	wantNote := "⚠️ `--agent` is required for this project (agents: zeus, apolo)"
 
 	if !strings.Contains(block, wantReq) {
 		t.Errorf("trackfwRulesBlock(by_agent, zeus+apolo): missing req line\n  want substring: %q\n  got:\n%s",
 			wantReq, block)
 	}
-	if !strings.Contains(block, wantRM) {
-		t.Errorf("trackfwRulesBlock(by_agent, zeus+apolo): missing roadmap line\n  want substring: %q\n  got:\n%s",
-			wantRM, block)
-	}
 	if !strings.Contains(block, wantNote) {
 		t.Errorf("trackfwRulesBlock(by_agent, zeus+apolo): missing warning note\n  want substring: %q\n  got:\n%s",
 			wantNote, block)
+	}
+	// AC8 (REQ-2026-09-09): `req new` already creates the roadmap; `roadmap new` must NOT appear
+	// in the step-1 protocol line. Falsification: restoring step1Roadmap would make this fail.
+	step1Line := ""
+	for _, line := range strings.Split(block, "\n") {
+		if strings.Contains(line, "Before any implementation") || strings.Contains(line, "req new") {
+			step1Line += line + "\n"
+		}
+	}
+	if strings.Contains(step1Line, "roadmap new") {
+		t.Errorf("AC8: step-1 must not contain 'roadmap new' (req new already creates the roadmap):\n  step-1 lines:\n%s\n  full block:\n%s",
+			step1Line, block)
 	}
 }
 

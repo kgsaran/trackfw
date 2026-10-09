@@ -71,7 +71,7 @@ func TestNewRoadmapFromREQ_WritesBacklinkIntoREQ(t *testing.T) {
 	chdirRoadmap(t, dir)
 	reqRel := writeREQML1B(t, dir, "REQ-2026-09-26-alvo.md", reqFixtureML1B("AC1 — o vinculo volta"))
 
-	if err := NewRoadmapFromREQ(reqRel, ""); err != nil {
+	if err := NewRoadmapFromREQ(reqRel, "", false); err != nil {
 		t.Fatalf("NewRoadmapFromREQ(): %v", err)
 	}
 	roadmapRel := onlyRoadmapML1B(t)
@@ -120,7 +120,7 @@ func TestNewRoadmapFromREQ_BacklinkIsIdempotent(t *testing.T) {
 	chdirRoadmap(t, dir)
 	reqRel := writeREQML1B(t, dir, "REQ-2026-09-26-alvo.md", reqFixtureML1B("AC1 — idempotencia"))
 
-	if err := NewRoadmapFromREQ(reqRel, ""); err != nil {
+	if err := NewRoadmapFromREQ(reqRel, "", false); err != nil {
 		t.Fatalf("NewRoadmapFromREQ() 1a rodada: %v", err)
 	}
 	first, err := os.ReadFile(reqRel)
@@ -128,7 +128,7 @@ func TestNewRoadmapFromREQ_BacklinkIsIdempotent(t *testing.T) {
 		t.Fatalf("ReadFile REQ: %v", err)
 	}
 
-	if err := NewRoadmapFromREQ(reqRel, ""); err != nil {
+	if err := NewRoadmapFromREQ(reqRel, "", false); err != nil {
 		t.Fatalf("NewRoadmapFromREQ() 2a rodada: %v", err)
 	}
 	second, err := os.ReadFile(reqRel)
@@ -159,7 +159,7 @@ func TestNewRoadmapFromREQ_ConsolidatedACsComeFromREQ(t *testing.T) {
 	reqRel := writeREQML1B(t, dir, "REQ-2026-09-26-alvo.md",
 		reqFixtureML1B("AC1 — o vinculo volta para a REQ", "AC2 — o bloco de ACs deixa de sair vazio"))
 
-	if err := NewRoadmapFromREQ(reqRel, ""); err != nil {
+	if err := NewRoadmapFromREQ(reqRel, "", false); err != nil {
 		t.Fatalf("NewRoadmapFromREQ(): %v", err)
 	}
 	content, err := os.ReadFile(onlyRoadmapML1B(t))
@@ -201,7 +201,7 @@ func TestNewRoadmapFromREQ_NoCriteriaKeepsPlaceholderAndInventsNoML(t *testing.T
 	chdirRoadmap(t, dir)
 	reqRel := writeREQML1B(t, dir, "REQ-2026-09-26-sem-acs.md", reqFixtureML1B())
 
-	if err := NewRoadmapFromREQ(reqRel, ""); err != nil {
+	if err := NewRoadmapFromREQ(reqRel, "", false); err != nil {
 		t.Fatalf("NewRoadmapFromREQ(): %v", err)
 	}
 	content, err := os.ReadFile(onlyRoadmapML1B(t))
@@ -266,7 +266,7 @@ func TestNewRoadmapFromREQ_DoesNotOverwriteExistingDifferentLink(t *testing.T) {
 		`roadmap: ""`, `roadmap: "`+existing+`"`, 1)
 	reqRel := writeREQML1B(t, dir, "REQ-2026-09-26-ja-vinculada.md", fixture)
 
-	if err := NewRoadmapFromREQ(reqRel, ""); err != nil {
+	if err := NewRoadmapFromREQ(reqRel, "", false); err != nil {
 		t.Fatalf("NewRoadmapFromREQ() não deve falhar por vínculo preexistente: %v", err)
 	}
 	reqAfter, err := os.ReadFile(reqRel)

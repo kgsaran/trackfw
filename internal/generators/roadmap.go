@@ -2,7 +2,9 @@ package generators
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,6 +27,10 @@ type RoadmapContent struct {
 	// Agent é o namespace de agente em modo by_agent. Quando vazio, a resolução usa
 	// ResolveWriteAgent: um único namespace → usa aquele; vários → retorna erro.
 	Agent string
+	// Force: quando true, sobrescreve o roadmap existente NO MESMO CAMINHO (backlog/).
+	// Recusado se o roadmap existente estiver em outro estado (ex.: wip/) — não cria
+	// duplicata em estados diferentes mesmo com --force.
+	Force bool
 }
 
 // wave0GateFence is the fixed, literal, non-interpolated gate command emitted inside every
@@ -126,6 +132,87 @@ func agentStateDir(agent, state string) (string, bool) {
 		}
 	}
 	return cfg.RoadmapDir + "/" + agent + "/" + state, true
+}
+
+// findRoadmapByBasename busca um roadmap pelo nome-base em todos os diretórios de estado.
+// Retorna o caminho relativo (separador "/") onde o arquivo foi encontrado, ou "" se não existir.
+// Em modo by_agent, pesquisa apenas no namespace do agente informado.
+//
+// AC8 (REQ-2026-09-09): evita sobrescrita silenciosa quando `roadmap new T` e `req new T`
+// geram o mesmo nome-base no mesmo dia — `req new` cria o roadmap e `roadmap new` precisa
+// detectar a colisão antes de escrever.
+func findRoadmapByBasename(basename, agent string, cfg config.ProjectConfig) string {
+	for _, state := range []string{"backlog", "analyzing", "wip", "blocked", "done", "abandoned"} {
+		var dir string
+		if cfg.RoadmapNamespacing == config.NamespacingByAgent {
+			dir = cfg.RoadmapDir + "/" + agent + "/" + state
+		} else {
+			dir = cfg.RoadmapDir + "/" + state
+		}
+		candidate := dir + "/" + basename
+		if _, err := os.Stat(candidate); err == nil {
+			return normalizeRefSeparator(candidate)
+		}
+	}
+	return ""
+}
+
+// roadmapCrossMatch é um resultado de busca fora do namespace do agente resolvido em modo by_agent.
+// Usado por findRoadmapByBasenameOtherAgents para reportar colisões cross-namespace (A1/ML-6E).
+type roadmapCrossMatch struct {
+	path  string // caminho relativo com separador "/" (normalizado)
+	agent string // namespace de agente que contém o arquivo; "" para flat state dirs
+}
+
+// findRoadmapByBasenameOtherAgents procura basename em todos os namespaces de agente EXCETO o
+// resolvedAgent, e também nos diretórios de estado flat (roadmap_dir/state/) se existirem.
+// Só relevante em modo by_agent — retorna nil em modo flat.
+//
+// A1/ML-6E (REQ-2026-09-09): impede que `roadmap new --agent B T` crie um roadmap órfão
+// quando `req new --agent A T` já criou um roadmap com o mesmo nome-base no namespace A.
+func findRoadmapByBasenameOtherAgents(basename, resolvedAgent string, cfg config.ProjectConfig) []roadmapCrossMatch {
+	if cfg.RoadmapNamespacing != config.NamespacingByAgent {
+		return nil
+	}
+	states := []string{"backlog", "analyzing", "wip", "blocked", "done", "abandoned"}
+	var results []roadmapCrossMatch
+
+	// Namespaces de agente (config + disco) exceto o agente resolvido.
+	// Pular entradas cujo nome coincide com um nome de estado (flat state dirs que
+	// resolveAgentNamespaces incluiria se existissem em disco — varridas separadamente abaixo).
+	agents := validator.ResolveAgentNamespaces(cfg, cfg.RoadmapDir)
+	for _, a := range agents {
+		if a == resolvedAgent {
+			continue
+		}
+		if roadmapValidStateNames[a] {
+			// É um diretório de estado flat; varrido separadamente abaixo.
+			continue
+		}
+		for _, state := range states {
+			candidate := cfg.RoadmapDir + "/" + a + "/" + state + "/" + basename
+			if _, err := os.Stat(candidate); err == nil {
+				results = append(results, roadmapCrossMatch{
+					path:  normalizeRefSeparator(candidate),
+					agent: a,
+				})
+			}
+		}
+	}
+
+	// Varrer também diretórios de estado flat (roadmap_dir/state/basename) em modo by_agent
+	// — podem coexistir com namespaces de agente em projetos em migração.
+	for _, state := range states {
+		candidate := cfg.RoadmapDir + "/" + state + "/" + basename
+		if _, err := os.Stat(candidate); err == nil {
+			results = append(results, roadmapCrossMatch{
+				path:  normalizeRefSeparator(candidate),
+				agent: "", // flat, sem namespace de agente
+			})
+		}
+	}
+
+	return results
 }
 
 // agentFromPath extrai o namespace de agente a partir de um caminho de arquivo em modo by_agent.
@@ -247,7 +334,71 @@ func NewRoadmapFromContent(content RoadmapContent) error {
 
 	slug := toSlug(content.Title)
 	date := time.Now().Format("2006-01-02")
-	filename := fmt.Sprintf("%s/ROADMAP-%s-%s.md", backlogDir, date, slug)
+	basename := fmt.Sprintf("ROADMAP-%s-%s.md", date, slug)
+	filename := fmt.Sprintf("%s/%s", backlogDir, basename)
+
+	// AC8 (REQ-2026-09-09): antes de escrever, verificar se um roadmap com o mesmo nome-base
+	// já existe em qualquer diretório de estado. Sobrescrita silenciosa destruiria conteúdo
+	// editado manualmente e quebraria o vínculo REQ↔roadmap (medido em ML-6A).
+	if existingPath := findRoadmapByBasename(basename, agent, cfg); existingPath != "" {
+		normExisting := existingPath // findRoadmapByBasename já normaliza com "/"
+		normFilename := normalizeRefSeparator(filename)
+		if normExisting == normFilename {
+			// Arquivo existe no destino planejado (backlog/).
+			if !content.Force {
+				// Opção B (idempotente): pular criação, verificar/reparar vínculos, reportar.
+				fmt.Fprintf(os.Stderr, "roadmap %s já existe em %s (criada por `trackfw req new`?) — nada sobrescrito; use --force para recriar\n",
+					basename, existingPath)
+				reconcileExistingRoadmapLink(content.REQPath, normalizeRefSeparator(filename), cfg)
+				return nil
+			}
+			// --force no mesmo caminho: cai no write abaixo (O_TRUNC via os.WriteFile).
+		} else {
+			// Arquivo existe em outro estado (ex.: wip/) — nunca criar duplicata.
+			if content.Force {
+				return fmt.Errorf("roadmap %s já existe em %s — --force não cria duplicata em estado diferente; mova ou apague o existente primeiro",
+					basename, existingPath)
+			}
+			fmt.Fprintf(os.Stderr, "roadmap %s já existe em %s — nada sobrescrito; use --force para recriar (apenas no mesmo estado)\n",
+				basename, existingPath)
+			reconcileExistingRoadmapLink(content.REQPath, normalizeRefSeparator(existingPath), cfg)
+			return nil
+		}
+	} else if cfg.RoadmapNamespacing == config.NamespacingByAgent {
+		// A1 (ML-6E): sem resultado no próprio namespace — verificar outros namespaces de agente
+		// e diretórios de estado flat. Evita criação de roadmap órfã quando `req new --agent A T`
+		// já criou um roadmap com mesmo nome-base num namespace diferente do resolvido.
+		if others := findRoadmapByBasenameOtherAgents(basename, agent, cfg); len(others) > 0 {
+			switch len(others) {
+			case 1:
+				m := others[0]
+				ownerLabel := m.agent
+				if ownerLabel == "" {
+					ownerLabel = "(flat)"
+				}
+				if content.Force {
+					return fmt.Errorf("roadmap %s já existe em %s (agente %s) — --force não cria duplicata em namespace diferente; mova ou apague o existente primeiro",
+						basename, m.path, ownerLabel)
+				}
+				fmt.Fprintf(os.Stderr, "roadmap %s já existe em %s (agente %s) — nada criado em namespace %s; mova o existente ou use o agente correto\n",
+					basename, m.path, ownerLabel, agent)
+				reconcileExistingRoadmapLink(content.REQPath, m.path, cfg)
+				return nil
+			default:
+				var descs []string
+				for _, m := range others {
+					ownerLabel := m.agent
+					if ownerLabel == "" {
+						ownerLabel = "(flat)"
+					}
+					descs = append(descs, fmt.Sprintf("%s (agente %s)", m.path, ownerLabel))
+				}
+				fmt.Fprintf(os.Stderr, "roadmap %s encontrada em múltiplos namespaces — nada criado: %s\n",
+					basename, strings.Join(descs, "; "))
+				return nil
+			}
+		}
+	}
 
 	var body string
 	if content.Body != "" {
@@ -255,6 +406,10 @@ func NewRoadmapFromContent(content RoadmapContent) error {
 	} else {
 		// squad recebe o agente resolvido quando em by_agent; vazio em flat (AC4).
 		squadVal := agent
+		// normalizeRefSeparator: o template é escrito em disco e pode ter sido
+		// invocado no Windows com content.REQPath usando "\". ADR-2026-09-01 D1:
+		// caminhos dentro de artefato versionado usam sempre "/" (ML-6F).
+		portableREQPath := normalizeRefSeparator(content.REQPath)
 		body = fmt.Sprintf(`---
 status: backlog
 date: %s
@@ -275,7 +430,7 @@ REQ: %s
 - [ ]
 - [ ]
 
-`, date, content.REQPath, squadVal, content.Title, date, content.REQPath) + wave0Block + fmt.Sprintf(`## Wave 1 — <name> (parallel MLs)
+`, date, portableREQPath, squadVal, content.Title, date, portableREQPath) + wave0Block + fmt.Sprintf(`## Wave 1 — <name> (parallel MLs)
 > Dependencies: none
 
 ### ML-1A — %s
@@ -296,9 +451,33 @@ REQ: %s
 	if guardErr := pathguard.RejectAndReport(root, absFilename); guardErr != nil {
 		return guardErr
 	}
-	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
-	if err := os.WriteFile(filename, []byte(body), 0644); err != nil {
-		return fmt.Errorf("writing roadmap: %w", err)
+	if content.Force {
+		// --force sobre o mesmo caminho: sobrescreve com truncate.
+		// write-containment-allowed: guarded by pathguard.RejectAndReport above
+		if err := os.WriteFile(filename, []byte(body), 0644); err != nil {
+			return fmt.Errorf("writing roadmap: %w", err)
+		}
+	} else {
+		// Caminho normal: O_EXCL fecha o TOCTOU entre findRoadmapByBasename e a escrita.
+		// Se o arquivo apareceu entre as duas operações, trata como "já existe" (idempotência).
+		// write-containment-allowed: guarded by pathguard.RejectAndReport above
+		f, createErr := os.OpenFile(filename, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+		if createErr != nil {
+			if errors.Is(createErr, fs.ErrExist) {
+				// TOCTOU: arquivo criado entre a checagem e o open — tratar como já existente.
+				fmt.Fprintf(os.Stderr, "roadmap %s já existe — nada sobrescrito; use --force para recriar\n", filename)
+				reconcileExistingRoadmapLink(content.REQPath, normalizeRefSeparator(filename), cfg)
+				return nil
+			}
+			return fmt.Errorf("writing roadmap: %w", createErr)
+		}
+		if _, werr := f.Write([]byte(body)); werr != nil {
+			_ = f.Close()
+			return fmt.Errorf("writing roadmap: %w", werr)
+		}
+		if cerr := f.Close(); cerr != nil {
+			return fmt.Errorf("writing roadmap: %w", cerr)
+		}
 	}
 
 	fmt.Printf("✓ created %s\n", filename)
@@ -327,7 +506,10 @@ REQ: %s
 //   - agent vazio: herda o namespace da REQ a partir do caminho reqPath usando agentFromPath
 //     (AC11 — reusa o mecanismo do roadmap move; não cria derivação nova).
 //   - Se não for possível derivar do caminho E o projeto tiver múltiplos agentes, retorna erro.
-func NewRoadmapFromREQ(reqPath, agent string) error {
+//
+// force: quando true, passa Force:true para NewRoadmapFromContent (sobrescreve o roadmap
+// existente no mesmo caminho; recusado se o existente estiver em outro estado).
+func NewRoadmapFromREQ(reqPath, agent string, force bool) error {
 	data, err := os.ReadFile(reqPath)
 	if err != nil {
 		return fmt.Errorf("reading REQ: %w", err)
@@ -413,6 +595,9 @@ func NewRoadmapFromREQ(reqPath, agent string) error {
 
 	// squad recebe o agente resolvido para registrar o namespace no frontmatter (AC4/AC11).
 	squadVal := resolvedAgent
+	// normalizeRefSeparator: o template é escrito em disco; no Windows reqPath pode conter "\".
+	// ADR-2026-09-01 D1: caminhos dentro de artefato versionado usam sempre "/" (ML-6F).
+	portableReqPath := normalizeRefSeparator(reqPath)
 	body := fmt.Sprintf(`---
 status: backlog
 date: %s
@@ -432,7 +617,7 @@ REQ: %s%s
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
 %s
 
-%s`, date, reqPath, squadVal, title, date, filepath.Base(reqPath), reqPath, adrRef, acBlock, mlSection.String())
+%s`, date, portableReqPath, squadVal, title, date, filepath.Base(portableReqPath), portableReqPath, adrRef, acBlock, mlSection.String())
 
 	return NewRoadmapFromContent(RoadmapContent{
 		Title: title,
@@ -442,6 +627,7 @@ REQ: %s%s
 		// o roadmap declarava a REQ e o gerador, uma linha depois, não sabia mais qual era.
 		REQPath: reqPath,
 		Agent:   resolvedAgent, // passa o agente já resolvido para o path resolver em NewRoadmapFromContent
+		Force:   force,
 	})
 }
 
@@ -1573,6 +1759,155 @@ func linkREQToRoadmap(reqPath, roadmapPath string) {
 	}
 
 	fmt.Printf("✓ linked %s → %s\n", filepath.Base(absReq), roadmapPath)
+}
+
+// ─── Reparo de elo nos caminhos "já existe" (ML-6D, A2/A4) ─────────────────
+
+// findREQsPointingToRoadmap retorna os caminhos relativos de todas as REQs em req_dir
+// cujo frontmatter `roadmap:` tem basename igual a roadmapBasename.
+// Reutiliza scanREQFiles (ponto único, ADR-2026-09-03) e o mesmo predicado de basename
+// que syncREQReferences usa em :1507.
+func findREQsPointingToRoadmap(roadmapBasename string, cfg config.ProjectConfig) []string {
+	reqFiles, err := scanREQFiles(cfg)
+	if err != nil {
+		return nil
+	}
+	var found []string
+	for _, reqPath := range reqFiles {
+		data, readErr := os.ReadFile(reqPath)
+		if readErr != nil {
+			continue
+		}
+		fmVal := extractFrontmatterRoadmap(string(data))
+		if fmVal == "" {
+			continue
+		}
+		if filepath.Base(normalizeRefSeparator(fmVal)) == roadmapBasename {
+			found = append(found, reqPath)
+		}
+	}
+	return found
+}
+
+// reconcileExistingRoadmapLink substitui as chamadas diretas a linkREQToRoadmap nos
+// três caminhos "já existe" de NewRoadmapFromContent (mesmo estado, outro estado, TOCTOU).
+//
+// A4 (ML-6D): quando --req R é passado e o roadmap existente já tem req: apontando para
+// OUTRA REQ, avisa em stderr e retorna sem escrever nada — nem a REQ R nem o roadmap são
+// alterados. "Outra" é definida por basename, como syncREQReferences e rewriteRoadmapREQRef
+// fazem, para tolerar formas diferentes do mesmo caminho (relativo, ./prefixado).
+//
+// A2 (ML-6D): quando --req não é passado e o roadmap tem req: vazio, verifica quantas REQs
+// em req_dir apontam para ele. Se exatamente uma, repara req: e a linha REQ: do corpo.
+// Se zero ou mais de uma, avisa e não toca o arquivo.
+//
+// Comportamento padrão (nem A4 nem A2 se aplicam): delega para linkREQToRoadmap.
+//
+// Nunca é fatal: falhas de leitura/escrita saem em stderr e retornam silenciosamente,
+// espelhando o contrato de não-fatalidade de linkREQToRoadmap.
+func reconcileExistingRoadmapLink(reqPath, existingPath string, cfg config.ProjectConfig) {
+	roadmapData, readErr := os.ReadFile(existingPath)
+
+	// A4: --req passado
+	if reqPath != "" {
+		if readErr != nil {
+			// Fail closed: sem o conteúdo do roadmap não é possível verificar vínculo.
+			fmt.Fprintf(os.Stderr, "trackfw roadmap new: cannot verify ownership of %s: %v — link skipped\n",
+				filepath.Base(existingPath), readErr)
+			return
+		}
+		existingREQ := extractFrontmatterReq(string(roadmapData))
+		if !reqRoadmapFMIsFillable(existingREQ) {
+			// roadmap tem req: preenchido — verificar se é a mesma REQ (por basename).
+			if filepath.Base(normalizeRefSeparator(existingREQ)) != filepath.Base(normalizeRefSeparator(reqPath)) {
+				fmt.Fprintf(os.Stderr, "trackfw roadmap new: %s already belongs to %s — link to %s not created\n",
+					filepath.Base(existingPath), existingREQ, filepath.Base(reqPath))
+				return
+			}
+		}
+		// req: vazio ou igual → completar o elo dos dois lados.
+		// Lado REQ→roadmap (já existia antes deste complemento).
+		linkREQToRoadmap(reqPath, normalizeRefSeparator(existingPath))
+		// Lado roadmap→REQ: quando req: está vazio, preencher com reqPath.
+		// Complemento do ML-6D: o lado REQ recebia o vínculo mas o roadmap
+		// continuava órfão do seu próprio req: — a lacuna declarada no relatório.
+		if reqRoadmapFMIsFillable(existingREQ) {
+			fmFillable := func(plainVal string) bool { return reqRoadmapFMIsFillable(plainVal) }
+			updated, changed := rewriteREQRoadmapRefWith(roadmapData, fmFillable, reqRoadmapBodyIsFillable,
+				"req", "REQ", true, normalizeRefSeparator(reqPath))
+			if changed {
+				root, rootErr := projectRoot()
+				if rootErr != nil {
+					fmt.Fprintf(os.Stderr, "trackfw roadmap new: skipped req: fill for %s: %v\n",
+						filepath.Base(existingPath), rootErr)
+					return
+				}
+				absExisting := filepath.Join(root, existingPath)
+				// write-containment-allowed: guarded by pathguard.RejectAndReport below
+				if guardErr := pathguard.RejectAndReport(root, absExisting); guardErr != nil {
+					return
+				}
+				// write-containment-allowed: guarded by pathguard.RejectAndReport above
+				if err := os.WriteFile(existingPath, updated, 0644); err != nil {
+					fmt.Fprintf(os.Stderr, "trackfw roadmap new: failed to fill req: in %s: %v\n",
+						filepath.Base(existingPath), err)
+					return
+				}
+				fmt.Printf("✓ linked %s → %s\n", filepath.Base(existingPath), reqPath)
+			}
+		}
+		return
+	}
+
+	// A2: --req não passado
+	if readErr != nil {
+		// Não conseguiu ler o roadmap — não tenta reparar.
+		return
+	}
+	existingREQ := extractFrontmatterReq(string(roadmapData))
+	if !reqRoadmapFMIsFillable(existingREQ) {
+		// roadmap já tem req: preenchido — nada a fazer.
+		return
+	}
+	// req: vazio → procurar REQs que apontam para este roadmap.
+	roadmapBasename := filepath.Base(normalizeRefSeparator(existingPath))
+	pointing := findREQsPointingToRoadmap(roadmapBasename, cfg)
+	switch len(pointing) {
+	case 0:
+		fmt.Fprintf(os.Stderr, "trackfw roadmap new: %s has empty req: and no REQ points to it — use --req to link\n",
+			roadmapBasename)
+	case 1:
+		// Exatamente 1 REQ aponta → reparar req: e corpo REQ: do roadmap.
+		reqRel := pointing[0]
+		fmFillable := func(plainVal string) bool {
+			return !strings.HasSuffix(strings.TrimSpace(plainVal), ".md")
+		}
+		updated, changed := rewriteREQRoadmapRefWith(roadmapData, fmFillable, reqRoadmapBodyIsFillable,
+			"req", "REQ", true, normalizeRefSeparator(reqRel))
+		if !changed {
+			fmt.Fprintf(os.Stderr, "trackfw roadmap new: %s has empty req: but repair produced no change — edit manually\n",
+				roadmapBasename)
+			return
+		}
+		root, rootErr := projectRoot()
+		if rootErr != nil {
+			fmt.Fprintf(os.Stderr, "trackfw roadmap new: skipped req: repair for %s: %v\n", roadmapBasename, rootErr)
+			return
+		}
+		absExisting := filepath.Join(root, existingPath)
+		if guardErr := pathguard.RejectAndReport(root, absExisting); guardErr != nil {
+			return
+		}
+		// write-containment-allowed: guarded by pathguard.RejectAndReport above
+		if err := os.WriteFile(existingPath, updated, 0644); err != nil {
+			fmt.Fprintf(os.Stderr, "trackfw roadmap new: failed to repair req: in %s: %v\n", roadmapBasename, err)
+			return
+		}
+		fmt.Printf("✓ repaired req: in %s → %s\n", roadmapBasename, reqRel)
+	default:
+		fmt.Fprintf(os.Stderr, "trackfw roadmap new: %s has empty req: and %d REQs point to it — use --req to link explicitly\n",
+			roadmapBasename, len(pointing))
+	}
 }
 
 // ─── Backlink roadmap←REQ no MOVIMENTO (ML-6A, AC16) ────────────────────────
