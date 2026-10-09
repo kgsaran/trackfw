@@ -445,7 +445,12 @@ jobs:
 
       # D7: assert CONTENT of published packages.
       # --published mode downloads and inspects the live artifacts.
-      # By this point npm + PyPI confirmed live (steps above), so read-after-write is resolved.
+      # By this point npm + PyPI confirmed live via their respective JSON/registry APIs (steps above).
+      # NOTE: "read-after-write resolved" holds for the JSON API — NOT for the PyPI Simple Index
+      # (/simple/), which is CDN-cached independently (Fastly, max-age=600 s). pip download uses
+      # the Simple Index and failed at 165 s and 193 s post-upload (v9.3.3/v9.4.1, 2026-10-08/09).
+      # Fix: check-channels-content.sh --published now fetches wheel URLs from the JSON API
+      # (bypassing /simple/) and retries with backoff up to VERIFY_CONTENT_DEADLINE=900 s.
       - name: Verify channel content (D7)
         run: |
           VERSION="${{ steps.version.outputs.version }}"

@@ -43,12 +43,16 @@ grep -q Veredito docs/seguranca/2026-10-09-wave0-verificacao-canais-indice-pypi.
 
 ## Wave 1 — Correção
 ### ML-1A — Retry com prazo na verificação de conteúdo (AC2–AC4)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** ares-tf
-- [ ] Retry com backoff e prazo para `pip download` e `npm pack`; self-test nas duas direções; comentário do workflow
+- [x] Retry com backoff e prazo para `pip download` e `npm pack`; self-test nas duas direções; comentário do workflow
+      Auditoria (2026-10-09): o relatório omitiu a execução real e as falsificações pedidas — feitas pelo arquiteto:
+      `--published 9.4.1` real → 8 de 8 wheels inspecionadas (10 OK); cópia exigindo uma 9ª etiqueta inexistente →
+      `FAIL: missing expected wheel tag: linux_riscv64`. Self-test 9/9 (ligado ao `make quality` pelo Makefile:177).
+      `make quality` (arquiteto) EXIT=0, 347 OK.
 
 ## Wave 2 — Red-team
 ### ML-2A — Red-team do diff
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Squad:** hades-tf
 - [ ] Parecer
