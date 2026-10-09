@@ -45986,3 +45986,7 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-08 — zeus-tf — bump 9.4.0; REQ-2026-10-06 Done de novo (#546)
 
 - Release 9.4.0 (#543, #545, #546). REQ-2026-10-06 fechada com evidência do AC6, roadmap em `done/`, `req-aberta` retirada da #544. Gates: parity-rest EXIT=0, check-required-full OK.
+
+## 2026-10-08 — zeus-tf — 9.4.0 publicada; INÍCIO: REQ da #547 (push/ship e branch de outro remote)
+
+- 9.4.0 nos 3 canais. Branch `fix/push-e-ship-avisam-sobre-branch-de-outro-remote`; saída 1 da issue (recortar candidatos ao remote `origin`). Wave 0 (hades-tf) despachada.
