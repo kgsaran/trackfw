@@ -46209,3 +46209,7 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-09 — zeus-tf — FIM: REQ da verificação de canais, aguarda PR
 
 - D7 baixa as 8 wheels pela JSON API (sha256 conferido, host restrito, lista parcial espera), retry com prazo 900 s também no npm pack; etiqueta inesperada reprova; injeções só no self-test. Era 1 de 8 wheels inspecionada. `make quality` EXIT=0.
+
+## 2026-10-09 — zeus-tf — bump 9.4.2; REQ da verificação de canais Done (#552)
+
+- Release 9.4.2 (#552). REQ fechada com evidência por AC, roadmap em `done/`. A 9.4.2 é a primeira release a rodar a verificação nova. Gates: parity-rest EXIT=0, check-required-full OK.

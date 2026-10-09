@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-10-09
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-10-09-verificacao-de-conteudo-dos-canais-reprova-por-atraso-do-indice-simples-do-pypi.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-10-09-verificacao-de-conteudo-dos-canais-reprova-por-atraso-do-indice-simples-do-pypi.md"
 ---
 
 # REQ: verificacao de conteudo dos canais reprova por atraso do indice simples do PyPI
 
-> Date: 2026-10-09 | Status: Open
+> Date: 2026-10-09 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -30,9 +30,13 @@ para "aviso".
 
 ## Acceptance Criteria
 - [x] AC1 — Wave 0: medição dos endpoints (JSON API vs índice simples do PyPI; registry npm vs `npm pack`) e enumeração de todo passo de verificação pós-publicação com a mesma forma (leitura sem retry de endpoint diferente do confirmado)
+      ✅ Evidência: `docs/seguranca/2026-10-09-wave0-verificacao-canais-indice-pypi.md` — `/simple/` com max-age 600; falhas a 165 s e 193 s; enumeração `npm pack` + `pip download`.
 - [x] AC2 — `check-channels-content.sh --published` tenta de novo, com backoff e prazo total declarado, antes de reprovar `pip download` e `npm pack`; esgotado o prazo, reprova como hoje (publicação que de fato falhou continua vermelha)
+      ✅ Evidência: PR #552 — retry com prazo 900 s; `--published 9.4.1` real 8 de 8 com sha256.
 - [x] AC3 — Teste/self-test que prova as duas direções (indisponível e depois disponível → passa; indisponível até o prazo → reprova) sem rede real
+      ✅ Evidência: `--self-test` 14/14 no `make quality`; falsificação do sha256 pelo arquiteto (braço 10 reprova).
 - [x] AC4 — Comentário do `release.yml` corrigido (a premissa "read-after-write is resolved" deixa de ser afirmada para o índice simples)
+      ✅ Evidência: PR #552 — comentário do `release.yml` corrigido.
 
 ## Linked ADR
 <!-- Reference the ADR that governs this requirement -->
@@ -43,4 +47,4 @@ ADR:
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-10-09-verificacao-de-conteudo-dos-canais-reprova-por-atraso-do-indice-simples-do-pypi.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-10-09-verificacao-de-conteudo-dos-canais-reprova-por-atraso-do-indice-simples-do-pypi.md

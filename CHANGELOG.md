@@ -7,6 +7,16 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [9.4.2] - 2026-10-09
+
+### Fixed
+
+- **Verificação de conteúdo dos canais na release.** O passo que inspeciona os pacotes publicados usava `pip download`:
+  lia o índice simples do PyPI (cache de 600 s — reprovou falsamente na 9.3.3 e na 9.4.1) e baixava só a wheel da
+  plataforma do runner, inspecionando 1 de 8. Agora lista as wheels pela JSON API, baixa as 8 de
+  `files.pythonhosted.org` conferindo o sha256, tenta de novo com prazo de 900 s (também no `npm pack`) e reprova na
+  hora conteúdo errado, hash divergente ou plataforma inesperada. (#552, REQ-2026-10-09)
+
 ## [9.4.1] - 2026-10-09
 
 ### Fixed

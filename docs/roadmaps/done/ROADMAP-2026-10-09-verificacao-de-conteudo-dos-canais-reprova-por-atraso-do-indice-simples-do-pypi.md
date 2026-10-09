@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-10-09
 req: "docs/req/REQ-2026-10-09-verificacao-de-conteudo-dos-canais-reprova-por-atraso-do-indice-simples-do-pypi.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: verificacao de conteudo dos canais reprova por atraso do indice simples do PyPI
 
-> Created: 2026-10-09 | Status: wip
+> Created: 2026-10-09 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-10-09-verificacao-de-conteudo-dos-canais-reprova-por-atraso-do-indice-simples-do-pypi.md -->
