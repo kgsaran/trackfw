@@ -29,10 +29,10 @@ falhado ainda.
 para "aviso".
 
 ## Acceptance Criteria
-- [ ] AC1 — Wave 0: medição dos endpoints (JSON API vs índice simples do PyPI; registry npm vs `npm pack`) e enumeração de todo passo de verificação pós-publicação com a mesma forma (leitura sem retry de endpoint diferente do confirmado)
-- [ ] AC2 — `check-channels-content.sh --published` tenta de novo, com backoff e prazo total declarado, antes de reprovar `pip download` e `npm pack`; esgotado o prazo, reprova como hoje (publicação que de fato falhou continua vermelha)
-- [ ] AC3 — Teste/self-test que prova as duas direções (indisponível e depois disponível → passa; indisponível até o prazo → reprova) sem rede real
-- [ ] AC4 — Comentário do `release.yml` corrigido (a premissa "read-after-write is resolved" deixa de ser afirmada para o índice simples)
+- [x] AC1 — Wave 0: medição dos endpoints (JSON API vs índice simples do PyPI; registry npm vs `npm pack`) e enumeração de todo passo de verificação pós-publicação com a mesma forma (leitura sem retry de endpoint diferente do confirmado)
+- [x] AC2 — `check-channels-content.sh --published` tenta de novo, com backoff e prazo total declarado, antes de reprovar `pip download` e `npm pack`; esgotado o prazo, reprova como hoje (publicação que de fato falhou continua vermelha)
+- [x] AC3 — Teste/self-test que prova as duas direções (indisponível e depois disponível → passa; indisponível até o prazo → reprova) sem rede real
+- [x] AC4 — Comentário do `release.yml` corrigido (a premissa "read-after-write is resolved" deixa de ser afirmada para o índice simples)
 
 ## Linked ADR
 <!-- Reference the ADR that governs this requirement -->

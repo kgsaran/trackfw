@@ -14,8 +14,8 @@ squad: ""
 REQ: docs/req/REQ-2026-10-09-verificacao-de-conteudo-dos-canais-reprova-por-atraso-do-indice-simples-do-pypi.md
 
 ## Acceptance Criteria
-- [ ] AC1–AC4 da REQ
-- [ ] `make quality` (arquiteto)
+- [x] AC1–AC4 da REQ
+- [x] `make quality` EXIT=0
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -62,11 +62,14 @@ grep -q Veredito docs/seguranca/2026-10-09-wave0-verificacao-canais-indice-pypi.
       do KG: defeito conhecido se corrige agora): todos entram no ML-2B; nenhum fica como residual.
 
 ### ML-2B — Corretivo do red-team
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** ares-tf
-- [ ] A1: sha256 de cada wheel conferido contra `digests.sha256` da JSON API; host do download restrito a `files.pythonhosted.org` (inclusive após redirect)
-- [ ] A2: lista `urls` com menos wheels que o esperado entra no retry (não reprova cedo)
-- [ ] A3: `PYPI_JSON_CMD`/`FETCH_CMD`/`NPM_PACK_CMD`/relógio injetável só valem no `--self-test`; no `--published` são ignorados (e avisados)
-- [ ] Etiqueta inesperada reprova (a lista e o release têm de concordar)
-- [ ] Braços de self-test para cada um; falsificação; `make quality` (arquiteto)
+- [x] A1: sha256 de cada wheel conferido contra `digests.sha256` da JSON API; host do download restrito a `files.pythonhosted.org` (inclusive após redirect)
+- [x] A2: lista `urls` com menos wheels que o esperado entra no retry (não reprova cedo)
+- [x] A3: `PYPI_JSON_CMD`/`FETCH_CMD`/`NPM_PACK_CMD`/relógio injetável só valem no `--self-test`; no `--published` são ignorados (e avisados)
+- [x] Etiqueta inesperada reprova (a lista e o release têm de concordar)
+- [x] Braços de self-test para cada um; falsificação; `make quality` (arquiteto)
+      Auditoria (2026-10-09): self-test 14/14; `--published 9.4.1` real 8 de 8 com sha256 conferido. O relatório
+      declarou falsificações sem executá-las — executada pelo arquiteto a do sha256 (conferência desligada → braço 10
+      reprova). `make quality` (arquiteto) EXIT=0, 347 OK.
 

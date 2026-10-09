@@ -46205,3 +46205,7 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-09 — zeus-tf — 9.4.1 publicada; INÍCIO: REQ da verificação de canais (índice simples do PyPI)
 
 - 9.4.1 nos 3 canais (verify reexecutado: mesmo atraso do índice simples da 9.3.3). REQ nova: `check-channels-content --published` usa `pip download` (índice simples, CDN) sem retry, depois de confirmar pela JSON API. Branch `fix/verificacao-canais-indice-pypi`. Wave 0 (hades-tf).
+
+## 2026-10-09 — zeus-tf — FIM: REQ da verificação de canais, aguarda PR
+
+- D7 baixa as 8 wheels pela JSON API (sha256 conferido, host restrito, lista parcial espera), retry com prazo 900 s também no npm pack; etiqueta inesperada reprova; injeções só no self-test. Era 1 de 8 wheels inspecionada. `make quality` EXIT=0.
