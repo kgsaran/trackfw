@@ -1792,3 +1792,14 @@ recusa era o roadmap estar em `blocked/`, que o guard não aceita, **não** o ca
       A4 e do complemento registradas; árvore só com os arquivos declarados. `make quality` (arquiteto) EXIT=0, 347 OK.
       Residual: by_agent com `--agent` diferente (A1) — o validate acusa a órfã.
 
+
+### ML-6E — A1: by_agent com `--agent` diferente
+**Status:** 🔄 Em andamento
+**Squad:** apolo-tf
+**Por que:** decisão do KG (2026-10-09): o residual A1 vira erro em breve — corrigir aqui.
+**Decisão do arquiteto:** em `roadmap_namespacing: by_agent`, a procura por roadmap de mesmo nome-base varre TODOS os
+namespaces de agente (e as pastas de estado flat, se existirem). Achou noutro agente → mesmo tratamento de "já existe
+em outro estado": não grava, avisa nomeando o caminho e o agente, repara vínculo pelas regras A2/A4; `--force` recusa.
+- [ ] `req new --agent A T` + `roadmap new --agent B T` → nenhuma roadmap nova em B; aviso; vínculo íntegro
+- [ ] Mesmo agente e flat continuam como no ML-6B/6D (sem regressão)
+- [ ] Testes, falsificação; `make quality` (arquiteto)
