@@ -1495,6 +1495,13 @@ próprio template** — minha régua marcou o padrão, não a anomalia. **Nenhum
 o risco residual é contido pelo cross-link guard, que só reescreve se o basename casar.
 
 ---
+      Parecer (`docs/seguranca/2026-10-09-wave6-roadmap-new-sobrescreve.md`): `internal/generators/roadmap.go:300`
+      `os.WriteFile` sem checagem de existência; medido: sobrescreve a vinculada (`req: ""`), destrói edição manual
+      imprimindo `✓ created`, e com a roadmap já em wip cria uma segunda em backlog. Texto gerado que manda rodar os dois:
+      `agentfiles.go` (AGENTS/GEMINI/copilot/windsurf/cursor), `claudemd.go`, mais `CLAUDE.md` e `README.md` deste repo.
+      Decisão do arquiteto: opção B (idempotente — existe roadmap com o mesmo nome-base em QUALQUER estado → não
+      escreve, avisa e repara o vínculo de volta) + C (`--force` só sobrescreve no mesmo caminho). Criação com
+      `O_EXCL` em vez de Stat+Write (fecha o TOCTOU).
 
 ### ML-6B — os 4 testes do vínculo comparavam separador nativo com valor portável
 **Status:** ✅ Concluído — auditado em 2026-09-26 · 🔴 **e refutou a minha hipótese**
@@ -1752,7 +1759,7 @@ recusa era o roadmap estar em `blocked/`, que o guard não aceita, **não** o ca
 - [ ] Decisão recomendada (recusar com erro? vincular sem sobrescrever? `--force`?) e Veredito
 
 ### ML-6B — Correção
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Squad:** apolo-tf
 - [ ] `roadmap new` nunca sobrescreve roadmap existente sem opt-in explícito; teste nas duas direções com falsificação
 - [ ] Texto de protocolo gerado atualizado em todos os sítios do ML-6A; testes que pinam o texto ajustados

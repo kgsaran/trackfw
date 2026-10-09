@@ -27,6 +27,31 @@
 - Sem `--list 'origin/*'`: incompatível com stubs de teste por chave de argv.
 - Spec de fixture para ML-1A: stub retorna `origin/feat/Y + upstream/fix/X`; dois vetores de direção + controle negativo.
 
+## 2026-10-09 — hades-tf (fix/req-nasce-orfa-roadmap-new-sobrescreve — ML-6A) — FIM
+
+**Branch:** `fix/req-nasce-orfa-roadmap-new-sobrescreve`
+**Escopo:** leitura, medição e parecer — sem alteração de código de produto
+**Entregável:** `docs/seguranca/2026-10-09-wave6-roadmap-new-sobrescreve.md`
+
+**Achados principais:**
+- Sítio único: `internal/generators/roadmap.go:300` — `os.WriteFile` sem checagem de existência.
+- Sítio de instrução gerada (vai para consumidores): `internal/generators/agentfiles.go:59-60,86` (Agent Protocol nas 5 variantes de IDE/agente) + `internal/generators/claudemd.go:74,77-78` (CLAUDE.md).
+- Sítios neste repo (não gerados): `CLAUDE.md:332` e `README.md:258-261`.
+- `validate` não detecta o problema enquanto a roadmap está em `backlog/`; `wip_has_req` detecta ao mover para `wip/`.
+- Recomendação: Opção B (idempotente: pular com aviso) + Opção C (`--force`).
+- Gates do artefato: `test -s` ✅ e `grep -q Veredito` ✅.
+
+---
+
+## 2026-10-09 — hades-tf (fix/req-nasce-orfa-roadmap-new-sobrescreve — ML-6A) — INÍCIO
+
+**Branch:** `fix/req-nasce-orfa-roadmap-new-sobrescreve`
+**Escopo:** leitura, medição e parecer — sem alteração de código de produto
+**Tarefa:** threat model e enumeração para AC8 (roadmap new sobrescreve roadmap criada pelo req new)
+**Artefato alvo:** `docs/seguranca/2026-10-09-wave6-roadmap-new-sobrescreve.md`
+
+---
+
 ## 2026-10-08 — hades-tf (fix/push-e-ship-avisam-sobre-branch-de-outro-remote — ML-0A) — INÍCIO
 
 **Branch:** `fix/push-e-ship-avisam-sobre-branch-de-outro-remote`
