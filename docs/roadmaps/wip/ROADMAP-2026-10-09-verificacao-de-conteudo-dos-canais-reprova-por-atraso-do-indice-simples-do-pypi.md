@@ -22,11 +22,18 @@ REQ: docs/req/REQ-2026-10-09-verificacao-de-conteudo-dos-canais-reprova-por-atra
 
 ## Wave 0 — Threat model e medição
 ### ML-0A — Endpoints e enumeração (AC1)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** hades-tf
-- [ ] Medição dos endpoints do PyPI (JSON API vs `/simple/`) e do npm, com a 9.4.1 publicada e o histórico dos dois runs
-- [ ] Enumeração de todo passo pós-publicação com leitura sem retry (release.yml, scripts/verify-*, check-channels-content)
-- [ ] Threat model (o retry pode esconder publicação quebrada? prazo?), residual, Veredito
+- [x] Medição dos endpoints do PyPI (JSON API vs `/simple/`) e do npm, com a 9.4.1 publicada e o histórico dos dois runs
+- [x] Enumeração de todo passo pós-publicação com leitura sem retry (release.yml, scripts/verify-*, check-channels-content)
+- [x] Threat model (o retry pode esconder publicação quebrada? prazo?), residual, Veredito
+      Parecer (`docs/seguranca/2026-10-09-wave0-verificacao-canais-indice-pypi.md`): `/simple/` servido pelo Fastly com
+      `max-age=600`; falhas a 165 s (9.3.3) e 193 s (9.4.1) do upload. Decisões do arquiteto na auditoria:
+      (1) prazo de 300 s proposto é menor que o `max-age` de 600 s medido → prazo 900 s;
+      (2) achado da auditoria, mesma causa (o passo D7 não lê o que foi publicado pelo que é): `pip download` sem
+      `--platform` baixa SÓ a wheel da plataforma do runner — o D7 inspeciona 1 de 8 wheels. Correção: listar as wheels
+      pela JSON API (com retry) e baixar cada URL de `files.pythonhosted.org` (não depende do `/simple/`), exigindo as 8;
+      (3) `npm pack` recebe o mesmo retry (residual do parecer não fica).
 
 **Gates da wave:**
 ```bash
@@ -36,7 +43,7 @@ grep -q Veredito docs/seguranca/2026-10-09-wave0-verificacao-canais-indice-pypi.
 
 ## Wave 1 — Correção
 ### ML-1A — Retry com prazo na verificação de conteúdo (AC2–AC4)
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Squad:** ares-tf
 - [ ] Retry com backoff e prazo para `pip download` e `npm pack`; self-test nas duas direções; comentário do workflow
 

@@ -2,6 +2,30 @@
 
 ---
 
+## 2026-10-09 — hades-tf (fix/verificacao-canais-indice-pypi — ML-0A Wave 0) — FIM
+
+**Branch:** `fix/verificacao-canais-indice-pypi`
+**Entregável produzido:** `docs/seguranca/2026-10-09-wave0-verificacao-canais-indice-pypi.md`
+**Veredito:** DEFEITO CONFIRMADO. `pip download` em D7 usa o índice simples do PyPI (CDN, propagação independente da JSON API confirmada pelo passo anterior). Dois runs falhados: v9.3.3 (165 s pós-upload) e v9.4.1 (193 s pós-upload); reexecução manual passou sem alteração de código.
+
+**Achados:**
+- Sítio defeituoso: `scripts/check-channels-content.sh`, modo `--published`, linha 467–483 — `pip download` sem retry.
+- Endpoint confirmado pelo passo 3 (JSON API: `/pypi/trackfw/json`) ≠ endpoint lido pelo passo 5 (índice simples: `/simple/trackfw/`, CDN Fastly com `max-age=600`).
+- `npm pack` em D7 também sem retry (superfície, não falhou ainda).
+- Comentário do workflow (`read-after-write is resolved`) incorreto para o índice simples.
+- Especificação ML-1A: retry 10→30 s, deadline 300 s, `VERIFY_CONTENT_DEADLINE` env var, self-test arms A/B por injeção de `NPM_PACK_CMD`/`PIP_DOWNLOAD_CMD`, correção do comentário do workflow.
+- Gates: `test -s` e `grep -q Veredito` — ambos PASS.
+
+---
+
+## 2026-10-09 — hades-tf (fix/verificacao-canais-indice-pypi — ML-0A Wave 0) — INÍCIO
+
+**Branch:** `fix/verificacao-canais-indice-pypi`
+**Escopo:** Wave 0 — Threat model e medição (AC1)
+**Objetivo:** Evidenciar os dois runs reprovados (v9.3.3 e v9.4.1), mapear endpoints, enumerar passos sem retry, especificar ML-1A, threat model do retry
+
+---
+
 ## 2026-10-09 — apolo-tf (fix/req-nasce-orfa-roadmap-new-sobrescreve — corretivo s25/s26 falsify) — FIM
 
 **Branch:** `fix/req-nasce-orfa-roadmap-new-sobrescreve`
