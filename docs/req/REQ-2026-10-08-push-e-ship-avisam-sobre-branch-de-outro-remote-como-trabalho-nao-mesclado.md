@@ -31,9 +31,9 @@ Amplificador: `git fetch` sem poda acumula refs mortas (135 no fork do relator a
 consulta ao forge; não poda refs do usuário; não muda o caráter consultivo do aviso.
 
 ## Acceptance Criteria
-- [ ] AC1 — Wave 0: enumeração de todo sítio que lista `branch -r` ou assume o prefixo `origin/` (push, ship, `branch prune`, validate, status) e decisão por sítio com medição
-- [ ] AC2 — `push`/`ship` não avisam sobre branch de remote diferente de `origin`; branch de `origin` com trabalho pendente continua avisando (teste nas duas direções, fixture com dois remotes)
-- [ ] AC3 — Mesmo defeito em outro sítio achado no AC1 → corrigido aqui com teste
+- [x] AC1 — Wave 0: enumeração de todo sítio que lista `branch -r` ou assume o prefixo `origin/` (push, ship, `branch prune`, validate, status) e decisão por sítio com medição
+- [x] AC2 — `push`/`ship` não avisam sobre branch de remote diferente de `origin`; branch de `origin` com trabalho pendente continua avisando (teste nas duas direções, fixture com dois remotes)
+- [x] AC3 — Mesmo defeito em outro sítio achado no AC1 → corrigido aqui com teste
 - [ ] AC4 — Comentário na #547 com o resultado
 
 ## Linked ADR

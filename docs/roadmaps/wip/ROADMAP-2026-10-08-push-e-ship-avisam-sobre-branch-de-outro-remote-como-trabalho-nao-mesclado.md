@@ -14,8 +14,8 @@ squad: ""
 REQ: docs/req/REQ-2026-10-08-push-e-ship-avisam-sobre-branch-de-outro-remote-como-trabalho-nao-mesclado.md
 
 ## Acceptance Criteria
-- [ ] AC1–AC4 da REQ
-- [ ] `make quality` (arquiteto)
+- [x] AC1–AC3 da REQ (AC4 — comentário na #547 — no PR)
+- [x] `make quality` EXIT=0
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -56,6 +56,10 @@ grep -q Veredito docs/seguranca/2026-10-08-wave0-push-ship-outro-remote.md
 
 ## Wave 2 — Red-team
 ### ML-2A — Red-team do diff
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** hades-tf
-- [ ] Parecer sobre o diff
+- [x] Parecer sobre o diff
+      Veredito do hades-tf (`docs/seguranca/2026-10-08-red-team-push-ship-outro-remote.md`): **aprova**. 8 casos de HEAD,
+      prefixos `origin-mirror`/`originx`, callers reconfirmados (push.go e ship.go), as duas mutações reprovam o teste.
+      Residual pré-existente: remote principal com nome diferente de `origin` (fora do escopo, saída 2 da issue).
+

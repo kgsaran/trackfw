@@ -46025,3 +46025,11 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-08 — zeus-tf — 9.4.0 publicada; INÍCIO: REQ da #547 (push/ship e branch de outro remote)
 
 - 9.4.0 nos 3 canais. Branch `fix/push-e-ship-avisam-sobre-branch-de-outro-remote`; saída 1 da issue (recortar candidatos ao remote `origin`). Wave 0 (hades-tf) despachada.
+
+## 2026-10-08 — hades-tf — INÍCIO: ML-2A REQ #547 (red-team push/ship outro remote)
+
+- Red-team do commit 4c8ade8e contra docs/seguranca/2026-10-08-wave0-push-ship-outro-remote.md. Atacando: HEAD discard (strings.Cut), HasPrefix("origin/"), outros callers, mutações. Entregável: docs/seguranca/2026-10-08-red-team-push-ship-outro-remote.md.
+
+## 2026-10-08 — hades-tf — FIM: ML-2A REQ #547 (red-team push/ship outro remote)
+
+- Entregue docs/seguranca/2026-10-08-red-team-push-ship-outro-remote.md. Quatro ataques executados: HEAD descarte (6 casos), HasPrefix esconde trabalho, enumeração de callers, mutações. Baseline PASS, mutação-1 (HasPrefix removido) FAIL corretamente, mutação-2 (Contains revertido) FAIL corretamente. Veredito: APROVA. Sem achados de severidade; R3 fechado pelo próprio commit; residuais R2/R4 pré-existentes inalterados.
