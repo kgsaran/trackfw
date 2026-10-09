@@ -46153,3 +46153,7 @@ Achados notáveis para o apolo-tf:
 - `internal/generators/roadmap.go` — 2 sítios normalizados: `NewRoadmapFromContent` (portableREQPath) e `NewRoadmapFromREQ` (portableReqPath)
 - `internal/generators/roadmap_separator_ml6f_test.go` — 3 testes novos
 **Gates:** `go build ./...` limpo · `go test ./internal/generators/ ./internal/commands/` ok · `make quality` EXIT=0 · VM Windows PASS · falsificação reprova no Windows
+
+## 2026-10-09 — zeus-tf — bump 9.4.1; REQ-2026-09-09 Done (#550)
+
+- Release 9.4.1 (#549, #550). REQ-2026-09-09 fechada com evidência do AC8, roadmap em `done/` (o status do ML-6B tinha ficado "em andamento" e o `roadmap move` bloqueou — corrigido). Gates: parity-rest EXIT=0, check-required-full OK.

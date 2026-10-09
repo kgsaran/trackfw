@@ -7,6 +7,20 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [9.4.1] - 2026-10-09
+
+### Fixed
+
+- **`trackfw roadmap new` não sobrescreve mais a roadmap que o `trackfw req new` criou.** Com roadmap de mesmo nome em
+  qualquer estado (e, em `by_agent`, em qualquer agente), o comando avisa, não escreve e repara o vínculo; `--req` de
+  outra REQ não cria vínculo falso; `--force` só recria no mesmo caminho. O protocolo gerado (AGENTS.md, GEMINI.md,
+  CLAUDE.md, Copilot, Windsurf, Cursor) passa a ensinar `req new` → `roadmap move` → `branch new` — rode
+  `trackfw update` para atualizar o texto. O vínculo REQ↔roadmap é gravado com `/` também no Windows. (#550,
+  REQ-2026-09-09)
+- **`push`/`ship` só avisam sobre branches do `origin`.** Em repositório com dois remotes, branches de `upstream` eram
+  apresentadas como trabalho não mesclado; e `origin/fix/HEADER-...` era silenciada por conter "HEAD". Relatado por
+  @lourivalgarciajunior. (#549, closes #547)
+
 ## [9.4.0] - 2026-10-08
 
 ### Added
