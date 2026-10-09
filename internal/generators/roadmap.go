@@ -157,6 +157,64 @@ func findRoadmapByBasename(basename, agent string, cfg config.ProjectConfig) str
 	return ""
 }
 
+// roadmapCrossMatch é um resultado de busca fora do namespace do agente resolvido em modo by_agent.
+// Usado por findRoadmapByBasenameOtherAgents para reportar colisões cross-namespace (A1/ML-6E).
+type roadmapCrossMatch struct {
+	path  string // caminho relativo com separador "/" (normalizado)
+	agent string // namespace de agente que contém o arquivo; "" para flat state dirs
+}
+
+// findRoadmapByBasenameOtherAgents procura basename em todos os namespaces de agente EXCETO o
+// resolvedAgent, e também nos diretórios de estado flat (roadmap_dir/state/) se existirem.
+// Só relevante em modo by_agent — retorna nil em modo flat.
+//
+// A1/ML-6E (REQ-2026-09-09): impede que `roadmap new --agent B T` crie um roadmap órfão
+// quando `req new --agent A T` já criou um roadmap com o mesmo nome-base no namespace A.
+func findRoadmapByBasenameOtherAgents(basename, resolvedAgent string, cfg config.ProjectConfig) []roadmapCrossMatch {
+	if cfg.RoadmapNamespacing != config.NamespacingByAgent {
+		return nil
+	}
+	states := []string{"backlog", "analyzing", "wip", "blocked", "done", "abandoned"}
+	var results []roadmapCrossMatch
+
+	// Namespaces de agente (config + disco) exceto o agente resolvido.
+	// Pular entradas cujo nome coincide com um nome de estado (flat state dirs que
+	// resolveAgentNamespaces incluiria se existissem em disco — varridas separadamente abaixo).
+	agents := validator.ResolveAgentNamespaces(cfg, cfg.RoadmapDir)
+	for _, a := range agents {
+		if a == resolvedAgent {
+			continue
+		}
+		if roadmapValidStateNames[a] {
+			// É um diretório de estado flat; varrido separadamente abaixo.
+			continue
+		}
+		for _, state := range states {
+			candidate := cfg.RoadmapDir + "/" + a + "/" + state + "/" + basename
+			if _, err := os.Stat(candidate); err == nil {
+				results = append(results, roadmapCrossMatch{
+					path:  normalizeRefSeparator(candidate),
+					agent: a,
+				})
+			}
+		}
+	}
+
+	// Varrer também diretórios de estado flat (roadmap_dir/state/basename) em modo by_agent
+	// — podem coexistir com namespaces de agente em projetos em migração.
+	for _, state := range states {
+		candidate := cfg.RoadmapDir + "/" + state + "/" + basename
+		if _, err := os.Stat(candidate); err == nil {
+			results = append(results, roadmapCrossMatch{
+				path:  normalizeRefSeparator(candidate),
+				agent: "", // flat, sem namespace de agente
+			})
+		}
+	}
+
+	return results
+}
+
 // agentFromPath extrai o namespace de agente a partir de um caminho de arquivo em modo by_agent.
 // Dado que rootDir é o diretório raiz do artefato (roadmapDir ou reqDir), o agente é o primeiro
 // segmento do caminho relativo: rootDir/<agent>/... → agent.
@@ -305,6 +363,40 @@ func NewRoadmapFromContent(content RoadmapContent) error {
 				basename, existingPath)
 			reconcileExistingRoadmapLink(content.REQPath, normalizeRefSeparator(existingPath), cfg)
 			return nil
+		}
+	} else if cfg.RoadmapNamespacing == config.NamespacingByAgent {
+		// A1 (ML-6E): sem resultado no próprio namespace — verificar outros namespaces de agente
+		// e diretórios de estado flat. Evita criação de roadmap órfã quando `req new --agent A T`
+		// já criou um roadmap com mesmo nome-base num namespace diferente do resolvido.
+		if others := findRoadmapByBasenameOtherAgents(basename, agent, cfg); len(others) > 0 {
+			switch len(others) {
+			case 1:
+				m := others[0]
+				ownerLabel := m.agent
+				if ownerLabel == "" {
+					ownerLabel = "(flat)"
+				}
+				if content.Force {
+					return fmt.Errorf("roadmap %s já existe em %s (agente %s) — --force não cria duplicata em namespace diferente; mova ou apague o existente primeiro",
+						basename, m.path, ownerLabel)
+				}
+				fmt.Fprintf(os.Stderr, "roadmap %s já existe em %s (agente %s) — nada criado em namespace %s; mova o existente ou use o agente correto\n",
+					basename, m.path, ownerLabel, agent)
+				reconcileExistingRoadmapLink(content.REQPath, m.path, cfg)
+				return nil
+			default:
+				var descs []string
+				for _, m := range others {
+					ownerLabel := m.agent
+					if ownerLabel == "" {
+						ownerLabel = "(flat)"
+					}
+					descs = append(descs, fmt.Sprintf("%s (agente %s)", m.path, ownerLabel))
+				}
+				fmt.Fprintf(os.Stderr, "roadmap %s encontrada em múltiplos namespaces — nada criado: %s\n",
+					basename, strings.Join(descs, "; "))
+				return nil
+			}
 		}
 	}
 

@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/kgsaran/trackfw/internal/config"
 )
@@ -129,6 +130,14 @@ REQ:
 	return rel
 }
 
+// ac8Today retorna a data atual no mesmo formato que o gerador usa para o nome de arquivo
+// (time.Now().Format("2006-01-02") — veja roadmap.go linha `date := time.Now().Format(...)`).
+// Toda data que entra em nome de arquivo ou que precise casar com o que o gerador calcula
+// DEVE vir daqui, nunca de um literal fixo — evita a bomba-relógio de datas hardcoded.
+func ac8Today() string {
+	return time.Now().Format("2006-01-02")
+}
+
 // writeStateDir cria os subdiretórios de estado padrão do roadmap.
 func writeStateDirs(dir string) {
 	for _, state := range []string{"backlog", "analyzing", "wip", "blocked", "done", "abandoned"} {
@@ -147,7 +156,7 @@ func writeStateDirs(dir string) {
 func TestRoadmapNew_SkipsWhenExistsInBacklog(t *testing.T) {
 	dir := setupAC8Dir(t)
 	writeStateDirs(dir)
-	reqRel := reqFixtureAC8(dir, "REQ-2026-10-09-titulo-ac8.md")
+	reqRel := reqFixtureAC8(dir, "REQ-"+ac8Today()+"-titulo-ac8.md")
 
 	// Passo 1: criar o roadmap via from-req (simula `req new`).
 	if err := NewRoadmapFromREQ(reqRel, "", false); err != nil {
@@ -232,7 +241,7 @@ func TestRoadmapNew_CreatesWhenNoExistingFile(t *testing.T) {
 func TestRoadmapNew_SkipsWhenExistsInWip(t *testing.T) {
 	dir := setupAC8Dir(t)
 	writeStateDirs(dir)
-	reqRel := reqFixtureAC8(dir, "REQ-2026-10-09-titulo-ac8.md")
+	reqRel := reqFixtureAC8(dir, "REQ-"+ac8Today()+"-titulo-ac8.md")
 
 	// Passo 1: criar via from-req.
 	if err := NewRoadmapFromREQ(reqRel, "", false); err != nil {
@@ -274,7 +283,7 @@ func TestRoadmapNew_SkipsWhenExistsInWip(t *testing.T) {
 func TestRoadmapNew_ForceOverwritesSamePath(t *testing.T) {
 	dir := setupAC8Dir(t)
 	writeStateDirs(dir)
-	reqRel := reqFixtureAC8(dir, "REQ-2026-10-09-titulo-ac8.md")
+	reqRel := reqFixtureAC8(dir, "REQ-"+ac8Today()+"-titulo-ac8.md")
 
 	// Passo 1: criar via from-req (com req: preenchido).
 	if err := NewRoadmapFromREQ(reqRel, "", false); err != nil {
@@ -311,7 +320,7 @@ func TestRoadmapNew_ForceOverwritesSamePath(t *testing.T) {
 func TestRoadmapNew_ForceRefusedWhenExistingInWip(t *testing.T) {
 	dir := setupAC8Dir(t)
 	writeStateDirs(dir)
-	reqRel := reqFixtureAC8(dir, "REQ-2026-10-09-titulo-ac8.md")
+	reqRel := reqFixtureAC8(dir, "REQ-"+ac8Today()+"-titulo-ac8.md")
 
 	// Passo 1: criar e mover para wip/.
 	if err := NewRoadmapFromREQ(reqRel, "", false); err != nil {
@@ -354,11 +363,11 @@ func TestRoadmapNew_A2_RepairsOrphanWithOneREQ(t *testing.T) {
 	writeStateDirs(dir)
 
 	// Criar o roadmap órfão (req: "") diretamente, sem passar por NewRoadmapFromREQ.
-	roadmapBasename := "ROADMAP-2026-10-09-titulo-ac8.md"
+	roadmapBasename := "ROADMAP-" + ac8Today() + "-titulo-ac8.md"
 	roadmapOrphanFixture(dir, roadmapBasename)
 
 	// Criar a REQ que aponta para ele.
-	reqFixtureWithRoadmapLink(dir, "REQ-2026-10-09-titulo-ac8.md", roadmapBasename)
+	reqFixtureWithRoadmapLink(dir, "REQ-"+ac8Today()+"-titulo-ac8.md", roadmapBasename)
 
 	// `roadmap new` sem --req deve detectar o req: vazio e reparar.
 	if err := NewRoadmap("Titulo AC8"); err != nil {
@@ -371,7 +380,7 @@ func TestRoadmapNew_A2_RepairsOrphanWithOneREQ(t *testing.T) {
 		t.Fatalf("ReadFile após repair: %v", err)
 	}
 
-	wantReq := `req: "docs/req/REQ-2026-10-09-titulo-ac8.md"`
+	wantReq := `req: "docs/req/REQ-` + ac8Today() + `-titulo-ac8.md"`
 	if !strings.Contains(string(afterBytes), wantReq) {
 		t.Errorf("A2: req: não foi reparado — esperado %q em:\n%s", wantReq, afterBytes)
 	}
@@ -389,7 +398,7 @@ func TestRoadmapNew_A2_NoRepairWithZeroREQ(t *testing.T) {
 	dir := setupAC8Dir(t)
 	writeStateDirs(dir)
 
-	roadmapBasename := "ROADMAP-2026-10-09-titulo-ac8.md"
+	roadmapBasename := "ROADMAP-" + ac8Today() + "-titulo-ac8.md"
 	roadmapOrphanFixture(dir, roadmapBasename)
 	// Sem nenhuma REQ apontando para o roadmap.
 
@@ -430,12 +439,12 @@ func TestRoadmapNew_A2_NoRepairWithTwoREQs(t *testing.T) {
 	dir := setupAC8Dir(t)
 	writeStateDirs(dir)
 
-	roadmapBasename := "ROADMAP-2026-10-09-titulo-ac8.md"
+	roadmapBasename := "ROADMAP-" + ac8Today() + "-titulo-ac8.md"
 	roadmapOrphanFixture(dir, roadmapBasename)
 
 	// Duas REQs apontando para o mesmo roadmap.
-	reqFixtureWithRoadmapLink(dir, "REQ-2026-10-09-titulo-ac8.md", roadmapBasename)
-	reqFixtureWithRoadmapLink(dir, "REQ-2026-10-09-titulo-ac8-v2.md", roadmapBasename)
+	reqFixtureWithRoadmapLink(dir, "REQ-"+ac8Today()+"-titulo-ac8.md", roadmapBasename)
+	reqFixtureWithRoadmapLink(dir, "REQ-"+ac8Today()+"-titulo-ac8-v2.md", roadmapBasename)
 
 	roadmapPath := filepath.Join("docs", "roadmaps", "backlog", roadmapBasename)
 	origBytes, err := os.ReadFile(roadmapPath)
@@ -472,10 +481,10 @@ func TestRoadmapNew_A4_DifferentREQ_NoLinkCreated(t *testing.T) {
 	dir := setupAC8Dir(t)
 	writeStateDirs(dir)
 
-	roadmapBasename := "ROADMAP-2026-10-09-titulo-ac8.md"
+	roadmapBasename := "ROADMAP-" + ac8Today() + "-titulo-ac8.md"
 
 	// Criar roadmap apontando para REQ-A.
-	reqARel := filepath.Join("docs", "req", "REQ-2026-10-09-titulo-ac8-a.md")
+	reqARel := filepath.Join("docs", "req", "REQ-"+ac8Today()+"-titulo-ac8-a.md")
 	if err := os.MkdirAll(filepath.Join(dir, "docs", "req"), 0o755); err != nil {
 		t.Fatalf("mkdir docs/req: %v", err)
 	}
@@ -516,7 +525,7 @@ Roadmap: ` + roadmapBasename + `
 	}
 
 	// REQ-B sem vínculo.
-	reqBRel := filepath.Join("docs", "req", "REQ-2026-10-09-titulo-ac8-b.md")
+	reqBRel := filepath.Join("docs", "req", "REQ-"+ac8Today()+"-titulo-ac8-b.md")
 	reqBBody := `---
 status: Open
 date: 2026-10-09
@@ -580,11 +589,11 @@ func TestRoadmapNew_A4_OrphanRoadmap_GetsReqFilled(t *testing.T) {
 	dir := setupAC8Dir(t)
 	writeStateDirs(dir)
 
-	roadmapBasename := "ROADMAP-2026-10-09-titulo-ac8.md"
+	roadmapBasename := "ROADMAP-" + ac8Today() + "-titulo-ac8.md"
 	roadmapOrphanFixture(dir, roadmapBasename)
 
 	// REQ R com roadmap: "" (vínculo ainda não estabelecido).
-	reqRRel := reqFixtureAC8(dir, "REQ-2026-10-09-titulo-ac8.md")
+	reqRRel := reqFixtureAC8(dir, "REQ-"+ac8Today()+"-titulo-ac8.md")
 
 	// `roadmap new --req R` sobre roadmap órfão.
 	err := NewRoadmapFromContent(RoadmapContent{
@@ -617,6 +626,342 @@ func TestRoadmapNew_A4_OrphanRoadmap_GetsReqFilled(t *testing.T) {
 	}
 }
 
+// ─── ML-6E (A1) tests — by_agent cross-namespace detection ──────────────────
+
+// setupA1ByAgentDir cria um projeto temporário com by_agent e os agentes fornecidos.
+// Reseta o singleton de config antes e depois de cada teste.
+func setupA1ByAgentDir(t *testing.T, agents ...string) string {
+	t.Helper()
+	dir := t.TempDir()
+	orig, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(orig) })
+	config.Reset()
+	t.Cleanup(func() { config.Reset() })
+
+	var agentLines []string
+	for _, a := range agents {
+		agentLines = append(agentLines, "- "+a)
+	}
+	yaml := "roadmap_namespacing: by_agent\nagents:\n" + strings.Join(agentLines, "\n") + "\n"
+	if err := os.WriteFile("trackfw.yaml", []byte(yaml), 0644); err != nil {
+		t.Fatalf("write trackfw.yaml: %v", err)
+	}
+	// Reset novamente após escrever trackfw.yaml para config.Load() recarregar.
+	config.Reset()
+	return dir
+}
+
+// createByAgentStateDirs cria os subdiretórios de estado para cada agente em modo by_agent.
+func createByAgentStateDirs(dir string, agents []string) {
+	for _, a := range agents {
+		for _, state := range []string{"backlog", "analyzing", "wip", "blocked", "done", "abandoned"} {
+			_ = os.MkdirAll(filepath.Join(dir, "docs", "roadmaps", a, state), 0o755)
+		}
+	}
+}
+
+// roadmapByAgentFixture cria um roadmap na pasta backlog/ do agente informado, com req: preenchido.
+func roadmapByAgentFixture(dir, agent, basename, reqPath string) string {
+	rel := filepath.Join("docs", "roadmaps", agent, "backlog", basename)
+	if err := os.MkdirAll(filepath.Join(dir, "docs", "roadmaps", agent, "backlog"), 0o755); err != nil {
+		panic("mkdir by_agent backlog: " + err.Error())
+	}
+	date := time.Now().Format("2006-01-02")
+	body := `---
+status: backlog
+date: ` + date + `
+req: "` + reqPath + `"
+squad: "` + agent + `"
+---
+
+# Roadmap: Cross Agent Feature
+
+> Created: ` + date + ` | Status: backlog
+
+## Context
+REQ: ` + reqPath + `
+`
+	if err := os.WriteFile(filepath.Join(dir, rel), []byte(body), 0o644); err != nil {
+		panic("WriteFile roadmap by_agent: " + err.Error())
+	}
+	return rel
+}
+
+// TestRoadmapNew_A1_ByAgent_DifferentAgentDetectsExisting — afirma que em modo
+// by_agent, `roadmap new --agent B T` detecta uma roadmap com mesmo basename já
+// existente no namespace A e retorna nil sem escrever nada em B. O roadmap de A
+// permanece byte-idêntico ao original.
+//
+// Reconciliação: afirma o mecanismo central do A1 (ML-6E) —
+// findRoadmapByBasenameOtherAgents encontra o arquivo no namespace A quando a
+// busca no namespace B retorna "". A ausência de arquivo em B/backlog e a
+// identidade byte a byte de A/backlog provam que a colisão foi detectada.
+// Falsificação: restringir findRoadmapByBasenameOtherAgents ao namespace
+// resolvido (ou remover a chamada) faz o teste reprovar porque um arquivo é
+// criado em agent-b/backlog.
+func TestRoadmapNew_A1_ByAgent_DifferentAgentDetectsExisting(t *testing.T) {
+	agents := []string{"agent-a", "agent-b"}
+	dir := setupA1ByAgentDir(t, agents...)
+	createByAgentStateDirs(dir, agents)
+	_ = os.MkdirAll(filepath.Join(dir, "docs", "req", "agent-a"), 0o755)
+
+	date := time.Now().Format("2006-01-02")
+	basename := "ROADMAP-" + date + "-cross-agent-feature.md"
+	reqPath := filepath.Join("docs", "req", "agent-a", "REQ-"+date+"-cross-agent-feature.md")
+
+	reqBody := `---
+status: Open
+date: ` + date + `
+adr: ""
+roadmap: ""
+---
+
+# REQ: Cross Agent Feature
+
+## Acceptance Criteria
+- [ ] AC1
+`
+	if err := os.WriteFile(filepath.Join(dir, reqPath), []byte(reqBody), 0o644); err != nil {
+		t.Fatalf("write REQ: %v", err)
+	}
+
+	// Simular `req new --agent agent-a`: criar roadmap em agent-a via NewRoadmapFromREQ.
+	if err := NewRoadmapFromREQ(reqPath, "agent-a", false); err != nil {
+		t.Fatalf("NewRoadmapFromREQ: %v", err)
+	}
+
+	roadmapAPath := filepath.Join("docs", "roadmaps", "agent-a", "backlog", basename)
+	origBytes, err := os.ReadFile(roadmapAPath)
+	if err != nil {
+		t.Fatalf("ReadFile roadmap A antes do teste: %v", err)
+	}
+	if !strings.Contains(string(origBytes), `req: "`+reqPath+`"`) {
+		t.Fatalf("roadmap A não tem req: preenchido:\n%s", origBytes)
+	}
+
+	// `roadmap new --agent agent-b "Cross Agent Feature"` deve detectar colisão em A.
+	err = NewRoadmapFromContent(RoadmapContent{Title: "Cross Agent Feature", Agent: "agent-b"})
+	if err != nil {
+		t.Fatalf("NewRoadmapFromContent(agent-b) deveria retornar nil (skip), obteve: %v", err)
+	}
+
+	// Nenhum arquivo criado em agent-b.
+	bMatches, _ := filepath.Glob(filepath.Join("docs", "roadmaps", "agent-b", "backlog", "*.md"))
+	if len(bMatches) != 0 {
+		t.Errorf("A1: arquivo criado em agent-b mesmo com existente em agent-a: %v", bMatches)
+	}
+
+	// Roadmap de A deve ser byte-idêntica ao original.
+	afterBytes, err := os.ReadFile(roadmapAPath)
+	if err != nil {
+		t.Fatalf("ReadFile roadmap A após skip: %v", err)
+	}
+	if !bytes.Equal(origBytes, afterBytes) {
+		t.Errorf("A1: roadmap de agent-a foi alterada — deve ser byte-idêntica\noriginal:\n%s\ndepois:\n%s",
+			origBytes, afterBytes)
+	}
+}
+
+// TestRoadmapNew_A1_ByAgent_ForceRefusedWhenOtherNamespace — afirma que
+// `roadmap new --agent B --force T` retorna erro quando o roadmap já existe
+// no namespace A: --force não cria duplicata em namespace diferente.
+//
+// Reconciliação: afirma o ramo `content.Force` do A1 (ML-6E) — o erro impede
+// que --force seja usado para criar uma cópia órfã em outro namespace.
+// Falsificação: remova a guarda `content.Force` na ramificação A1 → --force
+// criaria silenciosamente agent-b/backlog/<basename> e o teste reprovaria.
+func TestRoadmapNew_A1_ByAgent_ForceRefusedWhenOtherNamespace(t *testing.T) {
+	agents := []string{"agent-a", "agent-b"}
+	dir := setupA1ByAgentDir(t, agents...)
+	createByAgentStateDirs(dir, agents)
+	_ = os.MkdirAll(filepath.Join(dir, "docs", "req", "agent-a"), 0o755)
+
+	date := time.Now().Format("2006-01-02")
+	basename := "ROADMAP-" + date + "-cross-agent-feature.md"
+	reqPath := filepath.Join("docs", "req", "agent-a", "REQ-"+date+"-cross-agent-feature.md")
+	reqBody := `---
+status: Open
+date: ` + date + `
+adr: ""
+roadmap: ""
+---
+
+# REQ: Cross Agent Feature
+
+## Acceptance Criteria
+- [ ] AC1
+`
+	if err := os.WriteFile(filepath.Join(dir, reqPath), []byte(reqBody), 0o644); err != nil {
+		t.Fatalf("write REQ: %v", err)
+	}
+	// Criar roadmap em agent-a diretamente (fixture mais rápida que NewRoadmapFromREQ).
+	roadmapByAgentFixture(dir, "agent-a", basename, reqPath)
+
+	// `roadmap new --agent agent-b --force` deve retornar erro.
+	err := NewRoadmapFromContent(RoadmapContent{
+		Title: "Cross Agent Feature", Agent: "agent-b", Force: true,
+	})
+	if err == nil {
+		t.Error("A1 --force: esperado erro quando roadmap existe em outro namespace, obteve nil")
+	}
+
+	// Nenhum arquivo deve ter sido criado em agent-b.
+	bMatches, _ := filepath.Glob(filepath.Join("docs", "roadmaps", "agent-b", "backlog", "*.md"))
+	if len(bMatches) != 0 {
+		t.Errorf("A1 --force: arquivo criado em agent-b mesmo com erro esperado: %v", bMatches)
+	}
+}
+
+// TestRoadmapNew_A1_ByAgent_MultipleOccurrences — afirma que quando o mesmo
+// basename existe em dois namespaces diferentes (A e B), `roadmap new --agent C T`
+// não escreve nada e emite aviso listando ambos os caminhos.
+//
+// Reconciliação: afirma o ramo `default` (len > 1) do A1 (ML-6E) — a ambiguidade
+// de múltiplos namespaces impede qualquer escrita ou reparo.
+// Falsificação: torne o `switch` retornar sempre o primeiro resultado (case 1) →
+// o teste reprovaria porque agent-c/backlog/<basename> seria criado quando deveria
+// ser apenas avisado.
+func TestRoadmapNew_A1_ByAgent_MultipleOccurrences(t *testing.T) {
+	agents := []string{"agent-a", "agent-b", "agent-c"}
+	dir := setupA1ByAgentDir(t, agents...)
+	createByAgentStateDirs(dir, agents)
+
+	date := time.Now().Format("2006-01-02")
+	basename := "ROADMAP-" + date + "-cross-agent-feature.md"
+
+	// Criar roadmaps em agent-a e agent-b com o mesmo basename.
+	roadmapByAgentFixture(dir, "agent-a", basename, "docs/req/agent-a/REQ-a.md")
+	roadmapByAgentFixture(dir, "agent-b", basename, "docs/req/agent-b/REQ-b.md")
+
+	// `roadmap new --agent agent-c T` — múltiplos namespaces com o basename → não escreve.
+	err := NewRoadmapFromContent(RoadmapContent{Title: "Cross Agent Feature", Agent: "agent-c"})
+	if err != nil {
+		t.Fatalf("A1 múltiplos: esperado nil (aviso apenas), obteve erro: %v", err)
+	}
+
+	// Nenhum arquivo deve ter sido criado em agent-c.
+	cMatches, _ := filepath.Glob(filepath.Join("docs", "roadmaps", "agent-c", "backlog", "*.md"))
+	if len(cMatches) != 0 {
+		t.Errorf("A1 múltiplos: arquivo criado em agent-c mesmo com ambiguidade: %v", cMatches)
+	}
+
+	// Contagem total de roadmaps deve ser exatamente 2 (apenas agent-a e agent-b).
+	allMatches, _ := filepath.Glob(filepath.Join("docs", "roadmaps", "*", "backlog", "*.md"))
+	if len(allMatches) != 2 {
+		t.Errorf("A1 múltiplos: esperado 2 roadmaps total, obteve %d: %v", len(allMatches), allMatches)
+	}
+}
+
+// TestRoadmapNew_A1_ByAgent_SameAgentNoRegression — afirma que em modo by_agent,
+// `roadmap new --agent A T` quando o roadmap já existe em A (mesmo namespace) usa
+// o comportamento pré-existente do ML-6B (detecta, pula, repara vínculo), sem
+// interferência do novo código A1.
+//
+// Reconciliação: afirma que o caminho "mesmo namespace" não aciona
+// findRoadmapByBasenameOtherAgents — a checagem findRoadmapByBasename retorna o
+// caminho existente antes de chegar ao bloco A1.
+// Falsificação: altere o `else if` para `if` incondicional → a busca cross-namespace
+// executaria mesmo após encontrar no próprio namespace, criando dois avisos para o
+// mesmo arquivo e potencialmente comportamento inesperado.
+func TestRoadmapNew_A1_ByAgent_SameAgentNoRegression(t *testing.T) {
+	agents := []string{"agent-a"}
+	dir := setupA1ByAgentDir(t, agents...)
+	createByAgentStateDirs(dir, agents)
+	_ = os.MkdirAll(filepath.Join(dir, "docs", "req", "agent-a"), 0o755)
+
+	date := time.Now().Format("2006-01-02")
+	basename := "ROADMAP-" + date + "-same-agent-feature.md"
+	reqPath := filepath.Join("docs", "req", "agent-a", "REQ-"+date+"-same-agent-feature.md")
+	reqBody := `---
+status: Open
+date: ` + date + `
+adr: ""
+roadmap: ""
+---
+
+# REQ: Same Agent Feature
+
+## Acceptance Criteria
+- [ ] AC1
+`
+	if err := os.WriteFile(filepath.Join(dir, reqPath), []byte(reqBody), 0o644); err != nil {
+		t.Fatalf("write REQ: %v", err)
+	}
+
+	// Criar roadmap em agent-a via from-req.
+	if err := NewRoadmapFromREQ(reqPath, "agent-a", false); err != nil {
+		t.Fatalf("NewRoadmapFromREQ: %v", err)
+	}
+
+	roadmapPath := filepath.Join("docs", "roadmaps", "agent-a", "backlog", basename)
+	origBytes, err := os.ReadFile(roadmapPath)
+	if err != nil {
+		t.Fatalf("ReadFile original: %v", err)
+	}
+
+	// `roadmap new --agent agent-a T` (mesmo agente) — deve pular idempotentemente.
+	err = NewRoadmapFromContent(RoadmapContent{Title: "Same Agent Feature", Agent: "agent-a"})
+	if err != nil {
+		t.Fatalf("NewRoadmapFromContent(agent-a) deveria retornar nil (skip), obteve: %v", err)
+	}
+
+	afterBytes, err := os.ReadFile(roadmapPath)
+	if err != nil {
+		t.Fatalf("ReadFile após skip: %v", err)
+	}
+	if !bytes.Equal(origBytes, afterBytes) {
+		t.Errorf("A1 regressão mesmo-agente: roadmap alterada — deve ser byte-idêntica\noriginal:\n%s\ndepois:\n%s",
+			origBytes, afterBytes)
+	}
+
+	// Ainda exatamente 1 arquivo em agent-a/backlog.
+	aMatches, _ := filepath.Glob(filepath.Join("docs", "roadmaps", "agent-a", "backlog", "*.md"))
+	if len(aMatches) != 1 {
+		t.Errorf("A1 regressão mesmo-agente: esperado 1 roadmap em agent-a, obteve %d: %v", len(aMatches), aMatches)
+	}
+}
+
+// TestRoadmapNew_A1_ByAgent_FlatNoRegression — afirma que em modo flat (não by_agent),
+// o comportamento de `roadmap new T` após existente em backlog/ é idêntico ao ML-6B:
+// skip, aviso, byte-idêntico. O novo código A1 não interfere em modo flat.
+//
+// Reconciliação: afirma que findRoadmapByBasenameOtherAgents retorna nil em modo flat
+// e o `else if` nunca executa — o único caminho ativo é o findRoadmapByBasename original.
+// Falsificação: remova a guarda `cfg.RoadmapNamespacing == config.NamespacingByAgent`
+// do `else if` → findRoadmapByBasenameOtherAgents seria chamada em modo flat, produzindo
+// resultados vazios (sem efeito neste caso), mas alteraria o fluxo de execução.
+func TestRoadmapNew_A1_FlatNoRegression(t *testing.T) {
+	dir := setupAC8Dir(t)
+	writeStateDirs(dir)
+	reqRel := reqFixtureAC8(dir, "REQ-"+ac8Today()+"-titulo-ac8.md")
+
+	if err := NewRoadmapFromREQ(reqRel, "", false); err != nil {
+		t.Fatalf("NewRoadmapFromREQ(): %v", err)
+	}
+
+	matches, err := filepath.Glob("docs/roadmaps/backlog/*.md")
+	if err != nil || len(matches) != 1 {
+		t.Fatalf("esperado 1 roadmap em backlog, obteve %d: %v", len(matches), err)
+	}
+	origBytes, _ := os.ReadFile(matches[0])
+
+	if err := NewRoadmap("Titulo AC8"); err != nil {
+		t.Fatalf("NewRoadmap() deveria retornar nil (skip flat), obteve: %v", err)
+	}
+
+	afterBytes, _ := os.ReadFile(matches[0])
+	if !bytes.Equal(origBytes, afterBytes) {
+		t.Errorf("A1 flat regressão: roadmap alterada — deve ser byte-idêntica\noriginal:\n%s\ndepois:\n%s",
+			origBytes, afterBytes)
+	}
+}
+
 // TestRoadmapNew_A4_SameREQ_LinkOk — afirma que, no caminho "já existe" com
 // --req REQ-A, quando o roadmap existente já tem req: apontando para REQ-A
 // (mesma REQ, mesmo basename), a chamada não falha e o link pode ser completado.
@@ -630,8 +975,8 @@ func TestRoadmapNew_A4_SameREQ_LinkOk(t *testing.T) {
 	dir := setupAC8Dir(t)
 	writeStateDirs(dir)
 
-	roadmapBasename := "ROADMAP-2026-10-09-titulo-ac8.md"
-	reqARel := filepath.Join("docs", "req", "REQ-2026-10-09-titulo-ac8.md")
+	roadmapBasename := "ROADMAP-" + ac8Today() + "-titulo-ac8.md"
+	reqARel := filepath.Join("docs", "req", "REQ-"+ac8Today()+"-titulo-ac8.md")
 
 	if err := os.MkdirAll(filepath.Join(dir, "docs", "req"), 0o755); err != nil {
 		t.Fatalf("mkdir docs/req: %v", err)
