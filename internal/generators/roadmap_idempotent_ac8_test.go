@@ -172,7 +172,7 @@ func TestRoadmapNew_SkipsWhenExistsInBacklog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile roadmap original: %v", err)
 	}
-	if !strings.Contains(string(origBytes), `req: "`+reqRel+`"`) {
+	if !strings.Contains(string(origBytes), `req: "`+filepath.ToSlash(reqRel)+`"`) {
 		t.Fatalf("roadmap original não tem req: preenchido:\n%s", origBytes)
 	}
 
@@ -192,8 +192,8 @@ func TestRoadmapNew_SkipsWhenExistsInBacklog(t *testing.T) {
 	}
 
 	// Anti-vacuidade: o campo req: ainda está preenchido.
-	if !strings.Contains(string(afterBytes), `req: "`+reqRel+`"`) {
-		t.Errorf("AC8: req: foi destruído pelo roadmap new — deve permanecer %q:\n%s", reqRel, afterBytes)
+	if !strings.Contains(string(afterBytes), `req: "`+filepath.ToSlash(reqRel)+`"`) {
+		t.Errorf("AC8: req: foi destruído pelo roadmap new — deve permanecer %q:\n%s", filepath.ToSlash(reqRel), afterBytes)
 	}
 
 	// Verificar que ainda existe apenas 1 arquivo em backlog (nenhum duplicado criado).
@@ -743,7 +743,7 @@ roadmap: ""
 	if err != nil {
 		t.Fatalf("ReadFile roadmap A antes do teste: %v", err)
 	}
-	if !strings.Contains(string(origBytes), `req: "`+reqPath+`"`) {
+	if !strings.Contains(string(origBytes), `req: "`+filepath.ToSlash(reqPath)+`"`) {
 		t.Fatalf("roadmap A não tem req: preenchido:\n%s", origBytes)
 	}
 

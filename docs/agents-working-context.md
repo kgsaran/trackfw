@@ -2,6 +2,34 @@
 
 ---
 
+## 2026-10-09 — apolo-tf (fix/req-nasce-orfa-roadmap-new-sobrescreve — corretivo s25/s26 falsify) — FIM
+
+**Branch:** `fix/req-nasce-orfa-roadmap-new-sobrescreve`
+**Arquivos modificados:**
+- `scripts/check-gates-falsify.sh` — literais de busca/corrupção s25 (~2280-2281) e s26 (~2366-2367) atualizados para `portableReqPath`/`portableREQPath`; comentário 🔴 s25 ganhou nota ML-6F
+**Causa raiz:** ML-6F renomeou `reqPath`→`portableReqPath` (NewRoadmapFromREQ, linha 620) e `content.REQPath`→`portableREQPath` (NewRoadmapFromContent, linha 433); os literais do falsify permaneceram com os nomes antigos → `grep -cF` retornava 0 → `corrupt_literal` falhava com "expected exactly 1 occurrence"
+**Gates:** `make parity-falsify` → EXIT=0 · suite completa: 8 chunks, 347 OK, 0 FAIL · roadmap-req-frontmatter-path/go/from-req OK, roadmap-req-frontmatter-path/go/simple-detects-regression OK
+
+---
+
+## 2026-10-09 — apolo-tf (fix/req-nasce-orfa-roadmap-new-sobrescreve — corretivo ML-6F) — INÍCIO
+
+**Branch:** `fix/req-nasce-orfa-roadmap-new-sobrescreve`
+**Escopo:** `internal/generators/roadmap_idempotent_ac8_test.go`
+**Objetivo:** Corrigir regressão Windows introduzida pelo ML-6F: testes `TestRoadmapNew_SkipsWhenExistsInBacklog` e `TestRoadmapNew_A1_ByAgent_DifferentAgentDetectsExisting` comparavam `req:` gravado pelo gerador usando separador nativo (`\`) em vez de `/`
+
+---
+
+## 2026-10-09 — apolo-tf (fix/req-nasce-orfa-roadmap-new-sobrescreve — corretivo ML-6F) — FIM
+
+**Branch:** `fix/req-nasce-orfa-roadmap-new-sobrescreve`
+**Arquivos modificados:**
+- `internal/generators/roadmap_idempotent_ac8_test.go` — 3 asserções: `filepath.ToSlash()` aplicado a `reqRel` (linhas 175, 195, 196) e `reqPath` (linha 746)
+**Causa raiz:** ML-6F fez o gerador gravar sempre `/`; os testes comparavam o conteúdo gerado com `reqRel`/`reqPath` construídos por `filepath.Join` (separador nativo `\` no Windows)
+**Gates:** `go build ./...` limpo · `go test ./internal/generators/ ./internal/commands/ ./internal/validator/` PASS no macOS · VM Windows: dois testes alvo PASS confirmados
+
+---
+
 ## 2026-10-08 — apolo-tf (fix/push-e-ship-avisam-sobre-branch-de-outro-remote — ML-1A) — FIM
 
 **Branch:** `fix/push-e-ship-avisam-sobre-branch-de-outro-remote`

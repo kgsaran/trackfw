@@ -1824,3 +1824,14 @@ grava sempre `/`. Decisão do KG (2026-10-09): defeito conhecido se corrige agor
       conferidos por nome; VM: PASS, e sem a normalização reprova com `req: "docs\req\..."`. VM limpa. `make quality`
       EXIT=0 (executor).
 
+
+### ML-6G — Corretivo do CI do ML-6F
+**Status:** ✅ Concluído
+**Squad:** apolo-tf
+**Por que:** o ML-6F reprovou no CI em dois pontos que a auditoria não pegou (falha do arquiteto: commitou sem rodar o
+`make quality` próprio e aceitou VM só com os testes novos): (1) três asserções do AC8 montavam o esperado com
+`filepath.Join` (`\` no Windows) contra o `req:` agora gravado com `/`; (2) as âncoras literais de `s25`/`s26` em
+`scripts/check-gates-falsify.sh` apontavam para os argumentos antigos do Sprintf (`reqPath`, `content.REQPath`).
+- [x] Asserções com `filepath.ToSlash`; os dois testes passam na VM
+- [x] Âncoras s25/s26 atualizadas (contagem 1 cada); `make parity-falsify` 347 OK
+- [x] `make quality` (arquiteto) EXIT=0, 347 OK / 0 FAIL
