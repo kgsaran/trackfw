@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-09
 req: "docs/req/REQ-2026-09-09-req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos-e-o-segundo-se-esquece.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: REQ nasce orfa porque criar REQ e criar roadmap sao dois comandos e o segundo se esquece
 
-> Created: 2026-09-09 | Reestruturado: 2026-09-12 (absorção da REQ-2026-08-20) | Status: wip
+> Created: 2026-09-09 | Reestruturado: 2026-09-12 (absorção da REQ-2026-08-20) | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-09-09-req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos-e-o-segundo-se-esquece.md
@@ -1759,7 +1759,7 @@ recusa era o roadmap estar em `blocked/`, que o guard não aceita, **não** o ca
 - [x] Decisão recomendada (recusar com erro? vincular sem sobrescrever? `--force`?) e Veredito
 
 ### ML-6B — Correção
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 - [x] `roadmap new` nunca sobrescreve roadmap existente sem opt-in explícito; teste nas duas direções com falsificação
 - [x] Texto de protocolo gerado atualizado em todos os sítios do ML-6A; testes que pinam o texto ajustados

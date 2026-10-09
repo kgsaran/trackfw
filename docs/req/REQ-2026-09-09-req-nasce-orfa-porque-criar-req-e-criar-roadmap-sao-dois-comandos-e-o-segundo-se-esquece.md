@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-09
 author: ""
 adr: "docs/adr/ADR-2026-09-26-precisao-do-vinculo-branch-roadmap-escrever-em-vez-de-inferir.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-09-req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos-e-o-segundo-se-esquece.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-09-req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos-e-o-segundo-se-esquece.md"
 ---
 
 # REQ: REQ nasce orfa porque criar REQ e criar roadmap sao dois comandos e o segundo se esquece
 
-> Date: 2026-09-09 | Status: Open
+> Date: 2026-09-09 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -92,6 +92,7 @@ ignorar. E é a crítica que o autor do issue #275 fez sobre contagem.
       existente sem aviso, e o texto de protocolo gerado pelo trackfw (bloco "Agent Protocol" do CLAUDE.md/AGENTS.md
       e equivalentes) deixa de mandar rodar os dois comandos. Mesma causa da REQ (criar REQ+roadmap pelo caminho
       ensinado produz REQ órfã) → mesma REQ.
+      ✅ Evidência: PR #550 — `roadmap_idempotent_ac8_test.go` (16 testes, falsificados), `roadmap_separator_ml6f_test.go`; binário real: roadmap editada à mão fica byte-idêntica após `roadmap new`; red-team `docs/seguranca/2026-10-09-red-team-roadmap-new-sobrescreve.md` (A1–A4 corrigidos); CI verde incl. windows-full-suites.
 
 ## Negative Scope
 
