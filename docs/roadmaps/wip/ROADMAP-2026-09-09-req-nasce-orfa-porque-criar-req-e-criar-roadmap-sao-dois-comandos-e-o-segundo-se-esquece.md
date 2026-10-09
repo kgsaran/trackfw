@@ -1810,12 +1810,17 @@ em outro estado": não grava, avisa nomeando o caminho e o agente, repara víncu
 
 
 ### ML-6F — Separador de caminho no vínculo REQ↔roadmap (Windows)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** apolo-tf
 **Por que:** visto na correção do `windows-full-suites` do #550: o caminho de criação (`NewRoadmapFromREQ`/template)
 grava `REQ:`/`req:` com o separador nativo (`docs\req\...` no Windows), o de reparo (`reconcileExistingRoadmapLink`)
 grava sempre `/`. Decisão do KG (2026-10-09): defeito conhecido se corrige agora.
-- [ ] Todo sítio que grava vínculo REQ↔roadmap (frontmatter e linha do corpo, nos dois sentidos — req new, roadmap new,
+- [x] Todo sítio que grava vínculo REQ↔roadmap (frontmatter e linha do corpo, nos dois sentidos — req new, roadmap new,
       roadmap move, reparos) grava com `/`; enumeração por grep
-- [ ] Leitura/comparação do vínculo continua aceitando `\` já gravado (projetos existentes no Windows)
-- [ ] Testes que rodam no Windows (VM) provando `/` nos arquivos gerados; falsificação; `make quality` (arquiteto)
+- [x] Leitura/comparação do vínculo continua aceitando `\` já gravado (projetos existentes no Windows)
+- [x] Testes que rodam no Windows (VM) provando `/` nos arquivos gerados; falsificação; `make quality` (arquiteto)
+      Auditoria (2026-10-09): 2 sítios de criação não normalizavam (`NewRoadmapFromContent`, `NewRoadmapFromREQ`) —
+      corrigidos; os 7 demais já gravavam `/`. Vínculo legado com `\` é reconhecido e curado ao ser tocado. 3 testes
+      conferidos por nome; VM: PASS, e sem a normalização reprova com `req: "docs\req\..."`. VM limpa. `make quality`
+      EXIT=0 (executor).
+

@@ -46107,3 +46107,21 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-09 — zeus-tf — FIM: REQ-2026-09-09 AC8 implementado, aguarda PR
 
 - `roadmap new` idempotente (não sobrescreve roadmap de mesmo nome em qualquer estado; repara vínculo; não cria vínculo falso; `--force` só no mesmo caminho) e protocolo gerado sem `roadmap new` após `req new`. Red-team aprovou com ressalvas; A2/A3/A4 corrigidos. `make quality` EXIT=0.
+
+---
+
+## 2026-10-09 — apolo-tf (fix/req-nasce-orfa-roadmap-new-sobrescreve — ML-6F) — INÍCIO
+
+**Branch:** `fix/req-nasce-orfa-roadmap-new-sobrescreve`
+**Escopo:** `internal/generators/roadmap.go` · `internal/generators/roadmap_separator_ml6f_test.go`
+**Objetivo:** ML-6F — separador do vínculo REQ↔roadmap no Windows; gravar sempre "/" na criação
+
+---
+
+## 2026-10-09 — apolo-tf (fix/req-nasce-orfa-roadmap-new-sobrescreve — ML-6F) — FIM
+
+**Branch:** `fix/req-nasce-orfa-roadmap-new-sobrescreve`
+**Arquivos modificados:**
+- `internal/generators/roadmap.go` — 2 sítios normalizados: `NewRoadmapFromContent` (portableREQPath) e `NewRoadmapFromREQ` (portableReqPath)
+- `internal/generators/roadmap_separator_ml6f_test.go` — 3 testes novos
+**Gates:** `go build ./...` limpo · `go test ./internal/generators/ ./internal/commands/` ok · `make quality` EXIT=0 · VM Windows PASS · falsificação reprova no Windows

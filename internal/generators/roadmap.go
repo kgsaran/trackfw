@@ -406,6 +406,10 @@ func NewRoadmapFromContent(content RoadmapContent) error {
 	} else {
 		// squad recebe o agente resolvido quando em by_agent; vazio em flat (AC4).
 		squadVal := agent
+		// normalizeRefSeparator: o template é escrito em disco e pode ter sido
+		// invocado no Windows com content.REQPath usando "\". ADR-2026-09-01 D1:
+		// caminhos dentro de artefato versionado usam sempre "/" (ML-6F).
+		portableREQPath := normalizeRefSeparator(content.REQPath)
 		body = fmt.Sprintf(`---
 status: backlog
 date: %s
@@ -426,7 +430,7 @@ REQ: %s
 - [ ]
 - [ ]
 
-`, date, content.REQPath, squadVal, content.Title, date, content.REQPath) + wave0Block + fmt.Sprintf(`## Wave 1 — <name> (parallel MLs)
+`, date, portableREQPath, squadVal, content.Title, date, portableREQPath) + wave0Block + fmt.Sprintf(`## Wave 1 — <name> (parallel MLs)
 > Dependencies: none
 
 ### ML-1A — %s
@@ -591,6 +595,9 @@ func NewRoadmapFromREQ(reqPath, agent string, force bool) error {
 
 	// squad recebe o agente resolvido para registrar o namespace no frontmatter (AC4/AC11).
 	squadVal := resolvedAgent
+	// normalizeRefSeparator: o template é escrito em disco; no Windows reqPath pode conter "\".
+	// ADR-2026-09-01 D1: caminhos dentro de artefato versionado usam sempre "/" (ML-6F).
+	portableReqPath := normalizeRefSeparator(reqPath)
 	body := fmt.Sprintf(`---
 status: backlog
 date: %s
@@ -610,7 +617,7 @@ REQ: %s%s
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
 %s
 
-%s`, date, reqPath, squadVal, title, date, filepath.Base(reqPath), reqPath, adrRef, acBlock, mlSection.String())
+%s`, date, portableReqPath, squadVal, title, date, filepath.Base(portableReqPath), portableReqPath, adrRef, acBlock, mlSection.String())
 
 	return NewRoadmapFromContent(RoadmapContent{
 		Title: title,
