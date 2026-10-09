@@ -506,6 +506,36 @@ never invents criteria. 🔴 This narrows ADR-2026-07-31 (decision 3, *"placehol
 aggregation"*) **on the `--from-req` path only**; the plain template of `roadmap new` still emits the
 placeholder. The amendment to that ADR is pending (REQ-2026-09-09, AC7).
 
+### `roadmap new` is idempotent when a roadmap already exists (AC8, REQ-2026-09-09)
+
+<!-- trackfw-contract: gate=internal/generators/roadmap_idempotent_ac8_test.go partial=o gate cobre os 5 braços da tabela (skip-backlog, criação normal, skip-wip, force-sobrescreve, force-recusa-wip); NÃO cobre o caminho do wizard interativo (TTY) nem `roadmap new --from-req` com TTY -->
+
+Before `roadmap new` writes, it searches all state directories for a roadmap with the same
+basename (`ROADMAP-<date>-<slug>.md`). If one is found:
+
+| Existing file location | `--force` | Behaviour |
+|---|---|---|
+| Same path (`backlog/`) | false | Skip creation; repair the REQ backlink if missing; print diagnostic to **stderr**; exit **0** |
+| Same path (`backlog/`) | true | Overwrite (O_TRUNC) |
+| Different state (`wip/`, `done/`, etc.) | false | Skip creation; repair the REQ backlink using the existing path; print diagnostic to **stderr**; exit **0** |
+| Different state | true | **Error** — `--force` never creates a duplicate across states |
+| Not found anywhere | false | Create with `O_CREATE\|O_EXCL\|O_WRONLY`; if `O_EXCL` fails (TOCTOU), take the skip path |
+
+**Why idempotent (not error).** `req new` already creates the linked roadmap as of AC7. Agents
+following the old protocol (`req new T` → `roadmap new T`) would get an error on every first run
+if `roadmap new` refused outright — silent data loss is worse than a noisy skip. The skip path is
+the correct "protocol-proof" behavior.
+
+**stderr diagnostic, pinned:**
+
+```
+roadmap <basename> já existe em <path> (criada por `trackfw req new`?) — nada sobrescrito; use --force para recriar
+```
+(different state variant: `... — nada sobrescrito; use --force para recriar (apenas no mesmo estado)`)
+
+**`--force` flag.** Available on `roadmap new`, `roadmap new --req`, and `roadmap new --from-req`.
+Silently absent from `req new` (which never calls `roadmap new` directly).
+
 ### `req_has_roadmap` — date cutoff, and the grandfathering is visible
 
 <!-- trackfw-contract: gate=internal/validator/validator_req_roadmap_cutoff.go,internal/validator/validator_req_roadmap_cutoff_ml4b_test.go partial=nenhum gate de shell exercita o corte pela superfície do CLI; a falsificação dos dois braços é feita em Go, sabotando reqIsGrandfathered -->

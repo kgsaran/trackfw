@@ -222,7 +222,7 @@ func TestRoadmapFromREQ_InheritsAgentFromREQPath(t *testing.T) {
 	}
 
 	// NewRoadmapFromREQ sem agente explícito deve herdar 'beta' do caminho.
-	if err := NewRoadmapFromREQ(reqPath, ""); err != nil {
+	if err := NewRoadmapFromREQ(reqPath, "", false); err != nil {
 		t.Fatalf("NewRoadmapFromREQ deveria herdar beta do caminho da REQ: %v", err)
 	}
 

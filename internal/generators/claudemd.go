@@ -67,15 +67,15 @@ func generateClaudeMD(cfg Config) error {
 		}
 		if len(nonEmpty) >= 2 {
 			agentList := strings.Join(nonEmpty, ", ")
-			sb.WriteString("| `trackfw req new --agent <agent> \"title\"` | Create REQ (`--agent` required; agents: " + agentList + ") |\n")
-			sb.WriteString("| `trackfw roadmap new --agent <agent>` | Create roadmap linked to a REQ (`--agent` required) |\n")
+			sb.WriteString("| `trackfw req new --agent <agent> \"title\"` | Create REQ with linked roadmap (`--agent` required; agents: " + agentList + ") |\n")
+			sb.WriteString("| `trackfw roadmap new --agent <agent>` | Create standalone roadmap without a REQ (`req new` is preferred) |\n")
 		} else {
-			sb.WriteString("| `trackfw req new \"title\"` | Create REQ |\n")
-			sb.WriteString("| `trackfw roadmap new` | Create empty roadmap linked to a REQ |\n")
+			sb.WriteString("| `trackfw req new \"title\"` | Create REQ with linked roadmap |\n")
+			sb.WriteString("| `trackfw roadmap new` | Create standalone roadmap without a REQ (`req new` is preferred) |\n")
 		}
 	} else {
-		sb.WriteString("| `trackfw req new \"title\"` | Create REQ |\n")
-		sb.WriteString("| `trackfw roadmap new` | Create empty roadmap linked to a REQ |\n")
+		sb.WriteString("| `trackfw req new \"title\"` | Create REQ with linked roadmap |\n")
+		sb.WriteString("| `trackfw roadmap new` | Create standalone roadmap without a REQ (`req new` is preferred) |\n")
 	}
 	sb.WriteString("| `trackfw roadmap move <name> <state>` | Move roadmap state |\n")
 	sb.WriteString("| `trackfw validate` | Governance validation gate |\n")

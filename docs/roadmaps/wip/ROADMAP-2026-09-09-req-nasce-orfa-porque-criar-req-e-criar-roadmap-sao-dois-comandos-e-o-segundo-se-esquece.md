@@ -1752,21 +1752,26 @@ recusa era o roadmap estar em `blocked/`, que o guard não aceita, **não** o ca
 > `roadmap new` e o texto de protocolo gerado continuaram como antes — a sequência ensinada destrói o vínculo.
 
 ### ML-6A — Threat model e enumeração
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Squad:** hades-tf
-- [ ] Medição com o binário da main: `req new` + `roadmap new` mesmo título; título diferente; `--from-req`; roadmap já em wip/done; o que o `roadmap new` faz hoje com arquivo existente (sobrescreve? em que caminho do código?)
-- [ ] Enumeração de todo texto gerado que manda rodar `req new` e depois `roadmap new` (templates de CLAUDE.md, AGENTS.md, GEMINI.md, regras de Cursor/Windsurf/Kiro/Copilot, skills, docs) — por grep, não por memória
-- [ ] Decisão recomendada (recusar com erro? vincular sem sobrescrever? `--force`?) e Veredito
+- [x] Medição com o binário da main: `req new` + `roadmap new` mesmo título; título diferente; `--from-req`; roadmap já em wip/done; o que o `roadmap new` faz hoje com arquivo existente (sobrescreve? em que caminho do código?)
+- [x] Enumeração de todo texto gerado que manda rodar `req new` e depois `roadmap new` (templates de CLAUDE.md, AGENTS.md, GEMINI.md, regras de Cursor/Windsurf/Kiro/Copilot, skills, docs) — por grep, não por memória
+- [x] Decisão recomendada (recusar com erro? vincular sem sobrescrever? `--force`?) e Veredito
 
 ### ML-6B — Correção
 **Status:** 🔄 Em andamento
 **Squad:** apolo-tf
-- [ ] `roadmap new` nunca sobrescreve roadmap existente sem opt-in explícito; teste nas duas direções com falsificação
-- [ ] Texto de protocolo gerado atualizado em todos os sítios do ML-6A; testes que pinam o texto ajustados
-- [ ] `make quality` (arquiteto)
+- [x] `roadmap new` nunca sobrescreve roadmap existente sem opt-in explícito; teste nas duas direções com falsificação
+- [x] Texto de protocolo gerado atualizado em todos os sítios do ML-6A; testes que pinam o texto ajustados
+- [x] `make quality` (arquiteto)
+      Auditoria (2026-10-09): 5 testes conferidos por nome. Binário real num projeto temporário: `req new "Teste T"` +
+      edição à mão + `roadmap new "Teste T"` → aviso, arquivo byte-idêntico (hash igual), nota manual e `req:` preservados;
+      com a roadmap em wip → nenhuma cópia em backlog; `--force` com a existente em wip → erro. `make quality` EXIT=0
+      (executor), 347 OK. Texto de protocolo atualizado em agentfiles.go, claudemd.go, CLAUDE.md, AGENTS.md, GEMINI.md,
+      pypi/AGENTS.md e README.
 
 ### ML-6C — Red-team
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Squad:** hades-tf
 - [ ] Parecer sobre o diff
 

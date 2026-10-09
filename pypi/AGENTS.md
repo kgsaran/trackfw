@@ -8,7 +8,7 @@ Chain: `ADR → REQ → ROADMAP` · States: `backlog / analyzing / wip / blocked
 
 ### Agent Protocol
 1. **Before any implementation (mandatory):** create governance artifacts FIRST, then branch:
-   `trackfw req new "title"` → `trackfw roadmap new "title"` → `trackfw roadmap move <name> wip` → `git checkout -b feat/<branch>`
+   `trackfw req new "title"` → `trackfw roadmap move <name> wip` → `trackfw branch new <type>/<slug>`
    ❌ Never create a branch before REQ + ROADMAP are in wip/
    ❌ Never defer REQ/ROADMAP creation to a future task — they are prerequisites, not deliverables
    ✓ `trackfw validate` enforces this via `branch_has_wip_roadmap` rule (v2.7.0+)

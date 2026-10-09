@@ -228,7 +228,7 @@ func chainRoadmapForREQ(res generators.REQResult, noRoadmap bool) error {
 		return nil
 	}
 
-	if err := generators.NewRoadmapFromREQ(res.Path, res.Agent); err != nil {
+	if err := generators.NewRoadmapFromREQ(res.Path, res.Agent, false); err != nil {
 		return fmt.Errorf("REQ created at %s, but its roadmap was not: %w\n"+
 			"finish with: trackfw roadmap new --from-req %s (or accept the gap with --no-roadmap)",
 			res.Path, err, res.Path)
