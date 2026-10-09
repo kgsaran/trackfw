@@ -46157,3 +46157,7 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-09 — zeus-tf — bump 9.4.1; REQ-2026-09-09 Done (#550)
 
 - Release 9.4.1 (#549, #550). REQ-2026-09-09 fechada com evidência do AC8, roadmap em `done/` (o status do ML-6B tinha ficado "em andamento" e o `roadmap move` bloqueou — corrigido). Gates: parity-rest EXIT=0, check-required-full OK.
+
+## 2026-10-09 — zeus-tf — 9.4.1 publicada; INÍCIO: REQ da verificação de canais (índice simples do PyPI)
+
+- 9.4.1 nos 3 canais (verify reexecutado: mesmo atraso do índice simples da 9.3.3). REQ nova: `check-channels-content --published` usa `pip download` (índice simples, CDN) sem retry, depois de confirmar pela JSON API. Branch `fix/verificacao-canais-indice-pypi`. Wave 0 (hades-tf).
