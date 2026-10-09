@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-10-08
 req: "docs/req/REQ-2026-10-08-push-e-ship-avisam-sobre-branch-de-outro-remote-como-trabalho-nao-mesclado.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: push e ship avisam sobre branch de outro remote como trabalho nao mesclado
 
-> Created: 2026-10-08 | Status: wip
+> Created: 2026-10-08 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-10-08-push-e-ship-avisam-sobre-branch-de-outro-remote-como-trabalho-nao-mesclado.md -->

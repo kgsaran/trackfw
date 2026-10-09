@@ -1,5 +1,5 @@
 ---
-status: done
+status: wip
 date: 2026-09-09
 req: "docs/req/REQ-2026-09-09-req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos-e-o-segundo-se-esquece.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: REQ nasce orfa porque criar REQ e criar roadmap sao dois comandos e o segundo se esquece
 
-> Created: 2026-09-09 | Reestruturado: 2026-09-12 (absorção da REQ-2026-08-20) | Status: done
+> Created: 2026-09-09 | Reestruturado: 2026-09-12 (absorção da REQ-2026-08-20) | Status: wip
 
 ## Context
 REQ: docs/req/REQ-2026-09-09-req-nasce-orfa-porque-criar-req-e-criar-roadmap-sao-dois-comandos-e-o-segundo-se-esquece.md
@@ -1739,4 +1739,27 @@ Ao criar a branch desta retomada, `trackfw branch new` **recusou** — e a tenta
 reproduzira o #273 ao vivo. Refeito depois do `roadmap move … wip`: **passou**. A causa da primeira
 recusa era o roadmap estar em `blocked/`, que o guard não aceita, **não** o casamento de slug.
 🔴 **Não afirmei o que não medi.**
+
+## Wave 6 — Reabertura (AC8): `roadmap new` sobrescreve a roadmap que o `req new` criou
+> Reaberto em 2026-10-09. **Por que o escopo original não previa:** o AC1 fez o `req new` criar a roadmap, mas o
+> `roadmap new` e o texto de protocolo gerado continuaram como antes — a sequência ensinada destrói o vínculo.
+
+### ML-6A — Threat model e enumeração
+**Status:** 🔄 Em andamento
+**Squad:** hades-tf
+- [ ] Medição com o binário da main: `req new` + `roadmap new` mesmo título; título diferente; `--from-req`; roadmap já em wip/done; o que o `roadmap new` faz hoje com arquivo existente (sobrescreve? em que caminho do código?)
+- [ ] Enumeração de todo texto gerado que manda rodar `req new` e depois `roadmap new` (templates de CLAUDE.md, AGENTS.md, GEMINI.md, regras de Cursor/Windsurf/Kiro/Copilot, skills, docs) — por grep, não por memória
+- [ ] Decisão recomendada (recusar com erro? vincular sem sobrescrever? `--force`?) e Veredito
+
+### ML-6B — Correção
+**Status:** ⬜ Pendente
+**Squad:** apolo-tf
+- [ ] `roadmap new` nunca sobrescreve roadmap existente sem opt-in explícito; teste nas duas direções com falsificação
+- [ ] Texto de protocolo gerado atualizado em todos os sítios do ML-6A; testes que pinam o texto ajustados
+- [ ] `make quality` (arquiteto)
+
+### ML-6C — Red-team
+**Status:** ⬜ Pendente
+**Squad:** hades-tf
+- [ ] Parecer sobre o diff
 

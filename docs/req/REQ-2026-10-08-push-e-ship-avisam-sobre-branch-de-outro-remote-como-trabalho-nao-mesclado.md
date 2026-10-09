@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-10-08
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-10-08-push-e-ship-avisam-sobre-branch-de-outro-remote-como-trabalho-nao-mesclado.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-10-08-push-e-ship-avisam-sobre-branch-de-outro-remote-como-trabalho-nao-mesclado.md"
 ---
 
 # REQ: push e ship avisam sobre branch de outro remote como trabalho nao mesclado
 
-> Date: 2026-10-08 | Status: Open
+> Date: 2026-10-08 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -32,9 +32,13 @@ consulta ao forge; não poda refs do usuário; não muda o caráter consultivo d
 
 ## Acceptance Criteria
 - [x] AC1 — Wave 0: enumeração de todo sítio que lista `branch -r` ou assume o prefixo `origin/` (push, ship, `branch prune`, validate, status) e decisão por sítio com medição
+      ✅ Evidência: `docs/seguranca/2026-10-08-wave0-push-ship-outro-remote.md` — sítio único `detectPendingSquashMerges`; red-team reconfirmou callers (push.go, ship.go).
 - [x] AC2 — `push`/`ship` não avisam sobre branch de remote diferente de `origin`; branch de `origin` com trabalho pendente continua avisando (teste nas duas direções, fixture com dois remotes)
+      ✅ Evidência: PR #549 — `TestDetectPendingSquashMerges_Issue547_MultiRemote`, falsificado nas duas direções.
 - [x] AC3 — Mesmo defeito em outro sítio achado no AC1 → corrigido aqui com teste
-- [ ] AC4 — Comentário na #547 com o resultado
+      ✅ Evidência: PR #549 — `Contains("HEAD")` trocado por nome exato; `origin/fix/HEADER-parse` coberto no mesmo teste.
+- [x] AC4 — Comentário na #547 com o resultado
+      ✅ Evidência: comentário na #547 (2026-10-09).
 
 ## Linked ADR
 <!-- Reference the ADR that governs this requirement -->
@@ -45,4 +49,4 @@ ADR:
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-10-08-push-e-ship-avisam-sobre-branch-de-outro-remote-como-trabalho-nao-mesclado.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-10-08-push-e-ship-avisam-sobre-branch-de-outro-remote-como-trabalho-nao-mesclado.md

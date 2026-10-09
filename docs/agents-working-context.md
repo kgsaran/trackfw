@@ -46033,3 +46033,7 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-08 — hades-tf — FIM: ML-2A REQ #547 (red-team push/ship outro remote)
 
 - Entregue docs/seguranca/2026-10-08-red-team-push-ship-outro-remote.md. Quatro ataques executados: HEAD descarte (6 casos), HasPrefix esconde trabalho, enumeração de callers, mutações. Baseline PASS, mutação-1 (HasPrefix removido) FAIL corretamente, mutação-2 (Contains revertido) FAIL corretamente. Veredito: APROVA. Sem achados de severidade; R3 fechado pelo próprio commit; residuais R2/R4 pré-existentes inalterados.
+
+## 2026-10-09 — zeus-tf — REQ da #547 Done (PR #549); REQ-2026-09-09 reaberta (AC8)
+
+- REQ da #547 fechada com evidência, roadmap em `done/`, `req-aberta` retirada. REQ-2026-09-09 reaberta: `roadmap new` sobrescreve em silêncio a roadmap que o `req new` criou vinculada, e o protocolo gerado manda rodar os dois. Branch `fix/req-nasce-orfa-roadmap-new-sobrescreve`. ML-6A (hades-tf) despachado.
