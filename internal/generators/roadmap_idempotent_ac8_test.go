@@ -615,7 +615,9 @@ func TestRoadmapNew_A4_OrphanRoadmap_GetsReqFilled(t *testing.T) {
 	}
 
 	// O roadmap deve ter req: R.
-	wantReq := `req: "` + reqRRel + `"`
+	// filepath.ToSlash: o gerador normaliza separadores com normalizeRefSeparator (sempre "/"),
+	// mas reqRRel vem de filepath.Join que retorna "\" no Windows — alinhar o esperado.
+	wantReq := `req: "` + filepath.ToSlash(reqRRel) + `"`
 	if !strings.Contains(string(afterRoadmap), wantReq) {
 		t.Errorf("A4 orphan: req: não foi preenchido no roadmap — esperado %q em:\n%s", wantReq, afterRoadmap)
 	}
