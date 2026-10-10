@@ -187,7 +187,7 @@ go test ./internal/validator/
 
 ### ML-2A — Revisão de qualidade e red-team
 **Owner:** `hefesto-tf` e `hades-tf` (em sequência, não em paralelo — custo de CPU)
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Acceptance criteria:**
 - [ ] Parecer do `hades-tf` reimplementando a partir da leitura e tentando burlar a regra
 - [ ] Defeitos achados viram ML corretivo neste roadmap
