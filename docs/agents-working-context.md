@@ -46213,3 +46213,15 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-09 — zeus-tf — bump 9.4.2; REQ da verificação de canais Done (#552)
 
 - Release 9.4.2 (#552). REQ fechada com evidência por AC, roadmap em `done/`. A 9.4.2 é a primeira release a rodar a verificação nova. Gates: parity-rest EXIT=0, check-required-full OK.
+
+---
+
+## 2026-10-10 — zeus-tf — INÍCIO: auditoria de 3 branches locais com commits pós-merge
+
+- `trackfw branch prune` marcou `keep` em 3 branches com commits feitos depois do merge do PR (#415, #465, #503). Branch `docs/recupera-commits-pos-merge` (doc-only, §7).
+
+## 2026-10-10 — zeus-tf — FIM: 2 commits pós-merge recuperados, aguarda PR
+
+- `99477f44` (#503, AC10): 7/7 linhas já na main → branch apagável.
+- `2d3a7dbb` (#415): correção da contagem do censo (9→10, soma 19, lista literal) e adendo pós-merge — 34/59 linhas ausentes da main. Cherry-pick; conflito com a Wave 3 resolvido mantendo os dois, adendo antes (ordem cronológica).
+- `13843172` (#465): memória `feedback_mudar_contrato_auditar_quem_afirma_o_antigo.md` nunca chegou à main. Cherry-pick; índice reescrito sobre o da main + 1 linha.
