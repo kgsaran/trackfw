@@ -46225,3 +46225,9 @@ Achados notáveis para o apolo-tf:
 - `99477f44` (#503, AC10): 7/7 linhas já na main → branch apagável.
 - `2d3a7dbb` (#415): correção da contagem do censo (9→10, soma 19, lista literal) e adendo pós-merge — 34/59 linhas ausentes da main. Cherry-pick; conflito com a Wave 3 resolvido mantendo os dois, adendo antes (ordem cronológica).
 - `13843172` (#465): memória `feedback_mudar_contrato_auditar_quem_afirma_o_antigo.md` nunca chegou à main. Cherry-pick; índice reescrito sobre o da main + 1 linha.
+
+---
+
+## 2026-10-10 — zeus-tf — INÍCIO: REQ-2026-09-02 (remoção da fiação do guard não é detectada)
+
+- Medido hoje em worktree de `origin/main`, com e sem harness global (`HOME` vazio): apagar `hooks.PreToolUse` do `.claude/settings.json`, ou trocar `trackfw guard git-branch`/`credential` por `true`, deixa o `trackfw validate` byte a byte idêntico (169 warnings). Wave 0 com `hades-tf` antes de qualquer implementação.
