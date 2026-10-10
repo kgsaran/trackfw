@@ -1,12 +1,12 @@
 ---
-status: Proposed
+status: Accepted
 date: 2026-10-10
 author: "zeus-tf"
 ---
 
 # ADR: a fiação do guard é ancorada no origin/main por tupla e a remoção é violação fora do lenient e do baseline
 
-> Date: 2026-10-10 | Status: Proposed
+> Date: 2026-10-10 | Status: Accepted
 
 REQ: `docs/req/REQ-2026-09-02-remover-a-entrada-pretooluse-do-settings-nao-e-detectado-por-nenhuma-regra-de-integridade-de-guard.md`
 Estende: `ADR-2026-08-12-nao-ha-prevencao-contra-agente-induzido-com-escrita-irrestrita-a-resposta-e-deteccao-ancorada-no-git.md`

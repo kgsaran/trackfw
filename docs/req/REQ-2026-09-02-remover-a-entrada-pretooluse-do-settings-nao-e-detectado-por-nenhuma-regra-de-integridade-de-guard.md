@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-02
 author: "zeus-tf"
 adr: "docs/adr/ADR-2026-10-10-a-fiacao-do-guard-e-ancorada-no-origin-main-por-tupla-e-a-remocao-e-violacao-fora-do-lenient-e-do-baseline.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-22-remover-a-entrada-pretooluse-do-settings-nao-e-detectado-por-nenhuma-regra-de-integridade-de-guard.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-22-remover-a-entrada-pretooluse-do-settings-nao-e-detectado-por-nenhuma-regra-de-integridade-de-guard.md"
 ---
 
 # REQ: Remover a entrada `PreToolUse` do settings não é detectado por nenhuma regra de integridade de guard
 
-> Date: 2026-09-02 | Status: Open
+> Date: 2026-09-02 | Status: Done
 
 ## Motivation
 
@@ -99,7 +99,8 @@ verificam segue desligada.**
 - [x] **AC6** — Contrato da regra em `docs/cli-parity.md` com a anotação `trackfw-contract` (v8: o
       Go é a implementação única; não há paridade entre runtimes a provar).
       ✅ Evidência: seção `guard_wiring_removed` com `trackfw-contract` em `docs/cli-parity.md`
-- [ ] **AC7** — `make quality` EXIT=0 (máquina ociosa) e **CI** verde, inclusive `windows-full-suites`.
+- [x] **AC7** — `make quality` EXIT=0 (máquina ociosa) e **CI** verde, inclusive `windows-full-suites`.
+      ✅ Evidência: `make quality` EXIT=0 em `1127759d` (347 OK / 0 FAIL), com concorrência por decisão do usuário — ressalva: não foi máquina ociosa. CI do PR #557 verde em `5921506e`: 20/20 checks SUCCESS, inclusive `windows-full-suites`; mergeado em `85f21c2c` (2026-10-10).
 - [x] **AC8** — Cada teste novo declara a conclusão que afirma e reprova sem a correção.
       ✅ Evidência: 27 testes com nomes conferidos por `go test -list`; mordida M1–M5 e mutação independente do arquiteto
 - [x] **AC9** — Medição de volta: os três braços da tabela de 2026-10-10 repetidos com o binário da
@@ -124,4 +125,4 @@ ADR: docs/adr/ADR-2026-10-10-a-fiacao-do-guard-e-ancorada-no-origin-main-por-tup
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-22-remover-a-entrada-pretooluse-do-settings-nao-e-detectado-por-nenhuma-regra-de-integridade-de-guard.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-22-remover-a-entrada-pretooluse-do-settings-nao-e-detectado-por-nenhuma-regra-de-integridade-de-guard.md`
