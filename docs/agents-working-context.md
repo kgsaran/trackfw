@@ -2,6 +2,19 @@
 
 ---
 
+## 2026-10-10 — hades-tf (fix/remover-a-entrada-pretooluse-nao-e-detectado — ML-2A Wave 2 red-team) — FIM
+
+**Branch:** `fix/remover-a-entrada-pretooluse-nao-e-detectado`
+**Escopo:** red-team de `guard_wiring_removed`; scratch em `/scratchpad/hades-rt/`; entregável: `docs/seguranca/2026-10-10-red-team-guard-wiring-removed.md`
+**Veredito:** APROVADO COM RESSALVAS
+**Furos encontrados:**
+- R-1 (BLOQUEANTE): `guardWiringCollectCommandValues` faz busca recursiva por qualquer chave `"command"` no JSON. Adversário coloca string do guard em `metadata_guards.command` e substitui `command` por `echo bypassed`. Cursor (requiresCommandType=false): 0 violações em qualquer regra — bypass completo. Claude Code (requiresCommandType=true): `credential_guard_hook_resolvable` detecta; defesa mantida. Correção: restringir coleta ao caminho estrutural esperado por layout de schema.
+- R-2 (não-bloqueante): `type: script` para CLIs sem `requiresCommandType`; impacto isolado, sem bypass completo.
+**Resíduos confirmados:** R3, R4, R4b (variante URL-swap também silenciosa — mesma raiz que R4).
+**Carve-outs confirmados:** baseline e lenient não suprimem a violação.
+
+---
+
 ## 2026-10-10 — apolo-tf (fix/remover-a-entrada-pretooluse-nao-e-detectado — ML-2B corretivo) — FIM
 
 **Branch:** `fix/remover-a-entrada-pretooluse-nao-e-detectado`
@@ -46321,3 +46334,13 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-10 — zeus-tf — ML-2B auditado
 
 - Devolvido uma vez (testes de comportamento do Q1 ausentes, Parte 2 da concordância tautológica, sem mordida do Q2/Q3). Aprovado: 37 testes `GuardWiring`; concordância real com os 8 `Inject*Hooks`; mordida independente (sem D11-revised, 6/8 CLIs reprovam). Próximo: red-team do hades-tf.
+
+## 2026-10-10 — hades-tf — INÍCIO: red-team ML-2A Wave 2 (REQ-2026-09-02)
+
+- Barreira independente da regra `guard_wiring_removed`.
+- Lendo ADR, contrato cli-parity.md, parecer Wave 0, revisão de qualidade do hefesto-tf.
+- Construindo fixtures no scratch: `/scratchpad/hades-rt/`. Binário compilado da branch `fix/remover-a-entrada-pretooluse-nao-e-detectado` HEAD `8f5f760f`.
+
+## 2026-10-10 — zeus-tf — red-team (Wave 2) auditado
+
+- Parecer do hades-tf aprovado com ressalvas. R-1 (busca recursiva de `"command"` permite esconder o guard num campo de metadata e neutralizar o executável) confirmado no código; R-2 (`type` diferente de `command`) reclassificado para bloqueante. Variante R4 (`git remote set-url`) declarada no ADR. Corretivo ML-2C ao apolo-tf.

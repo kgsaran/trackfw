@@ -219,3 +219,17 @@ reproduzido** (o comentário citado não existe nos arquivos indicados).
 - [x] Prova de mordida por teste novo; nomes conferidos por `go test -list`
       ✅ Evidência: relatada por teste novo; uma refeita pelo arquiteto em cópia de scratch
 
+### ML-2C — Corretivo do red-team (`hades-tf`)
+**Owner:** `apolo-tf`
+**Status:** 🔄 Em andamento
+**Origem:** `docs/seguranca/2026-10-10-red-team-guard-wiring-removed.md` — aprovado com ressalvas. Auditoria
+do arquiteto: R-1 confirmado no código (`guardWiringCollectCommandValues`, `validator_guard_wiring.go:309`,
+recursiva: aceita `"command"` em qualquer profundidade; também usada na D7 do Kiro, linha 492). **R-2
+reclassificado para bloqueante** (defeito conhecido: entrada com `type` diferente de `command` não executa
+e é contada como fiação viva).
+**Files affected:** `internal/validator/validator_guard_wiring.go`, `internal/validator/validator_guard_wiring_test.go`, `docs/cli-parity.md` (seção da regra)
+**Acceptance criteria:**
+- [ ] R-1: extração de comando só nos campos executáveis do schema de cada arquivo (sem busca recursiva), inclusive na D7 do Kiro; teste com o guard em `metadata_guards.command` e `command` neutralizado → violação, para Claude Code e Cursor
+- [ ] R-2: entrada com `type` presente e diferente de `command` não é fiação viva; teste → violação
+- [ ] Concordância com os 8 `Inject*Hooks` continua verde (a extração estreitada ainda reconhece a saída real do gerador)
+- [ ] Prova de mordida dos testes novos; nomes por `go test -list`

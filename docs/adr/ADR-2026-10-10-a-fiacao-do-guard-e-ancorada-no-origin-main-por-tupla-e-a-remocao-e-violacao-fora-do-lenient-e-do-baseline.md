@@ -123,6 +123,9 @@ assimetria não está documentada como deliberada em lugar nenhum; o mesmo mecan
   silencioso. O ADR-2026-09-17 chama esse estado de *não alcançável pelo adversário* — isso vale para
   a superfície de escrita de um PR, **não** para o adversário desta REQ, um agente com shell. O
   vetor fica declarado; o CI, que clona com `origin`, continua vendo a remoção commitada.
+- **R4 (variante) — `git remote set-url origin <repositório do adversário>`** (red-team, A-20 em
+  `docs/seguranca/2026-10-10-red-team-guard-wiring-removed.md`): mesma raiz do R4 — a âncora passa a
+  ser um `origin` controlado pelo adversário. Silencioso localmente; o CI clona do remoto real.
 - **R4b — Nenhum ref de `origin` buscado localmente** (implementação do Wave 1): a regra fica em
   silêncio, para não acusar clone sem `fetch`; com ao menos um ref buscado e nenhum casando com a
   branch padrão, falha fechada. Apagar refs remotos: `git update-ref` é bloqueado pelo guard de git
