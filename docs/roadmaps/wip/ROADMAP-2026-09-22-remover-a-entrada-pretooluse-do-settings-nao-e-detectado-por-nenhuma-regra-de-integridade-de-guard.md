@@ -43,7 +43,7 @@ causa).
 
 ### ML-0A — Threat model do ADR da fiação ancorada
 **Owner:** `hades-tf`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:** `docs/seguranca/2026-10-10-wave0-fiacao-do-guard-ancorada.md` (novo; único arquivo que pode ser escrito)
 **Actions:**
 1. **Completude da população (ADR D3).** Enumerar todo arquivo de hook de projeto em que o gerador
