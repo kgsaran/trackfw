@@ -2,6 +2,27 @@
 
 ---
 
+## 2026-10-10 — apolo-tf (fix/remover-a-entrada-pretooluse-nao-e-detectado — ML-1C corretivo) — FIM
+
+**Branch:** `fix/remover-a-entrada-pretooluse-nao-e-detectado`
+**Escopo:** `internal/validator/validator_guard_wiring.go`, `internal/validator/validator_guard_wiring_test.go`, `docs/cli-parity.md`
+**Entregável:** Correções de 4 achados de auditoria — `go build ./...` EXIT=0, `go test ./internal/validator/` EXIT=0 (42s).
+**Achados corrigidos:**
+- A1: prefixo `origin/origin/main` → `origin/main` em 4 strings de formato
+- A2: parser TOML tri-state (`tomlHooksAbsent/tomlHooksTrue/tomlHooksDisabledOrUnknown`); inline table e comentários agora reconhecidos; falha fechada em vez de falha aberta
+- A3: 10 testes novos (Gemini D7, Copilot D7, Codex 4 formas + 2 controles, echo simples, ref-text)
+- A4: prova de mordida por mutação (validateGuardWiringRemoved→nil: 19 _Dispara falham; lenientCarveout removido: ViolaçaoSobreviveAoLenient falha)
+**Fixes colaterais:** ArquivoIdentico_Silencio usa JSON reformatado; ViolaçaoSobreviveAoLenient escreve trackfw.yaml no disco + config.Reset(); Kiro fixture alinhada ao formato real do gerador (version, name, cmdExe family)
+**Não feito (fora do escopo do ML):** threading de `ref` nas mensagens D7 hardcoded (minor, não-bloqueador per advisor)
+
+## 2026-10-10 — apolo-tf (fix/remover-a-entrada-pretooluse-nao-e-detectado — ML-1C corretivo) — INÍCIO
+
+**Branch:** `fix/remover-a-entrada-pretooluse-nao-e-detectado`
+**Escopo:** `internal/validator/validator_guard_wiring.go`, `internal/validator/validator_guard_wiring_test.go`, `docs/cli-parity.md`
+**Objetivo:** Corrigir 4 achados da auditoria do ML-1A: prefixo duplicado `origin/origin/main`, TOML inline-table falha aberta, testes D7 faltando (Gemini/Copilot/Codex), e prova de mordida dos 17 testes.
+
+---
+
 ## 2026-10-09 — hades-tf (fix/verificacao-canais-indice-pypi — ML-2A red-team) — FIM
 
 **Branch:** `fix/verificacao-canais-indice-pypi`
@@ -46239,3 +46260,18 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-10 — zeus-tf — Wave 0 auditado
 
 - A2, A3, A4 incorporados ao ADR. A1 divergido: chaves de desligamento viram detecção (D7), não resíduo — mesmo argumento valeria para apagar a tupla. `trackfw barrier --wave 0` passed. Nota no vault.
+
+## 2026-10-10 — apolo-tf — INÍCIO: ML-1A + ML-1B (REQ-2026-09-02 / Wave 1)
+
+- Implementação da regra `guard_wiring_removed`: compara tuplas (evento, matcher, guard-type) entre origin/main e disco; falha fechada se ref ilegível; silêncio se arquivo ausente na ref. Inclui D7 (chaves de desligamento: disableAllHooks, hooksConfig.enabled, enabled:false em entrada Kiro, [features] hooks=false em .codex/config.toml). Registro em credentialGuardAnchoredRules + lenientCarveoutRules. AC5: git_branch_guard_hook_resolvable e git_branch_guard_script_integrity também entram em credentialGuardAnchoredRules.
+- ML-1B: seção trackfw-contract em docs/cli-parity.md.
+
+## 2026-10-10 — apolo-tf — FIM: ML-1A + ML-1B (REQ-2026-09-02 / Wave 1)
+
+- ML-1A ✅: `internal/validator/validator_guard_wiring.go` (novo, 17 testes), ancoragem de `git_branch_guard_*` em `credentialGuardAnchoredRules`, `guard_wiring_removed` em `lenientCarveoutRules`, registro nos dois pontos de `ValidateUnfiltered`/`validateUnfilteredTagged`. `go build ./...` EXIT=0; `go test ./internal/validator/` PASS.
+- ML-1B ✅: seção adicionada a `docs/cli-parity.md` com anotação `trackfw-contract`. `make parity-rest` EXIT=2 por falha pre-existente em `scripts/check-required-status-checks.py` (Python 3.10 `str|None` em Python 3.9 — fora do escopo do ML, não causada por nenhum arquivo modificado nesta sessão).
+- Divergência de ADR documentada: ADR diz "ref unreadable → fail-closed"; o sub-caso "0 refs fetched" (CI shallow checkout) é silenciado para consistência com o anchor de credential_guard — `guardWiringHasAnyFetchedOriginRefs()` distingue os dois sub-casos.
+
+## 2026-10-10 — zeus-tf — Wave 1 da REQ-2026-09-02 auditado
+
+- 1ª entrega reprovada em 4 pontos (prefixo `origin/origin/`, TOML do Codex falhando aberto, testes de D7 faltando, sem mordida); corretivo ML-1C aprovado. AC9 medido com o binário da branch: base 0, `PreToolUse` apagado 4, `true` 7, `disableAllHooks` 1, `echo` 6. Mordida independente do carve-out de baseline. `make parity-rest` EXIT=0 com Python 3.12 (o 3.9.6 do sistema não roda o script). Resíduo R4b (0 refs de `origin`) no ADR.

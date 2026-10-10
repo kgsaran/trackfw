@@ -72,31 +72,39 @@ verificam segue desligada.**
       tocam o arquivo rastreado (`settings.local.json`, chaves de desligamento de hooks de cada CLI,
       verificadas na documentação) e o casamento do comando do guard.
       ✅ Evidência: `docs/seguranca/2026-10-10-wave0-fiacao-do-guard-ancorada.md` — aprovado com ajustes A1–A4; incorporados ao ADR (A1 divergido: D7)
-- [ ] **AC1** — Remover a fiação de um guard é **detectado** — chave apagada, matcher apagado, matcher
+- [x] **AC1** — Remover a fiação de um guard é **detectado** — chave apagada, matcher apagado, matcher
       estreitado, comando neutralizado e chave de desligamento de hooks (D7) — como **violação mesmo em lenient e com baseline**
       (D2, D5 do ADR).
-- [ ] **AC2** — 🔴 **Detectar a ausência exige saber o que deveria existir.** A regra precisa de uma
+      ✅ Evidência: AC9 medido: base 0; `PreToolUse` apagado 4; `true` 7; `disableAllHooks` 1; `echo` 6 violações; sobrevive a lenient e baseline (`TestGuardWiringRemoved_ViolaçaoSobreviveAoLenient`, mordida independente)
+- [x] **AC2** — 🔴 **Detectar a ausência exige saber o que deveria existir.** A regra precisa de uma
       referência de "fiação esperada" — e essa referência **não pode ser o próprio config**, senão
       ela some junto. Decidida no ADR ligado (D1): cópia do arquivo de hook em
       `origin/main`, pelo discriminante de 4 estados já existente — o HEAD é derrotado por um
       `git commit`. **É a decisão que separa controle de teatro.**
-- [ ] **AC3** — 🔴 **Falsificação nas duas direções.** (a) config com a fiação removida → detectado;
+      ✅ Evidência: ADR D1 + A4; `TestGuardWiringRemoved_SemTrackfwYamlNaRef_AindaCompara`, `RefIlegivel_FalhaFechada`
+- [x] **AC3** — 🔴 **Falsificação nas duas direções.** (a) config com a fiação removida → detectado;
       (b) **controle:** projeto que **nunca instalou** o guard **não** é acusado. Sem (b),
       transformaríamos "não instalado" em "adulterado" e o aviso viraria ruído em todo repositório
       novo.
-- [ ] **AC4** — Distinguir **"nunca instalado"** de **"instalado e removido"**. São fatos
+      ✅ Evidência: adulterados acusam (AC9); `ArquivoAusenteNaRef_Silencio`, `MigracaoLegitima_Silencio`
+- [x] **AC4** — Distinguir **"nunca instalado"** de **"instalado e removido"**. São fatos
       diferentes com remédios diferentes — um é `trackfw update harness`, o outro é investigação.
-- [ ] **AC5** — 🔴 **A assimetria do 6.3 endereçada ou declarada.** O `hefesto-tf` achou, lendo
+      ✅ Evidência: violação diz "was present in origin/main and is absent from disk … investigate"; ausente nos dois → silêncio
+- [x] **AC5** — 🔴 **A assimetria do 6.3 endereçada ou declarada.** O `hefesto-tf` achou, lendo
       `internal/validator/validator_credential_guard_integrity.go:196-200`, que a âncora no HEAD e a
       isenção por baseline valem **só** para as 3 regras de `credential_guard`; as 2 de
       `git_branch_guard` **não são ancoradas** e **podem ser toleradas por baseline**. **Nada no
       repositório documenta isso como deliberado.** Se for, registrar; se não for, corrigir.
-- [ ] **AC6** — Contrato da regra em `docs/cli-parity.md` com a anotação `trackfw-contract` (v8: o
+      ✅ Evidência: ADR D6: as 2 regras de `git_branch_guard` em `credentialGuardAnchoredRules`
+- [x] **AC6** — Contrato da regra em `docs/cli-parity.md` com a anotação `trackfw-contract` (v8: o
       Go é a implementação única; não há paridade entre runtimes a provar).
+      ✅ Evidência: seção `guard_wiring_removed` com `trackfw-contract` em `docs/cli-parity.md`
 - [ ] **AC7** — `make quality` EXIT=0 (máquina ociosa) e **CI** verde, inclusive `windows-full-suites`.
-- [ ] **AC8** — Cada teste novo declara a conclusão que afirma e reprova sem a correção.
-- [ ] **AC9** — Medição de volta: os três braços da tabela de 2026-10-10 repetidos com o binário da
+- [x] **AC8** — Cada teste novo declara a conclusão que afirma e reprova sem a correção.
+      ✅ Evidência: 27 testes com nomes conferidos por `go test -list`; mordida M1–M5 e mutação independente do arquiteto
+- [x] **AC9** — Medição de volta: os três braços da tabela de 2026-10-10 repetidos com o binário da
       branch — os dois braços adulterados acusam; a base não.
+      ✅ Evidência: binário da branch em worktree de `origin/main`: base 0, `PreToolUse` apagado 4, `true` 7, `disableAllHooks` 1, `echo` 6
 
 ## Negative Scope
 

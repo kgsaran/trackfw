@@ -161,11 +161,11 @@ func TestApplyLenientWithCarveout_KeepsCarveoutViolations(t *testing.T) {
 }
 
 // TestLenientCarveoutRules_ClosedSet verifies the exact membership of the carve-out set.
-// Reconciliação: este teste prova que o conjunto fechado tem exatamente dois membros —
-// req_roadmap_lifecycle e ref_targets_exist — correspondendo às 8 violações ativas / 0 históricas
-// calibradas em 2026-09-17. Adicionar uma regra ao conjunto exige atualizar este teste.
+// Reconciliação: este teste prova que o conjunto fechado tem exatamente três membros —
+// req_roadmap_lifecycle, ref_targets_exist e guard_wiring_removed — calibrado após ML-1A
+// (REQ-2026-09-02, ADR-2026-10-10). Adicionar uma regra ao conjunto exige atualizar este teste.
 func TestLenientCarveoutRules_ClosedSet(t *testing.T) {
-	wantRules := []string{"req_roadmap_lifecycle", "ref_targets_exist"}
+	wantRules := []string{"req_roadmap_lifecycle", "ref_targets_exist", "guard_wiring_removed"}
 	if len(lenientCarveoutRules) != len(wantRules) {
 		t.Errorf("lenientCarveoutRules has %d members, want %d (%v)",
 			len(lenientCarveoutRules), len(wantRules), wantRules)

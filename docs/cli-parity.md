@@ -8458,3 +8458,85 @@ predicado **recusa a operação** — falso-positivo, não falso-negativo. O ris
 
 A cláusula-tripwire e o gate atual não cobrem este cenário. Para medi-lo seria necessário um
 ambiente Windows com OneDrive configurado e arquivo cloud-only no caminho de trabalho.
+
+
+## Detecção de remoção de fiação do guard: `guard_wiring_removed` (REQ-2026-09-02, ADR-2026-10-10)
+
+<!-- trackfw-contract: none reason=cabeçalho de citação ao ADR e à implementação, sem alegação de comportamento própria — o conteúdo factual está nas subseções abaixo -->
+
+> ADR: `docs/adr/ADR-2026-10-10-a-fiacao-do-guard-e-ancorada-no-origin-main-por-tupla-e-a-remocao-e-violacao-fora-do-lenient-e-do-baseline.md`
+> Implementação: `internal/validator/validator_guard_wiring.go` · Testes: `internal/validator/validator_guard_wiring_test.go`
+
+### O problema que isto fecha
+
+<!-- trackfw-contract: none reason=narrativa histórica do problema motivador, sem alegação de comportamento de CLI atual verificável -->
+
+Medido em 2026-10-10: apagar `hooks.PreToolUse` do `.claude/settings.json`, ou trocar os dois
+`trackfw guard` por `true`, deixava o `trackfw validate` byte a byte idêntico (169 warnings).
+As regras anteriores (`credential_guard_hook_resolvable`, `credential_guard_script_integrity`,
+`credential_guard_mode_downgrade`) verificam o SCRIPT e o MODO, mas não a FIAÇÃO — a entrada de
+hook que chama o guard.
+
+### A regra: comparação por tupla ancorada em `origin/main`
+
+<!-- trackfw-contract: gate=internal/validator/validator_guard_wiring_test.go partial=o gate cobre os 4 tipos de adulteração (chave apagada, matcher apagado, matcher estreitado, comando neutralizado — incluindo echo sem sufixo), a chave de desligamento D7 (disableAllHooks para Claude e Copilot, settings.local.json, Kiro enabled:false, Gemini hooksConfig.enabled:false, Codex [features] hooks=false nas formas section/dotted-key/inline-table/comment), os controles de silêncio (nunca instalado, tuples idênticas com JSON reformatado, migração legítima A2, Codex config.toml não rastreado, Codex hooks=true), o caso A4 (sem trackfw.yaml em origin/main, regra ainda deriva o ref e compara), a falha fechada (2 branches não-standard fetched → violação), a sobrevivência ao lenient mode e ao baseline (com config.Reset()), e a ausência de origin/origin/ na mensagem; NÃO cobre Cursor/Windsurf/Amazon Q com fixtures próprios (mesma lógica de extração, sem prova per-artefato) -->
+
+A regra `guard_wiring_removed` opera sobre a **população fechada de 8 arquivos de hook**
+(`credentialGuardHookFiles`), comparando as tuplas `(arquivo, evento, matcher, guard-type)` entre
+`origin/main` e o disco.
+
+| Estado do âncora | Comportamento |
+|---|---|
+| Sem git / sem `origin` | Silêncio |
+| `origin` presente, 0 refs fetched | Silêncio — âncora do sistema já emite warning |
+| `origin` presente, refs fetched mas branch ambígua (≥2 branches, nenhuma `main`/`master`) | **Falha fechada** (violação) |
+| Arquivo ausente em `origin/main` | Silêncio — "nunca instalado" |
+| Arquivo presente em `origin/main` | Compara tuplas |
+
+**Tupla presente em `origin/main` e ausente no disco** → violação nomeando arquivo, CLI, guard-type,
+evento e matcher.
+
+**Equivalência de comando (A2):** as três formas históricas do guard (D2-legacy, D11-legacy,
+D11-revised) são equivalentes. O `trackfw update` produz D11-revised — migrações legítimas são
+silenciosas.
+
+**Cobertura de matcher (A2):** o matcher do disco cobre o de `origin/main` quando o conjunto de
+alternativas `|` do disco contém o de `origin/main`. `Bash|PowerShell` cobre `Bash`; `Bash` não
+cobre `Bash|PowerShell`. Matcher com metacaracteres → não cobre (conservativo).
+
+### D7 — Chaves de desligamento de hooks são violação da mesma regra
+
+<!-- trackfw-contract: gate=internal/validator/validator_guard_wiring_test.go partial=a cobertura D7 é provada por: TestGuardWiringRemoved_DisableAllHooks_Dispara (Claude disableAllHooks), TestGuardWiringRemoved_SettingsLocalDisableAll_Dispara (settings.local.json), TestGuardWiringRemoved_Kiro_EntryEnabled_False_Dispara (Kiro enabled:false), TestGuardWiringRemoved_Gemini_HooksConfigDisabled_Dispara (Gemini hooksConfig.enabled:false), TestGuardWiringRemoved_Copilot_DisableAllHooks_Dispara (Copilot disableAllHooks em .github/hooks/trackfw-attention.json), TestGuardWiringRemoved_Codex_Toml{Section,InlineTable,DottedKey,CommentInline}_Dispara (Codex config.toml 4 formas); o parser TOML usa tri-state (tomlHooksAbsent/tomlHooksTrue/tomlHooksDisabledOrUnknown): somente hooks=true conta como habilitado, qualquer outra menção em contexto [features] é falha fechada -->
+
+| CLI | Arquivo | Chave |
+|---|---|---|
+| Claude Code | `.claude/settings.json` | `disableAllHooks: true` |
+| Claude Code (local) | `.claude/settings.local.json` | `disableAllHooks: true` — verificado só no disco (não rastreado) |
+| GitHub Copilot CLI | `.github/hooks/trackfw-attention.json` | `disableAllHooks: true` |
+| Gemini CLI | `.gemini/settings.json` | `hooksConfig.enabled: false` |
+| Kiro | `.kiro/hooks/trackfw-attention.json` | `"enabled": false` em entrada de guard |
+| Codex CLI | `.codex/config.toml` | `[features] hooks = false`, `features.hooks = false`, `features = { hooks = false }` (inline table) — só se rastreado no git; qualquer forma que não seja `hooks = true` é tratada como desligado (falha fechada) |
+| Windsurf, Amazon Q | — | nenhuma chave documentada |
+
+Chave de desligamento ativa no disco e ausente/inativa em `origin/main` → violação da mesma regra
+`guard_wiring_removed`, mesma severidade.
+
+### Carve-outs: a regra é imune a lenient mode e a baseline
+
+<!-- trackfw-contract: gate=internal/validator/validator_guard_wiring_test.go partial=TestGuardWiringRemoved_ViolaçaoSobreviveAoLenient prova os dois braços (lenient mode + SaveBaseline) via Validate() com fixture real; prova que a violação permanece em violations (não em warnings) com governance_mode:lenient + lenient_until futuro, e que SaveBaseline não suprime a violação depois -->
+
+A regra entra em:
+- `credentialGuardAnchoredRules` → baseline (`.trackfw-baseline.json`) não a suprime
+- `lenientCarveoutRules` → `governance_mode: lenient` não a move para warnings
+
+A violação é uma **contradição entre artefatos vivos** (`origin/main` × disco), não dívida histórica.
+
+### Resíduos declarados
+
+<!-- trackfw-contract: none reason=autodeclaração de limites, não alegação de comportamento verificável -->
+
+- **R2 — Escopo global** (`~/.claude/settings.json` etc.): fora do git, sem âncora.
+- **R3 — `.codex/config.toml` não rastreado** com `[features] hooks = false`.
+- **R4 — `git remote remove origin`** (leva o âncora ao estado silencioso).
+- **R5 — Adversário com permissão de merge em `main`**: fora do escopo (ADR-2026-08-12).
+- **R7 — Windsurf e Amazon Q**: nenhuma chave de desligamento encontrada na documentação.

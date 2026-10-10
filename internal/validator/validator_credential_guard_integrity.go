@@ -250,6 +250,13 @@ var credentialGuardAnchoredRules = map[string]bool{
 	"credential_guard_hook_resolvable":  true,
 	"credential_guard_script_integrity": true,
 	"credential_guard_mode_downgrade":   true,
+	// ML-1A (REQ-2026-09-02, ADR-2026-10-10 D5): guard_wiring_removed detects removal of
+	// hook wiring from origin/main — cannot be baseline-tolerated.
+	"guard_wiring_removed": true,
+	// ML-1A (REQ-2026-09-02, ADR-2026-10-10 D6 / AC5): git_branch_guard rules were
+	// asymmetrically absent from this map; the same mechanism closes that gap.
+	"git_branch_guard_hook_resolvable":  true,
+	"git_branch_guard_script_integrity": true,
 }
 
 // originMainAnchorState is the four-state discriminant for origin/main's trackfw.yaml read,

@@ -123,6 +123,11 @@ assimetria não está documentada como deliberada em lugar nenhum; o mesmo mecan
   silencioso. O ADR-2026-09-17 chama esse estado de *não alcançável pelo adversário* — isso vale para
   a superfície de escrita de um PR, **não** para o adversário desta REQ, um agente com shell. O
   vetor fica declarado; o CI, que clona com `origin`, continua vendo a remoção commitada.
+- **R4b — Nenhum ref de `origin` buscado localmente** (implementação do Wave 1): a regra fica em
+  silêncio, para não acusar clone sem `fetch`; com ao menos um ref buscado e nenhum casando com a
+  branch padrão, falha fechada. Apagar refs remotos: `git update-ref` é bloqueado pelo guard de git
+  (medido em 2026-10-10); `git branch -dr` **não foi medido** — vetor em aberto, declarado. O CI busca `origin/main`
+  explicitamente (`.github/workflows/trackfw-validate.yml:26`) e vê a remoção commitada.
 - **R5 — Adversário com permissão de merge em `main`.** Fora, pelo ADR-2026-08-12.
 - **R7 — Windsurf e Amazon Q:** nenhuma chave de desligamento encontrada na documentação; se
   existir, não é coberta.

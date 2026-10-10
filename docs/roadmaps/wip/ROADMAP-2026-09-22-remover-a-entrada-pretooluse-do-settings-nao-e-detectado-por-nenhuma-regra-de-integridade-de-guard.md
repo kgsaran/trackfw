@@ -26,15 +26,23 @@ causa).
 ## Acceptance Criteria
 - [x] AC0 — Wave 0 auditado (parecer do `hades-tf` em `docs/seguranca/`)
       ✅ Evidência: `docs/seguranca/2026-10-10-wave0-fiacao-do-guard-ancorada.md` — aprovado com ajustes A1–A4; A2, A3, A4 incorporados ao ADR; A1 divergido (D7: chaves de desligamento viram detecção)
-- [ ] AC1 — remoção, estreitamento, neutralização e chave de desligamento detectados, mesmo em lenient e com baseline
-- [ ] AC2 — âncora em `origin/main` (ADR D1)
-- [ ] AC3 — falsificação nas duas direções (adulterado acusa; nunca instalado não acusa)
-- [ ] AC4 — mensagem distingue "nunca instalado" de "instalado e removido"
-- [ ] AC5 — regras de `git_branch_guard` ancoradas
-- [ ] AC6 — contrato em `docs/cli-parity.md` com `trackfw-contract`
+- [x] AC1 — remoção, estreitamento, neutralização e chave de desligamento detectados, mesmo em lenient e com baseline
+      ✅ Evidência: AC9 — binário da branch em worktree de `origin/main`: base 0; `PreToolUse` apagado 4; `true` 7; `disableAllHooks` 1; `echo` 6 violações
+- [x] AC2 — âncora em `origin/main` (ADR D1)
+      ✅ Evidência: ref derivado por `deriveOriginDefaultBranch()`; `TestGuardWiringRemoved_SemTrackfwYamlNaRef_AindaCompara`, `RefIlegivel_FalhaFechada`
+- [x] AC3 — falsificação nas duas direções (adulterado acusa; nunca instalado não acusa)
+      ✅ Evidência: adulterados acusam (AC9); `ArquivoAusenteNaRef_Silencio`, `MigracaoLegitima_Silencio`
+- [x] AC4 — mensagem distingue "nunca instalado" de "instalado e removido"
+      ✅ Evidência: violação diz "was present in origin/main and is absent from disk … investigate"; ausente nos dois → silêncio
+- [x] AC5 — regras de `git_branch_guard` ancoradas
+      ✅ Evidência: `git_branch_guard_hook_resolvable` e `git_branch_guard_script_integrity` em `credentialGuardAnchoredRules`
+- [x] AC6 — contrato em `docs/cli-parity.md` com `trackfw-contract`
+      ✅ Evidência: seção `guard_wiring_removed` com `trackfw-contract` em `docs/cli-parity.md`
 - [ ] AC7 — `make quality` EXIT=0 e CI verde, inclusive `windows-full-suites`
-- [ ] AC8 — cada teste novo declara o que afirma e reprova sem a correção
-- [ ] AC9 — medição de volta dos três braços com o binário da branch
+- [x] AC8 — cada teste novo declara o que afirma e reprova sem a correção
+      ✅ Evidência: nomes conferidos por `go test -list`; mordida M1–M5 + mutação independente do arquiteto
+- [x] AC9 — medição de volta dos três braços com o binário da branch
+      ✅ Evidência: base 0, `PreToolUse` apagado 4, `true` 7, `disableAllHooks` 1, `echo` 6 (binário da branch, worktree de `origin/main`)
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -91,7 +99,7 @@ git diff --quiet HEAD -- .claude/settings.json internal/
 
 ### ML-1A — Regra `guard_wiring_removed` e ancoragem do `git_branch_guard`
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-10 — `go build ./...` EXIT=0, `go test ./internal/validator/` EXIT=0 (27 testes da regra, nomes conferidos por `go test -list`); AC9 medido pelo arquiteto com o binário da branch (após o corretivo ML-1C)
 **Files affected:** `internal/validator/validator_guard_wiring.go` (novo), `internal/validator/validator_guard_wiring_test.go` (novo), `internal/validator/validator_credential_guard_integrity.go` (`credentialGuardAnchoredRules`), `internal/validator/validator.go` (registro da regra e `lenientCarveoutRules`)
 **Actions:**
 1. Ler, por arquivo de hook da população (ADR D3), a cópia em `origin/main` reaproveitando o
@@ -131,14 +139,41 @@ go build ./...
 go test ./internal/validator/
 ```
 
+### ML-1C — Corretivo da auditoria do ML-1A
+**Owner:** `apolo-tf`
+**Status:** ✅ Concluído — auditado em 2026-10-10 — `go build ./...` EXIT=0, `go test ./internal/validator/` EXIT=0 (27 testes da regra, nomes conferidos por `go test -list`); AC9 medido pelo arquiteto com o binário da branch
+**Origem:** auditoria do arquiteto, 2026-10-10. AC9 medido pelo arquiteto com o binário da branch
+(worktree de `origin/main`): base 0 violações da regra; `PreToolUse` apagado 4; `trackfw guard` → `true`
+7; `disableAllHooks` 1; `echo trackfw guard credential` 6.
+**Files affected:** `internal/validator/validator_guard_wiring.go`, `internal/validator/validator_guard_wiring_test.go`, `docs/cli-parity.md`
+**Achados:**
+1. Mensagem com prefixo duplicado: `present in origin/origin/main` (o ref já traz `origin/`).
+2. `guardWiringParseTomlFeaturesHooks` falha aberto em forma não reconhecida — `features = { hooks =
+   false }` desliga os hooks do Codex sem acusar. O ADR só aceita resíduo para `config.toml` **não
+   rastreado**.
+3. Sem teste para D7 em Gemini (`hooksConfig.enabled`), Copilot (`disableAllHooks`), Kiro
+   (`"enabled": false`), Codex (`config.toml`), nem para o comando `echo trackfw guard credential`.
+4. Sem prova de mordida para os 17 testes.
+**Acceptance criteria:**
+- [x] Mensagens sem `origin/origin/`; teste que afirma o texto do ref
+      ✅ Evidência: `grep '"origin/%s'` vazio em `validator_guard_wiring.go`; `TestGuardWiringRemoved_RefTexto_SemDuplicacao`
+- [x] `config.toml` rastreado com chave `hooks` sob `features` em forma não reconhecida → violação (falha fechada); teste com tabela inline, chave pontilhada e comentário
+      ✅ Evidência: estado triplo `tomlFeaturesHooksState` (só `true` explícito habilita); `TestGuardWiringRemoved_Codex_Toml{Section,InlineTable,DottedKey,CommentInline}_Dispara`, controles `TomlNaoRastreado_Silencio`, `TomlHooksTrue_Silencio`
+- [x] Um teste por CLI da D7 e um para o `echo`
+      ✅ Evidência: `Gemini_HooksConfigDisabled`, `Copilot_DisableAllHooks`, `Kiro_EntryEnabled_False`, `Codex_Toml*`, `ComandoNeutralizadoEcho`, `ComandoNeutralizadoEchoSimples`
+- [x] Prova de mordida por teste novo, com os nomes conferidos por `go test -list`
+      ✅ Evidência: 5 mutações reportadas (M1–M5); mutação independente do arquiteto em cópia de scratch — sem `guard_wiring_removed` em `credentialGuardAnchoredRules`, `TestGuardWiringRemoved_ViolaçaoSobreviveAoLenient` reprova (`must not be toleratable via baseline`). Ressalva: a tabela de descrições do relatório divergia dos testes reais; o código foi lido e confere
+
 ### ML-1B — Contrato em `docs/cli-parity.md`
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — seção `guard_wiring_removed` com `trackfw-contract` em `docs/cli-parity.md`. `make parity-rest` EXIT=2 local por `scripts/check-required-status-checks.py` (sintaxe `str | None`) sob Python 3.9.6 — script idêntico ao de `origin/main` (medido); é ambiente, verificado no `make quality`/CI do Wave 2
 **Dependencies:** ML-1A (mesmo executor, sequencial: o contrato descreve o comportamento entregue)
 **Files affected:** `docs/cli-parity.md`
 **Acceptance criteria:**
-- [ ] Seção da regra com anotação `trackfw-contract`, estados da âncora e mensagens
-- [ ] `make parity-rest` EXIT=0
+- [x] Seção da regra com anotação `trackfw-contract`, estados da âncora e mensagens
+      ✅ Evidência: seção `guard_wiring_removed` em `docs/cli-parity.md`
+- [x] `make parity-rest` EXIT=0
+      ✅ Evidência: EXIT=0, 2024 linhas, com Python 3.12.15 + PyYAML + packaging (venv de scratch); o EXIT=2 anterior era o Python 3.9.6 do sistema, sem suporte a `str | None`
 
 ## Wave 2 — Barreira final
 > Dependencies: Wave 1.
