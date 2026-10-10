@@ -123,16 +123,23 @@ git diff --quiet HEAD -- .claude/settings.json internal/
    `git_branch_guard_hook_resolvable` e `git_branch_guard_script_integrity` a
    `credentialGuardAnchoredRules` (AC5).
 **Acceptance criteria:**
-- [ ] Testes com repositório git real (bare como `origin`), um por tupla adulterada: chave apagada,
+- [x] Testes com repositório git real (bare como `origin`), um por tupla adulterada: chave apagada,
       matcher apagado, matcher estreitado, comando neutralizado → violação
-- [ ] Uma violação por chave de desligamento (D7), incluindo `.claude/settings.local.json`
-- [ ] Controle: arquivo ausente em `origin/main` → silêncio; arquivo idêntico → silêncio
-- [ ] Controle A2: `origin/main` com matcher `Bash` e forma de comando legada, disco com
+      ✅ Evidência: `CategoriaApagada`, `MatcherApagado`, `MatcherEstritado`, `ComandoNeutralizadoTrue`, `ComandoNeutralizadoEcho`, `ComandoNeutralizadoEchoSimples` (bare como `origin`)
+- [x] Uma violação por chave de desligamento (D7), incluindo `.claude/settings.local.json`
+      ✅ Evidência: `DisableAllHooks`, `SettingsLocalDisableAll`, `Gemini_HooksConfigDisabled`, `Copilot_DisableAllHooks`, `Kiro_EntryEnabled_False`, `Codex_Toml*`
+- [x] Controle: arquivo ausente em `origin/main` → silêncio; arquivo idêntico → silêncio
+      ✅ Evidência: `ArquivoAusenteNaRef_Silencio`, `ArquivoIdentico_Silencio`
+- [x] Controle A2: `origin/main` com matcher `Bash` e forma de comando legada, disco com
       `Bash|PowerShell` e forma D11-revised → silêncio
-- [ ] Controle A4: repositório sem `trackfw.yaml` em `origin/main` e com arquivo de hook → a regra
+      ✅ Evidência: `MigracaoLegitima_Silencio` (lido pelo arquiteto: ref `Bash` + D2-legacy, disco `Bash|PowerShell` + D11-revised)
+- [x] Controle A4: repositório sem `trackfw.yaml` em `origin/main` e com arquivo de hook → a regra
       ainda compara
-- [ ] Violação sobrevive a lenient e a baseline (teste)
-- [ ] Cada teste novo com uma frase do que afirma e prova de mordida (reprova sem a correção)
+      ✅ Evidência: `SemTrackfwYamlNaRef_AindaCompara`
+- [x] Violação sobrevive a lenient e a baseline (teste)
+      ✅ Evidência: `ViolaçaoSobreviveAoLenient`; mutação independente do arquiteto (sem o carve-out de baseline o teste reprova)
+- [x] Cada teste novo com uma frase do que afirma e prova de mordida (reprova sem a correção)
+      ✅ Evidência: 27 nomes conferidos por `go test -list`; mordida M1–M5 + mutação do arquiteto
 **Comandos de validação:**
 ```bash
 go build ./...
