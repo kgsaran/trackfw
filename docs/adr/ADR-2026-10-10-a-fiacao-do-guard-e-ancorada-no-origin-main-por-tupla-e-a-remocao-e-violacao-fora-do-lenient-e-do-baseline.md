@@ -52,6 +52,10 @@ Reaproveita o discriminante de 4 estados do `loadOriginMainAnchor` (ADR-2026-09-
 `trackfw.yaml` para os arquivos de hook — sem detector novo: sem git / sem `origin` → silencioso;
 `origin/main` ilegível → **falha fechada**; arquivo ausente em `origin/main` → "nunca instalado";
 presente → compara.
+**Ajuste A4 do Wave 0:** o `ref` de `loadOriginMainAnchor` só é preenchido no estado
+`originAnchorOK` do `trackfw.yaml` (`validator_credential_guard_integrity.go:306`). A regra deriva o
+ref com `deriveOriginDefaultBranch()` por conta própria; `ref` vazio com `origin` presente → falha
+fechada nomeada, nunca silêncio.
 
 **D2 — Unidade de comparação: a tupla (arquivo, evento, matcher, guard).** Não a chave
 `hooks.PreToolUse`. Cada tupla de guard presente em `origin/main` e ausente no disco é uma violação
@@ -59,6 +63,16 @@ nomeando arquivo, evento, matcher e guard. Isso cobre, com uma regra: chave apag
 apagado, matcher estreitado (`Bash|PowerShell` → `Bash`) e comando neutralizado (`true`). O guard
 é reconhecido pelo comando canônico emitido pelo gerador, não por substring — `echo trackfw guard
 credential` **não** conta como fiação.
+
+**Ajuste A2 do Wave 0 — equivalência, para não acusar a saída do próprio `trackfw update`:**
+- **Comando:** as formas que o gerador já emitiu para o mesmo guard (D2-legacy, D11-legacy,
+  D11-revised — as mesmas que `migrateHookCommand` reconhece, `agentfiles.go:1491`) são uma classe
+  de equivalência. A tupla compara a **classe**, não a string. Forma fora da lista fechada → não é
+  fiação.
+- **Matcher:** cobertura, não igualdade. O matcher do disco cobre o de `origin/main` quando o
+  conjunto de alternativas separadas por `|` do disco contém o de `origin/main` (`Bash|PowerShell`
+  cobre `Bash`, que é o que `migrateGuardHookMatcher`, `agentfiles.go:1526`, produz). Matcher que
+  não seja alternância literal simples → não cobre (falha fechada).
 
 **D3 — População: todos os arquivos de hook de projeto que o gerador escreve com um guard** —
 `credentialGuardHookFiles` (Claude Code, Codex, Gemini, Cursor, Copilot, Kiro), Windsurf e Amazon Q,
@@ -74,6 +88,21 @@ silêncio (remédio: `trackfw update`). Tupla presente em `origin/main` e ausent
 carve-out atendido: a violação é contradição entre artefatos vivos (`origin/main` × disco), nunca
 dívida histórica.
 
+**D7 — Chaves de desligamento são remoção de fiação (diverge do A1 do Wave 0).** O parecer mediu
+que cada CLI tem uma chave que desliga hooks sem tocar nas tuplas: `disableAllHooks` (Claude Code em
+`.claude/settings.json`; Copilot em `.github/hooks/trackfw-attention.json`), `hooksConfig.enabled:
+false` (Gemini, `.gemini/settings.json`), `"enabled": false` por entrada (Kiro) e `[features] hooks =
+false` (Codex, `.codex/config.toml`). O parecer recomendou declará-las resíduo, porque desligar para
+depurar é indistinguível de adulteração. **Rejeitado:** o mesmo argumento vale para apagar a tupla,
+que esta regra já trata como violação. É a mesma causa — o arquivo de hook perde a fiação efetiva —
+e a mesma âncora a detecta: o gerador **nunca** escreve essas chaves, então chave de desligamento
+ativa no disco e inativa ou ausente em `origin/main` é violação da mesma regra. Os resíduos R1
+e R6 do parecer deixam de ser resíduos.
+- `.codex/config.toml` entra na população quando rastreado; não rastreado, é resíduo.
+- `.claude/settings.local.json` não é rastreado (sem âncora), mas o gerador nunca o escreve: com
+  `disableAllHooks: true` ele é verificado **só no disco**, como violação da mesma regra, nomeando
+  o arquivo. O CI não o vê; o `validate` local, sim.
+
 **D6 — AC5: as 2 regras de `git_branch_guard` entram em `credentialGuardAnchoredRules`.** A
 assimetria não está documentada como deliberada em lugar nenhum; o mesmo mecanismo a fecha.
 
@@ -86,14 +115,19 @@ assimetria não está documentada como deliberada em lugar nenhum; o mesmo mecan
 - Custo: uma leitura `git show origin/main:<arquivo>` por arquivo de hook existente, no mesmo
   carregamento do anchor.
 
-### Resíduos declarados (a confirmar no Wave 0)
+### Resíduos declarados (confirmados no Wave 0 — `docs/seguranca/2026-10-10-wave0-fiacao-do-guard-ancorada.md`)
 
-- **Escopo global** (`~/.claude/settings.json` etc.): fora do git, sem âncora. Não coberto.
-- **Contornos que não tocam o arquivo rastreado**, como `.claude/settings.local.json` (não
-  rastreado) ou chaves de desligamento de hooks do próprio CLI. O Wave 0 verifica na documentação
-  de cada CLI o que existe; o que não puder ser ancorado vira resíduo nomeado.
-- **Adversário com permissão de merge em `main`.** Fora, pelo ADR-2026-08-12.
-- **O hook `AskUserQuestion` (attention-signal)** não é guard e fica fora.
+- **R2 — Escopo global** (`~/.claude/settings.json` etc.): fora do git, sem âncora.
+- **R3 — `.codex/config.toml` não rastreado** com `[features] hooks = false`.
+- **R4 — `git remote remove origin` (ajuste A3).** Leva o anchor ao estado "sem `origin`", que é
+  silencioso. O ADR-2026-09-17 chama esse estado de *não alcançável pelo adversário* — isso vale para
+  a superfície de escrita de um PR, **não** para o adversário desta REQ, um agente com shell. O
+  vetor fica declarado; o CI, que clona com `origin`, continua vendo a remoção commitada.
+- **R5 — Adversário com permissão de merge em `main`.** Fora, pelo ADR-2026-08-12.
+- **R7 — Windsurf e Amazon Q:** nenhuma chave de desligamento encontrada na documentação; se
+  existir, não é coberta.
+- **Fora de escopo:** o hook `AskUserQuestion` (attention-signal), que não é guard; a depreciação do
+  Amazon Q CLI em favor do Kiro, registrada pelo parecer.
 
 ## Alternatives Considered
 

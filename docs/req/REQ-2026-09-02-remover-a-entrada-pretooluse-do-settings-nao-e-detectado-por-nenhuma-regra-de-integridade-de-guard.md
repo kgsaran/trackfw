@@ -67,12 +67,13 @@ verificam segue desligada.**
 
 ## Acceptance Criteria
 
-- [ ] **AC0** — 🔴 **Wave 0 (`hades-tf`):** threat model do ADR ligado, com parecer em
+- [x] **AC0** — 🔴 **Wave 0 (`hades-tf`):** threat model do ADR ligado, com parecer em
       `docs/seguranca/`. Inclui completude da população de arquivos de hook (D3), contornos que não
       tocam o arquivo rastreado (`settings.local.json`, chaves de desligamento de hooks de cada CLI,
       verificadas na documentação) e o casamento do comando do guard.
+      ✅ Evidência: `docs/seguranca/2026-10-10-wave0-fiacao-do-guard-ancorada.md` — aprovado com ajustes A1–A4; incorporados ao ADR (A1 divergido: D7)
 - [ ] **AC1** — Remover a fiação de um guard é **detectado** — chave apagada, matcher apagado, matcher
-      estreitado e comando neutralizado — como **violação mesmo em lenient e com baseline**
+      estreitado, comando neutralizado e chave de desligamento de hooks (D7) — como **violação mesmo em lenient e com baseline**
       (D2, D5 do ADR).
 - [ ] **AC2** — 🔴 **Detectar a ausência exige saber o que deveria existir.** A regra precisa de uma
       referência de "fiação esperada" — e essa referência **não pode ser o próprio config**, senão

@@ -24,8 +24,9 @@ aberto (a `REQ-2026-09-01-trackfw-escreve-e-audita-guard-global-...` trata de ca
 causa).
 
 ## Acceptance Criteria
-- [ ] AC0 — Wave 0 auditado (parecer do `hades-tf` em `docs/seguranca/`)
-- [ ] AC1 — remoção, estreitamento e neutralização da fiação detectados, mesmo em lenient e com baseline
+- [x] AC0 — Wave 0 auditado (parecer do `hades-tf` em `docs/seguranca/`)
+      ✅ Evidência: `docs/seguranca/2026-10-10-wave0-fiacao-do-guard-ancorada.md` — aprovado com ajustes A1–A4; A2, A3, A4 incorporados ao ADR; A1 divergido (D7: chaves de desligamento viram detecção)
+- [ ] AC1 — remoção, estreitamento, neutralização e chave de desligamento detectados, mesmo em lenient e com baseline
 - [ ] AC2 — âncora em `origin/main` (ADR D1)
 - [ ] AC3 — falsificação nas duas direções (adulterado acusa; nunca instalado não acusa)
 - [ ] AC4 — mensagem distingue "nunca instalado" de "instalado e removido"
@@ -43,7 +44,7 @@ causa).
 
 ### ML-0A — Threat model do ADR da fiação ancorada
 **Owner:** `hades-tf`
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-10 · aprovado com ajustes A1–A4 (`docs/seguranca/2026-10-10-wave0-fiacao-do-guard-ancorada.md`)
 **Files affected:** `docs/seguranca/2026-10-10-wave0-fiacao-do-guard-ancorada.md` (novo; único arquivo que pode ser escrito)
 **Actions:**
 1. **Completude da população (ADR D3).** Enumerar todo arquivo de hook de projeto em que o gerador
@@ -70,9 +71,12 @@ causa).
 5. **Veredito sobre o ADR:** ajustes numerados (A1, A2, …) que o arquiteto incorpora antes do
    Wave 1.
 **Acceptance criteria:**
-- [ ] As cinco seções respondidas com evidência (comando + resultado, ou arquivo:linha), não asserção
-- [ ] Nenhuma linha de implementação escrita; nenhum arquivo além do parecer alterado
-- [ ] Toda medição feita em worktree ou scratch próprio; `.claude/settings.json` da árvore real intacto
+- [x] As cinco seções respondidas com evidência (comando + resultado, ou arquivo:linha), não asserção
+      ✅ Evidência: fontes oficiais citadas por CLI; arquivo:linha para `filterBaselineTagged`, `applyLenientWithCarveout`, `migrateGuardHookMatcher`; A4 conferido pelo arquiteto (`validator_credential_guard_integrity.go:306`)
+- [x] Nenhuma linha de implementação escrita; nenhum arquivo além do parecer alterado
+      ✅ Evidência: `git status --short` só com o parecer; `git diff --quiet HEAD -- .claude/settings.json internal/` EXIT=0
+- [x] Toda medição feita em worktree ou scratch próprio; `.claude/settings.json` da árvore real intacto
+      ✅ Evidência: `git worktree list` só com a árvore principal após o ML
 
 **Gates da wave:**
 ```bash
@@ -96,13 +100,29 @@ git diff --quiet HEAD -- .claude/settings.json internal/
    canônico, não por substring.
 3. Tupla em `origin/main` e ausente no disco → violação nomeando arquivo, evento, matcher, guard e
    o remédio ("investigar"). Tupla ausente nas duas → silêncio.
-4. Registrar a regra em `credentialGuardAnchoredRules` e `lenientCarveoutRules`; acrescentar
+4. **A2 do ADR:** comando comparado por classe de equivalência (D2-legacy, D11-legacy, D11-revised —
+   as formas de `migrateHookCommand`); matcher por cobertura de alternativas `|` (disco ⊇
+   `origin/main`); matcher que não seja alternância literal → não cobre.
+5. **A4 do ADR:** derivar o ref com `deriveOriginDefaultBranch()`, sem reaproveitar
+   `currentOriginMain.ref`; `origin` presente e ref vazio/ilegível → falha fechada nomeada.
+6. **D7 do ADR:** chave de desligamento ativa no disco e inativa/ausente em `origin/main` é violação:
+   `disableAllHooks` (`.claude/settings.json`, `.github/hooks/trackfw-attention.json`),
+   `hooksConfig.enabled: false` (`.gemini/settings.json`), `"enabled": false` em entrada de guard
+   (`.kiro/hooks/trackfw-attention.json`), `[features] hooks = false` (`.codex/config.toml`, só se
+   rastreado). `.claude/settings.local.json` com `disableAllHooks: true` → violação verificada só no
+   disco.
+7. Registrar a regra em `credentialGuardAnchoredRules` e `lenientCarveoutRules`; acrescentar
    `git_branch_guard_hook_resolvable` e `git_branch_guard_script_integrity` a
    `credentialGuardAnchoredRules` (AC5).
 **Acceptance criteria:**
 - [ ] Testes com repositório git real (bare como `origin`), um por tupla adulterada: chave apagada,
       matcher apagado, matcher estreitado, comando neutralizado → violação
+- [ ] Uma violação por chave de desligamento (D7), incluindo `.claude/settings.local.json`
 - [ ] Controle: arquivo ausente em `origin/main` → silêncio; arquivo idêntico → silêncio
+- [ ] Controle A2: `origin/main` com matcher `Bash` e forma de comando legada, disco com
+      `Bash|PowerShell` e forma D11-revised → silêncio
+- [ ] Controle A4: repositório sem `trackfw.yaml` em `origin/main` e com arquivo de hook → a regra
+      ainda compara
 - [ ] Violação sobrevive a lenient e a baseline (teste)
 - [ ] Cada teste novo com uma frase do que afirma e prova de mordida (reprova sem a correção)
 **Comandos de validação:**

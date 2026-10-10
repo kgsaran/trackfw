@@ -46231,3 +46231,11 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-10 — zeus-tf — INÍCIO: REQ-2026-09-02 (remoção da fiação do guard não é detectada)
 
 - Medido hoje em worktree de `origin/main`, com e sem harness global (`HOME` vazio): apagar `hooks.PreToolUse` do `.claude/settings.json`, ou trocar `trackfw guard git-branch`/`credential` por `true`, deixa o `trackfw validate` byte a byte idêntico (169 warnings). Wave 0 com `hades-tf` antes de qualquer implementação.
+
+## 2026-10-10 — hades-tf — ML-0A (Wave 0) da REQ-2026-09-02 — FIM
+
+- Parecer `docs/seguranca/2026-10-10-wave0-fiacao-do-guard-ancorada.md`: aprovado com ajustes A1–A4. População de 8 arquivos de hook fechada; chaves de desligamento de hooks por CLI; falso positivo por migração de matcher/comando do `update`; `git remote remove origin` silencia o anchor; `ref` vazio fora do estado OK.
+
+## 2026-10-10 — zeus-tf — Wave 0 auditado
+
+- A2, A3, A4 incorporados ao ADR. A1 divergido: chaves de desligamento viram detecção (D7), não resíduo — mesmo argumento valeria para apagar a tupla. `trackfw barrier --wave 0` passed. Nota no vault.
