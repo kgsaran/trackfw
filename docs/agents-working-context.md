@@ -2,6 +2,22 @@
 
 ---
 
+## 2026-10-10 — hefesto-tf — INÍCIO: ML-2A Wave 2 revisão guard_wiring_removed
+
+- Revisão de qualidade da implementação da regra `guard_wiring_removed` (REQ-2026-09-02, Wave 2).
+- Escopo: `internal/validator/validator_guard_wiring.go`, `validator_guard_wiring_test.go`, testes de concordância, `docs/cli-parity.md`.
+- Checklist: 6 itens (cópia-de-verdade, leituras brutas/falhas, duplicação, testes/mutações, custo, mensagens D1–D7).
+- Mutações M1–M5 executadas em cópia de scratch; projeto limpo o tempo todo.
+
+## 2026-10-10 — hefesto-tf — FIM: ML-2A Wave 2 revisão guard_wiring_removed
+
+- Veredito: **APROVADO COM AJUSTES** — 4 bloqueantes (Q2, Q3, Q6, Q8), 4 não bloqueantes (Q1, Q4, Q5, Q7).
+- Parecer em: `docs/qualidade/2026-10-10-revisao-guard-wiring-removed.md`.
+- Bloqueantes principais: (Q2) `lsErr` silenciado como ausente viola ADR D1; (Q3) mensagens D7/Codex hardcode "origin/main"; (Q6) `CategoriaApagada` declara caso errado — Regra Dura; (Q8) M5 revela que R4b sem mordida.
+- Projeto limpo confirmado. Nenhum arquivo de produto modificado.
+
+---
+
 ## 2026-10-10 — apolo-tf (fix/remover-a-entrada-pretooluse-nao-e-detectado — ML-1C corretivo) — FIM
 
 **Branch:** `fix/remover-a-entrada-pretooluse-nao-e-detectado`
@@ -46275,3 +46291,7 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-10 — zeus-tf — Wave 1 da REQ-2026-09-02 auditado
 
 - 1ª entrega reprovada em 4 pontos (prefixo `origin/origin/`, TOML do Codex falhando aberto, testes de D7 faltando, sem mordida); corretivo ML-1C aprovado. AC9 medido com o binário da branch: base 0, `PreToolUse` apagado 4, `true` 7, `disableAllHooks` 1, `echo` 6. Mordida independente do carve-out de baseline. `make parity-rest` EXIT=0 com Python 3.12 (o 3.9.6 do sistema não roda o script). Resíduo R4b (0 refs de `origin`) no ADR.
+
+## 2026-10-10 — zeus-tf — revisão de qualidade (Wave 2) auditada
+
+- Parecer do hefesto-tf aprovado com ajustes. Q2/Q3 confirmados no código; Q1 (fiação legada por script não reconhecida) reclassificado para bloqueante; Q7 não reproduzido. Corretivo ML-2B despachado ao apolo-tf.

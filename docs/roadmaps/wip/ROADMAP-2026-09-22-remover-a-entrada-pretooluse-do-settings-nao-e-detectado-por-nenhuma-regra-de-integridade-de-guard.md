@@ -193,3 +193,22 @@ go test ./internal/validator/
 - [ ] Defeitos achados viram ML corretivo neste roadmap
 - [ ] AC9: três braços repetidos com o binário da branch — base silenciosa, os dois adulterados acusam
 - [ ] `make quality` EXIT=0 com máquina ociosa; CI do PR verde, inclusive `windows-full-suites`
+
+### ML-2B — Corretivo da revisão de qualidade (`hefesto-tf`)
+**Owner:** `apolo-tf`
+**Status:** 🔄 Em andamento
+**Origem:** `docs/qualidade/2026-10-10-revisao-guard-wiring-removed.md` — aprovado com ajustes. Auditoria do
+arquiteto: Q2 e Q3 confirmados no código (`validator_guard_wiring.go:209` trata erro de `ls-tree` como
+ausente; linhas 468 e 533 fixam `origin/main`). **Q1 reclassificado para bloqueante** (falso negativo
+conhecido: fiação legada por caminho de script em `origin/main` não é reconhecida). **Q7 não
+reproduzido** (o comentário citado não existe nos arquivos indicados).
+**Files affected:** `internal/validator/validator_guard_wiring.go`, `internal/validator/validator_guard_wiring_test.go`, teste de concordância externo (novo ou existente em `internal/validator/*_external_test.go`)
+**Acceptance criteria:**
+- [ ] Q1: formas por caminho de script (`agentfiles.go:525-540`, credential e git-branch, por CLI) na classe de equivalência; teste com `origin/main` em forma de script e fiação removida → violação; script em origin e D11-revised no disco → silêncio
+- [ ] Q1: teste de concordância que falha se o gerador ganhar forma de comando que o validator não reconhece
+- [ ] Q2: erro do `git ls-tree` (diferente de "não listado") → falha fechada nomeada; teste
+- [ ] Q3: mensagens de D7 e do Codex usam o ref derivado; teste
+- [ ] Q6: teste renomeado para o que faz (arquivo ausente) + teste novo com o arquivo presente e `PreToolUse` removido
+- [ ] Q8: teste do ramo "0 refs de origin buscados → silêncio" que reprova com `guardWiringHasAnyFetchedOriginRefs` invertida
+- [ ] Prova de mordida por teste novo; nomes conferidos por `go test -list`
+
