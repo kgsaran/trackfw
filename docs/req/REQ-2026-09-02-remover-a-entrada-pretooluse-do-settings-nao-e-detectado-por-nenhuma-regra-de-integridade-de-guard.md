@@ -2,8 +2,8 @@
 status: Open
 date: 2026-09-02
 author: "zeus-tf"
-adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-22-remover-a-entrada-pretooluse-do-settings-nao-e-detectado-por-nenhuma-regra-de-integridade-de-guard.md"
+adr: "docs/adr/ADR-2026-10-10-a-fiacao-do-guard-e-ancorada-no-origin-main-por-tupla-e-a-remocao-e-violacao-fora-do-lenient-e-do-baseline.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-22-remover-a-entrada-pretooluse-do-settings-nao-e-detectado-por-nenhuma-regra-de-integridade-de-guard.md"
 ---
 
 # REQ: Remover a entrada `PreToolUse` do settings não é detectado por nenhuma regra de integridade de guard
@@ -23,6 +23,15 @@ As cinco regras de integridade de guard cobrem o **script** e o **modo**, mas n�
 | alterar o conteúdo do script | ✅ aviso (`*_script_integrity`) |
 | rebaixar o modo de `block` para `warn` | ✅ violação (`credential_guard_mode_downgrade`) |
 | **remover a entrada `hooks.PreToolUse` inteira do config** | ❌ **nenhuma das 5 regras, em nenhum modo** |
+
+**Remedido em 2026-10-10** (worktree de `origin/main` `39ad84de`, com o harness global desta máquina
+e com `HOME` vazio — a tabela acima é de 2026-09-02, quando o guard ainda era script):
+
+| `.claude/settings.json` | `trackfw validate` |
+|---|---|
+| intacto | 169 warnings |
+| `hooks.PreToolUse` apagado | 169 warnings — saída **idêntica byte a byte** |
+| `trackfw guard git-branch`/`credential` trocados por `true` | 169 warnings — **idêntica** |
 
 **O caminho mais fácil de burlar o guard é o único não coberto.** Apagar o script deixa rastro;
 remover a fiação deixa um arquivo JSON válido, menor, e silencioso.
@@ -58,26 +67,44 @@ verificam segue desligada.**
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — Remover a entrada `hooks.PreToolUse` do config é **detectado**, com severidade
-      coerente com a das regras irmãs.
-- [ ] **AC2** — 🔴 **Detectar a ausência exige saber o que deveria existir.** A regra precisa de uma
+- [x] **AC0** — 🔴 **Wave 0 (`hades-tf`):** threat model do ADR ligado, com parecer em
+      `docs/seguranca/`. Inclui completude da população de arquivos de hook (D3), contornos que não
+      tocam o arquivo rastreado (`settings.local.json`, chaves de desligamento de hooks de cada CLI,
+      verificadas na documentação) e o casamento do comando do guard.
+      ✅ Evidência: `docs/seguranca/2026-10-10-wave0-fiacao-do-guard-ancorada.md` — aprovado com ajustes A1–A4; incorporados ao ADR (A1 divergido: D7)
+- [x] **AC1** — Remover a fiação de um guard é **detectado** — chave apagada, matcher apagado, matcher
+      estreitado, comando neutralizado e chave de desligamento de hooks (D7) — como **violação mesmo em lenient e com baseline**
+      (D2, D5 do ADR).
+      ✅ Evidência: AC9 medido: base 0; `PreToolUse` apagado 4; `true` 7; `disableAllHooks` 1; `echo` 6 violações; sobrevive a lenient e baseline (`TestGuardWiringRemoved_ViolaçaoSobreviveAoLenient`, mordida independente)
+- [x] **AC2** — 🔴 **Detectar a ausência exige saber o que deveria existir.** A regra precisa de uma
       referência de "fiação esperada" — e essa referência **não pode ser o próprio config**, senão
-      ela some junto. Decidir e justificar: âncora no HEAD do git (como as 3 regras de
-      `credential_guard` já fazem), manifesto de instalação, ou outra. **É a decisão que separa
-      controle de teatro.**
-- [ ] **AC3** — 🔴 **Falsificação nas duas direções.** (a) config com a fiação removida → detectado;
+      ela some junto. Decidida no ADR ligado (D1): cópia do arquivo de hook em
+      `origin/main`, pelo discriminante de 4 estados já existente — o HEAD é derrotado por um
+      `git commit`. **É a decisão que separa controle de teatro.**
+      ✅ Evidência: ADR D1 + A4; `TestGuardWiringRemoved_SemTrackfwYamlNaRef_AindaCompara`, `RefIlegivel_FalhaFechada`
+- [x] **AC3** — 🔴 **Falsificação nas duas direções.** (a) config com a fiação removida → detectado;
       (b) **controle:** projeto que **nunca instalou** o guard **não** é acusado. Sem (b),
       transformaríamos "não instalado" em "adulterado" e o aviso viraria ruído em todo repositório
       novo.
-- [ ] **AC4** — Distinguir **"nunca instalado"** de **"instalado e removido"**. São fatos
+      ✅ Evidência: adulterados acusam (AC9); `ArquivoAusenteNaRef_Silencio`, `MigracaoLegitima_Silencio`
+- [x] **AC4** — Distinguir **"nunca instalado"** de **"instalado e removido"**. São fatos
       diferentes com remédios diferentes — um é `trackfw update harness`, o outro é investigação.
-- [ ] **AC5** — 🔴 **A assimetria do 6.3 endereçada ou declarada.** O `hefesto-tf` achou, lendo
+      ✅ Evidência: violação diz "was present in origin/main and is absent from disk … investigate"; ausente nos dois → silêncio
+- [x] **AC5** — 🔴 **A assimetria do 6.3 endereçada ou declarada.** O `hefesto-tf` achou, lendo
       `internal/validator/validator_credential_guard_integrity.go:196-200`, que a âncora no HEAD e a
       isenção por baseline valem **só** para as 3 regras de `credential_guard`; as 2 de
       `git_branch_guard` **não são ancoradas** e **podem ser toleradas por baseline**. **Nada no
       repositório documenta isso como deliberado.** Se for, registrar; se não for, corrigir.
-- [ ] **AC6** — Paridade nos 3 CLIs.
-- [ ] **AC7** — `make quality` e **CI** verdes.
+      ✅ Evidência: ADR D6: as 2 regras de `git_branch_guard` em `credentialGuardAnchoredRules`
+- [x] **AC6** — Contrato da regra em `docs/cli-parity.md` com a anotação `trackfw-contract` (v8: o
+      Go é a implementação única; não há paridade entre runtimes a provar).
+      ✅ Evidência: seção `guard_wiring_removed` com `trackfw-contract` em `docs/cli-parity.md`
+- [ ] **AC7** — `make quality` EXIT=0 (máquina ociosa) e **CI** verde, inclusive `windows-full-suites`.
+- [x] **AC8** — Cada teste novo declara a conclusão que afirma e reprova sem a correção.
+      ✅ Evidência: 27 testes com nomes conferidos por `go test -list`; mordida M1–M5 e mutação independente do arquiteto
+- [x] **AC9** — Medição de volta: os três braços da tabela de 2026-10-10 repetidos com o binário da
+      branch — os dois braços adulterados acusam; a base não.
+      ✅ Evidência: binário da branch em worktree de `origin/main`: base 0, `PreToolUse` apagado 4, `true` 7, `disableAllHooks` 1, `echo` 6; remedido após o red-team (binário de `a0c9361c`+ML-2C): base 0, apagado 4, `true` 7, `disableAllHooks` 1, guard escondido em `metadata_guards` 4
 
 ## Negative Scope
 
@@ -85,14 +112,16 @@ verificam segue desligada.**
   (`hooks-path-neutralized`), e ligar hooks de git para humanos é a Wave pendente da
   `REQ-2026-09-01-o-repositorio-do-trackfw-nao-esta-sob-os-cuidados-do-trackfw`.
 - **Não** mudar o padrão `warn` do `credential_guard` — merece decisão própria, com ADR.
+- **Não** cobrir o escopo global (`~/.claude/settings.json` etc.) — fora do git, sem âncora;
+  resíduo declarado no ADR.
+- **Não** cobrir o hook `AskUserQuestion` (attention-signal) — não é guard.
 - **Não** prometer proteção contra adversário com permissão de commit. O `ADR-2026-08-12` já declara
   esse limite; esta REQ trata **remoção silenciosa**, não adversário determinado.
 
 ## Linked ADR
 
-ADR: <!-- avaliar na análise: se a AC2 concluir que a referência de fiação esperada precisa de
-mecanismo novo, isso é decisão arquitetural. -->
+ADR: docs/adr/ADR-2026-10-10-a-fiacao-do-guard-e-ancorada-no-origin-main-por-tupla-e-a-remocao-e-violacao-fora-do-lenient-e-do-baseline.md
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-22-remover-a-entrada-pretooluse-do-settings-nao-e-detectado-por-nenhuma-regra-de-integridade-de-guard.md`
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-22-remover-a-entrada-pretooluse-do-settings-nao-e-detectado-por-nenhuma-regra-de-integridade-de-guard.md`

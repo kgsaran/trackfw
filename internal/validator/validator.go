@@ -597,6 +597,9 @@ func applyRuleWarnOnlyTagged(ruleName string, msgs []string, warnings *[]TaggedM
 var lenientCarveoutRules = map[string]bool{
 	"req_roadmap_lifecycle": true,
 	"ref_targets_exist":     true,
+	// ML-1A (REQ-2026-09-02, ADR-2026-10-10 D5): guard_wiring_removed detects removal of live
+	// guard wiring anchored in origin/main — never historical debt, always a live contradiction.
+	"guard_wiring_removed": true,
 }
 
 // applyLenientWithCarveout moves non-carve-out violations to warnings (lenient mode) while
@@ -1093,6 +1096,16 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	}
 	applyRule("git_branch_guard_script_integrity", append(gitBranchGuardScriptMsgs, gitBranchGuardGlobalScriptMsgs...), &violations, &warnings)
 
+	// ML-1A (REQ-2026-09-02, ADR-2026-10-10): detects removal/neutralisation of guard hook wiring
+	// anchored in origin/main. In credentialGuardAnchoredRules (baseline-immune) and
+	// lenientCarveoutRules (survives lenient mode). Mirror site in validateUnfilteredTagged below.
+	// 🔴 Forgetting the mirror site silences this rule from --json output.
+	guardWiringMsgs, e := validateGuardWiringRemoved()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRule("guard_wiring_removed", guardWiringMsgs, &violations, &warnings)
+
 	// ML-2B: detecta trackfw.exe/.cmd/.bat na raiz do projeto (cmd.exe busca no cwd antes do PATH).
 	binaryInRootMsgs, e := validateTrackfwBinaryInProjectRoot()
 	if e != nil {
@@ -1556,6 +1569,14 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 		return nil, nil, e
 	}
 	applyRuleTagged("git_branch_guard_script_integrity", append(gitBranchGuardScriptMsgsT, gitBranchGuardGlobalScriptMsgsT...), &violations, &warnings)
+
+	// ML-1A (REQ-2026-09-02): mirror of ValidateUnfiltered guard_wiring_removed block.
+	// 🔴 Missing this site silences guard_wiring_removed from --json output (Validate() path).
+	guardWiringMsgsT, e := validateGuardWiringRemoved()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleTagged("guard_wiring_removed", guardWiringMsgsT, &violations, &warnings)
 
 	// ML-2B: mirror of ValidateUnfiltered binary-in-root block.
 	// 🔴 Missing this site silences trackfw_binary_in_project_root from --json output.

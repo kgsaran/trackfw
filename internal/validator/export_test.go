@@ -1,7 +1,9 @@
 package validator
 
 import (
+	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -97,6 +99,65 @@ func StubProbeOKForTest(t testing.TB) {
 // same command string without importing generators (which would create an import cycle).
 func CredentialGuardGlobalExpectedCmdWindsurfForTest() string {
 	return credentialGuardGlobalExpectedCmdWindsurf()
+}
+
+// GuardWiringTypeFromCmdPSPosixForTest exposes guardWiringTypeFromCmd for the PS/POSIX shell family
+// to the external test package (package validator_test) — standard "export_test.go" pattern.
+// Used by validator_guard_wiring_concordance_external_test.go to verify that every guard command
+// form emitted by the generator is recognised by the validator (Q1 ML-2B).
+func GuardWiringTypeFromCmdPSPosixForTest(cmd string) string {
+	return guardWiringTypeFromCmd(cmd, guardShellFamilyPSPosix)
+}
+
+// GuardWiringTypeFromCmdCmdExeForTest exposes guardWiringTypeFromCmd for the cmd.exe shell family
+// to the external test package — same pattern as GuardWiringTypeFromCmdPSPosixForTest.
+func GuardWiringTypeFromCmdCmdExeForTest(cmd string) string {
+	return guardWiringTypeFromCmd(cmd, guardShellFamilyCmdExe)
+}
+
+// GuardExpectedLinePSPosixForTest exposes guardExpectedLine for the PS/POSIX shell family
+// to the external test package — used by the Q1 concordance test to check canonical inline forms.
+func GuardExpectedLinePSPosixForTest(subcmd string) string {
+	return guardExpectedLine(subcmd, guardShellFamilyPSPosix)
+}
+
+// GuardExpectedLineCmdExeForTest exposes guardExpectedLine for the cmd.exe shell family
+// to the external test package — same pattern as GuardExpectedLinePSPosixForTest.
+func GuardExpectedLineCmdExeForTest(subcmd string) string {
+	return guardExpectedLine(subcmd, guardShellFamilyCmdExe)
+}
+
+// GuardWiringExtractGuardTypesFromFileForTest reads the hook file at the given relative path
+// (resolved against CWD), looks it up in credentialGuardHookFiles to get the canonical shell
+// family, calls guardWiringParseTuples, and returns the list of guard types
+// ("credential", "git-branch") found in the tuples.
+// Returns an error if path is not in credentialGuardHookFiles, the file cannot be read, or
+// the content cannot be parsed. Callers should ChdirForTest into the project root first.
+// Used by TestGuardWiringConcordance_GeneratorOutputRecognized (Part 2a, ML-2B Lacuna 2).
+func GuardWiringExtractGuardTypesFromFileForTest(path string) ([]string, error) {
+	var hf *credentialGuardHookFile
+	for i := range credentialGuardHookFiles {
+		if credentialGuardHookFiles[i].path == path {
+			hf = &credentialGuardHookFiles[i]
+			break
+		}
+	}
+	if hf == nil {
+		return nil, fmt.Errorf("path %q is not in credentialGuardHookFiles", path)
+	}
+	content, err := os.ReadFile(filepath.FromSlash(path)) //nolint:gosec
+	if err != nil {
+		return nil, err
+	}
+	tuples, err := guardWiringParseTuples(content, *hf)
+	if err != nil {
+		return nil, err
+	}
+	guardTypes := make([]string, 0, len(tuples))
+	for _, tup := range tuples {
+		guardTypes = append(guardTypes, tup.guardType)
+	}
+	return guardTypes, nil
 }
 
 // ChdirForTest changes the working directory to dir and resets the config singleton (required

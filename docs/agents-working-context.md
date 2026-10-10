@@ -2,6 +2,86 @@
 
 ---
 
+## 2026-10-10 — apolo-tf (fix/remover-a-entrada-pretooluse-nao-e-detectado — ML-2C corretivo red-team) — FIM
+
+**Branch:** `fix/remover-a-entrada-pretooluse-nao-e-detectado`
+**Escopo:** Corretivo dos furos R-1 (busca recursiva em `guardWiringCollectCommandValues`) e R-2 (`type` diferente de `command`) identificados pelo red-team. Arquivos: `internal/validator/validator_guard_wiring.go`, `internal/validator/validator_guard_wiring_test.go`, `docs/cli-parity.md`.
+**Entregável:** `hookCmdSchemaKind` + `guardWiringHookLayout` (8 CLIs); `guardWiringExtractCommandsFromEntry` substitui busca recursiva por extração por caminho estrutural; R-2 type-check em todos os 3 schemas; fail-closed para arquivo não-mapeado em `guardWiringParseTuples`; D7 Kiro corrigido para usar `hookCmdSchemaKiro`. 5 testes novos, todos PASS. Concordância 8 CLIs verde. `go build ./...` EXIT=0, `go test ./internal/validator/` EXIT=0 (128s, suite completa). `trackfw validate` EXIT=0 (169 warnings pré-existentes).
+
+---
+
+## 2026-10-10 — hades-tf (fix/remover-a-entrada-pretooluse-nao-e-detectado — ML-2A Wave 2 red-team) — FIM
+
+**Branch:** `fix/remover-a-entrada-pretooluse-nao-e-detectado`
+**Escopo:** red-team de `guard_wiring_removed`; scratch em `/scratchpad/hades-rt/`; entregável: `docs/seguranca/2026-10-10-red-team-guard-wiring-removed.md`
+**Veredito:** APROVADO COM RESSALVAS
+**Furos encontrados:**
+- R-1 (BLOQUEANTE): `guardWiringCollectCommandValues` faz busca recursiva por qualquer chave `"command"` no JSON. Adversário coloca string do guard em `metadata_guards.command` e substitui `command` por `echo bypassed`. Cursor (requiresCommandType=false): 0 violações em qualquer regra — bypass completo. Claude Code (requiresCommandType=true): `credential_guard_hook_resolvable` detecta; defesa mantida. Correção: restringir coleta ao caminho estrutural esperado por layout de schema.
+- R-2 (não-bloqueante): `type: script` para CLIs sem `requiresCommandType`; impacto isolado, sem bypass completo.
+**Resíduos confirmados:** R3, R4, R4b (variante URL-swap também silenciosa — mesma raiz que R4).
+**Carve-outs confirmados:** baseline e lenient não suprimem a violação.
+
+---
+
+## 2026-10-10 — apolo-tf (fix/remover-a-entrada-pretooluse-nao-e-detectado — ML-2B corretivo) — FIM
+
+**Branch:** `fix/remover-a-entrada-pretooluse-nao-e-detectado`
+**Escopo:** `internal/validator/validator_guard_wiring.go`, `internal/validator/validator_guard_wiring_test.go`, `internal/validator/export_test.go`, `internal/validator/validator_guard_wiring_concordance_external_test.go`
+**Entregável:** Correções dos 6 achados bloqueantes da revisão hefesto-tf — `go build ./...` EXIT=0, `go test ./internal/validator/` EXIT=0 (49s), 33 testes GuardWiring listados.
+**Achados corrigidos:**
+- Q1: `guardWiringScriptPathForms` (9 formas legado script-path) adicionada; `guardWiringTypeFromCmd` verifica a tabela após as formas inline.
+- Q1 concordância: `TestGuardWiringConcordance_AllGeneratorFormsRecognized` — varre `agentfiles.go`, piso de 9 formas, prova de sentinela.
+- Q2: `guardWiringReadFromOrigin` distingue `lsErr != nil` (falha fechada, retorna error) de saída vazia (ausente, retorna `isAbsent=true`). `TestGuardWiringReadFromOrigin_LsTreeFalha_FailClosed` adicionado.
+- Q3: `guardWiringDisableKeyMsg` e `guardWiringCheckCodexToml` passam `ref` em vez de hardcode `"origin/main"`. Dois testes `_RefMaster_` adicionados.
+- Q6: `TestGuardWiringRemoved_CategoriaApagada_Dispara` → renomeado para `ArquivoAusenteNoDisco_Dispara`; `TestGuardWiringRemoved_ArquivoPresenteChaveRemovidaDoDisco_Dispara` adicionado (caso genuíno chave removida).
+- Q8: `TestGuardWiringRemoved_OriginSemRefsBuscados_Silencio` adicionado; chdir antes da precondição (bug corrigido nesta sessão).
+**Exports adicionados:** `GuardWiringTypeFromCmdPSPosixForTest`, `GuardWiringTypeFromCmdCmdExeForTest`, `GuardExpectedLinePSPosixForTest`, `GuardExpectedLineCmdExeForTest`.
+
+## 2026-10-10 — apolo-tf (fix/remover-a-entrada-pretooluse-nao-e-detectado — ML-2B corretivo) — INÍCIO
+
+**Branch:** `fix/remover-a-entrada-pretooluse-nao-e-detectado`
+**Escopo:** `internal/validator/validator_guard_wiring.go`, `internal/validator/validator_guard_wiring_test.go`, `internal/validator/export_test.go`, novo `validator_guard_wiring_concordance_external_test.go`
+**Objetivo:** Corrigir 6 achados bloqueantes da revisão hefesto-tf (Q1, Q2, Q3, Q6, Q8 + concordância Q1).
+
+---
+
+## 2026-10-10 — hefesto-tf — INÍCIO: ML-2A Wave 2 revisão guard_wiring_removed
+
+- Revisão de qualidade da implementação da regra `guard_wiring_removed` (REQ-2026-09-02, Wave 2).
+- Escopo: `internal/validator/validator_guard_wiring.go`, `validator_guard_wiring_test.go`, testes de concordância, `docs/cli-parity.md`.
+- Checklist: 6 itens (cópia-de-verdade, leituras brutas/falhas, duplicação, testes/mutações, custo, mensagens D1–D7).
+- Mutações M1–M5 executadas em cópia de scratch; projeto limpo o tempo todo.
+
+## 2026-10-10 — hefesto-tf — FIM: ML-2A Wave 2 revisão guard_wiring_removed
+
+- Veredito: **APROVADO COM AJUSTES** — 4 bloqueantes (Q2, Q3, Q6, Q8), 4 não bloqueantes (Q1, Q4, Q5, Q7).
+- Parecer em: `docs/qualidade/2026-10-10-revisao-guard-wiring-removed.md`.
+- Bloqueantes principais: (Q2) `lsErr` silenciado como ausente viola ADR D1; (Q3) mensagens D7/Codex hardcode "origin/main"; (Q6) `CategoriaApagada` declara caso errado — Regra Dura; (Q8) M5 revela que R4b sem mordida.
+- Projeto limpo confirmado. Nenhum arquivo de produto modificado.
+
+---
+
+## 2026-10-10 — apolo-tf (fix/remover-a-entrada-pretooluse-nao-e-detectado — ML-1C corretivo) — FIM
+
+**Branch:** `fix/remover-a-entrada-pretooluse-nao-e-detectado`
+**Escopo:** `internal/validator/validator_guard_wiring.go`, `internal/validator/validator_guard_wiring_test.go`, `docs/cli-parity.md`
+**Entregável:** Correções de 4 achados de auditoria — `go build ./...` EXIT=0, `go test ./internal/validator/` EXIT=0 (42s).
+**Achados corrigidos:**
+- A1: prefixo `origin/origin/main` → `origin/main` em 4 strings de formato
+- A2: parser TOML tri-state (`tomlHooksAbsent/tomlHooksTrue/tomlHooksDisabledOrUnknown`); inline table e comentários agora reconhecidos; falha fechada em vez de falha aberta
+- A3: 10 testes novos (Gemini D7, Copilot D7, Codex 4 formas + 2 controles, echo simples, ref-text)
+- A4: prova de mordida por mutação (validateGuardWiringRemoved→nil: 19 _Dispara falham; lenientCarveout removido: ViolaçaoSobreviveAoLenient falha)
+**Fixes colaterais:** ArquivoIdentico_Silencio usa JSON reformatado; ViolaçaoSobreviveAoLenient escreve trackfw.yaml no disco + config.Reset(); Kiro fixture alinhada ao formato real do gerador (version, name, cmdExe family)
+**Não feito (fora do escopo do ML):** threading de `ref` nas mensagens D7 hardcoded (minor, não-bloqueador per advisor)
+
+## 2026-10-10 — apolo-tf (fix/remover-a-entrada-pretooluse-nao-e-detectado — ML-1C corretivo) — INÍCIO
+
+**Branch:** `fix/remover-a-entrada-pretooluse-nao-e-detectado`
+**Escopo:** `internal/validator/validator_guard_wiring.go`, `internal/validator/validator_guard_wiring_test.go`, `docs/cli-parity.md`
+**Objetivo:** Corrigir 4 achados da auditoria do ML-1A: prefixo duplicado `origin/origin/main`, TOML inline-table falha aberta, testes D7 faltando (Gemini/Copilot/Codex), e prova de mordida dos 17 testes.
+
+---
+
 ## 2026-10-09 — hades-tf (fix/verificacao-canais-indice-pypi — ML-2A red-team) — FIM
 
 **Branch:** `fix/verificacao-canais-indice-pypi`
@@ -46225,3 +46305,58 @@ Achados notáveis para o apolo-tf:
 - `99477f44` (#503, AC10): 7/7 linhas já na main → branch apagável.
 - `2d3a7dbb` (#415): correção da contagem do censo (9→10, soma 19, lista literal) e adendo pós-merge — 34/59 linhas ausentes da main. Cherry-pick; conflito com a Wave 3 resolvido mantendo os dois, adendo antes (ordem cronológica).
 - `13843172` (#465): memória `feedback_mudar_contrato_auditar_quem_afirma_o_antigo.md` nunca chegou à main. Cherry-pick; índice reescrito sobre o da main + 1 linha.
+
+---
+
+## 2026-10-10 — zeus-tf — INÍCIO: REQ-2026-09-02 (remoção da fiação do guard não é detectada)
+
+- Medido hoje em worktree de `origin/main`, com e sem harness global (`HOME` vazio): apagar `hooks.PreToolUse` do `.claude/settings.json`, ou trocar `trackfw guard git-branch`/`credential` por `true`, deixa o `trackfw validate` byte a byte idêntico (169 warnings). Wave 0 com `hades-tf` antes de qualquer implementação.
+
+## 2026-10-10 — hades-tf — ML-0A (Wave 0) da REQ-2026-09-02 — FIM
+
+- Parecer `docs/seguranca/2026-10-10-wave0-fiacao-do-guard-ancorada.md`: aprovado com ajustes A1–A4. População de 8 arquivos de hook fechada; chaves de desligamento de hooks por CLI; falso positivo por migração de matcher/comando do `update`; `git remote remove origin` silencia o anchor; `ref` vazio fora do estado OK.
+
+## 2026-10-10 — zeus-tf — Wave 0 auditado
+
+- A2, A3, A4 incorporados ao ADR. A1 divergido: chaves de desligamento viram detecção (D7), não resíduo — mesmo argumento valeria para apagar a tupla. `trackfw barrier --wave 0` passed. Nota no vault.
+
+## 2026-10-10 — apolo-tf — INÍCIO: ML-1A + ML-1B (REQ-2026-09-02 / Wave 1)
+
+- Implementação da regra `guard_wiring_removed`: compara tuplas (evento, matcher, guard-type) entre origin/main e disco; falha fechada se ref ilegível; silêncio se arquivo ausente na ref. Inclui D7 (chaves de desligamento: disableAllHooks, hooksConfig.enabled, enabled:false em entrada Kiro, [features] hooks=false em .codex/config.toml). Registro em credentialGuardAnchoredRules + lenientCarveoutRules. AC5: git_branch_guard_hook_resolvable e git_branch_guard_script_integrity também entram em credentialGuardAnchoredRules.
+- ML-1B: seção trackfw-contract em docs/cli-parity.md.
+
+## 2026-10-10 — apolo-tf — FIM: ML-1A + ML-1B (REQ-2026-09-02 / Wave 1)
+
+- ML-1A ✅: `internal/validator/validator_guard_wiring.go` (novo, 17 testes), ancoragem de `git_branch_guard_*` em `credentialGuardAnchoredRules`, `guard_wiring_removed` em `lenientCarveoutRules`, registro nos dois pontos de `ValidateUnfiltered`/`validateUnfilteredTagged`. `go build ./...` EXIT=0; `go test ./internal/validator/` PASS.
+- ML-1B ✅: seção adicionada a `docs/cli-parity.md` com anotação `trackfw-contract`. `make parity-rest` EXIT=2 por falha pre-existente em `scripts/check-required-status-checks.py` (Python 3.10 `str|None` em Python 3.9 — fora do escopo do ML, não causada por nenhum arquivo modificado nesta sessão).
+- Divergência de ADR documentada: ADR diz "ref unreadable → fail-closed"; o sub-caso "0 refs fetched" (CI shallow checkout) é silenciado para consistência com o anchor de credential_guard — `guardWiringHasAnyFetchedOriginRefs()` distingue os dois sub-casos.
+
+## 2026-10-10 — zeus-tf — Wave 1 da REQ-2026-09-02 auditado
+
+- 1ª entrega reprovada em 4 pontos (prefixo `origin/origin/`, TOML do Codex falhando aberto, testes de D7 faltando, sem mordida); corretivo ML-1C aprovado. AC9 medido com o binário da branch: base 0, `PreToolUse` apagado 4, `true` 7, `disableAllHooks` 1, `echo` 6. Mordida independente do carve-out de baseline. `make parity-rest` EXIT=0 com Python 3.12 (o 3.9.6 do sistema não roda o script). Resíduo R4b (0 refs de `origin`) no ADR.
+
+## 2026-10-10 — zeus-tf — revisão de qualidade (Wave 2) auditada
+
+- Parecer do hefesto-tf aprovado com ajustes. Q2/Q3 confirmados no código; Q1 (fiação legada por script não reconhecida) reclassificado para bloqueante; Q7 não reproduzido. Corretivo ML-2B despachado ao apolo-tf.
+
+## 2026-10-10 — zeus-tf — ML-2B auditado
+
+- Devolvido uma vez (testes de comportamento do Q1 ausentes, Parte 2 da concordância tautológica, sem mordida do Q2/Q3). Aprovado: 37 testes `GuardWiring`; concordância real com os 8 `Inject*Hooks`; mordida independente (sem D11-revised, 6/8 CLIs reprovam). Próximo: red-team do hades-tf.
+
+## 2026-10-10 — hades-tf — INÍCIO: red-team ML-2A Wave 2 (REQ-2026-09-02)
+
+- Barreira independente da regra `guard_wiring_removed`.
+- Lendo ADR, contrato cli-parity.md, parecer Wave 0, revisão de qualidade do hefesto-tf.
+- Construindo fixtures no scratch: `/scratchpad/hades-rt/`. Binário compilado da branch `fix/remover-a-entrada-pretooluse-nao-e-detectado` HEAD `8f5f760f`.
+
+## 2026-10-10 — zeus-tf — red-team (Wave 2) auditado
+
+- Parecer do hades-tf aprovado com ressalvas. R-1 (busca recursiva de `"command"` permite esconder o guard num campo de metadata e neutralizar o executável) confirmado no código; R-2 (`type` diferente de `command`) reclassificado para bloqueante. Variante R4 (`git remote set-url`) declarada no ADR. Corretivo ML-2C ao apolo-tf.
+
+## 2026-10-10 — zeus-tf — ML-2C auditado
+
+- R-1/R-2 corrigidos (extração por esquema, sem recursão; `type` ≠ `command` não conta). Ressalva: R-2 no esquema flat (Copilot) sem teste próprio. AC9 remedido com o binário final: base 0; `PreToolUse` apagado 4; `true` 7; `disableAllHooks` 1; guard em metadata 4. ML-2A reaberto (o agente o marcara concluído sem `make quality`/CI).
+
+## 2026-10-10 — zeus-tf — make quality da REQ-2026-09-02
+
+- `make quality` EXIT=0 em `1127759d` (2956 linhas; falsify 347 OK / 0 FAIL), com concorrência do vitest do cmdb (load até 51), por decisão do usuário. Falta o CI, que só dispara com PR.

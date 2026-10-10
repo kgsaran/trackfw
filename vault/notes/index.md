@@ -4,6 +4,7 @@
 
 ## Índice
 
+- [hooks-tem-chave-de-desligamento-por-cli-e-a-fiacao-intacta-nao-prova-guard-ativo-2026-10-10](hooks-tem-chave-de-desligamento-por-cli-e-a-fiacao-intacta-nao-prova-guard-ativo-2026-10-10.md) — 🔴 **`disableAllHooks`/`hooksConfig.enabled`/`"enabled": false`/`[features] hooks = false` desligam todos os hooks com a fiação intacta** — regra de guard que só olha entradas é burlável; `.claude/settings.local.json` é git-ignored; ADR-2026-10-10 D7
 - [em-dash-in-bytes-literal-heredoc-syntaxerror-2026-10-09](em-dash-in-bytes-literal-heredoc-syntaxerror-2026-10-09.md) — 🔴 **em dash (U+2014) em bytes literal `b'...'` dentro de heredoc → Python SyntaxError silencioso** — self-test arm8 retryava em vez de detectar conteúdo inválido; fix: trocar `—` por `--` no comentário; adicionado `| strip_cr` no capture de `wheel_urls`
 
 - [credential-guard-windows-path-forms-layer2-2026-10-08](credential-guard-windows-path-forms-layer2-2026-10-08.md) — 🔴 **Dois bugs independentes na Layer 2: BUG-1 dois sub-casos (A: path devolvido como-está → os.Stat falha; B: IsAbs=false → join errado); BUG-2: credRedirectRe trunca `C:\path` em `C` por exclusão de `:`** — Git Bash `/c/...` e redirects com letra de unidade passam sem detecção; warn=block em padrão; POSIX seguro (IsAbs=true); PowerShell-nativo-com-POSIX-path = residual; fix: credNormalizeWindowsPath(path, goos) após TrimRight + regex sem `:`; ML-3B REQ-2026-10-06
