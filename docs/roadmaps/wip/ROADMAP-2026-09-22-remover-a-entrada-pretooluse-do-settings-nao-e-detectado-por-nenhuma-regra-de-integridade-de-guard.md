@@ -91,7 +91,7 @@ git diff --quiet HEAD -- .claude/settings.json internal/
 
 ### ML-1A — Regra `guard_wiring_removed` e ancoragem do `git_branch_guard`
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:** `internal/validator/validator_guard_wiring.go` (novo), `internal/validator/validator_guard_wiring_test.go` (novo), `internal/validator/validator_credential_guard_integrity.go` (`credentialGuardAnchoredRules`), `internal/validator/validator.go` (registro da regra e `lenientCarveoutRules`)
 **Actions:**
 1. Ler, por arquivo de hook da população (ADR D3), a cópia em `origin/main` reaproveitando o
@@ -110,7 +110,7 @@ git diff --quiet HEAD -- .claude/settings.json internal/
    `hooksConfig.enabled: false` (`.gemini/settings.json`), `"enabled": false` em entrada de guard
    (`.kiro/hooks/trackfw-attention.json`), `[features] hooks = false` (`.codex/config.toml`, só se
    rastreado). `.claude/settings.local.json` com `disableAllHooks: true` → violação verificada só no
-   disco.
+   disco. (decisão do usuário em 2026-10-10: violação, mesma severidade, não warning)
 7. Registrar a regra em `credentialGuardAnchoredRules` e `lenientCarveoutRules`; acrescentar
    `git_branch_guard_hook_resolvable` e `git_branch_guard_script_integrity` a
    `credentialGuardAnchoredRules` (AC5).
@@ -133,7 +133,7 @@ go test ./internal/validator/
 
 ### ML-1B — Contrato em `docs/cli-parity.md`
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Dependencies:** ML-1A (mesmo executor, sequencial: o contrato descreve o comportamento entregue)
 **Files affected:** `docs/cli-parity.md`
 **Acceptance criteria:**
