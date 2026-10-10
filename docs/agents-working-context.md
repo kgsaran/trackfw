@@ -2,6 +2,14 @@
 
 ---
 
+## 2026-10-10 — apolo-tf (fix/remover-a-entrada-pretooluse-nao-e-detectado — ML-2C corretivo red-team) — FIM
+
+**Branch:** `fix/remover-a-entrada-pretooluse-nao-e-detectado`
+**Escopo:** Corretivo dos furos R-1 (busca recursiva em `guardWiringCollectCommandValues`) e R-2 (`type` diferente de `command`) identificados pelo red-team. Arquivos: `internal/validator/validator_guard_wiring.go`, `internal/validator/validator_guard_wiring_test.go`, `docs/cli-parity.md`.
+**Entregável:** `hookCmdSchemaKind` + `guardWiringHookLayout` (8 CLIs); `guardWiringExtractCommandsFromEntry` substitui busca recursiva por extração por caminho estrutural; R-2 type-check em todos os 3 schemas; fail-closed para arquivo não-mapeado em `guardWiringParseTuples`; D7 Kiro corrigido para usar `hookCmdSchemaKiro`. 5 testes novos, todos PASS. Concordância 8 CLIs verde. `go build ./...` EXIT=0, `go test ./internal/validator/` EXIT=0 (128s, suite completa). `trackfw validate` EXIT=0 (169 warnings pré-existentes).
+
+---
+
 ## 2026-10-10 — hades-tf (fix/remover-a-entrada-pretooluse-nao-e-detectado — ML-2A Wave 2 red-team) — FIM
 
 **Branch:** `fix/remover-a-entrada-pretooluse-nao-e-detectado`
@@ -46344,3 +46352,7 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-10 — zeus-tf — red-team (Wave 2) auditado
 
 - Parecer do hades-tf aprovado com ressalvas. R-1 (busca recursiva de `"command"` permite esconder o guard num campo de metadata e neutralizar o executável) confirmado no código; R-2 (`type` diferente de `command`) reclassificado para bloqueante. Variante R4 (`git remote set-url`) declarada no ADR. Corretivo ML-2C ao apolo-tf.
+
+## 2026-10-10 — zeus-tf — ML-2C auditado
+
+- R-1/R-2 corrigidos (extração por esquema, sem recursão; `type` ≠ `command` não conta). Ressalva: R-2 no esquema flat (Copilot) sem teste próprio. AC9 remedido com o binário final: base 0; `PreToolUse` apagado 4; `true` 7; `disableAllHooks` 1; guard em metadata 4. ML-2A reaberto (o agente o marcara concluído sem `make quality`/CI).

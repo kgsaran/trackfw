@@ -104,7 +104,7 @@ verificam segue desligada.**
       ✅ Evidência: 27 testes com nomes conferidos por `go test -list`; mordida M1–M5 e mutação independente do arquiteto
 - [x] **AC9** — Medição de volta: os três braços da tabela de 2026-10-10 repetidos com o binário da
       branch — os dois braços adulterados acusam; a base não.
-      ✅ Evidência: binário da branch em worktree de `origin/main`: base 0, `PreToolUse` apagado 4, `true` 7, `disableAllHooks` 1, `echo` 6
+      ✅ Evidência: binário da branch em worktree de `origin/main`: base 0, `PreToolUse` apagado 4, `true` 7, `disableAllHooks` 1, `echo` 6; remedido após o red-team (binário de `a0c9361c`+ML-2C): base 0, apagado 4, `true` 7, `disableAllHooks` 1, guard escondido em `metadata_guards` 4
 
 ## Negative Scope
 

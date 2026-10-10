@@ -42,7 +42,7 @@ causa).
 - [x] AC8 — cada teste novo declara o que afirma e reprova sem a correção
       ✅ Evidência: nomes conferidos por `go test -list`; mordida M1–M5 + mutação independente do arquiteto
 - [x] AC9 — medição de volta dos três braços com o binário da branch
-      ✅ Evidência: base 0, `PreToolUse` apagado 4, `true` 7, `disableAllHooks` 1, `echo` 6 (binário da branch, worktree de `origin/main`)
+      ✅ Evidência: base 0, `PreToolUse` apagado 4, `true` 7, `disableAllHooks` 1, `echo` 6; remedido após o red-team (binário de `a0c9361c`+ML-2C): base 0, apagado 4, `true` 7, `disableAllHooks` 1, guard escondido em `metadata_guards` 4 (binário da branch, worktree de `origin/main`)
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -187,10 +187,12 @@ go test ./internal/validator/
 
 ### ML-2A — Revisão de qualidade e red-team
 **Owner:** `hefesto-tf` e `hades-tf` (em sequência, não em paralelo — custo de CPU)
-**Status:** 🔄 Em andamento
+**Status:** 🔄 Em andamento — pareceres e corretivos feitos; faltam AC9 final, `make quality` e CI
 **Acceptance criteria:**
-- [ ] Parecer do `hades-tf` reimplementando a partir da leitura e tentando burlar a regra
-- [ ] Defeitos achados viram ML corretivo neste roadmap
+- [x] Parecer do `hades-tf` reimplementando a partir da leitura e tentando burlar a regra
+      ✅ Evidência: `docs/seguranca/2026-10-10-red-team-guard-wiring-removed.md` (aprovado com ressalvas; R-1 e R-2 corrigidos no ML-2C)
+- [x] Defeitos achados viram ML corretivo neste roadmap
+      ✅ Evidência: ML-2B (revisão de qualidade) e ML-2C (red-team)
 - [ ] AC9: três braços repetidos com o binário da branch — base silenciosa, os dois adulterados acusam
 - [ ] `make quality` EXIT=0 com máquina ociosa; CI do PR verde, inclusive `windows-full-suites`
 
@@ -221,7 +223,7 @@ reproduzido** (o comentário citado não existe nos arquivos indicados).
 
 ### ML-2C — Corretivo do red-team (`hades-tf`)
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-10: `go build ./...` EXIT=0, `go test ./internal/validator/` EXIT=0; extração por esquema (aninhado, flat, Kiro) sem recursão. **Ressalva:** o R-2 no esquema flat (Copilot) está no código (`guardWiringExtractCommandsFromEntry`, ramo `hookCmdSchemaFlat`), simétrico ao aninhado, mas sem teste próprio
 **Origem:** `docs/seguranca/2026-10-10-red-team-guard-wiring-removed.md` — aprovado com ressalvas. Auditoria
 do arquiteto: R-1 confirmado no código (`guardWiringCollectCommandValues`, `validator_guard_wiring.go:309`,
 recursiva: aceita `"command"` em qualquer profundidade; também usada na D7 do Kiro, linha 492). **R-2
@@ -229,7 +231,11 @@ reclassificado para bloqueante** (defeito conhecido: entrada com `type` diferent
 e é contada como fiação viva).
 **Files affected:** `internal/validator/validator_guard_wiring.go`, `internal/validator/validator_guard_wiring_test.go`, `docs/cli-parity.md` (seção da regra)
 **Acceptance criteria:**
-- [ ] R-1: extração de comando só nos campos executáveis do schema de cada arquivo (sem busca recursiva), inclusive na D7 do Kiro; teste com o guard em `metadata_guards.command` e `command` neutralizado → violação, para Claude Code e Cursor
-- [ ] R-2: entrada com `type` presente e diferente de `command` não é fiação viva; teste → violação
-- [ ] Concordância com os 8 `Inject*Hooks` continua verde (a extração estreitada ainda reconhece a saída real do gerador)
-- [ ] Prova de mordida dos testes novos; nomes por `go test -list`
+- [x] R-1: extração de comando só nos campos executáveis do schema de cada arquivo (sem busca recursiva), inclusive na D7 do Kiro; teste com o guard em `metadata_guards.command` e `command` neutralizado → violação, para Claude Code e Cursor
+      ✅ Evidência: `GuardEmCampoDeMetadata_Claude_Dispara`, `GuardEmCampoDeMetadata_Cursor_Dispara`; reprovam com a busca recursiva de volta
+- [x] R-2: entrada com `type` presente e diferente de `command` não é fiação viva; teste → violação
+      ✅ Evidência: `TypeDiferenteDeCommand_Dispara` (Claude, Amazon Q); reprovam sem a checagem de `type`
+- [x] Concordância com os 8 `Inject*Hooks` continua verde (a extração estreitada ainda reconhece a saída real do gerador)
+      ✅ Evidência: `TestGuardWiringConcordance_GeneratorOutputRecognized` verde na suíte completa; `TestGuardWiringHookLayout_CobreTodasAsEntradas` amarra a população ao mapa de esquemas
+- [x] Prova de mordida dos testes novos; nomes por `go test -list`
+      ✅ Evidência: relatada por teste novo; nomes por `go test -list`

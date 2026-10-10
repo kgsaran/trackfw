@@ -8479,7 +8479,7 @@ hook que chama o guard.
 
 ### A regra: comparação por tupla ancorada em `origin/main`
 
-<!-- trackfw-contract: gate=internal/validator/validator_guard_wiring_test.go partial=o gate cobre os 4 tipos de adulteração (chave apagada, matcher apagado, matcher estreitado, comando neutralizado — incluindo echo sem sufixo), a chave de desligamento D7 (disableAllHooks para Claude e Copilot, settings.local.json, Kiro enabled:false, Gemini hooksConfig.enabled:false, Codex [features] hooks=false nas formas section/dotted-key/inline-table/comment), os controles de silêncio (nunca instalado, tuples idênticas com JSON reformatado, migração legítima A2, Codex config.toml não rastreado, Codex hooks=true), o caso A4 (sem trackfw.yaml em origin/main, regra ainda deriva o ref e compara), a falha fechada (2 branches não-standard fetched → violação), a sobrevivência ao lenient mode e ao baseline (com config.Reset()), e a ausência de origin/origin/ na mensagem; NÃO cobre Cursor/Windsurf/Amazon Q com fixtures próprios (mesma lógica de extração, sem prova per-artefato) -->
+<!-- trackfw-contract: gate=internal/validator/validator_guard_wiring_test.go partial=o gate cobre os 4 tipos de adulteração (chave apagada, matcher apagado, matcher estreitado, comando neutralizado — incluindo echo sem sufixo), a chave de desligamento D7 (disableAllHooks para Claude e Copilot, settings.local.json, Kiro enabled:false, Gemini hooksConfig.enabled:false, Codex [features] hooks=false nas formas section/dotted-key/inline-table/comment), os controles de silêncio (nunca instalado, tuples idênticas com JSON reformatado, migração legítima A2, Codex config.toml não rastreado, Codex hooks=true), o caso A4 (sem trackfw.yaml em origin/main, regra ainda deriva o ref e compara), a falha fechada (2 branches não-standard fetched → violação), a sobrevivência ao lenient mode e ao baseline (com config.Reset()), e a ausência de origin/origin/ na mensagem; R-1: bypass por campo de metadados coberto por TestGuardWiringRemoved_GuardEmCampoDeMetadata_Claude_Dispara e TestGuardWiringRemoved_GuardEmCampoDeMetadata_Cursor_Dispara; R-2: entrada com type != "command" coberta por TestGuardWiringRemoved_TypeDiferenteDeCommand_Dispara (Claude, AmazonQ); Kiro D7 com guard em metadados coberto por TestGuardWiringRemoved_Kiro_EnabledFalse_EmMetadata_NaoDisparaD7; cobertura de layout coberta por TestGuardWiringHookLayout_CobreTodasAsEntradas; NÃO cobre Cursor/Windsurf/Amazon Q com fixtures próprios via D7 (mesma lógica de extração, sem prova per-artefato) -->
 
 A regra `guard_wiring_removed` opera sobre a **população fechada de 8 arquivos de hook**
 (`credentialGuardHookFiles`), comparando as tuplas `(arquivo, evento, matcher, guard-type)` entre
@@ -8503,6 +8503,37 @@ silenciosas.
 **Cobertura de matcher (A2):** o matcher do disco cobre o de `origin/main` quando o conjunto de
 alternativas `|` do disco contém o de `origin/main`. `Bash|PowerShell` cobre `Bash`; `Bash` não
 cobre `Bash|PowerShell`. Matcher com metacaracteres → não cobre (conservativo).
+
+### Extração estrutural por esquema de CLI (R-1, R-2 — ML-2C)
+
+<!-- trackfw-contract: gate=internal/validator/validator_guard_wiring_test.go partial=TestGuardWiringRemoved_GuardEmCampoDeMetadata_Claude_Dispara (R-1 Nested), TestGuardWiringRemoved_GuardEmCampoDeMetadata_Cursor_Dispara (R-1 Flat), TestGuardWiringRemoved_TypeDiferenteDeCommand_Dispara/Claude e /AmazonQ (R-2 Nested), TestGuardWiringHookLayout_CobreTodasAsEntradas (cobertura do mapa) -->
+
+A extração de comandos executáveis segue o **caminho estrutural exato** do CLI — não busca
+recursiva de qualquer chave `"command"` no JSON (R-1: isso permitiria bypass colocando a string
+do guard num campo de metadados não-executável como `metadata_guards.command` e substituindo o
+campo executável por `echo bypassed`).
+
+| CLI | Esquema | Caminho do executável | Função geradora |
+|---|---|---|---|
+| Claude Code | `hookCmdSchemaNested` | `entry["hooks"][i]["command"]` | `mergeClaudeHookArray` |
+| Codex CLI | `hookCmdSchemaNested` | `entry["hooks"][i]["command"]` | `mergeClaudeHookArray` |
+| Gemini CLI | `hookCmdSchemaNested` | `entry["hooks"][i]["command"]` | `mergeClaudeHookArray` |
+| Amazon Q CLI | `hookCmdSchemaNested` | `entry["hooks"][i]["command"]` | `mergeClaudeHookArray` |
+| GitHub Copilot CLI | `hookCmdSchemaFlat` | `entry["command"]` | `InjectCopilotHooks` |
+| Cursor | `hookCmdSchemaFlat` | `entry["command"]` | `InjectCursorHooks` |
+| Windsurf | `hookCmdSchemaFlat` | `entry["command"]` | `InjectWindsurfHooks` |
+| Kiro | `hookCmdSchemaKiro` | `entry["action"]["command"]` | `InjectKiroHooks` |
+
+**R-2:** se o campo `"type"` estiver presente no objeto executável e seu valor for diferente de
+`"command"`, a entrada não é executada pelo runtime → **não conta como fiação viva**.
+
+- Nested: `entry["hooks"][i]["type"]` presente e `!= "command"` → item ignorado.
+- Flat: `entry["type"]` presente e `!= "command"` → entrada ignorada.
+- Kiro: `entry["action"]["type"]` presente e `!= "command"` → entrada ignorada.
+
+**Fail-closed em arquivo não mapeado:** se `guardWiringParseTuples` for chamado com um caminho
+não registrado em `guardWiringHookLayout`, a função retorna erro — zero tuplas extraídas seria
+fail-open (violação suprimida silenciosamente).
 
 ### D7 — Chaves de desligamento de hooks são violação da mesma regra
 

@@ -41,6 +41,53 @@ type wiringTuple struct {
 	guardType string // "credential" or "git-branch"
 }
 
+// hookCmdSchemaKind classifies how executable command strings are extracted from a parsed hook
+// entry for a given CLI hook file. R-1 (ML-2C): extraction must follow the structural path the
+// CLI actually executes, not a recursive "command" key search — the latter allows an attacker to
+// place the guard string in a non-executable metadata field and substitute the executable field
+// with a no-op.
+type hookCmdSchemaKind int
+
+const (
+	// hookCmdSchemaNested: each event-entry has an inner "hooks" array; the executable command
+	// lives at entry["hooks"][i]["command"]. If "type" is present and != "command" on the inner
+	// item, the item is not executed → skip (R-2).
+	// CLIs: Claude Code, Codex CLI, Gemini CLI, Amazon Q.
+	// Generator function: mergeClaudeHookArray (agentfiles.go:1976).
+	hookCmdSchemaNested hookCmdSchemaKind = iota
+	// hookCmdSchemaFlat: the executable command lives directly at entry["command"].
+	// If "type" is present on the entry and != "command", the entry is not executed → skip (R-2).
+	// Cursor entries never carry "type"; Copilot entries carry "type": "command".
+	// CLIs: GitHub Copilot CLI, Cursor, Windsurf.
+	// Generator functions: Copilot (agentfiles.go:1165), mergeSimpleCommandArray,
+	//   mergeCursorGuardMatcherEntry (agentfiles.go:2038).
+	hookCmdSchemaFlat
+	// hookCmdSchemaKiro: the executable command lives at entry["action"]["command"].
+	// If action["type"] is present and != "command", the entry is not executed → skip (R-2).
+	// CLIs: Kiro (.kiro/hooks/trackfw-attention.json).
+	// Generator function: InjectKiroHooks (agentfiles.go:954).
+	hookCmdSchemaKiro
+)
+
+// guardWiringHookLayout maps each hook file path to its command-extraction schema.
+// Every path in credentialGuardHookFiles must have an entry here; guardWiringParseTuples
+// returns a fail-closed error for any path missing from this map.
+//
+// Verified against generator source code (agentfiles.go) in ML-2C:
+//   - Nested (hooks[i].hooks[j].command): Claude, Codex, Gemini, Amazon Q via mergeClaudeHookArray.
+//   - Flat (hooks[i].command): Copilot (with type), Cursor/Windsurf (without type).
+//   - Kiro (hooks[i].action.command): array format, not object.
+var guardWiringHookLayout = map[string]hookCmdSchemaKind{
+	".claude/settings.json":                        hookCmdSchemaNested,
+	".codex/hooks.json":                            hookCmdSchemaNested,
+	".gemini/settings.json":                        hookCmdSchemaNested,
+	".amazonq/cli-agents/q_cli_default.json":       hookCmdSchemaNested,
+	".github/hooks/trackfw-attention.json":         hookCmdSchemaFlat,
+	".cursor/hooks.json":                           hookCmdSchemaFlat,
+	".windsurf/hooks.json":                         hookCmdSchemaFlat,
+	".kiro/hooks/trackfw-attention.json":           hookCmdSchemaKiro,
+}
+
 // disableKeyKind classifies the hook disable mechanism for a given CLI.
 type disableKeyKind int
 
@@ -230,18 +277,30 @@ func guardWiringReadFromOrigin(ref, path string) ([]byte, bool, error) {
 // --------------------------------------------------------------------------
 
 // guardWiringParseTuples parses a JSON hook file and returns all guard wiring tuples.
+// Returns a fail-closed error if the hook file path has no registered extraction schema in
+// guardWiringHookLayout (R-1, ML-2C).
 func guardWiringParseTuples(content []byte, hf credentialGuardHookFile) ([]wiringTuple, error) {
+	schema, ok := guardWiringHookLayout[hf.path]
+	if !ok {
+		return nil, fmt.Errorf(
+			"guard_wiring_removed: no extraction schema registered for hook file %q — fail closed",
+			hf.path,
+		)
+	}
 	var parsed map[string]any
 	if err := json.Unmarshal(content, &parsed); err != nil {
 		return nil, err
 	}
-	return guardWiringExtractTuples(parsed, hf.family), nil
+	return guardWiringExtractTuples(parsed, schema, hf.family), nil
 }
 
 // guardWiringExtractTuples walks a parsed JSON hook file and returns all guard wiring tuples.
 // Handles both hooks-as-object (Claude, Codex, Gemini, Cursor, Copilot, Windsurf, Amazon Q)
 // and hooks-as-array (Kiro) formats.
-func guardWiringExtractTuples(parsed map[string]any, family guardShellFamily) []wiringTuple {
+//
+// R-1 (ML-2C): command extraction is schema-specific (not recursive). schema must be the value
+// from guardWiringHookLayout[hf.path] for the file being parsed.
+func guardWiringExtractTuples(parsed map[string]any, schema hookCmdSchemaKind, family guardShellFamily) []wiringTuple {
 	hooksRaw, ok := parsed["hooks"]
 	if !ok {
 		return nil
@@ -259,8 +318,7 @@ func guardWiringExtractTuples(parsed map[string]any, family guardShellFamily) []
 	}
 
 	addCommandsFromEntry := func(event, matcher string, entry map[string]any) {
-		var cmds []string
-		guardWiringCollectCommandValues(entry, &cmds)
+		cmds := guardWiringExtractCommandsFromEntry(entry, schema)
 		for _, cmd := range cmds {
 			if gt := guardWiringTypeFromCmd(cmd, family); gt != "" {
 				addTuple(event, matcher, gt)
@@ -301,27 +359,81 @@ func guardWiringExtractTuples(parsed map[string]any, family guardShellFamily) []
 	return tuples
 }
 
-// guardWiringCollectCommandValues recursively collects all string values under any "command" key.
-// This covers:
-//   - Direct "command" field (Cursor, Windsurf)
-//   - Nested hooks[].command (Claude, Codex, Gemini, Copilot, Amazon Q)
-//   - action.command (Kiro)
-func guardWiringCollectCommandValues(v any, out *[]string) {
-	switch t := v.(type) {
-	case map[string]any:
-		for k, val := range t {
-			if k == "command" {
-				if s, ok := val.(string); ok {
-					*out = append(*out, s)
+// guardWiringExtractCommandsFromEntry extracts executable command strings from a parsed hook entry
+// using the structural path for the CLI's schema. This is a path-specific extraction — not a
+// recursive key search — to prevent bypass by placing the guard string in a non-executable
+// metadata field (R-1, ML-2C).
+//
+// R-2 (ML-2C): if a "type" field is present on the hook object along the executable path and
+// its value is not exactly "command", the hook is not executed by the runtime → skip.
+//
+// Schema paths (source: generator functions in internal/generators/agentfiles.go):
+//   - hookCmdSchemaNested (Claude, Codex, Gemini, Amazon Q — mergeClaudeHookArray):
+//     entry["hooks"][i]["command"]; inner item skipped if type != "command".
+//   - hookCmdSchemaFlat (Copilot, Cursor, Windsurf):
+//     entry["command"] directly; entry skipped if type != "command".
+//   - hookCmdSchemaKiro (Kiro — InjectKiroHooks):
+//     entry["action"]["command"]; skipped if action["type"] != "command".
+func guardWiringExtractCommandsFromEntry(entry map[string]any, schema hookCmdSchemaKind) []string {
+	switch schema {
+	case hookCmdSchemaNested:
+		// Executable path: entry["hooks"][i]["command"].
+		innerHooks, ok := entry["hooks"].([]any)
+		if !ok {
+			return nil
+		}
+		var cmds []string
+		for _, ih := range innerHooks {
+			innerObj, ok := ih.(map[string]any)
+			if !ok {
+				continue
+			}
+			// R-2: "type" present and != "command" → hook item not executed by runtime.
+			if typeVal, hasType := innerObj["type"]; hasType {
+				typeStr, isStr := typeVal.(string)
+				if !isStr || typeStr != "command" {
+					continue
 				}
 			}
-			guardWiringCollectCommandValues(val, out)
+			if cmd, ok := innerObj["command"].(string); ok && cmd != "" {
+				cmds = append(cmds, cmd)
+			}
 		}
-	case []any:
-		for _, item := range t {
-			guardWiringCollectCommandValues(item, out)
+		return cmds
+
+	case hookCmdSchemaFlat:
+		// Executable path: entry["command"] directly.
+		// R-2: "type" present and != "command" → entry not executed by runtime.
+		if typeVal, hasType := entry["type"]; hasType {
+			typeStr, isStr := typeVal.(string)
+			if !isStr || typeStr != "command" {
+				return nil
+			}
 		}
+		if cmd, ok := entry["command"].(string); ok && cmd != "" {
+			return []string{cmd}
+		}
+		return nil
+
+	case hookCmdSchemaKiro:
+		// Executable path: entry["action"]["command"].
+		// R-2: action["type"] present and != "command" → not executed by runtime.
+		action, ok := entry["action"].(map[string]any)
+		if !ok {
+			return nil
+		}
+		if typeVal, hasType := action["type"]; hasType {
+			typeStr, isStr := typeVal.(string)
+			if !isStr || typeStr != "command" {
+				return nil
+			}
+		}
+		if cmd, ok := action["command"].(string); ok && cmd != "" {
+			return []string{cmd}
+		}
+		return nil
 	}
+	return nil
 }
 
 // guardWiringScriptPathForms is the set of legacy script-path guard commands that predate the
@@ -487,9 +599,9 @@ func guardWiringParseDisableKey(content []byte, kind disableKeyKind, family guar
 			if !ok || enabled {
 				continue // enabled:true or non-bool → not disabled
 			}
-			// enabled:false — does this entry contain a guard command?
-			var cmds []string
-			guardWiringCollectCommandValues(entry, &cmds)
+			// enabled:false — does this entry contain a guard command in its executable path?
+			// R-1 (ML-2C): use schema-specific extraction, not recursive key search.
+			cmds := guardWiringExtractCommandsFromEntry(entry, hookCmdSchemaKiro)
 			for _, cmd := range cmds {
 				if guardWiringTypeFromCmd(cmd, family) != "" {
 					return true
