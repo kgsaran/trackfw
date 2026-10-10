@@ -2,6 +2,28 @@
 
 ---
 
+## 2026-10-10 — apolo-tf (fix/remover-a-entrada-pretooluse-nao-e-detectado — ML-2B corretivo) — FIM
+
+**Branch:** `fix/remover-a-entrada-pretooluse-nao-e-detectado`
+**Escopo:** `internal/validator/validator_guard_wiring.go`, `internal/validator/validator_guard_wiring_test.go`, `internal/validator/export_test.go`, `internal/validator/validator_guard_wiring_concordance_external_test.go`
+**Entregável:** Correções dos 6 achados bloqueantes da revisão hefesto-tf — `go build ./...` EXIT=0, `go test ./internal/validator/` EXIT=0 (49s), 33 testes GuardWiring listados.
+**Achados corrigidos:**
+- Q1: `guardWiringScriptPathForms` (9 formas legado script-path) adicionada; `guardWiringTypeFromCmd` verifica a tabela após as formas inline.
+- Q1 concordância: `TestGuardWiringConcordance_AllGeneratorFormsRecognized` — varre `agentfiles.go`, piso de 9 formas, prova de sentinela.
+- Q2: `guardWiringReadFromOrigin` distingue `lsErr != nil` (falha fechada, retorna error) de saída vazia (ausente, retorna `isAbsent=true`). `TestGuardWiringReadFromOrigin_LsTreeFalha_FailClosed` adicionado.
+- Q3: `guardWiringDisableKeyMsg` e `guardWiringCheckCodexToml` passam `ref` em vez de hardcode `"origin/main"`. Dois testes `_RefMaster_` adicionados.
+- Q6: `TestGuardWiringRemoved_CategoriaApagada_Dispara` → renomeado para `ArquivoAusenteNoDisco_Dispara`; `TestGuardWiringRemoved_ArquivoPresenteChaveRemovidaDoDisco_Dispara` adicionado (caso genuíno chave removida).
+- Q8: `TestGuardWiringRemoved_OriginSemRefsBuscados_Silencio` adicionado; chdir antes da precondição (bug corrigido nesta sessão).
+**Exports adicionados:** `GuardWiringTypeFromCmdPSPosixForTest`, `GuardWiringTypeFromCmdCmdExeForTest`, `GuardExpectedLinePSPosixForTest`, `GuardExpectedLineCmdExeForTest`.
+
+## 2026-10-10 — apolo-tf (fix/remover-a-entrada-pretooluse-nao-e-detectado — ML-2B corretivo) — INÍCIO
+
+**Branch:** `fix/remover-a-entrada-pretooluse-nao-e-detectado`
+**Escopo:** `internal/validator/validator_guard_wiring.go`, `internal/validator/validator_guard_wiring_test.go`, `internal/validator/export_test.go`, novo `validator_guard_wiring_concordance_external_test.go`
+**Objetivo:** Corrigir 6 achados bloqueantes da revisão hefesto-tf (Q1, Q2, Q3, Q6, Q8 + concordância Q1).
+
+---
+
 ## 2026-10-10 — hefesto-tf — INÍCIO: ML-2A Wave 2 revisão guard_wiring_removed
 
 - Revisão de qualidade da implementação da regra `guard_wiring_removed` (REQ-2026-09-02, Wave 2).
@@ -46295,3 +46317,7 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-10 — zeus-tf — revisão de qualidade (Wave 2) auditada
 
 - Parecer do hefesto-tf aprovado com ajustes. Q2/Q3 confirmados no código; Q1 (fiação legada por script não reconhecida) reclassificado para bloqueante; Q7 não reproduzido. Corretivo ML-2B despachado ao apolo-tf.
+
+## 2026-10-10 — zeus-tf — ML-2B auditado
+
+- Devolvido uma vez (testes de comportamento do Q1 ausentes, Parte 2 da concordância tautológica, sem mordida do Q2/Q3). Aprovado: 37 testes `GuardWiring`; concordância real com os 8 `Inject*Hooks`; mordida independente (sem D11-revised, 6/8 CLIs reprovam). Próximo: red-team do hades-tf.

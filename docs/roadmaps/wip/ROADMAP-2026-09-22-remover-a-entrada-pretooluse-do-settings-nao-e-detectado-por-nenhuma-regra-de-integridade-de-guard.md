@@ -196,7 +196,7 @@ go test ./internal/validator/
 
 ### ML-2B — Corretivo da revisão de qualidade (`hefesto-tf`)
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-10 após uma devolução (faltavam os testes de comportamento do Q1, a concordância real com o gerador e a mordida do Q2/Q3). `go build ./...` EXIT=0; `go test ./internal/validator/` EXIT=0; 37 testes `GuardWiring` por `go test -list`
 **Origem:** `docs/qualidade/2026-10-10-revisao-guard-wiring-removed.md` — aprovado com ajustes. Auditoria do
 arquiteto: Q2 e Q3 confirmados no código (`validator_guard_wiring.go:209` trata erro de `ls-tree` como
 ausente; linhas 468 e 533 fixam `origin/main`). **Q1 reclassificado para bloqueante** (falso negativo
@@ -204,11 +204,18 @@ conhecido: fiação legada por caminho de script em `origin/main` não é reconh
 reproduzido** (o comentário citado não existe nos arquivos indicados).
 **Files affected:** `internal/validator/validator_guard_wiring.go`, `internal/validator/validator_guard_wiring_test.go`, teste de concordância externo (novo ou existente em `internal/validator/*_external_test.go`)
 **Acceptance criteria:**
-- [ ] Q1: formas por caminho de script (`agentfiles.go:525-540`, credential e git-branch, por CLI) na classe de equivalência; teste com `origin/main` em forma de script e fiação removida → violação; script em origin e D11-revised no disco → silêncio
-- [ ] Q1: teste de concordância que falha se o gerador ganhar forma de comando que o validator não reconhece
-- [ ] Q2: erro do `git ls-tree` (diferente de "não listado") → falha fechada nomeada; teste
-- [ ] Q3: mensagens de D7 e do Codex usam o ref derivado; teste
-- [ ] Q6: teste renomeado para o que faz (arquivo ausente) + teste novo com o arquivo presente e `PreToolUse` removido
-- [ ] Q8: teste do ramo "0 refs de origin buscados → silêncio" que reprova com `guardWiringHasAnyFetchedOriginRefs` invertida
-- [ ] Prova de mordida por teste novo; nomes conferidos por `go test -list`
+- [x] Q1: formas por caminho de script (`agentfiles.go:525-540`, credential e git-branch, por CLI) na classe de equivalência; teste com `origin/main` em forma de script e fiação removida → violação; script em origin e D11-revised no disco → silêncio
+      ✅ Evidência: `TestGuardWiringRemoved_ScriptPathNaRef_FiacaoRemovida_Dispara`, `ScriptPathNaRef_MigradoParaD11_Silencio` (com precondição contra silêncio vácuo); mordida: remover a forma do Claude reprova os dois
+- [x] Q1: teste de concordância que falha se o gerador ganhar forma de comando que o validator não reconhece
+      ✅ Evidência: `TestGuardWiringConcordance_GeneratorOutputRecognized` (8 `Inject*Hooks` reais), `LegacyD2D11FormsRecognized`, `AllGeneratorFormsRecognized`; mordida independente do arquiteto: sem a forma D11-revised, 6 de 8 CLIs reprovam (Kiro e Amazon Q não, porque D11-legacy = D11-revised em cmd.exe)
+- [x] Q2: erro do `git ls-tree` (diferente de "não listado") → falha fechada nomeada; teste
+      ✅ Evidência: `TestGuardWiringReadFromOrigin_LsTreeFalha_FailClosed`; reprova com o erro tratado como ausente
+- [x] Q3: mensagens de D7 e do Codex usam o ref derivado; teste
+      ✅ Evidência: `DisableAllHooks_RefMaster_MensagemCorreta`, `Codex_TomlMaster_MensagemCorreta`; reprovam com `origin/main` fixo
+- [x] Q6: teste renomeado para o que faz (arquivo ausente) + teste novo com o arquivo presente e `PreToolUse` removido
+      ✅ Evidência: `ArquivoAusenteNoDisco_Dispara` (renomeado), `ArquivoPresenteChaveRemovidaDoDisco_Dispara` (novo)
+- [x] Q8: teste do ramo "0 refs de origin buscados → silêncio" que reprova com `guardWiringHasAnyFetchedOriginRefs` invertida
+      ✅ Evidência: `OriginSemRefsBuscados_Silencio`; reprova com `guardWiringHasAnyFetchedOriginRefs` sempre true
+- [x] Prova de mordida por teste novo; nomes conferidos por `go test -list`
+      ✅ Evidência: relatada por teste novo; uma refeita pelo arquiteto em cópia de scratch
 

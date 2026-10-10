@@ -138,7 +138,7 @@ func validateGuardWiringRemoved() ([]string, error) {
 				diskDisableActive = guardWiringParseDisableKey(diskContent, dkKind, hf.family)
 			}
 			if diskDisableActive && !originDisableActive {
-				msgs = append(msgs, guardWiringDisableKeyMsg(hf, dkKind))
+				msgs = append(msgs, guardWiringDisableKeyMsg(hf, dkKind, ref))
 			}
 		}
 
@@ -202,12 +202,21 @@ func validateGuardWiringRemoved() ([]string, error) {
 // guardWiringReadFromOrigin reads the hook file at path from the given git ref.
 // Returns (content, isAbsent, error):
 //   - content non-nil, isAbsent=false: file present and readable.
-//   - content nil, isAbsent=true: file not present in that ref ("never installed").
-//   - content nil, isAbsent=false, err non-nil: ls-tree listed it but git-show failed (fail-closed).
+//   - content nil, isAbsent=true: file not present in that ref ("never installed") — silent.
+//   - content nil, isAbsent=false, err non-nil: git failed (ls-tree or show) — fail closed (ADR D1).
+//
+// Q2 (ML-2B): the two failure modes are explicitly separated:
+//   - lsErr != nil: git ls-tree itself failed (network, pack corruption, bad ref) → fail closed.
+//   - empty lsOut: file not tracked in this ref → absent → silent.
+//   - showErr != nil: file listed but could not be read → fail closed.
 func guardWiringReadFromOrigin(ref, path string) ([]byte, bool, error) {
 	lsOut, lsErr := gitCommand(".", "ls-tree", ref, "--", "./"+path).Output()
-	if lsErr != nil || len(strings.TrimSpace(string(lsOut))) == 0 {
-		return nil, true, nil // absent
+	if lsErr != nil {
+		// git ls-tree failed: infrastructure error — do NOT treat as absent (ADR D1 fail-closed).
+		return nil, false, fmt.Errorf("git ls-tree %s ./%s: %w", ref, path, lsErr)
+	}
+	if len(strings.TrimSpace(string(lsOut))) == 0 {
+		return nil, true, nil // file not tracked in this ref → "never installed" → silent
 	}
 	showOut, showErr := gitCommand(".", "show", ref+":./" + path).Output()
 	if showErr != nil {
@@ -315,20 +324,60 @@ func guardWiringCollectCommandValues(v any, out *[]string) {
 	}
 }
 
+// guardWiringScriptPathForms is the set of legacy script-path guard commands that predate the
+// inline D2/D11/D11-revised forms. migrateHookCommand in internal/generators/agentfiles.go
+// (agentfiles.go:525-540) rewrites these to the current D11-revised inline form. The validator
+// recognises them as equivalent so that projects whose origin/main still carries a pre-migration
+// form are not falsely flagged (ADR A2).
+//
+// These forms are FAMILY-INDEPENDENT: the same string is recognised under any shell family
+// (guardShellFamilyPSPosix or guardShellFamilyCmdExe). The family distinction only matters for
+// inline D2/D11/D11-revised forms, which vary by suffix.
+//
+// Concordance: TestGuardWiringConcordance_AllGeneratorFormsRecognized verifies that every entry
+// here has a match in the generator, and that the generator does not add new forms undetected.
+var guardWiringScriptPathForms = []struct {
+	cmd       string
+	guardType string
+}{
+	// credential guard script paths (legacyBareCredGuardCmd, legacyClaudeCredGuardCmd,
+	// legacyGeminiCredGuardCmd, legacyCodexCredGuardCmd — agentfiles.go:531-534)
+	{"scripts/trackfw-credential-guard.sh", "credential"},
+	{"$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh", "credential"},
+	{"$GEMINI_PROJECT_DIR/scripts/trackfw-credential-guard.sh", "credential"},
+	{`"$(git rev-parse --show-toplevel)/scripts/trackfw-credential-guard.sh"`, "credential"},
+	// git-branch guard script paths (legacyBareGitGuardCmd, legacyClaudeGitGuardCmd,
+	// legacyGeminiGitGuardCmd, legacyCodexGitGuardCmd, legacyWindsurfGitGuardCmd,
+	// legacyAmazonQGitGuardCmd — agentfiles.go:527-540)
+	{"scripts/trackfw-git-branch-guard.sh", "git-branch"},
+	{"bash scripts/trackfw-git-branch-guard.sh", "git-branch"},
+	{"$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh", "git-branch"},
+	{"$GEMINI_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh", "git-branch"},
+	{`"$(git rev-parse --show-toplevel)/scripts/trackfw-git-branch-guard.sh"`, "git-branch"},
+}
+
 // guardWiringTypeFromCmd returns "credential" or "git-branch" if cmd is in the guard command
 // equivalence class for the given shell family, or "" otherwise.
 //
-// Equivalence class (ADR-2026-10-10 A2): D2-legacy + D11-legacy + D11-revised — the same
-// three forms that migrateHookCommand in internal/generators/agentfiles.go recognises.
+// Equivalence class (ADR-2026-10-10 A2):
+//   - D2-legacy + D11-legacy + D11-revised inline forms (family-dependent)
+//   - Script-path legacy forms (family-independent, see guardWiringScriptPathForms)
+//
 // The validator cannot import generators (cycle), so the equivalence is maintained here
 // via the shared helpers guardExpectedLine, guardD11LegacyLine, guardD2LegacyLine
-// (validator_guard_binary_probe.go).
+// (validator_guard_binary_probe.go) and the literal table guardWiringScriptPathForms.
 func guardWiringTypeFromCmd(cmd string, fam guardShellFamily) string {
 	for _, subcmd := range []string{"credential", "git-branch"} {
 		if cmd == guardExpectedLine(subcmd, fam) ||
 			cmd == guardD11LegacyLine(subcmd, fam) ||
 			cmd == guardD2LegacyLine(subcmd, fam) {
 			return subcmd
+		}
+	}
+	// Script-path legacy forms — family-independent exact match.
+	for _, entry := range guardWiringScriptPathForms {
+		if cmd == entry.cmd {
+			return entry.guardType
 		}
 	}
 	return ""
@@ -453,7 +502,10 @@ func guardWiringParseDisableKey(content []byte, kind disableKeyKind, family guar
 }
 
 // guardWiringDisableKeyMsg formats a D7 disable-key violation message.
-func guardWiringDisableKeyMsg(hf credentialGuardHookFile, kind disableKeyKind) string {
+// ref is the origin anchor ref derived by deriveOriginDefaultBranch (e.g. "origin/main" or
+// "origin/master"). Q3 (ML-2B): the ref is embedded in the message so that repos whose default
+// branch is not "main" do not see a misleading "origin/main" in the violation text.
+func guardWiringDisableKeyMsg(hf credentialGuardHookFile, kind disableKeyKind, ref string) string {
 	var keyDesc string
 	switch kind {
 	case disableKeyKindDisableAllHooks:
@@ -465,8 +517,8 @@ func guardWiringDisableKeyMsg(hf credentialGuardHookFile, kind disableKeyKind) s
 	}
 	return fmt.Sprintf(
 		"guard_wiring_removed: %s (%s): %s disables all hooks including guard wiring — "+
-			"this key was absent in origin/main; investigate before proceeding",
-		hf.path, hf.cli, keyDesc,
+			"this key was absent in %s; investigate before proceeding",
+		hf.path, hf.cli, keyDesc, ref,
 	)
 }
 
@@ -530,7 +582,7 @@ func guardWiringCheckCodexToml(ref string) ([]string, error) {
 	return []string{
 		"guard_wiring_removed: .codex/config.toml (Codex CLI): " +
 			"[features] hooks is not set to true — hooks are disabled or the value could " +
-			"not be classified as enabled; this was absent in origin/main; " +
+			"not be classified as enabled; this was absent in " + ref + "; " +
 			"investigate before proceeding",
 	}, nil
 }

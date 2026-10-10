@@ -149,14 +149,16 @@ func guardWiringInitOriginAmbiguous(t *testing.T, testDir string) {
 }
 
 // --------------------------------------------------------------------------
-// AC: viola quando a chave PreToolUse é apagada inteira
+// AC: viola quando o arquivo de hook está ausente no disco (Q6 ML-2B)
 // --------------------------------------------------------------------------
 
-// TestGuardWiringRemoved_CategoriaApagada_Dispara afirma: apagar o evento PreToolUse inteiro do
-// .claude/settings.json, com a entrada tendo estado em origin/main, gera violação nomeando o guard.
+// TestGuardWiringRemoved_ArquivoAusenteNoDisco_Dispara afirma: quando o arquivo de hook está
+// ausente no disco e estava presente em origin/main, a regra emite violação nomeando o guard.
+// (Q6 ML-2B: renomeado de CategoriaApagada_Dispara — o fixture testa arquivo ausente no disco,
+// não só a chave PreToolUse removida; os dois casos são distintos.)
 // Prova de mordida: sem a implementação de validateGuardWiringRemoved, origin tem tupla mas a regra
 // não a compara → ausência na lista de violations → teste falha em hasViolation.
-func TestGuardWiringRemoved_CategoriaApagada_Dispara(t *testing.T) {
+func TestGuardWiringRemoved_ArquivoAusenteNoDisco_Dispara(t *testing.T) {
 	dir := t.TempDir()
 	initGitRepo(t, dir, "main")
 
@@ -178,6 +180,49 @@ func TestGuardWiringRemoved_CategoriaApagada_Dispara(t *testing.T) {
 	}
 	if !hasViolation(msgs, "guard_wiring_removed") {
 		t.Fatalf("expected guard_wiring_removed violation; msgs=%v", msgs)
+	}
+	if !hasViolation(msgs, `"credential"`) {
+		t.Errorf("expected credential guard named in violation; msgs=%v", msgs)
+	}
+	if !hasViolation(msgs, `"git-branch"`) {
+		t.Errorf("expected git-branch guard named in violation; msgs=%v", msgs)
+	}
+}
+
+// --------------------------------------------------------------------------
+// AC: viola quando o arquivo está presente mas hooks.PreToolUse foi removido (Q6 ML-2B)
+// --------------------------------------------------------------------------
+
+// TestGuardWiringRemoved_ArquivoPresenteChaveRemovidaDoDisco_Dispara afirma: quando o arquivo de
+// hook está presente no disco mas o evento PreToolUse foi removido (arquivo tem {"hooks": {}}),
+// a regra emite violação — porque a tupla estava em origin/main e não está no disco.
+// (Q6 ML-2B: caso distinto de ArquivoAusenteNoDisco — aqui o arquivo existe, só a chave foi removida.)
+// Prova de mordida: se o disco tiver arquivo presente e parsável, e a regra pular a comparação de
+// tuplas (ex.: retornar nil quando diskAbsent=false), o teste falha em hasViolation.
+func TestGuardWiringRemoved_ArquivoPresenteChaveRemovidaDoDisco_Dispara(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir, "main")
+
+	credCmd := guardExpectedLine("credential", guardShellFamilyPSPosix)
+	gitCmd := guardExpectedLine("git-branch", guardShellFamilyPSPosix)
+	originHook := claudeSettingsWithGuard("Bash|PowerShell", credCmd, gitCmd)
+
+	initOriginMainWithArtifacts(t, dir, "req_dir: docs/req\n", map[string]string{
+		".claude/settings.json": originHook,
+	})
+
+	// Disk: file present but hooks.PreToolUse key removed entirely.
+	writeFile(t, dir, ".claude/settings.json", `{"hooks": {}}`)
+
+	chdir(t, dir)
+	t.Cleanup(func() { currentOriginMain = originMainAnchor{} })
+
+	msgs, err := validateGuardWiringRemoved()
+	if err != nil {
+		t.Fatalf("validateGuardWiringRemoved: %v", err)
+	}
+	if !hasViolation(msgs, "guard_wiring_removed") {
+		t.Fatalf("expected guard_wiring_removed violation for present-file/removed-key; msgs=%v", msgs)
 	}
 	if !hasViolation(msgs, `"credential"`) {
 		t.Errorf("expected credential guard named in violation; msgs=%v", msgs)
@@ -1190,6 +1235,303 @@ func TestGuardWiringRemoved_Codex_TomlHooksTrue_Silencio(t *testing.T) {
 		if strings.Contains(m, ".codex/config.toml") {
 			t.Errorf("expected no violation for hooks=true, got: %q", m)
 		}
+	}
+}
+
+// --------------------------------------------------------------------------
+// Q2 ML-2B: git ls-tree failure → fail-closed (not absent)
+// --------------------------------------------------------------------------
+
+// TestGuardWiringReadFromOrigin_LsTreeFalha_FailClosed afirma: quando git ls-tree falha (ref
+// inexistente), guardWiringReadFromOrigin deve retornar isAbsent=false e err não-nil — falha
+// fechada em vez de silêncio. (Q2 ML-2B)
+// Prova de mordida: antes da correção, lsErr != nil retornava (nil, true, nil) — isAbsent=true —
+// fazendo o chamador ignorar o arquivo. Com a correção, o chamador recebe err != nil e emite
+// violação de falha fechada.
+func TestGuardWiringReadFromOrigin_LsTreeFalha_FailClosed(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir, "main")
+	writeFile(t, dir, "README.md", "hello\n")
+	runGitInDir(t, dir, "add", ".")
+	runGitInDir(t, dir, "commit", "-m", "init")
+
+	chdir(t, dir)
+
+	// Use a ref that does not exist locally → git ls-tree fails.
+	_, isAbsent, err := guardWiringReadFromOrigin("refs/remotes/nonexistent/branch", ".claude/settings.json")
+	if isAbsent {
+		t.Fatal("Q2: ls-tree failure must not be treated as absent — want fail-closed (isAbsent=false)")
+	}
+	if err == nil {
+		t.Fatal("Q2: expected non-nil error for ls-tree failure on nonexistent ref")
+	}
+}
+
+// --------------------------------------------------------------------------
+// Q3 ML-2B: mensagens D7/Codex usam o ref derivado (não "origin/main" fixo)
+// --------------------------------------------------------------------------
+
+// guardWiringInitOriginMasterWithArtifacts creates an origin on branch "master" and fetches it.
+// Used by Q3 tests to verify that "origin/master" (not "origin/main") appears in violation messages.
+func guardWiringInitOriginMasterWithArtifacts(t *testing.T, testDir string, artifacts map[string]string) {
+	t.Helper()
+	originDir := t.TempDir()
+	runIn := func(dir string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("guardWiringInitOriginMasterWithArtifacts git %v in %s: %s", args, dir, string(out))
+		}
+	}
+	runIn(originDir, "init", "-b", "master")
+	runIn(originDir, "config", "user.email", "test@test.com")
+	runIn(originDir, "config", "user.name", "test")
+	writeFile(t, originDir, "trackfw.yaml", "req_dir: docs/req\n")
+	for relPath, content := range artifacts {
+		writeFile(t, originDir, relPath, content)
+	}
+	runIn(originDir, "add", ".")
+	runIn(originDir, "commit", "-m", "init")
+
+	runIn(testDir, "remote", "add", "origin", originDir)
+	runIn(testDir, "fetch", "--depth=1", "--no-tags", "origin",
+		"+refs/heads/master:refs/remotes/origin/master")
+}
+
+// TestGuardWiringRemoved_DisableAllHooks_RefMaster_MensagemCorreta afirma: quando a branch padrão
+// do origin é "master", a mensagem de violação D7 (disableAllHooks) cita "origin/master" — não
+// "origin/main" fixo. (Q3 ML-2B)
+// Prova de mordida: antes da correção, guardWiringDisableKeyMsg não recebia nem usava o ref →
+// mensagem continha literalmente "origin/main" mesmo com origin/master → teste falha em Contains.
+func TestGuardWiringRemoved_DisableAllHooks_RefMaster_MensagemCorreta(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir, "main")
+
+	// Origin on "master" with NO settings.json → so disableAllHooks on disk is new.
+	guardWiringInitOriginMasterWithArtifacts(t, dir, map[string]string{})
+
+	// Disk: settings.json with disableAllHooks:true (and a guard entry so origin was "present").
+	credCmd := guardExpectedLine("credential", guardShellFamilyPSPosix)
+	writeFile(t, dir, ".claude/settings.json", fmt.Sprintf(`{
+  "disableAllHooks": true,
+  "hooks": {
+    "PreToolUse": [
+      {"matcher": "Bash|PowerShell", "hooks": [{"command": %q, "type": "command"}]}
+    ]
+  }
+}`, credCmd))
+
+	chdir(t, dir)
+	t.Cleanup(func() { currentOriginMain = originMainAnchor{} })
+
+	msgs, err := validateGuardWiringRemoved()
+	if err != nil {
+		t.Fatalf("validateGuardWiringRemoved: %v", err)
+	}
+	var d7Msgs []string
+	for _, m := range msgs {
+		if strings.Contains(m, "disableAllHooks") {
+			d7Msgs = append(d7Msgs, m)
+		}
+	}
+	if len(d7Msgs) == 0 {
+		t.Fatalf("Q3: expected D7 disableAllHooks violation; msgs=%v", msgs)
+	}
+	for _, m := range d7Msgs {
+		if !strings.Contains(m, "origin/master") {
+			t.Errorf("Q3: D7 message must cite 'origin/master', got: %q", m)
+		}
+		if strings.Contains(m, "origin/main") {
+			t.Errorf("Q3: D7 message must not cite 'origin/main' when ref is origin/master, got: %q", m)
+		}
+	}
+}
+
+// TestGuardWiringRemoved_Codex_TomlMaster_MensagemCorreta afirma: quando a branch padrão do origin
+// é "master", a mensagem de violação Codex config.toml cita "origin/master" — não "origin/main" fixo.
+// (Q3 ML-2B)
+// Prova de mordida: antes da correção, guardWiringCheckCodexToml concatenava "origin/main" literal
+// → mensagem errada com origin/master → teste falha em Contains.
+func TestGuardWiringRemoved_Codex_TomlMaster_MensagemCorreta(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir, "main")
+
+	// Origin on "master" with NO config.toml → so hooks=false on disk is new.
+	guardWiringInitOriginMasterWithArtifacts(t, dir, map[string]string{})
+
+	// Disk: config.toml with [features] hooks = false — tracked in git.
+	writeFile(t, dir, ".codex/config.toml", "[features]\nhooks = false\n")
+	runGitInDir(t, dir, "add", ".codex/config.toml")
+
+	chdir(t, dir)
+	t.Cleanup(func() { currentOriginMain = originMainAnchor{} })
+
+	msgs, err := validateGuardWiringRemoved()
+	if err != nil {
+		t.Fatalf("validateGuardWiringRemoved: %v", err)
+	}
+	var codexMsgs []string
+	for _, m := range msgs {
+		if strings.Contains(m, ".codex/config.toml") {
+			codexMsgs = append(codexMsgs, m)
+		}
+	}
+	if len(codexMsgs) == 0 {
+		t.Fatalf("Q3: expected Codex config.toml violation; msgs=%v", msgs)
+	}
+	for _, m := range codexMsgs {
+		if !strings.Contains(m, "origin/master") {
+			t.Errorf("Q3: Codex message must cite 'origin/master', got: %q", m)
+		}
+		if strings.Contains(m, "origin/main") {
+			t.Errorf("Q3: Codex message must not cite 'origin/main' when ref is origin/master, got: %q", m)
+		}
+	}
+}
+
+// --------------------------------------------------------------------------
+// Q8 ML-2B: origin sem refs buscados → silêncio (R4a)
+// --------------------------------------------------------------------------
+
+// TestGuardWiringRemoved_OriginSemRefsBuscados_Silencio afirma: quando a origem está configurada
+// mas nenhum ref foi buscado (0 refs em refs/remotes/origin/), a regra fica em silêncio.
+// Isso corresponde a um checkout CI sem fetch explícito (R4a), onde o anchor system já emite
+// warning próprio. (Q8 ML-2B)
+// Prova de mordida: com guardWiringHasAnyFetchedOriginRefs sempre retornando true, o caso de
+// "sem refs" cai no ramo (b) de falha fechada e emite violação — o teste falha em hasViolation.
+// O caso simétrico (guardWiringHasAnyFetchedOriginRefs sempre false) é provado pelo teste
+// TestGuardWiringRemoved_RefIlegivel_FalhaFechada: medido com M5-always-false, esse teste falha
+// porque o ramo ambíguo é incorretamente tratado como "sem refs" → silêncio em vez de falha.
+func TestGuardWiringRemoved_OriginSemRefsBuscados_Silencio(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir, "main")
+
+	// Configure origin but do NOT run git fetch → refs/remotes/origin/ is empty.
+	originDir := t.TempDir()
+	// Initialize origin with at least one commit so the remote URL is valid.
+	runGitInDir(t, originDir, "init", "-b", "main")
+	runGitInDir(t, originDir, "config", "user.email", "test@test.com")
+	runGitInDir(t, originDir, "config", "user.name", "test")
+	writeFile(t, originDir, "README.md", "hello\n")
+	runGitInDir(t, originDir, "add", ".")
+	runGitInDir(t, originDir, "commit", "-m", "init")
+	runGitInDir(t, dir, "remote", "add", "origin", originDir)
+	// No fetch — refs/remotes/origin/ stays empty.
+
+	// chdir must come before the precondition check: guardWiringHasAnyFetchedOriginRefs
+	// reads refs/remotes/origin/ from the current working directory.
+	chdir(t, dir)
+	t.Cleanup(func() { currentOriginMain = originMainAnchor{} })
+
+	// Precondition: guardWiringHasAnyFetchedOriginRefs must return false.
+	if guardWiringHasAnyFetchedOriginRefs() {
+		t.Fatal("Q8 precondition: expected no fetched origin refs; repo is in wrong state for this test")
+	}
+
+	msgs, err := validateGuardWiringRemoved()
+	if err != nil {
+		t.Fatalf("validateGuardWiringRemoved: %v", err)
+	}
+	for _, m := range msgs {
+		if strings.Contains(m, "guard_wiring_removed") {
+			t.Errorf("Q8: expected silence for unfetched origin; got: %q", m)
+		}
+	}
+}
+
+// --------------------------------------------------------------------------
+// Lacuna 1 (ML-2B): testes de comportamento para fiação legada por script-path na ref
+// --------------------------------------------------------------------------
+
+// TestGuardWiringRemoved_ScriptPathNaRef_FiacaoRemovida_Dispara afirma: quando origin/main
+// tem .claude/settings.json com guarda em formato script-path legado
+// ($CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh e …/trackfw-git-branch-guard.sh),
+// e o disco não tem essa fiação, a regra emite violação nomeando os dois guards.
+// (Q1 ML-2B: falso negativo confirmado — antes de guardWiringScriptPathForms, comandos
+// script-path em origin/main retornavam "" de guardWiringTypeFromCmd → tupla não reconhecida
+// → nenhuma violação emitida para fiação removida.)
+// Prova de mordida: removendo "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh" de
+// guardWiringScriptPathForms, guardWiringTypeFromCmd("$CLAUDE_PROJECT_DIR/...") retorna "" →
+// a tupla não é extraída de origin → não é comparada → violação não emitida → teste falha em
+// hasViolation(msgs, "credential").
+func TestGuardWiringRemoved_ScriptPathNaRef_FiacaoRemovida_Dispara(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir, "main")
+
+	credScriptCmd := "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh"
+	gitScriptCmd := "$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh"
+	originHook := claudeSettingsWithGuard("Bash|PowerShell", credScriptCmd, gitScriptCmd)
+
+	initOriginMainWithArtifacts(t, dir, "req_dir: docs/req\n", map[string]string{
+		".claude/settings.json": originHook,
+	})
+
+	// Disk: hook file absent (wiring removed after a migration that accidentally deleted the file).
+	chdir(t, dir)
+	t.Cleanup(func() { currentOriginMain = originMainAnchor{} })
+
+	msgs, err := validateGuardWiringRemoved()
+	if err != nil {
+		t.Fatalf("validateGuardWiringRemoved: %v", err)
+	}
+	if !hasViolation(msgs, "guard_wiring_removed") {
+		t.Fatalf("expected guard_wiring_removed violation for script-path origin; msgs=%v", msgs)
+	}
+	if !hasViolation(msgs, `"credential"`) {
+		t.Errorf("expected credential guard named in violation; msgs=%v", msgs)
+	}
+	if !hasViolation(msgs, `"git-branch"`) {
+		t.Errorf("expected git-branch guard named in violation; msgs=%v", msgs)
+	}
+}
+
+// TestGuardWiringRemoved_ScriptPathNaRef_MigradoParaD11_Silencio afirma: quando origin/main
+// tem .claude/settings.json com guarda em formato script-path legado, e o disco tem os mesmos
+// guards na forma D11-revised (o que `trackfw update` produz) com matcher Bash|PowerShell, a
+// regra fica em silêncio — script-path e D11-revised estão na mesma classe de equivalência (A2).
+// (Q1 ML-2B: silêncio esperado para a migração legítima script-path → D11-revised.)
+// Precondição: as formas script-path devem ser reconhecidas por guardWiringTypeFromCmd, senão
+// origin não tem tuplas e o silêncio seria vacuous (falso verde).
+// Prova de mordida: se "$CLAUDE_PROJECT_DIR/scripts/…" for removido de guardWiringScriptPathForms,
+// a precondição falha com "not recognized" — evitando silêncio vacuous.
+func TestGuardWiringRemoved_ScriptPathNaRef_MigradoParaD11_Silencio(t *testing.T) {
+	dir := t.TempDir()
+	initGitRepo(t, dir, "main")
+
+	credScriptCmd := "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh"
+	gitScriptCmd := "$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh"
+	originHook := claudeSettingsWithGuard("Bash|PowerShell", credScriptCmd, gitScriptCmd)
+
+	// Precondition: the script-path forms must be in the equivalence class so that
+	// origin has non-empty tuples. Without this, the test passes vacuously when
+	// guardWiringScriptPathForms regresses (empty origin → no comparison → silence).
+	if got := guardWiringTypeFromCmd(credScriptCmd, guardShellFamilyPSPosix); got != "credential" {
+		t.Fatalf("precondition: %q not recognized as credential guard (got %q)", credScriptCmd, got)
+	}
+	if got := guardWiringTypeFromCmd(gitScriptCmd, guardShellFamilyPSPosix); got != "git-branch" {
+		t.Fatalf("precondition: %q not recognized as git-branch guard (got %q)", gitScriptCmd, got)
+	}
+
+	initOriginMainWithArtifacts(t, dir, "req_dir: docs/req\n", map[string]string{
+		".claude/settings.json": originHook,
+	})
+
+	// Disk: D11-revised form for both guards with Bash|PowerShell matcher — what trackfw update produces.
+	d11CredCmd := guardExpectedLine("credential", guardShellFamilyPSPosix)
+	d11GitCmd := guardExpectedLine("git-branch", guardShellFamilyPSPosix)
+	diskHook := claudeSettingsWithGuard("Bash|PowerShell", d11CredCmd, d11GitCmd)
+	writeFile(t, dir, ".claude/settings.json", diskHook)
+
+	chdir(t, dir)
+	t.Cleanup(func() { currentOriginMain = originMainAnchor{} })
+
+	msgs, err := validateGuardWiringRemoved()
+	if err != nil {
+		t.Fatalf("validateGuardWiringRemoved: %v", err)
+	}
+	if len(msgs) > 0 {
+		t.Fatalf("expected silence for script-path origin → D11-revised disk migration; msgs=%v", msgs)
 	}
 }
 
