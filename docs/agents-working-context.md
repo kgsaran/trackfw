@@ -46360,3 +46360,11 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-10 — zeus-tf — make quality da REQ-2026-09-02
 
 - `make quality` EXIT=0 em `1127759d` (2956 linhas; falsify 347 OK / 0 FAIL), com concorrência do vitest do cmdb (load até 51), por decisão do usuário. Falta o CI, que só dispara com PR.
+
+## 2026-10-10 — zeus-tf — fechamento da REQ-2026-09-02 (pós-merge do #557)
+
+- PR #557 mergeado em `85f21c2c`; CI 20/20 SUCCESS em `5921506e`, inclusive `windows-full-suites`. AC7 e ML-2A marcados (ressalva: `make quality` com concorrência, não ociosa). REQ → Done; roadmap → `done/` via `trackfw roadmap move`; ADR-2026-10-10 → Accepted. Branch local podada com `trackfw branch prune --apply`. `trackfw validate` rc=0, 169 warnings, nenhuma sobre os artefatos fechados.
+
+## 2026-10-10 — zeus-tf — release 9.4.3
+
+- Bump para 9.4.3 (`version.go`, `npm/package.json`, `npm/package-lock.json`, `pypi/pyproject.toml`) e `CHANGELOG.md` com o #557; leva junto o fechamento da REQ-2026-09-02. #554/#555 são só governança (omitidos). Tag após o merge, precedida de `make check-required-full`.

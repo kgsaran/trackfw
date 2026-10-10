@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-22
 req: "docs/req/REQ-2026-09-02-remover-a-entrada-pretooluse-do-settings-nao-e-detectado-por-nenhuma-regra-de-integridade-de-guard.md"
 squad: "hades-tf, apolo-tf, hefesto-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf, hefesto-tf"
 
 # Roadmap: Remover a entrada `PreToolUse` do settings não é detectado por nenhuma regra de integridade de guard
 
-> Created: 2026-09-22 | Status: wip
+> Created: 2026-09-22 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-09-02-remover-a-entrada-pretooluse-do-settings-nao-e-detectado-por-nenhuma-regra-de-integridade-de-guard.md
@@ -38,7 +38,7 @@ causa).
       ✅ Evidência: `git_branch_guard_hook_resolvable` e `git_branch_guard_script_integrity` em `credentialGuardAnchoredRules`
 - [x] AC6 — contrato em `docs/cli-parity.md` com `trackfw-contract`
       ✅ Evidência: seção `guard_wiring_removed` com `trackfw-contract` em `docs/cli-parity.md`
-- [ ] AC7 — `make quality` EXIT=0 e CI verde, inclusive `windows-full-suites`
+- [x] AC7 — `make quality` EXIT=0 e CI verde, inclusive `windows-full-suites` — ✅ CI do PR #557 20/20 SUCCESS em `5921506e`; ver ML-2A
 - [x] AC8 — cada teste novo declara o que afirma e reprova sem a correção
       ✅ Evidência: nomes conferidos por `go test -list`; mordida M1–M5 + mutação independente do arquiteto
 - [x] AC9 — medição de volta dos três braços com o binário da branch
@@ -187,7 +187,7 @@ go test ./internal/validator/
 
 ### ML-2A — Revisão de qualidade e red-team
 **Owner:** `hefesto-tf` e `hades-tf` (em sequência, não em paralelo — custo de CPU)
-**Status:** 🔄 Em andamento — pareceres e corretivos feitos; faltam AC9 final, `make quality` e CI
+**Status:** ✅ Concluído — auditado em 2026-10-10: pareceres, corretivos ML-2B/ML-2C, AC9, `make quality` e CI
 **Acceptance criteria:**
 - [x] Parecer do `hades-tf` reimplementando a partir da leitura e tentando burlar a regra
       ✅ Evidência: `docs/seguranca/2026-10-10-red-team-guard-wiring-removed.md` (aprovado com ressalvas; R-1 e R-2 corrigidos no ML-2C)
@@ -195,8 +195,8 @@ go test ./internal/validator/
       ✅ Evidência: ML-2B (revisão de qualidade) e ML-2C (red-team)
 - [x] AC9: três braços repetidos com o binário da branch — base silenciosa, os dois adulterados acusam
       ✅ Evidência: binário final, worktree de `origin/main`: base 0; `PreToolUse` apagado 4; `true` 7; `disableAllHooks` 1; guard em metadata 4
-- [ ] `make quality` EXIT=0 com máquina ociosa; CI do PR verde, inclusive `windows-full-suites`
-      🔄 `make quality` EXIT=0 em `1127759d` (2956 linhas; falsify 8 chunks, 347 OK / 0 FAIL) — **com concorrência** (vitest do cmdb, load até 51), por decisão do usuário. CI pendente: os workflows só disparam com PR aberto
+- [x] `make quality` EXIT=0 com máquina ociosa; CI do PR verde, inclusive `windows-full-suites`
+      🔄 `make quality` EXIT=0 em `1127759d` (2956 linhas; falsify 8 chunks, 347 OK / 0 FAIL) — **com concorrência** (vitest do cmdb, load até 51), por decisão do usuário (ressalva: não foi máquina ociosa). CI do PR #557 verde em `5921506e`: 20/20 checks SUCCESS, inclusive `windows-full-suites`; mergeado em `85f21c2c` (2026-10-10)
 
 ### ML-2B — Corretivo da revisão de qualidade (`hefesto-tf`)
 **Owner:** `apolo-tf`

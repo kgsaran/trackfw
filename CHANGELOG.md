@@ -7,6 +7,21 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [9.4.3] - 2026-10-10
+
+### Fixed
+
+- **Remover a fiação do guard passa a ser violação.** Apagar `hooks.PreToolUse` do `.claude/settings.json`, ou
+  trocar `trackfw guard credential`/`git-branch` por `true`, deixava a saída do `trackfw validate` idêntica byte a
+  byte. A nova regra `guard_wiring_removed` compara cada tupla (arquivo, evento, matcher, guard) dos arquivos de hook
+  de projeto com a cópia em `origin/<branch padrão>`: tupla presente lá e ausente no disco é violação, também em
+  LENIENT MODE e fora da isenção de baseline. Cobre ainda matcher estreitado e chave de desligamento ativa
+  (`disableAllHooks`, `hooksConfig.enabled: false`, `"enabled": false` no Kiro, `[features] hooks = false` no Codex
+  rastreado). Hook que nunca foi instalado continua silencioso, e as formas legadas que o `trackfw update` emite são
+  reconhecidas como equivalentes. `.claude/settings.local.json` com `disableAllHooks: true` é verificado no disco. As regras de `git_branch_guard`
+  passam a ser ancoradas também. Resíduos declarados no ADR-2026-10-10 (escopo global, `origin` removido ou
+  redirecionado). (#557, REQ-2026-09-02)
+
 ## [9.4.2] - 2026-10-09
 
 ### Fixed
