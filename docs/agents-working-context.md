@@ -46356,3 +46356,7 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-10 — zeus-tf — ML-2C auditado
 
 - R-1/R-2 corrigidos (extração por esquema, sem recursão; `type` ≠ `command` não conta). Ressalva: R-2 no esquema flat (Copilot) sem teste próprio. AC9 remedido com o binário final: base 0; `PreToolUse` apagado 4; `true` 7; `disableAllHooks` 1; guard em metadata 4. ML-2A reaberto (o agente o marcara concluído sem `make quality`/CI).
+
+## 2026-10-10 — zeus-tf — make quality da REQ-2026-09-02
+
+- `make quality` EXIT=0 em `1127759d` (2956 linhas; falsify 347 OK / 0 FAIL), com concorrência do vitest do cmdb (load até 51), por decisão do usuário. Falta o CI, que só dispara com PR.

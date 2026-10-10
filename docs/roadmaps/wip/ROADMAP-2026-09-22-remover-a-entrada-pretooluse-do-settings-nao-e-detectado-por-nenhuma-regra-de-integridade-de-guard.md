@@ -193,8 +193,10 @@ go test ./internal/validator/
       ✅ Evidência: `docs/seguranca/2026-10-10-red-team-guard-wiring-removed.md` (aprovado com ressalvas; R-1 e R-2 corrigidos no ML-2C)
 - [x] Defeitos achados viram ML corretivo neste roadmap
       ✅ Evidência: ML-2B (revisão de qualidade) e ML-2C (red-team)
-- [ ] AC9: três braços repetidos com o binário da branch — base silenciosa, os dois adulterados acusam
+- [x] AC9: três braços repetidos com o binário da branch — base silenciosa, os dois adulterados acusam
+      ✅ Evidência: binário final, worktree de `origin/main`: base 0; `PreToolUse` apagado 4; `true` 7; `disableAllHooks` 1; guard em metadata 4
 - [ ] `make quality` EXIT=0 com máquina ociosa; CI do PR verde, inclusive `windows-full-suites`
+      🔄 `make quality` EXIT=0 em `1127759d` (2956 linhas; falsify 8 chunks, 347 OK / 0 FAIL) — **com concorrência** (vitest do cmdb, load até 51), por decisão do usuário. CI pendente: os workflows só disparam com PR aberto
 
 ### ML-2B — Corretivo da revisão de qualidade (`hefesto-tf`)
 **Owner:** `apolo-tf`
