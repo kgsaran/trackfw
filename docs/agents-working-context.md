@@ -46443,4 +46443,4 @@ Achados notáveis para o apolo-tf:
 
 ## 2026-10-12 — zeus-tf — medição do suporte a Windows na 9.5.0
 
-- Censo x64 `38319939952` (4 FAIL emitidos) + VM ARM64. Consolidado em `docs/portabilidade/2026-10-12-suporte-windows-9.5.0-estado-medido.md`. Ressalva: 42 rótulos sumiram do censo desde 24/09; `go-behavioral-pin` 40 → 0 sem causa estabelecida. Guard global (HOME≠USERPROFILE) não medido — a VM usou o comando errado e não tem o Claude Code.
+- Censo x64 `38319939952` (4 FAIL emitidos) + VM ARM64. Consolidado em `docs/portabilidade/2026-10-12-suporte-windows-9.5.0-estado-medido.md`. Recontagem estrita: 16 rótulos sumiram (não 42 — o primeiro grep contou texto de PROOF); os 4 FAIL são do instrumento (pip install pypi/ pré-v8) e do NTFS. O verde do windows-full-suites é ratchet: 14 falhas conhecidas, 2 com efeito de segurança (proveniência de terceiros, 0600). Guard global (HOME≠USERPROFILE) não medido — a VM usou o comando errado e não tem o Claude Code.

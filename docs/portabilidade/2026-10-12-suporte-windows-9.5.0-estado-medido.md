@@ -1,54 +1,63 @@
 # Suporte a Windows no trackfw 9.5.0 — estado medido
 
 > 2026-10-12 · zeus-tf · consolida `2026-10-12-censo-windows-x64-9.5.0.md` (ares-tf, CI x64) e
-> `2026-10-12-medicao-vm-windows-9.5.0.md` (artemis-tf, VM ARM64), com conferências do arquiteto.
+> `2026-10-12-medicao-vm-windows-9.5.0.md` (artemis-tf, VM ARM64), com recontagens do arquiteto que
+> **corrigem** números dos dois relatórios (ver "Correções").
 
 ## Como ler
 
 - **VM investiga, CI mede.** Número que vira afirmação sai do `windows-latest` x64. A VM é ARM64.
-- Estados: **vivo** (reproduz na 9.5.0) · **fechado** · **sumiu com a v8** · **não medido** (com o que falta).
+- Estados: **vivo** · **fechado** · **sumiu com a v8** · **não medido** (com o que falta).
 
-## 🔴 Validade do instrumento — ressalva que vale para tudo que vem do censo
+## 🔴 O que o "verde" do CI de Windows significa
 
-O censo `38319939952` (`main` em `a1cc6e93`) rodou com a falsificação do próprio censo passando.
-Mas a diferença **por nome** contra o censo de 24/09 (`36036473391`), feita pelo arquiteto, mostra
-**42 rótulos que sumiram e 13 novos**:
+`windows-full-suites` roda com `continue-on-error` (allowlist em `check-job-annotations`) e um
+**ratchet de nomes** (`.github/windows-known-failures.json`, `scripts/check-windows-known-failures.py`):
+o job reprova só se aparecer falha **nova**. No run `38316881566` (`main`, 9.5.0) **14 testes Go
+falham** — exatamente os 14 da lista. Verde = "nenhuma falha nova", **não** "zero falhas". As causas
+na lista foram escritas em 2026-09-10, e **5 delas são inferidas** (`INFER`), não medidas.
 
-- 21 são `release-tag-parity/*/go-behavioral-pin`; os outros incluem `update-harness/*` (6),
-  `validate-rule-pins/pin1–6`, `skip-parity/*` (2) e `falsify/setup-sXX` (5).
-- Os scripts `check-update-harness-parity.sh` e `check-skip-parity.sh` **não existem mais** — sumiço
-  explicado.
-- 🔴 **Não explicado:** `check-release-tag-parity.sh` e `check-validate-rule-pins.sh` existem, ainda têm
-  os cenários `go-behavioral-pin`, e `check-release-tag-parity.sh` os emitiu no macOS hoje. No log do
-  censo: 40 linhas `go-behavioral-pin` na base, **0 hoje**. Hipóteses não testadas: o driver de
-  falsificação passou a capturar a saída aninhada dos gates (mudança de formato, inofensiva) **ou**
-  esses cenários deixaram de rodar no Windows (gate que parou de emitir — precedente
-  `release-tag-parity/dirty-tree`).
+## Correções aos relatórios dos agentes
 
-**Consequência:** a contagem de FAIL do censo (abaixo) é confiável para o que ele **emitiu**; não
-prova nada sobre os 42 que sumiram até a hipótese acima ser decidida.
+- **Censo, contagem estrita** (rótulo no início da linha, depois do prefixo de job e timestamp; mesma
+  regra nos dois logs): base `36036473391` (24/09) = 306 rótulos, 11 FAIL; hoje `38319939952`
+  (`a1cc6e93`) = 303 rótulos, **4 FAIL**. Sumiram **16**, novos **13** — não 42: a primeira contagem
+  usou grep sem âncora e contou texto aninhado de `PROOF` (`go-behavioral-pin`) como rótulo.
+- Os 16 que sumiram: `update-harness/*` (6) e `skip-parity/*` (2) — scripts apagados; `setup-sXX`
+  (5) — estavam FAIL na base; `structural-marker-value/go/roadmap-prose-*` (2) — renomeados para
+  `roadmap-prose-md-*` (aparecem entre os novos); `e2e/init-outdated-global`, `update-project/json` —
+  **causa não verificada**.
+- **Os 4 FAIL do censo de hoje não são regressão do produto.** Três estavam OK em 24/09, mas a causa é
+  do **instrumento**: o censo executa `python -m pip install pypi/` (`windows-census.yml:399`, passo
+  de antes da v8), que põe um `trackfw.exe` sem o subcomando `guard` no PATH; desde a 9.3.0 o
+  `validate` acusa isso ("does not have the guard subcommand — the hook will fail open") e o ciclo
+  limpo sai com 1. Afeta `kiro-dedicated-file/baseline` e `roadmap-req-frontmatter-path/go/from-req-baseline`.
+  Os outros dois são o NTFS sem ACL (#421).
+- **"28 FAIL na VM = artefato"**: confirmado para as famílias `TestADRPrefixE2E_` (5), `TestBarrierContract_`
+  (12), `TestBarrierFragment_` (9) e `TestBranchStateE2E_` (10), todas PASS no x64.
+  `TestShip_Integration_GracefulDegradation_RealBinary` **falha também no x64** (está na lista conhecida).
 
 ## Tabela
 
 | # | Item | Estado na 9.5.0 | Evidência | Segurança? | Próximo passo |
 |---|---|---|---|---|---|
-| 1 | Guard global gravado/auditado sob `$HOME` quando o agente lê `%USERPROFILE%` (REQ-2026-09-01) | **não medido** | VM: medição usou `init --ai-tools`, que não escreve a fiação global; quem escreve é o `update harness` (`internal/generators/update.go`, `harnessCredentialGuardTarget*`), e o `validate` a lê por `homedir.Dir()` (`validator_git_branch_guard.go:162`). Claude Code **não instalado** na VM | 🔴 sim | Refazer com `update harness` e Claude Code instalado na VM; número final pelo `windows-probe.yml` |
-| 2 | ML-R3 — guard de entrada cego a `\` (`internal/integrations/manager.go:756`) | **vivo, contido** | VM: `..\outside.md` passa o guard de entrada e é barrado por `beneath()`. macOS: não é travessia (vira arquivo chamado `..\outside.md` dentro da raiz) | 🔴 sim (defesa em uma camada) | ML de correção com teste que reprova sem Windows |
-| 3 | Censo: FAIL emitidos | **4 rótulos** (base x64: 11; base ARM64 09-08: 512) | `censo-windows-x64-9.5.0.md` | não | Ver 3a–3c |
-| 3a | NTFS sem ACL de execução (#421) — `scaffold-update-chmod-removed/direction-c-*` | vivo (2) | censo | não | Já tem issue; o `baseline` era OK vácuo antes e agora se declara "não exercitado" |
-| 3b | `git-branch-guard-global-hook-resolvable/kiro-dedicated-file/baseline` | **vivo, novo**, causa não investigada | censo | possível (guard) | Investigar — é rótulo de guard |
-| 3c | `roadmap-req-frontmatter-path/go/from-req-baseline` | **vivo, novo**, causa não investigada | censo | não | Investigar |
-| 4 | ML-R2b1b — `{owner}/{repo}` some no shim do `gh` | **não medido** | censo: os cenários estão em blocos PROOF ou bloqueados por `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1` | não | Sonda dedicada, se ainda houver consumidor |
-| 5 | ML-R2b2 — 76 rótulos sem triagem | **sumiu em grande parte** | 4 FAIL hoje; 10 rótulos viraram OK desde 24/09 (`git-branch-guard/stdin-drain`, `dedup`, `setup-s75/76/87/158/175`, `sandbox-*`) | — | Reclassificar no roadmap bloqueado depois de decidir a ressalva do instrumento |
-| 6 | Prazo de rede: `ssh` neto órfão no estouro (RS-2) | **vivo, declarado** | VM (Git Bash): retorno em ~10 s com `git fetch timed out after 5s (TRACKFW_NETWORK_TIMEOUT)`; o `ssh` falso segue vivo | não | Resíduo aceito no ADR; PowerShell não medido (script com caminho POSIX) |
-| 7 | Testes que pulam no `windows-full-suites` | **20 SKIP** | censo §5 | — | Dois protegem critério de aceite: `TestGitExec_AC2_Bite_NoWaitDelay` (prova de mordida do prazo) e `TestGitExec_WaitDelay_ExitZeroWithHangingGrandchild` (hook) |
-| 8 | 28 FAIL `git init … unable to access 'NUL'` | **artefato da VM** | os 5 `TestADRPrefixE2E_*` passam no x64 | não | Nenhum no produto; a VM tem git/config diferente |
-| 9 | Instalação (REQ-2026-09-05) | **em grande parte fechado, REQ desatualizada** | `install.sh` aceita MINGW/MSYS/Cygwin em amd64/arm64; README tem seção "Windows support (partial)"; Claude Code e Codex provados ponta a ponta (2026-10-07) | não | Reescrever a REQ com o que sobra (itens 10–11) |
-| 10 | Hooks ponta a ponta com agente real: Cursor, Windsurf, Gemini, Kiro, Copilot, Amazon Q | **não medido** | README: linha do hook medida no shell; agente não rodado | sim (guard) | Precisa de cada CLI instalado (e conta, para Copilot/Amazon Q/Kiro) |
-| 11 | PowerShell 7 (`pwsh`) | **não medido** | README | sim (guard) | Instalar `pwsh` na VM |
+| 1 | Guard global gravado/auditado sob `$HOME` quando o agente lê `%USERPROFILE%` (REQ-2026-09-01) | **não medido** | VM usou `init --ai-tools`, que não escreve a fiação global; quem escreve é o `update harness` (`internal/generators/update.go`, `harnessCredentialGuardTarget*`), e o `validate` lê por `homedir.Dir()` (`validator_git_branch_guard.go:162`). Claude Code **não instalado** na VM | 🔴 sim | Refazer com `update harness` + Claude Code na VM; número final pelo `windows-probe.yml` |
+| 2 | Proveniência de terceiros no Windows (`thirdparty_artifact_has_provenance`) | **vivo** | x64: install aprovado **acusa violação** (`integrations_thirdparty_validate_test.go:74`); no caso adulterado a violação esperada (D2 ramo ii) **não** aparece (`:132`). Causa listada como `INFER` (nome curto 8.3) | 🔴 sim — a regra não discrimina íntegro de adulterado no Windows (falha fechada no íntegro) | Medir a causa; corrigir |
+| 3 | ML-R3 — guard de entrada cego a `\` (`internal/integrations/manager.go:756`) | **vivo, contido** | VM: `..\outside.md` passa o guard de entrada e é barrado por `beneath()`. macOS: vira arquivo chamado `..\outside.md` dentro da raiz (não é travessia) | 🔴 sim (defesa em uma camada) | ML com teste que reprova sem Windows |
+| 4 | Permissão 0600 ignorada no NTFS (`TestSave_WritesAtomicallyWithPermissions`, `internal/identity`) | **vivo** | x64, lista conhecida (grupo A, medido) | possível — arquivo de identidade fica 0666 | Decidir: ACL do Windows ou declarar |
+| 5 | Demais 11 falhas conhecidas do x64 | **vivo** | lista: NTFS sem ACL (3), CRLF no renderizador (2 + 2 `INFER`), symlink sem privilégio (1), `shasum` com `\` (1), fake `git.exe` vs defesa do runner (1), separador no manifesto do `update` (1, `INFER`) | não | Remedir as `INFER`; corrigir as de produto (CRLF, separador) |
+| 6 | Censo: instrumento instala o pacote Python pré-v8 | **vivo, no instrumento** | `windows-census.yml:399`; 2 FAIL de hoje | não | Corrigir o passo de setup do censo |
+| 7 | NTFS sem ACL de execução (#421) no censo | **vivo** (2 rótulos) | censo | não | Já tem issue |
+| 8 | ML-R2b2 — 76 rótulos sem triagem | **fechado em grande parte** | 4 FAIL hoje, todos com causa (itens 6 e 7) | — | Reclassificar no roadmap bloqueado |
+| 9 | ML-R2b1b — `{owner}/{repo}` some no shim do `gh` | **não medido** | cenários em blocos PROOF ou com `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1` | não | Sonda dedicada, se ainda houver consumidor |
+| 10 | Prazo de rede: `ssh` neto órfão no estouro (RS-2) | **vivo, declarado** | VM (Git Bash): retorna em ~10 s com `git fetch timed out after 5s (TRACKFW_NETWORK_TIMEOUT)`; o `ssh` falso segue vivo | não | Resíduo aceito no ADR; PowerShell não medido |
+| 11 | SKIPs no `windows-full-suites` | **20** | censo §5 | — | Dois protegem critério de aceite: `TestGitExec_AC2_Bite_NoWaitDelay` e `TestGitExec_WaitDelay_ExitZeroWithHangingGrandchild` |
+| 12 | Instalação (REQ-2026-09-05) | **em grande parte fechado; REQ desatualizada** | `install.sh` aceita MINGW/MSYS/Cygwin em amd64/arm64; README "Windows support (partial)"; Claude Code e Codex provados ponta a ponta (2026-10-07) | não | Reescrever a REQ com o que sobra (13–14) |
+| 13 | Hooks ponta a ponta com agente real: Cursor, Windsurf, Gemini, Kiro, Copilot, Amazon Q | **não medido** | README: linha do hook medida no shell; agente não rodado | sim (guard) | Cada CLI instalado (e conta, para Copilot/Amazon Q/Kiro) |
+| 14 | PowerShell 7 (`pwsh`) | **não medido** | README | sim (guard) | Instalar `pwsh` na VM |
 
 ## O que **não** dá para afirmar hoje
 
-- "Suporte total ao Windows" — os itens 1, 10 e 11 são guard e estão sem medição; a ressalva do
-  instrumento cobre 42 rótulos.
-- Que o censo está verde para os gates de `release-tag-parity` e `validate-rule-pins` no Windows.
+- "Suporte total ao Windows": há 14 falhas conhecidas no x64 (2 com efeito de segurança: itens 2 e
+  4), e os itens 1, 13 e 14 — todos guard — estão sem medição.
+- Que as 5 causas `INFER` da lista conhecida são as causas reais.
