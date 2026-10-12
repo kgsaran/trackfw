@@ -46436,3 +46436,7 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-12 — zeus-tf — fechamento das REQs 2026-10-12 (#556) e 2026-10-10 (pós-merge do #559)
 
 - PR #559 mergeado em `d3396fc2`; CI 20/20 SUCCESS em `78f63381`, inclusive `windows-full-suites`; #556 fechada. Barreiras da wave 2 dos dois roadmaps passaram. REQs → Done com evidência por AC; roadmaps → `done/`; dois ADRs-2026-10-12 → Accepted. Branch local podada.
+
+## 2026-10-12 — zeus-tf — release 9.5.0
+
+- Bump para 9.5.0 (minor: `branch prune --remote` e duas variáveis de ambiente novas) e `CHANGELOG.md` com o #559; leva junto o fechamento das REQs 2026-10-12 e 2026-10-10. Tag após o merge, precedida de `make check-required-full`.

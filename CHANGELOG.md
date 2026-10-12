@@ -7,6 +7,31 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [9.5.0] - 2026-10-12
+
+### Added
+
+- **`trackfw branch prune --remote`.** Apaga no `origin` as branches remotas já integradas, só quando há PR mergeado
+  (não fork, na branch padrão) cujo head contém o tip remoto, e sempre com
+  `git push --force-with-lease=refs/heads/<b>:<sha avaliado>` — se a branch avançou depois da avaliação, não apaga.
+  Opt-in; sem `--apply` só relata. Mantém PR aberto, base de PR aberto, branch protegida e a branch padrão. Fetch que
+  falhou ou estourou o prazo, forge indisponível ou truncado, proteção ilegível ou URL de push diferente da de fetch
+  bloqueiam toda remoção remota. A heurística de conteúdo nunca autoriza apagar no remoto. O guard passa a apontar esse
+  comando para `git push --delete`/`-d`/`:<branch>` (continua bloqueando). (#559, REQ-2026-10-10)
+- **Prazo nas operações de rede: `TRACKFW_NETWORK_TIMEOUT` (padrão 60 s) e `TRACKFW_PUSH_TIMEOUT` (padrão 30 min).**
+  Valores `0`, negativos, acima de 24 h ou inválidos geram aviso e usam o padrão.
+
+### Fixed
+
+- **Um `git fetch` pendurado travava `push`, `ship`, `branch prune` e `release tag` sem limite** (70 min medidos).
+  `fetch`, `ls-remote` e as chamadas não interativas ao `gh` têm prazo; o `git push` tem teto próprio e, em HTTPS,
+  limite de inatividade; em macOS e Linux, fora de terminal interativo, o processo neto (`ssh`) é encerrado junto. No estouro, `push`/`ship`/`prune` seguem com aviso
+  que nomeia o prazo; `release tag` recusa quando não consegue confirmar que a tag não existe no remoto (antes, a falha
+  do `ls-remote` era lida como "tag ausente") e avisa estado incerto se a publicação estourar. A chamada à API do
+  Linear também ganhou prazo. `gh pr create`, interativo, continua sem prazo. (#559, closes #556)
+- **`branch prune` usa a branch padrão do forge**, depois a de `origin/HEAD`, e não mais o literal `main`: num
+  repositório `master` ele recusava tudo. (#559)
+
 ## [9.4.3] - 2026-10-10
 
 ### Fixed
