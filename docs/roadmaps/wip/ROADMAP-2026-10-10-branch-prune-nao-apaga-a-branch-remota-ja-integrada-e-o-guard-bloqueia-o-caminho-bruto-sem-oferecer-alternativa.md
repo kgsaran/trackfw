@@ -136,9 +136,11 @@ git diff --quiet HEAD -- internal/
 
 ### ML-2A — Medição de volta e fechamento
 **Owner:** `zeus-tf`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento — falta só o CI do PR
 **Acceptance criteria:**
-- [ ] AC7: `trackfw branch prune --remote` (dry-run) neste repositório lista as remotas integradas e nenhuma com trabalho não integrado
-- [ ] Pareceres do ML-2A do ROADMAP-2026-10-12 cobrem esta REQ; corretivos aplicados
+- [x] AC7: `trackfw branch prune --remote` (dry-run) neste repositório lista as remotas integradas e nenhuma com trabalho não integrado
+      ✅ ver AC7 consolidado acima (2 remotas, ambas `keep`, nada apagado)
+- [x] Pareceres do ML-2A do ROADMAP-2026-10-12 cobrem esta REQ; corretivos aplicados
+      ✅ qualidade (corretivo ML-2B do ROADMAP-2026-10-12) e red-team sem bloqueante, ambos cobrindo `branch_prune_remote.go` e o guard
 - [ ] `make quality` EXIT=0 com máquina ociosa; CI do PR verde, inclusive `windows-full-suites`
       🔄 `make quality` EXIT=0 em `1849d74c`, máquina ociosa (load 1,5; 2962 linhas; falsify 347 OK / 0 FAIL). CI pendente: só dispara com PR
