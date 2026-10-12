@@ -34,7 +34,7 @@ do fetch (ADR do prune, D4) e as duas tocam `internal/commands/branch_prune*.go`
 
 ### ML-0A — Threat model do ADR de prazo das operações de rede
 **Owner:** `hades-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-10-12 · aprovado com ajustes A1–A10 (incorporados ao ADR, D7)
 **Files affected:** `docs/seguranca/2026-10-12-wave0-prazo-das-operacoes-de-rede.md` (novo; único arquivo que pode ser escrito)
 **Actions:**
 1. **Completude da população.** Enumerar toda operação de rede de produção a partir dos
@@ -67,9 +67,12 @@ do fetch (ADR do prune, D4) e as duas tocam `internal/commands/branch_prune*.go`
      estouro vira sucesso).
 6. **Resíduo declarado** e **veredito sobre o ADR** com ajustes numerados (A1, A2, …).
 **Acceptance criteria:**
-- [ ] As seis seções respondidas com evidência (comando + resultado, ou arquivo:linha), não asserção
-- [ ] Nenhuma linha de implementação escrita; nenhum arquivo além do parecer alterado
-- [ ] Toda medição em scratch próprio; nenhum `git commit`/`push` bruto (o guard bloqueia, e não se contorna)
+- [x] As seis seções respondidas com evidência (comando + resultado, ou arquivo:linha), não asserção
+      ✅ Evidência: `docs/seguranca/2026-10-12-wave0-prazo-das-operacoes-de-rede.md` (população de 11 pontos + `linear.go:76`; mecanismo medido em 4 modos; 1,58 s / 2,96 s). `linear.go:76` conferido pelo arquiteto
+- [x] Nenhuma linha de implementação escrita; nenhum arquivo além do parecer alterado
+      ✅ Evidência: `git diff --quiet HEAD -- internal/` EXIT=0
+- [x] Toda medição em scratch próprio; nenhum `git commit`/`push` bruto (o guard bloqueia, e não se contorna)
+      ✅ Evidência: medições com `git init` + `remote add` + `fetch` contra `ssh://` falso; sem commit nem push
 
 **Gates da wave:**
 ```bash
@@ -79,29 +82,42 @@ git diff --quiet HEAD -- internal/
 ```
 
 ## Wave 1 — Implementação
-> Dependencies: Wave 0 auditado e ajustes incorporados ao ADR. Arquivos e valores exatos confirmados
-> após o parecer. ML-1A e ML-1B são **sequenciais** (compartilham os executores em `internal/commands/`).
+> Dependencies: Wave 0 auditado (✅). ML-1A → ML-1B → ML-1C, sequenciais: ML-1B compartilha os
+> arquivos de `internal/commands/` com o ML-1A; ML-1C importa o parser que o ML-1A cria em pacote
+> próprio (`internal/netdeadline`), para `internal/sync` não importar `internal/commands`.
 
-### ML-1A — Executor de rede com prazo
+### ML-1A — Executor de rede com prazo (ADR D2, D4, D7/A1–A3, A6, A9)
 **Owner:** `apolo-tf`
 **Status:** ⬜ Pendente
-**Files affected (provisório):** `internal/commands/ship.go` (`defaultGitExec`, `defaultCheckPROpen`), `internal/commands/branch_prune_forge.go` (`defaultGhExec`), `internal/commands/release.go` (executor `:229`), novo helper `internal/commands/netexec*.go` (+ variantes por SO para o grupo de processos), testes.
+**Files affected:** novo pacote `internal/netdeadline/` (parser de `TRACKFW_NETWORK_TIMEOUT`/`TRACKFW_PUSH_TIMEOUT`, padrões, limites; com testes), novo `internal/commands/netexec.go` (classificador e executor), `internal/commands/netexec_unix.go` e `netexec_windows.go` (grupo de processos e terminal de controle, com build tags), `internal/commands/ship.go` (`defaultGitExec`, `defaultCheckPROpen`), `internal/commands/branch_prune_forge.go` (`defaultGhExec`), `internal/commands/release.go` (executor `:229`), testes `internal/commands/netexec*_test.go`.
 **Acceptance criteria:**
-- [ ] Prazo nos executores de produção (ADR D2), com `WaitDelay`; `TRACKFW_NETWORK_TIMEOUT` (D4)
-- [ ] Teste do executor real contra neto pendurado: termina dentro de prazo + `WaitDelay`; sem o `WaitDelay`, reprova (mordida mostrada)
-- [ ] Interativo (`gh pr create` com stdin herdado) sem prazo, com teste
-- [ ] `go build ./...` EXIT=0; `go test ./internal/commands/` EXIT=0
+- [ ] `defaultGitExec` único com `classifyGitArgs`: `fetch`/`ls-remote` → `TRACKFW_NETWORK_TIMEOUT` (60 s); `push` → `TRACKFW_PUSH_TIMEOUT` (30 min) + `GIT_HTTP_LOW_SPEED_*` em HTTPS quando o usuário não configurou `http.lowSpeedLimit`; resto sem prazo. Teste do classificador nas duas direções (`-C d fetch` → rede; `commit`/`log`/`rev-parse` → local)
+- [ ] Executores de `gh` não interativos com prazo; `defaultExecForgeCLI` sem prazo, com teste (AC6)
+- [ ] `WaitDelay` em todos; `Setpgid` + `cmd.Cancel` matando o grupo só sem terminal de controle (`/dev/tty`), nunca no Windows
+- [ ] Parser: `0`, negativo, > 24 h e texto inválido → aviso e padrão; teste por caso
+- [ ] Teste AC2 do executor real: neto = binário de teste reexecutado e dormindo (nunca `cat`), `GIT_SSH_VARIANT=ssh`, prazo de 3 s; afirma ≥ prazo e < prazo + `WaitDelay` + margem; mordida mostrada (sem `WaitDelay`, reprova). Roda em Linux, macOS e Windows
+- [ ] `go build ./...` EXIT=0; `go vet ./internal/commands/` EXIT=0; `go test ./internal/commands/` EXIT=0
 
-### ML-1B — Caminho de falha por ponto e `release.go:310`
+### ML-1B — Caminho de falha por ponto (ADR D1, D5, D7/A5, A7, A8)
 **Owner:** `apolo-tf`
 **Status:** ⬜ Pendente
-**Files affected (provisório):** `internal/commands/push.go`, `ship.go`, `branch_prune.go`, `release.go`, testes; `docs/cli-parity.md` (seção com `trackfw-contract`)
+**Files affected:** `internal/commands/push.go`, `ship.go`, `branch_prune.go`, `release.go`, testes; `docs/cli-parity.md` (seção com `trackfw-contract`)
 **Acceptance criteria:**
-- [ ] Um teste por ponto afirmando o caminho de falha do ADR D1 no estouro
-- [ ] `ls-remote` com falha/estouro → falha fechada nomeada no `release tag`
+- [ ] Um teste por ponto da população afirmando o caminho de falha do D1 no estouro
+- [ ] `release.go:310`: falha ou estouro do `ls-remote` → `could not confirm tag … is absent from remote` (AC4)
+- [ ] `ship.go:801`: o motivo da degradação chega ao usuário (A7)
+- [ ] Estouro nas escritas `release.go:462,482` diz que o estado remoto é incerto (A8)
 - [ ] Mensagem nomeia operação, prazo e variável (D5)
-- [ ] Limite do `git push` conforme o Wave 0, ou razão escrita
 - [ ] `go build ./...` EXIT=0; `go test ./internal/commands/` EXIT=0; `make parity-rest` EXIT=0
+
+### ML-1C — Cliente HTTP do Linear com prazo (ADR D7/A10)
+**Owner:** `apolo-tf`
+**Status:** ⬜ Pendente
+**Por que o escopo original não previa:** o Wave 0 achou `http.DefaultClient` sem prazo em `internal/sync/linear.go:76`. É a mesma causa (cliente de rede sem prazo) por outro mecanismo.
+**Files affected:** `internal/sync/linear.go`, `internal/sync/linear_test.go`
+**Acceptance criteria:**
+- [ ] Cliente com o prazo de metadados de `internal/netdeadline`; teste contra `httptest.Server` que não responde termina dentro do prazo e reprova sem a correção
+- [ ] `go build ./...` EXIT=0; `go test ./internal/sync/` EXIT=0
 
 ## Wave 2 — Revisão e fechamento
 > Dependencies: Wave 1 deste roadmap **e** do ROADMAP-2026-10-10 (uma revisão para a branch inteira).

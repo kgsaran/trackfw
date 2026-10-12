@@ -42,19 +42,22 @@ transforma "não consegui perguntar" em "a tag não existe no remoto".
   no forge. Há um teste por ponto.
 - [ ] **AC4** — `release.go:310`: falha ou estouro do `ls-remote` → falha fechada nomeada. Nunca
   "tag ausente".
-- [ ] **AC5** — A mensagem de estouro nomeia a operação, o prazo e `TRACKFW_NETWORK_TIMEOUT`. Valor
-  inválido na variável gera aviso e usa o padrão.
+- [ ] **AC5** — A mensagem de estouro nomeia a operação, o prazo e a variável (`TRACKFW_NETWORK_TIMEOUT`
+  ou `TRACKFW_PUSH_TIMEOUT`, ADR D7/A1). Valor inválido (`0`, negativo, > 24 h) gera aviso e usa o
+  padrão. Estouro em escrita diz que o estado remoto é incerto.
 - [ ] **AC6** — Operações interativas (`gh pr create` com stdin herdado) não ganham prazo, com teste
   que afirma isso.
 - [ ] **AC7** — O `git push` do passo 4 tem o limite que o Wave 0 decidir, ou a razão escrita de não
   ter. "Fora do escopo" não é razão: a causa é a mesma.
+- [ ] **AC7b** — `internal/sync/linear.go:76`: cliente HTTP com prazo (ADR D7/A10), com teste
+  contra servidor que não responde.
 - [ ] **AC8** — `docs/cli-parity.md` atualizado, com a anotação `trackfw-contract`.
 - [ ] **AC9** — Cada teste novo declara a conclusão que afirma e reprova sem a correção.
 - [ ] **AC10** — `make quality` EXIT=0 e CI verde, inclusive `windows-full-suites`.
 
 ## Negative scope
 
-- **Chave no `trackfw.yaml` para o prazo:** fora. A variável de ambiente basta (ADR D4).
+- **Chave no `trackfw.yaml` para o prazo:** fora. As variáveis de ambiente bastam (ADR D4/D7).
 - **Retry automático** em operação que estourou: fora. O prazo só garante o retorno.
 - **Mudar o que o `push`/`ship` fazem quando o fetch falha** (continuar com aviso): fora. Só o
   travamento vira falha.

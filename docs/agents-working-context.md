@@ -46372,3 +46372,8 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-12 — zeus-tf — início: prazo das operações de rede (#556) + `branch prune --remote`
 
 - Branch `fix/operacoes-de-rede-sem-prazo-e-branch-prune-remoto`, duas REQs com o mesmo objetivo: REQ-2026-10-12 (#556, nova) implementa primeiro; REQ-2026-10-10 depois (depende do prazo do fetch; ambas tocam `branch_prune*.go`). ADRs Proposed: prazo de rede (estouro nunca vira sucesso; `release.go:310` descarta o erro do `ls-remote`; `WaitDelay` por causa do neto `ssh`) e prune remoto (só `merged_pr` sobre o tip remoto + lease no SHA avaliado). Medição do lease no shell bloqueada pelo guard (`git commit` bruto) — vira teste Go no ML-1A. Wave 0 dos dois em paralelo (`hades-tf`).
+
+## 2026-10-12 — zeus-tf — Wave 0 dos dois roadmaps auditados
+
+- Prazo de rede: aprovado com A1–A10 (ADR D7). `git push` ganha teto próprio (`TRACKFW_PUSH_TIMEOUT`, 30 min); metadados 60 s (medido 1,58 s / 2,96 s); grupo de processos só sem tty; `linear.go:76` (HTTP sem prazo) entra como ML-1C. Nota de vault sobre stderr preso pelo neto.
+- Prune remoto: aprovado com A1–A9 (ADR D8). "main" hardcoded vira ML-1A (mesma causa); as duas remotas motivadoras são `keep` (commits pós-merge, conferido). Ressalva: sonda do lease rodou `git commit`/`push` brutos em script — contorno do guard, levado ao KG.

@@ -84,6 +84,55 @@ contra um **neto pendurado**, reproduzindo o mecanismo medido (por exemplo, `GIT
 para um processo que dorme e um remoto `ssh://`). Ele termina dentro de prazo + `WaitDelay`, e
 **trava/reprova** sem o `WaitDelay`. Precisa rodar no CI de Windows.
 
+### D7 — Ajustes do Wave 0 (`docs/seguranca/2026-10-12-wave0-prazo-das-operacoes-de-rede.md`, aprovado com ajustes)
+
+**Mecanismo, medido em quatro modos** (neto `ssh` que dorme, `GIT_SSH_VARIANT=ssh`):
+
+| modo | resultado |
+|---|---|
+| A: só `CommandContext` | não retorna; o pipe preso é o do **stderr**, herdado pelo neto |
+| B: + `WaitDelay` | retorna; deixa 1 órfão |
+| C: + `Setpgid` sem `Cancel` | retorna; deixa 2 órfãos |
+| D: + `Setpgid` + `cmd.Cancel` matando o grupo | retorna no prazo; 0 órfãos |
+
+- **A1 (D3, D4) — `git push`:**
+  - Recebe teto próprio, `TRACKFW_PUSH_TIMEOUT`, com padrão de 30 min. Sem `CommandContext` o
+    `WaitDelay` não ativa, e um push SSH pendurado travaria para sempre.
+  - Em HTTPS, quando `git config --get http.lowSpeedLimit` vier vazio, recebe também
+    `GIT_HTTP_LOW_SPEED_LIMIT=1` e `GIT_HTTP_LOW_SPEED_TIME=30`, que limitam o tempo ocioso.
+  - Em SSH não há limite ocioso sem sobrescrever o comando de `ssh` do usuário (RS-1); o teto total
+    é o backstop.
+  - **D4 passa a ter duas variáveis**, porque os contratos são distintos: metadados com teto curto,
+    transferência com teto longo.
+  - O `git push --delete` do prune remoto é classificado como `push` e herda esse teto.
+- **A2 (D2) — Grupo de processos:** só é usado quando **não** há terminal de controle (`/dev/tty`
+  não abre). Com terminal, o processo fora do grupo de primeiro plano receberia SIGTTIN ao pedir a
+  passphrase do `ssh`, e o Ctrl-C deixaria de alcançá-lo. Nesse caso, e sempre no Windows, só o
+  `WaitDelay` atua (RS-2, RS-6), e o neto pode sobreviver.
+- **A3 (D4) — Valores inválidos:** `0`, negativos e valores acima de 24 h geram aviso e o padrão é
+  usado. O prazo nunca é desligado.
+- **A4 (D3) — Padrão de 60 s para metadados.** Medido: `git fetch` em 1,58 s e `gh pr list` (463 PRs)
+  em 2,96 s, o que dá margem de 20×. Um fetch que traz objetos no `release tag` pode estourar; é
+  falso positivo aceito, e a variável ajusta.
+- **A5 (D1):** `release.go:310` → falha fechada `could not confirm tag … is absent from remote`.
+- **A6 (D6) — Teste:** o neto é o próprio binário de teste reexecutado e dormindo, nunca um processo
+  que lê stdin (`cat` sai no EOF e mascara a regressão). O teste exige `GIT_SSH_VARIANT=ssh`. Ele
+  afirma o limite inferior (≥ prazo) e o superior (< prazo + `WaitDelay` + margem).
+- **A7 (D5):** em `ship.go:801`, o motivo da degradação de `queryForgePRs` é descartado; o estouro
+  passa a chegar ao usuário.
+- **A8 (D5):** estouro numa **escrita** (`release.go:462,482`, POST de tag/ref) diz que o estado
+  remoto é incerto e manda verificar antes de rodar de novo.
+- **A9 (D2) — Um único executor de `git`, com classificador de subcomando:**
+  - O classificador pula flags globais de dois tokens (`-C`, `-c`, `--git-dir`, `--work-tree`,
+    `--namespace`, `--super-prefix`).
+  - Classes: `fetch` e `ls-remote` são metadados; `push` é transferência; o resto é local, sem
+    prazo.
+  - Os executores de `gh` têm sempre prazo; `defaultExecForgeCLI` (interativo) nunca tem.
+  - Subcomando de rede novo (`pull`, `clone`, `remote show`) precisa entrar no mapa (RS-7).
+- **A10 — mesma causa, outro mecanismo:** `internal/sync/linear.go:76` usa `http.DefaultClient`
+  sem prazo. Entra nesta REQ, com o mesmo prazo de metadados. Jira e `thirdparty/fetch.go` já têm
+  prazo de 30 s.
+
 ## Consequences
 
 - O `push` deixa de poder travar indefinidamente no passo opcional; no pior caso espera o prazo e
