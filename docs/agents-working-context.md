@@ -2,6 +2,14 @@
 
 ---
 
+## 2026-10-12 — hefesto-tf — INÍCIO: revisão de qualidade Wave 2 (ML-2A) — REQ-2026-10-12 + REQ-2026-10-10
+
+**Branch:** `fix/operacoes-de-rede-sem-prazo-e-branch-prune-remoto`
+**Escopo:** Revisão de qualidade do ML-2A: prazo das operações de rede (REQ-2026-10-12) e branch prune --remote (REQ-2026-10-10). Arquivos inspecionados: `internal/netdeadline/`, `internal/commands/netexec*.go`, `netfailpath_test.go`, `push.go`, `ship.go`, `release.go`, `branch_prune*.go`, `internal/sync/linear*.go`, `internal/guard/gitbranch*.go`, scripts de paridade. Mutações feitas em cópia scratch (`mktemp -d`). Nenhum arquivo de produto alterado.
+**Entregável:** `docs/qualidade/2026-10-12-revisao-prazo-de-rede-e-prune-remoto.md`
+
+---
+
 ## 2026-10-12 — apolo-tf (fix/operacoes-de-rede-sem-prazo-e-branch-prune-remoto — ML-1A ROADMAP-2026-10-10) — FIM
 
 **Branch:** `fix/operacoes-de-rede-sem-prazo-e-branch-prune-remoto`
@@ -46398,3 +46406,9 @@ Achados notáveis para o apolo-tf:
 
 - Prazo de rede: aprovado com A1–A10 (ADR D7). `git push` ganha teto próprio (`TRACKFW_PUSH_TIMEOUT`, 30 min); metadados 60 s (medido 1,58 s / 2,96 s); grupo de processos só sem tty; `linear.go:76` (HTTP sem prazo) entra como ML-1C. Nota de vault sobre stderr preso pelo neto.
 - Prune remoto: aprovado com A1–A9 (ADR D8). "main" hardcoded vira ML-1A (mesma causa); as duas remotas motivadoras são `keep` (commits pós-merge, conferido). Ressalva: sonda do lease rodou `git commit`/`push` brutos em script — contorno do guard, levado ao KG.
+
+## 2026-10-12 — hefesto-tf — FIM: revisão de qualidade Wave 2 (ML-2A)
+
+**Branch:** `fix/operacoes-de-rede-sem-prazo-e-branch-prune-remoto`
+**Entregável:** `docs/qualidade/2026-10-12-revisao-prazo-de-rede-e-prune-remoto.md`
+**Veredito:** APROVADO COM AJUSTES. Nenhum bloqueante. 3 ajustes: Q1 (Case 5 em TestWaitDelay_ResolveNetworkErr — ctx expirado + ErrWaitDelay+success), Q2 (teste de varredura T4 não entregue), Q6 (margem upper bound do AC2 WaitDelayOnly apertada em Windows: 0.89s). Suite completa verde (commands 47s, netdeadline 2s, sync 7s, guard 4s). GOOS=windows go vet limpo.

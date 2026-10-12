@@ -138,8 +138,21 @@ git diff --quiet HEAD -- internal/
 
 ### ML-2A — Revisão de qualidade, red-team, `make quality` e CI
 **Owner:** `hefesto-tf` e `hades-tf` (em sequência)
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento — parecer do `hefesto-tf` aprovado com ajustes (`docs/qualidade/2026-10-12-revisao-prazo-de-rede-e-prune-remoto.md`); corretivo ML-2B; falta red-team
 **Acceptance criteria:**
 - [ ] Parecer do `hefesto-tf` em `docs/qualidade/`; parecer de red-team do `hades-tf` em `docs/seguranca/`
 - [ ] Defeitos achados viram ML corretivo neste roadmap
 - [ ] `make quality` EXIT=0 com máquina ociosa; CI do PR verde, inclusive `windows-full-suites`
+
+### ML-2B — Corretivo da revisão de qualidade (Q1, Q2, Q6, Q11)
+**Owner:** `apolo-tf`
+**Status:** 🔄 Em andamento
+**Por que o escopo original não previa:** achados do parecer de qualidade; defeito conhecido se corrige no mesmo PR.
+**Files affected:** `internal/commands/netexec_test.go`, novo teste de varredura em `internal/commands/`, `internal/netdeadline/netdeadline.go` e teste, `docs/cli-parity.md`
+**Acceptance criteria:**
+- [ ] Q1: `TestWaitDelay_ResolveNetworkErr` cobre `ctx.Err()!=nil` junto com `ErrWaitDelay`+sucesso → `(true,false)`; a inversão dos ramos reprova
+- [ ] Q2: teste de varredura reprova `exec.Command`/`CommandContext` de `git` com `fetch`/`ls-remote`/`push`, ou de `gh`, fora dos executores com prazo; mordida mostrada
+- [ ] Q6: limite superior do AC2 com margem para o CI de Windows
+- [ ] Q11: mensagem de estouro em inglês, como as vizinhas; contrato atualizado
+- [ ] `go test ./internal/commands/ ./internal/netdeadline/ ./internal/sync/` EXIT=0; `make parity-rest` EXIT=0
+
