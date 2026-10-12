@@ -46428,3 +46428,7 @@ Achados notáveis para o apolo-tf:
 **Branch:** `fix/operacoes-de-rede-sem-prazo-e-branch-prune-remoto`
 **Entregável:** `docs/qualidade/2026-10-12-revisao-prazo-de-rede-e-prune-remoto.md`
 **Veredito:** APROVADO COM AJUSTES. Nenhum bloqueante. 3 ajustes: Q1 (Case 5 em TestWaitDelay_ResolveNetworkErr — ctx expirado + ErrWaitDelay+success), Q2 (teste de varredura T4 não entregue), Q6 (margem upper bound do AC2 WaitDelayOnly apertada em Windows: 0.89s). Suite completa verde (commands 47s, netdeadline 2s, sync 7s, guard 4s). GOOS=windows go vet limpo.
+
+## 2026-10-12 — zeus-tf — Wave 2 da branch de prazo de rede e prune remoto
+
+- Revisão de qualidade (hefesto) aprovada com ajustes → corretivo ML-2B auditado. Red-team (hades) sem bloqueante; `pushInsteadOf` e injeção por nome medidos pelo arquiteto (fechados). `make quality` EXIT=0 em `1849d74c`, máquina ociosa (347 OK / 0 FAIL). Falta o CI, que só dispara com PR.

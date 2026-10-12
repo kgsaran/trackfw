@@ -141,3 +141,4 @@ git diff --quiet HEAD -- internal/
 - [ ] AC7: `trackfw branch prune --remote` (dry-run) neste repositório lista as remotas integradas e nenhuma com trabalho não integrado
 - [ ] Pareceres do ML-2A do ROADMAP-2026-10-12 cobrem esta REQ; corretivos aplicados
 - [ ] `make quality` EXIT=0 com máquina ociosa; CI do PR verde, inclusive `windows-full-suites`
+      🔄 `make quality` EXIT=0 em `1849d74c`, máquina ociosa (load 1,5; 2962 linhas; falsify 347 OK / 0 FAIL). CI pendente: só dispara com PR

@@ -143,6 +143,7 @@ git diff --quiet HEAD -- internal/
 - [x] Parecer do `hefesto-tf` em `docs/qualidade/`; parecer de red-team do `hades-tf` em `docs/seguranca/`
 - [x] Defeitos achados viram ML corretivo neste roadmap
 - [ ] `make quality` EXIT=0 com máquina ociosa; CI do PR verde, inclusive `windows-full-suites`
+      🔄 `make quality` EXIT=0 em `1849d74c`, máquina ociosa (load 1,5; 2962 linhas; falsify 347 OK / 0 FAIL). CI pendente: só dispara com PR
 
 ### ML-2B — Corretivo da revisão de qualidade (Q1, Q2, Q6, Q11)
 **Owner:** `apolo-tf`
