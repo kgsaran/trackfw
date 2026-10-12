@@ -31,6 +31,11 @@ const (
 
 	reasonPush = "trackfw: git push bruto bloqueado. Use `trackfw push` (para empurrar commits já criados), `trackfw ship` (para commit+push+PR em uma etapa) ou `trackfw release tag` (para publicar uma tag de release). Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
 
+	// reasonPushDelete is used when the push command contains a branch-deletion
+	// form (--delete/-d <ref> or :<ref>/+:<ref> where <ref> is not a tag).
+	// It points to the governed path that deletes remote branches safely.
+	reasonPushDelete = "trackfw: git push bruto de remoção de branch bloqueado. Use `trackfw branch prune --remote --apply` para apagar no origin apenas a branch integrada por PR mergeado, condicionada ao tip avaliado. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+
 	reasonStash = "trackfw: git stash bruto bloqueado — worktree compartilhado entre subagentes, um stash remove as alterações não commitadas de todos os outros. `git stash list`/`git stash show` seguem liberados; para guardar trabalho em progresso, use uma branch própria via `trackfw branch new` e commit nela. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
 
 	reasonResetHard = "trackfw: git reset --hard bruto bloqueado — descarta de forma irreversível as alterações não commitadas de todo o worktree compartilhado. `git reset --soft`/`--mixed` seguem liberados (ex.: `git reset --soft HEAD~1` é o caminho padrão; use `trackfw ship -m \"...\"` para commitar e empurrar). Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
@@ -136,6 +141,8 @@ func RunGitBranch(stdin io.Reader, idleTimeout time.Duration, command string, ge
 		reason = reasonCommit
 	case "push":
 		reason = reasonPush
+	case "push-delete":
+		reason = reasonPushDelete
 	case "stash":
 		reason = reasonStash
 	case "reset-hard":
@@ -301,6 +308,9 @@ func applyRule(sub string, rest []string) string {
 		return "commit"
 
 	case "push":
+		if isPushBranchDelete(rest) {
+			return "push-delete"
+		}
 		return "push"
 
 	case "checkout":
@@ -471,6 +481,75 @@ func applyRule(sub string, rest []string) string {
 	}
 
 	return "" // unknown subcommand: allow
+}
+
+// isPushBranchDelete reports whether any token in rest is a branch-deletion
+// form of git push:
+//   - "--delete"/"-d" flag (anywhere in rest) with non-tag positional refs; refs
+//     are positionals[1:] when there are 2+ positionals (first is the remote name),
+//     otherwise all positionals.
+//   - refspec ":<ref>" or "+:<ref>" where <ref> is non-empty and not refs/tags/…
+//
+// The following forms keep reasonPush (not branch deletion):
+//   - "--mirror", "--prune"
+//   - ":" or "+:" alone (empty src)
+//   - ":refs/tags/…" or "+:refs/tags/…"
+//   - "--delete" with only refs/tags/… refs
+//   - plain push (no deletion flag or refspec)
+//
+// Mixed commands (branch deletion + normal push in same invocation) return true.
+//
+// Residuals (declared): short tag names like "--delete v1.0" cannot be
+// distinguished from branches; combined short flags like "-fd" are not parsed;
+// flags that take values like "-o remote" or "--repo=remote" are not modelled.
+func isPushBranchDelete(rest []string) bool {
+	// Pass 1: --delete / -d appears anywhere → check positional refs.
+	hasDelete := false
+	for _, t := range rest {
+		if t == "--delete" || t == "-d" {
+			hasDelete = true
+			break
+		}
+	}
+	if hasDelete {
+		var positionals []string
+		for _, t := range rest {
+			if !strings.HasPrefix(t, "-") {
+				positionals = append(positionals, t)
+			}
+		}
+		// git push syntax: first positional is the remote name when there are 2+
+		// positionals; with exactly 1, that token IS the ref.
+		refs := positionals
+		if len(positionals) >= 2 {
+			refs = positionals[1:]
+		}
+		for _, r := range refs {
+			if !strings.HasPrefix(r, "refs/tags/") {
+				return true
+			}
+		}
+	}
+
+	// Pass 2: refspec :<ref> or +:<ref> forms.
+	for _, t := range rest {
+		if strings.HasPrefix(t, "-") {
+			continue
+		}
+		var ref string
+		switch {
+		case strings.HasPrefix(t, "+:"):
+			ref = t[2:]
+		case strings.HasPrefix(t, ":"):
+			ref = t[1:]
+		default:
+			continue
+		}
+		if ref != "" && !strings.HasPrefix(ref, "refs/tags/") {
+			return true
+		}
+	}
+	return false
 }
 
 // stripHeredocBodies removes the body of heredoc blocks (keeping the opening

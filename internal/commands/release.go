@@ -14,6 +14,7 @@ import (
 	"github.com/kgsaran/trackfw/internal/changelog"
 	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/forge"
+	"github.com/kgsaran/trackfw/internal/netdeadline"
 	"github.com/spf13/cobra"
 )
 
@@ -63,6 +64,11 @@ const (
 	releaseTagExistsLocalFmt = "trackfw release tag refuses to run: tag %q already exists locally. Delete it first (git tag -d %s) or choose a different version."
 
 	releaseTagExistsRemoteFmt = "trackfw release tag refuses to run: tag %q already exists on origin. Choose a different version."
+
+	// releaseTagRemoteCheckFailedFmt is used when git ls-remote --tags fails for any reason
+	// (network error, timeout, auth failure). A failed ls-remote MUST NOT be interpreted as
+	// "tag absent" — that silent success would create duplicate tags (ADR D1, D7/A5, ML-1B).
+	releaseTagRemoteCheckFailedFmt = "trackfw release tag: could not confirm tag %s is absent from remote: %v"
 
 	releaseTagNoForgeCLIFmt = "trackfw release tag requires the GitHub CLI (gh) to publish the tag. No forge CLI is available for this repository — install and authenticate gh, or push the tag manually: git tag -a %s -m \"<CHANGELOG.md section>\" %s && git push origin %s"
 
@@ -222,28 +228,15 @@ func defaultReleaseReadCommittedFile(sha, path string) (string, error) {
 }
 
 // defaultExecForgeAPI runs a forge CLI command (gh api ...) feeding stdin and capturing
-// stdout, so the JSON response can be parsed. On failure, surfaces the CLI's real stderr text
-// instead of exec's generic "exit status N" — same reasoning as defaultGitExec/
-// defaultCheckPROpen in ship.go.
+// stdout, so the JSON response can be parsed. On failure, surfaces the CLI's real stderr
+// text — same reasoning as defaultGitExec/defaultCheckPROpen in ship.go.
+// Applies TRACKFW_NETWORK_TIMEOUT + WaitDelay + process-group kill (ADR D2, D7/A2).
 func defaultExecForgeAPI(name string, args []string, stdin string) (string, error) {
-	cmd := exec.Command(name, args...)
-	cmd.Stdin = strings.NewReader(stdin)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
+	out, err := runNetworkCmd(name, args, stdin, true)
 	if err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				msg = fmt.Sprintf("%s %s exited with %d", name, strings.Join(args, " "), exitErr.ExitCode())
-			} else {
-				msg = err.Error()
-			}
-		}
-		return strings.TrimSpace(stdout.String()), errors.New(msg)
+		return "", err
 	}
-	return strings.TrimSpace(stdout.String()), nil
+	return strings.TrimSpace(string(out)), nil
 }
 
 // normalizeReleaseVersion strips an optional leading "v"/"V", matching
@@ -307,7 +300,13 @@ func runReleaseTag(versionArg string, deps releaseDeps) error {
 	if _, err := deps.execGit("rev-parse", "-q", "--verify", "refs/tags/"+tagName); err == nil {
 		return fmt.Errorf(releaseTagExistsLocalFmt, tagName, tagName)
 	}
-	remoteTagOut, _ := deps.execGit("ls-remote", "--tags", "origin", "refs/tags/"+tagName)
+	// ADR D1/D7/A5 (ML-1B): any error from ls-remote is a named closed failure.
+	// A failed ls-remote must NEVER be read as "tag absent" — that silent success
+	// would cause trackfw to attempt creating a tag that may already exist.
+	remoteTagOut, lsErr := deps.execGit("ls-remote", "--tags", "origin", "refs/tags/"+tagName)
+	if lsErr != nil {
+		return fmt.Errorf(releaseTagRemoteCheckFailedFmt, tagName, lsErr)
+	}
 	if strings.TrimSpace(remoteTagOut) != "" {
 		return fmt.Errorf(releaseTagExistsRemoteFmt, tagName)
 	}
@@ -461,6 +460,11 @@ func runReleaseTag(versionArg string, deps releaseDeps) error {
 
 	tagResp, err := deps.execForgeAPI("gh", []string{"api", "repos/{owner}/{repo}/git/tags", "--method", "POST", "--input", "-"}, string(tagPayload))
 	if err != nil {
+		// ADR D7/A8 (ML-1B): a timeout on a POST leaves remote state uncertain.
+		// The tag object may or may not have been created on GitHub.
+		if errors.Is(err, netdeadline.ErrTimeout) {
+			return fmt.Errorf("trackfw release tag: gh api (create tag object): %s — remote state is uncertain: check if the tag was created on GitHub before running again", err.Error())
+		}
 		return fmt.Errorf("trackfw release tag: gh api failed creating the tag object: %w", err)
 	}
 
@@ -480,6 +484,11 @@ func runReleaseTag(versionArg string, deps releaseDeps) error {
 	}
 
 	if _, err := deps.execForgeAPI("gh", []string{"api", "repos/{owner}/{repo}/git/refs", "--method", "POST", "--input", "-"}, string(refPayload)); err != nil {
+		// ADR D7/A8 (ML-1B): a timeout on a POST leaves remote state uncertain.
+		// The tag ref may or may not have been created on GitHub.
+		if errors.Is(err, netdeadline.ErrTimeout) {
+			return fmt.Errorf("trackfw release tag: gh api (create tag ref): %s — remote state is uncertain: check if the ref was created on GitHub before running again", err.Error())
+		}
 		return fmt.Errorf("trackfw release tag: gh api failed creating the tag ref: %w", err)
 	}
 

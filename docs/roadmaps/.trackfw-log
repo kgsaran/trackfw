@@ -416,3 +416,5 @@
 2026-10-09 15:05  ROADMAP-2026-10-09-verificacao-de-conteudo-dos-canais-reprova-por-atraso-do-indice-simples-do-pypi.md  wip → done  -0300  (kgsaran@gmail.com)
 2026-10-10 10:04  ROADMAP-2026-09-22-remover-a-entrada-pretooluse-do-settings-nao-e-detectado-por-nenhuma-regra-de-integridade-de-guard.md  backlog → wip  -0300  (kgsaran@gmail.com)
 2026-10-10 19:18  ROADMAP-2026-09-22-remover-a-entrada-pretooluse-do-settings-nao-e-detectado-por-nenhuma-regra-de-integridade-de-guard.md  wip → done  -0300  (kgsaran@gmail.com)
+2026-10-12 12:07  ROADMAP-2026-10-12-operacoes-de-rede-do-trackfw-nao-tem-prazo-e-um-fetch-pendurado-trava-push-ship-prune-e-release-sem-limite.md  backlog → wip  -0300  (kgsaran@gmail.com)
+2026-10-12 12:07  ROADMAP-2026-10-10-branch-prune-nao-apaga-a-branch-remota-ja-integrada-e-o-guard-bloqueia-o-caminho-bruto-sem-oferecer-alternativa.md  backlog → wip  -0300  (kgsaran@gmail.com)

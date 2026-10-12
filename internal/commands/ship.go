@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/forge"
+	"github.com/kgsaran/trackfw/internal/netdeadline"
 	"github.com/kgsaran/trackfw/internal/validator"
 	"github.com/spf13/cobra"
 )
@@ -152,35 +152,12 @@ PR first. When nothing is staged, it pushes existing commits without requiring -
 }
 
 // defaultGitExec is the production git executor.
-// It runs "git <args...>" and returns trimmed stdout.
-//
-// On failure, surfaces git's actual stderr text (trimmed) instead of exec.Command().Output()'s
-// own error, which formats as the generic "exit status N" and discards git's real diagnostic
-// (e.g. "! [rejected] ... (stale info)" from a refused --force-with-lease push). Node's
-// defaultExecGit and Python's default_exec_git already captured stderr this way — without this,
-// every git-failure message this command ever prints (git commit failed: ..., git push failed:
-// ...) diverges byte-for-byte from Node/Python. Caught by check-ship-force-parity.sh's
-// "remote-advanced-lease-mismatch" scenario (ML-1B,
-// ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md), which is the
-// first parity gate to exercise a real git push rejection end to end.
-func defaultGitExec(args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
-	if err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				msg = fmt.Sprintf("git %s exited with %d", strings.Join(args, " "), exitErr.ExitCode())
-			} else {
-				msg = err.Error()
-			}
-		}
-		return strings.TrimSpace(string(out)), errors.New(msg)
-	}
-	return strings.TrimSpace(string(out)), nil
-}
+// defaultGitExec is defined in netexec.go.
+// It runs "git <args...>" with a network deadline when the subcommand opens a
+// network connection (fetch, ls-remote → TRACKFW_NETWORK_TIMEOUT; push →
+// TRACKFW_PUSH_TIMEOUT). Local subcommands run without a deadline.
+// On failure, surfaces git's actual stderr text — same behaviour as before,
+// keeping all parity gates intact.
 
 // defaultExecForgeCLI runs the forge CLI (gh, glab, az) with inherited stdin/stdout/stderr.
 func defaultExecForgeCLI(name string, args []string) error {
@@ -214,27 +191,13 @@ func defaultCheckPROpen(adapter forge.Adapter, branch string) (bool, error) {
 		return false, fmt.Errorf("no PR/MR query defined for forge %q", adapter.Forge)
 	}
 
-	// Capture stderr explicitly and surface its trimmed text in the "cannot verify" error —
-	// exec.Command().Output()'s own error (an *exec.ExitError) formats as the generic
-	// "exit status N", discarding the CLI's actual diagnostic (e.g. an auth failure). Node's
-	// spawnSync and Python's subprocess.run both surface the real stderr text by default, so
-	// without this capture Go's forceLeaseCannotVerifyFmt message diverges byte-for-byte from
-	// Node/Python's — caught by check-ship-force-parity.sh's "forge-nao-verificavel" scenario
-	// (ML-1B, ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md).
-	cmd := exec.Command(adapter.CLIName, args...)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
+	// runNetworkCmd captures stderr and surfaces its trimmed text in the "cannot verify"
+	// error — same reasoning as before, keeping all parity gates intact.
+	// It also applies TRACKFW_NETWORK_TIMEOUT + WaitDelay so a hung forge CLI does not
+	// block the push indefinitely (ADR D2, D7/A2).
+	out, err := runNetworkCmd(adapter.CLIName, args, "", true)
 	if err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				msg = fmt.Sprintf("%s exited with %d", adapter.CLIName, exitErr.ExitCode())
-			} else {
-				msg = err.Error()
-			}
-		}
-		return false, errors.New(msg)
+		return false, err
 	}
 
 	var results []json.RawMessage
@@ -390,7 +353,12 @@ func runShip(opts shipOpts, deps shipDeps) error {
 		fmt.Fprintf(deps.out, "[dry-run] git fetch origin --prune\n")
 	} else {
 		if _, ferr := deps.execGit("fetch", "origin", "--prune"); ferr != nil {
-			fmt.Fprintf(deps.out, "Warning: could not fetch origin (offline or no remote); skipping squash-merge check.\n")
+			// ADR D1/D5: name the timeout so the user can distinguish it from "offline".
+			if errors.Is(ferr, netdeadline.ErrTimeout) {
+				fmt.Fprintf(deps.out, "Warning: could not fetch origin (%s); skipping squash-merge check.\n", ferr.Error())
+			} else {
+				fmt.Fprintf(deps.out, "Warning: could not fetch origin (offline or no remote); skipping squash-merge check.\n")
+			}
 		} else {
 			detectPendingSquashMerges(branch, deps.execGit, deps.ghExec, deps.out)
 		}
@@ -779,7 +747,7 @@ func isGitWriteCmd(args []string) bool {
 }
 
 // detectPendingSquashMerges warns about branches that have genuinely pending work against
-// origin/main. Non-blocking — prints only.
+// the repository's default branch. Non-blocking — prints only.
 //
 // Reuses evaluateBranchWithForge (branch_prune_forge.go), which applies the D1 PR-signal order
 // from ADR-2026-10-03 when a forge snapshot is available, and falls back to the touched-files
@@ -792,13 +760,22 @@ func isGitWriteCmd(args []string) bool {
 // All other decisions (no_own_work, content_identical, no_merge_base, eval_error, etc.) are
 // silently skipped — same posture as before. A6, ADR-2026-10-03.
 func detectPendingSquashMerges(currentBranch string, gitExec func(...string) (string, error), ghExec ghExecFn, out io.Writer) {
-	remoteBranches, err := gitExec("branch", "-r", "--no-merged", "origin/main")
+	// Resolve default branch once (A7, ADR-2026-10-12): forge → symref → fallback "main".
+	// The forge name is authoritative; no cross-check with symref (vault note).
+	defaultLocalName, defaultRemoteRef := resolveDefaultBranch(gitExec, ghExec)
+
+	remoteBranches, err := gitExec("branch", "-r", "--no-merged", defaultRemoteRef)
 	if err != nil || strings.TrimSpace(remoteBranches) == "" {
 		return
 	}
 
 	// D3/D4: one snapshot for all branches in this function (same policy as runBranchPrune).
-	snapshot, _ := queryForgePRs(gitExec, ghExec)
+	// ADR D7/A7: preserve the raw cause so that a timeout is named to the user (ML-1B).
+	snapshot, _, cause := queryForgePRs(gitExec, ghExec)
+	if snapshot == nil && errors.Is(cause, netdeadline.ErrTimeout) {
+		// D2 degradation continues (heuristic proceeds), but the timeout is named per D5.
+		fmt.Fprintf(out, "Warning: forge PR lookup failed (%s); squash-merge check using content heuristic only.\n", cause.Error())
+	}
 
 	for _, raw := range strings.Split(remoteBranches, "\n") {
 		candidate := strings.TrimSpace(raw)
@@ -829,12 +806,12 @@ func detectPendingSquashMerges(currentBranch string, gitExec func(...string) (st
 		}
 		// Pass a non-empty upstream sentinel: candidate is a remote tracking branch and
 		// therefore by definition has been pushed — case 4 (no_pr_never_pushed) must not fire.
-		eval := evaluateBranchWithForge(candidate, shortName, "origin/"+shortName, snapshot, gitExec)
+		eval := evaluateBranchWithForge(candidate, shortName, "origin/"+shortName, defaultLocalName, snapshot, gitExec)
 		switch eval.Decision {
 		case branchPruneDecisionPendingWork,
 			branchPruneDecisionCommitsAfterMerged,
 			branchPruneDecisionDivergedFromMerged:
-			fmt.Fprintf(out, "Warning: branch %q appears to have unmerged changes vs origin/main.\n", shortName)
+			fmt.Fprintf(out, "Warning: branch %q appears to have unmerged changes vs %s.\n", shortName, defaultRemoteRef)
 		}
 	}
 }

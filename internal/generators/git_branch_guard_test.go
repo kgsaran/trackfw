@@ -1193,3 +1193,102 @@ func TestGitBranchGuardAwk_ProvaDeMordida(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// ML-1C (REQ-2026-10-10, D7, A2) — paridade .sh↔Go para formas de remoção de branch
+// ---------------------------------------------------------------------------
+//
+// TestGitBranchGuard_PushDelete_ParityBranchDeleteForms (A2 do ADR-2026-10-12) afirma
+// que cada forma de remoção de branch e cada forma NÃO-remoção produz paridade
+// idêntica (.sh fixture congelada ↔ binário Go) e o comportamento de bloqueio correto.
+//
+// Para cada forma A–J (remoção): afirma rc=2 e stdout contendo
+// "trackfw branch prune --remote --apply" (identifica o reasonPushDelete).
+// Para cada forma K–Q (não-remoção): afirma rc=2 e stdout contendo
+// "trackfw ship" (identifica o reasonPush).
+//
+// A paridade .sh↔Go é afirmada implicitamente: runGitBranchGuard chama
+// assertGuardParity internamente após cada execução bash.
+func TestGitBranchGuard_PushDelete_ParityBranchDeleteForms(t *testing.T) {
+	dir, script := setupGitBranchGuardFixture(t)
+
+	type tc struct {
+		name       string
+		cmd        string
+		wantDelete bool // true → reasonPushDelete; false → reasonPush
+	}
+	cases := []tc{
+		// --- remoção de branch → reasonPushDelete ---
+		// Afirma: --delete sem remote detecta remoção de branch e aponta para prune --remote --apply.
+		{"A_delete_no_remote", "git push --delete feat/foo", true},
+		// Afirma: --delete com remote antes detecta remoção de branch.
+		{"B_delete_with_remote", "git push origin --delete feat/foo", true},
+		// Afirma: -d curto sem remote detecta remoção de branch.
+		{"C_d_short_no_remote", "git push -d feat/foo", true},
+		// Afirma: -d curto com remote detecta remoção de branch.
+		{"D_d_short_with_remote", "git push origin -d feat/foo", true},
+		// Afirma: múltiplos refs após --delete detecta remoção de branch.
+		{"E_delete_multi_refs", "git push origin --delete feat/a feat/b", true},
+		// Afirma: refspec :<branch> detecta remoção de branch.
+		{"F_refspec_colon", "git push origin :feat/foo", true},
+		// Afirma: refspec +:refs/heads/<branch> detecta remoção de branch.
+		{"G_refspec_plus_colon_refsheads", "git push origin +:refs/heads/feat/foo", true},
+		// Afirma: múltiplos refspecs :foo :bar detectam remoção de branch.
+		{"H_multi_refspecs", "git push origin :foo :bar", true},
+		// Afirma: mistura de push normal e refspec de remoção detecta remoção de branch.
+		{"I_mix_push_and_delete", "git push origin main :feat/foo", true},
+		// Afirma: refspec :refs/heads/<branch> detecta remoção de branch.
+		{"J_refs_heads_explicit", "git push origin :refs/heads/feat/foo", true},
+		// --- novos vetores do advisor (bugs no modelo antigo) ---
+		// Afirma: --delete com remote e tag não é remoção de branch.
+		{"P2_delete_remote_tag", "git push --delete origin refs/tags/v1.0", false},
+		// Afirma: --delete após positionals detecta remoção de branch.
+		{"R_delete_after_positionals", "git push origin feat/foo --delete", true},
+		// Afirma: --delete com --force não anula a detecção.
+		{"S_delete_force", "git push --delete --force origin feat/foo", true},
+		// Afirma: --delete com remote explícito detecta remoção de branch.
+		{"B2_delete_origin_branch", "git push --delete origin feat/foo", true},
+		// --- NÃO remoção de branch → reasonPush ---
+		// Afirma: --mirror não é remoção de branch e mantém reasonPush.
+		{"K_mirror", "git push origin --mirror", false},
+		// Afirma: --prune não é remoção de branch e mantém reasonPush.
+		{"L_prune", "git push origin --prune", false},
+		// Afirma: refspec :refs/tags/... não é remoção de branch e mantém reasonPush.
+		{"M_tag_refspec", "git push origin :refs/tags/v1.0", false},
+		// Afirma: refspec : sozinho (empty src) não é remoção de branch e mantém reasonPush.
+		{"N_bare_colon", "git push origin :", false},
+		// Afirma: refspec +: sozinho (empty src force) não é remoção de branch e mantém reasonPush.
+		{"O_plus_bare_colon", "git push origin +:", false},
+		// Afirma: --delete com apenas refs/tags/ não é remoção de branch e mantém reasonPush.
+		{"P_delete_only_tag", "git push origin --delete refs/tags/v1.0", false},
+		// Afirma: push simples sem flags de remoção mantém reasonPush.
+		{"Q_plain_push", "git push origin main", false},
+	}
+
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			payload := `{"tool_input":{"command":"` + c.cmd + `"}}`
+			code, stdout, stderr := runGitBranchGuard(t, dir, script, nil, payload)
+			if code != 2 {
+				t.Fatalf("rc: want 2, got %d (stderr: %s)", code, stderr)
+			}
+			if c.wantDelete {
+				if !strings.Contains(stdout, "trackfw branch prune --remote --apply") {
+					t.Errorf("stdout deveria mencionar 'trackfw branch prune --remote --apply', got: %s", stdout)
+				}
+				// A mensagem NÃO deve apontar para trackfw ship (seria a mensagem errada).
+				if strings.Contains(stdout, "trackfw ship") {
+					t.Errorf("stdout NÃO deveria mencionar 'trackfw ship' para forma de remoção, got: %s", stdout)
+				}
+			} else {
+				if !strings.Contains(stdout, "trackfw ship") {
+					t.Errorf("stdout deveria mencionar 'trackfw ship' para forma não-remoção, got: %s", stdout)
+				}
+				if strings.Contains(stdout, "trackfw branch prune --remote --apply") {
+					t.Errorf("stdout NÃO deveria mencionar 'trackfw branch prune --remote --apply' para forma não-remoção, got: %s", stdout)
+				}
+			}
+		})
+	}
+}

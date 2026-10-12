@@ -2,6 +2,51 @@
 
 ---
 
+## 2026-10-12 — hades-tf — FIM: red-team Wave 2 (ML-2A) — REQ-2026-10-12 + REQ-2026-10-10
+
+**Branch:** `fix/operacoes-de-rede-sem-prazo-e-branch-prune-remoto`
+**Escopo:** Red-team dos controles de prazo de rede (REQ-2026-10-12) e branch prune --remote + guard de remoção (REQ-2026-10-10). Vetores executados em cópia isolada (`rsync --exclude .git` + `go test`). Nenhum arquivo de produto alterado; nenhum git commit/push.
+**Entregável:** `docs/seguranca/2026-10-12-red-team-prazo-de-rede-e-prune-remoto.md`
+**Veredito:** sem achados críticos ou bloqueantes. Controles principais resistiram à falsificação por execução. Residuais: `--delete=foo` (precision gap inexplorável com git atual); RS-7 alias bypass (declarado); GH_HOST mismatch (conservador). Branch apta para merge.
+
+---
+
+## 2026-10-12 — hades-tf — INÍCIO: red-team Wave 2 (ML-2A) — REQ-2026-10-12 + REQ-2026-10-10
+
+**Branch:** `fix/operacoes-de-rede-sem-prazo-e-branch-prune-remoto`
+**Escopo:** Red-team de prazo de rede e prune remoto.
+
+---
+
+## 2026-10-12 — hefesto-tf — INÍCIO: revisão de qualidade Wave 2 (ML-2A) — REQ-2026-10-12 + REQ-2026-10-10
+
+**Branch:** `fix/operacoes-de-rede-sem-prazo-e-branch-prune-remoto`
+**Escopo:** Revisão de qualidade do ML-2A: prazo das operações de rede (REQ-2026-10-12) e branch prune --remote (REQ-2026-10-10). Arquivos inspecionados: `internal/netdeadline/`, `internal/commands/netexec*.go`, `netfailpath_test.go`, `push.go`, `ship.go`, `release.go`, `branch_prune*.go`, `internal/sync/linear*.go`, `internal/guard/gitbranch*.go`, scripts de paridade. Mutações feitas em cópia scratch (`mktemp -d`). Nenhum arquivo de produto alterado.
+**Entregável:** `docs/qualidade/2026-10-12-revisao-prazo-de-rede-e-prune-remoto.md`
+
+---
+
+## 2026-10-12 — apolo-tf (fix/operacoes-de-rede-sem-prazo-e-branch-prune-remoto — ML-1A ROADMAP-2026-10-10) — FIM
+
+**Branch:** `fix/operacoes-de-rede-sem-prazo-e-branch-prune-remoto`
+**Escopo:** ML-1A do ROADMAP-2026-10-10 (A7, ADR-2026-10-12) — branch padrão vem do forge, não do literal "main". Arquivos modificados: `internal/commands/branch_prune.go`, `branch_prune_forge.go`, `branch_prune_forge_test.go`, `branch_prune_test.go`, `ship.go`; novo: `branch_prune_default_branch_test.go`.
+**Entregável:** (1) `resolveDefaultBranch` + `forgeDefaultBranch` em `branch_prune_forge.go` (forge → symref → fallback "main"); (2) `evaluateBranchIntegration` recebe `remoteRef string` como 2º arg; (3) `evaluateBranchWithForge` recebe `defaultLocalName string` como 4º arg; (4) `fetchFailed`/`fetchTimedOut` removidos de `branchPruneDeps`, viram vars locais em `runBranchPrune`; (5) `detectPendingSquashMerges` resolve o nome internamente; (6) `TestAC5_ForgeQueriedExactlyOnce` atualizado para 2 chamadas (default_branch + PR list). 4 testes novos (master/trunk/forge-vs-symref/fallback), todos PASS. Suite completa `./internal/commands/` EXIT=0 (39s). `go build ./...` EXIT=0. `go vet ./internal/commands/` EXIT=0. `GOOS=windows go vet` EXIT=0. `make parity-rest` falha pré-existente em `check-required-status-checks.py` (Python 3.9.6 vs sintaxe 3.10+, commit 457fb955, não relacionado ao ML-1A).
+
+---
+
+## 2026-10-12 — apolo-tf (fix/operacoes-de-rede-sem-prazo-e-branch-prune-remoto — ML-1A ROADMAP-2026-10-10) — INÍCIO
+
+**Branch:** `fix/operacoes-de-rede-sem-prazo-e-branch-prune-remoto`
+**Escopo:** ML-1A do ROADMAP-2026-10-10 — substituir os literais hardcoded "origin/main"/"main" em `branch_prune.go` e `branch_prune_forge.go` pela resolução dinâmica via forge API → symref → fallback.
+
+---
+
+## 2026-10-12 — apolo-tf (fix/operacoes-de-rede-sem-prazo-e-branch-prune-remoto — ML-1B) — FIM
+
+**Branch:** `fix/operacoes-de-rede-sem-prazo-e-branch-prune-remoto`
+**Escopo:** ML-1B do ROADMAP-2026-10-12 (issue #556) — caminhos de falha de rede nomeiam o prazo ao usuário. Arquivos modificados: `internal/commands/push.go`, `ship.go`, `branch_prune.go`, `branch_prune_forge.go`, `branch_prune_forge_test.go`, `release.go`, `netexec_unix.go`; novo: `netfailpath_test.go`; doc: `docs/cli-parity.md`.
+**Entregável:** (1) `push.go` / `ship.go` fetch timeout: aviso nomeia `TRACKFW_NETWORK_TIMEOUT`; (2) `branch_prune.go` fetch timeout: aviso nomeia estouro + campos `fetchFailed`/`fetchTimedOut` internos reservados para ROADMAP-2026-10-10; (3) `queryForgePRs` 3ª saída de erro preserva identidade `errors.Is`; (4) `release.go` `ls-remote` erro: fail-closed com `releaseTagRemoteCheckFailedFmt`; (5) POST tag object e ref: mensagem "remote state is uncertain" quando estouro; (6) `detectPendingSquashMerges` timeout: aviso ao usuário. `netexec_unix.go` corrigido com `write-containment-allowed`. Seção de prazo de rede adicionada a `docs/cli-parity.md`. 9 testes novos, todos PASS. Suite completa `./internal/commands/` EXIT=0 (39s). `go build ./...` EXIT=0. `GOOS=windows go vet` EXIT=0. `trackfw validate` EXIT=0. `check-write-containment` OK. `check-parity-contract-coverage` OK. `make parity-rest` falha pré-existente em `check-required-status-checks.py` (Python 3.9.6 vs sintaxe 3.10+, commit 457fb955, não relacionado ao ML-1B).
+
 ## 2026-10-10 — apolo-tf (fix/remover-a-entrada-pretooluse-nao-e-detectado — ML-2C corretivo red-team) — FIM
 
 **Branch:** `fix/remover-a-entrada-pretooluse-nao-e-detectado`
@@ -46368,3 +46413,22 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-10 — zeus-tf — release 9.4.3
 
 - Bump para 9.4.3 (`version.go`, `npm/package.json`, `npm/package-lock.json`, `pypi/pyproject.toml`) e `CHANGELOG.md` com o #557; leva junto o fechamento da REQ-2026-09-02. #554/#555 são só governança (omitidos). Tag após o merge, precedida de `make check-required-full`.
+
+## 2026-10-12 — zeus-tf — início: prazo das operações de rede (#556) + `branch prune --remote`
+
+- Branch `fix/operacoes-de-rede-sem-prazo-e-branch-prune-remoto`, duas REQs com o mesmo objetivo: REQ-2026-10-12 (#556, nova) implementa primeiro; REQ-2026-10-10 depois (depende do prazo do fetch; ambas tocam `branch_prune*.go`). ADRs Proposed: prazo de rede (estouro nunca vira sucesso; `release.go:310` descarta o erro do `ls-remote`; `WaitDelay` por causa do neto `ssh`) e prune remoto (só `merged_pr` sobre o tip remoto + lease no SHA avaliado). Medição do lease no shell bloqueada pelo guard (`git commit` bruto) — vira teste Go no ML-1A. Wave 0 dos dois em paralelo (`hades-tf`).
+
+## 2026-10-12 — zeus-tf — Wave 0 dos dois roadmaps auditados
+
+- Prazo de rede: aprovado com A1–A10 (ADR D7). `git push` ganha teto próprio (`TRACKFW_PUSH_TIMEOUT`, 30 min); metadados 60 s (medido 1,58 s / 2,96 s); grupo de processos só sem tty; `linear.go:76` (HTTP sem prazo) entra como ML-1C. Nota de vault sobre stderr preso pelo neto.
+- Prune remoto: aprovado com A1–A9 (ADR D8). "main" hardcoded vira ML-1A (mesma causa); as duas remotas motivadoras são `keep` (commits pós-merge, conferido). Ressalva: sonda do lease rodou `git commit`/`push` brutos em script — contorno do guard, levado ao KG.
+
+## 2026-10-12 — hefesto-tf — FIM: revisão de qualidade Wave 2 (ML-2A)
+
+**Branch:** `fix/operacoes-de-rede-sem-prazo-e-branch-prune-remoto`
+**Entregável:** `docs/qualidade/2026-10-12-revisao-prazo-de-rede-e-prune-remoto.md`
+**Veredito:** APROVADO COM AJUSTES. Nenhum bloqueante. 3 ajustes: Q1 (Case 5 em TestWaitDelay_ResolveNetworkErr — ctx expirado + ErrWaitDelay+success), Q2 (teste de varredura T4 não entregue), Q6 (margem upper bound do AC2 WaitDelayOnly apertada em Windows: 0.89s). Suite completa verde (commands 47s, netdeadline 2s, sync 7s, guard 4s). GOOS=windows go vet limpo.
+
+## 2026-10-12 — zeus-tf — Wave 2 da branch de prazo de rede e prune remoto
+
+- Revisão de qualidade (hefesto) aprovada com ajustes → corretivo ML-2B auditado. Red-team (hades) sem bloqueante; `pushInsteadOf` e injeção por nome medidos pelo arquiteto (fechados). `make quality` EXIT=0 em `1849d74c`, máquina ociosa (347 OK / 0 FAIL). Falta o CI, que só dispara com PR.

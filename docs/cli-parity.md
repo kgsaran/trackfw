@@ -79,7 +79,7 @@ describes the expected behaviour; each `##` section below names the gate that pr
 | `note` | `new <title>` — creates `vault/notes/<slug>-YYYY-MM-DD.md` and links in `index.md`; idempotent (fails on duplicate) |
 | `ship` | Governed `git commit + push + open PR/MR` for `feat`/`fix`/`refactor`/`chore`/`docs` branches; hard governance gate for `feat`/`fix`/`refactor` only — `chore`/`docs` skip it (see below) |
 | `push` | Governed `git push` for already-committed work — never commits, never opens a PR/MR; same branch vocabulary and governance gate as `ship` (see below) |
-| `branch` | `new <type>/<slug>` — for `feat`/`fix`/`refactor`, gates `git checkout -b` on the same `branch_has_wip_roadmap` matching logic `trackfw validate` already applies, moving the check before branch creation instead of after; `chore`/`docs` create the branch without that gate, mirroring the housekeeping exemption `trackfw ship`/`trackfw commit` already grant those types (see below). `prune [--apply]` — reports (and, with `--apply`, deletes) local branches already integrated into `origin/main` via the touched-files heuristic (see below); `--dry-run` behavior is the default, `--apply` is opt-in |
+| `branch` | `new <type>/<slug>` — for `feat`/`fix`/`refactor`, gates `git checkout -b` on the same `branch_has_wip_roadmap` matching logic `trackfw validate` already applies, moving the check before branch creation instead of after; `chore`/`docs` create the branch without that gate, mirroring the housekeeping exemption `trackfw ship`/`trackfw commit` already grant those types (see below). `prune [--remote] [--apply]` — reports (and, with `--apply`, deletes) local branches already integrated into `origin/<default-branch>` via the touched-files heuristic (see below); `--remote` also evaluates and deletes remote branches in `origin` whose `merged_pr` is confirmed by the forge; `--dry-run` behavior is the default, `--apply` is opt-in |
 | `gemini` / `cursor` / `copilot` / `windsurf` / `amazonq` | Compatibility aliases (Go binary only; existed as Go-only in v7) |
 | `version` / `--version` | Both print the same single line: `trackfw <semver>`, no `v` prefix — see "Version output" below |
 | `changelog` | Reads `CHANGELOG.md` at project root; no flags prints the first `## [...]` section (`Unreleased` or latest version); `--version <x.y.z>` prints a specific section (accepts an optional leading `v`); `--all` prints the entire file. Error messages byte-identical: `CHANGELOG.md not found — nothing to show`, `version "<x>" not found in CHANGELOG.md` |
@@ -2086,7 +2086,13 @@ message is a scenario the gate is asserted to reject.
 `trackfw branch prune [--apply]` automates the "one active branch at a time" check documented in
 `CLAUDE.md` §1 ("Uma branch ativa por vez")
 (`docs/req/REQ-2026-08-18-trackfw-branch-prune-apaga-branch-local-ja-integrada-com-deteccao-correta-de-squash-merge.md`).
-It decides whether each local branch is safe to delete relative to `origin/main`.
+It decides whether each local branch is safe to delete relative to `origin/<default-branch>`, where
+the default branch is resolved in three steps by `resolveDefaultBranchWithSource` (`branch_prune_forge.go`):
+(1) forge API (`gh api repos/<owner>/<repo>` → `default_branch`) via `forgeDefaultBranch`,
+(2) local tracking symref `git symbolic-ref --short refs/remotes/origin/HEAD`,
+(3) literal `main`. The forge name is authoritative and is never cross-checked against the symref
+(vault note `forge-anchoring-branch-name-must-be-unconditional-not-cross-checked-2026-08-19`). The
+report header prints `origin/<nome real>` — not necessarily `origin/main` (A7, ADR-2026-10-12).
 When `gh` is available and the origin remote points to GitHub, a **single** `gh pr list --state all`
 query provides the primary signal (ADR-2026-10-03, D1 order: open PR → keep; MERGED PR containing
 tip → delete; MERGED PR with commits after → keep; MERGED PR diverged → keep; closed PR → review;
@@ -2112,22 +2118,22 @@ actually run `git branch -d`/`-D` (see "Deletion: `-d` before `-D`" below).
 
 Per `CLAUDE.md` §1 step 1, the command runs `git fetch origin --prune` before evaluating anything.
 Unlike `trackfw ship`'s squash-merge check (`ship.go`), which **skips its check entirely** when
-fetch fails, `branch prune` **keeps evaluating** against whatever `origin/main` ref is already
+fetch fails, `branch prune` **keeps evaluating** against whatever `origin/<default-branch>` ref is already
 resolvable locally — offline is a legitimate use case, and skipping evaluation entirely would
 regress AC6 (offline must still report, just never delete). Failure prints a warning naming the
 fetch failure and only that; it never aborts the command.
 
-A stale `origin/main` only ever makes the result **more conservative** — never less: it can *miss*
+A stale `origin/<default-branch>` ref only ever makes the result **more conservative** — never less: it can *miss*
 a branch that was in fact integrated since the last fetch (reporting it `keep` when a fresh fetch
 would show it `delete`-worthy), but it can never report a branch as deletable that a fresh fetch
 would show as pending. This holds because staleness only means `diverg` is computed against an
-*older* (but still valid) snapshot of `origin/main`'s content — a merge landing later can only
+*older* (but still valid) snapshot of `origin/<default-branch>`'s content — a merge landing later can only
 ever remove divergence that a stale ref still sees, never introduce divergence that a fresh ref
 would not have shown. Proven with a real-git fixture in all three CLIs (`TestRunBranchPrune_RealGitRepo_StaleOriginMain_IsConservativeNotWrong`
 and Node/Python equivalents): a branch genuinely merged upstream by someone else is reported
-`pending_work` (kept) while the local clone's `origin/main` is stale after a broken remote URL,
+`pending_work` (kept) while the local clone's `origin/<default-branch>` is stale after a broken remote URL,
 and becomes `content_identical` (deletable) the moment a real fetch succeeds — same branch, same
-local commits, only the freshness of `origin/main` changed.
+local commits, only the freshness of `origin/<default-branch>` changed.
 
 ### Why not `git branch -d`, and why not a naive `git diff`
 
@@ -2151,9 +2157,9 @@ positive is closed.
 
 
 ```
-mb      = git merge-base origin/main <branch>
-touched = git diff --name-only -z mb <branch>                      (what the branch touched)
-diverg  = git diff --name-only -z origin/main <branch> -- touched  (what still differs there)
+mb      = git merge-base origin/<default-branch> <branch>
+touched = git diff --name-only -z mb <branch>                               (what the branch touched)
+diverg  = git diff --name-only -z origin/<default-branch> <branch> -- touched  (what still differs there)
 ```
 
 | `touched` | `diverg` | Decision | Deletable |
@@ -2210,7 +2216,7 @@ or non-ASCII byte would be mis-split by the pathspec on the second call, silentl
 This decision function — `evaluateBranchIntegration` (Go) — is the **single shared implementation**.
 `trackfw ship` and `trackfw push`'s `detectPendingSquashMerges` (`ship.go`) routes through
 `evaluateBranchWithForge` (ADR-2026-10-03 D4/A6, `branch_prune_forge.go`) for each remote candidate
-returned by `git branch -r --no-merged origin/main`. It warns when the decision is:
+returned by `git branch -r --no-merged origin/<default-branch>`. It warns when the decision is:
 - `pending_work` (content heuristic — no forge signal, or degraded)
 - `commits_after_merged_pr` (D1 case 2: commits added after the merged PR head)
 - `diverged_from_merged_pr` (D1 case 2b: rebased or amended after merge)
@@ -2228,10 +2234,11 @@ two commands share the evaluation function but not its consequences.
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
-- **`main`** — the default branch itself. Evaluating it against `origin/main` would trivially
-  report `no_own_work` (its own merge-base against itself is its own tip) and offer to delete the
-  branch the user is meant to keep. Excluded by name before the heuristic ever runs — the
-  highest-severity failure mode this command guards against.
+- **The default branch** (resolved name — `main` when forge/symref is unavailable) — evaluating it
+  against `origin/<default-branch>` would trivially report `no_own_work` (its own merge-base
+  against itself is its own tip) and offer to delete the branch the user is meant to keep. Excluded
+  by the resolved `defaultLocalName` (`resolveDefaultBranchWithSource`, `branch_prune_forge.go`)
+  before the heuristic ever runs — the highest-severity failure mode this command guards against.
 - **The current branch** — via `git symbolic-ref --quiet --short HEAD` (empty on detached HEAD).
 - **Any branch checked out in another worktree** — via `git worktree list --porcelain`, parsing
   the `branch refs/heads/<name>` line (not the human-readable format).
@@ -2262,12 +2269,13 @@ back to `-D` and succeeds).
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
-The only ref this command consults is `origin/main`, checked once via
-`git rev-parse --verify -q origin/main` **after** the best-effort fetch above. If it cannot be
-resolved at all (no remote configured, or `origin/main` was never fetched even before this run),
-the **whole command** refuses and deletes nothing — no fallback to a local `main`. The
-human-readable reason goes to stdout; a bare `branch prune: origin/main not resolvable` goes to
-stderr (mirroring `trackfw branch new`'s stdout/stderr split), exit 1.
+The only ref this command consults is `origin/<default-branch>` (the ref resolved by
+`resolveDefaultBranchWithSource`), checked once via `git rev-parse --verify -q <defaultRemoteRef>`
+**after** the best-effort fetch above (`runBranchPrune`, `branch_prune.go`). If it cannot be
+resolved at all (no remote configured, or `origin/<default-branch>` was never fetched even before
+this run), the **whole command** refuses and deletes nothing — no fallback to a local `main`. The
+human-readable reason goes to stdout; a bare `branch prune: origin/<default-branch> not resolvable`
+goes to stderr (mirroring `trackfw branch new`'s stdout/stderr split), exit 1.
 
 ### Command surface
 
@@ -2276,11 +2284,80 @@ stderr (mirroring `trackfw branch new`'s stdout/stderr split), exit 1.
 
 | Element | Value |
 |---|---|
-| Invocation | `trackfw branch prune [--apply]` |
+| Invocation | `trackfw branch prune [--remote] [--apply]` |
 | `--apply` | Actually delete branches decided as integrated. Default: report only, delete nothing (equivalent to an implicit `--dry-run`) |
+| `--remote` | Also evaluate and, with `--apply`, delete remote branches from `origin` whose `merged_pr` decision is confirmed against the forge (see `--remote` subsection below). Without `--apply`, reports only |
 | Exit 0 | Ran to completion — includes the case where `--apply` deleted zero branches |
-| Exit 1 | `origin/main` unresolvable (offline with no prior fetch, no remote, never fetched), or local branch listing failed |
-| Deletion | `git branch -d`, falling back to `-D` only when `-d` refuses (see above); only for branches decided `no_own_work` or `content_identical`, and never the current/worktree/default branch, and never `review_doc_config` |
+| Exit 1 | `origin/<default-branch>` unresolvable (offline with no prior fetch, no remote, never fetched), or local branch listing failed |
+| Deletion (local) | `git branch -d`, falling back to `-D` only when `-d` refuses (see above); only for branches decided `no_own_work` or `content_identical`, and never the current/worktree/default branch, and never `review_doc_config` |
+| Deletion (remote) | `git push --force-with-lease=refs/heads/<b>:<sha> origin :refs/heads/<b>`; only for branches decided `merged_pr` against the remote tip; see `--remote` subsection |
+
+### `--remote` — remoção de branches integradas no origin (ML-1B, REQ-2026-10-10, ADR-2026-10-12)
+
+<!-- trackfw-contract: gap reason=branch-prune-remote-nao-testado-por-gate-de-script; coberto por go-test internal/commands/ (branch_prune_remote_test.go); ADR-2026-10-12 D1-D6/A1-A9 -->
+
+`--remote` é opt-in explícito (`runRemotePrune`, `branch_prune_remote.go`). Sem `--remote`, nenhuma
+chamada escreve no remoto — comportamento idêntico ao atual. Com `--remote` e sem `--apply`, o
+comando **apenas relata** o veredito de cada branch remota. O padrão continua sendo dry-run (D1).
+
+**População** — `git for-each-ref --format=%(refname) refs/remotes/origin/` (D2, A8), excluindo:
+- `refs/remotes/origin/HEAD` pelo refname completo (A8 — `%(refname:short)` de HEAD seria `origin`,
+  não casaria um filtro em `origin/HEAD`);
+- a branch padrão resolvida por `resolveDefaultBranchWithSource` (`defaultLocalName`).
+
+Somente `origin` é avaliado; outros remotos degradam com mensagem.
+
+**Único sinal que autoriza remoção remota** — `decision == merged_pr` aplicado ao tip remoto (D3/A6).
+A função `deletable()` **nunca** é usada no caminho remoto — ela também aceita `no_own_work` e
+`content_identical` (heurística de conteúdo), que o ADR proíbe para o remoto. O caminho remoto
+chama `evaluateBranchWithForge(sha, b, "origin/"+b, ...)` passando o SHA recém-lido como ref
+(D5), de modo que a avaliação ancora no tip remoto, não no local.
+
+**Exclusões individuais** (a branch é mantida com motivo impresso):
+- Branch protegida: `queryProtectedBranches` (`branch_prune_remote.go`) via
+  `gh api repos/<owner>/<repo>/branches?protected=true&per_page=100 --paginate` (D6/A4).
+- Base de PR aberto: `snapshot.prs[i].BaseRefName` para todos os PRs com `State == "OPEN"` (A3).
+- PR aberto de mesmo head: decisão `open_pr` no `evaluateBranchWithForge`.
+
+**Pré-condições que bloqueiam TODA remoção remota na execução** (D4/A5). Se qualquer uma falhar,
+nenhuma branch remota é tocada e o relatório imprime a linha
+`remote deletion blocked: <causa>` para cada causa (`runRemotePrune`, `branch_prune_remote.go`):
+
+| Pré-condição | Mensagem impressa |
+|---|---|
+| P1: `git fetch` estourou o prazo | `remote deletion blocked: git fetch timed out (TRACKFW_NETWORK_TIMEOUT)` |
+| P1: `git fetch` falhou (outros erros) | `remote deletion blocked: git fetch failed` |
+| P2: snapshot do forge indisponível (degradado ou truncado) | `remote deletion blocked: forge PR snapshot unavailable (forge degraded or truncated)` |
+| P3: branch padrão não veio do forge (`defaultFromForge == false`) | `remote deletion blocked: default branch could not be read from forge API` |
+| A5: URL de fetch ≠ URL de push do `origin` | `remote deletion blocked: fetch URL and push URL for origin differ — remote deletion disabled (A5)` |
+| A4: consulta de branches protegidas falhou | `remote deletion blocked: could not read protected branches: <err>` |
+
+**Comando de remoção** (D5, `deleteRemoteBranch`, `branch_prune_remote.go`):
+
+```
+git push --force-with-lease=refs/heads/<b>:<sha avaliado> origin :refs/heads/<b>
+```
+
+O lease é `refs/heads/<b>` (ref server-side), **não** `refs/remotes/origin/<b>` (tracking local).
+Usar o tracking local faria o servidor checar uma ref que não tem, satisfazendo o lease
+vaciamente (Wave 0, Seção 5, Direção 1). O SHA é lido uma vez durante a avaliação (D5) e
+reutilizado na remoção — sem segunda leitura que abriria janela TOCTOU.
+
+**Skip quando o push é recusado** — se `deleteRemoteBranch` retorna erro:
+- Estouro de prazo (`errors.Is(err, netdeadline.ErrTimeout)`):
+  `skip <b>: network timeout — remote state uncertain (TRACKFW_PUSH_TIMEOUT)`
+- Qualquer outro erro (incluindo `! [rejected] (stale info)` do lease):
+  `skip <b>: <err>`
+
+A branch é preservada; o comando continua com as demais.
+
+**Resíduos declarados** (ADR-2026-10-12):
+- Somente o remoto `origin` é elegível; outros remotos ficam fora.
+- Somente o GitHub é suportado; outros forges degradam na consulta de PRs e bloqueiam em P2 ou P3.
+- Ref recriada no remoto entre o fetch e o lease com o **mesmo SHA**: o lease aceita porque o SHA
+  coincide — o resultado é o mesmo commit apagado; nenhum trabalho é perdido.
+- `git -c alias.p=push p ...` não é reconhecido pelo guard (resíduo do ADR-2026-08-12).
+- Configuração `remote.origin.push`/`remote.origin.mirror` com refspec de deleção: não coberta.
 
 ### Parity gate
 
@@ -6170,7 +6247,15 @@ Mensagem de bloqueio por subcomando (todas referenciam CLAUDE.md §1):
 | `checkout -b` | `trackfw branch new <type>/<slug>` |
 | `switch -c`/`-C`/`--create` | `trackfw branch new <type>/<slug>` |
 | `commit` | `trackfw commit -m '<mensagem>'` (comando novo, Wave 2 deste roadmap) |
-| `push` | `trackfw ship` |
+| `push` (plain, `--mirror`, `--prune`) | `trackfw ship` |
+| `push` com remoção de branch: `--delete`/`-d <ref>` ou `:<ref>`/`+:<ref>` (onde `<ref>` não é `refs/tags/`) | `trackfw branch prune --remote --apply` — `reasonPushDelete` (`internal/guard/gitbranch.go`); `isPushBranchDelete` discrimina as formas; tags, `--mirror` e `--prune` continuam com `reasonPush` |
+
+O guard bloqueia **todas** as formas de remoção de branch via push (`isPushBranchDelete`,
+`internal/guard/gitbranch.go`). A nova mensagem nomeia `trackfw branch prune --remote --apply`
+como o caminho governado. Formas que não apagam branch — `--mirror`, `--prune`, refspec de tag
+(`:refs/tags/…`), refspec de src vazio (`:` sozinho), ou push normal — continuam recebendo
+`reasonPush` e apontando para `trackfw ship`/`trackfw push`/`trackfw release tag`. Coberto por
+`TestRunGitBranch_PushDelete_BranchDeleteForms` (`internal/guard/gitbranch_test.go`) e `TestGitBranchGuard_PushDelete_ParityBranchDeleteForms` (`internal/generators/git_branch_guard_test.go`, ML-1C, REQ-2026-10-10).
 
 ### Invólucro `.sh` — contrato do thin wrapper (ML-2A, ADR-2026-10-04)
 
@@ -8571,3 +8656,62 @@ A violação é uma **contradição entre artefatos vivos** (`origin/main` × di
 - **R4 — `git remote remove origin`** (leva o âncora ao estado silencioso).
 - **R5 — Adversário com permissão de merge em `main`**: fora do escopo (ADR-2026-08-12).
 - **R7 — Windsurf e Amazon Q**: nenhuma chave de desligamento encontrada na documentação.
+
+## Prazo em operações de rede — variáveis, padrões e caminhos de falha (REQ-2026-10-12, ADR-2026-10-12, ML-1B, issue #556)
+
+<!-- trackfw-contract: gate=internal/netdeadline/netdeadline_test.go partial=TestDefaultNetworkTimeout,TestDefaultPushTimeout prova que os dois padrões (60 s e 30 min) são os valores compilados; qualquer alteração nos defaults quebra esses dois casos -->
+
+Toda operação de rede do CLI Go carrega um prazo. Dois controles configuram os prazos:
+
+| Variável | Padrão | Limite superior aceito | Tipo de operação coberta |
+|---|---|---|---|
+| `TRACKFW_NETWORK_TIMEOUT` | 60 s | 24 h | Leitura de metadados: `git fetch`, `git ls-remote`, `gh pr list`, `gh api` GET/leitura |
+| `TRACKFW_PUSH_TIMEOUT` | 30 min | 24 h | Transferência de dados: `git push` |
+
+Valores inválidos (zero, negativos, acima de 24 h, texto não parsável) emitem aviso em stderr e
+usam o padrão — o prazo nunca é desligado.
+
+### Detecção no chamador
+
+<!-- trackfw-contract: gate=internal/commands/netfailpath_test.go partial=TestPush_FetchTimeout_WarningNamesTimeout_PushProceeds,TestRelease_LSRemoteTimeout_FailsClosed afirma que errors.Is(err, netdeadline.ErrTimeout) distingue estouro de prazo de erros genéricos nos dois caminhos de falha cobertos -->
+
+```go
+if errors.Is(err, netdeadline.ErrTimeout) { /* estouro nomeado */ }
+```
+
+`*netdeadline.TimeoutError` implementa `Is(ErrTimeout) bool`. A mensagem formatada segue o ADR D5:
+
+```
+git fetch timed out after 60s (TRACKFW_NETWORK_TIMEOUT)
+```
+
+### Caminho de falha por ponto de chamada
+
+<!-- trackfw-contract: gate=internal/commands/netfailpath_test.go partial=TestPush_FetchTimeout_WarningNamesTimeout_PushProceeds,TestShip_FetchTimeout_WarningNamesTimeout,TestBranchPrune_FetchTimeout_WarningNamesTimeout_FieldsSet,TestRelease_FetchTimeout_MessageNamesTimeoutError,TestRelease_LSRemoteError_FailsClosed,TestRelease_LSRemoteTimeout_FailsClosed,TestRelease_TagObjectPostTimeout_UncertainState,TestRelease_RefPostTimeout_UncertainState,TestShip_DetectSquashMerges_GhTimeout_WarnsDegradation afirma o comportamento de cada linha da tabela: mensagem nomeia TRACKFW_NETWORK_TIMEOUT, falha-padrão não usa a mensagem de estouro, estado remoto incerto declarado nos POSTs -->
+
+| Comando | Ponto | Falha-padrão (sem prazo) | Comportamento com estouro (ADR D1/D5) |
+|---|---|---|---|
+| `trackfw push` | `git fetch origin --prune` | aviso "offline or no remote"; push prossegue | aviso nomeia `TRACKFW_NETWORK_TIMEOUT`; push prossegue |
+| `trackfw ship` | `git fetch origin --prune` | aviso "offline or no remote"; commit/push prosseguem | aviso nomeia `TRACKFW_NETWORK_TIMEOUT`; commit/push prosseguem |
+| `trackfw branch prune` | `git fetch origin --prune` | aviso "offline, no remote, or fetch failed"; análise prossegue com dados possivelmente velhos | aviso nomeia `TRACKFW_NETWORK_TIMEOUT`; campos `fetchFailed`/`fetchTimedOut` ficam `true` internamente para uso pelo passo remoto (ROADMAP-2026-10-10) |
+| `trackfw release tag` | `git fetch origin --prune` | falha fechada: `could not fetch origin` | falha fechada: mensagem nomeia `TRACKFW_NETWORK_TIMEOUT` (via `%s` sobre `err.Error()`) |
+| `trackfw release tag` | `git ls-remote --tags` | **antes da correção ML-1B:** erro descartado, tag tratada como ausente | falha fechada: `could not confirm tag <tag> is absent from remote: <err>` (ADR D7/A5) |
+| `trackfw release tag` | POST `git/tags` (criação do objeto) | `gh api failed creating the tag object` | `<TimeoutError> — remote state is uncertain: check if the tag was created on GitHub before running again` (ADR D7/A8) |
+| `trackfw release tag` | POST `git/refs` (criação do ref) | `gh api failed creating the tag ref` | `<TimeoutError> — remote state is uncertain: check if the ref was created on GitHub before running again` (ADR D7/A8) |
+| `trackfw ship` / `trackfw push` | `gh pr list` dentro de `detectPendingSquashMerges` | degradação silenciosa; heurística de conteúdo continua | aviso nomeia `TRACKFW_NETWORK_TIMEOUT`; heurística de conteúdo continua (ADR D7/A7) |
+
+### `gh pr create` — sem prazo (por construção)
+
+<!-- trackfw-contract: none reason=gh pr create não passa pelo executor runNetworkCmd; o prazo é aplicado pelo gh CLI internamente, fora do nosso controle -->
+
+`gh pr create` não é envolvido pelo executor `runNetworkCmd` — ele é disparado pelo `os/exec` do
+shell sem contexto de cancelamento do trackfw. O prazo `TRACKFW_NETWORK_TIMEOUT` não se aplica a
+ele. Se o comando travar, o usuário deve interrompê-lo com Ctrl-C.
+
+### Resíduos declarados
+
+<!-- trackfw-contract: none reason=autodeclaração de limites; não são alegações de comportamento verificável -->
+
+- **R1**: `git push` usa `TRACKFW_PUSH_TIMEOUT` (30 min); `TRACKFW_NETWORK_TIMEOUT` não o afeta.
+- **R2**: `gh pr create` não tem prazo gerenciado pelo trackfw (ver acima).
+- **R3**: valores acima de 24 h são rejeitados silenciosamente; o aviso vai para stderr, não stdout.

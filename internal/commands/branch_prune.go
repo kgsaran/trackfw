@@ -1,28 +1,30 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"sort"
 	"strings"
 
+	"github.com/kgsaran/trackfw/internal/netdeadline"
 	"github.com/spf13/cobra"
 )
 
-// branchPruneDefaultRemoteRef is the primary source of truth this command consults: the local
-// tracking ref for the default branch. When the forge (GitHub) is reachable, a single `gh pr list`
-// query provides the PR signal used in the D1 order (ADR-2026-10-03); when it is not, the command
-// degrades to the content heuristic below and prints one line naming the cause (D2, same ADR —
-// revokes the "no forge lookup" clause of REQ-2026-08-18 decision 2).
-// If this ref cannot be resolved (no remote configured, or never fetched), the whole command
-// refuses and deletes nothing.
+// branchPruneDefaultRemoteRef is the FALLBACK remote ref used when neither the forge API nor the
+// local tracking symref can supply the default branch name (resolveDefaultBranch step 3).
+// It is also the value that tests using the string "origin/main" directly reference
+// (e.g. netfailpath_test.go), so the constant name is kept stable.
+// In normal operation, the actual default branch is resolved dynamically by resolveDefaultBranch
+// (branch_prune_forge.go) and this constant is only used as the last resort.
+// A7, ADR-2026-10-12: the pre-v8.1 hardcoded "main" assumption is replaced by dynamic resolution.
 const branchPruneDefaultRemoteRef = "origin/main"
 
-// branchPruneDefaultLocalName is the local branch name matching branchPruneDefaultRemoteRef. It is
-// always excluded as a prune candidate — evaluating it against itself would report "no own work"
-// and offer to delete the branch the user is meant to keep. This is the highest-severity bug the
-// naive heuristic contains (see docs/req/REQ-2026-08-18-...): merge-base origin/main main == the
-// tip of main, so "touched" is trivially empty.
+// branchPruneDefaultLocalName is the FALLBACK local branch name when resolveDefaultBranch (step 3)
+// falls back to the literal. It must always be excluded as a prune candidate — evaluating it
+// against itself would report "no own work" and offer to delete the branch the user means to keep
+// (merge-base origin/main main == the tip of main, so "touched" is trivially empty).
+// In normal operation the resolved defaultLocalName from resolveDefaultBranch is used instead.
 const branchPruneDefaultLocalName = "main"
 
 // branchPruneDecision classifies why a branch was (or was not) offered for deletion. Kept as a
@@ -116,38 +118,39 @@ type branchPruneEvaluation struct {
 }
 
 // evaluateBranchIntegration decides whether branch is safe to delete relative to
-// branchPruneDefaultRemoteRef, using the touched-files heuristic documented in CLAUDE.md §1 and
-// REQ-2026-08-18 — NOT the naive bidirectional `git diff origin/main <branch> --stat`, which is
-// only correct when the branch is up to date with main (see detectPendingSquashMerges' known
-// false positive, ship.go).
+// remoteRef (e.g. "origin/main", "origin/master"), using the touched-files heuristic
+// documented in CLAUDE.md §1 and REQ-2026-08-18 — NOT the naive bidirectional
+// `git diff <remoteRef> <branch> --stat`, which is only correct when the branch is
+// up to date with the default (see detectPendingSquashMerges' known false positive, ship.go).
 //
-//	mb      = git merge-base origin/main <branch>
+//	mb      = git merge-base <remoteRef> <branch>
 //	touched = git diff --name-only mb <branch>              (what the branch touched)
-//	diverg  = git diff --name-only origin/main <branch> -- touched  (what still differs there)
+//	diverg  = git diff --name-only <remoteRef> <branch> -- touched  (what still differs there)
 //
 // touched empty            -> no_own_work (deletable)      -- the squash-merge / -d false negative
 // touched non-empty,
 //
 //	diverg empty            -> content_identical (deletable) -- the naive-diff false positive (stale
-//	                                                             branch, main advanced by other PRs)
+//	                                                             branch, default advanced by other PRs)
 //	diverg non-empty        -> pending_work (kept, explained)
 //
 // This function is the single, shared implementation — ML-2A (detectPendingSquashMerges in
 // ship.go) is expected to call it instead of its own bidirectional diff. It never deletes
 // anything; it only decides and explains.
 //
+// remoteRef is supplied by the caller (from resolveDefaultBranch) — never hardcoded.
 // gitExec runs `git <args...>` and returns trimmed stdout (production: defaultGitExec). Both
 // git diff calls use -z (NUL-separated, unquoted paths) so filenames with spaces or non-ASCII
 // bytes are never mis-split — the exact class of bug that would make a branch with pending work in
 // "foo bar.md" read as an empty diverg and get deleted.
-func evaluateBranchIntegration(branch string, gitExec func(...string) (string, error)) branchPruneEvaluation {
-	mb, err := gitExec("merge-base", branchPruneDefaultRemoteRef, branch)
+func evaluateBranchIntegration(branch, remoteRef string, gitExec func(...string) (string, error)) branchPruneEvaluation {
+	mb, err := gitExec("merge-base", remoteRef, branch)
 	mb = strings.TrimSpace(mb)
 	if err != nil || mb == "" {
 		return branchPruneEvaluation{
 			Name:     branch,
 			Decision: branchPruneDecisionNoMergeBase,
-			Reason:   fmt.Sprintf("no merge-base with %s — refusing (unrelated history or bad ref)", branchPruneDefaultRemoteRef),
+			Reason:   fmt.Sprintf("no merge-base with %s — refusing (unrelated history or bad ref)", remoteRef),
 		}
 	}
 
@@ -165,17 +168,17 @@ func evaluateBranchIntegration(branch string, gitExec func(...string) (string, e
 		return branchPruneEvaluation{
 			Name:     branch,
 			Decision: branchPruneDecisionNoOwnWork,
-			Reason:   fmt.Sprintf("no own work relative to %s — safe to delete", branchPruneDefaultRemoteRef),
+			Reason:   fmt.Sprintf("no own work relative to %s — safe to delete", remoteRef),
 		}
 	}
 
-	divergArgs := append([]string{"diff", "--name-only", "-z", branchPruneDefaultRemoteRef, branch, "--"}, touched...)
+	divergArgs := append([]string{"diff", "--name-only", "-z", remoteRef, branch, "--"}, touched...)
 	divergRaw, err := gitExec(divergArgs...)
 	if err != nil {
 		return branchPruneEvaluation{
 			Name:     branch,
 			Decision: branchPruneDecisionEvalError,
-			Reason:   fmt.Sprintf("git diff --name-only -z %s %s -- <touched> failed: %v", branchPruneDefaultRemoteRef, branch, err),
+			Reason:   fmt.Sprintf("git diff --name-only -z %s %s -- <touched> failed: %v", remoteRef, branch, err),
 			Touched:  touched,
 		}
 	}
@@ -185,7 +188,7 @@ func evaluateBranchIntegration(branch string, gitExec func(...string) (string, e
 		return branchPruneEvaluation{
 			Name:     branch,
 			Decision: branchPruneDecisionIdentical,
-			Reason:   fmt.Sprintf("squash-merged into %s — content identical in touched files, safe to delete", branchPruneDefaultRemoteRef),
+			Reason:   fmt.Sprintf("squash-merged into %s — content identical in touched files, safe to delete", remoteRef),
 			Touched:  touched,
 		}
 	}
@@ -193,18 +196,18 @@ func evaluateBranchIntegration(branch string, gitExec func(...string) (string, e
 	// review_doc_config requires diverg to be a PROPER subset of touched (len(diverg) <
 	// len(touched)) — not just "all doc/config". diverg is always a subset of touched by
 	// construction (the second git diff is scoped `-- touched`), so this is the same as: at
-	// least one touched file is NOT in diverg, i.e. it made it into main. That is what
-	// distinguishes genuine housekeeping residue from a squash-merge (some files integrated,
+	// least one touched file is NOT in diverg, i.e. it made it into the default branch. That is
+	// what distinguishes genuine housekeeping residue from a squash-merge (some files integrated,
 	// doc/config noise left behind) from a branch whose ENTIRE touched set — doc/config or
-	// not — never reached main at all (diverg == touched): that is pending work, full stop,
-	// regardless of file type. See "Auditoria do ML-1B" in the roadmap: a branch with brand-new,
-	// never-merged docs/guia-novo.md previously fell into review_doc_config and was reported as
-	// "probable housekeeping, confirm and delete manually" — wrong advice about real work.
+	// not — never reached the default branch at all (diverg == touched): that is pending work,
+	// full stop, regardless of file type. See "Auditoria do ML-1B" in the roadmap: a branch with
+	// brand-new, never-merged docs/guia-novo.md previously fell into review_doc_config and was
+	// reported as "probable housekeeping, confirm and delete manually" — wrong advice about real work.
 	if len(diverg) < len(touched) && allDocOrConfig(diverg) {
 		return branchPruneEvaluation{
 			Name:     branch,
 			Decision: branchPruneDecisionReviewDocConfig,
-			Reason:   fmt.Sprintf("only doc/config files diverge from %s (%s) — probable housekeeping, confirm and delete manually", branchPruneDefaultRemoteRef, strings.Join(diverg, ", ")),
+			Reason:   fmt.Sprintf("only doc/config files diverge from %s (%s) — probable housekeeping, confirm and delete manually", remoteRef, strings.Join(diverg, ", ")),
 			Touched:  touched,
 			Diverged: diverg,
 		}
@@ -213,7 +216,7 @@ func evaluateBranchIntegration(branch string, gitExec func(...string) (string, e
 	return branchPruneEvaluation{
 		Name:     branch,
 		Decision: branchPruneDecisionPendingWork,
-		Reason:   fmt.Sprintf("pending work vs %s: %s", branchPruneDefaultRemoteRef, strings.Join(diverg, ", ")),
+		Reason:   fmt.Sprintf("pending work vs %s: %s", remoteRef, strings.Join(diverg, ", ")),
 		Touched:  touched,
 		Diverged: diverg,
 	}
@@ -316,10 +319,15 @@ type branchPruneDeps struct {
 	// flag ultimately performs the deletion.
 	deleteBranch func(gitExec func(args ...string) (string, error), name string) error
 	out          io.Writer
+	// remote, when true, enables the --remote section (ROADMAP-2026-10-10 ML-1B):
+	// evaluate and optionally delete remote branches on origin that are safe to remove.
+	// false (default) preserves byte-identical behaviour with the pre-ML-1B implementation.
+	remote bool
 }
 
 func newBranchPruneCmd() *cobra.Command {
 	var apply bool
+	var remote bool
 
 	cmd := &cobra.Command{
 		Use:   "prune",
@@ -368,12 +376,14 @@ squash-merged branches, which never have fast-forward ancestry with main.`,
 				worktreeBranches:  defaultWorktreeBranches,
 				deleteBranch:      defaultDeleteBranch,
 				out:               cmd.OutOrStdout(),
+				remote:            remote,
 			}
 			return runBranchPrune(apply, deps)
 		},
 	}
 
 	cmd.Flags().BoolVar(&apply, "apply", false, "Actually delete branches decided as integrated (default: report only, delete nothing)")
+	cmd.Flags().BoolVar(&remote, "remote", false, "Also evaluate (and, with --apply, delete) integrated remote branches on origin")
 
 	return cmd
 }
@@ -384,16 +394,37 @@ func runBranchPrune(apply bool, deps branchPruneDeps) error {
 	// Best-effort `git fetch origin --prune`, per CLAUDE.md §1 step 1. Failure is non-blocking —
 	// offline is a legitimate use case, the same posture `trackfw ship`'s squash-merge check
 	// already takes (ship.go) — but unlike ship (which skips its check entirely on fetch
-	// failure), evaluation below still proceeds against whatever origin/main ref is already
+	// failure), evaluation below still proceeds against whatever defaultRemoteRef is already
 	// resolvable locally: a stale ref only ever makes the result MORE conservative (see the Long
 	// help text), never less, so there is no safety reason to abort here.
+	//
+	// fetchFailed and fetchTimedOut are local vars (not deps fields) because branchPruneDeps is
+	// passed by value; their values are reserved for ROADMAP-2026-10-10 ML-1B (remote deletion),
+	// which will read them inside this function.
+	fetchFailed := false
+	fetchTimedOut := false
 	if _, err := deps.gitExec("fetch", "origin", "--prune"); err != nil {
-		fmt.Fprintf(deps.out, "Warning: could not fetch origin (offline, no remote, or fetch failed) — evaluating with possibly stale data; a branch merged upstream since the last fetch may still be reported as pending.\n")
+		fetchFailed = true
+		fetchTimedOut = errors.Is(err, netdeadline.ErrTimeout)
+		if fetchTimedOut {
+			// ADR D1/D5: estouro nomeia a operação, o prazo e a variável (err.Error()).
+			fmt.Fprintf(deps.out, "Warning: could not fetch origin (%s) — evaluating with possibly stale data; a branch merged upstream since the last fetch may still be reported as pending.\n", err.Error())
+		} else {
+			fmt.Fprintf(deps.out, "Warning: could not fetch origin (offline, no remote, or fetch failed) — evaluating with possibly stale data; a branch merged upstream since the last fetch may still be reported as pending.\n")
+		}
 	}
+	// Resolve the default branch once per execution (A7, ADR-2026-10-12):
+	// 1. forge API (gh api repos/<owner>/<repo> → default_branch)
+	// 2. symref (refs/remotes/origin/HEAD)
+	// 3. fallback literal "main"/"origin/main"
+	// The forge name is authoritative; no cross-check with the symref is done (vault note).
+	// defaultFromForge is used by ML-1B (remote prune D4 third bullet): remote deletion is
+	// blocked when the forge could not supply the default branch name.
+	defaultLocalName, defaultRemoteRef, defaultFromForge := resolveDefaultBranchWithSource(deps.gitExec, deps.ghExec)
 
-	if _, err := deps.gitExec("rev-parse", "--verify", "-q", branchPruneDefaultRemoteRef); err != nil {
-		fmt.Fprintf(deps.out, "trackfw branch prune: %s not found — offline, no remote configured, or never fetched. Refusing to evaluate any branch; nothing deleted.\n", branchPruneDefaultRemoteRef)
-		return fmt.Errorf("branch prune: %s not resolvable", branchPruneDefaultRemoteRef)
+	if _, err := deps.gitExec("rev-parse", "--verify", "-q", defaultRemoteRef); err != nil {
+		fmt.Fprintf(deps.out, "trackfw branch prune: %s not found — offline, no remote configured, or never fetched. Refusing to evaluate any branch; nothing deleted.\n", defaultRemoteRef)
+		return fmt.Errorf("branch prune: %s not resolvable", defaultRemoteRef)
 	}
 
 	branches, err := deps.listLocalBranches(deps.gitExec)
@@ -409,19 +440,19 @@ func runBranchPrune(apply bool, deps branchPruneDeps) error {
 	// D3 (ADR-2026-10-03): one forge query for all branches. queryForgePRs returns nil on
 	// degradation (D2) or truncation (A7) and prints one line explaining why; every branch then
 	// falls back to the content heuristic. The nil check is enforced inside evaluateBranchWithForge.
-	snapshot, degradeReason := queryForgePRs(deps.gitExec, deps.ghExec)
+	snapshot, degradeReason, _ := queryForgePRs(deps.gitExec, deps.ghExec)
 	if snapshot == nil {
 		fmt.Fprintf(deps.out, "Note: forge PR signal not available — using content heuristic only. Cause: %s\n\n", degradeReason)
 	}
 
-	fmt.Fprintf(deps.out, "trackfw branch prune — evaluating %d local branch(es) against %s\n\n", len(branches), branchPruneDefaultRemoteRef)
+	fmt.Fprintf(deps.out, "trackfw branch prune — evaluating %d local branch(es) against %s\n\n", len(branches), defaultRemoteRef)
 
 	var toDelete []string
 	var toReview []string
 	for _, b := range branches {
 		var eval branchPruneEvaluation
 		switch {
-		case b == branchPruneDefaultLocalName:
+		case b == defaultLocalName:
 			eval = branchPruneEvaluation{Name: b, Decision: branchPruneDecisionDefaultBranch, Reason: "default branch — never pruned"}
 		case b == current:
 			eval = branchPruneEvaluation{Name: b, Decision: branchPruneDecisionCurrentBranch, Reason: "current branch — never pruned"}
@@ -431,7 +462,7 @@ func runBranchPrune(apply bool, deps branchPruneDeps) error {
 			// A4 (ADR-2026-10-03): upstream via for-each-ref, not @{u}.
 			// D1 case 4 needs the upstream to distinguish "never pushed" from "pushed, no PR".
 			upstream := upstreamFor(b, deps.gitExec)
-			eval = evaluateBranchWithForge(b, b, upstream, snapshot, deps.gitExec)
+			eval = evaluateBranchWithForge(b, b, upstream, defaultLocalName, snapshot, deps.gitExec)
 		}
 
 		action := "keep"
@@ -456,40 +487,41 @@ func runBranchPrune(apply bool, deps branchPruneDeps) error {
 		} else {
 			fmt.Fprintf(deps.out, "[dry-run] would delete %d branch(es): %s. Rerun with --apply to delete.\n", len(toDelete), strings.Join(toDelete, ", "))
 		}
-		return nil
-	}
-
-	if len(toDelete) == 0 {
+	} else if len(toDelete) == 0 {
 		fmt.Fprintln(deps.out, "nothing to delete.")
+	} else {
+		var deleted []string
+		for _, b := range toDelete {
+			// Re-check current/worktree status immediately before each delete — belt-and-suspenders
+			// against the branch changing state between the report above and this loop (e.g. another
+			// process checking it out into a new worktree mid-run).
+			if b == deps.currentBranch(deps.gitExec) {
+				fmt.Fprintf(deps.out, "skip %s: became the current branch — refusing to delete\n", b)
+				continue
+			}
+			if deps.worktreeBranches(deps.gitExec)[b] {
+				fmt.Fprintf(deps.out, "skip %s: became checked out in a worktree — refusing to delete\n", b)
+				continue
+			}
+			if err := deps.deleteBranch(deps.gitExec, b); err != nil {
+				fmt.Fprintf(deps.out, "failed to delete %s: %v\n", b, err)
+				continue
+			}
+			deleted = append(deleted, b)
+		}
+		if len(deleted) == 0 {
+			fmt.Fprintln(deps.out, "deleted 0 branch(es).")
+		} else {
+			fmt.Fprintf(deps.out, "deleted %d branch(es): %s\n", len(deleted), strings.Join(deleted, ", "))
+		}
+	}
+
+	// ML-1B (ROADMAP-2026-10-10): remote prune section. When deps.remote is false,
+	// preserve the byte-identical return that existed before this ML was implemented.
+	if !deps.remote {
 		return nil
 	}
-
-	var deleted []string
-	for _, b := range toDelete {
-		// Re-check current/worktree status immediately before each delete — belt-and-suspenders
-		// against the branch changing state between the report above and this loop (e.g. another
-		// process checking it out into a new worktree mid-run).
-		if b == deps.currentBranch(deps.gitExec) {
-			fmt.Fprintf(deps.out, "skip %s: became the current branch — refusing to delete\n", b)
-			continue
-		}
-		if deps.worktreeBranches(deps.gitExec)[b] {
-			fmt.Fprintf(deps.out, "skip %s: became checked out in a worktree — refusing to delete\n", b)
-			continue
-		}
-		if err := deps.deleteBranch(deps.gitExec, b); err != nil {
-			fmt.Fprintf(deps.out, "failed to delete %s: %v\n", b, err)
-			continue
-		}
-		deleted = append(deleted, b)
-	}
-
-	if len(deleted) == 0 {
-		fmt.Fprintln(deps.out, "deleted 0 branch(es).")
-	} else {
-		fmt.Fprintf(deps.out, "deleted %d branch(es): %s\n", len(deleted), strings.Join(deleted, ", "))
-	}
-	return nil
+	return runRemotePrune(apply, fetchFailed, fetchTimedOut, defaultLocalName, defaultFromForge, snapshot, deps)
 }
 
 // defaultListLocalBranches runs `git branch --format=%(refname:short)` and returns one name per

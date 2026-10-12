@@ -69,7 +69,7 @@ func TestEvaluateBranchIntegration_NoOwnWork_Deletable(t *testing.T) {
 		"merge-base origin/main feat/foo":     {"abc123", nil},
 		"diff --name-only -z abc123 feat/foo": {"", nil}, // touched empty
 	})
-	eval := evaluateBranchIntegration("feat/foo", gitExec)
+	eval := evaluateBranchIntegration("feat/foo", "origin/main", gitExec)
 	if eval.Decision != branchPruneDecisionNoOwnWork {
 		t.Fatalf("expected no_own_work, got %v (%s)", eval.Decision, eval.Reason)
 	}
@@ -90,7 +90,7 @@ func TestEvaluateBranchIntegration_ContentIdentical_Deletable(t *testing.T) {
 		"diff --name-only -z abc123 feat/stale":               {"f1.md\x00", nil},
 		"diff --name-only -z origin/main feat/stale -- f1.md": {"", nil},
 	})
-	eval := evaluateBranchIntegration("feat/stale", gitExec)
+	eval := evaluateBranchIntegration("feat/stale", "origin/main", gitExec)
 	if eval.Decision != branchPruneDecisionIdentical {
 		t.Fatalf("expected content_identical, got %v (%s)", eval.Decision, eval.Reason)
 	}
@@ -115,7 +115,7 @@ func TestEvaluateBranchIntegration_PendingWork_NotDeletable(t *testing.T) {
 		"diff --name-only -z abc123 feat/pending":               {"f1.md\x00", nil},
 		"diff --name-only -z origin/main feat/pending -- f1.md": {"f1.md\x00", nil},
 	})
-	eval := evaluateBranchIntegration("feat/pending", gitExec)
+	eval := evaluateBranchIntegration("feat/pending", "origin/main", gitExec)
 	if eval.Decision != branchPruneDecisionPendingWork {
 		t.Fatalf("expected pending_work, got %v (%s)", eval.Decision, eval.Reason)
 	}
@@ -144,7 +144,7 @@ func TestEvaluateBranchIntegration_ReviewDocConfig_NotDeletable(t *testing.T) {
 		"diff --name-only -z abc123 feat/docs-only":                                                 {"CLAUDE.md\x00README-merged.md\x00trackfw.yaml\x00", nil},
 		"diff --name-only -z origin/main feat/docs-only -- CLAUDE.md README-merged.md trackfw.yaml": {"CLAUDE.md\x00trackfw.yaml\x00", nil},
 	})
-	eval := evaluateBranchIntegration("feat/docs-only", gitExec)
+	eval := evaluateBranchIntegration("feat/docs-only", "origin/main", gitExec)
 	if eval.Decision != branchPruneDecisionReviewDocConfig {
 		t.Fatalf("expected review_doc_config, got %v (%s)", eval.Decision, eval.Reason)
 	}
@@ -170,7 +170,7 @@ func TestEvaluateBranchIntegration_MixedDocAndCode_StaysPendingWork(t *testing.T
 		"diff --name-only -z abc123 feat/mixed":                           {"README.md\x00main.go\x00", nil},
 		"diff --name-only -z origin/main feat/mixed -- README.md main.go": {"README.md\x00main.go\x00", nil},
 	})
-	eval := evaluateBranchIntegration("feat/mixed", gitExec)
+	eval := evaluateBranchIntegration("feat/mixed", "origin/main", gitExec)
 	if eval.Decision != branchPruneDecisionPendingWork {
 		t.Fatalf("expected pending_work (mixed doc+code), got %v (%s)", eval.Decision, eval.Reason)
 	}
@@ -186,7 +186,7 @@ func TestEvaluateBranchIntegration_NoMergeBase_Refuses(t *testing.T) {
 	}{
 		"merge-base origin/main feat/orphan": {"", fmt.Errorf("fatal: no merge base")},
 	})
-	eval := evaluateBranchIntegration("feat/orphan", gitExec)
+	eval := evaluateBranchIntegration("feat/orphan", "origin/main", gitExec)
 	if eval.Decision != branchPruneDecisionNoMergeBase {
 		t.Fatalf("expected no_merge_base, got %v", eval.Decision)
 	}
@@ -529,7 +529,7 @@ func TestEvaluateBranchIntegration_RealGitRepo_SquashMergeAndStaleDiscriminant(t
 		t.Fatal("test setup invalid: naive diff origin/main feat/a --stat must be non-empty to discriminate against the heuristic (AC2)")
 	}
 
-	evalA := evaluateBranchIntegration("feat/a", gitExec)
+	evalA := evaluateBranchIntegration("feat/a", "origin/main", gitExec)
 	if evalA.Decision != branchPruneDecisionIdentical {
 		t.Fatalf("feat/a (stale but integrated) expected content_identical, got %v (%s)", evalA.Decision, evalA.Reason)
 	}
@@ -537,7 +537,7 @@ func TestEvaluateBranchIntegration_RealGitRepo_SquashMergeAndStaleDiscriminant(t
 		t.Fatal("feat/a must be deletable — this is the AC2 discriminant")
 	}
 
-	evalPending := evaluateBranchIntegration("feat/pending", gitExec)
+	evalPending := evaluateBranchIntegration("feat/pending", "origin/main", gitExec)
 	if evalPending.Decision != branchPruneDecisionPendingWork {
 		t.Fatalf("feat/pending expected pending_work, got %v (%s)", evalPending.Decision, evalPending.Reason)
 	}
@@ -856,7 +856,7 @@ func TestRunBranchPrune_RealGitRepo_StaleOriginMain_IsConservativeNotWrong(t *te
 	// pre-existing bug.
 	run(cloneDir, "remote", "set-url", "origin", bareDir)
 	run(cloneDir, "fetch", "-q", "origin")
-	eval := evaluateBranchIntegration("feat/mine", gitExec)
+	eval := evaluateBranchIntegration("feat/mine", "origin/main", gitExec)
 	if eval.Decision != branchPruneDecisionIdentical {
 		t.Fatalf("after a real fetch, expected feat/mine to become content_identical (deletable), got %v (%s)", eval.Decision, eval.Reason)
 	}
@@ -973,7 +973,7 @@ func TestEvaluateBranchIntegration_RealGitRepo_DocOnlyNeverIntegratedVsPartialRe
 		return strings.TrimSpace(string(out)), err
 	}
 
-	evalDocReal := evaluateBranchIntegration("feat/doc-real", gitExec)
+	evalDocReal := evaluateBranchIntegration("feat/doc-real", "origin/main", gitExec)
 	if evalDocReal.Decision != branchPruneDecisionPendingWork {
 		t.Fatalf("feat/doc-real (never merged, doc-only) expected pending_work, got %v (%s)", evalDocReal.Decision, evalDocReal.Reason)
 	}
@@ -987,7 +987,7 @@ func TestEvaluateBranchIntegration_RealGitRepo_DocOnlyNeverIntegratedVsPartialRe
 		t.Fatalf("feat/doc-real: expected touched == diverg (nothing integrated), got touched=%v diverg=%v", evalDocReal.Touched, evalDocReal.Diverged)
 	}
 
-	evalResidue := evaluateBranchIntegration("feat/residue", gitExec)
+	evalResidue := evaluateBranchIntegration("feat/residue", "origin/main", gitExec)
 	if evalResidue.Decision != branchPruneDecisionReviewDocConfig {
 		t.Fatalf("feat/residue (partial integration, doc residue) expected review_doc_config, got %v (%s)", evalResidue.Decision, evalResidue.Reason)
 	}

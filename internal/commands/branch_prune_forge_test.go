@@ -68,7 +68,7 @@ func TestD1_Case0_OpenPR_Keep(t *testing.T) {
 		}
 		return "", fmt.Errorf("unexpected gitExec: %v", args)
 	}
-	eval := evaluateBranchWithForge("feat/x", "feat/x", "origin/feat/x", snapshot, gitExec)
+	eval := evaluateBranchWithForge("feat/x", "feat/x", "origin/feat/x", "main", snapshot, gitExec)
 	if eval.Decision != branchPruneDecisionOpenPR {
 		t.Fatalf("case 0: expected open_pr, got %q (%s)", eval.Decision, eval.Reason)
 	}
@@ -101,7 +101,7 @@ func TestD1_Case1_MergedPR_Delete(t *testing.T) {
 		}
 		return "", fmt.Errorf("unexpected gitExec: %v", args)
 	}
-	eval := evaluateBranchWithForge("feat/y", "feat/y", "origin/feat/y", snapshot, gitExec)
+	eval := evaluateBranchWithForge("feat/y", "feat/y", "origin/feat/y", "main", snapshot, gitExec)
 	if eval.Decision != branchPruneDecisionMergedPR {
 		t.Fatalf("case 1: expected merged_pr, got %q (%s)", eval.Decision, eval.Reason)
 	}
@@ -138,7 +138,7 @@ func TestD1_Case2_CommitsAfterMerged_Keep(t *testing.T) {
 		}
 		return "", fmt.Errorf("unexpected gitExec: %v", args)
 	}
-	eval := evaluateBranchWithForge("feat/z", "feat/z", "origin/feat/z", snapshot, gitExec)
+	eval := evaluateBranchWithForge("feat/z", "feat/z", "origin/feat/z", "main", snapshot, gitExec)
 	if eval.Decision != branchPruneDecisionCommitsAfterMerged {
 		t.Fatalf("case 2: expected commits_after_merged_pr, got %q (%s)", eval.Decision, eval.Reason)
 	}
@@ -173,7 +173,7 @@ func TestD1_Case2b_DivergedFromMerged_Keep(t *testing.T) {
 		}
 		return "", fmt.Errorf("unexpected gitExec: %v", args)
 	}
-	eval := evaluateBranchWithForge("feat/w", "feat/w", "origin/feat/w", snapshot, gitExec)
+	eval := evaluateBranchWithForge("feat/w", "feat/w", "origin/feat/w", "main", snapshot, gitExec)
 	if eval.Decision != branchPruneDecisionDivergedFromMerged {
 		t.Fatalf("case 2b: expected diverged_from_merged_pr, got %q (%s)", eval.Decision, eval.Reason)
 	}
@@ -196,7 +196,7 @@ func TestD1_Case3_ClosedPR_Review(t *testing.T) {
 	gitExec := func(args ...string) (string, error) {
 		return "", fmt.Errorf("unexpected gitExec in case-3 test: %v", args)
 	}
-	eval := evaluateBranchWithForge("feat/v", "feat/v", "origin/feat/v", snapshot, gitExec)
+	eval := evaluateBranchWithForge("feat/v", "feat/v", "origin/feat/v", "main", snapshot, gitExec)
 	if eval.Decision != branchPruneDecisionClosedPR {
 		t.Fatalf("case 3: expected closed_pr, got %q (%s)", eval.Decision, eval.Reason)
 	}
@@ -228,7 +228,7 @@ func TestD1_Case4_NoPR_NeverPushed_Keep(t *testing.T) {
 		}
 		return "", fmt.Errorf("unexpected gitExec in case-4 test: %v", args)
 	}
-	eval := evaluateBranchWithForge("feat/unpushed", "feat/unpushed", "", snapshot, gitExec)
+	eval := evaluateBranchWithForge("feat/unpushed", "feat/unpushed", "", "main", snapshot, gitExec)
 	if eval.Decision != branchPruneDecisionNoPRNeverPushed {
 		t.Fatalf("case 4: expected no_pr_never_pushed, got %q (%s)", eval.Decision, eval.Reason)
 	}
@@ -256,7 +256,7 @@ func TestD1_Case5_NoPR_WithUpstream_ContentHeuristic(t *testing.T) {
 		}
 		return "", fmt.Errorf("unexpected gitExec in case-5 test: %v", args)
 	}
-	eval := evaluateBranchWithForge("feat/pushed-noPR", "feat/pushed-noPR", "origin/feat/pushed-noPR", snapshot, gitExec)
+	eval := evaluateBranchWithForge("feat/pushed-noPR", "feat/pushed-noPR", "origin/feat/pushed-noPR", "main", snapshot, gitExec)
 	// Content heuristic should fire and return a deletable result.
 	if eval.Decision == branchPruneDecisionNoPRNeverPushed {
 		t.Fatal("case 5: with a non-empty upstream, must NOT produce no_pr_never_pushed — must use content heuristic")
@@ -303,7 +303,7 @@ func TestAC3_ForkPR_MERGED_NeverDelete(t *testing.T) {
 		}
 		return "", fmt.Errorf("unexpected gitExec in AC3 test: %v", args)
 	}
-	eval := evaluateBranchWithForge("feat/fork", "feat/fork", "origin/feat/fork", snapshot, gitExec)
+	eval := evaluateBranchWithForge("feat/fork", "feat/fork", "origin/feat/fork", "main", snapshot, gitExec)
 	if eval.Decision == branchPruneDecisionMergedPR {
 		t.Fatal("AC3: fork PR must not produce merged_pr (delete) — isCrossRepository filter must exclude it")
 	}
@@ -341,7 +341,7 @@ func TestA3_HeadAbsent_NoCatFile_ReviewNotDelete(t *testing.T) {
 		}
 		return "", fmt.Errorf("unexpected gitExec in A3 test: %v", args)
 	}
-	eval := evaluateBranchWithForge("feat/a3", "feat/a3", "origin/feat/a3", snapshot, gitExec)
+	eval := evaluateBranchWithForge("feat/a3", "feat/a3", "origin/feat/a3", "main", snapshot, gitExec)
 	if eval.Decision != branchPruneDecisionMergedHeadAbsent {
 		t.Fatalf("A3: expected merged_head_absent, got %q (%s)", eval.Decision, eval.Reason)
 	}
@@ -357,7 +357,7 @@ func TestA3_HeadAbsent_NoCatFile_ReviewNotDelete(t *testing.T) {
 
 // TestA2_MergedPR_WrongBase_NotDelete asserts: a MERGED PR with baseRefName != main (e.g. a
 // stacked PR into another branch) does NOT produce merged_pr (delete).
-// Sabotage: remove the BaseRefName == branchPruneDefaultLocalName check → rev-parse succeeds,
+// Sabotage: remove the BaseRefName == defaultLocalName check → rev-parse succeeds,
 // cat-file succeeds, is-ancestor returns exit 0, result becomes merged_pr (delete). Test fails.
 // Content heuristic stubs return pending_work (not deletable) so the test only passes when the
 // base filter routes around the is-ancestor path.
@@ -387,7 +387,7 @@ func TestA2_MergedPR_WrongBase_NotDelete(t *testing.T) {
 		}
 		return "", fmt.Errorf("unexpected gitExec in A2 test: %v", args)
 	}
-	eval := evaluateBranchWithForge("feat/stacked", "feat/stacked", "origin/feat/stacked", snapshot, gitExec)
+	eval := evaluateBranchWithForge("feat/stacked", "feat/stacked", "origin/feat/stacked", "main", snapshot, gitExec)
 	if eval.Decision == branchPruneDecisionMergedPR {
 		t.Fatal("A2: stacked PR (base != main) must not produce merged_pr (delete) — baseRefName filter must exclude it")
 	}
@@ -396,19 +396,26 @@ func TestA2_MergedPR_WrongBase_NotDelete(t *testing.T) {
 	}
 }
 
-// ─── AC5: ghExec called exactly once for N branches ──────────────────────────────────────────
+// ─── AC5: ghExec call count does not grow with branch count ──────────────────────────────────
 
 // TestAC5_ForgeQueriedExactlyOnce asserts: for a prune run over N branches, the ghExecFn is
-// invoked exactly once (D3, single query, ADR-2026-10-03). Invoking it more than once would
-// multiply network calls by the branch count, violating D3.
+// invoked exactly twice regardless of N (D3, single PR-list query, ADR-2026-10-03):
+//   - once by resolveDefaultBranch (forgeDefaultBranch: "api repos/<owner>/<repo>")
+//   - once by queryForgePRs (the PR-list batch: "pr list --json ...")
+//
+// Invoking it more than twice, or in a way that scales with N, would violate D3.
 // Sabotage: move the queryForgePRs call inside the per-branch loop in runBranchPrune → test
-// fails with callCount > 1.
+// fails with callCount > 2.
 func TestAC5_ForgeQueriedExactlyOnce(t *testing.T) {
 	callCount := 0
 
 	ghExec := func(args ...string) ([]byte, error) {
 		callCount++
-		return jsonPRs([]forgePR{}), nil // empty — no PRs
+		if strings.Join(args, " ") == "api repos/owner/repo" {
+			// forgeDefaultBranch query: return valid repo JSON (not PR JSON)
+			return []byte(`{"default_branch":"main"}`), nil
+		}
+		return jsonPRs([]forgePR{}), nil // empty — no PRs (PR-list query)
 	}
 
 	// gitExec handles: fetch, rev-parse, for-each-ref (upstream), and content heuristic for
@@ -454,8 +461,8 @@ func TestAC5_ForgeQueriedExactlyOnce(t *testing.T) {
 
 	_ = runBranchPrune(false, deps)
 
-	if callCount != 1 {
-		t.Fatalf("AC5: ghExecFn must be called exactly once for any number of branches; called %d times", callCount)
+	if callCount != 2 {
+		t.Fatalf("AC5: ghExecFn must be called exactly twice (once for default-branch resolution, once for PR-list batch) regardless of branch count; called %d times", callCount)
 	}
 }
 
@@ -486,7 +493,7 @@ func TestAC5_TruncatedResponse_BlocksForgeSignalDeletes(t *testing.T) {
 		return "", fmt.Errorf("unexpected gitExec: %v", args)
 	}
 
-	snapshot, reason := queryForgePRs(gitExec, ghExec)
+	snapshot, reason, _ := queryForgePRs(gitExec, ghExec)
 	if snapshot != nil {
 		t.Fatal("AC5 truncation: snapshot must be nil when response length == forgeQueryLimit")
 	}
@@ -515,7 +522,7 @@ func TestA1_RepoFlagUsed(t *testing.T) {
 		return "", fmt.Errorf("unexpected gitExec: %v", args)
 	}
 
-	snapshot, reason := queryForgePRs(gitExec, ghExec)
+	snapshot, reason, _ := queryForgePRs(gitExec, ghExec)
 	if snapshot == nil {
 		t.Fatalf("A1: expected non-nil snapshot, got degraded: %q", reason)
 	}
@@ -563,7 +570,7 @@ func TestA1_NonGitHubHost_Degrades(t *testing.T) {
 		return "", fmt.Errorf("unexpected gitExec: %v", args)
 	}
 
-	snapshot, reason := queryForgePRs(gitExec, ghExec)
+	snapshot, reason, _ := queryForgePRs(gitExec, ghExec)
 	if snapshot != nil {
 		t.Fatal("A1 non-GitHub: snapshot must be nil for non-GitHub host")
 	}
@@ -595,9 +602,9 @@ func TestD2_NilGhExec_ContentHeuristic(t *testing.T) {
 		return "", fmt.Errorf("unexpected gitExec in D2 test: %v", args)
 	}
 	// nil snapshot = degraded.
-	eval := evaluateBranchWithForge("feat/degraded", "feat/degraded", "origin/feat/degraded", nil, gitExec)
+	eval := evaluateBranchWithForge("feat/degraded", "feat/degraded", "origin/feat/degraded", "main", nil, gitExec)
 	// Must fall back to evaluateBranchIntegration — same result as calling it directly.
-	direct := evaluateBranchIntegration("feat/degraded", gitExec)
+	direct := evaluateBranchIntegration("feat/degraded", "origin/main", gitExec)
 	if eval.Decision != direct.Decision {
 		t.Fatalf("D2: with nil snapshot, evaluateBranchWithForge must return same decision as evaluateBranchIntegration; got %q vs %q", eval.Decision, direct.Decision)
 	}
@@ -620,7 +627,7 @@ func TestA5_GhExitNonZero_Degrades(t *testing.T) {
 		return "", fmt.Errorf("unexpected gitExec: %v", args)
 	}
 
-	snapshot, reason := queryForgePRs(gitExec, ghExec)
+	snapshot, reason, _ := queryForgePRs(gitExec, ghExec)
 	if snapshot != nil {
 		t.Fatal("A5: gh exit ≠ 0 must produce nil snapshot (D2 degradation), not empty snapshot")
 	}
@@ -796,7 +803,7 @@ func TestD1_RealGit_Case1_And_Case2(t *testing.T) {
 	_ = extraTipOid // used implicitly as "tip" of feat/with-extra branch
 
 	// Evaluate feat/integrated: expect merged_pr (delete).
-	evalInt := evaluateBranchWithForge("feat/integrated", "feat/integrated", "origin/feat/integrated", snapshot, gitExec)
+	evalInt := evaluateBranchWithForge("feat/integrated", "feat/integrated", "origin/feat/integrated", "main", snapshot, gitExec)
 	if evalInt.Decision != branchPruneDecisionMergedPR {
 		t.Fatalf("real git case 1: expected merged_pr, got %q (%s)", evalInt.Decision, evalInt.Reason)
 	}
@@ -805,7 +812,7 @@ func TestD1_RealGit_Case1_And_Case2(t *testing.T) {
 	}
 
 	// Evaluate feat/with-extra: expect commits_after_merged_pr (keep).
-	evalExtra := evaluateBranchWithForge("feat/with-extra", "feat/with-extra", "origin/feat/with-extra", snapshot, gitExec)
+	evalExtra := evaluateBranchWithForge("feat/with-extra", "feat/with-extra", "origin/feat/with-extra", "main", snapshot, gitExec)
 	if evalExtra.Decision != branchPruneDecisionCommitsAfterMerged {
 		t.Fatalf("real git case 2: expected commits_after_merged_pr, got %q (%s)", evalExtra.Decision, evalExtra.Reason)
 	}
@@ -873,7 +880,7 @@ func TestA5_InvalidJSON_Degrades(t *testing.T) {
 		return "", fmt.Errorf("unexpected gitExec: %v", args)
 	}
 
-	snapshot, reason := queryForgePRs(gitExec, ghExec)
+	snapshot, reason, _ := queryForgePRs(gitExec, ghExec)
 	if snapshot != nil {
 		t.Fatal("A5 invalid JSON: snapshot must be nil — invalid JSON is D2 degradation, not an empty list")
 	}
@@ -917,7 +924,7 @@ func TestD1_MultiMerged_SecondContainsTip_Delete(t *testing.T) {
 		}
 		return "", fmt.Errorf("unexpected gitExec in multi-merged test: %v", args)
 	}
-	eval := evaluateBranchWithForge("feat/multi", "feat/multi", "origin/feat/multi", snapshot, gitExec)
+	eval := evaluateBranchWithForge("feat/multi", "feat/multi", "origin/feat/multi", "main", snapshot, gitExec)
 	if eval.Decision != branchPruneDecisionMergedPR {
 		t.Fatalf("D1§1 multi-merged: expected merged_pr (second PR contains tip), got %q (%s)", eval.Decision, eval.Reason)
 	}
@@ -1143,7 +1150,7 @@ func TestAJ1_NeverPushed_MergedPRInNonMainBase_NoPRNeverPushed(t *testing.T) {
 	}
 	// upstream = "" means never pushed.
 	eval := evaluateBranchWithForge(
-		"feat/stacked-never-pushed", "feat/stacked-never-pushed", "", snapshot, gitExec,
+		"feat/stacked-never-pushed", "feat/stacked-never-pushed", "", "main", snapshot, gitExec,
 	)
 	if eval.Decision != branchPruneDecisionNoPRNeverPushed {
 		t.Fatalf("AJ1: expected no_pr_never_pushed for never-pushed branch regardless of hasPRs, got %q (%s)", eval.Decision, eval.Reason)
@@ -1184,7 +1191,7 @@ func TestL1_Case1_TipBehindPRHead_Delete(t *testing.T) {
 		}
 		return "", fmt.Errorf("L1: unexpected gitExec: %v", args)
 	}
-	eval := evaluateBranchWithForge("feat/l1", "feat/l1", "origin/feat/l1", snapshot, gitExec)
+	eval := evaluateBranchWithForge("feat/l1", "feat/l1", "origin/feat/l1", "main", snapshot, gitExec)
 	if eval.Decision != branchPruneDecisionMergedPR {
 		t.Fatalf("L1: expected merged_pr for tip strictly behind prHead, got %q (%s)", eval.Decision, eval.Reason)
 	}

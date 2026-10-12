@@ -3,10 +3,96 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"strconv"
 	"strings"
 )
+
+// resolveDefaultBranchWithSource resolves the repository's default branch name,
+// using three sources in order, and reports whether the result came from the
+// forge API (fromForge=true). The three sources are the same as resolveDefaultBranch:
+//  1. Forge API (gh api repos/<owner>/<repo> → default_branch), via ghExec.
+//  2. Local tracking symref: git symbolic-ref --short refs/remotes/origin/HEAD.
+//  3. Literal fallback: "main" / "origin/main".
+//
+// Returns (localName, remoteRef, fromForge) where remoteRef == "origin/" + localName.
+// fromForge is true only when source 1 succeeded. Sources 2 and 3 return fromForge=false.
+// Callers that need to block remote deletions when the forge could not provide the
+// default branch (ADR-2026-10-12 D4 third bullet) should check fromForge.
+// Callers that only need (localName, remoteRef) should use the resolveDefaultBranch wrapper.
+func resolveDefaultBranchWithSource(gitExec func(...string) (string, error), ghExec ghExecFn) (localName, remoteRef string, fromForge bool) {
+	// 1. Forge API.
+	if ghExec != nil {
+		if name := forgeDefaultBranch(gitExec, ghExec); name != "" {
+			return name, "origin/" + name, true
+		}
+	}
+	// 2. Local tracking symref.
+	if out, err := gitExec("symbolic-ref", "--short", "refs/remotes/origin/HEAD"); err == nil {
+		s := strings.TrimSpace(out)
+		// s is normally "origin/main", "origin/master", etc. Strip the "origin/" prefix.
+		if after, ok := strings.CutPrefix(s, "origin/"); ok && after != "" {
+			return after, s, false
+		}
+	}
+	// 3. Literal fallback.
+	return branchPruneDefaultLocalName, branchPruneDefaultRemoteRef, false
+}
+
+// resolveDefaultBranch resolves the repository's default branch name, using
+// three sources in order:
+//  1. Forge API (gh api repos/<owner>/<repo> → default_branch), via ghExec.
+//     Requires ghExec != nil and a parseable github.com origin URL.
+//     The forge name is authoritative — unconditionally, without comparison
+//     with the local symref (vault/notes/forge-anchoring-branch-name-must-be-
+//     unconditional-not-cross-checked-2026-08-19). No refusal fires if the
+//     symref disagrees.
+//  2. Local tracking symref: git symbolic-ref --short refs/remotes/origin/HEAD,
+//     stripping the "origin/" prefix. Absent in fresh/shallow clones.
+//  3. Literal fallback: branchPruneFallbackLocalName / branchPruneDefaultRemoteRef
+//     ("main" / "origin/main"). This is the pre-v8.1 hardcoded value and is
+//     used only when neither of the above sources is available.
+//
+// Returns (localName, remoteRef) where remoteRef == "origin/" + localName.
+// Errors from any source are silently consumed — the function always returns a
+// usable pair. Callers must not compare or cross-check the forge name against
+// the symref; the vault note explains why that comparison introduces false
+// refusals for legitimate clones.
+func resolveDefaultBranch(gitExec func(...string) (string, error), ghExec ghExecFn) (localName, remoteRef string) {
+	localName, remoteRef, _ = resolveDefaultBranchWithSource(gitExec, ghExec)
+	return
+}
+
+// forgeDefaultBranch queries gh api repos/<owner>/<repo> and extracts
+// the default_branch field. Returns "" on any error (URL unparseable,
+// non-github.com host, gh API failure, JSON parse failure, empty field).
+// Uses the same URL-parsing logic as queryForgePRs (A1, ADR-2026-10-03).
+func forgeDefaultBranch(gitExec func(...string) (string, error), ghExec ghExecFn) string {
+	remoteURL, err := gitExec("remote", "get-url", "origin")
+	if err != nil {
+		return ""
+	}
+	host, ownerRepo := parseHostOwnerRepo(strings.TrimSpace(remoteURL))
+	if host != "github.com" {
+		return ""
+	}
+	out, err := ghExec("api", "repos/"+ownerRepo)
+	if err != nil {
+		return ""
+	}
+	var info struct {
+		DefaultBranch string `json:"default_branch"`
+	}
+	if err := json.Unmarshal(out, &info); err != nil {
+		return ""
+	}
+	name := strings.TrimSpace(info.DefaultBranch)
+	// Guard against an empty or whitespace-only value — the forge should never
+	// return one, but defence in depth.
+	if name == "" {
+		return ""
+	}
+	return name
+}
 
 // forgePR holds the PR fields returned by `gh pr list --json ...`.
 // Field names mirror gh's camelCase JSON keys exactly.
@@ -52,64 +138,64 @@ type ghExecFn func(args ...string) ([]byte, error)
 // defaultGhExec runs `gh <args...>` and returns stdout.
 // It is the production implementation of ghExecFn — wired only in RunE of
 // branch prune, push and ship; never wired in tests (tests pass nil or a stub).
+// Applies TRACKFW_NETWORK_TIMEOUT + WaitDelay + process-group kill (ADR D2, D7/A2).
 func defaultGhExec(args ...string) ([]byte, error) {
-	cmd := exec.Command("gh", args...)
-	return cmd.Output()
+	return runNetworkCmd("gh", args, "", true)
 }
 
 // queryForgePRs performs the single `gh pr list` query (D3, ADR-2026-10-03).
 //
-// Returns (*prSnapshot, "") on success.
-// Returns (nil, reason) on any degradation (D2):
-//   - ghExec is nil
-//   - origin remote URL cannot be read or parsed
-//   - host is not github.com (A1)
-//   - gh exits with non-zero (A5)
-//   - JSON cannot be parsed (A5)
-//   - response has exactly forgeQueryLimit items (A7: treat as truncated / incomplete)
+// Returns (*prSnapshot, "", nil) on success.
+// Returns (nil, reason, nil) on structural degradation (D2: ghExec nil, URL
+// unparseable, non-GitHub host, JSON parse failure, truncated response).
+// Returns (nil, reason, err) when ghExec itself fails (A5: exit ≠ 0) — err is the
+// raw error from the executor, preserved so callers can check for timeout via
+// errors.Is(err, netdeadline.ErrTimeout) (ADR D7/A7, ML-1B).
 //
 // gitExec is used only to run `git remote get-url origin` (A1) — the --repo flag
 // pins the query to the parsed repository and prevents GH_REPO misdirection.
 // forge.Resolve is intentionally NOT used: its CI-file fallback returns "github"
 // when .github/workflows/ exists, even with origin pointing to a non-GitHub host
 // (measured in Wave 0, Cenário 5).
-func queryForgePRs(gitExec func(...string) (string, error), ghExec ghExecFn) (*prSnapshot, string) {
+func queryForgePRs(gitExec func(...string) (string, error), ghExec ghExecFn) (*prSnapshot, string, error) {
 	if ghExec == nil {
-		return nil, "gh is not available"
+		return nil, "gh is not available", nil
 	}
 
 	remoteURL, err := gitExec("remote", "get-url", "origin")
 	if err != nil {
-		return nil, fmt.Sprintf("could not read git remote get-url origin: %v", err)
+		return nil, fmt.Sprintf("could not read git remote get-url origin: %v", err), nil
 	}
 	remoteURL = strings.TrimSpace(remoteURL)
 
 	host, ownerRepo := parseHostOwnerRepo(remoteURL)
 	switch {
 	case host == "":
-		return nil, fmt.Sprintf("could not parse origin remote URL %q; forge PR lookup skipped (D2, ADR-2026-10-03)", remoteURL)
+		return nil, fmt.Sprintf("could not parse origin remote URL %q; forge PR lookup skipped (D2, ADR-2026-10-03)", remoteURL), nil
 	case host != "github.com":
-		return nil, fmt.Sprintf("forge host %q is not github.com; forge PR lookup skipped (D2, ADR-2026-10-03)", host)
+		return nil, fmt.Sprintf("forge host %q is not github.com; forge PR lookup skipped (D2, ADR-2026-10-03)", host), nil
 	}
 
 	// A1: pass --repo HOST/OWNER/REPO to override GH_REPO and any multi-remote resolution.
 	repoArg := host + "/" + ownerRepo
-	out, err := ghExec(
+	out, ghErr := ghExec(
 		"pr", "list",
 		"--repo", repoArg,
 		"--state", "all",
 		"--limit", strconv.Itoa(forgeQueryLimit),
 		"--json", "number,state,headRefName,headRefOid,baseRefName,isCrossRepository,headRepositoryOwner",
 	)
-	if err != nil {
+	if ghErr != nil {
 		// A5: any exit ≠ 0 → D2. Do not treat as empty list.
-		return nil, fmt.Sprintf("gh pr list --repo %s failed: %v", repoArg, err)
+		// Preserve ghErr as the third return so callers can inspect it
+		// (e.g. errors.Is(ghErr, netdeadline.ErrTimeout) for ADR D7/A7).
+		return nil, fmt.Sprintf("gh pr list --repo %s failed: %v", repoArg, ghErr), ghErr
 	}
 
 	var prs []forgePR
 	if err := json.Unmarshal(out, &prs); err != nil {
 		// A5: JSON parse failure → D2. Do not treat as empty list.
-		return nil, fmt.Sprintf("could not parse gh pr list output: %v", err)
+		return nil, fmt.Sprintf("could not parse gh pr list output: %v", err), nil
 	}
 
 	// A7: exactly forgeQueryLimit items means the response may be incomplete.
@@ -122,10 +208,10 @@ func queryForgePRs(gitExec func(...string) (string, error), ghExec ghExecFn) (*p
 				"forge PR signal disabled for this run (A7, ADR-2026-10-03); "+
 				"all branches fall back to content heuristic",
 			forgeQueryLimit, forgeQueryLimit,
-		)
+		), nil
 	}
 
-	return &prSnapshot{prs: prs}, ""
+	return &prSnapshot{prs: prs}, "", nil
 }
 
 // parseHostOwnerRepo parses a git remote URL and returns the lowercase hostname
@@ -258,19 +344,23 @@ func isNotAncestorError(err error) bool {
 //     "never pushed". Callers that operate on remote refs (detectPendingSquashMerges)
 //     must pass a non-empty sentinel to skip case 4 — remote refs are always pushed
 //     by definition and case 4 would misfire if the local branch copy is absent.
+//   - defaultLocalName: the resolved default branch short name (e.g. "main",
+//     "master", "trunk"). Used to filter MERGED PRs to those targeting the default
+//     branch (A2, ADR-2026-10-03). Must come from resolveDefaultBranch — never
+//     hardcoded. A7 of ADR-2026-10-12.
 //   - snapshot: nil means degraded or truncated (D2/A7) — falls back directly to
-//     evaluateBranchIntegration(ref, gitExec). Never produces a new forge-signal
-//     decision when nil.
+//     evaluateBranchIntegration(ref, "origin/"+defaultLocalName, gitExec). Never
+//     produces a new forge-signal decision when nil.
 //
 // Decision priority among multiple MERGED PRs with valid base (A2):
 //  1. delete (any PR whose headRefOid contains the tip — case 1) — returned immediately
 //  2. commits_after_merged_pr (tip has commits beyond any PR head — case 2)
 //  3. diverged_from_merged_pr (tip and all PR heads are mutually diverged — case 2b)
 //  4. merged_head_absent (all checked PR heads missing locally — review, never delete)
-func evaluateBranchWithForge(ref, prName, upstream string, snapshot *prSnapshot, gitExec func(...string) (string, error)) branchPruneEvaluation {
+func evaluateBranchWithForge(ref, prName, upstream, defaultLocalName string, snapshot *prSnapshot, gitExec func(...string) (string, error)) branchPruneEvaluation {
 	// D2 / A7: snapshot nil → degrade to content heuristic.
 	if snapshot == nil {
-		return evaluateBranchIntegration(ref, gitExec)
+		return evaluateBranchIntegration(ref, "origin/"+defaultLocalName, gitExec)
 	}
 
 	// Filter PRs for this branch: non-fork, headRefName matches (A1/C1).
@@ -290,7 +380,7 @@ func evaluateBranchWithForge(ref, prName, upstream string, snapshot *prSnapshot,
 		case "OPEN":
 			openPRs = append(openPRs, pr)
 		case "MERGED":
-			if pr.BaseRefName == branchPruneDefaultLocalName { // A2
+			if pr.BaseRefName == defaultLocalName { // A2: targets the resolved default branch
 				mergedValidBase = append(mergedValidBase, pr)
 			}
 		case "CLOSED":
@@ -443,8 +533,8 @@ func evaluateBranchWithForge(ref, prName, upstream string, snapshot *prSnapshot,
 	// Case 5: no forge signal — fall back to the content heuristic (today's
 	// behaviour: evaluateBranchIntegration). Covers:
 	//   - branches with no PRs but with an upstream (were pushed, no PR opened)
-	//   - branches whose non-fork PRs all have base ≠ main AND have an upstream
-	//     (stacked PRs etc. — not considered "merged into main"). Without an
-	//     upstream, case 4 has already returned above (AJ1, Wave 2 review).
-	return evaluateBranchIntegration(ref, gitExec)
+	//   - branches whose non-fork PRs all have base ≠ defaultLocalName AND have an
+	//     upstream (stacked PRs etc. — not considered "merged into default branch").
+	//     Without an upstream, case 4 has already returned above (AJ1, Wave 2 review).
+	return evaluateBranchIntegration(ref, "origin/"+defaultLocalName, gitExec)
 }
