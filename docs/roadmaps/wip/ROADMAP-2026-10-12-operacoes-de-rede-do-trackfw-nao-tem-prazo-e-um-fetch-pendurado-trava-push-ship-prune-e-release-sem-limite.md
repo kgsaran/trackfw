@@ -88,19 +88,25 @@ git diff --quiet HEAD -- internal/
 
 ### ML-1A — Executor de rede com prazo (ADR D2, D4, D7/A1–A3, A6, A9)
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-12 após uma devolução (ramo morto de `ErrWaitDelay`; teste do AC6 decorativo). `go build ./...`, `go vet` (inclusive `GOOS=windows`), `go test ./internal/commands/ ./internal/netdeadline/` EXIT=0, rodados pelo arquiteto
 **Files affected:** novo pacote `internal/netdeadline/` (parser de `TRACKFW_NETWORK_TIMEOUT`/`TRACKFW_PUSH_TIMEOUT`, padrões, limites; com testes), novo `internal/commands/netexec.go` (classificador e executor), `internal/commands/netexec_unix.go` e `netexec_windows.go` (grupo de processos e terminal de controle, com build tags), `internal/commands/ship.go` (`defaultGitExec`, `defaultCheckPROpen`), `internal/commands/branch_prune_forge.go` (`defaultGhExec`), `internal/commands/release.go` (executor `:229`), testes `internal/commands/netexec*_test.go`.
 **Acceptance criteria:**
-- [ ] `defaultGitExec` único com `classifyGitArgs`: `fetch`/`ls-remote` → `TRACKFW_NETWORK_TIMEOUT` (60 s); `push` → `TRACKFW_PUSH_TIMEOUT` (30 min) + `GIT_HTTP_LOW_SPEED_*` em HTTPS quando o usuário não configurou `http.lowSpeedLimit`; resto sem prazo. Teste do classificador nas duas direções (`-C d fetch` → rede; `commit`/`log`/`rev-parse` → local)
-- [ ] Executores de `gh` não interativos com prazo; `defaultExecForgeCLI` sem prazo, com teste (AC6)
-- [ ] `WaitDelay` em todos; `Setpgid` + `cmd.Cancel` matando o grupo só sem terminal de controle (`/dev/tty`), nunca no Windows
-- [ ] Parser: `0`, negativo, > 24 h e texto inválido → aviso e padrão; teste por caso
-- [ ] Teste AC2 do executor real: neto = binário de teste reexecutado e dormindo (nunca `cat`), `GIT_SSH_VARIANT=ssh`, prazo de 3 s; afirma ≥ prazo e < prazo + `WaitDelay` + margem; mordida mostrada (sem `WaitDelay`, reprova). Roda em Linux, macOS e Windows
-- [ ] `go build ./...` EXIT=0; `go vet ./internal/commands/` EXIT=0; `go test ./internal/commands/` EXIT=0
+- [x] `defaultGitExec` único com `classifyGitArgs`: `fetch`/`ls-remote` → `TRACKFW_NETWORK_TIMEOUT` (60 s); `push` → `TRACKFW_PUSH_TIMEOUT` (30 min) + `GIT_HTTP_LOW_SPEED_*` em HTTPS quando o usuário não configurou `http.lowSpeedLimit`; resto sem prazo. Teste do classificador nas duas direções (`-C d fetch` → rede; `commit`/`log`/`rev-parse` → local)
+      ✅ `netexec.go`; 6 testes `TestClassifyGitArgs_*` nas duas direções
+- [x] Executores de `gh` não interativos com prazo; `defaultExecForgeCLI` sem prazo, com teste (AC6)
+      ✅ `runNetworkCmd` em `defaultGhExec`/`defaultCheckPROpen`/`defaultExecForgeAPI`; `TestDefaultExecForgeCLI_AC6_NoDeadline` (dorme 2,5 s com prazo de 1 s; reprova trocando por `runNetworkCmd`)
+- [x] `WaitDelay` em todos; `Setpgid` + `cmd.Cancel` matando o grupo só sem terminal de controle (`/dev/tty`), nunca no Windows
+      ✅ `netexec_unix.go`/`netexec_windows.go`; `TestGitExec_AC2_GroupKill` 3,07 s, 0 órfãos; `resolveNetworkErr` com `ErrWaitDelay`+`Success()` (3 testes, mordida mostrada)
+- [x] Parser: `0`, negativo, > 24 h e texto inválido → aviso e padrão; teste por caso
+      ✅ 11 testes em `internal/netdeadline`
+- [x] Teste AC2 do executor real: neto = binário de teste reexecutado e dormindo (nunca `cat`), `GIT_SSH_VARIANT=ssh`, prazo de 3 s; afirma ≥ prazo e < prazo + `WaitDelay` + margem; mordida mostrada (sem `WaitDelay`, reprova). Roda em Linux, macOS e Windows
+      ✅ `TestGitExec_AC2_WaitDelayOnly` 8,08 s (3 s + 5 s); sem `WaitDelay` → proteção de 15 s reprova (EXIT=1). Ressalva: a mordida e o teste de hook são pulados no Windows; o AC2 roda lá e será visto no CI
+- [x] `go build ./...` EXIT=0; `go vet ./internal/commands/` EXIT=0; `go test ./internal/commands/` EXIT=0
+      ✅ rodados pelo arquiteto
 
 ### ML-1B — Caminho de falha por ponto (ADR D1, D5, D7/A5, A7, A8)
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:** `internal/commands/push.go`, `ship.go`, `branch_prune.go`, `release.go`, testes; `docs/cli-parity.md` (seção com `trackfw-contract`)
 **Acceptance criteria:**
 - [ ] Um teste por ponto da população afirmando o caminho de falha do D1 no estouro

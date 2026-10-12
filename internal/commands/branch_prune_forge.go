@@ -3,7 +3,6 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"strconv"
 	"strings"
 )
@@ -52,9 +51,9 @@ type ghExecFn func(args ...string) ([]byte, error)
 // defaultGhExec runs `gh <args...>` and returns stdout.
 // It is the production implementation of ghExecFn — wired only in RunE of
 // branch prune, push and ship; never wired in tests (tests pass nil or a stub).
+// Applies TRACKFW_NETWORK_TIMEOUT + WaitDelay + process-group kill (ADR D2, D7/A2).
 func defaultGhExec(args ...string) ([]byte, error) {
-	cmd := exec.Command("gh", args...)
-	return cmd.Output()
+	return runNetworkCmd("gh", args, "", true)
 }
 
 // queryForgePRs performs the single `gh pr list` query (D3, ADR-2026-10-03).

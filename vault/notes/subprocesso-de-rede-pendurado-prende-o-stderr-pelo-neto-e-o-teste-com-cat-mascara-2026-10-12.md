@@ -36,6 +36,13 @@
 5. **`ps aux` não mostra variáveis de ambiente.** Detecte órfão pelo caminho do binário, capturando o
    `ps` em arquivo antes de filtrar.
 
+6. **`exec.ErrWaitDelay` nunca é `*exec.ExitError`.** Quando o processo sai 0 mas um neto segura o
+   pipe além do `WaitDelay`, o `Wait` devolve `exec.ErrWaitDelay` no lugar de nil (`go doc os/exec
+   Cmd.WaitDelay`). Um teste com `errors.As(err, &exitErr) && exitErr.ExitCode()==0` é ramo morto: a
+   primeira versão do ML-1A fez isso, e um push bem-sucedido cujo hook deixa daemon saía como erro. O
+   certo é `errors.Is(err, exec.ErrWaitDelay) && cmd.ProcessState.Success()`, avaliado só com
+   `ctx.Err()==nil` (`resolveNetworkErr`, `internal/commands/netexec.go`).
+
 ## Ver também
 
 - `internal/validator/validator_guard_binary_probe.go:138-147`: precedente do `WaitDelay`.

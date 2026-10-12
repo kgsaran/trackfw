@@ -1,9 +1,7 @@
 package commands
 
 import (
-	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -152,35 +150,12 @@ PR first. When nothing is staged, it pushes existing commits without requiring -
 }
 
 // defaultGitExec is the production git executor.
-// It runs "git <args...>" and returns trimmed stdout.
-//
-// On failure, surfaces git's actual stderr text (trimmed) instead of exec.Command().Output()'s
-// own error, which formats as the generic "exit status N" and discards git's real diagnostic
-// (e.g. "! [rejected] ... (stale info)" from a refused --force-with-lease push). Node's
-// defaultExecGit and Python's default_exec_git already captured stderr this way — without this,
-// every git-failure message this command ever prints (git commit failed: ..., git push failed:
-// ...) diverges byte-for-byte from Node/Python. Caught by check-ship-force-parity.sh's
-// "remote-advanced-lease-mismatch" scenario (ML-1B,
-// ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md), which is the
-// first parity gate to exercise a real git push rejection end to end.
-func defaultGitExec(args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
-	if err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				msg = fmt.Sprintf("git %s exited with %d", strings.Join(args, " "), exitErr.ExitCode())
-			} else {
-				msg = err.Error()
-			}
-		}
-		return strings.TrimSpace(string(out)), errors.New(msg)
-	}
-	return strings.TrimSpace(string(out)), nil
-}
+// defaultGitExec is defined in netexec.go.
+// It runs "git <args...>" with a network deadline when the subcommand opens a
+// network connection (fetch, ls-remote → TRACKFW_NETWORK_TIMEOUT; push →
+// TRACKFW_PUSH_TIMEOUT). Local subcommands run without a deadline.
+// On failure, surfaces git's actual stderr text — same behaviour as before,
+// keeping all parity gates intact.
 
 // defaultExecForgeCLI runs the forge CLI (gh, glab, az) with inherited stdin/stdout/stderr.
 func defaultExecForgeCLI(name string, args []string) error {
@@ -214,27 +189,13 @@ func defaultCheckPROpen(adapter forge.Adapter, branch string) (bool, error) {
 		return false, fmt.Errorf("no PR/MR query defined for forge %q", adapter.Forge)
 	}
 
-	// Capture stderr explicitly and surface its trimmed text in the "cannot verify" error —
-	// exec.Command().Output()'s own error (an *exec.ExitError) formats as the generic
-	// "exit status N", discarding the CLI's actual diagnostic (e.g. an auth failure). Node's
-	// spawnSync and Python's subprocess.run both surface the real stderr text by default, so
-	// without this capture Go's forceLeaseCannotVerifyFmt message diverges byte-for-byte from
-	// Node/Python's — caught by check-ship-force-parity.sh's "forge-nao-verificavel" scenario
-	// (ML-1B, ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md).
-	cmd := exec.Command(adapter.CLIName, args...)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	out, err := cmd.Output()
+	// runNetworkCmd captures stderr and surfaces its trimmed text in the "cannot verify"
+	// error — same reasoning as before, keeping all parity gates intact.
+	// It also applies TRACKFW_NETWORK_TIMEOUT + WaitDelay so a hung forge CLI does not
+	// block the push indefinitely (ADR D2, D7/A2).
+	out, err := runNetworkCmd(adapter.CLIName, args, "", true)
 	if err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				msg = fmt.Sprintf("%s exited with %d", adapter.CLIName, exitErr.ExitCode())
-			} else {
-				msg = err.Error()
-			}
-		}
-		return false, errors.New(msg)
+		return false, err
 	}
 
 	var results []json.RawMessage

@@ -222,28 +222,15 @@ func defaultReleaseReadCommittedFile(sha, path string) (string, error) {
 }
 
 // defaultExecForgeAPI runs a forge CLI command (gh api ...) feeding stdin and capturing
-// stdout, so the JSON response can be parsed. On failure, surfaces the CLI's real stderr text
-// instead of exec's generic "exit status N" — same reasoning as defaultGitExec/
-// defaultCheckPROpen in ship.go.
+// stdout, so the JSON response can be parsed. On failure, surfaces the CLI's real stderr
+// text — same reasoning as defaultGitExec/defaultCheckPROpen in ship.go.
+// Applies TRACKFW_NETWORK_TIMEOUT + WaitDelay + process-group kill (ADR D2, D7/A2).
 func defaultExecForgeAPI(name string, args []string, stdin string) (string, error) {
-	cmd := exec.Command(name, args...)
-	cmd.Stdin = strings.NewReader(stdin)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	err := cmd.Run()
+	out, err := runNetworkCmd(name, args, stdin, true)
 	if err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if msg == "" {
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				msg = fmt.Sprintf("%s %s exited with %d", name, strings.Join(args, " "), exitErr.ExitCode())
-			} else {
-				msg = err.Error()
-			}
-		}
-		return strings.TrimSpace(stdout.String()), errors.New(msg)
+		return "", err
 	}
-	return strings.TrimSpace(stdout.String()), nil
+	return strings.TrimSpace(string(out)), nil
 }
 
 // normalizeReleaseVersion strips an optional leading "v"/"V", matching
