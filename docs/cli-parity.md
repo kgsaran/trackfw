@@ -8571,3 +8571,62 @@ A violação é uma **contradição entre artefatos vivos** (`origin/main` × di
 - **R4 — `git remote remove origin`** (leva o âncora ao estado silencioso).
 - **R5 — Adversário com permissão de merge em `main`**: fora do escopo (ADR-2026-08-12).
 - **R7 — Windsurf e Amazon Q**: nenhuma chave de desligamento encontrada na documentação.
+
+## Prazo em operações de rede — variáveis, padrões e caminhos de falha (REQ-2026-10-12, ADR-2026-10-12, ML-1B, issue #556)
+
+<!-- trackfw-contract: gate=internal/netdeadline/netdeadline_test.go partial=TestDefaultNetworkTimeout,TestDefaultPushTimeout prova que os dois padrões (60 s e 30 min) são os valores compilados; qualquer alteração nos defaults quebra esses dois casos -->
+
+Toda operação de rede do CLI Go carrega um prazo. Dois controles configuram os prazos:
+
+| Variável | Padrão | Limite superior aceito | Tipo de operação coberta |
+|---|---|---|---|
+| `TRACKFW_NETWORK_TIMEOUT` | 60 s | 24 h | Leitura de metadados: `git fetch`, `git ls-remote`, `gh pr list`, `gh api` GET/leitura |
+| `TRACKFW_PUSH_TIMEOUT` | 30 min | 24 h | Transferência de dados: `git push` |
+
+Valores inválidos (zero, negativos, acima de 24 h, texto não parsável) emitem aviso em stderr e
+usam o padrão — o prazo nunca é desligado.
+
+### Detecção no chamador
+
+<!-- trackfw-contract: gate=internal/commands/netfailpath_test.go partial=TestPush_FetchTimeout_WarningNamesTimeout_PushProceeds,TestRelease_LSRemoteTimeout_FailsClosed afirma que errors.Is(err, netdeadline.ErrTimeout) distingue estouro de prazo de erros genéricos nos dois caminhos de falha cobertos -->
+
+```go
+if errors.Is(err, netdeadline.ErrTimeout) { /* estouro nomeado */ }
+```
+
+`*netdeadline.TimeoutError` implementa `Is(ErrTimeout) bool`. A mensagem formatada segue o ADR D5:
+
+```
+git fetch excedeu 60s (TRACKFW_NETWORK_TIMEOUT)
+```
+
+### Caminho de falha por ponto de chamada
+
+<!-- trackfw-contract: gate=internal/commands/netfailpath_test.go partial=TestPush_FetchTimeout_WarningNamesTimeout_PushProceeds,TestShip_FetchTimeout_WarningNamesTimeout,TestBranchPrune_FetchTimeout_WarningNamesTimeout_FieldsSet,TestRelease_FetchTimeout_MessageNamesTimeoutError,TestRelease_LSRemoteError_FailsClosed,TestRelease_LSRemoteTimeout_FailsClosed,TestRelease_TagObjectPostTimeout_UncertainState,TestRelease_RefPostTimeout_UncertainState,TestShip_DetectSquashMerges_GhTimeout_WarnsDegradation afirma o comportamento de cada linha da tabela: mensagem nomeia TRACKFW_NETWORK_TIMEOUT, falha-padrão não usa a mensagem de estouro, estado remoto incerto declarado nos POSTs -->
+
+| Comando | Ponto | Falha-padrão (sem prazo) | Comportamento com estouro (ADR D1/D5) |
+|---|---|---|---|
+| `trackfw push` | `git fetch origin --prune` | aviso "offline or no remote"; push prossegue | aviso nomeia `TRACKFW_NETWORK_TIMEOUT`; push prossegue |
+| `trackfw ship` | `git fetch origin --prune` | aviso "offline or no remote"; commit/push prosseguem | aviso nomeia `TRACKFW_NETWORK_TIMEOUT`; commit/push prosseguem |
+| `trackfw branch prune` | `git fetch origin --prune` | aviso "offline, no remote, or fetch failed"; análise prossegue com dados possivelmente velhos | aviso nomeia `TRACKFW_NETWORK_TIMEOUT`; campos `fetchFailed`/`fetchTimedOut` ficam `true` internamente para uso pelo passo remoto (ROADMAP-2026-10-10) |
+| `trackfw release tag` | `git fetch origin --prune` | falha fechada: `could not fetch origin` | falha fechada: mensagem nomeia `TRACKFW_NETWORK_TIMEOUT` (via `%s` sobre `err.Error()`) |
+| `trackfw release tag` | `git ls-remote --tags` | **antes da correção ML-1B:** erro descartado, tag tratada como ausente | falha fechada: `could not confirm tag <tag> is absent from remote: <err>` (ADR D7/A5) |
+| `trackfw release tag` | POST `git/tags` (criação do objeto) | `gh api failed creating the tag object` | `<TimeoutError> — remote state is uncertain: check if the tag was created on GitHub before running again` (ADR D7/A8) |
+| `trackfw release tag` | POST `git/refs` (criação do ref) | `gh api failed creating the tag ref` | `<TimeoutError> — remote state is uncertain: check if the ref was created on GitHub before running again` (ADR D7/A8) |
+| `trackfw ship` / `trackfw push` | `gh pr list` dentro de `detectPendingSquashMerges` | degradação silenciosa; heurística de conteúdo continua | aviso nomeia `TRACKFW_NETWORK_TIMEOUT`; heurística de conteúdo continua (ADR D7/A7) |
+
+### `gh pr create` — sem prazo (por construção)
+
+<!-- trackfw-contract: none reason=gh pr create não passa pelo executor runNetworkCmd; o prazo é aplicado pelo gh CLI internamente, fora do nosso controle -->
+
+`gh pr create` não é envolvido pelo executor `runNetworkCmd` — ele é disparado pelo `os/exec` do
+shell sem contexto de cancelamento do trackfw. O prazo `TRACKFW_NETWORK_TIMEOUT` não se aplica a
+ele. Se o comando travar, o usuário deve interrompê-lo com Ctrl-C.
+
+### Resíduos declarados
+
+<!-- trackfw-contract: none reason=autodeclaração de limites; não são alegações de comportamento verificável -->
+
+- **R1**: `git push` usa `TRACKFW_PUSH_TIMEOUT` (30 min); `TRACKFW_NETWORK_TIMEOUT` não o afeta.
+- **R2**: `gh pr create` não tem prazo gerenciado pelo trackfw (ver acima).
+- **R3**: valores acima de 24 h são rejeitados silenciosamente; o aviso vai para stderr, não stdout.

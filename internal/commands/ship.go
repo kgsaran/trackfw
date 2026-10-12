@@ -2,6 +2,7 @@ package commands
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/forge"
+	"github.com/kgsaran/trackfw/internal/netdeadline"
 	"github.com/kgsaran/trackfw/internal/validator"
 	"github.com/spf13/cobra"
 )
@@ -351,7 +353,12 @@ func runShip(opts shipOpts, deps shipDeps) error {
 		fmt.Fprintf(deps.out, "[dry-run] git fetch origin --prune\n")
 	} else {
 		if _, ferr := deps.execGit("fetch", "origin", "--prune"); ferr != nil {
-			fmt.Fprintf(deps.out, "Warning: could not fetch origin (offline or no remote); skipping squash-merge check.\n")
+			// ADR D1/D5: name the timeout so the user can distinguish it from "offline".
+			if errors.Is(ferr, netdeadline.ErrTimeout) {
+				fmt.Fprintf(deps.out, "Warning: could not fetch origin (%s); skipping squash-merge check.\n", ferr.Error())
+			} else {
+				fmt.Fprintf(deps.out, "Warning: could not fetch origin (offline or no remote); skipping squash-merge check.\n")
+			}
 		} else {
 			detectPendingSquashMerges(branch, deps.execGit, deps.ghExec, deps.out)
 		}
@@ -759,7 +766,12 @@ func detectPendingSquashMerges(currentBranch string, gitExec func(...string) (st
 	}
 
 	// D3/D4: one snapshot for all branches in this function (same policy as runBranchPrune).
-	snapshot, _ := queryForgePRs(gitExec, ghExec)
+	// ADR D7/A7: preserve the raw cause so that a timeout is named to the user (ML-1B).
+	snapshot, _, cause := queryForgePRs(gitExec, ghExec)
+	if snapshot == nil && errors.Is(cause, netdeadline.ErrTimeout) {
+		// D2 degradation continues (heuristic proceeds), but the timeout is named per D5.
+		fmt.Fprintf(out, "Warning: forge PR lookup failed (%s); squash-merge check using content heuristic only.\n", cause.Error())
+	}
 
 	for _, raw := range strings.Split(remoteBranches, "\n") {
 		candidate := strings.TrimSpace(raw)

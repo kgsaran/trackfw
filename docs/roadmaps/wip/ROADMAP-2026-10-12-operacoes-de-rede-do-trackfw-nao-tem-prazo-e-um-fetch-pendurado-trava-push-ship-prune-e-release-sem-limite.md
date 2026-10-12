@@ -106,19 +106,25 @@ git diff --quiet HEAD -- internal/
 
 ### ML-1B — Caminho de falha por ponto (ADR D1, D5, D7/A5, A7, A8)
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-12. Mordidas dos pontos 4 e 6 rodadas pelo arquiteto (o relatório só as descreveu); `make parity-rest` EXIT=0 com Python 3.12 (o agente não achou o venv). Ressalva para o ROADMAP-2026-10-10: `fetchFailed`/`fetchTimedOut` ficam numa cópia de `branchPruneDeps` — o ML-1B de lá deve trocar por variável local de `runBranchPrune`
 **Files affected:** `internal/commands/push.go`, `ship.go`, `branch_prune.go`, `release.go`, testes; `docs/cli-parity.md` (seção com `trackfw-contract`)
 **Acceptance criteria:**
-- [ ] Um teste por ponto da população afirmando o caminho de falha do D1 no estouro
-- [ ] `release.go:310`: falha ou estouro do `ls-remote` → `could not confirm tag … is absent from remote` (AC4)
-- [ ] `ship.go:801`: o motivo da degradação chega ao usuário (A7)
-- [ ] Estouro nas escritas `release.go:462,482` diz que o estado remoto é incerto (A8)
-- [ ] Mensagem nomeia operação, prazo e variável (D5)
-- [ ] `go build ./...` EXIT=0; `go test ./internal/commands/` EXIT=0; `make parity-rest` EXIT=0
+- [x] Um teste por ponto da população afirmando o caminho de falha do D1 no estouro
+      ✅ 9 testes em `netfailpath_test.go` (conferidos por `go test -list`)
+- [x] `release.go:310`: falha ou estouro do `ls-remote` → `could not confirm tag … is absent from remote` (AC4)
+      ✅ `releaseTagRemoteCheckFailedFmt`; mordida: com o erro descartado, `TestRelease_LSRemote{Error,Timeout}_FailsClosed` reprovam
+- [x] `ship.go:801`: o motivo da degradação chega ao usuário (A7)
+      ✅ `queryForgePRs` devolve a causa bruta; mordida: sem o aviso, `TestShip_DetectSquashMerges_GhTimeout_WarnsDegradation` reprova
+- [x] Estouro nas escritas `release.go:462,482` diz que o estado remoto é incerto (A8)
+      ✅ `TestRelease_{TagObject,Ref}PostTimeout_UncertainState`
+- [x] Mensagem nomeia operação, prazo e variável (D5)
+      ✅ texto do `TimeoutError` nos avisos; mensagem não-timeout idêntica à anterior (paridade)
+- [x] `go build ./...` EXIT=0; `go test ./internal/commands/` EXIT=0; `make parity-rest` EXIT=0
+      ✅ build, `go test ./internal/commands/` (39,5 s), `GOOS=windows go vet`, `make parity-rest` EXIT=0
 
 ### ML-1C — Cliente HTTP do Linear com prazo (ADR D7/A10)
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Por que o escopo original não previa:** o Wave 0 achou `http.DefaultClient` sem prazo em `internal/sync/linear.go:76`. É a mesma causa (cliente de rede sem prazo) por outro mecanismo.
 **Files affected:** `internal/sync/linear.go`, `internal/sync/linear_test.go`
 **Acceptance criteria:**

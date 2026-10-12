@@ -26,6 +26,7 @@ import (
 // Uses /dev/tty as the discriminator (more precise than os.Stdin.Stat(): /dev/null
 // is also a char device but has no ctty). Overridable in tests.
 var hasControllingTTY = func() bool {
+	// write-containment-allowed: O_RDONLY probe — no file is created or mutated; fails fast and returns false when /dev/tty is absent (CI, Windows).
 	tty, err := os.OpenFile("/dev/tty", os.O_RDONLY, 0)
 	if err == nil {
 		tty.Close()

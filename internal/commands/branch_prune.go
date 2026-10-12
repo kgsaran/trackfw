@@ -1,11 +1,13 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"sort"
 	"strings"
 
+	"github.com/kgsaran/trackfw/internal/netdeadline"
 	"github.com/spf13/cobra"
 )
 
@@ -316,6 +318,13 @@ type branchPruneDeps struct {
 	// flag ultimately performs the deletion.
 	deleteBranch func(gitExec func(args ...string) (string, error), name string) error
 	out          io.Writer
+
+	// Fields populated by runBranchPrune after the best-effort fetch (ML-1B, ADR D1/D5).
+	// Reserved for ROADMAP-2026-10-10 (branch prune --remote): the remote-delete step
+	// must refuse to proceed when the fetch failed (stale remote refs could cause false
+	// "already integrated" verdicts and delete unmerged remote branches).
+	fetchFailed  bool
+	fetchTimedOut bool
 }
 
 func newBranchPruneCmd() *cobra.Command {
@@ -388,7 +397,14 @@ func runBranchPrune(apply bool, deps branchPruneDeps) error {
 	// resolvable locally: a stale ref only ever makes the result MORE conservative (see the Long
 	// help text), never less, so there is no safety reason to abort here.
 	if _, err := deps.gitExec("fetch", "origin", "--prune"); err != nil {
-		fmt.Fprintf(deps.out, "Warning: could not fetch origin (offline, no remote, or fetch failed) — evaluating with possibly stale data; a branch merged upstream since the last fetch may still be reported as pending.\n")
+		deps.fetchFailed = true
+		if errors.Is(err, netdeadline.ErrTimeout) {
+			deps.fetchTimedOut = true
+			// ADR D1/D5: estouro nomeia a operação, o prazo e a variável (err.Error()).
+			fmt.Fprintf(deps.out, "Warning: could not fetch origin (%s) — evaluating with possibly stale data; a branch merged upstream since the last fetch may still be reported as pending.\n", err.Error())
+		} else {
+			fmt.Fprintf(deps.out, "Warning: could not fetch origin (offline, no remote, or fetch failed) — evaluating with possibly stale data; a branch merged upstream since the last fetch may still be reported as pending.\n")
+		}
 	}
 
 	if _, err := deps.gitExec("rev-parse", "--verify", "-q", branchPruneDefaultRemoteRef); err != nil {
@@ -409,7 +425,7 @@ func runBranchPrune(apply bool, deps branchPruneDeps) error {
 	// D3 (ADR-2026-10-03): one forge query for all branches. queryForgePRs returns nil on
 	// degradation (D2) or truncation (A7) and prints one line explaining why; every branch then
 	// falls back to the content heuristic. The nil check is enforced inside evaluateBranchWithForge.
-	snapshot, degradeReason := queryForgePRs(deps.gitExec, deps.ghExec)
+	snapshot, degradeReason, _ := queryForgePRs(deps.gitExec, deps.ghExec)
 	if snapshot == nil {
 		fmt.Fprintf(deps.out, "Note: forge PR signal not available — using content heuristic only. Cause: %s\n\n", degradeReason)
 	}

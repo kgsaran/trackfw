@@ -1,12 +1,14 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 
 	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/forge"
+	"github.com/kgsaran/trackfw/internal/netdeadline"
 	"github.com/kgsaran/trackfw/internal/validator"
 	"github.com/spf13/cobra"
 )
@@ -236,7 +238,12 @@ func runPush(opts pushOpts, deps pushDeps) error {
 		fmt.Fprintf(deps.out, "[dry-run] git fetch origin --prune\n")
 	} else {
 		if _, ferr := deps.execGit("fetch", "origin", "--prune"); ferr != nil {
-			fmt.Fprintf(deps.out, "Warning: could not fetch origin (offline or no remote); skipping squash-merge check.\n")
+			// ADR D1/D5: name the timeout so the user can distinguish it from "offline".
+			if errors.Is(ferr, netdeadline.ErrTimeout) {
+				fmt.Fprintf(deps.out, "Warning: could not fetch origin (%s); skipping squash-merge check.\n", ferr.Error())
+			} else {
+				fmt.Fprintf(deps.out, "Warning: could not fetch origin (offline or no remote); skipping squash-merge check.\n")
+			}
 		} else {
 			detectPendingSquashMerges(branch, deps.execGit, deps.ghExec, deps.out)
 		}

@@ -58,57 +58,57 @@ func defaultGhExec(args ...string) ([]byte, error) {
 
 // queryForgePRs performs the single `gh pr list` query (D3, ADR-2026-10-03).
 //
-// Returns (*prSnapshot, "") on success.
-// Returns (nil, reason) on any degradation (D2):
-//   - ghExec is nil
-//   - origin remote URL cannot be read or parsed
-//   - host is not github.com (A1)
-//   - gh exits with non-zero (A5)
-//   - JSON cannot be parsed (A5)
-//   - response has exactly forgeQueryLimit items (A7: treat as truncated / incomplete)
+// Returns (*prSnapshot, "", nil) on success.
+// Returns (nil, reason, nil) on structural degradation (D2: ghExec nil, URL
+// unparseable, non-GitHub host, JSON parse failure, truncated response).
+// Returns (nil, reason, err) when ghExec itself fails (A5: exit ≠ 0) — err is the
+// raw error from the executor, preserved so callers can check for timeout via
+// errors.Is(err, netdeadline.ErrTimeout) (ADR D7/A7, ML-1B).
 //
 // gitExec is used only to run `git remote get-url origin` (A1) — the --repo flag
 // pins the query to the parsed repository and prevents GH_REPO misdirection.
 // forge.Resolve is intentionally NOT used: its CI-file fallback returns "github"
 // when .github/workflows/ exists, even with origin pointing to a non-GitHub host
 // (measured in Wave 0, Cenário 5).
-func queryForgePRs(gitExec func(...string) (string, error), ghExec ghExecFn) (*prSnapshot, string) {
+func queryForgePRs(gitExec func(...string) (string, error), ghExec ghExecFn) (*prSnapshot, string, error) {
 	if ghExec == nil {
-		return nil, "gh is not available"
+		return nil, "gh is not available", nil
 	}
 
 	remoteURL, err := gitExec("remote", "get-url", "origin")
 	if err != nil {
-		return nil, fmt.Sprintf("could not read git remote get-url origin: %v", err)
+		return nil, fmt.Sprintf("could not read git remote get-url origin: %v", err), nil
 	}
 	remoteURL = strings.TrimSpace(remoteURL)
 
 	host, ownerRepo := parseHostOwnerRepo(remoteURL)
 	switch {
 	case host == "":
-		return nil, fmt.Sprintf("could not parse origin remote URL %q; forge PR lookup skipped (D2, ADR-2026-10-03)", remoteURL)
+		return nil, fmt.Sprintf("could not parse origin remote URL %q; forge PR lookup skipped (D2, ADR-2026-10-03)", remoteURL), nil
 	case host != "github.com":
-		return nil, fmt.Sprintf("forge host %q is not github.com; forge PR lookup skipped (D2, ADR-2026-10-03)", host)
+		return nil, fmt.Sprintf("forge host %q is not github.com; forge PR lookup skipped (D2, ADR-2026-10-03)", host), nil
 	}
 
 	// A1: pass --repo HOST/OWNER/REPO to override GH_REPO and any multi-remote resolution.
 	repoArg := host + "/" + ownerRepo
-	out, err := ghExec(
+	out, ghErr := ghExec(
 		"pr", "list",
 		"--repo", repoArg,
 		"--state", "all",
 		"--limit", strconv.Itoa(forgeQueryLimit),
 		"--json", "number,state,headRefName,headRefOid,baseRefName,isCrossRepository,headRepositoryOwner",
 	)
-	if err != nil {
+	if ghErr != nil {
 		// A5: any exit ≠ 0 → D2. Do not treat as empty list.
-		return nil, fmt.Sprintf("gh pr list --repo %s failed: %v", repoArg, err)
+		// Preserve ghErr as the third return so callers can inspect it
+		// (e.g. errors.Is(ghErr, netdeadline.ErrTimeout) for ADR D7/A7).
+		return nil, fmt.Sprintf("gh pr list --repo %s failed: %v", repoArg, ghErr), ghErr
 	}
 
 	var prs []forgePR
 	if err := json.Unmarshal(out, &prs); err != nil {
 		// A5: JSON parse failure → D2. Do not treat as empty list.
-		return nil, fmt.Sprintf("could not parse gh pr list output: %v", err)
+		return nil, fmt.Sprintf("could not parse gh pr list output: %v", err), nil
 	}
 
 	// A7: exactly forgeQueryLimit items means the response may be incomplete.
@@ -121,10 +121,10 @@ func queryForgePRs(gitExec func(...string) (string, error), ghExec ghExecFn) (*p
 				"forge PR signal disabled for this run (A7, ADR-2026-10-03); "+
 				"all branches fall back to content heuristic",
 			forgeQueryLimit, forgeQueryLimit,
-		)
+		), nil
 	}
 
-	return &prSnapshot{prs: prs}, ""
+	return &prSnapshot{prs: prs}, "", nil
 }
 
 // parseHostOwnerRepo parses a git remote URL and returns the lowercase hostname

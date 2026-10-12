@@ -486,7 +486,7 @@ func TestAC5_TruncatedResponse_BlocksForgeSignalDeletes(t *testing.T) {
 		return "", fmt.Errorf("unexpected gitExec: %v", args)
 	}
 
-	snapshot, reason := queryForgePRs(gitExec, ghExec)
+	snapshot, reason, _ := queryForgePRs(gitExec, ghExec)
 	if snapshot != nil {
 		t.Fatal("AC5 truncation: snapshot must be nil when response length == forgeQueryLimit")
 	}
@@ -515,7 +515,7 @@ func TestA1_RepoFlagUsed(t *testing.T) {
 		return "", fmt.Errorf("unexpected gitExec: %v", args)
 	}
 
-	snapshot, reason := queryForgePRs(gitExec, ghExec)
+	snapshot, reason, _ := queryForgePRs(gitExec, ghExec)
 	if snapshot == nil {
 		t.Fatalf("A1: expected non-nil snapshot, got degraded: %q", reason)
 	}
@@ -563,7 +563,7 @@ func TestA1_NonGitHubHost_Degrades(t *testing.T) {
 		return "", fmt.Errorf("unexpected gitExec: %v", args)
 	}
 
-	snapshot, reason := queryForgePRs(gitExec, ghExec)
+	snapshot, reason, _ := queryForgePRs(gitExec, ghExec)
 	if snapshot != nil {
 		t.Fatal("A1 non-GitHub: snapshot must be nil for non-GitHub host")
 	}
@@ -620,7 +620,7 @@ func TestA5_GhExitNonZero_Degrades(t *testing.T) {
 		return "", fmt.Errorf("unexpected gitExec: %v", args)
 	}
 
-	snapshot, reason := queryForgePRs(gitExec, ghExec)
+	snapshot, reason, _ := queryForgePRs(gitExec, ghExec)
 	if snapshot != nil {
 		t.Fatal("A5: gh exit ≠ 0 must produce nil snapshot (D2 degradation), not empty snapshot")
 	}
@@ -873,7 +873,7 @@ func TestA5_InvalidJSON_Degrades(t *testing.T) {
 		return "", fmt.Errorf("unexpected gitExec: %v", args)
 	}
 
-	snapshot, reason := queryForgePRs(gitExec, ghExec)
+	snapshot, reason, _ := queryForgePRs(gitExec, ghExec)
 	if snapshot != nil {
 		t.Fatal("A5 invalid JSON: snapshot must be nil — invalid JSON is D2 degradation, not an empty list")
 	}
