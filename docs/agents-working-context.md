@@ -46440,3 +46440,7 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-12 — zeus-tf — release 9.5.0
 
 - Bump para 9.5.0 (minor: `branch prune --remote` e duas variáveis de ambiente novas) e `CHANGELOG.md` com o #559; leva junto o fechamento das REQs 2026-10-12 e 2026-10-10. Tag após o merge, precedida de `make check-required-full`.
+
+## 2026-10-12 — zeus-tf — medição do suporte a Windows na 9.5.0
+
+- Censo x64 `38319939952` (4 FAIL emitidos) + VM ARM64. Consolidado em `docs/portabilidade/2026-10-12-suporte-windows-9.5.0-estado-medido.md`. Ressalva: 42 rótulos sumiram do censo desde 24/09; `go-behavioral-pin` 40 → 0 sem causa estabelecida. Guard global (HOME≠USERPROFILE) não medido — a VM usou o comando errado e não tem o Claude Code.
