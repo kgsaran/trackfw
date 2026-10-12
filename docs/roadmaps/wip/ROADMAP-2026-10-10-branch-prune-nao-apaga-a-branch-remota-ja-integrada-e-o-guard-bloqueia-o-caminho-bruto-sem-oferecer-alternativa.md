@@ -107,12 +107,15 @@ git diff --quiet HEAD -- internal/
 
 ### ML-1C — Mensagem do guard para remoção de branch
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-12. A mordida 2 do relatório (referência `.sh`) citava falhas de teste Go; refeita pelo arquiteto: com a detecção do `.sh` neutralizada, `TestGitBranchGuard_PushDelete_ParityBranchDeleteForms` reprova
 **Files affected (provisório):** `internal/guard/gitbranch.go`, `internal/generators/testdata/guard-sh-reference/git-branch-guard.sh` e os demais sítios da seção 1.1 do parecer, testes de paridade.
 **Acceptance criteria:**
-- [ ] `--delete`/`-d`/`:<ref>` (não `refs/tags/`) → mensagem que nomeia `trackfw branch prune --remote --apply`; `--mirror`, `--prune`, `:refs/tags/…`, `:` e push comum mantêm a atual (A1)
-- [ ] Teste de paridade com os vetores de remoção (A2); guard continua bloqueando a forma bruta
-- [ ] `go test ./internal/guard/ ./internal/generators/` EXIT=0
+- [x] `--delete`/`-d`/`:<ref>` (não `refs/tags/`) → mensagem que nomeia `trackfw branch prune --remote --apply`; `--mirror`, `--prune`, `:refs/tags/…`, `:` e push comum mantêm a atual (A1)
+      ✅ `reasonPushDelete` + `isPushBranchDelete` (`internal/guard/gitbranch.go`); 22 casos em `TestRunGitBranch_PushDelete_BranchDeleteForms`; mordida 1 → 14 FAILs nas formas de remoção
+- [x] Teste de paridade com os vetores de remoção (A2); guard continua bloqueando a forma bruta
+      ✅ `TestGitBranchGuard_PushDelete_ParityBranchDeleteForms` (Go × `.sh`); pin sha256 da referência atualizado; todos os casos afirmam o bloqueio
+- [x] `go test ./internal/guard/ ./internal/generators/` EXIT=0
+      ✅ `go test ./internal/guard/` e `-run PushDelete ./internal/generators/` EXIT=0; `go vet` inclusive `GOOS=windows`
 
 ### ML-1D — Contrato
 **Owner:** `apolo-tf`

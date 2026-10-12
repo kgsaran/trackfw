@@ -390,7 +390,7 @@ func TestGuardShReferenceFixtures_Sha256(t *testing.T) {
 	// The live scripts/trackfw-*.sh are now thin wrappers (ML-2A); the fixtures remain
 	// the original full scripts so the parity comparison stays meaningful.
 	expected := map[string]string{
-		"git-branch-guard.sh":         "f51ee1f93a168a19a5e03090f38543409702c03044f7807f3ff5bb3a1f3232a3",
+		"git-branch-guard.sh":         "71445ebf0a71e1db4eab8af9c6fe2a6b828a5d00e17ad39a5458d57d294c9245",
 		"credential-guard-project.sh": "e73d6502f851fee4ca304c1e8e8a60485f1339714734fb09d89a514dea65a4f7",
 		"credential-guard-global.sh":  "af21a5772a2edeba738db454771e8347b6300b4272a17c447f68a921b9c3cc43",
 	}

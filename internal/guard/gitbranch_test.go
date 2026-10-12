@@ -1088,3 +1088,111 @@ func TestMatchSubcommand_D10_WindowsQuotedPathWithSpaces_Blocks(t *testing.T) {
 		}
 	}
 }
+
+// ---------------------------------------------------------------------------
+// ML-1C (REQ-2026-10-10) — branch-deletion forms of git push
+// ---------------------------------------------------------------------------
+//
+// TestRunGitBranch_PushDelete_BranchDeleteForms afirma que cada forma de remoção
+// de branch listada na Tabela 1.2 do parecer de segurança produz:
+//   - exit 2 (deny)
+//   - reasonPushDelete no stdout e stderr
+//
+// Formas testadas:
+//
+//	A) --delete <ref>: git push --delete feat/foo
+//	B) com remote antes: git push origin --delete feat/foo
+//	C) -d curto: git push -d feat/foo
+//	D) -d com remote: git push origin -d feat/foo
+//	E) múltiplos refs: git push origin --delete feat/a feat/b
+//	F) refspec :<ref>: git push origin :feat/foo
+//	G) refspec +:refs/heads/b: git push origin +:refs/heads/feat/foo
+//	H) múltiplos refspecs: git push origin :foo :bar
+//	I) mistura branch+push comum: git push origin main :feat/foo
+//	J) refs/heads/ explícito: git push origin :refs/heads/feat/foo
+//
+// Formas NÃO-remoção (devem produzir reasonPush):
+//
+//	K) --mirror
+//	L) --prune
+//	M) :refs/tags/v1.0
+//	N) : sozinho
+//	O) +: sozinho
+//	P) --delete só com tag: git push origin --delete refs/tags/v1.0
+//	Q) push simples
+//
+// Afirma: a ramificação por formas detecta branch-delete nas classes A–J e
+// retorna reasonPushDelete; as demais formas retornam reasonPush.
+func TestRunGitBranch_PushDelete_BranchDeleteForms(t *testing.T) {
+	dir := makeProjectDir(t)
+
+	cases := []struct {
+		name    string
+		cmd     string
+		wantTag string // "push-delete" ou "push"
+		wantRC  int
+	}{
+		// --- remoção de branch → push-delete ---
+		{"A_delete_no_remote", "git push --delete feat/foo", "push-delete", 2},
+		{"B_delete_with_remote", "git push origin --delete feat/foo", "push-delete", 2},
+		{"C_d_short_no_remote", "git push -d feat/foo", "push-delete", 2},
+		{"D_d_short_with_remote", "git push origin -d feat/foo", "push-delete", 2},
+		{"E_delete_multi_refs", "git push origin --delete feat/a feat/b", "push-delete", 2},
+		{"F_refspec_colon", "git push origin :feat/foo", "push-delete", 2},
+		{"G_refspec_plus_colon_refsheads", "git push origin +:refs/heads/feat/foo", "push-delete", 2},
+		{"H_multi_refspecs", "git push origin :foo :bar", "push-delete", 2},
+		{"I_mix_push_and_delete", "git push origin main :feat/foo", "push-delete", 2},
+		{"J_refs_heads_explicit", "git push origin :refs/heads/feat/foo", "push-delete", 2},
+		// --- novos vetores do advisor (bugs no modelo antigo) ---
+		// Afirma: --delete com remote e tag não é remoção de branch (P').
+		{"P2_delete_remote_tag", "git push --delete origin refs/tags/v1.0", "push", 2},
+		// Afirma: --delete após positionals detecta remoção de branch (R).
+		{"R_delete_after_positionals", "git push origin feat/foo --delete", "push-delete", 2},
+		// Afirma: --delete com --force não anula a detecção (S).
+		{"S_delete_force", "git push --delete --force origin feat/foo", "push-delete", 2},
+		// Afirma: --delete com remote explícito detecta remoção de branch (B2).
+		{"B2_delete_origin_branch", "git push --delete origin feat/foo", "push-delete", 2},
+		// --- NÃO remoção de branch → push ---
+		{"K_mirror", "git push origin --mirror", "push", 2},
+		{"L_prune", "git push origin --prune", "push", 2},
+		{"M_tag_refspec", "git push origin :refs/tags/v1.0", "push", 2},
+		{"N_bare_colon", "git push origin :", "push", 2},
+		{"O_plus_bare_colon", "git push origin +:", "push", 2},
+		{"P_delete_only_tag", "git push origin --delete refs/tags/v1.0", "push", 2},
+		{"Q_plain_push", "git push origin main", "push", 2},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			// MatchSubcommand afirma o tag correto.
+			tag := MatchSubcommand(tc.cmd)
+			if tag != tc.wantTag {
+				t.Errorf("MatchSubcommand(%q): got tag %q, want %q", tc.cmd, tag, tc.wantTag)
+			}
+
+			// RunGitBranch afirma exit 2 (deny em ambos os casos).
+			rc, out, errOut := runWith(t, dir, "", tc.cmd)
+			if rc != tc.wantRC {
+				t.Errorf("rc: got %d, want %d (stderr: %s)", rc, tc.wantRC, errOut)
+			}
+
+			// Afirma a mensagem exata no stdout (JSON) e stderr.
+			var wantReason string
+			switch tc.wantTag {
+			case "push-delete":
+				wantReason = reasonPushDelete
+			default:
+				wantReason = reasonPush
+			}
+			expectedOut := `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"` + wantReason + `"}}` + "\n"
+			expectedErr := wantReason + "\n"
+			if out != expectedOut {
+				t.Errorf("stdout mismatch:\n  got  %q\n  want %q", out, expectedOut)
+			}
+			if errOut != expectedErr {
+				t.Errorf("stderr mismatch:\n  got  %q\n  want %q", errOut, expectedErr)
+			}
+		})
+	}
+}

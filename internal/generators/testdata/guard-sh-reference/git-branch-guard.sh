@@ -479,7 +479,54 @@ match_subcommand() {
         return 0
         ;;
       push)
-        echo "push"
+        # Detect branch-deletion forms: --delete/-d (anywhere) with non-tag
+        # positional refs; or :<ref>/+:<ref> where <ref> is non-empty/non-tag.
+        # Mirrors Go isPushBranchDelete() in internal/guard/gitbranch.go.
+        _push_is_delete=0
+        # Pass 1: --delete / -d appears anywhere
+        _has_delete=0
+        for tok2 in "$@"; do
+          case "$tok2" in --delete|-d) _has_delete=1; break ;; esac
+        done
+        if [ "$_has_delete" = "1" ]; then
+          # Count positionals (non-flag tokens)
+          _pos_count=0
+          for tok2 in "$@"; do
+            case "$tok2" in -*);; *) _pos_count=$((_pos_count+1));; esac
+          done
+          # If 2+ positionals, first is the remote — skip it; else use all
+          _min_pos=1
+          [ "$_pos_count" -ge 2 ] && _min_pos=2
+          _pos_n=0
+          for tok2 in "$@"; do
+            case "$tok2" in
+              -*) ;;
+              *)
+                _pos_n=$((_pos_n+1))
+                [ "$_pos_n" -lt "$_min_pos" ] && continue
+                case "$tok2" in
+                  refs/tags/*) ;;
+                  *) _push_is_delete=1; break ;;
+                esac
+                ;;
+            esac
+          done
+        fi
+        # Pass 2: refspec :<ref> or +:<ref>
+        if [ "$_push_is_delete" = "0" ]; then
+          for tok2 in "$@"; do
+            case "$tok2" in
+              -*);;
+              :refs/tags/*|+:refs/tags/*|:|+:);;
+              :*|+:*) _push_is_delete=1; break;;
+            esac
+          done
+        fi
+        if [ "$_push_is_delete" = "1" ]; then
+          echo "push-delete"
+        else
+          echo "push"
+        fi
         return 0
         ;;
       checkout)
@@ -718,6 +765,9 @@ case "$SUBCOMMAND" in
     ;;
   commit)
     REASON="trackfw: git commit bruto bloqueado. Use \`trackfw commit -m '<mensagem>'\`. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+    ;;
+  push-delete)
+    REASON="trackfw: git push bruto de remoção de branch bloqueado. Use \`trackfw branch prune --remote --apply\` para apagar no origin apenas a branch integrada por PR mergeado, condicionada ao tip avaliado. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
     ;;
   push)
     REASON="trackfw: git push bruto bloqueado. Use \`trackfw push\` (para empurrar commits já criados), \`trackfw ship\` (para commit+push+PR em uma etapa) ou \`trackfw release tag\` (para publicar uma tag de release). Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
