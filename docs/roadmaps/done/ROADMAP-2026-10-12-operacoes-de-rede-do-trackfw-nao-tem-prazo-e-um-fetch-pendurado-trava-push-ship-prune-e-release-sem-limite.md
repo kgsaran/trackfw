@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-10-12
 req: "docs/req/REQ-2026-10-12-operacoes-de-rede-do-trackfw-nao-tem-prazo-e-um-fetch-pendurado-trava-push-ship-prune-e-release-sem-limite.md"
 squad: "hades-tf, apolo-tf, hefesto-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf, hefesto-tf"
 
 # Roadmap: operações de rede do trackfw não têm prazo e um fetch pendurado trava push, ship, prune e release sem limite
 
-> Created: 2026-10-12 | Status: wip
+> Created: 2026-10-12 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-10-12-operacoes-de-rede-do-trackfw-nao-tem-prazo-e-um-fetch-pendurado-trava-push-ship-prune-e-release-sem-limite.md
@@ -19,11 +19,11 @@ trackfw terminam e são governadas. **Esta REQ implementa primeiro**: o prune re
 do fetch (ADR do prune, D4) e as duas tocam `internal/commands/branch_prune*.go`.
 
 ## Acceptance Criteria
-- [ ] AC1 — Wave 0 auditado (parecer do `hades-tf`)
-- [ ] AC2 — executor de produção não bloqueia além de prazo + `WaitDelay`, provado contra neto pendurado, em 3 SOs
-- [ ] AC3/AC4 — caminho de falha por ponto; `release.go:310` falha fechada
-- [ ] AC5/AC6/AC7 — mensagem, interativo sem prazo, decisão do `git push`
-- [ ] AC8/AC9/AC10 — contrato, reconciliação dos testes, `make quality` + CI
+- [x] AC1 — Wave 0 auditado (parecer do `hades-tf`)
+- [x] AC2 — executor de produção não bloqueia além de prazo + `WaitDelay`, provado contra neto pendurado, em 3 SOs
+- [x] AC3/AC4 — caminho de falha por ponto; `release.go:310` falha fechada
+- [x] AC5/AC6/AC7 — mensagem, interativo sem prazo, decisão do `git push`
+- [x] AC8/AC9/AC10 — contrato, reconciliação dos testes, `make quality` + CI
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -138,11 +138,12 @@ git diff --quiet HEAD -- internal/
 
 ### ML-2A — Revisão de qualidade, red-team, `make quality` e CI
 **Owner:** `hefesto-tf` e `hades-tf` (em sequência)
-**Status:** 🔄 Em andamento — parecer do `hefesto-tf` aprovado com ajustes (`docs/qualidade/2026-10-12-revisao-prazo-de-rede-e-prune-remoto.md`); corretivo ML-2B ✅; red-team do `hades-tf` sem bloqueante (`docs/seguranca/2026-10-12-red-team-prazo-de-rede-e-prune-remoto.md`, com adendo do arquiteto medindo `pushInsteadOf` e injeção por nome); falta `make quality` e CI
+**Status:** ✅ Concluído — CI do PR #559 verde em `78f63381`: 20/20 checks SUCCESS, inclusive `windows-full-suites`; mergeado em `d3396fc2` (2026-10-12)
 **Acceptance criteria:**
 - [x] Parecer do `hefesto-tf` em `docs/qualidade/`; parecer de red-team do `hades-tf` em `docs/seguranca/`
 - [x] Defeitos achados viram ML corretivo neste roadmap
-- [ ] `make quality` EXIT=0 com máquina ociosa; CI do PR verde, inclusive `windows-full-suites`
+- [x] `make quality` EXIT=0 com máquina ociosa; CI do PR verde, inclusive `windows-full-suites`
+      ✅ CI do PR #559 verde em `78f63381`: 20/20 checks SUCCESS, inclusive `windows-full-suites`; mergeado em `d3396fc2` (2026-10-12)
       🔄 `make quality` EXIT=0 em `1849d74c`, máquina ociosa (load 1,5; 2962 linhas; falsify 347 OK / 0 FAIL). CI pendente: só dispara com PR
 
 ### ML-2B — Corretivo da revisão de qualidade (Q1, Q2, Q6, Q11)

@@ -1,12 +1,12 @@
 ---
-status: Proposed
+status: Accepted
 date: 2026-10-12
 author: "zeus-tf"
 ---
 
 # ADR: operação de rede do trackfw tem prazo e o estouro nunca vira sucesso silencioso
 
-> Date: 2026-10-12 | Status: Proposed
+> Date: 2026-10-12 | Status: Accepted
 
 REQ: `docs/req/REQ-2026-10-12-operacoes-de-rede-do-trackfw-nao-tem-prazo-e-um-fetch-pendurado-trava-push-ship-prune-e-release-sem-limite.md`
 Issue: #556

@@ -38,3 +38,4 @@
 - [Defeito conhecido se corrige agora](feedback_defeito_conhecido_corrige_agora.md) — residual de red-team ou inconsistência vista na auditoria vira ML no mesmo PR (KG 2x em 2026-10-09)
 - [Mudar contrato: auditar quem afirma o antigo](feedback_mudar_contrato_auditar_quem_afirma_o_antigo.md) — enumerar consumidores não basta; os TESTES deles fixam a forma antiga
 - [Proibir sem rota legítima vira contorno](feedback_proibir_sem_rota_legitima_vira_contorno.md) — medição git que escreve: dê a rota (teste Go em t.TempDir); hades contornou o guard por script
+- [Agentes escrevem o working context](project_agentes_escrevem_working_context.md) — 5/9 ignoraram a proibição; a instrução do arquivo do agente vence o handoff; corrigir no gerador

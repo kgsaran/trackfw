@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-10-12
 author: "zeus-tf"
 adr: "docs/adr/ADR-2026-10-12-operacao-de-rede-do-trackfw-tem-prazo-e-o-estouro-nunca-vira-sucesso-silencioso.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-10-12-operacoes-de-rede-do-trackfw-nao-tem-prazo-e-um-fetch-pendurado-trava-push-ship-prune-e-release-sem-limite.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-10-12-operacoes-de-rede-do-trackfw-nao-tem-prazo-e-um-fetch-pendurado-trava-push-ship-prune-e-release-sem-limite.md"
 ---
 
 # REQ: operações de rede do trackfw não têm prazo e um fetch pendurado trava push, ship, prune e release sem limite
 
-> Date: 2026-10-12 | Status: Open
+> Date: 2026-10-12 | Status: Done
 | Issue: #556
 
 ## Motivation
@@ -27,33 +27,44 @@ transforma "não consegui perguntar" em "a tag não existe no remoto".
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — 🔴 **Wave 0 (`hades-tf`):** parecer em `docs/seguranca/` cobrindo:
+- [x] **AC1** — 🔴 **Wave 0 (`hades-tf`):** parecer em `docs/seguranca/` cobrindo:
   - a população **fechada** de operações de rede, por grep dos executores e não só dos literais de
     subcomando;
   - a natureza do limite por operação (total × ocioso), **medida**;
   - se o `WaitDelay` e o grupo de processos encerram o neto `ssh` em Unix, e o que sobra no Windows;
   - o valor padrão a partir de medição;
   - os alvos de falsificação nas duas direções.
-- [ ] **AC2** — Nenhuma operação de rede não interativa da população pode bloquear além de prazo +
+      ✅ Evidência: `docs/seguranca/2026-10-12-wave0-prazo-das-operacoes-de-rede.md`, A1–A10 no ADR D7
+- [x] **AC2** — Nenhuma operação de rede não interativa da população pode bloquear além de prazo +
   `WaitDelay`. A prova é um teste que roda o **executor de produção** contra um neto pendurado. Ele
   passa com a correção e **trava ou reprova** sem o `WaitDelay`. Roda no CI de Linux, macOS e Windows.
-- [ ] **AC3** — No estouro, cada ponto segue o caminho de falha declarado no ADR (D1): aviso no
+      ✅ Evidência: `TestGitExec_AC2_WaitDelayOnly`/`_GroupKill` (executor real contra neto pendurado), mordida sem `WaitDelay` → reprova; CI #559 20/20 (inclusive `windows-full-suites`) em `78f63381`. Ressalva: a mordida e o teste de hook pulam no Windows
+- [x] **AC3** — No estouro, cada ponto segue o caminho de falha declarado no ADR (D1): aviso no
   `push`/`ship`; dado velho declarado no `prune` (local); falha fechada no `release tag`; degradação D2
   no forge. Há um teste por ponto.
-- [ ] **AC4** — `release.go:310`: falha ou estouro do `ls-remote` → falha fechada nomeada. Nunca
+      ✅ Evidência: 9 testes em `netfailpath_test.go` (ML-1B)
+- [x] **AC4** — `release.go:310`: falha ou estouro do `ls-remote` → falha fechada nomeada. Nunca
   "tag ausente".
-- [ ] **AC5** — A mensagem de estouro nomeia a operação, o prazo e a variável (`TRACKFW_NETWORK_TIMEOUT`
+      ✅ Evidência: `releaseTagRemoteCheckFailedFmt`; mordida refeita pelo arquiteto
+- [x] **AC5** — A mensagem de estouro nomeia a operação, o prazo e a variável (`TRACKFW_NETWORK_TIMEOUT`
   ou `TRACKFW_PUSH_TIMEOUT`, ADR D7/A1). Valor inválido (`0`, negativo, > 24 h) gera aviso e usa o
   padrão. Estouro em escrita diz que o estado remoto é incerto.
-- [ ] **AC6** — Operações interativas (`gh pr create` com stdin herdado) não ganham prazo, com teste
+      ✅ Evidência: `TimeoutError` `<op> timed out after <dur> (<VAR>)`; 11 testes de `netdeadline`; escrita → estado incerto
+- [x] **AC6** — Operações interativas (`gh pr create` com stdin herdado) não ganham prazo, com teste
   que afirma isso.
-- [ ] **AC7** — O `git push` do passo 4 tem o limite que o Wave 0 decidir, ou a razão escrita de não
+      ✅ Evidência: `TestDefaultExecForgeCLI_AC6_NoDeadline` (mordida com `runNetworkCmd`)
+- [x] **AC7** — O `git push` do passo 4 tem o limite que o Wave 0 decidir, ou a razão escrita de não
   ter. "Fora do escopo" não é razão: a causa é a mesma.
-- [ ] **AC7b** — `internal/sync/linear.go:76`: cliente HTTP com prazo (ADR D7/A10), com teste
+      ✅ Evidência: `TRACKFW_PUSH_TIMEOUT` 30 min + `GIT_HTTP_LOW_SPEED_*` em HTTPS; SSH: resíduo RS-1 escrito no ADR
+- [x] **AC7b** — `internal/sync/linear.go:76`: cliente HTTP com prazo (ADR D7/A10), com teste
   contra servidor que não responde.
-- [ ] **AC8** — `docs/cli-parity.md` atualizado, com a anotação `trackfw-contract`.
-- [ ] **AC9** — Cada teste novo declara a conclusão que afirma e reprova sem a correção.
-- [ ] **AC10** — `make quality` EXIT=0 e CI verde, inclusive `windows-full-suites`.
+      ✅ Evidência: `TestLinearCreateIssue_{Timeout,Success}` (ML-1C)
+- [x] **AC8** — `docs/cli-parity.md` atualizado, com a anotação `trackfw-contract`.
+      ✅ Evidência: seção "Prazo em operações de rede" em `docs/cli-parity.md`; `check-parity-contract-coverage.sh` OK
+- [x] **AC9** — Cada teste novo declara a conclusão que afirma e reprova sem a correção.
+      ✅ Evidência: frase + mordida por teste em cada ML; 3 mutações próprias da revisão de qualidade (Q1 corrigido no ML-2B)
+- [x] **AC10** — `make quality` EXIT=0 e CI verde, inclusive `windows-full-suites`.
+      ✅ Evidência: `make quality` EXIT=0, máquina ociosa (347 OK / 0 FAIL); CI #559 20/20 (inclusive `windows-full-suites`) em `78f63381`
 
 ## Negative scope
 
@@ -72,4 +83,4 @@ ADR: docs/adr/ADR-2026-10-12-operacao-de-rede-do-trackfw-tem-prazo-e-o-estouro-n
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-10-12-operacoes-de-rede-do-trackfw-nao-tem-prazo-e-um-fetch-pendurado-trava-push-ship-prune-e-release-sem-limite.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-10-12-operacoes-de-rede-do-trackfw-nao-tem-prazo-e-um-fetch-pendurado-trava-push-ship-prune-e-release-sem-limite.md
