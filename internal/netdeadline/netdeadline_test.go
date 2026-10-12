@@ -134,12 +134,12 @@ func TestPushTimeout_Default(t *testing.T) {
 }
 
 // TestTimeoutError_Error asserts the message format matches ADR D5.
-// Format: "<op> excedeu <duration> (<var>)".
+// Format: "<op> timed out after <duration> (<var>)".
 // Note: time.Duration.String() formats 60s as "1m0s", not "60s".
 // Conclusion: the error message correctly identifies the operation, limit and variable.
 func TestTimeoutError_Error(t *testing.T) {
 	e := &TimeoutError{Op: "git fetch origin", Limit: 60 * time.Second, Var: NetworkTimeoutEnv}
-	want := "git fetch origin excedeu 1m0s (TRACKFW_NETWORK_TIMEOUT)"
+	want := "git fetch origin timed out after 1m0s (TRACKFW_NETWORK_TIMEOUT)"
 	if e.Error() != want {
 		t.Fatalf("want %q, got %q", want, e.Error())
 	}

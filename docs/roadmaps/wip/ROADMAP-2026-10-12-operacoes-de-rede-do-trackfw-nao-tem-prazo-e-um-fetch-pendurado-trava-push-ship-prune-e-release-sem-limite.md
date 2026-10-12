@@ -146,13 +146,18 @@ git diff --quiet HEAD -- internal/
 
 ### ML-2B — Corretivo da revisão de qualidade (Q1, Q2, Q6, Q11)
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-12; testes rerodados pelo arquiteto
 **Por que o escopo original não previa:** achados do parecer de qualidade; defeito conhecido se corrige no mesmo PR.
 **Files affected:** `internal/commands/netexec_test.go`, novo teste de varredura em `internal/commands/`, `internal/netdeadline/netdeadline.go` e teste, `docs/cli-parity.md`
 **Acceptance criteria:**
-- [ ] Q1: `TestWaitDelay_ResolveNetworkErr` cobre `ctx.Err()!=nil` junto com `ErrWaitDelay`+sucesso → `(true,false)`; a inversão dos ramos reprova
-- [ ] Q2: teste de varredura reprova `exec.Command`/`CommandContext` de `git` com `fetch`/`ls-remote`/`push`, ou de `gh`, fora dos executores com prazo; mordida mostrada
-- [ ] Q6: limite superior do AC2 com margem para o CI de Windows
-- [ ] Q11: mensagem de estouro em inglês, como as vizinhas; contrato atualizado
-- [ ] `go test ./internal/commands/ ./internal/netdeadline/ ./internal/sync/` EXIT=0; `make parity-rest` EXIT=0
+- [x] Q1: `TestWaitDelay_ResolveNetworkErr` cobre `ctx.Err()!=nil` junto com `ErrWaitDelay`+sucesso → `(true,false)`; a inversão dos ramos reprova
+      ✅ Case 5; mordida (ramos invertidos) → `want (true, false), got (false, true)`
+- [x] Q2: teste de varredura reprova `exec.Command`/`CommandContext` de `git` com `fetch`/`ls-remote`/`push`, ou de `gh`, fora dos executores com prazo; mordida mostrada
+      ✅ `TestT4_NoDirectNetworkExecCommand` (`go/ast`, todo `internal/`); mordida com 3 chamadas injetadas em `internal/forge/resolve.go` → 3 apontadas; nenhuma chamada de rede existente fora dos executores
+- [x] Q6: limite superior do AC2 com margem para o CI de Windows
+      ✅ três testes de tempo com +3 s
+- [x] Q11: mensagem de estouro em inglês, como as vizinhas; contrato atualizado
+      ✅ `"%s timed out after %s (%s)"`; contrato e exemplo do ADR D5 atualizados
+- [x] `go test ./internal/commands/ ./internal/netdeadline/ ./internal/sync/` EXIT=0; `make parity-rest` EXIT=0
+      ✅ EXIT=0; `make parity-rest` EXIT=0
 

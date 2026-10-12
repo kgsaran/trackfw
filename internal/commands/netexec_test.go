@@ -346,8 +346,9 @@ func TestGitExec_AC2_WaitDelayOnly(t *testing.T) {
 			t.Errorf("elapsed %s < 3s deadline; deadline was not honoured", elapsed)
 		}
 
-		// Upper bound: must have returned within deadline + WaitDelay + 1s margin.
-		maxExpected := 3*time.Second + cmdWaitDelay + 1*time.Second
+		// Upper bound: must have returned within deadline + WaitDelay + 3s margin.
+		// 3s provides enough headroom for Windows CI process-spawn overhead (~1-2s extra).
+		maxExpected := 3*time.Second + cmdWaitDelay + 3*time.Second
 		if elapsed >= maxExpected {
 			t.Errorf("elapsed %s >= %s (deadline+WaitDelay+margin); WaitDelay did not bound the wait", elapsed, maxExpected)
 		}
@@ -448,9 +449,10 @@ func TestGitExec_AC2_Bite_NoWaitDelay(t *testing.T) {
 
 // TestWaitDelay_ResolveNetworkErr verifies the classification logic of resolveNetworkErr.
 //
-// Conclusion: resolveNetworkErr returns (true,false) on context expiry, (false,true) when
-// exec.ErrWaitDelay fires with a success ProcessState, and (false,false) for other errors.
-// Both defaultGitExec and runNetworkCmd rely on this function for the D1 fix.
+// Conclusion: resolveNetworkErr returns (true,false) on context expiry (including when
+// exec.ErrWaitDelay+success also holds simultaneously), (false,true) when exec.ErrWaitDelay
+// fires with a success ProcessState and ctx has not expired, and (false,false) for other
+// errors. Both defaultGitExec and runNetworkCmd rely on this function for the D1 fix.
 func TestWaitDelay_ResolveNetworkErr(t *testing.T) {
 	// Obtain a real success ProcessState by running a no-op subprocess.
 	probe := exec.Command(os.Args[0], "-test.run=^$")
@@ -486,6 +488,18 @@ func TestWaitDelay_ResolveNetworkErr(t *testing.T) {
 	isTimeout, isSuccess = resolveNetworkErr(exec.ErrWaitDelay, bg, &exec.Cmd{})
 	if isTimeout || isSuccess {
 		t.Errorf("ErrWaitDelay+nil ProcessState: want (false, false), got (%v, %v)", isTimeout, isSuccess)
+	}
+
+	// Case 5: ErrWaitDelay + success ProcessState + ctx already expired → (true, false).
+	// Context expiry takes precedence over the WaitDelay-success branch (ADR D1).
+	// Mordida: inverting the order of the two if-blocks in resolveNetworkErr causes this
+	// case to return (false, true) instead of (true, false), and this assertion fails.
+	cancelledCtx, cancelFn := context.WithCancel(bg)
+	cancelFn() // expire the context immediately
+	fakeSuccessCmd := &exec.Cmd{ProcessState: successState}
+	isTimeout, isSuccess = resolveNetworkErr(exec.ErrWaitDelay, cancelledCtx, fakeSuccessCmd)
+	if !isTimeout || isSuccess {
+		t.Errorf("ErrWaitDelay+success+expired ctx: want (true, false), got (%v, %v)", isTimeout, isSuccess)
 	}
 }
 
@@ -563,9 +577,10 @@ func TestNetworkCmd_WaitDelay_ExitZeroWithHangingGrandchild(t *testing.T) {
 	if elapsed < testDelay {
 		t.Errorf("elapsed %s < %s (cmdWaitDelay); WaitDelay branch may not have been exercised", elapsed, testDelay)
 	}
-	// Upper bound: must complete well within ~2s.
-	if elapsed >= 2*time.Second {
-		t.Errorf("elapsed %s >= 2s; test took too long (possible hang)", elapsed)
+	// Upper bound: must complete within cmdWaitDelay + 3s margin.
+	// 3s provides enough headroom for process-spawn overhead on slow CI.
+	if elapsed >= testDelay+3*time.Second {
+		t.Errorf("elapsed %s >= %s (cmdWaitDelay+3s); test took too long (possible hang)", elapsed, testDelay+3*time.Second)
 	}
 	t.Logf("WaitDelay ExitZero (runNetworkCmd): returned in %s; stdout=%q; grandchild pid=%d",
 		elapsed, capturedPID, grandchildPID)
@@ -662,9 +677,10 @@ func TestGitExec_WaitDelay_ExitZeroWithHangingGrandchild(t *testing.T) {
 	if elapsed < testDelay {
 		t.Errorf("elapsed %s < %s (cmdWaitDelay); WaitDelay branch may not have been exercised", elapsed, testDelay)
 	}
-	// Upper bound: must complete well within ~3s (git startup adds overhead vs raw cmd).
-	if elapsed >= 3*time.Second {
-		t.Errorf("elapsed %s >= 3s; test took too long (possible hang)", elapsed)
+	// Upper bound: must complete within cmdWaitDelay + 3s margin.
+	// 3s provides enough headroom for git startup and process-spawn overhead on slow CI.
+	if elapsed >= testDelay+3*time.Second {
+		t.Errorf("elapsed %s >= %s (cmdWaitDelay+3s); test took too long (possible hang)", elapsed, testDelay+3*time.Second)
 	}
 	t.Logf("WaitDelay ExitZero (defaultGitExec): returned in %s with out=%q; grandchild pid=%d",
 		elapsed, result.out, grandchildPID)

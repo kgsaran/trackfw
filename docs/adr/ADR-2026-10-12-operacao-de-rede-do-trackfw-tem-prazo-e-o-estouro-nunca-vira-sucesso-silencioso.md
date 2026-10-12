@@ -75,7 +75,7 @@ não presumido.
 (`TRACKFW_NETWORK_TIMEOUT`, duração no formato do Go) sobrepõe o padrão. Valor inválido gera aviso e
 usa o padrão, sem nunca desligar o prazo em silêncio. `0` só desliga o prazo se o Wave 0 justificar.
 
-**D5 — A mensagem de estouro nomeia o prazo e a variável.** Por exemplo: `git fetch origin excedeu
+**D5 — A mensagem de estouro nomeia o prazo e a variável.** Por exemplo: `git fetch origin timed out after
 60s (TRACKFW_NETWORK_TIMEOUT)`. Assim o usuário distingue estouro de prazo de "offline".
 
 **D6 — O teste que prova o prazo exercita o executor real.** Um `execGit` falso **substitui**

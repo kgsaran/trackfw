@@ -52,7 +52,7 @@ var ErrTimeout = errors.New("network timeout")
 // TimeoutError is the concrete error type carrying the operation, limit and env var.
 // It implements errors.Is against ErrTimeout.
 //
-// Example message: "git fetch origin excedeu 1m0s (TRACKFW_NETWORK_TIMEOUT)"
+// Example message: "git fetch origin timed out after 1m0s (TRACKFW_NETWORK_TIMEOUT)"
 type TimeoutError struct {
 	// Op is the human-readable operation name, e.g. "git fetch".
 	Op string
@@ -64,7 +64,7 @@ type TimeoutError struct {
 
 // Error returns the formatted timeout message (ADR D5).
 func (e *TimeoutError) Error() string {
-	return fmt.Sprintf("%s excedeu %s (%s)", e.Op, e.Limit, e.Var)
+	return fmt.Sprintf("%s timed out after %s (%s)", e.Op, e.Limit, e.Var)
 }
 
 // Is makes errors.Is(err, ErrTimeout) return true.

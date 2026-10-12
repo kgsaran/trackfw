@@ -8682,7 +8682,7 @@ if errors.Is(err, netdeadline.ErrTimeout) { /* estouro nomeado */ }
 `*netdeadline.TimeoutError` implementa `Is(ErrTimeout) bool`. A mensagem formatada segue o ADR D5:
 
 ```
-git fetch excedeu 60s (TRACKFW_NETWORK_TIMEOUT)
+git fetch timed out after 60s (TRACKFW_NETWORK_TIMEOUT)
 ```
 
 ### Caminho de falha por ponto de chamada
