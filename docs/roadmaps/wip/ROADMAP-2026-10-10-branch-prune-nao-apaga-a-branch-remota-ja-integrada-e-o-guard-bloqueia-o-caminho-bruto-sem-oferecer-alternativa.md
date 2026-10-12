@@ -125,10 +125,11 @@ git diff --quiet HEAD -- internal/
 
 ### ML-1D — Contrato
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-10-12; nome de teste inexistente citado no contrato (`TestGuard_PushBranchDelete`) corrigido pelo arquiteto
 **Files affected:** `docs/cli-parity.md` (depois do ML-1B do ROADMAP-2026-10-12)
 **Acceptance criteria:**
-- [ ] Seção do `branch prune --remote` e da branch padrão do forge, com `trackfw-contract`; `make parity-rest` EXIT=0
+- [x] Seção do `branch prune --remote` e da branch padrão do forge, com `trackfw-contract`; `make parity-rest` EXIT=0
+      ✅ subseção `--remote` (anotação `gap`, coberta por `branch_prune_remote_test.go`), branch padrão do forge, tabela do guard; `check-parity-contract-coverage.sh` 296/0; `make parity-rest` EXIT=0
 
 ## Wave 2 — Revisão e fechamento
 > Dependencies: Wave 1 dos dois roadmaps. A revisão é única para a branch (ML-2A do ROADMAP-2026-10-12).
