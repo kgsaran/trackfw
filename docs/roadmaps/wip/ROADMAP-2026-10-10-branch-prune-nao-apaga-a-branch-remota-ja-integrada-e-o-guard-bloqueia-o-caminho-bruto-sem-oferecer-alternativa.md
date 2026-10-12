@@ -96,7 +96,7 @@ git diff --quiet HEAD -- internal/
 
 ### ML-1B — `branch prune --remote`
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected (provisório):** `internal/commands/branch_prune.go`, `internal/commands/branch_prune_forge.go`, novo `internal/commands/branch_prune_remote.go`, testes.
 **Acceptance criteria:**
 - [ ] Sem `--remote`: nenhuma chamada que escreva no remoto (teste com executor que registra os argumentos)
@@ -107,7 +107,7 @@ git diff --quiet HEAD -- internal/
 
 ### ML-1C — Mensagem do guard para remoção de branch
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected (provisório):** `internal/guard/gitbranch.go`, `internal/generators/testdata/guard-sh-reference/git-branch-guard.sh` e os demais sítios da seção 1.1 do parecer, testes de paridade.
 **Acceptance criteria:**
 - [ ] `--delete`/`-d`/`:<ref>` (não `refs/tags/`) → mensagem que nomeia `trackfw branch prune --remote --apply`; `--mirror`, `--prune`, `:refs/tags/…`, `:` e push comum mantêm a atual (A1)
