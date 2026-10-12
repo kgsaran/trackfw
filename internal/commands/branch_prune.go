@@ -319,10 +319,15 @@ type branchPruneDeps struct {
 	// flag ultimately performs the deletion.
 	deleteBranch func(gitExec func(args ...string) (string, error), name string) error
 	out          io.Writer
+	// remote, when true, enables the --remote section (ROADMAP-2026-10-10 ML-1B):
+	// evaluate and optionally delete remote branches on origin that are safe to remove.
+	// false (default) preserves byte-identical behaviour with the pre-ML-1B implementation.
+	remote bool
 }
 
 func newBranchPruneCmd() *cobra.Command {
 	var apply bool
+	var remote bool
 
 	cmd := &cobra.Command{
 		Use:   "prune",
@@ -371,12 +376,14 @@ squash-merged branches, which never have fast-forward ancestry with main.`,
 				worktreeBranches:  defaultWorktreeBranches,
 				deleteBranch:      defaultDeleteBranch,
 				out:               cmd.OutOrStdout(),
+				remote:            remote,
 			}
 			return runBranchPrune(apply, deps)
 		},
 	}
 
 	cmd.Flags().BoolVar(&apply, "apply", false, "Actually delete branches decided as integrated (default: report only, delete nothing)")
+	cmd.Flags().BoolVar(&remote, "remote", false, "Also evaluate (and, with --apply, delete) integrated remote branches on origin")
 
 	return cmd
 }
@@ -406,14 +413,14 @@ func runBranchPrune(apply bool, deps branchPruneDeps) error {
 			fmt.Fprintf(deps.out, "Warning: could not fetch origin (offline, no remote, or fetch failed) — evaluating with possibly stale data; a branch merged upstream since the last fetch may still be reported as pending.\n")
 		}
 	}
-	_ = fetchFailed // reserved for ROADMAP-2026-10-10 ML-1B (remote deletion pre-condition D4)
-
 	// Resolve the default branch once per execution (A7, ADR-2026-10-12):
 	// 1. forge API (gh api repos/<owner>/<repo> → default_branch)
 	// 2. symref (refs/remotes/origin/HEAD)
 	// 3. fallback literal "main"/"origin/main"
 	// The forge name is authoritative; no cross-check with the symref is done (vault note).
-	defaultLocalName, defaultRemoteRef := resolveDefaultBranch(deps.gitExec, deps.ghExec)
+	// defaultFromForge is used by ML-1B (remote prune D4 third bullet): remote deletion is
+	// blocked when the forge could not supply the default branch name.
+	defaultLocalName, defaultRemoteRef, defaultFromForge := resolveDefaultBranchWithSource(deps.gitExec, deps.ghExec)
 
 	if _, err := deps.gitExec("rev-parse", "--verify", "-q", defaultRemoteRef); err != nil {
 		fmt.Fprintf(deps.out, "trackfw branch prune: %s not found — offline, no remote configured, or never fetched. Refusing to evaluate any branch; nothing deleted.\n", defaultRemoteRef)
@@ -480,40 +487,41 @@ func runBranchPrune(apply bool, deps branchPruneDeps) error {
 		} else {
 			fmt.Fprintf(deps.out, "[dry-run] would delete %d branch(es): %s. Rerun with --apply to delete.\n", len(toDelete), strings.Join(toDelete, ", "))
 		}
-		return nil
-	}
-
-	if len(toDelete) == 0 {
+	} else if len(toDelete) == 0 {
 		fmt.Fprintln(deps.out, "nothing to delete.")
+	} else {
+		var deleted []string
+		for _, b := range toDelete {
+			// Re-check current/worktree status immediately before each delete — belt-and-suspenders
+			// against the branch changing state between the report above and this loop (e.g. another
+			// process checking it out into a new worktree mid-run).
+			if b == deps.currentBranch(deps.gitExec) {
+				fmt.Fprintf(deps.out, "skip %s: became the current branch — refusing to delete\n", b)
+				continue
+			}
+			if deps.worktreeBranches(deps.gitExec)[b] {
+				fmt.Fprintf(deps.out, "skip %s: became checked out in a worktree — refusing to delete\n", b)
+				continue
+			}
+			if err := deps.deleteBranch(deps.gitExec, b); err != nil {
+				fmt.Fprintf(deps.out, "failed to delete %s: %v\n", b, err)
+				continue
+			}
+			deleted = append(deleted, b)
+		}
+		if len(deleted) == 0 {
+			fmt.Fprintln(deps.out, "deleted 0 branch(es).")
+		} else {
+			fmt.Fprintf(deps.out, "deleted %d branch(es): %s\n", len(deleted), strings.Join(deleted, ", "))
+		}
+	}
+
+	// ML-1B (ROADMAP-2026-10-10): remote prune section. When deps.remote is false,
+	// preserve the byte-identical return that existed before this ML was implemented.
+	if !deps.remote {
 		return nil
 	}
-
-	var deleted []string
-	for _, b := range toDelete {
-		// Re-check current/worktree status immediately before each delete — belt-and-suspenders
-		// against the branch changing state between the report above and this loop (e.g. another
-		// process checking it out into a new worktree mid-run).
-		if b == deps.currentBranch(deps.gitExec) {
-			fmt.Fprintf(deps.out, "skip %s: became the current branch — refusing to delete\n", b)
-			continue
-		}
-		if deps.worktreeBranches(deps.gitExec)[b] {
-			fmt.Fprintf(deps.out, "skip %s: became checked out in a worktree — refusing to delete\n", b)
-			continue
-		}
-		if err := deps.deleteBranch(deps.gitExec, b); err != nil {
-			fmt.Fprintf(deps.out, "failed to delete %s: %v\n", b, err)
-			continue
-		}
-		deleted = append(deleted, b)
-	}
-
-	if len(deleted) == 0 {
-		fmt.Fprintln(deps.out, "deleted 0 branch(es).")
-	} else {
-		fmt.Fprintf(deps.out, "deleted %d branch(es): %s\n", len(deleted), strings.Join(deleted, ", "))
-	}
-	return nil
+	return runRemotePrune(apply, fetchFailed, fetchTimedOut, defaultLocalName, defaultFromForge, snapshot, deps)
 }
 
 // defaultListLocalBranches runs `git branch --format=%(refname:short)` and returns one name per

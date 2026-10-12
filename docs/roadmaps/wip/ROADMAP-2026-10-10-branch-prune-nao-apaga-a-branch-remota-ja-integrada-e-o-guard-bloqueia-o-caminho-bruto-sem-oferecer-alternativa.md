@@ -21,7 +21,8 @@ depois**: a remoção remota exige fetch concluído dentro do prazo (ADR D4), e 
 - [ ] AC1 — Wave 0 auditado (parecer do `hades-tf`)
 - [ ] AC3/AC4/AC5 — `--remote` opt-in; só `merged_pr` com tip remoto contido; lease no SHA avaliado; `keep`/`review`/padrão/protegida nunca apagadas
 - [ ] AC6 — mensagem do guard aponta para `trackfw branch prune --remote --apply`
-- [ ] AC7 — dry-run com `--remote` neste repositório (reformulado pelo C12: as remotas com commits após o PR mergeado saem `keep`, com motivo)
+- [x] AC7 — dry-run com `--remote` neste repositório (reformulado pelo C12: as remotas com commits após o PR mergeado saem `keep`, com motivo)
+      ✅ 2026-10-12, binário da branch: 2 remotas avaliadas contra o forge, ambas `keep` (sem PR mergeado), nada apagado. As duas remotas motivadoras já tinham sido apagadas no forge pelo usuário; o caminho de remoção é provado pelo `TestRemoteDeleteForceLease`
 - [ ] AC8/AC9/AC10 — contrato, reconciliação dos testes, `make quality` + CI
 
 ## Status Legend
@@ -96,14 +97,19 @@ git diff --quiet HEAD -- internal/
 
 ### ML-1B — `branch prune --remote`
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-12. Mordida A6 refeita pelo arquiteto (`deletable()` → `TestRemotePrune_ContentHeuristicWithoutPR_Keep` reprova). Pré-condição extra do agente, aceita: branch padrão que não veio do forge também bloqueia a remoção remota (D2). Correção ao parecer do Wave 0: o lease implícito (M1) é pego pelo braço C, não pelo B — medido
 **Files affected (provisório):** `internal/commands/branch_prune.go`, `internal/commands/branch_prune_forge.go`, novo `internal/commands/branch_prune_remote.go`, testes.
 **Acceptance criteria:**
-- [ ] Sem `--remote`: nenhuma chamada que escreva no remoto (teste com executor que registra os argumentos)
-- [ ] `--remote` sem `--apply`: só relata
-- [ ] Remoção exige `decision == merged_pr` sobre o tip remoto (A6) e lease no SHA avaliado; `TestRemoteDeleteForceLease` com braços A/B/C e mutações (A9)
-- [ ] `keep`/`review`/padrão/protegida (A4)/base de PR aberto (A3) nunca apagadas, um teste por caso; `origin/HEAD` excluído por refname (A8); URLs de fetch e push divergentes (A5), fetch falho/estourado ou forge degradado/truncado → nenhuma remoção remota
-- [ ] `go build ./...` EXIT=0; `go test ./internal/commands/` EXIT=0
+- [x] Sem `--remote`: nenhuma chamada que escreva no remoto (teste com executor que registra os argumentos)
+      ✅ `TestRemotePrune_NoRemoteFlag_NoPushArgs` (executor que registra argumentos)
+- [x] `--remote` sem `--apply`: só relata
+      ✅ `TestRemotePrune_NoApplyFlag_NoPush`
+- [x] Remoção exige `decision == merged_pr` sobre o tip remoto (A6) e lease no SHA avaliado; `TestRemoteDeleteForceLease` com braços A/B/C e mutações (A9)
+      ✅ `branch_prune_remote.go:183` (`!= branchPruneDecisionMergedPR`); `TestRemoteDeleteForceLease` A/B/C em bare repo real; mordidas M1 (lease implícito) → C reprova, M2 (lease em `refs/remotes`) → B e C, M3 (SHA relido) → C
+- [x] `keep`/`review`/padrão/protegida (A4)/base de PR aberto (A3) nunca apagadas, um teste por caso; `origin/HEAD` excluído por refname (A8); URLs de fetch e push divergentes (A5), fetch falho/estourado ou forge degradado/truncado → nenhuma remoção remota
+      ✅ testes (d)–(i): commits após o PR, PR aberto, base de PR aberto, protegida, padrão/`origin/HEAD` por refname, 6 pré-condições
+- [x] `go build ./...` EXIT=0; `go test ./internal/commands/` EXIT=0
+      ✅ `go build`, `go vet` (inclusive `GOOS=windows`), `go test ./internal/commands/` 40,7 s, rodados pelo arquiteto
 
 ### ML-1C — Mensagem do guard para remoção de branch
 **Owner:** `apolo-tf`

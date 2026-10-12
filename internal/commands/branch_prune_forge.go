@@ -7,6 +7,37 @@ import (
 	"strings"
 )
 
+// resolveDefaultBranchWithSource resolves the repository's default branch name,
+// using three sources in order, and reports whether the result came from the
+// forge API (fromForge=true). The three sources are the same as resolveDefaultBranch:
+//  1. Forge API (gh api repos/<owner>/<repo> → default_branch), via ghExec.
+//  2. Local tracking symref: git symbolic-ref --short refs/remotes/origin/HEAD.
+//  3. Literal fallback: "main" / "origin/main".
+//
+// Returns (localName, remoteRef, fromForge) where remoteRef == "origin/" + localName.
+// fromForge is true only when source 1 succeeded. Sources 2 and 3 return fromForge=false.
+// Callers that need to block remote deletions when the forge could not provide the
+// default branch (ADR-2026-10-12 D4 third bullet) should check fromForge.
+// Callers that only need (localName, remoteRef) should use the resolveDefaultBranch wrapper.
+func resolveDefaultBranchWithSource(gitExec func(...string) (string, error), ghExec ghExecFn) (localName, remoteRef string, fromForge bool) {
+	// 1. Forge API.
+	if ghExec != nil {
+		if name := forgeDefaultBranch(gitExec, ghExec); name != "" {
+			return name, "origin/" + name, true
+		}
+	}
+	// 2. Local tracking symref.
+	if out, err := gitExec("symbolic-ref", "--short", "refs/remotes/origin/HEAD"); err == nil {
+		s := strings.TrimSpace(out)
+		// s is normally "origin/main", "origin/master", etc. Strip the "origin/" prefix.
+		if after, ok := strings.CutPrefix(s, "origin/"); ok && after != "" {
+			return after, s, false
+		}
+	}
+	// 3. Literal fallback.
+	return branchPruneDefaultLocalName, branchPruneDefaultRemoteRef, false
+}
+
 // resolveDefaultBranch resolves the repository's default branch name, using
 // three sources in order:
 //  1. Forge API (gh api repos/<owner>/<repo> → default_branch), via ghExec.
@@ -27,22 +58,8 @@ import (
 // the symref; the vault note explains why that comparison introduces false
 // refusals for legitimate clones.
 func resolveDefaultBranch(gitExec func(...string) (string, error), ghExec ghExecFn) (localName, remoteRef string) {
-	// 1. Forge API.
-	if ghExec != nil {
-		if name := forgeDefaultBranch(gitExec, ghExec); name != "" {
-			return name, "origin/" + name
-		}
-	}
-	// 2. Local tracking symref.
-	if out, err := gitExec("symbolic-ref", "--short", "refs/remotes/origin/HEAD"); err == nil {
-		s := strings.TrimSpace(out)
-		// s is normally "origin/main", "origin/master", etc. Strip the "origin/" prefix.
-		if after, ok := strings.CutPrefix(s, "origin/"); ok && after != "" {
-			return after, s
-		}
-	}
-	// 3. Literal fallback.
-	return branchPruneDefaultLocalName, branchPruneDefaultRemoteRef
+	localName, remoteRef, _ = resolveDefaultBranchWithSource(gitExec, ghExec)
+	return
 }
 
 // forgeDefaultBranch queries gh api repos/<owner>/<repo> and extracts
