@@ -81,6 +81,41 @@ bloqueando a forma bruta. A mensagem vive em mais de um sítio (`internal/guard/
 referência `internal/generators/testdata/guard-sh-reference/git-branch-guard.sh`, no mínimo); o
 Wave 0 fecha a lista.
 
+### D8 — Ajustes do Wave 0 (`docs/seguranca/2026-10-12-wave0-prune-remoto.md`, aprovado com ajustes)
+
+- **A1 (D7):** a mensagem nova só vale para formas que **apagam branch**: `--delete`/`-d`/`:<ref>`, em
+  que `<ref>` não é `refs/tags/`. `--mirror`, `--prune`, `:refs/tags/…` e `:` sozinho mantêm a
+  mensagem atual.
+- **A2 (D7):** o teste de paridade do guard recebe os vetores de remoção de branch.
+- **A3 (D3):** branch que é `baseRefName` de um PR **aberto** fica de fora. Apagá-la fecharia o PR
+  empilhado.
+- **A4 (D6):** proteção via `gh api 'repos/<o>/<r>/branches?protected=true&per_page=100' --paginate`
+  (medido: responde sem token de administrador). Se a consulta falhar, nenhuma remoção remota.
+- **A5 (D2):** se a URL de fetch e a de push do `origin` divergirem, nenhuma remoção remota.
+- **A6 (D3), crítico:** o caminho remoto exige `decision == merged_pr`. Nunca usa `deletable()`,
+  que também aceita as decisões da heurística de conteúdo.
+- **A7 (D2):** a branch padrão vem do forge (`default_branch`), não do literal `"main"`
+  (`branch_prune.go:19,26`; filtro `baseRefName` em `branch_prune_forge.go:293`). O defeito também
+  existe no prune **local** de hoje: num repositório `master`, o comando recusa tudo. Mesma causa,
+  então entra como ML desta REQ.
+- **A8 (D2):** `refs/remotes/origin/HEAD` é excluído pelo refname completo, porque o short name dele
+  é `origin`.
+- **A9 (D5):** o teste do lease tem três braços:
+  - A: tip igual apaga;
+  - B: o remoto avançou e a remoção é recusada por *stale info*;
+  - C: houve refetch entre a avaliação e a remoção, e o lease usa o SHA **avaliado**.
+  O teste tem mutações que precisam reprovar e confere a ref com `rev-parse --verify --quiet` no
+  bare (`ls-remote` dá EXIT=0 com saída vazia). O lease na forma de remoção foi medido pelo Wave 0
+  (braço igual apaga; braço avançado `! [rejected] (stale info)`, ref mantida).
+- **C12 (corrige a hipótese da REQ):** as duas remotas que motivaram a REQ têm commits **depois** do
+  head do PR mergeado (`git merge-base --is-ancestor 2d3a7dbb d3970eff` → 1;
+  `99477f44 c61300ca` → 1; conferido pelo arquiteto). Por D3, elas são `keep`, e é isso que deve
+  acontecer: o commit pós-merge nunca passou por PR, e a decisão sobre ele é humana.
+- **Resíduos aceitos:** `git -c alias.p=push p …` não é reconhecido pelo guard (EXIT=0). É da mesma
+  classe do script que chama `git`, e o ADR-2026-08-12 já declara que contra agente com shell não há
+  prevenção. Remoção por configuração (`remote.origin.push`, `remote.origin.mirror`) também fica
+  como resíduo.
+
 ## Consequences
 
 - A operação que hoje acontece fora do trilho passa a ter caminho governado, auditável e

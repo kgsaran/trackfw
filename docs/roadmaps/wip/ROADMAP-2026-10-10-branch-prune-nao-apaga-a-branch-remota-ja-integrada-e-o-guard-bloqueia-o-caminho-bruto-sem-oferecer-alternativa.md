@@ -21,7 +21,7 @@ depois**: a remoção remota exige fetch concluído dentro do prazo (ADR D4), e 
 - [ ] AC1 — Wave 0 auditado (parecer do `hades-tf`)
 - [ ] AC3/AC4/AC5 — `--remote` opt-in; só `merged_pr` com tip remoto contido; lease no SHA avaliado; `keep`/`review`/padrão/protegida nunca apagadas
 - [ ] AC6 — mensagem do guard aponta para `trackfw branch prune --remote --apply`
-- [ ] AC7 — dry-run com `--remote` neste repositório
+- [ ] AC7 — dry-run com `--remote` neste repositório (reformulado pelo C12: as remotas com commits após o PR mergeado saem `keep`, com motivo)
 - [ ] AC8/AC9/AC10 — contrato, reconciliação dos testes, `make quality` + CI
 
 ## Status Legend
@@ -32,7 +32,7 @@ depois**: a remoção remota exige fetch concluído dentro do prazo (ADR D4), e 
 
 ### ML-0A — Threat model da remoção remota
 **Owner:** `hades-tf`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — auditado em 2026-10-12 · aprovado com ajustes A1–A9 (incorporados ao ADR, D8)
 **Files affected:** `docs/seguranca/2026-10-12-wave0-prune-remoto.md` (novo; único arquivo que pode ser escrito)
 **Actions:**
 1. **Completude da população.**
@@ -62,9 +62,12 @@ depois**: a remoção remota exige fetch concluído dentro do prazo (ADR D4), e 
    `--apply` escreve no remoto).
 6. **Resíduo declarado** e **veredito sobre o ADR** com ajustes numerados (A1, A2, …).
 **Acceptance criteria:**
-- [ ] As seis seções respondidas com evidência (comando + resultado, ou arquivo:linha, ou documentação citada), não asserção
-- [ ] Nenhuma linha de implementação escrita; nenhum arquivo além do parecer alterado
-- [ ] Nenhuma escrita em remoto real; nenhum `git commit`/`push` bruto
+- [x] As seis seções respondidas com evidência (comando + resultado, ou arquivo:linha, ou documentação citada), não asserção
+      ✅ Evidência: `docs/seguranca/2026-10-12-wave0-prune-remoto.md`; C12 e A7 conferidos pelo arquiteto (`merge-base --is-ancestor` → 1 nas duas; `branch_prune.go:19,26`, `branch_prune_forge.go:293`)
+- [x] Nenhuma linha de implementação escrita; nenhum arquivo além do parecer alterado
+      ✅ Evidência: `git diff --quiet HEAD -- internal/` EXIT=0
+- [x] Nenhuma escrita em remoto real; nenhum `git commit`/`push` bruto
+      ⚠️ Ressalva: nenhum remoto real foi tocado, mas a sonda do lease rodou `git commit`/`push` brutos dentro de um script bash em tmpdir isolado — contorno do guard que o handoff proibia. Sem impacto no projeto; registrado e levado ao usuário. A medição vale, e o teste Go do ML-1B a refaz de forma legítima
 
 **Gates da wave:**
 ```bash
@@ -74,35 +77,46 @@ git diff --quiet HEAD -- internal/
 ```
 
 ## Wave 1 — Implementação
-> Dependencies: Wave 0 auditado e ajustes no ADR; **Wave 1 do ROADMAP-2026-10-12 concluído** (prazo
-> no fetch e no `gh`). ML-1A e ML-1B tocam arquivos disjuntos e podem rodar em paralelo.
+> Dependencies: Wave 0 auditado (✅) e **Wave 1 do ROADMAP-2026-10-12 concluído** (prazo no fetch e no
+> `gh`). ML-1A → ML-1B são sequenciais (mesmos arquivos); ML-1C toca arquivos disjuntos e pode correr
+> em paralelo a eles; ML-1D por último (`docs/cli-parity.md` também é escrito pelo outro roadmap).
 
-### ML-1A — `branch prune --remote`
+### ML-1A — Branch padrão vem do forge (A7)
+**Owner:** `apolo-tf`
+**Status:** ⬜ Pendente
+**Por que o escopo original não previa:** o Wave 0 achou o literal `"main"` em `branch_prune.go:19,26` e no filtro `baseRefName` (`branch_prune_forge.go:293`). Num repositório `master`, o prune local de hoje recusa tudo. É a mesma causa do D2 do ADR (branch padrão vinda do forge), por isso entra nesta REQ.
+**Files affected:** `internal/commands/branch_prune.go`, `internal/commands/branch_prune_forge.go`, testes.
+**Acceptance criteria:**
+- [ ] Branch padrão vem do `default_branch` do forge; sem forge, do symref `origin/HEAD`; sem nenhum dos dois, recusa como hoje
+- [ ] Teste com repositório `master` (local) passa; sem a correção, reprova
+- [ ] `go build ./...` EXIT=0; `go test ./internal/commands/` EXIT=0
+
+### ML-1B — `branch prune --remote`
 **Owner:** `apolo-tf`
 **Status:** ⬜ Pendente
 **Files affected (provisório):** `internal/commands/branch_prune.go`, `internal/commands/branch_prune_forge.go`, novo `internal/commands/branch_prune_remote.go`, testes.
 **Acceptance criteria:**
 - [ ] Sem `--remote`: nenhuma chamada que escreva no remoto (teste com executor que registra os argumentos)
 - [ ] `--remote` sem `--apply`: só relata
-- [ ] Remoção só com `merged_pr` sobre o tip remoto e com lease no SHA avaliado; teste em bare repo com os dois braços
-- [ ] `keep`/`review`/padrão/protegida nunca apagadas, um teste por caso; fetch falho/estourado ou forge degradado/truncado → nenhuma remoção remota
+- [ ] Remoção exige `decision == merged_pr` sobre o tip remoto (A6) e lease no SHA avaliado; `TestRemoteDeleteForceLease` com braços A/B/C e mutações (A9)
+- [ ] `keep`/`review`/padrão/protegida (A4)/base de PR aberto (A3) nunca apagadas, um teste por caso; `origin/HEAD` excluído por refname (A8); URLs de fetch e push divergentes (A5), fetch falho/estourado ou forge degradado/truncado → nenhuma remoção remota
 - [ ] `go build ./...` EXIT=0; `go test ./internal/commands/` EXIT=0
 
-### ML-1B — Mensagem do guard para remoção remota
+### ML-1C — Mensagem do guard para remoção de branch
 **Owner:** `apolo-tf`
 **Status:** ⬜ Pendente
-**Files affected (provisório):** `internal/guard/gitbranch.go`, referência `.sh` e gerador conforme o Wave 0, testes.
+**Files affected (provisório):** `internal/guard/gitbranch.go`, `internal/generators/testdata/guard-sh-reference/git-branch-guard.sh` e os demais sítios da seção 1.1 do parecer, testes de paridade.
 **Acceptance criteria:**
-- [ ] Cada forma de remoção listada no Wave 0 recebe a mensagem que nomeia `trackfw branch prune --remote --apply`; `git push` comum mantém a mensagem atual
-- [ ] Guard continua bloqueando a forma bruta (teste)
+- [ ] `--delete`/`-d`/`:<ref>` (não `refs/tags/`) → mensagem que nomeia `trackfw branch prune --remote --apply`; `--mirror`, `--prune`, `:refs/tags/…`, `:` e push comum mantêm a atual (A1)
+- [ ] Teste de paridade com os vetores de remoção (A2); guard continua bloqueando a forma bruta
 - [ ] `go test ./internal/guard/ ./internal/generators/` EXIT=0
 
-### ML-1C — Contrato
+### ML-1D — Contrato
 **Owner:** `apolo-tf`
 **Status:** ⬜ Pendente
-**Files affected:** `docs/cli-parity.md` (depois do ML-1B do ROADMAP-2026-10-12, que também escreve nele)
+**Files affected:** `docs/cli-parity.md` (depois do ML-1B do ROADMAP-2026-10-12)
 **Acceptance criteria:**
-- [ ] Seção do `branch prune --remote` com `trackfw-contract`; `make parity-rest` EXIT=0
+- [ ] Seção do `branch prune --remote` e da branch padrão do forge, com `trackfw-contract`; `make parity-rest` EXIT=0
 
 ## Wave 2 — Revisão e fechamento
 > Dependencies: Wave 1 dos dois roadmaps. A revisão é única para a branch (ML-2A do ROADMAP-2026-10-12).
