@@ -747,7 +747,7 @@ func isGitWriteCmd(args []string) bool {
 }
 
 // detectPendingSquashMerges warns about branches that have genuinely pending work against
-// origin/main. Non-blocking — prints only.
+// the repository's default branch. Non-blocking — prints only.
 //
 // Reuses evaluateBranchWithForge (branch_prune_forge.go), which applies the D1 PR-signal order
 // from ADR-2026-10-03 when a forge snapshot is available, and falls back to the touched-files
@@ -760,7 +760,11 @@ func isGitWriteCmd(args []string) bool {
 // All other decisions (no_own_work, content_identical, no_merge_base, eval_error, etc.) are
 // silently skipped — same posture as before. A6, ADR-2026-10-03.
 func detectPendingSquashMerges(currentBranch string, gitExec func(...string) (string, error), ghExec ghExecFn, out io.Writer) {
-	remoteBranches, err := gitExec("branch", "-r", "--no-merged", "origin/main")
+	// Resolve default branch once (A7, ADR-2026-10-12): forge → symref → fallback "main".
+	// The forge name is authoritative; no cross-check with symref (vault note).
+	defaultLocalName, defaultRemoteRef := resolveDefaultBranch(gitExec, ghExec)
+
+	remoteBranches, err := gitExec("branch", "-r", "--no-merged", defaultRemoteRef)
 	if err != nil || strings.TrimSpace(remoteBranches) == "" {
 		return
 	}
@@ -802,12 +806,12 @@ func detectPendingSquashMerges(currentBranch string, gitExec func(...string) (st
 		}
 		// Pass a non-empty upstream sentinel: candidate is a remote tracking branch and
 		// therefore by definition has been pushed — case 4 (no_pr_never_pushed) must not fire.
-		eval := evaluateBranchWithForge(candidate, shortName, "origin/"+shortName, snapshot, gitExec)
+		eval := evaluateBranchWithForge(candidate, shortName, "origin/"+shortName, defaultLocalName, snapshot, gitExec)
 		switch eval.Decision {
 		case branchPruneDecisionPendingWork,
 			branchPruneDecisionCommitsAfterMerged,
 			branchPruneDecisionDivergedFromMerged:
-			fmt.Fprintf(out, "Warning: branch %q appears to have unmerged changes vs origin/main.\n", shortName)
+			fmt.Fprintf(out, "Warning: branch %q appears to have unmerged changes vs %s.\n", shortName, defaultRemoteRef)
 		}
 	}
 }

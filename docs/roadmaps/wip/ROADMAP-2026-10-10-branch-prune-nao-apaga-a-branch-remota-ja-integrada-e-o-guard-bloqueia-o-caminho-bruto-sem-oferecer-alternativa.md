@@ -83,13 +83,16 @@ git diff --quiet HEAD -- internal/
 
 ### ML-1A — Branch padrão vem do forge (A7)
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-12 após uma devolução (testes só com stubs, sem mordida). `go test ./internal/commands/` e `make parity-rest` EXIT=0, rodados pelo arquiteto
 **Por que o escopo original não previa:** o Wave 0 achou o literal `"main"` em `branch_prune.go:19,26` e no filtro `baseRefName` (`branch_prune_forge.go:293`). Num repositório `master`, o prune local de hoje recusa tudo. É a mesma causa do D2 do ADR (branch padrão vinda do forge), por isso entra nesta REQ.
 **Files affected:** `internal/commands/branch_prune.go`, `internal/commands/branch_prune_forge.go`, testes.
 **Acceptance criteria:**
-- [ ] Branch padrão vem do `default_branch` do forge; sem forge, do symref `origin/HEAD`; sem nenhum dos dois, recusa como hoje
-- [ ] Teste com repositório `master` (local) passa; sem a correção, reprova
-- [ ] `go build ./...` EXIT=0; `go test ./internal/commands/` EXIT=0
+- [x] Branch padrão vem do `default_branch` do forge; sem forge, do symref `origin/HEAD`; sem nenhum dos dois, recusa como hoje
+      ✅ `resolveDefaultBranch` (forge → symref → literal) em `branch_prune_forge.go`; `TestDefaultBranch_{ForgeVsSymref_ForgePrevails,NeitherAvailable_FallsBackToMain}`
+- [x] Teste com repositório `master` (local) passa; sem a correção, reprova
+      ✅ `TestBranchPrune_MasterRepo_EndToEnd` (repositório real em `t.TempDir()`); mordida M1 → `origin/main not resolvable`; M2 (filtro `"main"`) e M3 (symref antes do forge) reprovam seus testes
+- [x] `go build ./...` EXIT=0; `go test ./internal/commands/` EXIT=0
+      ✅ build, vet (inclusive `GOOS=windows`), `go test ./internal/commands/` 40,3 s
 
 ### ML-1B — `branch prune --remote`
 **Owner:** `apolo-tf`

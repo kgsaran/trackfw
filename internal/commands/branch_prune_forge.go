@@ -7,6 +7,76 @@ import (
 	"strings"
 )
 
+// resolveDefaultBranch resolves the repository's default branch name, using
+// three sources in order:
+//  1. Forge API (gh api repos/<owner>/<repo> → default_branch), via ghExec.
+//     Requires ghExec != nil and a parseable github.com origin URL.
+//     The forge name is authoritative — unconditionally, without comparison
+//     with the local symref (vault/notes/forge-anchoring-branch-name-must-be-
+//     unconditional-not-cross-checked-2026-08-19). No refusal fires if the
+//     symref disagrees.
+//  2. Local tracking symref: git symbolic-ref --short refs/remotes/origin/HEAD,
+//     stripping the "origin/" prefix. Absent in fresh/shallow clones.
+//  3. Literal fallback: branchPruneFallbackLocalName / branchPruneDefaultRemoteRef
+//     ("main" / "origin/main"). This is the pre-v8.1 hardcoded value and is
+//     used only when neither of the above sources is available.
+//
+// Returns (localName, remoteRef) where remoteRef == "origin/" + localName.
+// Errors from any source are silently consumed — the function always returns a
+// usable pair. Callers must not compare or cross-check the forge name against
+// the symref; the vault note explains why that comparison introduces false
+// refusals for legitimate clones.
+func resolveDefaultBranch(gitExec func(...string) (string, error), ghExec ghExecFn) (localName, remoteRef string) {
+	// 1. Forge API.
+	if ghExec != nil {
+		if name := forgeDefaultBranch(gitExec, ghExec); name != "" {
+			return name, "origin/" + name
+		}
+	}
+	// 2. Local tracking symref.
+	if out, err := gitExec("symbolic-ref", "--short", "refs/remotes/origin/HEAD"); err == nil {
+		s := strings.TrimSpace(out)
+		// s is normally "origin/main", "origin/master", etc. Strip the "origin/" prefix.
+		if after, ok := strings.CutPrefix(s, "origin/"); ok && after != "" {
+			return after, s
+		}
+	}
+	// 3. Literal fallback.
+	return branchPruneDefaultLocalName, branchPruneDefaultRemoteRef
+}
+
+// forgeDefaultBranch queries gh api repos/<owner>/<repo> and extracts
+// the default_branch field. Returns "" on any error (URL unparseable,
+// non-github.com host, gh API failure, JSON parse failure, empty field).
+// Uses the same URL-parsing logic as queryForgePRs (A1, ADR-2026-10-03).
+func forgeDefaultBranch(gitExec func(...string) (string, error), ghExec ghExecFn) string {
+	remoteURL, err := gitExec("remote", "get-url", "origin")
+	if err != nil {
+		return ""
+	}
+	host, ownerRepo := parseHostOwnerRepo(strings.TrimSpace(remoteURL))
+	if host != "github.com" {
+		return ""
+	}
+	out, err := ghExec("api", "repos/"+ownerRepo)
+	if err != nil {
+		return ""
+	}
+	var info struct {
+		DefaultBranch string `json:"default_branch"`
+	}
+	if err := json.Unmarshal(out, &info); err != nil {
+		return ""
+	}
+	name := strings.TrimSpace(info.DefaultBranch)
+	// Guard against an empty or whitespace-only value — the forge should never
+	// return one, but defence in depth.
+	if name == "" {
+		return ""
+	}
+	return name
+}
+
 // forgePR holds the PR fields returned by `gh pr list --json ...`.
 // Field names mirror gh's camelCase JSON keys exactly.
 // headRepositoryOwner is included for completeness and future filtering — the
@@ -257,19 +327,23 @@ func isNotAncestorError(err error) bool {
 //     "never pushed". Callers that operate on remote refs (detectPendingSquashMerges)
 //     must pass a non-empty sentinel to skip case 4 — remote refs are always pushed
 //     by definition and case 4 would misfire if the local branch copy is absent.
+//   - defaultLocalName: the resolved default branch short name (e.g. "main",
+//     "master", "trunk"). Used to filter MERGED PRs to those targeting the default
+//     branch (A2, ADR-2026-10-03). Must come from resolveDefaultBranch — never
+//     hardcoded. A7 of ADR-2026-10-12.
 //   - snapshot: nil means degraded or truncated (D2/A7) — falls back directly to
-//     evaluateBranchIntegration(ref, gitExec). Never produces a new forge-signal
-//     decision when nil.
+//     evaluateBranchIntegration(ref, "origin/"+defaultLocalName, gitExec). Never
+//     produces a new forge-signal decision when nil.
 //
 // Decision priority among multiple MERGED PRs with valid base (A2):
 //  1. delete (any PR whose headRefOid contains the tip — case 1) — returned immediately
 //  2. commits_after_merged_pr (tip has commits beyond any PR head — case 2)
 //  3. diverged_from_merged_pr (tip and all PR heads are mutually diverged — case 2b)
 //  4. merged_head_absent (all checked PR heads missing locally — review, never delete)
-func evaluateBranchWithForge(ref, prName, upstream string, snapshot *prSnapshot, gitExec func(...string) (string, error)) branchPruneEvaluation {
+func evaluateBranchWithForge(ref, prName, upstream, defaultLocalName string, snapshot *prSnapshot, gitExec func(...string) (string, error)) branchPruneEvaluation {
 	// D2 / A7: snapshot nil → degrade to content heuristic.
 	if snapshot == nil {
-		return evaluateBranchIntegration(ref, gitExec)
+		return evaluateBranchIntegration(ref, "origin/"+defaultLocalName, gitExec)
 	}
 
 	// Filter PRs for this branch: non-fork, headRefName matches (A1/C1).
@@ -289,7 +363,7 @@ func evaluateBranchWithForge(ref, prName, upstream string, snapshot *prSnapshot,
 		case "OPEN":
 			openPRs = append(openPRs, pr)
 		case "MERGED":
-			if pr.BaseRefName == branchPruneDefaultLocalName { // A2
+			if pr.BaseRefName == defaultLocalName { // A2: targets the resolved default branch
 				mergedValidBase = append(mergedValidBase, pr)
 			}
 		case "CLOSED":
@@ -442,8 +516,8 @@ func evaluateBranchWithForge(ref, prName, upstream string, snapshot *prSnapshot,
 	// Case 5: no forge signal — fall back to the content heuristic (today's
 	// behaviour: evaluateBranchIntegration). Covers:
 	//   - branches with no PRs but with an upstream (were pushed, no PR opened)
-	//   - branches whose non-fork PRs all have base ≠ main AND have an upstream
-	//     (stacked PRs etc. — not considered "merged into main"). Without an
-	//     upstream, case 4 has already returned above (AJ1, Wave 2 review).
-	return evaluateBranchIntegration(ref, gitExec)
+	//   - branches whose non-fork PRs all have base ≠ defaultLocalName AND have an
+	//     upstream (stacked PRs etc. — not considered "merged into default branch").
+	//     Without an upstream, case 4 has already returned above (AJ1, Wave 2 review).
+	return evaluateBranchIntegration(ref, "origin/"+defaultLocalName, gitExec)
 }

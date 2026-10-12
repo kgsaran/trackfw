@@ -2,6 +2,21 @@
 
 ---
 
+## 2026-10-12 — apolo-tf (fix/operacoes-de-rede-sem-prazo-e-branch-prune-remoto — ML-1A ROADMAP-2026-10-10) — FIM
+
+**Branch:** `fix/operacoes-de-rede-sem-prazo-e-branch-prune-remoto`
+**Escopo:** ML-1A do ROADMAP-2026-10-10 (A7, ADR-2026-10-12) — branch padrão vem do forge, não do literal "main". Arquivos modificados: `internal/commands/branch_prune.go`, `branch_prune_forge.go`, `branch_prune_forge_test.go`, `branch_prune_test.go`, `ship.go`; novo: `branch_prune_default_branch_test.go`.
+**Entregável:** (1) `resolveDefaultBranch` + `forgeDefaultBranch` em `branch_prune_forge.go` (forge → symref → fallback "main"); (2) `evaluateBranchIntegration` recebe `remoteRef string` como 2º arg; (3) `evaluateBranchWithForge` recebe `defaultLocalName string` como 4º arg; (4) `fetchFailed`/`fetchTimedOut` removidos de `branchPruneDeps`, viram vars locais em `runBranchPrune`; (5) `detectPendingSquashMerges` resolve o nome internamente; (6) `TestAC5_ForgeQueriedExactlyOnce` atualizado para 2 chamadas (default_branch + PR list). 4 testes novos (master/trunk/forge-vs-symref/fallback), todos PASS. Suite completa `./internal/commands/` EXIT=0 (39s). `go build ./...` EXIT=0. `go vet ./internal/commands/` EXIT=0. `GOOS=windows go vet` EXIT=0. `make parity-rest` falha pré-existente em `check-required-status-checks.py` (Python 3.9.6 vs sintaxe 3.10+, commit 457fb955, não relacionado ao ML-1A).
+
+---
+
+## 2026-10-12 — apolo-tf (fix/operacoes-de-rede-sem-prazo-e-branch-prune-remoto — ML-1A ROADMAP-2026-10-10) — INÍCIO
+
+**Branch:** `fix/operacoes-de-rede-sem-prazo-e-branch-prune-remoto`
+**Escopo:** ML-1A do ROADMAP-2026-10-10 — substituir os literais hardcoded "origin/main"/"main" em `branch_prune.go` e `branch_prune_forge.go` pela resolução dinâmica via forge API → symref → fallback.
+
+---
+
 ## 2026-10-12 — apolo-tf (fix/operacoes-de-rede-sem-prazo-e-branch-prune-remoto — ML-1B) — FIM
 
 **Branch:** `fix/operacoes-de-rede-sem-prazo-e-branch-prune-remoto`
