@@ -2,6 +2,22 @@
 
 ---
 
+## 2026-10-12 — hades-tf — FIM: red-team Wave 2 (ML-2A) — REQ-2026-10-12 + REQ-2026-10-10
+
+**Branch:** `fix/operacoes-de-rede-sem-prazo-e-branch-prune-remoto`
+**Escopo:** Red-team dos controles de prazo de rede (REQ-2026-10-12) e branch prune --remote + guard de remoção (REQ-2026-10-10). Vetores executados em cópia isolada (`rsync --exclude .git` + `go test`). Nenhum arquivo de produto alterado; nenhum git commit/push.
+**Entregável:** `docs/seguranca/2026-10-12-red-team-prazo-de-rede-e-prune-remoto.md`
+**Veredito:** sem achados críticos ou bloqueantes. Controles principais resistiram à falsificação por execução. Residuais: `--delete=foo` (precision gap inexplorável com git atual); RS-7 alias bypass (declarado); GH_HOST mismatch (conservador). Branch apta para merge.
+
+---
+
+## 2026-10-12 — hades-tf — INÍCIO: red-team Wave 2 (ML-2A) — REQ-2026-10-12 + REQ-2026-10-10
+
+**Branch:** `fix/operacoes-de-rede-sem-prazo-e-branch-prune-remoto`
+**Escopo:** Red-team de prazo de rede e prune remoto.
+
+---
+
 ## 2026-10-12 — hefesto-tf — INÍCIO: revisão de qualidade Wave 2 (ML-2A) — REQ-2026-10-12 + REQ-2026-10-10
 
 **Branch:** `fix/operacoes-de-rede-sem-prazo-e-branch-prune-remoto`

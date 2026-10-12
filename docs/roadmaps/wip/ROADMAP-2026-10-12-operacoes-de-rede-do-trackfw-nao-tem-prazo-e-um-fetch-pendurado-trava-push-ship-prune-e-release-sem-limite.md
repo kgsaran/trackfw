@@ -138,10 +138,10 @@ git diff --quiet HEAD -- internal/
 
 ### ML-2A — Revisão de qualidade, red-team, `make quality` e CI
 **Owner:** `hefesto-tf` e `hades-tf` (em sequência)
-**Status:** 🔄 Em andamento — parecer do `hefesto-tf` aprovado com ajustes (`docs/qualidade/2026-10-12-revisao-prazo-de-rede-e-prune-remoto.md`); corretivo ML-2B; falta red-team
+**Status:** 🔄 Em andamento — parecer do `hefesto-tf` aprovado com ajustes (`docs/qualidade/2026-10-12-revisao-prazo-de-rede-e-prune-remoto.md`); corretivo ML-2B ✅; red-team do `hades-tf` sem bloqueante (`docs/seguranca/2026-10-12-red-team-prazo-de-rede-e-prune-remoto.md`, com adendo do arquiteto medindo `pushInsteadOf` e injeção por nome); falta `make quality` e CI
 **Acceptance criteria:**
-- [ ] Parecer do `hefesto-tf` em `docs/qualidade/`; parecer de red-team do `hades-tf` em `docs/seguranca/`
-- [ ] Defeitos achados viram ML corretivo neste roadmap
+- [x] Parecer do `hefesto-tf` em `docs/qualidade/`; parecer de red-team do `hades-tf` em `docs/seguranca/`
+- [x] Defeitos achados viram ML corretivo neste roadmap
 - [ ] `make quality` EXIT=0 com máquina ociosa; CI do PR verde, inclusive `windows-full-suites`
 
 ### ML-2B — Corretivo da revisão de qualidade (Q1, Q2, Q6, Q11)
