@@ -46368,3 +46368,7 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-10 — zeus-tf — release 9.4.3
 
 - Bump para 9.4.3 (`version.go`, `npm/package.json`, `npm/package-lock.json`, `pypi/pyproject.toml`) e `CHANGELOG.md` com o #557; leva junto o fechamento da REQ-2026-09-02. #554/#555 são só governança (omitidos). Tag após o merge, precedida de `make check-required-full`.
+
+## 2026-10-12 — zeus-tf — início: prazo das operações de rede (#556) + `branch prune --remote`
+
+- Branch `fix/operacoes-de-rede-sem-prazo-e-branch-prune-remoto`, duas REQs com o mesmo objetivo: REQ-2026-10-12 (#556, nova) implementa primeiro; REQ-2026-10-10 depois (depende do prazo do fetch; ambas tocam `branch_prune*.go`). ADRs Proposed: prazo de rede (estouro nunca vira sucesso; `release.go:310` descarta o erro do `ls-remote`; `WaitDelay` por causa do neto `ssh`) e prune remoto (só `merged_pr` sobre o tip remoto + lease no SHA avaliado). Medição do lease no shell bloqueada pelo guard (`git commit` bruto) — vira teste Go no ML-1A. Wave 0 dos dois em paralelo (`hades-tf`).

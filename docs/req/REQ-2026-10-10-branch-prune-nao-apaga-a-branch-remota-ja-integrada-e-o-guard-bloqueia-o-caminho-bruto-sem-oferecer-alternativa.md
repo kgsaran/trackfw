@@ -2,8 +2,8 @@
 status: Open
 date: 2026-10-10
 author: "zeus-tf"
-adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-10-10-branch-prune-nao-apaga-a-branch-remota-ja-integrada-e-o-guard-bloqueia-o-caminho-bruto-sem-oferecer-alternativa.md"
+adr: "docs/adr/ADR-2026-10-12-branch-prune-apaga-a-branch-remota-so-pelo-sinal-do-forge-e-condicionada-ao-tip-avaliado.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-10-10-branch-prune-nao-apaga-a-branch-remota-ja-integrada-e-o-guard-bloqueia-o-caminho-bruto-sem-oferecer-alternativa.md"
 ---
 
 # REQ: branch prune não apaga a branch remota já integrada e o guard bloqueia o caminho bruto sem oferecer alternativa
@@ -69,14 +69,14 @@ merged PR`) também no remoto.
 - **Apagar remoto pela heurística de conteúdo:** fora. Sem sinal do forge, não apaga no remoto.
 - **Liberar `git push --delete` bruto no guard:** fora. O caminho governado substitui, não convive.
 - **Mudar o padrão `--dry-run`** ou a regra de que `review` nunca é apagado sozinho.
+- **Prazo das operações de rede** (fetch, `gh`): é a REQ-2026-10-12 (#556), mesma branch. Esta REQ depende dela: fetch que falhou ou estourou o prazo proíbe a remoção remota (ADR D4).
 - **Configurar o auto-delete do repositório no forge:** é configuração do repositório, não do CLI.
 
 ## Linked ADR
-<!-- A escrever na análise (AC2); estende o ADR-2026-10-03 -->
-ADR: 
+ADR: docs/adr/ADR-2026-10-12-branch-prune-apaga-a-branch-remota-so-pelo-sinal-do-forge-e-condicionada-ao-tip-avaliado.md
 
 ## Blocked by ADRs
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/backlog/ROADMAP-2026-10-10-branch-prune-nao-apaga-a-branch-remota-ja-integrada-e-o-guard-bloqueia-o-caminho-bruto-sem-oferecer-alternativa.md
+Roadmap: docs/roadmaps/wip/ROADMAP-2026-10-10-branch-prune-nao-apaga-a-branch-remota-ja-integrada-e-o-guard-bloqueia-o-caminho-bruto-sem-oferecer-alternativa.md
