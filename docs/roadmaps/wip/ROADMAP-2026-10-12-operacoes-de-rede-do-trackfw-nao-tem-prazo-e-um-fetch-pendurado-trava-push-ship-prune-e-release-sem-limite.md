@@ -88,7 +88,7 @@ git diff --quiet HEAD -- internal/
 
 ### ML-1A — Executor de rede com prazo (ADR D2, D4, D7/A1–A3, A6, A9)
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:** novo pacote `internal/netdeadline/` (parser de `TRACKFW_NETWORK_TIMEOUT`/`TRACKFW_PUSH_TIMEOUT`, padrões, limites; com testes), novo `internal/commands/netexec.go` (classificador e executor), `internal/commands/netexec_unix.go` e `netexec_windows.go` (grupo de processos e terminal de controle, com build tags), `internal/commands/ship.go` (`defaultGitExec`, `defaultCheckPROpen`), `internal/commands/branch_prune_forge.go` (`defaultGhExec`), `internal/commands/release.go` (executor `:229`), testes `internal/commands/netexec*_test.go`.
 **Acceptance criteria:**
 - [ ] `defaultGitExec` único com `classifyGitArgs`: `fetch`/`ls-remote` → `TRACKFW_NETWORK_TIMEOUT` (60 s); `push` → `TRACKFW_PUSH_TIMEOUT` (30 min) + `GIT_HTTP_LOW_SPEED_*` em HTTPS quando o usuário não configurou `http.lowSpeedLimit`; resto sem prazo. Teste do classificador nas duas direções (`-C d fetch` → rede; `commit`/`log`/`rev-parse` → local)
