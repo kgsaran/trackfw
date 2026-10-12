@@ -83,7 +83,7 @@ git diff --quiet HEAD -- internal/
 
 ### ML-1A — Branch padrão vem do forge (A7)
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Por que o escopo original não previa:** o Wave 0 achou o literal `"main"` em `branch_prune.go:19,26` e no filtro `baseRefName` (`branch_prune_forge.go:293`). Num repositório `master`, o prune local de hoje recusa tudo. É a mesma causa do D2 do ADR (branch padrão vinda do forge), por isso entra nesta REQ.
 **Files affected:** `internal/commands/branch_prune.go`, `internal/commands/branch_prune_forge.go`, testes.
 **Acceptance criteria:**

@@ -2,6 +2,12 @@
 
 ---
 
+## 2026-10-12 — apolo-tf (fix/operacoes-de-rede-sem-prazo-e-branch-prune-remoto — ML-1B) — FIM
+
+**Branch:** `fix/operacoes-de-rede-sem-prazo-e-branch-prune-remoto`
+**Escopo:** ML-1B do ROADMAP-2026-10-12 (issue #556) — caminhos de falha de rede nomeiam o prazo ao usuário. Arquivos modificados: `internal/commands/push.go`, `ship.go`, `branch_prune.go`, `branch_prune_forge.go`, `branch_prune_forge_test.go`, `release.go`, `netexec_unix.go`; novo: `netfailpath_test.go`; doc: `docs/cli-parity.md`.
+**Entregável:** (1) `push.go` / `ship.go` fetch timeout: aviso nomeia `TRACKFW_NETWORK_TIMEOUT`; (2) `branch_prune.go` fetch timeout: aviso nomeia estouro + campos `fetchFailed`/`fetchTimedOut` internos reservados para ROADMAP-2026-10-10; (3) `queryForgePRs` 3ª saída de erro preserva identidade `errors.Is`; (4) `release.go` `ls-remote` erro: fail-closed com `releaseTagRemoteCheckFailedFmt`; (5) POST tag object e ref: mensagem "remote state is uncertain" quando estouro; (6) `detectPendingSquashMerges` timeout: aviso ao usuário. `netexec_unix.go` corrigido com `write-containment-allowed`. Seção de prazo de rede adicionada a `docs/cli-parity.md`. 9 testes novos, todos PASS. Suite completa `./internal/commands/` EXIT=0 (39s). `go build ./...` EXIT=0. `GOOS=windows go vet` EXIT=0. `trackfw validate` EXIT=0. `check-write-containment` OK. `check-parity-contract-coverage` OK. `make parity-rest` falha pré-existente em `check-required-status-checks.py` (Python 3.9.6 vs sintaxe 3.10+, commit 457fb955, não relacionado ao ML-1B).
+
 ## 2026-10-10 — apolo-tf (fix/remover-a-entrada-pretooluse-nao-e-detectado — ML-2C corretivo red-team) — FIM
 
 **Branch:** `fix/remover-a-entrada-pretooluse-nao-e-detectado`
