@@ -124,12 +124,14 @@ git diff --quiet HEAD -- internal/
 
 ### ML-1C — Cliente HTTP do Linear com prazo (ADR D7/A10)
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-12. Ressalva: o teste de estouro afirma retorno em até 10 s (o handler segura 5 s); a mordida vem de `errors.Is(ErrTimeout)` falso sem a correção, não do tempo
 **Por que o escopo original não previa:** o Wave 0 achou `http.DefaultClient` sem prazo em `internal/sync/linear.go:76`. É a mesma causa (cliente de rede sem prazo) por outro mecanismo.
 **Files affected:** `internal/sync/linear.go`, `internal/sync/linear_test.go`
 **Acceptance criteria:**
-- [ ] Cliente com o prazo de metadados de `internal/netdeadline`; teste contra `httptest.Server` que não responde termina dentro do prazo e reprova sem a correção
-- [ ] `go build ./...` EXIT=0; `go test ./internal/sync/` EXIT=0
+- [x] Cliente com o prazo de metadados de `internal/netdeadline`
+      ✅ `context.WithTimeout` + `NewRequestWithContext`; estouro → `TimeoutError` + "remote state is uncertain" (A8, é escrita); `TestLinearCreateIssue_{Timeout,Success}`; mordida: com `http.DefaultClient`, `errors.Is(err, ErrTimeout)` falso → FAIL; teste contra `httptest.Server` que não responde termina dentro do prazo e reprova sem a correção
+- [x] `go build ./...` EXIT=0; `go test ./internal/sync/` EXIT=0
+      ✅ rerodado pelo arquiteto
 
 ## Wave 2 — Revisão e fechamento
 > Dependencies: Wave 1 deste roadmap **e** do ROADMAP-2026-10-10 (uma revisão para a branch inteira).
