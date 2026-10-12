@@ -1,12 +1,12 @@
 ---
-status: Proposed
+status: Accepted
 date: 2026-10-12
 author: "zeus-tf"
 ---
 
 # ADR: branch prune apaga a branch remota só pelo sinal do forge e condicionada ao tip avaliado
 
-> Date: 2026-10-12 | Status: Proposed
+> Date: 2026-10-12 | Status: Accepted
 
 REQ: `docs/req/REQ-2026-10-10-branch-prune-nao-apaga-a-branch-remota-ja-integrada-e-o-guard-bloqueia-o-caminho-bruto-sem-oferecer-alternativa.md`
 Estende: `ADR-2026-10-03-branch-prune-usa-o-estado-do-pr-no-forge-como-sinal-de-integracao-com-o-conteudo-como-fallback-declarado.md`

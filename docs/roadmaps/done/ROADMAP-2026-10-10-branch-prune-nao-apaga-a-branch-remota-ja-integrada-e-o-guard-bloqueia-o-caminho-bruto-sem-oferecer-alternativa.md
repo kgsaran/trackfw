@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-10-10
 req: "docs/req/REQ-2026-10-10-branch-prune-nao-apaga-a-branch-remota-ja-integrada-e-o-guard-bloqueia-o-caminho-bruto-sem-oferecer-alternativa.md"
 squad: "hades-tf, apolo-tf, hefesto-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf, hefesto-tf"
 
 # Roadmap: branch prune não apaga a branch remota já integrada e o guard bloqueia o caminho bruto sem oferecer alternativa
 
-> Created: 2026-10-10 | Status: wip
+> Created: 2026-10-10 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-10-10-branch-prune-nao-apaga-a-branch-remota-ja-integrada-e-o-guard-bloqueia-o-caminho-bruto-sem-oferecer-alternativa.md
@@ -18,12 +18,12 @@ depois**: a remoção remota exige fetch concluído dentro do prazo (ADR D4), e 
 `internal/commands/branch_prune*.go`.
 
 ## Acceptance Criteria
-- [ ] AC1 — Wave 0 auditado (parecer do `hades-tf`)
-- [ ] AC3/AC4/AC5 — `--remote` opt-in; só `merged_pr` com tip remoto contido; lease no SHA avaliado; `keep`/`review`/padrão/protegida nunca apagadas
-- [ ] AC6 — mensagem do guard aponta para `trackfw branch prune --remote --apply`
+- [x] AC1 — Wave 0 auditado (parecer do `hades-tf`)
+- [x] AC3/AC4/AC5 — `--remote` opt-in; só `merged_pr` com tip remoto contido; lease no SHA avaliado; `keep`/`review`/padrão/protegida nunca apagadas
+- [x] AC6 — mensagem do guard aponta para `trackfw branch prune --remote --apply`
 - [x] AC7 — dry-run com `--remote` neste repositório (reformulado pelo C12: as remotas com commits após o PR mergeado saem `keep`, com motivo)
       ✅ 2026-10-12, binário da branch: 2 remotas avaliadas contra o forge, ambas `keep` (sem PR mergeado), nada apagado. As duas remotas motivadoras já tinham sido apagadas no forge pelo usuário; o caminho de remoção é provado pelo `TestRemoteDeleteForceLease`
-- [ ] AC8/AC9/AC10 — contrato, reconciliação dos testes, `make quality` + CI
+- [x] AC8/AC9/AC10 — contrato, reconciliação dos testes, `make quality` + CI
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -136,11 +136,12 @@ git diff --quiet HEAD -- internal/
 
 ### ML-2A — Medição de volta e fechamento
 **Owner:** `zeus-tf`
-**Status:** 🔄 Em andamento — falta só o CI do PR
+**Status:** ✅ Concluído — CI do PR #559 verde em `78f63381`: 20/20 checks SUCCESS, inclusive `windows-full-suites`; mergeado em `d3396fc2` (2026-10-12)
 **Acceptance criteria:**
 - [x] AC7: `trackfw branch prune --remote` (dry-run) neste repositório lista as remotas integradas e nenhuma com trabalho não integrado
       ✅ ver AC7 consolidado acima (2 remotas, ambas `keep`, nada apagado)
 - [x] Pareceres do ML-2A do ROADMAP-2026-10-12 cobrem esta REQ; corretivos aplicados
       ✅ qualidade (corretivo ML-2B do ROADMAP-2026-10-12) e red-team sem bloqueante, ambos cobrindo `branch_prune_remote.go` e o guard
-- [ ] `make quality` EXIT=0 com máquina ociosa; CI do PR verde, inclusive `windows-full-suites`
+- [x] `make quality` EXIT=0 com máquina ociosa; CI do PR verde, inclusive `windows-full-suites`
+      ✅ CI do PR #559 verde em `78f63381`: 20/20 checks SUCCESS, inclusive `windows-full-suites`; mergeado em `d3396fc2` (2026-10-12)
       🔄 `make quality` EXIT=0 em `1849d74c`, máquina ociosa (load 1,5; 2962 linhas; falsify 347 OK / 0 FAIL). CI pendente: só dispara com PR
