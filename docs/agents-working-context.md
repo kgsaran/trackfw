@@ -46532,3 +46532,7 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-14 — zeus-tf — início: REQ-2026-09-01 (guard global segue o home que o agente lê)
 
 - Branch `fix/guard-global-segue-o-home-que-o-agente-le`. Decisão do KG: seguir o home de cada CLI + avisar. ADR-2026-10-14 (Proposed) resolve a contradição AC1×AC4 da auditoria externa. REQ reescrita (ACs e escopo negativo); roadmap com Wave 0 do `hades-tf` (mapa CLI → home no Windows).
+
+## 2026-10-14 — zeus-tf — REQ-2026-09-01 pronta para PR
+
+- MLs 0A, 1A–1D, 2B–2D auditados. Revisão (hefesto) e red-team (hades) bloquearam uma vez cada; corretivos fechados. CI x64 (probe P16) prova `main` grava sob HOME e branch sob USERPROFILE. `make quality` EXIT=0 em `1a86cca2` (347 OK / 0 FAIL), com carga até 8,3. Falta o CI do PR. Nota: um agente instalou `pyyaml`/`packaging` no Python 3.12 do Homebrew (global) quando o venv da sessão anterior sumiu.

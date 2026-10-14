@@ -110,8 +110,10 @@ git diff --quiet HEAD -- internal/
 **Owner:** `hefesto-tf` e `hades-tf` (em sequência)
 **Status:** 🔄 Em andamento — revisão do `hefesto-tf` BLOQUEOU (`docs/qualidade/2026-10-14-revisao-guard-global-home-por-cli.md`): B1, B2 conferidos pelo arquiteto; corretivo ML-2B ✅ e ML-2C ✅; red-team do `hades-tf` BLOQUEOU (`docs/seguranca/2026-10-14-red-team-guard-global-home-por-cli.md`): R-3, com R-1/R-4 de ajuste → ML-2D
 **Acceptance criteria:**
-- [ ] Pareceres em `docs/qualidade/` e `docs/seguranca/`; corretivos aplicados
+- [x] Pareceres em `docs/qualidade/` e `docs/seguranca/`; corretivos aplicados
+      ✅ qualidade (B1, B2 → ML-2B; ML-2C) e red-team (R-3, R-1, R-4 → ML-2D), todos auditados
 - [ ] `make quality` EXIT=0 com máquina ociosa; CI verde, inclusive `windows-full-suites`
+      🔄 `make quality` EXIT=0 em `1a86cca2` (2967 linhas; falsify 347 OK / 0 FAIL; guarda de conjunto OK) — ressalva: carga até 8,3 durante a execução, não ociosa. CI pendente: só dispara com PR
 
 ### ML-2B — Corretivo da revisão de qualidade (B1, B2, A1–A3)
 **Owner:** `apolo-tf`
