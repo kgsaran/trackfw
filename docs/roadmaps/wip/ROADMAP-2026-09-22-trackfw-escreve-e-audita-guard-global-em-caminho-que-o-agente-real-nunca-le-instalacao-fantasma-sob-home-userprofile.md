@@ -108,7 +108,18 @@ git diff --quiet HEAD -- internal/
 ## Wave 2 — Revisão e fechamento
 ### ML-2A — Revisão de qualidade, red-team, `make quality` e CI
 **Owner:** `hefesto-tf` e `hades-tf` (em sequência)
-**Status:** 🔄 Em andamento
+**Status:** 🔄 Em andamento — revisão do `hefesto-tf` BLOQUEOU (`docs/qualidade/2026-10-14-revisao-guard-global-home-por-cli.md`): B1, B2 conferidos pelo arquiteto; corretivo ML-2B; falta red-team
 **Acceptance criteria:**
 - [ ] Pareceres em `docs/qualidade/` e `docs/seguranca/`; corretivos aplicados
 - [ ] `make quality` EXIT=0 com máquina ociosa; CI verde, inclusive `windows-full-suites`
+
+### ML-2B — Corretivo da revisão de qualidade (B1, B2, A1–A3)
+**Owner:** `apolo-tf`
+**Status:** 🔄 Em andamento
+**Por que o escopo original não previa:** achados do parecer de qualidade; mesma causa (sítios fora do resolvedor único).
+**Acceptance criteria:**
+- [ ] B1: `validate_home_divergence_rule.go` usa `agentconfig.ClaudeConfigDir` para o diretório novo; com `CLAUDE_CONFIG_DIR=HOME/.claude` o guard ativo NÃO é chamado de inerte (teste reprova sem a correção)
+- [ ] B2: `harnessClaudeSkillTarget` grava a skill global sob `ClaudeConfigDir` (`<dir>/skills/trackfw/SKILL.md`); teste com divergência simulada
+- [ ] A1: `CLAUDE_CONFIG_DIR=HOME` (sem subdir) → agente em `HOME/agents/…`; A2: teste com `CLAUDE_CONFIG_DIR` vazio; A3: asserção do aviso pina o Claude como medido e o caminho de escrita
+- [ ] build, vet (inclusive `GOOS=windows`), testes dos pacotes tocados, `make parity-rest` EXIT=0
+
