@@ -735,6 +735,13 @@ func (m Manager) resolve(plan PlannedArtifact) (string, string, error) {
 	//
 	// "claude" is the target ID from the catalog (agentconfig.CLIClaude).
 	destRoot := root
+	// ML-2B (A1): capture whether ClaudeDir was successfully resolved so the
+	// destination switch below can branch on it without re-testing destRoot != root.
+	// When CLAUDE_CONFIG_DIR=HOME (no .claude/ subdir), destRoot equals root but
+	// the .claude/ prefix must still be stripped — the old `destRoot != root`
+	// condition failed this case, landing agents at HOME/.claude/agents/… instead
+	// of HOME/agents/… (ADR-2026-10-14 A1, ML-2B REQ-2026-09-01).
+	claudeDirSet := false
 	if plan.Claim.Scope == "global" && plan.Claim.Target == "claude" && m.ClaudeDir != nil {
 		var cd string
 		cd, err = m.ClaudeDir()
@@ -745,6 +752,7 @@ func (m Manager) resolve(plan PlannedArtifact) (string, string, error) {
 		if err != nil {
 			return "", "", err
 		}
+		claudeDirSet = true
 	}
 
 	destination := plan.Destination
@@ -753,14 +761,13 @@ func (m Manager) resolve(plan PlannedArtifact) (string, string, error) {
 		if plan.Claim.Scope != "global" {
 			return "", "", errors.New("home destination requires global scope")
 		}
-		// ML-1D: Claude catalog paths are "~/.claude/…". When destRoot differs
-		// from root (ClaudeDir is set), strip "~/.claude/" and join with destRoot
-		// so artifacts land at <ClaudeDir>/agents/… rather than
-		// <ClaudeDir>/.claude/agents/…. On non-Windows without CLAUDE_CONFIG_DIR,
-		// destRoot == filepath.Abs(HOME/.claude) ≠ root == filepath.Abs(HOME), so
-		// this branch is taken but the final path is identical to the legacy
-		// HomeDir-based expansion.
-		if destRoot != root && strings.HasPrefix(destination, "~/.claude/") {
+		// ML-1D: Claude catalog paths are "~/.claude/…". When ClaudeDir was resolved
+		// (claudeDirSet), strip "~/.claude/" and join with destRoot so artifacts land
+		// at <ClaudeDir>/agents/… rather than <ClaudeDir>/.claude/agents/….
+		// Using claudeDirSet instead of the old `destRoot != root` fixes the edge
+		// case where CLAUDE_CONFIG_DIR=HOME makes destRoot==root while the prefix
+		// must still be stripped (ML-2B A1, ADR-2026-10-14).
+		if claudeDirSet && strings.HasPrefix(destination, "~/.claude/") {
 			destination = filepath.Join(destRoot, strings.TrimPrefix(destination, "~/.claude/"))
 		} else {
 			destination = filepath.Join(root, strings.TrimPrefix(destination, "~/"))

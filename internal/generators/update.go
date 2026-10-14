@@ -627,7 +627,7 @@ func UpdateHarness(opts UpdateOptions) (UpdateReport, error) {
 	results := make([]TargetResult, 0, len(selected))
 	for _, id := range selected {
 		if id == "claude-skill" {
-			results = append(results, harnessClaudeSkillTarget(home, opts))
+			results = append(results, harnessClaudeSkillTarget(home, claudeDir, claudeDirErr, opts))
 			continue
 		}
 		if id == "git-branch-guard-script" {
@@ -886,14 +886,25 @@ func harnessCredentialGuardScriptTarget(home string, opts UpdateOptions) TargetR
 
 // harnessClaudeSkillTarget evaluates (and, unless DryRun, applies) the
 // historical global Claude compatibility skill.
-func harnessClaudeSkillTarget(home string, opts UpdateOptions) TargetResult {
+//
+// ML-2B (REQ-2026-09-01, B2): claudeDir is the resolved Claude config directory
+// (honours CLAUDE_CONFIG_DIR and, on Windows, USERPROFILE). claudeDirErr != nil
+// means resolution failed — treated as TargetFailed so the harness reports the
+// problem rather than silently writing to the wrong path (ADR-2026-10-14 A7).
+// home stays as the trackfw artefacts root (~/.trackfw/).
+func harnessClaudeSkillTarget(home, claudeDir string, claudeDirErr error, opts UpdateOptions) TargetResult {
 	const id = "claude-skill"
 	const displayPath = "~/.claude/skills/trackfw/SKILL.md"
 
-	path := GlobalClaudeSkillPath(home)
+	if claudeDirErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: fmt.Sprintf("resolving Claude config dir: %s", claudeDirErr)}
+	}
+	path := filepath.Join(claudeDir, "skills", "trackfw", "SKILL.md")
 	// Guard: reject writes through symlinks before any filesystem mutation
-	// (ADR-2026-09-18 / ML-1B).
-	if result, guarded := rejectHarnessSymlink(home, path, id, displayPath); guarded {
+	// (ADR-2026-09-18 / ML-1B). Root is filepath.Dir(claudeDir) — checks
+	// claudeDir itself (e.g. ~/.claude) for symlink, same depth as the
+	// credential and git-branch guard targets.
+	if result, guarded := rejectHarnessSymlink(filepath.Dir(claudeDir), path, id, displayPath); guarded {
 		return result
 	}
 	desired := GlobalClaudeSkillContent()

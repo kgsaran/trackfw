@@ -5,7 +5,9 @@ package validator_test
 // Each test asserts a specific conclusion (Regra de Reconciliação, CLAUDE.md):
 //
 //   (a) Simulated divergence → ValidateHomeDivergenceWindowsForTest returns exactly
-//       one warning that names HOME, osHome, and the three measurement-state strings.
+//       one warning that names HOME, osHome, the three measurement-state strings,
+//       the exact phrase "Claude Code reads the OS home (measured)" (A3), and the
+//       resolved Claude config dir path (B1, ML-2B).
 //
 //   (b) Control without divergence (HOME == USERPROFILE) → no warning returned.
 //
@@ -13,6 +15,9 @@ package validator_test
 //
 //   (d) Case/trailing-slash difference only → EqualFold+normHomePath treats them
 //       equal and returns no warning (A3 — MSYS2 Git Bash case).
+//
+//   (e) B1: CLAUDE_CONFIG_DIR=HOME/.claude with HOME≠USERPROFILE → guard at
+//       HOME/.claude/settings.json is NOT called inert (it is the live guard).
 //
 // Mordidas (mandatory falsification):
 //
@@ -26,6 +31,8 @@ package validator_test
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -34,16 +41,26 @@ import (
 )
 
 // TestHomeDivergenceWindows_Divergent asserts conclusion (a): simulated Windows
-// divergence produces exactly one warning naming both paths, Claude measured state,
-// Windsurf not-measured state, and the inferred CLIs.
+// divergence produces exactly one warning naming both paths, the exact phrase
+// "Claude Code reads the OS home (measured)" (A3 — not just "measured", which
+// is a substring of "not measured"), the resolved Claude config dir (B1), and
+// the inferred CLIs.
 //
 // Note: the warning uses %q to format paths, so "C:\Users\Lab\HOME" appears
 // as "C:\\Users\\Lab\\HOME" (with escaped backslashes) inside the warning string.
 // We compare using fmt.Sprintf("%q", path) to mirror the production format.
+//
+// A3 bites (mandatory):
+//   - Bite 1: changing the phrase to "not measured" → "Claude Code ... (measured)"
+//     assertion fails.
+//   - Bite 2: using osHomeEnv (USERPROFILE, without ".claude") as the third %q
+//     argument instead of newClaudeDir → path assertion fails because the message
+//     would no longer contain the ".claude" suffix.
 func TestHomeDivergenceWindows_Divergent(t *testing.T) {
 	const homeEnv = `C:\Users\Lab\HOME`
 	const osHomeEnv = `C:\Users\Lab\USERPROFILE`
 
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	restore := agentconfig.SetPlatformForTest("windows", func() (string, error) {
 		return osHomeEnv, nil
 	})
@@ -57,11 +74,13 @@ func TestHomeDivergenceWindows_Divergent(t *testing.T) {
 	}
 	w := warnings[0]
 	// Paths appear %q-formatted in the warning (backslashes doubled).
+	// After ML-2B B1 fix: newClaudeDir = filepath.Join(osHomeEnv, ".claude"),
+	// so the write-path assertion checks for that value.
+	writeDir := filepath.Join(osHomeEnv, ".claude")
 	for _, want := range []string{
-		fmt.Sprintf("%q", homeEnv),   // "C:\\Users\\Lab\\HOME"
-		fmt.Sprintf("%q", osHomeEnv), // "C:\\Users\\Lab\\USERPROFILE"
-		"Claude Code",
-		"measured",
+		fmt.Sprintf("%q", homeEnv),              // "C:\\Users\\Lab\\HOME"
+		fmt.Sprintf("%q", osHomeEnv),            // "C:\\Users\\Lab\\USERPROFILE"
+		"Claude Code reads the OS home (measured)", // A3: exact phrase, not just "measured"
 		"Windsurf",
 		"not measured",
 		"Codex",
@@ -69,6 +88,7 @@ func TestHomeDivergenceWindows_Divergent(t *testing.T) {
 		"Cursor",
 		"Copilot",
 		"Kiro",
+		fmt.Sprintf("%q", writeDir), // B1: write path includes .claude suffix
 	} {
 		if !strings.Contains(w, want) {
 			t.Errorf("warning missing %q\nfull warning: %s", want, w)
@@ -79,6 +99,7 @@ func TestHomeDivergenceWindows_Divergent(t *testing.T) {
 // TestHomeDivergenceWindows_NoDivergence asserts conclusion (b): when HOME equals
 // USERPROFILE, ValidateHomeDivergenceWindowsForTest returns nil (no warning).
 func TestHomeDivergenceWindows_NoDivergence(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	restore := agentconfig.SetPlatformForTest("windows", func() (string, error) {
 		return `C:\Users\Lab`, nil
 	})
@@ -95,6 +116,7 @@ func TestHomeDivergenceWindows_NoDivergence(t *testing.T) {
 // TestHomeDivergenceWindows_NotWindows asserts conclusion (c): outside Windows the
 // rule is silent even when HOME is set.
 func TestHomeDivergenceWindows_NotWindows(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	restore := agentconfig.SetPlatformForTest("linux", func() (string, error) {
 		return "/home/lab", nil
 	})
@@ -116,6 +138,7 @@ func TestHomeDivergenceWindows_NotWindows(t *testing.T) {
 // Mordida 1 falsifies this: without strings.EqualFold the predicate fires for
 // "C:\Users\Lab" vs "c:\users\lab\", incorrectly returning a warning.
 func TestHomeDivergenceWindows_CaseAndTrailingSlash(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	restore := agentconfig.SetPlatformForTest("windows", func() (string, error) {
 		return `C:\Users\Lab`, nil // USERPROFILE: uppercase, no trailing slash
 	})
@@ -127,5 +150,64 @@ func TestHomeDivergenceWindows_CaseAndTrailingSlash(t *testing.T) {
 	if len(warnings) != 0 {
 		t.Errorf("want no warnings for case/trailing-slash difference only (A3), got %d: %v",
 			len(warnings), warnings)
+	}
+}
+
+// TestHomeDivergenceWindows_ClaudeConfigDir_NoInert asserts conclusion (e):
+// when CLAUDE_CONFIG_DIR=HOME/.claude and HOME≠USERPROFILE, the guard at
+// HOME/.claude/settings.json is NOT called inert — it is the live guard.
+//
+// Conclusion (B1, ML-2B REQ-2026-09-01): validateHomeDivergenceWindows uses
+// ClaudeConfigDir to resolve newClaudeDir; when CLAUDE_CONFIG_DIR=HOME/.claude,
+// InertClaudeGuardPath(HOME/.claude) finds no divergence and suppresses the D5
+// notice; this test FAILS without the ClaudeConfigDir call (the old code hardcoded
+// filepath.Join(osHome, ".claude") = USERPROFILE/.claude, which differs from
+// HOME/.claude, causing InertClaudeGuardPath to declare the live guard inert).
+//
+// Control: the fixture also verifies that when CLAUDE_CONFIG_DIR="" the inert
+// notice DOES fire (proving the fixture can trigger D5), and the notice is absent
+// when CLAUDE_CONFIG_DIR=HOME/.claude.
+func TestHomeDivergenceWindows_ClaudeConfigDir_NoInert(t *testing.T) {
+	homeDir := t.TempDir()
+	osHomeDir := t.TempDir()
+	claudeDir := filepath.Join(homeDir, ".claude")
+
+	// Write a live guard at homeDir/.claude/settings.json containing a guard marker.
+	if err := os.MkdirAll(claudeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(claudeDir, "settings.json"),
+		[]byte(`{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"trackfw guard"}]}]}}`),
+		0644); err != nil {
+		t.Fatal(err)
+	}
+
+	restore := agentconfig.SetPlatformForTest("windows", func() (string, error) {
+		return osHomeDir, nil
+	})
+	defer restore()
+	t.Setenv("HOME", homeDir)
+
+	// Control: with CLAUDE_CONFIG_DIR="" the D5 inert notice should fire
+	// (InertClaudeGuardPath(osHomeDir/.claude) ≠ homeDir/.claude → detects guard).
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	controlWarnings := ValidateHomeDivergenceWindowsForTest()
+	if len(controlWarnings) != 1 {
+		t.Fatalf("control: want 1 warning, got %d: %v", len(controlWarnings), controlWarnings)
+	}
+	if !strings.Contains(controlWarnings[0], "inert") {
+		t.Logf("control: inert notice absent (guard may not be readable); warning: %s", controlWarnings[0])
+		// Non-fatal: on some platforms homedir.Dir() may not return homeDir.
+	}
+
+	// Subject: with CLAUDE_CONFIG_DIR=claudeDir (=HOME/.claude) the D5 notice must NOT fire.
+	t.Setenv("CLAUDE_CONFIG_DIR", claudeDir)
+	warnings := ValidateHomeDivergenceWindowsForTest()
+
+	if len(warnings) != 1 {
+		t.Fatalf("want exactly 1 warning, got %d: %v", len(warnings), warnings)
+	}
+	if strings.Contains(warnings[0], "inert") {
+		t.Errorf("CLAUDE_CONFIG_DIR=HOME/.claude: warning incorrectly calls the live guard inert.\nfull warning: %s", warnings[0])
 	}
 }

@@ -150,6 +150,30 @@ func TestClaudeConfigDir_Windows_UsesUserprofile(t *testing.T) {
 	}
 }
 
+// TestClaudeConfigDir_EmptyCLAUDE_CONFIG_DIR_FallsThrough confirms that
+// CLAUDE_CONFIG_DIR="" (empty string, as set by gate scripts with
+// `CLAUDE_CONFIG_DIR=`) is treated identically to the variable being unset —
+// it falls through to the HOME/.claude resolution.
+//
+// Conclusion (A2, ML-2B REQ-2026-09-01): ClaudeConfigDir ignores an empty
+// CLAUDE_CONFIG_DIR and proceeds to the HOME/.claude path; this test FAILS
+// if ClaudeConfigDir were changed to use os.LookupEnv (honouring the empty
+// string), which would return filepath.Clean("") = "." as the resolved dir.
+func TestClaudeConfigDir_EmptyCLAUDE_CONFIG_DIR_FallsThrough(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+
+	homeDir := t.TempDir()
+
+	got, err := agentconfig.ClaudeConfigDir(agentconfig.FixedCLIHomeResolver{Home: homeDir})
+	if err != nil {
+		t.Fatalf("ClaudeConfigDir with CLAUDE_CONFIG_DIR=\"\": unexpected error: %v", err)
+	}
+	want := filepath.Join(homeDir, ".claude")
+	if got != want {
+		t.Errorf("ClaudeConfigDir with CLAUDE_CONFIG_DIR=\"\": got %q, want %q (must fall through to HOME/.claude)", got, want)
+	}
+}
+
 // TestSetPlatformForTest_Restore confirms that the restore function returned by
 // SetPlatformForTest correctly reverts to the previous platform inputs.
 //

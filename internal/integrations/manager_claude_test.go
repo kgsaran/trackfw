@@ -239,6 +239,45 @@ func TestManagerClaudeDir_OtherCLI_Unchanged(t *testing.T) {
 	}
 }
 
+// TestManagerClaudeDir_ClaudeConfigDir_EqualsHome verifies that when
+// CLAUDE_CONFIG_DIR equals HomeDir (no .claude/ subdir), Install writes the
+// agent to <CLAUDE_CONFIG_DIR>/agents/… and NOT to <CLAUDE_CONFIG_DIR>/.claude/agents/….
+//
+// Conclusion (A1, ML-2B REQ-2026-09-01): when CLAUDE_CONFIG_DIR=HOME the old
+// `destRoot != root` condition was false (both equal filepath.Abs(HOME)),
+// causing the .claude/ prefix not to be stripped and agents landing at
+// HOME/.claude/agents/…; the claudeDirSet boolean fix always strips the prefix
+// when ClaudeDir was resolved; this test FAILS without the claudeDirSet fix.
+func TestManagerClaudeDir_ClaudeConfigDir_EqualsHome(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+	t.Setenv("CLAUDE_CONFIG_DIR", homeDir) // CLAUDE_CONFIG_DIR=HOME (no .claude/ subdir)
+
+	manager := Manager{
+		ProjectRoot: homeDir,
+		HomeDir:     homeDir,
+		ClaudeDir:   func() (string, error) { return agentconfig.ClaudeConfigDir(agentconfig.DefaultResolver) },
+	}
+
+	plan := testClaudePlan("backend", "v1", "# backend agent")
+	if err := manager.Install([]PlannedArtifact{plan}, false); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+
+	// Assert: file exists under HOME/agents/… (CLAUDE_CONFIG_DIR=HOME means root=HOME, no .claude/)
+	want := filepath.Join(homeDir, "agents", "trackfw-backend.md")
+	if _, err := os.Stat(want); err != nil {
+		t.Errorf("agent file not found at CLAUDE_CONFIG_DIR(=HOME)/agents path %q: %v", want, err)
+	}
+
+	// Assert: file does NOT exist under HOME/.claude/agents/…
+	bad := filepath.Join(homeDir, ".claude", "agents", "trackfw-backend.md")
+	if _, err := os.Stat(bad); err == nil {
+		t.Errorf("agent file incorrectly written to HOME/.claude path %q (old destRoot!=root bug)", bad)
+	}
+}
+
 // TestManagerClaudeDir_OutsideRoot_Rejected verifies that a Claude global plan
 // with an absolute destination outside ClaudeDir is rejected by the beneath guard.
 //

@@ -115,11 +115,25 @@ git diff --quiet HEAD -- internal/
 
 ### ML-2B — Corretivo da revisão de qualidade (B1, B2, A1–A3)
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-14; mordidas B1, B2, A1 coladas; A3 mostrou que a asserção antiga dava falso verde. Proteção de D5 já vem de `InertClaudeGuardPath` (compara com o diretório resolvido). Resíduo do agente rejeitado: `scaffold.go:239` é mesma causa → ML-2C
 **Por que o escopo original não previa:** achados do parecer de qualidade; mesma causa (sítios fora do resolvedor único).
 **Acceptance criteria:**
-- [ ] B1: `validate_home_divergence_rule.go` usa `agentconfig.ClaudeConfigDir` para o diretório novo; com `CLAUDE_CONFIG_DIR=HOME/.claude` o guard ativo NÃO é chamado de inerte (teste reprova sem a correção)
-- [ ] B2: `harnessClaudeSkillTarget` grava a skill global sob `ClaudeConfigDir` (`<dir>/skills/trackfw/SKILL.md`); teste com divergência simulada
-- [ ] A1: `CLAUDE_CONFIG_DIR=HOME` (sem subdir) → agente em `HOME/agents/…`; A2: teste com `CLAUDE_CONFIG_DIR` vazio; A3: asserção do aviso pina o Claude como medido e o caminho de escrita
-- [ ] build, vet (inclusive `GOOS=windows`), testes dos pacotes tocados, `make parity-rest` EXIT=0
+- [x] B1: `validate_home_divergence_rule.go` usa `agentconfig.ClaudeConfigDir` para o diretório novo; com `CLAUDE_CONFIG_DIR=HOME/.claude` o guard ativo NÃO é chamado de inerte (teste reprova sem a correção)
+      ✅ `TestHomeDivergenceWindows_ClaudeConfigDir_NoInert`
+- [x] B2: `harnessClaudeSkillTarget` grava a skill global sob `ClaudeConfigDir` (`<dir>/skills/trackfw/SKILL.md`); teste com divergência simulada
+      ✅ `TestHarnessClaudeSkillTarget_ClaudeConfigDir_LandsAtResolvedDir`
+- [x] A1: `CLAUDE_CONFIG_DIR=HOME` (sem subdir) → agente em `HOME/agents/…`; A2: teste com `CLAUDE_CONFIG_DIR` vazio; A3: asserção do aviso pina o Claude como medido e o caminho de escrita
+      ✅ `TestManagerClaudeDir_ClaudeConfigDir_EqualsHome`, `TestClaudeConfigDir_EmptyCLAUDE_CONFIG_DIR_FallsThrough`, `TestHomeDivergenceWindows_Divergent` endurecido
+- [x] build, vet (inclusive `GOOS=windows`), testes dos pacotes tocados, `make parity-rest` EXIT=0
+      ✅ EXIT=0 nos 5 pacotes + `pathguard`; `make parity-rest` EXIT=0
+
+### ML-2C — Skill global do trackfw instalada pelo `scaffold` segue o resolvedor
+**Owner:** `apolo-tf`
+**Status:** 🔄 Em andamento
+**Por que o escopo original não previa:** achado no ML-2B — `internal/generators/scaffold.go:239` (`installGlobalSkillInner`) grava `GlobalClaudeSkillPath(homedir.Dir())`. Mesma causa.
+**Acceptance criteria:**
+- [ ] Skill global gravada em `ClaudeConfigDir/skills/trackfw/SKILL.md`; contenção (`pathguard.ResolveRoot`) sobre a raiz resolvida; erro de resolução → erro nomeado
+- [ ] Teste com divergência simulada e com `CLAUDE_CONFIG_DIR` reprova sem a correção; controle idêntico; `containment_live_test.go` ajustado se necessário
+- [ ] `git grep GlobalClaudeSkillPath` sem chamador de escopo global fora do resolvedor
+- [ ] build, vet (inclusive `GOOS=windows`), testes, `make parity-rest` EXIT=0
 

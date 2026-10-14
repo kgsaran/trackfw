@@ -173,7 +173,8 @@ func TestUpdateHarnessCmd_JSONKeyOrderMatchesCliParityContract(t *testing.T) {
 func TestUpdateHarnessCmd_FailedTargetIncludesMessageAndExitsNonZero(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home) // ML-1A: Windows reads USERPROFILE
+	t.Setenv("USERPROFILE", home)      // ML-1A: Windows reads USERPROFILE
+	t.Setenv("CLAUDE_CONFIG_DIR", "") // ML-2B B2: isolate from real CLAUDE_CONFIG_DIR
 
 	// Force a failure: make the claude-skill destination a directory instead
 	// of a writable file location, so os.ReadFile succeeds reading a dir
