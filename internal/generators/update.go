@@ -170,6 +170,9 @@ func updateDetectedCodexIntegrations(cwd string) error {
 	if err != nil {
 		return fmt.Errorf("codex integration identity: %w", err)
 	}
+	// ML-1D: ClaudeDir is intentionally not set — this Manager handles Codex
+	// project-scope artifacts only (Targets: []string{"codex"}, Scope: "project").
+	// No claude/global plans reach it, so ClaudeDir is behaviour-neutral here.
 	manager := integrations.Manager{ProjectRoot: cwd, HomeDir: home}
 	updated := 0
 	for _, kind := range []integrations.ItemKind{integrations.KindAgents, integrations.KindSkills} {
@@ -691,7 +694,7 @@ func UpdateHarness(opts UpdateOptions) (UpdateReport, error) {
 		if !ok {
 			continue
 		}
-		results = append(results, harnessCatalogTarget(catalog, id, tool, kind, home, opts))
+		results = append(results, harnessCatalogTarget(catalog, id, tool, kind, home, claudeDir, claudeDirErr, opts))
 	}
 	return UpdateReport{Scope: "harness", DryRun: opts.DryRun, Targets: results}, nil
 }
@@ -2336,7 +2339,15 @@ func harnessGitBranchGuardTargetKiro(home string, opts UpdateOptions) TargetResu
 // displayPath is derived from the catalog itself (integrations.GlobalGroupPath)
 // rather than from any individual installed plan's destination, so the
 // reported path never depends on catalog item iteration order.
-func harnessCatalogTarget(catalog *integrations.Catalog, id, tool string, kind integrations.ItemKind, home string, opts UpdateOptions) TargetResult {
+// harnessCatalogTarget evaluates (and, unless DryRun, applies) every
+// global-scope catalog item of the given (tool, kind) pair.
+//
+// claudeDir is the pre-resolved agentconfig.ClaudeConfigDir value from the
+// caller (UpdateHarness). It is passed in to satisfy ADR-2026-10-14 D3 (writer
+// and auditor use the same resolver instance). claudeDirErr is the error from
+// that resolution; if non-nil and tool is "claude", the Manager will propagate
+// the error through ClaudeDir.
+func harnessCatalogTarget(catalog *integrations.Catalog, id, tool string, kind integrations.ItemKind, home, claudeDir string, claudeDirErr error, opts UpdateOptions) TargetResult {
 	displayPath, pathErr := integrations.GlobalGroupPath(catalog, tool, kind)
 	if pathErr != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: "", Message: pathErr.Error()}
@@ -2361,7 +2372,15 @@ func harnessCatalogTarget(catalog *integrations.Catalog, id, tool string, kind i
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}
 	}
 
+	// ML-1D (ADR-2026-10-14 D1/A1): set ClaudeDir only for the claude tool so
+	// global claude agents/skills are written at the path Claude Code actually
+	// reads. claudeDir comes from the caller (D3: one resolved value per harness
+	// run). Non-Claude tools are unaffected (D2: behaviour unchanged).
 	manager := integrations.Manager{ProjectRoot: home, HomeDir: home}
+	if tool == agentconfig.CLIClaude {
+		capturedDir, capturedErr := claudeDir, claudeDirErr
+		manager.ClaudeDir = func() (string, error) { return capturedDir, capturedErr }
+	}
 	anyInstalled := false
 	anyChanged := false
 	for _, plan := range plans {
@@ -2682,6 +2701,9 @@ func codexProjectAgentsApply(root string, opts UpdateOptions) error {
 	if err != nil {
 		return err
 	}
+	// ML-1D: ClaudeDir is intentionally not set — this Manager handles Codex
+	// project-scope artifacts only (Targets: []string{"codex"}, Scope: "project").
+	// No claude/global plans reach it, so ClaudeDir is behaviour-neutral here.
 	manager := integrations.Manager{ProjectRoot: root, HomeDir: home}
 	var projectAgentModels map[string]string
 	if chErr := withChdir(root, func() error {

@@ -96,7 +96,7 @@ run_install() {
   local home_dir="$WORK/home-$rt-${target//\//-}"
   mkdir -p "$home_dir"
   case "$rt" in
-    go)   (cd "$proj" && HOME="$home_dir" "$GO_BIN" agents install --targets "$target" --scope project >/dev/null 2>&1) ;;
+    go)   (cd "$proj" && HOME="$home_dir" USERPROFILE="$home_dir" CLAUDE_CONFIG_DIR= "$GO_BIN" agents install --targets "$target" --scope project >/dev/null 2>&1) ;;
     # ML-3A (v8): node and py cases removed
     *)    echo "check-agent-models-parity: unknown runtime '$rt'" >&2; exit 1 ;;
   esac
@@ -386,7 +386,7 @@ run_install_expect_fail() {
   local exit_code=0
   case "$rt" in
     go)
-      if (cd "$proj" && HOME="$home_dir" "$GO_BIN" agents install --targets "$target" --scope project >/dev/null 2>&1); then
+      if (cd "$proj" && HOME="$home_dir" USERPROFILE="$home_dir" CLAUDE_CONFIG_DIR= "$GO_BIN" agents install --targets "$target" --scope project >/dev/null 2>&1); then
         exit_code=1
       fi
       ;;
@@ -565,7 +565,7 @@ run_install_global() {
   local rt=$1 home_dir=$2 cwd_dir=$3 target=$4 stderr_dest="${5:-/dev/null}"
   mkdir -p "$cwd_dir"
   case "$rt" in
-    go)   ( cd "$cwd_dir" && HOME="$home_dir" "$GO_BIN" agents install --targets "$target" --scope global >/dev/null 2>"$stderr_dest" ) ;;
+    go)   ( cd "$cwd_dir" && HOME="$home_dir" USERPROFILE="$home_dir" CLAUDE_CONFIG_DIR= "$GO_BIN" agents install --targets "$target" --scope global >/dev/null 2>"$stderr_dest" ) ;;
     # ML-3A (v8): node global case removed
     # ML-3A (v8): py global case removed
     *)    echo "check-agent-models-parity: unknown runtime '$rt'" >&2; exit 1 ;;
@@ -580,7 +580,7 @@ run_install_global() {
 run_install_with_home() {
   local rt=$1 home_dir=$2 proj=$3 target=$4
   case "$rt" in
-    go)   ( cd "$proj" && HOME="$home_dir" "$GO_BIN" agents install --targets "$target" --scope project >/dev/null 2>&1 ) ;;
+    go)   ( cd "$proj" && HOME="$home_dir" USERPROFILE="$home_dir" CLAUDE_CONFIG_DIR= "$GO_BIN" agents install --targets "$target" --scope project >/dev/null 2>&1 ) ;;
     # ML-3A (v8): node project case removed
     # ML-3A (v8): py project case removed
     *)    echo "check-agent-models-parity: unknown runtime '$rt'" >&2; exit 1 ;;
@@ -808,7 +808,7 @@ for rt in go; do  # ML-3A (v8): node py removed
   c10_exit=0
   case "$rt" in
     go)
-      if ! ( cd "$cwd10" && HOME="$home10" "$GO_BIN" agents install --targets claude --scope global >/dev/null 2>"$stderr10" ); then
+      if ! ( cd "$cwd10" && HOME="$home10" USERPROFILE="$home10" CLAUDE_CONFIG_DIR= "$GO_BIN" agents install --targets claude --scope global >/dev/null 2>"$stderr10" ); then
         c10_exit=1
       fi
       ;;
@@ -869,7 +869,7 @@ for rt in go; do  # ML-3A (v8): node py removed
   c11_exit=0
   case "$rt" in
     go)
-      if ! ( cd "$cwd11" && HOME="$home11" "$GO_BIN" init --ai-tools claude >/dev/null 2>&1 ); then
+      if ! ( cd "$cwd11" && HOME="$home11" USERPROFILE="$home11" CLAUDE_CONFIG_DIR= "$GO_BIN" init --ai-tools claude >/dev/null 2>&1 ); then
         c11_exit=1
       fi
       ;;
@@ -939,7 +939,7 @@ for rt in go; do  # ML-3A (v8): node py removed
   c12a_exit=0
   case "$rt" in
     go)
-      if ! ( cd "$cwd12" && HOME="$home12" "$GO_BIN" agents install --targets claude --scope global >/dev/null 2>&1 ); then
+      if ! ( cd "$cwd12" && HOME="$home12" USERPROFILE="$home12" CLAUDE_CONFIG_DIR= "$GO_BIN" agents install --targets claude --scope global >/dev/null 2>&1 ); then
         c12a_exit=1
       fi
       ;;
@@ -995,7 +995,7 @@ EOF
   c12b_exit=0
   case "$rt" in
     go)
-      if ! ( cd "$cwd12" && HOME="$home12" TRACKFW_ORCHESTRATOR_SESSION=1 "$GO_BIN" skills third-party install \
+      if ! ( cd "$cwd12" && HOME="$home12" USERPROFILE="$home12" CLAUDE_CONFIG_DIR= TRACKFW_ORCHESTRATOR_SESSION=1 "$GO_BIN" skills third-party install \
           --checksum "$C12_CHECKSUM" --targets claude --apply-to backend --scope global \
           --yes-i-trust-this-source --yes-global-scope-unverified >/dev/null 2>&1 ); then
         c12b_exit=1

@@ -40,6 +40,8 @@ trap 'chmod -R u+w "$WORK" 2>/dev/null; rm -rf "$WORK"' EXIT
 # máquina com o harness instalado e outra sem). Mesmo precedente do
 # Cenário 46 em scripts/check-gates-falsify.sh.
 export HOME="$WORK/home"
+export USERPROFILE="$WORK/home"
+export CLAUDE_CONFIG_DIR=
 mkdir -p "$HOME"
 
 # ---------------------------------------------------------------------------

@@ -110,6 +110,8 @@ trap 'chmod -R u+w "$WORK" 2>/dev/null; rm -rf "$WORK"' EXIT
 # `validate` run here would see the REAL global guard scope of whoever runs
 # this gate, contaminating scenarios that have nothing to do with guards.
 export HOME="$WORK/home"
+export USERPROFILE="$WORK/home"
+export CLAUDE_CONFIG_DIR=
 mkdir -p "$HOME"
 export NO_COLOR=1
 export TERM=dumb

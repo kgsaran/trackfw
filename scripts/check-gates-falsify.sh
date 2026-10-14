@@ -116,6 +116,8 @@ export GOPATH="${GOPATH:-$(go env GOPATH)}"
 export GOCACHE="${GOCACHE:-$(go env GOCACHE)}"
 export GOMODCACHE="${GOMODCACHE:-$(go env GOMODCACHE)}"
 export HOME="$WORK/home"
+export USERPROFILE="$WORK/home"
+export CLAUDE_CONFIG_DIR=
 mkdir -p "$HOME"
 
 # ---------------------------------------------------------------------------
@@ -5331,7 +5333,7 @@ S68_MSG='content diverges from the template this version of trackfw generates'
 T68_HOME="$WORK/s68-fake-home"
 mkdir -p "$T68_HOME"
 
-(HOME="$T68_HOME" "$ROOT_DIR/bin/trackfw" update harness) >"$WORK/s68-update-harness.log" 2>&1
+(HOME="$T68_HOME" USERPROFILE="$T68_HOME" CLAUDE_CONFIG_DIR= "$ROOT_DIR/bin/trackfw" update harness) >"$WORK/s68-update-harness.log" 2>&1
 T68_GBG_SCRIPT="$T68_HOME/.trackfw/scripts/trackfw-git-branch-guard.sh"
 if [[ ! -s "$T68_GBG_SCRIPT" ]]; then
   echo "FAIL [falsify/git-branch-guard-global-script-integrity/setup]: 'trackfw update harness' não escreveu $T68_GBG_SCRIPT" >&2
@@ -5429,7 +5431,7 @@ assert_would_now_fail "git-branch-guard-global-script-integrity" \
 T68_DUP_HOME="$WORK/s68-dup-home-gbg"
 mkdir -p "$T68_DUP_HOME"
 set +e
-(HOME="$T68_DUP_HOME" "$ROOT_DIR/bin/trackfw" update harness \
+(HOME="$T68_DUP_HOME" USERPROFILE="$T68_DUP_HOME" CLAUDE_CONFIG_DIR= "$ROOT_DIR/bin/trackfw" update harness \
   --targets claude-git-branch-guard,codex-git-branch-guard,git-branch-guard-script --install-missing) \
   >"$WORK/s68-dup-update-harness-gbg.log" 2>&1
 s68dupgbg_setup_status=$?
@@ -5480,7 +5482,7 @@ fi
 T68_DUP_HOME_CG="$WORK/s68-dup-home-cg"
 mkdir -p "$T68_DUP_HOME_CG"
 set +e
-(HOME="$T68_DUP_HOME_CG" "$ROOT_DIR/bin/trackfw" update harness \
+(HOME="$T68_DUP_HOME_CG" USERPROFILE="$T68_DUP_HOME_CG" CLAUDE_CONFIG_DIR= "$ROOT_DIR/bin/trackfw" update harness \
   --targets claude-credential-guard,codex-credential-guard,credential-guard-script --install-missing) \
   >"$WORK/s68-dup-update-harness-cg.log" 2>&1
 s68dupcg_setup_status=$?
@@ -5547,7 +5549,7 @@ T69_HOME="$WORK/s69-fake-home"
 mkdir -p "$T69_HOME"
 
 set +e
-(HOME="$T69_HOME" "$ROOT_DIR/bin/trackfw" update harness \
+(HOME="$T69_HOME" USERPROFILE="$T69_HOME" CLAUDE_CONFIG_DIR= "$ROOT_DIR/bin/trackfw" update harness \
   --targets kiro-git-branch-guard,kiro-credential-guard,git-branch-guard-script,credential-guard-script --install-missing) \
   >"$WORK/s69-update-harness.log" 2>&1
 s69setup_status=$?
@@ -7123,10 +7125,10 @@ else
   mkdir -p "$T181_BASE_PROJ" "$T181_BASE_HOME/.trackfw"
   printf '%s\n' "$_S181_ID" >"$T181_BASE_HOME/.trackfw/identity.json"
   printf '%s' "$_S181_CFG" >"$T181_BASE_PROJ/trackfw.yaml"
-  (cd "$T181_BASE_PROJ" && HOME="$T181_BASE_HOME" "$ROOT_DIR/bin/trackfw" \
+  (cd "$T181_BASE_PROJ" && HOME="$T181_BASE_HOME" USERPROFILE="$T181_BASE_HOME" CLAUDE_CONFIG_DIR= "$ROOT_DIR/bin/trackfw" \
     update --install-missing --targets validate-script) >/dev/null
   chmod 0644 "$T181_BASE_PROJ/scripts/trackfw-validate.sh"
-  (cd "$T181_BASE_PROJ" && HOME="$T181_BASE_HOME" "$ROOT_DIR/bin/trackfw" \
+  (cd "$T181_BASE_PROJ" && HOME="$T181_BASE_HOME" USERPROFILE="$T181_BASE_HOME" CLAUDE_CONFIG_DIR= "$ROOT_DIR/bin/trackfw" \
     update --targets validate-script) >/dev/null
   if test -x "$T181_BASE_PROJ/scripts/trackfw-validate.sh"; then
     falsify_count_success
@@ -7143,7 +7145,7 @@ else
   mkdir -p "$T181_DET_PROJ" "$T181_DET_HOME/.trackfw"
   printf '%s\n' "$_S181_ID" >"$T181_DET_HOME/.trackfw/identity.json"
   printf '%s' "$_S181_CFG" >"$T181_DET_PROJ/trackfw.yaml"
-  (cd "$T181_DET_PROJ" && HOME="$T181_DET_HOME" "$ROOT_DIR/bin/trackfw" \
+  (cd "$T181_DET_PROJ" && HOME="$T181_DET_HOME" USERPROFILE="$T181_DET_HOME" CLAUDE_CONFIG_DIR= "$ROOT_DIR/bin/trackfw" \
     update --install-missing --targets validate-script) >/dev/null
   T181_SCRIPT="$T181_DET_PROJ/scripts/trackfw-validate.sh"
   # Salva conteudo canonico antes de corromper
@@ -7152,7 +7154,7 @@ else
   printf 'X' >>"$T181_SCRIPT"
   chmod 0644 "$T181_SCRIPT"
   # Roda binario sabotado
-  (cd "$T181_DET_PROJ" && HOME="$T181_DET_HOME" "$T181_BIN" \
+  (cd "$T181_DET_PROJ" && HOME="$T181_DET_HOME" USERPROFILE="$T181_DET_HOME" CLAUDE_CONFIG_DIR= "$T181_BIN" \
     update --targets validate-script) >/dev/null
   # Verifica: conteudo restaurado (apply() rodou)
   _falsify_arm_fail_6523=0

@@ -10,6 +10,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 	cbterm "github.com/charmbracelet/x/term"
+	"github.com/kgsaran/trackfw/internal/agentconfig"
 	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/forge"
 	"github.com/kgsaran/trackfw/internal/generators"
@@ -435,7 +436,16 @@ func installAITools(aiTools []string, cwd string, scope string) error {
 	for _, plan := range plans {
 		fmt.Printf("  %s\n", plan.Destination)
 	}
-	manager := integrations.Manager{ProjectRoot: cwd, HomeDir: home}
+	// ML-1D (ADR-2026-10-14 D1/A1): Claude global agents/skills land at
+	// agentconfig.ClaudeConfigDir, not at HomeDir/.claude, so the writer
+	// and the auditor (validate) agree on the path Claude Code actually reads.
+	manager := integrations.Manager{
+		ProjectRoot: cwd,
+		HomeDir:     home,
+		ClaudeDir: func() (string, error) {
+			return agentconfig.ClaudeConfigDir(agentconfig.DefaultResolver)
+		},
+	}
 	manager.OnSkip = func(_ string, reason string) {
 		fmt.Fprintln(os.Stderr, reason)
 	}

@@ -71,7 +71,7 @@ git diff --quiet HEAD -- internal/
 
 ### ML-1B — Aviso de divergência (D4) e resto inerte (D5)
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Acceptance criteria:**
 - [ ] Predicado A3; aviso informativo nomeia os dois caminhos, CLIs medidos × inferidos (A4) e o Windsurf (A8); silêncio sem divergência
 - [ ] `update harness` relata o guard antigo sob `HOME` sem apagá-lo (D5)
@@ -80,13 +80,17 @@ git diff --quiet HEAD -- internal/
 
 ### ML-1D — Arquivos de agente do Claude seguem o mesmo resolvedor
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-14. Mordida feita pelo arquiteto (o relatório não a trouxe): `Manager` ignorando `ClaudeDir` → (a), (b), (e) reprovam; controles (c), (d) passam. O manifesto grava destino absoluto (`manager.go:593`), então a raiz nova não perde o rastreio
 **Por que o escopo original não previa:** achado no ML-1A — `integrations.Manager{HomeDir: homedir.Dir()}` grava `~/.claude/agents` e `~/.claude/skills` sob `HOME` (`init.go:438`, `integrations_flags.go:444`, `update.go:173,2364,2685`); o Claude Code os lê no home dele. Mesma causa.
 **Acceptance criteria:**
-- [ ] `Manager` resolve o diretório do Claude por `agentconfig.ClaudeConfigDir` (os demais CLIs inalterados)
-- [ ] Teste com divergência simulada e com `CLAUDE_CONFIG_DIR` reprova sem a correção; controle idêntico
-- [ ] Scripts que chamam `agents install`/`init`/`update` com `HOME=` passam a definir `USERPROFILE` (lista do relatório do ML-1A)
-- [ ] build, vet (inclusive `GOOS=windows`), testes dos pacotes tocados, `make parity-rest` EXIT=0
+- [x] `Manager` resolve o diretório do Claude por `agentconfig.ClaudeConfigDir` (os demais CLIs inalterados)
+      ✅ campo `Manager.ClaudeDir`; `init.go`, `integrations_flags.go`, `update.go` (`harnessCatalogTarget`) passam `agentconfig.ClaudeConfigDir`; demais CLIs inalterados
+- [x] Teste com divergência simulada e com `CLAUDE_CONFIG_DIR` reprova sem a correção; controle idêntico
+      ✅ `manager_claude_test.go` (5 testes)
+- [x] Scripts que chamam `agents install`/`init`/`update` com `HOME=` passam a definir `USERPROFILE` (lista do relatório do ML-1A)
+      ✅ 8 scripts com `USERPROFILE` e `CLAUDE_CONFIG_DIR=`; `check-release-tag-parity.sh` só usa `HOME=` em chamadas de `git`
+- [x] build, vet (inclusive `GOOS=windows`), testes dos pacotes tocados, `make parity-rest` EXIT=0
+      ✅ build, vet (inclusive `GOOS=windows`), 5 pacotes, `make parity-rest` EXIT=0
 
 ### ML-1C — Medição de CI antes/depois, contrato e README
 **Owner:** `ares-tf` / `apolo-tf`
