@@ -3,12 +3,12 @@ status: Open
 date: 2026-09-03
 author: "trackfw_architect (Zeus)"
 adr: ""
-roadmap: "docs/roadmaps/blocked/ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz.md"
+roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz.md"
 ---
 
 # REQ: As 217 falhas reais de Windows colapsam em poucas causas, e três delas exigem decisão antes de código
 
-> Date: 2026-09-03 | Status: Done
+> Date: 2026-09-03 | Status: Open
 | Linear Issue:
 | Jira Issue:
 
@@ -118,7 +118,7 @@ ADR:
 <!-- As 3 acima. -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/blocked/ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz.md
+Roadmap: docs/roadmaps/backlog/ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz.md
 
 
 ---
@@ -179,3 +179,7 @@ triagem por mecanismo passou de ciclo-de-PR para segundos.
 
 **3 dos 15 não reproduzem na VM** (`TestChecksum`, os dois de `ThirdPartyInstall`) — diferença
 Windows 10 ARM64 vs Windows Server x64. Continuam dependendo do CI, e isso fica escrito.
+
+## Reclassificação pós-v8 — 2026-10-14
+
+Ver a seção de mesmo nome no roadmap. O cabeçalho dizia `Status: Done` e o frontmatter `Open`; o correto é `Open` (o roadmap nunca fechou). AC4 (paridade nos 3 CLIs) deixa de se aplicar: implementação única em Go. Entram os MLs W1–W4 por mesma causa.

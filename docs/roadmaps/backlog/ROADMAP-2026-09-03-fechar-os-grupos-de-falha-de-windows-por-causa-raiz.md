@@ -1,5 +1,5 @@
 ---
-status: blocked
+status: backlog
 date: 2026-09-03
 squad: apolo-tf
 req: "docs/req/REQ-2026-09-03-as-217-falhas-reais-de-windows-colapsam-em-poucas-causas-e-tres-delas-exigem-decisao-antes-de-codigo.md"
@@ -7,7 +7,7 @@ req: "docs/req/REQ-2026-09-03-as-217-falhas-reais-de-windows-colapsam-em-poucas-
 
 # Roadmap: Fechar os grupos de falha de Windows por causa raiz
 
-> Criado em: 2026-09-03 | Status: blocked
+> Criado em: 2026-09-03 | Status: backlog
 
 ## Context
 
@@ -2516,3 +2516,37 @@ significa implementar em runtimes que estão sendo deletados.
 
 **Reabre:** quando a Wave 3 da v8 fechar (`ROADMAP-2026-09-12-v8-um-binario-muitos-canais`), pelo
 ML-4A dela, que classifica REQs e issues em *desaparece / barateia / indiferente*.
+
+---
+
+## 🔄 RECLASSIFICAÇÃO PÓS-v8 — 2026-10-14 (zeus-tf)
+
+A v8 saiu e o critério de reabertura ("reclassificar em *desaparece / barateia / indiferente*")
+foi aplicado **por medição**, não por leitura: `docs/portabilidade/2026-10-12-suporte-windows-9.5.0-estado-medido.md`
+(censo x64 `38319939952` em `a1cc6e93` + `windows-full-suites` `38316881566` + VM ARM64).
+
+| item deste roadmap | classificação | evidência |
+|---|---|---|
+| ML-R2b2 — 76 rótulos | **desapareceu em grande parte** — 4 FAIL no censo hoje, todos com causa (setup do censo; NTFS #421) | doc acima, "Correções" |
+| ML-R2b1b — `{owner}/{repo}` no shim do `gh` | **indiferente / não medido** — o shim de `gh` era instrumento de paridade de runtimes; cenários hoje em PROOF | censo §4 |
+| "Os outros 5 grupos" | **substituídos** pela lista `.github/windows-known-failures.json` (14 testes Go, causas por grupo, 5 `INFER`) | `windows-full-suites` 38316881566 |
+| ML-R3 — guard de entrada cego a `\` | **vivo, contido** — segue valendo como está | VM 2026-10-12, M2 |
+| AC4 da REQ (paridade nos 3 CLIs) | **desapareceu** — implementação única em Go | v8 |
+
+### MLs acrescentados (mesma causa: produto que não fala a gramática/semântica do Windows)
+
+- **ML-W1 — 🔴 proveniência de terceiros no Windows** (`thirdparty_artifact_has_provenance`):
+  instalação aprovada acusa violação (`integrations_thirdparty_validate_test.go:74`) e a adulterada não
+  cai no ramo D2-ii esperado (`:132`). A regra não discrimina íntegro de adulterado. Causa listada como
+  `INFER` (nome curto 8.3) — medir antes de corrigir. Segurança: revisão `hades-tf` obrigatória.
+- **ML-W2 — permissão 0600 ignorada no NTFS** (`TestSave_WritesAtomicallyWithPermissions`,
+  `internal/identity`): decidir entre ACL do Windows e declarar o limite. Segurança: arquivo de
+  identidade.
+- **ML-W3 — remedir as 5 causas `INFER`** da lista conhecida (CRLF no renderizador ×2, golden,
+  modelo de agente, separador no manifesto do `update`) e corrigir as que forem de produto.
+- **ML-W4 — setup do censo instala o pacote Python pré-v8** (`windows-census.yml:399`): põe no PATH um
+  `trackfw.exe` sem `guard`, e 2 rótulos falham por isso. Corrigir o instrumento.
+- **ML-R3** permanece como está.
+
+**Estado:** sai de `blocked/` para `backlog/` — a condição de bloqueio (v8) se cumpriu. Vai para
+`wip/` quando a implementação começar, na branch dela.
