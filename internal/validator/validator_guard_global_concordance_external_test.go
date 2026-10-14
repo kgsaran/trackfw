@@ -361,3 +361,70 @@ func TestGuardGlobalConcordance_d_ResolutionError_Credential(t *testing.T) {
 		t.Errorf("expected a finding mentioning Claude Code; got: %v", msgs)
 	}
 }
+
+// --------------------------------------------------------------------------
+// Test (e): relative CLAUDE_CONFIG_DIR — R-1 A7 finding (ML-2D)
+//
+// Conclusion (ML-2D R-1): a relative CLAUDE_CONFIG_DIR produces an A7 finding
+// naming Claude Code; this test FAILS without the filepath.IsAbs check in
+// ClaudeConfigDirWithSource because the old code accepted relative paths and
+// the validator would silently skip or write outside the expected root.
+// --------------------------------------------------------------------------
+
+func TestGuardGlobalConcordance_e_RelativeCLAUDE_CONFIG_DIR_GitBranch(t *testing.T) {
+	for _, rel := range []string{"../evil", "rel"} {
+		rel := rel
+		t.Run(rel, func(t *testing.T) {
+			setupGlobalConcordanceDir(t)
+			t.Setenv("CLAUDE_CONFIG_DIR", rel)
+
+			msgs, err := validator.ValidateGitBranchGuardGlobalHookResolvableForTest()
+			if err != nil {
+				t.Fatalf("ValidateGitBranchGuardGlobalHookResolvable: unexpected error: %v", err)
+			}
+			if len(msgs) == 0 {
+				t.Errorf("CLAUDE_CONFIG_DIR=%q: expected at least one A7 finding, got zero", rel)
+				return
+			}
+			found := false
+			for _, m := range msgs {
+				if strings.Contains(m, "Claude Code") || strings.Contains(m, "claude") {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("CLAUDE_CONFIG_DIR=%q: expected finding mentioning Claude Code; got: %v", rel, msgs)
+			}
+		})
+	}
+}
+
+func TestGuardGlobalConcordance_e_RelativeCLAUDE_CONFIG_DIR_Credential(t *testing.T) {
+	for _, rel := range []string{"../evil", "rel"} {
+		rel := rel
+		t.Run(rel, func(t *testing.T) {
+			setupGlobalConcordanceDir(t)
+			t.Setenv("CLAUDE_CONFIG_DIR", rel)
+
+			msgs, err := validator.ValidateCredentialGuardGlobalHookResolvableForTest()
+			if err != nil {
+				t.Fatalf("ValidateCredentialGuardGlobalHookResolvable: unexpected error: %v", err)
+			}
+			if len(msgs) == 0 {
+				t.Errorf("CLAUDE_CONFIG_DIR=%q: expected at least one A7 finding, got zero", rel)
+				return
+			}
+			found := false
+			for _, m := range msgs {
+				if strings.Contains(m, "Claude Code") || strings.Contains(m, "claude") {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Errorf("CLAUDE_CONFIG_DIR=%q: expected finding mentioning Claude Code; got: %v", rel, msgs)
+			}
+		})
+	}
+}

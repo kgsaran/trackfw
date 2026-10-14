@@ -8718,7 +8718,7 @@ ele. Se o comando travar, o usuário deve interrompê-lo com Ctrl-C.
 
 ## Claude Code directory resolution — `ClaudeConfigDir`, `home_divergence_windows` (ADR-2026-10-14, REQ-2026-09-01, ML-1A/ML-1B/ML-1D)
 
-<!-- trackfw-contract: gate=internal/agentconfig/agentconfig_test.go,internal/validator/validator_home_divergence_rule_test.go,internal/generators/update_harness_home_divergence_ml1b_test.go,internal/integrations/manager_claude_test.go partial=TestClaudeConfigDir_CLAUDE_CONFIG_DIR_Honoured,TestClaudeConfigDir_Default_JoinsHomeDotClaude,TestClaudeConfigDir_Windows_UsesUserprofile prove the three-step resolution order and CLAUDE_CONFIG_DIR root-placement; TestHomeDivergenceWindows_Divergent,TestHomeDivergenceWindows_NoDivergence,TestHomeDivergenceWindows_NotWindows,TestHomeDivergenceWindows_CaseAndTrailingSlash prove the home_divergence_windows firing conditions (EqualFold + normHomePath); TestHarnessD5InertRemainderReported,TestHarnessDisplayPathWithClaudeConfigDirOutsideHome prove D5 inert-remainder reporting and display-path via withD5Notice and claudeSettingsDisplayPath; TestManagerClaudeDir_WindowsDivergence_AgentLandsUnderCLAUDE_DIR,TestManagerClaudeDir_CLAUDE_CONFIG_DIR_AgentLandsAtRoot,TestManagerClaudeDir_NoDiv_PathIdentical prove that Manager.ClaudeDir routes global agents/skills to the correct directory; no script gate for the Windows-only runtime path (windows branch not exercised in macOS/Linux CI) -->
+<!-- trackfw-contract: gate=internal/agentconfig/agentconfig_test.go,internal/validator/validator_home_divergence_rule_test.go,internal/generators/update_harness_home_divergence_ml1b_test.go,internal/generators/update_harness_d5_notice_ml2d_test.go,internal/integrations/manager_claude_test.go partial=TestClaudeConfigDir_CLAUDE_CONFIG_DIR_Honoured,TestClaudeConfigDir_Default_JoinsHomeDotClaude,TestClaudeConfigDir_Windows_UsesUserprofile prove the three-step resolution order and CLAUDE_CONFIG_DIR root-placement; TestClaudeConfigDir_RelativeCLAUDE_CONFIG_DIR_ReturnsError,TestClaudeConfigDir_SpacesOnlyCLAUDE_CONFIG_DIR_FallsThrough prove R-1 (ML-2D): relative paths rejected, spaces treated as unset; TestHomeDivergenceWindows_Divergent,TestHomeDivergenceWindows_NoDivergence,TestHomeDivergenceWindows_NotWindows,TestHomeDivergenceWindows_CaseAndTrailingSlash prove the home_divergence_windows firing conditions (EqualFold + normHomePath); TestHomeDivergenceWindows_ClaudeConfigDir_MessageCitesDir proves R-4 (ML-2D): warning cites CLAUDE_CONFIG_DIR when set; TestHarnessD5InertRemainderReported,TestHarnessDisplayPathWithClaudeConfigDirOutsideHome prove D5 inert-remainder reporting and display-path; TestHarnessD5Notice_ClaudeConfigDir_ConditionalMessage,TestHarnessD5Notice_WindowsDivergence_UnconditionalMessage,TestHarnessD5Notice_RelativeCLAUDE_CONFIG_DIR_TargetFailed prove R-3/R-1 (ML-2D): conditional D5 message and A7-failure on relative path; TestManagerClaudeDir_WindowsDivergence_AgentLandsUnderCLAUDE_DIR,TestManagerClaudeDir_CLAUDE_CONFIG_DIR_AgentLandsAtRoot,TestManagerClaudeDir_NoDiv_PathIdentical prove that Manager.ClaudeDir routes global agents/skills to the correct directory; no script gate for the Windows-only runtime path (windows branch not exercised in macOS/Linux CI) -->
 
 `agentconfig.ClaudeConfigDir` (`internal/agentconfig/agentconfig.go`, A1 of ADR-2026-10-14 D6)
 resolves the directory that contains Claude Code's `settings.json`. Both the `update harness`
@@ -8734,11 +8734,15 @@ agents and skills: `Manager.ClaudeDir` (`internal/integrations/manager.go`) is s
 
 **Resolution order:**
 
-1. **`CLAUDE_CONFIG_DIR`** — when set and non-empty: `filepath.Clean(CLAUDE_CONFIG_DIR)`.
-   `settings.json` lives at the **root** of this directory (no `.claude/` subdir) — measured
-   on Windows ARM64 2026-10-14
+1. **`CLAUDE_CONFIG_DIR`** — when set, non-empty, and **absolute** after `filepath.Clean`:
+   returns `filepath.Clean(CLAUDE_CONFIG_DIR)`. `settings.json` lives at the **root** of this
+   directory (no `.claude/` subdir) — measured on Windows ARM64 2026-10-14
    (`docs/portabilidade/2026-10-14-guard-global-home-userprofile-vm.md`, Passo 3.1).
    Cross-platform: applies on macOS, Linux, and Windows alike.
+   **R-1 (ML-2D):** if the value is not absolute after `filepath.Clean` (e.g. `../evil`, `rel`),
+   `ClaudeConfigDirWithSource` returns a named error → A7-finding in `validate`,
+   `TargetFailed` in the `update harness`. Spaces-only is treated as "not set" (falls through
+   to step 2/3).
 
 2. **Windows OS home (`USERPROFILE`)** — when `CLAUDE_CONFIG_DIR` is absent and
    `GOOS == "windows"`: `os.UserHomeDir()` (reads `USERPROFILE`).
@@ -8751,7 +8755,7 @@ agents and skills: `Manager.ClaudeDir` (`internal/integrations/manager.go`) is s
 
 ### `home_divergence_windows` — informative warning, never a violation
 
-<!-- trackfw-contract: gate=internal/validator/validator_home_divergence_rule_test.go partial=TestHomeDivergenceWindows_Divergent proves one warning is emitted with HOME and USERPROFILE paths named; TestHomeDivergenceWindows_NoDivergence proves silence when HOME equals USERPROFILE; TestHomeDivergenceWindows_NotWindows proves silence outside Windows; TestHomeDivergenceWindows_CaseAndTrailingSlash proves that paths differing only in case or trailing slash do not trigger the rule -->
+<!-- trackfw-contract: gate=internal/validator/validator_home_divergence_rule_test.go partial=TestHomeDivergenceWindows_Divergent proves one warning is emitted with HOME and USERPROFILE paths named; TestHomeDivergenceWindows_NoDivergence proves silence when HOME equals USERPROFILE; TestHomeDivergenceWindows_NotWindows proves silence outside Windows; TestHomeDivergenceWindows_CaseAndTrailingSlash proves that paths differing only in case or trailing slash do not trigger the rule; TestHomeDivergenceWindows_ClaudeConfigDir_MessageCitesDir (R-4 ML-2D) proves that the warning cites CLAUDE_CONFIG_DIR=%q when set and "OS home (measured)" when not -->
 
 On Windows, when `HOME` is non-empty and differs from `os.UserHomeDir()` (`USERPROFILE`)
 after `normHomePath` (replaces `\` with `/`, strips trailing slashes) followed by
@@ -8780,12 +8784,28 @@ outside Windows: the rule returns nil — silence.
 
 ### D5 — inert remainder is reported, never deleted
 
-<!-- trackfw-contract: gate=internal/generators/update_harness_home_divergence_ml1b_test.go partial=TestHarnessD5InertRemainderReported proves that TargetResult.Message names the inert path when HOME/.claude/settings.json contains guard wiring and claudeDir points elsewhere; TestHarnessDisplayPathWithClaudeConfigDirOutsideHome proves that claudeSettingsDisplayPath returns the absolute path (not ~/…) when the resolved dir is outside homedir.Dir() -->
+<!-- trackfw-contract: gate=internal/generators/update_harness_home_divergence_ml1b_test.go,internal/generators/update_harness_d5_notice_ml2d_test.go,internal/agentconfig/agentconfig_test.go,internal/validator/validator_home_divergence_rule_test.go partial=TestHarnessD5InertRemainderReported proves that TargetResult.Message names the inert path when HOME/.claude/settings.json contains guard wiring and claudeDir points elsewhere; TestHarnessDisplayPathWithClaudeConfigDirOutsideHome proves that claudeSettingsDisplayPath returns the absolute path (not ~/…) when the resolved dir is outside homedir.Dir(); TestHarnessD5Notice_ClaudeConfigDir_ConditionalMessage (R-3 ML-2D) proves that the D5 message is the conditional form (cites CLAUDE_CONFIG_DIR, omits "remove it by hand") when CLAUDE_CONFIG_DIR drove resolution without Windows divergence; TestHarnessD5Notice_WindowsDivergence_UnconditionalMessage proves the unconditional "remove it by hand" form when Windows HOME≠USERPROFILE divergence is present; TestHarnessD5Notice_RelativeCLAUDE_CONFIG_DIR_TargetFailed (R-1 ML-2D) proves that a relative CLAUDE_CONFIG_DIR produces TargetFailed; TestClaudeConfigDir_RelativeCLAUDE_CONFIG_DIR_ReturnsError proves the named error at the agentconfig level; TestClaudeConfigDir_SpacesOnlyCLAUDE_CONFIG_DIR_FallsThrough proves spaces-only treated as unset; TestHomeDivergenceWindows_ClaudeConfigDir_MessageCitesDir (R-4 ML-2D) proves that the home_divergence_windows warning cites CLAUDE_CONFIG_DIR=%q when set, and "OS home (measured)" when not set -->
 
-When `HOME` ≠ `USERPROFILE` and a guard written under the old `HOME/.claude/settings.json`
-exists (`agentconfig.InertClaudeGuardPath`), the `update harness` and `validate` report it
-as inert via `withD5Notice` (`internal/generators/update.go`) and the inline D5 clause in
-`validateHomeDivergenceWindows` (`internal/validator/validator_home_divergence_rule.go`).
+When `HOME` ≠ `USERPROFILE` (Windows divergence) or `CLAUDE_CONFIG_DIR` is set, a guard
+written under the old `HOME/.claude/settings.json` may no longer be active. The `update
+harness` reports this via `withD5Notice` (`internal/generators/update.go`) and
+`validateHomeDivergenceWindows` (`internal/validator/validator_home_divergence_rule.go`)
+reports it inline.
+
+**R-3 (ML-2D):** `withD5Notice` uses a conditional message when `CLAUDE_CONFIG_DIR` drove
+resolution and there is no Windows HOME≠USERPROFILE divergence — the notice explains that
+the file is inert *only* for Claude Code instances running with the same `CLAUDE_CONFIG_DIR`
+and instructs the user **not** to delete it. With Windows divergence (regardless of
+`CLAUDE_CONFIG_DIR`), the original "remove it by hand" message applies because `HOME/.claude`
+is unconditionally inert in that context.
+
+**R-1 (ML-2D):** `CLAUDE_CONFIG_DIR` set to a non-absolute path (e.g. `../evil`, `rel`) is
+rejected by `ClaudeConfigDirWithSource` with a named error (A7-failure), producing
+`TargetFailed` in the harness and a finding in `validate`.
+
+**R-4 (ML-2D):** the `home_divergence_windows` warning now cites `CLAUDE_CONFIG_DIR=%q`
+when the variable is set, rather than the fixed phrase "the OS home (measured)".
+
 The old file is **never deleted** — it is the user's own configuration file.
 
 ### Residuals declared

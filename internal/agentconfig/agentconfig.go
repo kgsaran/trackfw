@@ -26,6 +26,7 @@
 package agentconfig
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -236,17 +237,67 @@ func containsTrackfwGuardMarker(data []byte) bool {
 		strings.Contains(s, "trackfw-git-branch-guard.sh")
 }
 
-// ClaudeConfigDir returns the directory that contains Claude Code's settings.json.
+// Source constants returned by ClaudeConfigDirWithSource.
+//
+//   - ClaudeConfigDirSourceEnvVar: resolution came from the CLAUDE_CONFIG_DIR
+//     environment variable (set and non-empty after TrimSpace).
+//   - ClaudeConfigDirSourceOSHome: resolution fell through to the OS home
+//     (os.UserHomeDir / USERPROFILE) on Windows.
+//   - ClaudeConfigDirSourceHome: resolution fell through to homedir.Dir()
+//     (HOME env var first) on non-Windows platforms.
+const (
+	ClaudeConfigDirSourceEnvVar = "CLAUDE_CONFIG_DIR"
+	ClaudeConfigDirSourceOSHome = "os-home"
+	ClaudeConfigDirSourceHome   = "home"
+)
+
+// ClaudeConfigDirWithSource returns the directory that contains Claude Code's
+// settings.json together with a string identifying the source of the resolution
+// (one of the ClaudeConfigDirSource* constants).
+//
+// ClaudeConfigDir is a thin wrapper over this function for callers that do not
+// need the source.
 //
 // Resolution order (A1, ADR-2026-10-14 D6):
 //
-//  1. If CLAUDE_CONFIG_DIR is set and non-empty: returns filepath.Clean(CLAUDE_CONFIG_DIR).
-//     settings.json lives at the ROOT of this directory (no .claude/ subdir) — measured
-//     2026-10-14 on Windows ARM64 (docs/portabilidade/2026-10-14-guard-global-home-userprofile-vm.md
-//     Passo 3.1). This behaviour is cross-platform.
+//  1. If CLAUDE_CONFIG_DIR is set and non-empty after TrimSpace:
+//     - R-1 (ML-2D): if the value is not absolute after filepath.Clean, returns a
+//       named error — converts path-traversal ("../evil", "rel") to an explicit
+//       A7-failure rather than silent mis-writes. Spaces-only is treated as
+//       "not set" and falls through to step 2.
+//     - Otherwise: returns filepath.Clean(CLAUDE_CONFIG_DIR) and source
+//       ClaudeConfigDirSourceEnvVar. settings.json lives at the ROOT of this
+//       directory (no .claude/ subdir) — measured 2026-10-14 on Windows ARM64
+//       (docs/portabilidade/2026-10-14-guard-global-home-userprofile-vm.md Passo 3.1).
+//       Cross-platform.
 //
 //  2. Otherwise: filepath.Join(r.HomeFor(CLIClaude), ".claude").
-//     On Windows (via OSCLIHomeResolver) this uses USERPROFILE; on other platforms, HOME.
+//     On Windows (via OSCLIHomeResolver) this uses USERPROFILE (source:
+//     ClaudeConfigDirSourceOSHome); on other platforms, HOME (source:
+//     ClaudeConfigDirSourceHome).
+func ClaudeConfigDirWithSource(r CLIHomeResolver) (dir, source string, err error) {
+	raw := os.Getenv("CLAUDE_CONFIG_DIR")
+	if strings.TrimSpace(raw) != "" {
+		cleaned := filepath.Clean(raw)
+		if !filepath.IsAbs(cleaned) {
+			return "", "", fmt.Errorf("CLAUDE_CONFIG_DIR %q is not an absolute path", raw)
+		}
+		return cleaned, ClaudeConfigDirSourceEnvVar, nil
+	}
+	home, err := r.HomeFor(CLIClaude)
+	if err != nil {
+		return "", "", err
+	}
+	dir = filepath.Join(home, ".claude")
+	if effectiveGOOS() == "windows" {
+		return dir, ClaudeConfigDirSourceOSHome, nil
+	}
+	return dir, ClaudeConfigDirSourceHome, nil
+}
+
+// ClaudeConfigDir returns the directory that contains Claude Code's settings.json.
+// It is a wrapper over ClaudeConfigDirWithSource for callers that do not need
+// the resolution source.
 //
 // Callers join "settings.json" to the result:
 //
@@ -254,12 +305,6 @@ func containsTrackfwGuardMarker(data []byte) bool {
 //	if err != nil { /* emit finding per A7 */ }
 //	path := filepath.Join(dir, "settings.json")
 func ClaudeConfigDir(r CLIHomeResolver) (string, error) {
-	if dir := os.Getenv("CLAUDE_CONFIG_DIR"); dir != "" {
-		return filepath.Clean(dir), nil
-	}
-	home, err := r.HomeFor(CLIClaude)
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(home, ".claude"), nil
+	dir, _, err := ClaudeConfigDirWithSource(r)
+	return dir, err
 }

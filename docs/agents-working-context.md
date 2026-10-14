@@ -2,6 +2,32 @@
 
 ---
 
+## 2026-10-14 — apolo-tf — FIM: ML-2D — corretivos R-1/R-3/R-4 red-team (REQ-2026-09-01)
+
+**Branch:** `fix/guard-global-segue-o-home-que-o-agente-le`
+**Escopo:** ML-2D completo. R-3: `withD5Notice` usa mensagem condicional quando `CLAUDE_CONFIG_DIR && !divergent`. R-1: `ClaudeConfigDirWithSource` rejeita CLAUDE_CONFIG_DIR relativo com erro nomeado; `ClaudeConfigDir` virou wrapper. R-4: `validateHomeDivergenceWindows` cita `CLAUDE_CONFIG_DIR=%q` quando a variável drivou a resolução.
+**Arquivos alterados:**
+- `internal/agentconfig/agentconfig.go` — `ClaudeConfigDirWithSource` (novo), `ClaudeConfigDir` (wrapper), constantes de source
+- `internal/agentconfig/agentconfig_test.go` — `TestClaudeConfigDir_RelativeCLAUDE_CONFIG_DIR_ReturnsError`, `TestClaudeConfigDir_SpacesOnlyCLAUDE_CONFIG_DIR_FallsThrough`
+- `internal/generators/update.go` — `withD5Notice` com discriminante R-3
+- `internal/generators/update_harness_d5_notice_ml2d_test.go` — testes (a)(b)(b-misto)(c) com plataforma pinada
+- `internal/validator/validator_home_divergence_rule.go` — `claudeReadsPhrase` adaptativo R-4
+- `internal/validator/validator_home_divergence_rule_test.go` — `TestHomeDivergenceWindows_ClaudeConfigDir_MessageCitesDir`
+- `internal/validator/validator_guard_global_concordance_external_test.go` — testes (e) R-1 para validador
+- `docs/cli-parity.md` — anotações de contrato ML-2D
+**Evidências:** `go build ./...` EXIT:0 · `go vet ./internal/...` EXIT:0 · `go test ./internal/agentconfig/ ./internal/integrations/ ./internal/validator/ ./internal/generators/ ./internal/commands/ -count=1` EXIT:0 · `make parity-rest` EXIT:0 (com python3→python3.12 shim; 3.9.6 falha na última linha do gate check-required-status-checks.py — pré-existente, não relacionado ao ML-2D) · `trackfw validate` EXIT:0.
+**Mordidas:** M1 withD5Notice incondicional → (a) FAIL; M2 sem IsAbs → (c) agentconfig+harness+concordance FAIL; M3 claudeReadsPhrase fixo → (e) validator FAIL. Todas com backup/restore/cmp verificados.
+**Pendente trackfw_architect:** atualizar roadmap ML-2D para ✅ Concluído + auditoria de diff + commit.
+
+---
+
+## 2026-10-14 — apolo-tf — INÍCIO: ML-2D — corretivos R-1/R-3/R-4 red-team (REQ-2026-09-01)
+
+**Branch:** `fix/guard-global-segue-o-home-que-o-agente-le`
+**Escopo:** Implementar ML-2D da REQ-2026-09-01: corretivos R-3 (mensagem condicional withD5Notice), R-1 (rejeitar CLAUDE_CONFIG_DIR relativo), R-4 (citação de CLAUDE_CONFIG_DIR no aviso home_divergence_windows).
+
+---
+
 ## 2026-10-14 — apolo-tf — FIM: ML-1B — aviso de divergência HOME, relato D5 inerte, displayPath (REQ-2026-09-01)
 
 **Branch:** `fix/guard-global-segue-o-home-que-o-agente-le`

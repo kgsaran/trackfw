@@ -211,3 +211,89 @@ func TestHomeDivergenceWindows_ClaudeConfigDir_NoInert(t *testing.T) {
 		t.Errorf("CLAUDE_CONFIG_DIR=HOME/.claude: warning incorrectly calls the live guard inert.\nfull warning: %s", warnings[0])
 	}
 }
+
+// TestHomeDivergenceWindows_RelativeCCDError asserts conclusion (f): on simulated
+// Windows with HOME≠USERPROFILE and CLAUDE_CONFIG_DIR set to a relative path
+// ("rel"), ClaudeConfigDirWithSource returns a resolution error; the single
+// returned warning must contain both "unless CLAUDE_CONFIG_DIR is set" and the
+// resolution-error text, so the user knows why trackfw could not determine the
+// Claude config directory AND that the variable was responsible.
+//
+// Conclusion (R-3, ML-2D): the error-path warning now names CLAUDE_CONFIG_DIR as
+// the source of the failure; this test FAILS if the phrase remains the old
+// "Claude Code reads the OS home (measured)" without the caveat.
+func TestHomeDivergenceWindows_RelativeCCDError(t *testing.T) {
+	const homeEnv = `C:\Users\Lab\HOME`
+	const osHomeEnv = `C:\Users\Lab\USERPROFILE`
+
+	restore := agentconfig.SetPlatformForTest("windows", func() (string, error) {
+		return osHomeEnv, nil
+	})
+	defer restore()
+	t.Setenv("HOME", homeEnv)
+	t.Setenv("CLAUDE_CONFIG_DIR", "rel") // relative path → resolution error
+
+	warnings := ValidateHomeDivergenceWindowsForTest()
+
+	if len(warnings) != 1 {
+		t.Fatalf("want exactly 1 warning, got %d: %v", len(warnings), warnings)
+	}
+	w := warnings[0]
+	// "unless CLAUDE_CONFIG_DIR is set" must appear — the key ML-2D fix.
+	if !strings.Contains(w, "unless CLAUDE_CONFIG_DIR is set") {
+		t.Errorf("warning missing %q\nfull warning: %s", "unless CLAUDE_CONFIG_DIR is set", w)
+	}
+	// The resolution-error text must also appear so the user sees why it failed.
+	wantErrFrag := `"rel" is not an absolute path`
+	if !strings.Contains(w, wantErrFrag) {
+		t.Errorf("warning missing resolution-error text %q\nfull warning: %s", wantErrFrag, w)
+	}
+}
+
+// TestHomeDivergenceWindows_ClaudeConfigDir_MessageCitesDir asserts conclusion (e):
+// when CLAUDE_CONFIG_DIR is set to an absolute path on Windows with HOME≠USERPROFILE,
+// the warning cites "CLAUDE_CONFIG_DIR=%q" with the resolved dir rather than
+// "the OS home (measured)"; without CLAUDE_CONFIG_DIR, the phrase "OS home (measured)"
+// is present.
+//
+// Conclusion (e, R-4, ML-2D): the warning phrase adapts to the actual Claude
+// reading location; this test FAILS if claudeReadsPhrase is hardcoded to
+// "Claude Code reads the OS home (measured)" regardless of CLAUDE_CONFIG_DIR.
+func TestHomeDivergenceWindows_ClaudeConfigDir_MessageCitesDir(t *testing.T) {
+	const homeEnv = `C:\Users\Lab\HOME`
+	const osHomeEnv = `C:\Users\Lab\USERPROFILE`
+	customDir := t.TempDir() // absolute path — passes R-1 check
+
+	restore := agentconfig.SetPlatformForTest("windows", func() (string, error) {
+		return osHomeEnv, nil
+	})
+	defer restore()
+	t.Setenv("HOME", homeEnv)
+
+	// Sub-case 1: CLAUDE_CONFIG_DIR set → warning must cite CLAUDE_CONFIG_DIR=<dir>.
+	t.Setenv("CLAUDE_CONFIG_DIR", customDir)
+	warnings := ValidateHomeDivergenceWindowsForTest()
+	if len(warnings) != 1 {
+		t.Fatalf("(e) with CLAUDE_CONFIG_DIR: want 1 warning, got %d: %v", len(warnings), warnings)
+	}
+	w := warnings[0]
+	wantPhrase := fmt.Sprintf("CLAUDE_CONFIG_DIR=%q", customDir)
+	if !strings.Contains(w, wantPhrase) {
+		t.Errorf("(e) with CLAUDE_CONFIG_DIR: warning missing %q\nfull warning: %s", wantPhrase, w)
+	}
+	if strings.Contains(w, "the OS home (measured)") {
+		t.Errorf("(e) with CLAUDE_CONFIG_DIR: warning still says %q — should cite CLAUDE_CONFIG_DIR instead\nfull warning: %s",
+			"the OS home (measured)", w)
+	}
+
+	// Sub-case 2: no CLAUDE_CONFIG_DIR → warning must cite "OS home (measured)".
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	warnings2 := ValidateHomeDivergenceWindowsForTest()
+	if len(warnings2) != 1 {
+		t.Fatalf("(e) without CLAUDE_CONFIG_DIR: want 1 warning, got %d: %v", len(warnings2), warnings2)
+	}
+	if !strings.Contains(warnings2[0], "the OS home (measured)") {
+		t.Errorf("(e) without CLAUDE_CONFIG_DIR: warning missing %q\nfull warning: %s",
+			"the OS home (measured)", warnings2[0])
+	}
+}

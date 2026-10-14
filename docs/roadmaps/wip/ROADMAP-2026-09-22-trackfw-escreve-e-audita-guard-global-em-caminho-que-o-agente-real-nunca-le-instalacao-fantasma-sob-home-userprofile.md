@@ -143,10 +143,14 @@ git diff --quiet HEAD -- internal/
 
 ### ML-2D — Corretivo do red-team (R-1, R-3, R-4)
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-14. Discriminante do R-3 refinado pelo agente e aceito: `CLAUDE_CONFIG_DIR && !divergent` (no caso misto do Windows o arquivo sob HOME é inerte nos dois cenários). Ramo de erro corrigido (`unless CLAUDE_CONFIG_DIR is set`, `TestHomeDivergenceWindows_RelativeCCDError`)
 **Acceptance criteria:**
-- [ ] R-3: o relato de resto inerte (`withD5Notice` e aviso do `validate`), quando a origem é `CLAUDE_CONFIG_DIR`, é condicional — "inert only for a Claude Code that sees CLAUDE_CONFIG_DIR=…; if Claude Code runs without it, this file is the active one — do not remove it". Origem por divergência no Windows mantém a mensagem atual. Decisão do arquiteto: condicionar a mensagem em vez de restringir ao Windows (restringir esconderia a informação)
-- [ ] R-1: `CLAUDE_CONFIG_DIR` relativo é recusado com erro nomeado (vira finding/`TargetFailed`)
-- [ ] R-4: o aviso `home_divergence_windows` cita o diretório real resolvido em vez de "the OS home" quando `CLAUDE_CONFIG_DIR` está definido
-- [ ] Testes nas duas direções com mordida; build, vet (inclusive `GOOS=windows`), testes, `make parity-rest` EXIT=0
+- [x] R-3: o relato de resto inerte (`withD5Notice` e aviso do `validate`), quando a origem é `CLAUDE_CONFIG_DIR`, é condicional — "inert only for a Claude Code that sees CLAUDE_CONFIG_DIR=…; if Claude Code runs without it, this file is the active one — do not remove it". Origem por divergência no Windows mantém a mensagem atual. Decisão do arquiteto: condicionar a mensagem em vez de restringir ao Windows (restringir esconderia a informação)
+      ✅ `TestHarnessD5Notice_{ClaudeConfigDir_ConditionalMessage,WindowsDivergence_UnconditionalMessage,WindowsDivergence_WithClaudeConfigDir_UnconditionalMessage}`; mordida 1
+- [x] R-1: `CLAUDE_CONFIG_DIR` relativo é recusado com erro nomeado (vira finding/`TargetFailed`)
+      ✅ `TestClaudeConfigDir_RelativeCLAUDE_CONFIG_DIR_ReturnsError`, `TestHarnessD5Notice_RelativeCLAUDE_CONFIG_DIR_TargetFailed`, `TestGuardGlobalConcordance_e_*`; mordida 2
+- [x] R-4: o aviso `home_divergence_windows` cita o diretório real resolvido em vez de "the OS home" quando `CLAUDE_CONFIG_DIR` está definido
+      ✅ `TestHomeDivergenceWindows_ClaudeConfigDir_MessageCitesDir`; mordida 3
+- [x] Testes nas duas direções com mordida; build, vet (inclusive `GOOS=windows`), testes, `make parity-rest` EXIT=0
+      ✅ EXIT=0; `make parity-rest` EXIT=0 (Python 3.12 do Homebrew)
 

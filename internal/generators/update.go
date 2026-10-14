@@ -776,6 +776,17 @@ func claudeSettingsDisplayPath(claudeDir string) string {
 //
 // For TargetFailed / TargetMissing results the function is a no-op — the
 // D5 notice is informational only and must not obscure error/missing states.
+//
+// R-3 (ML-2D): the message is conditional on the origin of claudeDir and the
+// presence of Windows HOME≠USERPROFILE divergence:
+//
+//   - Origin CLAUDE_CONFIG_DIR, no Windows divergence: the guard at HOME/.claude
+//     is inert only for Claude Code instances that also run with CLAUDE_CONFIG_DIR.
+//     Without the variable, HOME/.claude IS the active guard — the notice warns
+//     without instructing the user to delete it.
+//   - Windows divergence (HOME≠USERPROFILE) regardless of CLAUDE_CONFIG_DIR:
+//     Claude Code reads USERPROFILE/.claude (or CLAUDE_CONFIG_DIR), so HOME/.claude
+//     is unconditionally inert. The existing "remove it by hand" message applies.
 func withD5Notice(result TargetResult, claudeDir string) TargetResult {
 	if result.State != TargetUpdated && result.State != TargetSkipped {
 		return result
@@ -784,10 +795,24 @@ func withD5Notice(result TargetResult, claudeDir string) TargetResult {
 	if !present {
 		return result
 	}
-	result.Message = fmt.Sprintf(
-		"old guard under HOME is inert — Claude Code does not read %s; remove it by hand if you want",
-		inertPath,
-	)
+	// R-3 discriminant: conditional message only when CLAUDE_CONFIG_DIR drove resolution
+	// AND there is no Windows HOME≠USERPROFILE divergence. With divergence, HOME/.claude
+	// is unconditionally inert (Claude reads USERPROFILE/.claude or CLAUDE_CONFIG_DIR,
+	// neither of which is HOME/.claude).
+	envDir := strings.TrimSpace(os.Getenv("CLAUDE_CONFIG_DIR"))
+	_, _, divergent := agentconfig.HomeDivergencePaths()
+	if envDir != "" && !divergent {
+		result.Message = fmt.Sprintf(
+			"guard under HOME at %s is inert only for a Claude Code that sees CLAUDE_CONFIG_DIR=%s; "+
+				"if Claude Code runs without CLAUDE_CONFIG_DIR, that file is the active one — do not remove it",
+			inertPath, filepath.Clean(envDir),
+		)
+	} else {
+		result.Message = fmt.Sprintf(
+			"old guard under HOME is inert — Claude Code does not read %s; remove it by hand if you want",
+			inertPath,
+		)
+	}
 	return result
 }
 

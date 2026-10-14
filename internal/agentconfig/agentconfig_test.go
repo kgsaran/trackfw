@@ -174,6 +174,48 @@ func TestClaudeConfigDir_EmptyCLAUDE_CONFIG_DIR_FallsThrough(t *testing.T) {
 	}
 }
 
+// TestClaudeConfigDir_RelativeCLAUDE_CONFIG_DIR_ReturnsError asserts conclusion (c-R1):
+// when CLAUDE_CONFIG_DIR is set to a relative path (e.g. "../evil" or "rel"),
+// ClaudeConfigDir returns a named error — it does NOT silently write to a path
+// that can escape the expected root.
+//
+// Conclusion (R-1, ML-2D): non-absolute CLAUDE_CONFIG_DIR is an A7-failure; this test
+// FAILS without the filepath.IsAbs check because filepath.Clean("../evil") = "../evil"
+// which is not absolute, yet the old code accepted it and passed it straight to callers.
+func TestClaudeConfigDir_RelativeCLAUDE_CONFIG_DIR_ReturnsError(t *testing.T) {
+	for _, rel := range []string{"../evil", "rel", "relative/path"} {
+		rel := rel
+		t.Run(rel, func(t *testing.T) {
+			t.Setenv("CLAUDE_CONFIG_DIR", rel)
+			_, err := agentconfig.ClaudeConfigDir(agentconfig.OSCLIHomeResolver{})
+			if err == nil {
+				t.Errorf("ClaudeConfigDir with CLAUDE_CONFIG_DIR=%q: want error for non-absolute path, got nil", rel)
+			}
+		})
+	}
+}
+
+// TestClaudeConfigDir_SpacesOnlyCLAUDE_CONFIG_DIR_FallsThrough asserts conclusion (d):
+// when CLAUDE_CONFIG_DIR is set to only whitespace it is treated as "not set" — the
+// resolution falls through to the HOME-based path without returning an error.
+//
+// Conclusion (d, ML-2D): spaces-only CLAUDE_CONFIG_DIR is equivalent to unset; this
+// test FAILS if TrimSpace is not applied (a spaces-only value would fail filepath.IsAbs
+// and return a spurious error, or would clean to a non-absolute string that errors).
+func TestClaudeConfigDir_SpacesOnlyCLAUDE_CONFIG_DIR_FallsThrough(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("CLAUDE_CONFIG_DIR", "   ")
+
+	got, err := agentconfig.ClaudeConfigDir(agentconfig.FixedCLIHomeResolver{Home: homeDir})
+	if err != nil {
+		t.Fatalf("ClaudeConfigDir with CLAUDE_CONFIG_DIR=\"   \": unexpected error: %v", err)
+	}
+	want := filepath.Join(homeDir, ".claude")
+	if got != want {
+		t.Errorf("ClaudeConfigDir with CLAUDE_CONFIG_DIR=\"   \": got %q, want %q (must fall through to HOME/.claude)", got, want)
+	}
+}
+
 // TestSetPlatformForTest_Restore confirms that the restore function returned by
 // SetPlatformForTest correctly reverts to the previous platform inputs.
 //
