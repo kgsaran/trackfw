@@ -223,6 +223,15 @@ agent CLI's process.** `trackfw validate` now reports three new conditions:
 from a user running the tool on real Windows 11 and measuring before reporting — open
 an issue with what you measured.
 
+**Guard global directory when `HOME` ≠ `USERPROFILE`** (measured 2026-10-14): when Git Bash
+sets `HOME` to a different directory than `USERPROFILE`, trackfw writes and audits the Claude
+Code guard and global agents/skills under `USERPROFILE` — the directory Claude Code reads
+(measured on Windows ARM64, Claude Code 2.1.299). If `CLAUDE_CONFIG_DIR` is set, trackfw uses
+that directory instead (cross-platform). `trackfw validate` warns when the two paths diverge
+(rule `home_divergence_windows`, informative only). Other CLIs (Codex, Gemini, Cursor,
+Copilot, Kiro) continue under `HOME` until measured; Windsurf is not yet measured and is
+flagged in the warning.
+
 ### pip
 
 ```bash

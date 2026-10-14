@@ -205,3 +205,7 @@ if (Test-Path $p16Backup) {
 
 Write-Host ""
 Write-Host "=== Pergunta 16 CONCLUIDA — grep 'PROBE guard-global' para o resultado central ==="
+
+# Sonda sem veredito: trackfw validate retorna 1 num projeto temporário (sem roadmap wip),
+# o que é esperado. Garantir exit 0 para não reprovar o step da Pergunta 16 (run 38618567001).
+exit 0

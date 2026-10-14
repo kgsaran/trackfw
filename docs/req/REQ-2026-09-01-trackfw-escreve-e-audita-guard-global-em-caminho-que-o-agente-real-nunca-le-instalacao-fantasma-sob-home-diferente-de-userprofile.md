@@ -46,18 +46,24 @@ AC5 original (paridade nos 3 CLIs) caiu com a v8.
       ✅ Evidência: `docs/seguranca/2026-10-14-wave0-home-por-cli-no-windows.md` (aprova com ressalvas; A1–A8 no ADR D6)
 - [x] **AC1** — Medir onde o consumidor real lê, por terminal.
       ✅ Evidência: medição de 2026-10-14 (Claude Code; Git Bash, PowerShell, cmd).
-- [ ] **AC2** — Número do CI: o `windows-probe.yml` (runner x64) reproduz a divergência antes da correção
+- [x] **AC2** — Número do CI: o `windows-probe.yml` (runner x64) reproduz a divergência antes da correção
       e mostra que ela fechou depois.
-- [ ] **AC3** — `update harness` grava, e o `validate` audita, a fiação global de cada CLI medido no home
+      ✅ Evidência: run `38618567001` (x64): `main` grava sob `HOME`, branch sob `USERPROFILE`
+- [x] **AC3** — `update harness` grava, e o `validate` audita, a fiação global de cada CLI medido no home
       que **aquele CLI** lê, por um resolvedor único por CLI usado pelos dois (ADR D1–D3).
-- [ ] **AC4** — Aviso informativo, não bloqueante, quando `HOME` ≠ home do SO no Windows, nomeando os dois
+      ✅ Evidência: `internal/agentconfig`; `TestGuardGlobalConcordance_*`; `Manager.ClaudeDir` (ML-1A, ML-1D)
+- [x] **AC4** — Aviso informativo, não bloqueante, quando `HOME` ≠ home do SO no Windows, nomeando os dois
       caminhos, qual cada CLI lê e o resto inerte sob `HOME` (ADR D4–D5). Com os dois iguais: silêncio.
-- [ ] **AC5** — 🔴 Falsificação nas duas direções: (a) com divergência, o guard é gravado e auditado no
+      ✅ Evidência: regra `home_divergence_windows`; `withD5Notice` (ML-1B)
+- [x] **AC5** — 🔴 Falsificação nas duas direções: (a) com divergência, o guard é gravado e auditado no
       home do CLI, e o aviso dispara; (b) controle: sem divergência e fora do Windows, a saída é idêntica
       à de hoje. O teste reprova sem a correção **sem depender de rodar no Windows** (resolvedor
       injetável).
-- [ ] **AC6** — `docs/cli-parity.md` e a seção Windows do README atualizados.
-- [ ] **AC7** — Cada teste novo declara a conclusão que afirma e reprova sem a correção.
+      ✅ Evidência: mordidas do ML-1A, ML-1B e ML-1D, todas no macOS
+- [x] **AC6** — `docs/cli-parity.md` e a seção Windows do README atualizados.
+      ✅ Evidência: `docs/cli-parity.md` e README (ML-1C)
+- [x] **AC7** — Cada teste novo declara a conclusão que afirma e reprova sem a correção.
+      ✅ Evidência: frase + mordida por teste em cada ML
 - [ ] **AC8** — `make quality` EXIT=0 e CI verde, inclusive `windows-full-suites` (sem entrada nova na
       lista conhecida).
 

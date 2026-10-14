@@ -98,15 +98,17 @@ git diff --quiet HEAD -- internal/
 
 ### ML-1C — Medição de CI antes/depois, contrato e README
 **Owner:** `ares-tf` / `apolo-tf`
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-14
 **Acceptance criteria:**
-- [ ] `windows-probe.yml` (ou repro equivalente) com `HOME`≠`USERPROFILE`: `main` reproduz, a branch fecha (AC2)
-- [ ] `docs/cli-parity.md` (`trackfw-contract`) e seção Windows do README
+- [x] `windows-probe.yml` (ou repro equivalente) com `HOME`≠`USERPROFILE`: `main` reproduz, a branch fecha (AC2)
+      ✅ `windows-probe.yml` Pergunta 16, run `38618567001` (x64): `main` grava sob `HOME` e o `validate` cala; branch grava sob `USERPROFILE` e avisa (`docs/portabilidade/2026-10-14-guard-global-home-ci.md`); script corrigido para sair 0
+- [x] `docs/cli-parity.md` (`trackfw-contract`) e seção Windows do README
+      ✅ seção "Claude Code directory resolution" em `docs/cli-parity.md` (12 testes citados, conferidos); README seção Windows; `check-parity-contract-coverage.sh` 300/0; `make parity-rest` EXIT=0
 
 ## Wave 2 — Revisão e fechamento
 ### ML-2A — Revisão de qualidade, red-team, `make quality` e CI
 **Owner:** `hefesto-tf` e `hades-tf` (em sequência)
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Acceptance criteria:**
 - [ ] Pareceres em `docs/qualidade/` e `docs/seguranca/`; corretivos aplicados
 - [ ] `make quality` EXIT=0 com máquina ociosa; CI verde, inclusive `windows-full-suites`

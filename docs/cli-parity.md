@@ -8715,3 +8715,85 @@ ele. Se o comando travar, o usuário deve interrompê-lo com Ctrl-C.
 - **R1**: `git push` usa `TRACKFW_PUSH_TIMEOUT` (30 min); `TRACKFW_NETWORK_TIMEOUT` não o afeta.
 - **R2**: `gh pr create` não tem prazo gerenciado pelo trackfw (ver acima).
 - **R3**: valores acima de 24 h são rejeitados silenciosamente; o aviso vai para stderr, não stdout.
+
+## Claude Code directory resolution — `ClaudeConfigDir`, `home_divergence_windows` (ADR-2026-10-14, REQ-2026-09-01, ML-1A/ML-1B/ML-1D)
+
+<!-- trackfw-contract: gate=internal/agentconfig/agentconfig_test.go,internal/validator/validator_home_divergence_rule_test.go,internal/generators/update_harness_home_divergence_ml1b_test.go,internal/integrations/manager_claude_test.go partial=TestClaudeConfigDir_CLAUDE_CONFIG_DIR_Honoured,TestClaudeConfigDir_Default_JoinsHomeDotClaude,TestClaudeConfigDir_Windows_UsesUserprofile prove the three-step resolution order and CLAUDE_CONFIG_DIR root-placement; TestHomeDivergenceWindows_Divergent,TestHomeDivergenceWindows_NoDivergence,TestHomeDivergenceWindows_NotWindows,TestHomeDivergenceWindows_CaseAndTrailingSlash prove the home_divergence_windows firing conditions (EqualFold + normHomePath); TestHarnessD5InertRemainderReported,TestHarnessDisplayPathWithClaudeConfigDirOutsideHome prove D5 inert-remainder reporting and display-path via withD5Notice and claudeSettingsDisplayPath; TestManagerClaudeDir_WindowsDivergence_AgentLandsUnderCLAUDE_DIR,TestManagerClaudeDir_CLAUDE_CONFIG_DIR_AgentLandsAtRoot,TestManagerClaudeDir_NoDiv_PathIdentical prove that Manager.ClaudeDir routes global agents/skills to the correct directory; no script gate for the Windows-only runtime path (windows branch not exercised in macOS/Linux CI) -->
+
+`agentconfig.ClaudeConfigDir` (`internal/agentconfig/agentconfig.go`, A1 of ADR-2026-10-14 D6)
+resolves the directory that contains Claude Code's `settings.json`. Both the `update harness`
+writer (`internal/generators/update.go`, `harnessCredentialGuardTargetClaude`,
+`harnessGitBranchGuardTargetClaude`) and the `validate` auditor
+(`internal/validator/validator_git_branch_guard.go`,
+`internal/validator/validator_credential_guard.go`) call the same function — enforcing D3
+(one resolver per CLI so writer and auditor always agree). The same function governs global
+agents and skills: `Manager.ClaudeDir` (`internal/integrations/manager.go`) is set to
+`agentconfig.ClaudeConfigDir` for `claude/global` plans
+(`internal/commands/integrations_flags.go`, `internal/commands/init.go`,
+`internal/generators/update.go`).
+
+**Resolution order:**
+
+1. **`CLAUDE_CONFIG_DIR`** — when set and non-empty: `filepath.Clean(CLAUDE_CONFIG_DIR)`.
+   `settings.json` lives at the **root** of this directory (no `.claude/` subdir) — measured
+   on Windows ARM64 2026-10-14
+   (`docs/portabilidade/2026-10-14-guard-global-home-userprofile-vm.md`, Passo 3.1).
+   Cross-platform: applies on macOS, Linux, and Windows alike.
+
+2. **Windows OS home (`USERPROFILE`)** — when `CLAUDE_CONFIG_DIR` is absent and
+   `GOOS == "windows"`: `os.UserHomeDir()` (reads `USERPROFILE`).
+   `settings.json` lives at `<USERPROFILE>/.claude/settings.json`.
+   Measured 2026-10-14 on Windows ARM64, Claude Code 2.1.299, three terminals
+   (`docs/portabilidade/2026-10-14-guard-global-home-userprofile-vm.md`, Passo 3a, evidence 3a).
+
+3. **`homedir.Dir()`** — on all other platforms: reads `HOME` first, falls back to
+   `os.UserHomeDir()`. `settings.json` lives at `<homedir.Dir()>/.claude/settings.json`.
+
+### `home_divergence_windows` — informative warning, never a violation
+
+<!-- trackfw-contract: gate=internal/validator/validator_home_divergence_rule_test.go partial=TestHomeDivergenceWindows_Divergent proves one warning is emitted with HOME and USERPROFILE paths named; TestHomeDivergenceWindows_NoDivergence proves silence when HOME equals USERPROFILE; TestHomeDivergenceWindows_NotWindows proves silence outside Windows; TestHomeDivergenceWindows_CaseAndTrailingSlash proves that paths differing only in case or trailing slash do not trigger the rule -->
+
+On Windows, when `HOME` is non-empty and differs from `os.UserHomeDir()` (`USERPROFILE`)
+after `normHomePath` (replaces `\` with `/`, strips trailing slashes) followed by
+`strings.EqualFold` (A3, ADR-2026-10-14), `trackfw validate` emits one informative warning.
+The rule id is `home_divergence_windows`, severity `warning`, routed through
+`applyRuleWarnOnly` (`internal/validator/validator.go`) — not promotable to violation, and
+silenced only by `rules.home_divergence_windows: off`.
+
+The single warning:
+
+- names `HOME` and `USERPROFILE` (the OS home);
+- names Claude Code as measured reading `USERPROFILE` (Passo 3a);
+- names inferred CLIs (Codex, Gemini, Cursor, Copilot, Kiro) as continuing under `HOME`
+  until measured (D2, ADR-2026-10-14);
+- names Windsurf as not measured (A8): the harness writes to
+  `homedir.Dir()/.codeium/windsurf/hooks.json` (HOME first, via
+  `harnessCredentialGuardTargetWindsurf`) while the auditor reads from
+  `os.UserHomeDir()/.codeium/windsurf/hooks.json` (USERPROFILE, via
+  `credentialGuardGlobalInstalledWindsurf`);
+- appends the D5 inert-remainder notice inline when `HOME/.claude/settings.json` contains
+  trackfw guard wiring.
+
+When `HOME` equals `USERPROFILE` (the common case on native cmd.exe / PowerShell),
+when `HOME` is empty, when `USERPROFILE` is absent (`os.UserHomeDir()` errors), or
+outside Windows: the rule returns nil — silence.
+
+### D5 — inert remainder is reported, never deleted
+
+<!-- trackfw-contract: gate=internal/generators/update_harness_home_divergence_ml1b_test.go partial=TestHarnessD5InertRemainderReported proves that TargetResult.Message names the inert path when HOME/.claude/settings.json contains guard wiring and claudeDir points elsewhere; TestHarnessDisplayPathWithClaudeConfigDirOutsideHome proves that claudeSettingsDisplayPath returns the absolute path (not ~/…) when the resolved dir is outside homedir.Dir() -->
+
+When `HOME` ≠ `USERPROFILE` and a guard written under the old `HOME/.claude/settings.json`
+exists (`agentconfig.InertClaudeGuardPath`), the `update harness` and `validate` report it
+as inert via `withD5Notice` (`internal/generators/update.go`) and the inline D5 clause in
+`validateHomeDivergenceWindows` (`internal/validator/validator_home_divergence_rule.go`).
+The old file is **never deleted** — it is the user's own configuration file.
+
+### Residuals declared
+
+<!-- trackfw-contract: none reason=self-declared limits; not verifiable-behaviour claims -->
+
+- **Inferred CLIs** (Codex, Gemini, Cursor, Copilot, Kiro): home resolution unchanged
+  (`homedir.Dir()`, HOME first) until each CLI is measured on Windows (D2, ADR-2026-10-14).
+- **Windsurf**: not measured — harness writes under `homedir.Dir()` (HOME), auditor reads
+  under `os.UserHomeDir()` (USERPROFILE); divergence is declared and named by
+  `home_divergence_windows`, not resolved.
