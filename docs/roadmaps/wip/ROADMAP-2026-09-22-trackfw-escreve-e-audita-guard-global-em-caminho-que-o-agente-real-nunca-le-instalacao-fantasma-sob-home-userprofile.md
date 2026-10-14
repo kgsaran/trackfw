@@ -55,7 +55,7 @@ git diff --quiet HEAD -- internal/
 
 ### ML-1A — Pacote `internal/agentconfig`: resolvedor por CLI usado pelo escritor e pelo auditor
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Files affected:** novo `internal/agentconfig/` (+ testes); os 8 sítios do ADR D6/A2; testes que isolam só `HOME` (tabela da seção 4 do parecer); `scripts/check-update-parity.sh` (definir `USERPROFILE`)
 **Acceptance criteria:**
 - [ ] Claude Code: `CLAUDE_CONFIG_DIR` (raiz) → senão, no Windows, `os.UserHomeDir()` → senão `homedir.Dir()`; os demais CLIs inalterados (D2), Windsurf intocado (A8)
