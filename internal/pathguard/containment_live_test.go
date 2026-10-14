@@ -73,7 +73,7 @@ const (
 	liveP2UnresolvedPin   = 3   // was 22 until ML-8A; see liveP2IrreducibleRoots
 	liveP2CleanSitesPin   = 0   // was 16 until ML-8A — the whole Wave 8 population
 	liveRootAliasedPin    = 3   // was 16 until ML-8A; see liveRootAliasedResidual
-	liveBlindSpotSitesPin = 15
+	liveBlindSpotSitesPin = 13
 	liveFailOpenSitesPin  = 0 // was 5 until ML-9A; see liveKnownFailOpen
 )
 
@@ -84,10 +84,6 @@ var liveAnalyserBlindSpots = map[string]blindSpot{
 		"guarded by the probe path filepath.Join(absAdrDir, \".trackfw-new-adr\"), which walks adrDir and every ancestor; absAdrDir arrives from a two-result call so the analyser cannot prove it is the same chain as adrDir"},
 	"internal/generators/adr.go|NewADRDraft|unguarded-write|adrDir": {1,
 		"same shape as NewADR: the guard is on draftProbe = filepath.Join(absAdrDirDraft, \".trackfw-new-adr-draft\"), which walks adrDir and every ancestor, and absAdrDirDraft comes from a two-result call"},
-	"internal/generators/scaffold.go|installGlobalSkillInner|unguarded-write|skillDir": {1,
-		"guarded by filepath.Join(absHome, \".claude\", \"skills\", \"trackfw\"); the written path comes from GlobalClaudeSkillPath(home), a call the analyser cannot expand into components"},
-	"internal/generators/scaffold.go|installGlobalSkillInner|unguarded-write|skillPath": {1,
-		"same shape, with the leaf guard on filepath.Join(absHome, …, \"SKILL.md\")"},
 	"internal/generators/scaffold.go|generateCommitMsgHook|unguarded-write|\".husky\"": {1,
 		"guarded by rejectScaffoldPath(cmhRoot, filepath.Join(cmhRoot, \".husky\")) in the FIRST `switch cfg.Hooks`; the write is in the SECOND switch over the same tag, and block-ancestry dominance does not relate two sibling switch statements (declared limit 4)"},
 	"internal/generators/scaffold.go|generateCommitMsgHook|unguarded-write|scriptDir": {1,

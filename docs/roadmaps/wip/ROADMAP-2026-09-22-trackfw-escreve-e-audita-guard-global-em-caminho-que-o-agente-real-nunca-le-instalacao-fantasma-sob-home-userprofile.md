@@ -129,11 +129,15 @@ git diff --quiet HEAD -- internal/
 
 ### ML-2C — Skill global do trackfw instalada pelo `scaffold` segue o resolvedor
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-14; testes rerodados pelo arquiteto. O analisador de contenção passou a enxergar a guarda da skill global: 2 pontos cegos saem da lista (15 → 13)
 **Por que o escopo original não previa:** achado no ML-2B — `internal/generators/scaffold.go:239` (`installGlobalSkillInner`) grava `GlobalClaudeSkillPath(homedir.Dir())`. Mesma causa.
 **Acceptance criteria:**
-- [ ] Skill global gravada em `ClaudeConfigDir/skills/trackfw/SKILL.md`; contenção (`pathguard.ResolveRoot`) sobre a raiz resolvida; erro de resolução → erro nomeado
-- [ ] Teste com divergência simulada e com `CLAUDE_CONFIG_DIR` reprova sem a correção; controle idêntico; `containment_live_test.go` ajustado se necessário
-- [ ] `git grep GlobalClaudeSkillPath` sem chamador de escopo global fora do resolvedor
-- [ ] build, vet (inclusive `GOOS=windows`), testes, `make parity-rest` EXIT=0
+- [x] Skill global gravada em `ClaudeConfigDir/skills/trackfw/SKILL.md`; contenção (`pathguard.ResolveRoot`) sobre a raiz resolvida; erro de resolução → erro nomeado
+      ✅ `installGlobalSkillInner` via `agentconfig.ClaudeConfigDir`; contenção sobre `ResolveRoot(filepath.Dir(claudeDir))`
+- [x] Teste com divergência simulada e com `CLAUDE_CONFIG_DIR` reprova sem a correção; controle idêntico; `containment_live_test.go` ajustado se necessário
+      ✅ `TestInstallGlobalSkillInner_{WindowsDivergence_LandsAtUserProfile,ClaudeConfigDir_LandsAtCustomDir,NoDiv_PathEqualsGlobalClaudeSkillPath,ContainmentRejectsSymlinkOutsideRoot}`; mordida colada
+- [x] `git grep GlobalClaudeSkillPath` sem chamador de escopo global fora do resolvedor
+      ✅ chamadores restantes de `GlobalClaudeSkillPath` são só testes
+- [x] build, vet (inclusive `GOOS=windows`), testes, `make parity-rest` EXIT=0
+      ✅ EXIT=0 em todos; `make parity-rest` EXIT=0
 
