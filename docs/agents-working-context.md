@@ -46460,3 +46460,7 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-12 — zeus-tf — medição do suporte a Windows na 9.5.0
 
 - Censo x64 `38319939952` (4 FAIL emitidos) + VM ARM64. Consolidado em `docs/portabilidade/2026-10-12-suporte-windows-9.5.0-estado-medido.md`. Recontagem estrita: 16 rótulos sumiram (não 42 — o primeiro grep contou texto de PROOF); os 4 FAIL são do instrumento (pip install pypi/ pré-v8) e do NTFS. O verde do windows-full-suites é ratchet: 14 falhas conhecidas, 2 com efeito de segurança (proveniência de terceiros, 0600). Guard global (HOME≠USERPROFILE) não medido — a VM usou o comando errado e não tem o Claude Code.
+
+## 2026-10-14 — zeus-tf — início: REQ-2026-09-01 (guard global segue o home que o agente lê)
+
+- Branch `fix/guard-global-segue-o-home-que-o-agente-le`. Decisão do KG: seguir o home de cada CLI + avisar. ADR-2026-10-14 (Proposed) resolve a contradição AC1×AC4 da auditoria externa. REQ reescrita (ACs e escopo negativo); roadmap com Wave 0 do `hades-tf` (mapa CLI → home no Windows).
