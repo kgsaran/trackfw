@@ -40,9 +40,10 @@ AC5 original (paridade nos 3 CLIs) caiu com a v8.
 
 ## Acceptance Criteria
 
-- [ ] **AC0** — 🔴 **Wave 0 (`hades-tf`):** o mapa CLI → mecanismo de home no Windows, com evidência
+- [x] **AC0** — 🔴 **Wave 0 (`hades-tf`):** o mapa CLI → mecanismo de home no Windows, com evidência
       por CLI (Claude Code medido; Codex, Gemini, Cursor, Copilot, Windsurf, Kiro). CLI sem evidência fica
       declarado e não muda de comportamento. Inclui a lista de testes que isolam só o `HOME`.
+      ✅ Evidência: `docs/seguranca/2026-10-14-wave0-home-por-cli-no-windows.md` (aprova com ressalvas; A1–A8 no ADR D6)
 - [x] **AC1** — Medir onde o consumidor real lê, por terminal.
       ✅ Evidência: medição de 2026-10-14 (Claude Code; Git Bash, PowerShell, cmd).
 - [ ] **AC2** — Número do CI: o `windows-probe.yml` (runner x64) reproduz a divergência antes da correção
@@ -63,7 +64,8 @@ AC5 original (paridade nos 3 CLIs) caiu com a v8.
 ## Negative Scope
 
 - **Não** reverte o port do `homedir`: `homedir.Dir()` continua valendo para os artefatos do trackfw.
-- **Não** muda o comportamento fora do Windows nem para CLI sem evidência medida.
+- **Não** muda o comportamento fora do Windows nem para CLI sem evidência medida — **exceto** `CLAUDE_CONFIG_DIR`, honrado em qualquer SO por ser a mesma causa (ADR D6/A1).
+- **Windsurf:** resíduo declarado até ser medido (ADR D6/A8).
 - **Não** apaga o guard já gravado sob o `HOME` divergente — relata (ADR D5).
 - **Não** bloqueia por divergência.
 

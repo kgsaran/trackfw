@@ -60,6 +60,31 @@ Reconciliação exigida pela auditoria externa de 2026-09-05 (REQ, item 11): o p
 grava no lugar certo e **relata** o resto, mas **não o apaga**, porque é arquivo de configuração do
 usuário. O aviso de D4 nomeia esse resto.
 
+### D6 — Ajustes do Wave 0 (`docs/seguranca/2026-10-14-wave0-home-por-cli-no-windows.md`, aprova com ressalvas)
+
+- **A1 — `CLAUDE_CONFIG_DIR` entra (decisão do arquiteto):** é a mesma causa — o trackfw grava onde o
+  agente não lê. Com a variável definida, o Claude Code lê `settings.json` **na raiz** dela (medido),
+  em qualquer SO. O resolvedor do Claude honra a variável; **amplia o escopo para além do Windows**
+  só neste ponto.
+- **A2 — Pacote único `internal/agentconfig`** com o conjunto fechado de 8 sítios de fiação de CLI
+  (`update.go:575`; `validator_git_branch_guard.go:162,356,399,450`; `validator_credential_guard.go:1175`;
+  `agentfiles.go:2089,2482`; `init.go:407`; `integrations_flags.go:440` — o Wave 0 confere cada um).
+  Os 11 sítios de artefato do trackfw ficam em `homedir.Dir()`.
+- **A3 — Predicado de D4:** `strings.EqualFold(filepath.Clean(HOME), filepath.Clean(os.UserHomeDir()))`
+  — o MSYS2 já converte `HOME` POSIX para a forma Windows (medido), e o caso padrão do Git Bash não
+  avisa.
+- **A4** — o aviso separa CLI medido de inferido. **A5** — resolvedor injetável nos testes e
+  `USERPROFILE` definido em `scripts/check-update-parity.sh`. **A6** — comentário no código com CLIs
+  medidos × inferidos, data e referência à medição.
+- **A7 — Auditor com erro de resolução (ex.: `USERPROFILE` ausente) emite finding**, nunca `nil`:
+  silêncio aqui é o defeito desta REQ.
+- **A8 — Windsurf fica como está e é resíduo declarado (decisão do arquiteto):** hoje grava sob `HOME`
+  (`update.go:1531`) e audita sob `USERPROFILE` (`validator_credential_guard.go:821`). Sem medição do
+  que o Windsurf lê, unificar para qualquer lado pode **criar** falso positivo de saúde. O aviso de D4
+  o nomeia como "não medido — grava e audita em homes diferentes". Medir o Windsurf é pré-requisito
+  para tirá-lo do resíduo.
+- **CLIs inferidos** (Codex, Gemini, Cursor, Copilot, Kiro): comportamento inalterado (D2) até medição.
+
 ## Consequences
 
 - O guard global passa a proteger de fato, e o `validate` passa a auditar o arquivo que o agente lê.
