@@ -80,7 +80,7 @@ git diff --quiet HEAD -- internal/
 
 ### ML-1D — Arquivos de agente do Claude seguem o mesmo resolvedor
 **Owner:** `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Por que o escopo original não previa:** achado no ML-1A — `integrations.Manager{HomeDir: homedir.Dir()}` grava `~/.claude/agents` e `~/.claude/skills` sob `HOME` (`init.go:438`, `integrations_flags.go:444`, `update.go:173,2364,2685`); o Claude Code os lê no home dele. Mesma causa.
 **Acceptance criteria:**
 - [ ] `Manager` resolve o diretório do Claude por `agentconfig.ClaudeConfigDir` (os demais CLIs inalterados)
