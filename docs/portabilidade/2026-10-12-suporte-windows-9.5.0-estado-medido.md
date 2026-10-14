@@ -41,7 +41,7 @@ na lista foram escritas em 2026-09-10, e **5 delas são inferidas** (`INFER`), n
 
 | # | Item | Estado na 9.5.0 | Evidência | Segurança? | Próximo passo |
 |---|---|---|---|---|---|
-| 1 | Guard global gravado/auditado sob `$HOME` quando o agente lê `%USERPROFILE%` (REQ-2026-09-01) | **não medido** | VM usou `init --ai-tools`, que não escreve a fiação global; quem escreve é o `update harness` (`internal/generators/update.go`, `harnessCredentialGuardTarget*`), e o `validate` lê por `homedir.Dir()` (`validator_git_branch_guard.go:162`). Claude Code **não instalado** na VM | 🔴 sim | Refazer com `update harness` + Claude Code na VM; número final pelo `windows-probe.yml` |
+| 1 | Guard global gravado/auditado sob `$HOME` quando o agente lê `%USERPROFILE%` (REQ-2026-09-01) | **vivo — confirmado em 2026-10-14** | VM, Claude Code 2.1.299 nativo: com `HOME`≠`USERPROFILE`, `update harness` grava em `HOME\.claude\settings.json` (`homedir.Dir()`, `HOME` primeiro), o `validate` audita o mesmo lugar e não acusa nada, e o `claude --debug-file` lê `C:\Users\Lab\.claude\settings.json` — nos três terminais (Git Bash, PowerShell, cmd). Falso positivo de saúde. No padrão da VM `HOME`=`USERPROFILE` e não diverge. `docs/portabilidade/2026-10-14-guard-global-home-userprofile-vm.md` | 🔴 sim | Implementar AC3/AC4 da REQ-2026-09-01; número de CI (AC2) pelo `windows-probe.yml` |
 | 2 | Proveniência de terceiros no Windows (`thirdparty_artifact_has_provenance`) | **vivo** | x64: install aprovado **acusa violação** (`integrations_thirdparty_validate_test.go:74`); no caso adulterado a violação esperada (D2 ramo ii) **não** aparece (`:132`). Causa listada como `INFER` (nome curto 8.3) | 🔴 sim — a regra não discrimina íntegro de adulterado no Windows (falha fechada no íntegro) | Medir a causa; corrigir |
 | 3 | ML-R3 — guard de entrada cego a `\` (`internal/integrations/manager.go:756`) | **vivo, contido** | VM: `..\outside.md` passa o guard de entrada e é barrado por `beneath()`. macOS: vira arquivo chamado `..\outside.md` dentro da raiz (não é travessia) | 🔴 sim (defesa em uma camada) | ML com teste que reprova sem Windows |
 | 4 | Permissão 0600 ignorada no NTFS (`TestSave_WritesAtomicallyWithPermissions`, `internal/identity`) | **vivo** | x64, lista conhecida (grupo A, medido) | possível — arquivo de identidade fica 0666 | Decidir: ACL do Windows ou declarar |
@@ -59,5 +59,5 @@ na lista foram escritas em 2026-09-10, e **5 delas são inferidas** (`INFER`), n
 ## O que **não** dá para afirmar hoje
 
 - "Suporte total ao Windows": há 14 falhas conhecidas no x64 (2 com efeito de segurança: itens 2 e
-  4), e os itens 1, 13 e 14 — todos guard — estão sem medição.
+  4), o item 1 (guard global) está confirmado vivo, e os itens 13 e 14 — guard — estão sem medição.
 - Que as 5 causas `INFER` da lista conhecida são as causas reais.

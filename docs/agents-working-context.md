@@ -2,6 +2,22 @@
 
 ---
 
+## 2026-10-14 — artemis-tf — FIM: medição guard global HOME≠USERPROFILE (AC1, REQ-2026-09-01)
+
+**Branch:** `docs/medicao-suporte-windows-9.5.0`
+**Escopo:** Medição pura — sem alteração de código, testes, roadmap ou artefatos de governança. Claude Code 2.1.299 instalado na VM para obter evidência 3a (debug file) em Git Bash, PowerShell e cmd.exe.
+**Entregável:** `docs/portabilidade/2026-10-14-guard-global-home-userprofile-vm.md` (novo arquivo não-commitado, aguarda auditoria de `trackfw_architect`).
+**Veredito:** Falso positivo de saúde confirmado nos três terminais. `trackfw update harness --install-missing` cria o guard em `HOME/.claude/settings.json`; `trackfw validate` reporta zero violações; Claude Code 2.1.299 ignora `HOME` e lê apenas `USERPROFILE/.claude/settings.json` (imune ao `HOME`, evidência 3a). HOME não está no Windows Registry (HKCU nem HKLM). Sem vazamento para `USERPROFILE`. AC3/AC4 não implementados em 9.5.0.
+
+---
+
+## 2026-10-14 — artemis-tf — INÍCIO: medição guard global HOME≠USERPROFILE (AC1, REQ-2026-09-01)
+
+**Branch:** `docs/medicao-suporte-windows-9.5.0`
+**Escopo:** Completar item 1 da medição Windows — comportamento do guard global quando `HOME≠USERPROFILE`, com Claude Code instalado na VM.
+
+---
+
 ## 2026-10-12 — hades-tf — FIM: red-team Wave 2 (ML-2A) — REQ-2026-10-12 + REQ-2026-10-10
 
 **Branch:** `fix/operacoes-de-rede-sem-prazo-e-branch-prune-remoto`
