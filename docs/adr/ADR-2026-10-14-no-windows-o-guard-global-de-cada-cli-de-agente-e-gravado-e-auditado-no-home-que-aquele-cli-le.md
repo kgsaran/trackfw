@@ -85,6 +85,11 @@ usuário. O aviso de D4 nomeia esse resto.
   para tirá-lo do resíduo.
 - **CLIs inferidos** (Codex, Gemini, Cursor, Copilot, Kiro): comportamento inalterado (D2) até medição.
 
+### D7 — Resíduos do red-team (`docs/seguranca/2026-10-14-red-team-guard-global-home-por-cli.md`)
+
+- **R-2:** symlink acima de `parent(CLAUDE_CONFIG_DIR)` não é verificado — extensão do T5 já declarado do `pathguard`.
+- **R-5:** `CLAUDE_CONFIG_DIR` diferente entre o processo do trackfw e o do Claude Code não é detectável pelo trackfw; mitigado pela mensagem condicional do ML-2D.
+
 ## Consequences
 
 - O guard global passa a proteger de fato, e o `validate` passa a auditar o arquivo que o agente lê.

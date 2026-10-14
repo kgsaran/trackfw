@@ -108,7 +108,7 @@ git diff --quiet HEAD -- internal/
 ## Wave 2 — Revisão e fechamento
 ### ML-2A — Revisão de qualidade, red-team, `make quality` e CI
 **Owner:** `hefesto-tf` e `hades-tf` (em sequência)
-**Status:** 🔄 Em andamento — revisão do `hefesto-tf` BLOQUEOU (`docs/qualidade/2026-10-14-revisao-guard-global-home-por-cli.md`): B1, B2 conferidos pelo arquiteto; corretivo ML-2B; falta red-team
+**Status:** 🔄 Em andamento — revisão do `hefesto-tf` BLOQUEOU (`docs/qualidade/2026-10-14-revisao-guard-global-home-por-cli.md`): B1, B2 conferidos pelo arquiteto; corretivo ML-2B ✅ e ML-2C ✅; red-team do `hades-tf` BLOQUEOU (`docs/seguranca/2026-10-14-red-team-guard-global-home-por-cli.md`): R-3, com R-1/R-4 de ajuste → ML-2D
 **Acceptance criteria:**
 - [ ] Pareceres em `docs/qualidade/` e `docs/seguranca/`; corretivos aplicados
 - [ ] `make quality` EXIT=0 com máquina ociosa; CI verde, inclusive `windows-full-suites`
@@ -140,4 +140,13 @@ git diff --quiet HEAD -- internal/
       ✅ chamadores restantes de `GlobalClaudeSkillPath` são só testes
 - [x] build, vet (inclusive `GOOS=windows`), testes, `make parity-rest` EXIT=0
       ✅ EXIT=0 em todos; `make parity-rest` EXIT=0
+
+### ML-2D — Corretivo do red-team (R-1, R-3, R-4)
+**Owner:** `apolo-tf`
+**Status:** 🔄 Em andamento
+**Acceptance criteria:**
+- [ ] R-3: o relato de resto inerte (`withD5Notice` e aviso do `validate`), quando a origem é `CLAUDE_CONFIG_DIR`, é condicional — "inert only for a Claude Code that sees CLAUDE_CONFIG_DIR=…; if Claude Code runs without it, this file is the active one — do not remove it". Origem por divergência no Windows mantém a mensagem atual. Decisão do arquiteto: condicionar a mensagem em vez de restringir ao Windows (restringir esconderia a informação)
+- [ ] R-1: `CLAUDE_CONFIG_DIR` relativo é recusado com erro nomeado (vira finding/`TargetFailed`)
+- [ ] R-4: o aviso `home_divergence_windows` cita o diretório real resolvido em vez de "the OS home" quando `CLAUDE_CONFIG_DIR` está definido
+- [ ] Testes nas duas direções com mordida; build, vet (inclusive `GOOS=windows`), testes, `make parity-rest` EXIT=0
 
