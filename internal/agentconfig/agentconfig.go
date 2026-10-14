@@ -29,6 +29,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/kgsaran/trackfw/internal/homedir"
 )
@@ -146,6 +147,94 @@ func (r FixedCLIHomeResolver) HomeFor(_ string) (string, error) {
 // to control the platform inputs of the default OSCLIHomeResolver.
 // Not goroutine-safe: do not replace concurrently with HomeFor calls.
 var DefaultResolver CLIHomeResolver = OSCLIHomeResolver{}
+
+// normHomePath normalizes a filesystem path for platform-independent comparison.
+// Replaces `\` with `/` (Windows path separators) and removes trailing slashes,
+// so "C:\Users\Lab" and "c:/users/lab/" both normalize to "c:/users/lab" for
+// case-insensitive comparison via strings.EqualFold.
+// Used by HomeDivergencePaths (A3, ADR-2026-10-14) and InertClaudeGuardPath (D5).
+func normHomePath(p string) string {
+	p = strings.ReplaceAll(p, `\`, `/`)
+	for len(p) > 1 && strings.HasSuffix(p, "/") {
+		p = p[:len(p)-1]
+	}
+	return p
+}
+
+// HomeDivergencePaths returns (homeEnv, osUserHome, true) when HOME and
+// os.UserHomeDir() differ on Windows (D4, ADR-2026-10-14 A3).
+//
+// Returns ("", "", false) in all other cases:
+//   - outside Windows (real GOOS or via SetPlatformForTest);
+//   - when HOME is empty (Git Bash without HOME set);
+//   - when effectiveUserHomeDir() returns an error (USERPROFILE absent);
+//   - when the two paths are equal after normHomePath + strings.EqualFold —
+//     MSYS2 converts /c/Users/Lab to C:\Users\Lab before spawning the Go
+//     process (Seção 3.5, Wave 0 2026-10-14), so the default Git Bash case
+//     (HOME=/c/Users/Lab, USERPROFILE=C:\Users\Lab) silently passes.
+//
+// The returned paths are for display only; callers must not resolve, write to,
+// or delete anything based on them.
+func HomeDivergencePaths() (homeEnv, osUserHome string, divergent bool) {
+	if effectiveGOOS() != "windows" {
+		return
+	}
+	homeEnv = os.Getenv("HOME")
+	if homeEnv == "" {
+		return "", "", false
+	}
+	var err error
+	osUserHome, err = effectiveUserHomeDir()
+	if err != nil {
+		return "", "", false
+	}
+	if strings.EqualFold(normHomePath(homeEnv), normHomePath(osUserHome)) {
+		return "", "", false
+	}
+	return homeEnv, osUserHome, true
+}
+
+// InertClaudeGuardPath returns (path, true) when HOME/.claude/settings.json
+// contains trackfw guard wiring but claudeDir points elsewhere — indicating a
+// D5 inert remainder (ADR-2026-10-14 D5).
+//
+// Returns ("", false) when:
+//   - claudeDir equals HOME/.claude (same location, no divergence);
+//   - HOME/.claude/settings.json does not exist or cannot be read;
+//   - the file does not contain any trackfw guard wiring.
+//
+// The caller must NOT delete or modify the returned file — D5 is report-only.
+func InertClaudeGuardPath(claudeDir string) (path string, present bool) {
+	home, err := homedir.Dir()
+	if err != nil {
+		return "", false
+	}
+	oldDir := filepath.Join(home, ".claude")
+	if strings.EqualFold(normHomePath(claudeDir), normHomePath(oldDir)) {
+		return "", false
+	}
+	p := filepath.Join(oldDir, "settings.json")
+	data, err := os.ReadFile(p)
+	if err != nil {
+		return "", false
+	}
+	if containsTrackfwGuardMarker(data) {
+		return p, true
+	}
+	return "", false
+}
+
+// containsTrackfwGuardMarker reports whether data contains any form of
+// trackfw guard wiring. The check covers:
+//   - current inline form: "trackfw guard" (post-ML-2A);
+//   - legacy .sh forms: "trackfw-credential-guard.sh", "trackfw-git-branch-guard.sh"
+//     (pre-ML-2A, may be present in a D5 remainder written by an older version).
+func containsTrackfwGuardMarker(data []byte) bool {
+	s := string(data)
+	return strings.Contains(s, "trackfw guard") ||
+		strings.Contains(s, "trackfw-credential-guard.sh") ||
+		strings.Contains(s, "trackfw-git-branch-guard.sh")
+}
 
 // ClaudeConfigDir returns the directory that contains Claude Code's settings.json.
 //

@@ -2,6 +2,48 @@
 
 ---
 
+## 2026-10-14 — apolo-tf — FIM: ML-1B — aviso de divergência HOME, relato D5 inerte, displayPath (REQ-2026-09-01)
+
+**Branch:** `fix/guard-global-segue-o-home-que-o-agente-le`
+**Escopo:** ML-1B completo. Entregáveis: D4 (regra `home_divergence_windows`, always-warning, nunca violation); D5 (`withD5Notice` em Updated/Skipped de `harnessCredentialGuardTargetClaude` e `harnessGitBranchGuardTargetClaude`); displayPath dinâmico via `claudeSettingsDisplayPath` em ambas as funções.
+**Arquivos alterados:**
+- `internal/agentconfig/agentconfig.go` — `normHomePath`, `HomeDivergencePaths`, `InertClaudeGuardPath`, `containsTrackfwGuardMarker`
+- `internal/validator/validator_home_divergence_rule.go` — regra D4 (novo arquivo, renomeado de `_windows.go`)
+- `internal/validator/validator.go` — `ruleDefaults["home_divergence_windows"]`, `applyRuleWarnOnly` + `applyRuleWarnOnlyTagged`
+- `internal/validator/export_test.go` — `ValidateHomeDivergenceWindowsForTest`
+- `internal/generators/update.go` — `withD5Notice`, `claudeSettingsDisplayPath`, ambas funções harness atualizadas
+**Novos testes:**
+- `internal/validator/validator_home_divergence_rule_test.go` — testes (a)-(d), com mordidas 1-2 documentadas
+- `internal/generators/update_harness_home_divergence_ml1b_test.go` — testes (e)-(f), com mordida 3 documentada
+**Evidências:** `go build ./...` EXIT:0 · `go vet ./internal/...` EXIT:0 · `GOOS=windows go vet ./internal/...` EXIT:0 · `go test ./internal/agentconfig/ ./internal/validator/ ./internal/generators/ ./internal/commands/ -count=1` EXIT:0 · `trackfw validate` EXIT:0. `make parity-rest` EXIT:2 apenas na última linha (`check-required-status-checks.py --self-test` requer Python 3.10+; ambiente tem 3.9.6 — falha pré-existente não relacionada ao ML-1B; as 1229 linhas anteriores do output passaram).
+**Mordidas executadas e coladas no relatório:** Mordida 1 (sem EqualFold → (d) FAIL), Mordida 2 (sem guard divergente → (b) FAIL), Mordida 3 (sem withD5Notice → (e) FAIL).
+**Pendente trackfw_architect:** atualizar roadmap ML-1B para ✅ Concluído + auditoria de diff + commit.
+
+---
+
+## 2026-10-14 — apolo-tf — INÍCIO: ML-1B — aviso de divergência HOME, relato D5 inerte, displayPath (REQ-2026-09-01)
+
+**Branch:** `fix/guard-global-segue-o-home-que-o-agente-le`
+**Escopo:** Implementar ML-1B da REQ-2026-09-01: D4 (regra home_divergence_windows), D5 (relato de guard inerte em HOME), displayPath dinâmico.
+
+---
+
+## 2026-10-14 — apolo-tf — FIM: ML-1D — agentes do Claude Code gravados no dir que o Claude Code lê (REQ-2026-09-01)
+
+**Branch:** `fix/guard-global-segue-o-home-que-o-agente-le`
+**Escopo:** ML-1D completo. Todos os sítios migrados: `internal/integrations/manager.go` (campo `ClaudeDir func() (string, error)`), `internal/commands/init.go`, `internal/commands/integrations_flags.go`, `internal/generators/update.go`. Nove scripts de paridade atualizados com `USERPROFILE=` + `CLAUDE_CONFIG_DIR=`. Novo arquivo: `internal/integrations/manager_claude_test.go` (5 testes).
+**Evidências:** `go build ./...` EXIT:0 · `go vet ./internal/...` EXIT:0 · `GOOS=windows go vet ./internal/...` EXIT:0 · `go test ./internal/agentconfig/ ./internal/integrations/ ./internal/generators/ ./internal/commands/ ./internal/validator/ -count=1` EXIT:0 · `make parity-rest` EXIT:0.
+**Pendente trackfw_architect:** auditoria de diff + commit ML-1D.
+
+---
+
+## 2026-10-14 — apolo-tf — INÍCIO: ML-1D — agentes do Claude Code gravados no dir que o Claude Code lê (REQ-2026-09-01)
+
+**Branch:** `fix/guard-global-segue-o-home-que-o-agente-le`
+**Escopo:** Implementar ML-1D da REQ-2026-09-01. Migrar todos os sítios de gravação de agents/skills do Claude Code para usar `agentconfig.ClaudeConfigDir` (mesmo resolvedor do ML-1A). Atualizar scripts de paridade com isolamento USERPROFILE/CLAUDE_CONFIG_DIR.
+
+---
+
 ## 2026-10-14 — artemis-tf — FIM: medição guard global HOME≠USERPROFILE (AC1, REQ-2026-09-01)
 
 **Branch:** `docs/medicao-suporte-windows-9.5.0`

@@ -71,12 +71,16 @@ git diff --quiet HEAD -- internal/
 
 ### ML-1B — Aviso de divergência (D4) e resto inerte (D5)
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-14 após corretivo de idioma (mensagens passaram para inglês). `make parity-rest` EXIT=0 rodado pelo arquiteto com Python 3.12
 **Acceptance criteria:**
-- [ ] Predicado A3; aviso informativo nomeia os dois caminhos, CLIs medidos × inferidos (A4) e o Windsurf (A8); silêncio sem divergência
-- [ ] `update harness` relata o guard antigo sob `HOME` sem apagá-lo (D5)
-- [ ] `displayPath` dos alvos harness do Claude (`~/.claude/settings.json` fixo) mostra o caminho real resolvido
-- [ ] Testes nas duas direções; mordida mostrada
+- [x] Predicado A3; aviso informativo nomeia os dois caminhos, CLIs medidos × inferidos (A4) e o Windsurf (A8); silêncio sem divergência
+      ✅ regra `home_divergence_windows` (só warning); `TestHomeDivergenceWindows_{Divergent,NoDivergence,NotWindows,CaseAndTrailingSlash}`; mordidas 1 (sem EqualFold) e 2 (sempre emite) coladas
+- [x] `update harness` relata o guard antigo sob `HOME` sem apagá-lo (D5)
+      ✅ `withD5Notice`; `TestHarnessD5InertRemainderReported` (hash do arquivo antigo inalterado); mordida 3 colada
+- [x] `displayPath` dos alvos harness do Claude (`~/.claude/settings.json` fixo) mostra o caminho real resolvido
+      ✅ `claudeSettingsDisplayPath`; `TestHarnessDisplayPathWithClaudeConfigDirOutsideHome`
+- [x] Testes nas duas direções; mordida mostrada
+      ✅ testes nas duas direções; três mordidas
 
 ### ML-1D — Arquivos de agente do Claude seguem o mesmo resolvedor
 **Owner:** `apolo-tf`
@@ -94,7 +98,7 @@ git diff --quiet HEAD -- internal/
 
 ### ML-1C — Medição de CI antes/depois, contrato e README
 **Owner:** `ares-tf` / `apolo-tf`
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Acceptance criteria:**
 - [ ] `windows-probe.yml` (ou repro equivalente) com `HOME`≠`USERPROFILE`: `main` reproduz, a branch fecha (AC2)
 - [ ] `docs/cli-parity.md` (`trackfw-contract`) e seção Windows do README

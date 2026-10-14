@@ -443,7 +443,7 @@ type TargetResult struct {
 	ID      string
 	State   TargetState
 	Path    string
-	Message string // only set when State == TargetFailed
+	Message string // set when State == TargetFailed (error detail) or for informational notices (e.g. D5 inert-remainder, ML-1B)
 }
 
 // UpdateSummary carries all four counters, including zeros — pinned by contract.
@@ -742,6 +742,55 @@ func selectDeclaredTargets(declared []string, requested []string) ([]string, err
 	return out, nil
 }
 
+// claudeSettingsDisplayPath returns the display path for Claude Code's settings.json.
+// When the resolved path is under homedir.Dir(), it is abbreviated with "~/"
+// (e.g., "~/.claude/settings.json" in the control case, or a custom subpath
+// when CLAUDE_CONFIG_DIR points inside the home directory).
+// When the resolved path is outside homedir.Dir() (e.g., CLAUDE_CONFIG_DIR=/tmp/…,
+// or USERPROFILE ≠ HOME on Windows), the absolute path is returned as-is.
+// Falls back to "~/.claude/settings.json" when claudeDir is empty (error path).
+//
+// ML-1B (REQ-2026-09-01): replaces the fixed const displayPath = "~/.claude/settings.json"
+// in harnessCredentialGuardTargetClaude and harnessGitBranchGuardTargetClaude so that
+// CLAUDE_CONFIG_DIR and Windows USERPROFILE divergence are reflected in the output.
+func claudeSettingsDisplayPath(claudeDir string) string {
+	if claudeDir == "" {
+		return "~/.claude/settings.json"
+	}
+	path := filepath.Join(claudeDir, "settings.json")
+	home, err := homedir.Dir()
+	if err != nil {
+		return path
+	}
+	rel, err := filepath.Rel(home, path)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return path
+	}
+	return "~/" + filepath.ToSlash(rel)
+}
+
+// withD5Notice appends the D5 inert-remainder notice to a TargetUpdated or
+// TargetSkipped result when HOME/.claude/settings.json exists and contains
+// trackfw guard wiring but claudeDir points elsewhere (ADR-2026-10-14 D5,
+// ML-1B REQ-2026-09-01).
+//
+// For TargetFailed / TargetMissing results the function is a no-op — the
+// D5 notice is informational only and must not obscure error/missing states.
+func withD5Notice(result TargetResult, claudeDir string) TargetResult {
+	if result.State != TargetUpdated && result.State != TargetSkipped {
+		return result
+	}
+	inertPath, present := agentconfig.InertClaudeGuardPath(claudeDir)
+	if !present {
+		return result
+	}
+	result.Message = fmt.Sprintf(
+		"old guard under HOME is inert — Claude Code does not read %s; remove it by hand if you want",
+		inertPath,
+	)
+	return result
+}
+
 // rejectHarnessSymlink checks path for symlinks in its ancestry (up to and
 // including home) before any filesystem mutation. It returns a TargetFailed
 // result and true if the guard fires, or TargetResult{} and false when the
@@ -906,10 +955,12 @@ func harnessClaudeSkillTarget(home string, opts UpdateOptions) TargetResult {
 // home stays as the trackfw artefacts root (~/.trackfw/).
 func harnessCredentialGuardTargetClaude(home, claudeDir string, claudeDirErr error, opts UpdateOptions) TargetResult {
 	const id = "claude-credential-guard"
-	const displayPath = "~/.claude/settings.json"
-
+	// ML-1B (REQ-2026-09-01): displayPath is now dynamic — shows the real resolved path.
+	// In the control case (HOME == USERPROFILE, no CLAUDE_CONFIG_DIR) this produces
+	// "~/.claude/settings.json", identical to the previous hardcoded value.
+	displayPath := claudeSettingsDisplayPath(claudeDir)
 	if claudeDirErr != nil {
-		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: fmt.Sprintf("resolving Claude config dir: %s", claudeDirErr)}
+		return TargetResult{ID: id, State: TargetFailed, Path: "~/.claude/settings.json", Message: fmt.Sprintf("resolving Claude config dir: %s", claudeDirErr)}
 	}
 	path := filepath.Join(claudeDir, "settings.json")
 	// Guard: reject writes through symlinks before any filesystem mutation
@@ -929,7 +980,7 @@ func harnessCredentialGuardTargetClaude(home, claudeDir string, claudeDirErr err
 			return TargetResult{ID: id, State: TargetMissing, Path: displayPath}
 		}
 		if opts.DryRun {
-			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+			return withD5Notice(TargetResult{ID: id, State: TargetUpdated, Path: displayPath}, claudeDir)
 		}
 		root := make(map[string]interface{})
 		mergeCredentialGuardClaudeHooks(root, claudeShellMatcher, guardCredentialGlobalCmdPSPOSIX)
@@ -945,7 +996,7 @@ func harnessCredentialGuardTargetClaude(home, claudeDir string, claudeDirErr err
 		if writeErr := os.WriteFile(path, append(desired, '\n'), 0644); writeErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 		}
-		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+		return withD5Notice(TargetResult{ID: id, State: TargetUpdated, Path: displayPath}, claudeDir)
 	case err != nil:
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}
 	}
@@ -982,16 +1033,16 @@ func harnessCredentialGuardTargetClaude(home, claudeDir string, claudeDirErr err
 	}
 	desired := append(out, '\n')
 	if string(desired) == string(raw) {
-		return TargetResult{ID: id, State: TargetSkipped, Path: displayPath}
+		return withD5Notice(TargetResult{ID: id, State: TargetSkipped, Path: displayPath}, claudeDir)
 	}
 	if opts.DryRun {
-		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+		return withD5Notice(TargetResult{ID: id, State: TargetUpdated, Path: displayPath}, claudeDir)
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 	}
-	return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	return withD5Notice(TargetResult{ID: id, State: TargetUpdated, Path: displayPath}, claudeDir)
 }
 
 // mergeCredentialGuardClaudeHooks merges the guard PreToolUse/PostToolUse[matcher]
@@ -1796,10 +1847,12 @@ func harnessCredentialGuardTargetKiro(home string, opts UpdateOptions) TargetRes
 // harnessCredentialGuardTargetClaude. home stays as the trackfw artefacts root.
 func harnessGitBranchGuardTargetClaude(home, claudeDir string, claudeDirErr error, opts UpdateOptions) TargetResult {
 	const id = "claude-git-branch-guard"
-	const displayPath = "~/.claude/settings.json"
-
+	// ML-1B (REQ-2026-09-01): displayPath is now dynamic — shows the real resolved path.
+	// In the control case (HOME == USERPROFILE, no CLAUDE_CONFIG_DIR) this produces
+	// "~/.claude/settings.json", identical to the previous hardcoded value.
+	displayPath := claudeSettingsDisplayPath(claudeDir)
 	if claudeDirErr != nil {
-		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: fmt.Sprintf("resolving Claude config dir: %s", claudeDirErr)}
+		return TargetResult{ID: id, State: TargetFailed, Path: "~/.claude/settings.json", Message: fmt.Sprintf("resolving Claude config dir: %s", claudeDirErr)}
 	}
 	path := filepath.Join(claudeDir, "settings.json")
 	// Guard: reject writes through symlinks before any filesystem mutation
@@ -1818,7 +1871,7 @@ func harnessGitBranchGuardTargetClaude(home, claudeDir string, claudeDirErr erro
 			return TargetResult{ID: id, State: TargetMissing, Path: displayPath}
 		}
 		if opts.DryRun {
-			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+			return withD5Notice(TargetResult{ID: id, State: TargetUpdated, Path: displayPath}, claudeDir)
 		}
 		root := make(map[string]interface{})
 		mergeCredentialGuardClaudeHooks(root, claudeShellMatcher, guardGitBranchCmdPSPOSIX)
@@ -1834,7 +1887,7 @@ func harnessGitBranchGuardTargetClaude(home, claudeDir string, claudeDirErr erro
 		if writeErr := os.WriteFile(path, append(desired, '\n'), 0644); writeErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 		}
-		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+		return withD5Notice(TargetResult{ID: id, State: TargetUpdated, Path: displayPath}, claudeDir)
 	case err != nil:
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}
 	}
@@ -1871,16 +1924,16 @@ func harnessGitBranchGuardTargetClaude(home, claudeDir string, claudeDirErr erro
 	}
 	desired := append(out, '\n')
 	if string(desired) == string(raw) {
-		return TargetResult{ID: id, State: TargetSkipped, Path: displayPath}
+		return withD5Notice(TargetResult{ID: id, State: TargetSkipped, Path: displayPath}, claudeDir)
 	}
 	if opts.DryRun {
-		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+		return withD5Notice(TargetResult{ID: id, State: TargetUpdated, Path: displayPath}, claudeDir)
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 	}
-	return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	return withD5Notice(TargetResult{ID: id, State: TargetUpdated, Path: displayPath}, claudeDir)
 }
 
 // harnessGitBranchGuardTargetCodex wires the global-scope git-branch-guard

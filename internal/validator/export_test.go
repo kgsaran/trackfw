@@ -175,6 +175,14 @@ func GuardWiringExtractGuardTypesFromFileForTest(path string) ([]string, error) 
 	return guardTypes, nil
 }
 
+// ValidateHomeDivergenceWindowsForTest exposes validateHomeDivergenceWindows to the
+// external test package (package validator_test) — standard "export_test.go" pattern.
+// ML-1B (REQ-2026-09-01): used by the home_divergence_windows tests that exercise
+// the D4 warning for HOME ≠ USERPROFILE on Windows (simulated via SetPlatformForTest).
+func ValidateHomeDivergenceWindowsForTest() []string {
+	return validateHomeDivergenceWindows()
+}
+
 // ChdirForTest changes the working directory to dir and resets the config singleton (required
 // because Validate* functions call os.Getwd() which is cached by config.Load). Restores both
 // on t.Cleanup. Safe to use from external test package (package validator_test).
