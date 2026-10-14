@@ -3,6 +3,7 @@ package validator
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/kgsaran/trackfw/internal/agentconfig"
 	"github.com/kgsaran/trackfw/internal/homedir"
 	"github.com/kgsaran/trackfw/internal/pathanchor"
 	"os"
@@ -164,13 +165,35 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker, subcmdMarker, sub
 		return nil, nil
 	}
 
+	// ML-1A (REQ-2026-09-01): resolve Claude Code's config dir independently so writer and
+	// auditor agree on the target path — ADR-2026-10-14 D3. claudeDirErr != nil → emit finding
+	// per A7 (silence here is the very defect this REQ fixes).
+	claudeDir, claudeDirErr := agentconfig.ClaudeConfigDir(agentconfig.DefaultResolver)
+
 	var msgs []string
 	// anySubcmdFormFound e hasPSPosixSubcmd rastreiam o uso da nova forma de subcomando Go.
 	var anySubcmdFormFound bool
 	var hasPSPosixSubcmd bool
 	for _, gf := range globalGuardConfigFiles {
 		relPath := globalGuardConfigPath(gf, scriptMarker)
-		fullPath := filepath.Join(home, relPath)
+		// ML-1A: Claude Code's settings.json lives in claudeDir (which honours CLAUDE_CONFIG_DIR
+		// and, on Windows, USERPROFILE instead of HOME). All other CLIs still use homedir.Dir().
+		var fullPath string
+		if gf.cli == "Claude Code" {
+			if claudeDirErr != nil {
+				// A7: resolution error → finding, never silent skip.
+				msgs = append(msgs, fmt.Sprintf(
+					"Claude Code global config directory cannot be resolved (%s) — "+
+						"trackfw cannot tell whether %s is wired; ensure USERPROFILE or "+
+						"CLAUDE_CONFIG_DIR is set correctly",
+					claudeDirErr, scriptMarker,
+				))
+				continue
+			}
+			fullPath = filepath.Join(claudeDir, "settings.json")
+		} else {
+			fullPath = filepath.Join(home, relPath)
+		}
 		content, readErr := readRegularFile(fullPath)
 		if readErr != nil {
 			if os.IsNotExist(readErr) {
@@ -358,10 +381,26 @@ func validateGuardGlobalHookShLegacyWarnings(scriptMarker string) ([]string, err
 		return nil, nil
 	}
 
+	// ML-1A: same resolver as validateGuardGlobalHookResolvable — A7, ADR-2026-10-14 D3.
+	claudeDir, claudeDirErr := agentconfig.ClaudeConfigDir(agentconfig.DefaultResolver)
+
 	var warnings []string
 	for _, gf := range globalGuardConfigFiles {
 		relPath := globalGuardConfigPath(gf, scriptMarker)
-		fullPath := filepath.Join(home, relPath)
+		var fullPath string
+		if gf.cli == "Claude Code" {
+			if claudeDirErr != nil {
+				warnings = append(warnings, fmt.Sprintf(
+					"Claude Code global config directory cannot be resolved (%s) — "+
+						"trackfw cannot check for legacy hook forms",
+					claudeDirErr,
+				))
+				continue
+			}
+			fullPath = filepath.Join(claudeDir, "settings.json")
+		} else {
+			fullPath = filepath.Join(home, relPath)
+		}
 		content, readErr := readRegularFile(fullPath)
 		if readErr != nil {
 			continue
@@ -401,10 +440,26 @@ func validateGuardGlobalHookD2InlineWarnings(scriptMarker, subcmdMarker, subcmdN
 		return nil, nil
 	}
 
+	// ML-1A: same resolver as validateGuardGlobalHookResolvable — A7, ADR-2026-10-14 D3.
+	claudeDir, claudeDirErr := agentconfig.ClaudeConfigDir(agentconfig.DefaultResolver)
+
 	var warnings []string
 	for _, gf := range globalGuardConfigFiles {
 		relPath := globalGuardConfigPath(gf, scriptMarker)
-		fullPath := filepath.Join(home, relPath)
+		var fullPath string
+		if gf.cli == "Claude Code" {
+			if claudeDirErr != nil {
+				warnings = append(warnings, fmt.Sprintf(
+					"Claude Code global config directory cannot be resolved (%s) — "+
+						"trackfw cannot check for D2 inline forms",
+					claudeDirErr,
+				))
+				continue
+			}
+			fullPath = filepath.Join(claudeDir, "settings.json")
+		} else {
+			fullPath = filepath.Join(home, relPath)
+		}
 		content, readErr := readRegularFile(fullPath)
 		if readErr != nil {
 			continue // ausente ou ilegível — já tratado pela regra resolvable
@@ -452,10 +507,26 @@ func validateGuardGlobalHookD11LegacyWarnings(scriptMarker, subcmdMarker, subcmd
 		return nil, nil
 	}
 
+	// ML-1A: same resolver as validateGuardGlobalHookResolvable — A7, ADR-2026-10-14 D3.
+	claudeDir, claudeDirErr := agentconfig.ClaudeConfigDir(agentconfig.DefaultResolver)
+
 	var warnings []string
 	for _, gf := range globalGuardConfigFiles {
 		relPath := globalGuardConfigPath(gf, scriptMarker)
-		fullPath := filepath.Join(home, relPath)
+		var fullPath string
+		if gf.cli == "Claude Code" {
+			if claudeDirErr != nil {
+				warnings = append(warnings, fmt.Sprintf(
+					"Claude Code global config directory cannot be resolved (%s) — "+
+						"trackfw cannot check for D11 legacy forms",
+					claudeDirErr,
+				))
+				continue
+			}
+			fullPath = filepath.Join(claudeDir, "settings.json")
+		} else {
+			fullPath = filepath.Join(home, relPath)
+		}
 		content, readErr := readRegularFile(fullPath)
 		if readErr != nil {
 			continue

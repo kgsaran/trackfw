@@ -59,6 +59,7 @@ func countLeafMatches(v interface{}, want string) int {
 func TestUpdateHarnessCmd_RunsOutsideProjectWithoutTrackfwYAML(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // ML-1A: Windows reads USERPROFILE
 	cwd := t.TempDir()
 	orig, _ := os.Getwd()
 	if err := os.Chdir(cwd); err != nil {
@@ -81,6 +82,7 @@ func TestUpdateHarnessCmd_RunsOutsideProjectWithoutTrackfwYAML(t *testing.T) {
 func TestUpdateHarnessCmd_EmptyHarnessExitsZero(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // ML-1A: Windows reads USERPROFILE
 
 	cmd := newUpdateHarnessCmd()
 	cmd.SetOut(&strings.Builder{})
@@ -93,6 +95,7 @@ func TestUpdateHarnessCmd_EmptyHarnessExitsZero(t *testing.T) {
 func TestUpdateHarnessCmd_UnknownTargetIsUsageError(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // ML-1A: Windows reads USERPROFILE
 
 	cmd := newUpdateHarnessCmd()
 	cmd.SetOut(&strings.Builder{})
@@ -111,6 +114,7 @@ func TestUpdateHarnessCmd_UnknownTargetIsUsageError(t *testing.T) {
 func TestUpdateHarnessCmd_JSONKeyOrderMatchesCliParityContract(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // ML-1A: Windows reads USERPROFILE
 
 	cmd := newUpdateHarnessCmd()
 	var out strings.Builder
@@ -169,6 +173,7 @@ func TestUpdateHarnessCmd_JSONKeyOrderMatchesCliParityContract(t *testing.T) {
 func TestUpdateHarnessCmd_FailedTargetIncludesMessageAndExitsNonZero(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // ML-1A: Windows reads USERPROFILE
 
 	// Force a failure: make the claude-skill destination a directory instead
 	// of a writable file location, so os.ReadFile succeeds reading a dir
@@ -204,6 +209,7 @@ func TestUpdateHarnessCmd_FailedTargetIncludesMessageAndExitsNonZero(t *testing.
 func TestUpdateHarnessCmd_CredentialGuardClaudeInstallsViaCLI(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // ML-1A: Windows reads USERPROFILE
 
 	cmd := newUpdateHarnessCmd()
 	var out strings.Builder
@@ -252,6 +258,7 @@ func TestUpdateHarnessCmd_CredentialGuardClaudeInstallsViaCLI(t *testing.T) {
 func TestUpdateHarnessCmd_CredentialGuardCodexInstallsViaCLI(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // ML-1A: Windows reads USERPROFILE
 
 	cmd := newUpdateHarnessCmd()
 	var out strings.Builder
@@ -300,6 +307,7 @@ func TestUpdateHarnessCmd_CredentialGuardCodexInstallsViaCLI(t *testing.T) {
 func TestUpdateHarnessCmd_CredentialGuardGeminiInstallsViaCLI(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // ML-1A: Windows reads USERPROFILE
 
 	cmd := newUpdateHarnessCmd()
 	var out strings.Builder
@@ -348,6 +356,7 @@ func TestUpdateHarnessCmd_CredentialGuardGeminiInstallsViaCLI(t *testing.T) {
 func TestUpdateHarnessCmd_CredentialGuardCursorInstallsViaCLI(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // ML-1A: Windows reads USERPROFILE
 
 	cmd := newUpdateHarnessCmd()
 	var out strings.Builder
@@ -396,6 +405,7 @@ func TestUpdateHarnessCmd_CredentialGuardCursorInstallsViaCLI(t *testing.T) {
 func TestUpdateHarnessCmd_CredentialGuardCopilotInstallsViaCLI(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // ML-1A: Windows reads USERPROFILE
 
 	cmd := newUpdateHarnessCmd()
 	var out strings.Builder
@@ -446,6 +456,7 @@ func TestUpdateHarnessCmd_CredentialGuardCopilotInstallsViaCLI(t *testing.T) {
 func TestUpdateHarnessCmd_CredentialGuardKiroInstallsViaCLI(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // ML-1A: Windows reads USERPROFILE
 
 	cmd := newUpdateHarnessCmd()
 	var out strings.Builder
@@ -515,6 +526,7 @@ func TestUpdateHarnessCmd_GitBranchGuardInstallsViaCLI(t *testing.T) {
 		t.Run(tc.tool, func(t *testing.T) {
 			home := t.TempDir()
 			t.Setenv("HOME", home)
+			t.Setenv("USERPROFILE", home) // ML-1A: Windows reads USERPROFILE
 
 			targetID := tc.tool + "-git-branch-guard"
 			cmd := newUpdateHarnessCmd()
@@ -585,6 +597,7 @@ func TestUpdateHarnessCmd_GitBranchGuardInstallsViaCLI(t *testing.T) {
 func TestUpdateHarnessCmd_GitBranchGuardAndCredentialGuardCoexistIdempotently(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // ML-1A: Windows reads USERPROFILE
 
 	targets := "claude-credential-guard,claude-git-branch-guard,kiro-credential-guard,kiro-git-branch-guard"
 

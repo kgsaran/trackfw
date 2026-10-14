@@ -789,6 +789,7 @@ func TestUpdateHarnessCredentialGuardClaudeMissingWithoutInstallMissing(t *testi
 func TestUpdateHarnessCredentialGuardClaudeInstallsAbsolutePathWithInstallMissing(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // ML-1A: also set USERPROFILE (Windows reads this)
 
 	report, err := UpdateHarness(UpdateOptions{Targets: []string{"claude-credential-guard"}, InstallMissing: true})
 	if err != nil {
@@ -840,6 +841,7 @@ func TestUpdateHarnessCredentialGuardClaudeInstallsAbsolutePathWithInstallMissin
 func TestUpdateHarnessCredentialGuardClaudeIsIdempotent(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // ML-1A: also set USERPROFILE (Windows reads this)
 
 	if _, err := UpdateHarness(UpdateOptions{Targets: []string{"claude-credential-guard"}, InstallMissing: true}); err != nil {
 		t.Fatal(err)
@@ -886,6 +888,7 @@ func TestUpdateHarnessCredentialGuardClaudeIsIdempotent(t *testing.T) {
 func TestUpdateHarnessCredentialGuardClaudeDryRunDoesNotWrite(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // ML-1A: also set USERPROFILE (Windows reads this)
 
 	report, err := UpdateHarness(UpdateOptions{Targets: []string{"claude-credential-guard"}, InstallMissing: true, DryRun: true})
 	if err != nil {
@@ -905,6 +908,7 @@ func TestUpdateHarnessCredentialGuardClaudeDryRunDoesNotWrite(t *testing.T) {
 func TestUpdateHarnessCredentialGuardClaudePreservesExistingContent(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // ML-1A: also set USERPROFILE (Windows reads this)
 
 	settingsPath := filepath.Join(home, ".claude", "settings.json")
 	if err := os.MkdirAll(filepath.Dir(settingsPath), 0755); err != nil {
@@ -2709,6 +2713,7 @@ func TestUpdateHarnessLeafSymlinkRefusesWrite(t *testing.T) {
 	home := t.TempDir()
 	outside := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // ML-1A: also set USERPROFILE (Windows reads this)
 
 	// Create the parent directory so the symlink can be planted at the leaf.
 	claudeDir := filepath.Join(home, ".claude")

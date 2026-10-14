@@ -84,6 +84,9 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 
+	// ML-1A: ClaudeConfigDir respects CLAUDE_CONFIG_DIR. Unset before any test
+	// runs so a developer's real Claude config is never read or written.
+	os.Unsetenv("CLAUDE_CONFIG_DIR")
 	os.Exit(m.Run())
 }
 

@@ -286,6 +286,9 @@ func globalGuardHome(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	// ML-1A (REQ-2026-09-01): also set USERPROFILE so agentconfig.ClaudeConfigDir
+	// returns this dir on simulated Windows (os.UserHomeDir() reads USERPROFILE there).
+	t.Setenv("USERPROFILE", home)
 	return home
 }
 

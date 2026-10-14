@@ -55,14 +55,19 @@ git diff --quiet HEAD -- internal/
 
 ### ML-1A — Pacote `internal/agentconfig`: resolvedor por CLI usado pelo escritor e pelo auditor
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-14. Testes dos 4 pacotes e `make parity-rest` (Python 3.12) EXIT=0 rodados pelo arquiteto; mordida própria (auditor sem o resolvedor) → `TestGuardGlobalConcordance_{a,b}_*_GitBranch` reprovam. Desvio: o agente deixou de migrar os sítios de arquivos de agente alegando instrução que o handoff não continha — viram ML-1D
 **Files affected:** novo `internal/agentconfig/` (+ testes); os 8 sítios do ADR D6/A2; testes que isolam só `HOME` (tabela da seção 4 do parecer); `scripts/check-update-parity.sh` (definir `USERPROFILE`)
 **Acceptance criteria:**
-- [ ] Claude Code: `CLAUDE_CONFIG_DIR` (raiz) → senão, no Windows, `os.UserHomeDir()` → senão `homedir.Dir()`; os demais CLIs inalterados (D2), Windsurf intocado (A8)
-- [ ] `update harness` e `validate` chamam a MESMA função por CLI (D3); erro de resolução → finding (A7)
-- [ ] Resolvedor injetável; teste com `HOME`≠`USERPROFILE` simulado reprova sem a correção **em macOS/Linux** (AC5); teste de `CLAUDE_CONFIG_DIR`
-- [ ] Controle: sem divergência e sem `CLAUDE_CONFIG_DIR`, saída idêntica à de hoje
-- [ ] `go build ./...`, `go vet`, `GOOS=windows go vet`, testes dos pacotes tocados EXIT=0; `make parity-rest` EXIT=0
+- [x] Claude Code: `CLAUDE_CONFIG_DIR` (raiz) → senão, no Windows, `os.UserHomeDir()` → senão `homedir.Dir()`; os demais CLIs inalterados (D2), Windsurf intocado (A8)
+      ✅ `internal/agentconfig` (`ClaudeConfigDir`, `OSCLIHomeResolver`); Windsurf e CLIs inferidos intocados
+- [x] `update harness` e `validate` chamam a MESMA função por CLI (D3); erro de resolução → finding (A7)
+      ✅ escritor (`update.go` harness Claude) e auditor (`validator_git_branch_guard.go`, `validator_credential_guard.go`) chamam `agentconfig.ClaudeConfigDir`; `TestGuardGlobalConcordance_d_*` (A7)
+- [x] Resolvedor injetável; teste com `HOME`≠`USERPROFILE` simulado reprova sem a correção **em macOS/Linux** (AC5); teste de `CLAUDE_CONFIG_DIR`
+      ✅ `SetPlatformForTest`; `TestGuardGlobalConcordance_a_*`, `_b_*` reprovam sem a correção no macOS
+- [x] Controle: sem divergência e sem `CLAUDE_CONFIG_DIR`, saída idêntica à de hoje
+      ✅ `TestGuardGlobalConcordance_c_*`
+- [x] `go build ./...`, `go vet`, `GOOS=windows go vet`, testes dos pacotes tocados EXIT=0; `make parity-rest` EXIT=0
+      ✅ build, vet (inclusive `GOOS=windows`), 4 pacotes, `make parity-rest`
 
 ### ML-1B — Aviso de divergência (D4) e resto inerte (D5)
 **Owner:** `apolo-tf`
@@ -70,7 +75,18 @@ git diff --quiet HEAD -- internal/
 **Acceptance criteria:**
 - [ ] Predicado A3; aviso informativo nomeia os dois caminhos, CLIs medidos × inferidos (A4) e o Windsurf (A8); silêncio sem divergência
 - [ ] `update harness` relata o guard antigo sob `HOME` sem apagá-lo (D5)
+- [ ] `displayPath` dos alvos harness do Claude (`~/.claude/settings.json` fixo) mostra o caminho real resolvido
 - [ ] Testes nas duas direções; mordida mostrada
+
+### ML-1D — Arquivos de agente do Claude seguem o mesmo resolvedor
+**Owner:** `apolo-tf`
+**Status:** ⬜ Pendente
+**Por que o escopo original não previa:** achado no ML-1A — `integrations.Manager{HomeDir: homedir.Dir()}` grava `~/.claude/agents` e `~/.claude/skills` sob `HOME` (`init.go:438`, `integrations_flags.go:444`, `update.go:173,2364,2685`); o Claude Code os lê no home dele. Mesma causa.
+**Acceptance criteria:**
+- [ ] `Manager` resolve o diretório do Claude por `agentconfig.ClaudeConfigDir` (os demais CLIs inalterados)
+- [ ] Teste com divergência simulada e com `CLAUDE_CONFIG_DIR` reprova sem a correção; controle idêntico
+- [ ] Scripts que chamam `agents install`/`init`/`update` com `HOME=` passam a definir `USERPROFILE` (lista do relatório do ML-1A)
+- [ ] build, vet (inclusive `GOOS=windows`), testes dos pacotes tocados, `make parity-rest` EXIT=0
 
 ### ML-1C — Medição de CI antes/depois, contrato e README
 **Owner:** `ares-tf` / `apolo-tf`
