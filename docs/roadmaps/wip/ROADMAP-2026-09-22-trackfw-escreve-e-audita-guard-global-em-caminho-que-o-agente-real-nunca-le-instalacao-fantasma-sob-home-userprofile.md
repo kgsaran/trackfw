@@ -156,3 +156,12 @@ git diff --quiet HEAD -- internal/
 - [x] Testes nas duas direções com mordida; build, vet (inclusive `GOOS=windows`), testes, `make parity-rest` EXIT=0
       ✅ EXIT=0; `make parity-rest` EXIT=0 (Python 3.12 do Homebrew)
 
+
+### ML-2E — Testes que isolam só o `HOME` vazam no Windows real (CI #562)
+**Owner:** `apolo-tf`
+**Status:** 🔄 Em andamento
+**Por que o escopo original não previa:** `windows-full-suites` do PR #562 (run `38727405910`): 7 falhas novas no ratchet — `TestDoctor*` (4), `TestInstallWithoutScopeOutsideTTYDefaultsToGlobal`, `TestListWithoutScopeReportsGlobalDestinations`, `TestThirdPartyInstall_GlobalScopeRequiresItsOwnConfirmation`. Eles fixam só `HOME`; no Windows real o resolvedor grava no `USERPROFILE` do job (`D:\a\_temp\winhome`), compartilhado entre testes, e o `doctor` acha o arquivo vazado. A simulação no macOS não passava por esses testes.
+**Acceptance criteria:**
+- [ ] Todo teste que exercita escopo global do Claude isola `HOME`, `USERPROFILE` e `CLAUDE_CONFIG_DIR` (helper único); varredura por `t.Setenv("HOME"` em `internal/` com a lista de cada arquivo tocado ou descartado
+- [ ] Prova no Windows real (VM) de que os 7 passam e nada é gravado no `USERPROFILE` sentinela
+- [ ] CI do PR: ratchet sem nome novo
