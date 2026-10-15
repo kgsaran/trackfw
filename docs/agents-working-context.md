@@ -46570,3 +46570,7 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-15 — zeus-tf — release 9.6.0
 
 - Bump para 9.6.0 (minor: regra `home_divergence_windows`) e `CHANGELOG.md` com o #562; #561 e #563 são só documentação. Tag após o merge, precedida de `make check-required-full`.
+
+## 2026-10-15 — zeus-tf — início: ML-W1 (proveniência de terceiros no Windows, nome curto 8.3)
+
+- Branch `fix/fechar-os-grupos-de-falha-de-windows-proveniencia-8.3`; roadmap da REQ-2026-09-03 em wip. Hipótese: `EvalSymlinks` na raiz expande 8.3 e o destino do manifesto não; chave de proveniência não casa. Falha fechada, não brecha. Medição x64 antes da correção.

@@ -85,18 +85,6 @@
       "reason": "Group A: ENOTDIR equals ERROR_PATH_NOT_FOUND on Windows -- walk does not produce expected diagnostic when file is placed where directory is expected (MEASURED)"
     },
     {
-      "name": "TestThirdPartyInstall_PassesValidateEndToEnd",
-      "runtime": "go",
-      "class": "assertion",
-      "reason": "INFER Group D: provenance key likely mismatches due to Windows 8.3 short-name path (e.g. RUNNER~1) -- filepath.Rel receives mixed long/short form paths producing unexpected relative key"
-    },
-    {
-      "name": "TestThirdPartyInstall_TamperAfterInstallFailsValidateEndToEnd",
-      "runtime": "go",
-      "class": "assertion",
-      "reason": "INFER Group D: same 8.3 short-name path mismatch as TestThirdPartyInstall_PassesValidateEndToEnd -- provenance key lookup fails before tamper detection path is reached"
-    },
-    {
       "name": "TestUpdateMigratesKnownCodexAndPreservesUnknown",
       "runtime": "go",
       "class": "assertion",
@@ -247,6 +235,18 @@
       "runtime": "python",
       "class": "assertion",
       "removal_note": "no-longer-runs"
+    },
+    {
+      "name": "TestThirdPartyInstall_PassesValidateEndToEnd",
+      "runtime": "go",
+      "class": "assertion",
+      "removal_note": "corrected"
+    },
+    {
+      "name": "TestThirdPartyInstall_TamperAfterInstallFailsValidateEndToEnd",
+      "runtime": "go",
+      "class": "assertion",
+      "removal_note": "corrected"
     }
   ]
 }

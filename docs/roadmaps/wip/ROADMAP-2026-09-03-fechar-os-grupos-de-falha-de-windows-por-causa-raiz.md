@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: wip
 date: 2026-09-03
 squad: apolo-tf
 req: "docs/req/REQ-2026-09-03-as-217-falhas-reais-de-windows-colapsam-em-poucas-causas-e-tres-delas-exigem-decisao-antes-de-codigo.md"
@@ -7,7 +7,7 @@ req: "docs/req/REQ-2026-09-03-as-217-falhas-reais-de-windows-colapsam-em-poucas-
 
 # Roadmap: Fechar os grupos de falha de Windows por causa raiz
 
-> Criado em: 2026-09-03 | Status: backlog
+> Criado em: 2026-09-03 | Status: wip
 
 ## Context
 
@@ -2535,7 +2535,8 @@ foi aplicado **por medição**, não por leitura: `docs/portabilidade/2026-10-12
 
 ### MLs acrescentados (mesma causa: produto que não fala a gramática/semântica do Windows)
 
-- **ML-W1 — 🔴 proveniência de terceiros no Windows** (`thirdparty_artifact_has_provenance`):
+- **ML-W1 — 🔴 proveniência de terceiros no Windows** — ✅ **Concluído (2026-10-15)**, PR #565: causa 8.3 **confirmada no x64** — run `38809357090`, os 2 testes passam com a correção (antes falhavam); movidos para `removed[]` (`corrected`). Achado extra fechado: chave com `..` casava com entrada forjada (`filepath.IsLocal`). Histórico: Hipótese pelo log x64 (run 38732634537) e leitura (`validator_thirdparty_provenance.go:95,163`): a raiz passa por `EvalSymlinks`, que expande o nome curto 8.3 (`RUNNER~1`), e o destino do manifesto fica na forma curta; `filepath.Rel` não produz a chave e o artefato íntegro cai no ramo i. Na VM o usuário `Lab` não tem forma curta distinta — por isso passa lá. Efeito: falha fechada (falso positivo), não brecha. Medir no x64 antes de corrigir.
+  **ML-W1 — 🔴 proveniência de terceiros no Windows** (`thirdparty_artifact_has_provenance`):
   instalação aprovada acusa violação (`integrations_thirdparty_validate_test.go:74`) e a adulterada não
   cai no ramo D2-ii esperado (`:132`). A regra não discrimina íntegro de adulterado. Causa listada como
   `INFER` (nome curto 8.3) — medir antes de corrigir. Segurança: revisão `hades-tf` obrigatória.

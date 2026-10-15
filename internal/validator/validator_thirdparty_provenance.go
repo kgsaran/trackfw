@@ -160,12 +160,40 @@ func validateThirdPartyArtifactHasProvenance() ([]string, error) {
 		// filesystem path). On a platform whose native separator is "\", the two would
 		// never be byte-equal even though they name the same destination. Normalize before
 		// the map lookup (docs/seguranca/2026-09-01-modelo-de-ameaca-do-separador-em-artefato.md).
-		provenanceKey, relErr := filepath.Rel(root, destination)
+		//
+		// Windows 8.3 short-name / macOS symlink descasamento (REQ-2026-09-03):
+		// filepath.Abs (used by Manager.resolve and integrationsManager) does NOT expand
+		// Windows 8.3 short names (RUNNER~1 → runneradmin), so a manifest destination
+		// written at install time may carry the short-name form while root above was
+		// already expanded by filepath.EvalSymlinks. The same mismatch occurs on macOS/Linux
+		// when a symlink was in the install-time path (e.g. $PWD=/var/… while EvalSymlinks
+		// yields /private/var/…). Resolving the destination's DIRECTORY component (not the
+		// leaf — rejectSymlinks already blocked any leaf symlink at install time) brings
+		// both operands into the same canonical namespace before filepath.Rel. Falls back
+		// to the original destination if EvalSymlinks fails (directory does not exist yet,
+		// cross-filesystem, etc.).
+		destForKey := destination
+		if dirResolved, symErr := filepath.EvalSymlinks(filepath.Dir(destination)); symErr == nil {
+			destForKey = filepath.Join(dirResolved, filepath.Base(destination))
+		}
+		provenanceKey, relErr := filepath.Rel(root, destForKey)
 		if relErr != nil {
 			msgs = append(msgs, fmt.Sprintf(
 				"thirdparty_artifact_has_provenance: %q could not be expressed relative to %q (%v) — cannot look up "+
 					"its provenance entry",
 				destination, root, relErr,
+			))
+			continue
+		}
+		// filepath.IsLocal rejects paths with ".." components or absolute paths —
+		// a destination outside root produces a "../x" relative path, which must
+		// never match a provenance key (keys are always local: "skills/thirdparty/x.md").
+		if !filepath.IsLocal(provenanceKey) {
+			msgs = append(msgs, fmt.Sprintf(
+				"thirdparty_artifact_has_provenance: %q is claimed as a third-party artifact but has no entry in "+
+					".trackfw/thirdparty-provenance.json — obtain a favorable hades-tf review and record an approved "+
+					"provenance entry for this destination before this can pass validate (D2 branch i)",
+				destination,
 			))
 			continue
 		}
