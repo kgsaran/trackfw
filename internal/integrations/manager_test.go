@@ -438,6 +438,89 @@ func TestManagerAcceptsCatalogRelativeDestinations(t *testing.T) {
 	}
 }
 
+// TestManagerRejectsHomeTildeTraversalByGuardEntry — ML-R3 complement (REQ-2026-09-03).
+//
+// Assertion: "~/..\outside.md", "~/a\..\..\x.md", "~/../x.md", and "~/..".
+// are rejected by the "~/" branch GUARD ENTRY in resolve() with "unsafe
+// destination", not by beneath(). The distinction is proved by the error
+// message: the guard entry emits "unsafe destination"; beneath() emits "is
+// outside … root".
+//
+// All four vectors are caught exclusively by containsUnsafeSegment(rest) —
+// measured by a second bite removing only that clause while keeping the
+// path.Clean / empty checks. path.Clean is POSIX-only and returns the
+// strings unchanged ("..\outside.md", "../x.md", ".." all survive Clean),
+// so it does not catch any of them; containsUnsafeSegment splits on both
+// '/' and '\' and detects ".." as a segment in every form.
+//
+// Without the guard: the two backslash forms (~/..\outside.md,
+// ~/a\..\..\x.md) are accepted as literal filenames in the home directory
+// on macOS (backslash is not a separator there); the two POSIX forms
+// (~/../x.md, ~/..") only fall to beneath() and produce "is outside …
+// root". All four fail the assertion without the guard block.
+func TestManagerRejectsHomeTildeTraversalByGuardEntry(t *testing.T) {
+	cases := []struct {
+		dest   string
+		reason string
+	}{
+		// (a) Windows-style backslash traversal after ~/
+		{`~/..\outside.md`, `".." as first segment with \\ separator after ~/`},
+		{`~/a\..\..\x.md`, `".." segments with \\ separators after ~/`},
+		// (b) POSIX traversal after ~/
+		{`~/../x.md`, `POSIX "../" after ~/`},
+		// (c) bare ".." after ~/
+		{`~/..`, `bare ".." as rest after ~/`},
+	}
+	for _, tc := range cases {
+		manager, _, _ := testManager(t)
+		plan := testPlan("global", tc.dest, "v1", "x")
+		_, _, err := manager.resolve(plan)
+		if err == nil {
+			t.Errorf("resolve(%q) accepted — %s", tc.dest, tc.reason)
+			continue
+		}
+		if !strings.Contains(err.Error(), "unsafe destination") {
+			t.Errorf("resolve(%q) error = %q; want \"unsafe destination\" (guard entry); got different layer — %s", tc.dest, err, tc.reason)
+		}
+	}
+}
+
+// TestManagerAcceptsCatalogGlobalDestinations — ML-R3 complement (REQ-2026-09-03).
+//
+// Assertion: every global-scope install path from the real embedded catalog is
+// accepted by the "~/" guard (zero flips after the ML-R3 complement). A
+// "unsafe destination" here means the guard incorrectly classified a legitimate
+// catalog global destination as unsafe.
+func TestManagerAcceptsCatalogGlobalDestinations(t *testing.T) {
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const exampleID = "backend"
+	n := 0
+	for _, target := range catalog.Targets {
+		for _, surface := range target.Surfaces {
+			all := append(surface.Paths.Agents, surface.Paths.Skills...)
+			for _, installPath := range all {
+				if installPath.Scope != "global" {
+					continue
+				}
+				dest := strings.ReplaceAll(installPath.Path, "{{id}}", exampleID)
+				manager, _, _ := testManager(t)
+				plan := testPlan("global", dest, "v1", "x")
+				_, _, resolveErr := manager.resolve(plan)
+				if resolveErr != nil && strings.Contains(resolveErr.Error(), "unsafe destination") {
+					t.Errorf("catalog global path %q rejected as \"unsafe destination\" — zero-flip check failed (ML-R3 complement)", dest)
+				}
+				n++
+			}
+		}
+	}
+	if n == 0 {
+		t.Fatal("no global-scope catalog paths found — catalog may have changed shape")
+	}
+}
+
 func TestManagerRejectsSymlinkFileAndParent(t *testing.T) {
 	manager, project, _ := testManager(t)
 	outside := t.TempDir()

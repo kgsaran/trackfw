@@ -761,6 +761,17 @@ func (m Manager) resolve(plan PlannedArtifact) (string, string, error) {
 		if plan.Claim.Scope != "global" {
 			return "", "", errors.New("home destination requires global scope")
 		}
+		// ML-R3 complement (REQ-2026-09-03): guard the path segment after "~/".
+		// Without this, "~/..\outside.md" becomes a literal filename in the home
+		// directory on macOS (the backslash is not a separator there), and
+		// "~/../x.md" reaches filepath.Join with a ".." segment that only beneath()
+		// would catch — relying on a single layer. The guard mirrors the default:
+		// branch: rest empty, bare ".", not in canonical form, or containing ".."
+		// as a segment in either grammar all produce "unsafe destination".
+		rest := strings.TrimPrefix(destination, "~/")
+		if rest == "" || rest == "." || path.Clean(rest) != rest || containsUnsafeSegment(rest) {
+			return "", "", fmt.Errorf("unsafe destination %q", plan.Destination)
+		}
 		// ML-1D: Claude catalog paths are "~/.claude/…". When ClaudeDir was resolved
 		// (claudeDirSet), strip "~/.claude/" and join with destRoot so artifacts land
 		// at <ClaudeDir>/agents/… rather than <ClaudeDir>/.claude/agents/….
@@ -770,7 +781,7 @@ func (m Manager) resolve(plan PlannedArtifact) (string, string, error) {
 		if claudeDirSet && strings.HasPrefix(destination, "~/.claude/") {
 			destination = filepath.Join(destRoot, strings.TrimPrefix(destination, "~/.claude/"))
 		} else {
-			destination = filepath.Join(root, strings.TrimPrefix(destination, "~/"))
+			destination = filepath.Join(root, rest)
 		}
 	case pathanchor.IsAnchored(destination) || filepath.IsAbs(destination):
 		// ANCHORED per the host-independent predicate (POSIX "/", Windows drive letter, or

@@ -2,6 +2,24 @@
 
 ---
 
+## 2026-10-15 — apolo-tf — INÍCIO/FIM: ML-R3 — guard de travessia fala as duas gramáticas (REQ-2026-09-03)
+
+**Branch:** `fix/fechar-os-grupos-de-falha-de-windows-ml-r3-travessia`
+**Escopo:** ML-R3 completo. O guard do ramo `default:` em `manager.go:resolve` agora detecta `..` como segmento em qualquer gramática (separador `/` ou `\`), via `containsUnsafeSegment`. `..\outside.md`, `a\..\..\x.md`, `a/..\x.md` e `..` são rejeitados pelo guard entry (não pelo `beneath()`), sem depender de Windows.
+**Arquivos alterados:**
+- `internal/integrations/manager.go` — ramo `default:`: substituído guard POSIX-only por `containsUnsafeSegment`; adicionada função `containsUnsafeSegment` (+34 linhas)
+- `internal/integrations/manager_test.go` — adicionados `TestManagerRejectsBackslashTraversalByGuardEntry` e `TestManagerAcceptsCatalogRelativeDestinations` (+80 linhas)
+**Evidências:**
+- `go build ./...` EXIT:0
+- `go vet ./internal/...` EXIT:0
+- `GOOS=windows go vet ./internal/...` EXIT:0
+- `go test ./internal/integrations/ ./internal/commands/ ./internal/pathguard/ -count=1` EXIT:0 (3 pkgs OK)
+- `trackfw validate` EXIT:0 (0 FAIL, 168 warnings pré-existentes)
+**Decisão de abordagem (A vs B):** Abordagem B (segment check) escolhida — a abordagem A (rejeitar `\` incondicionalmente) viraria 6 vetores UNC malformados de ACCEPTED para REJECTED no POSIX, quebrando `TestManagerAnchorPredicateVectorTableNoFlip` (teste de auditoria ML-R1). B cobre todos os 4 vetores exigidos sem afetar esse teste.
+**Observação fora de escopo:** o ramo `~/` não tem guard early — `~/..\outside.md` vira arquivo literal no home (mesmo padrão M2). Reportar ao arquiteto para novo ML nesta REQ.
+
+---
+
 ## 2026-10-15 — apolo-tf — FIM: ML-2E — isolar HOME e USERPROFILE nos testes (REQ-2026-09-01)
 
 **Branch:** `fix/guard-global-segue-o-home-que-o-agente-le`
