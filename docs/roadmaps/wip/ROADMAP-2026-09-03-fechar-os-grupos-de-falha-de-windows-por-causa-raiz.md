@@ -2447,7 +2447,7 @@ sem a correção, `censo-branch` com) + `persistem.txt` com a lista nominal.
 (issues #274 e #275).
 
 ### ML-R3 — O guard de travessia do ramo `default:` fala uma gramática só
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` · 🔴 **segurança (contido)**
+**Status:** 🔄 Em andamento (2026-10-15, branch `fix/fechar-os-grupos-de-falha-de-windows-ml-r3-travessia`) · **Agente:** `apolo-tf` · 🔴 **segurança (contido)**
 
 Achado do `hades-tf` na revisão do ML-R1, **medido, não inferido**.
 
