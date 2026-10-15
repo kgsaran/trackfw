@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-01
 author: "zeus-tf"
 adr: "docs/adr/ADR-2026-10-14-no-windows-o-guard-global-de-cada-cli-de-agente-e-gravado-e-auditado-no-home-que-aquele-cli-le.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-22-trackfw-escreve-e-audita-guard-global-em-caminho-que-o-agente-real-nunca-le-instalacao-fantasma-sob-home-userprofile.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-22-trackfw-escreve-e-audita-guard-global-em-caminho-que-o-agente-real-nunca-le-instalacao-fantasma-sob-home-userprofile.md"
 ---
 
 # REQ: `trackfw` escreve e audita guard global em caminho que o agente real nunca lê — instalação fantasma sob `$HOME` ≠ `%USERPROFILE%`
 
-> Date: 2026-09-01 | Status: Open
+> Date: 2026-09-01 | Status: Done
 
 ## Motivation
 
@@ -81,7 +81,7 @@ ADR: docs/adr/ADR-2026-10-14-no-windows-o-guard-global-de-cada-cli-de-agente-e-g
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-22-trackfw-escreve-e-audita-guard-global-em-caminho-que-o-agente-real-nunca-le-instalacao-fantasma-sob-home-userprofile.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-22-trackfw-escreve-e-audita-guard-global-em-caminho-que-o-agente-real-nunca-le-instalacao-fantasma-sob-home-userprofile.md`
 
 
 ---

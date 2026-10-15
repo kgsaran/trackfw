@@ -46562,3 +46562,7 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-14 — zeus-tf — REQ-2026-09-01 pronta para PR
 
 - MLs 0A, 1A–1D, 2B–2D auditados. Revisão (hefesto) e red-team (hades) bloquearam uma vez cada; corretivos fechados. CI x64 (probe P16) prova `main` grava sob HOME e branch sob USERPROFILE. `make quality` EXIT=0 em `1a86cca2` (347 OK / 0 FAIL), com carga até 8,3. Falta o CI do PR. Nota: um agente instalou `pyyaml`/`packaging` no Python 3.12 do Homebrew (global) quando o venv da sessão anterior sumiu.
+
+## 2026-10-15 — zeus-tf — fechamento da REQ-2026-09-01 (pós-merge do #562)
+
+- PR #562 mergeado em `032f00e8`; CI 20/20, ratchet do `windows-full-suites` sem nome novo. REQ → Done; roadmap → `done/`; ADR-2026-10-14 → Accepted. Segue aberto, na REQ-2026-09-03: ML-W1 (proveniência de terceiros falha no x64; na VM ARM64 passa — causa ainda não medida), ML-W2, ML-W3, ML-W4, ML-R3.
