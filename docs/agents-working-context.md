@@ -46592,3 +46592,16 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-15 — zeus-tf — início: ML-W1 (proveniência de terceiros no Windows, nome curto 8.3)
 
 - Branch `fix/fechar-os-grupos-de-falha-de-windows-proveniencia-8.3`; roadmap da REQ-2026-09-03 em wip. Hipótese: `EvalSymlinks` na raiz expande 8.3 e o destino do manifesto não; chave de proveniência não casa. Falha fechada, não brecha. Medição x64 antes da correção.
+
+---
+**hades-tf** · 2026-10-15 · Red-team ML-R3 (guard de travessia `Manager.resolve`)
+Branch: `fix/fechar-os-grupos-de-falha-de-windows-ml-r3-travessia`
+Iniciando revisão de segurança do guard de entrada do ML-R3 (REQ-2026-09-03).
+Artefato a produzir: `docs/seguranca/2026-10-15-red-team-ml-r3-travessia.md`
+
+**hades-tf** · 2026-10-15 · Red-team ML-R3 concluído
+Branch: `fix/fechar-os-grupos-de-falha-de-windows-ml-r3-travessia`
+Artefato entregue: `docs/seguranca/2026-10-15-red-team-ml-r3-travessia.md`
+Veredito: LIBERA COM RESSALVA (R-1 trailing space/dot — Ajuste).
+4 vetores obrigatórios do roadmap confirmados bloqueados pelo guard de entrada.
+Zero flips em catálogo e terceiros. Ajuste R-1 propõe `strings.TrimRight(part, " .") == ".."` em containsUnsafeSegment.
