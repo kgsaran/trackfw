@@ -452,6 +452,80 @@ func TestThirdPartyArtifactHasProvenance_BranchII_QuarantineDeletionDoesNotBreak
 	}
 }
 
+// TestThirdPartyArtifactHasProvenance_BranchI_OutOfRootDestinationIsRejected verifies
+// that a manifest artifact whose absolute destination is outside the project root
+// is treated as D2 branch i (missing provenance entry) rather than matching a
+// crafted provenance entry keyed by the "../x" relative path that filepath.Rel
+// would produce. The provenance entry in this fixture is keyed by the exact
+// "../sibling/..." path that filepath.Rel(root, destination) computes — so without
+// the filepath.IsLocal guard the lookup would succeed and the rule would silently
+// pass a file it never approved. This test exercises the filepath.IsLocal guard
+// added alongside the 8.3/symlink fix.
+// Conclusion: filepath.IsLocal rejects upward-traversing keys so a destination outside
+// root cannot bypass the provenance check via a matching crafted entry.
+func TestThirdPartyArtifactHasProvenance_BranchI_OutOfRootDestinationIsRejected(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	root := resolvedRootForTest(t, dir)
+
+	// Destination is a sibling of the project root (separate TempDir).
+	outsideDir := t.TempDir()
+	outsideRoot := resolvedRootForTest(t, outsideDir)
+	destination := filepath.Join(outsideRoot, "skills", "thirdparty", "evil.md")
+	if err := os.WriteFile(destinationEnsureDir(t, destination), []byte("evil\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	// Manifest at our root, artifact key pointing outside root.
+	writeThirdPartyManifest(t, root, destination, "thirdparty")
+
+	// Compute the exact relative path that filepath.Rel(root, destination) would
+	// return — this is the "../sibling/..." traversal key the attacker would
+	// craft in the provenance file to make the lookup succeed.
+	escapingKey, err := filepath.Rel(root, destination)
+	if err != nil {
+		t.Fatalf("filepath.Rel for crafted key: %v", err)
+	}
+	escapingKey = normalizeRefSeparator(escapingKey) // match production normalisation
+	if filepath.IsLocal(escapingKey) {
+		// If the two TempDirs happen to be in a parent-child relationship the key
+		// would be local and this test would not exercise the IsLocal guard at all.
+		t.Skip("computed relative key is local — cannot exercise IsLocal guard with this TempDir layout")
+	}
+
+	// Provenance entry keyed by the EXACT traversal key. Without filepath.IsLocal
+	// the lookup would succeed (key == escapingKey, matching installed_sha256 of the
+	// file content) and the rule would pass the out-of-root destination silently.
+	installedSHA256 := sha256HexForTest([]byte("evil\n"))
+	prov := map[string]interface{}{
+		"schema_version": 2,
+		"entries": map[string]interface{}{
+			escapingKey: map[string]interface{}{
+				"url":              "https://evil.example.com/evil.md",
+				"checksum_sha256":  strings.Repeat("a", 64),
+				"installed_sha256": installedSHA256,
+				"installed_at":     "2026-08-15T00:00:00Z",
+				"approved_by":      "hades-tf",
+				"review_reference": "docs/seguranca/example.md",
+				"scope":            "project",
+				"marker_override":  false,
+			},
+		},
+	}
+	writeJSONFile(t, filepath.Join(root, ".trackfw", "thirdparty-provenance.json"), prov)
+
+	msgs, err := validateThirdPartyArtifactHasProvenance()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("expected exactly 1 violation for out-of-root destination, got %d: %v", len(msgs), msgs)
+	}
+	if !strings.Contains(msgs[0], "D2 branch i") {
+		t.Fatalf("out-of-root destination must be reported as D2 branch i, got: %s", msgs[0])
+	}
+}
+
 func TestThirdPartyArtifactHasProvenance_BranchII_QuarantineDeletionStillDetectsTamper(t *testing.T) {
 	dir := t.TempDir()
 	chdir(t, dir)
