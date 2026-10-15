@@ -46566,3 +46566,7 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-15 — zeus-tf — fechamento da REQ-2026-09-01 (pós-merge do #562)
 
 - PR #562 mergeado em `032f00e8`; CI 20/20, ratchet do `windows-full-suites` sem nome novo. REQ → Done; roadmap → `done/`; ADR-2026-10-14 → Accepted. Segue aberto, na REQ-2026-09-03: ML-W1 (proveniência de terceiros falha no x64; na VM ARM64 passa — causa ainda não medida), ML-W2, ML-W3, ML-W4, ML-R3.
+
+## 2026-10-15 — zeus-tf — release 9.6.0
+
+- Bump para 9.6.0 (minor: regra `home_divergence_windows`) e `CHANGELOG.md` com o #562; #561 e #563 são só documentação. Tag após o merge, precedida de `make check-required-full`.

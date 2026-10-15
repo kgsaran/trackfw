@@ -7,6 +7,25 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [9.6.0] - 2026-10-15
+
+### Added
+
+- **Regra `home_divergence_windows` (só aviso).** No Windows, quando `HOME` e o home do sistema (`USERPROFILE`)
+  divergem, o `trackfw validate` avisa nomeando os dois caminhos, onde o trackfw grava e audita o guard do Claude Code,
+  e quais CLIs seguem sob `HOME` por não terem sido medidos (Codex, Gemini, Cursor, Copilot, Kiro; Windsurf não
+  medido). Diferença só de caixa ou de barra final não conta. Fora do Windows, silêncio. (#562, REQ-2026-09-01)
+
+### Fixed
+
+- **Guard global, agentes e skills globais do Claude Code no lugar que o Claude Code lê.** No Windows, com `HOME` ≠
+  `USERPROFILE`, o `trackfw update harness` gravava o guard sob `HOME`, o Claude Code lê `USERPROFILE`, e o
+  `trackfw validate` dizia que estava tudo certo — o guard ficava inerte sem aviso. Agora escritor e auditor usam o
+  mesmo resolvedor: `CLAUDE_CONFIG_DIR` (absoluto; `settings.json` na raiz dele, em qualquer SO) → no Windows,
+  `USERPROFILE\.claude` → senão `~/.claude` como antes. Vale também para `~/.claude/agents` e `~/.claude/skills`.
+  O guard antigo sob `HOME` é relatado, nunca apagado; `CLAUDE_CONFIG_DIR` relativo é recusado. Rode
+  `trackfw update harness` para regravar. Fora do Windows e sem `CLAUDE_CONFIG_DIR`, nada muda. (#562, REQ-2026-09-01)
+
 ## [9.5.0] - 2026-10-12
 
 ### Added
