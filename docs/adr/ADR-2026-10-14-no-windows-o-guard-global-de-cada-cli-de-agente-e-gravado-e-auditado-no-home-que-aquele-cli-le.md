@@ -1,12 +1,12 @@
 ---
-status: Proposed
+status: Accepted
 date: 2026-10-14
 author: "zeus-tf"
 ---
 
 # ADR: no Windows, o guard global de cada CLI de agente é gravado e auditado no home que aquele CLI lê
 
-> Date: 2026-10-14 | Status: Proposed
+> Date: 2026-10-14 | Status: Accepted
 
 REQ: `docs/req/REQ-2026-09-01-trackfw-escreve-e-audita-guard-global-em-caminho-que-o-agente-real-nunca-le-instalacao-fantasma-sob-home-diferente-de-userprofile.md`
 Medição: `docs/portabilidade/2026-10-14-guard-global-home-userprofile-vm.md`
