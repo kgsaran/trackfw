@@ -801,7 +801,23 @@ func (m Manager) resolve(plan PlannedArtifact) (string, string, error) {
 		}
 		destination = filepath.Clean(destination)
 	default:
-		if path.Clean(destination) != destination || destination == "." || strings.HasPrefix(destination, "../") {
+		// ML-R3 (REQ-2026-09-03): the path(POSIX) package does not interpret '\'
+		// as a separator, so path.Clean("..\outside.md") == "..\outside.md" and
+		// strings.HasPrefix("..\outside.md", "../") is false — the guard passed
+		// Windows-style traversal forms on every host, relying solely on beneath()
+		// as the only layer. Fixed by splitting on both '/' and '\' via
+		// containsUnsafeSegment, which detects ".." in any segment of any grammar.
+		//
+		// Approach B (not A): raw '\' without ".." (e.g. "foo\bar.md") is left
+		// accepted — it creates a literal backslash filename on POSIX and is not a
+		// traversal. Approach A (reject all '\') would flip six malformed-UNC vectors
+		// ("\\", "\\x" …) from accept to reject on POSIX, which are tested by
+		// TestManagerAnchorPredicateVectorTableNoFlip against oldResolveVerdict —
+		// touching that ML-R1 audit test is out of scope. Approach B covers all four
+		// roadmap-required vectors without those side effects. Catalog paths use only
+		// '/': catalog.go validateInstallPath rejects '\' at definition time (line 286).
+		if path.Clean(destination) != destination || destination == "." ||
+			containsUnsafeSegment(destination) {
 			return "", "", fmt.Errorf("unsafe destination %q", plan.Destination)
 		}
 		destination = filepath.Join(root, destination)
@@ -836,6 +852,22 @@ func beneath(root, filename string) bool { return pathguard.Beneath(root, filena
 // function nor its callers in resolve() printed anything, so a containment
 // refusal here reached the user as a bare error. ML-7B made it speak.
 func rejectSymlinks(root, filename string) error { return pathguard.RejectAndReport(root, filename) }
+
+// containsUnsafeSegment reports whether s contains ".." as a path segment when
+// split on either '/' or '\'.  It is used by the default: branch of resolve's
+// destination switch (ML-R3, REQ-2026-09-03) to catch Windows-style traversal
+// forms (..\x, a\..\x, a/..\x, ..) on any host, where the path(POSIX) package
+// is blind to '\'.  It also subsumes strings.HasPrefix(s, "../") and the bare
+// ".." case that path.Clean("..")==".." and HasPrefix("..", "../")==false both
+// missed.
+func containsUnsafeSegment(s string) bool {
+	for _, part := range strings.FieldsFunc(s, func(r rune) bool { return r == '/' || r == '\\' }) {
+		if part == ".." {
+			return true
+		}
+	}
+	return false
+}
 
 func atomicWrite(filename string, data []byte, mode os.FileMode) error {
 	directory := filepath.Dir(filename)
