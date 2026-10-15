@@ -20,6 +20,10 @@ func integrationCommandFixture(t *testing.T) (string, string) {
 	if err := os.Setenv("HOME", home); err != nil {
 		t.Fatal(err)
 	}
+	// ML-2E: on Windows, agentconfig.ClaudeConfigDir reads USERPROFILE (not HOME).
+	// Isolate both so global-Claude writes land in the temp dir, not the real profile.
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("CLAUDE_CONFIG_DIR", "") // clear any override from the outer environment
 	if err := os.Chdir(project); err != nil {
 		t.Fatal(err)
 	}

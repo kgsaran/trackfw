@@ -70,7 +70,10 @@ import (
 
 func setupSabotageFixture(t *testing.T, injectHooks func(cwd string) error, trackfwYAML string) (dir, scriptPath string) {
 	t.Helper()
-	t.Setenv("HOME", t.TempDir()) // isolate global credential-guard dedup check (ML-3A) from real $HOME
+	sabHome := t.TempDir()
+	t.Setenv("HOME", sabHome)         // isolate global credential-guard dedup check (ML-3A) from real $HOME
+	t.Setenv("USERPROFILE", sabHome)  // ML-2E: Windows ClaudeConfigDir reads USERPROFILE, not HOME
+	t.Setenv("CLAUDE_CONFIG_DIR", "") // ML-2E: clear any outer CLAUDE_CONFIG_DIR override
 	dir = t.TempDir()
 
 	if err := GenerateCredentialGuardScript(dir); err != nil {

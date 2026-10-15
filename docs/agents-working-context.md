@@ -2,6 +2,32 @@
 
 ---
 
+## 2026-10-15 — apolo-tf — FIM: ML-2E — isolar HOME e USERPROFILE nos testes (REQ-2026-09-01)
+
+**Branch:** `fix/guard-global-segue-o-home-que-o-agente-le`
+**Escopo:** ML-2E completo. Adicionado `t.Setenv("USERPROFILE", home)` + `t.Setenv("CLAUDE_CONFIG_DIR", "")` em todos os sítios class (b) — fixtures que exercem escopo global do Claude sem isolar USERPROFILE, causando 7 falhas no Windows CI.
+**Arquivos alterados (somente `_test.go`):**
+- `internal/commands/agents_skills_test.go` — `integrationCommandFixture`: USERPROFILE + CLAUDE_CONFIG_DIR isolados (raiz das 7 falhas)
+- `internal/generators/credential_guard_dedup_test.go` — `dedupFixtureHome`: USERPROFILE + CLAUDE_CONFIG_DIR
+- `internal/generators/credential_guard_sabotage_test.go` — `setupSabotageFixture`: USERPROFILE + CLAUDE_CONFIG_DIR
+- `internal/generators/hooks_test.go` — `TestInjectHooksDetected_SkipsAbsent` + `TestInjectHooksDetected_Claude`: USERPROFILE + CLAUDE_CONFIG_DIR
+- `internal/generators/agentfiles_test.go` — 6 sítios class (b) InjectClaudeHooks: USERPROFILE + CLAUDE_CONFIG_DIR
+**Evidências Mac:** `go build ./...` EXIT:0 · `go vet ./internal/...` EXIT:0 · `GOOS=windows go vet ./internal/...` EXIT:0 · `go test ./internal/commands/ ./internal/validator/ ./internal/generators/ -count=1` EXIT:0 (3 pkgs OK).
+**Evidências VM Windows (ARM64, powershell-vm):**
+- Before (sem patch): `TestDoctorReportsNoFindingsOnEmptyProject` FAIL — `[unregistered-write] C:\Users\Lab\.claude\agents\trackfw-backend.md` (USERPROFILE real contaminado)
+- After (com patch): 7 testes alvo PASS; `TestThirdPartyInstall_PassesValidateEndToEnd` e `TestThirdPartyInstall_TamperAfterInstallFailsValidateEndToEnd` também PASS.
+**Risco a reportar ao arquiteto:** os 2 tests acima estão em `.github/windows-known-failures.json` como expected failures. Agora passam — o ratchet vai falhar com "PASSED -- move to removed[]". É necessário remover as duas entradas de `windows-known-failures.json` (fora do escopo de `_test.go`).
+**Pendente trackfw_architect:** atualizar roadmap ML-2E para ✅ Concluído + remover 2 entradas de `windows-known-failures.json` + auditoria de diff + commit.
+
+---
+
+## 2026-10-15 — apolo-tf — INÍCIO: ML-2E — isolar HOME e USERPROFILE nos testes (REQ-2026-09-01)
+
+**Branch:** `fix/guard-global-segue-o-home-que-o-agente-le`
+**Escopo:** Fix 7 testes que falham no Windows CI porque `integrationCommandFixture` seta `HOME` mas não `USERPROFILE` — no Windows, `agentconfig.ClaudeConfigDir(DefaultResolver)` lê `USERPROFILE` (não `HOME`), contaminando o perfil real.
+
+---
+
 ## 2026-10-14 — apolo-tf — FIM: ML-2D — corretivos R-1/R-3/R-4 red-team (REQ-2026-09-01)
 
 **Branch:** `fix/guard-global-segue-o-home-que-o-agente-le`

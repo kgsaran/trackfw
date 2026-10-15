@@ -7,7 +7,10 @@ import (
 )
 
 func TestInjectHooksDetected_SkipsAbsent(t *testing.T) {
-	t.Setenv("HOME", t.TempDir()) // isolate global credential-guard dedup check (ML-3A) from real $HOME
+	hooksHome := t.TempDir()
+	t.Setenv("HOME", hooksHome)         // isolate global credential-guard dedup check (ML-3A) from real $HOME
+	t.Setenv("USERPROFILE", hooksHome)  // ML-2E: Windows ClaudeConfigDir reads USERPROFILE, not HOME
+	t.Setenv("CLAUDE_CONFIG_DIR", "")   // ML-2E: clear any outer CLAUDE_CONFIG_DIR override
 	dir := t.TempDir()
 
 	if err := InjectHooksDetected(dir); err != nil {
@@ -30,7 +33,10 @@ func TestInjectHooksDetected_SkipsAbsent(t *testing.T) {
 }
 
 func TestInjectHooksDetected_Claude(t *testing.T) {
-	t.Setenv("HOME", t.TempDir()) // isolate global credential-guard dedup check (ML-3A) from real $HOME
+	claudeHome := t.TempDir()
+	t.Setenv("HOME", claudeHome)         // isolate global credential-guard dedup check (ML-3A) from real $HOME
+	t.Setenv("USERPROFILE", claudeHome)  // ML-2E: Windows ClaudeConfigDir reads USERPROFILE, not HOME
+	t.Setenv("CLAUDE_CONFIG_DIR", "")    // ML-2E: clear any outer CLAUDE_CONFIG_DIR override
 	dir := t.TempDir()
 
 	if err := os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte("# Project\n"), 0644); err != nil {

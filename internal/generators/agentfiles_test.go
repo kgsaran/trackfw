@@ -59,7 +59,10 @@ func helperHasClaudeHook(data map[string]interface{}, event, matcher, command st
 
 func TestInjectClaudeHooks_Create(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("HOME", t.TempDir()) // isolate global credential-guard dedup check (ML-3A) from real $HOME
+	agentHome := t.TempDir()
+	t.Setenv("HOME", agentHome)        // isolate global credential-guard dedup check (ML-3A) from real $HOME
+	t.Setenv("USERPROFILE", agentHome) // ML-2E: Windows ClaudeConfigDir reads USERPROFILE, not HOME
+	t.Setenv("CLAUDE_CONFIG_DIR", "")  // ML-2E: clear any outer CLAUDE_CONFIG_DIR override
 	if err := InjectClaudeHooks(dir); err != nil {
 		t.Fatalf("InjectClaudeHooks failed: %v", err)
 	}
@@ -82,7 +85,10 @@ func TestInjectClaudeHooks_Create(t *testing.T) {
 
 func TestInjectClaudeHooks_MergeAndIdempotent(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("HOME", t.TempDir()) // isolate global credential-guard dedup check (ML-3A) from real $HOME
+	agentHome := t.TempDir()
+	t.Setenv("HOME", agentHome)        // isolate global credential-guard dedup check (ML-3A) from real $HOME
+	t.Setenv("USERPROFILE", agentHome) // ML-2E: Windows ClaudeConfigDir reads USERPROFILE, not HOME
+	t.Setenv("CLAUDE_CONFIG_DIR", "")  // ML-2E: clear any outer CLAUDE_CONFIG_DIR override
 
 	existing := map[string]interface{}{
 		"permissions": map[string]interface{}{"defaultMode": "default"},
@@ -152,7 +158,10 @@ func TestInjectClaudeHooks_MergeAndIdempotent(t *testing.T) {
 // hook ao lado do quebrado.
 func TestInjectClaudeHooks_MigratesLegacyRelativeCredentialGuardCommand(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("HOME", t.TempDir()) // isolate global credential-guard dedup check (ML-3A) from real $HOME
+	agentHome := t.TempDir()
+	t.Setenv("HOME", agentHome)        // isolate global credential-guard dedup check (ML-3A) from real $HOME
+	t.Setenv("USERPROFILE", agentHome) // ML-2E: Windows ClaudeConfigDir reads USERPROFILE, not HOME
+	t.Setenv("CLAUDE_CONFIG_DIR", "")  // ML-2E: clear any outer CLAUDE_CONFIG_DIR override
 
 	legacy := map[string]interface{}{
 		"hooks": map[string]interface{}{
@@ -232,7 +241,10 @@ func TestInjectClaudeHooks_MigratesLegacyRelativeCredentialGuardCommand(t *testi
 // não duplicada -- para $CLAUDE_PROJECT_DIR/scripts/trackfw-attention-{signal,cleanup}.sh.
 func TestInjectClaudeHooks_MigratesLegacyRelativeAttentionSignalCleanupCommand(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("HOME", t.TempDir()) // isolate global credential-guard dedup check (ML-3A) from real $HOME
+	agentHome := t.TempDir()
+	t.Setenv("HOME", agentHome)        // isolate global credential-guard dedup check (ML-3A) from real $HOME
+	t.Setenv("USERPROFILE", agentHome) // ML-2E: Windows ClaudeConfigDir reads USERPROFILE, not HOME
+	t.Setenv("CLAUDE_CONFIG_DIR", "")  // ML-2E: clear any outer CLAUDE_CONFIG_DIR override
 
 	legacy := map[string]interface{}{
 		"hooks": map[string]interface{}{
@@ -306,7 +318,10 @@ func TestInjectClaudeHooks_MigratesLegacyRelativeAttentionSignalCleanupCommand(t
 // independente do tool_name).
 func TestInjectClaudeHooks_ReadWriteEditMatchersRegisteredForCredentialGuard(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("HOME", t.TempDir()) // isolate global credential-guard dedup check (ML-3A) from real $HOME
+	agentHome := t.TempDir()
+	t.Setenv("HOME", agentHome)        // isolate global credential-guard dedup check (ML-3A) from real $HOME
+	t.Setenv("USERPROFILE", agentHome) // ML-2E: Windows ClaudeConfigDir reads USERPROFILE, not HOME
+	t.Setenv("CLAUDE_CONFIG_DIR", "")  // ML-2E: clear any outer CLAUDE_CONFIG_DIR override
 	if err := InjectClaudeHooks(dir); err != nil {
 		t.Fatalf("InjectClaudeHooks failed: %v", err)
 	}
@@ -1478,7 +1493,10 @@ func TestMigrateGuardHookMatcher_Idempotent(t *testing.T) {
 // "Bash|PowerShell" for Claude guard hooks, enabling the guard to fire on Windows.
 func TestInjectClaudeHooks_MigratesLegacyBashMatcherToClaudeShellMatcher(t *testing.T) {
 	dir := t.TempDir()
-	t.Setenv("HOME", t.TempDir())
+	agentHome := t.TempDir()
+	t.Setenv("HOME", agentHome)        // isolate global credential-guard dedup check (ML-3A) from real $HOME
+	t.Setenv("USERPROFILE", agentHome) // ML-2E: Windows ClaudeConfigDir reads USERPROFILE, not HOME
+	t.Setenv("CLAUDE_CONFIG_DIR", "")  // ML-2E: clear any outer CLAUDE_CONFIG_DIR override
 
 	legacy := map[string]interface{}{
 		"hooks": map[string]interface{}{
