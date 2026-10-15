@@ -521,6 +521,101 @@ func TestManagerAcceptsCatalogGlobalDestinations(t *testing.T) {
 	}
 }
 
+// TestManagerRejectsTrailingSpaceDotByGuardEntry — Corretivo R-1 (REQ-2026-09-03).
+//
+// Assertion: segments composed entirely of dots and spaces (".. ", ".. .",
+// "...", ". ") are rejected by the guard entry of resolve() with "unsafe
+// destination", not by beneath().  The distinction is proved by the error
+// message: guard entry emits "unsafe destination"; beneath() emits "is outside
+// … root".
+//
+// Four required vectors:
+//   - ".. /outside.md"    — default: branch, trailing-space dot segment
+//   - "~/.. /x.md"        — ~/ branch, same segment after ~/
+//   - "a/.. ./x.md"       — default: branch, trailing-dot after space
+//   - ".../x.md"          — default: branch, three-dot segment
+//
+// Each of these passes the old `part == ".."` guard (the segment is not literally
+// "..", it is ".. ", ".. .", or "..."), reaches filepath.Join, and on macOS
+// creates a literal pathname — a functional gap.  With the R-1 fix
+// (TrimRight(part, " .") == "") all four are rejected at the guard entry.
+//
+// Revert-proof: removing the TrimRight fix (restoring `part == ".."`) causes
+// three vectors to return err==nil (accepted) and one to change from "unsafe
+// destination" to "is outside … root" — all four assertions below fail.
+//
+// Conclusion: the guard entry closes the trailing-space/dot traversal gap by
+// treating any all-dot-and-space segment as equivalent to "..".
+func TestManagerRejectsTrailingSpaceDotByGuardEntry(t *testing.T) {
+	cases := []struct {
+		scope  string
+		dest   string
+		reason string
+	}{
+		// default: branch vectors
+		{"project", ".. /outside.md", `".. " segment (trailing space) — TrimRight catches it`},
+		{"project", "a/.. ./x.md", `".. ." segment (trailing dot after space) — TrimRight catches it`},
+		{"project", ".../x.md", `"..." segment (three dots) — TrimRight trims all dots to ""`},
+		// ~/ branch vector
+		{"global", "~/.. /x.md", `".. " segment after ~/ — TrimRight catches it in tilde guard`},
+	}
+	for _, tc := range cases {
+		manager, _, _ := testManager(t)
+		plan := testPlan(tc.scope, tc.dest, "v1", "x")
+		_, _, err := manager.resolve(plan)
+		if err == nil {
+			t.Errorf("resolve(%q) accepted — %s", tc.dest, tc.reason)
+			continue
+		}
+		if !strings.Contains(err.Error(), "unsafe destination") {
+			t.Errorf("resolve(%q) error = %q; want \"unsafe destination\" (guard entry); got different layer — %s",
+				tc.dest, err, tc.reason)
+		}
+	}
+}
+
+// TestContainsUnsafeSegmentTable — Corretivo R-1 (REQ-2026-09-03).
+//
+// Pins the exact behavior of containsUnsafeSegment after the TrimRight fix.
+// This table is the primary evidence that:
+//  (a) ".." is still caught (TrimRight strips both dots → "", which is the unsafe condition);
+//  (b) "." is NOT caught (explicit skip preserves "\\.\device" parity);
+//  (c) trailing-space and trailing-dot variants are caught;
+//  (d) legitimate segments with any non-dot/non-space suffix are not caught.
+//
+// Conclusion: the TrimRight rule is a strict superset of the old `part == ".."` check
+// and introduces zero false positives for segments that appear in real catalog paths.
+func TestContainsUnsafeSegmentTable(t *testing.T) {
+	cases := []struct {
+		input string
+		want  bool
+	}{
+		// Must still be unsafe (regression from old rule)
+		{"..", true},
+		{"a/../b", true},
+		// Trailing-space/dot variants — R-1 additions
+		{".. ", true},
+		{".. .", true},
+		{"...", true},
+		{". ", true},
+		// Single dot — must NOT be unsafe (\\.\device parity)
+		{".", false},
+		{"a/./b", false},
+		// Legitimate segments
+		{"dir", false},
+		{"a.", false},
+		{"a..", false},
+		{".claude", false},
+		{"x.md", false},
+	}
+	for _, tc := range cases {
+		got := containsUnsafeSegment(tc.input)
+		if got != tc.want {
+			t.Errorf("containsUnsafeSegment(%q) = %v, want %v", tc.input, got, tc.want)
+		}
+	}
+}
+
 func TestManagerRejectsSymlinkFileAndParent(t *testing.T) {
 	manager, project, _ := testManager(t)
 	outside := t.TempDir()

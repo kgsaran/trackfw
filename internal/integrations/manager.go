@@ -864,16 +864,48 @@ func beneath(root, filename string) bool { return pathguard.Beneath(root, filena
 // refusal here reached the user as a bare error. ML-7B made it speak.
 func rejectSymlinks(root, filename string) error { return pathguard.RejectAndReport(root, filename) }
 
-// containsUnsafeSegment reports whether s contains ".." as a path segment when
-// split on either '/' or '\'.  It is used by the default: branch of resolve's
-// destination switch (ML-R3, REQ-2026-09-03) to catch Windows-style traversal
-// forms (..\x, a\..\x, a/..\x, ..) on any host, where the path(POSIX) package
-// is blind to '\'.  It also subsumes strings.HasPrefix(s, "../") and the bare
-// ".." case that path.Clean("..")==".." and HasPrefix("..", "../")==false both
-// missed.
+// containsUnsafeSegment reports whether s contains an unsafe path segment when
+// split on either '/' or '\'.  It is used by the default: and ~/ branches of
+// resolve's destination switch (ML-R3, REQ-2026-09-03) to catch Windows-style
+// traversal forms (..\x, a\..\x, a/..\x, ..) on any host, and — since
+// corretivo R-1 (REQ-2026-09-03) — trailing-space and trailing-dot variants
+// that Win32 normalises to ".." (e.g. ".. ", ".. .", "...").
+//
+// Rule: a segment is unsafe when it consists entirely of dots and spaces.
+// Formally: strings.TrimRight(part, " .") == "".  Examples:
+//
+//	".."    → "" (both dots stripped)        → unsafe
+//	".. "   → "" (space then dots stripped)  → unsafe
+//	".. ."  → "" (dot, space, dot stripped)  → unsafe
+//	"..."   → "" (all three dots stripped)   → unsafe
+//	". "    → "" (space then dot stripped)   → unsafe
+//
+// Note: strings.TrimRight("..", " .") == "" (not ".."), because TrimRight
+// strips the trailing dots too.  The old guard was `part == ".."`, which this
+// call replaces entirely — the new rule is a strict superset.
+//
+// Exception: the exact single-dot segment "." is skipped here.  In the '/'
+// grammar, path.Clean already normalises it away before this function is ever
+// reached.  In the '\' grammar it appears in device-namespace forms such as
+// "\\.\x" (not a traversal) that must remain accepted on POSIX for parity with
+// the Windows anchored-path handling — flipping them would break
+// TestManagerAnchorPredicateVectorTableNoFlip.
+//
+// Legitimate segments always contain at least one non-dot/non-space rune, so
+// TrimRight leaves them non-empty:
+//
+//	"dir"    → "dir"    → safe
+//	"a."     → "a"      → safe
+//	".claude"→ ".claude"→ safe  (leading dot is not touched by TrimRight)
 func containsUnsafeSegment(s string) bool {
 	for _, part := range strings.FieldsFunc(s, func(r rune) bool { return r == '/' || r == '\\' }) {
-		if part == ".." {
+		if part == "." {
+			// Single-dot: not a traversal — kept for "\\.\device" parity (see above).
+			continue
+		}
+		// A segment that trims to "" consists entirely of dots and spaces.
+		// Win32 normalises such components (e.g. ".. ") to "..".
+		if strings.TrimRight(part, " .") == "" {
 			return true
 		}
 	}
