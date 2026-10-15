@@ -2,6 +2,100 @@
 
 ---
 
+## 2026-10-15 — apolo-tf — FIM: ML-2E — isolar HOME e USERPROFILE nos testes (REQ-2026-09-01)
+
+**Branch:** `fix/guard-global-segue-o-home-que-o-agente-le`
+**Escopo:** ML-2E completo. Adicionado `t.Setenv("USERPROFILE", home)` + `t.Setenv("CLAUDE_CONFIG_DIR", "")` em todos os sítios class (b) — fixtures que exercem escopo global do Claude sem isolar USERPROFILE, causando 7 falhas no Windows CI.
+**Arquivos alterados (somente `_test.go`):**
+- `internal/commands/agents_skills_test.go` — `integrationCommandFixture`: USERPROFILE + CLAUDE_CONFIG_DIR isolados (raiz das 7 falhas)
+- `internal/generators/credential_guard_dedup_test.go` — `dedupFixtureHome`: USERPROFILE + CLAUDE_CONFIG_DIR
+- `internal/generators/credential_guard_sabotage_test.go` — `setupSabotageFixture`: USERPROFILE + CLAUDE_CONFIG_DIR
+- `internal/generators/hooks_test.go` — `TestInjectHooksDetected_SkipsAbsent` + `TestInjectHooksDetected_Claude`: USERPROFILE + CLAUDE_CONFIG_DIR
+- `internal/generators/agentfiles_test.go` — 6 sítios class (b) InjectClaudeHooks: USERPROFILE + CLAUDE_CONFIG_DIR
+**Evidências Mac:** `go build ./...` EXIT:0 · `go vet ./internal/...` EXIT:0 · `GOOS=windows go vet ./internal/...` EXIT:0 · `go test ./internal/commands/ ./internal/validator/ ./internal/generators/ -count=1` EXIT:0 (3 pkgs OK).
+**Evidências VM Windows (ARM64, powershell-vm):**
+- Before (sem patch): `TestDoctorReportsNoFindingsOnEmptyProject` FAIL — `[unregistered-write] C:\Users\Lab\.claude\agents\trackfw-backend.md` (USERPROFILE real contaminado)
+- After (com patch): 7 testes alvo PASS; `TestThirdPartyInstall_PassesValidateEndToEnd` e `TestThirdPartyInstall_TamperAfterInstallFailsValidateEndToEnd` também PASS.
+**Risco a reportar ao arquiteto:** os 2 tests acima estão em `.github/windows-known-failures.json` como expected failures. Agora passam — o ratchet vai falhar com "PASSED -- move to removed[]". É necessário remover as duas entradas de `windows-known-failures.json` (fora do escopo de `_test.go`).
+**Pendente trackfw_architect:** atualizar roadmap ML-2E para ✅ Concluído + remover 2 entradas de `windows-known-failures.json` + auditoria de diff + commit.
+
+---
+
+## 2026-10-15 — apolo-tf — INÍCIO: ML-2E — isolar HOME e USERPROFILE nos testes (REQ-2026-09-01)
+
+**Branch:** `fix/guard-global-segue-o-home-que-o-agente-le`
+**Escopo:** Fix 7 testes que falham no Windows CI porque `integrationCommandFixture` seta `HOME` mas não `USERPROFILE` — no Windows, `agentconfig.ClaudeConfigDir(DefaultResolver)` lê `USERPROFILE` (não `HOME`), contaminando o perfil real.
+
+---
+
+## 2026-10-14 — apolo-tf — FIM: ML-2D — corretivos R-1/R-3/R-4 red-team (REQ-2026-09-01)
+
+**Branch:** `fix/guard-global-segue-o-home-que-o-agente-le`
+**Escopo:** ML-2D completo. R-3: `withD5Notice` usa mensagem condicional quando `CLAUDE_CONFIG_DIR && !divergent`. R-1: `ClaudeConfigDirWithSource` rejeita CLAUDE_CONFIG_DIR relativo com erro nomeado; `ClaudeConfigDir` virou wrapper. R-4: `validateHomeDivergenceWindows` cita `CLAUDE_CONFIG_DIR=%q` quando a variável drivou a resolução.
+**Arquivos alterados:**
+- `internal/agentconfig/agentconfig.go` — `ClaudeConfigDirWithSource` (novo), `ClaudeConfigDir` (wrapper), constantes de source
+- `internal/agentconfig/agentconfig_test.go` — `TestClaudeConfigDir_RelativeCLAUDE_CONFIG_DIR_ReturnsError`, `TestClaudeConfigDir_SpacesOnlyCLAUDE_CONFIG_DIR_FallsThrough`
+- `internal/generators/update.go` — `withD5Notice` com discriminante R-3
+- `internal/generators/update_harness_d5_notice_ml2d_test.go` — testes (a)(b)(b-misto)(c) com plataforma pinada
+- `internal/validator/validator_home_divergence_rule.go` — `claudeReadsPhrase` adaptativo R-4
+- `internal/validator/validator_home_divergence_rule_test.go` — `TestHomeDivergenceWindows_ClaudeConfigDir_MessageCitesDir`
+- `internal/validator/validator_guard_global_concordance_external_test.go` — testes (e) R-1 para validador
+- `docs/cli-parity.md` — anotações de contrato ML-2D
+**Evidências:** `go build ./...` EXIT:0 · `go vet ./internal/...` EXIT:0 · `go test ./internal/agentconfig/ ./internal/integrations/ ./internal/validator/ ./internal/generators/ ./internal/commands/ -count=1` EXIT:0 · `make parity-rest` EXIT:0 (com python3→python3.12 shim; 3.9.6 falha na última linha do gate check-required-status-checks.py — pré-existente, não relacionado ao ML-2D) · `trackfw validate` EXIT:0.
+**Mordidas:** M1 withD5Notice incondicional → (a) FAIL; M2 sem IsAbs → (c) agentconfig+harness+concordance FAIL; M3 claudeReadsPhrase fixo → (e) validator FAIL. Todas com backup/restore/cmp verificados.
+**Pendente trackfw_architect:** atualizar roadmap ML-2D para ✅ Concluído + auditoria de diff + commit.
+
+---
+
+## 2026-10-14 — apolo-tf — INÍCIO: ML-2D — corretivos R-1/R-3/R-4 red-team (REQ-2026-09-01)
+
+**Branch:** `fix/guard-global-segue-o-home-que-o-agente-le`
+**Escopo:** Implementar ML-2D da REQ-2026-09-01: corretivos R-3 (mensagem condicional withD5Notice), R-1 (rejeitar CLAUDE_CONFIG_DIR relativo), R-4 (citação de CLAUDE_CONFIG_DIR no aviso home_divergence_windows).
+
+---
+
+## 2026-10-14 — apolo-tf — FIM: ML-1B — aviso de divergência HOME, relato D5 inerte, displayPath (REQ-2026-09-01)
+
+**Branch:** `fix/guard-global-segue-o-home-que-o-agente-le`
+**Escopo:** ML-1B completo. Entregáveis: D4 (regra `home_divergence_windows`, always-warning, nunca violation); D5 (`withD5Notice` em Updated/Skipped de `harnessCredentialGuardTargetClaude` e `harnessGitBranchGuardTargetClaude`); displayPath dinâmico via `claudeSettingsDisplayPath` em ambas as funções.
+**Arquivos alterados:**
+- `internal/agentconfig/agentconfig.go` — `normHomePath`, `HomeDivergencePaths`, `InertClaudeGuardPath`, `containsTrackfwGuardMarker`
+- `internal/validator/validator_home_divergence_rule.go` — regra D4 (novo arquivo, renomeado de `_windows.go`)
+- `internal/validator/validator.go` — `ruleDefaults["home_divergence_windows"]`, `applyRuleWarnOnly` + `applyRuleWarnOnlyTagged`
+- `internal/validator/export_test.go` — `ValidateHomeDivergenceWindowsForTest`
+- `internal/generators/update.go` — `withD5Notice`, `claudeSettingsDisplayPath`, ambas funções harness atualizadas
+**Novos testes:**
+- `internal/validator/validator_home_divergence_rule_test.go` — testes (a)-(d), com mordidas 1-2 documentadas
+- `internal/generators/update_harness_home_divergence_ml1b_test.go` — testes (e)-(f), com mordida 3 documentada
+**Evidências:** `go build ./...` EXIT:0 · `go vet ./internal/...` EXIT:0 · `GOOS=windows go vet ./internal/...` EXIT:0 · `go test ./internal/agentconfig/ ./internal/validator/ ./internal/generators/ ./internal/commands/ -count=1` EXIT:0 · `trackfw validate` EXIT:0. `make parity-rest` EXIT:2 apenas na última linha (`check-required-status-checks.py --self-test` requer Python 3.10+; ambiente tem 3.9.6 — falha pré-existente não relacionada ao ML-1B; as 1229 linhas anteriores do output passaram).
+**Mordidas executadas e coladas no relatório:** Mordida 1 (sem EqualFold → (d) FAIL), Mordida 2 (sem guard divergente → (b) FAIL), Mordida 3 (sem withD5Notice → (e) FAIL).
+**Pendente trackfw_architect:** atualizar roadmap ML-1B para ✅ Concluído + auditoria de diff + commit.
+
+---
+
+## 2026-10-14 — apolo-tf — INÍCIO: ML-1B — aviso de divergência HOME, relato D5 inerte, displayPath (REQ-2026-09-01)
+
+**Branch:** `fix/guard-global-segue-o-home-que-o-agente-le`
+**Escopo:** Implementar ML-1B da REQ-2026-09-01: D4 (regra home_divergence_windows), D5 (relato de guard inerte em HOME), displayPath dinâmico.
+
+---
+
+## 2026-10-14 — apolo-tf — FIM: ML-1D — agentes do Claude Code gravados no dir que o Claude Code lê (REQ-2026-09-01)
+
+**Branch:** `fix/guard-global-segue-o-home-que-o-agente-le`
+**Escopo:** ML-1D completo. Todos os sítios migrados: `internal/integrations/manager.go` (campo `ClaudeDir func() (string, error)`), `internal/commands/init.go`, `internal/commands/integrations_flags.go`, `internal/generators/update.go`. Nove scripts de paridade atualizados com `USERPROFILE=` + `CLAUDE_CONFIG_DIR=`. Novo arquivo: `internal/integrations/manager_claude_test.go` (5 testes).
+**Evidências:** `go build ./...` EXIT:0 · `go vet ./internal/...` EXIT:0 · `GOOS=windows go vet ./internal/...` EXIT:0 · `go test ./internal/agentconfig/ ./internal/integrations/ ./internal/generators/ ./internal/commands/ ./internal/validator/ -count=1` EXIT:0 · `make parity-rest` EXIT:0.
+**Pendente trackfw_architect:** auditoria de diff + commit ML-1D.
+
+---
+
+## 2026-10-14 — apolo-tf — INÍCIO: ML-1D — agentes do Claude Code gravados no dir que o Claude Code lê (REQ-2026-09-01)
+
+**Branch:** `fix/guard-global-segue-o-home-que-o-agente-le`
+**Escopo:** Implementar ML-1D da REQ-2026-09-01. Migrar todos os sítios de gravação de agents/skills do Claude Code para usar `agentconfig.ClaudeConfigDir` (mesmo resolvedor do ML-1A). Atualizar scripts de paridade com isolamento USERPROFILE/CLAUDE_CONFIG_DIR.
+
+---
+
 ## 2026-10-14 — artemis-tf — FIM: medição guard global HOME≠USERPROFILE (AC1, REQ-2026-09-01)
 
 **Branch:** `docs/medicao-suporte-windows-9.5.0`
@@ -46460,3 +46554,11 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-12 — zeus-tf — medição do suporte a Windows na 9.5.0
 
 - Censo x64 `38319939952` (4 FAIL emitidos) + VM ARM64. Consolidado em `docs/portabilidade/2026-10-12-suporte-windows-9.5.0-estado-medido.md`. Recontagem estrita: 16 rótulos sumiram (não 42 — o primeiro grep contou texto de PROOF); os 4 FAIL são do instrumento (pip install pypi/ pré-v8) e do NTFS. O verde do windows-full-suites é ratchet: 14 falhas conhecidas, 2 com efeito de segurança (proveniência de terceiros, 0600). Guard global (HOME≠USERPROFILE) não medido — a VM usou o comando errado e não tem o Claude Code.
+
+## 2026-10-14 — zeus-tf — início: REQ-2026-09-01 (guard global segue o home que o agente lê)
+
+- Branch `fix/guard-global-segue-o-home-que-o-agente-le`. Decisão do KG: seguir o home de cada CLI + avisar. ADR-2026-10-14 (Proposed) resolve a contradição AC1×AC4 da auditoria externa. REQ reescrita (ACs e escopo negativo); roadmap com Wave 0 do `hades-tf` (mapa CLI → home no Windows).
+
+## 2026-10-14 — zeus-tf — REQ-2026-09-01 pronta para PR
+
+- MLs 0A, 1A–1D, 2B–2D auditados. Revisão (hefesto) e red-team (hades) bloquearam uma vez cada; corretivos fechados. CI x64 (probe P16) prova `main` grava sob HOME e branch sob USERPROFILE. `make quality` EXIT=0 em `1a86cca2` (347 OK / 0 FAIL), com carga até 8,3. Falta o CI do PR. Nota: um agente instalou `pyyaml`/`packaging` no Python 3.12 do Homebrew (global) quando o venv da sessão anterior sumiu.

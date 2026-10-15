@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/kgsaran/trackfw/internal/agentconfig"
 	"github.com/kgsaran/trackfw/internal/pathanchor"
 )
 
@@ -1172,11 +1173,15 @@ func validateClaudeGuardHookMatcherWarnings() ([]string, error) {
 // for Claude Code guard hooks whose matcher does not cover PowerShell (ML-5A /
 // REQ-2026-09-05). Returns always-warnings (never violations) via applyRuleWarnOnly.
 func validateClaudeGuardHookMatcherGlobalWarnings() ([]string, error) {
-	home, err := os.UserHomeDir()
+	// ML-1A (REQ-2026-09-01): use the shared Claude config dir resolver so writer and auditor
+	// always agree — ADR-2026-10-14 D3. Replaces bare os.UserHomeDir() + ".claude" that was
+	// already closer to correct than other callers (USERPROFILE on Windows) but did not honour
+	// CLAUDE_CONFIG_DIR (A1).
+	claudeDir, err := agentconfig.ClaudeConfigDir(agentconfig.DefaultResolver)
 	if err != nil {
 		return nil, nil
 	}
-	path := filepath.Join(home, ".claude", "settings.json")
+	path := filepath.Join(claudeDir, "settings.json")
 	content, readErr := readRegularFile(path)
 	if readErr != nil {
 		return nil, nil // absent / unreadable — not this rule's concern

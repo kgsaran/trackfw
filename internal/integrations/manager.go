@@ -55,6 +55,15 @@ type Manager struct {
 	ProjectRoot string
 	HomeDir     string
 
+	// ClaudeDir, when non-nil, is called for claude/global plans to resolve
+	// the destination root (ML-1D, ADR-2026-10-14 D1/A1). The returned value
+	// is agentconfig.ClaudeConfigDir — on Windows it yields USERPROFILE/.claude;
+	// with CLAUDE_CONFIG_DIR set it yields that directory (no .claude/ subdir).
+	// If nil, HomeDir is used as today (zero-change for all existing callers that
+	// do not set this field). A non-nil closure that returns an error causes the
+	// plan to fail (A7: no silent nil on resolver failure).
+	ClaudeDir func() (string, error)
+
 	// OnSkip is called once per artifact skipped during Install when the
 	// artifact is outdated+owned and --force is not set. destination is the
 	// tilde-abbreviated path; reason is the full warning line ready to print
@@ -717,13 +726,52 @@ func (m Manager) resolve(plan PlannedArtifact) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
+
+	// ML-1D (ADR-2026-10-14 D1/A1): for claude/global plans, the destination
+	// is anchored at ClaudeDir (agentconfig.ClaudeConfigDir result) rather than
+	// at root (HomeDir). The manifest stays at root — trackfw's own artifacts
+	// remain under homedir.Dir() (ADR D1). destRoot is used only for destination
+	// containment (beneath) and symlink rejection.
+	//
+	// "claude" is the target ID from the catalog (agentconfig.CLIClaude).
+	destRoot := root
+	// ML-2B (A1): capture whether ClaudeDir was successfully resolved so the
+	// destination switch below can branch on it without re-testing destRoot != root.
+	// When CLAUDE_CONFIG_DIR=HOME (no .claude/ subdir), destRoot equals root but
+	// the .claude/ prefix must still be stripped — the old `destRoot != root`
+	// condition failed this case, landing agents at HOME/.claude/agents/… instead
+	// of HOME/agents/… (ADR-2026-10-14 A1, ML-2B REQ-2026-09-01).
+	claudeDirSet := false
+	if plan.Claim.Scope == "global" && plan.Claim.Target == "claude" && m.ClaudeDir != nil {
+		var cd string
+		cd, err = m.ClaudeDir()
+		if err != nil {
+			return "", "", fmt.Errorf("resolving Claude config dir: %w", err)
+		}
+		destRoot, err = filepath.Abs(cd)
+		if err != nil {
+			return "", "", err
+		}
+		claudeDirSet = true
+	}
+
 	destination := plan.Destination
 	switch {
 	case strings.HasPrefix(destination, "~/"):
 		if plan.Claim.Scope != "global" {
 			return "", "", errors.New("home destination requires global scope")
 		}
-		destination = filepath.Join(root, strings.TrimPrefix(destination, "~/"))
+		// ML-1D: Claude catalog paths are "~/.claude/…". When ClaudeDir was resolved
+		// (claudeDirSet), strip "~/.claude/" and join with destRoot so artifacts land
+		// at <ClaudeDir>/agents/… rather than <ClaudeDir>/.claude/agents/….
+		// Using claudeDirSet instead of the old `destRoot != root` fixes the edge
+		// case where CLAUDE_CONFIG_DIR=HOME makes destRoot==root while the prefix
+		// must still be stripped (ML-2B A1, ADR-2026-10-14).
+		if claudeDirSet && strings.HasPrefix(destination, "~/.claude/") {
+			destination = filepath.Join(destRoot, strings.TrimPrefix(destination, "~/.claude/"))
+		} else {
+			destination = filepath.Join(root, strings.TrimPrefix(destination, "~/"))
+		}
 	case pathanchor.IsAnchored(destination) || filepath.IsAbs(destination):
 		// ANCHORED per the host-independent predicate (POSIX "/", Windows drive letter, or
 		// Windows UNC — internal/pathanchor) OR filepath.IsAbs on THIS host. The `||` matters:
@@ -758,12 +806,18 @@ func (m Manager) resolve(plan PlannedArtifact) (string, string, error) {
 		}
 		destination = filepath.Join(root, destination)
 	}
-	if !beneath(root, destination) {
+	// Use destRoot for destination containment and symlink checks.
+	// For claude/global plans with ClaudeDir set, destRoot is ClaudeDir;
+	// for all other plans, destRoot == root (HomeDir or ProjectRoot).
+	if !beneath(destRoot, destination) {
 		return "", "", fmt.Errorf("destination %q is outside %s root", plan.Destination, plan.Claim.Scope)
 	}
-	if err := rejectSymlinks(root, destination); err != nil {
+	if err := rejectSymlinks(destRoot, destination); err != nil {
 		return "", "", err
 	}
+	// Manifest stays at root (HomeDir): trackfw's own artifacts use homedir.Dir()
+	// (ADR-2026-10-14 D1, ML-1D). The destination root changes for Claude; the
+	// manifest root does not.
 	manifestFile := manifestPath(root)
 	if err := rejectSymlinks(root, manifestFile); err != nil {
 		return "", "", err

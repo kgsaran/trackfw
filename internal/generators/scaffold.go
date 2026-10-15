@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kgsaran/trackfw/internal/agentconfig"
 	"github.com/kgsaran/trackfw/internal/config"
-	"github.com/kgsaran/trackfw/internal/homedir"
 	"github.com/kgsaran/trackfw/internal/pathguard"
 	"github.com/kgsaran/trackfw/internal/validator"
 	"github.com/kgsaran/trackfw/internal/version"
@@ -222,26 +222,32 @@ func installSkillsInner(force bool) error {
 }
 
 func installGlobalSkillInner(force bool) error {
-	home, err := homedir.Dir()
+	// ML-2C (REQ-2026-09-01): use agentconfig.ClaudeConfigDir so that on
+	// Windows USERPROFILE (not HOME) is used, matching what Claude Code reads.
+	// Honours CLAUDE_CONFIG_DIR when set (ADR-2026-10-14 A1, D6).
+	claudeDir, err := agentconfig.ClaudeConfigDir(agentconfig.DefaultResolver)
 	if err != nil {
-		return fmt.Errorf("localizando home dir: %w", err)
+		return fmt.Errorf("resolving Claude config dir: %w", err)
 	}
 
-	// Guard: resolve home and use it as root for the global skill write.
-	// ML-8A / #402: one assignment from one resolver. The previous shape (Abs,
-	// then a conditional reassignment from EvalSymlinks) was behaviourally the
-	// same but bound absHome to the UNRESOLVED Abs(home), which is what the
-	// containment analyser's P2 reads.
-	absHome, absErr := pathguard.ResolveRoot(home)
+	// guardRoot is the parent of claudeDir, resolved for symlink-namespace
+	// consistency (macOS /var → /private/var). filepath.Dir(claudeDir) is HOME
+	// in the standard case and filepath.Dir(CLAUDE_CONFIG_DIR) when the env var
+	// is set. Using the parent (not claudeDir itself) keeps the containment
+	// semantics identical to today: .claude (or the last CLAUDE_CONFIG_DIR
+	// segment) sits BELOW the root and gets Lstat-checked, so a symlinked
+	// .claude is still rejected — the same guarantee as ML-8A.
+	// This also matches ML-2B's rejectHarnessSymlink(filepath.Dir(claudeDir), …).
+	guardRoot, absErr := pathguard.ResolveRoot(filepath.Dir(claudeDir))
 	if absErr != nil {
-		return fmt.Errorf("resolving home: %w", absErr)
+		return fmt.Errorf("resolving guard root: %w", absErr)
 	}
-	skillPath := GlobalClaudeSkillPath(home)
+	skillPath := filepath.Join(claudeDir, "skills", "trackfw", "SKILL.md")
 	skillDir := filepath.Dir(skillPath)
-	// Derive the resolved skill dir from absHome (already EvalSymlinks-resolved) so the
-	// containment check compares paths in the same namespace (macOS /var → /private/var).
-	absSkillDir := filepath.Join(absHome, ".claude", "skills", "trackfw")
-	if err := rejectScaffoldPath(absHome, absSkillDir); err != nil {
+	// Derive the resolved skill dir from guardRoot (already EvalSymlinks-resolved)
+	// so the containment check compares paths in the same namespace.
+	absSkillDir := filepath.Join(guardRoot, filepath.Base(claudeDir), "skills", "trackfw")
+	if err := rejectScaffoldPath(guardRoot, absSkillDir); err != nil {
 		return err
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
@@ -250,23 +256,23 @@ func installGlobalSkillInner(force bool) error {
 	}
 
 	if _, err := os.Stat(skillPath); err == nil && !force {
-		fmt.Printf("  ✓ ~/.claude/skills/trackfw/SKILL.md (já existe — não sobrescrito)\n")
+		fmt.Printf("  ✓ %s (já existe — não sobrescrito)\n", skillPath)
 		return nil
 	}
 
 	// Guard the leaf file — rejectScaffoldPath above covers the directory but not the file
 	// itself (RejectSymlinks walks upward from its argument and never descends below it).
-	// If SKILL.md already exists as a symlink pointing outside absHome, os.WriteFile would
+	// If SKILL.md already exists as a symlink pointing outside guardRoot, os.WriteFile would
 	// follow it silently. Guarding the file catches that case.
-	absSkillPath := filepath.Join(absHome, ".claude", "skills", "trackfw", "SKILL.md")
-	if err := rejectScaffoldPath(absHome, absSkillPath); err != nil {
+	absSkillPath := filepath.Join(guardRoot, filepath.Base(claudeDir), "skills", "trackfw", "SKILL.md")
+	if err := rejectScaffoldPath(guardRoot, absSkillPath); err != nil {
 		return err
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks via rejectScaffoldPath above
 	if err := os.WriteFile(skillPath, GlobalClaudeSkillContent(), 0644); err != nil {
 		return fmt.Errorf("writing SKILL.md: %w", err)
 	}
-	fmt.Printf("  ✓ ~/.claude/skills/trackfw/SKILL.md\n")
+	fmt.Printf("  ✓ %s\n", skillPath)
 	return nil
 }
 

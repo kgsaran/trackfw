@@ -223,6 +223,9 @@ var ruleDefaults = map[string]string{
 	// D4 (ADR-2026-10-04, REQ #514 ML-1B): new rule, born as warning — endure in "error" is a
 	// future decision. Corte retroativo proibido (113 REQs Done com caixa aberta, pré-corte).
 	"req_done_open_criteria": "warning",
+	// D4 (ADR-2026-10-14, REQ-2026-09-01 ML-1B): HOME ≠ USERPROFILE on Windows —
+	// informative-only diagnostic, never blockable. Routed via applyRuleWarnOnly.
+	"home_divergence_windows": "warning",
 }
 
 // ruleSeverity retorna a severidade configurada para a regra.
@@ -1151,6 +1154,10 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	fenceMsgs := validateRoadmapUnterminatedFence()
 	applyRule("roadmap_unterminated_fence", fenceMsgs, &violations, &warnings)
 
+	// ML-1B (REQ-2026-09-01, ADR-2026-10-14 D4): HOME ≠ USERPROFILE on Windows — always-warning.
+	// 🔴 Mirror site in validateUnfilteredTagged below — forgetting it silences the rule from --json.
+	applyRuleWarnOnly("home_divergence_windows", validateHomeDivergenceWindows(), &warnings)
+
 	return violations, warnings, nil
 }
 
@@ -1614,6 +1621,10 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 	// 🔴 Missing this site silences roadmap_unterminated_fence from --json output.
 	fenceMsgsT := validateRoadmapUnterminatedFence()
 	applyRuleTagged("roadmap_unterminated_fence", fenceMsgsT, &violations, &warnings)
+
+	// ML-1B (REQ-2026-09-01, ADR-2026-10-14 D4): mirror of ValidateUnfiltered.
+	// 🔴 Missing this site silences home_divergence_windows from --json output.
+	applyRuleWarnOnlyTagged("home_divergence_windows", validateHomeDivergenceWindows(), &warnings)
 
 	return violations, warnings, nil
 }

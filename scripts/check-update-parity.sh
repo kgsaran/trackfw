@@ -107,7 +107,10 @@ run_update() {
   shift 2
   local out_file="$WORK/out.$$.$RANDOM" err_file="$WORK/err.$$.$RANDOM"
   set +e
-  (cd "$project_dir" && HOME="$home_dir" "$GO_BIN" update "$@") >"$out_file" 2>"$err_file"
+  # ML-1A: set USERPROFILE alongside HOME so agentconfig.ClaudeConfigDir agrees with HOME
+  # on POSIX (os.UserHomeDir() reads USERPROFILE on Windows; on POSIX it reads HOME via stdlib).
+  # Clear CLAUDE_CONFIG_DIR so a developer's setting does not redirect writes during tests.
+  (cd "$project_dir" && HOME="$home_dir" USERPROFILE="$home_dir" CLAUDE_CONFIG_DIR= "$GO_BIN" update "$@") >"$out_file" 2>"$err_file"
   UPDATE_EXIT=$?
   set -e
   UPDATE_STDOUT=$(cat "$out_file")
@@ -157,7 +160,8 @@ install_claude_agents() {
   mkdir -p "$home_dir"
   local scratch_dir
   scratch_dir=$(mktemp -d "$WORK/agents-install-cwd.XXXXXX")
-  (cd "$scratch_dir" && HOME="$home_dir" "$GO_BIN" agents install --targets claude --scope global \
+  # ML-1A: align USERPROFILE with HOME (see run_update comment).
+  (cd "$scratch_dir" && HOME="$home_dir" USERPROFILE="$home_dir" CLAUDE_CONFIG_DIR= "$GO_BIN" agents install --targets claude --scope global \
     --identity-preset neutral --json >/dev/null)
 }
 
@@ -166,13 +170,15 @@ install_agent_global() {
   local home_dir=$1 target=$2 item=$3
   local scratch
   scratch=$(mktemp -d "$WORK/install-global-cwd.XXXXXX")
-  (cd "$scratch" && HOME="$home_dir" "$GO_BIN" agents install --targets "$target" --items "$item" --scope global >/dev/null 2>&1)
+  # ML-1A: align USERPROFILE with HOME (see run_update comment).
+  (cd "$scratch" && HOME="$home_dir" USERPROFILE="$home_dir" CLAUDE_CONFIG_DIR= "$GO_BIN" agents install --targets "$target" --items "$item" --scope global >/dev/null 2>&1)
 }
 
 # install_agent_project PROJECT_DIR HOME_DIR TARGET ITEM
 install_agent_project() {
   local project_dir=$1 home_dir=$2 target=$3 item=$4
-  (cd "$project_dir" && HOME="$home_dir" "$GO_BIN" agents install --targets "$target" --items "$item" --scope project >/dev/null 2>&1)
+  # ML-1A: align USERPROFILE with HOME (see run_update comment).
+  (cd "$project_dir" && HOME="$home_dir" USERPROFILE="$home_dir" CLAUDE_CONFIG_DIR= "$GO_BIN" agents install --targets "$target" --items "$item" --scope project >/dev/null 2>&1)
 }
 
 # run_agents_install HOME_DIR PROJECT_DIR TARGET ITEM SCOPE
@@ -181,7 +187,8 @@ run_agents_install() {
   local home_dir=$1 project_dir=$2 target=$3 item=$4 scope=$5
   local err_file="$WORK/err.$$.$RANDOM"
   set +e
-  (cd "$project_dir" && HOME="$home_dir" "$GO_BIN" agents install --targets "$target" --items "$item" --scope "$scope" >/dev/null 2>"$err_file")
+  # ML-1A: align USERPROFILE with HOME (see run_update comment).
+  (cd "$project_dir" && HOME="$home_dir" USERPROFILE="$home_dir" CLAUDE_CONFIG_DIR= "$GO_BIN" agents install --targets "$target" --items "$item" --scope "$scope" >/dev/null 2>"$err_file")
   AGENTS_INSTALL_EXIT=$?
   set -e
   AGENTS_INSTALL_STDERR=$(cat "$err_file")
@@ -194,7 +201,8 @@ run_init() {
   local home_dir=$1 project_dir=$2 tool=$3
   local err_file="$WORK/err.$$.$RANDOM"
   set +e
-  (cd "$project_dir" && HOME="$home_dir" "$GO_BIN" init --ai-tools "$tool" >/dev/null 2>"$err_file")
+  # ML-1A: align USERPROFILE with HOME (see run_update comment).
+  (cd "$project_dir" && HOME="$home_dir" USERPROFILE="$home_dir" CLAUDE_CONFIG_DIR= "$GO_BIN" init --ai-tools "$tool" >/dev/null 2>"$err_file")
   INIT_EXIT=$?
   set -e
   INIT_STDERR=$(cat "$err_file")

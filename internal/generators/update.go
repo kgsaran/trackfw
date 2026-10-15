@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/kgsaran/trackfw/internal/agentconfig"
 	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/identity"
 	"github.com/kgsaran/trackfw/internal/integrations"
@@ -169,6 +170,9 @@ func updateDetectedCodexIntegrations(cwd string) error {
 	if err != nil {
 		return fmt.Errorf("codex integration identity: %w", err)
 	}
+	// ML-1D: ClaudeDir is intentionally not set — this Manager handles Codex
+	// project-scope artifacts only (Targets: []string{"codex"}, Scope: "project").
+	// No claude/global plans reach it, so ClaudeDir is behaviour-neutral here.
 	manager := integrations.Manager{ProjectRoot: cwd, HomeDir: home}
 	updated := 0
 	for _, kind := range []integrations.ItemKind{integrations.KindAgents, integrations.KindSkills} {
@@ -439,7 +443,7 @@ type TargetResult struct {
 	ID      string
 	State   TargetState
 	Path    string
-	Message string // only set when State == TargetFailed
+	Message string // set when State == TargetFailed (error detail) or for informational notices (e.g. D5 inert-remainder, ML-1B)
 }
 
 // UpdateSummary carries all four counters, including zeros — pinned by contract.
@@ -601,6 +605,14 @@ func UpdateHarness(opts UpdateOptions) (UpdateReport, error) {
 	// with this reason.
 	home = filepath.Clean(home)
 
+	// ML-1A (REQ-2026-09-01): Claude Code's config dir may differ from home/.claude on Windows
+	// (USERPROFILE ≠ HOME in Git Bash) or when CLAUDE_CONFIG_DIR is set. Compute it once here
+	// and pass it to the two Claude-specific target functions — ADR-2026-10-14 D3.
+	claudeDir, claudeDirErr := agentconfig.ClaudeConfigDir(agentconfig.DefaultResolver)
+	if claudeDirErr == nil {
+		claudeDir = filepath.Clean(claudeDir)
+	}
+
 	// NOTE: the script files are now first-class targets ("git-branch-guard-script",
 	// "credential-guard-script") positioned before the wiring targets in
 	// HarnessTargetIDs. The pre-loop unconditional writes that used to live here
@@ -615,7 +627,7 @@ func UpdateHarness(opts UpdateOptions) (UpdateReport, error) {
 	results := make([]TargetResult, 0, len(selected))
 	for _, id := range selected {
 		if id == "claude-skill" {
-			results = append(results, harnessClaudeSkillTarget(home, opts))
+			results = append(results, harnessClaudeSkillTarget(home, claudeDir, claudeDirErr, opts))
 			continue
 		}
 		if id == "git-branch-guard-script" {
@@ -627,11 +639,11 @@ func UpdateHarness(opts UpdateOptions) (UpdateReport, error) {
 			continue
 		}
 		if id == "claude-credential-guard" {
-			results = append(results, harnessCredentialGuardTargetClaude(home, opts))
+			results = append(results, harnessCredentialGuardTargetClaude(home, claudeDir, claudeDirErr, opts))
 			continue
 		}
 		if id == "claude-git-branch-guard" {
-			results = append(results, harnessGitBranchGuardTargetClaude(home, opts))
+			results = append(results, harnessGitBranchGuardTargetClaude(home, claudeDir, claudeDirErr, opts))
 			continue
 		}
 		if id == "codex-credential-guard" {
@@ -682,7 +694,7 @@ func UpdateHarness(opts UpdateOptions) (UpdateReport, error) {
 		if !ok {
 			continue
 		}
-		results = append(results, harnessCatalogTarget(catalog, id, tool, kind, home, opts))
+		results = append(results, harnessCatalogTarget(catalog, id, tool, kind, home, claudeDir, claudeDirErr, opts))
 	}
 	return UpdateReport{Scope: "harness", DryRun: opts.DryRun, Targets: results}, nil
 }
@@ -728,6 +740,80 @@ func selectDeclaredTargets(declared []string, requested []string) ([]string, err
 		}
 	}
 	return out, nil
+}
+
+// claudeSettingsDisplayPath returns the display path for Claude Code's settings.json.
+// When the resolved path is under homedir.Dir(), it is abbreviated with "~/"
+// (e.g., "~/.claude/settings.json" in the control case, or a custom subpath
+// when CLAUDE_CONFIG_DIR points inside the home directory).
+// When the resolved path is outside homedir.Dir() (e.g., CLAUDE_CONFIG_DIR=/tmp/…,
+// or USERPROFILE ≠ HOME on Windows), the absolute path is returned as-is.
+// Falls back to "~/.claude/settings.json" when claudeDir is empty (error path).
+//
+// ML-1B (REQ-2026-09-01): replaces the fixed const displayPath = "~/.claude/settings.json"
+// in harnessCredentialGuardTargetClaude and harnessGitBranchGuardTargetClaude so that
+// CLAUDE_CONFIG_DIR and Windows USERPROFILE divergence are reflected in the output.
+func claudeSettingsDisplayPath(claudeDir string) string {
+	if claudeDir == "" {
+		return "~/.claude/settings.json"
+	}
+	path := filepath.Join(claudeDir, "settings.json")
+	home, err := homedir.Dir()
+	if err != nil {
+		return path
+	}
+	rel, err := filepath.Rel(home, path)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return path
+	}
+	return "~/" + filepath.ToSlash(rel)
+}
+
+// withD5Notice appends the D5 inert-remainder notice to a TargetUpdated or
+// TargetSkipped result when HOME/.claude/settings.json exists and contains
+// trackfw guard wiring but claudeDir points elsewhere (ADR-2026-10-14 D5,
+// ML-1B REQ-2026-09-01).
+//
+// For TargetFailed / TargetMissing results the function is a no-op — the
+// D5 notice is informational only and must not obscure error/missing states.
+//
+// R-3 (ML-2D): the message is conditional on the origin of claudeDir and the
+// presence of Windows HOME≠USERPROFILE divergence:
+//
+//   - Origin CLAUDE_CONFIG_DIR, no Windows divergence: the guard at HOME/.claude
+//     is inert only for Claude Code instances that also run with CLAUDE_CONFIG_DIR.
+//     Without the variable, HOME/.claude IS the active guard — the notice warns
+//     without instructing the user to delete it.
+//   - Windows divergence (HOME≠USERPROFILE) regardless of CLAUDE_CONFIG_DIR:
+//     Claude Code reads USERPROFILE/.claude (or CLAUDE_CONFIG_DIR), so HOME/.claude
+//     is unconditionally inert. The existing "remove it by hand" message applies.
+func withD5Notice(result TargetResult, claudeDir string) TargetResult {
+	if result.State != TargetUpdated && result.State != TargetSkipped {
+		return result
+	}
+	inertPath, present := agentconfig.InertClaudeGuardPath(claudeDir)
+	if !present {
+		return result
+	}
+	// R-3 discriminant: conditional message only when CLAUDE_CONFIG_DIR drove resolution
+	// AND there is no Windows HOME≠USERPROFILE divergence. With divergence, HOME/.claude
+	// is unconditionally inert (Claude reads USERPROFILE/.claude or CLAUDE_CONFIG_DIR,
+	// neither of which is HOME/.claude).
+	envDir := strings.TrimSpace(os.Getenv("CLAUDE_CONFIG_DIR"))
+	_, _, divergent := agentconfig.HomeDivergencePaths()
+	if envDir != "" && !divergent {
+		result.Message = fmt.Sprintf(
+			"guard under HOME at %s is inert only for a Claude Code that sees CLAUDE_CONFIG_DIR=%s; "+
+				"if Claude Code runs without CLAUDE_CONFIG_DIR, that file is the active one — do not remove it",
+			inertPath, filepath.Clean(envDir),
+		)
+	} else {
+		result.Message = fmt.Sprintf(
+			"old guard under HOME is inert — Claude Code does not read %s; remove it by hand if you want",
+			inertPath,
+		)
+	}
+	return result
 }
 
 // rejectHarnessSymlink checks path for symlinks in its ancestry (up to and
@@ -825,14 +911,25 @@ func harnessCredentialGuardScriptTarget(home string, opts UpdateOptions) TargetR
 
 // harnessClaudeSkillTarget evaluates (and, unless DryRun, applies) the
 // historical global Claude compatibility skill.
-func harnessClaudeSkillTarget(home string, opts UpdateOptions) TargetResult {
+//
+// ML-2B (REQ-2026-09-01, B2): claudeDir is the resolved Claude config directory
+// (honours CLAUDE_CONFIG_DIR and, on Windows, USERPROFILE). claudeDirErr != nil
+// means resolution failed — treated as TargetFailed so the harness reports the
+// problem rather than silently writing to the wrong path (ADR-2026-10-14 A7).
+// home stays as the trackfw artefacts root (~/.trackfw/).
+func harnessClaudeSkillTarget(home, claudeDir string, claudeDirErr error, opts UpdateOptions) TargetResult {
 	const id = "claude-skill"
 	const displayPath = "~/.claude/skills/trackfw/SKILL.md"
 
-	path := GlobalClaudeSkillPath(home)
+	if claudeDirErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: fmt.Sprintf("resolving Claude config dir: %s", claudeDirErr)}
+	}
+	path := filepath.Join(claudeDir, "skills", "trackfw", "SKILL.md")
 	// Guard: reject writes through symlinks before any filesystem mutation
-	// (ADR-2026-09-18 / ML-1B).
-	if result, guarded := rejectHarnessSymlink(home, path, id, displayPath); guarded {
+	// (ADR-2026-09-18 / ML-1B). Root is filepath.Dir(claudeDir) — checks
+	// claudeDir itself (e.g. ~/.claude) for symlink, same depth as the
+	// credential and git-branch guard targets.
+	if result, guarded := rejectHarnessSymlink(filepath.Dir(claudeDir), path, id, displayPath); guarded {
 		return result
 	}
 	desired := GlobalClaudeSkillContent()
@@ -884,14 +981,29 @@ func harnessClaudeSkillTarget(home string, opts UpdateOptions) TargetResult {
 // InjectClaudeHooks/InjectCodexHooks/InjectGeminiHooks already use — so any
 // pre-existing content in ~/.claude/settings.json (other hooks, user config)
 // is preserved; only the credential-guard entry is added/merged.
-func harnessCredentialGuardTargetClaude(home string, opts UpdateOptions) TargetResult {
+// harnessCredentialGuardTargetClaude evaluates (and, unless DryRun, applies)
+// the global-scope credential-guard hook wiring for Claude Code.
+//
+// ML-1A (REQ-2026-09-01): claudeDir is the resolved Claude config directory
+// (honours CLAUDE_CONFIG_DIR and, on Windows, USERPROFILE). claudeDirErr != nil
+// means resolution failed (USERPROFILE absent, etc.) — treated as TargetFailed so
+// the harness reports the problem rather than silently writing to the wrong path.
+// home stays as the trackfw artefacts root (~/.trackfw/).
+func harnessCredentialGuardTargetClaude(home, claudeDir string, claudeDirErr error, opts UpdateOptions) TargetResult {
 	const id = "claude-credential-guard"
-	const displayPath = "~/.claude/settings.json"
-
-	path := filepath.Join(home, ".claude", "settings.json")
+	// ML-1B (REQ-2026-09-01): displayPath is now dynamic — shows the real resolved path.
+	// In the control case (HOME == USERPROFILE, no CLAUDE_CONFIG_DIR) this produces
+	// "~/.claude/settings.json", identical to the previous hardcoded value.
+	displayPath := claudeSettingsDisplayPath(claudeDir)
+	if claudeDirErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: "~/.claude/settings.json", Message: fmt.Sprintf("resolving Claude config dir: %s", claudeDirErr)}
+	}
+	path := filepath.Join(claudeDir, "settings.json")
 	// Guard: reject writes through symlinks before any filesystem mutation
-	// (ADR-2026-09-18 / ML-1B).
-	if result, guarded := rejectHarnessSymlink(home, path, id, displayPath); guarded {
+	// (ADR-2026-09-18 / ML-1B). Root is filepath.Dir(claudeDir) — this checks
+	// claudeDir itself (e.g. ~/.claude) for symlink, preserving the same depth
+	// as before. In the control case (HOME == USERPROFILE) Dir(claudeDir) == home.
+	if result, guarded := rejectHarnessSymlink(filepath.Dir(claudeDir), path, id, displayPath); guarded {
 		return result
 	}
 	// ML-2A: global configs now emit the inline command instead of an absolute .sh path.
@@ -904,7 +1016,7 @@ func harnessCredentialGuardTargetClaude(home string, opts UpdateOptions) TargetR
 			return TargetResult{ID: id, State: TargetMissing, Path: displayPath}
 		}
 		if opts.DryRun {
-			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+			return withD5Notice(TargetResult{ID: id, State: TargetUpdated, Path: displayPath}, claudeDir)
 		}
 		root := make(map[string]interface{})
 		mergeCredentialGuardClaudeHooks(root, claudeShellMatcher, guardCredentialGlobalCmdPSPOSIX)
@@ -920,7 +1032,7 @@ func harnessCredentialGuardTargetClaude(home string, opts UpdateOptions) TargetR
 		if writeErr := os.WriteFile(path, append(desired, '\n'), 0644); writeErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 		}
-		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+		return withD5Notice(TargetResult{ID: id, State: TargetUpdated, Path: displayPath}, claudeDir)
 	case err != nil:
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}
 	}
@@ -957,16 +1069,16 @@ func harnessCredentialGuardTargetClaude(home string, opts UpdateOptions) TargetR
 	}
 	desired := append(out, '\n')
 	if string(desired) == string(raw) {
-		return TargetResult{ID: id, State: TargetSkipped, Path: displayPath}
+		return withD5Notice(TargetResult{ID: id, State: TargetSkipped, Path: displayPath}, claudeDir)
 	}
 	if opts.DryRun {
-		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+		return withD5Notice(TargetResult{ID: id, State: TargetUpdated, Path: displayPath}, claudeDir)
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 	}
-	return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	return withD5Notice(TargetResult{ID: id, State: TargetUpdated, Path: displayPath}, claudeDir)
 }
 
 // mergeCredentialGuardClaudeHooks merges the guard PreToolUse/PostToolUse[matcher]
@@ -1766,14 +1878,23 @@ func harnessCredentialGuardTargetKiro(home string, opts UpdateOptions) TargetRes
 // hooks.PreToolUse/PostToolUse[matcher:"Bash"] arrays credential-guard also
 // merges into — mergeClaudeHookArray appends a second, distinct command
 // entry rather than overwriting the first).
-func harnessGitBranchGuardTargetClaude(home string, opts UpdateOptions) TargetResult {
+//
+// ML-1A (REQ-2026-09-01): claudeDir/claudeDirErr — same contract as
+// harnessCredentialGuardTargetClaude. home stays as the trackfw artefacts root.
+func harnessGitBranchGuardTargetClaude(home, claudeDir string, claudeDirErr error, opts UpdateOptions) TargetResult {
 	const id = "claude-git-branch-guard"
-	const displayPath = "~/.claude/settings.json"
-
-	path := filepath.Join(home, ".claude", "settings.json")
+	// ML-1B (REQ-2026-09-01): displayPath is now dynamic — shows the real resolved path.
+	// In the control case (HOME == USERPROFILE, no CLAUDE_CONFIG_DIR) this produces
+	// "~/.claude/settings.json", identical to the previous hardcoded value.
+	displayPath := claudeSettingsDisplayPath(claudeDir)
+	if claudeDirErr != nil {
+		return TargetResult{ID: id, State: TargetFailed, Path: "~/.claude/settings.json", Message: fmt.Sprintf("resolving Claude config dir: %s", claudeDirErr)}
+	}
+	path := filepath.Join(claudeDir, "settings.json")
 	// Guard: reject writes through symlinks before any filesystem mutation
-	// (ADR-2026-09-18 / ML-1B).
-	if result, guarded := rejectHarnessSymlink(home, path, id, displayPath); guarded {
+	// (ADR-2026-09-18 / ML-1B). Root is filepath.Dir(claudeDir) — checks claudeDir
+	// itself for symlink; in control case (HOME==USERPROFILE) equals home.
+	if result, guarded := rejectHarnessSymlink(filepath.Dir(claudeDir), path, id, displayPath); guarded {
 		return result
 	}
 	// ML-2A: global configs now emit the inline command instead of an absolute .sh path.
@@ -1786,7 +1907,7 @@ func harnessGitBranchGuardTargetClaude(home string, opts UpdateOptions) TargetRe
 			return TargetResult{ID: id, State: TargetMissing, Path: displayPath}
 		}
 		if opts.DryRun {
-			return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+			return withD5Notice(TargetResult{ID: id, State: TargetUpdated, Path: displayPath}, claudeDir)
 		}
 		root := make(map[string]interface{})
 		mergeCredentialGuardClaudeHooks(root, claudeShellMatcher, guardGitBranchCmdPSPOSIX)
@@ -1802,7 +1923,7 @@ func harnessGitBranchGuardTargetClaude(home string, opts UpdateOptions) TargetRe
 		if writeErr := os.WriteFile(path, append(desired, '\n'), 0644); writeErr != nil {
 			return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 		}
-		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+		return withD5Notice(TargetResult{ID: id, State: TargetUpdated, Path: displayPath}, claudeDir)
 	case err != nil:
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}
 	}
@@ -1839,16 +1960,16 @@ func harnessGitBranchGuardTargetClaude(home string, opts UpdateOptions) TargetRe
 	}
 	desired := append(out, '\n')
 	if string(desired) == string(raw) {
-		return TargetResult{ID: id, State: TargetSkipped, Path: displayPath}
+		return withD5Notice(TargetResult{ID: id, State: TargetSkipped, Path: displayPath}, claudeDir)
 	}
 	if opts.DryRun {
-		return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+		return withD5Notice(TargetResult{ID: id, State: TargetUpdated, Path: displayPath}, claudeDir)
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if writeErr := os.WriteFile(path, desired, 0644); writeErr != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: writeErr.Error()}
 	}
-	return TargetResult{ID: id, State: TargetUpdated, Path: displayPath}
+	return withD5Notice(TargetResult{ID: id, State: TargetUpdated, Path: displayPath}, claudeDir)
 }
 
 // harnessGitBranchGuardTargetCodex wires the global-scope git-branch-guard
@@ -2307,7 +2428,15 @@ func harnessGitBranchGuardTargetKiro(home string, opts UpdateOptions) TargetResu
 // displayPath is derived from the catalog itself (integrations.GlobalGroupPath)
 // rather than from any individual installed plan's destination, so the
 // reported path never depends on catalog item iteration order.
-func harnessCatalogTarget(catalog *integrations.Catalog, id, tool string, kind integrations.ItemKind, home string, opts UpdateOptions) TargetResult {
+// harnessCatalogTarget evaluates (and, unless DryRun, applies) every
+// global-scope catalog item of the given (tool, kind) pair.
+//
+// claudeDir is the pre-resolved agentconfig.ClaudeConfigDir value from the
+// caller (UpdateHarness). It is passed in to satisfy ADR-2026-10-14 D3 (writer
+// and auditor use the same resolver instance). claudeDirErr is the error from
+// that resolution; if non-nil and tool is "claude", the Manager will propagate
+// the error through ClaudeDir.
+func harnessCatalogTarget(catalog *integrations.Catalog, id, tool string, kind integrations.ItemKind, home, claudeDir string, claudeDirErr error, opts UpdateOptions) TargetResult {
 	displayPath, pathErr := integrations.GlobalGroupPath(catalog, tool, kind)
 	if pathErr != nil {
 		return TargetResult{ID: id, State: TargetFailed, Path: "", Message: pathErr.Error()}
@@ -2332,7 +2461,15 @@ func harnessCatalogTarget(catalog *integrations.Catalog, id, tool string, kind i
 		return TargetResult{ID: id, State: TargetFailed, Path: displayPath, Message: err.Error()}
 	}
 
+	// ML-1D (ADR-2026-10-14 D1/A1): set ClaudeDir only for the claude tool so
+	// global claude agents/skills are written at the path Claude Code actually
+	// reads. claudeDir comes from the caller (D3: one resolved value per harness
+	// run). Non-Claude tools are unaffected (D2: behaviour unchanged).
 	manager := integrations.Manager{ProjectRoot: home, HomeDir: home}
+	if tool == agentconfig.CLIClaude {
+		capturedDir, capturedErr := claudeDir, claudeDirErr
+		manager.ClaudeDir = func() (string, error) { return capturedDir, capturedErr }
+	}
 	anyInstalled := false
 	anyChanged := false
 	for _, plan := range plans {
@@ -2653,6 +2790,9 @@ func codexProjectAgentsApply(root string, opts UpdateOptions) error {
 	if err != nil {
 		return err
 	}
+	// ML-1D: ClaudeDir is intentionally not set — this Manager handles Codex
+	// project-scope artifacts only (Targets: []string{"codex"}, Scope: "project").
+	// No claude/global plans reach it, so ClaudeDir is behaviour-neutral here.
 	manager := integrations.Manager{ProjectRoot: root, HomeDir: home}
 	var projectAgentModels map[string]string
 	if chErr := withChdir(root, func() error {

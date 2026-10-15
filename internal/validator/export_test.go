@@ -72,6 +72,21 @@ func ValidateClaudeGuardHookMatcherWarningsForTest() ([]string, error) {
 	return validateClaudeGuardHookMatcherWarnings()
 }
 
+// ValidateCredentialGuardGlobalHookResolvableForTest exposes
+// validateCredentialGuardGlobalHookResolvable to the external test package.
+// ML-1A (REQ-2026-09-01): used by the global concordance tests that exercise
+// the HOME≠USERPROFILE and CLAUDE_CONFIG_DIR code paths.
+func ValidateCredentialGuardGlobalHookResolvableForTest() ([]string, error) {
+	return validateCredentialGuardGlobalHookResolvable()
+}
+
+// ValidateGitBranchGuardGlobalHookResolvableForTest exposes
+// validateGitBranchGuardGlobalHookResolvable to the external test package.
+// ML-1A (REQ-2026-09-01): same contract as ValidateCredentialGuardGlobalHookResolvableForTest.
+func ValidateGitBranchGuardGlobalHookResolvableForTest() ([]string, error) {
+	return validateGitBranchGuardGlobalHookResolvable()
+}
+
 // StubProbeOKForTest replaces the binary-probe seam vars so any call to guardBinaryProbeOnce
 // succeeds (binary found, guard subcommand present, no Git Bash divergence). Restores the
 // originals via t.Cleanup. Used by the concordance test so it does not depend on a real
@@ -158,6 +173,14 @@ func GuardWiringExtractGuardTypesFromFileForTest(path string) ([]string, error) 
 		guardTypes = append(guardTypes, tup.guardType)
 	}
 	return guardTypes, nil
+}
+
+// ValidateHomeDivergenceWindowsForTest exposes validateHomeDivergenceWindows to the
+// external test package (package validator_test) — standard "export_test.go" pattern.
+// ML-1B (REQ-2026-09-01): used by the home_divergence_windows tests that exercise
+// the D4 warning for HOME ≠ USERPROFILE on Windows (simulated via SetPlatformForTest).
+func ValidateHomeDivergenceWindowsForTest() []string {
+	return validateHomeDivergenceWindows()
 }
 
 // ChdirForTest changes the working directory to dir and resets the config singleton (required

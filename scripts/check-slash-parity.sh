@@ -37,7 +37,7 @@ trap 'rm -rf "$WORK"' EXIT
 
 mkdir -p "$WORK/go" "$WORK/home-go"
 
-(cd "$WORK/go" && HOME="$WORK/home-go" "$GO_BIN" init >/dev/null)
+(cd "$WORK/go" && HOME="$WORK/home-go" USERPROFILE="$WORK/home-go" CLAUDE_CONFIG_DIR= "$GO_BIN" init >/dev/null)
 
 GO_DIR="$WORK/go/.claude/commands/trackfw"
 

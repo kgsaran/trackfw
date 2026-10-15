@@ -74,6 +74,8 @@ fi
 # enxergariam o escopo GLOBAL de guards do usuário rodando o gate). Isolado só a partir daqui —
 # depois do build Go acima.
 export HOME="$WORK/home"
+export USERPROFILE="$WORK/home"
+export CLAUDE_CONFIG_DIR=
 mkdir -p "$HOME"
 
 if [[ ! -x "$GO_BIN" ]]; then

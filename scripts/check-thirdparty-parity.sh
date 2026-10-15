@@ -134,13 +134,13 @@ mkdir -p "$project" "$home"
 project=$(cd "$project" && pwd -P)
 home=$(cd "$home" && pwd -P)
 
-(cd "$project" && HOME="$home" "$GO_BIN" agents install --targets claude --items backend --scope project \
+(cd "$project" && HOME="$home" USERPROFILE="$home" CLAUDE_CONFIG_DIR= "$GO_BIN" agents install --targets claude --items backend --scope project \
   >"$WORK/go-agent-install.out" 2>&1)
 
 write_quarantine_and_provenance "$project"
 
 set +e
-(cd "$project" && HOME="$home" "$GO_BIN" skills third-party install \
+(cd "$project" && HOME="$home" USERPROFILE="$home" CLAUDE_CONFIG_DIR= "$GO_BIN" skills third-party install \
   --checksum "$CHECKSUM" --targets claude --apply-to backend --yes-i-trust-this-source \
   >"$WORK/go-install.out" 2>&1)
 install_status=$?
@@ -237,7 +237,7 @@ project_d10=$(cd "$project_d10" && pwd -P)
 home_d10=$(cd "$home_d10" && pwd -P)
 write_quarantine_and_provenance "$project_d10"
 set +e
-(cd "$project_d10" && HOME="$home_d10" "$GO_BIN" skills third-party install \
+(cd "$project_d10" && HOME="$home_d10" USERPROFILE="$home_d10" CLAUDE_CONFIG_DIR= "$GO_BIN" skills third-party install \
   --checksum "$CHECKSUM" --targets claude --apply-to backend --yes-i-trust-this-source \
   >"$WORK/go-d10.out" 2>&1)
 status=$?

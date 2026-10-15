@@ -15,12 +15,16 @@ import (
 // entry) if the global file is missing, unreadable, or unparseable.
 // ---------------------------------------------------------------------------
 
-// dedupFixtureHome creates an isolated $HOME and points HOME at it for the
-// duration of the test.
+// dedupFixtureHome creates an isolated $HOME and points HOME, USERPROFILE and
+// CLAUDE_CONFIG_DIR at it for the duration of the test.
+// ML-2E: on Windows, agentconfig.ClaudeConfigDir reads USERPROFILE (not HOME);
+// setting both ensures global-Claude reads/writes land in the temp dir.
 func dedupFixtureHome(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	return home
 }
 

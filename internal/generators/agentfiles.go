@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/kgsaran/trackfw/internal/agentconfig"
 	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/pathguard"
 )
@@ -2101,6 +2102,26 @@ func readGlobalHookJSON(relParts ...string) (root map[string]interface{}, ok boo
 	return root, true
 }
 
+// readClaudeSettingsJSON reads and parses the JSON object at Claude Code's
+// settings.json, honouring CLAUDE_CONFIG_DIR and, on Windows, USERPROFILE
+// instead of $HOME (ML-1A, REQ-2026-09-01, ADR-2026-10-14 D3).
+// Returns ok=false on any failure — same fail-open contract as readGlobalHookJSON.
+// Callers that need the path for a different CLI must still call readGlobalHookJSON.
+func readClaudeSettingsJSON() (root map[string]interface{}, ok bool) {
+	dir, err := agentconfig.ClaudeConfigDir(agentconfig.DefaultResolver)
+	if err != nil || dir == "" {
+		return nil, false
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "settings.json"))
+	if err != nil {
+		return nil, false
+	}
+	if err := json.Unmarshal(raw, &root); err != nil {
+		return nil, false
+	}
+	return root, true
+}
+
 // normalizeGuardPath collapses run of consecutive slashes ("//" -> "/", at
 // any position, including leading) and strips a trailing slash, so that two
 // on-disk forms of the SAME script path compare equal regardless of
@@ -2361,7 +2382,8 @@ func globalCredentialGuardInstalledClaude() bool {
 	if !ok {
 		return false
 	}
-	root, ok := readGlobalHookJSON(".claude", "settings.json")
+	// ML-1A: use readClaudeSettingsJSON so we read from the same path the agent does.
+	root, ok := readClaudeSettingsJSON()
 	if !ok {
 		return false
 	}
@@ -2559,7 +2581,8 @@ func globalGitBranchGuardInstalledClaude() bool {
 	if !ok {
 		return false
 	}
-	root, ok := readGlobalHookJSON(".claude", "settings.json")
+	// ML-1A: use readClaudeSettingsJSON so we read from the same path the agent does.
+	root, ok := readClaudeSettingsJSON()
 	if !ok {
 		return false
 	}

@@ -929,6 +929,77 @@ jobs:
 
           Write-Host "=== P15 CONCLUIDA — buscar linhas P15_ no log para leitura dos resultados ==="
 
+      # ---------------------------------------------------------------
+      # Pergunta 16 — guard global: onde o trackfw grava settings.json
+      # sob HOME≠USERPROFILE, comparando origin/main vs branch atual.
+      #
+      # ML-1C, REQ-2026-09-01, AC2. Complementa a medição da VM ARM64
+      # (docs/portabilidade/2026-10-14-guard-global-home-userprofile-vm.md):
+      # lá confirmou-se que Claude Code lê USERPROFILE (evidência 3a —
+      # debug file, três terminais). Aqui confirma-se QUE O TRACKFW
+      # passou a gravar em USERPROFILE (branch) em vez de HOME (main).
+      #
+      # Dois binários compilados no mesmo runner:
+      #   main   — origin/main via git worktree add --detach
+      #   branch — commit HEAD desta branch
+      #
+      # Saída principal (grep-friendly, sem veredito):
+      #   PROBE guard-global main   written=HOME|USERPROFILE|NEITHER
+      #   PROBE guard-global branch written=HOME|USERPROFILE|NEITHER
+      #
+      # O Claude Code não está neste runner: a afirmação de que ele lê
+      # USERPROFILE vem da medição da VM, não é assertada aqui.
+      # ---------------------------------------------------------------
+      - name: "Pergunta 16 — guard global main vs branch sob HOME≠USERPROFILE (ML-1C, REQ-2026-09-01)"
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+
+          # ── Compilar binário da branch atual ────────────────────────────────
+          Write-Host "=== P16: compilando binário da BRANCH atual ==="
+          $branchBin = Join-Path $env:RUNNER_TEMP "p16-trackfw-branch.exe"
+          go build -o $branchBin ./cmd/trackfw 2>&1 | Write-Host
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "P16_GUARD_FAIL: BUILD_FAILED branch — saindo sem veredito"
+            exit 0
+          }
+          Write-Host "P16_BRANCH_BIN: $branchBin"
+
+          # ── Compilar binário de origin/main via worktree ─────────────────────
+          Write-Host "=== P16: git fetch origin main ==="
+          git fetch origin main 2>&1 | Write-Host
+
+          $mainWorktree = Join-Path $env:RUNNER_TEMP "p16-main-worktree"
+          if (Test-Path $mainWorktree) {
+            git worktree remove --force $mainWorktree 2>&1 | Out-Null
+          }
+          Write-Host "=== P16: git worktree add --detach $mainWorktree origin/main ==="
+          git worktree add --detach $mainWorktree origin/main 2>&1 | Write-Host
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "P16_GUARD_FAIL: WORKTREE_FAILED — saindo sem veredito"
+            exit 0
+          }
+
+          $mainBin = Join-Path $env:RUNNER_TEMP "p16-trackfw-main.exe"
+          Push-Location $mainWorktree
+          Write-Host "=== P16: compilando binário de origin/main ==="
+          go build -o $mainBin ./cmd/trackfw 2>&1 | Write-Host
+          $mainBuildExit = $LASTEXITCODE
+          Pop-Location
+          git worktree remove --force $mainWorktree 2>&1 | Out-Null
+          if ($mainBuildExit -ne 0) {
+            Write-Host "P16_GUARD_FAIL: BUILD_FAILED main — saindo sem veredito"
+            exit 0
+          }
+          Write-Host "P16_MAIN_BIN: $mainBin"
+
+          # ── Chamar script de sonda ───────────────────────────────────────────
+          # O script imprime as linhas PROBE guard-global e PROBE validate.
+          & ".\scripts\windows-repro\guard-global-home.ps1" `
+              -MainBin $mainBin `
+              -BranchBin $branchBin
+
       - name: Registrar duração
         if: always()
         shell: pwsh

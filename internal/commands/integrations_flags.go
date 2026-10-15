@@ -12,6 +12,7 @@ import (
 
 	"github.com/charmbracelet/huh"
 	cbterm "github.com/charmbracelet/x/term"
+	"github.com/kgsaran/trackfw/internal/agentconfig"
 	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/generators"
 	"github.com/kgsaran/trackfw/internal/i18n"
@@ -441,7 +442,15 @@ func integrationsManager() (integrations.Manager, error) {
 	if err != nil {
 		return integrations.Manager{}, err
 	}
-	return integrations.Manager{ProjectRoot: project, HomeDir: home}, nil
+	// ML-1D (ADR-2026-10-14 D1/A1): Claude global agents/skills land at
+	// agentconfig.ClaudeConfigDir so the writer and auditor agree.
+	return integrations.Manager{
+		ProjectRoot: project,
+		HomeDir:     home,
+		ClaudeDir: func() (string, error) {
+			return agentconfig.ClaudeConfigDir(agentconfig.DefaultResolver)
+		},
+	}, nil
 }
 
 func parseSurfaceFlags(values []string) (map[string]string, error) {

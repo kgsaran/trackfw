@@ -427,6 +427,8 @@ func TestUpdateHarnessUnknownTargetIsUsageError(t *testing.T) {
 func TestUpdateHarnessTargetsFilterPreservesDeclaredOrder(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)      // ML-1A: Windows reads USERPROFILE
+	t.Setenv("CLAUDE_CONFIG_DIR", "") // ML-2B B2: isolate from real CLAUDE_CONFIG_DIR
 
 	report, err := UpdateHarness(UpdateOptions{Targets: []string{"codex-agents", "claude-skill"}})
 	if err != nil {
@@ -445,6 +447,8 @@ func TestUpdateHarnessTargetsFilterPreservesDeclaredOrder(t *testing.T) {
 func TestUpdateHarnessNeverTouchesHomeInDryRun(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)      // ML-1A: Windows reads USERPROFILE
+	t.Setenv("CLAUDE_CONFIG_DIR", "") // ML-2B B2: isolate from real CLAUDE_CONFIG_DIR
 
 	report, err := UpdateHarness(UpdateOptions{DryRun: true, InstallMissing: true})
 	if err != nil {
@@ -462,6 +466,8 @@ func TestUpdateHarnessNeverTouchesHomeInDryRun(t *testing.T) {
 func TestUpdateHarnessClaudeSkillInstallsOnlyWithInstallMissing(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)      // ML-1A: Windows reads USERPROFILE
+	t.Setenv("CLAUDE_CONFIG_DIR", "") // ML-2B B2: isolate from real CLAUDE_CONFIG_DIR
 
 	report, err := UpdateHarness(UpdateOptions{Targets: []string{"claude-skill"}})
 	if err != nil {
@@ -493,6 +499,8 @@ func TestUpdateHarnessClaudeSkillInstallsOnlyWithInstallMissing(t *testing.T) {
 func TestUpdateHarnessClaudeSkillUpdatesStaleContentAndSkipsCurrent(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)      // ML-1A: Windows reads USERPROFILE
+	t.Setenv("CLAUDE_CONFIG_DIR", "") // ML-2B B2: isolate from real CLAUDE_CONFIG_DIR
 
 	path := GlobalClaudeSkillPath(home)
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
@@ -521,6 +529,50 @@ func TestUpdateHarnessClaudeSkillUpdatesStaleContentAndSkipsCurrent(t *testing.T
 	}
 	if report.Targets[0].State != TargetSkipped {
 		t.Fatalf("state = %q, want skipped (already current)", report.Targets[0].State)
+	}
+}
+
+// TestHarnessClaudeSkillTarget_ClaudeConfigDir_LandsAtResolvedDir asserts that
+// when CLAUDE_CONFIG_DIR is set, the SKILL.md is written at
+// <CLAUDE_CONFIG_DIR>/skills/trackfw/SKILL.md, not at HOME/.claude/skills/.
+//
+// Conclusion (B2, ML-2B REQ-2026-09-01): harnessClaudeSkillTarget uses
+// ClaudeConfigDir so SKILL.md lands where Claude Code reads; this test FAILS
+// when harnessClaudeSkillTarget uses GlobalClaudeSkillPath(home) (old code
+// writes to HOME/.claude/skills/trackfw/SKILL.md regardless of CLAUDE_CONFIG_DIR).
+//
+// Mordida (mandatory): reverting to GlobalClaudeSkillPath(home) causes:
+//   - SKILL.md written to HOME/.claude/skills/... instead of customClaudeDir/
+//   - want path not found → test fails.
+func TestHarnessClaudeSkillTarget_ClaudeConfigDir_LandsAtResolvedDir(t *testing.T) {
+	homeDir := t.TempDir()
+	customClaudeDir := t.TempDir() // plays the role of CLAUDE_CONFIG_DIR
+
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+	t.Setenv("CLAUDE_CONFIG_DIR", customClaudeDir)
+
+	report, err := UpdateHarness(UpdateOptions{Targets: []string{"claude-skill"}, InstallMissing: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Targets) == 0 {
+		t.Fatal("no targets returned")
+	}
+	if report.Targets[0].State != TargetUpdated {
+		t.Fatalf("state = %q, want updated; message: %s", report.Targets[0].State, report.Targets[0].Message)
+	}
+
+	// Assert: SKILL.md at customClaudeDir/skills/trackfw/SKILL.md
+	want := filepath.Join(customClaudeDir, "skills", "trackfw", "SKILL.md")
+	if _, err := os.Stat(want); err != nil {
+		t.Errorf("SKILL.md not found at CLAUDE_CONFIG_DIR path %q: %v", want, err)
+	}
+
+	// Assert: SKILL.md NOT at homeDir/.claude/skills/trackfw/SKILL.md (ghost install)
+	bad := filepath.Join(homeDir, ".claude", "skills", "trackfw", "SKILL.md")
+	if _, err := os.Stat(bad); err == nil {
+		t.Errorf("SKILL.md unexpectedly written to HOME/.claude path %q (ghost installation)", bad)
 	}
 }
 
@@ -789,6 +841,7 @@ func TestUpdateHarnessCredentialGuardClaudeMissingWithoutInstallMissing(t *testi
 func TestUpdateHarnessCredentialGuardClaudeInstallsAbsolutePathWithInstallMissing(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // ML-1A: also set USERPROFILE (Windows reads this)
 
 	report, err := UpdateHarness(UpdateOptions{Targets: []string{"claude-credential-guard"}, InstallMissing: true})
 	if err != nil {
@@ -840,6 +893,7 @@ func TestUpdateHarnessCredentialGuardClaudeInstallsAbsolutePathWithInstallMissin
 func TestUpdateHarnessCredentialGuardClaudeIsIdempotent(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // ML-1A: also set USERPROFILE (Windows reads this)
 
 	if _, err := UpdateHarness(UpdateOptions{Targets: []string{"claude-credential-guard"}, InstallMissing: true}); err != nil {
 		t.Fatal(err)
@@ -886,6 +940,7 @@ func TestUpdateHarnessCredentialGuardClaudeIsIdempotent(t *testing.T) {
 func TestUpdateHarnessCredentialGuardClaudeDryRunDoesNotWrite(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // ML-1A: also set USERPROFILE (Windows reads this)
 
 	report, err := UpdateHarness(UpdateOptions{Targets: []string{"claude-credential-guard"}, InstallMissing: true, DryRun: true})
 	if err != nil {
@@ -905,6 +960,7 @@ func TestUpdateHarnessCredentialGuardClaudeDryRunDoesNotWrite(t *testing.T) {
 func TestUpdateHarnessCredentialGuardClaudePreservesExistingContent(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // ML-1A: also set USERPROFILE (Windows reads this)
 
 	settingsPath := filepath.Join(home, ".claude", "settings.json")
 	if err := os.MkdirAll(filepath.Dir(settingsPath), 0755); err != nil {
@@ -2560,6 +2616,8 @@ func TestUpdateHarnessClaudeSymlinkRefusesWrite(t *testing.T) {
 	home := t.TempDir()
 	outside := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)      // ML-1A: Windows reads USERPROFILE
+	t.Setenv("CLAUDE_CONFIG_DIR", "") // ML-2B B2: ensure claudeDir = HOME/.claude (symlink)
 
 	// Create a victim file outside home that the symlink points to.
 	victim := filepath.Join(outside, "skill.md")
@@ -2639,6 +2697,8 @@ func TestUpdateHarnessLegitimateRunSucceedsForAllTargets(t *testing.T) {
 	// Braço (b): clean $HOME, no symlinks — guards must be transparent.
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)      // ML-1A: Windows reads USERPROFILE
+	t.Setenv("CLAUDE_CONFIG_DIR", "") // ML-2B B2: isolate from real CLAUDE_CONFIG_DIR
 
 	report, err := UpdateHarness(UpdateOptions{
 		InstallMissing: true,
@@ -2667,6 +2727,8 @@ func TestUpdateHarnessAncestorSymlinkRefusesAllTargets(t *testing.T) {
 	homeSym := filepath.Join(outside, "homesym")
 	symlinkOrSkip(t, realHome, homeSym)
 	t.Setenv("HOME", homeSym)
+	t.Setenv("USERPROFILE", homeSym)   // ML-1A: Windows reads USERPROFILE
+	t.Setenv("CLAUDE_CONFIG_DIR", "") // ML-2B B2: ensure claudeDir = HOME/.claude (symlink)
 
 	// Capture stderr.
 	origStderr := os.Stderr
@@ -2709,6 +2771,7 @@ func TestUpdateHarnessLeafSymlinkRefusesWrite(t *testing.T) {
 	home := t.TempDir()
 	outside := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home) // ML-1A: also set USERPROFILE (Windows reads this)
 
 	// Create the parent directory so the symlink can be planted at the leaf.
 	claudeDir := filepath.Join(home, ".claude")

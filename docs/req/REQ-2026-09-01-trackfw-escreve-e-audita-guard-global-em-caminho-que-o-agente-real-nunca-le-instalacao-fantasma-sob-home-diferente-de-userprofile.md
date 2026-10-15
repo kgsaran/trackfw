@@ -2,8 +2,8 @@
 status: Open
 date: 2026-09-01
 author: "zeus-tf"
-adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-22-trackfw-escreve-e-audita-guard-global-em-caminho-que-o-agente-real-nunca-le-instalacao-fantasma-sob-home-userprofile.md"
+adr: "docs/adr/ADR-2026-10-14-no-windows-o-guard-global-de-cada-cli-de-agente-e-gravado-e-auditado-no-home-que-aquele-cli-le.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-22-trackfw-escreve-e-audita-guard-global-em-caminho-que-o-agente-real-nunca-le-instalacao-fantasma-sob-home-userprofile.md"
 ---
 
 # REQ: `trackfw` escreve e audita guard global em caminho que o agente real nunca lê — instalação fantasma sob `$HOME` ≠ `%USERPROFILE%`
@@ -30,35 +30,58 @@ falha mais cara que existe — e é a mesma que apareceu cinco vezes durante a R
 `success()` implícito do Actions, o `VERDICT=ABSENT` por vacuidade, o `tail` engolindo o exit code,
 a base `origin/main` num gate, e dois gates que nunca rodavam).
 
+## Medição — 2026-10-14
+
+Confirmado na VM (Claude Code 2.1.299, três terminais): com `HOME` ≠ `USERPROFILE` o trackfw grava e
+audita sob `HOME`, o Claude Code lê `USERPROFILE`, e o `validate` não acusa nada
+(`docs/portabilidade/2026-10-14-guard-global-home-userprofile-vm.md`). **Decisão do usuário:** seguir
+o home que cada CLI lê, mais o aviso (ADR-2026-10-14). Os critérios abaixo substituem os originais;
+AC5 original (paridade nos 3 CLIs) caiu com a v8.
+
 ## Acceptance Criteria
 
-- [ ] **AC1** — 🔴 **A medição certa não é comparar `$HOME` com `%USERPROFILE%` entre si.** É medir
-      **onde o consumidor real lê o `settings.json`**, a partir de cada terminal (cmd.exe, Git Bash,
-      PowerShell, CI). Comparar as duas env vars só diz que divergem; não diz qual delas o agente usa.
-- [ ] **AC2** — Medição feita no runner Windows real — a sonda `windows-probe.yml` existe para
-      exatamente este tipo de pergunta e já está na branch default.
-- [ ] **AC3** — Se houver divergência, `trackfw validate` emite finding **informativo, não
-      bloqueante**, nomeando os dois caminhos. Bloquear seria pior que o defeito: quebraria ambiente
-      legítimo por uma condição que o `trackfw` não controla.
-- [ ] **AC4** — 🔴 **Falsificação nas duas direções.** (a) com `$HOME` ≠ `%USERPROFILE%`, o finding
-      dispara; (b) **controle**: com os dois iguais — o caso comum —, **não** dispara. Um aviso que
-      aparece sempre é ruído, e ruído é ignorado.
-- [ ] **AC5** — Paridade nos 3 CLIs.
+- [x] **AC0** — 🔴 **Wave 0 (`hades-tf`):** o mapa CLI → mecanismo de home no Windows, com evidência
+      por CLI (Claude Code medido; Codex, Gemini, Cursor, Copilot, Windsurf, Kiro). CLI sem evidência fica
+      declarado e não muda de comportamento. Inclui a lista de testes que isolam só o `HOME`.
+      ✅ Evidência: `docs/seguranca/2026-10-14-wave0-home-por-cli-no-windows.md` (aprova com ressalvas; A1–A8 no ADR D6)
+- [x] **AC1** — Medir onde o consumidor real lê, por terminal.
+      ✅ Evidência: medição de 2026-10-14 (Claude Code; Git Bash, PowerShell, cmd).
+- [x] **AC2** — Número do CI: o `windows-probe.yml` (runner x64) reproduz a divergência antes da correção
+      e mostra que ela fechou depois.
+      ✅ Evidência: run `38618567001` (x64): `main` grava sob `HOME`, branch sob `USERPROFILE`
+- [x] **AC3** — `update harness` grava, e o `validate` audita, a fiação global de cada CLI medido no home
+      que **aquele CLI** lê, por um resolvedor único por CLI usado pelos dois (ADR D1–D3).
+      ✅ Evidência: `internal/agentconfig`; `TestGuardGlobalConcordance_*`; `Manager.ClaudeDir` (ML-1A, ML-1D)
+- [x] **AC4** — Aviso informativo, não bloqueante, quando `HOME` ≠ home do SO no Windows, nomeando os dois
+      caminhos, qual cada CLI lê e o resto inerte sob `HOME` (ADR D4–D5). Com os dois iguais: silêncio.
+      ✅ Evidência: regra `home_divergence_windows`; `withD5Notice` (ML-1B)
+- [x] **AC5** — 🔴 Falsificação nas duas direções: (a) com divergência, o guard é gravado e auditado no
+      home do CLI, e o aviso dispara; (b) controle: sem divergência e fora do Windows, a saída é idêntica
+      à de hoje. O teste reprova sem a correção **sem depender de rodar no Windows** (resolvedor
+      injetável).
+      ✅ Evidência: mordidas do ML-1A, ML-1B e ML-1D, todas no macOS
+- [x] **AC6** — `docs/cli-parity.md` e a seção Windows do README atualizados.
+      ✅ Evidência: `docs/cli-parity.md` e README (ML-1C)
+- [x] **AC7** — Cada teste novo declara a conclusão que afirma e reprova sem a correção.
+      ✅ Evidência: frase + mordida por teste em cada ML
+- [x] **AC8** — `make quality` EXIT=0 e CI verde, inclusive `windows-full-suites` (sem entrada nova na
+      lista conhecida).
+      ✅ Evidência: `make quality` EXIT=0 em `1a86cca2` (carga até 8,3); CI do PR #562 20/20 SUCCESS em `e2be2675`, inclusive `windows-full-suites` (run 38732634537: ratchet 14 observadas / 14 conhecidas, nenhum nome novo)
 
 ## Negative Scope
 
-- **Não** reverte nem altera o port do `homedir`. Ele está correto e foi aprovado na barreira.
-- **Não** tenta adivinhar o mecanismo de cada agente de terceiro por leitura de documentação: **mede**.
-- **Não** bloqueia operação por divergência.
+- **Não** reverte o port do `homedir`: `homedir.Dir()` continua valendo para os artefatos do trackfw.
+- **Não** muda o comportamento fora do Windows nem para CLI sem evidência medida — **exceto** `CLAUDE_CONFIG_DIR`, honrado em qualquer SO por ser a mesma causa (ADR D6/A1).
+- **Windsurf:** resíduo declarado até ser medido (ADR D6/A8).
+- **Não** apaga o guard já gravado sob o `HOME` divergente — relata (ADR D5).
+- **Não** bloqueia por divergência.
 
 ## Linked ADR
-
-ADR: <!-- avaliar durante a análise: se a conclusão for que o trackfw deve seguir o mecanismo
-nativo do consumidor em vez do próprio, isso é decisão arquitetural e precisa de ADR. -->
+ADR: docs/adr/ADR-2026-10-14-no-windows-o-guard-global-de-cada-cli-de-agente-e-gravado-e-auditado-no-home-que-aquele-cli-le.md
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-22-trackfw-escreve-e-audita-guard-global-em-caminho-que-o-agente-real-nunca-le-instalacao-fantasma-sob-home-userprofile.md`
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-22-trackfw-escreve-e-audita-guard-global-em-caminho-que-o-agente-real-nunca-le-instalacao-fantasma-sob-home-userprofile.md`
 
 
 ---
@@ -86,3 +109,10 @@ entregue um aviso onde o objetivo era um guard que executa.
 **Reconciliação exigida antes de qualquer implementação:** decidir qual dos dois predicados governa a
 regra, e o que o outro vira — evidência auxiliar, diagnóstico, ou nada. Enquanto isso não estiver
 escrito, **esta REQ não é implementável**: um agente honesto entregaria AC1 e AC4 em conflito.
+
+### Reconciliação — 2026-10-14
+
+Resolvida pelo ADR-2026-10-14: **governa o predicado da AC1 original** (o que o CLI lê de fato, por
+um mapa medido por CLI). A divergência `HOME` × home do SO vira **diagnóstico auxiliar** (aviso
+informativo). A correção é gravar e auditar no home do CLI (AC3) — o aviso **não** conta como
+correção.

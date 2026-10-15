@@ -39,7 +39,7 @@ mkdir -p "$WORK/go" "$WORK/home-go"
 
 TOOLS="gemini,copilot,windsurf,amazonq"
 
-(cd "$WORK/go" && HOME="$WORK/home-go" "$GO_BIN" init --ai-tools "$TOOLS" >/dev/null)
+(cd "$WORK/go" && HOME="$WORK/home-go" USERPROFILE="$WORK/home-go" CLAUDE_CONFIG_DIR= "$GO_BIN" init --ai-tools "$TOOLS" >/dev/null)
 
 # Files relative to the project root, one per --ai-tools entry above.
 RULES_FILES=(

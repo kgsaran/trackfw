@@ -71,6 +71,14 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 
+	// ML-1A (REQ-2026-09-01): ensure CLAUDE_CONFIG_DIR does not leak from the developer's
+	// environment into the test binary. agentconfig.ClaudeConfigDir honours this env var (A1);
+	// without the unset, a set CLAUDE_CONFIG_DIR would make global-guard tests read/write a real
+	// user directory instead of the isolated temp home.
+	if err := os.Unsetenv("CLAUDE_CONFIG_DIR"); err != nil {
+		panic(err)
+	}
+
 	code := m.Run()
 	os.RemoveAll(home)
 	os.Exit(code)

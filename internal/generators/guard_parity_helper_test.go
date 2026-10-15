@@ -136,8 +136,28 @@ func compiledGuardBinary(t *testing.T) string {
 // TestMain — compila o binário uma vez antes de todos os testes do pacote.
 func TestMain(m *testing.M) {
 	buildGuardBinary()
+
+	// ML-1A (REQ-2026-09-01): isolate HOME and USERPROFILE so the global-guard tests
+	// (globalCredentialGuardInstalledClaude, globalGitBranchGuardInstalledClaude via
+	// readClaudeSettingsJSON) do not read from the real developer's home directories.
+	// Both must point to the SAME temp dir — consistent with validator/main_test.go.
+	guardTestHome, err := os.MkdirTemp("", "trackfw-generators-test-home-*")
+	if err != nil {
+		panic(err)
+	}
+	if err := os.Setenv("HOME", guardTestHome); err != nil {
+		panic(err)
+	}
+	if err := os.Setenv("USERPROFILE", guardTestHome); err != nil {
+		panic(err)
+	}
+	if err := os.Unsetenv("CLAUDE_CONFIG_DIR"); err != nil {
+		panic(err)
+	}
+
 	code := m.Run()
 	cleanupGuardBinary()
+	os.RemoveAll(guardTestHome)
 	os.Exit(code)
 }
 

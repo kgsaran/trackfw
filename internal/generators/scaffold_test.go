@@ -20,6 +20,8 @@ func TestInstallSkills_CriaSlashCommandsESkillGlobal(t *testing.T) {
 	origHome := os.Getenv("HOME")
 	_ = os.Chdir(dir)
 	_ = os.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)      // ML-2C: Windows reads USERPROFILE
+	t.Setenv("CLAUDE_CONFIG_DIR", "") // ML-2C: isolate from real CLAUDE_CONFIG_DIR
 	t.Cleanup(func() {
 		_ = os.Chdir(orig)
 		_ = os.Setenv("HOME", origHome)
