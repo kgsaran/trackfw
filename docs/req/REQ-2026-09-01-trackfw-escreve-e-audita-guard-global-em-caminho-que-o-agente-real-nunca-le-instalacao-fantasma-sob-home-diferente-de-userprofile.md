@@ -64,8 +64,9 @@ AC5 original (paridade nos 3 CLIs) caiu com a v8.
       ✅ Evidência: `docs/cli-parity.md` e README (ML-1C)
 - [x] **AC7** — Cada teste novo declara a conclusão que afirma e reprova sem a correção.
       ✅ Evidência: frase + mordida por teste em cada ML
-- [ ] **AC8** — `make quality` EXIT=0 e CI verde, inclusive `windows-full-suites` (sem entrada nova na
+- [x] **AC8** — `make quality` EXIT=0 e CI verde, inclusive `windows-full-suites` (sem entrada nova na
       lista conhecida).
+      ✅ Evidência: `make quality` EXIT=0 em `1a86cca2` (carga até 8,3); CI do PR #562 20/20 SUCCESS em `e2be2675`, inclusive `windows-full-suites` (run 38732634537: ratchet 14 observadas / 14 conhecidas, nenhum nome novo)
 
 ## Negative Scope
 

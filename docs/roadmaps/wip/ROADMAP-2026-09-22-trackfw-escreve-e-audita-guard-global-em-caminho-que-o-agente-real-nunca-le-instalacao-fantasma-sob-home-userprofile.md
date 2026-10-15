@@ -15,9 +15,9 @@ ADR: docs/adr/ADR-2026-10-14-no-windows-o-guard-global-de-cada-cli-de-agente-e-g
 Medição: docs/portabilidade/2026-10-14-guard-global-home-userprofile-vm.md
 
 ## Acceptance Criteria
-- [ ] AC0 — Wave 0 auditado (mapa CLI → home no Windows, por evidência)
-- [ ] AC2–AC5 — CI reproduz e fecha; resolvedor único por CLI; aviso de divergência; falsificação sem depender de Windows
-- [ ] AC6–AC8 — contrato/README, reconciliação dos testes, `make quality` + CI
+- [x] AC0 — Wave 0 auditado (mapa CLI → home no Windows, por evidência)
+- [x] AC2–AC5 — CI reproduz e fecha; resolvedor único por CLI; aviso de divergência; falsificação sem depender de Windows
+- [x] AC6–AC8 — contrato/README, reconciliação dos testes, `make quality` + CI
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -108,13 +108,14 @@ git diff --quiet HEAD -- internal/
 ## Wave 2 — Revisão e fechamento
 ### ML-2A — Revisão de qualidade, red-team, `make quality` e CI
 **Owner:** `hefesto-tf` e `hades-tf` (em sequência)
-**Status:** 🔄 Em andamento — revisão do `hefesto-tf` BLOQUEOU (`docs/qualidade/2026-10-14-revisao-guard-global-home-por-cli.md`): B1, B2 conferidos pelo arquiteto; corretivo ML-2B ✅ e ML-2C ✅; red-team do `hades-tf` BLOQUEOU (`docs/seguranca/2026-10-14-red-team-guard-global-home-por-cli.md`): R-3, com R-1/R-4 de ajuste → ML-2D
+**Status:** ✅ Concluído — CI do PR #562 20/20 SUCCESS em `e2be2675`, inclusive `windows-full-suites` (run 38732634537: ratchet 14 observadas / 14 conhecidas, nenhum nome novo)
 **Acceptance criteria:**
 - [x] Pareceres em `docs/qualidade/` e `docs/seguranca/`; corretivos aplicados
       ✅ qualidade (B1, B2 → ML-2B; ML-2C) e red-team (R-3, R-1, R-4 → ML-2D), todos auditados
-- [ ] `make quality` EXIT=0 com máquina ociosa; CI verde, inclusive `windows-full-suites`
+- [x] `make quality` EXIT=0 com máquina ociosa; CI verde, inclusive `windows-full-suites`
       🔄 `make quality` EXIT=0 em `1a86cca2` (2967 linhas; falsify 347 OK / 0 FAIL; guarda de conjunto OK) — ressalva: carga até 8,3 durante a execução, não ociosa. CI pendente: só dispara com PR
 
+      ✅ CI do PR #562 20/20 SUCCESS em `e2be2675`, inclusive `windows-full-suites` (run 38732634537: ratchet 14 observadas / 14 conhecidas, nenhum nome novo)
 ### ML-2B — Corretivo da revisão de qualidade (B1, B2, A1–A3)
 **Owner:** `apolo-tf`
 **Status:** ✅ Concluído — auditado em 2026-10-14; mordidas B1, B2, A1 coladas; A3 mostrou que a asserção antiga dava falso verde. Proteção de D5 já vem de `InertClaudeGuardPath` (compara com o diretório resolvido). Resíduo do agente rejeitado: `scaffold.go:239` é mesma causa → ML-2C
@@ -159,9 +160,12 @@ git diff --quiet HEAD -- internal/
 
 ### ML-2E — Testes que isolam só o `HOME` vazam no Windows real (CI #562)
 **Owner:** `apolo-tf`
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído — auditado em 2026-10-15. 11 sítios em 5 arquivos `_test.go`; VM: os 7 falham antes e passam depois. No x64 os 2 testes de proveniência de terceiros (ML-W1) seguem falhando — a VM não basta para retirá-los da lista
 **Por que o escopo original não previa:** `windows-full-suites` do PR #562 (run `38727405910`): 7 falhas novas no ratchet — `TestDoctor*` (4), `TestInstallWithoutScopeOutsideTTYDefaultsToGlobal`, `TestListWithoutScopeReportsGlobalDestinations`, `TestThirdPartyInstall_GlobalScopeRequiresItsOwnConfirmation`. Eles fixam só `HOME`; no Windows real o resolvedor grava no `USERPROFILE` do job (`D:\a\_temp\winhome`), compartilhado entre testes, e o `doctor` acha o arquivo vazado. A simulação no macOS não passava por esses testes.
 **Acceptance criteria:**
-- [ ] Todo teste que exercita escopo global do Claude isola `HOME`, `USERPROFILE` e `CLAUDE_CONFIG_DIR` (helper único); varredura por `t.Setenv("HOME"` em `internal/` com a lista de cada arquivo tocado ou descartado
-- [ ] Prova no Windows real (VM) de que os 7 passam e nada é gravado no `USERPROFILE` sentinela
-- [ ] CI do PR: ratchet sem nome novo
+- [x] Todo teste que exercita escopo global do Claude isola `HOME`, `USERPROFILE` e `CLAUDE_CONFIG_DIR` (helper único); varredura por `t.Setenv("HOME"` em `internal/` com a lista de cada arquivo tocado ou descartado
+      ✅ varredura classificada (relatório do ML-2E); `integrationCommandFixture`, `dedupFixtureHome`, `setupSabotageFixture`, `hooks_test.go`, `agentfiles_test.go`
+- [x] Prova no Windows real (VM) de que os 7 passam e nada é gravado no `USERPROFILE` sentinela
+      ✅ VM ARM64: 7 PASS com o patch, 3 FAIL sem ele
+- [x] CI do PR: ratchet sem nome novo
+      ✅ CI do PR #562 20/20 SUCCESS em `e2be2675`, inclusive `windows-full-suites` (run 38732634537: ratchet 14 observadas / 14 conhecidas, nenhum nome novo)
