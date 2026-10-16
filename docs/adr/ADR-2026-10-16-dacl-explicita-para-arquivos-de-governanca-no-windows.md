@@ -99,6 +99,13 @@ detecção do legado não vai para REQ futura — `.trackfw/` é re-protegido po
 `validate` que leia a DACL da proveniência, se for feita, é ML desta REQ (ML-W2c, decidido após
 o ML-W2b).
 
+**Medido (2026-10-16, `windows-probe` run 38910438658, x64, `TestGuardedWrite_LegacyFileRetainsDACL`):**
+re-proteger o `.trackfw\` preexistente com `SetNamedSecurityInfo` + DACL protegida **propaga** para
+o filho legado: `legacy.json` tinha ACE de escrita de Authenticated Users herdada e, depois de um
+`GuardedWrite` de **outro** arquivo no mesmo diretório, não tem mais. O legado sob `.trackfw\` se
+fecha na primeira gravação do trackfw naquele diretório — sobra só ACE **explícita** (não herdada)
+em arquivo legado, que a propagação não remove. Isso reduz o caso do ML-W2c.
+
 ### D6 — Dependência promovida
 
 `golang.org/x/sys` promovido de indireta a direta em `go.mod`. A dependência já existia no módulo

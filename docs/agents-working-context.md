@@ -2,6 +2,34 @@
 
 ---
 
+## 2026-10-16 — apolo-tf — FIM: ML-W2b — DACL explícita para arquivos de governança no Windows (REQ-2026-09-03)
+
+**Branch:** `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`
+**Run de probe:** 38910438658
+
+**Resultado P18 (4 pacotes no Windows x64):**
+- `fsperm` exit=0 — PASS (4/4 testes, incluindo `TestCreateRestrictedFile_DetectorError_FailsClosed`)
+- `pathguard` exit=0 — PASS (`TestGuardedWrite_FinalFileHasRestrictiveDACL` executou os 2 braços; `TestGuardedWrite_LegacyFileRetainsDACL` mediu)
+- `identity` exit=0 — PASS (`TestSave_WritesAtomicallyWithPermissions` com `makeForeignWriteDir` — não vacuous)
+- `integrations` exit=1 — `TestAtomicWrite_FinalFileHasRestrictiveDACL` PASS; exit=1 por 4 falhas pré-existentes listadas em known-failures
+- `go test ./...` exit=1 — exatamente 11 falhas conhecidas, sem novo nome
+
+**Achado de medição (legacy file):** `TestGuardedWrite_LegacyFileRetainsDACL` mediu comportamento INESPERADO: `SetRestrictiveDirACL` propagou para filho pré-existente (`legacy.json` perdeu ACE de AU). O ADR esperava o oposto. O teste mede e reporta via `t.Logf` sem asserção — cabe ao arquiteto atualizar a nota no ADR.
+
+**Commits entregues:**
+1. `10e3f4de` feat(fsperm): ML-W2b — DACL explícita
+2. `9ea87c17` fix(fsperm): auditoria ML-W2b — 4 correções
+3. `e7013130` fix(fsperm): corrigir máscara de AU em makeForeignWriteDir (0x001200a9→0x1301bf)
+
+---
+
+## 2026-10-16 — apolo-tf — INÍCIO: ML-W2b — DACL explícita para arquivos de governança no Windows (REQ-2026-09-03)
+
+**Branch:** `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`
+**Escopo:** Criar `internal/fsperm` com implementação Windows de DACL explícita; integrar nos dois sítios de escrita atômica (`pathguard.GuardedWrite`, `manager.atomicWrite`); testes Windows que mordem; dividir `TestSave_WritesAtomicallyWithPermissions` em `!windows`/`windows`; mover entrada de `windows-known-failures.json`.
+
+---
+
 ## 2026-10-15 — apolo-tf — INÍCIO/FIM: ML-R3 — guard de travessia fala as duas gramáticas (REQ-2026-09-03)
 
 **Branch:** `fix/fechar-os-grupos-de-falha-de-windows-ml-r3-travessia`
