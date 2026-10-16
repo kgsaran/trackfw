@@ -43,30 +43,6 @@
       "reason": "Group A: os.Chmod(0o000) silently ignored on NTFS without ACL -- test expects unreadable dir warning, Windows runner returns accessible directory (MEASURED)"
     },
     {
-      "name": "TestRenderOpenCodeAgent_CRLFSourceMatchesLF",
-      "runtime": "go",
-      "class": "assertion",
-      "reason": "Group B: CRLF normalizer does not cover all renderer code paths -- CRLF source produces different output than LF source on Windows runner (MEASURED)"
-    },
-    {
-      "name": "TestRenderSubagentRouteInjectsIdentity_CRLFSourceMatchesLF",
-      "runtime": "go",
-      "class": "assertion",
-      "reason": "Group B: CRLF normalizer does not cover all renderer code paths -- CRLF source produces different Rota B output than LF source on Windows runner (MEASURED)"
-    },
-    {
-      "name": "TestRenderWithoutIdentityMatchesFrozenGoldens",
-      "runtime": "go",
-      "class": "assertion",
-      "reason": "INFER Group B: frozen golden generated on macOS may diverge from Windows renderer output -- subtest subagent/architect likely produces CRLF difference in rendered content"
-    },
-    {
-      "name": "TestResolveAgentModelMatchesRender",
-      "runtime": "go",
-      "class": "assertion",
-      "reason": "INFER Group B: 16 combinations (gemini/copilot/windsurf/kiro x 4 agents) fail -- rendered model field likely has CRLF causing present=true vs present=false mismatch"
-    },
-    {
       "name": "TestShip_Integration_GracefulDegradation_RealBinary",
       "runtime": "go",
       "class": "assertion",
@@ -77,15 +53,49 @@
       "runtime": "go",
       "class": "assertion",
       "reason": "Group A: ENOTDIR equals ERROR_PATH_NOT_FOUND on Windows -- walk does not produce expected diagnostic when file is placed where directory is expected (MEASURED)"
+    }
+  ],
+  "removed": [
+    {
+      "name": "TestRenderOpenCodeAgent_CRLFSourceMatchesLF",
+      "runtime": "go",
+      "class": "assertion",
+      "reason": "Group B: CRLF normalizer does not cover all renderer code paths -- CRLF source produces different output than LF source on Windows runner (MEASURED)",
+      "removal_note": "corrected",
+      "correction_note": "instrument test fixed: lfSource now built with NormalizeCRLF(embedSource) so CRLF injection is clean on any OS; product fixed: normalizeMarkdown now calls NormalizeCRLF before TrimSpace (ML-W3b, REQ-2026-09-03)"
+    },
+    {
+      "name": "TestRenderSubagentRouteInjectsIdentity_CRLFSourceMatchesLF",
+      "runtime": "go",
+      "class": "assertion",
+      "reason": "Group B: CRLF normalizer does not cover all renderer code paths -- CRLF source produces different Rota B output than LF source on Windows runner (MEASURED)",
+      "removal_note": "corrected",
+      "correction_note": "same fix as TestRenderOpenCodeAgent_CRLFSourceMatchesLF — lfSource = NormalizeCRLF(embedSource) and normalizeMarkdown calls NormalizeCRLF (ML-W3b, REQ-2026-09-03)"
+    },
+    {
+      "name": "TestRenderWithoutIdentityMatchesFrozenGoldens",
+      "runtime": "go",
+      "class": "assertion",
+      "reason": "INFER Group B: frozen golden generated on macOS may diverge from Windows renderer output -- subtest subagent/architect likely produces CRLF difference in rendered content",
+      "removal_note": "corrected",
+      "correction_note": "normalizeMarkdown now calls NormalizeCRLF before TrimSpace; CRLF embed on Windows emits LF output identical to the LF golden (ML-W3b, REQ-2026-09-03)"
+    },
+    {
+      "name": "TestResolveAgentModelMatchesRender",
+      "runtime": "go",
+      "class": "assertion",
+      "reason": "INFER Group B: 16 combinations (gemini/copilot/windsurf/kiro x 4 agents) fail -- rendered model field likely has CRLF causing present=true vs present=false mismatch",
+      "removal_note": "corrected",
+      "correction_note": "normalizeMarkdown fix ensures Render emits LF output; extractFrontmatterField's --\n prefix check now succeeds on all targets (ML-W3b, REQ-2026-09-03)"
     },
     {
       "name": "TestUpdateMigratesKnownCodexAndPreservesUnknown",
       "runtime": "go",
       "class": "assertion",
-      "reason": "INFER Group D: manifest path uses normalized slash separator while backendPath uses Windows backslash -- strings.Contains check fails when manifest path format differs from filepath.Join form"
-    }
-  ],
-  "removed": [
+      "reason": "INFER Group D: manifest path uses normalized slash separator while backendPath uses Windows backslash -- strings.Contains check fails when manifest path format differs from filepath.Join form",
+      "removal_note": "corrected",
+      "correction_note": "test now uses integrations.LoadManifest + key lookup in Artifacts map instead of strings.Contains on raw JSON; comparison is exact-key regardless of path separator (ML-W3b, REQ-2026-09-03)"
+    },
     {
       "name": "Go manifest fixture is interoperable for inspect, update and uninstall",
       "runtime": "node",
