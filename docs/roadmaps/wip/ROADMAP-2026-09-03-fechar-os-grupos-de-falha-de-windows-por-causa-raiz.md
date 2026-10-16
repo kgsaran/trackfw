@@ -2664,7 +2664,7 @@ ADR-2026-10-14).
 
 ## 🔄 REABERTO — 2026-10-16: ML-W2d, o remédio da regra pode trancar o próprio dono (#569)
 
-**Status:** 🔄 Em andamento — branch `fix/fechar-os-grupos-de-falha-de-windows-ml-w2d-remedio` ·
+**Status:** ✅ Concluído (auditado 2026-10-16) — branch `fix/fechar-os-grupos-de-falha-de-windows-ml-w2d-remedio` ·
 **Agente:** `apolo-tf` · reaberto pela **Regra Dura de Causa Raiz** (mesmo ML-W2, mesma regra,
 mesma ADR D2.1).
 
@@ -2685,3 +2685,13 @@ explícita: `/grant` → `/remove:g`). O SID já é computado (`currentUserSID`)
 **Aceite:** teste Windows que aplica o remédio impresso a uma fixture cuja única ACE de escrita é
 `S-1-5-11` e verifica que o usuário corrente **continua** escrevendo; braço de controle com o
 remédio antigo perde a escrita. Ratchet sem nome novo. Fecha #569.
+
+**Entrega (ML-W2d):** remédio impresso passa a `… /grant *<SID-usuário>:(OI)(CI)(F) && … /remove:g <SID>`
+(herdada com `/inheritance:d` antes). `TestProjectForeignWrite_RemedyPreservesOwnerWrite`
+(explícita e herdada) **executa** o remédio impresso numa fixture cuja única ACE de escrita é
+`S-1-5-11`: o usuário continua escrevendo na raiz e em subpasta, e `S-1-5-11` some; o braço de
+controle com o remédio antigo dá **`Access is denied`**. Medido no x64 (`windows-probe` run
+`38980416363`): validator/pathguard/identity exit 0; `./...` falha só nas 6 conhecidas. Nota: o
+usuário do runner é o `Administrator` embutido (SID `-500`), mas sem ACE de Administrators na
+fixture o controle nega — o relatório do agente dizia "conta padrão", o que não foi medido; a
+mordida vale do mesmo jeito. ADR D2.2. Fecha #569.
