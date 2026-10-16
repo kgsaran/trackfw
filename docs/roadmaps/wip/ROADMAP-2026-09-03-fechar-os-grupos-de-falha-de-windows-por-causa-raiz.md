@@ -2598,6 +2598,17 @@ foi aplicado **por medição**, não por leitura: `docs/portabilidade/2026-10-12
   Node). **Aceite:** censo disparado na branch com os 2 rótulos (`kiro-dedicated-file/baseline`,
   `roadmap-req-frontmatter-path/go/from-req-baseline`) OK e nenhum rótulo novo em FAIL contra o
   censo `38319939952`; restam só os do NTFS sem ACL (#421).
+  **ML-W4 ✅ (auditado 2026-10-16):** duas causas em cadeia no instrumento — `pip install pypi/`
+  punha no PATH um `trackfw.exe` sem `guard`, e `go build -o bin/trackfw` no Windows não gera `.exe`
+  (`exec.LookPath` não acha); setup espelhado do `parity-falsify-shard` e build com `$(go env GOEXE)`;
+  `setup-node`/`npm ci` removidos (a única função Node do falsify nunca é chamada).
+  **ML-W4b ✅ (mesmo PR):** o censo revelou 2 FAIL novos em `git-branch-guard-dedup/*` — **não** é o
+  ML-R3 (atribuição do agente, refutada): o cenário 67 trocava só `HOME`, e desde o #562 o guard
+  global do Claude é lido de `USERPROFILE` no Windows; resíduo do ML-2E do #562 (cenários 68/69/181
+  já corrigidos). Corrigido nos 4 braços; varredura das demais trocas de `HOME` registrada em
+  `docs/portabilidade/2026-10-12-suporte-windows-9.5.0-estado-medido.md`. **Censo `38944389904`**,
+  contagem estrita do arquiteto contra `38319939952`: 275 rótulos nos dois, nenhum sumido, nenhum
+  novo; FAIL 4 → 2, restam só `scaffold-update-chmod-removed/direction-c-*` (#421).
 - **ML-R3** permanece como está.
 
 **Estado:** sai de `blocked/` para `backlog/` — a condição de bloqueio (v8) se cumpriu. Vai para
