@@ -5103,8 +5103,14 @@ cat >"$T67_FAKE_HOME_POSIX/.claude/settings.json" <<EOF
 {"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"$T67_FAKE_HOME/.trackfw/scripts/trackfw-git-branch-guard.sh"}]}]}}
 EOF
 
+# ML-W4b (REQ-2026-09-03): os braços 1, 2, 3 e 4 passam USERPROFILE=<fake>
+# junto com HOME para que no Windows agentconfig.ClaudeConfigDir use
+# os.UserHomeDir() (=USERPROFILE) e encontre o settings.json da fiação global
+# no fake home. Antes deste fix o USERPROFILE ficava em $WORK/home (linha 119)
+# e readClaudeSettingsJSON() retornava ok=false → globalGitBranchGuardInstalledClaude()
+# retornava false → discover gravava a entrada no projeto → braços 1 e 4 falhavam.
 set +e
-(cd "$T67_PROJECT_DIR" && HOME="$T67_FAKE_HOME" "$ROOT_DIR/bin/trackfw" discover --init) >"$WORK/s67-baseline-discover.log" 2>&1
+(cd "$T67_PROJECT_DIR" && HOME="$T67_FAKE_HOME" USERPROFILE="$T67_FAKE_HOME" CLAUDE_CONFIG_DIR= "$ROOT_DIR/bin/trackfw" discover --init) >"$WORK/s67-baseline-discover.log" 2>&1
 s67b_status=$?
 set -e
 if [[ $s67b_status -ne 0 ]]; then
@@ -5147,7 +5153,7 @@ T67_EMPTY_HOME="$WORK/s67-empty-home"
 mkdir -p "$T67_EMPTY_HOME"
 
 set +e
-(cd "$T67_PROJECT_DIR_RV" && HOME="$T67_EMPTY_HOME" "$ROOT_DIR/bin/trackfw" discover --init) >"$WORK/s67-rv-discover.log" 2>&1
+(cd "$T67_PROJECT_DIR_RV" && HOME="$T67_EMPTY_HOME" USERPROFILE="$T67_EMPTY_HOME" CLAUDE_CONFIG_DIR= "$ROOT_DIR/bin/trackfw" discover --init) >"$WORK/s67-rv-discover.log" 2>&1
 s67rv_status=$?
 set -e
 if [[ $s67rv_status -ne 0 ]]; then
@@ -5218,7 +5224,7 @@ mkdir -p "$T67_PROJECT_DIR_DET"
 : > "$T67_PROJECT_DIR_DET/CLAUDE.md"
 
 set +e
-(cd "$T67_PROJECT_DIR_DET" && HOME="$T67_FAKE_HOME" "$T67_BIN" discover --init) >"$WORK/s67-detection-discover.log" 2>&1
+(cd "$T67_PROJECT_DIR_DET" && HOME="$T67_FAKE_HOME" USERPROFILE="$T67_FAKE_HOME" CLAUDE_CONFIG_DIR= "$T67_BIN" discover --init) >"$WORK/s67-detection-discover.log" 2>&1
 s67d_status=$?
 set -e
 if [[ $s67d_status -ne 0 ]]; then
@@ -5254,6 +5260,13 @@ fi
 # Então converte-se a BASE ($WORK67_CLEAN) e injeta-se o "//" DEPOIS, sobre a
 # grafia nativa. A sobrevivência do "//" no arquivo gravado é ASSERTADA
 # abaixo (guarda de vacuidade), não presumida.
+#
+# ML-W4b (REQ-2026-09-03): passa USERPROFILE="$T67_FAKE_HOME_SLASH" junto com
+# HOME para que no Windows readClaudeSettingsJSON() leia de USERPROFILE (que
+# usa os.UserHomeDir() via agentconfig.ClaudeConfigDir) e encontre o
+# settings.json com "//". O USERPROFILE mantém o "//" — a guarda de vacuidade
+# do arquivo gravado (heredoc) não é afetada, pois aquela assertiva lê o
+# arquivo escrito diretamente pelo bash, não pelo binário.
 T67_WORK67_CLEAN_NATIVE=$(to_native_path "$WORK67_CLEAN")
 T67_FAKE_HOME_SLASH="${T67_WORK67_CLEAN_NATIVE}//s67-fake-home-installed-slash"
 T67_FAKE_HOME_SLASH_POSIX="${WORK67_CLEAN}//s67-fake-home-installed-slash"
@@ -5280,7 +5293,7 @@ mkdir -p "$T67_PROJECT_DIR_SLASH"
 : > "$T67_PROJECT_DIR_SLASH/CLAUDE.md"
 
 set +e
-(cd "$T67_PROJECT_DIR_SLASH" && HOME="$T67_FAKE_HOME_SLASH" "$ROOT_DIR/bin/trackfw" discover --init) >"$WORK/s67-slash-discover.log" 2>&1
+(cd "$T67_PROJECT_DIR_SLASH" && HOME="$T67_FAKE_HOME_SLASH" USERPROFILE="$T67_FAKE_HOME_SLASH" CLAUDE_CONFIG_DIR= "$ROOT_DIR/bin/trackfw" discover --init) >"$WORK/s67-slash-discover.log" 2>&1
 s67s_status=$?
 set -e
 if [[ $s67s_status -ne 0 ]]; then
