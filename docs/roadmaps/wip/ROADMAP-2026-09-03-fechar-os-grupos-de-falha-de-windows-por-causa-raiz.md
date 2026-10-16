@@ -2572,6 +2572,20 @@ foi aplicado **por medição**, não por leitura: `docs/portabilidade/2026-10-12
   junction. A decisão (manter `fsperm` como defesa em profundidade + correções, ou remover e
   declarar) volta ao usuário com a medição; nos dois caminhos entra regra do `validate` que acusa
   raiz do projeto ou `.trackfw\` com escrita alheia (absorve ML-W2c).
+  **Decisão do usuário (2026-10-16): remover `fsperm` e declarar o limite** — P19 (run `38918006930`,
+  usuário não-admin real): DACL barra sobrescrita/exclusão, mas o atacante **renomeia a raiz e a
+  recria**. ADR da DACL → Rejected; nova ADR
+  `ADR-2026-10-16-no-windows-o-validate-avisa-quando-o-projeto-concede-escrita-a-outro-usuario.md`.
+  **ML-W2b' ✅ (auditado 2026-10-16):** `fsperm` removido (`pathguard.go`, `manager.go`,
+  `containment_live_test.go` idênticos à `main`); regra informativa `project_foreign_write_windows`
+  (ACE allow no objeto, `OI` ou `CI`; 8 direitos de escrita; SIDs fora de usuário/SYSTEM/
+  Administrators/CREATOR OWNER/OWNER RIGHTS; remédio por ACE herdada × explícita; erro de leitura
+  vira aviso). Red-team libera com ressalvas R-1..R-5 (`docs/seguranca/2026-10-16-red-team-ml-w2b-linha-validate.md`),
+  todas corrigidas. Prova x64: `windows-probe` run `38932512429` — validator/pathguard/identity
+  exit 0, 16 PASS da regra sem SKIP (incl. CI|IO via ACL binária — a SDDL `CIIO` é rejeitada por
+  `SecurityDescriptorFromString`, medido — e GENERIC_WRITE/ALL crus em ACE `OI|IO`); `./...` falha
+  só nos 11 conhecidos. `identity` afirma `Mode().Perm()==0o666` no Windows (semântica, não ACL).
+  ML-W2c absorvido pela regra. 🔄 Falta: `make quality` + CI do PR.
 - **ML-W3 — remedir as 5 causas `INFER`** da lista conhecida (CRLF no renderizador ×2, golden,
   modelo de agente, separador no manifesto do `update`) e corrigir as que forem de produto.
 - **ML-W4 — setup do censo instala o pacote Python pré-v8** (`windows-census.yml:399`): põe no PATH um
