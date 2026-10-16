@@ -1,14 +1,23 @@
 ---
-status: Proposed
+status: Rejected
 date: 2026-10-16
 author: "hades-tf (parecer) / zeus-tf (decisão)"
 ---
 
 # ADR: DACL explícita para arquivos de governança no Windows
 
-> Date: 2026-10-16 | Status: Proposed
+> Date: 2026-10-16 | Status: Rejected
 
 **REQ:** `docs/req/REQ-2026-09-03-as-217-falhas-reais-de-windows-colapsam-em-poucas-causas-e-tres-delas-exigem-decisao-antes-de-codigo.md`
+
+> 🔴 **Rejeitada em 2026-10-16 (decisão do usuário), substituída por**
+> `ADR-2026-10-16-no-windows-o-validate-avisa-quando-o-projeto-concede-escrita-a-outro-usuario.md`.
+> Medição com segunda identidade não-admin (run `38918006930`,
+> `docs/portabilidade/2026-10-16-ataque-segunda-identidade-ci.md`): a DACL barra sobrescrita e
+> exclusão diretas, mas o co-inquilino **renomeia a raiz do projeto e a recria** com proveniência
+> forjada sempre que nenhum processo da vítima a mantém aberta. A DACL por arquivo não dá
+> integridade nesse cenário; o red-team (`docs/seguranca/2026-10-16-red-team-ml-w2b-dacl.md`)
+> ainda bloqueava por R-A/R-B. O texto abaixo fica como registro do desenho avaliado.
 
 ## Context
 
