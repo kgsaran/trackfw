@@ -128,34 +128,41 @@ if ($helperBuildExit -ne 0) {
 Write-Host "P19_HELPER_BIN=$helperBin"
 
 # -----------------------------------------------------------------------
-# Criar usuário não-admin p19atk
+# Criar usuário não-admin p19atk via New-LocalUser (sem prompt interativo).
 # -----------------------------------------------------------------------
 Write-Host ""
 Write-Host "=== P19: criando usuário local não-admin p19atk ==="
 
-# Gerar senha aleatória forte (32 bytes → base64)
-$pwBytes = New-Object byte[] 32
+# Gerar senha aleatória forte ≤ 14 chars + complexidade (New-LocalUser aceita
+# passwords longas, mas usamos New-LocalUser mesmo assim pois não tem prompt).
+$pwBytes = New-Object byte[] 9   # 9 bytes → base64 de 12 chars
 [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($pwBytes)
-$atkPassword = [Convert]::ToBase64String($pwBytes) + "Aa1!"   # garante complexidade
+$atkPassword = [Convert]::ToBase64String($pwBytes) + "Aa1"   # 15 chars, complexidade OK
 $securePassword = ConvertTo-SecureString $atkPassword -AsPlainText -Force
 
 # Remover se existir de execução anterior
-net user p19atk /delete 2>&1 | Out-Null
+try { Remove-LocalUser -Name "p19atk" -ErrorAction SilentlyContinue } catch {}
 
-net user p19atk $atkPassword /add /comment:"p19 probe attacker non-admin" 2>&1 | Write-Host
-$userCreateExit = $LASTEXITCODE
-if ($userCreateExit -ne 0) {
-    Write-Host "PROBE w2x setup result=NO_USER detail=net_user_add_exit=$userCreateExit"
+try {
+    New-LocalUser -Name "p19atk" `
+        -Password $securePassword `
+        -Description "p19 probe attacker non-admin" `
+        -PasswordNeverExpires `
+        -AccountNeverExpires `
+        -ErrorAction Stop | Out-Null
+    Write-Host "P19_USER_CREATED: p19atk (non-admin)"
+} catch {
+    Write-Host "PROBE w2x setup result=NO_USER detail=$($_.Exception.Message -replace '[\r\n]',' ')"
     exit 0
 }
-Write-Host "P19_USER_CREATED: p19atk (non-admin)"
+$userCreateExit = 0
 
 # Verificar que p19atk NÃO está em Administrators
-$isAdmin = (net localgroup Administrators 2>&1) -match 'p19atk'
+$isAdmin = (Get-LocalGroupMember -Group "Administrators" -ErrorAction SilentlyContinue).Name -contains ".\p19atk"
 Write-Host "P19_ATK_IS_ADMIN=$isAdmin"
 if ($isAdmin) {
     Write-Host "PROBE w2x setup result=ATK_IS_ADMIN detail=unexpected_admin_membership"
-    net user p19atk /delete 2>&1 | Out-Null
+    Remove-LocalUser -Name "p19atk" -ErrorAction SilentlyContinue
     exit 0
 }
 
@@ -568,7 +575,7 @@ Remove-Item -Recurse -Force $atkJunctionTarget -ErrorAction SilentlyContinue
 # -----------------------------------------------------------------------
 Write-Host ""
 Write-Host "=== P19: removendo usuário p19atk ==="
-net user p19atk /delete 2>&1 | Write-Host
+try { Remove-LocalUser -Name "p19atk" -ErrorAction SilentlyContinue; Write-Host "P19_USER_DELETED: p19atk" } catch { Write-Host "P19_USER_DELETE_ERR: $_" }
 Remove-Item -Recurse -Force $sharedDir -ErrorAction SilentlyContinue
 
 Write-Host ""
