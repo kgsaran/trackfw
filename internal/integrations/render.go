@@ -431,19 +431,10 @@ func NormalizeCRLF(source []byte) []byte {
 }
 
 // normalizeMarkdown is the output normalizer: TrimSpace + single trailing LF.
-// It calls NormalizeCRLF before TrimSpace so that a CRLF asset (e.g. one
-// whose bytes arrived via go:embed on Windows, where core.autocrlf=true causes
-// the checkout to write CRLF into the index) emits LF-only output regardless
-// of the line ending the caller supplied. This is the same D1/D3 rule the
-// frontmatter-boundary functions (markdownParts et al.) already apply on their
-// own entry: those functions normalize the input they PARSE; this function
-// normalizes the source it EMITS — a distinct site, reached only when the
-// source passes through without any frontmatter rewriting (KindSkills and the
-// no-identity default branch). Without this call, those two paths returned
-// CRLF to the caller and broke TestRenderWithoutIdentityMatchesFrozenGoldens
-// (golden is LF-only), TestResolveAgentModelMatchesRender (extractFrontmatterField
-// checks "---\n", fails on "---\r\n"), and the two *_CRLFSourceMatchesLF tests
-// (double-CR \r\r\n when CRLF was injected over an already-CRLF embed).
+// It calls NormalizeCRLF first so that an asset embedded with CRLF (Windows
+// checkout; assets have no eol=lf on purpose, see .gitattributes) emits LF-only
+// output on the paths that bypass markdownParts: KindSkills and the
+// no-identity default branch (ADR-2026-09-04, D1/D3).
 func normalizeMarkdown(source []byte) []byte {
 	return []byte(strings.TrimSpace(string(NormalizeCRLF(source))) + "\n")
 }
