@@ -23,6 +23,7 @@ package validator_test
 // Additional table test:
 //   EachBit: each D2 right in isolation triggers the rule (ensures no single bit
 //            can be removed from d2WriteMask without breaking coverage).
+//            GENERIC_WRITE and GENERIC_ALL use OIIO ACEs to preserve raw generic bits.
 //
 // Remedy branch test:
 //   InheritedACERemedy: child directory inherits OICI write ACE from parent;
@@ -379,18 +380,92 @@ func TestProjectForeignWrite_DACLReadError(t *testing.T) {
 // it lets the attacker pre-create .trackfw (FILE_ADD_SUBDIRECTORY via container
 // inheritance), which is the R-A vector measured in P19.
 //
+// Fixture note: windows.SecurityDescriptorFromString rejects SDDL (A;CIIO;AD;;;S-1-5-11)
+// with "The access control list (ACL) structure is invalid" (measured in CI run
+// 38929110948 — the SDDL parser rejects this combination; SetNamedSecurityInfo
+// was never reached). The fixture uses windows.ACLFromEntries + SetNamedSecurityInfo
+// to set the ACE via the binary API, which accepts CONTAINER_INHERIT_ACE|INHERIT_ONLY_ACE.
+//
 // Reconciliation: this test affirms "the rule fires when a CI|IO ACE grants a
 // D2 write right to a non-trusted SID, even though INHERIT_ONLY is set and OI
 // is absent". It would fail if CONTAINER_INHERIT_ACE were removed from the
 // ACE-counting condition (reverting R-1), causing the ACE to be silently skipped.
 func TestProjectForeignWrite_ContainerInheritOnlyACE(t *testing.T) {
-	ownerSID := ownerSIDForTest(t)
-	// (A;CIIO;AD;;;S-1-5-11): CI=CONTAINER_INHERIT, IO=INHERIT_ONLY,
-	// AD=FILE_ADD_SUBDIRECTORY (0x4, same bit as FILE_APPEND_DATA).
-	sddl := "D:(A;CIIO;AD;;;S-1-5-11)" +
-		"(A;OICI;FA;;;" + ownerSID + ")" +
-		"(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
-	root := buildProjectRoot(t, sddl)
+	ownerSIDStr := ownerSIDForTest(t)
+	ownerSID, err := windows.StringToSid(ownerSIDStr)
+	if err != nil {
+		t.Fatalf("StringToSid owner: %v", err)
+	}
+	auSID, err := windows.StringToSid("S-1-5-11")
+	if err != nil {
+		t.Fatalf("StringToSid S-1-5-11: %v", err)
+	}
+	sySID, err := windows.StringToSid("S-1-5-18")
+	if err != nil {
+		t.Fatalf("StringToSid SY: %v", err)
+	}
+	baSID, err := windows.StringToSid("S-1-5-32-544")
+	if err != nil {
+		t.Fatalf("StringToSid BA: %v", err)
+	}
+
+	// Build ACL: one CIIO ACE for AU with FILE_ADD_SUBDIRECTORY (0x4), plus
+	// full-control OI|CI ACEs for owner/SYSTEM/Administrators.
+	// CIIO = CONTAINER_INHERIT_ACE (0x2) | INHERIT_ONLY_ACE (0x8) = 0x0A.
+	entries := []windows.EXPLICIT_ACCESS{
+		{
+			AccessPermissions: 0x4, // FILE_ADD_SUBDIRECTORY
+			AccessMode:        windows.GRANT_ACCESS,
+			Inheritance:       windows.CONTAINER_INHERIT_ACE | windows.INHERIT_ONLY_ACE,
+			Trustee: windows.TRUSTEE{
+				TrusteeForm:  windows.TRUSTEE_IS_SID,
+				TrusteeType:  windows.TRUSTEE_IS_WELL_KNOWN_GROUP,
+				TrusteeValue: windows.TrusteeValueFromSID(auSID),
+			},
+		},
+		{
+			AccessPermissions: 0x1F01FF, // FILE_ALL_ACCESS
+			AccessMode:        windows.GRANT_ACCESS,
+			Inheritance:       windows.OBJECT_INHERIT_ACE | windows.CONTAINER_INHERIT_ACE,
+			Trustee: windows.TRUSTEE{
+				TrusteeForm:  windows.TRUSTEE_IS_SID,
+				TrusteeType:  windows.TRUSTEE_IS_USER,
+				TrusteeValue: windows.TrusteeValueFromSID(ownerSID),
+			},
+		},
+		{
+			AccessPermissions: 0x1F01FF,
+			AccessMode:        windows.GRANT_ACCESS,
+			Inheritance:       windows.OBJECT_INHERIT_ACE | windows.CONTAINER_INHERIT_ACE,
+			Trustee: windows.TRUSTEE{
+				TrusteeForm:  windows.TRUSTEE_IS_SID,
+				TrusteeType:  windows.TRUSTEE_IS_WELL_KNOWN_GROUP,
+				TrusteeValue: windows.TrusteeValueFromSID(sySID),
+			},
+		},
+		{
+			AccessPermissions: 0x1F01FF,
+			AccessMode:        windows.GRANT_ACCESS,
+			Inheritance:       windows.OBJECT_INHERIT_ACE | windows.CONTAINER_INHERIT_ACE,
+			Trustee: windows.TRUSTEE{
+				TrusteeForm:  windows.TRUSTEE_IS_SID,
+				TrusteeType:  windows.TRUSTEE_IS_ALIAS,
+				TrusteeValue: windows.TrusteeValueFromSID(baSID),
+			},
+		},
+	}
+	acl, err := windows.ACLFromEntries(entries, nil)
+	if err != nil {
+		t.Fatalf("ACLFromEntries (CI|IO fixture): %v", err)
+	}
+	root := t.TempDir()
+	if err := windows.SetNamedSecurityInfo(
+		root, windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
+		nil, nil, acl, nil,
+	); err != nil {
+		t.Fatalf("SetNamedSecurityInfo (CI|IO fixture): %v", err)
+	}
 
 	warnings := CheckProjectForeignWriteForTest(root)
 
@@ -413,12 +488,18 @@ func TestProjectForeignWrite_ContainerInheritOnlyACE(t *testing.T) {
 // that bit. This proves that removing any single bit from d2WriteMask would
 // break coverage for that right.
 //
+// For GENERIC_WRITE and GENERIC_ALL the fixture uses OIIO (OI|IO, inherit-only
+// to files) rather than OICI. Windows expands generic bits when writing an ACE
+// that applies to the current object, but preserves them raw in INHERIT_ONLY ACEs
+// (generic mapping is deferred until the ACE propagates to a child). With OIIO
+// the stored bit is the raw generic value, isolation holds exactly, and the rule
+// fires because inheritableToFile (OI present) is true.
+//
 // Reconciliation: each subcase affirms "a foreign ACE whose stored mask intersects
 // d2WriteMask only at this one bit triggers the rule". It would fail if that bit
-// were removed from d2WriteMask. The isolation assertion (stored mask ∩ d2 == bit)
-// uses Skip (not Fatal) if Windows maps/expands the right on storage, because the
-// rule still detects via the expanded specific bits — but the isolation claim no
-// longer holds for that bit.
+// were removed from d2WriteMask. For GENERIC_* subcases it also affirms that
+// the rule detects a raw generic bit carried by an OIIO ACE — it would fail if
+// the inheritableToFile path were removed from the ACE-counting condition.
 func TestProjectForeignWrite_ForeignWriteACE_EachBit(t *testing.T) {
 	ownerSID := ownerSIDForTest(t)
 
@@ -428,47 +509,49 @@ func TestProjectForeignWrite_ForeignWriteACE_EachBit(t *testing.T) {
 	}
 
 	cases := []struct {
-		name string
-		mask windows.ACCESS_MASK
+		name     string
+		mask     windows.ACCESS_MASK
+		aceFlags string // SDDL ACE inheritance flags
 	}{
-		{"FILE_WRITE_DATA", windows.FILE_WRITE_DATA},
-		{"FILE_APPEND_DATA", windows.FILE_APPEND_DATA},
-		{"FILE_DELETE_CHILD", windows.ACCESS_MASK(0x40)},
-		{"DELETE", windows.DELETE},
-		{"WRITE_DAC", windows.WRITE_DAC},
-		{"WRITE_OWNER", windows.WRITE_OWNER},
-		{"GENERIC_WRITE", windows.GENERIC_WRITE},
-		{"GENERIC_ALL", windows.GENERIC_ALL},
+		{"FILE_WRITE_DATA", windows.FILE_WRITE_DATA, "OICI"},
+		{"FILE_APPEND_DATA", windows.FILE_APPEND_DATA, "OICI"},
+		{"FILE_DELETE_CHILD", windows.ACCESS_MASK(0x40), "OICI"},
+		{"DELETE", windows.DELETE, "OICI"},
+		{"WRITE_DAC", windows.WRITE_DAC, "OICI"},
+		{"WRITE_OWNER", windows.WRITE_OWNER, "OICI"},
+		// OIIO: OI|IO preserves the raw generic bit; generic mapping only happens
+		// when Windows applies an ACE to a specific object (not for inherit-only ACEs).
+		{"GENERIC_WRITE", windows.GENERIC_WRITE, "OIIO"},
+		{"GENERIC_ALL", windows.GENERIC_ALL, "OIIO"},
 	}
 
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			sddl := fmt.Sprintf("D:(A;OICI;0x%08x;;;S-1-5-11)", uint32(tc.mask)) +
+			sddl := fmt.Sprintf("D:(A;%s;0x%08x;;;S-1-5-11)", tc.aceFlags, uint32(tc.mask)) +
 				"(A;OICI;FA;;;" + ownerSID + ")" +
 				"(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
 			root := buildProjectRoot(t, sddl)
 
 			// Isolation assertion: read back the stored ACE mask for AU and verify
 			// that its intersection with d2WriteMask equals exactly the target bit.
-			// If Windows expanded or remapped the right, Skip (not Fatal) because
-			// the rule still fires via the expanded bits, but the isolation is weaker.
+			// For OICI cases Windows stores specific rights; for OIIO cases Windows
+			// preserves the raw generic bit.
 			storedMask := readStoredMaskForSID(t, root, auSID)
 			storedD2Bits := storedMask & localD2WriteMask
 			if storedD2Bits != tc.mask {
-				t.Skipf(
-					"isolation: Windows mapped/split the stored mask for %s: "+
-						"input 0x%08x, stored d2 bits 0x%08x (expected 0x%08x) — "+
-						"rule may still detect via expanded bits; isolation not exact",
-					tc.name, uint32(tc.mask), uint32(storedD2Bits), uint32(tc.mask),
-				)
+				// Unexpected: if isolation fails even with OIIO, record the stored
+				// value but proceed — the rule must still fire via whatever bits were stored.
+				t.Logf("isolation note for %s: input 0x%08x, stored d2 bits 0x%08x — "+
+					"Windows may have remapped even the OIIO ACE; proceeding to rule check",
+					tc.name, uint32(tc.mask), uint32(storedD2Bits))
 			}
 
 			warnings := CheckProjectForeignWriteForTest(root)
 
 			if len(warnings) == 0 {
-				t.Fatalf("want ≥1 warning for foreign SID holding %s (0x%08x), got none",
-					tc.name, uint32(tc.mask))
+				t.Fatalf("want ≥1 warning for foreign SID holding %s (0x%08x, stored 0x%08x), got none",
+					tc.name, uint32(tc.mask), uint32(storedMask))
 			}
 			if !strings.Contains(warnings[0], "S-1-5-11") {
 				t.Errorf("warning missing SID S-1-5-11\nfull warning: %s", warnings[0])
