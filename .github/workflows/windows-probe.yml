@@ -1145,180 +1145,32 @@ jobs:
       #
       # O que esta pergunta mede:
       #   INFER-1  TestRenderWithoutIdentityMatchesFrozenGoldens/subagent/architect
-      #            — golden gerado em macOS (LF, attr/-text) diverge da saída Windows
+      #            — golden gerado em macOS (LF, attr/-text) diverge da saida Windows
       #   INFER-2  TestResolveAgentModelMatchesRender
-      #            — 16 combinações gemini/copilot/windsurf/kiro x 4 agentes; campo
-      #              "model" com CRLF faz extractFrontmatterField("---\n") falhar
+      #            — 16 combinacoes gemini/copilot/windsurf/kiro x 4 agentes;
+      #              extractFrontmatterField verifica "---\n" mas Render devolve "---\r\n"
       #   INFER-3  TestUpdateMigratesKnownCodexAndPreservesUnknown
-      #            — separador do manifest vs backendPath (filepath.Join)
+      #            — filepath.Join emite "\" no Windows; manifest JSON serializa como "\\"
       #   MEASURED TestRenderOpenCodeAgent_CRLFSourceMatchesLF
       #   MEASURED TestRenderSubagentRouteInjectsIdentity_CRLFSourceMatchesLF
-      #            — "normalizador não cobre todos os caminhos"; esta sonda determina
-      #              QUAL caminho e se lfSource já chega CRLF do embed (o que torna
-      #              crlfSource=\r\r\n e NormalizeCRLF deixa \r residual)
+      #            — se go:embed ja entrega CRLF, injecao manual gera "\r\r\n";
+      #              NormalizeCRLF (uma passagem) deixa "\r" residual
       #
-      # Método:
-      #   (a) git config core.autocrlf + git ls-files --eol dos assets e goldens
-      #   (b) Python conta bytes \r\n e \n por arquivo relevante
-      #   (c) go test -count=1 -json de cada teste; Python extrai primeira
-      #       divergência em hex (40 bytes de cada lado)
-      #   (d) Para TestUpdateMigratesKnownCodexAndPreservesUnknown: imprime o
-      #       backendPath real e o manifesto JSON para revelar a forma da chave
-      #
-      # Saída grep-friendly:
+      # Saida grep-friendly:
       #   PROBE w3 eol <arquivo> crlf=<n> lf=<n>
       #   PROBE w3 test=<nome> exit=<n>
       #   PROBE w3 hex_diverge test=<nome> byte=<n> got_len=<n> want_len=<n>
       #   PROBE w3 hex_got  <40-byte hex>
       #   PROBE w3 hex_want <40-byte hex>
-      #   PROBE w3 manifest_key_form=<posix|native|unknown>
+      #   PROBE w3 manifest_key_form=<posix_slash|native_json_escaped|unknown>
       # ---------------------------------------------------------------
       - name: "Pergunta 20 — 5 causas INFER do ML-W3a (CRLF em assets, golden, manifesto)"
         if: always()
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Continue'
-
-          Write-Host "=== P20: Pergunta 20 — causas INFER ML-W3a ==="
-
-          # ── (a) EOL config e atributos ────────────────────────────────────────
-          Write-Host "=== P20-EOL: git config core.autocrlf ==="
-          git config --show-origin --get core.autocrlf 2>&1 | Write-Host
-
-          Write-Host "=== P20-EOL: git ls-files --eol (assets e goldens) ==="
-          git ls-files --eol -- `
-            internal/integrations/assets/agents/architect.md `
-            internal/integrations/assets/agents/backend.md `
-            internal/integrations/testdata/architect.subagent.golden.md `
-            internal/integrations/testdata/backend.agent-directory.golden.md `
-            internal/generators/update_test.go 2>&1 | Write-Host
-
-          # ── (b) Contagem de bytes CRLF/LF por arquivo ────────────────────────
-          Write-Host "=== P20-EOL: contagem bytes CRLF/LF ==="
-          $p20Script = Join-Path $env:RUNNER_TEMP "p20_eol.py"
-          Set-Content -Path $p20Script -Encoding UTF8 -Value @'
-import sys
-files = [
-    "internal/integrations/assets/agents/architect.md",
-    "internal/integrations/assets/agents/backend.md",
-    "internal/integrations/testdata/architect.subagent.golden.md",
-    "internal/integrations/testdata/backend.agent-directory.golden.md",
-]
-for f in files:
-    try:
-        data = open(f, "rb").read()
-        crlf = data.count(b"\r\n")
-        lf_only = data.count(b"\n") - crlf
-        print("PROBE w3 eol {} crlf={} lf={}".format(f.split("/")[-1], crlf, lf_only))
-    except Exception as e:
-        print("PROBE w3 eol {} ERROR={}".format(f.split("/")[-1], e))
-'@
-          python3 $p20Script 2>&1 | Write-Host
-
-          # ── (c) Análise de hex das divergências ──────────────────────────────
-          # Script Python lê go test -json do stdin e imprime primeira divergência
-          $p20HexScript = Join-Path $env:RUNNER_TEMP "p20_hex.py"
-          Set-Content -Path $p20HexScript -Encoding UTF8 -Value @'
-import sys, json, re
-
-# Collect all test output lines
-all_output = []
-for line in sys.stdin:
-    try:
-        obj = json.loads(line.rstrip("\n"))
-        if obj.get("Action") == "output":
-            all_output.append(obj["Output"])
-    except Exception:
-        pass
-
-full = "".join(all_output)
-
-# First failure message (any test)
-fail_m = re.search(r"[a-z_]+_test\.go:\d+: (.{0,400})", full, re.DOTALL)
-if fail_m:
-    msg = fail_m.group(1)[:350].replace("\n", " | ").replace("\r", "[CR]")
-    print("P20_FAIL_MSG: " + msg)
-
-# got vs want hex divergence (golden/CRLF tests)
-m = re.search(r"--- got ---\n(.*?)--- want ---\n(.*?)(?:\nFAIL|\Z)", full, re.DOTALL)
-if m:
-    got_b = m.group(1).encode("utf-8", "replace")
-    want_b = m.group(2).encode("utf-8", "replace")
-    for i in range(min(len(got_b), len(want_b))):
-        if got_b[i] != want_b[i]:
-            s = max(0, i - 2)
-            eg = min(len(got_b), i + 40)
-            ew = min(len(want_b), i + 40)
-            print("PROBE w3 hex_diverge byte={} got_len={} want_len={}".format(i, len(got_b), len(want_b)))
-            print("PROBE w3 hex_got  " + got_b[s:eg].hex())
-            print("PROBE w3 hex_want " + want_b[s:ew].hex())
-            print("PROBE w3 hex_got_repr  " + repr(got_b[s:eg]))
-            print("PROBE w3 hex_want_repr " + repr(want_b[s:ew]))
-            break
-    else:
-        if len(got_b) != len(want_b):
-            print("PROBE w3 hex_no_early_diverge got_len={} want_len={}".format(len(got_b), len(want_b)))
-
-# CRLF test: LF vs CRLF outputs (no --- got/want ---, uses "LF:\n...\nCRLF:\n...")
-m2 = re.search(r"LF:\n(.*?)\nCRLF:\n(.*?)(?:\n---|\Z)", full, re.DOTALL)
-if m2:
-    lf_b = m2.group(1).encode("utf-8", "replace")
-    crlf_b = m2.group(2).encode("utf-8", "replace")
-    for i in range(min(len(lf_b), len(crlf_b))):
-        if lf_b[i] != crlf_b[i]:
-            s = max(0, i - 2)
-            el = min(len(lf_b), i + 40)
-            ec = min(len(crlf_b), i + 40)
-            print("PROBE w3 hex_diverge_crlf byte={} lf_len={} crlf_len={}".format(i, len(lf_b), len(crlf_b)))
-            print("PROBE w3 hex_lf    " + lf_b[s:el].hex())
-            print("PROBE w3 hex_crlf  " + crlf_b[s:ec].hex())
-            print("PROBE w3 hex_lf_repr   " + repr(lf_b[s:el]))
-            print("PROBE w3 hex_crlf_repr " + repr(crlf_b[s:ec]))
-            break
-    else:
-        if len(lf_b) != len(crlf_b):
-            print("PROBE w3 hex_crlf_no_early_diverge lf_len={} crlf_len={}".format(len(lf_b), len(crlf_b)))
-
-# Manifest key form (TestUpdateMigratesKnownCodexAndPreservesUnknown)
-man_m = re.search(r"unexpected Codex ownership manifest:\n\s*(.*?)(?:\n---|\Z)", full, re.DOTALL)
-if man_m:
-    raw = man_m.group(1)[:1200]
-    # Detect key form
-    if ":\\\\" in raw or ":\\\\\\\\".encode() in raw.encode():
-        form = "native_json_escaped"
-    elif ":/" in raw:
-        form = "posix_slash"
-    else:
-        form = "unknown"
-    print("PROBE w3 manifest_key_form=" + form)
-    # Print first 200 bytes of manifest hex for inspection
-    print("PROBE w3 manifest_raw_hex " + raw.encode("utf-8","replace")[:200].hex())
-'@
-
-          # ── Run each test ─────────────────────────────────────────────────────
-          $testCases = @(
-            @{ name = "TestRenderWithoutIdentityMatchesFrozenGoldens"; pkg = "./internal/integrations/" },
-            @{ name = "TestRenderOpenCodeAgent_CRLFSourceMatchesLF";   pkg = "./internal/integrations/" },
-            @{ name = "TestRenderSubagentRouteInjectsIdentity_CRLFSourceMatchesLF"; pkg = "./internal/integrations/" },
-            @{ name = "TestResolveAgentModelMatchesRender";             pkg = "./internal/integrations/" },
-            @{ name = "TestUpdateMigratesKnownCodexAndPreservesUnknown"; pkg = "./internal/generators/" }
-          )
-
-          foreach ($tc in $testCases) {
-            $tname = $tc.name
-            $pkg   = $tc.pkg
-            Write-Host ""
-            Write-Host "=== P20 test=$tname ==="
-            $jsonLines = go test -count=1 -json -run "^$($tname)$" $pkg 2>&1
-            $exitCode = $LASTEXITCODE
-            Write-Host "PROBE w3 test=$tname exit=$exitCode"
-            # Feed JSON lines to Python for hex analysis
-            $jsonLines | python3 $p20HexScript 2>&1 | Write-Host
-          }
-
-          Write-Host ""
-          Write-Host "=== P20 CONCLUIDA — aguardar saida Windows para confirmar causas ==="
-          exit 0
+          & ".\scripts\windows-repro\p20-infer-causes.ps1" `
+              -Workspace $env:GITHUB_WORKSPACE
 
       - name: Registrar duração
         if: always()
