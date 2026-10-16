@@ -46693,3 +46693,15 @@ Artefato a produzir: `docs/seguranca/2026-10-16-red-team-ml-w2b-dacl.md`
 Branch: `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`
 Artefato: `docs/seguranca/2026-10-16-red-team-ml-w2b-dacl.md`
 Veredito: BLOQUEIA. R-A: implicit owner WRITE_DAC contorna DACL em `.trackfw` pré-criado (sem OWNER RIGHTS ACE, sem OWNER_SECURITY_INFORMATION); R-B: SetNamedSecurityInfo segue junctions — novo dano introduzido pelo ML-W2b (mutação de ACL tree externo + desvio de escrita). Fix direction: (A) adicionar `(A;OICI;RC;;;OW)` no SDDL do dir; (B) usar CreateDirectory com SECURITY_ATTRIBUTES ou abrir com handle+OPEN_REPARSE_POINT antes de SetSecurityInfo.
+
+---
+
+**hades-tf** · 2026-10-16 · Red-team ML-W2b' (regra validate) — iniciado
+Branch: `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`
+Artefato a produzir: `docs/seguranca/2026-10-16-red-team-ml-w2b-linha-validate.md`
+Escopo: `validator_project_foreign_write_windows.go`, 5 testes, identity_windows_test.go, go.mod. Prova: run P18 (38923063026).
+
+**hades-tf** · 2026-10-16 · Red-team ML-W2b' (regra validate) — concluído
+Branch: `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`
+Artefato: `docs/seguranca/2026-10-16-red-team-ml-w2b-linha-validate.md`
+Veredito: LIBERA COM RESSALVAS. R-1: CI|IO ACE skipped — adição de subdiretório via container-only ACE não detectado, ADR deve nomear; R-2: GetAce break silencia ACEs restantes (D3); R-3: Lstat engole access-denied para .trackfw (D3); R-4: testes (a) e identity_windows vacuamente passantes em casos limítrofes; R-5: remédio "remove inheritance" errado para ACE explícita e FP de runner D:\a\... não declarado na ADR.
