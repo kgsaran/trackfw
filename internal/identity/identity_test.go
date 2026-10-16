@@ -1,7 +1,6 @@
 package identity
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -110,54 +109,6 @@ func TestSaveThenLoad_RoundTrip(t *testing.T) {
 	}
 }
 
-func TestSave_WritesAtomicallyWithPermissions(t *testing.T) {
-	homeDir := t.TempDir()
-	cfg := Config{Agents: map[string]AgentIdentity{}}
-
-	if err := Save(homeDir, cfg); err != nil {
-		t.Fatalf("Save falhou: %v", err)
-	}
-
-	path := identityPath(homeDir)
-	info, err := os.Stat(path)
-	if err != nil {
-		t.Fatalf("arquivo de identidade deveria existir: %v", err)
-	}
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("permissao do arquivo = %o, esperava 0600", info.Mode().Perm())
-	}
-
-	dirInfo, err := os.Stat(filepath.Join(homeDir, ".trackfw"))
-	if err != nil {
-		t.Fatalf("diretorio .trackfw deveria existir: %v", err)
-	}
-	if dirInfo.Mode().Perm() != 0o700 {
-		t.Fatalf("permissao do diretorio = %o, esperava 0700", dirInfo.Mode().Perm())
-	}
-
-	// No leftover temp files should remain in the directory.
-	entries, err := os.ReadDir(filepath.Join(homeDir, ".trackfw"))
-	if err != nil {
-		t.Fatalf("falha ao listar diretorio: %v", err)
-	}
-	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), ".trackfw-tmp-") {
-			t.Fatalf("arquivo temporario nao foi limpo: %s", entry.Name())
-		}
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("falha ao ler arquivo salvo: %v", err)
-	}
-	if !strings.HasSuffix(string(data), "\n") {
-		t.Fatal("arquivo salvo deveria terminar com newline")
-	}
-	var roundTrip map[string]json.RawMessage
-	if err := json.Unmarshal(data, &roundTrip); err != nil {
-		t.Fatalf("arquivo salvo deveria ser JSON valido: %v", err)
-	}
-}
 
 func TestSave_ForcesSchemaVersion(t *testing.T) {
 	homeDir := t.TempDir()

@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/kgsaran/trackfw/internal/fsperm"
 	"github.com/kgsaran/trackfw/internal/pathanchor"
 	"github.com/kgsaran/trackfw/internal/pathguard"
 )
@@ -914,12 +915,29 @@ func containsUnsafeSegment(s string) bool {
 
 func atomicWrite(filename string, data []byte, mode os.FileMode) error {
 	directory := filepath.Dir(filename)
+
+	// Capture whether the leaf directory pre-existed. Used below to decide
+	// whether to apply a restrictive DACL on Windows (ADR D3 + D3 ajuste).
+	_, dirStatErr := os.Stat(directory)
+	dirExisted := dirStatErr == nil
+
 	// write-containment-allowed: atomicWrite is called only after caller invokes rejectSymlinks — the guard is at the call site, not inside this helper
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return err
 	}
-	// write-containment-allowed: atomicWrite is called only after caller invokes rejectSymlinks — the guard is at the call site, not inside this helper
-	temporary, err := os.CreateTemp(directory, ".trackfw-tmp-*")
+
+	// Protect the directory with a restricted DACL on Windows before writing.
+	// Conditions (ADR D3 ajuste):
+	//   (a) trackfw created the leaf directory in this call, or
+	//   (b) the path is .trackfw or under .trackfw (trackfw owns it even if preexisting).
+	if !dirExisted || fsperm.IsTrackfwOwned(directory) {
+		if err := fsperm.SetRestrictiveDirACL(directory); err != nil {
+			return err
+		}
+	}
+
+	// write-containment-allowed: atomicWrite is called only after caller invokes rejectSymlinks — the guard is at the call site, not inside this helper; CreateRestrictedFile delegates os.CreateTemp on non-Windows and creates a DACL-restricted file on Windows
+	temporary, err := fsperm.CreateRestrictedFile(directory, ".trackfw-tmp-*")
 	if err != nil {
 		return err
 	}
