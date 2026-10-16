@@ -2,6 +2,13 @@
 
 ---
 
+## 2026-10-16 — apolo-tf — INÍCIO: ML-W2b' — Remover fsperm + regra validate project_foreign_write_windows (REQ-2026-09-03)
+
+**Branch:** `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`
+**Escopo:** Part 1 — reverter pathguard.go/manager.go/containment_live_test.go; apagar fsperm/; apagar DACL tests; reescrever identity_windows_test.go. Part 2 — nova regra `project_foreign_write_windows` no validator.
+
+---
+
 ## 2026-10-16 — ares-tf — FIM: ML-W2a-bis — Medição de ataque por segunda identidade (Pergunta 19, REQ-2026-09-03)
 
 **Branch:** `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`
