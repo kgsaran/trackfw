@@ -16,6 +16,16 @@ import (
 	"github.com/kgsaran/trackfw/internal/integrations"
 )
 
+// manifestKeys returns a sorted-ish list of keys from the manifest for use in
+// diagnostic messages.
+func manifestKeys(m integrations.Manifest) []string {
+	keys := make([]string, 0, len(m.Artifacts))
+	for k := range m.Artifacts {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
 // symlinkOrSkip creates a symlink at link pointing to target, mirroring
 // os.Symlink. If creation fails because the process lacks the privilege
 // Windows requires to create symlinks (Developer Mode or an elevated
@@ -138,12 +148,23 @@ Run focused tests and report changed files, validation evidence, and remaining r
 	if _, err := os.Stat(filepath.Join(agentsDir, "trackfw-qa.toml")); !os.IsNotExist(err) {
 		t.Fatalf("governance update installed missing Codex item: %v", err)
 	}
-	manifest, err := os.ReadFile(filepath.Join(root, ".trackfw", "integrations-manifest.json"))
-	if err != nil {
-		t.Fatal(err)
+	// Parse the manifest as a typed struct so that path comparison is exact-key
+	// rather than substring-in-JSON. On Windows, filepath.Join emits backslash
+	// (\) but json.Marshal escapes it to \\, so strings.Contains(manifest,
+	// backendPath) fails when backendPath contains \ (INFER Group D, ML-W3b).
+	// integrations.LoadManifest decodes the JSON; the Artifacts map keys are the
+	// canonical destination paths as stored — no re-escaping needed.
+	parsed, loadErr := integrations.LoadManifest(root)
+	if loadErr != nil {
+		t.Fatalf("LoadManifest: %v", loadErr)
 	}
-	if !strings.Contains(string(manifest), backendPath) || strings.Contains(string(manifest), frontendPath) {
-		t.Fatalf("unexpected Codex ownership manifest:\n%s", manifest)
+	if _, ok := parsed.Artifacts[backendPath]; !ok {
+		t.Fatalf("backendPath not found in manifest keys.\nbackendPath=%q\nkeys present: %v", backendPath, manifestKeys(parsed))
+	}
+	for k := range parsed.Artifacts {
+		if filepath.Base(k) == filepath.Base(frontendPath) {
+			t.Fatalf("frontendPath unexpectedly found in manifest keys: %q\nAll keys: %v", k, manifestKeys(parsed))
+		}
 	}
 }
 

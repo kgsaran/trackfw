@@ -1139,6 +1139,39 @@ jobs:
               -Bin $p19Bin `
               -Workspace $env:GITHUB_WORKSPACE
 
+      # ---------------------------------------------------------------
+      # Pergunta 20 — 5 causas INFER do ML-W3a (REQ-2026-09-03, branch
+      # fix/fechar-os-grupos-de-falha-de-windows-ml-w3-infer)
+      #
+      # O que esta pergunta mede:
+      #   INFER-1  TestRenderWithoutIdentityMatchesFrozenGoldens/subagent/architect
+      #            — golden gerado em macOS (LF, attr/-text) diverge da saida Windows
+      #   INFER-2  TestResolveAgentModelMatchesRender
+      #            — 16 combinacoes gemini/copilot/windsurf/kiro x 4 agentes;
+      #              extractFrontmatterField verifica "---\n" mas Render devolve "---\r\n"
+      #   INFER-3  TestUpdateMigratesKnownCodexAndPreservesUnknown
+      #            — filepath.Join emite "\" no Windows; manifest JSON serializa como "\\"
+      #   MEASURED TestRenderOpenCodeAgent_CRLFSourceMatchesLF
+      #   MEASURED TestRenderSubagentRouteInjectsIdentity_CRLFSourceMatchesLF
+      #            — se go:embed ja entrega CRLF, injecao manual gera "\r\r\n";
+      #              NormalizeCRLF (uma passagem) deixa "\r" residual
+      #
+      # Saida grep-friendly:
+      #   PROBE w3 eol <arquivo> crlf=<n> lf=<n>
+      #   PROBE w3 test=<nome> exit=<n>
+      #   PROBE w3 hex_diverge test=<nome> byte=<n> got_len=<n> want_len=<n>
+      #   PROBE w3 hex_got  <40-byte hex>
+      #   PROBE w3 hex_want <40-byte hex>
+      #   PROBE w3 manifest_key_form=<posix_slash|native_json_escaped|unknown>
+      # ---------------------------------------------------------------
+      - name: "Pergunta 20 — 5 causas INFER do ML-W3a (CRLF em assets, golden, manifesto)"
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          & ".\scripts\windows-repro\p20-infer-causes.ps1" `
+              -Workspace $env:GITHUB_WORKSPACE
+
       - name: Registrar duração
         if: always()
         shell: pwsh

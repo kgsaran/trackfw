@@ -430,8 +430,13 @@ func NormalizeCRLF(source []byte) []byte {
 	return bytes.ReplaceAll(source, []byte("\r\n"), []byte("\n"))
 }
 
+// normalizeMarkdown is the output normalizer: TrimSpace + single trailing LF.
+// It calls NormalizeCRLF first so that an asset embedded with CRLF (Windows
+// checkout; assets have no eol=lf on purpose, see .gitattributes) emits LF-only
+// output on the paths that bypass markdownParts: KindSkills and the
+// no-identity default branch (ADR-2026-09-04, D1/D3).
 func normalizeMarkdown(source []byte) []byte {
-	return []byte(strings.TrimSpace(string(source)) + "\n")
+	return []byte(strings.TrimSpace(string(NormalizeCRLF(source))) + "\n")
 }
 
 // markdownParts extrai name, description, model e body do frontmatter YAML delimitado por ---.

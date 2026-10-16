@@ -584,10 +584,15 @@ func TestRenderOpenCodeAgent_CRLFSourceMatchesLF(t *testing.T) {
 	if !ok {
 		t.Fatal("agente 'backend' não encontrado no catalog")
 	}
-	lfSource, err := catalog.ReadAsset(item)
+	embedSource, err := catalog.ReadAsset(item)
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Normalise the embed to LF first so that on Windows (where go:embed bakes
+	// CRLF when core.autocrlf=true) the subsequent ReplaceAll injection produces
+	// clean "\r\n" and not "\r\r\n" (double-CR). This is what the test is
+	// measuring: CRLF-from-outside vs LF; not "double-CR vs LF".
+	lfSource := NormalizeCRLF(embedSource)
 	crlfSource := []byte(strings.ReplaceAll(string(lfSource), "\n", "\r\n"))
 
 	lfOut, err := Render(item, KindAgents, Capability{Representation: "opencode-agent"}, lfSource, identity.Config{}, "opencode", nil)
@@ -606,6 +611,66 @@ func TestRenderOpenCodeAgent_CRLFSourceMatchesLF(t *testing.T) {
 	// writes.
 	if strings.Contains(string(crlfOut), "\r") {
 		t.Fatalf("CRLF input leaked into the rendered output (D2 violation):\n%s", crlfOut)
+	}
+}
+
+// TestNormalizeMarkdown_StripsCRLF is the falsification for the ML-W3b product
+// fix: normalizeMarkdown must emit LF-only output even when its input contains
+// CRLF line endings. This asserts CONCLUSION of ML-W3b: a CRLF source passed
+// directly to normalizeMarkdown (the path taken by KindSkills and the
+// no-identity default branch of Render) produces output byte-identical to an LF
+// source and never contains "\r". It reproves without the fix because
+// normalizeMarkdown previously did only TrimSpace+"\n" without NormalizeCRLF,
+// leaving internal "\r\n" in the output.
+func TestNormalizeMarkdown_StripsCRLF(t *testing.T) {
+	crlfSource := []byte("---\r\nname: test\r\n---\r\n\r\n# Body\r\n")
+	got := normalizeMarkdown(crlfSource)
+	want := []byte("---\nname: test\n---\n\n# Body\n")
+	if string(got) != string(want) {
+		t.Fatalf("normalizeMarkdown(CRLF) = %q, want %q", got, want)
+	}
+	if strings.Contains(string(got), "\r") {
+		t.Fatalf("CRLF leaked into normalizeMarkdown output (D2 violation): %q", got)
+	}
+}
+
+// TestRenderWithoutIdentityMatchesFrozenGoldens_CRLFSource is the golden-path
+// falsification for ML-W3b: the same subagent/architect case from
+// TestRenderWithoutIdentityMatchesFrozenGoldens, but with the source bytes
+// converted to CRLF before Render is called. The output must match the LF
+// golden byte-for-byte. This asserts CONCLUSION of ML-W3b: a CRLF-encoded
+// architect.md asset — as go:embed bakes it on a Windows runner with
+// core.autocrlf=true — renders identically to the LF golden. It reproves
+// without the fix because normalizeMarkdown returned CRLF output when the
+// source was CRLF, while the golden is LF-only (gitattributes -text pins it).
+func TestRenderWithoutIdentityMatchesFrozenGoldens_CRLFSource(t *testing.T) {
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	item, ok := catalog.Item(KindAgents, "architect")
+	if !ok {
+		t.Fatal("agente 'architect' não encontrado no catalog")
+	}
+	embedSource, err := catalog.ReadAsset(item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Build a clean CRLF source: normalise first so that on Windows (where the
+	// embed is already CRLF) we get plain CRLF, not double-CR.
+	lfSource := NormalizeCRLF(embedSource)
+	crlfSource := []byte(strings.ReplaceAll(string(lfSource), "\n", "\r\n"))
+
+	out, err := Render(item, KindAgents, Capability{Representation: "subagent"}, crlfSource, identity.Config{}, "claude", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := readGolden(t, "architect.subagent.golden.md")
+	if string(out) != string(want) {
+		t.Fatalf("Render with CRLF source diverges from frozen golden:\n--- got ---\n%s\n--- want ---\n%s", out, want)
+	}
+	if strings.Contains(string(out), "\r") {
+		t.Fatalf("CRLF leaked into rendered output (D2 violation)")
 	}
 }
 
@@ -814,10 +879,14 @@ func TestRenderSubagentRouteInjectsIdentity_CRLFSourceMatchesLF(t *testing.T) {
 	if !ok {
 		t.Fatal("agente 'architect' não encontrado no catalog")
 	}
-	lfSource, err := catalog.ReadAsset(item)
+	embedSource, err := catalog.ReadAsset(item)
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Normalise the embed to LF first (same reason as in
+	// TestRenderOpenCodeAgent_CRLFSourceMatchesLF): prevents double-CR on
+	// Windows where the go:embed asset is already CRLF.
+	lfSource := NormalizeCRLF(embedSource)
 	crlfSource := []byte(strings.ReplaceAll(string(lfSource), "\n", "\r\n"))
 
 	lfOut, err := Render(item, KindAgents, Capability{Representation: "subagent"}, lfSource, zeusIdentity(), "claude", nil)

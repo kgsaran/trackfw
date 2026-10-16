@@ -2588,6 +2588,25 @@ foi aplicado **por medição**, não por leitura: `docs/portabilidade/2026-10-12
   ML-W2c absorvido pela regra. ✅ `make quality` EXIT=0 (347 OK / 0 FAIL); CI do PR #567 20/20, ratchet 11/11; **mergeado** (`b5416c0f`).
 - **ML-W3 — remedir as 5 causas `INFER`** da lista conhecida (CRLF no renderizador ×2, golden,
   modelo de agente, separador no manifesto do `update`) e corrigir as que forem de produto.
+  🔄 **Em andamento (2026-10-16)** — branch `fix/fechar-os-grupos-de-falha-de-windows-ml-w3-infer`.
+  Lista atual: **11 ativas**, das quais **3 `INFER`** (`TestRenderWithoutIdentityMatchesFrozenGoldens`,
+  `TestResolveAgentModelMatchesRender`, `TestUpdateMigratesKnownCodexAndPreservesUnknown`) e 2 do
+  mesmo grupo B medidas (`TestRender*_CRLFSourceMatchesLF`) — o grupo B entra junto (mesmo sintoma,
+  investiga no mesmo roadmap). **W3a — medir** (P20 do `windows-probe`, x64): `go test -v -run` de
+  cada um, com a saída do diff bruta (bytes/hex da primeira divergência) — causa medida por teste.
+  **W3b — corrigir** as de produto, um ML por causa medida; as de ambiente ficam declaradas.
+  **W3a ✅** — P20 (run `38959494352`, x64): assets `i/lf w/crlf` sem atributo (deliberado no
+  `.gitattributes`); divergência no byte 11 (`--\r\n` × `--\n`); manifesto grava chave nativa
+  escapada (`INFER` de separador estava **errada**). Doc: `docs/portabilidade/2026-10-16-causas-infer-windows-ci.md`.
+  **W3b ✅ (auditado 2026-10-16)** — uma causa de produto: `normalizeMarkdown` era sítio restante da
+  ADR-2026-09-04 (sem `NormalizeCRLF`), mesma causa do ML-5A/5B; corrigido. Instrumento: os dois
+  `*_CRLFSourceMatchesLF` constroem a fonte LF com `NormalizeCRLF`; o teste do `update` decodifica o
+  manifesto. Testes novos `TestNormalizeMarkdown_StripsCRLF` e `…FrozenGoldens_CRLFSource` mordem
+  no macOS. Revisão `hefesto-tf` aprova com ressalva Q-3 (comentário) aplicada; nenhum sítio de
+  mesma causa restante (`docs/seguranca/2026-10-16-revisao-ml-w3b-crlf.md`). Prova x64: run
+  `38963653933` — os 5 `exit=0`; `./...` falha só nas **6** restantes (todas `MEASURED`: NTFS sem
+  ACL ×3, symlink sem privilégio, `shasum` com `\`, fake `git.exe` × defesa do runner).
+  🔄 Falta: `make quality` + CI do PR.
 - **ML-W4 — setup do censo instala o pacote Python pré-v8** (`windows-census.yml:399`): põe no PATH um
   `trackfw.exe` sem `guard`, e 2 rótulos falham por isso. Corrigir o instrumento.
   🔄 **Em andamento (2026-10-16)** — branch `fix/fechar-os-grupos-de-falha-de-windows-ml-w4-censo`.
@@ -2608,7 +2627,7 @@ foi aplicado **por medição**, não por leitura: `docs/portabilidade/2026-10-12
   já corrigidos). Corrigido nos 4 braços; varredura das demais trocas de `HOME` registrada em
   `docs/portabilidade/2026-10-12-suporte-windows-9.5.0-estado-medido.md`. **Censo `38944389904`**,
   contagem estrita do arquiteto contra `38319939952`: 275 rótulos nos dois, nenhum sumido, nenhum
-  novo; FAIL 4 → 2, restam só `scaffold-update-chmod-removed/direction-c-*` (#421).
+  novo; FAIL 4 → 2, restam só `scaffold-update-chmod-removed/direction-c-*` (#421). **Mergeado** (#568, `f7e9bded`).
 - **ML-R3** permanece como está.
 
 **Estado:** sai de `blocked/` para `backlog/` — a condição de bloqueio (v8) se cumpriu. Vai para
