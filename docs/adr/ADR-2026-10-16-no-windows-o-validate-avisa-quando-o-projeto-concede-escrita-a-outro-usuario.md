@@ -35,7 +35,8 @@ No Windows, a proteção é a do diretório onde o usuário pôs o projeto — *
 
 **D2 — O `validate` diz a verdade.** No Windows, uma regra **informativa, não bloqueante** lê a DACL
 da raiz do projeto e do `.trackfw\` (se existir) e avisa quando alguma ACE *allow* que se aplica ao
-próprio objeto, ou que é herdável para arquivos (`OI`), concede escrita, exclusão ou troca de DACL
+próprio objeto, ou que é herdável para arquivos (`OI`) ou para subpastas (`CI` — permite pré-criar
+`.trackfw`, R-1 do red-team), concede escrita, exclusão ou troca de DACL
 (`FILE_WRITE_DATA`, `FILE_APPEND_DATA`, `FILE_ADD_FILE`, `FILE_ADD_SUBDIRECTORY`, `DELETE`,
 `FILE_DELETE_CHILD`, `WRITE_DAC`, `WRITE_OWNER`, `GENERIC_WRITE`, `GENERIC_ALL`) a um SID fora do
 conjunto: usuário atual, `SYSTEM` (`S-1-5-18`), `Administrators` (`S-1-5-32-544`),
@@ -45,6 +46,11 @@ remover a herança.
 
 **D3 — Erro ao ler a DACL vira aviso**, nunca silêncio (mesmo princípio do A7 do
 ADR-2026-10-14). Fora do Windows a regra não existe.
+
+**D2.1 — Remédio por tipo de ACE (R-5 do red-team):** ACE herdada → mover o projeto para dentro do
+perfil ou desativar a herança; ACE explícita → `icacls <dir> /remove:g <SID>`. **Verdadeiro positivo
+esperado:** o checkout do runner do GitHub (`D:\a\...`) herda `BUILTIN\Users` com criação de
+subpasta e dispara o aviso — é informação correta sobre aquele ambiente, não ruído a suprimir.
 
 **D4 — O legado (ML-W2c) fica absorvido**: o aviso cobre projeto e `.trackfw\` existentes, sem
 depender de quando os arquivos foram gravados.
