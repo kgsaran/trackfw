@@ -1,12 +1,12 @@
 ---
-status: Proposed
+status: Accepted
 date: 2026-10-16
 author: "zeus-tf"
 ---
 
 # ADR: no Windows, o `validate` avisa quando o projeto concede escrita a outro usuário
 
-> Date: 2026-10-16 | Status: Proposed
+> Date: 2026-10-16 | Status: Accepted
 
 REQ: `docs/req/REQ-2026-09-03-as-217-falhas-reais-de-windows-colapsam-em-poucas-causas-e-tres-delas-exigem-decisao-antes-de-codigo.md`
 Substitui: `ADR-2026-10-16-dacl-explicita-para-arquivos-de-governanca-no-windows.md` (Rejected)

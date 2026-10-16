@@ -2585,11 +2585,19 @@ foi aplicado **por medição**, não por leitura: `docs/portabilidade/2026-10-12
   exit 0, 16 PASS da regra sem SKIP (incl. CI|IO via ACL binária — a SDDL `CIIO` é rejeitada por
   `SecurityDescriptorFromString`, medido — e GENERIC_WRITE/ALL crus em ACE `OI|IO`); `./...` falha
   só nos 11 conhecidos. `identity` afirma `Mode().Perm()==0o666` no Windows (semântica, não ACL).
-  ML-W2c absorvido pela regra. 🔄 Falta: `make quality` + CI do PR.
+  ML-W2c absorvido pela regra. ✅ `make quality` EXIT=0 (347 OK / 0 FAIL); CI do PR #567 20/20, ratchet 11/11; **mergeado** (`b5416c0f`).
 - **ML-W3 — remedir as 5 causas `INFER`** da lista conhecida (CRLF no renderizador ×2, golden,
   modelo de agente, separador no manifesto do `update`) e corrigir as que forem de produto.
 - **ML-W4 — setup do censo instala o pacote Python pré-v8** (`windows-census.yml:399`): põe no PATH um
   `trackfw.exe` sem `guard`, e 2 rótulos falham por isso. Corrigir o instrumento.
+  🔄 **Em andamento (2026-10-16)** — branch `fix/fechar-os-grupos-de-falha-de-windows-ml-w4-censo`.
+  **Mesma causa do ML-3A da v8**: o `quality.yml` já removeu `npm ci` e `pip install pypi/` do
+  `parity-falsify-shard` (comentários "ML-3A (v8)"); o `windows-census.yml` (job de shards, linhas
+  ~385–399) ficou para trás. Correção: espelhar o setup do `parity-falsify-shard` (`pip install
+  --upgrade pip packaging`, sem `pip install pypi/` nem `npm ci`/`setup-node` se nada no shard usa
+  Node). **Aceite:** censo disparado na branch com os 2 rótulos (`kiro-dedicated-file/baseline`,
+  `roadmap-req-frontmatter-path/go/from-req-baseline`) OK e nenhum rótulo novo em FAIL contra o
+  censo `38319939952`; restam só os do NTFS sem ACL (#421).
 - **ML-R3** permanece como está.
 
 **Estado:** sai de `blocked/` para `backlog/` — a condição de bloqueio (v8) se cumpriu. Vai para
