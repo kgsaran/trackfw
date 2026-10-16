@@ -1,7 +1,7 @@
 ---
 status: Proposed
 date: 2026-10-16
-author: "Hades-tf (parecer) / Zeus (decisão pendente)"
+author: "hades-tf (parecer) / zeus-tf (decisão)"
 ---
 
 # ADR: DACL explícita para arquivos de governança no Windows
@@ -69,15 +69,22 @@ incluem `OI|CI` para propagação a novos filhos.
 sido criados por ferramentas externas. Aplicar `SE_DACL_PROTECTED` em diretório preexistente
 alteraria configurações de terceiros — fora da propriedade do trackfw.
 
+**Ajuste do arquiteto (2026-10-16):** diretório cujo nome-folha é `.trackfw` ou que está **sob**
+um `.trackfw` (ex.: `.trackfw/thirdparty-quarantine/`) é propriedade do trackfw e é re-protegido
+**mesmo se preexistente** — é o que fecha o legado de D5 para a proveniência e a quarentena. A DACL
+do diretório é aplicada **antes** de criar o temporário.
+
 ### D4 — Detecção de volume sem ACL: fail-soft delimitado
 
 `IsACLSupported(path string) (bool, error)` chama `GetVolumeInformation` e testa
 `FILE_PERSISTENT_ACLS` (0x00000008). FAT/exFAT/SMB sem ACL retornam false.
 
-Quando o volume não suporta ACL: `CreateRestrictedFile` retorna `ErrNoACLSupport` (tipo sentinela);
-o caller faz fallthrough para `os.CreateTemp` convencional e propaga `ErrNoACLSupport` para o
-handler do comando. **Pathguard nunca emite aviso em stderr diretamente** — o caller decide
-(stderr interativo ou campo `"warning"` em JSON).
+Quando o volume não suporta ACL: `CreateRestrictedFile` retorna `ErrNoACLSupport` (tipo sentinela)
+e os dois sítios de escrita atômica fazem fallthrough para `os.CreateTemp` convencional, **sem
+aviso** e sem mudar a assinatura dos chamadores. **Ajuste do arquiteto (2026-10-16):** levar o
+sentinela até cada comando atravessa 5 cadeias de chamada para dizer algo que vale para o volume
+inteiro (num FAT ninguém tem ACL, não só o trackfw); fica como **limite declarado** do produto,
+não como silêncio de auditor. `pathguard` não escreve em stderr.
 
 Para `SetNamedSecurityInfo` (usado em `SetRestrictiveDirACL`): fail-soft somente em
 `ERROR_NOT_SUPPORTED` (50), `ERROR_INVALID_FUNCTION` (1), `ERROR_NO_SECURITY_ON_OBJECT` (0x546).
@@ -87,8 +94,10 @@ Todo o resto: fail-closed.
 
 Arquivos escritos antes da correção mantêm o DACL herdado até serem regravados pelo trackfw.
 A reescrita re-protege. Arquivos que nunca são regravados retêm o DACL permissivo — resíduo
-declarado, não defeito silenciado. Uma regra de `validate` que leia DACLs está fora do escopo
-deste ML; pode ser adicionada em REQ futura.
+declarado, não defeito silenciado. **Ajuste do arquiteto:** pela Regra Dura de Causa Raiz, a
+detecção do legado não vai para REQ futura — `.trackfw/` é re-protegido por D3, e uma regra de
+`validate` que leia a DACL da proveniência, se for feita, é ML desta REQ (ML-W2c, decidido após
+o ML-W2b).
 
 ### D6 — Dependência promovida
 
@@ -121,4 +130,4 @@ ACL herdada e retenha o handle.
 gate `thirdparty_artifact_has_provenance` é real e exploitável sem privilégio de admin.
 
 **Regra de `validate` que leia DACL:** complementar, não substituta. Não corrige o problema na
-escrita; trata-se de detecção pós-fato. Reservada para REQ futura.
+escrita; trata-se de detecção pós-fato. Candidata a ML-W2c nesta REQ.
