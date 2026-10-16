@@ -16,6 +16,11 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+// aclSupportDetector is the function used to detect ACL support on the volume
+// hosting a given path. It is a package-level variable so that tests can inject
+// an error-returning stub to verify fail-closed behaviour (R-2 / ADR D4).
+var aclSupportDetector = isACLSupported
+
 // CreateRestrictedFile creates a new temporary file in dir whose name begins
 // with the part of pattern before "*" and ends with the part after "*" (matching
 // os.CreateTemp conventions). On NTFS volumes the file is born with a protected
@@ -24,6 +29,13 @@ import (
 // (FAT, exFAT, SMB) the function silently falls back to os.CreateTemp and returns
 // a valid *os.File with nil error (ADR D4 — silent fallback, declared limit).
 //
+// Error handling (R-2 / ADR D4):
+//   - detector returns an error (e.g. GetVolumePathName / GetVolumeInformation
+//     fails) → fail-closed: the error is returned to the caller; no file is
+//     created and no data is written.
+//   - detector returns (false, nil) → volume does not support ACLs → silent
+//     fallback to os.CreateTemp (the only soft-fail path).
+//
 // The race window between creation and DACL application that exists with
 // os.CreateTemp + SetRestrictiveACL is eliminated here by construction:
 // windows.CreateFile receives the SECURITY_ATTRIBUTES with the restrictive DACL
@@ -31,12 +43,14 @@ import (
 // The os.Rename that follows preserves the DACL because the temp and final files
 // are in the same directory (same volume). (R-5)
 func CreateRestrictedFile(dir, pattern string) (*os.File, error) {
-	// Detect ACL support before taking any action. GetVolumeInformation needs a
-	// root path that already exists, so we call MkdirAll's side-effect implicitly
-	// by testing the directory directly. The caller ensures dir exists before us.
-	aclOK, err := isACLSupported(dir)
-	if err != nil || !aclOK {
-		// Volume without ACL support (FAT/exFAT/SMB) — silent fallback.
+	// Detect ACL support before taking any action.
+	aclOK, err := aclSupportDetector(dir)
+	if err != nil {
+		// Detector failure → fail-closed (R-2): do NOT fall back to os.CreateTemp.
+		return nil, fmt.Errorf("fsperm: verificando suporte a ACL em %q: %w", dir, err)
+	}
+	if !aclOK {
+		// Volume without ACL support (FAT/exFAT/SMB) — silent fallback (ADR D4).
 		// write-containment-allowed: fsperm volume-without-ACL fallback; delegates to os.CreateTemp on FAT/exFAT/SMB
 		return os.CreateTemp(dir, pattern)
 	}

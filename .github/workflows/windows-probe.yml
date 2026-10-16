@@ -1051,6 +1051,53 @@ jobs:
           # ── Chamar script de sonda ─────────────────────────────────────────
           & ".\scripts\windows-repro\p17-acl-0600-ntfs.ps1" -Bin $p17Bin
 
+      # ---------------------------------------------------------------
+      # Pergunta 18 — testes do ML-W2b em Windows real (REQ-2026-09-03):
+      # fsperm.CreateRestrictedFile produz DACL restrita (sem AU/Users/Everyone
+      # write ACE), fail-closed quando o detector falha, e os dois pontos de
+      # gravação (GuardedWrite + atomicWrite) produzem arquivo final protegido.
+      #
+      # Por que esta pergunta existe: os braços de controle e asserção
+      # requerem um runner Windows real com suporte a DACL explícita. Em
+      # particular: a fixture makeForeignWriteDir injeta AU:(OI)(CI)(Modify) via
+      # SetNamedSecurityInfo — o braço de controle verifica se os.CreateTemp
+      # herda essa ACE (prova que a fixture reproduz o defeito), e o braço de
+      # asserção verifica que o arquivo final não tem essa ACE (prova a correção).
+      #
+      # Saída principal (grep-friendly):
+      #   PROBE w2b pkg=<pkg> exit=<n>
+      # ---------------------------------------------------------------
+      - name: "Pergunta 18 — ML-W2b: DACL explícita em Windows real (fsperm, pathguard, identity, integrations)"
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+
+          $pkgs = @(
+            "github.com/kgsaran/trackfw/internal/fsperm",
+            "github.com/kgsaran/trackfw/internal/pathguard",
+            "github.com/kgsaran/trackfw/internal/identity",
+            "github.com/kgsaran/trackfw/internal/integrations"
+          )
+
+          foreach ($pkg in $pkgs) {
+            $short = ($pkg -split "/")[-1]
+            Write-Host "=== P18 pkg=$short ==="
+            go test -count=1 -v $pkg 2>&1
+            $exit = $LASTEXITCODE
+            Write-Host "PROBE w2b pkg=$short exit=$exit"
+          }
+
+          Write-Host "=== P18 go test ./... ==="
+          go test ./... 2>&1
+          $allExit = $LASTEXITCODE
+          Write-Host "PROBE w2b pkg=all exit=$allExit"
+
+          # Compare failing tests with known failures list.
+          Write-Host "=== P18 known-failures comparison ==="
+          $known = (Get-Content .github/windows-known-failures.json | ConvertFrom-Json).entries | ForEach-Object { $_.name }
+          Write-Host "Known failures ($($known.Count)): $($known -join ', ')"
+
       - name: Registrar duração
         if: always()
         shell: pwsh

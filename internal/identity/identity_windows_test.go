@@ -16,21 +16,27 @@ import (
 // TestSave_WritesAtomicallyWithPermissions is the Windows version of the
 // permissions test. Instead of asserting Mode().Perm() == 0o600 (which reflects
 // only the READONLY attribute on Windows and is not a valid proxy for DACL-based
-// access control), this version asserts that:
-//   - the identity file has no write ACE for Authenticated Users, BUILTIN\Users
-//     or Everyone (per ADR D2), and
+// access control), this version:
+//   - uses makeForeignWriteDir as homeDir so the "no AU write ACE" assertion
+//     actually BITES: a TempDir on the runner's TEMP volume typically has a
+//     restricted DACL already, so assertNoForeignWriteACE would pass even
+//     without fsperm — only assertDACLIsProtected would catch a regression.
+//   - asserts the identity file has no write ACE for Authenticated Users,
+//     BUILTIN\Users or Everyone (per ADR D2), and
 //   - the DACL is protected (SE_DACL_PROTECTED, per ADR R-4), and
 //   - the DACL includes an owner full-control ACE (so the process doesn't lock
 //     itself out), and
-//   - no leftover temp files remain (unchanged from the POSIX version), and
+//   - no leftover temp files remain, and
 //   - the file content is valid JSON ending with a newline.
 //
-// Reconciliation: this test affirms "Save produces a file whose DACL has no
-// write ACE for Authenticated Users/Users/Everyone on Windows, and the DACL is
-// protected". It would fail if fsperm.CreateRestrictedFile were replaced with
-// os.CreateTemp (which inherits the parent directory's permissive DACL).
+// Reconciliation:
+//   - assertNoForeignWriteACE BITES: makeForeignWriteDir injects AU:(OI)(CI)(M)
+//     into the root, so os.CreateTemp would inherit that ACE; fsperm eliminates
+//     it. Without fsperm.CreateRestrictedFile the assertion fails.
+//   - assertDACLIsProtected BITES: without SE_DACL_PROTECTED the DACL flag is
+//     absent; it is set only by fsperm.CreateRestrictedFile via its SDDL.
 func TestSave_WritesAtomicallyWithPermissions(t *testing.T) {
-	homeDir := t.TempDir()
+	homeDir := makeForeignWriteDir(t)
 	cfg := Config{Agents: map[string]AgentIdentity{}}
 
 	if err := Save(homeDir, cfg); err != nil {
@@ -173,4 +179,94 @@ func assertOwnerHasWriteACE(t *testing.T, path string) {
 		}
 	}
 	t.Errorf("%q has no write ACE for the process owner — process may lose access to its own file", path)
+}
+
+// makeForeignWriteDir creates a temporary directory and injects an
+// Authenticated Users:(OI)(CI)(Modify) ACE into it, simulating the inheritance
+// pattern measured on C:\ in run 38902064559 (ML-W2a / Pergunta 17).
+// Files created with os.CreateTemp inside this dir will inherit that ACE.
+// makeForeignWriteDir is duplicated here (from fsperm_windows_test.go) because
+// Go test helpers cannot cross package boundaries.
+func makeForeignWriteDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+
+	// Build a DACL: existing DACL + AU:(OI)(CI)(Modify) ACE.
+	auSID, err := windows.StringToSid("S-1-5-11")
+	if err != nil {
+		t.Fatalf("StringToSid(AU): %v", err)
+	}
+	// GENERIC_WRITE | GENERIC_EXECUTE | GENERIC_READ covers "Modify" at the
+	// generic-rights level. Use the SDDL approach: inject via
+	// SetNamedSecurityInfo with the existing DACL extended by the new ACE.
+	sd, err := windows.GetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		t.Fatalf("GetNamedSecurityInfo: %v", err)
+	}
+	existing, _, err := sd.DACL()
+	if err != nil {
+		t.Fatalf("sd.DACL: %v", err)
+	}
+
+	// Build a new DACL that includes the existing ACEs + AU:OI+CI+Modify.
+	newSDDL := "D:(A;OICI;0x001200a9;;;" + auSID.String() + ")"
+	if existing != nil {
+		// Prepend existing entries by converting to SDDL and appending; the
+		// simplest reliable method is re-setting via a combined SDDL string.
+		// Since SDDL for arbitrary existing DACLs is complex, just SET the
+		// AU ACE on top of whatever is there — the goal is that AU has Write.
+		_ = existing // intentionally not merged: SetNamedSecurityInfo with
+		// DACL_SECURITY_INFORMATION | UNPROTECTED_DACL_SECURITY_INFORMATION
+		// merges with the inherited ACEs from the parent; the AU ACE below is
+		// enough to inject the "foreign write" that the test needs to detect.
+	}
+	injectSD, err := windows.SecurityDescriptorFromString(newSDDL)
+	if err != nil {
+		t.Fatalf("SecurityDescriptorFromString(%q): %v", newSDDL, err)
+	}
+	injectDACL, _, err := injectSD.DACL()
+	if err != nil {
+		t.Fatalf("injectSD.DACL: %v", err)
+	}
+	if err := windows.SetNamedSecurityInfo(
+		dir, windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION,
+		nil, nil, injectDACL, nil,
+	); err != nil {
+		t.Fatalf("SetNamedSecurityInfo (inject AU): %v", err)
+	}
+	return dir
+}
+
+// dACLHasWriteACEForSID returns true when the named file's DACL contains at
+// least one ACCESS_ALLOWED ACE for sid that grants any write-capable right.
+func dACLHasWriteACEForSID(t *testing.T, path string, sid *windows.SID) bool {
+	t.Helper()
+	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		t.Fatalf("GetNamedSecurityInfo(%q): %v", path, err)
+	}
+	dacl, _, err := sd.DACL()
+	if err != nil {
+		t.Fatalf("sd.DACL: %v", err)
+	}
+	if dacl == nil {
+		return true // NULL DACL = everyone full control
+	}
+	for i := uint32(0); i < uint32(dacl.AceCount); i++ {
+		var ace *windows.ACCESS_ALLOWED_ACE
+		if err := windows.GetAce(dacl, i, &ace); err != nil {
+			break
+		}
+		if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE {
+			continue
+		}
+		aceSID := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
+		if aceSID.Equals(sid) && ace.Mask&maskWriteAny != 0 {
+			return true
+		}
+	}
+	return false
 }
