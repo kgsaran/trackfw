@@ -1,5 +1,5 @@
 ---
-status: done
+status: wip
 date: 2026-09-03
 squad: apolo-tf
 req: "docs/req/REQ-2026-09-03-as-217-falhas-reais-de-windows-colapsam-em-poucas-causas-e-tres-delas-exigem-decisao-antes-de-codigo.md"
@@ -7,7 +7,7 @@ req: "docs/req/REQ-2026-09-03-as-217-falhas-reais-de-windows-colapsam-em-poucas-
 
 # Roadmap: Fechar os grupos de falha de Windows por causa raiz
 
-> Criado em: 2026-09-03 | Status: done
+> Criado em: 2026-09-03 | Status: wip
 
 ## Context
 
@@ -2659,3 +2659,29 @@ defeito do produto.
 **Fora desta REQ** (não medidos, sem causa comum com ela): hooks ponta a ponta com Cursor, Windsurf,
 Gemini, Kiro, Copilot e Amazon Q; PowerShell 7 (`pwsh`); o que o Windsurf lê (A8 do
 ADR-2026-10-14).
+
+---
+
+## 🔄 REABERTO — 2026-10-16: ML-W2d, o remédio da regra pode trancar o próprio dono (#569)
+
+**Status:** 🔄 Em andamento — branch `fix/fechar-os-grupos-de-falha-de-windows-ml-w2d-remedio` ·
+**Agente:** `apolo-tf` · reaberto pela **Regra Dura de Causa Raiz** (mesmo ML-W2, mesma regra,
+mesma ADR D2.1).
+
+Issue #569 (consumidor externo, Windows 11, conta padrão sem Administradores no token): o aviso de
+`project_foreign_write_windows` está **certo**, mas o remédio impresso para ACE herdada,
+`icacls /inheritance:d && icacls /remove:g <SID>`, tira a escrita do próprio usuário quando ela vinha
+**só** do SID acusado (ali, `Authenticated Users:(M)` era a única ACE de escrita; o dono tem
+implícito só `READ_CONTROL`/`WRITE_DAC`). O consumidor aplicou a sequência de três comandos com
+`/grant` no meio e mediu o estado final: só a ACE criada pelo `/grant` dá escrita a ele.
+
+**Por que o escopo original não previa:** o red-team R-5 discutiu o remédio por tipo de ACE
+(herdada × explícita), não o efeito do remédio sobre o usuário corrente. Nenhum doc do ML-W2 cobre
+"o dono perde a escrita".
+
+**Correção:** o remédio impresso passa a incluir `icacls "<dir>" /grant *<SID-do-usuário>:(OI)(CI)(F)`
+**antes** do `/remove:g`, nos dois casos (herdada: `/inheritance:d` → `/grant` → `/remove:g`;
+explícita: `/grant` → `/remove:g`). O SID já é computado (`currentUserSID`).
+**Aceite:** teste Windows que aplica o remédio impresso a uma fixture cuja única ACE de escrita é
+`S-1-5-11` e verifica que o usuário corrente **continua** escrevendo; braço de controle com o
+remédio antigo perde a escrita. Ratchet sem nome novo. Fecha #569.

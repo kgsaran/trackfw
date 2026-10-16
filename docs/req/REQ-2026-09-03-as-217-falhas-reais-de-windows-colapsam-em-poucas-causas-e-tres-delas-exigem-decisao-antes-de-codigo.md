@@ -1,14 +1,14 @@
 ---
-status: Done
+status: Open
 date: 2026-09-03
 author: "trackfw_architect (Zeus)"
 adr: ""
-roadmap: "docs/roadmaps/done/ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz.md"
 ---
 
 # REQ: As 217 falhas reais de Windows colapsam em poucas causas, e três delas exigem decisão antes de código
 
-> Date: 2026-09-03 | Status: Done
+> Date: 2026-09-03 | Status: Open
 | Linear Issue:
 | Jira Issue:
 
@@ -121,7 +121,7 @@ ADR: docs/adr/ADR-2026-10-16-no-windows-o-validate-avisa-quando-o-projeto-conced
 <!-- As 3 acima. -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/done/ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz.md
+Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz.md
 
 
 ---
