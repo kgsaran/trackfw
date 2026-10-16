@@ -56,6 +56,66 @@ na lista foram escritas em 2026-09-10, e **5 delas são inferidas** (`INFER`), n
 | 13 | Hooks ponta a ponta com agente real: Cursor, Windsurf, Gemini, Kiro, Copilot, Amazon Q | **não medido** | README: linha do hook medida no shell; agente não rodado | sim (guard) | Cada CLI instalado (e conta, para Copilot/Amazon Q/Kiro) |
 | 14 | PowerShell 7 (`pwsh`) | **não medido** | README | sim (guard) | Instalar `pwsh` na VM |
 
+## Censo pós-ML-W4 (2026-10-16)
+
+> ares-tf · branch `fix/fechar-os-grupos-de-falha-de-windows-ml-w4-censo` · run `38941248253`
+
+### Commits do ML-W4
+
+| Hash | Descrição |
+|---|---|
+| `10613e10` | fix(ci): remover pip install pypi/ e npm ci do job censo |
+| `b88b532b` | fix(ci): usar go env GOEXE no build do censo Windows para que exec.LookPath encontre trackfw.exe |
+
+### Contagens
+
+| Censo | Run | Total | OK | FAIL |
+|---|---|---|---|---|
+| Referência (v9.5.0 main) | 38319939952 | 278 | 274 | 4 |
+| Pós-ML-W4 | 38941248253 | 278 | 274 | 4 |
+
+### FAILs pós-ML-W4
+
+| Rótulo | Causa | Previsto? |
+|---|---|---|
+| `scaffold-update-chmod-removed/direction-c-baseline` | NTFS sem ACL (#421) | ✅ previsto |
+| `scaffold-update-chmod-removed/direction-c-detected` | NTFS sem ACL (#421) | ✅ previsto |
+| `git-branch-guard-dedup/baseline-skips-project-entry` | Regressão de dedup introduzida pelo ML-R3 (manager.go) | ❌ novo |
+| `git-branch-guard-dedup/double-slash-tolerance` | Regressão de dedup introduzida pelo ML-R3 (manager.go) | ❌ novo |
+
+### Rótulos que saíram de FAIL
+
+| Rótulo | Causa original (referência) | Causa intermediária (run 38937863655) | Correção |
+|---|---|---|---|
+| `git-branch-guard-global-hook-resolvable/kiro-dedicated-file/baseline` | pip instalava trackfw.exe antigo (sem guard) | exec.LookPath não encontrava bin/trackfw (sem .exe) | go build com $(go env GOEXE) |
+| `roadmap-req-frontmatter-path/go/from-req-baseline` | pip instalava trackfw.exe antigo (sem guard) | exec.LookPath não encontrava bin/trackfw (sem .exe) | go build com $(go env GOEXE) |
+
+### Causa raiz do `exec.LookPath` — por que `export PATH` não basta
+
+No CI Windows, o `check-gates-falsify.sh` compila com `go build -o bin/trackfw` e depois
+faz `export PATH="$ROOT_DIR/bin:$PATH"`. O arquivo produzido é `bin/trackfw` **sem `.exe`**.
+
+O `exec.LookPath("trackfw")` do Go procura por PATHEXT (`.COM`, `.EXE`, …). O arquivo nu não
+casa — "not found in PATH". Antes do ML-W4, o `pip install pypi/` colocava um `trackfw.exe`
+em `C:\...\Python\Scripts\` via `$GITHUB_PATH` (mecanismo persistente de PATH do Actions);
+esse binário era encontrado pelo LookPath, mas era a versão antiga sem o subcomando `guard`.
+
+Correção: `go build -o "bin/trackfw$(go env GOEXE)"` — produz `bin/trackfw.exe` no Windows.
+Ver vault: `go-build-no-exe-suffix-exec-lookpath-falha-no-windows-2026-10-16`.
+
+### Status do aceite do ML-W4
+
+- ✅ `kiro-dedicated-file/baseline` → OK
+- ✅ `roadmap-req-frontmatter-path/go/from-req-baseline` → OK
+- ✅ NTFS noacl (#421) continuam FAIL (esperado)
+- ❌ 2 rótulos novos em FAIL: `git-branch-guard-dedup/baseline-skips-project-entry` e
+  `git-branch-guard-dedup/double-slash-tolerance` — regressão do ML-R3, fora do escopo do ML-W4.
+  Referência (v9.5.0): ambos OK. Introduzidos pelos commits do ML-R3 em `internal/integrations/manager.go`.
+
+O critério "nenhum rótulo novo em FAIL" **NÃO está atendido** por causa da regressão do ML-R3.
+O ML-W4 resolveu sua causa específica; a regressão do dedup deve ser investigada e corrigida no
+escopo do ML-R3 antes de fechar o roadmap.
+
 ## O que **não** dá para afirmar hoje
 
 - "Suporte total ao Windows": há 14 falhas conhecidas no x64 (2 com efeito de segurança: itens 2 e
