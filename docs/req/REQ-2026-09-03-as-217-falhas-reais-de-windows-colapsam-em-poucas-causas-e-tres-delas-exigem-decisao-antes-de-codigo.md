@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-03
 author: "trackfw_architect (Zeus)"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz.md"
 ---
 
 # REQ: As 217 falhas reais de Windows colapsam em poucas causas, e três delas exigem decisão antes de código
 
-> Date: 2026-09-03 | Status: Open
+> Date: 2026-09-03 | Status: Done
 | Linear Issue:
 | Jira Issue:
 
@@ -75,26 +75,26 @@ triagem em inventar mecanismo para o maior grupo que tornou este diagnóstico co
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — 🔴 O mecanismo do **grupo B** está identificado **e escrito**, com a medição que o
+- [x] **AC1** — 🔴 O mecanismo do **grupo B** está identificado **e escrito**, com a medição que o
       sustenta. Se não for identificável nesta REQ, **vira REQ própria com o que foi eliminado** —
       não fica como suspeita.
-- [ ] **AC2** — As 3 ADRs existem e estão `Accepted` **antes** do código do grupo que cada uma
+- [x] **AC2** — As 3 ADRs existem e estão `Accepted` **antes** do código do grupo que cada uma
       governa: separador POSIX em artefato autorado; CRLF no parser de frontmatter; caminho POSIX
       ancorado num config lido por CLI de agente.
-- [ ] **AC3** — Cada grupo corrigido tem falsificação **nas duas direções** e **controle POSIX** com
+- [x] **AC3** — Cada grupo corrigido tem falsificação **nas duas direções** e **controle POSIX** com
       números de antes/depois. O remendo do `.exe` quebrou o POSIX na primeira tentativa — não se
       repete por acidente.
-- [ ] **AC4** — 🔴 **Regra dura de paridade sem exceção:** é código de produto nos 3 CLIs. Todo ML
+- [x] **AC4** _(não se aplica desde a v8 — implementação única em Go)_ — 🔴 **Regra dura de paridade sem exceção:** é código de produto nos 3 CLIs. Todo ML
       lista os 3 stacks em "Files affected" **desde o início**.
-- [ ] **AC5** — 🔴 **Nenhum teste marcado `skip`** para reduzir contagem. Um teste pulado não mede
+- [x] **AC5** — 🔴 **Nenhum teste marcado `skip`** para reduzir contagem. Um teste pulado não mede
       mais que um que não executa. Toda supressão exige mensagem nomeando a garantia não exercitada.
-- [ ] **AC6** — 🔴 **Recontagem por wave, não só no fim.** A contagem por runtime é medida no CI
+- [x] **AC6** — 🔴 **Recontagem por wave, não só no fim.** A contagem por runtime é medida no CI
       após cada wave, e o delta é **atribuído** ao grupo corrigido. Sem isso não se sabe qual
       correção funcionou.
-- [ ] **AC7** — 🔴 **Controle contra a armadilha do grupo CRLF:** nenhuma correção pode reduzir
+- [x] **AC7** — 🔴 **Controle contra a armadilha do grupo CRLF:** nenhuma correção pode reduzir
       contagem **escondendo** defeito. O ML-1C mediu isso e **removeu** um pin que já tinha feito,
       porque apagaria a evidência. Cada ML declara o que deixou visível de propósito.
-- [ ] **AC8** — `make quality` verde e os 9 `required_status_checks` verdes ao fim de cada wave.
+- [x] **AC8** — `make quality` verde e os 9 `required_status_checks` verdes ao fim de cada wave.
 
 ## Negative Scope
 
@@ -112,13 +112,16 @@ triagem em inventar mecanismo para o maior grupo que tornou este diagnóstico co
 
 ## Linked ADR
 <!-- Três, a escrever antes do código de cada grupo. São do arquiteto e NÃO paralelizam. -->
-ADR:
+ADR: docs/adr/ADR-2026-09-04-separador-posix-nos-artefatos-autorados-cujo-consumidor-nao-e-o-sistema-de-arquivos.md
+ADR: docs/adr/ADR-2026-09-04-parser-de-frontmatter-tolera-crlf-na-fronteira-de-entrada.md
+ADR: docs/adr/ADR-2026-09-04-caminho-posix-ancorado-num-config-lido-por-cli-de-agente-e-absoluto-independente-do-so-host.md
+ADR: docs/adr/ADR-2026-10-16-no-windows-o-validate-avisa-quando-o-projeto-concede-escrita-a-outro-usuario.md
 
 ## Blocked by ADRs
 <!-- As 3 acima. -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz.md
 
 
 ---
@@ -183,3 +186,25 @@ Windows 10 ARM64 vs Windows Server x64. Continuam dependendo do CI, e isso fica 
 ## Reclassificação pós-v8 — 2026-10-14
 
 Ver a seção de mesmo nome no roadmap. O cabeçalho dizia `Status: Done` e o frontmatter `Open`; o correto é `Open` (o roadmap nunca fechou). AC4 (paridade nos 3 CLIs) deixa de se aplicar: implementação única em Go. Entram os MLs W1–W4 por mesma causa.
+
+## ✅ Encerramento — 2026-10-16
+
+Todos os MLs fechados (detalhe e tabela no roadmap, seção "Encerramento — 2026-10-16"). Lista
+conhecida do `windows-full-suites`: **14 → 6**, todas `MEASURED` e de ambiente; censo de Windows:
+**4 → 2 FAIL** (#421). Evidência dos ACs:
+
+- **AC1** — grupo B: CRLF dos assets embutidos no checkout do Windows + `normalizeMarkdown` sem
+  `NormalizeCRLF`, medido na P20 (`windows-probe` 38959494352; divergência no byte 11) e corrigido
+  no #570.
+- **AC2** — as 3 ADRs de 2026-09-04 `Accepted` antes do código (ML-1A/1B/1C); o ML-W2 acrescentou
+  a ADR de 2026-10-16 (Accepted) e rejeitou a de DACL explícita pela medição.
+- **AC3** — cada ML entregou teste que reprova sem a correção e braço de controle (ex.: W2 com DACL
+  limpa e ACE só de leitura; W3 com fonte CRLF × LF); controle POSIX pelo `make quality`.
+- **AC5** — nenhum `skip` novo; os dois SKIPs de GENERIC_* no W2 foram trocados por casos medidos.
+- **AC6** — recontagem por PR no ratchet: 14 → 12 (#565) → 11 (#567) → 6 (#570).
+- **AC7** — o `.gitattributes` continua **sem** `eol` nos assets, de propósito: o produto cura o
+  CRLF em vez de o checkout escondê-lo.
+- **AC8** — `make quality` EXIT=0 e CI 20/20 em cada PR (#565, #566, #567, #568, #570).
+
+Fora desta REQ (sem medição nem causa comum): hooks com Cursor/Windsurf/Gemini/Kiro/Copilot/Amazon Q
+e PowerShell 7.
