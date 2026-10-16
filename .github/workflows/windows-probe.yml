@@ -1098,6 +1098,49 @@ jobs:
           $known = (Get-Content .github/windows-known-failures.json | ConvertFrom-Json).entries | ForEach-Object { $_.name }
           Write-Host "Known failures ($($known.Count)): $($known -join ', ')"
 
+      # ---------------------------------------------------------------
+      # Pergunta 19 — ataque por segunda identidade local não-admin
+      # (ML-W2a-bis, REQ-2026-09-03).
+      #
+      # O que esta pergunta mede: com Authenticated Users:(I)(M) herdado de
+      # C:\ num diretório de projeto, um usuário local não-admin (p19atk,
+      # criado e deletado aqui) consegue comprometer thirdparty-provenance.json
+      # protegido pela DACL explícita do fsperm/pathguard?
+      #
+      # Quatro braços:
+      #   (i)   overwrite — sobrescrever/excluir o arquivo protegido.
+      #   (ii)  swap-root — renomear C:\p19-proj e recriar forjado.
+      #   (iii) pre-create (R-A) — pré-criar .trackfw antes da vítima.
+      #   (iv)  junction (R-B) — substituir .trackfw por junction (sequencial).
+      #
+      # Saída: PROBE w2x <braço> result=<...> detail=<...>
+      # ---------------------------------------------------------------
+      - name: "Pergunta 19 — ataque por segunda identidade não-admin (ML-W2a-bis, swap-root/junction/pre-create)"
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+
+          # Reutilizar binário compilado por step anterior se disponível.
+          $p19Bin = Join-Path $env:RUNNER_TEMP "probe-bin\trackfw-probe.exe"
+          if (-not (Test-Path $p19Bin)) {
+            $p19Bin = Join-Path $env:RUNNER_TEMP "p17-trackfw.exe"
+          }
+          if (-not (Test-Path $p19Bin)) {
+            Write-Host "=== P19: compilando binário trackfw ==="
+            $p19Bin = Join-Path $env:RUNNER_TEMP "p19-trackfw.exe"
+            go build -o $p19Bin ./cmd/trackfw 2>&1 | Write-Host
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "PROBE w2x setup result=NO_BINARY detail=go_build_failed"
+              exit 0
+            }
+          }
+          Write-Host "P19_BIN_USED: $p19Bin"
+
+          & ".\scripts\windows-repro\p19-attack-second-identity.ps1" `
+              -Bin $p19Bin `
+              -Workspace $env:GITHUB_WORKSPACE
+
       - name: Registrar duração
         if: always()
         shell: pwsh

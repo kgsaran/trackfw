@@ -2,6 +2,14 @@
 
 ---
 
+## 2026-10-16 — ares-tf — INÍCIO: ML-W2a-bis — Medição de ataque por segunda identidade (Pergunta 19, REQ-2026-09-03)
+
+**Branch:** `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`
+**Escopo:** Apenas medição — script `scripts/windows-repro/p19-attack-second-identity.ps1` + step Pergunta 19 no `windows-probe.yml`. Sem alterações em `internal/`, testes, ADR ou roadmap.
+**Quatro braços:** (i) overwrite, (ii) swap-root, (iii) pre-create R-A, (iv) junction R-B.
+
+---
+
 ## 2026-10-16 — apolo-tf — FIM: ML-W2b — DACL explícita para arquivos de governança no Windows (REQ-2026-09-03)
 
 **Branch:** `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`
