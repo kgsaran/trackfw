@@ -2,6 +2,13 @@
 
 ---
 
+## 2026-10-16 — ares-tf — INÍCIO: ML-W4 — Remover pip install pypi/ e npm ci do censo Windows (REQ-2026-09-03)
+
+**Branch:** `fix/fechar-os-grupos-de-falha-de-windows-ml-w4-censo`
+**Escopo:** Espelhar setup do `parity-falsify-shard` no job `censo` do `windows-census.yml`: remover `setup-node`, `npm ci`, `pip install pypi/`; acrescentar `packaging` ao upgrade do pip.
+
+---
+
 ## 2026-10-16 — apolo-tf — FIM (parcial): ML-W2b' red-team R-1/R-2/R-3/R-4/R-5 (REQ-2026-09-03)
 
 **Branch:** `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`

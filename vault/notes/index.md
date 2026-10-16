@@ -4,6 +4,8 @@
 
 ## Índice
 
+- [go-build-no-exe-suffix-exec-lookpath-falha-no-windows-2026-10-16](go-build-no-exe-suffix-exec-lookpath-falha-no-windows-2026-10-16.md) — 🔴 **`go build -o bin/trackfw` no Windows produz arquivo SEM `.exe`; `exec.LookPath("trackfw")` nunca casa** — correção: `go build -o "bin/trackfw$(go env GOEXE)"`; afeta qualquer cenário que exige `trackfw` resolvível via PATH (validate, hook-resolvable); medido em ML-W4 censo 38941248253
+
 - [ntfs-acl-herdada-de-c-raiz-da-write-para-authenticated-users-2026-10-16](ntfs-acl-herdada-de-c-raiz-da-write-para-authenticated-users-2026-10-16.md) — 🔴 **`C:\` raiz tem `Authenticated Users:(OI)(CI)(IO)(M)` — todo arquivo/dir sob `C:\` herda Modify para qualquer usuário logado**; `os.Chmod(0o600)` não modifica ACL; apenas `C:\Users\<user>\` bloqueia essa herança; projetos direto em `C:\` expõem proveniência e quarentena; ML-W2a run 38902064559
 
 - [hooks-tem-chave-de-desligamento-por-cli-e-a-fiacao-intacta-nao-prova-guard-ativo-2026-10-10](hooks-tem-chave-de-desligamento-por-cli-e-a-fiacao-intacta-nao-prova-guard-ativo-2026-10-10.md) — 🔴 **`disableAllHooks`/`hooksConfig.enabled`/`"enabled": false`/`[features] hooks = false` desligam todos os hooks com a fiação intacta** — regra de guard que só olha entradas é burlável; `.claude/settings.local.json` é git-ignored; ADR-2026-10-10 D7

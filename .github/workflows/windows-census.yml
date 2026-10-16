@@ -383,22 +383,23 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "20"
-
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
-      - run: npm ci --ignore-scripts
-        working-directory: npm
+      # ML-W4 (REQ-2026-09-03): mesma remoção do ML-3A da v8.
+      # setup-node e npm ci removidos — npm/src não existe mais (v8).
+      # pip install pypi/ removido — pypi/trackfw/ não existe mais (v8).
+      # packaging: necessário para check-wheel-filename.sh (D6-write).
+      - run: python -m pip install --upgrade pip packaging
 
-      - run: python -m pip install --upgrade pip
-
-      - run: python -m pip install pypi/
-
-      - run: go build -o bin/trackfw ./cmd/trackfw
+      # ML-W4 (REQ-2026-09-03): no Windows, `go build -o bin/trackfw` gera
+      # bin/trackfw SEM .exe; exec.LookPath("trackfw") nunca encontra o arquivo
+      # porque procura por PATHEXT (.COM,.EXE,...) e o binário nu não bate.
+      # Com $(go env GOEXE), o artefato é bin/trackfw.exe no Windows e
+      # bin/trackfw no Linux/Mac — check-gates-falsify.sh já usa GOEXE (linha
+      # GO_EXE_SUFFIX) e espera exatamente este nome.
+      - run: go build -o "bin/trackfw$(go env GOEXE)" ./cmd/trackfw
 
       # ML-3A — divida registrada pelo ML-2A: o log do censo mostrava o EFEITO
       # (`chmod 0644` seguido de `-rwxr-xr-x`) e nunca as OPCOES DE MONTAGEM,
