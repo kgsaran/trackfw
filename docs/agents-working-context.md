@@ -2,6 +2,23 @@
 
 ---
 
+## 2026-10-16 — ares-tf — FIM: ML-W2a-bis — Medição de ataque por segunda identidade (Pergunta 19, REQ-2026-09-03)
+
+**Branch:** `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`
+**Run de probe:** 38918006930 (P19 ✓)
+**Commits:** `0f568437` · `36429ef6` · `85985334`
+
+**Resultados resumidos:**
+- overwrite/delete → DENIED (DACL protege)
+- swap-root sem cwd → RENAME_SUCCEEDED + RECREATE_SUCCEEDED (janela aberta quando processo não está rodando)
+- swap-root com cwd → RENAME_DENIED (handle aberto bloqueia rename)
+- pre-create (R-A) → VICTIM_WRITE_SUCCEEDED (vítima sobrescreve DACL); overwrite pós-DACL → DENIED
+- junction (R-B) → REMOVE_FAILED (atacante não remove `.trackfw` com DACL restritiva)
+
+**Artefato:** `docs/portabilidade/2026-10-16-ataque-segunda-identidade-ci.md`
+
+---
+
 ## 2026-10-16 — ares-tf — INÍCIO: ML-W2a-bis — Medição de ataque por segunda identidade (Pergunta 19, REQ-2026-09-03)
 
 **Branch:** `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`
