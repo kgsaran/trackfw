@@ -2,6 +2,24 @@
 
 ---
 
+## 2026-10-15 — apolo-tf — INÍCIO/FIM: ML-R3 — guard de travessia fala as duas gramáticas (REQ-2026-09-03)
+
+**Branch:** `fix/fechar-os-grupos-de-falha-de-windows-ml-r3-travessia`
+**Escopo:** ML-R3 completo. O guard do ramo `default:` em `manager.go:resolve` agora detecta `..` como segmento em qualquer gramática (separador `/` ou `\`), via `containsUnsafeSegment`. `..\outside.md`, `a\..\..\x.md`, `a/..\x.md` e `..` são rejeitados pelo guard entry (não pelo `beneath()`), sem depender de Windows.
+**Arquivos alterados:**
+- `internal/integrations/manager.go` — ramo `default:`: substituído guard POSIX-only por `containsUnsafeSegment`; adicionada função `containsUnsafeSegment` (+34 linhas)
+- `internal/integrations/manager_test.go` — adicionados `TestManagerRejectsBackslashTraversalByGuardEntry` e `TestManagerAcceptsCatalogRelativeDestinations` (+80 linhas)
+**Evidências:**
+- `go build ./...` EXIT:0
+- `go vet ./internal/...` EXIT:0
+- `GOOS=windows go vet ./internal/...` EXIT:0
+- `go test ./internal/integrations/ ./internal/commands/ ./internal/pathguard/ -count=1` EXIT:0 (3 pkgs OK)
+- `trackfw validate` EXIT:0 (0 FAIL, 168 warnings pré-existentes)
+**Decisão de abordagem (A vs B):** Abordagem B (segment check) escolhida — a abordagem A (rejeitar `\` incondicionalmente) viraria 6 vetores UNC malformados de ACCEPTED para REJECTED no POSIX, quebrando `TestManagerAnchorPredicateVectorTableNoFlip` (teste de auditoria ML-R1). B cobre todos os 4 vetores exigidos sem afetar esse teste.
+**Observação fora de escopo:** o ramo `~/` não tem guard early — `~/..\outside.md` vira arquivo literal no home (mesmo padrão M2). Reportar ao arquiteto para novo ML nesta REQ.
+
+---
+
 ## 2026-10-15 — apolo-tf — FIM: ML-2E — isolar HOME e USERPROFILE nos testes (REQ-2026-09-01)
 
 **Branch:** `fix/guard-global-segue-o-home-que-o-agente-le`
@@ -46574,3 +46592,20 @@ Achados notáveis para o apolo-tf:
 ## 2026-10-15 — zeus-tf — início: ML-W1 (proveniência de terceiros no Windows, nome curto 8.3)
 
 - Branch `fix/fechar-os-grupos-de-falha-de-windows-proveniencia-8.3`; roadmap da REQ-2026-09-03 em wip. Hipótese: `EvalSymlinks` na raiz expande 8.3 e o destino do manifesto não; chave de proveniência não casa. Falha fechada, não brecha. Medição x64 antes da correção.
+
+---
+**hades-tf** · 2026-10-15 · Red-team ML-R3 (guard de travessia `Manager.resolve`)
+Branch: `fix/fechar-os-grupos-de-falha-de-windows-ml-r3-travessia`
+Iniciando revisão de segurança do guard de entrada do ML-R3 (REQ-2026-09-03).
+Artefato a produzir: `docs/seguranca/2026-10-15-red-team-ml-r3-travessia.md`
+
+**hades-tf** · 2026-10-15 · Red-team ML-R3 concluído
+Branch: `fix/fechar-os-grupos-de-falha-de-windows-ml-r3-travessia`
+Artefato entregue: `docs/seguranca/2026-10-15-red-team-ml-r3-travessia.md`
+Veredito: LIBERA COM RESSALVA (R-1 trailing space/dot — Ajuste).
+4 vetores obrigatórios do roadmap confirmados bloqueados pelo guard de entrada.
+Zero flips em catálogo e terceiros. Ajuste R-1 propõe `strings.TrimRight(part, " .") == ".."` em containsUnsafeSegment.
+
+## 2026-10-16 — zeus-tf — ML-R3 pronto (PR #566)
+
+- Guard de entrada do `Manager.resolve` recusa segmento composto só de pontos/espaços com `/` ou `\` nos ramos `default:` e `~/`. Red-team liberou; R-1 corrigido (fórmula do parecer era impossível). CI 20/20, ratchet 12/12; `make quality` EXIT=0 (carga até 11). Gates Python rodam com venv isolado em `/tmp/zeus-venv312`.

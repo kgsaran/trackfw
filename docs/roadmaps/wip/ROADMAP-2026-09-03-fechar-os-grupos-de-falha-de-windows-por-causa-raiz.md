@@ -2447,7 +2447,7 @@ sem a correção, `censo-branch` com) + `persistem.txt` com a lista nominal.
 (issues #274 e #275).
 
 ### ML-R3 — O guard de travessia do ramo `default:` fala uma gramática só
-**Status:** ⬜ Pendente · **Agente:** `apolo-tf` · 🔴 **segurança (contido)**
+**Status:** ✅ Concluído — auditado em 2026-10-15 (branch `fix/fechar-os-grupos-de-falha-de-windows-ml-r3-travessia`). Guard de entrada nos ramos `default:` e `~/` recusa segmento composto só de pontos/espaços (exceto `.` puro), com `/` ou `\`. Red-team (`docs/seguranca/2026-10-15-red-team-ml-r3-travessia.md`) libera; R-1 corrigido — a fórmula proposta (`TrimRight == ".."`) era impossível, refutada por medição · **Agente:** `apolo-tf` · 🔴 **segurança (contido)**
 
 Achado do `hades-tf` na revisão do ML-R1, **medido, não inferido**.
 
@@ -2486,11 +2486,16 @@ Nunca `"..\\outside.md"`.
   mesma armadilha do ML-R1: a plataforma onde testamos é a que não tem o defeito.
 
 **Critérios de aceite:**
-- [ ] `..\outside.md` barrado pelo guard early, com prova de qual camada rejeitou
-- [ ] conjunto de vetores relativos legítimos inalterado (zero flips)
-- [ ] teste revert-proof sem Windows
-- [ ] `make quality QUALITY_EXIT=0`, `grep -c '^FAIL'` sobre a saída inteira = 0
-- [ ] revisão do `hades-tf` — é guarda de segurança
+- [x] `..\outside.md` barrado pelo guard early, com prova de qual camada rejeitou
+      ✅ `TestManagerRejectsBackslashTraversalByGuardEntry`, `TestManagerRejectsHomeTildeTraversalByGuardEntry`, `TestManagerRejectsTrailingSpaceDotByGuardEntry` — mensagem `unsafe destination` prova a camada
+- [x] conjunto de vetores relativos legítimos inalterado (zero flips)
+      ✅ `TestManagerAcceptsCatalog{Relative,Global}Destinations`, `TestContainsUnsafeSegmentTable`; `TestManagerAnchorPredicateVectorTableNoFlip` intacto
+- [x] teste revert-proof sem Windows
+      ✅ todos reprovam no macOS sem a correção (mordidas coladas)
+- [x] `make quality QUALITY_EXIT=0`, `grep -c '^FAIL'` sobre a saída inteira = 0
+      ✅ `make quality` EXIT=0 em `f5dc225f` (347 OK / 0 FAIL; carga até 11, não ociosa); CI do PR #566 20/20, ratchet 12/12 sem nome novo
+- [x] revisão do `hades-tf` — é guarda de segurança
+      ✅ `hades-tf` red-team
 
 **Por que é ML e não REQ nova:** mesma causa da reabertura desta REQ — predicado de segurança cego a
 uma gramática de caminho. Mesma causa ⇒ mesma REQ ⇒ mesmo PR.

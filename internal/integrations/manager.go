@@ -761,6 +761,17 @@ func (m Manager) resolve(plan PlannedArtifact) (string, string, error) {
 		if plan.Claim.Scope != "global" {
 			return "", "", errors.New("home destination requires global scope")
 		}
+		// ML-R3 complement (REQ-2026-09-03): guard the path segment after "~/".
+		// Without this, "~/..\outside.md" becomes a literal filename in the home
+		// directory on macOS (the backslash is not a separator there), and
+		// "~/../x.md" reaches filepath.Join with a ".." segment that only beneath()
+		// would catch — relying on a single layer. The guard mirrors the default:
+		// branch: rest empty, bare ".", not in canonical form, or containing ".."
+		// as a segment in either grammar all produce "unsafe destination".
+		rest := strings.TrimPrefix(destination, "~/")
+		if rest == "" || rest == "." || path.Clean(rest) != rest || containsUnsafeSegment(rest) {
+			return "", "", fmt.Errorf("unsafe destination %q", plan.Destination)
+		}
 		// ML-1D: Claude catalog paths are "~/.claude/…". When ClaudeDir was resolved
 		// (claudeDirSet), strip "~/.claude/" and join with destRoot so artifacts land
 		// at <ClaudeDir>/agents/… rather than <ClaudeDir>/.claude/agents/….
@@ -770,7 +781,7 @@ func (m Manager) resolve(plan PlannedArtifact) (string, string, error) {
 		if claudeDirSet && strings.HasPrefix(destination, "~/.claude/") {
 			destination = filepath.Join(destRoot, strings.TrimPrefix(destination, "~/.claude/"))
 		} else {
-			destination = filepath.Join(root, strings.TrimPrefix(destination, "~/"))
+			destination = filepath.Join(root, rest)
 		}
 	case pathanchor.IsAnchored(destination) || filepath.IsAbs(destination):
 		// ANCHORED per the host-independent predicate (POSIX "/", Windows drive letter, or
@@ -801,7 +812,23 @@ func (m Manager) resolve(plan PlannedArtifact) (string, string, error) {
 		}
 		destination = filepath.Clean(destination)
 	default:
-		if path.Clean(destination) != destination || destination == "." || strings.HasPrefix(destination, "../") {
+		// ML-R3 (REQ-2026-09-03): the path(POSIX) package does not interpret '\'
+		// as a separator, so path.Clean("..\outside.md") == "..\outside.md" and
+		// strings.HasPrefix("..\outside.md", "../") is false — the guard passed
+		// Windows-style traversal forms on every host, relying solely on beneath()
+		// as the only layer. Fixed by splitting on both '/' and '\' via
+		// containsUnsafeSegment, which detects ".." in any segment of any grammar.
+		//
+		// Approach B (not A): raw '\' without ".." (e.g. "foo\bar.md") is left
+		// accepted — it creates a literal backslash filename on POSIX and is not a
+		// traversal. Approach A (reject all '\') would flip six malformed-UNC vectors
+		// ("\\", "\\x" …) from accept to reject on POSIX, which are tested by
+		// TestManagerAnchorPredicateVectorTableNoFlip against oldResolveVerdict —
+		// touching that ML-R1 audit test is out of scope. Approach B covers all four
+		// roadmap-required vectors without those side effects. Catalog paths use only
+		// '/': catalog.go validateInstallPath rejects '\' at definition time (line 286).
+		if path.Clean(destination) != destination || destination == "." ||
+			containsUnsafeSegment(destination) {
 			return "", "", fmt.Errorf("unsafe destination %q", plan.Destination)
 		}
 		destination = filepath.Join(root, destination)
@@ -836,6 +863,54 @@ func beneath(root, filename string) bool { return pathguard.Beneath(root, filena
 // function nor its callers in resolve() printed anything, so a containment
 // refusal here reached the user as a bare error. ML-7B made it speak.
 func rejectSymlinks(root, filename string) error { return pathguard.RejectAndReport(root, filename) }
+
+// containsUnsafeSegment reports whether s contains an unsafe path segment when
+// split on either '/' or '\'.  It is used by the default: and ~/ branches of
+// resolve's destination switch (ML-R3, REQ-2026-09-03) to catch Windows-style
+// traversal forms (..\x, a\..\x, a/..\x, ..) on any host, and — since
+// corretivo R-1 (REQ-2026-09-03) — trailing-space and trailing-dot variants
+// that Win32 normalises to ".." (e.g. ".. ", ".. .", "...").
+//
+// Rule: a segment is unsafe when it consists entirely of dots and spaces.
+// Formally: strings.TrimRight(part, " .") == "".  Examples:
+//
+//	".."    → "" (both dots stripped)        → unsafe
+//	".. "   → "" (space then dots stripped)  → unsafe
+//	".. ."  → "" (dot, space, dot stripped)  → unsafe
+//	"..."   → "" (all three dots stripped)   → unsafe
+//	". "    → "" (space then dot stripped)   → unsafe
+//
+// Note: strings.TrimRight("..", " .") == "" (not ".."), because TrimRight
+// strips the trailing dots too.  The old guard was `part == ".."`, which this
+// call replaces entirely — the new rule is a strict superset.
+//
+// Exception: the exact single-dot segment "." is skipped here.  In the '/'
+// grammar, path.Clean already normalises it away before this function is ever
+// reached.  In the '\' grammar it appears in device-namespace forms such as
+// "\\.\x" (not a traversal) that must remain accepted on POSIX for parity with
+// the Windows anchored-path handling — flipping them would break
+// TestManagerAnchorPredicateVectorTableNoFlip.
+//
+// Legitimate segments always contain at least one non-dot/non-space rune, so
+// TrimRight leaves them non-empty:
+//
+//	"dir"    → "dir"    → safe
+//	"a."     → "a"      → safe
+//	".claude"→ ".claude"→ safe  (leading dot is not touched by TrimRight)
+func containsUnsafeSegment(s string) bool {
+	for _, part := range strings.FieldsFunc(s, func(r rune) bool { return r == '/' || r == '\\' }) {
+		if part == "." {
+			// Single-dot: not a traversal — kept for "\\.\device" parity (see above).
+			continue
+		}
+		// A segment that trims to "" consists entirely of dots and spaces.
+		// Win32 normalises such components (e.g. ".. ") to "..".
+		if strings.TrimRight(part, " .") == "" {
+			return true
+		}
+	}
+	return false
+}
 
 func atomicWrite(filename string, data []byte, mode os.FileMode) error {
 	directory := filepath.Dir(filename)

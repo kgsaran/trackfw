@@ -358,6 +358,264 @@ func TestManagerAnchorPredicateVectorTableNoFlip(t *testing.T) {
 	}
 }
 
+// TestManagerRejectsBackslashTraversalByGuardEntry — ML-R3 (REQ-2026-09-03).
+//
+// Assertion (a): "..\outside.md", "a\..\..\x.md", "a/..\x.md", and ".." are
+// rejected by the default: branch GUARD ENTRY in resolve(), not by beneath().
+// The distinction is proved by the error message: the guard entry emits
+// "unsafe destination"; beneath() emits "is outside … root". This test proves
+// the fix on macOS/Linux without needing Windows — the four vectors contain ".."
+// as a path segment, and containsUnsafeSegment splits on both '/' and '\'.
+// Revert containsUnsafeSegment call (restore old single-grammar guard) and
+// three of these four become err==nil (accepted as literal filenames); ".."
+// changes message from "unsafe destination" to "is outside … root" — all four
+// cases fail the assertion below.
+//
+// Assertion (c): "../outside.md" (POSIX form) continues to be rejected by the
+// guard entry with "unsafe destination", not by beneath().
+func TestManagerRejectsBackslashTraversalByGuardEntry(t *testing.T) {
+	// Each entry: (destination, why it must be rejected by the guard entry)
+	cases := []struct {
+		dest   string
+		reason string
+	}{
+		// (a) Windows-style backslash forms — caught by ML-R3 fix (containsUnsafeSegment)
+		{`..\outside.md`, `".." as first segment with \\ separator`},
+		{`a\..\..\x.md`, `".." segments in the middle with \\ separators`},
+		{`a/..\x.md`, `mixed separators: ".." after /`},
+		{`..`, `bare ".." — path.Clean("..") == ".." and HasPrefix("..", "../") == false`},
+		// (c) POSIX form — must stay rejected (regression guard)
+		{`../outside.md`, `POSIX traversal form, must remain rejected by guard entry`},
+	}
+	for _, tc := range cases {
+		manager, _, _ := testManager(t)
+		plan := testPlan("project", tc.dest, "v1", "x")
+		_, _, err := manager.resolve(plan)
+		if err == nil {
+			t.Errorf("resolve(%q) accepted — %s", tc.dest, tc.reason)
+			continue
+		}
+		if !strings.Contains(err.Error(), "unsafe destination") {
+			t.Errorf("resolve(%q) error = %q; want \"unsafe destination\" (guard entry rejected it); got a different layer — %s", tc.dest, err, tc.reason)
+		}
+	}
+}
+
+// TestManagerAcceptsCatalogRelativeDestinations — ML-R3 (REQ-2026-09-03).
+//
+// Assertion (b): every project-scope install path from the real embedded catalog
+// is accepted by the guard (zero flips after the ML-R3 fix). Only project-scope
+// paths exercise the default: branch — global paths start with "~/" and take a
+// different switch arm. A "not accepted" verdict here would mean the ML-R3 guard
+// incorrectly classified a legitimate catalog destination as unsafe.
+func TestManagerAcceptsCatalogRelativeDestinations(t *testing.T) {
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const exampleID = "backend" // any valid ID; the guard runs before filesystem ops
+	n := 0
+	for _, target := range catalog.Targets {
+		for _, surface := range target.Surfaces {
+			all := append(surface.Paths.Agents, surface.Paths.Skills...)
+			for _, installPath := range all {
+				if installPath.Scope != "project" {
+					continue
+				}
+				dest := strings.ReplaceAll(installPath.Path, "{{id}}", exampleID)
+				manager, _, _ := testManager(t)
+				plan := testPlan("project", dest, "v1", "x")
+				_, _, resolveErr := manager.resolve(plan)
+				if resolveErr != nil && strings.Contains(resolveErr.Error(), "unsafe destination") {
+					t.Errorf("catalog project path %q rejected as \"unsafe destination\" — zero-flip check failed (ML-R3)", dest)
+				}
+				n++
+			}
+		}
+	}
+	if n == 0 {
+		t.Fatal("no project-scope catalog paths found — catalog may have changed shape")
+	}
+}
+
+// TestManagerRejectsHomeTildeTraversalByGuardEntry — ML-R3 complement (REQ-2026-09-03).
+//
+// Assertion: "~/..\outside.md", "~/a\..\..\x.md", "~/../x.md", and "~/..".
+// are rejected by the "~/" branch GUARD ENTRY in resolve() with "unsafe
+// destination", not by beneath(). The distinction is proved by the error
+// message: the guard entry emits "unsafe destination"; beneath() emits "is
+// outside … root".
+//
+// All four vectors are caught exclusively by containsUnsafeSegment(rest) —
+// measured by a second bite removing only that clause while keeping the
+// path.Clean / empty checks. path.Clean is POSIX-only and returns the
+// strings unchanged ("..\outside.md", "../x.md", ".." all survive Clean),
+// so it does not catch any of them; containsUnsafeSegment splits on both
+// '/' and '\' and detects ".." as a segment in every form.
+//
+// Without the guard: the two backslash forms (~/..\outside.md,
+// ~/a\..\..\x.md) are accepted as literal filenames in the home directory
+// on macOS (backslash is not a separator there); the two POSIX forms
+// (~/../x.md, ~/..") only fall to beneath() and produce "is outside …
+// root". All four fail the assertion without the guard block.
+func TestManagerRejectsHomeTildeTraversalByGuardEntry(t *testing.T) {
+	cases := []struct {
+		dest   string
+		reason string
+	}{
+		// (a) Windows-style backslash traversal after ~/
+		{`~/..\outside.md`, `".." as first segment with \\ separator after ~/`},
+		{`~/a\..\..\x.md`, `".." segments with \\ separators after ~/`},
+		// (b) POSIX traversal after ~/
+		{`~/../x.md`, `POSIX "../" after ~/`},
+		// (c) bare ".." after ~/
+		{`~/..`, `bare ".." as rest after ~/`},
+	}
+	for _, tc := range cases {
+		manager, _, _ := testManager(t)
+		plan := testPlan("global", tc.dest, "v1", "x")
+		_, _, err := manager.resolve(plan)
+		if err == nil {
+			t.Errorf("resolve(%q) accepted — %s", tc.dest, tc.reason)
+			continue
+		}
+		if !strings.Contains(err.Error(), "unsafe destination") {
+			t.Errorf("resolve(%q) error = %q; want \"unsafe destination\" (guard entry); got different layer — %s", tc.dest, err, tc.reason)
+		}
+	}
+}
+
+// TestManagerAcceptsCatalogGlobalDestinations — ML-R3 complement (REQ-2026-09-03).
+//
+// Assertion: every global-scope install path from the real embedded catalog is
+// accepted by the "~/" guard (zero flips after the ML-R3 complement). A
+// "unsafe destination" here means the guard incorrectly classified a legitimate
+// catalog global destination as unsafe.
+func TestManagerAcceptsCatalogGlobalDestinations(t *testing.T) {
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	const exampleID = "backend"
+	n := 0
+	for _, target := range catalog.Targets {
+		for _, surface := range target.Surfaces {
+			all := append(surface.Paths.Agents, surface.Paths.Skills...)
+			for _, installPath := range all {
+				if installPath.Scope != "global" {
+					continue
+				}
+				dest := strings.ReplaceAll(installPath.Path, "{{id}}", exampleID)
+				manager, _, _ := testManager(t)
+				plan := testPlan("global", dest, "v1", "x")
+				_, _, resolveErr := manager.resolve(plan)
+				if resolveErr != nil && strings.Contains(resolveErr.Error(), "unsafe destination") {
+					t.Errorf("catalog global path %q rejected as \"unsafe destination\" — zero-flip check failed (ML-R3 complement)", dest)
+				}
+				n++
+			}
+		}
+	}
+	if n == 0 {
+		t.Fatal("no global-scope catalog paths found — catalog may have changed shape")
+	}
+}
+
+// TestManagerRejectsTrailingSpaceDotByGuardEntry — Corretivo R-1 (REQ-2026-09-03).
+//
+// Assertion: segments composed entirely of dots and spaces (".. ", ".. .",
+// "...", ". ") are rejected by the guard entry of resolve() with "unsafe
+// destination", not by beneath().  The distinction is proved by the error
+// message: guard entry emits "unsafe destination"; beneath() emits "is outside
+// … root".
+//
+// Four required vectors:
+//   - ".. /outside.md"    — default: branch, trailing-space dot segment
+//   - "~/.. /x.md"        — ~/ branch, same segment after ~/
+//   - "a/.. ./x.md"       — default: branch, trailing-dot after space
+//   - ".../x.md"          — default: branch, three-dot segment
+//
+// Each of these passes the old `part == ".."` guard (the segment is not literally
+// "..", it is ".. ", ".. .", or "..."), reaches filepath.Join, and on macOS
+// creates a literal pathname — a functional gap.  With the R-1 fix
+// (TrimRight(part, " .") == "") all four are rejected at the guard entry.
+//
+// Revert-proof: removing the TrimRight fix (restoring `part == ".."`) causes
+// three vectors to return err==nil (accepted) and one to change from "unsafe
+// destination" to "is outside … root" — all four assertions below fail.
+//
+// Conclusion: the guard entry closes the trailing-space/dot traversal gap by
+// treating any all-dot-and-space segment as equivalent to "..".
+func TestManagerRejectsTrailingSpaceDotByGuardEntry(t *testing.T) {
+	cases := []struct {
+		scope  string
+		dest   string
+		reason string
+	}{
+		// default: branch vectors
+		{"project", ".. /outside.md", `".. " segment (trailing space) — TrimRight catches it`},
+		{"project", "a/.. ./x.md", `".. ." segment (trailing dot after space) — TrimRight catches it`},
+		{"project", ".../x.md", `"..." segment (three dots) — TrimRight trims all dots to ""`},
+		// ~/ branch vector
+		{"global", "~/.. /x.md", `".. " segment after ~/ — TrimRight catches it in tilde guard`},
+	}
+	for _, tc := range cases {
+		manager, _, _ := testManager(t)
+		plan := testPlan(tc.scope, tc.dest, "v1", "x")
+		_, _, err := manager.resolve(plan)
+		if err == nil {
+			t.Errorf("resolve(%q) accepted — %s", tc.dest, tc.reason)
+			continue
+		}
+		if !strings.Contains(err.Error(), "unsafe destination") {
+			t.Errorf("resolve(%q) error = %q; want \"unsafe destination\" (guard entry); got different layer — %s",
+				tc.dest, err, tc.reason)
+		}
+	}
+}
+
+// TestContainsUnsafeSegmentTable — Corretivo R-1 (REQ-2026-09-03).
+//
+// Pins the exact behavior of containsUnsafeSegment after the TrimRight fix.
+// This table is the primary evidence that:
+//  (a) ".." is still caught (TrimRight strips both dots → "", which is the unsafe condition);
+//  (b) "." is NOT caught (explicit skip preserves "\\.\device" parity);
+//  (c) trailing-space and trailing-dot variants are caught;
+//  (d) legitimate segments with any non-dot/non-space suffix are not caught.
+//
+// Conclusion: the TrimRight rule is a strict superset of the old `part == ".."` check
+// and introduces zero false positives for segments that appear in real catalog paths.
+func TestContainsUnsafeSegmentTable(t *testing.T) {
+	cases := []struct {
+		input string
+		want  bool
+	}{
+		// Must still be unsafe (regression from old rule)
+		{"..", true},
+		{"a/../b", true},
+		// Trailing-space/dot variants — R-1 additions
+		{".. ", true},
+		{".. .", true},
+		{"...", true},
+		{". ", true},
+		// Single dot — must NOT be unsafe (\\.\device parity)
+		{".", false},
+		{"a/./b", false},
+		// Legitimate segments
+		{"dir", false},
+		{"a.", false},
+		{"a..", false},
+		{".claude", false},
+		{"x.md", false},
+	}
+	for _, tc := range cases {
+		got := containsUnsafeSegment(tc.input)
+		if got != tc.want {
+			t.Errorf("containsUnsafeSegment(%q) = %v, want %v", tc.input, got, tc.want)
+		}
+	}
+}
+
 func TestManagerRejectsSymlinkFileAndParent(t *testing.T) {
 	manager, project, _ := testManager(t)
 	outside := t.TempDir()
