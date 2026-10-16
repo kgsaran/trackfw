@@ -3,7 +3,29 @@
 > Data: 2026-10-16 | Branch: `fix/fechar-os-grupos-de-falha-de-windows-ml-w3-infer`
 > REQ: REQ-2026-09-03 | Agente: artemis-tf (QA)
 > Método: leitura de código + simulação CRLF local (macOS) + P20 adicionada ao `windows-probe.yml`
-> CI run id: aguardando — P20 enviada para confirmação no runner x64 real
+> **Confirmado no x64 pelo arquiteto** — `windows-probe` run `38959494352` (antes da correção) e
+> `38963653933` (depois). Ver "Confirmação no x64" logo abaixo.
+
+## Confirmação no x64 (zeus-tf, 2026-10-16)
+
+Run `38959494352` (P20, antes da correção), linhas brutas:
+
+```
+i/lf    w/crlf  attr/                 	internal/integrations/assets/agents/architect.md
+i/lf    w/lf    attr/-text            	internal/integrations/testdata/architect.subagent.golden.md
+PROBE w3 eol architect.md crlf=61 lf=0
+PROBE w3 hex_diverge test=TestRenderWithoutIdentityMatchesFrozenGoldens byte=11 got_len=8074 want_len=8655
+PROBE w3 hex_got_repr  b'--\r\n        name: trackfw-architect\r\n     '
+PROBE w3 hex_want_repr b'--\n        name: trackfw-architect\n       '
+PROBE w3 manifest_key_form=native_json_escaped
+```
+
+Os 5 testes: `exit=1`. A medição local abaixo **converge** com o x64 (causa A: assets CRLF no
+checkout + `normalizeMarkdown` sem `NormalizeCRLF`; causa B: chave nativa escapada em JSON — a
+`INFER` "separador no manifesto" estava errada).
+
+Run `38963653933` (P20, depois do ML-W3b): os 5 testes `exit=0`; `go test ./...` falha só nas 6
+`entries` restantes, nenhum nome novo.
 
 ---
 
