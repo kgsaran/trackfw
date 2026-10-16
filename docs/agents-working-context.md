@@ -2,6 +2,28 @@
 
 ---
 
+## 2026-10-16 — apolo-tf — FIM (parcial): ML-W2b' red-team R-1/R-2/R-3/R-4/R-5 (REQ-2026-09-03)
+
+**Branch:** `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`
+**Commit:** `0e4d5811` (5 files, 458 ins / 71 del)
+**Run Windows probe:** 38929110948
+
+**Status por teste (P18):**
+- (a) TestProjectForeignWrite_ForeignWriteACE — PASS
+- (b) TestProjectForeignWrite_CleanDACL — PASS
+- (c) TestProjectForeignWrite_TrackfwDirForeignACE — PASS
+- (d) TestProjectForeignWrite_ReadOnlyACENoWarning — PASS
+- (e) TestProjectForeignWrite_DACLReadError — PASS
+- (f) TestProjectForeignWrite_ContainerInheritOnlyACE — **FAIL** (SDDL `CIIO` rejeitado pelo Windows como ACL inválida; necessita construção programática de ACE)
+- EachBit/FILE_WRITE_DATA…WRITE_OWNER — PASS (6/8)
+- EachBit/GENERIC_WRITE, GENERIC_ALL — SKIP (Windows expande mask)
+- TestProjectForeignWrite_InheritedACERemedy — PASS
+- TestSave_WritesAtomicallyWithPermissions — PASS
+
+**Bloqueio:** teste (f) falha; ML NÃO está concluído. Aguardando instrução do arquiteto.
+
+---
+
 ## 2026-10-16 — apolo-tf — INÍCIO: ML-W2b' — Remover fsperm + regra validate project_foreign_write_windows (REQ-2026-09-03)
 
 **Branch:** `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`
