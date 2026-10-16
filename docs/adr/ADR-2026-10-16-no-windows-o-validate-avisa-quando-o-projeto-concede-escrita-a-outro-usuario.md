@@ -52,6 +52,14 @@ perfil ou desativar a herança; ACE explícita → `icacls <dir> /remove:g <SID>
 esperado:** o checkout do runner do GitHub (`D:\a\...`) herda `BUILTIN\Users` com criação de
 subpasta e dispara o aviso — é informação correta sobre aquele ambiente, não ruído a suprimir.
 
+**D2.2 — O remédio nunca tira a escrita do próprio usuário (#569, 2026-10-16).** Quando a escrita
+do usuário corrente vem só do SID acusado (conta padrão, só `Authenticated Users:(M)` dá escrita),
+`/inheritance:d` + `/remove:g` o tranca fora do projeto — o dono tem implícito só `READ_CONTROL` e
+`WRITE_DAC`. O remédio impresso inclui `icacls "<dir>" /grant *<SID-do-usuário>:(OI)(CI)(F)`
+**antes** do `/remove:g`, nos dois casos de D2.1; idempotente quando ele já tem ACE própria. Medido
+num consumidor externo (Windows 11, conta padrão): com o `/grant`, a única ACE de escrita que sobra
+para ele é a que o `/grant` criou.
+
 **D4 — O legado (ML-W2c) fica absorvido**: o aviso cobre projeto e `.trackfw\` existentes, sem
 depender de quando os arquivos foram gravados.
 
