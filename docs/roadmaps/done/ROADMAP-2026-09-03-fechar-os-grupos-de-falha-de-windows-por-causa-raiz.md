@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-03
 squad: apolo-tf
 req: "docs/req/REQ-2026-09-03-as-217-falhas-reais-de-windows-colapsam-em-poucas-causas-e-tres-delas-exigem-decisao-antes-de-codigo.md"
@@ -7,7 +7,7 @@ req: "docs/req/REQ-2026-09-03-as-217-falhas-reais-de-windows-colapsam-em-poucas-
 
 # Roadmap: Fechar os grupos de falha de Windows por causa raiz
 
-> Criado em: 2026-09-03 | Status: wip
+> Criado em: 2026-09-03 | Status: done
 
 ## Context
 
@@ -1024,8 +1024,8 @@ completa dela.
 ## Wave 8-reaberta — 2026-09-08: o grupo `IsAbs` não havia fechado
 
 ### ML-R1 — `manager.go` usa o helper de ancoragem que já existe
-**Status:** 🔄 Em andamento (implementação, testes locais e VM Windows concluídos e verdes; falta
-só a revisão `hades-tf` antes do commit) · **Agente:** `apolo-tf` · 🔴 **segurança**
+**Status:** ✅ Concluído — ver "ML-R1 — bloqueado na auditoria, DESBLOQUEADO e entregue" abaixo
+(marcador atualizado no encerramento, 2026-10-16) · **Agente:** `apolo-tf` · 🔴 **segurança**
 
 **Medições registradas conforme feitas (2026-09-08):**
 
@@ -1181,7 +1181,8 @@ zero chamadas dependentes de SO, revisado pelo `hades-tf`.
 - [ ] revisão do `hades-tf` antes do commit — é mudança em guarda de segurança
 
 ### Os outros 5 grupos da triagem
-**Status:** ⬜ Pendente — **não** entram neste ML. Cada um com causa própria; misturar aqui repetiria
+**Status:** ✅ Substituído (2026-10-16) — os grupos viraram a lista `.github/windows-known-failures.json`
+e foram fechados pelos MLs W1–W4 e R3; restam 6 entradas `MEASURED` de ambiente. Texto original: ⬜ Pendente — **não** entram neste ML. Cada um com causa própria; misturar aqui repetiria
 o erro que estimou o grupo `IsAbs` em 14 falhas e entregou 2.
 
 ## 🔴 ML-R1 — bloqueado na auditoria, DESBLOQUEADO e entregue, 2026-09-08
@@ -2287,7 +2288,9 @@ Node**; `.exe` funciona nos dois. **Justifica o shim compilado em vez do wrapper
 a solução óbvia e mais simples — e estaria errada.
 
 ### ML-R2b1b — As chaves de `{owner}/{repo}` somem ao atravessar o shim
-**Status:** 🔄 Em andamento · **Agente:** `ares-tf` · **causa DIFERENTE do ML-R2b1, medida**
+**Status:** ✅ Desapareceu com a v8 — medido no encerramento (2026-10-16): no censo `38944389904` os
+rótulos `release-tag-parity/*` que restam são 8, **8/8 OK**; os 48 que falhavam eram cenários de
+paridade entre runtimes, removidos com a implementação única. Texto original: 🔄 Em andamento · **Agente:** `ares-tf` · **causa DIFERENTE do ML-R2b1, medida**
 
 Exposta pelo ML-R2b1: com o `gh.exe` funcionando, os 48 rótulos de `release-tag-parity` deixaram de
 falhar por "forge CLI ausente" e passaram a falhar **dentro do stub**.
@@ -2411,7 +2414,8 @@ reportar; não forçar.
 - [ ] 🔴 estimativa declarada como estimativa (feito acima) — se fechar menos, reportar
 
 ### ML-R2b2 — Triagem dos 76 rótulos restantes por causa
-**Status:** ⬜ Pendente · **Agente:** `ares-tf` · **depende do ML-R2b1** · **pré-requisito do ratchet**
+**Status:** ✅ Fechado por medição (2026-10-16) — censo `38944389904`: 275 rótulos, **2 FAIL**, ambos
+`scaffold-update-chmod-removed/direction-c-*` (NTFS sem ACL, #421). Texto original: ⬜ Pendente · **Agente:** `ares-tf` · **depende do ML-R2b1** · **pré-requisito do ratchet**
 
 Depois que o R2b1 fechar os 54, sobram **76 rótulos**. Escopo **medido**, não estimado.
 
@@ -2548,7 +2552,7 @@ foi aplicado **por medição**, não por leitura: `docs/portabilidade/2026-10-12
 - **ML-W2 — permissão 0600 ignorada no NTFS** (`TestSave_WritesAtomicallyWithPermissions`,
   `internal/identity`): decidir entre ACL do Windows e declarar o limite. Segurança: arquivo de
   identidade.
-  🔄 **Em andamento (2026-10-16)** — branch `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`.
+  ✅ **Concluído (2026-10-16)**, PR #567 — branch `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`.
   **Decisão do usuário (2026-10-16): medir e depois decidir.** Escopo pela causa (Go no Windows só
   alterna o bit somente-leitura; `0o600` é inerte): os 5 sítios que pedem `0o600` —
   `identity.go:93`, `integrations/manifest.go:92`, `integrations/render.go:730`,
@@ -2562,7 +2566,7 @@ foi aplicado **por medição**, não por leitura: `docs/portabilidade/2026-10-12
   sítios, revisão `hades-tf` obrigatória.
   **W2a ✅** — Pergunta 17, run `38902064559` (`docs/portabilidade/2026-10-16-acl-0600-ntfs-ci.md`):
   `%USERPROFILE%` restrito; projeto sob `C:\` com `Authenticated Users:(I)(M)`. Braço `D:\` era
-  falso positivo do parser (corrigido). **W2b 🔄 — red-team BLOQUEIA** (`cbceb590`,
+  falso positivo do parser (corrigido). **W2b (1ª versão, `fsperm`) — red-team BLOQUEIA** (`cbceb590`,
   `docs/seguranca/2026-10-16-red-team-ml-w2b-dacl.md`): R-A (dono implícito com `WRITE_DAC` em
   `.trackfw` pré-criado por terceiro) e R-B (`SetNamedSecurityInfo` por nome segue junction — dano
   novo). Antes de corrigir, o arquiteto reabre a premissa: com Modify herdado na raiz do projeto, o
@@ -2588,7 +2592,7 @@ foi aplicado **por medição**, não por leitura: `docs/portabilidade/2026-10-12
   ML-W2c absorvido pela regra. ✅ `make quality` EXIT=0 (347 OK / 0 FAIL); CI do PR #567 20/20, ratchet 11/11; **mergeado** (`b5416c0f`).
 - **ML-W3 — remedir as 5 causas `INFER`** da lista conhecida (CRLF no renderizador ×2, golden,
   modelo de agente, separador no manifesto do `update`) e corrigir as que forem de produto.
-  🔄 **Em andamento (2026-10-16)** — branch `fix/fechar-os-grupos-de-falha-de-windows-ml-w3-infer`.
+  ✅ **Concluído (2026-10-16)**, PR #570 — branch `fix/fechar-os-grupos-de-falha-de-windows-ml-w3-infer`.
   Lista atual: **11 ativas**, das quais **3 `INFER`** (`TestRenderWithoutIdentityMatchesFrozenGoldens`,
   `TestResolveAgentModelMatchesRender`, `TestUpdateMigratesKnownCodexAndPreservesUnknown`) e 2 do
   mesmo grupo B medidas (`TestRender*_CRLFSourceMatchesLF`) — o grupo B entra junto (mesmo sintoma,
@@ -2606,10 +2610,10 @@ foi aplicado **por medição**, não por leitura: `docs/portabilidade/2026-10-12
   mesma causa restante (`docs/seguranca/2026-10-16-revisao-ml-w3b-crlf.md`). Prova x64: run
   `38963653933` — os 5 `exit=0`; `./...` falha só nas **6** restantes (todas `MEASURED`: NTFS sem
   ACL ×3, symlink sem privilégio, `shasum` com `\`, fake `git.exe` × defesa do runner).
-  🔄 Falta: `make quality` + CI do PR.
+  ✅ `make quality` EXIT=0; CI do PR #570 20/20, ratchet 6/6; **mergeado** (`bcde12ac`).
 - **ML-W4 — setup do censo instala o pacote Python pré-v8** (`windows-census.yml:399`): põe no PATH um
   `trackfw.exe` sem `guard`, e 2 rótulos falham por isso. Corrigir o instrumento.
-  🔄 **Em andamento (2026-10-16)** — branch `fix/fechar-os-grupos-de-falha-de-windows-ml-w4-censo`.
+  ✅ **Concluído (2026-10-16)**, PR #568 — branch `fix/fechar-os-grupos-de-falha-de-windows-ml-w4-censo`.
   **Mesma causa do ML-3A da v8**: o `quality.yml` já removeu `npm ci` e `pip install pypi/` do
   `parity-falsify-shard` (comentários "ML-3A (v8)"); o `windows-census.yml` (job de shards, linhas
   ~385–399) ficou para trás. Correção: espelhar o setup do `parity-falsify-shard` (`pip install
@@ -2632,3 +2636,26 @@ foi aplicado **por medição**, não por leitura: `docs/portabilidade/2026-10-12
 
 **Estado:** sai de `blocked/` para `backlog/` — a condição de bloqueio (v8) se cumpriu. Vai para
 `wip/` quando a implementação começar, na branch dela.
+
+---
+
+## ✅ Encerramento — 2026-10-16 (zeus-tf)
+
+Todos os MLs fechados. A lista conhecida do `windows-full-suites` foi de **14** (9.5.0, run
+`38316881566`) a **6** (PR #570, `6 observed / 6 active / 32 removed`):
+
+| PR | ML | efeito na lista |
+|---|---|---|
+| #565 | W1 — proveniência e nome curto 8.3 | 14 → 12 |
+| #566 | R3 — guard de entrada fala `\` | — (segurança, contido) |
+| #567 | W2 — 0600 inerte no NTFS → `validate` avisa escrita alheia | 12 → 11 |
+| #568 | W4/W4b — censo sem pacote pré-v8, `trackfw.exe`, cenário 67 isola `USERPROFILE` | censo 4 → 2 FAIL |
+| #570 | W3 — `normalizeMarkdown` converte CRLF; 2 testes de instrumento | 11 → 6 |
+
+**As 6 restantes são limites de ambiente, todas `MEASURED`** — NTFS ignora `chmod` (3), symlink exige
+privilégio (1), `shasum` prefixa `\` (1), defesa do runner contra `git.exe` falso (1). Nenhuma é
+defeito do produto.
+
+**Fora desta REQ** (não medidos, sem causa comum com ela): hooks ponta a ponta com Cursor, Windsurf,
+Gemini, Kiro, Copilot e Amazon Q; PowerShell 7 (`pwsh`); o que o Windsurf lê (A8 do
+ADR-2026-10-14).

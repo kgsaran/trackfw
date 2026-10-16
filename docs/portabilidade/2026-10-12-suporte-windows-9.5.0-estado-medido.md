@@ -4,6 +4,23 @@
 > `2026-10-12-medicao-vm-windows-9.5.0.md` (artemis-tf, VM ARM64), com recontagens do arquiteto que
 > **corrigem** números dos dois relatórios (ver "Correções").
 
+## ✅ Atualização — 2026-10-16 (encerramento da REQ-2026-09-03)
+
+| item da tabela abaixo | estado em 2026-10-16 | PR |
+|---|---|---|
+| 1 — guard global sob `HOME` ≠ `USERPROFILE` | **fechado** | #562 (REQ-2026-09-01) |
+| 2 — proveniência de terceiros (8.3) | **fechado** | #565 |
+| 3 — ML-R3, guard de entrada cego a `\` | **fechado** | #566 |
+| 4 — 0600 ignorado no NTFS | **limite declarado** + `validate` avisa escrita alheia (`project_foreign_write_windows`) | #567 |
+| 5 — demais falhas conhecidas | CRLF no renderizador **corrigido**; `INFER` medidas (a de separador estava errada) | #570 |
+| 6 — censo instala pacote pré-v8 | **fechado** (+ `trackfw.exe` e cenário 67 isolando `USERPROFILE`) | #568 |
+| 8 — 76 rótulos sem triagem | **fechado**: censo `38944389904` com 2 FAIL, ambos #421 | #568 |
+| 9 — `{owner}/{repo}` no shim do `gh` | **sumiu com a v8**: `release-tag-parity/*` 8/8 OK | — |
+
+Lista conhecida do `windows-full-suites`: **14 → 6**, todas `MEASURED` e de ambiente (NTFS ignora
+`chmod` ×3, symlink sem privilégio, `shasum` com `\`, fake `git.exe` × defesa do runner). Seguem
+**não medidos**: itens 13 (hooks com os demais CLIs) e 14 (`pwsh`), e o Windsurf.
+
 ## Como ler
 
 - **VM investiga, CI mede.** Número que vira afirmação sai do `windows-latest` x64. A VM é ARM64.

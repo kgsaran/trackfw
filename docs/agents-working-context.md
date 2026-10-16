@@ -46747,3 +46747,7 @@ Artefato: `docs/seguranca/2026-10-16-revisao-ml-w3b-crlf.md`
 Veredito: APROVA COM RESSALVAS (Q-3 nao-bloqueante — comentario de 13 linhas em normalizeMarkdown excede padrao do arquivo).
 Q-1 OK (nenhum sitio remanescente), Q-2 OK (ADR D1/D3 coerente), Q-4 OK (testes reconciliam conclusoes do ML), Q-5 OK (formato JSON correto).
 Hash: 13baad65
+
+## 2026-10-16 — zeus-tf — REQ-2026-09-03 encerrada
+
+- MLs W1, R3, W2, W4/W4b, W3 mergeados (#565–#570). Lista conhecida do Windows 14 → 6, todas de ambiente; censo 4 → 2 FAIL (#421). REQ Done, roadmap em `done`. Fora do escopo e não medidos: hooks com os demais CLIs, `pwsh`, Windsurf.
