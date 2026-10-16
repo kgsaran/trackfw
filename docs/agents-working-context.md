@@ -46740,3 +46740,10 @@ Veredito: LIBERA COM RESSALVAS. R-1: CI|IO ACE skipped — adição de subdiret�
 **hefesto-tf** · 2026-10-16 · Revisão de qualidade ML-W3b — iniciada
 Branch: `fix/fechar-os-grupos-de-falha-de-windows-ml-w3-infer`
 Escopo: `internal/integrations/render.go`, `render_test.go`, `update_test.go`, `.github/windows-known-failures.json`.
+
+**hefesto-tf** · 2026-10-16 · Revisão de qualidade ML-W3b — concluída
+Branch: `fix/fechar-os-grupos-de-falha-de-windows-ml-w3-infer`
+Artefato: `docs/seguranca/2026-10-16-revisao-ml-w3b-crlf.md`
+Veredito: APROVA COM RESSALVAS (Q-3 nao-bloqueante — comentario de 13 linhas em normalizeMarkdown excede padrao do arquivo).
+Q-1 OK (nenhum sitio remanescente), Q-2 OK (ADR D1/D3 coerente), Q-4 OK (testes reconciliam conclusoes do ML), Q-5 OK (formato JSON correto).
+Hash: 13baad65
