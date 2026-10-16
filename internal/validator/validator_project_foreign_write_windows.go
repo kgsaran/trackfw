@@ -7,19 +7,30 @@ package validator
 //
 // Always-warning; routed via applyRuleWarnOnly — never blockable.
 //
-// Checks the project root and, if it exists, .trackfw\ for ACEs that grant
-// write-equivalent rights to a SID outside the trusted set:
+// Checks the project root and, if it exists and is not a reparse point, .trackfw\
+// for ACEs that grant write-equivalent rights to a SID outside the trusted set:
 //   - the current process user (from OpenCurrentProcessToken),
 //   - SYSTEM (S-1-5-18),
 //   - Administrators (S-1-5-32-544),
 //   - CREATOR OWNER (S-1-3-0),
 //   - OWNER RIGHTS (S-1-3-4).
 //
-// An ACE is counted if it is an ACCESS_ALLOWED_ACE that:
+// An ACE is counted if it is an ACCESS_ALLOWED_ACE that (R-1):
 //   - applies to the object itself (INHERIT_ONLY_ACE flag absent), OR
-//   - is inheritable to files (OBJECT_INHERIT_ACE flag present).
+//   - is inheritable to files (OBJECT_INHERIT_ACE flag present), OR
+//   - is inheritable to containers (CONTAINER_INHERIT_ACE flag present).
 //
-// D3: any error reading a DACL is emitted as a warning (fail-visible, not silent).
+// Remedy message distinguishes inherited ACEs (INHERITED_ACE flag) from explicit ACEs (R-5):
+//   - explicit: icacls "<dir>" /remove:g *<SID>
+//   - inherited: move project inside user profile or icacls "<dir>" /inheritance:d && /remove:g
+//
+// D3: any error reading or parsing the DACL is emitted as a warning (fail-visible, not silent).
+// R-2: GetAce failures emit a D3 warning and continue (no silent break).
+// R-3: non-IsNotExist Lstat errors for .trackfw emit a D3 warning. Reparse points
+//
+//	(junctions/symlinks) are warned about and the DACL scan is skipped — GetNamedSecurityInfo
+//	by name follows the reparse point to its target, which is outside the project's control.
+//
 // Outside Windows this file is replaced by the no-op in validator_project_foreign_write_other.go.
 
 import (
@@ -84,8 +95,7 @@ func validateProjectForeignWriteWindows() []string {
 	root, err := os.Getwd()
 	if err != nil {
 		return []string{fmt.Sprintf(
-			"project_foreign_write_windows: cannot determine project root: %v — "+
-				"move the project to your user profile or remove inheritance",
+			"project_foreign_write_windows: cannot determine project root: %v",
 			err,
 		)}
 	}
@@ -93,7 +103,7 @@ func validateProjectForeignWriteWindows() []string {
 }
 
 // checkProjectForeignWrite is the injectable inner function used by tests.
-// It checks root and, if present, root\.trackfw.
+// It checks root and, if present and not a reparse point, root\.trackfw.
 func checkProjectForeignWrite(root string) []string {
 	// Resolve the current user SID from the process token.
 	ownerSID, ownerErr := currentUserSID()
@@ -101,15 +111,46 @@ func checkProjectForeignWrite(root string) []string {
 	var msgs []string
 
 	// Check root directory.
-	if warn := checkDirForeignWrite(root, root, ownerSID, ownerErr); warn != "" {
-		msgs = append(msgs, warn)
-	}
+	msgs = append(msgs, checkDirForeignWrite(root, ownerSID, ownerErr)...)
 
 	// Check .trackfw\ if it exists; a missing .trackfw is silent per D2.
 	trackfwDir := filepath.Join(root, ".trackfw")
-	if _, statErr := os.Lstat(trackfwDir); statErr == nil {
-		if warn := checkDirForeignWrite(trackfwDir, root, ownerSID, ownerErr); warn != "" {
-			msgs = append(msgs, warn)
+	if _, statErr := os.Lstat(trackfwDir); statErr != nil {
+		if !os.IsNotExist(statErr) {
+			// R-3: access-denied or other non-existence error is a D3 warning.
+			msgs = append(msgs, fmt.Sprintf(
+				"project_foreign_write_windows: cannot stat %q: %v — DACL check skipped",
+				trackfwDir, statErr,
+			))
+		}
+		// IsNotExist: .trackfw doesn't exist, silent per D2.
+	} else {
+		// Path exists. Use GetFileAttributes to detect reparse points (junctions, symlinks).
+		// GetNamedSecurityInfo by path follows reparse points to their target;
+		// the target is outside the project's control, so its ACL proves nothing
+		// about the project's integrity. Warn and skip the DACL scan. (R-3)
+		ptr, ptrErr := windows.UTF16PtrFromString(trackfwDir)
+		if ptrErr != nil {
+			msgs = append(msgs, fmt.Sprintf(
+				"project_foreign_write_windows: cannot encode path %q: %v — DACL check skipped",
+				trackfwDir, ptrErr,
+			))
+		} else {
+			attrs, attrErr := windows.GetFileAttributes(ptr)
+			if attrErr != nil {
+				msgs = append(msgs, fmt.Sprintf(
+					"project_foreign_write_windows: cannot get attributes of %q: %v — DACL check skipped",
+					trackfwDir, attrErr,
+				))
+			} else if attrs&windows.FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+				msgs = append(msgs, fmt.Sprintf(
+					"project_foreign_write_windows: %q is a reparse point (junction or symlink); "+
+						"DACL scan skipped — target is outside the project; verify target separately",
+					trackfwDir,
+				))
+			} else {
+				msgs = append(msgs, checkDirForeignWrite(trackfwDir, ownerSID, ownerErr)...)
+			}
 		}
 	}
 
@@ -117,64 +158,71 @@ func checkProjectForeignWrite(root string) []string {
 }
 
 // checkDirForeignWrite checks a single directory path for foreign write ACEs.
-// root is the project root (used only in the remediation message).
 // ownerSID and ownerErr come from currentUserSID(); ownerErr is propagated as a
 // D3 warning if present.
-func checkDirForeignWrite(dirPath, root string, ownerSID *windows.SID, ownerErr error) string {
+// Returns a slice of warning strings (empty when no foreign ACE is found).
+func checkDirForeignWrite(dirPath string, ownerSID *windows.SID, ownerErr error) []string {
 	if ownerErr != nil {
-		return fmt.Sprintf(
-			"project_foreign_write_windows: %q: cannot determine current user SID: %v — "+
-				"move the project inside your user profile or remove inheritance",
+		return []string{fmt.Sprintf(
+			"project_foreign_write_windows: %q: cannot determine current user SID: %v",
 			dirPath, ownerErr,
-		)
+		)}
 	}
 
 	// D3: error reading the DACL is a warning, never silence.
 	sd, err := windows.GetNamedSecurityInfo(dirPath, windows.SE_FILE_OBJECT,
 		windows.DACL_SECURITY_INFORMATION)
 	if err != nil {
-		return fmt.Sprintf(
-			"project_foreign_write_windows: %q: cannot read DACL: %v — "+
-				"move the project inside your user profile or remove inheritance",
+		return []string{fmt.Sprintf(
+			"project_foreign_write_windows: %q: cannot read DACL: %v",
 			dirPath, err,
-		)
+		)}
 	}
 
 	dacl, _, err := sd.DACL()
 	if err != nil {
-		return fmt.Sprintf(
-			"project_foreign_write_windows: %q: cannot parse DACL: %v — "+
-				"move the project inside your user profile or remove inheritance",
+		return []string{fmt.Sprintf(
+			"project_foreign_write_windows: %q: cannot parse DACL: %v",
 			dirPath, err,
-		)
+		)}
 	}
 
 	if dacl == nil {
 		// NULL DACL = everyone has full control.
-		return fmt.Sprintf(
+		return []string{fmt.Sprintf(
 			"project_foreign_write_windows: %q has a NULL DACL (everyone full control) — "+
-				"move the project inside your user profile or remove inheritance",
+				"move the project inside your user profile or set an explicit restrictive DACL",
 			dirPath,
-		)
+		)}
 	}
 
-	var foreignSIDs []string
+	var msgs []string
+	var explicitLabels, explicitSIDs []string
+	var inheritedLabels, inheritedSIDs []string
 
 	for i := uint32(0); i < uint32(dacl.AceCount); i++ {
 		var ace *windows.ACCESS_ALLOWED_ACE
 		if err := windows.GetAce(dacl, i, &ace); err != nil {
-			break
+			// R-2: D3 violation to break silently; emit warning and continue scanning.
+			msgs = append(msgs, fmt.Sprintf(
+				"project_foreign_write_windows: %q: GetAce[%d] failed: %v — DACL scan may be incomplete",
+				dirPath, i, err,
+			))
+			continue
 		}
 		if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE {
 			continue
 		}
 
 		flags := uint32(ace.Header.AceFlags)
-		// An ACE counts if it applies to the object itself (INHERIT_ONLY absent)
-		// or is inheritable to files (OBJECT_INHERIT set).
+		// R-1: An ACE counts if it applies to the object itself (IO absent),
+		// is inheritable to files (OI set), or is inheritable to containers (CI set).
+		// The original rule omitted CI, allowing an attacker with only CI|IO rights
+		// to pre-create .trackfw (FILE_ADD_SUBDIRECTORY via container inheritance).
 		appliesToObject := (flags & windows.INHERIT_ONLY_ACE) == 0
 		inheritableToFile := (flags & windows.OBJECT_INHERIT_ACE) != 0
-		if !appliesToObject && !inheritableToFile {
+		inheritableToContainer := (flags & windows.CONTAINER_INHERIT_ACE) != 0
+		if !appliesToObject && !inheritableToFile && !inheritableToContainer {
 			continue
 		}
 
@@ -187,20 +235,54 @@ func checkDirForeignWrite(dirPath, root string, ownerSID *windows.SID, ownerErr 
 			continue
 		}
 
-		foreignSIDs = append(foreignSIDs, sidLabel(aceSID))
+		// R-5: distinguish inherited ACEs (INHERITED_ACE flag) from explicit ACEs.
+		// Inherited ACEs require disabling inheritance before removing; explicit ACEs
+		// can be removed directly.
+		label := sidLabel(aceSID)
+		sidStr := aceSID.String()
+		if flags&windows.INHERITED_ACE != 0 {
+			inheritedLabels = append(inheritedLabels, label)
+			inheritedSIDs = append(inheritedSIDs, sidStr)
+		} else {
+			explicitLabels = append(explicitLabels, label)
+			explicitSIDs = append(explicitSIDs, sidStr)
+		}
 	}
 
-	if len(foreignSIDs) == 0 {
-		return ""
+	// R-5: build separate messages with accurate remediation per ACE type.
+	// icacls requires a '*' prefix for SID strings (otherwise treats as account name).
+	// Paths are passed as plain strings inside "..." (not %q — %q doubles backslashes).
+	if len(explicitLabels) > 0 {
+		sidArgs := make([]string, len(explicitSIDs))
+		for i, s := range explicitSIDs {
+			sidArgs[i] = "*" + s
+		}
+		msgs = append(msgs, fmt.Sprintf(
+			"project_foreign_write_windows: %q grants write access to %s (explicit ACE) — "+
+				"run: icacls \"%s\" /remove:g %s",
+			dirPath,
+			strings.Join(explicitLabels, ", "),
+			dirPath,
+			strings.Join(sidArgs, " "),
+		))
+	}
+	if len(inheritedLabels) > 0 {
+		sidArgs := make([]string, len(inheritedSIDs))
+		for i, s := range inheritedSIDs {
+			sidArgs[i] = "*" + s
+		}
+		msgs = append(msgs, fmt.Sprintf(
+			"project_foreign_write_windows: %q grants write access to %s (inherited ACE) — "+
+				"move the project inside your user profile or run: "+
+				"icacls \"%s\" /inheritance:d && icacls \"%s\" /remove:g %s",
+			dirPath,
+			strings.Join(inheritedLabels, ", "),
+			dirPath, dirPath,
+			strings.Join(sidArgs, " "),
+		))
 	}
 
-	return fmt.Sprintf(
-		"project_foreign_write_windows: %q grants write access to %s — "+
-			"move the project inside your user profile or remove inheritance from %q",
-		dirPath,
-		strings.Join(foreignSIDs, ", "),
-		root,
-	)
+	return msgs
 }
 
 // isTrustedSID returns true if sid is in the trusted set (process owner + static list).

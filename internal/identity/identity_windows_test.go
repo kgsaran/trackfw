@@ -21,13 +21,16 @@ import (
 //   - the identity file exists after Save,
 //   - the file content is valid JSON ending with a newline,
 //   - no leftover temp files remain,
-//   - Mode().Perm() is NOT 0o600 (it is 0o666 on a standard NTFS runner) — D1.
+//   - Mode().Perm() == 0o666 (the only non-READONLY value Go synthesises on NTFS) — D1.
 //
 // Reconciliation (Regra de Reconciliação, CLAUDE.md):
-//   - The Mode().Perm() != 0o600 assertion affirms "os.Chmod(0o600) is inert on
-//     Windows NTFS" (D1 of ADR-2026-10-16). It would fail if a future change
-//     made Go's os.Chmod write an ACL-based 0o600 on Windows, which would be a
-//     surprise worth catching.
+//   - The Mode().Perm() == 0o666 assertion locks the measured Windows semantics.
+//     Go synthesises Mode() from FILE_ATTRIBUTE_READONLY only (os/types_windows.go),
+//     returning 0o444 or 0o666 regardless of NTFS ACLs. The assertion tightens the
+//     claim to the exact measured value so that any future change to Go's NTFS
+//     Mode() implementation — e.g. an ACL-aware path that could return 0o600 — causes
+//     a failure worth investigating. The proof that os.Chmod(0o600) is inert on NTFS
+//     is probe P17/icacls, not this test (D1 of ADR-2026-10-16).
 //   - The JSON + newline + no-temp assertions affirm "Save is atomic and produces
 //     valid output" — they would fail if the write was truncated or if the temp
 //     rename cleanup was broken.
@@ -46,13 +49,19 @@ func TestSave_WritesAtomicallyWithPermissions(t *testing.T) {
 	}
 
 	// D1 (ADR-2026-10-16-no-windows-o-validate-avisa-...): os.Chmod(0o600) is
-	// inert on NTFS. Mode().Perm() is expected to be 0o666 (measured in CI run
-	// 38902064559). Assert the Windows-measured value; the POSIX 0o600 assertion
-	// lives in identity_notwindows_test.go.
+	// inert on NTFS. Mode().Perm() is expected to be exactly 0o666 (measured in CI
+	// run 38902064559). Go synthesises Mode() from FILE_ATTRIBUTE_READONLY only
+	// (os/types_windows.go), so only 0o444 and 0o666 are possible.
+	// Assert the measured value; the POSIX 0o600 assertion lives in
+	// identity_notwindows_test.go.
 	perm := info.Mode().Perm()
 	t.Logf("PROBE w2b identity perm=%04o (Windows NTFS; expected 0o666 per D1)", perm)
-	if perm == 0o600 {
-		t.Errorf("Mode().Perm() = 0o600 on Windows — unexpected: os.Chmod(0o600) should be inert on NTFS (D1 ADR-2026-10-16); this may indicate a new ACL-aware os.Chmod; update the test and the ADR")
+	if perm != 0o666 {
+		t.Errorf("Mode().Perm() = 0o%o on Windows — expected 0o666 (Go synthesises from "+
+			"FILE_ATTRIBUTE_READONLY only; NTFS ACLs are not reflected in Mode()). "+
+			"If this is 0o444, the file was marked read-only. "+
+			"If it is 0o600, a new ACL-aware os.Chmod may have been introduced — update test and ADR.",
+			perm)
 	}
 
 	// No leftover temp files should remain in the directory.
