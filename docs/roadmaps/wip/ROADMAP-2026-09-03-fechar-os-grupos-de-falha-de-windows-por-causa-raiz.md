@@ -2492,8 +2492,8 @@ Nunca `"..\\outside.md"`.
       ✅ `TestManagerAcceptsCatalog{Relative,Global}Destinations`, `TestContainsUnsafeSegmentTable`; `TestManagerAnchorPredicateVectorTableNoFlip` intacto
 - [x] teste revert-proof sem Windows
       ✅ todos reprovam no macOS sem a correção (mordidas coladas)
-- [ ] `make quality QUALITY_EXIT=0`, `grep -c '^FAIL'` sobre a saída inteira = 0
-      🔄 `make quality`/CI no PR
+- [x] `make quality QUALITY_EXIT=0`, `grep -c '^FAIL'` sobre a saída inteira = 0
+      ✅ `make quality` EXIT=0 em `f5dc225f` (347 OK / 0 FAIL; carga até 11, não ociosa); CI do PR #566 20/20, ratchet 12/12 sem nome novo
 - [x] revisão do `hades-tf` — é guarda de segurança
       ✅ `hades-tf` red-team
 

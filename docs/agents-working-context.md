@@ -46605,3 +46605,7 @@ Artefato entregue: `docs/seguranca/2026-10-15-red-team-ml-r3-travessia.md`
 Veredito: LIBERA COM RESSALVA (R-1 trailing space/dot — Ajuste).
 4 vetores obrigatórios do roadmap confirmados bloqueados pelo guard de entrada.
 Zero flips em catálogo e terceiros. Ajuste R-1 propõe `strings.TrimRight(part, " .") == ".."` em containsUnsafeSegment.
+
+## 2026-10-16 — zeus-tf — ML-R3 pronto (PR #566)
+
+- Guard de entrada do `Manager.resolve` recusa segmento composto só de pontos/espaços com `/` ou `\` nos ramos `default:` e `~/`. Red-team liberou; R-1 corrigido (fórmula do parecer era impossível). CI 20/20, ratchet 12/12; `make quality` EXIT=0 (carga até 11). Gates Python rodam com venv isolado em `/tmp/zeus-venv312`.
