@@ -56,30 +56,18 @@ New-Item -ItemType Directory -Force -Path $sharedDir | Out-Null
 # Compilar o helper Go que escreve a proveniência real via
 # thirdparty.WriteProvenance (função exportada).
 #
-# Usa um módulo auxiliar em RUNNER_TEMP com replace directive apontando
-# para o workspace. Todas as dependências transitivas estão no module
-# cache (go build ./cmd/trackfw já rodou no workflow). GONOSUMDB=* evita
-# consulta ao sum database; -mod=mod permite atualizar go.sum localmente.
+# Pacotes sob internal/ só podem ser importados de dentro do mesmo módulo.
+# Portanto o helper é criado como um cmd temporário DENTRO do workspace
+# ($Workspace/cmd/p19-helper-probe/), compilado de lá, e removido depois.
+# Não usa módulo auxiliar externo — usa o go.mod raiz do trackfw.
 # -----------------------------------------------------------------------
 Write-Host ""
 Write-Host "=== P19: compilando helper Go (WriteProvenance) ==="
 
-$helperDir = Join-Path $env:RUNNER_TEMP "p19-helper"
+# Dir temporário DENTRO do módulo trackfw para o helper source
+$helperDir = Join-Path $Workspace "cmd\p19-helper-probe"
 if (Test-Path $helperDir) { Remove-Item -Recurse -Force $helperDir }
 New-Item -ItemType Directory -Force -Path $helperDir | Out-Null
-
-# Normalizar $Workspace para forward slashes no go.mod (require path seguro)
-$wsForwardSlash = $Workspace -replace '\\','/'
-
-$goMod = @"
-module p19helper
-go 1.25
-
-require github.com/kgsaran/trackfw v0.0.0
-
-replace github.com/kgsaran/trackfw v0.0.0 => $Workspace
-"@
-Set-Content -Path (Join-Path $helperDir "go.mod") -Value $goMod -Encoding UTF8
 
 $goMain = @'
 package main
@@ -123,14 +111,14 @@ func main() {
 Set-Content -Path (Join-Path $helperDir "main.go") -Value $goMain -Encoding UTF8
 
 $helperBin = Join-Path $env:RUNNER_TEMP "p19-helper.exe"
-Push-Location $helperDir
-$env:GONOSUMDB   = "*"
-$env:GONOSUMCHECK= "*"
-$env:GOFLAGS     = "-mod=mod"
-go build -o $helperBin . 2>&1 | Write-Host
+# Compilar a partir do workspace raiz para usar o go.mod do módulo
+Push-Location $Workspace
+go build -o $helperBin ".\cmd\p19-helper-probe" 2>&1 | Write-Host
 $helperBuildExit = $LASTEXITCODE
-Remove-Item Env:\GOFLAGS -ErrorAction SilentlyContinue
 Pop-Location
+
+# Remover source temporário (não deve entrar em nenhum commit)
+Remove-Item -Recurse -Force $helperDir -ErrorAction SilentlyContinue
 
 if ($helperBuildExit -ne 0) {
     Write-Host "P19_GUARD_FAIL: HELPER_BUILD_FAILED exit=$helperBuildExit"
