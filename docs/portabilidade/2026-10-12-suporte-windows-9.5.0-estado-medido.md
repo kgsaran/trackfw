@@ -80,8 +80,8 @@ na lista foram escritas em 2026-09-10, e **5 delas são inferidas** (`INFER`), n
 |---|---|---|
 | `scaffold-update-chmod-removed/direction-c-baseline` | NTFS sem ACL (#421) | ✅ previsto |
 | `scaffold-update-chmod-removed/direction-c-detected` | NTFS sem ACL (#421) | ✅ previsto |
-| `git-branch-guard-dedup/baseline-skips-project-entry` | Regressão de dedup introduzida pelo ML-R3 (manager.go) | ❌ novo |
-| `git-branch-guard-dedup/double-slash-tolerance` | Regressão de dedup introduzida pelo ML-R3 (manager.go) | ❌ novo |
+| `git-branch-guard-dedup/baseline-skips-project-entry` | Instrumento: fixture do cenário 67 não passava USERPROFILE — ver ML-W4b | ❌ novo (instrumento) |
+| `git-branch-guard-dedup/double-slash-tolerance` | Instrumento: fixture do cenário 67 não passava USERPROFILE — ver ML-W4b | ❌ novo (instrumento) |
 
 ### Rótulos que saíram de FAIL
 
@@ -109,12 +109,60 @@ Ver vault: `go-build-no-exe-suffix-exec-lookpath-falha-no-windows-2026-10-16`.
 - ✅ `roadmap-req-frontmatter-path/go/from-req-baseline` → OK
 - ✅ NTFS noacl (#421) continuam FAIL (esperado)
 - ❌ 2 rótulos novos em FAIL: `git-branch-guard-dedup/baseline-skips-project-entry` e
-  `git-branch-guard-dedup/double-slash-tolerance` — regressão do ML-R3, fora do escopo do ML-W4.
-  Referência (v9.5.0): ambos OK. Introduzidos pelos commits do ML-R3 em `internal/integrations/manager.go`.
+  `git-branch-guard-dedup/double-slash-tolerance` — **causa: instrumento**, não produto.
+  O arquiteto corrigiu: a causa **não era** o ML-R3. Ver seção "ML-W4b" abaixo.
 
-O critério "nenhum rótulo novo em FAIL" **NÃO está atendido** por causa da regressão do ML-R3.
-O ML-W4 resolveu sua causa específica; a regressão do dedup deve ser investigada e corrigida no
-escopo do ML-R3 antes de fechar o roadmap.
+O critério "nenhum rótulo novo em FAIL" **NÃO foi atendido** no run 38941248253.
+ML-W4b corrige o instrumento; o run 38944389904 é o alvo do aceite do ML-W4b.
+
+## Censo pós-ML-W4b (2026-10-16)
+
+> ares-tf · branch `fix/fechar-os-grupos-de-falha-de-windows-ml-w4-censo` · run `38944389904`
+
+### Causa raiz dos 2 rótulos novos (diagnóstico do arquiteto, corrigido)
+
+O relatório do ML-W4 atribuiu os 2 FAILs a uma "regressão do ML-R3 em manager.go". **Esta
+atribuição estava errada.** O arquiteto mediu e determinou a causa correta:
+
+- A referência `38319939952` (main `a1cc6e93`, 2026-10-12) é anterior ao PR #562
+  (REQ-2026-09-01, 2026-10-14). Com o PR #562, `agentconfig.OSCLIHomeResolver.HomeFor("claude")`
+  no Windows passou a chamar `os.UserHomeDir()` (= USERPROFILE), não `homedir.Dir()` (= HOME).
+- O cenário 67 do falsify (`scripts/check-gates-falsify.sh:5097–5301`) setava `HOME=<fake>` em cada
+  invocação de `discover --init`, mas deixava `USERPROFILE=$WORK/home` (da linha 119, global).
+- No Windows, `readClaudeSettingsJSON()` → `agentconfig.ClaudeConfigDir` → `HomeFor("claude")` →
+  `os.UserHomeDir()` → USERPROFILE = `$WORK/home`, que não tem o settings.json com a fiação global.
+- Resultado: `globalGitBranchGuardInstalledClaude()` retornava false → `discover` gravava
+  git-branch-guard no projeto → `baseline-skips-project-entry` (braço 1) e `double-slash-tolerance`
+  (braço 4) falhavam. Braços 2 e 3 passavam por acidente (ausência de fiação era o comportamento
+  esperado de qualquer forma).
+
+**Evidência no run 38941248253:** não foi possível extrair os logs do artifact `falsify-shard-*`
+porque o shard 6 (que contém o cenário 67) não produz log de diagnóstico de subshell. A causa foi
+inferida por leitura de código e confirmada pela correção: após adicionar `USERPROFILE="$T67_FAKE_HOME"
+CLAUDE_CONFIG_DIR=` a cada subshell de `discover --init`, todos os 6 rótulos `git-branch-guard-dedup/*`
+passam no macOS (run local, shard 6, SHARD_COUNT=8).
+
+**Varredura de mesma causa:** os `validate` dos cenários 68/69 com apenas `HOME=` não são mesma
+causa — `validate` usa `homedir.Dir()` (que honra HOME) para o caminho de scripts
+`~/.trackfw/scripts/`; USERPROFILE é fail-open nesse path. Nenhum outro `discover` ou
+`update harness` no falsify tinha a combinação `HOME=<fake>` sem `USERPROFILE=<mesmo>`.
+
+### Commit do ML-W4b
+
+| Hash | Descrição |
+|---|---|
+| `60eca16e` | fix(falsify): cenário 67 — passar USERPROFILE=<fake> em todos os discover --init |
+
+### Contagens esperadas pós-ML-W4b
+
+| Censo | Run | Total | OK | FAIL |
+|---|---|---|---|---|
+| Referência (v9.5.0 main) | 38319939952 | 278 | 274 | 4 |
+| Pós-ML-W4 | 38941248253 | 278 | 274 | 4 |
+| Pós-ML-W4b (pendente) | 38944389904 | 278 | 276 | 2 |
+
+Aceite esperado: apenas os 2 rótulos `scaffold-update-chmod-removed/direction-c-*` em FAIL,
+todos os demais OK. Run em andamento na publicação deste documento.
 
 ## O que **não** dá para afirmar hoje
 
