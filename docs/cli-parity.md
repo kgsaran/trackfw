@@ -8820,7 +8820,7 @@ The old file is **never deleted** — it is the user's own configuration file.
 
 ### `project_foreign_write_windows` — informative warning, never a violation
 
-<!-- trackfw-contract: gate=internal/validator/validator_project_foreign_write_windows_test.go partial=TestProjectForeignWrite_ForeignWriteACE proves one warning is emitted when AU (S-1-5-11) has (OI)(CI) Modify on the project root, names the SID, and uses the /remove:g remedy (explicit ACE path); TestProjectForeignWrite_CleanDACL proves silence when only owner/SYSTEM/Administrators have ACEs; TestProjectForeignWrite_TrackfwDirForeignACE proves the .trackfw\ check fires independently and names the subdirectory; TestProjectForeignWrite_ReadOnlyACENoWarning proves that a read-only (RX, mask 0x1200a9) ACE for a foreign SID does not trigger the rule; TestProjectForeignWrite_DACLReadError proves D3: a non-existent or unreadable path emits a warning rather than nil; TestProjectForeignWrite_ContainerInheritOnlyACE (f) proves R-1: a CI|IO ACE granting FILE_ADD_SUBDIRECTORY to AU fires the rule; TestProjectForeignWrite_ForeignWriteACE_EachBit proves each D2 right in isolation triggers the rule (isolation assertion: stored mask ∩ d2WriteMask == target bit); TestProjectForeignWrite_InheritedACERemedy proves R-5: an inherited ACE (INHERITED_ACE flag) produces a warning with /inheritance:d; no script gate for the Windows-only runtime path (windows branch not exercised in macOS/Linux CI) -->
+<!-- trackfw-contract: gate=internal/validator/validator_project_foreign_write_windows_test.go partial=TestProjectForeignWrite_ForeignWriteACE proves one warning is emitted when AU (S-1-5-11) has (OI)(CI) Modify on the project root, names the SID, and the explicit-ACE remedy includes /grant *<ownerSID>:(OI)(CI)(F) before /remove:g (D2.2); TestProjectForeignWrite_CleanDACL proves silence when only owner/SYSTEM/Administrators have ACEs; TestProjectForeignWrite_TrackfwDirForeignACE proves the .trackfw\ check fires independently and names the subdirectory; TestProjectForeignWrite_ReadOnlyACENoWarning proves that a read-only (RX, mask 0x1200a9) ACE for a foreign SID does not trigger the rule; TestProjectForeignWrite_DACLReadError proves D3: a non-existent or unreadable path emits a warning rather than nil; TestProjectForeignWrite_ContainerInheritOnlyACE (f) proves R-1: a CI|IO ACE granting FILE_ADD_SUBDIRECTORY to AU fires the rule; TestProjectForeignWrite_ForeignWriteACE_EachBit proves each D2 right in isolation triggers the rule (isolation assertion: stored mask ∩ d2WriteMask == target bit); TestProjectForeignWrite_InheritedACERemedy proves R-5: an inherited ACE (INHERITED_ACE flag) produces a warning with /inheritance:d, /grant *<ownerSID>:(OI)(CI)(F), and /remove:g in that order (D2.2); TestProjectForeignWrite_RemedyPreservesOwnerWrite/explicit proves D2.2: applying the printed explicit-ACE remedy to a fixture where only S-1-5-11 grants write access preserves the owner's write capability and removes S-1-5-11 from the DACL; TestProjectForeignWrite_RemedyPreservesOwnerWrite/inherited proves D2.2: applying the printed inherited-ACE remedy to the same fixture preserves the owner's write capability and removes S-1-5-11 from the DACL; no script gate for the Windows-only runtime path (windows branch not exercised in macOS/Linux CI) -->
 
 On Windows, `trackfw validate` reads the DACL of the project root (`os.Getwd()`) and,
 if present and not a reparse point (junction or symlink), `.trackfw\`. When any
@@ -8834,8 +8834,11 @@ If `.trackfw\` is a reparse point, a warning is emitted and its DACL scan is ski
 the project's control.
 
 The remedy message distinguishes ACE types (R-5): for explicit ACEs (no `INHERITED_ACE`
-flag), the message cites `icacls "<dir>" /remove:g *<SID>`; for inherited ACEs
-(`INHERITED_ACE` flag set), it cites `icacls "<dir>" /inheritance:d && /remove:g *<SID>`.
+flag), the message cites `icacls "<dir>" /grant *<ownerSID>:(OI)(CI)(F) && icacls "<dir>" /remove:g *<SID>`;
+for inherited ACEs (`INHERITED_ACE` flag set), it cites
+`icacls "<dir>" /inheritance:d && icacls "<dir>" /grant *<ownerSID>:(OI)(CI)(F) && icacls "<dir>" /remove:g *<SID>`.
+Both forms include `/grant *<ownerSID>:(OI)(CI)(F)` before `/remove:g` to preserve the
+owner's write access when the only write-granting ACE is the one being removed (D2.2, #569).
 D3 error messages (DACL unreadable, GetAce failure) carry their own suffix without ACL
 remediation commands.
 
@@ -8858,8 +8861,10 @@ emitted as a warning — never silenced.
 
 **Remedy message:** names the path, the foreign SIDs (with `LookupAccount` name when
 available, SID string otherwise), and provides an `icacls` command appropriate to the
-ACE type: explicit ACEs use `/remove:g *<SID>`; inherited ACEs use
-`/inheritance:d && /remove:g *<SID>`. D3 error messages do not carry ACL remediation.
+ACE type: explicit ACEs use `/grant *<ownerSID>:(OI)(CI)(F) && /remove:g *<SID>`;
+inherited ACEs use `/inheritance:d && /grant *<ownerSID>:(OI)(CI)(F) && /remove:g *<SID>`.
+Both forms include `/grant` before `/remove:g` to preserve the owner's write access (D2.2, #569).
+D3 error messages do not carry ACL remediation.
 
 **Declared limit (D1):** the trackfw does not write any DACL of its own. The rule only
 reads. A project under `C:\` with `Authenticated Users:(I)(M)` will be warned; the user

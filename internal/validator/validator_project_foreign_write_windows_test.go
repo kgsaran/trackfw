@@ -11,7 +11,8 @@ package validator_test
 // Each test asserts one conclusion (Regra de Reconciliação, CLAUDE.md):
 //
 //   (a) Root with (OI)(CI) Modify for S-1-5-11 (Authenticated Users): warning,
-//       names the SID, remedy is /remove:g (explicit ACE), no /inheritance:d.
+//       names the SID, remedy includes /grant *<ownerSID>:(OI)(CI)(F) before /remove:g
+//       (explicit ACE), no /inheritance:d. (D2.2, #569)
 //   (b) Root with only owner, SYSTEM, Administrators ACEs: no warning.
 //   (c) .trackfw\ with foreign write ACE, root clean: warning names .trackfw.
 //   (d) ACE with only read/execute rights (mask 0x1200a9, not in D2): no warning.
@@ -25,9 +26,12 @@ package validator_test
 //            can be removed from d2WriteMask without breaking coverage).
 //            GENERIC_WRITE and GENERIC_ALL use OIIO ACEs to preserve raw generic bits.
 //
-// Remedy branch test:
+// Remedy branch tests:
 //   InheritedACERemedy: child directory inherits OICI write ACE from parent;
-//       warning cites /inheritance:d (inherited ACE path).
+//       warning cites /inheritance:d, /grant *<ownerSID>:(OI)(CI)(F), /remove:g (D2.2).
+//   RemedyPreservesOwnerWrite: applies the printed remedy to a fixture where only S-1-5-11
+//       grants write access, and asserts the owner can still create files afterwards.
+//       Covers both explicit-ACE and inherited-ACE remedy paths. (closes #569)
 //
 // Mordidas obrigatórias (falsificação):
 //   (a) Remove the d2WriteMask check → (d) emits a spurious warning.
@@ -38,10 +42,16 @@ package validator_test
 //   (f) Remove CONTAINER_INHERIT_ACE from the ACE-counting condition → (f) returns no warning.
 //   EachBit: remove that bit from d2WriteMask → the corresponding subcase returns no warning.
 //   InheritedACERemedy: change inherited path to explicit path → assertion on /inheritance:d fails.
+//   ForeignWriteACE: remove /grant from explicit remedy → /grant assertion fails.
+//   InheritedACERemedy: remove /grant from inherited remedy → /grant assertion fails.
+//   RemedyPreservesOwnerWrite: apply old remedy (no /grant) → control arm measures access denied.
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -229,14 +239,15 @@ const localD2WriteMask windows.ACCESS_MASK = windows.FILE_WRITE_DATA |
 // TestProjectForeignWrite_ForeignWriteACE asserts conclusion (a):
 // a root directory with (OI)(CI) Modify for Authenticated Users (S-1-5-11)
 // emits a warning that names the SID; with an explicit ACE the remedy cites
-// /remove:g and not /inheritance:d.
+// /grant *<ownerSID>:(OI)(CI)(F) before /remove:g, and not /inheritance:d. (D2.2, #569)
 //
 // Reconciliation: this test affirms "the rule fires when a non-trusted SID has a
 // write ACE on the root, the warning names the SID, and the remedy for an explicit
-// ACE is /remove:g without /inheritance:d". It would fail if (a) d2WriteMask
-// excluded ALL D2 bits present in 0x1301bf, (b) S-1-5-11 were added to the trusted
-// set, or (c) the remedy message switched to the inherited-ACE form. The per-bit
-// isolation is proven by TestProjectForeignWrite_ForeignWriteACE_EachBit.
+// ACE includes /grant *<ownerSID>:(OI)(CI)(F) before /remove:g without /inheritance:d".
+// It would fail if (a) d2WriteMask excluded ALL D2 bits present in 0x1301bf,
+// (b) S-1-5-11 were added to the trusted set, (c) the remedy message switched to the
+// inherited-ACE form, or (d) /grant were removed from the explicit remedy (D2.2).
+// The per-bit isolation is proven by TestProjectForeignWrite_ForeignWriteACE_EachBit.
 func TestProjectForeignWrite_ForeignWriteACE(t *testing.T) {
 	ownerSID := ownerSIDForTest(t)
 	// 0x1301bf = Modify: FILE_WRITE_DATA, FILE_APPEND_DATA, FILE_WRITE_EA,
@@ -266,6 +277,18 @@ func TestProjectForeignWrite_ForeignWriteACE(t *testing.T) {
 	}
 	if strings.Contains(w, "/inheritance:d") {
 		t.Errorf("warning for explicit ACE must NOT mention /inheritance:d\nfull warning: %s", w)
+	}
+	// D2.2 (#569): remedy must include /grant *<ownerSID>:(OI)(CI)(F) BEFORE /remove:g.
+	if !strings.Contains(w, "/grant") {
+		t.Errorf("warning for explicit ACE should include /grant to preserve owner write access\nfull warning: %s", w)
+	}
+	if !strings.Contains(w, "*"+ownerSID) {
+		t.Errorf("warning /grant should reference owner SID *%s\nfull warning: %s", ownerSID, w)
+	}
+	grantIdx := strings.Index(w, "/grant")
+	removeIdx := strings.Index(w, "/remove:g")
+	if grantIdx < 0 || removeIdx < 0 || grantIdx >= removeIdx {
+		t.Errorf("/grant must appear before /remove:g in remedy\nfull warning: %s", w)
 	}
 	t.Logf("PROBE project_foreign_write (a) PASS: warning = %s", w)
 }
@@ -568,7 +591,8 @@ func TestProjectForeignWrite_ForeignWriteACE_EachBit(t *testing.T) {
 
 // TestProjectForeignWrite_InheritedACERemedy verifies the R-5 inherited-ACE
 // remedy path: when a child directory inherits an OICI write ACE from its parent,
-// the warning cites /inheritance:d (in addition to /remove:g), not just /remove:g.
+// the warning cites /inheritance:d, then /grant *<ownerSID>:(OI)(CI)(F), then
+// /remove:g. (D2.2, #569)
 //
 // The fixture creates a parent directory with an OI|CI AU write ACE (PROTECTED
 // from its own grandparent), then creates a child directory that inherits naturally.
@@ -576,9 +600,11 @@ func TestProjectForeignWrite_ForeignWriteACE_EachBit(t *testing.T) {
 // arm before proceeding.
 //
 // Reconciliation: this test affirms "for an inherited ACE the warning mentions
-// /inheritance:d; for an explicit ACE it does not". It would fail if the code
-// always used the explicit-ACE message path (removing the INHERITED_ACE check),
-// or if the inherited-ACE message were changed to omit /inheritance:d.
+// /inheritance:d, /grant *<ownerSID>:(OI)(CI)(F), and /remove:g, in that order;
+// for an explicit ACE it does not mention /inheritance:d". It would fail if the
+// code always used the explicit-ACE message path (removing the INHERITED_ACE check),
+// if the inherited-ACE message omitted /inheritance:d, or if /grant were removed
+// from the remedy (D2.2).
 func TestProjectForeignWrite_InheritedACERemedy(t *testing.T) {
 	ownerSID := ownerSIDForTest(t)
 	// Parent has OICI write ACE for AU (file_write_data = 0x2).
@@ -623,5 +649,371 @@ func TestProjectForeignWrite_InheritedACERemedy(t *testing.T) {
 	if !strings.Contains(w, "/remove:g") {
 		t.Errorf("warning should mention /remove:g\nfull warning: %s", w)
 	}
+	// D2.2 (#569): remedy must include /grant *<ownerSID>:(OI)(CI)(F) between
+	// /inheritance:d and /remove:g.
+	if !strings.Contains(w, "/grant") {
+		t.Errorf("warning for inherited ACE should include /grant to preserve owner write access\nfull warning: %s", w)
+	}
+	if !strings.Contains(w, "*"+ownerSID) {
+		t.Errorf("warning /grant should reference owner SID *%s\nfull warning: %s", ownerSID, w)
+	}
+	inheritIdx := strings.Index(w, "/inheritance:d")
+	grantIdx := strings.Index(w, "/grant")
+	removeIdx := strings.Index(w, "/remove:g")
+	if inheritIdx < 0 || grantIdx < 0 || removeIdx < 0 ||
+		!(inheritIdx < grantIdx && grantIdx < removeIdx) {
+		t.Errorf("/inheritance:d must appear before /grant, which must appear before /remove:g\nfull warning: %s", w)
+	}
 	t.Logf("PROBE project_foreign_write (inherited) PASS: warning = %s", w)
+}
+
+// ---------------------------------------------------------------------------
+// Helpers for RemedyPreservesOwnerWrite
+// ---------------------------------------------------------------------------
+
+// tokenizeCmdNoQuotes tokenizes an icacls command string into arguments,
+// stripping double-quote characters (the path is passed unquoted to exec.Command
+// which handles quoting for CreateProcess internally).
+func tokenizeCmdNoQuotes(cmd string) []string {
+	var tokens []string
+	var buf strings.Builder
+	inQuote := false
+	for _, r := range cmd {
+		switch {
+		case r == '"':
+			inQuote = !inQuote
+		case r == ' ' && !inQuote:
+			if buf.Len() > 0 {
+				tokens = append(tokens, buf.String())
+				buf.Reset()
+			}
+		default:
+			buf.WriteRune(r)
+		}
+	}
+	if buf.Len() > 0 {
+		tokens = append(tokens, buf.String())
+	}
+	return tokens
+}
+
+// extractRemedyCmds returns the icacls command segments (split on " && ") from the
+// warning string's "run: " suffix. Each element is a tokenized []string for exec.Command.
+func extractRemedyCmds(t *testing.T, warning string) [][]string {
+	t.Helper()
+	const runPrefix = "run: "
+	idx := strings.Index(warning, runPrefix)
+	if idx < 0 {
+		t.Fatalf("extractRemedyCmds: warning has no %q\nfull: %s", runPrefix, warning)
+	}
+	cmdStr := warning[idx+len(runPrefix):]
+	var result [][]string
+	for _, seg := range strings.Split(cmdStr, " && ") {
+		seg = strings.TrimSpace(seg)
+		if seg == "" {
+			continue
+		}
+		result = append(result, tokenizeCmdNoQuotes(seg))
+	}
+	return result
+}
+
+// applyRemedyCmds executes every icacls segment returned by extractRemedyCmds.
+func applyRemedyCmds(t *testing.T, warning string) {
+	t.Helper()
+	for _, args := range extractRemedyCmds(t, warning) {
+		if len(args) == 0 {
+			continue
+		}
+		out, err := exec.Command(args[0], args[1:]...).CombinedOutput()
+		t.Logf("remedy: %v => %s", args, strings.TrimSpace(string(out)))
+		if err != nil {
+			t.Fatalf("remedy: exec %v: %v", args, err)
+		}
+	}
+}
+
+// applyOldRemedyCmds executes the icacls segments from the warning but skips
+// any segment that contains "/grant" — simulating the pre-D2.2 remedy.
+func applyOldRemedyCmds(t *testing.T, warning string) {
+	t.Helper()
+	for _, args := range extractRemedyCmds(t, warning) {
+		if len(args) == 0 {
+			continue
+		}
+		// Skip the /grant step — this is the "old" remedy without D2.2 fix.
+		hasGrant := false
+		for _, a := range args {
+			if strings.HasPrefix(a, "/grant") {
+				hasGrant = true
+				break
+			}
+		}
+		if hasGrant {
+			t.Logf("old-remedy: skipping /grant segment: %v", args)
+			continue
+		}
+		out, err := exec.Command(args[0], args[1:]...).CombinedOutput()
+		t.Logf("old-remedy: %v => %s", args, strings.TrimSpace(string(out)))
+		if err != nil {
+			t.Logf("old-remedy: exec %v: %v (may be expected on some setups)", args, err)
+		}
+	}
+}
+
+// restoreFullControl sets a protected full-control DACL on dir for ownerSIDStr,
+// SYSTEM, and Administrators — called in t.Cleanup so t.TempDir can delete the dir.
+func restoreFullControl(tb testing.TB, dir, ownerSIDStr string) {
+	tb.Helper()
+	sddl := "D:(A;OICI;FA;;;" + ownerSIDStr + ")(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
+	sd, err := windows.SecurityDescriptorFromString(sddl)
+	if err != nil {
+		tb.Logf("restoreFullControl(%q): SecurityDescriptorFromString: %v", dir, err)
+		return
+	}
+	dacl, _, err := sd.DACL()
+	if err != nil {
+		tb.Logf("restoreFullControl(%q): DACL: %v", dir, err)
+		return
+	}
+	if err := windows.SetNamedSecurityInfo(
+		dir, windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION,
+		nil, nil, dacl, nil,
+	); err != nil {
+		tb.Logf("restoreFullControl(%q): SetNamedSecurityInfo: %v", dir, err)
+	}
+}
+
+// canCreateFile attempts to create and immediately delete a temporary file in dir.
+// Returns nil on success, the error otherwise.
+func canCreateFile(dir string) error {
+	f, err := os.CreateTemp(dir, "probe-*.txt")
+	if err != nil {
+		return err
+	}
+	name := f.Name()
+	f.Close()
+	_ = os.Remove(name)
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Effect test: remedy preserves owner write access (closes #569)
+// ---------------------------------------------------------------------------
+
+// TestProjectForeignWrite_RemedyPreservesOwnerWrite verifies that applying the
+// printed remedy to a fixture where the only write-granting ACE is S-1-5-11
+// preserves the owner's ability to create files in the directory.
+//
+// Two sub-tests cover the two remedy paths (explicit ACE and inherited ACE).
+//
+// Effect arm: applies the full remedy (with /grant), asserts owner can still
+// create files, asserts S-1-5-11 is gone from the DACL, asserts zero warnings.
+//
+// Control arm: applies the OLD remedy (without /grant), measures whether the
+// owner can still create files. On a standard non-admin account this should fail
+// with access denied, proving the /grant is load-bearing. On an admin runner the
+// OS may bypass the DACL via elevated privileges; this is recorded with t.Logf
+// and not treated as a hard assertion (as the task specifies).
+//
+// Reconciliation (explicit sub-test): this test affirms "applying the printed
+// explicit-ACE remedy on a fixture where only S-1-5-11 grants write access leaves
+// the owner able to create files and removes S-1-5-11 from the DACL".
+//
+// Reconciliation (inherited sub-test): this test affirms "applying the printed
+// inherited-ACE remedy on a fixture where only S-1-5-11 grants write access leaves
+// the owner able to create files and removes S-1-5-11 from the DACL".
+func TestProjectForeignWrite_RemedyPreservesOwnerWrite(t *testing.T) {
+	ownerSIDStr := ownerSIDForTest(t)
+	auSID, err := windows.StringToSid("S-1-5-11")
+	if err != nil {
+		t.Fatalf("StringToSid S-1-5-11: %v", err)
+	}
+
+	// Fixture SDDL: PROTECTED, only S-1-5-11 grants write (Modify), plus SYSTEM full and
+	// BUILTIN\Users read-only. No owner ACE and no Administrators ACE — the runner's write
+	// access comes entirely from S-1-5-11 (Authenticated Users) membership.
+	fixtureSddl := "D:(A;OICI;0x1301bf;;;S-1-5-11)(A;OICI;FA;;;SY)(A;OICI;0x1200a9;;;BU)"
+
+	t.Run("explicit", func(t *testing.T) {
+		// --- Effect arm ---
+		effectDir := t.TempDir()
+		t.Cleanup(func() { restoreFullControl(t, effectDir, ownerSIDStr) })
+		applyDACLFromSDDL(t, effectDir, fixtureSddl)
+
+		// Pre-condition: owner can write (via S-1-5-11 membership).
+		if err := canCreateFile(effectDir); err != nil {
+			t.Fatalf("effect arm: pre-remedy: owner cannot create file: %v — fixture invalid", err)
+		}
+		t.Logf("effect arm: pre-remedy write: OK (owner SID=%s)", ownerSIDStr)
+
+		// Get warning; must include /grant.
+		warnings := CheckProjectForeignWriteForTest(effectDir)
+		if len(warnings) == 0 {
+			t.Fatalf("effect arm: want ≥1 warning from fixture, got none")
+		}
+		w := warnings[0]
+		if !strings.Contains(w, "/grant") {
+			t.Fatalf("effect arm: remedy missing /grant — production code not updated?\nfull: %s", w)
+		}
+		t.Logf("effect arm: warning = %s", w)
+
+		// Apply the full remedy (including /grant).
+		applyRemedyCmds(t, w)
+
+		// Assert zero warnings after remedy.
+		postWarnings := CheckProjectForeignWriteForTest(effectDir)
+		if len(postWarnings) != 0 {
+			t.Errorf("effect arm: want 0 warnings after remedy, got %d: %v", len(postWarnings), postWarnings)
+		}
+
+		// Assert owner can still create a file.
+		if err := canCreateFile(effectDir); err != nil {
+			t.Errorf("effect arm: post-remedy: owner CANNOT create file: %v — /grant did not work", err)
+		} else {
+			t.Logf("effect arm: post-remedy write in effectDir: OK — owner write preserved")
+		}
+
+		// Assert S-1-5-11 write ACE is gone.
+		if readStoredMaskForSID(t, effectDir, auSID) != 0 {
+			t.Errorf("effect arm: S-1-5-11 write ACE still present in DACL after remedy")
+		} else {
+			t.Logf("effect arm: S-1-5-11 gone from DACL: OK")
+		}
+
+		// Assert owner can create in a newly-created sub-directory (OI|CI propagation).
+		subDir := filepath.Join(effectDir, "sub")
+		if mkErr := os.Mkdir(subDir, 0o700); mkErr != nil {
+			t.Logf("effect arm: cannot create subdir (owner may still lack FILE_ADD_SUBDIRECTORY — measuring): %v", mkErr)
+		} else {
+			if err := canCreateFile(subDir); err != nil {
+				t.Logf("effect arm: post-remedy write in subdir: FAIL (OI propagation may need one more level): %v", err)
+			} else {
+				t.Logf("effect arm: post-remedy write in subdir: OK")
+			}
+		}
+
+		// --- Control arm ---
+		controlDir := t.TempDir()
+		t.Cleanup(func() { restoreFullControl(t, controlDir, ownerSIDStr) })
+		applyDACLFromSDDL(t, controlDir, fixtureSddl)
+
+		// Get warning for control fixture (same as effect).
+		ctrlWarnings := CheckProjectForeignWriteForTest(controlDir)
+		if len(ctrlWarnings) == 0 {
+			t.Logf("control arm: no warning from fixture — skipping control arm")
+			return
+		}
+		cw := ctrlWarnings[0]
+
+		// Apply OLD remedy (without /grant).
+		applyOldRemedyCmds(t, cw)
+
+		// Measure whether owner can write. On a standard account, access should be denied;
+		// on an elevated admin runner, the OS may bypass the DACL.
+		if ctrlErr := canCreateFile(controlDir); ctrlErr != nil {
+			if errors.Is(ctrlErr, fs.ErrPermission) {
+				t.Logf("control arm: access denied after old remedy (expected on standard account): %v — /grant is load-bearing", ctrlErr)
+			} else {
+				t.Logf("control arm: error after old remedy (not ErrPermission): %v", ctrlErr)
+			}
+		} else {
+			t.Logf("control arm: owner CAN still write after old remedy — admin privilege likely bypassed DACL; control arm is a measurement, not a hard assertion")
+		}
+	})
+
+	t.Run("inherited", func(t *testing.T) {
+		// Build inherited fixture: parent with OICI AU write (Modify), SYSTEM full,
+		// BU read-only; child inherits from parent.
+		parentSddl := "D:(A;OICI;0x1301bf;;;S-1-5-11)(A;OICI;FA;;;SY)(A;OICI;0x1200a9;;;BU)"
+		parent := t.TempDir()
+		applyDACLFromSDDL(t, parent, parentSddl)
+
+		effectChild := filepath.Join(parent, "effect-project")
+		if err := os.MkdirAll(effectChild, 0o700); err != nil {
+			t.Fatalf("MkdirAll effectChild: %v", err)
+		}
+		t.Cleanup(func() { restoreFullControl(t, effectChild, ownerSIDStr) })
+
+		controlChild := filepath.Join(parent, "control-project")
+		if err := os.MkdirAll(controlChild, 0o700); err != nil {
+			t.Fatalf("MkdirAll controlChild: %v", err)
+		}
+		t.Cleanup(func() { restoreFullControl(t, controlChild, ownerSIDStr) })
+
+		// Confirm child inherited the AU ACE.
+		if !hasInheritedACEForSID(t, effectChild, auSID) {
+			t.Skip("fixture: effectChild did not inherit AU write ACE from parent — " +
+				"environment may not support ACL inheritance; skipping")
+		}
+		if !hasInheritedACEForSID(t, controlChild, auSID) {
+			t.Skip("fixture: controlChild did not inherit AU write ACE from parent — " +
+				"environment may not support ACL inheritance; skipping")
+		}
+
+		// Pre-condition.
+		if err := canCreateFile(effectChild); err != nil {
+			t.Fatalf("effect arm: pre-remedy: owner cannot create file in effectChild: %v — fixture invalid", err)
+		}
+		t.Logf("effect arm: pre-remedy write: OK (owner SID=%s)", ownerSIDStr)
+
+		// Get warning; must include /inheritance:d and /grant.
+		warnings := CheckProjectForeignWriteForTest(effectChild)
+		if len(warnings) == 0 {
+			t.Fatalf("effect arm: want ≥1 warning from fixture, got none")
+		}
+		w := warnings[0]
+		if !strings.Contains(w, "/inheritance:d") {
+			t.Fatalf("effect arm: remedy missing /inheritance:d (not an inherited ACE?)\nfull: %s", w)
+		}
+		if !strings.Contains(w, "/grant") {
+			t.Fatalf("effect arm: remedy missing /grant — production code not updated?\nfull: %s", w)
+		}
+		t.Logf("effect arm: warning = %s", w)
+
+		// Apply the full remedy.
+		applyRemedyCmds(t, w)
+
+		// Assert zero warnings after remedy.
+		postWarnings := CheckProjectForeignWriteForTest(effectChild)
+		if len(postWarnings) != 0 {
+			t.Errorf("effect arm: want 0 warnings after remedy, got %d: %v", len(postWarnings), postWarnings)
+		}
+
+		// Assert owner can still write.
+		if err := canCreateFile(effectChild); err != nil {
+			t.Errorf("effect arm: post-remedy: owner CANNOT create file: %v — /grant did not work", err)
+		} else {
+			t.Logf("effect arm: post-remedy write in effectChild: OK — owner write preserved")
+		}
+
+		// Assert S-1-5-11 write ACE is gone.
+		if readStoredMaskForSID(t, effectChild, auSID) != 0 {
+			t.Errorf("effect arm: S-1-5-11 write ACE still present in DACL after remedy")
+		} else {
+			t.Logf("effect arm: S-1-5-11 gone from DACL: OK")
+		}
+
+		// --- Control arm ---
+		ctrlWarnings := CheckProjectForeignWriteForTest(controlChild)
+		if len(ctrlWarnings) == 0 {
+			t.Logf("control arm: no warning from controlChild fixture — skipping control arm")
+			return
+		}
+		cw := ctrlWarnings[0]
+
+		// Apply OLD remedy (without /grant).
+		applyOldRemedyCmds(t, cw)
+
+		if ctrlErr := canCreateFile(controlChild); ctrlErr != nil {
+			if errors.Is(ctrlErr, fs.ErrPermission) {
+				t.Logf("control arm: access denied after old remedy (expected on standard account): %v — /grant is load-bearing", ctrlErr)
+			} else {
+				t.Logf("control arm: error after old remedy (not ErrPermission): %v", ctrlErr)
+			}
+		} else {
+			t.Logf("control arm: owner CAN still write after old remedy — admin privilege likely bypassed DACL; control arm is a measurement, not a hard assertion")
+		}
+	})
 }
