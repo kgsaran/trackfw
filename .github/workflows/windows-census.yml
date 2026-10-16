@@ -383,20 +383,15 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - uses: actions/setup-node@v7
-        with:
-          node-version: "20"
-
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
-      - run: npm ci --ignore-scripts
-        working-directory: npm
-
-      - run: python -m pip install --upgrade pip
-
-      - run: python -m pip install pypi/
+      # ML-W4 (REQ-2026-09-03): mesma remoção do ML-3A da v8.
+      # setup-node e npm ci removidos — npm/src não existe mais (v8).
+      # pip install pypi/ removido — pypi/trackfw/ não existe mais (v8).
+      # packaging: necessário para check-wheel-filename.sh (D6-write).
+      - run: python -m pip install --upgrade pip packaging
 
       - run: go build -o bin/trackfw ./cmd/trackfw
 
