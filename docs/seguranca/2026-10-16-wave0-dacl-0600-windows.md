@@ -1,6 +1,6 @@
 # Wave 0 — Modelo de ameaça: DACL explícita para 0o600/0o700 no Windows (ML-W2b)
 
-> Produzido por: hades-tf | Data: 2026-10-16
+> Produzido por: hades-tf | Data: 2026-10-16 (revisado 2026-10-16 — auditoria do arquiteto)
 > REQ: REQ-2026-09-03 | Fato base: run 38902064559 (Pergunta 17, x64)
 > Branch: `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`
 
@@ -35,9 +35,10 @@ E dois sítios de `MkdirAll` com `0o700`:
 
 ## 2. Modelo de ameaça
 
-**Adversário:** co-inquilino local — usuário autenticado na mesma máquina Windows, sem privilégios de administrador, membro de `NT AUTHORITY\Authenticated Users` ou `BUILTIN\Users`. Não precisa ter acesso ao projeto (só à máquina). Não é necessário controle do repositório, do código-fonte ou de qualquer outra conta.
+**Adversário:** co-inquilino local — usuário autenticado na mesma máquina Windows, sem privilégios de administrador, membro de `NT AUTHORITY\Authenticated Users`. Não precisa ter acesso ao projeto (só à máquina). Não é necessário controle do repositório, do código-fonte ou de qualquer outra conta.
 
-**Pré-condição confirmada por medição (run 38902064559):** em projetos criados diretamente sob `C:\` ou sob `D:\a\` (runner-temp), a ACL herdada concede `Modify` ou `WriteData` a esse adversário. Em `%USERPROFILE%\.trackfw\` a herança já é restritiva — nenhuma ação necessária para esse braço.
+**Pré-condição confirmada por medição (run 38902064559) — apenas o braço `C:\`:**
+Em projetos criados diretamente sob `C:\` (braço `root-c`), a ACL herdada concede `Modify` a Authenticated Users: `NT AUTHORITY\Authenticated Users:(I)(M)`. O braço `D:\a\_temp` (runner-temp) **não** tem escrita alheia em arquivos — o `icacls` bruto do arquivo mostra `BUILTIN\Users:(I)(RX)` (leitura apenas); o ACE `(CI)(IO)(WD)` de `D:\` propaga-se só a contêineres (subdiretórios), não a arquivos (ausência de `OI`). O braço `%USERPROFILE%\.trackfw\` já é restritivo — nenhuma ação necessária para esses dois braços. A decisão de DACL explícita é sustentada pelo braço `C:\` sozinho.
 
 ### Ameaça por sítio
 
@@ -61,47 +62,36 @@ O registro de quarentena é o que liga o `fetch` ao `install`. Com escrita alhei
 1. Entre `trackfw agents third-party fetch <url>` e o passo de revisão humana (janela de tempo), o adversário substitui o conteúdo em quarentena por uma skill maliciosa com o mesmo `checksum` de uma legítima.
 2. O operador aprova o que acreditou ter baixado; o `install` instala o substituto.
 
-Nota: o ataque exige conhecer o `checksum` esperado (ou substituir por um cujo checksum seja recalculado pelo binário na hora). A dificuldade é modulada pela largura da janela e pela capacidade do adversário de recalcular SHA-256 — não é trivial, mas é realizável.
-
 **T-3 — `manifest.go:92` (`integrations-manifest.json`)** — Severidade: MÉDIA-ALTA
 
-O manifesto lista os agentes instalados e suas propriedades (modelo, escopo, targets). Com escrita alheia:
-
-1. O adversário modifica o modelo de um agente existente (`model: malicious-endpoint`) ou injeta um novo agente no manifesto.
-2. `trackfw serve` exibe o manifesto modificado; `trackfw validate` pode não detectar a adulteração (não há verificação de integridade criptográfica do manifesto hoje).
-
-Resultado: desinformação sobre o estado de governança; potencial redirecionamento de modelo.
+O manifesto lista os agentes instalados e suas propriedades. Com escrita alheia, o adversário pode modificar o modelo de um agente existente ou injetar novo agente no manifesto; `trackfw validate` pode não detectar a adulteração (sem verificação de integridade criptográfica do manifesto).
 
 **T-4 — `render.go:730` (artefato de agente renderizado)** — Severidade: MÉDIA
 
-Os arquivos renderizados são as instruções dos agentes (`.claude/agents/`, etc.). Com escrita alheia, o adversário pode modificar as instruções após o `render` e antes do próximo uso do agente. O impacto depende de como o host de agente consome o arquivo; em Claude Code, o arquivo é lido por sessão.
+Os arquivos renderizados são as instruções dos agentes (`.claude/agents/`, etc.). Com escrita alheia, o adversário pode modificar as instruções após o `render` e antes do próximo uso do agente.
 
 **T-5 — `identity.go:93` (`identity.json`)** — Severidade: BAIXA-MÉDIA
 
-O `identity.json` contém a identidade do projeto. Adulteração pode causar confusão de identidade em contextos onde o trackfw usa esse arquivo para resolver o projeto. Não foi identificado vetor de escalada direta a partir desta adulteração.
+Adulteração do `identity.json` pode causar confusão de identidade. Não foi identificado vetor de escalada direta.
 
 **T-6 — `MkdirAll` (pathguard.go:150, manager.go:918)** — Severidade: INDIRETA
 
-Se o diretório pai (`directory`) for gravável por Authenticated Users, um adversário pode criar arquivos com nomes que conflitem com o `.trackfw-tmp-*` que o trackfw vai criar, ou inserir arquivos no diretório `.trackfw/` antes do primeiro uso. A ameaça direta é limitada (o `RejectSymlinks` / `RejectAndReport` do `GuardedWrite` já bloqueia substituição por symlink). A proteção do diretório com DACL explícita fecha o vetor residual de criação de arquivo no diretório.
+Diretório `.trackfw/` gravável por adversário permite inserção de arquivos com nomes controlados. A proteção do diretório com DACL explícita fecha esse vetor.
 
 ---
 
 ## 3. Targets de falsificação nas duas direções
 
-Para cada sítio da superfície, o gate correto e a direção de falha:
+| sítio | falso negativo (sem fix) | falso positivo (com fix) |
+|---|---|---|
+| provenance (T-1) | adversário forja proveniência; validate diz "aprovado" | file born with restrictive DACL but owner SID errado bloqueia o próprio processo |
+| quarantine (T-2) | adversário substitui durante janela fetch→install | DACL em volume FAT fail-closed impede o fetch inteiramente |
+| manifest, render, identity (T-3/4/5) | arquivo adulterado não detectado | idem owner SID |
+| diretório (T-6) | arquivo criado no `.trackfw/` por adversário | herança OI/CI restritiva bloqueia subcomandos que escrevem na pasta |
 
-| sítio | gate que deve pegar | falso negativo (sem fix) | falso positivo (com fix) |
-|---|---|---|---|
-| provenance (T-1) | `thirdparty_artifact_has_provenance` | adversário forja proveniência; validate diz "aprovado" | fix excessivamente restritivo impede que o próprio processo escreva a proveniência (erro ao criar o arquivo) |
-| quarantine (T-2) | `SetNamedSecurityInfo` chamado antes da escrita dos dados | adversário substitui durante janela fetch→install | fix bloqueia escrita em FS sem suporte a ACL (FAT/SMB), tornando o fetch inutilizável |
-| manifest (T-3) | ausência de ACE de escrita para Authenticated Users/Users no DACL lido por `GetNamedSecurityInfo` | manifesto adulterado não detectado | DACL com Owner SID errado bloqueia o próprio processo |
-| render (T-4) | idem manifest | instruções adulteradas consumidas pelo agente | idem |
-| identity (T-5) | idem | identidade forjada confunde resolução de projeto | idem |
-| diretório (T-6) | DACL de diretório com OI/CI na ACE do Owner | arquivo criado no `.trackfw/` por adversário | herança OI/CI excessivamente restritiva bloqueia subcomandos que criam arquivos sob o diretório |
+**Falsificação prioritária (falso negativo):** arquivo escrito via `GuardedWrite`/`atomicWrite` sob diretório pai com `Authenticated Users:(OI)(CI)(M)` manufaturado no teste (sem depender de `C:\`) deve resultar, após o fix, em DACL sem ACE de escrita para Authenticated Users — verificado por `GetNamedSecurityInfo`.
 
-**Direção de falso negativo que o teste deve cobrir (prioritária):** um arquivo escrito via `GuardedWrite`/`atomicWrite` sob um diretório pai com `Authenticated Users:(OI)(CI)(M)` artificialmente adicionado (sem depender de `C:\`) deve resultar, após o fix, em DACL sem ACE de escrita para Authenticated Users — verificado por `GetNamedSecurityInfo`.
-
-**Direção de falso positivo que o teste deve cobrir:** sem o fix, o mesmo arquivo deve ter o ACE de Authenticated Users presente (baseline do defeito). Isso confirma que o teste não é vacuoso.
+**Baseline do defeito (falsificação inversa):** sem o fix, `os.WriteFile` no mesmo diretório deve ter o ACE de Authenticated Users presente. Isso valida que o ambiente de teste reproduz o defeito antes de afirmar que o fix funciona.
 
 ---
 
@@ -111,73 +101,125 @@ Para cada sítio da superfície, o gate correto e a direção de falha:
 
 Novo pacote `internal/fsperm` com dois arquivos:
 
-- `internal/fsperm/fsperm_windows.go` (build tag implícito pelo nome `_windows.go`) — implementação real
+- `internal/fsperm/fsperm_windows.go` (build tag implícito pelo sufixo `_windows.go`) — implementação real
 - `internal/fsperm/fsperm_other.go` (`//go:build !windows`) — no-ops que retornam `nil`
 
-Função exportada: `SetRestrictiveACL(path string) error`
+Funções exportadas:
+- `CreateRestrictedFile(dir, pattern string) (*os.File, string, error)` — substitui `os.CreateTemp` nos dois sítios de escrita atômica; cria o arquivo já com DACL restritiva e share mode exclusivo
+- `SetRestrictiveDirACL(path string) error` — aplica DACL restritiva a um diretório (chamado após `MkdirAll`)
+- `IsACLSupported(path string) (bool, error)` — detecta suporte a ACL por `GetVolumeInformation`; usado por callers para decidir se emitem aviso
 
-Ambos os pontos de escrita atômicos chamam `SetRestrictiveACL`:
+### 4.2 Criação do arquivo temporário sem janela de corrida
 
-1. `GuardedWrite` (pathguard.go) — logo após `os.CreateTemp` retornar (antes de escrever dados)
-2. `atomicWrite` (manager.go) — idem, logo após `os.CreateTemp`
-3. `MkdirAll` (os dois sítios) — logo após `os.MkdirAll` (no sítio de pathguard.go:150 e no de manager.go:918), com ACEs `OI|CI` para que os arquivos criados dentro herdem o DACL restritivo
+**Problema com `os.CreateTemp` + `SetRestrictiveACL` posterior:**
+A verificação de acesso no Windows ocorre **no momento de abrir o handle** (MSDN "Access Checks", "CreateFile" — *"access to the object is determined by checking the security descriptor of the object"*). Um handle aberto retém os direitos concedidos na abertura mesmo que a DACL seja alterada depois. Além disso, `os.CreateTemp` abre o arquivo com `FILE_SHARE_READ | FILE_SHARE_WRITE` (confirmado em `syscall/syscall_windows.go:396`), o que permite que outro processo abra o mesmo arquivo para escrita enquanto nossa janela de herança permissiva ainda está ativa. Chamar `SetRestrictiveACL` depois não fecha esse handle já aberto.
 
-Justificativa para `internal/fsperm` em vez de inlinar nos dois sítios: os dois sítios implementam o mesmo padrão (MkdirAll + CreateTemp + Chmod + Write + Sync + Close + Rename); o `fsperm` evita terceiro sítio divergente quando um quarto uso surgir, e isola os imports de `golang.org/x/sys/windows` em um único arquivo de build.
+**Solução — `CreateRestrictedFile`:**
+Criar o arquivo temporário diretamente via `windows.CreateFile` com:
+- `lpSecurityAttributes`: aponta para `SECURITY_ATTRIBUTES` cujo `SecurityDescriptor` já carrega o DACL restritivo (Owner+SYSTEM+Administrators, protegido)
+- `dwShareMode`: `FILE_SHARE_READ` (sem WRITE) — impede que qualquer outro processo abra o arquivo para escrita enquanto o nosso handle está aberto
+- `dwCreationDisposition`: `CREATE_NEW` — falha se o arquivo existir (necessário para o loop de nome aleatório)
+- Nome: gerado por laço com sufixo aleatório (hex de 10 chars, igual ao `os.CreateTemp`), retry em `ERROR_FILE_EXISTS`
 
-### 4.2 Composição do DACL
+Após a criação: `os.NewFile(uintptr(handle), temporaryName)` para obter o `*os.File` compatível com o restante do código.
+
+**Fecha a corrida por completo?** Sim:
+1. O arquivo nasce com o DACL restritivo → não há janela de ACL permissiva
+2. O share mode restringe a escrita concorrente → nenhum handle de adversário pode ser aberto para escrita enquanto o arquivo existe com o nome temporário
+3. Após `os.Rename`, o arquivo final tem o mesmo DACL (mesma identidade de objeto, mesmo volume)
+
+### 4.3 Composição do DACL
 
 ACEs no DACL explícito:
 
-| Trustee | Direitos | Flags |
-|---|---|---|
-| Owner (SID do token do processo) | `GENERIC_ALL` | — (ACE de arquivo); `OI\|CI` (ACE de diretório) |
-| `NT AUTHORITY\SYSTEM` | `GENERIC_ALL` | — (arquivo); `OI\|CI` (diretório) |
-| `BUILTIN\Administrators` | `GENERIC_ALL` | — (arquivo); `OI\|CI` (diretório) |
+| Trustee | Direitos | Flags para arquivo | Flags para diretório |
+|---|---|---|---|
+| Owner (SID do token do processo) | `GENERIC_ALL` | — | `OI\|CI` |
+| `NT AUTHORITY\SYSTEM` | `GENERIC_ALL` | — | `OI\|CI` |
+| `BUILTIN\Administrators` | `GENERIC_ALL` | — | `OI\|CI` |
 
-DACL protegida (`SE_DACL_PROTECTED`) — desativa herança de ACEs do pai. Esta flag é obrigatória: sem ela, uma propagação posterior de permissões do pai (e.g., `icacls /reset` no pai) re-adiciona a ACE permissiva.
+DACL protegida (`SE_DACL_PROTECTED`, passado em `SetNamedSecurityInfo` como `windows.PROTECTED_DACL_SECURITY_INFORMATION`) — desativa herança de ACEs do pai. Esta flag é obrigatória: sem ela, propagação posterior (`icacls /reset`) re-adiciona a ACE permissiva.
 
 **Não incluir:** `NT AUTHORITY\Authenticated Users`, `BUILTIN\Users`, `Everyone`.
 
-**Justificativa para incluir SYSTEM:** processos do SO (backup VSS, antivírus, indexador) rodam como SYSTEM; removê-lo pode causar falhas operacionais silenciosas.
+**Obtenção do Owner SID:** via `windows.OpenCurrentProcessToken()` + `windows.GetTokenInformation(TOKEN_USER)`. Não hardcodar nenhum SID. Se a obtenção falhar (cenário extremamente improvável — o processo tem um token), retornar erro (fail-closed), NÃO usar um SID estático como fallback.
 
-**Justificativa para incluir Administrators:** o processo pode rodar como administrador; e operações de administração legítimas (inspeção, backup, limpeza) exigem acesso.
-
-**Obtenção do Owner SID:** via `windows.OpenCurrentProcessToken()` + `windows.GetTokenInformation(TOKEN_USER)`. Não hardcodar nenhum SID. Se a obtenção falhar (cenário extremamente improvável — o processo tem um token), emitir aviso e retornar `nil` (non-fatal), NÃO usar um SID estático como fallback.
-
-### 4.3 Sequência correta dentro de `atomicWrite` / `GuardedWrite`
+### 4.4 Sequência correta dentro de `atomicWrite` / `GuardedWrite`
 
 ```
-os.CreateTemp(directory, ".trackfw-tmp-*")   // cria o arquivo; herda ACL do pai
-fsperm.SetRestrictiveACL(temporaryName)      // ← AQUI, antes de Write
+fsperm.CreateRestrictedFile(directory, ".trackfw-tmp-*")
+  // ↳ windows.CreateFile(randomName, GENERIC_WRITE, FILE_SHARE_READ,
+  //                       &saRestrictive, CREATE_NEW, NORMAL, 0)
+  // ↳ os.NewFile(handle, name)
 temporary.Write(data)
 temporary.Sync()
 temporary.Close()
-os.Rename(temporaryName, filename)           // preserva o DACL (mesmo volume, documentado)
+os.Rename(temporaryName, filename)
+  // rename mesmo volume → preserva DACL (documentado: MSDN MoveFileExW,
+  // "Security Considerations: Windows File Management")
 ```
 
-**`os.Rename` preserva o security descriptor?** Sim. `os.Rename` no Windows chama `MoveFileExW`. Dentro do mesmo volume, `MoveFileExW` move o objeto de arquivo com seu security descriptor intacto — o arquivo não é recriado, apenas o diretório é atualizado. Referência: MSDN "MoveFileExW" e "Security Considerations: Windows File Management" ("The security descriptor of a file is not changed when you move the file"). Consequência: aplicar DACL no arquivo temporário antes do rename é suficiente; o arquivo final tem o mesmo DACL.
+O `os.MkdirAll` existente permanece; após a chamada, invocar `fsperm.SetRestrictiveDirACL(directory)` para proteger o diretório folha com ACEs `OI|CI`.
 
-**Invariante que garante same-volume:** `os.CreateTemp(directory, ...)` onde `directory = filepath.Dir(filename)`. O temporário e o destino estão sempre no mesmo diretório, portanto no mesmo volume. Essa invariante está presente em ambos `GuardedWrite` (pathguard.go:154) e `atomicWrite` (manager.go:922). Documentá-la como comentário nos dois sítios.
+### 4.5 Limite de aplicação do DACL em diretórios
 
-### 4.4 Tratamento de falha de `SetNamedSecurityInfo`
+**Regra:** DACL explícita em diretório SOMENTE quando o trackfw criou esse diretório NESTA chamada de `MkdirAll`. Não aplicar em diretórios preexistentes.
 
-**Não falhar-fechado em FS sem suporte a ACL.** `SetNamedSecurityInfo` retorna `ERROR_NOT_SUPPORTED` em FAT/exFAT e alguns shares SMB sem ACL. Falhar-fechado tornaria trackfw inutilizável em drives removíveis e em alguns ambientes CI — é uma regressão funcional para usuários legítimos.
+**Motivação:** `render.go` escreve em diretórios de agente (`.claude/agents/`, `.cursor/`, etc.) que podem ter sido criados por ferramentas externas (Claude Code, Windsurf). Aplicar `SE_DACL_PROTECTED` nesses diretórios alteraria a configuração de acesso de recursos que não pertencem ao trackfw — desfaria permissões que outros usuários ou ferramentas esperam encontrar.
 
-Política: `SetRestrictiveACL` emite `fmt.Fprintf(os.Stderr, "trackfw: aviso: não foi possível definir DACL restritiva em %s (%v) — verifique se o sistema de arquivos suporta ACLs\n", path, err)` e retorna `nil`.
+**Implementação:** antes de chamar `MkdirAll`, verificar se o diretório folha existe (`os.Stat`). Se já existia: não aplicar DACL ao diretório (a DACL do arquivo ainda é aplicada via `CreateRestrictedFile`). Se foi criado nesta chamada: aplicar `SetRestrictiveDirACL`.
 
-**Erros a tratar como "FS sem suporte":** `syscall.ERROR_NOT_SUPPORTED`, `syscall.ERROR_INVALID_FUNCTION`, `windows.ERROR_INVALID_SECURITY_DESCR`. Para `ERROR_ACCESS_DENIED` (pouco provável, o processo criou o arquivo), idem — avisar e continuar.
+**Todos os cinco sítios de arquivo:** DACL aplicada via `CreateRestrictedFile` em TODOS os sítios, independente do diretório. A proteção do arquivo é incondicional; a do diretório é condicional à criação pelo trackfw.
 
-**Para proveniência e quarentena (T-1, T-2):** documentar na mensagem de aviso que o controle de acesso do FS não está ativo, mas não bloquear a escrita. A alternativa (fail-closed) seria pior: um adversário em FAT poderia simplesmente colocar o projeto em FAT para contornar o trackfw inteiro.
+### 4.6 Tratamento de volume sem suporte a ACL
 
-### 4.5 Isolamento fora do Windows
+**Detecção proativa por `GetVolumeInformation`:**
+Antes de criar o arquivo, verificar se `FILE_PERSISTENT_ACLS` (0x00000008) está presente nos `FileSystemFlags` retornados por `GetVolumeInformation` para a raiz do volume. FAT/exFAT não setam este flag.
+
+```
+IsACLSupported(path) → (false, nil) se FILE_PERSISTENT_ACLS ausente
+```
+
+Se o volume não suporta ACL:
+- `CreateRestrictedFile` retorna erro tipado `ErrNoACLSupport{Path: path}` em vez de nil
+- O **caller** (`GuardedWrite`, `atomicWrite`) faz o fall-through para `os.CreateTemp` convencional e RETORNA o `ErrNoACLSupport` para cima — não emite aviso aqui
+- O handler do **comando** (identity.go caller, provenance.go caller, etc.) recebe `ErrNoACLSupport` e decide como comunicar ao usuário (stderr interativo vs. campo de aviso em JSON)
+
+**Por que o aviso não pode vir de dentro de `pathguard`:** `pathguard.GuardedWrite` é chamado de contextos que podem estar no modo `--json`; emitir texto para stderr de dentro do pathguard polui a saída. O `ErrNoACLSupport` como tipo explícito permite ao caller emitir `{"warning": "filesystem does not support ACLs; file protection not enforced on this volume"}` no lugar apropriado.
+
+**Erros que implicam fail-closed (não são FAT/SMB):**
+Qualquer outro erro de `CreateFile` com `SECURITY_ATTRIBUTES` — em particular `ERROR_ACCESS_DENIED`, `ERROR_INVALID_PARAMETER`, falhas de alocação do security descriptor — retorna esse erro diretamente para cima (fail-closed). Esses erros indicam programador ou configuração, não limitação de sistema de arquivos.
+
+**Erro específico de `SetNamedSecurityInfo` (para `SetRestrictiveDirACL`):**
+- `ERROR_NOT_SUPPORTED` (50) ou `ERROR_INVALID_FUNCTION` (1): volume sem ACL — fail-soft com `ErrNoACLSupport` (mesmo tratamento)
+- `ERROR_NO_SECURITY_ON_OBJECT` (0x546): objeto não suporta segurança — idem
+- Outros: fail-closed
+
+### 4.7 Arquivos legados (escritos antes do fix)
+
+Arquivos de proveniência e quarentena escritos ANTES da correção mantêm o DACL permissivo herdado até serem regravados. Quando o trackfw reescreve o arquivo (próxima execução de `fetch`, `install --force`, etc.), `CreateRestrictedFile` aplica o DACL restritivo.
+
+**Declaração como resíduo:** arquivos que nunca são regravados (e.g., proveniência de uma skill instalada e nunca atualizada) retêm o DACL permissivo indefinidamente. Este é o resíduo declarado desta implementação. A opção (b) — regra de `validate` que leia o DACL — está fora do escopo deste ML; pode ser adicionada em REQ futura. O commit do ML deve documentar este resíduo explicitamente.
+
+### 4.8 Isolamento fora do Windows
 
 `internal/fsperm/fsperm_other.go` com `//go:build !windows`:
 
 ```go
-func SetRestrictiveACL(_ string) error { return nil }
+func CreateRestrictedFile(dir, pattern string) (*os.File, string, error) {
+    return os.CreateTemp(dir, pattern)  // delegação direta; sem DACL
+}
+func SetRestrictiveDirACL(_ string) error { return nil }
+func IsACLSupported(_ string) (bool, error) { return true, nil }
 ```
 
-Nenhum import de `golang.org/x/sys/windows` fora do arquivo `_windows.go`. A chamada em `GuardedWrite` e em `atomicWrite` compila normalmente em todos os sistemas operacionais e é no-op em não-Windows. O `os.Chmod(mode)` atual permanece em ambos os caminhos — em Linux/macOS é o mecanismo correto; em Windows é inerte mas inofensivo.
+O `os.Chmod(mode)` existente em `GuardedWrite` e `atomicWrite` permanece em ambos os caminhos — em Linux/macOS é o mecanismo correto; em Windows é inerte mas inofensivo.
+
+### 4.9 Exige ADR?
+
+Sim. Critérios que se encaixam: novo pacote de produto (`internal/fsperm`), mudança de comportamento em tempo de execução (o arquivo passa a nascer com DACL restritiva, não herdada), promoção de dependência (`golang.org/x/sys` de indireta a direta), e decisão com trade-off de segurança documentado (fail-soft em FAT vs. fail-closed). A decisão afeta contribuidores futuros que adicionarem novos sítios de escrita.
+
+ADR rascunhado em: `docs/adr/ADR-2026-10-16-dacl-explicita-para-arquivos-de-governanca-no-windows.md` (status: Proposed).
 
 ---
 
@@ -185,87 +227,70 @@ Nenhum import de `golang.org/x/sys/windows` fora do arquivo `_windows.go`. A cha
 
 ### 5.1 `TestSave_WritesAtomicallyWithPermissions` (identity)
 
-Situação atual: afirma `Mode().Perm() == 0o600`. No Windows, `os.File.Mode().Perm()` reflete o bit `READONLY` do atributo, não a ACL — o assert sempre falha ou passa pelo motivo errado.
+Situação atual: afirma `Mode().Perm() == 0o600`. No Windows, `os.File.Mode().Perm()` reflete o bit `READONLY` do atributo, não a ACL — o assert falha ou passa pelo motivo errado.
 
-**Destino:** substituir (não skip, não guard de plataforma que elimine o assert) por:
+**Destino:** dois arquivos separados:
 
-- Em `_windows_test.go`: lê o DACL com `GetNamedSecurityInfo`; afirma ausência de ACE com bits de escrita (`WRITE_DAC`, `WRITE_OWNER`, `GENERIC_WRITE`, `FILE_WRITE_DATA`, `DELETE`, `MODIFY`) para Authenticated Users, BUILTIN\Users e Everyone. Afirma presença de ACE FullControl para o owner.
-- Em `_test.go` (ou com `//go:build !windows`): mantém `Mode().Perm() == 0o600`.
+- `identity_windows_test.go`: chama `CreateRestrictedFile` diretamente; lê o DACL com `GetNamedSecurityInfo`; afirma ausência de ACE de escrita para Authenticated Users/Users/Everyone; afirma presença de ACE FullControl para o owner.
+- `identity_test.go` (sem sufixo ou `//go:build !windows`): mantém `Mode().Perm() == 0o600`.
 
-### 5.2 Testes para todos os demais sítios (quarantine, provenance, manifest, render)
+### 5.2 Como criar a raiz "ruim" no teste
 
-O mesmo padrão de assert de DACL deve ser aplicado nos testes de cada sítio que chama `GuardedWrite` ou `atomicWrite`. Se não existir teste específico de permissão para esses sítios, criar.
+**Não usar `C:\` nem `%TEMP%` do runner.** Em vez disso:
 
-### 5.3 Como criar a raiz "ruim" no teste sem depender de `C:\`
+1. `os.MkdirTemp("", "trackfw-dacl-test-*")`
+2. Usar `SetNamedSecurityInfo` via `golang.org/x/sys/windows` para adicionar `Authenticated Users:(OI)(CI)(M)` ao diretório — simula a herança de `C:\`
+3. Escrever via `GuardedWrite` / `atomicWrite` nesse diretório
+4. Ler o DACL do arquivo com `GetNamedSecurityInfo`; afirmar ausência do ACE de Authenticated Users
 
-**Não usar `C:\` nem `%TEMP%` como raiz do teste.** Em vez disso:
+Isso elimina dependência da configuração do runner e reproduz o defeito em qualquer runner Windows.
 
-1. Criar um diretório temporário com `os.MkdirTemp("", "trackfw-dacl-test-*")`.
-2. Chamar `fsperm_test_helper.AddPermissiveACE(dir, "NT AUTHORITY\\Authenticated Users", windows.GENERIC_WRITE|windows.GENERIC_READ)` (implementado no pacote de teste) para adicionar o ACE permissivo ao diretório recém-criado, simulando a herança de `C:\`.
-3. Escrever um arquivo através de `GuardedWrite` / `atomicWrite` nesse diretório.
-4. Ler o DACL do arquivo resultante com `GetNamedSecurityInfo` e afirmar ausência do ACE de Authenticated Users.
+### 5.3 Baseline do defeito
 
-Isso elimina qualquer dependência da configuração da máquina de CI e reproduz o defeito em qualquer runner Windows, independente de onde esteja montado.
-
-### 5.4 Baseline do defeito (falsificação na direção "sem fix")
-
-Antes de afirmar que o fix funciona, o teste deve afirmar que SEM o fix o ACE estaria presente (ou seria herdado). Isso pode ser feito:
-
-- No mesmo teste, antes de aplicar a correção: verificar que o arquivo criado diretamente com `os.WriteFile(path, data, 0o600)` no diretório "ruim" TEM o ACE de Authenticated Users. Isso prova que o ambiente de teste reproduz o defeito.
-- Só então escrever via `GuardedWrite` e verificar que o ACE está ausente.
+Antes de afirmar que o fix funciona, o teste verifica que `os.WriteFile` no mesmo diretório "ruim" produz arquivo COM o ACE de Authenticated Users. Isso prova que o ambiente de teste reproduz o defeito — o teste não é vacuoso.
 
 ---
 
 ## 6. Riscos numerados (R-n)
 
-**R-1 — Janela de exposição do arquivo temporário.**
-Entre `os.CreateTemp` e a chamada de `SetRestrictiveACL`, o arquivo temporário tem a ACL herdada do pai (permissiva em root-c/runner-temp). A janela de exploração exige que o adversário saiba o nome aleatório (`.trackfw-tmp-*` + sufixo aleatório do Go — 10 caracteres hexadecimais) e abra o arquivo nesse intervalo. Mitigação: chamar `SetRestrictiveACL` como primeira operação após `CreateTemp`, antes de qualquer `Write`. O risco residual é baixo (nome imprevisível, janela de microssegundos), mas deve ser documentado.
+**R-1 — A corrida está no `os.CreateTemp`, não no `SetRestrictiveACL` posterior.**
+Windows avalia acesso no `CreateFile`; handle aberto retém os direitos concedidos na abertura independentemente de mudanças posteriores na DACL. `os.CreateTemp` usa `FILE_SHARE_READ | FILE_SHARE_WRITE` (`syscall/syscall_windows.go:396`). Chamar `SetRestrictiveACL` depois do `CreateTemp` NÃO fecha a janela — um adversário que abriu o file para escrita durante a janela de ACL herdada mantém o handle válido. **Solução fechada: `CreateRestrictedFile` cria o arquivo com o DACL restritivo no `CreateFile` e com `FILE_SHARE_READ` apenas.** Nenhuma janela de ACL permissiva existe; nenhum handle concurrent de escrita pode ser aberto.
 
-**R-2 — FAT/exFAT/SMB sem ACL: falha silenciosa.**
-`SetNamedSecurityInfo` falha em silêncio (ou com `ERROR_NOT_SUPPORTED`) em volumes sem suporte a ACL. O comportamento resultante é idêntico ao atual (sem proteção), não uma regressão. Política: emitir aviso em stderr, continuar. Não é aceitável fail-closed porque isso quebra usos legítimos. O implementador DEVE testar este ramo simulando o erro com uma stub/wrapper de `SetNamedSecurityInfo` que retorne `ERROR_NOT_SUPPORTED`.
+**R-2 — Fail-soft estritamente delimitado à classe "volume sem ACL".**
+Fail-soft aplica-se APENAS quando `GetVolumeInformation` não retorna `FILE_PERSISTENT_ACLS` (detecção proativa) ou quando `SetNamedSecurityInfo`/`CreateFile`-com-SA retorna `ERROR_NOT_SUPPORTED` (50), `ERROR_INVALID_FUNCTION` (1) ou `ERROR_NO_SECURITY_ON_OBJECT` (0x546). Qualquer outro erro é fail-closed (retorna o erro para o caller). Fail-soft silencia dentro de `fsperm`; o CALLER recebe `ErrNoACLSupport` e decide se emite aviso em stderr ou como campo JSON `"warning"` — `pathguard` nunca escreve em stderr diretamente por este motivo (poluiria saída `--json`).
 
 **R-3 — Owner SID obtido em runtime, não hardcoded.**
-O processo pode rodar como qualquer usuário (desenvolvedor, conta de domínio, conta de serviço). Usar `OpenCurrentProcessToken` + `GetTokenInformation(TOKEN_USER)` para obter o SID real. Não usar `WinCreatorOwnerSid` (S-1-3-0) porque em alguns contextos não resolve corretamente em runtime. Testar com conta que não seja a conta de builtin do runner.
+`OpenCurrentProcessToken()` + `GetTokenInformation(TOKEN_USER)`. Se falhar: fail-closed (retorna erro) — NÃO usar SID estático como fallback (um fallback errado cria DACL que bloqueia o próprio processo).
 
-**R-4 — SE_DACL_PROTECTED é obrigatório.**
-Sem este flag, uma operação posterior de "reset" de ACL no diretório pai (e.g., `icacls /reset /T`) pode re-herdar a ACE permissiva no arquivo. O flag deve ser passado em `SetNamedSecurityInfo` como `windows.PROTECTED_DACL_SECURITY_INFORMATION`.
+**R-4 — `SE_DACL_PROTECTED` obrigatório.**
+Sem este flag, operação posterior de reset de ACL no pai pode re-herdar a ACE permissiva. Passado como `windows.PROTECTED_DACL_SECURITY_INFORMATION` em toda chamada de `SetNamedSecurityInfo`.
 
 **R-5 — `os.Rename` preserva o DACL apenas dentro do mesmo volume.**
-Invariante atual: `os.CreateTemp(directory, ...)` onde `directory = filepath.Dir(filename)` garante same-volume. Documentar esse invariante como comentário nos dois sítios. Se o invariante for quebrado no futuro (e.g., criando temp em `%TEMP%` diferente do destino), o DACL seria perdido no rename cross-volume — o file seria recriado pelo fallback de copy+delete do Go sem a ACL explícita. O implementador deve adicionar um comentário de advertência.
+Invariante atual garantido por construção: `os.CreateTemp(directory, ...)` onde `directory = filepath.Dir(filename)` — temporário e destino no mesmo diretório, logo no mesmo volume. `CreateRestrictedFile` herda este invariante. Documentar como comentário nos dois sítios. Se quebrado no futuro, a DACL seria perdida numa cópia+delete cross-volume.
 
-**R-6 — MkdirAll cria apenas o diretório folha com DACL explícito.**
-`os.MkdirAll` pode criar múltiplos níveis. Apenas o diretório passado para `SetRestrictiveACL` recebe a DACL explícita. Diretórios intermediários criados na mesma chamada herdam do pai. Aceitável porque: (a) o diretório folha (`.trackfw/`) é quem recebe a proteção, que propaga via OI/CI para os filhos; (b) os diretórios intermediários (e.g., o próprio diretório do projeto) são de responsabilidade do usuário e do FS, não do trackfw.
+**R-6 — DACL de diretório apenas quando o trackfw o criou nesta chamada.**
+Aplicar `SE_DACL_PROTECTED` em diretório preexistente (e.g., `.claude/` para `render.go`) altera configuração de outros usuários ou ferramentas. A regra: verificar existência ANTES de `MkdirAll`; aplicar `SetRestrictiveDirACL` somente ao diretório folha criado por esta chamada. Arquivos: DACL via `CreateRestrictedFile` é sempre aplicada, independente do diretório.
 
-**R-7 — `golang.org/x/sys/windows` já é dependência indireta — promover a direta é mudança de go.mod.**
-O `go.mod` lista `golang.org/x/sys` como dependência indireta. Para importar `golang.org/x/sys/windows` em código de produto, a dependência deve ser promovida a direta (`go get golang.org/x/sys`). Isso é uma mudança pequena mas deve ser declarada no commit.
+**R-7 — `golang.org/x/sys/windows` promovido de indireta a direta em `go.mod`.**
+`go get golang.org/x/sys` antes de importar em código de produto. Deve estar no commit do ML.
 
-**R-8 — Testes `TestSave_WritesAtomicallyWithPermissions` e correlatos não devem usar `t.Skip` nem guard de plataforma que elimine o assert.**
-Um guard `if runtime.GOOS == "windows" { t.Skip() }` ou `if runtime.GOOS != "windows" { t.Skip() }` que elimine o assert de DACL é equivalente a não ter o teste. O padrão correto é arquivo `_windows_test.go` separado (build tag implícito) com o assert de DACL, coexistindo com o arquivo sem sufixo que afirma o modo POSIX.
+**R-8 — Testes não usam `t.Skip` nem guard de plataforma que elimine o assert.**
+O padrão correto é `_windows_test.go` separado com o assert de DACL, coexistindo com o arquivo `!windows` que afirma o modo POSIX.
 
-**R-9 — `BUILTIN\Administrators` no DACL pressupõe que o processo rodando como admin pode sempre ler/escrever seus próprios arquivos.**
-Em ambientes de contêiner Windows sem o grupo Administrators (e.g., Windows Server Core com usuário não-admin puro), a ACE de Administrators pode ser desnecessária mas inofensiva. Se a conta atual não for membro de Administrators, a ACE ainda é inserida (o DACL é uma política, não exige que a conta exista no contexto atual). Inofensivo.
+**R-9 — Arquivos legados permanecem com DACL permissiva até serem regravados.**
+Proveniência de skill instalada e nunca atualizada retém o ACL herdado. Resíduo declarado. Documentar no commit e no ADR. Regra de `validate` para detectar DACL permissiva é trabalho futuro (REQ separada).
+
+**R-10 — `BUILTIN\Administrators` no DACL em contêiner sem Administrators.**
+Em Windows Server Core com usuário não-admin puro, a ACE de Administrators é desnecessária mas inofensiva. Inofensivo.
 
 ---
 
 ## Veredito
 
-**APROVA COM RESSALVAS (R-1 a R-9).**
+**APROVA COM RESSALVAS (R-1 a R-10).**
 
-O desenho é tecnicamente correto e resolve o defeito medido. As ressalvas são implementáveis sem mudança de arquitetura e nenhuma é bloqueante para o início da codificação, desde que o implementador as atenda todas antes de submeter o PR.
+As ressalvas R-1, R-3, R-4 e R-8 são bloqueantes para o PR. As demais são requisitos de documentação ou residuais declarados.
 
-Ressalvas prioritárias (bloqueiam aprovação do PR se não atendidas):
+**Mudança crítica em relação à versão anterior:** `os.CreateTemp` + `SetRestrictiveACL` posterior **não fecha a corrida** — substituído por `CreateRestrictedFile` que cria o arquivo com DACL e share mode restritivos desde o `CreateFile`. Esta é a única abordagem que fecha a janela completamente.
 
-- **R-1**: `SetRestrictiveACL` chamado antes de qualquer `Write` (não depois)
-- **R-4**: `SE_DACL_PROTECTED` presente na chamada de `SetNamedSecurityInfo`
-- **R-8**: testes de DACL em `_windows_test.go`, sem skip nem guard que elimine o assert
-- **R-3**: Owner SID obtido em runtime, não hardcoded
-
-Ressalvas documentais (devem estar registradas em comentário de código ou commit message):
-
-- **R-2**: política de fail-soft em FAT/SMB documentada no código
-- **R-5**: invariante same-volume documentado nos dois sítios de `os.CreateTemp`
-- **R-7**: `go.mod` atualizado com `golang.org/x/sys` como dependência direta
-
-Ressalva de teste de produto (requer CI Windows para fechar):
-
-- A queda de `TestSave_WritesAtomicallyWithPermissions` do estado atual (impossível em Windows) para o novo assert de DACL só é verificável no runner x64. A aprovação do PR deve aguardar o CI Windows verde neste teste.
+**Exige ADR:** sim — `docs/adr/ADR-2026-10-16-dacl-explicita-para-arquivos-de-governanca-no-windows.md` (Proposed).
