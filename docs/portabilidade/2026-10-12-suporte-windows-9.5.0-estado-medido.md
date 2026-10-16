@@ -153,16 +153,29 @@ causa — `validate` usa `homedir.Dir()` (que honra HOME) para o caminho de scri
 |---|---|
 | `60eca16e` | fix(falsify): cenário 67 — passar USERPROFILE=<fake> em todos os discover --init |
 
-### Contagens esperadas pós-ML-W4b
+### Contagens pós-ML-W4b (parser Python estrito, critério: `^FAIL \[falsify/`)
 
 | Censo | Run | Total | OK | FAIL |
 |---|---|---|---|---|
-| Referência (v9.5.0 main) | 38319939952 | 278 | 274 | 4 |
-| Pós-ML-W4 | 38941248253 | 278 | 274 | 4 |
-| Pós-ML-W4b (pendente) | 38944389904 | 278 | 276 | 2 |
+| Pós-ML-W4 | 38941248253 | 281 | 277 | 4 |
+| Pós-ML-W4b | 38944389904 | 281 | 279 | 2 |
 
-Aceite esperado: apenas os 2 rótulos `scaffold-update-chmod-removed/direction-c-*` em FAIL,
-todos os demais OK. Run em andamento na publicação deste documento.
+Nota: a contagem pós-ML-W4 no documento original dizia "278" — apurado com método
+diferente (provavelmente sem normalização de CRLF). O parser Python estrito dá 281 nos dois runs.
+
+### FAILs pós-ML-W4b
+
+| Rótulo | Causa | Previsto? |
+|---|---|---|
+| `scaffold-update-chmod-removed/direction-c-baseline` | NTFS sem ACL (#421) | ✅ previsto |
+| `scaffold-update-chmod-removed/direction-c-detected` | NTFS sem ACL (#421) | ✅ previsto |
+
+Aceite do ML-W4b ✅:
+- `git-branch-guard-dedup/baseline-skips-project-entry` → OK (shard 6, rc=0)
+- `git-branch-guard-dedup/double-slash-tolerance` → OK (shard 6, rc=0)
+- Todos os outros 6 rótulos do cenário 67 → OK
+- Sem rótulo novo em FAIL e sem rótulo sumido (TOTAL=281 nos dois runs)
+- Apenas os 2 FAILs de NTFS noacl (#421) persistem (previstos)
 
 ## O que **não** dá para afirmar hoje
 
