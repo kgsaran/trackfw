@@ -1000,6 +1000,57 @@ jobs:
               -MainBin $mainBin `
               -BranchBin $branchBin
 
+      # Pergunta 17 — ACL NTFS em arquivos gravados com 0o600
+      # (ML-W2a, REQ-2026-09-03, branch fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao)
+      #
+      # Por que esta pergunta existe: Go no Windows ignora os 9 bits POSIX de
+      # permissão — os.Chmod / os.WriteFile(…,0o600) só alterna o bit READONLY.
+      # A ACL real é herdada do diretório pai em tempo de criação (os.CreateTemp).
+      # Os 5 sítios que pedem 0o600 (identity.go:93, manifest.go:92, render.go:730,
+      # quarantine.go:114, provenance.go:155) ficam com a ACL do pai.
+      # Decisão pendente (ML-W2b): declarar o limite ou usar DACL explícita.
+      #
+      # Esta pergunta mede — em dois braços — quem além de dono/SYSTEM/Administrators
+      # tem Write nos arquivos criados pelo binário real da branch:
+      #
+      #   Braço (i)  home-userprofile — %USERPROFILE%\.trackfw\identity.json
+      #              via `trackfw init --identity-preset greek` (identity.go:93)
+      #   Braço (ii) root-c — C:\p17-proj\.trackfw\integrations-manifest.json
+      #              via `trackfw agents install --scope project` (manifest.go:92)
+      #   Braço (iii) runner-temp — %RUNNER_TEMP%\p17-h-rt\.trackfw\identity.json
+      #              (cadeia de herança diferente de C:\ e %USERPROFILE%)
+      #
+      # Saída principal (grep-friendly, sem veredito):
+      #   PROBE acl <braço> <artefato> owner=<owner> foreign_write=<lista|(none)>
+      #   PROBE acl root <dir-raiz> foreign_write_inheritable=<lista|(none)>
+      #
+      # Reusa o binário compilado pela Pergunta 16 (p16-trackfw-branch.exe)
+      # se disponível, para não estourar o timeout de 10 min.
+      # ---------------------------------------------------------------
+      - name: "Pergunta 17 — ACL NTFS de arquivos com 0o600 (ML-W2a, REQ-2026-09-03)"
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+
+          # ── Reusar binário da P16 se disponível; compilar se não ───────────
+          $p17Bin = Join-Path $env:RUNNER_TEMP "p16-trackfw-branch.exe"
+          if (-not (Test-Path $p17Bin)) {
+            Write-Host "=== P17: p16-trackfw-branch.exe ausente — compilando p17-trackfw.exe ==="
+            $p17Bin = Join-Path $env:RUNNER_TEMP "p17-trackfw.exe"
+            go build -o $p17Bin ./cmd/trackfw 2>&1 | Write-Host
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "P17_GUARD_FAIL: BUILD_FAILED — saindo sem veredito"
+              exit 0
+            }
+          } else {
+            Write-Host "P17_BIN_REUSED: $p17Bin"
+          }
+          Write-Host "P17_BIN: $p17Bin"
+
+          # ── Chamar script de sonda ─────────────────────────────────────────
+          & ".\scripts\windows-repro\p17-acl-0600-ntfs.ps1" -Bin $p17Bin
+
       - name: Registrar duração
         if: always()
         shell: pwsh
