@@ -46609,3 +46609,15 @@ Zero flips em catálogo e terceiros. Ajuste R-1 propõe `strings.TrimRight(part,
 ## 2026-10-16 — zeus-tf — ML-R3 pronto (PR #566)
 
 - Guard de entrada do `Manager.resolve` recusa segmento composto só de pontos/espaços com `/` ou `\` nos ramos `default:` e `~/`. Red-team liberou; R-1 corrigido (fórmula do parecer era impossível). CI 20/20, ratchet 12/12; `make quality` EXIT=0 (carga até 11). Gates Python rodam com venv isolado em `/tmp/zeus-venv312`.
+
+---
+
+**hades-tf** · 2026-10-16 · Wave 0 ML-W2b — threat model DACL explícita para 0o600/0o700 no Windows
+Branch: `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`
+Iniciando produção do parecer `docs/seguranca/2026-10-16-wave0-dacl-0600-windows.md`.
+REQ: REQ-2026-09-03 | Fato base: run 38902064559 (Pergunta 17, x64) — braços root-c e runner-temp com escrita alheia confirmada.
+
+**hades-tf** · 2026-10-16 · Wave 0 ML-W2b concluído
+Branch: `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`
+Artefato: `docs/seguranca/2026-10-16-wave0-dacl-0600-windows.md`
+Veredito: APROVA COM RESSALVAS (R-1 a R-9). Desenho: `internal/fsperm` (build-tagged), `SetRestrictiveACL` chamado antes do primeiro `Write` no temp file, `SE_DACL_PROTECTED`, Owner SID em runtime, fail-soft em FAT/SMB. Testes em `_windows_test.go` com `GetNamedSecurityInfo`, raiz "ruim" manufaturada no teste.
