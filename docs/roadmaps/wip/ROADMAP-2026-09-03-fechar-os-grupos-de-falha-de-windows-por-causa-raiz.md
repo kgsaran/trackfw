@@ -2560,6 +2560,18 @@ foi aplicado **por medição**, não por leitura: `docs/portabilidade/2026-10-12
   herança já restringe nos dois → declarar o limite, teste afirma a semântica do Windows, entrada sai
   de `windows-known-failures.json`; algum braço com escrita alheia → DACL explícita só-dono nos 5
   sítios, revisão `hades-tf` obrigatória.
+  **W2a ✅** — Pergunta 17, run `38902064559` (`docs/portabilidade/2026-10-16-acl-0600-ntfs-ci.md`):
+  `%USERPROFILE%` restrito; projeto sob `C:\` com `Authenticated Users:(I)(M)`. Braço `D:\` era
+  falso positivo do parser (corrigido). **W2b 🔄 — red-team BLOQUEIA** (`cbceb590`,
+  `docs/seguranca/2026-10-16-red-team-ml-w2b-dacl.md`): R-A (dono implícito com `WRITE_DAC` em
+  `.trackfw` pré-criado por terceiro) e R-B (`SetNamedSecurityInfo` por nome segue junction — dano
+  novo). Antes de corrigir, o arquiteto reabre a premissa: com Modify herdado na raiz do projeto, o
+  co-inquilino pode **renomear a raiz e recriá-la** — se isso se confirmar com uma segunda identidade
+  real, a DACL por arquivo não dá integridade. **W2a-bis (Pergunta 19):** medir com usuário local
+  não-admin os braços sobrescrever proveniência protegida / trocar a raiz / pré-criar `.trackfw` /
+  junction. A decisão (manter `fsperm` como defesa em profundidade + correções, ou remover e
+  declarar) volta ao usuário com a medição; nos dois caminhos entra regra do `validate` que acusa
+  raiz do projeto ou `.trackfw\` com escrita alheia (absorve ML-W2c).
 - **ML-W3 — remedir as 5 causas `INFER`** da lista conhecida (CRLF no renderizador ×2, golden,
   modelo de agente, separador no manifesto do `update`) e corrigir as que forem de produto.
 - **ML-W4 — setup do censo instala o pacote Python pré-v8** (`windows-census.yml:399`): põe no PATH um
