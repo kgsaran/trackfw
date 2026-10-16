@@ -2548,6 +2548,18 @@ foi aplicado **por medição**, não por leitura: `docs/portabilidade/2026-10-12
 - **ML-W2 — permissão 0600 ignorada no NTFS** (`TestSave_WritesAtomicallyWithPermissions`,
   `internal/identity`): decidir entre ACL do Windows e declarar o limite. Segurança: arquivo de
   identidade.
+  🔄 **Em andamento (2026-10-16)** — branch `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`.
+  **Decisão do usuário (2026-10-16): medir e depois decidir.** Escopo pela causa (Go no Windows só
+  alterna o bit somente-leitura; `0o600` é inerte): os 5 sítios que pedem `0o600` —
+  `identity.go:93`, `integrations/manifest.go:92`, `integrations/render.go:730`,
+  `thirdparty/quarantine.go:114`, `thirdparty/provenance.go:155` — e os `MkdirAll(..., 0o700)`
+  (`pathguard.go:150`, `manager.go:918`). Nenhum guarda segredo; o risco é **escrita** por outro
+  usuário local (proveniência). **W2a — medir** (`windows-probe.yml`, Pergunta 17, x64): ACL efetiva
+  (`icacls`) do arquivo gravado pelo binário em (i) `%USERPROFILE%\.trackfw\` e (ii) projeto sob
+  `C:\` raiz; quem além do dono/SYSTEM/Administrators tem W/M/F. **W2b — decidir pela medição:**
+  herança já restringe nos dois → declarar o limite, teste afirma a semântica do Windows, entrada sai
+  de `windows-known-failures.json`; algum braço com escrita alheia → DACL explícita só-dono nos 5
+  sítios, revisão `hades-tf` obrigatória.
 - **ML-W3 — remedir as 5 causas `INFER`** da lista conhecida (CRLF no renderizador ×2, golden,
   modelo de agente, separador no manifesto do `update`) e corrigir as que forem de produto.
 - **ML-W4 — setup do censo instala o pacote Python pré-v8** (`windows-census.yml:399`): põe no PATH um
