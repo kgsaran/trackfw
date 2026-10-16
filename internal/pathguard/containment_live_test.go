@@ -73,7 +73,7 @@ const (
 	liveP2UnresolvedPin   = 3   // was 22 until ML-8A; see liveP2IrreducibleRoots
 	liveP2CleanSitesPin   = 0   // was 16 until ML-8A — the whole Wave 8 population
 	liveRootAliasedPin    = 3   // was 16 until ML-8A; see liveRootAliasedResidual
-	liveBlindSpotSitesPin = 15
+	liveBlindSpotSitesPin = 13
 	liveFailOpenSitesPin  = 0 // was 5 until ML-9A; see liveKnownFailOpen
 )
 
@@ -92,16 +92,12 @@ var liveAnalyserBlindSpots = map[string]blindSpot{
 		"dst is always an os.MkdirTemp sandbox root (the site says so and the callers confirm it); it enters the population only through the conservative taint transfer, not through a project root"},
 	"internal/generators/update.go|copyPath|unguarded-write|dst": {3,
 		"same sandbox reason as filepath.Dir(dst) above: copyPath only ever writes into the os.MkdirTemp tree the update dry-run builds, so no user-supplied root reaches it"},
-	"internal/integrations/manager.go|atomicWrite|unguarded-write|directory": {1,
+	"internal/integrations/manager.go|atomicWrite|unguarded-write|directory": {2,
 		"containment is established by the caller through rejectSymlinks before the write is queued; the queue crosses a function boundary and one call site is inside a deferred closure, which walkWithBlocks does not enter"},
 	"internal/integrations/manager.go|atomicWrite|unguarded-write|filename": {1,
 		"same call-site containment as the directory writes above: rejectSymlinks runs on the destination in the caller, before the write is appended to pendingWrites"},
 	"internal/metrics/metrics.go|ExportCSV|unguarded-write|path": {1,
 		"the guard is deliberately conditional on pathguard.Beneath: an external absolute destination is a user-directed named exception of ADR-2026-09-18, not a root-derived path"},
-	"internal/fsperm/fsperm_other.go|CreateRestrictedFile|unguarded-write|dir": {1,
-		"fsperm is the containment helper itself; dir is received from GuardedWrite or atomicWrite, which have already run RejectAndReport on the destination before calling CreateRestrictedFile — the guard is upstream at the call site, not re-entered inside this adapter"},
-	"internal/fsperm/fsperm_windows.go|CreateRestrictedFile|unguarded-write|dir": {2,
-		"same upstream-guard reason as fsperm_other.go: both callers (GuardedWrite, atomicWrite) run RejectAndReport before calling CreateRestrictedFile; the two sites are the ACL-unsupported volume fallback path and the CreateFile failure fallback inside the Windows implementation"},
 }
 
 // liveKnownFailOpen — MEASURED DEFECTS, not approvals. Same cause (the guard is

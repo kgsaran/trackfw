@@ -247,7 +247,8 @@
       "runtime": "go",
       "class": "assertion",
       "reason": "Group A: os.Chmod(0o600) silently ignored on NTFS without ACL -- file permission remains 0666, expected 0600 (MEASURED)",
-      "removal_note": "corrected"
+      "removal_note": "corrected",
+      "correction_note": "afirmar a semântica do Windows (ADR-2026-10-16-no-windows-o-validate-avisa-quando-o-projeto-concede-escrita-a-outro-usuario D1): o teste agora afirma que Mode().Perm() != 0o600 no Windows, refletindo o comportamento medido no CI run 38902064559 (ML-W2b')"
     }
   ]
 }

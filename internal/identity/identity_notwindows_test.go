@@ -12,9 +12,9 @@ import (
 
 // TestSave_WritesAtomicallyWithPermissions asserts that Save writes the identity
 // file atomically (no leftover temp files) and with mode 0600/0700 on POSIX.
-// On Windows the POSIX mode assertion is replaced by a DACL assertion in
-// identity_windows_test.go: Mode().Perm() reflects only the READONLY attribute
-// on Windows and is not a valid proxy for ACL-based access control.
+// On Windows the POSIX mode assertion differs in identity_windows_test.go:
+// Mode().Perm() reflects only the READONLY attribute on Windows and is not a
+// valid proxy for ACL-based access control (D1, ADR-2026-10-16-no-windows-o-validate-avisa-...).
 //
 // Reconciliation: this test affirms "Save produces a file with mode 0600 and a
 // directory with mode 0700 on POSIX". It would fail if GuardedWrite stopped

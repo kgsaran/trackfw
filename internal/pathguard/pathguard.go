@@ -46,8 +46,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/kgsaran/trackfw/internal/fsperm"
 )
 
 // Beneath reports whether filename is strictly inside root: it must be
@@ -148,29 +146,12 @@ func GuardedWrite(root, filename string, data []byte, mode os.FileMode) error {
 		return err
 	}
 	directory := filepath.Dir(filename)
-
-	// Capture whether the leaf directory pre-existed. Used below to decide
-	// whether to apply a restrictive DACL on Windows (ADR D3 + D3 ajuste).
-	_, dirStatErr := os.Stat(directory)
-	dirExisted := dirStatErr == nil
-
 	// write-containment-allowed: GuardedWrite implements the containment helper itself; MkdirAll is always called after RejectSymlinks guard passes
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return err
 	}
-
-	// Protect the directory with a restricted DACL on Windows before writing.
-	// Conditions (ADR D3 ajuste):
-	//   (a) trackfw created the leaf directory in this call, or
-	//   (b) the path is .trackfw or under .trackfw (trackfw owns it even if preexisting).
-	if !dirExisted || fsperm.IsTrackfwOwned(directory) {
-		if err := fsperm.SetRestrictiveDirACL(directory); err != nil {
-			return err
-		}
-	}
-
-	// write-containment-allowed: GuardedWrite implements the containment helper itself; CreateRestrictedFile delegates os.CreateTemp on non-Windows and creates a DACL-restricted file on Windows
-	temporary, err := fsperm.CreateRestrictedFile(directory, ".trackfw-tmp-*")
+	// write-containment-allowed: GuardedWrite implements the containment helper itself; CreateTemp is always called after RejectSymlinks guard passes
+	temporary, err := os.CreateTemp(directory, ".trackfw-tmp-*")
 	if err != nil {
 		return err
 	}

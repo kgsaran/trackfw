@@ -8,35 +8,31 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"unsafe"
-
-	"golang.org/x/sys/windows"
 )
 
 // TestSave_WritesAtomicallyWithPermissions is the Windows version of the
-// permissions test. Instead of asserting Mode().Perm() == 0o600 (which reflects
-// only the READONLY attribute on Windows and is not a valid proxy for DACL-based
-// access control), this version:
-//   - uses makeForeignWriteDir as homeDir so the "no AU write ACE" assertion
-//     actually BITES: a TempDir on the runner's TEMP volume typically has a
-//     restricted DACL already, so assertNoForeignWriteACE would pass even
-//     without fsperm — only assertDACLIsProtected would catch a regression.
-//   - asserts the identity file has no write ACE for Authenticated Users,
-//     BUILTIN\Users or Everyone (per ADR D2), and
-//   - the DACL is protected (SE_DACL_PROTECTED, per ADR R-4), and
-//   - the DACL includes an owner full-control ACE (so the process doesn't lock
-//     itself out), and
-//   - no leftover temp files remain, and
-//   - the file content is valid JSON ending with a newline.
+// permissions test. On Windows, os.Chmod(0o600) only toggles the READONLY
+// attribute — it does not set ACL-based access control. Measured in CI run
+// 38902064559 (ML-W2a): Mode().Perm() returns 0o666 (not 0o600) on an NTFS
+// volume. ADR-2026-10-16-no-windows-o-validate-avisa-... decision D1 declares
+// this a known limit and keeps 0o600 as the intent for POSIX.
 //
-// Reconciliation:
-//   - assertNoForeignWriteACE BITES: makeForeignWriteDir injects AU:(OI)(CI)(M)
-//     into the root, so os.CreateTemp would inherit that ACE; fsperm eliminates
-//     it. Without fsperm.CreateRestrictedFile the assertion fails.
-//   - assertDACLIsProtected BITES: without SE_DACL_PROTECTED the DACL flag is
-//     absent; it is set only by fsperm.CreateRestrictedFile via its SDDL.
+// This test asserts the Windows-measured semantics:
+//   - the identity file exists after Save,
+//   - the file content is valid JSON ending with a newline,
+//   - no leftover temp files remain,
+//   - Mode().Perm() is NOT 0o600 (it is 0o666 on a standard NTFS runner) — D1.
+//
+// Reconciliation (Regra de Reconciliação, CLAUDE.md):
+//   - The Mode().Perm() != 0o600 assertion affirms "os.Chmod(0o600) is inert on
+//     Windows NTFS" (D1 of ADR-2026-10-16). It would fail if a future change
+//     made Go's os.Chmod write an ACL-based 0o600 on Windows, which would be a
+//     surprise worth catching.
+//   - The JSON + newline + no-temp assertions affirm "Save is atomic and produces
+//     valid output" — they would fail if the write was truncated or if the temp
+//     rename cleanup was broken.
 func TestSave_WritesAtomicallyWithPermissions(t *testing.T) {
-	homeDir := makeForeignWriteDir(t)
+	homeDir := t.TempDir()
 	cfg := Config{Agents: map[string]AgentIdentity{}}
 
 	if err := Save(homeDir, cfg); err != nil {
@@ -44,16 +40,20 @@ func TestSave_WritesAtomicallyWithPermissions(t *testing.T) {
 	}
 
 	path := identityPath(homeDir)
-	if _, err := os.Stat(path); err != nil {
+	info, err := os.Stat(path)
+	if err != nil {
 		t.Fatalf("arquivo de identidade deveria existir: %v", err)
 	}
 
-	// DACL assertions: no foreign write ACEs; DACL protected; owner has control.
-	assertNoForeignWriteACE(t, path, "S-1-5-11")  // Authenticated Users
-	assertNoForeignWriteACE(t, path, "S-1-5-32-545") // BUILTIN\Users
-	assertNoForeignWriteACE(t, path, "S-1-1-0")   // Everyone
-	assertDACLIsProtected(t, path)
-	assertOwnerHasWriteACE(t, path)
+	// D1 (ADR-2026-10-16-no-windows-o-validate-avisa-...): os.Chmod(0o600) is
+	// inert on NTFS. Mode().Perm() is expected to be 0o666 (measured in CI run
+	// 38902064559). Assert the Windows-measured value; the POSIX 0o600 assertion
+	// lives in identity_notwindows_test.go.
+	perm := info.Mode().Perm()
+	t.Logf("PROBE w2b identity perm=%04o (Windows NTFS; expected 0o666 per D1)", perm)
+	if perm == 0o600 {
+		t.Errorf("Mode().Perm() = 0o600 on Windows — unexpected: os.Chmod(0o600) should be inert on NTFS (D1 ADR-2026-10-16); this may indicate a new ACL-aware os.Chmod; update the test and the ADR")
+	}
 
 	// No leftover temp files should remain in the directory.
 	entries, err := os.ReadDir(filepath.Join(homeDir, ".trackfw"))
@@ -77,183 +77,4 @@ func TestSave_WritesAtomicallyWithPermissions(t *testing.T) {
 	if err := json.Unmarshal(data, &roundTrip); err != nil {
 		t.Fatalf("arquivo salvo deveria ser JSON valido: %v", err)
 	}
-}
-
-// maskWriteAny covers all write-capability bits in an ACCESS_ALLOWED_ACE.
-const maskWriteAny = windows.GENERIC_WRITE |
-	windows.GENERIC_ALL |
-	windows.FILE_WRITE_DATA |
-	windows.FILE_APPEND_DATA |
-	windows.FILE_WRITE_EA |
-	windows.FILE_WRITE_ATTRIBUTES |
-	windows.DELETE |
-	windows.WRITE_DAC |
-	windows.WRITE_OWNER
-
-func assertNoForeignWriteACE(t *testing.T, path, sidStr string) {
-	t.Helper()
-	sid, err := windows.StringToSid(sidStr)
-	if err != nil {
-		t.Fatalf("StringToSid(%q): %v", sidStr, err)
-	}
-	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
-		windows.DACL_SECURITY_INFORMATION)
-	if err != nil {
-		t.Fatalf("GetNamedSecurityInfo(%q): %v", path, err)
-	}
-	dacl, _, err := sd.DACL()
-	if err != nil {
-		t.Fatalf("sd.DACL: %v", err)
-	}
-	if dacl == nil {
-		t.Errorf("%q has NULL DACL (everyone full control) — unexpected", path)
-		return
-	}
-	for i := uint32(0); i < uint32(dacl.AceCount); i++ {
-		var ace *windows.ACCESS_ALLOWED_ACE
-		if err := windows.GetAce(dacl, i, &ace); err != nil {
-			break
-		}
-		if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE {
-			continue
-		}
-		aceSID := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
-		if aceSID.Equals(sid) && ace.Mask&maskWriteAny != 0 {
-			t.Errorf("%q has write ACE for %s (mask 0x%x) — DACL not restricted", path, sidStr, ace.Mask)
-		}
-	}
-}
-
-func assertDACLIsProtected(t *testing.T, path string) {
-	t.Helper()
-	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
-		windows.DACL_SECURITY_INFORMATION)
-	if err != nil {
-		t.Fatalf("GetNamedSecurityInfo(%q): %v", path, err)
-	}
-	ctrl, _, err := sd.Control()
-	if err != nil {
-		t.Fatalf("sd.Control: %v", err)
-	}
-	if ctrl&windows.SE_DACL_PROTECTED == 0 {
-		t.Errorf("%q DACL is not protected (SE_DACL_PROTECTED not set, control=0x%x)", path, ctrl)
-	}
-}
-
-func assertOwnerHasWriteACE(t *testing.T, path string) {
-	t.Helper()
-	tok, err := windows.OpenCurrentProcessToken()
-	if err != nil {
-		t.Fatalf("OpenCurrentProcessToken: %v", err)
-	}
-	defer tok.Close()
-	tu, err := tok.GetTokenUser()
-	if err != nil {
-		t.Fatalf("GetTokenUser: %v", err)
-	}
-	ownerSID := tu.User.Sid
-
-	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
-		windows.DACL_SECURITY_INFORMATION)
-	if err != nil {
-		t.Fatalf("GetNamedSecurityInfo(%q): %v", path, err)
-	}
-	dacl, _, err := sd.DACL()
-	if err != nil {
-		t.Fatalf("sd.DACL: %v", err)
-	}
-	if dacl == nil {
-		return // NULL DACL means full control for everyone
-	}
-	for i := uint32(0); i < uint32(dacl.AceCount); i++ {
-		var ace *windows.ACCESS_ALLOWED_ACE
-		if err := windows.GetAce(dacl, i, &ace); err != nil {
-			break
-		}
-		if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE {
-			continue
-		}
-		aceSID := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
-		if aceSID.Equals(ownerSID) && ace.Mask&maskWriteAny != 0 {
-			return // owner has write access — OK
-		}
-	}
-	t.Errorf("%q has no write ACE for the process owner — process may lose access to its own file", path)
-}
-
-// makeForeignWriteDir creates a temporary directory and injects an
-// Authenticated Users:(OI)(CI)(Modify) ACE into it, simulating the inheritance
-// pattern measured on C:\ in run 38902064559 (ML-W2a / Pergunta 17).
-// Files created with os.CreateTemp inside this dir will inherit that ACE.
-// Mask 0x1301bf = Modify (same as icacls "(M)").
-// Owner/SY/BA retain FA to avoid locking the process out of the directory.
-// makeForeignWriteDir is duplicated here (from fsperm_windows_test.go) because
-// Go test helpers cannot cross package boundaries.
-func makeForeignWriteDir(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	tok, err := windows.OpenCurrentProcessToken()
-	if err != nil {
-		t.Fatalf("makeForeignWriteDir: OpenCurrentProcessToken: %v", err)
-	}
-	defer tok.Close()
-	tu, err := tok.GetTokenUser()
-	if err != nil {
-		t.Fatalf("makeForeignWriteDir: GetTokenUser: %v", err)
-	}
-	ownerSID, err := tu.User.Sid.Copy()
-	if err != nil {
-		t.Fatalf("makeForeignWriteDir: SID.Copy: %v", err)
-	}
-	// 0x1301bf = Modify (icacls "(M)"): includes FILE_WRITE_DATA, FILE_APPEND_DATA,
-	// FILE_WRITE_EA, FILE_WRITE_ATTRIBUTES, READ_CONTROL, SYNCHRONIZE, DELETE.
-	sddl := "D:(A;OICI;0x1301bf;;;S-1-5-11)(A;OICI;FA;;;" + ownerSID.String() + ")(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
-	sd, err := windows.SecurityDescriptorFromString(sddl)
-	if err != nil {
-		t.Fatalf("makeForeignWriteDir: building SDDL %q: %v", sddl, err)
-	}
-	dacl, _, err := sd.DACL()
-	if err != nil {
-		t.Fatalf("makeForeignWriteDir: extracting DACL: %v", err)
-	}
-	if err := windows.SetNamedSecurityInfo(
-		dir, windows.SE_FILE_OBJECT,
-		windows.DACL_SECURITY_INFORMATION,
-		nil, nil, dacl, nil,
-	); err != nil {
-		t.Fatalf("makeForeignWriteDir: SetNamedSecurityInfo: %v", err)
-	}
-	return dir
-}
-
-// dACLHasWriteACEForSID returns true when the named file's DACL contains at
-// least one ACCESS_ALLOWED ACE for sid that grants any write-capable right.
-func dACLHasWriteACEForSID(t *testing.T, path string, sid *windows.SID) bool {
-	t.Helper()
-	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
-		windows.DACL_SECURITY_INFORMATION)
-	if err != nil {
-		t.Fatalf("GetNamedSecurityInfo(%q): %v", path, err)
-	}
-	dacl, _, err := sd.DACL()
-	if err != nil {
-		t.Fatalf("sd.DACL: %v", err)
-	}
-	if dacl == nil {
-		return true // NULL DACL = everyone full control
-	}
-	for i := uint32(0); i < uint32(dacl.AceCount); i++ {
-		var ace *windows.ACCESS_ALLOWED_ACE
-		if err := windows.GetAce(dacl, i, &ace); err != nil {
-			break
-		}
-		if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE {
-			continue
-		}
-		aceSID := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
-		if aceSID.Equals(sid) && ace.Mask&maskWriteAny != 0 {
-			return true
-		}
-	}
-	return false
 }

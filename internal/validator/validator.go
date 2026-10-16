@@ -226,6 +226,10 @@ var ruleDefaults = map[string]string{
 	// D4 (ADR-2026-10-14, REQ-2026-09-01 ML-1B): HOME ≠ USERPROFILE on Windows —
 	// informative-only diagnostic, never blockable. Routed via applyRuleWarnOnly.
 	"home_divergence_windows": "warning",
+	// D2/D3 (ADR-2026-10-16-no-windows-o-validate-avisa-..., REQ-2026-09-03 ML-W2b'):
+	// project root or .trackfw\ grants write to a foreign SID on Windows —
+	// informative-only, never blockable. Routed via applyRuleWarnOnly.
+	"project_foreign_write_windows": "warning",
 }
 
 // ruleSeverity retorna a severidade configurada para a regra.
@@ -1158,6 +1162,11 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	// 🔴 Mirror site in validateUnfilteredTagged below — forgetting it silences the rule from --json.
 	applyRuleWarnOnly("home_divergence_windows", validateHomeDivergenceWindows(), &warnings)
 
+	// ML-W2b' (REQ-2026-09-03, ADR-2026-10-16-no-windows-o-validate-avisa-... D2/D3): project root
+	// or .trackfw\ grants write to a foreign SID on Windows — always-warning, never blockable.
+	// 🔴 Mirror site in validateUnfilteredTagged below — forgetting it silences the rule from --json.
+	applyRuleWarnOnly("project_foreign_write_windows", validateProjectForeignWriteWindows(), &warnings)
+
 	return violations, warnings, nil
 }
 
@@ -1625,6 +1634,10 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 	// ML-1B (REQ-2026-09-01, ADR-2026-10-14 D4): mirror of ValidateUnfiltered.
 	// 🔴 Missing this site silences home_divergence_windows from --json output.
 	applyRuleWarnOnlyTagged("home_divergence_windows", validateHomeDivergenceWindows(), &warnings)
+
+	// ML-W2b' (REQ-2026-09-03, ADR-2026-10-16-no-windows-o-validate-avisa-... D2/D3): mirror of ValidateUnfiltered.
+	// 🔴 Missing this site silences project_foreign_write_windows from --json output.
+	applyRuleWarnOnlyTagged("project_foreign_write_windows", validateProjectForeignWriteWindows(), &warnings)
 
 	return violations, warnings, nil
 }
