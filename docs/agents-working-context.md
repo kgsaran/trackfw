@@ -46734,3 +46734,9 @@ Escopo: `validator_project_foreign_write_windows.go`, 5 testes, identity_windows
 Branch: `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`
 Artefato: `docs/seguranca/2026-10-16-red-team-ml-w2b-linha-validate.md`
 Veredito: LIBERA COM RESSALVAS. R-1: CI|IO ACE skipped — adição de subdiretório via container-only ACE não detectado, ADR deve nomear; R-2: GetAce break silencia ACEs restantes (D3); R-3: Lstat engole access-denied para .trackfw (D3); R-4: testes (a) e identity_windows vacuamente passantes em casos limítrofes; R-5: remédio "remove inheritance" errado para ACE explícita e FP de runner D:\a\... não declarado na ADR.
+
+---
+
+**hefesto-tf** · 2026-10-16 · Revisão de qualidade ML-W3b — iniciada
+Branch: `fix/fechar-os-grupos-de-falha-de-windows-ml-w3-infer`
+Escopo: `internal/integrations/render.go`, `render_test.go`, `update_test.go`, `.github/windows-known-failures.json`.
