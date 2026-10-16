@@ -46649,3 +46649,15 @@ REQ: REQ-2026-09-03 | Fato base: run 38902064559 (Pergunta 17, x64) — braços 
 Branch: `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`
 Artefato: `docs/seguranca/2026-10-16-wave0-dacl-0600-windows.md`
 Veredito: APROVA COM RESSALVAS (R-1 a R-9). Desenho: `internal/fsperm` (build-tagged), `SetRestrictiveACL` chamado antes do primeiro `Write` no temp file, `SE_DACL_PROTECTED`, Owner SID em runtime, fail-soft em FAT/SMB. Testes em `_windows_test.go` com `GetNamedSecurityInfo`, raiz "ruim" manufaturada no teste.
+
+---
+
+**hades-tf** · 2026-10-16 · Red-team ML-W2b (gate de PR)
+Branch: `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`
+Iniciando red-team da implementação ML-W2b DACL explícita para arquivos de governança no Windows.
+Artefato a produzir: `docs/seguranca/2026-10-16-red-team-ml-w2b-dacl.md`
+
+**hades-tf** · 2026-10-16 · Red-team ML-W2b concluído
+Branch: `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`
+Artefato: `docs/seguranca/2026-10-16-red-team-ml-w2b-dacl.md`
+Veredito: BLOQUEIA. R-A: implicit owner WRITE_DAC contorna DACL em `.trackfw` pré-criado (sem OWNER RIGHTS ACE, sem OWNER_SECURITY_INFORMATION); R-B: SetNamedSecurityInfo segue junctions — novo dano introduzido pelo ML-W2b (mutação de ACL tree externo + desvio de escrita). Fix direction: (A) adicionar `(A;OICI;RC;;;OW)` no SDDL do dir; (B) usar CreateDirectory com SECURITY_ATTRIBUTES ou abrir com handle+OPEN_REPARSE_POINT antes de SetSecurityInfo.
