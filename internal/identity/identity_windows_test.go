@@ -185,56 +185,43 @@ func assertOwnerHasWriteACE(t *testing.T, path string) {
 // Authenticated Users:(OI)(CI)(Modify) ACE into it, simulating the inheritance
 // pattern measured on C:\ in run 38902064559 (ML-W2a / Pergunta 17).
 // Files created with os.CreateTemp inside this dir will inherit that ACE.
+// Mask 0x1301bf = Modify (same as icacls "(M)").
+// Owner/SY/BA retain FA to avoid locking the process out of the directory.
 // makeForeignWriteDir is duplicated here (from fsperm_windows_test.go) because
 // Go test helpers cannot cross package boundaries.
 func makeForeignWriteDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-
-	// Build a DACL: existing DACL + AU:(OI)(CI)(Modify) ACE.
-	auSID, err := windows.StringToSid("S-1-5-11")
+	tok, err := windows.OpenCurrentProcessToken()
 	if err != nil {
-		t.Fatalf("StringToSid(AU): %v", err)
+		t.Fatalf("makeForeignWriteDir: OpenCurrentProcessToken: %v", err)
 	}
-	// GENERIC_WRITE | GENERIC_EXECUTE | GENERIC_READ covers "Modify" at the
-	// generic-rights level. Use the SDDL approach: inject via
-	// SetNamedSecurityInfo with the existing DACL extended by the new ACE.
-	sd, err := windows.GetNamedSecurityInfo(dir, windows.SE_FILE_OBJECT,
-		windows.DACL_SECURITY_INFORMATION)
+	defer tok.Close()
+	tu, err := tok.GetTokenUser()
 	if err != nil {
-		t.Fatalf("GetNamedSecurityInfo: %v", err)
+		t.Fatalf("makeForeignWriteDir: GetTokenUser: %v", err)
 	}
-	existing, _, err := sd.DACL()
+	ownerSID, err := tu.User.Sid.Copy()
 	if err != nil {
-		t.Fatalf("sd.DACL: %v", err)
+		t.Fatalf("makeForeignWriteDir: SID.Copy: %v", err)
 	}
-
-	// Build a new DACL that includes the existing ACEs + AU:OI+CI+Modify.
-	newSDDL := "D:(A;OICI;0x001200a9;;;" + auSID.String() + ")"
-	if existing != nil {
-		// Prepend existing entries by converting to SDDL and appending; the
-		// simplest reliable method is re-setting via a combined SDDL string.
-		// Since SDDL for arbitrary existing DACLs is complex, just SET the
-		// AU ACE on top of whatever is there — the goal is that AU has Write.
-		_ = existing // intentionally not merged: SetNamedSecurityInfo with
-		// DACL_SECURITY_INFORMATION | UNPROTECTED_DACL_SECURITY_INFORMATION
-		// merges with the inherited ACEs from the parent; the AU ACE below is
-		// enough to inject the "foreign write" that the test needs to detect.
-	}
-	injectSD, err := windows.SecurityDescriptorFromString(newSDDL)
+	// 0x1301bf = Modify (icacls "(M)"): includes FILE_WRITE_DATA, FILE_APPEND_DATA,
+	// FILE_WRITE_EA, FILE_WRITE_ATTRIBUTES, READ_CONTROL, SYNCHRONIZE, DELETE.
+	sddl := "D:(A;OICI;0x1301bf;;;S-1-5-11)(A;OICI;FA;;;" + ownerSID.String() + ")(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
+	sd, err := windows.SecurityDescriptorFromString(sddl)
 	if err != nil {
-		t.Fatalf("SecurityDescriptorFromString(%q): %v", newSDDL, err)
+		t.Fatalf("makeForeignWriteDir: building SDDL %q: %v", sddl, err)
 	}
-	injectDACL, _, err := injectSD.DACL()
+	dacl, _, err := sd.DACL()
 	if err != nil {
-		t.Fatalf("injectSD.DACL: %v", err)
+		t.Fatalf("makeForeignWriteDir: extracting DACL: %v", err)
 	}
 	if err := windows.SetNamedSecurityInfo(
 		dir, windows.SE_FILE_OBJECT,
 		windows.DACL_SECURITY_INFORMATION,
-		nil, nil, injectDACL, nil,
+		nil, nil, dacl, nil,
 	); err != nil {
-		t.Fatalf("SetNamedSecurityInfo (inject AU): %v", err)
+		t.Fatalf("makeForeignWriteDir: SetNamedSecurityInfo: %v", err)
 	}
 	return dir
 }

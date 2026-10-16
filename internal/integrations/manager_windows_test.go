@@ -32,31 +32,49 @@ const maskWriteAny = windows.GENERIC_WRITE |
 
 // makeForeignWriteDir creates a temp dir with Authenticated Users:(OI)(CI)(Modify)
 // injected, simulating C:\ inheritance (run 38902064559 / ML-W2a).
+// Mask 0x1301bf = Modify (same as icacls "(M)").
+// Owner/SY/BA retain FA to avoid locking the process out of the directory.
 // Duplicated from fsperm_windows_test.go — Go test helpers cannot cross package boundaries.
 func makeForeignWriteDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
-	auSID, err := windows.StringToSid("S-1-5-11")
+	ownerSID, err := currentOwnerSIDForTest(t)
 	if err != nil {
-		t.Fatalf("StringToSid(AU): %v", err)
+		t.Fatalf("makeForeignWriteDir: %v", err)
 	}
-	newSDDL := "D:(A;OICI;0x001200a9;;;" + auSID.String() + ")"
-	injectSD, err := windows.SecurityDescriptorFromString(newSDDL)
+	// 0x1301bf = Modify (icacls "(M)"): includes FILE_WRITE_DATA, FILE_APPEND_DATA,
+	// FILE_WRITE_EA, FILE_WRITE_ATTRIBUTES, READ_CONTROL, SYNCHRONIZE, DELETE.
+	sddl := "D:(A;OICI;0x1301bf;;;S-1-5-11)(A;OICI;FA;;;" + ownerSID.String() + ")(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)"
+	sd, err := windows.SecurityDescriptorFromString(sddl)
 	if err != nil {
-		t.Fatalf("SecurityDescriptorFromString(%q): %v", newSDDL, err)
+		t.Fatalf("makeForeignWriteDir: building SDDL %q: %v", sddl, err)
 	}
-	injectDACL, _, err := injectSD.DACL()
+	dacl, _, err := sd.DACL()
 	if err != nil {
-		t.Fatalf("injectSD.DACL: %v", err)
+		t.Fatalf("makeForeignWriteDir: extracting DACL: %v", err)
 	}
 	if err := windows.SetNamedSecurityInfo(
 		dir, windows.SE_FILE_OBJECT,
 		windows.DACL_SECURITY_INFORMATION,
-		nil, nil, injectDACL, nil,
+		nil, nil, dacl, nil,
 	); err != nil {
-		t.Fatalf("SetNamedSecurityInfo (inject AU): %v", err)
+		t.Fatalf("makeForeignWriteDir: SetNamedSecurityInfo: %v", err)
 	}
 	return dir
+}
+
+func currentOwnerSIDForTest(t *testing.T) (*windows.SID, error) {
+	t.Helper()
+	tok, err := windows.OpenCurrentProcessToken()
+	if err != nil {
+		return nil, err
+	}
+	defer tok.Close()
+	tu, err := tok.GetTokenUser()
+	if err != nil {
+		return nil, err
+	}
+	return tu.User.Sid.Copy()
 }
 
 func dACLHasWriteACEForSID(t *testing.T, path string, sid *windows.SID) bool {
