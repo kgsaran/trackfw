@@ -8817,3 +8817,53 @@ The old file is **never deleted** — it is the user's own configuration file.
 - **Windsurf**: not measured — harness writes under `homedir.Dir()` (HOME), auditor reads
   under `os.UserHomeDir()` (USERPROFILE); divergence is declared and named by
   `home_divergence_windows`, not resolved.
+
+### `project_foreign_write_windows` — informative warning, never a violation
+
+<!-- trackfw-contract: gate=internal/validator/validator_project_foreign_write_windows_test.go partial=TestProjectForeignWrite_ForeignWriteACE proves one warning is emitted when AU (S-1-5-11) has (OI)(CI) Modify on the project root, names the SID, and uses the /remove:g remedy (explicit ACE path); TestProjectForeignWrite_CleanDACL proves silence when only owner/SYSTEM/Administrators have ACEs; TestProjectForeignWrite_TrackfwDirForeignACE proves the .trackfw\ check fires independently and names the subdirectory; TestProjectForeignWrite_ReadOnlyACENoWarning proves that a read-only (RX, mask 0x1200a9) ACE for a foreign SID does not trigger the rule; TestProjectForeignWrite_DACLReadError proves D3: a non-existent or unreadable path emits a warning rather than nil; TestProjectForeignWrite_ContainerInheritOnlyACE (f) proves R-1: a CI|IO ACE granting FILE_ADD_SUBDIRECTORY to AU fires the rule; TestProjectForeignWrite_ForeignWriteACE_EachBit proves each D2 right in isolation triggers the rule (isolation assertion: stored mask ∩ d2WriteMask == target bit); TestProjectForeignWrite_InheritedACERemedy proves R-5: an inherited ACE (INHERITED_ACE flag) produces a warning with /inheritance:d; no script gate for the Windows-only runtime path (windows branch not exercised in macOS/Linux CI) -->
+
+On Windows, `trackfw validate` reads the DACL of the project root (`os.Getwd()`) and,
+if present and not a reparse point (junction or symlink), `.trackfw\`. When any
+`ACCESS_ALLOWED` ACE that (a) applies to the object itself (`INHERIT_ONLY_ACE` absent),
+(b) is inheritable to files (`OBJECT_INHERIT_ACE` set), or (c) is inheritable to
+containers (`CONTAINER_INHERIT_ACE` set) grants at least one of the D2 write-equivalent
+rights to a SID outside the trusted set, an informative warning is emitted (R-1).
+
+If `.trackfw\` is a reparse point, a warning is emitted and its DACL scan is skipped —
+`GetNamedSecurityInfo` by name follows reparse points to their target, which is outside
+the project's control.
+
+The remedy message distinguishes ACE types (R-5): for explicit ACEs (no `INHERITED_ACE`
+flag), the message cites `icacls "<dir>" /remove:g *<SID>`; for inherited ACEs
+(`INHERITED_ACE` flag set), it cites `icacls "<dir>" /inheritance:d && /remove:g *<SID>`.
+D3 error messages (DACL unreadable, GetAce failure) carry their own suffix without ACL
+remediation commands.
+
+The rule id is `project_foreign_write_windows`, severity `warning`, routed through
+`applyRuleWarnOnly` (`internal/validator/validator.go`) — not promotable to violation, and
+silenced only by `rules.project_foreign_write_windows: off`.
+
+**D2 write-equivalent rights** (`d2WriteMask` in
+`internal/validator/validator_project_foreign_write_windows.go`):
+`FILE_WRITE_DATA` (0x2), `FILE_APPEND_DATA` (0x4), `FILE_DELETE_CHILD` (0x40),
+`DELETE` (0x10000), `WRITE_DAC` (0x40000), `WRITE_OWNER` (0x80000),
+`GENERIC_WRITE` (0x40000000), `GENERIC_ALL` (0x10000000).
+
+**Trusted SIDs** (never trigger the rule): current process token user,
+`SYSTEM` (`S-1-5-18`), `Administrators` (`S-1-5-32-544`),
+`CREATOR OWNER` (`S-1-3-0`), `OWNER RIGHTS` (`S-1-3-4`).
+
+**D3:** any error reading or parsing the DACL (including a non-existent path) is
+emitted as a warning — never silenced.
+
+**Remedy message:** names the path, the foreign SIDs (with `LookupAccount` name when
+available, SID string otherwise), and provides an `icacls` command appropriate to the
+ACE type: explicit ACEs use `/remove:g *<SID>`; inherited ACEs use
+`/inheritance:d && /remove:g *<SID>`. D3 error messages do not carry ACL remediation.
+
+**Declared limit (D1):** the trackfw does not write any DACL of its own. The rule only
+reads. A project under `C:\` with `Authenticated Users:(I)(M)` will be warned; the user
+decides whether to move the project or accept the risk (ADR-2026-10-16-no-windows-o-validate-avisa-...).
+
+Outside Windows: the rule always returns nil (no-op; POSIX mode bits provide equivalent
+protection).

@@ -2,6 +2,88 @@
 
 ---
 
+## 2026-10-16 — apolo-tf — FIM (parcial): ML-W2b' red-team R-1/R-2/R-3/R-4/R-5 (REQ-2026-09-03)
+
+**Branch:** `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`
+**Commit:** `0e4d5811` (5 files, 458 ins / 71 del)
+**Run Windows probe:** 38929110948
+
+**Status por teste (P18):**
+- (a) TestProjectForeignWrite_ForeignWriteACE — PASS
+- (b) TestProjectForeignWrite_CleanDACL — PASS
+- (c) TestProjectForeignWrite_TrackfwDirForeignACE — PASS
+- (d) TestProjectForeignWrite_ReadOnlyACENoWarning — PASS
+- (e) TestProjectForeignWrite_DACLReadError — PASS
+- (f) TestProjectForeignWrite_ContainerInheritOnlyACE — **FAIL** (SDDL `CIIO` rejeitado pelo Windows como ACL inválida; necessita construção programática de ACE)
+- EachBit/FILE_WRITE_DATA…WRITE_OWNER — PASS (6/8)
+- EachBit/GENERIC_WRITE, GENERIC_ALL — SKIP (Windows expande mask)
+- TestProjectForeignWrite_InheritedACERemedy — PASS
+- TestSave_WritesAtomicallyWithPermissions — PASS
+
+**Bloqueio:** teste (f) falha; ML NÃO está concluído. Aguardando instrução do arquiteto.
+
+---
+
+## 2026-10-16 — apolo-tf — INÍCIO: ML-W2b' — Remover fsperm + regra validate project_foreign_write_windows (REQ-2026-09-03)
+
+**Branch:** `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`
+**Escopo:** Part 1 — reverter pathguard.go/manager.go/containment_live_test.go; apagar fsperm/; apagar DACL tests; reescrever identity_windows_test.go. Part 2 — nova regra `project_foreign_write_windows` no validator.
+
+---
+
+## 2026-10-16 — ares-tf — FIM: ML-W2a-bis — Medição de ataque por segunda identidade (Pergunta 19, REQ-2026-09-03)
+
+**Branch:** `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`
+**Run de probe:** 38918006930 (P19 ✓)
+**Commits:** `0f568437` · `36429ef6` · `85985334`
+
+**Resultados resumidos:**
+- overwrite/delete → DENIED (DACL protege)
+- swap-root sem cwd → RENAME_SUCCEEDED + RECREATE_SUCCEEDED (janela aberta quando processo não está rodando)
+- swap-root com cwd → RENAME_DENIED (handle aberto bloqueia rename)
+- pre-create (R-A) → VICTIM_WRITE_SUCCEEDED (vítima sobrescreve DACL); overwrite pós-DACL → DENIED
+- junction (R-B) → REMOVE_FAILED (atacante não remove `.trackfw` com DACL restritiva)
+
+**Artefato:** `docs/portabilidade/2026-10-16-ataque-segunda-identidade-ci.md`
+
+---
+
+## 2026-10-16 — ares-tf — INÍCIO: ML-W2a-bis — Medição de ataque por segunda identidade (Pergunta 19, REQ-2026-09-03)
+
+**Branch:** `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`
+**Escopo:** Apenas medição — script `scripts/windows-repro/p19-attack-second-identity.ps1` + step Pergunta 19 no `windows-probe.yml`. Sem alterações em `internal/`, testes, ADR ou roadmap.
+**Quatro braços:** (i) overwrite, (ii) swap-root, (iii) pre-create R-A, (iv) junction R-B.
+
+---
+
+## 2026-10-16 — apolo-tf — FIM: ML-W2b — DACL explícita para arquivos de governança no Windows (REQ-2026-09-03)
+
+**Branch:** `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`
+**Run de probe:** 38910438658
+
+**Resultado P18 (4 pacotes no Windows x64):**
+- `fsperm` exit=0 — PASS (4/4 testes, incluindo `TestCreateRestrictedFile_DetectorError_FailsClosed`)
+- `pathguard` exit=0 — PASS (`TestGuardedWrite_FinalFileHasRestrictiveDACL` executou os 2 braços; `TestGuardedWrite_LegacyFileRetainsDACL` mediu)
+- `identity` exit=0 — PASS (`TestSave_WritesAtomicallyWithPermissions` com `makeForeignWriteDir` — não vacuous)
+- `integrations` exit=1 — `TestAtomicWrite_FinalFileHasRestrictiveDACL` PASS; exit=1 por 4 falhas pré-existentes listadas em known-failures
+- `go test ./...` exit=1 — exatamente 11 falhas conhecidas, sem novo nome
+
+**Achado de medição (legacy file):** `TestGuardedWrite_LegacyFileRetainsDACL` mediu comportamento INESPERADO: `SetRestrictiveDirACL` propagou para filho pré-existente (`legacy.json` perdeu ACE de AU). O ADR esperava o oposto. O teste mede e reporta via `t.Logf` sem asserção — cabe ao arquiteto atualizar a nota no ADR.
+
+**Commits entregues:**
+1. `10e3f4de` feat(fsperm): ML-W2b — DACL explícita
+2. `9ea87c17` fix(fsperm): auditoria ML-W2b — 4 correções
+3. `e7013130` fix(fsperm): corrigir máscara de AU em makeForeignWriteDir (0x001200a9→0x1301bf)
+
+---
+
+## 2026-10-16 — apolo-tf — INÍCIO: ML-W2b — DACL explícita para arquivos de governança no Windows (REQ-2026-09-03)
+
+**Branch:** `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`
+**Escopo:** Criar `internal/fsperm` com implementação Windows de DACL explícita; integrar nos dois sítios de escrita atômica (`pathguard.GuardedWrite`, `manager.atomicWrite`); testes Windows que mordem; dividir `TestSave_WritesAtomicallyWithPermissions` em `!windows`/`windows`; mover entrada de `windows-known-failures.json`.
+
+---
+
 ## 2026-10-15 — apolo-tf — INÍCIO/FIM: ML-R3 — guard de travessia fala as duas gramáticas (REQ-2026-09-03)
 
 **Branch:** `fix/fechar-os-grupos-de-falha-de-windows-ml-r3-travessia`
@@ -46609,3 +46691,39 @@ Zero flips em catálogo e terceiros. Ajuste R-1 propõe `strings.TrimRight(part,
 ## 2026-10-16 — zeus-tf — ML-R3 pronto (PR #566)
 
 - Guard de entrada do `Manager.resolve` recusa segmento composto só de pontos/espaços com `/` ou `\` nos ramos `default:` e `~/`. Red-team liberou; R-1 corrigido (fórmula do parecer era impossível). CI 20/20, ratchet 12/12; `make quality` EXIT=0 (carga até 11). Gates Python rodam com venv isolado em `/tmp/zeus-venv312`.
+
+---
+
+**hades-tf** · 2026-10-16 · Wave 0 ML-W2b — threat model DACL explícita para 0o600/0o700 no Windows
+Branch: `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`
+Iniciando produção do parecer `docs/seguranca/2026-10-16-wave0-dacl-0600-windows.md`.
+REQ: REQ-2026-09-03 | Fato base: run 38902064559 (Pergunta 17, x64) — braços root-c e runner-temp com escrita alheia confirmada.
+
+**hades-tf** · 2026-10-16 · Wave 0 ML-W2b concluído
+Branch: `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`
+Artefato: `docs/seguranca/2026-10-16-wave0-dacl-0600-windows.md`
+Veredito: APROVA COM RESSALVAS (R-1 a R-9). Desenho: `internal/fsperm` (build-tagged), `SetRestrictiveACL` chamado antes do primeiro `Write` no temp file, `SE_DACL_PROTECTED`, Owner SID em runtime, fail-soft em FAT/SMB. Testes em `_windows_test.go` com `GetNamedSecurityInfo`, raiz "ruim" manufaturada no teste.
+
+---
+
+**hades-tf** · 2026-10-16 · Red-team ML-W2b (gate de PR)
+Branch: `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`
+Iniciando red-team da implementação ML-W2b DACL explícita para arquivos de governança no Windows.
+Artefato a produzir: `docs/seguranca/2026-10-16-red-team-ml-w2b-dacl.md`
+
+**hades-tf** · 2026-10-16 · Red-team ML-W2b concluído
+Branch: `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`
+Artefato: `docs/seguranca/2026-10-16-red-team-ml-w2b-dacl.md`
+Veredito: BLOQUEIA. R-A: implicit owner WRITE_DAC contorna DACL em `.trackfw` pré-criado (sem OWNER RIGHTS ACE, sem OWNER_SECURITY_INFORMATION); R-B: SetNamedSecurityInfo segue junctions — novo dano introduzido pelo ML-W2b (mutação de ACL tree externo + desvio de escrita). Fix direction: (A) adicionar `(A;OICI;RC;;;OW)` no SDDL do dir; (B) usar CreateDirectory com SECURITY_ATTRIBUTES ou abrir com handle+OPEN_REPARSE_POINT antes de SetSecurityInfo.
+
+---
+
+**hades-tf** · 2026-10-16 · Red-team ML-W2b' (regra validate) — iniciado
+Branch: `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`
+Artefato a produzir: `docs/seguranca/2026-10-16-red-team-ml-w2b-linha-validate.md`
+Escopo: `validator_project_foreign_write_windows.go`, 5 testes, identity_windows_test.go, go.mod. Prova: run P18 (38923063026).
+
+**hades-tf** · 2026-10-16 · Red-team ML-W2b' (regra validate) — concluído
+Branch: `fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao`
+Artefato: `docs/seguranca/2026-10-16-red-team-ml-w2b-linha-validate.md`
+Veredito: LIBERA COM RESSALVAS. R-1: CI|IO ACE skipped — adição de subdiretório via container-only ACE não detectado, ADR deve nomear; R-2: GetAce break silencia ACEs restantes (D3); R-3: Lstat engole access-denied para .trackfw (D3); R-4: testes (a) e identity_windows vacuamente passantes em casos limítrofes; R-5: remédio "remove inheritance" errado para ACE explícita e FP de runner D:\a\... não declarado na ADR.

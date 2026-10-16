@@ -1000,6 +1000,145 @@ jobs:
               -MainBin $mainBin `
               -BranchBin $branchBin
 
+      # Pergunta 17 — ACL NTFS em arquivos gravados com 0o600
+      # (ML-W2a, REQ-2026-09-03, branch fix/fechar-os-grupos-de-falha-de-windows-ml-w2-permissao)
+      #
+      # Por que esta pergunta existe: Go no Windows ignora os 9 bits POSIX de
+      # permissão — os.Chmod / os.WriteFile(…,0o600) só alterna o bit READONLY.
+      # A ACL real é herdada do diretório pai em tempo de criação (os.CreateTemp).
+      # Os 5 sítios que pedem 0o600 (identity.go:93, manifest.go:92, render.go:730,
+      # quarantine.go:114, provenance.go:155) ficam com a ACL do pai.
+      # Decisão pendente (ML-W2b): declarar o limite ou usar DACL explícita.
+      #
+      # Esta pergunta mede — em dois braços — quem além de dono/SYSTEM/Administrators
+      # tem Write nos arquivos criados pelo binário real da branch:
+      #
+      #   Braço (i)  home-userprofile — %USERPROFILE%\.trackfw\identity.json
+      #              via `trackfw init --identity-preset greek` (identity.go:93)
+      #   Braço (ii) root-c — C:\p17-proj\.trackfw\integrations-manifest.json
+      #              via `trackfw agents install --scope project` (manifest.go:92)
+      #   Braço (iii) runner-temp — %RUNNER_TEMP%\p17-h-rt\.trackfw\identity.json
+      #              (cadeia de herança diferente de C:\ e %USERPROFILE%)
+      #
+      # Saída principal (grep-friendly, sem veredito):
+      #   PROBE acl <braço> <artefato> owner=<owner> foreign_write=<lista|(none)>
+      #   PROBE acl root <dir-raiz> foreign_write_inheritable=<lista|(none)>
+      #
+      # Reusa o binário compilado pela Pergunta 16 (p16-trackfw-branch.exe)
+      # se disponível, para não estourar o timeout de 10 min.
+      # ---------------------------------------------------------------
+      - name: "Pergunta 17 — ACL NTFS de arquivos com 0o600 (ML-W2a, REQ-2026-09-03)"
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+
+          # ── Reusar binário da P16 se disponível; compilar se não ───────────
+          $p17Bin = Join-Path $env:RUNNER_TEMP "p16-trackfw-branch.exe"
+          if (-not (Test-Path $p17Bin)) {
+            Write-Host "=== P17: p16-trackfw-branch.exe ausente — compilando p17-trackfw.exe ==="
+            $p17Bin = Join-Path $env:RUNNER_TEMP "p17-trackfw.exe"
+            go build -o $p17Bin ./cmd/trackfw 2>&1 | Write-Host
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "P17_GUARD_FAIL: BUILD_FAILED — saindo sem veredito"
+              exit 0
+            }
+          } else {
+            Write-Host "P17_BIN_REUSED: $p17Bin"
+          }
+          Write-Host "P17_BIN: $p17Bin"
+
+          # ── Chamar script de sonda ─────────────────────────────────────────
+          & ".\scripts\windows-repro\p17-acl-0600-ntfs.ps1" -Bin $p17Bin
+
+      # ---------------------------------------------------------------
+      # Pergunta 18 — testes do ML-W2b' em Windows real (REQ-2026-09-03):
+      # A regra project_foreign_write_windows do validator detecta quando a raiz
+      # do projeto ou .trackfw\ concede escrita a um SID estranho via DACL.
+      # identity e pathguard continuam sendo provados: o TestSave passa no Windows
+      # afirmando a semântica medida (Mode().Perm() != 0o600, D1 ADR-2026-10-16).
+      #
+      # Por que esta pergunta existe: os testes da regra nova requerem Windows
+      # real com suporte a SetNamedSecurityInfo para montar fixtures DACL.
+      # identity e pathguard confirmam que a remoção do fsperm não quebrou os
+      # testes de escrita atômica.
+      #
+      # Saída principal (grep-friendly):
+      #   PROBE w2b pkg=<pkg> exit=<n>
+      # ---------------------------------------------------------------
+      - name: "Pergunta 18 — ML-W2b': project_foreign_write_windows (validator, pathguard, identity)"
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+
+          $pkgs = @(
+            "github.com/kgsaran/trackfw/internal/validator",
+            "github.com/kgsaran/trackfw/internal/pathguard",
+            "github.com/kgsaran/trackfw/internal/identity"
+          )
+
+          foreach ($pkg in $pkgs) {
+            $short = ($pkg -split "/")[-1]
+            Write-Host "=== P18 pkg=$short ==="
+            go test -count=1 -v -run "TestProjectForeignWrite|TestSave_WritesAtomicallyWithPermissions|TestContainment" $pkg 2>&1
+            $exit = $LASTEXITCODE
+            Write-Host "PROBE w2b pkg=$short exit=$exit"
+          }
+
+          Write-Host "=== P18 go test ./... ==="
+          go test ./... 2>&1
+          $allExit = $LASTEXITCODE
+          Write-Host "PROBE w2b pkg=all exit=$allExit"
+
+          # Compare failing tests with known failures list.
+          Write-Host "=== P18 known-failures comparison ==="
+          $known = (Get-Content .github/windows-known-failures.json | ConvertFrom-Json).entries | ForEach-Object { $_.name }
+          Write-Host "Known failures ($($known.Count)): $($known -join ', ')"
+
+      # ---------------------------------------------------------------
+      # Pergunta 19 — ataque por segunda identidade local não-admin
+      # (ML-W2a-bis, REQ-2026-09-03).
+      #
+      # O que esta pergunta mede: com Authenticated Users:(I)(M) herdado de
+      # C:\ num diretório de projeto, um usuário local não-admin (p19atk,
+      # criado e deletado aqui) consegue comprometer thirdparty-provenance.json
+      # protegido pela DACL explícita do fsperm/pathguard?
+      #
+      # Quatro braços:
+      #   (i)   overwrite — sobrescrever/excluir o arquivo protegido.
+      #   (ii)  swap-root — renomear C:\p19-proj e recriar forjado.
+      #   (iii) pre-create (R-A) — pré-criar .trackfw antes da vítima.
+      #   (iv)  junction (R-B) — substituir .trackfw por junction (sequencial).
+      #
+      # Saída: PROBE w2x <braço> result=<...> detail=<...>
+      # ---------------------------------------------------------------
+      - name: "Pergunta 19 — ataque por segunda identidade não-admin (ML-W2a-bis, swap-root/junction/pre-create)"
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+
+          # Reutilizar binário compilado por step anterior se disponível.
+          $p19Bin = Join-Path $env:RUNNER_TEMP "probe-bin\trackfw-probe.exe"
+          if (-not (Test-Path $p19Bin)) {
+            $p19Bin = Join-Path $env:RUNNER_TEMP "p17-trackfw.exe"
+          }
+          if (-not (Test-Path $p19Bin)) {
+            Write-Host "=== P19: compilando binário trackfw ==="
+            $p19Bin = Join-Path $env:RUNNER_TEMP "p19-trackfw.exe"
+            go build -o $p19Bin ./cmd/trackfw 2>&1 | Write-Host
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "PROBE w2x setup result=NO_BINARY detail=go_build_failed"
+              exit 0
+            }
+          }
+          Write-Host "P19_BIN_USED: $p19Bin"
+
+          & ".\scripts\windows-repro\p19-attack-second-identity.ps1" `
+              -Bin $p19Bin `
+              -Workspace $env:GITHUB_WORKSPACE
+
       - name: Registrar duração
         if: always()
         shell: pwsh

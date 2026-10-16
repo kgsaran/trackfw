@@ -183,6 +183,14 @@ func ValidateHomeDivergenceWindowsForTest() []string {
 	return validateHomeDivergenceWindows()
 }
 
+// CheckProjectForeignWriteForTest exposes checkProjectForeignWrite to the
+// external test package (package validator_test) — standard "export_test.go" pattern.
+// ML-W2b' (REQ-2026-09-03): used by the project_foreign_write_windows tests that
+// exercise the D2/D3 warning on Windows (Windows-only build tag).
+func CheckProjectForeignWriteForTest(root string) []string {
+	return checkProjectForeignWrite(root)
+}
+
 // ChdirForTest changes the working directory to dir and resets the config singleton (required
 // because Validate* functions call os.Getwd() which is cached by config.Load). Restores both
 // on t.Cleanup. Safe to use from external test package (package validator_test).

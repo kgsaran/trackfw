@@ -67,12 +67,6 @@
       "reason": "INFER Group B: 16 combinations (gemini/copilot/windsurf/kiro x 4 agents) fail -- rendered model field likely has CRLF causing present=true vs present=false mismatch"
     },
     {
-      "name": "TestSave_WritesAtomicallyWithPermissions",
-      "runtime": "go",
-      "class": "assertion",
-      "reason": "Group A: os.Chmod(0o600) silently ignored on NTFS without ACL -- file permission remains 0666, expected 0600 (MEASURED)"
-    },
-    {
       "name": "TestShip_Integration_GracefulDegradation_RealBinary",
       "runtime": "go",
       "class": "assertion",
@@ -247,6 +241,14 @@
       "runtime": "go",
       "class": "assertion",
       "removal_note": "corrected"
+    },
+    {
+      "name": "TestSave_WritesAtomicallyWithPermissions",
+      "runtime": "go",
+      "class": "assertion",
+      "reason": "Group A: os.Chmod(0o600) silently ignored on NTFS without ACL -- file permission remains 0666, expected 0600 (MEASURED)",
+      "removal_note": "corrected",
+      "correction_note": "afirmar a semântica do Windows (ADR-2026-10-16-no-windows-o-validate-avisa-quando-o-projeto-concede-escrita-a-outro-usuario D1): o teste agora afirma que Mode().Perm() == 0o666 no Windows (Go sintetiza Mode() só do FILE_ATTRIBUTE_READONLY; 0o600 é estruturalmente inalcançável no NTFS), refletindo o comportamento medido no CI run 38902064559 (ML-W2b')"
     }
   ]
 }
