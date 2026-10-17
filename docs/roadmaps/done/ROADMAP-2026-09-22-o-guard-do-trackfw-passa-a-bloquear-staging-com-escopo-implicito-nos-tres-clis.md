@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-22
 req: "docs/req/REQ-2026-09-05-o-guard-do-trackfw-passa-a-bloquear-staging-com-escopo-implicito-nos-tres-clis.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: o guard do trackfw passa a bloquear staging com escopo implicito nos tres CLIs
 
-> Created: 2026-09-22 | Status: wip
+> Created: 2026-09-22 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-09-05-o-guard-do-trackfw-passa-a-bloquear-staging-com-escopo-implicito-nos-tres-clis.md -->
@@ -170,3 +170,5 @@ cenários, exit 0.
 alias do usuário; `git add '*'` (o shell expande antes); `:(icase)*`; `--pathspec-from-file`. A
 conferência listou `(git add -A) > redir` como resíduo, mas o arquiteto mediu **exit 2** (bloqueia) —
 não é resíduo.
+
+**Mergeado** no #576 (`a32d16a7`), 2026-10-17.
