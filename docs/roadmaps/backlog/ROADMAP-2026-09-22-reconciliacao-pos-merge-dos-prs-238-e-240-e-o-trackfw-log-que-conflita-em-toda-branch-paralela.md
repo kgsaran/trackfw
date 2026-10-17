@@ -108,3 +108,11 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 - [ ] **AC7** — 🔴 **Controle do AC6:** o merge=union **não** engole conteúdo — as linhas dos dois
 - [ ] build passes
 - [ ] tests green
+
+---
+
+## Triagem pós-v8 — 2026-10-17 (REQ-2026-10-17)
+
+**Mudou de forma**: `merge=union` feito (#251) e roadmaps em done; vivos AC1–AC4 — `errors="replace"` sem decisão, allowlist obsoleta e `DECL_RE` cego a `sys.stdout.reconfigure` (o gate diz OK).
+
+Evidência e tabela completa: `docs/governanca/2026-10-17-triagem-backlog-pre-v8.md`.

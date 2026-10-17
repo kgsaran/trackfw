@@ -1,17 +1,17 @@
 ---
-status: backlog
-date: 2026-09-22
-req: "docs/req/REQ-2026-08-21-update-harness-le-trackfw-yaml-do-cwd-e-escreve-em-escopo-global.md"
+status: abandoned
+date: 2026-09-11
+req: "docs/req/REQ-2026-09-11-residuos-dos-pareceres-de-seguranca-do-barrier-e-do-serve.md"
 squad: ""
 ---
 
-# Roadmap: `update harness` lê `trackfw.yaml` do cwd e escreve em escopo global
+# Roadmap: residuos dos pareceres de seguranca do barrier e do serve
 
-> Created: 2026-09-22 | Status: backlog
+> Created: 2026-09-11 | Status: abandoned
 
 ## Context
-<!-- Derived from REQ: REQ-2026-08-21-update-harness-le-trackfw-yaml-do-cwd-e-escreve-em-escopo-global.md -->
-REQ: docs/req/REQ-2026-08-21-update-harness-le-trackfw-yaml-do-cwd-e-escreve-em-escopo-global.md
+<!-- Derived from REQ: REQ-2026-09-11-residuos-dos-pareceres-de-seguranca-do-barrier-e-do-serve.md -->
+REQ: docs/req/REQ-2026-09-11-residuos-dos-pareceres-de-seguranca-do-barrier-e-do-serve.md
 
 ## Acceptance Criteria
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
@@ -46,56 +46,64 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 ## Wave 1 — Implementation (derived from REQ criteria)
 > Dependencies: none
 
-### ML-1A — AC1 — Decisão registrada em **ADR**, com os candidatos descartados e o motivo.
+### ML-1A — **AC1** — R1: VerifiesPassedBuffer portado para Node e Python, com a mesma conclusão afirmada.
 **Status:** ⬜ Pendente
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
-- [ ] AC1 — Decisão registrada em **ADR**, com os candidatos descartados e o motivo.
+- [ ] **AC1** — R1: VerifiesPassedBuffer portado para Node e Python, com a mesma conclusão afirmada.
 - [ ] build passes
 - [ ] tests green
 
-### ML-1B — AC2 — Uso legítimo preservado: update harness de dentro de projeto com agent_models
+### ML-1B — **AC2** — R2: guarda **estrutural** contra leitura duplicada no caller, nos 3 CLIs. 🔴 E a
 **Status:** ⬜ Pendente
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
-- [ ] AC2 — Uso legítimo preservado: update harness de dentro de projeto com agent_models
+- [ ] **AC2** — R2: guarda **estrutural** contra leitura duplicada no caller, nos 3 CLIs. 🔴 E a
 - [ ] build passes
 - [ ] tests green
 
-### ML-1C — AC3 — Diretório sem relação **não** influencia escopo global — provado.
+### ML-1C — **AC3** — R3: cenários 8-9 emitem mensagem que **nomeia a causa**, sem perder o RC.
 **Status:** ⬜ Pendente
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
-- [ ] AC3 — Diretório sem relação **não** influencia escopo global — provado.
+- [ ] **AC3** — R3: cenários 8-9 emitem mensagem que **nomeia a causa**, sem perder o RC.
 - [ ] build passes
 - [ ] tests green
 
-### ML-1D — AC4 — Paridade nos 3 CLIs, com gate comparando saídas reais.
+### ML-1D — **AC4** — R4: o gate invalida o pycache antes de medir. 🔴 **Falsificação:** com .pyc válido e
 **Status:** ⬜ Pendente
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
-- [ ] AC4 — Paridade nos 3 CLIs, com gate comparando saídas reais.
+- [ ] **AC4** — R4: o gate invalida o pycache antes de medir. 🔴 **Falsificação:** com .pyc válido e
 - [ ] build passes
 - [ ] tests green
 
-### ML-1E — AC5 — Cenário P4 com baseline e detecção.
+### ML-1E — **AC5** — contra-braço em cada um: configuração correta ⇒ passa. Guarda que só reprova é
 **Status:** ⬜ Pendente
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
-- [ ] AC5 — Cenário P4 com baseline e detecção.
+- [ ] **AC5** — contra-braço em cada um: configuração correta ⇒ passa. Guarda que só reprova é
 - [ ] build passes
 - [ ] tests green
 
-### ML-1F — AC6 — make quality verde **e CI verde**.
+### ML-1F — **AC6** — 🔴 **varredura:** o R4 é isolado? Outros gates nossos importam módulo Python cujo
 **Status:** ⬜ Pendente
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
-- [ ] AC6 — make quality verde **e CI verde**.
+- [ ] **AC6** — 🔴 **varredura:** o R4 é isolado? Outros gates nossos importam módulo Python cujo
 - [ ] build passes
 - [ ] tests green
+
+---
+
+## Triagem pós-v8 — 2026-10-17 (REQ-2026-10-17)
+
+**Sumiu com a v8** (5/5 itens): portes e cenários de Node/Python; o buffer único do Go já existia (#316).
+
+Evidência e tabela completa: `docs/governanca/2026-10-17-triagem-backlog-pre-v8.md`.

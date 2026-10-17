@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: done
 date: 2026-09-12
 req: "docs/req/REQ-2026-09-12-byte-nul-literal-no-fonte-torna-o-arquivo-invisivel-a-busca-e-ja-produziu-duas-reqs-com-evidencia-falsa.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: Remover o byte NUL literal do fonte e criar o gate que impede a classe
 
-> Created: 2026-09-12 | Status: backlog
+> Created: 2026-09-12 | Status: done
 
 ## Context
 <!-- What problem does this roadmap solve? Link the REQ. -->
@@ -25,7 +25,7 @@ REQ: docs/req/REQ-2026-09-12-byte-nul-literal-no-fonte-torna-o-arquivo-invisivel
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model for this roadmap
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — não exigido: roadmap anterior a 2026-09-18 (ADR-2026-09-18, decisão 8)
 **Files affected:**
 **Actions:**
 1. Enumeration completeness — is the list of surfaces in this roadmap complete? Name what is missing, or show the list is closed. Do not limit the search to the files already named by the REQ — before declaring the list closed, search the repository for other places that emit the same artifact or the same pattern (for example, grep for the literal the final artifact contains).
@@ -47,10 +47,18 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 > Dependencies: none
 
 ### ML-1A — Remover o byte NUL literal do fonte e criar o gate que impede a classe
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído fora deste roadmap — medido na triagem de 2026-10-17: nenhum NUL em .go/.sh/.py/.js e `scripts/check-no-literal-nul-in-source.sh` existe; REQ já Done
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
 - [ ] build passes
 - [ ] tests green
 - [ ] validate passes
+
+---
+
+## Triagem pós-v8 — 2026-10-17 (REQ-2026-10-17)
+
+**Já corrigido**: nenhum NUL em .go/.sh/.py/.js; gate `scripts/check-no-literal-nul-in-source.sh` existe; REQ já Done.
+
+Evidência e tabela completa: `docs/governanca/2026-10-17-triagem-backlog-pre-v8.md`.

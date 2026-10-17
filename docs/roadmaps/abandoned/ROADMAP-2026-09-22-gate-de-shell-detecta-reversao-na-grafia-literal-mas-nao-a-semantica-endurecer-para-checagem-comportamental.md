@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: abandoned
 date: 2026-09-22
 req: "docs/req/REQ-2026-09-01-gate-de-shell-detecta-reversao-na-grafia-literal-mas-nao-a-semantica-endurecer-para-checagem-comportamental.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: Gate de shell detecta reversão na grafia literal, mas não a semântica — endurecer para checagem comportamental
 
-> Created: 2026-09-22 | Status: backlog
+> Created: 2026-09-22 | Status: abandoned
 
 ## Context
 <!-- Derived from REQ: REQ-2026-09-01-gate-de-shell-detecta-reversao-na-grafia-literal-mas-nao-a-semantica-endurecer-para-checagem-comportamental.md -->
@@ -99,3 +99,11 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 - [ ] **AC6** — make quality e **CI** verdes.
 - [ ] build passes
 - [ ] tests green
+
+---
+
+## Triagem pós-v8 — 2026-10-17 (REQ-2026-10-17)
+
+**Sumiu com a v8**: o defeito estava no barrier de Node/Python; o gate foi removido.
+
+Evidência e tabela completa: `docs/governanca/2026-10-17-triagem-backlog-pre-v8.md`.

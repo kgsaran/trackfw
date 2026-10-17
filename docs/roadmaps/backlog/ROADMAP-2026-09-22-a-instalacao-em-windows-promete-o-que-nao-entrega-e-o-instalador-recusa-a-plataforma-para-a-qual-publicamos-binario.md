@@ -108,3 +108,11 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 - [ ] **AC7** — Caminhos com **espaço** e **acento** exercitados (C:\Program Files\...,
 - [ ] build passes
 - [ ] tests green
+
+---
+
+## Triagem pós-v8 — 2026-10-17 (REQ-2026-10-17)
+
+**Mudou de forma**: `install.sh` aceita Windows (#373) e o README tem a seção; segue aberto só o que não foi medido — hooks com Cursor/Windsurf/Gemini/Kiro/Copilot/Amazon Q, `pwsh`, caminhos com espaço/acento.
+
+Evidência e tabela completa: `docs/governanca/2026-10-17-triagem-backlog-pre-v8.md`.

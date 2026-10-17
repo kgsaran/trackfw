@@ -99,3 +99,11 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 - [ ] **AC6** — make quality exit 0 e CI verde.
 - [ ] build passes
 - [ ] tests green
+
+---
+
+## Triagem pós-v8 — 2026-10-17 (REQ-2026-10-17)
+
+**Vivo (AC1–AC2)** e **absorve o resíduo de REQ-2026-08-21**: `render.go:587` só rejeita caractere de controle; `"5 && rm -rf /"` vira artefato com WARN e exit 0; `:`/`"` geram YAML inválido. AC3–AC4 corrigidos (#271); AC5 sumiu com a v8.
+
+Evidência e tabela completa: `docs/governanca/2026-10-17-triagem-backlog-pre-v8.md`.

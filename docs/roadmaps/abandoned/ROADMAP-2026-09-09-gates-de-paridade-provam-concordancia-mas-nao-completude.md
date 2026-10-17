@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: abandoned
 date: 2026-09-09
 squad: ares-tf
 req: "docs/req/REQ-2026-09-01-gate-anti-divergencia-prova-que-as-copias-concordam-mas-nao-que-a-lista-esta-completa-quarta-copia-futura-passa-silenciosa.md"
@@ -7,7 +7,7 @@ req: "docs/req/REQ-2026-09-01-gate-anti-divergencia-prova-que-as-copias-concorda
 
 # Roadmap: Gates de paridade provam concordância, mas não completude
 
-> Criado em: 2026-09-09 | Status: backlog
+> Criado em: 2026-09-09 | Status: abandoned
 
 ## Context
 
@@ -106,3 +106,11 @@ vale é literal **sem** motivo.
 - [ ] `check-atomic-write-anti-divergence` deriva a lista
 - [ ] levantamento dos ~48 gates: derivável ou literal-com-motivo
 - [ ] falsificação nas duas direções em cada gate alterado + guarda de vacuidade
+
+---
+
+## Triagem pós-v8 — 2026-10-17 (REQ-2026-10-17)
+
+**Sumiu com a v8**: os gates e as cópias comparadas não existem; atomicWrite unificado no pathguard.
+
+Evidência e tabela completa: `docs/governanca/2026-10-17-triagem-backlog-pre-v8.md`.

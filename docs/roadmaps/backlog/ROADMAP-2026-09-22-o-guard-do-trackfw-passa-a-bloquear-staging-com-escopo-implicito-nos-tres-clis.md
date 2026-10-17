@@ -117,3 +117,11 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 - [ ] **AC8** — 🔴 **O gate de paridade cobre a regra nova.** Os guards existentes têm cobertura
 - [ ] build passes
 - [ ] tests green
+
+---
+
+## Triagem pós-v8 — 2026-10-17 (REQ-2026-10-17)
+
+🔴 **Vivo** — prioridade 1: `git add -A` → exit 0 no `trackfw guard git-branch` (`git commit` → exit 2); a regra do ADR-2026-09-05 nunca entrou em `internal/guard/gitbranch.go`. AC de paridade nos 3 CLIs sumiu com a v8.
+
+Evidência e tabela completa: `docs/governanca/2026-10-17-triagem-backlog-pre-v8.md`.

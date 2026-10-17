@@ -1,15 +1,15 @@
 ---
-status: Open
+status: Abandoned
 date: 2026-09-11
 author: ""
 adr: ""
 sucede: "REQ-2026-08-30-barrier-executa-gate-de-roadmap-nao-confiavel-porque-roadmaptrustforgates-falha-aberto-em-todo-caminho-de-erro.md, REQ-2026-09-01-serve-interpola-host-em-string-de-shell-e-permite-injecao-de-comando-ao-abrir-o-browser.md"
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-11-residuos-dos-pareceres-de-seguranca-do-barrier-e-do-serve.md"
+roadmap: "docs/roadmaps/abandoned/ROADMAP-2026-09-11-residuos-dos-pareceres-de-seguranca-do-barrier-e-do-serve.md"
 ---
 
 # REQ: residuos dos pareceres de seguranca do barrier e do serve
 
-> Date: 2026-09-11 | Status: Open
+> Date: 2026-09-11 | Status: Abandoned
 | Linear Issue: 
 | Jira Issue: 
 
@@ -29,7 +29,7 @@ ADR:
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-11-residuos-dos-pareceres-de-seguranca-do-barrier-e-do-serve.md`
+Roadmap: `docs/roadmaps/abandoned/ROADMAP-2026-09-11-residuos-dos-pareceres-de-seguranca-do-barrier-e-do-serve.md`
 ## Motivation
 
 REQ **sucessora**, criada pela `ADR-2026-09-10-req-de-campanha-tem-escopo-congelado-e-achado-novo-vai-para-sucessora`.
@@ -106,3 +106,7 @@ explicitamente antes de testar.
 
 - `docs/seguranca/2026-09-10-parecer-barrier-fail-closed.md` (veredito **APROVA**, R1 e R2)
 - `docs/seguranca/2026-09-11-parecer-serve-injecao-de-comando.md` (veredito **APROVA**, R3 e R4)
+
+## Triagem pós-v8 — 2026-10-17
+
+Status definido pela triagem medida da REQ-2026-10-17; evidência em `docs/governanca/2026-10-17-triagem-backlog-pre-v8.md`.

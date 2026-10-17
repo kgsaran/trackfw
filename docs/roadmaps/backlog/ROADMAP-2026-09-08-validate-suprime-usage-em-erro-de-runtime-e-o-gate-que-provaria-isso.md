@@ -67,3 +67,11 @@ Falsificação nas duas direções + guarda de vacuidade. E **remover o comentá
 - [ ] `validate` humano: nenhum bloco de usage, exit 1 preservado, `diff` de três vias
 - [ ] gate novo cobrindo o gap, falsificado nas duas direções; comentário de gap removido
 - [ ] conjunto de comandos que vazam usage em erro de **runtime** medido por comportamento
+
+---
+
+## Triagem pós-v8 — 2026-10-17 (REQ-2026-10-17)
+
+**Mudou de forma**: usage e gate corrigidos (#413); vivo só o AC1 — com violações, `validate --json` escreve "N violation(s) found" no stderr (`root.go:123`).
+
+Evidência e tabela completa: `docs/governanca/2026-10-17-triagem-backlog-pre-v8.md`.

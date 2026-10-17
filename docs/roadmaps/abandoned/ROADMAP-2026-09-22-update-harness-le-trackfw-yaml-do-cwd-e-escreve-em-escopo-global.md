@@ -1,17 +1,17 @@
 ---
-status: backlog
-date: 2026-09-11
-req: "docs/req/REQ-2026-09-11-residuos-dos-pareceres-de-seguranca-do-barrier-e-do-serve.md"
+status: abandoned
+date: 2026-09-22
+req: "docs/req/REQ-2026-08-21-update-harness-le-trackfw-yaml-do-cwd-e-escreve-em-escopo-global.md"
 squad: ""
 ---
 
-# Roadmap: residuos dos pareceres de seguranca do barrier e do serve
+# Roadmap: `update harness` lê `trackfw.yaml` do cwd e escreve em escopo global
 
-> Created: 2026-09-11 | Status: backlog
+> Created: 2026-09-22 | Status: abandoned
 
 ## Context
-<!-- Derived from REQ: REQ-2026-09-11-residuos-dos-pareceres-de-seguranca-do-barrier-e-do-serve.md -->
-REQ: docs/req/REQ-2026-09-11-residuos-dos-pareceres-de-seguranca-do-barrier-e-do-serve.md
+<!-- Derived from REQ: REQ-2026-08-21-update-harness-le-trackfw-yaml-do-cwd-e-escreve-em-escopo-global.md -->
+REQ: docs/req/REQ-2026-08-21-update-harness-le-trackfw-yaml-do-cwd-e-escreve-em-escopo-global.md
 
 ## Acceptance Criteria
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
@@ -46,56 +46,64 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 ## Wave 1 — Implementation (derived from REQ criteria)
 > Dependencies: none
 
-### ML-1A — **AC1** — R1: VerifiesPassedBuffer portado para Node e Python, com a mesma conclusão afirmada.
+### ML-1A — AC1 — Decisão registrada em **ADR**, com os candidatos descartados e o motivo.
 **Status:** ⬜ Pendente
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
-- [ ] **AC1** — R1: VerifiesPassedBuffer portado para Node e Python, com a mesma conclusão afirmada.
+- [ ] AC1 — Decisão registrada em **ADR**, com os candidatos descartados e o motivo.
 - [ ] build passes
 - [ ] tests green
 
-### ML-1B — **AC2** — R2: guarda **estrutural** contra leitura duplicada no caller, nos 3 CLIs. 🔴 E a
+### ML-1B — AC2 — Uso legítimo preservado: update harness de dentro de projeto com agent_models
 **Status:** ⬜ Pendente
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
-- [ ] **AC2** — R2: guarda **estrutural** contra leitura duplicada no caller, nos 3 CLIs. 🔴 E a
+- [ ] AC2 — Uso legítimo preservado: update harness de dentro de projeto com agent_models
 - [ ] build passes
 - [ ] tests green
 
-### ML-1C — **AC3** — R3: cenários 8-9 emitem mensagem que **nomeia a causa**, sem perder o RC.
+### ML-1C — AC3 — Diretório sem relação **não** influencia escopo global — provado.
 **Status:** ⬜ Pendente
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
-- [ ] **AC3** — R3: cenários 8-9 emitem mensagem que **nomeia a causa**, sem perder o RC.
+- [ ] AC3 — Diretório sem relação **não** influencia escopo global — provado.
 - [ ] build passes
 - [ ] tests green
 
-### ML-1D — **AC4** — R4: o gate invalida o pycache antes de medir. 🔴 **Falsificação:** com .pyc válido e
+### ML-1D — AC4 — Paridade nos 3 CLIs, com gate comparando saídas reais.
 **Status:** ⬜ Pendente
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
-- [ ] **AC4** — R4: o gate invalida o pycache antes de medir. 🔴 **Falsificação:** com .pyc válido e
+- [ ] AC4 — Paridade nos 3 CLIs, com gate comparando saídas reais.
 - [ ] build passes
 - [ ] tests green
 
-### ML-1E — **AC5** — contra-braço em cada um: configuração correta ⇒ passa. Guarda que só reprova é
+### ML-1E — AC5 — Cenário P4 com baseline e detecção.
 **Status:** ⬜ Pendente
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
-- [ ] **AC5** — contra-braço em cada um: configuração correta ⇒ passa. Guarda que só reprova é
+- [ ] AC5 — Cenário P4 com baseline e detecção.
 - [ ] build passes
 - [ ] tests green
 
-### ML-1F — **AC6** — 🔴 **varredura:** o R4 é isolado? Outros gates nossos importam módulo Python cujo
+### ML-1F — AC6 — make quality verde **e CI verde**.
 **Status:** ⬜ Pendente
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
-- [ ] **AC6** — 🔴 **varredura:** o R4 é isolado? Outros gates nossos importam módulo Python cujo
+- [ ] AC6 — make quality verde **e CI verde**.
 - [ ] build passes
 - [ ] tests green
+
+---
+
+## Triagem pós-v8 — 2026-10-17 (REQ-2026-10-17)
+
+**Mudou de forma e foi absorvido**: a leitura do cwd foi corrigida (#207); o resíduo (valor de `model` com `:`/`"` gerando YAML inválido) é a mesma causa do roadmap `ROADMAP-2026-09-22-validacao-de-valor-e-precisao-de-mensagem-agent-models-…` e segue lá (Regra Dura de Causa Raiz).
+
+Evidência e tabela completa: `docs/governanca/2026-10-17-triagem-backlog-pre-v8.md`.
