@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -219,6 +220,16 @@ func MatchSubcommand(cmdRaw string) string {
 		if len(seg) > 0 && seg[0] == '&' {
 			seg = strings.TrimLeft(seg[1:], " \t")
 		}
+		// Strip a single leading '(' from subshell form: (git add -A) → git add -A)
+		// The trailing ')' ends up on the last token; it does not change blocking
+		// decisions because it attaches to a flag or filename making the token
+		// unrecognised — which for flags means fail-closed (no n/p/i found),
+		// and for filenames means the synthetic name e.g. "file.go)" won't match
+		// any root token. RT-5 residual: nested or space-separated parens are not
+		// stripped; see docs/cli-parity.md §git-branch-guard residuals.
+		if len(seg) > 0 && seg[0] == '(' {
+			seg = strings.TrimLeft(seg[1:], " \t")
+		}
 		if seg == "" {
 			continue
 		}
@@ -278,6 +289,27 @@ func stripEnvCommandPrefix(tokens []string) []string {
 			}
 		} else if base == "command" {
 			tokens = tokens[1:] // skip "command"
+		} else if base == "sudo" {
+			// sudo [-E|-n|-s|...] [-u user] [--] <cmd>
+			tokens = tokens[1:] // skip "sudo"
+			for len(tokens) > 0 {
+				t := tokens[0]
+				if t == "--" {
+					tokens = tokens[1:] // skip --, next is the command
+					break
+				}
+				if !strings.HasPrefix(t, "-") {
+					break // non-flag token: this is the command
+				}
+				tokens = tokens[1:] // skip the flag
+				// Flags that consume a following argument.
+				switch t {
+				case "-u", "-g", "-C", "-D", "-T", "-U", "-h", "-p", "-r", "-t":
+					if len(tokens) > 0 {
+						tokens = tokens[1:]
+					}
+				}
+			}
 		} else {
 			break
 		}
@@ -493,32 +525,35 @@ func applyRule(sub string, rest []string) string {
 		//
 		// BLOCKS when:
 		//   (1) no positional AND no interactive flag AND no dry-run AND no --pathspec-from-file
-		//   (2) some positional AND every positional is a whole-tree root token
-		//       {., ./, .., ../, :/, :(top)} — including tokens after -- (R-4).
+		//   (2) ANY positional is a whole-tree root token (B-2 fix: "any" not "all") —
+		//       root tokens include ., ./, .., ../, :/, :(top), :/:, and any path whose
+		//       path.Clean (after \ → /) is "." or consists only of ".." segments
+		//       (e.g. .//  ./.  ../.. ) — RT-1/RT-3 fix.
+		//   (3) all positionals are exclusion pathspecs (:!x, :^x, :(exclude)x) — staging
+		//       "everything except x" is implicit scope (RT-2 fix).
 		//
 		// PASSES when:
-		//   - interactive flag present: -p / -i / --patch / --interactive
-		//   - dry-run flag present: -n / --dry-run
+		//   - interactive flag present (including combined: -p / -i / --patch / --interactive
+		//     and combined short-flag forms such as -Ap, -pA) — B-1 fix.
+		//   - dry-run flag present (including combined: -n / --dry-run, -An, -nA) — B-1 fix.
 		//   - --pathspec-from-file=<f> present (explicit enumeration via file; residual)
-		//   - at least one positional that is NOT a whole-tree root token
+		//   - at least one positional that is neither a root token nor an exclusion pathspec.
 		//
-		// DECLARED RESIDUAL (R-1, D5): combined short flags without pathspec (e.g.
-		// -AN bare) are not decomposed — -AN ≠ -A; these forms BLOCK (fail-closed).
-		// See docs/cli-parity.md §git-branch-guard for the full residual list.
+		// Combined short flags (e.g. -AN) are decomposed char-by-char (B-1 fix):
+		//   n → dry-run; p, i → interactive. Other chars (A, u, etc.) do not change the
+		//   decision. -AN bare (no dry-run char) still BLOCKS (correct: implicit scope).
 		//
+		// Residual D5: git${IFS}add, {git,add}, alias, $(…), external script with
+		// git add -A inside. See docs/cli-parity.md §git-branch-guard residuals.
 		// After --, all tokens are positionals (R-4).
 		var (
-			interactive        bool
-			dryRun             bool
+			interactive         bool
+			dryRun              bool
 			hasPathspecFromFile bool
-			hasPositional      bool
-			allPositionalsRoot = true // vacuously true; only meaningful when hasPositional
+			hasPositional       bool
+			anyPositionalRoot   bool
+			allImplicit         = true // false when a real named path is seen
 		)
-		// wholeTreeRoots is the closed set of tokens that address the entire tree.
-		// :(top) is the pathspec magic word for the repository root (git docs).
-		wholeTreeRoots := map[string]bool{
-			".": true, "./": true, "..": true, "../": true, ":/": true, ":(top)": true,
-		}
 		afterDash := false
 		for _, t := range rest {
 			if t == "--" {
@@ -527,11 +562,23 @@ func applyRule(sub string, rest []string) string {
 			}
 			if !afterDash && strings.HasPrefix(t, "-") {
 				// Flag token (before --).
+				if !strings.HasPrefix(t, "--") {
+					// Short combined flag: decompose char-by-char (B-1 fix).
+					for _, ch := range t[1:] {
+						switch ch {
+						case 'n':
+							dryRun = true
+						case 'p', 'i':
+							interactive = true
+						}
+					}
+				}
+				// Long flags (exact match).
 				switch t {
-				case "-p", "--patch", "-i", "--interactive":
-					interactive = true
-				case "-n", "--dry-run":
+				case "--dry-run":
 					dryRun = true
+				case "--patch", "--interactive":
+					interactive = true
 				}
 				if strings.HasPrefix(t, "--pathspec-from-file=") {
 					hasPathspecFromFile = true
@@ -539,8 +586,13 @@ func applyRule(sub string, rest []string) string {
 			} else {
 				// Positional (or token after --).
 				hasPositional = true
-				if !wholeTreeRoots[t] {
-					allPositionalsRoot = false
+				if isAddRootToken(t) {
+					anyPositionalRoot = true
+					// root token is still "implicit" — leave allImplicit true
+				} else if isExclusionPathspec(t) {
+					// exclusion-only pathspec is still "implicit" — leave allImplicit true
+				} else {
+					allImplicit = false // real named path: not implicit
 				}
 			}
 		}
@@ -550,13 +602,59 @@ func applyRule(sub string, rest []string) string {
 		if !hasPositional {
 			return "add-implicit" // (1) bare git add / git stage
 		}
-		if allPositionalsRoot {
-			return "add-implicit" // (2) every positional is a whole-tree root
+		if anyPositionalRoot {
+			return "add-implicit" // (2) any root token — subsumes even explicit siblings (B-2)
+		}
+		if allImplicit {
+			return "add-implicit" // (3) only exclusion pathspecs → whole-tree-minus-x (RT-2)
 		}
 		return ""
 	}
 
 	return "" // unknown subcommand: allow
+}
+
+// isAddRootToken reports whether a positional token addresses the entire working
+// tree. Handles:
+//
+//	(a) literal closed set: . ./ .. ../ :/ :(top) :/:
+//	(b) any path whose path.Clean (after \ → /) equals "." (e.g. .//  ./.)
+//	(c) paths made entirely of ".." segments (e.g. ../.. )
+func isAddRootToken(t string) bool {
+	switch t {
+	case ".", "./", "..", "../", ":/", ":(top)", ":/:":
+		return true
+	}
+	norm := strings.ReplaceAll(t, `\`, `/`)
+	cleaned := path.Clean(norm)
+	if cleaned == "." {
+		return true
+	}
+	return isAllDotDot(cleaned)
+}
+
+// isAllDotDot reports whether p consists entirely of ".." segments.
+func isAllDotDot(p string) bool {
+	if p == "" {
+		return false
+	}
+	for _, seg := range strings.Split(p, "/") {
+		if seg != ".." {
+			return false
+		}
+	}
+	return true
+}
+
+// isExclusionPathspec reports whether t is a pathspec exclusion form that
+// tells git to stage everything *except* the named path:
+// :!<path>, :^<path>, or :(exclude)<path>.
+// When ALL positionals are exclusion specs, the effective scope is the entire
+// working tree minus those paths — implicit scope that should be blocked.
+func isExclusionPathspec(t string) bool {
+	return strings.HasPrefix(t, ":!") ||
+		strings.HasPrefix(t, ":^") ||
+		strings.HasPrefix(t, ":(exclude)")
 }
 
 // isPushBranchDelete reports whether any token in rest is a branch-deletion

@@ -6,7 +6,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -1203,7 +1205,7 @@ func TestRunGitBranch_PushDelete_BranchDeleteForms(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // TestMatchSubcommand_AddImplicit_Blocks enumerates every blocking vector from
-// the ADR-2026-09-05 "Verificação exigida" and Wave-0 table.
+// the ADR-2026-09-05 "Verificação exigida", Wave-0 table, and red-team B-1/B-2/RT-n fixes.
 // Assertion: each form returns "add-implicit" — the rule fires on all implicit-scope
 // invocations and does not fire for any valid explicit-path form (non-afrouxamento).
 func TestMatchSubcommand_AddImplicit_Blocks(t *testing.T) {
@@ -1215,6 +1217,7 @@ func TestMatchSubcommand_AddImplicit_Blocks(t *testing.T) {
 		cmd  string
 		desc string
 	}{
+		// Original blocking vectors (ADR-2026-09-05 / Wave-0)
 		{"git add -A", "implicit-scope flag -A"},
 		{"git add --all", "implicit-scope flag --all"},
 		{"git add .", "whole-tree-root positional ."},
@@ -1227,8 +1230,28 @@ func TestMatchSubcommand_AddImplicit_Blocks(t *testing.T) {
 		{"git add -- .", "R-4: . after double-dash"},
 		{"git stage -A", "D-U3: git stage alias"},
 		{"git -C somedir add -A", "global -C flag skipped, add -A still blocks"},
-		{"git add ./ ", "whole-tree-root positional ./"},
+		{"git add ./", "whole-tree-root positional ./"},
 		{"git add ../", "whole-tree-root positional ../"},
+		// B-2 fix: ANY root token among positionals → block (not "all")
+		{"git add . docs/a.txt", "B-2: . subsumes everything even with explicit sibling"},
+		{"git add -A docs/ .", "B-2: -A flag + explicit dir + . positional"},
+		{"git add -- . file.go", "B-2: root after -- blocks even with explicit file"},
+		// RT-1: :/:  is a root magic pathspec (path.Clean semantics)
+		{"git add :/:","RT-1: :/: is root magic pathspec"},
+		// RT-2: exclusion-only positionals → staging whole-tree-minus-x
+		{"git add :!x", "RT-2: single exclusion pathspec :!x"},
+		{"git add :(exclude)x", "RT-2: :(exclude) form"},
+		{"git add :!x :!y", "RT-2: all-exclusion set :!x :!y"},
+		{"git add :^x", "RT-2: :^ exclusion form"},
+		// RT-3: semantic root via path.Clean normalization
+		{"git add ./.", "RT-3: ./.  normalizes to ."},
+		{"git add -A .//", "RT-3: .// normalizes to ."},
+		// RT-4: sudo prefix stripped → still blocks
+		{"sudo git add -A", "RT-4: sudo prefix stripped"},
+		{"sudo -E git add -A", "RT-4: sudo -E"},
+		{"sudo -u root git add -A", "RT-4: sudo -u user"},
+		// RT-5: subshell ( prefix stripped → still blocks
+		{"(git add -A)", "RT-5: subshell ( prefix"},
 	}
 	for _, tc := range blocks {
 		t.Run(tc.desc, func(t *testing.T) {
@@ -1241,8 +1264,9 @@ func TestMatchSubcommand_AddImplicit_Blocks(t *testing.T) {
 }
 
 // TestMatchSubcommand_AddImplicit_Passes enumerates every passing vector from
-// the ADR-2026-09-05 table (AC2, AC3).
-// Assertion: explicit paths, interactive flags, and dry-run return "" — no false positive.
+// the ADR-2026-09-05 table (AC2, AC3), plus B-1 combined-flag fixes.
+// Assertion: explicit paths, interactive flags, dry-run, and caminhos com ponto no
+// início (mas não raiz) retornam "" — sem falso positivo.
 func TestMatchSubcommand_AddImplicit_Passes(t *testing.T) {
 	passes := []struct {
 		cmd  string
@@ -1260,11 +1284,24 @@ func TestMatchSubcommand_AddImplicit_Passes(t *testing.T) {
 		{"git add --interactive", "interactive --interactive"},
 		{"git add -n .", "dry-run -n"},
 		{"git add --dry-run .", "dry-run --dry-run"},
-		{"git add -A -n", "dry-run overrides -A"},
+		{"git add -A -n", "dry-run overrides -A (separate flags)"},
 		{"git add -f arquivo.go", "explicit file with -f (force)"},
 		{"git add -N arquivo.go", "intent-to-add -N explicit file"},
 		{"git add -- file.go", "explicit file after --"},
-		{"git add -- . file.go", "R-4: mixed: root + explicit → explicit wins"},
+		// B-1 fix: combined short flags with dry-run or interactive PASS.
+		{"git add -An", "B-1: combined -A + dry-run n → passes"},
+		{"git add -nA", "B-1: combined dry-run n + -A → passes"},
+		{"git add -un .", "B-1: -u + dry-run n + dot → dry-run wins"},
+		{"git add -nv .", "B-1: dry-run n + verbose v + dot → dry-run wins"},
+		{"git add -Ap", "B-1: combined -A + interactive p → passes"},
+		{"git add -pA", "B-1: combined interactive p + -A → passes"},
+		// Paths with leading dot that are NOT whole-tree roots (AC3)
+		{"git add .github/x.yml", "AC3: .github/x.yml is explicit, not root"},
+		{"git add .gitignore", "AC3: .gitignore is explicit file"},
+		{"git add ./src/a.go", "AC3: ./src/a.go is explicit (not bare .)"},
+		{"git add ../outro/a.go", "AC3: ../outro/a.go is explicit (not bare ..)"},
+		// Exclusion spec mixed with real path → real path wins
+		{"git add :!x docs/a.go", "exclusion + real path → real path is explicit"},
 	}
 	for _, tc := range passes {
 		t.Run(tc.desc, func(t *testing.T) {
@@ -1278,9 +1315,11 @@ func TestMatchSubcommand_AddImplicit_Passes(t *testing.T) {
 
 // TestMatchSubcommand_AddImplicit_AC5 asserts that "git add -A" appearing as
 // prose inside a commit message body is NOT treated as a command.
-// Assertion: the guard must not block when "git add -A" is text in a message,
-// not a git invocation. Reproves without the heredoc-stripping + quote-aware
-// split pre-processing that already protects commit messages.
+// Assertion: the guard does not interpret "git add -A" as a git invocation when the
+// first token of the outer command is NOT "git" — this tests the tokenizer/parser base
+// (quote-aware split + first-token check), not the add rule itself. The add case in
+// applyRule is never reached for these vectors. Reproves if quote-aware split stops
+// isolating the quoted body from the outer command token.
 func TestMatchSubcommand_AddImplicit_AC5(t *testing.T) {
 	cases := []struct {
 		cmd  string
@@ -1326,28 +1365,41 @@ func TestRunGitBranch_AddImplicit_ExitAndReason(t *testing.T) {
 // unescaped double-quote (like the old reasonResetHard "...") would produce
 // invalid JSON, silently rejected by Claude Code. Each constant is routed
 // through denyOut's Fprintf path, which is the same mechanism that would fail.
+//
+// RT-7: the test also auto-discovers all reason[A-Z]\w* constants declared in
+// gitbranch.go and fails if any is not referenced in the reasons map below —
+// ensuring a new constant cannot be added without test coverage.
+//
+// NOTE: when adding a new reason constant to gitbranch.go, add an entry to the
+// reasons map below. The auto-discovery check below will fail if you forget.
 func TestAllReasonsProduceValidJSON(t *testing.T) {
+	// reasons maps a short label to each reason constant for test output readability.
+	// IMPORTANT: the map must reference every reason[A-Z]\w* constant by name —
+	// the auto-discovery check reads gitbranch.go and verifies each constant
+	// appears in this test file.
 	reasons := map[string]string{
-		"truncated":           reasonTruncated,
-		"nul":                 reasonNUL,
-		"indecodeable":        reasonIndecodeable,
-		"checkout-b":          reasonCheckoutB,
-		"switch-c":            reasonSwitchC,
-		"branch-create":       reasonBranchCreate,
-		"worktree-add-b":      reasonWorktreeAddB,
-		"commit":              reasonCommit,
-		"push":                reasonPush,
-		"push-delete":         reasonPushDelete,
-		"stash":               reasonStash,
-		"reset-hard":          reasonResetHard,
-		"clean-force":         reasonCleanForce,
-		"restore-path":        reasonRestorePath,
-		"checkout-path":       reasonCheckoutPath,
-		"update-ref":          reasonUpdateRef,
-		"worktree-remove":     reasonWorktreeRemoveForce,
-		"rm-force":            reasonRmForce,
-		"add-implicit":        reasonAddImplicit,
+		"truncated":       reasonTruncated,
+		"nul":             reasonNUL,
+		"indecodeable":    reasonIndecodeable,
+		"checkout-b":      reasonCheckoutB,
+		"switch-c":        reasonSwitchC,
+		"branch-create":   reasonBranchCreate,
+		"worktree-add-b":  reasonWorktreeAddB,
+		"commit":          reasonCommit,
+		"push":            reasonPush,
+		"push-delete":     reasonPushDelete,
+		"stash":           reasonStash,
+		"reset-hard":      reasonResetHard,
+		"clean-force":     reasonCleanForce,
+		"restore-path":    reasonRestorePath,
+		"checkout-path":   reasonCheckoutPath,
+		"update-ref":      reasonUpdateRef,
+		"worktree-remove": reasonWorktreeRemoveForce,
+		"rm-force":        reasonRmForce,
+		"add-implicit":    reasonAddImplicit,
 	}
+
+	// --- JSON-validity check (one sub-test per reason) ---
 	for name, reason := range reasons {
 		t.Run(name, func(t *testing.T) {
 			jsonStr := `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"` + reason + `"}}` + "\n"
@@ -1356,4 +1408,34 @@ func TestAllReasonsProduceValidJSON(t *testing.T) {
 			}
 		})
 	}
+
+	// --- RT-7: auto-discovery — every reason constant must be in this test ---
+	t.Run("auto-discovery", func(t *testing.T) {
+		_, thisFile, _, ok := runtime.Caller(0)
+		if !ok {
+			t.Fatal("runtime.Caller failed")
+		}
+		srcFile := filepath.Join(filepath.Dir(thisFile), "gitbranch.go")
+		src, err := os.ReadFile(srcFile)
+		if err != nil {
+			t.Fatalf("cannot read %s: %v", srcFile, err)
+		}
+		// Extract all reason[A-Z]\w* constant names declared in gitbranch.go.
+		re := regexp.MustCompile(`\breason[A-Z]\w*\b`)
+		declared := make(map[string]bool)
+		for _, name := range re.FindAllString(string(src), -1) {
+			declared[name] = true
+		}
+		// Read this test file and check each constant name is referenced here.
+		testSrc, err := os.ReadFile(thisFile)
+		if err != nil {
+			t.Fatalf("cannot read %s: %v", thisFile, err)
+		}
+		testText := string(testSrc)
+		for name := range declared {
+			if !strings.Contains(testText, name) {
+				t.Errorf("constant %q declared in gitbranch.go is not referenced in this test file — add it to the reasons map", name)
+			}
+		}
+	})
 }
