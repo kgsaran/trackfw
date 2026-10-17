@@ -1267,6 +1267,15 @@ func TestMatchSubcommand_AddImplicit_Blocks(t *testing.T) {
 		{"git add :(glob)**", "RT-NEW-4: glob wildcard-only **"},
 		{"git add :(top,glob)*", "RT-NEW-4: top+glob magic"},
 		{"git add :(glob,top)**", "RT-NEW-4: glob+top magic"},
+		// B-5: :(top,exclude) and :(exclude,top) contain "exclude" attr → all-exclusion rule blocks
+		{"git add :(top,exclude)x", "B-5: :(top,exclude) exclusion pathspec"},
+		{"git add :(exclude,top)x", "B-5: :(exclude,top) exclusion pathspec"},
+		// B-5: :(top). — pattern after ) is "." which normalizes to "." → root → blocks
+		{"git add :(top).", "B-5: :(top). pattern is root ."},
+		// B-6: redirect suffix does not bypass add-implicit guard
+		{"git add -A > /dev/null", "B-6: redirect does not bypass add -A"},
+		// RT-R3-5: paren + redirect still blocks (now closed by B-6 fix)
+		{"(git add .) > /dev/null", "RT-R3-5: (C) > x blocks same as C"},
 	}
 	for _, tc := range blocks {
 		t.Run(tc.desc, func(t *testing.T) {
@@ -1325,6 +1334,19 @@ func TestMatchSubcommand_AddImplicit_Passes(t *testing.T) {
 		// RT-NEW-5: -e/--edit are not considered interactive by the guard
 		// (no flag recognition → fail-closed if bare, pass with explicit path)
 		{"git add -e src/file.go", "RT-NEW-5: -e with explicit path passes"},
+		// B-5: :(top) with non-root pattern passes — pattern is an explicit file/dir, not a root
+		{"git add :(top)src/a.go", "B-5: :(top) with explicit non-root path"},
+		{"git add :(top,icase)src/a.go", "B-5: :(top,icase) with non-root path"},
+		// B-6: stash commands with redirect/comment suffix still pass (non-add commands)
+		{"(git stash list) > /tmp/x", "B-6: stash list subshell + redirect"},
+		{"(git stash show) 2>&1", "B-6: stash show subshell + 2>&1"},
+		{"(git stash list) # comment", "B-6: stash list subshell + comment"},
+		{"git stash list > /tmp/x", "B-6: stash list with redirect"},
+		{"git stash list # comment", "B-6: stash list with comment"},
+		// RT-R3-3/4: unambiguous long-option prefix abbreviations expand to canonical forms
+		{"git add --dry .", "RT-R3-3: --dry expands to --dry-run → passes"},
+		{"git add --pat .", "RT-R3-4: --pat expands to --patch → passes"},
+		{"git add --inter .", "RT-R3-4: --inter expands to --interactive → passes"},
 	}
 	for _, tc := range passes {
 		t.Run(tc.desc, func(t *testing.T) {
@@ -1362,11 +1384,15 @@ func TestMatchSubcommand_AddImplicit_AC5(t *testing.T) {
 	}
 }
 
-// TestMatchSubcommand_ParenInvariant asserts that for every command C, (C) and
-// ( C ) produce the same decision as the plain command C (B-4 fix invariant).
-// Assertion: the symmetric ) strip introduced in B-4 preserves the decision for
-// all guards — not just add. Reproves if ) strip is removed or if ) corrupts an
-// allowlist keyword (stash list) or a blocking flag (--hard).
+// TestMatchSubcommand_ParenInvariant asserts that for every command C:
+//   - (C) and ( C ) produce the same decision as C  (B-4 invariant)
+//   - C > /dev/null, C 2>&1, C # x produce the same decision as C  (B-6 invariant)
+//   - (C) > /dev/null also produces the same decision as C  (RT-R3-5 invariant)
+//
+// Assertion: quoteAwareSplit word-boundary ( separator + stripShellSuffix strip
+// preserve the guard decision for all rules, not just add. Reproves if the
+// separator or strip is removed, or if it corrupts allowlist keywords (stash list)
+// or blocking flags (--hard).
 func TestMatchSubcommand_ParenInvariant(t *testing.T) {
 	cases := []struct {
 		cmd     string
@@ -1385,10 +1411,11 @@ func TestMatchSubcommand_ParenInvariant(t *testing.T) {
 		{"git add -A", "add-implicit"},
 	}
 	for _, tc := range cases {
-		// Verify the base case first, then both paren forms.
+		// Verify the base case first.
 		if got := MatchSubcommand(tc.cmd); got != tc.wantTag {
 			t.Errorf("base %q: got %q want %q", tc.cmd, got, tc.wantTag)
 		}
+		// B-4 paren forms: (C) and ( C ) must match C.
 		for _, form := range []string{
 			"(" + tc.cmd + ")",
 			"( " + tc.cmd + " )",
@@ -1398,6 +1425,98 @@ func TestMatchSubcommand_ParenInvariant(t *testing.T) {
 					form, got, tc.wantTag, tc.cmd)
 			}
 		}
+		// B-6 redirect/comment forms: C > x, C 2>&1, C # x must match C.
+		for _, suffix := range []string{" > /dev/null", " 2>&1", " # comment"} {
+			form := tc.cmd + suffix
+			if got := MatchSubcommand(form); got != tc.wantTag {
+				t.Errorf("redirect/comment form %q: got %q want %q (same as plain %q)",
+					form, got, tc.wantTag, tc.cmd)
+			}
+			// RT-R3-5: (C) + redirect/comment must also match C.
+			form2 := "(" + tc.cmd + ")" + suffix
+			if got := MatchSubcommand(form2); got != tc.wantTag {
+				t.Errorf("paren+redirect form %q: got %q want %q (same as plain %q)",
+					form2, got, tc.wantTag, tc.cmd)
+			}
+		}
+	}
+}
+
+// TestMatchSubcommand_RegressionAgainstMain is a regression table for non-add
+// commands. Expected values were derived by running the origin/main binary against
+// each command via `trackfw guard git-branch --command "<cmd>"` and recording the
+// exit code (0 = pass, 2 = block). The table asserts that the current
+// MatchSubcommand implementation produces the same pass/block decision for all
+// 38 commands tested. Assertion: the Round 3 tokenizer rewrite (quoteAwareSplit
+// word-boundary ( separator + stripShellSuffix) does not regress any non-add
+// guard rule compared to origin/main.
+func TestMatchSubcommand_RegressionAgainstMain(t *testing.T) {
+	// wantBlock=true means MatchSubcommand must return a non-empty tag (block).
+	// wantBlock=false means it must return "" (allow).
+	// Expected values fixed from origin/main binary (2026-10-17).
+	cases := []struct {
+		cmd       string
+		wantBlock bool
+	}{
+		// stash — list/show allowed, all others blocked
+		{"git stash list", false},
+		{"git stash show", false},
+		{"git stash pop", true},
+		{"git stash apply", true},
+		{"git stash drop", true},
+		{"git stash", true},
+		// reset — --hard blocked, --soft/--mixed allowed
+		{"git reset --hard HEAD", true},
+		{"git reset --soft HEAD~1", false},
+		{"git reset --mixed HEAD", false},
+		// push — blocked in all forms
+		{"git push origin main", true},
+		{"git push --force origin main", true},
+		// commit — blocked
+		{"git commit -m fix", true},
+		// checkout — branch allowed, -b blocked
+		{"git checkout main", false},
+		{"git checkout -b new-branch", true},
+		// branch — -d/-D/--delete allowed
+		{"git branch -d old", false},
+		{"git branch --delete old", false},
+		{"git branch -D old", false},
+		// worktree — list/add allowed, add -b blocked
+		{"git worktree list", false},
+		{"git worktree add ../foo", false},
+		{"git worktree add -b new ../foo", true},
+		// status/log — allowed
+		{"git status", false},
+		{"git status --short", false},
+		{"git log --oneline", false},
+		// paren forms — must preserve decision (B-4 invariant holds at origin/main)
+		{"(git stash list)", false},
+		{"(git reset --soft HEAD~1)", false},
+		// non-git commands — allowed
+		{"gh pr list", false},
+		{"gh pr create --title foo", false},
+		{"trackfw context", false},
+		{"trackfw validate", false},
+		// redirect/comment forms — allowed for non-add commands (B-6)
+		{"(gh pr list) > /tmp/x", false},
+		{"(trackfw context) 2>&1", false},
+		{"git log --oneline # show recent", false},
+		{"git status # check files", false},
+		{"git stash list > /tmp/x", false},
+		{"git stash list # comment", false},
+		{"(git stash list) > /tmp/x", false},
+		{"(git stash show) 2>&1", false},
+		{"(git stash list) # comment", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.cmd, func(t *testing.T) {
+			got := MatchSubcommand(tc.cmd)
+			blocked := got != ""
+			if blocked != tc.wantBlock {
+				t.Errorf("%q: blocked=%v (tag=%q) want blocked=%v",
+					tc.cmd, blocked, got, tc.wantBlock)
+			}
+		})
 	}
 }
 

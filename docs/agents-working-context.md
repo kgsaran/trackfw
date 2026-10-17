@@ -2,6 +2,42 @@
 
 ---
 
+## 2026-10-17 — apolo-tf — FIM: Red-team Rodada 3 — guard de staging implícito (REQ-2026-09-05)
+
+**Branch:** `feat/o-guard-do-trackfw-passa-a-bloquear-staging-com-escopo-implicito`
+**Escopo:** Correção dos blockers B-5 (falso positivo `:(top)X` com padrão não-root) e B-6 (regressão no guard de stash com redirect/comentário), RT-R3-3/4 (abreviações de opção longa), adição de testes e atualização de cli-parity.md.
+
+**Implementação concluída em sessão anterior (rodadas 1-3 de gitbranch.go):**
+- `quoteAwareSplit` reescrito com separador `(` na fronteira de palavra e rastreamento de profundidade de parêntese (`parenDepth`)
+- `stripShellSuffix` novo: remove redirecionamentos e comentários `#` de segmento (quote-aware)
+- `isAddRootToken` corrigido para B-5: `:(top)X` verifica `isAddRootToken(X)` recursivamente
+- `isExclusionPathspec` estendido: detecta atributo `exclude` em `:(attrs)X`
+- `resolveAddLongOpt` novo + `addLongOpts`: resolve abreviações não-ambíguas de opções longas de add
+- `stripOuterParens` removido; `isNegDryRun` removido
+
+**Testes adicionados nesta sessão:**
+- `_Blocks`: B-5 (`:( top,exclude)x`, `:(exclude,top)x`, `:(top).`, redirect não bypassa add), RT-R3-5
+- `_Passes`: B-5 (`:(top)src/a.go`, `:(top,icase)src/a.go`), B-6 (stash+redirect/comment), RT-R3-3/4 (`--dry`, `--pat`, `--inter`)
+- `TestMatchSubcommand_ParenInvariant` estendido: redirect/comment/paren+redirect para todos os comandos-base
+- `TestMatchSubcommand_RegressionAgainstMain`: 38 comandos não-add, 0 divergências contra binário origin/main
+
+**Gates:**
+- `go build ./...` — OK
+- `go test ./...` — OK (272 falsify cenários; guard ok 2.77s)
+- `make lint` — OK
+- `GOOS=windows GOARCH=amd64 go vet ./...` — OK
+- `bash scripts/check-gates-falsify.sh` — exit 0, 272 cenários, piso 248
+- `trackfw validate` — 165 warnings pré-existentes, 0 erros
+
+**Arquivos modificados:**
+- `internal/guard/gitbranch.go` (modificado em sessão anterior — Round 3 completo)
+- `internal/guard/gitbranch_test.go` (testes Round 3 adicionados nesta sessão)
+- `docs/cli-parity.md` (documentação Round 3 atualizada nesta sessão)
+
+**Status:** pronto para commit pelo arquiteto.
+
+---
+
 ## 2026-10-16 — ares-tf — INÍCIO: ML-W4 — Remover pip install pypi/ e npm ci do censo Windows (REQ-2026-09-03)
 
 **Branch:** `fix/fechar-os-grupos-de-falha-de-windows-ml-w4-censo`
