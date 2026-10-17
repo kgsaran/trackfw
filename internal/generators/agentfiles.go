@@ -1947,16 +1947,33 @@ func InjectAmazonQHooks(rootDir string) error {
 		execBash = make(map[string]interface{})
 	}
 	const gitDenyPattern = `^git (commit|push|checkout -b)`
+	// gitAddImplicitDenyPattern covers implicit-scope staging forms
+	// (ADR-2026-09-05, D1): git add/stage with no explicit path, or with
+	// only whole-tree root tokens (. ./ .. ../ :/ :(top)).
+	// False-positive check: `git add -A docs/` does NOT match because `docs/`
+	// is not in the alternatives, so the pattern fails after consuming `-A`.
+	// `git add file.go` also does not match. `git add -p` does not match.
+	const gitAddImplicitDenyPattern = `^git (add|stage)( +(-A|--all|-u|--update|--|\.|\./|\.\.|\.\./|:/|:\(top\)))* *$`
 	denied, _ := execBash["deniedCommands"].([]interface{})
-	found := false
+	foundBase := false
+	foundAdd := false
 	for _, d := range denied {
-		if s, ok := d.(string); ok && s == gitDenyPattern {
-			found = true
-			break
+		s, ok := d.(string)
+		if !ok {
+			continue
+		}
+		if s == gitDenyPattern {
+			foundBase = true
+		}
+		if s == gitAddImplicitDenyPattern {
+			foundAdd = true
 		}
 	}
-	if !found {
+	if !foundBase {
 		denied = append(denied, gitDenyPattern)
+	}
+	if !foundAdd {
+		denied = append(denied, gitAddImplicitDenyPattern)
 	}
 	execBash["deniedCommands"] = denied
 	toolsSettings["execute_bash"] = execBash

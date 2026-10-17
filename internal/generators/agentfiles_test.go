@@ -1183,8 +1183,28 @@ func TestInjectAmazonQHooks_CreateAndIdempotent(t *testing.T) {
 	toolsSettings, _ := data["toolsSettings"].(map[string]interface{})
 	execBash, _ := toolsSettings["execute_bash"].(map[string]interface{})
 	denied, _ := execBash["deniedCommands"].([]interface{})
-	if len(denied) != 1 || denied[0] != `^git (commit|push|checkout -b)` {
-		t.Errorf("expected exactly 1 deniedCommands entry (idempotent across 2 runs), got %v", denied)
+	// Two entries expected (idempotent across 2 runs):
+	// 1. ^git (commit|push|checkout -b) — original git-branch guard
+	// 2. ^git (add|stage)... — implicit-scope staging guard (ADR-2026-09-05)
+	if len(denied) != 2 {
+		t.Errorf("expected exactly 2 deniedCommands entries (idempotent across 2 runs), got %v", denied)
+	}
+	foundBase, foundAdd := false, false
+	for _, d := range denied {
+		switch d {
+		case `^git (commit|push|checkout -b)`:
+			foundBase = true
+		}
+		s, _ := d.(string)
+		if len(s) > 20 && s[:len(`^git (add|stage)`)] == `^git (add|stage)` {
+			foundAdd = true
+		}
+	}
+	if !foundBase {
+		t.Error("base git-branch-guard deniedCommands entry was not added")
+	}
+	if !foundAdd {
+		t.Error("add/stage implicit-scope deniedCommands entry was not added")
 	}
 }
 
@@ -1211,23 +1231,31 @@ func TestInjectAmazonQHooks_PreservesExistingSettings(t *testing.T) {
 	toolsSettings, _ := data["toolsSettings"].(map[string]interface{})
 	execBash, _ := toolsSettings["execute_bash"].(map[string]interface{})
 	denied, _ := execBash["deniedCommands"].([]interface{})
-	if len(denied) != 2 {
-		t.Fatalf("expected 2 deniedCommands entries (pre-existing + git-guard), got %v", denied)
+	// Three entries: pre-existing + git-branch-guard + add/stage implicit-scope guard.
+	if len(denied) != 3 {
+		t.Fatalf("expected 3 deniedCommands entries (pre-existing + git-guard + add-implicit), got %v", denied)
 	}
-	foundExisting, foundNew := false, false
+	foundExisting, foundBase, foundAdd := false, false, false
 	for _, d := range denied {
-		switch d {
+		s, _ := d.(string)
+		switch s {
 		case "^rm -rf /":
 			foundExisting = true
 		case `^git (commit|push|checkout -b)`:
-			foundNew = true
+			foundBase = true
+		}
+		if len(s) > 16 && s[:len(`^git (add|stage)`)] == `^git (add|stage)` {
+			foundAdd = true
 		}
 	}
 	if !foundExisting {
 		t.Error("pre-existing deniedCommands entry was lost")
 	}
-	if !foundNew {
+	if !foundBase {
 		t.Error("git-branch-guard deniedCommands entry was not added")
+	}
+	if !foundAdd {
+		t.Error("add/stage implicit-scope deniedCommands entry was not added")
 	}
 }
 

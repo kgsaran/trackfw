@@ -2,6 +2,7 @@ package guard
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -1192,6 +1193,166 @@ func TestRunGitBranch_PushDelete_BranchDeleteForms(t *testing.T) {
 			}
 			if errOut != expectedErr {
 				t.Errorf("stderr mismatch:\n  got  %q\n  want %q", errOut, expectedErr)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Tests for git add / git stage implicit-scope guard (ADR-2026-09-05, Wave 1)
+// ---------------------------------------------------------------------------
+
+// TestMatchSubcommand_AddImplicit_Blocks enumerates every blocking vector from
+// the ADR-2026-09-05 "Verificação exigida" and Wave-0 table.
+// Assertion: each form returns "add-implicit" — the rule fires on all implicit-scope
+// invocations and does not fire for any valid explicit-path form (non-afrouxamento).
+func TestMatchSubcommand_AddImplicit_Blocks(t *testing.T) {
+	// Non-afrouxamento table: every form below MUST block. None of them is a
+	// legitimate staging operation (all either name no file or name only
+	// whole-tree roots). Adding any legitimate path form here would be a
+	// false-positive regression.
+	blocks := []struct {
+		cmd  string
+		desc string
+	}{
+		{"git add -A", "implicit-scope flag -A"},
+		{"git add --all", "implicit-scope flag --all"},
+		{"git add .", "whole-tree-root positional ."},
+		{"git add -u", "implicit-scope flag -u"},
+		{"git add --update", "implicit-scope flag --update"},
+		{"git add", "bare add (no operand)"},
+		{"git add :/", "pathspec-magic root :/"},
+		{"git add :(top)", "pathspec-magic root :(top)"},
+		{"git add ..", "parent-dir whole-tree .."},
+		{"git add -- .", "R-4: . after double-dash"},
+		{"git stage -A", "D-U3: git stage alias"},
+		{"git -C somedir add -A", "global -C flag skipped, add -A still blocks"},
+		{"git add ./ ", "whole-tree-root positional ./"},
+		{"git add ../", "whole-tree-root positional ../"},
+	}
+	for _, tc := range blocks {
+		t.Run(tc.desc, func(t *testing.T) {
+			got := MatchSubcommand(tc.cmd)
+			if got != "add-implicit" {
+				t.Fatalf("%q: got %q, want %q", tc.cmd, got, "add-implicit")
+			}
+		})
+	}
+}
+
+// TestMatchSubcommand_AddImplicit_Passes enumerates every passing vector from
+// the ADR-2026-09-05 table (AC2, AC3).
+// Assertion: explicit paths, interactive flags, and dry-run return "" — no false positive.
+func TestMatchSubcommand_AddImplicit_Passes(t *testing.T) {
+	passes := []struct {
+		cmd  string
+		desc string
+	}{
+		{"git add internal/guard/gitbranch.go", "explicit file"},
+		{"git add file1.go file2.go", "multiple explicit files"},
+		{"git add 'path with spaces.go'", "quoted path with spaces"},
+		{"git add docs/", "explicit directory (not root)"},
+		{"git add -A docs/", "D-U2: -A with explicit dir passes"},
+		{"git add -u src/", "D-U2: -u with explicit dir passes"},
+		{"git add -p", "interactive -p"},
+		{"git add --patch", "interactive --patch"},
+		{"git add -i", "interactive -i"},
+		{"git add --interactive", "interactive --interactive"},
+		{"git add -n .", "dry-run -n"},
+		{"git add --dry-run .", "dry-run --dry-run"},
+		{"git add -A -n", "dry-run overrides -A"},
+		{"git add -f arquivo.go", "explicit file with -f (force)"},
+		{"git add -N arquivo.go", "intent-to-add -N explicit file"},
+		{"git add -- file.go", "explicit file after --"},
+		{"git add -- . file.go", "R-4: mixed: root + explicit → explicit wins"},
+	}
+	for _, tc := range passes {
+		t.Run(tc.desc, func(t *testing.T) {
+			got := MatchSubcommand(tc.cmd)
+			if got != "" {
+				t.Fatalf("%q: got %q, want %q (pass)", tc.cmd, got, "")
+			}
+		})
+	}
+}
+
+// TestMatchSubcommand_AddImplicit_AC5 asserts that "git add -A" appearing as
+// prose inside a commit message body is NOT treated as a command.
+// Assertion: the guard must not block when "git add -A" is text in a message,
+// not a git invocation. Reproves without the heredoc-stripping + quote-aware
+// split pre-processing that already protects commit messages.
+func TestMatchSubcommand_AddImplicit_AC5(t *testing.T) {
+	cases := []struct {
+		cmd  string
+		desc string
+	}{
+		{`trackfw commit -m "git add -A"`, "git add -A in trackfw commit message"},
+		{`echo "git add -A"`, "git add -A in echo output (not a git invocation)"},
+		{`gh pr create --body "git add -A"`, "git add -A in gh body"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.desc, func(t *testing.T) {
+			got := MatchSubcommand(tc.cmd)
+			if got != "" {
+				t.Fatalf("AC5: %q should pass (body prose), got tag %q", tc.cmd, got)
+			}
+		})
+	}
+}
+
+// TestRunGitBranch_AddImplicit_ExitAndReason asserts RunGitBranch exits 2 and
+// emits the correct reason for an implicit-scope add.
+// Assertion: exit 2 + reasonAddImplicit on stdout/stderr — the full path through
+// RunGitBranch works, not just MatchSubcommand. Reproves if the case "add-implicit"
+// dispatch in RunGitBranch is missing.
+func TestRunGitBranch_AddImplicit_ExitAndReason(t *testing.T) {
+	dir := makeProjectDir(t)
+	code, out, errOut := runWith(t, dir, `{"tool_input":{"command":"git add -A"}}`, "")
+	if code != 2 {
+		t.Fatalf("expected exit 2, got %d", code)
+	}
+	expectedOut := `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"` + reasonAddImplicit + `"}}` + "\n"
+	if out != expectedOut {
+		t.Fatalf("stdout mismatch:\n  got  %q\n  want %q", out, expectedOut)
+	}
+	if errOut != reasonAddImplicit+"\n" {
+		t.Fatalf("stderr mismatch:\n  got  %q\n  want %q", errOut, reasonAddImplicit+"\n")
+	}
+}
+
+// TestAllReasonsProduceValidJSON asserts that every reason constant produces
+// a parseable JSON object when emitted via denyOut.
+// Assertion: JSON validity — R-6 (Wave 0, 2026-10-17). A reason with an
+// unescaped double-quote (like the old reasonResetHard "...") would produce
+// invalid JSON, silently rejected by Claude Code. Each constant is routed
+// through denyOut's Fprintf path, which is the same mechanism that would fail.
+func TestAllReasonsProduceValidJSON(t *testing.T) {
+	reasons := map[string]string{
+		"truncated":           reasonTruncated,
+		"nul":                 reasonNUL,
+		"indecodeable":        reasonIndecodeable,
+		"checkout-b":          reasonCheckoutB,
+		"switch-c":            reasonSwitchC,
+		"branch-create":       reasonBranchCreate,
+		"worktree-add-b":      reasonWorktreeAddB,
+		"commit":              reasonCommit,
+		"push":                reasonPush,
+		"push-delete":         reasonPushDelete,
+		"stash":               reasonStash,
+		"reset-hard":          reasonResetHard,
+		"clean-force":         reasonCleanForce,
+		"restore-path":        reasonRestorePath,
+		"checkout-path":       reasonCheckoutPath,
+		"update-ref":          reasonUpdateRef,
+		"worktree-remove":     reasonWorktreeRemoveForce,
+		"rm-force":            reasonRmForce,
+		"add-implicit":        reasonAddImplicit,
+	}
+	for name, reason := range reasons {
+		t.Run(name, func(t *testing.T) {
+			jsonStr := `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"` + reason + `"}}` + "\n"
+			if err := json.Unmarshal([]byte(jsonStr), new(map[string]interface{})); err != nil {
+				t.Fatalf("reason %q produces invalid JSON: %v\npayload: %s", name, err, jsonStr)
 			}
 		})
 	}

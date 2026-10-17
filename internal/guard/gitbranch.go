@@ -38,7 +38,14 @@ const (
 
 	reasonStash = "trackfw: git stash bruto bloqueado — worktree compartilhado entre subagentes, um stash remove as alterações não commitadas de todos os outros. `git stash list`/`git stash show` seguem liberados; para guardar trabalho em progresso, use uma branch própria via `trackfw branch new` e commit nela. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
 
-	reasonResetHard = "trackfw: git reset --hard bruto bloqueado — descarta de forma irreversível as alterações não commitadas de todo o worktree compartilhado. `git reset --soft`/`--mixed` seguem liberados (ex.: `git reset --soft HEAD~1` é o caminho padrão; use `trackfw ship -m \"...\"` para commitar e empurrar). Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+	reasonResetHard = "trackfw: git reset --hard bruto bloqueado — descarta de forma irreversível as alterações não commitadas de todo o worktree compartilhado. `git reset --soft`/`--mixed` seguem liberados (ex.: `git reset --soft HEAD~1` é o caminho padrão; use `trackfw ship -m '...'` para commitar e empurrar). Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+
+	// reasonAddImplicit is emitted when `git add` or `git stage` is invoked with
+	// implicit scope (no named path, or only whole-tree roots such as . / .. / :/
+	// / :(top)). ADR-2026-09-05 D1, D3: staging without enumeration is blocked;
+	// the message must teach the valid form. Single-line, JSON-safe (no raw
+	// double-quote or backslash). R-6 (Wave 0, 2026-10-17).
+	reasonAddImplicit = "trackfw: git add/stage com escopo implicito bloqueado — enumerate antes o que vai estagiar com `git status --short`, depois estagiar por caminho explicito: `git add <arquivo1> <arquivo2> ...` e commitar com `trackfw commit -m '...'`. Nada antes deste comando foi executado (comando composto e bloqueado por inteiro). Ver CLAUDE.md §1."
 
 	reasonCleanForce = "trackfw: git clean -f/-x bruto bloqueado — apaga arquivos não rastreados do worktree compartilhado, de forma irreversível. `git clean -n`/`--dry-run` segue liberado para revisar antes o que seria apagado. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
 
@@ -159,6 +166,8 @@ func RunGitBranch(stdin io.Reader, idleTimeout time.Duration, command string, ge
 		reason = reasonWorktreeRemoveForce
 	case "rm-force":
 		reason = reasonRmForce
+	case "add-implicit":
+		reason = reasonAddImplicit
 	default:
 		return 0
 	}
@@ -476,6 +485,73 @@ func applyRule(sub string, rest []string) string {
 			if t == "--force" || strings.HasPrefix(t, "-f") || strings.HasPrefix(t, "--force=") {
 				return "rm-force"
 			}
+		}
+		return ""
+
+	case "add", "stage":
+		// Blocking rule: ADR-2026-09-05 D1 — staging with implicit scope is blocked.
+		//
+		// BLOCKS when:
+		//   (1) no positional AND no interactive flag AND no dry-run AND no --pathspec-from-file
+		//   (2) some positional AND every positional is a whole-tree root token
+		//       {., ./, .., ../, :/, :(top)} — including tokens after -- (R-4).
+		//
+		// PASSES when:
+		//   - interactive flag present: -p / -i / --patch / --interactive
+		//   - dry-run flag present: -n / --dry-run
+		//   - --pathspec-from-file=<f> present (explicit enumeration via file; residual)
+		//   - at least one positional that is NOT a whole-tree root token
+		//
+		// DECLARED RESIDUAL (R-1, D5): combined short flags without pathspec (e.g.
+		// -AN bare) are not decomposed — -AN ≠ -A; these forms BLOCK (fail-closed).
+		// See docs/cli-parity.md §git-branch-guard for the full residual list.
+		//
+		// After --, all tokens are positionals (R-4).
+		var (
+			interactive        bool
+			dryRun             bool
+			hasPathspecFromFile bool
+			hasPositional      bool
+			allPositionalsRoot = true // vacuously true; only meaningful when hasPositional
+		)
+		// wholeTreeRoots is the closed set of tokens that address the entire tree.
+		// :(top) is the pathspec magic word for the repository root (git docs).
+		wholeTreeRoots := map[string]bool{
+			".": true, "./": true, "..": true, "../": true, ":/": true, ":(top)": true,
+		}
+		afterDash := false
+		for _, t := range rest {
+			if t == "--" {
+				afterDash = true
+				continue
+			}
+			if !afterDash && strings.HasPrefix(t, "-") {
+				// Flag token (before --).
+				switch t {
+				case "-p", "--patch", "-i", "--interactive":
+					interactive = true
+				case "-n", "--dry-run":
+					dryRun = true
+				}
+				if strings.HasPrefix(t, "--pathspec-from-file=") {
+					hasPathspecFromFile = true
+				}
+			} else {
+				// Positional (or token after --).
+				hasPositional = true
+				if !wholeTreeRoots[t] {
+					allPositionalsRoot = false
+				}
+			}
+		}
+		if interactive || dryRun || hasPathspecFromFile {
+			return "" // explicit or safe: allow
+		}
+		if !hasPositional {
+			return "add-implicit" // (1) bare git add / git stage
+		}
+		if allPositionalsRoot {
+			return "add-implicit" // (2) every positional is a whole-tree root
 		}
 		return ""
 	}
