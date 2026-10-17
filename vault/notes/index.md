@@ -4,6 +4,8 @@
 
 ## Índice
 
+- [process-substitution-find-pipefail-exit-status-hidden-2026-10-17](process-substitution-find-pipefail-exit-status-hidden-2026-10-17.md) — 🔴 **`done < <(find ... 2>/dev/null|sort)` esconde exit status (process substitution async + 2>/dev/null silencia find)**; corrige com `if ! req_list=$(find...|sort)`; `pipefail` herdado em `$(...)` (medido); e **`origin/main` como fixture de falsify quebra pós-merge** — usar heredoc fixo + `cmp -s` para liveness; awk `["']` em `<<'SABEOF'` precisa de `["'"'"']` (truque de quoting literal)
+
 - [guard-add-no-dry-run-negation-bypass-2026-10-17](guard-add-no-dry-run-negation-bypass-2026-10-17.md) — 🔴 **`git add -An --no-dry-run` passa o guard mas estageia whole-tree — git usa last-flag-wins; `--no-dry-run`/`--no-dry` cancela `-n`; guard não modela negação; B-3 bloqueante Rodada 2**
 
 - [go-build-no-exe-suffix-exec-lookpath-falha-no-windows-2026-10-16](go-build-no-exe-suffix-exec-lookpath-falha-no-windows-2026-10-16.md) — 🔴 **`go build -o bin/trackfw` no Windows produz arquivo SEM `.exe`; `exec.LookPath("trackfw")` nunca casa** — correção: `go build -o "bin/trackfw$(go env GOEXE)"`; afeta qualquer cenário que exige `trackfw` resolvível via PATH (validate, hook-resolvable); medido em ML-W4 censo 38941248253

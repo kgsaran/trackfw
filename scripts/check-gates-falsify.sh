@@ -324,7 +324,7 @@ FALSIFY_SUCCESS_TALLY="$WORK/success-count"
 # (`-lt`), entao a contagem so pode ter SUBIDO: 241 continua valido e a folga passa
 # de 8 para 17. Nao houve bump -- o delta 249->258 foi MEDIDO, nao somado, e bate
 # com os 9 bracos do Cenario 200 por corroboracao, nao por construcao.
-FALSIFY_SUCCESS_FLOOR=248
+FALSIFY_SUCCESS_FLOOR=255
 if [[ "$TRACKFW_FALSIFY_ENUMERATE" == "1" ]]; then
   : > "$FALSIFY_ENUM_TALLY"
   echo "[falsify/enumerate] modo de enumeração ATIVO (TRACKFW_FALSIFY_ENUMERATE=1, default=0) -- reprovações são contadas e a execução continua para o próximo cenário; o exit code final permanece != 0 se qualquer cenário reprovar. Ferramenta de diagnóstico -- não usada por make quality/parity." >&2
@@ -1827,6 +1827,177 @@ EOF
 assert_fails_with "referential-integrity/missing-roadmap" \
   "referential integrity failed" \
   bash "$T12/scripts/check-referential-integrity.sh"
+
+# ---------------------------------------------------------------------------
+# Cenário 12 (continuação) — check-referential-integrity.sh: guarda de vacuidade
+# (REQ-2026-09-03-check-referential-integrity-diz-ok-e-sai-zero-sobre-arvore-vazia
+# -sem-guarda-de-vacuidade.md, Wave 1).
+#
+# Eixo 1 (Seção 3 da Wave 0): árvore sem req_dir → reprova.
+# Eixo 2: árvore íntegra → passa com contagem.
+# Prova de não-vacuidade: versão antiga (pré-fix) embarcada como fixture e verificada
+# que o script ATUAL difere dela; a versão antiga passa na árvore vazia.
+# ---------------------------------------------------------------------------
+
+# Fixture: versão pré-fix do script (sabotada) — sem guarda de vacuidade.
+# Usada para provar que os novos braços medem algo real.
+T12_SAB="$WORK/s12sab"
+mkdir -p "$T12_SAB/scripts"
+cat > "$T12_SAB/scripts/check-referential-integrity.sh" <<'SABEOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+cd "$ROOT_DIR"
+
+REQ_DIR="docs/req"
+if [[ -f "$ROOT_DIR/trackfw.yaml" ]]; then
+  _VAL=$(awk '/^req_dir[[:space:]]*:/ {
+    sub(/^req_dir[[:space:]]*:[[:space:]]*/, "")
+    gsub(/^["'"'"']|["'"'"']$/, "")
+    gsub(/[[:space:]]*$/, "")
+    print; exit
+  }' "$ROOT_DIR/trackfw.yaml")
+  [[ -n "$_VAL" ]] && REQ_DIR="$_VAL"
+fi
+
+status=0
+
+while IFS= read -r req; do
+  [[ -f "$req" ]] || continue
+  in_frontmatter=0
+  seen_frontmatter=0
+
+  while IFS= read -r line; do
+    if [[ "$line" == "---" ]]; then
+      if [[ $seen_frontmatter -eq 0 ]]; then
+        seen_frontmatter=1
+        in_frontmatter=1
+        continue
+      fi
+      break
+    fi
+
+    [[ $in_frontmatter -eq 1 ]] || continue
+
+    case "$line" in
+      adr:*|roadmap:*)
+        key=${line%%:*}
+        value=${line#*:}
+        value=${value#"${value%%[![:space:]]*}"}
+        value=${value%"${value##*[![:space:]]}"}
+        value=${value%\"}
+        value=${value#\"}
+        value=${value%\'}
+        value=${value#\'}
+
+        [[ -n "$value" ]] || continue
+        [[ "$value" == "-" || "$value" == "—" ]] && continue
+
+        if [[ ! -f "$value" ]]; then
+          printf 'referential integrity failed: %s %s "%s" does not exist\n' "$req" "$key" "$value" >&2
+          status=1
+        fi
+        ;;
+    esac
+  done < "$req"
+done < <(find "$ROOT_DIR/$REQ_DIR" -maxdepth 2 -name "*.md" 2>/dev/null | sort)
+
+if [[ $status -ne 0 ]]; then
+  exit "$status"
+fi
+
+echo "Referential integrity OK"
+SABEOF
+chmod +x "$T12_SAB/scripts/check-referential-integrity.sh"
+cp "$ROOT_DIR/trackfw.yaml" "$T12_SAB/"
+# docs/req/ NOT created — empty tree
+
+# Prova de vida: o script ATUAL deve diferir da versão pré-fix embarcada acima.
+# Se forem idênticos, a guarda de vacuidade não foi aplicada e os braços abaixo
+# não medem nada.
+if cmp -s "$ROOT_DIR/scripts/check-referential-integrity.sh" "$T12_SAB/scripts/check-referential-integrity.sh"; then
+  echo "FAIL [falsify/setup-s12-vacuity]: check-referential-integrity.sh nao difere da versao pre-fix embarcada neste cenario — a guarda de vacuidade nao foi aplicada. Este cenario parou de medir o que promete." >&2
+  falsify_fail_point
+fi
+
+# Braço A: versão pré-fix passa na árvore vazia (docs/req/ ausente) — esta é a
+# regressão que a REQ-2026-09-03 corrige. Se este braço falhar, a versão
+# pré-fix já foi alterada ou docs/req não controla mais o comportamento.
+set +e
+s12sab_out=$(bash "$T12_SAB/scripts/check-referential-integrity.sh" 2>&1)
+s12sab_status=$?
+set -e
+if [[ $s12sab_status -eq 0 ]]; then
+  falsify_count_success
+  echo "OK   [falsify/referential-integrity/vacuity/old-script-passes-empty-tree]: versao pre-fix saiu 0 na arvore vazia — a guarda nova e o que intercepta o defeito"
+else
+  echo "FAIL [falsify/referential-integrity/vacuity/old-script-passes-empty-tree]: versao pre-fix saiu $s12sab_status, esperava 0 — a versao pre-fix foi alterada ou o req_dir mudou" >&2
+  echo "  output: $s12sab_out" >&2
+  falsify_fail_point
+fi
+
+# Fixtures independentes para os braços de detecção (cada um no seu próprio diretório
+# para isolar efeitos colaterais).
+
+# Braço B: docs/req/ ausente → novo script reprova.
+T12B="$WORK/s12b"
+mkdir -p "$T12B/scripts"
+cp "$ROOT_DIR/scripts/check-referential-integrity.sh" "$T12B/scripts/"
+cp "$ROOT_DIR/trackfw.yaml" "$T12B/"
+# docs/req/ NOT created
+assert_fails_with "referential-integrity/vacuity/no-req-dir" \
+  "nao existe" \
+  bash "$T12B/scripts/check-referential-integrity.sh"
+
+# Braço C: docs/req/ existe mas está vazio → novo script reprova.
+T12C="$WORK/s12c"
+mkdir -p "$T12C/scripts" "$T12C/docs/req"
+cp "$ROOT_DIR/scripts/check-referential-integrity.sh" "$T12C/scripts/"
+cp "$ROOT_DIR/trackfw.yaml" "$T12C/"
+assert_fails_with "referential-integrity/vacuity/empty-req-dir" \
+  "zero REQs" \
+  bash "$T12C/scripts/check-referential-integrity.sh"
+
+# Braço D: req_dir do yaml aponta para diretório inexistente → reprova.
+# Também popula docs/req/ para distinguir "honra o yaml" de "caiu no fallback".
+T12D="$WORK/s12d"
+mkdir -p "$T12D/scripts" "$T12D/docs/req"
+cp "$ROOT_DIR/scripts/check-referential-integrity.sh" "$T12D/scripts/"
+cat > "$T12D/trackfw.yaml" <<'EOF'
+req_dir: docs/req-inexistente
+EOF
+assert_fails_with "referential-integrity/vacuity/yaml-req-dir-missing" \
+  "nao existe" \
+  bash "$T12D/scripts/check-referential-integrity.sh"
+
+# Braço E: árvore íntegra (1 REQ, sem refs) → sai 0.
+T12E="$WORK/s12e"
+mkdir -p "$T12E/scripts" "$T12E/docs/req"
+cp "$ROOT_DIR/scripts/check-referential-integrity.sh" "$T12E/scripts/"
+cp "$ROOT_DIR/trackfw.yaml" "$T12E/"
+cat > "$T12E/docs/req/REQ-vacuity-test.md" <<'EOF'
+---
+status: Done
+adr: ""
+roadmap: "-"
+---
+# REQ de teste de vacuidade
+EOF
+assert_succeeds "referential-integrity/vacuity/intact-tree-exit-ok" \
+  bash "$T12E/scripts/check-referential-integrity.sh"
+
+# Braço F: árvore íntegra → saída contém a contagem (AC3).
+# Usa a mesma fixture do Braço E; rodar duas vezes é idempotente.
+assert_output_contains "referential-integrity/vacuity/intact-tree-has-count" \
+  "Referential integrity OK:" \
+  bash "$T12E/scripts/check-referential-integrity.sh"
+
+# Braço G: N>0, M=0 (REQs existem mas sem refs verificadas) → sai 0 com contagem
+# visível (segunda direção de vacuidade da Seção 3, Wave 0 — exit 0 esperado).
+assert_output_contains "referential-integrity/vacuity/no-refs-has-count" \
+  "0 referencias" \
+  bash "$T12E/scripts/check-referential-integrity.sh"
 
 # ---------------------------------------------------------------------------
 # Cenário 13 — check-barrier.sh: a própria prova E2E da barrier é falsificável.
