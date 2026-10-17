@@ -7,6 +7,31 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [9.7.0] - 2026-10-17
+
+### Added
+
+- **Regra `project_foreign_write_windows` (só aviso).** No Windows, o `trackfw validate` lê a DACL da raiz do
+  projeto e do `.trackfw\` e avisa quando outro usuário pode escrever, apagar ou trocar permissões ali — por ACE no
+  próprio diretório ou herdável para arquivos ou subpastas. O aviso nomeia o caminho e os SIDs e imprime o
+  remédio: mover o projeto para dentro do perfil ou, com `icacls`, conceder a você mesmo (`/grant`) **antes** de
+  remover o SID alheio (`/remove:g`), para não se trancar fora do projeto. Erro ao ler a DACL também vira aviso.
+  Fora do Windows, a regra não existe. (#567, #572, REQ-2026-09-03)
+
+### Fixed
+
+- **Proveniência de terceiros no Windows.** Um artefato aprovado e íntegro era acusado como sem proveniência
+  quando o caminho tinha nome curto 8.3 (`C:\Users\RUNNER~1\…`), e o adulterado caía no ramo errado. A chave
+  agora é calculada na mesma forma canônica dos dois lados; chave com `..` nunca casa com entrada forjada.
+  (#565, REQ-2026-09-03)
+- **Guard de entrada do instalador de integrações recusa travessia com `\`.** Destinos relativos e sob `~/`
+  com segmento só de pontos/espaços (`..`, `.. `, `...`) separados por `/` ou `\` são recusados já na entrada,
+  não só na segunda camada. (#566, REQ-2026-09-03)
+- **Agentes renderizados a partir de fonte CRLF saem em LF.** Num checkout do Windows os assets embutidos chegam
+  em CRLF; os caminhos de skill e de agente sem identidade emitiam CRLF. (#570, REQ-2026-09-03)
+- **0600 no Windows deixa de ser fingido.** O NTFS ignora o modo pedido; o trackfw declara o limite e o aviso
+  acima diz a verdade sobre quem pode escrever. (#567)
+
 ## [9.6.0] - 2026-10-15
 
 ### Added

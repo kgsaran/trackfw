@@ -46751,3 +46751,7 @@ Hash: 13baad65
 ## 2026-10-16 — zeus-tf — REQ-2026-09-03 encerrada
 
 - MLs W1, R3, W2, W4/W4b, W3 mergeados (#565–#570). Lista conhecida do Windows 14 → 6, todas de ambiente; censo 4 → 2 FAIL (#421). REQ Done, roadmap em `done`. Fora do escopo e não medidos: hooks com os demais CLIs, `pwsh`, Windsurf.
+
+## 2026-10-17 — zeus-tf — release 9.7.0 em preparação
+
+- Bump dos arquivos de versão + CHANGELOG (#565–#572). Tag após o merge, depois de `make parity-rest` e `make check-required-full`.
