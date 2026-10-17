@@ -1,5 +1,7 @@
 # Memory Index — Hades (Security, trackfw)
 
+- [git add -An --no-dry-run bypasses guard; last-flag-wins not modeled](project_guard_add_no_dry_run_bypass.md) — 2026-10-17 Rodada 2 REQ-2026-09-05; B-3 BLOQUEANTE; --no-dry-run/--no-dry cancels dryRun set by B-1 fix; whole-tree staging confirmed
+
 - [trackfw serve binds all interfaces (Go/Python)](project_serve_binds_all_interfaces.md) — found 2026-08-16, FIXED and verified same day (ML-2A barrier); loopback default + opt-in --host now in all 3 CLIs
 - [Verify by execution, not just reading](feedback_verify_by_execution.md) — for serve/CLI security review, spin up the process and curl/lsof it; reading alone missed the bind-address bug
 - [Global guard dedup/validate only compares command string, not hook structure](project_guard_dedup_hook_structure_gap.md) — found 2026-08-18, ML-4A barrier, APPROVED with named residual debt, not fixed
@@ -33,3 +35,4 @@
 - [powershell -Command: PS 7 documentado (exit 2→1); PS 5.1 hipotese; late_eof FP medido; credential hang FN medido](project_powershell_command_converts_exit2_to_1.md) — 2026-10-04 ML-0A; pipe nao fechado: git-branch FP ~4s (benigno negado), credential FN 6s (CLI timeout faz allow); cmd.exe `;` hipotese ML-0D arm 8; requer ML-0D
 - [credExtractCmdAndCwd passa data (com BOM) em vez de stripped — desativa Layer 2b no branch](project_credextractcmdandcwd_bom_unmarshal_data_not_stripped.md) — 2026-10-08 ML-2B; `json.Unmarshal(data,...)` deve ser `json.Unmarshal(stripped,...)`; BOM reverte todos os fixes do ML-1C; PowerShell como trigger documentado; fix de uma linha; vault note criada
 - [git clone --depth N ignorado em path local — usar file:// para shallow genuíno](feedback_depth_ignored_local_clone_use_file_protocol.md) — 2026-10-08 ML-0A; `--depth` silencioso em path local; `file://` força transporte de socket e cria shallow real; ls-tree funciona mesmo depth=1 (tree objects ≠ histórico)
+- [git add -A com pathspec = mesmo escopo que pathspec sem -A — regra de staging deve ser por escopo, não por flag](project_git_add_A_with_pathspec_equals_pathspec.md) — 2026-10-17 Wave 0 REQ-2026-09-05; bloquear -A com pathspec é FP puro (AC3); regra certa: sem positional→BLOCK, positional em {.,..,:/ }→BLOCK, outro path→PASSA

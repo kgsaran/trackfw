@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -38,7 +39,14 @@ const (
 
 	reasonStash = "trackfw: git stash bruto bloqueado — worktree compartilhado entre subagentes, um stash remove as alterações não commitadas de todos os outros. `git stash list`/`git stash show` seguem liberados; para guardar trabalho em progresso, use uma branch própria via `trackfw branch new` e commit nela. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
 
-	reasonResetHard = "trackfw: git reset --hard bruto bloqueado — descarta de forma irreversível as alterações não commitadas de todo o worktree compartilhado. `git reset --soft`/`--mixed` seguem liberados (ex.: `git reset --soft HEAD~1` é o caminho padrão; use `trackfw ship -m \"...\"` para commitar e empurrar). Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+	reasonResetHard = "trackfw: git reset --hard bruto bloqueado — descarta de forma irreversível as alterações não commitadas de todo o worktree compartilhado. `git reset --soft`/`--mixed` seguem liberados (ex.: `git reset --soft HEAD~1` é o caminho padrão; use `trackfw ship -m '...'` para commitar e empurrar). Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+
+	// reasonAddImplicit is emitted when `git add` or `git stage` is invoked with
+	// implicit scope (no named path, or only whole-tree roots such as . / .. / :/
+	// / :(top)). ADR-2026-09-05 D1, D3: staging without enumeration is blocked;
+	// the message must teach the valid form. Single-line, JSON-safe (no raw
+	// double-quote or backslash). R-6 (Wave 0, 2026-10-17).
+	reasonAddImplicit = "trackfw: git add/stage com escopo implicito bloqueado — enumerate antes o que vai estagiar com `git status --short`, depois estagiar por caminho explicito: `git add <arquivo1> <arquivo2> ...` e commitar com `trackfw commit -m '...'`. Nada antes deste comando foi executado (comando composto e bloqueado por inteiro). Ver CLAUDE.md §1."
 
 	reasonCleanForce = "trackfw: git clean -f/-x bruto bloqueado — apaga arquivos não rastreados do worktree compartilhado, de forma irreversível. `git clean -n`/`--dry-run` segue liberado para revisar antes o que seria apagado. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
 
@@ -159,6 +167,8 @@ func RunGitBranch(stdin io.Reader, idleTimeout time.Duration, command string, ge
 		reason = reasonWorktreeRemoveForce
 	case "rm-force":
 		reason = reasonRmForce
+	case "add-implicit":
+		reason = reasonAddImplicit
 	default:
 		return 0
 	}
@@ -194,6 +204,129 @@ func FindProjectRoot(cwd string) (string, bool) {
 	}
 }
 
+// stripShellSuffix removes trailing shell syntax from a segment string that
+// should not affect the guard's decision: I/O redirections (with their
+// targets) and # comments. It is quote-aware — content inside single or
+// double quotes is never treated as an operator.
+//
+// Redirects removed: >, >>, <, <<, <>, >&, >|, &>, &>>, and their optional
+// leading fd digit (e.g. 2>, 2>&1, 1>/dev/null). The token immediately
+// following a bare operator (one with no inline target) is also consumed.
+// Comments: '#' at word boundary (after whitespace or at segment start)
+// terminates the segment.
+//
+// This enforces the invariant "C > x" and "C # y" produce the same guard
+// decision as "C" — regardless of whether C is wrapped in subshell parens.
+// B-6 fix extended (red-team 2026-10-17 round 3).
+func stripShellSuffix(seg string) string {
+	runes := []rune(seg)
+	n := len(runes)
+	var out strings.Builder
+	var q rune // current quote char (0 = unquoted)
+	atWordBoundary := true
+
+	for i := 0; i < n; i++ {
+		c := runes[i]
+
+		if q != 0 {
+			// Inside a quoted region — nothing is an operator.
+			if c == q {
+				q = 0
+			}
+			out.WriteRune(c)
+			atWordBoundary = false
+			continue
+		}
+
+		// Outside quotes.
+		switch {
+		case c == '\'' || c == '"':
+			q = c
+			out.WriteRune(c)
+			atWordBoundary = false
+
+		case c == '#' && atWordBoundary:
+			// Comment start: discard the rest of the segment.
+			goto done
+
+		case c == '>' || c == '<':
+			// Redirect operator. Strip optional preceding fd digit from output.
+			s := out.String()
+			if len(s) > 0 {
+				last := rune(s[len(s)-1])
+				if last >= '0' && last <= '9' {
+					// fd digit: remove it if preceded by nothing or whitespace.
+					prevIsSpace := len(s) < 2 || s[len(s)-2] == ' ' || s[len(s)-2] == '\t'
+					if prevIsSpace {
+						out.Reset()
+						out.WriteString(s[:len(s)-1])
+					}
+				}
+			}
+			// Consume the full operator: >, >>, >&1, >|, <, <<, etc.
+			for i+1 < n && (runes[i+1] == '>' || runes[i+1] == '<' || runes[i+1] == '&' || runes[i+1] == '|') {
+				i++
+			}
+			// If the operator ends here (no inline target), skip the next word too.
+			inlineTarget := i+1 < n && runes[i+1] != ' ' && runes[i+1] != '\t'
+			if !inlineTarget {
+				// Skip whitespace before target.
+				for i+1 < n && (runes[i+1] == ' ' || runes[i+1] == '\t') {
+					i++
+				}
+				// Skip target word.
+				for i+1 < n && runes[i+1] != ' ' && runes[i+1] != '\t' &&
+					runes[i+1] != ';' && runes[i+1] != '&' && runes[i+1] != '|' {
+					i++
+				}
+			} else {
+				// Operator has inline target (e.g. >/dev/null): skip it.
+				for i+1 < n && runes[i+1] != ' ' && runes[i+1] != '\t' &&
+					runes[i+1] != ';' && runes[i+1] != '&' && runes[i+1] != '|' {
+					i++
+				}
+			}
+			atWordBoundary = true
+
+		case c == '&' && i+1 < n && (runes[i+1] == '>' || runes[i+1] == '<'):
+			// &> / &>> / &< redirect (bash shorthand: combine stdout+stderr).
+			i++ // consume '>'
+			// Consume further operator chars (e.g. &>>).
+			for i+1 < n && (runes[i+1] == '>' || runes[i+1] == '<') {
+				i++
+			}
+			// Skip whitespace and target (same logic as above).
+			inlineTarget := i+1 < n && runes[i+1] != ' ' && runes[i+1] != '\t'
+			if !inlineTarget {
+				for i+1 < n && (runes[i+1] == ' ' || runes[i+1] == '\t') {
+					i++
+				}
+				for i+1 < n && runes[i+1] != ' ' && runes[i+1] != '\t' &&
+					runes[i+1] != ';' && runes[i+1] != '&' && runes[i+1] != '|' {
+					i++
+				}
+			} else {
+				for i+1 < n && runes[i+1] != ' ' && runes[i+1] != '\t' &&
+					runes[i+1] != ';' && runes[i+1] != '&' && runes[i+1] != '|' {
+					i++
+				}
+			}
+			atWordBoundary = true
+
+		case c == ' ' || c == '\t':
+			out.WriteRune(c)
+			atWordBoundary = true
+
+		default:
+			out.WriteRune(c)
+			atWordBoundary = false
+		}
+	}
+
+done:
+	return out.String()
+}
+
 // MatchSubcommand applies the guard rules to cmdRaw and returns the subcommand
 // tag if the command should be blocked, or "" to allow.
 // It is a faithful Go port of the bash match_subcommand() function.
@@ -210,6 +343,11 @@ func MatchSubcommand(cmdRaw string) string {
 		if len(seg) > 0 && seg[0] == '&' {
 			seg = strings.TrimLeft(seg[1:], " \t")
 		}
+		// Strip I/O redirections and trailing comments.
+		// Invariant: "C > x", "C 2>&1", "C # comment" all decide the same as "C".
+		// B-6 fix (round 3): subshell handling is now in quoteAwareSplit (word-start
+		// '(' is a separator), so no per-segment paren strip is needed here.
+		seg = stripShellSuffix(seg)
 		if seg == "" {
 			continue
 		}
@@ -269,6 +407,31 @@ func stripEnvCommandPrefix(tokens []string) []string {
 			}
 		} else if base == "command" {
 			tokens = tokens[1:] // skip "command"
+		} else if base == "sudo" {
+			// sudo [-E|-n|-s|...] [-u user] [--] <cmd>
+			tokens = tokens[1:] // skip "sudo"
+			for len(tokens) > 0 {
+				t := tokens[0]
+				if t == "--" {
+					tokens = tokens[1:] // skip --, next is the command
+					break
+				}
+				if !strings.HasPrefix(t, "-") {
+					break // non-flag token: this is the command
+				}
+				tokens = tokens[1:] // skip the flag
+				// Flags that consume a following argument — both short and long forms.
+				// Long --x=v forms are self-contained (consumed above as the flag token).
+				// Long --x v forms require consuming the next token as the value.
+				switch t {
+				case "-u", "-g", "-C", "-D", "-T", "-U", "-h", "-p", "-r", "-t",
+					"--user", "--group", "--chdir", "--close-from", "--host",
+					"--prompt", "--role", "--type", "--other-user":
+					if len(tokens) > 0 {
+						tokens = tokens[1:]
+					}
+				}
+			}
 		} else {
 			break
 		}
@@ -478,9 +641,248 @@ func applyRule(sub string, rest []string) string {
 			}
 		}
 		return ""
+
+	case "add", "stage":
+		// Blocking rule: ADR-2026-09-05 D1 — staging with implicit scope is blocked.
+		//
+		// BLOCKS when:
+		//   (1) no positional AND no interactive flag AND no dry-run AND no --pathspec-from-file
+		//   (2) ANY positional is a whole-tree root token (B-2 fix: "any" not "all") —
+		//       root tokens include ., ./, .., ../, :/, :(top), :/:, and any path whose
+		//       path.Clean (after \ → /) is "." or consists only of ".." segments
+		//       (e.g. .//  ./.  ../.. ) — RT-1/RT-3 fix.
+		//   (3) all positionals are exclusion pathspecs (:!x, :^x, :(exclude)x) — staging
+		//       "everything except x" is implicit scope (RT-2 fix).
+		//
+		// PASSES when:
+		//   - interactive flag present (including combined: -p / -i / --patch / --interactive
+		//     and combined short-flag forms such as -Ap, -pA) — B-1 fix.
+		//   - dry-run flag present (including combined: -n / --dry-run, -An, -nA) — B-1 fix.
+		//   - --pathspec-from-file=<f> present (explicit enumeration via file; residual)
+		//   - at least one positional that is neither a root token nor an exclusion pathspec.
+		//
+		// Combined short flags (e.g. -AN) are decomposed char-by-char (B-1 fix):
+		//   n → dry-run; p, i → interactive. Other chars (A, u, etc.) do not change the
+		//   decision. -AN bare (no dry-run char) still BLOCKS (correct: implicit scope).
+		//
+		// Residual D5: git${IFS}add, {git,add}, alias, $(…), external script with
+		// git add -A inside. See docs/cli-parity.md §git-branch-guard residuals.
+		// After --, all tokens are positionals (R-4).
+		var (
+			interactive         bool
+			dryRun              bool
+			hasPathspecFromFile bool
+			hasPositional       bool
+			anyPositionalRoot   bool
+			allImplicit         = true // false when a real named path is seen
+		)
+		afterDash := false
+		for _, t := range rest {
+			if t == "--" {
+				afterDash = true
+				continue
+			}
+			if !afterDash && strings.HasPrefix(t, "-") {
+				// Flag token (before --).
+				if !strings.HasPrefix(t, "--") {
+					// Short combined flag: decompose char-by-char (B-1 fix).
+					for _, ch := range t[1:] {
+						switch ch {
+						case 'n':
+							dryRun = true
+						case 'p', 'i':
+							interactive = true
+						}
+					}
+				}
+				// Long flags — prefix-unique resolver + last-wins (B-3/RT-R3-3/4 fix).
+				// resolveAddLongOpt expands unambiguous git parse-options abbreviations
+				// (--dry → --dry-run, --pat → --patch, --inter → --interactive, etc.)
+				// and their --no-* counterparts. Last occurrence wins.
+				if strings.HasPrefix(t, "--pathspec-from-file=") {
+					hasPathspecFromFile = true
+				} else {
+					switch resolveAddLongOpt(t) {
+					case "--dry-run":
+						dryRun = true
+					case "--patch", "--interactive":
+						interactive = true
+					case "--no-dry-run":
+						dryRun = false
+					case "--no-patch", "--no-interactive":
+						interactive = false
+					}
+				}
+			} else {
+				// Positional (or token after --).
+				hasPositional = true
+				if isAddRootToken(t) {
+					anyPositionalRoot = true
+					// root token is still "implicit" — leave allImplicit true
+				} else if isExclusionPathspec(t) {
+					// exclusion-only pathspec is still "implicit" — leave allImplicit true
+				} else {
+					allImplicit = false // real named path: not implicit
+				}
+			}
+		}
+		if interactive || dryRun || hasPathspecFromFile {
+			return "" // explicit or safe: allow
+		}
+		if !hasPositional {
+			return "add-implicit" // (1) bare git add / git stage
+		}
+		if anyPositionalRoot {
+			return "add-implicit" // (2) any root token — subsumes even explicit siblings (B-2)
+		}
+		if allImplicit {
+			return "add-implicit" // (3) only exclusion pathspecs → whole-tree-minus-x (RT-2)
+		}
+		return ""
 	}
 
 	return "" // unknown subcommand: allow
+}
+
+// isAddRootToken reports whether a positional token addresses the entire working
+// tree. Handles:
+//
+//	(a) literal closed set: . ./ .. ../ :/ :(top) :/:
+//	(b) any path whose path.Clean (after \ → /) equals "." (e.g. .//  ./.)
+//	(c) paths made entirely of ".." segments (e.g. ../.. )
+//	(d) magic pathspecs with "top" attr, or "glob" attr with wildcard-only pattern
+//	    (RT-NEW-4, red-team 2026-10-17 round 2)
+func isAddRootToken(t string) bool {
+	switch t {
+	case ".", "./", "..", "../", ":/", ":(top)", ":/:":
+		return true
+	}
+	norm := strings.ReplaceAll(t, `\`, `/`)
+	cleaned := path.Clean(norm)
+	if cleaned == "." {
+		return true
+	}
+	if isAllDotDot(cleaned) {
+		return true
+	}
+	// RT-NEW-4: magic pathspec :(attrs)pattern where attrs contains "top" AND
+	// the pattern is itself a root token (empty, ".", or glob-wildcard-only),
+	// or attrs contains "glob" AND pattern is only wildcard chars (* /**).
+	// B-5 fix (round 3): ":(top)src/a.go" has a non-root pattern → NOT blocked.
+	if strings.HasPrefix(t, ":(") {
+		if closeIdx := strings.Index(t, ")"); closeIdx > 2 {
+			attrs := t[2:closeIdx]
+			pattern := t[closeIdx+1:]
+			attrList := strings.Split(attrs, ",")
+			hasTop := false
+			hasGlob := false
+			for _, a := range attrList {
+				switch strings.TrimSpace(a) {
+				case "top":
+					hasTop = true
+				case "glob":
+					hasGlob = true
+				}
+			}
+			if hasTop && isAddRootToken(pattern) {
+				// e.g. :(top) (empty pattern), :(top)., :(top,glob)*
+				return true
+			}
+			if hasGlob && isGlobWildcardOnly(pattern) {
+				// e.g. :(glob)**, :(glob)*/**
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// isGlobWildcardOnly reports whether s consists entirely of '*' and '/'
+// characters (e.g. "**", "*/**", "*/"). Used to detect glob pathspecs that
+// address the entire working tree. Non-empty requirement prevents false positive
+// on empty string.
+func isGlobWildcardOnly(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if c != '*' && c != '/' {
+			return false
+		}
+	}
+	return true
+}
+
+// addLongOpts is the closed set of long options that the add/stage guard
+// recognises. It is used by resolveAddLongOpt for unambiguous-prefix matching
+// (git parse-options semantics). --pathspec-from-file= is kept separate
+// because it has an inline = value and would conflict with --patch on --pa.
+// RT-R3-3/RT-R3-4 fix (red-team 2026-10-17 round 3): --dry, --pat, --inter
+// and their --no-* counterparts now resolve to their canonical forms.
+var addLongOpts = []string{
+	"--dry-run",
+	"--patch",
+	"--interactive",
+	"--no-dry-run",
+	"--no-patch",
+	"--no-interactive",
+}
+
+// resolveAddLongOpt returns the canonical long option for t if t is an
+// unambiguous prefix (by git parse-options rules) of exactly one element
+// of addLongOpts. Returns "" if t is ambiguous or matches nothing.
+func resolveAddLongOpt(t string) string {
+	if !strings.HasPrefix(t, "--") {
+		return ""
+	}
+	var match string
+	for _, opt := range addLongOpts {
+		if strings.HasPrefix(opt, t) {
+			if match != "" {
+				return "" // ambiguous
+			}
+			match = opt
+		}
+	}
+	return match
+}
+
+// isAllDotDot reports whether p consists entirely of ".." segments.
+func isAllDotDot(p string) bool {
+	if p == "" {
+		return false
+	}
+	for _, seg := range strings.Split(p, "/") {
+		if seg != ".." {
+			return false
+		}
+	}
+	return true
+}
+
+// isExclusionPathspec reports whether t is a pathspec exclusion form that
+// tells git to stage everything *except* the named path:
+// :!<path>, :^<path>, :(exclude)<path>, or any :(attrs) form whose attrs
+// contain "exclude" (e.g. :(top,exclude)x, :(exclude,top)x).
+// When ALL positionals are exclusion specs, the effective scope is the entire
+// working tree minus those paths — implicit scope that should be blocked.
+// B-5 related fix (round 3): :(top,exclude)x is an exclusion, not a root.
+func isExclusionPathspec(t string) bool {
+	if strings.HasPrefix(t, ":!") || strings.HasPrefix(t, ":^") || strings.HasPrefix(t, ":(exclude)") {
+		return true
+	}
+	// :(attrs)path form — check if "exclude" is one of the attrs.
+	if strings.HasPrefix(t, ":(") {
+		if closeIdx := strings.Index(t, ")"); closeIdx > 2 {
+			attrs := t[2:closeIdx]
+			for _, a := range strings.Split(attrs, ",") {
+				if strings.TrimSpace(a) == "exclude" {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // isPushBranchDelete reports whether any token in rest is a branch-deletion
@@ -667,16 +1069,38 @@ func shellTokenize(s string) []string {
 	return words
 }
 
-// quoteAwareSplit splits cmdRaw on `;`, `&&`, `||`, `|` outside of single or
-// double quotes. Newlines inside quotes become spaces. The result is a list
-// of command segments. Mirrors the bash quote_aware_split() awk function
-// (lines 347–402).
+// quoteAwareSplit splits cmdRaw on `;`, `&&`, `||`, `|`, `(`, `)` and
+// newlines outside of single or double quotes. The result is a list of
+// command segments (subcommands / subshell bodies to inspect individually).
+//
+// `(` is a separator only at word-boundary (start of segment or preceded by
+// whitespace): `(git add .)` splits into ["", "git add .", ""].
+// A `(` immediately after a non-space character (e.g. `:(top)`) starts a
+// word-local depth counter; its matching `)` is literal and stays in the
+// segment, preserving magic pathspecs like `:(top)src/a.go`.
+//
+// `#` outside quotes at word-boundary starts a shell comment: the rest of
+// the current line is skipped (preventing a `'` inside a comment from
+// opening a spurious quote region in multi-line inputs).
+//
+// Newlines inside quotes become spaces. The result is a list of command
+// segments. Mirrors the bash quote_aware_split() awk function (lines 347–402).
+// B-4/B-6 fix (red-team 2026-10-17 rounds 2–3).
 func quoteAwareSplit(s string) []string {
 	var segments []string
 	var cur strings.Builder
 	runes := []rune(s)
 	n := len(runes)
-	var q rune // current quote char (0 = unquoted)
+	var q rune     // current quote char (0 = unquoted)
+	var parenDepth int
+	atWordBound := true // true at start or after whitespace/separator
+
+	emitSeg := func() {
+		segments = append(segments, cur.String())
+		cur.Reset()
+		atWordBound = true
+		parenDepth = 0
+	}
 
 	for i := 0; i < n; i++ {
 		c := runes[i]
@@ -702,6 +1126,7 @@ func quoteAwareSplit(s string) []string {
 			if c == q {
 				q = 0
 				cur.WriteRune(c)
+				atWordBound = false
 				continue
 			}
 			if c == '\n' {
@@ -709,6 +1134,7 @@ func quoteAwareSplit(s string) []string {
 			} else {
 				cur.WriteRune(c)
 			}
+			atWordBound = false
 			continue
 		}
 
@@ -717,17 +1143,28 @@ func quoteAwareSplit(s string) []string {
 		case c == '"' || c == '\'':
 			q = c
 			cur.WriteRune(c)
+			atWordBound = false
+
+		case c == '#' && atWordBound:
+			// Comment start: skip to end of current line, then emit the segment
+			// built so far. This prevents `'` inside the comment from opening a
+			// spurious quote that swallows the next line.
+			for i+1 < n && runes[i+1] != '\n' {
+				i++
+			}
+			// Fall through to newline handling on the next iteration.
+
 		case i+1 < n && c == '&' && runes[i+1] == '&':
-			segments = append(segments, cur.String())
-			cur.Reset()
+			emitSeg()
 			i++ // skip second '&'
+
 		case i+1 < n && c == '|' && runes[i+1] == '|':
-			segments = append(segments, cur.String())
-			cur.Reset()
+			emitSeg()
 			i++ // skip second '|'
+
 		case c == ';' || c == '|':
-			segments = append(segments, cur.String())
-			cur.Reset()
+			emitSeg()
+
 		case c == '&':
 			// Single `&` outside quotes: shell control operator (cmd.exe command
 			// chaining, PS call operator). Split into a new segment UNLESS the `&`
@@ -742,18 +1179,48 @@ func quoteAwareSplit(s string) []string {
 			nextIsRedirect := i+1 < n && (runes[i+1] == '>' || runes[i+1] == '<')
 			if prevIsRedirect || nextIsRedirect {
 				cur.WriteRune(c) // redirect context: keep as-is
+				atWordBound = false
 			} else {
-				segments = append(segments, cur.String())
-				cur.Reset()
+				emitSeg()
 			}
+
+		case c == '(':
+			// Subshell opener — behaviour depends on position.
+			// Word-boundary (start of segment or after whitespace): treat as
+			// a separator, so "(git add .)" splits into ["", "git add .", ""].
+			// Mid-word (immediately after non-space, e.g. the ':' in ':(top)'):
+			// open a depth counter; the matching ')' stays literal in the segment,
+			// preserving magic pathspecs. B-4/B-6 fix (round 3).
+			if atWordBound {
+				emitSeg()
+			} else {
+				parenDepth++
+				cur.WriteRune(c)
+				// atWordBound stays false
+			}
+
+		case c == ')':
+			// Subshell closer or depth decrement.
+			if parenDepth > 0 {
+				parenDepth--
+				cur.WriteRune(c)
+				atWordBound = false
+			} else {
+				// depth 0 at word-boundary or end of word: separator.
+				emitSeg()
+			}
+
 		case c == '\n':
-			// Newline outside quotes acts as a segment separator, matching the bash
-			// quote_aware_split awk function which passes \n through unchanged and
-			// the caller iterates with `while IFS= read -r seg`.
-			segments = append(segments, cur.String())
-			cur.Reset()
+			// Newline outside quotes acts as a segment separator.
+			emitSeg()
+
+		case c == ' ' || c == '\t':
+			cur.WriteRune(c)
+			atWordBound = true
+
 		default:
 			cur.WriteRune(c)
+			atWordBound = false
 		}
 	}
 

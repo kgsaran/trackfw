@@ -2,6 +2,42 @@
 
 ---
 
+## 2026-10-17 — apolo-tf — FIM: Red-team Rodada 3 — guard de staging implícito (REQ-2026-09-05)
+
+**Branch:** `feat/o-guard-do-trackfw-passa-a-bloquear-staging-com-escopo-implicito`
+**Escopo:** Correção dos blockers B-5 (falso positivo `:(top)X` com padrão não-root) e B-6 (regressão no guard de stash com redirect/comentário), RT-R3-3/4 (abreviações de opção longa), adição de testes e atualização de cli-parity.md.
+
+**Implementação concluída em sessão anterior (rodadas 1-3 de gitbranch.go):**
+- `quoteAwareSplit` reescrito com separador `(` na fronteira de palavra e rastreamento de profundidade de parêntese (`parenDepth`)
+- `stripShellSuffix` novo: remove redirecionamentos e comentários `#` de segmento (quote-aware)
+- `isAddRootToken` corrigido para B-5: `:(top)X` verifica `isAddRootToken(X)` recursivamente
+- `isExclusionPathspec` estendido: detecta atributo `exclude` em `:(attrs)X`
+- `resolveAddLongOpt` novo + `addLongOpts`: resolve abreviações não-ambíguas de opções longas de add
+- `stripOuterParens` removido; `isNegDryRun` removido
+
+**Testes adicionados nesta sessão:**
+- `_Blocks`: B-5 (`:( top,exclude)x`, `:(exclude,top)x`, `:(top).`, redirect não bypassa add), RT-R3-5
+- `_Passes`: B-5 (`:(top)src/a.go`, `:(top,icase)src/a.go`), B-6 (stash+redirect/comment), RT-R3-3/4 (`--dry`, `--pat`, `--inter`)
+- `TestMatchSubcommand_ParenInvariant` estendido: redirect/comment/paren+redirect para todos os comandos-base
+- `TestMatchSubcommand_RegressionAgainstMain`: 38 comandos não-add, 0 divergências contra binário origin/main
+
+**Gates:**
+- `go build ./...` — OK
+- `go test ./...` — OK (272 falsify cenários; guard ok 2.77s)
+- `make lint` — OK
+- `GOOS=windows GOARCH=amd64 go vet ./...` — OK
+- `bash scripts/check-gates-falsify.sh` — exit 0, 272 cenários, piso 248
+- `trackfw validate` — 165 warnings pré-existentes, 0 erros
+
+**Arquivos modificados:**
+- `internal/guard/gitbranch.go` (modificado em sessão anterior — Round 3 completo)
+- `internal/guard/gitbranch_test.go` (testes Round 3 adicionados nesta sessão)
+- `docs/cli-parity.md` (documentação Round 3 atualizada nesta sessão)
+
+**Status:** pronto para commit pelo arquiteto.
+
+---
+
 ## 2026-10-16 — ares-tf — INÍCIO: ML-W4 — Remover pip install pypi/ e npm ci do censo Windows (REQ-2026-09-03)
 
 **Branch:** `fix/fechar-os-grupos-de-falha-de-windows-ml-w4-censo`
@@ -46759,3 +46795,24 @@ Hash: 13baad65
 ## 2026-10-17 — zeus-tf — triagem medida do backlog pré-v8 (REQ-2026-10-17)
 
 - 16 roadmaps de setembro reclassificados contra o código da v9.7.0: 10 seguem no backlog com escopo reescrito, 4 abandonados, 2 em done. Prioridade: guard de staging (`git add -A` passa), gate `check-referential-integrity` vácuo, valor de `agent_models`. Doc: `docs/governanca/2026-10-17-triagem-backlog-pre-v8.md`.
+
+---
+
+**hades-tf** · 2026-10-17 · Red-team Wave 1 — guard de staging implícito (REQ-2026-09-05) — iniciado
+Branch: `feat/o-guard-do-trackfw-passa-a-bloquear-staging-com-escopo-implicito`
+Escopo: `internal/guard/gitbranch.go`, `internal/guard/gitbranch_test.go`, `internal/generators/agentfiles.go`, `internal/generators/scaffold.go`, `scripts/check-gates-falsify.sh`, `docs/cli-parity.md`, `CHANGELOG.md`.
+
+**hades-tf** · 2026-10-17 · Red-team Wave 1 — guard de staging implícito (REQ-2026-09-05) — concluído
+Branch: `feat/o-guard-do-trackfw-passa-a-bloquear-staging-com-escopo-implicito`
+Artefato: `docs/seguranca/2026-10-17-red-team-guard-staging-implicito.md`
+Veredito: LIBERA COM RESSALVAS. R-T1 (resíduos não declarados: :!x, :(exclude)x, ./.); R-T2 (sudo não declarado); R-T3 (TestAllReasons hardcoded); R-T4 (regex AQ não cobre -AN bare); R-T5 (mixed root+explicit passa). Nenhuma bloqueante. Todos os vetores principais bloqueiam. Nenhum FP encontrado. Cenário 201 correto. R-6 corrigido e testado.
+
+**hades-tf** · 2026-10-17 · Red-team Wave 1 — guard de staging implícito — veredito revisado
+Artefato: `docs/seguranca/2026-10-17-red-team-guard-staging-implicito.md`
+Veredito: NÃO FECHA. B-1 (BLOQUEANTE FP): combined flags com dry-run/interativo bloqueiam — `-An`, `-Ap`, `-nA`, `-un .` → exit 2, devem passar. B-2 (BLOQUEANTE FN): `git add . docs/a.txt` → exit 0, mas estageia 4 arquivos (whole-tree), bypass de 1 token. Fix B-1: decompor combined flags ou restringir resíduo. Fix B-2: `allPositionalsRoot` → `anyPositionalRoot`. Não-bloqueantes: RT-1..RT-7 (resíduos não declarados, test hardcoded, regex AQ divergência para -AN).
+
+**hades-tf** · 2026-10-17 · Conferência pós-rodada 3 — guard de staging implícito (REQ-2026-09-05) — concluído
+Branch: `feat/o-guard-do-trackfw-passa-a-bloquear-staging-com-escopo-implicito`
+Commit auditado: `f127561d`
+Artefato: `docs/seguranca/2026-10-17-red-team-guard-staging-implicito.md` (seção "Conferência pós-rodada 3" adicionada)
+Veredito: LIBERA. 37 vetores verificados: sem FP novo, sem FN novo, sem regressão. RT-R3-6 (`:(top,exclude)x`) fechado pelo fix de `isExclusionPathspec`. RT-R3-3/4 (`--dry`/`--pat`) fechados por `resolveAddLongOpt`. Resíduos remanescentes: `$(git add -A)` FN (R-1), `(git add -A) > redir` FN (R-2), `:(icase)*` exótico (R-3). 180 testes verdes.

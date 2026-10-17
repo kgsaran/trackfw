@@ -435,3 +435,4 @@
 2026-10-17 13:04  ROADMAP-2026-09-12-remover-o-byte-nul-literal-do-fonte-e-criar-o-gate-que-impede-a-classe.md  backlog → done  -0300  (kgsaran@gmail.com)
 2026-10-17 13:04  ROADMAP-2026-09-12-triagem-medida-das-reqs-de-paridade-e-gate-de-conjunto-de-regras.md  blocked → done  -0300  (kgsaran@gmail.com)
 2026-10-17 13:05  ROADMAP-2026-10-17-triagem-medida-do-backlog-pre-v8-dezesseis-roadmaps-de-setembro-reclassificados-contra-o-codigo-atual.md  wip → done  -0300  (kgsaran@gmail.com)
+2026-10-17 15:31  ROADMAP-2026-09-22-o-guard-do-trackfw-passa-a-bloquear-staging-com-escopo-implicito-nos-tres-clis.md  backlog → wip  -0300  (kgsaran@gmail.com)

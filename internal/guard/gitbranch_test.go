@@ -2,10 +2,13 @@ package guard
 
 import (
 	"bytes"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -1195,4 +1198,435 @@ func TestRunGitBranch_PushDelete_BranchDeleteForms(t *testing.T) {
 			}
 		})
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Tests for git add / git stage implicit-scope guard (ADR-2026-09-05, Wave 1)
+// ---------------------------------------------------------------------------
+
+// TestMatchSubcommand_AddImplicit_Blocks enumerates every blocking vector from
+// the ADR-2026-09-05 "Verificação exigida", Wave-0 table, and red-team B-1/B-2/RT-n fixes.
+// Assertion: each form returns "add-implicit" — the rule fires on all implicit-scope
+// invocations and does not fire for any valid explicit-path form (non-afrouxamento).
+func TestMatchSubcommand_AddImplicit_Blocks(t *testing.T) {
+	// Non-afrouxamento table: every form below MUST block. None of them is a
+	// legitimate staging operation (all either name no file or name only
+	// whole-tree roots). Adding any legitimate path form here would be a
+	// false-positive regression.
+	blocks := []struct {
+		cmd  string
+		desc string
+	}{
+		// Original blocking vectors (ADR-2026-09-05 / Wave-0)
+		{"git add -A", "implicit-scope flag -A"},
+		{"git add --all", "implicit-scope flag --all"},
+		{"git add .", "whole-tree-root positional ."},
+		{"git add -u", "implicit-scope flag -u"},
+		{"git add --update", "implicit-scope flag --update"},
+		{"git add", "bare add (no operand)"},
+		{"git add :/", "pathspec-magic root :/"},
+		{"git add :(top)", "pathspec-magic root :(top)"},
+		{"git add ..", "parent-dir whole-tree .."},
+		{"git add -- .", "R-4: . after double-dash"},
+		{"git stage -A", "D-U3: git stage alias"},
+		{"git -C somedir add -A", "global -C flag skipped, add -A still blocks"},
+		{"git add ./", "whole-tree-root positional ./"},
+		{"git add ../", "whole-tree-root positional ../"},
+		// B-2 fix: ANY root token among positionals → block (not "all")
+		{"git add . docs/a.txt", "B-2: . subsumes everything even with explicit sibling"},
+		{"git add -A docs/ .", "B-2: -A flag + explicit dir + . positional"},
+		{"git add -- . file.go", "B-2: root after -- blocks even with explicit file"},
+		// RT-1: :/:  is a root magic pathspec (path.Clean semantics)
+		{"git add :/:","RT-1: :/: is root magic pathspec"},
+		// RT-2: exclusion-only positionals → staging whole-tree-minus-x
+		{"git add :!x", "RT-2: single exclusion pathspec :!x"},
+		{"git add :(exclude)x", "RT-2: :(exclude) form"},
+		{"git add :!x :!y", "RT-2: all-exclusion set :!x :!y"},
+		{"git add :^x", "RT-2: :^ exclusion form"},
+		// RT-3: semantic root via path.Clean normalization
+		{"git add ./.", "RT-3: ./.  normalizes to ."},
+		{"git add -A .//", "RT-3: .// normalizes to ."},
+		// RT-4: sudo prefix stripped → still blocks
+		{"sudo git add -A", "RT-4: sudo prefix stripped"},
+		{"sudo -E git add -A", "RT-4: sudo -E"},
+		{"sudo -u root git add -A", "RT-4: sudo -u user"},
+		{"sudo --user x git add -A", "RT-NEW-3: sudo --user long-form"},
+		// RT-5/B-4: subshell ( and ) stripped symmetrically
+		{"(git add -A)", "RT-5/B-4: paren strip symmetric"},
+		{"(git add .)", "B-4: paren strip ., root still blocks"},
+		{"(git add :/)", "B-4: paren strip :/, root still blocks"},
+		{"( git add -A )", "B-4: paren strip with spaces"},
+		{"(cd x && git add .)", "B-4: ) falls on last segment after && split"},
+		// B-3: --no-dry-run cancels dry-run (last-wins, B-3 fix)
+		{"git add -An --no-dry-run", "B-3: --no-dry-run cancels -An dry-run"},
+		{"git add -An --no-dry", "B-3: --no-dry abbrev cancels -An dry-run"},
+		{"git add -n --no-dry-run .", "B-3: --no-dry-run cancels standalone -n"},
+		{"git add -p --no-patch .", "B-3: --no-patch cancels -p"},
+		{"git add --dry-run --no-dry-run .", "B-3: last-wins --no-dry-run"},
+		// RT-NEW-4: magic pathspecs with top/glob-wildcard-only
+		{"git add :(glob)**", "RT-NEW-4: glob wildcard-only **"},
+		{"git add :(top,glob)*", "RT-NEW-4: top+glob magic"},
+		{"git add :(glob,top)**", "RT-NEW-4: glob+top magic"},
+		// B-5: :(top,exclude) and :(exclude,top) contain "exclude" attr → all-exclusion rule blocks
+		{"git add :(top,exclude)x", "B-5: :(top,exclude) exclusion pathspec"},
+		{"git add :(exclude,top)x", "B-5: :(exclude,top) exclusion pathspec"},
+		// B-5: :(top). — pattern after ) is "." which normalizes to "." → root → blocks
+		{"git add :(top).", "B-5: :(top). pattern is root ."},
+		// B-6: redirect suffix does not bypass add-implicit guard
+		{"git add -A > /dev/null", "B-6: redirect does not bypass add -A"},
+		// RT-R3-5: paren + redirect still blocks (now closed by B-6 fix)
+		{"(git add .) > /dev/null", "RT-R3-5: (C) > x blocks same as C"},
+	}
+	for _, tc := range blocks {
+		t.Run(tc.desc, func(t *testing.T) {
+			got := MatchSubcommand(tc.cmd)
+			if got != "add-implicit" {
+				t.Fatalf("%q: got %q, want %q", tc.cmd, got, "add-implicit")
+			}
+		})
+	}
+}
+
+// TestMatchSubcommand_AddImplicit_Passes enumerates every passing vector from
+// the ADR-2026-09-05 table (AC2, AC3), plus B-1 combined-flag fixes.
+// Assertion: explicit paths, interactive flags, dry-run, and caminhos com ponto no
+// início (mas não raiz) retornam "" — sem falso positivo.
+func TestMatchSubcommand_AddImplicit_Passes(t *testing.T) {
+	passes := []struct {
+		cmd  string
+		desc string
+	}{
+		{"git add internal/guard/gitbranch.go", "explicit file"},
+		{"git add file1.go file2.go", "multiple explicit files"},
+		{"git add 'path with spaces.go'", "quoted path with spaces"},
+		{"git add docs/", "explicit directory (not root)"},
+		{"git add -A docs/", "D-U2: -A with explicit dir passes"},
+		{"git add -u src/", "D-U2: -u with explicit dir passes"},
+		{"git add -p", "interactive -p"},
+		{"git add --patch", "interactive --patch"},
+		{"git add -i", "interactive -i"},
+		{"git add --interactive", "interactive --interactive"},
+		{"git add -n .", "dry-run -n"},
+		{"git add --dry-run .", "dry-run --dry-run"},
+		{"git add -A -n", "dry-run overrides -A (separate flags)"},
+		{"git add -f arquivo.go", "explicit file with -f (force)"},
+		{"git add -N arquivo.go", "intent-to-add -N explicit file"},
+		{"git add -- file.go", "explicit file after --"},
+		// B-1 fix: combined short flags with dry-run or interactive PASS.
+		{"git add -An", "B-1: combined -A + dry-run n → passes"},
+		{"git add -nA", "B-1: combined dry-run n + -A → passes"},
+		{"git add -un .", "B-1: -u + dry-run n + dot → dry-run wins"},
+		{"git add -nv .", "B-1: dry-run n + verbose v + dot → dry-run wins"},
+		{"git add -Ap", "B-1: combined -A + interactive p → passes"},
+		{"git add -pA", "B-1: combined interactive p + -A → passes"},
+		// Paths with leading dot that are NOT whole-tree roots (AC3)
+		{"git add .github/x.yml", "AC3: .github/x.yml is explicit, not root"},
+		{"git add .gitignore", "AC3: .gitignore is explicit file"},
+		{"git add ./src/a.go", "AC3: ./src/a.go is explicit (not bare .)"},
+		{"git add ../outro/a.go", "AC3: ../outro/a.go is explicit (not bare ..)"},
+		// Exclusion spec mixed with real path → real path wins
+		{"git add :!x docs/a.go", "exclusion + real path → real path is explicit"},
+		// B-3: last-wins → -n after --no-dry-run re-activates dry-run
+		{"git add --no-dry-run -n .", "B-3: -n after --no-dry-run → dry-run wins"},
+		{"git add --no-patch -p .", "B-3: -p after --no-patch → interactive wins"},
+		// RT-NEW-4: glob with specific path still passes
+		{"git add :(glob)src/**", "RT-NEW-4: glob with specific path passes"},
+		// RT-NEW-5: -e/--edit are not considered interactive by the guard
+		// (no flag recognition → fail-closed if bare, pass with explicit path)
+		{"git add -e src/file.go", "RT-NEW-5: -e with explicit path passes"},
+		// B-5: :(top) with non-root pattern passes — pattern is an explicit file/dir, not a root
+		{"git add :(top)src/a.go", "B-5: :(top) with explicit non-root path"},
+		{"git add :(top,icase)src/a.go", "B-5: :(top,icase) with non-root path"},
+		// B-6: stash commands with redirect/comment suffix still pass (non-add commands)
+		{"(git stash list) > /tmp/x", "B-6: stash list subshell + redirect"},
+		{"(git stash show) 2>&1", "B-6: stash show subshell + 2>&1"},
+		{"(git stash list) # comment", "B-6: stash list subshell + comment"},
+		{"git stash list > /tmp/x", "B-6: stash list with redirect"},
+		{"git stash list # comment", "B-6: stash list with comment"},
+		// RT-R3-3/4: unambiguous long-option prefix abbreviations expand to canonical forms
+		{"git add --dry .", "RT-R3-3: --dry expands to --dry-run → passes"},
+		{"git add --pat .", "RT-R3-4: --pat expands to --patch → passes"},
+		{"git add --inter .", "RT-R3-4: --inter expands to --interactive → passes"},
+	}
+	for _, tc := range passes {
+		t.Run(tc.desc, func(t *testing.T) {
+			got := MatchSubcommand(tc.cmd)
+			if got != "" {
+				t.Fatalf("%q: got %q, want %q (pass)", tc.cmd, got, "")
+			}
+		})
+	}
+}
+
+// TestMatchSubcommand_AddImplicit_AC5 asserts that "git add -A" appearing as
+// prose inside a commit message body is NOT treated as a command.
+// Assertion: the guard does not interpret "git add -A" as a git invocation when the
+// first token of the outer command is NOT "git" — this tests the tokenizer/parser base
+// (quote-aware split + first-token check), not the add rule itself. The add case in
+// applyRule is never reached for these vectors. Reproves if quote-aware split stops
+// isolating the quoted body from the outer command token.
+func TestMatchSubcommand_AddImplicit_AC5(t *testing.T) {
+	cases := []struct {
+		cmd  string
+		desc string
+	}{
+		{`trackfw commit -m "git add -A"`, "git add -A in trackfw commit message"},
+		{`echo "git add -A"`, "git add -A in echo output (not a git invocation)"},
+		{`gh pr create --body "git add -A"`, "git add -A in gh body"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.desc, func(t *testing.T) {
+			got := MatchSubcommand(tc.cmd)
+			if got != "" {
+				t.Fatalf("AC5: %q should pass (body prose), got tag %q", tc.cmd, got)
+			}
+		})
+	}
+}
+
+// TestMatchSubcommand_ParenInvariant asserts that for every command C:
+//   - (C) and ( C ) produce the same decision as C  (B-4 invariant)
+//   - C > /dev/null, C 2>&1, C # x produce the same decision as C  (B-6 invariant)
+//   - (C) > /dev/null also produces the same decision as C  (RT-R3-5 invariant)
+//
+// Assertion: quoteAwareSplit word-boundary ( separator + stripShellSuffix strip
+// preserve the guard decision for all rules, not just add. Reproves if the
+// separator or strip is removed, or if it corrupts allowlist keywords (stash list)
+// or blocking flags (--hard).
+func TestMatchSubcommand_ParenInvariant(t *testing.T) {
+	cases := []struct {
+		cmd     string
+		wantTag string
+	}{
+		// Commands that PASS (allowlist or no rule)
+		{"git stash list", ""},
+		{"git stash show", ""},
+		{"git add src/file.go", ""},
+		// Commands that BLOCK
+		{"git stash", "stash"},
+		{"git reset --hard", "reset-hard"},
+		{"git push --force origin main", "push"},
+		{"git commit -m fix", "commit"},
+		{"git add .", "add-implicit"},
+		{"git add -A", "add-implicit"},
+	}
+	for _, tc := range cases {
+		// Verify the base case first.
+		if got := MatchSubcommand(tc.cmd); got != tc.wantTag {
+			t.Errorf("base %q: got %q want %q", tc.cmd, got, tc.wantTag)
+		}
+		// B-4 paren forms: (C) and ( C ) must match C.
+		for _, form := range []string{
+			"(" + tc.cmd + ")",
+			"( " + tc.cmd + " )",
+		} {
+			if got := MatchSubcommand(form); got != tc.wantTag {
+				t.Errorf("paren form %q: got %q want %q (same as plain %q)",
+					form, got, tc.wantTag, tc.cmd)
+			}
+		}
+		// B-6 redirect/comment forms: C > x, C 2>&1, C # x must match C.
+		for _, suffix := range []string{" > /dev/null", " 2>&1", " # comment"} {
+			form := tc.cmd + suffix
+			if got := MatchSubcommand(form); got != tc.wantTag {
+				t.Errorf("redirect/comment form %q: got %q want %q (same as plain %q)",
+					form, got, tc.wantTag, tc.cmd)
+			}
+			// RT-R3-5: (C) + redirect/comment must also match C.
+			form2 := "(" + tc.cmd + ")" + suffix
+			if got := MatchSubcommand(form2); got != tc.wantTag {
+				t.Errorf("paren+redirect form %q: got %q want %q (same as plain %q)",
+					form2, got, tc.wantTag, tc.cmd)
+			}
+		}
+	}
+}
+
+// TestMatchSubcommand_RegressionAgainstMain is a regression table for non-add
+// commands. Expected values were derived by running the origin/main binary against
+// each command via `trackfw guard git-branch --command "<cmd>"` and recording the
+// exit code (0 = pass, 2 = block). The table asserts that the current
+// MatchSubcommand implementation produces the same pass/block decision for all
+// 38 commands tested. Assertion: the Round 3 tokenizer rewrite (quoteAwareSplit
+// word-boundary ( separator + stripShellSuffix) does not regress any non-add
+// guard rule compared to origin/main.
+func TestMatchSubcommand_RegressionAgainstMain(t *testing.T) {
+	// wantBlock=true means MatchSubcommand must return a non-empty tag (block).
+	// wantBlock=false means it must return "" (allow).
+	// Expected values fixed from origin/main binary (2026-10-17).
+	cases := []struct {
+		cmd       string
+		wantBlock bool
+	}{
+		// stash — list/show allowed, all others blocked
+		{"git stash list", false},
+		{"git stash show", false},
+		{"git stash pop", true},
+		{"git stash apply", true},
+		{"git stash drop", true},
+		{"git stash", true},
+		// reset — --hard blocked, --soft/--mixed allowed
+		{"git reset --hard HEAD", true},
+		{"git reset --soft HEAD~1", false},
+		{"git reset --mixed HEAD", false},
+		// push — blocked in all forms
+		{"git push origin main", true},
+		{"git push --force origin main", true},
+		// commit — blocked
+		{"git commit -m fix", true},
+		// checkout — branch allowed, -b blocked
+		{"git checkout main", false},
+		{"git checkout -b new-branch", true},
+		// branch — -d/-D/--delete allowed
+		{"git branch -d old", false},
+		{"git branch --delete old", false},
+		{"git branch -D old", false},
+		// worktree — list/add allowed, add -b blocked
+		{"git worktree list", false},
+		{"git worktree add ../foo", false},
+		{"git worktree add -b new ../foo", true},
+		// status/log — allowed
+		{"git status", false},
+		{"git status --short", false},
+		{"git log --oneline", false},
+		// paren forms — must preserve decision (B-4 invariant holds at origin/main)
+		{"(git stash list)", false},
+		{"(git reset --soft HEAD~1)", false},
+		// non-git commands — allowed
+		{"gh pr list", false},
+		{"gh pr create --title foo", false},
+		{"trackfw context", false},
+		{"trackfw validate", false},
+		// redirect/comment forms — allowed for non-add commands (B-6)
+		{"(gh pr list) > /tmp/x", false},
+		{"(trackfw context) 2>&1", false},
+		{"git log --oneline # show recent", false},
+		{"git status # check files", false},
+		{"git stash list > /tmp/x", false},
+		{"git stash list # comment", false},
+		{"(git stash list) > /tmp/x", false},
+		{"(git stash show) 2>&1", false},
+		{"(git stash list) # comment", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.cmd, func(t *testing.T) {
+			got := MatchSubcommand(tc.cmd)
+			blocked := got != ""
+			if blocked != tc.wantBlock {
+				t.Errorf("%q: blocked=%v (tag=%q) want blocked=%v",
+					tc.cmd, blocked, got, tc.wantBlock)
+			}
+		})
+	}
+}
+
+// TestRunGitBranch_AddImplicit_ExitAndReason asserts RunGitBranch exits 2 and
+// emits the correct reason for an implicit-scope add.
+// Assertion: exit 2 + reasonAddImplicit on stdout/stderr — the full path through
+// RunGitBranch works, not just MatchSubcommand. Reproves if the case "add-implicit"
+// dispatch in RunGitBranch is missing.
+func TestRunGitBranch_AddImplicit_ExitAndReason(t *testing.T) {
+	dir := makeProjectDir(t)
+	code, out, errOut := runWith(t, dir, `{"tool_input":{"command":"git add -A"}}`, "")
+	if code != 2 {
+		t.Fatalf("expected exit 2, got %d", code)
+	}
+	expectedOut := `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"` + reasonAddImplicit + `"}}` + "\n"
+	if out != expectedOut {
+		t.Fatalf("stdout mismatch:\n  got  %q\n  want %q", out, expectedOut)
+	}
+	if errOut != reasonAddImplicit+"\n" {
+		t.Fatalf("stderr mismatch:\n  got  %q\n  want %q", errOut, reasonAddImplicit+"\n")
+	}
+}
+
+// TestAllReasonsProduceValidJSON asserts that every reason constant produces
+// a parseable JSON object when emitted via denyOut.
+// Assertion: JSON validity — R-6 (Wave 0, 2026-10-17). A reason with an
+// unescaped double-quote (like the old reasonResetHard "...") would produce
+// invalid JSON, silently rejected by Claude Code. Each constant is routed
+// through denyOut's Fprintf path, which is the same mechanism that would fail.
+//
+// RT-7: the test also auto-discovers all reason[A-Z]\w* constants declared in
+// gitbranch.go and fails if any is not referenced in the reasons map below —
+// ensuring a new constant cannot be added without test coverage.
+//
+// NOTE: when adding a new reason constant to gitbranch.go, add an entry to the
+// reasons map below. The auto-discovery check below will fail if you forget.
+func TestAllReasonsProduceValidJSON(t *testing.T) {
+	// reasons maps a short label to each reason constant for test output readability.
+	// IMPORTANT: the map must reference every reason[A-Z]\w* constant by name —
+	// the auto-discovery check reads gitbranch.go and verifies each constant
+	// appears in this test file.
+	reasons := map[string]string{
+		"truncated":       reasonTruncated,
+		"nul":             reasonNUL,
+		"indecodeable":    reasonIndecodeable,
+		"checkout-b":      reasonCheckoutB,
+		"switch-c":        reasonSwitchC,
+		"branch-create":   reasonBranchCreate,
+		"worktree-add-b":  reasonWorktreeAddB,
+		"commit":          reasonCommit,
+		"push":            reasonPush,
+		"push-delete":     reasonPushDelete,
+		"stash":           reasonStash,
+		"reset-hard":      reasonResetHard,
+		"clean-force":     reasonCleanForce,
+		"restore-path":    reasonRestorePath,
+		"checkout-path":   reasonCheckoutPath,
+		"update-ref":      reasonUpdateRef,
+		"worktree-remove": reasonWorktreeRemoveForce,
+		"rm-force":        reasonRmForce,
+		"add-implicit":    reasonAddImplicit,
+	}
+
+	// --- JSON-validity check (one sub-test per reason) ---
+	for name, reason := range reasons {
+		t.Run(name, func(t *testing.T) {
+			jsonStr := `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"` + reason + `"}}` + "\n"
+			if err := json.Unmarshal([]byte(jsonStr), new(map[string]interface{})); err != nil {
+				t.Fatalf("reason %q produces invalid JSON: %v\npayload: %s", name, err, jsonStr)
+			}
+		})
+	}
+
+	// --- RT-NEW-7: auto-discovery — every reason constant must be in the map ---
+	// Checks that each constant appears in the map LITERAL (not merely in a comment),
+	// so a developer cannot satisfy the check by adding the name only to a comment.
+	t.Run("auto-discovery", func(t *testing.T) {
+		_, thisFile, _, ok := runtime.Caller(0)
+		if !ok {
+			t.Fatal("runtime.Caller failed")
+		}
+		srcFile := filepath.Join(filepath.Dir(thisFile), "gitbranch.go")
+		src, err := os.ReadFile(srcFile)
+		if err != nil {
+			t.Fatalf("cannot read %s: %v", srcFile, err)
+		}
+		// Extract all reason[A-Z]\w* constant names declared in gitbranch.go.
+		re := regexp.MustCompile(`\breason[A-Z]\w*\b`)
+		declared := make(map[string]bool)
+		for _, name := range re.FindAllString(string(src), -1) {
+			declared[name] = true
+		}
+		// Read this test file and extract the reasons map literal.
+		testSrc, err := os.ReadFile(thisFile)
+		if err != nil {
+			t.Fatalf("cannot read %s: %v", thisFile, err)
+		}
+		// Use regex to extract the body of `reasons := map[string]string{...}`.
+		// Map values are constant names with no '}' in them, so [^}]* is safe.
+		mapRe := regexp.MustCompile(`reasons := map\[string\]string\{([^}]*)\}`)
+		m := mapRe.FindStringSubmatch(string(testSrc))
+		if m == nil {
+			t.Fatal("cannot find 'reasons := map[string]string{...}' in test source")
+		}
+		mapLiteral := m[1]
+		// Verify each constant name from gitbranch.go appears in the map literal.
+		for name := range declared {
+			if !strings.Contains(mapLiteral, name) {
+				t.Errorf("constant %q from gitbranch.go is not in the reasons map — add an entry to the map (not just a comment)", name)
+			}
+		}
+	})
 }
