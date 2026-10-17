@@ -46755,3 +46755,7 @@ Hash: 13baad65
 ## 2026-10-17 — zeus-tf — release 9.7.0 em preparação
 
 - Bump dos arquivos de versão + CHANGELOG (#565–#572). Tag após o merge, depois de `make parity-rest` e `make check-required-full`.
+
+## 2026-10-17 — zeus-tf — triagem medida do backlog pré-v8 (REQ-2026-10-17)
+
+- 16 roadmaps de setembro reclassificados contra o código da v9.7.0: 10 seguem no backlog com escopo reescrito, 4 abandonados, 2 em done. Prioridade: guard de staging (`git add -A` passa), gate `check-referential-integrity` vácuo, valor de `agent_models`. Doc: `docs/governanca/2026-10-17-triagem-backlog-pre-v8.md`.

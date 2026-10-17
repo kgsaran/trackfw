@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Superseded
 date: 2026-08-21
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-22-update-harness-le-trackfw-yaml-do-cwd-e-escreve-em-escopo-global.md"
+roadmap: "docs/roadmaps/abandoned/ROADMAP-2026-09-22-update-harness-le-trackfw-yaml-do-cwd-e-escreve-em-escopo-global.md"
 ---
 
 # REQ: `update harness` lê `trackfw.yaml` do cwd e escreve em escopo global
 
-> Date: 2026-08-21 | Status: Open (backlog, sem roadmap)
+> Date: 2026-08-21 | Status: Superseded
 
 ## Motivação
 
@@ -93,4 +93,10 @@ meu projeto"* de *"diretório qualquer"*, e essa distinção não é óbvia — 
 ADR: <!-- a criar: fronteira entre config de projeto e escrita global -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-22-update-harness-le-trackfw-yaml-do-cwd-e-escreve-em-escopo-global.md`
+Roadmap: `docs/roadmaps/abandoned/ROADMAP-2026-09-22-update-harness-le-trackfw-yaml-do-cwd-e-escreve-em-escopo-global.md`
+
+## Triagem pós-v8 — 2026-10-17
+
+Status definido pela triagem medida da REQ-2026-10-17; evidência em `docs/governanca/2026-10-17-triagem-backlog-pre-v8.md`.
+
+**Absorvida (2026-10-17):** o resíduo (valor de `model` com `:`/`"` gerando YAML inválido) é a mesma causa da `REQ-2026-08-30-validacao-de-valor-e-precisao-de-mensagem-agent-models-…` e segue lá.

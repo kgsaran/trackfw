@@ -54,3 +54,11 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 - [ ] build passes
 - [ ] tests green
 - [ ] validate passes
+
+---
+
+## Triagem pós-v8 — 2026-10-17 (REQ-2026-10-17)
+
+**Vivo**: `branch.go:143` faz `git checkout -b` sem start point nem `fetch`. AC de paridade sumiu com a v8.
+
+Evidência e tabela completa: `docs/governanca/2026-10-17-triagem-backlog-pre-v8.md`.

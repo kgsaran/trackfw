@@ -99,3 +99,11 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 - [ ] **AC6** — make quality verde e trackfw validate exit 0.
 - [ ] build passes
 - [ ] tests green
+
+---
+
+## Triagem pós-v8 — 2026-10-17 (REQ-2026-10-17)
+
+🔴 **Vivo** — prioridade 2: árvore sem REQ → "Referential integrity OK", exit 0 (reconferido). `req_dir` do yaml já é lido (AC5 feito).
+
+Evidência e tabela completa: `docs/governanca/2026-10-17-triagem-backlog-pre-v8.md`.

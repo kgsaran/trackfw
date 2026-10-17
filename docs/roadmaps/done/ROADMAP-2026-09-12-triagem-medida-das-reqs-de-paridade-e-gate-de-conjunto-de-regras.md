@@ -1,5 +1,5 @@
 ---
-status: blocked
+status: done
 date: 2026-09-12
 req: "docs/req/REQ-2026-09-12-reqs-de-paridade-nao-distinguem-entregue-de-pendente-porque-o-gate-que-provaria-a-entrega-nao-existe.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: Triagem medida das REQs de paridade e gate de conjunto de regras
 
-> Created: 2026-09-12 | Status: blocked
+> Created: 2026-09-12 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-09-12-reqs-de-paridade-nao-distinguem-entregue-de-pendente-porque-o-gate-que-provaria-a-entrega-nao-existe.md
@@ -171,7 +171,7 @@ REQ-2026-09-03-check-referential-integrity-diz-ok-e-sai-zero-sobre-arvore-vazia-
 > Dependências: Wave 1 (a triagem diz o que o gate precisa cobrir).
 
 ### ML-2A — **AC4 + AC5 + AC6** — gate de conjunto de regras
-**Status:** ❌ Bloqueado — ver "FRENTE PARADA" acima
+**Status:** ABANDONADO (2026-10-17) — a v8 adotou um binário; gate cross-runtime sem objeto, como previsto na "FRENTE PARADA". Antes: ❌ Bloqueado
 **Arquivos afetados:** novo `scripts/check-rule-set-parity.sh`, `Makefile`.
 🔴 **Nome distinto de `check-rules-parity.sh`, que já existe e mede outra coisa** — o bloco de regras
 de artefatos gerados (4 arquivos × 3 runtimes), não as regras implementadas. Não alterar aquele gate.
@@ -189,7 +189,7 @@ de artefatos gerados (4 arquivos × 3 runtimes), não as regras implementadas. N
 **Reconciliação:** cada teste novo declara qual conclusão do ML ele afirma.
 
 ### ML-2A-b — **AC9 + AC10 + AC11 + AC12** — gate de paridade de subcomandos (#298)
-**Status:** ❌ Bloqueado — ver "FRENTE PARADA" acima
+**Status:** ABANDONADO (2026-10-17) — a v8 adotou um binário; gate cross-runtime sem objeto, como previsto na "FRENTE PARADA". Antes: ❌ Bloqueado
 **Arquivos afetados:** novo `scripts/check-subcommand-parity.sh`, `Makefile`.
 🔴 **Não alterar `scripts/check-cli-parity.sh`** — ele mede o primeiro nível e continua válido para
 isso. Este gate desce um nível.
@@ -223,7 +223,7 @@ e `req list` faltou no Python sem nenhum gate avisar."*
 **Reconciliação:** cada teste novo declara qual conclusão do ML ele afirma.
 
 ### ML-2B — **AC7 + AC8 + AC13** — documentação e fechamento
-**Status:** ❌ Bloqueado — ver "FRENTE PARADA" acima
+**Status:** ABANDONADO (2026-10-17) — a v8 adotou um binário; gate cross-runtime sem objeto, como previsto na "FRENTE PARADA". Antes: ❌ Bloqueado
 **Arquivos afetados:** `docs/cli-parity.md`.
 **Critérios de aceite:**
 - [ ] Seção nomeando `check-rule-set-parity.sh` e o que ele cobre
@@ -267,3 +267,11 @@ ML-4A dela, que classifica REQs e issues em *desaparece / barateia / indiferente
 
 **Nota específica:** esta frente já estava com os MLs restantes marcados ❌ Bloqueado — os dois
 entregáveis eram **gates de paridade**, que a v8 apaga. O estacionamento aqui só formaliza a pasta.
+
+---
+
+## Triagem pós-v8 — 2026-10-17 (REQ-2026-10-17)
+
+**Condição de bloqueio caiu**: a v8 adotou um binário; ML-1A/1B concluídos; ML-2A/2A-b/2B (gates cross-runtime) abandonados pelo motivo previsto no próprio roadmap.
+
+Evidência e tabela completa: `docs/governanca/2026-10-17-triagem-backlog-pre-v8.md`.

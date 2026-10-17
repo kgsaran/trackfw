@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Abandoned
 date: 2026-09-01
 author: "zeus-tf"
 adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-09-gates-de-paridade-provam-concordancia-mas-nao-completude.md"
+roadmap: "docs/roadmaps/abandoned/ROADMAP-2026-09-09-gates-de-paridade-provam-concordancia-mas-nao-completude.md"
 ---
 
 # REQ: Gate anti-divergência prova que as cópias concordam, mas não que a lista está completa
 
-> Date: 2026-09-01 | Status: Open
+> Date: 2026-09-01 | Status: Abandoned
 
 ## Motivation
 
@@ -70,7 +70,7 @@ descoberta-vs-lista vira postura de projeto e merece ADR. -->
 
 ## Linked Roadmap
 
-Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-09-gates-de-paridade-provam-concordancia-mas-nao-completude.md`
+Roadmap: `docs/roadmaps/abandoned/ROADMAP-2026-09-09-gates-de-paridade-provam-concordancia-mas-nao-completude.md`
 
 
 ## 🔴 Sítio de mesma causa — issue #298, 2026-09-09
@@ -90,3 +90,7 @@ avisar. Não é hipótese.
 **Nota de medição:** o autor do issue reportou 12 subcomandos; medi **9**. A diferença provável é o
 `help` que o cobra injeta em cada grupo — e excluí-lo é requisito do ML, não detalhe: contar o `help`
 faria o gate exigir paridade de algo que o framework gera.
+
+## Triagem pós-v8 — 2026-10-17
+
+Status definido pela triagem medida da REQ-2026-10-17; evidência em `docs/governanca/2026-10-17-triagem-backlog-pre-v8.md`.

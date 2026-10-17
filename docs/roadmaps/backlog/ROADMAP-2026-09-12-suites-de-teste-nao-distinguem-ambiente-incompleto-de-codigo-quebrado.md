@@ -200,3 +200,11 @@ make quality
 # Verifica que make quality tem check-prereqs como dependência:
 /usr/bin/grep "check-prereqs" Makefile
 ```
+
+---
+
+## Triagem pós-v8 — 2026-10-17 (REQ-2026-10-17)
+
+**Mudou de forma**: Node/Python sumiram; vivos AC3 (3 testes de `validator_git_exec_test.go` sem `LookPath`+`Skip`) e AC4 (`make quality` sem checagem de pré-requisitos).
+
+Evidência e tabela completa: `docs/governanca/2026-10-17-triagem-backlog-pre-v8.md`.

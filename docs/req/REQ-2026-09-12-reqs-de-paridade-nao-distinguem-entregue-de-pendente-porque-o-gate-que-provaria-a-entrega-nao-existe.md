@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-12
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/blocked/ROADMAP-2026-09-12-triagem-medida-das-reqs-de-paridade-e-gate-de-conjunto-de-regras.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-12-triagem-medida-das-reqs-de-paridade-e-gate-de-conjunto-de-regras.md"
 ---
 
 # REQ: REQs de paridade não distinguem entregue de pendente porque o gate que provaria a entrega não existe
 
-> Date: 2026-09-12 | Status: Open
+> Date: 2026-09-12 | Status: Done
 
 ## Motivação
 
@@ -231,3 +231,7 @@ Python **ganha** o que lhe falta, e nada é removido de Go/Node:
       arquivos comuns não o veria.
 - [ ] **AC16** — Python converge para o Go: mensagens, comentário de cabeçalho, `#!/usr/bin/env sh`,
       `set -e`, e sem criar o `ADR-001`. Provado pelo AC14 passando.
+
+## Triagem pós-v8 — 2026-10-17
+
+Status definido pela triagem medida da REQ-2026-10-17; evidência em `docs/governanca/2026-10-17-triagem-backlog-pre-v8.md`.

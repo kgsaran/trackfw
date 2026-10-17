@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-10-17
 req: "docs/req/REQ-2026-10-17-triagem-medida-do-backlog-pre-v8-dezesseis-roadmaps-de-setembro-reclassificados-contra-o-codigo-atual.md"
 squad: "hefesto-tf"
@@ -7,7 +7,7 @@ squad: "hefesto-tf"
 
 # Roadmap: triagem medida do backlog pre-v8 — dezesseis roadmaps de setembro reclassificados contra o codigo atual
 
-> Created: 2026-10-17 | Status: wip
+> Created: 2026-10-17 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-10-17-triagem-medida-do-backlog-pre-v8-dezesseis-roadmaps-de-setembro-reclassificados-contra-o-codigo-atual.md
@@ -16,9 +16,9 @@ REQ: docs/req/REQ-2026-10-17-triagem-medida-do-backlog-pre-v8-dezesseis-roadmaps
 `f8870c79`, v9.7.0), sem código de produto.
 
 ## Acceptance Criteria
-- [ ] Veredito com evidência para os 16 (AC1/AC2 da REQ)
-- [ ] Agrupamento por causa e prioridade dos vivos (AC3)
-- [ ] REQs ligadas reconciliadas e roadmaps movidos pelo `trackfw roadmap move` (AC4)
+- [x] Veredito com evidência para os 16 (AC1/AC2 da REQ)
+- [x] Agrupamento por causa e prioridade dos vivos (AC3)
+- [x] REQs ligadas reconciliadas e roadmaps movidos pelo `trackfw roadmap move` (AC4)
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -36,11 +36,21 @@ REQ: docs/req/REQ-2026-10-17-triagem-medida-do-backlog-pre-v8-dezesseis-roadmaps
 4. **Resíduo:** itens cujo teste exige Windows ficam "vivo — não medido" se a VM/CI não forem usados.
 
 ## Wave 1 — Triagem (3 MLs em paralelo, só leitura)
-### ML-1A — segurança e guard (5 roadmaps) · `hefesto-tf` · ⬜
-### ML-1B — gates vácuos e testes (6 roadmaps) · `hefesto-tf` · ⬜
-### ML-1C — Windows, mensagens, higiene e processo (5 roadmaps) · `hefesto-tf` · ⬜
+### ML-1A — segurança e guard (5 roadmaps) · `hefesto-tf`
+**Status:** ✅ Concluído
+### ML-1B — gates vácuos e testes (6 roadmaps) · `hefesto-tf`
+**Status:** ✅ Concluído
+### ML-1C — Windows, mensagens, higiene e processo (5 roadmaps) · `hefesto-tf`
+**Status:** ✅ Concluído
 **Critério:** tabela por roadmap: veredito, evidência (arquivo:linha / comando+saída / PR), causa
 agrupável, REQ ligada e recomendação.
 
-## Wave 2 — Consolidação · `zeus-tf` · ⬜
+## Wave 2 — Consolidação · `zeus-tf`
+### ML-2A — Consolidação e movimentos
+**Status:** ✅ Concluído — `docs/governanca/2026-10-17-triagem-backlog-pre-v8.md`
 Doc `docs/governanca/2026-10-17-triagem-backlog-pre-v8.md`; movimentos de roadmap e REQ; prioridade.
+
+## Resultado (2026-10-17)
+
+16 roadmaps → **10** seguem em `backlog/` (com escopo reescrito por nota de triagem em cada um); 4 → `abandoned/`
+(um deles absorvido por mesma causa), 2 → `done/`. Prioridade e evidência no doc da triagem.
