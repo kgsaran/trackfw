@@ -324,7 +324,7 @@ FALSIFY_SUCCESS_TALLY="$WORK/success-count"
 # (`-lt`), entao a contagem so pode ter SUBIDO: 241 continua valido e a folga passa
 # de 8 para 17. Nao houve bump -- o delta 249->258 foi MEDIDO, nao somado, e bate
 # com os 9 bracos do Cenario 200 por corroboracao, nao por construcao.
-FALSIFY_SUCCESS_FLOOR=246
+FALSIFY_SUCCESS_FLOOR=248
 if [[ "$TRACKFW_FALSIFY_ENUMERATE" == "1" ]]; then
   : > "$FALSIFY_ENUM_TALLY"
   echo "[falsify/enumerate] modo de enumeração ATIVO (TRACKFW_FALSIFY_ENUMERATE=1, default=0) -- reprovações são contadas e a execução continua para o próximo cenário; o exit code final permanece != 0 se qualquer cenário reprovar. Ferramenta de diagnóstico -- não usada por make quality/parity." >&2
@@ -8741,6 +8741,20 @@ assert_guard_bin_exit "git-branch-guard/add-implicit/detection-does-not-break-pu
   "$T201_BIN" \
   '{"tool_input":{"command":"git push"}}' \
   2
+
+# B-3 last-wins negation (red-team 2026-10-17 round 2): -An sets dry-run via
+# combined flag (B-1), but --no-dry-run cancels it last-wins. Net result:
+# no dry-run exemption, no positionals → blocks. Sabotado: add/stage case
+# removed → returns 0.
+assert_guard_bin_exit "git-branch-guard/add-implicit/baseline-blocks-An-no-dry-run" \
+  "$T201_BASE_BIN" \
+  '{"tool_input":{"command":"git add -An --no-dry-run"}}' \
+  2
+
+assert_guard_bin_exit "git-branch-guard/add-implicit/detection-catches-bypass-An-no-dry-run" \
+  "$T201_BIN" \
+  '{"tool_input":{"command":"git add -An --no-dry-run"}}' \
+  0
 
 # FALSIFY-EPILOGUE-BEGIN  (ML-4A, ROADMAP-2026-09-24-treze-rotulos-falham-no-
 # censo-de-windows...): daqui até o fim do arquivo é EPÍLOGO — nenhum cenário

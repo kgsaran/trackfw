@@ -1250,8 +1250,23 @@ func TestMatchSubcommand_AddImplicit_Blocks(t *testing.T) {
 		{"sudo git add -A", "RT-4: sudo prefix stripped"},
 		{"sudo -E git add -A", "RT-4: sudo -E"},
 		{"sudo -u root git add -A", "RT-4: sudo -u user"},
-		// RT-5: subshell ( prefix stripped → still blocks
-		{"(git add -A)", "RT-5: subshell ( prefix"},
+		{"sudo --user x git add -A", "RT-NEW-3: sudo --user long-form"},
+		// RT-5/B-4: subshell ( and ) stripped symmetrically
+		{"(git add -A)", "RT-5/B-4: paren strip symmetric"},
+		{"(git add .)", "B-4: paren strip ., root still blocks"},
+		{"(git add :/)", "B-4: paren strip :/, root still blocks"},
+		{"( git add -A )", "B-4: paren strip with spaces"},
+		{"(cd x && git add .)", "B-4: ) falls on last segment after && split"},
+		// B-3: --no-dry-run cancels dry-run (last-wins, B-3 fix)
+		{"git add -An --no-dry-run", "B-3: --no-dry-run cancels -An dry-run"},
+		{"git add -An --no-dry", "B-3: --no-dry abbrev cancels -An dry-run"},
+		{"git add -n --no-dry-run .", "B-3: --no-dry-run cancels standalone -n"},
+		{"git add -p --no-patch .", "B-3: --no-patch cancels -p"},
+		{"git add --dry-run --no-dry-run .", "B-3: last-wins --no-dry-run"},
+		// RT-NEW-4: magic pathspecs with top/glob-wildcard-only
+		{"git add :(glob)**", "RT-NEW-4: glob wildcard-only **"},
+		{"git add :(top,glob)*", "RT-NEW-4: top+glob magic"},
+		{"git add :(glob,top)**", "RT-NEW-4: glob+top magic"},
 	}
 	for _, tc := range blocks {
 		t.Run(tc.desc, func(t *testing.T) {
@@ -1302,6 +1317,14 @@ func TestMatchSubcommand_AddImplicit_Passes(t *testing.T) {
 		{"git add ../outro/a.go", "AC3: ../outro/a.go is explicit (not bare ..)"},
 		// Exclusion spec mixed with real path → real path wins
 		{"git add :!x docs/a.go", "exclusion + real path → real path is explicit"},
+		// B-3: last-wins → -n after --no-dry-run re-activates dry-run
+		{"git add --no-dry-run -n .", "B-3: -n after --no-dry-run → dry-run wins"},
+		{"git add --no-patch -p .", "B-3: -p after --no-patch → interactive wins"},
+		// RT-NEW-4: glob with specific path still passes
+		{"git add :(glob)src/**", "RT-NEW-4: glob with specific path passes"},
+		// RT-NEW-5: -e/--edit are not considered interactive by the guard
+		// (no flag recognition → fail-closed if bare, pass with explicit path)
+		{"git add -e src/file.go", "RT-NEW-5: -e with explicit path passes"},
 	}
 	for _, tc := range passes {
 		t.Run(tc.desc, func(t *testing.T) {
@@ -1336,6 +1359,45 @@ func TestMatchSubcommand_AddImplicit_AC5(t *testing.T) {
 				t.Fatalf("AC5: %q should pass (body prose), got tag %q", tc.cmd, got)
 			}
 		})
+	}
+}
+
+// TestMatchSubcommand_ParenInvariant asserts that for every command C, (C) and
+// ( C ) produce the same decision as the plain command C (B-4 fix invariant).
+// Assertion: the symmetric ) strip introduced in B-4 preserves the decision for
+// all guards — not just add. Reproves if ) strip is removed or if ) corrupts an
+// allowlist keyword (stash list) or a blocking flag (--hard).
+func TestMatchSubcommand_ParenInvariant(t *testing.T) {
+	cases := []struct {
+		cmd     string
+		wantTag string
+	}{
+		// Commands that PASS (allowlist or no rule)
+		{"git stash list", ""},
+		{"git stash show", ""},
+		{"git add src/file.go", ""},
+		// Commands that BLOCK
+		{"git stash", "stash"},
+		{"git reset --hard", "reset-hard"},
+		{"git push --force origin main", "push"},
+		{"git commit -m fix", "commit"},
+		{"git add .", "add-implicit"},
+		{"git add -A", "add-implicit"},
+	}
+	for _, tc := range cases {
+		// Verify the base case first, then both paren forms.
+		if got := MatchSubcommand(tc.cmd); got != tc.wantTag {
+			t.Errorf("base %q: got %q want %q", tc.cmd, got, tc.wantTag)
+		}
+		for _, form := range []string{
+			"(" + tc.cmd + ")",
+			"( " + tc.cmd + " )",
+		} {
+			if got := MatchSubcommand(form); got != tc.wantTag {
+				t.Errorf("paren form %q: got %q want %q (same as plain %q)",
+					form, got, tc.wantTag, tc.cmd)
+			}
+		}
 	}
 }
 
@@ -1409,7 +1471,9 @@ func TestAllReasonsProduceValidJSON(t *testing.T) {
 		})
 	}
 
-	// --- RT-7: auto-discovery — every reason constant must be in this test ---
+	// --- RT-NEW-7: auto-discovery — every reason constant must be in the map ---
+	// Checks that each constant appears in the map LITERAL (not merely in a comment),
+	// so a developer cannot satisfy the check by adding the name only to a comment.
 	t.Run("auto-discovery", func(t *testing.T) {
 		_, thisFile, _, ok := runtime.Caller(0)
 		if !ok {
@@ -1426,15 +1490,23 @@ func TestAllReasonsProduceValidJSON(t *testing.T) {
 		for _, name := range re.FindAllString(string(src), -1) {
 			declared[name] = true
 		}
-		// Read this test file and check each constant name is referenced here.
+		// Read this test file and extract the reasons map literal.
 		testSrc, err := os.ReadFile(thisFile)
 		if err != nil {
 			t.Fatalf("cannot read %s: %v", thisFile, err)
 		}
-		testText := string(testSrc)
+		// Use regex to extract the body of `reasons := map[string]string{...}`.
+		// Map values are constant names with no '}' in them, so [^}]* is safe.
+		mapRe := regexp.MustCompile(`reasons := map\[string\]string\{([^}]*)\}`)
+		m := mapRe.FindStringSubmatch(string(testSrc))
+		if m == nil {
+			t.Fatal("cannot find 'reasons := map[string]string{...}' in test source")
+		}
+		mapLiteral := m[1]
+		// Verify each constant name from gitbranch.go appears in the map literal.
 		for name := range declared {
-			if !strings.Contains(testText, name) {
-				t.Errorf("constant %q declared in gitbranch.go is not referenced in this test file — add it to the reasons map", name)
+			if !strings.Contains(mapLiteral, name) {
+				t.Errorf("constant %q from gitbranch.go is not in the reasons map — add an entry to the map (not just a comment)", name)
 			}
 		}
 	})

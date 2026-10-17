@@ -204,11 +204,50 @@ func FindProjectRoot(cwd string) (string, bool) {
 	}
 }
 
+// stripOuterParens removes one layer of balanced outer parentheses from s,
+// returning the inner content with leading/trailing spaces trimmed.
+// It only strips when the '(' at position 0 matches the ')' at the last
+// position (balanced depth), so "(a) && (b)" is left unchanged.
+// This is the pre-split step for handling subshell notation — done before
+// quoteAwareSplit so that pathspecs like ":(top)" inside the command keep
+// their closing ')' intact through segment-level processing (B-4 fix,
+// red-team 2026-10-17 round 2, extended).
+func stripOuterParens(s string) string {
+	s = strings.TrimSpace(s)
+	if len(s) < 2 || s[0] != '(' {
+		return s
+	}
+	depth := 0
+	for i, c := range s {
+		switch c {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				if i == len(s)-1 {
+					// Opening '(' at 0 matches ')' at the last position.
+					return strings.TrimSpace(s[1:i])
+				}
+				// First '(' closes before the end — don't strip (e.g. "(a) && (b)").
+				return s
+			}
+		}
+	}
+	return s // unbalanced — leave unchanged
+}
+
 // MatchSubcommand applies the guard rules to cmdRaw and returns the subcommand
 // tag if the command should be blocked, or "" to allow.
 // It is a faithful Go port of the bash match_subcommand() function.
 func MatchSubcommand(cmdRaw string) string {
 	normalized := stripHeredocBodies(cmdRaw)
+	// Pre-split: strip outermost balanced '()' before splitting on '&&'/'||'/';'.
+	// Handles (cmd), ( cmd ), and (cmd1 && cmd2) without corrupting pathspecs like
+	// ":(top)" that also contain ')'. Invariant: for any command C (without outer
+	// parens), (C), ( C ), and C all produce the same decision (B-4 fix,
+	// red-team 2026-10-17 round 2).
+	normalized = stripOuterParens(normalized)
 	segments := quoteAwareSplit(normalized)
 
 	for _, seg := range segments {
@@ -220,15 +259,20 @@ func MatchSubcommand(cmdRaw string) string {
 		if len(seg) > 0 && seg[0] == '&' {
 			seg = strings.TrimLeft(seg[1:], " \t")
 		}
-		// Strip a single leading '(' from subshell form: (git add -A) → git add -A)
-		// The trailing ')' ends up on the last token; it does not change blocking
-		// decisions because it attaches to a flag or filename making the token
-		// unrecognised — which for flags means fail-closed (no n/p/i found),
-		// and for filenames means the synthetic name e.g. "file.go)" won't match
-		// any root token. RT-5 residual: nested or space-separated parens are not
-		// stripped; see docs/cli-parity.md §git-branch-guard residuals.
+		// Strip ')' and '(' for nested subshells like "true && (git add .)".
+		// After the pre-split stripOuterParens above, the outermost '()' is
+		// already gone; what remains here is a segment that ITSELF starts with '('
+		// — meaning it is a nested subshell opener from a compound command such as
+		// "cmd1 && (git add .)". Only strip when the segment starts with '(' to
+		// avoid corrupting pathspecs like ":(top)" that end with ')' but do NOT
+		// start with '('. RT-5 fix (round 1) + B-4 fix (round 2, extended).
+		seg = strings.TrimRight(seg, " \t")
 		if len(seg) > 0 && seg[0] == '(' {
+			// Strip leading '(' and matching trailing ')' for a nested subshell.
 			seg = strings.TrimLeft(seg[1:], " \t")
+			if len(seg) > 0 && seg[len(seg)-1] == ')' {
+				seg = strings.TrimRight(seg[:len(seg)-1], " \t")
+			}
 		}
 		if seg == "" {
 			continue
@@ -302,9 +346,13 @@ func stripEnvCommandPrefix(tokens []string) []string {
 					break // non-flag token: this is the command
 				}
 				tokens = tokens[1:] // skip the flag
-				// Flags that consume a following argument.
+				// Flags that consume a following argument — both short and long forms.
+				// Long --x=v forms are self-contained (consumed above as the flag token).
+				// Long --x v forms require consuming the next token as the value.
 				switch t {
-				case "-u", "-g", "-C", "-D", "-T", "-U", "-h", "-p", "-r", "-t":
+				case "-u", "-g", "-C", "-D", "-T", "-U", "-h", "-p", "-r", "-t",
+					"--user", "--group", "--chdir", "--close-from", "--host",
+					"--prompt", "--role", "--type", "--other-user":
 					if len(tokens) > 0 {
 						tokens = tokens[1:]
 					}
@@ -573,14 +621,23 @@ func applyRule(sub string, rest []string) string {
 						}
 					}
 				}
-				// Long flags (exact match).
-				switch t {
-				case "--dry-run":
+				// Long flags — last-wins for opposing pairs (B-3 fix).
+				// Negation flags cancel a prior positive set earlier in the same command.
+				// git parse-options accepts unambiguous abbreviations: --no-dry is
+				// a valid abbreviation of --no-dry-run for `git add`.
+				switch {
+				case t == "--dry-run":
 					dryRun = true
-				case "--patch", "--interactive":
+				case t == "--patch" || t == "--interactive":
 					interactive = true
-				}
-				if strings.HasPrefix(t, "--pathspec-from-file=") {
+				case isNegDryRun(t):
+					// --no-dry-run (or prefix ≥ --no-dry) cancels dry-run/-n.
+					dryRun = false
+				case t == "--no-patch":
+					interactive = false
+				case t == "--no-interactive":
+					interactive = false
+				case strings.HasPrefix(t, "--pathspec-from-file="):
 					hasPathspecFromFile = true
 				}
 			} else {
@@ -620,6 +677,8 @@ func applyRule(sub string, rest []string) string {
 //	(a) literal closed set: . ./ .. ../ :/ :(top) :/:
 //	(b) any path whose path.Clean (after \ → /) equals "." (e.g. .//  ./.)
 //	(c) paths made entirely of ".." segments (e.g. ../.. )
+//	(d) magic pathspecs with "top" attr, or "glob" attr with wildcard-only pattern
+//	    (RT-NEW-4, red-team 2026-10-17 round 2)
 func isAddRootToken(t string) bool {
 	switch t {
 	case ".", "./", "..", "../", ":/", ":(top)", ":/:":
@@ -630,7 +689,55 @@ func isAddRootToken(t string) bool {
 	if cleaned == "." {
 		return true
 	}
-	return isAllDotDot(cleaned)
+	if isAllDotDot(cleaned) {
+		return true
+	}
+	// RT-NEW-4: magic pathspec :(attrs)pattern where attrs contains "top",
+	// or attrs contains "glob" AND pattern is only wildcard chars (* /**).
+	if strings.HasPrefix(t, ":(") {
+		if closeIdx := strings.Index(t, ")"); closeIdx > 2 {
+			attrs := t[2:closeIdx]
+			pattern := t[closeIdx+1:]
+			attrList := strings.Split(attrs, ",")
+			for _, a := range attrList {
+				if strings.TrimSpace(a) == "top" {
+					return true
+				}
+			}
+			for _, a := range attrList {
+				if strings.TrimSpace(a) == "glob" && isGlobWildcardOnly(pattern) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// isGlobWildcardOnly reports whether s consists entirely of '*' and '/'
+// characters (e.g. "**", "*/**", "*/"). Used to detect glob pathspecs that
+// address the entire working tree. Non-empty requirement prevents false positive
+// on empty string.
+func isGlobWildcardOnly(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if c != '*' && c != '/' {
+			return false
+		}
+	}
+	return true
+}
+
+// isNegDryRun reports whether t is --no-dry-run or any unambiguous prefix of
+// it of length ≥ len("--no-dry"). git parse-options accepts the shortest
+// unambiguous prefix; for `git add`, --no-dry is unambiguous (no other
+// --no-dry-* option). B-3 fix (red-team 2026-10-17 round 2).
+func isNegDryRun(t string) bool {
+	const full = "--no-dry-run"
+	const minLen = len("--no-dry") // 8
+	return len(t) >= minLen && strings.HasPrefix(full, t)
 }
 
 // isAllDotDot reports whether p consists entirely of ".." segments.

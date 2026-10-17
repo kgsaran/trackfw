@@ -6260,23 +6260,27 @@ Mensagem de bloqueio por subcomando (todas referenciam CLAUDE.md §1):
 - **Qualquer** positional que seja token whole-tree root (não "todos" — B-2, red-team 2026-10-17): `git add .`, `git add ./`, `git add ..`, `git add ../`, `git add :/`, `git add :(top)`, `git add :/:`, `git add -- .`, inclusive com outros positionals presentes (`git add . docs/a.txt` bloqueia porque `.` subsume tudo)
 - Tokens whole-tree por normalização semântica via `path.Clean` (RT-3): `git add ./.`, `git add .//` etc.
 - Pathspecs de exclusão exclusivos (RT-2): `git add :!x`, `git add :(exclude)x` — estagiam "tudo menos x", escopo implícito
+- Magic pathspecs `:(top,...)` e `:(glob)` com padrão wildcard-only (RT-NEW-4, red-team 2026-10-17 round 2): `git add :(glob)**`, `git add :(top,glob)*`; glob passa quando padrão tem só `*` e `/`; `:(top)` já coberto como hardcoded root
 - `git stage` com as mesmas formas acima (D-U3)
-- `sudo git add -A` e `sudo -E/-u user git add -A` — `sudo` prefixo é removido assim como `env` e `command` (RT-4)
-- `(git add -A)` — parêntese inicial de subshell é removido (RT-5, restrição: apenas um `(` de abertura)
+- `sudo git add -A` e `sudo -E/-u user git add -A` — `sudo` prefixo é removido assim como `env` e `command` (RT-4); flags longas `--user x`, `--group x` etc. consumidas (RT-NEW-3, red-team 2026-10-17 round 2)
+- `(git add -A)`, `( git add -A )`, `(cd x && git add .)` — subshell: parênteses externos balanceados removidos antes do split (B-4 fix, red-team 2026-10-17 rounds 1–2). Invariante: `(C)`, `( C )` e `C` produzem a mesma decisão para qualquer comando `C`.
 
 **Passa** (AC2/AC3):
 - Caminho explícito: `git add arquivo.go`, `git add docs/`, `git add -A docs/` (D-U2: `-A` é flag; positional `docs/` não é root)
 - Flag interativa: `-p`/`--patch`, `-i`/`--interactive` — inclusive em combined flags: `-Ap`, `-pA` (B-1, red-team 2026-10-17)
 - Dry-run: `-n`/`--dry-run` — inclusive em combined flags: `-An`, `-nA`, `-un .`, `-nv .` (B-1)
+- `-e`/`--edit` — abre editor para revisar diff; não é interativo no sentido guard (RT-NEW-5, red-team 2026-10-17 round 2): `git add -e src/file.go` passa
+- `--no-dry-run`/`--no-dry`, `--no-patch`, `--no-interactive` cancelam as flags anteriores (B-3, red-team 2026-10-17 round 2 — last-wins): `git add -An --no-dry-run .` bloqueia; `git add --no-dry-run -n .` passa
 - `--pathspec-from-file=<arq>` (enumeração via arquivo — residual: guard não lê o arquivo)
 - Caminhos com ponto no início que não são root: `.github/x.yml`, `.gitignore`, `./src/a.go`, `../outro/a.go`
 - Exclusão combinada com caminho real: `git add :!x docs/a.go` (positional real presente → passa)
+- Magic pathspec `:(glob)src/**` — padrão com caracteres além de `*`/`/` → não é wildcard-only → passa (RT-NEW-4)
 
-**Resíduos declarados (D5):** `git${IFS}add`, `{git,add}`, alias (`git config alias.aa 'add -A'` + `git aa`), `bash script.sh` com `git add -A` interno, `$(git add -A)`, `((git add -A))` (parêntese duplo não removido). `sudo` e `(...)` simples estão cobertos (ver acima).
+**Resíduos declarados (D5):** `git${IFS}add`, `{git,add}`, alias (`git config alias.aa 'add -A'` + `git aa`), `bash script.sh` com `git add -A` interno, `$(git add -A)`, `((git add -A))` (parêntese duplo não removido), `git add '*'` (glob shell não expandido — guard não expande globs). `sudo` e `(...)` simples estão cobertos (ver acima).
 
 **RT-6 — Divergência guard vs regex Amazon Q:** o `deniedCommands` regex não decompõe combined flags nem detecta mistura root+explícito (`git add . docs/a.txt`). O hook é a camada primária; a regex é segunda linha para clientes que ignoram hooks. Casos onde diferem: `git add -AN` bare (guard bloqueia, regex passa — guard mais restrito, correto); `git add . docs/a.txt` (guard bloqueia, regex passa — guard mais restrito, correto). Casos onde concordam: `git add -An` (ambos passam, dry-run). A regex permanece como está; ajuste seria complexo sem reescrever como parser.
 
-**Cobertura de testes:** `TestMatchSubcommand_AddImplicit_Blocks`, `TestMatchSubcommand_AddImplicit_Passes`, `TestMatchSubcommand_AddImplicit_AC5`, `TestRunGitBranch_AddImplicit_ExitAndReason`, `TestAllReasonsProduceValidJSON` (com auto-descoberta RT-7) (`internal/guard/gitbranch_test.go`). Vacuidade (AC4): Cenário 201 em `scripts/check-gates-falsify.sh`.
+**Cobertura de testes:** `TestMatchSubcommand_AddImplicit_Blocks`, `TestMatchSubcommand_AddImplicit_Passes`, `TestMatchSubcommand_AddImplicit_AC5`, `TestRunGitBranch_AddImplicit_ExitAndReason`, `TestMatchSubcommand_ParenInvariant`, `TestAllReasonsProduceValidJSON` (com auto-descoberta RT-NEW-7: verifica dentro do mapa literal, não no arquivo todo) (`internal/guard/gitbranch_test.go`). Vacuidade (AC4): Cenário 201 em `scripts/check-gates-falsify.sh`.
 
 **Amazon Q Developer:** além do hook, o `deniedCommands` nativo é estendido com `^git (add|stage)( +(-A|--all|-u|--update|--|\.|\./|\.\.|\.\./|:/|:\(top\)))* *$` (segundo padrão além de `^git (commit|push|checkout -b)`). Falso-positivo verificado: `git add -A docs/` e `git add file.go` não casam. Gerado por `InjectAmazonQHooks` (`internal/generators/agentfiles.go`).
 
