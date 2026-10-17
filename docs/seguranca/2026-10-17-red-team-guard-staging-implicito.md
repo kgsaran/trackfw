@@ -248,3 +248,271 @@ Confirmado limpo antes de qualquer medição: `git diff --cached --stat` → sem
   arquivos staged, idêntico a `git add .`. Fix: mudar `allPositionalsRoot` para `anyPositionalRoot`
   — se QUALQUER positional for root, bloqueia. Sem falso positivo com essa mudança: `git add docs/
   src/a.go` passa, `git add .github/x.yml docs/` passa.
+
+---
+
+## Rodada 2 — Hades-tf
+
+> Reviewer: `hades-tf` | Data: 2026-10-17 (segunda sessão)
+> Binário branch: `/tmp/tfw-rt2` (HEAD feat branch, commit `59fc9ea7`)
+> Binário r1: `/tmp/tfw-r1` (estado após commit `084ba721` — antes do fix, round-1 code)
+> Binário main: `/tmp/tfw-main` (origin/main == local main `3e9d4c6d`, confirmado por `git rev-parse main origin/main`)
+> Harness: `python3 -c 'import json,sys;print(json.dumps({"tool_name":"Bash","tool_input":{"command":sys.argv[1]}}))'`
+> Motivação: testar o código acrescentado nos commits `ccccedc8`/`59fc9ea7`.
+
+---
+
+### Veredito Rodada 2
+
+**BLOQUEIA.**
+
+Dois bloqueantes novos, introduzidos pelo código desta rodada:
+
+- **B-3** — A decomposição de combined flags (B-1 fix) set `dryRun=true` para o char `n` em
+  `-An`, mas não reconhece `--no-dry-run` como negação. Git usa last-flag-wins: `git add -An
+  --no-dry-run` estageia tudo. Medido: 2 arquivos staged em repo de teste. Apenas o vetor
+  `-An --no-dry-run` é novo desta rodada; os outros (`-n --no-dry-run .`, `-p --no-patch .`,
+  `--dry-run --no-dry-run .`) eram já miss na round 1.
+- **B-4** — o strip de `(` deixa `)` no último token. O comentário do código afirma que isso
+  "does not change blocking decisions." É falso para allowlists de subcomando e flags de
+  bloqueio: `(git stash list)` → "list)" não está na allowlist → bloqueia comando legítimo.
+
+---
+
+### B-3 — Bypass via negação de flag: --no-dry-run / --no-patch
+
+**Descrição:** `applyRule` reconhece `--dry-run` e `-n` (via decomposição B-1) como sinais
+de dry-run, e passa o comando. Mas git parse-options aceita `--no-dry-run` como negação de
+`--dry-run`/`-n` com last-flag-wins. O guard não reconhece a negação.
+
+**Atribuição:** só `git add -An --no-dry-run` é novo nesta rodada (no r1, `-An` era
+unrecognized combined flag → blocked bare add; agora passa por dryRun=true + não-negado).
+As outras formas (`-n --no-dry-run .`, `-p --no-patch .`, `--dry-run --no-dry-run .`) eram
+miss na round 1 também — confirmado medindo r1: r1=exit:0 para todos esses vetores.
+
+**Medido em /tmp/tgit (2 arquivos modificados):**
+
+```
+git add -An               → stderr: "add 'test.txt'\nadd 'other.txt'" / diff --cached: vazio (dry-run OK)
+git add -An --no-dry-run  → staged: other.txt, test.txt (whole-tree staging)
+git add -An --no-dry      → staged: other.txt, test.txt (forma abreviada, mesmo resultado)
+git add -n --no-dry-run test.txt → staged: test.txt (--no-dry-run cancela -n)
+```
+
+**Tabela B-3:**
+
+| Comando | Semântica git | Deveria | branch | r1 | Novo desta rodada? |
+|---|---|---|---|---|---|
+| `git add -An --no-dry-run` | stages whole-tree | BLOQUEIA | exit:0 FN | exit:2 (blocked bare) | **SIM** |
+| `git add -An --no-dry` | stages whole-tree (abrev.) | BLOQUEIA | exit:0 FN | exit:2 | **SIM** |
+| `git add -n --no-dry-run .` | stages `.` | BLOQUEIA | exit:0 FN | exit:0 FN | Não (pre-existente) |
+| `git add -p --no-patch .` | stages `.` | BLOQUEIA | exit:0 FN | exit:0 FN | Não (pre-existente) |
+| `git add --dry-run --no-dry-run .` | stages `.` | BLOQUEIA | exit:0 FN | exit:0 FN | Não (pre-existente) |
+| `git add --no-dry-run .` | stages `.` | BLOQUEIA | exit:2 OK | exit:2 OK | Já correto |
+| `git add -An` | dry-run, nada staged | PASSA | exit:0 OK | exit:2 FP (era BUG) | B-1 fix correto |
+
+**Causa raiz:** `applyRule` não modela last-flag-wins para os pares dry-run/interactive.
+`--no-dry-run`, `--no-patch`, `--no-interactive`, `--no-dry` (abreviação aceita por git)
+devem cancelar os booleans correspondentes.
+
+**Correção recomendada:** reconhecer os negativos na lógica de flags — usando last-wins em
+vez de OR acumulativo:
+- `--no-dry-run` / `--no-dry` → `dryRun = false`
+- `--no-patch` / `--no-interactive` → `interactive = false`
+- E para char decomposition: tratar `N` (maiúsculo) como `--no-dry-run` é arriscado (não é
+  flag git documentada para `add`); mais seguro: só os long-form negatives.
+- Atenção: `--no-dry-run -n .` seria FP se dryRun for sobrescrito em vez de last-wins.
+  Implementar como var + sobrescrita sequencial, não como OR.
+
+**Severidade:** BLOQUEANTE. `git add -An --no-dry-run` é o vetor novo — bypass de um token
+adicionado após o B-1 fix. Os outros três rows pré-existentes agravam mas não são a causa da
+nova superfície.
+
+---
+
+### B-4 — False positive: RT-5 paren strip corrompe token final (novo em RT-5 fix)
+
+**Descrição:** `MatchSubcommand` faz strip do `(` inicial do segmento, deixando o `)` final
+preso no último token. O código comenta: "does not change blocking decisions because it
+attaches to a flag or filename." Esse invariante é falso para dois casos:
+
+**(a) Allowlists de subcomando:** `(git stash list)` → strip → tokens `["git","stash","list)"]`.
+A regra de stash bloqueia "stash" e tem allowlist de subcomandos seguros (`list`, `show`,
+etc.). `"list)"` ≠ `"list"` → não está na allowlist → bloqueia. Mas `git stash list` sem
+parênteses passa. Resultado: FP — comando legítimo bloqueado pelo strip do `(`.
+
+**(b) Flags de bloqueio (RT-NEW-1, não-bloqueante):** `(git reset --hard)` → tokens `["git",
+"reset", "--hard)"]`. `"--hard)"` ≠ `"--hard"` → reset rule não detecta `--hard` → passa.
+Mas `git reset --hard` sem parênteses bloqueia. Resultado: FN — a `)` impede o bloqueio.
+
+**Tabela B-4 (FPs — branch bloqueia; sem parênteses passa):**
+
+| Comando | Sem parênteses (branch) | Com parênteses (branch) | Tipo |
+|---|---|---|---|
+| `(git stash list)` | exit:0 PASSA | exit:2 BLOQUEIA | **FP → B-4 BLOQUEANTE** |
+| `(git stash show)` | exit:0 PASSA | exit:2 BLOQUEIA | **FP → B-4 BLOQUEANTE** |
+
+**Tabela RT-NEW-1/RT-NEW-2 (FNs — branch passa; sem parênteses bloqueia):**
+
+| Comando | Sem parênteses (branch) | Com parênteses (branch) | Tipo |
+|---|---|---|---|
+| `(git reset --hard)` | exit:2 BLOQUEIA | exit:0 PASSA | FN (RT-NEW-1, não-bloqueante) |
+| `(git add .)` | exit:2 BLOQUEIA | exit:0 PASSA | FN (RT-NEW-2, ver abaixo) |
+| `(git add :/)` | exit:2 BLOQUEIA | exit:0 PASSA | FN (RT-NEW-2) |
+
+**Adicionalmente:** `( git add -A )` (espaço antes de git) passa no branch E no main — a
+espaço antes de `git` faz o `(` ficar no próprio segment de `(`, que então é trimmed, e `)`
+final vira token separado. `cli-parity.md` declara `((…))` como resíduo mas afirma que
+`(...)` simples está coberto — contradito pela evidência (RT-NEW-6, mesma raiz de B-4).
+
+**Causa raiz:** a análise que gerou o código RT-5 cobriu flags (ok — `"-A)"` sem `n/p/i`
+→ fail-closed) e filenames (ok — `"file.go)"` não é root token). Não cobriu (a) allowlists
+onde a keyword precisa de match exato e (b) flags de bloqueio onde o `")"` impede o match.
+
+**Correção recomendada:** strip simétrico: se `(` foi removido do início do segmento, remover
+também o `)` do final do segmento (antes do shellTokenize). Isso é robusto para o paren de
+subshell `(cmd)`. Casos `(cd x && git add .)` são tratados pelo split em `&&`, e a `)` fica
+no último segmento: `git add .)` → strip `)` → `git add .` → blocks. Atenção: o strip de `)` 
+final do segmento, não do token — aplicar em `seg` antes de `shellTokenize(seg)`.
+
+**Severidade:** BLOQUEANTE por B-4 (FP). RT-NEW-1/2 são FNs não-bloqueantes (classe RT-5
+que o código declara como residual, mas o comentário sobre o invariante está factualmente
+errado).
+
+---
+
+### Mudanças fora da regra `add` introduzidas pelo código desta rodada
+
+O strip de `sudo` e `(` afeta TODOS os guards, não só o add. Comportamentos novos vs main:
+
+| Comando | main | r1 | branch | Avaliação |
+|---|---|---|---|---|
+| `sudo git add -A` | exit:0 | exit:0 | exit:2 | Novo bloco correto |
+| `sudo git commit -m fix` | exit:2 (commit guard) | exit:2 | exit:2 | Consistente |
+| `sudo git push --force` | exit:2 (push guard) | exit:2 | exit:2 | Consistente |
+| `sudo git reset --hard` | exit:2 (reset guard) | exit:2 | exit:2 | Consistente |
+| `sudo git stash` | exit:2 (stash guard) | exit:2 | exit:2 | Consistente |
+| `(git push origin main)` | exit:0 (push=main sem guard) | exit:2 | exit:2 | Novo bloco correto (push guard em main não cobre paren) |
+| `(git stash list)` | exit:0 | exit:0 | exit:2 | **FP — B-4** |
+| `(git stash show)` | exit:0 | exit:0 | exit:2 | **FP — B-4** |
+
+Nota: `cli-parity.md` declara `sudo` e `(...)` apenas sob a regra de `git add`; o impacto
+nos outros guards (commit, push, stash) não está declarado nesses guards.
+
+---
+
+### Tabela Completa Rodada 2
+
+Nota sobre coluna `main`: binário de origin/main `3e9d4c6d` (commit docs-only, sem guard de
+add; tem guards de commit/push/stash/reset — seus exit:2 são dessas regras, não da ausência
+de guard).
+
+| Comando | Deveria | branch | r1 | Tipo |
+|---|---|---|---|---|
+| `git add -Nf` | BLOQUEIA (bare) | exit:2 OK | exit:2 OK | OK |
+| `git add -fA` | BLOQUEIA (bare) | exit:2 OK | exit:2 OK | OK |
+| `git add -e` | BLOQUEIA (bare, -e não é interativo declarado) | exit:2 OK | exit:2 OK | OK |
+| `git add -An -- .` | PASSA (dryRun=true fires antes de anyPositionalRoot) | exit:0 OK | exit:2 FP (era bug r1) | OK |
+| `git add --chmod=+x .` | BLOQUEIA (root positional) | exit:2 OK | exit:2 OK | OK |
+| `git add --chmod=+x file.go` | PASSA (explicit path) | exit:0 OK | exit:0 OK | OK |
+| `git add -An` | PASSA (B-1 fix — dry-run correto) | exit:0 OK | exit:2 FP (era bug r1) | OK |
+| `git add -An --no-dry-run` | BLOQUEIA (--no-dry-run cancela -n) | exit:0 FN | exit:2 OK | **B-3 BLOQUEANTE** |
+| `git add -An --no-dry` | BLOQUEIA (abreviação de --no-dry-run) | exit:0 FN | exit:2 OK | **B-3 BLOQUEANTE** |
+| `git add -n --no-dry-run .` | BLOQUEIA | exit:0 FN | exit:0 FN (pre-existente) | B-3 (pre-existente) |
+| `git add -p --no-patch .` | BLOQUEIA | exit:0 FN | exit:0 FN (pre-existente) | B-3 (pre-existente) |
+| `git add --dry-run --no-dry-run .` | BLOQUEIA | exit:0 FN | exit:0 FN (pre-existente) | B-3 (pre-existente) |
+| `sudo -u root -n git add -A` | BLOQUEIA | exit:2 OK | exit:0 | OK (RT-4 fix) |
+| `sudo --user=x git add -A` | BLOQUEIA | exit:2 OK | exit:0 | OK (RT-4 fix) |
+| `sudo -- git add -A` | BLOQUEIA | exit:2 OK | exit:0 | OK (RT-4 fix) |
+| `sudo --user x git add -A` | BLOQUEIA | exit:0 FN | exit:0 FN | RT-NEW-3 (pre-existente) |
+| `sudo -n git add file.go` | PASSA (sudo's -n, file.go explicit) | exit:0 OK | exit:0 OK | OK |
+| `(git add -A)` | BLOQUEIA | exit:2 OK | exit:0 | OK (RT-5 fix) |
+| `(git add .)` | BLOQUEIA | exit:0 FN | exit:0 FN | RT-NEW-2 (invariant errado) |
+| `(git add :/)` | BLOQUEIA | exit:0 FN | exit:0 FN | RT-NEW-2 |
+| `(git reset --hard)` | BLOQUEIA | exit:0 FN | exit:0 FN | RT-NEW-1 |
+| `(git stash list)` | PASSA | exit:2 FP | exit:0 OK | **B-4 BLOQUEANTE** |
+| `(git stash show)` | PASSA | exit:2 FP | exit:0 OK | **B-4 BLOQUEANTE** |
+| `(git add src/file.go)` | PASSA | exit:0 OK | exit:0 OK | OK |
+| `(cd x && git add -A)` | BLOQUEIA | exit:2 OK | exit:0 | OK (RT-5 fix) |
+| `git add .\.` (json-encoded) | BLOQUEIA (.\ → ./ via ReplaceAll → root) | exit:2 OK | exit:2 OK | OK |
+| `git add .\\` (json-encoded) | BLOQUEIA | exit:2 OK | exit:2 OK | OK |
+| `git add ..\..` (json-encoded) | BLOQUEIA (isAllDotDot) | exit:2 OK | exit:2 OK | OK |
+| `git add :(top,glob)*` | BLOQUEIA (glob whole-tree magic) | exit:0 FN | exit:0 FN | RT-NEW-4 |
+| `git add :(glob)**` | BLOQUEIA | exit:0 FN | exit:0 FN | RT-NEW-4 |
+| `git add *` | INDETERMINADO (shell expande antes; guard vê `*`) | exit:0 | exit:0 | RT-NEW-4-b (ver nota) |
+| `echo "(git add -A)"` | PASSA (first token = echo) | exit:0 OK | exit:0 OK | OK |
+| `git add -foo` | BLOQUEIA (bare, flag desconhecida) | exit:2 OK | exit:2 OK | OK |
+| `sudo -u -n git add -A` | BLOQUEIA | exit:2 OK | exit:0 | OK (sudo -u consome -n como valor) |
+| `git add :!x :!y` | BLOQUEIA | exit:2 OK | exit:0 | OK (RT-2 fix) |
+| `git add :!x src/` | PASSA | exit:0 OK | exit:0 OK | OK |
+| `git add ./.` | BLOQUEIA | exit:2 OK | exit:0 | OK (RT-3 fix) |
+| `git add .//file.go` | PASSA | exit:0 OK | exit:0 OK | OK |
+| `git add docs/ src/a.go` | PASSA | exit:0 OK | exit:0 OK | OK |
+| Regressão: `git commit -m fix` | BLOQUEIA | exit:2 OK | exit:2 OK | OK |
+| Regressão: `git push --force` | BLOQUEIA | exit:2 OK | exit:2 OK | OK |
+| Regressão: `git stash` | BLOQUEIA | exit:2 OK | exit:2 OK | OK |
+| Regressão: `git reset --hard` | BLOQUEIA | exit:2 OK | exit:2 OK | OK |
+| RT-7 sabotagem reasonSabotageNew | Teste FAIL | FAIL confirmado | — | OK |
+
+**Nota RT-NEW-4-b (`*`):** o hook recebe o texto do comando antes da expansão shell. `git add *`
+e `git add '*'` chegam ao guard como o token `*`. `isAddRootToken("*")` → false (path.Clean("*")
+= `"*"`, não `"."`). Decidir se `*` deve ser bloqueado é decisão arquitetural (fora do alcance
+desta rodada); anotar como resíduo em `docs/cli-parity.md`. `:(glob)**` e `:(top,glob)*` são
+pathspec magic words git-nativas e são in-scope — confirmado: `git add -n ":(glob)**"` estageia
+toda a árvore em /tmp/tgit.
+
+---
+
+### Ressalvas não-bloqueantes Rodada 2
+
+| # | Descrição | Ação recomendada |
+|---|---|---|
+| RT-NEW-1 | `(git reset --hard)` → FN: `"--hard)"` ≠ `"--hard"`, `)` corrompe flag de bloqueio. Mesma raiz de B-4. | Corrigir junto com B-4: strip `)` do final de `seg` antes de shellTokenize |
+| RT-NEW-2 | `(git add .)`, `(git add :/)` → FN: `".)"`/`":/)"`  não são root tokens. O comentário do código afirma "não muda blocking decisions" — factualmente errado para root tokens e flags de bloqueio. | Corrigir junto com B-4; atualizar o comentário para ser preciso |
+| RT-NEW-3 | `sudo --user x git add -A` → FN: long-form sudo flags com valor separado por espaço não são consumidas. O value `x` torna-se o "comando" na lógica de strip. `sudo --user=x` (equals-form) funciona. | Declarar em cli-parity.md como resíduo; ou fix: `case "--user", "--group": consume next` |
+| RT-NEW-4 | `git add :(glob)**`, `git add :(top,glob)*` → FN: git magic pathspecs de glob whole-tree passam. Medido: `:(glob)**` é aceito pelo git e estageia toda a árvore. | Declarar como resíduo em cli-parity.md (mesmo RT-4 de exclusion) |
+| RT-NEW-5 | `git add -e`/`--edit` não são reconhecidos como interativos. Bare `git add -e` bloqueia (correto — sem positional). `git add -e .` bloqueia (correto — root). Não é FP. | Declarar que -e/--edit não são considerados interativos pelo guard |
+| RT-NEW-6 | `( git add -A )` (espaço) passa no branch e no r1. cli-parity.md diz `(...)` simples estão cobertos mas esse form não é coberto. Mesma raiz de B-4 (`)` como token separado). | Corrigir junto com B-4; atualizar declaração em cli-parity.md |
+| RT-NEW-7 | `TestAllReasonsProduceValidJSON/auto-discovery` usa `strings.Contains(testText, name)` — passa se o nome aparecer apenas em comentário, sem estar no map de JSON. Verificado: sabotagem `reasonSabotageNew` não adicionada ao map → FAIL confirmado. Vulnerabilidade residual: se um dev adicionar o nome em comentário sem o map entry, o teste passa mas a cobertura JSON está ausente. | Adicionar comentário no teste alertando sobre isso; ou mudar a verificação para checar só dentro da função `reasons := map[string]string{...}` |
+
+---
+
+### Falsify Cenário 201
+
+Tentativa de execução: `bash scripts/check-gates-falsify.sh 201` esgotou o timeout (>120s) —
+o script inicializa todos os cenários predecessores antes do 201. Os testes unitários que
+cobrem o mesmo invariante (`TestMatchSubcommand_AddImplicit_Blocks`,
+`TestRunGitBranch_AddImplicit_ExitAndReason`, `TestAllReasonsProduceValidJSON`) passam —
+confirmado por `go test ./internal/guard/ -v`.
+
+---
+
+### Resumo Rodada 2
+
+**BLOQUEIA.** Dois novos bloqueantes — ambos introduzidos pelo código desta rodada:
+
+- **B-3 (FN):** `git add -An --no-dry-run` e `git add -An --no-dry` passam o guard mas
+  estagiaram a árvore inteira em /tmp/tgit (medido). O B-1 fix set `dryRun=true` via `-n` em
+  `-An`, mas `--no-dry-run`/`--no-dry` não são reconhecidos como negação. Apenas os dois
+  vetores com combined flag são novos desta rodada; `-n --no-dry-run .` etc. eram miss na r1.
+
+- **B-4 (FP):** `(git stash list)` e `(git stash show)` bloqueiam (exit:2) embora ambos
+  passem sem parênteses (exit:0). A `)` presa em "list)" impede o match na allowlist do stash.
+  Comando legítimo bloqueado = critério de bloqueante de Round 1.
+
+**Seis ressalvas não-bloqueantes** (RT-NEW-1 a 7 excluindo dup): todos ou pre-existentes
+ou consequências da mesma raiz de B-4 já apontada.
+
+**Código correto verificado esta rodada:**
+- B-1 fix: `-An`, `-Ap`, `-nA` passam; `-AN` bloqueia. OK.
+- B-2 fix: `git add . docs/a.txt` bloqueia. `git add docs/ src/a.go` passa. OK.
+- RT-2 fix: `:!x :!y` bloqueia; `:!x src/` passa. OK.
+- RT-3 fix: `./.` bloqueia; `.//file.go` passa. OK.
+- RT-4 fix (sudo): `sudo git add -A`, `sudo -u root`, `sudo --` bloqueiam. Long-form `--user x` gap = RT-NEW-3.
+- RT-5 fix (paren): `(git add -A)`, `(cd x && git add -A)` bloqueiam. FP para stash list/show = B-4.
+- RT-7 auto-discovery: `reasonSabotageNew` sem map entry → FAIL. OK.
+- Regressão add guard: sem regressão.
+- Regressão outros guards (commit/push/stash/reset): sem regressão.
+
+**Nota de papel:** hades-tf não commita. O arquivo está em
+`docs/seguranca/2026-10-17-red-team-guard-staging-implicito.md`.

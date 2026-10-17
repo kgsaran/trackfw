@@ -4,6 +4,8 @@
 
 ## Índice
 
+- [guard-add-no-dry-run-negation-bypass-2026-10-17](guard-add-no-dry-run-negation-bypass-2026-10-17.md) — 🔴 **`git add -An --no-dry-run` passa o guard mas estageia whole-tree — git usa last-flag-wins; `--no-dry-run`/`--no-dry` cancela `-n`; guard não modela negação; B-3 bloqueante Rodada 2**
+
 - [go-build-no-exe-suffix-exec-lookpath-falha-no-windows-2026-10-16](go-build-no-exe-suffix-exec-lookpath-falha-no-windows-2026-10-16.md) — 🔴 **`go build -o bin/trackfw` no Windows produz arquivo SEM `.exe`; `exec.LookPath("trackfw")` nunca casa** — correção: `go build -o "bin/trackfw$(go env GOEXE)"`; afeta qualquer cenário que exige `trackfw` resolvível via PATH (validate, hook-resolvable); medido em ML-W4 censo 38941248253
 
 - [ntfs-remedy-remove-g-tranca-dono-quando-unica-ace-de-escrita-e-o-sid-acusado-2026-10-16](ntfs-remedy-remove-g-tranca-dono-quando-unica-ace-de-escrita-e-o-sid-acusado-2026-10-16.md) — 🔴 **`icacls /remove:g *S-1-5-11` tranca o dono quando a única ACE de escrita é o SID acusado** — `READ_CONTROL`/`WRITE_DAC` são os únicos implícitos do owner; fix: incluir `/grant *<ownerSID>:(OI)(CI)(F)` antes do `/remove:g` nos dois caminhos (explícito e herdado); medido no CI run 38980416363, conta padrão, acesso negado no braço de controle; ML-W2d #569

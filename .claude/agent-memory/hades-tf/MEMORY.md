@@ -1,5 +1,7 @@
 # Memory Index — Hades (Security, trackfw)
 
+- [git add -An --no-dry-run bypasses guard; last-flag-wins not modeled](project_guard_add_no_dry_run_bypass.md) — 2026-10-17 Rodada 2 REQ-2026-09-05; B-3 BLOQUEANTE; --no-dry-run/--no-dry cancels dryRun set by B-1 fix; whole-tree staging confirmed
+
 - [trackfw serve binds all interfaces (Go/Python)](project_serve_binds_all_interfaces.md) — found 2026-08-16, FIXED and verified same day (ML-2A barrier); loopback default + opt-in --host now in all 3 CLIs
 - [Verify by execution, not just reading](feedback_verify_by_execution.md) — for serve/CLI security review, spin up the process and curl/lsof it; reading alone missed the bind-address bug
 - [Global guard dedup/validate only compares command string, not hook structure](project_guard_dedup_hook_structure_gap.md) — found 2026-08-18, ML-4A barrier, APPROVED with named residual debt, not fixed
