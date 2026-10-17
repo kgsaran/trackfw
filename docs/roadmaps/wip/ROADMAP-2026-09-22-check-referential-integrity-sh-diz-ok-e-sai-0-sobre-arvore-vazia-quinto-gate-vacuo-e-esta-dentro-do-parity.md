@@ -180,7 +180,7 @@ grep -q "ML-0A-DONE" docs/roadmaps/wip/ROADMAP-2026-09-22-check-referential-inte
 > Dependencies: none
 
 ### ML-1A — **AC1** — Guarda de vacuidade: varredura que enumere **zero** itens **falha** ou reporta
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (2026-10-17)
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
@@ -189,7 +189,7 @@ grep -q "ML-0A-DONE" docs/roadmaps/wip/ROADMAP-2026-09-22-check-referential-inte
 - [ ] tests green
 
 ### ML-1B — **AC2** — 🔴 **Falsificação nas duas direções:** árvore vazia → **reprova**; árvore íntegra →
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (2026-10-17)
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
@@ -198,7 +198,7 @@ grep -q "ML-0A-DONE" docs/roadmaps/wip/ROADMAP-2026-09-22-check-referential-inte
 - [ ] tests green
 
 ### ML-1C — **AC3** — O gate emite **contagem** do que verificou. Os demais gates ≤0,11 s têm guarda ou
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (2026-10-17)
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
@@ -207,7 +207,7 @@ grep -q "ML-0A-DONE" docs/roadmaps/wip/ROADMAP-2026-09-22-check-referential-inte
 - [ ] tests green
 
 ### ML-1D — **AC4** — 🔴 **Cenário em scripts/check-gates-falsify.sh.** Esta é a correção da **classe**,
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (2026-10-17)
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
@@ -216,7 +216,7 @@ grep -q "ML-0A-DONE" docs/roadmaps/wip/ROADMAP-2026-09-22-check-referential-inte
 - [ ] tests green
 
 ### ML-1E — **AC5** — O gate resolve req_dir/adr_dirs/roadmap_dir do trackfw.yaml em vez de
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (2026-10-17)
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
@@ -245,3 +245,12 @@ Evidência e tabela completa: `docs/governanca/2026-10-17-triagem-backlog-pre-v8
 O resíduo 4 (`2>/dev/null` no `find` engolindo erro de permissão) **não fica como resíduo**: é o
 mesmo mecanismo desta REQ — o gate termina em OK sem ter conseguido olhar. Entra no ML-1A: `req_dir`
 inexistente ou ilegível reprova com mensagem nomeando o caminho, e erro do `find` não é engolido.
+
+## Entrega — 2026-10-17
+`scripts/check-referential-integrity.sh`: `req_dir` inexistente → reprova nomeando o caminho e a
+origem; zero REQs → reprova; erro do `find` não é mais engolido; OK com contagem
+("Referential integrity OK: 257 REQs, 327 referencias verificadas" neste repositório).
+Cenário 12 do falsify ganhou 7 braços, incluindo o script pré-correção embarcado (heredoc) que passa
+na árvore vazia — prova de que o cenário mede. Não usa `git show origin/main:`, que após o merge
+apontaria para a versão corrigida (desvio do handoff, correto). Reconferido pelo arquiteto: sem
+diretório, vazio, referência quebrada → exit 1; íntegro → exit 0 com contagem.

@@ -1,5 +1,6 @@
 # Memory Index — ares-tf
 
+- [Heredoc awk quoting in falsify fixtures](feedback_heredoc_awk_quoting_in_falsify.md) — `["']` in `<<'SABEOF'` must be `["'"'"']`; never use `origin/main` as old-script fixture (breaks post-merge)
 - [PowerShell $Args param collision](feedback_powershell_args_param_collision.md) — naming a function param $Args silently empties it; always execute .ps1 scripts locally, parsing isn't enough
 - [Opção D validação técnica](project_opcao_d_validacao.md) — Trilha 1 (ML-1A→1D) completa; AC4 é npm constraint não opção D; go-to-wheel v0.2 incompatível com cmd/ layout; issue #338 agrava
 - [Windows VM: PSExecutionPolicyPreference inheritance](project_psexecutionpolicypref_bypass_inheritance.md) — child PS processes inherit Bypass from parent via env; test Restricted from cmd parent only
