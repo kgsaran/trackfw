@@ -125,3 +125,31 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 🔴 **Vivo** — prioridade 1: `git add -A` → exit 0 no `trackfw guard git-branch` (`git commit` → exit 2); a regra do ADR-2026-09-05 nunca entrou em `internal/guard/gitbranch.go`. AC de paridade nos 3 CLIs sumiu com a v8.
 
 Evidência e tabela completa: `docs/governanca/2026-10-17-triagem-backlog-pre-v8.md`.
+
+---
+
+## Decisões — 2026-10-17 (Wave 0 + usuário)
+
+Wave 0: `docs/seguranca/2026-10-17-wave0-guard-staging-implicito.md` (hades-tf, aprova com ressalvas).
+
+- **D-U1** `git add` sem operando → **bloqueia** (ADR D1).
+- **D-U2 (usuário)** diretório como alvo (`git add docs/`, `git add -A docs/`) → **passa**: medido que,
+  com pathspec, `-A` não alarga o escopo. Bloqueia só sem pathspec ou com pathspec que é a raiz
+  inteira (`.`, `./`, `..`, `../`, `:/`, `:(top)`), inclusive depois de `--`.
+- **D-U3** `git stage` (alias de `add`) → mesma regra.
+- **D-U4** `:/` e `:(top)` → **bloqueiam**.
+- **D-U5 (usuário)** **ligada por padrão**, como os demais guards; entra no CHANGELOG como mudança de
+  comportamento.
+- Interativos e simulação (`-p`, `-i`, `--patch`, `--interactive`, `-n`, `--dry-run`) → passam.
+- `git commit -a`/`--all` já é bloqueado (o guard bloqueia `git commit` cru incondicionalmente).
+- **D4/AC8 pós-v8:** uma implementação; a paridade vira contrato em `docs/cli-parity.md` + testes Go
+  + cenários em `scripts/check-gates-falsify.sh`.
+
+### ML-1I — Sítios de mesma causa achados na Wave 0
+**Status:** ⬜ Pendente
+- **B:** `internal/generators/scaffold.go:~732` — o template de skill instrui `git add -A`; passa a
+  instruir caminho explícito.
+- **C:** `internal/generators/agentfiles.go:~1949` — denylist nativa do Amazon Q
+  (`^git (commit|push|checkout -b)`) não cobre o staging implícito; estender.
+- **R-6 (medir):** a razão do guard tem de ser linha única e segura dentro de JSON; o hades observou
+  que `reasonResetHard` já sai inválida. Se for o mesmo mecanismo de emissão, corrige junto.
