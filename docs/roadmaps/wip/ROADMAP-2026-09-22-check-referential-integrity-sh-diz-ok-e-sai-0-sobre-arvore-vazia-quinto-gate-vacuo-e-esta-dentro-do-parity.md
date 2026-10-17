@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: wip
 date: 2026-09-22
 req: "docs/req/REQ-2026-09-03-check-referential-integrity-diz-ok-e-sai-zero-sobre-arvore-vazia-sem-guarda-de-vacuidade.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: `check-referential-integrity.sh` diz `OK` e sai 0 sobre árvore vazia — quinto gate vácuo, e está dentro do `parity`
 
-> Created: 2026-09-22 | Status: backlog
+> Created: 2026-09-22 | Status: wip
 
 ## Context
 <!-- Derived from REQ: REQ-2026-09-03-check-referential-integrity-diz-ok-e-sai-zero-sobre-arvore-vazia-sem-guarda-de-vacuidade.md -->
