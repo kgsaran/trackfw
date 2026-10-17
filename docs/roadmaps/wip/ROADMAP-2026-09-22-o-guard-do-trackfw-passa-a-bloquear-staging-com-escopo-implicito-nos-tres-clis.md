@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: wip
 date: 2026-09-22
 req: "docs/req/REQ-2026-09-05-o-guard-do-trackfw-passa-a-bloquear-staging-com-escopo-implicito-nos-tres-clis.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: o guard do trackfw passa a bloquear staging com escopo implicito nos tres CLIs
 
-> Created: 2026-09-22 | Status: backlog
+> Created: 2026-09-22 | Status: wip
 
 ## Context
 <!-- Derived from REQ: REQ-2026-09-05-o-guard-do-trackfw-passa-a-bloquear-staging-com-escopo-implicito-nos-tres-clis.md -->
