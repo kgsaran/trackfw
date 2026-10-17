@@ -516,3 +516,310 @@ ou consequências da mesma raiz de B-4 já apontada.
 
 **Nota de papel:** hades-tf não commita. O arquivo está em
 `docs/seguranca/2026-10-17-red-team-guard-staging-implicito.md`.
+
+---
+
+## Rodada 3 — Hades-tf
+
+> Reviewer: `hades-tf` | Data: 2026-10-17 (terceira sessão — rodada final)
+> Binário branch: `/tmp/tfw-r3` (HEAD da branch, commit `81c91606`)
+> Binário main: `/tmp/tfw-main` (origin/main `3e9d4c6d`, mesmo da Rodada 2)
+> Testes: `go test ./internal/guard/ ./internal/generators/` — verde.
+> Critério ADR D5/AC7: guard é tripwire contra dedo escorregando, não defesa
+> contra adversário. BLOQUEANTE = (a) FP em comando legítimo plausível, ou
+> (b) bypass natural. RESÍDUO = forma exótica ou só possível com intenção de
+> contornar. Regressão em guard diferente de add = sempre BLOQUEANTE.
+
+---
+
+### Veredito Rodada 3
+
+**BLOQUEIA.**
+
+Dois bloqueantes novos, introduzidos pelo código desta rodada:
+
+- **B-5 (FP):** `git add :(top)src/a.go` e `git add ':(top)src/a.go'` bloqueiam
+  quando deveriam passar. `isAddRootToken` trata qualquer `:(top)X` como raiz
+  independentemente do padrão `X`.
+- **B-6 (FP / Regressão no stash guard):** `(git stash list) > /tmp/x`,
+  `(git stash show) 2>&1`, `(git stash list) # comment`, `(git stash list) )`,
+  `(git stash list) 2>/dev/null` — bloqueiam no branch (exit:2), passavam no
+  main (exit:0). Regressão introduzida pelo B-4 fix: o per-segment strip remove
+  `(` mas não remove `)` quando a `)` fechadora não é o último caractere do
+  segmento (há redirect/comentário após). `"list)"` não casa com a allowlist do
+  stash → stash guard dispara.
+
+---
+
+### B-5 — Falso positivo: `:(top)X` com caminho explícito bloqueia
+
+**Descrição:** `isAddRootToken` retorna `true` para qualquer pathspec mágico
+cujos attrs contêm `"top"`, independentemente do padrão que o segue. O `:(top)`
+sozinho é de fato raiz (equivalente a `:/`). Mas `:(top)src/a.go` significa
+"src/a.go relativo à raiz do repo, mesmo que CWD seja subdiretório" — caminho
+explícito. O guard o bloqueia como escopo implícito.
+
+Discriminador: `git add ':/src/a.go'` (sinônimo git, diferente grafia) →
+branch exit:0, main exit:0. O `:/src/a.go` não entra no ramo `:(` de
+`isAddRootToken`. A assimetria confirma que o bug é a cobertura excessiva do
+`"top"` attr, não uma propriedade do pathspec mágico em geral.
+
+**Medido (branch=exit:2 ≡ BLOQUEIA; exit:0 ≡ PASSA):**
+
+| Comando | Deveria | branch | main | Tipo |
+|---|---|---|---|---|
+| `git add ':(top)src/a.go'` | PASSA | exit:2 | exit:0 | **B-5 FP** |
+| `git add :(top)src/a.go` | PASSA | exit:2 | exit:0 | **B-5 FP** |
+| `git add ':(top,icase)src/a.go'` | PASSA | exit:2 | exit:0 | **B-5 FP** |
+| `(git add :(top)src/a.go)` | PASSA | exit:2 | exit:0 | **B-5 FP** |
+| `git add :(top)` | BLOQUEIA | exit:2 | exit:0 | OK (main sem regra add) |
+| `git add ':(top).'` | BLOQUEIA | exit:2 | exit:0 | OK |
+| `git add ':(top,glob)*'` | BLOQUEIA | exit:2 | exit:0 | OK |
+| `git add ':/src/a.go'` | PASSA | exit:0 | exit:0 | OK (discriminador) |
+
+**Causa raiz:** em `isAddRootToken` (linha ~700):
+
+```go
+if strings.TrimSpace(a) == "top" {
+    return true   // ← ignora o padrão após :(top)
+}
+```
+
+**Correção recomendada:** só retornar `true` quando o padrão for raiz ou vazio
+(`isAddRootToken("")` = true via `path.Clean("") = "."`):
+
+```go
+if strings.TrimSpace(a) == "top" {
+    if isAddRootToken(pattern) {
+        return true
+    }
+}
+```
+
+Verificação que `:(top,glob)*` não regride: `isAddRootToken("*")` = false →
+"top" check NÃO retorna true; o ramo "glob" ainda captura porque
+`isGlobWildcardOnly("*")` = true.
+
+Consequência declarada do fix: `:(top,exclude)x` passa a retornar `false` por
+`isAddRootToken` (pattern=`"x"`, não raiz) e também `false` por
+`isExclusionPathspec` (não começa com `:!`, `:^` ou `:(exclude)`). O token
+seria classificado como positional não-raiz → `allImplicit=false` → PASSA. Mas
+`:(top,exclude)x` estágia todo o repo exceto `x` — é escopo implícito. Esse
+vetor deve ser adicionado à lista de resíduos da mesma família de `:!x`/RT-2.
+
+**Severidade:** BLOQUEANTE — FP em comando legítimo que o arquiteto declarou
+explicitamente como "deve passar".
+
+---
+
+### B-6 — Regressão no stash guard: `(cmd) > redirect` e formas similares
+
+**Descrição:** o fix de B-4 (Rodada 2) adicionou per-segment strip de `(` +
+`)` simétricos. O código só remove a `)` final se ela for o ÚLTIMO caractere
+do segmento. Quando há conteúdo após a `)` fechadora (redirect `>`, `2>&1`,
+`# comment`, extra `)`), a `)` fica presa no token anterior: `list)` em vez
+de `list`. A allowlist do stash case não casa → bloqueia.
+
+`quoteAwareSplit` não divide em `>` (não é separador), então
+`(git stash list) > /tmp/x` chega inteiro como segmento ao per-segment strip.
+
+Código problemático (`MatchSubcommand`, per-segment strip, linhas ~269–276):
+
+```go
+if len(seg) > 0 && seg[0] == '(' {
+    seg = strings.TrimLeft(seg[1:], " \t")
+    if len(seg) > 0 && seg[len(seg)-1] == ')' {    // ← só strip se último char
+        seg = strings.TrimRight(seg[:len(seg)-1], " \t")
+    }
+}
+```
+
+**Medido:**
+
+| Comando | Deveria | branch | main | Tipo |
+|---|---|---|---|---|
+| `(git stash list) > /tmp/x` | PASSA | exit:2 | exit:0 | **B-6 REGRESSÃO** |
+| `(git stash show) 2>&1` | PASSA | exit:2 | exit:0 | **B-6 REGRESSÃO** |
+| `(git stash list) # comment` | PASSA | exit:2 | exit:0 | **B-6 REGRESSÃO** |
+| `(git stash list) )` | PASSA | exit:2 | exit:0 | **B-6 REGRESSÃO** |
+| `(git stash list) 2>/dev/null` | PASSA | exit:2 | exit:0 | **B-6 REGRESSÃO** |
+| `(git stash list)` | PASSA | exit:0 | exit:0 | OK (B-4 fix intacto) |
+| `(git stash show)` | PASSA | exit:0 | exit:0 | OK (B-4 fix intacto) |
+
+Nota: `(git add -A) > /dev/null` passa no branch (exit:0) e no main (exit:0).
+Não é regressão, mas é FN no add rule (o `>` vira positional não-raiz,
+`allImplicit=false` → passa). Resíduo da mesma classe de `$(git add -A)` —
+I/O redirects não são modeled pelo guard; declarado junto com D5.
+
+**Correção recomendada:** aplicar `stripOuterParens` ao segmento em vez do
+check `seg[len-1]==)`, ou usar a lógica de profundidade para encontrar a `)` 
+balanceada dentro do segmento e truncar ali:
+
+```go
+if len(seg) > 0 && seg[0] == '(' {
+    inner := seg[1:]
+    // Find balanced ) inside inner (same depth logic as stripOuterParens)
+    depth := 1
+    for i, c := range inner {
+        if c == '(' { depth++ }
+        if c == ')' {
+            depth--
+            if depth == 0 {
+                seg = strings.TrimSpace(inner[:i])
+                break
+            }
+        }
+    }
+}
+```
+
+**Severidade:** BLOQUEANTE — regressão em guard diferente de add (stash guard),
+critério sempre-bloqueante por definição.
+
+---
+
+### Tabela completa Rodada 3
+
+| Comando | Deveria | branch | main | Categoria |
+|---|---|---|---|---|
+| `git add ':(top)src/a.go'` | PASSA | exit:2 | exit:0 | **B-5 BLOQUEANTE** |
+| `git add :(top)src/a.go` | PASSA | exit:2 | exit:0 | **B-5 BLOQUEANTE** |
+| `git add ':(top,icase)src/a.go'` | PASSA | exit:2 | exit:0 | **B-5 BLOQUEANTE** |
+| `(git add :(top)src/a.go)` | PASSA | exit:2 | exit:0 | **B-5 BLOQUEANTE** |
+| `(git stash list) > /tmp/x` | PASSA | exit:2 | exit:0 | **B-6 BLOQUEANTE** |
+| `(git stash show) 2>&1` | PASSA | exit:2 | exit:0 | **B-6 BLOQUEANTE** |
+| `(git stash list) # comment` | PASSA | exit:2 | exit:0 | **B-6 BLOQUEANTE** |
+| `(git stash list) )` | PASSA | exit:2 | exit:0 | **B-6 BLOQUEANTE** |
+| `(git stash list) 2>/dev/null` | PASSA | exit:2 | exit:0 | **B-6 BLOQUEANTE** |
+| `git add :(top)` | BLOQUEIA | exit:2 | exit:0 | OK |
+| `git add ':(top).'` | BLOQUEIA | exit:2 | exit:0 | OK |
+| `git add ':(top,glob)*'` | BLOQUEIA | exit:2 | exit:0 | OK |
+| `git add ':/src/a.go'` | PASSA | exit:0 | exit:0 | OK (discriminador B-5) |
+| `(git stash list)` | PASSA | exit:0 | exit:0 | OK (B-4 fix intacto) |
+| `(git stash show)` | PASSA | exit:0 | exit:0 | OK (B-4 fix intacto) |
+| `git add ':(icase)*'` | BLOQUEIA (whole-tree) | exit:0 | exit:0 | RT-R3-1 (resíduo) |
+| `git add ':(top,glob)src/*.go'` | PASSA | exit:2 | exit:0 | RT-R3-2 (mesma raiz B-5) |
+| `git add --dry .` | PASSA (abrev.) | exit:2 | exit:0 | RT-R3-3 (resíduo) |
+| `git add --dry-run=false .` | BLOQUEIA (git rejeita) | exit:2 | exit:0 | OK |
+| `git add --pat .` | PASSA (abrev. --patch) | exit:2 | exit:0 | RT-R3-4 (resíduo) |
+| `git add --patch .` | PASSA | exit:0 | exit:0 | OK |
+| `git add -A -- -n` | PASSA (-A+path → só -n) | exit:0 | exit:0 | OK (correto — -A com pathspec é scoped) |
+| `git add ':(attr:executable)'` | PASSA (seletivo) | exit:0 | exit:0 | OK |
+| `(git add -A 'f(x)')` | PASSA (explícito) | exit:0 | exit:0 | OK |
+| `(git add -A) > /dev/null` | BLOQUEIA | exit:0 | exit:0 | RT-R3-5 (FN, resíduo I/O redirect) |
+| `((git add -A))` | BLOQUEIA | exit:2 | exit:0 | OK |
+| `(git add f1 && git add -A)` | BLOQUEIA | exit:2 | exit:0 | OK |
+| `(git add -A)` | BLOQUEIA | exit:2 | exit:0 | OK (B-4 fix) |
+| `git log --format='(%h %s)'` | PASSA | exit:0 | exit:0 | OK |
+| `trackfw commit -m 'fix (scope): x'` | PASSA | exit:0 | exit:0 | OK |
+| `gh pr create --title 'x (y)'` | PASSA | exit:0 | exit:0 | OK |
+| `git add -An --no-dry-run` | BLOQUEIA | exit:2 | exit:0 | OK (B-3 fix) |
+| `git add -An` | PASSA (dry-run) | exit:0 | exit:0 | OK (B-1 fix) |
+| `git add -n --no-d .` | PASSA (--no-d não atinge min 8) | exit:0 | exit:0 | OK (guard correto) |
+| `git add 'unfinished` | PASSA | exit:0 | exit:0 | OK (unclosed quote — explicit token) |
+| Regressão: `git commit -m fix` | BLOQUEIA | exit:2 | exit:2 | OK |
+| Regressão: `git push --force` | BLOQUEIA | exit:2 | exit:2 | OK |
+| Regressão: `git stash` | BLOQUEIA | exit:2 | exit:2 | OK |
+| Regressão: `git reset --hard` | BLOQUEIA | exit:2 | exit:2 | OK |
+
+---
+
+### Ressalvas não-bloqueantes (Resíduo Rodada 3)
+
+| # | Descrição | Ação / texto para `cli-parity.md` |
+|---|---|---|
+| RT-R3-1 | `:(icase)*` → FN whole-tree. `:(icase)` não reconhecido. Exótico (pathspec magic). | Adicionar ao parágrafo de resíduos junto com `git add '*'`: `:(icase)*` (glob case-insensitive inteiro — guard não reconhece o atributo `icase`; usar `git add .` que é bloqueado). |
+| RT-R3-2 | `:(top,glob)src/*.go` → FP (mesma raiz de B-5). Mais exótico. | Fechado pelo fix de B-5. |
+| RT-R3-3 | `git add --dry .` → FP (abrev. de `--dry-run`). Git aceita `--dry`; guard aceita só `--dry-run` exato. Raro. | Adicionar: "O guard aceita `-n` e `--dry-run` exatos; abreviações como `--dry` não são reconhecidas (fail-closed). Usar `--dry-run`." |
+| RT-R3-4 | `git add --pat .` → FP (abrev. de `--patch`). Guard aceita só `--patch` exato. Raro. | Adicionar junto com RT-R3-3: "Mesma classe para `--patch`/`--interactive`: só a forma exata é reconhecida." |
+| RT-R3-5 | `(git add -A) > /dev/null` → FN. `>` vira positional após strip do `(`, `allImplicit=false`. | Adicionar ao bloco D5: "`(git add -A) > redir` — o `>` vira positional, escapa a regra; mesma classe de `$(git add -A)` (I/O redirect não modelado pelo guard)." |
+| RT-R3-6 | `:(top,exclude)x` → consequência do fix de B-5. Após o fix, `isAddRootToken(":(top,exclude)x")` = false e `isExclusionPathspec` também = false (não começa com `:!`/`:^`/`:(exclude)`) → PASSA. Mas estágia todo o repo menos `x`. | Adicionar à lista RT-2 de exclusões: "`:(top,exclude)x` — `:(top)` combinado com `exclude` não é capturado pelo guard (resíduo do fix B-5)." |
+
+---
+
+### Análise `stripOuterParens` — aspas e formas especiais
+
+`stripOuterParens` não respeita aspas ao contar `(` e `)`. Para os vetores
+testados, isso é benigno:
+
+- **`(` dentro de aspas → depth inflada:** a função não encontra `depth==0` no
+  último `)` esperado → retorna `s` inalterado → fail-safe (o per-segment
+  processa normalmente).
+- **`)` dentro de aspas → depth decrementada:** pode causar retorno prematuro
+  com `s` inalterado. Nenhum vetor testado causou strip incorreto.
+
+Casos testados e confirmados:
+- `(git add -A 'f(x)')` → strip via coincidência de depth (o `(` na string
+  de argumento infla depth para 2; os dois `)` finais retornam depth a 0 em
+  last pos) → `git add -A 'f(x)'` → path explícito → PASSA. Correto.
+- `(git commit -m "fix (scope)")` → idem → `git commit ...` → BLOQUEIA commit
+  guard. Correto.
+- `(git stash list) > /tmp/x` → NÃO stripa (primeiro `)` não está em last
+  pos) → per-segment processa → **B-6** (ver acima).
+
+Nenhum FP/FN novo atribuível a `stripOuterParens` além de B-6
+(per-segment, não `stripOuterParens` diretamente) e B-5 (em `isAddRootToken`).
+
+---
+
+### Testes
+
+`go test ./internal/guard/ ./internal/generators/` — verde em todos os
+subtestes (confirmado HEAD commit `81c91606`).
+
+Falsify cenário 201 — novos vetores adicionados por `git diff HEAD~1 --
+scripts/check-gates-falsify.sh`:
+- `baseline-blocks-An-no-dry-run`: `git add -An --no-dry-run` → exit:2 em base
+  binary. Medido: `/tmp/tfw-r3` → exit:2. ✓
+- `detection-catches-bypass-An-no-dry-run`: `git add -An --no-dry-run` → exit:0
+  em binário sabotado (case "add","stage" removido). Não medido diretamente
+  (requer build separado); padrão idêntico ao vetor 200 já validado em rounds
+  anteriores. A estrutura é correta; `FALSIFY_SUCCESS_FLOOR` bumped de 246→248
+  confirma que os 2 novos braços foram contados.
+
+Vetores B-5 e B-6 não têm cobertura de teste atual — ausentes do suite.
+
+---
+
+### Resumo Rodada 3
+
+**BLOQUEIA.** Dois bloqueantes novos:
+
+- **B-5 (FP add guard):** `isAddRootToken` trata `:(top)X` como raiz
+  independentemente de `X`. Fix: mudar para `isAddRootToken(pattern)` no ramo
+  "top" (empty pattern cai em `path.Clean("")="."` → true; path explícito →
+  false). Consequência declarada: `:(top,exclude)x` passa a resíduo (RT-R3-6).
+  Vetores do mesmo ML: `:(top)src/a.go`, `:(top,icase)src/a.go`,
+  `:(top,glob)src/*.go` e formas parenthesized.
+
+- **B-6 (FP stash guard / regressão):** per-segment strip remove `(` mas não
+  a `)` correspondente quando há conteúdo após ela (redirect/comment/extra `)`)
+  no mesmo segmento (porque `>` não é split char em `quoteAwareSplit`).
+  Fix: usar lógica de profundidade para localizar a `)` balanceada dentro do
+  segmento em vez de checar `seg[len-1]==)`.
+
+**Texto de resíduo para `cli-parity.md`** (paste-ready, estilo do arquivo):
+
+No parágrafo de resíduos declarados (linha ~6279), acrescentar após
+`git add '*'`:
+
+```
+`:(icase)*` (atributo icase não reconhecido pelo guard — usar `git add .`
+que é bloqueado), `(git add -A) > redir` (I/O redirect vira positional,
+escapa a regra — mesma classe de `$(git add -A)`).
+```
+
+Adicionar ao parágrafo de Passa, após a nota de `--no-interactive`:
+
+```
+O guard aceita `-n` e `--dry-run` exatos para dry-run, e `--patch`/`--interactive`
+exatos para interativo; abreviações git válidas como `--dry` e `--pat` não são
+reconhecidas (fail-closed): bloqueiam quando haveria positional root.
+```
+
+Adicionar à lista RT-2 de exclusões:
+
+```
+`:(top,exclude)x` — `:(top)` combinado com `exclude` não é capturado pelo
+guard após o fix de B-5 (resíduo declarado).
+```
