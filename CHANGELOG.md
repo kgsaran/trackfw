@@ -7,6 +7,10 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **O guard bloqueia staging com escopo implícito, ligado por padrão.** `git add` e `git stage` sem caminho explícito (bare, `-A`/`--all`/`-u` sem positional, ou com só tokens whole-tree como `.` `./` `..` `../` `:/` `:(top)`) são bloqueados pelo guard de branch do agente com instrução de enumerar o que vai estagiar via `git status --short` e depois usar `git add <arquivo1> <arquivo2> …`. Passam: caminhos explícitos (inclusive `-A docs/`), flags interativas (`-p`/`-i`/`--patch`/`--interactive`), dry-run (`-n`/`--dry-run`) e `--pathspec-from-file=`. O Amazon Q Developer recebe um segundo padrão em `deniedCommands` cobrindo as formas bare. (REQ-2026-09-05, ADR-2026-09-05)
+
 ## [9.7.0] - 2026-10-17
 
 ### Added

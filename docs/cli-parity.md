@@ -6249,6 +6249,30 @@ Mensagem de bloqueio por subcomando (todas referenciam CLAUDE.md §1):
 | `commit` | `trackfw commit -m '<mensagem>'` (comando novo, Wave 2 deste roadmap) |
 | `push` (plain, `--mirror`, `--prune`) | `trackfw ship` |
 | `push` com remoção de branch: `--delete`/`-d <ref>` ou `:<ref>`/`+:<ref>` (onde `<ref>` não é `refs/tags/`) | `trackfw branch prune --remote --apply` — `reasonPushDelete` (`internal/guard/gitbranch.go`); `isPushBranchDelete` discrimina as formas; tags, `--mirror` e `--prune` continuam com `reasonPush` |
+| `add`/`stage` com escopo implícito | `git status --short` para enumerar + `git add <arquivo1> <arquivo2>` — ver abaixo |
+
+**Guard de staging com escopo implícito (ADR-2026-09-05 D1, Wave 1, REQ-2026-09-05):**
+
+`git add` e `git stage` (alias) bloqueiam quando o escopo não é enumerado explicitamente. Regra baseada em escopo efetivo, não em flags:
+
+**Bloqueia** (`reasonAddImplicit`, `internal/guard/gitbranch.go`):
+- Sem operando posicional e sem flag interativa/dry-run: `git add`, `git add -A`, `git add -u`, `git add --all`, `git add --update`
+- Somente tokens whole-tree como positionals: `git add .`, `git add ./`, `git add ..`, `git add ../`, `git add :/`, `git add :(top)`, `git add -- .`
+- `git stage` com as mesmas formas acima (D-U3)
+
+**Passa** (AC2/AC3):
+- Caminho explícito: `git add arquivo.go`, `git add docs/`, `git add -A docs/` (D-U2)
+- Flag interativa: `-p`/`--patch`, `-i`/`--interactive`
+- Dry-run: `-n`/`--dry-run` (ex.: `git add -A -n`)
+- `--pathspec-from-file=<arq>` (enumeração via arquivo — residual, guard não lê o arquivo)
+
+**Resíduos declarados (D5, R-1):** flags curtas combinadas sem pathspec (ex.: `-AN` bare) não são decompostas — `-AN` ≠ `-A`; essas formas bloqueiam (fail-closed). `git${IFS}add`, `{git,add}`, `git config alias.aa 'add -A'` + `git aa`, e `bash script.sh` com `git add -A` interno ficam fora do alcance (preprocessing de shell ou script externo).
+
+**Cobertura de testes:** `TestMatchSubcommand_AddImplicit_Blocks`, `TestMatchSubcommand_AddImplicit_Passes`, `TestMatchSubcommand_AddImplicit_AC5`, `TestRunGitBranch_AddImplicit_ExitAndReason`, `TestAllReasonsProduceValidJSON` (`internal/guard/gitbranch_test.go`). Vacuidade (AC4): Cenário 201 em `scripts/check-gates-falsify.sh`.
+
+**Amazon Q Developer:** além do hook, o `deniedCommands` nativo é estendido com `^git (add|stage)( +(-A|--all|-u|--update|--|\.|\./|\.\.|\.\./|:/|:\(top\)))* *$` (segundo padrão além de `^git (commit|push|checkout -b)`). Falso-positivo verificado: `git add -A docs/` e `git add file.go` não casam. Gerado por `InjectAmazonQHooks` (`internal/generators/agentfiles.go`).
+
+<!-- trackfw-contract: gate=scripts/check-gates-falsify.sh,internal/guard/gitbranch_test.go partial=TestAllReasonsProduceValidJSON valida JSON-safety de todas as razões (R-6) -->
 
 O guard bloqueia **todas** as formas de remoção de branch via push (`isPushBranchDelete`,
 `internal/guard/gitbranch.go`). A nova mensagem nomeia `trackfw branch prune --remote --apply`
