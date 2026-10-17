@@ -823,3 +823,87 @@ Adicionar à lista RT-2 de exclusões:
 `:(top,exclude)x` — `:(top)` combinado com `exclude` não é capturado pelo
 guard após o fix de B-5 (resíduo declarado).
 ```
+
+---
+
+## Conferência pós-rodada 3
+
+> Reviewer: `hades-tf` | Commit: `f127561d` | Data: 2026-10-17
+
+**Veredito: LIBERA.**
+
+Nenhum vetor bloqueante novo. A mudança no tokenizador fecha os dois bloqueantes da rodada 3 (B-5,
+B-6) sem introduzir FP ou FN nos domínios verificados. RT-R3-6 (residual da rodada 3) foi fechado
+como efeito colateral do fix de `isExclusionPathspec`. 180 testes verdes.
+
+### Vetores verificados
+
+| Comando | Deveria | Branch (`f127561d`) | Observação |
+|---|---|---|---|
+| `git add :(top)` | BLOCK | `add-implicit` | B-5: empty pattern = root, correto |
+| `git add ':(top)'` | BLOCK | `add-implicit` | quoted = mesmo tratamento |
+| `git add :(top)src/a.go` | PASS | `""` | B-5 fix funciona: padrão explícito |
+| `git add ':(top)src/a.go'` | PASS | `""` | quoted explicit, correto |
+| `git add :(exclude)x` | BLOCK | `add-implicit` | exclusão implica whole-tree |
+| `git add ':(exclude)x'` | BLOCK | `add-implicit` | quoted, correto |
+| `git add ':(glob)**'` | BLOCK | `add-implicit` | glob wildcard-only = root |
+| `git add :(glob)**` | BLOCK | `add-implicit` | unquoted, correto |
+| `git add :(glob)src/*.go` | PASS | `""` | glob + path explícito, correto |
+| `git add :(top,exclude)x` | BLOCK | `add-implicit` | RT-R3-6 FECHADO pelo fix de `isExclusionPathspec` |
+| `git add :(top).` | BLOCK | `add-implicit` | dot pattern = root, correto |
+| `git add :(top,glob)**` | BLOCK | `add-implicit` | top+glob+wildcard, correto |
+| `echo $(date)` | PASS | `""` | sem FP em não-add com `$(...)` |
+| `git commit -m 'fix (scope): msg'` | `commit` | `commit` | `(` em argumento: mid-word, não separator |
+| `gh api /x --jq '.[] \| select(.a)'` | PASS | `""` | `\|` é operador no shell mas jq não é add |
+| `ls $(date +%Y)` | PASS | `""` | subshell em não-add, sem FP |
+| `cat <(echo test)` | PASS | `""` | process substitution, sem FP |
+| `true && (git add .)` | BLOCK | `add-implicit` | subshell com add, correto |
+| `git push origin HEAD#x` | `push` | `push` | `#` após `D` (mid-word, `atWordBound=false`) não corta; `HEAD#x` intacto |
+| `gh issue view 12#c` | PASS | `""` | `#` mid-word, não-add, correto |
+| `git log --grep='#569'` | PASS | `""` | `#` dentro de aspas, seguro |
+| `git log --grep=#569` | PASS | `""` | `#` após `=` (não word-boundary), correto |
+| `git add src/a.go #comment` | PASS | `""` | path explícito + comentário, correto |
+| `git add . #comment` | BLOCK | `add-implicit` | `.` + comentário descartado, correto |
+| `git add -A # staging all` | BLOCK | `add-implicit` | `-A` + comentário descartado, correto |
+| `git add -A 2>/dev/null` | BLOCK | `add-implicit` | `stripShellSuffix` remove `2>/dev/null`; `git add -A` fica |
+| `git add -A &>/tmp/x` | BLOCK | `add-implicit` | `&>` removido, correto |
+| `git add . >>log` | BLOCK | `add-implicit` | `>>` removido, correto |
+| `git add f.go 2>&1` | PASS | `""` | path explícito + redir, correto |
+| `git add f.go >>/tmp/out` | PASS | `""` | path explícito + `>>`, correto |
+| `git add -A 2>/dev/null && git commit -m x` | BLOCK | `add-implicit` | segmento add bloqueia a chain |
+| `git stash list > /tmp/x` | PASS | `""` | regressão: correto |
+| `(git stash list) > /tmp/x` | PASS | `""` | regressão: correto |
+| `git log --oneline # show` | PASS | `""` | regressão: correto |
+| `(trackfw context) 2>&1` | PASS | `""` | regressão: correto |
+| `(git stash show) 2>&1` | PASS | `""` | regressão: correto |
+| `(git reset --soft HEAD~1)` | PASS | `""` | regressão: correto |
+
+### Resíduos remanescentes pós-rodada 3
+
+Os resíduos abaixo sobrevivem ao commit `f127561d`. Nenhum é novo — todos existiam antes da rodada 3
+ou foram declarados explicitamente nas rodadas anteriores.
+
+| # | Resíduo | Classe | Herdado de |
+|---|---|---|---|
+| R-1 | `$(git add -A)` e `` `git add -A` `` não bloqueados | FN pré-existente | Rodada 1 / RT-R3-5 |
+| R-2 | `(git add -A) > redir` — `>` vira positional, escapa | FN pré-existente | Rodada 3 (RT-R3-5) |
+| R-3 | `:(icase)*` não reconhecido (guard não modela `icase`) | FN exótico | Rodada 3 (RT-R3-1) |
+| R-4 | `--dry`, `--pat`, `--inter` (abreviações git) → fail-closed | FP raro | Rodada 3 (RT-R3-3/4); agora parcialmente corrigido pelo `resolveAddLongOpt` |
+
+**Nota sobre R-4**: o `resolveAddLongOpt` adicionado neste commit fecha `--dry` → `--dry-run`,
+`--pat` → `--patch`, `--inter` → `--interactive`. Portanto RT-R3-3 e RT-R3-4 da rodada 3 foram
+fechados aqui. O texto do resíduo nos parágrafos de `cli-parity.md` pode ser removido.
+
+### Nota sobre RT-R3-6 (fechado)
+
+A rodada 3 declarou `:(top,exclude)x` como resíduo (passaria sem bloquear). O commit `f127561d`
+estendeu `isExclusionPathspec` para checar o atributo `exclude` na forma `:(attrs)` — cobrindo
+`:(top,exclude)x`, `:(exclude,top)x` e variantes. Confirmado medido: retorna `add-implicit`.
+Semanticamente correto: `:(top,exclude)x` estágia todo o repositório menos `x` — escopo implícito
+que deve ser bloqueado.
+
+### Cobertura de testes
+
+`go test ./internal/guard/` — 180 sub-testes, 0 falhas. Os vetores B-5 e B-6 (mencionados na rodada
+3 como sem cobertura) continuam sem testes dedicados; o comportamento correto foi verificado acima
+por execução direta. Isso é um resíduo de cobertura, não de comportamento.

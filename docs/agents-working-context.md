@@ -46810,3 +46810,9 @@ Veredito: LIBERA COM RESSALVAS. R-T1 (resíduos não declarados: :!x, :(exclude)
 **hades-tf** · 2026-10-17 · Red-team Wave 1 — guard de staging implícito — veredito revisado
 Artefato: `docs/seguranca/2026-10-17-red-team-guard-staging-implicito.md`
 Veredito: NÃO FECHA. B-1 (BLOQUEANTE FP): combined flags com dry-run/interativo bloqueiam — `-An`, `-Ap`, `-nA`, `-un .` → exit 2, devem passar. B-2 (BLOQUEANTE FN): `git add . docs/a.txt` → exit 0, mas estageia 4 arquivos (whole-tree), bypass de 1 token. Fix B-1: decompor combined flags ou restringir resíduo. Fix B-2: `allPositionalsRoot` → `anyPositionalRoot`. Não-bloqueantes: RT-1..RT-7 (resíduos não declarados, test hardcoded, regex AQ divergência para -AN).
+
+**hades-tf** · 2026-10-17 · Conferência pós-rodada 3 — guard de staging implícito (REQ-2026-09-05) — concluído
+Branch: `feat/o-guard-do-trackfw-passa-a-bloquear-staging-com-escopo-implicito`
+Commit auditado: `f127561d`
+Artefato: `docs/seguranca/2026-10-17-red-team-guard-staging-implicito.md` (seção "Conferência pós-rodada 3" adicionada)
+Veredito: LIBERA. 37 vetores verificados: sem FP novo, sem FN novo, sem regressão. RT-R3-6 (`:(top,exclude)x`) fechado pelo fix de `isExclusionPathspec`. RT-R3-3/4 (`--dry`/`--pat`) fechados por `resolveAddLongOpt`. Resíduos remanescentes: `$(git add -A)` FN (R-1), `(git add -A) > redir` FN (R-2), `:(icase)*` exótico (R-3). 180 testes verdes.

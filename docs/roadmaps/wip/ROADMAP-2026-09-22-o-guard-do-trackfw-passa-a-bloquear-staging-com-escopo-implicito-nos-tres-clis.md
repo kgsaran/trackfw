@@ -25,7 +25,7 @@ REQ: docs/req/REQ-2026-09-05-o-guard-do-trackfw-passa-a-bloquear-staging-com-esc
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model for this roadmap
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — `docs/seguranca/2026-10-17-wave0-guard-staging-implicito.md`
 **Files affected:**
 **Actions:**
 1. Enumeration completeness — is the list of surfaces in this roadmap complete? Name what is missing, or show the list is closed. Do not limit the search to the files already named by the REQ — before declaring the list closed, search the repository for other places that emit the same artifact or the same pattern (for example, grep for the literal the final artifact contains).
@@ -47,7 +47,7 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 > Dependencies: none
 
 ### ML-1A — **AC1** — O guard bloqueia git add de escopo implícito: -A, --all, ., -u,
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (2026-10-17)
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
@@ -56,7 +56,7 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 - [ ] tests green
 
 ### ML-1B — **AC2** — Staging por caminho explícito **continua passando**, inclusive múltiplos caminhos e
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (2026-10-17)
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
@@ -65,7 +65,7 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 - [ ] tests green
 
 ### ML-1C — **AC3** — 🔴 **Controle de não-afrouxamento**, e é o critério principal: enumerar o que passou a
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (2026-10-17)
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
@@ -74,7 +74,7 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 - [ ] tests green
 
 ### ML-1D — **AC4** — 🔴 **Guarda de vacuidade:** com a regra desligada, os cenários de bloqueio **falham**.
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (2026-10-17)
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
@@ -83,7 +83,7 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 - [ ] tests green
 
 ### ML-1E — **AC5** — Mensagem de commit contendo o texto git add -A **não** é tratada como comando —
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (2026-10-17)
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
@@ -92,7 +92,7 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 - [ ] tests green
 
 ### ML-1F — **AC6** — 🔴 **A mensagem ensina.** Mostra git status --short para enumerar e a forma válida.
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (2026-10-17)
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
@@ -101,7 +101,7 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 - [ ] tests green
 
 ### ML-1G — **AC7** — Os limites de tokenização ficam **declarados** (git${IFS}add, {git,add},
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (2026-10-17)
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
@@ -110,7 +110,7 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 - [ ] tests green
 
 ### ML-1H — **AC8** — 🔴 **O gate de paridade cobre a regra nova.** Os guards existentes têm cobertura
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (2026-10-17)
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
@@ -146,10 +146,27 @@ Wave 0: `docs/seguranca/2026-10-17-wave0-guard-staging-implicito.md` (hades-tf, 
   + cenários em `scripts/check-gates-falsify.sh`.
 
 ### ML-1I — Sítios de mesma causa achados na Wave 0
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (2026-10-17)
 - **B:** `internal/generators/scaffold.go:~732` — o template de skill instrui `git add -A`; passa a
   instruir caminho explícito.
 - **C:** `internal/generators/agentfiles.go:~1949` — denylist nativa do Amazon Q
   (`^git (commit|push|checkout -b)`) não cobre o staging implícito; estender.
 - **R-6 (medir):** a razão do guard tem de ser linha única e segura dentro de JSON; o hades observou
   que `reasonResetHard` já sai inválida. Se for o mesmo mecanismo de emissão, corrige junto.
+
+## Entrega — 2026-10-17
+
+Regra em `internal/guard/gitbranch.go` (`add`/`stage`), ligada por padrão. Três rodadas de red-team
+(`docs/seguranca/2026-10-17-red-team-guard-staging-implicito.md`) bloquearam B-1…B-6; a causa
+recorrente (parênteses tratados por recorte de string) foi corrigida no tokenizador: `(`/`)` fora de
+aspas separam, redirecionamentos e `#` saem dos tokens. Conferência pós-rodada 3: **libera**.
+
+**Reconferido pelo arquiteto no binário:** 35 vetores de `add` corretos; 30 comandos não-add com
+decisão idêntica ao binário da `origin/main`; invariante `(C)` = `( C )` = `C` em 11 comandos de todos
+os guards. Teste `TestMatchSubcommand_RegressionAgainstMain` (38 comandos) fixa isso. Falsify: 272
+cenários, exit 0.
+
+**Resíduos declarados (`docs/cli-parity.md`):** `$(git add -A)` e crase; `git${IFS}add`, `{git,add}`,
+alias do usuário; `git add '*'` (o shell expande antes); `:(icase)*`; `--pathspec-from-file`. A
+conferência listou `(git add -A) > redir` como resíduo, mas o arquiteto mediu **exit 2** (bloqueia) —
+não é resíduo.
