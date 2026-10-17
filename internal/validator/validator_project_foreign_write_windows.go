@@ -20,9 +20,12 @@ package validator
 //   - is inheritable to files (OBJECT_INHERIT_ACE flag present), OR
 //   - is inheritable to containers (CONTAINER_INHERIT_ACE flag present).
 //
-// Remedy message distinguishes inherited ACEs (INHERITED_ACE flag) from explicit ACEs (R-5):
-//   - explicit: icacls "<dir>" /remove:g *<SID>
-//   - inherited: move project inside user profile or icacls "<dir>" /inheritance:d && /remove:g
+// Remedy message distinguishes inherited ACEs (INHERITED_ACE flag) from explicit ACEs (R-5).
+// Both forms include /grant *<ownerSID>:(OI)(CI)(F) BEFORE /remove:g so that the owner's write
+// access is not revoked when the only write-granting ACE is the one being removed (D2.2, #569):
+//   - explicit: icacls "<dir>" /grant *<ownerSID>:(OI)(CI)(F) && icacls "<dir>" /remove:g *<SID>
+//   - inherited: move project inside user profile or icacls "<dir>" /inheritance:d &&
+//                icacls "<dir>" /grant *<ownerSID>:(OI)(CI)(F) && icacls "<dir>" /remove:g *<SID>
 //
 // D3: any error reading or parsing the DACL is emitted as a warning (fail-visible, not silent).
 // R-2: GetAce failures emit a D3 warning and continue (no silent break).
@@ -259,9 +262,11 @@ func checkDirForeignWrite(dirPath string, ownerSID *windows.SID, ownerErr error)
 		}
 		msgs = append(msgs, fmt.Sprintf(
 			"project_foreign_write_windows: %q grants write access to %s (explicit ACE) — "+
-				"run: icacls \"%s\" /remove:g %s",
+				"run: icacls \"%s\" /grant *%s:(OI)(CI)(F) && icacls \"%s\" /remove:g %s",
 			dirPath,
 			strings.Join(explicitLabels, ", "),
+			dirPath,
+			ownerSID.String(),
 			dirPath,
 			strings.Join(sidArgs, " "),
 		))
@@ -274,10 +279,12 @@ func checkDirForeignWrite(dirPath string, ownerSID *windows.SID, ownerErr error)
 		msgs = append(msgs, fmt.Sprintf(
 			"project_foreign_write_windows: %q grants write access to %s (inherited ACE) — "+
 				"move the project inside your user profile or run: "+
-				"icacls \"%s\" /inheritance:d && icacls \"%s\" /remove:g %s",
+				"icacls \"%s\" /inheritance:d && icacls \"%s\" /grant *%s:(OI)(CI)(F) && icacls \"%s\" /remove:g %s",
 			dirPath,
 			strings.Join(inheritedLabels, ", "),
 			dirPath, dirPath,
+			ownerSID.String(),
+			dirPath,
 			strings.Join(sidArgs, " "),
 		))
 	}
