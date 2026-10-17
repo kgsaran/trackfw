@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-03
 author: "trackfw_architect (Zeus)"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz.md"
 ---
 
 # REQ: As 217 falhas reais de Windows colapsam em poucas causas, e três delas exigem decisão antes de código
 
-> Date: 2026-09-03 | Status: Open
+> Date: 2026-09-03 | Status: Done
 | Linear Issue:
 | Jira Issue:
 
@@ -121,7 +121,7 @@ ADR: docs/adr/ADR-2026-10-16-no-windows-o-validate-avisa-quando-o-projeto-conced
 <!-- As 3 acima. -->
 
 ## Linked Roadmap
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-09-03-fechar-os-grupos-de-falha-de-windows-por-causa-raiz.md
 
 
 ---
@@ -208,3 +208,9 @@ conhecida do `windows-full-suites`: **14 → 6**, todas `MEASURED` e de ambiente
 
 Fora desta REQ (sem medição nem causa comum): hooks com Cursor/Windsurf/Gemini/Kiro/Copilot/Amazon Q
 e PowerShell 7.
+
+## ✅ Reaberta e encerrada — 2026-10-16/17
+
+Reaberta pela Regra Dura de Causa Raiz com o #569 (o remédio impresso por
+`project_foreign_write_windows` podia trancar o dono). ML-W2d: o remédio concede ao usuário antes de
+remover o SID alheio (ADR D2.2), provado no x64 executando o remédio; mergeado no #572.
