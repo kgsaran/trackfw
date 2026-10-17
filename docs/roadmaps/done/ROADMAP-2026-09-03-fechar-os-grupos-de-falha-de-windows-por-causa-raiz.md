@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-03
 squad: apolo-tf
 req: "docs/req/REQ-2026-09-03-as-217-falhas-reais-de-windows-colapsam-em-poucas-causas-e-tres-delas-exigem-decisao-antes-de-codigo.md"
@@ -7,7 +7,7 @@ req: "docs/req/REQ-2026-09-03-as-217-falhas-reais-de-windows-colapsam-em-poucas-
 
 # Roadmap: Fechar os grupos de falha de Windows por causa raiz
 
-> Criado em: 2026-09-03 | Status: wip
+> Criado em: 2026-09-03 | Status: done
 
 ## Context
 
@@ -2694,4 +2694,9 @@ controle com o remédio antigo dá **`Access is denied`**. Medido no x64 (`windo
 `38980416363`): validator/pathguard/identity exit 0; `./...` falha só nas 6 conhecidas. Nota: o
 usuário do runner é o `Administrator` embutido (SID `-500`), mas sem ACE de Administrators na
 fixture o controle nega — o relatório do agente dizia "conta padrão", o que não foi medido; a
-mordida vale do mesmo jeito. ADR D2.2. Fecha #569.
+mordida vale do mesmo jeito. ADR D2.2. Fecha #569. **Mergeado** (#572, `dd2b7531`); #569 fechado.
+
+## ✅ Encerramento final — 2026-10-17
+
+ML-W2d entregue (#572). REQ-2026-09-03 volta a Done; nenhum ML aberto. Balanço inalterado: lista
+conhecida do Windows **6**, todas de ambiente.
