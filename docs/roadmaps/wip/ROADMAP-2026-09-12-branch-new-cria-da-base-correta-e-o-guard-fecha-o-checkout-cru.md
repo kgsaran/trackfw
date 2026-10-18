@@ -415,3 +415,19 @@ no guard hoje. Pela Regra Dura, entra neste roadmap.
 **Vivo**: `branch.go:143` faz `git checkout -b` sem start point nem `fetch`. AC de paridade sumiu com a v8.
 
 Evidência e tabela completa: `docs/governanca/2026-10-17-triagem-backlog-pre-v8.md`.
+
+## Decisões do usuário — 2026-10-18
+
+- **D-1: base padrão sempre a branch padrão do remoto (`origin/main`) → 10.0.0.** `branch new` faz
+  `fetch` (avisa se falhar, molde do `branch prune`) e cria de `origin/<padrão>` resolvida por
+  `resolveDefaultBranch` (o mesmo do `branch prune`); `--from <ref>` (inclusive `--from HEAD`) mantém
+  o empilhamento intencional; `--no-track` obrigatório (senão o `@{u}` vira `origin/main`); repo sem
+  `origin` → mensagem acionável. Entra no CHANGELOG como **BREAKING** e a próxima release é **major**.
+- **D-2: AC6/AC7 saem desta REQ** como resíduo declarado — com o D-1 o dano que o bloqueio de
+  `checkout <branch>`/`pull` evitaria desaparece, e bloquear `pull` sem caminho governado contraria o
+  ADR-2026-08-17.
+- **D-3:** branch padrão por `resolveDefaultBranch`, como no `branch prune`.
+- **ML-1C fica** (mesma causa: `git worktree add <path>` sem `-b` cria branch do HEAD) — o guard já
+  bloqueia `worktree add -b`; passa a bloquear a forma que cria branch implicitamente, deixando passar
+  `--detach`, `<path> <branch-existente>` e `<path> <commit>`.
+- **ML-1D:** CHANGELOG em `[Unreleased]` como BREAKING; o bump de versão vai no PR da release.
