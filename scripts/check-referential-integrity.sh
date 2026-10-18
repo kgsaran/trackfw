@@ -13,6 +13,7 @@ _REQ_DIR_SRC="fallback docs/req"
 REQ_DIR="docs/req"
 if [[ -f "$ROOT_DIR/trackfw.yaml" ]]; then
   _VAL=$(awk '/^req_dir[[:space:]]*:/ {
+    sub(/\r$/, "")
     sub(/^req_dir[[:space:]]*:[[:space:]]*/, "")
     gsub(/^["'"'"']|["'"'"']$/, "")
     gsub(/[[:space:]]*$/, "")
@@ -55,6 +56,7 @@ while IFS= read -r req; do
   seen_frontmatter=0
 
   while IFS= read -r line; do
+    line=${line%$'\r'}
     if [[ "$line" == "---" ]]; then
       if [[ $seen_frontmatter -eq 0 ]]; then
         seen_frontmatter=1
@@ -92,6 +94,11 @@ done <<<"$req_list"
 
 if [[ $req_count -eq 0 ]]; then
   echo "FAIL: zero REQs enumeradas em '$ROOT_DIR/$REQ_DIR' (de $_REQ_DIR_SRC)" >&2
+  exit 1
+fi
+
+if [[ $req_count -gt 0 && $ref_count -eq 0 ]]; then
+  echo "FAIL: $req_count REQs enumeradas mas zero referencias verificadas — provavel CRLF no frontmatter, frontmatter com outra gramatica, ou REQs sem campo adr/roadmap" >&2
   exit 1
 fi
 
