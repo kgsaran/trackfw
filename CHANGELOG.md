@@ -7,24 +7,33 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Breaking Changes
+## [10.0.0] - 2026-10-18
 
-- **`trackfw branch new` now creates branches from `origin/<default-branch>` by default**
-  (previously created from current HEAD). Before creating the branch, the command fetches
-  `origin` (warns on failure, never aborts) and resolves the default branch via
-  `resolveDefaultBranch`. This means branches started on a feature branch that is ahead of
-  `origin/main` will no longer silently inherit those commits.
-  Migration: use `--from HEAD` to reproduce the previous behaviour, or commit/stash local work
-  first.
+### ⚠️ BREAKING
 
-- **`git checkout --no-track -b`** is now used internally instead of `git checkout -b`. This
-  prevents git from setting `@{u}=origin/<default>` on the new branch, which would cause
-  `trackfw push` to never add `-u` (and the `[gone]` signal after PR merge would disappear).
+- **`trackfw branch new` cria a branch a partir da branch padrão do remoto, não mais do HEAD
+  atual.** Antes de criar, o comando faz `fetch` de `origin` (avisa e segue se falhar) e parte de
+  `origin/<branch padrão>` — `main`, `master` ou o que o remoto declarar —, sem rastreá-la
+  (`--no-track`). Uma branch nova deixa de herdar em silêncio os commits da branch em que você estava,
+  e nasce atualizada mesmo quando a `main` local está atrás.
+  **Para migrar:** quem empilha de propósito passa a usar `trackfw branch new <tipo>/<slug> --from HEAD`
+  (ou `--from <branch|tag|sha>`). Alterações não commitadas que conflitem com a base fazem o comando
+  parar com orientação (commit, stash ou `--from HEAD`); sem remoto `origin`, idem.
+  `--dry-run` passa a mostrar a base que seria usada. (#585, REQ-2026-09-12)
 
-- **`git worktree add <path>` without a branch flag is now blocked by the guard** when invoked
-  without a second positional (branch/commit-ish) and without `--detach`/`-d`/`--orphan`.
-  This form creates an implicit branch derived from `<path>`, bypassing governance.
-  Use `git worktree add <path> <existing-branch>` or `trackfw branch new <type>/<slug>` first.
+### Changed
+
+- **O guard bloqueia `git worktree add <caminho>` quando isso cria uma branch implícita** a partir do
+  HEAD (sem `-b`, sem branch/commit existente, inclusive com `--orphan` ou `--lock --reason`). Continuam
+  liberados `git worktree add <caminho> <branch-existente>`, `<caminho> <commit>` e `--detach`. (#585)
+- `trackfw push` e `trackfw ship` passam a orientar `trackfw branch new` em vez de `git checkout -b`. (#585)
+
+### Security
+
+- **`--from` do `branch new` não vira mais opção do `git`.** O valor é resolvido para um commit
+  (`git rev-parse --verify --end-of-options`) antes do checkout, que recebe o SHA; valores começando com
+  `-` ou que não resolvem são recusados sem tocar no repositório. (Encontrado no red-team antes da
+  release — nenhuma versão publicada tinha o `--from`.) (#585)
 
 ## [9.8.0] - 2026-10-18
 

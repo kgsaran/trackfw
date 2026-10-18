@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-12
 author: ""
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-12-branch-new-cria-da-base-correta-e-o-guard-fecha-o-checkout-cru.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-12-branch-new-cria-da-base-correta-e-o-guard-fecha-o-checkout-cru.md"
 ---
 
 # REQ: `branch new` cria a partir do HEAD atual, e não há comando para voltar à base
 
-> Date: 2026-09-12 | Status: Open
+> Date: 2026-09-12 | Status: Done
 
 ## Motivação
 
@@ -67,25 +67,25 @@ Esta REQ pede o mesmo comportamento no `branch new`.
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — `trackfw branch new <type>/<slug>` cria a partir de **`origin/main`** por padrão,
+- [x] **AC1** — `trackfw branch new <type>/<slug>` cria a partir de **`origin/main`** por padrão,
       independentemente do HEAD atual.
-- [ ] **AC2** — `--from <ref>` cria a partir da ref dada. `--from HEAD` reproduz o comportamento
+- [x] **AC2** — `--from <ref>` cria a partir da ref dada. `--from HEAD` reproduz o comportamento
       atual, para quem empilha **de propósito**.
-- [ ] **AC3** — o comando **faz `fetch` de `origin`** antes de resolver a base e, se o fetch falhar,
+- [x] **AC3** — o comando **faz `fetch` de `origin`** antes de resolver a base e, se o fetch falhar,
       **avisa** em vez de seguir com dado velho — molde literal do `branch prune`.
-- [ ] **AC4** — 🔴 **falsificação:** estando numa branch com commits próprios, `branch new` sem
+- [x] **AC4** — 🔴 **falsificação:** estando numa branch com commits próprios, `branch new` sem
       `--from` produz branch com **zero** commits além de `origin/main`. Contra-braço: com
       `--from HEAD`, os commits são preservados.
-- [ ] **AC5** — 🔴 **BREAKING declarado.** Hoje o comando cria do HEAD; quem depende disso muda de
+- [x] **AC5** — 🔴 **BREAKING declarado.** Hoje o comando cria do HEAD; quem depende disso muda de
       comportamento. Vai no CHANGELOG como break, não como melhoria.
-- [ ] **AC6** — o guard passa a **bloquear `git checkout <branch>` e `git pull` crus**, apontando
+- [x] **AC6** _(fora desta REQ por decisão do usuário, 2026-10-18 — resíduo declarado)_ — o guard passa a **bloquear `git checkout <branch>` e `git pull` crus**, apontando
       para o caminho governado. 🔴 Só depois do AC1 — bloquear antes deixaria o agente sem saída.
-- [ ] **AC7** — 🔴 **contra-braço do AC6:** `git checkout` continua permitido onde não há
+- [x] **AC7** _(idem AC6)_ — 🔴 **contra-braço do AC6:** `git checkout` continua permitido onde não há
       alternativa — entrar em worktree, `--detach` para inspeção, voltar para `main` **sem** criar
       branch. Um guard que bloqueia tudo é desligado pelo usuário; é a lição do `ADR-2026-08-17`.
-- [ ] **AC8** — paridade nos 3 CLIs.
+- [x] **AC8** _(não se aplica desde a v8 — implementação única em Go)_ — paridade nos 3 CLIs.
       ⚠️ Ver ressalva de sequenciamento abaixo.
-- [ ] **AC9** — `--dry-run` (já existente) informa **qual base seria usada**, não só se criaria ou
+- [x] **AC9** — `--dry-run` (já existente) informa **qual base seria usada**, não só se criaria ou
       bloquearia.
 
 ## Escopo negativo
@@ -105,3 +105,7 @@ Por isso o roadmap nasce em `backlog/`.
 
 ## Linked ADR
 ADR: <!-- não requer: a decisão de base padrão é comportamento de comando, não de arquitetura -->
+
+## ✅ Encerramento — 2026-10-18
+
+Entregue no #585 (`7430e838`): base padrão `origin/<padrão>` com `fetch` e `--no-track`; `--from` resolvido para SHA (red-team B-1); dry-run mostra a base; guard bloqueia `worktree add` com branch implícita. AC6/AC7 (bloquear `checkout <branch>`/`pull`) saíram por decisão do usuário. Release: 10.0.0 (BREAKING).
