@@ -207,7 +207,7 @@ Opção (i): manter o warn como está, adicionar os novos vetores ao check (`cla
 > Dependencies: Wave 0 completa
 
 ### ML-1A — **AC1** — Validação de formato antes de interpolar; formato inválido falha sem gerar arquivo
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (2026-10-17) — validação nos 5 call sites, sem arquivo gravado; reconferido com o binário
 **Files affected:** `internal/integrations/render.go` (ramo claude, ~linha 214), `internal/integrations/models.go` (`ResolveAgentModel`)
 **Actions:**
 1. Adicionar função `isValidModelPinValue(v string) bool` em `render.go` (ou `models.go`, compartilhada): retorna true se `v` corresponde a `[a-zA-Z0-9._:@/+-]+` com zero espaço, `{`, `}`, `#`, `"`, `'`, `,`, `[`, `]`.
@@ -222,7 +222,7 @@ Opção (i): manter o warn como está, adicionar os novos vetores ao check (`cla
 - [ ] build passes · tests green
 
 ### ML-1B — **AC2** — Falsificação nas duas direções (corpus completo)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (2026-10-17) — 6 recusados / 9 aceitos como string; identity `Zeus: danger` e `Ze #us` em YAML válido
 **Files affected:** `internal/integrations/render_test.go` ou `internal/integrations/models_test.go`
 **Actions:**
 1. Adicionar testes que cobrem os dois lados: aceitos (`5`, `4.6`, `4-5-sonnet`, `claude-sonnet-4-5-20250929`, `anthropic.claude-opus-4-5-v1:0`, `claude-opus-5@20250101`) e rejeitados (`5: danger`, `{tools: Bash}`, `claude-opus-5 #x`, `5 && rm -rf /`).
@@ -236,7 +236,7 @@ Opção (i): manter o warn como está, adicionar os novos vetores ao check (`cla
 - [ ] build passes · tests green
 
 ### ML-1C — **AC6** — `make quality` exit 0 e CI verde
-**Status:** ⬜ Pendente
+**Status:** 🔄 `make quality` EXIT=0 (361 OK / 0 FAIL); falta o CI do PR
 **Files affected:** scripts de gate (se houver gate específico de `agent_models`)
 **Actions:**
 1. Se existir `scripts/check-agent-models-parity.sh` ou similar, atualizar com os novos vetores de rejeição.
@@ -267,3 +267,6 @@ Evidência e tabela completa: `docs/governanca/2026-10-17-triagem-backlog-pre-v8
   emitidos de forma segura em YAML (aspas quando necessário) e caractere de controle recusado ao ler.
 - **D-4 (aceita):** `LooksLikeSuspectModelValue` cobre os falsos negativos medidos
   (`claude-x: danger`, `claude-x #x`) e deixa de avisar sobre ids Bedrock legítimos.
+
+
+**Red-team** (`docs/seguranca/2026-10-17-red-team-agent-models-e-identity.md`): único bloqueante foi a anotação de contrato dos resíduos; o `make quality` pegou também o formato da anotação da seção principal — ambos corrigidos. Cursor byte-idêntico à `main`.
