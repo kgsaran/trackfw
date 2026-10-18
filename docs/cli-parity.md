@@ -7732,6 +7732,7 @@ O target `claude` sempre emite `model: "value"` (double-quoted) para evitar que 
 **Regra (D-4):** `LooksLikeSuspectModelValue` agora detecta false negatives: valores com prefixo `claude-` mas com metacaracteres YAML inline (espaço, tab, `#`, `{`, `}`, `[`, `]`, `'`, `"`) disparam aviso antes de chegar ao check do prefixo. False positives corrigidos: IDs Bedrock (`anthropic.claude-opus-4-5-v1:0`) não disparam aviso — são reconhecidos pelo heurístico de prefixo-letra + `.`.
 
 #### Residuais declarados (REQ-2026-08-30)
+<!-- trackfw-contract: none reason=residuos declarados por decisao de projeto, nao contrato comportamental com gate -->
 
 | ID | Descrição | Por que não está aqui |
 |----|-----------|----------------------|

@@ -46865,3 +46865,12 @@ Escopo: roadmap `ROADMAP-2026-09-22-validacao-de-valor-e-precisao-de-mensagem-ag
 Branch: `fix/validacao-de-valor-e-precisao-de-mensagem-agent-models`
 Artefato: roadmap `docs/roadmaps/wip/ROADMAP-2026-09-22-validacao-de-valor-e-precisao-de-mensagem-agent-models-sem-sanitizacao-e-ancoragem-de-imprecisa.md` (ML-0A ✅, seções 1–4, gates, Decisões)
 Veredito: barrier --wave 0 --trust-local-gates PASSA. 5 call sites de escrita mapeados. 8 vetores medidos (3 FN confirmados: 5: danger→YAML PARSE ERROR, {tools: Bash}→type map, espaço-hash→truncamento). Nova classe: type confusion via YAML scalars (null/true/0x10/~) — passa qualquer allowlist de letras mas modelo vira nil/bool/int. Recomendação D-2 consolidada: opção (b) allowlist + quoting obrigatório na saída. Resíduos: identity.json (D-3), escape-hatch por construção (R-2).
+
+**hades-tf** · 2026-10-17 · Red-team Wave 1 — validação de valor agent_models e identity (REQ-2026-08-30) — iniciado
+Branch: `fix/validacao-de-valor-e-precisao-de-mensagem-agent-models`
+Escopo: `internal/integrations/render.go`, `internal/integrations/models.go`, `internal/identity/identity.go`, `docs/cli-parity.md`, `CHANGELOG.md`, testes novos em `*_test.go`.
+
+**hades-tf** · 2026-10-17 · Red-team Wave 1 — validação de valor agent_models e identity (REQ-2026-08-30) — concluído
+Branch: `fix/validacao-de-valor-e-precisao-de-mensagem-agent-models`
+Artefato: `docs/seguranca/2026-10-17-red-team-agent-models-e-identity.md`
+Veredito: BLOQUEIA. B-1 (único bloqueante): `#### Residuais declarados (REQ-2026-08-30)` em `docs/cli-parity.md` linha 7734 não tem anotação `trackfw-contract` — `make quality` falha. Fix: inserir `<!-- trackfw-contract: none reason=... -->` após o heading. Patch de produto: correto em todos os vetores medidos. Nenhuma regressão de segurança, nenhum FP para modelo legítimo, nenhum YAML inválido gerado a partir de entrada aceita.
