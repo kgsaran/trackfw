@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-03
 author: "trackfw_architect (Zeus)"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-22-check-referential-integrity-sh-diz-ok-e-sai-0-sobre-arvore-vazia-quinto-gate-vacuo-e-esta-dentro-do-parity.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-22-check-referential-integrity-sh-diz-ok-e-sai-0-sobre-arvore-vazia-quinto-gate-vacuo-e-esta-dentro-do-parity.md"
 ---
 
 # REQ: `check-referential-integrity.sh` diz `OK` e sai 0 sobre árvore vazia — quinto gate vácuo, e está dentro do `parity`
 
-> Date: 2026-09-03 | Status: Open
+> Date: 2026-09-03 | Status: Done
 | Linear Issue:
 | Jira Issue:
 
@@ -48,19 +48,19 @@ sempre, em silêncio.
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — Guarda de vacuidade: varredura que enumere **zero** itens **falha** ou reporta
+- [x] **AC1** — Guarda de vacuidade: varredura que enumere **zero** itens **falha** ou reporta
       `not_evaluated`. **Nunca** `OK` com exit 0.
-- [ ] **AC2** — 🔴 **Falsificação nas duas direções:** árvore vazia → **reprova**; árvore íntegra →
+- [x] **AC2** — 🔴 **Falsificação nas duas direções:** árvore vazia → **reprova**; árvore íntegra →
       passa. Um gate que passa nos dois casos não mede nada.
-- [ ] **AC3** — O gate emite **contagem** do que verificou. Os demais gates ≤0,11 s têm guarda ou
+- [x] **AC3** — O gate emite **contagem** do que verificou. Os demais gates ≤0,11 s têm guarda ou
       emitem contagem — este é o único que não tem nenhuma das duas.
-- [ ] **AC4** — 🔴 **Cenário em `scripts/check-gates-falsify.sh`.** Esta é a correção da **classe**,
+- [x] **AC4** — 🔴 **Cenário em `scripts/check-gates-falsify.sh`.** Esta é a correção da **classe**,
       não da instância: os 4 vácuos anteriores estavam fora daquele harness, e é por isso que
       sobreviveram ao `make quality` verde. Sem o cenário, o sexto nasce vácuo.
-- [ ] **AC5** — O gate resolve `req_dir`/`adr_dirs`/`roadmap_dir` do `trackfw.yaml` em vez de
+- [x] **AC5** — O gate resolve `req_dir`/`adr_dirs`/`roadmap_dir` do `trackfw.yaml` em vez de
       hardcodar `docs/req/` — **ou** declara explicitamente que só serve para este repositório.
       Decidir e escrever.
-- [ ] **AC6** — `make quality` verde e `trackfw validate` exit 0.
+- [x] **AC6** — `make quality` verde e `trackfw validate` exit 0.
 
 ## Negative Scope
 
@@ -78,4 +78,8 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-22-check-referential-integrity-sh-diz-ok-e-sai-0-sobre-arvore-vazia-quinto-gate-vacuo-e-esta-dentro-do-parity.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-22-check-referential-integrity-sh-diz-ok-e-sai-0-sobre-arvore-vazia-quinto-gate-vacuo-e-esta-dentro-do-parity.md`
+
+## ✅ Encerramento — 2026-10-17
+
+Entregue no #578: vacuidade reprova (sem diretório, vazio, `req_dir` inexistente), erro do `find` não é engolido, OK com contagem; cenário 12 com 7 braços. `make quality` 361 OK / 0 FAIL.

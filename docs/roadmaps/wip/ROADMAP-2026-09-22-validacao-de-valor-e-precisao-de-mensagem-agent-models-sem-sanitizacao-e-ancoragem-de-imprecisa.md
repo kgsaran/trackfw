@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: wip
 date: 2026-09-22
 req: "docs/req/REQ-2026-08-30-validacao-de-valor-e-precisao-de-mensagem-agent-models-sem-sanitizacao-e-ancoragem-de-til-imprecisa.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: Validação de valor e precisão de mensagem — `agent_models` sem sanitização e ancoragem de `~` imprecisa
 
-> Created: 2026-09-22 | Status: backlog
+> Created: 2026-09-22 | Status: wip
 
 ## Context
 <!-- Derived from REQ: REQ-2026-08-30-validacao-de-valor-e-precisao-de-mensagem-agent-models-sem-sanitizacao-e-ancoragem-de-til-imprecisa.md -->
