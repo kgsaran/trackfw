@@ -1979,11 +1979,13 @@ time.
 | Invocation | `trackfw branch new <type>/<slug>` |
 | `<type>` | One of `feat`, `fix`, `refactor`, `chore`, `docs` |
 | `<slug>` | Non-empty; for `feat`/`fix`/`refactor`, matched against roadmaps in `wip/` and `done/` the same way `branch_has_wip_roadmap` does. For `chore`/`docs`, no matching is performed. |
-| `--dry-run` | Reports whether the branch would be created or blocked, without executing `git` |
-| Exit 0 | `feat`/`fix`/`refactor` with a match, or any `chore`/`docs` spec — branch created (or `--dry-run` reports "would create") |
+| `--dry-run` | Reports whether the branch would be created or blocked, and which base ref would be used, without executing `git` |
+| `--from <ref>` | Override the start point. `--from HEAD` reproduces the pre-v9.9 behaviour (creates the branch from the current HEAD, no fetch). Any other ref is used directly. Omitting `--from` fetches `origin` and uses `origin/<default-branch>` as the start point. |
+| Exit 0 | `feat`/`fix`/`refactor` with a match, or any `chore`/`docs` spec — branch created (or `--dry-run` reports "would create … from <base>") |
 | Exit non-zero, usage error | Malformed spec (missing `/`, empty slug, invalid `<type>` — error message lists the full vocabulary: `feat, fix, refactor, chore, docs`) |
-| Exit non-zero, blocked | `feat`/`fix`/`refactor` only: no matching roadmap in `wip/` nor `done/` — `git checkout -b` is **never** executed |
-| Exit = Git's own code | Match found (or `chore`/`docs`), `git checkout -b` ran and failed (e.g. branch already exists → Git's `128`) |
+| Exit non-zero, blocked | `feat`/`fix`/`refactor` only: no matching roadmap in `wip/` nor `done/` — `git checkout --no-track -b` is **never** executed |
+| Exit non-zero, no origin | Repo has no `remote` named `origin` and `--from` was not supplied — prints an actionable hint to use `--from HEAD` or add an origin remote |
+| Exit = Git's own code | Match found (or `chore`/`docs`), `git checkout --no-track -b` ran and failed (e.g. branch already exists → Git's `128`) |
 
 ### Decision flow
 
@@ -2000,11 +2002,22 @@ time.
 3. No match in wip/ (feat|fix|refactor only): print governance orientation via
    BranchGovernanceOrientationForCreation (names any done/ roadmaps as hint for `roadmap move`),
    exit non-zero, never invoke git.
-4. --dry-run with a match (or chore|docs): print "[dry-run] would create branch "<type>/<slug>"
-   (git checkout -b <type>/<slug>)", exit 0, never invoke git.
-5. Match (or chore|docs), no --dry-run: run `git checkout -b <type>/<slug>` with inherited
-   stdio.
-6. For feat|fix|refactor only, AFTER git created the branch: record the branch↔roadmap link in
+4. Resolve start point:
+   - If --from HEAD: start point is empty (git creates from current HEAD, no fetch).
+   - If --from <ref>: start point is <ref> (used directly, no fetch).
+   - Otherwise: best-effort `git fetch origin` (warns on failure, never aborts). Then call
+     resolveDefaultBranch (forge symref → remote symref → "main") to obtain remoteRef
+     (e.g. "origin/main"). Verify remoteRef exists. If origin is absent: print actionable
+     message (hint: use --from HEAD or add an origin remote), exit non-zero.
+5. --dry-run with a match (or chore|docs): print
+   "[dry-run] would create branch "<type>/<slug>" from <base>", exit 0, never invoke git.
+   If base resolution would fail (no origin, etc.), prints the error and exits non-zero.
+6. Match (or chore|docs), no --dry-run: run `git checkout --no-track -b <type>/<slug> <base>`
+   with inherited stdio. --no-track is MANDATORY: without it, git sets @{u}=origin/<default>
+   which causes `trackfw push` to omit -u and the branch never registers [gone] after merge.
+   Dirty-tree conflict: git exits non-zero with "would be overwritten"; the command adds a
+   hint to commit/stash first or use --from HEAD.
+7. For feat|fix|refactor only, AFTER git created the branch: record the branch↔roadmap link in
    <roadmap_dir>/.trackfw-branch-links.json, when the inference identified exactly ONE roadmap.
    A failure to record is printed and does not fail the command — the link is an accelerator,
    never a gate.

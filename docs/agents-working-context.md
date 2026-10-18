@@ -2,6 +2,48 @@
 
 ---
 
+## 2026-10-18 — apolo-tf — FIM: Wave 1 — branch new da base correta + guard worktree-add-implicit (REQ-2026-09-12)
+
+**Branch:** `feat/branch-new-cria-da-base-correta`
+**Escopo:** ML-1A (`branch new` usa `origin/<padrão>` como base, `--from`, `--no-track`), ML-1B (push.go/ship.go: `trackfw branch new` nas mensagens; cli-parity.md atualizado), ML-1C (guard: `git worktree add <path>` sem branch implicitamente criada = bloqueado via `reasonWorktreeAddImplicit`), ML-1D (CHANGELOG.md `[Unreleased]` Breaking Changes).
+
+**Implementação:**
+- `internal/commands/branch.go`: `resolveBranchStartPoint` (fetch + `resolveDefaultBranch` + `--from`), `defaultGitCheckout` atualizado (`--no-track`, dirty-tree hint), `--from` flag, wiring de `gitExec`/`ghExec`/`fromRef`
+- `internal/commands/branch_test.go`: `execGitCheckout` signature atualizada (2ª arg `_ string`), `fromRef: "HEAD"` em `makeBranchDeps`
+- `internal/commands/branchlink_ml3a_test.go`: `execGitCheckout` signature atualizada
+- `internal/commands/branch_new_base_e2e_test.go`: NOVO — 8 testes reais com repo git (AC1/F-1, F-1 contra-braço, F-3/A-3, F-5/A-5, AC3, F-2, F-4b, AC9/F-6)
+- `internal/commands/branch_state_e2e_test.go`: 4 testes existentes receberam `makeBareOriginAndPush`; testAC4 recebeu `git push origin main` antes de `branch new`
+- `internal/guard/gitbranch.go`: `reasonWorktreeAddImplicit` + `"worktree-add-implicit"` no switch + lógica de detecção (1 positional, sem `--detach`/`-d`/`--orphan`)
+- `internal/guard/gitbranch_test.go`: linha 1486 `false`→`true`, 2 novas linhas de fixture, `"worktree-add-implicit": reasonWorktreeAddImplicit` no mapa, 3 novos testes ML-1C
+- `internal/commands/push.go`: `git checkout -b` → `trackfw branch new` (2 sítios)
+- `internal/commands/ship.go`: `git checkout -b` → `trackfw branch new` (2 sítios)
+- `docs/cli-parity.md`: seção `trackfw branch new` atualizada (`--from`, decision flow passos 4-7, `--no-track`, no-origin)
+- `CHANGELOG.md`: 3 entradas Breaking Changes em `[Unreleased]`
+
+**Gates:**
+- `go build ./...` — OK
+- `go test ./...` — OK (todos os pacotes)
+- `make lint` — OK
+- `GOOS=windows GOARCH=amd64 go vet ./...` — OK
+- `trackfw validate` — 166 warnings pré-existentes, 0 erros (`✗`)
+- `scripts/check-parity-contract-coverage.sh` — OK
+
+**Arquivos prontos para auditoria (sem commit — aguardando trackfw_architect):**
+- `internal/commands/branch.go`
+- `internal/commands/branch_test.go`
+- `internal/commands/branchlink_ml3a_test.go`
+- `internal/commands/branch_new_base_e2e_test.go` (novo)
+- `internal/commands/branch_state_e2e_test.go`
+- `internal/guard/gitbranch.go`
+- `internal/guard/gitbranch_test.go`
+- `internal/commands/push.go`
+- `internal/commands/ship.go`
+- `docs/cli-parity.md`
+- `CHANGELOG.md`
+- `docs/agents-working-context.md`
+
+---
+
 ## 2026-10-17 — apolo-tf — INÍCIO+FIM: Wave 1 — Validação de valor e precisão de mensagem agent_models (REQ-2026-08-30)
 
 **Branch:** `fix/validacao-de-valor-e-precisao-de-mensagem-agent-models`
