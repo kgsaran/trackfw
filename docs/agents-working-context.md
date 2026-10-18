@@ -2,6 +2,87 @@
 
 ---
 
+## 2026-10-18 — apolo-tf — FIM: parity-rest fix — dry-run sem origin (REQ-2026-09-12)
+
+**Branch:** `feat/branch-new-cria-da-base-correta`
+**Causa:** `check-roadmap-slug-matching.sh` roda `trackfw branch new --dry-run` em fixtures sem remoto `origin`. Após o fix B-1/R-1, `resolveBranchStartPoint` falha com "nenhum remote 'origin' encontrado" antes de imprimir "would create", quebrando o contrato de token do gate.
+**Fix:** Em dry-run, se `resolveBranchStartPoint` retorna erro, ainda imprime `[dry-run] would create branch "x" (base não resolvida: ...)` e retorna nil (exit 0). A governança é avaliada ANTES da base (já era o caso); a base só importa para o run real. Exit code 0 foi a decisão: o gate mede governança, não disponibilidade de base. `docs/cli-parity.md` atualizado com o contrato do token.
+**Gates:** `go build` ✅ | `go vet` ✅ | `GOOS=windows` ✅ | `go test ./internal/commands/...` ✅ | `check-roadmap-slug-matching.sh` ✅ (0 divergências, 9/9 self-test) | `make parity-rest` ✅ | `check-parity-contract-coverage.sh` ✅
+
+---
+
+## 2026-10-18 — apolo-tf — FIM: Red-team fixes B-1/R-1..R-5 (REQ-2026-09-12)
+
+**Branch:** `feat/branch-new-cria-da-base-correta`
+**Escopo:** Todos os bloqueios e ressalvas do parecer `docs/seguranca/2026-10-18-red-team-branch-new-base.md`.
+
+**Implementação:**
+- `internal/commands/branch.go`: `resolveBranchStartPoint` refatorada para `(startPoint, displayRef string, err error)` (B-1 + R-1); rejeita `fromRef` com prefixo `-`; resolve via `rev-parse --end-of-options <ref>^{commit}`; fetch sempre roda (inclusive em dry-run = R-1). Mensagem "no origin" apenas em Português (idiom fix).
+- `internal/guard/gitbranch.go`: R-2 — `--reason` consome o próximo token; R-3 — `--orphan` removido de `hasExplicit` (git ≥ 2.54.0 cria branch implícita sem `-b`).
+- `docs/cli-parity.md`: R-4 — "pre-v9.9" → "pre-v10.0.0"; atualiza decision flow step 4 com B-1/R-1; nova seção "Guard: git worktree add implicit-branch form" com anotação de contrato (R-2/R-3).
+- `internal/commands/branch_test.go`: 2 novos testes unitários B-1 (`TestResolveBranchStartPoint_DashFlagRejected`, `TestResolveBranchStartPoint_ExplicitRefResolvesToSHA`).
+- `internal/commands/branch_new_base_e2e_test.go`: R-5 (fortalece `TestBranchNewBase_NoOriginActionable`); 4 e2e B-1 (`--from -f`, `--from --upload-pack`, tag, SHA); 1 e2e R-1 (dry-run master).
+- `internal/guard/gitbranch_test.go`: R-2 (`TestMatchSubcommand_WorktreeAddReasonConsumed`); R-3 (`TestMatchSubcommand_WorktreeAddOrphanBlocked`); comentário de reconciliação atualizado.
+
+**Gates:**
+- `go build ./...` ✅ | `go vet ./...` ✅ | `GOOS=windows GOARCH=amd64 go vet ./...` ✅
+- `go test ./...` ✅ (todos os pacotes verdes)
+- `make lint` ✅
+- `trackfw validate` ✅ (166 warnings pré-existentes, nenhum erro novo)
+- `scripts/check-parity-contract-coverage.sh` ✅
+
+---
+
+## 2026-10-18 — hades-tf — Red-team Wave 1 — branch new base correta (REQ-2026-09-12) — concluído
+
+Branch: `feat/branch-new-cria-da-base-correta`
+Artefato: `docs/seguranca/2026-10-18-red-team-branch-new-base.md`
+Veredito: BLOQUEIA. B-1 (BLOQUEANTE): `trackfw branch new --from "-f"` executa `git checkout --no-track -b <branch> -f`; descarta trabalho não commitado irreversivelmente, exit 0, sem aviso. Fix: rejeitar `fromRef` com prefixo `-` em `resolveBranchStartPoint`. Ressalvas não-bloqueantes: R-1 (--dry-run diverge do run real para remotes master/develop), R-2 (FN: `--lock --reason <text> <path>` — reason arg conta como positional), R-3 (FN: `--orphan <path>` — guard permite mas cria branch implícita), R-4 (cli-parity.md diz "pre-v9.9" em vez de "pre-v10"), R-5 (reconciliação de TestBranchNewBase_NoOriginActionable é fraca — teste passaria sem o bloco remote get-url). Todos os testes verdes. `make lint` verde.
+
+---
+
+## 2026-10-18 — apolo-tf — FIM: Wave 1 — branch new da base correta + guard worktree-add-implicit (REQ-2026-09-12)
+
+**Branch:** `feat/branch-new-cria-da-base-correta`
+**Escopo:** ML-1A (`branch new` usa `origin/<padrão>` como base, `--from`, `--no-track`), ML-1B (push.go/ship.go: `trackfw branch new` nas mensagens; cli-parity.md atualizado), ML-1C (guard: `git worktree add <path>` sem branch implicitamente criada = bloqueado via `reasonWorktreeAddImplicit`), ML-1D (CHANGELOG.md `[Unreleased]` Breaking Changes).
+
+**Implementação:**
+- `internal/commands/branch.go`: `resolveBranchStartPoint` (fetch + `resolveDefaultBranch` + `--from`), `defaultGitCheckout` atualizado (`--no-track`, dirty-tree hint), `--from` flag, wiring de `gitExec`/`ghExec`/`fromRef`
+- `internal/commands/branch_test.go`: `execGitCheckout` signature atualizada (2ª arg `_ string`), `fromRef: "HEAD"` em `makeBranchDeps`
+- `internal/commands/branchlink_ml3a_test.go`: `execGitCheckout` signature atualizada
+- `internal/commands/branch_new_base_e2e_test.go`: NOVO — 8 testes reais com repo git (AC1/F-1, F-1 contra-braço, F-3/A-3, F-5/A-5, AC3, F-2, F-4b, AC9/F-6)
+- `internal/commands/branch_state_e2e_test.go`: 4 testes existentes receberam `makeBareOriginAndPush`; testAC4 recebeu `git push origin main` antes de `branch new`
+- `internal/guard/gitbranch.go`: `reasonWorktreeAddImplicit` + `"worktree-add-implicit"` no switch + lógica de detecção (1 positional, sem `--detach`/`-d`/`--orphan`)
+- `internal/guard/gitbranch_test.go`: linha 1486 `false`→`true`, 2 novas linhas de fixture, `"worktree-add-implicit": reasonWorktreeAddImplicit` no mapa, 3 novos testes ML-1C
+- `internal/commands/push.go`: `git checkout -b` → `trackfw branch new` (2 sítios)
+- `internal/commands/ship.go`: `git checkout -b` → `trackfw branch new` (2 sítios)
+- `docs/cli-parity.md`: seção `trackfw branch new` atualizada (`--from`, decision flow passos 4-7, `--no-track`, no-origin)
+- `CHANGELOG.md`: 3 entradas Breaking Changes em `[Unreleased]`
+
+**Gates:**
+- `go build ./...` — OK
+- `go test ./...` — OK (todos os pacotes)
+- `make lint` — OK
+- `GOOS=windows GOARCH=amd64 go vet ./...` — OK
+- `trackfw validate` — 166 warnings pré-existentes, 0 erros (`✗`)
+- `scripts/check-parity-contract-coverage.sh` — OK
+
+**Arquivos prontos para auditoria (sem commit — aguardando trackfw_architect):**
+- `internal/commands/branch.go`
+- `internal/commands/branch_test.go`
+- `internal/commands/branchlink_ml3a_test.go`
+- `internal/commands/branch_new_base_e2e_test.go` (novo)
+- `internal/commands/branch_state_e2e_test.go`
+- `internal/guard/gitbranch.go`
+- `internal/guard/gitbranch_test.go`
+- `internal/commands/push.go`
+- `internal/commands/ship.go`
+- `docs/cli-parity.md`
+- `CHANGELOG.md`
+- `docs/agents-working-context.md`
+
+---
+
 ## 2026-10-17 — apolo-tf — INÍCIO+FIM: Wave 1 — Validação de valor e precisão de mensagem agent_models (REQ-2026-08-30)
 
 **Branch:** `fix/validacao-de-valor-e-precisao-de-mensagem-agent-models`

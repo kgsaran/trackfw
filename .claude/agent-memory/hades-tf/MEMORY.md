@@ -1,5 +1,6 @@
 # Memory Index — Hades (Security, trackfw)
 
+- [branch new --from "-f" injection discards uncommitted work](project_branch_new_from_flag_injection.md) — 2026-10-18 REQ-2026-09-12 Wave 1; BLOQUEANTE; fromRef not validated; fix: reject prefix "-"; guard bypassed by trackfw itself
 - [git add -An --no-dry-run bypasses guard; last-flag-wins not modeled](project_guard_add_no_dry_run_bypass.md) — 2026-10-17 Rodada 2 REQ-2026-09-05; B-3 BLOQUEANTE; --no-dry-run/--no-dry cancels dryRun set by B-1 fix; whole-tree staging confirmed
 
 - [trackfw serve binds all interfaces (Go/Python)](project_serve_binds_all_interfaces.md) — found 2026-08-16, FIXED and verified same day (ML-2A barrier); loopback default + opt-in --host now in all 3 CLIs

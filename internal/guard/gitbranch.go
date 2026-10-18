@@ -59,6 +59,13 @@ const (
 	reasonWorktreeRemoveForce = "trackfw: git worktree remove -f/--force bruto bloqueado — remove um worktree e descarta de forma irreversível qualquer alteração não commitada nele. `git worktree remove` sem force segue liberado (recusa sozinho quando há algo não commitado). Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
 
 	reasonRmForce = "trackfw: git rm -f/--force bruto bloqueado — apaga arquivos do working tree e do index de forma irreversível, mesma classe de `git clean -f`/`git reset --hard` já bloqueados. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
+
+	// reasonWorktreeAddImplicit is emitted when `git worktree add <path>` is invoked
+	// without any branch-selection flag (-b/-B/--detach/-d/--orphan) and without a
+	// commit-ish as a second positional argument. In that form git creates an implicit
+	// branch whose name is derived from <path>, bypassing the governance gate that
+	// `trackfw branch new` enforces. Blocked by ML-1C (REQ-2026-09-12, ROADMAP-2026-09-12).
+	reasonWorktreeAddImplicit = "trackfw: git worktree add <path> sem flag de branch bloqueado — esta forma cria uma branch implícita derivada do nome do caminho, contornando a governança. Use `git worktree add <path> <branch-existente>` (para branch já criada) ou `trackfw branch new <type>/<slug>` + `git worktree add <path> <nova-branch>`. Nada antes deste comando foi executado (comando composto é bloqueado por inteiro). Ver CLAUDE.md §1."
 )
 
 // StdInIdleTimeout is the idle window used by DrainStdin in production.
@@ -169,6 +176,8 @@ func RunGitBranch(stdin io.Reader, idleTimeout time.Duration, command string, ge
 		reason = reasonRmForce
 	case "add-implicit":
 		reason = reasonAddImplicit
+	case "worktree-add-implicit":
+		reason = reasonWorktreeAddImplicit
 	default:
 		return 0
 	}
@@ -619,6 +628,44 @@ func applyRule(sub string, rest []string) string {
 				if t == "-b" || t == "-B" {
 					return "worktree-add-b"
 				}
+			}
+			// Block implicit branch creation: `git worktree add <path>` with no
+			// branch-selection flag and no commit-ish as a second positional.
+			// Allowed forms:
+			//   git worktree add <path> <branch-or-commit>  — 2 positionals → explicit
+			//   git worktree add --detach/-d <path>         — --detach flag → explicit
+			// Blocked forms:
+			//   git worktree add <path>                     — 1 positional, no flags above
+			//   git worktree add --orphan <path>            — --orphan creates implicit branch
+			//                                                 (git 2.54.0+, no -b required);
+			//                                                 treated as blocked here; callers
+			//                                                 that need --orphan should also
+			//                                                 supply -b <name> explicitly.
+			// Note on --reason: `git worktree add --lock --reason <msg> <path>` — the
+			// token after --reason is consumed as its argument, not a positional. We model
+			// this by skipping the next token whenever --reason is seen (R-2).
+			hasExplicit := false
+			positionals := 0
+			skipNext := false
+			for _, t := range rest {
+				if skipNext {
+					skipNext = false
+					continue
+				}
+				if t == "--reason" {
+					skipNext = true
+					continue
+				}
+				switch t {
+				case "--detach", "-d":
+					hasExplicit = true
+				}
+				if !strings.HasPrefix(t, "-") {
+					positionals++
+				}
+			}
+			if !hasExplicit && positionals < 2 {
+				return "worktree-add-implicit"
 			}
 		case "remove":
 			for _, t := range rest {

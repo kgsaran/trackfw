@@ -7,6 +7,25 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **`trackfw branch new` now creates branches from `origin/<default-branch>` by default**
+  (previously created from current HEAD). Before creating the branch, the command fetches
+  `origin` (warns on failure, never aborts) and resolves the default branch via
+  `resolveDefaultBranch`. This means branches started on a feature branch that is ahead of
+  `origin/main` will no longer silently inherit those commits.
+  Migration: use `--from HEAD` to reproduce the previous behaviour, or commit/stash local work
+  first.
+
+- **`git checkout --no-track -b`** is now used internally instead of `git checkout -b`. This
+  prevents git from setting `@{u}=origin/<default>` on the new branch, which would cause
+  `trackfw push` to never add `-u` (and the `[gone]` signal after PR merge would disappear).
+
+- **`git worktree add <path>` without a branch flag is now blocked by the guard** when invoked
+  without a second positional (branch/commit-ish) and without `--detach`/`-d`/`--orphan`.
+  This form creates an implicit branch derived from `<path>`, bypassing governance.
+  Use `git worktree add <path> <existing-branch>` or `trackfw branch new <type>/<slug>` first.
+
 ## [9.8.0] - 2026-10-18
 
 ### Changed

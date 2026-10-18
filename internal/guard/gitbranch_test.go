@@ -177,6 +177,89 @@ func TestMatchSubcommand_WorktreeRemoveForce(t *testing.T) {
 	}
 }
 
+// ML-1C (REQ-2026-09-12) — implicit worktree branch guard
+//
+// Reconciliation sentence: these tests affirm that `git worktree add <path>` with only one
+// positional and no branch-selection flag is blocked ("worktree-add-implicit"), and that the
+// allowed forms (explicit branch/commit-ish as second positional, --detach/-d) pass.
+// R-3: --orphan without -b is blocked (git ≥ 2.54.0 creates implicit branch from path name).
+// R-2: --reason <msg> consumes its argument; --lock --reason x ../foo is 1 positional → blocked.
+
+// TestMatchSubcommand_WorktreeAddImplicit_Blocked asserts the single-positional form is blocked.
+// Affirms ML-1C F-blocked: `git worktree add <path>` with no commit-ish creates an implicit branch.
+func TestMatchSubcommand_WorktreeAddImplicit_Blocked(t *testing.T) {
+	cases := []string{
+		"git worktree add ../foo",
+		"git worktree add /tmp/new-tree",
+	}
+	for _, cmd := range cases {
+		if got := MatchSubcommand(cmd); got != "worktree-add-implicit" {
+			t.Errorf("ML-1C: %q should be blocked as worktree-add-implicit, got %q", cmd, got)
+		}
+	}
+}
+
+// TestMatchSubcommand_WorktreeAddImplicit_AllowedExplicitBranch asserts two-positional form passes.
+// Affirms ML-1C F-allowed: `git worktree add <path> <branch>` names an existing branch — no implicit creation.
+func TestMatchSubcommand_WorktreeAddImplicit_AllowedExplicitBranch(t *testing.T) {
+	cases := []string{
+		"git worktree add ../foo main",
+		"git worktree add ../foo feat/existing",
+		"git worktree add ../foo origin/main",
+		"git worktree add ../foo abc1234",
+	}
+	for _, cmd := range cases {
+		if got := MatchSubcommand(cmd); got != "" {
+			t.Errorf("ML-1C: %q should be allowed, got %q", cmd, got)
+		}
+	}
+}
+
+// TestMatchSubcommand_WorktreeAddImplicit_AllowedDetach asserts --detach/-d form passes.
+// Affirms ML-1C F-allowed-detach: --detach is explicit (detached HEAD, no branch created).
+func TestMatchSubcommand_WorktreeAddImplicit_AllowedDetach(t *testing.T) {
+	cases := []string{
+		"git worktree add --detach ../foo",
+		"git worktree add -d ../foo",
+	}
+	for _, cmd := range cases {
+		if got := MatchSubcommand(cmd); got != "" {
+			t.Errorf("ML-1C: %q should be allowed (detach), got %q", cmd, got)
+		}
+	}
+}
+
+// TestMatchSubcommand_WorktreeAddOrphanBlocked asserts --orphan without -b is blocked.
+// Affirms R-3: git ≥ 2.54.0 allows `git worktree add --orphan <path>` to create an implicit
+// branch from the path name. The guard treats this as a blocked form.
+func TestMatchSubcommand_WorktreeAddOrphanBlocked(t *testing.T) {
+	cases := []string{
+		"git worktree add --orphan ../foo",
+		"git worktree add --orphan /tmp/new-tree",
+	}
+	for _, cmd := range cases {
+		if got := MatchSubcommand(cmd); got != "worktree-add-implicit" {
+			t.Errorf("R-3: %q should be blocked as worktree-add-implicit, got %q", cmd, got)
+		}
+	}
+}
+
+// TestMatchSubcommand_WorktreeAddReasonConsumed asserts --reason consumes its argument.
+// Affirms R-2: `git worktree add --lock --reason x ../foo` has only one path positional.
+// Without the --reason-consumes-next-token rule, "x" would count as a positional, raising
+// the count to 2 and incorrectly classifying the command as allowed.
+func TestMatchSubcommand_WorktreeAddReasonConsumed(t *testing.T) {
+	cases := []string{
+		"git worktree add --lock --reason x ../foo",
+		"git worktree add --reason sometext ../bar",
+	}
+	for _, cmd := range cases {
+		if got := MatchSubcommand(cmd); got != "worktree-add-implicit" {
+			t.Errorf("R-2: %q should be blocked as worktree-add-implicit (--reason consumes next token), got %q", cmd, got)
+		}
+	}
+}
+
 // TestMatchSubcommand_Stash asserts bare "git stash" is blocked.
 func TestMatchSubcommand_Stash(t *testing.T) {
 	if got := MatchSubcommand("git stash"); got != "stash" {
@@ -1481,9 +1564,11 @@ func TestMatchSubcommand_RegressionAgainstMain(t *testing.T) {
 		{"git branch -d old", false},
 		{"git branch --delete old", false},
 		{"git branch -D old", false},
-		// worktree — list/add allowed, add -b blocked
+		// worktree — list/add (explicit branch) allowed; add -b and implicit blocked
 		{"git worktree list", false},
-		{"git worktree add ../foo", false},
+		{"git worktree add ../foo", true},
+		{"git worktree add ../foo main", false},
+		{"git worktree add --detach ../foo", false},
 		{"git worktree add -b new ../foo", true},
 		// status/log — allowed
 		{"git status", false},
@@ -1575,9 +1660,10 @@ func TestAllReasonsProduceValidJSON(t *testing.T) {
 		"restore-path":    reasonRestorePath,
 		"checkout-path":   reasonCheckoutPath,
 		"update-ref":      reasonUpdateRef,
-		"worktree-remove": reasonWorktreeRemoveForce,
-		"rm-force":        reasonRmForce,
-		"add-implicit":    reasonAddImplicit,
+		"worktree-remove":          reasonWorktreeRemoveForce,
+		"rm-force":                 reasonRmForce,
+		"add-implicit":             reasonAddImplicit,
+		"worktree-add-implicit":    reasonWorktreeAddImplicit,
 	}
 
 	// --- JSON-validity check (one sub-test per reason) ---

@@ -30,11 +30,15 @@ func makeBranchDeps(matched bool, candidates []string) (branchNewDeps, *bytes.Bu
 		matchDone: func(slug string, doneDirs []string) []string {
 			return nil // no done matches by default in fake helpers
 		},
-		execGitCheckout: func(branchName string) error {
+		execGitCheckout: func(branchName, _ string) error {
 			checkoutCalls = append(checkoutCalls, branchName)
 			return nil
 		},
-		out: out,
+		// fromRef: "HEAD" reproduces the pre-v10 behaviour in unit tests: no fetch, no origin
+		// resolution, no start point. Tests that exercise the remote-resolution path build
+		// their own deps instead of using makeBranchDeps.
+		fromRef: "HEAD",
+		out:     out,
 	}
 	return d, out, &checkoutCalls
 }
@@ -139,11 +143,12 @@ func TestRunBranchNew_DoneOnlyMatch_Blocks(t *testing.T) {
 			// There IS a matching roadmap in done/.
 			return []string{"ROADMAP-my-slug.md"}
 		},
-		execGitCheckout: func(branchName string) error {
+		execGitCheckout: func(branchName, _ string) error {
 			calls = append(calls, branchName)
 			return nil
 		},
-		out: out,
+		fromRef: "HEAD",
+		out:     out,
 	}
 	err := runBranchNew("refactor/my-slug", false, deps)
 	if err == nil {
@@ -346,7 +351,7 @@ func TestRunBranchNew_EmptySlug_NeverCallsMatchOrGit(t *testing.T) {
 func TestRunBranchNew_BranchAlreadyExists_PropagatesGitError(t *testing.T) {
 	deps, _, _ := makeBranchDeps(true, nil)
 	gitErr := errors.New("fatal: a branch named 'feat/my-slug' already exists")
-	deps.execGitCheckout = func(branchName string) error { return gitErr }
+	deps.execGitCheckout = func(branchName, _ string) error { return gitErr }
 
 	err := runBranchNew("feat/my-slug", false, deps)
 	if err == nil {
@@ -374,5 +379,68 @@ func TestRunBranchNew_UsesNormalizedSlugForMatching(t *testing.T) {
 	want := validator.NormalizeBranchSlug("My_Weird--Slug")
 	if receivedSlug != want {
 		t.Fatalf("expected normalized slug %q, got %q", want, receivedSlug)
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// resolveBranchStartPoint — B-1 flag-injection guard
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestResolveBranchStartPoint_DashFlagRejected asserts that --from values starting with '-'
+// are rejected before any git call is made.
+// Reconciliation: affirms B-1 fix — `--from "-f"` would otherwise execute `git checkout -f`
+// and silently discard uncommitted work.
+func TestResolveBranchStartPoint_DashFlagRejected(t *testing.T) {
+	cases := []string{
+		"-f",
+		"--force",
+		"--upload-pack=x",
+		"-b",
+	}
+	for _, ref := range cases {
+		deps := branchNewDeps{
+			fromRef: ref,
+			gitExec: func(args ...string) (string, error) {
+				t.Errorf("B-1: git must not be called for --from %q, but was called with %v", ref, args)
+				return "", nil
+			},
+		}
+		startPoint, displayRef, err := resolveBranchStartPoint(deps, "chore/x")
+		if err == nil {
+			t.Errorf("B-1: expected error for --from %q, got nil (startPoint=%q displayRef=%q)", ref, startPoint, displayRef)
+		}
+		if startPoint != "" || displayRef != "" {
+			t.Errorf("B-1: expected empty startPoint/displayRef for rejected --from %q, got %q/%q", ref, startPoint, displayRef)
+		}
+	}
+}
+
+// TestResolveBranchStartPoint_ExplicitRefResolvesToSHA asserts that a valid explicit ref
+// calls git rev-parse and returns the resolved SHA (not the raw ref text).
+// Reconciliation: affirms B-1 fix — checkout receives a flag-safe SHA, not user-supplied text.
+func TestResolveBranchStartPoint_ExplicitRefResolvesToSHA(t *testing.T) {
+	const fakeRef = "origin/altra"
+	const fakeSHA = "abc1234def5678901234567890123456789012ab"
+
+	deps := branchNewDeps{
+		fromRef: fakeRef,
+		gitExec: func(args ...string) (string, error) {
+			// Expect: rev-parse --verify --quiet --end-of-options <ref>^{commit}
+			if len(args) >= 2 && args[0] == "rev-parse" {
+				return fakeSHA + "\n", nil
+			}
+			t.Errorf("B-1: unexpected git call: %v", args)
+			return "", nil
+		},
+	}
+	startPoint, displayRef, err := resolveBranchStartPoint(deps, "chore/x")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if startPoint != fakeSHA {
+		t.Errorf("B-1: expected SHA %q as startPoint, got %q", fakeSHA, startPoint)
+	}
+	if displayRef != fakeRef {
+		t.Errorf("B-1: expected displayRef %q, got %q", fakeRef, displayRef)
 	}
 }

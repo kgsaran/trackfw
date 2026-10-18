@@ -272,6 +272,9 @@ func moveRoadmapToDone(t *testing.T, repoDir, filename string) {
 
 func TestBranchStateE2E_AC2_DoneOnlyBlocksCreation(t *testing.T) {
 	repoDir, homeDir := makeE2ERepo(t)
+	// ML-1A (REQ-2026-09-12): branch new now resolves a start point from origin/<default>.
+	// Add a bare origin so the control arm (dry-run with wip/ match) can reach the checkout step.
+	makeBareOriginAndPush(t, repoDir, homeDir)
 
 	// Synthetic fixture instead of the real corpus: layout-independent (works under
 	// roadmap_namespacing: by_agent, where the flat docs/roadmaps/done/ does not exist) and with no
@@ -352,6 +355,8 @@ func TestBranchStateE2E_AC2_DoneOnlyBlocksCreation(t *testing.T) {
 
 func TestBranchStateE2E_AC4_BlockedRoadmapGoverns_WithLink(t *testing.T) {
 	repoDir, homeDir := makeE2ERepo(t)
+	// ML-1A: branch new needs origin for start-point resolution.
+	makeBareOriginAndPush(t, repoDir, homeDir)
 	testAC4(t, repoDir, homeDir, true /* deleteLink = false → keep link */)
 }
 
@@ -365,6 +370,8 @@ func TestBranchStateE2E_AC4_BlockedRoadmapGoverns_WithLink(t *testing.T) {
 
 func TestBranchStateE2E_AC4_BlockedRoadmapGoverns_NoLink(t *testing.T) {
 	repoDir, homeDir := makeE2ERepo(t)
+	// ML-1A: branch new needs origin for start-point resolution.
+	makeBareOriginAndPush(t, repoDir, homeDir)
 	testAC4(t, repoDir, homeDir, false /* deleteLink = true → remove link before move */)
 }
 
@@ -378,11 +385,13 @@ func testAC4(t *testing.T, repoDir, homeDir string, withLink bool) {
 	const branchSpec = "fix/cache-de-sessao"
 	const branchName = "fix/cache-de-sessao"
 
-	// Setup: add roadmap to wip/ and commit
+	// Setup: add roadmap to wip/, commit, and push to origin so `branch new` (which fetches
+	// origin and creates from origin/main) will have the roadmap file in the working tree.
 	wipDir := filepath.Join(repoDir, "docs", "roadmaps", "wip")
 	writeRoadmap(t, wipDir, roadmapFile)
 	gitE2E(t, repoDir, homeDir, "add", "-A")
 	gitE2E(t, repoDir, homeDir, "commit", "-q", "-m", "chore: add cache-de-sessao roadmap")
+	gitE2E(t, repoDir, homeDir, "push", "-q", "origin", "main")
 
 	// Create branch (writes link file via trackfw branch new)
 	out, rc := runTFW(t, repoDir, homeDir, "branch", "new", branchSpec)
@@ -860,6 +869,8 @@ func TestBranchStateE2E_AC2_ByAgent_DoneOnlyBlocksCreation(t *testing.T) {
 	const agentA = "alpha"
 	const agentB = "beta"
 	repoDir, homeDir := makeE2ERepoByAgent(t, agentA, agentB)
+	// ML-1A: branch new needs origin for start-point resolution.
+	makeBareOriginAndPush(t, repoDir, homeDir)
 
 	// Use the same slug as the existing AC2 flat test to prove cross-namespacing.
 	const roadmapFile = "ROADMAP-2026-10-01-gateway-estado.md"

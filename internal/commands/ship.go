@@ -244,7 +244,7 @@ func runShip(opts shipOpts, deps shipDeps) error {
 	// main/master is blocked unconditionally — the doc-only exception never applies here.
 	if branch == "main" || branch == "master" {
 		return fmt.Errorf(
-			"trackfw ship cannot run on %q — use a feature branch:\n  git checkout -b feat/<slug>",
+			"trackfw ship cannot run on %q — use a feature branch:\n  trackfw branch new feat/<slug>",
 			branch,
 		)
 	}
@@ -252,7 +252,7 @@ func runShip(opts shipOpts, deps shipDeps) error {
 	if !docOnly && !isShipBranch(branch) {
 		return fmt.Errorf(
 			"branch %q does not match the required pattern feat|fix|refactor|chore|docs/<slug>\n"+
-				"Rename your branch or create a new one:\n  git checkout -b feat/<slug>",
+				"Rename your branch or create a new one:\n  trackfw branch new feat/<slug>",
 			branch,
 		)
 	}

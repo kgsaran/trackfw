@@ -17,7 +17,7 @@ import (
 func TestBranchNew_RecordsLinkAfterCheckout(t *testing.T) {
 	deps, _, checkoutCalls := makeBranchDeps(true, []string{"ROADMAP-x.md"})
 	order := []string{}
-	deps.execGitCheckout = func(branchName string) error {
+	deps.execGitCheckout = func(branchName, _ string) error {
 		order = append(order, "checkout:"+branchName)
 		*checkoutCalls = append(*checkoutCalls, branchName)
 		return nil

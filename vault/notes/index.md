@@ -4,6 +4,10 @@
 
 ## Índice
 
+- [branch-new-checkout-b-com-start-point-seta-upstream-no-track-obrigatorio-2026-10-18](branch-new-checkout-b-com-start-point-seta-upstream-no-track-obrigatorio-2026-10-18.md) — 🔴 **`git checkout -b <branch> origin/main` seta `@{u}=origin/main`; `buildPushArgs` lê `@{u}`; `--no-track` é REQUISITO** — sem ele, `trackfw push` nunca seta `origin/feat/slug` como upstream, Passo 0 fica cego ao `[gone]` após merge; REQ-2026-09-12 ML-1A
+
+- [branch-new-worktree-add-no-b-empilha-HEAD-2026-10-18](branch-new-worktree-add-no-b-empilha-HEAD-2026-10-18.md) — 🔴 **`git worktree add <path>` sem `-b` cria branch nomeada pelo último componente de `<path>` a partir do HEAD** — mesmo bug de empilhamento de `branch new`, guard não bloqueia (exit 0 medido); entra como ML-1C no ROADMAP-2026-09-12
+
 - [process-substitution-find-pipefail-exit-status-hidden-2026-10-17](process-substitution-find-pipefail-exit-status-hidden-2026-10-17.md) — 🔴 **`done < <(find ... 2>/dev/null|sort)` esconde exit status (process substitution async + 2>/dev/null silencia find)**; corrige com `if ! req_list=$(find...|sort)`; `pipefail` herdado em `$(...)` (medido); e **`origin/main` como fixture de falsify quebra pós-merge** — usar heredoc fixo + `cmp -s` para liveness; awk `["']` em `<<'SABEOF'` precisa de `["'"'"']` (truque de quoting literal)
 
 - [guard-add-no-dry-run-negation-bypass-2026-10-17](guard-add-no-dry-run-negation-bypass-2026-10-17.md) — 🔴 **`git add -An --no-dry-run` passa o guard mas estageia whole-tree — git usa last-flag-wins; `--no-dry-run`/`--no-dry` cancela `-n`; guard não modela negação; B-3 bloqueante Rodada 2**
