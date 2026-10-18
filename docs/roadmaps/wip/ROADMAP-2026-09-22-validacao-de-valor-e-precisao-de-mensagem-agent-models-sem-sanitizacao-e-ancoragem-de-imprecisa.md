@@ -253,3 +253,17 @@ Opção (i): manter o warn como está, adicionar os novos vetores ao check (`cla
 **Vivo (AC1–AC2)** e **absorve o resíduo de REQ-2026-08-21**: `render.go:587` só rejeita caractere de controle; `"5 && rm -rf /"` vira artefato com WARN e exit 0; `:`/`"` geram YAML inválido. AC3–AC4 corrigidos (#271); AC5 sumiu com a v8.
 
 Evidência e tabela completa: `docs/governanca/2026-10-17-triagem-backlog-pre-v8.md`.
+
+## Decisões do usuário — 2026-10-17
+
+- **D-1 (aceita como recomendada):** validar no ramo `claude` de `Render`, espelhado em
+  `ResolveAgentModel`; nem em `rewriteFrontmatterModelLine` (quebra o Cursor, T-2) nem só no load
+  (silent un-pin, T-3). Falha antes de gravar qualquer arquivo, nos 5 call sites.
+- **D-2 (usuário): lista `[a-zA-Z0-9._:@/+-]` + `model:` sempre entre aspas.** Fora da lista →
+  erro nomeando a chave e o esperado, exit ≠ 0, nenhum arquivo. Aceito → emitido quotado e escapado
+  (fecha a troca de tipo `null`/`true`/`0x10`). Mudança visível: o `model:` dos agentes do Claude passa
+  a sair entre aspas — vai para o CHANGELOG.
+- **D-3 (usuário): `identity.json` entra nesta REQ** (mesma causa). ML novo: `name`/`description`
+  emitidos de forma segura em YAML (aspas quando necessário) e caractere de controle recusado ao ler.
+- **D-4 (aceita):** `LooksLikeSuspectModelValue` cobre os falsos negativos medidos
+  (`claude-x: danger`, `claude-x #x`) e deixa de avisar sobre ids Bedrock legítimos.
