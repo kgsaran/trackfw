@@ -338,7 +338,7 @@ falhar explicitamente com mensagem acionável se `origin` não existir.**
 > Dependências: Wave 0 concluída; D-1, D-2, D-3 respondidas pelo usuário.
 
 ### ML-1A — `branch new` cria da base correta (AC1, AC2, AC3, AC4, AC9)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (2026-10-18)
 **Arquivos afetados:** `internal/commands/branch.go`, testes
 
 **Ações:**
@@ -362,7 +362,7 @@ falhar explicitamente com mensagem acionável se `origin` não existir.**
 - [ ] build e testes verdes
 
 ### ML-1B — Atualizar mensagens e contratos (F-7, F-8, cli-parity.md)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (2026-10-18)
 **Arquivos afetados:** `internal/commands/push.go`, `internal/commands/ship.go`,
 `internal/guard/gitbranch.go`, `scripts/trackfw-git-branch-guard.sh`, `docs/cli-parity.md`
 
@@ -378,7 +378,7 @@ falhar explicitamente com mensagem acionável se `origin` não existir.**
 - [ ] build e testes verdes
 
 ### ML-1C — `git worktree add <path>` sem `-b` cria branch do HEAD (mesma causa)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (2026-10-18)
 **Arquivos afetados:** `internal/guard/gitbranch.go`, `scripts/trackfw-git-branch-guard.sh`
 
 **Base:** `git worktree add <path>` sem `-b` cria branch nomeada pelo último componente de
@@ -397,7 +397,7 @@ no guard hoje. Pela Regra Dura, entra neste roadmap.
 - [ ] build e testes verdes
 
 ### ML-1D — CHANGELOG e bump de versão (AC5)
-**Status:** ⬜ Pendente — aguarda D-1
+**Status:** ✅ Concluído — BREAKING no CHANGELOG; bump para 10.0.0 no PR da release
 **Arquivos afetados:** `CHANGELOG.md`, arquivos de versão
 
 **Ações:**
@@ -431,3 +431,15 @@ Evidência e tabela completa: `docs/governanca/2026-10-17-triagem-backlog-pre-v8
   bloqueia `worktree add -b`; passa a bloquear a forma que cria branch implicitamente, deixando passar
   `--detach`, `<path> <branch-existente>` e `<path> <commit>`.
 - **ML-1D:** CHANGELOG em `[Unreleased]` como BREAKING; o bump de versão vai no PR da release.
+
+## Entrega — 2026-10-18
+Red-team (`docs/seguranca/2026-10-18-red-team-branch-new-base.md`) bloqueou por B-1: `--from -f`
+virava opção do `git checkout` e descartava trabalho não commitado. Corrigido na causa: o `--from` é
+resolvido por `rev-parse --verify --end-of-options <ref>^{commit}` e o checkout recebe o SHA; valor
+com `-` ou que não resolve → erro sem tocar no repositório. R-1 (dry-run com `master`), R-2
+(`--reason`), R-3 (`--orphan`), R-4 (texto) e R-5 (teste) corrigidos; mensagem de "sem origin" única.
+**Reconferido pelo arquiteto no binário:** `--from -f` com arquivo modificado → exit 1, arquivo
+preservado, sem branch; `--from --upload-pack=x` → exit 1; `--from v1` → HEAD = v1; ref inexistente
+→ exit 1; padrão → 0 commits além de `origin/main`; remoto `master` sem `origin/HEAD` → dry-run e
+execução real usam `origin/master`; guard: `--lock --reason x ../foo` e `--orphan ../foo` bloqueiam,
+`../foo main` e `--detach` passam.
