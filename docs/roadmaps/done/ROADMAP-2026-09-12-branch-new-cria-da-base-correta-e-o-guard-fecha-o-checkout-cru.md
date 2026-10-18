@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-12
 req: "docs/req/REQ-2026-09-12-branch-new-cria-a-partir-do-head-atual-e-nao-ha-comando-para-voltar-a-base-a-branch-nasce-empilhada-e-o-guard-nao-pode-bloquear-o-checkout-cru.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: branch new cria da base correta e o guard fecha o checkout cru
 
-> Created: 2026-09-12 | Status: wip
+> Created: 2026-09-12 | Status: done
 
 ## Contexto
 
@@ -443,3 +443,5 @@ preservado, sem branch; `--from --upload-pack=x` → exit 1; `--from v1` → HEA
 → exit 1; padrão → 0 commits além de `origin/main`; remoto `master` sem `origin/HEAD` → dry-run e
 execução real usam `origin/master`; guard: `--lock --reason x ../foo` e `--orphan ../foo` bloqueiam,
 `../foo main` e `--detach` passam.
+
+**Mergeado** no #585 (`7430e838`), 2026-10-18.
