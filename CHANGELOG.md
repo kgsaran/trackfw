@@ -7,6 +7,14 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Validação de `agent_models.<tier>` antes de qualquer escrita (D-1).** Valores com caracteres fora do allowlist `[a-zA-Z0-9._:@/+-]` (espaço, `#`, `{`, `}`, etc.) causam `trackfw agents install`/`update` a retornar erro e não gravar nenhum arquivo. O comando `trackfw agents models` aplica a mesma validação e imprime `ERROR:` por tier inválido, saindo com código ≠ 0 — display e install reportam o mesmo veredito para o mesmo valor. (REQ-2026-08-30, REQ-2026-08-21)
+
+- **Target `claude` sempre emite `model: "value"` com aspas (D-2).** Valores como `null`, `true` e `0x10` eram escritos sem aspas no frontmatter YAML e podiam ser parseados pelo Claude Code como não-strings. Agora o target `claude` usa `forceQuote=true` em `rewriteFrontmatterModelLine`, garantindo tipo string independente do conteúdo. (REQ-2026-08-30)
+
+- **Identidade YAML-safe em `agent-directory` e `opencode-agent` (D-3).** Campos `name:` e `description:` que chegavam de `identity.json` eram interpolados literalmente; display names como `Zeus: danger` quebravam o frontmatter YAML. Agora usam `yamlSafeScalar`, que adiciona aspas somente quando necessário — nomes comuns são byte-idênticos ao original. O `identity.Load` rejeita caracteres de controle em `display_name` e `user_nickname`. (REQ-2026-08-30)
+
 ### Changed
 
 - **O guard bloqueia staging com escopo implícito, ligado por padrão.** `git add` e `git stage` sem caminho explícito (bare, `-A`/`--all`/`-u` sem positional, ou com só tokens whole-tree como `.` `./` `..` `../` `:/` `:(top)`) são bloqueados pelo guard de branch do agente com instrução de enumerar o que vai estagiar via `git status --short` e depois usar `git add <arquivo1> <arquivo2> …`. Passam: caminhos explícitos (inclusive `-A docs/`), flags interativas (`-p`/`-i`/`--patch`/`--interactive`), dry-run (`-n`/`--dry-run`) e `--pathspec-from-file=`. O Amazon Q Developer recebe um segundo padrão em `deniedCommands` cobrindo as formas bare. (REQ-2026-09-05, ADR-2026-09-05)

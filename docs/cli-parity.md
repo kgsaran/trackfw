@@ -7719,6 +7719,26 @@ trackfw: aviso: "~/.trackfw/trackfw.yaml" tem YAML malformado — config global 
 | 9 — Escopo de projeto (não-regressão) | Global com `sonnet: "4.6"`, projeto com `sonnet: "9.9"` | Vacuity guard: `model: claude-sonnet-9-9`; cross-runtime byte-idêntico |
 | 10 — Config global malformada | `~/.trackfw/trackfw.yaml` com YAML inválido | Exit 0; aviso malformed em stderr; `model: sonnet` |
 
+### Validação de valor de `agent_models` e quoting do target claude (D-1..D-4, REQ-2026-08-30)
+
+<!-- trackfw-contract: gate=internal/integrations/models_test.go:TestValidateAgentModelValue,TestRenderRejectsInvalidModelValueAndWritesNoFile -->
+
+**Regra (D-1/D-2):** O campo `agent_models.<tier>` é validado contra o allowlist `[a-zA-Z0-9._:@/+-]` antes de qualquer escrita. Um valor inválido causa `Render` a retornar erro imediatamente, sem gravar nenhum arquivo. O comando `trackfw agents models` aplica a mesma validação (`ValidateAgentModelValue`) e reporta `ERROR:` com exit ≠ 0 quando algum tier é inválido — o display e o install reportam o mesmo veredito para o mesmo valor (invariante de espelho D-1).
+
+O target `claude` sempre emite `model: "value"` (double-quoted) para evitar que values como `null`, `true` ou `0x10` sejam parseados pelo parser YAML como não-strings — o quoting força o tipo string independente do conteúdo (`forceQuote=true` em `rewriteFrontmatterModelLine`).
+
+**Regra (D-3):** Os campos `name:` e `description:` nos targets `agent-directory` e `opencode-agent` usam `yamlSafeScalar` ao interpolar valores de identidade, impedindo que display names como `"Zeus: danger"` ou `"Apolo #tf"` quebrem o frontmatter. O `identity.Load` rejeita caracteres de controle (U+0000–U+001F, U+2028, U+2029) em `display_name` e `user_nickname` como defesa-em-profundidade independente do quoting.
+
+**Regra (D-4):** `LooksLikeSuspectModelValue` agora detecta false negatives: valores com prefixo `claude-` mas com metacaracteres YAML inline (espaço, tab, `#`, `{`, `}`, `[`, `]`, `'`, `"`) disparam aviso antes de chegar ao check do prefixo. False positives corrigidos: IDs Bedrock (`anthropic.claude-opus-4-5-v1:0`) não disparam aviso — são reconhecidos pelo heurístico de prefixo-letra + `.`.
+
+#### Residuais declarados (REQ-2026-08-30)
+
+| ID | Descrição | Por que não está aqui |
+|----|-----------|----------------------|
+| R-2 | YAML type-confusion em targets não-claude (Codex TOML, Cursor MD) — nesses targets, `null` escrito sem quotes seria parseado conforme o parser do target, não pelo YAML frontmatter do Claude | Nenhum desses targets usa `forceQuote`; o risco é próprio do target, não do trackfw |
+| R-3 | `rewriteFrontmatterFields` (path do claude subagent) usa `yamlSafeScalar` mas não valida o comprimento máximo do valor — um display name muito longo pode exceder limites de parsers de frontmatter | Limite não é definido pela spec YAML; nenhum parser do catálogo documenta um limite |
+| R-4 | `yamlSafeScalar` não cobre todas as formas de block scalars YAML (`\|` literal, `>` folded) — se o frontmatter original usar block scalars para description, a substituição produz um scalar diferente em estilo mas semanticamente equivalente | Todos os templates do catálogo usam plain ou double-quoted scalars; block scalar é fora do padrão do gerador |
+
 
 ---
 

@@ -2,6 +2,46 @@
 
 ---
 
+## 2026-10-17 — apolo-tf — INÍCIO+FIM: Wave 1 — Validação de valor e precisão de mensagem agent_models (REQ-2026-08-30)
+
+**Branch:** `fix/validacao-de-valor-e-precisao-de-mensagem-agent-models`
+**Escopo:** D-1/D-2 validação allowlist + quoting forçado target claude; D-3 yamlSafeScalar identity fields + rejeição de control chars em Load; D-4 LooksLikeSuspectModelValue false negatives/positives; testes bidirecionais; atualização cli-parity.md + CHANGELOG.md; scripts/check-agent-models-parity.sh.
+
+**Implementação:**
+- `internal/integrations/render.go`: `isValidModelPinValue`, `yamlSafeScalar`, `needsYAMLQuoting` (sem vírgula como trigger falso), `yamlEscapeDoubleQuoted`; `rewriteFrontmatterModelLine` recebe `forceQuote bool`; target claude usa `forceQuote=true`; agent-directory e opencode-agent usam `yamlSafeScalar` para name/description; `rewriteFrontmatterFields` usa `yamlSafeScalar`
+- `internal/integrations/models.go`: `ValidateAgentModelValue` exportado; `ResolveAgentModel` retorna 3 valores (+ err); `LooksLikeSuspectModelValue` com `containsYAMLInlineMetachar` (D-4); `isAlpha`
+- `internal/identity/identity.go`: `containsControlCharIdent`; `Load` rejeita control chars em display_name e user_nickname
+- `internal/commands/agents_models.go`: detecção de tiers inválidos, ERROR em stderr, exit ≠ 0, `[invalid]` na tabela
+- `internal/integrations/models_test.go`: novos casos D-4 em `TestLooksLikeSuspectModelValue`; `TestValidateAgentModelValue` (corpus aceitos/rejeitados); `TestRenderRejectsInvalidModelValueAndWritesNoFile`
+- `internal/integrations/render_test.go`: `TestRenderAgentModelsComposeForClaude` atualizado para `wantModelLine` com aspas; 5 chamadas de `rewriteFrontmatterModelLine` atualizadas para 3 argumentos
+- `internal/identity/identity_test.go`: `TestLoadRejectsControlCharInDisplayName`; `TestContainsControlCharIdent`
+- `scripts/check-agent-models-parity.sh`: todos os greps de model composto atualizados para formato com aspas
+- `docs/cli-parity.md`: seção D-1..D-4 + residuais R-2..R-4 adicionados ao bloco `agent_models`
+- `CHANGELOG.md`: entradas Fixed para D-1, D-2, D-3 em `[Unreleased]`
+
+**Gates:**
+- `go build ./...` — OK
+- `go test ./...` — OK (todos os pacotes)
+- `go vet ./...` — OK
+- `GOOS=windows GOARCH=amd64 go vet ./...` — OK
+- `bash scripts/check-agent-models-parity.sh` — "All scenarios passed"
+- `trackfw validate` — 165 warnings pré-existentes, 0 erros
+
+**Arquivos prontos para auditoria (sem commit — aguardando trackfw_architect):**
+- `internal/integrations/render.go`
+- `internal/integrations/models.go`
+- `internal/integrations/models_test.go`
+- `internal/integrations/render_test.go`
+- `internal/identity/identity.go`
+- `internal/identity/identity_test.go`
+- `internal/commands/agents_models.go`
+- `scripts/check-agent-models-parity.sh`
+- `docs/cli-parity.md`
+- `CHANGELOG.md`
+- `docs/agents-working-context.md`
+
+---
+
 ## 2026-10-17 — apolo-tf — FIM: Red-team Rodada 3 — guard de staging implícito (REQ-2026-09-05)
 
 **Branch:** `feat/o-guard-do-trackfw-passa-a-bloquear-staging-com-escopo-implicito`
