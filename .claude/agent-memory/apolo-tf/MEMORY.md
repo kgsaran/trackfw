@@ -16,3 +16,4 @@
 - [Prova de mordida: lista do sed antigo diverge do medido](feedback_prova_de_mordida_sed_list.md) — C09, C10, C11 NÃO falham abertos com o sed antigo; medir antes de escrever os casos
 - [Guard Go: map não struct, idleTimeout parametrizado, os.Exit direto no deny](project_guard_go_contract.md) — map[string]json.RawMessage (case-sensitive), RunGitBranch recebe idleTimeout para testabilidade, deny usa os.Exit direto (não return error) para não poluir stderr com "Error:"
 - [sed global revert destrói múltiplos sítios](feedback_sed_revert_destroys_multiple_sites.md) — usar python3 com match exato do corpo da função para reverter só o sítio alvo; sed em render.go destruiu 7 NormalizeCRLF calls em ML-W3b
+- [branch new com origin: arm negativo não quebra, arm de controle quebra](feedback_branch_new_quebra_testes_existentes_sem_origin.md) — gate de governança dispara antes do origin check; arm de controle e push-antes-do-branch-new são os dois pontos de atenção
