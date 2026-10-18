@@ -7721,7 +7721,7 @@ trackfw: aviso: "~/.trackfw/trackfw.yaml" tem YAML malformado — config global 
 
 ### Validação de valor de `agent_models` e quoting do target claude (D-1..D-4, REQ-2026-08-30)
 
-<!-- trackfw-contract: gate=internal/integrations/models_test.go:TestValidateAgentModelValue,TestRenderRejectsInvalidModelValueAndWritesNoFile -->
+<!-- trackfw-contract: gate=internal/integrations/models_test.go partial=TestValidateAgentModelValue prova a lista permitida nas duas direções; TestRenderRejectsInvalidModelValueAndWritesNoFile prova que valor inválido falha sem gravar arquivo -->
 
 **Regra (D-1/D-2):** O campo `agent_models.<tier>` é validado contra o allowlist `[a-zA-Z0-9._:@/+-]` antes de qualquer escrita. Um valor inválido causa `Render` a retornar erro imediatamente, sem gravar nenhum arquivo. O comando `trackfw agents models` aplica a mesma validação (`ValidateAgentModelValue`) e reporta `ERROR:` com exit ≠ 0 quando algum tier é inválido — o display e o install reportam o mesmo veredito para o mesmo valor (invariante de espelho D-1).
 
