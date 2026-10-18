@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-22
 req: "docs/req/REQ-2026-09-03-check-referential-integrity-diz-ok-e-sai-zero-sobre-arvore-vazia-sem-guarda-de-vacuidade.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: `check-referential-integrity.sh` diz `OK` e sai 0 sobre árvore vazia — quinto gate vácuo, e está dentro do `parity`
 
-> Created: 2026-09-22 | Status: wip
+> Created: 2026-09-22 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-09-03-check-referential-integrity-diz-ok-e-sai-zero-sobre-arvore-vazia-sem-guarda-de-vacuidade.md -->
@@ -288,3 +288,5 @@ awk do `req_dir` antes de tirar as aspas (sítio de mesma causa achado pelo `are
 CRLF, com o script pré-ML-2A embarcado provando o vácuo) e J_old/J/J2 (yaml CRLF). Reconferido pelo
 arquiteto: CRLF com referência quebrada → exit 1; CRLF íntegro → exit 0 com M=1; REQ sem referência
 → exit 1 nomeando as causas. Neste repositório: 257 REQs, 327 referências.
+
+**Mergeado** no #583 (`b1d539b3`), 2026-10-18; #579 fechado.
