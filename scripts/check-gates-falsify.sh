@@ -324,7 +324,7 @@ FALSIFY_SUCCESS_TALLY="$WORK/success-count"
 # (`-lt`), entao a contagem so pode ter SUBIDO: 241 continua valido e a folga passa
 # de 8 para 17. Nao houve bump -- o delta 249->258 foi MEDIDO, nao somado, e bate
 # com os 9 bracos do Cenario 200 por corroboracao, nao por construcao.
-FALSIFY_SUCCESS_FLOOR=255
+FALSIFY_SUCCESS_FLOOR=262
 if [[ "$TRACKFW_FALSIFY_ENUMERATE" == "1" ]]; then
   : > "$FALSIFY_ENUM_TALLY"
   echo "[falsify/enumerate] modo de enumeração ATIVO (TRACKFW_FALSIFY_ENUMERATE=1, default=0) -- reprovações são contadas e a execução continua para o próximo cenário; o exit code final permanece != 0 se qualquer cenário reprovar. Ferramenta de diagnóstico -- não usada por make quality/parity." >&2
@@ -1980,17 +1980,22 @@ assert_fails_with "referential-integrity/vacuity/yaml-req-dir-missing" \
   "nao existe" \
   bash "$T12D/scripts/check-referential-integrity.sh"
 
-# Braço E: árvore íntegra (1 REQ, sem refs) → sai 0.
+# Braço E: árvore íntegra (1 REQ, 1 ref válida) → sai 0.
+# Fixture tem um ADR real para que ref_count > 0 e o piso de denominador não
+# reprove (ML-2A revogou a recomendação de exit 0 quando N>0 e M=0).
 T12E="$WORK/s12e"
-mkdir -p "$T12E/scripts" "$T12E/docs/req"
+mkdir -p "$T12E/scripts" "$T12E/docs/req" "$T12E/docs/adr"
 cp "$ROOT_DIR/scripts/check-referential-integrity.sh" "$T12E/scripts/"
 cat > "$T12E/trackfw.yaml" <<'EOF'
 req_dir: docs/req
 EOF
+cat > "$T12E/docs/adr/ADR-vacuity-test.md" <<'EOF'
+# ADR de teste de vacuidade
+EOF
 cat > "$T12E/docs/req/REQ-vacuity-test.md" <<'EOF'
 ---
 status: Done
-adr: ""
+adr: docs/adr/ADR-vacuity-test.md
 roadmap: "-"
 ---
 # REQ de teste de vacuidade
@@ -2004,11 +2009,271 @@ assert_output_contains "referential-integrity/vacuity/intact-tree-has-count" \
   "Referential integrity OK:" \
   bash "$T12E/scripts/check-referential-integrity.sh"
 
-# Braço G: N>0, M=0 (REQs existem mas sem refs verificadas) → sai 0 com contagem
-# visível (segunda direção de vacuidade da Seção 3, Wave 0 — exit 0 esperado).
-assert_output_contains "referential-integrity/vacuity/no-refs-has-count" \
-  "0 referencias" \
-  bash "$T12E/scripts/check-referential-integrity.sh"
+# Braço G: N>0, M=0 (REQs existem mas zero refs verificadas) → reprova (ML-2A).
+# Fixture própria: REQ com adr:"" e roadmap:"-" — ambos ignorados — para medir
+# o piso de denominador isolado da direção de CRLF.
+# Revoga a recomendação da Wave 0 do #578 que esperava exit 0 com "0 referencias";
+# o piso fecha a classe sem depender de conhecer a gramática que cegou o laço.
+T12G="$WORK/s12g"
+mkdir -p "$T12G/scripts" "$T12G/docs/req"
+cp "$ROOT_DIR/scripts/check-referential-integrity.sh" "$T12G/scripts/"
+cat > "$T12G/trackfw.yaml" <<'EOF'
+req_dir: docs/req
+EOF
+cat > "$T12G/docs/req/REQ-no-refs.md" <<'EOF'
+---
+status: Done
+adr: ""
+roadmap: "-"
+---
+# REQ sem refs verificáveis
+EOF
+assert_fails_with "referential-integrity/vacuity/no-refs-reprova" \
+  "zero referencias verificadas" \
+  bash "$T12G/scripts/check-referential-integrity.sh"
+
+# ---------------------------------------------------------------------------
+# Cenário 12 (continuação) — check-referential-integrity.sh: CRLF zera as
+# referências verificadas (issue #579, ML-2A).
+#
+# O gate detectava o frontmatter por igualdade exata `[[ "$line" == "---" ]]`.
+# Em checkout CRLF a linha chega como `---\r`, a igualdade é falsa,
+# in_frontmatter nunca vira 1, ref_count fica em 0 e o gate imprime OK.
+#
+# Correção (ML-2A):
+#   1. `line=${line%$'\r'}` — normalização na entrada antes de qualquer
+#      comparação, cobrindo `---`, a chave e o valor.
+#   2. Piso de denominador: N>0 e M=0 → reprova (cobre a classe sem depender
+#      de conhecer a gramática que cegou o laço).
+#
+# Estrutura:
+#   T12_SAB2 — script pré-ML-2A embarcado (pós-#578, sem normalização CRLF e
+#              sem piso M=0); prova de vida confirma que o script ATUAL difere.
+#   Braço H1  — SAB2 + CRLF com ref quebrada → passa com M=0 (era o defeito).
+#   Braço H2  — script atual + CRLF com ref quebrada → reprova.
+#   Braço I   — script atual + CRLF com ref válida → passa com M>0.
+#   Braço I2  — saída do braço I contém contagem "1 referencias".
+# ---------------------------------------------------------------------------
+
+# Versão pré-ML-2A do script (pós-#578): sem `line=${line%$'\r'}` e sem piso M=0.
+# Embarcada para provar que os braços H*/I* medem algo real (não decorativos).
+T12_SAB2="$WORK/s12sab2"
+mkdir -p "$T12_SAB2/scripts"
+cat > "$T12_SAB2/scripts/check-referential-integrity.sh" <<'SAB2EOF'
+#!/usr/bin/env bash
+# Verifica que refs canônicas de frontmatter em REQs apontam para arquivos existentes.
+# Lê req_dir de trackfw.yaml (fallback: docs/req) — corrige o literal hardcoded que ignorava
+# a configuração (REQ-2026-09-17-sync-enumera-req-por-caminho-literal-ignora-req-dir-e-escreve-no-provedor-de-pm.md, AC5).
+set -euo pipefail
+
+ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+cd "$ROOT_DIR"
+
+# Extrai req_dir de trackfw.yaml. Usa awk para o caso mais comum (chave simples com ou sem aspas).
+# Fallback para docs/req quando o arquivo não existe ou a chave está ausente.
+_REQ_DIR_SRC="fallback docs/req"
+REQ_DIR="docs/req"
+if [[ -f "$ROOT_DIR/trackfw.yaml" ]]; then
+  _VAL=$(awk '/^req_dir[[:space:]]*:/ {
+    sub(/^req_dir[[:space:]]*:[[:space:]]*/, "")
+    gsub(/^["'"'"']|["'"'"']$/, "")
+    gsub(/[[:space:]]*$/, "")
+    print; exit
+  }' "$ROOT_DIR/trackfw.yaml")
+  if [[ -n "$_VAL" ]]; then
+    REQ_DIR="$_VAL"
+    _REQ_DIR_SRC="trackfw.yaml"
+  fi
+fi
+
+# Guarda de vacuidade: req_dir deve existir e ser acessível.
+if [[ ! -d "$ROOT_DIR/$REQ_DIR" ]]; then
+  echo "FAIL: req_dir '$ROOT_DIR/$REQ_DIR' (de $_REQ_DIR_SRC) nao existe" >&2
+  exit 1
+fi
+if [[ ! -r "$ROOT_DIR/$REQ_DIR" ]]; then
+  echo "FAIL: req_dir '$ROOT_DIR/$REQ_DIR' (de $_REQ_DIR_SRC) existe mas nao pode ser lido" >&2
+  exit 1
+fi
+
+status=0
+req_count=0
+ref_count=0
+
+# Enumera REQs no layout flat e por subdiretório (depth <= 2 cobre by_agent e por-estado).
+if ! req_list=$(find "$ROOT_DIR/$REQ_DIR" -maxdepth 2 -name "*.md" | sort); then
+  echo "FAIL: find em '$ROOT_DIR/$REQ_DIR' falhou" >&2
+  exit 1
+fi
+
+while IFS= read -r req; do
+  [[ -f "$req" ]] || continue
+  req_count=$((req_count + 1))
+  in_frontmatter=0
+  seen_frontmatter=0
+
+  while IFS= read -r line; do
+    if [[ "$line" == "---" ]]; then
+      if [[ $seen_frontmatter -eq 0 ]]; then
+        seen_frontmatter=1
+        in_frontmatter=1
+        continue
+      fi
+      break
+    fi
+
+    [[ $in_frontmatter -eq 1 ]] || continue
+
+    case "$line" in
+      adr:*|roadmap:*)
+        key=${line%%:*}
+        value=${line#*:}
+        value=${value#"${value%%[![:space:]]*}"}
+        value=${value%"${value##*[![:space:]]}"}
+        value=${value%\"}
+        value=${value#\"}
+        value=${value%\'}
+        value=${value#\'}
+
+        [[ -n "$value" ]] || continue
+        [[ "$value" == "-" || "$value" == "—" ]] && continue
+
+        ref_count=$((ref_count + 1))
+        if [[ ! -f "$value" ]]; then
+          printf 'referential integrity failed: %s %s "%s" does not exist\n' "$req" "$key" "$value" >&2
+          status=1
+        fi
+        ;;
+    esac
+  done < "$req"
+done <<<"$req_list"
+
+if [[ $req_count -eq 0 ]]; then
+  echo "FAIL: zero REQs enumeradas em '$ROOT_DIR/$REQ_DIR' (de $_REQ_DIR_SRC)" >&2
+  exit 1
+fi
+
+if [[ $status -ne 0 ]]; then
+  exit "$status"
+fi
+
+echo "Referential integrity OK: $req_count REQs, $ref_count referencias verificadas"
+SAB2EOF
+chmod +x "$T12_SAB2/scripts/check-referential-integrity.sh"
+
+# Prova de vida: o script ATUAL deve diferir da versão pré-ML-2A embarcada acima.
+# Se forem idênticos, a normalização CRLF e o piso M=0 não foram aplicados e os
+# braços H*/I* não medem nada.
+if cmp -s "$ROOT_DIR/scripts/check-referential-integrity.sh" "$T12_SAB2/scripts/check-referential-integrity.sh"; then
+  echo "FAIL [falsify/setup-s12-crlf]: check-referential-integrity.sh nao difere da versao pre-ML-2A embarcada neste cenario — a normalizacao CRLF e/ou o piso M=0 nao foram aplicados. Este cenario parou de medir o que promete." >&2
+  falsify_fail_point
+fi
+
+# Braço H1: versão pré-ML-2A + CRLF com ref quebrada → passa com "0 referencias"
+# (era o defeito descrito no issue #579).
+T12H="$WORK/s12h"
+mkdir -p "$T12H/scripts" "$T12H/docs/req"
+cp "$T12_SAB2/scripts/check-referential-integrity.sh" "$T12H/scripts/"
+printf 'req_dir: docs/req\n' > "$T12H/trackfw.yaml"
+# Gera REQ com CRLF real via printf; od -c confirma \r antes de \n.
+printf -- '---\r\nstatus: Done\r\nroadmap: "docs/roadmaps/done/MISSING-crlf.md"\r\n---\r\n\r\n# REQ CRLF ref quebrada\r\n' \
+  > "$T12H/docs/req/REQ-crlf-broken.md"
+# Guarda: confirma que o CRLF foi escrito (editor ou ferramenta pode converter).
+if ! grep -q $'\r' "$T12H/docs/req/REQ-crlf-broken.md"; then
+  echo "FAIL [falsify/setup-s12-crlf/h1-fixture]: fixture CRLF nao contem \\r — braço H1 mediria LF, nao CRLF" >&2
+  falsify_fail_point
+fi
+set +e
+s12h1_out=$(bash "$T12H/scripts/check-referential-integrity.sh" 2>&1)
+s12h1_rc=$?
+set -e
+if [[ $s12h1_rc -eq 0 && "$s12h1_out" == *"0 referencias"* ]]; then
+  falsify_count_success
+  echo "OK   [falsify/referential-integrity/crlf/old-script-passes-broken-ref]: versao pre-ML-2A saiu 0 com '0 referencias' em CRLF — exatamente o defeito que o ML-2A corrige"
+else
+  echo "FAIL [falsify/referential-integrity/crlf/old-script-passes-broken-ref]: versao pre-ML-2A saiu $s12h1_rc, saida: $s12h1_out" >&2
+  falsify_fail_point
+fi
+
+# Braço H2: script atual + CRLF com ref quebrada → reprova acusando a referência.
+T12H2="$WORK/s12h2"
+mkdir -p "$T12H2/scripts" "$T12H2/docs/req"
+cp "$ROOT_DIR/scripts/check-referential-integrity.sh" "$T12H2/scripts/"
+printf 'req_dir: docs/req\n' > "$T12H2/trackfw.yaml"
+printf -- '---\r\nstatus: Done\r\nroadmap: "docs/roadmaps/done/MISSING-crlf.md"\r\n---\r\n\r\n# REQ CRLF ref quebrada\r\n' \
+  > "$T12H2/docs/req/REQ-crlf-broken.md"
+if ! grep -q $'\r' "$T12H2/docs/req/REQ-crlf-broken.md"; then
+  echo "FAIL [falsify/setup-s12-crlf/h2-fixture]: fixture CRLF nao contem \\r — braço H2 mediria LF, nao CRLF" >&2
+  falsify_fail_point
+fi
+assert_fails_with "referential-integrity/crlf/new-script-fails-broken-ref" \
+  "referential integrity failed" \
+  bash "$T12H2/scripts/check-referential-integrity.sh"
+
+# Braço I: script atual + CRLF com ref válida → passa com M>0.
+# Cria o arquivo referenciado na fixture para que a verificação não reprove.
+T12I="$WORK/s12i"
+mkdir -p "$T12I/scripts" "$T12I/docs/req" "$T12I/docs/roadmaps/done"
+cp "$ROOT_DIR/scripts/check-referential-integrity.sh" "$T12I/scripts/"
+printf 'req_dir: docs/req\n' > "$T12I/trackfw.yaml"
+touch "$T12I/docs/roadmaps/done/ROADMAP-crlf-intact.md"
+printf -- '---\r\nstatus: Done\r\nroadmap: "docs/roadmaps/done/ROADMAP-crlf-intact.md"\r\n---\r\n\r\n# REQ CRLF ref valida\r\n' \
+  > "$T12I/docs/req/REQ-crlf-intact.md"
+if ! grep -q $'\r' "$T12I/docs/req/REQ-crlf-intact.md"; then
+  echo "FAIL [falsify/setup-s12-crlf/i-fixture]: fixture CRLF nao contem \\r — braço I mediria LF, nao CRLF" >&2
+  falsify_fail_point
+fi
+assert_succeeds "referential-integrity/crlf/intact-passes" \
+  bash "$T12I/scripts/check-referential-integrity.sh"
+
+# Braço I2: saída contém contagem com M>0.
+assert_output_contains "referential-integrity/crlf/intact-has-count" \
+  "1 referencias verificadas" \
+  bash "$T12I/scripts/check-referential-integrity.sh"
+
+# Braço J: trackfw.yaml em CRLF com req_dir entre aspas — mesmo mecanismo CRLF,
+# superfície do leitor awk. Sem o `sub(/\r$/, "")` como primeira ação do bloco
+# awk, a aspa de fechamento fica grudada no valor: `docs/req"` em vez de
+# `docs/req`. O gate falha barulhento com "nao existe" — diagnóstico falso para
+# quem tem o yaml em CRLF. Mesma causa, mesmo ML (Regra Dura de Causa Raiz).
+#
+# Controle: versão pré-ML-2A (T12_SAB2) reprova com "nao existe"; script atual
+# passa com M>0.
+T12J="$WORK/s12j"
+mkdir -p "$T12J/scripts" "$T12J/docs/req" "$T12J/docs/adr"
+cp "$ROOT_DIR/scripts/check-referential-integrity.sh" "$T12J/scripts/"
+cp "$T12_SAB2/scripts/check-referential-integrity.sh" "$T12J/scripts/cri-old.sh"
+# trackfw.yaml em CRLF com req_dir entre aspas; REQs ficam em LF.
+printf -- 'req_dir: "docs/req"\r\n' > "$T12J/trackfw.yaml"
+if ! grep -q $'\r' "$T12J/trackfw.yaml"; then
+  echo "FAIL [falsify/setup-s12-crlf/j-fixture]: trackfw.yaml do braço J nao contem \\r — braço mediria LF, nao CRLF" >&2
+  falsify_fail_point
+fi
+touch "$T12J/docs/adr/ADR-crlf-yaml.md"
+printf -- '---\nstatus: Done\nadr: docs/adr/ADR-crlf-yaml.md\n---\n\n# REQ com yaml CRLF\n' \
+  > "$T12J/docs/req/REQ-crlf-yaml.md"
+
+# Controle J_old: SAB2 + yaml CRLF + quoted req_dir → reprova com "nao existe".
+set +e
+s12j_old_out=$(bash "$T12J/scripts/cri-old.sh" 2>&1)
+s12j_old_rc=$?
+set -e
+if [[ $s12j_old_rc -ne 0 && "$s12j_old_out" == *"nao existe"* ]]; then
+  falsify_count_success
+  echo "OK   [falsify/referential-integrity/crlf-yaml/old-script-fails-nao-existe]: versao pre-ML-2A saiu $s12j_old_rc com 'nao existe' em yaml CRLF — diagnostico falso que o ML-2A corrige"
+else
+  echo "FAIL [falsify/referential-integrity/crlf-yaml/old-script-fails-nao-existe]: versao pre-ML-2A saiu $s12j_old_rc, saida: $s12j_old_out" >&2
+  falsify_fail_point
+fi
+
+# Braço J: script atual + yaml CRLF + quoted req_dir → passa com M>0.
+assert_succeeds "referential-integrity/crlf-yaml/new-script-passes" \
+  bash "$T12J/scripts/check-referential-integrity.sh"
+
+# Braço J2: saída contém contagem M>0.
+assert_output_contains "referential-integrity/crlf-yaml/new-script-has-count" \
+  "1 referencias verificadas" \
+  bash "$T12J/scripts/check-referential-integrity.sh"
 
 # ---------------------------------------------------------------------------
 # Cenário 13 — check-barrier.sh: a própria prova E2E da barrier é falsificável.

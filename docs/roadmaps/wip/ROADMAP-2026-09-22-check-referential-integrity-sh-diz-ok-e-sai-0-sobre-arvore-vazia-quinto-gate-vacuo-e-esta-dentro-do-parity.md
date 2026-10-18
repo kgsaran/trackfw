@@ -1,5 +1,5 @@
 ---
-status: done
+status: wip
 date: 2026-09-22
 req: "docs/req/REQ-2026-09-03-check-referential-integrity-diz-ok-e-sai-zero-sobre-arvore-vazia-sem-guarda-de-vacuidade.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: `check-referential-integrity.sh` diz `OK` e sai 0 sobre árvore vazia — quinto gate vácuo, e está dentro do `parity`
 
-> Created: 2026-09-22 | Status: done
+> Created: 2026-09-22 | Status: wip
 
 ## Context
 <!-- Derived from REQ: REQ-2026-09-03-check-referential-integrity-diz-ok-e-sai-zero-sobre-arvore-vazia-sem-guarda-de-vacuidade.md -->
@@ -254,3 +254,37 @@ Cenário 12 do falsify ganhou 7 braços, incluindo o script pré-correção emba
 na árvore vazia — prova de que o cenário mede. Não usa `git show origin/main:`, que após o merge
 apontaria para a versão corrigida (desvio do handoff, correto). Reconferido pelo arquiteto: sem
 diretório, vazio, referência quebrada → exit 1; íntegro → exit 0 com contagem.
+
+---
+
+## 🔄 REABERTO — 2026-10-18: ML-2A, CRLF zera as referências (#579)
+
+**Status:** ✅ Concluído (auditado 2026-10-18) — branch `fix/check-referential-integrity-crlf-zera-as-referencias` ·
+reaberto pela **Regra Dura de Causa Raiz** (mesmo gate dizendo OK sem ter olhado, segunda gramática).
+
+Issue #579 (consumidor externo, Windows, checkout CRLF): o gate detecta o frontmatter por
+`[[ "$line" == "---" ]]`; com CRLF a linha é `---\r`, nada é lido e sai
+`OK: 87 REQs, 0 referencias verificadas` com 143 marcadores no acervo. Falsificado pelo autor com os
+mesmos bytes: LF acusa as duas referências quebradas da fixture; CRLF diz OK.
+
+**Por que o escopo do #578 não previa:** a Wave 0 tratou só o vácuo de enumeração (zero REQs) e
+recomendou **passar** com N>0 e M=0. A medição do #579 mostra que M=0 é exatamente o sintoma da
+cegueira por gramática.
+
+**Correção (decisão do usuário, 2026-10-18):**
+1. normalizar na entrada: remover `\r` de cada linha antes de comparar (cobre `---`, a chave e o
+   valor), em vez de acrescentar uma segunda comparação;
+2. **piso de denominador:** com REQs enumeradas (N>0) e **zero** referências verificadas (M=0) o gate
+   **reprova** — revoga a recomendação da Wave 0 do #578; fecha a classe sem depender de conhecer a
+   gramática que cegou o laço.
+
+**Aceite:** cenário no falsify com os **mesmos bytes** em LF e CRLF — CRLF com referência quebrada
+reprova (antes passava); CRLF íntegro passa com M>0; N>0 e M=0 reprova; controle LF inalterado.
+`Closes #579` no PR.
+
+**Entrega (ML-2A):** `\r` removido de cada linha do frontmatter antes de comparar; `\r` removido no
+awk do `req_dir` antes de tirar as aspas (sítio de mesma causa achado pelo `ares-tf`: yaml CRLF com
+`req_dir` entre aspas dava "nao existe"); N>0 e M=0 reprova. Falsify: braços H1/H2/I/I2 (frontmatter
+CRLF, com o script pré-ML-2A embarcado provando o vácuo) e J_old/J/J2 (yaml CRLF). Reconferido pelo
+arquiteto: CRLF com referência quebrada → exit 1; CRLF íntegro → exit 0 com M=1; REQ sem referência
+→ exit 1 nomeando as causas. Neste repositório: 257 REQs, 327 referências.

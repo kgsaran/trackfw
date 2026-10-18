@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-08-30
 author: "trackfw_architect (Zeus)"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-22-validacao-de-valor-e-precisao-de-mensagem-agent-models-sem-sanitizacao-e-ancoragem-de-imprecisa.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-22-validacao-de-valor-e-precisao-de-mensagem-agent-models-sem-sanitizacao-e-ancoragem-de-imprecisa.md"
 ---
 
 # REQ: Validação de valor e precisão de mensagem — `agent_models` sem sanitização e ancoragem de `~` imprecisa
 
-> Date: 2026-08-30 | Status: Open
+> Date: 2026-08-30 | Status: Done
 
 ## Motivation
 
@@ -30,15 +30,15 @@ Nenhum dos dois é explorável hoje. Os dois custam tempo quando alguém investi
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — Valor de `agent_models` validado por formato antes de interpolar; formato inválido
+- [x] **AC1** — Valor de `agent_models` validado por formato antes de interpolar; formato inválido
       falha com mensagem nomeando a chave e o esperado, sem gerar arquivo.
-- [ ] **AC2** — Falsificação nas duas direções: valores legítimos (`5`, `4.6`, `4-5-sonnet`) aceitos;
+- [x] **AC2** — Falsificação nas duas direções: valores legítimos (`5`, `4.6`, `4-5-sonnet`) aceitos;
       valores com metacaractere, espaço ou controle recusados.
-- [ ] **AC3** — Mensagens de `~usuario/` e `"~/"` descrevem o motivo **real** da classificação.
-- [ ] **AC4** — A classificação em si **não muda** — o `ADR-2026-08-22` está correto; o que muda é o
+- [x] **AC3** — Mensagens de `~usuario/` e `"~/"` descrevem o motivo **real** da classificação.
+- [x] **AC4** — A classificação em si **não muda** — o `ADR-2026-08-22` está correto; o que muda é o
       texto.
-- [ ] **AC5** — Paridade nos 3; gate falsificável para AC1 e AC2.
-- [ ] **AC6** — `make quality` exit 0 e CI verde.
+- [x] **AC5** — Paridade nos 3; gate falsificável para AC1 e AC2.
+- [x] **AC6** — `make quality` exit 0 e CI verde.
 
 ## Negative Scope
 
@@ -53,4 +53,8 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-22-validacao-de-valor-e-precisao-de-mensagem-agent-models-sem-sanitizacao-e-ancoragem-de-imprecisa.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-22-validacao-de-valor-e-precisao-de-mensagem-agent-models-sem-sanitizacao-e-ancoragem-de-imprecisa.md`
+
+## ✅ Encerramento — 2026-10-18
+
+Entregue no #582 (`6dfef256`). AC1/AC2: valor fora de `[a-zA-Z0-9._:@/+-]` falha sem gravar arquivo nos 5 call sites; aceitos gravados como string entre aspas. AC3/AC4: já corrigidos no #271 (mensagens de `~`). AC5: paridade sumiu com a v8. AC6: `make quality` e CI verdes. Absorveu o resíduo da REQ-2026-08-21 e, por decisão do usuário, o YAML do `identity.json` (mesma causa).
