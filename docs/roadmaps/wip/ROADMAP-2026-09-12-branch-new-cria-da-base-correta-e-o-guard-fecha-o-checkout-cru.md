@@ -1,5 +1,5 @@
 ---
-status: backlog
+status: wip
 date: 2026-09-12
 req: "docs/req/REQ-2026-09-12-branch-new-cria-a-partir-do-head-atual-e-nao-ha-comando-para-voltar-a-base-a-branch-nasce-empilhada-e-o-guard-nao-pode-bloquear-o-checkout-cru.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: branch new cria da base correta e o guard fecha o checkout cru
 
-> Created: 2026-09-12 | Status: backlog
+> Created: 2026-09-12 | Status: wip
 
 ## Context
 <!-- What problem does this roadmap solve? Link the REQ. -->
