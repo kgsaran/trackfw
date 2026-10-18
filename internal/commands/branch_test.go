@@ -30,11 +30,15 @@ func makeBranchDeps(matched bool, candidates []string) (branchNewDeps, *bytes.Bu
 		matchDone: func(slug string, doneDirs []string) []string {
 			return nil // no done matches by default in fake helpers
 		},
-		execGitCheckout: func(branchName string) error {
+		execGitCheckout: func(branchName, _ string) error {
 			checkoutCalls = append(checkoutCalls, branchName)
 			return nil
 		},
-		out: out,
+		// fromRef: "HEAD" reproduces the pre-v10 behaviour in unit tests: no fetch, no origin
+		// resolution, no start point. Tests that exercise the remote-resolution path build
+		// their own deps instead of using makeBranchDeps.
+		fromRef: "HEAD",
+		out:     out,
 	}
 	return d, out, &checkoutCalls
 }
@@ -139,11 +143,12 @@ func TestRunBranchNew_DoneOnlyMatch_Blocks(t *testing.T) {
 			// There IS a matching roadmap in done/.
 			return []string{"ROADMAP-my-slug.md"}
 		},
-		execGitCheckout: func(branchName string) error {
+		execGitCheckout: func(branchName, _ string) error {
 			calls = append(calls, branchName)
 			return nil
 		},
-		out: out,
+		fromRef: "HEAD",
+		out:     out,
 	}
 	err := runBranchNew("refactor/my-slug", false, deps)
 	if err == nil {
@@ -346,7 +351,7 @@ func TestRunBranchNew_EmptySlug_NeverCallsMatchOrGit(t *testing.T) {
 func TestRunBranchNew_BranchAlreadyExists_PropagatesGitError(t *testing.T) {
 	deps, _, _ := makeBranchDeps(true, nil)
 	gitErr := errors.New("fatal: a branch named 'feat/my-slug' already exists")
-	deps.execGitCheckout = func(branchName string) error { return gitErr }
+	deps.execGitCheckout = func(branchName, _ string) error { return gitErr }
 
 	err := runBranchNew("feat/my-slug", false, deps)
 	if err == nil {

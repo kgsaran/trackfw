@@ -142,7 +142,7 @@ func runPush(opts pushOpts, deps pushDeps) error {
 	// main/master is blocked unconditionally.
 	if branch == "main" || branch == "master" {
 		return fmt.Errorf(
-			"trackfw push cannot run on %q — use a feature branch:\n  git checkout -b feat/<slug>",
+			"trackfw push cannot run on %q — use a feature branch:\n  trackfw branch new feat/<slug>",
 			branch,
 		)
 	}
@@ -150,7 +150,7 @@ func runPush(opts pushOpts, deps pushDeps) error {
 	if !isShipBranch(branch) {
 		return fmt.Errorf(
 			"branch %q does not match the required pattern feat|fix|refactor|chore|docs/<slug>\n"+
-				"Rename your branch or create a new one:\n  git checkout -b feat/<slug>",
+				"Rename your branch or create a new one:\n  trackfw branch new feat/<slug>",
 			branch,
 		)
 	}
