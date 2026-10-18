@@ -38,6 +38,112 @@ func isVersionString(s string) bool {
 	return true
 }
 
+// isValidModelPinValue reports whether v is a model pin value accepted by the
+// write path. The charset is [a-zA-Z0-9._:@/+-]. Any other character (space,
+// {, }, #, ", ', ,, [, ]) causes Render to return an error and write no file.
+// An empty string is not valid — it means "no pin" and must be handled by the
+// caller before reaching this function.
+//
+// The charset covers Claude model IDs ("claude-sonnet-4-6"), Bedrock IDs
+// ("anthropic.claude-opus-4-5-v1:0"), Vertex date-suffixed IDs
+// ("claude-opus-5@20250101"), and OpenAI-style provider/model IDs
+// ("openai/gpt-5"). It deliberately excludes space and all YAML structural
+// metacharacters so that model: "value" is always valid YAML after quoting.
+func isValidModelPinValue(v string) bool {
+	if v == "" {
+		return false
+	}
+	for _, r := range v {
+		if !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') ||
+			r == '.' || r == '_' || r == ':' || r == '@' || r == '/' || r == '+' || r == '-') {
+			return false
+		}
+	}
+	return true
+}
+
+// yamlSafeScalar returns v as a YAML plain scalar when it is unambiguous, or
+// as a double-quoted scalar when quoting is needed to prevent structural
+// misinterpretation. Common values (letters, spaces, hyphens, digits) are
+// returned byte-identical to the input — no churn for existing agent files.
+//
+// Values with YAML metacharacters (colon-space, space-hash, flow indicators
+// {}/[], quote chars, etc.) are wrapped in double-quotes with internal
+// double-quotes escaped as \". Used for identity fields (name, description)
+// emitted into YAML frontmatter so that a display name like "Zeus: danger"
+// does not break frontmatter parsers in Claude Code or other targets.
+func yamlSafeScalar(v string) string {
+	if !needsYAMLQuoting(v) {
+		return v
+	}
+	return `"` + yamlEscapeDoubleQuoted(v) + `"`
+}
+
+// needsYAMLQuoting reports whether v requires double-quote wrapping to be a
+// safe YAML plain scalar. The rules are conservative: false positives (quoting
+// values that would parse fine without it) are acceptable; false negatives
+// (not quoting values that break YAML) are not.
+func needsYAMLQuoting(v string) bool {
+	if v == "" {
+		return true
+	}
+	if containsControlChar(v) {
+		return true
+	}
+	// YAML special keywords that parse as non-string types
+	switch strings.ToLower(v) {
+	case "null", "~", "true", "false", "yes", "no", "on", "off":
+		return true
+	}
+	for i, r := range v {
+		switch r {
+		case ':':
+			// colon-space or colon at end-of-string → YAML key separator
+			if i+1 < len(v) && (v[i+1] == ' ' || v[i+1] == '\t') {
+				return true
+			}
+			if i == len(v)-1 {
+				return true
+			}
+		case '#':
+			// space-hash → YAML comment
+			if i > 0 && (v[i-1] == ' ' || v[i-1] == '\t') {
+				return true
+			}
+		case '{', '}', '[', ']', '!', '&', '*', '|', '>', '%', '`':
+			return true
+		case '"', '\'':
+			return true
+		}
+		// Additional restrictions for the first character
+		if i == 0 {
+			switch r {
+			case '-', '?', ':', '|', '>', '!', '&', '*', '#', '%', '@', '`':
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// yamlEscapeDoubleQuoted escapes special characters for a YAML double-quoted
+// scalar: double-quotes become \" and backslashes become \\.
+func yamlEscapeDoubleQuoted(v string) string {
+	var sb strings.Builder
+	sb.Grow(len(v))
+	for _, r := range v {
+		switch r {
+		case '"':
+			sb.WriteString(`\"`)
+		case '\\':
+			sb.WriteString(`\\`)
+		default:
+			sb.WriteRune(r)
+		}
+	}
+	return sb.String()
+}
+
 // composeClaudeModelID builds a Claude model identifier from tier (e.g.
 // "sonnet") and version (e.g. "4.6" or "5"), applying the three composition
 // rules from the official Anthropic model documentation
@@ -140,8 +246,8 @@ func Render(item Item, kind ItemKind, capability Capability, source []byte, cfg 
 		// - omite campos não suportados pelo agy
 		var sb strings.Builder
 		sb.WriteString("---\n")
-		sb.WriteString("name: " + name + "\n")
-		sb.WriteString("description: " + description + "\n")
+		sb.WriteString("name: " + yamlSafeScalar(name) + "\n")
+		sb.WriteString("description: " + yamlSafeScalar(description) + "\n")
 		if mapped, ok := mapModel(model); ok {
 			sb.WriteString("model: " + mapped + "\n")
 		}
@@ -184,7 +290,7 @@ func Render(item Item, kind ItemKind, capability Capability, source []byte, cfg 
 		//     descartado junto com "tools:".
 		var sb strings.Builder
 		sb.WriteString("---\n")
-		sb.WriteString("description: " + description + "\n")
+		sb.WriteString("description: " + yamlSafeScalar(description) + "\n")
 		sb.WriteString("mode: subagent\n")
 		sb.WriteString("---\n")
 		if body != "" {
@@ -195,7 +301,7 @@ func Render(item Item, kind ItemKind, capability Capability, source []byte, cfg 
 		if targetID == "cursor" {
 			if mapped, ok := mapModelCursor(model); ok {
 				var rewErr error
-				source, rewErr = rewriteFrontmatterModelLine(source, mapped)
+				source, rewErr = rewriteFrontmatterModelLine(source, mapped, false)
 				if rewErr != nil {
 					return nil, rewErr
 				}
@@ -212,6 +318,14 @@ func Render(item Item, kind ItemKind, capability Capability, source []byte, cfg 
 			// as-is (fall back to tier alias). This preserves identical behavior
 			// for callers that set agentModels but leave a tier value empty.
 			if version, ok := agentModels[model]; ok && version != "" {
+				// D-1/D-2: validate before any write. An invalid value causes
+				// Render to return an error immediately, before any file is
+				// written. The check mirrors ValidateAgentModelValue so that
+				// "trackfw agents models" and "trackfw agents install" report
+				// identical outcomes for the same value.
+				if err := ValidateAgentModelValue(model, version); err != nil {
+					return nil, err
+				}
 				var modelID string
 				if isVersionString(version) {
 					// Compose: "4.6" → "claude-sonnet-4-6"; "5" → "claude-sonnet-5".
@@ -222,8 +336,11 @@ func Render(item Item, kind ItemKind, capability Capability, source []byte, cfg 
 					// ADR-2026-08-21 §3.
 					modelID = version
 				}
+				// D-2: always emit model: "value" (double-quoted) for the claude
+				// target so that type-confusion values like null/true/0x10 parse
+				// as strings and not as YAML non-string scalars. forceQuote=true.
 				var rewErr error
-				source, rewErr = rewriteFrontmatterModelLine(source, modelID)
+				source, rewErr = rewriteFrontmatterModelLine(source, modelID, true)
 				if rewErr != nil {
 					return nil, rewErr
 				}
@@ -365,7 +482,7 @@ func rewriteFrontmatterFields(source []byte, name, description string) []byte {
 
 	lines := strings.Split(frontmatter, "\n")
 	for i, line := range lines {
-		key, value, ok := strings.Cut(line, ":")
+		key, _, ok := strings.Cut(line, ":")
 		if !ok {
 			continue
 		}
@@ -378,13 +495,10 @@ func rewriteFrontmatterFields(source []byte, name, description string) []byte {
 		default:
 			continue
 		}
-		trimmedValue := strings.TrimSpace(value)
-		quoted := len(trimmedValue) >= 2 && strings.HasPrefix(trimmedValue, `"`) && strings.HasSuffix(trimmedValue, `"`)
-		if quoted {
-			lines[i] = key + ": \"" + replacement + "\""
-		} else {
-			lines[i] = key + ": " + replacement
-		}
+		// D-3: use yamlSafeScalar so that values like "Zeus: danger" (colon-space)
+		// or names with # do not break the YAML frontmatter. Common names that
+		// need no quoting are returned byte-identical to the input.
+		lines[i] = key + ": " + yamlSafeScalar(replacement)
 	}
 
 	return []byte("---\n" + strings.Join(lines, "\n") + rest)
@@ -583,7 +697,7 @@ func containsControlChar(s string) bool {
 // Model IDs never require control characters; any such value is rejected to
 // prevent frontmatter injection (CVE-class: escape hatch writes value literally;
 // a newline closes the frontmatter block or adds attacker-controlled YAML keys).
-func rewriteFrontmatterModelLine(source []byte, value string) ([]byte, error) {
+func rewriteFrontmatterModelLine(source []byte, value string, forceQuote bool) ([]byte, error) {
 	if containsControlChar(value) {
 		return nil, fmt.Errorf("model value contains control character and was rejected: model IDs never require newlines or other control characters (got %q)", value)
 	}
@@ -605,18 +719,28 @@ func rewriteFrontmatterModelLine(source []byte, value string) ([]byte, error) {
 		if !ok || strings.TrimSpace(key) != "model" {
 			continue
 		}
-		trimmedValue := strings.TrimSpace(value2)
-		quoted := len(trimmedValue) >= 2 && strings.HasPrefix(trimmedValue, `"`) && strings.HasSuffix(trimmedValue, `"`)
-		if quoted {
+		if forceQuote {
+			// D-2: always emit model: "value" for the claude target so that
+			// YAML type-confusion values (null, true, 0x10) parse as strings.
 			lines[i] = "model: \"" + value + "\""
 		} else {
-			lines[i] = "model: " + value
+			trimmedValue := strings.TrimSpace(value2)
+			quoted := len(trimmedValue) >= 2 && strings.HasPrefix(trimmedValue, `"`) && strings.HasSuffix(trimmedValue, `"`)
+			if quoted {
+				lines[i] = "model: \"" + value + "\""
+			} else {
+				lines[i] = "model: " + value
+			}
 		}
 		found = true
 		break
 	}
 	if !found {
-		lines = append(lines, "model: "+value)
+		if forceQuote {
+			lines = append(lines, "model: \""+value+"\"")
+		} else {
+			lines = append(lines, "model: "+value)
+		}
 	}
 
 	return []byte("---\n" + strings.Join(lines, "\n") + rest), nil

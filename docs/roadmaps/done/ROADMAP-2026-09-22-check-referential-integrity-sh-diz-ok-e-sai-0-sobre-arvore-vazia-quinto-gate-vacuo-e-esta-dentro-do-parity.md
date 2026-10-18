@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-22
 req: "docs/req/REQ-2026-09-03-check-referential-integrity-diz-ok-e-sai-zero-sobre-arvore-vazia-sem-guarda-de-vacuidade.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: `check-referential-integrity.sh` diz `OK` e sai 0 sobre árvore vazia — quinto gate vácuo, e está dentro do `parity`
 
-> Created: 2026-09-22 | Status: wip
+> Created: 2026-09-22 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-09-03-check-referential-integrity-diz-ok-e-sai-zero-sobre-arvore-vazia-sem-guarda-de-vacuidade.md -->
@@ -225,7 +225,7 @@ grep -q "ML-0A-DONE" docs/roadmaps/wip/ROADMAP-2026-09-22-check-referential-inte
 - [ ] tests green
 
 ### ML-1F — **AC6** — make quality verde e trackfw validate exit 0.
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído — `make quality` EXIT=0 (361 OK / 0 FAIL), `trackfw validate` EXIT=0; CI do #578 20/20; mergeado
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
