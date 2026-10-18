@@ -248,6 +248,15 @@ func runBranchNew(spec string, dryRun bool, deps branchNewDeps) error {
 	// - fromRef == "" (default): fetch origin, resolve the default remote branch, return SHA + name.
 	startPoint, displayRef, err := resolveBranchStartPoint(deps, branchName)
 	if err != nil {
+		// Dry-run: governance passed, so the branch WOULD be created — but the base could not be
+		// resolved (e.g. no origin). Report "would create" (governance result) and append the base
+		// warning so the user knows the real execution would need --from HEAD or an origin remote.
+		// Exit 0: the gate measures governance, not base availability; a branch that passes
+		// governance must print "would create" regardless of base state.
+		if dryRun {
+			fmt.Fprintf(deps.out, "[dry-run] would create branch %q (base não resolvida: %s; a execução real requer --from HEAD ou um remote 'origin')\n", branchName, err.Error())
+			return nil
+		}
 		return err
 	}
 

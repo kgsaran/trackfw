@@ -1979,7 +1979,7 @@ time.
 | Invocation | `trackfw branch new <type>/<slug>` |
 | `<type>` | One of `feat`, `fix`, `refactor`, `chore`, `docs` |
 | `<slug>` | Non-empty; for `feat`/`fix`/`refactor`, matched against roadmaps in `wip/` and `done/` the same way `branch_has_wip_roadmap` does. For `chore`/`docs`, no matching is performed. |
-| `--dry-run` | Reports whether the branch would be created or blocked, and which base ref would be used, without executing `git` |
+| `--dry-run` | Reports whether the branch would be created or blocked, without executing `git`. Governance (roadmap match) is evaluated first. If governance passes but the base cannot be resolved (e.g. no origin), prints "would create … (base não resolvida: …)" and exits 0. The "would create" token is always emitted when governance passes, regardless of base state. |
 | `--from <ref>` | Override the start point. `--from HEAD` reproduces the pre-v10.0.0 behaviour (creates the branch from the current HEAD, no fetch). Any other ref is resolved to a canonical SHA before checkout (B-1 flag-injection guard). Omitting `--from` fetches `origin` and uses `origin/<default-branch>` as the start point. |
 | Exit 0 | `feat`/`fix`/`refactor` with a match, or any `chore`/`docs` spec — branch created (or `--dry-run` reports "would create … from <base>") |
 | Exit non-zero, usage error | Malformed spec (missing `/`, empty slug, invalid `<type>` — error message lists the full vocabulary: `feat, fix, refactor, chore, docs`) |
@@ -2013,9 +2013,13 @@ time.
      `git fetch origin` (warns on failure, never aborts; R-1: fetch runs even in --dry-run so
      both paths see the same default branch). Call resolveDefaultBranch (forge symref → remote
      symref → "main") to obtain remoteRef (e.g. "origin/main"). Resolve remoteRef to SHA.
-5. --dry-run with a match (or chore|docs): print
-   "[dry-run] would create branch "<type>/<slug>" from <base>", exit 0, never invoke git.
-   If base resolution would fail (no origin, etc.), prints the error and exits non-zero.
+5. --dry-run with a match (or chore|docs): governance passed → always print "would create".
+   - If base resolved: "[dry-run] would create branch "<type>/<slug>" from <base>", exit 0.
+   - If base failed (e.g. no origin): "[dry-run] would create branch "<type>/<slug>" (base não
+     resolvida: …; a execução real requer --from HEAD ou um remote 'origin')", exit 0.
+   Rationale: the gate `check-roadmap-slug-matching.sh` and any caller that reads "would create"/
+   "would block" to determine governance state must get a stable verdict regardless of whether a
+   remote is configured in the test fixture. The real execution (step 6) still fails without origin.
 6. Match (or chore|docs), no --dry-run: run `git checkout --no-track -b <type>/<slug> <base>`
    with inherited stdio. --no-track is MANDATORY: without it, git sets @{u}=origin/<default>
    which causes `trackfw push` to omit -u and the branch never registers [gone] after merge.
