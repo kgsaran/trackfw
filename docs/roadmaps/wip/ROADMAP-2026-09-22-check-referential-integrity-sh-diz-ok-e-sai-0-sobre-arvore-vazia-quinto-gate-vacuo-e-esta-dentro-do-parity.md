@@ -259,7 +259,7 @@ diretório, vazio, referência quebrada → exit 1; íntegro → exit 0 com cont
 
 ## 🔄 REABERTO — 2026-10-18: ML-2A, CRLF zera as referências (#579)
 
-**Status:** 🔄 Em andamento — branch `fix/check-referential-integrity-crlf-zera-as-referencias` ·
+**Status:** ✅ Concluído (auditado 2026-10-18) — branch `fix/check-referential-integrity-crlf-zera-as-referencias` ·
 reaberto pela **Regra Dura de Causa Raiz** (mesmo gate dizendo OK sem ter olhado, segunda gramática).
 
 Issue #579 (consumidor externo, Windows, checkout CRLF): o gate detecta o frontmatter por
@@ -281,3 +281,10 @@ cegueira por gramática.
 **Aceite:** cenário no falsify com os **mesmos bytes** em LF e CRLF — CRLF com referência quebrada
 reprova (antes passava); CRLF íntegro passa com M>0; N>0 e M=0 reprova; controle LF inalterado.
 `Closes #579` no PR.
+
+**Entrega (ML-2A):** `\r` removido de cada linha do frontmatter antes de comparar; `\r` removido no
+awk do `req_dir` antes de tirar as aspas (sítio de mesma causa achado pelo `ares-tf`: yaml CRLF com
+`req_dir` entre aspas dava "nao existe"); N>0 e M=0 reprova. Falsify: braços H1/H2/I/I2 (frontmatter
+CRLF, com o script pré-ML-2A embarcado provando o vácuo) e J_old/J/J2 (yaml CRLF). Reconferido pelo
+arquiteto: CRLF com referência quebrada → exit 1; CRLF íntegro → exit 0 com M=1; REQ sem referência
+→ exit 1 nomeando as causas. Neste repositório: 257 REQs, 327 referências.
