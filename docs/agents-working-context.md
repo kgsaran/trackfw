@@ -46816,3 +46816,12 @@ Branch: `feat/o-guard-do-trackfw-passa-a-bloquear-staging-com-escopo-implicito`
 Commit auditado: `f127561d`
 Artefato: `docs/seguranca/2026-10-17-red-team-guard-staging-implicito.md` (seção "Conferência pós-rodada 3" adicionada)
 Veredito: LIBERA. 37 vetores verificados: sem FP novo, sem FN novo, sem regressão. RT-R3-6 (`:(top,exclude)x`) fechado pelo fix de `isExclusionPathspec`. RT-R3-3/4 (`--dry`/`--pat`) fechados por `resolveAddLongOpt`. Resíduos remanescentes: `$(git add -A)` FN (R-1), `(git add -A) > redir` FN (R-2), `:(icase)*` exótico (R-3). 180 testes verdes.
+
+**hades-tf** · 2026-10-17 · Wave 0 (ML-0A) — validação de valor agent_models (REQ-2026-08-30) — iniciado
+Branch: `fix/validacao-de-valor-e-precisao-de-mensagem-agent-models`
+Escopo: roadmap `ROADMAP-2026-09-22-validacao-de-valor-e-precisao-de-mensagem-agent-models-…md`
+
+**hades-tf** · 2026-10-18 · Wave 0 (ML-0A) — validação de valor agent_models (REQ-2026-08-30) — concluído
+Branch: `fix/validacao-de-valor-e-precisao-de-mensagem-agent-models`
+Artefato: roadmap `docs/roadmaps/wip/ROADMAP-2026-09-22-validacao-de-valor-e-precisao-de-mensagem-agent-models-sem-sanitizacao-e-ancoragem-de-imprecisa.md` (ML-0A ✅, seções 1–4, gates, Decisões)
+Veredito: barrier --wave 0 --trust-local-gates PASSA. 5 call sites de escrita mapeados. 8 vetores medidos (3 FN confirmados: 5: danger→YAML PARSE ERROR, {tools: Bash}→type map, espaço-hash→truncamento). Nova classe: type confusion via YAML scalars (null/true/0x10/~) — passa qualquer allowlist de letras mas modelo vira nil/bool/int. Recomendação D-2 consolidada: opção (b) allowlist + quoting obrigatório na saída. Resíduos: identity.json (D-3), escape-hatch por construção (R-2).
