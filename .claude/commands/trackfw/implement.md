@@ -77,8 +77,8 @@ Para cada Wave (em sequência), execute os MLs da Wave:
 
 **5e. Commitar:**
 ```bash
-git add -A
-git commit -m "feat(<escopo>): <descrição do ML>"
+git add <arquivos-do-ml>
+trackfw commit -m "feat(<escopo>): <descrição do ML>"
 ```
 
 Só avance para a próxima Wave após todos os MLs da Wave atual estarem ✅.
