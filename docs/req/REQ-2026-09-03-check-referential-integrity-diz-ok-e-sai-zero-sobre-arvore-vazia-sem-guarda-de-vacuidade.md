@@ -1,14 +1,14 @@
 ---
-status: Done
+status: Open
 date: 2026-09-03
 author: "trackfw_architect (Zeus)"
 adr: ""
-roadmap: "docs/roadmaps/done/ROADMAP-2026-09-22-check-referential-integrity-sh-diz-ok-e-sai-0-sobre-arvore-vazia-quinto-gate-vacuo-e-esta-dentro-do-parity.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-22-check-referential-integrity-sh-diz-ok-e-sai-0-sobre-arvore-vazia-quinto-gate-vacuo-e-esta-dentro-do-parity.md"
 ---
 
 # REQ: `check-referential-integrity.sh` diz `OK` e sai 0 sobre árvore vazia — quinto gate vácuo, e está dentro do `parity`
 
-> Date: 2026-09-03 | Status: Done
+> Date: 2026-09-03 | Status: Open
 | Linear Issue:
 | Jira Issue:
 
@@ -78,7 +78,7 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-22-check-referential-integrity-sh-diz-ok-e-sai-0-sobre-arvore-vazia-quinto-gate-vacuo-e-esta-dentro-do-parity.md`
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-22-check-referential-integrity-sh-diz-ok-e-sai-0-sobre-arvore-vazia-quinto-gate-vacuo-e-esta-dentro-do-parity.md`
 
 ## ✅ Encerramento — 2026-10-17
 

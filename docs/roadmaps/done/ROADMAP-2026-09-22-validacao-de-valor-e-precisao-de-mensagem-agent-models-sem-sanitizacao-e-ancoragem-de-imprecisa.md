@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-22
 req: "docs/req/REQ-2026-08-30-validacao-de-valor-e-precisao-de-mensagem-agent-models-sem-sanitizacao-e-ancoragem-de-til-imprecisa.md"
 squad: ""
@@ -7,7 +7,7 @@ squad: ""
 
 # Roadmap: Validação de valor e precisão de mensagem — `agent_models` sem sanitização e ancoragem de `~` imprecisa
 
-> Created: 2026-09-22 | Status: wip
+> Created: 2026-09-22 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-08-30-validacao-de-valor-e-precisao-de-mensagem-agent-models-sem-sanitizacao-e-ancoragem-de-til-imprecisa.md -->
@@ -236,7 +236,7 @@ Opção (i): manter o warn como está, adicionar os novos vetores ao check (`cla
 - [ ] build passes · tests green
 
 ### ML-1C — **AC6** — `make quality` exit 0 e CI verde
-**Status:** 🔄 `make quality` EXIT=0 (361 OK / 0 FAIL); falta o CI do PR
+**Status:** ✅ Concluído — `make quality` EXIT=0 (361 OK / 0 FAIL); CI do #582 20/20; mergeado (`6dfef256`)
 **Files affected:** scripts de gate (se houver gate específico de `agent_models`)
 **Actions:**
 1. Se existir `scripts/check-agent-models-parity.sh` ou similar, atualizar com os novos vetores de rejeição.
