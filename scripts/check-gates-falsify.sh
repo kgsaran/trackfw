@@ -1939,12 +1939,19 @@ fi
 
 # Fixtures independentes para os braços de detecção (cada um no seu próprio diretório
 # para isolar efeitos colaterais).
+#
+# Cada braço escreve o PRÓPRIO trackfw.yaml em vez de copiar o do repositório
+# hospedeiro: os braços criam docs/req/, e um fork que sobrescreve req_dir faria o
+# gate sair no guard de "req_dir nao existe" — diagnóstico diferente do que o braço
+# afirma. O braço D já fazia assim; isto estende a mesma forma aos demais.
 
 # Braço B: docs/req/ ausente → novo script reprova.
 T12B="$WORK/s12b"
 mkdir -p "$T12B/scripts"
 cp "$ROOT_DIR/scripts/check-referential-integrity.sh" "$T12B/scripts/"
-cp "$ROOT_DIR/trackfw.yaml" "$T12B/"
+cat > "$T12B/trackfw.yaml" <<'EOF'
+req_dir: docs/req
+EOF
 # docs/req/ NOT created
 assert_fails_with "referential-integrity/vacuity/no-req-dir" \
   "nao existe" \
@@ -1954,7 +1961,9 @@ assert_fails_with "referential-integrity/vacuity/no-req-dir" \
 T12C="$WORK/s12c"
 mkdir -p "$T12C/scripts" "$T12C/docs/req"
 cp "$ROOT_DIR/scripts/check-referential-integrity.sh" "$T12C/scripts/"
-cp "$ROOT_DIR/trackfw.yaml" "$T12C/"
+cat > "$T12C/trackfw.yaml" <<'EOF'
+req_dir: docs/req
+EOF
 assert_fails_with "referential-integrity/vacuity/empty-req-dir" \
   "zero REQs" \
   bash "$T12C/scripts/check-referential-integrity.sh"
@@ -1975,7 +1984,9 @@ assert_fails_with "referential-integrity/vacuity/yaml-req-dir-missing" \
 T12E="$WORK/s12e"
 mkdir -p "$T12E/scripts" "$T12E/docs/req"
 cp "$ROOT_DIR/scripts/check-referential-integrity.sh" "$T12E/scripts/"
-cp "$ROOT_DIR/trackfw.yaml" "$T12E/"
+cat > "$T12E/trackfw.yaml" <<'EOF'
+req_dir: docs/req
+EOF
 cat > "$T12E/docs/req/REQ-vacuity-test.md" <<'EOF'
 ---
 status: Done
