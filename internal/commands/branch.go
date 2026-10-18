@@ -244,19 +244,15 @@ func runBranchNew(spec string, dryRun bool, deps branchNewDeps) error {
 
 	// Resolve the start point for the branch.
 	// - fromRef == "HEAD": reproduce old behaviour (no start point, creates from current HEAD).
-	// - fromRef != "" and != "HEAD": use it directly as start point.
-	// - fromRef == "" (default): fetch origin, resolve the default remote branch, verify the ref.
-	startPoint, err := resolveBranchStartPoint(deps, branchName, dryRun)
+	// - fromRef != "" and != "HEAD": validate, resolve to SHA, return SHA + original ref as display.
+	// - fromRef == "" (default): fetch origin, resolve the default remote branch, return SHA + name.
+	startPoint, displayRef, err := resolveBranchStartPoint(deps, branchName)
 	if err != nil {
 		return err
 	}
 
 	if dryRun {
-		base := startPoint
-		if base == "" {
-			base = "HEAD"
-		}
-		fmt.Fprintf(deps.out, "[dry-run] would create branch %q from %s\n", branchName, base)
+		fmt.Fprintf(deps.out, "[dry-run] would create branch %q from %s\n", branchName, displayRef)
 		return nil
 	}
 
@@ -278,60 +274,84 @@ func runBranchNew(spec string, dryRun bool, deps branchNewDeps) error {
 
 // resolveBranchStartPoint resolves the git start point for the new branch based on
 // deps.fromRef, performing fetch + resolveDefaultBranch when fromRef == "".
-// Returns "" when the branch should be created from the current HEAD (no start point).
-// Returns a non-nil error only when start-point resolution fails in a way that should
-// block branch creation (e.g. no origin, base ref not found).
-func resolveBranchStartPoint(deps branchNewDeps, branchName string, dryRun bool) (string, error) {
+//
+// Returns (startPoint, displayRef, error):
+//   - startPoint: value to pass to git checkout (canonical SHA, or "" for HEAD-based creation).
+//   - displayRef: human-readable name for user messages ("HEAD", "origin/main", user's --from value).
+//   - error: non-nil when resolution fails and branch creation must be blocked.
+func resolveBranchStartPoint(deps branchNewDeps, branchName string) (startPoint, displayRef string, err error) {
 	switch {
 	case deps.fromRef == "HEAD":
-		// Explicit: create from current HEAD (no start point). Reproduces the pre-v10 behaviour.
-		return "", nil
+		// Explicit: create from current HEAD (no start point). Reproduces the pre-v10.0.0 behaviour.
+		return "", "HEAD", nil
 	case deps.fromRef != "":
-		// Explicit ref: use as start point directly.
-		return deps.fromRef, nil
+		// Explicit ref — validate before touching git (B-1: reject flag-like values that git
+		// would interpret as options, silently discarding uncommitted work via e.g. -f/--force).
+		if strings.HasPrefix(deps.fromRef, "-") {
+			return "", "", fmt.Errorf(
+				"trackfw branch new: --from %q: a ref não pode começar com '-' — use o nome de uma branch, tag ou SHA",
+				deps.fromRef,
+			)
+		}
+		if deps.gitExec == nil {
+			// Test mode: no git available; return the ref as-is (unit tests inject the mock).
+			return deps.fromRef, deps.fromRef, nil
+		}
+		// Resolve to a canonical SHA so the checkout receives a stable, flag-safe value.
+		// --end-of-options separates our ref argument from any flags git might interpret.
+		sha, resolveErr := deps.gitExec("rev-parse", "--verify", "--quiet", "--end-of-options", deps.fromRef+"^{commit}")
+		if resolveErr != nil {
+			return "", "", fmt.Errorf(
+				"trackfw branch new: --from %q: a ref não foi encontrada ou não é um commit válido",
+				deps.fromRef,
+			)
+		}
+		return strings.TrimSpace(sha), deps.fromRef, nil
 	}
 
-	// Default path: fetch origin, resolve default branch, verify ref.
+	// Default path: fetch origin, resolve default branch, verify ref, return SHA.
 	// Requires deps.gitExec to be set (production wiring; tests that set fromRef="HEAD" skip this).
 	if deps.gitExec == nil {
 		// Safety: if gitExec was not provided and fromRef is empty, fall back to HEAD behaviour.
 		// This should not happen in production (RunE always wires defaultGitExec).
-		return "", nil
+		return "", "HEAD", nil
 	}
 
-	// Check that origin exists.
+	// Check that origin exists before attempting fetch or symref resolution.
 	if _, err := deps.gitExec("remote", "get-url", "origin"); err != nil {
-		fmt.Fprintf(deps.out,
+		// Single message, in Portuguese. Execute() in root.go prints err.Error() to stderr.
+		return "", "", fmt.Errorf(
 			"trackfw branch new: nenhum remote 'origin' encontrado — use --from HEAD para criar"+
-				" a partir do HEAD atual, ou adicione um remote com 'git remote add origin <url>'.\n")
-		return "", fmt.Errorf("branch new: no 'origin' remote")
+				" a partir do HEAD atual, ou adicione um remote com 'git remote add origin <url>'.",
+		)
 	}
 
-	// Best-effort fetch. Failure is non-blocking (same posture as `branch prune`):
-	// we warn and fall back to the locally-known state of origin/<default>.
-	if !dryRun {
-		if _, err := deps.gitExec("fetch", "origin"); err != nil {
-			if errors.Is(err, netdeadline.ErrTimeout) {
-				fmt.Fprintf(deps.out, "Warning: could not fetch origin (%s) — creating branch from possibly stale remote ref.\n", err.Error())
-			} else {
-				fmt.Fprintf(deps.out, "Warning: could not fetch origin (offline, no remote, or fetch failed) — creating branch from possibly stale remote ref.\n")
-			}
+	// Best-effort fetch (R-1: always fetch, including --dry-run, so both paths resolve the same
+	// default branch for remotes whose origin/HEAD is not locally set yet). Only ref objects
+	// are updated; working tree is not touched.
+	if _, err := deps.gitExec("fetch", "origin"); err != nil {
+		if errors.Is(err, netdeadline.ErrTimeout) {
+			fmt.Fprintf(deps.out, "Warning: could not fetch origin (%s) — creating branch from possibly stale remote ref.\n", err.Error())
+		} else {
+			fmt.Fprintf(deps.out, "Warning: could not fetch origin (offline, no remote, or fetch failed) — creating branch from possibly stale remote ref.\n")
 		}
 	}
 
 	// Resolve the default branch (forge API → symref → fallback "main").
 	_, remoteRef := resolveDefaultBranch(deps.gitExec, deps.ghExec)
 
-	// Verify the resolved ref is reachable. If not, fail with an actionable message.
-	if _, err := deps.gitExec("rev-parse", "--verify", "-q", remoteRef+"^{commit}"); err != nil {
-		fmt.Fprintf(deps.out,
+	// Resolve to a canonical SHA (B-1: checkout receives a stable, flag-safe value).
+	sha, resolveErr := deps.gitExec("rev-parse", "--verify", "-q", "--end-of-options", remoteRef+"^{commit}")
+	if resolveErr != nil {
+		return "", "", fmt.Errorf(
 			"trackfw branch new: a ref base '%s' não foi encontrada — verifique se o remote foi"+
 				" configurado corretamente e tente 'git fetch origin', ou use --from HEAD para criar"+
-				" a partir do HEAD atual.\n", remoteRef)
-		return "", fmt.Errorf("branch new: base ref %q not found", remoteRef)
+				" a partir do HEAD atual.",
+			remoteRef,
+		)
 	}
 
-	return remoteRef, nil
+	return strings.TrimSpace(sha), remoteRef, nil
 }
 
 // parseBranchSpec splits "<type>/<slug>" and validates both parts. type must be one of

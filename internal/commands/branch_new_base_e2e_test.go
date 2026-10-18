@@ -330,9 +330,13 @@ func TestBranchNewBase_NoOriginActionable(t *testing.T) {
 	if strings.Contains(out, "not a commit") || strings.Contains(out, "128") {
 		t.Errorf("F-4b: must not propagate raw git error; got:\n%s", out)
 	}
-	// Must contain actionable message (mention --from HEAD or 'origin').
-	if !strings.Contains(out, "--from HEAD") && !strings.Contains(out, "origin") {
-		t.Errorf("F-4b: expected actionable message mentioning '--from HEAD' or 'origin'; got:\n%s", out)
+	// R-5: must contain the exact Portuguese actionable message.
+	if !strings.Contains(out, "nenhum remote 'origin' encontrado") {
+		t.Errorf("F-4b/R-5: expected exact message \"nenhum remote 'origin' encontrado\"; got:\n%s", out)
+	}
+	// Must contain actionable hint: --from HEAD or 'origin remote add'.
+	if !strings.Contains(out, "--from HEAD") {
+		t.Errorf("F-4b: expected actionable hint mentioning '--from HEAD'; got:\n%s", out)
 	}
 }
 
@@ -352,5 +356,157 @@ func TestBranchNewBase_DryRunShowsBase(t *testing.T) {
 	// Output must name the base (e.g. "origin/main"), not just the branch.
 	if !strings.Contains(out, "origin/") {
 		t.Errorf("AC9/F-6: dry-run must name the base ref (e.g. origin/main), got:\n%s", out)
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// B-1 (REQ-2026-09-12, red-team) — --from flag-injection guard
+// ──────────────────────────────────────────────────────────────────────────────
+
+// TestBranchNew_FromDashFlagRejected asserts that --from values starting with '-'
+// are rejected, the process exits non-zero, and uncommitted work is preserved.
+// Reconciliation: affirms B-1 fix — without the guard, --from "-f" passes "-f" to
+// git checkout, which silently discards uncommitted work via --force.
+func TestBranchNew_FromDashFlagRejected(t *testing.T) {
+	workDir, _, homeDir := makeRemoteRepo(t)
+
+	addWIPRoadmapFile(t, workDir, "b1-dash")
+
+	// Write an uncommitted file that must survive.
+	sentinel := filepath.Join(workDir, "uncommitted.txt")
+	if err := os.WriteFile(sentinel, []byte("must survive\n"), 0o644); err != nil {
+		t.Fatalf("write sentinel: %v", err)
+	}
+
+	out, code := runTFW(t, workDir, homeDir, "branch", "new", "--from", "-f", "chore/b1-dash")
+	if code == 0 {
+		t.Fatalf("B-1: expected non-zero exit for --from -f, got 0:\n%s", out)
+	}
+	// Sentinel must still exist — work not discarded.
+	if _, err := os.Stat(sentinel); os.IsNotExist(err) {
+		t.Errorf("B-1: uncommitted file was discarded — --from -f triggered git checkout -f")
+	}
+	// Error message must mention the rejection reason.
+	if !strings.Contains(out, "não pode começar com '-'") {
+		t.Errorf("B-1: expected rejection message mentioning '-'; got:\n%s", out)
+	}
+}
+
+// TestBranchNew_FromUploadPackRejected asserts that --from --upload-pack=x is rejected.
+// Reconciliation: affirms B-1 fix — values starting with '--' are flag-like and rejected.
+func TestBranchNew_FromUploadPackRejected(t *testing.T) {
+	workDir, _, homeDir := makeRemoteRepo(t)
+
+	addWIPRoadmapFile(t, workDir, "b1-upload")
+
+	out, code := runTFW(t, workDir, homeDir, "branch", "new", "--from", "--upload-pack=x", "chore/b1-upload")
+	if code == 0 {
+		t.Fatalf("B-1: expected non-zero exit for --from --upload-pack=x, got 0:\n%s", out)
+	}
+	if !strings.Contains(out, "não pode começar com '-'") {
+		t.Errorf("B-1: expected rejection message; got:\n%s", out)
+	}
+}
+
+// TestBranchNew_FromTagResolvedToSHA asserts that --from <tag> succeeds and creates the branch
+// at the tag's commit (not from origin/main).
+// Reconciliation: affirms B-1 fix — the SHA-resolution path works for valid refs.
+func TestBranchNew_FromTagResolvedToSHA(t *testing.T) {
+	workDir, bareDir, homeDir := makeRemoteRepo(t)
+
+	// Create a tag on the initial commit.
+	gitE2E(t, workDir, homeDir, "tag", "v0.0.1")
+	// Push the tag so we can verify it resolves.
+	gitE2E(t, workDir, homeDir, "push", "origin", "v0.0.1")
+
+	addWIPRoadmapFile(t, workDir, "from-tag")
+	_ = bareDir
+
+	out, code := runTFW(t, workDir, homeDir, "branch", "new", "--from", "v0.0.1", "chore/from-tag")
+	if code != 0 {
+		t.Fatalf("B-1/tag: expected success for --from v0.0.1, got %d:\n%s", code, out)
+	}
+	// Verify the branch was created.
+	branches := gitE2EOutput(t, workDir, homeDir, "branch")
+	if !strings.Contains(branches, "chore/from-tag") {
+		t.Errorf("B-1/tag: branch chore/from-tag not found in:\n%s", branches)
+	}
+}
+
+// TestBranchNew_FromSHAWorks asserts that --from <sha> succeeds.
+// Reconciliation: affirms B-1 fix — a full SHA is valid and accepted as-is.
+func TestBranchNew_FromSHAWorks(t *testing.T) {
+	workDir, _, homeDir := makeRemoteRepo(t)
+
+	addWIPRoadmapFile(t, workDir, "from-sha")
+
+	// Get the current HEAD SHA.
+	sha := strings.TrimSpace(gitE2EOutput(t, workDir, homeDir, "rev-parse", "HEAD"))
+	if len(sha) < 7 {
+		t.Fatalf("could not get HEAD SHA: %q", sha)
+	}
+
+	out, code := runTFW(t, workDir, homeDir, "branch", "new", "--from", sha, "chore/from-sha")
+	if code != 0 {
+		t.Fatalf("B-1/sha: expected success for --from <sha>, got %d:\n%s", code, out)
+	}
+	branches := gitE2EOutput(t, workDir, homeDir, "branch")
+	if !strings.Contains(branches, "chore/from-sha") {
+		t.Errorf("B-1/sha: branch chore/from-sha not found in:\n%s", branches)
+	}
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// R-1 (REQ-2026-09-12, red-team) — dry-run fetches so it sees the same default branch as real run
+// ──────────────────────────────────────────────────────────────────────────────
+
+// TestBranchNew_DryRunFetchesMasterDefault asserts that --dry-run reports the correct base when
+// the remote defaults to "master" (no origin/HEAD locally before fetch).
+// Reconciliation: affirms R-1 fix — dry-run now always fetches, so both paths resolve the same
+// default branch for remotes that use "master" as default.
+func TestBranchNew_DryRunFetchesMasterDefault(t *testing.T) {
+	homeDir := t.TempDir()
+	workDir := t.TempDir()
+	bareDir := t.TempDir()
+
+	// Init bare repo with "master" as default branch (not "main").
+	gitE2E(t, bareDir, homeDir, "init", "--bare", "-b", "master", ".")
+
+	// Init working repo from the bare remote.
+	gitE2E(t, workDir, homeDir, "init", "-b", "master", ".")
+	gitE2E(t, workDir, homeDir, "config", "user.email", "e2e@localhost")
+	gitE2E(t, workDir, homeDir, "config", "user.name", "E2E Test")
+	gitE2E(t, workDir, homeDir, "config", "commit.gpgsign", "false")
+	gitE2E(t, workDir, homeDir, "remote", "add", "origin", bareDir)
+
+	// Bootstrap the required governance structure.
+	for _, d := range []string{"docs/roadmaps/wip", "docs/roadmaps/done", "docs/roadmaps/backlog", "docs/roadmaps/abandoned", "docs/req"} {
+		if err := os.MkdirAll(filepath.Join(workDir, d), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", d, err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(workDir, "trackfw.yaml"), []byte(minimalTrackfwYAML()), 0o644); err != nil {
+		t.Fatalf("write trackfw.yaml: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(workDir, "README.md"), []byte("# test\n"), 0o644); err != nil {
+		t.Fatalf("write README.md: %v", err)
+	}
+	gitE2E(t, workDir, homeDir, "add", ".")
+	gitE2E(t, workDir, homeDir, "commit", "-q", "-m", "initial")
+	gitE2E(t, workDir, homeDir, "push", "-u", "origin", "master")
+
+	addWIPRoadmapFile(t, workDir, "dry-run-master")
+
+	// Before fetch, origin/HEAD may not be set locally; dry-run must still report "origin/master".
+	// Delete origin/HEAD to simulate the pre-fetch state.
+	gitE2E(t, workDir, homeDir, "remote", "set-head", "origin", "--delete")
+
+	out, code := runTFW(t, workDir, homeDir, "branch", "new", "--dry-run", "chore/dry-run-master")
+	if code != 0 {
+		t.Fatalf("R-1: dry-run returned non-zero (%d):\n%s", code, out)
+	}
+	// R-1: after fetch, origin/HEAD is updated; must report origin/master, not origin/main.
+	if !strings.Contains(out, "origin/master") {
+		t.Errorf("R-1: dry-run must report 'origin/master' as base after fetch; got:\n%s", out)
 	}
 }

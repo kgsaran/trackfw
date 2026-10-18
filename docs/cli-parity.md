@@ -1980,7 +1980,7 @@ time.
 | `<type>` | One of `feat`, `fix`, `refactor`, `chore`, `docs` |
 | `<slug>` | Non-empty; for `feat`/`fix`/`refactor`, matched against roadmaps in `wip/` and `done/` the same way `branch_has_wip_roadmap` does. For `chore`/`docs`, no matching is performed. |
 | `--dry-run` | Reports whether the branch would be created or blocked, and which base ref would be used, without executing `git` |
-| `--from <ref>` | Override the start point. `--from HEAD` reproduces the pre-v9.9 behaviour (creates the branch from the current HEAD, no fetch). Any other ref is used directly. Omitting `--from` fetches `origin` and uses `origin/<default-branch>` as the start point. |
+| `--from <ref>` | Override the start point. `--from HEAD` reproduces the pre-v10.0.0 behaviour (creates the branch from the current HEAD, no fetch). Any other ref is resolved to a canonical SHA before checkout (B-1 flag-injection guard). Omitting `--from` fetches `origin` and uses `origin/<default-branch>` as the start point. |
 | Exit 0 | `feat`/`fix`/`refactor` with a match, or any `chore`/`docs` spec — branch created (or `--dry-run` reports "would create … from <base>") |
 | Exit non-zero, usage error | Malformed spec (missing `/`, empty slug, invalid `<type>` — error message lists the full vocabulary: `feat, fix, refactor, chore, docs`) |
 | Exit non-zero, blocked | `feat`/`fix`/`refactor` only: no matching roadmap in `wip/` nor `done/` — `git checkout --no-track -b` is **never** executed |
@@ -2002,13 +2002,17 @@ time.
 3. No match in wip/ (feat|fix|refactor only): print governance orientation via
    BranchGovernanceOrientationForCreation (names any done/ roadmaps as hint for `roadmap move`),
    exit non-zero, never invoke git.
-4. Resolve start point:
+4. Resolve start point (B-1 flag-injection guard: values starting with `-` are rejected before any
+   git call; non-HEAD explicit refs are resolved to a canonical SHA via
+   `git rev-parse --verify --quiet --end-of-options <ref>^{commit}` and the SHA is passed to
+   checkout, never the user's raw text):
    - If --from HEAD: start point is empty (git creates from current HEAD, no fetch).
-   - If --from <ref>: start point is <ref> (used directly, no fetch).
-   - Otherwise: best-effort `git fetch origin` (warns on failure, never aborts). Then call
-     resolveDefaultBranch (forge symref → remote symref → "main") to obtain remoteRef
-     (e.g. "origin/main"). Verify remoteRef exists. If origin is absent: print actionable
-     message (hint: use --from HEAD or add an origin remote), exit non-zero.
+   - If --from <ref> (non-HEAD): reject if starts with `-`. Resolve to SHA; error if not found.
+   - Otherwise: check origin exists first; if absent, print actionable Portuguese message (hint:
+     use --from HEAD or add an origin remote), exit non-zero. Then: best-effort
+     `git fetch origin` (warns on failure, never aborts; R-1: fetch runs even in --dry-run so
+     both paths see the same default branch). Call resolveDefaultBranch (forge symref → remote
+     symref → "main") to obtain remoteRef (e.g. "origin/main"). Resolve remoteRef to SHA.
 5. --dry-run with a match (or chore|docs): print
    "[dry-run] would create branch "<type>/<slug>" from <base>", exit 0, never invoke git.
    If base resolution would fail (no origin, etc.), prints the error and exits non-zero.
@@ -2022,6 +2026,30 @@ time.
    A failure to record is printed and does not fail the command — the link is an accelerator,
    never a gate.
 ```
+
+### Guard: `git worktree add` implicit-branch form (R-2/R-3, REQ-2026-09-12)
+
+<!-- trackfw-contract: gate=internal/guard/gitbranch_test.go partial=TestMatchSubcommand_WorktreeAddImplicit_Blocked proves the single-positional form is blocked (worktree-add-implicit); TestMatchSubcommand_WorktreeAddImplicit_AllowedExplicitBranch proves two-positional form passes; TestMatchSubcommand_WorktreeAddImplicit_AllowedDetach proves --detach/-d passes; TestMatchSubcommand_WorktreeAddOrphanBlocked (R-3) proves --orphan without -b is blocked as worktree-add-implicit on all git versions; TestMatchSubcommand_WorktreeAddReasonConsumed (R-2) proves --reason consumes the next token, so --lock --reason x ../foo counts as one positional and is blocked; check-gates-falsify.sh Cenário 63b proves the -b/-B loop literal is preserved (corruption baseline) -->
+
+`git worktree add <path>` with exactly one positional and no branch-selection flag creates a new
+branch whose name is derived from `<path>`, bypassing governance. The guard blocks this form.
+
+**Allowed forms:**
+- `git worktree add <path> <branch-or-commit>` — two positionals → explicit (checkout existing)
+- `git worktree add --detach <path>` / `git worktree add -d <path>` — detached HEAD, no new branch
+
+**Blocked forms:**
+- `git worktree add <path>` — one positional, no branch flag → implicit branch creation (blocked)
+- `git worktree add --orphan <path>` — **version variation:** on git ≥ 2.54.0, `--orphan` without
+  `-b` creates an implicit orphan branch whose name is derived from `<path>`. The guard treats this
+  as a blocked form. On git < 2.54.0 the flag is not recognized by git; the guard still blocks it.
+  Callers that need `--orphan` should also supply `-b <name>` explicitly — that form is allowed.
+
+**`--reason` consuming rule (R-2):** `git worktree add --lock --reason <msg> <path>` — the token
+immediately after `--reason` is its argument (a message string), not a path positional. The guard
+models this correctly: `--reason` consumes the next token and it is not counted as a positional.
+Without this rule, `git worktree add --lock --reason x ../foo` would count `x` as a positional,
+raising the count to 2 and classifying the command as allowed (false negative).
 
 ### Shared matching logic — never duplicated
 

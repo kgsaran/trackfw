@@ -634,14 +634,30 @@ func applyRule(sub string, rest []string) string {
 			// Allowed forms:
 			//   git worktree add <path> <branch-or-commit>  — 2 positionals → explicit
 			//   git worktree add --detach/-d <path>         — --detach flag → explicit
-			//   git worktree add --orphan <branch> <path>   — --orphan flag → explicit
-			// Blocked form:
+			// Blocked forms:
 			//   git worktree add <path>                     — 1 positional, no flags above
+			//   git worktree add --orphan <path>            — --orphan creates implicit branch
+			//                                                 (git 2.54.0+, no -b required);
+			//                                                 treated as blocked here; callers
+			//                                                 that need --orphan should also
+			//                                                 supply -b <name> explicitly.
+			// Note on --reason: `git worktree add --lock --reason <msg> <path>` — the
+			// token after --reason is consumed as its argument, not a positional. We model
+			// this by skipping the next token whenever --reason is seen (R-2).
 			hasExplicit := false
 			positionals := 0
+			skipNext := false
 			for _, t := range rest {
+				if skipNext {
+					skipNext = false
+					continue
+				}
+				if t == "--reason" {
+					skipNext = true
+					continue
+				}
 				switch t {
-				case "--detach", "-d", "--orphan":
+				case "--detach", "-d":
 					hasExplicit = true
 				}
 				if !strings.HasPrefix(t, "-") {

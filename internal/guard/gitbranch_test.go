@@ -181,7 +181,9 @@ func TestMatchSubcommand_WorktreeRemoveForce(t *testing.T) {
 //
 // Reconciliation sentence: these tests affirm that `git worktree add <path>` with only one
 // positional and no branch-selection flag is blocked ("worktree-add-implicit"), and that the
-// allowed forms (explicit branch/commit-ish as second positional, --detach/-d, --orphan) pass.
+// allowed forms (explicit branch/commit-ish as second positional, --detach/-d) pass.
+// R-3: --orphan without -b is blocked (git ≥ 2.54.0 creates implicit branch from path name).
+// R-2: --reason <msg> consumes its argument; --lock --reason x ../foo is 1 positional → blocked.
 
 // TestMatchSubcommand_WorktreeAddImplicit_Blocked asserts the single-positional form is blocked.
 // Affirms ML-1C F-blocked: `git worktree add <path>` with no commit-ish creates an implicit branch.
@@ -223,6 +225,37 @@ func TestMatchSubcommand_WorktreeAddImplicit_AllowedDetach(t *testing.T) {
 	for _, cmd := range cases {
 		if got := MatchSubcommand(cmd); got != "" {
 			t.Errorf("ML-1C: %q should be allowed (detach), got %q", cmd, got)
+		}
+	}
+}
+
+// TestMatchSubcommand_WorktreeAddOrphanBlocked asserts --orphan without -b is blocked.
+// Affirms R-3: git ≥ 2.54.0 allows `git worktree add --orphan <path>` to create an implicit
+// branch from the path name. The guard treats this as a blocked form.
+func TestMatchSubcommand_WorktreeAddOrphanBlocked(t *testing.T) {
+	cases := []string{
+		"git worktree add --orphan ../foo",
+		"git worktree add --orphan /tmp/new-tree",
+	}
+	for _, cmd := range cases {
+		if got := MatchSubcommand(cmd); got != "worktree-add-implicit" {
+			t.Errorf("R-3: %q should be blocked as worktree-add-implicit, got %q", cmd, got)
+		}
+	}
+}
+
+// TestMatchSubcommand_WorktreeAddReasonConsumed asserts --reason consumes its argument.
+// Affirms R-2: `git worktree add --lock --reason x ../foo` has only one path positional.
+// Without the --reason-consumes-next-token rule, "x" would count as a positional, raising
+// the count to 2 and incorrectly classifying the command as allowed.
+func TestMatchSubcommand_WorktreeAddReasonConsumed(t *testing.T) {
+	cases := []string{
+		"git worktree add --lock --reason x ../foo",
+		"git worktree add --reason sometext ../bar",
+	}
+	for _, cmd := range cases {
+		if got := MatchSubcommand(cmd); got != "worktree-add-implicit" {
+			t.Errorf("R-2: %q should be blocked as worktree-add-implicit (--reason consumes next token), got %q", cmd, got)
 		}
 	}
 }
