@@ -2,6 +2,15 @@
 
 ---
 
+## 2026-10-18 — apolo-tf — FIM: parity-rest fix — dry-run sem origin (REQ-2026-09-12)
+
+**Branch:** `feat/branch-new-cria-da-base-correta`
+**Causa:** `check-roadmap-slug-matching.sh` roda `trackfw branch new --dry-run` em fixtures sem remoto `origin`. Após o fix B-1/R-1, `resolveBranchStartPoint` falha com "nenhum remote 'origin' encontrado" antes de imprimir "would create", quebrando o contrato de token do gate.
+**Fix:** Em dry-run, se `resolveBranchStartPoint` retorna erro, ainda imprime `[dry-run] would create branch "x" (base não resolvida: ...)` e retorna nil (exit 0). A governança é avaliada ANTES da base (já era o caso); a base só importa para o run real. Exit code 0 foi a decisão: o gate mede governança, não disponibilidade de base. `docs/cli-parity.md` atualizado com o contrato do token.
+**Gates:** `go build` ✅ | `go vet` ✅ | `GOOS=windows` ✅ | `go test ./internal/commands/...` ✅ | `check-roadmap-slug-matching.sh` ✅ (0 divergências, 9/9 self-test) | `make parity-rest` ✅ | `check-parity-contract-coverage.sh` ✅
+
+---
+
 ## 2026-10-18 — apolo-tf — FIM: Red-team fixes B-1/R-1..R-5 (REQ-2026-09-12)
 
 **Branch:** `feat/branch-new-cria-da-base-correta`
