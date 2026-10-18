@@ -46874,3 +46874,7 @@ Escopo: `internal/integrations/render.go`, `internal/integrations/models.go`, `i
 Branch: `fix/validacao-de-valor-e-precisao-de-mensagem-agent-models`
 Artefato: `docs/seguranca/2026-10-17-red-team-agent-models-e-identity.md`
 Veredito: BLOQUEIA. B-1 (único bloqueante): `#### Residuais declarados (REQ-2026-08-30)` em `docs/cli-parity.md` linha 7734 não tem anotação `trackfw-contract` — `make quality` falha. Fix: inserir `<!-- trackfw-contract: none reason=... -->` após o heading. Patch de produto: correto em todos os vetores medidos. Nenhuma regressão de segurança, nenhum FP para modelo legítimo, nenhum YAML inválido gerado a partir de entrada aceita.
+
+## 2026-10-18 — zeus-tf — release 9.8.0 em preparação
+
+- Bump + CHANGELOG (#576 guard de staging, #582 agent_models/identity; #581/#583 internos). REQ do gate de integridade referencial encerrada de novo (#583, fecha #579). Tag após o merge.

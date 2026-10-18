@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-03
 author: "trackfw_architect (Zeus)"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-22-check-referential-integrity-sh-diz-ok-e-sai-0-sobre-arvore-vazia-quinto-gate-vacuo-e-esta-dentro-do-parity.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-22-check-referential-integrity-sh-diz-ok-e-sai-0-sobre-arvore-vazia-quinto-gate-vacuo-e-esta-dentro-do-parity.md"
 ---
 
 # REQ: `check-referential-integrity.sh` diz `OK` e sai 0 sobre árvore vazia — quinto gate vácuo, e está dentro do `parity`
 
-> Date: 2026-09-03 | Status: Open
+> Date: 2026-09-03 | Status: Done
 | Linear Issue:
 | Jira Issue:
 
@@ -78,8 +78,12 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-22-check-referential-integrity-sh-diz-ok-e-sai-0-sobre-arvore-vazia-quinto-gate-vacuo-e-esta-dentro-do-parity.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-22-check-referential-integrity-sh-diz-ok-e-sai-0-sobre-arvore-vazia-quinto-gate-vacuo-e-esta-dentro-do-parity.md`
 
 ## ✅ Encerramento — 2026-10-17
 
 Entregue no #578: vacuidade reprova (sem diretório, vazio, `req_dir` inexistente), erro do `find` não é engolido, OK com contagem; cenário 12 com 7 braços. `make quality` 361 OK / 0 FAIL.
+
+## ✅ Reaberta e encerrada — 2026-10-18
+
+Reaberta pela Regra Dura de Causa Raiz com o #579 (CRLF zerava as referências). Entregue no #583: `\r` normalizado no frontmatter e no `req_dir` do yaml; N>0 REQs com M=0 referências reprova.

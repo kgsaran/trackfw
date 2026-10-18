@@ -7,17 +7,32 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-### Fixed
-
-- **Validação de `agent_models.<tier>` antes de qualquer escrita (D-1).** Valores com caracteres fora do allowlist `[a-zA-Z0-9._:@/+-]` (espaço, `#`, `{`, `}`, etc.) causam `trackfw agents install`/`update` a retornar erro e não gravar nenhum arquivo. O comando `trackfw agents models` aplica a mesma validação e imprime `ERROR:` por tier inválido, saindo com código ≠ 0 — display e install reportam o mesmo veredito para o mesmo valor. (REQ-2026-08-30, REQ-2026-08-21)
-
-- **Target `claude` sempre emite `model: "value"` com aspas (D-2).** Valores como `null`, `true` e `0x10` eram escritos sem aspas no frontmatter YAML e podiam ser parseados pelo Claude Code como não-strings. Agora o target `claude` usa `forceQuote=true` em `rewriteFrontmatterModelLine`, garantindo tipo string independente do conteúdo. (REQ-2026-08-30)
-
-- **Identidade YAML-safe em `agent-directory` e `opencode-agent` (D-3).** Campos `name:` e `description:` que chegavam de `identity.json` eram interpolados literalmente; display names como `Zeus: danger` quebravam o frontmatter YAML. Agora usam `yamlSafeScalar`, que adiciona aspas somente quando necessário — nomes comuns são byte-idênticos ao original. O `identity.Load` rejeita caracteres de controle em `display_name` e `user_nickname`. (REQ-2026-08-30)
+## [9.8.0] - 2026-10-18
 
 ### Changed
 
-- **O guard bloqueia staging com escopo implícito, ligado por padrão.** `git add` e `git stage` sem caminho explícito (bare, `-A`/`--all`/`-u` sem positional, ou com só tokens whole-tree como `.` `./` `..` `../` `:/` `:(top)`) são bloqueados pelo guard de branch do agente com instrução de enumerar o que vai estagiar via `git status --short` e depois usar `git add <arquivo1> <arquivo2> …`. Passam: caminhos explícitos (inclusive `-A docs/`), flags interativas (`-p`/`-i`/`--patch`/`--interactive`), dry-run (`-n`/`--dry-run`) e `--pathspec-from-file=`. O Amazon Q Developer recebe um segundo padrão em `deniedCommands` cobrindo as formas bare. (REQ-2026-09-05, ADR-2026-09-05)
+- **O guard bloqueia `git add` com escopo implícito, ligado por padrão.** `git add` e `git stage` sem caminho
+  (`-A`, `--all`, `-u`, `--update`, sem operando) ou com alvo que é a raiz inteira (`.`, `./`, `..`, `:/`,
+  `:(top)`, só exclusões como `:!x`) — inclusive misturado com outros caminhos, depois de `sudo`, entre
+  parênteses ou com redirecionamento — são bloqueados com a orientação de listar com `git status --short` e
+  estagiar por caminho. Passam: arquivos e diretórios nomeados (inclusive `git add -A docs/`), `-p`/`-i` e
+  `-n`. A denylist nativa do Amazon Q ganha o mesmo padrão e o template de skill passa a instruir caminho
+  explícito. Formas que dependem de expansão do shell (`$(…)`, aliases, `git add '*'`) ficam declaradas fora de
+  alcance. (#576, REQ-2026-09-05)
+- **`model:` dos agentes do Claude sai sempre entre aspas** (`model: "claude-opus-5"`), para que valores como
+  `null`, `true` ou `0x10` continuem sendo texto. Quem já tem agentes instalados vê essa diferença no próximo
+  `trackfw update harness` ou `agents update`. (#582, REQ-2026-08-30)
+
+### Fixed
+
+- **Valor de `agent_models` validado antes de gravar.** Fora de `[a-zA-Z0-9._:@/+-]` (espaço, `&&`, `#`, `{`,
+  aspas), `init`, `agents install`/`update`, `update harness` e `agents third-party` falham nomeando a chave e
+  não gravam nenhum arquivo; `trackfw agents models` marca a linha como `[invalid]` e sai com código ≠ 0. Ids
+  Bedrock (`…-v1:0`), Vertex (`…@data`) e `openai/gpt-5` continuam aceitos. (#582, REQ-2026-08-30)
+- **Nome e descrição do agente em YAML válido.** Um `display_name` como `Zeus: danger` em
+  `~/.trackfw/identity.json` quebrava o frontmatter dos agentes; agora é escrito com aspas quando necessário
+  (nomes comuns ficam iguais) e caractere de controle no arquivo é recusado. (#582)
+- **Razão de bloqueio de `git reset --hard` saía como JSON inválido.** (#576)
 
 ## [9.7.0] - 2026-10-17
 
