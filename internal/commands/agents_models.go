@@ -69,7 +69,7 @@ const (
 	modelsTargetWidth = 12
 )
 
-func executeAgentModels(cmd *cobra.Command, _ []string) error {
+func executeAgentModels(cmd *cobra.Command, _ []string) error { //nolint:cyclop
 	cat, err := integrations.LoadCatalog()
 	if err != nil {
 		return fmt.Errorf("loading catalog: %w", err)
@@ -124,6 +124,22 @@ func executeAgentModels(cmd *cobra.Command, _ []string) error {
 		)
 	}
 
+	// D-1: validate values that the write path would reject; report errors
+	// before the table so the user sees them alongside WARN lines. Exit != 0
+	// after printing the table so the table is still visible for diagnosis.
+	var invalidTiers []string
+	for tier, version := range agentModels {
+		if err := integrations.ValidateAgentModelValue(tier, version); err != nil {
+			invalidTiers = append(invalidTiers, tier)
+		}
+	}
+	sort.Strings(invalidTiers)
+	for _, tier := range invalidTiers {
+		if validateErr := integrations.ValidateAgentModelValue(tier, agentModels[tier]); validateErr != nil {
+			fmt.Fprintf(os.Stderr, "ERROR: %v — agents install/update would fail for this tier\n", validateErr)
+		}
+	}
+
 	fmt.Fprintf(out, "%-*s %-*s %-*s %s\n",
 		modelsAgentWidth, "AGENT",
 		modelsTierWidth, "TIER",
@@ -143,15 +159,21 @@ func executeAgentModels(cmd *cobra.Command, _ []string) error {
 			if !ok {
 				continue
 			}
-			resolved, present := integrations.ResolveAgentModel(
+			resolved, present, resolveErr := integrations.ResolveAgentModel(
 				tier,
 				surface.Capabilities.Agents.Representation,
 				tgt.ID,
 				agentModels,
 			)
-			display := resolved
-			if !present {
+			var display string
+			switch {
+			case resolveErr != nil:
+				// Already reported above as ERROR; use a marker in the table.
+				display = "[invalid]"
+			case !present:
 				display = modelsNA
+			default:
+				display = resolved
 			}
 			fmt.Fprintf(out, "%-*s %-*s %-*s %s\n",
 				modelsAgentWidth, agent.ID,
@@ -162,5 +184,11 @@ func executeAgentModels(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
+	// D-1: exit != 0 when any tier has an invalid value — the display command
+	// must not report a different outcome than install would. The table is
+	// already printed above so the user can see the [invalid] rows for context.
+	if len(invalidTiers) > 0 {
+		return fmt.Errorf("agent_models contém %d valor(es) inválido(s); corrija trackfw.yaml e reexecute", len(invalidTiers))
+	}
 	return nil
 }

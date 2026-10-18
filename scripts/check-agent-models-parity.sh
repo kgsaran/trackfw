@@ -170,16 +170,16 @@ go_arch="$WORK/case1-go/.claude/agents/trackfw-architect.md"
 go_back="$WORK/case1-go/.claude/agents/trackfw-backend.md"
 if [[ ! -f "$go_arch" ]]; then
   diag "composition/vacuity-guard" "Go CLI did not generate .claude/agents/trackfw-architect.md — fixture broken"
-elif ! grep -q 'model: claude-opus-5' "$go_arch"; then
-  diag "composition/vacuity-guard" "Go architect does not contain 'model: claude-opus-5' — composition may be broken (got: $(grep 'model:' "$go_arch" || echo 'no model line'))"
+elif ! grep -q 'model: "claude-opus-5"' "$go_arch"; then
+  diag "composition/vacuity-guard" "Go architect does not contain 'model: \"claude-opus-5\"' — composition may be broken (got: $(grep 'model:' "$go_arch" || echo 'no model line'))"
 else
   ok "composition/vacuity-guard/architect-opus"
 fi
 
 if [[ ! -f "$go_back" ]]; then
   diag "composition/vacuity-guard" "Go CLI did not generate .claude/agents/trackfw-backend.md — fixture broken"
-elif ! grep -q 'model: claude-sonnet-4-6' "$go_back"; then
-  diag "composition/vacuity-guard" "Go backend does not contain 'model: claude-sonnet-4-6' — composition may be broken (got: $(grep 'model:' "$go_back" || echo 'no model line'))"
+elif ! grep -q 'model: "claude-sonnet-4-6"' "$go_back"; then
+  diag "composition/vacuity-guard" "Go backend does not contain 'model: \"claude-sonnet-4-6\"' — composition may be broken (got: $(grep 'model:' "$go_back" || echo 'no model line'))"
 else
   ok "composition/vacuity-guard/backend-sonnet"
 fi
@@ -301,7 +301,7 @@ ok "absent-config/go-behavioral-pin/claude-agents-generated"
 # Case 4 — Escape hatch: dated ID written literally, cross-runtime
 #
 # With agent_models: {sonnet: "claude-sonnet-4-5-20250929"}, the backend must
-# have "model: claude-sonnet-4-5-20250929" — not composed, not mapped.
+# have "model: \"claude-sonnet-4-5-20250929\"" — not composed, not mapped.
 # ===========================================================================
 for rt in go; do  # ML-3A (v8): node py removed
   proj="$WORK/case4-$rt"
@@ -313,7 +313,7 @@ done
 go_back4="$WORK/case4-go/.claude/agents/trackfw-backend.md"
 if [[ ! -f "$go_back4" ]]; then
   diag "escape-hatch/vacuity-guard" "Go did not generate trackfw-backend.md — fixture broken"
-elif ! grep -q 'model: claude-sonnet-4-5-20250929' "$go_back4"; then
+elif ! grep -q 'model: "claude-sonnet-4-5-20250929"' "$go_back4"; then
   diag "escape-hatch/vacuity-guard" "Go backend does not contain literal escape hatch value (got: $(grep 'model:' "$go_back4" || echo 'no model line'))"
 else
   ok "escape-hatch/vacuity-guard/literal-value-written"
@@ -628,8 +628,8 @@ for label_f in "cwd-a:$go_arch6a" "cwd-b:$go_arch6b"; do
   f="${label_f#*:}"
   if [[ ! -f "$f" ]]; then
     diag "global-scope/two-cwds/vacuity-$lbl" "Go did not generate trackfw-architect.md — fixture broken"
-  elif ! grep -q 'model: claude-opus-5' "$f"; then
-    diag "global-scope/two-cwds/vacuity-$lbl" "Go architect missing 'model: claude-opus-5' from global pin (got: $(grep 'model:' "$f" || echo 'no model line'))"
+  elif ! grep -q 'model: "claude-opus-5"' "$f"; then
+    diag "global-scope/two-cwds/vacuity-$lbl" "Go architect missing 'model: "claude-opus-5"' from global pin (got: $(grep 'model:' "$f" || echo 'no model line'))"
   else
     ok "global-scope/two-cwds/vacuity-$lbl/opus-composed"
   fi
@@ -697,7 +697,7 @@ for rt in go; do  # ML-3A (v8): node py removed
   back7="$home7/.claude/agents/trackfw-backend.md"
   if [[ ! -f "$back7" ]]; then
     diag "global-scope/project-only-warn/$rt/canonical-tier" "did not generate trackfw-backend.md — fixture broken"
-  elif grep -q 'model: claude-sonnet-' "$back7"; then
+  elif grep -q 'model: "claude-sonnet-' "$back7"; then
     diag "global-scope/project-only-warn/$rt/canonical-tier" "composed model found despite project-only config — value leaked: $(grep 'model:' "$back7")"
   elif ! grep -q 'model: sonnet' "$back7"; then
     diag "global-scope/project-only-warn/$rt/canonical-tier" "expected 'model: sonnet' (canonical) but got: $(grep 'model:' "$back7" || echo 'no model line')"
@@ -771,8 +771,8 @@ done
 go_back9="$WORK/case9-go/.claude/agents/trackfw-backend.md"
 if [[ ! -f "$go_back9" ]]; then
   diag "global-scope/project-scope-nonreg/vacuity" "Go did not generate trackfw-backend.md — fixture broken"
-elif ! grep -q 'model: claude-sonnet-9-9' "$go_back9"; then
-  diag "global-scope/project-scope-nonreg/vacuity" "Go backend missing 'model: claude-sonnet-9-9' (project pin) — got: $(grep 'model:' "$go_back9" || echo 'no model line')"
+elif ! grep -q 'model: "claude-sonnet-9-9"' "$go_back9"; then
+  diag "global-scope/project-scope-nonreg/vacuity" "Go backend missing 'model: "claude-sonnet-9-9"' (project pin) — got: $(grep 'model:' "$go_back9" || echo 'no model line')"
 else
   ok "global-scope/project-scope-nonreg/vacuity/sonnet-9.9-from-project"
 fi
@@ -894,8 +894,8 @@ for rt in go; do  # ML-3A (v8): node py removed
   back11="$home11/.claude/agents/trackfw-backend.md"
   if [[ ! -f "$back11" ]]; then
     diag "init-global-scope/$rt/pin" "init did not create trackfw-backend.md at global path — fixture broken"
-  elif ! grep -q 'model: claude-sonnet-4-6' "$back11"; then
-    diag "init-global-scope/$rt/pin" "expected 'model: claude-sonnet-4-6' but got: $(grep 'model:' "$back11" || echo 'no model line')"
+  elif ! grep -q 'model: "claude-sonnet-4-6"' "$back11"; then
+    diag "init-global-scope/$rt/pin" "expected 'model: "claude-sonnet-4-6"' but got: $(grep 'model:' "$back11" || echo 'no model line')"
   else
     ok "init-global-scope/$rt/pin/backend-sonnet-4.6"
   fi
@@ -1036,8 +1036,8 @@ EOF
     ok "thirdparty-apply-global/$rt/ref-block/present"
   fi
 
-  if ! grep -q 'model: claude-sonnet-4-6' "$back12"; then
-    diag "thirdparty-apply-global/$rt/pin" "expected 'model: claude-sonnet-4-6' after re-render but got: $(grep 'model:' "$back12" || echo 'no model line')"
+  if ! grep -q 'model: "claude-sonnet-4-6"' "$back12"; then
+    diag "thirdparty-apply-global/$rt/pin" "expected 'model: "claude-sonnet-4-6"' after re-render but got: $(grep 'model:' "$back12" || echo 'no model line')"
   else
     ok "thirdparty-apply-global/$rt/pin/claude-sonnet-4-6-preserved"
   fi

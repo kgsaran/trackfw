@@ -61,6 +61,18 @@ func Load(homeDir string) (Config, error) {
 	if cfg.Agents == nil {
 		cfg.Agents = make(map[string]AgentIdentity)
 	}
+	// D-3: reject control characters in fields that land in YAML frontmatter.
+	// A newline in display_name would inject an extra YAML key when interpolated
+	// literally (the write path now uses yamlSafeScalar, but rejection here is
+	// an independent defence-in-depth layer and surfaces the problem early).
+	if containsControlCharIdent(cfg.UserNickname) {
+		return Config{}, fmt.Errorf("identity: user_nickname em %s contém caractere de controle — remova o valor ou corrija o arquivo manualmente", filename)
+	}
+	for id, agent := range cfg.Agents {
+		if containsControlCharIdent(agent.DisplayName) {
+			return Config{}, fmt.Errorf("identity: display_name do agente %q em %s contém caractere de controle — remova o valor ou corrija o arquivo manualmente", id, filename)
+		}
+	}
 	return cfg, nil
 }
 
@@ -137,6 +149,20 @@ func Validate(cfg Config, knownIDs []string) error {
 	}
 
 	return nil
+}
+
+// containsControlCharIdent reports whether s contains any ASCII control
+// character (U+0000–U+001F) or a Unicode line/paragraph separator (U+2028,
+// U+2029). These characters are rejected in identity fields (display_name,
+// user_nickname) because they would inject structural YAML when interpolated
+// into frontmatter — defence-in-depth alongside the yamlSafeScalar quoting.
+func containsControlCharIdent(s string) bool {
+	for _, r := range s {
+		if r < 0x20 || r == ' ' || r == ' ' {
+			return true
+		}
+	}
+	return false
 }
 
 // Lookup returns the identity configured for id, if any.
