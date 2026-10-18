@@ -46959,3 +46959,7 @@ Veredito: BLOQUEIA. B-1 (único bloqueante): `#### Residuais declarados (REQ-202
 ## 2026-10-18 — zeus-tf — release 9.8.0 em preparação
 
 - Bump + CHANGELOG (#576 guard de staging, #582 agent_models/identity; #581/#583 internos). REQ do gate de integridade referencial encerrada de novo (#583, fecha #579). Tag após o merge.
+
+## 2026-10-18 — zeus-tf — release 10.0.0 em preparação
+
+- Bump + CHANGELOG (#585 branch new da base correta, BREAKING). REQ-2026-09-12 encerrada. Tag após o merge.
