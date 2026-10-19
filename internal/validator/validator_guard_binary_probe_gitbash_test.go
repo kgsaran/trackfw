@@ -13,9 +13,14 @@ package validator
 // each test has, in its opening comment, the conclusion of this ML that the test asserts.
 
 import (
+	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
+	"time"
 )
 
 // --------------------------------------------------------------------------
@@ -260,7 +265,7 @@ func TestGuardPosixToWindowsPath_FormatMedido(t *testing.T) {
 		{"/c/Users/Lab/bin/trackfw", `C:\Users\Lab\bin\trackfw`},
 		{"/c/tools/trackfw", `C:\tools\trackfw`},
 		{"/C/tools/Trackfw", `C:\tools\Trackfw`},
-		{"/usr/bin/trackfw", "/usr/bin/trackfw"},     // not a drive letter pattern
+		{"/usr/bin/trackfw", "/usr/bin/trackfw"},         // not a drive letter pattern
 		{"/mingw64/bin/trackfw", "/mingw64/bin/trackfw"}, // more than one char after /
 	}
 	for _, c := range cases {
@@ -291,5 +296,120 @@ func TestGuardStripExe_Normalizacao(t *testing.T) {
 		if got != c.want {
 			t.Errorf("guardStripExe(%q) = %q; want %q", c.in, got, c.want)
 		}
+	}
+}
+
+// --------------------------------------------------------------------------
+// ML-1A (REQ-2026-10-19) — o prazo do contexto nao e veredito da sonda
+// --------------------------------------------------------------------------
+
+// TestGuardProbeEndedByDeadline_Discriminante afirma a conclusao do ML-1A de que a
+// pergunta "foi o prazo?" e respondida pelo contexto, e nao pelo tipo do erro do exec.
+// Converge com resolveNetworkErr (internal/commands/netexec.go), que faz esta mesma
+// pergunta antes de classificar.
+func TestGuardProbeEndedByDeadline_Discriminante(t *testing.T) {
+	vivo, cancelVivo := context.WithTimeout(context.Background(), time.Hour)
+	defer cancelVivo()
+	if guardProbeEndedByDeadline(vivo) {
+		t.Fatal("contexto vivo nao deveria ser classificado como prazo estourado")
+	}
+
+	expirado, cancelExp := context.WithTimeout(context.Background(), time.Nanosecond)
+	defer cancelExp()
+	<-expirado.Done()
+	if !guardProbeEndedByDeadline(expirado) {
+		t.Fatal("contexto expirado deveria ser classificado como prazo estourado")
+	}
+}
+
+// guardBashParaSonda devolve um executavel que a sonda do login shell possa rodar.
+//
+// No Windows usa o Git Bash REAL, achado pela propria guardFindGitBashExe — e o unico
+// jeito honesto de exercitar o corpo da sonda na plataforma para a qual a regra existe.
+// No POSIX escreve um script stub que dorme e imprime, porque ali o shebang e confiavel.
+// Devolve "" quando nao ha bash utilizavel, e o teste pula.
+func guardBashParaSonda(t *testing.T) string {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		return guardFindGitBashExe()
+	}
+	stub := filepath.Join(t.TempDir(), "bash")
+	corpo := "#!/bin/sh\nsleep 2\necho /stub/bin/trackfw\n"
+	if err := os.WriteFile(stub, []byte(corpo), 0o700); err != nil {
+		t.Fatalf("escrevendo o stub: %v", err)
+	}
+	return stub
+}
+
+// TestGuardRunBashLoginProbe_PrazoEstourado_NaoAfirmaNada afirma a conclusao do ML-1A de
+// que o TERCEIRO caso do doc de guardRunBashLoginProbe passou a existir: prazo estourado
+// devolve ("", false) — skip —, e nao ("", true), que a regra le como "trackfw ausente do
+// PATH do login shell".
+//
+// Exercita o CORPO REAL da funcao, nao a seam: as seams sao substituidas em todos os
+// outros testes deste arquivo, e e por isso que este ramo sobreviveu desde o ML-5D.
+func TestGuardRunBashLoginProbe_PrazoEstourado_NaoAfirmaNada(t *testing.T) {
+	bash := guardBashParaSonda(t)
+	if bash == "" {
+		t.Skip("nenhum bash utilizavel nesta maquina")
+	}
+
+	origTimeout := guardProbeTimeout
+	t.Cleanup(func() { guardProbeTimeout = origTimeout })
+
+	// Controle positivo: com prazo folgado o bash RODA. Sem este braco, um stub quebrado
+	// ou um bash ausente daria ("", false) e o teste passaria pelo motivo errado — o
+	// caminho que o ML-0A nomeou como o risco mais provavel aqui.
+	//
+	// Afirma `ran`, nao o caminho: se o trackfw nao estiver no PATH do login shell desta
+	// maquina, `command -v` sai 1 e a funcao devolve ("", true) — que tambem prova que o
+	// bash rodou, que e o discriminante.
+	guardProbeTimeout = 30 * time.Second
+	if _, ran := guardRunBashLoginProbe(bash); !ran {
+		t.Fatalf("controle positivo: com prazo folgado o bash deveria ter rodado (ran=true)")
+	}
+
+	// O caso: prazo curto mata o processo antes de ele responder.
+	guardProbeTimeout = 50 * time.Millisecond
+	got, ran := guardRunBashLoginProbe(bash)
+	if ran {
+		t.Errorf("prazo estourado devolveu ran=true (o balde de %q); esperava ran=false, resolved=%q",
+			"trackfw ausente do PATH", got)
+	}
+	if got != "" {
+		t.Errorf("prazo estourado devolveu resolved=%q; esperava vazio", got)
+	}
+}
+
+// TestGuardBinaryProbeOnce_PrazoDoGuardHelp_NaoAcusaOBinario afirma a conclusao do ML-1A
+// de que o segundo sitio — a sonda de `trackfw guard --help` — tambem deixou de ler prazo
+// estourado como veredito: o chamador pula em vez de dizer que o binario nao tem o
+// subcomando guard.
+func TestGuardBinaryProbeOnce_PrazoDoGuardHelp_NaoAcusaOBinario(t *testing.T) {
+	origLookup := guardLookupBinary
+	origRun := guardRunProbe
+	t.Cleanup(func() {
+		guardLookupBinary = origLookup
+		guardRunProbe = origRun
+	})
+	guardLookupBinary = func(string) (string, error) { return "/usr/local/bin/trackfw", nil }
+
+	// Prazo estourado: o sentinela viaja no erro, e nada e afirmado.
+	guardRunProbe = func(string) error {
+		return errors.Join(errGuardProbeDeadline, errors.New("signal: killed"))
+	}
+	if msgs := guardBinaryProbeOnce(false); len(msgs) != 0 {
+		t.Errorf("prazo estourado produziu %d violacao(oes): %v", len(msgs), msgs)
+	}
+
+	// Controle positivo, e e ele que impede o conserto de ser "silenciar tudo":
+	// erro comum, sem o sentinela, continua acusando.
+	guardRunProbe = func(string) error { return errors.New("exit status 1") }
+	msgs := guardBinaryProbeOnce(false)
+	if len(msgs) != 1 {
+		t.Fatalf("erro sem prazo deveria acusar 1 violacao, obtive %d: %v", len(msgs), msgs)
+	}
+	if !strings.Contains(msgs[0], "does not have the guard subcommand") {
+		t.Errorf("mensagem inesperada: %q", msgs[0])
 	}
 }

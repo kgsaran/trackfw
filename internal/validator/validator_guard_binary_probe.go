@@ -19,6 +19,36 @@ import (
 	"time"
 )
 
+// guardProbeEndedByDeadline reporta se foi o prazo do contexto que encerrou o comando.
+//
+// Converge para resolveNetworkErr (internal/commands/netexec.go, ADR D1 do prazo de rede),
+// que ja faz esta pergunta ANTES de classificar o erro do exec: `if ctx.Err() != nil`.
+// O caminho inverso — classificar primeiro — confunde prazo estourado com veredito do
+// processo, porque exec.CommandContext MATA o filho no prazo e cmd.Output()/cmd.Run()
+// devolvem *exec.ExitError. Medido em 2026-10-19: com o trackfw PRESENTE no PATH do login
+// shell, prazo de 1s/300ms/1ms produzia a violacao de "nao acha o trackfw".
+//
+// Um sitio so, consumido pelas duas sondas desta regra (guardRunProbe e
+// guardRunBashLoginProbe), pelo mesmo motivo escrito no resolveNetworkErr: a
+// classificacao e testada uma vez e aplicada de forma consistente.
+func guardProbeEndedByDeadline(ctx context.Context) bool {
+	return ctx.Err() != nil
+}
+
+// guardProbeTimeout e o prazo das sondas desta regra (binario, login shell e politica
+// do PowerShell). Vive numa var de pacote pelo mesmo motivo do cmdWaitDelay em
+// internal/commands/netexec.go: ser substituivel nos testes que exercitam
+// comportamento especifico de prazo. Sem isso, o terceiro caso do doc de
+// guardRunBashLoginProbe so seria testavel com um processo que dorme 5 s.
+var guardProbeTimeout = 5 * time.Second
+
+// errGuardProbeDeadline marca o erro de guardRunProbe cujo processo foi morto pelo prazo.
+//
+// A seam guardRunProbe devolve `error` e e substituida em muitos testes, entao mudar a
+// assinatura para transportar "foi o prazo" custaria reescrever esses testes. O sentinela
+// transporta a informacao sem tocar na forma: o chamador pergunta com errors.Is.
+var errGuardProbeDeadline = errors.New("guard probe deadline exceeded")
+
 // guardShellFamily classifica o ambiente de shell que executa o hook, determinando a forma
 // exata da linha emitida para cada CLI (ADR-2026-10-04, D2 revista).
 //
@@ -87,14 +117,20 @@ var guardLookupBinary = func(name string) (string, error) {
 // nil pipes prevent Wait from hanging on a grandchild holding the pipe open).
 // Replaced in tests.
 var guardRunProbe = func(bin string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), guardProbeTimeout)
 	defer cancel()
 	// #nosec G204 — bin is the resolved path from exec.LookPath, not user input
 	cmd := exec.CommandContext(ctx, bin, "guard", "--help") //nolint:gosec
 	cmd.Stdin = nil
 	cmd.Stdout = nil
 	cmd.Stderr = nil
-	return cmd.Run()
+	err := cmd.Run()
+	if err != nil && guardProbeEndedByDeadline(ctx) {
+		// Prazo estourado nao e "o binario nao tem o subcomando guard": o processo foi
+		// morto antes de responder. O sentinela deixa o chamador pular em vez de acusar.
+		return errors.Join(errGuardProbeDeadline, err)
+	}
+	return err
 }
 
 // guardFindGitBashExe finds the bash.exe from Git for Windows.
@@ -132,13 +168,14 @@ var guardFindGitBashExe = func() string {
 //
 //   - ("path", true)  — bash ran (exit 0), path is the last non-empty output line.
 //   - ("", true)      — bash ran (exit non-zero), trackfw was not found in login PATH.
-//   - ("", false)     — bash could not start, or the context deadline expired.
+//   - ("", false)     — bash could not start, or the context deadline expired
+//     (o prazo e discriminado por guardProbeEndedByDeadline ANTES do errors.As).
 //
 // Login profile noise is handled by taking the last non-empty line of stdout.
 // WaitDelay ensures the 5 s context deadline applies even if a grandchild holds the pipe open.
 // Only called when CurrentGOOS == "windows". Replaced in tests.
 var guardRunBashLoginProbe = func(bashExe string) (resolved string, ran bool) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), guardProbeTimeout)
 	defer cancel()
 	// #nosec G204 — bashExe comes from guardFindGitBashExe, not user input
 	cmd := exec.CommandContext(ctx, bashExe, "-lc", "command -v trackfw") //nolint:gosec
@@ -147,9 +184,17 @@ var guardRunBashLoginProbe = func(bashExe string) (resolved string, ran bool) {
 	cmd.WaitDelay = 5 * time.Second
 	out, err := cmd.Output()
 	if err != nil {
+		if guardProbeEndedByDeadline(ctx) {
+			// O prazo estourou: o login shell nao disse nada, e nao se afirma nada.
+			// Este era o terceiro caso do doc acima, que o codigo nunca alcancava —
+			// exec.CommandContext mata o filho no prazo e cmd.Output() devolve
+			// *exec.ExitError, entao o errors.As abaixo casava e o veredito saia
+			// como "trackfw ausente do PATH".
+			return "", false
+		}
 		var exitErr *exec.ExitError
 		if !errors.As(err, &exitErr) {
-			// Bash couldn't start or timed out — skip entirely.
+			// Bash couldn't start — skip entirely.
 			return "", false
 		}
 		// Bash ran but command -v exited non-zero: trackfw not found.
@@ -192,7 +237,7 @@ var guardFindTrackfwForPS = func() string {
 // lines 245-248 / ML-1D measurement).
 // Only called when CurrentGOOS == "windows". Replaced in tests.
 var guardGetPSPolicy = func() string {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), guardProbeTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-Command", "Get-ExecutionPolicy") //nolint:gosec
 	cmd.Stdin = nil
@@ -234,6 +279,10 @@ func guardBinaryProbeOnce(hasPSPosixEntry bool) []string {
 	}
 
 	if probeErr := guardRunProbe(bin); probeErr != nil {
+		if errors.Is(probeErr, errGuardProbeDeadline) {
+			// Prazo estourado: nada afirmado. Melhor nao dizer nada que acusar o binario.
+			return nil
+		}
 		return []string{fmt.Sprintf(
 			"the trackfw resolved at %q does not have the guard subcommand — "+
 				"the hook will fail open; update trackfw (make install / "+
