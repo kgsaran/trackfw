@@ -111,6 +111,30 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 
 ---
 
+### ML-1H — **AC8** — Hooks de atenção viram subcomando Go (`trackfw attention signal|cleanup`)
+**Status:** ⬜ Pendente
+**Por que entra aqui:** Regra Dura de Causa Raiz — mesma causa da REQ (dependência de `sh` na
+jornada Windows). Não previsto no escopo original porque, em 2026-09-22, os guards também eram `.sh`;
+a ADR-2026-10-04 levou só os **guards** para Go e deixou os hooks de atenção para trás (medido em
+2026-10-18).
+**Files affected:** `internal/commands/` (novo `attention.go` + teste), `internal/generators/agentfiles.go`
+(linhas 297, 405, 634, 640, 805, 813, 984, 991 e a migração `migrateHookCommand`), `scripts/trackfw-attention-{signal,cleanup}.sh`
+(vira invólucro fino `exec trackfw attention …`, como ADR-2026-10-04 D3 fez com os guards),
+`docs/cli-parity.md` (contrato do subcomando), emenda na ADR-2026-10-04 estendendo D2 aos hooks de atenção.
+**Actions:**
+1. Wave 0 (hades-tf): o hook de atenção escreve arquivo dentro de `roadmap_dir` a partir de payload do
+   agente — confinar o caminho (hoje o `.sh` rejeita `/`, `..`), escapar JSON pelo `encoding/json`,
+   limitar `message` a 300 chars, no-op fora da raiz do projeto, **nunca** bloquear o agente (exit 0 sempre).
+2. Portar `trackfw-attention-signal.sh` (40 linhas) e `-cleanup.sh` (18) para `trackfw attention signal|cleanup`
+   com comportamento igual (mesmos campos no `.trackfw-attention.json`).
+3. Geradores emitem a string única polyglot (mesmo padrão `trackfw guard …`) para Claude, Codex, Gemini e Kiro;
+   `trackfw update` migra configs existentes que apontam para o `.sh`.
+4. Teste que reprova se a linha emitida contiver `.sh`, `$VAR` ou caminho; teste de paridade `.sh` × subcomando.
+**Acceptance criteria:**
+- [ ] `go build ./...` e `make quality` verdes
+- [ ] nenhum gerador emite `trackfw-attention-*.sh` como comando de hook
+- [ ] no `windows-probe.yml`, com `bash` fora do PATH, o banner aparece (AC5/AC6 desta REQ)
+
 ## Triagem pós-v8 — 2026-10-17 (REQ-2026-10-17)
 
 **Mudou de forma**: `install.sh` aceita Windows (#373) e o README tem a seção; segue aberto só o que não foi medido — hooks com Cursor/Windsurf/Gemini/Kiro/Copilot/Amazon Q, `pwsh`, caminhos com espaço/acento.

@@ -84,6 +84,15 @@ campanha inteira mostrou que teste verde não implica comportamento entregue.
       `C:\Users\José\...`). O espaço já apareceu nesta campanha: o bash provado do harness é
       `C:\Program Files\Git\bin\bash.exe`.
 
+- [ ] **AC8** — Os hooks de **atenção** (banner do `trackfw serve`) disparam no Windows **sem shell
+      POSIX**: a linha de hook emitida para cada CLI de agente é um subcomando do binário
+      (`trackfw attention signal` / `trackfw attention cleanup`), na mesma forma da string única
+      do guard (ADR-2026-10-04 D2), sem `jq`/`python3`. 🔴 Acrescentada em 2026-10-18 pela Regra
+      Dura de Causa Raiz: mesma causa desta REQ (a jornada Windows depende de `sh` sem dizer), não
+      REQ nova. Medido: guards já são Go (ADR-2026-10-04), mas
+      `internal/generators/agentfiles.go:297,405,634,640,805,813,984,991` ainda emitem
+      `scripts/trackfw-attention-{signal,cleanup}.sh`, que exigem bash e `jq` ou `python3`.
+
 ## Negative Scope
 
 - ❌ **Não** decidir a release aqui. Publicar é decisão do usuário — mas registre-se que **a última

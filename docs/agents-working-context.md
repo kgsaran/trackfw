@@ -46963,3 +46963,15 @@ Veredito: BLOQUEIA. B-1 (único bloqueante): `#### Residuais declarados (REQ-202
 ## 2026-10-18 — zeus-tf — release 10.0.0 em preparação
 
 - Bump + CHANGELOG (#585 branch new da base correta, BREAKING). REQ-2026-09-12 encerrada. Tag após o merge.
+
+**hefesto-tf** · 2026-10-18 · Limpeza de resíduos pré-v8 em .gitattributes e docs/cli-parity.md — iniciado
+Branch: `docs/residuos-pre-v8-gitattributes-e-gates-removidos`
+Escopo: `.gitattributes` (comentário NUL bytes), `docs/cli-parity.md` (17 scripts de paridade removidos na v8.0.0).
+
+**hefesto-tf** · 2026-10-18 · Limpeza de resíduos pré-v8 em .gitattributes e docs/cli-parity.md — concluído
+Branch: `docs/residuos-pre-v8-gitattributes-e-gates-removidos`
+Entregue: `.gitattributes` linhas 20-23 reescritas (removidas referências a npm/src/integrations/doctor.js e npm/src/validator/index.js; salvaguarda mantida com ponteiro para check-no-literal-nul-in-source.sh). `docs/cli-parity.md`: 17 scripts de paridade removidos na v8.0.0 atualizados — referências em presente passaram para passado, cada gate com nota "removed in v8.0.0" e, quando coberto, citação do teste Go equivalente (ship_test.go, push_test.go, branch_test.go, slug_test.go, identity_wiring_test.go, agentfiles_test.go, scaffold_parity_test.go, root_test.go, commit_test.go, doctor_test.go, doctor_remote_test.go, update_harness_*.go). Gap annotations (gap reason=) atualizados para refletir remoção. Nenhuma annotation gate= alterada. go build ./... ✅ | git diff --stat: .gitattributes, docs/cli-parity.md, docs/agents-working-context.md (+ 2 arquivos pré-existentes não tocados).
+
+**hefesto-tf** · 2026-10-18 · Limpeza adicional .gitattributes (Regra Dura de Causa Raiz) — concluído
+Branch: `docs/residuos-pre-v8-gitattributes-e-gates-removidos`
+Entregue: (1) Cabeçalho linha 8 "3 CLIs" → "FONTE Go e shims de canal"; parágrafo de medição marcado como "[Medição de 2026-09, anterior à v8.0.0]"; "Comparação 3-a-3 ... é simétrica" → era/carregava/divergia (passado). (2) Linha 43 `npm/tests/thirdparty.test.js` → `internal/commands/integrations_thirdparty_test.go`. (3) grep -nE 'npm/|pypi/|3 CLIs|...' confirma que remanescentes são: nova nota de contexto (intencionais), parágrafo histórico (mantido por instrução), referências "removidos na v8.0.0" (já corrigidas), e regra ativa npm/bin/trackfw (não-comentário, não tocado). make quality: go test ./... ✅ | go vet ✅ | build ✅ | todos os 59 self-test arms ✅ | check-wheel-filename.sh FAIL — módulo Python `packaging` ausente no ambiente local, pré-existente (não causado por estas edições).

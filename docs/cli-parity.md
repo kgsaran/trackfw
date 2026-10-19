@@ -983,7 +983,7 @@ permanente no CI que dilui o sinal das violações reais.
 
 ## JSON Schema artifacts
 
-<!-- trackfw-contract: gap reason=nenhum gate compara os 3 arquivos docs/schema/*.json publicados por init entre os 3 runtimes; check-artifact-parity.sh tem uma lista fixa de KINDS que não inclui os schemas -->
+<!-- trackfw-contract: gap reason=nenhum gate compara os 3 arquivos docs/schema/*.json publicados por init entre os 3 runtimes; check-artifact-parity.sh (removido na v8.0.0) tinha uma lista fixa de KINDS que não incluía os schemas -->
 
 `trackfw init` publishes `docs/schema/adr.schema.json`,
 `docs/schema/req.schema.json`, and `docs/schema/roadmap.schema.json` as
@@ -1244,8 +1244,8 @@ message *within* each runtime; none of them assert equality *across* runtimes. U
 exists, a future edit to only one of the three copies would go undetected by `make quality`.
 Recommendation, not implemented here: add a scenario to a `check-integrations-parity.sh`-style
 script (or extend an existing one) that reproduces the unmanaged-artifact case against all three
-binaries and three-way-diffs the message, following the same pattern already used by
-`check-ship-parity.sh` and `check-branch-new-parity.sh`.
+binaries and three-way-diffs the message, following the same pattern formerly used by
+`check-ship-parity.sh` and `check-branch-new-parity.sh` (both removed in v8.0.0).
 
 A related, still-open divergence found during the same investigation but **not** fixed here: the
 error-wrapper prefix in `internal/integrations`/its Node.js/Python equivalents also diverges — Go
@@ -1367,8 +1367,8 @@ adding a vector in one runtime without propagating it is a contract break.
 
 <!-- trackfw-contract: gate=scripts/check-gates-falsify.sh -->
 
-`scripts/check-identity-parity.sh` is the cross-CLI gate for this contract. It
-verifies that the three `slug_vectors.json` copies are byte-identical and that
+`scripts/check-identity-parity.sh` (removed in v8.0.0) was the cross-CLI gate for this contract. It
+verified that the three `slug_vectors.json` copies are byte-identical and that
 the three runtimes render the same artifact for the same `identity.json`.
 Target/surface coverage is derived from the canonical integration catalog
 (`internal/integrations/assets/catalog.json`): every surface whose `agents`
@@ -1376,13 +1376,13 @@ support level is not `unsupported` is exercised, using the default target name
 for the default surface and `target=surface` for additional surfaces. This means
 a new agent-capable catalog surface enters the gate without editing a manual
 target list.
-It runs as part of `make quality`, alongside `check-cli-parity.sh` and
-`check-integration-assets.sh`.
+In v8.0.0 (uma implementação em Go, três canais), coberto por
+`internal/identity/slug_test.go` e `internal/commands/identity_wiring_test.go`.
 
-`scripts/check-gates-falsify.sh` includes the P4 scenario
-`identity-parity/catalog-target-missing`, which mutates a temporary catalog copy
-to add an uncovered agent-capable surface and requires
-`check-identity-parity.sh` to fail with a catalog coverage diagnostic.
+`scripts/check-gates-falsify.sh` incluía o cenário P4
+`identity-parity/catalog-target-missing`, que mutava uma cópia temporária do
+catálogo e exigia que `check-identity-parity.sh` reprovasse — cenário removido
+junto com o gate na v8.0.0.
 
 ### The wizard's UX is also part of the contract
 
@@ -1411,7 +1411,7 @@ across the three CLIs. Specifically:
   coordination`), never the raw `id`.
 
 Unlike the artifact bytes and the slug algorithm, this UX contract has **no
-automated cross-CLI test** yet — `check-identity-parity.sh` validates the
+automated cross-CLI test** yet — `check-identity-parity.sh` (removed in v8.0.0) validated the
 generated artifacts, not the wizard's interactive flow. Parity here is
 maintained by review: a change to the wizard's steps, labels, trigger rule,
 or confirmation layout in one CLI must be ported to the other two in the same
@@ -1485,7 +1485,7 @@ remote URL regardless of the host.
 
 ### Graceful degradation
 
-<!-- trackfw-contract: gap reason=nenhum gate testa o passo 7 com o CLI de forge ausente (fallback de URL impresso, exit 0) nem o texto de --dry-run correspondente, byte a byte entre os 3 runtimes; check-ship-parity.sh desabilita comandos externos mas roda majoritariamente com --no-pr, sem chegar ao passo 7 -->
+<!-- trackfw-contract: gap reason=nenhum gate testa o passo 7 com o CLI de forge ausente (fallback de URL impresso, exit 0) nem o texto de --dry-run correspondente, byte a byte entre os 3 runtimes; check-ship-parity.sh (removido na v8.0.0) desabilitava comandos externos mas rodava majoritariamente com --no-pr, sem chegar ao passo 7 -->
 
 When the forge CLI is not available in `$PATH` (or `TRACKFW_DISABLE_EXTERNAL_COMMANDS=1`
 is set), step 7 prints the fallback browser URL and exits 0 — it does not fail the
@@ -1507,7 +1507,7 @@ This text is identical in Go, Node.js, and Python.
 
 ### Behavioural divergence from `trackfw validate`
 
-<!-- trackfw-contract: gap reason=nenhum gate fixa governance_mode: lenient em trackfw.yaml e confirma que ship ainda aborta — a diferença central desta seção (ship ignora lenient mode; validate não) nunca é exercitada; check-ship-parity.sh só prova o bloqueio com config default -->
+<!-- trackfw-contract: gap reason=nenhum gate fixa governance_mode: lenient em trackfw.yaml e confirma que ship ainda aborta — a diferença central desta seção (ship ignora lenient mode; validate não) nunca é exercitada; check-ship-parity.sh (removido na v8.0.0) só provava o bloqueio com config default -->
 
 `trackfw validate` respects `governance_mode: lenient` (configured in `trackfw.yaml`)
 and per-rule severity overrides — in lenient mode, governance violations become warnings
@@ -1554,9 +1554,9 @@ final one-line summary of each abort path; the detailed body (violation list, re
 the `Note: ...` block) still goes to **stdout** via `writeln`, exactly as Go already did through
 `deps.out`.
 
-Covered by `scripts/check-ship-parity.sh` (`feat-still-gated-non-regression` and
-`invalid-branch-vocabulary` scenarios), which now runs a full three-way `diff -u` of stdout
-**and** stderr for these cases, not a substring/exit-code-only assertion.
+Coberto por `scripts/check-ship-parity.sh` (removed in v8.0.0; cenários
+`feat-still-gated-non-regression` e `invalid-branch-vocabulary`). Em v8.0.0 (uma
+implementação em Go), coberto por `internal/commands/ship_test.go`.
 
 ### Usage silencing
 
@@ -1624,7 +1624,7 @@ refusal/error message, matching Node.js/Python byte-for-byte. This affects both 
 verify" force-with-lease refusal and every `git commit`/`git push` failure message `ship` ever
 prints, not only the force-with-lease path.
 
-**Gate: `scripts/check-ship-force-parity.sh`** (registered in the `parity` Make target). Real bare
+**Gate: `scripts/check-ship-force-parity.sh`** (removed in v8.0.0; was registered in the `parity` Make target; covered in v8 by `internal/commands/ship_test.go`). Real bare
 git remotes only — never a mocked `git`, per the project's standing gate-fixture convention (see
 `check-branch-prune-parity.sh`). Five scenarios, each diffed byte-for-byte across the 3 runtimes
 on stdout, stderr, and exit code:
@@ -1933,7 +1933,7 @@ RemoteURL, then CI files — push has no `--forge` flag). Three distinct refusal
 | No open PR | PR list returns empty | `has no open pull/merge request. Open the PR/MR first` |
 | Unverifiable | forge CLI exits non-zero | `could not verify whether branch` |
 
-**Gate: `scripts/check-push-force-parity.sh`** (registered in the `parity` Make target). Real bare
+**Gate: `scripts/check-push-force-parity.sh`** (removed in v8.0.0; was registered in the `parity` Make target; covered in v8 by `internal/commands/push_test.go`). Real bare
 origin per (scenario, runtime) — 5 scenarios total: no-forge-cli, forge-zero-pr,
 forge-unverifiable, forge-pr-open-pushes (remote SHA changes, proved with `Pushed: ` marker),
 remote-advanced-lease-mismatch (other clone advances remote, --force-with-lease refuses). Byte
@@ -2104,14 +2104,14 @@ extra diagnostic line, and none substitutes a fixed exit code for Git's own.
 This matters because dependency-injected unit tests (all three runtimes inject a fake
 `execGitCheckout`/`exec_git_checkout` for testability) never exercise the production wrapper —
 the only way to verify "propagate literally" is to run a real `git` subprocess and compare, which
-is exactly what `scripts/check-branch-new-parity.sh` (see below) does.
+is exactly what `scripts/check-branch-new-parity.sh` (removed in v8.0.0) did.
 
 ### Parity gate
 
 <!-- trackfw-contract: gate=scripts/check-gates-falsify.sh -->
 
-`scripts/check-branch-new-parity.sh` covers three scenarios, each asserting stdout, stderr, and
-exit code are byte-identical across all three runtimes:
+`scripts/check-branch-new-parity.sh` (removed in v8.0.0) cobria três cenários, cada um afirmando
+que stdout, stderr e exit code são byte-idênticos entre os três runtimes:
 
 1. **No match** — blocks, `git checkout -b` never runs.
 2. **Match + `--dry-run`** — reports "would create", exit 0, never touches `git`.
@@ -2120,9 +2120,11 @@ exit code are byte-identical across all three runtimes:
    Git's own diagnostic and exit code (`128`) are propagated unmodified in all three runtimes,
    and that no runtime leaks a Go-style `exit status N` artifact.
 
-Wired into `make quality` via the `parity` target. `scripts/check-gates-falsify.sh` proves the
-gate is non-vacuous (P4): a corrupted Node.js build that reformats the `blocked: ...` stderr
-message is a scenario the gate is asserted to reject.
+Era registrado no alvo `parity` de `make quality`. Em v8.0.0 (uma implementação em Go), os
+cenários 1 e 2 são cobertos por `internal/commands/branch_test.go`; o cenário 3 (real `git`,
+exit 128 propagado verbatim) não tem equivalente exato — o teste unitário usa fake injetado
+(`TestRunBranchNew_BranchAlreadyExists_PropagatesGitError` em `branch_test.go`). `scripts/check-gates-falsify.sh`
+incluía P4 correspondente (mensagem `blocked:` reformatada); removido junto com o gate na v8.0.0.
 
 ## `trackfw branch prune`
 
@@ -2409,8 +2411,8 @@ A branch é preservada; o comando continua com as demais.
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
-`scripts/check-branch-prune-parity.sh` builds a **real** local bare repository as `origin` (no
-mock of `git` — see `vault/notes/` precedent, Cenário 50 in `check-gates-falsify.sh`) and asserts
+`scripts/check-branch-prune-parity.sh` (removed in v8.0.0) built a **real** local bare repository as `origin` (no
+mock of `git` — see `vault/notes/` precedent, Cenário 50 in `check-gates-falsify.sh`) and asserted
 byte-identical stdout/stderr/exit code across all three runtimes for:
 
 1. **Dry-run (default)** — reports two integrated branches (one squash-merged same-session, one
@@ -2429,7 +2431,8 @@ byte-identical stdout/stderr/exit code across all three runtimes for:
    to the stale local `origin/main`) is reported `keep`, never `delete`; the fetch-failure warning
    is present.
 
-Wired into `make quality` via the `parity` target.
+Era registrado no alvo `parity` de `make quality`. Em v8.0.0, coberto por testes em
+`internal/commands/` (`branch_prune_*_test.go`).
 
 ## `trackfw barrier`
 
@@ -3028,16 +3031,13 @@ cases" above) — an environment where both fail-open trust *and* a `$PATH`-adul
 has no accidental syntax mitigation left in the middle. Full measurement and argument:
 `docs/seguranca/2026-09-01-modelo-de-ameaca-do-shell-de-gate.md`.
 
-**Regression gate.** `scripts/check-shell-posix-portability.sh` pins the `sh -c` call signature,
-the `not_evaluated` status on both branches (untrusted roadmap and missing `sh`), and the pinned
-failure message in `npm/src/commands/barrier.js` and `pypi/trackfw/commands/barrier.py`, and
-reproves if either file's gate-execution point reverts to the **literal spelling** `shell: true` / `shell=True` (see the `partial=` annotation: equivalent spellings evade it) (host-shell
-execution) — checked outside comment lines, since both files' own comments document the old
-pattern in prose as the thing *not* to do again. It reproves independently per file: a regression
-in only one of the two CLIs fails, naming which. It does not touch `serve.js`/`serve.py` — the browser-opening
-`shell: true` / `shell=True` carve-out from that gate has been resolved:
-`serve.js` now uses `spawn` (argv) and `serve.py` Windows branch no longer uses `shell=True`.
-See "Abertura de browser — segurança de processo" under `trackfw serve` for the current contract.
+**Regression gate.** `scripts/check-shell-posix-portability.sh` (removed in v8.0.0) fixava a
+assinatura da chamada `sh -c`, o status `not_evaluated` em ambas as ramificações, e a mensagem
+de falha fixada em `npm/src/commands/barrier.js` e `pypi/trackfw/commands/barrier.py` — ambos os
+arquivos removidos na v8.0.0 junto com os runtimes Node.js e Python. Sem objeto em v8: o Go usa
+`exec.LookPath` + `exec.Command` (sem equivalente a `shell: true`). A salvaguarda passa a ser
+construtiva: não existe como reintroduzir `shell: true` em Go sem uma mudança explícita de API.
+Ver "Abertura de browser — segurança de processo" under `trackfw serve` for the current contract.
 
 ### Contrato gerador↔`barrier`: dialeto e vocabulário (ADR-2026-08-29)
 
@@ -4991,13 +4991,13 @@ combining marks (diacríticos) → lowercase → substituição de sequências
 > "colapsar `[^a-z0-9]+`" quanto sob "deletar não-alfanuméricos", porque neles todo trecho
 > não-alfanumérico é adjacente a espaço ou a borda. Um gate montado sobre qualquer um deles
 > fica verde com a semântica errada — foi o que aconteceu com
-> `pypi/trackfw/generators/adr.py`. Por isso `check-artifact-parity.sh` exercita
+> `pypi/trackfw/generators/adr.py`. Por isso `check-artifact-parity.sh` (removed in v8.0.0) exercitava
 > `"Autenticação C/C++ v1.2"`: o não-alfanumérico entre alfanuméricos (`C/C`, `v1.2`) é o que
 > separa as duas semânticas. Não troque esse título por um da tabela.
 
 Títulos com qualquer combinação de acentos (á é í ó ú), cedilha (ç), til (ã õ),
 crase (à) e caracteres não-alfanuméricos produzem slugs idênticos nos três
-runtimes. O gate `check-artifact-parity.sh` usa título acentuado
+runtimes. O gate `check-artifact-parity.sh` (removed in v8.0.0) usava título acentuado
 (`"Autenticação e Sessão"`) para validar esse comportamento.
 
 ### Data — hora local nos três runtimes
@@ -5015,16 +5015,17 @@ essa condição e falha explicitamente.
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
-`scripts/check-artifact-parity.sh` é o gate transversal que verifica esse contrato.
+`scripts/check-artifact-parity.sh` (removed in v8.0.0) era o gate transversal que verificava esse contrato.
 Para cada tipo de artefato (req, adr, roadmap, slash-command roadmap, note,
-vault/notes/index.md), ele invoca os três runtimes com título posicional ASCII,
-confirma que exatamente um arquivo foi gerado por runtime (vacuity guard), e faz
-diff byte-a-byte acumulando todos os erros antes de sair — o diagnóstico nomeia
-o tipo e os runtimes divergentes. O mesmo gate executa um ciclo E2E
+vault/notes/index.md), ele invocava os três runtimes com título posicional ASCII,
+confirmava que exatamente um arquivo foi gerado por runtime (vacuity guard), e fazia
+diff byte-a-byte acumulando todos os erros antes de sair — o diagnóstico nomeava
+o tipo e os runtimes divergentes. O mesmo gate executava um ciclo E2E
 `backlog → analyzing` em cada runtime nos layouts `flat` e `by_agent`,
 verificando pasta, frontmatter, header, `.trackfw-log` e ausência de
-`folder_status` no `validate --json`. Roda como parte de `make quality` (alvo
-`parity`), antes de `check-gates-falsify.sh`.
+`folder_status` no `validate --json`. Era registrado no alvo `parity` de `make quality`.
+Em v8.0.0 (uma implementação em Go), coberto por testes em
+`internal/generators/` (e.g. `scaffold_parity_test.go`).
 
 Dois cenários negativos (P4) estão em `scripts/check-gates-falsify.sh`:
 
@@ -5041,13 +5042,13 @@ Dois cenários negativos (P4) estão em `scripts/check-gates-falsify.sh`:
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
-`check-artifact-parity.sh` prova que os 3 CLIs **geram a mesma coisa**. Ele nunca provou que o
+`check-artifact-parity.sh` (removed in v8.0.0) provava que os 3 CLIs **geram a mesma coisa**. Ele nunca provou que o
 **verificador enxerga o que o gerador escreveu** — e essa lacuna já produziu três defeitos nesta
 base: cabeçalho de aceite (gerador em português, `barrier` casando só inglês), vocabulário de
 status (gerador emitindo emoji, verificador esperando `pending`) e layout de REQ (`req new`
 gravando flat, o validator procurando `<agente>/<estado>/`). Nenhum dos três foi pego por teste.
 
-`scripts/check-artifact-closed-cycle.sh` fecha esse ciclo **executando o CLI**, nunca importando o
+`scripts/check-artifact-closed-cycle.sh` (removed in v8.0.0) fechava esse ciclo **executando o CLI**, nunca importando o
 módulo — a fronteira comando↔validator é exatamente onde os defeitos moram. Para cada uma das 18
 combinações (3 artefatos × 3 CLIs × `flat`/`by_agent`) ele gera com `req new`/`adr new`/`note new` e
 depois pergunta ao `validate --json`:
@@ -5093,10 +5094,10 @@ separada; Go e Node.js não). A seção `## Architect responses`, acrescentada p
 ROADMAP, **deve** ser byte-idêntica nos 3 runtimes — ela define o protocolo de verbosidade do
 agente Arquiteto e qualquer divergência silenciosa introduziria comportamento distinto por runtime.
 
-O gate `check-artifact-parity.sh` isola e verifica apenas essa seção via `awk` (extrai de
-`## Architect responses` até o próximo `## ` ou fim de arquivo) e compara byte a byte across
-os 3 outputs de `init`. Um extrato vazio em qualquer runtime activa o vacuity guard antes da
-comparação — evitando que a seção desapareça silenciosamente e a comparação byte a byte passe
+O gate `check-artifact-parity.sh` (removed in v8.0.0) isolava e verificava apenas essa seção via `awk` (extrai de
+`## Architect responses` até o próximo `## ` ou fim de arquivo) e comparava byte a byte across
+os 3 outputs de `init`. Um extrato vazio em qualquer runtime ativava o vacuity guard antes da
+comparação — evitando que a seção desaparecesse silenciosamente e a comparação byte a byte passasse
 por vacuidade (os 3 arquivos vazios concordam entre si).
 
 Cenário P4 de falsificação em `scripts/check-gates-falsify.sh` (Cenário 84):
@@ -5130,18 +5131,19 @@ de signal), e `sed` de expressão única (`sed 'expr1; expr2'`, não
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
-`scripts/check-attention-scripts-parity.sh` roda `discover --init` com os três
+`scripts/check-attention-scripts-parity.sh` (removed in v8.0.0) rodava `discover --init` com os três
 binários reais (Go compilado, Node.js, Python) num fixture vazio por runtime, e
-faz `diff -u` byte-a-byte dos dois scripts gerados entre Go×Node e Go×Python —
-falha com o diff explícito no diagnóstico se divergirem (P2, sem degradação
-silenciosa) e tem um guard de vacuidade (P2) que reprova se algum runtime não
-gerar os arquivos. Roda como parte de `make quality` (alvo `parity`), antes de
-`check-gates-falsify.sh`.
+fazia `diff -u` byte-a-byte dos dois scripts gerados entre Go×Node e Go×Python —
+falhava com o diff explícito no diagnóstico se divergissem (P2, sem degradação
+silenciosa) e tinha um guard de vacuidade (P2) que reprovava se algum runtime não
+gerasse os arquivos. Era registrado no alvo `parity` de `make quality`.
+Em v8.0.0 (uma implementação em Go), coberto por
+`internal/generators/scaffold_parity_test.go`.
 
-A prova negativa (P4) está em `scripts/check-gates-falsify.sh` — corrompe o
+A prova negativa (P4) estava em `scripts/check-gates-falsify.sh` — corrompeu o
 comentário "no-op" do literal Python (`pypi/trackfw/generators/init_gen.py`)
-numa cópia isolada do repositório e asserta que o gate reprova com o diff
-explícito no diagnóstico.
+numa cópia isolada do repositório e asserta que o gate reprovava com o diff
+explícito no diagnóstico — cenário removido junto com o gate na v8.0.0.
 
 ## Agent hooks por CLI (`.claude/settings.json`, `.codex/hooks.json`, `.gemini/settings.json`, `.github/hooks/trackfw-attention.json`, `.cursor/hooks.json`, `.kiro/hooks/trackfw-attention.json`) — paridade estrutural (ML-3A)
 
@@ -5187,15 +5189,15 @@ do Gemini.
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
-`scripts/check-agent-hooks-parity.sh` roda `discover --init` uma vez por
+`scripts/check-agent-hooks-parity.sh` (removed in v8.0.0) rodava `discover --init` uma vez por
 runtime (Go compilado, Node.js, Python) — não uma vez por CLI — num fixture
-que carrega, de uma vez, o marcador de detecção dos 6 CLIs
+que carregava, de uma vez, o marcador de detecção dos 6 CLIs
 (`CLAUDE.md`/`AGENTS.md`/`GEMINI.md`/`.kiro/`/`.github/copilot-instructions.md`/
 `.cursor/`, os mesmos marcadores lidos por
 `InjectHooksDetected`/`injectHooksDetected`/`inject_hooks_detected`), o que
-mantém o gate em ~3 execuções reais de CLI (isolamento por CLI mediria ~15s a
+mantinha o gate em ~3 execuções reais de CLI (isolamento por CLI mediria ~15s a
 mais em `make quality` sem ganho de detecção: os guards de vacuidade abaixo já
-cobrem o caso de um detector que passa a pular um CLI silenciosamente).
+cobriam o caso de um detector que passa a pular um CLI silenciosamente).
 
 **`HOME` isolado por runtime (ROADMAP-2026-08-08 ML-4A, P3).** `run_discover_init` cria um
 diretório vazio dedicado sob `$WORK` (`<fixture-dir>.home`) e passa `HOME="$home_dir"` para as 3
@@ -5222,25 +5224,24 @@ comparação estrutural (Go×Node e Go×Python, por CLI) via um comparador
 sem `jq` — nenhum `scripts/check-*.sh` do projeto depende de `jq` nem nenhum
 workflow o instala; `python3` já é uma dependência obrigatória do gate por
 rodar o CLI Python). Falha nomeando o CLI, o par de stacks e o path JSON
-divergente (ex.: `$.hooks.PreToolUse[0].matcher`). Roda como parte de
-`make quality` (alvo `parity`), logo após
-`check-attention-scripts-parity.sh` e antes de `check-gates-falsify.sh`.
+divergente (ex.: `$.hooks.PreToolUse[0].matcher`). Era registrado no alvo `parity` de `make quality`.
+Em v8.0.0 (uma implementação em Go), coberto por
+`internal/generators/agentfiles_test.go`.
 
-A prova negativa (P4) está em `scripts/check-gates-falsify.sh`, em dois
-cenários que cobrem as duas camadas do gate: o Cenário 44 corrompe o
+A prova negativa (P4) estava em `scripts/check-gates-falsify.sh`, em dois
+cenários que cobriam as duas camadas do gate: o Cenário 44 corrompeu o
 `matcher` da entrada `trackfw-credential-guard-post` do wiring do Kiro no
 literal Node.js (`npm/src/generators/hooks.js`, de `'shell'` para
 `'execute_bash'`) numa cópia isolada do repositório e asserta que o gate
-reprova apontando `$.hooks[3].matcher` no diagnóstico — falsificando o
-comparador estrutural (`compare_json`). O Cenário 46 cobre o segundo guard,
-o de vacuidade (P2) `credential-guard-present` — o mesmo que capturou o
-falso negativo ambiental corrigido acima: força as 3 funções de dedup
+reprovava apontando `$.hooks[3].matcher` no diagnóstico — falsificando o
+comparador estrutural (`compare_json`). O Cenário 46 cobria o segundo guard,
+o de vacuidade (P2) `credential-guard-present`: forçava as 3 funções de dedup
 (`globalCredentialGuardInstalledClaude`/`_global_credential_guard_installed_claude`)
 a sempre reportar "instalado", nas 3 cópias isoladas do source, o que
-suprime a entrada de credential-guard do Claude de forma idêntica nos 3
-stacks — o comparador estrutural continua satisfeito (nunca chega a rodar,
-o gate sai antes, no guard de vacuidade) e só o guard `credential-guard-present`
-reprova.
+suprimia a entrada de credential-guard do Claude de forma idêntica nos 3
+stacks — o comparador estrutural continuava satisfeito (nunca chegava a rodar,
+o gate saía antes, no guard de vacuidade) e só o guard `credential-guard-present`
+reprovava — cenários removidos junto com o gate na v8.0.0.
 
 ## Mecanismo de resolução de caminho dos hooks de projeto, por CLI
 
@@ -5707,7 +5708,7 @@ arquivo global que este gate exercita, mas nunca o escreve.
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 
-`scripts/check-harness-hooks-parity.sh` roda `update harness --targets
+`scripts/check-harness-hooks-parity.sh` (removed in v8.0.0) rodava `update harness --targets
 <todos os 6 ids>-credential-guard --install-missing` uma vez por runtime (Go
 compilado, Node.js, Python), cada runtime contra o seu PRÓPRIO fixture de
 `$HOME` isolado (nunca o `$HOME` real de quem roda o gate) — um `$HOME`
@@ -5718,30 +5719,33 @@ silenciosamente a garantia central do gate (que cada stack, escrevendo do
 zero, produz a mesma estrutura). Os mesmos dois guards de vacuidade (P2) do
 gate por-projeto rodam antes de qualquer diff (arquivo existe e não está
 vazio nos 3 runtimes; arquivo referencia `trackfw-credential-guard.sh` pelo
-menos uma vez). A comparação estrutural reusa o mesmo comparador `python3`
+menos uma vez). A comparação estrutural reusava o mesmo comparador `python3`
 inline do gate por-projeto (mesmo motivo: nenhum `jq`) — com uma etapa extra
 de normalização textual ANTES do `json.loads`: cada um dos 6 arquivos embute
 o path ABSOLUTO de `~/.trackfw/scripts/trackfw-credential-guard.sh` (um hook
 global precisa resolver a partir do cwd de qualquer projeto, então um path
-relativo não é opção), e como cada runtime roda contra o seu próprio `$HOME`
-de fixture, esse absoluto diverge textualmente entre os 3 mesmo quando todos
-resolvem corretamente — o gate substitui o path do `$HOME` de fixture de cada
+relativo não é opção), e como cada runtime rodava contra o seu próprio `$HOME`
+de fixture, esse absoluto divergia textualmente entre os 3 mesmo quando todos
+resolviam corretamente — o gate substituía o path do `$HOME` de fixture de cada
 runtime por um placeholder comum (`<HOME>`) no conteúdo bruto do arquivo
-antes de parsear como JSON, então esse campo nunca é reportado como drift
+antes de parsear como JSON, então esse campo nunca era reportado como drift
 falso. Falha nomeando o CLI, o par de stacks e o path JSON divergente (ex.:
-`$.hooks[1].matcher`). Roda como parte de `make quality` (alvo `parity`),
-logo após `check-agent-hooks-parity.sh` e antes de `check-gates-falsify.sh`.
+`$.hooks[1].matcher`). Era registrado no alvo `parity` de `make quality`.
+Em v8.0.0 (uma implementação em Go), coberto por
+`internal/generators/update_harness_home_divergence_ml1b_test.go` e
+`internal/generators/update_harness_d5_notice_ml2d_test.go`.
 
-A prova negativa (P4) está em `scripts/check-gates-falsify.sh` (Cenário 45) —
-corrompe o `matcher` da entrada `trackfw-credential-guard-global-post` do
+A prova negativa (P4) estava em `scripts/check-gates-falsify.sh` (Cenário 45) —
+corrompia o `matcher` da entrada `trackfw-credential-guard-global-post` do
 wiring GLOBAL do Kiro no literal Python
 (`pypi/trackfw/commands/update_harness.py`, de `"shell"` para
 `"execute_bash"`) numa cópia isolada do repositório e asserta que o gate
-reprova apontando `$.hooks[1].matcher` no diagnóstico.
+reprovava apontando `$.hooks[1].matcher` no diagnóstico — cenário removido
+junto com o gate na v8.0.0.
 
 ## Modo default do credential-guard GLOBAL — `warn` → `block` (ADR-2026-08-06 emenda 6, ROADMAP-2026-08-08 Wave 1)
 
-<!-- trackfw-contract: gap reason=nenhum gate ou teste roda de fato o script gerado (scripts/trackfw-credential-guard.sh) sem trackfw.yaml/sem a chave credential_guard.mode para confirmar o fallback DEFAULT_MODE=block no escopo global vs DEFAULT_MODE=warn no escopo de projeto; check-harness-hooks-parity.sh só compara a estrutura do wiring JSON, não a execução do script nem a leitura de MODE em runtime — grep por DEFAULT_MODE/credential_guard.mode nos check-*.sh só retorna a regra distinta credential_guard_mode_downgrade (seção "Ancoragem no HEAD", fora deste lote) -->
+<!-- trackfw-contract: gap reason=nenhum gate ou teste roda de fato o script gerado (scripts/trackfw-credential-guard.sh) sem trackfw.yaml/sem a chave credential_guard.mode para confirmar o fallback DEFAULT_MODE=block no escopo global vs DEFAULT_MODE=warn no escopo de projeto; check-harness-hooks-parity.sh (removido na v8.0.0) só comparava a estrutura do wiring JSON, não a execução do script nem a leitura de MODE em runtime — grep por DEFAULT_MODE/credential_guard.mode nos check-*.sh só retorna a regra distinta credential_guard_mode_downgrade (seção "Ancoragem no HEAD", fora deste lote) -->
 
 
 **Supersede o achado transversal #1 da seção "Suporte por CLI — visão consolidada, escopo GLOBAL"
@@ -5813,11 +5817,12 @@ shell tool.
 
 Implementado identicamente nos 3 stacks (`internal/generators/agentfiles.go`,
 `npm/src/generators/hooks.js`, `pypi/trackfw/generators/hooks.py`), verificado por
-`scripts/check-agent-hooks-parity.sh` (escopo de projeto) e `scripts/check-harness-hooks-parity.sh`
-(escopo global) — ver as duas seções "... paridade estrutural" acima para o detalhamento dos gates.
+`scripts/check-agent-hooks-parity.sh` (escopo de projeto, removed in v8.0.0) e `scripts/check-harness-hooks-parity.sh`
+(escopo global, removed in v8.0.0) — ver as duas seções "... paridade estrutural" acima para o detalhamento dos gates.
+Em v8.0.0 (uma implementação em Go), coberto por `internal/generators/agentfiles_test.go`.
 Cobertura ponta-a-ponta (matcher gerado → script efetivamente bloqueando/alertando um payload real
-de tool call Read/Write) é testada em `npm/tests/credential_guard.test.js` e
-`pypi/tests/test_credential_guard.py` (cenário (b) da REQ).
+de tool call Read/Write) era testada em `npm/tests/credential_guard.test.js` e
+`pypi/tests/test_credential_guard.py` (cenário (b) da REQ) — arquivos removidos na v8.0.0.
 
 ## Princípios de design de gates (P1–P4)
 
@@ -5973,11 +5978,13 @@ unpinned exit-code divergence for unknown *flags* noted below.
 Verified byte-for-byte across the three runtimes, plus the falsification
 vector (a real `trackfw-vaildate` executable placed on `PATH`, which the
 removal above must never invoke) by `scripts/check-unknown-command-parity.sh`
-(added to `make parity`).
+(removed in v8.0.0; was added to `make parity`). Em v8.0.0 (uma implementação
+em Go), coberto por `internal/commands/root_test.go`
+(`TestFormatUnknownCommandError*`, `TestUnknownCommand_NeverExecutesExternalBinary`).
 
 ### Candidate set — "completion" is Go-only, and deliberately excluded
 
-<!-- trackfw-contract: gap reason=nenhum cenário de check-unknown-command-parity.sh testa um typo próximo de "completion" (grep confirma zero ocorrências da palavra no script) para confirmar que a lista de candidatos exclui "completion" nos 3 CLIs -->
+<!-- trackfw-contract: gap reason=nenhum cenário de check-unknown-command-parity.sh (removido na v8.0.0) testou um typo próximo de "completion" para confirmar que a lista de candidatos exclui "completion"; em v8 sem gate dedicado para esse caso -->
 
 Cobra auto-registers a `completion` subcommand that has no Node.js/Python
 equivalent (shell-completion script generator, framework built-in, unrelated
@@ -6515,17 +6522,17 @@ eliminado e bloqueio real preservado — estão nos Cenários 60/61 de `scripts/
 Nenhum runtime tem garantia hermética de shell completo (o parser continua sendo um scanner, não um
 interpretador de shell); essa ressalva geral permanece registrada na REQ vinculada.
 
-### Gate de paridade do `trackfw commit` (`scripts/check-commit-parity.sh`, ML-4A)
+### Gate de paridade do `trackfw commit` (`scripts/check-commit-parity.sh`, ML-4A, removed in v8.0.0)
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
-Criado para fechar a lacuna que só `check-branch-new-parity.sh` cobria antes — verifica que as
+Criado para fechar a lacuna que só `check-branch-new-parity.sh` cobria antes — verificava que as
 mensagens de bloqueio/aviso do novo comando `trackfw commit` são byte-idênticas entre os 3 CLIs em 3
 cenários (commit em `main`/`master`, commit em `feat/` sem roadmap em `wip/`, commit em branch
-não-governada). Registrado em `make quality`/`parity`. Encontrou um bug real de ordenação de output
+não-governada). Era registrado em `make quality`/`parity`. Encontrou um bug real de ordenação de output
 no Python (`pypi/trackfw/commands/commit.py`): `sys.stdout.write()` sem `flush()` antes de um
 `subprocess.run` com stdio herdado inverte a ordem da saída quando stdout não é um TTY — corrigido
-com `out.flush()`.
+com `out.flush()`. Em v8.0.0 (uma implementação em Go), coberto por `internal/commands/commit_test.go`.
 
 ### Bloqueio da classe destrutiva de working tree + mensagem de raio de alcance (ML-3A, ROADMAP-2026-08-19-caminho-governado-para-push-forcado-e-tag-de-release.md / REQ-2026-08-19-guard-nao-bloqueia-comandos-destrutivos-de-working-tree-em-repo-compartilhado-por-agentes.md)
 
@@ -7077,10 +7084,12 @@ Razão da decisão (auditoria 2026-09-11, hades-tf BLOQUEIA):
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
-Gate: **`scripts/check-doctor-parity.sh`** (alvo `parity`) + Cenários 71 e 72 de
-`check-gates-falsify.sh`. O gate compara as **três saídas reais** (`diff -u` byte a byte, stdout e
+Gate: **`scripts/check-doctor-parity.sh`** (removed in v8.0.0; was registered in alvo `parity`) + Cenários 71 e 72 de
+`check-gates-falsify.sh`. O gate comparava as **três saídas reais** (`diff -u` byte a byte, stdout e
 stderr, nas duas superfícies — relatório de texto e `--json`) contra fixtures construídas por
 **install-e-mutar** real, nunca por bytes de template hardcoded.
+Em v8.0.0 (uma implementação em Go), coberto por `internal/commands/doctor_test.go` e
+`internal/commands/doctor_remote_test.go`.
 
 **Origem:** antes da inversão de ordem de persistência do ADR-2026-08-18, uma escrita
 interrompida entre gravar os bytes de um artefato e persistir a entrada correspondente no
@@ -7468,7 +7477,7 @@ arquivo em `0755` que perdeu o bit para `0644` não tem o bit e é acusado.
 **AC5 — guarda de plataforma Windows:** no Windows (`CurrentGOOS == "windows"`) o bit de execução
 não é representável em NTFS. A verificação de modo é suprimida inteiramente — `scaffold-wrong-mode`
 nunca é emitido nesta plataforma. O doctor imprime uma nota informando a supressão. O gate
-`check-doctor-parity.sh` não cobre Windows (os CI runners do projeto são Linux/macOS); testes
+`check-doctor-parity.sh` (removed in v8.0.0) não cobria Windows (os CI runners do projeto são Linux/macOS); testes
 unitários específicos de plataforma no Go cobrem a guarda via `generators.CurrentGOOS`.
 
 **AC9 — `trackfw update` restaura o modo em arquivos existentes:** `os.WriteFile` / `writeFileSync`
@@ -7486,7 +7495,7 @@ reescrito mas o inode mode não é tocado. Cada runtime adiciona uma chamada exp
 
 | cenário | sabotagem | o que o gate detecta |
 |---|---|---|
-| 179 (direção A) | `execBit &&` → `false  &&` em `scaffold_doctor.go:324` — a condição de modo nunca dispara | `check-doctor-parity.sh` reprova: cenário (p) `scaffold-wrong-mode-detected` não encontra `[scaffold-wrong-mode]` no Go |
+| 179 (direção A) | `execBit &&` → `false  &&` em `scaffold_doctor.go:324` — a condição de modo nunca dispara | `check-doctor-parity.sh` (removed in v8.0.0) reprovava: cenário (p) `scaffold-wrong-mode-detected` não encontra `[scaffold-wrong-mode]` no Go |
 | 180 (direção B) | `execBit &&` → `true   &&` — discriminante AC11 silenciado: todos os artefatos têm o bit verificado, incluindo os 0644 | doctor Go invocado diretamente em fixture com slash commands (`--targets validate-script,agent-hooks,claude-commands`): 9 `scaffold-wrong-mode` falsos positivos em `.claude/commands/trackfw/*.md` |
 | 181 (direção C) | `os.Chmod` removido de `generateValidateScript` — `update` reescreve o conteúdo mas não restaura o bit | `cmp -s` confirma que `apply()` rodou (conteúdo restaurado); `test ! -x` confirma que o bit permanece ausente após o update |
 
@@ -7496,9 +7505,10 @@ reescrito mas o inode mode não é tocado. Cada runtime adiciona uma chamada exp
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
-Gate: **`scripts/check-doctor-remote-parity.sh`** (alvo `parity`) + testes unitários por CLI
-(`internal/commands/doctor_remote_test.go`, `npm/tests/doctor_remote.test.js`,
-`pypi/tests/test_doctor_remote.py`).
+Gate: **`scripts/check-doctor-remote-parity.sh`** (removed in v8.0.0; was registered in alvo `parity`) + testes unitários por CLI
+(`internal/commands/doctor_remote_test.go`, `npm/tests/doctor_remote.test.js` (removed v8.0.0),
+`pypi/tests/test_doctor_remote.py` (removed v8.0.0)). Em v8.0.0, coberto por
+`internal/commands/doctor_remote_test.go`.
 
 `trackfw doctor` ganhou uma segunda modalidade de verificação — rede + credencial — que ele nunca
 teve: `required_status_checks` e `enforce_admins` da branch protection do GitHub, mais, localmente
@@ -7583,7 +7593,7 @@ sem a flag, `doctor` não ganha nenhum caminho de código novo (critério de ace
 
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
-`scripts/check-doctor-remote-parity.sh` segue a convenção de `check-release-tag-parity.sh`: um
+`scripts/check-doctor-remote-parity.sh` (removed in v8.0.0) seguia a convenção de `check-release-tag-parity.sh`: um
 executável `gh` STUB é colocado no início do `PATH` de cada cenário, respondendo
 deterministicamente `auth status` / `api repos/{owner}/{repo}` / `api .../branches/<b>/protection`
 — nunca uma chamada de rede real. Cobre as 3 direções de falsificação exigidas pelo roadmap
@@ -8139,11 +8149,12 @@ runtimes produzem artefato diferente byte a byte para a mesma entrada — quebra
 "Contrato de artefatos gerados" acima — e os `scripts/*.sh` gerados (hooks, guards) saem com `\r` no
 shebang, que falha em POSIX com `bad interpreter: ...^M: no such file or directory`.
 
-**Gate:** `scripts/check-python-writes-lf.sh` — varredura estática, não dinâmica, de propósito: a CI
-do upstream roda em Linux, que nunca observa CRLF na saída (o SO não traduz), então qualquer teste
-dinâmico rodando só em Linux nunca pegaria a regressão. O gate varre todo `open(`/`.write_text(` em
-modo texto de escrita sob `pypi/trackfw/**/*.py` (excluindo modos binários `rb`/`wb`/`ab`) e reprova
-nomeando arquivo e linha de qualquer chamada sem `newline=` explícito — pega no merge, em qualquer
+**Gate:** `scripts/check-python-writes-lf.sh` (removed in v8.0.0; sem objeto em v8: `pypi/trackfw/`
+removido) — varredura estática, não dinâmica, de propósito: a CI
+do upstream rodava em Linux, que nunca observa CRLF na saída (o SO não traduz), então qualquer teste
+dinâmico rodando só em Linux nunca pegaria a regressão. O gate varria todo `open(`/`.write_text(` em
+modo texto de escrita sob `pypi/trackfw/**/*.py` (excluindo modos binários `rb`/`wb`/`ab`) e reprovava
+nomeando arquivo e linha de qualquer chamada sem `newline=` explícito — pegava no merge, em qualquer
 SO, sem precisar do job caro de runner Windows.
 
 Origem: porte fiel de `lourivalgarciajunior`, PR #225 (fechado por conflito de governança,
@@ -8420,11 +8431,12 @@ declaração (se ganhar uma, o gate reprova com "exceção obsoleta" em vez de a
 e ele continua invocando `python3`.
 
 **Alvo 2 — produto, e é o que a paridade não cobre.** `scripts/check-attention-scripts-parity.sh`
-compara os 3 CLIs **entre si**: removendo o prefixo dos três, ele devolve **exit 0** — medido, com
-`GO_BIN` recompilado da árvore mutada — enquanto `check-output-encoding-declared.sh` devolve
+(removed in v8.0.0) comparava os 3 CLIs **entre si**: removendo o prefixo dos três, ele devolvia **exit 0** — medido, com
+`GO_BIN` recompilado da árvore mutada — enquanto `check-output-encoding-declared.sh` devolvia
 **exit 1** nomeando os três arquivos. Paridade mede se as implementações concordam, não se o
 contrato está correto (mesmo cego de
-`vault/notes/barrier-so-casa-cabecalho-de-aceite-em-portugues-2026-08-28.md`).
+`vault/notes/barrier-so-casa-cabecalho-de-aceite-em-portugues-2026-08-28.md`). Em v8.0.0, coberto por
+`internal/generators/scaffold_parity_test.go`.
 
 **Guarda de vacuidade nos dois alvos, falsificada por execução.** Glob `scripts/check-*.sh` vazio,
 população de invocadores vazia, ou âncora do literal que deixou de casar (menos de 2 invocações
