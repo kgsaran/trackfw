@@ -1,5 +1,10 @@
 # agents-working-context.md
 
+## 2026-10-20 — zeus-tf — retomada após autenticação Claude
+
+- KG confirmou login Claude na VM. Artemis retomou medição real AC5–AC7 na fixture existente com fonte 28d6d018, verificando somente status de autenticação e preservando credenciais/configs globais. Sinal de atenção por login removido. Sem novos agentes instalados ou mudanças de produto; eventos reais não serão substituídos por controles diretos.
+- Resultado da tentativa autenticada: loggedIn=true; Claude exit1/is_error=true/num_turns1, custo0USD, zero tool_use/hook_event e nenhum marcador/sinal. Mensagem do fornecedor informa limite semanal atingido antes de qualquer ferramenta. Não atribuir falha a hooks nem fechar AC5–AC7. Sem retry/modelo alternativo; processos encerrados e configs reais preservadas. Evidência no relatório QA; aguarda quota disponível ou runtime autenticado alternativo.
+
 ## 2026-10-20 — zeus-tf — início das jornadas AC5–AC7
 
 - Retomada autorizada pelo KG com VM ligada, fonte main 28d6d018 (#591) enviada por arquivo git archive. Branch fix/instalacao-windows-jornadas ligada à REQ Windows existente e roadmap WIP; checkout original com alterações do usuário preservado.

@@ -67,3 +67,36 @@ Subprocessos têm timeout de 30 s e drenagem concorrente de stdout/stderr com li
 4. AC6 exige reconciliação pelo orquestrador: sua redação histórica exige falhar sem Git Bash, mas guard/atenção agora são Go nativo. Ausência de Bash é controle legítimo positivo; indisponibilidade do trackfw é o controle negativo pertinente (guard fail-closed, atenção no-op). Não fabricar reprovação para sustentar uma premissa aposentada.
 
 Autenticação é a lacuna imediata para Claude. Outros cinco runtimes não estão disponíveis nos locais consultados e não foram instalados. Os seis emissores não tiveram eventos reais medidos por esta etapa. Caminhos com espaço/acento passaram no controle direto; isso não encerra sozinho AC7 da jornada completa.
+
+## Retomada autenticada — limite semanal observado
+
+Após o usuário informar login, nova consulta limitada confirmou `loggedIn=true`, `authMethod=claude.ai`. A consulta anterior sem login permanece evidência histórica, não estado atual.
+
+A ajuda do Claude instalado confirmou `--setting-sources`, `--settings`, `--include-hook-events` em stream-json, `--max-budget-usd`, `--tools`, `--allowedTools` e `--no-session-persistence`. O instrumento temporário `ac567-agent.ps1` manteve USERPROFILE real para resolver OAuth, sem copiar credenciais, e restringiu fontes de settings a `project,local`. Não usou `--bare`/`--safe-mode` (desligariam hooks), bypass de permissões ou override de modelo. Execução do instrumento PowerShell com Bypass foi apenas política do processo do script, não bypass de permissões do Claude.
+
+Foi feita **uma** chamada real do Claude nativo 2.1.299, no mesmo caminho de fixture com espaço/acento, com PATH de processo contendo binário medido, Git e diretórios Windows. Orçamento máximo US$ 0,30 e timeout de 120 s, stdout/stderr drenados concorrentemente. Flags de execução:
+
+```text
+--print --verbose --output-format stream-json --include-hook-events
+--no-session-persistence --setting-sources project,local
+--max-budget-usd 0.30 --tools AskUserQuestion,Bash,Read
+--allowedTools AskUserQuestion,Bash,Read
+```
+
+Prompt curto pediu AskUserQuestion com texto de fixture e depois uma ação Bash benigna para criar `qa-allowed-marker.txt`, sem comandos de rede/credenciais ou agentes. O comportamento esperado de atenção/cleanup continua sendo o matcher **AskUserQuestion** emitido, não um PostToolUse genérico de Bash. A ação Bash pretendida seria somente controle de ferramenta permitida; não provaria cleanup de atenção por si.
+
+Resultado efetivamente observado:
+
+```text
+exit=1 timeout=false drained=true
+marker_exists=false attention_exists=false
+system subtype=init
+result subtype=success is_error=true num_turns=1 total_cost_usd=0
+You've hit your weekly limit — resets 11am (America/Sao_Paulo)
+```
+
+O texto `subtype=success` não foi contado como sucesso: `is_error=true`, exit 1 e mensagem explícita demonstram bloqueio do fornecedor. Não houve evento `tool_use` nem evento de hook na saída stream-json. Portanto não há evidência nesta chamada de disparo, schema aceito pelo executor, guard, sinal ou cleanup. Não foi feita tentativa repetida, modelo alternativo ou contorno de quota. Custo reportado total desta rodada: US$ 0. O horário de reset acima é o informado pelo fornecedor, não uma confirmação independente de quando haverá capacidade.
+
+Artefatos brutos somente na fixture: `qa-agent-stream.jsonl` e `qa-agent-stderr.txt`; não foram copiados para o repositório nem publicados na íntegra. Nenhum segredo foi usado como payload, nenhuma instalação/config real foi alterada, nenhum push foi tentado. Processo próprio terminou e foi descartado. O controle negativo de guard e o browser após evento real não foram executados, porque a chamada foi recusada antes da primeira ferramenta.
+
+**Estado final desta retomada:** autenticação disponível, execução de ferramentas bloqueada pelo limite semanal. AC5–AC7 continuam pendentes. Retomar após disponibilidade da conta; antes de escolher print ou PTY, verificar se AskUserQuestion é realmente oferecido nesse modo. Não remapear o evento do hook emitido para fabricar evidência.
