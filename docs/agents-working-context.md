@@ -46982,3 +46982,10 @@ Entregue: (1) Cabeçalho linha 8 "3 CLIs" → "FONTE Go e shims de canal"; pará
 - Iniciado: REQ-2026-09-05 e roadmap pareados em wip, plano detalhado e emenda ADR para atenção nativa Go; Wave 0 antes da implementação.
 - Isolamento: /private/tmp/trackfw-attention-go a partir de origin/main bc9d4b5c, pois workaround local dos guards zsh não é reconhecido pelo validate (5 guard_wiring_removed no checkout original). Nenhum hook do usuário alterado neste ML. PR externo #590 fica com Lourival e não bloqueia esta frente, por orientação explícita do usuário.
 - Branches remotas antigas: comparação somente dos arquivos tocados mostra divergência de housekeeping em contexto/.trackfw-log; não há branch local obsoleta para limpar além da branch de parada em uso no outro worktree.
+
+
+**hades-tf** · 2026-10-20 · Wave 0 attention Go — início
+Escopo: ML-0A/ML-1H, análise sem produto e sem operações Git. Context e validate executados com exit 0; avisos legados/globais preservados.
+
+**hades-tf** · 2026-10-20 · Wave 0 attention Go — concluído
+Artefato: `docs/seguranca/2026-10-20-wave0-attention-go.md`. Veredito: libera desenho com controles S1 (config.Load osExit1), S2 (contenção física inclusive cleanup), corpus legado independente e stdin limitado; AC5–AC7 seguem sem prova de runtime real Windows. Roadmap não alterado; auditoria Zeus pendente.

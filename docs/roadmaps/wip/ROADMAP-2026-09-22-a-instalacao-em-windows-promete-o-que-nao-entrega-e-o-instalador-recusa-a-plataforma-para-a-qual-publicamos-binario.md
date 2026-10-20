@@ -25,7 +25,7 @@ REQ: docs/req/REQ-2026-09-05-a-instalacao-em-windows-promete-o-que-nao-entrega-e
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model for this roadmap
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Files affected:** docs/seguranca/2026-10-20-wave0-attention-go.md
 **Actions:**
 1. Enumeration completeness — is the list of surfaces in this roadmap complete? Name what is missing, or show the list is closed. Do not limit the search to the files already named by the REQ — before declaring the list closed, search the repository for other places that emit the same artifact or the same pattern (for example, grep for the literal the final artifact contains).
@@ -33,8 +33,8 @@ REQ: docs/req/REQ-2026-09-05-a-instalacao-em-windows-promete-o-que-nao-entrega-e
 3. Falsification targets in both directions — for each surface, what breaks when the behavior regresses, and what breaks when it regresses the opposite way?
 4. Declared residual — what this design accepts not covering.
 **Acceptance criteria:**
-- [ ] The four sections above answered with evidence, not a one-line assertion
-- [ ] No implementation line written for this ML
+- [x] The four sections above answered with evidence, not a one-line assertion
+- [x] No implementation line written for this ML
 
 **Gates da wave:**
 ```bash
@@ -115,7 +115,7 @@ test -s docs/seguranca/2026-10-20-wave0-attention-go.md
 > Dependências: Wave 0 auditada. ML-1H executado por apolo_tf, um único dono de comandos, geradores e testes. Sem paralelismo entre implementação e revisão, pois compartilham os arquivos.
 
 ### ML-1H — **AC8** — Hooks de atenção viram subcomando Go (`trackfw attention signal|cleanup`)
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Por que entra aqui:** Regra Dura de Causa Raiz — mesma causa da REQ (dependência de `sh` na
 jornada Windows). Não previsto no escopo original porque, em 2026-09-22, os guards também eram `.sh`;
 a ADR-2026-10-04 levou só os **guards** para Go e deixou os hooks de atenção para trás (medido em
@@ -182,3 +182,9 @@ test -s docs/seguranca/2026-10-20-quality-attention-go.md
 test -s docs/seguranca/2026-10-20-red-team-attention-go.md
 go test ./internal/commands ./internal/generators ./internal/integrations
 ```
+
+### Auditoria Zeus da Wave 0 — 2026-10-20
+
+Parecer docs/seguranca/2026-10-20-wave0-attention-go.md lido integralmente e aprovado com controles S1/S2 obrigatórios. Copilot migra atenção de bash para command: schema já empregado pelos guards e decidido na ADR D4. Limites decididos: stdin no máximo 1 MiB e prazo absoluto de 2 s (ambos testados); acima do limite ou prazo, no-op0, sem arquivo parcial. YAML deve ser decodificado sem config.Load (que encerra processo), documento único e erros no-op. Campos tool/message removem ASCII controles conforme corpus legado; message no máximo 300 runas. Não introduzir busca por raiz ancestral. Limite/erros/contenção fortalecem casos inválidos do legado, diferenças declaradas.
+
+Arquivos autorizados adicionais ML-1H: internal/commands/testdata/attention-legacy/{signal.sh,cleanup.sh,MANIFEST.sha256}, internal/commands/attention_test.go, internal/generators/attention_hooks_test.go, scripts/check-output-encoding-declared.sh e scripts/check-crlf-normalize-capture.sh (somente pressupostos aposentados da implementação de atenção; não relaxar controles dos demais scripts). Build/test isolam HOME/USERPROFILE apenas no subprocesso de teste para não ler hooks reais do usuário; packaging/PyYAML via PYTHONPATH temporário.
