@@ -2,8 +2,8 @@
 status: Open
 date: 2026-09-05
 author: ""
-adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-22-a-instalacao-em-windows-promete-o-que-nao-entrega-e-o-instalador-recusa-a-plataforma-para-a-qual-publicamos-binario.md"
+adr: "docs/adr/ADR-2026-10-04-o-guard-de-hook-e-um-subcomando-go-do-trackfw-e-a-linha-de-hook-e-a-mesma-string-em-todo-shell.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-22-a-instalacao-em-windows-promete-o-que-nao-entrega-e-o-instalador-recusa-a-plataforma-para-a-qual-publicamos-binario.md"
 ---
 
 # REQ: a instalacao em Windows promete o que nao entrega e o instalador recusa a plataforma para a qual publicamos binario
@@ -106,13 +106,13 @@ campanha inteira mostrou que teste verde não implica comportamento entregue.
 ## Linked ADR
 <!-- Decisão de shell já existe: ADR-2026-09-01-gate-de-wave-e-contrato-portavel-em-shell-posix-...
      Esta REQ NÃO a re-decide; ela declara e verifica o que aquela decisão implica na instalação. -->
-ADR:
+ADR: `docs/adr/ADR-2026-10-04-o-guard-de-hook-e-um-subcomando-go-do-trackfw-e-a-linha-de-hook-e-a-mesma-string-em-todo-shell.md`
 
 ## Blocked by ADRs
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-22-a-instalacao-em-windows-promete-o-que-nao-entrega-e-o-instalador-recusa-a-plataforma-para-a-qual-publicamos-binario.md`
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-22-a-instalacao-em-windows-promete-o-que-nao-entrega-e-o-instalador-recusa-a-plataforma-para-a-qual-publicamos-binario.md`
 
 ---
 
@@ -175,3 +175,7 @@ Plataformas suportadas: macOS (Darwin), Linux
 - `npm.ps1` é bloqueado pela *execution policy* do PowerShell; usar `cmd /c "npm ..."`.
 - Medir exit code de script **sem** canalizar para `tail`: `sh x.sh | tail` devolve o `$?` do `tail`.
   A primeira medição deu `RC=0` por esse motivo e foi refeita — o valor real é `1`.
+
+## Retomada 2026-10-20 — AC8
+
+Atenção usa comandos simples `trackfw attention signal|cleanup` (informativos, exit 0), sem copiar a linha polyglot fail-closed dos guards. A descrição anterior de string única do guard é substituída neste ponto pela evidência zsh de 20/10. PR #590 é responsabilidade do Lourival, fora desta frente. Nenhuma mudança em guards ou nas configurações locais/globais do usuário nesta rodada.

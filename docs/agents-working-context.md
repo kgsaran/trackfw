@@ -46975,3 +46975,10 @@ Entregue: `.gitattributes` linhas 20-23 reescritas (removidas referências a npm
 **hefesto-tf** · 2026-10-18 · Limpeza adicional .gitattributes (Regra Dura de Causa Raiz) — concluído
 Branch: `docs/residuos-pre-v8-gitattributes-e-gates-removidos`
 Entregue: (1) Cabeçalho linha 8 "3 CLIs" → "FONTE Go e shims de canal"; parágrafo de medição marcado como "[Medição de 2026-09, anterior à v8.0.0]"; "Comparação 3-a-3 ... é simétrica" → era/carregava/divergia (passado). (2) Linha 43 `npm/tests/thirdparty.test.js` → `internal/commands/integrations_thirdparty_test.go`. (3) grep -nE 'npm/|pypi/|3 CLIs|...' confirma que remanescentes são: nova nota de contexto (intencionais), parágrafo histórico (mantido por instrução), referências "removidos na v8.0.0" (já corrigidas), e regra ativa npm/bin/trackfw (não-comentário, não tocado). make quality: go test ./... ✅ | go vet ✅ | build ✅ | todos os 59 self-test arms ✅ | check-wheel-filename.sh FAIL — módulo Python `packaging` ausente no ambiente local, pré-existente (não causado por estas edições).
+
+
+## 2026-10-20 — zeus-tf — retomada ML-1H em worktree isolado
+
+- Iniciado: REQ-2026-09-05 e roadmap pareados em wip, plano detalhado e emenda ADR para atenção nativa Go; Wave 0 antes da implementação.
+- Isolamento: /private/tmp/trackfw-attention-go a partir de origin/main bc9d4b5c, pois workaround local dos guards zsh não é reconhecido pelo validate (5 guard_wiring_removed no checkout original). Nenhum hook do usuário alterado neste ML. PR externo #590 fica com Lourival e não bloqueia esta frente, por orientação explícita do usuário.
+- Branches remotas antigas: comparação somente dos arquivos tocados mostra divergência de housekeeping em contexto/.trackfw-log; não há branch local obsoleta para limpar além da branch de parada em uso no outro worktree.

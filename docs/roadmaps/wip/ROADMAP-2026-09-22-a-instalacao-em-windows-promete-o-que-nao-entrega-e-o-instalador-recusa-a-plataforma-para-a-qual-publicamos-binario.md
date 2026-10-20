@@ -1,13 +1,13 @@
 ---
-status: backlog
+status: wip
 date: 2026-09-22
 req: "docs/req/REQ-2026-09-05-a-instalacao-em-windows-promete-o-que-nao-entrega-e-o-instalador-recusa-a-plataforma-para-a-qual-publicamos-binario.md"
-squad: ""
+squad: "hades_tf, apolo_tf, hefesto_tf"
 ---
 
 # Roadmap: a instalacao em Windows promete o que nao entrega e o instalador recusa a plataforma para a qual publicamos binario
 
-> Created: 2026-09-22 | Status: backlog
+> Created: 2026-09-22 | Status: wip
 
 ## Context
 <!-- Derived from REQ: REQ-2026-09-05-a-instalacao-em-windows-promete-o-que-nao-entrega-e-o-instalador-recusa-a-plataforma-para-a-qual-publicamos-binario.md -->
@@ -15,8 +15,8 @@ REQ: docs/req/REQ-2026-09-05-a-instalacao-em-windows-promete-o-que-nao-entrega-e
 
 ## Acceptance Criteria
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
-- [ ]
-- [ ]
+- [ ] AC8: hooks de atenção nativos em Go, migrados sem perder hooks personalizados.
+- [ ] AC5–AC7: jornadas Windows medidas, sem confundir execução direta com execução pelo runtime.
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -25,8 +25,8 @@ REQ: docs/req/REQ-2026-09-05-a-instalacao-em-windows-promete-o-que-nao-entrega-e
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model for this roadmap
-**Status:** ⬜ Pendente
-**Files affected:**
+**Status:** 🔄 Em andamento
+**Files affected:** docs/seguranca/2026-10-20-wave0-attention-go.md
 **Actions:**
 1. Enumeration completeness — is the list of surfaces in this roadmap complete? Name what is missing, or show the list is closed. Do not limit the search to the files already named by the REQ — before declaring the list closed, search the repository for other places that emit the same artifact or the same pattern (for example, grep for the literal the final artifact contains).
 2. Threat model — who empties this Wave 0 without breaking any written rule, and how?
@@ -40,11 +40,11 @@ REQ: docs/req/REQ-2026-09-05-a-instalacao-em-windows-promete-o-que-nao-entrega-e
 ```bash
 # Wave 0 gate — replace this placeholder with a project-specific check before
 # marking ML-0A done. Do not remove the gate; replace its command (AC13).
-exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli-parity.md
+test -s docs/seguranca/2026-10-20-wave0-attention-go.md
 ```
 
-## Wave 1 — Implementation (derived from REQ criteria)
-> Dependencies: none
+## Wave 1 — Critérios históricos e jornadas AC1–AC7
+> Dependências: AC1–AC4 reconciliados na triagem de 17/10; AC5–AC7 somente após Wave 3. Não executar estes MLs antes do ML-1H.
 
 ### ML-1A — **AC1** — O README declara a dependência de **shell** para as funcionalidades que dependem
 **Status:** ⬜ Pendente
@@ -111,6 +111,9 @@ exit 1  # placeholder gate fails closed until ML-0A replaces it — see docs/cli
 
 ---
 
+## Wave 2 — Atenção nativa (retomada autorizada em 20/10)
+> Dependências: Wave 0 auditada. ML-1H executado por apolo_tf, um único dono de comandos, geradores e testes. Sem paralelismo entre implementação e revisão, pois compartilham os arquivos.
+
 ### ML-1H — **AC8** — Hooks de atenção viram subcomando Go (`trackfw attention signal|cleanup`)
 **Status:** ⬜ Pendente
 **Por que entra aqui:** Regra Dura de Causa Raiz — mesma causa da REQ (dependência de `sh` na
@@ -127,8 +130,7 @@ a ADR-2026-10-04 levou só os **guards** para Go e deixou os hooks de atenção 
    limitar `message` a 300 chars, no-op fora da raiz do projeto, **nunca** bloquear o agente (exit 0 sempre).
 2. Portar `trackfw-attention-signal.sh` (40 linhas) e `-cleanup.sh` (18) para `trackfw attention signal|cleanup`
    com comportamento igual (mesmos campos no `.trackfw-attention.json`).
-3. Geradores emitem a string única polyglot (mesmo padrão `trackfw guard …`) para Claude, Codex, Gemini e Kiro;
-   `trackfw update` migra configs existentes que apontam para o `.sh`.
+3. Geradores emitem exatamente `trackfw attention signal` e `trackfw attention cleanup`, sem polyglot, para Claude, Codex, Gemini, Kiro, Cursor e Copilot (campo command); `trackfw update` migra todas as formas legadas emitidas sem duplicar/remover hooks personalizados. Atenção é informativa e não usa a linha fail-closed dos guards, defeituosa sob zsh (nota de 20/10). Não alterar guards nem arquivos do PR #590.
 4. Teste que reprova se a linha emitida contiver `.sh`, `$VAR` ou caminho; teste de paridade `.sh` × subcomando.
 **Acceptance criteria:**
 - [ ] `go build ./...` e `make quality` verdes
@@ -140,3 +142,43 @@ a ADR-2026-10-04 levou só os **guards** para Go e deixou os hooks de atenção 
 **Mudou de forma**: `install.sh` aceita Windows (#373) e o README tem a seção; segue aberto só o que não foi medido — hooks com Cursor/Windsurf/Gemini/Kiro/Copilot/Amazon Q, `pwsh`, caminhos com espaço/acento.
 
 Evidência e tabela completa: `docs/governanca/2026-10-17-triagem-backlog-pre-v8.md`.
+
+
+## Plano executável da retomada — 2026-10-20
+
+- Escopo desta rodada: ML-0A, ML-1H e auditoria. AC5–AC7 seguem pendentes até medição real Windows; não encerrar a REQ nem mover o roadmap para done sem essa evidência.
+- Arquivos adicionais descobertos: internal/commands/root.go, internal/generators/scaffold.go, internal/generators/agentfiles_test.go, internal/generators/copilot_hooks_parity_test.go, internal/generators/scaffold_literal_copy_parity_test.go, testes de atenção em internal/generators, e scripts/ de gates que ainda afirmem a implementação antiga. Inventário fechado pela Wave 0 antes do código.
+- Contrato: entrada JSON stdin; prioridade question > command > texto por tool_name; message no máximo 300 runas; mesmos campos tool/message/level/timestamp; projeto somente com trackfw.yaml no cwd; caminho roadmap_dir configurado contido fisicamente na raiz; rejeitar symlinks/junctions com utilitários existentes; cleanup apaga somente .trackfw-attention.json, nunca .trackfw-credential-guard.json. Erros de payload/config/I/O são no-op e exit 0; stdin limitado para não travar hook.
+- Compatibilidade: wrappers .sh e literais scaffold delegam para Go, preservando encaminhamento stdin e argumentos, sem jq/python; paridade usa fixture congelada do legado e prova comportamento sem ferramentas auxiliares. Não regenerar configurações locais/globais do usuário nesta rodada.
+- Validação ML-1H: go build ./...; go test ./internal/commands ./internal/generators ./internal/integrations; go vet ./...; make quality; trackfw validate --json. Qualquer falha nova bloqueia; falhas de ambiente devem ser provadas e registradas.
+
+**Gates da wave:**
+```bash
+go build ./...
+go test ./internal/commands ./internal/generators ./internal/integrations
+go vet ./...
+```
+
+## Wave 3 — Auditoria de qualidade e red-team
+> Dependências: Wave 2 implementada e auditada. Revisões sequenciais para não compartilhar contexto em escrita.
+
+### ML-3A — Qualidade (hefesto_tf)
+**Status:** ⬜ Pendente
+**Files affected:** docs/seguranca/2026-10-20-quality-attention-go.md
+**Actions:** revisar escopo, migração idempotente, fonte única, cobertura real e controles negativos; não escrever código.
+**Acceptance criteria:**
+- [ ] Parecer escrito, achados bloqueantes resolvidos e gates conferidos.
+
+### ML-3B — Red-team (hades_tf)
+**Status:** ⬜ Pendente
+**Files affected:** docs/seguranca/2026-10-20-red-team-attention-go.md
+**Actions:** exercer payload inválido, contenção caminho/symlink, exclusão segura e execução das linhas emitidas em sh/bash/zsh; distinguir prova local de runtime Windows.
+**Acceptance criteria:**
+- [ ] Parecer escrito, nenhum achado bloqueante aberto.
+
+**Gates da wave:**
+```bash
+test -s docs/seguranca/2026-10-20-quality-attention-go.md
+test -s docs/seguranca/2026-10-20-red-team-attention-go.md
+go test ./internal/commands ./internal/generators ./internal/integrations
+```

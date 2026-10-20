@@ -273,3 +273,10 @@ Medido: saída **0 só quando o `trackfw` sai 0** e **2 em todos os outros casos
 Bash e PowerShell 5.1; o ruído no stderr do PowerShell é o mesmo da D11 (o trecho novo é atribuição válida). Família
 `cmd` inalterada (`trackfw guard <nome> || exit 2`, já 0/2/2/2/2). Medição em
 `docs/portabilidade/2026-10-07-linha-de-hook-fail-closed-sem-trackfw.md`, seção ML-6C.
+
+
+## Adendo — 2026-10-20: atenção nativa (ML-1H da instalação Windows)
+
+Estende D1/D3 aos hooks informativos: `trackfw attention signal` e `trackfw attention cleanup` são a fonte única Go; scripts .sh existentes viram invólucros de compatibilidade. Todas as configs emitidas usam essas linhas simples, sem variáveis/caminhos/jq/python. Copilot usa command. Atenção não bloqueia ferramentas: erros internos resultam em no-op e exit 0. Por isso não copia D11/D11 revista dos guards. A falha da semente polyglot sob zsh está registrada em vault/notes/codex-guard-polyglot-aborta-zsh-equals-2026-10-20.md e a correção dos guards segue na sua REQ própria.
+
+O payload é dado JSON, nunca código. Escrita e cleanup ficam confinados fisicamente ao roadmap_dir da raiz com trackfw.yaml no cwd, usando as guardas existentes; não remover o arquivo dedicado de credential guard. Migração reconhece somente comandos legados de atenção emitidos pelo produto e preserva hooks personalizados. Prova local shell não será declarada como jornada real de CLI de agente no Windows.
