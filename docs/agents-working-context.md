@@ -47044,3 +47044,10 @@ P21 complemento operacional: input workflow_dispatch attention_only boolean fals
 - Windows P21 isolada 39454688584 success: helpers bash/jq/python ausentes, PowerShell/cmd exit 0, API sinal ativo/inativo, Edge real com banner visível/oculto e mensagem exata, credential signal preservado. Evidência docs/portabilidade/2026-10-20-atencao-go-windows-p21.md. Execução completa anterior falhou nas sondas 5c/18, explicitadas no relatório; não confundir com aprovação geral do Windows.
 - make quality PASS, 368 OK/0 FAIL; barreiras 0/2/3 PASS com 1/4/3 comandos efetivamente executados e conferidos no JSON. Erro de headings H2 do roadmap corrigido e registrado no vault, sem alterar parser ou gates. validate 0 violações (163 avisos em home isolado; 166 com globais reais).
 - AC8/ML-1H concluído; REQ Open e roadmap WIP para AC5–AC7 dos agentes reais. Branch fix/a-instalacao-em-windows-promete-o-que-nao-entrega em /private/tmp/trackfw-attention-go. Sem PR, merge ou release; PR #590 fica com Lourival e configurações reais do usuário foram preservadas.
+
+
+## 2026-10-20 — zeus-tf — abertura de PR do ML-1H
+
+- Iniciado por autorização explícita do KG: conferir branch limpa/sincronizada, diff, template e validate; preparar PR limitado a AC8/ML-1H, mantendo AC5–AC7 pendentes.
+- Concluído: PR #591 aberto em https://github.com/kgsaran/trackfw/pull/591; AC5–AC7 continuam pendentes, sem merge ou release.
+- A pedido do KG, reavaliado o PR de Lourival #590 no head 8ab6e84c9413c73416d0bcbe00ecd3d176a999de: P2 do comentário atendido no segundo consumidor da sonda; regressão cobre prazo inconclusivo e erro real. Revisão independente de segurança sem bloqueadores. No snapshot exato, go build ./..., go vet ./internal/validator, suíte completa do validator (30.290s) e regressão explícita passaram. GitHub confirmou 20 checks SUCCESS, MERGEABLE/CLEAN. Recomendado merge pelo usuário; nenhum comentário, review ou merge publicado.
