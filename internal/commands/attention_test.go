@@ -182,9 +182,7 @@ func TestAttentionInvalidAndContainment(t *testing.T) {
 				link = file
 				target = sentinel
 			}
-			if err := os.Symlink(target, link); err != nil {
-				t.Skipf("symlink unavailable: %v", err)
-			}
+			symlinkOrSkipCmd(t, target, link)
 			runAttention("signal", dir, strings.NewReader(`{}`))
 			runAttention("cleanup", dir, nil)
 			got, err := os.ReadFile(sentinel)

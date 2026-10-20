@@ -19,12 +19,6 @@
   },
   "entries": [
     {
-      "name": "TestAttentionScripts_FallbackWithoutJQ",
-      "runtime": "go",
-      "class": "assertion",
-      "reason": "Group C: os.Symlink requires developer privilege on Windows -- fakeBinDir stays empty, script returns default 'Agent needs attention' instead of test fallback_tool value (MEASURED)"
-    },
-    {
       "name": "TestChecksum_StableAndMatchesSHA256Sum",
       "runtime": "go",
       "class": "assertion",
@@ -56,6 +50,14 @@
     }
   ],
   "removed": [
+    {
+      "name": "TestAttentionScripts_FallbackWithoutJQ",
+      "runtime": "go",
+      "class": "assertion",
+      "reason": "Group C: os.Symlink requires developer privilege on Windows -- fakeBinDir stays empty, script returns default 'Agent needs attention' instead of test fallback_tool value (MEASURED)",
+      "removal_note": "corrected",
+      "correction_note": "Native Go attention compatibility wrapper no longer depends on jq or a symlinked fake helper; test PASS observed in windows-full-suites CI run 39458335009 (PR #591, ML-1H, REQ-2026-09-05)."
+    },
     {
       "name": "TestRenderOpenCodeAgent_CRLFSourceMatchesLF",
       "runtime": "go",

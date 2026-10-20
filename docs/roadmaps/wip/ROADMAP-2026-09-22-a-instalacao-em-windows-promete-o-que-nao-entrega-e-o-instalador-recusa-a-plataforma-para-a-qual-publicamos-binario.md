@@ -212,6 +212,8 @@ Para evitar aguardar as 20 sondas alheias ao ML, input boolean attention_only (d
 
 ### Conclusão ML-1H — Zeus, 2026-10-20
 
+**Correção de CI do PR #591 — em validação:** run 39458335009 revelou symlink sem helper de capacidade em `internal/commands/attention_test.go` e aposentadoria obrigatória do teste `TestAttentionScripts_FallbackWithoutJQ` que passou no Windows. Artemis substituiu a criação pelo helper existente `symlinkOrSkipCmd` e moveu somente essa entrada de `entries` para `removed` em `.github/windows-known-failures.json`, com `removal_note: corrected` e referência à medição. Sem mudança de produto nem relaxamento de gates. Testes focados de atenção, gate symlink e seus 3 autotestes e 59 autotestes do ratchet passaram. Aprovação final depende da nova execução da esteira.
+
 P21 isolada 39454688584 (fonte 20b3734c) success: PowerShell/cmd signal e cleanup exit0, helpers ausentes do PATH, API active true/false com mensagem exata, Edge DOM visible true/false, credential signal byte-idêntico. Evidência completa: docs/portabilidade/2026-10-20-atencao-go-windows-p21.md. ML-1H/AC8 concluído; roadmap permanece WIP e REQ Open para jornadas reais AC5–AC7. Não confundir o primeiro workflow completo failure (5c legado Node e cinco falhas Windows conhecidas na pergunta 18) com P21 isolada medida.
 
 ### Barreiras finais auditadas
