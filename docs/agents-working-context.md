@@ -1,5 +1,15 @@
 # agents-working-context.md
 
+## 2026-10-20 — zeus-tf — PONTO DE PARADA (retomar 2026-10-21)
+
+- PR #590 (Lourival) e #591 integrados; main medida em 28d6d018. #591 entregou AC8, atenção nativa Go; última esteira 39461370579 teve 20/20 checks SUCCESS. Sem nova release.
+- Trabalho atual: branch `fix/instalacao-windows-jornadas`, worktree `/private/tmp/trackfw-attention-go`, evidência publicada até d85001c6. REQ de instalação Windows (2026-09-05) Open, roadmap correspondente em wip; AC5–AC7 NÃO concluídos. Relatório: `docs/portabilidade/2026-10-20-jornadas-agentes-windows.md`.
+- VM `powershell-vm`/WIN-C83B0R5MIGB ARM64 acessível por SSH; Claude2.1.299 autenticado, porém chamada real recusada por limite semanal antes de qualquer ferramenta/hook, custo0USD. Não inferir horário de liberação a partir do texto do fornecedor. Nenhum processo de medição deixado ativo, nenhum segredo copiado ou config real alterada.
+- Fonte exata 28d6d018 em `C:\Users\Lab\tf-ac567-20261020-source`; binário compilado trackfw.exe10.0.0, SHA256696B63EAD8A5EB20B4DF41B8F7A427A0DBA5083D66506D6B248DBE61070062F1. Fixture válida `jornada ação com espaço 2`; diretório `tf-ac567-20261020` é extração inválida, NÃO usar. PATH padrão resolve trackfw9.2.0; usar exe medido por PATH apenas do subprocesso. `claude.cmd` absoluto evita shim.ps1 sob Restricted.
+- Controles diretos PS5/cmd: init/update geraram configs, signal/cleanup funcionaram com espaço/acento e sem bash/jq/python no PATH. Isso NÃO prova evento real. Outros agentes/pwsh ausentes nos locais consultados.
+- Amanhã: confirmar VM, login e quota por tentativa limitada; conferir ajuda instalada e disponibilidade de AskUserQuestion no modo usado (print pode não oferecer); preservar settings locais gerados e perfil autenticado, sem copiar credenciais. Medir AskUserQuestion real → sinal/banner → cleanup, controle de ferramenta permitida e negada pelo guard, com timeout/orçamento e marcador. Só então atualizar AC5–AC7. AC6 histórico pressupõe dependência Bash aposentada: reconciliar com ADR nativa e falsificação pela ausência do trackfw; não fabricar falha sem Bash. Se quota seguir indisponível, registrar impedimento e decidir runtime alternativo com KG.
+- Checkout original `docs/ponto-de-parada-2026-10-19` mantém alterações locais de hooks/REQ/vault do usuário; não resetar/stash/commitar tudo. Nenhum PR aberto para a branch atual; abrir somente quando solicitado. Sinal de atenção por quota permanece local no worktree isolado.
+
 ## 2026-10-20 — zeus-tf — retomada após autenticação Claude
 
 - KG confirmou login Claude na VM. Artemis retomou medição real AC5–AC7 na fixture existente com fonte 28d6d018, verificando somente status de autenticação e preservando credenciais/configs globais. Sinal de atenção por login removido. Sem novos agentes instalados ou mudanças de produto; eventos reais não serão substituídos por controles diretos.
