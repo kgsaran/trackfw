@@ -83,7 +83,10 @@ test -s docs/seguranca/2026-10-20-wave0-attention-go.md
 - [ ] tests green
 
 ### ML-1E — **AC5** — 🔴 **Jornada verificada de ponta a ponta em Windows**, com o hook **disparando** —
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
+**Plano executável em 20/10:** QA Artemis usa fonte exata `28d6d018`, enviada como git archive sem prefixo de diretório, em scratch novo na VM ARM64. Compilar `go build -o <scratch>/trackfw.exe ./cmd/trackfw`; registrar SHA256, versão e resolução de PATH (o instalado é 9.2.0). Criar projeto descartável com espaço/acento e configuração local emitida pelo binário. Isolar configuração de agente por mecanismo próprio, sem copiar credenciais nem mudar HOME/PATH persistentes. Verificar autenticação apenas por status booleano. Após login do usuário, acionar ferramenta benigna por runtime real, capturar debug/marker, sinal JSON e mudança do banner por browser, e provar cleanup por evento seguinte. Controle: ferramenta negada por guard não pode criar marcador; ferramenta permitida deve criá-lo. Nenhum push real ou segredo real como payload. Timeout finito em todos subprocessos. Não instalar outros agentes nesta etapa; registrar ausência como lacuna. Evidência em `docs/portabilidade/2026-10-20-jornadas-agentes-windows.md` por Artemis; root audita antes de marcar ACs.
+**Reconciliação AC6:** texto original pressupõe hooks dependentes de Bash; ADR-2026-10-04 e AC8 substituem esse desenho. Medir ausência de Bash como caso nativo positivo; falsificar por ausência do binário trackfw, exigindo recusa visível do guard. Não marcar AC6 antigo como cumprido por silêncio ou por comando direto. Registrar mudança de premissa e separar falhas de autenticação de falhas do hook.
+**AC7:** mesmo projeto e binário em caminho com espaço/acento; registrar caminho exato, shell efetivo do runtime e arquivo realmente criado/negado. Comandos diretos de PS/cmd são controles adicionais, nunca substituto do evento real. Sem login, preparar instrumentos e registrar impedimento sem fechar AC5–AC7.
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**

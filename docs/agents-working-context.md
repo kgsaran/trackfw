@@ -1,5 +1,10 @@
 # agents-working-context.md
 
+## 2026-10-20 — zeus-tf — início das jornadas AC5–AC7
+
+- Retomada autorizada pelo KG com VM ligada, fonte main 28d6d018 (#591) enviada por arquivo git archive. Branch fix/instalacao-windows-jornadas ligada à REQ Windows existente e roadmap WIP; checkout original com alterações do usuário preservado.
+- Inventário QA: Windows ARM64 WIN-C83B0R5MIGB, cmd.exe, Go1.27, Claude2.1.299 sem login; trackfw9.2.0 sombreia PATH. Outros seis agentes/pwsh não encontrados nas instalações padrão. Artemis prepara build scratch e plano sem editar configs reais. Usuário consultado sobre autenticação; nenhuma chamada de modelo até resolver.
+
 ---
 
 ## 2026-10-18 — apolo-tf — FIM: parity-rest fix — dry-run sem origin (REQ-2026-09-12)
