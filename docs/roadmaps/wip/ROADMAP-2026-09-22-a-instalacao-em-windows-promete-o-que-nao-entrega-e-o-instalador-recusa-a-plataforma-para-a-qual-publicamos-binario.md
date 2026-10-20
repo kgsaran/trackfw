@@ -15,7 +15,7 @@ REQ: docs/req/REQ-2026-09-05-a-instalacao-em-windows-promete-o-que-nao-entrega-e
 
 ## Acceptance Criteria
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
-- [ ] AC8: hooks de atenção nativos em Go, migrados sem perder hooks personalizados.
+- [x] AC8: hooks de atenção nativos em Go, migrados sem perder hooks personalizados.
 - [ ] AC5–AC7: jornadas Windows medidas, sem confundir execução direta com execução pelo runtime.
 
 ## Status Legend
@@ -115,7 +115,7 @@ test -s docs/seguranca/2026-10-20-wave0-attention-go.md
 > Dependências: Wave 0 auditada. ML-1H executado por apolo_tf, um único dono de comandos, geradores e testes. Sem paralelismo entre implementação e revisão, pois compartilham os arquivos.
 
 ### ML-1H — **AC8** — Hooks de atenção viram subcomando Go (`trackfw attention signal|cleanup`)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Por que entra aqui:** Regra Dura de Causa Raiz — mesma causa da REQ (dependência de `sh` na
 jornada Windows). Não previsto no escopo original porque, em 2026-09-22, os guards também eram `.sh`;
 a ADR-2026-10-04 levou só os **guards** para Go e deixou os hooks de atenção para trás (medido em
@@ -135,16 +135,16 @@ a ADR-2026-10-04 levou só os **guards** para Go e deixou os hooks de atenção 
 **Acceptance criteria:**
 - [x] `go build ./...` e `make quality` verdes
 - [x] nenhum gerador emite `trackfw-attention-*.sh` como comando de hook
-- [ ] no `windows-probe.yml`, com `bash` fora do PATH, o banner aparece (AC5/AC6 desta REQ)
+- [x] no `windows-probe.yml`, com bash/jq/python fora do PATH, comandos nativos ativam/ocultam o banner no Edge real (AC8). AC5–AC7: eventos reais dos agentes continuam pendentes.
 
-## Triagem pós-v8 — 2026-10-17 (REQ-2026-10-17)
+**Triagem pós-v8 — 2026-10-17 (REQ-2026-10-17)**
 
 **Mudou de forma**: `install.sh` aceita Windows (#373) e o README tem a seção; segue aberto só o que não foi medido — hooks com Cursor/Windsurf/Gemini/Kiro/Copilot/Amazon Q, `pwsh`, caminhos com espaço/acento.
 
 Evidência e tabela completa: `docs/governanca/2026-10-17-triagem-backlog-pre-v8.md`.
 
 
-## Plano executável da retomada — 2026-10-20
+**Plano executável da retomada — 2026-10-20**
 
 - Escopo desta rodada: ML-0A, ML-1H e auditoria. AC5–AC7 seguem pendentes até medição real Windows; não encerrar a REQ nem mover o roadmap para done sem essa evidência.
 - Arquivos adicionais descobertos: internal/commands/root.go, internal/generators/scaffold.go, internal/generators/agentfiles_test.go, internal/generators/copilot_hooks_parity_test.go, internal/generators/scaffold_literal_copy_parity_test.go, testes de atenção em internal/generators, e scripts/ de gates que ainda afirmem a implementação antiga. Inventário fechado pela Wave 0 antes do código.
@@ -156,6 +156,7 @@ Evidência e tabela completa: `docs/governanca/2026-10-17-triagem-backlog-pre-v8
 ```bash
 go build ./...
 go test ./internal/commands ./internal/generators ./internal/integrations
+go test ./internal/pathguard
 go vet ./...
 ```
 
@@ -205,6 +206,19 @@ Para comprovar também o banner entregue ao browser, estender P21 com Edge headl
 
 ### Evidência local final — Zeus, 2026-10-20
 
-make quality completo PASS exit0 após corretivo de contenção: suíte Go, vet, gates e falsificação em 8 chunks com 368 OK/0 FAIL, conjunto de rótulos completo. Log preservado /private/tmp/trackfw-attention-quality-final.log. bin/trackfw validate --json: 0 violações/166 avisos legados e globais, exit0. Qualidade APROVADO e red-team LIBERA, relatórios lidos integralmente por Zeus. ML-1H permanece em andamento até executar P21 no Windows; AC5–AC7 continuam sem prova de evento real dos agentes. Nenhum código/config do PR #590 ou hooks reais do usuário alterado.
+make quality completo PASS exit0 após corretivo de contenção: suíte Go, vet, gates e falsificação em 8 chunks com 368 OK/0 FAIL, conjunto de rótulos completo. Log preservado /private/tmp/trackfw-attention-quality-final.log. bin/trackfw validate --json: 0 violações/166 avisos legados e globais, exit0. Qualidade APROVADO e red-team LIBERA, relatórios lidos integralmente por Zeus. A medição P21 subsequente encerrou ML-1H (ver conclusão abaixo); AC5–AC7 continuam sem prova de evento real dos agentes. Nenhum código/config do PR #590 ou hooks reais do usuário alterado.
 
-Para evitar aguardar as20sondas alheias ao ML, input boolean attention_only (default false) seleciona job attention_native, mutuamente exclusivo ao probe original. Mesmo workflow_dispatch, contents:read e teto10min; padrão completo preservado. Novo diff da instrumentação teve parser PowerShell/YAML10/10 e complemento Hades LIBERA. Código Go não mudou após make quality aprovado.
+Para evitar aguardar as 20 sondas alheias ao ML, input boolean attention_only (default false) seleciona job attention_native, mutuamente exclusivo ao probe original. Mesmo workflow_dispatch, contents:read e teto de 10 min; padrão completo preservado. Novo diff da instrumentação teve parser PowerShell/YAML 10/10 e complemento Hades LIBERA. Código Go não mudou após make quality aprovado.
+
+### Conclusão ML-1H — Zeus, 2026-10-20
+
+P21 isolada 39454688584 (fonte 20b3734c) success: PowerShell/cmd signal e cleanup exit0, helpers ausentes do PATH, API active true/false com mensagem exata, Edge DOM visible true/false, credential signal byte-idêntico. Evidência completa: docs/portabilidade/2026-10-20-atencao-go-windows-p21.md. ML-1H/AC8 concluído; roadmap permanece WIP e REQ Open para jornadas reais AC5–AC7. Não confundir o primeiro workflow completo failure (5c legado Node e cinco falhas Windows conhecidas na pergunta 18) com P21 isolada medida.
+
+### Barreiras finais auditadas
+
+- Wave 0: PASS, 1 comando executado (parecer de ameaça presente).
+- Wave 2: PASS, ML-1H e ML-2C completos, 4 comandos executados com exit 0 (build, suíte focada, pathguard e vet).
+- Wave 3: PASS, ML-3A e ML-3B completos, 3 comandos executados com exit 0 (pareceres presentes e suíte focada).
+- validate das barreiras em home de teste isolado: 0 violações/163 avisos existentes. A contagem 166 anterior incluía configurações globais reais, preservadas.
+
+Auditoria detectou e corrigiu erro de autoria: dois headings H2 de contexto encerravam a Wave 2 antes dos gates. O primeiro passed com commands vazio foi descartado como evidência de execução; nova execução conferiu os quatro comandos no JSON. Nota: vault/notes/barrier-wave-h2-separa-gates-sem-executar-2026-10-20.md. Nenhuma regra do parser foi alterada.

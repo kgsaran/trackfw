@@ -84,7 +84,7 @@ campanha inteira mostrou que teste verde não implica comportamento entregue.
       `C:\Users\José\...`). O espaço já apareceu nesta campanha: o bash provado do harness é
       `C:\Program Files\Git\bin\bash.exe`.
 
-- [ ] **AC8** — Os hooks de **atenção** (banner do `trackfw serve`) disparam no Windows **sem shell
+- [x] **AC8** — Os hooks de **atenção** (banner do `trackfw serve`) disparam no Windows **sem shell
       POSIX**: a linha de hook emitida para cada CLI de agente é um subcomando do binário
       (`trackfw attention signal` / `trackfw attention cleanup`), na mesma forma da string única
       do guard (ADR-2026-10-04 D2), sem `jq`/`python3`. 🔴 Acrescentada em 2026-10-18 pela Regra
@@ -179,3 +179,7 @@ Plataformas suportadas: macOS (Darwin), Linux
 ## Retomada 2026-10-20 — AC8
 
 Atenção usa comandos simples `trackfw attention signal|cleanup` (informativos, exit 0), sem copiar a linha polyglot fail-closed dos guards. A descrição anterior de string única do guard é substituída neste ponto pela evidência zsh de 20/10. PR #590 é responsabilidade do Lourival, fora desta frente. Nenhuma mudança em guards ou nas configurações locais/globais do usuário nesta rodada.
+
+## Evidência AC8 — 2026-10-20
+
+ML-1H concluído: execução Windows P21 39454688584, fonte 20b3734c, confirmou comandos nativos sem bash/jq/python no PATH e banner ativo/inativo no DOM real do Edge. Relatório: docs/portabilidade/2026-10-20-atencao-go-windows-p21.md. AC5–AC7 não encerrados: a sonda não dispara eventos dos CLIs de agente. REQ permanece Open.
