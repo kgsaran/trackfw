@@ -413,3 +413,59 @@ func TestGuardBinaryProbeOnce_PrazoDoGuardHelp_NaoAcusaOBinario(t *testing.T) {
 		t.Errorf("mensagem inesperada: %q", msgs[0])
 	}
 }
+
+// --------------------------------------------------------------------------
+// (7) Prazo estourado na sonda do SEGUNDO binario — o do login shell
+// --------------------------------------------------------------------------
+
+// TestGuardGitBashBinaryProbe_PrazoNoSegundoBinario_NaoAfirmaNada afirma a conclusao do
+// ML-1B de que o TERCEIRO consumidor de guardRunProbe — o do binario que o login shell
+// do Git Bash resolve, quando ele difere do principal — tambem deixou de ler prazo
+// estourado como veredito. O prazo diz que a sonda nao terminou, nunca que o binario
+// esta sem o subcomando guard, e a mensagem manda remover ou atualizar o binario.
+//
+// Sitio achado pela revisao do mantenedor no PR #590 (2026-10-20 08:10 -0300): o ML-1A
+// tratou a sentinela em guardBinaryProbeOnce e deixou este de fora. Mesma causa, mesma
+// REQ, mesmo PR — Regra Dura de Causa Raiz.
+func TestGuardGitBashBinaryProbe_PrazoNoSegundoBinario_NaoAfirmaNada(t *testing.T) {
+	// PATH binary (exec.LookPath): C:\tools\trackfw.exe (tem guard)
+	// Git Bash login resolve:      /c/shadow/trackfw  ->  C:\shadow\trackfw  (DIFERENTE)
+	// A sonda DESSE segundo binario estoura o prazo -> nada a afirmar.
+	const sombra = `C:\shadow\trackfw`
+
+	stubGitBashSeams(t,
+		`C:\Program Files\Git\bin\bash.exe`,
+		"/c/shadow/trackfw", true,
+		func(bin string) error {
+			if bin == sombra {
+				return errors.Join(errGuardProbeDeadline, errors.New("signal: killed"))
+			}
+			return nil // o binario do PATH esta bem
+		},
+	)
+
+	if msgs := guardGitBashBinaryProbe(`C:\tools\trackfw.exe`); len(msgs) != 0 {
+		t.Errorf("prazo no segundo binario produziu %d violacao(oes): %v", len(msgs), msgs)
+	}
+
+	// Controle positivo, e e ele que impede o conserto de ser "silenciar tudo":
+	// erro comum no MESMO sitio, sem o sentinela, continua acusando.
+	origRun := guardRunProbe
+	t.Cleanup(func() { guardRunProbe = origRun })
+	guardRunProbe = func(bin string) error {
+		if bin == sombra {
+			return errors.New("exit status 2")
+		}
+		return nil
+	}
+	msgs := guardGitBashBinaryProbe(`C:\tools\trackfw.exe`)
+	if len(msgs) != 1 {
+		t.Fatalf("erro sem prazo deveria acusar 1 violacao, obtive %d: %v", len(msgs), msgs)
+	}
+	if !strings.Contains(msgs[0], sombra) {
+		t.Errorf("violacao deveria nomear %q, obtive: %q", sombra, msgs[0])
+	}
+	if !strings.Contains(msgs[0], "does not have the guard subcommand") {
+		t.Errorf("mensagem inesperada: %q", msgs[0])
+	}
+}

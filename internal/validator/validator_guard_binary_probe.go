@@ -418,6 +418,12 @@ func guardGitBashBinaryProbe(windowsResolvedBin string) []string {
 
 	// Different binary — probe it for the guard subcommand.
 	if probeErr := guardRunProbe(winPath); probeErr != nil {
+		if errors.Is(probeErr, errGuardProbeDeadline) {
+			// Prazo estourado: nada afirmado. Mesmo tratamento do outro consumidor
+			// de guardRunProbe (guardBinaryProbeOnce) — o prazo diz que a sonda não
+			// terminou, nunca que o binário não tem o subcomando.
+			return nil
+		}
 		return []string{fmt.Sprintf(
 			"the Git Bash login shell (used by Claude Code on Windows to run hooks) resolves %s, "+
 				"which does not have the guard subcommand — the hook will fail open; "+
