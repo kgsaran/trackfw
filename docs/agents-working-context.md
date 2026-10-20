@@ -4,6 +4,7 @@
 
 - Retomada autorizada pelo KG com VM ligada, fonte main 28d6d018 (#591) enviada por arquivo git archive. Branch fix/instalacao-windows-jornadas ligada à REQ Windows existente e roadmap WIP; checkout original com alterações do usuário preservado.
 - Inventário QA: Windows ARM64 WIN-C83B0R5MIGB, cmd.exe, Go1.27, Claude2.1.299 sem login; trackfw9.2.0 sombreia PATH. Outros seis agentes/pwsh não encontrados nas instalações padrão. Artemis prepara build scratch e plano sem editar configs reais. Usuário consultado sobre autenticação; nenhuma chamada de modelo até resolver.
+- Preparação concluída: relatório docs/portabilidade/2026-10-20-jornadas-agentes-windows.md auditado junto do instrumento /private/tmp/ac567-native.ps1. Build fonte 28d6d018 PASS e hash tar conferido host/VM; init/update reais exit0; linhas geradas de atenção em PS5/cmd ativam/removem sinal com mensagem exata em caminho espaço/acento e PATH sem helpers. Nenhum evento de agente/modelo ou browser nesta rodada. AC5–AC7 permanecem pendentes; aguarda autenticação Claude na VM, sinal de atenção local ativo. validate 0 violações/163 avisos e diff-check limpo; nenhum código de produto alterado.
 
 ---
 
