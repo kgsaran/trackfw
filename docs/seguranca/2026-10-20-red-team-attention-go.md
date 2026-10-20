@@ -27,3 +27,13 @@ LIBERA: nenhum bloqueante encontrado no produto final inspecionado. Liberação 
 ## Residuais preservados
 
 Não promete resistência a troca concorrente de filesystem entre check e operação (TOCTOU), autorização de quem escreve sinal, ordenação entre sessões concorrentes ou disponibilidade de binário/PATH. Não mediu eventos de agente Windows nem junction nesta máquina. Não acessou configurações reais para fazer testes passarem. Build/vet/validate0 e as suites completas informados pelo orquestrador não foram repetidos nesta revisão. `make quality` final deve ser registrado pelo Zeus com resultado efetivo antes de concluir ML.
+
+## Complemento — P21 DOM e execução isolada (2026-10-20)
+
+LIBERA, sem novo bloqueante no diff da instrumentação. Revisão restrita a `scripts/windows-repro/p21-attention-native.ps1` e `.github/workflows/windows-probe.yml`; produto Go congelado.
+
+Edge é localizado por caminho absoluto em Program Files; argumentos usam `ProcessStartInfo.ArgumentList`, URL construída só com loopback/porta local, sem payload interpolado, JavaScript injetado ou `--no-sandbox`. Perfil fica em diretório GUID owned; HOME/USERPROFILE/XDG/APPDATA/LOCALAPPDATA apontam para fixture e PATH filho continua somente o binário nativo. Browser tem timeout18s, streams concorrentes e espera de drenagem2s; ausência/erro vira UNMEASURED. Cleanup permanece restrito aos processos iniciados pelo instrumento e à árvore owned. Resíduo: a rotina existente não garante recolher descendentes já órfãos se o processo pai encerrou antes de `Stop-Owned`; não há kill global por nome nem uso de perfil real para contornar isso.
+
+DOM exige banner encontrado, atributo class presente, ausência/presença de hidden conforme esperado e, no sinal, texto exato após HtmlDecode; não aceita apenas exit0. Mede estado DOM com polling normal, não visibilidade por screenshot/computed style e não evento de agente. Esta diferença limita a prova, sem ampliar AC5–AC7.
+
+`attention_only` é booleano opcional defaultfalse. Condições `!inputs.attention_only` e `inputs.attention_only` tornam jobs mutuamente exclusivos; preservam workflow_dispatch e permissions contents:read. Job isolado mantém timeout10min, setup Go e execução do mesmo script observacional; não adiciona credenciais, permissões ou escrita externa. Parser PowerShell/YAML informados pelo QA passam; sem nova suite ampla porque não há alteração de produto.

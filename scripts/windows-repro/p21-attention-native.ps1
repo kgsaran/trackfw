@@ -15,11 +15,15 @@ function Start-Owned([string]$File, [string[]]$Arguments) {
     $si.RedirectStandardOutput = $true
     $si.RedirectStandardError = $true
     $si.StandardInputEncoding = [Text.UTF8Encoding]::new($false)
+    $si.StandardOutputEncoding = [Text.UTF8Encoding]::new($false)
+    $si.StandardErrorEncoding = [Text.UTF8Encoding]::new($false)
     foreach ($arg in $Arguments) { $si.ArgumentList.Add($arg) }
     $si.Environment['PATH'] = $script:nativePath
     $si.Environment['HOME'] = $script:homeDir
     $si.Environment['USERPROFILE'] = $script:homeDir
     $si.Environment['XDG_CONFIG_HOME'] = $script:homeDir
+    $si.Environment['APPDATA'] = $script:homeDir
+    $si.Environment['LOCALAPPDATA'] = $script:homeDir
     $si.Environment['TRACKFW_DISABLE_EXTERNAL_COMMANDS'] = '1'
     $p = [Diagnostics.Process]::new()
     $p.StartInfo = $si
@@ -46,6 +50,42 @@ function Invoke-Owned([string]$File, [string[]]$Arguments, [string]$InputText = 
         return @{ exit=$h.Process.ExitCode; timeout=$false; stdout_bytes=$h.Out.Result.Length; stderr_bytes=$h.Err.Result.Length }
     } finally { Stop-Owned $h }
 }
+# Observe normal app polling (initial request plus 8-second interval) in real Edge.
+# No injected JavaScript, no DevTools state manipulation, no real browser profile.
+function Read-BrowserAttention([string]$Url, [bool]$Expected, [string]$Message, [string]$Label) {
+    $h = $null
+    try {
+        $edge = $null
+        foreach ($base in @(${env:ProgramFiles(x86)},$env:ProgramFiles)) {
+            if ($base) {
+                $candidate = Join-Path $base 'Microsoft/Edge/Application/msedge.exe'
+                if (Test-Path -LiteralPath $candidate -PathType Leaf) { $edge = $candidate; break }
+            }
+        }
+        if (-not $edge) { return @{ result='UNMEASURED'; reason='edge_absent'; observed=$false; visible=$null; message_exact=$null; timeout=$false; exit=$null } }
+        $profile = Join-Path $script:owned ('edge-profile-' + $Label)
+        [void](New-Item -ItemType Directory -Path $profile)
+        $h = Start-Owned $edge @('--headless=new','--no-first-run','--no-default-browser-check',('--user-data-dir=' + $profile),'--virtual-time-budget=9000','--dump-dom',$Url)
+        $h.Process.StandardInput.Close()
+        if (-not $h.Process.WaitForExit(18000)) {
+            return @{ result='UNMEASURED'; reason='browser_timeout'; observed=$false; visible=$null; message_exact=$null; timeout=$true; exit=$null }
+        }
+        # Bound stream draining too: a surviving child must not hold pipes open.
+        if (-not [Threading.Tasks.Task]::WaitAll([Threading.Tasks.Task[]]@($h.Out,$h.Err),2000)) {
+            return @{ result='UNMEASURED'; reason='browser_stream_timeout'; observed=$false; visible=$null; message_exact=$null; timeout=$true; exit=$h.Process.ExitCode }
+        }
+        $html = $h.Out.Result
+        $banner = [regex]::Match($html, '<div\b(?=[^>]*\bid="attention-banner")[^>]*>', 'IgnoreCase')
+        $class = [regex]::Match($banner.Value, '\bclass="([^"]*)"', 'IgnoreCase')
+        $messageNode = [regex]::Match($html, '<span\b(?=[^>]*\bid="attention-message")[^>]*>(.*?)</span>', 'IgnoreCase,Singleline')
+        $visible = $null
+        if ($banner.Success -and $class.Success) { $visible = -not (($class.Groups[1].Value -split '\s+') -contains 'hidden') }
+        $exact = $messageNode.Success -and ([Net.WebUtility]::HtmlDecode($messageNode.Groups[1].Value) -ceq $Message)
+        return @{ observed=($h.Process.ExitCode -eq 0 -and $banner.Success -and $class.Success -and ($visible -eq $Expected) -and ((-not $Expected) -or $exact)); visible=$visible; message_exact=$exact; timeout=$false; exit=$h.Process.ExitCode; banner_found=$banner.Success; message_found=$messageNode.Success }
+    } catch {
+        return @{ result='UNMEASURED'; error_type=$_.Exception.GetType().FullName; observed=$false; visible=$null; message_exact=$null; timeout=$false; exit=$null }
+    } finally { Stop-Owned $h }
+}
 function Read-Attention([string]$Url, [bool]$Expected, [string]$Message) {
     $deadline = [DateTime]::UtcNow.AddSeconds(5)
     $lastActive = $null
@@ -65,7 +105,7 @@ function Read-Attention([string]$Url, [bool]$Expected, [string]$Message) {
     return @{ observed=$false; expected_active=$Expected; actual_active=$lastActive; message_exact=$lastExact; last_error=$lastError }
 }
 try {
-    Probe 'scope' @{ measurement='native_shell_api_smoke'; agent_event=$false; ac5_ac7='pending' }
+    Probe 'scope' @{ measurement='native_shell_api_browser_smoke'; agent_event=$false; ac5_ac7='pending' }
     if (-not $IsWindows) { Probe 'setup' @{ result='UNMEASURED'; reason='requires_windows' }; exit 0 }
     $sourceBin = (Resolve-Path -LiteralPath $Bin).Path
     $sourceRoot = (Resolve-Path -LiteralPath $Workspace).Path
@@ -116,8 +156,10 @@ try {
         else { $exe=$cmdExe; $prefix=@('/d','/s','/c'); $suffix='' }
         Probe "$shell-signal" (Invoke-Owned $exe ($prefix + @($signal+$suffix)) $payload)
         Probe "$shell-api-signal" (Read-Attention $url $true $message)
+        if ($shell -eq 'powershell') { Probe 'browser-signal' (Read-BrowserAttention "http://127.0.0.1:$port/" $true $message 'signal') }
         Probe "$shell-cleanup" (Invoke-Owned $exe ($prefix + @($cleanup+$suffix)))
         Probe "$shell-api-cleanup" (Read-Attention $url $false '')
+        if ($shell -eq 'powershell') { Probe 'browser-cleanup' (Read-BrowserAttention "http://127.0.0.1:$port/" $false '' 'cleanup') }
         Probe "$shell-credential" @{ bytes_identical=([Convert]::ToBase64String([IO.File]::ReadAllBytes($credential)) -ceq $credentialBefore) }
     }
     Probe 'serve_exit' @{ running=(-not $server.Process.HasExited); exit=$(if ($server.Process.HasExited) { $server.Process.ExitCode } else { $null }) }

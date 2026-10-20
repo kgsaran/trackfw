@@ -47026,3 +47026,13 @@ Artefato: `docs/seguranca/2026-10-20-red-team-attention-go.md`. Veredito LIBERA,
 - Implementação Apolo e instrumentação Ártemis auditadas, qualidade Hefesto APROVADO e red-team Hades LIBERA. Primeiro gate amplo detectou uso de predicado bruto de contenção: corrigido para RejectAndReport sem alterar testes/listas.
 - make quality final PASS: suíte Go, vet, gates e 8 chunks de falsificação 368 OK/0 FAIL, guarda de conjunto completa. Log /private/tmp/trackfw-attention-quality-final.log. validate: 0 violações/166 avisos existentes.
 - Código pronto para checkpoint/push e P21 por workflow_dispatch na branch; ML-1H ainda não concluído até evidência Windows. AC5–AC7 continuam pendentes de runtime real. Sem PR/merge/release, sem alterações no #590 ou configuração do usuário.
+
+
+**artemis-tf** · 2026-10-20 · ML-1H extensão DOM Windows — iniciado
+Escopo: somente P21/contexto, Edge headless absoluto com profile descartável sob fixture, DOM normal do board após polling inicial/8 s, sem JS injetado ou evento de agente; sem Git.
+
+
+**artemis-tf** · 2026-10-20 · ML-1H extensão DOM Windows — entregue para auditoria
+P21 acrescenta Edge headless real localizado em ProgramFiles, perfil único por signal/cleanup sob owned, ambiente APPDATA/LOCALAPPDATA/HOME/USERPROFILE de fixture. Shells e Edge absolutos; PATH continua só binDir. Board HTTP normal, virtual-time-budget 9000 ms; timeout processo 18 s + drains no máximo 2 s; sem desativar sandbox ou injetar JavaScript. Extrai attention-banner/class hidden e attention-message do DOM real, HtmlDecode e igualdade exata; registra observed/visible/message_exact/timeout/exit e UNMEASURED quando Edge indisponível/erro. Parser PowerShell zero erros; smoke local não Windows UNMEASURED requires_windows exit0. Não executado Edge Windows localmente; AC5–AC7 eventos de agente pendentes. Sem Git, sem make quality adicional, sem outros arquivos alterados.
+
+P21 complemento operacional: input workflow_dispatch attention_only boolean false por padrão; job attention_native Windows isolado opcional com checkout/setup-go/build GOEXE, timeout 10 min. Job probe original condicionado à negação, fluxo default preservado. Não aumenta permissões nem adiciona triggers. Gate YAML 10 passed/0 failed.
