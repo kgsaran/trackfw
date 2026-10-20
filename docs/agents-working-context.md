@@ -46989,3 +46989,40 @@ Escopo: ML-0A/ML-1H, análise sem produto e sem operações Git. Context e valid
 
 **hades-tf** · 2026-10-20 · Wave 0 attention Go — concluído
 Artefato: `docs/seguranca/2026-10-20-wave0-attention-go.md`. Veredito: libera desenho com controles S1 (config.Load osExit1), S2 (contenção física inclusive cleanup), corpus legado independente e stdin limitado; AC5–AC7 seguem sem prova de runtime real Windows. Roadmap não alterado; auditoria Zeus pendente.
+
+
+**apolo-tf** · 2026-10-20 · ML-1H atenção Go — iniciado
+Escopo: runtime attention, seis emissores, migração, wrappers e testes. Árvore isolada /private/tmp/trackfw-attention-go; sem operações Git. Wave 0 auditada por Zeus em d17cc3ba; stdin 1 MiB/2 s, YAML local sem config.Load, contenção física obrigatória.
+
+
+**apolo-tf** · 2026-10-20 · ML-1H atenção Go — implementação entregue para auditoria
+Entregue: comandos registrados attention signal/cleanup (YAML local documento único, stdin 1 MiB/2 s, JSON nativo, pathguard para ancestral/folha e cleanup dedicado); seis emissores nativos e migração exata idempotente com preservação de metadata/custom; wrappers fail-soft; corpus shell legado com SHA256 e comparação independente. Testes novos cobrem binário real, stdin aberto/backstop, symlink ancestral e folha, destinos externos, Unicode/literal shell, sh/bash/zsh com PATH só binário, wrappers ausente/falha. Ajustadas apenas expectativas de atenção em testes existentes (incluindo credential_guard_dedup_test.go/git_branch_guard_dedup_test.go; guards intocados).
+Evidência: build e vet exit0; testes TestAttention de commands e generators passaram; encoding e write-containment passaram; CRLF mediu 69 capturas e piso 52 preservado. Suite completa dos três pacotes PASS em execução escalada com HOME isolado: commands 48.273s, generators 62.475s, integrations 1.684s; JSON em /private/tmp/attention-final-focused-results.jsonl. Tentativas sem escalada tiveram recusa de cache Go pelo sandbox; uma saída commands truncada não permitiu atribuição, portanto não foi rotulada como falha de produto. trackfw validate --json exit0, zero violations e 166 warnings legados/globais. make quality delegado ao Zeus. AC5–AC7 seguem pendentes; nenhuma afirmação de runtime real Windows. Sem operações Git nem alteração de roadmap por Apolo.
+
+
+**artemis-tf** · 2026-10-20 · ML-1H medição Windows — iniciado
+Escopo exclusivo: P21 PowerShell e etapa windows-probe; fixture isolada, comandos constantes nativos e API, sem evento real de agente. Wave 0 lida; context e validate exit0 (166 warnings legados/globais). Sem operações Git.
+
+
+**artemis-tf** · 2026-10-20 · ML-1H medição Windows — entregue para auditoria
+Entregue P21 e etapa if:always(), sem alterar triggers/permissões/budget. Processo filho com PATH restrito, HOME/USERPROFILE isolados, exe e fixture com espaços/acentos, YAML CRLF, stdin UTF-8 literal, cmd e PowerShell nativos, serve loopback/API com polling finito, credential byte-idêntico e limpeza de handles próprios. Constant-command smoke explicitamente rotulado; origem conferida contra constantes fonte, sem alegar geração de fixture/evento de agente. Parser PowerShell local: zero erros; pwsh executou ramo não Windows UNMEASURED requires_windows exit0; gate YAML: 10 passed/0 failed; go build ./... exit0. Context/validate no início exit0, 166 warnings legados/globais. Execução Windows depende de workflow_dispatch pelo orquestrador; AC5–AC7 pendentes. Sem operações Git; alterações não commitadas para auditoria Zeus.
+
+
+**hefesto-tf** · 2026-10-20 · revisão de qualidade ML-1H atenção Go — iniciado
+Escopo: diff de atenção nativa, migração dos seis emissores, corpus legado, wrappers e P21. Handoff Zeus; sem alterações de produto/Git. Wave 0 e emenda ADR lidas; correção de integração pathguard em andamento pelo proprietário.
+
+**hefesto-tf** · 2026-10-20 · revisão de qualidade ML-1H atenção Go — concluído
+Artefato: `docs/seguranca/2026-10-20-quality-attention-go.md`. APROVADO sem bloqueante remanescente de qualidade após auditar corretivo RejectAndReport nos três sítios e contrato stderr/exit0. Gate direcionado pathguard PASS (Zeus, 0.181 s); make quality global repetido em execução e red-team pendente. AC5–AC7 seguem pendentes; sem produto/Git editados.
+
+**hades-tf** · 2026-10-20 · Red-team attention Go — início
+Escopo final ML-1H: comando, limites, contenção, seis emissores/migrações, corpus legado, wrappers e P21. Sem edições de produto ou operações Git.
+
+**hades-tf** · 2026-10-20 · Red-team attention Go — concluído
+Artefato: `docs/seguranca/2026-10-20-red-team-attention-go.md`. Veredito LIBERA, nenhum bloqueante encontrado; TestAttention PASS 3.083 s e emissores/migração/shell/cópia PASS 0.669 s. Gate amplo final e AC5–AC7 não presumidos. Produto/Git preservados.
+
+
+## 2026-10-20 — zeus-tf — auditoria ML-1H e preparação de medição Windows
+
+- Implementação Apolo e instrumentação Ártemis auditadas, qualidade Hefesto APROVADO e red-team Hades LIBERA. Primeiro gate amplo detectou uso de predicado bruto de contenção: corrigido para RejectAndReport sem alterar testes/listas.
+- make quality final PASS: suíte Go, vet, gates e 8 chunks de falsificação 368 OK/0 FAIL, guarda de conjunto completa. Log /private/tmp/trackfw-attention-quality-final.log. validate: 0 violações/166 avisos existentes.
+- Código pronto para checkpoint/push e P21 por workflow_dispatch na branch; ML-1H ainda não concluído até evidência Windows. AC5–AC7 continuam pendentes de runtime real. Sem PR/merge/release, sem alterações no #590 ou configuração do usuário.

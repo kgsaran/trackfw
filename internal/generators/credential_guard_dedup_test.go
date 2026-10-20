@@ -58,10 +58,10 @@ func TestDedup_Claude_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	if helperHasClaudeHook(data, "PostToolUse", "Bash", guardCredentialCmdPSPOSIX) {
 		t.Error("project-scope PostToolUse credential-guard entry should have been skipped")
 	}
-	if !helperHasClaudeHook(data, "PreToolUse", "AskUserQuestion", "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh") {
+	if !helperHasClaudeHook(data, "PreToolUse", "AskUserQuestion", attentionSignalCmd) {
 		t.Error("attention-signal entry must still be added regardless of global credential-guard state")
 	}
-	if !helperHasClaudeHook(data, "PostToolUse", "AskUserQuestion", "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh") {
+	if !helperHasClaudeHook(data, "PostToolUse", "AskUserQuestion", attentionCleanupCmd) {
 		t.Error("attention-cleanup entry must still be added regardless of global credential-guard state")
 	}
 }
@@ -168,10 +168,10 @@ func TestDedup_Cursor_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	}
 	pre, _ := hooks["preToolUse"].([]interface{})
 	post, _ := hooks["postToolUse"].([]interface{})
-	if len(pre) != 1 || pre[0].(map[string]interface{})["command"] != "scripts/trackfw-attention-signal.sh" {
+	if len(pre) != 1 || pre[0].(map[string]interface{})["command"] != attentionSignalCmd {
 		t.Errorf("attention-signal entry must still be added regardless of global credential-guard state, got %v", pre)
 	}
-	if len(post) != 1 || post[0].(map[string]interface{})["command"] != "scripts/trackfw-attention-cleanup.sh" {
+	if len(post) != 1 || post[0].(map[string]interface{})["command"] != attentionCleanupCmd {
 		t.Errorf("attention-cleanup entry must still be added regardless of global credential-guard state, got %v", post)
 	}
 }
@@ -202,7 +202,7 @@ func TestDedup_Copilot_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	if len(pre) != 2 {
 		t.Errorf("expected attention-signal + git-branch-guard entries in preToolUse (global credential-guard installed), got %v", pre)
 	}
-	if pre[0].(map[string]interface{})["bash"] != "scripts/trackfw-attention-signal.sh" {
+	if pre[0].(map[string]interface{})["command"] != attentionSignalCmd {
 		t.Errorf("expected preToolUse[0] to be the attention-signal entry, got %v", pre[0])
 	}
 	foundGitGuard := false
@@ -214,7 +214,7 @@ func TestDedup_Copilot_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	if !foundGitGuard {
 		t.Errorf("expected preToolUse to contain the git-branch-guard entry (command field), got %v", pre)
 	}
-	if len(post) != 1 || post[0].(map[string]interface{})["bash"] != "scripts/trackfw-attention-cleanup.sh" {
+	if len(post) != 1 || post[0].(map[string]interface{})["command"] != attentionCleanupCmd {
 		t.Errorf("expected only the attention-cleanup entry in postToolUse (global credential-guard installed), got %v", post)
 	}
 }

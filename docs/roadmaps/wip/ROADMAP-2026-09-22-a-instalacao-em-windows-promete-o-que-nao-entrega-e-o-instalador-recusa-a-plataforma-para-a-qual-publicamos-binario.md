@@ -133,8 +133,8 @@ a ADR-2026-10-04 levou só os **guards** para Go e deixou os hooks de atenção 
 3. Geradores emitem exatamente `trackfw attention signal` e `trackfw attention cleanup`, sem polyglot, para Claude, Codex, Gemini, Kiro, Cursor e Copilot (campo command); `trackfw update` migra todas as formas legadas emitidas sem duplicar/remover hooks personalizados. Atenção é informativa e não usa a linha fail-closed dos guards, defeituosa sob zsh (nota de 20/10). Não alterar guards nem arquivos do PR #590.
 4. Teste que reprova se a linha emitida contiver `.sh`, `$VAR` ou caminho; teste de paridade `.sh` × subcomando.
 **Acceptance criteria:**
-- [ ] `go build ./...` e `make quality` verdes
-- [ ] nenhum gerador emite `trackfw-attention-*.sh` como comando de hook
+- [x] `go build ./...` e `make quality` verdes
+- [x] nenhum gerador emite `trackfw-attention-*.sh` como comando de hook
 - [ ] no `windows-probe.yml`, com `bash` fora do PATH, o banner aparece (AC5/AC6 desta REQ)
 
 ## Triagem pós-v8 — 2026-10-17 (REQ-2026-10-17)
@@ -159,22 +159,30 @@ go test ./internal/commands ./internal/generators ./internal/integrations
 go vet ./...
 ```
 
+### ML-2C — Correção da API de contenção exigida pelo gate global
+**Status:** ✅ Concluído
+**Files affected:** internal/commands/attention.go
+**Actions:** substituir predicados brutos por pathguard.RejectAndReport, preservando exit 0 da atenção. Não alterar listas de exceções, emissores de diagnóstico ou testes do pacote pathguard.
+**Acceptance criteria:**
+- [x] Testes de atenção e gramática/proveniência em internal/pathguard passam.
+- [x] make quality completo passa após o ajuste.
+
 ## Wave 3 — Auditoria de qualidade e red-team
 > Dependências: Wave 2 implementada e auditada. Revisões sequenciais para não compartilhar contexto em escrita.
 
 ### ML-3A — Qualidade (hefesto_tf)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Files affected:** docs/seguranca/2026-10-20-quality-attention-go.md
 **Actions:** revisar escopo, migração idempotente, fonte única, cobertura real e controles negativos; não escrever código.
 **Acceptance criteria:**
-- [ ] Parecer escrito, achados bloqueantes resolvidos e gates conferidos.
+- [x] Parecer escrito, achados bloqueantes resolvidos e gates conferidos.
 
 ### ML-3B — Red-team (hades_tf)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Files affected:** docs/seguranca/2026-10-20-red-team-attention-go.md
 **Actions:** exercer payload inválido, contenção caminho/symlink, exclusão segura e execução das linhas emitidas em sh/bash/zsh; distinguir prova local de runtime Windows.
 **Acceptance criteria:**
-- [ ] Parecer escrito, nenhum achado bloqueante aberto.
+- [x] Parecer escrito, nenhum achado bloqueante aberto.
 
 **Gates da wave:**
 ```bash
@@ -192,3 +200,7 @@ Arquivos autorizados adicionais ML-1H: internal/commands/testdata/attention-lega
 ### Complemento de medição Windows do ML-1H — artemis_tf
 
 Após entrega e auditoria do código Apolo, QA é dono exclusivo de `scripts/windows-repro/p21-attention-native.ps1` e `.github/workflows/windows-probe.yml` (adicionar Pergunta 21 sem mudar triggers/permissões ou orçamento de 10 minutos). A sonda registra resultado bruto, não vira gate: binário compilado em caminho com espaço/acento e PATH sem bash/jq/python, signal/cleanup via PowerShell e cmd, API `/api/attention` com serve isolado, preservação de `.trackfw-credential-guard.json`, limpeza somente de seus processos/fixtures. Não é execução de evento por CLI de agente; AC5–AC7 seguem pendentes. Medir por workflow_dispatch da branch após push. VM powershell-vm sem resposta em 20/10 (ConnectTimeout de 8 s).
+
+### Evidência local final — Zeus, 2026-10-20
+
+make quality completo PASS exit0 após corretivo de contenção: suíte Go, vet, gates e falsificação em 8 chunks com 368 OK/0 FAIL, conjunto de rótulos completo. Log preservado /private/tmp/trackfw-attention-quality-final.log. bin/trackfw validate --json: 0 violações/166 avisos legados e globais, exit0. Qualidade APROVADO e red-team LIBERA, relatórios lidos integralmente por Zeus. ML-1H permanece em andamento até executar P21 no Windows; AC5–AC7 continuam sem prova de evento real dos agentes. Nenhum código/config do PR #590 ou hooks reais do usuário alterado.

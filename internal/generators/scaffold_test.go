@@ -20,7 +20,7 @@ func TestInstallSkills_CriaSlashCommandsESkillGlobal(t *testing.T) {
 	origHome := os.Getenv("HOME")
 	_ = os.Chdir(dir)
 	_ = os.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)      // ML-2C: Windows reads USERPROFILE
+	t.Setenv("USERPROFILE", home)     // ML-2C: Windows reads USERPROFILE
 	t.Setenv("CLAUDE_CONFIG_DIR", "") // ML-2C: isolate from real CLAUDE_CONFIG_DIR
 	t.Cleanup(func() {
 		_ = os.Chdir(orig)
@@ -203,17 +203,18 @@ func TestGenerateAttentionScripts(t *testing.T) {
 	}
 
 	signalContent, _ := os.ReadFile(signalPath)
-	if !strings.Contains(string(signalContent), "# trackfw attention signal — PreToolUse/BeforeTool hook") {
+	if !strings.Contains(string(signalContent), "# trackfw attention signal — compatibility wrapper") {
 		t.Errorf("script signal não contém cabeçalho esperado: %s", string(signalContent))
 	}
 
 	cleanupContent, _ := os.ReadFile(cleanupPath)
-	if !strings.Contains(string(cleanupContent), "# trackfw attention cleanup — PostToolUse/AfterTool hook") {
+	if !strings.Contains(string(cleanupContent), "# trackfw attention cleanup — compatibility wrapper") {
 		t.Errorf("script cleanup não contém cabeçalho esperado: %s", string(cleanupContent))
 	}
 }
 
 func TestAttentionScripts_ExecutionContract(t *testing.T) {
+	t.Setenv("PATH", filepath.Dir(compiledGuardBinary(t))+string(os.PathListSeparator)+os.Getenv("PATH"))
 	// (a) trackfw.yaml sem roadmap_dir -> executa signal script, verifica criação de docs/roadmaps/.trackfw-attention.json parseável, executa cleanup script, verifica remoção.
 	t.Run("DefaultRoadmapDirAndCleanup", func(t *testing.T) {
 		dir := t.TempDir()
@@ -313,8 +314,8 @@ func TestAttentionScripts_ExecutionContract(t *testing.T) {
 
 				// Deve ser mantido em docs/roadmaps/.trackfw-attention.json
 				containedFile := filepath.Join("docs", "roadmaps", ".trackfw-attention.json")
-				if _, err := os.Stat(containedFile); err != nil {
-					t.Errorf("Arquivo de atenção esperadamente contido não foi encontrado em %s para path %s: %v", containedFile, p, err)
+				if _, err := os.Stat(containedFile); !os.IsNotExist(err) {
+					t.Errorf("Caminho inseguro deveria ser no-op, mas há arquivo em %s para path %s: %v", containedFile, p, err)
 				}
 
 				// Não deve ter sido criado no caminho externo
@@ -380,6 +381,7 @@ func TestAttentionScripts_ExecutionContract(t *testing.T) {
 }
 
 func TestAttentionScripts_FallbackWithoutJQ(t *testing.T) {
+	t.Setenv("PATH", filepath.Dir(compiledGuardBinary(t))+string(os.PathListSeparator)+os.Getenv("PATH"))
 	dir := t.TempDir()
 	orig, _ := os.Getwd()
 	_ = os.Chdir(dir)
@@ -396,7 +398,7 @@ func TestAttentionScripts_FallbackWithoutJQ(t *testing.T) {
 	fakeBinDir := t.TempDir()
 
 	// Utilitários necessários para o script rodar sem jq: bash, python3, date, grep, sed, tr, mkdir, printf, cat, rm
-	requiredBins := []string{"bash", "python3", "python", "date", "grep", "sed", "tr", "mkdir", "printf", "cat", "rm"}
+	requiredBins := []string{"trackfw"}
 	for _, bin := range requiredBins {
 		binPath, err := exec.LookPath(bin)
 		if err == nil {
@@ -635,23 +637,9 @@ func TestGenerateGitHubActionsWorkflow_SymlinkGithubDirRefused(t *testing.T) {
 // capture site, matching the Wave 0 conclusion that python3 in Windows text
 // mode appends \r\n to print() output and that the correction must be
 // autocontained (no lib-crlf-normalize.sh, which the consumer does not have).
-func TestAttentionSignal_Literal_HasCRLFNormalisationAtPython3Sites(t *testing.T) {
-	// Both python3 capture lines must contain the autocontained sed strip.
-	// We count by splitting on the exact sed token so one occurrence does not
-	// mask a missing second one.
-	token := `sed $'s/\r$//'`
-	count := strings.Count(attentionSignalScript, token)
-	if count < 2 {
-		t.Errorf("attentionSignalScript contains %d occurrence(s) of %q, want >= 2 (one per python3 capture site: TOOL and MSG)", count, token)
-	}
-	// Verify placement: each occurrence is on the same line as python3.
-	for _, line := range strings.Split(attentionSignalScript, "\n") {
-		if strings.Contains(line, "python3") && strings.Contains(line, "2>/dev/null") {
-			// Every active python3 capture line (not a comment) must pipe through sed.
-			if !strings.Contains(line, token) {
-				t.Errorf("python3 capture line is missing %q:\n  %s", token, line)
-			}
-		}
+func TestAttentionSignal_Literal_DelegatesWithoutPythonCaptures(t *testing.T) {
+	if strings.Contains(attentionSignalScript, "python3") || !strings.Contains(attentionSignalScript, `trackfw attention signal "$@" || true`) {
+		t.Fatal("attention must use the native parser")
 	}
 }
 
@@ -665,6 +653,7 @@ func TestAttentionSignal_Literal_HasCRLFNormalisationAtPython3Sites(t *testing.T
 // because sed $'s/\r//g' strips all \r from the extracted value before it
 // reaches mkdir -p and the JSON write.
 func TestAttentionSignal_CRLF_TrackfwYaml_WritesToCorrectPath(t *testing.T) {
+	t.Setenv("PATH", filepath.Dir(compiledGuardBinary(t))+string(os.PathListSeparator)+os.Getenv("PATH"))
 	dir := t.TempDir()
 	orig, _ := os.Getwd()
 	_ = os.Chdir(dir)
@@ -713,6 +702,7 @@ func TestAttentionSignal_CRLF_TrackfwYaml_WritesToCorrectPath(t *testing.T) {
 // trackfw.yaml leaves ROADMAP_DIR unchanged so the signal is still written to
 // docs/roadmaps/.
 func TestAttentionSignal_LF_TrackfwYaml_StillWorks(t *testing.T) {
+	t.Setenv("PATH", filepath.Dir(compiledGuardBinary(t))+string(os.PathListSeparator)+os.Getenv("PATH"))
 	dir := t.TempDir()
 	orig, _ := os.Getwd()
 	_ = os.Chdir(dir)
@@ -753,6 +743,7 @@ func TestAttentionSignal_LF_TrackfwYaml_StillWorks(t *testing.T) {
 // contain spaces, so the correction does not introduce a new class of path
 // corruption for consumers with unconventional but valid directory names.
 func TestAttentionSignal_SpaceInRoadmapDir_NotBrokenByCRLFNorm(t *testing.T) {
+	t.Setenv("PATH", filepath.Dir(compiledGuardBinary(t))+string(os.PathListSeparator)+os.Getenv("PATH"))
 	dir := t.TempDir()
 	orig, _ := os.Getwd()
 	_ = os.Chdir(dir)

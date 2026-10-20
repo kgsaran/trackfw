@@ -52,7 +52,7 @@ func TestGBGDedup_Claude_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	if !helperHasClaudeHook(data, "PreToolUse", claudeShellMatcher, guardCredentialCmdPSPOSIX) {
 		t.Error("credential-guard entry must still be added (its own global dedup was not triggered by this fixture)")
 	}
-	if !helperHasClaudeHook(data, "PreToolUse", "AskUserQuestion", "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh") {
+	if !helperHasClaudeHook(data, "PreToolUse", "AskUserQuestion", attentionSignalCmd) {
 		t.Error("attention-signal entry must still be added regardless of global git-branch-guard state")
 	}
 }

@@ -13,20 +13,10 @@
 # ML-1B; ver vault/notes/gate-em-cp1252-tem-duas-falhas-distintas-crash-de-
 # print-e-mismatch-por-transcodificacao-2026-09-02.md.
 #
-# ALVO 2 — PRODUTO, e e o alvo que a paridade NAO cobre. O literal
-# `attentionSignalScript`, embutido byte-identico nos 3 CLIs
-# (internal/generators/scaffold.go, npm/src/generators/hooks.js,
-# pypi/trackfw/generators/init_gen.py) e escrito em
-# scripts/trackfw-attention-signal.sh na maquina de quem adota o trackfw,
-# invoca `python3 -c` no ramo sem jq. Essas invocacoes tem de manter o prefixo
-# PYTHONIOENCODING=utf-8 (ML-1A).
-#   Por que isto NAO e redundante com check-attention-scripts-parity.sh: aquele
-#   gate compara os 3 CLIs ENTRE SI. Se alguem remover o prefixo dos TRES, ele
-#   continua verde — paridade mede se as implementacoes concordam, nao se o
-#   contrato esta correto. Mesmo cego ja registrado em
-#   vault/notes/barrier-so-casa-cabecalho-de-aceite-em-portugues-2026-08-28.md.
-#   Falsificado por execucao: com o prefixo removido dos 3, o gate de paridade
-#   devolve exit 0 e este devolve exit 1.
+# ALVO 2 — PRODUTO. Desde ML-1H, os literais de atenção são wrappers
+# de `trackfw attention signal|cleanup`: nenhuma captura Python/jq é emitida.
+# O alvo fixa delegação nativa e fallback informativo; testes Go exercitam
+# JSON/YAML, Unicode e corpus legado independente. ALVO 1 segue inalterado.
 #
 # ------------------------------------------------------------------------------
 # FORMA ACEITA E FORMA RECUSADA — decisao explicita, nao acidente de regex.
@@ -94,9 +84,7 @@
 #     descuido — asseverar "toda invocacao tem prefixo" exigiria parsear pipeline
 #     de bash, e nenhum dos 37 gates usa essa forma hoje (zero falso positivo na
 #     arvore atual). Quem quiser usa-la num gate novo tem de adicionar tambem o
-#     `export`. No ALVO 2 e o inverso: la a forma de prefixo e a UNICA aceita,
-#     porque o literal e um heredoc de script gerado onde `export` vazaria para
-#     o resto do hook do usuario.
+#     `export`. ALVO 2 agora rejeita parser externo nos wrappers nativos.
 #
 # COBERTURA PARCIAL, declarada: a assercao e estatica sobre o texto-fonte. Ela
 # prova que a declaracao existe, e exportada, tem valor utf_8 e precede a
@@ -139,7 +127,7 @@ ALLOWLIST=(
   "scripts/check-roadmap-barrier-contract.sh"
 )
 
-# Alvo 2 — os 3 arquivos-fonte que embutem o literal attentionSignalScript.
+# Alvo 2 — fonte dos wrappers nativos de atenção.
 ATTENTION_SOURCES=(
   "internal/generators/scaffold.go"
 )
@@ -354,64 +342,23 @@ else:
     )
 
 # ---------------------------------------------------------------- ALVO 2
-#
-# Ancoragem: a invocacao do attentionSignalScript e identificada pela
-# assinatura `python3 -c` + `json.load(sys.stdin)` na mesma linha. Isso a
-# distingue do OUTRO python3 -c emitido por scaffold.go (o build-check de
-# py_compile de projetos Python), que nao faz parte deste contrato.
-ATTENTION_CALL_RE = re.compile(r'python3[ \t]+-c\b')
-ATTENTION_SIG_RE = re.compile(r'json\.load\(sys\.stdin\)')
-# Sem re.IGNORECASE, pelas mesmas duas razoes do alvo 1 — e aqui elas incidem
-# sobre PRODUTO: `pythonioencoding=utf-8 python3 -c` no literal seta uma
-# variavel que o Python nunca le (reversao completa do ML-1A na maquina de quem
-# adota o trackfw), e handler que nao seja `strict` grava byte invalido no
-# .trackfw-attention.json — que e exatamente o artefato lido pelos 3 `serve`.
-PREFIX_RE = re.compile(
-    r'PYTHONIOENCODING=(?P<q>["\']?)' + UTF8_ALIASES + UTF8_HANDLER
-    + r'(?P=q)[ \t]+python3[ \t]+-c\b',
-)
-MIN_CALLS = 2  # o literal tem duas invocacoes: TOOL e MSG.
-
+# ML-1H: Python captures retired; pin the thin wrapper rather than requiring
+# a Python implementation to exist. Native JSON/YAML behavior is tested in Go.
 for src in attention_sources:
     if not os.path.isfile(src):
-        failures.append(
-            "ALVO 2: fonte esperada nao existe: %s. O literal pode ter mudado "
-            "de arquivo — atualize ATTENTION_SOURCES neste gate." % src
-        )
+        failures.append("ALVO 2: fonte esperada nao existe: %s" % src)
         continue
-    total = 0
-    prefixed = 0
-    bad = []
-    with open(src, encoding="utf-8", errors="replace") as fh:
-        for i, raw in enumerate(fh.read().splitlines(), start=1):
-            if not (ATTENTION_CALL_RE.search(raw) and ATTENTION_SIG_RE.search(raw)):
-                continue
-            total += 1
-            if PREFIX_RE.search(raw):
-                prefixed += 1
-            else:
-                bad.append(i)
-    # GUARDA DE VACUIDADE do alvo 2: zero invocacoes casadas significa que a
-    # ancora quebrou (literal renomeado, movido, reescrito) OU que o literal
-    # sumiu. Nos dois casos o gate deixaria de medir o produto — reprova.
-    if total < MIN_CALLS:
-        failures.append(
-            "ALVO 2 vacuo em %s: esperava >= %d invocacoes "
-            "`python3 -c ... json.load(sys.stdin)` do attentionSignalScript, "
-            "encontrei %d. A ancora quebrou ou o literal sumiu; recuso passar "
-            "em silencio." % (src, MIN_CALLS, total)
-        )
-    elif prefixed != total:
-        failures.append(
-            "ALVO 2 em %s: %d de %d invocacoes do attentionSignalScript sem o "
-            "prefixo PYTHONIOENCODING=utf-8 (linhas %s). "
-            "check-attention-scripts-parity.sh NAO pega isto: ele compara os 3 "
-            "CLIs entre si e fica verde se o prefixo sumir dos tres."
-            % (src, total - prefixed, total, ", ".join(str(b) for b in bad))
-        )
-    else:
-        notes.append("ALVO 2: %s — %d/%d invocacoes com prefixo." % (src, prefixed, total))
-
+    with open(src, encoding="utf-8") as fh:
+        text = fh.read()
+    for name in ("signal", "cleanup"):
+        match = re.search(r"const attention" + name.title() + r"Script = `([^`]+)`", text)
+        expected = 'trackfw attention ' + name + ' "$@" || true'
+        if not match or expected not in match.group(1):
+            failures.append("ALVO 2: wrapper nativo de %s ausente ou sem fallback" % name)
+        elif re.search(r"python[23]?|\bjq\b", match.group(1)):
+            failures.append("ALVO 2: wrapper de %s reintroduz parser externo" % name)
+        else:
+            notes.append("ALVO 2: %s — wrapper nativo %s sem captura Python." % (src, name))
 if not attention_sources:
     failures.append("ALVO 2 vacuo: nenhuma fonte de literal configurada.")
 

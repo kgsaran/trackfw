@@ -102,6 +102,24 @@ jobs:
       - run: npm ci --ignore-scripts
         working-directory: npm
 
+      # Native shell/API smoke only; not an agent event or AC5–AC7 closure.
+      - name: "Pergunta 21 — atenção Go sem bash/jq/python (ML-1H)"
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $p21Dir = Join-Path $env:RUNNER_TEMP "p21-native-build"
+          New-Item -ItemType Directory -Force -Path $p21Dir | Out-Null
+          $goExe = go env GOEXE
+          $p21Bin = Join-Path $p21Dir ("trackfw" + $goExe)
+          go build -o $p21Bin ./cmd/trackfw 2>&1 | Write-Host
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host 'PROBE attention build {"result":"UNMEASURED","reason":"go_build_failed"}'
+            exit 0
+          }
+          $p21Script = Join-Path $env:GITHUB_WORKSPACE "scripts/windows-repro/p21-attention-native.ps1"
+          & $p21Script -Bin $p21Bin -Workspace $env:GITHUB_WORKSPACE
+
       # ---------------------------------------------------------------
       # Pergunta 1 — modo devolvido por os.Stat: arquivo comum vs chmod +x.
       # Mesmo primitivo que internal/validator/validator_credential_guard.go

@@ -294,12 +294,12 @@ func InjectClaudeHooks(rootDir string) error {
 	// so upgrading doesn't just append a second, still-cwd-fragile entry alongside the fixed one
 	// -- same "No such file or directory" bug class, and same migrate-before-merge ordering
 	// requirement, as the credential-guard fix a few lines below.
-	migrateHookCommand(hooks["PreToolUse"], "AskUserQuestion", "scripts/trackfw-attention-signal.sh", "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh")
+	hooks["PreToolUse"] = migrateAttentionHook(hooks["PreToolUse"], "AskUserQuestion", attentionSignalCmd)
 
 	hooks["PreToolUse"] = mergeClaudeHookArray(
 		hooks["PreToolUse"],
 		"AskUserQuestion",
-		"$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh",
+		attentionSignalCmd,
 	)
 
 	// Fix (2026-08-09, reported in production against the CMDB project):
@@ -402,12 +402,12 @@ func InjectClaudeHooks(rootDir string) error {
 		)
 	}
 
-	migrateHookCommand(hooks["PostToolUse"], "AskUserQuestion", "scripts/trackfw-attention-cleanup.sh", "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh")
+	hooks["PostToolUse"] = migrateAttentionHook(hooks["PostToolUse"], "AskUserQuestion", attentionCleanupCmd)
 
 	hooks["PostToolUse"] = mergeClaudeHookArray(
 		hooks["PostToolUse"],
 		"AskUserQuestion",
-		"$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh",
+		attentionCleanupCmd,
 	)
 	if !globalCredentialGuardInstalledClaude() {
 		hooks["PostToolUse"] = mergeClaudeHookArray(
@@ -439,31 +439,18 @@ func InjectClaudeHooks(rootDir string) error {
 	return os.WriteFile(path, append(out, '\n'), 0644)
 }
 
-// ROADMAP-2026-08-11 ML-3A: Codex CLI does not expose a project-root env var for
-// repo-local hooks (unlike Claude's $CLAUDE_PROJECT_DIR or Gemini's
-// $GEMINI_PROJECT_DIR) — the only documented mechanism is shell substitution.
-// Per ADR-2026-08-11 ("Codex — alterar, com dependência explícita de shell e
-// git"), the command is wrapped in literal double quotes around
-// `$(git rev-parse --show-toplevel)`, matching every repo-local hook example in
-// the official Codex docs (https://developers.openai.com/codex/config-advanced):
-// "For repo-local hooks, prefer resolving from the git root instead of using a
-// relative path such as `.codex/hooks/...`."
+// Legacy root token is retained solely for exact migration of previously emitted hooks.
 const codexRoot = `"$(git rev-parse --show-toplevel)`
 
 var (
-	codexSignalCmd  = codexRoot + `/scripts/trackfw-attention-signal.sh"`
-	codexCleanupCmd = codexRoot + `/scripts/trackfw-attention-cleanup.sh"`
+	codexSignalCmd  = attentionSignalCmd
+	codexCleanupCmd = attentionCleanupCmd
 )
 
-// ROADMAP-2026-08-11 ML-4A: Gemini CLI documents $GEMINI_PROJECT_DIR (distinct
-// from the session-following $GEMINI_CWD) and uses it in 100% of its official
-// hook command examples (ADR-2026-08-11, "Gemini CLI — alterar, por argumento
-// de assimetria"). Unlike Codex's $(git rev-parse …), this is an env var
-// expanded by the Gemini CLI runtime itself — no shell substitution needed, no
-// literal quotes required.
+// All attention emitters use native commands; old anchored forms migrate below.
 const (
-	geminiSignalCmd  = `$GEMINI_PROJECT_DIR/scripts/trackfw-attention-signal.sh`
-	geminiCleanupCmd = `$GEMINI_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh`
+	geminiSignalCmd  = attentionSignalCmd
+	geminiCleanupCmd = attentionCleanupCmd
 )
 
 // --- Guard hook lines — ADR-2026-10-04 D2 revised (Adendo). ---
@@ -530,11 +517,11 @@ const (
 	legacyGeminiGitGuardCmd = `$GEMINI_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh`
 
 	// credential guard legacy paths (all CLIs used relative or env-var paths)
-	legacyClaudeCredGuardCmd = "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh"
-	legacyCodexCredGuardCmd  = codexRoot + `/scripts/trackfw-credential-guard.sh"`
-	legacyGeminiCredGuardCmd = `$GEMINI_PROJECT_DIR/scripts/trackfw-credential-guard.sh`
-	legacyBareCredGuardCmd   = "scripts/trackfw-credential-guard.sh"
-	legacyBareGitGuardCmd    = "scripts/trackfw-git-branch-guard.sh"
+	legacyClaudeCredGuardCmd  = "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh"
+	legacyCodexCredGuardCmd   = codexRoot + `/scripts/trackfw-credential-guard.sh"`
+	legacyGeminiCredGuardCmd  = `$GEMINI_PROJECT_DIR/scripts/trackfw-credential-guard.sh`
+	legacyBareCredGuardCmd    = "scripts/trackfw-credential-guard.sh"
+	legacyBareGitGuardCmd     = "scripts/trackfw-git-branch-guard.sh"
 	legacyWindsurfGitGuardCmd = "bash scripts/trackfw-git-branch-guard.sh"
 
 	// Amazon Q used a bare relative path (cmd.exe family)
@@ -631,13 +618,13 @@ func InjectCodexHooks(rootDir string) error {
 	// rewrites any stale relative-path entry from before this fix in place, so
 	// `trackfw update` doesn't just append the new $(git rev-parse ...) entry
 	// alongside the still-cwd-fragile old one.
-	migrateHookCommand(hooks["PermissionRequest"], ".*", "scripts/trackfw-attention-signal.sh", codexSignalCmd)
+	hooks["PermissionRequest"] = migrateAttentionHook(hooks["PermissionRequest"], ".*", codexSignalCmd)
 	// ML-2A: migrate pre-ML-2A credential-guard entries to the new inline form.
 	migrateHookCommand(hooks["PreToolUse"], "Bash", legacyBareCredGuardCmd, guardCredentialCmdPSPOSIX)
 	migrateHookCommand(hooks["PreToolUse"], "Bash", legacyCodexCredGuardCmd, guardCredentialCmdPSPOSIX)
 	migrateHookCommand(hooks["PreToolUse"], "apply_patch", legacyBareCredGuardCmd, guardCredentialCmdPSPOSIX)
 	migrateHookCommand(hooks["PreToolUse"], "apply_patch", legacyCodexCredGuardCmd, guardCredentialCmdPSPOSIX)
-	migrateHookCommand(hooks["PostToolUse"], ".*", "scripts/trackfw-attention-cleanup.sh", codexCleanupCmd)
+	hooks["PostToolUse"] = migrateAttentionHook(hooks["PostToolUse"], ".*", codexCleanupCmd)
 	migrateHookCommand(hooks["PostToolUse"], "Bash", legacyBareCredGuardCmd, guardCredentialCmdPSPOSIX)
 	migrateHookCommand(hooks["PostToolUse"], "Bash", legacyCodexCredGuardCmd, guardCredentialCmdPSPOSIX)
 	migrateHookCommand(hooks["PostToolUse"], "apply_patch", legacyBareCredGuardCmd, guardCredentialCmdPSPOSIX)
@@ -802,7 +789,7 @@ func InjectGeminiHooks(rootDir string) error {
 	// The wave that changes the Gemini command strings (ML-4A) updates oldCommand
 	// here instead of adding this call from scratch — without it, the merge's
 	// exact-string dedup would append a duplicate alongside the stale entry.
-	migrateHookCommand(hooks["Notification"], "ToolPermission", "scripts/trackfw-attention-signal.sh", geminiSignalCmd)
+	hooks["Notification"] = migrateAttentionHook(hooks["Notification"], "ToolPermission", geminiSignalCmd)
 	// ML-2A: migrate pre-ML-2A credential-guard entries to the new inline form.
 	migrateHookCommand(hooks["BeforeTool"], "run_shell_command", "scripts/trackfw-credential-guard.sh", guardCredentialCmdPSPOSIX)
 	migrateHookCommand(hooks["BeforeTool"], "run_shell_command", legacyGeminiCredGuardCmd, guardCredentialCmdPSPOSIX)
@@ -810,7 +797,7 @@ func InjectGeminiHooks(rootDir string) error {
 	migrateHookCommand(hooks["BeforeTool"], "read_file|read_many_files", legacyGeminiCredGuardCmd, guardCredentialCmdPSPOSIX)
 	migrateHookCommand(hooks["BeforeTool"], "write_file|replace", "scripts/trackfw-credential-guard.sh", guardCredentialCmdPSPOSIX)
 	migrateHookCommand(hooks["BeforeTool"], "write_file|replace", legacyGeminiCredGuardCmd, guardCredentialCmdPSPOSIX)
-	migrateHookCommand(hooks["AfterTool"], "*", "scripts/trackfw-attention-cleanup.sh", geminiCleanupCmd)
+	hooks["AfterTool"] = migrateAttentionHook(hooks["AfterTool"], "*", geminiCleanupCmd)
 	migrateHookCommand(hooks["AfterTool"], "run_shell_command", "scripts/trackfw-credential-guard.sh", guardCredentialCmdPSPOSIX)
 	migrateHookCommand(hooks["AfterTool"], "run_shell_command", legacyGeminiCredGuardCmd, guardCredentialCmdPSPOSIX)
 	migrateHookCommand(hooks["AfterTool"], "read_file|read_many_files", "scripts/trackfw-credential-guard.sh", guardCredentialCmdPSPOSIX)
@@ -981,14 +968,14 @@ func InjectKiroHooks(rootDir string) error {
 			"description": "Signals trackfw board when agent executes a tool",
 			"trigger":     "PreToolUse",
 			"matcher":     "*",
-			"action":      map[string]interface{}{"type": "command", "command": "scripts/trackfw-attention-signal.sh"},
+			"action":      map[string]interface{}{"type": "command", "command": attentionSignalCmd},
 		},
 		map[string]interface{}{
 			"name":        "trackfw-attention-cleanup",
 			"description": "Clears trackfw board attention after tool completes",
 			"trigger":     "PostToolUse",
 			"matcher":     "*",
-			"action":      map[string]interface{}{"type": "command", "command": "scripts/trackfw-attention-cleanup.sh"},
+			"action":      map[string]interface{}{"type": "command", "command": attentionCleanupCmd},
 		},
 	}
 
@@ -1135,7 +1122,7 @@ func InjectCopilotHooks(rootDir string) error {
 	preToolUse := []interface{}{
 		map[string]interface{}{
 			"type":       "command",
-			"bash":       "scripts/trackfw-attention-signal.sh",
+			"command":    attentionSignalCmd,
 			"cwd":        ".",
 			"timeoutSec": 10,
 		},
@@ -1143,7 +1130,7 @@ func InjectCopilotHooks(rootDir string) error {
 	postToolUse := []interface{}{
 		map[string]interface{}{
 			"type":       "command",
-			"bash":       "scripts/trackfw-attention-cleanup.sh",
+			"command":    attentionCleanupCmd,
 			"cwd":        ".",
 			"timeoutSec": 10,
 		},
@@ -1358,12 +1345,26 @@ func InjectCursorHooks(rootDir string) error {
 		hooks = make(map[string]interface{})
 	}
 
-	// Migrate any legacy top-level preToolUse/postToolUse trackfw entries
-	// (written by trackfw before this ML) into the nested, real hooks.
-	hooks["preToolUse"] = mergeSimpleCommandArray(hooks["preToolUse"], "scripts/trackfw-attention-signal.sh", makeEntry, getCmd)
-	hooks["postToolUse"] = mergeSimpleCommandArray(hooks["postToolUse"], "scripts/trackfw-attention-cleanup.sh", makeEntry, getCmd)
-	removeKnownCommandFromLegacyTopLevelArray(root, "preToolUse", "scripts/trackfw-attention-signal.sh", getCmd)
-	removeKnownCommandFromLegacyTopLevelArray(root, "postToolUse", "scripts/trackfw-attention-cleanup.sh", getCmd)
+	// Migrate exact legacy forms in place, preserving matcher/timeout/custom fields.
+	for _, pair := range []struct{ event, command string }{{"preToolUse", attentionSignalCmd}, {"postToolUse", attentionCleanupCmd}} {
+		for _, old := range legacyAttentionCommands(pair.command) {
+			migrateCursorSimpleCommand(hooks[pair.event], old, pair.command, getCmd)
+			if legacy, ok := root[pair.event].([]interface{}); ok {
+				for _, item := range legacy {
+					if getCmd(item) == old {
+						obj := item.(map[string]interface{})
+						obj["command"] = pair.command
+						arr, _ := hooks[pair.event].([]interface{})
+						hooks[pair.event] = append(arr, obj)
+					}
+				}
+			}
+			removeKnownCommandFromLegacyTopLevelArray(root, pair.event, pair.command, getCmd)
+			removeKnownCommandFromLegacyTopLevelArray(root, pair.event, old, getCmd)
+		}
+		hooks[pair.event] = dedupAttentionSimple(hooks[pair.event], pair.command)
+		hooks[pair.event] = mergeSimpleCommandArray(hooks[pair.event], pair.command, makeEntry, getCmd)
+	}
 
 	// Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda
 	// 7/ROADMAP-2026-08-08 Wave 2 to Read/Write via the generic
@@ -2704,4 +2705,82 @@ func globalGitBranchGuardInstalledCopilot() bool {
 		simpleArrayHasValue(hooks["preToolUse"], "bash", guardGitBranchCmdPSPOSIX, true) ||
 		simpleArrayHasValue(hooks["preToolUse"], "bash", legacyD2GitBranchCmdPSPOSIX, true) ||
 		simpleArrayHasValue(hooks["preToolUse"], "bash", legacyD11GitBranchCmdPSPOSIX, true)
+}
+
+// Exact equality prevents rewriting a user's command containing a similar path.
+const attentionSignalCmd = "trackfw attention signal"
+const attentionCleanupCmd = "trackfw attention cleanup"
+
+func legacyAttentionCommands(command string) []string {
+	name := "signal"
+	if command == attentionCleanupCmd {
+		name = "cleanup"
+	}
+	path := "scripts/trackfw-attention-" + name + ".sh"
+	return []string{path, "$CLAUDE_PROJECT_DIR/" + path, "$GEMINI_PROJECT_DIR/" + path, codexRoot + "/" + path + `"`}
+}
+
+func migrateAttentionHook(existing interface{}, matcher, command string) []interface{} {
+	for _, old := range legacyAttentionCommands(command) {
+		migrateHookCommand(existing, matcher, old, command)
+	}
+	arr, _ := existing.([]interface{})
+	kept := make([]interface{}, 0, len(arr))
+	var first map[string]interface{}
+	for _, item := range arr {
+		group, ok := item.(map[string]interface{})
+		if !ok || group["matcher"] != matcher {
+			kept = append(kept, item)
+			continue
+		}
+		entries, _ := group["hooks"].([]interface{})
+		next := make([]interface{}, 0, len(entries))
+		for _, entry := range entries {
+			hook, ok := entry.(map[string]interface{})
+			if !ok || hook["command"] != command {
+				next = append(next, entry)
+				continue
+			}
+			if first == nil {
+				first = hook
+				next = append(next, entry)
+			} else {
+				for k, v := range hook {
+					if _, exists := first[k]; !exists {
+						first[k] = v
+					}
+				}
+			}
+		}
+		group["hooks"] = next
+		if len(next) > 0 {
+			kept = append(kept, item)
+		}
+	}
+	return kept
+}
+
+func dedupAttentionSimple(existing interface{}, command string) []interface{} {
+	arr, _ := existing.([]interface{})
+	kept := make([]interface{}, 0, len(arr))
+	seen := map[string]map[string]interface{}{}
+	for _, item := range arr {
+		obj, ok := item.(map[string]interface{})
+		if !ok || obj["command"] != command {
+			kept = append(kept, item)
+			continue
+		}
+		key, _ := obj["matcher"].(string)
+		if first := seen[key]; first != nil {
+			for k, v := range obj {
+				if _, exists := first[k]; !exists {
+					first[k] = v
+				}
+			}
+		} else {
+			seen[key] = obj
+			kept = append(kept, item)
+		}
+	}
+	return kept
 }
