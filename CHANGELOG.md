@@ -7,6 +7,14 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **`trackfw attention signal` e `trackfw attention cleanup`**: hooks informativos nativos em Go,
+  sem dependência de Bash, jq ou Python. Os seis emissores migram comandos legados e preservam
+  hooks personalizados nos arquivos compartilhados; scripts antigos passam a delegar ao binário.
+  Entrada limitada a 1 MiB/2 s e operações confinadas ao projeto. A jornada real dos agentes no
+  Windows continua pendente de medição. (REQ-2026-09-05, ML-1H)
+
 ## [10.0.0] - 2026-10-18
 
 ### ⚠️ BREAKING

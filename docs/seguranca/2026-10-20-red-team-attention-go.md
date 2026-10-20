@@ -1,0 +1,39 @@
+# Red-team — atenção nativa Go (ML-1H)
+
+2026-10-20 · Hades · árvore `/private/tmp/trackfw-attention-go` · REQ-2026-09-05.
+
+## Veredito
+
+LIBERA: nenhum bloqueante encontrado no produto final inspecionado. Liberação da wave permanece condicionada ao `make quality` final executado pelo Zeus; esta revisão não transforma esse processo ainda em execução em aprovação. AC5–AC7 seguem pendentes, sem alegação de eventos reais dos agentes Windows.
+
+## Evidência executada
+
+- `go test ./internal/commands -run TestAttention -count=1`: PASS, 3.083 s, com HOME/USERPROFILE isolados, caches Go existentes e comandos externos desabilitados. Executou corpus, checksum, limites, destinos externos, symlinks e executável real.
+- `go test ./internal/generators -run 'TestAttentionSixEmittersNativeAndIdempotent|TestAttentionMigrationPreservesCustomMetadata|TestAttentionCursorMigrationNestedAndTopLevel|TestAttentionShellCommandsAndFailSoftWrappers|TestScripts_LiteralMatchesVersionedCopy' -count=1`: PASS, 0.669 s, mesmo isolamento. Não duplicou suite ampla em andamento.
+- Leitura do diff final, arquivos novos, threat model aprovado e parecer Hefesto. Nenhum código de produto, teste ou gate alterado por esta revisão.
+
+## Vetores e controles
+
+1. **Payload literal e JSON:** `internal/commands/attention.go:128–158` decodifica campos tipados e usa `json.Marshal`, sem comando de shell ou avaliação. `attention_test.go:204` executa binário real com `$(touch NEVER_EXECUTED)`, comprova mensagem exata e ausência do arquivo. Corpus inclui Unicode, barras, aspas, controles, metacaracteres e truncamento acima de 300 runas. Não houve corrupção nem execução. Campos de tipo incorreto/JSON múltiplo são no-op.
+2. **Stdin finito:** `attention.go:17–18/38–56` limita a 1 MiB com leitura de um byte excedente e deadline absoluto 2 s. `attention_test.go:271` aceita exatamente o limite e rejeita excedente; `:204` usa pipe aberto no processo real, exige término dentro da janela e nenhum sinal parcial. Cleanup com pipe aberto termina sem drená-lo. O leitor em goroutine pode sobreviver até o processo sair; é limite declarado do comando curto, não vazamento num serviço persistente.
+3. **Config e escrita:** `attention.go:61–100` lê apenas config do cwd e rejeita YAML inválido, duplicado e multidocumento sem `config.Load/osExit`. Teste real de subprocesso confirma silêncio e exit0. Caminhos absolutos, traversal e formas Windows são recusados. `attention_test.go:102–203` constrói realmente `project` e `outside`, verifica overwrite, remove e criação ausente, além de links de folha/ancestral com sentinela e árvore externa intactas. Isso mede o alvo escapado, não somente a pasta default.
+4. **Contenção física:** `attention.go:96/161/168` chama emissor canônico `pathguard.RejectAndReport`; nenhuma exceção nova no pathguard/gates. S2 da Wave 0 fechado dentro do modelo existente. Junction Windows não foi executada neste macOS: cobertura especializada existente `internal/pathguard/containment_junction_windows_test.go:98` recusa junction via mesmo predicado ModeSymlink|ModeIrregular. Não confundir composição por inspeção com teste nativo da atenção sob junction.
+5. **Cleanup dedicado:** `attention.go:115–119` remove somente folha resolvida após guarda. Teste real preserva `.trackfw-credential-guard.json` byte a byte. Sem wildcard ou mudança no guard. Erros runtime continuam exit0; recusa de contenção pode emitir diagnóstico canônico stderr conforme contrato atualizado.
+6. **Seis fornecedores e migração:** `internal/generators/agentfiles.go` emite strings nativas exatas nos seis CLIs; migração compara igualdade de formas legadas bare/ancoradas. Testes focados mantêm comando customizado com substring parecida e matcher customizado, timeout e idempotência; Cursor cobre arrays nested e top-level. Kiro/Copilot seguem arquivos dedicados gerados integralmente. Copilot agora usa `command`, como solicitado; aceitação real pelo agente permanece sem prova de runtime, não é inferida do teste estrutural.
+7. **Oráculo independente:** `internal/commands/testdata/attention-legacy/{signal.sh,cleanup.sh}` contêm a implementação antiga real (cat/jq/Python/grep/sed), não wrappers. Manifest tem hashes `3ecb8c8a…` e `76e8ed42…`; teste recalcula hash e executa scripts em fixture separado do nativo, comparando semântica JSON e normalizando apenas timestamp. Não é Go comparado consigo mesmo. Casos inválidos divergentes do shell estão subordinados ao novo contrato explícito.
+8. **Wrappers e gates:** literais/cópias delegam sem parser externo e wrappers missing/failing binary retornam0. Testes executam comandos simples via sh/bash/zsh disponíveis, sem polyglot, PATH restrito ao binário. Gate de encoding conserva ALVO1 e redefine ALVO2 para implementação sem Python; piso CRLF 52 permanece. Essas asserções estáticas não provam execução sozinhas; a cobertura comportamental acima é a defesa adicional.
+9. **P21 observacional:** `scripts/windows-repro/p21-attention-native.ps1` usa shells absolutos e PATH filho só com diretório nativo, registra resolução bruta de helpers, stdin UTF8 sem interpolação, streams drenados em paralelo, timeout5s e cleanup dos processos próprios. Mede API local e sentinela credential. Tanto script quanto `.github/workflows/windows-probe.yml:106` declaram smoke de shell/API, `agent_event=false`, ACs pendentes. Exit0 é propriedade do instrumento observacional, não aprovação de produto. Não amplia escopo para guards ou PR #590.
+
+## Residuais preservados
+
+Não promete resistência a troca concorrente de filesystem entre check e operação (TOCTOU), autorização de quem escreve sinal, ordenação entre sessões concorrentes ou disponibilidade de binário/PATH. Não mediu eventos de agente Windows nem junction nesta máquina. Não acessou configurações reais para fazer testes passarem. Build/vet/validate0 e as suites completas informados pelo orquestrador não foram repetidos nesta revisão. `make quality` final deve ser registrado pelo Zeus com resultado efetivo antes de concluir ML.
+
+## Complemento — P21 DOM e execução isolada (2026-10-20)
+
+LIBERA, sem novo bloqueante no diff da instrumentação. Revisão restrita a `scripts/windows-repro/p21-attention-native.ps1` e `.github/workflows/windows-probe.yml`; produto Go congelado.
+
+Edge é localizado por caminho absoluto em Program Files; argumentos usam `ProcessStartInfo.ArgumentList`, URL construída só com loopback/porta local, sem payload interpolado, JavaScript injetado ou `--no-sandbox`. Perfil fica em diretório GUID owned; HOME/USERPROFILE/XDG/APPDATA/LOCALAPPDATA apontam para fixture e PATH filho continua somente o binário nativo. Browser tem timeout18s, streams concorrentes e espera de drenagem2s; ausência/erro vira UNMEASURED. Cleanup permanece restrito aos processos iniciados pelo instrumento e à árvore owned. Resíduo: a rotina existente não garante recolher descendentes já órfãos se o processo pai encerrou antes de `Stop-Owned`; não há kill global por nome nem uso de perfil real para contornar isso.
+
+DOM exige banner encontrado, atributo class presente, ausência/presença de hidden conforme esperado e, no sinal, texto exato após HtmlDecode; não aceita apenas exit0. Mede estado DOM com polling normal, não visibilidade por screenshot/computed style e não evento de agente. Esta diferença limita a prova, sem ampliar AC5–AC7.
+
+`attention_only` é booleano opcional defaultfalse. Condições `!inputs.attention_only` e `inputs.attention_only` tornam jobs mutuamente exclusivos; preservam workflow_dispatch e permissions contents:read. Job isolado mantém timeout10min, setup Go e execução do mesmo script observacional; não adiciona credenciais, permissões ou escrita externa. Parser PowerShell/YAML informados pelo QA passam; sem nova suite ampla porque não há alteração de produto.

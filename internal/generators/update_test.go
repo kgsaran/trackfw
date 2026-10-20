@@ -448,7 +448,7 @@ func TestUpdateHarnessUnknownTargetIsUsageError(t *testing.T) {
 func TestUpdateHarnessTargetsFilterPreservesDeclaredOrder(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)      // ML-1A: Windows reads USERPROFILE
+	t.Setenv("USERPROFILE", home)     // ML-1A: Windows reads USERPROFILE
 	t.Setenv("CLAUDE_CONFIG_DIR", "") // ML-2B B2: isolate from real CLAUDE_CONFIG_DIR
 
 	report, err := UpdateHarness(UpdateOptions{Targets: []string{"codex-agents", "claude-skill"}})
@@ -468,7 +468,7 @@ func TestUpdateHarnessTargetsFilterPreservesDeclaredOrder(t *testing.T) {
 func TestUpdateHarnessNeverTouchesHomeInDryRun(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)      // ML-1A: Windows reads USERPROFILE
+	t.Setenv("USERPROFILE", home)     // ML-1A: Windows reads USERPROFILE
 	t.Setenv("CLAUDE_CONFIG_DIR", "") // ML-2B B2: isolate from real CLAUDE_CONFIG_DIR
 
 	report, err := UpdateHarness(UpdateOptions{DryRun: true, InstallMissing: true})
@@ -487,7 +487,7 @@ func TestUpdateHarnessNeverTouchesHomeInDryRun(t *testing.T) {
 func TestUpdateHarnessClaudeSkillInstallsOnlyWithInstallMissing(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)      // ML-1A: Windows reads USERPROFILE
+	t.Setenv("USERPROFILE", home)     // ML-1A: Windows reads USERPROFILE
 	t.Setenv("CLAUDE_CONFIG_DIR", "") // ML-2B B2: isolate from real CLAUDE_CONFIG_DIR
 
 	report, err := UpdateHarness(UpdateOptions{Targets: []string{"claude-skill"}})
@@ -520,7 +520,7 @@ func TestUpdateHarnessClaudeSkillInstallsOnlyWithInstallMissing(t *testing.T) {
 func TestUpdateHarnessClaudeSkillUpdatesStaleContentAndSkipsCurrent(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)      // ML-1A: Windows reads USERPROFILE
+	t.Setenv("USERPROFILE", home)     // ML-1A: Windows reads USERPROFILE
 	t.Setenv("CLAUDE_CONFIG_DIR", "") // ML-2B B2: isolate from real CLAUDE_CONFIG_DIR
 
 	path := GlobalClaudeSkillPath(home)
@@ -2140,7 +2140,7 @@ func TestUpdateInjectsAndUpdatesAttentionHooksIdempotently(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to read cursor hooks: %v", err)
 	}
-	if !strings.Contains(string(cursorContent), "scripts/trackfw-attention-signal.sh") {
+	if !strings.Contains(string(cursorContent), attentionSignalCmd) {
 		t.Fatalf("cursor attention hook missing after update:\n%s", cursorContent)
 	}
 
@@ -2637,7 +2637,7 @@ func TestUpdateHarnessClaudeSymlinkRefusesWrite(t *testing.T) {
 	home := t.TempDir()
 	outside := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)      // ML-1A: Windows reads USERPROFILE
+	t.Setenv("USERPROFILE", home)     // ML-1A: Windows reads USERPROFILE
 	t.Setenv("CLAUDE_CONFIG_DIR", "") // ML-2B B2: ensure claudeDir = HOME/.claude (symlink)
 
 	// Create a victim file outside home that the symlink points to.
@@ -2718,7 +2718,7 @@ func TestUpdateHarnessLegitimateRunSucceedsForAllTargets(t *testing.T) {
 	// Braço (b): clean $HOME, no symlinks — guards must be transparent.
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)      // ML-1A: Windows reads USERPROFILE
+	t.Setenv("USERPROFILE", home)     // ML-1A: Windows reads USERPROFILE
 	t.Setenv("CLAUDE_CONFIG_DIR", "") // ML-2B B2: isolate from real CLAUDE_CONFIG_DIR
 
 	report, err := UpdateHarness(UpdateOptions{
@@ -2748,7 +2748,7 @@ func TestUpdateHarnessAncestorSymlinkRefusesAllTargets(t *testing.T) {
 	homeSym := filepath.Join(outside, "homesym")
 	symlinkOrSkip(t, realHome, homeSym)
 	t.Setenv("HOME", homeSym)
-	t.Setenv("USERPROFILE", homeSym)   // ML-1A: Windows reads USERPROFILE
+	t.Setenv("USERPROFILE", homeSym)  // ML-1A: Windows reads USERPROFILE
 	t.Setenv("CLAUDE_CONFIG_DIR", "") // ML-2B B2: ensure claudeDir = HOME/.claude (symlink)
 
 	// Capture stderr.

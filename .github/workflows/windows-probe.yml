@@ -34,6 +34,11 @@ name: Windows Probe (sonda sob demanda)
 on:
   workflow_dispatch:
     inputs:
+      attention_only:
+        description: "Executar somente P21 atenção nativa/DOM (sem eventos reais de agente)"
+        type: boolean
+        required: false
+        default: false
       motivo:
         description: "Por que está rodando a sonda agora (fica no log, para anexar em REQ)"
         required: false
@@ -44,6 +49,7 @@ permissions:
 
 jobs:
   probe:
+    if: ${{ !inputs.attention_only }}
     runs-on: windows-latest
     # Guardrail, não meta: a sonda existe para responder em poucos minutos
     # (AC5/AC6/ADR decisão 3). Se este timeout disparar, a sonda deixou de
@@ -101,6 +107,24 @@ jobs:
       - run: python -m pip install --upgrade pip pyyaml
       - run: npm ci --ignore-scripts
         working-directory: npm
+
+      # Native shell/API smoke only; not an agent event or AC5–AC7 closure.
+      - name: "Pergunta 21 — atenção Go sem bash/jq/python (ML-1H)"
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $p21Dir = Join-Path $env:RUNNER_TEMP "p21-native-build"
+          New-Item -ItemType Directory -Force -Path $p21Dir | Out-Null
+          $goExe = go env GOEXE
+          $p21Bin = Join-Path $p21Dir ("trackfw" + $goExe)
+          go build -o $p21Bin ./cmd/trackfw 2>&1 | Write-Host
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host 'PROBE attention build {"result":"UNMEASURED","reason":"go_build_failed"}'
+            exit 0
+          }
+          $p21Script = Join-Path $env:GITHUB_WORKSPACE "scripts/windows-repro/p21-attention-native.ps1"
+          & $p21Script -Bin $p21Bin -Workspace $env:GITHUB_WORKSPACE
 
       # ---------------------------------------------------------------
       # Pergunta 1 — modo devolvido por os.Stat: arquivo comum vs chmod +x.
@@ -1205,3 +1229,29 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "Esta sonda NÃO responde: core.symlinks=false de clone de terceiro fora deste runner; console cp1252 REAL interativo (aqui o stdout é capturado pelo Actions, não por um console interativo); codepage diferente de cp1252; comportamento com Developer Mode habilitado (de propósito não habilitado nesta execução)."
+
+  attention_native:
+    if: ${{ inputs.attention_only }}
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: "P21 — atenção nativa/API/DOM isolada"
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $p21Dir = Join-Path $env:RUNNER_TEMP "p21-native-build"
+          New-Item -ItemType Directory -Force -Path $p21Dir | Out-Null
+          $goExe = go env GOEXE
+          $p21Bin = Join-Path $p21Dir ("trackfw" + $goExe)
+          go build -o $p21Bin ./cmd/trackfw 2>&1 | Write-Host
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host 'PROBE attention build {"result":"UNMEASURED","reason":"go_build_failed"}'
+            exit 0
+          }
+          $p21Script = Join-Path $env:GITHUB_WORKSPACE "scripts/windows-repro/p21-attention-native.ps1"
+          & $p21Script -Bin $p21Bin -Workspace $env:GITHUB_WORKSPACE

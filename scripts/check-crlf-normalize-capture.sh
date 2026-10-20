@@ -111,6 +111,7 @@
 #   MIN_CAPTURES set to 52 (≈74% of 70 — guards against empty-corpus
 #   silent pass). Previous floor was 50 at 68 candidates (≈74%); raised
 #   proportionally to maintain the 74% threshold ratio.
+#   ML-1H: attention Python captures retired by native Go; existing floor 52 retained.
 #   Override with CRLF_GATE_MIN_CAPTURES env var (set to 1 in synthetic trees).
 #
 # DIAGNOSTIC STRINGS (must stay distinct — assert_fails_with matches on them):

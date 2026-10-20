@@ -74,6 +74,7 @@ describes the expected behaviour; each `##` section below names the gate that pr
 | `metrics` | Delivery metrics |
 | `sync` | Jira/Linear synchronization |
 | `serve` | Local dashboard |
+| `attention` | `signal`, `cleanup` — native informational board hooks; bounded JSON stdin, contained writes and runtime errors returning zero (see Native board attention below) |
 | `agents` | `list`, `install`, `uninstall`, `update` across supported AI CLIs |
 | `skills` | `list`, `install`, `uninstall`, `update` across supported AI CLIs |
 | `note` | `new <title>` — creates `vault/notes/<slug>-YYYY-MM-DD.md` and links in `index.md`; idempotent (fails on duplicate) |
@@ -8987,3 +8988,15 @@ decides whether to move the project or accept the risk (ADR-2026-10-16-no-window
 
 Outside Windows: the rule always returns nil (no-op; POSIX mode bits provide equivalent
 protection).
+
+
+## Native board attention — ML-1H (2026-10-20)
+<!-- trackfw-contract: gate=internal/commands/attention_test.go partial=Legacy corpus parity, registered command, bounded stdin, cwd config and contained writes/removes; real Windows agent runtime AC5-AC7 remains pending -->
+
+`trackfw attention signal` and `trackfw attention cleanup` are native Go commands in all distribution channels. All six agent emitters use these exact strings, including Copilot's `command` field. No shell variables or script paths are emitted. Legacy wrappers delegate and return zero if the binary is unavailable or fails.
+
+Signal reads JSON from stdin (maximum 1 MiB, absolute deadline 2 seconds); cleanup never reads stdin. Only `trackfw.yaml` in cwd is read, with a single valid YAML document and default `docs/roadmaps`. Invalid payload/config and I/O errors are silent no-op with exit 0. Unsafe paths and symlinks/junctions are refused with exit 0; filesystem containment refusals use the existing centralized pathguard stderr diagnostic. CLI usage errors retain the normal nonzero status. Unsafe paths are refused rather than redirected to the default.
+
+The signal retains `tool`, `message`, `level=action_required`, and UTC `timestamp`. Message priority is question, command, then tool-name fallback, sliced to 300 Unicode runes before removing ASCII controls 0–31 as in the frozen valid legacy corpus. Cleanup removes only `.trackfw-attention.json`, preserving `.trackfw-credential-guard.json`. Shared hook files migrate exact bare/anchored forms while retaining custom commands and matcher/timeout metadata. Dedicated Kiro/Copilot files remain fully generated, as before.
+
+The independent legacy shell corpus and checksums live in `internal/commands/testdata/attention-legacy/`; tests compare JSON semantics and normalize only timestamps. This contract does not establish execution by actual Windows agent events; AC5–AC7 require separate evidence.

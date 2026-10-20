@@ -69,10 +69,10 @@ func TestInjectClaudeHooks_Create(t *testing.T) {
 
 	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
 
-	if !helperHasClaudeHook(data, "PreToolUse", "AskUserQuestion", "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh") {
+	if !helperHasClaudeHook(data, "PreToolUse", "AskUserQuestion", attentionSignalCmd) {
 		t.Error("PreToolUse[AskUserQuestion] → signal.sh missing")
 	}
-	if !helperHasClaudeHook(data, "PostToolUse", "AskUserQuestion", "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh") {
+	if !helperHasClaudeHook(data, "PostToolUse", "AskUserQuestion", attentionCleanupCmd) {
 		t.Error("PostToolUse[AskUserQuestion] → cleanup.sh missing")
 	}
 	if !helperHasClaudeHook(data, "PreToolUse", claudeShellMatcher, guardCredentialCmdPSPOSIX) {
@@ -115,13 +115,13 @@ func TestInjectClaudeHooks_MergeAndIdempotent(t *testing.T) {
 	if !helperHasClaudeHook(data, "PreToolUse", "Bash", "scripts/other.sh") {
 		t.Error("existing Bash hook lost during merge")
 	}
-	if !helperHasClaudeHook(data, "PreToolUse", "AskUserQuestion", "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh") {
+	if !helperHasClaudeHook(data, "PreToolUse", "AskUserQuestion", attentionSignalCmd) {
 		t.Error("PreToolUse signal hook missing")
 	}
 	if !helperHasClaudeHook(data, "PreToolUse", claudeShellMatcher, guardCredentialCmdPSPOSIX) {
 		t.Error("PreToolUse credential-guard hook missing")
 	}
-	if !helperHasClaudeHook(data, "PostToolUse", "AskUserQuestion", "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh") {
+	if !helperHasClaudeHook(data, "PostToolUse", "AskUserQuestion", attentionCleanupCmd) {
 		t.Error("PostToolUse cleanup hook missing")
 	}
 	if !helperHasClaudeHook(data, "PostToolUse", claudeShellMatcher, guardCredentialCmdPSPOSIX) {
@@ -277,10 +277,10 @@ func TestInjectClaudeHooks_MigratesLegacyRelativeAttentionSignalCleanupCommand(t
 	if helperHasClaudeHook(data, "PostToolUse", "AskUserQuestion", "scripts/trackfw-attention-cleanup.sh") {
 		t.Error("stale relative-path PostToolUse[AskUserQuestion] cleanup entry survived the upgrade")
 	}
-	if !helperHasClaudeHook(data, "PreToolUse", "AskUserQuestion", "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh") {
+	if !helperHasClaudeHook(data, "PreToolUse", "AskUserQuestion", attentionSignalCmd) {
 		t.Error("PreToolUse[AskUserQuestion] was not upgraded to the $CLAUDE_PROJECT_DIR-prefixed signal command")
 	}
-	if !helperHasClaudeHook(data, "PostToolUse", "AskUserQuestion", "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh") {
+	if !helperHasClaudeHook(data, "PostToolUse", "AskUserQuestion", attentionCleanupCmd) {
 		t.Error("PostToolUse[AskUserQuestion] was not upgraded to the $CLAUDE_PROJECT_DIR-prefixed cleanup command")
 	}
 
@@ -808,10 +808,10 @@ func TestInjectCopilotHooks(t *testing.T) {
 	}
 
 	// helperFindCopilotByBash finds by "bash" field (attention signal/cleanup use old field name).
-	helperFindCopilotByBash := func(arr []interface{}, bash string) map[string]interface{} {
+	helperFindCopilotByAttentionCommand := func(arr []interface{}, bash string) map[string]interface{} {
 		for _, item := range arr {
 			obj, ok := item.(map[string]interface{})
-			if ok && obj["bash"] == bash {
+			if ok && obj["command"] == bash {
 				return obj
 			}
 		}
@@ -828,7 +828,7 @@ func TestInjectCopilotHooks(t *testing.T) {
 		return nil
 	}
 
-	signal := helperFindCopilotByBash(pre, "scripts/trackfw-attention-signal.sh")
+	signal := helperFindCopilotByAttentionCommand(pre, attentionSignalCmd)
 	if signal == nil {
 		t.Fatal("preToolUse missing attention-signal entry")
 	}
@@ -844,7 +844,7 @@ func TestInjectCopilotHooks(t *testing.T) {
 		t.Errorf("credential-guard preToolUse entry should have matcher=bash, got %v", guardPre["matcher"])
 	}
 
-	cleanup := helperFindCopilotByBash(post, "scripts/trackfw-attention-cleanup.sh")
+	cleanup := helperFindCopilotByAttentionCommand(post, attentionCleanupCmd)
 	if cleanup == nil {
 		t.Fatal("postToolUse missing attention-cleanup entry")
 	}
@@ -894,10 +894,10 @@ func TestInjectCursorHooks(t *testing.T) {
 	if len(pre) != 3 || len(post) != 3 {
 		t.Fatalf("expected 3 hooks.preToolUse and 3 hooks.postToolUse entries, got %d pre, %d post", len(pre), len(post))
 	}
-	if pre[0].(map[string]interface{})["command"] != "scripts/trackfw-attention-signal.sh" {
+	if pre[0].(map[string]interface{})["command"] != attentionSignalCmd {
 		t.Errorf("hooks.preToolUse[0] should be the attention-signal script, got %v", pre[0])
 	}
-	if post[0].(map[string]interface{})["command"] != "scripts/trackfw-attention-cleanup.sh" {
+	if post[0].(map[string]interface{})["command"] != attentionCleanupCmd {
 		t.Errorf("hooks.postToolUse[0] should be the attention-cleanup script, got %v", post[0])
 	}
 
@@ -968,10 +968,10 @@ func TestInjectCursorHooks_MigratesLegacyTopLevelArrays(t *testing.T) {
 	// 3 entries each after migration: the migrated attention-signal/cleanup entry
 	// plus the two matcher-scoped credential-guard entries (Read/Write) added by
 	// this ML — see TestInjectCursorHooks.
-	if len(hPre) != 3 || hPre[0].(map[string]interface{})["command"] != "scripts/trackfw-attention-signal.sh" {
+	if len(hPre) != 3 || hPre[0].(map[string]interface{})["command"] != attentionSignalCmd {
 		t.Errorf("expected hooks.preToolUse to contain the migrated attention-signal entry, got %v", hPre)
 	}
-	if len(hPost) != 3 || hPost[0].(map[string]interface{})["command"] != "scripts/trackfw-attention-cleanup.sh" {
+	if len(hPost) != 3 || hPost[0].(map[string]interface{})["command"] != attentionCleanupCmd {
 		t.Errorf("expected hooks.postToolUse to contain the migrated attention-cleanup entry, got %v", hPost)
 	}
 }

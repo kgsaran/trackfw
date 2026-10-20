@@ -26,7 +26,6 @@ func getGoCopilotHooks(t *testing.T) map[string]interface{} {
 	return readCopilotHooksJSON(t, filepath.Join(dir, ".github", "hooks", "trackfw-attention.json"))
 }
 
-
 func readCopilotHooksJSON(t *testing.T, path string) map[string]interface{} {
 	t.Helper()
 	raw, err := os.ReadFile(path)
@@ -112,9 +111,9 @@ func TestInjectCopilotHooks_StructuralParityAcrossStacks(t *testing.T) {
 			t.Errorf("%s: preToolUse deveria ter %d entradas, obteve %d", name, wantPre, len(pre))
 		}
 
-		assertCopilotHookEntry(t, name, pre, "scripts/trackfw-attention-signal.sh", nil)
+		assertCopilotHookEntry(t, name, pre, attentionSignalCmd, nil)
 		assertCopilotHookEntry(t, name, pre, guardCredentialCmdPSPOSIX, "bash")
-		assertCopilotHookEntry(t, name, post, "scripts/trackfw-attention-cleanup.sh", nil)
+		assertCopilotHookEntry(t, name, post, attentionCleanupCmd, nil)
 		assertCopilotHookEntry(t, name, post, guardCredentialCmdPSPOSIX, "bash")
 	}
 }

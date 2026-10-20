@@ -8,9 +8,9 @@ import (
 
 func TestInjectHooksDetected_SkipsAbsent(t *testing.T) {
 	hooksHome := t.TempDir()
-	t.Setenv("HOME", hooksHome)         // isolate global credential-guard dedup check (ML-3A) from real $HOME
-	t.Setenv("USERPROFILE", hooksHome)  // ML-2E: Windows ClaudeConfigDir reads USERPROFILE, not HOME
-	t.Setenv("CLAUDE_CONFIG_DIR", "")   // ML-2E: clear any outer CLAUDE_CONFIG_DIR override
+	t.Setenv("HOME", hooksHome)        // isolate global credential-guard dedup check (ML-3A) from real $HOME
+	t.Setenv("USERPROFILE", hooksHome) // ML-2E: Windows ClaudeConfigDir reads USERPROFILE, not HOME
+	t.Setenv("CLAUDE_CONFIG_DIR", "")  // ML-2E: clear any outer CLAUDE_CONFIG_DIR override
 	dir := t.TempDir()
 
 	if err := InjectHooksDetected(dir); err != nil {
@@ -34,9 +34,9 @@ func TestInjectHooksDetected_SkipsAbsent(t *testing.T) {
 
 func TestInjectHooksDetected_Claude(t *testing.T) {
 	claudeHome := t.TempDir()
-	t.Setenv("HOME", claudeHome)         // isolate global credential-guard dedup check (ML-3A) from real $HOME
-	t.Setenv("USERPROFILE", claudeHome)  // ML-2E: Windows ClaudeConfigDir reads USERPROFILE, not HOME
-	t.Setenv("CLAUDE_CONFIG_DIR", "")    // ML-2E: clear any outer CLAUDE_CONFIG_DIR override
+	t.Setenv("HOME", claudeHome)        // isolate global credential-guard dedup check (ML-3A) from real $HOME
+	t.Setenv("USERPROFILE", claudeHome) // ML-2E: Windows ClaudeConfigDir reads USERPROFILE, not HOME
+	t.Setenv("CLAUDE_CONFIG_DIR", "")   // ML-2E: clear any outer CLAUDE_CONFIG_DIR override
 	dir := t.TempDir()
 
 	if err := os.WriteFile(filepath.Join(dir, "CLAUDE.md"), []byte("# Project\n"), 0644); err != nil {
@@ -48,7 +48,7 @@ func TestInjectHooksDetected_Claude(t *testing.T) {
 	}
 
 	data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
-	if !helperHasClaudeHook(data, "PreToolUse", "AskUserQuestion", "$CLAUDE_PROJECT_DIR/scripts/trackfw-attention-signal.sh") {
+	if !helperHasClaudeHook(data, "PreToolUse", "AskUserQuestion", attentionSignalCmd) {
 		t.Error("hook Claude não foi injetado ao detectar CLAUDE.md")
 	}
 }
