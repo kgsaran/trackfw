@@ -337,7 +337,7 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker, subcmdMarker, sub
 						hasPSPosixSubcmd = true
 					}
 				} else if m.raw == legacyD11RevLine && m.raw != expectedLine {
-					// REQ-2026-10-20: D11 revised pré-REQ-2026-10-20 (sem prefixo unsetopt) — aborta no zsh.
+					// REQ-2026-10-20: D11 revised pré-REQ-2026-10-20 (sem prefixo) — aborta no zsh.
 					// Tratada como warning (via validateGuardGlobalHookD11RevisedLegacyWarnings), não violation.
 					anySubcmdFormFound = true
 					if gf.family == guardShellFamilyPSPosix {
@@ -552,7 +552,7 @@ func validateGuardGlobalHookD11LegacyWarnings(scriptMarker, subcmdMarker, subcmd
 			if m.raw == legacyD11RevLine && m.raw != expectedLine {
 				warnings = append(warnings, fmt.Sprintf(
 					"~/%s (%s, global scope) has %q — forma D11 revised pré-REQ-2026-10-20, aborta no zsh (EQUALS/NOMATCH); "+
-						"rode `trackfw update harness` para migrar para a forma REQ-2026-10-20 com unsetopt",
+						"rode `trackfw update harness` para migrar para a forma REQ-2026-10-20 com o prefixo `emulate -R sh`",
 					relPath, gf.cli, m.raw,
 				))
 				break // um aviso por arquivo é suficiente
@@ -583,7 +583,7 @@ func validateGitBranchGuardGlobalHookD11LegacyWarnings() ([]string, error) {
 }
 
 // validateGuardGlobalHookD11RevisedLegacyWarnings retorna avisos para configs GLOBAIS
-// que ainda usam a forma D11 revised pré-REQ-2026-10-20 (sem prefixo unsetopt EQUALS NOMATCH).
+// que ainda usam a forma D11 revised pré-REQ-2026-10-20 (sem prefixo emulate -R sh).
 // Reutiliza globalGuardConfigFiles — mesma lista que validateGuardGlobalHookD11LegacyWarnings usa.
 func validateGuardGlobalHookD11RevisedLegacyWarnings(scriptMarker, subcmdMarker, subcmdName string) ([]string, error) {
 	home, err := homedir.Dir()
@@ -622,7 +622,7 @@ func validateGuardGlobalHookD11RevisedLegacyWarnings(scriptMarker, subcmdMarker,
 			if m.raw == legacyD11RevLine && m.raw != expectedLine {
 				warnings = append(warnings, fmt.Sprintf(
 					"~/%s (%s, global scope) has %q — forma D11 revised pré-REQ-2026-10-20, aborta no zsh (EQUALS/NOMATCH); "+
-						"rode `trackfw update harness` para migrar para a forma REQ-2026-10-20 com unsetopt",
+						"rode `trackfw update harness` para migrar para a forma REQ-2026-10-20 com o prefixo `emulate -R sh`",
 					relPath, gf.cli, m.raw,
 				))
 				break // um aviso por arquivo é suficiente

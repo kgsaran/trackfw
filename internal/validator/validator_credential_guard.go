@@ -616,7 +616,7 @@ func validateGuardHookResolvable(ruleName, scriptMarker, subcmdMarker, subcmdNam
 						hasPSPosixSubcmd = true
 					}
 				} else if m.raw == legacyD11RevLine && m.raw != expectedLine {
-					// REQ-2026-10-20: D11 revised pré-REQ-2026-10-20 (sem prefixo unsetopt) — aborta no zsh.
+					// REQ-2026-10-20: D11 revised pré-REQ-2026-10-20 (sem prefixo) — aborta no zsh.
 					// Tratada como warning (via validateGuardHookD11RevisedLegacyWarnings), não violation.
 					anySubcmdFormFound = true
 					if hf.family == guardShellFamilyPSPosix {
@@ -1075,7 +1075,7 @@ func validateGitBranchGuardHookD11LegacyWarnings() ([]string, error) {
 
 // validateGuardHookD11RevisedLegacyWarnings retorna avisos (always-warning, roteados via
 // applyRuleWarnOnly) para arquivos de hook de PROJETO que ainda usam a forma D11 revised
-// pré-REQ-2026-10-20 (com 4º trecho PS mas sem prefixo unsetopt EQUALS NOMATCH).
+// pré-REQ-2026-10-20 (com 4º trecho PS mas sem prefixo emulate -R sh).
 // A forma pré-REQ-2026-10-20 aborta o zsh com exit 1 antes do guard rodar (fail-open no zsh).
 func validateGuardHookD11RevisedLegacyWarnings(subcmdMarker, subcmdName string) ([]string, error) {
 	root, err := os.Getwd()
@@ -1104,7 +1104,7 @@ func validateGuardHookD11RevisedLegacyWarnings(subcmdMarker, subcmdName string) 
 			if m.raw == legacyD11RevLine && m.raw != expectedLine {
 				warnings = append(warnings, fmt.Sprintf(
 					"%s (%s) has %q — forma D11 revised pré-REQ-2026-10-20, aborta no zsh (EQUALS/NOMATCH); "+
-						"rode `trackfw update` para migrar para a forma REQ-2026-10-20 com unsetopt",
+						"rode `trackfw update` para migrar para a forma REQ-2026-10-20 com o prefixo `emulate -R sh`",
 					hf.path, hf.cli, m.raw,
 				))
 				break // um aviso por arquivo é suficiente

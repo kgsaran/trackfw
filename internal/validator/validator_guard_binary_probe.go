@@ -74,7 +74,7 @@ const (
 )
 
 // guardExpectedLine retorna a linha exata de hook D11 revised REQ-2026-10-20 fail-closed (com prefixo
-// unsetopt EQUALS NOMATCH) para a família de shell e nome de subcomando dados
+// emulate -R sh) para a família de shell e nome de subcomando dados
 // (REQ-2026-10-20 / REQ-2026-10-20 / ADR-2026-10-04 D11 revised). O subcmdName pode incluir
 // flags (ex.: "credential --global").
 func guardExpectedLine(subcmdName string, fam guardShellFamily) string {
@@ -85,7 +85,7 @@ func guardExpectedLine(subcmdName string, fam guardShellFamily) string {
 }
 
 // guardD11RevisedLegacyLine retorna a linha D11 revised pré-REQ-2026-10-20 (com 4º trecho PS mas sem
-// prefixo unsetopt). Esta forma aborta o zsh via EQUALS/NOMATCH expansion; é tratada como
+// prefixo). Esta forma aborta o zsh via EQUALS/NOMATCH expansion; é tratada como
 // warning de migração (via validateGuardHookD11RevisedLegacyWarnings), não violation.
 // Só relevante para a família PS/POSIX.
 func guardD11RevisedLegacyLine(subcmdName string, fam guardShellFamily) string {

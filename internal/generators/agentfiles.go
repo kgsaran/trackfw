@@ -335,7 +335,7 @@ func InjectClaudeHooks(rootDir string) error {
 	migrateHookCommand(hooks["PreToolUse"], "Bash", legacyClaudeGitGuardCmd, guardGitBranchCmdPSPOSIX)
 
 	// ML-6B/ML-6C: migrate D2-revised and pre-ML-6C D11 inline forms → new forms.
-	// REQ-2026-10-20: also migrate D11 revised pré-REQ-2026-10-20 (without unsetopt) → REQ-2026-10-20 forms.
+	// REQ-2026-10-20: also migrate D11 revised pré-REQ-2026-10-20 (without emulate -R sh prefix) → REQ-2026-10-20 forms.
 	// Must run BEFORE migrateGuardHookMatcher so that legacy commands are already
 	// in current form when the all-guard renaming logic inspects them.
 	for _, matcher := range []string{claudeShellMatcher, "Bash", "Read", "Write|Edit"} {
@@ -499,13 +499,17 @@ const (
 	// REQ-2026-10-20 (REQ-2026-10-20): prefixing "emulate -R sh 2>${null-/dev/null}; " fixes
 	// two zsh breakpoints before the guard runs:
 	//   1. EQUALS expansion: "$LASTEXITCODE" is empty on first run → word "=2" → zsh tries
-	//      "which 2" → abort exit 1. Fixed by unsetopt EQUALS.
+	//      "which 2" → abort exit 1.
 	//   2. NOMATCH: after segment 3 sets LASTEXITCODE, segment 4 expands to "N=2*!!N";
-	//      the bare "*" is a glob; zero matches → zsh abort exit 1. Fixed by unsetopt NOMATCH.
-	//   In sh/bash/dash: "unsetopt" is CommandNotFound (exit 127), stderr swallowed by
-	//   2>${null-/dev/null}, shell continues — no change in behaviour on those shells.
-	//   In PowerShell: "unsetopt" is CommandNotFoundException, does not affect $LASTEXITCODE,
-	//   seed "$LASTEXITCODE=2" continues to work normally.
+	//      the bare "*" is a glob; zero matches → zsh abort exit 1.
+	//   "unsetopt EQUALS NOMATCH" was discarded as alternative because: (a) errexit=127 —
+	//   in sh/bash/dash with errexit set, CommandNotFound (exit 127) aborts the hook before
+	//   the guard runs (fail-open); (b) nounset=1 — "unsetopt nounset" was not in the
+	//   candidate, leaving nounset active and causing unset variable references to abort;
+	//   (c) cshnullglob — NOMATCH alone was insufficient without also unsetting cshnullglob.
+	//   emulate -R sh restores all POSIX sh defaults at once, including disabling these options.
+	//   In PS 5.1: emulate and the LASTEXITCODE= seed are CommandNotFound; two lines appear in
+	//   stderr per hook execution — accepted cost (ADR-2026-10-04 adendo 2026-10-21).
 	//   Measured on macOS: sh/bash/dash/zsh/zsh-f all yield allow→0, deny→2, absent→2, err1→2.
 	//   (Wave 0 / ADR-2026-10-04 D11 revised REQ-2026-10-20)
 	guardGitBranchCmdPSPOSIX        = `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
@@ -572,7 +576,7 @@ const (
 	legacyD11CredentialGlobalCmdPSPOSIX = `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
 )
 
-// D11 revised pre-REQ-2026-10-20 inline forms (D11 revised WITH 4th PS trecho but WITHOUT unsetopt prefix).
+// D11 revised pre-REQ-2026-10-20 inline forms (D11 revised WITH 4th PS trecho but WITHOUT emulate -R sh prefix).
 // These are the exact strings written by trackfw before the REQ-2026-10-20 zsh fix (REQ-2026-10-20).
 // They fail in zsh because EQUALS expansion and NOMATCH abort the shell before the guard runs.
 // Kept for migrateHookCommand / dedup recognition. Never used as the "new" command in any emit path.

@@ -1324,7 +1324,7 @@ func globalKiroGitBranchWithSubcmdD2() string {
 }
 
 // globalClaudeSettingsWithSubcmdD11Credential monta ~/.claude/settings.json com a linha REQ-2026-10-20
-// fail-closed de credential (PS/POSIX): a forma correta atual (com prefixo unsetopt EQUALS NOMATCH).
+// fail-closed de credential (PS/POSIX): a forma correta atual (com prefixo emulate -R sh).
 func globalClaudeSettingsWithSubcmdD11Credential() string {
 	const d11Line = `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
 	return `{
@@ -1342,7 +1342,7 @@ func globalClaudeSettingsWithSubcmdD11Credential() string {
 }
 
 // globalClaudeSettingsWithSubcmdD11RevLegacyCredential monta ~/.claude/settings.json com a linha
-// D11 revised pré-REQ-2026-10-20 de credential (PS/POSIX): sem o prefixo "unsetopt EQUALS NOMATCH".
+// D11 revised pré-REQ-2026-10-20 de credential (PS/POSIX): sem o prefixo "emulate -R sh".
 // Usada para testar que o validate emite um aviso de migração D11 revised legacy.
 func globalClaudeSettingsWithSubcmdD11RevLegacyCredential() string {
 	const d11RevLegacyLine = `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
@@ -1472,7 +1472,7 @@ func TestGuardGlobalHookD11LegacyWarnings_CredentialLegacyD11_EmiteUmAviso(t *te
 }
 
 // TestGuardGlobalHookD11RevisedLegacyWarnings_CredentialD11Rev_EmiteUmAviso afirma que a linha D11
-// revised pré-REQ-2026-10-20 (sem unsetopt EQUALS NOMATCH) em ~/.claude/settings.json emite exatamente 1 aviso
+// revised pré-REQ-2026-10-20 (sem prefixo emulate -R sh) em ~/.claude/settings.json emite exatamente 1 aviso
 // nomeando o arquivo e instruindo `trackfw update harness`.
 // Reconciliação: REQ-2026-10-20 eleva a forma D11 revised pré-REQ-2026-10-20 a legado (aborta no zsh) — o validator emite aviso de migração.
 func TestGuardGlobalHookD11RevisedLegacyWarnings_CredentialD11Rev_EmiteUmAviso(t *testing.T) {
@@ -1505,7 +1505,7 @@ func TestGuardGlobalHookD11RevisedLegacyWarnings_CredentialD11Rev_EmiteUmAviso(t
 }
 
 // TestGuardGlobalHookD11RevisedLegacyWarnings_NewML7AForm_Silencio afirma que a nova linha
-// REQ-2026-10-20 (com prefixo unsetopt EQUALS NOMATCH) em ~/.claude/settings.json não emite aviso D11 revised legacy.
+// REQ-2026-10-20 (com prefixo emulate -R sh) em ~/.claude/settings.json não emite aviso D11 revised legacy.
 // Reconciliação: só a forma D11 revised pré-REQ-2026-10-20 dispara este aviso — a forma REQ-2026-10-20 está correta e é silenciada.
 func TestGuardGlobalHookD11RevisedLegacyWarnings_NewML7AForm_Silencio(t *testing.T) {
 	dir := t.TempDir()

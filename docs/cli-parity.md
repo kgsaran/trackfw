@@ -6196,15 +6196,21 @@ todo CLI de agente), via subcomando Go `trackfw guard`:
 | cmd.exe (Kiro, Amazon Q) | `trackfw guard git-branch \|\| exit 2` |
 | Idem para credential-guard | `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE` / `trackfw guard credential \|\| exit 2` |
 
-**REQ-2026-10-20 — correção de falha do hook sob zsh (ADR-2026-10-04, issue #603, 2026-10-21):**
+**REQ-2026-10-20 — correção de falha do hook sob zsh (ADR-2026-10-04, 2026-10-21):**
 A linha D11 (ML-6C) falhava silenciosamente sob zsh devido a duas opções ativas por padrão:
 
 - **EQUALS**: `$LASTEXITCODE` vazio → o token `=2` aciona *equals expansion* → zsh executa `which 2` → falha com exit 1, abortando o hook antes de `trackfw guard`.
 - **NOMATCH**: o 4º segmento `$LASTEXITCODE=2*!!$LASTEXITCODE` tem `*` não quotado → glob expansion → nenhum arquivo casa → zsh aborta com `zsh: no matches found`.
 
-O prefixo `unsetopt EQUALS NOMATCH 2>${null-/dev/null}` desliga essas opções no escopo do hook.
-Em sh/bash o `unsetopt` é `command not found` — stderr descartado pelo redirecionamento, exit ignorado.
-Em PS 5.1 é igualmente inerte. A linha é poliglota em todos os quatro ambientes.
+O prefixo `emulate -R sh 2>${null-/dev/null}` restaura as opções padrão de sh no escopo do hook,
+desativando EQUALS, NOMATCH e outras opções zsh que causavam abort. `unsetopt EQUALS NOMATCH` foi
+descartado: em sh/bash/dash com `errexit` ativo, o CommandNotFound (exit 127) aborta o hook
+(fail-open); `nounset=1` permaneceria ativo; `cshnullglob` não era coberto pelo candidato
+(ver ADR-2026-10-04, adendo 2026-10-21). Em sh/bash/dash, `emulate` é CommandNotFound — stderr
+descartado pelo redirecionamento, exit ignorado, comportamento inalterado. Em PS 5.1, `emulate` e
+o `$LASTEXITCODE=…` seguinte são CommandNotFound: o redirect `2>${null-/dev/null}` NÃO suprime o
+CommandNotFound no PS 5.1 (medido, achado A6) — duas linhas aparecem no stderr por execução, mas
+`$LASTEXITCODE` não é afetado e a execução prossegue normalmente. Custo aceito (KG, 2026-10-21).
 
 **D11 — fail-closed sem o trackfw no PATH (ADR-2026-10-04, ML-6B, issue #535):**
 A linha D11 resolve o problema da D2 que era **fail-open** quando `trackfw` estava ausente do PATH:
@@ -6212,7 +6218,7 @@ o hook saía com exit 0 e o agente prosseguia sem interrupção.
 
 Mecanismo da linha PS/POSIX (poliglota sh/bash/zsh/PowerShell 5.1):
 
-- `unsetopt EQUALS NOMATCH 2>${null-/dev/null}` — desliga as opções zsh que causavam abort; inerte em sh/bash/PS 5.1 (REQ-2026-10-20).
+- `emulate -R sh 2>${null-/dev/null}` — restaura as opções padrão de sh no escopo do hook, desativando EQUALS, NOMATCH e demais opções zsh; em sh/bash/dash é CommandNotFound (stderr descartado, exit ignorado); em PS 5.1 é CommandNotFound — duas linhas no stderr por execução, `$LASTEXITCODE` não afetado (REQ-2026-10-20, ADR-2026-10-04 adendo 2026-10-21).
 - `$LASTEXITCODE=2` — semente de fallback: em PS 5.1 é atribuição da variável automática; em
   sh/bash/zsh é um comando inexistente `=2` que retorna exit ≠ 0 (sem impacto — o erro é descartado
   pelo redirecionamento a seguir).
@@ -6234,7 +6240,7 @@ Linha cmd.exe: `trackfw guard <nome> || exit 2` — o `||` é o short-circuit na
 se o guard falha ou o binário não existe, `exit 2` é executado imediatamente.
 
 A D2 revisada (pre-ML-6B: `trackfw guard <nome>; exit $LASTEXITCODE` / `trackfw guard <nome>`),
-a D11 legada (pre-ML-6C: sem o 4º segmento PS) e a D11 revisada (pre-REQ-2026-10-20: sem o prefixo `unsetopt`)
+a D11 legada (pre-ML-6C: sem o 4º segmento PS) e a D11 revisada (pre-REQ-2026-10-20: sem o prefixo `emulate -R sh`)
 **não geram violation** no `trackfw validate` — são aceitas como formas conhecidas —, mas geram aviso
 solicitando `trackfw update harness` para migrar para a nova forma REQ-2026-10-20.
 
@@ -6399,7 +6405,7 @@ credential` e verifica se a linha é **exatamente** a esperada para a família d
 - cmd.exe (D11) → `trackfw guard <nome> || exit 2`
 
 A D2 revisada (`trackfw guard <nome>; exit $LASTEXITCODE` / `trackfw guard <nome>`), a D11
-legada (sem o 4º segmento PS) e a D11 revisada (pre-REQ-2026-10-20: sem o prefixo `unsetopt`) são aceitas
+legada (sem o 4º segmento PS) e a D11 revisada (pre-REQ-2026-10-20: sem o prefixo `emulate -R sh`) são aceitas
 sem violation mas geram aviso (`linha antiga; rode \`trackfw update harness\` para migrar`).
 
 Se o marcador está presente mas a linha não corresponde nem a D11 nem a D2, o validador acusa com a
