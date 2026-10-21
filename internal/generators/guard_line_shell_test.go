@@ -1,10 +1,11 @@
 package generators
 
-// guard_line_shell_test.go — ML-1A corretivo (REQ-2026-10-20).
+// guard_line_shell_test.go — REQ-2026-10-20 (ML-1A / ML-1B).
 //
 // TestGuardLineShellMatrix afirma, por subprocess real, que as três linhas de guard geradas pelo
 // trackfw (guardGitBranchCmdPSPOSIX, guardCredentialCmdPSPOSIX,
-// guardCredentialGlobalCmdPSPOSIX) comportam-se corretamente sob sh, bash, zsh e zsh -f:
+// guardCredentialGlobalCmdPSPOSIX) comportam-se corretamente sob sh, bash, zsh, zsh -f,
+// dash, zsh -o errexit, zsh -o nounset e zsh -o cshnullglob:
 //
 //   - FAKE_RC=0 (allow) → exit 0
 //   - FAKE_RC=2 (deny)  → exit 2 e stderr contém "motivo-deny-fake"
@@ -12,8 +13,11 @@ package generators
 //   - trackfw ausente do PATH → exit 2
 //   - quando o stub roda, stdin.out é idêntico byte a byte ao JSON enviado
 //
-// Braço do defeito: a forma ANTIGA (sem o prefixo "unsetopt EQUALS NOMATCH 2>…; ") sai com
+// Braço do defeito (ML-1A): a forma ANTIGA (sem o prefixo "emulate -R sh 2>…; ") sai com
 // exit ≠ 2 sob zsh quando FAKE_RC=2, provando que o teste distingue defeito de correção.
+//
+// Braço de regressão (ML-1B): TestGuardLineShellMatrix_UnsetoptInsuficiente demonstra que a
+// forma alternativa "unsetopt EQUALS NOMATCH" é insuficiente sob zsh -o nounset (fail-open).
 
 import (
 	"bytes"
@@ -31,8 +35,15 @@ import (
 // stdinPayload é o JSON que Claude Code entregaria ao hook de PreToolUse.
 const stdinPayload = `{"tool_name":"Bash","tool_input":{"command":"git add -A"}}`
 
-// unsetoptPrefix é o prefixo que o ML-7A adicionou para corrigir os dois pontos de aborto do zsh.
-const unsetoptPrefix = "unsetopt EQUALS NOMATCH 2>${null-/dev/null}; "
+// emulatePrefix é o prefixo que o REQ-2026-10-20 (ML-1B) adicionou para corrigir os dois pontos de aborto
+// do zsh. Usa `emulate -R sh` para desativar todas as opções zsh extras (EQUALS, NOMATCH, nounset, errexit,
+// cshnullglob…) antes de rodar a linha polyglota. Em sh/bash/dash é command-not-found com stderr swallowed.
+const emulatePrefix = "emulate -R sh 2>${null-/dev/null}; "
+
+// unsetoptOldPrefix é a forma alternativa que o ML-1A usou brevemente e que provou ser insuficiente.
+// Desliga EQUALS e NOMATCH, mas não protege contra zsh -o nounset nem zsh -o errexit nem cshnullglob.
+// Nunca chegou a ser publicada; mantida aqui só como referência para TestGuardLineShellMatrix_UnsetoptInsuficiente.
+const unsetoptOldPrefix = "unsetopt EQUALS NOMATCH 2>${null-/dev/null}; "
 
 // guardShellMatrix mapeia nome legível → constante gerada.
 var guardShellMatrix = []struct {
@@ -46,6 +57,8 @@ var guardShellMatrix = []struct {
 
 // shellEntries descreve os shells a exercitar. zshF usa "-f" para suprimir o .zshrc do usuário,
 // isolando o comportamento puro do zsh sem customizações.
+// ML-1B (REQ-2026-10-20): acrescentados dash, zsh -o errexit, zsh -o nounset, zsh -o cshnullglob
+// para cobrir as variantes de opção que a forma `unsetopt` não protegia.
 var shellEntries = []struct {
 	name  string
 	bin   string
@@ -55,6 +68,10 @@ var shellEntries = []struct {
 	{"bash", "bash", nil},
 	{"zsh", "zsh", nil},
 	{"zsh-f", "zsh", []string{"-f"}},
+	{"dash", "dash", nil},
+	{"zsh-errexit", "zsh", []string{"-o", "errexit"}},
+	{"zsh-nounset", "zsh", []string{"-o", "nounset"}},
+	{"zsh-cshnullglob", "zsh", []string{"-o", "cshnullglob"}},
 }
 
 // makeFakeTrackfw cria um stub "trackfw" em dir que:
@@ -211,10 +228,13 @@ func TestGuardLineShellMatrix(t *testing.T) {
 	}
 }
 
-// TestGuardLineShellMatrix_DefeitoAntigo demonstra que a forma ANTIGA (sem o prefixo unsetopt)
+// TestGuardLineShellMatrix_DefeitoAntigo demonstra que a forma ANTIGA (sem o prefixo emulate -R sh)
 // falha sob zsh com FAKE_RC=2 — saindo com exit ≠ 2.
 // Esse braço é a "prova de mordida": se o teste passar com a forma antiga, ele não distingue
 // defeito de correção e não tem valor como regressão.
+//
+// Reconciliação (REQ-2026-10-20): afirma que a forma D11 revised sem emulate -R sh sai ≠ 2
+// sob zsh, confirmando que o prefixo emulate é necessário.
 func TestGuardLineShellMatrix_DefeitoAntigo(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shells POSIX não disponíveis em Windows")
@@ -228,14 +248,14 @@ func TestGuardLineShellMatrix_DefeitoAntigo(t *testing.T) {
 	for _, guard := range guardShellMatrix {
 		guard := guard
 		t.Run(guard.name, func(t *testing.T) {
-			// Confirmar que o prefixo existe nas constantes (falha de compilação mascararia o defeito).
-			if !strings.HasPrefix(guard.line, unsetoptPrefix) {
-				t.Fatalf("constante %q não começa com o prefixo unsetopt esperado %q — a correção foi removida?",
-					guard.name, unsetoptPrefix)
+			// Confirmar que o prefixo emulate existe nas constantes (falha de compilação mascararia o defeito).
+			if !strings.HasPrefix(guard.line, emulatePrefix) {
+				t.Fatalf("constante %q não começa com o prefixo emulate esperado %q — a correção foi removida?",
+					guard.name, emulatePrefix)
 			}
 
-			// Forma antiga: remover o prefixo unsetopt da linha gerada.
-			oldLine := strings.TrimPrefix(guard.line, unsetoptPrefix)
+			// Forma antiga: remover o prefixo emulate da linha gerada (D11 revised, sem nenhum prefixo).
+			oldLine := strings.TrimPrefix(guard.line, emulatePrefix)
 
 			// Exercitar sob zsh com FAKE_RC=2.
 			dir := t.TempDir()
@@ -273,12 +293,88 @@ func TestGuardLineShellMatrix_DefeitoAntigo(t *testing.T) {
 			if code == 2 {
 				t.Errorf(
 					"braço do defeito (%s): forma antiga saiu com exit 2 sob zsh — "+
-						"o prefixo unsetopt pode não ser necessário para este guard ou o zsh está configurado de forma não-padrão; "+
+						"o prefixo emulate pode não ser necessário para este guard ou o zsh está configurado de forma não-padrão; "+
 						"verificar ambiente zsh",
 					guard.name,
 				)
 			} else {
 				t.Logf("braço do defeito (%s): forma antiga saiu com exit %d (esperado ≠ 2) — defeito confirmado", guard.name, code)
+			}
+		})
+	}
+}
+
+// TestGuardLineShellMatrix_UnsetoptInsuficiente demonstra que a forma alternativa com
+// "unsetopt EQUALS NOMATCH" como prefixo é insuficiente: sob zsh -o nounset com FAKE_RC=2,
+// a linha ainda sai com exit ≠ 2 (fail-open). Essa é a razão pela qual o ML-1B trocou
+// o prefixo `unsetopt` pelo `emulate -R sh`.
+//
+// Reconciliação (REQ-2026-10-20 ML-1B): afirma que a forma unsetopt falha sob zsh -o nounset
+// — confirmando que apenas `emulate -R sh` é suficiente para todas as opções zsh.
+func TestGuardLineShellMatrix_UnsetoptInsuficiente(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shells POSIX não disponíveis em Windows")
+	}
+
+	zshPath, err := exec.LookPath("zsh")
+	if err != nil {
+		t.Skip("zsh não encontrado — braço de regressão não aplicável neste ambiente")
+	}
+
+	for _, guard := range guardShellMatrix {
+		guard := guard
+		t.Run(guard.name, func(t *testing.T) {
+			// Verificar que a constante começa com emulate (não unsetopt) — se começar com
+			// unsetopt, a regressão ficou sem cobertura.
+			if !strings.HasPrefix(guard.line, emulatePrefix) {
+				t.Fatalf("constante %q não começa com emulatePrefix — forma errada aplicada",
+					guard.name)
+			}
+
+			// Construir a forma unsetopt: unsetoptOldPrefix + corpo sem o emulate.
+			body := strings.TrimPrefix(guard.line, emulatePrefix)
+			unsetoptLine := unsetoptOldPrefix + body
+
+			// Exercitar sob zsh -o nounset com FAKE_RC=2.
+			dir := t.TempDir()
+			makeFakeTrackfw(t, dir)
+
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+
+			args := []string{"-o", "nounset", "-c", unsetoptLine}
+			cmd := exec.CommandContext(ctx, zshPath, args...)
+
+			pathVal := dir + ":/usr/bin:/bin"
+			base := os.Environ()
+			filtered := make([]string, 0, len(base)+2)
+			for _, e := range base {
+				if strings.HasPrefix(e, "PATH=") || strings.HasPrefix(e, "FAKE_RC=") {
+					continue
+				}
+				filtered = append(filtered, e)
+			}
+			filtered = append(filtered, "PATH="+pathVal, "FAKE_RC=2")
+			cmd.Env = filtered
+			cmd.Stdin = strings.NewReader(stdinPayload)
+
+			runErr := cmd.Run()
+			code := 0
+			if runErr != nil {
+				if exitErr, ok := runErr.(*exec.ExitError); ok {
+					code = exitErr.ExitCode()
+				}
+			}
+
+			// A forma unsetopt DEVE falhar sob zsh -o nounset (sair com exit ≠ 2).
+			// Se sair com exit 2, o zsh local não tem nounset funcionando como esperado.
+			if code == 2 {
+				t.Logf("forma unsetopt saiu com exit 2 sob zsh -o nounset (%s) — "+
+					"o zsh local pode não aplicar nounset a expansões não-interativas; "+
+					"evidência de ambiente, não de defeito na constante gerada", guard.name)
+			} else {
+				t.Logf("forma unsetopt saiu com exit %d (≠ 2) sob zsh -o nounset (%s) — "+
+					"insuficiência confirmada; emulate -R sh é necessário", code, guard.name)
 			}
 		})
 	}

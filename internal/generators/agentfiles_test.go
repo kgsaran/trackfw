@@ -683,6 +683,324 @@ func TestInjectGeminiHooks_MigrationWiringRewritesInPlaceNotDuplicate(t *testing
 	}
 }
 
+// TestInjectCodexHooks_LegacyMigrationNoDuplicate verifies that B-1 (REQ-2026-10-20) is fixed:
+// each legacy credential/git-branch form (D2, D11, D11-revised, WABash wrapper) is rewritten in
+// place to the canonical emulate form — no duplicate entries across any Codex matcher.
+// Reconciliation note: affirms that migration-before-merge prevents duplicates (B-1 fix).
+func TestInjectCodexHooks_LegacyMigrationNoDuplicate(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", t.TempDir())
+
+	mk := func(matcher, command string) map[string]interface{} {
+		return map[string]interface{}{
+			"matcher": matcher,
+			"hooks":   []interface{}{map[string]interface{}{"type": "command", "command": command}},
+		}
+	}
+
+	credLegacyForms := []struct {
+		name string
+		cmd  string
+	}{
+		{"D2", legacyD2CredentialCmdPSPOSIX},
+		{"D11", legacyD11CredentialCmdPSPOSIX},
+		{"D11Rev", legacyD11RevCredentialCmdPSPOSIX},
+		{"WABash", legacyWABashCredentialCmdPSPOSIX},
+	}
+	gitLegacyForms := []struct {
+		name string
+		cmd  string
+	}{
+		{"D2", legacyD2GitBranchCmdPSPOSIX},
+		{"D11", legacyD11GitBranchCmdPSPOSIX},
+		{"D11Rev", legacyD11RevGitBranchCmdPSPOSIX},
+		{"WABash", legacyWABashGitBranchCmdPSPOSIX},
+	}
+
+	for _, tc := range credLegacyForms {
+		tc := tc
+		t.Run("cred_"+tc.name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("USERPROFILE", t.TempDir())
+			dir := t.TempDir()
+			existing := map[string]interface{}{
+				"hooks": map[string]interface{}{
+					"PreToolUse": []interface{}{
+						mk("Bash", tc.cmd),
+						mk("apply_patch", tc.cmd),
+					},
+					"PostToolUse": []interface{}{
+						mk("Bash", tc.cmd),
+						mk("apply_patch", tc.cmd),
+					},
+				},
+			}
+			helperWriteJSON(t, filepath.Join(dir, ".codex", "hooks.json"), existing)
+			if err := InjectCodexHooks(dir); err != nil {
+				t.Fatalf("InjectCodexHooks failed: %v", err)
+			}
+
+			data := helperReadJSON(t, filepath.Join(dir, ".codex", "hooks.json"))
+			hooks, _ := data["hooks"].(map[string]interface{})
+
+			for _, event := range []string{"PreToolUse", "PostToolUse"} {
+				for _, matcher := range []string{"Bash", "apply_patch"} {
+					arr, _ := hooks[event].([]interface{})
+					count := 0
+					for _, item := range arr {
+						obj, _ := item.(map[string]interface{})
+						if obj["matcher"] != matcher {
+							continue
+						}
+						count++
+					}
+					if count != 1 {
+						t.Errorf("[%s] %s[%s]: legacy %s — expected 1 matcher entry, got %d (B-1 duplicate)", tc.name, event, matcher, tc.name, count)
+					}
+					if !helperHasClaudeHook(data, event, matcher, guardCredentialCmdPSPOSIX) {
+						t.Errorf("[%s] %s[%s]: canonical credential-guard command missing", tc.name, event, matcher)
+					}
+				}
+			}
+
+			// Idempotent: second Inject must not add new entries.
+			if err := InjectCodexHooks(dir); err != nil {
+				t.Fatalf("second InjectCodexHooks failed: %v", err)
+			}
+			data2 := helperReadJSON(t, filepath.Join(dir, ".codex", "hooks.json"))
+			hooks2, _ := data2["hooks"].(map[string]interface{})
+			for _, event := range []string{"PreToolUse", "PostToolUse"} {
+				for _, matcher := range []string{"Bash", "apply_patch"} {
+					arr, _ := hooks2[event].([]interface{})
+					count := 0
+					for _, item := range arr {
+						obj, _ := item.(map[string]interface{})
+						if obj["matcher"] == matcher {
+							count++
+						}
+					}
+					if count != 1 {
+						t.Errorf("[%s] idempotent %s[%s]: expected 1 entry after 2nd inject, got %d", tc.name, event, matcher, count)
+					}
+				}
+			}
+		})
+	}
+
+	for _, tc := range gitLegacyForms {
+		tc := tc
+		t.Run("git_"+tc.name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("USERPROFILE", t.TempDir())
+			dir := t.TempDir()
+			existing := map[string]interface{}{
+				"hooks": map[string]interface{}{
+					"PreToolUse": []interface{}{mk("Bash", tc.cmd)},
+				},
+			}
+			helperWriteJSON(t, filepath.Join(dir, ".codex", "hooks.json"), existing)
+			if err := InjectCodexHooks(dir); err != nil {
+				t.Fatalf("InjectCodexHooks failed: %v", err)
+			}
+
+			data := helperReadJSON(t, filepath.Join(dir, ".codex", "hooks.json"))
+			hooks, _ := data["hooks"].(map[string]interface{})
+
+			arr, _ := hooks["PreToolUse"].([]interface{})
+			count := 0
+			for _, item := range arr {
+				obj, _ := item.(map[string]interface{})
+				if obj["matcher"] == "Bash" {
+					count++
+				}
+			}
+			if count != 1 {
+				t.Errorf("[git_%s] PreToolUse[Bash]: expected 1 matcher entry, got %d (B-1 duplicate)", tc.name, count)
+			}
+			if !helperHasClaudeHook(data, "PreToolUse", "Bash", guardGitBranchCmdPSPOSIX) {
+				t.Errorf("[git_%s] PreToolUse[Bash]: canonical git-branch-guard command missing", tc.name)
+			}
+
+			// Idempotent.
+			if err := InjectCodexHooks(dir); err != nil {
+				t.Fatalf("second InjectCodexHooks failed: %v", err)
+			}
+			data2 := helperReadJSON(t, filepath.Join(dir, ".codex", "hooks.json"))
+			hooks2, _ := data2["hooks"].(map[string]interface{})
+			arr2, _ := hooks2["PreToolUse"].([]interface{})
+			count2 := 0
+			for _, item := range arr2 {
+				obj, _ := item.(map[string]interface{})
+				if obj["matcher"] == "Bash" {
+					count2++
+				}
+			}
+			if count2 != 1 {
+				t.Errorf("[git_%s] idempotent PreToolUse[Bash]: expected 1 entry after 2nd inject, got %d", tc.name, count2)
+			}
+		})
+	}
+}
+
+// TestInjectGeminiHooks_LegacyMigrationNoDuplicate is the Gemini counterpart of
+// TestInjectCodexHooks_LegacyMigrationNoDuplicate.
+// Reconciliation note: affirms that migration-before-merge prevents duplicates in Gemini (B-1 fix).
+func TestInjectGeminiHooks_LegacyMigrationNoDuplicate(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", t.TempDir())
+
+	mk := func(matcher, command string) map[string]interface{} {
+		return map[string]interface{}{
+			"matcher": matcher,
+			"hooks":   []interface{}{map[string]interface{}{"type": "command", "command": command}},
+		}
+	}
+
+	credLegacyForms := []struct {
+		name string
+		cmd  string
+	}{
+		{"D2", legacyD2CredentialCmdPSPOSIX},
+		{"D11", legacyD11CredentialCmdPSPOSIX},
+		{"D11Rev", legacyD11RevCredentialCmdPSPOSIX},
+		{"WABash", legacyWABashCredentialCmdPSPOSIX},
+	}
+	gitLegacyForms := []struct {
+		name string
+		cmd  string
+	}{
+		{"D2", legacyD2GitBranchCmdPSPOSIX},
+		{"D11", legacyD11GitBranchCmdPSPOSIX},
+		{"D11Rev", legacyD11RevGitBranchCmdPSPOSIX},
+		{"WABash", legacyWABashGitBranchCmdPSPOSIX},
+	}
+
+	geminiMatchers := []string{"run_shell_command", "read_file|read_many_files", "write_file|replace"}
+
+	for _, tc := range credLegacyForms {
+		tc := tc
+		t.Run("cred_"+tc.name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("USERPROFILE", t.TempDir())
+			dir := t.TempDir()
+
+			var beforeEntries, afterEntries []interface{}
+			for _, m := range geminiMatchers {
+				beforeEntries = append(beforeEntries, mk(m, tc.cmd))
+				afterEntries = append(afterEntries, mk(m, tc.cmd))
+			}
+			existing := map[string]interface{}{
+				"hooks": map[string]interface{}{
+					"BeforeTool": beforeEntries,
+					"AfterTool":  afterEntries,
+				},
+			}
+			helperWriteJSON(t, filepath.Join(dir, ".gemini", "settings.json"), existing)
+			if err := InjectGeminiHooks(dir); err != nil {
+				t.Fatalf("InjectGeminiHooks failed: %v", err)
+			}
+
+			data := helperReadJSON(t, filepath.Join(dir, ".gemini", "settings.json"))
+			hooks, _ := data["hooks"].(map[string]interface{})
+
+			for _, event := range []string{"BeforeTool", "AfterTool"} {
+				for _, matcher := range geminiMatchers {
+					arr, _ := hooks[event].([]interface{})
+					count := 0
+					for _, item := range arr {
+						obj, _ := item.(map[string]interface{})
+						if obj["matcher"] == matcher {
+							count++
+						}
+					}
+					if count != 1 {
+						t.Errorf("[%s] %s[%s]: expected 1 matcher entry, got %d (B-1 duplicate)", tc.name, event, matcher, count)
+					}
+					if !helperHasClaudeHook(data, event, matcher, guardCredentialCmdPSPOSIX) {
+						t.Errorf("[%s] %s[%s]: canonical credential-guard command missing", tc.name, event, matcher)
+					}
+				}
+			}
+
+			// Idempotent.
+			if err := InjectGeminiHooks(dir); err != nil {
+				t.Fatalf("second InjectGeminiHooks failed: %v", err)
+			}
+			data2 := helperReadJSON(t, filepath.Join(dir, ".gemini", "settings.json"))
+			hooks2, _ := data2["hooks"].(map[string]interface{})
+			for _, event := range []string{"BeforeTool", "AfterTool"} {
+				for _, matcher := range geminiMatchers {
+					arr, _ := hooks2[event].([]interface{})
+					count := 0
+					for _, item := range arr {
+						obj, _ := item.(map[string]interface{})
+						if obj["matcher"] == matcher {
+							count++
+						}
+					}
+					if count != 1 {
+						t.Errorf("[%s] idempotent %s[%s]: expected 1 entry after 2nd inject, got %d", tc.name, event, matcher, count)
+					}
+				}
+			}
+		})
+	}
+
+	for _, tc := range gitLegacyForms {
+		tc := tc
+		t.Run("git_"+tc.name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("USERPROFILE", t.TempDir())
+			dir := t.TempDir()
+			existing := map[string]interface{}{
+				"hooks": map[string]interface{}{
+					"BeforeTool": []interface{}{mk("run_shell_command", tc.cmd)},
+				},
+			}
+			helperWriteJSON(t, filepath.Join(dir, ".gemini", "settings.json"), existing)
+			if err := InjectGeminiHooks(dir); err != nil {
+				t.Fatalf("InjectGeminiHooks failed: %v", err)
+			}
+
+			data := helperReadJSON(t, filepath.Join(dir, ".gemini", "settings.json"))
+			hooks, _ := data["hooks"].(map[string]interface{})
+
+			arr, _ := hooks["BeforeTool"].([]interface{})
+			count := 0
+			for _, item := range arr {
+				obj, _ := item.(map[string]interface{})
+				if obj["matcher"] == "run_shell_command" {
+					count++
+				}
+			}
+			if count != 1 {
+				t.Errorf("[git_%s] BeforeTool[run_shell_command]: expected 1 matcher entry, got %d (B-1 duplicate)", tc.name, count)
+			}
+			if !helperHasClaudeHook(data, "BeforeTool", "run_shell_command", guardGitBranchCmdPSPOSIX) {
+				t.Errorf("[git_%s] BeforeTool[run_shell_command]: canonical git-branch-guard command missing", tc.name)
+			}
+
+			// Idempotent.
+			if err := InjectGeminiHooks(dir); err != nil {
+				t.Fatalf("second InjectGeminiHooks failed: %v", err)
+			}
+			data2 := helperReadJSON(t, filepath.Join(dir, ".gemini", "settings.json"))
+			hooks2, _ := data2["hooks"].(map[string]interface{})
+			arr2, _ := hooks2["BeforeTool"].([]interface{})
+			count2 := 0
+			for _, item := range arr2 {
+				obj, _ := item.(map[string]interface{})
+				if obj["matcher"] == "run_shell_command" {
+					count2++
+				}
+			}
+			if count2 != 1 {
+				t.Errorf("[git_%s] idempotent BeforeTool[run_shell_command]: expected 1 entry after 2nd inject, got %d", tc.name, count2)
+			}
+		})
+	}
+}
+
 // --- Kiro ---
 
 func TestInjectKiroHooks(t *testing.T) {

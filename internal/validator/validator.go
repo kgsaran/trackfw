@@ -1052,7 +1052,7 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	applyRuleWarnOnly("credential_guard_hook_resolvable", append(credentialGuardD11Warn, credentialGuardGlobalD11Warn...), &warnings)
 	applyRuleWarnOnly("git_branch_guard_hook_resolvable", append(gitBranchGuardD11Warn, gitBranchGuardGlobalD11Warn...), &warnings)
 
-	// ML-7A (REQ-2026-10-20): avisos de forma D11 revised pré-ML-7A (aborta no zsh — EQUALS/NOMATCH).
+	// REQ-2026-10-20 (REQ-2026-10-20): avisos de forma D11 revised pré-REQ-2026-10-20 (aborta no zsh — EQUALS/NOMATCH).
 	credentialGuardD11RevWarn, e := validateCredentialGuardHookD11RevisedLegacyWarnings()
 	if e != nil {
 		return nil, nil, e
@@ -1554,7 +1554,7 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 	applyRuleWarnOnlyTagged("credential_guard_hook_resolvable", append(credentialGuardD11WarnT, credentialGuardGlobalD11WarnT...), &warnings)
 	applyRuleWarnOnlyTagged("git_branch_guard_hook_resolvable", append(gitBranchGuardD11WarnT, gitBranchGuardGlobalD11WarnT...), &warnings)
 
-	// ML-7A (REQ-2026-10-20): avisos de forma D11 revised pré-ML-7A (aborta no zsh — EQUALS/NOMATCH).
+	// REQ-2026-10-20 (REQ-2026-10-20): avisos de forma D11 revised pré-REQ-2026-10-20 (aborta no zsh — EQUALS/NOMATCH).
 	credentialGuardD11RevWarnT, e := validateCredentialGuardHookD11RevisedLegacyWarnings()
 	if e != nil {
 		return nil, nil, e

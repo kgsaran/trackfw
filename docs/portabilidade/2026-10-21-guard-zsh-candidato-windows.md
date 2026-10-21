@@ -168,3 +168,152 @@ Gone: C:\Users\Lab\tf-guard-zsh-20261021-script.ps1
 Gone: C:\Users\Lab\AppData\Local\Temp\guard-results.txt
 WorkDir C:\Users\Lab\tf-guard-zsh-m9: removed OK
 ```
+
+---
+
+## Rodada 2 — forma emulate -R sh (2026-10-21)
+
+> Agente: artemis-tf | VM: powershell-vm | Script: measure-r2-v2.ps1 (adaptado de v9)
+> Pergunta: `emulate -R sh 2>${null-/dev/null}` funciona como substituto do prefixo `unsetopt EQUALS NOMATCH`?
+> Escopo: PS 5.1 e Git Bash (cmd.exe excluído por ADR D11).
+
+### Linha medida
+
+```
+emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard x; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE
+```
+
+**Comprimento:** 186 bytes (UTF-8, sem BOM)
+**SHA-256:** `4787c8ac9a2c6074b18877f575e352e8cdbd2bcf31171cdb8982269a3b9a8626`
+
+Verificado no host macOS via `python3 hashlib.sha256`. A VM computou o mesmo hash via `[System.Security.Cryptography.SHA256]::Create()` sobre os bytes UTF-16LE da string PS — fonte de verdade é o host (hash direto sobre UTF-8). A linha enviada ao shell PS5 chega por construção (a `-EncodedCommand` codifica o mesmo valor de `$R2`); não foi verificada decodificando o base64 na VM.
+
+**Linha de diagnóstico** (sem o `2>` no prefixo emulate, para captura de stderr bruto):
+
+```
+emulate -R sh; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard x; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE
+```
+
+Comprimento: 166 bytes | SHA-256: `c2ef485765eff7e25dab54d69b94e2cc14addfe89ba86a33fcd1ebd366cf28e3`
+
+### Ambiente
+
+Idêntico a Rodada 1 (tabela do relatório acima). Workdir novo: `C:\Users\Lab\tf-guard-emulate-20261021\`. `C:\Users\Lab\bin` excluído do PATH dos subprocessos, confirmado com `where.exe trackfw` retornando exclusivamente o fake.
+
+Verificação Git Bash:
+```
+with WorkDir:  trackfw is /c/Users/Lab/tf-guard-emulate-20261021/trackfw
+               /usr/bin/bash: line 1: type: emulate: not found
+without WorkDir (absent): /usr/bin/bash: line 1: type: trackfw: not found
+```
+
+`emulate` é confirmado como **não encontrado** em Git Bash (não é builtin nem externo no ambiente da VM). Fake de PS5 (`trackfw.cmd`) e fake de Git Bash (`trackfw`) confirmados como resolução exclusiva no PATH de teste.
+
+### Método de invocação
+
+Idêntico ao v9:
+- **PS5**: `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand <base64-utf16le>`. PATH e FAKE_RC injetados via `ProcessStartInfo.EnvironmentVariables` (não embutidos no `-EncodedCommand`). Linha codificada é exatamente a linha acima.
+- **Git Bash**: `bash -c "export PATH='...'; export FAKE_RC='N'; . <workdir>/gline.sh"`. Linha escrita em `gline.sh` sem BOM, sem `\n` final adicionado.
+- Stdin: `{"tool":"guard","path":"C:\\project"}` enviado e fechado. Validação de conteúdo: leitura do arquivo capturado e comparação byte a byte com o payload esperado (`stdinOK=True`).
+
+### Tabela de resultados
+
+Casos: **allow** = `FAKE_RC=0`, **deny** = `FAKE_RC=2`, **err** = `FAKE_RC=1`, **ausente** = sem fake no PATH.
+
+Expectativa: allow=0, deny=2, err=2, ausente=2.
+
+| Shell | Caso | RC | Invocado | stdin OK | Conteúdo stdin | Veredito |
+|-------|------|----|----------|----------|----------------|----------|
+| PS 5.1 | allow | **0** | Sim | **Sim** | `{"tool":"guard","path":"C:\\project"}` | ✓ |
+| PS 5.1 | deny | **2** | Sim | **Sim** | `{"tool":"guard","path":"C:\\project"}` | ✓ |
+| PS 5.1 | err | **2** | Sim | **Sim** | `{"tool":"guard","path":"C:\\project"}` | ✓ |
+| PS 5.1 | ausente | **2** | Não | N/A | (not captured) | ✓ herdado¹ |
+| Git Bash | allow | **0** | Sim | **Sim** | `{"tool":"guard","path":"C:\\project"}` | ✓ |
+| Git Bash | deny | **2** | Sim | **Sim** | `{"tool":"guard","path":"C:\\project"}` | ✓ |
+| Git Bash | err | **2** | Sim | **Sim** | `{"tool":"guard","path":"C:\\project"}` | ✓ |
+| Git Bash | ausente | **2** | Não | N/A | (not captured — stderr: `trackfw: command not found`) | ✓ |
+
+¹ PS5 ausente: rc=2 e invoked=False confirmados. A prova completa (nenhum `trackfw` alternativo no CleanPath) é herdada da Rodada 1, onde a mesma VM e o mesmo CleanPath produziram `trackfw : O termo 'trackfw' não é reconhecido…` no stderr. O stderr desta rodada foi truncado a 300 chars antes de alcançar a mensagem de trackfw (emulate CNF ocupou a primeira parte).
+
+stdin verificado por comparação de string após `.Trim()` (não comparação byte a byte — conteúdo ASCII simples, sem BOM no payload).
+
+Resultado 0/2/2/2 nos dois shells. Base de comparação: ATUAL e CANDIDATA da Rodada 1 (mesma VM, mesmo dia).
+
+### Stderr observado
+
+**PS 5.1 — todos os casos (extraído do CLIXML via strip, truncado a 300 chars):**
+```
+emulate : O termo 'emulate' não é reconhecido como nome de cmdlet, função, arquivo de script ou programa operável.
+Verifique a grafia do nome ou, se um caminho tiver sido incluído, veja se o caminho está correto e tente novamente.
+No linha:1 caractere:1; + emulate -R sh 2>${null-/d...
+```
+
+**Observação — redirect inerte no PS5:** O `2>${null-/dev/null}` no prefixo `emulate` aparece no CLIXML **com e sem o redirect** (braço principal R2 vs braço de diagnóstico R2_DIAG). O registro de CNF aparece nos dois casos. O redirect é **inerte em PS5** para esse tipo de erro: não suprime nem restringe a emissão do CLIXML. A execução continua porque `CommandNotFoundException` é **não-terminante por padrão em PS5** (não aborta o pipeline), e não porque o redirect engole o erro. Comportamento idêntico ao de `unsetopt EQUALS NOMATCH 2>${null-/dev/null}` (Rodada 1).
+
+**Git Bash — ausente:**
+```
+/c/Users/Lab/tf-guard-emulate-20261021/gline.sh: line 1: trackfw: command not found
+```
+`$?=127`; `LASTEXITCODE=$((2*!!127))=2`; `exit 2`. Fail-closed correto.
+
+**Git Bash — allow/deny/err:** sem stderr (emulate não encontrado → `$?=127`, suprimido pelo `2>/dev/null`; resto da linha executa normalmente).
+
+### Stderr bruto do diagnóstico (PS 5.1, emulate sem redirect, caso allow)
+
+```xml
+#< CLIXML
+<Objs ...>
+  <S S="Error">emulate : O termo 'emulate' não é reconhecido como nome de cmdlet, função,
+arquivo de script ou programa operável. </S>
+  <S S="Error">Verifique a grafia do nome ou, se um caminho tiver sido incluído, veja se o
+caminho está correto e tente novamente.</S>
+  <S S="Error">No linha:1 caractere:1</S>
+  <S S="Error">+ emulate -R sh; $LASTEXITCODE=2 2&gt;${null-/dev/null}; trackfw guard x; ...</S>
+  <S S="Error">+ ~~~~~~~</S>
+  <S S="Error">    + CategoryInfo : ObjectNotFound: (emulate:String) [], CommandNotFoundException</S>
+  <S S="Error">    + FullyQualifiedErrorId : CommandNotFoundException</S>
+  <S S="Error">LASTEXITCODE=$((2*!!$?)) : O termo 'LASTEXITCODE=$((2*!!$?))' não é reconhecido...</S>
+  <S S="Error">    + FullyQualifiedErrorId : CommandNotFoundException</S>
+</Objs>
+```
+
+**RC do diagnóstico: 0** (allow). Invocado: Sim. stdin OK: Sim.
+
+Decodificado: `emulate -R sh` gera `CommandNotFoundException` com `FullyQualifiedErrorId = CommandNotFoundException`. Execução continua para o próximo `;`. `$LASTEXITCODE` não é alterado por `CommandNotFoundException` (só exit code de comando externo o modifica). O fake `trackfw guard x` roda e define `$LASTEXITCODE=0` (allow). Saída final: 0. Demonstra que o prefixo `emulate -R sh` é engolido sem efeito no exit code final.
+
+### Achados
+
+#### A6 — PS 5.1: `emulate -R sh` é CommandNotFound não-terminante; redirect é inerte
+
+Confirmado pelo braço de diagnóstico (R2_DIAG, sem `2>` no prefixo): `FullyQualifiedErrorId = CommandNotFoundException`. Execução continua para `trackfw guard x`. `$LASTEXITCODE` final = exit code do fake (0 no braço allow, confirmado). Portanto:
+
+- **`emulate -R sh` é CommandNotFound?** Sim.
+- **O redirect `2>${null-/dev/null}` suprime algo no PS5?** Não. O registro CNF aparece no CLIXML com e sem o redirect. O redirect é **inerte** para `CommandNotFoundException` no PS5 — o mecanismo que permite a execução continuar é que CNF é **não-terminante** em PS5, independente de qualquer redirect.
+- **`$LASTEXITCODE` é alterado pelo CNF?** Não. `CommandNotFoundException` não é um comando externo e não altera `$LASTEXITCODE`. Apenas exit codes de processos externos fazem isso.
+- **Diferença vs ATUAL:** um registro CNF extra no CLIXML stderr. Nenhuma diferença de exit code. Mesma classe que `unsetopt EQUALS NOMATCH 2>${null-/dev/null}` da Rodada 1.
+
+#### A7 — Git Bash: `emulate` não encontrado como externo, suprimido pelo `2>/dev/null` efetivo
+
+Em Git Bash, `${null-/dev/null}` = `/dev/null` (bash shell parameter expansion: `$null` indefinido → usa o default `/dev/null`). Portanto `2>${null-/dev/null}` = `2>/dev/null`. O comando `emulate -R sh 2>/dev/null` tenta executar `emulate` como externo, falha com rc=127, stderr suprimido. `$?=127` não afeta `LASTEXITCODE` (variável bash independente do `$?` do emulate). A linha continua normalmente.
+
+### Veredito
+
+**APROVADA para PS 5.1 e Git Bash** (0/2/2/2 nos dois shells; stdin verificado por comparação de string com `.Trim()`, payload ASCII sem BOM; invocação do fake confirmada nos casos allow/deny/err).
+
+| Shell | Veredito | Base |
+|-------|----------|------|
+| PS 5.1 | ✅ APROVADA | allow=0, deny=2, err=2, ausente=2; stdin payload verificado; sem regressão vs ATUAL/CANDIDATA |
+| Git Bash | ✅ APROVADA | allow=0, deny=2, err=2, ausente=2; stdin payload verificado; sem regressão vs ATUAL/CANDIDATA |
+| cmd.exe | ⚠️ Fora de escopo | ADR D7/D11 exclui cmd da linha polyglot; não medido nesta rodada |
+
+A linha `emulate -R sh 2>${null-/dev/null}; ...` é funcionalmente equivalente a `unsetopt EQUALS NOMATCH 2>${null-/dev/null}; ...` (Rodada 1) em PS 5.1 e Git Bash. O prefixo `emulate -R sh` é neutro nesses dois shells — gera CommandNotFound suprimido, sem alterar exit code.
+
+### Cleanup
+
+Verificação pós-medição via `EncodedCommand` (evita ambiguidade de quoting do shell externo):
+
+```
+WorkDir exists=False                          ← C:\Users\Lab\tf-guard-emulate-20261021 removido
+measure-r2*.ps1 before=0 after=0             ← nenhum script de medição remanescente
+Leftover procs (not self): (none)            ← nenhum powershell/bash órfão
+```

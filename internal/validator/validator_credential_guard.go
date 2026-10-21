@@ -610,13 +610,13 @@ func validateGuardHookResolvable(ruleName, scriptMarker, subcmdMarker, subcmdNam
 				legacyD11Line := guardD11LegacyLine(subcmdName, hf.family)
 				legacyD11RevLine := guardD11RevisedLegacyLine(subcmdName, hf.family)
 				if m.raw == expectedLine {
-					// Linha exata ML-7A fail-closed → OK; marcar para sonda do binário.
+					// Linha exata REQ-2026-10-20 fail-closed → OK; marcar para sonda do binário.
 					anySubcmdFormFound = true
 					if hf.family == guardShellFamilyPSPosix {
 						hasPSPosixSubcmd = true
 					}
 				} else if m.raw == legacyD11RevLine && m.raw != expectedLine {
-					// ML-7A: D11 revised pré-ML-7A (sem prefixo unsetopt) — aborta no zsh.
+					// REQ-2026-10-20: D11 revised pré-REQ-2026-10-20 (sem prefixo unsetopt) — aborta no zsh.
 					// Tratada como warning (via validateGuardHookD11RevisedLegacyWarnings), não violation.
 					anySubcmdFormFound = true
 					if hf.family == guardShellFamilyPSPosix {
@@ -1075,8 +1075,8 @@ func validateGitBranchGuardHookD11LegacyWarnings() ([]string, error) {
 
 // validateGuardHookD11RevisedLegacyWarnings retorna avisos (always-warning, roteados via
 // applyRuleWarnOnly) para arquivos de hook de PROJETO que ainda usam a forma D11 revised
-// pré-ML-7A (com 4º trecho PS mas sem prefixo unsetopt EQUALS NOMATCH).
-// A forma pré-ML-7A aborta o zsh com exit 1 antes do guard rodar (fail-open no zsh).
+// pré-REQ-2026-10-20 (com 4º trecho PS mas sem prefixo unsetopt EQUALS NOMATCH).
+// A forma pré-REQ-2026-10-20 aborta o zsh com exit 1 antes do guard rodar (fail-open no zsh).
 func validateGuardHookD11RevisedLegacyWarnings(subcmdMarker, subcmdName string) ([]string, error) {
 	root, err := os.Getwd()
 	if err != nil {
@@ -1103,8 +1103,8 @@ func validateGuardHookD11RevisedLegacyWarnings(subcmdMarker, subcmdName string) 
 		for _, m := range subcmdCommands {
 			if m.raw == legacyD11RevLine && m.raw != expectedLine {
 				warnings = append(warnings, fmt.Sprintf(
-					"%s (%s) has %q — forma D11 revised pré-ML-7A, aborta no zsh (EQUALS/NOMATCH); "+
-						"rode `trackfw update` para migrar para a forma ML-7A com unsetopt",
+					"%s (%s) has %q — forma D11 revised pré-REQ-2026-10-20, aborta no zsh (EQUALS/NOMATCH); "+
+						"rode `trackfw update` para migrar para a forma REQ-2026-10-20 com unsetopt",
 					hf.path, hf.cli, m.raw,
 				))
 				break // um aviso por arquivo é suficiente
@@ -1115,13 +1115,13 @@ func validateGuardHookD11RevisedLegacyWarnings(subcmdMarker, subcmdName string) 
 }
 
 // validateCredentialGuardHookD11RevisedLegacyWarnings retorna os avisos de forma D11 revised
-// pré-ML-7A para a regra credential_guard_hook_resolvable.
+// pré-REQ-2026-10-20 para a regra credential_guard_hook_resolvable.
 func validateCredentialGuardHookD11RevisedLegacyWarnings() ([]string, error) {
 	return validateGuardHookD11RevisedLegacyWarnings(credentialGuardSubcmdMarker, "credential")
 }
 
 // validateGitBranchGuardHookD11RevisedLegacyWarnings retorna os avisos de forma D11 revised
-// pré-ML-7A para a regra git_branch_guard_hook_resolvable.
+// pré-REQ-2026-10-20 para a regra git_branch_guard_hook_resolvable.
 func validateGitBranchGuardHookD11RevisedLegacyWarnings() ([]string, error) {
 	return validateGuardHookD11RevisedLegacyWarnings(gitBranchGuardSubcmdMarker, "git-branch")
 }

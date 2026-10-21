@@ -335,7 +335,7 @@ func InjectClaudeHooks(rootDir string) error {
 	migrateHookCommand(hooks["PreToolUse"], "Bash", legacyClaudeGitGuardCmd, guardGitBranchCmdPSPOSIX)
 
 	// ML-6B/ML-6C: migrate D2-revised and pre-ML-6C D11 inline forms → new forms.
-	// ML-7A: also migrate D11 revised pré-ML-7A (without unsetopt) → ML-7A forms.
+	// REQ-2026-10-20: also migrate D11 revised pré-REQ-2026-10-20 (without unsetopt) → REQ-2026-10-20 forms.
 	// Must run BEFORE migrateGuardHookMatcher so that legacy commands are already
 	// in current form when the all-guard renaming logic inspects them.
 	for _, matcher := range []string{claudeShellMatcher, "Bash", "Read", "Write|Edit"} {
@@ -496,7 +496,7 @@ const (
 	//
 	// cmd.exe family (Kiro, Amazon Q): "||" is a cmd.exe conditional separator;
 	//   when trackfw is absent or exits non-zero, "exit 2" fires.
-	// ML-7A (REQ-2026-10-20): prefixing "unsetopt EQUALS NOMATCH 2>${null-/dev/null}; " fixes
+	// REQ-2026-10-20 (REQ-2026-10-20): prefixing "emulate -R sh 2>${null-/dev/null}; " fixes
 	// two zsh breakpoints before the guard runs:
 	//   1. EQUALS expansion: "$LASTEXITCODE" is empty on first run → word "=2" → zsh tries
 	//      "which 2" → abort exit 1. Fixed by unsetopt EQUALS.
@@ -507,10 +507,10 @@ const (
 	//   In PowerShell: "unsetopt" is CommandNotFoundException, does not affect $LASTEXITCODE,
 	//   seed "$LASTEXITCODE=2" continues to work normally.
 	//   Measured on macOS: sh/bash/dash/zsh/zsh-f all yield allow→0, deny→2, absent→2, err1→2.
-	//   (Wave 0 / ADR-2026-10-04 D11 revised ML-7A)
-	guardGitBranchCmdPSPOSIX        = `unsetopt EQUALS NOMATCH 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
-	guardCredentialCmdPSPOSIX       = `unsetopt EQUALS NOMATCH 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
-	guardCredentialGlobalCmdPSPOSIX = `unsetopt EQUALS NOMATCH 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+	//   (Wave 0 / ADR-2026-10-04 D11 revised REQ-2026-10-20)
+	guardGitBranchCmdPSPOSIX        = `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+	guardCredentialCmdPSPOSIX       = `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+	guardCredentialGlobalCmdPSPOSIX = `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
 
 	guardGitBranchCmdCmdExe        = "trackfw guard git-branch || exit 2"
 	guardCredentialCmdCmdExe       = "trackfw guard credential || exit 2"
@@ -572,8 +572,8 @@ const (
 	legacyD11CredentialGlobalCmdPSPOSIX = `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
 )
 
-// D11 revised pre-ML-7A inline forms (D11 revised WITH 4th PS trecho but WITHOUT unsetopt prefix).
-// These are the exact strings written by trackfw before the ML-7A zsh fix (REQ-2026-10-20).
+// D11 revised pre-REQ-2026-10-20 inline forms (D11 revised WITH 4th PS trecho but WITHOUT unsetopt prefix).
+// These are the exact strings written by trackfw before the REQ-2026-10-20 zsh fix (REQ-2026-10-20).
 // They fail in zsh because EQUALS expansion and NOMATCH abort the shell before the guard runs.
 // Kept for migrateHookCommand / dedup recognition. Never used as the "new" command in any emit path.
 const (
@@ -584,7 +584,7 @@ const (
 
 // Workaround bash wrapper forms — written manually as a temporary fix by KG on 2026-10-20.
 // These are the D11 revised forms wrapped in "/bin/bash -c '...'" to work around the zsh
-// breakpoints in Codex's zsh executor. Never canonical; migrated to ML-7A form by update/update harness.
+// breakpoints in Codex's zsh executor. Never canonical; migrated to REQ-2026-10-20 form by update/update harness.
 // Kept for migrateHookCommand / dedup recognition. Never used as the "new" command in any emit path.
 const (
 	legacyWABashGitBranchCmdPSPOSIX        = `/bin/bash -c '$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE'`
@@ -670,6 +670,26 @@ func InjectCodexHooks(rootDir string) error {
 	migrateHookCommand(hooks["PostToolUse"], "Bash", legacyCodexCredGuardCmd, guardCredentialCmdPSPOSIX)
 	migrateHookCommand(hooks["PostToolUse"], "apply_patch", legacyBareCredGuardCmd, guardCredentialCmdPSPOSIX)
 	migrateHookCommand(hooks["PostToolUse"], "apply_patch", legacyCodexCredGuardCmd, guardCredentialCmdPSPOSIX)
+	// Git branch guard (ROADMAP-2026-08-14 ML-3A / ML-2A): migrate pre-ML-2A entry.
+	// B-1 (REQ-2026-10-20): all migrateHookCommand calls moved BEFORE any mergeClaudeHookArray so that
+	// a legacy form is rewritten to canonical BEFORE the merge checks for it — prevents duplicate entries.
+	migrateHookCommand(hooks["PreToolUse"], "Bash", legacyCodexGitGuardCmd, guardGitBranchCmdPSPOSIX)
+	// ML-6B/ML-6C: migrate D2 and pre-ML-6C D11 inline forms → new forms.
+	// REQ-2026-10-20: also migrate D11 revised pré-REQ-2026-10-20 and workaround bash wrapper forms.
+	for _, matcher := range []string{"Bash", "apply_patch"} {
+		migrateHookCommand(hooks["PreToolUse"], matcher, legacyD2CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
+		migrateHookCommand(hooks["PostToolUse"], matcher, legacyD2CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
+		migrateHookCommand(hooks["PreToolUse"], matcher, legacyD11CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
+		migrateHookCommand(hooks["PostToolUse"], matcher, legacyD11CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
+		migrateHookCommand(hooks["PreToolUse"], matcher, legacyD11RevCredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
+		migrateHookCommand(hooks["PostToolUse"], matcher, legacyD11RevCredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
+		migrateHookCommand(hooks["PreToolUse"], matcher, legacyWABashCredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
+		migrateHookCommand(hooks["PostToolUse"], matcher, legacyWABashCredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
+	}
+	migrateHookCommand(hooks["PreToolUse"], "Bash", legacyD2GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
+	migrateHookCommand(hooks["PreToolUse"], "Bash", legacyD11GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
+	migrateHookCommand(hooks["PreToolUse"], "Bash", legacyD11RevGitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
+	migrateHookCommand(hooks["PreToolUse"], "Bash", legacyWABashGitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
 
 	hooks["PermissionRequest"] = mergeClaudeHookArray(
 		hooks["PermissionRequest"],
@@ -695,25 +715,6 @@ func InjectCodexHooks(rootDir string) error {
 		)
 	}
 
-	// Git branch guard (ROADMAP-2026-08-14 ML-3A / ML-2A): migrate
-	// pre-ML-2A entry then emit or dedup.
-	migrateHookCommand(hooks["PreToolUse"], "Bash", legacyCodexGitGuardCmd, guardGitBranchCmdPSPOSIX)
-	// ML-6B/ML-6C: migrate D2 and pre-ML-6C D11 inline forms → new forms.
-	// ML-7A: also migrate D11 revised pré-ML-7A and workaround bash wrapper forms.
-	for _, matcher := range []string{"Bash", "apply_patch"} {
-		migrateHookCommand(hooks["PreToolUse"], matcher, legacyD2CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
-		migrateHookCommand(hooks["PostToolUse"], matcher, legacyD2CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
-		migrateHookCommand(hooks["PreToolUse"], matcher, legacyD11CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
-		migrateHookCommand(hooks["PostToolUse"], matcher, legacyD11CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
-		migrateHookCommand(hooks["PreToolUse"], matcher, legacyD11RevCredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
-		migrateHookCommand(hooks["PostToolUse"], matcher, legacyD11RevCredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
-		migrateHookCommand(hooks["PreToolUse"], matcher, legacyWABashCredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
-		migrateHookCommand(hooks["PostToolUse"], matcher, legacyWABashCredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
-	}
-	migrateHookCommand(hooks["PreToolUse"], "Bash", legacyD2GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
-	migrateHookCommand(hooks["PreToolUse"], "Bash", legacyD11GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
-	migrateHookCommand(hooks["PreToolUse"], "Bash", legacyD11RevGitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
-	migrateHookCommand(hooks["PreToolUse"], "Bash", legacyWABashGitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
 	// Dedup (ROADMAP-2026-08-17 Wave 2/ML-2B): skip the project-scope
 	// git-branch-guard entry when the global one is already installed
 	// (`trackfw update harness --targets codex-git-branch-guard`).
@@ -852,6 +853,27 @@ func InjectGeminiHooks(rootDir string) error {
 	migrateHookCommand(hooks["AfterTool"], "read_file|read_many_files", legacyGeminiCredGuardCmd, guardCredentialCmdPSPOSIX)
 	migrateHookCommand(hooks["AfterTool"], "write_file|replace", "scripts/trackfw-credential-guard.sh", guardCredentialCmdPSPOSIX)
 	migrateHookCommand(hooks["AfterTool"], "write_file|replace", legacyGeminiCredGuardCmd, guardCredentialCmdPSPOSIX)
+	// Git branch guard (ROADMAP-2026-08-14 ML-3A / ML-2A): only
+	// "run_shell_command" can ever carry a raw git subcommand.
+	migrateHookCommand(hooks["BeforeTool"], "run_shell_command", legacyGeminiGitGuardCmd, guardGitBranchCmdPSPOSIX)
+	// ML-6B/ML-6C: migrate D2 and pre-ML-6C D11 inline forms → new forms.
+	// REQ-2026-10-20: also migrate D11 revised pré-REQ-2026-10-20 and workaround bash wrapper forms.
+	// B-1 (REQ-2026-10-20): all migrateHookCommand calls moved BEFORE any mergeClaudeHookArray so that
+	// a legacy form is rewritten to canonical BEFORE the merge checks for it — prevents duplicate entries.
+	for _, matcher := range []string{"run_shell_command", "read_file|read_many_files", "write_file|replace"} {
+		migrateHookCommand(hooks["BeforeTool"], matcher, legacyD2CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
+		migrateHookCommand(hooks["AfterTool"], matcher, legacyD2CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
+		migrateHookCommand(hooks["BeforeTool"], matcher, legacyD11CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
+		migrateHookCommand(hooks["AfterTool"], matcher, legacyD11CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
+		migrateHookCommand(hooks["BeforeTool"], matcher, legacyD11RevCredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
+		migrateHookCommand(hooks["AfterTool"], matcher, legacyD11RevCredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
+		migrateHookCommand(hooks["BeforeTool"], matcher, legacyWABashCredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
+		migrateHookCommand(hooks["AfterTool"], matcher, legacyWABashCredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
+	}
+	migrateHookCommand(hooks["BeforeTool"], "run_shell_command", legacyD2GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
+	migrateHookCommand(hooks["BeforeTool"], "run_shell_command", legacyD11GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
+	migrateHookCommand(hooks["BeforeTool"], "run_shell_command", legacyD11RevGitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
+	migrateHookCommand(hooks["BeforeTool"], "run_shell_command", legacyWABashGitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
 
 	hooks["Notification"] = mergeClaudeHookArray(
 		hooks["Notification"],
@@ -882,27 +904,6 @@ func InjectGeminiHooks(rootDir string) error {
 			guardCredentialCmdPSPOSIX,
 		)
 	}
-
-	// ML-6B/ML-6C: migrate D2 and pre-ML-6C D11 inline forms → new forms.
-	// ML-7A: also migrate D11 revised pré-ML-7A and workaround bash wrapper forms.
-	for _, matcher := range []string{"run_shell_command", "read_file|read_many_files", "write_file|replace"} {
-		migrateHookCommand(hooks["BeforeTool"], matcher, legacyD2CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
-		migrateHookCommand(hooks["AfterTool"], matcher, legacyD2CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
-		migrateHookCommand(hooks["BeforeTool"], matcher, legacyD11CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
-		migrateHookCommand(hooks["AfterTool"], matcher, legacyD11CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
-		migrateHookCommand(hooks["BeforeTool"], matcher, legacyD11RevCredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
-		migrateHookCommand(hooks["AfterTool"], matcher, legacyD11RevCredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
-		migrateHookCommand(hooks["BeforeTool"], matcher, legacyWABashCredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
-		migrateHookCommand(hooks["AfterTool"], matcher, legacyWABashCredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX)
-	}
-	migrateHookCommand(hooks["BeforeTool"], "run_shell_command", legacyD2GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
-	migrateHookCommand(hooks["BeforeTool"], "run_shell_command", legacyD11GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
-	migrateHookCommand(hooks["BeforeTool"], "run_shell_command", legacyD11RevGitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
-	migrateHookCommand(hooks["BeforeTool"], "run_shell_command", legacyWABashGitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
-
-	// Git branch guard (ROADMAP-2026-08-14 ML-3A / ML-2A): only
-	// "run_shell_command" can ever carry a raw git subcommand.
-	migrateHookCommand(hooks["BeforeTool"], "run_shell_command", legacyGeminiGitGuardCmd, guardGitBranchCmdPSPOSIX)
 	// Dedup (ROADMAP-2026-08-17 Wave 2/ML-2B): skip the project-scope
 	// git-branch-guard entry when the global one is already installed
 	// (`trackfw update harness --targets gemini-git-branch-guard`).
@@ -1430,7 +1431,7 @@ func InjectCursorHooks(rootDir string) error {
 	migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyBareCredGuardCmd, guardCredentialCmdPSPOSIX, getCmd)
 	migrateCursorSimpleCommand(hooks["afterShellExecution"], legacyBareCredGuardCmd, guardCredentialCmdPSPOSIX, getCmd)
 	// ML-6B/ML-6C: migrate D2 and pre-ML-6C D11 inline forms → new forms.
-	// ML-7A: also migrate D11 revised pré-ML-7A and workaround bash wrapper forms.
+	// REQ-2026-10-20: also migrate D11 revised pré-REQ-2026-10-20 and workaround bash wrapper forms.
 	migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyD2CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX, getCmd)
 	migrateCursorSimpleCommand(hooks["afterShellExecution"], legacyD2CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX, getCmd)
 	migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyD11CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX, getCmd)
@@ -1494,7 +1495,7 @@ func InjectCursorHooks(rootDir string) error {
 	migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyBareGitGuardCmd, guardGitBranchCmdPSPOSIX, getCmd)
 	migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyWindsurfGitGuardCmd, guardGitBranchCmdPSPOSIX, getCmd)
 	// ML-6B/ML-6C: migrate D2 and pre-ML-6C D11 git-branch inline form → new form.
-	// ML-7A: also migrate D11 revised pré-ML-7A and workaround bash wrapper forms.
+	// REQ-2026-10-20: also migrate D11 revised pré-REQ-2026-10-20 and workaround bash wrapper forms.
 	migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyD2GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX, getCmd)
 	migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyD11GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX, getCmd)
 	migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyD11RevGitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX, getCmd)
@@ -1793,7 +1794,7 @@ func InjectWindsurfHooks(rootDir string) error {
 	// ML-2A: migrate pre-ML-2A Windsurf git-branch-guard entry to the new inline form.
 	migrateCursorSimpleCommand(hooks["pre_run_command"], legacyWindsurfGitGuardCmd, windsurfGitGuardCmd, windsurfGetCmd)
 	// ML-6B/ML-6C: migrate D2 and pre-ML-6C D11 inline form → new form.
-	// ML-7A: also migrate D11 revised pré-ML-7A and workaround bash wrapper form.
+	// REQ-2026-10-20: also migrate D11 revised pré-REQ-2026-10-20 and workaround bash wrapper form.
 	migrateCursorSimpleCommand(hooks["pre_run_command"], legacyD2GitBranchCmdPSPOSIX, windsurfGitGuardCmd, windsurfGetCmd)
 	migrateCursorSimpleCommand(hooks["pre_run_command"], legacyD11GitBranchCmdPSPOSIX, windsurfGitGuardCmd, windsurfGetCmd)
 	migrateCursorSimpleCommand(hooks["pre_run_command"], legacyD11RevGitBranchCmdPSPOSIX, windsurfGitGuardCmd, windsurfGetCmd)
@@ -2480,7 +2481,7 @@ func globalCredentialGuardInstalledClaude() bool {
 	// to D11 still dedups the project-scope entry.
 	// ML-6C: also accept pre-ML-6C D11 (without 4th PS trecho) so that a global
 	// config not yet migrated to D11 revised still dedups the project-scope entry.
-	// ML-7A: also accept D11 revised pré-ML-7A and workaround bash wrapper form.
+	// REQ-2026-10-20: also accept D11 revised pré-REQ-2026-10-20 and workaround bash wrapper form.
 	return hookArrayHasCommand(hooks["PreToolUse"], "Bash", scriptPath) ||
 		hookArrayHasCommand(hooks["PreToolUse"], "Bash", guardCredentialGlobalCmdPSPOSIX) ||
 		hookArrayHasCommand(hooks["PreToolUse"], claudeShellMatcher, guardCredentialGlobalCmdPSPOSIX) ||
@@ -2510,7 +2511,7 @@ func globalCredentialGuardInstalledCodex() bool {
 	// ML-2A: accept both old abs .sh path and new inline command form.
 	// ML-6B: also accept D2 revised form.
 	// ML-6C: also accept pre-ML-6C D11 form.
-	// ML-7A: also accept D11 revised pré-ML-7A and workaround bash wrapper form.
+	// REQ-2026-10-20: also accept D11 revised pré-REQ-2026-10-20 and workaround bash wrapper form.
 	return hookArrayHasCommand(hooks["PreToolUse"], "Bash", scriptPath) ||
 		hookArrayHasCommand(hooks["PreToolUse"], "Bash", guardCredentialGlobalCmdPSPOSIX) ||
 		hookArrayHasCommand(hooks["PreToolUse"], "Bash", legacyD11RevCredentialGlobalCmdPSPOSIX) ||
@@ -2536,7 +2537,7 @@ func globalCredentialGuardInstalledGemini() bool {
 	// ML-2A: accept both old abs .sh path and new inline command form.
 	// ML-6B: also accept D2 revised form.
 	// ML-6C: also accept pre-ML-6C D11 form.
-	// ML-7A: also accept D11 revised pré-ML-7A and workaround bash wrapper form.
+	// REQ-2026-10-20: also accept D11 revised pré-REQ-2026-10-20 and workaround bash wrapper form.
 	return hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", scriptPath) ||
 		hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", guardCredentialGlobalCmdPSPOSIX) ||
 		hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", legacyD11RevCredentialGlobalCmdPSPOSIX) ||
@@ -2561,7 +2562,7 @@ func globalCredentialGuardInstalledCursor() bool {
 	// ML-2A: accept both old abs .sh path and new inline command form.
 	// ML-6B: also accept D2 revised form.
 	// ML-6C: also accept pre-ML-6C D11 form.
-	// ML-7A: also accept D11 revised pré-ML-7A and workaround bash wrapper form.
+	// REQ-2026-10-20: also accept D11 revised pré-REQ-2026-10-20 and workaround bash wrapper form.
 	return simpleArrayHasValue(hooks["beforeShellExecution"], "command", scriptPath, false) ||
 		simpleArrayHasValue(hooks["beforeShellExecution"], "command", guardCredentialGlobalCmdPSPOSIX, false) ||
 		simpleArrayHasValue(hooks["beforeShellExecution"], "command", legacyD11RevCredentialGlobalCmdPSPOSIX, false) ||
@@ -2586,7 +2587,7 @@ func globalCredentialGuardInstalledCopilot() bool {
 	// ML-2A: accept both old abs .sh path and new inline command form.
 	// ML-6B: also accept D2 revised form.
 	// ML-6C: also accept pre-ML-6C D11 form.
-	// ML-7A: also accept D11 revised pré-ML-7A and workaround bash wrapper form.
+	// REQ-2026-10-20: also accept D11 revised pré-REQ-2026-10-20 and workaround bash wrapper form.
 	return simpleArrayHasValue(hooks["preToolUse"], "bash", scriptPath, true) ||
 		simpleArrayHasValue(hooks["preToolUse"], "bash", guardCredentialGlobalCmdPSPOSIX, true) ||
 		simpleArrayHasValue(hooks["preToolUse"], "bash", legacyD11RevCredentialGlobalCmdPSPOSIX, true) ||
@@ -2632,7 +2633,7 @@ func globalCredentialGuardInstalledWindsurf() bool {
 		return false
 	}
 	hooks, _ := root["hooks"].(map[string]interface{})
-	// ML-7A: also accept D11 revised pré-ML-7A form (workaround bash wrapper not used in Windsurf).
+	// REQ-2026-10-20: also accept D11 revised pré-REQ-2026-10-20 form (workaround bash wrapper not used in Windsurf).
 	hasPreRun := simpleArrayHasValue(hooks["pre_run_command"], "command", guardCredentialGlobalCmdPSPOSIX, false) ||
 		simpleArrayHasValue(hooks["pre_run_command"], "command", legacyD11RevCredentialGlobalCmdPSPOSIX, false)
 	hasPreWrite := simpleArrayHasValue(hooks["pre_write_code"], "command", guardCredentialGlobalCmdPSPOSIX, false) ||
@@ -2726,7 +2727,7 @@ func globalGitBranchGuardInstalledCodex() bool {
 	// ML-2A: accept both old abs .sh path and new inline command form.
 	// ML-6B: also accept D2 revised form.
 	// ML-6C: also accept pre-ML-6C D11 form.
-	// ML-7A: also accept D11 revised pré-ML-7A and workaround bash wrapper form.
+	// REQ-2026-10-20: also accept D11 revised pré-REQ-2026-10-20 and workaround bash wrapper form.
 	return hookArrayHasCommand(hooks["PreToolUse"], "Bash", scriptPath) ||
 		hookArrayHasCommand(hooks["PreToolUse"], "Bash", guardGitBranchCmdPSPOSIX) ||
 		hookArrayHasCommand(hooks["PreToolUse"], "Bash", legacyD11RevGitBranchCmdPSPOSIX) ||
@@ -2751,7 +2752,7 @@ func globalGitBranchGuardInstalledGemini() bool {
 	// ML-2A: accept both old abs .sh path and new inline command form.
 	// ML-6B: also accept D2 revised form.
 	// ML-6C: also accept pre-ML-6C D11 form.
-	// ML-7A: also accept D11 revised pré-ML-7A and workaround bash wrapper form.
+	// REQ-2026-10-20: also accept D11 revised pré-REQ-2026-10-20 and workaround bash wrapper form.
 	return hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", scriptPath) ||
 		hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", guardGitBranchCmdPSPOSIX) ||
 		hookArrayHasCommand(hooks["BeforeTool"], "run_shell_command", legacyD11RevGitBranchCmdPSPOSIX) ||
@@ -2776,7 +2777,7 @@ func globalGitBranchGuardInstalledCursor() bool {
 	// ML-2A: accept both old abs .sh path and new inline command form.
 	// ML-6B: also accept D2 revised form.
 	// ML-6C: also accept pre-ML-6C D11 form.
-	// ML-7A: also accept D11 revised pré-ML-7A and workaround bash wrapper form.
+	// REQ-2026-10-20: also accept D11 revised pré-REQ-2026-10-20 and workaround bash wrapper form.
 	return simpleArrayHasValue(hooks["beforeShellExecution"], "command", scriptPath, false) ||
 		simpleArrayHasValue(hooks["beforeShellExecution"], "command", guardGitBranchCmdPSPOSIX, false) ||
 		simpleArrayHasValue(hooks["beforeShellExecution"], "command", legacyD11RevGitBranchCmdPSPOSIX, false) ||
@@ -2801,7 +2802,7 @@ func globalGitBranchGuardInstalledCopilot() bool {
 	// ML-2A: accept both old abs .sh path and new inline command form.
 	// ML-6B: also accept D2 revised form.
 	// ML-6C: also accept pre-ML-6C D11 form.
-	// ML-7A: also accept D11 revised pré-ML-7A and workaround bash wrapper form.
+	// REQ-2026-10-20: also accept D11 revised pré-REQ-2026-10-20 and workaround bash wrapper form.
 	return simpleArrayHasValue(hooks["preToolUse"], "bash", scriptPath, true) ||
 		simpleArrayHasValue(hooks["preToolUse"], "bash", guardGitBranchCmdPSPOSIX, true) ||
 		simpleArrayHasValue(hooks["preToolUse"], "bash", legacyD11RevGitBranchCmdPSPOSIX, true) ||

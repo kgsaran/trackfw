@@ -86,7 +86,7 @@ func stubProbeOK(t *testing.T) {
 // --------------------------------------------------------------------------
 
 // Reconciliação: afirma que a linha exata PS/POSIX ML-7A para git-branch
-// ("unsetopt EQUALS NOMATCH 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; ...")
+// ("emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; ...")
 // em .claude/settings.json não gera violation (ML-7A: nova forma fail-closed com unsetopt).
 func TestGuardHookResolvable_ExatoPSPosix_Ok(t *testing.T) {
 	CurrentGOOS = "linux"
@@ -96,7 +96,7 @@ func TestGuardHookResolvable_ExatoPSPosix_Ok(t *testing.T) {
 	stubProbeOK(t)
 
 	writeFile(t, dir, ".claude/settings.json",
-		claudeSettingsWithSubcmd(`unsetopt EQUALS NOMATCH 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`))
+		claudeSettingsWithSubcmd(`emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`))
 
 	msgs, err := validateGitBranchGuardHookResolvable()
 	if err != nil {

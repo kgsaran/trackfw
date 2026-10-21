@@ -331,13 +331,13 @@ func validateGuardGlobalHookResolvable(ruleName, scriptMarker, subcmdMarker, sub
 				legacyD11Line := guardD11LegacyLine(subcmdName, gf.family)
 				legacyD11RevLine := guardD11RevisedLegacyLine(subcmdName, gf.family)
 				if m.raw == expectedLine {
-					// Linha exata ML-7A fail-closed → OK.
+					// Linha exata REQ-2026-10-20 fail-closed → OK.
 					anySubcmdFormFound = true
 					if gf.family == guardShellFamilyPSPosix {
 						hasPSPosixSubcmd = true
 					}
 				} else if m.raw == legacyD11RevLine && m.raw != expectedLine {
-					// ML-7A: D11 revised pré-ML-7A (sem prefixo unsetopt) — aborta no zsh.
+					// REQ-2026-10-20: D11 revised pré-REQ-2026-10-20 (sem prefixo unsetopt) — aborta no zsh.
 					// Tratada como warning (via validateGuardGlobalHookD11RevisedLegacyWarnings), não violation.
 					anySubcmdFormFound = true
 					if gf.family == guardShellFamilyPSPosix {
@@ -551,8 +551,8 @@ func validateGuardGlobalHookD11LegacyWarnings(scriptMarker, subcmdMarker, subcmd
 		for _, m := range subcmdCommands {
 			if m.raw == legacyD11RevLine && m.raw != expectedLine {
 				warnings = append(warnings, fmt.Sprintf(
-					"~/%s (%s, global scope) has %q — forma D11 revised pré-ML-7A, aborta no zsh (EQUALS/NOMATCH); "+
-						"rode `trackfw update harness` para migrar para a forma ML-7A com unsetopt",
+					"~/%s (%s, global scope) has %q — forma D11 revised pré-REQ-2026-10-20, aborta no zsh (EQUALS/NOMATCH); "+
+						"rode `trackfw update harness` para migrar para a forma REQ-2026-10-20 com unsetopt",
 					relPath, gf.cli, m.raw,
 				))
 				break // um aviso por arquivo é suficiente
@@ -583,7 +583,7 @@ func validateGitBranchGuardGlobalHookD11LegacyWarnings() ([]string, error) {
 }
 
 // validateGuardGlobalHookD11RevisedLegacyWarnings retorna avisos para configs GLOBAIS
-// que ainda usam a forma D11 revised pré-ML-7A (sem prefixo unsetopt EQUALS NOMATCH).
+// que ainda usam a forma D11 revised pré-REQ-2026-10-20 (sem prefixo unsetopt EQUALS NOMATCH).
 // Reutiliza globalGuardConfigFiles — mesma lista que validateGuardGlobalHookD11LegacyWarnings usa.
 func validateGuardGlobalHookD11RevisedLegacyWarnings(scriptMarker, subcmdMarker, subcmdName string) ([]string, error) {
 	home, err := homedir.Dir()
@@ -591,7 +591,7 @@ func validateGuardGlobalHookD11RevisedLegacyWarnings(scriptMarker, subcmdMarker,
 		return nil, nil
 	}
 
-	// ML-7A: same resolver as validateGuardGlobalHookD11LegacyWarnings.
+	// REQ-2026-10-20: same resolver as validateGuardGlobalHookD11LegacyWarnings.
 	claudeDir, claudeDirErr := agentconfig.ClaudeConfigDir(agentconfig.DefaultResolver)
 
 	var warnings []string
@@ -621,8 +621,8 @@ func validateGuardGlobalHookD11RevisedLegacyWarnings(scriptMarker, subcmdMarker,
 		for _, m := range subcmdCommands {
 			if m.raw == legacyD11RevLine && m.raw != expectedLine {
 				warnings = append(warnings, fmt.Sprintf(
-					"~/%s (%s, global scope) has %q — forma D11 revised pré-ML-7A, aborta no zsh (EQUALS/NOMATCH); "+
-						"rode `trackfw update harness` para migrar para a forma ML-7A com unsetopt",
+					"~/%s (%s, global scope) has %q — forma D11 revised pré-REQ-2026-10-20, aborta no zsh (EQUALS/NOMATCH); "+
+						"rode `trackfw update harness` para migrar para a forma REQ-2026-10-20 com unsetopt",
 					relPath, gf.cli, m.raw,
 				))
 				break // um aviso por arquivo é suficiente
@@ -633,13 +633,13 @@ func validateGuardGlobalHookD11RevisedLegacyWarnings(scriptMarker, subcmdMarker,
 }
 
 // validateCredentialGuardGlobalHookD11RevisedLegacyWarnings retorna os avisos de forma
-// D11 revised pré-ML-7A para configs globais de credential-guard.
+// D11 revised pré-REQ-2026-10-20 para configs globais de credential-guard.
 func validateCredentialGuardGlobalHookD11RevisedLegacyWarnings() ([]string, error) {
 	return validateGuardGlobalHookD11RevisedLegacyWarnings(credentialGuardScriptMarker, credentialGuardSubcmdMarker, "credential --global")
 }
 
 // validateGitBranchGuardGlobalHookD11RevisedLegacyWarnings retorna os avisos de forma
-// D11 revised pré-ML-7A para configs globais de git-branch-guard.
+// D11 revised pré-REQ-2026-10-20 para configs globais de git-branch-guard.
 func validateGitBranchGuardGlobalHookD11RevisedLegacyWarnings() ([]string, error) {
 	return validateGuardGlobalHookD11RevisedLegacyWarnings(gitBranchGuardScriptMarker, gitBranchGuardSubcmdMarker, "git-branch")
 }

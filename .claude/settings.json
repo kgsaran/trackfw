@@ -2,82 +2,82 @@
   "hooks": {
     "PostToolUse": [
       {
+        "matcher": "AskUserQuestion",
         "hooks": [
           {
             "command": "trackfw attention cleanup",
             "type": "command"
           }
-        ],
-        "matcher": "AskUserQuestion"
+        ]
       },
       {
+        "matcher": "Bash|PowerShell",
         "hooks": [
           {
-            "command": "unsetopt EQUALS NOMATCH 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
+            "command": "emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
             "type": "command"
           }
-        ],
-        "matcher": "Bash|PowerShell"
+        ]
       },
       {
+        "matcher": "Read",
         "hooks": [
           {
-            "command": "unsetopt EQUALS NOMATCH 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
+            "command": "emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
             "type": "command"
           }
-        ],
-        "matcher": "Read"
+        ]
       },
       {
+        "matcher": "Write|Edit",
         "hooks": [
           {
-            "command": "unsetopt EQUALS NOMATCH 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
+            "command": "emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
             "type": "command"
           }
-        ],
-        "matcher": "Write|Edit"
+        ]
       }
     ],
     "PreToolUse": [
       {
+        "matcher": "AskUserQuestion",
         "hooks": [
           {
             "command": "trackfw attention signal",
             "type": "command"
           }
-        ],
-        "matcher": "AskUserQuestion"
+        ]
       },
       {
+        "matcher": "Bash|PowerShell",
         "hooks": [
           {
-            "command": "unsetopt EQUALS NOMATCH 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
+            "command": "emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
             "type": "command"
           },
           {
-            "command": "unsetopt EQUALS NOMATCH 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
+            "command": "emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
             "type": "command"
           }
-        ],
-        "matcher": "Bash|PowerShell"
+        ]
       },
       {
+        "matcher": "Read",
         "hooks": [
           {
-            "command": "unsetopt EQUALS NOMATCH 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
+            "command": "emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
             "type": "command"
           }
-        ],
-        "matcher": "Read"
+        ]
       },
       {
+        "matcher": "Write|Edit",
         "hooks": [
           {
-            "command": "unsetopt EQUALS NOMATCH 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
+            "command": "emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
             "type": "command"
           }
-        ],
-        "matcher": "Write|Edit"
+        ]
       }
     ]
   }

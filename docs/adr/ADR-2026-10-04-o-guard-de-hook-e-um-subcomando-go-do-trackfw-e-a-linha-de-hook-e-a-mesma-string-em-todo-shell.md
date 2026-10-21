@@ -275,7 +275,7 @@ Bash e PowerShell 5.1; o ruído no stderr do PowerShell é o mesmo da D11 (o tre
 `docs/portabilidade/2026-10-07-linha-de-hook-fail-closed-sem-trackfw.md`, seção ML-6C.
 
 
-## Adendo — 2026-10-21: correção de falha sob zsh — prefixo `unsetopt` (ML-7A, issue #603)
+## Adendo — 2026-10-21: correção de falha sob zsh — prefixo `emulate -R sh` (REQ-2026-10-20, issue #603)
 
 A linha D11 revisada (ML-6C) falhava silenciosamente quando o hook era executado sob zsh com as
 opções padrão ativas. Dois mecanismos distintos causavam abort antes de `trackfw guard` rodar:
@@ -288,18 +288,32 @@ opções padrão ativas. Dois mecanismos distintos causavam abort antes de `trac
    `$LASTEXITCODE=2*!!$LASTEXITCODE` contém `*` não quotado → glob expansion → nenhum arquivo casa
    → zsh aborta com `zsh: no matches found: =2*!!`.
 
-**Solução:** prefixo `unsetopt EQUALS NOMATCH 2>${null-/dev/null};` antes da semente. O `unsetopt`
-é comando nativo do zsh; em sh/bash é `command not found` com stderr descartado pelo redirecionamento
+**Candidato descartado — `unsetopt EQUALS NOMATCH`:** O prefixo `unsetopt EQUALS NOMATCH 2>${null-/dev/null};`
+resolve EQUALS e NOMATCH mas é insuficiente sob variantes mais restritivas do zsh. Medição ML-1B:
+
+| Prefixo              | zsh padrão | zsh -o nounset | zsh -o errexit | zsh -o cshnullglob |
+|----------------------|------------|----------------|----------------|--------------------|
+| sem prefixo          | 127        | 127            | 127            | 127                |
+| `unsetopt EQUALS NOMATCH` | 2     | 1              | 127            | 127                |
+| `emulate -R sh`      | 2          | 2              | 2              | 2                  |
+
+Sob `zsh -o nounset`, `$LASTEXITCODE` não inicializado aborta com `unbound variable` (exit 1).
+Sob `zsh -o errexit`, qualquer saída não-zero antes de `trackfw guard` encerra o hook (exit 127).
+O `unsetopt` não foi publicado em nenhum config versionado, portanto não vira forma legada.
+
+**Solução final:** prefixo `emulate -R sh 2>${null-/dev/null};` antes da semente. O `emulate -R sh`
+reseta TODAS as opções do zsh para os padrões POSIX sh — incluindo nounset, errexit, cshnullglob e
+qualquer combinação futura. Em sh/bash é `command not found` com stderr descartado pelo redirecionamento
 — inerte. Em PS 5.1 é igualmente inerte (CommandNotFound, stderr descartado). A linha continua
 poliglota em todos os ambientes.
 
-Forma canônica atualizada (ML-7A, família PS/POSIX):
+Forma canônica atualizada (REQ-2026-10-20, família PS/POSIX):
 
-`unsetopt EQUALS NOMATCH 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard <nome>; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+`emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard <nome>; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
 
-A D11 revisada (pre-ML-7A: sem o prefixo `unsetopt`) não gera violation no `trackfw validate` —
+A D11 revisada (pre-REQ-2026-10-20: sem o prefixo `emulate -R sh`) não gera violation no `trackfw validate` —
 é aceita como forma legada —, mas emite aviso solicitando `trackfw update harness` para migrar
-para a nova forma. Os arquivos de configuração deste repositório foram migrados para ML-7A no mesmo
+para a nova forma. Os arquivos de configuração deste repositório foram migrados para REQ-2026-10-20 no mesmo
 ML. O único sítio canônico continua `guardExpectedLine` em `validator_guard_binary_probe.go`.
 
 `docs/portabilidade/` (Artemis, em andamento) documentará a medição de cada shell.

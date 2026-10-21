@@ -1049,7 +1049,7 @@ func harnessCredentialGuardTargetClaude(home, claudeDir string, claudeDirErr err
 	// ML-2A: migrate any pre-ML-2A global entry (abs .sh path → inline command).
 	// ML-5A: also migrate the "Bash" matcher → claudeShellMatcher for guard entries.
 	// ML-6B/ML-6C: migrate D2 revised and pre-ML-6C D11 inline forms → D11 revised forms.
-	// ML-7A: migrate D11 revised pré-ML-7A and workaround bash wrapper forms → new form.
+	// REQ-2026-10-20: migrate D11 revised pré-REQ-2026-10-20 and workaround bash wrapper forms → new form.
 	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
 		migrateHookCommand(hooks["PreToolUse"], "Bash", legacyScriptPath, guardCredentialGlobalCmdPSPOSIX)
 		migrateHookCommand(hooks["PostToolUse"], "Bash", legacyScriptPath, guardCredentialGlobalCmdPSPOSIX)
@@ -1187,7 +1187,7 @@ func harnessCredentialGuardTargetCodex(home string, opts UpdateOptions) TargetRe
 	}
 	// ML-2A: migrate any pre-ML-2A global entry (abs .sh path → inline command).
 	// ML-6B/ML-6C: migrate D2 revised and pre-ML-6C D11 inline form → D11 revised form.
-	// ML-7A: migrate D11 revised pré-ML-7A and workaround bash wrapper forms → new form.
+	// REQ-2026-10-20: migrate D11 revised pré-REQ-2026-10-20 and workaround bash wrapper forms → new form.
 	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
 		migrateHookCommand(hooks["PreToolUse"], "Bash", legacyScriptPath, guardCredentialGlobalCmdPSPOSIX)
 		migrateHookCommand(hooks["PostToolUse"], "Bash", legacyScriptPath, guardCredentialGlobalCmdPSPOSIX)
@@ -1303,7 +1303,7 @@ func harnessCredentialGuardTargetGemini(home string, opts UpdateOptions) TargetR
 	}
 	// ML-2A: migrate any pre-ML-2A global entry (abs .sh path → inline command).
 	// ML-6B/ML-6C: migrate D2 revised and pre-ML-6C D11 inline form → D11 revised form.
-	// ML-7A: migrate D11 revised pré-ML-7A and workaround bash wrapper forms → new form.
+	// REQ-2026-10-20: migrate D11 revised pré-REQ-2026-10-20 and workaround bash wrapper forms → new form.
 	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
 		migrateHookCommand(hooks["BeforeTool"], "run_shell_command", legacyScriptPath, guardCredentialGlobalCmdPSPOSIX)
 		migrateHookCommand(hooks["AfterTool"], "run_shell_command", legacyScriptPath, guardCredentialGlobalCmdPSPOSIX)
@@ -1438,7 +1438,7 @@ func harnessCredentialGuardTargetCursor(home string, opts UpdateOptions) TargetR
 	}
 	// ML-2A: migrate any pre-ML-2A global entry (abs .sh path → inline command).
 	// ML-6B/ML-6C: migrate D2 revised and pre-ML-6C D11 inline form → D11 revised form.
-	// ML-7A: migrate D11 revised pré-ML-7A and workaround bash wrapper forms → new form.
+	// REQ-2026-10-20: migrate D11 revised pré-REQ-2026-10-20 and workaround bash wrapper forms → new form.
 	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
 		migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyScriptPath, guardCredentialGlobalCmdPSPOSIX, cursorGetCmd)
 		migrateCursorSimpleCommand(hooks["afterShellExecution"], legacyScriptPath, guardCredentialGlobalCmdPSPOSIX, cursorGetCmd)
@@ -1598,7 +1598,7 @@ func harnessCredentialGuardTargetCopilot(home string, opts UpdateOptions) Target
 	}
 	// ML-2A: migrate any pre-ML-2A global entry (abs .sh path → inline command).
 	// ML-6B/ML-6C: migrate D2 revised and pre-ML-6C D11 inline form → D11 revised form.
-	// ML-7A: migrate D11 revised pré-ML-7A and workaround bash wrapper forms → new form.
+	// REQ-2026-10-20: migrate D11 revised pré-REQ-2026-10-20 and workaround bash wrapper forms → new form.
 	// Copilot entries use "bash" key (not "command"), so inline migration is needed.
 	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
 		for _, eventKey := range []string{"preToolUse", "postToolUse"} {
@@ -1735,7 +1735,7 @@ func harnessCredentialGuardTargetWindsurf(home string, opts UpdateOptions) Targe
 	if hooks == nil {
 		hooks = make(map[string]interface{})
 	}
-	// ML-7A: migrate D11 revised pré-ML-7A form → new form.
+	// REQ-2026-10-20: migrate D11 revised pré-REQ-2026-10-20 form → new form.
 	for _, event := range []string{"pre_run_command", "pre_write_code"} {
 		migrateCursorSimpleCommand(hooks[event], legacyD11RevCredentialGlobalCmdPSPOSIX, guardCredentialGlobalCmdPSPOSIX, windsurfGetCmd)
 	}
@@ -1969,7 +1969,7 @@ func harnessGitBranchGuardTargetClaude(home, claudeDir string, claudeDirErr erro
 	// ML-2A: migrate any pre-ML-2A global entry (abs .sh path → inline command).
 	// ML-5A: also migrate the "Bash" matcher → claudeShellMatcher for guard entries.
 	// ML-6B/ML-6C: migrate D2 revised and pre-ML-6C D11 inline forms → D11 revised forms.
-	// ML-7A: migrate D11 revised pré-ML-7A and workaround bash wrapper forms → new form.
+	// REQ-2026-10-20: migrate D11 revised pré-REQ-2026-10-20 and workaround bash wrapper forms → new form.
 	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
 		migrateHookCommand(hooks["PreToolUse"], "Bash", legacyScriptPath, guardGitBranchCmdPSPOSIX)
 		migrateHookCommand(hooks["PostToolUse"], "Bash", legacyScriptPath, guardGitBranchCmdPSPOSIX)
@@ -2061,7 +2061,7 @@ func harnessGitBranchGuardTargetCodex(home string, opts UpdateOptions) TargetRes
 	}
 	// ML-2A: migrate any pre-ML-2A global entry (abs .sh path → inline command).
 	// ML-6B/ML-6C: migrate D2 revised and pre-ML-6C D11 inline form → D11 revised form.
-	// ML-7A: migrate D11 revised pré-ML-7A and workaround bash wrapper forms → new form.
+	// REQ-2026-10-20: migrate D11 revised pré-REQ-2026-10-20 and workaround bash wrapper forms → new form.
 	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
 		migrateHookCommand(hooks["PreToolUse"], "Bash", legacyScriptPath, guardGitBranchCmdPSPOSIX)
 		migrateHookCommand(hooks["PostToolUse"], "Bash", legacyScriptPath, guardGitBranchCmdPSPOSIX)
@@ -2149,7 +2149,7 @@ func harnessGitBranchGuardTargetGemini(home string, opts UpdateOptions) TargetRe
 	}
 	// ML-2A: migrate any pre-ML-2A global entry (abs .sh path → inline command).
 	// ML-6B/ML-6C: migrate D2 revised and pre-ML-6C D11 inline form → D11 revised form.
-	// ML-7A: migrate D11 revised pré-ML-7A and workaround bash wrapper forms → new form.
+	// REQ-2026-10-20: migrate D11 revised pré-REQ-2026-10-20 and workaround bash wrapper forms → new form.
 	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
 		migrateHookCommand(hooks["BeforeTool"], "run_shell_command", legacyScriptPath, guardGitBranchCmdPSPOSIX)
 		migrateHookCommand(hooks["AfterTool"], "run_shell_command", legacyScriptPath, guardGitBranchCmdPSPOSIX)
@@ -2245,7 +2245,7 @@ func harnessGitBranchGuardTargetCursor(home string, opts UpdateOptions) TargetRe
 	}
 	// ML-2A: migrate any pre-ML-2A global entry (abs .sh path → inline command).
 	// ML-6B/ML-6C: migrate D2 revised and pre-ML-6C D11 inline form → D11 revised form.
-	// ML-7A: migrate D11 revised pré-ML-7A and workaround bash wrapper forms → new form.
+	// REQ-2026-10-20: migrate D11 revised pré-REQ-2026-10-20 and workaround bash wrapper forms → new form.
 	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
 		migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyScriptPath, guardGitBranchCmdPSPOSIX, cursorGetCmd)
 		migrateCursorSimpleCommand(hooks["afterShellExecution"], legacyScriptPath, guardGitBranchCmdPSPOSIX, cursorGetCmd)
@@ -2333,7 +2333,7 @@ func harnessGitBranchGuardTargetCopilot(home string, opts UpdateOptions) TargetR
 	}
 	// ML-2A: migrate any pre-ML-2A global entry (abs .sh path → inline command).
 	// ML-6B: migrate D2 revised inline form → fail-closed D11 form.
-	// ML-7A: migrate D11 revised pré-ML-7A and workaround bash wrapper forms → new form.
+	// REQ-2026-10-20: migrate D11 revised pré-REQ-2026-10-20 and workaround bash wrapper forms → new form.
 	// Copilot entries use "bash" key (not "command"), so inline migration is needed.
 	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
 		for _, eventKey := range []string{"preToolUse", "postToolUse"} {

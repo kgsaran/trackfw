@@ -205,7 +205,7 @@ Indício adicional (2026-10-21): com o workaround `/bin/bash -c` no `~/.codex/ho
 **Auditoria (zeus, 2026-10-21):** prefixo `unsetopt EQUALS NOMATCH 2>${null-/dev/null}; `. `TestGuardLineShellMatrix` com 60 subtestes (sh/bash/zsh/zsh -f × allow/deny/erro/ausente, stdin e motivo preservados) + braço do defeito antigo; o teste reprova numa cópia com a correção revertida (`zsh:1: 2 not found`). Migração medida no binário sobre uma cópia do `~/.codex/hooks.json` real: 4 wrappers `/bin/bash -c` → forma nova, 6 entradas, 0 duplicatas, personalizados preservados, idempotente. Windows (VM ARM64, `docs/portabilidade/2026-10-21-guard-zsh-candidato-windows.md`): PS 5.1 e Git Bash dão o mesmo resultado na linha atual e na candidata (0/2/2/2). O cmd.exe não recebe a polyglot (ADR D11, linha 160: Kiro/Amazon Q usam `trackfw guard <nome>`), então o rc=1 medido ali não corresponde a artefato emitido. pwsh não estava na VM. Nota: o trackfw v10.0.0 instalado reporta `guard_wiring_removed` para a forma nova (não a conhece). O CI compila a partir do código do PR.
 
 ### ML-1B — Corretivo do red-team: `emulate -R sh`, ordem migração→merge, validador e cobertura
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento (falta o teste discriminante do B-1)
 **Squad:** apolo-tf (implementação) · artemis-tf (matriz Windows da nova forma) · auditoria zeus-tf
 **Origem:** ML-2A. O Hades reprovou com o B-1 (duplicata do guard de credencial em `InjectCodexHooks`/`InjectGeminiHooks`, confirmada pelo arquiteto nos configs commitados) e achou resíduos do zsh não declarados. O Hefesto aprovou com A1 (rótulo "ML-7A") e A2 (sem teste da migração do wrapper `/bin/bash -c`). Pela regra de "defeito conhecido corrige agora", tudo entra aqui.
 **Decisão (arquiteto, medida no host com o script de matriz em bash):** trocar o prefixo `unsetopt EQUALS NOMATCH` por `emulate -R sh 2>${null-/dev/null}; `. Matriz allow/deny/erro/ausente:
@@ -225,6 +225,8 @@ A forma `unsetopt` nunca foi publicada, então não vira legado.
 - [ ] teste da migração do wrapper `/bin/bash -c` (A2)
 - [ ] rótulo estável `REQ-2026-10-20` no lugar de "ML-7A" (A1)
 - [ ] Windows: PS 5.1 e Git Bash 0/2/2/2 com a nova forma
+
+**Auditoria (zeus, 2026-10-21):** `emulate -R sh` aplicado; matriz com dash/errexit/nounset/cshnullglob e o braço `UnsetoptInsuficiente` PASS; Windows (Artemis, rodada 2) 0/2/2/2 em PS 5.1 e Git Bash; configs sem duplicata; pins e validate OK. 🔴 **O teste do B-1 não discrimina:** `TestInjectCodexHooks/Gemini_LegacyMigrationNoDuplicate` passa também com o `agentfiles.go` anterior (mutação feita pelo arquiteto numa cópia da árvore). O caminho que produziu as duplicatas commitadas no ML-1A ainda não está identificado. As tentativas do arquiteto com o binário anterior não exercitaram o config de projeto (a entrada nem foi migrada), então não valem como medição. Achado A6 da Artemis: no PS 5.1 o redirect `2>${null-/dev/null}` não suprime o CommandNotFound; o prefixo acrescenta uma segunda linha de erro no stderr; aguarda decisão do KG.
 
 ## Wave 2 — Auditoria final
 

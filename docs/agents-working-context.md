@@ -1,5 +1,22 @@
 # agents-working-context.md
 
+## 2026-10-21 — apolo-tf — FIM: ML-1B para REQ-2026-10-20 (emulate -R sh, B-1 dedup fix)
+
+- Build clean (`go build ./...`), vet clean (`go vet ./internal/...`).
+- Testes suite completa: `ok internal/generators 63s`, `ok internal/validator 36s`, `ok internal/commands 52s`.
+- `scripts/check-validate-rule-pins.sh`: 34/34 pins PASS.
+- `trackfw validate` (HOME isolado, binário do worktree): exit=0, 164 warnings pré-existentes, zero erros.
+- Novos testes: `TestGuardLineShellMatrix_UnsetoptInsuficiente` (3 PASS — prova que unsetopt falha sob nounset), `TestInjectCodexHooks_LegacyMigrationNoDuplicate` (8 subtests PASS: D2/D11/D11Rev/WABash × cred+git), `TestInjectGeminiHooks_LegacyMigrationNoDuplicate` (8 subtests PASS: D2/D11/D11Rev/WABash × cred+git).
+- Sítios alterados: `agentfiles.go` (prefixo emulate, ordem migração B-1), `guard_line_shell_test.go` (dash/zsh-errexit/zsh-nounset/zsh-cshnullglob, UnsetoptInsuficiente), `agentfiles_test.go` (LegacyMigrationNoDuplicate Codex+Gemini), `validator_guard_wiring.go` (WABash forms em guardWiringScriptPathForms), `update_test.go`+`update_harness_test.go` (prefixo emulate), `validator_guard_binary_probe.go`+`validator_guard_binary_probe_test.go`+`validator_git_branch_guard_test.go` (prefixo emulate).
+- Configs versionados: `.claude/settings.json`, `.codex/hooks.json`, `.gemini/settings.json` — prefixo emulate, sem duplicatas (confirmado por checagem Python).
+- ADR `ADR-2026-10-04-*.md` adendo 2026-10-21 reescrito com tabela de medição ML-1B e explicação de por que `unsetopt` foi descartado.
+
+## 2026-10-21 — apolo-tf — INÍCIO: ML-1B para REQ-2026-10-20 (emulate -R sh, B-1 dedup fix)
+
+- Escopo: substituir `unsetopt EQUALS NOMATCH` por `emulate -R sh` (candidato descartado insuficiente sob nounset/errexit/cshnullglob), corrigir ordem de migração antes de merge em InjectCodexHooks/InjectGeminiHooks (B-1), adicionar wrappers WABash em guardWiringScriptPathForms, escrever testes LegacyMigrationNoDuplicate, atualizar ADR adendo, regenerar configs versionados.
+- Worktree: `/private/tmp/trackfw-attention-go`. Branch: `fix/hooks-de-guard-gerados-falham-sob-zsh`.
+- Proibido: git ops, editar REQ/roadmap/vault, tocar `/Users/kgsaran/Sistemas/Desenvolvimento/workspace/trackfw`.
+
 ## 2026-10-21 — artemis-tf — FIM: medição Windows do candidato zsh (REQ-2026-10-20) [v9]
 
 - PS 5.1 e Git Bash medidos para ATUAL e CANDIDATA (4 casos cada: allow/deny/err/ausente), invocação de produção, stdin confirmado.
