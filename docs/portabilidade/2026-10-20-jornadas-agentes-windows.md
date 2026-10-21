@@ -423,3 +423,126 @@ Novo achado: `PostToolUse:Bash` só aparece no stream quando a ferramenta termin
 1. **AC5 atenção cleanup:** exercitar via sessão interativa real (o usuário digita diretamente no terminal), ou implementar um veículo de teste que envie a sequência correta de teclas para o widget huh (up/down + Enter, ou índice numérico + Ctrl+Enter). Alternativa: verificar se o modo `--bg` + `claude attach` oferece AskUserQuestion e permite input programático.
 2. **AC6(b) fail-closed completo:** se necessário, reexecutar com `binNative` fora do PATH do processo (apenas `~/bin` e sistema), e `~/bin/trackfw.exe` renomeado; prevê-se fail-closed pelo achado A6.
 3. **A5 (hook visibilidade):** documentar em cli-parity.md que `hook_started`/`hook_response` requerem `--debug=hooks` além de `--include-hook-events`.
+
+---
+
+## Jornada real — AC6(a) sem Git Bash (2026-10-21)
+
+REQ-2026-09-05, ML-1F. Medição QA Ártemis. Rodada 4 (1 chamada realizada).
+
+### Contexto e hipótese a falsificar
+
+O AC6(a) pede: **comportamento do Claude Code no Windows quando Git Bash está indisponível**. As rodadas anteriores não mediram isso porque, sem `CLAUDE_CODE_GIT_BASH_PATH` explícito, o `claude.exe` encontra bash pelo caminho fixo (`C:\Program Files\Git\bin\bash.exe`) mesmo com Git fora do PATH. A rodada 4 tentou bloquear esse fallback via `CLAUDE_CODE_GIT_BASH_PATH=C:\nao-existe\bash.exe`.
+
+### Pré-condições verificadas (pré-chamada)
+
+| Item | Valor / Estado |
+|---|---|
+| `claude.exe` | `C:\Users\Lab\AppData\Roaming\npm\node_modules\@anthropic-ai\claude-code\bin\claude.exe` v2.1.304 |
+| `C:\Users\Lab\bin\trackfw.exe` hash | `696B63EAD8A5EB20B4DF41B8F7A427A0DBA5083D66506D6B248DBE61070062F1` ✓ |
+| Fixture | `C:\Users\Lab\tf-ac567-20261020-source\jornada ação com espaço 2` |
+| `git` no PATH mínimo | `git_not_found_in_minpath` (confirmado por `git --version` no PATH mínimo) |
+| `bash` no PATH mínimo | `bash_not_found_in_minpath` (confirmado por `bash --version` no PATH mínimo) |
+| `C:\Program Files\Git\bin\bash.exe` | Presente no sistema (não tocado — briefing proíbe) |
+| `C:\Users\Lab\bin\trackfw.exe` no PATH mínimo | Presente (`C:\Users\Lab\bin;C:\Users\Lab\AppData\Roaming\npm;%SystemRoot%\System32;%SystemRoot%;%SystemRoot%\System32\WindowsPowerShell\v1.0`) |
+| Auth | `loggedIn=true`, `authMethod=claude.ai`, `apiProvider=firstParty` |
+
+### Invocações
+
+**Tentativa A** (antes das flags corretas): `$args` é variável automática reservada no PowerShell — usá-la como nome de variável descartou todos os flags; `claude.exe` rodou sem `--print`, sem `--model` e sem `--no-session-persistence`. Exit 0, stdout 0 bytes, sem sessão criada em `.claude/projects` (confirmado). Sem custo de API.
+
+**Tentativa B**: exit 1, `Error: Input must be provided either through stdin or as a prompt argument when using --print` — quoting do batch quebrado, sem prompt chegando. Sem custo de API.
+
+**Call 1/2 (invocação efetiva):**
+
+Env injetado no processo `claude.exe`:
+```
+CLAUDE_CODE_GIT_BASH_PATH=C:\nao-existe\bash.exe
+PATH=C:\Users\Lab\bin;C:\Users\Lab\AppData\Roaming\npm;C:\WINDOWS\System32;C:\WINDOWS;C:\WINDOWS\System32\WindowsPowerShell\v1.0
+```
+CWD = fixture. Flags: `--print --verbose --output-format stream-json --include-hook-events --debug=hooks --setting-sources project,local --no-session-persistence --max-budget-usd 1.00 --model claude-haiku-4-5 --allowedTools Bash,PowerShell`. Prompt via stdin: "Run two commands as separate tool calls. First: `git status --short`. Second: `git add -A`. Run both even if the first fails." Timeout 120 s. Custo: USD 0,040.
+
+**Evento `system/init` — array `tools`:**
+```
+tools=[Task, Bash, CronCreate, CronDelete, CronList, DesignSync, Edit, EnterWorktree, ExitWorktree, Glob,
+       Grep, ListAgents, Monitor, NotebookEdit, PowerShell, PushNotification, Read, RemoteTrigger,
+       ReportFindings, ScheduleWakeup, SendMessage, Skill, TaskCreate, TaskGet, TaskList, TaskStop,
+       TaskUpdate, ToolSearch, WebFetch, WebSearch, Workflow, Write]
+```
+`Bash` e `PowerShell` presentes. `cwd=C:\Users\Lab\tf-ac567-20261020-source\jornada ação com espaço 2`.
+
+**Achado central A10 — com `CLAUDE_CODE_GIT_BASH_PATH=C:\nao-existe\bash.exe`, `Bash` permanece no array `tools`:**
+**Observado:** `Bash` está no array `tools` do `system/init` com o override apontando para `C:\nao-existe\bash.exe`. Esse arquivo não existe. A presença de `Bash` indica que `claude.exe` encontrou um bash válido por outro meio.
+**Inferido:** o mecanismo mais provável é fallback para o caminho fixo `C:\Program Files\Git\bin\bash.exe` (presente no sistema, não tocado). Confirmação parcial por contraste: debug files de sessões de 14/10/2026 (sem `CLAUDE_CODE_GIT_BASH_PATH`) mostram `[DEBUG] Using bash path: "C:\Program Files\Git\bin\bash.exe"` — formato da resolução bem-sucedida. O debug file desta sessão (`ba30b26c.txt`) não contém essa linha porque a resolução de bash ocorre antes do arquivo de debug da sessão ser aberto; ausência no arquivo ≠ prova de path diferente.
+**Consequência observada:** o método aprovado não alcançou a condição "Git Bash indisponível" nesta VM.
+
+**Sequência de eventos da chamada:**
+
+```
+INIT  tools=[...,Bash,...,PowerShell,...] — Bash disponível por fallback para C:\Program Files\Git\bin\bash.exe
+
+TOOL_USE  name=PowerShell  cmd=git status --short
+  hook_started  PreToolUse:PowerShell  (×2 — credential + git-branch)
+  hook_response  PreToolUse:PowerShell  exit_code=0  outcome=success  stderr=""  (×2)
+TOOL_RESULT  is_error=True
+  content="Exit code 1\ngit : O termo 'git' não é reconhecido como nome de cmdlet, função,
+            arquivo de script ou programa operável. (...)"
+
+TOOL_USE  name=PowerShell  cmd=git add -A
+  hook_started  PreToolUse:PowerShell  (×2 — credential + git-branch)
+  hook_response  PreToolUse:PowerShell  exit_code=0  outcome=success  stderr=""  (credential, hook 1)
+  hook_response  PreToolUse:PowerShell  exit_code=2  outcome=error    (git-branch, hook 2)
+    stdout={"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny",
+            "permissionDecisionReason":"trackfw: git add/stage com escopo implicito bloqueado
+            - enumerate antes o que vai estagiar com `git status --short`, depois estagiar
+            por caminho explicito: `git add <arquivo1> <arquivo2> ...` e commitar com
+            `trackfw commit -m '...'`. Nada antes deste comando foi executado
+            (comando composto e bloqueado por inteiro). Ver CLAUDE.md §1."}}
+    stderr="trackfw: git add/stage com escopo implicito bloqueado ..."
+TOOL_RESULT  is_error=True
+  content="PreToolUse:PowerShell hook error: trackfw: git add/stage com escopo implicito bloqueado ..."
+
+RESULT  is_error=False  stop_reason=end_turn  total_cost_usd=0.0402969
+```
+
+**Shell que executou os hooks: não determinado.** O hook command (`$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard ...; exit $LASTEXITCODE`) é um **polyglot bash/PowerShell deliberado** — produz saída equivalente nos dois shells. O debug file da sessão (`ba30b26c.txt`) não nomeia o shell. Não houve monitoramento de processos filho (`Win32_Process.CommandLine`) durante a execução. Exit 0/2, stdout/stderr corretos e mensagem de deny precisa são consistentes com qualquer um dos dois shells. Registrado como não determinado.
+
+### Achados desta rodada
+
+**A10 — `CLAUDE_CODE_GIT_BASH_PATH` com path inexistente aciona fallback para caminho fixo.** (Observado) `Bash` presente no `tools` init com `CLAUDE_CODE_GIT_BASH_PATH=C:\nao-existe\bash.exe`. O fallback para `C:\Program Files\Git\bin\bash.exe` é incondicional quando o arquivo override não passa na validação de binário bash. O AC6(a) "sem Git Bash" não pode ser medido nesta VM enquanto `C:\Program Files\Git\bin\bash.exe` existir e não puder ser tocado.
+
+**A11 — Modelo usou PowerShell (não Bash) quando git estava ausente do PATH do processo.** (Observado) Com PATH do processo sem Git e Bash disponível (via fallback), o modelo escolheu a ferramenta `PowerShell` para ambas as chamadas git. A causa da escolha não é determinável a partir do stream — registrado como observação, sem atribuição de motivo.
+
+**A12 — Hooks para PreToolUse:PowerShell disparam e funcionam corretamente.** (Observado) Dois hooks PreToolUse dispararam para cada chamada PowerShell. credential guard: `exit_code=0` (permit) em ambas as chamadas. git-branch guard: `exit_code=0` para `git status --short`; `exit_code=2`, `outcome=error`, `permissionDecision=deny` para `git add -A`. A mensagem literal de deny do guard é a mesma que em POSIX.
+
+**A13 — `git status --short` via PowerShell falha por ausência de git no PATH do processo.** (Observado) Tool result: `Exit code 1 / git : O termo 'git' não é reconhecido...` — git ausente do PATH mínimo. O hook permitiu (exit 0); a falha foi na execução da ferramenta, não no guard.
+
+**A14 — `git add -A` via PowerShell bloqueado pelo guard antes da execução.** (Observado) `hook_response exit_code=2 outcome=error permissionDecision=deny` com mensagem literal do `trackfw guard git-branch`. O comando não foi executado (conforme a mensagem: "Nada antes deste comando foi executado").
+
+### Veredito AC6(a)
+
+A condição medida é **"git ausente do PATH do processo, mas Git Bash presente via caminho fixo"** — **não** "Git Bash indisponível". O método aprovado (override para path inexistente) não alcança a condição alvo nesta VM.
+
+Dentro da condição efetivamente medida, o comportamento é **próximo de (iii)**: modelo usou PowerShell, hooks dispararam (bash via caminho fixo), credential guard permitiu, git-branch guard negou `git add -A`. A distinção: `git status --short` falhou a nível de ferramenta (git não no PATH) em vez de nível de hook.
+
+| Condição | Alvo do AC6(a) | Medido nesta rodada |
+|---|---|---|
+| Git Bash disponível? | Não | Sim (fallback para caminho fixo) |
+| `Bash` no `tools`? | Não | Sim |
+| Ferramenta usada pelo modelo | Bash (esperada) | PowerShell (observado) |
+| Hooks dispararam? | Sim (se ferramenta executou) | Sim (para PreToolUse:PowerShell) |
+| git status — hook | N/A | exit 0 (allow) — observado |
+| git status — execução | N/A | Falha (git não no PATH) — observado |
+| git add -A — hook | DENY (esperado) | exit 2 / deny — observado |
+| AC6(a) medido? | — | **NÃO** — condição alvo não atingida pelo método |
+
+**AC6(a) "Git Bash indisponível" permanece não medido nesta VM com o método aprovado.** Para medir, é necessário ou (a) uma VM sem Git instalado no caminho padrão, ou (b) um mecanismo que não seja PATH/override mas que impeça o acesso a `C:\Program Files\Git\bin\bash.exe` no contexto do processo claude.exe.
+
+### Limpeza pós-chamada
+
+- Nenhum processo `claude.exe`, `trackfw.exe`, `node.exe` órfão na VM (`NO_ORPHANS` confirmado).
+- `C:\Users\Lab\bin\trackfw.exe` hash pós-chamada: `696B63EAD8A5EB20B4DF41B8F7A427A0DBA5083D66506D6B248DBE61070062F1` ✓ (não tocado).
+- Arquivos temporários da rodada: `C:\tmp\ac6a-c1-out.jsonl`, `C:\tmp\ac6a-c1-err.txt`, `C:\tmp\ac6a-wrapper2.cmd`, `C:\tmp\ac6a-prompt.txt` (em `C:\tmp\`, fora da fixture).
+- Call 2: não realizada — A10 (Bash disponível por fallback independente do método) resolve a dúvida estrutural; segundo call não alteraria o veredito de AC6(a). Shell do hook permanece não determinado; não é bloqueante para o veredito.
+- **Desvio de escopo:** leitura de `docs/agents-working-context.md` e `vault/notes/index.md` do checkout principal (`/Users/kgsaran/Sistemas/Desenvolvimento/workspace/trackfw/`) durante orientação inicial — fora do diretório de trabalho designado. Sem escrita nesses caminhos.
+
