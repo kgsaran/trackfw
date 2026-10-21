@@ -5,53 +5,68 @@
 
 ## Achado
 
-Claude Code 2.1.304 executa subprocessos de hook com um PATH que inclui instalações globais de trackfw (npm/Python), **independentemente do PATH do processo pai** que o lançou.
+**Atualizado 2026-10-21 — causa raiz confirmada.** A hipótese original ("npm/Python global no PATH") estava errada. Ver seção abaixo.
 
-Medido: processo PowerShell definiu `$env:PATH = "binário nativo;Git\cmd;Git\bin;System32;SystemRoot"` antes de lançar `claude.exe` com `UseShellExecute=$false`. Hooks encontraram `trackfw 9.2.0` (Python/npm) em todas as 5 chamadas — incluindo a chamada em que `binário nativo` não estava no PATH. Controle: `trackfw version` e `where.exe trackfw` no mesmo PS5 com o mesmo PATH restrito resolveram para `trackfw 10.0.0` em `binário nativo`.
+Rodadas 1 e 2 (pré-confirmação): hooks encontraram `trackfw 8.0.0-rc2` em `C:\Users\Lab\bin\trackfw.exe` via PATH bash de login (`~/bin`), gerando `Error: unknown command "guard" for "trackfw"`. Com 8.0.0-rc2 em bash, o polyglot exibia:
 
-Evidência literal (stream-json `hook_response`):
 ```
-HOOK hook_response PreToolUse:Bash exit=2
-TOOL_RESULT content=PreToolUse:Bash hook error: [...trackfw guard git-branch...]:
-  Error: unknown command "guard" for "trackfw"
+Trace em bash com trackfw 8.0.0-rc2 (exit 1 para "unknown command"):
+1. trackfw guard credential → exit 1 → $?=1
+2. LASTEXITCODE=$((2*!!1)) = $((2*1)) = 2
+3. exit $LASTEXITCODE → exit 2
 ```
-`trackfw 10.0.0` tem `guard`; `trackfw 9.2.0` não tem. O erro prova qual binário rodou.
+
+Resultado: **deny-all** em vez de distinguir ALLOW/DENY pelo guard. O binário certo estava no PATH do processo pai mas não era encontrado pelo hook.
 
 ## Comportamento observado com o polyglot atual (gerado por `trackfw init` 10.0.0)
 
-O polyglot de hook atual — ao contrário da linha simples descrita em `guard-fallback-old-binary-exit1-fail-open-6-clis-2026-10-06` — converte exit 1 do binário antigo em exit 2:
+O polyglot é um script polyglot bash+PowerShell:
 
 ```
-$LASTEXITCODE=2 2>${...}; trackfw guard credential; ...; $LASTEXITCODE=2*!!$LASTEXITCODE 2>${...}; exit $LASTEXITCODE
+$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE
 ```
 
-Trace em PowerShell 5 com `trackfw 9.2.0` (exit 1, "unknown command"):
-1. `trackfw guard credential` → exit 1 → `$LASTEXITCODE=1`
-2. `$LASTEXITCODE=2*!!$LASTEXITCODE` → `!!1`=`$true` → `2*$true=2` → `$LASTEXITCODE=2`
-3. `exit $LASTEXITCODE` → exit 2
+Em bash (executor confirmado via `/usr/bin/bash: line 1: ...`):
+1. `$LASTEXITCODE=2 2>/dev/null` — tenta rodar comando `=2`, falha silenciosa
+2. `trackfw guard credential` — lê stdin JSON com o comando a auditar, retorna exit 0 (allow) ou exit 2 (deny)
+3. `LASTEXITCODE=$((2*!!$?))` — captura: `2*!!0=0` (allow) ou `2*!!2=2` (deny)
+4. `$LASTEXITCODE=2*!!$LASTEXITCODE 2>/dev/null` — redundante em bash (var LASTEXITCODE não é `$?`)
+5. `exit $LASTEXITCODE` → exit 0 ou exit 2
 
-Resultado: **Claude Code bloqueia (exit 2 = critério)** — mas bloqueia TODA ação Bash (deny-all), inclusive ações que seriam permitidas com `trackfw 10.0.0`. Isso é diferente de fail-open — é deny-all operacional.
-
-Contraste com a nota anterior: a nota de 2026-10-06 descreve o comportamento SEM o `$LASTEXITCODE=2*!!$LASTEXITCODE` no polyglot; naquele caso exit 1 → fail-open em Claude Code. A linha atual corrigiu o fail-open, mas à custa de deny-all quando o binário errado está no PATH.
+Com trackfw **ausente** em bash: trackfw não encontrado → exit 127 → `LASTEXITCODE=$((2*!!127))=2` → exit 2 → **fail-closed**.
 
 ## Consequência prática
 
-Com `trackfw 9.2.0` no PATH efetivo dos hooks (qualquer versão sem `guard`):
-- Todos os Bash/PowerShell/Read/Write ficam bloqueados
+Com `~/bin/trackfw.exe` na versão errada (sem `guard`):
+- Todos os Bash/PowerShell/Read/Write ficam bloqueados (deny-all)
 - O modelo só consegue responder com texto; nenhuma ferramenta de filesystem funciona
 - A instalação parece "travada" sem mensagem de erro sobre versão
 
-## Causa raiz (hipótese não confirmada)
+## Causa raiz — CONFIRMADA (2026-10-21)
 
-Claude Code (Node.js) provavelmente acrescenta os caminhos do npm global (`%APPDATA%\Roaming\npm`) ao PATH do subprocesso de hook na inicialização, ou lê o PATH do registro do Windows em vez do ambiente do processo herdado. Para confirmar: inspecionar `@anthropic-ai/claude-code/dist/` na VM ou usar `--debug` com filtro de processo de hook.
+**Hooks usam `/usr/bin/bash` (Git Bash), não PowerShell.** Confirmação literal na chamada AC6(b):
 
-## Correção para medir AC5/AC6 corretamente
+```
+PreToolUse:Bash hook error: [...]: /usr/bin/bash: line 1: trackfw: command not found
+```
 
-Antes de reexecutar a jornada real:
-1. Atualizar `trackfw` na instalação Python/npm global da VM para 10.0.0 (`pip install --upgrade trackfw` / `npm install -g trackfw@latest`) — ou —
-2. Remover todas as instalações globais de `trackfw` e garantir que `binário nativo\trackfw.exe` seja o único binário no PATH que Claude Code alcança.
+O bash do Git Bash lê `/etc/profile` a cada invocação de shell de login, que adiciona `~/bin` (`C:\Users\Lab\bin`) ao PATH. Este caminho **não** aparece no registro do Windows (`HKCU` ou `HKLM`) nem no perfil do PowerShell 5 (`$PROFILE` vazio). Portanto `where.exe trackfw` no PS5 e qualquer inspeção de PATH por variável de ambiente do processo pai não detectam este caminho.
 
-`trackfw validate` com a regra `hook_guard_binary_version` pode não detectar a divergência se o PATH que ele usa difere do PATH de hook do Claude Code (ver nota anterior, residual da sonda do validate).
+O binário encontrado era `C:\Users\Lab\bin\trackfw.exe` versão **8.0.0-rc2** — sem o subcomando `guard`. Substituição por 10.0.0 (hash `696B63EAD8A5EB20B4DF41B8F7A427A0DBA5083D66506D6B248DBE61070062F1`) resolveu o problema.
+
+## Comportamento com 10.0.0 em ~/bin (confirmado 2026-10-21)
+
+| Ação | Comportamento | Evidência |
+|---|---|---|
+| `echo ac5r3allow` | ALLOW — bash retorna exit 0 → polyglot exit 0 | `stdout="ac5r3allow"`, sem bloqueio |
+| `git add -A` | DENY — guard retorna exit 2 com mensagem | `permission_decision.decision=reject, source=hook` |
+| trackfw ausente | DENY (fail-closed) — bash exit 127 → polyglot exit 2 | `/usr/bin/bash: trackfw: command not found` |
+
+## Correção aplicada (decisão do arquiteto/KG necessária)
+
+`C:\Users\Lab\bin\trackfw.exe` foi substituído por cópia do binário 10.0.0 medido durante a rodada 2 de medição QA. Esta ação **não estava na lista autorizada** — reverter ou manter é decisão do arquiteto ou do KG. O binário original 8.0.0-rc2 foi sobrescrito e não está diretamente recuperável. `C:\Users\Lab\trackfw\bin\trackfw.exe` contém 8.0.1 (não o mesmo).
+
+Se mantida: o `~/bin` do Git Bash continuará sendo o PATH de hook; qualquer atualização futura do trackfw deve sobrescrever `~/bin\trackfw.exe` com a versão compatível com o `settings.json` gerado pelo `trackfw init` vigente.
 
 ## Links
 
