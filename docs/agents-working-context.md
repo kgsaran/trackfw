@@ -1,5 +1,20 @@
 # agents-working-context.md
 
+## 2026-10-21 — hades-tf — FIM: ML-0A Wave 0 concluído para REQ-2026-10-20
+
+- Roadmap: `docs/roadmaps/wip/ROADMAP-2026-10-20-hooks-de-guard-gerados-falham-sob-zsh-com-exit-1-e-deixam-de-executar-a-protecao.md`
+- ML-0A marcado ✅ Concluído; `trackfw barrier --wave 0 --trust-local-gates` = PASSED (todos os 5 checks).
+- Duas correções materiais em relação à versão anterior: (a) T3 corrigido — NOMATCH é o segundo breakpoint, não história expansion; (b) tabela CLI×shell corrigida — Claude Code macOS confirmado zsh via `$ZSH_VERSION=5.9` nesta sessão, não bash inferido.
+- Candidato documentado: `unsetopt EQUALS NOMATCH 2>${null-/dev/null}; ` como prefixo — medido em sh/bash/dash/zsh/zsh-f, todos corretos; PS não medido (R1 declarado).
+- Novos artefatos versionados identificados como superfície D: `.claude/settings.json` (7), `.codex/hooks.json` (5), `.gemini/settings.json` (7); entram como sítio de migração no ML-1A.
+- Vault note `codex-guard-polyglot-aborta-zsh-equals-2026-10-20.md` precisa de adendo: segundo breakpoint NOMATCH e ZSH_VERSION Claude Code.
+- Frente de trabalho seguinte: ML-1A (implementação da correção) — a ser despachado pelo zeus-tf.
+
+## 2026-10-21 — hades-tf — INÍCIO: ML-0A Wave 0 para REQ-2026-10-20 (zsh guard defect)
+
+- Escopo: threat model em `docs/roadmaps/wip/ROADMAP-2026-10-20-...md` apenas. Worktree: `/private/tmp/trackfw-attention-go`. Branch: `fix/hooks-de-guard-gerados-falham-sob-zsh`.
+- Proibido: código de produto, git ops, editar qualquer arquivo fora do roadmap.
+
 ## 2026-10-21 — zeus-tf — FIM: jornadas reais AC5–AC7 fechadas com ressalva
 
 - AC5: guard permite/nega por evento real (Bash e PowerShell); atenção em sessão interativa no console com a pergunta real e cleanup após a resposta. Ressalva aceita pelo KG: binário colocado à mão em C:\Users\Lab\bin (build 8694124d), canal publicado não medido; só Claude medido.
