@@ -115,18 +115,30 @@ func attentionText(value string) string {
 //
 // Any type mismatch or missing field at any level silently returns "".
 // The caller falls through to the next candidate in the message-precedence chain.
+//
+// Only the first array element is decoded; the remaining elements are never read
+// or allocated. This avoids materialising the full array when the payload is large
+// (e.g. ~200 k items each 6 bytes ≈ 1.2 MiB of input yielding ~12 MiB of slice
+// headers with the former Unmarshal approach).
 func attentionFirstQuestion(raw json.RawMessage) string {
 	if len(raw) == 0 {
 		return ""
 	}
-	var items []json.RawMessage
-	if json.Unmarshal(raw, &items) != nil || len(items) == 0 {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	tok, err := dec.Token()
+	if err != nil {
+		return ""
+	}
+	if delim, ok := tok.(json.Delim); !ok || delim != '[' {
+		return ""
+	}
+	if !dec.More() {
 		return ""
 	}
 	var first struct {
 		Question *string `json:"question"`
 	}
-	if json.Unmarshal(items[0], &first) != nil {
+	if dec.Decode(&first) != nil {
 		return ""
 	}
 	if first.Question == nil || *first.Question == "" {

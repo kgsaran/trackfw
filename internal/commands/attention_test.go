@@ -316,6 +316,34 @@ func TestAttentionQuestionsField(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("questions_large_array_only_first_read", func(t *testing.T) {
+		// Asserts: a questions array whose first entry is valid and whose tail has
+		// ~200 k additional objects (total within attentionMaxInput) returns the
+		// first question. Only the first element is decoded — the tail is never
+		// allocated — so memory usage stays constant regardless of array length.
+		tail := strings.Repeat(",{}", 200_000)
+		raw := json.RawMessage(`[{"question":"only this"}` + tail + `]`)
+		if got := attentionFirstQuestion(raw); got != "only this" {
+			t.Fatalf("got %q, want %q", got, "only this")
+		}
+	})
+
+	t.Run("questions_first_valid_rest_malformed", func(t *testing.T) {
+		// Asserts: attentionFirstQuestion returns the first question even when the
+		// remainder of the array is malformed JSON. The decoder stops after the
+		// first element and never reads the broken tail.
+		//
+		// NOTE: in the complete runAttention flow this case is a no-op: the outer
+		// json.Unmarshal on the full payload rejects malformed JSON before
+		// attentionFirstQuestion is ever called. This subtest exercises the
+		// function directly to document and guarantee its early-exit semantics in
+		// isolation.
+		raw := json.RawMessage(`[{"question":"ok"}, }`)
+		if got := attentionFirstQuestion(raw); got != "ok" {
+			t.Fatalf("got %q, want %q", got, "ok")
+		}
+	})
 }
 
 func TestAttentionInputBoundsAndCwd(t *testing.T) {
