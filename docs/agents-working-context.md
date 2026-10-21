@@ -47115,3 +47115,8 @@ P21 complemento operacional: input workflow_dispatch attention_only boolean fals
 ## 2026-10-21 — zeus-tf — PR #592 aberto
 
 - make quality exit 0 (falsificação 368 OK/0 FAIL), com HOME isolado e packaging/pyyaml por venv temporário. A primeira tentativa parou por falta do `packaging` no host. PR https://github.com/kgsaran/trackfw/pull/592 aberto a pedido do KG; sem merge. REQ fecha pós-merge.
+
+## 2026-10-21 — zeus-tf — FIM: REQ-2026-09-05 (instalação Windows) encerrada
+
+- PR #592 mergeado (3c0cc1f2, 2026-10-21T19:48:48Z), conforme informado pelo KG e conferido no GitHub. Roadmap movido para done/ com `trackfw roadmap move`, REQ com status Done e ponteiros sincronizados. validate: 0 violações, 166 avisos. Branch docs/encerra-req-instalacao-windows.
+- VM: `C:\Users\Lab\bin\trackfw.exe` = build da branch (backup .bak-28d6d018); pip/npm sem trackfw.

@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-05
 author: ""
 adr: "docs/adr/ADR-2026-10-04-o-guard-de-hook-e-um-subcomando-go-do-trackfw-e-a-linha-de-hook-e-a-mesma-string-em-todo-shell.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-22-a-instalacao-em-windows-promete-o-que-nao-entrega-e-o-instalador-recusa-a-plataforma-para-a-qual-publicamos-binario.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-22-a-instalacao-em-windows-promete-o-que-nao-entrega-e-o-instalador-recusa-a-plataforma-para-a-qual-publicamos-binario.md"
 ---
 
 # REQ: a instalacao em Windows promete o que nao entrega e o instalador recusa a plataforma para a qual publicamos binario
 
-> Date: 2026-09-05 | Status: Open
+> Date: 2026-09-05 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -136,7 +136,7 @@ ADR: `docs/adr/ADR-2026-10-04-o-guard-de-hook-e-um-subcomando-go-do-trackfw-e-a-
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-22-a-instalacao-em-windows-promete-o-que-nao-entrega-e-o-instalador-recusa-a-plataforma-para-a-qual-publicamos-binario.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-22-a-instalacao-em-windows-promete-o-que-nao-entrega-e-o-instalador-recusa-a-plataforma-para-a-qual-publicamos-binario.md`
 
 ---
 
@@ -207,3 +207,7 @@ Atenção usa comandos simples `trackfw attention signal|cleanup` (informativos,
 ## Evidência AC8 — 2026-10-20
 
 ML-1H concluído: execução Windows P21 39454688584, fonte 20b3734c, confirmou comandos nativos sem bash/jq/python no PATH e banner ativo/inativo no DOM real do Edge. Relatório: docs/portabilidade/2026-10-20-atencao-go-windows-p21.md. AC5–AC7 não encerrados: a sonda não dispara eventos dos CLIs de agente. REQ permanece Open.
+
+## Encerramento — 2026-10-21
+
+Todos os ACs (AC1–AC8) marcados; entregue no PR #592 (merge 3c0cc1f2), com as ressalvas de AC5–AC7 escritas acima. Roadmap movido para `done/`.
