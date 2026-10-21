@@ -47111,3 +47111,7 @@ P21 complemento operacional: input workflow_dispatch attention_only boolean fals
 ## 2026-10-21 — zeus-tf — FIM: AC1–AC4 fechados; REQ com todos os ACs marcados
 
 - README (Apolo, auditado, com um ajuste de redação do arquiteto) e install.sh (Ares) commitados. AC3 na direção "suportar Windows", decidida pelo KG. Escopo negativo "não implementar ARM64" marcado como obsoleto. REQ continua Open até o merge; roadmap em wip. Sem PR.
+
+## 2026-10-21 — zeus-tf — PR #592 aberto
+
+- make quality exit 0 (falsificação 368 OK/0 FAIL), com HOME isolado e packaging/pyyaml por venv temporário. A primeira tentativa parou por falta do `packaging` no host. PR https://github.com/kgsaran/trackfw/pull/592 aberto a pedido do KG; sem merge. REQ fecha pós-merge.
