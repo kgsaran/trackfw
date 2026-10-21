@@ -1,5 +1,46 @@
 # agents-working-context.md
 
+## 2026-10-21 — zeus-tf — FIM: jornadas reais AC5–AC7 fechadas com ressalva
+
+- AC5: guard permite/nega por evento real (Bash e PowerShell); atenção em sessão interativa no console com a pergunta real e cleanup após a resposta. Ressalva aceita pelo KG: binário colocado à mão em C:\Users\Lab\bin (build 8694124d), canal publicado não medido; só Claude medido.
+- AC6 reescrito (decisão do KG): falsificação = sem trackfw o guard recusa de forma visível (medido). Claude sem Git instalado é limite declarado e não medido (claude.exe acha Git Bash por caminho fixo).
+- AC7: todas as medições em caminho com espaço/acento; perfil C:\Users\José não exercitado.
+- Defeito achado pela jornada e corrigido no mesmo PR: ML-1I (attention lia tool_input.question; o payload real é questions[].question) + residual do red-team (só o primeiro item decodificado). Hades aprovou.
+- Causa do trackfw antigo nos hooks: Git Bash /etc/profile põe ~/bin no PATH; 8.0.0-rc2 em C:\Users\Lab\bin. pip/npm 9.2.0 desinstalados da VM (autorizado).
+- Observação para a REQ-2026-10-20 (zsh): TestValidateJSONFlag/TestValidateTextUnchanged falham localmente também em origin/main por causa do ~/.codex/hooks.json global com /bin/bash -c; passam com HOME isolado.
+- Pendente na REQ: AC1–AC4 (documentação: README, instalação Windows, install.sh, ARM64). Sem PR aberto.
+
+## 2026-10-21 — zeus-tf — início: jornadas reais AC5–AC7 com quota liberada
+
+- Iniciado: KG confirmou VM ligada e quota liberada; SSH powershell-vm respondeu (WIN-C83B0R5MIGB). Sinal de atenção de quota removido. Artemis despachada para a jornada Claude real na fixture existente (fonte 28d6d018).
+- Decisão AC6: a redação histórica pressupõe dependência de Git Bash, aposentada pela atenção/guard nativos (ADR-2026-10-04 D2, AC8). Falsificação passa a ser: sem Bash no PATH a jornada funciona (controle positivo); sem trackfw no PATH o guard falha de forma visível e nomeada (fail-closed) e a atenção vira no-op declarado. Texto da REQ só muda após a medição.
+
+## 2026-10-21 — zeus-tf — consulta de retomada
+
+- Iniciado: confronto do ponto de parada de 20/10 com origin/main (28d6d018, #590 e #591 mergeados), worktree e sinal de atenção.
+- Concluído: frente ativa continua em AC5–AC7 (ML-1E, jornada real Windows), branch fix/instalacao-windows-jornadas sincronizada com origin, sem PR. Bloqueio vigente: quota semanal do Claude na VM; sinal de atenção local mantido até nova tentativa. Nenhuma medição, código ou config alterados nesta consulta.
+
+## 2026-10-20 — zeus-tf — PONTO DE PARADA (retomar 2026-10-21)
+
+- PR #590 (Lourival) e #591 integrados; main medida em 28d6d018. #591 entregou AC8, atenção nativa Go; última esteira 39461370579 teve 20/20 checks SUCCESS. Sem nova release.
+- Trabalho atual: branch `fix/instalacao-windows-jornadas`, worktree `/private/tmp/trackfw-attention-go`, evidência publicada até d85001c6. REQ de instalação Windows (2026-09-05) Open, roadmap correspondente em wip; AC5–AC7 NÃO concluídos. Relatório: `docs/portabilidade/2026-10-20-jornadas-agentes-windows.md`.
+- VM `powershell-vm`/WIN-C83B0R5MIGB ARM64 acessível por SSH; Claude2.1.299 autenticado, porém chamada real recusada por limite semanal antes de qualquer ferramenta/hook, custo0USD. Não inferir horário de liberação a partir do texto do fornecedor. Nenhum processo de medição deixado ativo, nenhum segredo copiado ou config real alterada.
+- Fonte exata 28d6d018 em `C:\Users\Lab\tf-ac567-20261020-source`; binário compilado trackfw.exe10.0.0, SHA256696B63EAD8A5EB20B4DF41B8F7A427A0DBA5083D66506D6B248DBE61070062F1. Fixture válida `jornada ação com espaço 2`; diretório `tf-ac567-20261020` é extração inválida, NÃO usar. PATH padrão resolve trackfw9.2.0; usar exe medido por PATH apenas do subprocesso. `claude.cmd` absoluto evita shim.ps1 sob Restricted.
+- Controles diretos PS5/cmd: init/update geraram configs, signal/cleanup funcionaram com espaço/acento e sem bash/jq/python no PATH. Isso NÃO prova evento real. Outros agentes/pwsh ausentes nos locais consultados.
+- Amanhã: confirmar VM, login e quota por tentativa limitada; conferir ajuda instalada e disponibilidade de AskUserQuestion no modo usado (print pode não oferecer); preservar settings locais gerados e perfil autenticado, sem copiar credenciais. Medir AskUserQuestion real → sinal/banner → cleanup, controle de ferramenta permitida e negada pelo guard, com timeout/orçamento e marcador. Só então atualizar AC5–AC7. AC6 histórico pressupõe dependência Bash aposentada: reconciliar com ADR nativa e falsificação pela ausência do trackfw; não fabricar falha sem Bash. Se quota seguir indisponível, registrar impedimento e decidir runtime alternativo com KG.
+- Checkout original `docs/ponto-de-parada-2026-10-19` mantém alterações locais de hooks/REQ/vault do usuário; não resetar/stash/commitar tudo. Nenhum PR aberto para a branch atual; abrir somente quando solicitado. Sinal de atenção por quota permanece local no worktree isolado.
+
+## 2026-10-20 — zeus-tf — retomada após autenticação Claude
+
+- KG confirmou login Claude na VM. Artemis retomou medição real AC5–AC7 na fixture existente com fonte 28d6d018, verificando somente status de autenticação e preservando credenciais/configs globais. Sinal de atenção por login removido. Sem novos agentes instalados ou mudanças de produto; eventos reais não serão substituídos por controles diretos.
+- Resultado da tentativa autenticada: loggedIn=true; Claude exit1/is_error=true/num_turns1, custo0USD, zero tool_use/hook_event e nenhum marcador/sinal. Mensagem do fornecedor informa limite semanal atingido antes de qualquer ferramenta. Não atribuir falha a hooks nem fechar AC5–AC7. Sem retry/modelo alternativo; processos encerrados e configs reais preservadas. Evidência no relatório QA; aguarda quota disponível ou runtime autenticado alternativo.
+
+## 2026-10-20 — zeus-tf — início das jornadas AC5–AC7
+
+- Retomada autorizada pelo KG com VM ligada, fonte main 28d6d018 (#591) enviada por arquivo git archive. Branch fix/instalacao-windows-jornadas ligada à REQ Windows existente e roadmap WIP; checkout original com alterações do usuário preservado.
+- Inventário QA: Windows ARM64 WIN-C83B0R5MIGB, cmd.exe, Go1.27, Claude2.1.299 sem login; trackfw9.2.0 sombreia PATH. Outros seis agentes/pwsh não encontrados nas instalações padrão. Artemis prepara build scratch e plano sem editar configs reais. Usuário consultado sobre autenticação; nenhuma chamada de modelo até resolver.
+- Preparação concluída: relatório docs/portabilidade/2026-10-20-jornadas-agentes-windows.md auditado junto do instrumento /private/tmp/ac567-native.ps1. Build fonte 28d6d018 PASS e hash tar conferido host/VM; init/update reais exit0; linhas geradas de atenção em PS5/cmd ativam/removem sinal com mensagem exata em caminho espaço/acento e PATH sem helpers. Nenhum evento de agente/modelo ou browser nesta rodada. AC5–AC7 permanecem pendentes; aguarda autenticação Claude na VM, sinal de atenção local ativo. validate 0 violações/163 avisos e diff-check limpo; nenhum código de produto alterado.
+
 ---
 
 ## 2026-10-18 — apolo-tf — FIM: parity-rest fix — dry-run sem origin (REQ-2026-09-12)
@@ -47053,3 +47094,24 @@ P21 complemento operacional: input workflow_dispatch attention_only boolean fals
 - Correção auditada: helper existente falha em erros comuns e pula apenas falta de capacidade; entrada Windows movida com histórico preservado. Testes TestAttention commands/generators PASS, build PASS, make parity-rest completo PASS após disponibilizar packaging/PyYAML temporários (primeira tentativa parou por dependência ausente); validate 0 violações/163 avisos. Publicação para nova medição CI, sem merge.
 - Concluído: PR #591 aberto em https://github.com/kgsaran/trackfw/pull/591; AC5–AC7 continuam pendentes, sem merge ou release.
 - A pedido do KG, reavaliado o PR de Lourival #590 no head 8ab6e84c9413c73416d0bcbe00ecd3d176a999de: P2 do comentário atendido no segundo consumidor da sonda; regressão cobre prazo inconclusivo e erro real. Revisão independente de segurança sem bloqueadores. No snapshot exato, go build ./..., go vet ./internal/validator, suíte completa do validator (30.290s) e regressão explícita passaram. GitHub confirmou 20 checks SUCCESS, MERGEABLE/CLEAN. Recomendado merge pelo usuário; nenhum comentário, review ou merge publicado.
+
+## 2026-10-21 — apolo-tf — FIM: ML-1A, ML-1B, ML-1D (documentação README Windows)
+
+- README.md atualizado em /private/tmp/trackfw-attention-go.
+- ML-1A: banner topo e aviso npm atualizados — guard/atenção são subcomandos Go (sem POSIX shell/jq/python3), atenção nativa ships na próxima release após v10.0.0, caveat Git Bash C:\Program Files\Git\bin\bash.exe, jornada 2026-10-21 declarada.
+- ML-1B: nova subseção "#### Installing on Windows" com npm/pip/install.sh/tarball e pitfall de múltiplos trackfw no PATH.
+- ML-1D: ARM64 declarado em "What we know works" — publicado, medido em VM ARM64 2026-09-16, jornada 2026-10-21 também ARM64, CI só x64.
+- trackfw validate --json: 0 violations, 166 warnings (baseline pré-existente), exit_code 0.
+- Não tocado: scripts/, roadmap, REQ, nenhum outro arquivo.
+
+## 2026-10-21 — ares-tf (registrado por zeus-tf) — FIM: ML-1C aviso de outra cópia no PATH
+
+- O `scripts/install.sh` lista em stderr toda outra cópia de trackfw/trackfw.exe nas entradas do PATH, sem executá-la. No Windows com `~/bin`, avisa que o Git Bash põe `~/bin` primeiro. Gate `check-install-checksum.sh` com C8 (aviso, caminho e sentinela ausente) e C9 (contra-braço). Auditoria: `sh -n` OK, checksum gate exit 0 (15 cenários), version-pin exit 0. A escrita do Ares no context foi barrada pelo classificador; esta entrada é do arquiteto.
+
+## 2026-10-21 — zeus-tf — FIM: AC1–AC4 fechados; REQ com todos os ACs marcados
+
+- README (Apolo, auditado, com um ajuste de redação do arquiteto) e install.sh (Ares) commitados. AC3 na direção "suportar Windows", decidida pelo KG. Escopo negativo "não implementar ARM64" marcado como obsoleto. REQ continua Open até o merge; roadmap em wip. Sem PR.
+
+## 2026-10-21 — zeus-tf — PR #592 aberto
+
+- make quality exit 0 (falsificação 368 OK/0 FAIL), com HOME isolado e packaging/pyyaml por venv temporário. A primeira tentativa parou por falta do `packaging` no host. PR https://github.com/kgsaran/trackfw/pull/592 aberto a pedido do KG; sem merge. REQ fecha pós-merge.

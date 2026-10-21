@@ -108,6 +108,45 @@ func attentionText(value string) string {
 	}, value)
 }
 
+// attentionFirstQuestion extracts the first non-empty question string from a
+// JSON array that matches the Claude Code 2.x AskUserQuestion shape:
+//
+//	[{"question":"<text>", ...}, ...]
+//
+// Any type mismatch or missing field at any level silently returns "".
+// The caller falls through to the next candidate in the message-precedence chain.
+//
+// Only the first array element is decoded; the remaining elements are never read
+// or allocated. This avoids materialising the full array when the payload is large
+// (e.g. ~200 k items each 6 bytes ≈ 1.2 MiB of input yielding ~12 MiB of slice
+// headers with the former Unmarshal approach).
+func attentionFirstQuestion(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	tok, err := dec.Token()
+	if err != nil {
+		return ""
+	}
+	if delim, ok := tok.(json.Delim); !ok || delim != '[' {
+		return ""
+	}
+	if !dec.More() {
+		return ""
+	}
+	var first struct {
+		Question *string `json:"question"`
+	}
+	if dec.Decode(&first) != nil {
+		return ""
+	}
+	if first.Question == nil || *first.Question == "" {
+		return ""
+	}
+	return *first.Question
+}
+
 func runAttention(action, cwd string, input io.Reader) {
 	root, filename, ok := attentionPath(cwd)
 	if !ok {
@@ -125,8 +164,9 @@ func runAttention(action, cwd string, input io.Reader) {
 	var payload struct {
 		Tool  *string `json:"tool_name"`
 		Input struct {
-			Question *string `json:"question"`
-			Command  *string `json:"command"`
+			Question  *string         `json:"question"`
+			Questions json.RawMessage `json:"questions"`
+			Command   *string         `json:"command"`
 		} `json:"tool_input"`
 	}
 	if json.Unmarshal(data, &payload) != nil || !bytes.HasPrefix(bytes.TrimSpace(data), []byte("{")) {
@@ -139,6 +179,8 @@ func runAttention(action, cwd string, input io.Reader) {
 	message := "Agent is executing: " + fallback
 	if payload.Input.Question != nil {
 		message = *payload.Input.Question
+	} else if q := attentionFirstQuestion(payload.Input.Questions); q != "" {
+		message = q
 	} else if payload.Input.Command != nil {
 		message = *payload.Input.Command
 	}

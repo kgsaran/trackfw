@@ -4,6 +4,8 @@
 
 ## Índice
 
+- [hook-subprocess-path-nao-herda-do-processo-pai-windows-2026-10-21](hook-subprocess-path-nao-herda-do-processo-pai-windows-2026-10-21.md) — 🔴 **Hooks usam `/usr/bin/bash`; bash HERDA PATH do processo pai e `/etc/profile` PREPENDE `~/bin`; fail-closed só quando trackfw ausente do PATH efetivo completo; claude.exe tem caminhos hardcoded para bash; hook_started/hook_response requerem --debug=hooks**
+
 - [branch-new-checkout-b-com-start-point-seta-upstream-no-track-obrigatorio-2026-10-18](branch-new-checkout-b-com-start-point-seta-upstream-no-track-obrigatorio-2026-10-18.md) — 🔴 **`git checkout -b <branch> origin/main` seta `@{u}=origin/main`; `buildPushArgs` lê `@{u}`; `--no-track` é REQUISITO** — sem ele, `trackfw push` nunca seta `origin/feat/slug` como upstream, Passo 0 fica cego ao `[gone]` após merge; REQ-2026-09-12 ML-1A
 
 - [branch-new-worktree-add-no-b-empilha-HEAD-2026-10-18](branch-new-worktree-add-no-b-empilha-HEAD-2026-10-18.md) — 🔴 **`git worktree add <path>` sem `-b` cria branch nomeada pelo último componente de `<path>` a partir do HEAD** — mesmo bug de empilhamento de `branch new`, guard não bloqueia (exit 0 medido); entra como ML-1C no ROADMAP-2026-09-12

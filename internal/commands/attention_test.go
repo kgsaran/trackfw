@@ -266,6 +266,86 @@ func TestAttentionRegisteredCommandRuntime(t *testing.T) {
 		t.Fatal("timed out signal wrote file")
 	}
 }
+func TestAttentionQuestionsField(t *testing.T) {
+	// real payload extracted from Claude Code 2.1.304 transcript
+	const realPayload = `{"tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"What is your favorite color?","header":"Color","options":[{"label":"Red","description":"A bold, warm color"},{"label":"Blue","description":"A calm, cool color"}],"multiSelect":false}]}}`
+
+	t.Run("real_AskUserQuestion_payload", func(t *testing.T) {
+		// Asserts: questions[0].question is extracted as message when tool_input.question is absent.
+		dir, file := attentionFixture(t, "# defaults\n")
+		runAttention("signal", dir, strings.NewReader(realPayload))
+		got := readAttention(t, file)
+		if got["message"] != "What is your favorite color?" {
+			t.Fatalf("got %q, want %q", got["message"], "What is your favorite color?")
+		}
+	})
+
+	t.Run("questions_uses_first", func(t *testing.T) {
+		// Asserts: when questions has multiple entries, only the first question is used.
+		const payload = `{"tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"First?"},{"question":"Second?"}]}}`
+		dir, file := attentionFixture(t, "# defaults\n")
+		runAttention("signal", dir, strings.NewReader(payload))
+		got := readAttention(t, file)
+		if got["message"] != "First?" {
+			t.Fatalf("got %q, want %q", got["message"], "First?")
+		}
+	})
+
+	// Robustness: each of these falls through to the fallback without panicking.
+	// Asserts: malformed/empty/missing questions values all produce the fallback message,
+	// and a file is still written (payload is otherwise well-formed).
+	robustCases := []struct {
+		name    string
+		payload string
+	}{
+		{"questions_not_array", `{"tool_name":"T","tool_input":{"questions":"not-array"}}`},
+		{"questions_empty_array", `{"tool_name":"T","tool_input":{"questions":[]}}`},
+		{"questions_item_not_object", `{"tool_name":"T","tool_input":{"questions":[42]}}`},
+		{"questions_item_question_absent", `{"tool_name":"T","tool_input":{"questions":[{"header":"no-question"}]}}`},
+		{"questions_item_question_empty_string", `{"tool_name":"T","tool_input":{"questions":[{"question":""}]}}`},
+		{"questions_item_question_nonstring", `{"tool_name":"T","tool_input":{"questions":[{"question":4}]}}`},
+	}
+	for _, tc := range robustCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			dir, file := attentionFixture(t, "# defaults\n")
+			runAttention("signal", dir, strings.NewReader(tc.payload))
+			got := readAttention(t, file)
+			if got["message"] != "Agent is executing: T" {
+				t.Fatalf("got %q, want fallback %q", got["message"], "Agent is executing: T")
+			}
+		})
+	}
+
+	t.Run("questions_large_array_only_first_read", func(t *testing.T) {
+		// Asserts: a questions array whose first entry is valid and whose tail has
+		// ~200 k additional objects (total within attentionMaxInput) returns the
+		// first question. Only the first element is decoded — the tail is never
+		// allocated — so memory usage stays constant regardless of array length.
+		tail := strings.Repeat(",{}", 200_000)
+		raw := json.RawMessage(`[{"question":"only this"}` + tail + `]`)
+		if got := attentionFirstQuestion(raw); got != "only this" {
+			t.Fatalf("got %q, want %q", got, "only this")
+		}
+	})
+
+	t.Run("questions_first_valid_rest_malformed", func(t *testing.T) {
+		// Asserts: attentionFirstQuestion returns the first question even when the
+		// remainder of the array is malformed JSON. The decoder stops after the
+		// first element and never reads the broken tail.
+		//
+		// NOTE: in the complete runAttention flow this case is a no-op: the outer
+		// json.Unmarshal on the full payload rejects malformed JSON before
+		// attentionFirstQuestion is ever called. This subtest exercises the
+		// function directly to document and guarantee its early-exit semantics in
+		// isolation.
+		raw := json.RawMessage(`[{"question":"ok"}, }`)
+		if got := attentionFirstQuestion(raw); got != "ok" {
+			t.Fatalf("got %q, want %q", got, "ok")
+		}
+	})
+}
+
 func TestAttentionInputBoundsAndCwd(t *testing.T) {
 	data := bytes.Repeat([]byte(" "), attentionMaxInput)
 	copy(data, []byte("{}"))

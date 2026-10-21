@@ -47,67 +47,70 @@ test -s docs/seguranca/2026-10-20-wave0-attention-go.md
 > Dependências: AC1–AC4 reconciliados na triagem de 17/10; AC5–AC7 somente após Wave 3. Não executar estes MLs antes do ML-1H.
 
 ### ML-1A — **AC1** — O README declara a dependência de **shell** para as funcionalidades que dependem
-**Status:** ⬜ Pendente
-**Files affected:**
-**Actions:**
+**Status:** ✅ Concluído
+**Files affected:** `README.md` (squad: apolo-tf)
+**Actions:** O texto "wherever Node.js ≥ 18" já saiu do README (v8). Atualizar o banner do topo (linhas ~21–27) e o aviso da seção npm (~linha 115) com o estado medido em 2026-10-21: guard e atenção são subcomandos Go, e não há dependência de shell POSIX no trackfw. 🔴 Mesmo parágrafo: o Claude Code no Windows executa hooks pelo Git Bash, que ele resolve por caminho fixo; máquina sem Git não medida.
 **Acceptance criteria:**
-- [ ] **AC1** — O README declara a dependência de **shell** para as funcionalidades que dependem
-- [ ] build passes
-- [ ] tests green
+- [x] **AC1** — O README declara a dependência de **shell** para as funcionalidades que dependem
+- [x] build passes
+- [x] tests green
 
 ### ML-1B — **AC2** — Existe seção de instalação para Windows, com o caminho real (qual artefato, onde
-**Status:** ⬜ Pendente
-**Files affected:**
-**Actions:**
+**Status:** ✅ Concluído
+**Files affected:** `README.md` (squad: apolo-tf)
+**Actions:** Subseção "Installing on Windows" dentro de "Windows support (partial)": npm (`cmd /c npm install -g trackfw`; o shim `.ps1` é bloqueado por ExecutionPolicy Restricted, então usar `trackfw.cmd` ou cmd), pip, `install.sh` em Git Bash/MSYS2/Cygwin (instala em `$HOME/bin`, que só está no PATH dentro do Git Bash) e tarball manual (extrair `trackfw.exe`, pôr numa pasta, adicioná-la ao PATH do usuário). Armadilha medida: mais de um trackfw no PATH; o Git Bash põe `~/bin` primeiro, e os hooks do Claude rodam ali. Conferir com `where.exe trackfw` e, no Git Bash, `type -a trackfw`.
 **Acceptance criteria:**
-- [ ] **AC2** — Existe seção de instalação para Windows, com o caminho real (qual artefato, onde
-- [ ] build passes
-- [ ] tests green
+- [x] **AC2** — Existe seção de instalação para Windows, com o caminho real (qual artefato, onde
+- [x] build passes
+- [x] tests green
 
 ### ML-1C — **AC3** — A contradição entre install.sh e o release é resolvida **numa direção declarada**:
-**Status:** ⬜ Pendente
-**Files affected:**
-**Actions:**
+**Status:** ✅ Concluído
+**Files affected:** `scripts/install.sh`, `scripts/check-install-checksum.sh` (squad: ares-tf)
+**Actions:** Direção declarada pelo KG em 2026-10-21: **suportar** Windows (já entregue no #373). Fecha o resíduo: depois de instalar, listar todo outro `trackfw`/`trackfw.exe` encontrado nas entradas do PATH, diferente do recém-instalado, e avisar que ele pode responder no lugar (sem executá-lo). No Windows, avisar também que `~/bin` vem antes no PATH do Git Bash. Cenários novos no gate: com outra cópia → aviso com o caminho; sem outra → nenhum aviso.
 **Acceptance criteria:**
-- [ ] **AC3** — A contradição entre install.sh e o release é resolvida **numa direção declarada**:
-- [ ] build passes
-- [ ] tests green
+- [x] **AC3** — A contradição entre install.sh e o release é resolvida **numa direção declarada**:
+- [x] build passes
+- [x] tests green
 
 ### ML-1D — **AC4** — O limite de ARM64 fica **declarado** onde o usuário lê, não só no .goreleaser.yaml.
-**Status:** ⬜ Pendente
-**Files affected:**
-**Actions:**
+**Status:** ✅ Concluído
+**Files affected:** `README.md` (squad: apolo-tf)
+**Actions:** O limite mudou de natureza (medição de 2026-09-16): `windows_arm64` é publicado nos canais, e npm e PyPI foram executados em Windows ARM64. Declarar no README: arm64 publicado; o CI de Windows é só x64; ARM64 medido em VM (n=1). Escopo negativo "não implementar ARM64" está obsoleto, conforme a própria REQ.
 **Acceptance criteria:**
-- [ ] **AC4** — O limite de ARM64 fica **declarado** onde o usuário lê, não só no .goreleaser.yaml.
-- [ ] build passes
-- [ ] tests green
+- [x] **AC4** — O limite de ARM64 fica **declarado** onde o usuário lê, não só no .goreleaser.yaml.
+- [x] build passes
+- [x] tests green
 
 ### ML-1E — **AC5** — 🔴 **Jornada verificada de ponta a ponta em Windows**, com o hook **disparando** —
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (com ressalva, ver REQ AC5)
+**Plano executável em 20/10:** QA Artemis usa fonte exata `28d6d018`, enviada como git archive sem prefixo de diretório, em scratch novo na VM ARM64. Compilar `go build -o <scratch>/trackfw.exe ./cmd/trackfw`; registrar SHA256, versão e resolução de PATH (o instalado é 9.2.0). Criar projeto descartável com espaço/acento e configuração local emitida pelo binário. Isolar configuração de agente por mecanismo próprio, sem copiar credenciais nem mudar HOME/PATH persistentes. Verificar autenticação apenas por status booleano. Após login do usuário, acionar ferramenta benigna por runtime real, capturar debug/marker, sinal JSON e mudança do banner por browser, e provar cleanup por evento seguinte. Controle: ferramenta negada por guard não pode criar marcador; ferramenta permitida deve criá-lo. Nenhum push real ou segredo real como payload. Timeout finito em todos subprocessos. Não instalar outros agentes nesta etapa; registrar ausência como lacuna. Evidência em `docs/portabilidade/2026-10-20-jornadas-agentes-windows.md` por Artemis; root audita antes de marcar ACs.
+**Reconciliação AC6:** texto original pressupõe hooks dependentes de Bash; ADR-2026-10-04 e AC8 substituem esse desenho. Medir ausência de Bash como caso nativo positivo; falsificar por ausência do binário trackfw, exigindo recusa visível do guard. Não marcar AC6 antigo como cumprido por silêncio ou por comando direto. Registrar mudança de premissa e separar falhas de autenticação de falhas do hook.
+**AC7:** mesmo projeto e binário em caminho com espaço/acento; registrar caminho exato, shell efetivo do runtime e arquivo realmente criado/negado. Comandos diretos de PS/cmd são controles adicionais, nunca substituto do evento real. Sem login, preparar instrumentos e registrar impedimento sem fechar AC5–AC7.
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
-- [ ] **AC5** — 🔴 **Jornada verificada de ponta a ponta em Windows**, com o hook **disparando** —
-- [ ] build passes
-- [ ] tests green
+- [x] **AC5** — 🔴 **Jornada verificada de ponta a ponta em Windows**, com o hook **disparando** —
+- [x] build passes
+- [x] tests green
 
 ### ML-1F — **AC6** — 🔴 **Falsificação da AC5:** num ambiente **sem** Git Bash, a jornada tem de **falhar
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (medido no ML-1E, 2026-10-21)
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
-- [ ] **AC6** — 🔴 **Falsificação da AC5:** num ambiente **sem** Git Bash, a jornada tem de **falhar
-- [ ] build passes
-- [ ] tests green
+- [x] **AC6** — 🔴 **Falsificação da AC5:** num ambiente **sem** Git Bash, a jornada tem de **falhar
+- [x] build passes
+- [x] tests green
 
 ### ML-1G — **AC7** — Caminhos com **espaço** e **acento** exercitados (C:\Program Files\...,
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído (medido no ML-1E, 2026-10-21)
 **Files affected:**
 **Actions:**
 **Acceptance criteria:**
-- [ ] **AC7** — Caminhos com **espaço** e **acento** exercitados (C:\Program Files\...,
-- [ ] build passes
-- [ ] tests green
+- [x] **AC7** — Caminhos com **espaço** e **acento** exercitados (C:\Program Files\...,
+- [x] build passes
+- [x] tests green
 
 ---
 
@@ -167,6 +170,21 @@ go vet ./...
 **Acceptance criteria:**
 - [x] Testes de atenção e gramática/proveniência em internal/pathguard passam.
 - [x] make quality completo passa após o ajuste.
+
+### ML-1I — Sinal de atenção lê o payload real do AskUserQuestion (`questions[].question`)
+**Status:** ✅ Concluído
+**Squad:** apolo-tf (implementação) · auditoria zeus-tf
+**Origem:** jornada real Windows, rodada 3 (2026-10-21). O payload real do Claude Code 2.1.304, extraído do transcript da VM, é `tool_input.questions[{question,header,options,multiSelect}]`. `internal/commands/attention.go` só lê `tool_input.question`, então o banner mostra `Agent is executing: AskUserQuestion` e não a pergunta. Os testes usam o formato inventado `{"question":...}` e por isso passavam sem exercer o contrato real. Mesma causa da AC5 (artefato não verificado contra a jornada real), por isso entra nesta REQ.
+**Arquivos afetados:** `internal/commands/attention.go`, `internal/commands/attention_test.go`
+**Ações:** extrair a mensagem de `tool_input.questions[0].question` quando presente; manter `question` e `command` como estão hoje (outros emissores) e o fallback genérico; mesmos limites (300 runes, `attentionText`, tamanho máximo de entrada, JSON malformado = no-op). Tipos inesperados (`questions` não array, item não objeto, `question` não string, array vazio) → fallback, nunca pânico. Teste com o payload literal capturado.
+**Critérios de aceite:**
+- [x] payload real `{"tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"Qual cor?","header":"Cor","options":[...],"multiSelect":false}]}}` → `message` = `Qual cor?`
+- [x] payloads antigos (`question`, `command`, vazio) mantêm a saída atual
+- [x] tipos inesperados em `questions` → fallback sem pânico
+- [x] `go build ./...` e `go test ./internal/commands/ -run Attention` verdes
+- [x] re-medição na VM (sessão interativa) mostra a pergunta no arquivo de atenção e o cleanup após a resposta
+**Auditoria (zeus, 2026-10-21):** pacote `internal/commands` verde com HOME isolado; `TestValidateJSONFlag`/`TestValidateTextUnchanged` falham também em origin/main só com o `~/.codex/hooks.json` local do usuário (passam com HOME isolado), então são vazamento de ambiente do teste e não efeito deste ML.
+**Comandos de validação:** `go build ./... && go test ./internal/commands/ -run Attention -count=1`
 
 ## Wave 3 — Auditoria de qualidade e red-team
 > Dependências: Wave 2 implementada e auditada. Revisões sequenciais para não compartilhar contexto em escrita.
