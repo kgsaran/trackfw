@@ -85,10 +85,32 @@ func stubProbeOK(t *testing.T) {
 // (a) Linha exata / sufixo extra / família errada / legado / --global
 // --------------------------------------------------------------------------
 
-// Reconciliação: afirma que a linha exata PS/POSIX D11 para git-branch
-// ("$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE")
-// em .claude/settings.json não gera violation (ML-6B: D11 fail-closed).
+// Reconciliação: afirma que a linha exata PS/POSIX ML-7A para git-branch
+// ("unsetopt EQUALS NOMATCH 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; ...")
+// em .claude/settings.json não gera violation (ML-7A: nova forma fail-closed com unsetopt).
 func TestGuardHookResolvable_ExatoPSPosix_Ok(t *testing.T) {
+	CurrentGOOS = "linux"
+	t.Cleanup(func() { CurrentGOOS = runtime.GOOS })
+	dir := t.TempDir()
+	chdir(t, dir)
+	stubProbeOK(t)
+
+	writeFile(t, dir, ".claude/settings.json",
+		claudeSettingsWithSubcmd(`unsetopt EQUALS NOMATCH 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`))
+
+	msgs, err := validateGitBranchGuardHookResolvable()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(msgs) != 0 {
+		t.Errorf("esperado 0 msgs, obteve: %v", msgs)
+	}
+}
+
+// Reconciliação: afirma que a linha D11 revised pré-ML-7A para git-branch (sem unsetopt)
+// em .claude/settings.json não gera violation — é tratada como warning-only
+// (via validateGitBranchGuardHookD11RevisedLegacyWarnings), não violation.
+func TestGuardHookResolvable_D11RevLegacyPSPosix_SemViolation(t *testing.T) {
 	CurrentGOOS = "linux"
 	t.Cleanup(func() { CurrentGOOS = runtime.GOOS })
 	dir := t.TempDir()
@@ -103,7 +125,7 @@ func TestGuardHookResolvable_ExatoPSPosix_Ok(t *testing.T) {
 		t.Fatalf("erro inesperado: %v", err)
 	}
 	if len(msgs) != 0 {
-		t.Errorf("esperado 0 msgs, obteve: %v", msgs)
+		t.Errorf("D11 revised pré-ML-7A deve gerar 0 violations (só warning), obteve: %v", msgs)
 	}
 }
 

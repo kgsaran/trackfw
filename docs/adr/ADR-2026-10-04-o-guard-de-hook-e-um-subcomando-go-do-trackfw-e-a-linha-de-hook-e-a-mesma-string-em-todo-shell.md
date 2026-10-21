@@ -275,6 +275,35 @@ Bash e PowerShell 5.1; o ruído no stderr do PowerShell é o mesmo da D11 (o tre
 `docs/portabilidade/2026-10-07-linha-de-hook-fail-closed-sem-trackfw.md`, seção ML-6C.
 
 
+## Adendo — 2026-10-21: correção de falha sob zsh — prefixo `unsetopt` (ML-7A, issue #603)
+
+A linha D11 revisada (ML-6C) falhava silenciosamente quando o hook era executado sob zsh com as
+opções padrão ativas. Dois mecanismos distintos causavam abort antes de `trackfw guard` rodar:
+
+1. **EQUALS expansion** (`setopt EQUALS` ativo por padrão em zsh interativo): `$LASTEXITCODE` vazio
+   → o token `=2` aciona *equals expansion* → zsh tenta `which 2` → falha com exit 1, encerrando o
+   hook imediatamente. A proteção nunca chegava a executar.
+
+2. **NOMATCH** (`setopt NOMATCH` ativo por padrão em zsh): o 4º segmento
+   `$LASTEXITCODE=2*!!$LASTEXITCODE` contém `*` não quotado → glob expansion → nenhum arquivo casa
+   → zsh aborta com `zsh: no matches found: =2*!!`.
+
+**Solução:** prefixo `unsetopt EQUALS NOMATCH 2>${null-/dev/null};` antes da semente. O `unsetopt`
+é comando nativo do zsh; em sh/bash é `command not found` com stderr descartado pelo redirecionamento
+— inerte. Em PS 5.1 é igualmente inerte (CommandNotFound, stderr descartado). A linha continua
+poliglota em todos os ambientes.
+
+Forma canônica atualizada (ML-7A, família PS/POSIX):
+
+`unsetopt EQUALS NOMATCH 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard <nome>; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+
+A D11 revisada (pre-ML-7A: sem o prefixo `unsetopt`) não gera violation no `trackfw validate` —
+é aceita como forma legada —, mas emite aviso solicitando `trackfw update harness` para migrar
+para a nova forma. Os arquivos de configuração deste repositório foram migrados para ML-7A no mesmo
+ML. O único sítio canônico continua `guardExpectedLine` em `validator_guard_binary_probe.go`.
+
+`docs/portabilidade/` (Artemis, em andamento) documentará a medição de cada shell.
+
 ## Adendo — 2026-10-20: atenção nativa (ML-1H da instalação Windows)
 
 Estende D1/D3 aos hooks informativos: `trackfw attention signal` e `trackfw attention cleanup` são a fonte única Go; scripts .sh existentes viram invólucros de compatibilidade. Todas as configs emitidas usam essas linhas simples, sem variáveis/caminhos/jq/python. Copilot usa command. Atenção não bloqueia ferramentas: erros internos resultam em no-op e exit 0. Por isso não copia D11/D11 revista dos guards. A falha da semente polyglot sob zsh está registrada em vault/notes/codex-guard-polyglot-aborta-zsh-equals-2026-10-20.md e a correção dos guards segue na sua REQ própria.

@@ -1,5 +1,34 @@
 # agents-working-context.md
 
+## 2026-10-21 — artemis-tf — FIM: medição Windows do candidato zsh (REQ-2026-10-20)
+
+- PS 5.1 e Git Bash medidos para ATUAL e CANDIDATA (4 casos cada: allow/deny/err/ausente).
+- CANDIDATA APROVADA para PS 5.1 e Git Bash: mesmos exit codes que ATUAL em todos os casos.
+- Achados: cmd.exe = N/A (linha PS/POSIX falha no redirect — pré-existente); pwsh ausente na VM.
+- Relatório: `docs/portabilidade/2026-10-21-guard-zsh-candidato-windows.md`.
+
+## 2026-10-21 — artemis-tf — INÍCIO: medição Windows do candidato zsh (REQ-2026-10-20)
+
+- Escopo: medir ATUAL e CANDIDATA em PS5/cmd/Git Bash na VM powershell-vm; escrever somente `docs/portabilidade/2026-10-21-guard-zsh-candidato-windows.md`.
+- Proibido: git, go build/test, editar internal/, scripts/, docs/cli-parity.md, docs/adr/, configs.
+
+## 2026-10-21 — apolo-tf — FIM: ML-1A para REQ-2026-10-20 (unsetopt EQUALS NOMATCH fix)
+
+- Build clean (`go build ./...`), vet clean (`go vet ./internal/...`).
+- Testes: `ok internal/generators 57s`, `ok internal/validator 32s`, `ok internal/commands 48s`.
+- `scripts/check-validate-rule-pins.sh`: 34/34 pins PASS.
+- Sítios alterados: `internal/generators/agentfiles.go` (3 constantes canônicas + 6 legacy), `internal/generators/update.go` (11 harness targets), `internal/validator/validator_guard_binary_probe.go`, `internal/validator/validator_credential_guard.go`, `internal/validator/validator_git_branch_guard.go`, `internal/validator/validator_guard_wiring.go`, `internal/validator/validator.go`.
+- Configs versionados migrados: `.claude/settings.json` (7), `.codex/hooks.json` (7), `.gemini/settings.json` (10) — todos com `unsetopt EQUALS NOMATCH 2>${null-/dev/null}; ` prefix via `/tmp/tf-ml1a update harness` em HOME isolado.
+- Documentação: `docs/cli-parity.md` (tabela ML-7A + seção NOMATCH/EQUALS), `docs/adr/ADR-2026-10-04-*.md` (adendo 2026-10-21).
+- Forma legada D11 revisada (pre-ML-7A) não gera violation — emite aviso de `trackfw update harness`.
+- Pendentes identificados (não bloqueantes): subprocess shell test em `internal/generators/`, dedup de entradas duplicadas pós-migração, `trackfw validate` run final aguarda `trackfw validate` com HOME isolado pelo arquiteto.
+
+## 2026-10-21 — apolo-tf — INÍCIO: ML-1A para REQ-2026-10-20 (unsetopt EQUALS NOMATCH fix)
+
+- Escopo: implementar a correção da linha polyglot de guard em zsh — adicionar prefixo `unsetopt EQUALS NOMATCH 2>${null-/dev/null}; ` às 3 constantes PS/POSIX. Worktree: `/private/tmp/trackfw-attention-go`. Branch: `fix/hooks-de-guard-gerados-falham-sob-zsh`.
+- Arquivos primários: `internal/generators/agentfiles.go`, `internal/validator/validator_guard_binary_probe.go`, + testes e configs versionados.
+- Proibido: git ops, editar REQ/roadmap, tocar `/Users/kgsaran/Sistemas/Desenvolvimento/workspace/trackfw`, `~/.codex`, `~/.claude`, `~/.gemini`.
+
 ## 2026-10-21 — hades-tf — FIM: ML-0A Wave 0 concluído para REQ-2026-10-20
 
 - Roadmap: `docs/roadmaps/wip/ROADMAP-2026-10-20-hooks-de-guard-gerados-falham-sob-zsh-com-exit-1-e-deixam-de-executar-a-protecao.md`

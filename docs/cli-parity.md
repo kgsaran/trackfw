@@ -6190,42 +6190,53 @@ runtimes.
 um caminho para o `.sh` e passou a ser um comando inline idêntico em todos os shells (mesma string em
 todo CLI de agente), via subcomando Go `trackfw guard`:
 
-| Família de shell | Linha de hook emitida (D11, ML-6C) |
+| Família de shell | Linha de hook emitida (ML-7A) |
 |---|---|
-| PS/POSIX (Claude Code, Codex, Gemini CLI, Cursor, Copilot, Windsurf) | `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE` |
+| PS/POSIX (Claude Code, Codex, Gemini CLI, Cursor, Copilot, Windsurf) | `unsetopt EQUALS NOMATCH 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE` |
 | cmd.exe (Kiro, Amazon Q) | `trackfw guard git-branch \|\| exit 2` |
-| Idem para credential-guard | `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE` / `trackfw guard credential \|\| exit 2` |
+| Idem para credential-guard | `unsetopt EQUALS NOMATCH 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE` / `trackfw guard credential \|\| exit 2` |
+
+**ML-7A — correção de falha do hook sob zsh (ADR-2026-10-04, issue #603, 2026-10-21):**
+A linha D11 (ML-6C) falhava silenciosamente sob zsh devido a duas opções ativas por padrão:
+
+- **EQUALS**: `$LASTEXITCODE` vazio → o token `=2` aciona *equals expansion* → zsh executa `which 2` → falha com exit 1, abortando o hook antes de `trackfw guard`.
+- **NOMATCH**: o 4º segmento `$LASTEXITCODE=2*!!$LASTEXITCODE` tem `*` não quotado → glob expansion → nenhum arquivo casa → zsh aborta com `zsh: no matches found`.
+
+O prefixo `unsetopt EQUALS NOMATCH 2>${null-/dev/null}` desliga essas opções no escopo do hook.
+Em sh/bash o `unsetopt` é `command not found` — stderr descartado pelo redirecionamento, exit ignorado.
+Em PS 5.1 é igualmente inerte. A linha é poliglota em todos os quatro ambientes.
 
 **D11 — fail-closed sem o trackfw no PATH (ADR-2026-10-04, ML-6B, issue #535):**
 A linha D11 resolve o problema da D2 que era **fail-open** quando `trackfw` estava ausente do PATH:
 o hook saía com exit 0 e o agente prosseguia sem interrupção.
 
-Mecanismo da linha PS/POSIX (poliglota sh/bash/PowerShell 5.1):
+Mecanismo da linha PS/POSIX (poliglota sh/bash/zsh/PowerShell 5.1):
 
+- `unsetopt EQUALS NOMATCH 2>${null-/dev/null}` — desliga as opções zsh que causavam abort; inerte em sh/bash/PS 5.1 (ML-7A).
 - `$LASTEXITCODE=2` — semente de fallback: em PS 5.1 é atribuição da variável automática; em
-  sh/bash é um comando inexistente `=2` que retorna exit ≠ 0 (sem impacto — o erro é descartado
+  sh/bash/zsh é um comando inexistente `=2` que retorna exit ≠ 0 (sem impacto — o erro é descartado
   pelo redirecionamento a seguir).
-- `2>${null-/dev/null}` — `${null-/dev/null}` expande para `/dev/null` em sh/bash (parâmetro
+- `2>${null-/dev/null}` — `${null-/dev/null}` expande para `/dev/null` em sh/bash/zsh (parâmetro
   vazio com fallback) e para nulo em PS 5.1 (variável `$null`), descartando o stderr do passo
   anterior em ambos os ambientes sem mensagem `=2: command not found`.
-- `trackfw guard <nome>` — o comando real do guard; se o binário está ausente, sh/bash retorna
+- `trackfw guard <nome>` — o comando real do guard; se o binário está ausente, sh/bash/zsh retorna
   exit 127 (não encontrado); PS 5.1 lança exceção e a expressão seguinte lê o `$LASTEXITCODE=2`
   já semeado.
-- `LASTEXITCODE=$((2*!!$?))` — normaliza qualquer saída não-zero para 2 em sh/bash: `$?` é o exit do
+- `LASTEXITCODE=$((2*!!$?))` — normaliza qualquer saída não-zero para 2 em sh/bash/zsh: `$?` é o exit do
   guard; a aritmética `2*!!n` → 0 se n=0, 2 se n≠0. Em PS 5.1 este segmento é CommandNotFound
   (inert — o `$LASTEXITCODE` seminal já vale 2 neste ponto).
 - `$LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}` — 4º segmento PS (ML-6C): em PS 5.1 é
   uma atribuição válida que normaliza qualquer RC não-zero para 2 (`2*!!n` funciona via `!` como
-  `-not` booleano em PS); em sh/bash é CommandNotFound (inert, stderr descartado pelo redirecionamento).
+  `-not` booleano em PS); em sh/bash/zsh é CommandNotFound (inert, stderr descartado pelo redirecionamento).
 - `exit $LASTEXITCODE` — propaga o código normalizado.
 
 Linha cmd.exe: `trackfw guard <nome> || exit 2` — o `||` é o short-circuit nativo do cmd.exe;
 se o guard falha ou o binário não existe, `exit 2` é executado imediatamente.
 
-A D2 revisada (pre-ML-6B: `trackfw guard <nome>; exit $LASTEXITCODE` / `trackfw guard <nome>`)
-e a D11 legada (pre-ML-6C: sem o 4º segmento PS) **não geram violation** no `trackfw validate`
-— são aceitas como formas conhecidas —, mas geram aviso solicitando `trackfw update` para migrar
-para a nova D11.
+A D2 revisada (pre-ML-6B: `trackfw guard <nome>; exit $LASTEXITCODE` / `trackfw guard <nome>`),
+a D11 legada (pre-ML-6C: sem o 4º segmento PS) e a D11 revisada (pre-ML-7A: sem o prefixo `unsetopt`)
+**não geram violation** no `trackfw validate` — são aceitas como formas conhecidas —, mas geram aviso
+solicitando `trackfw update harness` para migrar para a nova forma ML-7A.
 
 `internal/validator/validator_guard_binary_probe.go:guardExpectedLine` é o único sítio que
 define a linha por família (`guardShellFamily`), evitando divergência entre gerador e validador.
@@ -6384,12 +6395,12 @@ adicionou Windsurf e Amazon Q à lista `credentialGuardHookFiles`:
 O validador coleta entradas de hook que contenham `trackfw guard git-branch` ou `trackfw guard
 credential` e verifica se a linha é **exatamente** a esperada para a família de shell daquele CLI
 (`guardExpectedLine` em `validator_guard_binary_probe.go`):
-- PS/POSIX (D11) → `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard <nome>; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+- PS/POSIX (ML-7A) → `unsetopt EQUALS NOMATCH 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard <nome>; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
 - cmd.exe (D11) → `trackfw guard <nome> || exit 2`
 
-A D2 revisada (`trackfw guard <nome>; exit $LASTEXITCODE` / `trackfw guard <nome>`) e a D11
-legada (sem o 4º segmento PS) são aceitas sem violation mas geram aviso (`linha antiga; rode
-\`trackfw update harness\` para migrar`).
+A D2 revisada (`trackfw guard <nome>; exit $LASTEXITCODE` / `trackfw guard <nome>`), a D11
+legada (sem o 4º segmento PS) e a D11 revisada (pre-ML-7A: sem o prefixo `unsetopt`) são aceitas
+sem violation mas geram aviso (`linha antiga; rode \`trackfw update harness\` para migrar`).
 
 Se o marcador está presente mas a linha não corresponde nem a D11 nem a D2, o validador acusa com a
 linha esperada e pede `trackfw update` para regenerar.

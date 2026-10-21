@@ -557,10 +557,10 @@ with open(sys.argv[1], 'w') as f:
     json.dump(d, f)
 PY
 
-# cg-claude-guard-subcmd: D11 fail-closed "trackfw guard credential" subcommand form (nova D11 ML-6C) → no violation.
+# cg-claude-guard-subcmd: ML-7A fail-closed "trackfw guard credential" subcommand form (nova ML-7A com unsetopt) → no violation.
 mkdir -p "$CG_TMP/cg-claude-guard-subcmd/.claude"
 cat >"$CG_TMP/cg-claude-guard-subcmd/.claude/settings.json" <<'EOF'
-{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE"}]}]}}
+{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"unsetopt EQUALS NOMATCH 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE"}]}]}}
 EOF
 
 # cg-cursor-present: Cursor with script present → silent.
