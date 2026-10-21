@@ -47309,3 +47309,7 @@ que chamam git sem `LookPath`; chmod no discover.
 - Prova de mordida: cópia mutada sem prefixo unsetopt → FAIL nos subtestes zsh/zsh-f (stderr "zsh:1: 2 not found", stdin não preservado, exit 1 em vez de 0/2)
 - trackfw validate: 19 violações guard_wiring_removed pré-existentes do ML-1A (settings.json/codex/gemini); não introduzidas por este ML
 - Riscos: nenhum novo; as violações do validate são do ML-1A, para o arquiteto auditar junto ao diff completo do ML-1A
+
+## 2026-10-21 — zeus-tf — PR #595 aberto (REQ-2026-10-20)
+
+- PR https://github.com/kgsaran/trackfw/pull/595 aberto a pedido do KG; sem merge. Todos os ACs marcados, make quality verde. REQ fecha pós-merge. Depois de uma release, `trackfw update harness` migra os configs globais do KG (inclusive o workaround /bin/bash -c).
