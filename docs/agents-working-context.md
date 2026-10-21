@@ -1,5 +1,20 @@
 # agents-working-context.md
 
+## 2026-10-21 — apolo-tf — FIM: ML-1C para REQ-2026-10-20 (discriminantes B-1 Codex+Gemini)
+
+- Vet limpo. Suite completa: `ok internal/generators 65s`.
+- Testes discriminantes (FAIL em 91494bb7, PASS no HEAD):
+  - `TestInjectCodexHooks_LegacyMigrationNoDuplicate/{D2,D11,D11Rev,WABash}` — PASS HEAD / FAIL ML-1A (2 cópias de credential-guard em PreToolUse["Bash"] e ["apply_patch"])
+  - `TestInjectGeminiHooks_LegacyMigrationNoDuplicate/{D2,D11,D11Rev,WABash}` — PASS HEAD / FAIL ML-1A (2 cópias em BeforeTool["run_shell_command"], ["read_file|read_many_files"], ["write_file|replace"])
+  - `TestInjectCodexHooks_D11RevNoDuplicate` — PASS HEAD / FAIL ML-1A
+  - `TestInjectGeminiHooks_D11RevNoDuplicate` (novo) — PASS HEAD / FAIL ML-1A
+- Sítios alterados: `internal/generators/agentfiles_test.go` (TestInjectCodexHooks_LegacyMigrationNoDuplicate e TestInjectGeminiHooks_LegacyMigrationNoDuplicate reescritos com fixture combinada + contagem de comandos dentro do grupo), `internal/generators/b1_discriminant_test.go` (helper helperB1CombinedNoDuplicate, specs codexB1Spec/geminiB1Spec, TestInjectCodexHooks_D11RevNoDuplicate atualizado, TestInjectGeminiHooks_D11RevNoDuplicate novo).
+
+## 2026-10-21 — apolo-tf — INÍCIO: ML-1C para REQ-2026-10-20 (discriminantes B-1 Codex+Gemini)
+
+- Escopo: tornar TestInjectCodexHooks_LegacyMigrationNoDuplicate e TestInjectGeminiHooks_LegacyMigrationNoDuplicate discriminantes (fixture combinada, contagem de comandos), criar TestInjectGeminiHooks_D11RevNoDuplicate, integrar via helper compartilhado.
+- Worktree: `/private/tmp/trackfw-attention-go`. Branch: `fix/hooks-de-guard-gerados-falham-sob-zsh`.
+
 ## 2026-10-21 — apolo-tf — FIM: ML-1B para REQ-2026-10-20 (emulate -R sh, B-1 dedup fix)
 
 - Build clean (`go build ./...`), vet clean (`go vet ./internal/...`).
