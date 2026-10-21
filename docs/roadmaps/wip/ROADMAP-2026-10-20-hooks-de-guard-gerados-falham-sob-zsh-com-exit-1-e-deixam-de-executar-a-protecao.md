@@ -196,11 +196,13 @@ Retomada em 2026-10-21: o #590 foi mergeado (81130826) e não bloqueia mais. Roa
 Indício adicional (2026-10-21): com o workaround `/bin/bash -c` no `~/.codex/hooks.json` global, `TestValidateJSONFlag`/`TestValidateTextUnchanged` falham localmente também em origin/main, e passam com HOME isolado. Isso mostra que o validador (regra de forma esperada do hook global) e os testes leem o HOME real. A migração precisa levar em conta a forma do workaround.
 
 ### ML-1A — Definir e implementar geração compatível e migração
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** internal/generators/agentfiles.go, internal/generators/agentfiles_test.go, internal/generators/update_test.go; localizar consumidores de validação antes do handoff.
 **Ações:** depois da Wave 0, decidir variante por shell/plataforma com base em prova real, migrar as três constantes de guard e todas as entradas legadas reconhecidas; preservar hooks desconhecidos. Não transportar o wrapper local macOS para Windows sem validação.
 **Critérios de aceite:** matriz zsh/sh/bash allow/deny/ausente/erro e regressão Windows; ausência de duplicação; testes de preservação.
 **Comandos de validação:** `go test ./internal/generators ./internal/validator ./internal/guard`; `go build ./...`; `make quality`.
+
+**Auditoria (zeus, 2026-10-21):** prefixo `unsetopt EQUALS NOMATCH 2>${null-/dev/null}; `. `TestGuardLineShellMatrix` com 60 subtestes (sh/bash/zsh/zsh -f × allow/deny/erro/ausente, stdin e motivo preservados) + braço do defeito antigo; o teste reprova numa cópia com a correção revertida (`zsh:1: 2 not found`). Migração medida no binário sobre uma cópia do `~/.codex/hooks.json` real: 4 wrappers `/bin/bash -c` → forma nova, 6 entradas, 0 duplicatas, personalizados preservados, idempotente. Windows (VM ARM64, `docs/portabilidade/2026-10-21-guard-zsh-candidato-windows.md`): PS 5.1 e Git Bash dão o mesmo resultado na linha atual e na candidata (0/2/2/2). O cmd.exe não recebe a polyglot (ADR D11, linha 160: Kiro/Amazon Q usam `trackfw guard <nome>`), então o rc=1 medido ali não corresponde a artefato emitido. pwsh não estava na VM. Nota: o trackfw v10.0.0 instalado reporta `guard_wiring_removed` para a forma nova (não a conhece). O CI compila a partir do código do PR.
 
 ## Wave 2 — Auditoria final
 

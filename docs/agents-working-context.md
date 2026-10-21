@@ -1,10 +1,12 @@
 # agents-working-context.md
 
-## 2026-10-21 — artemis-tf — FIM: medição Windows do candidato zsh (REQ-2026-10-20)
+## 2026-10-21 — artemis-tf — FIM: medição Windows do candidato zsh (REQ-2026-10-20) [v9]
 
-- PS 5.1 e Git Bash medidos para ATUAL e CANDIDATA (4 casos cada: allow/deny/err/ausente).
-- CANDIDATA APROVADA para PS 5.1 e Git Bash: mesmos exit codes que ATUAL em todos os casos.
-- Achados: cmd.exe = N/A (linha PS/POSIX falha no redirect — pré-existente); pwsh ausente na VM.
+- PS 5.1 e Git Bash medidos para ATUAL e CANDIDATA (4 casos cada: allow/deny/err/ausente), invocação de produção, stdin confirmado.
+- CANDIDATA APROVADA para PS 5.1 e Git Bash: exit codes allow=0,deny=2,err=2,ausente=2 idênticos à ATUAL; stdin `{"tool":"guard","path":"C:\\project"}` capturado pelo fake em allow/deny/err.
+- Bug descoberto: `param([string]$args,...)` em PS conflita com variável automática `$args` — filhos recebem args vazios, bash/PS lêem stdin como script. Corrigido na v9 com `$argStr`.
+- cmd.exe: rc=1 para todos os casos — gap pré-existente (ADR D7/D11; linha polyglot não é para cmd); ATUAL e CANDIDATA idênticos.
+- pwsh: não instalado na VM. Risco baixo (mecanismo idêntico ao PS5).
 - Relatório: `docs/portabilidade/2026-10-21-guard-zsh-candidato-windows.md`.
 
 ## 2026-10-21 — artemis-tf — INÍCIO: medição Windows do candidato zsh (REQ-2026-10-20)
