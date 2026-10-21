@@ -74,15 +74,29 @@ campanha inteira mostrou que teste verde não implica comportamento entregue.
       seco. 🔴 Publicar binário que o instalador recusa é o defeito; qualquer das duas saídas o
       fecha, mas a escolha tem de ser escrita.
 - [ ] **AC4** — O limite de ARM64 fica **declarado** onde o usuário lê, não só no `.goreleaser.yaml`.
-- [ ] **AC5** — 🔴 **Jornada verificada de ponta a ponta em Windows**, com o hook **disparando** —
+- [x] **AC5** — 🔴 **Jornada verificada de ponta a ponta em Windows**, com o hook **disparando** —
       não apenas escrito. Escrever o arquivo e verificar que ele existe é o mesmo erro dos testes que
       passavam sem exercer nada.
-- [ ] **AC6** — 🔴 **Falsificação da AC5:** num ambiente **sem** Git Bash, a jornada tem de **falhar
-      de forma visível e nomeada** — não silenciosamente. Uma jornada que "passa" nos dois ambientes
-      não mediu o que importa.
-- [ ] **AC7** — Caminhos com **espaço** e **acento** exercitados (`C:\Program Files\...`,
+      ✅ 2026-10-21: Claude Code 2.1.304 real, Windows ARM64. Guard permite `git status` e nega
+      `git add -A` por evento PreToolUse (ferramentas Bash e PowerShell); atenção com a pergunta
+      real no PreToolUse:AskUserQuestion e cleanup no PostToolUse, em sessão interativa. 🔴
+      **Ressalva aceita pelo KG:** o binário foi colocado à mão (`C:\Users\Lab\bin`, build de
+      `8694124d`); a instalação por canal publicado (npm/PyPI/Homebrew) não foi medida nesta
+      jornada. Só o Claude foi medido; os outros cinco CLIs de agente não estavam instalados na VM.
+      Evidência: `docs/portabilidade/2026-10-20-jornadas-agentes-windows.md`.
+- [x] **AC6** — 🔴 **Falsificação da AC5:** sem o binário `trackfw` resolvível, o guard tem de
+      **falhar de forma visível e nomeada** — não silenciosamente. *Reescrito em 2026-10-21 (decisão
+      do KG):* a redação original exigia falha "sem Git Bash", premissa aposentada porque guard e
+      atenção são subcomandos Go (ADR-2026-10-04 D2, AC8). Medido: sem trackfw, o hook recusa com
+      `/usr/bin/bash: line 1: trackfw: command not found` e a ação não executa. 🔴 **Limite
+      declarado, não medido:** Claude Code numa máquina sem Git instalado. O `claude.exe` 2.1.304
+      resolve o Git Bash por caminho fixo (`C:\Program Files\Git\bin\bash.exe`), mesmo com
+      `CLAUDE_CODE_GIT_BASH_PATH` inválido, e o Git não foi desinstalado da VM.
+- [x] **AC7** — Caminhos com **espaço** e **acento** exercitados (`C:\Program Files\...`,
       `C:\Users\José\...`). O espaço já apareceu nesta campanha: o bash provado do harness é
       `C:\Program Files\Git\bin\bash.exe`.
+      ✅ 2026-10-21: todas as medições reais rodaram em `C:\Users\Lab\...\jornada ação com espaço 2`.
+      Ressalva: perfil de usuário com acento (`C:\Users\José`) não exercitado.
 
 - [x] **AC8** — Os hooks de **atenção** (banner do `trackfw serve`) disparam no Windows **sem shell
       POSIX**: a linha de hook emitida para cada CLI de agente é um subcomando do binário

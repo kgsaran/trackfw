@@ -1,5 +1,15 @@
 # agents-working-context.md
 
+## 2026-10-21 — zeus-tf — FIM: jornadas reais AC5–AC7 fechadas com ressalva
+
+- AC5: guard permite/nega por evento real (Bash e PowerShell); atenção em sessão interativa no console com a pergunta real e cleanup após a resposta. Ressalva aceita pelo KG: binário colocado à mão em C:\Users\Lab\bin (build 8694124d), canal publicado não medido; só Claude medido.
+- AC6 reescrito (decisão do KG): falsificação = sem trackfw o guard recusa de forma visível (medido). Claude sem Git instalado é limite declarado e não medido (claude.exe acha Git Bash por caminho fixo).
+- AC7: todas as medições em caminho com espaço/acento; perfil C:\Users\José não exercitado.
+- Defeito achado pela jornada e corrigido no mesmo PR: ML-1I (attention lia tool_input.question; o payload real é questions[].question) + residual do red-team (só o primeiro item decodificado). Hades aprovou.
+- Causa do trackfw antigo nos hooks: Git Bash /etc/profile põe ~/bin no PATH; 8.0.0-rc2 em C:\Users\Lab\bin. pip/npm 9.2.0 desinstalados da VM (autorizado).
+- Observação para a REQ-2026-10-20 (zsh): TestValidateJSONFlag/TestValidateTextUnchanged falham localmente também em origin/main por causa do ~/.codex/hooks.json global com /bin/bash -c; passam com HOME isolado.
+- Pendente na REQ: AC1–AC4 (documentação: README, instalação Windows, install.sh, ARM64). Sem PR aberto.
+
 ## 2026-10-21 — zeus-tf — início: jornadas reais AC5–AC7 com quota liberada
 
 - Iniciado: KG confirmou VM ligada e quota liberada; SSH powershell-vm respondeu (WIN-C83B0R5MIGB). Sinal de atenção de quota removido. Artemis despachada para a jornada Claude real na fixture existente (fonte 28d6d018).
