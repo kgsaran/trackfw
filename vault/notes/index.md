@@ -298,3 +298,7 @@
 - [Subprocesso de rede pendurado prende o stderr pelo neto; teste com `cat` mascara](subprocesso-de-rede-pendurado-prende-o-stderr-pelo-neto-e-o-teste-com-cat-mascara-2026-10-12.md) — 🔴 `CommandContext` sozinho não retorna (o `ssh` neto segura o **stderr**); `Setpgid` sem `Cancel` deixa **mais** órfãos; só `Setpgid`+`kill(-pgid)` zera; `Setpgid` com tty → SIGTTIN; neto que lê stdin e falta de `GIT_SSH_VARIANT=ssh` fazem o teste passar sem a correção
 
 - [H2 encerra a wave e pode deixar gates fora da barreira](barrier-wave-h2-separa-gates-sem-executar-2026-10-20.md) — Conferir commands e MLs no JSON: gates passed com commands vazio não prova execução dos comandos planejados.
+
+- [codex-rewriter-ls-corrompe-comando-composto-2026-10-20](codex-rewriter-ls-corrompe-comando-composto-2026-10-20.md) — Hook global de ls concatena --color=never ao último comando de uma lista shell e quebra git status.
+
+- [codex-guard-polyglot-aborta-zsh-equals-2026-10-20](codex-guard-polyglot-aborta-zsh-equals-2026-10-20.md) — Gerador trackfw emite semente =2 que aborta zsh antes de executar guards; matriz deve testar shell real.

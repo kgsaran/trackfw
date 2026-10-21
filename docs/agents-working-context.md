@@ -47115,3 +47115,81 @@ P21 complemento operacional: input workflow_dispatch attention_only boolean fals
 ## 2026-10-21 — zeus-tf — PR #592 aberto
 
 - make quality exit 0 (falsificação 368 OK/0 FAIL), com HOME isolado e packaging/pyyaml por venv temporário. A primeira tentativa parou por falta do `packaging` no host. PR https://github.com/kgsaran/trackfw/pull/592 aberto a pedido do KG; sem merge. REQ fecha pós-merge.
+
+## 2026-10-21 — zeus-tf — registros importados do checkout principal (branch docs/ponto-de-parada-2026-10-19 + alterações não commitadas)
+
+> Importados por decisão do KG ("juntar com o próximo trabalho"). O conteúdo é histórico e está copiado sem edição.
+
+## 2026-10-21 — apolo-tf — FIM: correção residual ML-1I em attentionFirstQuestion
+Worktree `/private/tmp/trackfw-attention-go`, branch `fix/instalacao-windows-jornadas`. `attentionFirstQuestion` reescrita com `json.NewDecoder` — lê só o primeiro elemento, sem alocar o array inteiro. Dois subtestes novos adicionados. Build + vet + 10 subtestes de Attention: todos PASS. Pronto para auditoria do arquiteto.
+## 2026-10-21 — hades-tf — FIM: revisão attention.go HEAD fix/instalacao-windows-jornadas
+Revisão read-only de `internal/commands/attention.go` HEAD em `/private/tmp/trackfw-attention-go`. Quatro propriedades verificadas: limite de entrada (OK), sanitização (OK), no-op (OK), pathguard (OK). APROVADO sem ressalvas bloqueantes. Observação não-bloqueante: amplificação 12× de headers de slice para array grande em `attentionFirstQuestion` — não crítico para hook local, registrar se exposto via rede.
+## 2026-10-20 — zeus-tf — retomada AC5–AC7 na VM
+
+- KG autorizou continuar com VM ligada. SSH powershell-vm respondeu WIN-C83B0R5MIGB; shell cmd.exe. Inventário inicial PATH: Claude Code, Go, Git e trackfw presentes; demais agentes e pwsh não resolvidos. Medição deve usar fonte pós-merge #591, isolamento de projeto/config e eventos reais, preservando instalações/configs existentes.
+---
+## 2026-10-19 — zeus-tf — PONTO DE PARADA (retomar quarta-feira, 2026-10-21)
+**Estado:** `main` em `bc9d4b5c` (#588), árvore limpa, nenhuma branch aberta além desta. Release
+**v10.0.0** publicada (GitHub 8 assets, PyPI, npm 6 plataformas + shim); binário local em 10.0.0.
+Nenhum roadmap em `wip/`.
+**Entregue na sessão 2026-10-15→19:** REQ-2026-09-03 (Windows: falhas conhecidas 14→6, todas de
+ambiente), REQ-2026-09-05 guard de staging (#576), refint+CRLF (#579/#583), agent_models+identity
+(REQ-2026-08-30), branch new da base correta (REQ-2026-09-12, 10.0.0 BREAKING), skill implement
+(#587), resíduos pré-v8 no cli-parity/.gitattributes (#588). Releases 9.7.0, 9.8.0, 10.0.0.
+
+**Próximo (recomendado):** REQ-2026-09-05 — instalação em Windows, começando pelo **ML-1H**
+(hooks de atenção → `trackfw attention signal|cleanup` em Go, sem `sh`/`jq`/`python3`), depois
+AC5–AC7 (medir outros CLIs, `pwsh` sem Git Bash, caminhos com espaço/acento).
+Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-22-a-instalacao-em-windows-*.md`.
+
+**Restante do backlog:** reescrita do `cli-parity.md` (89 linhas de 3 runtimes —
+`ROADMAP-2026-10-18-reescrita-do-cli-parity-md-*`); reconciliação #238/#240 (allowlist do gate de
+encoding); contrato `model` no harness do arquiteto; texto em stderr do `validate --json`; testes
+que chamam git sem `LookPath`; chmod no discover.
+
+**Lacuna de cobertura registrada (#588):** o ciclo gerador→verificador perdeu o gate dedicado
+(`check-artifact-closed-cycle.sh`, removido na v8) — sem REQ ainda; decidir ao retomar.
+
+**Lembretes operacionais:** `make parity-rest` precisa de `PATH=/tmp/zeus-venv312/bin:$PATH`
+(módulo `packaging`); corpo de PR sem "fecha #N".
+## 2026-10-20 — zeus-tf — diagnóstico de hooks do Codex
+- Iniciado: inspeção read-only de configuração global/projeto, vault, logs SQLite e scripts instalados.
+- Concluído: seis comandos PreToolUse/Bash de guard passaram em sonda direta com `pwd` (exit 0); SessionStart dos companions Codex/Gemini passou diretamente (exit 0). Não comprova execução pelo runtime.
+- Confirmado: pretooluse-rewriter.sh global concatena --color=never ao fim de comandos compostos iniciados por ls; reprodução transforma `ls /tmp; git status --short` em `ls /tmp; git status --short --color=never`, quebrando git.
+- Logs de 10:52:59/10:53:00 UTC: config.toml:7:1 duplicate key; runtime manteve configuração de startup. Arquivo atual passa tomllib, portanto erro é histórico/transitório. Profile arquiteto contém caminho sem / inicial.
+- Nenhuma configuração global alterada; causa de todos os avisos de falha não estabelecida pelos registros acessíveis.
+## 2026-10-20 — zeus-tf — correção dos hooks personalizados globais
+- Iniciado: origem conferida em internal/generators/agentfiles.go:317 e InjectCodexHooks; rewriter/guardrails são customizações preservadas, sem gerador no trackfw. Guards e attention são gerados pelo produto.
+- Concluído: especialista preparou patch externo, auditor independente aprovou; instalado com autorização do sandbox. Rewriter preserva comandos compostos e não reescreve ls/go build; guardrails corrige permissionDecision block para deny, mantendo políticas.
+- Backup: ~/.codex/hooks/backups/20261020T105943314518Z/. hooks.json e código do produto não alterados.
+- Validação: 5 testes com subcasos passaram nos scripts instalados; modos executáveis preservados e bytes conferidos. Testes de preservação do gerador passaram. Sonda do guard bloqueou payload simulado com exit 2/deny sem executar operação Git. Chamada real composta ls + status passou após instalação. Guardrail corrigido também bloqueou uma tentativa de gravar documentação por conter texto de comando proibido; falso positivo preexistente de varredura textual, fora deste fix.
+## 2026-10-20 — zeus-tf — levantamento do ponto de retomada
+- Iniciado: confronto do ponto de parada de 19/10 com branch, roadmaps e GitHub.
+- Concluído: branch local docs/ponto-de-parada-2026-10-19, HEAD b31f611d; 7 roadmaps backlog, nenhum WIP/analyzing/blocked. Release v10.0.0 confirmada no GitHub (18/10 23:23 UTC).
+- Retomada prevista: ML-1H da instalação Windows (REQ-2026-09-05), portar atenção para Go; depois medir jornadas AC5–AC7.
+- Novidade remota: PR #590 aberto, correção da classificação de timeout nas sondas do guard, fora deste checkout; responsabilidade do Lourival, sem bloquear nossa frente (orientação do usuário).
+- Alterações locais: somente registros e nota do diagnóstico/correção dos hooks desta sessão. Nenhuma implementação iniciada neste levantamento.
+## 2026-10-20 — zeus-tf — causa real dos avisos repetidos de hooks
+- Iniciado: usuário mostrou exit 1 persistente após correção dos hooks personalizados.
+- Concluído: constantes polyglot do trackfw abortam sob zsh com `2 not found`, antes do binário. Nove entradas corrigidas localmente por Bash explícito, com backup ~/.codex/hooks/backups/20261020T110406812571Z/. Auditoria independente aprovada; 18 execuções pós-instalação zsh -c/-lc passam; deny e ausência do binário continuam exit 2.
+- A afirmação anterior de que não havia defeito de geração estava incompleta: só fora testado Bash. Nova REQ-2026-10-20 + roadmap backlog registram correção do gerador, migração e matriz zsh/Windows. Produto ainda não implementado; o PR externo #590 é responsabilidade do Lourival e não bloqueia nossa frente (orientação do usuário). Arquivos .codex/hooks.json local e global alterados somente nas 9 strings command; não desativamos hooks.
+## 2026-10-20 — zeus-tf — consulta de retomada
+- Iniciado: leitura do contexto, visão, trackfw context e estado Git local.
+- Concluído: próxima implementação planejada continua ML-1H da REQ-2026-09-05. Branch docs/ponto-de-parada-2026-10-19, sem roadmap WIP; alterações locais do diagnóstico de hooks preservadas. Estado remoto não reconsultado nesta leitura.
+## 2026-10-20 — zeus-tf — descarte da frente local PR #590
+- Iniciado: usuário determinou descartar nossa frente de revisão/correção do PR #590, que fica com o Lourival.
+- Concluído: removidos o parecer P2 e o bloqueio de retomada do contexto local; PR externo não bloqueia o ML-1H por orientação explícita do usuário. Nenhum código de produto referente ao #590 foi aplicado neste checkout. Banner de atenção já ausente. Alterações e artefatos dos hooks preservados.
+## 2026-10-20 — zeus-tf — início da retomada ML-1H
+- REQ existente pareada movida para WIP; plano refinado para atenção nativa Go com linha simples, sem polyglot dos guards. Wave 0 precede implementação. PR externo #590 excluído explicitamente pelo usuário.
+- Branch base: origin/main; HEAD local difere apenas em registro doc-only de parada. Workaround local .codex/hooks.json e artefatos de diagnóstico permanecem fora dos commits deste ML. Branches antigas remotas comparadas por arquivos tocados: resíduos somente docs/agents-working-context.md e .trackfw-log; nenhuma implementação própria pendente.
+- Execução transferida para /private/tmp/trackfw-attention-go, branch fix/a-instalacao-em-windows-promete-o-que-nao-entrega a partir de origin/main. Governança commitada 2f71ab8f, validate isolado: zero violações. Documentos desta retomada vivem somente nesse worktree; checkout original preserva diagnóstico/hooks e backlog anterior.
+## 2026-10-20 — zeus-tf — retomada planejada: ML-1H concluído
+- Trabalho entregue no worktree /private/tmp/trackfw-attention-go, branch fix/a-instalacao-em-windows-promete-o-que-nao-entrega. Commits de produto 658c07ab, sonda 20b3734c e conclusão dfbebd94, publicados no origin. Checkout original e hooks/diagnósticos locais preservados.
+- Atenção Go nos seis emissores, migrações e wrappers auditados. make quality PASS (368 OK/0 FAIL); barreiras 0/2/3 PASS com comandos conferidos, validate 0 violações.
+- Windows https://github.com/kgsaran/trackfw/actions/runs/39454688584 success: PowerShell/cmd sem bash/jq/python, API ativo/inativo, Edge real mostrou e ocultou banner com mensagem exata, credential signal intacto. Evidência em docs/portabilidade/2026-10-20-atencao-go-windows-p21.md na branch de trabalho.
+- Próximo ponto: AC5–AC7, jornadas reais dos CLIs de agente; REQ Open e roadmap WIP. ML-1H/AC8 concluído. Nenhum PR/merge/release; #590 com Lourival.
+## 2026-10-20 — zeus-tf — PR #591 e gates concluídos
+- Pós-merge: KG informou o merge; confirmado no GitHub em 2026-10-20T17:11:58Z, commit 28d6d0189ac725d76cc4d667ee1b6c57e00c1b52. Retomada planejada: AC5–AC7, jornadas reais dos agentes no Windows; AC8 entregue. Checkout original mantém alterações locais; worktree /private/tmp/trackfw-attention-go preservado, sem apagar branch em uso.
+- PR #591 aberto por autorização do KG. Correção CI no commit 17828895: Artemis reutilizou helper de capacidade no teste symlink e aposentou entrada Windows já resolvida, preservando histórico. Sem alteração de produto ou relaxamento dos gates.
+- Run 39461370579 SUCCESS: 20/20 checks verdes, incluindo parity-other-gates, parity e windows-full-suites (suíte Go e ratchet D4/D6 aprovados). Head 17828895 MERGEABLE/CLEAN. Build, testes focados, parity-rest e validate locais passaram. Branch publicada e worktree isolado limpo; nenhum merge realizado.
+- PR #590 de Lourival reavaliado no head 8ab6e84c: comentário P2 atendido, testes locais e 20 checks aprovados; recomendação de merge fornecida ao KG, sem publicar review/comentário ou executar merge.
