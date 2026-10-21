@@ -48,8 +48,8 @@ test -s docs/seguranca/2026-10-20-wave0-attention-go.md
 
 ### ML-1A — **AC1** — O README declara a dependência de **shell** para as funcionalidades que dependem
 **Status:** ⬜ Pendente
-**Files affected:**
-**Actions:**
+**Files affected:** `README.md` (squad: apolo-tf)
+**Actions:** O texto "wherever Node.js ≥ 18" já saiu do README (v8). Atualizar o banner do topo (linhas ~21–27) e o aviso da seção npm (~linha 115) com o estado medido em 2026-10-21: guard e atenção são subcomandos Go, e não há dependência de shell POSIX no trackfw. 🔴 Mesmo parágrafo: o Claude Code no Windows executa hooks pelo Git Bash, que ele resolve por caminho fixo; máquina sem Git não medida.
 **Acceptance criteria:**
 - [ ] **AC1** — O README declara a dependência de **shell** para as funcionalidades que dependem
 - [ ] build passes
@@ -57,8 +57,8 @@ test -s docs/seguranca/2026-10-20-wave0-attention-go.md
 
 ### ML-1B — **AC2** — Existe seção de instalação para Windows, com o caminho real (qual artefato, onde
 **Status:** ⬜ Pendente
-**Files affected:**
-**Actions:**
+**Files affected:** `README.md` (squad: apolo-tf)
+**Actions:** Subseção "Installing on Windows" dentro de "Windows support (partial)": npm (`cmd /c npm install -g trackfw`; o shim `.ps1` é bloqueado por ExecutionPolicy Restricted, então usar `trackfw.cmd` ou cmd), pip, `install.sh` em Git Bash/MSYS2/Cygwin (instala em `$HOME/bin`, que só está no PATH dentro do Git Bash) e tarball manual (extrair `trackfw.exe`, pôr numa pasta, adicioná-la ao PATH do usuário). Armadilha medida: mais de um trackfw no PATH; o Git Bash põe `~/bin` primeiro, e os hooks do Claude rodam ali. Conferir com `where.exe trackfw` e, no Git Bash, `type -a trackfw`.
 **Acceptance criteria:**
 - [ ] **AC2** — Existe seção de instalação para Windows, com o caminho real (qual artefato, onde
 - [ ] build passes
@@ -66,8 +66,8 @@ test -s docs/seguranca/2026-10-20-wave0-attention-go.md
 
 ### ML-1C — **AC3** — A contradição entre install.sh e o release é resolvida **numa direção declarada**:
 **Status:** ⬜ Pendente
-**Files affected:**
-**Actions:**
+**Files affected:** `scripts/install.sh`, `scripts/check-install-checksum.sh` (squad: ares-tf)
+**Actions:** Direção declarada pelo KG em 2026-10-21: **suportar** Windows (já entregue no #373). Fecha o resíduo: depois de instalar, listar todo outro `trackfw`/`trackfw.exe` encontrado nas entradas do PATH, diferente do recém-instalado, e avisar que ele pode responder no lugar (sem executá-lo). No Windows, avisar também que `~/bin` vem antes no PATH do Git Bash. Cenários novos no gate: com outra cópia → aviso com o caminho; sem outra → nenhum aviso.
 **Acceptance criteria:**
 - [ ] **AC3** — A contradição entre install.sh e o release é resolvida **numa direção declarada**:
 - [ ] build passes
@@ -75,8 +75,8 @@ test -s docs/seguranca/2026-10-20-wave0-attention-go.md
 
 ### ML-1D — **AC4** — O limite de ARM64 fica **declarado** onde o usuário lê, não só no .goreleaser.yaml.
 **Status:** ⬜ Pendente
-**Files affected:**
-**Actions:**
+**Files affected:** `README.md` (squad: apolo-tf)
+**Actions:** O limite mudou de natureza (medição de 2026-09-16): `windows_arm64` é publicado nos canais, e npm e PyPI foram executados em Windows ARM64. Declarar no README: arm64 publicado; o CI de Windows é só x64; ARM64 medido em VM (n=1). Escopo negativo "não implementar ARM64" está obsoleto, conforme a própria REQ.
 **Acceptance criteria:**
 - [ ] **AC4** — O limite de ARM64 fica **declarado** onde o usuário lê, não só no .goreleaser.yaml.
 - [ ] build passes
