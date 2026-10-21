@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-22
 req: "docs/req/REQ-2026-09-05-a-instalacao-em-windows-promete-o-que-nao-entrega-e-o-instalador-recusa-a-plataforma-para-a-qual-publicamos-binario.md"
 squad: "hades_tf, apolo_tf, hefesto_tf"
@@ -7,7 +7,7 @@ squad: "hades_tf, apolo_tf, hefesto_tf"
 
 # Roadmap: a instalacao em Windows promete o que nao entrega e o instalador recusa a plataforma para a qual publicamos binario
 
-> Created: 2026-09-22 | Status: wip
+> Created: 2026-09-22 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-09-05-a-instalacao-em-windows-promete-o-que-nao-entrega-e-o-instalador-recusa-a-plataforma-para-a-qual-publicamos-binario.md -->
