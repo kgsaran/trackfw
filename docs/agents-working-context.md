@@ -1,5 +1,15 @@
 # agents-working-context.md
 
+## 2026-10-21 — zeus-tf — início: jornadas reais AC5–AC7 com quota liberada
+
+- Iniciado: KG confirmou VM ligada e quota liberada; SSH powershell-vm respondeu (WIN-C83B0R5MIGB). Sinal de atenção de quota removido. Artemis despachada para a jornada Claude real na fixture existente (fonte 28d6d018).
+- Decisão AC6: a redação histórica pressupõe dependência de Git Bash, aposentada pela atenção/guard nativos (ADR-2026-10-04 D2, AC8). Falsificação passa a ser: sem Bash no PATH a jornada funciona (controle positivo); sem trackfw no PATH o guard falha de forma visível e nomeada (fail-closed) e a atenção vira no-op declarado. Texto da REQ só muda após a medição.
+
+## 2026-10-21 — zeus-tf — consulta de retomada
+
+- Iniciado: confronto do ponto de parada de 20/10 com origin/main (28d6d018, #590 e #591 mergeados), worktree e sinal de atenção.
+- Concluído: frente ativa continua em AC5–AC7 (ML-1E, jornada real Windows), branch fix/instalacao-windows-jornadas sincronizada com origin, sem PR. Bloqueio vigente: quota semanal do Claude na VM; sinal de atenção local mantido até nova tentativa. Nenhuma medição, código ou config alterados nesta consulta.
+
 ## 2026-10-20 — zeus-tf — PONTO DE PARADA (retomar 2026-10-21)
 
 - PR #590 (Lourival) e #591 integrados; main medida em 28d6d018. #591 entregou AC8, atenção nativa Go; última esteira 39461370579 teve 20/20 checks SUCCESS. Sem nova release.

@@ -100,3 +100,94 @@ O texto `subtype=success` não foi contado como sucesso: `is_error=true`, exit 1
 Artefatos brutos somente na fixture: `qa-agent-stream.jsonl` e `qa-agent-stderr.txt`; não foram copiados para o repositório nem publicados na íntegra. Nenhum segredo foi usado como payload, nenhuma instalação/config real foi alterada, nenhum push foi tentado. Processo próprio terminou e foi descartado. O controle negativo de guard e o browser após evento real não foram executados, porque a chamada foi recusada antes da primeira ferramenta.
 
 **Estado final desta retomada:** autenticação disponível, execução de ferramentas bloqueada pelo limite semanal. AC5–AC7 continuam pendentes. Retomar após disponibilidade da conta; antes de escolher print ou PTY, verificar se AskUserQuestion é realmente oferecido nesse modo. Não remapear o evento do hook emitido para fabricar evidência.
+
+## Jornada real — 2026-10-21
+
+QA Artemis, quota liberada conforme KG. VM `WIN-C83B0R5MIGB`. Modelo: `claude-opus-5-5` (relatado no campo `model` do evento `system/init`). Instrumentos em `/private/tmp/measure-all.ps1` (BOM UTF-8 confirmado `ef bb bf`). Scripts sem BOM (`setup-fixture.ps1`, `check-fixture.ps1`) criaram diretório com nome mojibake (`jornada aÃ§Ã£o com espaÃ§o 2`) e rodaram `trackfw init` lá; esse diretório é inválido e não foi usado nas chamadas reais — idêntico ao precedente `tf-ac567-20261020`. **Fixture real** (`jornada ação com espaço 2`) preservada com `binário nativo\trackfw.exe` (hash confirmado `696B63EAD8A5EB20B4DF41B8F7A427A0DBA5083D66506D6B248DBE61070062F1`, `trackfw 10.0.0`).
+
+### Pré-voo
+
+`trackfw version` direto de `binário nativo\trackfw.exe` → `trackfw 10.0.0`. `where.exe trackfw` com PATH restrito → resolve `binário nativo\trackfw.exe`. PATH original resolve `C:\Users\Lab\AppData\Local\Programs\Python\Python312-arm64\Scripts\trackfw.exe` (9.2.0) antes do shim npm.
+
+### Chamadas reais (5 de 6 usadas, orçamento total observado USD 2,56)
+
+Flags comuns: `--print --verbose --output-format stream-json --include-hook-events --no-session-persistence --setting-sources project,local --max-budget-usd 0.30 --tools Bash,Read --allowedTools Bash,Read`. USERPROFILE real preservado. PATH por chamada: `binário nativo;Git\cmd;Git\bin;System32;SystemRoot` (padrão), `Git\cmd;Git\bin;System32;SystemRoot` (sem-trackfw), `binário nativo;System32;SystemRoot` (sem-git).
+
+**Chamada 0 — sonda de quota** (PATH padrão, sem ferramentas além de Bash/Read):
+```
+exit=0 timeout=False is_error=False turns=1 cost=0.1386
+result_text=QUOTA-OK
+system/init cwd=C:\Users\Lab\tf-ac567-20261020-source\jornada ação com espaço 2
+  AskUserQuestion NOT in tools
+  powershell_path=C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe
+```
+Quota disponível. AskUserQuestion ausente do array `tools` no evento `system/init` mesmo quando `--tools AskUserQuestion,...` era passado nas sessões anteriores — confirmado ausente aqui com `--tools Bash,Read`. `powershell_path` presente no init indica que Claude Code localiza o PowerShell 5 do sistema para uso em hooks.
+
+**Chamada 1 — AC5 sinal/shell probe** (PATH padrão, prompt: shell probe + marker):
+```
+exit=1 timeout=False is_error=True (error_max_budget_usd) turns=2 cost=0.627278
+marker_allowed=False  attn_file=False
+TOOL_USE Bash command="echo \"$0|$BASH_VERSION\"; command -v trackfw; trackfw version"
+HOOK hook_started PreToolUse:Bash (×2)
+HOOK hook_response PreToolUse:Bash exit=2 (×2)
+TOOL_RESULT is_error=True content=PreToolUse:Bash hook error: [...trackfw guard git-branch...]:
+  Error: unknown command "guard" for "trackfw"\nRun 'trackfw --help' for usage.
+TOOL_USE Bash command="printf qa-ok > qa-allowed-marker.txt"
+HOOK hook_started PreToolUse:Bash (×2)  [budget exceeded antes do hook_response]
+```
+
+**Chamada 2 — AC5 guard bloqueado** (PATH padrão, prompt: compound `printf x > qa-denied-marker.txt; git add -A`):
+```
+exit=1 is_error=True (error_max_budget_usd) turns=1 cost=0.540852
+marker_denied=False
+TOOL_USE Bash command="printf x > qa-denied-marker.txt; git add -A"
+HOOK hook_started PreToolUse:Bash (×2)  [budget exceeded antes do hook_response]
+```
+
+**Chamada 3 — AC6 falsificação** (PATH sem-trackfw, prompt: `trackfw version 2>&1`):
+```
+exit=1 is_error=True (error_max_budget_usd) turns=2 cost=0.628638
+TOOL_USE Bash command="trackfw version 2>&1; echo exit=$?"
+HOOK hook_started PreToolUse:Bash (×2)
+HOOK hook_response PreToolUse:Bash exit=2 (×2)
+TOOL_RESULT is_error=True: Error: unknown command "guard" for "trackfw"
+```
+O hook encontrou `trackfw` mesmo com `binário nativo` ausente do PATH — o trackfw 9.2.0 (Python/npm) foi resolvido.
+
+**Chamada 4 — AC6 controle positivo** (PATH sem-git, prompt: shell probe + marker):
+```
+exit=1 is_error=True (error_max_budget_usd) turns=2 cost=0.628466
+marker_allowed=False
+TOOL_USE Bash command="echo \"$0|$BASH_VERSION\"; trackfw version; printf qa-ok > qa-allowed-marker.txt"
+HOOK hook_started PreToolUse:Bash (×2)
+HOOK hook_response PreToolUse:Bash exit=2 (×2)
+TOOL_RESULT is_error=True: Error: unknown command "guard" for "trackfw"
+TOOL_USE Read file_path=...qa-allowed-marker.txt  [hook_started somente, sem hook_response antes do budget]
+```
+
+### Achados
+
+**A1 — trackfw 9.2.0 resolve nos hooks independentemente do PATH do processo.** Em todas as chamadas (inclusive c3 onde `binário nativo` não estava no PATH), o subprocesso de hook encontrou `trackfw` que não tem o subcomando `guard`. Isso é 9.2.0 (Python/npm do sistema). Medição direta: `trackfw version` do PS5 com PATH restrito → `trackfw 10.0.0` (correto); hook subprocess → `Error: unknown command "guard" for "trackfw"` (9.2.0). Hipótese: Claude Code (Node.js 2.1.304) resolve `trackfw` na inicialização usando o PATH do sistema (não o do processo herdado) ou adiciona o caminho npm/Python ao PATH do subprocesso de hook. Causa raiz não confirmada; requer inspeção do código-fonte do Claude Code ou debug com `--debug`.
+
+**A2 — Hooks disparam e saem com código 2 para toda ação Bash** (fail-closed por construção). O `$LASTEXITCODE=2` na abertura do comando polyglot garante saída 2 mesmo quando o trackfw que roda não conhece `guard`. Isso é fail-closed, mas a razão é o `$LASTEXITCODE=2` inicial, não o veredito do guard. A distinção importa: o comportamento correto seria exit 0 para ações permitidas e exit 2 para ações bloqueadas.
+
+**A3 — AskUserQuestion ausente no modo `--print`.** O array `tools` no evento `system/init` não inclui `AskUserQuestion` em nenhuma das 5 chamadas. O hook de atenção (`PreToolUse AskUserQuestion → trackfw attention signal`) não pode ser exercitado em `--print`; requer modo PTY/interativo.
+
+**A4 — `error_max_budget_usd` em 4 de 5 chamadas.** Claude Opus 5.5 cobra ~0,54–0,63 USD por chamada com ferramentas (Bash bloqueado = dois turn); o orçamento de 0,30 USD é insuficiente para completar ações com hooks. Aumentar para USD 1,00 ou usar `--model claude-haiku-4-5` para medições de governança (o resultado testado é o hook, não a resposta do modelo).
+
+### Vereditos
+
+| AC | Resultado | Evidência literal |
+|---|---|---|
+| AC5 atenção (signal/cleanup via AskUserQuestion) | **NÃO MEDIDO** | AskUserQuestion ausente do array `tools` em `system/init` em todas as 5 chamadas; modo print não oferece a ferramenta. Proposta: reexecutar em modo PTY/interativo com login local. |
+| AC5 guard (bloqueio de ação negada, passagem de ação permitida) | **NÃO MEDIDO** | Hooks disparam (hook_started + hook_response exit=2 visíveis no stream), mas trackfw 9.2.0 causa saída 2 para TODA ação Bash — incluindo ações permitidas. Não há distinção guard-allow vs guard-deny com esta resolução. O efeito colateral observado (ação nunca executa) é consequência de exit=2 universal, não do guard específico. Ver A1. |
+| AC6(a) controle positivo (sem bash/jq/python no PATH) | **PARCIAL — condicionado** | Hooks disparam sem Git no PATH (c4: hook_started + hook_response visíveis). Se o shell de hooks é PowerShell (indicado por `powershell_path` no init), a ausência de Git Bash não afeta a execução. Mas: a resolução de trackfw 9.2.0 persiste (A1), indicando que o PATH efetivo do subprocesso inclui caminhos além dos controlados. Portanto a medição é parcial: hooks rodaram, mas qual shell rodou o hook não está confirmado no stream. |
+| AC6(b) falsificação (trackfw ausente → fail-closed visível e nomeado) | **FAIL (condição não alcançável nesta instalação)** | Com `binário nativo` removido do PATH (c3), o hook ainda encontrou trackfw 9.2.0 e saiu exit=2. O comportamento observado é fail-closed mas por razão distinta da hipótese: o guard não está ausente, está presente com versão errada. Para falsificar conforme hipótese seria necessário isolar o ambiente eliminando Python/npm, o que requer acesso ao sistema além do escopo da sessão. |
+| AC7 (caminhos com espaço e acento) | **PASS** | `cwd` no evento `system/init` em todas as chamadas: `C:\Users\Lab\tf-ac567-20261020-source\jornada ação com espaço 2`. Hooks disparam nesse caminho. `binário nativo\trackfw.exe` encontrado por path literal com acento (hash verificado fora das chamadas). |
+
+### Próximo passo recomendado (para o orquestrador)
+
+1. **A1**: Investigar como Claude Code 2.1.304 resolve o PATH para subprocessos de hook no Windows — opção a: `--debug` em chamada controlada; opção b: inspecionar `@anthropic-ai/claude-code/dist/` no node_modules da VM; opção c: substituir trackfw 9.2.0 pelo 10.0.0 na instalação npm/Python globais da VM antes de reexecutar.
+2. **AC5 atenção**: Reexecutar em modo PTY/interativo (sem `--print`); o runtime pode oferecer AskUserQuestion nesse modo.
+3. **AC5 guard / AC6**: Resolver A1 primeiro; com trackfw 10.0.0 nos hooks, re-medir com `--max-budget-usd 1.00` ou `--model claude-haiku-4-5`.
+4. **Processos encerrados**: confirmado — sem processos claude/trackfw/node órfãos após medição.
