@@ -15,8 +15,8 @@ REQ: docs/req/REQ-2026-10-20-hooks-de-guard-gerados-falham-sob-zsh-com-exit-1-e-
 
 ## Acceptance Criteria
 <!-- Consolidated criteria for this roadmap. Detail per ML in the waves below. -->
-- [ ] allow=0 e deny/ausente/erro=2 na matriz de shells suportados.
-- [ ] Migração preserva customizações e os gates passam.
+- [x] allow=0 e deny/ausente/erro=2 na matriz de shells suportados.
+- [x] Migração preserva customizações e os gates passam.
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -219,12 +219,12 @@ Indício adicional (2026-10-21): com o workaround `/bin/bash -c` no `~/.codex/ho
 A forma `unsetopt` nunca foi publicada, então não vira legado.
 **Arquivos afetados:** `internal/generators/agentfiles.go`, `internal/generators/update.go`, `internal/generators/guard_line_shell_test.go`, `internal/generators/*_test.go`, `internal/validator/validator_guard_binary_probe.go`, `internal/validator/validator_guard_wiring.go`, testes do validador, `scripts/check-validate-rule-pins.sh`, `.claude/settings.json`, `.codex/hooks.json`, `.gemini/settings.json`, `docs/cli-parity.md`, ADR-2026-10-04 (adendo), README se citar a string.
 **Critérios de aceite:**
-- [ ] forma nova com `emulate -R sh`; matriz por subprocess inclui dash, zsh -o errexit, -o nounset, -o cshnullglob, além de sh/bash/zsh/zsh -f; braço que mostra a forma `unsetopt` falhando sob `-o nounset`
-- [ ] Codex/Gemini: todas as migrações antes dos merges; testes de regressão "forma legada → 1 entrada por matcher" para Codex e Gemini; configs versionados sem duplicata
-- [ ] `guardWiringTypeFromCmd` reconhece as formas do wrapper `/bin/bash -c`; teste
-- [ ] teste da migração do wrapper `/bin/bash -c` (A2)
-- [ ] rótulo estável `REQ-2026-10-20` no lugar de "ML-7A" (A1)
-- [ ] Windows: PS 5.1 e Git Bash 0/2/2/2 com a nova forma
+- [x] forma nova com `emulate -R sh`; matriz por subprocess inclui dash, zsh -o errexit, -o nounset, -o cshnullglob, além de sh/bash/zsh/zsh -f; braço que mostra a forma `unsetopt` falhando sob `-o nounset`
+- [x] Codex/Gemini: todas as migrações antes dos merges; testes de regressão "forma legada → 1 entrada por matcher" para Codex e Gemini; configs versionados sem duplicata
+- [x] `guardWiringTypeFromCmd` reconhece as formas do wrapper `/bin/bash -c`; teste
+- [x] teste da migração do wrapper `/bin/bash -c` (A2)
+- [x] rótulo estável `REQ-2026-10-20` no lugar de "ML-7A" (A1)
+- [x] Windows: PS 5.1 e Git Bash 0/2/2/2 com a nova forma
 
 **Auditoria (zeus, 2026-10-21):** `emulate -R sh` aplicado; matriz com dash/errexit/nounset/cshnullglob e o braço `UnsetoptInsuficiente` PASS; Windows (Artemis, rodada 2) 0/2/2/2 em PS 5.1 e Git Bash; configs sem duplicata; pins e validate OK. 🔴 **O teste do B-1 não discrimina:** `TestInjectCodexHooks/Gemini_LegacyMigrationNoDuplicate` passa também com o `agentfiles.go` anterior (mutação feita pelo arquiteto numa cópia da árvore). O caminho que produziu as duplicatas commitadas no ML-1A ainda não está identificado. As tentativas do arquiteto com o binário anterior não exercitaram o config de projeto (a entrada nem foi migrada), então não valem como medição. Achado A6 da Artemis: no PS 5.1 o redirect `2>${null-/dev/null}` não suprime o CommandNotFound; o prefixo acrescenta uma segunda linha de erro no stderr; aguarda decisão do KG.
 
@@ -233,7 +233,7 @@ A forma `unsetopt` nunca foi publicada, então não vira legado.
 ## Wave 2 — Auditoria final
 
 ### ML-2A — Segurança, qualidade e contrato
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Arquivos afetados:** docs/cli-parity.md, ADR-2026-10-04, CHANGELOG.md; relatório de revisão.
 **Ações:** revisar que nenhum erro sai fail-open, nenhuma política foi removida e o artefato gerado foi executado nos shells declarados.
 **Critérios de aceite:** revisão independente, gates verdes e prova reproduzível.
@@ -245,3 +245,5 @@ A forma `unsetopt` nunca foi publicada, então não vira legado.
 - Hades, 2ª rodada (delta `91494bb7..HEAD`): APROVADO COM RESSALVA. B-1 fechado em Codex/Gemini (Claude já estava correto; Cursor/Windsurf/Copilot/Kiro/Amazon Q migram in-place, sem o padrão). `emulate -R sh` 0/2/2/2 em `zsh --emulate ksh`, `bash --posix`, ksh, `.zshenv` com `set -e`, `zsh -o errexit/nounset/cshnullglob` e dash. NO_UNSET e CSH_NULL_GLOB fechados. Ressalva: faltava o teste do validador para o wrapper `/bin/bash -c`. O arquiteto achou também que `TestGuardLineShellMatrix_UnsetoptInsuficiente` só usava `t.Logf` (decorativo). Os dois foram para o corretivo final.
 - 🔴 **Resíduo declarado (R4, anterior a esta REQ):** bash com `errexit` herdado (`bash --posix -e`, `BASH_ENV` com `set -e`) sai 127 antes do guard, ou seja, fail-open. Vale para toda forma polyglot até aqui: em bash, a semente `$LASTEXITCODE=2` é comando inexistente, e com `errexit` ela aborta. Não corrigido nesta REQ.
 
+
+**Gate final (zeus, 2026-10-21):** `make quality` exit 0, falsificação 368 OK / 0 FAIL (HOME isolado; `packaging`/`pyyaml` por venv temporário).
