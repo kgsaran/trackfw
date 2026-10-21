@@ -47239,3 +47239,12 @@ que chamam git sem `LookPath`; chmod no discover.
 - PR #591 aberto por autorização do KG. Correção CI no commit 17828895: Artemis reutilizou helper de capacidade no teste symlink e aposentou entrada Windows já resolvida, preservando histórico. Sem alteração de produto ou relaxamento dos gates.
 - Run 39461370579 SUCCESS: 20/20 checks verdes, incluindo parity-other-gates, parity e windows-full-suites (suíte Go e ratchet D4/D6 aprovados). Head 17828895 MERGEABLE/CLEAN. Build, testes focados, parity-rest e validate locais passaram. Branch publicada e worktree isolado limpo; nenhum merge realizado.
 - PR #590 de Lourival reavaliado no head 8ab6e84c: comentário P2 atendido, testes locais e 20 checks aprovados; recomendação de merge fornecida ao KG, sem publicar review/comentário ou executar merge.
+## 2026-10-21 — hades-tf — INÍCIO: red-team ML-2A (REQ-2026-10-20 — guard sob zsh)
+- Revisão de segurança da branch fix/hooks-de-guard-gerados-falham-sob-zsh, diff internal/ scripts/ .claude/ .codex/ .gemini/.
+- Escopo: fail-open, migração (remoção/reescrita/duplicata), rebaixamento de violação para aviso, cobertura de testes.
+## 2026-10-21 — hades-tf — FIM: red-team ML-2A (REQ-2026-10-20 — guard sob zsh)
+- Veredito: REPROVADO. Achado BLOQUEANTE B-1: duplicata de credential guard em .codex/hooks.json (6x) e .gemini/settings.json (9x) — mergeClaudeHookArray roda ANTES dos migrateHookCommand D11Rev em InjectCodexHooks/InjectGeminiHooks.
+- Matrix zsh sh bash dash/zsh-f: PASS (TestGuardLineShellMatrix 60 subtestes, TestGuardLineShellMatrix_DefeitoAntigo confirma exit 1 sob zsh sem prefixo).
+- Validador rebaixou D11Rev para warning: comportamento intencional e correto. [Corrigido pelo próprio hades-tf no relatório: `guard_wiring_removed` NÃO reconhece as formas do wrapper `/bin/bash -c`, o que gera falso positivo; entra no ML corretivo.]
+- ACs cobertos: matriz sh/bash/zsh/zsh-f completa; braço do defeito; sem cobertura de migração D11Rev (gap de teste).
+- Nota vault: inject-codex-gemini-d11rev-duplicata-antes-de-migracao-2026-10-21.md

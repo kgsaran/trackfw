@@ -4,6 +4,8 @@
 
 ## Índice
 
+- [inject-codex-gemini-d11rev-duplicata-antes-de-migracao-2026-10-21](inject-codex-gemini-d11rev-duplicata-antes-de-migracao-2026-10-21.md) — 🔴 **InjectCodexHooks/InjectGeminiHooks: mergeClaudeHookArray roda antes da migração D11Rev → 2 entradas do guard no mesmo evento; RE-GERAR .codex/hooks.json e .gemini/settings.json após fix**
+
 - [hook-subprocess-path-nao-herda-do-processo-pai-windows-2026-10-21](hook-subprocess-path-nao-herda-do-processo-pai-windows-2026-10-21.md) — 🔴 **Hooks usam `/usr/bin/bash`; bash HERDA PATH do processo pai e `/etc/profile` PREPENDE `~/bin`; fail-closed só quando trackfw ausente do PATH efetivo completo; claude.exe tem caminhos hardcoded para bash; hook_started/hook_response requerem --debug=hooks**
 
 - [branch-new-checkout-b-com-start-point-seta-upstream-no-track-obrigatorio-2026-10-18](branch-new-checkout-b-com-start-point-seta-upstream-no-track-obrigatorio-2026-10-18.md) — 🔴 **`git checkout -b <branch> origin/main` seta `@{u}=origin/main`; `buildPushArgs` lê `@{u}`; `--no-track` é REQUISITO** — sem ele, `trackfw push` nunca seta `origin/feat/slug` como upstream, Passo 0 fica cego ao `[gone]` após merge; REQ-2026-09-12 ML-1A

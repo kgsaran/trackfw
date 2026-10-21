@@ -204,6 +204,28 @@ Indício adicional (2026-10-21): com o workaround `/bin/bash -c` no `~/.codex/ho
 
 **Auditoria (zeus, 2026-10-21):** prefixo `unsetopt EQUALS NOMATCH 2>${null-/dev/null}; `. `TestGuardLineShellMatrix` com 60 subtestes (sh/bash/zsh/zsh -f × allow/deny/erro/ausente, stdin e motivo preservados) + braço do defeito antigo; o teste reprova numa cópia com a correção revertida (`zsh:1: 2 not found`). Migração medida no binário sobre uma cópia do `~/.codex/hooks.json` real: 4 wrappers `/bin/bash -c` → forma nova, 6 entradas, 0 duplicatas, personalizados preservados, idempotente. Windows (VM ARM64, `docs/portabilidade/2026-10-21-guard-zsh-candidato-windows.md`): PS 5.1 e Git Bash dão o mesmo resultado na linha atual e na candidata (0/2/2/2). O cmd.exe não recebe a polyglot (ADR D11, linha 160: Kiro/Amazon Q usam `trackfw guard <nome>`), então o rc=1 medido ali não corresponde a artefato emitido. pwsh não estava na VM. Nota: o trackfw v10.0.0 instalado reporta `guard_wiring_removed` para a forma nova (não a conhece). O CI compila a partir do código do PR.
 
+### ML-1B — Corretivo do red-team: `emulate -R sh`, ordem migração→merge, validador e cobertura
+**Status:** ⬜ Pendente
+**Squad:** apolo-tf (implementação) · artemis-tf (matriz Windows da nova forma) · auditoria zeus-tf
+**Origem:** ML-2A. O Hades reprovou com o B-1 (duplicata do guard de credencial em `InjectCodexHooks`/`InjectGeminiHooks`, confirmada pelo arquiteto nos configs commitados) e achou resíduos do zsh não declarados. O Hefesto aprovou com A1 (rótulo "ML-7A") e A2 (sem teste da migração do wrapper `/bin/bash -c`). Pela regra de "defeito conhecido corrige agora", tudo entra aqui.
+**Decisão (arquiteto, medida no host com o script de matriz em bash):** trocar o prefixo `unsetopt EQUALS NOMATCH` por `emulate -R sh 2>${null-/dev/null}; `. Matriz allow/deny/erro/ausente:
+| shell | antiga | unsetopt | emulate -R sh |
+|---|---|---|---|
+| zsh, zsh -f | 1/1/1/1 | 0/2/2/2 | 0/2/2/2 |
+| zsh -o errexit | 1/1/1/1 | 127/127/127/127 | 0/2/2/2 |
+| zsh -o nounset | 1/1/1/1 | 1/1/1/1 (fail-open) | 0/2/2/2 |
+| zsh -o cshnullglob / nullglob | 1/1/1/1 | ausente: `cat` lê o stdin | 0/2/2/2 |
+| dash, /bin/sh, bash | — | 0/2/2/2 | 0/2/2/2 |
+A forma `unsetopt` nunca foi publicada, então não vira legado.
+**Arquivos afetados:** `internal/generators/agentfiles.go`, `internal/generators/update.go`, `internal/generators/guard_line_shell_test.go`, `internal/generators/*_test.go`, `internal/validator/validator_guard_binary_probe.go`, `internal/validator/validator_guard_wiring.go`, testes do validador, `scripts/check-validate-rule-pins.sh`, `.claude/settings.json`, `.codex/hooks.json`, `.gemini/settings.json`, `docs/cli-parity.md`, ADR-2026-10-04 (adendo), README se citar a string.
+**Critérios de aceite:**
+- [ ] forma nova com `emulate -R sh`; matriz por subprocess inclui dash, zsh -o errexit, -o nounset, -o cshnullglob, além de sh/bash/zsh/zsh -f; braço que mostra a forma `unsetopt` falhando sob `-o nounset`
+- [ ] Codex/Gemini: todas as migrações antes dos merges; testes de regressão "forma legada → 1 entrada por matcher" para Codex e Gemini; configs versionados sem duplicata
+- [ ] `guardWiringTypeFromCmd` reconhece as formas do wrapper `/bin/bash -c`; teste
+- [ ] teste da migração do wrapper `/bin/bash -c` (A2)
+- [ ] rótulo estável `REQ-2026-10-20` no lugar de "ML-7A" (A1)
+- [ ] Windows: PS 5.1 e Git Bash 0/2/2/2 com a nova forma
+
 ## Wave 2 — Auditoria final
 
 ### ML-2A — Segurança, qualidade e contrato
