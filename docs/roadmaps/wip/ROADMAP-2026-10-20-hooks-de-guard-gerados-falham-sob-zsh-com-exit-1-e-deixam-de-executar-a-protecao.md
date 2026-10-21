@@ -238,3 +238,10 @@ A forma `unsetopt` nunca foi publicada, então não vira legado.
 **Ações:** revisar que nenhum erro sai fail-open, nenhuma política foi removida e o artefato gerado foi executado nos shells declarados.
 **Critérios de aceite:** revisão independente, gates verdes e prova reproduzível.
 **Comandos de validação:** `make quality`; `trackfw validate`.
+
+**Revisões do ML-2A (registradas pelo arquiteto, 2026-10-21):**
+- Hefesto: APROVADO; A1 (rótulo) e A2 (teste do wrapper) foram absorvidos no ML-1B.
+- Hades, 1ª rodada: REPROVADO (B-1 e resíduos NO_UNSET/CSH_NULL_GLOB) → ML-1B.
+- Hades, 2ª rodada (delta `91494bb7..HEAD`): APROVADO COM RESSALVA. B-1 fechado em Codex/Gemini (Claude já estava correto; Cursor/Windsurf/Copilot/Kiro/Amazon Q migram in-place, sem o padrão). `emulate -R sh` 0/2/2/2 em `zsh --emulate ksh`, `bash --posix`, ksh, `.zshenv` com `set -e`, `zsh -o errexit/nounset/cshnullglob` e dash. NO_UNSET e CSH_NULL_GLOB fechados. Ressalva: faltava o teste do validador para o wrapper `/bin/bash -c`. O arquiteto achou também que `TestGuardLineShellMatrix_UnsetoptInsuficiente` só usava `t.Logf` (decorativo). Os dois foram para o corretivo final.
+- 🔴 **Resíduo declarado (R4, anterior a esta REQ):** bash com `errexit` herdado (`bash --posix -e`, `BASH_ENV` com `set -e`) sai 127 antes do guard, ou seja, fail-open. Vale para toda forma polyglot até aqui: em bash, a semente `$LASTEXITCODE=2` é comando inexistente, e com `errexit` ela aborta. Não corrigido nesta REQ.
+

@@ -47280,3 +47280,7 @@ que chamam git sem `LookPath`; chmod no discover.
 - Validador rebaixou D11Rev para warning: comportamento intencional e correto. [Corrigido pelo próprio hades-tf no relatório: `guard_wiring_removed` NÃO reconhece as formas do wrapper `/bin/bash -c`, o que gera falso positivo; entra no ML corretivo.]
 - ACs cobertos: matriz sh/bash/zsh/zsh-f completa; braço do defeito; sem cobertura de migração D11Rev (gap de teste).
 - Nota vault: inject-codex-gemini-d11rev-duplicata-antes-de-migracao-2026-10-21.md
+
+## 2026-10-21 — hades-tf (registrado por zeus-tf) — FIM: 2ª revisão de segurança, REQ-2026-10-20
+
+- Leitura do delta 91494bb7..HEAD; testes só em cópia. APROVADO COM RESSALVA (baixa): faltava o teste de guardWiringTypeFromCmd para as 3 formas do wrapper /bin/bash -c. B-1 fechado; emulate -R sh sem fail-open novo; NO_UNSET/CSH_NULL_GLOB fechados; R4 (bash com errexit herdado) continua como resíduo declarado.
