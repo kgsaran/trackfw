@@ -367,11 +367,13 @@ func TestGuardLineShellMatrix_UnsetoptInsuficiente(t *testing.T) {
 			}
 
 			// A forma unsetopt DEVE falhar sob zsh -o nounset (sair com exit ≠ 2).
-			// Se sair com exit 2, o zsh local não tem nounset funcionando como esperado.
+			// Se sair com exit 2 significa que a forma funcionou — contraditório com a
+			// afirmação de que unsetopt é insuficiente — então o teste deve reprovar.
 			if code == 2 {
-				t.Logf("forma unsetopt saiu com exit 2 sob zsh -o nounset (%s) — "+
-					"o zsh local pode não aplicar nounset a expansões não-interativas; "+
-					"evidência de ambiente, não de defeito na constante gerada", guard.name)
+				t.Errorf("forma unsetopt saiu com exit 2 sob zsh -o nounset (%s) — "+
+					"esperado exit ≠ 2 (insuficiência); o prefixo emulate -R sh pode ter "+
+					"sido removido ou o zsh local não aplica nounset a expansões não-interativas",
+					guard.name)
 			} else {
 				t.Logf("forma unsetopt saiu com exit %d (≠ 2) sob zsh -o nounset (%s) — "+
 					"insuficiência confirmada; emulate -R sh é necessário", code, guard.name)

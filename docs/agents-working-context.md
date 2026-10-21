@@ -47284,3 +47284,28 @@ que chamam git sem `LookPath`; chmod no discover.
 ## 2026-10-21 — hades-tf (registrado por zeus-tf) — FIM: 2ª revisão de segurança, REQ-2026-10-20
 
 - Leitura do delta 91494bb7..HEAD; testes só em cópia. APROVADO COM RESSALVA (baixa): faltava o teste de guardWiringTypeFromCmd para as 3 formas do wrapper /bin/bash -c. B-1 fechado; emulate -R sh sem fail-open novo; NO_UNSET/CSH_NULL_GLOB fechados; R4 (bash com errexit herdado) continua como resíduo declarado.
+
+## 2026-10-21 — zeus-tf — entradas do apolo-tf gravadas por engano no checkout principal (main), copiadas sem edição
+
+## 2026-10-21 — apolo-tf — FIM: corretivo ML-1B da revisão de segurança REQ-2026-10-20
+
+- Item 1: `TestGuardLineShellMatrix_UnsetoptInsuficiente` — branch `code == 2` trocado de `t.Logf` para `t.Errorf`. O teste afirma que a forma `unsetopt` é insuficiente (sai com exit ≠ 2 sob zsh -o nounset); se a forma "passar" (exit 2), o teste reprova. Prova de mordida confirmada (mutação com `emulatePrefix` → FAIL nos 3 subcasos).
+- Item 2: `TestGuardWiringTypeFromCmd_ClasseDeEquivalencia` — adicionado bloco para as três formas `legacyWABash*` (`/bin/bash -c`). Strings extraídas de `guardWiringScriptPathForms` por filtro (sem cópia manual), com asserção `wantWABashCount = 3` para detectar remoção silenciosa. Prova de mordida confirmada (remoção das 3 entradas da tabela → `got 0, want 3` → FAIL).
+- Item 3: `validator_guard_binary_probe_test.go` — quatro ocorrências de `ML-7A` nos comentários desta branch trocadas por `REQ-2026-10-20`. Verificado por `git diff origin/main | grep ML-7A` (saída vazia).
+- `go vet ./internal/...` limpo; `go test ./internal/generators/ ./internal/validator/ -count=1` verde (generators 63s, validator 35s).
+- Arquivos modificados: `internal/generators/guard_line_shell_test.go`, `internal/validator/validator_guard_wiring_test.go`, `internal/validator/validator_guard_binary_probe_test.go`.
+
+
+## 2026-10-21 — apolo-tf — início: ML-1A corretivo — teste real por subprocess (REQ-2026-10-20)
+
+- Tarefa: implementar TestGuardLineShellMatrix em internal/generators/guard_line_shell_test.go
+- Worktree: /private/tmp/trackfw-attention-go, branch fix/hooks-de-guard-gerados-falham-sob-zsh
+- Escopo restrito: único arquivo novo, sem tocar outros arquivos ou worktrees
+
+## 2026-10-21 — apolo-tf — FIM: ML-1A corretivo — TestGuardLineShellMatrix implementado
+
+- Arquivo entregue: internal/generators/guard_line_shell_test.go (novo, não commitado)
+- go vet: PASS; TestGuardLineShellMatrix: PASS (60 subtestes — 3 guards × 4 shells × 4 casos + DefeitoAntigo: PASS)
+- Prova de mordida: cópia mutada sem prefixo unsetopt → FAIL nos subtestes zsh/zsh-f (stderr "zsh:1: 2 not found", stdin não preservado, exit 1 em vez de 0/2)
+- trackfw validate: 19 violações guard_wiring_removed pré-existentes do ML-1A (settings.json/codex/gemini); não introduzidas por este ML
+- Riscos: nenhum novo; as violações do validate são do ML-1A, para o arquiteto auditar junto ao diff completo do ML-1A

@@ -85,9 +85,9 @@ func stubProbeOK(t *testing.T) {
 // (a) Linha exata / sufixo extra / família errada / legado / --global
 // --------------------------------------------------------------------------
 
-// Reconciliação: afirma que a linha exata PS/POSIX ML-7A para git-branch
+// Reconciliação: afirma que a linha exata PS/POSIX REQ-2026-10-20 para git-branch
 // ("emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; ...")
-// em .claude/settings.json não gera violation (ML-7A: nova forma fail-closed com prefixo emulate -R sh).
+// em .claude/settings.json não gera violation (REQ-2026-10-20: nova forma fail-closed com prefixo emulate -R sh).
 func TestGuardHookResolvable_ExatoPSPosix_Ok(t *testing.T) {
 	CurrentGOOS = "linux"
 	t.Cleanup(func() { CurrentGOOS = runtime.GOOS })
@@ -107,7 +107,7 @@ func TestGuardHookResolvable_ExatoPSPosix_Ok(t *testing.T) {
 	}
 }
 
-// Reconciliação: afirma que a linha D11 revised pré-ML-7A para git-branch (sem prefixo emulate -R sh)
+// Reconciliação: afirma que a linha D11 revised pré-REQ-2026-10-20 para git-branch (sem prefixo emulate -R sh)
 // em .claude/settings.json não gera violation — é tratada como warning-only
 // (via validateGitBranchGuardHookD11RevisedLegacyWarnings), não violation.
 func TestGuardHookResolvable_D11RevLegacyPSPosix_SemViolation(t *testing.T) {
@@ -125,7 +125,7 @@ func TestGuardHookResolvable_D11RevLegacyPSPosix_SemViolation(t *testing.T) {
 		t.Fatalf("erro inesperado: %v", err)
 	}
 	if len(msgs) != 0 {
-		t.Errorf("D11 revised pré-ML-7A deve gerar 0 violations (só warning), obteve: %v", msgs)
+		t.Errorf("D11 revised pré-REQ-2026-10-20 deve gerar 0 violations (só warning), obteve: %v", msgs)
 	}
 }
 
