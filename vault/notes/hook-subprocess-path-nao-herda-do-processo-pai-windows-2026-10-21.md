@@ -68,7 +68,40 @@ O binário encontrado era `C:\Users\Lab\bin\trackfw.exe` versão **8.0.0-rc2** �
 
 Se mantida: o `~/bin` do Git Bash continuará sendo o PATH de hook; qualquer atualização futura do trackfw deve sobrescrever `~/bin\trackfw.exe` com a versão compatível com o `settings.json` gerado pelo `trackfw init` vigente.
 
+## Correção ao título da nota (2026-10-21, rodada 3)
+
+O título "PATH não herda do processo pai" estava incorreto. O comportamento real, confirmado na rodada 3 call 8:
+
+**Bash SIM herda o PATH do processo pai (claude.exe).** O `/etc/profile` do Git Bash PREPENDE `~/bin` ao PATH existente — não substitui. Portanto o PATH efetivo do bash é:
+
+```
+~/bin : <PATH herdado de claude.exe>
+```
+
+**Consequência prática:**
+- Se `binNative` (com trackfw 10.0.0) estiver no PATH do processo pai, bash o encontra mesmo com `~/bin/trackfw.exe` ausente.
+- Fail-closed (exit 127) só ocorre quando trackfw está ausente de **TODO** o PATH efetivo do bash (tanto `~/bin` quanto o PATH herdado).
+- Evidência: call 8 — `~/bin/trackfw.exe` renomeado para `.bak`, PATH do processo tinha `binNative` → hooks exit=0 (permitiram). Rodada 2 c4 — `~/bin/trackfw.exe` renomeado, `binNative` FORA do PATH → hooks exit=127 (bloquearam).
+
+## Achado adicional (rodada 3): hook_started/hook_response requerem --debug=hooks
+
+`--include-hook-events` sozinho não emite `hook_started`/`hook_response` para hooks ALLOW (exit=0). Esses eventos só aparecem no stream-json com `--include-hook-events` E `--debug=hooks` combinados. Hooks DENY aparecem via `tool_result` com `is_error=true` e `permission_decision.source=hook` mesmo sem `--debug=hooks`.
+
+## Achado adicional (rodada 3): caminhos hardcoded para bash em claude.exe
+
+Claude Code 2.1.304 (binário `claude.exe`, 277MB) contém no executável:
+- Primário: `C:\Program Files\Git\bin\bash.exe`
+- Secundário: `C:\Program Files (x86)\Git\bin\bash.exe`
+- Override via `CLAUDE_CODE_GIT_BASH_PATH` (env var)
+- Mensagem se não encontrado: `"Git Bash not found; BashTool will be unavailable"`
+
+Isso significa: Git ausente do PATH do processo lançador **não impede** Claude Code de encontrar bash — ele usa os caminhos hardcoded diretamente.
+
+## Achado adicional (rodada 3): PostToolUse só aparece quando is_error=False
+
+O hook PostToolUse:Bash só é emitido no stream quando a ferramenta Bash termina com `is_error=False` (exit 0). Se o comando Bash retorna exit não-zero (ex: git exit 128 → is_error=True), o PostToolUse não aparece no stream com `--debug=hooks`.
+
 ## Links
 
 - Nota anterior sobre binário antigo: [[guard-fallback-old-binary-exit1-fail-open-6-clis-2026-10-06]]
-- Relatório completo: `docs/portabilidade/2026-10-20-jornadas-agentes-windows.md` (seção "Jornada real — 2026-10-21")
+- Relatório completo: `docs/portabilidade/2026-10-20-jornadas-agentes-windows.md` (seções "Jornada real — 2026-10-21" e "Jornada real — rodada 3 (2026-10-21)")

@@ -171,6 +171,20 @@ go vet ./...
 - [x] Testes de atenção e gramática/proveniência em internal/pathguard passam.
 - [x] make quality completo passa após o ajuste.
 
+### ML-1I — Sinal de atenção lê o payload real do AskUserQuestion (`questions[].question`)
+**Status:** ⬜ Pendente
+**Squad:** apolo-tf (implementação) · auditoria zeus-tf
+**Origem:** jornada real Windows, rodada 3 (2026-10-21). O payload real do Claude Code 2.1.304, extraído do transcript da VM, é `tool_input.questions[{question,header,options,multiSelect}]`. `internal/commands/attention.go` só lê `tool_input.question`, então o banner mostra `Agent is executing: AskUserQuestion` e não a pergunta. Os testes usam o formato inventado `{"question":...}` e por isso passavam sem exercer o contrato real. Mesma causa da AC5 (artefato não verificado contra a jornada real), por isso entra nesta REQ.
+**Arquivos afetados:** `internal/commands/attention.go`, `internal/commands/attention_test.go`
+**Ações:** extrair a mensagem de `tool_input.questions[0].question` quando presente; manter `question` e `command` como estão hoje (outros emissores) e o fallback genérico; mesmos limites (300 runes, `attentionText`, tamanho máximo de entrada, JSON malformado = no-op). Tipos inesperados (`questions` não array, item não objeto, `question` não string, array vazio) → fallback, nunca pânico. Teste com o payload literal capturado.
+**Critérios de aceite:**
+- [ ] payload real `{"tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"Qual cor?","header":"Cor","options":[...],"multiSelect":false}]}}` → `message` = `Qual cor?`
+- [ ] payloads antigos (`question`, `command`, vazio) mantêm a saída atual
+- [ ] tipos inesperados em `questions` → fallback sem pânico
+- [ ] `go build ./...` e `go test ./internal/commands/ -run Attention` verdes
+- [ ] re-medição na VM (sessão interativa) mostra a pergunta no arquivo de atenção e o cleanup após a resposta
+**Comandos de validação:** `go build ./... && go test ./internal/commands/ -run Attention -count=1`
+
 ## Wave 3 — Auditoria de qualidade e red-team
 > Dependências: Wave 2 implementada e auditada. Revisões sequenciais para não compartilhar contexto em escrita.
 

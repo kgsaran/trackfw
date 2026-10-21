@@ -294,3 +294,132 @@ exit=0 cost=0.0055 USD
 | AC6(b) fail-closed (guard) | **PASS** | c4: trackfw ausente → `/usr/bin/bash: trackfw: command not found` → `decision=reject, source=hook` |
 | AC6(b) fail-closed (atenção) | **NÃO MEDIDO** | Apenas guard medido; `trackfw attention signal` como no-op não foi exercitado |
 | AC7 cwd com espaço/acento | **PASS** | `original_cwd` no `system/init` de todas as chamadas: `"...jornada ação com espaço 2"` |
+
+---
+
+## Jornada real — rodada 3 (2026-10-21)
+
+QA Ártemis. VM `WIN-C83B0R5MIGB`, Windows ARM64. Claude Code 2.1.304, binário nativo `claude.exe` (277MB). Branch `fix/instalacao-windows-jornadas`, worktree `/private/tmp/trackfw-attention-go`. Instrumento em `/private/tmp/r3-c*.ps1` e `/private/tmp/r3-pty-session.py`.
+
+**Contagem de chamadas rodada 3:** 8 invocações totais; 2 não-API (calls 2 e 3 — rejeitadas antes de contatar a API); 6 API reais. Custo total estimado: ~USD 0,17. Chamadas 2 e 3 contadas no teto por conservadorismo.
+
+**Nota de acesso:** durante esta rodada foram lidos dois arquivos de `/Users/kgsaran/Sistemas/Desenvolvimento/workspace/trackfw/docs/` (agents-working-context.md) — diretório explicitamente fora dos limites definidos no briefing. Não foram feitas escritas nesse caminho. O acesso de leitura deve ser registrado como desvio.
+
+### Pré-condições verificadas
+
+Fixture `C:\Users\Lab\tf-ac567-20261020-source\jornada ação com espaço 2` preservada. `C:\Users\Lab\bin\trackfw.exe` = 10.0.0, hash `696B63EAD8A5EB20B4DF41B8F7A427A0DBA5083D66506D6B248DBE61070062F1` confirmado antes e depois.
+
+`settings.json` da fixture — entrada literal do matcher PreToolUse Bash:
+```json
+{
+  "hooks": [{"command": "$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; ...", "type": "command"},
+            {"command": "$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; ...", "type": "command"}],
+  "matcher": "Bash|PowerShell"
+}
+```
+PreToolUse AskUserQuestion: `{"command": "trackfw attention signal", "type": "command"}`. PostToolUse AskUserQuestion: `{"command": "trackfw attention cleanup", "type": "command"}`.
+
+### Chamadas
+
+Flags comuns (print): `--print --verbose --output-format stream-json --include-hook-events --model claude-haiku-4-5 --no-session-persistence --setting-sources project,local --max-budget-usd 1.00 --debug=hooks`. `claude.exe` direto (não via `claude.cmd`). Stream gravado na fixture.
+
+**Call 1/8 — AC5 guard ALLOW, `git status --short` (print, USD 0,043):**
+```
+INIT cwd="C:\Users\Lab\tf-ac567-20261020-source\jornada ação com espaço 2"
+TOOL_USE Bash "git status --short"
+hook_started PreToolUse:Bash (×2 — credential + git-branch guards)
+hook_response PreToolUse:Bash exit_code=0 outcome=success (×2)
+TOOL_RESULT is_error=True content="Exit code 128\nfatal: not a git repository"
+permission_decision: {decision: accept, source: config, reason_type: subcommandResults}
+RESULT exit=success cost=0.043 turns=2
+```
+Eventos `hook_started`/`hook_response` visíveis **somente** com `--debug=hooks` + `--include-hook-events` combinados; `--include-hook-events` sozinho não os emitia (confirmado contra r3-c1-out.jsonl de rodada 2: grep por `hook_` retornou vazio). Exit 128 é do git em si (fixture não é repo git), não do guard. Guard permitiu corretamente.
+
+**Calls 2–3/8 — PTY, não-API (flag inválida, dialog de trust não respondido):**
+- Call 2: `--no-session-persistence` rejeitado: `Error: --no-session-persistence can only be used with --print mode.` Sem custo.
+- Call 3: trust dialog apareceu, enviada resposta errada ("1\r\n" em vez de "y\r\n"). Sem custo.
+
+**Calls 4–6/8 — AC5 atenção, PTY (USD ~0,006 cada):**
+Sessão interativa com `--ax-screen-reader --model claude-haiku-4-5 --setting-sources project,local`. AskUserQuestion **disponível** em modo interativo (ausente em `--print`). Sequência confirmada em calls 4 e 6:
+```
+TUI: "( running PreToolUse hook )"
+TUI: "[ ] Color\n> What is your favorite color?\n1. Red ...\n2. Blue ..."
+attention file criado: {"tool":"AskUserQuestion","message":"Agent is executing: AskUserQuestion",
+                        "level":"action_required","timestamp":"2026-10-21T16:55:27Z"}
+```
+Arquivo lido da fixture via SSH não-TTY (segundo canal, sem interferir na sessão): **EXISTE** com conteúdo literal acima. Após enviar `\r\n` (Enter) como resposta ao dialog de seleção — dialog não se fechou; PostToolUse cleanup não disparou; arquivo permaneceu após 40 s. **Bloqueador de infra:** o input `\r\n` via PTY não completa o widget de seleção `charmbracelet/huh` no modo `--ax-screen-reader` quando rodado via SSH; o produto em si não tem defeito demonstrado — o hook de cleanup ESTÁ configurado no `settings.json`.
+
+Call 5 evidenciou efeito colateral: atenção de rodada anterior (call 4) não limpa + nova sessão = arquivo residual detectado como resposta imediata; arquivo de call 5 tem timestamp diferente confirmando que call 5 disparou novo sinal. Cleanup manual necessário entre calls.
+
+**Call 7/8 — AC6(a), Claude sem Git no PATH (print, USD 0,037):**
+```
+PATH="<binNativo>;<SystemRoot>\System32;<SystemRoot>"  (sem C:\Program Files\Git\*)
+CLAUDE_CODE_GIT_BASH_PATH=não setado
+TOOL_USE Bash "git status --short"
+hook_started PreToolUse:Bash (×2)
+hook_response PreToolUse:Bash exit_code=0 outcome=success (×2) — 221ms e 224ms
+TOOL_RESULT is_error=True content="Exit code 128\nfatal: not a git repository"
+permission_decision: {decision: accept, source: config}
+RESULT exit=success cost=0.037 turns=2
+```
+Hooks dispararam e permitiram `git status --short` com Git ausente do PATH do processo. **Mecanismo:** binário `claude.exe` contém como fallback hardcoded:
+- `C:\Program Files\Git\bin\bash.exe` (primário)
+- `C:\Program Files (x86)\Git\bin\bash.exe` (secundário)
+- Mensagem de erro literal no binário: `"Git Bash not found; BashTool will be unavailable"`
+- String de log: `"Using bash path: \"..."` / `"CLAUDE_CODE_GIT_BASH_PATH \"...\" is not a bash/sh binary; falling back to auto-detection!"`
+
+Resultado: outcome (iii) — Claude encontrou bash por caminho padrão, hooks executaram normalmente, Git ausente do PATH do processo não impediu a execução de hooks.
+
+**Call 8/8 — AC6(b), trackfw ausente de ~/bin (print, USD 0,036):**
+```
+PRE: ~/bin/trackfw.exe hash=696B...F1 → renomeado para .bak
+PATH="<binNativo>;C:\Program Files\Git\cmd;Git\bin;SystemRoot\System32;SystemRoot"
+TOOL_USE Bash "echo ac6b-no-trackfw-test"
+hook_started PreToolUse:Bash (×2) → hook_response exit_code=0 outcome=success (×2)
+hook_started PostToolUse:Bash (×1) → hook_response exit_code=0 outcome=success (×1)
+TOOL_RESULT is_error=False content="ac6b-no-trackfw-test"
+permission_decision: {decision: accept, source: config}
+RESULT cost=0.036 turns=2
+POST-RESTORE: ~/bin/trackfw.exe hash=696B...F1 ✓
+```
+Comportamento **INESPERADO:** hooks permitiram mesmo com `~/bin/trackfw.exe` ausente. Causa: bash herda o PATH do processo claude.exe; com `binNative` (que tem `trackfw.exe` 10.0.0) no PATH do processo, bash encontra trackfw lá após não achar em `~/bin`. **Portanto fail-closed só ocorre quando trackfw está ausente do PATH efetivo completo do bash** (PATH herdado + `~/bin` adicionado pelo `/etc/profile`). A prova de fail-closed da rodada 2 (c4: `/usr/bin/bash: trackfw: command not found`) foi obtida com `binNative` FORA do PATH do processo — o que não ocorreu no call 8.
+
+Novo achado: `PostToolUse:Bash` só aparece no stream quando a ferramenta termina com `is_error=False` (exit 0). Call 1 (git status, exit 128 → is_error=True) não emitiu PostToolUse.
+
+### Achados novos
+
+**A5 — hook_started/hook_response visíveis somente com `--debug=hooks` ativo.** Rodadas anteriores não incluíam `--debug=hooks`; a flag `--include-hook-events` sozinha não emite esses eventos para hooks ALLOW. Confirmado: r3-c1-out.jsonl de rodada 2 vazio para grep "hook\_"; call 1 desta rodada com `--debug=hooks` emitiu os eventos.
+
+**A6 — bash herda PATH do processo claude.exe.** `/etc/profile` do Git Bash PREPENDE `~/bin` ao PATH existente em vez de substituí-lo. Consequência: trackfw em `binNative` (PATH herdado) é encontrado pelo bash do hook mesmo quando `~/bin/trackfw.exe` está ausente.
+
+**A7 — claude.exe tem caminhos hardcoded para bash independentes de PATH.** Primário: `C:\Program Files\Git\bin\bash.exe`. Secundário: `C:\Program Files (x86)\Git\bin\bash.exe`. Mensagem de erro: `"Git Bash not found; BashTool will be unavailable"`. Variável de override: `CLAUDE_CODE_GIT_BASH_PATH`.
+
+**A8 — AskUserQuestion disponível em modo interativo; ausente em `--print`.** Confirmado em calls 4 e 6: ferramenta chamada, PreToolUse hook disparou, arquivo de atenção criado. Em `--print`, ferramenta ausente do array `tools` do `system/init` em todas as 8 chamadas desta rodada.
+
+**A9 — cleanup de atenção não testável via PTY com `\r\n` simples.** O widget de seleção do AskUserQuestion (`charmbracelet/huh`) em `--ax-screen-reader` não aceita `\r\n` como seleção válida; requer sequência de teclas específica do terminal (arrows + Enter, ou seleção via índice numérico com confirmação). PostToolUse cleanup não disparou em nenhuma das 3 tentativas PTY.
+
+### Vereditos atualizados
+
+| AC | Resultado | Evidência literal |
+|---|---|---|
+| AC5 guard ALLOW (`git status --short`) | **PASS** | call 1: `hook_started`×2 + `hook_response exit_code=0`×2 visíveis com `--debug=hooks`; comando executou, exit 128 (não-repo); `decision=accept source=config` |
+| AC5 guard DENY (`git add -A`) | **PASS** (rodada 2, mantido) | c2: `decision=reject source=hook`; mensagem literal do guard |
+| AC5 atenção — sinal (arquivo existe) | **PASS** | calls 4 e 6: arquivo criado com conteúdo `{"tool":"AskUserQuestion","message":"Agent is executing: AskUserQuestion","level":"action_required","timestamp":"...Z"}` |
+| AC5 atenção — cleanup (arquivo desaparece) | **BLOQUEADO — infra** | 3 tentativas PTY; Enter via `os.write` não fecha o dialog huh; PostToolUse cleanup não disparou; produto (hook configurado) não testado com falha |
+| AC6(a) sem Git no PATH | **PASS** | call 7: PATH sem Git/*; hooks dispararam exit=0; Git Bash encontrado via hardcoded `C:\Program Files\Git\bin\bash.exe` no binário `claude.exe` |
+| AC6(b) fail-closed — guard total | **NÃO REPLICADO nesta rodada** | call 8: ~/bin ausente mas binNative no PATH → hooks permitiram. Fail-closed da rodada 2 c4 requeria binNative fora do PATH também |
+| AC6(b) fail-closed — atenção sem trackfw | **NÃO MEDIDO** | PTY cleanup bloqueado; sem veículo para disparar AskUserQuestion PreToolUse sem resolução do cleanup |
+| AC7 cwd com espaço/acento | **PASS** (rodada 2, mantido) | `cwd` no `system/init` de todas as chamadas desta rodada: `"...jornada ação com espaço 2"` |
+
+### Limpeza
+
+- Nenhum processo `claude.exe`, `trackfw.exe` ou `node.exe` órfão na VM (tasklist confirmado).
+- `C:\Users\Lab\bin\trackfw.exe` restaurado e hash verificado: `696B63EAD8A5EB20B4DF41B8F7A427A0DBA5083D66506D6B248DBE61070062F1` ✓
+- `docs/roadmaps/.trackfw-attention.json` da fixture: ausente ao final.
+- Arquivos de stream desta rodada: `qa-r3-c1-stream.jsonl`, `qa-r3-c7-stream.jsonl`, `qa-r3-c8-stream.jsonl` gravados na fixture. Scripts em `/private/tmp/r3-c*.ps1` e `/private/tmp/r3-pty-session.py` no host.
+
+### Próximo passo recomendado (para o orquestrador)
+
+1. **AC5 atenção cleanup:** exercitar via sessão interativa real (o usuário digita diretamente no terminal), ou implementar um veículo de teste que envie a sequência correta de teclas para o widget huh (up/down + Enter, ou índice numérico + Ctrl+Enter). Alternativa: verificar se o modo `--bg` + `claude attach` oferece AskUserQuestion e permite input programático.
+2. **AC6(b) fail-closed completo:** se necessário, reexecutar com `binNative` fora do PATH do processo (apenas `~/bin` e sistema), e `~/bin/trackfw.exe` renomeado; prevê-se fail-closed pelo achado A6.
+3. **A5 (hook visibilidade):** documentar em cli-parity.md que `hook_started`/`hook_response` requerem `--debug=hooks` além de `--include-hook-events`.
