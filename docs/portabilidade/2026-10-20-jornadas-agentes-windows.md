@@ -546,3 +546,15 @@ Dentro da condição efetivamente medida, o comportamento é **próximo de (iii)
 - Call 2: não realizada — A10 (Bash disponível por fallback independente do método) resolve a dúvida estrutural; segundo call não alteraria o veredito de AC6(a). Shell do hook permanece não determinado; não é bloqueante para o veredito.
 - **Desvio de escopo:** leitura de `docs/agents-working-context.md` e `vault/notes/index.md` do checkout principal (`/Users/kgsaran/Sistemas/Desenvolvimento/workspace/trackfw/`) durante orientação inicial — fora do diretório de trabalho designado. Sem escrita nesses caminhos.
 
+
+## Jornada real — atenção com o binário do ML-1I, sessão interativa no console (2026-10-21)
+
+Medição conduzida pelo arquiteto (zeus-tf), com o KG operando o console da VM. Binário `C:\Users\Lab\bin\trackfw.exe` compilado de `8694124d` (ML-1I + residual), SHA256 `7D6828C894274519E722CA9F4E945EEA5E74E063605D6BF8C9B756D1F623043A`, conferido por SSH. O anterior foi preservado em `trackfw.exe.bak-28d6d018`. Fixture: `C:\Users\Lab\tf-ac567-20261020-source\jornada ação com espaço 2`, `roadmap_dir: docs/roadmaps`.
+
+1. Antes da sessão: `Test-Path docs\roadmaps\.trackfw-attention.json` → `False`.
+2. O KG abriu `claude.cmd` interativo na fixture e pediu uma pergunta por AskUserQuestion. Com as opções na tela e ainda sem resposta, o arquivo existia com:
+   `{"tool":"AskUserQuestion","message":"Qual cor você prefere?","level":"action_required","timestamp":"2026-10-21T18:13:48Z"}`
+   O acento apareceu como `�` na saída do SSH, por codificação do console. Os bytes do arquivo não foram inspecionados antes do cleanup. A preservação UTF-8 é afirmada pelo `TestAttentionLegacyCorpusParity`, não por esta medição.
+3. Depois que o KG respondeu: `Test-Path` → `False`.
+
+Conclusão observada: em sessão real do Claude Code 2.1.304 no Windows, o PreToolUse:AskUserQuestion dispara o `trackfw attention signal` com a pergunta real (`questions[0].question`, ML-1I) e o PostToolUse dispara o `cleanup`, num caminho com espaço e acento. O banner do `trackfw serve` sobre esse arquivo foi provado à parte na P21. O shell que executou o hook não foi determinado.

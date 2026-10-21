@@ -172,7 +172,7 @@ go vet ./...
 - [x] make quality completo passa após o ajuste.
 
 ### ML-1I — Sinal de atenção lê o payload real do AskUserQuestion (`questions[].question`)
-**Status:** 🔄 Em andamento (código auditado; falta re-medição na VM)
+**Status:** ✅ Concluído
 **Squad:** apolo-tf (implementação) · auditoria zeus-tf
 **Origem:** jornada real Windows, rodada 3 (2026-10-21). O payload real do Claude Code 2.1.304, extraído do transcript da VM, é `tool_input.questions[{question,header,options,multiSelect}]`. `internal/commands/attention.go` só lê `tool_input.question`, então o banner mostra `Agent is executing: AskUserQuestion` e não a pergunta. Os testes usam o formato inventado `{"question":...}` e por isso passavam sem exercer o contrato real. Mesma causa da AC5 (artefato não verificado contra a jornada real), por isso entra nesta REQ.
 **Arquivos afetados:** `internal/commands/attention.go`, `internal/commands/attention_test.go`
@@ -182,7 +182,7 @@ go vet ./...
 - [x] payloads antigos (`question`, `command`, vazio) mantêm a saída atual
 - [x] tipos inesperados em `questions` → fallback sem pânico
 - [x] `go build ./...` e `go test ./internal/commands/ -run Attention` verdes
-- [ ] re-medição na VM (sessão interativa) mostra a pergunta no arquivo de atenção e o cleanup após a resposta
+- [x] re-medição na VM (sessão interativa) mostra a pergunta no arquivo de atenção e o cleanup após a resposta
 **Auditoria (zeus, 2026-10-21):** pacote `internal/commands` verde com HOME isolado; `TestValidateJSONFlag`/`TestValidateTextUnchanged` falham também em origin/main só com o `~/.codex/hooks.json` local do usuário (passam com HOME isolado), então são vazamento de ambiente do teste e não efeito deste ML.
 **Comandos de validação:** `go build ./... && go test ./internal/commands/ -run Attention -count=1`
 
