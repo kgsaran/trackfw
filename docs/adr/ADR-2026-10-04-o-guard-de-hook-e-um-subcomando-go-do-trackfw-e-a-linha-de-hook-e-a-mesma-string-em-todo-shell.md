@@ -275,7 +275,7 @@ Bash e PowerShell 5.1; o ruído no stderr do PowerShell é o mesmo da D11 (o tre
 `docs/portabilidade/2026-10-07-linha-de-hook-fail-closed-sem-trackfw.md`, seção ML-6C.
 
 
-## Adendo — 2026-10-21: correção de falha sob zsh — prefixo `emulate -R sh` (REQ-2026-10-20, issue #603)
+## Adendo — 2026-10-21: correção de falha sob zsh — prefixo `emulate -R sh` (REQ-2026-10-20)
 
 A linha D11 revisada (ML-6C) falhava silenciosamente quando o hook era executado sob zsh com as
 opções padrão ativas. Dois mecanismos distintos causavam abort antes de `trackfw guard` rodar:
@@ -304,8 +304,20 @@ O `unsetopt` não foi publicado em nenhum config versionado, portanto não vira 
 **Solução final:** prefixo `emulate -R sh 2>${null-/dev/null};` antes da semente. O `emulate -R sh`
 reseta TODAS as opções do zsh para os padrões POSIX sh — incluindo nounset, errexit, cshnullglob e
 qualquer combinação futura. Em sh/bash é `command not found` com stderr descartado pelo redirecionamento
-— inerte. Em PS 5.1 é igualmente inerte (CommandNotFound, stderr descartado). A linha continua
-poliglota em todos os ambientes.
+— inerte. Em PS 5.1 o `emulate` é CommandNotFound não-terminante: a execução segue e o `$LASTEXITCODE`
+final não muda (medido na VM, `docs/portabilidade/2026-10-21-guard-zsh-candidato-windows.md`, rodada 2).
+🔴 **Mas o stderr NÃO é descartado no PS 5.1:** `2>${null-/dev/null}` não suprime o registro de
+CommandNotFound (achado A6, medido com e sem o redirect). A linha continua poliglota em todos os
+ambientes.
+
+**Custo aceito (decisão do KG, 2026-10-21):** no PowerShell 5.1, cada execução do hook passa a emitir
+**duas** linhas de erro `CommandNotFound` no stderr (`emulate` + o trecho `LASTEXITCODE=…` já
+registrado no adendo de 2026-10-07), e no deny elas aparecem antes do motivo do guard. Aplicando a
+regra de 2026-10-07 ("tentar silenciar; se não houver variante silenciosa, adotar a de menor ruído"):
+toda forma que corrige o zsh medida até aqui custa essa linha (o `unsetopt` também custava), e a
+alternativa sem ruído é o fail-open do zsh. Nenhuma variante silenciosa foi pesquisada a fundo; a
+candidata esboçada (`${=null-emulate -R sh}`) quebraria sh/bash com "bad substitution" e foi descartada sem
+medição. Se alguém trouxer uma variante silenciosa medida na matriz inteira, ela substitui esta.
 
 Forma canônica atualizada (REQ-2026-10-20, família PS/POSIX):
 
