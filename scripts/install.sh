@@ -332,6 +332,37 @@ case ":${PATH}:" in
     ;;
 esac
 
+# --- Detectar outras copias do trackfw no PATH ---
+# Percorre PATH (separador ':') procurando por trackfw ou trackfw.exe em
+# diretorios diferentes de INSTALL_DIR. Compara caminhos literalmente, sem
+# resolver symlinks; ignora barra final. Nunca executa as copias encontradas.
+_other_copies=""
+_path_rem="$PATH"
+while [ -n "$_path_rem" ]; do
+  case "$_path_rem" in
+    *:*) _dir="${_path_rem%%:*}"; _path_rem="${_path_rem#*:}" ;;
+    *)   _dir="$_path_rem";       _path_rem="" ;;
+  esac
+  [ -z "$_dir" ] && continue
+  _dir="${_dir%/}"
+  [ "$_dir" = "${INSTALL_DIR%/}" ] && continue
+  for _name in trackfw trackfw.exe; do
+    if [ -f "$_dir/$_name" ] && [ -x "$_dir/$_name" ]; then
+      _other_copies="${_other_copies}  ${_dir}/${_name}
+"
+    fi
+  done
+done
+if [ -n "$_other_copies" ]; then
+  echo "Atencao: outra copia do trackfw esta no PATH e pode responder no lugar desta:" >&2
+  printf '%s' "$_other_copies" >&2
+  echo "Confira com: type -a trackfw   (no Windows tambem: where.exe trackfw)" >&2
+  echo "Mantenha uma unica copia para que hooks de agente executem a versao instalada." >&2
+  if [ "$OS" = "windows" ] && [ "$INSTALL_DIR" = "${HOME}/bin" ]; then
+    echo "No Git Bash, ${INSTALL_DIR} vem antes no PATH; hooks de agente executados pelo Git Bash usam esta copia mesmo depois de instalar outra por npm ou pip." >&2
+  fi
+fi
+
 # --- Sucesso ---
 echo ""
 echo "trackfw ${VERSION} instalado com sucesso em ${INSTALL_DIR}/${BIN_EXE}"

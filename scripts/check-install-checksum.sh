@@ -28,6 +28,15 @@
 #   C7 — PATH sem curl, somente wget → instala normalmente (rama wget do install.sh)
 #         Afirma: o caminho wget do install.sh funciona corretamente quando curl esta ausente.
 #
+#   C8 — PATH com diretorio extra contendo trackfw falso → exit 0, warning com caminho, sentinela ausente
+#         Afirma: quando outra copia de trackfw esta no PATH, install.sh avisa em stderr com
+#         "outra copia do trackfw" e o caminho exato, conclui com exit 0 e nunca executa o
+#         binario encontrado (sentinela ausente prova que nao houve execucao).
+#
+#   C9 (contra-braco) — PATH sem nenhuma copia extra de trackfw → exit 0, sem warning
+#         Afirma: quando nao ha outra copia de trackfw no PATH, install.sh nao emite o
+#         warning "outra copia do trackfw".
+#
 # Este gate e em si o AC6 da REQ: reprova quando verificacao e removida do install.sh.
 # Secao "AC6 falsificacao do gate": remove o bloco de verificacao do install.sh em copia
 # temporaria e confirma que tarball substituido e instalado (binario reporta "MALICIOUS"),
@@ -564,6 +573,140 @@ if [ "$STRIP_OK" = "1" ]; then
     echo "  output: $OUT_STRIPPED"
     GATE_FAIL=1
   fi
+fi
+
+# ---------------------------------------------------------------------------
+# C8 e C9 — Deteccao de outras copias do trackfw no PATH (ML-1C)
+#
+# Hermeticidade: PATH construido de forma controlada, sem trackfw do host,
+# para que C8 detecte apenas o binario falso criado aqui e C9 nao detecte nada.
+# ---------------------------------------------------------------------------
+
+# Diretorio de utilitarios hermeticos (sem trackfw) — reutilizado por C8 e C9
+HERMETIC_BIN_C89="$WORK/hermetic-bin-c89"
+mkdir -p "$HERMETIC_BIN_C89"
+ln -sf "$STUB_BIN/curl" "$HERMETIC_BIN_C89/curl"
+for _hutil in sh env awk sed uname tr wc mktemp mkdir mv chmod tar cp rm printf grep gzip python3; do
+  _hp="$(command -v "$_hutil" 2>/dev/null)" || true
+  [ -z "$_hp" ] && continue
+  _hbn="$(basename "$_hp")"
+  case "$_hbn" in trackfw|trackfw.exe) continue ;; esac
+  ln -sf "$_hp" "$HERMETIC_BIN_C89/$_hbn" 2>/dev/null || true
+done
+_hgunzip_p="$(command -v gunzip 2>/dev/null)" || true
+[ -n "$_hgunzip_p" ] && ln -sf "$_hgunzip_p" "$HERMETIC_BIN_C89/gunzip" 2>/dev/null || true
+if command -v sha256sum >/dev/null 2>&1; then
+  ln -sf "$(command -v sha256sum)" "$HERMETIC_BIN_C89/sha256sum"
+elif command -v shasum >/dev/null 2>&1; then
+  ln -sf "$(command -v shasum)" "$HERMETIC_BIN_C89/shasum"
+fi
+# Garantia: diretorio hermetico nao contem trackfw
+if [ -e "$HERMETIC_BIN_C89/trackfw" ] || [ -e "$HERMETIC_BIN_C89/trackfw.exe" ]; then
+  echo "FAIL [C8-C9/setup]: hermetic-bin-c89 contem trackfw — PATH do cenario e invalido" >&2
+  GATE_FAIL=1
+fi
+
+# ---------------------------------------------------------------------------
+# C8 — PATH com diretorio extra contendo trackfw falso
+# Reconciliacao: afirma que install.sh avisa com "outra copia do trackfw" e
+# o caminho exato, conclui com exit 0 e nunca executa o binario encontrado
+# (sentinela ausente prova isso).
+# ---------------------------------------------------------------------------
+EXTRA_BIN_C8="$WORK/extra-bin-c8"
+mkdir -p "$EXTRA_BIN_C8"
+SENTINEL_C8="$WORK/c8-sentinel"
+rm -f "$SENTINEL_C8"
+
+# Fake trackfw: se executado, cria sentinela — prova que install.sh nao o invoca
+cat > "$EXTRA_BIN_C8/trackfw" << C8FAKEEOF
+#!/bin/sh
+touch "${SENTINEL_C8}"
+echo "trackfw v0.0.1-fake"
+C8FAKEEOF
+chmod +x "$EXTRA_BIN_C8/trackfw"
+
+rm -f "$INSTALL_DIR_TMP/trackfw"
+rm -f "$URL_LOG"
+set +e
+OUT_C8=$(env \
+  TRACKFW_VERSION="v${VERSION}" \
+  TRACKFW_INSTALL_DIR="$INSTALL_DIR_TMP" \
+  STUB_SERVE_DIR="$FIXTURES" \
+  STUB_URL_LOG="$URL_LOG" \
+  PATH="$EXTRA_BIN_C8:$HERMETIC_BIN_C89" \
+  sh "$INSTALL_SH" 2>&1)
+RC_C8=$?
+set -e
+
+if [ "$RC_C8" -ne 0 ]; then
+  echo "FAIL [C8/exit-0]: esperava exit 0, saiu com $RC_C8"
+  echo "  output: $OUT_C8"
+  GATE_FAIL=1
+else
+  echo "OK   [C8/exit-0]"
+  SCENARIOS_RUN=$((SCENARIOS_RUN + 1))
+fi
+
+if ! echo "$OUT_C8" | grep -q "outra copia do trackfw"; then
+  echo "FAIL [C8/warning-presente]: output nao contem 'outra copia do trackfw'"
+  echo "  output: $OUT_C8"
+  GATE_FAIL=1
+else
+  echo "OK   [C8/warning-presente]"
+  SCENARIOS_RUN=$((SCENARIOS_RUN + 1))
+fi
+
+if ! echo "$OUT_C8" | grep -qF "$EXTRA_BIN_C8/trackfw"; then
+  echo "FAIL [C8/warning-caminho]: output nao contem o caminho do trackfw falso ($EXTRA_BIN_C8/trackfw)"
+  echo "  output: $OUT_C8"
+  GATE_FAIL=1
+else
+  echo "OK   [C8/warning-caminho]"
+  SCENARIOS_RUN=$((SCENARIOS_RUN + 1))
+fi
+
+if [ -f "$SENTINEL_C8" ]; then
+  echo "FAIL [C8/nao-executado]: sentinela existe — install.sh executou o trackfw falso"
+  GATE_FAIL=1
+else
+  echo "OK   [C8/nao-executado] (sentinela ausente — install.sh nao executou a outra copia)"
+  SCENARIOS_RUN=$((SCENARIOS_RUN + 1))
+fi
+
+# ---------------------------------------------------------------------------
+# C9 (contra-braco) — PATH sem nenhuma copia extra de trackfw
+# Reconciliacao: afirma que quando nao ha outra copia de trackfw no PATH,
+# install.sh nao emite o warning "outra copia do trackfw".
+# ---------------------------------------------------------------------------
+rm -f "$INSTALL_DIR_TMP/trackfw"
+rm -f "$URL_LOG"
+set +e
+OUT_C9=$(env \
+  TRACKFW_VERSION="v${VERSION}" \
+  TRACKFW_INSTALL_DIR="$INSTALL_DIR_TMP" \
+  STUB_SERVE_DIR="$FIXTURES" \
+  STUB_URL_LOG="$URL_LOG" \
+  PATH="$HERMETIC_BIN_C89" \
+  sh "$INSTALL_SH" 2>&1)
+RC_C9=$?
+set -e
+
+if [ "$RC_C9" -ne 0 ]; then
+  echo "FAIL [C9/exit-0]: esperava exit 0, saiu com $RC_C9"
+  echo "  output: $OUT_C9"
+  GATE_FAIL=1
+else
+  echo "OK   [C9/exit-0]"
+  SCENARIOS_RUN=$((SCENARIOS_RUN + 1))
+fi
+
+if echo "$OUT_C9" | grep -q "outra copia do trackfw"; then
+  echo "FAIL [C9/sem-warning]: output contem 'outra copia do trackfw' mas nao deveria"
+  echo "  output: $OUT_C9"
+  GATE_FAIL=1
+else
+  echo "OK   [C9/sem-warning]"
+  SCENARIOS_RUN=$((SCENARIOS_RUN + 1))
 fi
 
 # ---------------------------------------------------------------------------

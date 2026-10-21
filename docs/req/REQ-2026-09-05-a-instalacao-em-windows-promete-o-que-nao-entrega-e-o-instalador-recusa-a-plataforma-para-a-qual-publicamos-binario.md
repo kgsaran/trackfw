@@ -64,16 +64,26 @@ campanha inteira mostrou que teste verde não implica comportamento entregue.
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — O README declara a dependência de **shell** para as funcionalidades que dependem
+- [x] **AC1** — O README declara a dependência de **shell** para as funcionalidades que dependem
       dela, no mesmo lugar onde promete "wherever Node.js ≥ 18". 🔴 A promessa e a ressalva no mesmo
       parágrafo — ressalva em outra seção não é lida.
-- [ ] **AC2** — Existe seção de instalação para Windows, com o caminho real (qual artefato, onde
+      ✅ 2026-10-21: a promessa saiu na v8. O banner do topo declara, no mesmo parágrafo, que guard e
+      atenção são subcomandos Go sem shell POSIX e que o Claude Code no Windows executa hooks pelo
+      Git Bash (máquina sem Git não medida).
+- [x] **AC2** — Existe seção de instalação para Windows, com o caminho real (qual artefato, onde
       colocar, como pôr no `PATH`).
-- [ ] **AC3** — A contradição entre `install.sh` e o release é resolvida **numa direção declarada**:
+      ✅ 2026-10-21: `#### Installing on Windows` no README (npm, pip, install.sh, tarball) com a
+      armadilha medida de mais de um trackfw no PATH.
+- [x] **AC3** — A contradição entre `install.sh` e o release é resolvida **numa direção declarada**:
       ou o instalador passa a suportar Windows, ou ele **diz o que usar** em vez de "não suportado"
       seco. 🔴 Publicar binário que o instalador recusa é o defeito; qualquer das duas saídas o
       fecha, mas a escolha tem de ser escrita.
-- [ ] **AC4** — O limite de ARM64 fica **declarado** onde o usuário lê, não só no `.goreleaser.yaml`.
+      ✅ 2026-10-21, direção escrita pelo KG: **o instalador suporta Windows** (Git Bash/MSYS2/Cygwin,
+      entregue no #373). Resíduo fechado: o `install.sh` lista outras cópias do trackfw no PATH sem
+      executá-las (`check-install-checksum.sh` C8/C9).
+- [x] **AC4** — O limite de ARM64 fica **declarado** onde o usuário lê, não só no `.goreleaser.yaml`.
+      ✅ 2026-10-21: README declara arm64 publicado nos canais, npm/PyPI executados em ARM64 (VM,
+      2026-09-16), jornada de 2026-10-21 em ARM64 e CI de Windows só x64.
 - [x] **AC5** — 🔴 **Jornada verificada de ponta a ponta em Windows**, com o hook **disparando** —
       não apenas escrito. Escrever o arquivo e verificar que ele existe é o mesmo erro dos testes que
       passavam sem exercer nada.
@@ -114,7 +124,7 @@ campanha inteira mostrou que teste verde não implica comportamento entregue.
   destas correções chega a quem instala.
 - ❌ **Não** transformar isto em suporte a WSL como caminho primário. A ADR de shell já decidiu Git
   Bash/WSL para execução de hook; esta REQ é sobre **declarar e verificar**, não sobre re-decidir.
-- ❌ **Não** implementar ARM64. Declarar o limite é o entregável; construir é outra decisão.
+- ~~❌ **Não** implementar ARM64.~~ Obsoleto desde a v8: arm64 é publicado nos três canais (ver medição de 2026-09-16).
 - ❌ **Não** misturar com o CRLF em renderizadores (item 13 do inventário) — superfície própria.
 
 ## Linked ADR

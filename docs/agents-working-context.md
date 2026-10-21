@@ -47094,3 +47094,20 @@ P21 complemento operacional: input workflow_dispatch attention_only boolean fals
 - Correção auditada: helper existente falha em erros comuns e pula apenas falta de capacidade; entrada Windows movida com histórico preservado. Testes TestAttention commands/generators PASS, build PASS, make parity-rest completo PASS após disponibilizar packaging/PyYAML temporários (primeira tentativa parou por dependência ausente); validate 0 violações/163 avisos. Publicação para nova medição CI, sem merge.
 - Concluído: PR #591 aberto em https://github.com/kgsaran/trackfw/pull/591; AC5–AC7 continuam pendentes, sem merge ou release.
 - A pedido do KG, reavaliado o PR de Lourival #590 no head 8ab6e84c9413c73416d0bcbe00ecd3d176a999de: P2 do comentário atendido no segundo consumidor da sonda; regressão cobre prazo inconclusivo e erro real. Revisão independente de segurança sem bloqueadores. No snapshot exato, go build ./..., go vet ./internal/validator, suíte completa do validator (30.290s) e regressão explícita passaram. GitHub confirmou 20 checks SUCCESS, MERGEABLE/CLEAN. Recomendado merge pelo usuário; nenhum comentário, review ou merge publicado.
+
+## 2026-10-21 — apolo-tf — FIM: ML-1A, ML-1B, ML-1D (documentação README Windows)
+
+- README.md atualizado em /private/tmp/trackfw-attention-go.
+- ML-1A: banner topo e aviso npm atualizados — guard/atenção são subcomandos Go (sem POSIX shell/jq/python3), atenção nativa ships na próxima release após v10.0.0, caveat Git Bash C:\Program Files\Git\bin\bash.exe, jornada 2026-10-21 declarada.
+- ML-1B: nova subseção "#### Installing on Windows" com npm/pip/install.sh/tarball e pitfall de múltiplos trackfw no PATH.
+- ML-1D: ARM64 declarado em "What we know works" — publicado, medido em VM ARM64 2026-09-16, jornada 2026-10-21 também ARM64, CI só x64.
+- trackfw validate --json: 0 violations, 166 warnings (baseline pré-existente), exit_code 0.
+- Não tocado: scripts/, roadmap, REQ, nenhum outro arquivo.
+
+## 2026-10-21 — ares-tf (registrado por zeus-tf) — FIM: ML-1C aviso de outra cópia no PATH
+
+- O `scripts/install.sh` lista em stderr toda outra cópia de trackfw/trackfw.exe nas entradas do PATH, sem executá-la. No Windows com `~/bin`, avisa que o Git Bash põe `~/bin` primeiro. Gate `check-install-checksum.sh` com C8 (aviso, caminho e sentinela ausente) e C9 (contra-braço). Auditoria: `sh -n` OK, checksum gate exit 0 (15 cenários), version-pin exit 0. A escrita do Ares no context foi barrada pelo classificador; esta entrada é do arquiteto.
+
+## 2026-10-21 — zeus-tf — FIM: AC1–AC4 fechados; REQ com todos os ACs marcados
+
+- README (Apolo, auditado, com um ajuste de redação do arquiteto) e install.sh (Ares) commitados. AC3 na direção "suportar Windows", decidida pelo KG. Escopo negativo "não implementar ARM64" marcado como obsoleto. REQ continua Open até o merge; roadmap em wip. Sem PR.

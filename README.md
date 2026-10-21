@@ -22,8 +22,16 @@ Every piece of work traces back to a decision. Every decision links to a require
 > The CLIs install on Windows and core governance commands run. Since v9.3.0, guard
 > hooks call `trackfw guard <name>` (the Go binary) instead of a POSIX shell script —
 > measured blocking and allowing correctly in PowerShell 5, cmd.exe, and Git Bash on
-> Windows; Claude Code and Codex CLI proven end-to-end. Windows CI still reports known
-> test failures. There are limits worth knowing; **read
+> Windows; Claude Code and Codex CLI proven end-to-end. Guard and attention
+> (`trackfw guard <name>`, `trackfw attention signal|cleanup`) are Go subcommands — no
+> POSIX shell, `jq`, or `python3` required; native attention is in `main` and ships in
+> the next release after v10.0.0. **Caveat:** Claude Code on Windows executes hooks
+> through Git Bash, which it locates at `C:\Program Files\Git\bin\bash.exe`; a machine
+> without Git installed has not been measured. **Measured 2026-10-21 (Windows ARM64,
+> Claude Code 2.1.304):** guard allowed and denied by real PreToolUse events on Bash and
+> PowerShell tools; attention appeared with the question and cleared after the response
+> in an interactive session — only Claude Code was measured end-to-end in this round.
+> Windows CI still reports known test failures. There are limits worth knowing; **read
 > [Windows support (partial)](#windows-support-partial) before adopting on Windows.**
 
 ---
@@ -112,10 +120,12 @@ declaration.
 
 Shared behavior follows the [command contract](docs/cli-parity.md).
 
-> **The npm package delivers the same Go binary, and the guard hooks run it from `PATH`.**
-> Since v9.3.0, hooks call `trackfw guard <name>` directly; no POSIX shell is needed. On
-> Windows, the npm shim is a `.ps1` that PowerShell's `ExecutionPolicy Restricted` blocks —
-> see [Windows support](#windows-support-partial) before relying on the hooks.
+> **The npm package delivers the same Go binary, and guard and attention hooks run it from
+> `PATH`.** Since v9.3.0, guard hooks call `trackfw guard <name>` directly; attention hooks
+> call `trackfw attention signal|cleanup` (ships in the next release after v10.0.0) — no
+> POSIX shell, `jq`, or `python3` required. On Windows, the npm shim is a `.ps1` that
+> PowerShell's `ExecutionPolicy Restricted` blocks — see
+> [Windows support](#windows-support-partial) before relying on the hooks.
 
 ### Windows support (partial)
 
@@ -128,6 +138,55 @@ We publish a Windows binary and the npm/pip packages install on Windows. That is
 the same as the tool working end to end, and we would rather tell you where the edges
 are than let you find them after adoption.
 
+#### Installing on Windows
+
+**npm:**
+
+```bash
+cmd /c npm install -g trackfw
+```
+
+In PowerShell with `ExecutionPolicy Restricted`, the `.ps1` shim is blocked by the
+policy. Use `trackfw.cmd` instead, or run from `cmd.exe`.
+
+**pip:**
+
+```bash
+pip install trackfw
+```
+
+**Git Bash / MSYS2 / Cygwin (shell installer):**
+
+```bash
+curl -fsSL https://github.com/kgsaran/trackfw/releases/latest/download/install.sh | sh
+```
+
+This installs the binary to `$HOME/bin`. Inside Git Bash (and MSYS2/Cygwin), `~/bin` is
+on `PATH` automatically. In PowerShell and `cmd.exe` it is not — add `%USERPROFILE%\bin`
+to your user `PATH` if you want to call `trackfw` from those shells.
+
+**Tarball (manual):**
+
+Download `trackfw_<version>_windows_amd64.tar.gz` or `windows_arm64.tar.gz` from the
+[releases page](https://github.com/kgsaran/trackfw/releases). Extract `trackfw.exe`,
+move it to a folder of your choice, and add that folder to your user `PATH`.
+
+**Pitfall: more than one `trackfw` on `PATH`**
+
+Measured during the 2026-10-21 Windows journey: Claude Code hooks run through Git Bash,
+and the Git Bash login profile (`/etc/profile`) prepends `~/bin` (`%USERPROFILE%\bin`)
+to `PATH` before other entries. If an older `trackfw` binary — one without the `guard`
+subcommand — lives in `~/bin`, the hook finds it first, exits with "unknown command", and
+causes every Bash tool call to be denied (fail-closed by construction). Check with:
+
+```bash
+where.exe trackfw          # in PowerShell or cmd.exe — shows Windows-registered PATH
+type -a trackfw            # in Git Bash — also shows ~/bin entries
+```
+
+Keep a single copy. Starting with the next release after v10.0.0, `install.sh` lists
+every other `trackfw` binary it finds on `PATH` after installing (it never executes them).
+
 **What we know works**
 
 - All four channels install (`npm install -g trackfw`, `pip install trackfw`,
@@ -136,6 +195,11 @@ are than let you find them after adoption.
   channels deliver the same Go binary; no separate Node.js or Python implementation.
 - Core governance commands — `req new`, `roadmap new`, `roadmap move`, `status`,
   `validate` — run, and artifacts are written with LF endings.
+- **ARM64:** `windows_arm64` is published for npm (`@trackfw-bin/win32-arm64`), PyPI
+  (`win_arm64` wheel), and the release tarball. Both npm and PyPI were executed on a
+  Windows 11 ARM64 VM (2026-09-16, v8.0.0-rc2 artefacts). The guard and attention
+  end-to-end journey on 2026-10-21 (Claude Code 2.1.304) also ran on Windows ARM64.
+  Windows CI runs on x64 only — ARM64 is not covered by the CI matrix.
 
 **What we know does not work yet**
 
