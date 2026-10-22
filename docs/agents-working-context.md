@@ -47374,3 +47374,10 @@ que chamam git sem `LookPath`; chmod no discover.
 - Artefato: `docs/seguranca/2026-10-22-wave0-model-override.md` (novo). Gate `test -s`: OK.
 - Veredito: ML-1A pode seguir com um ajuste — texto do parágrafo precisa de cláusula para destinos sem `model:` (§3.d). Cinco defesas adicionais para o teste listadas no veredito.
 - git status --short do worktree: `M docs/agents-working-context.md`, `?? docs/seguranca/2026-10-22-wave0-model-override.md`.
+
+## 2026-10-22 — zeus-tf — Wave 2 da REQ-2026-09-26 (registro consolidado dos agentes)
+
+- hefesto-tf, ML-2A: APROVADO COM RESSALVA. O A1 é médio: `extractDispatchSection` não tinha mordida. A2–A5 são menores. Parecer em docs/seguranca/2026-10-22-quality-model-override.md.
+- hades-tf, ML-2B, 1ª rodada: REPROVADO, com D-1 a D-6. Ele entregou um diff de código, que não foi aplicado: auditor não escreve código. Também escreveu por engano em .claude/agent-memory do checkout principal e reverteu ele mesmo; conferi que não ficou nada. O diff solto em docs/seguranca foi removido, e uma cópia ficou no scratchpad.
+- prometeu-tf, ML-1B: corretivo com casamento exato e único do cabeçalho, recusa de conteúdo inerte e A2–A5. 133 PASS, conferido pelo arquiteto. A nota do vault foi reescrita para bater com o que foi implementado.
+- Próximo: 2ª rodada do hades-tf, que reexecuta os vetores M1–M5g contra o teste novo.

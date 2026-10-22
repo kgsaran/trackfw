@@ -109,6 +109,18 @@ go build ./...
 go test ./internal/integrations/ ./internal/thirdparty/
 ```
 
+### ML-1B — Corretivo da Wave 2 (localização com mordida e conteúdo inerte)
+**Status:** ✅ Concluído
+**Agente:** prometeu-tf
+**Files affected:** `internal/integrations/render_test.go`, `vault/notes/dispatch-section-substring-match-bypass-2026-10-22.md`
+**Origem:** o Hefesto apontou o A1 (a checagem de localização não tinha mordida) e A2–A5. O Hades, na primeira rodada, apontou D-1 a D-6 (sufixo, H3, duplicata, comentário, fence e recuo).
+**Decisão do arquiteto:** o parser de markdown de 438 linhas que o Hades propôs não foi adotado. Em vez dele: o cabeçalho tem de casar exatamente e uma única vez, e a seção não pode ter ```` ``` ````, `~~~`, `<!--` nem a `phrase1` fora da coluna 0.
+**Acceptance criteria:**
+- [x] 7 braços negativos novos (wrong-section, suffix-heading, h3-heading, duplicate-heading, comment-wrapped, fence-wrapped, indented), cada um com guarda de vacuidade
+- [x] Medido pelo arquiteto: 133 PASS (1 + 12 + 12×10); `go test ./internal/integrations/ ./internal/thirdparty/` ok
+- [x] Mordida: com `extractDispatchSection` devolvendo `body`, os 4 braços de localização reprovam (×12); sem a recusa de conteúdo inerte, os 3 braços de inerte reprovam (×12)
+- [x] Resíduos declarados: M3 (cláusula de exceção na mesma seção) e um fence aberto noutra seção que envolva a seção inteira
+
 ## Wave 2 — Revisão
 > Dependencies: Wave 1 auditada.
 
