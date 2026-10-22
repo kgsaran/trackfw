@@ -28,12 +28,14 @@ REQ: docs/req/REQ-2026-09-26-o-harness-do-arquiteto-nao-proibe-sobrepor-o-modelo
 - Nenhuma ADR é necessária: o defeito é uma omissão num contrato existente, e não há decisão de desenho nova (escopo negativo da REQ).
 
 ## Acceptance Criteria
-- [ ] AC1. O Dispatch contract proíbe explicitamente passar o parâmetro `model` do Agent tool, com a razão escrita (roteamento de custo).
-- [ ] AC2. O contrato manda ler `name:` e `model:` do arquivo instalado e diz que o `model:` é decisão do projeto.
-- [ ] AC3. Há falsificação nas duas direções: a renderização do architect **sem** o parágrafo reprova; **com** ele, passa. Vale em toda representação que o catálogo emite para o architect.
-- [ ] AC4. A enumeração de outros contratos da mesma classe fica escrita, mesmo que dê "nenhum" (Wave 0).
-- [ ] AC5. Os goldens acompanham a mudança, e ela aparece no diff.
+- [x] AC1. O Dispatch contract proíbe explicitamente passar o parâmetro `model` do Agent tool, com a razão escrita (roteamento de custo).
+- [x] AC2. O contrato manda ler `name:` e `model:` do arquivo instalado e diz que o `model:` é decisão do projeto.
+- [x] AC3. Há falsificação nas duas direções: a renderização do architect **sem** o parágrafo reprova; **com** ele, passa. Vale em toda representação que o catálogo emite para o architect.
+- [x] AC4. A enumeração de outros contratos da mesma classe fica escrita, mesmo que dê "nenhum" (Wave 0).
+- [x] AC5. Os goldens acompanham a mudança, e ela aparece no diff.
 - [ ] AC6. `make quality` e o CI ficam verdes.
+- [x] AC7. O TOML do Codex é serializado como basic string do TOML 1.0 (Wave 4, ML-4A e ML-4F).
+- [x] AC8. O escape YAML não deixa sair byte de controle cru (verificado por enumeração), o `identity.Load` valida o slug e recusa DEL, C1 e não-caracteres, e as referências de terceiro não corrompem o TOML nem o JSON (ML-4B, 4C, 4D e 4F).
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -239,6 +241,7 @@ test -s docs/seguranca/2026-10-22-red-team-model-override.md
 **Acceptance criteria:**
 - [x] `make quality` com rc=0, com a máquina ociosa e o HOME isolado. Medido em 2026-10-22 no HEAD da branch: falsificação com 8 chunks, 368 OK / 0 FAIL, `packaging` e `pyyaml` por venv.
 - [ ] CI do PR verde
+- [x] `make quality` refeito depois da Wave 4: rc=0, falsificação com 368 OK / 0 FAIL (HEAD 459762a7, HOME isolado). O CI do 459762a7 passou em todos os jobs, menos o `windows-full-suites`, que ainda estava pendente quando isto foi registrado.
 
 ---
 
