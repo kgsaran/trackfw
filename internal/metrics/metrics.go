@@ -1,17 +1,15 @@
 package metrics
 
 import (
-	"bufio"
 	"encoding/csv"
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/kgsaran/trackfw/internal/pathguard"
+	"github.com/kgsaran/trackfw/internal/translog"
 )
 
 // Transition representa uma entrada do .trackfw-log.
@@ -35,51 +33,30 @@ type Metrics struct {
 	Period        string
 }
 
-// lineRe faz match de linhas do formato:
-// 2026-06-12 14:30  ROADMAP-2026-06-12-auth.md                  backlog → wip
-var lineRe = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s{2,}(\S+)\s{2,}(\S+)\s+→\s+(\S+)`)
-
 // metricsGetwdFn is the function used to obtain the current working directory inside
 // ExportCSV. It defaults to os.Getwd and may be overridden in tests to inject a
 // controlled failure without relying on OS-specific filesystem tricks.
 var metricsGetwdFn func() (string, error) = os.Getwd
 
-// ParseLog lê o arquivo .trackfw-log e retorna todas as transições.
-// Retorna nil, nil se o arquivo não existe.
-func ParseLog(path string) ([]Transition, error) {
-	f, err := os.Open(path)
-	if os.IsNotExist(err) {
+// ParseLog lê o diretório de roadmaps e retorna todas as transições, combinando
+// o arquivo legado .trackfw-log (se existir) com as entradas em .trackfw-log.d/.
+// Retorna nil, nil se nenhuma fonte existe.
+func ParseLog(dir string) ([]Transition, error) {
+	tls, err := translog.ReadAll(dir)
+	if err != nil {
+		return nil, fmt.Errorf("metrics: ler log: %w", err)
+	}
+	if len(tls) == 0 {
 		return nil, nil
 	}
-	if err != nil {
-		return nil, fmt.Errorf("metrics: abrir log: %w", err)
-	}
-	defer f.Close()
-
-	var transitions []Transition
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.TrimSpace(line) == "" {
-			continue
+	transitions := make([]Transition, len(tls))
+	for i, t := range tls {
+		transitions[i] = Transition{
+			Timestamp: t.Timestamp,
+			Basename:  t.Basename,
+			From:      t.From,
+			To:        t.To,
 		}
-		m := lineRe.FindStringSubmatch(line)
-		if m == nil {
-			continue
-		}
-		ts, err := time.ParseInLocation("2006-01-02 15:04", m[1], time.Local)
-		if err != nil {
-			continue
-		}
-		transitions = append(transitions, Transition{
-			Timestamp: ts,
-			Basename:  strings.TrimSpace(m[2]),
-			From:      strings.TrimSpace(m[3]),
-			To:        strings.TrimSpace(m[4]),
-		})
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("metrics: ler log: %w", err)
 	}
 	return transitions, nil
 }

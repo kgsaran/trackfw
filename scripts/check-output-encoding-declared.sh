@@ -110,29 +110,123 @@ cd "$ROOT_DIR"
 
 SELF_BASENAME=$(basename "${BASH_SOURCE[0]}")
 
+# ---------------------------------------------------------------------------
+# --self-test: falsifica o RECONFIGURE_RE do aviso de allowlist obsoleta
+# (AC3, ML-1B, REQ-2026-09-02). Testa nas tres direcoes:
+#   arm(i)   — arquivo allowlisted COM reconfigure(encoding=utf-8) dispara aviso
+#   arm(ii)  — arquivo allowlisted SEM reconfigure (so python3) NAO dispara
+#   arm(iii) — reconfigure apenas em linha # comentario NAO dispara (pop_lines
+#              exclui linhas de comentario puro)
+# Nao usa root real: opera sobre arvore sintetica em tmpdir.
+# ---------------------------------------------------------------------------
+if [[ "${1:-}" == "--self-test" ]]; then
+python3 <<'SELFTEST_PYEOF'
+import re, sys, tempfile, os
+
+UTF8_ALIASES = r"(?i:utf-8|utf8|utf_8|u8)"
+# RECONFIGURE_RE: reconhece sys.stdout.reconfigure(encoding=<alias-utf8>)
+# como forma de declaracao de codificacao de saida. Usado APENAS no aviso
+# de obsolescencia da allowlist — nao satisfaz o ALVO 1 (nao cobre as demais
+# invocacoes de python3 no mesmo arquivo, nem o stdin decode).
+RECONFIGURE_RE = re.compile(
+    r'sys\.stdout\.reconfigure\([^)]*?encoding=["\']?' + UTF8_ALIASES + r'["\']?',
+)
+COMMENT_RE = re.compile(r'^[ \t]*#')
+
+def pop_lines(path):
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        return [(i, raw) for i, raw in enumerate(fh.read().splitlines(), start=1)
+                if not COMMENT_RE.match(raw)]
+
+failures = []
+tmpdir = tempfile.mkdtemp()
+try:
+    # arm (i): reconfigure dentro de heredoc — dispara aviso de allowlist obsoleta
+    # Afirma: RECONFIGURE_RE acha sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    # via population_lines, que inclui corpos de heredoc.
+    f_i = os.path.join(tmpdir, "check-arm-i.sh")
+    with open(f_i, "w") as fh:
+        fh.write(
+            "#!/usr/bin/env bash\n"
+            "python3 - <<'PYEOF'\n"
+            "import sys\n"
+            'sys.stdout.reconfigure(encoding="utf-8", errors="replace", newline="\\n")\n'
+            "print('test')\n"
+            "PYEOF\n"
+        )
+    pop = pop_lines(f_i)
+    if any(RECONFIGURE_RE.search(t) for _n, t in pop):
+        print("  ST-OK arm(i): reconfigure(encoding=utf-8,errors=replace) em heredoc dispara aviso de allowlist obsoleta")
+    else:
+        failures.append("arm(i): RECONFIGURE_RE nao encontrou reconfigure no heredoc body via population_lines")
+
+    # arm (ii): python3 sem reconfigure — NAO dispara aviso de allowlist obsoleta
+    # Afirma: arquivo allowlisted sem nenhuma declaracao de codificacao nao
+    # aciona o aviso de obsolescencia.
+    f_ii = os.path.join(tmpdir, "check-arm-ii.sh")
+    with open(f_ii, "w") as fh:
+        fh.write(
+            "#!/usr/bin/env bash\n"
+            "python3 -c \"print('hello')\"\n"
+        )
+    pop = pop_lines(f_ii)
+    if not any(RECONFIGURE_RE.search(t) for _n, t in pop):
+        print("  ST-OK arm(ii): arquivo sem reconfigure NAO dispara aviso de allowlist obsoleta")
+    else:
+        failures.append("arm(ii): RECONFIGURE_RE disparou em arquivo sem reconfigure — falso positivo")
+
+    # arm (iii): reconfigure apenas em linha # comentario — NAO dispara
+    # Afirma: population_lines exclui linhas de comentario puro; uma mencao
+    # morta a reconfigure num comentario nao aciona o aviso.
+    f_iii = os.path.join(tmpdir, "check-arm-iii.sh")
+    with open(f_iii, "w") as fh:
+        fh.write(
+            "#!/usr/bin/env bash\n"
+            '# sys.stdout.reconfigure(encoding="utf-8") -- so comentario\n'
+            "export PYTHONIOENCODING=utf-8\n"
+            "python3 -c \"print(1)\"\n"
+        )
+    pop = pop_lines(f_iii)
+    matched = [(n, t) for n, t in pop if RECONFIGURE_RE.search(t)]
+    if not matched:
+        print("  ST-OK arm(iii): reconfigure em # comentario excluido por population_lines — sem falso positivo")
+    else:
+        failures.append("arm(iii): population_lines incluiu linha de comentario com reconfigure: %r" % matched)
+
+finally:
+    import shutil
+    shutil.rmtree(tmpdir, ignore_errors=True)
+
+if failures:
+    print("check-output-encoding-declared --self-test: FAIL")
+    for f in failures:
+        print("  - " + f)
+    sys.exit(1)
+print("check-output-encoding-declared --self-test: OK")
+SELFTEST_PYEOF
+exit $?
+fi
+# ---------------------------------------------------------------------------
+
 # Allowlist do ALVO 1 — excecao UNICA e NOMEADA, nunca skip silencioso.
 #
-# scripts/check-roadmap-barrier-contract.sh: o PR #238 de lourivalgarciajunior
-# esta ABERTO sobre exatamente este sitio de codigo — o heredoc que escreve o
-# $CORPUS_LINES_FILE cujo sha vira o CORPUS_HASH. Sob cp1252 o gate estoura
-# (UnicodeEncodeError '✅' na linha 523), mas forcar a codificacao aqui
-# MATARIA O CRASH SEM tornar o CORPUS_HASH independente do SO — o defeito de
-# fundo e o hash depender da codificacao, e e esse que o #238 corrige. Aplicar
-# o remedio parcial agora seria tomar trabalho ja feito por ele enquanto o
-# seguramos por processo. Medido e registrado no ML-1B (42 de 43).
-# Quando o #238 fechar: remover desta lista. Este gate AVISA sozinho quando
-# isso acontecer — se o arquivo passar a ter a declaracao, ele reprova com
-# "excecao obsoleta" em vez de aceitar os dois estados.
-ALLOWLIST=(
-  "scripts/check-roadmap-barrier-contract.sh"
-)
+# AC2 (ML-1B, REQ-2026-09-02, 2026-10-22): allowlist VAZIA.
+# O PR #238 foi mergeado (fix do CORPUS_HASH); o check-roadmap-barrier-contract.sh
+# ganhou `export PYTHONIOENCODING=utf-8` no mesmo ML. A excecao ja nao tem objeto
+# — o arquivo agora declara a codificacao e sera checado como os demais 37 gates.
+# O mecanismo de aviso de obsolescencia (abaixo) continua ativo para proximas
+# excecoes: se um arquivo allowlisted ganhar `export PYTHONIOENCODING=` ou
+# `sys.stdout.reconfigure(encoding=...)`, o gate reprova com "ALLOWLIST OBSOLETA".
+ALLOWLIST=()
 
 # Alvo 2 — fonte dos wrappers nativos de atenção.
 ATTENTION_SOURCES=(
   "internal/generators/scaffold.go"
 )
 
-python3 - "$SELF_BASENAME" "${#ALLOWLIST[@]}" "${ALLOWLIST[@]}" "${ATTENTION_SOURCES[@]}" <<'PYEOF'
+python3 - "$SELF_BASENAME" "${#ALLOWLIST[@]}" \
+  ${ALLOWLIST[@]+"${ALLOWLIST[@]}"} \
+  "${ATTENTION_SOURCES[@]}" <<'PYEOF'
 import glob
 import os
 import re
@@ -175,6 +269,23 @@ PY3_RE = re.compile(r'\bpython3\b')
 COMMENT_RE = re.compile(r'^[ \t]*#')
 
 HEREDOC_RE = re.compile(r'<<-?[ \t]*(["\']?)([A-Za-z_][A-Za-z0-9_]*)\1')
+
+# RECONFIGURE_RE — APENAS para o aviso de allowlist obsoleta (FORMA RECUSADA
+# como declaracao de arquivo no ALVO 1). sys.stdout.reconfigure(encoding=...) e
+# valido para o stdout DO BLOCO Python que o executa, mas nao cobre as demais
+# invocacoes de python3 no mesmo arquivo, nem o decode do stdin. Aceita-lo como
+# declaracao de arquivo violaria o contrato que todos os 37 gates observam.
+# Forma recusada registrada aqui para que a decisao seja explicita, nao ausencia.
+#
+# Uso legitimo: a verificacao de obsolescencia da allowlist (abaixo) usa
+# population_lines() — que inclui corpos de heredoc — para detectar se um
+# arquivo allowlisted ganhou sys.stdout.reconfigure(encoding=...) como
+# declaracao interna ao bloco Python. Isso aciona o aviso "ALLOWLIST OBSOLETA".
+# O tripwire nao exige errors="strict": a forma errors="replace" do PR #238
+# tambem e suficiente para marcar o arquivo como "ja declarado".
+RECONFIGURE_RE = re.compile(
+    r'sys\.stdout\.reconfigure\([^)]*?encoding=["\']?' + UTF8_ALIASES + r'["\']?',
+)
 
 
 def population_lines(path):
@@ -314,14 +425,28 @@ else:
                 % allowed
             )
             continue
-        # (b) o arquivo continua SEM a declaracao. Se ganhou uma, a excecao
-        #     ficou obsoleta e tem de ser removida — nao aceitar os dois estados.
+        # (b) o arquivo continua SEM a declaracao. Se ganhou uma — seja
+        #     `export PYTHONIOENCODING=` (via code_lines, declaracao de arquivo)
+        #     ou `sys.stdout.reconfigure(encoding=...)` (via population_lines,
+        #     inclui corpos de heredoc) — a excecao ficou obsoleta.
+        #     RECONFIGURE_RE nao satisfaz o ALVO 1 (nao e aceito como declaracao
+        #     de arquivo), mas e suficiente para marcar a excecao como obsoleta:
+        #     o arquivo ja cuida da codificacao do bloco mais critico (o heredoc),
+        #     e a razao original da excecao (sem declaracao de nenhum tipo) deixou
+        #     de valer.
         alines = code_lines(allowed)
-        if any(DECL_RE.match(t) for _n, t in alines):
+        pop = population_lines(allowed)
+        has_export_decl = any(DECL_RE.match(t) for _n, t in alines)
+        has_reconfigure = any(RECONFIGURE_RE.search(t) for _n, t in pop)
+        if has_export_decl or has_reconfigure:
+            decl_form = (
+                "export PYTHONIOENCODING" if has_export_decl
+                else "sys.stdout.reconfigure(encoding=...)"
+            )
             failures.append(
-                "ALLOWLIST OBSOLETA: %s agora declara PYTHONIOENCODING. A "
-                "excecao (PR #238 aberto sobre o mesmo sitio) nao se aplica "
-                "mais — remova a entrada de ALLOWLIST neste arquivo." % allowed
+                "ALLOWLIST OBSOLETA: %s agora declara codificacao de saida "
+                "(%s). A excecao nao se aplica mais — remova a entrada de "
+                "ALLOWLIST neste arquivo." % (allowed, decl_form)
             )
         # (c) o arquivo esta de fato na populacao — se deixou de invocar
         #     python3, a excecao tambem ficou sem objeto. Pergunta de

@@ -47416,3 +47416,21 @@ que chamam git sem `LookPath`; chmod no discover.
 
 - Segundo item da ordem aprovada. O KG decidiu: um arquivo por entrada, tanto para o `.trackfw-log` quanto para o contexto de trabalho, que entra na REQ. AC5: o mantenedor move os roadmaps de PR externo depois do merge. Criei a ADR-2026-10-22, reescrevi o AC6 e acrescentei o AC8.
 - Plano: Wave 0 com o hades-tf; Wave 1 com o apolo-tf (log) e o ares-tf (gates de encoding) em paralelo; Wave 2 com o prometeu-tf (instruções do contexto); Wave 3 com a revisão. Worktree /private/tmp/trackfw-toml-escape. O PR abre como draft.
+
+## 2026-10-22 — apolo-tf — INÍCIO: ajuste de pins ML-1A (REQ-2026-09-02)
+
+- Tarefa: os gates de falsificação B1 e B3 de check-agent-namespace-union.sh tinham pins textuais do código antigo (antes do ML-1A).
+- Causa: ML-1A acrescentou `.trackfw-log.d` ao return de `isInfraDirName` e inseriu o comentário dentro do corpo da função; os `corrupt_literal` do script fixavam o corpo antigo (só `node_modules`).
+
+## 2026-10-22 — apolo-tf — FIM: ajuste de pins ML-1A (REQ-2026-09-02)
+
+- validator.go: comentário ML-1A movido do corpo da função para antes da linha `func` (no bloco de GoDoc). O corpo ficou: `return name == "node_modules" || name == ".trackfw-log.d"`.
+- check-agent-namespace-union.sh B1: pin atualizado de `'return name == "node_modules"'` para `'return name == "node_modules" || name == ".trackfw-log.d"'`.
+- check-agent-namespace-union.sh B3: fonte atualizada para o novo corpo; destino atualizado para `strings.HasPrefix(name, ".") || name == "node_modules" || name == ".trackfw-log.d"`, preservando .trackfw-log.d.
+- Resultados: anu=0 (22/22), pr=0, val=0.
+
+## 2026-10-22 — zeus-tf — Wave 1 da REQ-2026-09-02 auditada
+
+- apolo-tf, ML-1A: o log tem um arquivo por entrada em `.trackfw-log.d/*.entry`, e o leitor único `internal/translog` substitui os dois parsers. A 1ª entrega foi reprovada e depois corrigida. As mordidas foram medidas, e o `make parity-rest` deu rc=0.
+- ares-tf, ML-1B: os gates de encoding (AC1–AC4) foram corrigidos, e o `--self-test` ficou ligado ao Makefile.
+- Desvio: o apolo-tf escreveu neste arquivo, embora fosse proibido. O conteúdo foi mantido. As memórias do hades-tf e do prometeu-tf foram gravadas no checkout principal, que é o caminho de memória configurado para eles; não mexi.

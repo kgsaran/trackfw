@@ -11,19 +11,23 @@ import (
 // #407 — a linha de transição ganha fuso e autor, NO FIM.
 //
 // A restrição que decide a forma não é estética: a regex de
-// internal/serve/metrics_log.go não é ancorada no fim, então um sufixo é invisível
-// para ela — mas um offset inserido DEPOIS da hora quebra o \s{2,} que segue o grupo
-// do timestamp, e a linha deixaria de ser lida em silêncio.
+// internal/translog (lineRe — o leitor canônico após ML-1A) não é ancorada no fim,
+// então um sufixo é invisível para ela — mas um offset inserido DEPOIS da hora
+// quebra o \s{2,} que segue o grupo do timestamp, e a linha deixaria de ser lida.
 //
 // Reconciliação (Regra Dura): a frase de cada teste está no seu comentário.
 // ────────────────────────────────────────────────────────────────────────────
 
-// parseLogRe é a regex de internal/serve/metrics_log.go, copiada LITERALMENTE.
+// parseLogRe é a regex de internal/translog (translog.lineRe), copiada LITERALMENTE.
 //
-// 🔴 É uma segunda cópia, e isso é declarado em vez de escondido: o pacote serve não
-// exporta a regex, e importá-lo daqui inverteria a direção de dependência. Se a regex
-// de lá mudar, este teste continua passando sobre a régua antiga — o que ele garante é
-// a compatibilidade com a régua de HOJE, que é exatamente a afirmação do #407.
+// 🔴 É uma segunda cópia, e isso é declarado em vez de escondido: o pacote translog não
+// exporta lineRe, e importá-lo daqui só para re-exportar a regex não faz sentido — o
+// test file já importa translog via roadmap.go indiretamente. Se a regex de lá mudar,
+// este teste continua passando sobre a régua antiga — o que ele garante é a
+// compatibilidade com a régua de HOJE, que é exatamente a afirmação do #407.
+//
+// Histórico: até ML-1A a regex ficava em internal/serve/metrics_log.go; foi movida
+// para internal/translog como leitor canônico.
 var parseLogRe = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s{2,}(\S+)\s{2,}(\S+)\s+→\s+(\S+)`)
 
 // AFIRMA: a linha com fuso e autor no fim continua sendo lida pela régua de hoje — e

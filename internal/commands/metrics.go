@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/i18n"
 	"github.com/kgsaran/trackfw/internal/metrics"
 	"github.com/spf13/cobra"
@@ -17,9 +18,7 @@ func newMetricsCmd() *cobra.Command {
 		Use:   "metrics",
 		Short: i18n.T("metrics.description"),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			logPath := "docs/roadmaps/.trackfw-log"
-
-			transitions, err := metrics.ParseLog(logPath)
+			transitions, err := metrics.ParseLog(config.Load().RoadmapDir)
 			if err != nil {
 				return err
 			}

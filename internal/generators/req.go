@@ -10,6 +10,7 @@ import (
 	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/integrations"
 	"github.com/kgsaran/trackfw/internal/pathguard"
+	"github.com/kgsaran/trackfw/internal/translog"
 	"github.com/kgsaran/trackfw/internal/validator"
 )
 
@@ -510,7 +511,7 @@ func appendREQTransitionLog(basename, fromState, toState string) {
 	_ = appendREQTransitionLogEntry(basename, fromState, toState)
 }
 
-// appendREQTransitionLogEntry writes one transition line to cfg.REQDir/.trackfw-log,
+// appendREQTransitionLogEntry writes one transition line to cfg.REQDir/.trackfw-log.d/,
 // refusing rather than writing when containment cannot be established. It is the
 // mirror of roadmap.go's appendTransitionLogEntry — the two are deliberately
 // written as the same shape.
@@ -522,31 +523,26 @@ func appendREQTransitionLog(basename, fromState, toState string) {
 // root failing is itself a refusal.
 func appendREQTransitionLogEntry(basename, fromState, toState string) error {
 	cfg := config.Load()
-	logFile := filepath.Join(cfg.REQDir, ".trackfw-log")
-	// Guard the log file against ancestor symlinks (append-mode, so GuardedWrite's
-	// atomic replace is not usable).
+	dir := cfg.REQDir
+	// Guard the .d/ directory against ancestor symlinks. translog.WriteEntry creates
+	// the directory if absent, so we guard the path where it will land.
 	root, rootErr := projectRoot()
 	if rootErr != nil {
-		return pathguard.RefuseUnverifiableRoot(logFile, rootErr)
+		return pathguard.RefuseUnverifiableRoot(dir+"/.trackfw-log.d", rootErr)
 	}
-	absLog := filepath.Join(root, logFile)
-	if guardErr := pathguard.RejectAndReport(root, absLog); guardErr != nil {
+	absDotD := filepath.Join(root, dir, ".trackfw-log.d")
+	if guardErr := pathguard.RejectAndReport(root, absDotD); guardErr != nil {
 		return guardErr
 	}
-	// write-containment-allowed: pathguard.RejectAndReport(root, absLog) above dominates this append unconditionally; an unresolvable root refuses via RefuseUnverifiableRoot
-	f, err := os.OpenFile(logFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
+	// write-containment-allowed: pathguard.RejectAndReport(root, absDotD) above; an unresolvable root refuses via RefuseUnverifiableRoot
 	now := time.Now()
-	line := fmt.Sprintf("%s  %-50s  %s → %s%s\n",
+	line := fmt.Sprintf("%s  %-50s  %s → %s%s",
 		now.Format("2006-01-02 15:04"),
 		basename,
 		fromState,
 		toState,
 		transitionLogSuffix(now),
 	)
-	_, err = f.WriteString(line)
+	_, err := translog.WriteEntry(dir, line, now)
 	return err
 }

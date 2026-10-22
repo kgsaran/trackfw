@@ -15,6 +15,7 @@ import (
 	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/integrations"
 	"github.com/kgsaran/trackfw/internal/pathguard"
+	"github.com/kgsaran/trackfw/internal/translog"
 )
 
 // BaselineFile representa o conteúdo de .trackfw-baseline.json
@@ -1965,8 +1966,12 @@ func resolveAgentNamespaces(cfg config.ProjectConfig, dir string) []string {
 // continua entrando na união normalmente; só é excluído da VIOLAÇÃO (não do resolvedor) em
 // validateAgentNamespaceUndeclared, porque ali a informação de que é um nome de estado reservado é o
 // sinal relevante, não um sinal de "não é diretório real".
+//
+// ML-1A: .trackfw-log.d is a per-entry log directory and must never be treated as
+// an agent namespace in by_agent mode — it would generate spurious
+// agent_namespace_hidden violations on every project that has run the new writer.
 func isInfraDirName(name string) bool {
-	return name == "node_modules"
+	return name == "node_modules" || name == ".trackfw-log.d"
 }
 
 // isDotPrefixedName reporta se name começa com "." — um sinal ambíguo (pode ser um namespace
@@ -2870,36 +2875,25 @@ func validateStaleWIP() ([]string, error) {
 }
 
 func latestWIPTransitionTime(cfg config.ProjectConfig, roadmapPath string) (time.Time, bool, []string) {
-	logPath := filepath.Join(cfg.RoadmapDir, ".trackfw-log")
-	data, err := readRegularFile(logPath)
+	// ML-1A: use the unified reader so both .trackfw-log (legacy) and .trackfw-log.d/
+	// entries are considered. ReadAll returns nil, nil when neither source exists.
+	tls, err := translog.ReadAll(cfg.RoadmapDir)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return time.Time{}, false, nil
-		}
-		return time.Time{}, false, []string{inspectionDiagnostic("stale_wip", logPath, err)}
+		return time.Time{}, false, []string{inspectionDiagnostic("stale_wip", cfg.RoadmapDir, err)}
 	}
 	identity := roadmapLogIdentity(cfg, roadmapPath)
 	var latest time.Time
 	found := false
-	var diagnostics []string
-	for _, line := range strings.Split(string(data), "\n") {
-		if strings.TrimSpace(line) == "" {
+	for _, t := range tls {
+		if t.Basename != identity || t.To != "wip" {
 			continue
 		}
-		timestamp, name, toState, ok := parseTransitionLogLine(line)
-		if !ok {
-			diagnostics = append(diagnostics, fmt.Sprintf("stale_wip: invalid support line in %q: %q", logPath, line))
-			continue
-		}
-		if name != identity || toState != "wip" {
-			continue
-		}
-		if !found || timestamp.After(latest) {
-			latest = timestamp
+		if !found || t.Timestamp.After(latest) {
+			latest = t.Timestamp
 			found = true
 		}
 	}
-	return latest, found, diagnostics
+	return latest, found, nil
 }
 
 func roadmapLogIdentity(cfg config.ProjectConfig, roadmapPath string) string {

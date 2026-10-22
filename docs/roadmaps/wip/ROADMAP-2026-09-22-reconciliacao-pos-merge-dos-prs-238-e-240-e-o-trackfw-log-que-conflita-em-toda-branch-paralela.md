@@ -74,33 +74,35 @@ test -s docs/seguranca/2026-10-22-wave0-log-por-entrada.md
 > Dependencies: Wave 0 auditada.
 
 ### ML-1A — Log de transições com um arquivo por entrada (ADR D1, AC6, AC7)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** apolo-tf
 **Files affected:** escritores (`generators/roadmap.go`, `generators/req.go`), um pacote leitor único, todos os leitores listados no
 Context, `generators/scaffold.go` (o comentário do `gitAttributesBlock`), `docs/cli-parity.md` e os testes. A lista final vem da Wave 0.
 **Acceptance criteria:**
-- [ ] Uma transição grava `<dir>/.trackfw-log.d/<AAAAMMDDTHHMMSSZ>-<h8>.entry` com uma linha. Não há mais append no arquivo.
-- [ ] Sobra um único parser. Todos os leitores leem o legado e o diretório. Nenhum leitor lê só o arquivo, e um teste prova isso.
-- [ ] Teste em `t.TempDir()` **sem `.gitattributes`**: duas branches movem roadmaps pelo código real, e o `git merge` sai limpo, com
+- [x] Uma transição grava `<dir>/.trackfw-log.d/<AAAAMMDDTHHMMSSZ>-<h8>.entry` com uma linha. Não há mais append no arquivo.
+- [x] Sobra um único parser. Todos os leitores leem o legado e o diretório. Nenhum leitor lê só o arquivo, e um teste prova isso.
+- [x] Teste em `t.TempDir()` **sem `.gitattributes`**: duas branches movem roadmaps pelo código real, e o `git merge` sai limpo, com
       igualdade de conjunto das entradas. O braço contrário, com o formato antigo, conflita no mesmo teste.
-- [ ] A travessia de `roadmap_dir`/`req_dir` ignora `.trackfw-log.d/`.
+- [x] A travessia de `roadmap_dir`/`req_dir` ignora `.trackfw-log.d/`.
+**Auditoria do arquiteto:** a 1ª entrega foi reprovada. O `TestDiscoverBootstrapLog` reprovava, porque `internal/commands` não foi rodado; o `check-write-containment` reprovava no `translog`; faltavam o teste do `by_agent` e a mordida. No corretivo: os 7 pacotes ficaram verdes; `wc=0`, com os 3 chamadores conferidos passando pelo `pathguard` antes do `WriteEntry`; e as 3 mordidas reprovam como esperado (`CONFLICT (add/add)` no append legado). Depois, as anotações de contrato no `cli-parity.md` e os pins B1/B3 de `check-agent-namespace-union.sh` foram atualizados para o `isInfraDirName` novo. `make parity-rest` com rc=0, medido pelo arquiteto.
 
 ### ML-1B — Gates de encoding (AC1–AC4 da REQ)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** ares-tf
 **Files affected:** `scripts/check-roadmap-barrier-contract.sh`, `scripts/check-output-encoding-declared.sh` e o autoteste/fixture deles
 **Acceptance criteria:**
-- [ ] AC1: `errors="replace"` vira `strict`, ou o motivo fica escrito com medição. Falsificação com surrogate solto.
-- [ ] AC2/AC3: a allowlist é removida ou reescrita, e o aviso de obsoleta passa a reconhecer `sys.stdout.reconfigure`. Falsificado
+- [x] AC1: `errors="replace"` vira `strict`, ou o motivo fica escrito com medição. Falsificação com surrogate solto.
+- [x] AC2/AC3: a allowlist é removida ou reescrita, e o aviso de obsoleta passa a reconhecer `sys.stdout.reconfigure`. Falsificado
       nas duas direções.
-- [ ] AC4: exposição a CRLF medida. Zero encerra o item.
-- [ ] Para script novo ou alterado, `make parity-rest` no handoff.
+- [x] AC4: exposição a CRLF medida. Zero encerra o item.
+- [x] Para script novo ou alterado, `make parity-rest` no handoff.
 
 **Gates da wave:**
 ```bash
 go build ./...
 go test ./internal/generators/ ./internal/metrics/ ./internal/serve/ ./internal/validator/ ./internal/discover/ ./internal/commands/
 ```
+**Auditoria do arquiteto:** `strict` com medição de surrogate (o `CORPUS_HASH` não mudou), allowlist vazia, `RECONFIGURE_RE` só no aviso de allowlist obsoleta (estreitamento justificado: o `reconfigure` cobre só um bloco), AC4 = 0 de 10 sítios expostos. O `--self-test` foi ligado ao `parity-rest` no Makefile, num ajuste posterior.
 
 ## Wave 2 — Contexto de trabalho com um arquivo por entrada (ADR D2, AC8)
 > Dependencies: Wave 1 auditada. É sequencial ao ML-1A porque compartilha o pacote `internal/generators`.

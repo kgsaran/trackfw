@@ -37,8 +37,7 @@ func metricsHandler(w http.ResponseWriter, _ *http.Request, cfg config.ProjectCo
 	setCORSHeaders(w)
 	w.Header().Set("Content-Type", "application/json")
 
-	logFile := filepath.Join(cfg.RoadmapDir, ".trackfw-log")
-	transitions := ParseLog(logFile)
+	transitions := ParseLog(cfg.RoadmapDir)
 
 	leadTime := calcLeadTime(transitions)
 	cycleTime := calcCycleTime(transitions)

@@ -16,6 +16,7 @@ import (
 	"github.com/kgsaran/trackfw/internal/integrations"
 	"github.com/kgsaran/trackfw/internal/pathguard"
 	"github.com/kgsaran/trackfw/internal/roadmapdoc"
+	"github.com/kgsaran/trackfw/internal/translog"
 	"github.com/kgsaran/trackfw/internal/validator"
 )
 
@@ -1178,32 +1179,27 @@ func appendTransitionLog(basename, fromState, toState string) {
 // The refusal was already non-silent since ML-7B; what ML-9A adds is that the
 // root failing is itself a refusal.
 func appendTransitionLogEntry(basename, fromState, toState string) error {
-	lp := logPath()
-	// Guard the log file against ancestor symlinks. This is an append-mode write so
-	// we cannot use GuardedWrite (which does atomic replace).
+	dir := config.Load().RoadmapDir
+	// Guard the .d/ directory against ancestor symlinks. translog.WriteEntry creates
+	// the directory if absent, so we guard the path where it will land.
 	root, rootErr := projectRoot()
 	if rootErr != nil {
-		return pathguard.RefuseUnverifiableRoot(lp, rootErr)
+		return pathguard.RefuseUnverifiableRoot(dir+"/.trackfw-log.d", rootErr)
 	}
-	absLog := filepath.Join(root, lp)
-	if guardErr := pathguard.RejectAndReport(root, absLog); guardErr != nil {
+	absDotD := filepath.Join(root, dir, ".trackfw-log.d")
+	if guardErr := pathguard.RejectAndReport(root, absDotD); guardErr != nil {
 		return guardErr
 	}
-	// write-containment-allowed: pathguard.RejectAndReport(root, absLog) above dominates this append unconditionally; an unresolvable root refuses via RefuseUnverifiableRoot
-	f, err := os.OpenFile(lp, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
+	// write-containment-allowed: pathguard.RejectAndReport(root, absDotD) above; an unresolvable root refuses via RefuseUnverifiableRoot
 	now := time.Now()
-	line := fmt.Sprintf("%s  %-50s  %s → %s%s\n",
+	line := fmt.Sprintf("%s  %-50s  %s → %s%s",
 		now.Format("2006-01-02 15:04"),
 		basename,
 		fromState,
 		toState,
 		transitionLogSuffix(now),
 	)
-	_, err = f.WriteString(line)
+	_, err := translog.WriteEntry(dir, line, now)
 	return err
 }
 

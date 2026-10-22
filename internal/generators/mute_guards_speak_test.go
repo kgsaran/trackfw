@@ -136,8 +136,10 @@ func TestAppendTransitionLogRefusalIsAudible(t *testing.T) {
 	if controlOutput != "" {
 		t.Fatalf("clean tree must print nothing, got: %q", controlOutput)
 	}
-	if _, err := os.Stat(filepath.Join(clean, logRelative)); err != nil {
-		t.Fatalf("control arm did not reach the write (%v) — the guard was never exercised, so the loud arm below would prove nothing", err)
+	// ML-1A: writer creates .trackfw-log.d/ directory, not the legacy .trackfw-log file.
+	dotD := filepath.Join(clean, config.Load().RoadmapDir, ".trackfw-log.d")
+	if info, err := os.Stat(dotD); err != nil || !info.IsDir() {
+		t.Fatalf("control arm did not create .trackfw-log.d/ (%v) — the guard was never exercised, so the loud arm below would prove nothing", err)
 	}
 
 	// ── loud arm: ancestor symlink, guard fires, refusal must be AUDIBLE ───
@@ -179,8 +181,10 @@ func TestAppendREQTransitionLogRefusalIsAudible(t *testing.T) {
 	if controlOutput != "" {
 		t.Fatalf("clean tree must print nothing, got: %q", controlOutput)
 	}
-	if _, err := os.Stat(filepath.Join(clean, logRelative)); err != nil {
-		t.Fatalf("control arm did not reach the write (%v) — the guard was never exercised, so the loud arm below would prove nothing", err)
+	// ML-1A: writer creates .trackfw-log.d/ directory, not the legacy .trackfw-log file.
+	dotDReq := filepath.Join(clean, config.Load().REQDir, ".trackfw-log.d")
+	if info, err := os.Stat(dotDReq); err != nil || !info.IsDir() {
+		t.Fatalf("control arm did not create .trackfw-log.d/ (%v) — the guard was never exercised, so the loud arm below would prove nothing", err)
 	}
 
 	baited := t.TempDir()
