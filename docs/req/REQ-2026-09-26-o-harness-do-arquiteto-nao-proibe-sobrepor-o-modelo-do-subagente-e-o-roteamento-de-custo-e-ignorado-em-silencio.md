@@ -3,7 +3,7 @@ status: Open
 date: 2026-09-26
 author: "trackfw_architect"
 adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-26-o-harness-do-arquiteto-nao-proibe-sobrepor-o-modelo-do-subagente-e-o-roteamento-de-custo-e-ignorado-em-silencio.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-26-o-harness-do-arquiteto-nao-proibe-sobrepor-o-modelo-do-subagente-e-o-roteamento-de-custo-e-ignorado-em-silencio.md"
 ---
 
 # REQ: o harness do arquiteto nao proibe sobrepor o modelo do subagente e o roteamento de custo e ignorado em silencio
@@ -70,6 +70,20 @@ verificação, e o leitor cumprindo a letra sem alcançar a razão.
       **visível no diff** — golden que muda sem ninguém ver é a próxima claim falsa
 - [ ] `make quality` e **CI** verdes
 
+### Ampliação de 2026-10-22: escape TOML do destino Codex (decisão do KG)
+
+O red team do ML-2B achou que o destino Codex (`custom-agent-toml`, `internal/integrations/render.go:217-224`)
+serializa `name`, `description`, `model` e `developer_instructions` com `strconv.Quote`, que é um escape de Go, não de TOML.
+A causa é outra, mas o KG decidiu em 2026-10-22: *"o Escape TOML entra nesta PR"*.
+
+Medido em 2026-10-22, com `strconv.Quote` e depois `tomllib` no Python 3.15:
+- `\a` (0x07) e `\v` (0x0B) dão TOML inválido (*Unescaped '\'*);
+- para outros bytes de controle (0x01, 0x7F) e para UTF-8 inválido (0xFF), o `strconv.Quote` emite `\xHH`, que só existe no TOML 1.1;
+- no TOML 1.0, que a CLI de destino pode estar usando, o arquivo inteiro deixa de carregar.
+O `description` recebe o `DisplayName` da identidade configurada pelo usuário (`render.go:210`).
+
+- [ ] **AC7** — Os quatro campos do TOML do Codex são serializados como *basic string* do TOML 1.0: só `\b \t \n \f \r \" \\` e `\uXXXX` para os demais caracteres de controle. Há falsificação nas duas direções: a saída para entradas com 0x00–0x1F, 0x7F e UTF-8 inválido é TOML 1.0 válido, e a versão antiga (`strconv.Quote`) reprova no mesmo teste.
+
 ## Negative scope — o que esta REQ NÃO faz
 
 - **Não** muda o `model:` de nenhum agente. A escolha de qual modelo cada papel usa é do projeto e
@@ -87,4 +101,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-26-o-harness-do-arquiteto-nao-proibe-sobrepor-o-modelo-do-subagente-e-o-roteamento-de-custo-e-ignorado-em-silencio.md`
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-26-o-harness-do-arquiteto-nao-proibe-sobrepor-o-modelo-do-subagente-e-o-roteamento-de-custo-e-ignorado-em-silencio.md`

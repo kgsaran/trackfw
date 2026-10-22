@@ -304,3 +304,5 @@
 - [codex-rewriter-ls-corrompe-comando-composto-2026-10-20](codex-rewriter-ls-corrompe-comando-composto-2026-10-20.md) — Hook global de ls concatena --color=never ao último comando de uma lista shell e quebra git status.
 
 - [codex-guard-polyglot-aborta-zsh-equals-2026-10-20](codex-guard-polyglot-aborta-zsh-equals-2026-10-20.md) — Gerador trackfw emite semente =2 que aborta zsh antes de executar guards; matriz deve testar shell real.
+
+- [dispatch-section-substring-match-bypass-2026-10-22](dispatch-section-substring-match-bypass-2026-10-22.md) — `strings.Index` em extractDispatchSection é substring, não linha exata: sufixo/H3/duplicata/comment/fence passam sem corrective. Correção: a linha `## Dispatch contract` precisa casar exatamente, uma única vez, e a seção não pode ter fence, comentário HTML ou recuo. Ficou de fora: uma cláusula de exceção na mesma seção (barrada só pela auditoria do diff).

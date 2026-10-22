@@ -1,7 +1,9 @@
 package integrations
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -740,6 +742,11 @@ func TestBuildPlansDefaultsToFirstNonLegacySurface(t *testing.T) {
 // audit", tornando explícito que nomear um especialista em prosa/`squad:` não roteia a chamada da
 // Agent tool — todo dispatch exige o parâmetro `subagent_type`, cujo valor correto é o `name:` do
 // agente instalado do role-alvo (identity-agnostic, nunca um nome fixo).
+//
+// Re-congelado em 2026-10-22 pela REQ-2026-09-26-o-harness-do-arquiteto-nao-proibe-sobrepor-o-modelo-do-subagente-e-o-roteamento-de-custo-e-ignorado-em-silencio:
+// architect.md ganhou um segundo parágrafo em "## Dispatch contract" proibindo explicitamente
+// passar o parâmetro `model` do Agent tool, com a razão escrita (roteamento de custo é decisão
+// do projeto, silenciosamente sobrescrita sem erro ou aviso quando `model` é passado).
 
 func readGolden(t *testing.T, name string) []byte {
 	t.Helper()
@@ -1520,3 +1527,482 @@ func TestRenderSubagentRouteRewritesSignatureLine(t *testing.T) {
 		t.Fatalf("título da assinatura não preservado:\n%s", output)
 	}
 }
+
+// extractBodyText returns the decoded body text for the given representation.
+// For custom-agent-toml, it decodes developer_instructions via strconv.Unquote.
+// For agent-json and cli-agent-json, it decodes the "prompt" field from JSON.
+// For all other representations, it returns the full output as a string.
+func extractBodyText(t *testing.T, output []byte, repr string) string {
+	t.Helper()
+	out := string(output)
+	switch repr {
+	case "custom-agent-toml":
+		const marker = "developer_instructions = "
+		idx := strings.Index(out, marker)
+		if idx < 0 {
+			t.Fatalf("developer_instructions not found in custom-agent-toml output")
+		}
+		valuePart := out[idx+len(marker):]
+		if nl := strings.Index(valuePart, "\n"); nl >= 0 {
+			valuePart = valuePart[:nl]
+		}
+		decoded, err := strconv.Unquote(valuePart)
+		if err != nil {
+			t.Fatalf("strconv.Unquote failed for developer_instructions: %v\nraw: %q", err, valuePart)
+		}
+		return decoded
+	case "agent-json", "cli-agent-json":
+		var m map[string]string
+		if err := json.Unmarshal(output, &m); err != nil {
+			t.Fatalf("json.Unmarshal failed for %s: %v", repr, err)
+		}
+		return m["prompt"]
+	default:
+		return out
+	}
+}
+
+// extractDispatchSection returns the body text between the "## Dispatch contract"
+// heading and the next "## " heading. Returns an empty string if the section is
+// not found or appears more than once. Matching is exact and line-level: the
+// needle is "\n## Dispatch contract\n", so headings with any prefix or suffix
+// (e.g. "## Old Dispatch contract", "### Dispatch contract") and duplicate
+// headings all return "".
+func extractDispatchSection(body string) string {
+	const needle = "\n## Dispatch contract\n"
+	full := "\n" + body
+	count := strings.Count(full, needle)
+	if count != 1 {
+		return ""
+	}
+	idx := strings.Index(full, needle)
+	content := full[idx+len(needle):]
+	if next := strings.Index(content, "\n## "); next >= 0 {
+		return content[:next]
+	}
+	return content
+}
+
+// TestArchitectDispatchContractForbidsModelOverride asserts that the prohibition
+// on passing the Agent tool's `model` parameter is present inside the
+// ## Dispatch contract section in every representation the catalog emits for
+// the architect agent. It exercises eleven arms per representation:
+//   - positive (no identity): both required phrases are in the section;
+//   - positive (zeusIdentity): identity injection does not destroy the section;
+//   - negative/no-paragraph: entire prohibition paragraph removed — proves
+//     phrase1 and phrase2 checks have real bite;
+//   - negative/no-rationale: cost-routing rationale sentence removed — proves
+//     phrase2 check has real bite when phrase1 is still present;
+//   - negative/wrong-section: paragraph moved outside ## Dispatch contract —
+//     proves location check (extractDispatchSection) has real bite;
+//   - negative/suffix-heading: heading renamed with a prefix modifier —
+//     proves exact heading match rejects "## Old Dispatch contract";
+//   - negative/h3-heading: heading demoted to H3 —
+//     proves exact H2 match rejects "### Dispatch contract";
+//   - negative/duplicate-heading: second empty ## Dispatch contract inserted —
+//     proves uniqueness check (count != 1) rejects duplicate headings;
+//   - negative/comment-wrapped: paragraph inside HTML comment —
+//     proves "<!--" detection rejects inert content;
+//   - negative/fence-wrapped: paragraph inside fenced code block —
+//     proves "` ``` `" detection rejects inert content;
+//   - negative/indented: paragraph prefixed with 4 spaces —
+//     proves column-0 check rejects indented phrase1;
+//   - negative/html-block-wrapped: paragraph inside <div hidden>...</div> —
+//     proves HTML block tag detection (line starting with < after ≤3 spaces)
+//     rejects inert HTML-wrapped content (D-7).
+//
+// REQ: REQ-2026-09-26-o-harness-do-arquiteto-nao-proibe-sobrepor-o-modelo-do-subagente-e-o-roteamento-de-custo-e-ignorado-em-silencio
+func TestArchitectDispatchContractForbidsModelOverride(t *testing.T) {
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	item, ok := catalog.Item(KindAgents, "architect")
+	if !ok {
+		t.Fatal("agente 'architect' não encontrado no catalog")
+	}
+	source, err := catalog.ReadAsset(item)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Normalize CRLF so the needle works regardless of line-ending convention
+	// in the embedded asset (see TestRenderWithoutIdentityMatchesFrozenGoldens_CRLFSource).
+	source = NormalizeCRLF(source)
+
+	// paragraphNeedle is the first sentence of the new paragraph — no newlines,
+	// to avoid CRLF fragility (wave 0 §4.2). It is a substring of phrase1, so
+	// removing it from the source also removes phrase1 from all rendered outputs.
+	const paragraphNeedle = "Never pass the Agent tool's `model` parameter."
+	// phrase1 and phrase2 are the two semantic anchors that must appear inside
+	// the ## Dispatch contract section in every rendered representation.
+	const phrase1 = "Never pass the Agent tool's `model` parameter"
+	const phrase2 = "`model:` is the project's cost routing"
+
+	// noParagraph: entire prohibition paragraph removed, including its preceding
+	// blank line. The needle is derived by slicing from paragraphNeedle's position
+	// to the end of the line, then prepending \n to absorb the blank separator.
+	// bytes.Equal guard catches vacuity if the needle is not found (wave 0 §4.2).
+	var noParagraph []byte
+	{
+		idx := bytes.Index(source, []byte(paragraphNeedle))
+		if idx < 0 {
+			t.Fatal("paragraphNeedle not found in source; cannot build noParagraph needle — " +
+				"verify CRLF normalization and paragraph text in architect.md")
+		}
+		end := bytes.IndexByte(source[idx:], '\n')
+		var paraLine []byte
+		if end < 0 {
+			paraLine = source[idx:]
+		} else {
+			paraLine = source[idx : idx+end+1] // include trailing \n
+		}
+		needle := append([]byte("\n"), paraLine...)
+		noParagraph = bytes.Replace(source, needle, []byte{}, 1)
+	}
+	if bytes.Equal(noParagraph, source) {
+		t.Fatal("noParagraph vacuity guard: bytes.Equal — blank+paragraph needle not found in source; " +
+			"negative/no-paragraph arm would be vacuous; verify CRLF normalization and paragraph text")
+	}
+
+	// noRationale: same source but with the cost-routing rationale sentence removed,
+	// leaving the prohibition ("Never pass…") intact. After removal phrase2 is absent
+	// but phrase1 is still present — exercises the phrase2 check in checkPhrases.
+	const rationalePhrase = "`model:` is the project's cost routing for that role — the project's decision, not yours. "
+	noRationale := []byte(strings.Replace(string(source), rationalePhrase, "", 1))
+	if bytes.Equal(noRationale, source) {
+		t.Fatal("noRationale vacuity guard: bytes.Equal — rationale phrase not found in source; " +
+			"negative/no-rationale arm would be vacuous; verify text in architect.md")
+	}
+
+	// checkPhrases returns a non-empty message if either required phrase is
+	// absent from the ## Dispatch contract section of the decoded body, or if
+	// the section contains inert-content markers (fenced blocks or HTML comments)
+	// that could hide the phrases, or if phrase1 does not start at column 0.
+	checkPhrases := func(body string) string {
+		section := extractDispatchSection(body)
+		if section == "" {
+			return "## Dispatch contract section not found in decoded body"
+		}
+		if strings.Contains(section, "```") {
+			return "## Dispatch contract section contains fenced-block marker (` ``` `)"
+		}
+		if strings.Contains(section, "~~~") {
+			return "## Dispatch contract section contains fenced-block marker (~~~)"
+		}
+		if strings.Contains(section, "<!--") {
+			return "## Dispatch contract section contains HTML comment marker (<!--)"
+		}
+		for _, line := range strings.Split(section, "\n") {
+			trimmed := strings.TrimLeft(line, " ")
+			if strings.HasPrefix(trimmed, "<") && len(line)-len(trimmed) <= 3 {
+				return "## Dispatch contract section contains HTML block tag at start of line (D-7)"
+			}
+		}
+		if !strings.Contains(section, phrase1) {
+			return fmt.Sprintf("phrase1 absent from ## Dispatch contract section:\n%q", section)
+		}
+		// phrase1 must begin at column 0 of its line — indentation or fence wrapping
+		// that moves it off column 0 makes it inert even if the substring is present.
+		foundAtCol0 := false
+		for _, line := range strings.Split(section, "\n") {
+			if strings.HasPrefix(line, phrase1) {
+				foundAtCol0 = true
+				break
+			}
+		}
+		if !foundAtCol0 {
+			return "phrase1 is present but does not start at column 0 in ## Dispatch contract section"
+		}
+		if !strings.Contains(section, phrase2) {
+			return fmt.Sprintf("phrase2 absent from ## Dispatch contract section:\n%q", section)
+		}
+		return ""
+	}
+
+	// Pre-compute mutated sources for the new negative arms.
+	// prohibitionLine is the full content of the prohibition paragraph line
+	// (without trailing \n). paragraphNeedleBytes is "\n" + prohibitionLine + "\n"
+	// and matches the same needle used to build noParagraph above.
+	var prohibitionLine []byte
+	var paragraphNeedleBytes []byte
+	{
+		idx := bytes.Index(source, []byte(paragraphNeedle))
+		// idx >= 0: paragraphNeedle vacuity guard above already confirmed it exists.
+		end := bytes.IndexByte(source[idx:], '\n')
+		if end < 0 {
+			prohibitionLine = source[idx:]
+		} else {
+			prohibitionLine = source[idx : idx+end]
+		}
+		paragraphNeedleBytes = append(append([]byte{'\n'}, prohibitionLine...), '\n')
+	}
+
+	// wrongSection: prohibition paragraph removed from ## Dispatch contract and
+	// appended after ## Post-microbatch audit. The dispatch section is found by
+	// extractDispatchSection but phrase1 is no longer in it.
+	wrongSection := func() []byte {
+		const postAuditHeading = "\n## Post-microbatch audit\n"
+		para := string(prohibitionLine)
+		removed := bytes.Replace(source, paragraphNeedleBytes, nil, 1)
+		insert := []byte(postAuditHeading + para + "\n\n")
+		return bytes.Replace(removed, []byte(postAuditHeading), insert, 1)
+	}()
+	if bytes.Equal(wrongSection, source) {
+		t.Fatal("wrongSection vacuity guard: source unchanged after mutation")
+	}
+	if !bytes.Contains(wrongSection, prohibitionLine) {
+		t.Fatal("wrongSection vacuity guard: prohibition paragraph not found in mutated source — " +
+			"paragraph was removed but not reinserted; arm would conflate with no-paragraph")
+	}
+
+	// suffixHeading: "## Dispatch contract" renamed to "## Old Dispatch contract".
+	// extractDispatchSection needle "\n## Dispatch contract\n" does not match.
+	suffixHeading := bytes.Replace(source,
+		[]byte("\n## Dispatch contract\n"), []byte("\n## Old Dispatch contract\n"), 1)
+	if bytes.Equal(suffixHeading, source) {
+		t.Fatal("suffixHeading vacuity guard: source unchanged after mutation")
+	}
+
+	// h3Heading: "## Dispatch contract" demoted to "### Dispatch contract".
+	// "\n## Dispatch contract\n" is not a substring of "\n### Dispatch contract\n".
+	h3Heading := bytes.Replace(source,
+		[]byte("\n## Dispatch contract\n"), []byte("\n### Dispatch contract\n"), 1)
+	if bytes.Equal(h3Heading, source) {
+		t.Fatal("h3Heading vacuity guard: source unchanged after mutation")
+	}
+
+	// duplicateHeading: an empty second "## Dispatch contract" section inserted
+	// before "## Workflow". strings.Count reaches 2, so extractDispatchSection returns "".
+	duplicateHeading := bytes.Replace(source,
+		[]byte("\n## Workflow\n"), []byte("\n## Dispatch contract\n\n## Workflow\n"), 1)
+	if bytes.Equal(duplicateHeading, source) {
+		t.Fatal("duplicateHeading vacuity guard: source unchanged after mutation")
+	}
+
+	// commentWrapped: prohibition paragraph wrapped in an HTML comment.
+	// Section contains "<!--"; checkPhrases rejects.
+	commentWrapped := bytes.Replace(source, paragraphNeedleBytes,
+		[]byte("\n<!--\n"+string(prohibitionLine)+"\n-->"), 1)
+	if bytes.Equal(commentWrapped, source) {
+		t.Fatal("commentWrapped vacuity guard: source unchanged after mutation")
+	}
+
+	// fenceWrapped: prohibition paragraph wrapped in a fenced code block.
+	// Section contains "```"; checkPhrases rejects.
+	fenceWrapped := bytes.Replace(source, paragraphNeedleBytes,
+		[]byte("\n```\n"+string(prohibitionLine)+"\n```"), 1)
+	if bytes.Equal(fenceWrapped, source) {
+		t.Fatal("fenceWrapped vacuity guard: source unchanged after mutation")
+	}
+
+	// indented: prohibition paragraph prefixed with 4 spaces.
+	// phrase1 does not start at column 0; checkPhrases rejects.
+	indented := bytes.Replace(source, paragraphNeedleBytes,
+		[]byte("\n    "+string(prohibitionLine)+"\n"), 1)
+	if bytes.Equal(indented, source) {
+		t.Fatal("indented vacuity guard: source unchanged after mutation")
+	}
+
+	// htmlBlockWrapped: prohibition paragraph enclosed in <div hidden>...</div>.
+	// checkPhrases rejects because the section contains a line that starts with
+	// "<" after at most 3 leading spaces (D-7: <div hidden>, <pre>, <script>, etc.).
+	htmlBlockWrapped := bytes.Replace(source, paragraphNeedleBytes,
+		[]byte("\n<div hidden>\n"+string(prohibitionLine)+"\n</div>"), 1)
+	if bytes.Equal(htmlBlockWrapped, source) {
+		t.Fatal("htmlBlockWrapped vacuity guard: source unchanged after mutation")
+	}
+
+	coveredReprs := make(map[string]bool)
+	requiredReprs := []string{
+		"subagent", "custom-agent-toml", "agent-markdown", "agent-directory",
+		"agent-json", "custom-agent", "skill", "cli-agent-json", "opencode-agent",
+	}
+
+	for _, tgt := range catalog.Targets {
+		for _, surf := range tgt.Surfaces {
+			agentsCap := surf.Capabilities.Agents
+			if agentsCap.Representation == "" || agentsCap.SupportLevel == "unsupported" {
+				continue
+			}
+			coveredReprs[agentsCap.Representation] = true
+			capability := Capability{Representation: agentsCap.Representation}
+
+			t.Run(tgt.ID+"/"+surf.ID, func(t *testing.T) {
+				// Positive: no identity.
+				out, err := Render(item, KindAgents, capability, source, identity.Config{}, tgt.ID, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				body := extractBodyText(t, out, agentsCap.Representation)
+				if msg := checkPhrases(body); msg != "" {
+					t.Errorf("positive (no identity): %s", msg)
+				}
+
+				// Positive: zeus identity — injected greeting and rewritten
+				// name/signature must not destroy the section in the middle.
+				t.Run("zeus", func(t *testing.T) {
+					out, err := Render(item, KindAgents, capability, source, zeusIdentity(), tgt.ID, nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+					body := extractBodyText(t, out, agentsCap.Representation)
+					if msg := checkPhrases(body); msg != "" {
+						t.Errorf("positive (zeusIdentity): %s", msg)
+					}
+				})
+
+				// Negative (no-paragraph): entire prohibition paragraph removed from source.
+				// checkPhrases must reject the rendered output — both phrase1 and phrase2
+				// are absent. This asserts that phrase1 and phrase2 checks have real bite.
+				t.Run("negative/no-paragraph", func(t *testing.T) {
+					out, err := Render(item, KindAgents, capability, noParagraph, identity.Config{}, tgt.ID, nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+					body := extractBodyText(t, out, agentsCap.Representation)
+					if msg := checkPhrases(body); msg == "" {
+						t.Errorf("negative/no-paragraph: checkPhrases passed on source missing the prohibition paragraph — guard has no bite (repr=%s)", agentsCap.Representation)
+					}
+				})
+
+				// Negative (no-rationale): cost-routing rationale sentence removed; the
+				// prohibition ("Never pass…") is still present but phrase2 is absent.
+				// checkPhrases must reject the output, proving phrase2 check has real bite.
+				t.Run("negative/no-rationale", func(t *testing.T) {
+					out, err := Render(item, KindAgents, capability, noRationale, identity.Config{}, tgt.ID, nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+					body := extractBodyText(t, out, agentsCap.Representation)
+					if msg := checkPhrases(body); msg == "" {
+						t.Errorf("negative/no-rationale: checkPhrases passed on source missing the cost-routing rationale — phrase2 check has no bite (repr=%s)", agentsCap.Representation)
+					}
+				})
+
+				// Negative (wrong-section): prohibition paragraph moved to after
+				// ## Post-microbatch audit. extractDispatchSection returns the dispatch
+				// section without the paragraph, so phrase1 is absent from it.
+				t.Run("negative/wrong-section", func(t *testing.T) {
+					out, err := Render(item, KindAgents, capability, wrongSection, identity.Config{}, tgt.ID, nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+					body := extractBodyText(t, out, agentsCap.Representation)
+					if msg := checkPhrases(body); msg == "" {
+						t.Errorf("negative/wrong-section: checkPhrases passed when prohibition paragraph is outside ## Dispatch contract — location check has no bite (repr=%s)", agentsCap.Representation)
+					}
+				})
+
+				// Negative (suffix-heading): heading renamed to "## Old Dispatch contract".
+				// extractDispatchSection needle "\n## Dispatch contract\n" does not match
+				// "\n## Old Dispatch contract\n", so the section is not found.
+				t.Run("negative/suffix-heading", func(t *testing.T) {
+					out, err := Render(item, KindAgents, capability, suffixHeading, identity.Config{}, tgt.ID, nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+					body := extractBodyText(t, out, agentsCap.Representation)
+					if msg := checkPhrases(body); msg == "" {
+						t.Errorf("negative/suffix-heading: checkPhrases passed when heading has a prefix modifier — exact heading match has no bite (repr=%s)", agentsCap.Representation)
+					}
+				})
+
+				// Negative (h3-heading): heading demoted to "### Dispatch contract".
+				// The needle "\n## Dispatch contract\n" is not a substring of
+				// "\n### Dispatch contract\n", so the section is not found.
+				t.Run("negative/h3-heading", func(t *testing.T) {
+					out, err := Render(item, KindAgents, capability, h3Heading, identity.Config{}, tgt.ID, nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+					body := extractBodyText(t, out, agentsCap.Representation)
+					if msg := checkPhrases(body); msg == "" {
+						t.Errorf("negative/h3-heading: checkPhrases passed when heading is H3 — exact H2 match has no bite (repr=%s)", agentsCap.Representation)
+					}
+				})
+
+				// Negative (duplicate-heading): a second empty "## Dispatch contract"
+				// section is inserted before "## Workflow". strings.Count == 2, so
+				// extractDispatchSection returns "".
+				t.Run("negative/duplicate-heading", func(t *testing.T) {
+					out, err := Render(item, KindAgents, capability, duplicateHeading, identity.Config{}, tgt.ID, nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+					body := extractBodyText(t, out, agentsCap.Representation)
+					if msg := checkPhrases(body); msg == "" {
+						t.Errorf("negative/duplicate-heading: checkPhrases passed with two ## Dispatch contract headings — uniqueness check has no bite (repr=%s)", agentsCap.Representation)
+					}
+				})
+
+				// Negative (comment-wrapped): prohibition paragraph wrapped in an HTML
+				// comment. checkPhrases rejects because the section contains "<!--".
+				t.Run("negative/comment-wrapped", func(t *testing.T) {
+					out, err := Render(item, KindAgents, capability, commentWrapped, identity.Config{}, tgt.ID, nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+					body := extractBodyText(t, out, agentsCap.Representation)
+					if msg := checkPhrases(body); msg == "" {
+						t.Errorf("negative/comment-wrapped: checkPhrases passed with paragraph in HTML comment — comment marker check has no bite (repr=%s)", agentsCap.Representation)
+					}
+				})
+
+				// Negative (fence-wrapped): prohibition paragraph wrapped in a fenced
+				// code block. checkPhrases rejects because the section contains "` ``` `".
+				t.Run("negative/fence-wrapped", func(t *testing.T) {
+					out, err := Render(item, KindAgents, capability, fenceWrapped, identity.Config{}, tgt.ID, nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+					body := extractBodyText(t, out, agentsCap.Representation)
+					if msg := checkPhrases(body); msg == "" {
+						t.Errorf("negative/fence-wrapped: checkPhrases passed with paragraph in fenced block — fence marker check has no bite (repr=%s)", agentsCap.Representation)
+					}
+				})
+
+				// Negative (indented): prohibition paragraph prefixed with 4 spaces.
+				// checkPhrases rejects because phrase1 does not start at column 0.
+				t.Run("negative/indented", func(t *testing.T) {
+					out, err := Render(item, KindAgents, capability, indented, identity.Config{}, tgt.ID, nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+					body := extractBodyText(t, out, agentsCap.Representation)
+					if msg := checkPhrases(body); msg == "" {
+						t.Errorf("negative/indented: checkPhrases passed with paragraph indented by 4 spaces — column-0 check has no bite (repr=%s)", agentsCap.Representation)
+					}
+				})
+
+				// Negative (html-block-wrapped): prohibition paragraph wrapped in a
+				// <div hidden> HTML block element. checkPhrases rejects because a line
+				// in the section starts with "<" after at most 3 leading spaces (D-7).
+				// Closes <div hidden>, <pre>, <script> and any HTML block opener.
+				t.Run("negative/html-block-wrapped", func(t *testing.T) {
+					out, err := Render(item, KindAgents, capability, htmlBlockWrapped, identity.Config{}, tgt.ID, nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+					body := extractBodyText(t, out, agentsCap.Representation)
+					if msg := checkPhrases(body); msg == "" {
+						t.Errorf("negative/html-block-wrapped: checkPhrases passed with paragraph in <div hidden> block — HTML block tag check has no bite (repr=%s)", agentsCap.Representation)
+					}
+				})
+			})
+		}
+	}
+
+	// Coverage check: the catalog iteration must have produced the required set
+	// of representations. A missing entry means a future target escaped the test.
+	if len(coveredReprs) == 0 {
+		t.Fatal("catalog yielded zero covered representations — loop logic error")
+	}
+	for _, r := range requiredReprs {
+		if !coveredReprs[r] {
+			t.Errorf("required representation %q not covered by catalog iteration — add it or remove from requiredReprs", r)
+		}
+	}
+}
+

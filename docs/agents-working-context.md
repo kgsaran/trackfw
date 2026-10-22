@@ -1,5 +1,35 @@
 # agents-working-context.md
 
+## 2026-10-22 — prometeu-tf — FIM: corretivo ML-1A (REQ-2026-09-26) — braço negativo reescrito
+
+- Defeito corrigido: braço `negative` não chamava `checkPhrases` e só afirmava que phrase1 sumiu; phrase2 nunca era exercida.
+- Correção: removidos `modifiedSource` e o antigo `t.Run("negative", ...)`. Adicionados `noParagraph` (parágrafo inteiro removido via slice do índice de `paragraphNeedle` até fim da linha, com `\n` precedente) e `noRationale` (apenas a frase de rationale removida), ambos com guarda `bytes.Equal`. Dois subtestes por target: `negative/no-paragraph` e `negative/no-rationale`, ambos chamam `checkPhrases` e exigem retorno não-vazio.
+- vet=0, test=0 (integrations + thirdparty). Subtestes negativos: 24 (12 targets × 2 braços).
+- Prova de mordida 1 (phrase2=XYZ-nunca): positivos FAIL, negativos PASS.
+- Prova de mordida 2 (checkPhrases=return ""): positivos PASS, negativos FAIL — ambos os braços.
+- Arquivo de código alterado nesta sessão: somente `internal/integrations/render_test.go`.
+- Worktree: `/private/tmp/trackfw-model-override`. Branch: `fix/arquiteto-nao-sobrepoe-modelo-do-subagente`.
+
+## 2026-10-22 — prometeu-tf — INÍCIO: corretivo ML-1A (REQ-2026-09-26) — braço negativo
+
+- Escopo: corrigir `TestArchitectDispatchContractForbidsModelOverride` — braço negativo não chamava checkPhrases, phrase2 não exercida.
+- Único arquivo permitido: `internal/integrations/render_test.go`.
+- Worktree: `/private/tmp/trackfw-model-override`. Branch: `fix/arquiteto-nao-sobrepoe-modelo-do-subagente`.
+
+## 2026-10-22 — prometeu-tf — FIM: ML-1A para REQ-2026-09-26 (proibição de model no Dispatch contract)
+
+- Build=0, vet=0, `go test ./internal/integrations/ ./internal/thirdparty/` test=0.
+- `trackfw validate`: exit=0, 164 warnings pré-existentes, zero erros.
+- Sítios alterados: `internal/integrations/assets/agents/architect.md` (+2 linhas: blank + parágrafo da proibição), `internal/integrations/testdata/architect.subagent.golden.md` (+2), `internal/integrations/testdata/architect.agent-directory.golden.md` (+2), `internal/integrations/render_test.go` (+200: imports bytes+fmt, helpers extractBodyText/extractDispatchSection, TestArchitectDispatchContractForbidsModelOverride com 36 subtests, linha no comentário de re-congelamento).
+- Novo teste: `TestArchitectDispatchContractForbidsModelOverride` — 12 targets × 3 braços (positivo sem identidade, positivo com zeusIdentity(), negativo). Subtests: claude/cli, codex/cli, gemini/cli, antigravity/current, antigravity/legacy-cli, cursor/ide, copilot/ide, windsurf/ide, amazonq/cli, opencode/cli, kiro/ide, kiro/cli, cada um com /zeus e /negative.
+- Prova de mordida: com parágrafo removido → FAIL ("strings.Replace did not find paragraphNeedle"); com parágrafo presente → PASS.
+- Worktree: `/private/tmp/trackfw-model-override`. Branch: `fix/arquiteto-nao-sobrepoe-modelo-do-subagente`.
+
+## 2026-10-22 — prometeu-tf — INÍCIO: ML-1A para REQ-2026-09-26 (proibição de model no Dispatch contract)
+
+- Escopo: inserir parágrafo de proibição em architect.md, reger goldens, criar TestArchitectDispatchContractForbidsModelOverride.
+- Worktree: `/private/tmp/trackfw-model-override`. Branch: `fix/arquiteto-nao-sobrepoe-modelo-do-subagente`.
+
 ## 2026-10-21 — apolo-tf — FIM: ML-1C para REQ-2026-10-20 (discriminantes B-1 Codex+Gemini)
 
 - Vet limpo. Suite completa: `ok internal/generators 65s`.
@@ -47328,3 +47358,27 @@ que chamam git sem `LookPath`; chmod no discover.
 - Branch chore/release-10.1.0. O CHANGELOG ganha a seção [10.1.0], que reúne #590, #591, #592 e #595, sem breaking changes. O ares-tf trocou a versão nos quatro arquivos (version.go, npm/package.json, npm/package-lock.json, pypi/pyproject.toml), e eu auditei o diff.
 - Gates: `make check-required-full` rc=0 (D=R=W, 9 checks); `check-manifest-version-gate.sh` 9 OK / 0 FAIL; `go build ./...` rc=0.
 - A tag `v10.1.0` só é criada depois do merge do PR de bump, com o changelog no corpo.
+
+## 2026-10-22 — zeus-tf — INÍCIO: REQ-2026-09-26 (arquiteto não pode sobrepor o `model` do subagente)
+
+- Primeiro item da ordem aprovada pelo KG (5 → 4 → 1 → 3 → 2 → 6). Roadmap reescrito contra a main 3be3375c e movido para wip/. Worktree /private/tmp/trackfw-model-override.
+- Plano: a Wave 0 (hades-tf) faz o threat model e a enumeração da classe; o ML-1A (prometeu-tf) faz o parágrafo, os goldens e um teste semântico com braço negativo; a Wave 2 traz a revisão do hefesto-tf e o red team do hades-tf.
+
+## 2026-10-22 — hades-tf — INÍCIO: Wave 0 ML-0A REQ-2026-09-26 (model-override)
+
+- Threat model e enumeração da classe: `docs/seguranca/2026-10-22-wave0-model-override.md`.
+- Escopo: `internal/integrations/assets/agents/architect.md` + testdata goldens + `internal/thirdparty/markers.go` para contexto de marcador.
+
+## 2026-10-22 — hades-tf — FIM: Wave 0 ML-0A REQ-2026-09-26 (model-override)
+
+- Artefato: `docs/seguranca/2026-10-22-wave0-model-override.md` (novo). Gate `test -s`: OK.
+- Veredito: ML-1A pode seguir com um ajuste — texto do parágrafo precisa de cláusula para destinos sem `model:` (§3.d). Cinco defesas adicionais para o teste listadas no veredito.
+- git status --short do worktree: `M docs/agents-working-context.md`, `?? docs/seguranca/2026-10-22-wave0-model-override.md`.
+
+## 2026-10-22 — zeus-tf — Wave 2 da REQ-2026-09-26 (registro consolidado dos agentes)
+
+- hefesto-tf, ML-2A: APROVADO COM RESSALVA. O A1 é médio: `extractDispatchSection` não tinha mordida. A2–A5 são menores. Parecer em docs/seguranca/2026-10-22-quality-model-override.md.
+- hades-tf, ML-2B, 1ª rodada: REPROVADO, com D-1 a D-6. Ele entregou um diff de código, que não foi aplicado: auditor não escreve código. Também escreveu por engano em .claude/agent-memory do checkout principal e reverteu ele mesmo; conferi que não ficou nada. O diff solto em docs/seguranca foi removido, e uma cópia ficou no scratchpad.
+- prometeu-tf, ML-1B: corretivo com casamento exato e único do cabeçalho, recusa de conteúdo inerte e A2–A5. 133 PASS, conferido pelo arquiteto. A nota do vault foi reescrita para bater com o que foi implementado.
+- Próximo: 2ª rodada do hades-tf, que reexecuta os vetores M1–M5g contra o teste novo.
+- hades-tf, ML-2B, 2ª rodada: os vetores M1–M5g fecharam. O D-7 (bloco HTML) ficou aberto e o D-8 (comentário externo) virou resíduo. prometeu-tf, ML-1C: o D-7 foi fechado; 145 PASS, e a mordida foi medida pelo arquiteto numa cópia. Não haverá 3ª rodada, porque o que sobra é M3 (texto ativo de exceção), cuja barreira é a auditoria do diff.
