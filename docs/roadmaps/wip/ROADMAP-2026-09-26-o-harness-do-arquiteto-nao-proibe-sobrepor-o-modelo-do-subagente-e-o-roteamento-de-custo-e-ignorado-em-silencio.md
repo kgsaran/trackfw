@@ -171,31 +171,34 @@ test -s docs/seguranca/2026-10-22-red-team-model-override.md
 **Auditoria do arquiteto (2026-10-22):** aprovada. Conferido no código: `identity.go:159-166` (só `< 0x20` e os separadores), `identity.go:64-76` (o Load valida apenas o nickname e o display_name), `render.go:914-934` (o bloco é anexado sem olhar a representação, e `plan.go:79` chama a função para todo KindAgents). **Decisão:** UTF-8 inválido é **recusado com erro**, sem escrever arquivo, em linha com `render.go:665` ("callers must reject, not sanitize"). Por isso o AC7 foi ajustado. O YAML, a identidade e o T-4 entram nesta REQ, pela regra do KG de corrigir agora o defeito conhecido.
 
 ### ML-4A — Encoder de basic string TOML 1.0 (Codex)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** prometeu-tf (mesmo despacho do ML-4B, porque os dois tocam `render.go`)
 **Files affected:** `internal/integrations/render.go`, `internal/integrations/render_test.go`
 **Acceptance criteria:**
-- [ ] As 4 chamadas de `strconv.Quote` do ramo `custom-agent-toml` passam por `tomlBasicString(s) (string, error)`. Escapa `\b \t \n \f \r \" \\` e `\uXXXX` para os demais C0, o DEL e os runes com `!strconv.IsPrint`. UTF-8 inválido devolve erro (`r == utf8.RuneError && size == 1`).
-- [ ] O teste tem um decodificador mínimo de basic string TOML 1.0, sem dependência nova. A saída do encoder decodifica de volta à entrada para 0x00–0x1F, 0x7F, C1, NBSP e acentos. A saída do `strconv.Quote` para 0x07 e 0x0B é recusada pelo mesmo decodificador (braço contrário). UTF-8 inválido vira erro, com o `Render` propagando esse erro.
-- [ ] Os goldens do Codex não mudam.
+- [x] As 4 chamadas de `strconv.Quote` do ramo `custom-agent-toml` passam por `tomlBasicString(s) (string, error)`. Escapa `\b \t \n \f \r \" \\` e `\uXXXX` para os demais C0, o DEL e os runes com `!strconv.IsPrint`. UTF-8 inválido devolve erro (`r == utf8.RuneError && size == 1`).
+- [x] O teste tem um decodificador mínimo de basic string TOML 1.0, sem dependência nova. A saída do encoder decodifica de volta à entrada para 0x00–0x1F, 0x7F, C1, NBSP e acentos. A saída do `strconv.Quote` para 0x07 e 0x0B é recusada pelo mesmo decodificador (braço contrário). UTF-8 inválido vira erro, com o `Render` propagando esse erro.
+- [x] Os goldens do Codex não mudam.
+**Auditoria do arquiteto:** 174 PASS em `TestTOMLBasicString` e `TestYAMLEscapeDoubleQuotedNoRawControl`. Mordida: com `strconv.Quote`, reprovam `arm_a_round_trip` (todo C0 e o DEL) e `arm_c_invalid_utf8_error`. Goldens sem diff. Pacotes integrations, identity, thirdparty, commands e generators verdes com HOME isolado.
 
 ### ML-4B — Escape YAML double-quoted
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** prometeu-tf
 **Files affected:** `internal/integrations/render.go`, `internal/integrations/render_test.go`
 **Acceptance criteria:**
-- [ ] `containsControlChar` passa a cobrir 0x7F e C1 (U+0080–U+009F). `yamlEscapeDoubleQuoted` emite escape YAML (`\xHH`, `\uXXXX` ou os escapes nomeados do YAML 1.2) para todo C0, DEL e C1, sem byte de controle cru.
-- [ ] O teste prova que nenhum byte < 0x20, 0x7F ou C1 sai cru numa scalar double-quoted e que o valor original pode ser recuperado. Antes da mudança, o teste reprova.
-- [ ] Os goldens atuais não mudam.
+- [x] `containsControlChar` passa a cobrir 0x7F e C1 (U+0080–U+009F). `yamlEscapeDoubleQuoted` emite escape YAML (`\xHH`, `\uXXXX` ou os escapes nomeados do YAML 1.2) para todo C0, DEL e C1, sem byte de controle cru.
+- [x] O teste prova que nenhum byte < 0x20, 0x7F ou C1 sai cru numa scalar double-quoted e que o valor original pode ser recuperado. Antes da mudança, o teste reprova.
+- [x] Os goldens atuais não mudam.
+**Auditoria do arquiteto:** com o escape antigo, `new_encoder_no_raw_control_and_round_trips` reprova para todo C0 (exceto o tab), o DEL e o C1. Agora `containsControlChar` também recusa o U+0085; antes ele era excluído porque o yaml.v3 o normaliza, então nada muda na prática.
 
 ### ML-4C — `identity.Load` valida o slug e recusa DEL/C1
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** apolo-tf (em paralelo com 4A/4B, porque os arquivos são disjuntos)
 **Files affected:** `internal/identity/identity.go`, `internal/identity/identity_test.go`
 **Acceptance criteria:**
-- [ ] O `Load` recusa slug não vazio que não case com `slugPattern`, com mensagem no padrão das existentes.
-- [ ] `containsControlCharIdent` passa a recusar 0x7F e C1.
-- [ ] Os testes reprovam no código antigo (com slug contendo 0x07, display_name com 0x7F e com U+0085) e passam no novo. Os presets continuam carregando.
+- [x] O `Load` recusa slug não vazio que não case com `slugPattern`, com mensagem no padrão das existentes.
+- [x] `containsControlCharIdent` passa a recusar 0x7F e C1.
+- [x] Os testes reprovam no código antigo (com slug contendo 0x07, display_name com 0x7F e com U+0085) e passam no novo. Os presets continuam carregando.
+**Auditoria do arquiteto:** diff mínimo em `identity.go`. Os 8 subtestes de recusa reprovam no código antigo. O slug vazio continua aceito no Load (o `Validate` o recusa).
 
 ### ML-4D — Referências de terceiro respeitam a representação (T-4)
 **Status:** ⬜ Pendente

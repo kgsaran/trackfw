@@ -47387,3 +47387,4 @@ que chamam git sem `LookPath`; chmod no discover.
 
 - O PR #598 (ed910c22) entregou o model-override (Waves 0–3). A Wave 4, o escape TOML do Codex (AC7), continua na branch fix/harness-arquiteto-escape-toml-codex, worktree /private/tmp/trackfw-toml-escape. O roadmap segue em wip.
 - O título do #598 cita a correção do TOML, mas ela não está na main. O PR da Wave 4 deve dizer isso.
+- 2026-10-22 — Wave 4. prometeu-tf, ML-4A/4B: `tomlBasicString` no Codex e o escape YAML sem controle cru, 174 PASS. apolo-tf, ML-4C: o `identity.Load` valida o slug e recusa o DEL e o C1. Auditados pelo arquiteto; integrations, identity, thirdparty, commands e generators verdes com HOME isolado. Próximo: o ML-4D (referências de terceiro).
