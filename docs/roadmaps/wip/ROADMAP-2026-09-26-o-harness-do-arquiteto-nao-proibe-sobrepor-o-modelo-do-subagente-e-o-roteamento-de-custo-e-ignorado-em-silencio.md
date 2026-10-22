@@ -201,12 +201,13 @@ test -s docs/seguranca/2026-10-22-red-team-model-override.md
 **Auditoria do arquiteto:** diff mínimo em `identity.go`. Os 8 subtestes de recusa reprovam no código antigo. O slug vazio continua aceito no Load (o `Validate` o recusa).
 
 ### ML-4D — Referências de terceiro respeitam a representação (T-4)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** prometeu-tf (depois de 4A/4B, porque também toca `render.go` e `plan.go`)
-**Files affected:** a definir no despacho, depois de 4A/4B (`internal/integrations/render.go`, `internal/integrations/plan.go` e os testes)
+**Files affected:** `internal/integrations/plan.go`, `internal/integrations/thirdparty_refs_repr_test.go`, `internal/commands/integrations_thirdparty.go`, `internal/commands/integrations_thirdparty_test.go`
 **Acceptance criteria:**
-- [ ] Para `custom-agent-toml`, `agent-json` e `cli-agent-json`, o artefato final continua TOML ou JSON válido quando existem referências de terceiro. Ou o bloco entra no campo de instruções, ou a referência é recusada com erro explícito. Nunca é anexada ao arquivo serializado.
-- [ ] O teste reprova no código atual.
+- [x] Para `custom-agent-toml`, `agent-json` e `cli-agent-json`, o artefato final continua TOML ou JSON válido quando existem referências de terceiro. Ou o bloco entra no campo de instruções, ou a referência é recusada com erro explícito. Nunca é anexada ao arquivo serializado.
+- [x] O teste reprova no código atual.
+**Auditoria do arquiteto:** a 1ª entrega foi reprovada. Ela recusava com erro dentro do `BuildPlans`, o que derrubava o plano de todos os destinos: um registro antigo com entrada para o codex quebrava `agents update` e `update harness`, e o `--apply-to codex` deixava o registro envenenado. No corretivo, o `--apply-to` recusa representação estruturada antes de qualquer escrita, e o `BuildPlans` só deixa de anexar o bloco nesses destinos, sem falhar. Os testes `SkipBlockKeepValid`, `StaleRegistryDoesNotBreakOtherTargets` e `ApplyToRejectsStructuredRepresentationBeforeWrite` têm as 3 mordidas medidas. **Resíduo:** o plano não tem canal de aviso, então a omissão do bloco num registro antigo é silenciosa e só fica documentada no comentário.
 
 ### ML-4E — Revisão
 **Status:** ⬜ Pendente

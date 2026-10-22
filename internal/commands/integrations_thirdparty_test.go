@@ -585,6 +585,58 @@ func TestThirdPartyInstall_ApplyToRejectsHandModifiedAgentBeforeAnyWrite(t *test
 	}
 }
 
+// TestThirdPartyInstall_ApplyToRejectsStructuredRepresentationBeforeWrite
+// asserts CONCLUSION of ML-4D corretivo: --apply-to is refused before any
+// write when the target uses a structured representation (custom-agent-toml,
+// agent-json, cli-agent-json).  The registry file and skill file must both be
+// absent after the refusal.
+//
+// For the positive case (--apply-to claude, markdown representation, succeeds)
+// see TestThirdPartyInstall_CatalogAgentByteIdenticalExceptMarkers, which
+// already covers that path end-to-end.
+func TestThirdPartyInstall_ApplyToRejectsStructuredRepresentationBeforeWrite(t *testing.T) {
+	project, _ := integrationCommandFixture(t)
+	withOrchestratorSession(t)
+	stubThirdPartyFetch(t, []byte(benignThirdPartyContent))
+
+	// Fetch produces a valid quarantine entry; checksum is the install key.
+	checksum := runFetch(t, "https://example.com/skills/my-skill.md")
+
+	install := newSkillsCmd()
+	install.SetArgs([]string{
+		"third-party", "install",
+		"--checksum", checksum,
+		"--targets", "codex",
+		"--apply-to", "backend",
+		"--yes-i-trust-this-source",
+	})
+	var out bytes.Buffer
+	install.SetOut(&out)
+	install.SetErr(&out)
+	err := install.Execute()
+	if err == nil {
+		t.Fatal("expected install to refuse --apply-to for structured-representation target codex")
+	}
+	if !strings.Contains(err.Error(), "codex") {
+		t.Fatalf("expected error to mention target %q: %v", "codex", err)
+	}
+	if !strings.Contains(err.Error(), "custom-agent-toml") {
+		t.Fatalf("expected error to mention representation %q: %v", "custom-agent-toml", err)
+	}
+
+	// No partial state: the thirdparty-references registry must not exist.
+	registryPath := filepath.Join(project, ".trackfw", "thirdparty-references.json")
+	if _, statErr := os.Stat(registryPath); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("registry must not exist after structured-rep refusal, stat err: %v", statErr)
+	}
+
+	// The skill file must not exist either.
+	skillPath := filepath.Join(project, ".agents", "skills", "thirdparty", "my-skill.md")
+	if _, statErr := os.Stat(skillPath); !errors.Is(statErr, os.ErrNotExist) {
+		t.Fatalf("skill file must not exist after structured-rep refusal, stat err: %v", statErr)
+	}
+}
+
 // TestThirdPartyThirdPartyCmd_ReachableFromBothKinds proves D1: the
 // third-party subcommand (fetch and install) is reachable both via
 // `trackfw agents` and `trackfw skills`, not only skills (every other test
