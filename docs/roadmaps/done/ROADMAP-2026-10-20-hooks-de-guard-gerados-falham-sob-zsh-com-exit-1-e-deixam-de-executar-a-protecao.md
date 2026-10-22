@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-10-20
 req: "docs/req/REQ-2026-10-20-hooks-de-guard-gerados-falham-sob-zsh-com-exit-1-e-deixam-de-executar-a-protecao.md"
 squad: "zeus-tf, backend, security, code-quality"
@@ -7,7 +7,7 @@ squad: "zeus-tf, backend, security, code-quality"
 
 # Roadmap: Hooks de guard gerados falham sob zsh com exit 1 e deixam de executar a protecao
 
-> Created: 2026-10-20 | Status: wip
+> Created: 2026-10-20 | Status: done
 
 ## Context
 <!-- Derived from REQ: REQ-2026-10-20-hooks-de-guard-gerados-falham-sob-zsh-com-exit-1-e-deixam-de-executar-a-protecao.md -->
