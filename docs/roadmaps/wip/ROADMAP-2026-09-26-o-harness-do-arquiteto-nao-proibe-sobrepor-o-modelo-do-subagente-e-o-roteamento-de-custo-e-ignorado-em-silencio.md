@@ -156,6 +156,8 @@ test -s docs/seguranca/2026-10-22-red-team-model-override.md
 
 ## Wave 4 — Escape TOML do destino Codex (AC7, ampliação decidida pelo KG em 2026-10-22)
 > Dependencies: Wave 2 concluída. A Wave 3 é refeita depois desta wave.
+>
+> **2026-10-22:** o KG mergeou o PR #598 (ed910c22) antes desta wave. As Waves 0–3 do model-override foram entregues nele, e o título do PR já cita o TOML, mas o `strconv.Quote` ainda está na main. A Wave 4 segue na branch `fix/harness-arquiteto-escape-toml-codex`, na mesma REQ (Regra Dura), e o roadmap fica em wip até ela fechar.
 
 ### ML-4.0 — Threat model do encoder TOML
 **Status:** ⬜ Pendente

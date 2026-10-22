@@ -47382,3 +47382,8 @@ que chamam git sem `LookPath`; chmod no discover.
 - prometeu-tf, ML-1B: corretivo com casamento exato e único do cabeçalho, recusa de conteúdo inerte e A2–A5. 133 PASS, conferido pelo arquiteto. A nota do vault foi reescrita para bater com o que foi implementado.
 - Próximo: 2ª rodada do hades-tf, que reexecuta os vetores M1–M5g contra o teste novo.
 - hades-tf, ML-2B, 2ª rodada: os vetores M1–M5g fecharam. O D-7 (bloco HTML) ficou aberto e o D-8 (comentário externo) virou resíduo. prometeu-tf, ML-1C: o D-7 foi fechado; 145 PASS, e a mordida foi medida pelo arquiteto numa cópia. Não haverá 3ª rodada, porque o que sobra é M3 (texto ativo de exceção), cuja barreira é a auditoria do diff.
+
+## 2026-10-22 — zeus-tf — REQ-2026-09-26: o #598 foi mergeado com a Wave 4 pendente
+
+- O PR #598 (ed910c22) entregou o model-override (Waves 0–3). A Wave 4, o escape TOML do Codex (AC7), continua na branch fix/harness-arquiteto-escape-toml-codex, worktree /private/tmp/trackfw-toml-escape. O roadmap segue em wip.
+- O título do #598 cita a correção do TOML, mas ela não está na main. O PR da Wave 4 deve dizer isso.
