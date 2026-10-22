@@ -47318,6 +47318,11 @@ que chamam git sem `LookPath`; chmod no discover.
 - PR #592 mergeado (3c0cc1f2, 2026-10-21T19:48:48Z), conforme informado pelo KG e conferido no GitHub. Roadmap movido para done/ com `trackfw roadmap move`, REQ com status Done e ponteiros sincronizados. validate: 0 violações, 166 avisos. Branch docs/encerra-req-instalacao-windows.
 - VM: `C:\Users\Lab\bin\trackfw.exe` = build da branch (backup .bak-28d6d018); pip/npm sem trackfw.
 
+## 2026-10-22 — zeus-tf — FIM: REQ-2026-10-20 (guard sob zsh) encerrada
+
+- PR #595 mergeado (28665b30, 2026-10-22T09:20:55Z), conforme informado pelo KG e conferido no GitHub. O roadmap foi para done/ com `trackfw roadmap move`, e a REQ está com status Done e os ponteiros sincronizados. Branch docs/encerra-req-2026-10-20-guard-zsh.
+- Pendente com o KG: depois da próxima release, rodar `trackfw update harness` para migrar os configs globais e aposentar o workaround `/bin/bash -c`.
+
 ## 2026-10-22 — zeus-tf — release 10.1.0 preparada
 
 - Branch chore/release-10.1.0. O CHANGELOG ganha a seção [10.1.0], que reúne #590, #591, #592 e #595, sem breaking changes. O ares-tf trocou a versão nos quatro arquivos (version.go, npm/package.json, npm/package-lock.json, pypi/pyproject.toml), e eu auditei o diff.
