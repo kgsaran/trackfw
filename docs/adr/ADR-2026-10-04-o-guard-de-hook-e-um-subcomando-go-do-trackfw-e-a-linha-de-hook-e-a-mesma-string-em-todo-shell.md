@@ -275,6 +275,61 @@ Bash e PowerShell 5.1; o ruído no stderr do PowerShell é o mesmo da D11 (o tre
 `docs/portabilidade/2026-10-07-linha-de-hook-fail-closed-sem-trackfw.md`, seção ML-6C.
 
 
+## Adendo — 2026-10-21: correção de falha sob zsh — prefixo `emulate -R sh` (REQ-2026-10-20)
+
+A linha D11 revisada (ML-6C) falhava silenciosamente quando o hook era executado sob zsh com as
+opções padrão ativas. Dois mecanismos distintos causavam abort antes de `trackfw guard` rodar:
+
+1. **EQUALS expansion** (`setopt EQUALS` ativo por padrão em zsh interativo): `$LASTEXITCODE` vazio
+   → o token `=2` aciona *equals expansion* → zsh tenta `which 2` → falha com exit 1, encerrando o
+   hook imediatamente. A proteção nunca chegava a executar.
+
+2. **NOMATCH** (`setopt NOMATCH` ativo por padrão em zsh): o 4º segmento
+   `$LASTEXITCODE=2*!!$LASTEXITCODE` contém `*` não quotado → glob expansion → nenhum arquivo casa
+   → zsh aborta com `zsh: no matches found: =2*!!`.
+
+**Candidato descartado — `unsetopt EQUALS NOMATCH`:** O prefixo `unsetopt EQUALS NOMATCH 2>${null-/dev/null};`
+resolve EQUALS e NOMATCH mas é insuficiente sob variantes mais restritivas do zsh. Medição ML-1B:
+
+| Prefixo              | zsh padrão | zsh -o nounset | zsh -o errexit | zsh -o cshnullglob |
+|----------------------|------------|----------------|----------------|--------------------|
+| sem prefixo          | 127        | 127            | 127            | 127                |
+| `unsetopt EQUALS NOMATCH` | 2     | 1              | 127            | 127                |
+| `emulate -R sh`      | 2          | 2              | 2              | 2                  |
+
+Sob `zsh -o nounset`, `$LASTEXITCODE` não inicializado aborta com `unbound variable` (exit 1).
+Sob `zsh -o errexit`, qualquer saída não-zero antes de `trackfw guard` encerra o hook (exit 127).
+O `unsetopt` não foi publicado em nenhum config versionado, portanto não vira forma legada.
+
+**Solução final:** prefixo `emulate -R sh 2>${null-/dev/null};` antes da semente. O `emulate -R sh`
+reseta TODAS as opções do zsh para os padrões POSIX sh — incluindo nounset, errexit, cshnullglob e
+qualquer combinação futura. Em sh/bash é `command not found` com stderr descartado pelo redirecionamento
+— inerte. Em PS 5.1 o `emulate` é CommandNotFound não-terminante: a execução segue e o `$LASTEXITCODE`
+final não muda (medido na VM, `docs/portabilidade/2026-10-21-guard-zsh-candidato-windows.md`, rodada 2).
+🔴 **Mas o stderr NÃO é descartado no PS 5.1:** `2>${null-/dev/null}` não suprime o registro de
+CommandNotFound (achado A6, medido com e sem o redirect). A linha continua poliglota em todos os
+ambientes.
+
+**Custo aceito (decisão do KG, 2026-10-21):** no PowerShell 5.1, cada execução do hook passa a emitir
+**duas** linhas de erro `CommandNotFound` no stderr (`emulate` + o trecho `LASTEXITCODE=…` já
+registrado no adendo de 2026-10-07), e no deny elas aparecem antes do motivo do guard. Aplicando a
+regra de 2026-10-07 ("tentar silenciar; se não houver variante silenciosa, adotar a de menor ruído"):
+toda forma que corrige o zsh medida até aqui custa essa linha (o `unsetopt` também custava), e a
+alternativa sem ruído é o fail-open do zsh. Nenhuma variante silenciosa foi pesquisada a fundo; a
+candidata esboçada (`${=null-emulate -R sh}`) quebraria sh/bash com "bad substitution" e foi descartada sem
+medição. Se alguém trouxer uma variante silenciosa medida na matriz inteira, ela substitui esta.
+
+Forma canônica atualizada (REQ-2026-10-20, família PS/POSIX):
+
+`emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard <nome>; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+
+A D11 revisada (pre-REQ-2026-10-20: sem o prefixo `emulate -R sh`) não gera violation no `trackfw validate` —
+é aceita como forma legada —, mas emite aviso solicitando `trackfw update harness` para migrar
+para a nova forma. Os arquivos de configuração deste repositório foram migrados para REQ-2026-10-20 no mesmo
+ML. O único sítio canônico continua `guardExpectedLine` em `validator_guard_binary_probe.go`.
+
+`docs/portabilidade/` (Artemis, em andamento) documentará a medição de cada shell.
+
 ## Adendo — 2026-10-20: atenção nativa (ML-1H da instalação Windows)
 
 Estende D1/D3 aos hooks informativos: `trackfw attention signal` e `trackfw attention cleanup` são a fonte única Go; scripts .sh existentes viram invólucros de compatibilidade. Todas as configs emitidas usam essas linhas simples, sem variáveis/caminhos/jq/python. Copilot usa command. Atenção não bloqueia ferramentas: erros internos resultam em no-op e exit 0. Por isso não copia D11/D11 revista dos guards. A falha da semente polyglot sob zsh está registrada em vault/notes/codex-guard-polyglot-aborta-zsh-equals-2026-10-20.md e a correção dos guards segue na sua REQ própria.

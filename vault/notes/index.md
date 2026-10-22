@@ -4,6 +4,8 @@
 
 ## Índice
 
+- [inject-codex-gemini-d11rev-duplicata-antes-de-migracao-2026-10-21](inject-codex-gemini-d11rev-duplicata-antes-de-migracao-2026-10-21.md) — 🔴 **InjectCodexHooks/InjectGeminiHooks: mergeClaudeHookArray roda antes da migração D11Rev → 2 entradas do guard no mesmo evento; RE-GERAR .codex/hooks.json e .gemini/settings.json após fix**
+
 - [hook-subprocess-path-nao-herda-do-processo-pai-windows-2026-10-21](hook-subprocess-path-nao-herda-do-processo-pai-windows-2026-10-21.md) — 🔴 **Hooks usam `/usr/bin/bash`; bash HERDA PATH do processo pai e `/etc/profile` PREPENDE `~/bin`; fail-closed só quando trackfw ausente do PATH efetivo completo; claude.exe tem caminhos hardcoded para bash; hook_started/hook_response requerem --debug=hooks**
 
 - [branch-new-checkout-b-com-start-point-seta-upstream-no-track-obrigatorio-2026-10-18](branch-new-checkout-b-com-start-point-seta-upstream-no-track-obrigatorio-2026-10-18.md) — 🔴 **`git checkout -b <branch> origin/main` seta `@{u}=origin/main`; `buildPushArgs` lê `@{u}`; `--no-track` é REQUISITO** — sem ele, `trackfw push` nunca seta `origin/feat/slug` como upstream, Passo 0 fica cego ao `[gone]` após merge; REQ-2026-09-12 ML-1A
@@ -298,3 +300,7 @@
 - [Subprocesso de rede pendurado prende o stderr pelo neto; teste com `cat` mascara](subprocesso-de-rede-pendurado-prende-o-stderr-pelo-neto-e-o-teste-com-cat-mascara-2026-10-12.md) — 🔴 `CommandContext` sozinho não retorna (o `ssh` neto segura o **stderr**); `Setpgid` sem `Cancel` deixa **mais** órfãos; só `Setpgid`+`kill(-pgid)` zera; `Setpgid` com tty → SIGTTIN; neto que lê stdin e falta de `GIT_SSH_VARIANT=ssh` fazem o teste passar sem a correção
 
 - [H2 encerra a wave e pode deixar gates fora da barreira](barrier-wave-h2-separa-gates-sem-executar-2026-10-20.md) — Conferir commands e MLs no JSON: gates passed com commands vazio não prova execução dos comandos planejados.
+
+- [codex-rewriter-ls-corrompe-comando-composto-2026-10-20](codex-rewriter-ls-corrompe-comando-composto-2026-10-20.md) — Hook global de ls concatena --color=never ao último comando de uma lista shell e quebra git status.
+
+- [codex-guard-polyglot-aborta-zsh-equals-2026-10-20](codex-guard-polyglot-aborta-zsh-equals-2026-10-20.md) — Gerador trackfw emite semente =2 que aborta zsh antes de executar guards; matriz deve testar shell real.

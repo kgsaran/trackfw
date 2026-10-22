@@ -2,84 +2,84 @@
   "hooks": {
     "AfterTool": [
       {
+        "matcher": "*",
         "hooks": [
           {
-            "command": "$GEMINI_PROJECT_DIR/scripts/trackfw-attention-cleanup.sh",
+            "command": "trackfw attention cleanup",
             "type": "command"
           }
-        ],
-        "matcher": "*"
+        ]
       },
       {
+        "matcher": "run_shell_command",
         "hooks": [
           {
-            "command": "$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
+            "command": "emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
             "type": "command"
           }
-        ],
-        "matcher": "run_shell_command"
+        ]
       },
       {
+        "matcher": "read_file|read_many_files",
         "hooks": [
           {
-            "command": "$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
+            "command": "emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
             "type": "command"
           }
-        ],
-        "matcher": "read_file|read_many_files"
+        ]
       },
       {
+        "matcher": "write_file|replace",
         "hooks": [
           {
-            "command": "$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
+            "command": "emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
             "type": "command"
           }
-        ],
-        "matcher": "write_file|replace"
+        ]
       }
     ],
     "BeforeTool": [
       {
+        "matcher": "run_shell_command",
         "hooks": [
           {
-            "command": "$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
+            "command": "emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
             "type": "command"
           },
           {
-            "command": "$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
+            "command": "emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
             "type": "command"
           }
-        ],
-        "matcher": "run_shell_command"
+        ]
       },
       {
+        "matcher": "read_file|read_many_files",
         "hooks": [
           {
-            "command": "$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
+            "command": "emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
             "type": "command"
           }
-        ],
-        "matcher": "read_file|read_many_files"
+        ]
       },
       {
+        "matcher": "write_file|replace",
         "hooks": [
           {
-            "command": "$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
+            "command": "emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
             "type": "command"
           }
-        ],
-        "matcher": "write_file|replace"
+        ]
       }
     ],
     "Notification": [
       {
+        "matcher": "ToolPermission",
         "hooks": [
           {
-            "command": "$GEMINI_PROJECT_DIR/scripts/trackfw-attention-signal.sh",
+            "command": "trackfw attention signal",
             "type": "command"
           }
-        ],
-        "matcher": "ToolPermission"
+        ]
       }
     ]
   }

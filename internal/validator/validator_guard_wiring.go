@@ -466,6 +466,12 @@ var guardWiringScriptPathForms = []struct {
 	{"$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh", "git-branch"},
 	{"$GEMINI_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh", "git-branch"},
 	{`"$(git rev-parse --show-toplevel)/scripts/trackfw-git-branch-guard.sh"`, "git-branch"},
+	// REQ-2026-10-20: workaround bash wrapper forms (legacyWABash* — agentfiles.go).
+	// These are family-independent (the /bin/bash -c wrapper is written verbatim regardless of
+	// the host shell) and do not match any family-dependent helper, so they live here.
+	{`/bin/bash -c '$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE'`, "git-branch"},
+	{`/bin/bash -c '$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE'`, "credential"},
+	{`/bin/bash -c '$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE'`, "credential"},
 }
 
 // guardWiringTypeFromCmd returns "credential" or "git-branch" if cmd is in the guard command
@@ -481,6 +487,7 @@ var guardWiringScriptPathForms = []struct {
 func guardWiringTypeFromCmd(cmd string, fam guardShellFamily) string {
 	for _, subcmd := range []string{"credential", "git-branch"} {
 		if cmd == guardExpectedLine(subcmd, fam) ||
+			cmd == guardD11RevisedLegacyLine(subcmd, fam) ||
 			cmd == guardD11LegacyLine(subcmd, fam) ||
 			cmd == guardD2LegacyLine(subcmd, fam) {
 			return subcmd

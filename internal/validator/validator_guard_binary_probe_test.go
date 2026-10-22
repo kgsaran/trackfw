@@ -85,10 +85,32 @@ func stubProbeOK(t *testing.T) {
 // (a) Linha exata / sufixo extra / família errada / legado / --global
 // --------------------------------------------------------------------------
 
-// Reconciliação: afirma que a linha exata PS/POSIX D11 para git-branch
-// ("$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE")
-// em .claude/settings.json não gera violation (ML-6B: D11 fail-closed).
+// Reconciliação: afirma que a linha exata PS/POSIX REQ-2026-10-20 para git-branch
+// ("emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; ...")
+// em .claude/settings.json não gera violation (REQ-2026-10-20: nova forma fail-closed com prefixo emulate -R sh).
 func TestGuardHookResolvable_ExatoPSPosix_Ok(t *testing.T) {
+	CurrentGOOS = "linux"
+	t.Cleanup(func() { CurrentGOOS = runtime.GOOS })
+	dir := t.TempDir()
+	chdir(t, dir)
+	stubProbeOK(t)
+
+	writeFile(t, dir, ".claude/settings.json",
+		claudeSettingsWithSubcmd(`emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`))
+
+	msgs, err := validateGitBranchGuardHookResolvable()
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+	if len(msgs) != 0 {
+		t.Errorf("esperado 0 msgs, obteve: %v", msgs)
+	}
+}
+
+// Reconciliação: afirma que a linha D11 revised pré-REQ-2026-10-20 para git-branch (sem prefixo emulate -R sh)
+// em .claude/settings.json não gera violation — é tratada como warning-only
+// (via validateGitBranchGuardHookD11RevisedLegacyWarnings), não violation.
+func TestGuardHookResolvable_D11RevLegacyPSPosix_SemViolation(t *testing.T) {
 	CurrentGOOS = "linux"
 	t.Cleanup(func() { CurrentGOOS = runtime.GOOS })
 	dir := t.TempDir()
@@ -103,7 +125,7 @@ func TestGuardHookResolvable_ExatoPSPosix_Ok(t *testing.T) {
 		t.Fatalf("erro inesperado: %v", err)
 	}
 	if len(msgs) != 0 {
-		t.Errorf("esperado 0 msgs, obteve: %v", msgs)
+		t.Errorf("D11 revised pré-REQ-2026-10-20 deve gerar 0 violations (só warning), obteve: %v", msgs)
 	}
 }
 

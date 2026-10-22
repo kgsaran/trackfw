@@ -683,6 +683,81 @@ func TestInjectGeminiHooks_MigrationWiringRewritesInPlaceNotDuplicate(t *testing
 	}
 }
 
+// TestInjectCodexHooks_LegacyMigrationNoDuplicate verifies that B-1 (REQ-2026-10-20)
+// is fixed for all four legacy forms (D2, D11, D11Rev, WABash) on the Codex path.
+//
+// Each sub-test uses the real origin/main .codex/hooks.json shape: a "Bash"
+// PreToolUse group containing BOTH the git-branch guard and the credential guard
+// (in legacy form), plus an "apply_patch" group with credential only. It then
+// counts COMMANDS within each group (not groups), so that the duplicate produced
+// by ML-1A code — two identical credential-guard commands inside the same Bash
+// group — is visible as a FAIL. It also asserts exactly 1 group per matcher
+// (the original invariant, which remains valid).
+//
+// Reconciliation note: affirms that migration-before-merge (ML-1B, B-1 fix)
+// prevents duplicate commands within groups for every supported legacy form.
+func TestInjectCodexHooks_LegacyMigrationNoDuplicate(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", t.TempDir())
+
+	legacyForms := []struct {
+		name    string
+		gitCmd  string
+		credCmd string
+	}{
+		{"D2", legacyD2GitBranchCmdPSPOSIX, legacyD2CredentialCmdPSPOSIX},
+		{"D11", legacyD11GitBranchCmdPSPOSIX, legacyD11CredentialCmdPSPOSIX},
+		{"D11Rev", legacyD11RevGitBranchCmdPSPOSIX, legacyD11RevCredentialCmdPSPOSIX},
+		{"WABash", legacyWABashGitBranchCmdPSPOSIX, legacyWABashCredentialCmdPSPOSIX},
+	}
+
+	for _, tc := range legacyForms {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("USERPROFILE", t.TempDir())
+			helperB1CombinedNoDuplicate(t, codexB1Spec, tc.gitCmd, tc.credCmd)
+		})
+	}
+}
+
+// TestInjectGeminiHooks_LegacyMigrationNoDuplicate is the Gemini counterpart of
+// TestInjectCodexHooks_LegacyMigrationNoDuplicate.
+//
+// Each sub-test uses the real origin/main .gemini/settings.json shape:
+// "run_shell_command" BeforeTool group has BOTH git-branch and credential guards
+// (in legacy form); "read_file|read_many_files" and "write_file|replace" groups
+// have credential only. Commands within each group are counted — not groups — so
+// that the ML-1A duplicate (two identical credential-guard commands inside the
+// same run_shell_command group) is visible as a FAIL.
+//
+// Reconciliation note: affirms that migration-before-merge (ML-1B, B-1 fix)
+// prevents duplicate commands within groups for every supported legacy form.
+func TestInjectGeminiHooks_LegacyMigrationNoDuplicate(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("USERPROFILE", t.TempDir())
+
+	legacyForms := []struct {
+		name    string
+		gitCmd  string
+		credCmd string
+	}{
+		{"D2", legacyD2GitBranchCmdPSPOSIX, legacyD2CredentialCmdPSPOSIX},
+		{"D11", legacyD11GitBranchCmdPSPOSIX, legacyD11CredentialCmdPSPOSIX},
+		{"D11Rev", legacyD11RevGitBranchCmdPSPOSIX, legacyD11RevCredentialCmdPSPOSIX},
+		{"WABash", legacyWABashGitBranchCmdPSPOSIX, legacyWABashCredentialCmdPSPOSIX},
+	}
+
+	for _, tc := range legacyForms {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("HOME", t.TempDir())
+			t.Setenv("USERPROFILE", t.TempDir())
+			helperB1CombinedNoDuplicate(t, geminiB1Spec, tc.gitCmd, tc.credCmd)
+		})
+	}
+}
+
 // --- Kiro ---
 
 func TestInjectKiroHooks(t *testing.T) {

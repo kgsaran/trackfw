@@ -2,66 +2,66 @@
   "hooks": {
     "PermissionRequest": [
       {
+        "matcher": ".*",
         "hooks": [
           {
-            "command": "\"$(git rev-parse --show-toplevel)/scripts/trackfw-attention-signal.sh\"",
+            "command": "trackfw attention signal",
             "type": "command"
           }
-        ],
-        "matcher": ".*"
+        ]
       }
     ],
     "PostToolUse": [
       {
+        "matcher": ".*",
         "hooks": [
           {
-            "command": "\"$(git rev-parse --show-toplevel)/scripts/trackfw-attention-cleanup.sh\"",
+            "command": "trackfw attention cleanup",
             "type": "command"
           }
-        ],
-        "matcher": ".*"
+        ]
       },
       {
+        "matcher": "Bash",
         "hooks": [
           {
-            "command": "$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
+            "command": "emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
             "type": "command"
           }
-        ],
-        "matcher": "Bash"
+        ]
       },
       {
+        "matcher": "apply_patch",
         "hooks": [
           {
-            "command": "$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
+            "command": "emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
             "type": "command"
           }
-        ],
-        "matcher": "apply_patch"
+        ]
       }
     ],
     "PreToolUse": [
       {
+        "matcher": "Bash",
         "hooks": [
           {
-            "command": "$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
+            "command": "emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
             "type": "command"
           },
           {
-            "command": "$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
+            "command": "emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
             "type": "command"
           }
-        ],
-        "matcher": "Bash"
+        ]
       },
       {
+        "matcher": "apply_patch",
         "hooks": [
           {
-            "command": "$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
+            "command": "emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
             "type": "command"
           }
-        ],
-        "matcher": "apply_patch"
+        ]
       }
     ]
   }

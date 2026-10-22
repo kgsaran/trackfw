@@ -788,7 +788,9 @@ func TestGuardWiringMatcherCovers_Tabela(t *testing.T) {
 // TestGuardWiringTypeFromCmd_ClasseDeEquivalencia verifica que todas as formas da classe de
 // equivalência são reconhecidas e que strings fora dela retornam "".
 // Reconciliação: este teste prova que "echo trackfw guard credential" não é reconhecido como
-// fiação (AD2, A2), e que formas legadas são equivalentes à D11-revised.
+// fiação (AD2, A2), e que formas legadas são equivalentes à D11-revised. Inclui as três formas
+// legacyWABash* (wrapper /bin/bash -c, REQ-2026-10-20) extraídas de guardWiringScriptPathForms —
+// family-independent, reconhecidas sob qualquer família de shell.
 func TestGuardWiringTypeFromCmd_ClasseDeEquivalencia(t *testing.T) {
 	for _, fam := range []guardShellFamily{guardShellFamilyPSPosix, guardShellFamilyCmdExe} {
 		for _, subcmd := range []string{"credential", "git-branch"} {
@@ -814,6 +816,36 @@ func TestGuardWiringTypeFromCmd_ClasseDeEquivalencia(t *testing.T) {
 			got := guardWiringTypeFromCmd(notGuard, fam)
 			if got != "" {
 				t.Errorf("fam=%v: out-of-class %q returned %q, want \"\"", fam, notGuard, got)
+			}
+		}
+	}
+
+	// legacyWABash* forms: /bin/bash -c wrapper (REQ-2026-10-20). Family-independent:
+	// extracted directly from guardWiringScriptPathForms to avoid copying strings by hand.
+	// Prova de mordida: remover as três entradas WABash de guardWiringScriptPathForms faz
+	// (a) o count abaixo falhar (got 0, want 3) E (b) guardWiringTypeFromCmd retornar ""
+	// para elas em qualquer iteração restante → falha dupla em t.Errorf.
+	var waBashEntries []struct{ cmd, guardType string }
+	for _, entry := range guardWiringScriptPathForms {
+		if strings.HasPrefix(entry.cmd, "/bin/bash -c") {
+			waBashEntries = append(waBashEntries, entry)
+		}
+	}
+	// REQ-2026-10-20 introduziu exatamente 3 formas WABash (git-branch, credential, credential --global).
+	// Se esse count mudar, o comentário "legacyWABash*" nos agentfiles.go deve ser atualizado também.
+	const wantWABashCount = 3
+	if len(waBashEntries) != wantWABashCount {
+		t.Errorf("guardWiringScriptPathForms: expected %d legacyWABash entries (/bin/bash -c), got %d — "+
+			"REQ-2026-10-20 introduziu 3 (git-branch, credential, credential --global); "+
+			"adicionar ou remover entradas requer atualizar este teste",
+			wantWABashCount, len(waBashEntries))
+	}
+	for _, fam := range []guardShellFamily{guardShellFamilyPSPosix, guardShellFamilyCmdExe} {
+		for _, entry := range waBashEntries {
+			got := guardWiringTypeFromCmd(entry.cmd, fam)
+			if got != entry.guardType {
+				t.Errorf("legacyWABash fam=%v cmd=%q → got %q, want %q",
+					fam, entry.cmd, got, entry.guardType)
 			}
 		}
 	}

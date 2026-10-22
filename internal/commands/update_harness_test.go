@@ -247,7 +247,7 @@ func TestUpdateHarnessCmd_CredentialGuardClaudeInstallsViaCLI(t *testing.T) {
 		t.Fatalf("~/.claude/settings.json was not written: %v", err)
 	}
 	// ML-2A: harness now emits inline command instead of abs .sh path.
-	wantCmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+	wantCmd := `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
 	if countJSONLeafMatches(t, data, wantCmd) == 0 {
 		t.Fatalf("settings.json does not contain inline global command %q (decoded JSON has no leaf equal to it):\n%s", wantCmd, data)
 	}
@@ -296,7 +296,7 @@ func TestUpdateHarnessCmd_CredentialGuardCodexInstallsViaCLI(t *testing.T) {
 		t.Fatalf("~/.codex/hooks.json was not written: %v", err)
 	}
 	// ML-2A: harness now emits inline command instead of abs .sh path.
-	wantCmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+	wantCmd := `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
 	if countJSONLeafMatches(t, data, wantCmd) == 0 {
 		t.Fatalf("hooks.json does not contain inline global command %q (decoded JSON has no leaf equal to it):\n%s", wantCmd, data)
 	}
@@ -345,7 +345,7 @@ func TestUpdateHarnessCmd_CredentialGuardGeminiInstallsViaCLI(t *testing.T) {
 		t.Fatalf("~/.gemini/settings.json was not written: %v", err)
 	}
 	// ML-2A: harness now emits inline command instead of abs .sh path.
-	wantCmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+	wantCmd := `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
 	if countJSONLeafMatches(t, data, wantCmd) == 0 {
 		t.Fatalf("settings.json does not contain inline global command %q (decoded JSON has no leaf equal to it):\n%s", wantCmd, data)
 	}
@@ -394,7 +394,7 @@ func TestUpdateHarnessCmd_CredentialGuardCursorInstallsViaCLI(t *testing.T) {
 		t.Fatalf("~/.cursor/hooks.json was not written: %v", err)
 	}
 	// ML-2A: harness now emits inline command instead of abs .sh path.
-	wantCmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+	wantCmd := `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
 	if countJSONLeafMatches(t, data, wantCmd) == 0 {
 		t.Fatalf("hooks.json does not contain inline global command %q (decoded JSON has no leaf equal to it):\n%s", wantCmd, data)
 	}
@@ -443,7 +443,7 @@ func TestUpdateHarnessCmd_CredentialGuardCopilotInstallsViaCLI(t *testing.T) {
 		t.Fatalf("~/.copilot/settings.json was not written: %v", err)
 	}
 	// ML-2A: harness now emits inline command instead of abs .sh path.
-	wantCmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+	wantCmd := `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
 	if countJSONLeafMatches(t, data, wantCmd) == 0 {
 		t.Fatalf("settings.json does not contain inline global command %q (decoded JSON has no leaf equal to it):\n%s", wantCmd, data)
 	}
@@ -569,7 +569,7 @@ func TestUpdateHarnessCmd_GitBranchGuardInstallsViaCLI(t *testing.T) {
 			if tc.tool == "kiro" {
 				wantCmd = "trackfw guard git-branch || exit 2"
 			} else {
-				wantCmd = `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+				wantCmd = `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
 			}
 			if countJSONLeafMatches(t, data, wantCmd) == 0 {
 				t.Fatalf("%s does not contain inline global command %q (decoded JSON has no leaf equal to it):\n%s", tc.relPath, wantCmd, data)
@@ -580,7 +580,7 @@ func TestUpdateHarnessCmd_GitBranchGuardInstallsViaCLI(t *testing.T) {
 			// different name and is never even touched here) never got its
 			// own command injected by the git-branch-guard target.
 			if tc.tool != "kiro" {
-				credCmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+				credCmd := `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
 				if countJSONLeafMatches(t, data, credCmd) != 0 {
 					t.Fatalf("%s unexpectedly contains credential-guard command — git-branch-guard target should not install credential-guard wiring", tc.relPath)
 				}
@@ -639,8 +639,8 @@ func TestUpdateHarnessCmd_GitBranchGuardAndCredentialGuardCoexistIdempotently(t 
 		t.Fatalf("~/.claude/settings.json not written: %v", err)
 	}
 	// ML-6B: harness emits D11 inline commands (fail-closed PS/POSIX form).
-	credCmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
-	branchCmd := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+	credCmd := `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+	branchCmd := `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
 	credCount := countJSONLeafMatches(t, claudeData, credCmd)
 	branchCount := countJSONLeafMatches(t, claudeData, branchCmd)
 	if credCount == 0 || branchCount == 0 {

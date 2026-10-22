@@ -1323,10 +1323,10 @@ func globalKiroGitBranchWithSubcmdD2() string {
 }`
 }
 
-// globalClaudeSettingsWithSubcmdD11Credential monta ~/.claude/settings.json com a linha D11
-// fail-closed de credential (PS/POSIX): a nova forma correta (ML-6C), esperada sem aviso.
+// globalClaudeSettingsWithSubcmdD11Credential monta ~/.claude/settings.json com a linha REQ-2026-10-20
+// fail-closed de credential (PS/POSIX): a forma correta atual (com prefixo emulate -R sh).
 func globalClaudeSettingsWithSubcmdD11Credential() string {
-	const d11Line = `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+	const d11Line = `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
 	return `{
   "hooks": {
     "PreToolUse": [
@@ -1334,6 +1334,25 @@ func globalClaudeSettingsWithSubcmdD11Credential() string {
         "matcher": "Bash|PowerShell",
         "hooks": [
           {"command": ` + jsonStringLiteral(d11Line) + `, "type": "command"}
+        ]
+      }
+    ]
+  }
+}`
+}
+
+// globalClaudeSettingsWithSubcmdD11RevLegacyCredential monta ~/.claude/settings.json com a linha
+// D11 revised pré-REQ-2026-10-20 de credential (PS/POSIX): sem o prefixo "emulate -R sh".
+// Usada para testar que o validate emite um aviso de migração D11 revised legacy.
+func globalClaudeSettingsWithSubcmdD11RevLegacyCredential() string {
+	const d11RevLegacyLine = `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+	return `{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {"command": ` + jsonStringLiteral(d11RevLegacyLine) + `, "type": "command"}
         ]
       }
     ]
@@ -1449,6 +1468,65 @@ func TestGuardGlobalHookD11LegacyWarnings_CredentialLegacyD11_EmiteUmAviso(t *te
 	}
 	if !hasWarning(warns, "trackfw update harness") {
 		t.Errorf("aviso deve citar `trackfw update harness`, obteve: %v", warns)
+	}
+}
+
+// TestGuardGlobalHookD11RevisedLegacyWarnings_CredentialD11Rev_EmiteUmAviso afirma que a linha D11
+// revised pré-REQ-2026-10-20 (sem prefixo emulate -R sh) em ~/.claude/settings.json emite exatamente 1 aviso
+// nomeando o arquivo e instruindo `trackfw update harness`.
+// Reconciliação: REQ-2026-10-20 eleva a forma D11 revised pré-REQ-2026-10-20 a legado (aborta no zsh) — o validator emite aviso de migração.
+func TestGuardGlobalHookD11RevisedLegacyWarnings_CredentialD11Rev_EmiteUmAviso(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	home := globalGuardHome(t)
+	t.Cleanup(config.Reset)
+
+	settingsPath := filepath.Join(home, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(settingsPath, []byte(globalClaudeSettingsWithSubcmdD11RevLegacyCredential()), 0644); err != nil {
+		t.Fatalf("write global settings: %v", err)
+	}
+
+	warns, err := validateCredentialGuardGlobalHookD11RevisedLegacyWarnings()
+	if err != nil {
+		t.Fatalf("validateCredentialGuardGlobalHookD11RevisedLegacyWarnings() erro: %v", err)
+	}
+	if len(warns) != 1 {
+		t.Fatalf("esperado 1 aviso para config global com linha D11 revised legacy, obteve %d: %v", len(warns), warns)
+	}
+	if !hasWarning(warns, "~/.claude/settings.json") {
+		t.Errorf("aviso deve citar ~/.claude/settings.json, obteve: %v", warns)
+	}
+	if !hasWarning(warns, "trackfw update harness") {
+		t.Errorf("aviso deve citar `trackfw update harness`, obteve: %v", warns)
+	}
+}
+
+// TestGuardGlobalHookD11RevisedLegacyWarnings_NewML7AForm_Silencio afirma que a nova linha
+// REQ-2026-10-20 (com prefixo emulate -R sh) em ~/.claude/settings.json não emite aviso D11 revised legacy.
+// Reconciliação: só a forma D11 revised pré-REQ-2026-10-20 dispara este aviso — a forma REQ-2026-10-20 está correta e é silenciada.
+func TestGuardGlobalHookD11RevisedLegacyWarnings_NewML7AForm_Silencio(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	home := globalGuardHome(t)
+	t.Cleanup(config.Reset)
+
+	settingsPath := filepath.Join(home, ".claude", "settings.json")
+	if err := os.MkdirAll(filepath.Dir(settingsPath), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(settingsPath, []byte(globalClaudeSettingsWithSubcmdD11Credential()), 0644); err != nil {
+		t.Fatalf("write global settings: %v", err)
+	}
+
+	warns, err := validateCredentialGuardGlobalHookD11RevisedLegacyWarnings()
+	if err != nil {
+		t.Fatalf("validateCredentialGuardGlobalHookD11RevisedLegacyWarnings() erro: %v", err)
+	}
+	if len(warns) != 0 {
+		t.Errorf("nova linha REQ-2026-10-20 não deve emitir aviso D11 revised legacy, obteve: %v", warns)
 	}
 }
 

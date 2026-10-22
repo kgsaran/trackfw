@@ -73,11 +73,24 @@ const (
 	guardShellFamilyCmdExe
 )
 
-// guardExpectedLine retorna a linha exata de hook D11 revised fail-closed para a família de shell
-// e nome de subcomando dados (ML-6C / ADR-2026-10-04 D11 revised). O subcmdName pode incluir
+// guardExpectedLine retorna a linha exata de hook D11 revised REQ-2026-10-20 fail-closed (com prefixo
+// emulate -R sh) para a família de shell e nome de subcomando dados
+// (REQ-2026-10-20 / REQ-2026-10-20 / ADR-2026-10-04 D11 revised). O subcmdName pode incluir
 // flags (ex.: "credential --global").
 func guardExpectedLine(subcmdName string, fam guardShellFamily) string {
 	if fam == guardShellFamilyCmdExe {
+		return "trackfw guard " + subcmdName + " || exit 2"
+	}
+	return `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard ` + subcmdName + `; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+}
+
+// guardD11RevisedLegacyLine retorna a linha D11 revised pré-REQ-2026-10-20 (com 4º trecho PS mas sem
+// prefixo). Esta forma aborta o zsh via EQUALS/NOMATCH expansion; é tratada como
+// warning de migração (via validateGuardHookD11RevisedLegacyWarnings), não violation.
+// Só relevante para a família PS/POSIX.
+func guardD11RevisedLegacyLine(subcmdName string, fam guardShellFamily) string {
+	if fam == guardShellFamilyCmdExe {
+		// cmd.exe family did not change between D11 revised and REQ-2026-10-20.
 		return "trackfw guard " + subcmdName + " || exit 2"
 	}
 	return `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard ` + subcmdName + `; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`

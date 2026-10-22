@@ -1,5 +1,83 @@
 # agents-working-context.md
 
+## 2026-10-21 — apolo-tf — FIM: ML-1C para REQ-2026-10-20 (discriminantes B-1 Codex+Gemini)
+
+- Vet limpo. Suite completa: `ok internal/generators 65s`.
+- Testes discriminantes (FAIL em 91494bb7, PASS no HEAD):
+  - `TestInjectCodexHooks_LegacyMigrationNoDuplicate/{D2,D11,D11Rev,WABash}` — PASS HEAD / FAIL ML-1A (2 cópias de credential-guard em PreToolUse["Bash"] e ["apply_patch"])
+  - `TestInjectGeminiHooks_LegacyMigrationNoDuplicate/{D2,D11,D11Rev,WABash}` — PASS HEAD / FAIL ML-1A (2 cópias em BeforeTool["run_shell_command"], ["read_file|read_many_files"], ["write_file|replace"])
+  - `TestInjectCodexHooks_D11RevNoDuplicate` — PASS HEAD / FAIL ML-1A
+  - `TestInjectGeminiHooks_D11RevNoDuplicate` (novo) — PASS HEAD / FAIL ML-1A
+- Sítios alterados: `internal/generators/agentfiles_test.go` (TestInjectCodexHooks_LegacyMigrationNoDuplicate e TestInjectGeminiHooks_LegacyMigrationNoDuplicate reescritos com fixture combinada + contagem de comandos dentro do grupo), `internal/generators/b1_discriminant_test.go` (helper helperB1CombinedNoDuplicate, specs codexB1Spec/geminiB1Spec, TestInjectCodexHooks_D11RevNoDuplicate atualizado, TestInjectGeminiHooks_D11RevNoDuplicate novo).
+
+## 2026-10-21 — apolo-tf — INÍCIO: ML-1C para REQ-2026-10-20 (discriminantes B-1 Codex+Gemini)
+
+- Escopo: tornar TestInjectCodexHooks_LegacyMigrationNoDuplicate e TestInjectGeminiHooks_LegacyMigrationNoDuplicate discriminantes (fixture combinada, contagem de comandos), criar TestInjectGeminiHooks_D11RevNoDuplicate, integrar via helper compartilhado.
+- Worktree: `/private/tmp/trackfw-attention-go`. Branch: `fix/hooks-de-guard-gerados-falham-sob-zsh`.
+
+## 2026-10-21 — apolo-tf — FIM: ML-1B para REQ-2026-10-20 (emulate -R sh, B-1 dedup fix)
+
+- Build clean (`go build ./...`), vet clean (`go vet ./internal/...`).
+- Testes suite completa: `ok internal/generators 63s`, `ok internal/validator 36s`, `ok internal/commands 52s`.
+- `scripts/check-validate-rule-pins.sh`: 34/34 pins PASS.
+- `trackfw validate` (HOME isolado, binário do worktree): exit=0, 164 warnings pré-existentes, zero erros.
+- Novos testes: `TestGuardLineShellMatrix_UnsetoptInsuficiente` (3 PASS — prova que unsetopt falha sob nounset), `TestInjectCodexHooks_LegacyMigrationNoDuplicate` (8 subtests PASS: D2/D11/D11Rev/WABash × cred+git), `TestInjectGeminiHooks_LegacyMigrationNoDuplicate` (8 subtests PASS: D2/D11/D11Rev/WABash × cred+git).
+- Sítios alterados: `agentfiles.go` (prefixo emulate, ordem migração B-1), `guard_line_shell_test.go` (dash/zsh-errexit/zsh-nounset/zsh-cshnullglob, UnsetoptInsuficiente), `agentfiles_test.go` (LegacyMigrationNoDuplicate Codex+Gemini), `validator_guard_wiring.go` (WABash forms em guardWiringScriptPathForms), `update_test.go`+`update_harness_test.go` (prefixo emulate), `validator_guard_binary_probe.go`+`validator_guard_binary_probe_test.go`+`validator_git_branch_guard_test.go` (prefixo emulate).
+- Configs versionados: `.claude/settings.json`, `.codex/hooks.json`, `.gemini/settings.json` — prefixo emulate, sem duplicatas (confirmado por checagem Python).
+- ADR `ADR-2026-10-04-*.md` adendo 2026-10-21 reescrito com tabela de medição ML-1B e explicação de por que `unsetopt` foi descartado.
+
+## 2026-10-21 — apolo-tf — INÍCIO: ML-1B para REQ-2026-10-20 (emulate -R sh, B-1 dedup fix)
+
+- Escopo: substituir `unsetopt EQUALS NOMATCH` por `emulate -R sh` (candidato descartado insuficiente sob nounset/errexit/cshnullglob), corrigir ordem de migração antes de merge em InjectCodexHooks/InjectGeminiHooks (B-1), adicionar wrappers WABash em guardWiringScriptPathForms, escrever testes LegacyMigrationNoDuplicate, atualizar ADR adendo, regenerar configs versionados.
+- Worktree: `/private/tmp/trackfw-attention-go`. Branch: `fix/hooks-de-guard-gerados-falham-sob-zsh`.
+- Proibido: git ops, editar REQ/roadmap/vault, tocar `/Users/kgsaran/Sistemas/Desenvolvimento/workspace/trackfw`.
+
+## 2026-10-21 — artemis-tf — FIM: medição Windows do candidato zsh (REQ-2026-10-20) [v9]
+
+- PS 5.1 e Git Bash medidos para ATUAL e CANDIDATA (4 casos cada: allow/deny/err/ausente), invocação de produção, stdin confirmado.
+- CANDIDATA APROVADA para PS 5.1 e Git Bash: exit codes allow=0,deny=2,err=2,ausente=2 idênticos à ATUAL; stdin `{"tool":"guard","path":"C:\\project"}` capturado pelo fake em allow/deny/err.
+- Bug descoberto: `param([string]$args,...)` em PS conflita com variável automática `$args` — filhos recebem args vazios, bash/PS lêem stdin como script. Corrigido na v9 com `$argStr`.
+- cmd.exe: rc=1 para todos os casos — gap pré-existente (ADR D7/D11; linha polyglot não é para cmd); ATUAL e CANDIDATA idênticos.
+- pwsh: não instalado na VM. Risco baixo (mecanismo idêntico ao PS5).
+- Relatório: `docs/portabilidade/2026-10-21-guard-zsh-candidato-windows.md`.
+
+## 2026-10-21 — artemis-tf — INÍCIO: medição Windows do candidato zsh (REQ-2026-10-20)
+
+- Escopo: medir ATUAL e CANDIDATA em PS5/cmd/Git Bash na VM powershell-vm; escrever somente `docs/portabilidade/2026-10-21-guard-zsh-candidato-windows.md`.
+- Proibido: git, go build/test, editar internal/, scripts/, docs/cli-parity.md, docs/adr/, configs.
+
+## 2026-10-21 — apolo-tf — FIM: ML-1A para REQ-2026-10-20 (unsetopt EQUALS NOMATCH fix)
+
+- Build clean (`go build ./...`), vet clean (`go vet ./internal/...`).
+- Testes: `ok internal/generators 57s`, `ok internal/validator 32s`, `ok internal/commands 48s`.
+- `scripts/check-validate-rule-pins.sh`: 34/34 pins PASS.
+- Sítios alterados: `internal/generators/agentfiles.go` (3 constantes canônicas + 6 legacy), `internal/generators/update.go` (11 harness targets), `internal/validator/validator_guard_binary_probe.go`, `internal/validator/validator_credential_guard.go`, `internal/validator/validator_git_branch_guard.go`, `internal/validator/validator_guard_wiring.go`, `internal/validator/validator.go`.
+- Configs versionados migrados: `.claude/settings.json` (7), `.codex/hooks.json` (7), `.gemini/settings.json` (10) — todos com `unsetopt EQUALS NOMATCH 2>${null-/dev/null}; ` prefix via `/tmp/tf-ml1a update harness` em HOME isolado.
+- Documentação: `docs/cli-parity.md` (tabela ML-7A + seção NOMATCH/EQUALS), `docs/adr/ADR-2026-10-04-*.md` (adendo 2026-10-21).
+- Forma legada D11 revisada (pre-ML-7A) não gera violation — emite aviso de `trackfw update harness`.
+- Pendentes identificados (não bloqueantes): subprocess shell test em `internal/generators/`, dedup de entradas duplicadas pós-migração, `trackfw validate` run final aguarda `trackfw validate` com HOME isolado pelo arquiteto.
+
+## 2026-10-21 — apolo-tf — INÍCIO: ML-1A para REQ-2026-10-20 (unsetopt EQUALS NOMATCH fix)
+
+- Escopo: implementar a correção da linha polyglot de guard em zsh — adicionar prefixo `unsetopt EQUALS NOMATCH 2>${null-/dev/null}; ` às 3 constantes PS/POSIX. Worktree: `/private/tmp/trackfw-attention-go`. Branch: `fix/hooks-de-guard-gerados-falham-sob-zsh`.
+- Arquivos primários: `internal/generators/agentfiles.go`, `internal/validator/validator_guard_binary_probe.go`, + testes e configs versionados.
+- Proibido: git ops, editar REQ/roadmap, tocar `/Users/kgsaran/Sistemas/Desenvolvimento/workspace/trackfw`, `~/.codex`, `~/.claude`, `~/.gemini`.
+
+## 2026-10-21 — hades-tf — FIM: ML-0A Wave 0 concluído para REQ-2026-10-20
+
+- Roadmap: `docs/roadmaps/wip/ROADMAP-2026-10-20-hooks-de-guard-gerados-falham-sob-zsh-com-exit-1-e-deixam-de-executar-a-protecao.md`
+- ML-0A marcado ✅ Concluído; `trackfw barrier --wave 0 --trust-local-gates` = PASSED (todos os 5 checks).
+- Duas correções materiais em relação à versão anterior: (a) T3 corrigido — NOMATCH é o segundo breakpoint, não história expansion; (b) tabela CLI×shell corrigida — Claude Code macOS confirmado zsh via `$ZSH_VERSION=5.9` nesta sessão, não bash inferido.
+- Candidato documentado: `unsetopt EQUALS NOMATCH 2>${null-/dev/null}; ` como prefixo — medido em sh/bash/dash/zsh/zsh-f, todos corretos; PS não medido (R1 declarado).
+- Novos artefatos versionados identificados como superfície D: `.claude/settings.json` (7), `.codex/hooks.json` (5), `.gemini/settings.json` (7); entram como sítio de migração no ML-1A.
+- Vault note `codex-guard-polyglot-aborta-zsh-equals-2026-10-20.md` precisa de adendo: segundo breakpoint NOMATCH e ZSH_VERSION Claude Code.
+- Frente de trabalho seguinte: ML-1A (implementação da correção) — a ser despachado pelo zeus-tf.
+
+## 2026-10-21 — hades-tf — INÍCIO: ML-0A Wave 0 para REQ-2026-10-20 (zsh guard defect)
+
+- Escopo: threat model em `docs/roadmaps/wip/ROADMAP-2026-10-20-...md` apenas. Worktree: `/private/tmp/trackfw-attention-go`. Branch: `fix/hooks-de-guard-gerados-falham-sob-zsh`.
+- Proibido: código de produto, git ops, editar qualquer arquivo fora do roadmap.
+
 ## 2026-10-21 — zeus-tf — FIM: jornadas reais AC5–AC7 fechadas com ressalva
 
 - AC5: guard permite/nega por evento real (Bash e PowerShell); atenção em sessão interativa no console com a pergunta real e cleanup após a resposta. Ressalva aceita pelo KG: binário colocado à mão em C:\Users\Lab\bin (build 8694124d), canal publicado não medido; só Claude medido.
@@ -47116,6 +47194,125 @@ P21 complemento operacional: input workflow_dispatch attention_only boolean fals
 
 - make quality exit 0 (falsificação 368 OK/0 FAIL), com HOME isolado e packaging/pyyaml por venv temporário. A primeira tentativa parou por falta do `packaging` no host. PR https://github.com/kgsaran/trackfw/pull/592 aberto a pedido do KG; sem merge. REQ fecha pós-merge.
 
+## 2026-10-21 — zeus-tf — registros importados do checkout principal (branch docs/ponto-de-parada-2026-10-19 + alterações não commitadas)
+
+> Importados por decisão do KG ("juntar com o próximo trabalho"). O conteúdo é histórico e está copiado sem edição.
+
+## 2026-10-21 — apolo-tf — FIM: correção residual ML-1I em attentionFirstQuestion
+Worktree `/private/tmp/trackfw-attention-go`, branch `fix/instalacao-windows-jornadas`. `attentionFirstQuestion` reescrita com `json.NewDecoder` — lê só o primeiro elemento, sem alocar o array inteiro. Dois subtestes novos adicionados. Build + vet + 10 subtestes de Attention: todos PASS. Pronto para auditoria do arquiteto.
+## 2026-10-21 — hades-tf — FIM: revisão attention.go HEAD fix/instalacao-windows-jornadas
+Revisão read-only de `internal/commands/attention.go` HEAD em `/private/tmp/trackfw-attention-go`. Quatro propriedades verificadas: limite de entrada (OK), sanitização (OK), no-op (OK), pathguard (OK). APROVADO sem ressalvas bloqueantes. Observação não-bloqueante: amplificação 12× de headers de slice para array grande em `attentionFirstQuestion` — não crítico para hook local, registrar se exposto via rede.
+## 2026-10-20 — zeus-tf — retomada AC5–AC7 na VM
+
+- KG autorizou continuar com VM ligada. SSH powershell-vm respondeu WIN-C83B0R5MIGB; shell cmd.exe. Inventário inicial PATH: Claude Code, Go, Git e trackfw presentes; demais agentes e pwsh não resolvidos. Medição deve usar fonte pós-merge #591, isolamento de projeto/config e eventos reais, preservando instalações/configs existentes.
+---
+## 2026-10-19 — zeus-tf — PONTO DE PARADA (retomar quarta-feira, 2026-10-21)
+**Estado:** `main` em `bc9d4b5c` (#588), árvore limpa, nenhuma branch aberta além desta. Release
+**v10.0.0** publicada (GitHub 8 assets, PyPI, npm 6 plataformas + shim); binário local em 10.0.0.
+Nenhum roadmap em `wip/`.
+**Entregue na sessão 2026-10-15→19:** REQ-2026-09-03 (Windows: falhas conhecidas 14→6, todas de
+ambiente), REQ-2026-09-05 guard de staging (#576), refint+CRLF (#579/#583), agent_models+identity
+(REQ-2026-08-30), branch new da base correta (REQ-2026-09-12, 10.0.0 BREAKING), skill implement
+(#587), resíduos pré-v8 no cli-parity/.gitattributes (#588). Releases 9.7.0, 9.8.0, 10.0.0.
+
+**Próximo (recomendado):** REQ-2026-09-05 — instalação em Windows, começando pelo **ML-1H**
+(hooks de atenção → `trackfw attention signal|cleanup` em Go, sem `sh`/`jq`/`python3`), depois
+AC5–AC7 (medir outros CLIs, `pwsh` sem Git Bash, caminhos com espaço/acento).
+Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-22-a-instalacao-em-windows-*.md`.
+
+**Restante do backlog:** reescrita do `cli-parity.md` (89 linhas de 3 runtimes —
+`ROADMAP-2026-10-18-reescrita-do-cli-parity-md-*`); reconciliação #238/#240 (allowlist do gate de
+encoding); contrato `model` no harness do arquiteto; texto em stderr do `validate --json`; testes
+que chamam git sem `LookPath`; chmod no discover.
+
+**Lacuna de cobertura registrada (#588):** o ciclo gerador→verificador perdeu o gate dedicado
+(`check-artifact-closed-cycle.sh`, removido na v8) — sem REQ ainda; decidir ao retomar.
+
+**Lembretes operacionais:** `make parity-rest` precisa de `PATH=/tmp/zeus-venv312/bin:$PATH`
+(módulo `packaging`); corpo de PR sem "fecha #N".
+## 2026-10-20 — zeus-tf — diagnóstico de hooks do Codex
+- Iniciado: inspeção read-only de configuração global/projeto, vault, logs SQLite e scripts instalados.
+- Concluído: seis comandos PreToolUse/Bash de guard passaram em sonda direta com `pwd` (exit 0); SessionStart dos companions Codex/Gemini passou diretamente (exit 0). Não comprova execução pelo runtime.
+- Confirmado: pretooluse-rewriter.sh global concatena --color=never ao fim de comandos compostos iniciados por ls; reprodução transforma `ls /tmp; git status --short` em `ls /tmp; git status --short --color=never`, quebrando git.
+- Logs de 10:52:59/10:53:00 UTC: config.toml:7:1 duplicate key; runtime manteve configuração de startup. Arquivo atual passa tomllib, portanto erro é histórico/transitório. Profile arquiteto contém caminho sem / inicial.
+- Nenhuma configuração global alterada; causa de todos os avisos de falha não estabelecida pelos registros acessíveis.
+## 2026-10-20 — zeus-tf — correção dos hooks personalizados globais
+- Iniciado: origem conferida em internal/generators/agentfiles.go:317 e InjectCodexHooks; rewriter/guardrails são customizações preservadas, sem gerador no trackfw. Guards e attention são gerados pelo produto.
+- Concluído: especialista preparou patch externo, auditor independente aprovou; instalado com autorização do sandbox. Rewriter preserva comandos compostos e não reescreve ls/go build; guardrails corrige permissionDecision block para deny, mantendo políticas.
+- Backup: ~/.codex/hooks/backups/20261020T105943314518Z/. hooks.json e código do produto não alterados.
+- Validação: 5 testes com subcasos passaram nos scripts instalados; modos executáveis preservados e bytes conferidos. Testes de preservação do gerador passaram. Sonda do guard bloqueou payload simulado com exit 2/deny sem executar operação Git. Chamada real composta ls + status passou após instalação. Guardrail corrigido também bloqueou uma tentativa de gravar documentação por conter texto de comando proibido; falso positivo preexistente de varredura textual, fora deste fix.
+## 2026-10-20 — zeus-tf — levantamento do ponto de retomada
+- Iniciado: confronto do ponto de parada de 19/10 com branch, roadmaps e GitHub.
+- Concluído: branch local docs/ponto-de-parada-2026-10-19, HEAD b31f611d; 7 roadmaps backlog, nenhum WIP/analyzing/blocked. Release v10.0.0 confirmada no GitHub (18/10 23:23 UTC).
+- Retomada prevista: ML-1H da instalação Windows (REQ-2026-09-05), portar atenção para Go; depois medir jornadas AC5–AC7.
+- Novidade remota: PR #590 aberto, correção da classificação de timeout nas sondas do guard, fora deste checkout; responsabilidade do Lourival, sem bloquear nossa frente (orientação do usuário).
+- Alterações locais: somente registros e nota do diagnóstico/correção dos hooks desta sessão. Nenhuma implementação iniciada neste levantamento.
+## 2026-10-20 — zeus-tf — causa real dos avisos repetidos de hooks
+- Iniciado: usuário mostrou exit 1 persistente após correção dos hooks personalizados.
+- Concluído: constantes polyglot do trackfw abortam sob zsh com `2 not found`, antes do binário. Nove entradas corrigidas localmente por Bash explícito, com backup ~/.codex/hooks/backups/20261020T110406812571Z/. Auditoria independente aprovada; 18 execuções pós-instalação zsh -c/-lc passam; deny e ausência do binário continuam exit 2.
+- A afirmação anterior de que não havia defeito de geração estava incompleta: só fora testado Bash. Nova REQ-2026-10-20 + roadmap backlog registram correção do gerador, migração e matriz zsh/Windows. Produto ainda não implementado; o PR externo #590 é responsabilidade do Lourival e não bloqueia nossa frente (orientação do usuário). Arquivos .codex/hooks.json local e global alterados somente nas 9 strings command; não desativamos hooks.
+## 2026-10-20 — zeus-tf — consulta de retomada
+- Iniciado: leitura do contexto, visão, trackfw context e estado Git local.
+- Concluído: próxima implementação planejada continua ML-1H da REQ-2026-09-05. Branch docs/ponto-de-parada-2026-10-19, sem roadmap WIP; alterações locais do diagnóstico de hooks preservadas. Estado remoto não reconsultado nesta leitura.
+## 2026-10-20 — zeus-tf — descarte da frente local PR #590
+- Iniciado: usuário determinou descartar nossa frente de revisão/correção do PR #590, que fica com o Lourival.
+- Concluído: removidos o parecer P2 e o bloqueio de retomada do contexto local; PR externo não bloqueia o ML-1H por orientação explícita do usuário. Nenhum código de produto referente ao #590 foi aplicado neste checkout. Banner de atenção já ausente. Alterações e artefatos dos hooks preservados.
+## 2026-10-20 — zeus-tf — início da retomada ML-1H
+- REQ existente pareada movida para WIP; plano refinado para atenção nativa Go com linha simples, sem polyglot dos guards. Wave 0 precede implementação. PR externo #590 excluído explicitamente pelo usuário.
+- Branch base: origin/main; HEAD local difere apenas em registro doc-only de parada. Workaround local .codex/hooks.json e artefatos de diagnóstico permanecem fora dos commits deste ML. Branches antigas remotas comparadas por arquivos tocados: resíduos somente docs/agents-working-context.md e .trackfw-log; nenhuma implementação própria pendente.
+- Execução transferida para /private/tmp/trackfw-attention-go, branch fix/a-instalacao-em-windows-promete-o-que-nao-entrega a partir de origin/main. Governança commitada 2f71ab8f, validate isolado: zero violações. Documentos desta retomada vivem somente nesse worktree; checkout original preserva diagnóstico/hooks e backlog anterior.
+## 2026-10-20 — zeus-tf — retomada planejada: ML-1H concluído
+- Trabalho entregue no worktree /private/tmp/trackfw-attention-go, branch fix/a-instalacao-em-windows-promete-o-que-nao-entrega. Commits de produto 658c07ab, sonda 20b3734c e conclusão dfbebd94, publicados no origin. Checkout original e hooks/diagnósticos locais preservados.
+- Atenção Go nos seis emissores, migrações e wrappers auditados. make quality PASS (368 OK/0 FAIL); barreiras 0/2/3 PASS com comandos conferidos, validate 0 violações.
+- Windows https://github.com/kgsaran/trackfw/actions/runs/39454688584 success: PowerShell/cmd sem bash/jq/python, API ativo/inativo, Edge real mostrou e ocultou banner com mensagem exata, credential signal intacto. Evidência em docs/portabilidade/2026-10-20-atencao-go-windows-p21.md na branch de trabalho.
+- Próximo ponto: AC5–AC7, jornadas reais dos CLIs de agente; REQ Open e roadmap WIP. ML-1H/AC8 concluído. Nenhum PR/merge/release; #590 com Lourival.
+## 2026-10-20 — zeus-tf — PR #591 e gates concluídos
+- Pós-merge: KG informou o merge; confirmado no GitHub em 2026-10-20T17:11:58Z, commit 28d6d0189ac725d76cc4d667ee1b6c57e00c1b52. Retomada planejada: AC5–AC7, jornadas reais dos agentes no Windows; AC8 entregue. Checkout original mantém alterações locais; worktree /private/tmp/trackfw-attention-go preservado, sem apagar branch em uso.
+- PR #591 aberto por autorização do KG. Correção CI no commit 17828895: Artemis reutilizou helper de capacidade no teste symlink e aposentou entrada Windows já resolvida, preservando histórico. Sem alteração de produto ou relaxamento dos gates.
+- Run 39461370579 SUCCESS: 20/20 checks verdes, incluindo parity-other-gates, parity e windows-full-suites (suíte Go e ratchet D4/D6 aprovados). Head 17828895 MERGEABLE/CLEAN. Build, testes focados, parity-rest e validate locais passaram. Branch publicada e worktree isolado limpo; nenhum merge realizado.
+- PR #590 de Lourival reavaliado no head 8ab6e84c: comentário P2 atendido, testes locais e 20 checks aprovados; recomendação de merge fornecida ao KG, sem publicar review/comentário ou executar merge.
+## 2026-10-21 — hades-tf — INÍCIO: red-team ML-2A (REQ-2026-10-20 — guard sob zsh)
+- Revisão de segurança da branch fix/hooks-de-guard-gerados-falham-sob-zsh, diff internal/ scripts/ .claude/ .codex/ .gemini/.
+- Escopo: fail-open, migração (remoção/reescrita/duplicata), rebaixamento de violação para aviso, cobertura de testes.
+## 2026-10-21 — hades-tf — FIM: red-team ML-2A (REQ-2026-10-20 — guard sob zsh)
+- Veredito: REPROVADO. Achado BLOQUEANTE B-1: duplicata de credential guard em .codex/hooks.json (6x) e .gemini/settings.json (9x) — mergeClaudeHookArray roda ANTES dos migrateHookCommand D11Rev em InjectCodexHooks/InjectGeminiHooks.
+- Matrix zsh sh bash dash/zsh-f: PASS (TestGuardLineShellMatrix 60 subtestes, TestGuardLineShellMatrix_DefeitoAntigo confirma exit 1 sob zsh sem prefixo).
+- Validador rebaixou D11Rev para warning: comportamento intencional e correto. [Corrigido pelo próprio hades-tf no relatório: `guard_wiring_removed` NÃO reconhece as formas do wrapper `/bin/bash -c`, o que gera falso positivo; entra no ML corretivo.]
+- ACs cobertos: matriz sh/bash/zsh/zsh-f completa; braço do defeito; sem cobertura de migração D11Rev (gap de teste).
+- Nota vault: inject-codex-gemini-d11rev-duplicata-antes-de-migracao-2026-10-21.md
+
+## 2026-10-21 — hades-tf (registrado por zeus-tf) — FIM: 2ª revisão de segurança, REQ-2026-10-20
+
+- Leitura do delta 91494bb7..HEAD; testes só em cópia. APROVADO COM RESSALVA (baixa): faltava o teste de guardWiringTypeFromCmd para as 3 formas do wrapper /bin/bash -c. B-1 fechado; emulate -R sh sem fail-open novo; NO_UNSET/CSH_NULL_GLOB fechados; R4 (bash com errexit herdado) continua como resíduo declarado.
+
+## 2026-10-21 — zeus-tf — entradas do apolo-tf gravadas por engano no checkout principal (main), copiadas sem edição
+
+## 2026-10-21 — apolo-tf — FIM: corretivo ML-1B da revisão de segurança REQ-2026-10-20
+
+- Item 1: `TestGuardLineShellMatrix_UnsetoptInsuficiente` — branch `code == 2` trocado de `t.Logf` para `t.Errorf`. O teste afirma que a forma `unsetopt` é insuficiente (sai com exit ≠ 2 sob zsh -o nounset); se a forma "passar" (exit 2), o teste reprova. Prova de mordida confirmada (mutação com `emulatePrefix` → FAIL nos 3 subcasos).
+- Item 2: `TestGuardWiringTypeFromCmd_ClasseDeEquivalencia` — adicionado bloco para as três formas `legacyWABash*` (`/bin/bash -c`). Strings extraídas de `guardWiringScriptPathForms` por filtro (sem cópia manual), com asserção `wantWABashCount = 3` para detectar remoção silenciosa. Prova de mordida confirmada (remoção das 3 entradas da tabela → `got 0, want 3` → FAIL).
+- Item 3: `validator_guard_binary_probe_test.go` — quatro ocorrências de `ML-7A` nos comentários desta branch trocadas por `REQ-2026-10-20`. Verificado por `git diff origin/main | grep ML-7A` (saída vazia).
+- `go vet ./internal/...` limpo; `go test ./internal/generators/ ./internal/validator/ -count=1` verde (generators 63s, validator 35s).
+- Arquivos modificados: `internal/generators/guard_line_shell_test.go`, `internal/validator/validator_guard_wiring_test.go`, `internal/validator/validator_guard_binary_probe_test.go`.
+
+
+## 2026-10-21 — apolo-tf — início: ML-1A corretivo — teste real por subprocess (REQ-2026-10-20)
+
+- Tarefa: implementar TestGuardLineShellMatrix em internal/generators/guard_line_shell_test.go
+- Worktree: /private/tmp/trackfw-attention-go, branch fix/hooks-de-guard-gerados-falham-sob-zsh
+- Escopo restrito: único arquivo novo, sem tocar outros arquivos ou worktrees
+
+## 2026-10-21 — apolo-tf — FIM: ML-1A corretivo — TestGuardLineShellMatrix implementado
+
+- Arquivo entregue: internal/generators/guard_line_shell_test.go (novo, não commitado)
+- go vet: PASS; TestGuardLineShellMatrix: PASS (60 subtestes — 3 guards × 4 shells × 4 casos + DefeitoAntigo: PASS)
+- Prova de mordida: cópia mutada sem prefixo unsetopt → FAIL nos subtestes zsh/zsh-f (stderr "zsh:1: 2 not found", stdin não preservado, exit 1 em vez de 0/2)
+- trackfw validate: 19 violações guard_wiring_removed pré-existentes do ML-1A (settings.json/codex/gemini); não introduzidas por este ML
+- Riscos: nenhum novo; as violações do validate são do ML-1A, para o arquiteto auditar junto ao diff completo do ML-1A
+
+## 2026-10-21 — zeus-tf — PR #595 aberto (REQ-2026-10-20)
+
+- PR https://github.com/kgsaran/trackfw/pull/595 aberto a pedido do KG; sem merge. Todos os ACs marcados, make quality verde. REQ fecha pós-merge. Depois de uma release, `trackfw update harness` migra os configs globais do KG (inclusive o workaround /bin/bash -c).
 ## 2026-10-21 — zeus-tf — FIM: REQ-2026-09-05 (instalação Windows) encerrada
 
 - PR #592 mergeado (3c0cc1f2, 2026-10-21T19:48:48Z), conforme informado pelo KG e conferido no GitHub. Roadmap movido para done/ com `trackfw roadmap move`, REQ com status Done e ponteiros sincronizados. validate: 0 violações, 166 avisos. Branch docs/encerra-req-instalacao-windows.
