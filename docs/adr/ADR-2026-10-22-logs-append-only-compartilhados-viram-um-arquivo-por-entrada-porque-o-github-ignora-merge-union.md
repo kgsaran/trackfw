@@ -44,12 +44,12 @@ entre três opções: arquivo por entrada, manter `union` e documentar, ou inser
 
 ### D1. Log de transições
 
-- **Escrita:** cada transição cria `<dir>/.trackfw-log.d/<AAAAMMDDTHHMMSSZ>-<h8>.log`, onde `<dir>` é o
+- **Escrita:** cada transição cria `<dir>/.trackfw-log.d/<AAAAMMDDTHHMMSSZ>-<h8>.entry`, onde `<dir>` é o
   mesmo diretório de hoje (`roadmap_dir` ou `req_dir`). O timestamp é em UTC, sem `:` (que o Windows não
   aceita), e `<h8>` são os 8 primeiros hex do SHA-256 da linha. O conteúdo é **uma linha**, no formato
   atual, para reaproveitar o parser. Duas branches que gerem a mesma entrada criam o mesmo arquivo com o
   mesmo conteúdo, e isso não conflita.
-- **Leitura, por um ponto único:** o `.trackfw-log` legado (se existir) e todos os `*.log` de
+- **Leitura, por um ponto único:** o `.trackfw-log` legado (se existir) e todos os `*.entry` de
   `.trackfw-log.d/`, ordenados pelo timestamp da linha já parseado com o fuso, com desempate pelo nome do
   arquivo. Os dois parsers atuais (`internal/metrics/metrics.go` e `internal/serve/metrics_log.go`) viram
   um só. Pela Regra Dura, esta ADR não está satisfeita enquanto sobrar um leitor que leia só o arquivo.
@@ -61,7 +61,7 @@ entre três opções: arquivo por entrada, manter `union` e documentar, ou inser
 
 ### D2. Contexto de trabalho dos agentes
 
-- **Escrita:** cada entrada vira `docs/agents-working-context.d/<AAAAMMDDTHHMMSSZ>-<agente>-<h8>.md`, com o
+- **Escrita:** cada entrada vira `docs/agents-working-context.d/<AAAAMMDDTHHMMSSZ>-<agente>-<slug-do-assunto>.md`, com o
   mesmo formato de bloco de hoje (`## <data> — <agente> — <INÍCIO|FIM>: <assunto>` e os bullets).
 - **`docs/agents-working-context.md`** fica congelado como histórico, com um cabeçalho de
   redirecionamento no topo. Ele deixa de ser o lugar de escrita.
@@ -77,6 +77,23 @@ duas branches fazem transições pelo código real e depois fazem `git merge`. O
 limpo e igualdade de conjunto das entradas. O braço contrário exige que o formato antigo, com append nas
 duas branches, conflite. Com `.gitattributes`, o teste passaria até no formato antigo, e foi exatamente
 assim que o defeito ficou invisível.
+
+### Adendo da Wave 0 (2026-10-22, `docs/seguranca/2026-10-22-wave0-log-por-entrada.md`)
+
+- **Extensão `.entry`, e não `.log`.** Medido: com `*.log` no `.gitignore`, que é padrão nos templates de Node e Python,
+  `git check-ignore` confirma que a entrada seria ignorada. O arquivo existiria só localmente, e o forge nunca veria o
+  formato novo. Uma negação no `.gitignore` foi descartada: ela não vale quando o diretório pai já está ignorado e
+  depende do arquivo do adotante. Nenhum template conhecido ignora `*.entry`.
+- **`by_agent`:** `.trackfw-log.d` entra em `isInfraDirName` (`validator.go:1968`). Sem isso, o `hiddenNamespaceWarnings`
+  (`validator.go:2103`) o trata como namespace de agente oculto. Isso foi medido.
+- **D2 sem hash:** quem escreve a entrada de contexto é um LLM, que não calcula SHA-256. O sufixo vira um slug curto do
+  assunto, escolhido pelo agente. Dois agentes diferentes no mesmo segundo nunca colidem, porque o nome do agente está no
+  arquivo. Se o mesmo agente gravar duas entradas no mesmo segundo, os assuntos distinguem.
+- **Leitura do legado:** os três leitores atuais divergem no fuso (`time.Local` e `time.Parse` em UTC). O leitor único usa
+  o offset escrito na própria linha, que o formato atual já grava (`-0300`), e cai para `time.Local` só quando a linha não o
+  tiver.
+- **Bug da mesma causa:** `commands/metrics.go:20` fixa `docs/roadmaps/.trackfw-log` em vez de `RoadmapDir`. Ele é
+  corrigido junto.
 
 ## Consequences
 

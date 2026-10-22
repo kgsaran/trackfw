@@ -43,7 +43,7 @@ ADR: docs/adr/ADR-2026-10-22-logs-append-only-compartilhados-viram-um-arquivo-po
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model e enumeração completa
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** hades-tf
 **Files affected:** `docs/seguranca/2026-10-22-wave0-log-por-entrada.md` (novo, único arquivo)
 **Actions:**
@@ -59,9 +59,11 @@ ADR: docs/adr/ADR-2026-10-22-logs-append-only-compartilhados-viram-um-arquivo-po
    existe (`trackfw context`).
 6. Alvos de falsificação nas duas direções e o resíduo, incluindo a janela de transição das instruções já instaladas.
 **Acceptance criteria:**
-- [ ] As seis seções respondidas com evidência (arquivo:linha ou comando e saída)
-- [ ] A lista final de arquivos de cada ML da Wave 1 e da Wave 2
-- [ ] Nenhuma linha de implementação
+- [x] As seis seções respondidas com evidência (arquivo:linha ou comando e saída)
+- [x] A lista final de arquivos de cada ML da Wave 1 e da Wave 2
+- [x] Nenhuma linha de implementação
+
+**Auditoria do arquiteto (2026-10-22):** aprovada, com os três ajustes incorporados ao adendo da ADR: extensão `.entry` em vez de negação no `.gitignore`, `isInfraDirName` e D2 sem hash. A lista de arquivos de cada ML está na seção "Lista de arquivos" do parecer, e os handoffs a seguem.
 
 **Gates da wave:**
 ```bash
@@ -77,7 +79,7 @@ test -s docs/seguranca/2026-10-22-wave0-log-por-entrada.md
 **Files affected:** escritores (`generators/roadmap.go`, `generators/req.go`), um pacote leitor único, todos os leitores listados no
 Context, `generators/scaffold.go` (o comentário do `gitAttributesBlock`), `docs/cli-parity.md` e os testes. A lista final vem da Wave 0.
 **Acceptance criteria:**
-- [ ] Uma transição grava `<dir>/.trackfw-log.d/<AAAAMMDDTHHMMSSZ>-<h8>.log` com uma linha. Não há mais append no arquivo.
+- [ ] Uma transição grava `<dir>/.trackfw-log.d/<AAAAMMDDTHHMMSSZ>-<h8>.entry` com uma linha. Não há mais append no arquivo.
 - [ ] Sobra um único parser. Todos os leitores leem o legado e o diretório. Nenhum leitor lê só o arquivo, e um teste prova isso.
 - [ ] Teste em `t.TempDir()` **sem `.gitattributes`**: duas branches movem roadmaps pelo código real, e o `git merge` sai limpo, com
       igualdade de conjunto das entradas. O braço contrário, com o formato antigo, conflita no mesmo teste.
