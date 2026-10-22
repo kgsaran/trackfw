@@ -147,6 +147,11 @@ func needsYAMLQuoting(v string) bool {
 	if containsControlChar(v) {
 		return true
 	}
+	// Leading or trailing ASCII whitespace is trimmed from YAML plain scalars
+	// (YAML 1.2 §7.3.3); double-quoting preserves it.
+	if v[0] == ' ' || v[0] == '\t' || v[len(v)-1] == ' ' || v[len(v)-1] == '\t' {
+		return true
+	}
 	// YAML special keywords that parse as non-string types
 	switch strings.ToLower(v) {
 	case "null", "~", "true", "false", "yes", "no", "on", "off":
@@ -175,7 +180,7 @@ func needsYAMLQuoting(v string) bool {
 		// Additional restrictions for the first character
 		if i == 0 {
 			switch r {
-			case '-', '?', ':', '|', '>', '!', '&', '*', '#', '%', '@', '`':
+			case '-', '?', ':', '|', '>', '!', '&', '*', '#', '%', '@', '`', ',':
 				return true
 			}
 		}
@@ -188,7 +193,9 @@ func needsYAMLQuoting(v string) bool {
 // control characters (U+0000–U+001F), DEL (U+007F), and C1 control
 // characters (U+0080–U+009F) are escaped with YAML \xHH notation
 // (code-point value, not a byte), which YAML 1.2 accepts in double-quoted
-// scalars. ML-4B.
+// scalars. U+2028/U+2029 (line/paragraph separators) and U+FFFE/U+FFFF
+// (non-characters) are emitted as \uXXXX escapes: yaml.v3 folds the raw
+// forms or rejects them outright. ML-4B, ML-4F.
 func yamlEscapeDoubleQuoted(v string) string {
 	var sb strings.Builder
 	sb.Grow(len(v))
@@ -201,6 +208,12 @@ func yamlEscapeDoubleQuoted(v string) string {
 		default:
 			if r < 0x20 || r == 0x7F || (r >= 0x80 && r <= 0x9F) {
 				fmt.Fprintf(&sb, `\x%02x`, r)
+			} else if r == 0x2028 || r == 0x2029 || r == 0xFFFE || r == 0xFFFF {
+				// U+2028 (LINE SEPARATOR) and U+2029 (PARAGRAPH SEPARATOR) fold to
+				// spaces in yaml.v3 double-quoted scalars when emitted raw; U+FFFE
+				// and U+FFFF (non-characters) are rejected by yaml.v3 as raw bytes.
+				// All four are safe as \uXXXX escapes per YAML 1.2 §7.3.1.
+				fmt.Fprintf(&sb, `\u%04x`, r)
 			} else {
 				sb.WriteRune(r)
 			}
@@ -274,6 +287,17 @@ func Render(item Item, kind ItemKind, capability Capability, source []byte, cfg 
 		name = identity.AgentName(id.Slug)
 		description = id.DisplayName + " — " + description
 		body = greeting + "\n\n" + body
+	}
+
+	// Reject Unicode non-characters (U+FFFE, U+FFFF) for YAML output paths.
+	// yaml.v3 accepts them as \ufffe/\uffff escape sequences but YAML 1.2 §5.1
+	// excludes them from c-printable; the trackfw policy is to refuse them
+	// explicitly rather than emit non-conforming YAML. Structured representations
+	// (TOML, JSON) are not subject to this restriction.
+	if !IsStructuredAgentRepresentation(capability.Representation) {
+		if containsNonYAMLCharacter(name) || containsNonYAMLCharacter(description) {
+			return nil, fmt.Errorf("render %s: name or description contains a Unicode non-character (U+FFFE or U+FFFF) excluded from YAML 1.2 §5.1 c-printable; remove or replace these characters", item.ID)
+		}
 	}
 
 	switch capability.Representation {
@@ -747,12 +771,30 @@ func mapModelCursor(model string) (string, bool) {
 //   - U+007F: DEL
 //   - U+0080–U+009F: C1 control characters (includes NEL U+0085)
 //   - U+2028, U+2029: Unicode line/paragraph separators
+//   - U+FFFE, U+FFFF: Unicode non-characters (YAML 1.2 §5.1 c-printable exclusion)
 //
-// Values with these characters are either malformed or injection payloads.
-// Callers must reject, not sanitize. ML-5C, ML-4B.
+// U+FFFE and U+FFFF are escapable in yaml.v3 as \ufffe/\uffff but are excluded
+// from YAML 1.2 c-printable; including them here ensures yamlEscapeDoubleQuoted
+// handles the encoding defensively. The Render pre-check (containsNonYAMLCharacter)
+// refuses them outright for YAML paths. ML-5C, ML-4B, ML-4F.
 func containsControlChar(s string) bool {
 	for _, r := range s {
-		if r < 0x20 || r == 0x7F || (r >= 0x80 && r <= 0x9F) || r == ' ' || r == ' ' {
+		if r < 0x20 || r == 0x7F || (r >= 0x80 && r <= 0x9F) || r == '\u2028' || r == '\u2029' || r == 0xFFFE || r == 0xFFFF {
+			return true
+		}
+	}
+	return false
+}
+
+// containsNonYAMLCharacter reports whether s contains a Unicode non-character
+// (U+FFFE or U+FFFF) that is excluded from c-printable by YAML 1.2 §5.1.
+// yaml.v3 accepts \ufffe/\uffff escape sequences in double-quoted scalars, but
+// conforming YAML 1.2 streams must not contain these code points at all.
+// Render uses this to reject them early for YAML output paths, rather than
+// emitting technically-parseable but non-conforming YAML. ML-4F.
+func containsNonYAMLCharacter(s string) bool {
+	for _, r := range s {
+		if r == 0xFFFE || r == 0xFFFF {
 			return true
 		}
 	}

@@ -317,6 +317,8 @@ func TestContainsControlCharIdent(t *testing.T) {
 		{"Apolo\nBash", true},      // newline is control char → reject
 		{"Apolo\t", true},          // tab is control char → reject  (U+0009 < 0x20)
 		{"Apolo\x00", true},        // null byte
+		{"Zeus\uFFFEx", true},      // U+FFFE non-character → reject (ML-4F)
+		{"Zeus\uFFFFx", true},      // U+FFFF non-character → reject (ML-4F)
 	}
 	for _, tc := range cases {
 		got := containsControlCharIdent(tc.input)
@@ -437,4 +439,60 @@ func TestLoadRejectsDELAndC1(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestLoadRejectsNoncharacters asserts ML-4F: Load must reject display_name or
+// user_nickname containing Unicode non-characters U+FFFE or U+FFFF.
+// These are excluded from YAML 1.2 c-printable (§5.1) and yaml.v3 rejects
+// them as raw bytes; containsControlCharIdent now catches them at parse time
+// so they never reach any YAML sink.
+func TestLoadRejectsNoncharacters(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string
+	}{
+		{
+			name: "display_name with U+FFFE",
+			// U+FFFE encodes as 0xEF 0xBF 0xBE in UTF-8.
+			content: "{\"schema_version\":1,\"agents\":{\"backend\":{\"display_name\":\"Zeus\xef\xbf\xbeTF\",\"slug\":\"zeus\"}}}",
+		},
+		{
+			name: "display_name with U+FFFF",
+			// U+FFFF encodes as 0xEF 0xBF 0xBF in UTF-8.
+			content: "{\"schema_version\":1,\"agents\":{\"backend\":{\"display_name\":\"Zeus\xef\xbf\xbfTF\",\"slug\":\"zeus\"}}}",
+		},
+		{
+			name:    "user_nickname with U+FFFE",
+			content: "{\"schema_version\":1,\"user_nickname\":\"KG\xef\xbf\xbe\"}",
+		},
+		{
+			name:    "user_nickname with U+FFFF",
+			content: "{\"schema_version\":1,\"user_nickname\":\"KG\xef\xbf\xbf\"}",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			homeDir := t.TempDir()
+			writeIdentityJSON(t, homeDir, tc.content)
+			_, err := Load(homeDir)
+			if err == nil {
+				t.Errorf("Load deve rejeitar non-character em %s; obteve nil", tc.name)
+			}
+		})
+	}
+
+	// Control: the "greek" preset must still load without error.
+	t.Run("greek_preset_loads", func(t *testing.T) {
+		cfg, err := Preset("greek")
+		if err != nil {
+			t.Fatalf("Preset(greek) failed: %v", err)
+		}
+		homeDir := t.TempDir()
+		if err := Save(homeDir, cfg); err != nil {
+			t.Fatalf("Save failed: %v", err)
+		}
+		if _, err := Load(homeDir); err != nil {
+			t.Fatalf("Load(greek preset) failed unexpectedly: %v", err)
+		}
+	})
 }

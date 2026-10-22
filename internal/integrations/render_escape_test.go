@@ -14,12 +14,14 @@ package integrations
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
 	"unicode/utf8"
 
 	"github.com/kgsaran/trackfw/internal/identity"
+	"gopkg.in/yaml.v3"
 )
 
 // ---------------------------------------------------------------------------
@@ -70,25 +72,33 @@ func decodeTomlBasicString(s string) (string, error) {
 					return "", fmt.Errorf("toml decoder: \\u escape too short at offset %d", i)
 				}
 				hex := inner[i+2 : i+6]
-				var cp uint32
-				if n, _ := fmt.Sscanf(hex, "%04x", &cp); n != 1 {
-					return "", fmt.Errorf("toml decoder: invalid \\u%s at offset %d", hex, i)
+				cp64, parseErr := strconv.ParseUint(hex, 16, 32)
+				if parseErr != nil {
+					return "", fmt.Errorf("toml decoder: invalid \\u%s at offset %d: %v", hex, i, parseErr)
 				}
+				cp := rune(cp64)
 				if cp >= 0xD800 && cp <= 0xDFFF {
 					return "", fmt.Errorf("toml decoder: surrogate \\u%04x not allowed", cp)
 				}
-				sb.WriteRune(rune(cp))
+				sb.WriteRune(cp)
 				i += 6
 			case 'U':
 				if i+10 > len(inner) {
 					return "", fmt.Errorf("toml decoder: \\U escape too short at offset %d", i)
 				}
 				hex := inner[i+2 : i+10]
-				var cp uint32
-				if n, _ := fmt.Sscanf(hex, "%08x", &cp); n != 1 {
-					return "", fmt.Errorf("toml decoder: invalid \\U%s at offset %d", hex, i)
+				cp64, parseErr := strconv.ParseUint(hex, 16, 32)
+				if parseErr != nil {
+					return "", fmt.Errorf("toml decoder: invalid \\U%s at offset %d: %v", hex, i, parseErr)
 				}
-				sb.WriteRune(rune(cp))
+				cp := rune(cp64)
+				if cp > 0x10FFFF {
+					return "", fmt.Errorf("toml decoder: \\U%08x out of Unicode range", cp64)
+				}
+				if cp >= 0xD800 && cp <= 0xDFFF {
+					return "", fmt.Errorf("toml decoder: surrogate \\U%08x not allowed", cp64)
+				}
+				sb.WriteRune(cp)
 				i += 10
 			default:
 				return "", fmt.Errorf("toml decoder: unrecognized escape \\%c (0x%02x) at offset %d",
@@ -201,7 +211,7 @@ func hasRawControlRuneInDoubleQuoted(s string) bool {
 			continue
 		}
 		r, size := utf8.DecodeRuneInString(inner[i:])
-		if (r < 0x20 && r != 0x09) || r == 0x7F || (r >= 0x80 && r <= 0x9F) {
+		if (r < 0x20 && r != 0x09) || r == 0x7F || (r >= 0x80 && r <= 0x9F) || r == 0x2028 || r == 0x2029 {
 			return true
 		}
 		i += size
@@ -303,8 +313,10 @@ func TestTOMLBasicString(t *testing.T) {
 	})
 
 	t.Run("arm_b_contra_arm_strconv_quote_rejected", func(t *testing.T) {
-		// Verify that strconv.Quote output is rejected by our TOML 1.0 decoder
-		// for inputs that differ from tomlBasicString. This proves the decoder bites.
+		// Verify that strconv.Quote output is rejected by our TOML 1.0 decoder for
+		// inputs that differ from tomlBasicString. This validates the DECODER
+		// (decodeTomlBasicString), not the encoder — a decoder that never rejects
+		// anything cannot falsify arm_a round-trip claims.
 		biteInputs := []struct {
 			name  string
 			input string
@@ -336,6 +348,25 @@ func TestTOMLBasicString(t *testing.T) {
 			raw := "\"a\x07b\""
 			if _, err := decodeTomlBasicString(raw); err == nil {
 				t.Fatal("decodeTomlBasicString should reject raw 0x07 byte but accepted it")
+			}
+		})
+
+		// Decoder rejects partial-hex, out-of-range, and surrogate escapes.
+		// These validate the ML-4F fixes to decodeTomlBasicString (strconv.ParseUint
+		// replaces fmt.Sscanf which accepted partial hex like \u00zz as \u0000).
+		t.Run("partial_hex_u_rejected", func(t *testing.T) {
+			if _, err := decodeTomlBasicString(`"\u00zz"`); err == nil {
+				t.Fatal("decodeTomlBasicString should reject \\u00zz (partial hex) but accepted it")
+			}
+		})
+		t.Run("out_of_range_U_rejected", func(t *testing.T) {
+			if _, err := decodeTomlBasicString(`"\U00110000"`); err == nil {
+				t.Fatal("decodeTomlBasicString should reject \\U00110000 (> 0x10FFFF) but accepted it")
+			}
+		})
+		t.Run("surrogate_U_rejected", func(t *testing.T) {
+			if _, err := decodeTomlBasicString(`"\U0000D800"`); err == nil {
+				t.Fatal("decodeTomlBasicString should reject surrogate \\U0000D800 but accepted it")
 			}
 		})
 	})
@@ -484,6 +515,13 @@ func TestYAMLEscapeDoubleQuotedNoRawControl(t *testing.T) {
 			input: "a" + string(i) + "b",
 		})
 	}
+	// U+2028 (LINE SEPARATOR) and U+2029 (PARAGRAPH SEPARATOR): yaml.v3 folds
+	// these to empty/spaces in double-quoted scalars when emitted raw. After
+	// ML-4F, yamlEscapeDoubleQuoted emits \u2028/\u2029 which round-trip.
+	cases = append(cases,
+		controlCase{name: "LS_U+2028", input: "a" + string(rune(0x2028)) + "b"},
+		controlCase{name: "PS_U+2029", input: "a" + string(rune(0x2029)) + "b"},
+	)
 
 	t.Run("new_encoder_no_raw_control_and_round_trips", func(t *testing.T) {
 		for _, tc := range cases {
@@ -524,6 +562,8 @@ func TestYAMLEscapeDoubleQuotedNoRawControl(t *testing.T) {
 			{"lf_0x0a", "a\x0ab"},
 			{"cr_0x0d", "a\x0db"},
 			{"nel_0x85", "a" + string(rune(0x85)) + "b"},
+			{"ls_0x2028", "a" + string(rune(0x2028)) + "b"},
+			{"ps_0x2029", "a" + string(rune(0x2029)) + "b"},
 		}
 		for _, tc := range biteInputs {
 			tc := tc
@@ -535,4 +575,171 @@ func TestYAMLEscapeDoubleQuotedNoRawControl(t *testing.T) {
 			})
 		}
 	})
+}
+
+// ---------------------------------------------------------------------------
+// TestYAMLScalarEnumerationAllRunes — ML-4F
+// ---------------------------------------------------------------------------
+
+// TestYAMLScalarEnumerationAllRunes asserts CONCLUSION of ML-4F:
+// For every Unicode rune (excluding surrogates), yamlSafeScalar produces a
+// scalar that yaml.v3 round-trips faithfully, OR Render returns a non-nil
+// error that explicitly rejects the rune before any YAML is emitted. Three
+// forms exercise bare (single-rune), embedded, and leading-position contexts.
+//
+// Bite (HEAD) expectation: fails for at least U+FFFE, U+FFFF, U+2028, U+2029
+// (yaml.v3 folds or rejects them when emitted raw) and U+002C comma in
+// leading position (yaml.v3 rejects "description: ,").
+func TestYAMLScalarEnumerationAllRunes(t *testing.T) {
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatalf("LoadCatalog: %v", err)
+	}
+	item, ok := catalog.Item(KindAgents, "backend")
+	if !ok {
+		t.Fatal("catalog: backend item not found")
+	}
+	source, err := catalog.ReadAsset(item)
+	if err != nil {
+		t.Fatalf("ReadAsset: %v", err)
+	}
+
+	type failure struct {
+		form string
+		r    rune
+		msg  string
+	}
+	var failures []failure
+
+	forms := []struct {
+		name string
+		make func(rune) string
+	}{
+		{"bare", func(r rune) string { return string(r) }},
+		{"embedded", func(r rune) string { return "a" + string(r) + "b" }},
+		{"leading", func(r rune) string { return string(r) + " x" }},
+	}
+
+	for r := rune(0); r <= 0x10FFFF; r++ {
+		if r >= 0xD800 && r <= 0xDFFF {
+			continue // surrogates: not valid Unicode scalar values
+		}
+		for _, form := range forms {
+			v := form.make(r)
+
+			// Condition 2 (cheap): yamlSafeScalar produces a scalar that yaml.v3
+			// round-trips faithfully.
+			var m map[string]string
+			yErr := yaml.Unmarshal([]byte("description: "+yamlSafeScalar(v)), &m)
+			if yErr == nil && m["description"] == v {
+				continue // condition 2 satisfied
+			}
+
+			// Condition 1 (fallback): Render rejects the rune explicitly by
+			// returning a non-nil error for a YAML output path (subagent/claude).
+			cfg := identity.Config{
+				Agents: map[string]identity.AgentIdentity{
+					item.ID: {
+						DisplayName: v,
+						Slug:        "zeus",
+					},
+				},
+			}
+			_, rErr := Render(item, KindAgents, Capability{Representation: "subagent"}, source, cfg, "claude", nil)
+			if rErr != nil {
+				continue // condition 1 satisfied
+			}
+
+			// Neither condition met — record failure.
+			var msg string
+			if yErr != nil {
+				msg = fmt.Sprintf("yaml.Unmarshal error: %v", yErr)
+			} else {
+				msg = fmt.Sprintf("round-trip mismatch: got %q, want %q", m["description"], v)
+			}
+			failures = append(failures, failure{form: form.name, r: r, msg: msg})
+		}
+	}
+
+	if len(failures) == 0 {
+		return
+	}
+
+	// Deduplicate by rune (report each rune once across all forms).
+	seen := make(map[rune]bool)
+	var distinct []rune
+	for _, f := range failures {
+		if !seen[f.r] {
+			seen[f.r] = true
+			distinct = append(distinct, f.r)
+		}
+	}
+	sort.Slice(distinct, func(i, j int) bool { return distinct[i] < distinct[j] })
+
+	const maxReport = 20
+	t.Errorf("%d distinct rune(s) fail the YAML round-trip guarantee (first %d):",
+		len(distinct), min(len(distinct), maxReport))
+	for i, r := range distinct {
+		if i >= maxReport {
+			break
+		}
+		for _, f := range failures {
+			if f.r == r {
+				t.Logf("  U+%04X form=%s: %s", r, f.form, f.msg)
+				break
+			}
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TestRender_NonYAMLChar_Rejected — ML-4F
+// ---------------------------------------------------------------------------
+
+// TestRender_NonYAMLChar_Rejected asserts CONCLUSION of ML-4F (policy gate):
+// Render returns a non-nil error when DisplayName contains U+FFFE for YAML
+// output paths (subagent, agent-directory, opencode-agent). For structured
+// representations (custom-agent-toml, agent-json) the same input is accepted
+// without error — those encoders handle the rune safely via their own encoding.
+func TestRender_NonYAMLChar_Rejected(t *testing.T) {
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatalf("LoadCatalog: %v", err)
+	}
+	item, ok := catalog.Item(KindAgents, "backend")
+	if !ok {
+		t.Fatal("catalog: backend item not found")
+	}
+	source, err := catalog.ReadAsset(item)
+	if err != nil {
+		t.Fatalf("ReadAsset: %v", err)
+	}
+
+	// Config constructed directly (bypasses Load) to inject U+FFFE.
+	noncharCfg := identity.Config{
+		Agents: map[string]identity.AgentIdentity{
+			item.ID: {
+				DisplayName: "Zeus￾TF", // U+FFFE non-character
+				Slug:        "zeus",
+			},
+		},
+	}
+
+	// YAML output paths must refuse with a non-nil error.
+	yamlReps := []string{"subagent", "agent-directory", "opencode-agent"}
+	for _, rep := range yamlReps {
+		_, err := Render(item, KindAgents, Capability{Representation: rep}, source, noncharCfg, "claude", nil)
+		if err == nil {
+			t.Errorf("Render(%s) with U+FFFE in DisplayName: expected error, got nil", rep)
+		}
+	}
+
+	// Structured output paths (TOML, JSON) must accept the same input.
+	structuredReps := []string{"custom-agent-toml", "agent-json"}
+	for _, rep := range structuredReps {
+		_, err := Render(item, KindAgents, Capability{Representation: rep}, source, noncharCfg, "codex", nil)
+		if err != nil {
+			t.Errorf("Render(%s) with U+FFFE in DisplayName: unexpected error: %v", rep, err)
+		}
+	}
 }

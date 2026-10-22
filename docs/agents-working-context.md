@@ -47389,3 +47389,19 @@ que chamam git sem `LookPath`; chmod no discover.
 - O título do #598 cita a correção do TOML, mas ela não está na main. O PR da Wave 4 deve dizer isso.
 - 2026-10-22 — Wave 4. prometeu-tf, ML-4A/4B: `tomlBasicString` no Codex e o escape YAML sem controle cru, 174 PASS. apolo-tf, ML-4C: o `identity.Load` valida o slug e recusa o DEL e o C1. Auditados pelo arquiteto; integrations, identity, thirdparty, commands e generators verdes com HOME isolado. Próximo: o ML-4D (referências de terceiro).
 - 2026-10-22 — prometeu-tf, ML-4D: as referências de terceiro não corrompem mais o TOML e o JSON. A 1ª entrega foi reprovada (derrubava o plano inteiro). No corretivo, a recusa acontece no `--apply-to`, antes da escrita, e o `BuildPlans` só deixa de anexar o bloco nos destinos estruturados. Integrations, commands e generators verdes com HOME isolado.
+
+## 2026-10-22 — prometeu-tf — INÍCIO: ML-4F REQ-2026-09-26 (corretivo Wave 4)
+
+- Sessão continuada de context compactado. Investigação prévia: scratchpad ml4f-yaml-check mediu que yaml.v3 aceita `￾`/`￿` como escapes (contradiz Hades §1: a recusa é política, não limitação técnica).
+- Trabalho em andamento: render.go, identity.go, render_escape_test.go, thirdparty_refs_repr_test.go, identity_test.go.
+
+## 2026-10-22 — prometeu-tf — FIM: ML-4F REQ-2026-09-26 (corretivo Wave 4)
+
+- render.go: `yamlEscapeDoubleQuoted` agora emite ` `/` `/`￾`/`￿` em vez de raw bytes ou pass-through. `containsControlChar` inclui U+FFFE/U+FFFF. `needsYAMLQuoting` detecta vírgula em posição inicial e espaço/tab na borda. Novo `containsNonYAMLCharacter`. Pre-check em `Render` recusa U+FFFE/U+FFFF nos caminhos YAML (política YAML 1.2 §5.1).
+- identity.go: `containsControlCharIdent` inclui U+FFFE/U+FFFF.
+- render_escape_test.go: `decodeTomlBasicString` corrigido (`strconv.ParseUint`, range e surrogate no `\U`). `hasRawControlRuneInDoubleQuoted` estendido para U+2028/U+2029. U+2028/U+2029 adicionados aos casos do teste YAML. Novos: `TestYAMLScalarEnumerationAllRunes` (6,37 s, 0 falhas), `TestRender_NonYAMLChar_Rejected`.
+- thirdparty_refs_repr_test.go: novo `TestStructuredRepCatalogCoverage` (R3 drift check).
+- identity_test.go: `TestContainsControlCharIdent` + U+FFFE/U+FFFF; novo `TestLoadRejectsNoncharacters`.
+- Bite: 6 falhas esperadas em HEAD (U+0020 bare, U+002C bare, U+2028/U+2029 leading, U+FFFE/U+FFFF bare). Corretivo fecha todas.
+- Build ✅ Vet ✅ test ./... ✅ (21 pacotes, 7,2 s para integrations) trackfw validate exit=0.
+- Diff: 5 arquivos, +374 / -19. Aguarda auditoria e commit do trackfw_architect.

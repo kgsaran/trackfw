@@ -210,10 +210,25 @@ test -s docs/seguranca/2026-10-22-red-team-model-override.md
 **Auditoria do arquiteto:** a 1ª entrega foi reprovada. Ela recusava com erro dentro do `BuildPlans`, o que derrubava o plano de todos os destinos: um registro antigo com entrada para o codex quebrava `agents update` e `update harness`, e o `--apply-to codex` deixava o registro envenenado. No corretivo, o `--apply-to` recusa representação estruturada antes de qualquer escrita, e o `BuildPlans` só deixa de anexar o bloco nesses destinos, sem falhar. Os testes `SkipBlockKeepValid`, `StaleRegistryDoesNotBreakOtherTargets` e `ApplyToRejectsStructuredRepresentationBeforeWrite` têm as 3 mordidas medidas. **Resíduo:** o plano não tem canal de aviso, então a omissão do bloco num registro antigo é silenciosa e só fica documentada no comentário.
 
 ### ML-4E — Revisão
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** hefesto-tf e hades-tf
 **Acceptance criteria:**
-- [ ] Parecer de qualidade e red team dos MLs 4A–4D.
+- [x] Qualidade (`docs/seguranca/2026-10-22-quality-toml-escape.md`): APROVADO COM RESSALVA. R2 (U+2028/U+2029 crus dentro das aspas duplas) e R3 (a lista de representações estruturadas é fixa no código).
+- [x] Red team (`docs/seguranca/2026-10-22-red-team-toml-escape.md`): REPROVADO. T-1 a T-4 fechados; Defeito 1 (U+FFFE/U+FFFF) e Defeito 2 (vírgula sozinha).
+
+### ML-4F — Corretivo da revisão: fechar a classe por enumeração
+**Status:** ✅ Concluído
+**Agente:** prometeu-tf
+**Files affected:** `internal/integrations/render.go`, `internal/integrations/render_escape_test.go`, `internal/integrations/thirdparty_refs_repr_test.go`, `internal/identity/identity.go`, `internal/identity/identity_test.go`
+**Decisão do arquiteto:** os dois revisores acharam furos diferentes no mesmo encoder porque a cobertura era uma lista. O oráculo passou a ser o yaml.v3, sobre todo o espaço de entrada.
+**Acceptance criteria:**
+- [x] `TestYAMLScalarEnumerationAllRunes` cobre 3 formas × 1.112.064 code points, em cerca de 6,5 s. Para cada um, o `Render` recusa ou o yaml.v3 faz o round-trip exato. Medido pelo arquiteto numa cópia: com `render.go` e `identity.go` do HEAD, a enumeração reprova em exatamente 6 runes (U+0020 e U+002C sozinhos, U+2028/U+2029 com espaço depois, U+FFFE e U+FFFF).
+- [x] U+FFFE/U+FFFF recusados no `identity.Load` e no `Render` dos caminhos YAML. Isso é política (YAML 1.2, c-printable): o yaml.v3 aceita a forma escapada, ao contrário do que a 1ª medição do red team dizia.
+- [x] R3: `TestStructuredRepCatalogCoverage` classifica cada destino pela SAÍDA do `Render` (prefixo `---\n`) e exige concordância com `IsStructuredAgentRepresentation`. A 1ª versão, circular, foi reprovada na auditoria. Mordida: sem `cli-agent-json` na função, o teste reprova em amazonq/cli.
+- [x] A1/A2: o decodificador TOML do teste recusa hex parcial, `\U` acima de U+10FFFF e surrogates.
+- [x] integrations, identity, thirdparty, commands e generators verdes com HOME isolado.
+**Desvios do agente:** rodou `go test ./...`, que era proibido, e deixou 114 MB de `build-cache/` e `vendor-cache/` na árvore, apagados pelo arquiteto. Também escreveu no contexto de trabalho, o que era proibido; o conteúdo foi mantido.
+**Sem 3ª rodada de red team:** a classe ficou fechada por um oráculo exaustivo, com a mordida medida pelo arquiteto.
 
 ## Wave 3 — Fechamento
 > Dependencies: Wave 2 aprovada.

@@ -162,14 +162,15 @@ func Validate(cfg Config, knownIDs []string) error {
 
 // containsControlCharIdent reports whether s contains any ASCII control
 // character (U+0000–U+001F), DEL (U+007F), a C1 control character
-// (U+0080–U+009F), or a Unicode line/paragraph separator (U+2028, U+2029).
+// (U+0080–U+009F), a Unicode line/paragraph separator (U+2028, U+2029),
+// or a Unicode non-character (U+FFFE, U+FFFF).
 // These characters are rejected in identity fields (display_name,
 // user_nickname) because they would inject structural YAML or TOML when
 // interpolated into frontmatter — defence-in-depth alongside the
-// yamlSafeScalar quoting.
+// yamlSafeScalar quoting. ML-4B, ML-4F.
 func containsControlCharIdent(s string) bool {
 	for _, r := range s {
-		if r < 0x20 || r == 0x7F || (r >= 0x80 && r <= 0x9F) || r == ' ' || r == ' ' {
+		if r < 0x20 || r == 0x7F || (r >= 0x80 && r <= 0x9F) || r == '\u2028' || r == '\u2029' || r == 0xFFFE || r == 0xFFFF {
 			return true
 		}
 	}

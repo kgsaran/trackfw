@@ -21,9 +21,12 @@ package integrations
 //   behavior for markdown targets.
 
 import (
+	"bytes"
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/kgsaran/trackfw/internal/identity"
 )
 
 // structuredRepTargetCases covers all three structured representations emitted
@@ -390,4 +393,103 @@ func truncateSnippet(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
+
+// ---------------------------------------------------------------------------
+// TestStructuredRepCatalogCoverage — ML-4F (R3 coverage)
+// ---------------------------------------------------------------------------
+
+// TestStructuredRepCatalogCoverage asserts CONCLUSION of ML-4F (R3):
+// IsStructuredAgentRepresentation agrees with the actual Render output for every
+// representation in the catalog, and structuredRepTargetCases covers every
+// representation that Render classifies as structured.
+//
+// Classification rule: Render output that does NOT start with "---\n" is
+// structured (TOML or JSON); output that starts with "---\n" is markdown.
+// This matches actual render.go behaviour for all known representations:
+//   - "custom-agent-toml" → "name = ..." (TOML, no leading "---\n")
+//   - "agent-json"        → "{" (JSON, no leading "---\n")
+//   - "cli-agent-json"    → "{" (JSON, no leading "---\n")
+//   - everything else     → "---\n..." (YAML frontmatter / markdown)
+//
+// Unlike the previous version of this test, classification is driven by the
+// output of Render — not by IsStructuredAgentRepresentation itself — so a new
+// structured representation that the function does not yet know about causes
+// the test to fail instead of being silently skipped.
+func TestStructuredRepCatalogCoverage(t *testing.T) {
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatalf("LoadCatalog: %v", err)
+	}
+
+	architectItem, ok := catalog.Item(KindAgents, "architect")
+	if !ok {
+		t.Fatal("catalog: architect item not found")
+	}
+	architectSource, readErr := catalog.ReadAsset(architectItem)
+	if readErr != nil {
+		t.Fatalf("ReadAsset(architect): %v", readErr)
+	}
+	architectSource = NormalizeCRLF(architectSource)
+
+	markdownPrefix := []byte("---\n")
+
+	// renderStructured collects every representation whose Render output does
+	// not start with "---\n" (i.e. is TOML or JSON, not markdown/YAML).
+	renderStructured := make(map[string]bool)
+
+	for _, target := range catalog.Targets {
+		for _, surface := range target.Surfaces {
+			cap := surface.Capabilities.Agents
+			rep := cap.Representation
+			if rep == "" || cap.SupportLevel == "unsupported" {
+				continue
+			}
+
+			out, renderErr := Render(architectItem, KindAgents, cap, architectSource, identity.Config{}, target.ID, nil)
+			if renderErr != nil {
+				t.Errorf("Render(architect, target=%s surface=%s rep=%q): unexpected error: %v",
+					target.ID, surface.ID, rep, renderErr)
+				continue
+			}
+
+			isMarkdown := bytes.HasPrefix(out, markdownPrefix)
+			isStructuredFn := IsStructuredAgentRepresentation(rep)
+
+			// The function must agree with the actual output: structured output
+			// means IsStructuredAgentRepresentation must return true, and vice versa.
+			if isStructuredFn != !isMarkdown {
+				t.Errorf("target=%s surface=%s rep=%q: Render output isMarkdown=%v but IsStructuredAgentRepresentation=%v — they disagree; update IsStructuredAgentRepresentation or the representation",
+					target.ID, surface.ID, rep, isMarkdown, isStructuredFn)
+			}
+
+			if !isMarkdown {
+				renderStructured[rep] = true
+			}
+		}
+	}
+
+	// structuredRepTargetCases must cover every representation that Render
+	// classified as structured.
+	coveredReps := make(map[string]bool)
+	for _, tc := range structuredRepTargetCases {
+		coveredReps[tc.representation] = true
+	}
+
+	for rep := range renderStructured {
+		if !coveredReps[rep] {
+			t.Errorf("catalog has structured representation %q (confirmed by Render output) but structuredRepTargetCases has no test for it — add a case",
+				rep)
+		}
+	}
+
+	// structuredRepTargetCases must not declare representations whose Render
+	// output is not actually structured (stale entries or wrong representation
+	// string in the test table).
+	for _, tc := range structuredRepTargetCases {
+		if !renderStructured[tc.representation] {
+			t.Errorf("structuredRepTargetCases entry %q: not found in catalog as a non-markdown representation — update the test table or IsStructuredAgentRepresentation",
+				tc.representation)
+		}
+	}
 }
