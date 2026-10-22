@@ -1586,7 +1586,7 @@ func extractDispatchSection(body string) string {
 // TestArchitectDispatchContractForbidsModelOverride asserts that the prohibition
 // on passing the Agent tool's `model` parameter is present inside the
 // ## Dispatch contract section in every representation the catalog emits for
-// the architect agent. It exercises ten arms per representation:
+// the architect agent. It exercises eleven arms per representation:
 //   - positive (no identity): both required phrases are in the section;
 //   - positive (zeusIdentity): identity injection does not destroy the section;
 //   - negative/no-paragraph: entire prohibition paragraph removed — proves
@@ -1606,7 +1606,10 @@ func extractDispatchSection(body string) string {
 //   - negative/fence-wrapped: paragraph inside fenced code block —
 //     proves "` ``` `" detection rejects inert content;
 //   - negative/indented: paragraph prefixed with 4 spaces —
-//     proves column-0 check rejects indented phrase1.
+//     proves column-0 check rejects indented phrase1;
+//   - negative/html-block-wrapped: paragraph inside <div hidden>...</div> —
+//     proves HTML block tag detection (line starting with < after ≤3 spaces)
+//     rejects inert HTML-wrapped content (D-7).
 //
 // REQ: REQ-2026-09-26-o-harness-do-arquiteto-nao-proibe-sobrepor-o-modelo-do-subagente-e-o-roteamento-de-custo-e-ignorado-em-silencio
 func TestArchitectDispatchContractForbidsModelOverride(t *testing.T) {
@@ -1690,6 +1693,12 @@ func TestArchitectDispatchContractForbidsModelOverride(t *testing.T) {
 		}
 		if strings.Contains(section, "<!--") {
 			return "## Dispatch contract section contains HTML comment marker (<!--)"
+		}
+		for _, line := range strings.Split(section, "\n") {
+			trimmed := strings.TrimLeft(line, " ")
+			if strings.HasPrefix(trimmed, "<") && len(line)-len(trimmed) <= 3 {
+				return "## Dispatch contract section contains HTML block tag at start of line (D-7)"
+			}
 		}
 		if !strings.Contains(section, phrase1) {
 			return fmt.Sprintf("phrase1 absent from ## Dispatch contract section:\n%q", section)
@@ -1794,6 +1803,15 @@ func TestArchitectDispatchContractForbidsModelOverride(t *testing.T) {
 		[]byte("\n    "+string(prohibitionLine)+"\n"), 1)
 	if bytes.Equal(indented, source) {
 		t.Fatal("indented vacuity guard: source unchanged after mutation")
+	}
+
+	// htmlBlockWrapped: prohibition paragraph enclosed in <div hidden>...</div>.
+	// checkPhrases rejects because the section contains a line that starts with
+	// "<" after at most 3 leading spaces (D-7: <div hidden>, <pre>, <script>, etc.).
+	htmlBlockWrapped := bytes.Replace(source, paragraphNeedleBytes,
+		[]byte("\n<div hidden>\n"+string(prohibitionLine)+"\n</div>"), 1)
+	if bytes.Equal(htmlBlockWrapped, source) {
+		t.Fatal("htmlBlockWrapped vacuity guard: source unchanged after mutation")
 	}
 
 	coveredReprs := make(map[string]bool)
@@ -1955,6 +1973,21 @@ func TestArchitectDispatchContractForbidsModelOverride(t *testing.T) {
 					body := extractBodyText(t, out, agentsCap.Representation)
 					if msg := checkPhrases(body); msg == "" {
 						t.Errorf("negative/indented: checkPhrases passed with paragraph indented by 4 spaces — column-0 check has no bite (repr=%s)", agentsCap.Representation)
+					}
+				})
+
+				// Negative (html-block-wrapped): prohibition paragraph wrapped in a
+				// <div hidden> HTML block element. checkPhrases rejects because a line
+				// in the section starts with "<" after at most 3 leading spaces (D-7).
+				// Closes <div hidden>, <pre>, <script> and any HTML block opener.
+				t.Run("negative/html-block-wrapped", func(t *testing.T) {
+					out, err := Render(item, KindAgents, capability, htmlBlockWrapped, identity.Config{}, tgt.ID, nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+					body := extractBodyText(t, out, agentsCap.Representation)
+					if msg := checkPhrases(body); msg == "" {
+						t.Errorf("negative/html-block-wrapped: checkPhrases passed with paragraph in <div hidden> block — HTML block tag check has no bite (repr=%s)", agentsCap.Representation)
 					}
 				})
 			})

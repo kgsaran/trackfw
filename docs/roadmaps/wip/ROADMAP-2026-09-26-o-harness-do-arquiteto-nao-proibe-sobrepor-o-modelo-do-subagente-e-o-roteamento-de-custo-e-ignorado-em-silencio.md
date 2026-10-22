@@ -121,22 +121,32 @@ go test ./internal/integrations/ ./internal/thirdparty/
 - [x] Mordida: com `extractDispatchSection` devolvendo `body`, os 4 braços de localização reprovam (×12); sem a recusa de conteúdo inerte, os 3 braços de inerte reprovam (×12)
 - [x] Resíduos declarados: M3 (cláusula de exceção na mesma seção) e um fence aberto noutra seção que envolva a seção inteira
 
+### ML-1C — Corretivo da 2ª rodada (bloco HTML)
+**Status:** ✅ Concluído
+**Agente:** prometeu-tf
+**Files affected:** `internal/integrations/render_test.go`, `vault/notes/dispatch-section-substring-match-bypass-2026-10-22.md`
+**Acceptance criteria:**
+- [x] O D-7 foi fechado: o `checkPhrases` recusa linha da seção que comece com `<` depois de no máximo 3 espaços. O braço `negative/html-block-wrapped` tem guarda de vacuidade.
+- [x] Medido pelo arquiteto: 145 PASS. Numa cópia sem a checagem, exatamente os 12 `html-block-wrapped` reprovam.
+- [x] Resíduo ampliado (D-8): fence ou comentário HTML que abre numa seção anterior e fecha numa posterior, envolvendo a seção inteira. Em todo vetor que sobra, quem esvazia a proibição é um texto ativo novo de exceção (M3), e a barreira contra isso é a auditoria do diff.
+- [x] O arquiteto não abriu uma 3ª rodada de red team: o D-7 era o único defeito aberto, e a correção dele foi conferida por mordida medida.
+
 ## Wave 2 — Revisão
 > Dependencies: Wave 1 auditada.
 
 ### ML-2A — Qualidade
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** hefesto-tf
 **Files affected:** `docs/seguranca/2026-10-22-quality-model-override.md` (novo)
 **Acceptance criteria:**
-- [ ] Parecer sobre o teste (vacuidade, braço negativo real, cobertura de todas as representações)
+- [x] Parecer sobre o teste (vacuidade, braço negativo real, cobertura de todas as representações). Veredito: APROVADO COM RESSALVA; A1–A5 foram corrigidos no ML-1B.
 
 ### ML-2B — Red team
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** hades-tf
 **Files affected:** `docs/seguranca/2026-10-22-red-team-model-override.md` (novo)
 **Acceptance criteria:**
-- [ ] Tentativa de esvaziar a proibição sem reprovar o teste, com o resultado registrado
+- [x] Tentativa de esvaziar a proibição sem reprovar o teste, com o resultado registrado. 1ª rodada REPROVADO (D-1 a D-6, corrigidos no ML-1B); 2ª rodada REPROVADO (D-7, corrigido no ML-1C; D-8 virou resíduo declarado).
 
 **Gates da wave:**
 ```bash

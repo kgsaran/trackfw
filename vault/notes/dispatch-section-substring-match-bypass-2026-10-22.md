@@ -1,6 +1,6 @@
 # extractDispatchSection — exact heading match closes substring-bypass and inert-content vectors
 
-> Data: 2026-10-22 | REQ: REQ-2026-09-26 | ML: 1B (corretivo da Wave 2)
+> Data: 2026-10-22 | REQ: REQ-2026-09-26 | ML: 1B (corretivo da Wave 2) + ML-1C (corretivo da 2ª rodada)
 
 ## Causa raiz
 
@@ -59,7 +59,28 @@ O red team (Hades) propôs `stripInactiveMarkdown` com `parseFenceRun` (CommonMa
 
 O parser completo de CommonMark seria necessário se o teste precisasse distinguir fences abertas em outra seção que englobassem a seção inteira — esse vetor é um resíduo declarado (ver abaixo).
 
-## Mordida verificada (133 PASS no worktree)
+## D-7 — HTML block tag não detectado (2ª rodada, 2026-10-22)
+
+A 2ª rodada do red team (Hades) descobriu que blocos HTML na forma `<div hidden>`, `<pre>` e `<script type="text/x-deprecated">` passavam pelo `checkPhrases` sem rejeição: nenhum dos marcadores existentes (`<!--`, ` ``` `, `~~~`) detecta uma tag HTML de abertura.
+
+### Fix implementado (ML-1C)
+
+Adicionado ao loop de linhas em `checkPhrases`, após o check de `<!--`:
+
+```go
+for _, line := range strings.Split(section, "\n") {
+    trimmed := strings.TrimLeft(line, " ")
+    if strings.HasPrefix(trimmed, "<") && len(line)-len(trimmed) <= 3 {
+        return "## Dispatch contract section contains HTML block tag at start of line (D-7)"
+    }
+}
+```
+
+**Lógica:** CommonMark define HTML block quando uma linha começa com `<` após no máximo 3 espaços de recuo (spec §4.6). O check usa exatamente esse critério. O `<` no meio da linha (ex.: `` `<slug>-tf` ``) não é afetado porque `strings.HasPrefix` opera sobre a linha após TrimLeft.
+
+Novo braço `negative/html-block-wrapped`: fonte com o parágrafo entre `<div hidden>\n` e `\n</div>`. Vacuidade garantida por `bytes.Equal`. O braço afirma que `checkPhrases` rejeita a saída renderizada de qualquer representação quando o parágrafo de proibição está dentro de um bloco HTML.
+
+## Mordida verificada (133 PASS baseline → 145 PASS pós-ML-1C)
 
 | Braço | O que afirma | Resultado |
 |---|---|---|
@@ -70,16 +91,18 @@ O parser completo de CommonMark seria necessário se o teste precisasse distingu
 | `negative/comment-wrapped` | Detecção de `<!--` rejeita parágrafo em comentário HTML | PASS |
 | `negative/fence-wrapped` | Detecção de ` ``` ` rejeita parágrafo em bloco de código | PASS |
 | `negative/indented` | Verificação col 0 rejeita parágrafo indentado com 4 espaços | PASS |
+| `negative/html-block-wrapped` | Detecção de linha começando com `<` rejeita parágrafo em `<div hidden>` (D-7) | PASS |
 
 Provas de mordida (bite):
 - Bite (a) — `extractDispatchSection = return body`: wrong-section, suffix-heading, h3-heading, duplicate-heading FAIL ×12; comment-wrapped, fence-wrapped, indented PASS.
 - Bite (b) — recusa de fence/comment/col0 removida: comment-wrapped, fence-wrapped, indented FAIL ×12; demais PASS.
+- Bite (c, ML-1C) — check de HTML tag removido: html-block-wrapped FAIL ×12; demais PASS.
 
 ## Resíduos declarados
 
-**M3** — uma cláusula de exceção na MESMA seção que preserve as frases (ex.: `"Exception: this rule does not apply when..."`) passa. O teste não exige que o conteúdo da seção seja apenas o parágrafo proibido. A barreira que cobre esse vetor é a auditoria do diff pelo arquiteto.
+**M3** — uma cláusula de exceção na MESMA seção que preserve as frases (ex.: `"Exception: this rule does not apply when..."`) passa. O teste não exige que o conteúdo da seção seja apenas o parágrafo proibido. A barreira que cobre esse vetor é a auditoria do diff pelo arquiteto. O que esvazia a proibição em TODOS os vetores que restam é um texto ativo novo de exceção (M3); o teste é uma tripwire de texto, e a barreira real contra o M3 é a auditoria do diff pelo arquiteto.
 
-**Fence externa** — uma fence aberta em uma seção anterior e fechada após a seção `## Dispatch contract` (ou seja, a seção inteira dentro de um bloco de código) não é detectada, pois a verificação de ` ``` ` é somente sobre o conteúdo da seção já extraída. O parser `parseFenceRun` do red team fecharia esse vetor; decidiu-se não implementá-lo por ser de complexidade desproporcional ao risco real (exigiria editar o asset de forma que o próprio `extractDispatchSection` não detectaria o cabeçalho).
+**D-8 — Fence ou comentário HTML externo** — uma fence (ou comentário HTML) que abre em uma seção anterior e fecha em uma seção posterior à `## Dispatch contract`, envolvendo a seção inteira, não é detectada: a verificação de ` ``` ` / `<!--` é somente sobre o conteúdo da seção já extraída por `extractDispatchSection`. O parser `parseFenceRun` do red team fecharia esse vetor; decidiu-se não implementá-lo por ser de complexidade desproporcional ao risco real (exigiria editar o asset de forma que o próprio `extractDispatchSection` não detectaria o cabeçalho — o que tornaria o asset ilegível para o próprio CLI).
 
 ## Regra a derivar
 
