@@ -47328,3 +47328,8 @@ que chamam git sem `LookPath`; chmod no discover.
 - Branch chore/release-10.1.0. O CHANGELOG ganha a seção [10.1.0], que reúne #590, #591, #592 e #595, sem breaking changes. O ares-tf trocou a versão nos quatro arquivos (version.go, npm/package.json, npm/package-lock.json, pypi/pyproject.toml), e eu auditei o diff.
 - Gates: `make check-required-full` rc=0 (D=R=W, 9 checks); `check-manifest-version-gate.sh` 9 OK / 0 FAIL; `go build ./...` rc=0.
 - A tag `v10.1.0` só é criada depois do merge do PR de bump, com o changelog no corpo.
+
+## 2026-10-22 — zeus-tf — INÍCIO: REQ-2026-09-26 (arquiteto não pode sobrepor o `model` do subagente)
+
+- Primeiro item da ordem aprovada pelo KG (5 → 4 → 1 → 3 → 2 → 6). Roadmap reescrito contra a main 3be3375c e movido para wip/. Worktree /private/tmp/trackfw-model-override.
+- Plano: a Wave 0 (hades-tf) faz o threat model e a enumeração da classe; o ML-1A (prometeu-tf) faz o parágrafo, os goldens e um teste semântico com braço negativo; a Wave 2 traz a revisão do hefesto-tf e o red team do hades-tf.
