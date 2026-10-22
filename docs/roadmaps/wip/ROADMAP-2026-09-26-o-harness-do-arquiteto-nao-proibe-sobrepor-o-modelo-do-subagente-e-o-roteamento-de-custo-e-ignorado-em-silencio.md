@@ -154,6 +154,33 @@ test -s docs/seguranca/2026-10-22-quality-model-override.md
 test -s docs/seguranca/2026-10-22-red-team-model-override.md
 ```
 
+## Wave 4 — Escape TOML do destino Codex (AC7, ampliação decidida pelo KG em 2026-10-22)
+> Dependencies: Wave 2 concluída. A Wave 3 é refeita depois desta wave.
+
+### ML-4.0 — Threat model do encoder TOML
+**Status:** ⬜ Pendente
+**Agente:** hades-tf
+**Files affected:** `docs/seguranca/2026-10-22-wave0-toml-escape.md` (novo)
+**Acceptance criteria:**
+- [ ] A alcançabilidade fica medida: quais entradas chegam aos 4 campos (assets, `identity.Config`, o mapeamento de modelo) e se a identidade já recusa caracteres de controle.
+- [ ] A versão de TOML que o destino aceita fica registrada, com fonte, ou declarada como desconhecida.
+- [ ] Os alvos de falsificação nas duas direções e o resíduo ficam declarados, inclusive o que fazer com UTF-8 inválido (recusar ou trocar).
+
+### ML-4A — Encoder de basic string TOML 1.0
+**Status:** ⬜ Pendente
+**Agente:** prometeu-tf
+**Files affected:** `internal/integrations/render.go`, e o teste em `internal/integrations/` (a definir pela ML-4.0)
+**Acceptance criteria:**
+- [ ] `strconv.Quote` some do ramo `custom-agent-toml`.
+- [ ] O teste reprova com o código antigo e passa com o novo.
+- [ ] Os goldens do Codex ficam iguais byte a byte para os assets atuais, ou a diferença é justificada.
+
+### ML-4B — Revisão
+**Status:** ⬜ Pendente
+**Agente:** hefesto-tf e hades-tf
+**Acceptance criteria:**
+- [ ] Parecer de qualidade e red team do encoder.
+
 ## Wave 3 — Fechamento
 > Dependencies: Wave 2 aprovada.
 
