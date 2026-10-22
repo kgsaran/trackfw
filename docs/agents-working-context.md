@@ -47411,3 +47411,8 @@ que chamam git sem `LookPath`; chmod no discover.
 - A REQ foi entregue em dois PRs: #598 (ed910c22, proibição do `model` no Dispatch contract) e #600 (75642ec5, escape TOML do Codex, YAML conferido por enumeração, slug validado no Load, referências de terceiro). O roadmap foi para done/, e a REQ ficou Done.
 - Pendente com o KG: quem já tem o arquiteto instalado só recebe o parágrafo novo depois de `trackfw agents update` ou `trackfw update harness` com um binário que contenha o #598, ou seja, depois da próxima release.
 - Próximo da fila aprovada: o roadmap 4, sobre o conflito do `.trackfw-log`.
+
+## 2026-10-22 — zeus-tf — INÍCIO: REQ-2026-09-02 (logs append-only que conflitam no GitHub)
+
+- Segundo item da ordem aprovada. O KG decidiu: um arquivo por entrada, tanto para o `.trackfw-log` quanto para o contexto de trabalho, que entra na REQ. AC5: o mantenedor move os roadmaps de PR externo depois do merge. Criei a ADR-2026-10-22, reescrevi o AC6 e acrescentei o AC8.
+- Plano: Wave 0 com o hades-tf; Wave 1 com o apolo-tf (log) e o ares-tf (gates de encoding) em paralelo; Wave 2 com o prometeu-tf (instruções do contexto); Wave 3 com a revisão. Worktree /private/tmp/trackfw-toml-escape. O PR abre como draft.

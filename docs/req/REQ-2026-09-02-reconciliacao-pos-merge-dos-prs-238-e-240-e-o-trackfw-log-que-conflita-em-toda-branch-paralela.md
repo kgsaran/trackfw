@@ -2,8 +2,8 @@
 status: Open
 date: 2026-09-02
 author: "kgsaran"
-adr: ""
-roadmap: "docs/roadmaps/backlog/ROADMAP-2026-09-22-reconciliacao-pos-merge-dos-prs-238-e-240-e-o-trackfw-log-que-conflita-em-toda-branch-paralela.md"
+adr: "docs/adr/ADR-2026-10-22-logs-append-only-compartilhados-viram-um-arquivo-por-entrada-porque-o-github-ignora-merge-union.md"
+roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-22-reconciliacao-pos-merge-dos-prs-238-e-240-e-o-trackfw-log-que-conflita-em-toda-branch-paralela.md"
 ---
 
 # REQ: Reconciliação pós-merge dos PRs #238 e #240, e o `.trackfw-log` que conflita em toda branch paralela
@@ -110,14 +110,35 @@ Conflito em arquivo de log é ruído puro — não há disputa semântica, as du
 - [ ] **AC4** — O item 3 é **medido**: enumerar onde saída de gate é hasheada ou comparada byte a
       byte, e reportar quantos dos 37 têm exposição real a CRLF. **Zero é resultado válido** e
       encerra o item. Correção só se a medição mostrar exposição.
-- [ ] **AC5** — Os roadmaps trazidos pelos PRs do reporter estão em `done`, e a política de quem faz
+- [x] **AC5** *(política decidida pelo KG em 2026-10-22, ver a reescrita abaixo; roadmaps já em done)* — Os roadmaps trazidos pelos PRs do reporter estão em `done`, e a política de quem faz
       essa transição para PR externo está escrita (candidata natural ao `CONTRIBUTING.md`).
-- [ ] **AC6** — `.gitattributes` com `merge=union` para `.trackfw-log` existe **neste** repositório
+- [x] ~~**AC6**~~ *(substituído pelo AC6 reescrito abaixo; o `merge=union` foi entregue no #251, e o GitHub o ignora)* — `.gitattributes` com `merge=union` para `.trackfw-log` existe **neste** repositório
       **e** é gerado pelo `trackfw init` nos **3 CLIs** (regra dura de paridade). Falsificação nas
       duas direções: duas branches que movem roadmaps mergeiam sem conflito com o arquivo, e
       conflitam sem ele.
 - [ ] **AC7** — 🔴 **Controle do AC6:** o `merge=union` **não** engole conteúdo — as linhas dos dois
       lados sobrevivem, verificado por igualdade de conjunto, não por ausência de conflito.
+
+### Reescrita de 2026-10-22, contra a main 75642ec5 (v10.1.0 + #598/#600)
+
+**O AC6 mudou de premissa.** O `merge=union` existe (#251) e é gerado pelo `trackfw init`, mas o **GitHub o
+ignora**. No #595, o GitHub acusou conflito no `.trackfw-log`, que o merge local resolveu sozinho. A
+expressão "3 CLIs" também é pré-v8: o produto agora é um binário Go. O KG decidiu em 2026-10-22: **um
+arquivo por entrada** (ADR-2026-10-22). Pela mesma causa e pelo mesmo sintoma, o
+`docs/agents-working-context.md` entra nesta REQ.
+
+**AC5, decisão do KG em 2026-10-22:** quem move para `done/` o roadmap trazido por um PR externo é o
+mantenedor, depois do merge, numa branch `docs/`. É a mesma regra de "fechamento é pós-merge" que vale
+para o trabalho interno. Os roadmaps do #238 e do #240 já estão em `done/` (triagem de 2026-10-17).
+
+- [ ] **AC6 (reescrito)** — Uma transição de roadmap ou REQ grava um arquivo próprio em
+      `<dir>/.trackfw-log.d/` (ADR D1). Todos os leitores passam por um ponto único, que lê o legado
+      congelado e o diretório. Falsificação **sem `.gitattributes`**, num repositório temporário: duas
+      branches que movem roadmaps fazem merge sem conflito, e o formato antigo conflita no mesmo teste.
+- [ ] **AC7 (mantido)** — Controle: as entradas dos dois lados sobrevivem, por igualdade de conjunto.
+- [ ] **AC8** — O contexto de trabalho grava uma entrada por arquivo em `docs/agents-working-context.d/`
+      (ADR D2). As instruções geradas (`agentfiles.go`, os 12 assets e os goldens) mandam escrever e ler
+      ali. O `.md` legado ganha cabeçalho de redirecionamento. Mesma falsificação do AC6.
 
 ## Negative Scope
 
@@ -146,4 +167,4 @@ ADR:
      docs/roadmaps/.trackfw-log, exatamente o arquivo em conflito nos PRs #238/#240. Criar o roadmap
      antes de os dois mergearem geraria um terceiro conflito no PR do reporter — que é o defeito
      descrito no item 5 desta própria REQ. Criar após os merges. -->
-Roadmap: `docs/roadmaps/backlog/ROADMAP-2026-09-22-reconciliacao-pos-merge-dos-prs-238-e-240-e-o-trackfw-log-que-conflita-em-toda-branch-paralela.md`
+Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-22-reconciliacao-pos-merge-dos-prs-238-e-240-e-o-trackfw-log-que-conflita-em-toda-branch-paralela.md`
