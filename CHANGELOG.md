@@ -7,13 +7,41 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [10.1.0] - 2026-10-22
+
+Sem breaking changes.
+
 ### Added
 
-- **`trackfw attention signal` e `trackfw attention cleanup`**: hooks informativos nativos em Go,
-  sem dependência de Bash, jq ou Python. Os seis emissores migram comandos legados e preservam
-  hooks personalizados nos arquivos compartilhados; scripts antigos passam a delegar ao binário.
-  Entrada limitada a 1 MiB/2 s e operações confinadas ao projeto. A jornada real dos agentes no
-  Windows continua pendente de medição. (REQ-2026-09-05, ML-1H)
+- **`trackfw attention signal` e `trackfw attention cleanup`**: hooks de atenção nativos em Go, sem
+  dependência de Bash, jq ou Python. Os seis emissores migram os comandos legados e preservam os hooks
+  personalizados nos arquivos compartilhados. Os scripts antigos passam a delegar ao binário. A
+  entrada é limitada a 1 MiB e 2 s, e as operações ficam confinadas ao projeto. (#591, REQ-2026-09-05)
+- **Instalação no Windows documentada:** o README ganha a seção *Installing on Windows* e declara
+  suporte a ARM64. O `scripts/install.sh` passa a listar outras cópias do trackfw encontradas no PATH,
+  sem executá-las. No Windows, o Claude Code roda os hooks pelo Git Bash, e o `/etc/profile` dele põe
+  `~/bin` na frente do PATH. Uma cópia antiga nesse diretório intercepta o guard em silêncio. (#592)
+
+### Fixed
+
+- 🔴 **Sob zsh, o guard deixava passar o que devia bloquear (fail-open).** A linha de hook gerada
+  abortava no zsh antes de chamar o binário, por causa das opções EQUALS (`zsh:1: 2 not found`) e
+  NOMATCH. Assim, o deny saía com código 1 e não bloqueava a ação. Isso foi medido no Codex. A linha
+  agora começa com `emulate -R sh 2>${null-/dev/null}; ` e dá 0/2/2/2 (allow/deny/erro/ausente) em sh,
+  bash, dash, zsh (inclusive com `errexit`, `nounset` e `cshnullglob`), PowerShell 5.1 e Git Bash.
+  **Para migrar:** rode `trackfw update harness`. Ele converte as formas antigas e o wrapper manual
+  `/bin/bash -c '…'`, sem duplicar e preservando hooks personalizados. O `validate` trata a forma
+  anterior como legado e mostra um aviso. Custos conhecidos: no PowerShell 5.1, o prefixo gera duas
+  linhas de CommandNotFound no stderr. Bash com `errexit` herdado (`BASH_ENV`, `bash -e`) sai com 127.
+  (#595, REQ-2026-10-20)
+- **Codex e Gemini: o guard não sai mais duplicado no mesmo evento.** Em `InjectCodexHooks` e
+  `InjectGeminiHooks`, o merge rodava antes da migração, o que deixava dois comandos iguais no grupo
+  dos guards de git-branch e de credencial. (#595)
+- **O sinal de atenção mostra a pergunta real do AskUserQuestion**, lida de
+  `tool_input.questions[0].question`. Antes, esse campo do payload real era ignorado. (#592)
+- **`guard_binary_probe` não confunde mais o estouro do próprio prazo de 5 s com "trackfw ausente do
+  PATH".** Quando a sonda estoura o prazo, a regra não acusa nada, em vez de afirmar que o hook vai falhar aberto.
+  (#590, #589)
 
 ## [10.0.0] - 2026-10-18
 

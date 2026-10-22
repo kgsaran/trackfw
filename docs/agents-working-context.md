@@ -47322,3 +47322,9 @@ que chamam git sem `LookPath`; chmod no discover.
 
 - PR #595 mergeado (28665b30, 2026-10-22T09:20:55Z), conforme informado pelo KG e conferido no GitHub. O roadmap foi para done/ com `trackfw roadmap move`, e a REQ está com status Done e os ponteiros sincronizados. Branch docs/encerra-req-2026-10-20-guard-zsh.
 - Pendente com o KG: depois da próxima release, rodar `trackfw update harness` para migrar os configs globais e aposentar o workaround `/bin/bash -c`.
+
+## 2026-10-22 — zeus-tf — release 10.1.0 preparada
+
+- Branch chore/release-10.1.0. O CHANGELOG ganha a seção [10.1.0], que reúne #590, #591, #592 e #595, sem breaking changes. O ares-tf trocou a versão nos quatro arquivos (version.go, npm/package.json, npm/package-lock.json, pypi/pyproject.toml), e eu auditei o diff.
+- Gates: `make check-required-full` rc=0 (D=R=W, 9 checks); `check-manifest-version-gate.sh` 9 OK / 0 FAIL; `go build ./...` rc=0.
+- A tag `v10.1.0` só é criada depois do merge do PR de bump, com o changelog no corpo.
