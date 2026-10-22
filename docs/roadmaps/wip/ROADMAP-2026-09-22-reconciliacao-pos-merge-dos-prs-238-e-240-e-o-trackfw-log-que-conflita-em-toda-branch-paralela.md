@@ -117,15 +117,15 @@ go test ./internal/generators/ ./internal/metrics/ ./internal/serve/ ./internal/
 > Dependencies: Wave 1 auditada. É sequencial ao ML-1A porque compartilha o pacote `internal/generators`.
 
 ### ML-2A — Instruções geradas e o arquivo legado
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** prometeu-tf
 **Files affected:** `internal/generators/agentfiles.go`, os 12 `internal/integrations/assets/agents/*.md`, os goldens, o cabeçalho de
 `docs/agents-working-context.md` e o `CLAUDE.md` do projeto (as linhas que mandam ler e atualizar o contexto)
 **Acceptance criteria:**
-- [ ] Toda instrução gerada manda escrever um arquivo em `docs/agents-working-context/` e ler as entradas mais recentes. Um teste
+- [x] Toda instrução gerada manda escrever um arquivo em `docs/agents-working-context/` e ler as entradas mais recentes. Um teste
       sobre todas as representações do catálogo tem braço negativo (instrução antiga reprova).
-- [ ] O `.md` legado ganha o cabeçalho de redirecionamento e não recebe mais entradas.
-- [ ] Os goldens acompanham, e a mudança aparece no diff.
+- [x] O `.md` legado ganha o cabeçalho de redirecionamento e não recebe mais entradas.
+- [x] Os goldens acompanham, e a mudança aparece no diff.
 
 ## Wave 3 — Revisão
 > Dependencies: Wave 2 auditada.

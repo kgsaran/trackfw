@@ -8,7 +8,7 @@
 Cadeia: `ADR → REQ → ROADMAP → backlog/wip/blocked/done/abandoned`
 
 Leia `docs/visao-projeto/VISION.md` antes de qualquer tarefa.
-Leia `docs/agents-working-context.md` para o estado atual de trabalho.
+Leia as 10 entradas mais recentes de `docs/agents-working-context/` para o estado atual de trabalho.
 
 ## Stack
 
@@ -56,7 +56,7 @@ infra e templates de artefato são exceções explícitas.
 
 - **Nunca commitar na `main` sem PR** (mesmo sendo projeto novo)
 - **Build obrigatório** após qualquer alteração: `go build ./...`
-- **Atualizar `docs/agents-working-context.md`** ao iniciar e encerrar cada ciclo
+- **Escreva um arquivo em `docs/agents-working-context/<AAAAMMDDTHHMMSSZ>-<agente>-<assunto>.md`** ao iniciar e encerrar cada ciclo
 
 ## Sinalização de Atenção para o Board (`trackfw serve`)
 
@@ -150,8 +150,8 @@ Chain: `ADR → REQ → ROADMAP` · States: `backlog / analyzing / wip / blocked
    ❌ Never create a branch before REQ + ROADMAP are in wip/
    ❌ Never defer REQ/ROADMAP creation to a future task — they are prerequisites, not deliverables
    ✓ `trackfw validate` enforces this via `branch_has_wip_roadmap` rule (v2.7.0+)
-2. **Before starting:** run `trackfw context` · read `docs/agents-working-context.md`
-3. **After finishing:** update `docs/agents-working-context.md` with what changed
+2. **Before starting:** run `trackfw context` · read the 10 most recent entries in `docs/agents-working-context/`
+3. **After finishing:** write a new file in `docs/agents-working-context/<YYYYMMDDTHHMMSSZ>-<your-slug>-<topic>.md` with what changed
 4. **Before PR:** `trackfw validate` must pass
 5. **ML lifecycle — mandatory:**
    - Starting a ML: edit roadmap `**Status:** ⬜ Pendente` → `**Status:** 🔄 Em andamento` + commit.

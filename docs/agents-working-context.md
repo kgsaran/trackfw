@@ -1,5 +1,9 @@
 # agents-working-context.md
 
+> **CONGELADO em 2026-10-22 (ADR-2026-10-22).** Este arquivo é histórico somente-leitura.
+> Novas entradas vão em `docs/agents-working-context/<AAAAMMDDTHHMMSSZ>-<agente>-<assunto>.md`.
+> Leitura: `trackfw context` ou as 10 entradas mais recentes de `docs/agents-working-context/`.
+
 ## 2026-10-22 — prometeu-tf — FIM: corretivo ML-1A (REQ-2026-09-26) — braço negativo reescrito
 
 - Defeito corrigido: braço `negative` não chamava `checkPhrases` e só afirmava que phrase1 sumiu; phrase2 nunca era exercida.
@@ -47435,3 +47439,4 @@ que chamam git sem `LookPath`; chmod no discover.
 - ares-tf, ML-1B: os gates de encoding (AC1–AC4) foram corrigidos, e o `--self-test` ficou ligado ao Makefile.
 - Desvio: o apolo-tf escreveu neste arquivo, embora fosse proibido. O conteúdo foi mantido. As memórias do hades-tf e do prometeu-tf foram gravadas no checkout principal, que é o caminho de memória configurado para eles; não mexi.
 - 2026-10-22 — apolo-tf, ML-1C: o diretório agora se chama `.trackfw-log-entries`, com a constante `translog.EntriesDirSuffix`, porque `*.d` no `.gitignore` ignoraria o nome antigo. Há um teste com padrões comuns de `.gitignore`. Medido pelo arquiteto: 7 pacotes verdes.
+- 2026-10-22 — zeus-tf. prometeu-tf, ML-2A: as instruções dos 12 agentes e do `agentfiles.go` apontam para `docs/agents-working-context/`, e o `trackfw context` mostra as 10 mais recentes. O arquivo legado está congelado. Auditado: `parity-rest` com rc=0 e mordida medida. Nota: este registro do arquiteto ainda vai no `.md` legado, porque o arquivo instalado do arquiteto manda assim até o `agents update` pós-release.
