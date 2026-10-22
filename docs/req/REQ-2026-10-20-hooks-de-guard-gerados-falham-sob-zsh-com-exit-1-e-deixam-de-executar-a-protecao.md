@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-10-20
 author: "zeus-tf"
 adr: "docs/adr/ADR-2026-10-04-o-guard-de-hook-e-um-subcomando-go-do-trackfw-e-a-linha-de-hook-e-a-mesma-string-em-todo-shell.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-10-20-hooks-de-guard-gerados-falham-sob-zsh-com-exit-1-e-deixam-de-executar-a-protecao.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-10-20-hooks-de-guard-gerados-falham-sob-zsh-com-exit-1-e-deixam-de-executar-a-protecao.md"
 ---
 
 # REQ: Hooks de guard gerados falham sob zsh com exit 1 e deixam de executar a protecao
 
-> Date: 2026-10-20 | Status: Open
+> Date: 2026-10-20 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -30,7 +30,7 @@ ADR: docs/adr/ADR-2026-10-04-o-guard-de-hook-e-um-subcomando-go-do-trackfw-e-a-l
 
 ## Linked Roadmap
 <!-- Reference the roadmap that implements this requirement -->
-Roadmap: docs/roadmaps/wip/ROADMAP-2026-10-20-hooks-de-guard-gerados-falham-sob-zsh-com-exit-1-e-deixam-de-executar-a-protecao.md
+Roadmap: docs/roadmaps/done/ROADMAP-2026-10-20-hooks-de-guard-gerados-falham-sob-zsh-com-exit-1-e-deixam-de-executar-a-protecao.md
 
 ## Escopo negativo
 
