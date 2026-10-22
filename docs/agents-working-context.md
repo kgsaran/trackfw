@@ -47405,3 +47405,9 @@ que chamam git sem `LookPath`; chmod no discover.
 - Bite: 6 falhas esperadas em HEAD (U+0020 bare, U+002C bare, U+2028/U+2029 leading, U+FFFE/U+FFFF bare). Corretivo fecha todas.
 - Build ✅ Vet ✅ test ./... ✅ (21 pacotes, 7,2 s para integrations) trackfw validate exit=0.
 - Diff: 5 arquivos, +374 / -19. Aguarda auditoria e commit do trackfw_architect.
+
+## 2026-10-22 — zeus-tf — FIM: REQ-2026-09-26 encerrada
+
+- A REQ foi entregue em dois PRs: #598 (ed910c22, proibição do `model` no Dispatch contract) e #600 (75642ec5, escape TOML do Codex, YAML conferido por enumeração, slug validado no Load, referências de terceiro). O roadmap foi para done/, e a REQ ficou Done.
+- Pendente com o KG: quem já tem o arquiteto instalado só recebe o parágrafo novo depois de `trackfw agents update` ou `trackfw update harness` com um binário que contenha o #598, ou seja, depois da próxima release.
+- Próximo da fila aprovada: o roadmap 4, sobre o conflito do `.trackfw-log`.

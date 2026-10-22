@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-26
 author: "trackfw_architect"
 adr: ""
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-26-o-harness-do-arquiteto-nao-proibe-sobrepor-o-modelo-do-subagente-e-o-roteamento-de-custo-e-ignorado-em-silencio.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-26-o-harness-do-arquiteto-nao-proibe-sobrepor-o-modelo-do-subagente-e-o-roteamento-de-custo-e-ignorado-em-silencio.md"
 ---
 
 # REQ: o harness do arquiteto nao proibe sobrepor o modelo do subagente e o roteamento de custo e ignorado em silencio
 
-> Date: 2026-09-26 | Status: Open
+> Date: 2026-09-26 | Status: Done
 | Linear Issue: 
 | Jira Issue: 
 
@@ -68,7 +68,7 @@ verificação, e o leitor cumprindo a letra sem alcançar a razão.
       fica escrita **mesmo que seja "nenhum"**
 - [x] O golden `internal/integrations/testdata/architect.subagent.golden.md` acompanha, e a mudança é
       **visível no diff** — golden que muda sem ninguém ver é a próxima claim falsa
-- [ ] `make quality` e **CI** verdes
+- [x] `make quality` e **CI** verdes
 
 ### Ampliação de 2026-10-22: escape TOML do destino Codex (decisão do KG)
 
@@ -102,4 +102,4 @@ ADR:
 <!-- none -->
 
 ## Linked Roadmap
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-26-o-harness-do-arquiteto-nao-proibe-sobrepor-o-modelo-do-subagente-e-o-roteamento-de-custo-e-ignorado-em-silencio.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-26-o-harness-do-arquiteto-nao-proibe-sobrepor-o-modelo-do-subagente-e-o-roteamento-de-custo-e-ignorado-em-silencio.md`
