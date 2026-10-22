@@ -28,12 +28,14 @@ REQ: docs/req/REQ-2026-09-26-o-harness-do-arquiteto-nao-proibe-sobrepor-o-modelo
 - Nenhuma ADR é necessária: o defeito é uma omissão num contrato existente, e não há decisão de desenho nova (escopo negativo da REQ).
 
 ## Acceptance Criteria
-- [ ] AC1. O Dispatch contract proíbe explicitamente passar o parâmetro `model` do Agent tool, com a razão escrita (roteamento de custo).
-- [ ] AC2. O contrato manda ler `name:` e `model:` do arquivo instalado e diz que o `model:` é decisão do projeto.
-- [ ] AC3. Há falsificação nas duas direções: a renderização do architect **sem** o parágrafo reprova; **com** ele, passa. Vale em toda representação que o catálogo emite para o architect.
-- [ ] AC4. A enumeração de outros contratos da mesma classe fica escrita, mesmo que dê "nenhum" (Wave 0).
-- [ ] AC5. Os goldens acompanham a mudança, e ela aparece no diff.
+- [x] AC1. O Dispatch contract proíbe explicitamente passar o parâmetro `model` do Agent tool, com a razão escrita (roteamento de custo).
+- [x] AC2. O contrato manda ler `name:` e `model:` do arquivo instalado e diz que o `model:` é decisão do projeto.
+- [x] AC3. Há falsificação nas duas direções: a renderização do architect **sem** o parágrafo reprova; **com** ele, passa. Vale em toda representação que o catálogo emite para o architect.
+- [x] AC4. A enumeração de outros contratos da mesma classe fica escrita, mesmo que dê "nenhum" (Wave 0).
+- [x] AC5. Os goldens acompanham a mudança, e ela aparece no diff.
 - [ ] AC6. `make quality` e o CI ficam verdes.
+- [x] AC7. O TOML do Codex é serializado como basic string do TOML 1.0 (Wave 4, ML-4A e ML-4F).
+- [x] AC8. O escape YAML não deixa sair byte de controle cru (verificado por enumeração), o `identity.Load` valida o slug e recusa DEL, C1 e não-caracteres, e as referências de terceiro não corrompem o TOML nem o JSON (ML-4B, 4C, 4D e 4F).
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -156,30 +158,79 @@ test -s docs/seguranca/2026-10-22-red-team-model-override.md
 
 ## Wave 4 — Escape TOML do destino Codex (AC7, ampliação decidida pelo KG em 2026-10-22)
 > Dependencies: Wave 2 concluída. A Wave 3 é refeita depois desta wave.
+>
+> **2026-10-22:** o KG mergeou o PR #598 (ed910c22) antes desta wave. As Waves 0–3 do model-override foram entregues nele, e o título do PR já cita o TOML, mas o `strconv.Quote` ainda está na main. A Wave 4 segue na branch `fix/harness-arquiteto-escape-toml-codex`, na mesma REQ (Regra Dura), e o roadmap fica em wip até ela fechar.
 
 ### ML-4.0 — Threat model do encoder TOML
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** hades-tf
-**Files affected:** `docs/seguranca/2026-10-22-wave0-toml-escape.md` (novo)
+**Files affected:** `docs/seguranca/2026-10-22-wave0-toml-escape.md`
 **Acceptance criteria:**
-- [ ] A alcançabilidade fica medida: quais entradas chegam aos 4 campos (assets, `identity.Config`, o mapeamento de modelo) e se a identidade já recusa caracteres de controle.
-- [ ] A versão de TOML que o destino aceita fica registrada, com fonte, ou declarada como desconhecida.
-- [ ] Os alvos de falsificação nas duas direções e o resíduo ficam declarados, inclusive o que fazer com UTF-8 inválido (recusar ou trocar).
+- [x] Alcançabilidade medida. O DEL (0x7F) passa por `containsControlCharIdent` e chega à `description` (T-2). O slug não é validado no `identity.Load` (só `identity.Validate`, usado pelo wizard e pelas flags, aplica o `slugPattern`), e um 0x07 nele chega ao `name` (T-3).
+- [x] Versão do TOML: o Codex 0.163.0 aceita TOML 1.1. O piso adotado é TOML 1.0 (Python 3.12 serve de oráculo de 1.0).
+- [x] Falsificação e resíduo declarados. Novos sítios: o YAML (`yamlEscapeDoubleQuoted` emite C0 cru; `containsControlChar` não cobre 0x7F nem C1) e o T-4 (`ApplyThirdPartyReferences` anexa um bloco HTML/markdown ao TOML e ao JSON).
 
-### ML-4A — Encoder de basic string TOML 1.0
-**Status:** ⬜ Pendente
+**Auditoria do arquiteto (2026-10-22):** aprovada. Conferido no código: `identity.go:159-166` (só `< 0x20` e os separadores), `identity.go:64-76` (o Load valida apenas o nickname e o display_name), `render.go:914-934` (o bloco é anexado sem olhar a representação, e `plan.go:79` chama a função para todo KindAgents). **Decisão:** UTF-8 inválido é **recusado com erro**, sem escrever arquivo, em linha com `render.go:665` ("callers must reject, not sanitize"). Por isso o AC7 foi ajustado. O YAML, a identidade e o T-4 entram nesta REQ, pela regra do KG de corrigir agora o defeito conhecido.
+
+### ML-4A — Encoder de basic string TOML 1.0 (Codex)
+**Status:** ✅ Concluído
+**Agente:** prometeu-tf (mesmo despacho do ML-4B, porque os dois tocam `render.go`)
+**Files affected:** `internal/integrations/render.go`, `internal/integrations/render_test.go`
+**Acceptance criteria:**
+- [x] As 4 chamadas de `strconv.Quote` do ramo `custom-agent-toml` passam por `tomlBasicString(s) (string, error)`. Escapa `\b \t \n \f \r \" \\` e `\uXXXX` para os demais C0, o DEL e os runes com `!strconv.IsPrint`. UTF-8 inválido devolve erro (`r == utf8.RuneError && size == 1`).
+- [x] O teste tem um decodificador mínimo de basic string TOML 1.0, sem dependência nova. A saída do encoder decodifica de volta à entrada para 0x00–0x1F, 0x7F, C1, NBSP e acentos. A saída do `strconv.Quote` para 0x07 e 0x0B é recusada pelo mesmo decodificador (braço contrário). UTF-8 inválido vira erro, com o `Render` propagando esse erro.
+- [x] Os goldens do Codex não mudam.
+**Auditoria do arquiteto:** 174 PASS em `TestTOMLBasicString` e `TestYAMLEscapeDoubleQuotedNoRawControl`. Mordida: com `strconv.Quote`, reprovam `arm_a_round_trip` (todo C0 e o DEL) e `arm_c_invalid_utf8_error`. Goldens sem diff. Pacotes integrations, identity, thirdparty, commands e generators verdes com HOME isolado.
+
+### ML-4B — Escape YAML double-quoted
+**Status:** ✅ Concluído
 **Agente:** prometeu-tf
-**Files affected:** `internal/integrations/render.go`, e o teste em `internal/integrations/` (a definir pela ML-4.0)
+**Files affected:** `internal/integrations/render.go`, `internal/integrations/render_test.go`
 **Acceptance criteria:**
-- [ ] `strconv.Quote` some do ramo `custom-agent-toml`.
-- [ ] O teste reprova com o código antigo e passa com o novo.
-- [ ] Os goldens do Codex ficam iguais byte a byte para os assets atuais, ou a diferença é justificada.
+- [x] `containsControlChar` passa a cobrir 0x7F e C1 (U+0080–U+009F). `yamlEscapeDoubleQuoted` emite escape YAML (`\xHH`, `\uXXXX` ou os escapes nomeados do YAML 1.2) para todo C0, DEL e C1, sem byte de controle cru.
+- [x] O teste prova que nenhum byte < 0x20, 0x7F ou C1 sai cru numa scalar double-quoted e que o valor original pode ser recuperado. Antes da mudança, o teste reprova.
+- [x] Os goldens atuais não mudam.
+**Auditoria do arquiteto:** com o escape antigo, `new_encoder_no_raw_control_and_round_trips` reprova para todo C0 (exceto o tab), o DEL e o C1. Agora `containsControlChar` também recusa o U+0085; antes ele era excluído porque o yaml.v3 o normaliza, então nada muda na prática.
 
-### ML-4B — Revisão
-**Status:** ⬜ Pendente
+### ML-4C — `identity.Load` valida o slug e recusa DEL/C1
+**Status:** ✅ Concluído
+**Agente:** apolo-tf (em paralelo com 4A/4B, porque os arquivos são disjuntos)
+**Files affected:** `internal/identity/identity.go`, `internal/identity/identity_test.go`
+**Acceptance criteria:**
+- [x] O `Load` recusa slug não vazio que não case com `slugPattern`, com mensagem no padrão das existentes.
+- [x] `containsControlCharIdent` passa a recusar 0x7F e C1.
+- [x] Os testes reprovam no código antigo (com slug contendo 0x07, display_name com 0x7F e com U+0085) e passam no novo. Os presets continuam carregando.
+**Auditoria do arquiteto:** diff mínimo em `identity.go`. Os 8 subtestes de recusa reprovam no código antigo. O slug vazio continua aceito no Load (o `Validate` o recusa).
+
+### ML-4D — Referências de terceiro respeitam a representação (T-4)
+**Status:** ✅ Concluído
+**Agente:** prometeu-tf (depois de 4A/4B, porque também toca `render.go` e `plan.go`)
+**Files affected:** `internal/integrations/plan.go`, `internal/integrations/thirdparty_refs_repr_test.go`, `internal/commands/integrations_thirdparty.go`, `internal/commands/integrations_thirdparty_test.go`
+**Acceptance criteria:**
+- [x] Para `custom-agent-toml`, `agent-json` e `cli-agent-json`, o artefato final continua TOML ou JSON válido quando existem referências de terceiro. Ou o bloco entra no campo de instruções, ou a referência é recusada com erro explícito. Nunca é anexada ao arquivo serializado.
+- [x] O teste reprova no código atual.
+**Auditoria do arquiteto:** a 1ª entrega foi reprovada. Ela recusava com erro dentro do `BuildPlans`, o que derrubava o plano de todos os destinos: um registro antigo com entrada para o codex quebrava `agents update` e `update harness`, e o `--apply-to codex` deixava o registro envenenado. No corretivo, o `--apply-to` recusa representação estruturada antes de qualquer escrita, e o `BuildPlans` só deixa de anexar o bloco nesses destinos, sem falhar. Os testes `SkipBlockKeepValid`, `StaleRegistryDoesNotBreakOtherTargets` e `ApplyToRejectsStructuredRepresentationBeforeWrite` têm as 3 mordidas medidas. **Resíduo:** o plano não tem canal de aviso, então a omissão do bloco num registro antigo é silenciosa e só fica documentada no comentário.
+
+### ML-4E — Revisão
+**Status:** ✅ Concluído
 **Agente:** hefesto-tf e hades-tf
 **Acceptance criteria:**
-- [ ] Parecer de qualidade e red team do encoder.
+- [x] Qualidade (`docs/seguranca/2026-10-22-quality-toml-escape.md`): APROVADO COM RESSALVA. R2 (U+2028/U+2029 crus dentro das aspas duplas) e R3 (a lista de representações estruturadas é fixa no código).
+- [x] Red team (`docs/seguranca/2026-10-22-red-team-toml-escape.md`): REPROVADO. T-1 a T-4 fechados; Defeito 1 (U+FFFE/U+FFFF) e Defeito 2 (vírgula sozinha).
+
+### ML-4F — Corretivo da revisão: fechar a classe por enumeração
+**Status:** ✅ Concluído
+**Agente:** prometeu-tf
+**Files affected:** `internal/integrations/render.go`, `internal/integrations/render_escape_test.go`, `internal/integrations/thirdparty_refs_repr_test.go`, `internal/identity/identity.go`, `internal/identity/identity_test.go`
+**Decisão do arquiteto:** os dois revisores acharam furos diferentes no mesmo encoder porque a cobertura era uma lista. O oráculo passou a ser o yaml.v3, sobre todo o espaço de entrada.
+**Acceptance criteria:**
+- [x] `TestYAMLScalarEnumerationAllRunes` cobre 3 formas × 1.112.064 code points, em cerca de 6,5 s. Para cada um, o `Render` recusa ou o yaml.v3 faz o round-trip exato. Medido pelo arquiteto numa cópia: com `render.go` e `identity.go` do HEAD, a enumeração reprova em exatamente 6 runes (U+0020 e U+002C sozinhos, U+2028/U+2029 com espaço depois, U+FFFE e U+FFFF).
+- [x] U+FFFE/U+FFFF recusados no `identity.Load` e no `Render` dos caminhos YAML. Isso é política (YAML 1.2, c-printable): o yaml.v3 aceita a forma escapada, ao contrário do que a 1ª medição do red team dizia.
+- [x] R3: `TestStructuredRepCatalogCoverage` classifica cada destino pela SAÍDA do `Render` (prefixo `---\n`) e exige concordância com `IsStructuredAgentRepresentation`. A 1ª versão, circular, foi reprovada na auditoria. Mordida: sem `cli-agent-json` na função, o teste reprova em amazonq/cli.
+- [x] A1/A2: o decodificador TOML do teste recusa hex parcial, `\U` acima de U+10FFFF e surrogates.
+- [x] integrations, identity, thirdparty, commands e generators verdes com HOME isolado.
+**Desvios do agente:** rodou `go test ./...`, que era proibido, e deixou 114 MB de `build-cache/` e `vendor-cache/` na árvore, apagados pelo arquiteto. Também escreveu no contexto de trabalho, o que era proibido; o conteúdo foi mantido.
+**Sem 3ª rodada de red team:** a classe ficou fechada por um oráculo exaustivo, com a mordida medida pelo arquiteto.
 
 ## Wave 3 — Fechamento
 > Dependencies: Wave 2 aprovada.
@@ -190,6 +241,7 @@ test -s docs/seguranca/2026-10-22-red-team-model-override.md
 **Acceptance criteria:**
 - [x] `make quality` com rc=0, com a máquina ociosa e o HOME isolado. Medido em 2026-10-22 no HEAD da branch: falsificação com 8 chunks, 368 OK / 0 FAIL, `packaging` e `pyyaml` por venv.
 - [ ] CI do PR verde
+- [x] `make quality` refeito depois da Wave 4: rc=0, falsificação com 368 OK / 0 FAIL (HEAD 459762a7, HOME isolado). O CI do 459762a7 passou em todos os jobs, menos o `windows-full-suites`, que ainda estava pendente quando isto foi registrado.
 
 ---
 

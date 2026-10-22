@@ -47382,3 +47382,26 @@ que chamam git sem `LookPath`; chmod no discover.
 - prometeu-tf, ML-1B: corretivo com casamento exato e único do cabeçalho, recusa de conteúdo inerte e A2–A5. 133 PASS, conferido pelo arquiteto. A nota do vault foi reescrita para bater com o que foi implementado.
 - Próximo: 2ª rodada do hades-tf, que reexecuta os vetores M1–M5g contra o teste novo.
 - hades-tf, ML-2B, 2ª rodada: os vetores M1–M5g fecharam. O D-7 (bloco HTML) ficou aberto e o D-8 (comentário externo) virou resíduo. prometeu-tf, ML-1C: o D-7 foi fechado; 145 PASS, e a mordida foi medida pelo arquiteto numa cópia. Não haverá 3ª rodada, porque o que sobra é M3 (texto ativo de exceção), cuja barreira é a auditoria do diff.
+
+## 2026-10-22 — zeus-tf — REQ-2026-09-26: o #598 foi mergeado com a Wave 4 pendente
+
+- O PR #598 (ed910c22) entregou o model-override (Waves 0–3). A Wave 4, o escape TOML do Codex (AC7), continua na branch fix/harness-arquiteto-escape-toml-codex, worktree /private/tmp/trackfw-toml-escape. O roadmap segue em wip.
+- O título do #598 cita a correção do TOML, mas ela não está na main. O PR da Wave 4 deve dizer isso.
+- 2026-10-22 — Wave 4. prometeu-tf, ML-4A/4B: `tomlBasicString` no Codex e o escape YAML sem controle cru, 174 PASS. apolo-tf, ML-4C: o `identity.Load` valida o slug e recusa o DEL e o C1. Auditados pelo arquiteto; integrations, identity, thirdparty, commands e generators verdes com HOME isolado. Próximo: o ML-4D (referências de terceiro).
+- 2026-10-22 — prometeu-tf, ML-4D: as referências de terceiro não corrompem mais o TOML e o JSON. A 1ª entrega foi reprovada (derrubava o plano inteiro). No corretivo, a recusa acontece no `--apply-to`, antes da escrita, e o `BuildPlans` só deixa de anexar o bloco nos destinos estruturados. Integrations, commands e generators verdes com HOME isolado.
+
+## 2026-10-22 — prometeu-tf — INÍCIO: ML-4F REQ-2026-09-26 (corretivo Wave 4)
+
+- Sessão continuada de context compactado. Investigação prévia: scratchpad ml4f-yaml-check mediu que yaml.v3 aceita `￾`/`￿` como escapes (contradiz Hades §1: a recusa é política, não limitação técnica).
+- Trabalho em andamento: render.go, identity.go, render_escape_test.go, thirdparty_refs_repr_test.go, identity_test.go.
+
+## 2026-10-22 — prometeu-tf — FIM: ML-4F REQ-2026-09-26 (corretivo Wave 4)
+
+- render.go: `yamlEscapeDoubleQuoted` agora emite ` `/` `/`￾`/`￿` em vez de raw bytes ou pass-through. `containsControlChar` inclui U+FFFE/U+FFFF. `needsYAMLQuoting` detecta vírgula em posição inicial e espaço/tab na borda. Novo `containsNonYAMLCharacter`. Pre-check em `Render` recusa U+FFFE/U+FFFF nos caminhos YAML (política YAML 1.2 §5.1).
+- identity.go: `containsControlCharIdent` inclui U+FFFE/U+FFFF.
+- render_escape_test.go: `decodeTomlBasicString` corrigido (`strconv.ParseUint`, range e surrogate no `\U`). `hasRawControlRuneInDoubleQuoted` estendido para U+2028/U+2029. U+2028/U+2029 adicionados aos casos do teste YAML. Novos: `TestYAMLScalarEnumerationAllRunes` (6,37 s, 0 falhas), `TestRender_NonYAMLChar_Rejected`.
+- thirdparty_refs_repr_test.go: novo `TestStructuredRepCatalogCoverage` (R3 drift check).
+- identity_test.go: `TestContainsControlCharIdent` + U+FFFE/U+FFFF; novo `TestLoadRejectsNoncharacters`.
+- Bite: 6 falhas esperadas em HEAD (U+0020 bare, U+002C bare, U+2028/U+2029 leading, U+FFFE/U+FFFF bare). Corretivo fecha todas.
+- Build ✅ Vet ✅ test ./... ✅ (21 pacotes, 7,2 s para integrations) trackfw validate exit=0.
+- Diff: 5 arquivos, +374 / -19. Aguarda auditoria e commit do trackfw_architect.

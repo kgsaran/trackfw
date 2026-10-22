@@ -72,6 +72,15 @@ func Load(homeDir string) (Config, error) {
 		if containsControlCharIdent(agent.DisplayName) {
 			return Config{}, fmt.Errorf("identity: display_name do agente %q em %s contém caractere de controle — remova o valor ou corrija o arquivo manualmente", id, filename)
 		}
+		// T-3: a slug edited by hand into identity.json bypasses Validate
+		// (which is only called by the wizard and CLI flags). Reject any
+		// non-empty slug that does not match slugPattern here so that
+		// AgentName never propagates an invalid slug into TOML/YAML output.
+		// An empty slug is still allowed at Load time (Validate enforces
+		// non-empty slugs; Load does not duplicate that check).
+		if agent.Slug != "" && !slugPattern.MatchString(agent.Slug) {
+			return Config{}, fmt.Errorf("identity: slug do agente %q em %s inválido (%q; esperado padrão %s) — corrija o arquivo manualmente", id, filename, agent.Slug, slugPattern.String())
+		}
 	}
 	return cfg, nil
 }
@@ -152,13 +161,16 @@ func Validate(cfg Config, knownIDs []string) error {
 }
 
 // containsControlCharIdent reports whether s contains any ASCII control
-// character (U+0000–U+001F) or a Unicode line/paragraph separator (U+2028,
-// U+2029). These characters are rejected in identity fields (display_name,
-// user_nickname) because they would inject structural YAML when interpolated
-// into frontmatter — defence-in-depth alongside the yamlSafeScalar quoting.
+// character (U+0000–U+001F), DEL (U+007F), a C1 control character
+// (U+0080–U+009F), a Unicode line/paragraph separator (U+2028, U+2029),
+// or a Unicode non-character (U+FFFE, U+FFFF).
+// These characters are rejected in identity fields (display_name,
+// user_nickname) because they would inject structural YAML or TOML when
+// interpolated into frontmatter — defence-in-depth alongside the
+// yamlSafeScalar quoting. ML-4B, ML-4F.
 func containsControlCharIdent(s string) bool {
 	for _, r := range s {
-		if r < 0x20 || r == ' ' || r == ' ' {
+		if r < 0x20 || r == 0x7F || (r >= 0x80 && r <= 0x9F) || r == '\u2028' || r == '\u2029' || r == 0xFFFE || r == 0xFFFF {
 			return true
 		}
 	}

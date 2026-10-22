@@ -338,6 +338,27 @@ func executeThirdPartyInstall(cmd *cobra.Command, kind integrations.ItemKind, op
 				if len(agentPlans) == 0 {
 					return fmt.Errorf("target %s has no supported agents surface for item %q", rt.targetID, agentID)
 				}
+				// ML-4D corretivo: refuse structured representations before any
+				// write. A registry entry written here, followed by a BuildPlans
+				// call that errors on that entry, leaves the registry poisoned and
+				// all subsequent updates failing. The refusal must come first.
+				// Read the representation from the surface the plan actually used
+				// (Claim.Surface) rather than from rt.surfaceID (the skills
+				// surface, which can differ for the same target).
+				usedSurface := agentPlans[0].Claim.Surface
+				if tgt, tgtOK := catalog.Target(rt.targetID); tgtOK {
+					for _, s := range tgt.Surfaces {
+						if s.ID == usedSurface && integrations.IsStructuredAgentRepresentation(s.Capabilities.Agents.Representation) {
+							return fmt.Errorf(
+								"refused: --apply-to %q for target %q uses structured representation %q, "+
+									"which does not support HTML-comment injection for third-party "+
+									"references (D5); use a markdown-representation target "+
+									"(e.g. claude, cursor, gemini) or omit --apply-to for this target",
+								agentID, rt.targetID, s.Capabilities.Agents.Representation,
+							)
+						}
+					}
+				}
 				inspection, err := manager.Inspect(agentPlans[0])
 				if err != nil {
 					return err

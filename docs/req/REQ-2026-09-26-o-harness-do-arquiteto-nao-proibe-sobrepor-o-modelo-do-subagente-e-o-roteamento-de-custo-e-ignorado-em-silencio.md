@@ -56,17 +56,17 @@ verificação, e o leitor cumprindo a letra sem alcançar a razão.
 
 ## Acceptance Criteria
 
-- [ ] **O Dispatch contract proíbe explicitamente passar `model`**, com a razão escrita (roteamento de
+- [x] **O Dispatch contract proíbe explicitamente passar `model`**, com a razão escrita (roteamento de
       custo) — não como convenção, como regra
-- [ ] O contrato manda ler **`name:` e `model:`** do arquivo do agente, e diz que o segundo é **do
+- [x] O contrato manda ler **`name:` e `model:`** do arquivo do agente, e diz que o segundo é **do
       projeto**, não do arquiteto
-- [ ] 🔴 **Falsificação nas duas direções:** um `architect.md` gerado **sem** a proibição reprova; o
+- [x] 🔴 **Falsificação nas duas direções:** um `architect.md` gerado **sem** a proibição reprova; o
       gerado **com** ela passa. Sem o braço negativo, o gate afirma o que não verifica
-- [ ] ⚠️ **Enumerar os outros sítios da mesma classe antes de fechar** (Regra Dura): o Dispatch
+- [x] ⚠️ **Enumerar os outros sítios da mesma classe antes de fechar** (Regra Dura): o Dispatch
       contract manda ler o arquivo do agente e nomeia **só** um campo — há **outro** contrato neste
       produto que manda ler um artefato e nomeia um subconjunto dos campos que importam? A resposta
       fica escrita **mesmo que seja "nenhum"**
-- [ ] O golden `internal/integrations/testdata/architect.subagent.golden.md` acompanha, e a mudança é
+- [x] O golden `internal/integrations/testdata/architect.subagent.golden.md` acompanha, e a mudança é
       **visível no diff** — golden que muda sem ninguém ver é a próxima claim falsa
 - [ ] `make quality` e **CI** verdes
 
@@ -82,7 +82,8 @@ Medido em 2026-10-22, com `strconv.Quote` e depois `tomllib` no Python 3.15:
 - no TOML 1.0, que a CLI de destino pode estar usando, o arquivo inteiro deixa de carregar.
 O `description` recebe o `DisplayName` da identidade configurada pelo usuário (`render.go:210`).
 
-- [ ] **AC7** — Os quatro campos do TOML do Codex são serializados como *basic string* do TOML 1.0: só `\b \t \n \f \r \" \\` e `\uXXXX` para os demais caracteres de controle. Há falsificação nas duas direções: a saída para entradas com 0x00–0x1F, 0x7F e UTF-8 inválido é TOML 1.0 válido, e a versão antiga (`strconv.Quote`) reprova no mesmo teste.
+- [x] **AC7** — Os quatro campos do TOML do Codex são serializados como *basic string* do TOML 1.0: só `\b \t \n \f \r \" \\` e `\uXXXX` para os demais caracteres de controle. Há falsificação nas duas direções: a saída para entradas com 0x00–0x1F e 0x7F é TOML 1.0 válido e decodifica de volta à entrada; UTF-8 inválido é recusado com erro, sem arquivo escrito (decisão do arquiteto em 2026-10-22, alinhada a `render.go:665`); e a versão antiga (`strconv.Quote`) reprova no mesmo teste.
+- [x] **AC8** — Mesma família, achada na Wave 0 da ampliação: o escape YAML não deixa sair byte de controle cru; `identity.Load` valida o slug e recusa DEL e C1; as referências de terceiro não corrompem o TOML nem o JSON do destino.
 
 ## Negative scope — o que esta REQ NÃO faz
 

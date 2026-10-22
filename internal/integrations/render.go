@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/kgsaran/trackfw/internal/identity"
 )
@@ -62,6 +63,62 @@ func isValidModelPinValue(v string) bool {
 	return true
 }
 
+// tomlBasicString encodes s as a TOML 1.0 basic string (double-quoted) and
+// returns it including the surrounding double-quote characters.
+//
+// Escapes used:
+//   - Named: \" \\ \b \t \n \f \r
+//   - Unicode: \uXXXX (4 lowercase hex digits) for U+0000–U+001F, U+007F, and
+//     any rune where strconv.IsPrint reports false
+//   - Unicode: \UXXXXXXXX (8 lowercase hex digits) for runes above U+FFFF that
+//     are non-printable
+//   - Everything else is emitted as-is in UTF-8.
+//
+// Returns an error on invalid UTF-8 (RuneError with size == 1). This is the
+// "callers must reject, not sanitize" policy — see containsControlChar.
+func tomlBasicString(s string) (string, error) {
+	var sb strings.Builder
+	sb.Grow(len(s) + 2)
+	sb.WriteByte('"')
+	for i := 0; i < len(s); {
+		r, size := utf8.DecodeRuneInString(s[i:])
+		if r == utf8.RuneError && size == 1 {
+			return "", fmt.Errorf("toml basic string: invalid UTF-8 at byte offset %d", i)
+		}
+		switch r {
+		case '"':
+			sb.WriteString(`\"`)
+		case '\\':
+			sb.WriteString(`\\`)
+		case '\b':
+			sb.WriteString(`\b`)
+		case '\t':
+			sb.WriteString(`\t`)
+		case '\n':
+			sb.WriteString(`\n`)
+		case '\f':
+			sb.WriteString(`\f`)
+		case '\r':
+			sb.WriteString(`\r`)
+		default:
+			if r < 0x20 || r == 0x7F {
+				fmt.Fprintf(&sb, `\u%04x`, r)
+			} else if !strconv.IsPrint(r) {
+				if r > 0xFFFF {
+					fmt.Fprintf(&sb, `\U%08x`, r)
+				} else {
+					fmt.Fprintf(&sb, `\u%04x`, r)
+				}
+			} else {
+				sb.WriteRune(r)
+			}
+		}
+		i += size
+	}
+	sb.WriteByte('"')
+	return sb.String(), nil
+}
+
 // yamlSafeScalar returns v as a YAML plain scalar when it is unambiguous, or
 // as a double-quoted scalar when quoting is needed to prevent structural
 // misinterpretation. Common values (letters, spaces, hyphens, digits) are
@@ -88,6 +145,11 @@ func needsYAMLQuoting(v string) bool {
 		return true
 	}
 	if containsControlChar(v) {
+		return true
+	}
+	// Leading or trailing ASCII whitespace is trimmed from YAML plain scalars
+	// (YAML 1.2 §7.3.3); double-quoting preserves it.
+	if v[0] == ' ' || v[0] == '\t' || v[len(v)-1] == ' ' || v[len(v)-1] == '\t' {
 		return true
 	}
 	// YAML special keywords that parse as non-string types
@@ -118,7 +180,7 @@ func needsYAMLQuoting(v string) bool {
 		// Additional restrictions for the first character
 		if i == 0 {
 			switch r {
-			case '-', '?', ':', '|', '>', '!', '&', '*', '#', '%', '@', '`':
+			case '-', '?', ':', '|', '>', '!', '&', '*', '#', '%', '@', '`', ',':
 				return true
 			}
 		}
@@ -126,8 +188,14 @@ func needsYAMLQuoting(v string) bool {
 	return false
 }
 
-// yamlEscapeDoubleQuoted escapes special characters for a YAML double-quoted
-// scalar: double-quotes become \" and backslashes become \\.
+// yamlEscapeDoubleQuoted escapes special characters for a YAML 1.2
+// double-quoted scalar. Named escapes \" and \\ are preserved. All C0
+// control characters (U+0000–U+001F), DEL (U+007F), and C1 control
+// characters (U+0080–U+009F) are escaped with YAML \xHH notation
+// (code-point value, not a byte), which YAML 1.2 accepts in double-quoted
+// scalars. U+2028/U+2029 (line/paragraph separators) and U+FFFE/U+FFFF
+// (non-characters) are emitted as \uXXXX escapes: yaml.v3 folds the raw
+// forms or rejects them outright. ML-4B, ML-4F.
 func yamlEscapeDoubleQuoted(v string) string {
 	var sb strings.Builder
 	sb.Grow(len(v))
@@ -138,7 +206,17 @@ func yamlEscapeDoubleQuoted(v string) string {
 		case '\\':
 			sb.WriteString(`\\`)
 		default:
-			sb.WriteRune(r)
+			if r < 0x20 || r == 0x7F || (r >= 0x80 && r <= 0x9F) {
+				fmt.Fprintf(&sb, `\x%02x`, r)
+			} else if r == 0x2028 || r == 0x2029 || r == 0xFFFE || r == 0xFFFF {
+				// U+2028 (LINE SEPARATOR) and U+2029 (PARAGRAPH SEPARATOR) fold to
+				// spaces in yaml.v3 double-quoted scalars when emitted raw; U+FFFE
+				// and U+FFFF (non-characters) are rejected by yaml.v3 as raw bytes.
+				// All four are safe as \uXXXX escapes per YAML 1.2 §7.3.1.
+				fmt.Fprintf(&sb, `\u%04x`, r)
+			} else {
+				sb.WriteRune(r)
+			}
 		}
 	}
 	return sb.String()
@@ -211,16 +289,43 @@ func Render(item Item, kind ItemKind, capability Capability, source []byte, cfg 
 		body = greeting + "\n\n" + body
 	}
 
+	// Reject Unicode non-characters (U+FFFE, U+FFFF) for YAML output paths.
+	// yaml.v3 accepts them as \ufffe/\uffff escape sequences but YAML 1.2 §5.1
+	// excludes them from c-printable; the trackfw policy is to refuse them
+	// explicitly rather than emit non-conforming YAML. Structured representations
+	// (TOML, JSON) are not subject to this restriction.
+	if !IsStructuredAgentRepresentation(capability.Representation) {
+		if containsNonYAMLCharacter(name) || containsNonYAMLCharacter(description) {
+			return nil, fmt.Errorf("render %s: name or description contains a Unicode non-character (U+FFFE or U+FFFF) excluded from YAML 1.2 §5.1 c-printable; remove or replace these characters", item.ID)
+		}
+	}
+
 	switch capability.Representation {
 	case "custom-agent-toml":
+		encodedName, err := tomlBasicString(strings.ReplaceAll(name, "-", "_"))
+		if err != nil {
+			return nil, fmt.Errorf("render %s as TOML: %w", item.ID, err)
+		}
+		encodedDesc, err := tomlBasicString(description)
+		if err != nil {
+			return nil, fmt.Errorf("render %s as TOML: %w", item.ID, err)
+		}
 		lines := []string{
-			fmt.Sprintf("name = %s", strconv.Quote(strings.ReplaceAll(name, "-", "_"))),
-			fmt.Sprintf("description = %s", strconv.Quote(description)),
+			fmt.Sprintf("name = %s", encodedName),
+			fmt.Sprintf("description = %s", encodedDesc),
 		}
 		if mapped, ok := mapModelCodex(model); ok {
-			lines = append(lines, fmt.Sprintf("model = %s", strconv.Quote(mapped)))
+			encodedModel, err := tomlBasicString(mapped)
+			if err != nil {
+				return nil, fmt.Errorf("render %s as TOML: %w", item.ID, err)
+			}
+			lines = append(lines, fmt.Sprintf("model = %s", encodedModel))
 		}
-		lines = append(lines, fmt.Sprintf("developer_instructions = %s", strconv.Quote(body)))
+		encodedBody, err := tomlBasicString(body)
+		if err != nil {
+			return nil, fmt.Errorf("render %s as TOML: %w", item.ID, err)
+		}
+		lines = append(lines, fmt.Sprintf("developer_instructions = %s", encodedBody))
 		return []byte(strings.Join(lines, "\n") + "\n"), nil
 	case "cli-agent-json", "agent-json":
 		var buf bytes.Buffer
@@ -660,25 +765,36 @@ func mapModelCursor(model string) (string, bool) {
 	}
 }
 
-// containsControlChar reports whether s contains any ASCII control character
-// (U+0000–U+001F) or a Unicode line/paragraph separator (U+2028, U+2029).
-// Model IDs never require control characters or Unicode line separators in any
-// known or anticipated format; a value that contains them is either malformed
-// or a frontmatter-injection payload. Callers must reject, not sanitize.
+// containsControlChar reports whether s contains any character that must be
+// escaped before being placed in a YAML or TOML string value:
+//   - U+0000–U+001F: ASCII C0 control characters
+//   - U+007F: DEL
+//   - U+0080–U+009F: C1 control characters (includes NEL U+0085)
+//   - U+2028, U+2029: Unicode line/paragraph separators
+//   - U+FFFE, U+FFFF: Unicode non-characters (YAML 1.2 §5.1 c-printable exclusion)
 //
-// Implementation note: the rune loop is equivalent to the old byte loop for
-// ASCII controls — UTF-8 continuation bytes are always ≥ 0x80, so a byte
-// < 0x20 can never be part of a multi-byte sequence. The rune loop adds
-// detection of U+2028/U+2029, which yaml.v3 preserves verbatim in the parsed
-// Go string (bytes 0xE2 0x80 0xA8 / 0xE2 0x80 0xA9, all ≥ 0x80, invisible to
-// the original byte < 0x20 check). ML-5C.
-//
-// U+0085 (NEL) is intentionally excluded: yaml.v3 normalizes it to a space
-// at parse time, so no U+0085 ever reaches this function; the space it
-// produces is inert for YAML frontmatter parsers (measured 2026-08-21).
+// U+FFFE and U+FFFF are escapable in yaml.v3 as \ufffe/\uffff but are excluded
+// from YAML 1.2 c-printable; including them here ensures yamlEscapeDoubleQuoted
+// handles the encoding defensively. The Render pre-check (containsNonYAMLCharacter)
+// refuses them outright for YAML paths. ML-5C, ML-4B, ML-4F.
 func containsControlChar(s string) bool {
 	for _, r := range s {
-		if r < 0x20 || r == ' ' || r == ' ' {
+		if r < 0x20 || r == 0x7F || (r >= 0x80 && r <= 0x9F) || r == '\u2028' || r == '\u2029' || r == 0xFFFE || r == 0xFFFF {
+			return true
+		}
+	}
+	return false
+}
+
+// containsNonYAMLCharacter reports whether s contains a Unicode non-character
+// (U+FFFE or U+FFFF) that is excluded from c-printable by YAML 1.2 §5.1.
+// yaml.v3 accepts \ufffe/\uffff escape sequences in double-quoted scalars, but
+// conforming YAML 1.2 streams must not contain these code points at all.
+// Render uses this to reject them early for YAML output paths, rather than
+// emitting technically-parseable but non-conforming YAML. ML-4F.
+func containsNonYAMLCharacter(s string) bool {
+	for _, r := range s {
+		if r == 0xFFFE || r == 0xFFFF {
 			return true
 		}
 	}

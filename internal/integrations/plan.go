@@ -17,9 +17,14 @@ type PlanRequest struct {
 	Identity    identity.Config
 	// ProjectRoot, when non-empty, lets BuildPlans apply the D5 third-party
 	// reference extension point (ApplyThirdPartyReferences, render.go) to
-	// every rendered KindAgents artifact. Optional and source-compatible:
-	// every existing caller that does not set it gets byte-identical output
-	// to before this field existed (ApplyThirdPartyReferences no-ops on an
+	// rendered KindAgents artifacts whose representation supports HTML-comment
+	// injection (i.e. markdown, not structured). Structured representations
+	// (custom-agent-toml, agent-json, cli-agent-json) skip the block silently
+	// — --apply-to refuses those targets before any registry write, so a
+	// registered entry here is a stale/legacy record (see
+	// IsStructuredAgentRepresentation). Optional and source-compatible: every
+	// existing caller that does not set it gets byte-identical output to
+	// before this field existed (ApplyThirdPartyReferences no-ops on an
 	// empty root).
 	ProjectRoot string
 
@@ -29,6 +34,20 @@ type PlanRequest struct {
 	// field existed — by construction (Render no-ops the composition branch
 	// when len(agentModels) == 0). See ADR-2026-08-21.
 	AgentModels map[string]string
+}
+
+// IsStructuredAgentRepresentation reports whether rep is one of the three
+// structured (non-markdown) agent representations that cannot receive the
+// HTML-comment third-party reference block. Used both in BuildPlans (silent
+// skip) and in the --apply-to pre-validation in integrations_thirdparty.go
+// (early refusal before any write) so the set of three cannot drift between
+// the two sites.
+func IsStructuredAgentRepresentation(rep string) bool {
+	switch rep {
+	case "custom-agent-toml", "agent-json", "cli-agent-json":
+		return true
+	}
+	return false
 }
 
 // BuildPlans resolves catalog selections into deterministic lifecycle plans.
@@ -76,10 +95,24 @@ func BuildPlans(catalog *Catalog, request PlanRequest) ([]PlannedArtifact, error
 				// instead of treating the attachment as drift. See the
 				// ThirdPartyReference doc comment in render.go for why this
 				// cannot live inside Render itself.
+				//
+				// Structured representations (custom-agent-toml, agent-json,
+				// cli-agent-json) cannot receive the HTML-comment reference
+				// block — appending it after serialization produces invalid
+				// TOML or JSON. For these representations the block is skipped
+				// silently: the artifact is emitted valid, without it. The
+				// --apply-to pre-validation in integrations_thirdparty.go
+				// refuses structured targets before any registry write
+				// (ML-4D corretivo), so a registered entry here is a
+				// stale/legacy record. PlanRequest and PlannedArtifact carry
+				// no Warnings channel, so the omission is recorded only in
+				// this comment.
 				if request.Kind == KindAgents && request.ProjectRoot != "" {
-					content, err = ApplyThirdPartyReferences(request.ProjectRoot, content, target.ID, item.ID)
-					if err != nil {
-						return nil, err
+					if !IsStructuredAgentRepresentation(capability.Representation) {
+						content, err = ApplyThirdPartyReferences(request.ProjectRoot, content, target.ID, item.ID)
+						if err != nil {
+							return nil, err
+						}
 					}
 				}
 				claim := Claim{Target: target.ID, Surface: surface.ID, Scope: request.Scope, Kind: request.Kind, Item: item.ID}

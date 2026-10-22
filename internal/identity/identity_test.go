@@ -317,6 +317,8 @@ func TestContainsControlCharIdent(t *testing.T) {
 		{"Apolo\nBash", true},      // newline is control char → reject
 		{"Apolo\t", true},          // tab is control char → reject  (U+0009 < 0x20)
 		{"Apolo\x00", true},        // null byte
+		{"Zeus\uFFFEx", true},      // U+FFFE non-character → reject (ML-4F)
+		{"Zeus\uFFFFx", true},      // U+FFFF non-character → reject (ML-4F)
 	}
 	for _, tc := range cases {
 		got := containsControlCharIdent(tc.input)
@@ -324,4 +326,173 @@ func TestContainsControlCharIdent(t *testing.T) {
 			t.Errorf("containsControlCharIdent(%q) = %v, want %v", tc.input, got, tc.want)
 		}
 	}
+}
+
+// writeIdentityJSON creates <homeDir>/.trackfw/identity.json with content.
+func writeIdentityJSON(t *testing.T, homeDir, content string) {
+	t.Helper()
+	dir := filepath.Join(homeDir, ".trackfw")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatalf("setup MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "identity.json"), []byte(content), 0o600); err != nil {
+		t.Fatalf("setup WriteFile: %v", err)
+	}
+}
+
+// TestLoadRejectsInvalidSlug asserts T-3: Load must reject a non-empty slug
+// that does not match slugPattern, because AgentName would otherwise propagate
+// the invalid slug into TOML/YAML output without any further validation.
+// Empty slugs are still permitted by Load (Validate enforces non-emptiness).
+//
+// Note: the BEL case uses the JSON unicode escape \u0007 (not the raw byte)
+// because JSON forbids unescaped characters U+0000–U+001F in strings; Go's
+// json.Unmarshal decodes the escape to the BEL rune, which then fails
+// slugPattern — this is the real-world threat model (a hand-edited file).
+func TestLoadRejectsInvalidSlug(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string // full JSON written to the file
+		wantErr bool
+	}{
+		{
+			name:    "BEL in slug via JSON unicode escape",
+			// \u0007 is the JSON encoding of BEL; json.Unmarshal decodes it to
+			// the BEL rune, which does not match slugPattern.
+			content: `{"schema_version":1,"agents":{"backend":{"display_name":"Apolo","slug":"a\u0007b"}}}`,
+			wantErr: true,
+		},
+		{
+			name:    "uppercase slug",
+			content: `{"schema_version":1,"agents":{"backend":{"display_name":"Apolo","slug":"Zeus"}}}`,
+			wantErr: true,
+		},
+		{
+			name:    "path traversal slug",
+			content: `{"schema_version":1,"agents":{"backend":{"display_name":"Apolo","slug":"../x"}}}`,
+			wantErr: true,
+		},
+		{
+			name:    "valid slug passes",
+			content: `{"schema_version":1,"agents":{"backend":{"display_name":"Apolo","slug":"zeus"}}}`,
+			wantErr: false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			homeDir := t.TempDir()
+			writeIdentityJSON(t, homeDir, tc.content)
+			_, err := Load(homeDir)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("Load deve rejeitar: %s; obteve nil", tc.name)
+				}
+				if !strings.Contains(err.Error(), "inválido") {
+					t.Fatalf("mensagem deve conter 'inválido', obteve: %v", err)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("Load nao deveria falhar para %s: %v", tc.name, err)
+				}
+			}
+		})
+	}
+}
+
+// TestLoadRejectsDELAndC1 asserts T-2: Load must reject display_name and
+// user_nickname containing DEL (U+007F) or C1 control characters (U+0080-U+009F).
+// The previous containsControlCharIdent only guarded U+0000-U+001F and
+// U+2028/U+2029; DEL and C1 passed through silently.
+func TestLoadRejectsDELAndC1(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string
+	}{
+		{
+			name: "display_name with DEL U+007F",
+			// \x7f is DEL; embed as raw byte in the JSON string.
+			content: "{\"schema_version\":1,\"agents\":{\"backend\":{\"display_name\":\"Zeus\x7fTF\",\"slug\":\"zeus\"}}}",
+		},
+		{
+			name: "user_nickname with DEL U+007F",
+			content: "{\"schema_version\":1,\"user_nickname\":\"KG\x7f\"}",
+		},
+		{
+			name: "display_name with NEL U+0085 (C1)",
+			// U+0085 encodes as 0xC2 0x85 in UTF-8.
+			content: "{\"schema_version\":1,\"agents\":{\"backend\":{\"display_name\":\"Zeus\xc2\x85TF\",\"slug\":\"zeus\"}}}",
+		},
+		{
+			name: "user_nickname with NEL U+0085 (C1)",
+			content: "{\"schema_version\":1,\"user_nickname\":\"KG\xc2\x85\"}",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			homeDir := t.TempDir()
+			writeIdentityJSON(t, homeDir, tc.content)
+			_, err := Load(homeDir)
+			if err == nil {
+				t.Errorf("Load deve rejeitar DEL/C1 em %s; obteve nil", tc.name)
+			}
+		})
+	}
+}
+
+// TestLoadRejectsNoncharacters asserts ML-4F: Load must reject display_name or
+// user_nickname containing Unicode non-characters U+FFFE or U+FFFF.
+// These are excluded from YAML 1.2 c-printable (§5.1) and yaml.v3 rejects
+// them as raw bytes; containsControlCharIdent now catches them at parse time
+// so they never reach any YAML sink.
+func TestLoadRejectsNoncharacters(t *testing.T) {
+	cases := []struct {
+		name    string
+		content string
+	}{
+		{
+			name: "display_name with U+FFFE",
+			// U+FFFE encodes as 0xEF 0xBF 0xBE in UTF-8.
+			content: "{\"schema_version\":1,\"agents\":{\"backend\":{\"display_name\":\"Zeus\xef\xbf\xbeTF\",\"slug\":\"zeus\"}}}",
+		},
+		{
+			name: "display_name with U+FFFF",
+			// U+FFFF encodes as 0xEF 0xBF 0xBF in UTF-8.
+			content: "{\"schema_version\":1,\"agents\":{\"backend\":{\"display_name\":\"Zeus\xef\xbf\xbfTF\",\"slug\":\"zeus\"}}}",
+		},
+		{
+			name:    "user_nickname with U+FFFE",
+			content: "{\"schema_version\":1,\"user_nickname\":\"KG\xef\xbf\xbe\"}",
+		},
+		{
+			name:    "user_nickname with U+FFFF",
+			content: "{\"schema_version\":1,\"user_nickname\":\"KG\xef\xbf\xbf\"}",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			homeDir := t.TempDir()
+			writeIdentityJSON(t, homeDir, tc.content)
+			_, err := Load(homeDir)
+			if err == nil {
+				t.Errorf("Load deve rejeitar non-character em %s; obteve nil", tc.name)
+			}
+		})
+	}
+
+	// Control: the "greek" preset must still load without error.
+	t.Run("greek_preset_loads", func(t *testing.T) {
+		cfg, err := Preset("greek")
+		if err != nil {
+			t.Fatalf("Preset(greek) failed: %v", err)
+		}
+		homeDir := t.TempDir()
+		if err := Save(homeDir, cfg); err != nil {
+			t.Fatalf("Save failed: %v", err)
+		}
+		if _, err := Load(homeDir); err != nil {
+			t.Fatalf("Load(greek preset) failed unexpectedly: %v", err)
+		}
+	})
 }
