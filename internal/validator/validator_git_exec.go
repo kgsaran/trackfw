@@ -1,6 +1,7 @@
 package validator
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"strings"
@@ -73,6 +74,18 @@ func gitCommand(dir string, args ...string) *exec.Cmd {
 	}
 	fullArgs := append([]string{"-C", dir}, args...)
 	cmd := exec.Command("git", fullArgs...)
+	cmd.Env = cleanGitEnv()
+	return cmd
+}
+
+// gitCommandCtx is like gitCommand but honours context cancellation (e.g. for timeout).
+// Used by rules that invoke git as a side-check with a bounded deadline.
+func gitCommandCtx(ctx context.Context, dir string, args ...string) *exec.Cmd {
+	if dir == "" {
+		dir = "."
+	}
+	fullArgs := append([]string{"-C", dir}, args...)
+	cmd := exec.CommandContext(ctx, "git", fullArgs...)
 	cmd.Env = cleanGitEnv()
 	return cmd
 }

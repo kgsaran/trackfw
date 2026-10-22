@@ -12,12 +12,12 @@ import (
 	"github.com/kgsaran/trackfw/internal/translog"
 )
 
-// Transition representa uma entrada do .trackfw-log.
-type Transition struct {
-	Timestamp time.Time
-	Basename  string
-	From, To  string
-}
+// Transition is an alias for translog.Transition — the struct is defined once
+// in the translog package (the single source of truth). Using an alias removes
+// the per-call conversion loop that previously existed in ParseLog and makes
+// metrics.Transition and translog.Transition the same type, so []Transition
+// slices can be passed between the two packages without conversion.
+type Transition = translog.Transition
 
 // WIPEntry representa um roadmap atualmente em wip com sua idade.
 type WIPEntry struct {
@@ -41,6 +41,9 @@ var metricsGetwdFn func() (string, error) = os.Getwd
 // ParseLog lê o diretório de roadmaps e retorna todas as transições, combinando
 // o arquivo legado .trackfw-log (se existir) com as entradas em .trackfw-log-entries/.
 // Retorna nil, nil se nenhuma fonte existe.
+//
+// M6: Transition is now an alias for translog.Transition, so the conversion loop
+// is gone — tls can be returned directly.
 func ParseLog(dir string) ([]Transition, error) {
 	tls, err := translog.ReadAll(dir)
 	if err != nil {
@@ -49,16 +52,7 @@ func ParseLog(dir string) ([]Transition, error) {
 	if len(tls) == 0 {
 		return nil, nil
 	}
-	transitions := make([]Transition, len(tls))
-	for i, t := range tls {
-		transitions[i] = Transition{
-			Timestamp: t.Timestamp,
-			Basename:  t.Basename,
-			From:      t.From,
-			To:        t.To,
-		}
-	}
-	return transitions, nil
+	return tls, nil
 }
 
 // Filter retorna apenas as transições com Timestamp >= since.

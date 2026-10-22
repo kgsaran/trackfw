@@ -2,6 +2,7 @@ package validator
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -231,6 +232,10 @@ var ruleDefaults = map[string]string{
 	// project root or .trackfw\ grants write to a foreign SID on Windows —
 	// informative-only, never blockable. Routed via applyRuleWarnOnly.
 	"project_foreign_write_windows": "warning",
+	// R1 (REQ-2026-09-02 ML-3C): gitignore pattern covering .trackfw-log-entries/ or
+	// docs/agents-working-context/ means transition history is silently lost on clone.
+	// Default "warning" — the pattern may be intentional in some projects.
+	"log_entries_dir_gitignored": "warning",
 }
 
 // ruleSeverity retorna a severidade configurada para a regra.
@@ -966,6 +971,14 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	}
 	applyRule("note_orphan", noteOrphanMsgs, &violations, &warnings)
 
+	// R1 (REQ-2026-09-02 ML-3C): warn when .trackfw-log-entries/ or agents-working-context/
+	// is gitignored — entries would be lost on clone.
+	logEntriesGitignoreMsgs, e := validateLogEntriesDirGitignored()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRule("log_entries_dir_gitignored", logEntriesGitignoreMsgs, &violations, &warnings)
+
 	// v2.5: verificação bidirecional REQ↔Roadmap via trace_id_field (desativada se campo vazio)
 	traceViolations, traceWarnings := validateTraceId(cfg)
 	violations = append(violations, traceViolations...)
@@ -1461,6 +1474,14 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 		return nil, nil, e
 	}
 	applyRuleTagged("note_orphan", noteOrphanMsgsT, &violations, &warnings)
+
+	// R1 (REQ-2026-09-02 ML-3C): warn when .trackfw-log-entries/ or agents-working-context/
+	// is gitignored — entries would be lost on clone.
+	logEntriesGitignoreMsgsT, e := validateLogEntriesDirGitignored()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleTagged("log_entries_dir_gitignored", logEntriesGitignoreMsgsT, &violations, &warnings)
 
 	// v2.5: traceid — applyRuleTagged está no validator_traceid via applyRule; aqui fazemos tagged
 	traceViolations, traceWarnings := validateTraceId(cfg)
@@ -4608,4 +4629,67 @@ func CheckShipGovernance() *GovernanceViolation {
 		return nil
 	}
 	return &GovernanceViolation{Missing: missing, Warnings: warnings}
+}
+
+// validateLogEntriesDirGitignored checks whether any of the three paths that store
+// transition history or working-context entries are covered by a .gitignore pattern.
+// When they are gitignored, entries written at runtime are silently excluded from git
+// commits and are lost on clone.
+//
+// Checked paths (hypothetical — directories need not exist):
+//
+//	<roadmap_dir>/.trackfw-log-entries/x.entry
+//	<req_dir>/.trackfw-log-entries/x.entry
+//	docs/agents-working-context/x.md
+//
+// The function is a no-op (returns nil, nil) when git is not available or the CWD is
+// not inside a git work-tree — callers on machines without git must not see false warnings.
+//
+// R1 (REQ-2026-09-02 ML-3C): trackfw-contract gate=log_entries_dir_gitignored
+func validateLogEntriesDirGitignored() ([]string, error) {
+	if !isGitWorktree(".") {
+		return nil, nil
+	}
+	cfg := config.Load()
+	// Hypothetical representative file inside each tracked directory.
+	candidates := []struct {
+		label string
+		path  string
+	}{
+		{
+			label: cfg.RoadmapDir + "/.trackfw-log-entries/",
+			path:  cfg.RoadmapDir + "/.trackfw-log-entries/x.entry",
+		},
+		{
+			label: cfg.REQDir + "/.trackfw-log-entries/",
+			path:  cfg.REQDir + "/.trackfw-log-entries/x.entry",
+		},
+		{
+			label: "docs/agents-working-context/",
+			path:  "docs/agents-working-context/x.md",
+		},
+	}
+
+	const timeout = 3 * time.Second
+	var msgs []string
+	for _, c := range candidates {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		out, err := gitCommandCtx(ctx, ".", "check-ignore", "-q", "--no-index", c.path).Output()
+		cancel()
+		_ = out
+		if err == nil {
+			// exit 0 means the path IS gitignored — warn.
+			// Fetch the culprit pattern for a useful message.
+			ctx2, cancel2 := context.WithTimeout(context.Background(), timeout)
+			patternOut, patternErr := gitCommandCtx(ctx2, ".", "check-ignore", "-v", "--no-index", c.path).Output()
+			cancel2()
+			culprit := ""
+			if patternErr == nil {
+				culprit = " (pattern: " + strings.TrimSpace(string(patternOut)) + ")"
+			}
+			msgs = append(msgs, "log_entries_dir_gitignored: "+c.label+" is covered by a .gitignore pattern — entries will not be committed and will be lost on clone"+culprit)
+		}
+		// exit 1 = not ignored; other errors (git absent, not-a-repo) = already excluded above.
+	}
+	return msgs, nil
 }

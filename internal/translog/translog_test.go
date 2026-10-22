@@ -350,6 +350,65 @@ func isSymlinkPrivilegeErrorTranslog(err error) bool {
 	return false
 }
 
+// AFIRMA: parseLine usa o offset da linha (ex: "-0300") para construir um
+// time.FixedZone, de modo que a ordenação de entradas legadas contra arquivos
+// .entry com timestamp UTC é correta independentemente do TZ da máquina leitora.
+// Mordida: sem a correção, a linha "12:00 -0300" (= 15:00 UTC) é lida como 12:00
+// UTC (antes de 14:00 UTC da entry) quando TZ=UTC — a entry aparece depois, errado.
+func TestParseLine_HonorsLineOffsetUnderUTC(t *testing.T) {
+	// Force time.Local to UTC so that lines without offset are parsed as UTC.
+	// This is the setting that exposed the bug: with TZ=UTC, "12:00 -0300"
+	// was previously parsed as 12:00 UTC instead of 15:00 UTC.
+	origLocal := time.Local
+	time.Local = time.UTC
+	t.Cleanup(func() { time.Local = origLocal })
+
+	dir := t.TempDir()
+
+	// Legacy line: "12:00 -0300" = 15:00 UTC.
+	legacy := "2026-10-22 12:00  ROADMAP-legacy.md                   backlog → wip  -0300\n"
+	if err := os.WriteFile(filepath.Join(dir, ".trackfw-log"), []byte(legacy), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Entry file with timestamp 14:00 UTC — must sort BEFORE the legacy line (15:00 UTC).
+	entryTime := time.Date(2026, 10, 22, 14, 0, 0, 0, time.UTC)
+	entryLine := "2026-10-22 09:00  ROADMAP-entry.md                    backlog → wip"
+	if _, err := WriteEntry(dir, entryLine, entryTime); err != nil {
+		t.Fatalf("WriteEntry: %v", err)
+	}
+
+	all, err := ReadAll(dir)
+	if err != nil {
+		t.Fatalf("ReadAll: %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("expected 2 transitions, got %d", len(all))
+	}
+
+	// entry (14:00 UTC) must come before legacy (15:00 UTC).
+	if all[0].Basename != "ROADMAP-entry.md" {
+		t.Errorf("ORDER BROKEN under UTC: expected ROADMAP-entry.md first (14:00Z before 15:00Z), got %s first\n"+
+			"  all[0]=%+v\n  all[1]=%+v",
+			all[0].Basename, all[0], all[1])
+	}
+
+	// Confirm that the legacy Timestamp is 15:00 UTC (not 12:00 UTC).
+	wantLegacyUTC := time.Date(2026, 10, 22, 15, 0, 0, 0, time.UTC)
+	var legacyT *Transition
+	for i := range all {
+		if all[i].Basename == "ROADMAP-legacy.md" {
+			legacyT = &all[i]
+		}
+	}
+	if legacyT == nil {
+		t.Fatal("ROADMAP-legacy.md not found in result")
+	}
+	if !legacyT.Timestamp.Equal(wantLegacyUTC) {
+		t.Errorf("legacy Timestamp: want %v (UTC), got %v (UTC)", wantLegacyUTC, legacyT.Timestamp.UTC())
+	}
+}
+
 func equalStringSlices(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

@@ -9033,3 +9033,21 @@ Signal reads JSON from stdin (maximum 1 MiB, absolute deadline 2 seconds); clean
 The signal retains `tool`, `message`, `level=action_required`, and UTC `timestamp`. Message priority is question, command, then tool-name fallback, sliced to 300 Unicode runes before removing ASCII controls 0–31 as in the frozen valid legacy corpus. Cleanup removes only `.trackfw-attention.json`, preserving `.trackfw-credential-guard.json`. Shared hook files migrate exact bare/anchored forms while retaining custom commands and matcher/timeout metadata. Dedicated Kiro/Copilot files remain fully generated, as before.
 
 The independent legacy shell corpus and checksums live in `internal/commands/testdata/attention-legacy/`; tests compare JSON semantics and normalize only timestamps. This contract does not establish execution by actual Windows agent events; AC5–AC7 require separate evidence.
+
+## Regra `log_entries_dir_gitignored` (R1, REQ-2026-09-02 ML-3C)
+
+<!-- trackfw-contract: gate=internal/validator/validator_log_entries_gitignored_test.go -->
+
+`trackfw validate` emits a **warning** (rule `log_entries_dir_gitignored`, default severity `warning`, configurable via `rules:` in `trackfw.yaml`) when any of the following hypothetical paths would be covered by a `.gitignore` pattern:
+
+| Path checked | Directory it protects |
+|---|---|
+| `<roadmap_dir>/.trackfw-log-entries/x.entry` | roadmap transition history |
+| `<req_dir>/.trackfw-log-entries/x.entry` | REQ transition history |
+| `docs/agents-working-context/x.md` | working-context entries |
+
+When a pattern such as `*.entry`, `.*`, or `*-entries` covers these paths, entries written at runtime are excluded from git commits and are silently lost on clone.
+
+**Detection mechanism:** `git check-ignore -q --no-index <hypothetical-path>` (exit 0 = ignored). The culprit pattern is fetched via `git check-ignore -v --no-index` and included in the warning message. Both invocations use a 3-second timeout and a clean GIT_* environment (see `validator_git_exec.go`).
+
+**Silent conditions:** the rule is a no-op when git is absent or the CWD is not inside a git work-tree. Projects without a `.gitignore` never trigger this rule.

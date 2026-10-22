@@ -74,6 +74,7 @@ func TestAgentInstructionsUseWorkingContextDir(t *testing.T) {
 		t.Fatal("no surfaces found in catalog")
 	}
 
+	renderCount := 0
 	for _, item := range agents {
 		src, err := catalog.ReadAsset(item)
 		if err != nil {
@@ -89,9 +90,13 @@ func TestAgentInstructionsUseWorkingContextDir(t *testing.T) {
 				// Only fail for unexpected errors.
 				continue
 			}
+			renderCount++
 			label := item.ID + "/" + surf.targetID + "/" + surf.cap.Representation
 			checkWorkingContextDir(t, label, string(out))
 		}
+	}
+	if renderCount == 0 {
+		t.Fatal("no renders succeeded — all agent×surface combinations were skipped or errored; test is vacuous")
 	}
 
 	// Negative arm: construct a minimal agent source containing the OLD

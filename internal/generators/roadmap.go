@@ -260,11 +260,6 @@ func agentFromPath(rootDir, filePath string) string {
 	return parts[0]
 }
 
-// logPath retorna o caminho do arquivo de log de transições.
-func logPath() string {
-	return config.Load().RoadmapDir + "/.trackfw-log"
-}
-
 // NewRoadmap cria um roadmap com template padrão a partir de um título simples.
 func NewRoadmap(title string) error {
 	return NewRoadmapFromContent(RoadmapContent{Title: title})

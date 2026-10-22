@@ -2,6 +2,7 @@ package translog
 
 import (
 	"errors"
+	"fmt"
 	"io"
 )
 
@@ -30,4 +31,33 @@ func readRegularFileBytes(path string) ([]byte, error) {
 	}
 	defer f.Close()
 	return io.ReadAll(f)
+}
+
+// errEntryTooLarge is returned by readRegularFileBytesLimited when the file
+// exceeds the caller-supplied size limit.
+var errEntryTooLarge = errors.New("entry exceeds size limit")
+
+// readRegularFileBytesLimited is like readRegularFileBytes but returns
+// errEntryTooLarge (wrapped with the path and limit) when the file content
+// exceeds maxBytes. This lets callers distinguish a hard oversize error from a
+// transient read failure (permissions, torn write) without relying on error
+// string inspection.
+//
+// Uses io.LimitReader to avoid reading more than maxBytes+1 into memory, so a
+// 1 GiB sparse file does not allocate 1 GiB of heap.
+func readRegularFileBytesLimited(path string, maxBytes int64) ([]byte, error) {
+	f, err := openRegularFileNonblock(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	lr := io.LimitReader(f, maxBytes+1)
+	data, readErr := io.ReadAll(lr)
+	if readErr != nil {
+		return nil, readErr
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, fmt.Errorf("%s: %w (%d bytes)", path, errEntryTooLarge, maxBytes)
+	}
+	return data, nil
 }

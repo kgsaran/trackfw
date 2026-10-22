@@ -131,14 +131,27 @@ go test ./internal/generators/ ./internal/metrics/ ./internal/serve/ ./internal/
 > Dependencies: Wave 2 auditada.
 
 ### ML-3A — Qualidade
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** hefesto-tf
 **Files affected:** `docs/seguranca/2026-10-22-quality-log-por-entrada.md`
+- [x] REPROVADO. B1: o braço contrário do merge tinha `t.Skip` e não podia reprovar. B2: o `parseLine` ignorava o offset `-0300` e ordenava errado sob `TZ=UTC` (medido). Mais M1–M7.
 
 ### ML-3B — Red team
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** hades-tf
 **Files affected:** `docs/seguranca/2026-10-22-red-team-log-por-entrada.md`
+- [x] APROVADO COM RESSALVA. Medido com o binário: o merge real sai limpo, nada lê fora da raiz e nada trava. R1: `*.entry`, `*-entries` e `.*` ainda ignoram o diretório. Mais R2–R5.
+- [x] A ação proposta para o R1 (incluir esses padrões no braço positivo do teste) foi recusada pelo arquiteto, porque o teste reprovaria sempre. Ela foi trocada por uma regra de validate.
+
+### ML-3C — Corretivo da revisão
+**Status:** ✅ Concluído
+**Agente:** apolo-tf
+**Acceptance criteria:**
+- [x] B1: o braço contrário exige o conflito (`t.Fatal` se o merge sair limpo).
+- [x] B2: o `parseLine` usa o offset da linha. `TestParseLine_HonorsLineOffsetUnderUTC` reprova com o `translog.go` anterior, o que o arquiteto mediu numa cópia.
+- [x] R1: a regra `log_entries_dir_gitignored` (warning) aponta o padrão culpado. Com a regra desligada, os 3 casos de aviso reprovam, o que o arquiteto também mediu.
+- [x] R2 (1 MiB), R3 (`entryNameRe`), R4 (fuso no discover), R5 (`log_error` no `/api/metrics`) e M1–M7.
+- [x] O arquiteto corrigiu a anotação `gate=` do `cli-parity.md`, que apontava um nome de regra em vez do arquivo de teste. Depois disso, o `make parity-rest` deu rc=0.
 
 ## Wave 4 — Fechamento
 > Dependencies: Wave 3 aprovada.

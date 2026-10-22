@@ -28,6 +28,7 @@ package translog
 import (
 	"bytes"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -49,43 +50,75 @@ type Transition struct {
 //
 //	2026-06-12 14:30  ROADMAP-....md  backlog → wip  -0300  (email)
 //
-// The trailing suffix (timezone offset, email) is not anchored; the regex stops
-// at the fourth field. This is intentional: the validator and serve tests pin the
-// decision that (a) a suffix at the END does not affect parsing, and (b) an offset
-// inserted RIGHT AFTER the timestamp DOES break the line — see
-// internal/generators/transition_log_suffix_test.go.
+// Group 5 captures the optional timezone offset (e.g. "-0300", "+0530") that
+// transitionLogSuffix appends after two or more spaces following the To field.
+// parseLine uses the offset — when present — to build a time.FixedZone location
+// so that sort keys are correct regardless of the machine's TZ setting.
+//
+// The trailing email field is not captured; it is decoration only.
+//
+// The invariant that (a) a suffix at the END does not affect the first four
+// fields, and (b) an offset inserted RIGHT AFTER the timestamp DOES break the
+// line, is pinned by internal/generators/transition_log_suffix_test.go.
 var lineRe = regexp.MustCompile(
-	`^(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s{2,}(\S+)\s{2,}(\S+)\s+→\s+(\S+)`,
+	`^(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s{2,}(\S+)\s{2,}(\S+)\s+→\s+(\S+)(?:\s{2,}([+-]\d{4}))?`,
 )
 
 // entryNameRe matches the expected entry filename format so the reader can extract
 // the UTC sort key. Files that do not match are silently skipped.
 var entryNameRe = regexp.MustCompile(`^(\d{8}T\d{6}Z)-[0-9a-f]{8}\.entry$`)
 
-// EntriesDirSuffix is the directory name (with leading slash) where new
-// per-entry log files land: <dir>/.trackfw-log-entries/<name>.entry.
+// EntriesDirName is the bare directory name where per-entry log files land.
 // It is exported so callers can reference the name without embedding a
 // literal, keeping the name in a single place.
 //
-// The old name was "/.trackfw-log.d"; it was renamed because "*.d" is a
+// The old name was ".trackfw-log.d"; it was renamed because "*.d" is a
 // common .gitignore pattern (e.g. the GitHub C++ .gitignore opens with it),
 // which would silently prevent the entries from being committed.
+//
+// EntriesDirSuffix is derived from EntriesDirName: "/" + EntriesDirName.
+// Use EntriesDirName when you need only the bare directory name;
+// use EntriesDirSuffix when you need the slash-prefixed form for path
+// concatenation with a parent dir.
 const (
-	EntriesDirSuffix = "/.trackfw-log-entries"
+	EntriesDirName   = ".trackfw-log-entries"
+	EntriesDirSuffix = "/" + EntriesDirName
 	entryTimeFormat  = "20060102T150405Z"
 	entryExt         = ".entry"
 	legacySuffix     = "/.trackfw-log"
+	// maxEntrySize is the per-.entry file size limit enforced by ReadAll (R2).
+	// A single transition line is under 200 bytes; 1 MiB is several thousand
+	// entries in one file and is reached only via manual or malicious writes.
+	maxEntrySize = int64(1 << 20)
 )
 
 // parseLine parses one log line. Returns a zero Transition and false if the line
-// does not match the expected format. The Timestamp is parsed in time.Local for
-// compatibility with the existing metrics.go and validator.go parsers.
+// does not match the expected format.
+//
+// If the line carries a timezone offset in group 5 (e.g. "-0300"), Timestamp is
+// placed in a time.FixedZone for that offset — this preserves the wall-clock
+// value written by the client and ensures that sort comparisons against .entry
+// filenames (whose timestamps are always UTC) are correct regardless of the
+// reader's TZ setting.
+//
+// Lines without an offset fall back to time.Local, preserving backward
+// compatibility with legacy log lines that were written without a suffix.
 func parseLine(line string) (Transition, bool) {
 	m := lineRe.FindStringSubmatch(line)
 	if m == nil {
 		return Transition{}, false
 	}
-	ts, err := time.ParseInLocation("2006-01-02 15:04", m[1], time.Local)
+	loc := time.Local
+	if len(m) > 5 && m[5] != "" {
+		sign := 1
+		if m[5][0] == '-' {
+			sign = -1
+		}
+		h := int(m[5][1]-'0')*10 + int(m[5][2]-'0')
+		min := int(m[5][3]-'0')*10 + int(m[5][4]-'0')
+		loc = time.FixedZone("", sign*(h*3600+min*60))
+	}
+	ts, err := time.ParseInLocation("2006-01-02 15:04", m[1], loc)
 	if err != nil {
 		return Transition{}, false
 	}
@@ -104,18 +137,21 @@ func parseLine(line string) (Transition, bool) {
 //   - all *.entry regular files in <dir>/.trackfw-log-entries/ (sorted by filename)
 //
 // Results are sorted by the entry's effective sort key:
-//   - legacy lines: their parsed Timestamp (time.Local, minute precision)
-//   - .d/ entries: the UTC timestamp embedded in the filename (second precision)
+//   - legacy lines: their parsed Timestamp (time.Local or FixedZone from line offset)
+//   - .trackfw-log-entries/ entries: the UTC timestamp embedded in the filename (second precision)
 //
 // Tie-breaking within the same second: lexicographic order of the source name,
 // which means ".trackfw-log" (legacy) < "20261022T100000Z-…" (entry files).
 //
-// Files inside .d/ that are not regular files or do not end in .entry are silently
-// ignored — they may be temp files from crashed writes (*.tmp from os.CreateTemp),
-// OS metadata files (.DS_Store), editor swap files, or future-format extensions.
+// Files inside .trackfw-log-entries/ are accepted only when their name matches
+// entryNameRe (the canonical format YYYYMMDDTHHMMSSZ-hhhhhhhh.entry). All other
+// files are silently ignored — they may be temp files from crashed writes
+// (tmp-* from os.CreateTemp), OS metadata files (.DS_Store), editor swap files,
+// or future-format extensions.
 //
-// An error is returned only for hard failures: symlink in place of .d/, unreadable
-// directory. Individual unreadable entry files are silently skipped.
+// An error is returned for hard failures: symlink in place of the entries directory,
+// unreadable directory, or any .entry file exceeding maxEntrySize (1 MiB).
+// Individual unreadable entry files are silently skipped.
 func ReadAll(dir string) ([]Transition, error) {
 	type weighted struct {
 		t       Transition
@@ -166,22 +202,30 @@ func ReadAll(dir string) ([]Transition, error) {
 		}
 		for _, de := range des {
 			name := de.Name()
-			if !strings.HasSuffix(name, entryExt) {
-				// Silently ignored: .tmp crash remnants, .DS_Store, future-format files.
+			// R3: accept only files matching the canonical entry filename format.
+			// Silently ignored: tmp-* crash remnants, .DS_Store, x.entry (wrong format),
+			// future-format extensions, and any other non-canonical names.
+			if !entryNameRe.MatchString(name) {
 				continue
 			}
 			if de.Type()&os.ModeSymlink != 0 || !de.Type().IsRegular() {
-				// Silently ignore symlinks and non-regular files inside .d/.
+				// Silently ignore symlinks and non-regular files inside .trackfw-log-entries/.
 				continue
 			}
 			fullPath := filepath.Join(dPath, name)
-			content, readErr := readRegularFileBytes(fullPath)
+			// R2: enforce 1 MiB per-file limit. Oversize is a hard error (named with the
+			// file); other read failures are silently skipped (permission issues, torn writes).
+			content, readErr := readRegularFileBytesLimited(fullPath, maxEntrySize)
 			if readErr != nil {
+				if errors.Is(readErr, errEntryTooLarge) {
+					return nil, fmt.Errorf("translog: %w", readErr)
+				}
 				// Silently skip unreadable entries (permission issues, torn writes).
 				continue
 			}
 
 			// Extract sort key from filename.
+			// After the entryNameRe check above, m[1] always parses without error.
 			var sortKey time.Time
 			if m := entryNameRe.FindStringSubmatch(name); m != nil {
 				if ts, parseErr := time.Parse(entryTimeFormat, m[1]); parseErr == nil {
@@ -198,11 +242,7 @@ func ReadAll(dir string) ([]Transition, error) {
 				if !ok {
 					continue
 				}
-				sk := sortKey
-				if sk.IsZero() {
-					sk = t.Timestamp // fallback for non-standard filenames
-				}
-				ws = append(ws, weighted{t: t, sortKey: sk, name: name})
+				ws = append(ws, weighted{t: t, sortKey: sortKey, name: name})
 			}
 		}
 	}
@@ -314,13 +354,21 @@ func WriteEntry(dir string, line string, now time.Time) (string, error) {
 }
 
 // HasLog reports whether dir has any log at all — either a legacy .trackfw-log file
-// or a .trackfw-log-entries/ directory with at least one .entry file.
+// or a .trackfw-log-entries/ directory with at least one canonical .entry file.
+//
+// M5: uses os.Lstat (does not follow symlinks) for both paths, consistent with
+// ReadAll which also uses os.Lstat on the entries directory — a symlink where
+// .trackfw-log-entries/ should be is refused by ReadAll, so HasLog would mislead
+// callers if it reported true for such a configuration.
+//
+// Uses entryNameRe (same filter as ReadAll) so that a directory containing only
+// non-canonical files (tmp-*, .DS_Store) is not reported as having a log.
 func HasLog(dir string) bool {
-	if _, err := os.Stat(dir + legacySuffix); err == nil {
+	if _, err := os.Lstat(dir + legacySuffix); err == nil {
 		return true
 	}
 	dPath := dir + EntriesDirSuffix
-	info, err := os.Stat(dPath)
+	info, err := os.Lstat(dPath)
 	if err != nil || !info.IsDir() {
 		return false
 	}
@@ -329,7 +377,7 @@ func HasLog(dir string) bool {
 		return false
 	}
 	for _, de := range des {
-		if strings.HasSuffix(de.Name(), entryExt) && de.Type().IsRegular() {
+		if entryNameRe.MatchString(de.Name()) && de.Type().IsRegular() {
 			return true
 		}
 	}

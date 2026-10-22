@@ -12,12 +12,6 @@ package generators
 //     old append-to-single-file strategy produces a merge conflict, proving the
 //     per-entry approach solves a real problem rather than an imaginary one.
 //
-//   - TestTransitionLog_ByAgent_DotDNotNamespace affirms that validate with
-//     by_agent mode and an existing .trackfw-log-entries/ directory does not emit
-//     agent_namespace_hidden (tested via isInfraDirName coverage in validator_test.go;
-//     this test confirms the generator creates the correct path under the roadmapDir
-//     so the validator gate sees it).
-//
 //   - TestTransitionLog_EntriesInDotD_VisibleViaReadAll affirms that entries written
 //     by MoveRoadmap (which calls appendTransitionLogEntry → translog.WriteEntry) are
 //     returned by translog.ReadAll on the same directory — the only way callers read
@@ -235,23 +229,22 @@ func TestTransitionLog_LegacyAppendConflicts(t *testing.T) {
 	mustGit(t, "commit", "-m", "legacy-b appends")
 
 	// Merge legacy-a into legacy-b WITHOUT merge=union — this MUST conflict.
+	// Both branches appended a distinct line at the same position (after the base
+	// "# initial\n"), so this is a deterministic 3-way conflict every time.
 	out, mergeErr := git("merge", "legacy-a", "--no-edit").CombinedOutput()
 	if mergeErr == nil {
-		// Check that the log actually has conflict markers (git may or may not exit non-zero
-		// depending on how it resolves).
-		data, _ := os.ReadFile(legacyLog)
-		if !strings.Contains(string(data), "<<<<<<<") {
-			// No conflict markers and merge succeeded — the append strategy occasionally merges
-			// cleanly (e.g., when both branches append to the same last line). This is expected
-			// to be rare but possible. Skip rather than fail to keep the test deterministic.
-			t.Skip("legacy merge happened to be conflict-free (append at same offset) — D3 holds in the general case")
-		}
+		t.Fatalf("expected merge to conflict but it succeeded cleanly — the D3 contra-arm is no longer valid\nmerge output:\n%s", out)
 	}
-	_ = out
-	// Either the merge failed (exit non-zero) or produced conflict markers — both confirm D3.
-	// Reset back to a clean state so the test does not leave the repo dirty.
-	git("merge", "--abort").Run()                //nolint:errcheck
-	git("checkout", "--", ".trackfw-log").Run()  //nolint:errcheck
+	if !strings.Contains(string(out), "CONFLICT") {
+		t.Errorf("merge failed but output does not contain CONFLICT — unexpected failure mode\noutput:\n%s", out)
+	}
+	data, err := os.ReadFile(legacyLog)
+	if err != nil {
+		t.Fatalf("read legacy log after failed merge: %v", err)
+	}
+	if !strings.Contains(string(data), "<<<<<<<") {
+		t.Errorf("merge failed but legacy log has no conflict markers (<<<<<<< absent) — unexpected failure mode\nfile contents:\n%s", data)
+	}
 }
 
 // AFIRMA: entradas gravadas por appendTransitionLogEntry são visíveis via

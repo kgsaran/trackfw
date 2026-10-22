@@ -201,7 +201,7 @@ func NewDiscoverCmd() *cobra.Command {
 					// Parse the retroactive timestamp from the line (format: "2006-01-02 15:04  ...").
 					var entryTime time.Time
 					if len(line) >= 16 {
-						if ts, parseErr := time.ParseInLocation("2006-01-02 15:04", line[:16], time.UTC); parseErr == nil {
+						if ts, parseErr := time.ParseInLocation("2006-01-02 15:04", line[:16], time.Local); parseErr == nil {
 							entryTime = ts
 						}
 					}

@@ -8,9 +8,14 @@ import (
 )
 
 // TestParseLog_Empty — diretório inexistente retorna slice vazia (não nil, não panic).
+// AFIRMA: ParseLog não retorna nil para um diretório inexistente — callers podem iterar
+// sobre o resultado sem verificar nil.
 func TestParseLog_Empty(t *testing.T) {
 	// ML-1A: ParseLog now takes a directory, not a file path.
-	result := ParseLog("/caminho/inexistente/roadmaps")
+	result, err := ParseLog("/caminho/inexistente/roadmaps")
+	if err != nil {
+		t.Fatalf("esperado err=nil para diretório inexistente, obteve: %v", err)
+	}
 	if result == nil {
 		t.Fatal("esperado slice vazia, obteve nil")
 	}
@@ -31,7 +36,10 @@ func TestParseLog_ValidLines(t *testing.T) {
 	}
 
 	// ML-1A: ParseLog takes the directory, not the file path; the legacy file is read automatically.
-	result := ParseLog(dir)
+	result, err := ParseLog(dir)
+	if err != nil {
+		t.Fatalf("ParseLog: %v", err)
+	}
 	if len(result) != 2 {
 		t.Fatalf("esperado 2 transições, obteve %d", len(result))
 	}
@@ -85,7 +93,10 @@ func TestParseLog_SkipsInvalidLines(t *testing.T) {
 	}
 
 	// ML-1A: ParseLog takes the directory; the legacy file is read automatically.
-	result := ParseLog(dir)
+	result, err := ParseLog(dir)
+	if err != nil {
+		t.Fatalf("ParseLog: %v", err)
+	}
 	// Apenas a linha válida deve ser retornada.
 	if len(result) != 1 {
 		t.Errorf("esperado 1 transição válida, obteve %d: %+v", len(result), result)
@@ -109,7 +120,10 @@ func TestParseLog_MultipleTransitions(t *testing.T) {
 	}
 
 	// ML-1A: ParseLog takes the directory.
-	result := ParseLog(dir)
+	result, err := ParseLog(dir)
+	if err != nil {
+		t.Fatalf("ParseLog: %v", err)
+	}
 	if len(result) != 4 {
 		t.Fatalf("esperado 4 transições, obteve %d", len(result))
 	}
