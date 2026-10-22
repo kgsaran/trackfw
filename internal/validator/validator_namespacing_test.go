@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/kgsaran/trackfw/internal/config"
+	"github.com/kgsaran/trackfw/internal/translog"
 )
 
 // TestByAgentNamespacingWIPLimit verifica que o WIP limit é aplicado POR AGENTE,
@@ -197,12 +198,12 @@ func TestResolveWriteAgent_MultipleNamespacesWithEmpty_ParityMessage(t *testing.
 }
 
 // TestValidate_ByAgent_TrackfwLogDirIsInfra verifica que um projeto by_agent com um
-// .trackfw-log.d/ presente em roadmap_dir NÃO emite agent_namespace_hidden para ele.
+// .trackfw-log-entries/ presente em roadmap_dir NÃO emite agent_namespace_hidden para ele.
 //
-// AFIRMA: isInfraDirName(".trackfw-log.d") == true, portanto o diretório de log por entrada
-// é filtrado pelo resolvedor de namespaces e nunca aparece na lista de namespaces ocultos.
-// A ausência de agent_namespace_hidden é a garantia contratual que todo projeto que rodou
-// o novo writer (ML-1A) não receba um falso positivo de validate.
+// AFIRMA: isInfraDirName(".trackfw-log-entries") == true, portanto o diretório de log por
+// entrada é filtrado pelo resolvedor de namespaces e nunca aparece na lista de namespaces
+// ocultos. A ausência de agent_namespace_hidden é a garantia contratual que todo projeto que
+// rodou o novo writer (ML-1A/ML-1C) não receba um falso positivo de validate.
 func TestValidate_ByAgent_TrackfwLogDirIsInfra(t *testing.T) {
 	dir := t.TempDir()
 	chdir(t, dir)
@@ -222,11 +223,12 @@ func TestValidate_ByAgent_TrackfwLogDirIsInfra(t *testing.T) {
 		t.Fatalf("escrever roadmap: %v", err)
 	}
 
-	// Cria o diretório de log por entrada (.trackfw-log.d) com uma entrada fictícia.
-	if err := os.MkdirAll("docs/roadmaps/.trackfw-log.d", 0755); err != nil {
-		t.Fatalf("mkdir .trackfw-log.d: %v", err)
+	// Cria o diretório de log por entrada (.trackfw-log-entries) com uma entrada fictícia.
+	logDir := "docs/roadmaps/" + translog.EntriesDirSuffix[1:]
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		t.Fatalf("mkdir %s: %v", logDir, err)
 	}
-	if err := os.WriteFile("docs/roadmaps/.trackfw-log.d/x.entry",
+	if err := os.WriteFile(logDir+"/x.entry",
 		[]byte("2026-10-22 10:00  ROADMAP-001.md                       backlog → wip\n"), 0644); err != nil {
 		t.Fatalf("escrever x.entry: %v", err)
 	}
@@ -235,9 +237,10 @@ func TestValidate_ByAgent_TrackfwLogDirIsInfra(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Validate() erro: %v", err)
 	}
+	entriesDirName := translog.EntriesDirSuffix[1:]
 	for _, w := range warnings {
-		if strings.Contains(w, "agent_namespace_hidden") || strings.Contains(w, ".trackfw-log.d") {
-			t.Errorf("Validate() emitiu warning inesperado sobre .trackfw-log.d: %q", w)
+		if strings.Contains(w, "agent_namespace_hidden") || strings.Contains(w, entriesDirName) {
+			t.Errorf("Validate() emitiu warning inesperado sobre %s: %q", entriesDirName, w)
 		}
 	}
 }

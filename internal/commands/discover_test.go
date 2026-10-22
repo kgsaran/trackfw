@@ -171,10 +171,10 @@ func TestDiscoverInit(t *testing.T) {
 	})
 }
 
-// TestDiscoverBootstrapLog verifica que .trackfw-log.d/ é criado com entradas dos arquivos done/
+// TestDiscoverBootstrapLog verifica que .trackfw-log-entries/ é criado com entradas dos arquivos done/
 // e que execuções repetidas não duplicam entradas.
 //
-// AFIRMA: --bootstrap-log grava entradas no .trackfw-log.d/ (novo contrato do ML-1A) e
+// AFIRMA: --bootstrap-log grava entradas no .trackfw-log-entries/ (novo contrato do ML-1A) e
 // translog.ReadAll as enxerga; a contagem de transições lidas deve corresponder ao número de
 // roadmaps em done/. A idempotência garante que a segunda execução não duplica entradas.
 func TestDiscoverBootstrapLog(t *testing.T) {
@@ -185,7 +185,7 @@ func TestDiscoverBootstrapLog(t *testing.T) {
 	mustWriteFileCmd(t, filepath.Join(dir, "docs/roadmaps/done/ROADMAP-001.md"), "# Roadmap 001")
 	mustWriteFileCmd(t, filepath.Join(dir, "docs/roadmaps/done/ROADMAP-002.md"), "# Roadmap 002")
 
-	// primeira execução — deve criar as entradas em .trackfw-log.d/
+	// primeira execução — deve criar as entradas em .trackfw-log-entries/
 	out, err := runDiscover(t, dir, "--bootstrap-log")
 	if err != nil {
 		t.Fatalf("discover --bootstrap-log failed (1ª execução): %v", err)
@@ -194,7 +194,7 @@ func TestDiscoverBootstrapLog(t *testing.T) {
 		t.Errorf("output should confirm log was written; got:\n%s", out)
 	}
 
-	// O contrato novo: entradas vivem em .trackfw-log.d/, lidas por translog.ReadAll.
+	// O contrato novo: entradas vivem em .trackfw-log-entries/, lidas por translog.ReadAll.
 	roadmapDir := filepath.Join(dir, "docs/roadmaps")
 	ts, readErr := translog.ReadAll(roadmapDir)
 	if readErr != nil {

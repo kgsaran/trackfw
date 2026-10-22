@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/kgsaran/trackfw/internal/config"
+	"github.com/kgsaran/trackfw/internal/translog"
 )
 
 // mute_guards_speak_test.go — ML-7B / AC4 + AC5 of REQ-2026-08-31.
@@ -136,10 +137,10 @@ func TestAppendTransitionLogRefusalIsAudible(t *testing.T) {
 	if controlOutput != "" {
 		t.Fatalf("clean tree must print nothing, got: %q", controlOutput)
 	}
-	// ML-1A: writer creates .trackfw-log.d/ directory, not the legacy .trackfw-log file.
-	dotD := filepath.Join(clean, config.Load().RoadmapDir, ".trackfw-log.d")
+	// ML-1A/ML-1C: writer creates .trackfw-log-entries/ directory, not the legacy .trackfw-log file.
+	dotD := filepath.Join(clean, config.Load().RoadmapDir, translog.EntriesDirSuffix[1:])
 	if info, err := os.Stat(dotD); err != nil || !info.IsDir() {
-		t.Fatalf("control arm did not create .trackfw-log.d/ (%v) — the guard was never exercised, so the loud arm below would prove nothing", err)
+		t.Fatalf("control arm did not create .trackfw-log-entries/ (%v) — the guard was never exercised, so the loud arm below would prove nothing", err)
 	}
 
 	// ── loud arm: ancestor symlink, guard fires, refusal must be AUDIBLE ───
@@ -181,10 +182,10 @@ func TestAppendREQTransitionLogRefusalIsAudible(t *testing.T) {
 	if controlOutput != "" {
 		t.Fatalf("clean tree must print nothing, got: %q", controlOutput)
 	}
-	// ML-1A: writer creates .trackfw-log.d/ directory, not the legacy .trackfw-log file.
-	dotDReq := filepath.Join(clean, config.Load().REQDir, ".trackfw-log.d")
+	// ML-1A/ML-1C: writer creates .trackfw-log-entries/ directory, not the legacy .trackfw-log file.
+	dotDReq := filepath.Join(clean, config.Load().REQDir, translog.EntriesDirSuffix[1:])
 	if info, err := os.Stat(dotDReq); err != nil || !info.IsDir() {
-		t.Fatalf("control arm did not create .trackfw-log.d/ (%v) — the guard was never exercised, so the loud arm below would prove nothing", err)
+		t.Fatalf("control arm did not create .trackfw-log-entries/ (%v) — the guard was never exercised, so the loud arm below would prove nothing", err)
 	}
 
 	baited := t.TempDir()

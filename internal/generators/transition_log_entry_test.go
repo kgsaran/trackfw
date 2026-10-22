@@ -5,7 +5,7 @@ package generators
 // What each test affirms (Regra Dura de Reconciliação, one sentence each):
 //
 //   - TestTransitionLog_ParallelBranchesMergeWithoutConflict affirms the ML-1A
-//     conclusion that two branches each writing to .trackfw-log.d/ produce no merge
+//     conclusion that two branches each writing to .trackfw-log-entries/ produce no merge
 //     conflict, because the per-entry filenames are distinct (AC7).
 //
 //   - TestTransitionLog_LegacyAppendConflicts affirms the contra-arm (ADR D3): the
@@ -13,7 +13,7 @@ package generators
 //     per-entry approach solves a real problem rather than an imaginary one.
 //
 //   - TestTransitionLog_ByAgent_DotDNotNamespace affirms that validate with
-//     by_agent mode and an existing .trackfw-log.d/ directory does not emit
+//     by_agent mode and an existing .trackfw-log-entries/ directory does not emit
 //     agent_namespace_hidden (tested via isInfraDirName coverage in validator_test.go;
 //     this test confirms the generator creates the correct path under the roadmapDir
 //     so the validator gate sees it).
@@ -35,7 +35,7 @@ import (
 )
 
 // AFIRMA: dois branches que chamam MoveRoadmap sobre roadmaps diferentes gravam em
-// arquivos distintos em .trackfw-log.d/ — `git merge` sai 0, sem marcadores de conflito
+// arquivos distintos em .trackfw-log-entries/ — `git merge` sai 0, sem marcadores de conflito
 // (AC7, D1 do ADR).
 func TestTransitionLog_ParallelBranchesMergeWithoutConflict(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
@@ -129,12 +129,13 @@ func TestTransitionLog_ParallelBranchesMergeWithoutConflict(t *testing.T) {
 	mustGit(t, "merge", "branch-a", "--no-edit")
 
 	// Verify no conflict markers anywhere.
-	entries, _ := os.ReadDir(filepath.Join(repoDir, "docs/roadmaps/.trackfw-log.d"))
+	entriesDir := filepath.Join(repoDir, "docs/roadmaps", translog.EntriesDirSuffix[1:])
+	entries, _ := os.ReadDir(entriesDir)
 	for _, e := range entries {
 		if !strings.HasSuffix(e.Name(), ".entry") {
 			continue
 		}
-		data, _ := os.ReadFile(filepath.Join(repoDir, "docs/roadmaps/.trackfw-log.d", e.Name()))
+		data, _ := os.ReadFile(filepath.Join(entriesDir, e.Name()))
 		if strings.Contains(string(data), "<<<<<<<") || strings.Contains(string(data), ">>>>>>>") {
 			t.Errorf(".d entry %s contains conflict markers", e.Name())
 		}
@@ -296,6 +297,6 @@ func TestTransitionLog_EntriesInDotD_VisibleViaReadAll(t *testing.T) {
 
 	// Legacy .trackfw-log must NOT have been created (ML-1A: new writes go to .d/).
 	if _, err := os.Stat("docs/roadmaps/.trackfw-log"); err == nil {
-		t.Errorf("legacy .trackfw-log was created — ML-1A requires writes go to .trackfw-log.d/")
+		t.Errorf("legacy .trackfw-log was created — ML-1A requires writes go to .trackfw-log-entries/")
 	}
 }

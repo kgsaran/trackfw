@@ -220,13 +220,13 @@ Regra de validação `note_orphan` — notas em `vault/notes/` não referenciada
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 > REQ-2026-09-02-reconciliacao-pos-merge-dos-prs-238-e-240-e-o-trackfw-log-que-conflita-em-toda-branch-paralela.md (AC6/AC7)
-> ML-1A (ADR-2026-10-22): novas entradas vão para `.trackfw-log.d/` — conflito de merge é estruturalmente impossível.
+> ML-1A (ADR-2026-10-22): novas entradas vão para `.trackfw-log-entries/` — conflito de merge é estruturalmente impossível.
 
 ### Situação atual (pós-ML-1A)
 <!-- trackfw-contract: gate=internal/generators/transition_log_entry_test.go,internal/translog/translog_test.go partial=TestTransitionLog_ParallelBranchesMergeWithoutConflict pina a não-colisão de nomes em branches paralelas (AC7); TestReadAll_LegacyAndDirTogether pina que o leitor unificado lê o legado e o .d/ juntos; o rationale da extensão .entry (não .log para evitar .gitignore) é narrativo sem gate -->
 
 A partir da versão que introduziu ML-1A, cada transição cria um arquivo separado em
-`<dir>/.trackfw-log.d/<YYYYMMDDTHHMMSSZ>-<h8>.entry`, onde `<h8>` são os primeiros 8 dígitos hex
+`<dir>/.trackfw-log-entries/<YYYYMMDDTHHMMSSZ>-<h8>.entry`, onde `<h8>` são os primeiros 8 dígitos hex
 do SHA-256 da linha (sem `\n` final). Dois branches paralelos que registram transições diferentes
 criam arquivos com nomes diferentes — o `git merge` do diretório `.d/` **nunca conflita**, sem
 necessidade de nenhum atributo.
@@ -802,8 +802,8 @@ A REQ nested deeper than those four fixed patterns is invisible to both commands
   here.
 - Any other layout under `req_dir/` (unrecognized) → falls back to the in-place behavior above.
 
-The transition is written to `<req_dir>/.trackfw-log.d/` (ML-1A: one file per entry) — a directory
-separate from `<roadmap_dir>/.trackfw-log.d/`; `trackfw log` reads only the roadmap log, so REQ
+The transition is written to `<req_dir>/.trackfw-log-entries/` (ML-1A: one file per entry) — a directory
+separate from `<roadmap_dir>/.trackfw-log-entries/`; `trackfw log` reads only the roadmap log, so REQ
 transitions do not appear in `trackfw log` output. The legacy `<req_dir>/.trackfw-log` (if present)
 continues to be read by `internal/translog.ReadAll` for backward compatibility.
 
@@ -1017,14 +1017,14 @@ The Go, Node.js, and Python validators share the same `stale_wip` contract:
 - A roadmap's WIP age is measured from its latest transition into `wip/` in the
   transition log, read via the unified reader (`internal/translog.ReadAll`), which
   combines `<roadmap_dir>/.trackfw-log` (legacy, if present) and all `.entry` files
-  in `<roadmap_dir>/.trackfw-log.d/` (ML-1A).
+  in `<roadmap_dir>/.trackfw-log-entries/` (ML-1A).
 - Valid WIP-entry transitions include any log line for the current roadmap whose
   destination state is `wip`, such as `backlog → wip`, `analyzing → wip`, or
   `blocked → wip`.
 - In `roadmap_namespacing: by_agent`, the roadmap identity includes the agent
   prefix exactly as written in the log, for example
   `zeus/ROADMAP-YYYY-MM-DD-<slug>.md`.
-- If neither `.trackfw-log` nor `.trackfw-log.d/` exists, or if the current
+- If neither `.trackfw-log` nor `.trackfw-log-entries/` exists, or if the current
   roadmap has no parseable entry into `wip`, the backward-compatible fallback is
   the file `mtime`.
 - Git commit time is not part of the cross-runtime contract for WIP age. It
@@ -1050,7 +1050,7 @@ Inspection failures must not degrade silently:
 | Invalid support file or invalid transition-log line | Emit a diagnostic and use the documented fallback for the affected artifact when available. |
 
 The implemented coverage is intentionally cross-runtime: Go tests the unified
-reader (`translog.ReadAll`) as source of truth — reading from `.trackfw-log.d/`
+reader (`translog.ReadAll`) as source of truth — reading from `.trackfw-log-entries/`
 entries (ML-1A) and the legacy `.trackfw-log` (backward compatibility) — as well
 as configurable boundary behavior, `mtime` fallback, and `ENOTDIR`/walk-error
 diagnostics for `wip/`.

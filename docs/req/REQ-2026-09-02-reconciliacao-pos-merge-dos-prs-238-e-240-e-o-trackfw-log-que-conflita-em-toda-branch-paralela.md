@@ -132,11 +132,11 @@ mantenedor, depois do merge, numa branch `docs/`. É a mesma regra de "fechament
 para o trabalho interno. Os roadmaps do #238 e do #240 já estão em `done/` (triagem de 2026-10-17).
 
 - [ ] **AC6 (reescrito)** — Uma transição de roadmap ou REQ grava um arquivo próprio em
-      `<dir>/.trackfw-log.d/` (ADR D1). Todos os leitores passam por um ponto único, que lê o legado
+      `<dir>/.trackfw-log-entries/` (ADR D1). Todos os leitores passam por um ponto único, que lê o legado
       congelado e o diretório. Falsificação **sem `.gitattributes`**, num repositório temporário: duas
       branches que movem roadmaps fazem merge sem conflito, e o formato antigo conflita no mesmo teste.
 - [ ] **AC7 (mantido)** — Controle: as entradas dos dois lados sobrevivem, por igualdade de conjunto.
-- [ ] **AC8** — O contexto de trabalho grava uma entrada por arquivo em `docs/agents-working-context.d/`
+- [ ] **AC8** — O contexto de trabalho grava uma entrada por arquivo em `docs/agents-working-context/`
       (ADR D2). As instruções geradas (`agentfiles.go`, os 12 assets e os goldens) mandam escrever e ler
       ali. O `.md` legado ganha cabeçalho de redirecionamento. Mesma falsificação do AC6.
 

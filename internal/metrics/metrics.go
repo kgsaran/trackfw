@@ -39,7 +39,7 @@ type Metrics struct {
 var metricsGetwdFn func() (string, error) = os.Getwd
 
 // ParseLog lê o diretório de roadmaps e retorna todas as transições, combinando
-// o arquivo legado .trackfw-log (se existir) com as entradas em .trackfw-log.d/.
+// o arquivo legado .trackfw-log (se existir) com as entradas em .trackfw-log-entries/.
 // Retorna nil, nil se nenhuma fonte existe.
 func ParseLog(dir string) ([]Transition, error) {
 	tls, err := translog.ReadAll(dir)

@@ -642,7 +642,7 @@ func TestMoveREQ_LogsTransition(t *testing.T) {
 		t.Fatalf("MoveREQ erro: %v", err)
 	}
 
-	// ML-1A: entries land in .trackfw-log.d/, not the legacy .trackfw-log file.
+	// ML-1A: entries land in .trackfw-log-entries/, not the legacy .trackfw-log file.
 	reqTransitions, err := translog.ReadAll(filepath.Join("docs", "req"))
 	if err != nil {
 		t.Fatalf("log de transição: ReadAll: %v", err)

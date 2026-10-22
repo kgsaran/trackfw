@@ -104,9 +104,9 @@ func NewDiscoverCmd() *cobra.Command {
 				fmt.Fprintln(out, "✓ trackfw.yaml found")
 			}
 
-			// .trackfw-log / .trackfw-log.d (ML-1A: new writes go to .d/)
+			// .trackfw-log / .trackfw-log-entries (ML-1A: new writes go to entries dir)
 			if !r.HasTrackfwLog {
-				fmt.Fprintln(out, "⚠ No .trackfw-log or .trackfw-log.d — run with --bootstrap-log to create retroactive history")
+				fmt.Fprintln(out, "⚠ No .trackfw-log or .trackfw-log-entries — run with --bootstrap-log to create retroactive history")
 			} else {
 				fmt.Fprintln(out, "✓ transition log found")
 			}
@@ -174,7 +174,7 @@ func NewDiscoverCmd() *cobra.Command {
 				}
 
 				roadmapDir := filepath.Join(resolvedCwd, r.RoadmapDir)
-				dotDPath := filepath.Join(roadmapDir, ".trackfw-log.d")
+				dotDPath := filepath.Join(roadmapDir, translog.EntriesDirSuffix[1:])
 
 				// Guard the .d/ directory before writing any entries.
 				if err := rejectDiscoverPath(resolvedCwd, dotDPath); err != nil {
@@ -215,7 +215,7 @@ func NewDiscoverCmd() *cobra.Command {
 					written++
 				}
 
-				fmt.Fprintf(out, "✓ bootstrap log written to %s/.trackfw-log.d (%d new entries)\n", r.RoadmapDir, written)
+				fmt.Fprintf(out, "✓ bootstrap log written to %s/%s (%d new entries)\n", r.RoadmapDir, translog.EntriesDirSuffix[1:], written)
 			}
 
 			return nil

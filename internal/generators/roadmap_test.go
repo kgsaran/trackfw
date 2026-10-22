@@ -361,7 +361,7 @@ func assertMoveRoadmapAnalyzingContract(t *testing.T, byAgent bool) error {
 				return &testExpectationError{message: "roadmap by_agent não sincronizou " + want}
 			}
 		}
-		// ML-1A: entries land in .trackfw-log.d/, not the legacy .trackfw-log file.
+		// ML-1A: entries land in .trackfw-log-entries/, not the legacy .trackfw-log file.
 		transitions, err := translog.ReadAll("docs/roadmaps")
 		if err != nil {
 			return err
@@ -424,7 +424,7 @@ func assertMoveRoadmapAnalyzingContract(t *testing.T, byAgent bool) error {
 			return &testExpectationError{message: "roadmap flat não sincronizou " + want}
 		}
 	}
-	// ML-1A: entries land in .trackfw-log.d/, not the legacy .trackfw-log file.
+	// ML-1A: entries land in .trackfw-log-entries/, not the legacy .trackfw-log file.
 	flatTransitions, err := translog.ReadAll("docs/roadmaps")
 	if err != nil {
 		return err
@@ -894,7 +894,7 @@ func TestMoveRoadmap_ByAgent_LogPrefixHasAgent(t *testing.T) {
 		t.Fatalf("MoveRoadmap() erro: %v", err)
 	}
 
-	// ML-1A: entries land in .trackfw-log.d/, not the legacy .trackfw-log file.
+	// ML-1A: entries land in .trackfw-log-entries/, not the legacy .trackfw-log file.
 	transitions, err := translog.ReadAll("docs/roadmaps")
 	if err != nil {
 		t.Fatalf("ler log de transições: %v", err)

@@ -16,7 +16,7 @@ type Transition struct {
 
 // ParseLog reads the roadmap transition log directory and returns a slice of
 // Transitions, combining the legacy .trackfw-log file (if present) with entries
-// in .trackfw-log.d/. Returns an empty slice on any error or when no log exists.
+// in .trackfw-log-entries/. Returns an empty slice on any error or when no log exists.
 func ParseLog(dir string) []Transition {
 	tls, err := translog.ReadAll(dir)
 	if err != nil || len(tls) == 0 {

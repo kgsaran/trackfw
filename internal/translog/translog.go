@@ -8,7 +8,7 @@
 //
 // # Storage
 //
-// New writes land in <dir>/.trackfw-log.d/<YYYYMMDDTHHMMSSZ>-<h8>.entry, where
+// New writes land in <dir>/.trackfw-log-entries/<YYYYMMDDTHHMMSSZ>-<h8>.entry, where
 // <h8> are the first 8 lowercase hex digits of the SHA-256 of the line (WITHOUT
 // the trailing \n). Two parallel branches that record the same transition produce
 // the same filename and the same content — a git merge of the two directories
@@ -62,11 +62,19 @@ var lineRe = regexp.MustCompile(
 // the UTC sort key. Files that do not match are silently skipped.
 var entryNameRe = regexp.MustCompile(`^(\d{8}T\d{6}Z)-[0-9a-f]{8}\.entry$`)
 
+// EntriesDirSuffix is the directory name (with leading slash) where new
+// per-entry log files land: <dir>/.trackfw-log-entries/<name>.entry.
+// It is exported so callers can reference the name without embedding a
+// literal, keeping the name in a single place.
+//
+// The old name was "/.trackfw-log.d"; it was renamed because "*.d" is a
+// common .gitignore pattern (e.g. the GitHub C++ .gitignore opens with it),
+// which would silently prevent the entries from being committed.
 const (
-	entryTimeFormat = "20060102T150405Z"
-	entryExt        = ".entry"
-	dotDSuffix      = "/.trackfw-log.d"
-	legacySuffix    = "/.trackfw-log"
+	EntriesDirSuffix = "/.trackfw-log-entries"
+	entryTimeFormat  = "20060102T150405Z"
+	entryExt         = ".entry"
+	legacySuffix     = "/.trackfw-log"
 )
 
 // parseLine parses one log line. Returns a zero Transition and false if the line
@@ -93,7 +101,7 @@ func parseLine(line string) (Transition, bool) {
 //
 // It combines:
 //   - the legacy file <dir>/.trackfw-log (if it exists), read FIFO-safely
-//   - all *.entry regular files in <dir>/.trackfw-log.d/ (sorted by filename)
+//   - all *.entry regular files in <dir>/.trackfw-log-entries/ (sorted by filename)
 //
 // Results are sorted by the entry's effective sort key:
 //   - legacy lines: their parsed Timestamp (time.Local, minute precision)
@@ -138,8 +146,8 @@ func ReadAll(dir string) ([]Transition, error) {
 		return nil, fmt.Errorf("translog: read legacy log %s: %w", legacyPath, err)
 	}
 
-	// 2. .d/ entries.
-	dPath := dir + dotDSuffix
+	// 2. entries directory.
+	dPath := dir + EntriesDirSuffix
 	lstat, lstatErr := os.Lstat(dPath)
 	switch {
 	case lstatErr != nil && os.IsNotExist(lstatErr):
@@ -226,7 +234,7 @@ func EntryFilename(line string, now time.Time) string {
 	return ts + "-" + h8 + entryExt
 }
 
-// WriteEntry writes one entry to <dir>/.trackfw-log.d/<name>.entry where name is
+// WriteEntry writes one entry to <dir>/.trackfw-log-entries/<name>.entry where name is
 // EntryFilename(line, now). line must NOT include a trailing \n.
 //
 // Idempotency: if the target file already exists with content equal to line+"\n"
@@ -241,9 +249,9 @@ func EntryFilename(line string, now time.Time) string {
 // silently ignores. The remaining TOCTOU race on Windows is narrow and documented.
 //
 // WriteEntry does NOT call pathguard — the caller must call pathguard.RejectAndReport
-// on dir+"/.trackfw-log.d" before invoking this function.
+// on dir+EntriesDirSuffix before invoking this function.
 func WriteEntry(dir string, line string, now time.Time) (string, error) {
-	dPath := dir + dotDSuffix
+	dPath := dir + EntriesDirSuffix
 	name := EntryFilename(line, now)
 	entryPath := filepath.Join(dPath, name)
 	content := line + "\n"
@@ -260,7 +268,7 @@ func WriteEntry(dir string, line string, now time.Time) (string, error) {
 		return "", fmt.Errorf("translog: stat %s: %w", dPath, err)
 	}
 
-	// Callers guard dir+"/.trackfw-log.d" with pathguard.RejectAndReport before invoking WriteEntry;
+	// Callers guard dir+EntriesDirSuffix with pathguard.RejectAndReport before invoking WriteEntry;
 	// temp files use a non-.entry name so they are skipped by ReadAll.
 	// write-containment-allowed: caller (e.g. discover.go) calls rejectDiscoverPath/pathguard before WriteEntry
 	if err := os.MkdirAll(dPath, 0755); err != nil {
@@ -306,12 +314,12 @@ func WriteEntry(dir string, line string, now time.Time) (string, error) {
 }
 
 // HasLog reports whether dir has any log at all — either a legacy .trackfw-log file
-// or a .trackfw-log.d/ directory with at least one .entry file.
+// or a .trackfw-log-entries/ directory with at least one .entry file.
 func HasLog(dir string) bool {
 	if _, err := os.Stat(dir + legacySuffix); err == nil {
 		return true
 	}
-	dPath := dir + dotDSuffix
+	dPath := dir + EntriesDirSuffix
 	info, err := os.Stat(dPath)
 	if err != nil || !info.IsDir() {
 		return false

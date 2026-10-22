@@ -2053,7 +2053,7 @@ const gitAttributesRuleTarget = ".trackfw-log"
 //
 // # Por que merge=union continua presente após ML-1A
 //
-// A partir de ML-1A, novas transições vão para .trackfw-log.d/<ts>-<h8>.entry;
+// A partir de ML-1A, novas transições vão para .trackfw-log-entries/<ts>-<h8>.entry;
 // dois branches paralelos NUNCA conflitam nesse diretório — arquivos distintos,
 // merge automático. O .trackfw-log legado continua sendo LIDO pelo leitor
 // unificado (translog.ReadAll) mas nunca mais escrito por este binário.

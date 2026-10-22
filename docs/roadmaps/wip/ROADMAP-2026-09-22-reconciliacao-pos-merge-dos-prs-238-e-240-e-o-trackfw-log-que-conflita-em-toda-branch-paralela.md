@@ -49,7 +49,7 @@ ADR: docs/adr/ADR-2026-10-22-logs-append-only-compartilhados-viram-um-arquivo-po
 **Actions:**
 1. Enumerar todo escritor e leitor dos dois arquivos, além do grep em `internal/*.go`: `scripts/` (a falsificação e os contratos),
    `docs/cli-parity.md`, os testes que fixam o arquivo único, `discover --bootstrap-log`, o `serve` e os goldens.
-2. Listar todo código que percorre `roadmap_dir`/`req_dir` e diria o que faz com um diretório `.trackfw-log.d/`: se ele vira
+2. Listar todo código que percorre `roadmap_dir`/`req_dir` e diria o que faz com um diretório `.trackfw-log-entries/`: se ele vira
    estado, REQ ou lixo. Ponto de partida: `roadmap.go:1040-1046`.
 3. O corpus pinado `internal/roadmapdoc/testdata/corpus` e os snapshots em `scripts/testdata/` têm `.trackfw-log`? A leitura do
    legado mantém o `CORPUS_HASH` válido? O escopo negativo proíbe mexer no corpus.
@@ -79,11 +79,11 @@ test -s docs/seguranca/2026-10-22-wave0-log-por-entrada.md
 **Files affected:** escritores (`generators/roadmap.go`, `generators/req.go`), um pacote leitor único, todos os leitores listados no
 Context, `generators/scaffold.go` (o comentário do `gitAttributesBlock`), `docs/cli-parity.md` e os testes. A lista final vem da Wave 0.
 **Acceptance criteria:**
-- [x] Uma transição grava `<dir>/.trackfw-log.d/<AAAAMMDDTHHMMSSZ>-<h8>.entry` com uma linha. Não há mais append no arquivo.
+- [x] Uma transição grava `<dir>/.trackfw-log-entries/<AAAAMMDDTHHMMSSZ>-<h8>.entry` com uma linha. Não há mais append no arquivo.
 - [x] Sobra um único parser. Todos os leitores leem o legado e o diretório. Nenhum leitor lê só o arquivo, e um teste prova isso.
 - [x] Teste em `t.TempDir()` **sem `.gitattributes`**: duas branches movem roadmaps pelo código real, e o `git merge` sai limpo, com
       igualdade de conjunto das entradas. O braço contrário, com o formato antigo, conflita no mesmo teste.
-- [x] A travessia de `roadmap_dir`/`req_dir` ignora `.trackfw-log.d/`.
+- [x] A travessia de `roadmap_dir`/`req_dir` ignora `.trackfw-log-entries/`.
 **Auditoria do arquiteto:** a 1ª entrega foi reprovada. O `TestDiscoverBootstrapLog` reprovava, porque `internal/commands` não foi rodado; o `check-write-containment` reprovava no `translog`; faltavam o teste do `by_agent` e a mordida. No corretivo: os 7 pacotes ficaram verdes; `wc=0`, com os 3 chamadores conferidos passando pelo `pathguard` antes do `WriteEntry`; e as 3 mordidas reprovam como esperado (`CONFLICT (add/add)` no append legado). Depois, as anotações de contrato no `cli-parity.md` e os pins B1/B3 de `check-agent-namespace-union.sh` foram atualizados para o `isInfraDirName` novo. `make parity-rest` com rc=0, medido pelo arquiteto.
 
 ### ML-1B — Gates de encoding (AC1–AC4 da REQ)
@@ -104,6 +104,15 @@ go test ./internal/generators/ ./internal/metrics/ ./internal/serve/ ./internal/
 ```
 **Auditoria do arquiteto:** `strict` com medição de surrogate (o `CORPUS_HASH` não mudou), allowlist vazia, `RECONFIGURE_RE` só no aviso de allowlist obsoleta (estreitamento justificado: o `reconfigure` cobre só um bloco), AC4 = 0 de 10 sítios expostos. O `--self-test` foi ligado ao `parity-rest` no Makefile, num ajuste posterior.
 
+### ML-1C — Diretório sem sufixo `.d`
+**Status:** ✅ Concluído
+**Agente:** apolo-tf
+**Origem:** o arquiteto deixou passar o achado B2 da Wave 0 (`*.d` no `.gitignore` ignora o diretório; o `C++.gitignore` do GitHub abre com `*.d`).
+**Acceptance criteria:**
+- [x] `.trackfw-log.d` virou `.trackfw-log-entries`, com a constante única `translog.EntriesDirSuffix`.
+- [x] `TestEntriesDirNotIgnoredByCommonGitignorePatterns`: com `*.d`, `*.log`, `*.tmp`, `*.bak` e `*.swp`, o caminho novo não é ignorado; o antigo é ignorado no braço contrário.
+- [x] Junto, foi corrigido `TestReadAll_DotDSymlinkRefused`, que usava `os.Symlink` com `t.Skip` (proibido pelo `check-symlink-privilege-guard`). Medido pelo arquiteto: os 7 pacotes verdes e `spg=0`.
+
 ## Wave 2 — Contexto de trabalho com um arquivo por entrada (ADR D2, AC8)
 > Dependencies: Wave 1 auditada. É sequencial ao ML-1A porque compartilha o pacote `internal/generators`.
 
@@ -113,7 +122,7 @@ go test ./internal/generators/ ./internal/metrics/ ./internal/serve/ ./internal/
 **Files affected:** `internal/generators/agentfiles.go`, os 12 `internal/integrations/assets/agents/*.md`, os goldens, o cabeçalho de
 `docs/agents-working-context.md` e o `CLAUDE.md` do projeto (as linhas que mandam ler e atualizar o contexto)
 **Acceptance criteria:**
-- [ ] Toda instrução gerada manda escrever um arquivo em `docs/agents-working-context.d/` e ler as entradas mais recentes. Um teste
+- [ ] Toda instrução gerada manda escrever um arquivo em `docs/agents-working-context/` e ler as entradas mais recentes. Um teste
       sobre todas as representações do catálogo tem braço negativo (instrução antiga reprova).
 - [ ] O `.md` legado ganha o cabeçalho de redirecionamento e não recebe mais entradas.
 - [ ] Os goldens acompanham, e a mudança aparece no diff.

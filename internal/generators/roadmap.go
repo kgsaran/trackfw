@@ -1184,9 +1184,9 @@ func appendTransitionLogEntry(basename, fromState, toState string) error {
 	// the directory if absent, so we guard the path where it will land.
 	root, rootErr := projectRoot()
 	if rootErr != nil {
-		return pathguard.RefuseUnverifiableRoot(dir+"/.trackfw-log.d", rootErr)
+		return pathguard.RefuseUnverifiableRoot(dir+translog.EntriesDirSuffix, rootErr)
 	}
-	absDotD := filepath.Join(root, dir, ".trackfw-log.d")
+	absDotD := filepath.Join(root, dir, translog.EntriesDirSuffix[1:])
 	if guardErr := pathguard.RejectAndReport(root, absDotD); guardErr != nil {
 		return guardErr
 	}

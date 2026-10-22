@@ -511,7 +511,7 @@ func appendREQTransitionLog(basename, fromState, toState string) {
 	_ = appendREQTransitionLogEntry(basename, fromState, toState)
 }
 
-// appendREQTransitionLogEntry writes one transition line to cfg.REQDir/.trackfw-log.d/,
+// appendREQTransitionLogEntry writes one transition line to cfg.REQDir/.trackfw-log-entries/,
 // refusing rather than writing when containment cannot be established. It is the
 // mirror of roadmap.go's appendTransitionLogEntry — the two are deliberately
 // written as the same shape.
@@ -528,9 +528,9 @@ func appendREQTransitionLogEntry(basename, fromState, toState string) error {
 	// the directory if absent, so we guard the path where it will land.
 	root, rootErr := projectRoot()
 	if rootErr != nil {
-		return pathguard.RefuseUnverifiableRoot(dir+"/.trackfw-log.d", rootErr)
+		return pathguard.RefuseUnverifiableRoot(dir+translog.EntriesDirSuffix, rootErr)
 	}
-	absDotD := filepath.Join(root, dir, ".trackfw-log.d")
+	absDotD := filepath.Join(root, dir, translog.EntriesDirSuffix[1:])
 	if guardErr := pathguard.RejectAndReport(root, absDotD); guardErr != nil {
 		return guardErr
 	}

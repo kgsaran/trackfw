@@ -540,7 +540,7 @@ func Scan(rootDir string) (DiscoveryResult, error) {
 			}
 		}
 
-		// detectar .trackfw-log ou .trackfw-log.d/ dentro de roadmapDir (ML-1A)
+		// detectar .trackfw-log ou .trackfw-log-entries/ dentro de roadmapDir (ML-1A)
 		r.HasTrackfwLog = translog.HasLog(roadmapRoot)
 	}
 

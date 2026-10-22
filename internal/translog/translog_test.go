@@ -1,9 +1,12 @@
 package translog
 
 import (
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -25,7 +28,7 @@ func TestReadAll_LegacyAndDirTogether(t *testing.T) {
 	}
 
 	// One .d/ entry with a later timestamp.
-	dPath := filepath.Join(dir, ".trackfw-log.d")
+	dPath := filepath.Join(dir, EntriesDirSuffix[1:])
 	if err := os.MkdirAll(dPath, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +87,7 @@ func TestWriteEntry_DifferentContentSameNameErrors(t *testing.T) {
 	// Manufacture a collision by writing a different line with the same computed name.
 	// We do this by directly creating the file with a different content.
 	name := EntryFilename(line1, now)
-	dPath := filepath.Join(dir, ".trackfw-log.d")
+	dPath := filepath.Join(dir, EntriesDirSuffix[1:])
 	differentContent := "different content that hash-collides artificially\n"
 	if err := os.WriteFile(filepath.Join(dPath, name), []byte(differentContent), 0644); err != nil {
 		t.Fatal(err)
@@ -97,17 +100,17 @@ func TestWriteEntry_DifferentContentSameNameErrors(t *testing.T) {
 	}
 }
 
-// AFIRMA: um .d/ que é symlink é recusado pelo reader (não seguido cegamente).
+// AFIRMA: um entries/ que é symlink é recusado pelo reader (não seguido cegamente).
 func TestReadAll_DotDSymlinkRefused(t *testing.T) {
 	dir := t.TempDir()
-	dPath := filepath.Join(dir, ".trackfw-log.d")
+	dPath := filepath.Join(dir, EntriesDirSuffix[1:])
 	target := t.TempDir()
-	if err := os.Symlink(target, dPath); err != nil {
-		t.Skip("symlink not supported on this platform")
+	if !symlinkOrSkipTranslog(t, target, dPath) {
+		return
 	}
 	_, err := ReadAll(dir)
 	if err == nil {
-		t.Fatal("expected error when .d/ is a symlink, got nil")
+		t.Fatal("expected error when entries/ is a symlink, got nil")
 	}
 }
 
@@ -115,7 +118,7 @@ func TestReadAll_DotDSymlinkRefused(t *testing.T) {
 // ignorados pelo reader (crash remnants, .DS_Store, future extensions).
 func TestReadAll_NonEntryFilesIgnored(t *testing.T) {
 	dir := t.TempDir()
-	dPath := filepath.Join(dir, ".trackfw-log.d")
+	dPath := filepath.Join(dir, EntriesDirSuffix[1:])
 	if err := os.MkdirAll(dPath, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -143,8 +146,8 @@ func TestReadAll_NonEntryFilesIgnored(t *testing.T) {
 	}
 }
 
-// AFIRMA: o validate com by_agent e um .trackfw-log.d/ não emite agent_namespace_hidden
-// (provado pela adição de .trackfw-log.d a isInfraDirName — verificado no package validator).
+// AFIRMA: o validate com by_agent e um .trackfw-log-entries/ não emite agent_namespace_hidden
+// (provado pela adição de .trackfw-log-entries a isInfraDirName — verificado no package validator).
 // Este teste prova que EntryFilename é determinístico e estável.
 func TestEntryFilename_Deterministic(t *testing.T) {
 	line := "2026-10-22 10:00  ROADMAP-x.md                          backlog → wip"
@@ -234,6 +237,117 @@ func TestReadAll_EmptyDir(t *testing.T) {
 	if len(ts) != 0 {
 		t.Errorf("want 0, got %d", len(ts))
 	}
+}
+
+// AFIRMA: um arquivo escrito por WriteEntry em `.trackfw-log-entries/<name>.entry`
+// NÃO é ignorado por padrões comuns de .gitignore (*.d, *.log, *.tmp, *.bak, *.swp),
+// enquanto o nome antigo `.trackfw-log.d/x.entry` É ignorado pelo padrão *.d.
+// Prova que o rename (ML-1C) corrige o problema real que motivou a renomeação.
+func TestEntriesDirNotIgnoredByCommonGitignorePatterns(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not in PATH")
+	}
+
+	repoDir := t.TempDir()
+
+	// Initialise a git repo.
+	mustRunGit := func(args ...string) {
+		cmd := exec.Command("git", append([]string{"-c", "core.excludesFile="}, args...)...)
+		cmd.Dir = repoDir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	mustRunGit("init")
+	mustRunGit("config", "user.email", "test@example.com")
+	mustRunGit("config", "user.name", "Test")
+
+	// Write a .gitignore with common patterns that historically silenced .d/ dirs.
+	gitignore := "*.d\n*.log\n*.tmp\n*.bak\n*.swp\n"
+	if err := os.WriteFile(filepath.Join(repoDir, ".gitignore"), []byte(gitignore), 0644); err != nil {
+		t.Fatalf("write .gitignore: %v", err)
+	}
+
+	// ── positive arm: WriteEntry creates .trackfw-log-entries/<name>.entry ─
+	// The literal ".trackfw-log-entries" here is the on-disk contract pin.
+	// Changing EntriesDirSuffix without updating this test makes it red.
+	line := "2026-10-22 10:00  ROADMAP-x.md                          backlog → wip"
+	now := time.Date(2026, 10, 22, 10, 0, 0, 0, time.UTC)
+	entryName, writeErr := WriteEntry(repoDir, line, now)
+	if writeErr != nil {
+		t.Fatalf("WriteEntry: %v", writeErr)
+	}
+	newEntryRel := filepath.Join(".trackfw-log-entries", entryName)
+
+	checkIgnoreNew := exec.Command("git", "-c", "core.excludesFile=", "check-ignore", "-v", newEntryRel)
+	checkIgnoreNew.Dir = repoDir
+	if err := checkIgnoreNew.Run(); err == nil {
+		// exit 0 means the file IS ignored — the rename did not fix the problem.
+		t.Errorf("git check-ignore exit 0: .trackfw-log-entries/%s is ignored by .gitignore", entryName)
+	} else {
+		var ee *exec.ExitError
+		if !errors.As(err, &ee) || ee.ExitCode() != 1 {
+			t.Errorf("git check-ignore returned unexpected non-zero %v (want exit 1 = not-ignored)", err)
+		}
+	}
+
+	// ── contrario arm: old name (.trackfw-log.d/) IS ignored by *.d ────────
+	// This arm proves the test bites: the old name would have silenced entries.
+	oldDir := filepath.Join(repoDir, ".trackfw-log.d")
+	if err := os.MkdirAll(oldDir, 0755); err != nil {
+		t.Fatalf("mkdir old .d/: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(oldDir, "x.entry"),
+		[]byte(line+"\n"), 0644); err != nil {
+		t.Fatalf("write old entry: %v", err)
+	}
+
+	checkIgnoreOld := exec.Command("git", "-c", "core.excludesFile=", "check-ignore", "-v", ".trackfw-log.d/x.entry")
+	checkIgnoreOld.Dir = repoDir
+	if err := checkIgnoreOld.Run(); err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) && ee.ExitCode() == 1 {
+			// exit 1 means NOT ignored — the contrario arm does not bite.
+			t.Errorf("git check-ignore exit 1: .trackfw-log.d/x.entry is NOT ignored by *.d — contrario arm does not bite, test is inconclusive")
+		} else {
+			t.Errorf("git check-ignore unexpected error for old path: %v", err)
+		}
+	}
+}
+
+// symlinkOrSkipTranslog creates a symlink at link pointing to target.
+// If creation fails due to missing privilege (Windows without Developer Mode
+// or elevated process — WinError 1314, or permission denied), it skips the
+// test. Any other error is a t.Fatalf.
+//
+// The check is by CONDITION (privilege failure), not by runtime.GOOS.
+func symlinkOrSkipTranslog(t *testing.T, target, link string) bool {
+	t.Helper()
+	err := os.Symlink(target, link)
+	if err == nil {
+		return true
+	}
+	if isSymlinkPrivilegeErrorTranslog(err) {
+		t.Skipf("symlink guard not exercised: creating symlink requires Developer Mode "+
+			"(or elevated process) on this Windows: %v", err)
+		return false
+	}
+	t.Fatalf("os.Symlink(%q, %q): %v", target, link, err)
+	return false
+}
+
+// isSymlinkPrivilegeErrorTranslog reports whether err is a privilege-missing
+// symlink creation failure. Checks by error value, not by GOOS.
+func isSymlinkPrivilegeErrorTranslog(err error) bool {
+	if os.IsPermission(err) {
+		return true
+	}
+	var e syscall.Errno
+	if errors.As(err, &e) && e == 1314 {
+		return true
+	}
+	return false
 }
 
 func equalStringSlices(a, b []string) bool {

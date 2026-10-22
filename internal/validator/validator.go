@@ -1967,11 +1967,13 @@ func resolveAgentNamespaces(cfg config.ProjectConfig, dir string) []string {
 // validateAgentNamespaceUndeclared, porque ali a informação de que é um nome de estado reservado é o
 // sinal relevante, não um sinal de "não é diretório real".
 //
-// ML-1A: .trackfw-log.d is a per-entry log directory and must never be treated as
-// an agent namespace in by_agent mode — it would generate spurious
+// ML-1A: the per-entry log directory (translog.EntriesDirSuffix[1:]) must never be
+// treated as an agent namespace in by_agent mode — it would generate spurious
 // agent_namespace_hidden violations on every project that has run the new writer.
+// ML-1C: the directory was renamed; see the constant comment in internal/translog
+// for the history.
 func isInfraDirName(name string) bool {
-	return name == "node_modules" || name == ".trackfw-log.d"
+	return name == "node_modules" || name == translog.EntriesDirSuffix[1:]
 }
 
 // isDotPrefixedName reporta se name começa com "." — um sinal ambíguo (pode ser um namespace
@@ -2875,7 +2877,7 @@ func validateStaleWIP() ([]string, error) {
 }
 
 func latestWIPTransitionTime(cfg config.ProjectConfig, roadmapPath string) (time.Time, bool, []string) {
-	// ML-1A: use the unified reader so both .trackfw-log (legacy) and .trackfw-log.d/
+	// ML-1A: use the unified reader so both .trackfw-log (legacy) and .trackfw-log-entries/
 	// entries are considered. ReadAll returns nil, nil when neither source exists.
 	tls, err := translog.ReadAll(cfg.RoadmapDir)
 	if err != nil {

@@ -47434,3 +47434,4 @@ que chamam git sem `LookPath`; chmod no discover.
 - apolo-tf, ML-1A: o log tem um arquivo por entrada em `.trackfw-log.d/*.entry`, e o leitor único `internal/translog` substitui os dois parsers. A 1ª entrega foi reprovada e depois corrigida. As mordidas foram medidas, e o `make parity-rest` deu rc=0.
 - ares-tf, ML-1B: os gates de encoding (AC1–AC4) foram corrigidos, e o `--self-test` ficou ligado ao Makefile.
 - Desvio: o apolo-tf escreveu neste arquivo, embora fosse proibido. O conteúdo foi mantido. As memórias do hades-tf e do prometeu-tf foram gravadas no checkout principal, que é o caminho de memória configurado para eles; não mexi.
+- 2026-10-22 — apolo-tf, ML-1C: o diretório agora se chama `.trackfw-log-entries`, com a constante `translog.EntriesDirSuffix`, porque `*.d` no `.gitignore` ignoraria o nome antigo. Há um teste com padrões comuns de `.gitignore`. Medido pelo arquiteto: 7 pacotes verdes.
