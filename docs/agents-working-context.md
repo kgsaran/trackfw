@@ -47313,3 +47313,7 @@ que chamam git sem `LookPath`; chmod no discover.
 ## 2026-10-21 — zeus-tf — PR #595 aberto (REQ-2026-10-20)
 
 - PR https://github.com/kgsaran/trackfw/pull/595 aberto a pedido do KG; sem merge. Todos os ACs marcados, make quality verde. REQ fecha pós-merge. Depois de uma release, `trackfw update harness` migra os configs globais do KG (inclusive o workaround /bin/bash -c).
+## 2026-10-21 — zeus-tf — FIM: REQ-2026-09-05 (instalação Windows) encerrada
+
+- PR #592 mergeado (3c0cc1f2, 2026-10-21T19:48:48Z), conforme informado pelo KG e conferido no GitHub. Roadmap movido para done/ com `trackfw roadmap move`, REQ com status Done e ponteiros sincronizados. validate: 0 violações, 166 avisos. Branch docs/encerra-req-instalacao-windows.
+- VM: `C:\Users\Lab\bin\trackfw.exe` = build da branch (backup .bak-28d6d018); pip/npm sem trackfw.
