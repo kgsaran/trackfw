@@ -82,7 +82,8 @@ Medido em 2026-10-22, com `strconv.Quote` e depois `tomllib` no Python 3.15:
 - no TOML 1.0, que a CLI de destino pode estar usando, o arquivo inteiro deixa de carregar.
 O `description` recebe o `DisplayName` da identidade configurada pelo usuário (`render.go:210`).
 
-- [ ] **AC7** — Os quatro campos do TOML do Codex são serializados como *basic string* do TOML 1.0: só `\b \t \n \f \r \" \\` e `\uXXXX` para os demais caracteres de controle. Há falsificação nas duas direções: a saída para entradas com 0x00–0x1F, 0x7F e UTF-8 inválido é TOML 1.0 válido, e a versão antiga (`strconv.Quote`) reprova no mesmo teste.
+- [ ] **AC7** — Os quatro campos do TOML do Codex são serializados como *basic string* do TOML 1.0: só `\b \t \n \f \r \" \\` e `\uXXXX` para os demais caracteres de controle. Há falsificação nas duas direções: a saída para entradas com 0x00–0x1F e 0x7F é TOML 1.0 válido e decodifica de volta à entrada; UTF-8 inválido é recusado com erro, sem arquivo escrito (decisão do arquiteto em 2026-10-22, alinhada a `render.go:665`); e a versão antiga (`strconv.Quote`) reprova no mesmo teste.
+- [ ] **AC8** — Mesma família, achada na Wave 0 da ampliação: o escape YAML não deixa sair byte de controle cru; `identity.Load` valida o slug e recusa DEL e C1; as referências de terceiro não corrompem o TOML nem o JSON do destino.
 
 ## Negative scope — o que esta REQ NÃO faz
 
