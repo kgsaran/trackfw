@@ -42,7 +42,7 @@ REQ: docs/req/REQ-2026-09-26-o-harness-do-arquiteto-nao-proibe-sobrepor-o-modelo
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model e enumeração da classe
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** hades-tf
 **Files affected:** `docs/seguranca/2026-10-22-wave0-model-override.md` (novo, único arquivo)
 **Actions:**
@@ -57,8 +57,10 @@ REQ: docs/req/REQ-2026-09-26-o-harness-do-arquiteto-nao-proibe-sobrepor-o-modelo
    custom-agent-toml/codex e as demais que o catálogo emitir para o architect).
 5. Resíduo declarado: o harness gera instrução e não intercepta a chamada (escopo negativo da REQ).
 **Acceptance criteria:**
-- [ ] As cinco seções respondidas com evidência (arquivo:linha ou comando e saída)
-- [ ] Nenhuma linha de implementação escrita
+- [x] As cinco seções respondidas com evidência (arquivo:linha ou comando e saída)
+- [x] Nenhuma linha de implementação escrita
+
+**Auditoria do arquiteto (2026-10-22):** aprovada. Conferido no código: só `architect.md` tem `Agent` em `tools:`; os destinos `agent-json`/`cli-agent-json` (`render.go:230-234`), `opencode-agent` (`render.go:280-289`) e o `cursor` sem mapeamento (`render.go:309`) não emitem `model:`. Por isso o texto do ML-1A ganhou uma cláusula para arquivo sem `model:`; a cláusula fica dentro do escopo, porque não muda o modelo de nenhum agente. AC4: nenhum outro contrato da mesma classe.
 
 **Gates da wave:**
 ```bash
@@ -77,7 +79,7 @@ test -s docs/seguranca/2026-10-22-wave0-model-override.md
 **Actions:**
 1. Em `architect.md`, dentro de `## Dispatch contract`, logo depois do parágrafo atual (linha 41), insira uma linha em
    branco e este parágrafo, exatamente como está:
-   `Never pass the Agent tool's \`model\` parameter. Read two fields from the installed agent file before every dispatch: \`name:\` is the value you pass as \`subagent_type\`; \`model:\` is the project's cost routing for that role — the project's decision, not yours. The \`model\` parameter overrides that frontmatter silently: no error, no warning, and the cost only shows on the bill. If a task seems to need a different model, tell the user and let them change the agent's configuration; never override it in the call.`
+   `Never pass the Agent tool's \`model\` parameter. Read two fields from the installed agent file before every dispatch: \`name:\` is the value you pass as \`subagent_type\`; \`model:\` is the project's cost routing for that role — the project's decision, not yours. The \`model\` parameter overrides that routing silently: no error, no warning, and the cost only shows on the bill. If the installed file has no \`model:\` field, the target CLI applies its own configured default, and that default is the project's routing too. If a task seems to need a different model, tell the user and let them change the agent's configuration; never override it in the call.`
    Não renomeie a seção nem altere o parágrafo existente.
 2. Regenere os dois goldens a partir do render, sem editar à mão, e confira que o diff deles é só o parágrafo novo.
 3. Em `render_test.go`, crie `TestArchitectDispatchContractForbidsModelOverride`, com um subteste por representação
@@ -86,6 +88,13 @@ test -s docs/seguranca/2026-10-22-wave0-model-override.md
    - braço negativo: o asset com o parágrafo removido. Use `strings.Replace` **e verifique que a fonte mudou** (sem isso, o
      braço negativo passa vazio). A mesma checagem tem de reprovar.
    Depois, acrescente ao comentário de re-congelamento (perto da linha 739) uma linha que cite a REQ-2026-09-26.
+4. Defesas exigidas pela Wave 0 (`docs/seguranca/2026-10-22-wave0-model-override.md`):
+   - percorra os destinos e representações do catálogo (`catalog.Targets`), sem lista fixa. Exija que o conjunto coberto
+     não seja vazio e que inclua `subagent`, `custom-agent-toml`, `agent-directory`, `agent-json`, `cli-agent-json` e `opencode-agent`;
+   - normalize o CRLF da fonte antes do `strings.Replace` (veja `TestRenderWithoutIdentityMatchesFrozenGoldens_CRLFSource`);
+   - verifique que as frases estão **dentro** da seção, entre `## Dispatch contract` e o `##` seguinte;
+   - no TOML do codex, decodifique `developer_instructions` antes de verificar; no JSON (`agent-json`/`cli-agent-json`), decodifique `prompt`;
+   - inclua subcasos com `zeusIdentity()` (identidade customizada).
 **Acceptance criteria:**
 - [ ] `go build ./...` com rc=0
 - [ ] `go test ./internal/integrations/ ./internal/thirdparty/` com rc=0

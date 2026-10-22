@@ -47333,3 +47333,14 @@ que chamam git sem `LookPath`; chmod no discover.
 
 - Primeiro item da ordem aprovada pelo KG (5 → 4 → 1 → 3 → 2 → 6). Roadmap reescrito contra a main 3be3375c e movido para wip/. Worktree /private/tmp/trackfw-model-override.
 - Plano: a Wave 0 (hades-tf) faz o threat model e a enumeração da classe; o ML-1A (prometeu-tf) faz o parágrafo, os goldens e um teste semântico com braço negativo; a Wave 2 traz a revisão do hefesto-tf e o red team do hades-tf.
+
+## 2026-10-22 — hades-tf — INÍCIO: Wave 0 ML-0A REQ-2026-09-26 (model-override)
+
+- Threat model e enumeração da classe: `docs/seguranca/2026-10-22-wave0-model-override.md`.
+- Escopo: `internal/integrations/assets/agents/architect.md` + testdata goldens + `internal/thirdparty/markers.go` para contexto de marcador.
+
+## 2026-10-22 — hades-tf — FIM: Wave 0 ML-0A REQ-2026-09-26 (model-override)
+
+- Artefato: `docs/seguranca/2026-10-22-wave0-model-override.md` (novo). Gate `test -s`: OK.
+- Veredito: ML-1A pode seguir com um ajuste — texto do parágrafo precisa de cláusula para destinos sem `model:` (§3.d). Cinco defesas adicionais para o teste listadas no veredito.
+- git status --short do worktree: `M docs/agents-working-context.md`, `?? docs/seguranca/2026-10-22-wave0-model-override.md`.
