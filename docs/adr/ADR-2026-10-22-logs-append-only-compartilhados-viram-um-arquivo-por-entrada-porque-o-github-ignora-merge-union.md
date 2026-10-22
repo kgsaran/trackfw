@@ -44,13 +44,13 @@ entre três opções: arquivo por entrada, manter `union` e documentar, ou inser
 
 ### D1. Log de transições
 
-- **Escrita:** cada transição cria `<dir>/.trackfw-log.d/<AAAAMMDDTHHMMSSZ>-<h8>.entry`, onde `<dir>` é o
+- **Escrita:** cada transição cria `<dir>/.trackfw-log-entries/<AAAAMMDDTHHMMSSZ>-<h8>.entry`, onde `<dir>` é o
   mesmo diretório de hoje (`roadmap_dir` ou `req_dir`). O timestamp é em UTC, sem `:` (que o Windows não
   aceita), e `<h8>` são os 8 primeiros hex do SHA-256 da linha. O conteúdo é **uma linha**, no formato
   atual, para reaproveitar o parser. Duas branches que gerem a mesma entrada criam o mesmo arquivo com o
   mesmo conteúdo, e isso não conflita.
 - **Leitura, por um ponto único:** o `.trackfw-log` legado (se existir) e todos os `*.entry` de
-  `.trackfw-log.d/`, ordenados pelo timestamp da linha já parseado com o fuso, com desempate pelo nome do
+  `.trackfw-log-entries/`, ordenados pelo timestamp da linha já parseado com o fuso, com desempate pelo nome do
   arquivo. Os dois parsers atuais (`internal/metrics/metrics.go` e `internal/serve/metrics_log.go`) viram
   um só. Pela Regra Dura, esta ADR não está satisfeita enquanto sobrar um leitor que leia só o arquivo.
 - **Legado:** o `.trackfw-log` existente fica **congelado**. Ele é lido, mas nunca reescrito nem migrado.
@@ -61,12 +61,12 @@ entre três opções: arquivo por entrada, manter `union` e documentar, ou inser
 
 ### D2. Contexto de trabalho dos agentes
 
-- **Escrita:** cada entrada vira `docs/agents-working-context.d/<AAAAMMDDTHHMMSSZ>-<agente>-<slug-do-assunto>.md`, com o
+- **Escrita:** cada entrada vira `docs/agents-working-context/<AAAAMMDDTHHMMSSZ>-<agente>-<slug-do-assunto>.md`, com o
   mesmo formato de bloco de hoje (`## <data> — <agente> — <INÍCIO|FIM>: <assunto>` e os bullets).
 - **`docs/agents-working-context.md`** fica congelado como histórico, com um cabeçalho de
   redirecionamento no topo. Ele deixa de ser o lugar de escrita.
 - **Leitura:** a instrução gerada passa a ser "leia as entradas mais recentes de
-  `docs/agents-working-context.d/`". Se um subcomando de leitura for criado (por exemplo, `trackfw context`
+  `docs/agents-working-context/`". Se um subcomando de leitura for criado (por exemplo, `trackfw context`
   mostrando as N últimas), quem decide é a Wave 0 da REQ, com o caminho escrito no roadmap.
 - **Instruções geradas:** `agentfiles.go`, os 12 assets e os goldens mudam juntos.
 
@@ -84,7 +84,11 @@ assim que o defeito ficou invisível.
   `git check-ignore` confirma que a entrada seria ignorada. O arquivo existiria só localmente, e o forge nunca veria o
   formato novo. Uma negação no `.gitignore` foi descartada: ela não vale quando o diretório pai já está ignorado e
   depende do arquivo do adotante. Nenhum template conhecido ignora `*.entry`.
-- **`by_agent`:** `.trackfw-log.d` entra em `isInfraDirName` (`validator.go:1968`). Sem isso, o `hiddenNamespaceWarnings`
+- **Diretórios sem sufixo `.d`** (corrigido pelo arquiteto em 2026-10-22, depois da Wave 1). A Wave 0 também mediu que um
+  `*.d` no `.gitignore` ignora o diretório inteiro, e esse padrão é comum: o `C++.gitignore` do GitHub abre com `*.d`, por
+  causa dos arquivos de dependência. O arquiteto incorporou só a parte da extensão e deixou passar o nome do diretório, e o
+  ML-1A foi entregue com `.trackfw-log.d`. Os nomes passam a ser `.trackfw-log-entries/` e `docs/agents-working-context/`.
+- **`by_agent`:** `.trackfw-log-entries` entra em `isInfraDirName` (`validator.go:1968`). Sem isso, o `hiddenNamespaceWarnings`
   (`validator.go:2103`) o trata como namespace de agente oculto. Isso foi medido.
 - **D2 sem hash:** quem escreve a entrada de contexto é um LLM, que não calcula SHA-256. O sufixo vira um slug curto do
   assunto, escolhido pelo agente. Dois agentes diferentes no mesmo segundo nunca colidem, porque o nome do agente está no
@@ -99,7 +103,7 @@ assim que o defeito ficou invisível.
 
 - O conflito desaparece no GitHub, no GitLab e no Bitbucket, para os dois arquivos e para todo adotante.
 - Os leitores do log passam a ler um diretório. Todo código que percorre `roadmap_dir` ou `req_dir`
-  precisa ignorar `.trackfw-log.d/`, como já ignora o `.trackfw-log` (veja `roadmap.go:1040-1046`).
+  precisa ignorar `.trackfw-log-entries/`, como já ignora o `.trackfw-log` (veja `roadmap.go:1040-1046`).
 - O repositório ganha muitos arquivos pequenos: um por transição e um por entrada de contexto.
 - **Transição:** as cópias instaladas das instruções (os agentes em `~/.claude/agents`, o
   `~/.claude/CLAUDE.md` do usuário) continuam mandando anexar no `.md` até o `trackfw agents update`
