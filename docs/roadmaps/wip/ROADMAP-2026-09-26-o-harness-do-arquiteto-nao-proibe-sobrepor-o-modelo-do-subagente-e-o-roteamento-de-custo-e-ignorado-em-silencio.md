@@ -161,7 +161,7 @@ test -s docs/seguranca/2026-10-22-red-team-model-override.md
 **Status:** ⬜ Pendente
 **Agente:** zeus-tf (execução de gate, sem código)
 **Acceptance criteria:**
-- [ ] `make quality` com rc=0, com a máquina ociosa e o HOME isolado
+- [x] `make quality` com rc=0, com a máquina ociosa e o HOME isolado. Medido em 2026-10-22 no HEAD da branch: falsificação com 8 chunks, 368 OK / 0 FAIL, `packaging` e `pyyaml` por venv.
 - [ ] CI do PR verde
 
 ---
