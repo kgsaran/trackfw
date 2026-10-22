@@ -71,7 +71,7 @@ test -s docs/seguranca/2026-10-22-wave0-model-override.md
 > Dependencies: Wave 0 auditada pelo arquiteto.
 
 ### ML-1A — Proibição no Dispatch contract, goldens e teste semântico
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** prometeu-tf
 **Files affected:** `internal/integrations/assets/agents/architect.md`, `internal/integrations/testdata/architect.subagent.golden.md`,
 `internal/integrations/testdata/architect.agent-directory.golden.md`, `internal/integrations/render_test.go`
@@ -96,10 +96,12 @@ test -s docs/seguranca/2026-10-22-wave0-model-override.md
    - no TOML do codex, decodifique `developer_instructions` antes de verificar; no JSON (`agent-json`/`cli-agent-json`), decodifique `prompt`;
    - inclua subcasos com `zeusIdentity()` (identidade customizada).
 **Acceptance criteria:**
-- [ ] `go build ./...` com rc=0
-- [ ] `go test ./internal/integrations/ ./internal/thirdparty/` com rc=0
-- [ ] Prova de mordida: com o parágrafo removido de `architect.md`, o teste novo reprova; restaurado, passa (registrar as duas saídas)
-- [ ] O relatório declara, para cada teste novo, a conclusão do ML que ele afirma, em uma frase (Regra Dura de Reconciliação)
+- [x] `go build ./...` com rc=0
+- [x] `go test ./internal/integrations/ ./internal/thirdparty/` com rc=0
+- [x] Prova de mordida: com o parágrafo removido de `architect.md`, o teste novo reprova; restaurado, passa (registrar as duas saídas)
+- [x] O relatório declara, para cada teste novo, a conclusão do ML que ele afirma, em uma frase (Regra Dura de Reconciliação)
+
+**Auditoria do arquiteto (2026-10-22):** a 1ª entrega foi reprovada: o braço negativo não chamava a mesma checagem do positivo e a frase do motivo nunca era exercida. O corretivo criou os braços `negative/no-paragraph` e `negative/no-rationale`, ambos exigindo `checkPhrases != ""`. Medido pelo arquiteto: 49 PASS (1 + 12 positivos + 12 com `zeusIdentity` + 24 negativos). Mordida: com `phrase2` inválida os positivos reprovam; com `checkPhrases` neutralizada os 24 negativos reprovam.
 
 **Gates da wave:**
 ```bash

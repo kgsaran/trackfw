@@ -1,5 +1,35 @@
 # agents-working-context.md
 
+## 2026-10-22 — prometeu-tf — FIM: corretivo ML-1A (REQ-2026-09-26) — braço negativo reescrito
+
+- Defeito corrigido: braço `negative` não chamava `checkPhrases` e só afirmava que phrase1 sumiu; phrase2 nunca era exercida.
+- Correção: removidos `modifiedSource` e o antigo `t.Run("negative", ...)`. Adicionados `noParagraph` (parágrafo inteiro removido via slice do índice de `paragraphNeedle` até fim da linha, com `\n` precedente) e `noRationale` (apenas a frase de rationale removida), ambos com guarda `bytes.Equal`. Dois subtestes por target: `negative/no-paragraph` e `negative/no-rationale`, ambos chamam `checkPhrases` e exigem retorno não-vazio.
+- vet=0, test=0 (integrations + thirdparty). Subtestes negativos: 24 (12 targets × 2 braços).
+- Prova de mordida 1 (phrase2=XYZ-nunca): positivos FAIL, negativos PASS.
+- Prova de mordida 2 (checkPhrases=return ""): positivos PASS, negativos FAIL — ambos os braços.
+- Arquivo de código alterado nesta sessão: somente `internal/integrations/render_test.go`.
+- Worktree: `/private/tmp/trackfw-model-override`. Branch: `fix/arquiteto-nao-sobrepoe-modelo-do-subagente`.
+
+## 2026-10-22 — prometeu-tf — INÍCIO: corretivo ML-1A (REQ-2026-09-26) — braço negativo
+
+- Escopo: corrigir `TestArchitectDispatchContractForbidsModelOverride` — braço negativo não chamava checkPhrases, phrase2 não exercida.
+- Único arquivo permitido: `internal/integrations/render_test.go`.
+- Worktree: `/private/tmp/trackfw-model-override`. Branch: `fix/arquiteto-nao-sobrepoe-modelo-do-subagente`.
+
+## 2026-10-22 — prometeu-tf — FIM: ML-1A para REQ-2026-09-26 (proibição de model no Dispatch contract)
+
+- Build=0, vet=0, `go test ./internal/integrations/ ./internal/thirdparty/` test=0.
+- `trackfw validate`: exit=0, 164 warnings pré-existentes, zero erros.
+- Sítios alterados: `internal/integrations/assets/agents/architect.md` (+2 linhas: blank + parágrafo da proibição), `internal/integrations/testdata/architect.subagent.golden.md` (+2), `internal/integrations/testdata/architect.agent-directory.golden.md` (+2), `internal/integrations/render_test.go` (+200: imports bytes+fmt, helpers extractBodyText/extractDispatchSection, TestArchitectDispatchContractForbidsModelOverride com 36 subtests, linha no comentário de re-congelamento).
+- Novo teste: `TestArchitectDispatchContractForbidsModelOverride` — 12 targets × 3 braços (positivo sem identidade, positivo com zeusIdentity(), negativo). Subtests: claude/cli, codex/cli, gemini/cli, antigravity/current, antigravity/legacy-cli, cursor/ide, copilot/ide, windsurf/ide, amazonq/cli, opencode/cli, kiro/ide, kiro/cli, cada um com /zeus e /negative.
+- Prova de mordida: com parágrafo removido → FAIL ("strings.Replace did not find paragraphNeedle"); com parágrafo presente → PASS.
+- Worktree: `/private/tmp/trackfw-model-override`. Branch: `fix/arquiteto-nao-sobrepoe-modelo-do-subagente`.
+
+## 2026-10-22 — prometeu-tf — INÍCIO: ML-1A para REQ-2026-09-26 (proibição de model no Dispatch contract)
+
+- Escopo: inserir parágrafo de proibição em architect.md, reger goldens, criar TestArchitectDispatchContractForbidsModelOverride.
+- Worktree: `/private/tmp/trackfw-model-override`. Branch: `fix/arquiteto-nao-sobrepoe-modelo-do-subagente`.
+
 ## 2026-10-21 — apolo-tf — FIM: ML-1C para REQ-2026-10-20 (discriminantes B-1 Codex+Gemini)
 
 - Vet limpo. Suite completa: `ok internal/generators 65s`.

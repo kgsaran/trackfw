@@ -1,7 +1,9 @@
 package integrations
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -740,6 +742,11 @@ func TestBuildPlansDefaultsToFirstNonLegacySurface(t *testing.T) {
 // audit", tornando explícito que nomear um especialista em prosa/`squad:` não roteia a chamada da
 // Agent tool — todo dispatch exige o parâmetro `subagent_type`, cujo valor correto é o `name:` do
 // agente instalado do role-alvo (identity-agnostic, nunca um nome fixo).
+//
+// Re-congelado em 2026-10-22 pela REQ-2026-09-26-o-harness-do-arquiteto-nao-proibe-sobrepor-o-modelo-do-subagente-e-o-roteamento-de-custo-e-ignorado-em-silencio:
+// architect.md ganhou um segundo parágrafo em "## Dispatch contract" proibindo explicitamente
+// passar o parâmetro `model` do Agent tool, com a razão escrita (roteamento de custo é decisão
+// do projeto, silenciosamente sobrescrita sem erro ou aviso quando `model` é passado).
 
 func readGolden(t *testing.T, name string) []byte {
 	t.Helper()
@@ -1520,3 +1527,240 @@ func TestRenderSubagentRouteRewritesSignatureLine(t *testing.T) {
 		t.Fatalf("título da assinatura não preservado:\n%s", output)
 	}
 }
+
+// extractBodyText returns the decoded body text for the given representation.
+// For custom-agent-toml, it decodes developer_instructions via strconv.Unquote.
+// For agent-json and cli-agent-json, it decodes the "prompt" field from JSON.
+// For all other representations, it returns the full output as a string.
+func extractBodyText(t *testing.T, output []byte, repr string) string {
+	t.Helper()
+	out := string(output)
+	switch repr {
+	case "custom-agent-toml":
+		const marker = "developer_instructions = "
+		idx := strings.Index(out, marker)
+		if idx < 0 {
+			t.Fatalf("developer_instructions not found in custom-agent-toml output")
+		}
+		valuePart := out[idx+len(marker):]
+		if nl := strings.Index(valuePart, "\n"); nl >= 0 {
+			valuePart = valuePart[:nl]
+		}
+		decoded, err := strconv.Unquote(valuePart)
+		if err != nil {
+			t.Fatalf("strconv.Unquote failed for developer_instructions: %v\nraw: %q", err, valuePart)
+		}
+		return decoded
+	case "agent-json", "cli-agent-json":
+		var m map[string]string
+		if err := json.Unmarshal(output, &m); err != nil {
+			t.Fatalf("json.Unmarshal failed for %s: %v", repr, err)
+		}
+		return m["prompt"]
+	default:
+		return out
+	}
+}
+
+// extractDispatchSection returns the body text between the "## Dispatch contract"
+// heading and the next "## " heading. Returns an empty string if the section
+// is not found. Used by TestArchitectDispatchContractForbidsModelOverride to
+// assert location: phrases must be inside the section, not in another section
+// or in a comment elsewhere in the body.
+func extractDispatchSection(body string) string {
+	const header = "## Dispatch contract"
+	idx := strings.Index(body, header)
+	if idx < 0 {
+		return ""
+	}
+	afterHeader := body[idx+len(header):]
+	nl := strings.Index(afterHeader, "\n")
+	if nl < 0 {
+		return ""
+	}
+	content := afterHeader[nl+1:]
+	if next := strings.Index(content, "\n## "); next >= 0 {
+		return content[:next]
+	}
+	return content
+}
+
+// TestArchitectDispatchContractForbidsModelOverride asserts that the prohibition
+// on passing the Agent tool's `model` parameter is present inside the
+// ## Dispatch contract section in every representation the catalog emits for
+// the architect agent. It exercises four arms per representation:
+//   - positive (no identity): both required phrases are in the section;
+//   - positive (zeusIdentity): identity injection does not destroy the section;
+//   - negative/no-paragraph: entire prohibition paragraph removed — checkPhrases
+//     rejects the output, proving phrase1 and phrase2 checks have real bite;
+//   - negative/no-rationale: only the cost-routing rationale sentence removed —
+//     checkPhrases rejects the output, proving phrase2 check has real bite even
+//     when phrase1 is still present.
+//
+// REQ: REQ-2026-09-26-o-harness-do-arquiteto-nao-proibe-sobrepor-o-modelo-do-subagente-e-o-roteamento-de-custo-e-ignorado-em-silencio
+func TestArchitectDispatchContractForbidsModelOverride(t *testing.T) {
+	catalog, err := LoadCatalog()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	item, ok := catalog.Item(KindAgents, "architect")
+	if !ok {
+		t.Fatal("agente 'architect' não encontrado no catalog")
+	}
+	source, err := catalog.ReadAsset(item)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Normalize CRLF so the needle works regardless of line-ending convention
+	// in the embedded asset (see TestRenderWithoutIdentityMatchesFrozenGoldens_CRLFSource).
+	source = NormalizeCRLF(source)
+
+	// paragraphNeedle is the first sentence of the new paragraph — no newlines,
+	// to avoid CRLF fragility (wave 0 §4.2). It is a substring of phrase1, so
+	// removing it from the source also removes phrase1 from all rendered outputs.
+	const paragraphNeedle = "Never pass the Agent tool's `model` parameter."
+	// phrase1 and phrase2 are the two semantic anchors that must appear inside
+	// the ## Dispatch contract section in every rendered representation.
+	const phrase1 = "Never pass the Agent tool's `model` parameter"
+	const phrase2 = "`model:` is the project's cost routing"
+
+	// noParagraph: entire prohibition paragraph removed, including its preceding
+	// blank line. The needle is derived by slicing from paragraphNeedle's position
+	// to the end of the line, then prepending \n to absorb the blank separator.
+	// bytes.Equal guard catches vacuity if the needle is not found (wave 0 §4.2).
+	var noParagraph []byte
+	{
+		idx := bytes.Index(source, []byte(paragraphNeedle))
+		if idx < 0 {
+			t.Fatal("paragraphNeedle not found in source; cannot build noParagraph needle — " +
+				"verify CRLF normalization and paragraph text in architect.md")
+		}
+		end := bytes.IndexByte(source[idx:], '\n')
+		var paraLine []byte
+		if end < 0 {
+			paraLine = source[idx:]
+		} else {
+			paraLine = source[idx : idx+end+1] // include trailing \n
+		}
+		needle := append([]byte("\n"), paraLine...)
+		noParagraph = bytes.Replace(source, needle, []byte{}, 1)
+	}
+	if bytes.Equal(noParagraph, source) {
+		t.Fatal("noParagraph vacuity guard: bytes.Equal — blank+paragraph needle not found in source; " +
+			"negative/no-paragraph arm would be vacuous; verify CRLF normalization and paragraph text")
+	}
+
+	// noRationale: same source but with the cost-routing rationale sentence removed,
+	// leaving the prohibition ("Never pass…") intact. After removal phrase2 is absent
+	// but phrase1 is still present — exercises the phrase2 check in checkPhrases.
+	const rationalePhrase = "`model:` is the project's cost routing for that role — the project's decision, not yours. "
+	noRationale := []byte(strings.Replace(string(source), rationalePhrase, "", 1))
+	if bytes.Equal(noRationale, source) {
+		t.Fatal("noRationale vacuity guard: bytes.Equal — rationale phrase not found in source; " +
+			"negative/no-rationale arm would be vacuous; verify text in architect.md")
+	}
+
+	// checkPhrases returns a non-empty message if either required phrase is
+	// absent from the ## Dispatch contract section of the decoded body.
+	// checkPhrases returns a non-empty message if either required phrase is
+	// absent from the ## Dispatch contract section of the decoded body.
+	checkPhrases := func(body string) string {
+		section := extractDispatchSection(body)
+		if section == "" {
+			return "## Dispatch contract section not found in decoded body"
+		}
+		if !strings.Contains(section, phrase1) {
+			return fmt.Sprintf("phrase1 absent from ## Dispatch contract section:\n%q", section)
+		}
+		if !strings.Contains(section, phrase2) {
+			return fmt.Sprintf("phrase2 absent from ## Dispatch contract section:\n%q", section)
+		}
+		return ""
+	}
+
+	coveredReprs := make(map[string]bool)
+	requiredReprs := []string{
+		"subagent", "custom-agent-toml", "agent-directory",
+		"agent-json", "cli-agent-json", "opencode-agent",
+	}
+
+	for _, tgt := range catalog.Targets {
+		tgt := tgt
+		for _, surf := range tgt.Surfaces {
+			surf := surf
+			cap := surf.Capabilities.Agents
+			if cap.Representation == "" || cap.SupportLevel == "unsupported" {
+				continue
+			}
+			coveredReprs[cap.Representation] = true
+			capability := Capability{Representation: cap.Representation}
+
+			t.Run(tgt.ID+"/"+surf.ID, func(t *testing.T) {
+				// Positive: no identity.
+				out, err := Render(item, KindAgents, capability, source, identity.Config{}, tgt.ID, nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				body := extractBodyText(t, out, cap.Representation)
+				if msg := checkPhrases(body); msg != "" {
+					t.Errorf("positive (no identity): %s", msg)
+				}
+
+				// Positive: zeus identity — injected greeting and rewritten
+				// name/signature must not destroy the section in the middle.
+				t.Run("zeus", func(t *testing.T) {
+					out, err := Render(item, KindAgents, capability, source, zeusIdentity(), tgt.ID, nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+					body := extractBodyText(t, out, cap.Representation)
+					if msg := checkPhrases(body); msg != "" {
+						t.Errorf("positive (zeusIdentity): %s", msg)
+					}
+				})
+
+				// Negative (no-paragraph): entire prohibition paragraph removed from source.
+				// checkPhrases must reject the rendered output — both phrase1 and phrase2
+				// are absent. This asserts that phrase1 and phrase2 checks have real bite.
+				t.Run("negative/no-paragraph", func(t *testing.T) {
+					out, err := Render(item, KindAgents, capability, noParagraph, identity.Config{}, tgt.ID, nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+					body := extractBodyText(t, out, cap.Representation)
+					if msg := checkPhrases(body); msg == "" {
+						t.Errorf("negative/no-paragraph: checkPhrases passed on source missing the prohibition paragraph — guard has no bite (repr=%s)", cap.Representation)
+					}
+				})
+
+				// Negative (no-rationale): cost-routing rationale sentence removed; the
+				// prohibition ("Never pass…") is still present but phrase2 is absent.
+				// checkPhrases must reject the output, proving phrase2 check has real bite.
+				t.Run("negative/no-rationale", func(t *testing.T) {
+					out, err := Render(item, KindAgents, capability, noRationale, identity.Config{}, tgt.ID, nil)
+					if err != nil {
+						t.Fatal(err)
+					}
+					body := extractBodyText(t, out, cap.Representation)
+					if msg := checkPhrases(body); msg == "" {
+						t.Errorf("negative/no-rationale: checkPhrases passed on source missing the cost-routing rationale — phrase2 check has no bite (repr=%s)", cap.Representation)
+					}
+				})
+			})
+		}
+	}
+
+	// Coverage check: the catalog iteration must have produced the required set
+	// of representations. A missing entry means a future target escaped the test.
+	if len(coveredReprs) == 0 {
+		t.Fatal("catalog yielded zero covered representations — loop logic error")
+	}
+	for _, r := range requiredReprs {
+		if !coveredReprs[r] {
+			t.Errorf("required representation %q not covered by catalog iteration — add it or remove from requiredReprs", r)
+		}
+	}
+}
+
