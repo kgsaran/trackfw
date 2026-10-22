@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-26
 req: "docs/req/REQ-2026-09-26-o-harness-do-arquiteto-nao-proibe-sobrepor-o-modelo-do-subagente-e-o-roteamento-de-custo-e-ignorado-em-silencio.md"
 squad: "hades-tf, prometeu-tf, hefesto-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, prometeu-tf, hefesto-tf"
 
 # Roadmap: o harness do arquiteto nao proibe sobrepor o modelo do subagente e o roteamento de custo e ignorado em silencio
 
-> Created: 2026-09-26 | Status: wip | Reescrito contra a main 3be3375c (v10.1.0) em 2026-10-22
+> Created: 2026-09-26 | Status: done | Reescrito contra a main 3be3375c (v10.1.0) em 2026-10-22
 
 ## Context
 REQ: docs/req/REQ-2026-09-26-o-harness-do-arquiteto-nao-proibe-sobrepor-o-modelo-do-subagente-e-o-roteamento-de-custo-e-ignorado-em-silencio.md
@@ -33,7 +33,7 @@ REQ: docs/req/REQ-2026-09-26-o-harness-do-arquiteto-nao-proibe-sobrepor-o-modelo
 - [x] AC3. Há falsificação nas duas direções: a renderização do architect **sem** o parágrafo reprova; **com** ele, passa. Vale em toda representação que o catálogo emite para o architect.
 - [x] AC4. A enumeração de outros contratos da mesma classe fica escrita, mesmo que dê "nenhum" (Wave 0).
 - [x] AC5. Os goldens acompanham a mudança, e ela aparece no diff.
-- [ ] AC6. `make quality` e o CI ficam verdes.
+- [x] AC6. `make quality` e o CI ficam verdes.
 - [x] AC7. O TOML do Codex é serializado como basic string do TOML 1.0 (Wave 4, ML-4A e ML-4F).
 - [x] AC8. O escape YAML não deixa sair byte de controle cru (verificado por enumeração), o `identity.Load` valida o slug e recusa DEL, C1 e não-caracteres, e as referências de terceiro não corrompem o TOML nem o JSON (ML-4B, 4C, 4D e 4F).
 
@@ -236,11 +236,11 @@ test -s docs/seguranca/2026-10-22-red-team-model-override.md
 > Dependencies: Wave 2 aprovada.
 
 ### ML-3A — make quality e CI
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** zeus-tf (execução de gate, sem código)
 **Acceptance criteria:**
 - [x] `make quality` com rc=0, com a máquina ociosa e o HOME isolado. Medido em 2026-10-22 no HEAD da branch: falsificação com 8 chunks, 368 OK / 0 FAIL, `packaging` e `pyyaml` por venv.
-- [ ] CI do PR verde
+- [x] CI do PR verde: #598 (Waves 0–3) e #600 (Wave 4, 20/20 jobs no a9f055ed, inclusive o `windows-full-suites`), ambos mergeados (ed910c22, 75642ec5)
 - [x] `make quality` refeito depois da Wave 4: rc=0, falsificação com 368 OK / 0 FAIL (HEAD 459762a7, HOME isolado). O CI do 459762a7 passou em todos os jobs, menos o `windows-full-suites`, que ainda estava pendente quando isto foi registrado.
 
 ---
