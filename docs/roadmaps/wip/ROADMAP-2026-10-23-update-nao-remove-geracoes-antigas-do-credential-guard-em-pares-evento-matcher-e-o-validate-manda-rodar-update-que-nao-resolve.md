@@ -225,22 +225,35 @@ agora: o credential guard do Amazon Q não migra `CredentialLegacyPSPOSIX`, enqu
 - [x] Parecer: 15 ataques, 14 PASS; B1 (Copilot: `view` e `create|edit` somem com o global instalado) — `docs/seguranca/2026-10-23-redteam-geracoes-do-guard.md`; corretivo no ML-2C. Nenhum hook do usuário removido
 
 ### ML-2C — Corretivo das revisões
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** apolo-tf
 **Por que existe:** o Hefesto achou o B1, em que o `InjectGeminiHooks` passa o literal `"scripts/trackfw-credential-guard.sh"`
 em 6 chamadas. O Hades achou o B1 do Copilot, e o arquiteto mediu o mesmo defeito no Kiro: o `InjectKiroHooks` deixa de
 emitir `read` e `write` com o global instalado, e o global do Kiro só cobre `shell`. Copilot e Kiro ficaram fora da matriz
 da Wave 0 porque são sobrescrita total, mas a D14 por par vale para eles também. A auditoria do arquiteto não conferiu isso.
 **Acceptance criteria:**
-- [ ] Gemini: as 6 chamadas com literal saem (a deduplicação pelo registro já cobre a forma) ou passam a usar o alias; grep pelo literal em `internal/generators/*.go` fora de testes devolve só `internal/guardforms`
-- [ ] Copilot: `view` e `create|edit` emitidos com ou sem global; `bash` pulado com o global. Teste com os dois braços, que reprova no HEAD anterior
-- [ ] Kiro: `read` e `write` emitidos com ou sem global; `shell` pulado com o global. Teste com os dois braços, que reprova no HEAD anterior
-- [ ] R1: `migrateDedupGuardInFlatArray` delega para `dedupFlatGuardEntries`, sem duplicação dos passes 1–2
-- [ ] R2: testes `*_ML1C_*` renomeados por comportamento
-- [ ] R3: `TestNestedMigrate_Claude_AC4_EveryRegistryFormMigrates` removido, porque o `TestAC4_RegistrySites` já cobre o caso
-- [ ] R4: `append` sobre slice do registro sempre com cópia (`append(append([]string{}, a...), b...)`)
-- [ ] R5 (Hefesto), aceito como resíduo: os marcadores de substring do validador servem a outro propósito (detecção por `Contains`) e não são gerações
-- [ ] Resíduos R1–R4 do Hades aceitos, conforme o parecer
+- [x] Gemini: as 6 chamadas com literal saem (a deduplicação pelo registro já cobre a forma) ou passam a usar o alias; grep pelo literal em `internal/generators/*.go` fora de testes devolve só `internal/guardforms`
+- [x] Copilot: `view` e `create|edit` emitidos com ou sem global; `bash` pulado com o global. Teste com os dois braços, que reprova no HEAD anterior
+- [x] Kiro: `read` e `write` emitidos com ou sem global; `shell` pulado com o global. Teste com os dois braços, que reprova no HEAD anterior
+- [x] R1: `migrateDedupGuardInFlatArray` delega para `dedupFlatGuardEntries`, sem duplicação dos passes 1–2
+- [x] R2: testes `*_ML1C_*` renomeados por comportamento
+- [x] R3: `TestNestedMigrate_Claude_AC4_EveryRegistryFormMigrates` removido, porque o `TestAC4_RegistrySites` já cobre o caso
+- [x] R4: `append` sobre slice do registro sempre com cópia (`append(append([]string{}, a...), b...)`)
+- [x] R5 (Hefesto), aceito como resíduo: os marcadores de substring do validador servem a outro propósito (detecção por `Contains`) e não são gerações
+- [x] Resíduos R1–R4 do Hades aceitos, conforme o parecer
+**Gates evidence:**
+```
+go build ./...                                           rc=0
+go test ./internal/generators/ ./internal/validators/ \
+  ./internal/pathguard/ ./internal/commands/ -count=1
+ok  github.com/kgsaran/trackfw/internal/generators    60.041s
+ok  github.com/kgsaran/trackfw/internal/validator     32.473s
+ok  github.com/kgsaran/trackfw/internal/pathguard      0.876s
+ok  github.com/kgsaran/trackfw/internal/commands      46.648s
+```
+**Contra-braço:** `TestCopilotD14_ViewCreateEditAlwaysPresent/with-global` e
+`TestKiroD14_ReadWriteAlwaysPresent/with-global` FAIL no HEAD anterior (pré-ML-2C),
+confirmando que os novos testes reprovam a condição correta.
 
 
 ## Wave 3 — Fechamento

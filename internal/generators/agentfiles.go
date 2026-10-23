@@ -805,18 +805,15 @@ func InjectGeminiHooks(rootDir string) error {
 	// exact-string dedup would append a duplicate alongside the stale entry.
 	hooks["Notification"] = migrateAttentionHook(hooks["Notification"], "ToolPermission", geminiSignalCmd)
 	// ML-2A: migrate pre-ML-2A credential-guard entries to the new inline form.
-	migrateHookCommand(hooks["BeforeTool"], "run_shell_command", "scripts/trackfw-credential-guard.sh", guardCredentialCmdPSPOSIX)
+	// The literal "scripts/trackfw-credential-guard.sh" (LegacyBareCredGuard) is in
+	// guardforms.CredentialLegacyPSPOSIX and is therefore already covered by the
+	// migrateDedupGuardInNestedArray D13 loop below (ML-2C, REQ-2026-10-23 B1 corretivo).
 	migrateHookCommand(hooks["BeforeTool"], "run_shell_command", legacyGeminiCredGuardCmd, guardCredentialCmdPSPOSIX)
-	migrateHookCommand(hooks["BeforeTool"], "read_file|read_many_files", "scripts/trackfw-credential-guard.sh", guardCredentialCmdPSPOSIX)
 	migrateHookCommand(hooks["BeforeTool"], "read_file|read_many_files", legacyGeminiCredGuardCmd, guardCredentialCmdPSPOSIX)
-	migrateHookCommand(hooks["BeforeTool"], "write_file|replace", "scripts/trackfw-credential-guard.sh", guardCredentialCmdPSPOSIX)
 	migrateHookCommand(hooks["BeforeTool"], "write_file|replace", legacyGeminiCredGuardCmd, guardCredentialCmdPSPOSIX)
 	hooks["AfterTool"] = migrateAttentionHook(hooks["AfterTool"], "*", geminiCleanupCmd)
-	migrateHookCommand(hooks["AfterTool"], "run_shell_command", "scripts/trackfw-credential-guard.sh", guardCredentialCmdPSPOSIX)
 	migrateHookCommand(hooks["AfterTool"], "run_shell_command", legacyGeminiCredGuardCmd, guardCredentialCmdPSPOSIX)
-	migrateHookCommand(hooks["AfterTool"], "read_file|read_many_files", "scripts/trackfw-credential-guard.sh", guardCredentialCmdPSPOSIX)
 	migrateHookCommand(hooks["AfterTool"], "read_file|read_many_files", legacyGeminiCredGuardCmd, guardCredentialCmdPSPOSIX)
-	migrateHookCommand(hooks["AfterTool"], "write_file|replace", "scripts/trackfw-credential-guard.sh", guardCredentialCmdPSPOSIX)
 	migrateHookCommand(hooks["AfterTool"], "write_file|replace", legacyGeminiCredGuardCmd, guardCredentialCmdPSPOSIX)
 	// Git branch guard (ROADMAP-2026-08-14 ML-3A / ML-2A): only
 	// "run_shell_command" can ever carry a raw git subcommand.
@@ -982,6 +979,9 @@ func InjectKiroHooks(rootDir string) error {
 	// (`trackfw update harness --targets kiro-credential-guard`,
 	// ~/.kiro/hooks/trackfw-credential-guard.json).
 	// ML-2A: Kiro uses cmd.exe family — no `; exit $LASTEXITCODE` suffix.
+	// D14 revised (REQ-2026-10-23 ML-2C corretivo): the global harness only covers
+	// "shell". "read" and "write" are never covered by the global, so they must
+	// always be emitted regardless of whether the global is installed.
 	if !globalCredentialGuardInstalledKiro() {
 		hooks = append(hooks,
 			map[string]interface{}{
@@ -998,39 +998,41 @@ func InjectKiroHooks(rootDir string) error {
 				"matcher":     "shell",
 				"action":      map[string]interface{}{"type": "command", "command": guardCredentialCmdCmdExe},
 			},
-			// Read/Write coverage (ADR-2026-08-06 emenda 7, 2026-08-08): "read"
-			// and "write" are the documented Kiro tool-category aliases
-			// (fs_read/fs_write), same pattern as "shell" above.
-			map[string]interface{}{
-				"name":        "trackfw-credential-guard-read-pre",
-				"description": "Blocks/warns on possible plaintext credential materialization before a file read",
-				"trigger":     "PreToolUse",
-				"matcher":     "read",
-				"action":      map[string]interface{}{"type": "command", "command": guardCredentialCmdCmdExe},
-			},
-			map[string]interface{}{
-				"name":        "trackfw-credential-guard-read-post",
-				"description": "Warns on possible plaintext credential materialization after a file read",
-				"trigger":     "PostToolUse",
-				"matcher":     "read",
-				"action":      map[string]interface{}{"type": "command", "command": guardCredentialCmdCmdExe},
-			},
-			map[string]interface{}{
-				"name":        "trackfw-credential-guard-write-pre",
-				"description": "Blocks/warns on possible plaintext credential materialization before a file write",
-				"trigger":     "PreToolUse",
-				"matcher":     "write",
-				"action":      map[string]interface{}{"type": "command", "command": guardCredentialCmdCmdExe},
-			},
-			map[string]interface{}{
-				"name":        "trackfw-credential-guard-write-post",
-				"description": "Warns on possible plaintext credential materialization after a file write",
-				"trigger":     "PostToolUse",
-				"matcher":     "write",
-				"action":      map[string]interface{}{"type": "command", "command": guardCredentialCmdCmdExe},
-			},
 		)
 	}
+	// Read/Write coverage (ADR-2026-08-06 emenda 7, 2026-08-08): "read"
+	// and "write" are the documented Kiro tool-category aliases
+	// (fs_read/fs_write). Not covered by the global harness → always emit.
+	hooks = append(hooks,
+		map[string]interface{}{
+			"name":        "trackfw-credential-guard-read-pre",
+			"description": "Blocks/warns on possible plaintext credential materialization before a file read",
+			"trigger":     "PreToolUse",
+			"matcher":     "read",
+			"action":      map[string]interface{}{"type": "command", "command": guardCredentialCmdCmdExe},
+		},
+		map[string]interface{}{
+			"name":        "trackfw-credential-guard-read-post",
+			"description": "Warns on possible plaintext credential materialization after a file read",
+			"trigger":     "PostToolUse",
+			"matcher":     "read",
+			"action":      map[string]interface{}{"type": "command", "command": guardCredentialCmdCmdExe},
+		},
+		map[string]interface{}{
+			"name":        "trackfw-credential-guard-write-pre",
+			"description": "Blocks/warns on possible plaintext credential materialization before a file write",
+			"trigger":     "PreToolUse",
+			"matcher":     "write",
+			"action":      map[string]interface{}{"type": "command", "command": guardCredentialCmdCmdExe},
+		},
+		map[string]interface{}{
+			"name":        "trackfw-credential-guard-write-post",
+			"description": "Warns on possible plaintext credential materialization after a file write",
+			"trigger":     "PostToolUse",
+			"matcher":     "write",
+			"action":      map[string]interface{}{"type": "command", "command": guardCredentialCmdCmdExe},
+		},
+	)
 
 	// Git branch guard (ML-2A): Kiro uses cmd.exe family; PreToolUse only
 	// (PostToolUse is audit-only, can't block). No global harness target exists
@@ -1146,6 +1148,9 @@ func InjectCopilotHooks(rootDir string) error {
 	// convention already used for "bash" above.
 	// ML-2A: Copilot uses `command` field (not `bash`) per ADR-2026-10-04 D4.
 	// PS/POSIX family — includes `; exit $LASTEXITCODE` suffix.
+	// D14 revised (REQ-2026-10-23 ML-2C corretivo): the global harness only covers
+	// "bash". "view" and "create|edit" are never covered by the global, so they
+	// must always be emitted regardless of whether the global is installed.
 	if !globalCredentialGuardInstalledCopilot() {
 		preToolUse = append(preToolUse, map[string]interface{}{
 			"type":       "command",
@@ -1154,20 +1159,6 @@ func InjectCopilotHooks(rootDir string) error {
 			"cwd":        ".",
 			"timeoutSec": 10,
 		})
-		preToolUse = append(preToolUse, map[string]interface{}{
-			"type":       "command",
-			"matcher":    "view",
-			"command":    guardCredentialCmdPSPOSIX,
-			"cwd":        ".",
-			"timeoutSec": 10,
-		})
-		preToolUse = append(preToolUse, map[string]interface{}{
-			"type":       "command",
-			"matcher":    "create|edit",
-			"command":    guardCredentialCmdPSPOSIX,
-			"cwd":        ".",
-			"timeoutSec": 10,
-		})
 		postToolUse = append(postToolUse, map[string]interface{}{
 			"type":       "command",
 			"matcher":    "bash",
@@ -1175,21 +1166,36 @@ func InjectCopilotHooks(rootDir string) error {
 			"cwd":        ".",
 			"timeoutSec": 10,
 		})
-		postToolUse = append(postToolUse, map[string]interface{}{
-			"type":       "command",
-			"matcher":    "view",
-			"command":    guardCredentialCmdPSPOSIX,
-			"cwd":        ".",
-			"timeoutSec": 10,
-		})
-		postToolUse = append(postToolUse, map[string]interface{}{
-			"type":       "command",
-			"matcher":    "create|edit",
-			"command":    guardCredentialCmdPSPOSIX,
-			"cwd":        ".",
-			"timeoutSec": 10,
-		})
 	}
+	// "view" and "create|edit": not covered by the global harness → always emit.
+	preToolUse = append(preToolUse, map[string]interface{}{
+		"type":       "command",
+		"matcher":    "view",
+		"command":    guardCredentialCmdPSPOSIX,
+		"cwd":        ".",
+		"timeoutSec": 10,
+	})
+	preToolUse = append(preToolUse, map[string]interface{}{
+		"type":       "command",
+		"matcher":    "create|edit",
+		"command":    guardCredentialCmdPSPOSIX,
+		"cwd":        ".",
+		"timeoutSec": 10,
+	})
+	postToolUse = append(postToolUse, map[string]interface{}{
+		"type":       "command",
+		"matcher":    "view",
+		"command":    guardCredentialCmdPSPOSIX,
+		"cwd":        ".",
+		"timeoutSec": 10,
+	})
+	postToolUse = append(postToolUse, map[string]interface{}{
+		"type":       "command",
+		"matcher":    "create|edit",
+		"command":    guardCredentialCmdPSPOSIX,
+		"cwd":        ".",
+		"timeoutSec": 10,
+	})
 
 	// Git branch guard (ROADMAP-2026-08-14 ML-3A): the roadmap describes this
 	// mechanism as `--deny-tool='shell(git commit)'`-style CLI flags in a
@@ -1878,7 +1884,7 @@ func InjectAmazonQHooks(rootDir string) error {
 	// execute_bash or fs_write is also migrated to the canonical CmdExe form
 	// (Amazon Q's confirmed shell family, ML-2A).
 	credentialLegacyAll := append(append([]string{}, guardforms.CredentialLegacyCmdExe...), guardforms.CredentialLegacyPSPOSIX...)
-	hooks["preToolUse"] = migrateDedupGuardInNestedArray(hooks["preToolUse"], "execute_bash", guardGitBranchCmdCmdExe, append(guardforms.GitBranchLegacyCmdExe, guardforms.GitBranchLegacyPSPOSIX...))
+	hooks["preToolUse"] = migrateDedupGuardInNestedArray(hooks["preToolUse"], "execute_bash", guardGitBranchCmdCmdExe, append(append([]string{}, guardforms.GitBranchLegacyCmdExe...), guardforms.GitBranchLegacyPSPOSIX...))
 	hooks["preToolUse"] = migrateDedupGuardInNestedArray(hooks["preToolUse"], "execute_bash", guardCredentialCmdCmdExe, credentialLegacyAll)
 	hooks["preToolUse"] = migrateDedupGuardInNestedArray(hooks["preToolUse"], "fs_write", guardCredentialCmdCmdExe, credentialLegacyAll)
 	// Emit: git-branch guard then credential guard in execute_bash; credential in fs_write.

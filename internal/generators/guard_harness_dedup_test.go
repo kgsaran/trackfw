@@ -1,6 +1,6 @@
 package generators
 
-// guard_harness_dedup_ml1c_test.go — ML-1C (REQ-2026-10-23)
+// guard_harness_dedup_test.go — ML-1C (REQ-2026-10-23)
 //
 // These tests cover the D13 dedup gap closed by ML-1C: harness functions and
 // InjectAmazonQHooks lacked the "collapse N legacy forms → exactly 1 canonical"
@@ -15,7 +15,7 @@ package generators
 //   functions had a dedup pass, so they produced N canonicals; these tests
 //   would have reported FAIL.  On the current branch (after ML-1C) they PASS.
 //
-//   TestAmazonQ_ML1C_GitBranch_PSPOSIXForms_Migrate asserts: POSIX git-branch
+//   TestAmazonQGitBranch_PSPOSIXFormsCollapseToOneCmdExe asserts: POSIX git-branch
 //   forms in execute_bash are migrated to the CmdExe canonical.  Origin/main
 //   only included GitBranchLegacyCmdExe in the AmazonQ dedup call, leaving
 //   POSIX forms untouched — this test would have FAILED there.
@@ -25,7 +25,7 @@ package generators
 //   CredentialGlobalLegacyPSPOSIX forms.  Before ML-1C it only migrated
 //   LegacyD11Rev; the other three global forms would survive — FAIL.
 //
-//   TestWindsurf_ML1C_AC5_UserHookSurvives and TestWindsurf_ML1C_D14_* pass on
+//   TestWindsurfCredential_UserHookSurvivesDedup and TestWindsurf_ML1C_D14_* pass on
 //   origin/main (user-hook survival and D14 removal were already correct).
 //
 // Nota de AC4 (bite): every harness fix references guardforms.*LegacyPSPOSIX
@@ -265,7 +265,7 @@ func assertFlatBashDedup(t *testing.T, root map[string]interface{},
 // Harness dedup — Codex credential
 // ---------------------------------------------------------------------------
 
-func TestHarness_ML1C_Codex_Credential_NLegaciesDedup(t *testing.T) {
+func TestHarnessCodexCredential_NLegaciesCollapseToOne(t *testing.T) {
 	// Afirma: após UpdateHarness com um fixture de 4 formas legadas de credential
 	// global, o arquivo ~/.codex/hooks.json contém exatamente 1 entrada canônica
 	// por (PreToolUse × Bash, PostToolUse × Bash) e 0 formas legadas.
@@ -292,7 +292,7 @@ func TestHarness_ML1C_Codex_Credential_NLegaciesDedup(t *testing.T) {
 // Harness dedup — Codex git-branch
 // ---------------------------------------------------------------------------
 
-func TestHarness_ML1C_Codex_GitBranch_NLegaciesDedup(t *testing.T) {
+func TestHarnessCodexGitBranch_NLegaciesCollapseToOne(t *testing.T) {
 	// Afirma: 4 formas legadas de git-branch em ~/.codex/hooks.json → 1 canônica.
 	// FALHA em origin/main — PASSA após ML-1C.
 	home := harnessHome(t)
@@ -322,7 +322,7 @@ func TestHarness_ML1C_Codex_GitBranch_NLegaciesDedup(t *testing.T) {
 // Harness dedup — Gemini credential
 // ---------------------------------------------------------------------------
 
-func TestHarness_ML1C_Gemini_Credential_NLegaciesDedup(t *testing.T) {
+func TestHarnessGeminiCredential_NLegaciesCollapseToOne(t *testing.T) {
 	// Afirma: 4 formas legadas em ~/.gemini/settings.json → 1 canônica por
 	// (BeforeTool × run_shell_command, AfterTool × run_shell_command).
 	// FALHA em origin/main — PASSA após ML-1C.
@@ -348,7 +348,7 @@ func TestHarness_ML1C_Gemini_Credential_NLegaciesDedup(t *testing.T) {
 // Harness dedup — Gemini git-branch
 // ---------------------------------------------------------------------------
 
-func TestHarness_ML1C_Gemini_GitBranch_NLegaciesDedup(t *testing.T) {
+func TestHarnessGeminiGitBranch_NLegaciesCollapseToOne(t *testing.T) {
 	// Afirma: 4 formas legadas em ~/.gemini/settings.json → 1 canônica.
 	// FALHA em origin/main — PASSA após ML-1C.
 	home := harnessHome(t)
@@ -378,7 +378,7 @@ func TestHarness_ML1C_Gemini_GitBranch_NLegaciesDedup(t *testing.T) {
 // Harness dedup — Cursor credential
 // ---------------------------------------------------------------------------
 
-func TestHarness_ML1C_Cursor_Credential_NLegaciesDedup(t *testing.T) {
+func TestHarnessCursorCredential_NLegaciesCollapseToOne(t *testing.T) {
 	// Afirma: 4 formas legadas em ~/.cursor/hooks.json → 1 canônica por evento.
 	// FALHA em origin/main — PASSA após ML-1C.
 	home := harnessHome(t)
@@ -403,7 +403,7 @@ func TestHarness_ML1C_Cursor_Credential_NLegaciesDedup(t *testing.T) {
 // Harness dedup — Cursor git-branch
 // ---------------------------------------------------------------------------
 
-func TestHarness_ML1C_Cursor_GitBranch_NLegaciesDedup(t *testing.T) {
+func TestHarnessCursorGitBranch_NLegaciesCollapseToOne(t *testing.T) {
 	// Afirma: 4 formas legadas em ~/.cursor/hooks.json → 1 canônica.
 	// FALHA em origin/main — PASSA após ML-1C.
 	home := harnessHome(t)
@@ -433,7 +433,7 @@ func TestHarness_ML1C_Cursor_GitBranch_NLegaciesDedup(t *testing.T) {
 // Harness dedup — Copilot credential
 // ---------------------------------------------------------------------------
 
-func TestHarness_ML1C_Copilot_Credential_NLegaciesDedup(t *testing.T) {
+func TestHarnessCopilotCredential_NLegaciesCollapseToOne(t *testing.T) {
 	// Afirma: 4 formas legadas em ~/.copilot/settings.json (campo "bash") → 1
 	// entrada canônica por evento (preToolUse, postToolUse).
 	// FALHA em origin/main — PASSA após ML-1C.
@@ -459,7 +459,7 @@ func TestHarness_ML1C_Copilot_Credential_NLegaciesDedup(t *testing.T) {
 // Harness dedup — Copilot git-branch
 // ---------------------------------------------------------------------------
 
-func TestHarness_ML1C_Copilot_GitBranch_NLegaciesDedup(t *testing.T) {
+func TestHarnessCopilotGitBranch_NLegaciesCollapseToOne(t *testing.T) {
 	// Afirma: 4 formas legadas em ~/.copilot/settings.json (campo "bash") → 1
 	// canônica por evento.
 	// FALHA em origin/main — PASSA após ML-1C.
@@ -490,7 +490,7 @@ func TestHarness_ML1C_Copilot_GitBranch_NLegaciesDedup(t *testing.T) {
 // Harness dedup — Windsurf global credential
 // ---------------------------------------------------------------------------
 
-func TestHarness_ML1C_Windsurf_Credential_NLegaciesDedup(t *testing.T) {
+func TestHarnessWindsurfCredential_NLegaciesCollapseToOne(t *testing.T) {
 	// Afirma: 4 formas globais legadas em ~/.codeium/windsurf/hooks.json →
 	// exatamente 1 canônica por evento (pre_run_command, pre_write_code).
 	// Antes de ML-1C apenas LegacyD11Rev era migrado; os outros 3 sobreviviam.
@@ -526,7 +526,7 @@ func TestHarness_ML1C_Windsurf_Credential_NLegaciesDedup(t *testing.T) {
 // Amazon Q — POSIX git-branch forms in execute_bash
 // ---------------------------------------------------------------------------
 
-func TestAmazonQ_ML1C_GitBranch_PSPOSIXForms_Migrate(t *testing.T) {
+func TestAmazonQGitBranch_PSPOSIXFormsCollapseToOneCmdExe(t *testing.T) {
 	// Afirma: formas legadas POSIX de git-branch em execute_bash do Amazon Q
 	// são migradas para a forma canônica CmdExe (guardGitBranchCmdCmdExe), e
 	// o resultado final contém exatamente 1 entrada canônica.
@@ -577,7 +577,7 @@ func TestAmazonQ_ML1C_GitBranch_PSPOSIXForms_Migrate(t *testing.T) {
 // Windsurf (project-scope) — N credential legacies
 // ---------------------------------------------------------------------------
 
-func TestWindsurf_ML1C_NCredentialLegacies_Deduplicates(t *testing.T) {
+func TestWindsurfCredential_NLegaciesCollapseToOne(t *testing.T) {
 	// Afirma: N formas legadas de credential em .windsurf/hooks.json colapsam
 	// para exatamente 1 entrada canônica em pre_run_command e pre_write_code.
 	// Falha em origin/main (sem dedupFlatGuardEntries em InjectWindsurfHooks).
@@ -612,7 +612,7 @@ func TestWindsurf_ML1C_NCredentialLegacies_Deduplicates(t *testing.T) {
 // Windsurf (project-scope) — N git-branch legacies
 // ---------------------------------------------------------------------------
 
-func TestWindsurf_ML1C_NGitBranchLegacies_Deduplicates(t *testing.T) {
+func TestWindsurfGitBranch_NLegaciesCollapseToOne(t *testing.T) {
 	// Afirma: N formas legadas de git-branch em pre_run_command colapsam para 1.
 	// Falha em origin/main (sem dedupFlatGuardEntries em InjectWindsurfHooks).
 	root := t.TempDir()
@@ -644,7 +644,7 @@ func TestWindsurf_ML1C_NGitBranchLegacies_Deduplicates(t *testing.T) {
 // Windsurf AC5 — user hook survives
 // ---------------------------------------------------------------------------
 
-func TestWindsurf_ML1C_AC5_UserHookSurvives(t *testing.T) {
+func TestWindsurfCredential_UserHookSurvivesDedup(t *testing.T) {
 	// Afirma: um hook de usuário cujo comando NÃO está na registry sobrevive
 	// byte-for-byte após InjectWindsurfHooks. Passes on origin/main too.
 	root := t.TempDir()
@@ -686,7 +686,7 @@ func TestWindsurf_ML1C_AC5_UserHookSurvives(t *testing.T) {
 // Windsurf D14 — global credential installed → project credential removed
 // ---------------------------------------------------------------------------
 
-func TestWindsurf_ML1C_D14_GlobalInstalled_RemovesProjectCredential(t *testing.T) {
+func TestWindsurfCredential_D14GlobalInstalledRemovesProject(t *testing.T) {
 	// Afirma: quando o guard global de credential está instalado em
 	// ~/.codeium/windsurf/hooks.json (D14 revised), InjectWindsurfHooks remove
 	// todas as entradas de credential do arquivo de projeto em pre_run_command

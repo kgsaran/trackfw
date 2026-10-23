@@ -1069,7 +1069,7 @@ func harnessCredentialGuardTargetClaude(home, claudeDir string, claudeDirErr err
 		// D13 dedup (REQ-2026-10-23): collapse duplicates produced by multiple
 		// migrateHookCommand calls (home-dependent legacyScriptPath + registry forms).
 		// Pass legacyScriptPath at the call site — it cannot live in guardforms (home-dependent).
-		globalLegacyForms := append(guardforms.CredentialGlobalLegacyPSPOSIX, legacyScriptPath) //nolint:gocritic // intentional extend-by-value
+		globalLegacyForms := append(append([]string{}, guardforms.CredentialGlobalLegacyPSPOSIX...), legacyScriptPath)
 		for _, m := range []string{claudeShellMatcher, "Bash"} {
 			hooks["PreToolUse"] = migrateDedupGuardInNestedArray(hooks["PreToolUse"], m, guardCredentialGlobalCmdPSPOSIX, globalLegacyForms)
 			hooks["PostToolUse"] = migrateDedupGuardInNestedArray(hooks["PostToolUse"], m, guardCredentialGlobalCmdPSPOSIX, globalLegacyForms)
@@ -1213,7 +1213,7 @@ func harnessCredentialGuardTargetCodex(home string, opts UpdateOptions) TargetRe
 	// remaining duplicates (e.g. two legacy forms simultaneously present → two
 	// canonicals after migration → deduplicated to exactly one).
 	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
-		legacies := append(guardforms.CredentialGlobalLegacyPSPOSIX, legacyScriptPath)
+		legacies := append(append([]string{}, guardforms.CredentialGlobalLegacyPSPOSIX...), legacyScriptPath)
 		hooks["PreToolUse"] = migrateDedupGuardInNestedArray(hooks["PreToolUse"], "Bash", guardCredentialGlobalCmdPSPOSIX, legacies)
 		hooks["PostToolUse"] = migrateDedupGuardInNestedArray(hooks["PostToolUse"], "Bash", guardCredentialGlobalCmdPSPOSIX, legacies)
 		root["hooks"] = hooks
@@ -1336,7 +1336,7 @@ func harnessCredentialGuardTargetGemini(home string, opts UpdateOptions) TargetR
 	}
 	// D13 dedup (REQ-2026-10-23): collapse duplicates after individual migrations.
 	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
-		legacies := append(guardforms.CredentialGlobalLegacyPSPOSIX, legacyScriptPath)
+		legacies := append(append([]string{}, guardforms.CredentialGlobalLegacyPSPOSIX...), legacyScriptPath)
 		hooks["BeforeTool"] = migrateDedupGuardInNestedArray(hooks["BeforeTool"], "run_shell_command", guardCredentialGlobalCmdPSPOSIX, legacies)
 		hooks["AfterTool"] = migrateDedupGuardInNestedArray(hooks["AfterTool"], "run_shell_command", guardCredentialGlobalCmdPSPOSIX, legacies)
 		root["hooks"] = hooks
@@ -1478,7 +1478,7 @@ func harnessCredentialGuardTargetCursor(home string, opts UpdateOptions) TargetR
 	}
 	// D13 dedup (REQ-2026-10-23): collapse duplicates after individual migrations.
 	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
-		legacies := append(guardforms.CredentialGlobalLegacyPSPOSIX, legacyScriptPath)
+		legacies := append(append([]string{}, guardforms.CredentialGlobalLegacyPSPOSIX...), legacyScriptPath)
 		hooks["beforeShellExecution"] = dedupFlatGuardEntries(hooks["beforeShellExecution"], "", guardCredentialGlobalCmdPSPOSIX, legacies, cursorGetCmd)
 		hooks["afterShellExecution"] = dedupFlatGuardEntries(hooks["afterShellExecution"], "", guardCredentialGlobalCmdPSPOSIX, legacies, cursorGetCmd)
 		root["hooks"] = hooks
@@ -1820,7 +1820,7 @@ func harnessCredentialGuardTargetWindsurf(home string, opts UpdateOptions) Targe
 	// D13 dedup (REQ-2026-10-23): migrate ALL global legacy POSIX forms and
 	// collapse duplicates to exactly one canonical entry per event.
 	// Replaces the prior single-form migrateCursorSimpleCommand(D11Rev...) call.
-	windsurfLegaciesGlobal := append(guardforms.CredentialGlobalLegacyPSPOSIX,
+	windsurfLegaciesGlobal := append(append([]string{}, guardforms.CredentialGlobalLegacyPSPOSIX...),
 		filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh"))
 	for _, event := range []string{"pre_run_command", "pre_write_code"} {
 		hooks[event] = dedupFlatGuardEntries(hooks[event], "", guardCredentialGlobalCmdPSPOSIX, windsurfLegaciesGlobal, windsurfGetCmd)
@@ -2072,7 +2072,7 @@ func harnessGitBranchGuardTargetClaude(home, claudeDir string, claudeDirErr erro
 		migrateGuardHookMatcher(hooks["PreToolUse"], "Bash", claudeShellMatcher, guardGitBranchCmdPSPOSIX)
 		migrateGuardHookMatcher(hooks["PostToolUse"], "Bash", claudeShellMatcher, guardGitBranchCmdPSPOSIX)
 		// D13 dedup (REQ-2026-10-23): collapse duplicates from multiple migrateHookCommand calls.
-		gitLegacyForms := append(guardforms.GitBranchLegacyPSPOSIX, legacyScriptPath) //nolint:gocritic // intentional extend-by-value
+		gitLegacyForms := append(append([]string{}, guardforms.GitBranchLegacyPSPOSIX...), legacyScriptPath)
 		for _, m := range []string{claudeShellMatcher, "Bash"} {
 			hooks["PreToolUse"] = migrateDedupGuardInNestedArray(hooks["PreToolUse"], m, guardGitBranchCmdPSPOSIX, gitLegacyForms)
 			hooks["PostToolUse"] = migrateDedupGuardInNestedArray(hooks["PostToolUse"], m, guardGitBranchCmdPSPOSIX, gitLegacyForms)
@@ -2168,7 +2168,7 @@ func harnessGitBranchGuardTargetCodex(home string, opts UpdateOptions) TargetRes
 	}
 	// D13 dedup (REQ-2026-10-23): collapse duplicates after individual migrations.
 	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
-		legacies := append(guardforms.GitBranchLegacyPSPOSIX, legacyScriptPath)
+		legacies := append(append([]string{}, guardforms.GitBranchLegacyPSPOSIX...), legacyScriptPath)
 		hooks["PreToolUse"] = migrateDedupGuardInNestedArray(hooks["PreToolUse"], "Bash", guardGitBranchCmdPSPOSIX, legacies)
 		hooks["PostToolUse"] = migrateDedupGuardInNestedArray(hooks["PostToolUse"], "Bash", guardGitBranchCmdPSPOSIX, legacies)
 		root["hooks"] = hooks
@@ -2263,7 +2263,7 @@ func harnessGitBranchGuardTargetGemini(home string, opts UpdateOptions) TargetRe
 	}
 	// D13 dedup (REQ-2026-10-23): collapse duplicates after individual migrations.
 	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
-		legacies := append(guardforms.GitBranchLegacyPSPOSIX, legacyScriptPath)
+		legacies := append(append([]string{}, guardforms.GitBranchLegacyPSPOSIX...), legacyScriptPath)
 		hooks["BeforeTool"] = migrateDedupGuardInNestedArray(hooks["BeforeTool"], "run_shell_command", guardGitBranchCmdPSPOSIX, legacies)
 		hooks["AfterTool"] = migrateDedupGuardInNestedArray(hooks["AfterTool"], "run_shell_command", guardGitBranchCmdPSPOSIX, legacies)
 		root["hooks"] = hooks
@@ -2366,7 +2366,7 @@ func harnessGitBranchGuardTargetCursor(home string, opts UpdateOptions) TargetRe
 	}
 	// D13 dedup (REQ-2026-10-23): collapse duplicates after individual migrations.
 	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
-		legacies := append(guardforms.GitBranchLegacyPSPOSIX, legacyScriptPath)
+		legacies := append(append([]string{}, guardforms.GitBranchLegacyPSPOSIX...), legacyScriptPath)
 		hooks["beforeShellExecution"] = dedupFlatGuardEntries(hooks["beforeShellExecution"], "", guardGitBranchCmdPSPOSIX, legacies, cursorGetCmd)
 		hooks["afterShellExecution"] = dedupFlatGuardEntries(hooks["afterShellExecution"], "", guardGitBranchCmdPSPOSIX, legacies, cursorGetCmd)
 		root["hooks"] = hooks

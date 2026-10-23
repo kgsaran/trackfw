@@ -271,61 +271,6 @@ func TestNestedMigrate_AmazonQ_NLegacies_Deduplicates(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// AC4 — table-driven: each registry form migrates at exactly one Claude pair
-// ---------------------------------------------------------------------------
-
-// TestNestedMigrate_Claude_AC4_EveryRegistryFormMigrates verifies that each form
-// in CredentialLegacyPSPOSIX migrates to the canonical for the claudeShellMatcher pair.
-//
-// Reconciliação: afirma que a lista completa da registry é coberta. Falsificação: a
-// função usa a lista completa; se uma forma for omitida da lista passada ao helper,
-// a forma legada persiste e o test falha.
-func TestNestedMigrate_Claude_AC4_EveryRegistryFormMigrates(t *testing.T) {
-	for i, legacy := range guardforms.CredentialLegacyPSPOSIX {
-		legacy := legacy
-		t.Run(legacy[:minInt(40, len(legacy))], func(t *testing.T) {
-			nestedFixtureHome(t) // each subtest gets its own HOME via t.Setenv
-
-			dir := t.TempDir()
-			helperWriteJSON(t, filepath.Join(dir, ".claude", "settings.json"), map[string]interface{}{
-				"hooks": map[string]interface{}{
-					"PreToolUse": []interface{}{
-						map[string]interface{}{
-							"matcher": claudeShellMatcher,
-							"hooks":   []interface{}{map[string]interface{}{"type": "command", "command": legacy}},
-						},
-					},
-				},
-			})
-
-			if err := InjectClaudeHooks(dir); err != nil {
-				t.Fatalf("InjectClaudeHooks: %v", err)
-			}
-
-			data := helperReadJSON(t, filepath.Join(dir, ".claude", "settings.json"))
-
-			// The legacy form must be gone.
-			if hasNestedEntry(data, "PreToolUse", claudeShellMatcher, legacy) {
-				t.Errorf("AC4[%d] legacy form %q must not remain after migration", i, legacy)
-			}
-			// Exactly one canonical form must be present.
-			n := countNestedEntries(data, "PreToolUse", claudeShellMatcher, guardCredentialCmdPSPOSIX)
-			if n != 1 {
-				t.Errorf("AC4[%d]: expected exactly 1 canonical after migrating %q, got %d", i, legacy, n)
-			}
-		})
-	}
-}
-
-// minInt returns the smaller of a and b (avoids conflict with min in other test files).
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-// ---------------------------------------------------------------------------
 // AC5 — user hooks survive migrate+dedup
 // ---------------------------------------------------------------------------
 

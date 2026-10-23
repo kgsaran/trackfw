@@ -47,16 +47,12 @@ func migrateDedupGuardInFlatArray(
 	legacyForms []string,
 	getCmd func(interface{}) string,
 ) []interface{} {
-	arr, _ := existing.([]interface{})
+	// Passes 1 and 2: delegate to dedupFlatGuardEntries (migrate legacy → current,
+	// then deduplicate). Pass 3 (append if absent) is ours alone.
+	// R1 (REQ-2026-10-23 ML-2C): eliminates ~55 duplicated lines between the two helpers.
+	result := dedupFlatGuardEntries(existing, matcher, currentCmd, legacyForms, getCmd)
 
-	// Build O(1) lookup for all recognized forms.
-	allForms := make(map[string]bool, len(legacyForms)+1)
-	for _, f := range legacyForms {
-		allForms[f] = true
-	}
-	allForms[currentCmd] = true
-
-	// getMatcher extracts the "matcher" field (empty string if absent).
+	// Pass 3: if the canonical is absent after passes 1+2, append a new entry.
 	getMatcher := func(item interface{}) string {
 		obj, ok := item.(map[string]interface{})
 		if !ok {
@@ -65,45 +61,13 @@ func migrateDedupGuardInFlatArray(
 		m, _ := obj["matcher"].(string)
 		return m
 	}
-
-	// Pass 1: rewrite legacy → currentCmd in-place (preserves position and extra fields).
-	for _, item := range arr {
-		obj, ok := item.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		if getMatcher(item) != matcher {
-			continue
-		}
-		cmd := getCmd(item)
-		if allForms[cmd] && cmd != currentCmd {
-			obj["command"] = currentCmd
-		}
-	}
-
-	// Pass 2: deduplicate — keep first currentCmd+matcher, drop later occurrences.
 	seen := false
-	var result []interface{}
-	for _, item := range arr {
-		_, ok := item.(map[string]interface{})
-		if !ok {
-			result = append(result, item)
-			continue
-		}
-		cmd := getCmd(item)
-		m := getMatcher(item)
-		if cmd == currentCmd && m == matcher {
-			if !seen {
-				seen = true
-				result = append(result, item)
-			}
-			// else: drop duplicate — do not append.
-		} else {
-			result = append(result, item)
+	for _, item := range result {
+		if getCmd(item) == currentCmd && getMatcher(item) == matcher {
+			seen = true
+			break
 		}
 	}
-
-	// Pass 3: if no entry was found/kept, append a new one.
 	if !seen {
 		entry := map[string]interface{}{"command": currentCmd}
 		if matcher != "" {
