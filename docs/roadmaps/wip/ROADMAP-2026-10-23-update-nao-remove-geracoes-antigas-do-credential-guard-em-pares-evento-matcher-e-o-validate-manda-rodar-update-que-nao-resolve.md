@@ -126,7 +126,7 @@ todos os sítios usarem o helper:
   registro, ou amarrá-las a ele por um teste de igualdade.
 
 ### ML-1B — Os demais sítios da matriz
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Agente:** apolo-tf
 **Dependencies:** ML-1A. Sequencial porque usa o mesmo arquivo (`agentfiles.go`).
 **Files affected:** `internal/generators/agentfiles.go`, `internal/generators/update.go` e testes.
@@ -150,6 +150,26 @@ todos os sítios usarem o helper:
 go build ./...
 go test ./internal/generators/ ./internal/validator/ ./internal/pathguard/ ./internal/commands/ -count=1
 ```
+
+**Auditoria do arquiteto (2026-10-23): reprovado, com o corretivo no ML-1C.** Os gates passam (`go build` rc=0; 4 pacotes
+ok; 27 `--- PASS` em `-run 'TestNested|TestDedup_'`). Faltam:
+- o contra-braço em `origin/main`, que nenhum teste mediu;
+- os testes do Windsurf, que não existem;
+- o harness global: só os dois alvos do Claude foram tocados, e Codex, Gemini, Cursor, Copilot e Windsurf não foram medidos;
+- o AC4 completo: ele cobre só Claude × `claudeShellMatcher`, sem falsificação;
+- o AC2: não foi feito. O "garantido pela construção" é falso, porque o `guardExpectedLine` tem template próprio.
+
+### ML-1C — Corretivo do ML-1B
+**Status:** ⬜ Pendente
+**Agente:** apolo-tf
+**Acceptance criteria:**
+- [ ] Contra-braço medido em `origin/main` (via `git archive`) para cada teste novo do ML-1B e do ML-1C, com a lista dos que reprovam lá
+- [ ] Windsurf: credential e git-branch, N legadas → 1 por par; AC5; D14 com o global de credential
+- [ ] Amazon Q: git-branch com as formas PS/POSIX, N legadas → 1 por par
+- [ ] Harness global: um teste de N legadas + a atual para cada `harness*Target*` de Codex, Gemini, Cursor, Copilot e Windsurf (credential e git-branch); corrigir os que duplicarem
+- [ ] AC4 orientado por tabela sobre todo sítio × par, com a falsificação relatada
+- [ ] AC2: as formas inline do validador derivam de `guardforms`, ou há um teste de igualdade para os dois guards e as duas famílias
+
 
 ## Wave 2 — Revisões independentes
 > Dependencies: Wave 1 auditada.

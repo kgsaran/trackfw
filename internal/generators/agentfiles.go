@@ -370,72 +370,56 @@ func InjectClaudeHooks(rootDir string) error {
 	migrateGuardHookMatcher(hooks["PostToolUse"], "Bash", claudeShellMatcher,
 		guardCredentialCmdPSPOSIX)
 
-	// Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda
-	// 7/ROADMAP-2026-08-08 Wave 2 to Read/Write|Edit): skip the project-scope
-	// credential-guard entry when the global one is already installed
-	// (`trackfw update harness --targets claude-credential-guard`), so the
-	// guard doesn't run twice per Bash/PowerShell call. attention-signal/cleanup
-	// above and below are unaffected — they are inherently project-scope.
-	if !globalCredentialGuardInstalledClaude() {
-		hooks["PreToolUse"] = mergeClaudeHookArray(
-			hooks["PreToolUse"],
-			claudeShellMatcher,
-			guardCredentialCmdPSPOSIX,
-		)
-		// Read/Write/Edit coverage (ADR-2026-08-06 emenda 7, 2026-08-08):
-		// extraction via a direct file read, or materialization via write/edit,
-		// never went through the hook before.
-		hooks["PreToolUse"] = mergeClaudeHookArray(
-			hooks["PreToolUse"],
-			"Read",
-			guardCredentialCmdPSPOSIX,
-		)
-		hooks["PreToolUse"] = mergeClaudeHookArray(
-			hooks["PreToolUse"],
-			"Write|Edit",
-			guardCredentialCmdPSPOSIX,
-		)
+	// D13 dedup (ADR-2026-10-04 adendo 2026-10-23, REQ-2026-10-23): after all legacy
+	// migrations above, collapse any duplicate guard entries (produced when a file had N
+	// different legacy forms for the same pair) to exactly one per (event, matcher) pair.
+	// Must run AFTER migrateGuardHookMatcher so "Bash" envelopes are already renamed to
+	// claudeShellMatcher. We also cover the remaining "Bash" matcher for mixed envelopes
+	// that migrateGuardHookMatcher left untouched (user hook co-located with guard).
+	for _, m := range []string{claudeShellMatcher, "Bash", "Read", "Write|Edit"} {
+		hooks["PreToolUse"] = migrateDedupGuardInNestedArray(hooks["PreToolUse"], m, guardCredentialCmdPSPOSIX, guardforms.CredentialLegacyPSPOSIX)
+		hooks["PostToolUse"] = migrateDedupGuardInNestedArray(hooks["PostToolUse"], m, guardCredentialCmdPSPOSIX, guardforms.CredentialLegacyPSPOSIX)
+	}
+	for _, m := range []string{claudeShellMatcher, "Bash"} {
+		hooks["PreToolUse"] = migrateDedupGuardInNestedArray(hooks["PreToolUse"], m, guardGitBranchCmdPSPOSIX, guardforms.GitBranchLegacyPSPOSIX)
 	}
 
-	// Git branch guard (ROADMAP-2026-08-14 ML-3A / ML-2A / ML-5A): dedup or emit
-	// under claudeShellMatcher so the guard fires on both Bash (POSIX) and
-	// PowerShell (Windows).
-	// Dedup (ROADMAP-2026-08-17 Wave 2/ML-2B): skip the project-scope
-	// git-branch-guard entry when the global one is already installed
-	// (`trackfw update harness --targets claude-git-branch-guard`), so the
-	// guard doesn't fire twice per shell call and print the block message twice.
+	// D14 revised (ADR-2026-10-04 adendo 2026-10-23, REQ-2026-10-23): removal is per
+	// pair, only where the global guard covers. The global harness covers shell events
+	// (claudeShellMatcher); it does NOT cover Read and Write|Edit.
+	// — Shell pair: when global installed → REMOVE project-scope entries so the guard
+	//   does not run twice. When not installed → emit normally.
+	// — Read/Write|Edit pairs: ALWAYS present regardless of global state (D14 revised).
+	skipClaudeCG := globalCredentialGuardInstalledClaude()
+	if !skipClaudeCG {
+		hooks["PreToolUse"] = mergeClaudeHookArray(hooks["PreToolUse"], claudeShellMatcher, guardCredentialCmdPSPOSIX)
+	} else {
+		removeGuardFromNestedArrayInHooks(hooks, "PreToolUse", claudeShellMatcher, guardCredentialCmdPSPOSIX, guardforms.CredentialLegacyPSPOSIX)
+	}
+	// Read/Write|Edit coverage (ADR-2026-08-06 emenda 7, 2026-08-08): always present.
+	hooks["PreToolUse"] = mergeClaudeHookArray(hooks["PreToolUse"], "Read", guardCredentialCmdPSPOSIX)
+	hooks["PreToolUse"] = mergeClaudeHookArray(hooks["PreToolUse"], "Write|Edit", guardCredentialCmdPSPOSIX)
+
+	// Git branch guard (ROADMAP-2026-08-14 ML-3A / ML-2A / ML-5A / D14 revised):
+	// shell pair only — git branch guard has no Read/Write coverage.
+	// When global installed → REMOVE; when not installed → emit.
 	if !globalGitBranchGuardInstalledClaude() {
-		hooks["PreToolUse"] = mergeClaudeHookArray(
-			hooks["PreToolUse"],
-			claudeShellMatcher,
-			guardGitBranchCmdPSPOSIX,
-		)
+		hooks["PreToolUse"] = mergeClaudeHookArray(hooks["PreToolUse"], claudeShellMatcher, guardGitBranchCmdPSPOSIX)
+	} else {
+		removeGuardFromNestedArrayInHooks(hooks, "PreToolUse", claudeShellMatcher, guardGitBranchCmdPSPOSIX, guardforms.GitBranchLegacyPSPOSIX)
 	}
 
 	hooks["PostToolUse"] = migrateAttentionHook(hooks["PostToolUse"], "AskUserQuestion", attentionCleanupCmd)
 
-	hooks["PostToolUse"] = mergeClaudeHookArray(
-		hooks["PostToolUse"],
-		"AskUserQuestion",
-		attentionCleanupCmd,
-	)
-	if !globalCredentialGuardInstalledClaude() {
-		hooks["PostToolUse"] = mergeClaudeHookArray(
-			hooks["PostToolUse"],
-			claudeShellMatcher,
-			guardCredentialCmdPSPOSIX,
-		)
-		hooks["PostToolUse"] = mergeClaudeHookArray(
-			hooks["PostToolUse"],
-			"Read",
-			guardCredentialCmdPSPOSIX,
-		)
-		hooks["PostToolUse"] = mergeClaudeHookArray(
-			hooks["PostToolUse"],
-			"Write|Edit",
-			guardCredentialCmdPSPOSIX,
-		)
+	hooks["PostToolUse"] = mergeClaudeHookArray(hooks["PostToolUse"], "AskUserQuestion", attentionCleanupCmd)
+	// D14 revised PostToolUse: same per-pair logic as PreToolUse.
+	if !skipClaudeCG {
+		hooks["PostToolUse"] = mergeClaudeHookArray(hooks["PostToolUse"], claudeShellMatcher, guardCredentialCmdPSPOSIX)
+	} else {
+		removeGuardFromNestedArrayInHooks(hooks, "PostToolUse", claudeShellMatcher, guardCredentialCmdPSPOSIX, guardforms.CredentialLegacyPSPOSIX)
 	}
+	hooks["PostToolUse"] = mergeClaudeHookArray(hooks["PostToolUse"], "Read", guardCredentialCmdPSPOSIX)
+	hooks["PostToolUse"] = mergeClaudeHookArray(hooks["PostToolUse"], "Write|Edit", guardCredentialCmdPSPOSIX)
 
 	root["hooks"] = hooks
 
@@ -687,58 +671,43 @@ func InjectCodexHooks(rootDir string) error {
 	migrateHookCommand(hooks["PreToolUse"], "Bash", legacyD11RevGitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
 	migrateHookCommand(hooks["PreToolUse"], "Bash", legacyWABashGitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
 
-	hooks["PermissionRequest"] = mergeClaudeHookArray(
-		hooks["PermissionRequest"],
-		".*",
-		codexSignalCmd,
-	)
+	hooks["PermissionRequest"] = mergeClaudeHookArray(hooks["PermissionRequest"], ".*", codexSignalCmd)
 
-	// Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda
-	// 7/ROADMAP-2026-08-08 Wave 2 to apply_patch): skip the project-scope
-	// credential-guard entry when the global one is already installed
-	// (`trackfw update harness --targets codex-credential-guard`).
+	// D13 dedup (REQ-2026-10-23): collapse duplicates produced by multiple migrateHookCommand
+	// calls above (one per legacy form × one per matcher). Must run after all migrations.
+	for _, m := range []string{"Bash", "apply_patch"} {
+		hooks["PreToolUse"] = migrateDedupGuardInNestedArray(hooks["PreToolUse"], m, guardCredentialCmdPSPOSIX, guardforms.CredentialLegacyPSPOSIX)
+		hooks["PostToolUse"] = migrateDedupGuardInNestedArray(hooks["PostToolUse"], m, guardCredentialCmdPSPOSIX, guardforms.CredentialLegacyPSPOSIX)
+	}
+	hooks["PreToolUse"] = migrateDedupGuardInNestedArray(hooks["PreToolUse"], "Bash", guardGitBranchCmdPSPOSIX, guardforms.GitBranchLegacyPSPOSIX)
+
+	// D14 revised (REQ-2026-10-23): per-pair logic.
+	// Global harness covers Bash pair; apply_patch is NOT covered by the global.
 	skipCodexCG := globalCredentialGuardInstalledCodex()
 	if !skipCodexCG {
-		hooks["PreToolUse"] = mergeClaudeHookArray(
-			hooks["PreToolUse"],
-			"Bash",
-			guardCredentialCmdPSPOSIX,
-		)
-		hooks["PreToolUse"] = mergeClaudeHookArray(
-			hooks["PreToolUse"],
-			"apply_patch",
-			guardCredentialCmdPSPOSIX,
-		)
+		hooks["PreToolUse"] = mergeClaudeHookArray(hooks["PreToolUse"], "Bash", guardCredentialCmdPSPOSIX)
+	} else {
+		removeGuardFromNestedArrayInHooks(hooks, "PreToolUse", "Bash", guardCredentialCmdPSPOSIX, guardforms.CredentialLegacyPSPOSIX)
 	}
+	// apply_patch always present (D14 revised: global does not cover this pair).
+	hooks["PreToolUse"] = mergeClaudeHookArray(hooks["PreToolUse"], "apply_patch", guardCredentialCmdPSPOSIX)
 
-	// Dedup (ROADMAP-2026-08-17 Wave 2/ML-2B): skip the project-scope
-	// git-branch-guard entry when the global one is already installed
-	// (`trackfw update harness --targets codex-git-branch-guard`).
+	// Git branch guard D14 revised: Bash pair only.
 	if !globalGitBranchGuardInstalledCodex() {
-		hooks["PreToolUse"] = mergeClaudeHookArray(
-			hooks["PreToolUse"],
-			"Bash",
-			guardGitBranchCmdPSPOSIX,
-		)
+		hooks["PreToolUse"] = mergeClaudeHookArray(hooks["PreToolUse"], "Bash", guardGitBranchCmdPSPOSIX)
+	} else {
+		removeGuardFromNestedArrayInHooks(hooks, "PreToolUse", "Bash", guardGitBranchCmdPSPOSIX, guardforms.GitBranchLegacyPSPOSIX)
 	}
 
-	hooks["PostToolUse"] = mergeClaudeHookArray(
-		hooks["PostToolUse"],
-		".*",
-		codexCleanupCmd,
-	)
+	hooks["PostToolUse"] = mergeClaudeHookArray(hooks["PostToolUse"], ".*", codexCleanupCmd)
+	// D14 revised PostToolUse: same per-pair logic.
 	if !skipCodexCG {
-		hooks["PostToolUse"] = mergeClaudeHookArray(
-			hooks["PostToolUse"],
-			"Bash",
-			guardCredentialCmdPSPOSIX,
-		)
-		hooks["PostToolUse"] = mergeClaudeHookArray(
-			hooks["PostToolUse"],
-			"apply_patch",
-			guardCredentialCmdPSPOSIX,
-		)
+		hooks["PostToolUse"] = mergeClaudeHookArray(hooks["PostToolUse"], "Bash", guardCredentialCmdPSPOSIX)
+	} else {
+		removeGuardFromNestedArrayInHooks(hooks, "PostToolUse", "Bash", guardCredentialCmdPSPOSIX, guardforms.CredentialLegacyPSPOSIX)
 	}
+	// apply_patch always present.
+	hooks["PostToolUse"] = mergeClaudeHookArray(hooks["PostToolUse"], "apply_patch", guardCredentialCmdPSPOSIX)
 
 	root["hooks"] = hooks
 
@@ -871,68 +840,44 @@ func InjectGeminiHooks(rootDir string) error {
 	migrateHookCommand(hooks["BeforeTool"], "run_shell_command", legacyD11RevGitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
 	migrateHookCommand(hooks["BeforeTool"], "run_shell_command", legacyWABashGitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
 
-	hooks["Notification"] = mergeClaudeHookArray(
-		hooks["Notification"],
-		"ToolPermission",
-		geminiSignalCmd,
-	)
+	hooks["Notification"] = mergeClaudeHookArray(hooks["Notification"], "ToolPermission", geminiSignalCmd)
 
-	// Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda
-	// 7/ROADMAP-2026-08-08 Wave 2 to read_file|read_many_files /
-	// write_file|replace): skip the project-scope credential-guard entry when
-	// the global one is already installed
-	// (`trackfw update harness --targets gemini-credential-guard`).
+	// D13 dedup (REQ-2026-10-23): collapse duplicates after all legacy migrations.
+	for _, m := range []string{"run_shell_command", "read_file|read_many_files", "write_file|replace"} {
+		hooks["BeforeTool"] = migrateDedupGuardInNestedArray(hooks["BeforeTool"], m, guardCredentialCmdPSPOSIX, guardforms.CredentialLegacyPSPOSIX)
+		hooks["AfterTool"] = migrateDedupGuardInNestedArray(hooks["AfterTool"], m, guardCredentialCmdPSPOSIX, guardforms.CredentialLegacyPSPOSIX)
+	}
+	hooks["BeforeTool"] = migrateDedupGuardInNestedArray(hooks["BeforeTool"], "run_shell_command", guardGitBranchCmdPSPOSIX, guardforms.GitBranchLegacyPSPOSIX)
+
+	// D14 revised (REQ-2026-10-23): per-pair logic.
+	// Global harness covers run_shell_command; read/write pairs NOT covered.
 	skipGeminiCG := globalCredentialGuardInstalledGemini()
 	if !skipGeminiCG {
-		hooks["BeforeTool"] = mergeClaudeHookArray(
-			hooks["BeforeTool"],
-			"run_shell_command",
-			guardCredentialCmdPSPOSIX,
-		)
-		hooks["BeforeTool"] = mergeClaudeHookArray(
-			hooks["BeforeTool"],
-			"read_file|read_many_files",
-			guardCredentialCmdPSPOSIX,
-		)
-		hooks["BeforeTool"] = mergeClaudeHookArray(
-			hooks["BeforeTool"],
-			"write_file|replace",
-			guardCredentialCmdPSPOSIX,
-		)
+		hooks["BeforeTool"] = mergeClaudeHookArray(hooks["BeforeTool"], "run_shell_command", guardCredentialCmdPSPOSIX)
+	} else {
+		removeGuardFromNestedArrayInHooks(hooks, "BeforeTool", "run_shell_command", guardCredentialCmdPSPOSIX, guardforms.CredentialLegacyPSPOSIX)
 	}
-	// Dedup (ROADMAP-2026-08-17 Wave 2/ML-2B): skip the project-scope
-	// git-branch-guard entry when the global one is already installed
-	// (`trackfw update harness --targets gemini-git-branch-guard`).
+	// read/write always present (D14 revised: global does not cover these pairs).
+	hooks["BeforeTool"] = mergeClaudeHookArray(hooks["BeforeTool"], "read_file|read_many_files", guardCredentialCmdPSPOSIX)
+	hooks["BeforeTool"] = mergeClaudeHookArray(hooks["BeforeTool"], "write_file|replace", guardCredentialCmdPSPOSIX)
+
+	// Git branch guard D14 revised: run_shell_command only.
 	if !globalGitBranchGuardInstalledGemini() {
-		hooks["BeforeTool"] = mergeClaudeHookArray(
-			hooks["BeforeTool"],
-			"run_shell_command",
-			guardGitBranchCmdPSPOSIX,
-		)
+		hooks["BeforeTool"] = mergeClaudeHookArray(hooks["BeforeTool"], "run_shell_command", guardGitBranchCmdPSPOSIX)
+	} else {
+		removeGuardFromNestedArrayInHooks(hooks, "BeforeTool", "run_shell_command", guardGitBranchCmdPSPOSIX, guardforms.GitBranchLegacyPSPOSIX)
 	}
 
-	hooks["AfterTool"] = mergeClaudeHookArray(
-		hooks["AfterTool"],
-		"*",
-		geminiCleanupCmd,
-	)
+	hooks["AfterTool"] = mergeClaudeHookArray(hooks["AfterTool"], "*", geminiCleanupCmd)
+	// D14 revised AfterTool: same per-pair logic.
 	if !skipGeminiCG {
-		hooks["AfterTool"] = mergeClaudeHookArray(
-			hooks["AfterTool"],
-			"run_shell_command",
-			guardCredentialCmdPSPOSIX,
-		)
-		hooks["AfterTool"] = mergeClaudeHookArray(
-			hooks["AfterTool"],
-			"read_file|read_many_files",
-			guardCredentialCmdPSPOSIX,
-		)
-		hooks["AfterTool"] = mergeClaudeHookArray(
-			hooks["AfterTool"],
-			"write_file|replace",
-			guardCredentialCmdPSPOSIX,
-		)
+		hooks["AfterTool"] = mergeClaudeHookArray(hooks["AfterTool"], "run_shell_command", guardCredentialCmdPSPOSIX)
+	} else {
+		removeGuardFromNestedArrayInHooks(hooks, "AfterTool", "run_shell_command", guardCredentialCmdPSPOSIX, guardforms.CredentialLegacyPSPOSIX)
 	}
+	// read/write always present.
+	hooks["AfterTool"] = mergeClaudeHookArray(hooks["AfterTool"], "read_file|read_many_files", guardCredentialCmdPSPOSIX)
+	hooks["AfterTool"] = mergeClaudeHookArray(hooks["AfterTool"], "write_file|replace", guardCredentialCmdPSPOSIX)
 
 	root["hooks"] = hooks
 
@@ -1749,46 +1694,32 @@ func InjectWindsurfHooks(rootDir string) error {
 			"show_output": true,
 		}
 	}
-	// ML-2A: migrate pre-ML-2A Windsurf git-branch-guard entry to the new inline form.
-	migrateCursorSimpleCommand(hooks["pre_run_command"], legacyWindsurfGitGuardCmd, windsurfGitGuardCmd, windsurfGetCmd)
-	// ML-6B/ML-6C: migrate D2 and pre-ML-6C D11 inline form → new form.
-	// REQ-2026-10-20: also migrate D11 revised pré-REQ-2026-10-20 and workaround bash wrapper form.
-	migrateCursorSimpleCommand(hooks["pre_run_command"], legacyD2GitBranchCmdPSPOSIX, windsurfGitGuardCmd, windsurfGetCmd)
-	migrateCursorSimpleCommand(hooks["pre_run_command"], legacyD11GitBranchCmdPSPOSIX, windsurfGitGuardCmd, windsurfGetCmd)
-	migrateCursorSimpleCommand(hooks["pre_run_command"], legacyD11RevGitBranchCmdPSPOSIX, windsurfGitGuardCmd, windsurfGetCmd)
-	migrateCursorSimpleCommand(hooks["pre_run_command"], legacyWABashGitBranchCmdPSPOSIX, windsurfGitGuardCmd, windsurfGetCmd)
-	hooks["pre_run_command"] = mergeSimpleCommandArray(
-		hooks["pre_run_command"],
-		windsurfGitGuardCmd,
-		windsurfMakeEntry,
-		windsurfGetCmd,
-	)
-	// ML-1B (REQ-2026-10-06): wire credential guard.
-	// globalCredentialGuardInstalledWindsurf checks ~/.codeium/windsurf/hooks.json
-	// for the global form (guardCredentialGlobalCmdPSPOSIX). If the global harness is
-	// already installed, the project-scope wiring is skipped to avoid double-firing —
-	// same dedup pattern as Cursor/Claude/Codex/Gemini/Copilot.
+	// D13 dedup for git-branch guard (REQ-2026-10-23): replace N individual
+	// migrateCursorSimpleCommand calls (one per legacy form) with a single
+	// dedupFlatGuardEntries call that migrates all legacy forms and collapses to
+	// exactly one entry. mergeSimpleCommandArray then handles the "not yet present"
+	// case with the correct {command, show_output:true} entry shape.
+	hooks["pre_run_command"] = dedupFlatGuardEntries(hooks["pre_run_command"], "", windsurfGitGuardCmd, guardforms.GitBranchLegacyPSPOSIX, windsurfGetCmd)
+	hooks["pre_run_command"] = mergeSimpleCommandArray(hooks["pre_run_command"], windsurfGitGuardCmd, windsurfMakeEntry, windsurfGetCmd)
+
+	// D13/D14 revised for credential guard (REQ-2026-10-23):
+	// globalCredentialGuardInstalledWindsurf checks ~/.codeium/windsurf/hooks.json.
+	// When global installed → REMOVE project-scope entries (D14 revised removal).
+	// When not installed → migrate legacy forms and emit canonical entry.
 	if !globalCredentialGuardInstalledWindsurf() {
-		// pre_run_command: credential guard in addition to git-branch guard (already wired above).
-		// Credential guard is merged AFTER git-branch so that a fresh init and an update of a
-		// git-branch-only file produce identical byte order: [git-branch, credential] in both cases.
-		hooks["pre_run_command"] = mergeSimpleCommandArray(
-			hooks["pre_run_command"],
-			guardCredentialCmdPSPOSIX,
-			windsurfMakeEntry,
-			windsurfGetCmd,
-		)
-		// pre_write_code: credential guard only (git-branch is irrelevant for write events).
-		// Wave 0 ML-0B: pre_write_code carries edits[*].new_string — the most critical event for
-		// credential materialization. Layer 1 (brute scan) detects JWTs in the payload (Vector H
-		// confirmed: RC=2). NÃO instalar em pre_read_code: payload contains only file_path, not
-		// content — installing there would be false protection (Wave 0 residual R2).
-		hooks["pre_write_code"] = mergeSimpleCommandArray(
-			hooks["pre_write_code"],
-			guardCredentialCmdPSPOSIX,
-			windsurfMakeEntry,
-			windsurfGetCmd,
-		)
+		// pre_run_command: credential guard in addition to git-branch guard.
+		// Credential guard merged AFTER git-branch for stable byte order.
+		hooks["pre_run_command"] = dedupFlatGuardEntries(hooks["pre_run_command"], "", guardCredentialCmdPSPOSIX, guardforms.CredentialLegacyPSPOSIX, windsurfGetCmd)
+		hooks["pre_run_command"] = mergeSimpleCommandArray(hooks["pre_run_command"], guardCredentialCmdPSPOSIX, windsurfMakeEntry, windsurfGetCmd)
+		// pre_write_code: credential guard only (git-branch irrelevant for write events).
+		// Wave 0 ML-0B: pre_write_code carries edits[*].new_string — Vector H confirmed: RC=2.
+		// NÃO instalar em pre_read_code: payload is file_path only, not content (R2).
+		hooks["pre_write_code"] = dedupFlatGuardEntries(hooks["pre_write_code"], "", guardCredentialCmdPSPOSIX, guardforms.CredentialLegacyPSPOSIX, windsurfGetCmd)
+		hooks["pre_write_code"] = mergeSimpleCommandArray(hooks["pre_write_code"], guardCredentialCmdPSPOSIX, windsurfMakeEntry, windsurfGetCmd)
+	} else {
+		// D14 revised: remove project-scope entries from pairs the global covers.
+		removeGuardFromFlatArrayInHooks(hooks, "pre_run_command", "", guardCredentialCmdPSPOSIX, guardforms.CredentialLegacyPSPOSIX, windsurfGetCmd)
+		removeGuardFromFlatArrayInHooks(hooks, "pre_write_code", "", guardCredentialCmdPSPOSIX, guardforms.CredentialLegacyPSPOSIX, windsurfGetCmd)
 	}
 	root["hooks"] = hooks
 
@@ -1936,32 +1867,24 @@ func InjectAmazonQHooks(rootDir string) error {
 	migrateHookCommand(hooks["preToolUse"], "execute_bash", legacyAmazonQGitGuardCmd, guardGitBranchCmdCmdExe)
 	// ML-6B: migrate D2 cmd.exe form → fail-closed D11 form.
 	migrateHookCommand(hooks["preToolUse"], "execute_bash", legacyD2GitBranchCmdCmdExe, guardGitBranchCmdCmdExe)
-	hooks["preToolUse"] = mergeClaudeHookArray(
-		hooks["preToolUse"],
-		"execute_bash",
-		guardGitBranchCmdCmdExe,
-	)
-	// ML-1B (REQ-2026-10-06): wire credential guard.
-	// execute_bash: credential guard in addition to git-branch guard (already wired above).
-	// Credential guard is merged AFTER git-branch so that a fresh init and an update of a
-	// git-branch-only file produce identical byte order: git-branch entry first, credential
-	// second inside the same matcher's inner hooks array.
-	hooks["preToolUse"] = mergeClaudeHookArray(
-		hooks["preToolUse"],
-		"execute_bash",
-		guardCredentialCmdCmdExe,
-	)
-	// fs_write: credential guard only (git-branch guard is irrelevant for write events).
-	// Wave 0 ML-0B: fs_write carries file_text/new_str content variants — Layer 1 detects
-	// JWTs in the payload (Vector G confirmed: RC=2). NÃO instalar em fs_read: payload contains
-	// only path, not content — false protection (Wave 0 residual R2).
-	// Bypass EE4 (JWT + "> /dev/null" in new_str → credIsAllEphemeral → RC=0) is a known gap
-	// documented in Wave 0 and to be addressed by ML-1C.
-	hooks["preToolUse"] = mergeClaudeHookArray(
-		hooks["preToolUse"],
-		"fs_write",
-		guardCredentialCmdCmdExe,
-	)
+	// Credential guard: migrate all known legacy forms to the cmd.exe canonical.
+	for _, matcher := range []string{"execute_bash", "fs_write"} {
+		migrateHookCommand(hooks["preToolUse"], matcher, legacyBareCredGuardCmd, guardCredentialCmdCmdExe)
+		migrateHookCommand(hooks["preToolUse"], matcher, legacyD2CredentialCmdCmdExe, guardCredentialCmdCmdExe)
+	}
+	// D13 dedup (REQ-2026-10-23): collapse duplicates after legacy migrations.
+	hooks["preToolUse"] = migrateDedupGuardInNestedArray(hooks["preToolUse"], "execute_bash", guardGitBranchCmdCmdExe, guardforms.GitBranchLegacyCmdExe)
+	hooks["preToolUse"] = migrateDedupGuardInNestedArray(hooks["preToolUse"], "execute_bash", guardCredentialCmdCmdExe, guardforms.CredentialLegacyCmdExe)
+	hooks["preToolUse"] = migrateDedupGuardInNestedArray(hooks["preToolUse"], "fs_write", guardCredentialCmdCmdExe, guardforms.CredentialLegacyCmdExe)
+	// Emit: git-branch guard then credential guard in execute_bash; credential in fs_write.
+	hooks["preToolUse"] = mergeClaudeHookArray(hooks["preToolUse"], "execute_bash", guardGitBranchCmdCmdExe)
+	// execute_bash: credential guard after git-branch for stable byte order.
+	hooks["preToolUse"] = mergeClaudeHookArray(hooks["preToolUse"], "execute_bash", guardCredentialCmdCmdExe)
+	// fs_write: credential guard only (git-branch irrelevant for write events).
+	// Wave 0 ML-0B: fs_write carries file_text/new_str — Vector G confirmed: RC=2.
+	// NÃO instalar em fs_read: payload is path only, not content (R2).
+	// Bypass EE4 (JWT + "> /dev/null" in new_str → credIsAllEphemeral → RC=0) documented in Wave 0.
+	hooks["preToolUse"] = mergeClaudeHookArray(hooks["preToolUse"], "fs_write", guardCredentialCmdCmdExe)
 	root["hooks"] = hooks
 
 	toolsSettings, _ := root["toolsSettings"].(map[string]interface{})

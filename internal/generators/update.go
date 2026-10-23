@@ -15,6 +15,7 @@ import (
 
 	"github.com/kgsaran/trackfw/internal/agentconfig"
 	"github.com/kgsaran/trackfw/internal/config"
+	"github.com/kgsaran/trackfw/internal/guardforms"
 	"github.com/kgsaran/trackfw/internal/identity"
 	"github.com/kgsaran/trackfw/internal/integrations"
 	"github.com/kgsaran/trackfw/internal/pathguard"
@@ -1065,6 +1066,14 @@ func harnessCredentialGuardTargetClaude(home, claudeDir string, claudeDirErr err
 		}
 		migrateGuardHookMatcher(hooks["PreToolUse"], "Bash", claudeShellMatcher, guardCredentialGlobalCmdPSPOSIX)
 		migrateGuardHookMatcher(hooks["PostToolUse"], "Bash", claudeShellMatcher, guardCredentialGlobalCmdPSPOSIX)
+		// D13 dedup (REQ-2026-10-23): collapse duplicates produced by multiple
+		// migrateHookCommand calls (home-dependent legacyScriptPath + registry forms).
+		// Pass legacyScriptPath at the call site — it cannot live in guardforms (home-dependent).
+		globalLegacyForms := append(guardforms.CredentialGlobalLegacyPSPOSIX, legacyScriptPath) //nolint:gocritic // intentional extend-by-value
+		for _, m := range []string{claudeShellMatcher, "Bash"} {
+			hooks["PreToolUse"] = migrateDedupGuardInNestedArray(hooks["PreToolUse"], m, guardCredentialGlobalCmdPSPOSIX, globalLegacyForms)
+			hooks["PostToolUse"] = migrateDedupGuardInNestedArray(hooks["PostToolUse"], m, guardCredentialGlobalCmdPSPOSIX, globalLegacyForms)
+		}
 	}
 	mergeCredentialGuardClaudeHooks(root, claudeShellMatcher, guardCredentialGlobalCmdPSPOSIX)
 
@@ -1985,6 +1994,12 @@ func harnessGitBranchGuardTargetClaude(home, claudeDir string, claudeDirErr erro
 		}
 		migrateGuardHookMatcher(hooks["PreToolUse"], "Bash", claudeShellMatcher, guardGitBranchCmdPSPOSIX)
 		migrateGuardHookMatcher(hooks["PostToolUse"], "Bash", claudeShellMatcher, guardGitBranchCmdPSPOSIX)
+		// D13 dedup (REQ-2026-10-23): collapse duplicates from multiple migrateHookCommand calls.
+		gitLegacyForms := append(guardforms.GitBranchLegacyPSPOSIX, legacyScriptPath) //nolint:gocritic // intentional extend-by-value
+		for _, m := range []string{claudeShellMatcher, "Bash"} {
+			hooks["PreToolUse"] = migrateDedupGuardInNestedArray(hooks["PreToolUse"], m, guardGitBranchCmdPSPOSIX, gitLegacyForms)
+			hooks["PostToolUse"] = migrateDedupGuardInNestedArray(hooks["PostToolUse"], m, guardGitBranchCmdPSPOSIX, gitLegacyForms)
+		}
 	}
 	mergeCredentialGuardClaudeHooks(root, claudeShellMatcher, guardGitBranchCmdPSPOSIX)
 
