@@ -29,11 +29,11 @@ ADR: docs/adr/ADR-2026-10-22-logs-append-only-compartilhados-viram-um-arquivo-po
 - Não há issue aberta sobre o mecanismo (varredura de 2026-10-22).
 
 ## Acceptance Criteria
-- [ ] AC1–AC4 da REQ (gates de encoding), na Wave 1, ML-1B.
+- [x] AC1–AC4 da REQ (gates de encoding), na Wave 1, ML-1B.
 - [x] AC5: política decidida pelo KG (o mantenedor move depois do merge); os roadmaps do #238 e do #240 já estão em done.
-- [ ] AC6 (reescrito): log com um arquivo por entrada, lido por um ponto único, com o merge sem conflito provado sem `.gitattributes`.
-- [ ] AC7: as entradas dos dois lados sobrevivem, por igualdade de conjunto.
-- [ ] AC8: o contexto de trabalho grava um arquivo por entrada, e as instruções geradas acompanham.
+- [x] AC6 (reescrito): log com um arquivo por entrada, lido por um ponto único, com o merge sem conflito provado sem `.gitattributes`.
+- [x] AC7: as entradas dos dois lados sobrevivem, por igualdade de conjunto.
+- [x] AC8: o contexto de trabalho grava um arquivo por entrada, e as instruções geradas acompanham.
 - [ ] `make quality` e o CI ficam verdes.
 
 ## Status Legend
@@ -160,9 +160,12 @@ go test ./internal/generators/ ./internal/metrics/ ./internal/serve/ ./internal/
 **Status:** ⬜ Pendente
 **Agente:** zeus-tf
 **Acceptance criteria:**
-- [ ] `make quality` com rc=0, com a máquina ociosa e o HOME isolado
+- [x] `make quality` com rc=0, com a máquina ociosa e o HOME isolado. A 1ª rodada reprovou em `internal/pathguard`, porque a guarda ficava nos chamadores do `WriteEntry`; depois da correção (f3cddf7a), rc=0 e falsificação com 368 OK / 0 FAIL.
 - [ ] CI do PR verde (o PR abre como draft até aqui)
-- [ ] Lista, para o KG, das linhas do `~/.claude/CLAUDE.md` e dos agentes instalados que mudam depois do `agents update`
+- [x] Lista para o KG, depois da release e do `trackfw agents update`:
+  - os 12 `~/.claude/agents/trackfw-*.md` (linha 23) ainda mandam anexar ao `.md` legado. O próprio update os regenera;
+  - `~/.claude/agents/cronos.md:40` é do KG, fora do trackfw, e precisa da troca manual;
+  - na linha 20 do `~/.claude/CLAUDE.md`, "`agents-working-context.md`" passa a ser "`docs/agents-working-context/`". A linha 304 é histórico e pode ficar.
 
 ---
 

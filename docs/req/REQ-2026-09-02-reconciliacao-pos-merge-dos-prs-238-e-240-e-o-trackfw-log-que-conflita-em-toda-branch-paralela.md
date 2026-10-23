@@ -99,15 +99,15 @@ Conflito em arquivo de log é ruído puro — não há disputa semântica, as du
 
 ## Acceptance Criteria
 
-- [ ] **AC1** — `errors="replace"` vira `strict` **ou** o motivo de mantê-lo está escrito no código
+- [x] **AC1** — `errors="replace"` vira `strict` **ou** o motivo de mantê-lo está escrito no código
       com a medição que o sustenta. Falsificação: entrada com surrogate solto demonstra o
       comportamento nos dois casos.
-- [ ] **AC2** — A entrada de allowlist de `check-output-encoding-declared.sh` é removida **ou** seu
+- [x] **AC2** — A entrada de allowlist de `check-output-encoding-declared.sh` é removida **ou** seu
       motivo é reescrito para o que passa a ser verdade. Se o arquivo sair da allowlist, o gate passa
       a cobri-lo e isso é verificado por execução.
-- [ ] **AC3** — 🔴 O aviso de "allowlist obsoleta" passa a reconhecer **também** `sys.stdout.reconfigure`
+- [x] **AC3** — 🔴 O aviso de "allowlist obsoleta" passa a reconhecer **também** `sys.stdout.reconfigure`
       como declaração, e não só `export PYTHONIOENCODING`. Falsificado nas duas direções.
-- [ ] **AC4** — O item 3 é **medido**: enumerar onde saída de gate é hasheada ou comparada byte a
+- [x] **AC4** — O item 3 é **medido**: enumerar onde saída de gate é hasheada ou comparada byte a
       byte, e reportar quantos dos 37 têm exposição real a CRLF. **Zero é resultado válido** e
       encerra o item. Correção só se a medição mostrar exposição.
 - [x] **AC5** *(política decidida pelo KG em 2026-10-22, ver a reescrita abaixo; roadmaps já em done)* — Os roadmaps trazidos pelos PRs do reporter estão em `done`, e a política de quem faz
@@ -116,7 +116,7 @@ Conflito em arquivo de log é ruído puro — não há disputa semântica, as du
       **e** é gerado pelo `trackfw init` nos **3 CLIs** (regra dura de paridade). Falsificação nas
       duas direções: duas branches que movem roadmaps mergeiam sem conflito com o arquivo, e
       conflitam sem ele.
-- [ ] **AC7** — 🔴 **Controle do AC6:** o `merge=union` **não** engole conteúdo — as linhas dos dois
+- [x] **AC7** — 🔴 **Controle do AC6:** o `merge=union` **não** engole conteúdo — as linhas dos dois
       lados sobrevivem, verificado por igualdade de conjunto, não por ausência de conflito.
 
 ### Reescrita de 2026-10-22, contra a main 75642ec5 (v10.1.0 + #598/#600)
@@ -131,12 +131,12 @@ arquivo por entrada** (ADR-2026-10-22). Pela mesma causa e pelo mesmo sintoma, o
 mantenedor, depois do merge, numa branch `docs/`. É a mesma regra de "fechamento é pós-merge" que vale
 para o trabalho interno. Os roadmaps do #238 e do #240 já estão em `done/` (triagem de 2026-10-17).
 
-- [ ] **AC6 (reescrito)** — Uma transição de roadmap ou REQ grava um arquivo próprio em
+- [x] **AC6 (reescrito)** — Uma transição de roadmap ou REQ grava um arquivo próprio em
       `<dir>/.trackfw-log-entries/` (ADR D1). Todos os leitores passam por um ponto único, que lê o legado
       congelado e o diretório. Falsificação **sem `.gitattributes`**, num repositório temporário: duas
       branches que movem roadmaps fazem merge sem conflito, e o formato antigo conflita no mesmo teste.
-- [ ] **AC7 (mantido)** — Controle: as entradas dos dois lados sobrevivem, por igualdade de conjunto.
-- [ ] **AC8** — O contexto de trabalho grava uma entrada por arquivo em `docs/agents-working-context/`
+- [x] **AC7 (mantido)** — Controle: as entradas dos dois lados sobrevivem, por igualdade de conjunto.
+- [x] **AC8** — O contexto de trabalho grava uma entrada por arquivo em `docs/agents-working-context/`
       (ADR D2). As instruções geradas (`agentfiles.go`, os 12 assets e os goldens) mandam escrever e ler
       ali. O `.md` legado ganha cabeçalho de redirecionamento. Mesma falsificação do AC6.
 
