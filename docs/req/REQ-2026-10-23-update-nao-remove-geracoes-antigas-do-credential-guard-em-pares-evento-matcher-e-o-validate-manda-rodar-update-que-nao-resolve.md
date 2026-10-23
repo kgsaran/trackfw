@@ -33,26 +33,26 @@ da legada de projeto com o guard global instalado).
 
 ## Acceptance Criteria
 
-- [ ] **AC1 — Cursor, a issue.** Com a fixture das 5 gerações (as 4 da issue mais `scripts/trackfw-credential-guard.sh`)
+- [x] **AC1 — Cursor, a issue.** Com a fixture das 5 gerações (as 4 da issue mais `scripts/trackfw-credential-guard.sh`)
   em `preToolUse`/`postToolUse` × `Read`/`Write`, nos dois estados (só legadas; legadas mais a atual), depois do
   `InjectCursorHooks` há **exatamente uma** entrada do guard por par, na forma atual. O validador real sobre o arquivo
   resultante dá **zero** avisos de `.cursor/hooks.json`. Contra-braço: o código de `origin/main` deixa as legadas, e o
   validador dá 4 avisos sobre a mesma fixture.
-- [ ] **AC2 — Registro único (D12).** As formas legadas de cada guard (credential e git-branch) estão numa lista só,
+- [x] **AC2 — Registro único (D12).** As formas legadas de cada guard (credential e git-branch) estão numa lista só,
   consumida pelo validador e por todo sítio de migração. Não sobra nenhuma cópia literal da lista: um grep pelas constantes
   `legacy*Cmd*` fora do registro e dos testes devolve só o uso por referência.
-- [ ] **AC3 — Mesma causa nos outros sítios (Regra Dura).** A matriz CLI × escopo (projeto/global) × evento × matcher ×
+- [x] **AC3 — Mesma causa nos outros sítios (Regra Dura).** A matriz CLI × escopo (projeto/global) × evento × matcher ×
   geração medida na Wave 0 está no roadmap, e **cada célula** em que o código de hoje deixa legada ou duplicata tem um
   teste que reprova no código de `origin/main` e passa no novo.
-- [ ] **AC4 — Teste de concordância.** Um teste afirma que toda forma que o validador classifica como legada é migrada por
+- [x] **AC4 — Teste de concordância.** Um teste afirma que toda forma que o validador classifica como legada é migrada por
   todo sítio que emite aquele guard. Ele reprova quando uma geração é acrescentada ao registro sem que algum sítio a
   receba, e isso é verificado por falsificação.
-- [ ] **AC5 — Hooks do usuário intactos.** Uma entrada que não está no registro (comando personalizado, inclusive um que
+- [x] **AC5 — Hooks do usuário intactos.** Uma entrada que não está no registro (comando personalizado, inclusive um que
   só *contém* `trackfw guard credential`), no mesmo par evento×matcher, sobrevive à migração byte a byte.
-- [ ] **AC6 — Guard global (D14 revista, por par).** Num par (evento, matcher) que o guard global do CLI cobre, a entrada de
+- [x] **AC6 — Guard global (D14 revista, por par).** Num par (evento, matcher) que o guard global do CLI cobre, a entrada de
   projeto reconhecida pelo registro é removida. Num par que o global não cobre (por exemplo Cursor `preToolUse`×`Read`),
   ela é migrada e continua emitida, com ou sem global. Os três braços têm teste.
-- [ ] **AC7 — Idempotência.** Rodar o `update` duas vezes produz o mesmo arquivo da primeira, byte a byte, e a segunda
+- [x] **AC7 — Idempotência.** Rodar o `update` duas vezes produz o mesmo arquivo da primeira, byte a byte, e a segunda
   rodada não reporta mudança.
 - [ ] **AC8 — Fechamento.** `make quality` rc=0, CI verde, e o PR leva `Closes #599`.
 

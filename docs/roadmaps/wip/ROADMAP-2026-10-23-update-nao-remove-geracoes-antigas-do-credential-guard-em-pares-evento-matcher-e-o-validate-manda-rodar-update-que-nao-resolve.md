@@ -19,7 +19,7 @@ que acrescenta a forma atual e deixa as legadas. A lista de gerações está cop
 divergem entre os CLIs.
 
 ## Acceptance Criteria
-- [ ] AC1–AC8 da REQ, cada um com a evidência registrada no ML que o fecha.
+- [x] AC1–AC7 da REQ, cada um com a evidência registrada no ML que o fecha (AC8 = fechamento, abaixo).
 - [ ] `make quality` e o CI ficam verdes.
 
 ## Status Legend
@@ -263,5 +263,5 @@ confirmando que os novos testes reprovam a condição correta.
 **Status:** ⬜ Pendente
 **Agente:** zeus-tf
 **Acceptance criteria:**
-- [ ] `make quality` rc=0 com a máquina ociosa e o HOME isolado
+- [x] `make quality` rc=0 com a máquina ociosa e o HOME isolado (falsificação 368 OK / 0 FAIL; FAIL do log são só braços de autoteste)
 - [ ] CI do PR verde; PR com `Closes #599`
