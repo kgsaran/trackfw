@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-09-22
 req: "docs/req/REQ-2026-09-02-reconciliacao-pos-merge-dos-prs-238-e-240-e-o-trackfw-log-que-conflita-em-toda-branch-paralela.md"
 squad: "hades-tf, apolo-tf, ares-tf, prometeu-tf, hefesto-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf, ares-tf, prometeu-tf, hefesto-tf"
 
 # Roadmap: Reconciliação pós-merge dos PRs #238 e #240, e o `.trackfw-log` que conflita em toda branch paralela
 
-> Created: 2026-09-22 | Status: wip | Reescrito contra a main 75642ec5 em 2026-10-22
+> Created: 2026-09-22 | Status: done | Reescrito contra a main 75642ec5 em 2026-10-22
 
 ## Context
 REQ: docs/req/REQ-2026-09-02-reconciliacao-pos-merge-dos-prs-238-e-240-e-o-trackfw-log-que-conflita-em-toda-branch-paralela.md
@@ -34,7 +34,7 @@ ADR: docs/adr/ADR-2026-10-22-logs-append-only-compartilhados-viram-um-arquivo-po
 - [x] AC6 (reescrito): log com um arquivo por entrada, lido por um ponto único, com o merge sem conflito provado sem `.gitattributes`.
 - [x] AC7: as entradas dos dois lados sobrevivem, por igualdade de conjunto.
 - [x] AC8: o contexto de trabalho grava um arquivo por entrada, e as instruções geradas acompanham.
-- [ ] `make quality` e o CI ficam verdes.
+- [x] `make quality` e o CI ficam verdes. (`make quality` rc=0 no f3cddf7a, 368 OK / 0 FAIL; CI 20/20 no 96988d94; mergeado no #602, f99db897)
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -157,11 +157,11 @@ go test ./internal/generators/ ./internal/metrics/ ./internal/serve/ ./internal/
 > Dependencies: Wave 3 aprovada.
 
 ### ML-4A — make quality, CI e a transição
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** zeus-tf
 **Acceptance criteria:**
 - [x] `make quality` com rc=0, com a máquina ociosa e o HOME isolado. A 1ª rodada reprovou em `internal/pathguard`, porque a guarda ficava nos chamadores do `WriteEntry`; depois da correção (f3cddf7a), rc=0 e falsificação com 368 OK / 0 FAIL.
-- [ ] CI do PR verde (o PR abre como draft até aqui)
+- [x] CI do PR verde (o PR abre como draft até aqui) — #602, 20/20 checks no 96988d94
 - [x] Lista para o KG, depois da release e do `trackfw agents update`:
   - os 12 `~/.claude/agents/trackfw-*.md` (linha 23) ainda mandam anexar ao `.md` legado. O próprio update os regenera;
   - `~/.claude/agents/cronos.md:40` é do KG, fora do trackfw, e precisa da troca manual;
