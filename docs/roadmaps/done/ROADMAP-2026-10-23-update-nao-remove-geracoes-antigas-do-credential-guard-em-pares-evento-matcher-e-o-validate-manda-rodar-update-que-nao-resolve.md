@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-10-23
 req: "docs/req/REQ-2026-10-23-update-nao-remove-geracoes-antigas-do-credential-guard-em-pares-evento-matcher-e-o-validate-manda-rodar-update-que-nao-resolve.md"
 squad: "hades-tf, apolo-tf, hefesto-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, apolo-tf, hefesto-tf"
 
 # Roadmap: update não remove gerações antigas do credential guard em pares evento×matcher
 
-> Created: 2026-10-23 | Status: wip
+> Created: 2026-10-23 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-10-23-update-nao-remove-geracoes-antigas-do-credential-guard-em-pares-evento-matcher-e-o-validate-manda-rodar-update-que-nao-resolve.md
@@ -20,7 +20,7 @@ divergem entre os CLIs.
 
 ## Acceptance Criteria
 - [x] AC1–AC7 da REQ, cada um com a evidência registrada no ML que o fecha (AC8 = fechamento, abaixo).
-- [ ] `make quality` e o CI ficam verdes.
+- [x] `make quality` e o CI ficam verdes. (`make quality` rc=0; CI 20/20 no 39d0ac26; mergeado no #604, f2c7c7fd)
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -260,8 +260,8 @@ confirmando que os novos testes reprovam a condição correta.
 > Dependencies: Wave 2 aprovada.
 
 ### ML-3A — make quality e CI
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** zeus-tf
 **Acceptance criteria:**
 - [x] `make quality` rc=0 com a máquina ociosa e o HOME isolado (falsificação 368 OK / 0 FAIL; FAIL do log são só braços de autoteste)
-- [ ] CI do PR verde; PR com `Closes #599`
+- [x] CI do PR verde; PR com `Closes #599` — #604, 20/20 no 39d0ac26; #599 fechada
