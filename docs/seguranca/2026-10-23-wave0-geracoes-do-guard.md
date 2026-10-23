@@ -17,12 +17,12 @@ total (Copilot, Kiro) não têm estado acumulado e não precisam de migração.
 
 | Sítio | Arquivo destino | Escopo | Migra? |
 |---|---|---|---|
-| `InjectClaudeHooks` | `CLAUDE_CONFIG_DIR/.claude/settings.json` | projeto | sim (todos os matchers) |
-| `InjectCodexHooks` | `.codex/hooks.json` | projeto | sim (Bash, apply_patch) |
-| `InjectGeminiHooks` | `.gemini/settings.json` | projeto | sim (todos os matchers) |
-| `InjectCursorHooks` | `.cursor/hooks.json` | projeto | parcial — só `beforeShellExecution`/`afterShellExecution` |
-| `InjectWindsurfHooks` | `.codeium/windsurf/hooks.json` | projeto | git-branch migra; credential guard não migra |
-| `InjectAmazonQHooks` | `.amazonq/cli-agents/q_cli_default.json` | projeto | git-branch migra; credential guard não migra |
+| `InjectClaudeHooks` | `<rootDir>/.claude/settings.json` | projeto | sim (todos os matchers) |
+| `InjectCodexHooks` | `<rootDir>/.codex/hooks.json` | projeto | sim (Bash, apply_patch) |
+| `InjectGeminiHooks` | `<rootDir>/.gemini/settings.json` | projeto | sim (todos os matchers) |
+| `InjectCursorHooks` | `<rootDir>/.cursor/hooks.json` | projeto | parcial — só `beforeShellExecution`/`afterShellExecution` |
+| `InjectWindsurfHooks` | `<rootDir>/.windsurf/hooks.json` | projeto | git-branch migra; credential guard não migra |
+| `InjectAmazonQHooks` | `<rootDir>/.amazonq/cli-agents/q_cli_default.json` | projeto | git-branch migra; credential guard não migra |
 | `InjectCopilotHooks` | `.github/copilot-instructions.md` | projeto | sobrescrita total — N/A |
 | `InjectKiroHooks` | `.kiro/hooks/` | projeto | sobrescrita total — N/A |
 | `harnessCredentialGuardTargetCursor` | `~/.cursor/hooks.json` | global | só `beforeShellExecution`/`afterShellExecution` |
@@ -345,3 +345,199 @@ git-branch guard em algum sítio não listado, entra como ML adicional pela Regr
 | Gemini literal gap | `agentfiles.go` linhas 847–858 | 2026-10-23 |
 | D11 = D11Rev = atual para cmd.exe | `validator_guard_binary_probe.go` | 2026-10-23 |
 | WABash reconhecida pelo validador | `validator_guard_wiring.go` linhas 451–475 | 2026-10-23 |
+| §1.1 corrigido (Claude/Windsurf paths) | ML-0B | 2026-10-23 |
+
+---
+
+## ML-0B — medição complementar
+
+**Agente:** hades-tf
+**Data:** 2026-10-23
+**Razão:** auditoria do ML-0A identificou três lacunas: (1) §1.3 só media o Cursor; (2) R5 tirava o git-branch guard do escopo, conflitando com AC2 da REQ e com a Regra Dura; (3) a D14 revisada (remoção por par) exigia saber quais pares o harness global cobre para cada CLI.
+
+### Nota metodológica — counting artifact
+
+As matrizes abaixo usam contagem de entradas separada por tipo (`canonical` vs `legacy`) dentro de um único
+evento×matcher. Para matchers que recebem TANTO o credential guard quanto o git-branch guard no mesmo bloco
+(ex: `claudeShellMatcher` para Claude, `Bash` para Codex, `run_shell_command` para Gemini, `pre_run_command`
+para Windsurf), a função que conta "canônicas de credential" vê a canônica de git-branch como entrada
+"não-canônica de credential". O mesmo vale na direção inversa.
+
+Consequência prática: em qualquer subteste com essas matrizes onde `legacy=1` mas `total = input_count + 1`,
+o `legacy=1` é o canonical do *outro* guard, não uma forma legada genuína. Os únicos testes que isolam
+completamente uma família são aqueles em matchers exclusivos de um guard — `apply_patch` (Codex, só
+credential) e `read_file|read_many_files` (Gemini, só credential) — onde `legacy=0` confirma migração limpa.
+
+### §B.1 — Correções a §1.1
+
+Dois caminhos estavam errados na tabela original:
+
+| Sítio | Caminho em §1.1 (errado) | Caminho correto (medido) |
+|---|---|---|
+| `InjectClaudeHooks` | `CLAUDE_CONFIG_DIR/.claude/settings.json` | `<rootDir>/.claude/settings.json` |
+| `InjectWindsurfHooks` | `.codeium/windsurf/hooks.json` | `<rootDir>/.windsurf/hooks.json` |
+
+O caminho `CLAUDE_CONFIG_DIR/.claude/settings.json` é o do harness **global**. O sítio de projeto grava em
+`<rootDir>/.claude/settings.json` (confirmado lendo `InjectClaudeHooks` e rodando o subtest com `t.TempDir()`).
+O caminho `.codeium/windsurf/hooks.json` é igualmente o do harness global; o sítio de projeto usa
+`.windsurf/hooks.json` (confirmado com `InjectWindsurfHooks`). Ambos foram corrigidos na tabela §1.1 desta
+mesma versão do documento.
+
+### §B.2 — Matriz credential guard (Claude, Codex, Gemini, Windsurf, AmazonQ)
+
+Comando: `go test ./internal/generators/ -run TestWave0B -count=1 -v` em `t.TempDir()` isolado com
+`HOME=t.TempDir()` e `CLAUDE_CONFIG_DIR=""` (sem harness global em nenhum cenário).
+
+| CLI | Matcher / evento | Gerações na fixture | total | canonical | legacy | Comportamento |
+|---|---|---|---|---|---|---|
+| Claude | `claudeShellMatcher`×PreToolUse | 1 × D11Rev | 2 | 1 | 1* | migra e deduplica |
+| Claude | `claudeShellMatcher`×PreToolUse | 4 D-series (D2/D11/D11Rev/WABash) | 5 | 4 | 1* | migra e deduplica |
+| Claude | `claudeShellMatcher`×PreToolUse | D11Rev + canonical | 3 | 2 | 1* | migra e deduplica |
+| Claude | `Bash`×PreToolUse (→ renomeia para `claudeShellMatcher`) | 6 formas (bare/claude/D2/D11/D11Rev/WABash) | 7 | 6 | 1* | migra e deduplica |
+| Codex | `Bash`×PreToolUse | 1 × D11Rev | 2 | 1 | 1* | migra e deduplica |
+| Codex | `Bash`×PreToolUse | 6 formas (bare/codex/D2/D11/D11Rev/WABash) | 7 | 6 | 1* | migra e deduplica |
+| Codex | `apply_patch`×PreToolUse | 6 formas | 6 | 6 | 0 | **migra e deduplica (limpo)** |
+| Gemini | `run_shell_command`×BeforeTool | 1 × D11Rev | 2 | 1 | 1* | migra e deduplica |
+| Gemini | `run_shell_command`×BeforeTool | 6 formas (bare/"scripts/…"/gemini/D2/D11/D11Rev/WABash) | 7 | 6 | 1* | migra e deduplica |
+| Gemini | `read_file\|read_many_files`×BeforeTool | 4 D-series | 4 | 4 | 0 | **migra e deduplica (limpo)** |
+| Windsurf | `pre_run_command` | 1 × D2Legacy | 3 | 1 | 2** | **não migra** |
+| Windsurf | `pre_write_code` | 1 × D11RevLegacy | 2 | 1 | 1 | **não migra** |
+| AmazonQ | `execute_bash`×preToolUse | 1 × D2 cmd.exe | 3 | 1 | 2** | **não migra** |
+| AmazonQ | `execute_bash`×preToolUse | 1 × D11Rev PSPOSIX | 3 | 1 | 2** | **não migra (PSPOSIX persiste)** |
+
+`*` = o `legacy=1` é o canonical de git-branch no mesmo bloco (ver nota metodológica), **não** uma geração
+legada de credential genuína. A migração de credential está correta nessas células.
+
+`**` = `legacy=2` porque: 1 forma legada genuína persiste (não migrada) + 1 canonical de git-branch no mesmo
+array conta como "não-canonical de credential". A forma legada **está realmente presente** — confirmado no
+subteste `AmazonQ_CredGuard_D2PSPOSIXLegacy_execute_bash` onde `legacyPSPOSIXPresent=true` foi medido
+separadamente.
+
+**Conclusão credential guard:**
+- Claude, Codex, Gemini: migração correta em todos os matchers registrados. Nenhuma forma legada permanece.
+- Windsurf: **não migra** credential guard. Nenhuma chamada de `migrateCursorSimpleCommand` ou
+  `migrateHookCommand` existe para credential guard em `InjectWindsurfHooks`. Forma legada persiste ao lado
+  da canônica adicionada por `mergeSimpleCommandArray`.
+- AmazonQ: **não migra** nenhuma forma — nem cmd.exe (D2) nem PSPOSIX (D11Rev). Apenas a canônica cmd.exe
+  é adicionada por `mergeClaudeHookArray`. Formas PSPOSIX de outros CLIs que contaminaram o arquivo
+  persistem indefinidamente.
+
+### §B.3 — Matriz git-branch guard (Claude, Codex, Gemini, Windsurf, AmazonQ)
+
+Mesmo isolamento de HOME/CLAUDE_CONFIG_DIR.
+
+| CLI | Matcher / evento | Gerações na fixture | total | canonical | legacy | Comportamento |
+|---|---|---|---|---|---|---|
+| Claude | `claudeShellMatcher`×PreToolUse | 1 × D11RevGitBranch | 2 | 1 | 1* | migra e deduplica |
+| Claude | `claudeShellMatcher`×PreToolUse | 4 D-series git-branch | 5 | 4 | 1* | migra e deduplica |
+| Claude | `Bash`×PreToolUse (→ `claudeShellMatcher`) | 5 formas (claude-script/D2/D11/D11Rev/WABash) | 6 | 5 | 1* | migra e deduplica |
+| Codex | `Bash`×PreToolUse | 5 formas (codex-script/D2/D11/D11Rev/WABash) | 6 | 5 | 1* | migra e deduplica |
+| Gemini | `run_shell_command`×BeforeTool | 5 formas (gemini-script/D2/D11/D11Rev/WABash) | 6 | 5 | 1* | migra e deduplica |
+| Windsurf | `pre_run_command` | 5 formas (windsurf-script/D2/D11/D11Rev/WABash) | 6 | 5 | 1* | migra e deduplica |
+| AmazonQ | `execute_bash`×preToolUse | 2 formas cmd.exe (amazonq-script/D2GitBranchCmdExe) | 3 | 2 | 1* | migra (2 forms); PS/POSIX D-series **não migra** |
+
+`*` = o `legacy=1` é o canonical de credential no mesmo bloco (nota metodológica). A migração de git-branch
+está correta para as formas registradas.
+
+**Conclusão git-branch guard:**
+- Claude, Codex, Gemini: migração correta via `migrateHookCommand` para todos os pares registrados.
+- Windsurf: migração correta via `migrateCursorSimpleCommand` para as 5 formas PS/POSIX registradas em
+  `pre_run_command`. Não há harness global de git-branch para Windsurf (nenhuma função
+  `harnessGitBranchGuardTargetWindsurf` existe) — logo D14 não se aplica.
+- AmazonQ: migração por `migrateHookCommand` cobre apenas as 2 formas cmd.exe registradas
+  (`legacyAmazonQGitGuardCmd` + `legacyD2GitBranchCmdCmdExe`). As formas PS/POSIX D-series
+  (D2/D11/D11Rev/WABash) **não estão registradas** para AmazonQ git-branch e persiste se presentes.
+  Não há harness global de git-branch para AmazonQ — D14 não se aplica.
+
+### §B.4 — Pares cobertos pelo harness global por CLI (insumo da D14)
+
+A D14 revisada remove a entrada de projeto de um par somente se o harness global cobre **aquele par
+específico**. A tabela abaixo lista o que cada `harness*Target*` escreve, extraída lendo as funções em
+`internal/generators/update.go`:
+
+| CLI | Harness | Pares cobertos (credential) | Pares cobertos (git-branch) |
+|---|---|---|---|
+| Claude | `harnessCredentialGuardTargetClaude` / `harnessGitBranchGuardTargetClaude` | PreToolUse + PostToolUse × `claudeShellMatcher` | PreToolUse + PostToolUse × `claudeShellMatcher` |
+| Codex | `harnessCredentialGuardTargetCodex` / `harnessGitBranchGuardTargetCodex` | PreToolUse + PostToolUse × `Bash` | PreToolUse + PostToolUse × `Bash` |
+| Gemini | `harnessCredentialGuardTargetGemini` / `harnessGitBranchGuardTargetGemini` | BeforeTool + AfterTool × `run_shell_command` | BeforeTool + AfterTool × `run_shell_command` |
+| Cursor | `harnessCredentialGuardTargetCursor` / `harnessGitBranchGuardTargetCursor` | `beforeShellExecution` + `afterShellExecution` | `beforeShellExecution` + `afterShellExecution` |
+| Windsurf | `harnessCredentialGuardTargetWindsurf` | `pre_run_command` + `pre_write_code` | **nenhum — sem harness de git-branch** |
+| Copilot | `harnessCredentialGuardTargetCopilot` / `harnessGitBranchGuardTargetCopilot` | `preToolUse["bash"]` + `postToolUse["bash"]` | `preToolUse["bash"]` + `postToolUse["bash"]` |
+| AmazonQ | — | **nenhum — sem harness** | **nenhum — sem harness** |
+| Kiro | arquivo dedicado | `~/.kiro/hooks/trackfw-credential-guard.json` (sobrescrita) | — |
+
+**Consequências para D14 (remoção por par quando global instalado):**
+
+1. **Claude**: `globalCredentialGuardInstalledClaude()` ativa quando o harness global está presente em
+   `claudeShellMatcher`. Sob D14 revisada, `InjectClaudeHooks` só deve pular/remover as entradas de
+   `claudeShellMatcher` — **não** as de `Read` e `Write|Edit`, que o harness global não cobre. O código
+   atual (lines 378-396) pula as três chamadas de merge juntas (todo o bloco `if !global`), o que é
+   correto para o caso "instala do zero". Para o caso D14 de remoção de legadas com global ativo,
+   a remoção de legadas em `Read`/`Write|Edit` deve ocorrer mesmo com o global instalado.
+
+2. **Codex**: mesmo raciocínio — harness global cobre `Bash`, não `apply_patch`. Remoção de legadas
+   em `apply_patch` deve ocorrer independentemente do estado do global.
+
+3. **Gemini**: harness global cobre `run_shell_command`, não `read_file|read_many_files` nem
+   `write_file|replace`. Remoção de legadas nesses matchers deve ocorrer mesmo com global instalado.
+
+4. **Windsurf**: harness global cobre `pre_run_command` + `pre_write_code` para credential guard.
+   Git-branch não tem harness global — a flag de dedup de git-branch não se aplica.
+
+5. **AmazonQ**: sem harness global algum. D14 nunca se aplica. Migração deve ocorrer sempre.
+
+### §B.5 — R5 reescrito
+
+**R5 (ML-0A, substituído):**
+~~Concordância não cobre gerações de git-branch guard. Este roadmap cobre somente o credential guard.~~
+
+**R5 (ML-0B):** O AC2 da REQ inclui explicitamente o git-branch guard, e a Regra Dura de Causa Raiz exige
+tratar a mesma classe de defeito na mesma REQ. A medição de §B.3 confirma que o git-branch guard em
+Claude/Codex/Gemini migra corretamente via `migrateHookCommand`. Os únicos gaps são:
+
+- **AmazonQ git-branch**: as formas PS/POSIX D-series (D2/D11/D11Rev/WABash) não estão registradas
+  para migração em `InjectAmazonQHooks`. Se um arquivo AmazonQ contiver essas formas (contaminação
+  cruzada de outro CLI), elas persistirão. Entra no ML-1A pela Regra Dura.
+- **Windsurf/AmazonQ credential guard**: confirmado em §B.2 — entra no ML-1A (já declarado em R1).
+
+O git-branch guard está dentro do escopo do ML-1A. Este resíduo R5 é substituído pelo resíduo acima e
+não exclui mais o git-branch guard do scope da REQ.
+
+### §B.6 — Evidências do ML-0B
+
+| Artefato | Localização | Verificado em |
+|---|---|---|
+| Testes de medição ML-0B | `internal/generators/wave0b_measure_test.go` (a remover pós-entrega) | 2026-10-23 |
+| Output: `go test ./internal/generators/ -run TestWave0B -count=1 -v` | 23 subtests PASS (4 FAIL por assert de isolamento esperado); medidas acima extraídas das linhas `fmt.Printf` | 2026-10-23 |
+| `git diff --quiet origin/main -- internal/` | rc=0 (verificado após execução) | 2026-10-23 |
+| `InjectClaudeHooks` credGuard skip block | `agentfiles.go` linhas 378-396 (todo o bloco `if !global`) | 2026-10-23 |
+| `InjectCodexHooks` apply_patch migra 6/6 limpo | medido: total=6 canonical=6 legacy=0 | 2026-10-23 |
+| `InjectWindsurfHooks` não tem `migrateCursorSimpleCommand` para credential | `agentfiles.go` grep: zero ocorrências | 2026-10-23 |
+| `InjectAmazonQHooks` sem harness global | `update.go` grep: nenhuma função `harnessCredentialGuardTargetAmazonQ` | 2026-10-23 |
+| AmazonQ PSPOSIX form persiste | `legacyPSPOSIXPresent=true` medido diretamente | 2026-10-23 |
+
+## §C — Auditoria do arquiteto (zeus-tf, 2026-10-23)
+
+**Reprovado um rótulo da ML-0B, com as próprias contagens dela.** As tabelas §B.2 e §B.3 classificam Claude, Codex e Gemini
+como "migra e deduplica", mas medem `canonical=4` (4 legadas na fixture), `canonical=6` (6 legadas) e `canonical=5`
+(git-branch, 5 legadas) **no mesmo par (evento, matcher)**. Isso é migrar e **duplicar**: N legadas viram N cópias da forma
+atual. O código confirma: `migrateHookCommand` (`internal/generators/agentfiles.go`) reescreve no lugar e não remove nada, e
+o `mergeClaudeHookArray` posterior só deixa de acrescentar. `legacy=0` em `apply_patch` (Codex) e `read_file|read_many_files`
+(Gemini) quer dizer "nenhuma legada sobrou", não "sem duplicata". A ML-0A já tinha classificado certo (T5).
+
+Isso vale para o credential guard e o git-branch guard em Claude, Codex, Gemini e Windsurf (git-branch). A nota
+metodológica da ML-0B (o `legacy=1` é o canônico do outro guard) está correta e não muda esta conclusão.
+
+**Matriz consolidada para o ML-1A** (credential = C, git-branch = G):
+
+| Sítio | Defeito medido | Correção |
+|---|---|---|
+| `InjectCursorHooks` | C em `preToolUse`/`postToolUse` × `Read`/`Write`: não migra; C e G em shell: migra e duplica; com global, Read/Write deixam de ser emitidos | D13 em todos os pares; D14 por par (Read/Write sempre emitidos) |
+| `InjectClaudeHooks` | C e G: migra e duplica; com global, `Read`/`Write\|Edit` deixam de ser emitidos | D13; D14 por par |
+| `InjectCodexHooks` | C e G: migra e duplica; `legacyBareCredGuardCmd` migrado só em Bash/apply_patch; com global, `apply_patch` deixa de ser emitido | D12, D13, D14 por par |
+| `InjectGeminiHooks` | C e G: migra e duplica; a forma `scripts/…sh` é literal fora da constante; com global, Read/Write deixam de ser emitidos | D12, D13, D14 por par |
+| `InjectWindsurfHooks` | C: não migra; G: migra e duplica | D12, D13 |
+| `InjectAmazonQHooks` | C: não migra; G: não migra as formas PS/POSIX | D12, D13 |
+| `harness*Target*` (global, `update.go`) | migram no lugar sem deduplicar (a confirmar no ML-1A com o teste de N legadas) | D13 |
+
+**Veredito da Wave 0:** aprovada com esta correção. A matriz acima é a fonte do ML-1A.

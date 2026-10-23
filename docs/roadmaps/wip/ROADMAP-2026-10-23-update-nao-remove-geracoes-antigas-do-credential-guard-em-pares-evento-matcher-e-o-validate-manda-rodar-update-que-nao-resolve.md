@@ -60,19 +60,19 @@ git diff --quiet origin/main -- internal/
 ```
 
 ### ML-0B — Corretivo da auditoria: medir os CLIs que faltaram e o guard de git-branch
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** hades-tf
 **Por que existe:** a auditoria da ML-0A achou três problemas. A matriz §1.3 só mediu o Cursor: as afirmações sobre
 Claude, Codex, Gemini, Windsurf e Amazon Q ("migra e duplica", "não migra") não têm cenário medido. O R5 tirou o guard de
 git-branch do escopo, mas o AC2 da REQ o inclui, e a Regra Dura manda medir. E a D14 foi revista por par, depois do T4/R2.
 **Files affected:** `docs/seguranca/2026-10-23-wave0-geracoes-do-guard.md` (acréscimo de seção)
 **Acceptance criteria:**
-- [ ] Matriz medida, com cenário e contagem, para Claude, Codex, Gemini, Windsurf e Amazon Q, nos estados só-legadas,
+- [x] Matriz medida, com cenário e contagem, para Claude, Codex, Gemini, Windsurf e Amazon Q, nos estados só-legadas,
   N-legadas e legada+atual, em cada par (evento, matcher) que o sítio emite
-- [ ] Mesma matriz para o guard de git-branch, em todo sítio de projeto e global que o emite
-- [ ] Para cada CLI, quais pares o guard global cobre, que é o insumo da D14 revista
-- [ ] R5 reescrito, sem tirar o git-branch do escopo
-- [ ] Nenhuma linha de produto (`git diff --quiet origin/main -- internal/` rc=0)
+- [x] Mesma matriz para o guard de git-branch, em todo sítio de projeto e global que o emite
+- [x] Para cada CLI, quais pares o guard global cobre, que é o insumo da D14 revista
+- [x] R5 reescrito, sem tirar o git-branch do escopo (rótulo "migra e deduplica" de Claude/Codex/Gemini corrigido pela auditoria, §C)
+- [x] Nenhuma linha de produto (`git diff --quiet origin/main -- internal/` rc=0)
 **Gates da wave:**
 ```bash
 grep -q 'ML-0B' docs/seguranca/2026-10-23-wave0-geracoes-do-guard.md
@@ -82,21 +82,56 @@ git diff --quiet origin/main -- internal/
 ## Wave 1 — Registro único, migração com deduplicação e todos os sítios da matriz
 > Dependencies: Wave 0 auditada pelo arquiteto.
 
-### ML-1A — Registro de gerações, Cursor e os demais sítios da matriz
+### ML-1A — Registro único, deduplicação genérica e o Cursor (a issue)
 **Status:** ⬜ Pendente
 **Agente:** apolo-tf
-**Files affected:** `internal/generators/agentfiles.go`, `internal/generators/update.go`, os arquivos de validador que a
-Wave 0 apontar, e os testes correspondentes. A lista exata sai da matriz da Wave 0 e é escrita aqui antes do despacho.
-**Actions:** implementar D12 (registro único), D13 (migrar → deduplicar → mesclar, uma entrada por par) e D14 (remover com
-o global instalado) em toda célula marcada pela Wave 0.
+**Fonte:** matriz consolidada em `docs/seguranca/2026-10-23-wave0-geracoes-do-guard.md` §C.
+**Files affected:** `internal/generators/agentfiles.go`, um arquivo novo `internal/generators/guard_generations.go` (o registro),
+os validadores que hoje listam gerações (`internal/validator/validator_credential_guard.go`, `validator_git_branch_guard.go`,
+`validator_guard_wiring.go`, `validator_guard_binary_probe.go`) e testes novos em `internal/generators/`.
+**Actions:**
+1. **D12:** criar um registro com as gerações de cada guard (credential, git-branch) por família de shell (PS/POSIX, cmd.exe),
+   incluindo as formas de caminho (`scripts/…sh`, `$CLAUDE_PROJECT_DIR/…`, `$(git rev-parse …)/…`, `$GEMINI_PROJECT_DIR/…`).
+   Os validadores e os sítios de migração passam a consumir o registro, e o literal do Gemini sai.
+2. **D13:** criar um helper que, para um par (evento, matcher), migra toda geração do registro para a forma atual e deixa
+   **exatamente uma** entrada daquele guard. O helper preserva a posição da primeira entrada e todos os campos extras dela,
+   e compara o comando inteiro por igualdade exata, nunca por `Contains`. Ele cobre as duas variantes de forma: a aninhada
+   (`matcher` + `hooks[]`, Claude/Codex/Gemini) e a plana (`command` + `matcher` opcional, Cursor/Windsurf/Amazon Q).
+3. **Cursor:** aplicar o helper em `beforeShellExecution`, em `afterShellExecution` e nos 4 pares `preToolUse`/`postToolUse` ×
+   `Read`/`Write`. **D14 por par:** com o global instalado, as entradas de shell reconhecidas são removidas; as de
+   Read/Write são sempre migradas e emitidas.
+4. **Teste de concordância (AC4):** toda geração que o validador classifica como legada está no registro e é tratada por todo
+   sítio que emite aquele guard. Falsificar acrescentando uma geração fictícia só ao validador.
 **Acceptance criteria:**
-- [ ] AC1, AC2, AC3, AC4, AC5, AC6 e AC7 da REQ, cada um com o nome do teste que o fecha e a frase do que ele afirma
-- [ ] Cada teste novo reprova no código de `origin/main` (contra-braço medido)
-- [ ] `go build ./...`, `go test ./internal/generators/ ./internal/validator/ ./internal/pathguard/` verdes
+- [ ] AC1: fixture da issue (5 gerações × 4 pares, nos dois estados); validador real com 0 avisos de `.cursor/hooks.json`; contra-braço em `origin/main` com 4
+- [ ] AC2, AC4, AC5 (um hook do usuário que contém `trackfw guard credential` sobrevive byte a byte) e AC7 (segunda rodada igual byte a byte **e** uma entrada por par)
+- [ ] AC6 para o Cursor, nos três braços
+- [ ] Cada teste novo com a frase do que afirma e o contra-braço medido em `origin/main`
 **Gates da wave:**
 ```bash
 go build ./...
-go test ./internal/generators/ ./internal/validator/ ./internal/pathguard/
+go test ./internal/generators/ ./internal/validator/ ./internal/pathguard/ -count=1
+```
+
+### ML-1B — Os demais sítios da matriz
+**Status:** ⬜ Pendente
+**Agente:** apolo-tf
+**Dependencies:** ML-1A. Sequencial porque usa o mesmo arquivo (`agentfiles.go`).
+**Files affected:** `internal/generators/agentfiles.go`, `internal/generators/update.go` e testes.
+**Actions:**
+- Aplicar o helper da ML-1A em `InjectClaudeHooks`, `InjectCodexHooks` e `InjectGeminiHooks`, com D13 e com D14 por par:
+  `Read`/`Write|Edit`, `apply_patch` e os matchers de leitura/escrita do Gemini são sempre emitidos.
+- Aplicar também em `InjectWindsurfHooks` e `InjectAmazonQHooks`, para o credential e o git-branch, inclusive as formas
+  PS/POSIX no Amazon Q.
+- Em todo `harness*Target*` global que migra no lugar: medir primeiro com N legadas e corrigir onde duplicar.
+**Acceptance criteria:**
+- [ ] AC3: cada célula da matriz §C tem um teste que reprova em `origin/main` e passa no novo
+- [ ] AC6 para Claude, Codex e Gemini
+- [ ] Os goldens e os configs versionados do repositório (`.claude/settings.json`, `.codex/hooks.json`, `.gemini/settings.json`), se mudarem, mudam só por deduplicação
+**Gates da wave:**
+```bash
+go build ./...
+go test ./internal/generators/ ./internal/validator/ ./internal/pathguard/ ./internal/commands/ -count=1
 ```
 
 ## Wave 2 — Revisões independentes
