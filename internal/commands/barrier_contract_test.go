@@ -518,8 +518,9 @@ func TestBarrierContract_ValidateFalhoBloqueia(t *testing.T) {
 				t.Fatalf("expected validate check blocked, got %q", c.Status)
 			}
 		}
-		// Os demais checks devem permanecer verdes — prova que o fixture isola a falha.
-		if c.Name != "validate" && c.Status != "passed" {
+		// Os demais checks devem permanecer verdes (passed ou skipped) — prova que o
+		// fixture isola a falha. ml_scope fica skipped em fixture sem repositório git.
+		if c.Name != "validate" && c.Status != "passed" && c.Status != "skipped" {
 			t.Fatalf("expected only 'validate' to be blocked, but %q is %q", c.Name, c.Status)
 		}
 	}
@@ -583,7 +584,7 @@ func TestBarrierContract_JSONDeterministico(t *testing.T) {
 		gateCommands:  []string{"true"},
 	})
 
-	wantOrder := []string{"wave_headings", "mls_complete", "acceptance_evidence", "gates", "validate"}
+	wantOrder := []string{"wave_headings", "mls_complete", "acceptance_evidence", "gates", "validate", "ml_scope"}
 
 	for run := 0; run < 2; run++ {
 		// --trust-local-gates: temp dir fixture; test exercises JSON structure, not trust check.

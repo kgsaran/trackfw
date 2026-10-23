@@ -68,7 +68,7 @@ git diff --quiet origin/main -- internal/
 ### ML-1A — Seção Working context dos 11 papéis
 **Status:** ✅ Concluído
 **Agente:** prometeu-tf
-**Files affected:** `internal/integrations/assets/agents/*.md` (os 11 que não são `architect.md`), os goldens desses assets e o teste novo da forma por papel
+**Files affected:** `internal/integrations/assets/agents/*.md` (os 11 que não são `architect.md`), `internal/integrations/testdata/backend.agent-directory.golden.md`, `internal/integrations/testdata/backend.codex-toml.golden.toml`, `internal/integrations/working_context_form_test.go`
 **Acceptance criteria:**
 - [x] AC1 da REQ
 - [x] `go test ./internal/integrations/ ./internal/generators/ -count=1` verde
@@ -83,8 +83,7 @@ sítio, que entra como ML-1B.
 **Agente:** prometeu-tf
 **Por que existe:** o `trackfwRulesBlock` (`internal/generators/agentfiles.go:94`) manda **toda** sessão, inclusive os
 subagentes, "write a new file in `docs/agents-working-context/…`". Isso contradiz a D1. O texto é lido por todo agente.
-**Files affected:** `internal/generators/agentfiles.go`, os goldens e testes que fixam o bloco, e os blocos gerados
-deste repositório em `CLAUDE.md`, `AGENTS.md` e `GEMINI.md` (a mesma linha, editada igual).
+**Files affected:** `internal/generators/agentfiles.go`, `internal/generators/working_context_log_test.go`, `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`
 **Acceptance criteria:**
 - [x] A linha 3 do bloco passa a dizer que quem registra é a sessão que orquestra (o arquiteto), e que os subagentes
   reportam no relatório final
@@ -105,7 +104,7 @@ e é o caso que a D3 (o guard) fecha.
 ### ML-2A — Checagem `ml_scope`
 **Status:** ⬜ Pendente
 **Agente:** apolo-tf
-**Files affected:** `internal/commands/barrier.go`, `internal/commands/barrier_ml_scope_test.go` (novo), `docs/cli-parity.md`
+**Files affected:** `internal/commands/barrier.go`, `internal/commands/barrier_ml_scope_test.go`, `internal/commands/barrier_contract_test.go`, `docs/cli-parity.md`
 **Contrato (decisão do arquiteto sobre a Wave 0 §2.2; adendo na ADR):**
 1. **Roadmap lido do commit, não do disco.** Os `Files affected` vêm de `git show HEAD:<roadmap>`. Edição não commitada do
    roadmap não amplia o escopo. Quem commita é só o arquiteto, que audita o diff do roadmap. A merge-base não serve,
@@ -142,6 +141,24 @@ e é o caso que a D3 (o guard) fecha.
 go build ./...
 go test ./internal/commands/ -count=1
 ```
+
+**Auditoria do arquiteto (2026-10-23):** a implementação está aprovada, mas a wave fica bloqueada pelo ML-2B.
+- Gates verdes; 10 testes novos.
+- O dogfood funcionou: achou 5 arquivos fora de escopo, todos declarados em prosa fora de crases pelo arquiteto nos ML-1A
+  e ML-1B, ou não declarados (`barrier_contract_test.go`). As declarações foram corrigidas.
+- `scripts/check-barrier.sh` reprova em `barrier/isolated-check/mls_complete/go`, com a mensagem "check 'ml_scope' is
+  'skipped', want passed", porque a fixture dele não é repositório git.
+- O contra-braço dos testes novos é de compilação: as funções não existem no HEAD anterior. Isso é aceito, porque a
+  funcionalidade é nova.
+
+### ML-2B — Corretivo: `check-barrier.sh` com a checagem nova
+**Status:** ⬜ Pendente
+**Agente:** apolo-tf
+**Files affected:** `scripts/check-barrier.sh`
+**Acceptance criteria:**
+- [ ] A asserção de isolamento trata `skipped` como não bloqueante, igual ao contrato do Go (`TestBarrierContract_ValidateFalhoBloqueia`), sem afrouxar o resto: `blocked` em checagem não isolada continua reprovando
+- [ ] Um cenário no script exercita o `ml_scope` reprovando por arquivo fora de escopo, num repositório git temporário
+- [ ] `GO_BIN=<binário do worktree> bash scripts/check-barrier.sh` rc=0, e `make parity-rest` rc=0
 
 ## Wave 3 — D3 e D4, o guard write-scope
 > Dependencies: Wave 2 auditada. Detalhada depois da Wave 0.

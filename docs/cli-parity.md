@@ -3166,6 +3166,7 @@ Evaluated in this fixed order; the run continues through all checks so the repor
 | `acceptance_evidence` | Every ML in the wave satisfies rule 4 |
 | `gates` | Every command from rule 5 exits 0 |
 | `validate` | `trackfw validate --json` reports `violations: 0` |
+| `ml_scope` | Every file touched since `merge-base(origin/main, HEAD)` (diff + status) is covered by a `**Files affected:**` declaration in waves 0..N or by the orchestration set; `skipped` when outside a git repo, when the roadmap date predates 2026-07-18, or when the roadmap has not been committed yet; `blocked` when any file is undeclared |
 
 `trackfw validate` is invoked in-process (Go/Node/Python each call their own validator), not by
 shelling out to a `trackfw` binary that may not be on `PATH`.
@@ -3200,6 +3201,47 @@ between `2026-09-08` and `2026-09-12` — all exempt. The `move → done` gate p
 and skips the Wave 0 blocker for those files.
 
 <!-- trackfw-contract: gate=internal/validator/validator_roadmap_wave0_cutoff_test.go,internal/generators/roadmap_move_test.go partial=o validator_roadmap_wave0_cutoff_test.go cobre o corte nos dois braços (pré, on-cutoff, pós, fail-closed, frontmatter-first); o gate de generators cobre o move→done; nenhum gate de shell exerce o corte pela superfície do CLI -->
+
+### `ml_scope` check (D2, ADR-2026-10-23)
+
+<!-- trackfw-contract: gate=internal/commands/barrier_ml_scope_test.go -->
+
+The `ml_scope` check verifies that every file touched by the current branch is covered by a
+`**Files affected:**` declaration or belongs to the fixed orchestration set.
+
+#### Inputs
+
+- **Roadmap from HEAD, not disk.** `git show HEAD:<roadmap>` is used to read the `**Files affected:**` lines. An uncommitted disk edit cannot expand scope. A roadmap not yet committed results in `skipped`.
+- **Touched files.** `git diff --name-only -z $(git merge-base origin/main HEAD) HEAD` (committed changes) plus `git status --porcelain=v1 -z --untracked-files=all` (modified, staged, untracked), excluding gitignored files.
+- **Wave N scope.** The union of `**Files affected:**` from every ML in waves 0..N.
+- **Orchestration set (always permitted).** The roadmap file itself; the REQ from frontmatter `req:`; the ADR from the REQ's frontmatter `adr:`; `docs/agents-working-context/`; `vault/notes/`; `.claude/agent-memory/`; `<roadmap_dir>/.trackfw-log`; `<roadmap_dir>/.trackfw-log-entries/`; `<req_dir>/.trackfw-log`; `<req_dir>/.trackfw-log-entries/`.
+
+#### `**Files affected:**` grammar
+
+Each backtick-quoted token on the `**Files affected:**` line (including continuation lines) is a path pattern. A continuation line is any non-blank line after the label line that does not start with `**`, `#`, or a list marker (`- `, `* `).
+
+| Form | Example | Matches |
+|---|---|---|
+| Exact path | `` `internal/commands/barrier.go` `` | Only that file |
+| Directory prefix (ends in `/`) | `` `internal/commands/` `` | Any file under the directory |
+| Glob (contains `*`, `?`, or `[`) | `` `scripts/*.sh` `` | `path.Match`-style; `**` spans multiple segments |
+| Double-star glob | `` `internal/**/*.go` `` | Any `.go` under `internal/` at any depth |
+
+Text outside backticks (including `"a definir"`) is ignored. A label line with no backticks declares zero files (valid declaration; no files are permitted beyond the orchestration set).
+
+#### Date cutoff
+
+Roadmaps with a `date:` frontmatter value strictly before `2026-07-18` exit `skipped` with the reason in `evidence`. Roadmaps in `wip` with a post-cutoff date that have an ML in wave N without a `**Files affected:**` line → `blocked`, naming the ML.
+
+#### Status values
+
+| Status | Condition |
+|---|---|
+| `passed` | Every touched file is in scope |
+| `blocked` | At least one file is out of scope, or an ML has no declaration |
+| `skipped` | Not a git repo; roadmap not in HEAD; date before 2026-07-18; no `origin/main` ref |
+
+`skipped` is **non-blocking** — the overall barrier status is not `blocked` by a `skipped` `ml_scope`.
 
 ### JSON document
 
@@ -3244,6 +3286,12 @@ and skips the Wave 0 blocker for those files.
       "status": "passed",
       "evidence": ["0 violations, 0 warnings"],
       "failures": []
+    },
+    {
+      "name": "ml_scope",
+      "status": "passed",
+      "evidence": ["scope: 3 file(s) checked, 0 out of scope"],
+      "failures": []
     }
   ],
   "failures": ["acceptance_evidence: ML-2C: 2 unmet acceptance criteria"]
@@ -3260,6 +3308,7 @@ so that a diff of two runtimes' JSON output for the same fixture is empty:
 | `acceptance_evidence` | `<ML-id>: <n> criteria met` | `<ML-id>: <n> unmet acceptance criteria` or `<ML-id>: no acceptance block` |
 | `gates` | `<command>: exit 0` | `<command>: exit <code>` · `line <n>: incomplete command — each line of the gates block runs as a separate sh -c (rule 5): <cmd>` (fragment detected by `sh -n` or odd-`\` rule before any gate executes; see rule 5) |
 | `validate` | `<v> violations, <w> warnings` | `<v> violations, <w> warnings` |
+| `ml_scope` | `scope: <n> file(s) checked, <m> out of scope` (when run) · `skipped: <reason>` (when skipped) | `out of scope: <path>` (for each undeclared file) · `undeclared ML: <ML-id> has no Files affected declaration` (for each ML without a declaration in a post-cutoff wip roadmap) |
 
 Determinism contract:
 
