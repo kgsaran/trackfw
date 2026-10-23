@@ -379,5 +379,5 @@ go test ./internal/guard/ ./internal/commands/ ./internal/pathguard/ -count=1
 **Agente:** zeus-tf
 **Files affected:** artefatos de orquestração (roadmap, REQ — sem novo arquivo de produto)
 **Acceptance criteria:**
-- [ ] `make quality` rc=0, com a máquina ociosa e o HOME isolado
+- [x] `make quality` rc=0, com a máquina ociosa e o HOME isolado (os FAIL do log são só braços de autoteste)
 - [ ] CI do PR verde
