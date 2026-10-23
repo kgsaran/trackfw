@@ -166,7 +166,7 @@ go test ./internal/commands/ -count=1
 > Dependencies: Wave 2 auditada. Detalhada depois da Wave 0.
 
 ### ML-3A — `trackfw guard write-scope` com os caminhos congelados (D3)
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído
 **Agente:** apolo-tf
 **Files affected:** `internal/commands/guard.go`, `internal/commands/guard_write_scope_test.go`, `internal/guard/`, `internal/guardforms/`, `internal/generators/`, `internal/validator/`, `internal/config/`, `docs/cli-parity.md`, `.claude/settings.json`, `docs/agents-working-context.md`
 **Contrato (arquiteto, a partir da Wave 0 e do adendo da ADR):**
@@ -197,13 +197,13 @@ go test ./internal/commands/ -count=1
    como no precedente da ADR-2026-10-04 ("`make install` antes de migrar as próprias configs"). O marcador do item 4 vai
    para o `docs/agents-working-context.md`, e quem o põe é o arquiteto.
 **Acceptance criteria:**
-- [ ] AC3 da REQ, com o payload real do Claude Code, inclusive com `agent_id` presente e ausente
-- [ ] AC5 da REQ:
-  - [ ] relativo, `..`, symlink no caminho, `/tmp` e `/private/tmp`, caminho do Windows (`C:\` e `/c/`);
-  - [ ] payload ilegível, campo ausente e panic → 2;
-  - [ ] alvo fora de projeto → 0
-- [ ] Teste da regra do worktree: um alvo no checkout principal, com o cwd no worktree, é julgado pelo `trackfw.yaml` do checkout principal
-- [ ] Cada teste com frase e contra-braço; `go test ./internal/guard/ ./internal/commands/ ./internal/generators/ ./internal/validator/ ./internal/config/ ./internal/pathguard/ -count=1` verde
+- [x] AC3 da REQ, com o payload real do Claude Code, inclusive com `agent_id` presente e ausente
+- [x] AC5 da REQ:
+  - [x] relativo, `..`, symlink no caminho, `/tmp` e `/private/tmp`, caminho do Windows (`C:\` e `/c/`);
+  - [x] payload ilegível, campo ausente e panic → 2;
+  - [x] alvo fora de projeto → 0
+- [x] Teste da regra do worktree: um alvo no checkout principal, com o cwd no worktree, é julgado pelo `trackfw.yaml` do checkout principal
+- [x] Cada teste com frase e contra-braço; `go test ./internal/guard/ ./internal/commands/ ./internal/generators/ ./internal/validator/ ./internal/config/ ./internal/pathguard/ -count=1` verde
 **Gates da wave:**
 ```bash
 go build ./...
@@ -221,24 +221,68 @@ O agente também escreveu 2 entradas em `docs/agents-working-context/`. Foram re
 conteúdo está no relatório. A fiação do `.claude/settings.json` do repo foi revertida pela decisão do item 8 revisto.
 
 ### ML-3A2 — Corretivo do ML-3A
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** apolo-tf
 **Files affected:** `internal/guard/`, `internal/commands/guard_write_scope_test.go`
 **Acceptance criteria:**
-- [ ] `internal/guard/writescope_test.go` com testes unitários da resolução de caminho e das listas
-- [ ] AC5: relativo (resolvido contra o `cwd` do payload, ou negado, como o código decidir, com teste), `..` que sai do
-  projeto, symlink de diretório apontando para o arquivo congelado, `/tmp/x` contra `/private/tmp/x` no macOS, `C:\` e
-  `/c/` (Windows, pelo menos a normalização em teste unitário)
-- [ ] Item 3: o alvo no projeto A com o `cwd` no projeto B é julgado pelo `trackfw.yaml` de A
-- [ ] Panic recuperado → 2, por seam de teste
-- [ ] Contra-braço de cada um
+- [x] `internal/guard/writescope_test.go` com testes unitários da resolução de caminho e das listas
+- [x] AC5: relativo (negado — fail-closed), `..` que sai do projeto (allow) e que acerta congelado (deny), symlink de
+  diretório apontando para o arquivo congelado (deny), `/tmp/x` contra `/private/tmp/x` no macOS (mesmo veredito),
+  `C:\` e `/c/` (Windows — normalização unitária via `normalizeTargetPath(p, "windows")`)
+- [x] Item 3: o alvo no projeto A com o `cwd` no projeto B é julgado pelo `trackfw.yaml` de A
+- [x] Panic recuperado → 2, por seam de teste (`writeScopeInternalHook`)
+- [x] Contra-braço de cada um (ver relatório do ML-3A2)
+
+**Auditoria do ML-3A2 (arquiteto, 2026-10-23):** aprovado. Foram achados e corrigidos dois **fail-opens** reais:
+- **Caminho relativo:** era resolvido contra o cwd do processo do hook e saía 0. Agora nega, porque o contrato do Write/Edit
+  exige caminho absoluto.
+- **YAML inválido:** era engolido pelo `ParseWriteScopeConfig` e saía 0. Agora nega.
+
+Os dois foram medidos com exit 0 no HEAD anterior. A normalização `/c/` → `C:\` entrou como função pura. O seam de panic
+dá exit 2. Os testes que já passavam no HEAD ficam declarados como fixação de comportamento correto. Nada foi staged, e
+nenhuma escrita no working context.
 
 ### ML-3B — A permissão por despacho (D4)
 **Status:** ⬜ Pendente
 **Agente:** apolo-tf
-**Files affected:** `internal/guard/writescope.go`, `internal/guard/writescope_test.go`, `docs/cli-parity.md`
+**Files affected:** `internal/guard/`, `internal/commands/guard_write_scope_test.go`, `docs/cli-parity.md`
+**Contrato (arquiteto, a partir do adendo da ADR e da Wave 0 §2):**
+1. **Quando vale:** só quando o payload traz `agent_id` não vazio (subagente) e `agent_type` casa `^[A-Za-z0-9_-]{1,64}$`.
+   Um `agent_type` fora do padrão significa "sem permissão": vale só a D3, sem erro.
+2. **Onde:** `<raiz do projeto do alvo>/.trackfw/leases/<agent_type>.json`, a mesma raiz do item 3 do ML-3A. Ausente: vale
+   só a D3. Ilegível, diretório ou JSON inválido: nega.
+3. **Formato (v1):** `{"version":1,"agent_type":"apolo-tf","allow":["/abs/worktree/","/abs/arquivo.go"],"expires":"2026-10-24T00:00:00Z"}`.
+   - `allow` é uma lista de caminhos absolutos: terminado em `/` é diretório, os demais são arquivo exato.
+   - `expires` é obrigatório, em RFC 3339. Uma permissão expirada nega, com o motivo dizendo que expirou. É isso que impede
+     uma permissão esquecida de valer para sempre.
+   - `version` diferente de 1 nega.
+   - `agent_type` do arquivo diferente do payload nega.
+4. **Decisão:** com permissão válida, o alvo (resolvido como no ML-3A) tem de estar dentro de algum `allow`, também
+   resolvido com `EvalSymlinks` no maior prefixo existente. Fora de todos, nega, e o motivo nomeia o alvo e o arquivo da
+   permissão. A D3 continua valendo antes: um caminho congelado nega mesmo que esteja dentro do `allow`.
+5. **O alvo fora de qualquer projeto trackfw** (item 3 do ML-3A) segue liberado. A permissão só é lida dentro de projeto.
+   **Resíduo declarado:** um subagente com permissão que escreve fora de qualquer projeto trackfw não é barrado.
+6. **Contrato no `docs/cli-parity.md`:** formato, ciclo de vida (o arquiteto grava antes do despacho e apaga depois) e
+   resíduos (R6 da Wave 0: dois agentes do mesmo `agent_type` compartilham a permissão).
 **Acceptance criteria:**
-- [ ] AC4 e AC5 da REQ
+- [ ] AC4 da REQ:
+  - alvo dentro do `allow` → 0;
+  - alvo fora → 2, com motivo;
+  - sem permissão → só a D3;
+  - permissão expirada → 2;
+  - JSON inválido → 2;
+  - `agent_type` fora do padrão → só a D3;
+  - `agent_type` divergente → 2;
+  - `allow` relativo → 2;
+  - congelado dentro do `allow` → 2;
+  - sessão principal (sem `agent_id`) ignora a permissão
+- [ ] Teste da permissão apontando para um worktree, com o alvo no checkout principal → 2. É o caso de 2026-10-23
+- [ ] Cada teste com a frase e o contra-braço
+**Gates da wave:**
+```bash
+go build ./...
+go test ./internal/guard/ ./internal/commands/ ./internal/pathguard/ -count=1
+```
 
 ## Wave 4 — Revisões independentes
 > Dependencies: Wave 3 auditada.

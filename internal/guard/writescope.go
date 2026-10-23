@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/kgsaran/trackfw/internal/config"
+	"gopkg.in/yaml.v3"
 )
 
 // frozenMarker is checked in the first 10 lines of docs/agents-working-context.md
@@ -30,6 +31,12 @@ var writeScopeWriteTools = map[string]struct{}{
 	"Edit":         {},
 	"NotebookEdit": {},
 }
+
+// writeScopeInternalHook is called inside RunWriteScope immediately after the
+// panic-recovery defer is registered. Nil in production. Tests set it to inject
+// a panic and verify that the defer catches it and returns exit 2.
+// ML-3A2: panic → 2 seam.
+var writeScopeInternalHook func()
 
 // writeScopeSubagentFrozenRelPaths are the paths frozen ONLY for subagents
 // (agent_id present), relative to the project root.
@@ -63,6 +70,11 @@ func RunWriteScope(stdin io.Reader, idleTimeout time.Duration, stderr io.Writer)
 			exitCode = 2
 		}
 	}()
+
+	// Panic seam: hook fires after defer is registered; tests use it to verify recovery.
+	if writeScopeInternalHook != nil {
+		writeScopeInternalHook()
+	}
 
 	// Step 1: Drain stdin with idle timeout.
 	data, truncated := DrainStdin(stdin, idleTimeout)
@@ -110,6 +122,17 @@ func RunWriteScope(stdin io.Reader, idleTimeout time.Duration, stderr io.Writer)
 		return 2
 	}
 
+	// Step 5b: Normalize path for the current OS (handles /c/... on Windows).
+	rawFilePath = normalizeTargetPath(rawFilePath, runtime.GOOS)
+
+	// Step 5c: Deny relative paths. The Write/Edit contract requires absolute paths.
+	// Resolving against os.Getwd() is wrong: the hook process cwd differs from the
+	// agent's cwd. Failing closed is safer (ML-3A2 AC5).
+	if !filepath.IsAbs(rawFilePath) {
+		fmt.Fprintf(stderr, "trackfw guard write-scope: denied: %q is not an absolute path\n", rawFilePath)
+		return 2
+	}
+
 	// Step 6: Resolve the physical path of the target.
 	resolved := resolveWriteScopePath(rawFilePath)
 
@@ -124,8 +147,12 @@ func RunWriteScope(stdin io.Reader, idleTimeout time.Duration, stderr io.Writer)
 	// Step 8: Determine if this is a subagent call.
 	isSubagent := payloadHasAgentID(root)
 
-	// Step 9: Build the frozen list for this call.
-	frozen := buildFrozenList(projectRoot, isSubagent)
+	// Step 9: Build the frozen list for this call. YAML errors → deny (item 6).
+	frozen, yamlErr := buildFrozenList(projectRoot, isSubagent)
+	if yamlErr != nil {
+		fmt.Fprintf(stderr, "trackfw guard write-scope: denied: %v\n", yamlErr)
+		return 2
+	}
 
 	// Step 10: Check whether the resolved path hits a frozen entry.
 	if rel, hit := frozenHit(resolved, projectRoot, frozen); hit {
@@ -308,7 +335,8 @@ func payloadHasAgentID(root map[string]json.RawMessage) bool {
 //
 // The list reads extra entries from trackfw.yaml (write_scope.frozen_paths).
 // YAML is read directly (not via config.Load() singleton) to avoid osExit on malformed config.
-func buildFrozenList(projectRoot string, isSubagent bool) []string {
+// Returns a non-nil error when trackfw.yaml exists but contains invalid YAML (item 6: YAML inválido nega).
+func buildFrozenList(projectRoot string, isSubagent bool) ([]string, error) {
 	var frozen []string
 
 	// All-session frozen paths (item 4): docs/agents-working-context.md, IF frozen marker present.
@@ -322,14 +350,17 @@ func buildFrozenList(projectRoot string, isSubagent bool) []string {
 		frozen = append(frozen, writeScopeSubagentFrozenRelPaths...)
 	}
 
-	// Extra paths from trackfw.yaml (item 6): append, never remove.
-	extraAll, extraSub := readWriteScopeFromYAML(projectRoot)
+	// Extra paths from trackfw.yaml (item 6): append, never remove. Invalid YAML → return error.
+	extraAll, extraSub, err := readWriteScopeFromYAML(projectRoot)
+	if err != nil {
+		return nil, err
+	}
 	frozen = append(frozen, extraAll...)
 	if isSubagent {
 		frozen = append(frozen, extraSub...)
 	}
 
-	return frozen
+	return frozen, nil
 }
 
 // fileHasFrozenMarker reports whether the first 10 lines of the file contain frozenMarker.
@@ -360,17 +391,24 @@ func fileHasFrozenMarker(path string) bool {
 
 // readWriteScopeFromYAML reads write_scope.frozen_paths and write_scope.frozen_paths_subagent
 // from trackfw.yaml at the given project root.
-// Any error (missing file, invalid YAML, wrong type) returns empty slices silently.
+// Missing file → (nil, nil, nil): no extra frozen paths, not an error.
+// Invalid YAML → (nil, nil, error): contract item 6 says YAML inválido nega.
 // IMPORTANT: does NOT use config.Load() to avoid the osExit(1) on malformed YAML.
-func readWriteScopeFromYAML(projectRoot string) (all, subagent []string) {
-	data, err := os.ReadFile(filepath.Join(projectRoot, "trackfw.yaml"))
-	if err != nil {
-		return nil, nil
+func readWriteScopeFromYAML(projectRoot string) (all, subagent []string, err error) {
+	data, readErr := os.ReadFile(filepath.Join(projectRoot, "trackfw.yaml"))
+	if readErr != nil {
+		return nil, nil, nil // file absent → not an error
+	}
+
+	// Validate YAML syntax first (item 6: YAML inválido nega).
+	var rawYAML interface{}
+	if yamlErr := yaml.Unmarshal(data, &rawYAML); yamlErr != nil {
+		return nil, nil, fmt.Errorf("trackfw.yaml: invalid YAML: %w", yamlErr)
 	}
 
 	// Use config.ParseWriteScopeConfig which reads without the singleton.
 	cfg := config.ParseWriteScopeConfig(string(data))
-	return cfg.FrozenPaths, cfg.FrozenPathsSubagent
+	return cfg.FrozenPaths, cfg.FrozenPathsSubagent, nil
 }
 
 // frozenHit checks whether the resolved target path matches any entry in the frozen list.
@@ -427,4 +465,37 @@ func pathHasPrefix(p, prefix string) bool {
 		return strings.HasPrefix(strings.ToLower(p), strings.ToLower(prefix))
 	}
 	return strings.HasPrefix(p, prefix)
+}
+
+// normalizeTargetPath translates path p to its native OS form for goos.
+// On Windows, Unix-style drive-letter paths are converted:
+//   - /c/rest  → C:\rest
+//   - C:/rest  → C:\rest
+//
+// On all other OSes the path is returned unchanged.
+// This is a pure string operation; it does NOT touch the filesystem.
+// ML-3A2 AC5 (Windows normalisation).
+func normalizeTargetPath(p, goos string) string {
+	if goos != "windows" {
+		return p
+	}
+	// /c/rest or /C/rest → C:\rest
+	if len(p) >= 3 && p[0] == '/' && isWindowsDriveLetter(p[1]) && p[2] == '/' {
+		drive := strings.ToUpper(string(p[1]))
+		rest := strings.ReplaceAll(p[3:], "/", "\\")
+		if rest == "" {
+			return drive + ":\\"
+		}
+		return drive + ":\\" + rest
+	}
+	// C:/rest → C:\rest  (mixed slash — occurs in some agent payloads)
+	if len(p) >= 3 && isWindowsDriveLetter(p[0]) && p[1] == ':' && p[2] == '/' {
+		return string(p[0:2]) + "\\" + strings.ReplaceAll(p[3:], "/", "\\")
+	}
+	return p
+}
+
+// isWindowsDriveLetter reports whether c is an ASCII letter (a–z or A–Z).
+func isWindowsDriveLetter(c byte) bool {
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 }

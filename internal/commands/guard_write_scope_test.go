@@ -384,31 +384,34 @@ func TestGuardWriteScope_YAMLExtraFrozenPath_Deny(t *testing.T) {
 }
 
 // TestGuardWriteScope_MalformedYAML_Deny asserts that malformed trackfw.yaml → exit 2 (fail-closed).
-// Asserts: contract item 6 — YAML invalid → deny (D3-F fail-closed).
+// The target is a plain file with NO frozen marker; the only reason to deny is YAML invalidity.
+// Asserts: contract item 6 — YAML invalid → deny regardless of frozen-marker state (D3-F fail-closed).
+// Contra-braço: on HEAD (before this ML) readWriteScopeFromYAML silently swallowed YAML errors
+// and returned empty slices, so the guard would allow this write (exit 0). After the fix, exit 2.
 func TestGuardWriteScope_MalformedYAML_Deny(t *testing.T) {
 	dir := t.TempDir()
-	// Malformed YAML.
-	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte(": : bad yaml\n"), 0600); err != nil {
+	// Unambiguously malformed YAML: unclosed bracket.
+	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte("key: [unclosed\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	docsDir := filepath.Join(dir, "docs")
 	if err := os.MkdirAll(docsDir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	// Write docs/agents-working-context.md WITH frozen marker.
-	content := "<!-- trackfw:frozen -->\n# Context\n"
-	if err := os.WriteFile(filepath.Join(docsDir, "agents-working-context.md"), []byte(content), 0600); err != nil {
+	// Write a plain file with NO frozen marker — not covered by item 4 or item 5.
+	if err := os.WriteFile(filepath.Join(docsDir, "plain.md"), []byte("# Plain\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 
-	target := filepath.Join(dir, "docs", "agents-working-context.md")
-	// Main session with frozen marker — should still deny even with malformed YAML.
+	target := filepath.Join(dir, "docs", "plain.md")
+	// Main session (no agent_id). Only denial reason: malformed YAML in trackfw.yaml.
 	payload := fmt.Sprintf(`{"tool_name":"Write","tool_input":{"file_path":%q}}`, target)
 	rc, stderr := writeScopeExitCode(t, payload)
-	// Malformed YAML: the frozen marker on agents-working-context.md still triggers deny.
-	// (YAML malformed → no extra paths; but defaults still apply.)
 	if rc != 2 {
-		t.Fatalf("malformed YAML + frozen marker: want exit 2 (deny), got %d (stderr=%q)", rc, stderr)
+		t.Fatalf("malformed YAML, non-frozen target: want exit 2 (deny by YAML error), got %d (stderr=%q)", rc, stderr)
+	}
+	if !strings.Contains(stderr, "YAML") && !strings.Contains(stderr, "yaml") {
+		t.Fatalf("malformed YAML deny: want 'YAML' or 'yaml' in stderr, got %q", stderr)
 	}
 }
 
