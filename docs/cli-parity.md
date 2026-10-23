@@ -9109,9 +9109,9 @@ When a pattern such as `*.entry`, `.*`, or `*-entries` covers these paths, entri
 
 **Silent conditions:** the rule is a no-op when git is absent or the CWD is not inside a git work-tree. Projects without a `.gitignore` never trigger this rule.
 
-## `trackfw guard write-scope` — proteção de caminhos congelados (ADR-2026-10-23, ML-3A)
+## `trackfw guard write-scope` — proteção de caminhos congelados e escopo por despacho (ADR-2026-10-23, ML-3A, ML-3B)
 
-<!-- trackfw-contract: gate=internal/commands/guard_write_scope_test.go,internal/guard/writescope.go partial=guard_write_scope_test.go cobre os 8 itens do contrato ML-3A via binário real (subprocess); writescope.go implementa o guard; NÃO há gate cross-runtime (v8: implementação única em Go) -->
+<!-- trackfw-contract: gate=internal/commands/guard_write_scope_test.go,internal/guard/writescope.go partial=guard_write_scope_test.go cobre os itens do contrato ML-3A (D3, subprocess) e ML-3B (D4, unit + subprocess) via binário real; writescope.go implementa o guard; NÃO há gate cross-runtime (v8: implementação única em Go) -->
 
 > REQ: `docs/req/REQ-2026-10-23-regras-de-escrita-dos-agentes-sao-aplicadas-pelo-harness-e-nao-pelo-texto-do-handoff.md`
 > ADR: `docs/adr/ADR-2026-10-23-regras-de-escrita-dos-agentes-sao-aplicadas-pelo-harness-e-nao-pelo-texto-do-handoff.md`
@@ -9152,3 +9152,43 @@ YAML inválido → deny (fail-closed). Extensão adiciona entradas, nunca remove
 Aviso (severidade default `warning`, nunca `error` até a próxima versão major) quando `.claude/settings.json` não tem o PreToolUse `Write|Edit|NotebookEdit` com o comando canônico do write-scope. `trackfw init`/`trackfw update` instalam o hook automaticamente.
 
 **Ordering constraint:** o hook em `.claude/settings.json` deve ser instalado APENAS quando o binário já tem `write-scope` disponível. Instalar o hook contra a versão anterior (que trata `write-scope` como subcomando desconhecido → exit 2 via guardError) nega todas as operações Write/Edit/NotebookEdit na sessão.
+
+**D4 — Escopo por despacho (ML-3B, subagentes com `agent_id` presente):**
+
+Quando `agent_id` está presente no payload (subagente) e `agent_type` é um slug válido (`^[A-Za-z0-9_-]{1,64}$`), o guard consulta o arquivo de lease `<raiz do projeto do alvo>/.trackfw/leases/<agent_type>.json`. A D3 (caminhos congelados) sempre é aplicada antes; um caminho congelado é negado mesmo que apareça no `allow`.
+
+**Formato do lease (v1):**
+```json
+{
+  "version": 1,
+  "agent_type": "apolo-tf",
+  "allow": ["/abs/path/worktree/", "/abs/path/arquivo.go"],
+  "expires": "2026-10-24T12:00:00Z"
+}
+```
+
+- `version` — deve ser `1`; valor diferente → deny.
+- `agent_type` — deve coincidir com o `agent_type` do payload; divergência → deny.
+- `allow` — lista de caminhos absolutos. Terminado em `/` é prefixo de diretório (o separador impede que `/a/b/` case `/a/bc`); os demais são arquivo exato. Qualquer caminho relativo na lista → deny.
+- `expires` — RFC 3339, obrigatório. Lease expirado → deny. Impede que uma permissão esquecida permaneça ativa indefinidamente.
+
+**Comportamento por caso:**
+
+| Situação | Resultado |
+|---|---|
+| Lease ausente para o `agent_type` | D3 apenas (sem D4) |
+| `agent_type` fora do padrão de slug | D3 apenas |
+| Sessão principal (`agent_id` ausente) | D3 apenas; lease ignorado |
+| Lease presente, alvo dentro do `allow` | 0 (allow) |
+| Lease presente, alvo fora do `allow` | 2 (deny), com motivo nomeando alvo e lease |
+| Lease expirado | 2 (deny), com "expired" no motivo |
+| Lease ilegível, diretório ou JSON inválido | 2 (deny) — fail-closed (D4-C) |
+
+**Ciclo de vida:** o arquiteto grava o lease antes do despacho e o apaga após o retorno do subagente. O arquivo `.trackfw/leases/` está na lista de congelados da D3 para subagentes (impede que o agente edite a própria permissão — D4-D).
+
+**Lookup pela raiz do ALVO:** a permissão é lida da raiz do projeto do **alvo**, não do cwd. Um subagente num worktree que escreve no checkout principal é julgado pelo lease do checkout principal. Se o checkout principal não tiver lease, só a D3 se aplica (resíduo).
+
+**Resíduos declarados:**
+- R6 (Wave 0): dois subagentes do mesmo `agent_type` em worktrees paralelos compartilham o mesmo lease — a instância menos privilegiada herda a permissão da mais privilegiada.
+- Escrita fora de qualquer projeto trackfw (sem `trackfw.yaml` ancestral) não é bloqueada pela D4.
+- Escrita por Bash (`echo >>`, `sed -i`, `cp`) escapa da D3 e da D4; só a D2 (`trackfw barrier ml_scope`) a detecta na auditoria de commit.

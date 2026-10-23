@@ -14,10 +14,12 @@
 package guard
 
 import (
+	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -355,14 +357,43 @@ func TestRunWriteScope_DotDot_OutsideProject_DotDotPath(t *testing.T) {
 	}
 }
 
+// symlinkOrSkipInGuard creates a symlink from link to target.
+// If creation fails due to a privilege error (Windows without Developer Mode,
+// or permission-denied), the calling test is skipped.
+// Any other error is a t.Fatalf.
+// This is the capability guard required by scripts/check-symlink-privilege-guard.sh.
+func symlinkOrSkipInGuard(t *testing.T, target, link string) bool {
+	t.Helper()
+	err := os.Symlink(target, link)
+	if err == nil {
+		return true
+	}
+	if isSymlinkPrivilegeErrorInGuard(err) {
+		t.Skipf("guarda de symlink não exercitada: criação de symlink exige privilégio: %v", err)
+		return false
+	}
+	t.Fatalf("os.Symlink(%q, %q): %v", target, link, err)
+	return false
+}
+
+// isSymlinkPrivilegeErrorInGuard reports whether err is a privilege error for symlink creation.
+// Matches os.IsPermission and Windows WinError 1314 (ERROR_PRIVILEGE_NOT_HELD).
+func isSymlinkPrivilegeErrorInGuard(err error) bool {
+	if os.IsPermission(err) {
+		return true
+	}
+	var e syscall.Errno
+	if errors.As(err, &e) && e == 1314 {
+		return true
+	}
+	return false
+}
+
 // TestRunWriteScope_Symlink_Directory asserts that a symlink DIRECTORY inside the project that
 // points to docs/ causes writes to agents-working-context.md via the symlink to be denied.
 // Asserts: ML-3A2 AC5 — symlink directory inside project → resolves to frozen path → deny.
 // Contra-braço: passes on HEAD (EvalSymlinks was already there; the test adds coverage).
 func TestRunWriteScope_Symlink_Directory(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("os.Symlink requires elevated privileges on Windows; skipping")
-	}
 	dir := makeWSProjectDir(t)
 	docs := filepath.Join(dir, "docs")
 	if err := os.MkdirAll(docs, 0700); err != nil {
@@ -372,8 +403,8 @@ func TestRunWriteScope_Symlink_Directory(t *testing.T) {
 
 	// Create a symlink: dir/link → dir/docs
 	link := filepath.Join(dir, "link")
-	if err := os.Symlink(docs, link); err != nil {
-		t.Skipf("os.Symlink failed (%v); skipping symlink test", err)
+	if !symlinkOrSkipInGuard(t, docs, link) {
+		return
 	}
 
 	// Target: dir/link/agents-working-context.md
@@ -553,5 +584,563 @@ func TestRunWriteScope_MalformedYAML_NonFrozenTarget_Denied(t *testing.T) {
 	rc, stderr := runWS(t, payload("Write", target, ""))
 	if rc != 2 {
 		t.Fatalf("malformed YAML, non-frozen target: want exit 2 (deny), got %d (stderr=%q)", rc, stderr)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────
+// D4 — permission by dispatch (ML-3B)
+//
+// Helper: makeLeaseFile writes .trackfw/leases/<agentType>.json.
+// Helper: payloadFull builds a JSON payload using json.Marshal
+//         (safe for Windows paths that contain backslashes).
+// ─────────────────────────────────────────────────────────────
+
+// makeLeaseFile creates a .trackfw/leases/<agentType>.json with the given content.
+func makeLeaseFile(t *testing.T, projectRoot, agentType string, lease map[string]interface{}) string {
+	t.Helper()
+	leasesDir := filepath.Join(projectRoot, ".trackfw", "leases")
+	if err := os.MkdirAll(leasesDir, 0700); err != nil {
+		t.Fatalf("mkdir leases: %v", err)
+	}
+	leasePath := filepath.Join(leasesDir, agentType+".json")
+	data, err := json.Marshal(lease)
+	if err != nil {
+		t.Fatalf("marshal lease: %v", err)
+	}
+	if err := os.WriteFile(leasePath, data, 0600); err != nil {
+		t.Fatalf("write lease: %v", err)
+	}
+	return leasePath
+}
+
+// futureRFC3339 returns a future RFC 3339 timestamp (now + 1 hour).
+func futureRFC3339() string { return time.Now().Add(time.Hour).Format(time.RFC3339) }
+
+// pastRFC3339 returns a past RFC 3339 timestamp (now - 1 hour).
+func pastRFC3339() string { return time.Now().Add(-time.Hour).Format(time.RFC3339) }
+
+// payloadFull builds a JSON payload using json.Marshal to handle Windows backslashes safely.
+func payloadFull(tool, filePath, agentID, agentType string) string {
+	m := map[string]interface{}{
+		"tool_name":  tool,
+		"tool_input": map[string]string{"file_path": filePath},
+	}
+	if agentID != "" {
+		m["agent_id"] = agentID
+	}
+	if agentType != "" {
+		m["agent_type"] = agentType
+	}
+	b, _ := json.Marshal(m)
+	return string(b)
+}
+
+// TestRunWriteScope_D4_TargetInAllowDir_Allow asserts that a target inside a directory allow entry → 0.
+// Asserts: ML-3B AC4 — alvo dentro do allow (directory entry) → 0.
+// Contra-braço: on HEAD, D4 doesn't exist; RunWriteScope skips the lease check and allows the write
+//
+//	(exit 0) for the same reason — this test PASSES on HEAD for the wrong reason (no D4 check).
+//	The test's value comes from the failing arms that confirm D4 was not present on HEAD.
+func TestRunWriteScope_D4_TargetInAllowDir_Allow(t *testing.T) {
+	proj := makeWSProjectDir(t)
+	target := filepath.Join(proj, "src", "main.go")
+	if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("package main"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Allow entry: proj/ (directory, trailing slash).
+	makeLeaseFile(t, proj, "apolo-tf", map[string]interface{}{
+		"version":    1,
+		"agent_type": "apolo-tf",
+		"allow":      []string{proj + "/"},
+		"expires":    futureRFC3339(),
+	})
+
+	rc, stderr := runWS(t, payloadFull("Write", target, "apolo-tf-id", "apolo-tf"))
+	if rc != 0 {
+		t.Fatalf("target in allow dir: want exit 0 (allow), got %d (stderr=%q)", rc, stderr)
+	}
+}
+
+// TestRunWriteScope_D4_TargetInAllowFile_Allow asserts that a file-exact allow entry → 0.
+// Asserts: ML-3B AC4 — file-exact allow entry matches the target → 0.
+// Contra-braço: PASSES on HEAD (D4 absent → same exit 0 for wrong reason; see above).
+func TestRunWriteScope_D4_TargetInAllowFile_Allow(t *testing.T) {
+	proj := makeWSProjectDir(t)
+	target := filepath.Join(proj, "src", "lib.go")
+	if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("package lib"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Allow entry: exact file path (no trailing slash).
+	makeLeaseFile(t, proj, "apolo-tf", map[string]interface{}{
+		"version":    1,
+		"agent_type": "apolo-tf",
+		"allow":      []string{target},
+		"expires":    futureRFC3339(),
+	})
+
+	rc, stderr := runWS(t, payloadFull("Write", target, "apolo-tf-id", "apolo-tf"))
+	if rc != 0 {
+		t.Fatalf("target matches file-exact allow: want exit 0 (allow), got %d (stderr=%q)", rc, stderr)
+	}
+}
+
+// TestRunWriteScope_D4_SiblingFileNotAllowed asserts that a sibling of the allow file is denied.
+// Asserts: ML-3B — file-exact allow entry does NOT grant siblings → 2.
+// Contra-braço: FAILS on HEAD (D4 absent → exit 0; after fix → exit 2).
+func TestRunWriteScope_D4_SiblingFileNotAllowed(t *testing.T) {
+	proj := makeWSProjectDir(t)
+	allowedFile := filepath.Join(proj, "src", "lib.go")
+	if err := os.MkdirAll(filepath.Dir(allowedFile), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(allowedFile, []byte("package lib"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	sibling := filepath.Join(proj, "src", "other.go")
+	if err := os.WriteFile(sibling, []byte("package lib"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	makeLeaseFile(t, proj, "apolo-tf", map[string]interface{}{
+		"version":    1,
+		"agent_type": "apolo-tf",
+		"allow":      []string{allowedFile},
+		"expires":    futureRFC3339(),
+	})
+
+	rc, stderr := runWS(t, payloadFull("Write", sibling, "apolo-tf-id", "apolo-tf"))
+	if rc != 2 {
+		t.Fatalf("sibling not in allow: want exit 2 (deny), got %d (stderr=%q)", rc, stderr)
+	}
+	if !strings.Contains(stderr, "allow") && !strings.Contains(stderr, "not in") {
+		t.Fatalf("deny message: want 'allow' or 'not in' in stderr, got %q", stderr)
+	}
+}
+
+// TestRunWriteScope_D4_TargetOutsideAllow_Deny asserts that a target not in any allow → 2 with reason.
+// Asserts: ML-3B AC4 — alvo fora do allow → 2, com motivo.
+// Contra-braço: FAILS on HEAD (D4 absent → exit 0).
+func TestRunWriteScope_D4_TargetOutsideAllow_Deny(t *testing.T) {
+	proj := makeWSProjectDir(t)
+
+	// Allowed dir: a subdirectory.
+	allowedDir := filepath.Join(proj, "src")
+	if err := os.MkdirAll(allowedDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	// Target: a different subdirectory, outside allowedDir.
+	target := filepath.Join(proj, "docs", "plan.md")
+	if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("plan"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	makeLeaseFile(t, proj, "apolo-tf", map[string]interface{}{
+		"version":    1,
+		"agent_type": "apolo-tf",
+		"allow":      []string{allowedDir + "/"},
+		"expires":    futureRFC3339(),
+	})
+
+	rc, stderr := runWS(t, payloadFull("Write", target, "apolo-tf-id", "apolo-tf"))
+	if rc != 2 {
+		t.Fatalf("target outside allow: want exit 2 (deny), got %d (stderr=%q)", rc, stderr)
+	}
+	// Denial reason should name the target (or lease file).
+	if !strings.Contains(stderr, "allow") && !strings.Contains(stderr, "not in") {
+		t.Fatalf("deny message: want 'allow' or 'not in' in stderr, got %q", stderr)
+	}
+}
+
+// TestRunWriteScope_D4_NoLease_D3Only_Allow asserts that when no lease exists, only D3 applies.
+// Asserts: ML-3B AC4 — sem permissão → só a D3 (non-frozen target allowed).
+// Contra-braço: PASSES on HEAD (D4 absent → same D3-only behavior → exit 0).
+func TestRunWriteScope_D4_NoLease_D3Only_Allow(t *testing.T) {
+	proj := makeWSProjectDir(t)
+	target := filepath.Join(proj, "src", "main.go")
+	if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("package main"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	// No lease file created.
+
+	rc, stderr := runWS(t, payloadFull("Write", target, "apolo-tf-id", "apolo-tf"))
+	if rc != 0 {
+		t.Fatalf("no lease → D3 only: want exit 0 (allow), got %d (stderr=%q)", rc, stderr)
+	}
+}
+
+// TestRunWriteScope_D4_Expired_Deny asserts that an expired lease → 2 with "expir" in stderr.
+// Asserts: ML-3B AC4 — permissão expirada → 2.
+// Contra-braço: FAILS on HEAD (D4 absent → exit 0).
+func TestRunWriteScope_D4_Expired_Deny(t *testing.T) {
+	proj := makeWSProjectDir(t)
+	target := filepath.Join(proj, "src", "main.go")
+	if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("package main"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Lease valid except that expires is in the past.
+	makeLeaseFile(t, proj, "apolo-tf", map[string]interface{}{
+		"version":    1,
+		"agent_type": "apolo-tf",
+		"allow":      []string{proj + "/"},
+		"expires":    pastRFC3339(), // expired
+	})
+
+	rc, stderr := runWS(t, payloadFull("Write", target, "apolo-tf-id", "apolo-tf"))
+	if rc != 2 {
+		t.Fatalf("expired lease: want exit 2 (deny), got %d (stderr=%q)", rc, stderr)
+	}
+	if !strings.Contains(stderr, "expir") {
+		t.Fatalf("expired deny message: want 'expir' in stderr, got %q", stderr)
+	}
+}
+
+// TestRunWriteScope_D4_InvalidJSON_Deny asserts that an invalid JSON lease → 2.
+// Asserts: ML-3B AC4 — JSON inválido → 2.
+// Contra-braço: FAILS on HEAD (D4 absent → exit 0).
+func TestRunWriteScope_D4_InvalidJSON_Deny(t *testing.T) {
+	proj := makeWSProjectDir(t)
+	target := filepath.Join(proj, "src", "main.go")
+	if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("package main"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write an invalid JSON lease.
+	leasesDir := filepath.Join(proj, ".trackfw", "leases")
+	if err := os.MkdirAll(leasesDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(leasesDir, "apolo-tf.json"), []byte("{not valid json"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	rc, stderr := runWS(t, payloadFull("Write", target, "apolo-tf-id", "apolo-tf"))
+	if rc != 2 {
+		t.Fatalf("invalid JSON lease: want exit 2 (deny), got %d (stderr=%q)", rc, stderr)
+	}
+}
+
+// TestRunWriteScope_D4_LeaseIsDirectory_Deny asserts that when the lease path is a directory → 2.
+// Asserts: ML-3B — lease ilegível (diretório) → 2 (D4-C).
+// Contra-braço: FAILS on HEAD (D4 absent → exit 0).
+func TestRunWriteScope_D4_LeaseIsDirectory_Deny(t *testing.T) {
+	proj := makeWSProjectDir(t)
+	target := filepath.Join(proj, "src", "main.go")
+	if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("package main"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create the lease path as a directory instead of a file.
+	leasesDir := filepath.Join(proj, ".trackfw", "leases", "apolo-tf.json")
+	if err := os.MkdirAll(leasesDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	rc, stderr := runWS(t, payloadFull("Write", target, "apolo-tf-id", "apolo-tf"))
+	if rc != 2 {
+		t.Fatalf("lease is directory: want exit 2 (deny), got %d (stderr=%q)", rc, stderr)
+	}
+}
+
+// TestRunWriteScope_D4_VersionNotOne_Deny asserts that an unsupported lease version → 2.
+// Asserts: ML-3B contract item 3 — version != 1 → 2.
+// Contra-braço: FAILS on HEAD (D4 absent → exit 0).
+func TestRunWriteScope_D4_VersionNotOne_Deny(t *testing.T) {
+	proj := makeWSProjectDir(t)
+	target := filepath.Join(proj, "src", "main.go")
+	if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("package main"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	makeLeaseFile(t, proj, "apolo-tf", map[string]interface{}{
+		"version":    2, // unsupported
+		"agent_type": "apolo-tf",
+		"allow":      []string{proj + "/"},
+		"expires":    futureRFC3339(),
+	})
+
+	rc, stderr := runWS(t, payloadFull("Write", target, "apolo-tf-id", "apolo-tf"))
+	if rc != 2 {
+		t.Fatalf("version 2 lease: want exit 2 (deny), got %d (stderr=%q)", rc, stderr)
+	}
+	if !strings.Contains(stderr, "version") {
+		t.Fatalf("version deny message: want 'version' in stderr, got %q", stderr)
+	}
+}
+
+// TestRunWriteScope_D4_AgentTypeDivergent_Deny asserts that a divergent agent_type in the file → 2.
+// Asserts: ML-3B AC4 — agent_type divergente → 2.
+// Contra-braço: FAILS on HEAD (D4 absent → exit 0).
+func TestRunWriteScope_D4_AgentTypeDivergent_Deny(t *testing.T) {
+	proj := makeWSProjectDir(t)
+	target := filepath.Join(proj, "src", "main.go")
+	if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("package main"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// File agent_type "hades-tf" ≠ payload agent_type "apolo-tf".
+	makeLeaseFile(t, proj, "apolo-tf", map[string]interface{}{
+		"version":    1,
+		"agent_type": "hades-tf", // divergent
+		"allow":      []string{proj + "/"},
+		"expires":    futureRFC3339(),
+	})
+
+	rc, stderr := runWS(t, payloadFull("Write", target, "apolo-tf-id", "apolo-tf"))
+	if rc != 2 {
+		t.Fatalf("agent_type mismatch: want exit 2 (deny), got %d (stderr=%q)", rc, stderr)
+	}
+	if !strings.Contains(stderr, "agent_type") {
+		t.Fatalf("mismatch deny message: want 'agent_type' in stderr, got %q", stderr)
+	}
+}
+
+// TestRunWriteScope_D4_RelativeAllow_Deny asserts that a relative allow entry → 2 even if it would match.
+// Asserts: ML-3B AC4 — allow relativo → 2.
+// Contra-braço: FAILS on HEAD (D4 absent → exit 0).
+func TestRunWriteScope_D4_RelativeAllow_Deny(t *testing.T) {
+	proj := makeWSProjectDir(t)
+	target := filepath.Join(proj, "src", "main.go")
+	if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("package main"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// One relative, one absolute (that covers the target).
+	// The relative entry should trigger denial before the absolute entry is consulted.
+	makeLeaseFile(t, proj, "apolo-tf", map[string]interface{}{
+		"version":    1,
+		"agent_type": "apolo-tf",
+		"allow":      []string{"relative/path", proj + "/"},
+		"expires":    futureRFC3339(),
+	})
+
+	rc, stderr := runWS(t, payloadFull("Write", target, "apolo-tf-id", "apolo-tf"))
+	if rc != 2 {
+		t.Fatalf("relative allow entry: want exit 2 (deny), got %d (stderr=%q)", rc, stderr)
+	}
+}
+
+// TestRunWriteScope_D4_FrozenInsideAllow_Deny asserts that a frozen path inside the allow list is still denied.
+// Asserts: ML-3B AC4 — congelado dentro do allow → 2 (D3 runs before D4).
+// Contra-braço: PASSES on HEAD (D3 already denies; D4 is absent but D3 denies first → exit 2).
+func TestRunWriteScope_D4_FrozenInsideAllow_Deny(t *testing.T) {
+	proj := makeWSProjectDir(t)
+	// Create frozen working context.
+	makeDocsWorkingContext(t, proj, true /* frozen */)
+
+	// Allow entry covers the whole project (including the frozen file).
+	makeLeaseFile(t, proj, "apolo-tf", map[string]interface{}{
+		"version":    1,
+		"agent_type": "apolo-tf",
+		"allow":      []string{proj + "/"},
+		"expires":    futureRFC3339(),
+	})
+
+	target := filepath.Join(proj, "docs", "agents-working-context.md")
+	rc, stderr := runWS(t, payloadFull("Write", target, "apolo-tf-id", "apolo-tf"))
+	if rc != 2 {
+		t.Fatalf("frozen path inside allow: want exit 2 (deny by D3), got %d (stderr=%q)", rc, stderr)
+	}
+	if !strings.Contains(stderr, "frozen") {
+		t.Fatalf("frozen deny message: want 'frozen' in stderr, got %q", stderr)
+	}
+}
+
+// TestRunWriteScope_D4_MainSession_NoAgentID_LeaseIgnored asserts that the main session ignores D4.
+// Asserts: ML-3B AC4 — sessão principal (sem agent_id) ignora a permissão.
+// A lease exists that would deny the target, but agent_id is absent → D3 only → allow.
+// Contra-braço: PASSES on HEAD (D4 absent → D3 only → same exit 0).
+func TestRunWriteScope_D4_MainSession_NoAgentID_LeaseIgnored(t *testing.T) {
+	proj := makeWSProjectDir(t)
+	target := filepath.Join(proj, "src", "main.go")
+	if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("package main"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Lease exists with allow pointing elsewhere — would deny if D4 applied.
+	elsewhere := filepath.Join(proj, "other")
+	if err := os.MkdirAll(elsewhere, 0700); err != nil {
+		t.Fatal(err)
+	}
+	makeLeaseFile(t, proj, "apolo-tf", map[string]interface{}{
+		"version":    1,
+		"agent_type": "apolo-tf",
+		"allow":      []string{elsewhere + "/"},
+		"expires":    futureRFC3339(),
+	})
+
+	// No agent_id → main session.
+	p := payloadFull("Write", target, "", "apolo-tf")
+	rc, stderr := runWS(t, p)
+	if rc != 0 {
+		t.Fatalf("main session (no agent_id): want exit 0 (allow, D4 ignored), got %d (stderr=%q)", rc, stderr)
+	}
+}
+
+// TestRunWriteScope_D4_InvalidSlug_D3Only asserts that an agent_type with "/" → D3 only (not D4).
+// Asserts: ML-3B AC4 — agent_type fora do padrão → só a D3 (D4-A slug validation).
+// Contra-braço: PASSES on HEAD (D4 absent → D3 only → same exit 0 for non-frozen target).
+func TestRunWriteScope_D4_InvalidSlug_D3Only(t *testing.T) {
+	proj := makeWSProjectDir(t)
+	target := filepath.Join(proj, "src", "main.go")
+	if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("package main"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// A lease exists for a slug that could be accessed via path traversal if slug validation failed.
+	// With validation, "x/../apolo-tf" fails the slug check → D3 only.
+	rc, stderr := runWS(t, payloadFull("Write", target, "x-id", "x/../apolo-tf"))
+	if rc != 0 {
+		t.Fatalf("invalid slug agent_type: want exit 0 (D3 only), got %d (stderr=%q)", rc, stderr)
+	}
+}
+
+// TestRunWriteScope_D4_DirBoundary_NoCross asserts /a/b/ does NOT match /a/bc/x.
+// Asserts: ML-3B — directory allow entry uses separator-terminated prefix; /a/b/ doesn't match /a/bc.
+// Contra-braço: FAILS on HEAD (D4 absent → exit 0 for any non-frozen target in a project;
+//
+//	but the test is meaningful with D4: it verifies the separator boundary).
+func TestRunWriteScope_D4_DirBoundary_NoCross(t *testing.T) {
+	proj := makeWSProjectDir(t)
+
+	// allowedDir = proj/src
+	allowedDir := filepath.Join(proj, "src")
+	if err := os.MkdirAll(allowedDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create proj/srcmore/file.go — starts with the same prefix as "src/" but is a sibling.
+	srcmore := filepath.Join(proj, "srcmore")
+	if err := os.MkdirAll(srcmore, 0700); err != nil {
+		t.Fatal(err)
+	}
+	crossFile := filepath.Join(srcmore, "file.go")
+	if err := os.WriteFile(crossFile, []byte("x"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	makeLeaseFile(t, proj, "apolo-tf", map[string]interface{}{
+		"version":    1,
+		"agent_type": "apolo-tf",
+		"allow":      []string{allowedDir + "/"},
+		"expires":    futureRFC3339(),
+	})
+
+	rc, stderr := runWS(t, payloadFull("Write", crossFile, "apolo-tf-id", "apolo-tf"))
+	if rc != 2 {
+		t.Fatalf("directory boundary: want exit 2 (deny; proj/srcmore not in proj/src/), got %d (stderr=%q)", rc, stderr)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────
+// D4 — Caso de 2026-10-23: worktrees paralelos
+//
+// Projeto A = checkout principal, Projeto B = worktree.
+// Cada um tem trackfw.yaml. A permissão é lida da raiz do ALVO.
+// ─────────────────────────────────────────────────────────────
+
+// TestRunWriteScope_D4_Worktree_VariantA_Deny asserts Variant A: lease in A, allow=[B/], target in A → 2.
+// Asserts: ML-3B test of "caso de 2026-10-23" — lease in A allows only B, write targets A → denied.
+// Contra-braço: FAILS on HEAD (D4 absent → exit 0).
+func TestRunWriteScope_D4_Worktree_VariantA_Deny(t *testing.T) {
+	projA := makeWSProjectDir(t) // simulates main checkout
+	projB := makeWSProjectDir(t) // simulates worktree
+
+	// Target in A (non-frozen).
+	targetInA := filepath.Join(projA, "src", "main.go")
+	if err := os.MkdirAll(filepath.Dir(targetInA), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(targetInA, []byte("package main"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Lease in A: allow = [projB/] — the agent is permitted to write in B, not A.
+	makeLeaseFile(t, projA, "apolo-tf", map[string]interface{}{
+		"version":    1,
+		"agent_type": "apolo-tf",
+		"allow":      []string{projB + "/"},
+		"expires":    futureRFC3339(),
+	})
+
+	rc, stderr := runWS(t, payloadFull("Write", targetInA, "apolo-tf-id", "apolo-tf"))
+	if rc != 2 {
+		t.Fatalf("variant A (lease in A, allow=B, target=A): want exit 2 (deny), got %d (stderr=%q)", rc, stderr)
+	}
+}
+
+// TestRunWriteScope_D4_Worktree_VariantB_Allow asserts Variant B: lease in B only, target in A → 0 (D3 only).
+// The lease is read from the root of the TARGET (A), which has no lease → D3 only → allow.
+// Asserts: ML-3B test of "caso de 2026-10-23" — lease in B does not protect A.
+//
+// Security implication (to be reported to the architect): if a subagent can write to a trackfw
+// project that has no lease for its agent_type, D4 does not block it. Only D3 (frozen paths) applies.
+// A project must hold its own lease to get D4 protection.
+//
+// Contra-braço: PASSES on HEAD (D4 absent → D3 only → same exit 0 for non-frozen target).
+func TestRunWriteScope_D4_Worktree_VariantB_Allow(t *testing.T) {
+	projA := makeWSProjectDir(t) // simulates main checkout
+	projB := makeWSProjectDir(t) // simulates worktree
+
+	// Target in A (non-frozen).
+	targetInA := filepath.Join(projA, "src", "main.go")
+	if err := os.MkdirAll(filepath.Dir(targetInA), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(targetInA, []byte("package main"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Lease only in B (the worktree). A has no lease.
+	makeLeaseFile(t, projB, "apolo-tf", map[string]interface{}{
+		"version":    1,
+		"agent_type": "apolo-tf",
+		"allow":      []string{projB + "/"},
+		"expires":    futureRFC3339(),
+	})
+
+	// Writing to A: lease is looked up in A (root of target), not B → absent → D3 only → allow.
+	rc, stderr := runWS(t, payloadFull("Write", targetInA, "apolo-tf-id", "apolo-tf"))
+	if rc != 0 {
+		t.Fatalf("variant B (lease in B, target=A): want exit 0 (D3 only, no lease in A), got %d (stderr=%q)", rc, stderr)
 	}
 }

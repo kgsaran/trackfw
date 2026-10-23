@@ -14,12 +14,14 @@ package commands
 // Each test declares what conclusion of ML-3A it asserts (Reconciliation Rule, CLAUDE.md).
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // writeScopeExitCode runs `trackfw guard write-scope` with the given JSON on stdin
@@ -459,5 +461,218 @@ func TestGuardWriteScope_TrackfwLeasesDir_Deny_Subagent(t *testing.T) {
 	}
 	if stderr == "" {
 		t.Fatal("frozen path deny: want non-empty stderr reason, got empty")
+	}
+}
+
+// ─────────────────────────────────────────────────────────────
+// D4 — ML-3B: permission by dispatch (subprocess tests)
+// ─────────────────────────────────────────────────────────────
+
+// d4MakeLeaseFile writes .trackfw/leases/<agentType>.json in projectRoot.
+func d4MakeLeaseFile(t *testing.T, projectRoot, agentType string, lease map[string]interface{}) {
+	t.Helper()
+	leasesDir := filepath.Join(projectRoot, ".trackfw", "leases")
+	if err := os.MkdirAll(leasesDir, 0700); err != nil {
+		t.Fatalf("mkdir leases: %v", err)
+	}
+	data, err := json.Marshal(lease)
+	if err != nil {
+		t.Fatalf("marshal lease: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(leasesDir, agentType+".json"), data, 0600); err != nil {
+		t.Fatalf("write lease: %v", err)
+	}
+}
+
+// d4Payload builds a JSON payload using json.Marshal (safe for Windows backslash paths).
+func d4Payload(tool, filePath, agentID, agentType string) string {
+	m := map[string]interface{}{
+		"tool_name":  tool,
+		"tool_input": map[string]string{"file_path": filePath},
+	}
+	if agentID != "" {
+		m["agent_id"] = agentID
+	}
+	if agentType != "" {
+		m["agent_type"] = agentType
+	}
+	b, _ := json.Marshal(m)
+	return string(b)
+}
+
+// TestGuardWriteScope_D4_Allow asserts that a target within the lease allow list → exit 0.
+// Asserts: ML-3B AC4 — alvo dentro do allow → 0 (subprocess, real binary).
+// Contra-braço: FAILS on HEAD (D4 absent → allows for wrong reason; allow arms still exit 0).
+//
+//	This test is behaviorally correct on both HEAD and after the fix.
+//	The failing contra-braço is in the deny arm (TestGuardWriteScope_D4_Deny).
+func TestGuardWriteScope_D4_Allow(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte(""), 0600); err != nil {
+		t.Fatal(err)
+	}
+	srcDir := filepath.Join(dir, "src")
+	if err := os.MkdirAll(srcDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(srcDir, "main.go")
+	if err := os.WriteFile(target, []byte("package main"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	d4MakeLeaseFile(t, dir, "apolo-tf", map[string]interface{}{
+		"version":    1,
+		"agent_type": "apolo-tf",
+		"allow":      []string{srcDir + "/"},
+		"expires":    time.Now().Add(time.Hour).Format(time.RFC3339),
+	})
+
+	p := d4Payload("Write", target, "apolo-tf-session-1", "apolo-tf")
+	rc, stderr := writeScopeExitCode(t, p)
+	if rc != 0 {
+		t.Fatalf("D4 allow: want exit 0 (allow), got %d (stderr=%q)", rc, stderr)
+	}
+}
+
+// TestGuardWriteScope_D4_Deny asserts that a target outside the allow list → exit 2.
+// Asserts: ML-3B AC4 — alvo fora do allow → 2 (subprocess, real binary).
+// Contra-braço: FAILS on HEAD (D4 absent → exit 0).
+func TestGuardWriteScope_D4_Deny(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte(""), 0600); err != nil {
+		t.Fatal(err)
+	}
+	srcDir := filepath.Join(dir, "src")
+	if err := os.MkdirAll(srcDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	docsDir := filepath.Join(dir, "docs")
+	if err := os.MkdirAll(docsDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(docsDir, "plan.md")
+	if err := os.WriteFile(target, []byte("plan"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Lease allows only src/; target is in docs/ → deny.
+	d4MakeLeaseFile(t, dir, "apolo-tf", map[string]interface{}{
+		"version":    1,
+		"agent_type": "apolo-tf",
+		"allow":      []string{srcDir + "/"},
+		"expires":    time.Now().Add(time.Hour).Format(time.RFC3339),
+	})
+
+	p := d4Payload("Write", target, "apolo-tf-session-1", "apolo-tf")
+	rc, stderr := writeScopeExitCode(t, p)
+	if rc != 2 {
+		t.Fatalf("D4 deny (outside allow): want exit 2, got %d (stderr=%q)", rc, stderr)
+	}
+	if !strings.Contains(stderr, "allow") && !strings.Contains(stderr, "not in") {
+		t.Fatalf("deny message: want 'allow' or 'not in' in stderr, got %q", stderr)
+	}
+}
+
+// TestGuardWriteScope_D4_Expired_Deny asserts that an expired lease → exit 2.
+// Asserts: ML-3B AC4 — permissão expirada → 2 (subprocess).
+// Contra-braço: FAILS on HEAD (D4 absent → exit 0).
+func TestGuardWriteScope_D4_Expired_Deny(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte(""), 0600); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(dir, "src", "main.go")
+	if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("package main"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	d4MakeLeaseFile(t, dir, "apolo-tf", map[string]interface{}{
+		"version":    1,
+		"agent_type": "apolo-tf",
+		"allow":      []string{dir + "/"},
+		"expires":    time.Now().Add(-time.Hour).Format(time.RFC3339), // expired
+	})
+
+	p := d4Payload("Write", target, "apolo-tf-session-1", "apolo-tf")
+	rc, stderr := writeScopeExitCode(t, p)
+	if rc != 2 {
+		t.Fatalf("expired lease: want exit 2, got %d (stderr=%q)", rc, stderr)
+	}
+	if !strings.Contains(stderr, "expir") {
+		t.Fatalf("expired deny message: want 'expir' in stderr, got %q", stderr)
+	}
+}
+
+// TestGuardWriteScope_D4_NoLease_Allow asserts that without a lease, only D3 applies.
+// Asserts: ML-3B AC4 — sem permissão → só a D3 (non-frozen target → allow).
+// Contra-braço: PASSES on HEAD (same D3-only behavior → exit 0).
+func TestGuardWriteScope_D4_NoLease_Allow(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte(""), 0600); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(dir, "src", "main.go")
+	if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("package main"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	// No lease file; agent_type = "apolo-tf".
+
+	p := d4Payload("Write", target, "apolo-tf-session-1", "apolo-tf")
+	rc, stderr := writeScopeExitCode(t, p)
+	if rc != 0 {
+		t.Fatalf("no lease → D3 only: want exit 0 (allow), got %d (stderr=%q)", rc, stderr)
+	}
+}
+
+// TestGuardWriteScope_D4_RealClaudePayload asserts D4 allow works with the full Claude Code payload.
+// The real Claude Code PreToolUse payload includes session_id, transcript_path, cwd,
+// hook_event_name, agent_id, and agent_type in addition to the write fields.
+// Asserts: ML-3B AC4 — payload real do Claude Code com agent_id e agent_type presentes → 0.
+// Contra-braço: PASSES on HEAD (D4 absent → D3-only allow for non-frozen target).
+func TestGuardWriteScope_D4_RealClaudePayload(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte(""), 0600); err != nil {
+		t.Fatal(err)
+	}
+	srcDir := filepath.Join(dir, "src")
+	if err := os.MkdirAll(srcDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(srcDir, "output.go")
+	if err := os.WriteFile(target, []byte("package out"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	d4MakeLeaseFile(t, dir, "apolo-tf", map[string]interface{}{
+		"version":    1,
+		"agent_type": "apolo-tf",
+		"allow":      []string{srcDir + "/"},
+		"expires":    time.Now().Add(time.Hour).Format(time.RFC3339),
+	})
+
+	// Full Claude Code PreToolUse payload as documented in https://code.claude.com/docs/en/hooks.
+	fullPayload := map[string]interface{}{
+		"session_id":      "session-abc123",
+		"transcript_path": "/tmp/claude/transcript.jsonl",
+		"cwd":             dir,
+		"hook_event_name": "PreToolUse",
+		"agent_id":        "sub-agent-xyz",
+		"agent_type":      "apolo-tf",
+		"tool_name":       "Write",
+		"tool_input": map[string]string{
+			"file_path": target,
+			"content":   "package out\n// generated",
+		},
+	}
+	payloadBytes, _ := json.Marshal(fullPayload)
+
+	rc, stderr := writeScopeExitCode(t, string(payloadBytes))
+	if rc != 0 {
+		t.Fatalf("real Claude Code payload (subagent, within allow): want exit 0, got %d (stderr=%q)", rc, stderr)
 	}
 }

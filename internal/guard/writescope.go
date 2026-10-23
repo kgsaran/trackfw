@@ -1,6 +1,7 @@
 // Package guard — write-scope subcommand.
-// Implements trackfw guard write-scope: denies writes to frozen paths.
-// ADR-2026-10-23 D3, ML-3A.
+// Implements trackfw guard write-scope: denies writes to frozen paths (D3)
+// and enforces per-agent write-scope leases (D4).
+// ADR-2026-10-23, ML-3A, ML-3B.
 package guard
 
 import (
@@ -11,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -18,6 +20,21 @@ import (
 	"github.com/kgsaran/trackfw/internal/config"
 	"gopkg.in/yaml.v3"
 )
+
+// agentTypeSlugRE validates agent_type as a safe filename component.
+// Must match ^[A-Za-z0-9_-]{1,64}$ to prevent path traversal (D4-A, Wave 0 §2.4).
+var agentTypeSlugRE = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+
+// WriteScopeLease is the on-disk format of a write-scope permission lease (v1).
+// File: <project_root>/.trackfw/leases/<agent_type>.json
+// The arquiteto writes the lease before dispatching a subagent and deletes it after.
+// ML-3B, ADR-2026-10-23 adendo.
+type WriteScopeLease struct {
+	Version   int      `json:"version"`
+	AgentType string   `json:"agent_type"`
+	Allow     []string `json:"allow"`    // absolute paths; trailing "/" → directory prefix
+	Expires   string   `json:"expires"` // RFC 3339; mandatory
+}
 
 // frozenMarker is checked in the first 10 lines of docs/agents-working-context.md
 // to determine whether to freeze it for the main session (item 4 of ML-3A contract).
@@ -155,12 +172,128 @@ func RunWriteScope(stdin io.Reader, idleTimeout time.Duration, stderr io.Writer)
 	}
 
 	// Step 10: Check whether the resolved path hits a frozen entry.
+	// D3 always runs before D4. A frozen path is denied even if it appears in the D4 allow list.
 	if rel, hit := frozenHit(resolved, projectRoot, frozen); hit {
 		fmt.Fprintf(stderr, "trackfw guard write-scope: denied: %q is a frozen path (%s)\n", rawFilePath, rel)
 		return 2
 	}
 
-	return 0
+	// Step 11: D4 — permission by dispatch (subagent only, ML-3B).
+	// Only applies when the payload identifies a subagent (agent_id present, non-empty).
+	if !isSubagent {
+		return 0
+	}
+
+	// Extract agent_type. A missing, empty, or non-slug agent_type means "no lease" → D3 only.
+	// Errors from extractStringField (non-string value) are silenced: they collapse to empty string.
+	agentType, _ := extractStringField(root, "agent_type")
+	if !agentTypeSlugRE.MatchString(agentType) {
+		// Invalid or empty → no lease lookup → D3 only → allow.
+		return 0
+	}
+
+	// Load lease from <projectRoot>/.trackfw/leases/<agentType>.json.
+	lease, leaseErr := loadWriteScopeLease(projectRoot, agentType)
+	if leaseErr != nil {
+		fmt.Fprintf(stderr, "trackfw guard write-scope: denied: %v\n", leaseErr)
+		return 2
+	}
+	if lease == nil {
+		// No lease file for this agent type → D3 only → allow.
+		return 0
+	}
+
+	// Validate lease fields (version, agent_type, expires) before checking allow list.
+	if lease.Version != 1 {
+		fmt.Fprintf(stderr, "trackfw guard write-scope: denied: lease for %q: unsupported version %d (want 1)\n", agentType, lease.Version)
+		return 2
+	}
+	if lease.AgentType != agentType {
+		fmt.Fprintf(stderr, "trackfw guard write-scope: denied: lease for %q: agent_type in file (%q) does not match payload (%q)\n", agentType, lease.AgentType, agentType)
+		return 2
+	}
+	if lease.Expires == "" {
+		fmt.Fprintf(stderr, "trackfw guard write-scope: denied: lease for %q: expires field is missing\n", agentType)
+		return 2
+	}
+	expires, parseErr := time.Parse(time.RFC3339, lease.Expires)
+	if parseErr != nil {
+		fmt.Fprintf(stderr, "trackfw guard write-scope: denied: lease for %q: expires is not valid RFC 3339: %v\n", agentType, parseErr)
+		return 2
+	}
+	if time.Now().After(expires) {
+		fmt.Fprintf(stderr, "trackfw guard write-scope: denied: lease for %q has expired at %s\n", agentType, lease.Expires)
+		return 2
+	}
+
+	// Validate ALL allow entries are absolute before matching any.
+	// One relative entry in the list denies the write even if another entry would match.
+	leasePath := filepath.Join(projectRoot, ".trackfw", "leases", agentType+".json")
+	for _, e := range lease.Allow {
+		en := normalizeTargetPath(e, runtime.GOOS)
+		if !filepath.IsAbs(en) {
+			fmt.Fprintf(stderr, "trackfw guard write-scope: denied: lease %s: allow entry %q is not an absolute path\n", leasePath, e)
+			return 2
+		}
+	}
+
+	// Check whether the resolved target is within some allow entry.
+	// Trailing "/" in the allow entry means directory prefix; otherwise exact file match.
+	for _, e := range lease.Allow {
+		en := normalizeTargetPath(e, runtime.GOOS)
+		isDirEntry := strings.HasSuffix(e, "/")
+		allowResolved := resolveWriteScopePath(en)
+		if isDirEntry {
+			allowDir := filepath.Clean(allowResolved)
+			// Use separator-terminated prefix to prevent /a/b matching /a/bc.
+			prefix := allowDir + string(filepath.Separator)
+			if pathEqual(resolved, allowDir) || pathHasPrefix(resolved, prefix) {
+				return 0
+			}
+		} else {
+			if pathEqual(resolved, allowResolved) {
+				return 0
+			}
+		}
+	}
+
+	// Target is not within any allow entry.
+	fmt.Fprintf(stderr, "trackfw guard write-scope: denied: %q is not in the allow list of %s\n", rawFilePath, leasePath)
+	return 2
+}
+
+// loadWriteScopeLease reads and parses the lease file for agentType.
+// Returns (nil, nil) when the file is absent → caller applies D3 only (ML-3B item 2).
+// Returns (nil, err) when the file exists but cannot be read or parsed → caller denies (D4-C).
+// Returns (lease, nil) when the file is present and parses as JSON (validation is the caller's job).
+//
+// agentType MUST already be validated as a slug before calling this function (D4-A):
+// filepath.Join would otherwise allow path traversal.
+func loadWriteScopeLease(projectRoot, agentType string) (*WriteScopeLease, error) {
+	leasePath := filepath.Join(projectRoot, ".trackfw", "leases", agentType+".json")
+
+	info, err := os.Stat(leasePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil // absent → D3 only
+		}
+		return nil, fmt.Errorf("lease file %q: %w", leasePath, err)
+	}
+	if !info.Mode().IsRegular() {
+		// Covers directory entries and FIFOs (a FIFO would block ReadFile).
+		return nil, fmt.Errorf("lease file %q is not a regular file (D4-C)", leasePath)
+	}
+
+	data, err := os.ReadFile(leasePath)
+	if err != nil {
+		return nil, fmt.Errorf("lease file %q: cannot read: %w", leasePath, err)
+	}
+
+	var lease WriteScopeLease
+	if err := json.Unmarshal(data, &lease); err != nil {
+		return nil, fmt.Errorf("lease file %q: invalid JSON: %w", leasePath, err)
+	}
+	return &lease, nil
 }
 
 // extractStringField extracts a string value from a flat JSON map.

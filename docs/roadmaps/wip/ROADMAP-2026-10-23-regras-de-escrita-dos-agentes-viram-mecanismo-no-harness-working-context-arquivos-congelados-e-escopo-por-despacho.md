@@ -243,7 +243,7 @@ dá exit 2. Os testes que já passavam no HEAD ficam declarados como fixação d
 nenhuma escrita no working context.
 
 ### ML-3B — A permissão por despacho (D4)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** apolo-tf
 **Files affected:** `internal/guard/`, `internal/commands/guard_write_scope_test.go`, `docs/cli-parity.md`
 **Contrato (arquiteto, a partir do adendo da ADR e da Wave 0 §2):**
@@ -283,6 +283,40 @@ nenhuma escrita no working context.
 go build ./...
 go test ./internal/guard/ ./internal/commands/ ./internal/pathguard/ -count=1
 ```
+
+**Auditoria do arquiteto (2026-10-23):** a implementação está aprovada; o desenho ficou incompleto e o corretivo é o ML-3C.
+- **Gates:** verdes, e `parity-rest` rc=0.
+- **Testes:** 22 novos. Os braços de negação reprovam no HEAD anterior, e os de liberação fixam o comportamento que estava
+  correto. Foi corrigido também o seam de symlink exigido por `check-symlink-privilege-guard.sh`.
+- **Desenho — a variante B mediu exit 0.** A permissão gravada no worktree não protege o checkout principal, porque a
+  busca é pela raiz do **alvo**, e o caso real de 2026-10-23 é justamente esse.
+- **Desenho — `.trackfw/leases/` não é ignorado pelo git.** Uma permissão, com caminhos absolutos da máquina, poderia ser
+  commitada.
+- **Fora do escopo:** o agente instalou `packaging` com `pip3 install --user --break-system-packages`, sem autorização. O
+  handoff não dava o venv do arquiteto. Isso está reportado ao KG.
+
+### ML-3C — Corretivo da D4: busca da permissão pela sessão e pelo alvo
+**Status:** ⬜ Pendente
+**Agente:** apolo-tf
+**Files affected:** `internal/guard/`, `internal/commands/guard_write_scope_test.go`, `internal/generators/`, `.gitignore`, `docs/cli-parity.md`
+**Contrato:**
+1. **A permissão é procurada em duas raízes**, sem repetição:
+   - a raiz do projeto do `cwd` do payload, que é a sessão;
+   - a raiz do projeto do alvo.
+
+   Se existir permissão para o `agent_type` em qualquer delas, o alvo tem de estar no `allow` de pelo menos uma permissão
+   válida. Uma permissão inválida em qualquer das raízes nega. `cwd` ausente ou relativo significa só a raiz do alvo, como
+   hoje.
+2. **Com isso, a variante B passa a negar.** É o caso de 2026-10-23: a permissão está no checkout principal (o `cwd` da
+   sessão), com `allow` igual ao worktree, e o alvo está no checkout principal.
+3. **`.trackfw/leases/` ignorado pelo git:** no `.gitignore` gerado pelo `trackfw init` (ache onde o scaffold escreve as
+   entradas `.trackfw-*` do `.gitignore`) e no `.gitignore` deste repositório.
+4. **Formato e ciclo de vida** atualizados no `docs/cli-parity.md`.
+**Acceptance criteria:**
+- [ ] A variante B medida com 2; a variante A continua 2; o alvo dentro do `allow` continua 0, com a permissão só na raiz do `cwd`
+- [ ] Uma permissão inválida na raiz do `cwd` e uma válida na do alvo → 2
+- [ ] `git check-ignore .trackfw/leases/x.json` rc=0 neste repo, e teste do scaffold gerando a entrada
+- [ ] Contra-braço de cada teste novo; os gates do ML-3B verdes
 
 ## Wave 4 — Revisões independentes
 > Dependencies: Wave 3 auditada.
