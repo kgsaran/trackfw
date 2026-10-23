@@ -170,3 +170,23 @@ func TestTrackfwRulesBlockUsesWorkingContextDir(t *testing.T) {
 		t.Error("trackfwRulesBlock: must not reference docs/agents-working-context.md (legacy frozen file)")
 	}
 }
+
+// TestTrackfwRulesBlockAfterFinishingSubagentsNeverWrite affirms ML-1B (D1):
+// line 3 of the Agent Protocol in the generated governance rules block states
+// that the orchestrating session (trackfw_architect) writes the working-context
+// entry and that subagents never write there. This test FAILS on HEAD before
+// this ML is applied (the old text says "write a new file" without the subagent
+// restriction) and PASSES on the branch after the edit to agentfiles.go:94.
+func TestTrackfwRulesBlockAfterFinishingSubagentsNeverWrite(t *testing.T) {
+	block := trackfwRulesBlock("", "flat", nil)
+
+	const wantOrchestrator = "the orchestrating session (`trackfw_architect`) writes a new file in"
+	const wantSubagentRule = "Subagents never write there"
+
+	if !strings.Contains(block, wantOrchestrator) {
+		t.Errorf("trackfwRulesBlock: line 3 must state that the orchestrating session writes the entry.\nwant substring: %q\ngot block:\n%s", wantOrchestrator, block)
+	}
+	if !strings.Contains(block, wantSubagentRule) {
+		t.Errorf("trackfwRulesBlock: line 3 must prohibit subagents from writing to docs/agents-working-context/.\nwant substring: %q\ngot block:\n%s", wantSubagentRule, block)
+	}
+}

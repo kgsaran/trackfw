@@ -13,7 +13,7 @@ Chain: `ADR → REQ → ROADMAP` · States: `backlog / analyzing / wip / blocked
    ❌ Never defer REQ/ROADMAP creation to a future task — they are prerequisites, not deliverables
    ✓ `trackfw validate` enforces this via `branch_has_wip_roadmap` rule (v2.7.0+)
 2. **Before starting:** run `trackfw context` · read the 10 most recent entries in `docs/agents-working-context/`
-3. **After finishing:** write a new file in `docs/agents-working-context/<YYYYMMDDTHHMMSSZ>-<your-slug>-<topic>.md` with what changed
+3. **After finishing:** the orchestrating session (`trackfw_architect`) writes a new file in `docs/agents-working-context/<YYYYMMDDTHHMMSSZ>-<your-slug>-<topic>.md` with what changed. Subagents never write there; they state what started, what changed and what is pending in their final report.
 4. **Before PR:** `trackfw validate` must pass
 5. **ML lifecycle — mandatory:**
    - Starting a ML: edit roadmap `**Status:** ⬜ Pendente` → `**Status:** 🔄 Em andamento` + commit.

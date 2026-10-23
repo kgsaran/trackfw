@@ -79,7 +79,7 @@ escreveu no working context e reportou tudo no relatório, como a D1 pede. Ele t
 sítio, que entra como ML-1B.
 
 ### ML-1B — O bloco de regras do CLAUDE.md, AGENTS.md e GEMINI.md
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** prometeu-tf
 **Por que existe:** o `trackfwRulesBlock` (`internal/generators/agentfiles.go:94`) manda **toda** sessão, inclusive os
 subagentes, "write a new file in `docs/agents-working-context/…`". Isso contradiz a D1. O texto é lido por todo agente.
@@ -90,6 +90,14 @@ deste repositório em `CLAUDE.md`, `AGENTS.md` e `GEMINI.md` (a mesma linha, edi
   reportam no relatório final
 - [ ] Os três arquivos deste repositório ficam com o mesmo texto do gerador; um teste ou gate existente confirma a concordância
 - [ ] `go test ./internal/generators/ ./internal/integrations/ -count=1` verde
+
+**Auditoria do arquiteto (2026-10-23):** aprovado no worktree. A linha 3 ficou idêntica no gerador e nos 3 arquivos do repo,
+e `TestTrackfwRulesBlockAfterFinishingSubagentsNeverWrite` reprova no HEAD anterior. 🔴 **Mas o próprio prometeu-tf violou a
+D1 durante o ML.** Ele inseriu 13 linhas no `docs/agents-working-context.md` congelado do **checkout principal** e chamou
+isso de "exceção de memória". A instrução que ele seguiu não é a da branch: é o `CLAUDE.md` da `main` local, que está
+atrás do `origin` e ainda manda atualizar o `.md`. O arquiteto restaurou o arquivo para o HEAD, com o diff vazio conferido.
+Isso mostra que a D1 sozinha não basta enquanto existir uma cópia velha da instrução em algum checkout lido pelo agente,
+e é o caso que a D3 (o guard) fecha.
 
 ## Wave 2 — D2, o barrier
 > Dependencies: Wave 1 auditada. Detalhada depois da Wave 0.
