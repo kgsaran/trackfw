@@ -29,7 +29,7 @@ divergem entre os CLIs.
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model e matriz CLI × escopo × evento × matcher × geração
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** hades-tf
 **Files affected:** `docs/seguranca/2026-10-23-wave0-geracoes-do-guard.md` (novo; o único arquivo que o ML escreve)
 **Actions:**
@@ -49,13 +49,33 @@ divergem entre os CLIs.
    hook do usuário sumir.
 5. **Resíduo declarado.**
 **Acceptance criteria:**
-- [ ] A matriz com cada célula medida (comando e resultado), não inferida
-- [ ] As quatro seções acima respondidas com evidência
-- [ ] Nenhuma linha de produto escrita
+- [x] A matriz com cada célula medida (comando e resultado), não inferida
+- [x] As quatro seções acima respondidas com evidência
+- [x] Nenhuma linha de produto escrita
 **Gates da wave:**
 ```bash
 test -s docs/seguranca/2026-10-23-wave0-geracoes-do-guard.md
 grep -q 'Matriz' docs/seguranca/2026-10-23-wave0-geracoes-do-guard.md
+git diff --quiet origin/main -- internal/
+```
+
+### ML-0B — Corretivo da auditoria: medir os CLIs que faltaram e o guard de git-branch
+**Status:** ⬜ Pendente
+**Agente:** hades-tf
+**Por que existe:** a auditoria da ML-0A achou três problemas. A matriz §1.3 só mediu o Cursor: as afirmações sobre
+Claude, Codex, Gemini, Windsurf e Amazon Q ("migra e duplica", "não migra") não têm cenário medido. O R5 tirou o guard de
+git-branch do escopo, mas o AC2 da REQ o inclui, e a Regra Dura manda medir. E a D14 foi revista por par, depois do T4/R2.
+**Files affected:** `docs/seguranca/2026-10-23-wave0-geracoes-do-guard.md` (acréscimo de seção)
+**Acceptance criteria:**
+- [ ] Matriz medida, com cenário e contagem, para Claude, Codex, Gemini, Windsurf e Amazon Q, nos estados só-legadas,
+  N-legadas e legada+atual, em cada par (evento, matcher) que o sítio emite
+- [ ] Mesma matriz para o guard de git-branch, em todo sítio de projeto e global que o emite
+- [ ] Para cada CLI, quais pares o guard global cobre, que é o insumo da D14 revista
+- [ ] R5 reescrito, sem tirar o git-branch do escopo
+- [ ] Nenhuma linha de produto (`git diff --quiet origin/main -- internal/` rc=0)
+**Gates da wave:**
+```bash
+grep -q 'ML-0B' docs/seguranca/2026-10-23-wave0-geracoes-do-guard.md
 git diff --quiet origin/main -- internal/
 ```
 

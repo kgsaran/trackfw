@@ -370,3 +370,15 @@ migrada. A detecção do global continua com falha aberta (se não der para ler,
 o comportamento de hoje.
 
 REQ: `docs/req/REQ-2026-10-23-update-nao-remove-geracoes-antigas-do-credential-guard-em-pares-evento-matcher-e-o-validate-manda-rodar-update-que-nao-resolve.md`.
+
+### D14 revista (2026-10-23, auditoria da Wave 0): a remoção é por par, e só onde o global cobre
+
+A Wave 0 (`docs/seguranca/2026-10-23-wave0-geracoes-do-guard.md`, T4 e R2) mediu que o guard global do Cursor só cobre
+`beforeShellExecution`/`afterShellExecution`. Os pares `preToolUse`/`postToolUse` × `Read`/`Write` não têm guard global.
+Com a D14 original, uma remoção "com o global instalado" tiraria o único guard que esses pares têm.
+
+Passa a valer: a decisão de pular ou remover a entrada de projeto é tomada **por par (evento, matcher)**, e não por CLI.
+Num par que o guard global daquele CLI cobre, a entrada de projeto reconhecida pelo registro é removida. Num par que o
+global não cobre, ela é migrada para a forma atual e continua sendo emitida, haja ou não global instalado. Isso não roda o
+guard duas vezes: o global não está naquele par. O efeito colateral é intencional e corrige uma lacuna de hoje, em que o
+`InjectCursorHooks` com o global instalado deixa de emitir Read/Write e esses pares ficam sem guard.

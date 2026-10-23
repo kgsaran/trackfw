@@ -49,8 +49,9 @@ da legada de projeto com o guard global instalado).
   receba, e isso é verificado por falsificação.
 - [ ] **AC5 — Hooks do usuário intactos.** Uma entrada que não está no registro (comando personalizado, inclusive um que
   só *contém* `trackfw guard credential`), no mesmo par evento×matcher, sobrevive à migração byte a byte.
-- [ ] **AC6 — Guard global (D14).** Com o guard global do CLI instalado, a entrada de projeto reconhecida pelo registro é
-  removida. Sem o global, ela é migrada. Os dois braços têm teste.
+- [ ] **AC6 — Guard global (D14 revista, por par).** Num par (evento, matcher) que o guard global do CLI cobre, a entrada de
+  projeto reconhecida pelo registro é removida. Num par que o global não cobre (por exemplo Cursor `preToolUse`×`Read`),
+  ela é migrada e continua emitida, com ou sem global. Os três braços têm teste.
 - [ ] **AC7 — Idempotência.** Rodar o `update` duas vezes produz o mesmo arquivo da primeira, byte a byte, e a segunda
   rodada não reporta mudança.
 - [ ] **AC8 — Fechamento.** `make quality` rc=0, CI verde, e o PR leva `Closes #599`.
