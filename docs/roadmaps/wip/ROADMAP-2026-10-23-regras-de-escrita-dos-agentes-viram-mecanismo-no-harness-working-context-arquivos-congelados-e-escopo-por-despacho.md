@@ -265,7 +265,7 @@ nenhuma escrita no working context.
 6. **Contrato no `docs/cli-parity.md`:** formato, ciclo de vida (o arquiteto grava antes do despacho e apaga depois) e
    resíduos (R6 da Wave 0: dois agentes do mesmo `agent_type` compartilham a permissão).
 **Acceptance criteria:**
-- [ ] AC4 da REQ:
+- [x] AC4 da REQ:
   - alvo dentro do `allow` → 0;
   - alvo fora → 2, com motivo;
   - sem permissão → só a D3;
@@ -276,8 +276,8 @@ nenhuma escrita no working context.
   - `allow` relativo → 2;
   - congelado dentro do `allow` → 2;
   - sessão principal (sem `agent_id`) ignora a permissão
-- [ ] Teste da permissão apontando para um worktree, com o alvo no checkout principal → 2. É o caso de 2026-10-23
-- [ ] Cada teste com a frase e o contra-braço
+- [x] Teste da permissão apontando para um worktree, com o alvo no checkout principal → 2. É o caso de 2026-10-23
+- [x] Cada teste com a frase e o contra-braço
 **Gates da wave:**
 ```bash
 go build ./...
@@ -296,7 +296,7 @@ go test ./internal/guard/ ./internal/commands/ ./internal/pathguard/ -count=1
   handoff não dava o venv do arquiteto. Isso está reportado ao KG.
 
 ### ML-3C — Corretivo da D4: busca da permissão pela sessão e pelo alvo
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** apolo-tf
 **Files affected:** `internal/guard/`, `internal/commands/guard_write_scope_test.go`, `internal/generators/`, `.gitignore`, `docs/cli-parity.md`
 **Contrato:**
@@ -313,10 +313,10 @@ go test ./internal/guard/ ./internal/commands/ ./internal/pathguard/ -count=1
    entradas `.trackfw-*` do `.gitignore`) e no `.gitignore` deste repositório.
 4. **Formato e ciclo de vida** atualizados no `docs/cli-parity.md`.
 **Acceptance criteria:**
-- [ ] A variante B medida com 2; a variante A continua 2; o alvo dentro do `allow` continua 0, com a permissão só na raiz do `cwd`
-- [ ] Uma permissão inválida na raiz do `cwd` e uma válida na do alvo → 2
-- [ ] `git check-ignore .trackfw/leases/x.json` rc=0 neste repo, e teste do scaffold gerando a entrada
-- [ ] Contra-braço de cada teste novo; os gates do ML-3B verdes
+- [x] A variante B medida com 2; a variante A continua 2; o alvo dentro do `allow` continua 0, com a permissão só na raiz do `cwd`
+- [x] Uma permissão inválida na raiz do `cwd` e uma válida na do alvo → 2
+- [x] `git check-ignore .trackfw/leases/x.json` rc=0 neste repo, e teste do scaffold gerando a entrada
+- [x] Contra-braço de cada teste novo; os gates do ML-3B verdes
 
 ## Wave 4 — Revisões independentes
 > Dependencies: Wave 3 auditada.

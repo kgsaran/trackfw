@@ -9153,9 +9153,9 @@ Aviso (severidade default `warning`, nunca `error` até a próxima versão major
 
 **Ordering constraint:** o hook em `.claude/settings.json` deve ser instalado APENAS quando o binário já tem `write-scope` disponível. Instalar o hook contra a versão anterior (que trata `write-scope` como subcomando desconhecido → exit 2 via guardError) nega todas as operações Write/Edit/NotebookEdit na sessão.
 
-**D4 — Escopo por despacho (ML-3B, subagentes com `agent_id` presente):**
+**D4 — Escopo por despacho (ML-3B/ML-3C, subagentes com `agent_id` presente):**
 
-Quando `agent_id` está presente no payload (subagente) e `agent_type` é um slug válido (`^[A-Za-z0-9_-]{1,64}$`), o guard consulta o arquivo de lease `<raiz do projeto do alvo>/.trackfw/leases/<agent_type>.json`. A D3 (caminhos congelados) sempre é aplicada antes; um caminho congelado é negado mesmo que apareça no `allow`.
+Quando `agent_id` está presente no payload (subagente) e `agent_type` é um slug válido (`^[A-Za-z0-9_-]{1,64}$`), o guard consulta o arquivo de lease em duas raízes (sem repetição): a raiz do projeto do **alvo** e a raiz do projeto do **cwd** do payload. Se `cwd` estiver ausente, for relativo ou não pertencer a nenhum projeto trackfw, só a raiz do alvo é usada. A D3 (caminhos congelados) sempre é aplicada antes; um caminho congelado é negado mesmo que apareça no `allow`.
 
 **Formato do lease (v1):**
 ```json
@@ -9176,17 +9176,19 @@ Quando `agent_id` está presente no payload (subagente) e `agent_type` é um slu
 
 | Situação | Resultado |
 |---|---|
-| Lease ausente para o `agent_type` | D3 apenas (sem D4) |
+| Lease ausente em ambas as raízes | D3 apenas (sem D4) |
 | `agent_type` fora do padrão de slug | D3 apenas |
 | Sessão principal (`agent_id` ausente) | D3 apenas; lease ignorado |
-| Lease presente, alvo dentro do `allow` | 0 (allow) |
-| Lease presente, alvo fora do `allow` | 2 (deny), com motivo nomeando alvo e lease |
-| Lease expirado | 2 (deny), com "expired" no motivo |
+| Lease presente em qualquer raiz, alvo dentro do `allow` | 0 (allow) |
+| Lease presente, alvo fora do `allow` de todas as raízes | 2 (deny), com motivo nomeando alvo e leases consultados |
+| Lease inválido em qualquer raiz (expirado, versão errada, allow relativo) | 2 (deny) — validate-all-before-match |
 | Lease ilegível, diretório ou JSON inválido | 2 (deny) — fail-closed (D4-C) |
 
 **Ciclo de vida:** o arquiteto grava o lease antes do despacho e o apaga após o retorno do subagente. O arquivo `.trackfw/leases/` está na lista de congelados da D3 para subagentes (impede que o agente edite a própria permissão — D4-D).
 
-**Lookup pela raiz do ALVO:** a permissão é lida da raiz do projeto do **alvo**, não do cwd. Um subagente num worktree que escreve no checkout principal é julgado pelo lease do checkout principal. Se o checkout principal não tiver lease, só a D3 se aplica (resíduo).
+**Busca em duas raízes (ML-3C):** o guard procura o lease em ambas as raízes (cwd e alvo). Se qualquer lease for inválido (expirado, versão errada, allow relativo etc.), a escrita é negada mesmo que a outra raiz tenha um lease válido que cubriria o alvo. Se nenhuma raiz tiver lease para o `agent_type`, só a D3 se aplica. O alvo precisa estar no `allow` de pelo menos um lease válido entre as duas raízes para ser liberado.
+
+**`.gitignore`:** o `trackfw init` garante que `.trackfw/leases/` esteja ignorado no `.gitignore` do projeto. Os leases contêm caminhos absolutos da máquina do arquiteto e não devem ser versionados.
 
 **Resíduos declarados:**
 - R6 (Wave 0): dois subagentes do mesmo `agent_type` em worktrees paralelos compartilham o mesmo lease — a instância menos privilegiada herda a permissão da mais privilegiada.

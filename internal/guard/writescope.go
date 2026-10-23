@@ -178,7 +178,7 @@ func RunWriteScope(stdin io.Reader, idleTimeout time.Duration, stderr io.Writer)
 		return 2
 	}
 
-	// Step 11: D4 — permission by dispatch (subagent only, ML-3B).
+	// Step 11: D4 — permission by dispatch (subagent only, ML-3B/ML-3C).
 	// Only applies when the payload identifies a subagent (agent_id present, non-empty).
 	if !isSubagent {
 		return 0
@@ -192,74 +192,142 @@ func RunWriteScope(stdin io.Reader, idleTimeout time.Duration, stderr io.Writer)
 		return 0
 	}
 
-	// Load lease from <projectRoot>/.trackfw/leases/<agentType>.json.
-	lease, leaseErr := loadWriteScopeLease(projectRoot, agentType)
-	if leaseErr != nil {
-		fmt.Fprintf(stderr, "trackfw guard write-scope: denied: %v\n", leaseErr)
-		return 2
+	// ML-3C: search for a lease in TWO roots (without duplication):
+	//   1. The root of the TARGET project (as in ML-3B).
+	//   2. The root of the CWD project (the session root from the payload).
+	//
+	// Rationale: the lease written by the architect lives in the session root (the cwd
+	// of the orchestrating session). When the target is in a different project (e.g. the
+	// main checkout while the agent runs in a worktree), searching only the target root
+	// misses the lease and falls through to D3-only, which is a fail-open for D4 (ML-3C §2).
+	//
+	// Contract:
+	//   - If an invalid lease is found in any root → deny (fail-closed).
+	//   - If at least one lease is found → the target must be in the allow list of at
+	//     least one valid lease; otherwise deny.
+	//   - If no lease is found in any root → D3 only → allow.
+	//   - cwd absent, non-string, or relative → only the target root is searched.
+
+	// Step 11a: extract cwd project root from the payload.
+	var cwdProjectRoot string
+	if cwdStr, cwdFieldErr := extractStringField(root, "cwd"); cwdFieldErr == nil && cwdStr != "" {
+		cwdStr = normalizeTargetPath(cwdStr, runtime.GOOS)
+		if filepath.IsAbs(cwdStr) {
+			cwdResolved := resolveWriteScopePath(cwdStr)
+			if cr, ok := findProjectRoot(cwdResolved); ok {
+				cwdProjectRoot = cr
+			}
+		}
 	}
-	if lease == nil {
-		// No lease file for this agent type → D3 only → allow.
+
+	// Step 11b: collect deduplicated roots to search.
+	leaseRoots := collectLeaseRoots(projectRoot, cwdProjectRoot)
+
+	// Step 11c: load leases from all roots.
+	type leaseEntry struct {
+		lease *WriteScopeLease
+		path  string // full path to the lease file (for error messages)
+	}
+	var loadedLeases []leaseEntry
+	for _, lr := range leaseRoots {
+		l, lerr := loadWriteScopeLease(lr, agentType)
+		if lerr != nil {
+			// Unreadable or malformed lease in any root → fail-closed.
+			fmt.Fprintf(stderr, "trackfw guard write-scope: denied: %v\n", lerr)
+			return 2
+		}
+		if l != nil {
+			loadedLeases = append(loadedLeases, leaseEntry{
+				lease: l,
+				path:  filepath.Join(lr, ".trackfw", "leases", agentType+".json"),
+			})
+		}
+	}
+
+	// Step 11d: no leases found in any root → D3 only → allow.
+	if len(loadedLeases) == 0 {
 		return 0
 	}
 
-	// Validate lease fields (version, agent_type, expires) before checking allow list.
-	if lease.Version != 1 {
-		fmt.Fprintf(stderr, "trackfw guard write-scope: denied: lease for %q: unsupported version %d (want 1)\n", agentType, lease.Version)
-		return 2
-	}
-	if lease.AgentType != agentType {
-		fmt.Fprintf(stderr, "trackfw guard write-scope: denied: lease for %q: agent_type in file (%q) does not match payload (%q)\n", agentType, lease.AgentType, agentType)
-		return 2
-	}
-	if lease.Expires == "" {
-		fmt.Fprintf(stderr, "trackfw guard write-scope: denied: lease for %q: expires field is missing\n", agentType)
-		return 2
-	}
-	expires, parseErr := time.Parse(time.RFC3339, lease.Expires)
-	if parseErr != nil {
-		fmt.Fprintf(stderr, "trackfw guard write-scope: denied: lease for %q: expires is not valid RFC 3339: %v\n", agentType, parseErr)
-		return 2
-	}
-	if time.Now().After(expires) {
-		fmt.Fprintf(stderr, "trackfw guard write-scope: denied: lease for %q has expired at %s\n", agentType, lease.Expires)
-		return 2
-	}
-
-	// Validate ALL allow entries are absolute before matching any.
-	// One relative entry in the list denies the write even if another entry would match.
-	leasePath := filepath.Join(projectRoot, ".trackfw", "leases", agentType+".json")
-	for _, e := range lease.Allow {
-		en := normalizeTargetPath(e, runtime.GOOS)
-		if !filepath.IsAbs(en) {
-			fmt.Fprintf(stderr, "trackfw guard write-scope: denied: lease %s: allow entry %q is not an absolute path\n", leasePath, e)
+	// Step 11e: validate ALL loaded leases before checking any allow list.
+	// An invalid lease in any root denies, even if another root has a valid matching lease.
+	for _, le := range loadedLeases {
+		lease := le.lease
+		leasePath := le.path
+		if lease.Version != 1 {
+			fmt.Fprintf(stderr, "trackfw guard write-scope: denied: lease for %q: unsupported version %d (want 1)\n", agentType, lease.Version)
 			return 2
 		}
-	}
-
-	// Check whether the resolved target is within some allow entry.
-	// Trailing "/" in the allow entry means directory prefix; otherwise exact file match.
-	for _, e := range lease.Allow {
-		en := normalizeTargetPath(e, runtime.GOOS)
-		isDirEntry := strings.HasSuffix(e, "/")
-		allowResolved := resolveWriteScopePath(en)
-		if isDirEntry {
-			allowDir := filepath.Clean(allowResolved)
-			// Use separator-terminated prefix to prevent /a/b matching /a/bc.
-			prefix := allowDir + string(filepath.Separator)
-			if pathEqual(resolved, allowDir) || pathHasPrefix(resolved, prefix) {
-				return 0
-			}
-		} else {
-			if pathEqual(resolved, allowResolved) {
-				return 0
+		if lease.AgentType != agentType {
+			fmt.Fprintf(stderr, "trackfw guard write-scope: denied: lease for %q: agent_type in file (%q) does not match payload (%q)\n", agentType, lease.AgentType, agentType)
+			return 2
+		}
+		if lease.Expires == "" {
+			fmt.Fprintf(stderr, "trackfw guard write-scope: denied: lease for %q: expires field is missing\n", agentType)
+			return 2
+		}
+		expires, parseErr := time.Parse(time.RFC3339, lease.Expires)
+		if parseErr != nil {
+			fmt.Fprintf(stderr, "trackfw guard write-scope: denied: lease for %q: expires is not valid RFC 3339: %v\n", agentType, parseErr)
+			return 2
+		}
+		if time.Now().After(expires) {
+			fmt.Fprintf(stderr, "trackfw guard write-scope: denied: lease for %q has expired at %s\n", agentType, lease.Expires)
+			return 2
+		}
+		// Validate ALL allow entries are absolute before matching any.
+		// One relative entry in the list denies the write even if another entry would match.
+		for _, e := range lease.Allow {
+			en := normalizeTargetPath(e, runtime.GOOS)
+			if !filepath.IsAbs(en) {
+				fmt.Fprintf(stderr, "trackfw guard write-scope: denied: lease %s: allow entry %q is not an absolute path\n", leasePath, e)
+				return 2
 			}
 		}
 	}
 
-	// Target is not within any allow entry.
-	fmt.Fprintf(stderr, "trackfw guard write-scope: denied: %q is not in the allow list of %s\n", rawFilePath, leasePath)
+	// Step 11f: check whether the resolved target is within the allow list of ANY valid lease.
+	// Trailing "/" in the allow entry means directory prefix; otherwise exact file match.
+	for _, le := range loadedLeases {
+		for _, e := range le.lease.Allow {
+			en := normalizeTargetPath(e, runtime.GOOS)
+			isDirEntry := strings.HasSuffix(e, "/")
+			allowResolved := resolveWriteScopePath(en)
+			if isDirEntry {
+				allowDir := filepath.Clean(allowResolved)
+				// Use separator-terminated prefix to prevent /a/b matching /a/bc.
+				prefix := allowDir + string(filepath.Separator)
+				if pathEqual(resolved, allowDir) || pathHasPrefix(resolved, prefix) {
+					return 0
+				}
+			} else {
+				if pathEqual(resolved, allowResolved) {
+					return 0
+				}
+			}
+		}
+	}
+
+	// Target is not within any allow entry across all valid leases.
+	// Build a list of lease paths for the deny message.
+	var leasePaths []string
+	for _, le := range loadedLeases {
+		leasePaths = append(leasePaths, le.path)
+	}
+	fmt.Fprintf(stderr, "trackfw guard write-scope: denied: %q is not in the allow list of any lease for %q (searched: %s)\n",
+		rawFilePath, agentType, strings.Join(leasePaths, ", "))
 	return 2
+}
+
+// collectLeaseRoots returns the deduplicated ordered list of project roots to search for leases.
+// Always includes targetRoot. Adds cwdRoot if it is non-empty and not path-equal to targetRoot.
+// ML-3C: two-root lease search.
+func collectLeaseRoots(targetRoot, cwdRoot string) []string {
+	if cwdRoot == "" || pathEqual(cwdRoot, targetRoot) {
+		return []string{targetRoot}
+	}
+	// targetRoot first so the error message names it first when both are present.
+	return []string{targetRoot, cwdRoot}
 }
 
 // loadWriteScopeLease reads and parses the lease file for agentType.

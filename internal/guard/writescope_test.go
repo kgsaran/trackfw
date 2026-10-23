@@ -635,6 +635,26 @@ func payloadFull(tool, filePath, agentID, agentType string) string {
 	return string(b)
 }
 
+// payloadFullWithCwd builds a JSON payload that includes the cwd field.
+// ML-3C: cwd is the session working directory; its project root is the second lease search root.
+func payloadFullWithCwd(tool, filePath, agentID, agentType, cwd string) string {
+	m := map[string]interface{}{
+		"tool_name":  tool,
+		"tool_input": map[string]string{"file_path": filePath},
+	}
+	if agentID != "" {
+		m["agent_id"] = agentID
+	}
+	if agentType != "" {
+		m["agent_type"] = agentType
+	}
+	if cwd != "" {
+		m["cwd"] = cwd
+	}
+	b, _ := json.Marshal(m)
+	return string(b)
+}
+
 // TestRunWriteScope_D4_TargetInAllowDir_Allow asserts that a target inside a directory allow entry → 0.
 // Asserts: ML-3B AC4 — alvo dentro do allow (directory entry) → 0.
 // Contra-braço: on HEAD, D4 doesn't exist; RunWriteScope skips the lease check and allows the write
@@ -1108,18 +1128,18 @@ func TestRunWriteScope_D4_Worktree_VariantA_Deny(t *testing.T) {
 	}
 }
 
-// TestRunWriteScope_D4_Worktree_VariantB_Allow asserts Variant B: lease in B only, target in A → 0 (D3 only).
-// The lease is read from the root of the TARGET (A), which has no lease → D3 only → allow.
-// Asserts: ML-3B test of "caso de 2026-10-23" — lease in B does not protect A.
+// TestRunWriteScope_D4_Worktree_VariantB_Deny asserts Variant B (ML-3C): lease in B (cwd project),
+// allow=[B/], target in A, cwd=B → 2.
+// With ML-3C two-root search, the lease in B (the cwd project) is found. The target is in A, which
+// is NOT in the allow list (only B/ is allowed), so the write is denied.
 //
-// Security implication (to be reported to the architect): if a subagent can write to a trackfw
-// project that has no lease for its agent_type, D4 does not block it. Only D3 (frozen paths) applies.
-// A project must hold its own lease to get D4 protection.
+// Asserts: ML-3C contract item 2 — the case of 2026-10-23 (lease in cwd, allow=worktree, target
+// in main checkout) is now denied. The cwd root is searched in addition to the target root.
 //
-// Contra-braço: PASSES on HEAD (D4 absent → D3 only → same exit 0 for non-frozen target).
-func TestRunWriteScope_D4_Worktree_VariantB_Allow(t *testing.T) {
-	projA := makeWSProjectDir(t) // simulates main checkout
-	projB := makeWSProjectDir(t) // simulates worktree
+// Contra-braço: FAILS on HEAD (cwd root not searched → lease in B never found → D3 only → exit 0).
+func TestRunWriteScope_D4_Worktree_VariantB_Deny(t *testing.T) {
+	projA := makeWSProjectDir(t) // simulates main checkout (target project)
+	projB := makeWSProjectDir(t) // simulates worktree (cwd project, where lease lives)
 
 	// Target in A (non-frozen).
 	targetInA := filepath.Join(projA, "src", "main.go")
@@ -1130,7 +1150,8 @@ func TestRunWriteScope_D4_Worktree_VariantB_Allow(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Lease only in B (the worktree). A has no lease.
+	// Lease in B (the cwd project). A has no lease.
+	// The allow list only covers projB — the agent is supposed to write in B, not A.
 	makeLeaseFile(t, projB, "apolo-tf", map[string]interface{}{
 		"version":    1,
 		"agent_type": "apolo-tf",
@@ -1138,9 +1159,118 @@ func TestRunWriteScope_D4_Worktree_VariantB_Allow(t *testing.T) {
 		"expires":    futureRFC3339(),
 	})
 
-	// Writing to A: lease is looked up in A (root of target), not B → absent → D3 only → allow.
-	rc, stderr := runWS(t, payloadFull("Write", targetInA, "apolo-tf-id", "apolo-tf"))
+	// Writing to A with cwd=B: ML-3C searches B (cwd root) and finds the lease.
+	// Target (in A) is not in allow=[B/] → denied.
+	rc, stderr := runWS(t, payloadFullWithCwd("Write", targetInA, "apolo-tf-id", "apolo-tf", projB))
+	if rc != 2 {
+		t.Fatalf("variant B (lease in B, cwd=B, target=A): want exit 2 (deny — target not in allow), got %d (stderr=%q)", rc, stderr)
+	}
+}
+
+// TestRunWriteScope_D4_CwdLeaseAllowTarget_Allow asserts that a lease only in the cwd root,
+// with the target inside its allow list, results in exit 0.
+// Asserts: ML-3C AC — permissão só na raiz do cwd, alvo dentro do allow → 0.
+// Contra-braço: PASSES on HEAD (no D4 logic → D3 only → allow for non-frozen target).
+// This is a fixation test: it documents the correct behavior and ensures ML-3C doesn't break it.
+func TestRunWriteScope_D4_CwdLeaseAllowTarget_Allow(t *testing.T) {
+	projA := makeWSProjectDir(t) // target project (no lease)
+	projB := makeWSProjectDir(t) // cwd project (has lease)
+
+	// Target in A — inside a subdirectory that the lease allows.
+	targetInA := filepath.Join(projA, "src", "main.go")
+	if err := os.MkdirAll(filepath.Dir(targetInA), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(targetInA, []byte("package main"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Lease in B (cwd project): allow = [projA/] — the agent is permitted to write anywhere in A.
+	makeLeaseFile(t, projB, "apolo-tf", map[string]interface{}{
+		"version":    1,
+		"agent_type": "apolo-tf",
+		"allow":      []string{projA + "/"},
+		"expires":    futureRFC3339(),
+	})
+
+	// Writing to A with cwd=B: lease in B allows projA/ → target is in allow → exit 0.
+	rc, stderr := runWS(t, payloadFullWithCwd("Write", targetInA, "apolo-tf-id", "apolo-tf", projB))
 	if rc != 0 {
-		t.Fatalf("variant B (lease in B, target=A): want exit 0 (D3 only, no lease in A), got %d (stderr=%q)", rc, stderr)
+		t.Fatalf("cwd-lease allow target: want exit 0 (allow — target in cwd lease), got %d (stderr=%q)", rc, stderr)
+	}
+}
+
+// TestRunWriteScope_D4_InvalidLeaseInCwd_ValidInTarget_Deny asserts that an invalid lease in
+// the cwd root denies even when a valid lease in the target root would allow the write.
+// Asserts: ML-3C AC — permissão inválida no cwd e válida no alvo → 2.
+// Uses an expired lease (not bad JSON) to exercise the validate-all-before-match path.
+// Contra-braço: FAILS on HEAD (no cwd root search → only target root, valid lease → exit 0).
+func TestRunWriteScope_D4_InvalidLeaseInCwd_ValidInTarget_Deny(t *testing.T) {
+	projA := makeWSProjectDir(t) // target project (has valid lease)
+	projB := makeWSProjectDir(t) // cwd project (has expired/invalid lease)
+
+	target := filepath.Join(projA, "src", "main.go")
+	if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("package main"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Valid lease in A (target project): allows the target.
+	makeLeaseFile(t, projA, "apolo-tf", map[string]interface{}{
+		"version":    1,
+		"agent_type": "apolo-tf",
+		"allow":      []string{projA + "/"},
+		"expires":    futureRFC3339(),
+	})
+
+	// EXPIRED lease in B (cwd project): invalid because it has expired.
+	// Using an expired lease (not bad JSON) so it passes load but fails validation.
+	makeLeaseFile(t, projB, "apolo-tf", map[string]interface{}{
+		"version":    1,
+		"agent_type": "apolo-tf",
+		"allow":      []string{projA + "/"},
+		"expires":    pastRFC3339(), // expired
+	})
+
+	// Writing to A with cwd=B: expired lease in B → deny (validate-all-before-match).
+	rc, stderr := runWS(t, payloadFullWithCwd("Write", target, "apolo-tf-id", "apolo-tf", projB))
+	if rc != 2 {
+		t.Fatalf("invalid lease in cwd + valid in target: want exit 2 (deny — expired cwd lease), got %d (stderr=%q)", rc, stderr)
+	}
+	if !strings.Contains(stderr, "expir") {
+		t.Fatalf("deny message: want 'expir' in stderr, got %q", stderr)
+	}
+}
+
+// TestRunWriteScope_D4_CwdAbsent_TargetRootOnly asserts that when cwd is absent from the payload,
+// only the target project root is searched for leases.
+// Asserts: ML-3C AC — cwd ausente → só a raiz do alvo.
+// Contra-braço: PASSES on HEAD (same single-root behavior → no change in outcome).
+// Fixation test: documents that missing cwd does not break existing D4 behavior.
+func TestRunWriteScope_D4_CwdAbsent_TargetRootOnly(t *testing.T) {
+	projA := makeWSProjectDir(t) // target project (has lease allowing the target)
+
+	target := filepath.Join(projA, "src", "main.go")
+	if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(target, []byte("package main"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Valid lease in A: allows the target directory.
+	makeLeaseFile(t, projA, "apolo-tf", map[string]interface{}{
+		"version":    1,
+		"agent_type": "apolo-tf",
+		"allow":      []string{projA + "/"},
+		"expires":    futureRFC3339(),
+	})
+
+	// Payload has no cwd field → only target root searched → lease in A found → target allowed → 0.
+	rc, stderr := runWS(t, payloadFull("Write", target, "apolo-tf-id", "apolo-tf"))
+	if rc != 0 {
+		t.Fatalf("cwd absent: want exit 0 (allow — target in A's lease), got %d (stderr=%q)", rc, stderr)
 	}
 }
