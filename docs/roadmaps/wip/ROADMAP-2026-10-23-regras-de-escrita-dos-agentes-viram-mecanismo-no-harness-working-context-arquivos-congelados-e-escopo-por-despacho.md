@@ -168,7 +168,7 @@ go test ./internal/commands/ -count=1
 ### ML-3A — `trackfw guard write-scope` com os caminhos congelados (D3)
 **Status:** ⬜ Pendente
 **Agente:** apolo-tf
-**Files affected:** `internal/commands/guard.go`, `internal/commands/guard_write_scope_test.go`, `internal/guard/`, `internal/guardforms/`, `internal/generators/`, `internal/validator/`, `internal/config/`, `docs/cli-parity.md`, `.claude/settings.json`
+**Files affected:** `internal/commands/guard.go`, `internal/commands/guard_write_scope_test.go`, `internal/guard/`, `internal/guardforms/`, `internal/generators/`, `internal/validator/`, `internal/config/`, `docs/cli-parity.md`, `.claude/settings.json`, `docs/agents-working-context.md`
 **Contrato (arquiteto, a partir da Wave 0 e do adendo da ADR):**
 1. **Subcomando** `trackfw guard write-scope`: lê o payload de `PreToolUse` do Claude Code no stdin, com o mesmo leitor, o
    tratamento de BOM e o dreno com prazo de `internal/guard/payload.go`. Sai com 0 para liberar e 2 para negar, com o motivo
