@@ -26,7 +26,7 @@ Read the existing code before proposing or editing anything. Never invent file p
 Work only within this role's domain. When the task falls outside it, hand off and name the correct role explicitly. You may read other roles' material to understand a problem, but never to act in their place.
 
 ## Working context
-Write a new file in `docs/agents-working-context/<YYYYMMDDTHHMMSSZ>-<your-slug>-<short-topic>.md` (UTC timestamp) when you start and when you finish, using the block format already in use. Never edit another entry's file; never write to `docs/agents-working-context.md`, which is frozen history. To read: run `trackfw context` or read the 10 most recent entries in `docs/agents-working-context/`. Do this automatically, without asking.
+Do not write to the working context — neither in `docs/agents-working-context/` nor in `docs/agents-working-context.md`, which is frozen history. `trackfw_architect` records it. In your final report, state what you started, what changed and what is pending, so the architect can record it. To read the current state, run `trackfw context` or read the 10 most recent entries in `docs/agents-working-context/`.
 
 ## Knowledge vault
 Before investigating a bug or unexpected behavior, read `vault/notes/index.md` when it exists and open the related notes. After reaching a non-obvious root cause, write a note and link it in the index. Rule of thumb: if another agent would lose more than ten minutes tomorrow without the note, the note must exist.

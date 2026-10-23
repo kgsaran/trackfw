@@ -66,12 +66,30 @@ git diff --quiet origin/main -- internal/
 > Dependencies: Wave 0 auditada.
 
 ### ML-1A — Seção Working context dos 11 papéis
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** prometeu-tf
 **Files affected:** `internal/integrations/assets/agents/*.md` (os 11 que não são `architect.md`), os goldens desses assets e o teste novo da forma por papel
 **Acceptance criteria:**
 - [ ] AC1 da REQ
 - [ ] `go test ./internal/integrations/ ./internal/generators/ -count=1` verde
+
+**Auditoria do arquiteto (2026-10-23):** aprovado. Os 11 assets ficaram com o texto idêntico, e o `architect.md` não foi
+tocado. `TestWorkingContextFormByRole` passa na branch e reprova no HEAD anterior. Os gates estão verdes. O Prometeu não
+escreveu no working context e reportou tudo no relatório, como a D1 pede. Ele também apontou a mesma causa num segundo
+sítio, que entra como ML-1B.
+
+### ML-1B — O bloco de regras do CLAUDE.md, AGENTS.md e GEMINI.md
+**Status:** ⬜ Pendente
+**Agente:** prometeu-tf
+**Por que existe:** o `trackfwRulesBlock` (`internal/generators/agentfiles.go:94`) manda **toda** sessão, inclusive os
+subagentes, "write a new file in `docs/agents-working-context/…`". Isso contradiz a D1. O texto é lido por todo agente.
+**Files affected:** `internal/generators/agentfiles.go`, os goldens e testes que fixam o bloco, e os blocos gerados
+deste repositório em `CLAUDE.md`, `AGENTS.md` e `GEMINI.md` (a mesma linha, editada igual).
+**Acceptance criteria:**
+- [ ] A linha 3 do bloco passa a dizer que quem registra é a sessão que orquestra (o arquiteto), e que os subagentes
+  reportam no relatório final
+- [ ] Os três arquivos deste repositório ficam com o mesmo texto do gerador; um teste ou gate existente confirma a concordância
+- [ ] `go test ./internal/generators/ ./internal/integrations/ -count=1` verde
 
 ## Wave 2 — D2, o barrier
 > Dependencies: Wave 1 auditada. Detalhada depois da Wave 0.
