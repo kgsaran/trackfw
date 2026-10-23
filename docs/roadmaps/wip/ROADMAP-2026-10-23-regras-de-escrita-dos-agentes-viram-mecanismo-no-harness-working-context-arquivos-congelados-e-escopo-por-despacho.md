@@ -1,0 +1,126 @@
+---
+status: wip
+date: 2026-10-23
+req: "docs/req/REQ-2026-10-23-regras-de-escrita-dos-agentes-viram-mecanismo-no-harness-working-context-arquivos-congelados-e-escopo-por-despacho.md"
+squad: "hades-tf, prometeu-tf, apolo-tf, hefesto-tf"
+---
+
+# Roadmap: as regras de escrita dos agentes viram mecanismo no harness
+
+> Created: 2026-10-23 | Status: wip
+
+## Context
+REQ: docs/req/REQ-2026-10-23-regras-de-escrita-dos-agentes-viram-mecanismo-no-harness-working-context-arquivos-congelados-e-escopo-por-despacho.md
+ADR: docs/adr/ADR-2026-10-23-regras-de-escrita-dos-agentes-sao-aplicadas-pelo-harness-e-nao-pelo-texto-do-handoff.md
+
+Ordem decidida pelo KG: D1 (a instrução) → D2 (o barrier) → D3 (os congelados) → D4 (o escopo por despacho).
+
+## Acceptance Criteria
+- [ ] AC1–AC6 da REQ, cada um com a evidência no ML que o fecha
+- [ ] `make quality` e o CI verdes
+
+## Status Legend
+⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
+
+## Wave 0 — Threat model e decisões abertas
+> Dependencies: none. Blocks all implementation.
+
+### ML-0A — Threat model das quatro camadas
+**Status:** ⬜ Pendente
+**Agente:** hades-tf
+**Files affected:** `docs/seguranca/2026-10-23-wave0-regras-de-escrita.md`
+**Actions:**
+1. **Superfícies, com a enumeração fechada por grep e cruzando todas as dimensões** (lição da REQ-2026-10-23, em que a matriz
+   falhou três vezes por olhar só a dimensão do defeito original):
+   - os 12 assets de agente e o gerador (`internal/integrations/assets/agents/`, `internal/generators/agentfiles.go`, o
+     render em `internal/integrations/`);
+   - as checagens do `trackfw barrier` (`internal/commands/barrier.go`);
+   - os subcomandos de `trackfw guard` (`internal/commands/guard.go`, `internal/guard/`);
+   - a fiação do guard por CLI no `init`, no `update` e no `validate`, e quais matchers de escrita cada CLI tem.
+2. **Identidade do agente:** confirme na documentação oficial do Claude Code os campos `agent_id` e `agent_type` no payload
+   de `PreToolUse` e os hooks no frontmatter de subagente (<https://code.claude.com/docs/en/hooks>). Diga quais outros CLIs
+   entregam identidade e cite a fonte. Defina o que acontece quando o campo falta.
+3. **D2:** defina a base do diff da wave, a gramática de `Files affected` (medida sobre os roadmaps reais em
+   `docs/roadmaps/`: quantos declaram, em que formato) e a regra para roadmap antigo sem declaração, com um corte por data
+   explícito ou outra regra que nunca passe em silêncio.
+4. **D3/D4, ameaças:**
+   - escrita por Bash, e se o parser de shell do credential guard cobre `>`/`>>`/`tee`/`sed -i`;
+   - caminho relativo, `..`, symlink, `/tmp` versus `/private/tmp`, Windows;
+   - o agente editando a própria permissão;
+   - payload sem `file_path`;
+   - `NotebookEdit`;
+   - o MCP de escrita;
+   - fail-open por erro de parse.
+5. **Alvos de falsificação nos dois sentidos** por camada, e o **resíduo declarado**.
+**Acceptance criteria:**
+- [ ] Cada seção respondida com evidência (comando e saída, ou citação com URL)
+- [ ] A gramática de `Files affected` medida sobre o corpus real, com contagens
+- [ ] Nenhuma linha de produto
+**Gates da wave:**
+```bash
+test -s docs/seguranca/2026-10-23-wave0-regras-de-escrita.md
+git diff --quiet origin/main -- internal/
+```
+
+## Wave 1 — D1, a instrução na origem
+> Dependencies: Wave 0 auditada.
+
+### ML-1A — Seção Working context dos 11 papéis
+**Status:** ⬜ Pendente
+**Agente:** prometeu-tf
+**Files affected:** `internal/integrations/assets/agents/*.md` (os 11 que não são `architect.md`), os goldens desses assets e o teste novo da forma por papel
+**Acceptance criteria:**
+- [ ] AC1 da REQ
+- [ ] `go test ./internal/integrations/ ./internal/generators/ -count=1` verde
+
+## Wave 2 — D2, o barrier
+> Dependencies: Wave 1 auditada. Detalhada depois da Wave 0.
+
+### ML-2A — Checagem `ml_scope`
+**Status:** ⬜ Pendente
+**Agente:** apolo-tf
+**Files affected:** `internal/commands/barrier.go`, o teste novo e `docs/cli-parity.md` (o contrato do barrier)
+**Acceptance criteria:**
+- [ ] AC2 da REQ
+
+## Wave 3 — D3 e D4, o guard write-scope
+> Dependencies: Wave 2 auditada. Detalhada depois da Wave 0.
+
+### ML-3A — `trackfw guard write-scope` com os caminhos congelados (D3)
+**Status:** ⬜ Pendente
+**Agente:** apolo-tf
+**Files affected:** a definir pela Wave 0
+**Acceptance criteria:**
+- [ ] AC3 e AC5 da REQ
+
+### ML-3B — A permissão por despacho (D4)
+**Status:** ⬜ Pendente
+**Agente:** apolo-tf
+**Files affected:** a definir pela Wave 0
+**Acceptance criteria:**
+- [ ] AC4 e AC5 da REQ
+
+## Wave 4 — Revisões independentes
+> Dependencies: Wave 3 auditada.
+
+### ML-4A — Revisão de qualidade
+**Status:** ⬜ Pendente
+**Agente:** hefesto-tf
+**Acceptance criteria:**
+- [ ] Parecer sem bloqueio, ou corretivo
+
+### ML-4B — Red-team do guard write-scope
+**Status:** ⬜ Pendente
+**Agente:** hades-tf
+**Acceptance criteria:**
+- [ ] Reimplementação independente das regras a partir da ADR; nenhum caminho de fail-open
+
+## Wave 5 — Fechamento
+> Dependencies: Wave 4 aprovada.
+
+### ML-5A — make quality e CI
+**Status:** ⬜ Pendente
+**Agente:** zeus-tf
+**Acceptance criteria:**
+- [ ] `make quality` rc=0, com a máquina ociosa e o HOME isolado
+- [ ] CI do PR verde
