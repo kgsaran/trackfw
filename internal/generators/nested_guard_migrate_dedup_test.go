@@ -224,6 +224,10 @@ func TestNestedMigrate_Gemini_NLegacies_Deduplicates(t *testing.T) {
 // TestNestedMigrate_AmazonQ_NLegacies_Deduplicates verifies dedup for Amazon Q.
 //
 // Reconciliação: afirma colapso N→1 para (preToolUse, execute_bash) do Amazon Q.
+// Afirma também que cada forma legada semeada desaparece completamente do output
+// (count == 0 para a string exata do comando). Apenas verificar count==1 canônico
+// era insuficiente: a condição era satisfeita em origin/main porque a implementação
+// antiga adicionava 1 canônico sem remover as formas legadas.
 func TestNestedMigrate_AmazonQ_NLegacies_Deduplicates(t *testing.T) {
 	nestedFixtureHome(t)
 
@@ -257,6 +261,12 @@ func TestNestedMigrate_AmazonQ_NLegacies_Deduplicates(t *testing.T) {
 	n := countNestedEntries(data, "preToolUse", "execute_bash", guardCredentialCmdCmdExe)
 	if n != 1 {
 		t.Errorf("AC3/AmazonQ: expected exactly 1 canonical cred entry in preToolUse/execute_bash, got %d", n)
+	}
+	// Each seeded legacy form must be gone: the entire command string must not appear.
+	for _, legacy := range legacies {
+		if countNestedEntries(data, "preToolUse", "execute_bash", legacy) != 0 {
+			t.Errorf("AC3/AmazonQ: legacy form %q must not remain after migration", legacy)
+		}
 	}
 }
 

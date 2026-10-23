@@ -186,12 +186,27 @@ O AC2 está fechado por teste de igualdade (`TestAC2_*`, 13 subtestes). O AC4 or
 "AC4 note" é argumento, não teste. As duas lacunas passam para o ML-1D.
 
 ### ML-1D — Corretivo do ML-1C
+**Status:** ✅ Concluído
+**Agente:** apolo-tf
+**Acceptance criteria:**
+- [x] `TestNestedMigrate_AmazonQ_NLegacies_Deduplicates` também exige zero legadas no par, e reprova em `origin/main`
+- [x] AC4: um teste orientado por tabela sobre (sítio, evento, matcher, guard) para todo sítio de projeto e global, iterando
+  cada forma do registro; a falsificação, com uma forma fictícia acrescentada ao registro, reprova e a saída é relatada
+
+**Auditoria do arquiteto (2026-10-23):** aprovado. O `TestAC4_RegistrySites` (23 linhas de tabela) passa na branch e tem
+169 FAILs em `origin/main`. O teste do Amazon Q agora também exige zero legadas, e reprova em `origin/main`. Sobre a
+falsificação pedida: acrescentar uma forma fictícia ao registro não pode reprovar, porque os sítios consomem a mesma
+variável. O desenho do AC4 estava errado, e o erro é do arquiteto. A propriedade que importa, "todo sítio trata todo o
+registro", fica provada pelo contra-braço, em que os sítios não usam o registro. Fica um defeito conhecido, que entra
+agora: o credential guard do Amazon Q não migra `CredentialLegacyPSPOSIX`, enquanto o git-branch já migra (ML-1C).
+
+### ML-1E — Amazon Q: credential com as formas PS/POSIX
 **Status:** ⬜ Pendente
 **Agente:** apolo-tf
 **Acceptance criteria:**
-- [ ] `TestNestedMigrate_AmazonQ_NLegacies_Deduplicates` também exige zero legadas no par, e reprova em `origin/main`
-- [ ] AC4: um teste orientado por tabela sobre (sítio, evento, matcher, guard) para todo sítio de projeto e global, iterando
-  cada forma do registro; a falsificação, com uma forma fictícia acrescentada ao registro, reprova e a saída é relatada
+- [ ] `InjectAmazonQHooks` migra também `guardforms.CredentialLegacyPSPOSIX` para a forma atual de cmd.exe, nos pares de credential que ele emite
+- [ ] A linha do Amazon Q de credential no `TestAC4_RegistrySites` passa a iterar `CredentialLegacyPSPOSIX`, e o comentário de lacuna sai
+- [ ] Contra-braço: a linha nova reprova no HEAD anterior a este ML
 
 
 ## Wave 2 — Revisões independentes
