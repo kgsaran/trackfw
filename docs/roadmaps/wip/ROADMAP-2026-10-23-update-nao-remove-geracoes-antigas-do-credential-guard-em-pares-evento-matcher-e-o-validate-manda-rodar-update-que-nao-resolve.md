@@ -213,16 +213,35 @@ agora: o credential guard do Amazon Q não migra `CredentialLegacyPSPOSIX`, enqu
 > Dependencies: Wave 1 auditada.
 
 ### ML-2A — Revisão de qualidade
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** hefesto-tf
 **Acceptance criteria:**
-- [ ] Parecer sem bloqueio, ou bloqueios corrigidos por ML corretivo
+- [x] Parecer: REPROVADO com B1 (literal do Gemini) e R1–R5 — `docs/qualidade/2026-10-23-revisao-geracoes-do-guard.md`; corretivo no ML-2C
 
 ### ML-2B — Red-team da remoção
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** hades-tf
 **Acceptance criteria:**
-- [ ] Reimplementação independente da regra de remoção a partir da leitura; nenhum hook do usuário removido
+- [x] Parecer: 15 ataques, 14 PASS; B1 (Copilot: `view` e `create|edit` somem com o global instalado) — `docs/seguranca/2026-10-23-redteam-geracoes-do-guard.md`; corretivo no ML-2C. Nenhum hook do usuário removido
+
+### ML-2C — Corretivo das revisões
+**Status:** ⬜ Pendente
+**Agente:** apolo-tf
+**Por que existe:** o Hefesto achou o B1, em que o `InjectGeminiHooks` passa o literal `"scripts/trackfw-credential-guard.sh"`
+em 6 chamadas. O Hades achou o B1 do Copilot, e o arquiteto mediu o mesmo defeito no Kiro: o `InjectKiroHooks` deixa de
+emitir `read` e `write` com o global instalado, e o global do Kiro só cobre `shell`. Copilot e Kiro ficaram fora da matriz
+da Wave 0 porque são sobrescrita total, mas a D14 por par vale para eles também. A auditoria do arquiteto não conferiu isso.
+**Acceptance criteria:**
+- [ ] Gemini: as 6 chamadas com literal saem (a deduplicação pelo registro já cobre a forma) ou passam a usar o alias; grep pelo literal em `internal/generators/*.go` fora de testes devolve só `internal/guardforms`
+- [ ] Copilot: `view` e `create|edit` emitidos com ou sem global; `bash` pulado com o global. Teste com os dois braços, que reprova no HEAD anterior
+- [ ] Kiro: `read` e `write` emitidos com ou sem global; `shell` pulado com o global. Teste com os dois braços, que reprova no HEAD anterior
+- [ ] R1: `migrateDedupGuardInFlatArray` delega para `dedupFlatGuardEntries`, sem duplicação dos passes 1–2
+- [ ] R2: testes `*_ML1C_*` renomeados por comportamento
+- [ ] R3: `TestNestedMigrate_Claude_AC4_EveryRegistryFormMigrates` removido, porque o `TestAC4_RegistrySites` já cobre o caso
+- [ ] R4: `append` sobre slice do registro sempre com cópia (`append(append([]string{}, a...), b...)`)
+- [ ] R5 (Hefesto), aceito como resíduo: os marcadores de substring do validador servem a outro propósito (detecção por `Contains`) e não são gerações
+- [ ] Resíduos R1–R4 do Hades aceitos, conforme o parecer
+
 
 ## Wave 3 — Fechamento
 > Dependencies: Wave 2 aprovada.
