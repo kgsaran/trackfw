@@ -58,11 +58,20 @@ func makeDocsWorkingContext(t *testing.T, dir string, frozen bool) string {
 
 // payload builds a minimal JSON payload for RunWriteScope.
 // agentID may be "" for main session or a non-empty string for subagent.
+// Uses encoding/json so Windows backslash paths are escaped correctly.
 func payload(tool, filePath, agentID string) string {
-	if agentID != "" {
-		return `{"tool_name":"` + tool + `","tool_input":{"file_path":"` + filePath + `"},"agent_id":"` + agentID + `"}`
+	m := map[string]any{
+		"tool_name":  tool,
+		"tool_input": map[string]any{"file_path": filePath},
 	}
-	return `{"tool_name":"` + tool + `","tool_input":{"file_path":"` + filePath + `"}}`
+	if agentID != "" {
+		m["agent_id"] = agentID
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		panic("payload: json.Marshal: " + err.Error())
+	}
+	return string(b)
 }
 
 // runWS calls RunWriteScope with the given JSON payload (main-session, no agent_id by default).

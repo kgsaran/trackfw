@@ -372,7 +372,7 @@ go test ./internal/guard/ ./internal/commands/ ./internal/pathguard/ -count=1
 - **Resíduo aceito:** `allow: ["/"]` fica inerte e nunca casa, o que é o lado seguro.
 
 ### ML-4D — Testes do write-scope no Windows (CI do #606)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** apolo-tf
 **Files affected:** `internal/guard/writescope_test.go`, `internal/commands/guard_write_scope_test.go`, `.github/windows-known-failures.json`
 **Por que existe:** o `windows-full-suites` do #606 reprovou em 4 testes novos. Os dois motivos são de fixture, não de
@@ -384,9 +384,9 @@ produto:
 Os testes afetados são `TestGuardWriteScope_OutsideTrackfwProject_Allow`, `TestRunWriteScope_DotDot_OutsideProject`,
 `TestRunWriteScope_DotDot_OutsideProject_DotDotPath` e `TestRunWriteScope_TwoProjects_TargetInA_CwdInB`.
 **Acceptance criteria:**
-- [ ] Todo payload de teste do write-scope montado com `encoding/json` (`json.Marshal`), nunca por concatenação nem por `%q` dentro de JSON
-- [ ] O alvo "fora do projeto" é um arquivo em `t.TempDir()` sem `trackfw.yaml` ancestral, nunca `/dev/null`
-- [ ] Nenhuma entrada nova em `.github/windows-known-failures.json` (o arquivo só entra nos Files affected para provar que não mudou)
+- [x] Todo payload de teste do write-scope montado com `encoding/json` (`json.Marshal`), nunca por concatenação nem por `%q` dentro de JSON
+- [x] O alvo "fora do projeto" é um arquivo em `t.TempDir()` sem `trackfw.yaml` ancestral, nunca `/dev/null`
+- [x] Nenhuma entrada nova em `.github/windows-known-failures.json` (o arquivo só entra nos Files affected para provar que não mudou)
 - [ ] CI `windows-full-suites` verde
 
 ## Wave 5 — Fechamento

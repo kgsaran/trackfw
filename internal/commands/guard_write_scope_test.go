@@ -15,7 +15,6 @@ package commands
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -166,20 +165,23 @@ func TestGuardWriteScope_NotebookEdit_AbsentNotebookPath_Deny(t *testing.T) {
 }
 
 // TestGuardWriteScope_OutsideTrackfwProject_Allow asserts targets outside any trackfw project → allow.
-// Uses /tmp which is not inside a trackfw project (no trackfw.yaml in ancestors).
 // Asserts: contract item 3 — target outside trackfw project → allow.
 func TestGuardWriteScope_OutsideTrackfwProject_Allow(t *testing.T) {
-	// Use a path that is definitely outside any trackfw project.
-	// /dev/null is safe — it won't have a trackfw.yaml ancestor.
-	payload := `{"tool_name":"Write","tool_input":{"file_path":"/dev/null"}}`
-	rc, stderr := writeScopeExitCode(t, payload)
-	if rc != 2 && rc != 0 {
-		// We only assert it's not something weird; 0 is allow, 2 is deny.
-		t.Fatalf("/dev/null path: want exit 0 or 2, got %d (stderr=%q)", rc, stderr)
+	// Create a file in a temp dir that has no trackfw.yaml ancestor.
+	// t.TempDir() on CI lives under %TEMP% (Windows) or /tmp (Unix), never inside a checkout.
+	outsideDir := t.TempDir()
+	outsideFile := filepath.Join(outsideDir, "outside.txt")
+	if err := os.WriteFile(outsideFile, []byte("x"), 0600); err != nil {
+		t.Fatal(err)
 	}
-	// /dev/null has no trackfw.yaml ancestor — must be allowed.
+	p := d4Payload("Write", outsideFile, "", "")
+	rc, stderr := writeScopeExitCode(t, p)
+	if rc != 2 && rc != 0 {
+		t.Fatalf("outside-project path: want exit 0 or 2, got %d (stderr=%q)", rc, stderr)
+	}
+	// outsideFile has no trackfw.yaml ancestor — must be allowed.
 	if rc != 0 {
-		t.Fatalf("target outside trackfw project (/dev/null): want exit 0 (allow), got %d (stderr=%q)", rc, stderr)
+		t.Fatalf("target outside trackfw project: want exit 0 (allow), got %d (stderr=%q)", rc, stderr)
 	}
 }
 
@@ -202,8 +204,7 @@ func TestGuardWriteScope_WorkingContextNoMarker_Allow_MainSession(t *testing.T) 
 	}
 
 	target := filepath.Join(dir, "docs", "agents-working-context.md")
-	payload := fmt.Sprintf(`{"tool_name":"Write","tool_input":{"file_path":%q}}`, target)
-	rc, stderr := writeScopeExitCode(t, payload)
+	rc, stderr := writeScopeExitCode(t, d4Payload("Write", target, "", ""))
 	if rc != 0 {
 		t.Fatalf("working-context without frozen marker, main session: want exit 0 (allow), got %d (stderr=%q)", rc, stderr)
 	}
@@ -229,8 +230,7 @@ func TestGuardWriteScope_WorkingContextWithMarker_Deny_MainSession(t *testing.T)
 
 	target := filepath.Join(dir, "docs", "agents-working-context.md")
 	// No agent_id → main session.
-	payload := fmt.Sprintf(`{"tool_name":"Write","tool_input":{"file_path":%q}}`, target)
-	rc, stderr := writeScopeExitCode(t, payload)
+	rc, stderr := writeScopeExitCode(t, d4Payload("Write", target, "", ""))
 	if rc != 2 {
 		t.Fatalf("working-context WITH frozen marker, main session: want exit 2 (deny), got %d (stderr=%q)", rc, stderr)
 	}
@@ -258,8 +258,7 @@ func TestGuardWriteScope_WorkingContextNoMarker_Deny_Subagent(t *testing.T) {
 
 	target := filepath.Join(dir, "docs", "agents-working-context.md")
 	// agent_id present → subagent.
-	payload := fmt.Sprintf(`{"tool_name":"Write","tool_input":{"file_path":%q},"agent_id":"apolo-tf"}`, target)
-	rc, stderr := writeScopeExitCode(t, payload)
+	rc, stderr := writeScopeExitCode(t, d4Payload("Write", target, "apolo-tf", ""))
 	if rc != 2 {
 		t.Fatalf("working-context no marker, subagent: want exit 2 (deny), got %d (stderr=%q)", rc, stderr)
 	}
@@ -277,8 +276,7 @@ func TestGuardWriteScope_TrackfwYaml_Deny_Subagent(t *testing.T) {
 	}
 
 	target := filepath.Join(dir, "trackfw.yaml")
-	payload := fmt.Sprintf(`{"tool_name":"Edit","tool_input":{"file_path":%q},"agent_id":"apolo-tf"}`, target)
-	rc, stderr := writeScopeExitCode(t, payload)
+	rc, stderr := writeScopeExitCode(t, d4Payload("Edit", target, "apolo-tf", ""))
 	if rc != 2 {
 		t.Fatalf("trackfw.yaml subagent: want exit 2 (deny), got %d (stderr=%q)", rc, stderr)
 	}
@@ -297,8 +295,7 @@ func TestGuardWriteScope_TrackfwYaml_Allow_MainSession(t *testing.T) {
 
 	target := filepath.Join(dir, "trackfw.yaml")
 	// No agent_id → main session.
-	payload := fmt.Sprintf(`{"tool_name":"Edit","tool_input":{"file_path":%q}}`, target)
-	rc, stderr := writeScopeExitCode(t, payload)
+	rc, stderr := writeScopeExitCode(t, d4Payload("Edit", target, "", ""))
 	if rc != 0 {
 		t.Fatalf("trackfw.yaml main session: want exit 0 (allow), got %d (stderr=%q)", rc, stderr)
 	}
@@ -319,8 +316,7 @@ func TestGuardWriteScope_ClaudeSettings_Deny_Subagent(t *testing.T) {
 	}
 
 	target := filepath.Join(dir, ".claude", "settings.json")
-	payload := fmt.Sprintf(`{"tool_name":"Write","tool_input":{"file_path":%q},"agent_id":"apolo-tf"}`, target)
-	rc, stderr := writeScopeExitCode(t, payload)
+	rc, stderr := writeScopeExitCode(t, d4Payload("Write", target, "apolo-tf", ""))
 	if rc != 2 {
 		t.Fatalf(".claude/settings.json subagent: want exit 2 (deny), got %d (stderr=%q)", rc, stderr)
 	}
@@ -352,8 +348,7 @@ func TestGuardWriteScope_WorkingContextDir_Deny_Subagent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	payload := fmt.Sprintf(`{"tool_name":"Write","tool_input":{"file_path":%q},"agent_id":"apolo-tf"}`, innerFile)
-	rc, stderr := writeScopeExitCode(t, payload)
+	rc, stderr := writeScopeExitCode(t, d4Payload("Write", innerFile, "apolo-tf", ""))
 	// Decision 4: docs/agents-working-context/ is now frozen for subagents — must deny.
 	if rc != 2 {
 		t.Fatalf("docs/agents-working-context/notes.md subagent: want exit 2 (deny — frozen dir for subagents), got %d (stderr=%q)", rc, stderr)
@@ -385,8 +380,7 @@ func TestGuardWriteScope_WorkingContextDir_Allow_MainSession(t *testing.T) {
 	}
 
 	// No agent_id → main session; docs/agents-working-context/ must remain writable.
-	payload := fmt.Sprintf(`{"tool_name":"Write","tool_input":{"file_path":%q}}`, innerFile)
-	rc, stderr := writeScopeExitCode(t, payload)
+	rc, stderr := writeScopeExitCode(t, d4Payload("Write", innerFile, "", ""))
 	if rc != 0 {
 		t.Fatalf("docs/agents-working-context/ main session: want exit 0 (allow — not frozen for main session), got %d (stderr=%q)", rc, stderr)
 	}
@@ -411,8 +405,7 @@ func TestGuardWriteScope_YAMLExtraFrozenPath_Deny(t *testing.T) {
 
 	target := filepath.Join(dir, "docs", "secret.md")
 	// No agent_id → main session (showing YAML frozen_paths applies to all sessions).
-	payload := fmt.Sprintf(`{"tool_name":"Write","tool_input":{"file_path":%q}}`, target)
-	rc, stderr := writeScopeExitCode(t, payload)
+	rc, stderr := writeScopeExitCode(t, d4Payload("Write", target, "", ""))
 	if rc != 2 {
 		t.Fatalf("YAML extra frozen path, main session: want exit 2 (deny), got %d (stderr=%q)", rc, stderr)
 	}
@@ -443,8 +436,7 @@ func TestGuardWriteScope_MalformedYAML_Deny(t *testing.T) {
 
 	target := filepath.Join(dir, "docs", "plain.md")
 	// Main session (no agent_id). Only denial reason: malformed YAML in trackfw.yaml.
-	payload := fmt.Sprintf(`{"tool_name":"Write","tool_input":{"file_path":%q}}`, target)
-	rc, stderr := writeScopeExitCode(t, payload)
+	rc, stderr := writeScopeExitCode(t, d4Payload("Write", target, "", ""))
 	if rc != 2 {
 		t.Fatalf("malformed YAML, non-frozen target: want exit 2 (deny by YAML error), got %d (stderr=%q)", rc, stderr)
 	}
@@ -463,9 +455,14 @@ func TestGuardWriteScope_NonStringAgentID_Deny_Subagent(t *testing.T) {
 	}
 
 	target := filepath.Join(dir, "trackfw.yaml")
-	// agent_id is a number, not a string.
-	payload := fmt.Sprintf(`{"tool_name":"Edit","tool_input":{"file_path":%q},"agent_id":42}`, target)
-	rc, stderr := writeScopeExitCode(t, payload)
+	// agent_id is a number, not a string — intentionally non-string to test subagent treatment.
+	intAgentPayload := map[string]any{
+		"tool_name":  "Edit",
+		"tool_input": map[string]string{"file_path": target},
+		"agent_id":   42,
+	}
+	intAgentPayloadBytes, _ := json.Marshal(intAgentPayload)
+	rc, stderr := writeScopeExitCode(t, string(intAgentPayloadBytes))
 	if rc != 2 {
 		t.Fatalf("non-string agent_id: want exit 2 (treat as subagent), got %d (stderr=%q)", rc, stderr)
 	}
@@ -490,8 +487,7 @@ func TestGuardWriteScope_TrackfwLeasesDir_Deny_Subagent(t *testing.T) {
 	}
 
 	target := filepath.Join(leasesDir, "my.lease")
-	payload := fmt.Sprintf(`{"tool_name":"Write","tool_input":{"file_path":%q},"agent_id":"apolo-tf"}`, target)
-	rc, stderr := writeScopeExitCode(t, payload)
+	rc, stderr := writeScopeExitCode(t, d4Payload("Write", target, "apolo-tf", ""))
 	if rc != 2 {
 		t.Fatalf(".trackfw/leases/my.lease subagent: want exit 2 (deny), got %d (stderr=%q)", rc, stderr)
 	}
