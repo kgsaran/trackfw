@@ -115,3 +115,7 @@ congelados da D3. Isso evita quebrar o uso sem orquestração. Vale onde o CLI e
   no formato v1 com `allow` (caminhos absolutos) e `expires` (RFC 3339, obrigatório). Permissão expirada, de versão
   desconhecida, ilegível ou com `agent_type` divergente nega. O `expires` existe para que uma permissão esquecida não valha
   para sempre. Os caminhos congelados da D3 continuam negando mesmo dentro do `allow`.
+- **Revisões da Wave 4:** toda permissão encontrada nas duas raízes (a da sessão e a do alvo) precisa liberar o alvo. Isso
+  impede que um projeto falso, com uma permissão ampla no `cwd`, sobreponha a permissão restrita do projeto do alvo. A
+  identidade de arquivo usa `os.SameFile`, que cobre hardlink. `docs/agents-working-context/` fica congelado para
+  subagentes, e a D1 deixa de depender de obediência. Sem `origin/main`, o `ml_scope` sai `blocked`, e não `skipped`.

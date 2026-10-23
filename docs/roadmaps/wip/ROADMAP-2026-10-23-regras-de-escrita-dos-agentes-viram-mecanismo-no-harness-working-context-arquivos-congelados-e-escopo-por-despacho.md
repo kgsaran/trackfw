@@ -322,18 +322,45 @@ go test ./internal/guard/ ./internal/commands/ ./internal/pathguard/ -count=1
 > Dependencies: Wave 3 auditada.
 
 ### ML-4A — Revisão de qualidade
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** hefesto-tf
 **Files affected:** `docs/seguranca/2026-10-23-quality-write-scope.md`
 **Acceptance criteria:**
-- [ ] Parecer sem bloqueio, ou corretivo
+- [x] Parecer: BLOQUEADO com B1 (`ml_scope` sem `origin/main`: o código diz `blocked`, o doc diz `skipped`) e R1–R5 — `docs/seguranca/2026-10-23-quality-write-scope.md`; corretivo no ML-4C
 
 ### ML-4B — Red-team do guard write-scope
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** hades-tf
 **Files affected:** `docs/seguranca/2026-10-23-red-team-write-scope.md`
 **Acceptance criteria:**
-- [ ] Reimplementação independente das regras a partir da ADR; nenhum caminho de fail-open
+- [x] Parecer: 47 ataques; B (hardlink para o arquivo congelado passa); R1 (subagente escreve em `docs/agents-working-context/`), R2 (`allow` com barra final casa arquivo) — `docs/seguranca/2026-10-23-red-team-write-scope.md`; corretivo no ML-4C
+
+### ML-4C — Corretivo das revisões
+**Status:** ⬜ Pendente
+**Agente:** apolo-tf
+**Files affected:** `internal/guard/`, `internal/config/`, `internal/commands/barrier.go`, `internal/commands/barrier_ml_scope_test.go`, `internal/commands/guard_write_scope_test.go`, `docs/cli-parity.md`
+**Decisões do arquiteto:**
+1. **B1 do Hefesto:** o código está certo e o doc está errado. Sem `origin/main`, o `ml_scope` sai `blocked`. Um `skipped`
+   desligaria a checagem em silêncio em clone raso ou sem fetch, contra a regra da Wave 0 de "nunca passar em silêncio".
+   Corrigir o comentário de `checkMLScope` e a tabela do `docs/cli-parity.md`, e criar um teste sem `origin/main`.
+2. **B do Hades (hardlink):** `os.SameFile` entre o alvo e cada arquivo congelado, quando os dois existem.
+3. **Regra da D4 endurecida (achado do arquiteto sobre o ataque 2E):** **toda** permissão encontrada nas duas raízes
+   precisa liberar o alvo. Com a regra de "pelo menos uma", um agente que muda o `cwd` para um projeto falso com
+   `allow: ["/"]` libera a escrita num arquivo não congelado do checkout principal, porque a permissão falsa basta.
+4. **R1 do Hades:** `docs/agents-working-context/` entra na lista congelada **só para subagente**. Assim a D1 deixa de
+   depender da obediência: o arquiteto, que é a sessão principal, continua escrevendo.
+5. **R2 do Hades:** uma entrada de `allow` terminada em `/` casa só o que está abaixo do diretório, nunca o arquivo com o
+   mesmo nome.
+6. **R1 e R2 do Hefesto:** `ParseWriteScopeConfig` passa a devolver erro, e o guard deixa de fazer o duplo `Unmarshal`.
+7. **R3 do Hefesto:** os diretórios congelados também passam por `EvalSymlinks`. **R5:** acrescentar a nota de custo do
+   `--untracked-files=all`.
+8. **R4 do Hefesto** (`extractFrontmatterField` em 3 pacotes) fica como resíduo. A duplicação é anterior a esta REQ e
+   tem outra causa.
+**Acceptance criteria:**
+- [ ] Um teste por decisão (1–7), cada um com contra-braço no HEAD
+- [ ] O ataque 2E reproduzido em teste: `cwd` num projeto falso com `allow: ["/"]`, alvo não congelado no checkout principal com permissão restrita → 2
+- [ ] O hardlink do Hades → 2; subagente em `docs/agents-working-context/x.md` → 2; sessão principal no mesmo caminho → 0
+- [ ] Gates: `go build ./...`; `go test ./internal/guard/ ./internal/config/ ./internal/commands/ ./internal/pathguard/ -count=1`; `make parity-rest` pelo venv
 
 ## Wave 5 — Fechamento
 > Dependencies: Wave 4 aprovada.
