@@ -1,14 +1,14 @@
 ---
-status: Open
+status: Done
 date: 2026-09-02
 author: "kgsaran"
 adr: "docs/adr/ADR-2026-10-22-logs-append-only-compartilhados-viram-um-arquivo-por-entrada-porque-o-github-ignora-merge-union.md"
-roadmap: "docs/roadmaps/wip/ROADMAP-2026-09-22-reconciliacao-pos-merge-dos-prs-238-e-240-e-o-trackfw-log-que-conflita-em-toda-branch-paralela.md"
+roadmap: "docs/roadmaps/done/ROADMAP-2026-09-22-reconciliacao-pos-merge-dos-prs-238-e-240-e-o-trackfw-log-que-conflita-em-toda-branch-paralela.md"
 ---
 
 # REQ: Reconciliação pós-merge dos PRs #238 e #240, e o `.trackfw-log` que conflita em toda branch paralela
 
-> Date: 2026-09-02 | Status: Open
+> Date: 2026-09-02 | Status: Done
 | Linear Issue:
 | Jira Issue:
 
@@ -167,4 +167,4 @@ ADR:
      docs/roadmaps/.trackfw-log, exatamente o arquivo em conflito nos PRs #238/#240. Criar o roadmap
      antes de os dois mergearem geraria um terceiro conflito no PR do reporter — que é o defeito
      descrito no item 5 desta própria REQ. Criar após os merges. -->
-Roadmap: `docs/roadmaps/wip/ROADMAP-2026-09-22-reconciliacao-pos-merge-dos-prs-238-e-240-e-o-trackfw-log-que-conflita-em-toda-branch-paralela.md`
+Roadmap: `docs/roadmaps/done/ROADMAP-2026-09-22-reconciliacao-pos-merge-dos-prs-238-e-240-e-o-trackfw-log-que-conflita-em-toda-branch-paralela.md`
