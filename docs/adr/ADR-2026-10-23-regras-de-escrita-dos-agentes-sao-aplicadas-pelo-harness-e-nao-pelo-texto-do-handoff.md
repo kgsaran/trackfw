@@ -86,3 +86,19 @@ congelados da D3. Isso evita quebrar o uso sem orquestração. Vale onde o CLI e
 
 ## Linked REQ
 `docs/req/REQ-2026-10-23-regras-de-escrita-dos-agentes-viram-mecanismo-no-harness-working-context-arquivos-congelados-e-escopo-por-despacho.md`
+
+## Adendo — 2026-10-23 (Wave 0, `docs/seguranca/2026-10-23-wave0-regras-de-escrita.md`)
+
+- **D3 em dois níveis.** O `docs/agents-working-context.md` legado é congelado para todos. Para **subagentes** (o payload traz
+  `agent_id`), também ficam congelados o `trackfw.yaml`, os arquivos de hook e de settings de todo CLI cabeado pelo trackfw e
+  `.trackfw/leases/`. Assim um subagente não consegue desligar o próprio guard nem editar a própria permissão. A sessão
+  principal continua editando esses arquivos. O `trackfw.yaml` só acrescenta caminhos às listas, nunca remove.
+- **"É subagente" = `agent_id` presente.** O `agent_type` sozinho também aparece com `--agent` na thread principal.
+- **D3 e D4 nesta REQ: só o Claude Code.** É o único CLI com `file_path` único e confirmado no payload de escrita. Os demais
+  ficam como resíduo, documentado em `docs/cli-parity.md`.
+- **Erros fecham.** Payload ilegível, campo ausente, permissão ilegível ou panic → exit 2. Um `agent_type` que não é slug
+  significa "sem permissão" (vale a D3), nunca erro.
+- **D2:** a base do diff é `merge-base(origin/main, HEAD)`. Os `Files affected` são lidos do roadmap **na base**, não do disco.
+  Roadmap anterior a 2026-07-18 sem declaração fica isento, com mensagem explícita. Roadmap posterior em `wip` sem declaração
+  reprova.
+- **Cabeamento:** por `settings.json` de projeto, não por frontmatter, porque subagentes de plugin ignoram hooks no frontmatter.

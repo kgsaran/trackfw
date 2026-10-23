@@ -26,7 +26,7 @@ Ordem decidida pelo KG: D1 (a instrução) → D2 (o barrier) → D3 (os congela
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model das quatro camadas
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** hades-tf
 **Files affected:** `docs/seguranca/2026-10-23-wave0-regras-de-escrita.md`
 **Actions:**
@@ -53,9 +53,9 @@ Ordem decidida pelo KG: D1 (a instrução) → D2 (o barrier) → D3 (os congela
    - fail-open por erro de parse.
 5. **Alvos de falsificação nos dois sentidos** por camada, e o **resíduo declarado**.
 **Acceptance criteria:**
-- [ ] Cada seção respondida com evidência (comando e saída, ou citação com URL)
-- [ ] A gramática de `Files affected` medida sobre o corpus real, com contagens
-- [ ] Nenhuma linha de produto
+- [x] Cada seção respondida com evidência (comando e saída, ou citação com URL)
+- [x] A gramática de `Files affected` medida sobre o corpus real, com contagens
+- [x] Nenhuma linha de produto
 **Gates da wave:**
 ```bash
 test -s docs/seguranca/2026-10-23-wave0-regras-de-escrita.md
@@ -89,14 +89,14 @@ git diff --quiet origin/main -- internal/
 ### ML-3A — `trackfw guard write-scope` com os caminhos congelados (D3)
 **Status:** ⬜ Pendente
 **Agente:** apolo-tf
-**Files affected:** a definir pela Wave 0
+**Files affected:** `internal/commands/guard.go`, `internal/guard/writescope.go`, `internal/guard/writescope_test.go`, `internal/generators/agentfiles.go`, `docs/cli-parity.md`, `trackfw.yaml`
 **Acceptance criteria:**
 - [ ] AC3 e AC5 da REQ
 
 ### ML-3B — A permissão por despacho (D4)
 **Status:** ⬜ Pendente
 **Agente:** apolo-tf
-**Files affected:** a definir pela Wave 0
+**Files affected:** `internal/guard/writescope.go`, `internal/guard/writescope_test.go`, `docs/cli-parity.md`
 **Acceptance criteria:**
 - [ ] AC4 e AC5 da REQ
 
@@ -106,12 +106,14 @@ git diff --quiet origin/main -- internal/
 ### ML-4A — Revisão de qualidade
 **Status:** ⬜ Pendente
 **Agente:** hefesto-tf
+**Files affected:** `docs/seguranca/2026-10-23-quality-write-scope.md`
 **Acceptance criteria:**
 - [ ] Parecer sem bloqueio, ou corretivo
 
 ### ML-4B — Red-team do guard write-scope
 **Status:** ⬜ Pendente
 **Agente:** hades-tf
+**Files affected:** `docs/seguranca/2026-10-23-red-team-write-scope.md`
 **Acceptance criteria:**
 - [ ] Reimplementação independente das regras a partir da ADR; nenhum caminho de fail-open
 
@@ -121,6 +123,7 @@ git diff --quiet origin/main -- internal/
 ### ML-5A — make quality e CI
 **Status:** ⬜ Pendente
 **Agente:** zeus-tf
+**Files affected:** artefatos de orquestração (roadmap, REQ — sem novo arquivo de produto)
 **Acceptance criteria:**
 - [ ] `make quality` rc=0, com a máquina ociosa e o HOME isolado
 - [ ] CI do PR verde
