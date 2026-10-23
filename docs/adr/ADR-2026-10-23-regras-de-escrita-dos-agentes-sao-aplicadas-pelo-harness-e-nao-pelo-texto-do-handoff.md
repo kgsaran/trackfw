@@ -106,3 +106,8 @@ congelados da D3. Isso evita quebrar o uso sem orquestração. Vale onde o CLI e
   merge-base, porque um roadmap novo não existe nela. A edição não commitada de um agente não amplia o escopo, e só o
   arquiteto commita. O escopo da wave N é a união dos MLs das waves 0..N mais o conjunto de orquestração (contrato completo
   no ML-2A do roadmap).
+- **D3, contrato do ML-3A:** a raiz que vale é a do projeto do **alvo** (o ancestral com `trackfw.yaml`), e não o cwd. Assim, um
+  agente num worktree que escreve no checkout principal é julgado pelas regras do checkout principal, que é o caso medido
+  em 2026-10-23. O `docs/agents-working-context.md` só fica congelado para a sessão principal quando traz o marcador
+  `<!-- trackfw:frozen -->`, porque projetos de terceiros ainda o usam como diário vivo. Para subagentes, ele é sempre
+  congelado.

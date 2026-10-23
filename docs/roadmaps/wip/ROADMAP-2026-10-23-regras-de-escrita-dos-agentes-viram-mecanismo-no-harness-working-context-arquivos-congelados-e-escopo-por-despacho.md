@@ -168,9 +168,45 @@ go test ./internal/commands/ -count=1
 ### ML-3A — `trackfw guard write-scope` com os caminhos congelados (D3)
 **Status:** ⬜ Pendente
 **Agente:** apolo-tf
-**Files affected:** `internal/commands/guard.go`, `internal/guard/writescope.go`, `internal/guard/writescope_test.go`, `internal/generators/agentfiles.go`, `docs/cli-parity.md`, `trackfw.yaml`
+**Files affected:** `internal/commands/guard.go`, `internal/commands/guard_write_scope_test.go`, `internal/guard/`, `internal/guardforms/`, `internal/generators/`, `internal/validator/`, `internal/config/`, `docs/cli-parity.md`, `.claude/settings.json`
+**Contrato (arquiteto, a partir da Wave 0 e do adendo da ADR):**
+1. **Subcomando** `trackfw guard write-scope`: lê o payload de `PreToolUse` do Claude Code no stdin, com o mesmo leitor, o
+   tratamento de BOM e o dreno com prazo de `internal/guard/payload.go`. Sai com 0 para liberar e 2 para negar, com o motivo
+   no stderr. Todo erro sob `guard` sai com 2 (D7 da ADR-2026-10-04).
+2. **Alvo:** `tool_input.file_path` (`Write`, `Edit`) e `tool_input.notebook_path` (`NotebookEdit`). Campo ausente, vazio ou que
+   não seja string nega. `tool_name` fora de `Write|Edit|NotebookEdit` libera, porque o matcher não deveria entregá-lo.
+3. **Raiz do projeto do alvo**, e não do cwd: é o ancestral mais próximo do alvo que contém `trackfw.yaml`, depois de
+   `filepath.Abs` e de `EvalSymlinks` no maior prefixo existente. Assim, um agente num worktree que escreve no checkout
+   principal é julgado pela raiz do checkout principal, que é o caso de 2026-10-23. Alvo fora de qualquer projeto
+   trackfw libera.
+4. **Lista para toda sessão:** `docs/agents-working-context.md`, só quando as 10 primeiras linhas do arquivo contêm o marcador
+   `<!-- trackfw:frozen -->`. Sem o marcador, o arquivo continua livre para a sessão principal, porque projetos de
+   terceiros ainda o usam como diário vivo.
+5. **Lista só para subagente** (o payload traz `agent_id` não vazio): `docs/agents-working-context.md` (sempre),
+   `trackfw.yaml`, `.claude/settings.json`, `.claude/settings.local.json`, `.codex/hooks.json`, `.gemini/settings.json`,
+   `.cursor/hooks.json`, `.windsurf/hooks.json`, `.github/hooks/`, `.kiro/hooks/`, `.amazonq/cli-agents/` e `.trackfw/leases/`.
+   Comparação por caminho relativo à raiz, com `filepath.Clean`, e sem diferenciar maiúsculas no Windows e no macOS.
+6. **Extensão:** a chave `write_scope.frozen_paths` (toda sessão) e a chave `write_scope.frozen_paths_subagent` no
+   `trackfw.yaml` acrescentam caminhos. Nunca removem os padrões. YAML inválido nega.
+7. **Cabeamento:** o `InjectClaudeHooks` acrescenta em `PreToolUse` um envelope com o matcher `Write|Edit|NotebookEdit` (lista
+   exata) e a linha poliglota atual com `trackfw guard write-scope`, registrada em `internal/guardforms`. O `validate` avisa
+   quando o `.claude/settings.json` de um projeto não tem esse envelope. É aviso, não violação, até a próxima major.
+8. **Este repositório:** o `.claude/settings.json` do worktree ganha o envelope, editado à mão para ficar igual ao que o
+   gerador emite. Nunca por `trackfw init`/`update`. O marcador do item 4 vai para o `docs/agents-working-context.md`, e
+   quem o põe é o arquiteto.
 **Acceptance criteria:**
-- [ ] AC3 e AC5 da REQ
+- [ ] AC3 da REQ, com o payload real do Claude Code, inclusive com `agent_id` presente e ausente
+- [ ] AC5 da REQ:
+  - [ ] relativo, `..`, symlink no caminho, `/tmp` e `/private/tmp`, caminho do Windows (`C:\` e `/c/`);
+  - [ ] payload ilegível, campo ausente e panic → 2;
+  - [ ] alvo fora de projeto → 0
+- [ ] Teste da regra do worktree: um alvo no checkout principal, com o cwd no worktree, é julgado pelo `trackfw.yaml` do checkout principal
+- [ ] Cada teste com frase e contra-braço; `go test ./internal/guard/ ./internal/commands/ ./internal/generators/ ./internal/validator/ ./internal/config/ ./internal/pathguard/ -count=1` verde
+**Gates da wave:**
+```bash
+go build ./...
+go test ./internal/guard/ ./internal/commands/ ./internal/generators/ ./internal/validator/ ./internal/config/ ./internal/pathguard/ -count=1
+```
 
 ### ML-3B — A permissão por despacho (D4)
 **Status:** ⬜ Pendente
