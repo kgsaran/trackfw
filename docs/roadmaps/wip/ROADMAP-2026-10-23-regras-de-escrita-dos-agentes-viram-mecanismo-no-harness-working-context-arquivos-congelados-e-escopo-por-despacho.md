@@ -336,7 +336,7 @@ go test ./internal/guard/ ./internal/commands/ ./internal/pathguard/ -count=1
 - [x] Parecer: 47 ataques; B (hardlink para o arquivo congelado passa); R1 (subagente escreve em `docs/agents-working-context/`), R2 (`allow` com barra final casa arquivo) — `docs/seguranca/2026-10-23-red-team-write-scope.md`; corretivo no ML-4C
 
 ### ML-4C — Corretivo das revisões
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** apolo-tf
 **Files affected:** `internal/guard/`, `internal/config/`, `internal/commands/barrier.go`, `internal/commands/barrier_ml_scope_test.go`, `internal/commands/guard_write_scope_test.go`, `docs/cli-parity.md`
 **Decisões do arquiteto:**
@@ -357,10 +357,19 @@ go test ./internal/guard/ ./internal/commands/ ./internal/pathguard/ -count=1
 8. **R4 do Hefesto** (`extractFrontmatterField` em 3 pacotes) fica como resíduo. A duplicação é anterior a esta REQ e
    tem outra causa.
 **Acceptance criteria:**
-- [ ] Um teste por decisão (1–7), cada um com contra-braço no HEAD
-- [ ] O ataque 2E reproduzido em teste: `cwd` num projeto falso com `allow: ["/"]`, alvo não congelado no checkout principal com permissão restrita → 2
-- [ ] O hardlink do Hades → 2; subagente em `docs/agents-working-context/x.md` → 2; sessão principal no mesmo caminho → 0
-- [ ] Gates: `go build ./...`; `go test ./internal/guard/ ./internal/config/ ./internal/commands/ ./internal/pathguard/ -count=1`; `make parity-rest` pelo venv
+- [x] Um teste por decisão (1–7), cada um com contra-braço no HEAD
+- [x] O ataque 2E reproduzido em teste: `cwd` num projeto falso com `allow: ["/"]`, alvo não congelado no checkout principal com permissão restrita → 2
+- [x] O hardlink do Hades → 2; subagente em `docs/agents-working-context/x.md` → 2; sessão principal no mesmo caminho → 0
+- [x] Gates: `go build ./...`; `go test ./internal/guard/ ./internal/config/ ./internal/commands/ ./internal/pathguard/ -count=1`; `make parity-rest` pelo venv
+
+**Auditoria do arquiteto (2026-10-23):** aprovado.
+- O ataque 2E (`TestRunWriteScope_D4_2E_FakeProjectPermissive_Deny`) reprova no HEAD anterior: a fuga pelo projeto falso
+  existia e está fechada.
+- O hardlink e o subagente em `docs/agents-working-context/` também reprovam no HEAD anterior.
+- O `TestMLScope_NoOriginMain_Blocked` fixa um comportamento que já estava certo.
+- **Resíduo aceito:** um hardlink para um arquivo dentro de um diretório congelado (`.trackfw/leases/`) só pode ser criado
+  por Bash, e escrita por Bash já é resíduo declarado (R1 da Wave 0).
+- **Resíduo aceito:** `allow: ["/"]` fica inerte e nunca casa, o que é o lado seguro.
 
 ## Wave 5 — Fechamento
 > Dependencies: Wave 4 aprovada.

@@ -3166,7 +3166,7 @@ Evaluated in this fixed order; the run continues through all checks so the repor
 | `acceptance_evidence` | Every ML in the wave satisfies rule 4 |
 | `gates` | Every command from rule 5 exits 0 |
 | `validate` | `trackfw validate --json` reports `violations: 0` |
-| `ml_scope` | Every file touched since `merge-base(origin/main, HEAD)` (diff + status) is covered by a `**Files affected:**` declaration in waves 0..N or by the orchestration set; `skipped` when outside a git repo, when the roadmap date predates 2026-07-18, or when the roadmap has not been committed yet; `blocked` when any file is undeclared |
+| `ml_scope` | Every file touched since `merge-base(origin/main, HEAD)` (diff + status) is covered by a `**Files affected:**` declaration in waves 0..N or by the orchestration set; `skipped` when outside a git repo, when the roadmap date predates 2026-07-18, or when the roadmap has not been committed yet; `blocked` when any file is undeclared or when `origin/main` is unavailable (the diff cannot be computed — fail-closed per Wave 0 contract) |
 
 `trackfw validate` is invoked in-process (Go/Node/Python each call their own validator), not by
 shelling out to a `trackfw` binary that may not be on `PATH`.
@@ -3246,8 +3246,8 @@ Roadmaps with a `date:` frontmatter value strictly before `2026-07-18` exit `ski
 | Status | Condition |
 |---|---|
 | `passed` | Every touched file is in scope |
-| `blocked` | At least one file is out of scope, or an ML has no declaration |
-| `skipped` | Not a git repo; roadmap not in HEAD; date before 2026-07-18; no `origin/main` ref |
+| `blocked` | At least one file is out of scope, or an ML has no declaration; also when `origin/main` is unavailable — fail-closed (never pass in silence) |
+| `skipped` | Not a git repo; roadmap not in HEAD; date before 2026-07-18 |
 
 `skipped` is **non-blocking** — the overall barrier status is not `blocked` by a `skipped` `ml_scope`.
 
@@ -9133,6 +9133,7 @@ emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw 
 
 **Caminhos congelados apenas para subagentes** (`agent_id` presente no payload — sempre mais restritivo):
 - `docs/agents-working-context.md` — sempre, sem depender do marker
+- `docs/agents-working-context/` — diretório de entradas por sessão; subagentes não podem escrever entradas de working-context (D1 independente de obediência — Decision 4, ML-4C)
 - `trackfw.yaml` — impede extensão de caminhos congelados pelo subagente
 - `.claude/settings.json`, `.claude/settings.local.json` — impede remoção do hook
 - `.codex/hooks.json`, `.gemini/settings.json`, `.cursor/hooks.json`, `.windsurf/hooks.json`
@@ -9169,7 +9170,7 @@ Quando `agent_id` está presente no payload (subagente) e `agent_type` é um slu
 
 - `version` — deve ser `1`; valor diferente → deny.
 - `agent_type` — deve coincidir com o `agent_type` do payload; divergência → deny.
-- `allow` — lista de caminhos absolutos. Terminado em `/` é prefixo de diretório (o separador impede que `/a/b/` case `/a/bc`); os demais são arquivo exato. Qualquer caminho relativo na lista → deny.
+- `allow` — lista de caminhos absolutos. Terminado em `/` é prefixo de diretório estrito (o separador impede que `/a/b/` case `/a/bc`; a entrada `/x/` NÃO casa o arquivo `/x` — só o que está abaixo do diretório); os demais são arquivo exato. Qualquer caminho relativo na lista → deny. Decision 5 (ML-4C).
 - `expires` — RFC 3339, obrigatório. Lease expirado → deny. Impede que uma permissão esquecida permaneça ativa indefinidamente.
 
 **Comportamento por caso:**
@@ -9179,14 +9180,14 @@ Quando `agent_id` está presente no payload (subagente) e `agent_type` é um slu
 | Lease ausente em ambas as raízes | D3 apenas (sem D4) |
 | `agent_type` fora do padrão de slug | D3 apenas |
 | Sessão principal (`agent_id` ausente) | D3 apenas; lease ignorado |
-| Lease presente em qualquer raiz, alvo dentro do `allow` | 0 (allow) |
-| Lease presente, alvo fora do `allow` de todas as raízes | 2 (deny), com motivo nomeando alvo e leases consultados |
+| **Todo** lease encontrado autoriza o alvo | 0 (allow) — Decision 3 (ML-4C): todas as raízes devem concordar |
+| Qualquer lease encontrado não autoriza o alvo | 2 (deny), com motivo nomeando o lease que negou |
 | Lease inválido em qualquer raiz (expirado, versão errada, allow relativo) | 2 (deny) — validate-all-before-match |
 | Lease ilegível, diretório ou JSON inválido | 2 (deny) — fail-closed (D4-C) |
 
 **Ciclo de vida:** o arquiteto grava o lease antes do despacho e o apaga após o retorno do subagente. O arquivo `.trackfw/leases/` está na lista de congelados da D3 para subagentes (impede que o agente edite a própria permissão — D4-D).
 
-**Busca em duas raízes (ML-3C):** o guard procura o lease em ambas as raízes (cwd e alvo). Se qualquer lease for inválido (expirado, versão errada, allow relativo etc.), a escrita é negada mesmo que a outra raiz tenha um lease válido que cubriria o alvo. Se nenhuma raiz tiver lease para o `agent_type`, só a D3 se aplica. O alvo precisa estar no `allow` de pelo menos um lease válido entre as duas raízes para ser liberado.
+**Busca em duas raízes (ML-3C / Decision 3 ML-4C):** o guard procura o lease em ambas as raízes (cwd e alvo). Se qualquer lease for inválido (expirado, versão errada, allow relativo etc.), a escrita é negada. Se nenhuma raiz tiver lease para o `agent_type`, só a D3 se aplica. O alvo precisa estar no `allow` de **todos** os leases válidos encontrados — não basta um. Isso impede que um projeto falso (cwd) com um lease permissivo (`allow: ["/private/"]`) sobreponha a permissão restrita do projeto do alvo (ataque 2E, Decision 3, ML-4C).
 
 **`.gitignore`:** o `trackfw init` garante que `.trackfw/leases/` esteja ignorado no `.gitignore` do projeto. Os leases contêm caminhos absolutos da máquina do arquiteto e não devem ser versionados.
 

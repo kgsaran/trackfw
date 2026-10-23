@@ -278,12 +278,25 @@ func Reset() {
 }
 
 // ParseWriteScopeConfig parses only the write_scope.* fields from arbitrary trackfw.yaml content.
+// Returns an error when content is not valid YAML (duplicate keys, syntax errors).
+// The caller must treat any error as a deny (fail-closed, D3-F).
 // Used by the write-scope guard, which cannot call Load() (Load calls osExit(1) on malformed YAML).
 // Like ParseRulesFromContent, reuses parse() so the read logic cannot diverge.
-func ParseWriteScopeConfig(content string) WriteScopeConfig {
+//
+// Decision 6 (ML-4C): yaml.Node used internally by parse() does not detect duplicate mapping
+// keys; this function uses a first-pass yaml.Unmarshal into interface{} to catch those errors
+// before invoking parse(). The two Unmarshal calls are consolidated here so callers see one
+// clean API and are not required to do their own validation pass.
+func ParseWriteScopeConfig(content string) (WriteScopeConfig, error) {
+	// First pass: validate YAML syntax including duplicate mapping keys.
+	// yaml.Node silently accepts duplicate keys; interface{} rejects them.
+	var raw interface{}
+	if err := yaml.Unmarshal([]byte(content), &raw); err != nil {
+		return WriteScopeConfig{}, err
+	}
 	cfg := ProjectConfig{Rules: make(map[string]string)}
 	parse(content, &cfg)
-	return cfg.WriteScope
+	return cfg.WriteScope, nil
 }
 
 // ParseRulesFromContent parses only the `rules:` mapping out of arbitrary trackfw.yaml content

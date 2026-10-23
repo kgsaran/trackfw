@@ -19,6 +19,7 @@ package commands
 // | TestMLScope_WipMissingDeclarationFails | ML in wave without **Files affected:** causes blocked status      |
 // | TestMLScopeFilesAffectedParsing        | parseMLScopeFilesAffected extracts backtick paths from single and multi-line declarations |
 // | TestMLScopeMatchPath                   | mlScopeMatchPath handles exact, dir, glob and ** patterns         |
+// | TestMLScope_NoOriginMain_Blocked       | Absent origin/main → status "blocked" (Decision 1, ML-4C)        |
 
 import (
 	"encoding/json"
@@ -754,5 +755,82 @@ func TestMLScopeMatchPath(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("mlScopeMatchPath(%q, %q) = %v, want %v", tc.pattern, tc.file, got, tc.want)
 		}
+	}
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// T10 — No origin/main → blocked (Decision 1, ML-4C)
+// ────────────────────────────────────────────────────────────────────────────
+
+// TestMLScope_NoOriginMain_Blocked asserts that when refs/remotes/origin/main is absent,
+// ml_scope reports "blocked" (not "skipped").
+//
+// Rationale (Decision 1, ML-4C): "never pass in silence" — a missing origin/main means the
+// diff cannot be computed. Returning "skipped" would silently pass in shallow clones or repos
+// without a configured remote, creating a gap in the D2 audit layer. "blocked" is the
+// fail-closed choice.
+//
+// Asserts: Decision 1 (ML-4C) — absent origin/main → status "blocked".
+// Contra-braço: PASSES on HEAD (code already returns "blocked" — test pins existing behaviour).
+func TestMLScope_NoOriginMain_Blocked(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("ml_scope uses git commands; windows path handling tested separately")
+	}
+
+	dir := t.TempDir()
+	roadmapRel := "docs/roadmaps/wip/ROADMAP-ml-scope-fixture.md"
+	// Post-cutoff date with a declared file so the only reason to block/skip is origin/main.
+	content := buildMLScopeRoadmap("2026-10-01", "`internal/commands/foo.go`")
+
+	// Use a subset of mlScopeSetupGitRepo: initialise repo but do NOT create origin/main.
+	if phys, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = phys
+	}
+	env := mlScopeGitEnv(dir)
+	mlScopeGitRun(t, dir, env, "init", "-b", "main", dir)
+
+	for _, d := range []string{
+		"docs/roadmaps/wip", "docs/roadmaps/backlog", "docs/roadmaps/blocked",
+		"docs/roadmaps/done", "docs/roadmaps/abandoned", "docs/req", "docs/adr",
+	} {
+		if err := os.MkdirAll(filepath.Join(dir, d), 0755); err != nil {
+			t.Fatalf("mkdirs: %v", err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"),
+		[]byte("req_dir: docs/req\nroadmap_dir: docs/roadmaps\nadr_dirs: []\n"), 0644); err != nil {
+		t.Fatalf("write trackfw.yaml: %v", err)
+	}
+
+	roadmapPath := filepath.Join(dir, roadmapRel)
+	if err := os.MkdirAll(filepath.Dir(roadmapPath), 0755); err != nil {
+		t.Fatalf("mkdir roadmap dir: %v", err)
+	}
+	if err := os.WriteFile(roadmapPath, []byte(content), 0644); err != nil {
+		t.Fatalf("write roadmap: %v", err)
+	}
+	writeMLScopeREQFixture(t, dir, roadmapRel)
+
+	mlScopeGitRun(t, dir, env, "add", ".")
+	mlScopeGitRun(t, dir, env, "commit", "-q", "-m", "base")
+	// ← intentionally NO update-ref refs/remotes/origin/main here.
+
+	stdout, _ := mlScopeRunBarrier(t, dir, "ROADMAP-ml-scope-fixture", "1")
+	check := findMLScopeCheck(t, stdout)
+
+	if check.Status != "blocked" {
+		t.Fatalf("expected ml_scope blocked when origin/main absent, got %q\nevidence: %v\nfailures: %v",
+			check.Status, check.Evidence, check.Failures)
+	}
+	// The failure message must mention origin/main.
+	found := false
+	for _, f := range check.Failures {
+		if strings.Contains(f, "origin/main") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected 'origin/main' in failures; got: %v", check.Failures)
 	}
 }

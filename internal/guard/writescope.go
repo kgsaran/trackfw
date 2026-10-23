@@ -18,7 +18,6 @@ import (
 	"time"
 
 	"github.com/kgsaran/trackfw/internal/config"
-	"gopkg.in/yaml.v3"
 )
 
 // agentTypeSlugRE validates agent_type as a safe filename component.
@@ -60,18 +59,19 @@ var writeScopeInternalHook func()
 // ML-3A contract item 5, §Z adendo.
 // Paths ending in "/" match the directory and everything under it.
 var writeScopeSubagentFrozenRelPaths = []string{
-	"docs/agents-working-context.md",   // always frozen for subagents (item 5)
-	"trackfw.yaml",                     // prevent disabling frozen-path extension
-	".claude/settings.json",            // prevent removing write-scope hook
-	".claude/settings.local.json",      // prevent removing write-scope hook
-	".codex/hooks.json",                // prevent hook removal
-	".gemini/settings.json",            // prevent hook removal
-	".cursor/hooks.json",               // prevent hook removal
-	".windsurf/hooks.json",             // prevent hook removal
-	".github/hooks/",                   // prevent hook removal (directory)
-	".kiro/hooks/",                     // prevent hook removal (directory)
-	".amazonq/cli-agents/",             // prevent hook removal (directory)
-	".trackfw/leases/",                 // prevent editing own permission (D4-D)
+	"docs/agents-working-context.md",  // always frozen for subagents (item 5)
+	"docs/agents-working-context/",    // directory of per-session entries — D1 independence (ML-4C Decision 4)
+	"trackfw.yaml",                    // prevent disabling frozen-path extension
+	".claude/settings.json",           // prevent removing write-scope hook
+	".claude/settings.local.json",     // prevent removing write-scope hook
+	".codex/hooks.json",               // prevent hook removal
+	".gemini/settings.json",           // prevent hook removal
+	".cursor/hooks.json",              // prevent hook removal
+	".windsurf/hooks.json",            // prevent hook removal
+	".github/hooks/",                  // prevent hook removal (directory)
+	".kiro/hooks/",                    // prevent hook removal (directory)
+	".amazonq/cli-agents/",            // prevent hook removal (directory)
+	".trackfw/leases/",                // prevent editing own permission (D4-D)
 }
 
 // RunWriteScope implements the write-scope guard.
@@ -203,8 +203,10 @@ func RunWriteScope(stdin io.Reader, idleTimeout time.Duration, stderr io.Writer)
 	//
 	// Contract:
 	//   - If an invalid lease is found in any root → deny (fail-closed).
-	//   - If at least one lease is found → the target must be in the allow list of at
-	//     least one valid lease; otherwise deny.
+	//   - If a lease is found → EVERY found lease must independently authorize the target
+	//     (Decision 3, ML-4C). A permissive cwd-project lease cannot override a restrictive
+	//     target-project lease. The old "at least one" rule allowed a fake project with
+	//     allow=["/private/"] to bypass the target project's restricted lease (attack 2E).
 	//   - If no lease is found in any root → D3 only → allow.
 	//   - cwd absent, non-string, or relative → only the target root is searched.
 
@@ -286,9 +288,13 @@ func RunWriteScope(stdin io.Reader, idleTimeout time.Duration, stderr io.Writer)
 		}
 	}
 
-	// Step 11f: check whether the resolved target is within the allow list of ANY valid lease.
-	// Trailing "/" in the allow entry means directory prefix; otherwise exact file match.
+	// Step 11f: check that the resolved target is within the allow list of EVERY valid lease
+	// (Decision 3, ML-4C). All found leases must independently authorize the target.
+	// Trailing "/" in the allow entry means directory prefix (strictly below the dir);
+	// otherwise exact file match. A trailing-slash entry does NOT match the dir-named file
+	// (Decision 5, ML-4C): "/path/file.go/" allows only files under that name as a dir.
 	for _, le := range loadedLeases {
+		leaseAllows := false
 		for _, e := range le.lease.Allow {
 			en := normalizeTargetPath(e, runtime.GOOS)
 			isDirEntry := strings.HasSuffix(e, "/")
@@ -296,27 +302,30 @@ func RunWriteScope(stdin io.Reader, idleTimeout time.Duration, stderr io.Writer)
 			if isDirEntry {
 				allowDir := filepath.Clean(allowResolved)
 				// Use separator-terminated prefix to prevent /a/b matching /a/bc.
+				// Trailing "/" means strictly inside the directory — pathEqual(resolved, allowDir)
+				// is intentionally NOT checked (Decision 5): an entry ending in "/" names a
+				// directory, not a file of the same name; matching the directory itself would
+				// allow writing a file with the same name as the directory component.
 				prefix := allowDir + string(filepath.Separator)
-				if pathEqual(resolved, allowDir) || pathHasPrefix(resolved, prefix) {
-					return 0
+				if pathHasPrefix(resolved, prefix) {
+					leaseAllows = true
+					break
 				}
 			} else {
 				if pathEqual(resolved, allowResolved) {
-					return 0
+					leaseAllows = true
+					break
 				}
 			}
 		}
+		if !leaseAllows {
+			// This lease does not authorize the target — deny immediately.
+			fmt.Fprintf(stderr, "trackfw guard write-scope: denied: %q is not in the allow list of lease %s for %q\n",
+				rawFilePath, le.path, agentType)
+			return 2
+		}
 	}
-
-	// Target is not within any allow entry across all valid leases.
-	// Build a list of lease paths for the deny message.
-	var leasePaths []string
-	for _, le := range loadedLeases {
-		leasePaths = append(leasePaths, le.path)
-	}
-	fmt.Fprintf(stderr, "trackfw guard write-scope: denied: %q is not in the allow list of any lease for %q (searched: %s)\n",
-		rawFilePath, agentType, strings.Join(leasePaths, ", "))
-	return 2
+	return 0
 }
 
 // collectLeaseRoots returns the deduplicated ordered list of project roots to search for leases.
@@ -601,14 +610,13 @@ func readWriteScopeFromYAML(projectRoot string) (all, subagent []string, err err
 		return nil, nil, nil // file absent → not an error
 	}
 
-	// Validate YAML syntax first (item 6: YAML inválido nega).
-	var rawYAML interface{}
-	if yamlErr := yaml.Unmarshal(data, &rawYAML); yamlErr != nil {
+	// ParseWriteScopeConfig validates YAML (including duplicate mapping keys) and returns error
+	// on any malformed content — item 6: YAML inválido nega. Decision 6 (ML-4C): the guard no
+	// longer needs a pre-validation pass; ParseWriteScopeConfig does it atomically.
+	cfg, yamlErr := config.ParseWriteScopeConfig(string(data))
+	if yamlErr != nil {
 		return nil, nil, fmt.Errorf("trackfw.yaml: invalid YAML: %w", yamlErr)
 	}
-
-	// Use config.ParseWriteScopeConfig which reads without the singleton.
-	cfg := config.ParseWriteScopeConfig(string(data))
 	return cfg.FrozenPaths, cfg.FrozenPathsSubagent, nil
 }
 
@@ -627,6 +635,10 @@ func frozenHit(resolved, projectRoot string, frozen []string) (string, bool) {
 // entry is relative to projectRoot; trailing "/" means directory prefix match.
 //
 // Case sensitivity: case-insensitive on darwin and windows (APFS / NTFS), case-sensitive on Linux.
+//
+// Decision 7 (ML-4C): directory entries also resolve symlinks in the frozen path.
+// Decision 2 (ML-4C): file entries use os.SameFile to detect hardlinks (two distinct paths
+// to the same inode). EvalSymlinks does not cover hardlinks; SameFile does.
 func pathMatchesFrozen(resolved, projectRoot, entry string) bool {
 	// Resolve the frozen path to its canonical form.
 	frozenAbs := filepath.Join(projectRoot, entry)
@@ -634,8 +646,14 @@ func pathMatchesFrozen(resolved, projectRoot, entry string) bool {
 	isDir := strings.HasSuffix(entry, "/")
 
 	if isDir {
-		// Directory prefix: resolved must be under frozenAbs.
-		frozenDir := filepath.Clean(frozenAbs)
+		// Directory prefix: resolved must be under frozenAbs (or equal to frozenAbs itself).
+		// Resolve symlinks in the frozen directory path so that a symlinked directory is
+		// correctly matched when the target arrives via its physical path (R3, ML-4C).
+		frozenDirResolved := frozenAbs
+		if r, err := filepath.EvalSymlinks(frozenAbs); err == nil {
+			frozenDirResolved = r
+		}
+		frozenDir := filepath.Clean(frozenDirResolved)
 		// Ensure the prefix ends with separator for prefix matching.
 		prefix := frozenDir + string(filepath.Separator)
 		if pathEqual(resolved, frozenDir) {
@@ -649,7 +667,20 @@ func pathMatchesFrozen(resolved, projectRoot, entry string) bool {
 	if r, err := filepath.EvalSymlinks(frozenAbs); err == nil {
 		frozenResolved = r
 	}
-	return pathEqual(resolved, frozenResolved)
+	if pathEqual(resolved, frozenResolved) {
+		return true
+	}
+	// Hardlink detection: os.SameFile reports that two distinct paths share an inode.
+	// Only applicable when both the target and the frozen file exist on disk.
+	// A target that does not exist yet cannot be a hardlink to the frozen file.
+	if fi1, err1 := os.Lstat(resolved); err1 == nil {
+		if fi2, err2 := os.Lstat(frozenResolved); err2 == nil {
+			if os.SameFile(fi1, fi2) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // pathEqual compares two absolute paths, case-insensitively on darwin and windows.

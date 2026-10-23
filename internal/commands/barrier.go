@@ -707,6 +707,13 @@ func barrierGitDiffFiles(topLevel, mergeBase string) []string {
 // and untracked (non-ignored) files from the working tree. Uses porcelain=v1 with
 // -z (NUL-delimited) and --untracked-files=all so that individual untracked files
 // inside new directories are listed rather than the directory as a whole.
+//
+// Performance note (R5, ML-4C): --untracked-files=all is required by the cli-parity.md
+// contract (line 3217) and lists every untracked file individually, not the containing
+// directory. In a monorepo with O(100k) untracked files this is O(N). If latency becomes
+// a concern, the architect must evaluate --untracked-files=normal (reports directories)
+// and update the parity contract accordingly — do not change this flag without updating
+// the contract and the gate scenarios.
 func barrierGitStatusFiles(topLevel string) []string {
 	cmd := exec.Command("git", "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames")
 	cmd.Dir = topLevel
@@ -931,11 +938,14 @@ func buildMLScopeOrchestrationSet(topLevel, roadmapRelPath, headContent string, 
 // Returned status values:
 //
 //	"passed"  — all touched files are in declared scope
-//	"blocked" — at least one touched file is out of scope (each named in Failures)
+//	"blocked" — at least one touched file is out of scope (each named in Failures);
+//	            also returned when origin/main is unavailable — the diff cannot be
+//	            computed, which is treated as a hard failure, not a skip, to prevent
+//	            silent pass in shallow clones or repos without a configured remote
+//	            (Decision 1, ML-4C; "never pass in silence" — Wave 0 contract).
 //	"skipped" — the check is not applicable: not a git repo, roadmap not in HEAD,
-//	            pre-cutoff roadmap date, or origin/main not available. The skip
-//	            reason is recorded in Evidence. A skipped check does NOT block the
-//	            overall barrier verdict.
+//	            or pre-cutoff roadmap date. The skip reason is recorded in Evidence.
+//	            A skipped check does NOT block the overall barrier verdict.
 func checkMLScope(roadmapPath string, currentWaveInt int) barrierCheck {
 	check := barrierCheck{Name: "ml_scope", Evidence: []string{}, Failures: []string{}}
 

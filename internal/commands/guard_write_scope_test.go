@@ -329,30 +329,66 @@ func TestGuardWriteScope_ClaudeSettings_Deny_Subagent(t *testing.T) {
 	}
 }
 
-// TestGuardWriteScope_SubdirOfWorkingContext_Allow_Subagent asserts that a file under
-// docs/agents-working-context/ (different from docs/agents-working-context.md) is NOT frozen.
-// This is the FP gate: the rule must match the file, not a directory with a similar name.
-// Asserts: contract item 5 — frozen list is exact-match for files; does not glob similar names.
-func TestGuardWriteScope_SubdirOfWorkingContext_Allow_Subagent(t *testing.T) {
+// TestGuardWriteScope_WorkingContextDir_Deny_Subagent asserts that a file under
+// docs/agents-working-context/ is frozen for subagents (Decision 4, ML-4C).
+// The directory docs/agents-working-context/ was previously not frozen, allowing subagents
+// to write working-context entries. After Decision 4, the directory is added to the
+// subagent frozen list so that D1 no longer depends on agent obedience.
+//
+// Asserts: Decision 4 (ML-4C) — docs/agents-working-context/ is frozen for subagents.
+// Contra-braço: on HEAD, this test FAILS (exit 0 — the directory was not frozen).
+func TestGuardWriteScope_WorkingContextDir_Deny_Subagent(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte(""), 0600); err != nil {
 		t.Fatal(err)
 	}
 	// Create docs/agents-working-context/ dir and a file inside it.
-	similarDir := filepath.Join(dir, "docs", "agents-working-context")
-	if err := os.MkdirAll(similarDir, 0700); err != nil {
+	wcDir := filepath.Join(dir, "docs", "agents-working-context")
+	if err := os.MkdirAll(wcDir, 0700); err != nil {
 		t.Fatal(err)
 	}
-	innerFile := filepath.Join(similarDir, "notes.md")
+	innerFile := filepath.Join(wcDir, "notes.md")
 	if err := os.WriteFile(innerFile, []byte("# notes\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 
 	payload := fmt.Sprintf(`{"tool_name":"Write","tool_input":{"file_path":%q},"agent_id":"apolo-tf"}`, innerFile)
 	rc, stderr := writeScopeExitCode(t, payload)
-	// This file is NOT docs/agents-working-context.md — it must be allowed.
+	// Decision 4: docs/agents-working-context/ is now frozen for subagents — must deny.
+	if rc != 2 {
+		t.Fatalf("docs/agents-working-context/notes.md subagent: want exit 2 (deny — frozen dir for subagents), got %d (stderr=%q)", rc, stderr)
+	}
+	if stderr == "" {
+		t.Fatal("frozen dir deny: want non-empty stderr reason, got empty")
+	}
+}
+
+// TestGuardWriteScope_WorkingContextDir_Allow_MainSession asserts that a file under
+// docs/agents-working-context/ is NOT frozen for the main session (Decision 4, ML-4C).
+// Only subagents (agent_id present) are blocked; the architect (main session) continues
+// writing working-context entries as before.
+//
+// Asserts: Decision 4 (ML-4C) — docs/agents-working-context/ is free for the main session.
+// Contra-braço: PASSES on HEAD (directory was never frozen — behavior unchanged).
+func TestGuardWriteScope_WorkingContextDir_Allow_MainSession(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte(""), 0600); err != nil {
+		t.Fatal(err)
+	}
+	wcDir := filepath.Join(dir, "docs", "agents-working-context")
+	if err := os.MkdirAll(wcDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	innerFile := filepath.Join(wcDir, "2026-10-23-apolo-entry.md")
+	if err := os.WriteFile(innerFile, []byte("# entry\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// No agent_id → main session; docs/agents-working-context/ must remain writable.
+	payload := fmt.Sprintf(`{"tool_name":"Write","tool_input":{"file_path":%q}}`, innerFile)
+	rc, stderr := writeScopeExitCode(t, payload)
 	if rc != 0 {
-		t.Fatalf("docs/agents-working-context/notes.md subagent: want exit 0 (allow, different from .md), got %d (stderr=%q)", rc, stderr)
+		t.Fatalf("docs/agents-working-context/ main session: want exit 0 (allow — not frozen for main session), got %d (stderr=%q)", rc, stderr)
 	}
 }
 

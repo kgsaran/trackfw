@@ -1274,3 +1274,239 @@ func TestRunWriteScope_D4_CwdAbsent_TargetRootOnly(t *testing.T) {
 		t.Fatalf("cwd absent: want exit 0 (allow — target in A's lease), got %d (stderr=%q)", rc, stderr)
 	}
 }
+
+// ─────────────────────────────────────────────────────────────
+// Decision 2 (ML-4C) — Hardlink to frozen file is denied
+// ─────────────────────────────────────────────────────────────
+
+// hardlinkOrSkip creates a hardlink from link to target.
+// Skips the test if the OS/FS does not support hardlinks (different devices, permission).
+func hardlinkOrSkip(t *testing.T, target, link string) bool {
+	t.Helper()
+	err := os.Link(target, link)
+	if err == nil {
+		return true
+	}
+	// Cross-device link, or FS that does not support hardlinks → skip.
+	// os.IsPermission covers permission issues; syscall.EXDEV covers cross-device.
+	if os.IsPermission(err) || errors.Is(err, syscall.EXDEV) {
+		t.Skipf("hardlink not supported on this FS: %v", err)
+		return false
+	}
+	t.Fatalf("os.Link(%q, %q): %v", target, link, err)
+	return false
+}
+
+// TestRunWriteScope_Hardlink_FrozenFile_Deny asserts that a hardlink pointing to the frozen
+// docs/agents-working-context.md is denied for the main session (when the marker is present).
+//
+// Attack vector: attacker creates a hardlink at an arbitrary path. The two paths share an inode;
+// EvalSymlinks resolves symlinks but returns the hardlink's own path — the string comparison fails.
+// os.SameFile(fi1, fi2) detects the shared inode.
+//
+// Asserts: Decision 2 (ML-4C) — os.SameFile used in pathMatchesFrozen → hardlink denied.
+// Contra-braço: FAILS on HEAD (no os.SameFile → exit 0, hardlink bypasses frozen-path check).
+func TestRunWriteScope_Hardlink_FrozenFile_Deny(t *testing.T) {
+	dir := makeWSProjectDir(t)
+	makeDocsWorkingContext(t, dir, true /* frozen */)
+
+	// Create a hardlink to docs/agents-working-context.md at a different path.
+	original := filepath.Join(dir, "docs", "agents-working-context.md")
+	alias := filepath.Join(dir, "docs", "frozen-alias.md")
+	if !hardlinkOrSkip(t, original, alias) {
+		return
+	}
+
+	// Target the alias path — not the frozen path by name.
+	rc, stderr := runWS(t, payload("Write", alias, ""))
+	if rc != 2 {
+		t.Fatalf("hardlink to frozen file: want exit 2 (deny — same inode), got %d (stderr=%q)", rc, stderr)
+	}
+}
+
+// TestRunWriteScope_Hardlink_FrozenFile_Deny_Subagent asserts the same hardlink denial for a
+// subagent (agent_id present), where docs/agents-working-context.md is always frozen.
+//
+// Asserts: Decision 2 (ML-4C) — hardlink denied for subagent arm (no frozen marker needed).
+// Contra-braço: FAILS on HEAD (no os.SameFile → exit 0).
+func TestRunWriteScope_Hardlink_FrozenFile_Deny_Subagent(t *testing.T) {
+	dir := makeWSProjectDir(t)
+	// For subagents, agents-working-context.md is always frozen (no marker needed).
+	if err := os.MkdirAll(filepath.Join(dir, "docs"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	original := filepath.Join(dir, "docs", "agents-working-context.md")
+	if err := os.WriteFile(original, []byte("no marker\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	alias := filepath.Join(dir, "docs", "hl-alias.md")
+	if !hardlinkOrSkip(t, original, alias) {
+		return
+	}
+
+	rc, stderr := runWS(t, payload("Write", alias, "subagent-id"))
+	if rc != 2 {
+		t.Fatalf("hardlink to frozen file (subagent): want exit 2, got %d (stderr=%q)", rc, stderr)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────
+// Decision 3 (ML-4C) — All leases must allow (attack 2E)
+// ─────────────────────────────────────────────────────────────
+
+// TestRunWriteScope_D4_2E_FakeProjectPermissive_Deny reproduces attack 2E (Decision 3, ML-4C):
+// A fake cwd project F has a permissive lease (allow=[<parent>/]). The real target project A
+// has a restrictive lease (allow=[A/src/allowed.go]). The target is A/src/x.go (not allowed).
+//
+// Under the old "at least one lease allows" rule: F's permissive lease would grant access → exit 0.
+// Under the new "all leases must allow" rule: A's restrictive lease denies → exit 2.
+//
+// Asserts: Decision 3 (ML-4C) — all found leases must authorize the target.
+// Contra-braço: FAILS on HEAD (old "at least one" rule → F's permissive lease is enough → exit 0).
+func TestRunWriteScope_D4_2E_FakeProjectPermissive_Deny(t *testing.T) {
+	projA := makeWSProjectDir(t) // checkout principal — has restrictive lease
+	projF := makeWSProjectDir(t) // fake cwd project — has permissive lease
+
+	// Target in A (non-frozen).
+	targetInA := filepath.Join(projA, "src", "x.go")
+	if err := os.MkdirAll(filepath.Dir(targetInA), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(targetInA, []byte("package main"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Lease in A: only allows src/allowed.go — NOT src/x.go.
+	makeLeaseFile(t, projA, "apolo-tf", map[string]interface{}{
+		"version":    1,
+		"agent_type": "apolo-tf",
+		"allow":      []string{filepath.Join(projA, "src", "allowed.go")},
+		"expires":    futureRFC3339(),
+	})
+
+	// Lease in F: permissive — allows the entire parent of projA.
+	// Uses the parent directory of projA's parent to cover both projA and projF.
+	commonParent := filepath.Dir(projA) + string(filepath.Separator)
+	makeLeaseFile(t, projF, "apolo-tf", map[string]interface{}{
+		"version":    1,
+		"agent_type": "apolo-tf",
+		"allow":      []string{commonParent},
+		"expires":    futureRFC3339(),
+	})
+
+	// Agent runs in F (fake cwd) and tries to write to A/src/x.go.
+	// Old rule: F's permissive lease covers A/src/x.go → allow (bypass!).
+	// New rule: A's restrictive lease does NOT cover A/src/x.go → deny.
+	rc, stderr := runWS(t, payloadFullWithCwd("Write", targetInA, "apolo-sess-001", "apolo-tf", projF))
+	if rc != 2 {
+		t.Fatalf("attack 2E: want exit 2 (deny — A's restrictive lease not satisfied), got %d (stderr=%q)", rc, stderr)
+	}
+}
+
+// TestRunWriteScope_D4_2E_BothLeasesAllow_Allow asserts the benign case of Decision 3:
+// when both A and F have leases that authorize the target, the write is allowed.
+//
+// Asserts: Decision 3 (ML-4C) — both leases authorize → allow.
+// Contra-braço: PASSES on HEAD (old rule: at least one allows → exit 0 for same reason).
+func TestRunWriteScope_D4_2E_BothLeasesAllow_Allow(t *testing.T) {
+	projA := makeWSProjectDir(t)
+	projF := makeWSProjectDir(t)
+
+	targetInA := filepath.Join(projA, "src", "x.go")
+	if err := os.MkdirAll(filepath.Dir(targetInA), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(targetInA, []byte("package main"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Both leases allow the target directory in A.
+	makeLeaseFile(t, projA, "apolo-tf", map[string]interface{}{
+		"version":    1,
+		"agent_type": "apolo-tf",
+		"allow":      []string{projA + "/"},
+		"expires":    futureRFC3339(),
+	})
+	makeLeaseFile(t, projF, "apolo-tf", map[string]interface{}{
+		"version":    1,
+		"agent_type": "apolo-tf",
+		"allow":      []string{projA + "/"},
+		"expires":    futureRFC3339(),
+	})
+
+	rc, stderr := runWS(t, payloadFullWithCwd("Write", targetInA, "apolo-sess-001", "apolo-tf", projF))
+	if rc != 0 {
+		t.Fatalf("both leases allow: want exit 0 (allow), got %d (stderr=%q)", rc, stderr)
+	}
+}
+
+// ─────────────────────────────────────────────────────────────
+// Decision 5 (ML-4C) — Trailing slash does not match same-named file
+// ─────────────────────────────────────────────────────────────
+
+// TestRunWriteScope_D4_TrailingSlash_DoesNotMatchFile_Deny asserts that an allow entry
+// ending in "/" does NOT match the file at the same cleaned path.
+//
+// Example: allow entry "/path/src/" must NOT match the file "/path/src" (a file with that name).
+// It only matches files INSIDE the directory (prefix matching).
+//
+// This prevents an accidental or malicious allow entry like "/path/file.go/" from granting
+// access to "/path/file.go" as an exact-file match via filepath.Clean stripping the slash.
+//
+// Asserts: Decision 5 (ML-4C) — trailing-slash entry matches only content inside the directory.
+// Contra-braço: FAILS on HEAD (old code: pathEqual(resolved, allowDir) matches file with dir name → exit 0).
+func TestRunWriteScope_D4_TrailingSlash_DoesNotMatchFile_Deny(t *testing.T) {
+	proj := makeWSProjectDir(t)
+
+	// Create a file at proj/src (no extension — simulates a file accidentally named as dir).
+	srcFile := filepath.Join(proj, "src")
+	if err := os.WriteFile(srcFile, []byte("not-a-dir\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Lease allows "proj/src/" — trailing slash means "inside the src directory".
+	// The file proj/src is NOT inside proj/src/ — it IS proj/src.
+	makeLeaseFile(t, proj, "apolo-tf", map[string]interface{}{
+		"version":    1,
+		"agent_type": "apolo-tf",
+		"allow":      []string{srcFile + "/"},
+		"expires":    futureRFC3339(),
+	})
+
+	rc, stderr := runWS(t, payloadFull("Write", srcFile, "apolo-tf-id", "apolo-tf"))
+	if rc != 2 {
+		t.Fatalf("trailing slash must not match file of same name: want exit 2 (deny), got %d (stderr=%q)", rc, stderr)
+	}
+}
+
+// TestRunWriteScope_D4_TrailingSlash_MatchesContentInside_Allow asserts that a trailing-slash
+// allow entry correctly matches files INSIDE the directory.
+//
+// Asserts: Decision 5 (ML-4C) — trailing-slash entry still grants access to content inside the dir.
+// Contra-braço: PASSES on HEAD (directory content matching was already correct).
+func TestRunWriteScope_D4_TrailingSlash_MatchesContentInside_Allow(t *testing.T) {
+	proj := makeWSProjectDir(t)
+
+	srcDir := filepath.Join(proj, "src")
+	if err := os.MkdirAll(srcDir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	targetFile := filepath.Join(srcDir, "main.go")
+	if err := os.WriteFile(targetFile, []byte("package main"), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Lease allows "proj/src/" — content inside src/ should be allowed.
+	makeLeaseFile(t, proj, "apolo-tf", map[string]interface{}{
+		"version":    1,
+		"agent_type": "apolo-tf",
+		"allow":      []string{srcDir + "/"},
+		"expires":    futureRFC3339(),
+	})
+
+	rc, stderr := runWS(t, payloadFull("Write", targetFile, "apolo-tf-id", "apolo-tf"))
+	if rc != 0 {
+		t.Fatalf("trailing slash must match content inside dir: want exit 0 (allow), got %d (stderr=%q)", rc, stderr)
+	}
+}
