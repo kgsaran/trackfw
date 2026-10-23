@@ -32,6 +32,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/kgsaran/trackfw/internal/guardforms"
 )
 
 // wiringTuple is one guard hook entry: the event name, the matcher pattern, and the guard type.
@@ -436,42 +438,43 @@ func guardWiringExtractCommandsFromEntry(entry map[string]any, schema hookCmdSch
 	return nil
 }
 
-// guardWiringScriptPathForms is the set of legacy script-path guard commands that predate the
-// inline D2/D11/D11-revised forms. migrateHookCommand in internal/generators/agentfiles.go
-// (agentfiles.go:525-540) rewrites these to the current D11-revised inline form. The validator
-// recognises them as equivalent so that projects whose origin/main still carries a pre-migration
-// form are not falsely flagged (ADR A2).
-//
-// These forms are FAMILY-INDEPENDENT: the same string is recognised under any shell family
-// (guardShellFamilyPSPosix or guardShellFamilyCmdExe). The family distinction only matters for
-// inline D2/D11/D11-revised forms, which vary by suffix.
-//
-// Concordance: TestGuardWiringConcordance_AllGeneratorFormsRecognized verifies that every entry
-// here has a match in the generator, and that the generator does not add new forms undetected.
-var guardWiringScriptPathForms = []struct {
+// guardWiringScriptPathEntry is one element of the family-independent legacy table.
+type guardWiringScriptPathEntry struct {
 	cmd       string
 	guardType string
-}{
-	// credential guard script paths (legacyBareCredGuardCmd, legacyClaudeCredGuardCmd,
-	// legacyGeminiCredGuardCmd, legacyCodexCredGuardCmd — agentfiles.go:531-534)
-	{"scripts/trackfw-credential-guard.sh", "credential"},
-	{"$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh", "credential"},
-	{"$GEMINI_PROJECT_DIR/scripts/trackfw-credential-guard.sh", "credential"},
-	{`"$(git rev-parse --show-toplevel)/scripts/trackfw-credential-guard.sh"`, "credential"},
-	// git-branch guard script paths (legacyBareGitGuardCmd, legacyClaudeGitGuardCmd,
-	// legacyGeminiGitGuardCmd, legacyCodexGitGuardCmd, legacyWindsurfGitGuardCmd,
-	// legacyAmazonQGitGuardCmd — agentfiles.go:527-540)
-	{"scripts/trackfw-git-branch-guard.sh", "git-branch"},
-	{"bash scripts/trackfw-git-branch-guard.sh", "git-branch"},
-	{"$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh", "git-branch"},
-	{"$GEMINI_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh", "git-branch"},
-	{`"$(git rev-parse --show-toplevel)/scripts/trackfw-git-branch-guard.sh"`, "git-branch"},
-	// REQ-2026-10-20: workaround bash wrapper forms (legacyWABash* — agentfiles.go).
-	// These are family-independent (the /bin/bash -c wrapper is written verbatim regardless of
-	// the host shell) and do not match any family-dependent helper, so they live here.
-	{`/bin/bash -c '$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE'`, "git-branch"},
-	{`/bin/bash -c '$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE'`, "credential"},
-	{`/bin/bash -c '$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE'`, "credential"},
+}
+
+// guardWiringScriptPathForms is the set of legacy guard commands that the validator
+// treats as family-independent: script-path forms (pre-D2) and /bin/bash -c wrapper
+// forms (WABash). Derived from the D12 registry (internal/guardforms) so that adding
+// a new form to the registry is automatically recognized here without a manual edit.
+//
+// These forms are FAMILY-INDEPENDENT: the same string is recognised under any shell
+// family (guardShellFamilyPSPosix or guardShellFamilyCmdExe). The family distinction
+// only matters for the inline D2/D11/D11-revised forms, which vary by suffix and are
+// handled by the family-dependent helpers (guardExpectedLine, guardD11LegacyLine, …).
+//
+// Concordance: TestGuardWiringConcordance_AllGeneratorFormsRecognized verifies that
+// every entry here has a counterpart in the generator registry, and vice versa.
+var guardWiringScriptPathForms = buildGuardWiringScriptPathForms()
+
+func buildGuardWiringScriptPathForms() []guardWiringScriptPathEntry {
+	var out []guardWiringScriptPathEntry
+	for _, cmd := range guardforms.CredentialScriptPathForms() {
+		out = append(out, guardWiringScriptPathEntry{cmd, "credential"})
+	}
+	for _, cmd := range guardforms.GitBranchScriptPathForms() {
+		out = append(out, guardWiringScriptPathEntry{cmd, "git-branch"})
+	}
+	// WABash forms: the /bin/bash -c wrapper is written verbatim regardless of host
+	// shell, so these are family-independent and not recognised by the family-dependent
+	// helpers above.
+	out = append(out,
+		guardWiringScriptPathEntry{guardforms.LegacyWABashCredentialPSPOSIX, "credential"},
+		guardWiringScriptPathEntry{guardforms.LegacyWABashCredentialGlobalPSPOSIX, "credential"},
+		guardWiringScriptPathEntry{guardforms.LegacyWABashGitBranchPSPOSIX, "git-branch"},
+	)
+	return out
 }
 
 // guardWiringTypeFromCmd returns "credential" or "git-branch" if cmd is in the guard command

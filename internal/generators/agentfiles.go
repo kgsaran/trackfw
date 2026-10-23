@@ -10,6 +10,7 @@ import (
 
 	"github.com/kgsaran/trackfw/internal/agentconfig"
 	"github.com/kgsaran/trackfw/internal/config"
+	"github.com/kgsaran/trackfw/internal/guardforms"
 	"github.com/kgsaran/trackfw/internal/pathguard"
 )
 
@@ -512,13 +513,15 @@ const (
 	//   stderr per hook execution — accepted cost (ADR-2026-10-04 adendo 2026-10-21).
 	//   Measured on macOS: sh/bash/dash/zsh/zsh-f all yield allow→0, deny→2, absent→2, err1→2.
 	//   (Wave 0 / ADR-2026-10-04 D11 revised REQ-2026-10-20)
-	guardGitBranchCmdPSPOSIX        = `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
-	guardCredentialCmdPSPOSIX       = `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
-	guardCredentialGlobalCmdPSPOSIX = `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+	// D12: current-form aliases — literals live in internal/guardforms/guard_generations.go.
+	// Any change to the canonical command string must be made there first.
+	guardGitBranchCmdPSPOSIX        = guardforms.GitBranchCurrentPSPOSIX
+	guardCredentialCmdPSPOSIX       = guardforms.CredentialCurrentPSPOSIX
+	guardCredentialGlobalCmdPSPOSIX = guardforms.CredentialGlobalCurrentPSPOSIX
 
-	guardGitBranchCmdCmdExe        = "trackfw guard git-branch || exit 2"
-	guardCredentialCmdCmdExe       = "trackfw guard credential || exit 2"
-	guardCredentialGlobalCmdCmdExe = "trackfw guard credential --global || exit 2"
+	guardGitBranchCmdCmdExe        = guardforms.GitBranchCurrentCmdExe
+	guardCredentialCmdCmdExe       = guardforms.CredentialCurrentCmdExe
+	guardCredentialGlobalCmdCmdExe = guardforms.CredentialGlobalCurrentCmdExe
 
 	// claudeShellMatcher is the single canonical matcher for Claude Code shell-tool
 	// guard hooks (git-branch and credential). Claude Code names its primary shell tool
@@ -529,7 +532,7 @@ const (
 	claudeShellMatcher = "Bash|PowerShell"
 )
 
-// --- Legacy command paths — kept for migrateHookCommand calls only. ---
+// --- Legacy command paths — D12 aliases. Literals in internal/guardforms. ---
 //
 // These are the exact strings that older trackfw versions wrote into hook
 // configs. migrateHookCommand rewrites them to the new guard hook lines above
@@ -537,63 +540,52 @@ const (
 // runs.  They are NEVER used as the "new" command in any emit path.
 const (
 	// git-branch guard legacy paths
-	legacyClaudeGitGuardCmd = "$CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh"
-	legacyCodexGitGuardCmd  = codexRoot + `/scripts/trackfw-git-branch-guard.sh"`
-	legacyGeminiGitGuardCmd = `$GEMINI_PROJECT_DIR/scripts/trackfw-git-branch-guard.sh`
+	legacyClaudeGitGuardCmd = guardforms.LegacyClaudeGitGuard
+	legacyCodexGitGuardCmd  = guardforms.LegacyCodexGitGuard
+	legacyGeminiGitGuardCmd = guardforms.LegacyGeminiGitGuard
 
 	// credential guard legacy paths (all CLIs used relative or env-var paths)
-	legacyClaudeCredGuardCmd  = "$CLAUDE_PROJECT_DIR/scripts/trackfw-credential-guard.sh"
-	legacyCodexCredGuardCmd   = codexRoot + `/scripts/trackfw-credential-guard.sh"`
-	legacyGeminiCredGuardCmd  = `$GEMINI_PROJECT_DIR/scripts/trackfw-credential-guard.sh`
-	legacyBareCredGuardCmd    = "scripts/trackfw-credential-guard.sh"
-	legacyBareGitGuardCmd     = "scripts/trackfw-git-branch-guard.sh"
-	legacyWindsurfGitGuardCmd = "bash scripts/trackfw-git-branch-guard.sh"
+	legacyClaudeCredGuardCmd  = guardforms.LegacyClaudeCredGuard
+	legacyCodexCredGuardCmd   = guardforms.LegacyCodexCredGuard
+	legacyGeminiCredGuardCmd  = guardforms.LegacyGeminiCredGuard
+	legacyBareCredGuardCmd    = guardforms.LegacyBareCredGuard
+	legacyBareGitGuardCmd     = guardforms.LegacyBareGitGuard
+	legacyWindsurfGitGuardCmd = guardforms.LegacyBashGitGuard
 
-	// Amazon Q used a bare relative path (cmd.exe family)
-	legacyAmazonQGitGuardCmd = "scripts/trackfw-git-branch-guard.sh"
+	// Amazon Q used the same bare relative path as the generic form
+	legacyAmazonQGitGuardCmd = guardforms.LegacyBareGitGuard
 )
 
-// D2-revised inline forms (pre-ML-6B, ADR-2026-10-04 D2 revised).
-// These are the exact strings written by trackfw before the D11 fail-closed
-// upgrade. Kept for migrateHookCommand / dedup recognition. Never used as the
-// "new" command in any emit path.
+// D2-revised inline forms — D12 aliases. Literals in internal/guardforms.
 const (
-	legacyD2GitBranchCmdPSPOSIX        = "trackfw guard git-branch; exit $LASTEXITCODE"
-	legacyD2CredentialCmdPSPOSIX       = "trackfw guard credential; exit $LASTEXITCODE"
-	legacyD2CredentialGlobalCmdPSPOSIX = "trackfw guard credential --global; exit $LASTEXITCODE"
+	legacyD2GitBranchCmdPSPOSIX        = guardforms.LegacyD2GitBranchPSPOSIX
+	legacyD2CredentialCmdPSPOSIX       = guardforms.LegacyD2CredentialPSPOSIX
+	legacyD2CredentialGlobalCmdPSPOSIX = guardforms.LegacyD2CredentialGlobalPSPOSIX
 
-	legacyD2GitBranchCmdCmdExe        = "trackfw guard git-branch"
-	legacyD2CredentialCmdCmdExe       = "trackfw guard credential"
-	legacyD2CredentialGlobalCmdCmdExe = "trackfw guard credential --global"
+	legacyD2GitBranchCmdCmdExe        = guardforms.LegacyD2GitBranchCmdExe
+	legacyD2CredentialCmdCmdExe       = guardforms.LegacyD2CredentialCmdExe
+	legacyD2CredentialGlobalCmdCmdExe = guardforms.LegacyD2CredentialGlobalCmdExe
 )
 
-// D11 pre-ML-6C inline forms (the D11 form WITHOUT the 4th PowerShell normalisation trecho).
-// These were written by trackfw v9.3.x before the ML-6C upgrade. Kept for
-// migrateHookCommand / dedup recognition. Never used as the "new" command in any emit path.
+// D11 pre-ML-6C inline forms — D12 aliases. Literals in internal/guardforms.
 const (
-	legacyD11GitBranchCmdPSPOSIX        = `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
-	legacyD11CredentialCmdPSPOSIX       = `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
-	legacyD11CredentialGlobalCmdPSPOSIX = `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
+	legacyD11GitBranchCmdPSPOSIX        = guardforms.LegacyD11GitBranchPSPOSIX
+	legacyD11CredentialCmdPSPOSIX       = guardforms.LegacyD11CredentialPSPOSIX
+	legacyD11CredentialGlobalCmdPSPOSIX = guardforms.LegacyD11CredentialGlobalPSPOSIX
 )
 
-// D11 revised pre-REQ-2026-10-20 inline forms (D11 revised WITH 4th PS trecho but WITHOUT emulate -R sh prefix).
-// These are the exact strings written by trackfw before the REQ-2026-10-20 zsh fix (REQ-2026-10-20).
-// They fail in zsh because EQUALS expansion and NOMATCH abort the shell before the guard runs.
-// Kept for migrateHookCommand / dedup recognition. Never used as the "new" command in any emit path.
+// D11 revised pre-REQ-2026-10-20 inline forms — D12 aliases. Literals in internal/guardforms.
 const (
-	legacyD11RevGitBranchCmdPSPOSIX        = `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
-	legacyD11RevCredentialCmdPSPOSIX       = `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
-	legacyD11RevCredentialGlobalCmdPSPOSIX = `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
+	legacyD11RevGitBranchCmdPSPOSIX        = guardforms.LegacyD11RevGitBranchPSPOSIX
+	legacyD11RevCredentialCmdPSPOSIX       = guardforms.LegacyD11RevCredentialPSPOSIX
+	legacyD11RevCredentialGlobalCmdPSPOSIX = guardforms.LegacyD11RevCredentialGlobalPSPOSIX
 )
 
-// Workaround bash wrapper forms — written manually as a temporary fix by KG on 2026-10-20.
-// These are the D11 revised forms wrapped in "/bin/bash -c '...'" to work around the zsh
-// breakpoints in Codex's zsh executor. Never canonical; migrated to REQ-2026-10-20 form by update/update harness.
-// Kept for migrateHookCommand / dedup recognition. Never used as the "new" command in any emit path.
+// Workaround bash wrapper forms — D12 aliases. Literals in internal/guardforms.
 const (
-	legacyWABashGitBranchCmdPSPOSIX        = `/bin/bash -c '$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE'`
-	legacyWABashCredentialCmdPSPOSIX       = `/bin/bash -c '$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE'`
-	legacyWABashCredentialGlobalCmdPSPOSIX = `/bin/bash -c '$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential --global; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE'`
+	legacyWABashGitBranchCmdPSPOSIX        = guardforms.LegacyWABashGitBranchPSPOSIX
+	legacyWABashCredentialCmdPSPOSIX       = guardforms.LegacyWABashCredentialPSPOSIX
+	legacyWABashCredentialGlobalCmdPSPOSIX = guardforms.LegacyWABashCredentialGlobalPSPOSIX
 )
 
 // InjectCodexHooks injects Codex CLI attention hooks into .codex/hooks.json.
@@ -1426,86 +1418,48 @@ func InjectCursorHooks(rootDir string) error {
 		hooks[pair.event] = mergeSimpleCommandArray(hooks[pair.event], pair.command, makeEntry, getCmd)
 	}
 
-	// Dedup (ROADMAP-2026-08-06 Wave 3/ML-3A, extended ADR-2026-08-06 emenda
-	// 7/ROADMAP-2026-08-08 Wave 2 to Read/Write via the generic
-	// preToolUse/postToolUse events): skip the project-scope credential-guard
-	// entries when the global one is already installed
-	// (`trackfw update harness --targets cursor-credential-guard`).
-	// ML-2A: migrate pre-ML-2A Cursor credential-guard entries to the new inline form.
-	migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyBareCredGuardCmd, guardCredentialCmdPSPOSIX, getCmd)
-	migrateCursorSimpleCommand(hooks["afterShellExecution"], legacyBareCredGuardCmd, guardCredentialCmdPSPOSIX, getCmd)
-	// ML-6B/ML-6C: migrate D2 and pre-ML-6C D11 inline forms → new forms.
-	// REQ-2026-10-20: also migrate D11 revised pré-REQ-2026-10-20 and workaround bash wrapper forms.
-	migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyD2CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX, getCmd)
-	migrateCursorSimpleCommand(hooks["afterShellExecution"], legacyD2CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX, getCmd)
-	migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyD11CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX, getCmd)
-	migrateCursorSimpleCommand(hooks["afterShellExecution"], legacyD11CredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX, getCmd)
-	migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyD11RevCredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX, getCmd)
-	migrateCursorSimpleCommand(hooks["afterShellExecution"], legacyD11RevCredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX, getCmd)
-	migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyWABashCredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX, getCmd)
-	migrateCursorSimpleCommand(hooks["afterShellExecution"], legacyWABashCredentialCmdPSPOSIX, guardCredentialCmdPSPOSIX, getCmd)
+	// Credential guard — shell events (D12/D13/D14 revised, ADR-2026-10-04 adendo
+	// 2026-10-23): migrate ALL known legacy forms to current in one pass and
+	// deduplicate to exactly one entry. When the global guard is installed, the
+	// global harness covers shell events — remove project-level entries instead of
+	// adding them. The remove step (else branch) also handles the case where a user
+	// had project-level entries before installing the global guard.
+	credLegacyForms := guardforms.CredentialLegacyPSPOSIX
 	if !globalCredentialGuardInstalledCursor() {
-		hooks["beforeShellExecution"] = mergeSimpleCommandArray(hooks["beforeShellExecution"], guardCredentialCmdPSPOSIX, makeEntry, getCmd)
-		hooks["afterShellExecution"] = mergeSimpleCommandArray(hooks["afterShellExecution"], guardCredentialCmdPSPOSIX, makeEntry, getCmd)
-
-		// Read/Write coverage (ADR-2026-08-06 emenda 7, 2026-08-08): wired via
-		// the generic preToolUse/postToolUse events (distinct from
-		// beforeShellExecution/afterShellExecution, which only ever fire for
-		// Shell) with an explicit "matcher", so these entries never fire for
-		// the same tool call the unfiltered attention-signal/cleanup entries
-		// already handle above in this same array. mergeSimpleCommandArray
-		// (command-only dedup) is not enough here — both the unfiltered
-		// signal entry and these matcher-scoped guard entries share the same
-		// array, so dedup must also check "matcher".
-		hooks["preToolUse"] = mergeCursorGuardMatcherEntry(hooks["preToolUse"], "Read", guardCredentialCmdPSPOSIX)
-		hooks["preToolUse"] = mergeCursorGuardMatcherEntry(hooks["preToolUse"], "Write", guardCredentialCmdPSPOSIX)
-		hooks["postToolUse"] = mergeCursorGuardMatcherEntry(hooks["postToolUse"], "Read", guardCredentialCmdPSPOSIX)
-		hooks["postToolUse"] = mergeCursorGuardMatcherEntry(hooks["postToolUse"], "Write", guardCredentialCmdPSPOSIX)
+		hooks["beforeShellExecution"] = migrateDedupGuardInFlatArray(
+			hooks["beforeShellExecution"], "", guardCredentialCmdPSPOSIX, credLegacyForms, getCmd)
+		hooks["afterShellExecution"] = migrateDedupGuardInFlatArray(
+			hooks["afterShellExecution"], "", guardCredentialCmdPSPOSIX, credLegacyForms, getCmd)
+	} else {
+		removeGuardFromFlatArrayInHooks(hooks, "beforeShellExecution", "", guardCredentialCmdPSPOSIX, credLegacyForms, getCmd)
+		removeGuardFromFlatArrayInHooks(hooks, "afterShellExecution", "", guardCredentialCmdPSPOSIX, credLegacyForms, getCmd)
 	}
 
-	// Git branch guard (ROADMAP-2026-08-14 ML-3A): wired via
-	// beforeShellExecution, the same event already used for
-	// credential-guard. No script change was needed for Cursor's
-	// `permission: "deny"` contract — this file's own doc comment above
-	// confirms exit code 2 alone is "equivalent to returning
-	// permission: \"deny\"", and stdout JSON is only consulted on exit 0;
-	// trackfw-git-branch-guard.sh always exits 2 on a match, so the existing
-	// script output is sufficient without adding a `permission` field to the
-	// byte-parity-tested gitBranchGuardScript constant (scaffold.go).
-	//
-	// The roadmap also asks for a static `Shell(git:commit)`/`Shell(git:push)`
-	// deny layer in `.cursor/rules` as defense-in-depth. NOT added here: this
-	// codebase has no established mechanism for tool-specific supplementary
-	// directives inside `.cursor/rules/trackfw.mdc` (that file only carries
-	// the shared, cross-tool trackfwRulesBlock() text — adding a
-	// Cursor-specific deny clause there would require either a new templating
-	// mechanism or leaking a Cursor-only concept into the shared block used
-	// by all 7 runtimes) and the Cursor `.mdc` frontmatter format documents
-	// no declarative shell-deny field to confirm. Documented as a known gap
-	// in docs/cli-parity.md rather than guessed at.
-	//
-	// Dedup (ROADMAP-2026-08-17 Wave 2/ML-2B): skip the project-scope
-	// git-branch-guard entry when the global one is already installed
-	// (`trackfw update harness --targets cursor-git-branch-guard`). The key
-	// is intentionally only touched inside this conditional (never a
-	// standalone `hooks["beforeShellExecution"] = hooks["beforeShellExecution"]`
-	// outside it) so that when BOTH credential-guard and git-branch-guard are
-	// deduped away, the key stays absent from the emitted JSON rather than
-	// becoming a present-but-empty array — matching the shape the
-	// credential-guard dedup above already produces in the equivalent case,
-	// which check-agent-hooks-parity.sh's structural comparator treats as
-	// significant (absent key vs empty array is drift, not noise).
-	// ML-2A: migrate pre-ML-2A Cursor git-branch-guard entry to the new inline form.
-	migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyBareGitGuardCmd, guardGitBranchCmdPSPOSIX, getCmd)
-	migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyWindsurfGitGuardCmd, guardGitBranchCmdPSPOSIX, getCmd)
-	// ML-6B/ML-6C: migrate D2 and pre-ML-6C D11 git-branch inline form → new form.
-	// REQ-2026-10-20: also migrate D11 revised pré-REQ-2026-10-20 and workaround bash wrapper forms.
-	migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyD2GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX, getCmd)
-	migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyD11GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX, getCmd)
-	migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyD11RevGitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX, getCmd)
-	migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyWABashGitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX, getCmd)
+	// Credential guard — Read/Write pairs (D14 revised: ALWAYS present).
+	// The global harness is wired to shell events only and does NOT fire for
+	// Read/Write tool calls. These entries cover file-access operations regardless
+	// of global installation status. Uses migrateDedupGuardInFlatArray so that
+	// any legacy forms already present in these arrays are rewritten and collapsed
+	// to exactly one canonical entry per (event, matcher) pair — fixing issue #599.
+	hooks["preToolUse"] = migrateDedupGuardInFlatArray(
+		hooks["preToolUse"], "Read", guardCredentialCmdPSPOSIX, credLegacyForms, getCmd)
+	hooks["preToolUse"] = migrateDedupGuardInFlatArray(
+		hooks["preToolUse"], "Write", guardCredentialCmdPSPOSIX, credLegacyForms, getCmd)
+	hooks["postToolUse"] = migrateDedupGuardInFlatArray(
+		hooks["postToolUse"], "Read", guardCredentialCmdPSPOSIX, credLegacyForms, getCmd)
+	hooks["postToolUse"] = migrateDedupGuardInFlatArray(
+		hooks["postToolUse"], "Write", guardCredentialCmdPSPOSIX, credLegacyForms, getCmd)
+
+	// Git branch guard — shell events only (no Read/Write coverage for git guard).
+	// Same D13/D14 pattern: migrate all legacy forms and deduplicate; remove when
+	// global is installed. The key is only touched inside conditionals so that
+	// when both guards are deduped away, the key stays absent (not empty array).
+	gitLegacyForms := guardforms.GitBranchLegacyPSPOSIX
 	if !globalGitBranchGuardInstalledCursor() {
-		hooks["beforeShellExecution"] = mergeSimpleCommandArray(hooks["beforeShellExecution"], guardGitBranchCmdPSPOSIX, makeEntry, getCmd)
+		hooks["beforeShellExecution"] = migrateDedupGuardInFlatArray(
+			hooks["beforeShellExecution"], "", guardGitBranchCmdPSPOSIX, gitLegacyForms, getCmd)
+	} else {
+		removeGuardFromFlatArrayInHooks(hooks, "beforeShellExecution", "", guardGitBranchCmdPSPOSIX, gitLegacyForms, getCmd)
 	}
 
 	root["hooks"] = hooks

@@ -168,11 +168,39 @@ func TestDedup_Cursor_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	}
 	pre, _ := hooks["preToolUse"].([]interface{})
 	post, _ := hooks["postToolUse"].([]interface{})
-	if len(pre) != 1 || pre[0].(map[string]interface{})["command"] != attentionSignalCmd {
-		t.Errorf("attention-signal entry must still be added regardless of global credential-guard state, got %v", pre)
+	// D14 revised (ADR-2026-10-04 adendo 2026-10-23): the global harness covers only shell
+	// events; Read/Write pairs are ALWAYS emitted. So pre/post each have 3 entries:
+	// attention-signal/cleanup + {Read, credential} + {Write, credential}.
+	if len(pre) != 3 {
+		t.Errorf("expected 3 preToolUse entries (attention-signal + Read guard + Write guard), got %d: %v", len(pre), pre)
+	} else {
+		if pre[0].(map[string]interface{})["command"] != attentionSignalCmd {
+			t.Errorf("preToolUse[0] must be attention-signal, got %v", pre[0])
+		}
+		// Read and Write guard entries can be in any order after the signal.
+		hasRead, hasWrite := false, false
+		for _, item := range pre[1:] {
+			obj := item.(map[string]interface{})
+			if obj["command"] == guardCredentialCmdPSPOSIX && obj["matcher"] == "Read" {
+				hasRead = true
+			}
+			if obj["command"] == guardCredentialCmdPSPOSIX && obj["matcher"] == "Write" {
+				hasWrite = true
+			}
+		}
+		if !hasRead {
+			t.Errorf("preToolUse must contain a Read credential-guard entry, got %v", pre)
+		}
+		if !hasWrite {
+			t.Errorf("preToolUse must contain a Write credential-guard entry, got %v", pre)
+		}
 	}
-	if len(post) != 1 || post[0].(map[string]interface{})["command"] != attentionCleanupCmd {
-		t.Errorf("attention-cleanup entry must still be added regardless of global credential-guard state, got %v", post)
+	if len(post) != 3 {
+		t.Errorf("expected 3 postToolUse entries (attention-cleanup + Read guard + Write guard), got %d: %v", len(post), post)
+	} else {
+		if post[0].(map[string]interface{})["command"] != attentionCleanupCmd {
+			t.Errorf("postToolUse[0] must be attention-cleanup, got %v", post[0])
+		}
 	}
 }
 

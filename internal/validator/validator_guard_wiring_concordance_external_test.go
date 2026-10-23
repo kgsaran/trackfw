@@ -73,17 +73,35 @@ func assertRecognized(t *testing.T, cmd, wantType string) {
 		wantType, cmd, gotPS, gotCmd)
 }
 
-// agentFilesPath returns the absolute path to internal/generators/agentfiles.go,
-// derived from the current test file's location via runtime.Caller.
+// agentFilesPath returns the absolute path to internal/generators/agentfiles.go.
+// NOTE: after D12 aliasing, script-path form literals have moved to guardforms.
+// Use guardFormsPath for script-path and D2/D11 forms; use agentFilesPath only
+// for forms that have not yet been moved (none remain after ML-1A).
 func agentFilesPath(t *testing.T) string {
 	t.Helper()
 	_, testFile, _, ok := runtime.Caller(0)
 	if !ok {
 		t.Fatal("runtime.Caller failed")
 	}
-	// testFile is internal/validator/validator_guard_wiring_concordance_external_test.go
 	validatorDir := filepath.Dir(testFile)
 	p := filepath.Join(validatorDir, "..", "generators", "agentfiles.go")
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		t.Fatalf("filepath.Abs(%q): %v", p, err)
+	}
+	return abs
+}
+
+// guardFormsPath returns the absolute path to internal/guardforms/guard_generations.go,
+// which is the D12 single source of truth for all guard command generations.
+func guardFormsPath(t *testing.T) string {
+	t.Helper()
+	_, testFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	validatorDir := filepath.Dir(testFile)
+	p := filepath.Join(validatorDir, "..", "guardforms", "guard_generations.go")
 	abs, err := filepath.Abs(p)
 	if err != nil {
 		t.Fatalf("filepath.Abs(%q): %v", p, err)
@@ -117,14 +135,15 @@ func agentFilesPath(t *testing.T) string {
 //     not a stub that always returns a non-empty string).
 func TestGuardWiringConcordance_AllGeneratorFormsRecognized(t *testing.T) {
 	// -----------------------------------------------------------------------
-	// Part 1: scan agentfiles.go for script-path forms
+	// Part 1: scan guardforms/guard_generations.go for script-path forms
+	// (D12: literals live here after aliasing in agentfiles.go)
 	// -----------------------------------------------------------------------
 	const codexRootValue = `"$(git rev-parse --show-toplevel)`
 
-	agentFile := agentFilesPath(t)
-	raw, err := os.ReadFile(agentFile) //nolint:gosec // known project-internal path
+	guardFile := guardFormsPath(t)
+	raw, err := os.ReadFile(guardFile) //nolint:gosec // known project-internal path
 	if err != nil {
-		t.Fatalf("read agentfiles.go: %v", err)
+		t.Fatalf("read guard_generations.go: %v", err)
 	}
 
 	// Extract all string literal values (single-quoted, double-quoted, raw backtick)
@@ -165,8 +184,9 @@ func TestGuardWiringConcordance_AllGeneratorFormsRecognized(t *testing.T) {
 			if !strings.Contains(line, pair.suffix) {
 				continue
 			}
-			// Determine if this is a codexRoot concatenation.
-			isCodexConcat := strings.Contains(line, "codexRoot")
+			// guardforms uses inline literals only; no codexRoot concatenation.
+			isCodexConcat := false
+			_ = isCodexConcat
 
 			// Extract the string value from the line.
 			// Try raw string literal first (backtick), then regular string.
@@ -346,10 +366,11 @@ func TestGuardWiringConcordance_GeneratorOutputRecognized(t *testing.T) {
 // Floor: at least 6 distinct non-Global legacyD2*/legacyD11* constants found (prevents
 // vacuous pass if the scan pattern breaks).
 func TestGuardWiringConcordance_LegacyD2D11FormsRecognized(t *testing.T) {
-	agentFile := agentFilesPath(t)
-	raw, err := os.ReadFile(agentFile) //nolint:gosec
+	// D12: literals now in guardforms/guard_generations.go (PascalCase names).
+	guardFile := guardFormsPath(t)
+	raw, err := os.ReadFile(guardFile) //nolint:gosec
 	if err != nil {
-		t.Fatalf("read agentfiles.go: %v", err)
+		t.Fatalf("read guard_generations.go: %v", err)
 	}
 
 	type legacyForm struct {
@@ -370,8 +391,8 @@ func TestGuardWiringConcordance_LegacyD2D11FormsRecognized(t *testing.T) {
 		if strings.HasPrefix(trimmed, "//") {
 			continue
 		}
-		// Only lines that define a legacyD2* or legacyD11* constant.
-		if !strings.Contains(trimmed, "legacyD2") && !strings.Contains(trimmed, "legacyD11") {
+		// Only lines that define a LegacyD2* or LegacyD11* constant (PascalCase in guardforms).
+		if !strings.Contains(trimmed, "LegacyD2") && !strings.Contains(trimmed, "LegacyD11") {
 			continue
 		}
 		// Skip Global variants (those are global-harness commands, not project-scope).
@@ -385,17 +406,17 @@ func TestGuardWiringConcordance_LegacyD2D11FormsRecognized(t *testing.T) {
 		}
 		constName := strings.TrimSpace(trimmed[:eqIdx])
 
-		// Accept only names that start with legacyD2 or legacyD11.
-		if !strings.HasPrefix(constName, "legacyD2") && !strings.HasPrefix(constName, "legacyD11") {
+		// Accept only names that start with LegacyD2 or LegacyD11.
+		if !strings.HasPrefix(constName, "LegacyD2") && !strings.HasPrefix(constName, "LegacyD11") {
 			continue
 		}
 
 		// Determine guard type from constant name.
 		var guardType string
 		switch {
-		case strings.Contains(constName, "GitBranch") || strings.Contains(constName, "GitGuard"):
+		case strings.Contains(constName, "GitBranch"):
 			guardType = "git-branch"
-		case strings.Contains(constName, "Credential") || strings.Contains(constName, "CredGuard"):
+		case strings.Contains(constName, "Credential"):
 			guardType = "credential"
 		default:
 			continue // unrecognised guard type — skip
@@ -404,7 +425,7 @@ func TestGuardWiringConcordance_LegacyD2D11FormsRecognized(t *testing.T) {
 		// Determine shell family from constant name.
 		var family string
 		switch {
-		case strings.Contains(constName, "PSPOSIX") || strings.Contains(constName, "PSPosix"):
+		case strings.Contains(constName, "PSPOSIX"):
 			family = "ps"
 		case strings.Contains(constName, "CmdExe"):
 			family = "cmd"
@@ -440,13 +461,13 @@ func TestGuardWiringConcordance_LegacyD2D11FormsRecognized(t *testing.T) {
 		found = append(found, legacyForm{constName, value, guardType, family})
 	}
 	if err := scanner.Err(); err != nil {
-		t.Fatalf("scanning agentfiles.go: %v", err)
+		t.Fatalf("scanning guard_generations.go: %v", err)
 	}
 
 	// Vacuity floor: at least 6 non-Global D2/D11 forms must be found.
 	const minLegacyForms = 6
 	if len(found) < minLegacyForms {
-		t.Errorf("legacyD2/D11 concordance vacuity: expected >= %d non-Global forms, got %d "+
+		t.Errorf("LegacyD2/D11 concordance vacuity: expected >= %d non-Global forms, got %d "+
 			"(Global constants are intentionally excluded; scan pattern may be broken)",
 			minLegacyForms, len(found))
 	}

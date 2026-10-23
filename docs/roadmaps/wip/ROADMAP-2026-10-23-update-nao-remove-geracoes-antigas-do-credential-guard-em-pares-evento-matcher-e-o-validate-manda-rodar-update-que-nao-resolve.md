@@ -83,7 +83,7 @@ git diff --quiet origin/main -- internal/
 > Dependencies: Wave 0 auditada pelo arquiteto.
 
 ### ML-1A — Registro único, deduplicação genérica e o Cursor (a issue)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** apolo-tf
 **Fonte:** matriz consolidada em `docs/seguranca/2026-10-23-wave0-geracoes-do-guard.md` §C.
 **Files affected:** `internal/generators/agentfiles.go`, um arquivo novo `internal/generators/guard_generations.go` (o registro),
@@ -103,15 +103,27 @@ os validadores que hoje listam gerações (`internal/validator/validator_credent
 4. **Teste de concordância (AC4):** toda geração que o validador classifica como legada está no registro e é tratada por todo
    sítio que emite aquele guard. Falsificar acrescentando uma geração fictícia só ao validador.
 **Acceptance criteria:**
-- [ ] AC1: fixture da issue (5 gerações × 4 pares, nos dois estados); validador real com 0 avisos de `.cursor/hooks.json`; contra-braço em `origin/main` com 4
-- [ ] AC2, AC4, AC5 (um hook do usuário que contém `trackfw guard credential` sobrevive byte a byte) e AC7 (segunda rodada igual byte a byte **e** uma entrada por par)
-- [ ] AC6 para o Cursor, nos três braços
-- [ ] Cada teste novo com a frase do que afirma e o contra-braço medido em `origin/main`
+- [x] AC1: fixture da issue (5 gerações × 4 pares, nos dois estados); validador real com 0 avisos de `.cursor/hooks.json`; contra-braço em `origin/main` com 4
+- [x] AC2, AC4, AC5 (um hook do usuário que contém `trackfw guard credential` sobrevive byte a byte) e AC7 (segunda rodada igual byte a byte **e** uma entrada por par)
+- [x] AC6 para o Cursor, nos três braços
+- [x] Cada teste novo com a frase do que afirma e o contra-braço medido em `origin/main`
 **Gates da wave:**
 ```bash
 go build ./...
 go test ./internal/generators/ ./internal/validator/ ./internal/pathguard/ -count=1
 ```
+
+**Auditoria do arquiteto (2026-10-23):** aprovado com ressalva. `go build ./...` rc=0; `go test ./internal/generators/
+./internal/validator/ ./internal/pathguard/ -count=1` ok; `-run TestCursorGuardMigrateDedup -v`: 6 testes `--- PASS`
+(UserHookSurvives, D14Arms, Idempotent, IdempotentFromLegacy, ValidatorAfterMigration, RegistryConcordance). O registro
+está em `internal/guardforms/`, que é pacote folha porque o `validator` não pode importar o `generators`, e as constantes
+do gerador são aliases. O helper compara por igualdade exata. Duas lacunas passam para o ML-1B, porque só fecham quando
+todos os sítios usarem o helper:
+- **AC4, sentido sítios:** o `RegistryConcordance` só afirma registro → validador, e passa nas duas árvores. Falta o teste
+  que itera o registro × todo sítio × todo par.
+- **AC2, formas inline do validador:** `guardExpectedLine`, `guardD11LegacyLine` e `guardD11RevisedLegacyLine`
+  (`validator_guard_binary_probe.go`) ainda montam as linhas D2/D11/D11Rev/atual por template próprio. Falta derivá-las do
+  registro, ou amarrá-las a ele por um teste de igualdade.
 
 ### ML-1B — Os demais sítios da matriz
 **Status:** ⬜ Pendente
@@ -127,6 +139,11 @@ go test ./internal/generators/ ./internal/validator/ ./internal/pathguard/ -coun
 **Acceptance criteria:**
 - [ ] AC3: cada célula da matriz §C tem um teste que reprova em `origin/main` e passa no novo
 - [ ] AC6 para Claude, Codex e Gemini
+- [ ] AC4, sentido sítios (herdado da auditoria do ML-1A): um teste orientado por tabela itera cada forma de
+  `guardforms.*Legacy*` × cada sítio de projeto e global × cada par que o sítio emite, e exige uma entrada atual por par.
+  Falsificar acrescentando uma forma fictícia ao registro, e o teste tem de reprovar no primeiro sítio
+- [ ] AC2, formas inline (herdado): `guardExpectedLine`, `guardD11LegacyLine` e `guardD11RevisedLegacyLine` derivam do
+  registro, ou um teste afirma igualdade com `guardforms.*` para os dois guards e as duas famílias
 - [ ] Os goldens e os configs versionados do repositório (`.claude/settings.json`, `.codex/hooks.json`, `.gemini/settings.json`), se mudarem, mudam só por deduplicação
 **Gates da wave:**
 ```bash
