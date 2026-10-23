@@ -111,3 +111,7 @@ congelados da D3. Isso evita quebrar o uso sem orquestração. Vale onde o CLI e
   em 2026-10-23. O `docs/agents-working-context.md` só fica congelado para a sessão principal quando traz o marcador
   `<!-- trackfw:frozen -->`, porque projetos de terceiros ainda o usam como diário vivo. Para subagentes, ele é sempre
   congelado.
+- **D4, contrato do ML-3B:** a permissão de escrita fica em `<raiz do projeto do alvo>/.trackfw/leases/<agent_type>.json`,
+  no formato v1 com `allow` (caminhos absolutos) e `expires` (RFC 3339, obrigatório). Permissão expirada, de versão
+  desconhecida, ilegível ou com `agent_type` divergente nega. O `expires` existe para que uma permissão esquecida não valha
+  para sempre. Os caminhos congelados da D3 continuam negando mesmo dentro do `allow`.
