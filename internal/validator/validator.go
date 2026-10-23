@@ -2,6 +2,7 @@ package validator
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -15,6 +16,7 @@ import (
 	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/integrations"
 	"github.com/kgsaran/trackfw/internal/pathguard"
+	"github.com/kgsaran/trackfw/internal/translog"
 )
 
 // BaselineFile representa o conteúdo de .trackfw-baseline.json
@@ -230,6 +232,10 @@ var ruleDefaults = map[string]string{
 	// project root or .trackfw\ grants write to a foreign SID on Windows —
 	// informative-only, never blockable. Routed via applyRuleWarnOnly.
 	"project_foreign_write_windows": "warning",
+	// R1 (REQ-2026-09-02 ML-3C): gitignore pattern covering .trackfw-log-entries/ or
+	// docs/agents-working-context/ means transition history is silently lost on clone.
+	// Default "warning" — the pattern may be intentional in some projects.
+	"log_entries_dir_gitignored": "warning",
 }
 
 // ruleSeverity retorna a severidade configurada para a regra.
@@ -965,6 +971,14 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	}
 	applyRule("note_orphan", noteOrphanMsgs, &violations, &warnings)
 
+	// R1 (REQ-2026-09-02 ML-3C): warn when .trackfw-log-entries/ or agents-working-context/
+	// is gitignored — entries would be lost on clone.
+	logEntriesGitignoreMsgs, e := validateLogEntriesDirGitignored()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRule("log_entries_dir_gitignored", logEntriesGitignoreMsgs, &violations, &warnings)
+
 	// v2.5: verificação bidirecional REQ↔Roadmap via trace_id_field (desativada se campo vazio)
 	traceViolations, traceWarnings := validateTraceId(cfg)
 	violations = append(violations, traceViolations...)
@@ -1460,6 +1474,14 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 		return nil, nil, e
 	}
 	applyRuleTagged("note_orphan", noteOrphanMsgsT, &violations, &warnings)
+
+	// R1 (REQ-2026-09-02 ML-3C): warn when .trackfw-log-entries/ or agents-working-context/
+	// is gitignored — entries would be lost on clone.
+	logEntriesGitignoreMsgsT, e := validateLogEntriesDirGitignored()
+	if e != nil {
+		return nil, nil, e
+	}
+	applyRuleTagged("log_entries_dir_gitignored", logEntriesGitignoreMsgsT, &violations, &warnings)
 
 	// v2.5: traceid — applyRuleTagged está no validator_traceid via applyRule; aqui fazemos tagged
 	traceViolations, traceWarnings := validateTraceId(cfg)
@@ -1965,8 +1987,14 @@ func resolveAgentNamespaces(cfg config.ProjectConfig, dir string) []string {
 // continua entrando na união normalmente; só é excluído da VIOLAÇÃO (não do resolvedor) em
 // validateAgentNamespaceUndeclared, porque ali a informação de que é um nome de estado reservado é o
 // sinal relevante, não um sinal de "não é diretório real".
+//
+// ML-1A: the per-entry log directory (translog.EntriesDirSuffix[1:]) must never be
+// treated as an agent namespace in by_agent mode — it would generate spurious
+// agent_namespace_hidden violations on every project that has run the new writer.
+// ML-1C: the directory was renamed; see the constant comment in internal/translog
+// for the history.
 func isInfraDirName(name string) bool {
-	return name == "node_modules"
+	return name == "node_modules" || name == translog.EntriesDirSuffix[1:]
 }
 
 // isDotPrefixedName reporta se name começa com "." — um sinal ambíguo (pode ser um namespace
@@ -2870,36 +2898,25 @@ func validateStaleWIP() ([]string, error) {
 }
 
 func latestWIPTransitionTime(cfg config.ProjectConfig, roadmapPath string) (time.Time, bool, []string) {
-	logPath := filepath.Join(cfg.RoadmapDir, ".trackfw-log")
-	data, err := readRegularFile(logPath)
+	// ML-1A: use the unified reader so both .trackfw-log (legacy) and .trackfw-log-entries/
+	// entries are considered. ReadAll returns nil, nil when neither source exists.
+	tls, err := translog.ReadAll(cfg.RoadmapDir)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return time.Time{}, false, nil
-		}
-		return time.Time{}, false, []string{inspectionDiagnostic("stale_wip", logPath, err)}
+		return time.Time{}, false, []string{inspectionDiagnostic("stale_wip", cfg.RoadmapDir, err)}
 	}
 	identity := roadmapLogIdentity(cfg, roadmapPath)
 	var latest time.Time
 	found := false
-	var diagnostics []string
-	for _, line := range strings.Split(string(data), "\n") {
-		if strings.TrimSpace(line) == "" {
+	for _, t := range tls {
+		if t.Basename != identity || t.To != "wip" {
 			continue
 		}
-		timestamp, name, toState, ok := parseTransitionLogLine(line)
-		if !ok {
-			diagnostics = append(diagnostics, fmt.Sprintf("stale_wip: invalid support line in %q: %q", logPath, line))
-			continue
-		}
-		if name != identity || toState != "wip" {
-			continue
-		}
-		if !found || timestamp.After(latest) {
-			latest = timestamp
+		if !found || t.Timestamp.After(latest) {
+			latest = t.Timestamp
 			found = true
 		}
 	}
-	return latest, found, diagnostics
+	return latest, found, nil
 }
 
 func roadmapLogIdentity(cfg config.ProjectConfig, roadmapPath string) string {
@@ -4612,4 +4629,67 @@ func CheckShipGovernance() *GovernanceViolation {
 		return nil
 	}
 	return &GovernanceViolation{Missing: missing, Warnings: warnings}
+}
+
+// validateLogEntriesDirGitignored checks whether any of the three paths that store
+// transition history or working-context entries are covered by a .gitignore pattern.
+// When they are gitignored, entries written at runtime are silently excluded from git
+// commits and are lost on clone.
+//
+// Checked paths (hypothetical — directories need not exist):
+//
+//	<roadmap_dir>/.trackfw-log-entries/x.entry
+//	<req_dir>/.trackfw-log-entries/x.entry
+//	docs/agents-working-context/x.md
+//
+// The function is a no-op (returns nil, nil) when git is not available or the CWD is
+// not inside a git work-tree — callers on machines without git must not see false warnings.
+//
+// R1 (REQ-2026-09-02 ML-3C): trackfw-contract gate=log_entries_dir_gitignored
+func validateLogEntriesDirGitignored() ([]string, error) {
+	if !isGitWorktree(".") {
+		return nil, nil
+	}
+	cfg := config.Load()
+	// Hypothetical representative file inside each tracked directory.
+	candidates := []struct {
+		label string
+		path  string
+	}{
+		{
+			label: cfg.RoadmapDir + "/.trackfw-log-entries/",
+			path:  cfg.RoadmapDir + "/.trackfw-log-entries/x.entry",
+		},
+		{
+			label: cfg.REQDir + "/.trackfw-log-entries/",
+			path:  cfg.REQDir + "/.trackfw-log-entries/x.entry",
+		},
+		{
+			label: "docs/agents-working-context/",
+			path:  "docs/agents-working-context/x.md",
+		},
+	}
+
+	const timeout = 3 * time.Second
+	var msgs []string
+	for _, c := range candidates {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		out, err := gitCommandCtx(ctx, ".", "check-ignore", "-q", "--no-index", c.path).Output()
+		cancel()
+		_ = out
+		if err == nil {
+			// exit 0 means the path IS gitignored — warn.
+			// Fetch the culprit pattern for a useful message.
+			ctx2, cancel2 := context.WithTimeout(context.Background(), timeout)
+			patternOut, patternErr := gitCommandCtx(ctx2, ".", "check-ignore", "-v", "--no-index", c.path).Output()
+			cancel2()
+			culprit := ""
+			if patternErr == nil {
+				culprit = " (pattern: " + strings.TrimSpace(string(patternOut)) + ")"
+			}
+			msgs = append(msgs, "log_entries_dir_gitignored: "+c.label+" is covered by a .gitignore pattern — entries will not be committed and will be lost on clone"+culprit)
+		}
+		// exit 1 = not ignored; other errors (git absent, not-a-repo) = already excluded above.
+	}
+	return msgs, nil
 }

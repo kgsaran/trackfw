@@ -128,6 +128,8 @@ parity-rest: build
 	scripts/check-usage-silencing.sh --self-test
 	scripts/check-ref-separator-portability.sh
 	scripts/check-output-encoding-declared.sh
+	# REQ-2026-09-02 ML-1B AC3: autoteste do gate de declaracao de encoding Python (ALVO 1 + ALVO 2).
+	scripts/check-output-encoding-declared.sh --self-test
 	scripts/check-parity-call-site-pins.sh
 	# ML-1C (fix/orphan-req-reprova-estado-correto): cada regra que decide "esta REQ
 	# deveria ter roadmap?" deve chamar reqStatusIsDone antes de emitir violation.

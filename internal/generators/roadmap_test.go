@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/kgsaran/trackfw/internal/config"
+	"github.com/kgsaran/trackfw/internal/translog"
 	"github.com/kgsaran/trackfw/internal/validator"
 )
 
@@ -360,11 +361,19 @@ func assertMoveRoadmapAnalyzingContract(t *testing.T, byAgent bool) error {
 				return &testExpectationError{message: "roadmap by_agent não sincronizou " + want}
 			}
 		}
-		log, err := os.ReadFile("docs/roadmaps/.trackfw-log")
+		// ML-1A: entries land in .trackfw-log-entries/, not the legacy .trackfw-log file.
+		transitions, err := translog.ReadAll("docs/roadmaps")
 		if err != nil {
 			return err
 		}
-		if !strings.Contains(string(log), "zeus/ROADMAP-analyze-by-agent.md") || !strings.Contains(string(log), "backlog → analyzing") {
+		agentTransFound := false
+		for _, tr := range transitions {
+			if strings.Contains(tr.Basename, "zeus/ROADMAP-analyze-by-agent.md") && tr.From == "backlog" && tr.To == "analyzing" {
+				agentTransFound = true
+				break
+			}
+		}
+		if !agentTransFound {
 			return &testExpectationError{message: "log by_agent não registrou backlog → analyzing preservando agente"}
 		}
 		found, err := findRoadmap("analyze-by-agent")
@@ -415,11 +424,19 @@ func assertMoveRoadmapAnalyzingContract(t *testing.T, byAgent bool) error {
 			return &testExpectationError{message: "roadmap flat não sincronizou " + want}
 		}
 	}
-	log, err := os.ReadFile("docs/roadmaps/.trackfw-log")
+	// ML-1A: entries land in .trackfw-log-entries/, not the legacy .trackfw-log file.
+	flatTransitions, err := translog.ReadAll("docs/roadmaps")
 	if err != nil {
 		return err
 	}
-	if !strings.Contains(string(log), "ROADMAP-analyze-flat.md") || !strings.Contains(string(log), "backlog → analyzing") {
+	flatTransFound := false
+	for _, tr := range flatTransitions {
+		if tr.Basename == "ROADMAP-analyze-flat.md" && tr.From == "backlog" && tr.To == "analyzing" {
+			flatTransFound = true
+			break
+		}
+	}
+	if !flatTransFound {
 		return &testExpectationError{message: "log flat não registrou backlog → analyzing"}
 	}
 	found, err := findRoadmap("analyze-flat")
@@ -877,22 +894,32 @@ func TestMoveRoadmap_ByAgent_LogPrefixHasAgent(t *testing.T) {
 		t.Fatalf("MoveRoadmap() erro: %v", err)
 	}
 
-	log, err := os.ReadFile("docs/roadmaps/.trackfw-log")
+	// ML-1A: entries land in .trackfw-log-entries/, not the legacy .trackfw-log file.
+	transitions, err := translog.ReadAll("docs/roadmaps")
 	if err != nil {
-		t.Fatalf("ler .trackfw-log: %v", err)
+		t.Fatalf("ler log de transições: %v", err)
 	}
-	logStr := string(log)
 
-	// A linha deve conter "alpha/ROADMAP-log-prefix.md" — o segmento do agente não pode ser vazio.
+	// A entrada deve conter "alpha/ROADMAP-log-prefix.md" — o segmento do agente não pode ser vazio.
 	// Sem este teste, um logBasename calculado após o rename pode devolver "" no macOS (EvalSymlinks
 	// assimétrico /var vs /private/var faz o guard ".." de agentFromPath retornar ""), deixando
 	// apenas "/ROADMAP-log-prefix.md" no log — violação silenciosa que o gate de paridade detecta
 	// mas nenhum teste unitário anterior verificava.
-	if !strings.Contains(logStr, "alpha/ROADMAP-log-prefix.md") {
-		t.Errorf(".trackfw-log não contém prefixo de agente; got:\n%s", logStr)
+	agentFound := false
+	transFound := false
+	for _, tr := range transitions {
+		if strings.Contains(tr.Basename, "alpha/ROADMAP-log-prefix.md") {
+			agentFound = true
+		}
+		if tr.From == "backlog" && tr.To == "analyzing" {
+			transFound = true
+		}
 	}
-	if !strings.Contains(logStr, "backlog → analyzing") {
-		t.Errorf(".trackfw-log não registrou a transição backlog → analyzing; got:\n%s", logStr)
+	if !agentFound {
+		t.Errorf("log não contém prefixo de agente alpha/ROADMAP-log-prefix.md; got %d entradas", len(transitions))
+	}
+	if !transFound {
+		t.Errorf("log não registrou a transição backlog → analyzing; got %d entradas", len(transitions))
 	}
 }
 

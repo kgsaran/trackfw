@@ -16,6 +16,7 @@ import (
 	"github.com/kgsaran/trackfw/internal/integrations"
 	"github.com/kgsaran/trackfw/internal/pathguard"
 	"github.com/kgsaran/trackfw/internal/roadmapdoc"
+	"github.com/kgsaran/trackfw/internal/translog"
 	"github.com/kgsaran/trackfw/internal/validator"
 )
 
@@ -257,11 +258,6 @@ func agentFromPath(rootDir, filePath string) string {
 		return ""
 	}
 	return parts[0]
-}
-
-// logPath retorna o caminho do arquivo de log de transições.
-func logPath() string {
-	return config.Load().RoadmapDir + "/.trackfw-log"
 }
 
 // NewRoadmap cria um roadmap com template padrão a partir de um título simples.
@@ -1178,32 +1174,24 @@ func appendTransitionLog(basename, fromState, toState string) {
 // The refusal was already non-silent since ML-7B; what ML-9A adds is that the
 // root failing is itself a refusal.
 func appendTransitionLogEntry(basename, fromState, toState string) error {
-	lp := logPath()
-	// Guard the log file against ancestor symlinks. This is an append-mode write so
-	// we cannot use GuardedWrite (which does atomic replace).
+	dir := config.Load().RoadmapDir
+	// Resolve the project root so WriteEntry can guard the entries directory.
+	// If resolution fails, refuse via RefuseUnverifiableRoot before attempting
+	// any write — WriteEntry also guards internally, but the caller holds the
+	// original resolution error and must emit it here.
 	root, rootErr := projectRoot()
 	if rootErr != nil {
-		return pathguard.RefuseUnverifiableRoot(lp, rootErr)
+		return pathguard.RefuseUnverifiableRoot(dir+translog.EntriesDirSuffix, rootErr)
 	}
-	absLog := filepath.Join(root, lp)
-	if guardErr := pathguard.RejectAndReport(root, absLog); guardErr != nil {
-		return guardErr
-	}
-	// write-containment-allowed: pathguard.RejectAndReport(root, absLog) above dominates this append unconditionally; an unresolvable root refuses via RefuseUnverifiableRoot
-	f, err := os.OpenFile(lp, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
 	now := time.Now()
-	line := fmt.Sprintf("%s  %-50s  %s → %s%s\n",
+	line := fmt.Sprintf("%s  %-50s  %s → %s%s",
 		now.Format("2006-01-02 15:04"),
 		basename,
 		fromState,
 		toState,
 		transitionLogSuffix(now),
 	)
-	_, err = f.WriteString(line)
+	_, err := translog.WriteEntry(root, dir, line, now)
 	return err
 }
 

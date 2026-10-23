@@ -220,9 +220,28 @@ Regra de validação `note_orphan` — notas em `vault/notes/` não referenciada
 <!-- trackfw-contract: none reason=v8-um-binario-runtime-unico-paridade-cross-runtime-removida -->
 
 > REQ-2026-09-02-reconciliacao-pos-merge-dos-prs-238-e-240-e-o-trackfw-log-que-conflita-em-toda-branch-paralela.md (AC6/AC7)
+> ML-1A (ADR-2026-10-22): novas entradas vão para `.trackfw-log-entries/` — conflito de merge é estruturalmente impossível.
 
-`trackfw init` emite `.gitattributes` na raiz do projeto nos três CLIs, **byte-idêntico**, com o
-mesmo bloco que este repositório versiona na própria raiz:
+### Situação atual (pós-ML-1A)
+<!-- trackfw-contract: gate=internal/generators/transition_log_entry_test.go,internal/translog/translog_test.go partial=TestTransitionLog_ParallelBranchesMergeWithoutConflict pina a não-colisão de nomes em branches paralelas (AC7); TestReadAll_LegacyAndDirTogether pina que o leitor unificado lê o legado e o .d/ juntos; o rationale da extensão .entry (não .log para evitar .gitignore) é narrativo sem gate -->
+
+A partir da versão que introduziu ML-1A, cada transição cria um arquivo separado em
+`<dir>/.trackfw-log-entries/<YYYYMMDDTHHMMSSZ>-<h8>.entry`, onde `<h8>` são os primeiros 8 dígitos hex
+do SHA-256 da linha (sem `\n` final). Dois branches paralelos que registram transições diferentes
+criam arquivos com nomes diferentes — o `git merge` do diretório `.d/` **nunca conflita**, sem
+necessidade de nenhum atributo.
+
+A extensão `.entry` (e não `.log`) é deliberada: padrões `*.log` comuns no `.gitignore` de projetos
+não silenciam as entradas.
+
+O arquivo legado `<dir>/.trackfw-log` (append-only, uma linha por entrada) ainda é **lido** pelo
+leitor unificado (`internal/translog.ReadAll`) para compatibilidade retroativa, mas **nunca mais é
+escrito** por este binário. Binários antigos continuam escrevendo nele.
+
+### Por que `merge=union` permanece no bloco gerado
+<!-- trackfw-contract: gate=internal/generators/gitattributes_test.go partial=TestGitAttributesBlock_IgualAoArquivoVersionadoNaRaiz pina que o bloco gerado é subconjunto do .gitattributes versionado (motivo 2); o motivo 1 (compatibilidade com binários antigos ainda escrevendo no legado) é factual sem gate próprio; a nota sobre forjas ignorando merge=union é contexto histórico documentado -->
+
+`trackfw init` emite `.gitattributes` com o mesmo bloco que este repositório versiona na raiz:
 
 ```
 # trackfw: .trackfw-log is append-only — every write lands on the last line, so
@@ -233,39 +252,31 @@ mesmo bloco que este repositório versiona na própria raiz:
 .trackfw-log merge=union
 ```
 
-**Por que basename e não caminho.** `roadmap_dir` e `req_dir` são configuráveis por projeto
-(`trackfw.yaml`) e **os dois** carregam um `.trackfw-log`: o de roadmap (`internal/generators/roadmap.go`
-e equivalentes) e o de REQ (`internal/generators/req.go` `appendREQTransitionLog` e equivalentes).
-Um padrão com caminho fixo (`docs/roadmaps/.trackfw-log`) nasceria quebrado em quem configurou
-diretório diferente e deixaria o log do `req_dir` descoberto. Padrão sem barra casa em **qualquer
-diretório** — medido com `git check-attr merge` sobre `docs/roadmaps/`, `docs/req/` e um
-`custom/rm/` arbitrário: `merge: union` nos três.
+O atributo permanece por dois motivos:
+1. **Compatibilidade retroativa**: binários antigos ainda escrevem no arquivo legado. A regra protege
+   projetos com mix de versões durante a janela de transição.
+2. **Teste de regressão**: `TestGitAttributesBlock_IgualAoArquivoVersionadoNaRaiz` (em
+   `internal/generators/`) verifica que o bloco gerado é subconjunto do `.gitattributes` versionado.
+   Alterar o const sem atualizar o arquivo versionado quebraria o teste.
 
-**O que `merge=union` garante e o que não garante.**
+**Nota sobre forjas (GitHub, GitLab).** Medido em PR #595 e #597 deste repositório: forjas ignoram
+`merge=union` definido em `.gitattributes` de repositório — o atributo só é respeitado em merges
+**locais** via `git merge`. Isso foi a causa raiz da REQ-2026-09-02 e motivou a migração para `.d/`.
+Documentado em `ADR-2026-10-22-logs-append-only-compartilhados-viram-um-arquivo-por-entrada-*`.
 
-| Aspecto | Comportamento medido |
-|---|---|
-| Conflito | Nunca — o driver resolve, `git merge` sai 0 |
-| Perda de linha | Não ocorre: as linhas dos dois lados sobrevivem (igualdade de conjunto) |
-| Duplicação | Não ocorre quando os dois lados acrescentam a **mesma** linha (o xdiff a trata como mudança comum) nem em sobreposição parcial |
-| **Ordem** | **Não é cronológica** — o bloco de `ours` vem inteiro antes do bloco de `theirs`; a ordem *dentro* de cada bloco é preservada |
+### Sobre o conteúdo legado do `.trackfw-log`
+<!-- trackfw-contract: gate=internal/translog/translog_test.go,internal/generators/gitattributes_test.go partial=TestReadAll_LegacyAndDirTogether pina que o leitor trata a linha duplicada normalmente; TestGenerateGitAttributes_CriaQuandoAusenteEIdempotente pina os 3 braços da tabela de idempotência de .gitattributes; o contexto histórico da linha duplicada deste repositório é narrativo -->
 
-A ordem é o único efeito colateral, e ele é aceito conscientemente. Dos leitores do log,
-`trackfw log --tail` é apresentação; a regra `stale_wip` do validador e o throughput de `metrics`
-comparam **timestamps** (`.After`, min/max), não posição. A única dependência posicional é o cálculo
-de cycle time / WIP age em `internal/metrics/metrics.go` (`Calculate`), que toma a primeira entrada
-`backlog`/`wip` e a última `done`/`wip` **na ordem do arquivo**. Ela só é atingida por um roadmap com
-transições registradas nos **dois** lados do merge — e a alternativa (resolução manual) é
-demonstravelmente pior: o `.trackfw-log` deste repositório carrega uma linha **duplicada**
-(`2026-09-02 10:46 … gate-do-barrier`) produzida por uma resolução manual de conflito. `merge=union`
-não teria duplicado.
+A linha duplicada `2026-09-02 10:46 … gate-do-barrier` presente no `.trackfw-log` deste repositório
+foi produzida por resolução manual de conflito antes de ML-1A; `merge=union` não a teria duplicado em
+merge local, mas não teria ajudado em merge pela forge. O leitor unificado lê essa linha normalmente.
 
-**Idempotência — três ramos, idênticos nos três runtimes.**
+**Idempotência — geração do `.gitattributes`.**
 
 | Estado do projeto | Comportamento |
 |---|---|
 | Sem `.gitattributes` | Cria com o bloco acima |
-| Com `.gitattributes` **sem** a regra | **Append** do bloco — o arquivo do projeto nunca é sobrescrito. Se o arquivo existente não termina em `\n`, um `\n` é inserido antes do bloco (senão a primeira linha do bloco grudaria na última linha do projeto) |
+| Com `.gitattributes` **sem** a regra | **Append** do bloco — o arquivo do projeto nunca é sobrescrito. Se o arquivo existente não termina em `\n`, um `\n` é inserido antes do bloco |
 | Com `.gitattributes` **com** a regra | No-op |
 
 O predicado de "a regra já existe" é pinado: **alguma linha não-comentário cujo primeiro campo
@@ -275,8 +286,7 @@ Assim `.trackfw-log  merge=union` (dois espaços) ou uma regra manual com outro 
 
 **Fora do contrato (não coberto):** `trackfw update` **não** emite este arquivo — só projetos
 inicializados depois desta versão recebem a regra; projeto já existente precisa acrescentá-la à mão
-(ou rodar `init` de novo, que faz o append idempotente). E a falsificação foi feita sobre `git merge`
-local; se o merge do lado do servidor da forge honra o atributo é questão separada, não medida aqui.
+(ou rodar `init` de novo, que faz o append idempotente).
 
 ## i18n locale keys — no orphan keys (ML-2A)
 
@@ -792,9 +802,10 @@ A REQ nested deeper than those four fixed patterns is invisible to both commands
   here.
 - Any other layout under `req_dir/` (unrecognized) → falls back to the in-place behavior above.
 
-The transition is appended to `<req_dir>/.trackfw-log` — a log file separate from
-`<roadmap_dir>/.trackfw-log`; `trackfw log` reads only the roadmap log, so REQ transitions do not appear
-in `trackfw log` output.
+The transition is written to `<req_dir>/.trackfw-log-entries/` (ML-1A: one file per entry) — a directory
+separate from `<roadmap_dir>/.trackfw-log-entries/`; `trackfw log` reads only the roadmap log, so REQ
+transitions do not appear in `trackfw log` output. The legacy `<req_dir>/.trackfw-log` (if present)
+continues to be read by `internal/translog.ReadAll` for backward compatibility.
 
 ### REQ layout — union on read, single path on write
 
@@ -1003,16 +1014,19 @@ traceability checks.
 
 The Go, Node.js, and Python validators share the same `stale_wip` contract:
 
-- A roadmap's WIP age is measured from its latest transition into `wip/` in
-  `docs/roadmaps/.trackfw-log`.
+- A roadmap's WIP age is measured from its latest transition into `wip/` in the
+  transition log, read via the unified reader (`internal/translog.ReadAll`), which
+  combines `<roadmap_dir>/.trackfw-log` (legacy, if present) and all `.entry` files
+  in `<roadmap_dir>/.trackfw-log-entries/` (ML-1A).
 - Valid WIP-entry transitions include any log line for the current roadmap whose
   destination state is `wip`, such as `backlog → wip`, `analyzing → wip`, or
   `blocked → wip`.
 - In `roadmap_namespacing: by_agent`, the roadmap identity includes the agent
   prefix exactly as written in the log, for example
   `zeus/ROADMAP-YYYY-MM-DD-<slug>.md`.
-- If `.trackfw-log` is absent, or if the current roadmap has no parseable entry
-  into `wip`, the backward-compatible fallback is the file `mtime`.
+- If neither `.trackfw-log` nor `.trackfw-log-entries/` exists, or if the current
+  roadmap has no parseable entry into `wip`, the backward-compatible fallback is
+  the file `mtime`.
 - Git commit time is not part of the cross-runtime contract for WIP age. It
   describes file edit history, not time spent in the WIP state.
 - The default stale threshold remains 7 days and the default rule severity
@@ -1035,9 +1049,11 @@ Inspection failures must not degrade silently:
 | Expected file exists but cannot be `stat`ed or read | Emit a diagnostic for the owning rule and continue inspecting the remaining files. |
 | Invalid support file or invalid transition-log line | Emit a diagnostic and use the documented fallback for the affected artifact when available. |
 
-The implemented coverage is intentionally cross-runtime: Go, Node.js, and
-Python test the `.trackfw-log` source of truth, configurable boundary behavior,
-`mtime` fallback, and `ENOTDIR`/walk-error diagnostics for `wip/`.
+The implemented coverage is intentionally cross-runtime: Go tests the unified
+reader (`translog.ReadAll`) as source of truth — reading from `.trackfw-log-entries/`
+entries (ML-1A) and the legacy `.trackfw-log` (backward compatibility) — as well
+as configurable boundary behavior, `mtime` fallback, and `ENOTDIR`/walk-error
+diagnostics for `wip/`.
 
 ## AI integration lifecycle
 
@@ -9017,3 +9033,21 @@ Signal reads JSON from stdin (maximum 1 MiB, absolute deadline 2 seconds); clean
 The signal retains `tool`, `message`, `level=action_required`, and UTC `timestamp`. Message priority is question, command, then tool-name fallback, sliced to 300 Unicode runes before removing ASCII controls 0–31 as in the frozen valid legacy corpus. Cleanup removes only `.trackfw-attention.json`, preserving `.trackfw-credential-guard.json`. Shared hook files migrate exact bare/anchored forms while retaining custom commands and matcher/timeout metadata. Dedicated Kiro/Copilot files remain fully generated, as before.
 
 The independent legacy shell corpus and checksums live in `internal/commands/testdata/attention-legacy/`; tests compare JSON semantics and normalize only timestamps. This contract does not establish execution by actual Windows agent events; AC5–AC7 require separate evidence.
+
+## Regra `log_entries_dir_gitignored` (R1, REQ-2026-09-02 ML-3C)
+
+<!-- trackfw-contract: gate=internal/validator/validator_log_entries_gitignored_test.go -->
+
+`trackfw validate` emits a **warning** (rule `log_entries_dir_gitignored`, default severity `warning`, configurable via `rules:` in `trackfw.yaml`) when any of the following hypothetical paths would be covered by a `.gitignore` pattern:
+
+| Path checked | Directory it protects |
+|---|---|
+| `<roadmap_dir>/.trackfw-log-entries/x.entry` | roadmap transition history |
+| `<req_dir>/.trackfw-log-entries/x.entry` | REQ transition history |
+| `docs/agents-working-context/x.md` | working-context entries |
+
+When a pattern such as `*.entry`, `.*`, or `*-entries` covers these paths, entries written at runtime are excluded from git commits and are silently lost on clone.
+
+**Detection mechanism:** `git check-ignore -q --no-index <hypothetical-path>` (exit 0 = ignored). The culprit pattern is fetched via `git check-ignore -v --no-index` and included in the warning message. Both invocations use a 3-second timeout and a clean GIT_* environment (see `validator_git_exec.go`).
+
+**Silent conditions:** the rule is a no-op when git is absent or the CWD is not inside a git work-tree. Projects without a `.gitignore` never trigger this rule.

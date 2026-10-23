@@ -73,7 +73,7 @@ const (
 	liveP2UnresolvedPin   = 3   // was 22 until ML-8A; see liveP2IrreducibleRoots
 	liveP2CleanSitesPin   = 0   // was 16 until ML-8A — the whole Wave 8 population
 	liveRootAliasedPin    = 3   // was 16 until ML-8A; see liveRootAliasedResidual
-	liveBlindSpotSitesPin = 13
+	liveBlindSpotSitesPin = 14
 	liveFailOpenSitesPin  = 0 // was 5 until ML-9A; see liveKnownFailOpen
 )
 
@@ -98,6 +98,8 @@ var liveAnalyserBlindSpots = map[string]blindSpot{
 		"same call-site containment as the directory writes above: rejectSymlinks runs on the destination in the caller, before the write is appended to pendingWrites"},
 	"internal/metrics/metrics.go|ExportCSV|unguarded-write|path": {1,
 		"the guard is deliberately conditional on pathguard.Beneath: an external absolute destination is a user-directed named exception of ADR-2026-09-18, not a root-derived path"},
+	"internal/translog/translog.go|WriteEntry|unguarded-write|tmpName": {1,
+		"tmpName = tmp.Name() where tmp comes from os.CreateTemp(dPath, \"tmp-\"); the OS creates the temp file INSIDE dPath, which is the parent of entryPath. The guard RejectAndReport(resolvedRoot, entryPath) covers dPath (ancestor coverage) and entryPath (exact); tmpName is semantically a path inside dPath but the analyser cannot trace an opaque method call on a two-result return value back to its filesystem parent — same declared limit as manager.go|atomicWrite"},
 }
 
 // liveKnownFailOpen — MEASURED DEFECTS, not approvals. Same cause (the guard is
@@ -424,8 +426,19 @@ var ml9ASites = []struct {
 }{
 	{"internal/generators/java.go", "GeneratePomXML", "GeneratePomXML", 1},
 	{"internal/generators/note.go", "appendNoteToIndex", "appendNoteToIndex", 2},
-	{"internal/generators/req.go", "appendREQTransitionLogEntry", "appendREQTransitionLog", 1},
-	{"internal/generators/roadmap.go", "appendTransitionLogEntry", "appendTransitionLog", 1},
+	// req.go|appendREQTransitionLogEntry and roadmap.go|appendTransitionLogEntry are
+	// NOT listed here: after the refactoring that moved all three write primitives
+	// into translog.WriteEntry, those functions hold 0 write primitives — pinning
+	// them at writes:1 would fail the non-vacuity check.  Their revert protection is
+	// provided by TestContainmentAnalyserOverTheLiveTree: any unguarded write
+	// reintroduced there lands in the unexplained arm and fails by name.
+	//
+	// translog.WriteEntry itself is NOT listed either: it has a legitimate analyser
+	// blind spot (tmpName) pinned in liveAnalyserBlindSpots, so it generates a P1
+	// finding — and TestML9ASitesStayClosed asserts that listed functions are CLEAN
+	// (no findings).  Non-vacuity for WriteEntry is enforced by the blind-spot entry:
+	// if the three write primitives disappear, the pinned finding disappears, and
+	// assertListMatches reports a stale entry.
 }
 
 func TestML9ASitesStayClosed(t *testing.T) {

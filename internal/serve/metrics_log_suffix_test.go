@@ -35,7 +35,11 @@ func TestParseLog_ReadsTheSuffixedLineAndDropsTheBrokenOne(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got := ParseLog(path)
+	// ML-1A: ParseLog takes the directory; the legacy .trackfw-log file is read automatically.
+	got, err := ParseLog(dir)
+	if err != nil {
+		t.Fatalf("ParseLog: %v", err)
+	}
 
 	if len(got) != 3 {
 		t.Fatalf("esperava 3 transições lidas (a quarta é a forma quebrada, de propósito), veio %d: %+v", len(got), got)

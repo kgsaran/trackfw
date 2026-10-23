@@ -14,6 +14,7 @@ import (
 	"github.com/kgsaran/trackfw/internal/forge"
 	"github.com/kgsaran/trackfw/internal/generators"
 	"github.com/kgsaran/trackfw/internal/pathguard"
+	"github.com/kgsaran/trackfw/internal/translog"
 	"github.com/kgsaran/trackfw/internal/validator"
 )
 
@@ -539,8 +540,8 @@ func Scan(rootDir string) (DiscoveryResult, error) {
 			}
 		}
 
-		// detectar .trackfw-log dentro de roadmapDir
-		r.HasTrackfwLog = fileExists(filepath.Join(roadmapRoot, ".trackfw-log"))
+		// detectar .trackfw-log ou .trackfw-log-entries/ dentro de roadmapDir (ML-1A)
+		r.HasTrackfwLog = translog.HasLog(roadmapRoot)
 	}
 
 	// 5. Hook framework

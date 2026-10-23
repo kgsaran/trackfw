@@ -2047,9 +2047,27 @@ func generateVaultIndex() error {
 const gitAttributesRuleTarget = ".trackfw-log"
 
 // gitAttributesBlock é o bloco emitido no caminho de criação E no de append.
-// Byte-idêntico ao equivalente em npm/src/generators/init.js e
-// pypi/trackfw/generators/init_gen.py (regra dura de paridade) e ao
-// .gitattributes da raiz deste repositório.
+// Byte-idêntico ao .gitattributes da raiz deste repositório (verificado por
+// TestGitAttributesBlock_IgualAoArquivoVersionadoNaRaiz — NÃO alterar o conteúdo
+// sem atualizar também o arquivo versionado).
+//
+// # Por que merge=union continua presente após ML-1A
+//
+// A partir de ML-1A, novas transições vão para .trackfw-log-entries/<ts>-<h8>.entry;
+// dois branches paralelos NUNCA conflitam nesse diretório — arquivos distintos,
+// merge automático. O .trackfw-log legado continua sendo LIDO pelo leitor
+// unificado (translog.ReadAll) mas nunca mais escrito por este binário.
+//
+// O atributo merge=union permanece no bloco gerado por dois motivos:
+//  1. Binários antigos (< versão que introduziu ML-1A) ainda podem escrever no
+//     arquivo legado — a regra protege esses projetos durante a transição.
+//  2. Remover o atributo quebraria TestGitAttributesBlock_IgualAoArquivoVersionadoNaRaiz
+//     e o .gitattributes versionado na raiz sem coordenação entre os dois.
+//
+// Nota: forjas como GitHub ignoram merge=union definido em .gitattributes de
+// repositório (medido em PR #595/#597); o atributo só é respeitado em merges
+// locais via `git merge`. Isso é documentado em
+// ADR-2026-10-22-logs-append-only-compartilhados-viram-um-arquivo-por-entrada-*.
 const gitAttributesBlock = `# trackfw: .trackfw-log is append-only — every write lands on the last line, so
 # two parallel branches conflict on every merge. merge=union keeps the lines
 # from both sides (chronological order is not guaranteed). The pattern has no

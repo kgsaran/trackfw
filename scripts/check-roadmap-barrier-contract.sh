@@ -29,6 +29,12 @@ set -euo pipefail
 
 export NO_COLOR=1
 export TERM=dumb
+# Codificacao de saida (ML-1B, REQ-2026-09-02): forca UTF-8 no stdio de todo
+# python3 deste gate. O gate invoca python3 diretamente (doc_check_json, linha 115
+# e outros) e tambem via heredoc (linha ~612). PYTHONIOENCODING cobre TODOS;
+# o reconfigure interno ao heredoc e belt-and-suspenders para o bloco do corpus.
+# A declaracao aqui e asseverada por check-output-encoding-declared.sh (ALVO 1).
+export PYTHONIOENCODING=utf-8
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 # shellcheck source=scripts/lib-crlf-normalize.sh
@@ -609,7 +615,15 @@ import json, sys
 # console cp1252 o print estoura com UnicodeEncodeError e o gate morre no 11o
 # check. E mesmo sem estourar, a codificacao entraria no CORPUS_HASH (linha 542
 # hasheia este arquivo), fazendo o mesmo corpus dar hash diferente por SO.
-sys.stdout.reconfigure(encoding="utf-8", errors="replace", newline="\n")
+#
+# AC1 (ML-1B, REQ-2026-09-02): errors="strict" em vez de "replace".
+# Medicao (ac1-bite.py, 2026-10-22): json.load preserva surrogate solto \udcff;
+# com errors="replace" o print() silencia o erro e grava '?' (0x3F) no
+# CORPUS_LINES_FILE — corrupcao que muda o CORPUS_HASH sem indicar a causa.
+# Com errors="strict" o mesmo input levanta UnicodeEncodeError (exit 1) e o
+# gate falha alto antes de gravar qualquer byte corrompido. O corpus real nao
+# contem surrogates — a mudanca nao altera o PINNED_CORPUS_HASH.
+sys.stdout.reconfigure(encoding="utf-8", errors="strict", newline="\n")
 
 doc = json.loads(sys.argv[1])
 base, label = sys.argv[2], sys.argv[3]

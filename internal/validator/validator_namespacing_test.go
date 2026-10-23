@@ -2,9 +2,11 @@ package validator
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/kgsaran/trackfw/internal/config"
+	"github.com/kgsaran/trackfw/internal/translog"
 )
 
 // TestByAgentNamespacingWIPLimit verifica que o WIP limit é aplicado POR AGENTE,
@@ -192,6 +194,54 @@ func TestResolveWriteAgent_MultipleNamespacesWithEmpty_ParityMessage(t *testing.
 	const want = "by_agent project has multiple agent namespaces (alpha, beta): use --agent to specify one"
 	if err.Error() != want {
 		t.Fatalf("mensagem deve ser byte-idêntica ao contrato de paridade;\nwant: %q\ngot:  %q", want, err.Error())
+	}
+}
+
+// TestValidate_ByAgent_TrackfwLogDirIsInfra verifica que um projeto by_agent com um
+// .trackfw-log-entries/ presente em roadmap_dir NÃO emite agent_namespace_hidden para ele.
+//
+// AFIRMA: isInfraDirName(".trackfw-log-entries") == true, portanto o diretório de log por
+// entrada é filtrado pelo resolvedor de namespaces e nunca aparece na lista de namespaces
+// ocultos. A ausência de agent_namespace_hidden é a garantia contratual que todo projeto que
+// rodou o novo writer (ML-1A/ML-1C) não receba um falso positivo de validate.
+func TestValidate_ByAgent_TrackfwLogDirIsInfra(t *testing.T) {
+	dir := t.TempDir()
+	chdir(t, dir)
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	yaml := "roadmap_namespacing: by_agent\nagents:\n  - zeus\nroadmap_dir: docs/roadmaps\n"
+	if err := os.WriteFile("trackfw.yaml", []byte(yaml), 0644); err != nil {
+		t.Fatalf("escrever trackfw.yaml: %v", err)
+	}
+
+	// Cria um namespace legítimo "zeus" com um wip roadmap.
+	if err := os.MkdirAll("docs/roadmaps/zeus/wip", 0755); err != nil {
+		t.Fatalf("mkdir zeus/wip: %v", err)
+	}
+	if err := os.WriteFile("docs/roadmaps/zeus/wip/ROADMAP-001.md", []byte("# R\n"), 0644); err != nil {
+		t.Fatalf("escrever roadmap: %v", err)
+	}
+
+	// Cria o diretório de log por entrada (.trackfw-log-entries) com uma entrada fictícia.
+	logDir := "docs/roadmaps/" + translog.EntriesDirSuffix[1:]
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		t.Fatalf("mkdir %s: %v", logDir, err)
+	}
+	if err := os.WriteFile(logDir+"/x.entry",
+		[]byte("2026-10-22 10:00  ROADMAP-001.md                       backlog → wip\n"), 0644); err != nil {
+		t.Fatalf("escrever x.entry: %v", err)
+	}
+
+	_, warnings, err := Validate()
+	if err != nil {
+		t.Fatalf("Validate() erro: %v", err)
+	}
+	entriesDirName := translog.EntriesDirSuffix[1:]
+	for _, w := range warnings {
+		if strings.Contains(w, "agent_namespace_hidden") || strings.Contains(w, entriesDirName) {
+			t.Errorf("Validate() emitiu warning inesperado sobre %s: %q", entriesDirName, w)
+		}
 	}
 }
 

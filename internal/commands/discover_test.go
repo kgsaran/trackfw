@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kgsaran/trackfw/internal/translog"
 )
 
 // helpers compartilhados
@@ -169,8 +171,12 @@ func TestDiscoverInit(t *testing.T) {
 	})
 }
 
-// TestDiscoverBootstrapLog verifica que .trackfw-log é criado com entradas dos arquivos done/
+// TestDiscoverBootstrapLog verifica que .trackfw-log-entries/ é criado com entradas dos arquivos done/
 // e que execuções repetidas não duplicam entradas.
+//
+// AFIRMA: --bootstrap-log grava entradas no .trackfw-log-entries/ (novo contrato do ML-1A) e
+// translog.ReadAll as enxerga; a contagem de transições lidas deve corresponder ao número de
+// roadmaps em done/. A idempotência garante que a segunda execução não duplica entradas.
 func TestDiscoverBootstrapLog(t *testing.T) {
 	dir := t.TempDir()
 
@@ -179,7 +185,7 @@ func TestDiscoverBootstrapLog(t *testing.T) {
 	mustWriteFileCmd(t, filepath.Join(dir, "docs/roadmaps/done/ROADMAP-001.md"), "# Roadmap 001")
 	mustWriteFileCmd(t, filepath.Join(dir, "docs/roadmaps/done/ROADMAP-002.md"), "# Roadmap 002")
 
-	// primeira execução — deve criar o log com 2 entradas
+	// primeira execução — deve criar as entradas em .trackfw-log-entries/
 	out, err := runDiscover(t, dir, "--bootstrap-log")
 	if err != nil {
 		t.Fatalf("discover --bootstrap-log failed (1ª execução): %v", err)
@@ -188,15 +194,24 @@ func TestDiscoverBootstrapLog(t *testing.T) {
 		t.Errorf("output should confirm log was written; got:\n%s", out)
 	}
 
-	logPath := filepath.Join(dir, "docs/roadmaps/.trackfw-log")
-	content, err := os.ReadFile(logPath)
-	if err != nil {
-		t.Fatalf(".trackfw-log not created: %v", err)
+	// O contrato novo: entradas vivem em .trackfw-log-entries/, lidas por translog.ReadAll.
+	roadmapDir := filepath.Join(dir, "docs/roadmaps")
+	ts, readErr := translog.ReadAll(roadmapDir)
+	if readErr != nil {
+		t.Fatalf("translog.ReadAll after 1st run: %v", readErr)
 	}
-
-	lines := countNonEmptyLines(string(content))
-	if lines != 2 {
-		t.Errorf("expected 2 log entries after 1st run, got %d; content:\n%s", lines, string(content))
+	if len(ts) != 2 {
+		t.Errorf("expected 2 log entries after 1st run, got %d: %+v", len(ts), ts)
+	}
+	// Garantir que os basenames estão presentes (afirma conteúdo, não só contagem).
+	seen := map[string]bool{}
+	for _, tr := range ts {
+		seen[tr.Basename] = true
+	}
+	for _, want := range []string{"ROADMAP-001.md", "ROADMAP-002.md"} {
+		if !seen[want] {
+			t.Errorf("basename %q not found in log entries after 1st run; got %+v", want, ts)
+		}
 	}
 
 	// segunda execução — não deve duplicar (dedup)
@@ -205,14 +220,18 @@ func TestDiscoverBootstrapLog(t *testing.T) {
 		t.Fatalf("discover --bootstrap-log failed (2ª execução): %v", err)
 	}
 
-	content2, err := os.ReadFile(logPath)
-	if err != nil {
-		t.Fatalf(".trackfw-log not found after 2nd run: %v", err)
+	ts2, readErr2 := translog.ReadAll(roadmapDir)
+	if readErr2 != nil {
+		t.Fatalf("translog.ReadAll after 2nd run: %v", readErr2)
+	}
+	if len(ts2) != 2 {
+		t.Errorf("expected 2 log entries after 2nd run (no duplicates), got %d: %+v", len(ts2), ts2)
 	}
 
-	lines2 := countNonEmptyLines(string(content2))
-	if lines2 != 2 {
-		t.Errorf("expected 2 log entries after 2nd run (no duplicates), got %d; content:\n%s", lines2, string(content2))
+	// .trackfw-log (legado) NÃO deve ter sido criado — o novo contrato escreve só no .d/.
+	legacyPath := filepath.Join(roadmapDir, ".trackfw-log")
+	if _, statErr := os.Stat(legacyPath); statErr == nil {
+		t.Errorf(".trackfw-log legacy file should NOT be created by new writer; found at %s", legacyPath)
 	}
 }
 

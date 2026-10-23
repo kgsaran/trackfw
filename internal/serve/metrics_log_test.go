@@ -7,9 +7,15 @@ import (
 	"time"
 )
 
-// TestParseLog_Empty — arquivo inexistente retorna slice vazia (não nil, não panic).
+// TestParseLog_Empty — diretório inexistente retorna slice vazia (não nil, não panic).
+// AFIRMA: ParseLog não retorna nil para um diretório inexistente — callers podem iterar
+// sobre o resultado sem verificar nil.
 func TestParseLog_Empty(t *testing.T) {
-	result := ParseLog("/caminho/inexistente/.trackfw-log")
+	// ML-1A: ParseLog now takes a directory, not a file path.
+	result, err := ParseLog("/caminho/inexistente/roadmaps")
+	if err != nil {
+		t.Fatalf("esperado err=nil para diretório inexistente, obteve: %v", err)
+	}
 	if result == nil {
 		t.Fatal("esperado slice vazia, obteve nil")
 	}
@@ -18,7 +24,7 @@ func TestParseLog_Empty(t *testing.T) {
 	}
 }
 
-// TestParseLog_ValidLines — arquivo com linhas válidas retorna transições corretas.
+// TestParseLog_ValidLines — arquivo legado com linhas válidas retorna transições corretas.
 func TestParseLog_ValidLines(t *testing.T) {
 	dir := t.TempDir()
 	logPath := filepath.Join(dir, ".trackfw-log")
@@ -29,14 +35,20 @@ func TestParseLog_ValidLines(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	result := ParseLog(logPath)
+	// ML-1A: ParseLog takes the directory, not the file path; the legacy file is read automatically.
+	result, err := ParseLog(dir)
+	if err != nil {
+		t.Fatalf("ParseLog: %v", err)
+	}
 	if len(result) != 2 {
 		t.Fatalf("esperado 2 transições, obteve %d", len(result))
 	}
 
-	// Primeira transição
+	// Primeira transição.
+	// ML-1A: translog.ReadAll parses timestamps in time.Local (matching metrics/validator)
+	// rather than UTC as the old serve.ParseLog did. Update expectations accordingly.
 	first := result[0]
-	wantTS1, _ := time.Parse("2006-01-02 15:04", "2026-06-12 14:30")
+	wantTS1, _ := time.ParseInLocation("2006-01-02 15:04", "2026-06-12 14:30", time.Local)
 	if !first.Timestamp.Equal(wantTS1) {
 		t.Errorf("Timestamp[0]: esperado %v, obteve %v", wantTS1, first.Timestamp)
 	}
@@ -50,9 +62,9 @@ func TestParseLog_ValidLines(t *testing.T) {
 		t.Errorf("To[0]: esperado %q, obteve %q", "wip", first.To)
 	}
 
-	// Segunda transição
+	// Segunda transição.
 	second := result[1]
-	wantTS2, _ := time.Parse("2006-01-02 15:04", "2026-06-13 09:00")
+	wantTS2, _ := time.ParseInLocation("2006-01-02 15:04", "2026-06-13 09:00", time.Local)
 	if !second.Timestamp.Equal(wantTS2) {
 		t.Errorf("Timestamp[1]: esperado %v, obteve %v", wantTS2, second.Timestamp)
 	}
@@ -80,7 +92,11 @@ func TestParseLog_SkipsInvalidLines(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	result := ParseLog(logPath)
+	// ML-1A: ParseLog takes the directory; the legacy file is read automatically.
+	result, err := ParseLog(dir)
+	if err != nil {
+		t.Fatalf("ParseLog: %v", err)
+	}
 	// Apenas a linha válida deve ser retornada.
 	if len(result) != 1 {
 		t.Errorf("esperado 1 transição válida, obteve %d: %+v", len(result), result)
@@ -103,7 +119,11 @@ func TestParseLog_MultipleTransitions(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	result := ParseLog(logPath)
+	// ML-1A: ParseLog takes the directory.
+	result, err := ParseLog(dir)
+	if err != nil {
+		t.Fatalf("ParseLog: %v", err)
+	}
 	if len(result) != 4 {
 		t.Fatalf("esperado 4 transições, obteve %d", len(result))
 	}

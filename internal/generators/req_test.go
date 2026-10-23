@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/kgsaran/trackfw/internal/config"
+	"github.com/kgsaran/trackfw/internal/translog"
 )
 
 // chdirREQ muda para dir e restaura ao fim do teste
@@ -641,13 +642,20 @@ func TestMoveREQ_LogsTransition(t *testing.T) {
 		t.Fatalf("MoveREQ erro: %v", err)
 	}
 
-	log, err := os.ReadFile(filepath.Join("docs", "req", ".trackfw-log"))
+	// ML-1A: entries land in .trackfw-log-entries/, not the legacy .trackfw-log file.
+	reqTransitions, err := translog.ReadAll(filepath.Join("docs", "req"))
 	if err != nil {
-		t.Fatalf("log de transição não foi criado: %v", err)
+		t.Fatalf("log de transição: ReadAll: %v", err)
 	}
-	logBody := string(log)
-	if !strings.Contains(logBody, "REQ-2026-08-04-log.md") || !strings.Contains(logBody, "backlog → wip") {
-		t.Fatalf("log não registrou a transição esperada, obteve:\n%s", logBody)
+	reqTransFound := false
+	for _, tr := range reqTransitions {
+		if strings.Contains(tr.Basename, "REQ-2026-08-04-log.md") && tr.From == "backlog" && tr.To == "wip" {
+			reqTransFound = true
+			break
+		}
+	}
+	if !reqTransFound {
+		t.Fatalf("log não registrou a transição esperada; obteve %d entradas", len(reqTransitions))
 	}
 }
 

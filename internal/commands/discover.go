@@ -1,16 +1,17 @@
 package commands
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/kgsaran/trackfw/internal/discover"
 	"github.com/kgsaran/trackfw/internal/generators"
 	"github.com/kgsaran/trackfw/internal/i18n"
 	"github.com/kgsaran/trackfw/internal/pathguard"
+	"github.com/kgsaran/trackfw/internal/translog"
 	"github.com/spf13/cobra"
 )
 
@@ -103,11 +104,11 @@ func NewDiscoverCmd() *cobra.Command {
 				fmt.Fprintln(out, "✓ trackfw.yaml found")
 			}
 
-			// .trackfw-log
+			// .trackfw-log / .trackfw-log-entries (ML-1A: new writes go to entries dir)
 			if !r.HasTrackfwLog {
-				fmt.Fprintln(out, "⚠ No .trackfw-log — run with --bootstrap-log to create retroactive history")
+				fmt.Fprintln(out, "⚠ No .trackfw-log or .trackfw-log-entries — run with --bootstrap-log to create retroactive history")
 			} else {
-				fmt.Fprintln(out, "✓ .trackfw-log found")
+				fmt.Fprintln(out, "✓ transition log found")
 			}
 
 			// hooks
@@ -172,39 +173,50 @@ func NewDiscoverCmd() *cobra.Command {
 					return fmt.Errorf("no roadmap dir detected — cannot bootstrap log")
 				}
 
-				logPath := filepath.Join(resolvedCwd, r.RoadmapDir, ".trackfw-log")
+				roadmapDir := filepath.Join(resolvedCwd, r.RoadmapDir)
+				dotDPath := filepath.Join(roadmapDir, translog.EntriesDirSuffix[1:])
 
-				// ler entradas já existentes para dedup
-				existingEntries := readLogEntries(logPath)
+				// Guard the .d/ directory before writing any entries.
+				if err := rejectDiscoverPath(resolvedCwd, dotDPath); err != nil {
+					return err
+				}
+
+				// Build a dedup set from existing transitions (legacy + .d/).
+				existingEntries := readLogEntries(r.RoadmapDir)
 
 				// gerar novas entradas
 				newContent := discover.GenerateBootstrapLog(r, cwd)
 				lines := strings.Split(newContent, "\n")
 
-				if err := rejectDiscoverPath(resolvedCwd, logPath); err != nil {
-					return err
-				}
-				f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644) // write-containment-allowed: guarded by pathguard.RejectSymlinks via rejectDiscoverPath above
-				if err != nil {
-					return fmt.Errorf("opening log: %w", err)
-				}
-				defer f.Close()
-
 				written := 0
 				for _, line := range lines {
+					line = strings.TrimRight(line, "\r\n")
 					if line == "" {
 						continue
 					}
-					// extrair chave de dedup: data + filename (sem o timestamp de hora)
 					key := dedupKey(line)
 					if existingEntries[key] {
 						continue
 					}
-					fmt.Fprintln(f, line)
+					// Parse the retroactive timestamp from the line (format: "2006-01-02 15:04  ...").
+					var entryTime time.Time
+					if len(line) >= 16 {
+						if ts, parseErr := time.ParseInLocation("2006-01-02 15:04", line[:16], time.Local); parseErr == nil {
+							entryTime = ts
+						}
+					}
+					if entryTime.IsZero() {
+						entryTime = time.Now()
+					}
+					// WriteEntry guards itself via pathguard.RejectAndReport(resolvedRoot, entryPath);
+					// rejectDiscoverPath above serves as an early-exit before the loop.
+					if _, writeErr := translog.WriteEntry(resolvedCwd, r.RoadmapDir, line, entryTime); writeErr != nil {
+						return fmt.Errorf("bootstrap log: write entry: %w", writeErr)
+					}
 					written++
 				}
 
-				fmt.Fprintf(out, "✓ bootstrap log written to %s (%d new entries)\n", logPath, written)
+				fmt.Fprintf(out, "✓ bootstrap log written to %s/%s (%d new entries)\n", r.RoadmapDir, translog.EntriesDirSuffix[1:], written)
 			}
 
 			return nil
@@ -227,20 +239,25 @@ func rejectDiscoverPath(root, absTarget string) error {
 	return pathguard.RejectAndReport(root, absTarget)
 }
 
-// readLogEntries lê o arquivo de log e retorna um set de chaves de dedup.
-func readLogEntries(logPath string) map[string]bool {
+// readLogEntries lê o log de transições (legacy + .d/) e retorna um set de chaves de dedup.
+// The key is the full line reconstructed from the Transition fields, so that bootstrap lines
+// already written via translog.WriteEntry are not re-written.
+func readLogEntries(roadmapDir string) map[string]bool {
 	entries := make(map[string]bool)
-	f, err := os.Open(logPath)
+	tls, err := translog.ReadAll(roadmapDir)
 	if err != nil {
 		return entries
 	}
-	defer f.Close()
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if line != "" {
-			entries[dedupKey(line)] = true
-		}
+	for _, t := range tls {
+		// Reconstruct the line the same way GenerateBootstrapLog does it so the dedup
+		// key matches. The time format and field separator must be identical.
+		line := fmt.Sprintf("%s  %-50s  %s → %s",
+			t.Timestamp.Format("2006-01-02 15:04"),
+			t.Basename,
+			t.From,
+			t.To,
+		)
+		entries[dedupKey(line)] = true
 	}
 	return entries
 }

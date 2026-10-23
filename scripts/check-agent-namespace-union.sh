@@ -709,7 +709,7 @@ cp -r "$ROOT_DIR/internal/." "$TB1_GO_MOD/internal/"
 cp "$ROOT_DIR/go.mod" "$ROOT_DIR/go.sum" "$TB1_GO_MOD/"
 corrupt_literal \
   "$ROOT_DIR/internal/validator/validator.go" "$TB1_GO_MOD/internal/validator/validator.go" \
-  'return name == "node_modules"' \
+  'return name == "node_modules" || name == translog.EntriesDirSuffix[1:]' \
   'return false' \
   "direction-b1-go"
 TB1_GO_BIN="$WORK/dirb1-go-bin/trackfw"
@@ -745,10 +745,10 @@ cp "$ROOT_DIR/go.mod" "$ROOT_DIR/go.sum" "$TB3_GO_MOD/"
 corrupt_literal \
   "$ROOT_DIR/internal/validator/validator.go" "$TB3_GO_MOD/internal/validator/validator.go" \
   'func isInfraDirName(name string) bool {
-	return name == "node_modules"
+	return name == "node_modules" || name == translog.EntriesDirSuffix[1:]
 }' \
   'func isInfraDirName(name string) bool {
-	return strings.HasPrefix(name, ".") || name == "node_modules"
+	return strings.HasPrefix(name, ".") || name == "node_modules" || name == translog.EntriesDirSuffix[1:]
 }' \
   "direction-b3-go"
 TB3_GO_BIN="$WORK/dirb3-go-bin/trackfw"

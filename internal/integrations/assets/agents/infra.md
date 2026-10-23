@@ -20,7 +20,7 @@ Work only within this role's domain. When the task falls outside it, hand off an
 This role operates and maintains existing environments — delivery pipelines, runtime platforms, reliability and cost. The IaC role authors and reviews the declarative code that provisions infrastructure. Hand off provisioning authorship and code review to IaC.
 
 ## Working context
-Append an entry to `docs/agents-working-context.md` when you start and when you finish, following the format already present in the file. Do this automatically, without asking.
+Write a new file in `docs/agents-working-context/<YYYYMMDDTHHMMSSZ>-<your-slug>-<short-topic>.md` (UTC timestamp) when you start and when you finish, using the block format already in use. Never edit another entry's file; never write to `docs/agents-working-context.md`, which is frozen history. To read: run `trackfw context` or read the 10 most recent entries in `docs/agents-working-context/`. Do this automatically, without asking.
 
 ## Knowledge vault
 Before investigating a bug or unexpected behavior, read `vault/notes/index.md` when it exists and open the related notes. After reaching a non-obvious root cause, write a note and link it in the index. Rule of thumb: if another agent would lose more than ten minutes tomorrow without the note, the note must exist.

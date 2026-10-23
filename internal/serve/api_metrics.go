@@ -21,11 +21,15 @@ type burndownPoint struct {
 
 // metricsResponse is the JSON shape returned by GET /api/metrics.
 type metricsResponse struct {
-	LeadTimeAvgDays  float64            `json:"lead_time_avg_days"`
-	CycleTimeAvgDays float64            `json:"cycle_time_avg_days"`
-	AbandonmentRate  float64            `json:"abandonment_rate"`
-	StateDistrib     map[string]int     `json:"state_distribution"`
-	Burndown         []burndownPoint    `json:"burndown"`
+	LeadTimeAvgDays  float64         `json:"lead_time_avg_days"`
+	CycleTimeAvgDays float64         `json:"cycle_time_avg_days"`
+	AbandonmentRate  float64         `json:"abandonment_rate"`
+	StateDistrib     map[string]int  `json:"state_distribution"`
+	Burndown         []burndownPoint `json:"burndown"`
+	// LogError is non-empty when translog.ReadAll failed (e.g. entries directory is a
+	// symlink or a regular file). Omitted from JSON when the log is healthy. R5: the
+	// board used to show zero metrics without any signal of degradation.
+	LogError string `json:"log_error,omitempty"`
 }
 
 var openStates = map[string]bool{
@@ -37,8 +41,7 @@ func metricsHandler(w http.ResponseWriter, _ *http.Request, cfg config.ProjectCo
 	setCORSHeaders(w)
 	w.Header().Set("Content-Type", "application/json")
 
-	logFile := filepath.Join(cfg.RoadmapDir, ".trackfw-log")
-	transitions := ParseLog(logFile)
+	transitions, logErr := ParseLog(cfg.RoadmapDir)
 
 	leadTime := calcLeadTime(transitions)
 	cycleTime := calcCycleTime(transitions)
@@ -48,12 +51,17 @@ func metricsHandler(w http.ResponseWriter, _ *http.Request, cfg config.ProjectCo
 	// State distribution: count files currently in each state dir
 	distrib := countStateDistribution(cfg)
 
+	var logErrStr string
+	if logErr != nil {
+		logErrStr = logErr.Error()
+	}
 	resp := metricsResponse{
 		LeadTimeAvgDays:  leadTime,
 		CycleTimeAvgDays: cycleTime,
 		AbandonmentRate:  abandonment,
 		StateDistrib:     distrib,
 		Burndown:         burndown,
+		LogError:         logErrStr,
 	}
 	_ = json.NewEncoder(w).Encode(resp)
 }

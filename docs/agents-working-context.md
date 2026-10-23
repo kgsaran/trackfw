@@ -1,5 +1,9 @@
 # agents-working-context.md
 
+> **CONGELADO em 2026-10-22 (ADR-2026-10-22).** Este arquivo é histórico somente-leitura.
+> Novas entradas vão em `docs/agents-working-context/<AAAAMMDDTHHMMSSZ>-<agente>-<assunto>.md`.
+> Leitura: `trackfw context` ou as 10 entradas mais recentes de `docs/agents-working-context/`.
+
 ## 2026-10-22 — prometeu-tf — FIM: corretivo ML-1A (REQ-2026-09-26) — braço negativo reescrito
 
 - Defeito corrigido: braço `negative` não chamava `checkPhrases` e só afirmava que phrase1 sumiu; phrase2 nunca era exercida.
@@ -47411,3 +47415,31 @@ que chamam git sem `LookPath`; chmod no discover.
 - A REQ foi entregue em dois PRs: #598 (ed910c22, proibição do `model` no Dispatch contract) e #600 (75642ec5, escape TOML do Codex, YAML conferido por enumeração, slug validado no Load, referências de terceiro). O roadmap foi para done/, e a REQ ficou Done.
 - Pendente com o KG: quem já tem o arquiteto instalado só recebe o parágrafo novo depois de `trackfw agents update` ou `trackfw update harness` com um binário que contenha o #598, ou seja, depois da próxima release.
 - Próximo da fila aprovada: o roadmap 4, sobre o conflito do `.trackfw-log`.
+
+## 2026-10-22 — zeus-tf — INÍCIO: REQ-2026-09-02 (logs append-only que conflitam no GitHub)
+
+- Segundo item da ordem aprovada. O KG decidiu: um arquivo por entrada, tanto para o `.trackfw-log` quanto para o contexto de trabalho, que entra na REQ. AC5: o mantenedor move os roadmaps de PR externo depois do merge. Criei a ADR-2026-10-22, reescrevi o AC6 e acrescentei o AC8.
+- Plano: Wave 0 com o hades-tf; Wave 1 com o apolo-tf (log) e o ares-tf (gates de encoding) em paralelo; Wave 2 com o prometeu-tf (instruções do contexto); Wave 3 com a revisão. Worktree /private/tmp/trackfw-toml-escape. O PR abre como draft.
+
+## 2026-10-22 — apolo-tf — INÍCIO: ajuste de pins ML-1A (REQ-2026-09-02)
+
+- Tarefa: os gates de falsificação B1 e B3 de check-agent-namespace-union.sh tinham pins textuais do código antigo (antes do ML-1A).
+- Causa: ML-1A acrescentou `.trackfw-log.d` ao return de `isInfraDirName` e inseriu o comentário dentro do corpo da função; os `corrupt_literal` do script fixavam o corpo antigo (só `node_modules`).
+
+## 2026-10-22 — apolo-tf — FIM: ajuste de pins ML-1A (REQ-2026-09-02)
+
+- validator.go: comentário ML-1A movido do corpo da função para antes da linha `func` (no bloco de GoDoc). O corpo ficou: `return name == "node_modules" || name == ".trackfw-log.d"`.
+- check-agent-namespace-union.sh B1: pin atualizado de `'return name == "node_modules"'` para `'return name == "node_modules" || name == ".trackfw-log.d"'`.
+- check-agent-namespace-union.sh B3: fonte atualizada para o novo corpo; destino atualizado para `strings.HasPrefix(name, ".") || name == "node_modules" || name == ".trackfw-log.d"`, preservando .trackfw-log.d.
+- Resultados: anu=0 (22/22), pr=0, val=0.
+
+## 2026-10-22 — zeus-tf — Wave 1 da REQ-2026-09-02 auditada
+
+- apolo-tf, ML-1A: o log tem um arquivo por entrada em `.trackfw-log.d/*.entry`, e o leitor único `internal/translog` substitui os dois parsers. A 1ª entrega foi reprovada e depois corrigida. As mordidas foram medidas, e o `make parity-rest` deu rc=0.
+- ares-tf, ML-1B: os gates de encoding (AC1–AC4) foram corrigidos, e o `--self-test` ficou ligado ao Makefile.
+- Desvio: o apolo-tf escreveu neste arquivo, embora fosse proibido. O conteúdo foi mantido. As memórias do hades-tf e do prometeu-tf foram gravadas no checkout principal, que é o caminho de memória configurado para eles; não mexi.
+- 2026-10-22 — apolo-tf, ML-1C: o diretório agora se chama `.trackfw-log-entries`, com a constante `translog.EntriesDirSuffix`, porque `*.d` no `.gitignore` ignoraria o nome antigo. Há um teste com padrões comuns de `.gitignore`. Medido pelo arquiteto: 7 pacotes verdes.
+- 2026-10-22 — zeus-tf. prometeu-tf, ML-2A: as instruções dos 12 agentes e do `agentfiles.go` apontam para `docs/agents-working-context/`, e o `trackfw context` mostra as 10 mais recentes. O arquivo legado está congelado. Auditado: `parity-rest` com rc=0 e mordida medida. Nota: este registro do arquiteto ainda vai no `.md` legado, porque o arquivo instalado do arquiteto manda assim até o `agents update` pós-release.
+- 2026-10-22 — zeus-tf, Wave 3 da REQ-2026-09-02. hefesto-tf REPROVOU (B1, B2) e hades-tf aprovou com ressalva (R1–R5). apolo-tf, ML-3C: corrigido; as mordidas de B2 e R1 foram medidas pelo arquiteto, que também corrigiu uma anotação `gate=`. `parity-rest` com rc=0.
+- 2026-10-22 — zeus-tf. O `make quality` reprovou em `internal/pathguard`, porque a guarda estava nos chamadores e não no `translog.WriteEntry`. apolo-tf: o `WriteEntry(resolvedRoot, dir, line, now)` agora guarda o caminho final por conta própria, e os pins do analisador foram atualizados (1 ponto cego do `tmpName`, com o mesmo precedente do `atomicWrite`). O arquiteto ainda não reroda o `make quality`. Lição: mudança que move escrita de lugar exige `go test ./internal/pathguard/`.
+- 2026-10-22 — zeus-tf. `make quality` com rc=0 no f3cddf7a (368 OK / 0 FAIL). ACs da REQ-2026-09-02 marcados; falta o CI do PR #602.

@@ -1,12 +1,11 @@
 package commands
 
 import (
-	"bufio"
 	"fmt"
-	"os"
 
 	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/i18n"
+	"github.com/kgsaran/trackfw/internal/translog"
 	"github.com/spf13/cobra"
 )
 
@@ -24,31 +23,29 @@ func newLogCmd() *cobra.Command {
 }
 
 func runLog(tail int) error {
-	logFile := config.Load().RoadmapDir + "/.trackfw-log"
-	f, err := os.Open(logFile)
-	if os.IsNotExist(err) {
-		fmt.Println(i18n.T("log.empty"))
-		return nil
-	}
+	dir := config.Load().RoadmapDir
+	transitions, err := translog.ReadAll(dir)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-
-	var lines []string
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		lines = append(lines, scanner.Text())
+	if len(transitions) == 0 {
+		fmt.Println(i18n.T("log.empty"))
+		return nil
 	}
 
 	start := 0
-	if len(lines) > tail {
-		start = len(lines) - tail
+	if len(transitions) > tail {
+		start = len(transitions) - tail
 	}
 
 	fmt.Println("── trackfw log ─────────────────────────")
-	for _, line := range lines[start:] {
-		fmt.Println(line)
+	for _, t := range transitions[start:] {
+		fmt.Printf("%s  %-50s  %s → %s\n",
+			t.Timestamp.Format("2006-01-02 15:04"),
+			t.Basename,
+			t.From,
+			t.To,
+		)
 	}
 	return nil
 }

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/kgsaran/trackfw/internal/config"
+	"github.com/kgsaran/trackfw/internal/translog"
 )
 
 // fail_closed_root_test.go — ML-9A of REQ-2026-08-31.
@@ -216,8 +217,12 @@ func TestAppendNoteToIndexRefusesUnverifiableRoot(t *testing.T) {
 
 func TestAppendTransitionLogIsNonFatalAndRefuses(t *testing.T) {
 	logRelative := logPath()
+	// ML-1A/ML-1C: the writer now creates .trackfw-log-entries/<name>.entry instead of
+	// appending to the legacy .trackfw-log file. The control arm checks the entries dir;
+	// the refused arm checks neither file is created.
+	dotDRelative := filepath.Join(config.Load().RoadmapDir, translog.EntriesDirSuffix[1:])
 
-	// ── control arm: the happy path still appends ─────────────────────────
+	// ── control arm: the happy path still writes (to .d/) ─────────────────
 	clean := t.TempDir()
 	t.Chdir(clean)
 	if err := os.MkdirAll(filepath.Dir(filepath.Join(clean, logRelative)), 0o755); err != nil {
@@ -229,8 +234,9 @@ func TestAppendTransitionLogIsNonFatalAndRefuses(t *testing.T) {
 	if controlOutput != "" {
 		t.Fatalf("clean tree must print nothing, got: %q", controlOutput)
 	}
-	if _, err := os.Stat(filepath.Join(clean, logRelative)); err != nil {
-		t.Fatalf("control arm did not reach the write (%v) — the negative arm below would prove nothing", err)
+	// ML-1A/ML-1C: writer creates .trackfw-log-entries/ directory, not the legacy file.
+	if info, err := os.Stat(filepath.Join(clean, dotDRelative)); err != nil || !info.IsDir() {
+		t.Fatalf("control arm did not create .trackfw-log-entries/ (%v) — the negative arm below would prove nothing", err)
 	}
 
 	// ── negative arm: root unverifiable → refuses, out loud, without writing
@@ -253,9 +259,15 @@ func TestAppendTransitionLogIsNonFatalAndRefuses(t *testing.T) {
 	if !strings.Contains(output, singleGrammar) {
 		t.Errorf("the refusal is not audible in the single grammar %q, got: %q", singleGrammar, output)
 	}
-	assertUnverifiableRefusal(t, "stderr", output, logRelative)
+	// ML-1A/ML-1C: the refusal names the entries dir (.trackfw-log-entries), not the legacy file.
+	// Use filepath.ToSlash so the assertion holds on Windows where filepath.Join produces backslashes.
+	assertUnverifiableRefusal(t, "stderr", output, filepath.ToSlash(dotDRelative))
+	// Neither the legacy file nor the new entries dir must be created when refused.
 	if _, statErr := os.Stat(filepath.Join(refused, logRelative)); statErr == nil {
-		t.Errorf("containment violated: the transition log was written while the root could not be established")
+		t.Errorf("containment violated: legacy .trackfw-log was written while the root could not be established")
+	}
+	if _, statErr := os.Stat(filepath.Join(refused, dotDRelative)); statErr == nil {
+		t.Errorf("containment violated: .trackfw-log-entries/ was created while the root could not be established")
 	}
 
 	// ── the discriminant: WHICH control flow is preserved ─────────────────
@@ -273,6 +285,9 @@ func TestAppendTransitionLogIsNonFatalAndRefuses(t *testing.T) {
 
 func TestAppendREQTransitionLogIsNonFatalAndRefuses(t *testing.T) {
 	logRelative := filepath.Join(config.Load().REQDir, ".trackfw-log")
+	// ML-1A/ML-1C: the writer now creates .trackfw-log-entries/<name>.entry instead of
+	// appending to the legacy .trackfw-log file. The control arm checks the entries dir.
+	dotDRelativeREQ := filepath.Join(config.Load().REQDir, translog.EntriesDirSuffix[1:])
 
 	clean := t.TempDir()
 	t.Chdir(clean)
@@ -285,8 +300,9 @@ func TestAppendREQTransitionLogIsNonFatalAndRefuses(t *testing.T) {
 	if controlOutput != "" {
 		t.Fatalf("clean tree must print nothing, got: %q", controlOutput)
 	}
-	if _, err := os.Stat(filepath.Join(clean, logRelative)); err != nil {
-		t.Fatalf("control arm did not reach the write (%v) — the negative arm below would prove nothing", err)
+	// ML-1A/ML-1C: writer creates .trackfw-log-entries/ directory, not the legacy file.
+	if info, err := os.Stat(filepath.Join(clean, dotDRelativeREQ)); err != nil || !info.IsDir() {
+		t.Fatalf("control arm did not create .trackfw-log-entries/ (%v) — the negative arm below would prove nothing", err)
 	}
 
 	refused := t.TempDir()
@@ -305,9 +321,15 @@ func TestAppendREQTransitionLogIsNonFatalAndRefuses(t *testing.T) {
 	if !strings.Contains(output, singleGrammar) {
 		t.Errorf("the refusal is not audible in the single grammar %q, got: %q", singleGrammar, output)
 	}
-	assertUnverifiableRefusal(t, "stderr", output, logRelative)
+	// ML-1A/ML-1C: the refusal names the entries dir (.trackfw-log-entries), not the legacy file.
+	// Use filepath.ToSlash so the assertion holds on Windows where filepath.Join produces backslashes.
+	assertUnverifiableRefusal(t, "stderr", output, filepath.ToSlash(dotDRelativeREQ))
+	// Neither the legacy file nor the new entries dir must be created when refused.
 	if _, statErr := os.Stat(filepath.Join(refused, logRelative)); statErr == nil {
-		t.Errorf("containment violated: the REQ transition log was written while the root could not be established")
+		t.Errorf("containment violated: legacy .trackfw-log was written while the root could not be established")
+	}
+	if _, statErr := os.Stat(filepath.Join(refused, dotDRelativeREQ)); statErr == nil {
+		t.Errorf("containment violated: .trackfw-log-entries/ was created while the root could not be established")
 	}
 
 	entryErr := appendREQTransitionLogEntry("REQ-refusada.md", "backlog", "wip")

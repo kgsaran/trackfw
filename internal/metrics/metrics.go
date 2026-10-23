@@ -1,25 +1,23 @@
 package metrics
 
 import (
-	"bufio"
 	"encoding/csv"
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/kgsaran/trackfw/internal/pathguard"
+	"github.com/kgsaran/trackfw/internal/translog"
 )
 
-// Transition representa uma entrada do .trackfw-log.
-type Transition struct {
-	Timestamp time.Time
-	Basename  string
-	From, To  string
-}
+// Transition is an alias for translog.Transition — the struct is defined once
+// in the translog package (the single source of truth). Using an alias removes
+// the per-call conversion loop that previously existed in ParseLog and makes
+// metrics.Transition and translog.Transition the same type, so []Transition
+// slices can be passed between the two packages without conversion.
+type Transition = translog.Transition
 
 // WIPEntry representa um roadmap atualmente em wip com sua idade.
 type WIPEntry struct {
@@ -35,53 +33,26 @@ type Metrics struct {
 	Period        string
 }
 
-// lineRe faz match de linhas do formato:
-// 2026-06-12 14:30  ROADMAP-2026-06-12-auth.md                  backlog → wip
-var lineRe = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s{2,}(\S+)\s{2,}(\S+)\s+→\s+(\S+)`)
-
 // metricsGetwdFn is the function used to obtain the current working directory inside
 // ExportCSV. It defaults to os.Getwd and may be overridden in tests to inject a
 // controlled failure without relying on OS-specific filesystem tricks.
 var metricsGetwdFn func() (string, error) = os.Getwd
 
-// ParseLog lê o arquivo .trackfw-log e retorna todas as transições.
-// Retorna nil, nil se o arquivo não existe.
-func ParseLog(path string) ([]Transition, error) {
-	f, err := os.Open(path)
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
+// ParseLog lê o diretório de roadmaps e retorna todas as transições, combinando
+// o arquivo legado .trackfw-log (se existir) com as entradas em .trackfw-log-entries/.
+// Retorna nil, nil se nenhuma fonte existe.
+//
+// M6: Transition is now an alias for translog.Transition, so the conversion loop
+// is gone — tls can be returned directly.
+func ParseLog(dir string) ([]Transition, error) {
+	tls, err := translog.ReadAll(dir)
 	if err != nil {
-		return nil, fmt.Errorf("metrics: abrir log: %w", err)
-	}
-	defer f.Close()
-
-	var transitions []Transition
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.TrimSpace(line) == "" {
-			continue
-		}
-		m := lineRe.FindStringSubmatch(line)
-		if m == nil {
-			continue
-		}
-		ts, err := time.ParseInLocation("2006-01-02 15:04", m[1], time.Local)
-		if err != nil {
-			continue
-		}
-		transitions = append(transitions, Transition{
-			Timestamp: ts,
-			Basename:  strings.TrimSpace(m[2]),
-			From:      strings.TrimSpace(m[3]),
-			To:        strings.TrimSpace(m[4]),
-		})
-	}
-	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("metrics: ler log: %w", err)
 	}
-	return transitions, nil
+	if len(tls) == 0 {
+		return nil, nil
+	}
+	return tls, nil
 }
 
 // Filter retorna apenas as transições com Timestamp >= since.

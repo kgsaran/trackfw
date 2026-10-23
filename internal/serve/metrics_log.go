@@ -1,54 +1,23 @@
 package serve
 
 import (
-	"bufio"
-	"os"
-	"regexp"
-	"strings"
-	"time"
+	"github.com/kgsaran/trackfw/internal/translog"
 )
 
-// Transition represents a single state-change entry in the .trackfw-log file.
-type Transition struct {
-	Timestamp time.Time
-	Basename  string
-	From      string
-	To        string
-}
+// Transition is an alias for translog.Transition — the two types are identical
+// and share the same package representation. Using an alias removes the per-call
+// conversion loop that previously existed between ParseLog and its callers, while
+// keeping the serve.Transition name available for any future serve-only fields.
+type Transition = translog.Transition
 
-// logLineRe matches lines in the format:
-// "2026-06-12 14:30  ROADMAP-....md                  backlog → wip"
-var logLineRe = regexp.MustCompile(
-	`^(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\s{2,}(\S+)\s{2,}(\S+)\s+→\s+(\S+)`,
-)
-
-// ParseLog reads the .trackfw-log file and returns a slice of Transitions.
-// Returns an empty slice if the file does not exist or cannot be read.
-func ParseLog(path string) []Transition {
-	f, err := os.Open(path)
-	if err != nil {
-		return []Transition{}
+// ParseLog reads the roadmap transition log directory and returns a slice of
+// Transitions, combining the legacy .trackfw-log file (if present) with entries
+// in .trackfw-log-entries/. Returns a non-nil empty slice and a non-nil error
+// when ReadAll fails (R5: the caller can surface the error in the API response).
+func ParseLog(dir string) ([]Transition, error) {
+	tls, err := translog.ReadAll(dir)
+	if err != nil || len(tls) == 0 {
+		return []Transition{}, err
 	}
-	defer f.Close()
-
-	var out []Transition
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		line := scanner.Text()
-		m := logLineRe.FindStringSubmatch(line)
-		if m == nil {
-			continue
-		}
-		ts, err := time.Parse("2006-01-02 15:04", m[1])
-		if err != nil {
-			continue
-		}
-		out = append(out, Transition{
-			Timestamp: ts,
-			Basename:  m[2],
-			From:      strings.TrimSpace(m[3]),
-			To:        strings.TrimSpace(m[4]),
-		})
-	}
-	return out
+	return tls, nil
 }

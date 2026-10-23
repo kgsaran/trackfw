@@ -1,15 +1,85 @@
 package generators
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/kgsaran/trackfw/internal/config"
 	"github.com/kgsaran/trackfw/internal/validator"
 )
+
+// workingContextLog holds a single entry from docs/agents-working-context/.
+type workingContextLog struct {
+	Name    string // filename (e.g. 20261022T100000Z-apolo-ml1a.md)
+	Heading string // first "## …" line, empty if absent
+}
+
+// recentWorkingContextEntries returns up to n entries from dir, sorted by
+// filename in descending order (newest first). Only regular .md files that are
+// not symlinks are included; non-.md files and symlinks are skipped silently.
+// If dir does not exist or is empty, an empty slice is returned without error.
+func recentWorkingContextEntries(dir string, n int) []workingContextLog {
+	fi, err := os.Lstat(dir)
+	if err != nil || !fi.IsDir() {
+		return nil
+	}
+	des, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+
+	// Collect regular .md entries.
+	var names []string
+	for _, de := range des {
+		if de.Type()&os.ModeSymlink != 0 {
+			continue // skip symlinks
+		}
+		if !de.Type().IsRegular() {
+			continue
+		}
+		if !strings.HasSuffix(de.Name(), ".md") {
+			continue
+		}
+		names = append(names, de.Name())
+	}
+
+	// Sort descending (newest first by ISO timestamp prefix).
+	sort.Slice(names, func(i, j int) bool { return names[i] > names[j] })
+
+	if len(names) > n {
+		names = names[:n]
+	}
+
+	result := make([]workingContextLog, 0, len(names))
+	for _, name := range names {
+		heading := extractFirstHeading(filepath.Join(dir, name))
+		result = append(result, workingContextLog{Name: name, Heading: heading})
+	}
+	return result
+}
+
+// extractFirstHeading reads a file and returns the text of the first "## …" line,
+// or empty string if none is found. Uses a buffered scanner for efficiency.
+func extractFirstHeading(path string) string {
+	f, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer f.Close() //nolint:errcheck
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		line := sc.Text()
+		if strings.HasPrefix(line, "## ") {
+			return line
+		}
+	}
+	return ""
+}
 
 // ContextEntry representa um artefato de governança (ADR, REQ ou ROADMAP) com metadados extraídos.
 type ContextEntry struct {
@@ -181,6 +251,22 @@ func GetContext(format string) error {
 		fmt.Printf("\n## Warnings (%d)\n", len(warnings))
 		for _, w := range warnings {
 			fmt.Printf("- %s\n", w)
+		}
+	}
+
+	// Recent working context entries (ADR-2026-10-22 D2).
+	wctxDir := filepath.Join("docs", "agents-working-context")
+	entries := recentWorkingContextEntries(wctxDir, 10)
+	fmt.Printf("\n## Recent working context (last %d entries)\n", len(entries))
+	if len(entries) == 0 {
+		fmt.Printf("- (no entries in %s)\n", wctxDir)
+	} else {
+		for _, e := range entries {
+			if e.Heading != "" {
+				fmt.Printf("- %s — %s\n", e.Name, e.Heading)
+			} else {
+				fmt.Printf("- %s\n", e.Name)
+			}
 		}
 	}
 

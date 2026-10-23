@@ -11,7 +11,8 @@ import (
 )
 
 func TestParseLog_Empty(t *testing.T) {
-	transitions, err := ParseLog("/tmp/trackfw-nonexistent-log-99999.log")
+	// ML-1A: ParseLog takes a directory, not a file path.
+	transitions, err := ParseLog("/tmp/trackfw-nonexistent-dir-99999")
 	require.NoError(t, err)
 	assert.Nil(t, transitions)
 }
@@ -20,10 +21,12 @@ func TestParseLog_WithLines(t *testing.T) {
 	content := `2026-06-12 14:30  ROADMAP-2026-06-12-auth.md                  backlog → wip
 2026-06-12 16:00  ROADMAP-2026-06-12-auth.md                  wip → done
 `
-	tmp := filepath.Join(t.TempDir(), ".trackfw-log")
+	// ML-1A: ParseLog takes the directory; write the legacy file for backward-compat reading.
+	tmpDir := t.TempDir()
+	tmp := filepath.Join(tmpDir, ".trackfw-log")
 	require.NoError(t, os.WriteFile(tmp, []byte(content), 0644))
 
-	transitions, err := ParseLog(tmp)
+	transitions, err := ParseLog(tmpDir)
 	require.NoError(t, err)
 	require.Len(t, transitions, 2)
 
@@ -38,10 +41,12 @@ func TestParseLog_WithLines(t *testing.T) {
 
 func TestParseLog_IgnoresBlankLines(t *testing.T) {
 	content := "\n2026-06-12 14:30  ROADMAP-2026-06-12-auth.md                  backlog → wip\n\n"
-	tmp := filepath.Join(t.TempDir(), ".trackfw-log")
+	// ML-1A: ParseLog takes the directory.
+	tmpDir := t.TempDir()
+	tmp := filepath.Join(tmpDir, ".trackfw-log")
 	require.NoError(t, os.WriteFile(tmp, []byte(content), 0644))
 
-	transitions, err := ParseLog(tmp)
+	transitions, err := ParseLog(tmpDir)
 	require.NoError(t, err)
 	assert.Len(t, transitions, 1)
 }
