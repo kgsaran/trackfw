@@ -15,6 +15,7 @@ import (
 
 	"github.com/kgsaran/trackfw/internal/agentconfig"
 	"github.com/kgsaran/trackfw/internal/config"
+	"github.com/kgsaran/trackfw/internal/guardforms"
 	"github.com/kgsaran/trackfw/internal/identity"
 	"github.com/kgsaran/trackfw/internal/integrations"
 	"github.com/kgsaran/trackfw/internal/pathguard"
@@ -1065,6 +1066,14 @@ func harnessCredentialGuardTargetClaude(home, claudeDir string, claudeDirErr err
 		}
 		migrateGuardHookMatcher(hooks["PreToolUse"], "Bash", claudeShellMatcher, guardCredentialGlobalCmdPSPOSIX)
 		migrateGuardHookMatcher(hooks["PostToolUse"], "Bash", claudeShellMatcher, guardCredentialGlobalCmdPSPOSIX)
+		// D13 dedup (REQ-2026-10-23): collapse duplicates produced by multiple
+		// migrateHookCommand calls (home-dependent legacyScriptPath + registry forms).
+		// Pass legacyScriptPath at the call site — it cannot live in guardforms (home-dependent).
+		globalLegacyForms := append(append([]string{}, guardforms.CredentialGlobalLegacyPSPOSIX...), legacyScriptPath)
+		for _, m := range []string{claudeShellMatcher, "Bash"} {
+			hooks["PreToolUse"] = migrateDedupGuardInNestedArray(hooks["PreToolUse"], m, guardCredentialGlobalCmdPSPOSIX, globalLegacyForms)
+			hooks["PostToolUse"] = migrateDedupGuardInNestedArray(hooks["PostToolUse"], m, guardCredentialGlobalCmdPSPOSIX, globalLegacyForms)
+		}
 	}
 	mergeCredentialGuardClaudeHooks(root, claudeShellMatcher, guardCredentialGlobalCmdPSPOSIX)
 
@@ -1200,6 +1209,15 @@ func harnessCredentialGuardTargetCodex(home string, opts UpdateOptions) TargetRe
 		migrateHookCommand(hooks["PreToolUse"], "Bash", legacyD11CredentialGlobalCmdPSPOSIX, guardCredentialGlobalCmdPSPOSIX)
 		migrateHookCommand(hooks["PostToolUse"], "Bash", legacyD11CredentialGlobalCmdPSPOSIX, guardCredentialGlobalCmdPSPOSIX)
 	}
+	// D13 dedup (REQ-2026-10-23): after individual migrations, collapse any
+	// remaining duplicates (e.g. two legacy forms simultaneously present → two
+	// canonicals after migration → deduplicated to exactly one).
+	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
+		legacies := append(append([]string{}, guardforms.CredentialGlobalLegacyPSPOSIX...), legacyScriptPath)
+		hooks["PreToolUse"] = migrateDedupGuardInNestedArray(hooks["PreToolUse"], "Bash", guardCredentialGlobalCmdPSPOSIX, legacies)
+		hooks["PostToolUse"] = migrateDedupGuardInNestedArray(hooks["PostToolUse"], "Bash", guardCredentialGlobalCmdPSPOSIX, legacies)
+		root["hooks"] = hooks
+	}
 	mergeCredentialGuardClaudeHooks(root, "Bash", guardCredentialGlobalCmdPSPOSIX)
 
 	out, marshalErr := marshalJSONNoEscape(root)
@@ -1315,6 +1333,13 @@ func harnessCredentialGuardTargetGemini(home string, opts UpdateOptions) TargetR
 		migrateHookCommand(hooks["AfterTool"], "run_shell_command", legacyD2CredentialGlobalCmdPSPOSIX, guardCredentialGlobalCmdPSPOSIX)
 		migrateHookCommand(hooks["BeforeTool"], "run_shell_command", legacyD11CredentialGlobalCmdPSPOSIX, guardCredentialGlobalCmdPSPOSIX)
 		migrateHookCommand(hooks["AfterTool"], "run_shell_command", legacyD11CredentialGlobalCmdPSPOSIX, guardCredentialGlobalCmdPSPOSIX)
+	}
+	// D13 dedup (REQ-2026-10-23): collapse duplicates after individual migrations.
+	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
+		legacies := append(append([]string{}, guardforms.CredentialGlobalLegacyPSPOSIX...), legacyScriptPath)
+		hooks["BeforeTool"] = migrateDedupGuardInNestedArray(hooks["BeforeTool"], "run_shell_command", guardCredentialGlobalCmdPSPOSIX, legacies)
+		hooks["AfterTool"] = migrateDedupGuardInNestedArray(hooks["AfterTool"], "run_shell_command", guardCredentialGlobalCmdPSPOSIX, legacies)
+		root["hooks"] = hooks
 	}
 	mergeCredentialGuardGeminiHooks(root, guardCredentialGlobalCmdPSPOSIX)
 
@@ -1450,6 +1475,13 @@ func harnessCredentialGuardTargetCursor(home string, opts UpdateOptions) TargetR
 		migrateCursorSimpleCommand(hooks["afterShellExecution"], legacyD2CredentialGlobalCmdPSPOSIX, guardCredentialGlobalCmdPSPOSIX, cursorGetCmd)
 		migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyD11CredentialGlobalCmdPSPOSIX, guardCredentialGlobalCmdPSPOSIX, cursorGetCmd)
 		migrateCursorSimpleCommand(hooks["afterShellExecution"], legacyD11CredentialGlobalCmdPSPOSIX, guardCredentialGlobalCmdPSPOSIX, cursorGetCmd)
+	}
+	// D13 dedup (REQ-2026-10-23): collapse duplicates after individual migrations.
+	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
+		legacies := append(append([]string{}, guardforms.CredentialGlobalLegacyPSPOSIX...), legacyScriptPath)
+		hooks["beforeShellExecution"] = dedupFlatGuardEntries(hooks["beforeShellExecution"], "", guardCredentialGlobalCmdPSPOSIX, legacies, cursorGetCmd)
+		hooks["afterShellExecution"] = dedupFlatGuardEntries(hooks["afterShellExecution"], "", guardCredentialGlobalCmdPSPOSIX, legacies, cursorGetCmd)
+		root["hooks"] = hooks
 	}
 	mergeCredentialGuardCursorHooks(root, guardCredentialGlobalCmdPSPOSIX)
 
@@ -1622,6 +1654,56 @@ func harnessCredentialGuardTargetCopilot(home string, opts UpdateOptions) Target
 			}
 		}
 	}
+	// D13 dedup (REQ-2026-10-23): Copilot entries use "bash" key (not "command"),
+	// so the generic dedupFlatGuardEntries helper is not used here. Inline dedup:
+	// pass 1 migrates any remaining legacies (those not covered by the switch
+	// above), pass 2 keeps only the first canonical entry per event.
+	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
+		copilotAllForms := make(map[string]bool, len(guardforms.CredentialGlobalLegacyPSPOSIX)+2)
+		for _, f := range guardforms.CredentialGlobalLegacyPSPOSIX {
+			copilotAllForms[f] = true
+		}
+		copilotAllForms[legacyScriptPath] = true
+		copilotAllForms[guardCredentialGlobalCmdPSPOSIX] = true
+		for _, eventKey := range []string{"preToolUse", "postToolUse"} {
+			arr, _ := hooks[eventKey].([]interface{})
+			// Pass 1: rewrite any remaining legacy bash values to canonical.
+			for _, item := range arr {
+				obj, ok := item.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				bash, _ := obj["bash"].(string)
+				if copilotAllForms[bash] && bash != guardCredentialGlobalCmdPSPOSIX {
+					obj["bash"] = guardCredentialGlobalCmdPSPOSIX
+				}
+			}
+			// Pass 2: keep first canonical entry, drop subsequent duplicates.
+			seen := false
+			var deduped []interface{}
+			for _, item := range arr {
+				obj, ok := item.(map[string]interface{})
+				if !ok {
+					deduped = append(deduped, item)
+					continue
+				}
+				bash, _ := obj["bash"].(string)
+				if bash == guardCredentialGlobalCmdPSPOSIX {
+					if !seen {
+						seen = true
+						deduped = append(deduped, item)
+					}
+					// else: drop duplicate.
+				} else {
+					deduped = append(deduped, item)
+				}
+			}
+			if deduped != nil {
+				hooks[eventKey] = deduped
+			}
+		}
+		root["hooks"] = hooks
+	}
 	mergeCredentialGuardCopilotHooks(root, guardCredentialGlobalCmdPSPOSIX)
 
 	out, marshalErr := marshalJSONNoEscape(root)
@@ -1735,9 +1817,13 @@ func harnessCredentialGuardTargetWindsurf(home string, opts UpdateOptions) Targe
 	if hooks == nil {
 		hooks = make(map[string]interface{})
 	}
-	// REQ-2026-10-20: migrate D11 revised pré-REQ-2026-10-20 form → new form.
+	// D13 dedup (REQ-2026-10-23): migrate ALL global legacy POSIX forms and
+	// collapse duplicates to exactly one canonical entry per event.
+	// Replaces the prior single-form migrateCursorSimpleCommand(D11Rev...) call.
+	windsurfLegaciesGlobal := append(append([]string{}, guardforms.CredentialGlobalLegacyPSPOSIX...),
+		filepath.Join(home, ".trackfw", "scripts", "trackfw-credential-guard.sh"))
 	for _, event := range []string{"pre_run_command", "pre_write_code"} {
-		migrateCursorSimpleCommand(hooks[event], legacyD11RevCredentialGlobalCmdPSPOSIX, guardCredentialGlobalCmdPSPOSIX, windsurfGetCmd)
+		hooks[event] = dedupFlatGuardEntries(hooks[event], "", guardCredentialGlobalCmdPSPOSIX, windsurfLegaciesGlobal, windsurfGetCmd)
 	}
 	for _, event := range []string{"pre_run_command", "pre_write_code"} {
 		hooks[event] = mergeSimpleCommandArray(
@@ -1985,6 +2071,12 @@ func harnessGitBranchGuardTargetClaude(home, claudeDir string, claudeDirErr erro
 		}
 		migrateGuardHookMatcher(hooks["PreToolUse"], "Bash", claudeShellMatcher, guardGitBranchCmdPSPOSIX)
 		migrateGuardHookMatcher(hooks["PostToolUse"], "Bash", claudeShellMatcher, guardGitBranchCmdPSPOSIX)
+		// D13 dedup (REQ-2026-10-23): collapse duplicates from multiple migrateHookCommand calls.
+		gitLegacyForms := append(append([]string{}, guardforms.GitBranchLegacyPSPOSIX...), legacyScriptPath)
+		for _, m := range []string{claudeShellMatcher, "Bash"} {
+			hooks["PreToolUse"] = migrateDedupGuardInNestedArray(hooks["PreToolUse"], m, guardGitBranchCmdPSPOSIX, gitLegacyForms)
+			hooks["PostToolUse"] = migrateDedupGuardInNestedArray(hooks["PostToolUse"], m, guardGitBranchCmdPSPOSIX, gitLegacyForms)
+		}
 	}
 	mergeCredentialGuardClaudeHooks(root, claudeShellMatcher, guardGitBranchCmdPSPOSIX)
 
@@ -2074,6 +2166,13 @@ func harnessGitBranchGuardTargetCodex(home string, opts UpdateOptions) TargetRes
 		migrateHookCommand(hooks["PreToolUse"], "Bash", legacyD11GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
 		migrateHookCommand(hooks["PostToolUse"], "Bash", legacyD11GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
 	}
+	// D13 dedup (REQ-2026-10-23): collapse duplicates after individual migrations.
+	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
+		legacies := append(append([]string{}, guardforms.GitBranchLegacyPSPOSIX...), legacyScriptPath)
+		hooks["PreToolUse"] = migrateDedupGuardInNestedArray(hooks["PreToolUse"], "Bash", guardGitBranchCmdPSPOSIX, legacies)
+		hooks["PostToolUse"] = migrateDedupGuardInNestedArray(hooks["PostToolUse"], "Bash", guardGitBranchCmdPSPOSIX, legacies)
+		root["hooks"] = hooks
+	}
 	mergeCredentialGuardClaudeHooks(root, "Bash", guardGitBranchCmdPSPOSIX)
 
 	out, marshalErr := marshalJSONNoEscape(root)
@@ -2161,6 +2260,13 @@ func harnessGitBranchGuardTargetGemini(home string, opts UpdateOptions) TargetRe
 		migrateHookCommand(hooks["AfterTool"], "run_shell_command", legacyD2GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
 		migrateHookCommand(hooks["BeforeTool"], "run_shell_command", legacyD11GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
 		migrateHookCommand(hooks["AfterTool"], "run_shell_command", legacyD11GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX)
+	}
+	// D13 dedup (REQ-2026-10-23): collapse duplicates after individual migrations.
+	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
+		legacies := append(append([]string{}, guardforms.GitBranchLegacyPSPOSIX...), legacyScriptPath)
+		hooks["BeforeTool"] = migrateDedupGuardInNestedArray(hooks["BeforeTool"], "run_shell_command", guardGitBranchCmdPSPOSIX, legacies)
+		hooks["AfterTool"] = migrateDedupGuardInNestedArray(hooks["AfterTool"], "run_shell_command", guardGitBranchCmdPSPOSIX, legacies)
+		root["hooks"] = hooks
 	}
 	mergeCredentialGuardGeminiHooks(root, guardGitBranchCmdPSPOSIX)
 
@@ -2257,6 +2363,13 @@ func harnessGitBranchGuardTargetCursor(home string, opts UpdateOptions) TargetRe
 		migrateCursorSimpleCommand(hooks["afterShellExecution"], legacyD2GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX, cursorGetCmd)
 		migrateCursorSimpleCommand(hooks["beforeShellExecution"], legacyD11GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX, cursorGetCmd)
 		migrateCursorSimpleCommand(hooks["afterShellExecution"], legacyD11GitBranchCmdPSPOSIX, guardGitBranchCmdPSPOSIX, cursorGetCmd)
+	}
+	// D13 dedup (REQ-2026-10-23): collapse duplicates after individual migrations.
+	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
+		legacies := append(append([]string{}, guardforms.GitBranchLegacyPSPOSIX...), legacyScriptPath)
+		hooks["beforeShellExecution"] = dedupFlatGuardEntries(hooks["beforeShellExecution"], "", guardGitBranchCmdPSPOSIX, legacies, cursorGetCmd)
+		hooks["afterShellExecution"] = dedupFlatGuardEntries(hooks["afterShellExecution"], "", guardGitBranchCmdPSPOSIX, legacies, cursorGetCmd)
+		root["hooks"] = hooks
 	}
 	mergeCredentialGuardCursorHooks(root, guardGitBranchCmdPSPOSIX)
 
@@ -2356,6 +2469,50 @@ func harnessGitBranchGuardTargetCopilot(home string, opts UpdateOptions) TargetR
 				}
 			}
 		}
+	}
+	// D13 dedup (REQ-2026-10-23): Copilot uses "bash" key — inline dedup.
+	if hooks, _ := root["hooks"].(map[string]interface{}); hooks != nil {
+		copilotGitAllForms := make(map[string]bool, len(guardforms.GitBranchLegacyPSPOSIX)+2)
+		for _, f := range guardforms.GitBranchLegacyPSPOSIX {
+			copilotGitAllForms[f] = true
+		}
+		copilotGitAllForms[legacyScriptPath] = true
+		copilotGitAllForms[guardGitBranchCmdPSPOSIX] = true
+		for _, eventKey := range []string{"preToolUse", "postToolUse"} {
+			arr, _ := hooks[eventKey].([]interface{})
+			for _, item := range arr {
+				obj, ok := item.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				bash, _ := obj["bash"].(string)
+				if copilotGitAllForms[bash] && bash != guardGitBranchCmdPSPOSIX {
+					obj["bash"] = guardGitBranchCmdPSPOSIX
+				}
+			}
+			seen := false
+			var deduped []interface{}
+			for _, item := range arr {
+				obj, ok := item.(map[string]interface{})
+				if !ok {
+					deduped = append(deduped, item)
+					continue
+				}
+				bash, _ := obj["bash"].(string)
+				if bash == guardGitBranchCmdPSPOSIX {
+					if !seen {
+						seen = true
+						deduped = append(deduped, item)
+					}
+				} else {
+					deduped = append(deduped, item)
+				}
+			}
+			if deduped != nil {
+				hooks[eventKey] = deduped
+			}
+		}
+		root["hooks"] = hooks
 	}
 	mergeCredentialGuardCopilotHooks(root, guardGitBranchCmdPSPOSIX)
 

@@ -168,15 +168,46 @@ func TestDedup_Cursor_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	}
 	pre, _ := hooks["preToolUse"].([]interface{})
 	post, _ := hooks["postToolUse"].([]interface{})
-	if len(pre) != 1 || pre[0].(map[string]interface{})["command"] != attentionSignalCmd {
-		t.Errorf("attention-signal entry must still be added regardless of global credential-guard state, got %v", pre)
+	// D14 revised (ADR-2026-10-04 adendo 2026-10-23): the global harness covers only shell
+	// events; Read/Write pairs are ALWAYS emitted. So pre/post each have 3 entries:
+	// attention-signal/cleanup + {Read, credential} + {Write, credential}.
+	if len(pre) != 3 {
+		t.Errorf("expected 3 preToolUse entries (attention-signal + Read guard + Write guard), got %d: %v", len(pre), pre)
+	} else {
+		if pre[0].(map[string]interface{})["command"] != attentionSignalCmd {
+			t.Errorf("preToolUse[0] must be attention-signal, got %v", pre[0])
+		}
+		// Read and Write guard entries can be in any order after the signal.
+		hasRead, hasWrite := false, false
+		for _, item := range pre[1:] {
+			obj := item.(map[string]interface{})
+			if obj["command"] == guardCredentialCmdPSPOSIX && obj["matcher"] == "Read" {
+				hasRead = true
+			}
+			if obj["command"] == guardCredentialCmdPSPOSIX && obj["matcher"] == "Write" {
+				hasWrite = true
+			}
+		}
+		if !hasRead {
+			t.Errorf("preToolUse must contain a Read credential-guard entry, got %v", pre)
+		}
+		if !hasWrite {
+			t.Errorf("preToolUse must contain a Write credential-guard entry, got %v", pre)
+		}
 	}
-	if len(post) != 1 || post[0].(map[string]interface{})["command"] != attentionCleanupCmd {
-		t.Errorf("attention-cleanup entry must still be added regardless of global credential-guard state, got %v", post)
+	if len(post) != 3 {
+		t.Errorf("expected 3 postToolUse entries (attention-cleanup + Read guard + Write guard), got %d: %v", len(post), post)
+	} else {
+		if post[0].(map[string]interface{})["command"] != attentionCleanupCmd {
+			t.Errorf("postToolUse[0] must be attention-cleanup, got %v", post[0])
+		}
 	}
 }
 
 func TestDedup_Copilot_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
+	// D14 revised (REQ-2026-10-23 ML-2C): global covers only "bash". With global
+	// installed, "bash" credential-guard is absent; "view" and "create|edit" are
+	// always emitted (not covered by the global).
 	home := dedupFixtureHome(t)
 	scriptPath := dedupScriptPath(home)
 	helperWriteJSON(t, filepath.Join(home, ".copilot", "settings.json"), map[string]interface{}{
@@ -196,15 +227,42 @@ func TestDedup_Copilot_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 	hooks, _ := data["hooks"].(map[string]interface{})
 	pre, _ := hooks["preToolUse"].([]interface{})
 	post, _ := hooks["postToolUse"].([]interface{})
-	// preToolUse: attention-signal + git-branch-guard (ROADMAP-2026-08-14
-	// ML-3A, no global-scope dedup target yet, always added) — credential-guard
-	// is skipped (global installed), so exactly 2 entries.
-	if len(pre) != 2 {
-		t.Errorf("expected attention-signal + git-branch-guard entries in preToolUse (global credential-guard installed), got %v", pre)
+
+	// preToolUse: attention-signal + view guard + create|edit guard + git-branch-guard = 4
+	// (bash credential-guard absent — covered by global).
+	if len(pre) != 4 {
+		t.Errorf("expected 4 preToolUse entries (attention-signal + view + create|edit + git-branch), got %d: %v", len(pre), pre)
 	}
 	if pre[0].(map[string]interface{})["command"] != attentionSignalCmd {
 		t.Errorf("expected preToolUse[0] to be the attention-signal entry, got %v", pre[0])
 	}
+	// "bash" credential guard must be absent (global covers it).
+	for _, item := range pre {
+		obj := item.(map[string]interface{})
+		if obj["matcher"] == "bash" && obj["command"] == guardCredentialCmdPSPOSIX {
+			t.Errorf("bash credential-guard must be absent when global is installed, found: %v", obj)
+		}
+	}
+	// "view" and "create|edit" credential guards must be present.
+	foundView, foundCreateEdit := false, false
+	for _, item := range pre {
+		obj := item.(map[string]interface{})
+		if obj["command"] == guardCredentialCmdPSPOSIX {
+			switch obj["matcher"] {
+			case "view":
+				foundView = true
+			case "create|edit":
+				foundCreateEdit = true
+			}
+		}
+	}
+	if !foundView {
+		t.Errorf("expected view credential-guard in preToolUse (not covered by global), got %v", pre)
+	}
+	if !foundCreateEdit {
+		t.Errorf("expected create|edit credential-guard in preToolUse (not covered by global), got %v", pre)
+	}
+	// git-branch-guard must still be present.
 	foundGitGuard := false
 	for _, item := range pre {
 		if item.(map[string]interface{})["command"] == guardGitBranchCmdPSPOSIX {
@@ -212,14 +270,29 @@ func TestDedup_Copilot_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 		}
 	}
 	if !foundGitGuard {
-		t.Errorf("expected preToolUse to contain the git-branch-guard entry (command field), got %v", pre)
+		t.Errorf("expected preToolUse to contain the git-branch-guard entry, got %v", pre)
 	}
-	if len(post) != 1 || post[0].(map[string]interface{})["command"] != attentionCleanupCmd {
-		t.Errorf("expected only the attention-cleanup entry in postToolUse (global credential-guard installed), got %v", post)
+
+	// postToolUse: attention-cleanup + view guard + create|edit guard = 3
+	if len(post) != 3 {
+		t.Errorf("expected 3 postToolUse entries (attention-cleanup + view + create|edit), got %d: %v", len(post), post)
+	}
+	if post[0].(map[string]interface{})["command"] != attentionCleanupCmd {
+		t.Errorf("expected postToolUse[0] to be attention-cleanup, got %v", post[0])
+	}
+	// "bash" credential guard must be absent in postToolUse too.
+	for _, item := range post {
+		obj := item.(map[string]interface{})
+		if obj["matcher"] == "bash" && obj["command"] == guardCredentialCmdPSPOSIX {
+			t.Errorf("bash credential-guard must be absent in postToolUse when global is installed, found: %v", obj)
+		}
 	}
 }
 
 func TestDedup_Kiro_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
+	// D14 revised (REQ-2026-10-23 ML-2C): global covers only "shell". With global
+	// installed, "shell" credential-guard is absent; "read" and "write" are always
+	// emitted (not covered by the global).
 	home := dedupFixtureHome(t)
 	globalKiroPath := filepath.Join(home, ".kiro", "hooks", "trackfw-credential-guard.json")
 	if err := os.MkdirAll(filepath.Dir(globalKiroPath), 0755); err != nil {
@@ -236,16 +309,37 @@ func TestDedup_Kiro_SkipsProjectEntryWhenGlobalInstalled(t *testing.T) {
 
 	data := helperReadJSON(t, filepath.Join(dir, ".kiro", "hooks", "trackfw-attention.json"))
 	hooks, _ := data["hooks"].([]interface{})
-	// git-branch-guard is always added for Kiro (no global-scope dedup target),
-	// so 3 entries: signal + cleanup + git-branch-guard.
-	if len(hooks) != 3 {
-		t.Fatalf("expected 3 hooks (signal, cleanup, git-branch-guard) when global credential-guard is installed, got %d: %v", len(hooks), hooks)
+	// With global installed: signal + cleanup + read-pre + read-post + write-pre + write-post + git-branch = 7
+	// (shell pre/post absent — covered by global).
+	if len(hooks) != 7 {
+		t.Fatalf("expected 7 hooks when global credential-guard is installed, got %d: %v", len(hooks), hooks)
 	}
+	// "shell" pre/post must be absent.
 	for _, h := range hooks {
 		entry, _ := h.(map[string]interface{})
 		name, _ := entry["name"].(string)
 		if name == "trackfw-credential-guard-pre" || name == "trackfw-credential-guard-post" {
-			t.Errorf("project-scope credential-guard hook %q should have been skipped (global already installed)", name)
+			t.Errorf("project-scope shell credential-guard hook %q must be absent when global is installed", name)
+		}
+	}
+	// "read" and "write" guards must be present.
+	wantNames := []string{
+		"trackfw-credential-guard-read-pre",
+		"trackfw-credential-guard-read-post",
+		"trackfw-credential-guard-write-pre",
+		"trackfw-credential-guard-write-post",
+	}
+	for _, want := range wantNames {
+		found := false
+		for _, h := range hooks {
+			entry, _ := h.(map[string]interface{})
+			if entry["name"] == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected hook %q to be present (not covered by global), missing from: %v", want, hooks)
 		}
 	}
 }
