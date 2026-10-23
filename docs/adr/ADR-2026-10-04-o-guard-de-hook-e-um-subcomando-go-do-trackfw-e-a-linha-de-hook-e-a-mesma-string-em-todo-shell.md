@@ -335,3 +335,38 @@ ML. O único sítio canônico continua `guardExpectedLine` em `validator_guard_b
 Estende D1/D3 aos hooks informativos: `trackfw attention signal` e `trackfw attention cleanup` são a fonte única Go; scripts .sh existentes viram invólucros de compatibilidade. Todas as configs emitidas usam essas linhas simples, sem variáveis/caminhos/jq/python. Copilot usa command. Atenção não bloqueia ferramentas: erros internos resultam em no-op e exit 0. Por isso não copia D11/D11 revista dos guards. A falha da semente polyglot sob zsh está registrada em vault/notes/codex-guard-polyglot-aborta-zsh-equals-2026-10-20.md e a correção dos guards segue na sua REQ própria.
 
 O payload é dado JSON, nunca código. Escrita e cleanup ficam confinados fisicamente ao roadmap_dir da raiz com trackfw.yaml no cwd, usando as guardas existentes; não remover o arquivo dedicado de credential guard. Migração reconhece somente comandos legados de atenção emitidos pelo produto e preserva hooks personalizados. Prova local shell não será declarada como jornada real de CLI de agente no Windows.
+
+## Adendo — 2026-10-23 (issue #599): uma lista de gerações, e a migração termina em uma entrada por par
+
+**Contexto medido.** No `.cursor/hooks.json` de um consumidor com a 10.1.0, depois de `trackfw update`, cada par
+`preToolUse`/`postToolUse` × `Read`/`Write` tem 4 formas legadas do credential guard mais a atual. O guard roda 5 vezes por
+chamada, e o `validate` continua mandando rodar o `update`, que não resolve. A causa está em `InjectCursorHooks`
+(`internal/generators/agentfiles.go`): as migrações de forma legada cobrem só `beforeShellExecution`/`afterShellExecution`.
+Os pares com matcher passam apenas por `mergeCursorGuardMatcherEntry`, que acrescenta a forma atual e não toca nas outras.
+Além disso, a lista de gerações (`legacyBareCredGuardCmd`, `legacyD2…`, `legacyD11…`, `legacyD11Rev…`, `legacyWABash…`)
+está **copiada à mão em cada sítio de migração**, e as cópias já divergem entre os CLIs. É a mesma família do achado de
+2026-10-21 (`vault/notes/inject-codex-gemini-d11rev-duplicata-antes-de-migracao-2026-10-21.md`).
+
+### D12 — As gerações conhecidas de cada guard vivem num registro único
+
+Existe **uma** lista, por guard e por família de shell, com todas as formas que o produto já emitiu. O validador (que
+classifica uma linha como legada) e todo `Inject*Hooks` e alvo do `update harness` (que migram) consomem essa lista. Nenhum
+sítio escreve a própria cópia. Um teste de concordância afirma que toda forma que o validador reconhece como legada é
+migrada por todo sítio que emite aquele guard.
+
+### D13 — A migração termina com exatamente uma entrada por (evento, matcher, guard)
+
+Depois da migração, cada par (evento, matcher) tem **exatamente uma** entrada do guard, na forma atual. Isso vale para os
+dois estados reais: só formas legadas, e formas legadas convivendo com a atual. Migrar no lugar sem deduplicar não basta,
+porque N legadas viram N cópias idênticas da atual. A ordem é sempre migrar, deduplicar e só depois mesclar. Entradas que
+não estão no registro (hooks do usuário) nunca são removidas nem reescritas.
+
+### D14 — Com o guard global instalado, a forma legada de projeto é removida
+
+Quando o guard global do CLI está instalado, a entrada de projeto não é emitida (ADR-2026-08-06, decisão 4). Hoje, porém,
+uma forma legada de projeto é **migrada** para a forma atual mesmo com o global presente, e isso duplica o guard. Passa a
+ser assim: com o global instalado, uma entrada de projeto reconhecida pelo registro é **removida**; sem o global, ela é
+migrada. A detecção do global continua com falha aberta (se não der para ler, conta como não instalado), então o pior caso é
+o comportamento de hoje.
+
+REQ: `docs/req/REQ-2026-10-23-update-nao-remove-geracoes-antigas-do-credential-guard-em-pares-evento-matcher-e-o-validate-manda-rodar-update-que-nao-resolve.md`.
