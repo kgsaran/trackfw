@@ -3211,12 +3211,16 @@ The `ml_scope` check verifies that every file touched by the current branch is c
 
 #### Inputs
 
+<!-- trackfw-contract: gate=internal/commands/barrier_ml_scope_test.go,scripts/check-barrier.sh -->
+
 - **Roadmap from HEAD, not disk.** `git show HEAD:<roadmap>` is used to read the `**Files affected:**` lines. An uncommitted disk edit cannot expand scope. A roadmap not yet committed results in `skipped`.
 - **Touched files.** `git diff --name-only -z $(git merge-base origin/main HEAD) HEAD` (committed changes) plus `git status --porcelain=v1 -z --untracked-files=all` (modified, staged, untracked), excluding gitignored files.
 - **Wave N scope.** The union of `**Files affected:**` from every ML in waves 0..N.
 - **Orchestration set (always permitted).** The roadmap file itself; the REQ from frontmatter `req:`; the ADR from the REQ's frontmatter `adr:`; `docs/agents-working-context/`; `vault/notes/`; `.claude/agent-memory/`; `<roadmap_dir>/.trackfw-log`; `<roadmap_dir>/.trackfw-log-entries/`; `<req_dir>/.trackfw-log`; `<req_dir>/.trackfw-log-entries/`.
 
 #### `**Files affected:**` grammar
+
+<!-- trackfw-contract: gate=internal/commands/barrier_ml_scope_test.go,scripts/check-barrier.sh -->
 
 Each backtick-quoted token on the `**Files affected:**` line (including continuation lines) is a path pattern. A continuation line is any non-blank line after the label line that does not start with `**`, `#`, or a list marker (`- `, `* `).
 
@@ -3231,9 +3235,13 @@ Text outside backticks (including `"a definir"`) is ignored. A label line with n
 
 #### Date cutoff
 
+<!-- trackfw-contract: gate=internal/commands/barrier_ml_scope_test.go,scripts/check-barrier.sh -->
+
 Roadmaps with a `date:` frontmatter value strictly before `2026-07-18` exit `skipped` with the reason in `evidence`. Roadmaps in `wip` with a post-cutoff date that have an ML in wave N without a `**Files affected:**` line → `blocked`, naming the ML.
 
 #### Status values
+
+<!-- trackfw-contract: gate=internal/commands/barrier_ml_scope_test.go,scripts/check-barrier.sh -->
 
 | Status | Condition |
 |---|---|
