@@ -135,7 +135,7 @@ e é o caso que a D3 (o guard) fecha.
   - `wip` sem declaração reprova
 - [x] Contra-braço: os testes reprovam no HEAD anterior
 - [x] `docs/cli-parity.md` documenta a checagem
-- [x] Este próprio roadmap passa no `ml_scope` da wave 1 (dogfood)
+- [x] Este próprio roadmap passa no `ml_scope` (dogfood). O AC dizia wave 1, mas o barrier da wave 2, com o binário do worktree, deu `ml_scope: passed`. Na primeira rodada, a checagem achou 5 declarações em prosa nos ML-1A e 1B, que foram corrigidas
 **Gates da wave:**
 ```bash
 go build ./...
@@ -158,7 +158,7 @@ go test ./internal/commands/ -count=1
 **Acceptance criteria:**
 - [x] A asserção de isolamento trata `skipped` como não bloqueante, igual ao contrato do Go (`TestBarrierContract_ValidateFalhoBloqueia`), sem afrouxar o resto: `blocked` em checagem não isolada continua reprovando
 - [x] Um cenário no script exercita o `ml_scope` reprovando por arquivo fora de escopo, num repositório git temporário
-- [x] `GO_BIN=<binário do worktree> bash scripts/check-barrier.sh` rc=0 ✅, e `make parity-rest` rc=0 ❌ (bloqueado por `docs/cli-parity.md` fora do escopo do ML-2B — ver relatório)
+- [x] `GO_BIN=<binário do worktree> bash scripts/check-barrier.sh` rc=0, e `make parity-rest` rc=0. A primeira rodada reprovou porque faltavam anotações `trackfw-contract` em 4 seções `####` do `docs/cli-parity.md`, criadas no ML-2A; o arquiteto as acrescentou
 
 **Nota de auditoria (apolo-tf, 2026-10-23):** `bash scripts/check-barrier.sh` rc=0. `make parity-rest` rc=1 por três seções `####` em `docs/cli-parity.md` (linhas 3212, 3219, 3232, 3236) sem anotação `trackfw-contract` — introduzidas pelo ML-2A; `docs/cli-parity.md` não está nos Files affected do ML-2B; reportado ao arquiteto.
 
