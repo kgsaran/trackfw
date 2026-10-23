@@ -102,3 +102,7 @@ congelados da D3. Isso evita quebrar o uso sem orquestração. Vale onde o CLI e
   Roadmap anterior a 2026-07-18 sem declaração fica isento, com mensagem explícita. Roadmap posterior em `wip` sem declaração
   reprova.
 - **Cabeamento:** por `settings.json` de projeto, não por frontmatter, porque subagentes de plugin ignoram hooks no frontmatter.
+- **D2, revisado na auditoria:** os `Files affected` são lidos de `git show HEAD:<roadmap>` (o commit, não o disco), e não da
+  merge-base, porque um roadmap novo não existe nela. A edição não commitada de um agente não amplia o escopo, e só o
+  arquiteto commita. O escopo da wave N é a união dos MLs das waves 0..N mais o conjunto de orquestração (contrato completo
+  no ML-2A do roadmap).

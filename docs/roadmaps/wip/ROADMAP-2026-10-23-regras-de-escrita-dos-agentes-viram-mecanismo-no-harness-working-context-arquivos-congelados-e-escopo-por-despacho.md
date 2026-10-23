@@ -70,8 +70,8 @@ git diff --quiet origin/main -- internal/
 **Agente:** prometeu-tf
 **Files affected:** `internal/integrations/assets/agents/*.md` (os 11 que não são `architect.md`), os goldens desses assets e o teste novo da forma por papel
 **Acceptance criteria:**
-- [ ] AC1 da REQ
-- [ ] `go test ./internal/integrations/ ./internal/generators/ -count=1` verde
+- [x] AC1 da REQ
+- [x] `go test ./internal/integrations/ ./internal/generators/ -count=1` verde
 
 **Auditoria do arquiteto (2026-10-23):** aprovado. Os 11 assets ficaram com o texto idêntico, e o `architect.md` não foi
 tocado. `TestWorkingContextFormByRole` passa na branch e reprova no HEAD anterior. Os gates estão verdes. O Prometeu não
@@ -86,10 +86,10 @@ subagentes, "write a new file in `docs/agents-working-context/…`". Isso contra
 **Files affected:** `internal/generators/agentfiles.go`, os goldens e testes que fixam o bloco, e os blocos gerados
 deste repositório em `CLAUDE.md`, `AGENTS.md` e `GEMINI.md` (a mesma linha, editada igual).
 **Acceptance criteria:**
-- [ ] A linha 3 do bloco passa a dizer que quem registra é a sessão que orquestra (o arquiteto), e que os subagentes
+- [x] A linha 3 do bloco passa a dizer que quem registra é a sessão que orquestra (o arquiteto), e que os subagentes
   reportam no relatório final
-- [ ] Os três arquivos deste repositório ficam com o mesmo texto do gerador; um teste ou gate existente confirma a concordância
-- [ ] `go test ./internal/generators/ ./internal/integrations/ -count=1` verde
+- [x] Os três arquivos deste repositório ficam com o mesmo texto do gerador; um teste ou gate existente confirma a concordância
+- [x] `go test ./internal/generators/ ./internal/integrations/ -count=1` verde
 
 **Auditoria do arquiteto (2026-10-23):** aprovado no worktree. A linha 3 ficou idêntica no gerador e nos 3 arquivos do repo,
 e `TestTrackfwRulesBlockAfterFinishingSubagentsNeverWrite` reprova no HEAD anterior. 🔴 **Mas o próprio prometeu-tf violou a
@@ -105,9 +105,43 @@ e é o caso que a D3 (o guard) fecha.
 ### ML-2A — Checagem `ml_scope`
 **Status:** ⬜ Pendente
 **Agente:** apolo-tf
-**Files affected:** `internal/commands/barrier.go`, o teste novo e `docs/cli-parity.md` (o contrato do barrier)
+**Files affected:** `internal/commands/barrier.go`, `internal/commands/barrier_ml_scope_test.go` (novo), `docs/cli-parity.md`
+**Contrato (decisão do arquiteto sobre a Wave 0 §2.2; adendo na ADR):**
+1. **Roadmap lido do commit, não do disco.** Os `Files affected` vêm de `git show HEAD:<roadmap>`. Edição não commitada do
+   roadmap não amplia o escopo. Quem commita é só o arquiteto, que audita o diff do roadmap. A merge-base não serve,
+   porque um roadmap novo não existe nela.
+2. **Arquivos tocados:** `git diff --name-only $(git merge-base origin/main HEAD) HEAD`, mais o `git status --porcelain`
+   (modificados, staged e untracked), sem os ignorados.
+3. **Escopo permitido** para a wave N: a união dos `Files affected` de todo ML das waves 0..N, mais o conjunto de orquestração
+   fixo: o próprio roadmap, a REQ do frontmatter `req:`, a ADR do frontmatter `adr:` da REQ, `docs/agents-working-context/`,
+   `vault/notes/`, `.claude/agent-memory/`, `<roadmap_dir>/.trackfw-log`, `<roadmap_dir>/.trackfw-log-entries/` e os
+   equivalentes em `req_dir`.
+4. **Gramática:** cada trecho entre crases dentro da linha `**Files affected:**` é um caminho, um diretório (terminado em `/`)
+   ou um glob (`path.Match` por segmento, mais `**`). O texto fora das crases é ignorado. Uma linha só com "a definir" ou sem
+   crases declara zero arquivos.
+5. **Roadmap sem declaração:** anterior a 2026-07-18 (data do frontmatter), a checagem sai `skipped`, com motivo explícito na
+   evidência. Em `wip` com algum ML da wave N sem declaração, a checagem reprova e nomeia o ML. Em `backlog` ou `analyzing`,
+   aviso.
+6. **Saída:** a checagem `ml_scope` entra no JSON e no texto do barrier, como as outras, e cada falha nomeia o caminho fora de
+   escopo. O `result` só fica `blocked` quando ela falha.
 **Acceptance criteria:**
-- [ ] AC2 da REQ
+- [ ] AC2 da REQ, com testes em repositório git real em `t.TempDir()`:
+  - braço positivo: o arquivo declarado passa;
+  - braço negativo: o arquivo fora reprova e o caminho aparece;
+  - um untracked fora reprova;
+  - o roadmap editado no disco para incluir o arquivo continua reprovando;
+  - o conjunto de orquestração passa;
+  - um diretório e um glob casam;
+  - pré-corte sai `skipped`;
+  - `wip` sem declaração reprova
+- [ ] Contra-braço: os testes reprovam no HEAD anterior
+- [ ] `docs/cli-parity.md` documenta a checagem
+- [ ] Este próprio roadmap passa no `ml_scope` da wave 1 (dogfood)
+**Gates da wave:**
+```bash
+go build ./...
+go test ./internal/commands/ -count=1
+```
 
 ## Wave 3 — D3 e D4, o guard write-scope
 > Dependencies: Wave 2 auditada. Detalhada depois da Wave 0.
