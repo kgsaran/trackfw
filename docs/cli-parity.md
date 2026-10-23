@@ -9108,3 +9108,47 @@ When a pattern such as `*.entry`, `.*`, or `*-entries` covers these paths, entri
 **Detection mechanism:** `git check-ignore -q --no-index <hypothetical-path>` (exit 0 = ignored). The culprit pattern is fetched via `git check-ignore -v --no-index` and included in the warning message. Both invocations use a 3-second timeout and a clean GIT_* environment (see `validator_git_exec.go`).
 
 **Silent conditions:** the rule is a no-op when git is absent or the CWD is not inside a git work-tree. Projects without a `.gitignore` never trigger this rule.
+
+## `trackfw guard write-scope` — proteção de caminhos congelados (ADR-2026-10-23, ML-3A)
+
+<!-- trackfw-contract: gate=internal/commands/guard_write_scope_test.go,internal/guard/writescope.go partial=guard_write_scope_test.go cobre os 8 itens do contrato ML-3A via binário real (subprocess); writescope.go implementa o guard; NÃO há gate cross-runtime (v8: implementação única em Go) -->
+
+> REQ: `docs/req/REQ-2026-10-23-regras-de-escrita-dos-agentes-sao-aplicadas-pelo-harness-e-nao-pelo-texto-do-handoff.md`
+> ADR: `docs/adr/ADR-2026-10-23-regras-de-escrita-dos-agentes-sao-aplicadas-pelo-harness-e-nao-pelo-texto-do-handoff.md`
+
+`trackfw guard write-scope` é um PreToolUse hook que lê o payload de ferramentas `Write`, `Edit` e `NotebookEdit` do Claude Code e nega escrita em caminhos congelados. O projeto raiz é determinado pelo caminho do ALVO (não pelo cwd) para cobrir cenários de worktree.
+
+**Linha de hook emitida pelo gerador (PS/POSIX — Claude Code only, §Z, sem forma cmd.exe):**
+
+```
+emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard write-scope; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE
+```
+
+**Matcher:** `Write|Edit|NotebookEdit` — lista exata, `|` é separador, NÃO uma regex. NUNCA usar `Edit.*` (vira regex JavaScript que casa tudo começando com "Edit").
+
+**Exit codes:** 0 = allow; 2 = deny (bloqueio). Exit 1 = error (fail-open no Claude Code PreToolUse) — todos os erros internos do guard saem com 2 (fail-closed, D3-F).
+
+**Caminhos congelados para todos os contextos** (quando o marker está presente):
+- `docs/agents-working-context.md` — quando as primeiras 10 linhas contêm `<!-- trackfw:frozen -->`
+
+**Caminhos congelados apenas para subagentes** (`agent_id` presente no payload — sempre mais restritivo):
+- `docs/agents-working-context.md` — sempre, sem depender do marker
+- `trackfw.yaml` — impede extensão de caminhos congelados pelo subagente
+- `.claude/settings.json`, `.claude/settings.local.json` — impede remoção do hook
+- `.codex/hooks.json`, `.gemini/settings.json`, `.cursor/hooks.json`, `.windsurf/hooks.json`
+- `.github/hooks/`, `.kiro/hooks/`, `.amazonq/cli-agents/`, `.trackfw/leases/`
+
+**Extensão via `trackfw.yaml`** (item 6 do contrato):
+```yaml
+write_scope:
+  frozen_paths:           # congelados para todos os contextos
+    - docs/secret.md
+  frozen_paths_subagent:  # congelados adicionalmente para subagentes
+    - docs/internal/
+```
+YAML inválido → deny (fail-closed). Extensão adiciona entradas, nunca remove os defaults.
+
+**Regra `write_scope_not_wired`** (`validate`):
+Aviso (severidade default `warning`, nunca `error` até a próxima versão major) quando `.claude/settings.json` não tem o PreToolUse `Write|Edit|NotebookEdit` com o comando canônico do write-scope. `trackfw init`/`trackfw update` instalam o hook automaticamente.
+
+**Ordering constraint:** o hook em `.claude/settings.json` deve ser instalado APENAS quando o binário já tem `write-scope` disponível. Instalar o hook contra a versão anterior (que trata `write-scope` como subcomando desconhecido → exit 2 via guardError) nega todas as operações Write/Edit/NotebookEdit na sessão.

@@ -1,6 +1,7 @@
 package validator
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,8 +10,41 @@ import (
 	"testing"
 
 	"github.com/kgsaran/trackfw/internal/config"
+	"github.com/kgsaran/trackfw/internal/guardforms"
 	"github.com/kgsaran/trackfw/internal/homedir"
 )
+
+// writeWriteScopeSettings writes a minimal .claude/settings.json that satisfies
+// the write_scope_not_wired validator rule.
+func writeWriteScopeSettings(t *testing.T, dir string) {
+	t.Helper()
+	settingsDir := filepath.Join(dir, ".claude")
+	if err := os.MkdirAll(settingsDir, 0700); err != nil {
+		t.Fatalf("MkdirAll .claude: %v", err)
+	}
+	settings := map[string]interface{}{
+		"hooks": map[string]interface{}{
+			"PreToolUse": []interface{}{
+				map[string]interface{}{
+					"matcher": "Write|Edit|NotebookEdit",
+					"hooks": []interface{}{
+						map[string]interface{}{
+							"type":    "command",
+							"command": guardforms.WriteScopeCurrentPSPOSIX,
+						},
+					},
+				},
+			},
+		},
+	}
+	data, err := json.Marshal(settings)
+	if err != nil {
+		t.Fatalf("marshal settings: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(settingsDir, "settings.json"), data, 0600); err != nil {
+		t.Fatalf("write settings.json: %v", err)
+	}
+}
 
 // initGitRepo inicializa um repo git no diretório e cria+faz checkout de uma branch.
 func initGitRepo(t *testing.T, dir, branch string) {
@@ -106,6 +140,9 @@ func TestValidate_Clean(t *testing.T) {
 		"docs/req",
 		"docs/adr",
 	)
+	// ML-3A: write_scope_not_wired fires when .claude/settings.json is absent.
+	// A clean project has the hook wired — satisfy the rule here.
+	writeWriteScopeSettings(t, dir)
 	chdir(t, dir)
 
 	violations, warnings, err := Validate()

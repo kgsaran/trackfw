@@ -71,6 +71,9 @@ type ProjectConfig struct {
 	// credenciais-reais-por-subagentes.md.
 	CredentialGuard CredentialGuardConfig
 
+	// write_scope field — see ADR-2026-10-23 D3, ML-3A.
+	WriteScope WriteScopeConfig
+
 	// agent_models field — see ADR-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md.
 	// Maps tier name (e.g. "opus", "sonnet") to version string (e.g. "5", "4.6").
 	// Absent or empty map → behavior identical to today (tier alias used verbatim).
@@ -82,6 +85,14 @@ type ProjectConfig struct {
 // Read via a nested mapping under the flat root, same pattern as SyncConfig.
 type CredentialGuardConfig struct {
 	Mode string // credential_guard.mode: "warn" (default) | "block"
+}
+
+// WriteScopeConfig holds the write_scope.* fields read from trackfw.yaml.
+// Paths in these lists are appended to the defaults — they never remove the hardcoded list.
+// ADR-2026-10-23 D3, ML-3A contract item 6.
+type WriteScopeConfig struct {
+	FrozenPaths         []string // write_scope.frozen_paths: extra paths frozen for all sessions
+	FrozenPathsSubagent []string // write_scope.frozen_paths_subagent: extra paths frozen for subagents only
 }
 
 // UpdateConfig holds the fields `trackfw update` reads to decide which git hooks and CI
@@ -264,6 +275,15 @@ func Load() ProjectConfig {
 func Reset() {
 	once = sync.Once{}
 	instance = ProjectConfig{}
+}
+
+// ParseWriteScopeConfig parses only the write_scope.* fields from arbitrary trackfw.yaml content.
+// Used by the write-scope guard, which cannot call Load() (Load calls osExit(1) on malformed YAML).
+// Like ParseRulesFromContent, reuses parse() so the read logic cannot diverge.
+func ParseWriteScopeConfig(content string) WriteScopeConfig {
+	cfg := ProjectConfig{Rules: make(map[string]string)}
+	parse(content, &cfg)
+	return cfg.WriteScope
 }
 
 // ParseRulesFromContent parses only the `rules:` mapping out of arbitrary trackfw.yaml content
@@ -548,6 +568,21 @@ func parse(content string, cfg *ProjectConfig) {
 		if cg, ok := v.(map[string]interface{}); ok {
 			if mode, ok := stringVal(cg, "mode"); ok && (mode == "warn" || mode == "block") {
 				cfg.CredentialGuard.Mode = mode
+			}
+		}
+	}
+
+	// write_scope field — nested mapping with two list keys.
+	// Absent, malformed, or empty blocks leave WriteScopeConfig as zero value (nil slices).
+	// An invalid list item (non-string) is silently skipped.
+	// ADR-2026-10-23 D3, ML-3A contract item 6.
+	if v, ok := m["write_scope"]; ok {
+		if ws, ok := v.(map[string]interface{}); ok {
+			if items, ok := stringList(ws["frozen_paths"]); ok {
+				cfg.WriteScope.FrozenPaths = items
+			}
+			if items, ok := stringList(ws["frozen_paths_subagent"]); ok {
+				cfg.WriteScope.FrozenPathsSubagent = items
 			}
 		}
 	}

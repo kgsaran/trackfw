@@ -40,6 +40,7 @@ Denied commands exit with code 2 (ADR-2026-10-04 D7).`,
 	}
 	cmd.AddCommand(newGuardGitBranchCmd())
 	cmd.AddCommand(newGuardCredentialCmd())
+	cmd.AddCommand(newGuardWriteScopeCmd())
 	return cmd
 }
 
@@ -145,6 +146,51 @@ Positional arguments are not accepted.`,
 	}
 
 	cmd.Flags().BoolVar(&globalFlag, "global", false, "run as global scope guard (no trackfw.yaml required, default mode block, fixed docs/roadmaps dir)")
+	return cmd
+}
+
+// newGuardWriteScopeCmd returns the `trackfw guard write-scope` subcommand.
+// Reads a Claude Code PreToolUse payload from stdin and denies writes to frozen paths.
+// ADR-2026-10-23 D3, ML-3A.
+func newGuardWriteScopeCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "write-scope",
+		Short: "Guard that blocks writes to frozen paths (docs/agents-working-context.md and others)",
+		Long: `write-scope reads a PreToolUse hook payload from stdin, extracts the target file path,
+and denies the write if the path is in the frozen list for this project.
+
+The frozen list always includes docs/agents-working-context.md (when it carries
+the <!-- trackfw:frozen --> marker). For subagents (payload has agent_id), it also
+includes trackfw.yaml, .claude/settings.json, .claude/settings.local.json and all
+other hook configuration files, preventing a subagent from disabling its own guard.
+
+The project root is determined from the target path (not the cwd), so a subagent in
+a worktree that tries to write to the main checkout is judged by the main checkout's
+frozen list.
+
+Allowed  → exit 0 (nothing printed)
+Denied   → exit 2, reason to stderr
+No-op    → exit 0 (tool_name outside Write|Edit|NotebookEdit, or outside a trackfw project)
+
+Positional arguments are not accepted.`,
+		Args: func(cmd *cobra.Command, args []string) error {
+			if len(args) > 0 {
+				return &guardError{"trackfw guard write-scope: positional arguments are not accepted"}
+			}
+			return nil
+		},
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			code := guard.RunWriteScope(
+				os.Stdin,
+				guard.StdInIdleTimeout,
+				os.Stderr,
+			)
+			if code != 0 {
+				os.Exit(code)
+			}
+			return nil
+		},
+	}
 	return cmd
 }
 

@@ -33,6 +33,14 @@ const (
 	// GitBranchCurrentCmdExe is the canonical git-branch guard command for the
 	// cmd.exe shell family.
 	GitBranchCurrentCmdExe = "trackfw guard git-branch || exit 2"
+
+	// WriteScopeCurrentPSPOSIX is the canonical write-scope guard command for the
+	// POSIX/PS shell family (used by Claude Code via settings.json PreToolUse).
+	// Matcher: Write|Edit|NotebookEdit (list exact, §Z of Wave 0 / ADR-2026-10-23).
+	// No cmd.exe form: Claude Code on Windows uses PowerShell via claudeShellMatcher,
+	// not cmd.exe; write-scope is wired only in the Write|Edit|NotebookEdit PreToolUse
+	// envelope, which Claude Code always executes with sh/PowerShell, not cmd.exe.
+	WriteScopeCurrentPSPOSIX = `emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard write-scope; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE`
 )
 
 // ─── Global (--global) current forms ───────────────────────────────────────

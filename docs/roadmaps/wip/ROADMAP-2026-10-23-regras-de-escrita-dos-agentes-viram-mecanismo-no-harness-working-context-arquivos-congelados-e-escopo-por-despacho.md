@@ -166,7 +166,7 @@ go test ./internal/commands/ -count=1
 > Dependencies: Wave 2 auditada. Detalhada depois da Wave 0.
 
 ### ML-3A — `trackfw guard write-scope` com os caminhos congelados (D3)
-**Status:** ⬜ Pendente
+**Status:** 🔄 Em andamento
 **Agente:** apolo-tf
 **Files affected:** `internal/commands/guard.go`, `internal/commands/guard_write_scope_test.go`, `internal/guard/`, `internal/guardforms/`, `internal/generators/`, `internal/validator/`, `internal/config/`, `docs/cli-parity.md`, `.claude/settings.json`, `docs/agents-working-context.md`
 **Contrato (arquiteto, a partir da Wave 0 e do adendo da ADR):**
@@ -191,9 +191,11 @@ go test ./internal/commands/ -count=1
 7. **Cabeamento:** o `InjectClaudeHooks` acrescenta em `PreToolUse` um envelope com o matcher `Write|Edit|NotebookEdit` (lista
    exata) e a linha poliglota atual com `trackfw guard write-scope`, registrada em `internal/guardforms`. O `validate` avisa
    quando o `.claude/settings.json` de um projeto não tem esse envelope. É aviso, não violação, até a próxima major.
-8. **Este repositório:** o `.claude/settings.json` do worktree ganha o envelope, editado à mão para ficar igual ao que o
-   gerador emite. Nunca por `trackfw init`/`update`. O marcador do item 4 vai para o `docs/agents-working-context.md`, e
-   quem o põe é o arquiteto.
+8. **Este repositório (revisto na auditoria):** o `.claude/settings.json` do repo **não** é cabeado neste PR. O binário
+   10.1.0 instalado trata `guard write-scope` como subcomando desconhecido e sai 2, o que bloquearia todo Write/Edit de
+   quem fizer pull da `main` antes da release. A fiação do repo entra depois da release e da instalação, num PR próprio,
+   como no precedente da ADR-2026-10-04 ("`make install` antes de migrar as próprias configs"). O marcador do item 4 vai
+   para o `docs/agents-working-context.md`, e quem o põe é o arquiteto.
 **Acceptance criteria:**
 - [ ] AC3 da REQ, com o payload real do Claude Code, inclusive com `agent_id` presente e ausente
 - [ ] AC5 da REQ:
@@ -207,6 +209,29 @@ go test ./internal/commands/ -count=1
 go build ./...
 go test ./internal/guard/ ./internal/commands/ ./internal/generators/ ./internal/validator/ ./internal/config/ ./internal/pathguard/ -count=1
 ```
+
+**Auditoria do arquiteto (2026-10-23): reprovado em parte, corretivo no ML-3A2.** Gates verdes, `parity-rest` rc=0, 21
+testes de subprocesso. Faltou:
+- **AC5 de caminho:** relativo, `..`, symlink no caminho, `/tmp` contra `/private/tmp`, Windows (`C:\` e `/c/`);
+- **o teste do item 3:** alvo num projeto, cwd noutro;
+- **o panic → 2;**
+- **qualquer teste unitário em `internal/guard/`.**
+
+O agente também escreveu 2 entradas em `docs/agents-working-context/`. Foram retiradas para quarentena, porque o
+conteúdo está no relatório. A fiação do `.claude/settings.json` do repo foi revertida pela decisão do item 8 revisto.
+
+### ML-3A2 — Corretivo do ML-3A
+**Status:** ⬜ Pendente
+**Agente:** apolo-tf
+**Files affected:** `internal/guard/`, `internal/commands/guard_write_scope_test.go`
+**Acceptance criteria:**
+- [ ] `internal/guard/writescope_test.go` com testes unitários da resolução de caminho e das listas
+- [ ] AC5: relativo (resolvido contra o `cwd` do payload, ou negado, como o código decidir, com teste), `..` que sai do
+  projeto, symlink de diretório apontando para o arquivo congelado, `/tmp/x` contra `/private/tmp/x` no macOS, `C:\` e
+  `/c/` (Windows, pelo menos a normalização em teste unitário)
+- [ ] Item 3: o alvo no projeto A com o `cwd` no projeto B é julgado pelo `trackfw.yaml` de A
+- [ ] Panic recuperado → 2, por seam de teste
+- [ ] Contra-braço de cada um
 
 ### ML-3B — A permissão por despacho (D4)
 **Status:** ⬜ Pendente

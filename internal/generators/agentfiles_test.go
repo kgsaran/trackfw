@@ -132,12 +132,16 @@ func TestInjectClaudeHooks_MergeAndIdempotent(t *testing.T) {
 	pr, _ := hooks["PreToolUse"].([]interface{})
 	// ML-5A: a pre-existing "Bash" matcher entry (third-party hook) stays under
 	// its original "Bash" key; guard hooks go under "Bash|PowerShell" in a
-	// separate entry: 5 PreToolUse entries total:
+	// separate entry: 6 PreToolUse entries total:
 	// -- {Bash: [other.sh]}, {Bash|PowerShell: [credential-guard, git-branch-guard]},
 	// {AskUserQuestion: [signal.sh]}, {Read: [credential-guard.sh]},
-	// {Write|Edit: [credential-guard.sh]} (ML-5A / REQ-2026-09-05).
-	if len(pr) != 5 {
-		t.Errorf("expected 5 PreToolUse entries (Bash=other, Bash|PowerShell=guards, AskUserQuestion, Read, Write|Edit), got %d", len(pr))
+	// {Write|Edit: [credential-guard.sh]} (ML-5A / REQ-2026-09-05),
+	// {Write|Edit|NotebookEdit: [write-scope-guard]} (ML-3A / ADR-2026-10-23).
+	if len(pr) != 6 {
+		t.Errorf("expected 6 PreToolUse entries (Bash=other, Bash|PowerShell=guards, AskUserQuestion, Read, Write|Edit, Write|Edit|NotebookEdit), got %d", len(pr))
+	}
+	if !helperHasClaudeHook(data, "PreToolUse", "Write|Edit|NotebookEdit", guardWriteScopeCmdPSPOSIX) {
+		t.Error("PreToolUse[Write|Edit|NotebookEdit] → write-scope guard missing (ML-3A)")
 	}
 	post, _ := hooks["PostToolUse"].([]interface{})
 	// PostToolUse: 4 entries — {Bash|PowerShell: [credential-guard]},
