@@ -208,8 +208,9 @@ func NewDiscoverCmd() *cobra.Command {
 					if entryTime.IsZero() {
 						entryTime = time.Now()
 					}
-					// write-containment-allowed: guarded by rejectDiscoverPath(resolvedCwd, dotDPath) above
-					if _, writeErr := translog.WriteEntry(r.RoadmapDir, line, entryTime); writeErr != nil {
+					// WriteEntry guards itself via pathguard.RejectAndReport(resolvedRoot, entryPath);
+					// rejectDiscoverPath above serves as an early-exit before the loop.
+					if _, writeErr := translog.WriteEntry(resolvedCwd, r.RoadmapDir, line, entryTime); writeErr != nil {
 						return fmt.Errorf("bootstrap log: write entry: %w", writeErr)
 					}
 					written++

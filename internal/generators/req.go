@@ -524,17 +524,14 @@ func appendREQTransitionLog(basename, fromState, toState string) {
 func appendREQTransitionLogEntry(basename, fromState, toState string) error {
 	cfg := config.Load()
 	dir := cfg.REQDir
-	// Guard the .d/ directory against ancestor symlinks. translog.WriteEntry creates
-	// the directory if absent, so we guard the path where it will land.
+	// Resolve the project root so WriteEntry can guard the entries directory.
+	// If resolution fails, refuse via RefuseUnverifiableRoot before attempting
+	// any write — WriteEntry also guards internally, but the caller holds the
+	// original resolution error and must emit it here.
 	root, rootErr := projectRoot()
 	if rootErr != nil {
 		return pathguard.RefuseUnverifiableRoot(dir+translog.EntriesDirSuffix, rootErr)
 	}
-	absDotD := filepath.Join(root, dir, translog.EntriesDirSuffix[1:])
-	if guardErr := pathguard.RejectAndReport(root, absDotD); guardErr != nil {
-		return guardErr
-	}
-	// write-containment-allowed: pathguard.RejectAndReport(root, absDotD) above; an unresolvable root refuses via RefuseUnverifiableRoot
 	now := time.Now()
 	line := fmt.Sprintf("%s  %-50s  %s → %s%s",
 		now.Format("2006-01-02 15:04"),
@@ -543,6 +540,6 @@ func appendREQTransitionLogEntry(basename, fromState, toState string) error {
 		toState,
 		transitionLogSuffix(now),
 	)
-	_, err := translog.WriteEntry(dir, line, now)
+	_, err := translog.WriteEntry(root, dir, line, now)
 	return err
 }

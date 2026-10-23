@@ -60,11 +60,11 @@ func TestWriteEntry_Idempotent(t *testing.T) {
 	line := "2026-10-22 10:00  ROADMAP-x.md                          backlog → wip"
 	now := time.Date(2026, 10, 22, 10, 0, 0, 0, time.UTC)
 
-	name1, err := WriteEntry(dir, line, now)
+	name1, err := WriteEntry(dir, dir, line, now)
 	if err != nil {
 		t.Fatalf("first WriteEntry: %v", err)
 	}
-	name2, err := WriteEntry(dir, line, now)
+	name2, err := WriteEntry(dir, dir, line, now)
 	if err != nil {
 		t.Fatalf("second WriteEntry (idempotent): %v", err)
 	}
@@ -80,7 +80,7 @@ func TestWriteEntry_DifferentContentSameNameErrors(t *testing.T) {
 	now := time.Date(2026, 10, 22, 10, 0, 0, 0, time.UTC)
 
 	line1 := "2026-10-22 10:00  ROADMAP-a.md                          backlog → wip"
-	if _, err := WriteEntry(dir, line1, now); err != nil {
+	if _, err := WriteEntry(dir, dir, line1, now); err != nil {
 		t.Fatalf("WriteEntry line1: %v", err)
 	}
 
@@ -94,7 +94,7 @@ func TestWriteEntry_DifferentContentSameNameErrors(t *testing.T) {
 	}
 
 	// Now WriteEntry should fail because the file exists with different content.
-	_, err := WriteEntry(dir, line1, now)
+	_, err := WriteEntry(dir, dir, line1, now)
 	if err == nil {
 		t.Fatal("expected error for different-content collision, got nil")
 	}
@@ -126,7 +126,7 @@ func TestReadAll_NonEntryFilesIgnored(t *testing.T) {
 	// A valid .entry file.
 	validLine := "2026-10-22 10:00  ROADMAP-ok.md                         backlog → wip"
 	validTime := time.Date(2026, 10, 22, 10, 0, 0, 0, time.UTC)
-	if _, err := WriteEntry(dir, validLine, validTime); err != nil {
+	if _, err := WriteEntry(dir, dir, validLine, validTime); err != nil {
 		t.Fatalf("WriteEntry: %v", err)
 	}
 
@@ -171,7 +171,7 @@ func TestReadAll_EntriesOnlyInDotD_AreVisible(t *testing.T) {
 	// NO legacy file.
 	line := "2026-10-22 11:00  ROADMAP-y.md                          wip → done"
 	now := time.Date(2026, 10, 22, 11, 0, 0, 0, time.UTC)
-	if _, err := WriteEntry(dir, line, now); err != nil {
+	if _, err := WriteEntry(dir, dir, line, now); err != nil {
 		t.Fatalf("WriteEntry: %v", err)
 	}
 
@@ -197,10 +197,10 @@ func TestReadAll_SortOrder(t *testing.T) {
 	line2 := "2026-10-22 10:05  ROADMAP-second.md                    backlog → wip"
 	t1 := time.Date(2026, 10, 22, 10, 0, 0, 0, time.UTC)
 	t2 := time.Date(2026, 10, 22, 10, 5, 0, 0, time.UTC)
-	if _, err := WriteEntry(dir, line1, t1); err != nil {
+	if _, err := WriteEntry(dir, dir, line1, t1); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := WriteEntry(dir, line2, t2); err != nil {
+	if _, err := WriteEntry(dir, dir, line2, t2); err != nil {
 		t.Fatal(err)
 	}
 	// Legacy line at 10:03.
@@ -274,7 +274,7 @@ func TestEntriesDirNotIgnoredByCommonGitignorePatterns(t *testing.T) {
 	// Changing EntriesDirSuffix without updating this test makes it red.
 	line := "2026-10-22 10:00  ROADMAP-x.md                          backlog → wip"
 	now := time.Date(2026, 10, 22, 10, 0, 0, 0, time.UTC)
-	entryName, writeErr := WriteEntry(repoDir, line, now)
+	entryName, writeErr := WriteEntry(repoDir, repoDir, line, now)
 	if writeErr != nil {
 		t.Fatalf("WriteEntry: %v", writeErr)
 	}
@@ -374,7 +374,7 @@ func TestParseLine_HonorsLineOffsetUnderUTC(t *testing.T) {
 	// Entry file with timestamp 14:00 UTC — must sort BEFORE the legacy line (15:00 UTC).
 	entryTime := time.Date(2026, 10, 22, 14, 0, 0, 0, time.UTC)
 	entryLine := "2026-10-22 09:00  ROADMAP-entry.md                    backlog → wip"
-	if _, err := WriteEntry(dir, entryLine, entryTime); err != nil {
+	if _, err := WriteEntry(dir, dir, entryLine, entryTime); err != nil {
 		t.Fatalf("WriteEntry: %v", err)
 	}
 
@@ -406,6 +406,48 @@ func TestParseLine_HonorsLineOffsetUnderUTC(t *testing.T) {
 	}
 	if !legacyT.Timestamp.Equal(wantLegacyUTC) {
 		t.Errorf("legacy Timestamp: want %v (UTC), got %v (UTC)", wantLegacyUTC, legacyT.Timestamp.UTC())
+	}
+}
+
+// AFIRMA: WriteEntry recusa escrever quando um ancestral do diretório de entradas
+// é um symlink que sai da raiz — a guarda interna de pathguard.RejectAndReport
+// domina os três sítios de escrita (MkdirAll, CreateTemp, Rename) na própria função.
+// Braço de controle sem symlink comprova que o teste morde: sem a guarda, a escrita
+// atravessaria o symlink em vez de ser recusada.
+func TestWriteEntry_RefusesSymlinkAncestor(t *testing.T) {
+	root := t.TempDir()    // the project root
+	outside := t.TempDir() // a directory outside root, target of the symlink
+
+	// Place root/sub as a symlink pointing outside root.
+	// symlinkOrSkipTranslog skips on platforms that require elevated privilege.
+	subPath := filepath.Join(root, "sub")
+	if !symlinkOrSkipTranslog(t, outside, subPath) {
+		return
+	}
+
+	line := "2026-10-22 10:00  ROADMAP-x.md                          backlog → wip"
+	now := time.Date(2026, 10, 22, 10, 0, 0, 0, time.UTC)
+
+	// WriteEntry with dir="sub/logs" — the ancestor "sub" is a symlink, so the
+	// guard must refuse before creating anything.
+	_, err := WriteEntry(root, "sub/logs", line, now)
+	if err == nil {
+		t.Error("expected WriteEntry to refuse a path through a symlink ancestor, got nil")
+	}
+
+	// Verify nothing was written under outside (the symlink target).
+	des, readErr := os.ReadDir(outside)
+	if readErr != nil {
+		t.Fatalf("ReadDir(outside): %v", readErr)
+	}
+	if len(des) != 0 {
+		t.Errorf("WriteEntry created %d entry/entries under outside/; expected nothing: %v", len(des), des)
+	}
+
+	// Control arm: same root, a different dir with no symlink — must succeed.
+	_, err = WriteEntry(root, "safe", line, now)
+	if err != nil {
+		t.Errorf("control arm (no symlink): unexpected error: %v", err)
 	}
 }
 

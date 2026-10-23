@@ -4,6 +4,8 @@
 
 ## Índice
 
+- [filepath-join-go-nao-descarta-componentes-absolutos-2026-10-22](filepath-join-go-nao-descarta-componentes-absolutos-2026-10-22.md) — 🔴 **Go filepath.Join NÃO descarta elementos antes de um componente absoluto** (ao contrário do Python); `filepath.Join("/a", "/b", "c")` = `/a/b/c`; causa: 5 testes de translog falhavam silenciosamente após mudança de assinatura de WriteEntry; fix: `if filepath.IsAbs(dir) { dPath = filepath.Join(dir, ...) }`
+
 - [inject-codex-gemini-d11rev-duplicata-antes-de-migracao-2026-10-21](inject-codex-gemini-d11rev-duplicata-antes-de-migracao-2026-10-21.md) — 🔴 **InjectCodexHooks/InjectGeminiHooks: mergeClaudeHookArray roda antes da migração D11Rev → 2 entradas do guard no mesmo evento; RE-GERAR .codex/hooks.json e .gemini/settings.json após fix**
 
 - [hook-subprocess-path-nao-herda-do-processo-pai-windows-2026-10-21](hook-subprocess-path-nao-herda-do-processo-pai-windows-2026-10-21.md) — 🔴 **Hooks usam `/usr/bin/bash`; bash HERDA PATH do processo pai e `/etc/profile` PREPENDE `~/bin`; fail-closed só quando trackfw ausente do PATH efetivo completo; claude.exe tem caminhos hardcoded para bash; hook_started/hook_response requerem --debug=hooks**

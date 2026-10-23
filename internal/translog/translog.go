@@ -37,6 +37,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/kgsaran/trackfw/internal/pathguard"
 )
 
 // Transition represents a single state-change entry from the log.
@@ -274,8 +276,15 @@ func EntryFilename(line string, now time.Time) string {
 	return ts + "-" + h8 + entryExt
 }
 
-// WriteEntry writes one entry to <dir>/.trackfw-log-entries/<name>.entry where name is
-// EntryFilename(line, now). line must NOT include a trailing \n.
+// WriteEntry writes one entry to the log-entries directory derived from resolvedRoot
+// and dir. The entry file is named EntryFilename(line, now). line must NOT include a
+// trailing \n.
+//
+// resolvedRoot must be the resolved project root (from pathguard.ResolveRoot or
+// equivalent). WriteEntry calls pathguard.RejectAndReport on the entry path before
+// creating any file or directory, so a symlink placed in any ancestor of the entries
+// directory is refused. An empty resolvedRoot is refused via
+// pathguard.RefuseUnverifiableRoot.
 //
 // Idempotency: if the target file already exists with content equal to line+"\n"
 // (after CRLF normalisation), WriteEntry is a no-op and returns nil. If the file
@@ -287,16 +296,35 @@ func EntryFilename(line string, now time.Time) string {
 // is within the same filesystem) and then renamed into place. Temp files use the
 // pattern "tmp-*" (NOT "*.entry"), so a crashed write leaves a file that the reader
 // silently ignores. The remaining TOCTOU race on Windows is narrow and documented.
-//
-// WriteEntry does NOT call pathguard — the caller must call pathguard.RejectAndReport
-// on dir+EntriesDirSuffix before invoking this function.
-func WriteEntry(dir string, line string, now time.Time) (string, error) {
-	dPath := dir + EntriesDirSuffix
+func WriteEntry(resolvedRoot string, dir string, line string, now time.Time) (string, error) {
+	if resolvedRoot == "" {
+		return "", pathguard.RefuseUnverifiableRoot(dir+EntriesDirSuffix, fmt.Errorf("guard root is empty"))
+	}
+	// dPath is the absolute entries directory; entryPath is the leaf file to guard.
+	// In production, dir is a relative path (e.g. "docs/roadmaps") and resolvedRoot
+	// is the project root, so filepath.Join produces the correct absolute path.
+	// In tests, dir is an absolute temp path. Go's filepath.Join does NOT drop
+	// elements before an absolute component (unlike Python) — filepath.Join("/a",
+	// "/a", "c") = "/a/a/c". So when dir is already absolute, use it directly.
+	dPath := filepath.Join(resolvedRoot, dir, EntriesDirName)
+	if filepath.IsAbs(dir) {
+		dPath = filepath.Join(dir, EntriesDirName)
+	}
 	name := EntryFilename(line, now)
 	entryPath := filepath.Join(dPath, name)
 	content := line + "\n"
 
-	// Safety: refuse to create .d/ if it is already a symlink.
+	// Guard entryPath against ancestor symlinks. RejectSymlinks walks every ancestor
+	// up to resolvedRoot, so MkdirAll (writes dPath = filepath.Dir(entryPath)) and
+	// CreateTemp (also dPath) are covered by the ancestor walk; Rename (writes
+	// entryPath) is guarded directly.
+	if guardErr := pathguard.RejectAndReport(resolvedRoot, entryPath); guardErr != nil {
+		return "", guardErr
+	}
+
+	// Safety: refuse to create the entries directory if it is already a symlink.
+	// The guard above catches symlinks in ancestors; this check catches a race where
+	// the directory was replaced with a symlink after the guard ran.
 	if lstat, err := os.Lstat(dPath); err == nil {
 		if lstat.Mode()&os.ModeSymlink != 0 {
 			return "", fmt.Errorf("translog: %s is a symlink — refusing to write", dPath)
@@ -306,13 +334,6 @@ func WriteEntry(dir string, line string, now time.Time) (string, error) {
 		}
 	} else if !os.IsNotExist(err) {
 		return "", fmt.Errorf("translog: stat %s: %w", dPath, err)
-	}
-
-	// Callers guard dir+EntriesDirSuffix with pathguard.RejectAndReport before invoking WriteEntry;
-	// temp files use a non-.entry name so they are skipped by ReadAll.
-	// write-containment-allowed: caller (e.g. discover.go) calls rejectDiscoverPath/pathguard before WriteEntry
-	if err := os.MkdirAll(dPath, 0755); err != nil {
-		return "", fmt.Errorf("translog: mkdir %s: %w", dPath, err)
 	}
 
 	// Idempotency check: read existing content before committing the temp file.
@@ -328,7 +349,12 @@ func WriteEntry(dir string, line string, now time.Time) (string, error) {
 		return "", fmt.Errorf("translog: entry %s already exists with different content", name)
 	}
 
-	// write-containment-allowed: MkdirAll passed above; CreateTemp is in the same dir.
+	// write-containment-allowed: pathguard.RejectAndReport(resolvedRoot, entryPath) above
+	if err := os.MkdirAll(dPath, 0755); err != nil {
+		return "", fmt.Errorf("translog: mkdir %s: %w", dPath, err)
+	}
+
+	// write-containment-allowed: pathguard.RejectAndReport(resolvedRoot, entryPath) above
 	tmp, createErr := os.CreateTemp(dPath, "tmp-")
 	if createErr != nil {
 		return "", fmt.Errorf("translog: create temp in %s: %w", dPath, createErr)
@@ -346,7 +372,7 @@ func WriteEntry(dir string, line string, now time.Time) (string, error) {
 
 	// Rename is atomic on POSIX. On Windows, if entryPath already exists the rename
 	// may fail; the idempotency check above reduces (but does not eliminate) the race.
-	// write-containment-allowed: same dir as CreateTemp above; guarded by caller pathguard before WriteEntry
+	// write-containment-allowed: pathguard.RejectAndReport(resolvedRoot, entryPath) above
 	if err := os.Rename(tmpName, entryPath); err != nil {
 		return "", fmt.Errorf("translog: rename to %s: %w", entryPath, err)
 	}
