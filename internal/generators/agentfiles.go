@@ -1873,12 +1873,14 @@ func InjectAmazonQHooks(rootDir string) error {
 		migrateHookCommand(hooks["preToolUse"], matcher, legacyD2CredentialCmdCmdExe, guardCredentialCmdCmdExe)
 	}
 	// D13 dedup (REQ-2026-10-23): collapse duplicates after legacy migrations.
-	// Include POSIX legacy forms so any entry written by an old POSIX-family
-	// trackfw version that installed in execute_bash is also migrated to the
-	// canonical CmdExe form (Amazon Q's confirmed shell family, ML-2A).
+	// Both git-branch and credential include POSIX legacy forms so any entry
+	// written by an old POSIX-family trackfw version that installed in
+	// execute_bash or fs_write is also migrated to the canonical CmdExe form
+	// (Amazon Q's confirmed shell family, ML-2A).
+	credentialLegacyAll := append(append([]string{}, guardforms.CredentialLegacyCmdExe...), guardforms.CredentialLegacyPSPOSIX...)
 	hooks["preToolUse"] = migrateDedupGuardInNestedArray(hooks["preToolUse"], "execute_bash", guardGitBranchCmdCmdExe, append(guardforms.GitBranchLegacyCmdExe, guardforms.GitBranchLegacyPSPOSIX...))
-	hooks["preToolUse"] = migrateDedupGuardInNestedArray(hooks["preToolUse"], "execute_bash", guardCredentialCmdCmdExe, guardforms.CredentialLegacyCmdExe)
-	hooks["preToolUse"] = migrateDedupGuardInNestedArray(hooks["preToolUse"], "fs_write", guardCredentialCmdCmdExe, guardforms.CredentialLegacyCmdExe)
+	hooks["preToolUse"] = migrateDedupGuardInNestedArray(hooks["preToolUse"], "execute_bash", guardCredentialCmdCmdExe, credentialLegacyAll)
+	hooks["preToolUse"] = migrateDedupGuardInNestedArray(hooks["preToolUse"], "fs_write", guardCredentialCmdCmdExe, credentialLegacyAll)
 	// Emit: git-branch guard then credential guard in execute_bash; credential in fs_write.
 	hooks["preToolUse"] = mergeClaudeHookArray(hooks["preToolUse"], "execute_bash", guardGitBranchCmdCmdExe)
 	// execute_bash: credential guard after git-branch for stable byte order.

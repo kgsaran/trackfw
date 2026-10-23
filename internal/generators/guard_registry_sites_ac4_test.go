@@ -42,11 +42,6 @@ package generators
 //   • Kiro harness: harnessCredentialGuardTargetKiro performs a total
 //     overwrite (writes a dedicated ~/.kiro/hooks/ file, not a merge into a
 //     shared settings file), so there is no legacy dedup pass to test.
-//   • InjectAmazonQ credential × CredentialLegacyPSPOSIX: AmazonQ's
-//     execute_bash credential dedup covers only CredentialLegacyCmdExe (cmd.exe
-//     family), not CredentialLegacyPSPOSIX.  Seeding a POSIX form there
-//     would expose a real defect (the form survives unmodified) — omitted
-//     here to keep this test green; the gap is documented separately.
 
 import (
 	"path/filepath"
@@ -227,10 +222,14 @@ func TestAC4_RegistrySites(t *testing.T) {
 		}
 	}
 
-	// ── combined list for AmazonQ git-branch (CmdExe forms + POSIX forms) ────
+	// ── combined lists for AmazonQ (CmdExe forms + POSIX forms) ─────────────
 	amazonQGitBranchList := append(
 		append([]string{}, guardforms.GitBranchLegacyCmdExe...),
 		guardforms.GitBranchLegacyPSPOSIX...,
+	)
+	amazonQCredentialList := append(
+		append([]string{}, guardforms.CredentialLegacyCmdExe...),
+		guardforms.CredentialLegacyPSPOSIX...,
 	)
 
 	rows := []row{
@@ -291,11 +290,16 @@ func TestAC4_RegistrySites(t *testing.T) {
 			run: flatInjectRun(".windsurf/hooks.json", InjectWindsurfHooks), count: flatCount,
 		},
 		// InjectAmazonQHooks — nested — .amazonq/cli-agents/q_cli_default.json
-		// credential: dedup covers CredentialLegacyCmdExe only (cmd.exe family)
+		// credential: dedup covers CredentialLegacyCmdExe + CredentialLegacyPSPOSIX (ML-1E)
 		// git-branch: dedup covers GitBranchLegacyCmdExe + GitBranchLegacyPSPOSIX
 		{
 			site: "InjectAmazonQ-cred", event: "preToolUse", matcher: "execute_bash",
-			canonical: guardCredentialCmdCmdExe, list: guardforms.CredentialLegacyCmdExe,
+			canonical: guardCredentialCmdCmdExe, list: amazonQCredentialList,
+			run: nestedInjectRun(".amazonq/cli-agents/q_cli_default.json", InjectAmazonQHooks), count: nestedCount,
+		},
+		{
+			site: "InjectAmazonQ-cred-fswrite", event: "preToolUse", matcher: "fs_write",
+			canonical: guardCredentialCmdCmdExe, list: amazonQCredentialList,
 			run: nestedInjectRun(".amazonq/cli-agents/q_cli_default.json", InjectAmazonQHooks), count: nestedCount,
 		},
 		{

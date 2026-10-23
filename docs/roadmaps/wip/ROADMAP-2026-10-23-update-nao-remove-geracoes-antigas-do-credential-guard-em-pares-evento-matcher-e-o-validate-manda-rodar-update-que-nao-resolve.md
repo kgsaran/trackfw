@@ -126,7 +126,7 @@ todos os sítios usarem o helper:
   registro, ou amarrá-las a ele por um teste de igualdade.
 
 ### ML-1B — Os demais sítios da matriz
-**Status:** 🔄 Em andamento
+**Status:** ✅ Concluído (lacunas fechadas pelos ML-1C, ML-1D e ML-1E)
 **Agente:** apolo-tf
 **Dependencies:** ML-1A. Sequencial porque usa o mesmo arquivo (`agentfiles.go`).
 **Files affected:** `internal/generators/agentfiles.go`, `internal/generators/update.go` e testes.
@@ -137,14 +137,14 @@ todos os sítios usarem o helper:
   PS/POSIX no Amazon Q.
 - Em todo `harness*Target*` global que migra no lugar: medir primeiro com N legadas e corrigir onde duplicar.
 **Acceptance criteria:**
-- [ ] AC3: cada célula da matriz §C tem um teste que reprova em `origin/main` e passa no novo
-- [ ] AC6 para Claude, Codex e Gemini
-- [ ] AC4, sentido sítios (herdado da auditoria do ML-1A): um teste orientado por tabela itera cada forma de
+- [x] AC3: cada célula da matriz §C tem um teste que reprova em `origin/main` e passa no novo
+- [x] AC6 para Claude, Codex e Gemini
+- [x] AC4, sentido sítios (herdado da auditoria do ML-1A): um teste orientado por tabela itera cada forma de
   `guardforms.*Legacy*` × cada sítio de projeto e global × cada par que o sítio emite, e exige uma entrada atual por par.
   Falsificar acrescentando uma forma fictícia ao registro, e o teste tem de reprovar no primeiro sítio
-- [ ] AC2, formas inline (herdado): `guardExpectedLine`, `guardD11LegacyLine` e `guardD11RevisedLegacyLine` derivam do
+- [x] AC2, formas inline (herdado): `guardExpectedLine`, `guardD11LegacyLine` e `guardD11RevisedLegacyLine` derivam do
   registro, ou um teste afirma igualdade com `guardforms.*` para os dois guards e as duas famílias
-- [ ] Os goldens e os configs versionados do repositório (`.claude/settings.json`, `.codex/hooks.json`, `.gemini/settings.json`), se mudarem, mudam só por deduplicação
+- [x] Os goldens e os configs versionados do repositório (`.claude/settings.json`, `.codex/hooks.json`, `.gemini/settings.json`), se mudarem, mudam só por deduplicação
 **Gates da wave:**
 ```bash
 go build ./...
@@ -201,12 +201,12 @@ registro", fica provada pelo contra-braço, em que os sítios não usam o regist
 agora: o credential guard do Amazon Q não migra `CredentialLegacyPSPOSIX`, enquanto o git-branch já migra (ML-1C).
 
 ### ML-1E — Amazon Q: credential com as formas PS/POSIX
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** apolo-tf
 **Acceptance criteria:**
-- [ ] `InjectAmazonQHooks` migra também `guardforms.CredentialLegacyPSPOSIX` para a forma atual de cmd.exe, nos pares de credential que ele emite
-- [ ] A linha do Amazon Q de credential no `TestAC4_RegistrySites` passa a iterar `CredentialLegacyPSPOSIX`, e o comentário de lacuna sai
-- [ ] Contra-braço: a linha nova reprova no HEAD anterior a este ML
+- [x] `InjectAmazonQHooks` migra também `guardforms.CredentialLegacyPSPOSIX` para a forma atual de cmd.exe, nos pares de credential que ele emite
+- [x] A linha do Amazon Q de credential no `TestAC4_RegistrySites` passa a iterar `CredentialLegacyPSPOSIX`, e o comentário de lacuna sai
+- [x] Contra-braço: a linha nova reprova no HEAD anterior a este ML
 
 
 ## Wave 2 — Revisões independentes
