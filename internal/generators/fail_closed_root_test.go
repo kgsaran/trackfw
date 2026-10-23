@@ -259,9 +259,9 @@ func TestAppendTransitionLogIsNonFatalAndRefuses(t *testing.T) {
 	if !strings.Contains(output, singleGrammar) {
 		t.Errorf("the refusal is not audible in the single grammar %q, got: %q", singleGrammar, output)
 	}
-	// ML-1A/ML-1C: the refusal path is now .trackfw-log-entries; assertUnverifiableRefusal checks
-	// that the message contains logRelative which is a substring of .trackfw-log-entries.
-	assertUnverifiableRefusal(t, "stderr", output, logRelative)
+	// ML-1A/ML-1C: the refusal names the entries dir (.trackfw-log-entries), not the legacy file.
+	// Use filepath.ToSlash so the assertion holds on Windows where filepath.Join produces backslashes.
+	assertUnverifiableRefusal(t, "stderr", output, filepath.ToSlash(dotDRelative))
 	// Neither the legacy file nor the new entries dir must be created when refused.
 	if _, statErr := os.Stat(filepath.Join(refused, logRelative)); statErr == nil {
 		t.Errorf("containment violated: legacy .trackfw-log was written while the root could not be established")
@@ -321,8 +321,9 @@ func TestAppendREQTransitionLogIsNonFatalAndRefuses(t *testing.T) {
 	if !strings.Contains(output, singleGrammar) {
 		t.Errorf("the refusal is not audible in the single grammar %q, got: %q", singleGrammar, output)
 	}
-	// ML-1A/ML-1C: the refusal path is .trackfw-log-entries; logRelative is a substring.
-	assertUnverifiableRefusal(t, "stderr", output, logRelative)
+	// ML-1A/ML-1C: the refusal names the entries dir (.trackfw-log-entries), not the legacy file.
+	// Use filepath.ToSlash so the assertion holds on Windows where filepath.Join produces backslashes.
+	assertUnverifiableRefusal(t, "stderr", output, filepath.ToSlash(dotDRelativeREQ))
 	// Neither the legacy file nor the new entries dir must be created when refused.
 	if _, statErr := os.Stat(filepath.Join(refused, logRelative)); statErr == nil {
 		t.Errorf("containment violated: legacy .trackfw-log was written while the root could not be established")
