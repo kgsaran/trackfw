@@ -68,6 +68,14 @@ type Config struct {
 	// correct `req new` / `roadmap new` command for by_agent projects with 2+ agents (AC13).
 	RoadmapNamespacing string   // "flat" (default) | "by_agent"
 	Agents             []string // agent namespaces declared in by_agent projects
+
+	// ci_trigger — ADR-2026-08-28 adendo 2026-10-24, REQ-2026-10-24.
+	// Accepted values: "pull_request" (default, absent = pull_request) and "manual".
+	// CITriggerInvalid mirrors config.UpdateConfig.CITriggerInvalid: when true, callers
+	// must refuse to generate CI workflows and return an error.
+	CITrigger        string // ci_trigger: "pull_request" | "manual" (default: "" = pull_request)
+	CITriggerInvalid bool   // true when config had an invalid ci_trigger value
+	CITriggerRawValue string // raw value for error messages when CITriggerInvalid
 }
 
 var govDirs = []string{
@@ -1672,6 +1680,10 @@ trackfw validate
 }
 
 func generateCIWorkflow(cfg Config) error {
+	// AC4: refuse to generate when ci_trigger has an invalid value; rc≠0.
+	if cfg.CITriggerInvalid {
+		return fmt.Errorf("ci_trigger: %q é inválido — valores aceitos: pull_request, manual", cfg.CITriggerRawValue)
+	}
 	switch cfg.CI {
 	case "github-actions":
 		return generateGitHubActionsWorkflow(cfg)
@@ -1793,13 +1805,40 @@ jobs:
 `
 }
 
+// buildGitHubActionsWorkflowContentWithTrigger is the parameterised builder used by
+// production callers that have a Config with CITrigger set. The old
+// buildGitHubActionsWorkflowContent (below) is kept as a backward-compatible wrapper
+// for tests and callers that don't pass a trigger — it always returns the pull_request
+// variant. The value of ciTrigger is NEVER interpolated into YAML (T2 mitigation): the
+// switch selects between two pre-written fixed blocks.
+//
+// Accepted values: "pull_request" | "" → pull_request template (default)
+//                  "manual"            → workflow_dispatch template
+//
+// Callers must validate ciTrigger before calling (CITriggerInvalid=true → return error
+// before any write, never call this function with an invalid value).
+func buildGitHubActionsWorkflowContentWithTrigger(isProducer bool, ciTrigger string) string {
+	base := buildGitHubActionsWorkflowContent(isProducer)
+	if ciTrigger == "manual" {
+		// Replace the pull_request trigger block with workflow_dispatch.
+		// The replaced block is a fixed literal; the value ciTrigger is never in the output.
+		return strings.Replace(base,
+			"  pull_request:\n    branches: [main]\n",
+			"  workflow_dispatch:\n",
+			1)
+	}
+	return base
+}
+
 // buildGitLabCIWorkflowContent returns the template content that trackfw writes to
 // GitLabCIWorkflowPath. Cfg-independent; ci: gitlab-ci is the gate at the call site.
 // NOT version-independent: pins TRACKFW_VERSION to internal/version.Version — see the
 // doc comment on buildGitHubActionsWorkflowContent above for the rationale (AC6/AC7,
 // AC10, AC11, AC12).
-func buildGitLabCIWorkflowContent(_ Config) string {
-	return `# trackfw governance gate
+// ci_trigger is honoured: "manual" replaces `only: - merge_requests` with
+// `rules: - if: '$CI_PIPELINE_SOURCE == "web"'` (ADR-2026-08-28 adendo §Z decision 2).
+func buildGitLabCIWorkflowContent(cfg Config) string {
+	base := `# trackfw governance gate
 trackfw-gate:
   stage: test
   image: alpine:latest
@@ -1814,6 +1853,15 @@ trackfw-gate:
   only:
     - merge_requests
 `
+	if cfg.CITrigger == "manual" {
+		// Replace only/merge_requests with rules/web equivalent.
+		// Neither block contains the value of cfg.CITrigger (T2 mitigation).
+		return strings.Replace(base,
+			"  only:\n    - merge_requests\n",
+			"  rules:\n    - if: '$CI_PIPELINE_SOURCE == \"web\"'\n",
+			1)
+	}
+	return base
 }
 
 func generateGitHubActionsWorkflow(cfg Config) error {
@@ -1852,7 +1900,7 @@ func generateGitHubActionsWorkflow(cfg Config) error {
 		return err
 	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks via rejectScaffoldPath above
-	if err := os.WriteFile(path, []byte(buildGitHubActionsWorkflowContent(IsProducerGoMod("."))), 0644); err != nil {
+	if err := os.WriteFile(path, []byte(buildGitHubActionsWorkflowContentWithTrigger(IsProducerGoMod("."), cfg.CITrigger)), 0644); err != nil {
 		return fmt.Errorf("writing CI workflow: %w", err)
 	}
 	fmt.Printf("  ✓ %s\n", path)

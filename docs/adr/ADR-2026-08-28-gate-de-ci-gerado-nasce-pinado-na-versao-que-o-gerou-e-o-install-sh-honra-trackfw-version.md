@@ -123,3 +123,25 @@ existente reportar `unregistered-write` de uma vez.
 **Publicar `install.sh` versionado por tag** (`releases/download/v7.3.0/install.sh`). Não funciona:
 o script resolve a versão pela API de `latest` independentemente de onde foi baixado. Seria um pin
 aparente — a pior categoria de controle, porque parece funcionar.
+
+## Adendo — 2026-10-24 (issue #607): o gatilho do workflow gerado é configurável
+
+**Contexto.** O `trackfw update` regenera os workflows gerados (`trackfw-gate.yml`, `.gitlab-ci-trackfw.yml` e o
+`trackfw-validate.yml` do `discover --init`) sempre com o gatilho por PR/MR. Um consumidor (claraea/ea-cmdb) roda sem CI
+por PR, por custo de Actions, e com os gates locais antes do PR. Cada `update` religa o workflow, e o scaffold doctor acusa
+como divergente qualquer troca manual do gatilho.
+
+**Decisão (KG, 2026-10-24).** Entra uma chave `ci_trigger` no `trackfw.yaml`, irmã de `ci`, porque `ci` já é escalar:
+- `pull_request` é o padrão e mantém o comportamento atual byte a byte;
+- `manual` gera o mesmo workflow só com disparo manual: `workflow_dispatch` no GitHub, `when: manual` no GitLab.
+
+Os templates e o scaffold doctor consomem o mesmo valor, de modo que o workflow manual não é acusado como divergente. Um
+valor desconhecido é erro de configuração, nunca uma volta silenciosa ao padrão.
+
+**Rejeitada:** preservar o bloco `on:` existente quando diverge do template. É implícito, e um `on:` editado à mão para
+pior (sem gatilho nenhum, por exemplo) passaria sem aviso.
+
+- **Wave 0 (2026-10-24, `docs/seguranca/2026-10-24-wave0-ci-trigger.md` §Z):** os templates nunca interpolam o valor. São
+  dois templates pré-escritos por `switch`, para fechar a injeção de YAML. No GitLab, `manual` é
+  `rules: - if: '$CI_PIPELINE_SOURCE == "web"'`. Com `manual`, o `validate` avisa que o gate de PR não roda sozinho. Valor
+  não escalar em chave escalar passa a ser violation para toda chave, por ser a mesma causa.

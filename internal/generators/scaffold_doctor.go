@@ -57,7 +57,40 @@ const DiscoverGitHubActionsWorkflowPath = ".github/workflows/trackfw-validate.ym
 // Job id `governance-go-install` (ML-1A, ROADMAP-2026-09-01): named after the install
 // mechanism in the consumer template; kept identical in the producer template because
 // the id is a required_status_checks contract, not a description of the step.
+// BuildDiscoverGitHubActionsWorkflowContent is the backward-compatible wrapper.
+// It always returns the pull_request variant (ciTrigger = "pull_request").
+// Production callers that have a Config with CITrigger must call
+// BuildDiscoverGitHubActionsWorkflowContentWithTrigger instead.
 func BuildDiscoverGitHubActionsWorkflowContent(isProducer bool) string {
+	return BuildDiscoverGitHubActionsWorkflowContentWithTrigger(isProducer, "pull_request")
+}
+
+// BuildDiscoverGitHubActionsWorkflowContentWithTrigger is the parameterised builder.
+// ciTrigger accepted values: "pull_request" | "" → PR template; "manual" → workflow_dispatch.
+// The value of ciTrigger is NEVER interpolated into YAML (T2 mitigation): the switch
+// selects between two pre-written fixed blocks. Callers must validate ciTrigger before
+// calling — never call with an invalid value.
+func BuildDiscoverGitHubActionsWorkflowContentWithTrigger(isProducer bool, ciTrigger string) string {
+	base := buildDiscoverGitHubActionsWorkflowContentPR(isProducer)
+	if ciTrigger == "manual" {
+		// Replace the entire on: body (comment + push + pull_request) with workflow_dispatch.
+		// Neither block contains the value of ciTrigger (T2 mitigation).
+		return strings.Replace(base,
+			"  # push so na main. Com o gatilho de lista (push e pull_request juntos), uma\n"+
+				"  # branch do proprio repositorio dispara os DOIS eventos no mesmo commit e o\n"+
+				"  # gate roda em dobro — medido num PR real: 2 execucoes do mesmo job, mesmo SHA.\n"+
+				"  push:\n    branches: [main]\n  pull_request:\n",
+			"  workflow_dispatch:\n",
+			1)
+	}
+	return base
+}
+
+// buildDiscoverGitHubActionsWorkflowContentPR is the internal implementation for the
+// pull_request variant of BuildDiscoverGitHubActionsWorkflowContent. Extracted so that
+// BuildDiscoverGitHubActionsWorkflowContentWithTrigger can derive the manual variant
+// from it without duplicating the template.
+func buildDiscoverGitHubActionsWorkflowContentPR(isProducer bool) string {
 	if isProducer {
 		return `name: trackfw validate
 on:
@@ -312,31 +345,37 @@ func RunScaffoldDoctor(projectRoot string) ([]integrations.DoctorFinding, error)
 	// --- CI workflow (AC13: conditional on ci: in trackfw.yaml) ---
 	//
 	// CI workflow YAML files are written with mode 0644 — execBit=false (AC11).
-	switch cfg.CI {
-	case "github-actions":
-		relPath := GitHubActionsWorkflowPath
-		path := filepath.Join(projectRoot, relPath)
-		f := checkScaffoldArtifact(path, relPath, []byte(buildGitHubActionsWorkflowContent(IsProducerGoMod(projectRoot))), true, false)
-		if f != nil {
-			// D4 (ADR-2026-09-29): suppress scaffold-missing for trackfw-gate.yml when
-			// trackfw-validate.yml is already present as a regular file. The generator
-			// (generateGitHubActionsWorkflow, scaffold.go) no longer writes gate.yml in
-			// that case (D2), so absence of gate.yml is expected — not a finding.
-			// A stale gate.yml (scaffold-divergent) is never suppressed: the file exists
-			// and must be kept current for the project's branch-protection contract.
-			// discoverWorkflowPresent uses os.Lstat, so a symlink is NOT treated as
-			// present and the finding is kept — consistent with the write-side predicate.
-			if f.FindingKind == integrations.DoctorScaffoldMissing && discoverWorkflowPresent(projectRoot) {
-				break
+	// AC4: when ci_trigger has an invalid value, skip the byte-exact comparison —
+	// there is no valid template to compare against. The validate rule ci_trigger_invalid
+	// reports the violation; the doctor's job is to detect drift, not to duplicate config
+	// errors.
+	if !cfg.CITriggerInvalid {
+		switch cfg.CI {
+		case "github-actions":
+			relPath := GitHubActionsWorkflowPath
+			path := filepath.Join(projectRoot, relPath)
+			f := checkScaffoldArtifact(path, relPath, []byte(buildGitHubActionsWorkflowContentWithTrigger(IsProducerGoMod(projectRoot), cfg.CITrigger)), true, false)
+			if f != nil {
+				// D4 (ADR-2026-09-29): suppress scaffold-missing for trackfw-gate.yml when
+				// trackfw-validate.yml is already present as a regular file. The generator
+				// (generateGitHubActionsWorkflow, scaffold.go) no longer writes gate.yml in
+				// that case (D2), so absence of gate.yml is expected — not a finding.
+				// A stale gate.yml (scaffold-divergent) is never suppressed: the file exists
+				// and must be kept current for the project's branch-protection contract.
+				// discoverWorkflowPresent uses os.Lstat, so a symlink is NOT treated as
+				// present and the finding is kept — consistent with the write-side predicate.
+				if f.FindingKind == integrations.DoctorScaffoldMissing && discoverWorkflowPresent(projectRoot) {
+					break
+				}
+				findings = append(findings, *f)
 			}
-			findings = append(findings, *f)
-		}
-	case "gitlab-ci":
-		relPath := GitLabCIWorkflowPath
-		path := filepath.Join(projectRoot, relPath)
-		f := checkScaffoldArtifact(path, relPath, []byte(buildGitLabCIWorkflowContent(cfg)), true, false)
-		if f != nil {
-			findings = append(findings, *f)
+		case "gitlab-ci":
+			relPath := GitLabCIWorkflowPath
+			path := filepath.Join(projectRoot, relPath)
+			f := checkScaffoldArtifact(path, relPath, []byte(buildGitLabCIWorkflowContent(cfg)), true, false)
+			if f != nil {
+				findings = append(findings, *f)
+			}
 		}
 	}
 
@@ -398,11 +437,14 @@ func RunScaffoldDoctor(projectRoot string) ([]integrations.DoctorFinding, error)
 	// follow it, compare the target's content against the template, and emit scaffold-divergent
 	// whose remedy (trackfw update) is inoperant because update refuses to write through a
 	// symlink. Achado verdadeiro na forma, inútil no conteúdo — skipped.
+	// AC4: same guard as above — skip comparison when ci_trigger is invalid.
 	discoverWorkflowPath := filepath.Join(projectRoot, DiscoverGitHubActionsWorkflowPath)
-	if dInfo, err := os.Lstat(discoverWorkflowPath); err == nil && dInfo.Mode()&os.ModeSymlink == 0 {
-		f := checkScaffoldArtifact(discoverWorkflowPath, DiscoverGitHubActionsWorkflowPath, []byte(BuildDiscoverGitHubActionsWorkflowContent(IsProducerGoMod(projectRoot))), true, false)
-		if f != nil {
-			findings = append(findings, *f)
+	if !cfg.CITriggerInvalid {
+		if dInfo, err := os.Lstat(discoverWorkflowPath); err == nil && dInfo.Mode()&os.ModeSymlink == 0 {
+			f := checkScaffoldArtifact(discoverWorkflowPath, DiscoverGitHubActionsWorkflowPath, []byte(BuildDiscoverGitHubActionsWorkflowContentWithTrigger(IsProducerGoMod(projectRoot), cfg.CITrigger)), true, false)
+			if f != nil {
+				findings = append(findings, *f)
+			}
 		}
 	}
 

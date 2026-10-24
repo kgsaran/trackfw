@@ -3438,6 +3438,96 @@ is installed or on a machine that never installs it) — routing it through the 
 shelling out to `trackfw` from inside a hook, which is not guaranteed to exist. It reads only
 `roadmap_dir`, is intentionally minimal, and is not part of the `Update`/`Sync` namespaces above.
 
+### `ci_trigger` — `trackfw.yaml` field controlling how the gate CI workflow fires
+
+<!-- trackfw-contract: gate=internal/config/config_ci_trigger_test.go partial=TestLoad_CITrigger_* tests parsing of all accepted and rejected ci_trigger values; gate=internal/generators/ci_trigger_test.go partial=TestCITrigger_* tests golden file equality and doctor cross-combination; gate=internal/validator/validator_ci_trigger_test.go partial=TestValidateCITrigger_* tests ci_trigger_invalid and ci_trigger_manual rules -->
+
+Since `REQ-2026-10-24`, a flat top-level `ci_trigger:` key in `trackfw.yaml` controls whether the
+trackfw gate workflow fires automatically on pull requests / merge requests (the default) or only
+when triggered manually.
+
+| Key (YAML) | Type | Default (absent) | Accepted values |
+|---|---|---|---|
+| `ci_trigger` | scalar string | `"pull_request"` | `"pull_request"`, `"manual"` |
+
+```yaml
+# Default — gate runs automatically on every pull request / merge request
+ci_trigger: pull_request
+
+# Manual — gate runs only when dispatched manually (workflow_dispatch / web pipeline)
+ci_trigger: manual
+```
+
+**Behaviour by value:**
+
+- `"pull_request"` (or absent): GitHub Actions gate uses `on: pull_request: branches: [main]`;
+  GitLab CI gate uses `only: - merge_requests`.
+- `"manual"`: GitHub Actions gate uses `on: workflow_dispatch:` (no inputs);
+  GitLab CI gate uses `rules: - if: '$CI_PIPELINE_SOURCE == "web"'`.
+
+**Invalid value:** `trackfw validate` emits a `ci_trigger_invalid` violation (default severity:
+`"error"`) with the raw value and accepted values. `trackfw update` and `trackfw init` refuse with
+rc≠0 and leave any existing workflow file untouched.
+
+**Manual warning:** `trackfw validate` additionally emits a `ci_trigger_manual` warning (default
+severity: `"warning"`) when the value is `"manual"` — the gate will not run on pull requests.
+
+**Security (T2):** the value of `ci_trigger` is NEVER interpolated into YAML. The switch over
+`"manual"` / `"pull_request"` selects between two pre-written, fixed blocks.
+
+**`trackfw init`:** honours an existing `ci_trigger` key already in `trackfw.yaml` (option c,
+§Z). No new flag or wizard question; the template does not emit the key.
+
+**`trackfw discover --init`:** honours `ci_trigger` from `config.Load()` when writing
+`.github/workflows/trackfw-validate.yml`.
+
+**`trackfw doctor`:** compares the on-disk workflow byte-exactly against the template of the
+*configured* trigger. When `ci_trigger_invalid` is set, the comparison is skipped (no valid
+template to compare against). When `config=manual` but disk has the PR variant (or vice-versa),
+a `scaffold-divergent` finding is reported. Run `trackfw update` to regenerate.
+
+**Coverage note:** the v8 single-Go-implementation invariant applies — there is one template per
+(isProducer, ciTrigger) combination, all in `internal/generators/scaffold.go` and
+`internal/generators/scaffold_doctor.go`.
+
+### `config_value_type` — validate rule for wrong YAML type on a trackfw.yaml key (ML-1B/ML-1C, REQ-2026-10-24)
+
+<!-- trackfw-contract: gate=internal/config/config_scalar_type_test.go partial=TestScalarType_* tests that all known scalar keys, list keys, container keys and nested scalars record a ScalarTypeError when given a wrong YAML type; gate=internal/validator/validator_config_scalar_test.go partial=TestConfigValueType_* tests the config_value_type rule in both ValidateUnfiltered and Validate (tagged path) -->
+
+When any key in `trackfw.yaml` receives a YAML value of the wrong type, the parser records a
+`ScalarTypeError` in `cfg.ScalarTypeErrors`. The recording layer covers four key categories:
+
+| Category | Examples | Expected type | Wrong types caught |
+|---|---|---|---|
+| **Scalar keys** | `req_dir`, `roadmap_dir`, `ci`, `forge`, … (24 total) | `scalar string` | `sequence`, `mapping` |
+| **List keys** | `adr_dirs`, `agents`, `acceptance_markers` | `sequence` | `scalar`, `mapping` |
+| **Container keys** | `rules`, `agent_models`, `link_fields`, `credential_guard`, `write_scope` | `mapping` | `scalar`, `sequence` |
+| **Map values** | `rules.<key>`, `agent_models.<key>` | `scalar string` | `sequence`, `mapping` |
+| **Nested scalars** | `credential_guard.mode` | `scalar string` | `sequence`, `mapping` |
+
+Since ML-1B, scalar keys go through `stringValRec` (via `scalarKeyTable`). Since ML-1C, list keys
+use `stringListRec`, container keys use `recordContainerType`, and nested scalars use
+`stringValNested`. `KnownScalarKeys()` derives the scalar list from `scalarKeyTable` by
+construction — adding a new scalar key to the table automatically includes it in detection.
+
+**Validate rule:** `config_value_type` (default severity: `"error"`) emits one violation per
+affected key with the key name, received type, and expected type.
+
+```
+config_value_type: trackfw.yaml: key "agents" received a scalar value; expected a sequence
+config_value_type: trackfw.yaml: key "rules.wip_limit" received a sequence value; expected a scalar string
+config_value_type: trackfw.yaml: key "credential_guard.mode" received a sequence value; expected a scalar string
+```
+
+**Excluded key:** `ci_trigger` is NOT covered by this rule. A non-scalar `ci_trigger` is handled
+exclusively by `ci_trigger_invalid` (ML-1A) to avoid a double violation on the same root cause.
+
+**Known scalar keys:** `req_dir`, `roadmap_dir`, `roadmap_namespacing`, `governance_mode`,
+`lenient_until`, `wip_limit`, `wip_by_squad`, `stale_wip_days`, `require_req_in_commit`,
+`trace_id_field`, `strict_ci_paths`, `forge`, `hooks`, `ci`, `backend`, `frontend`,
+`pkg_manager`, `agent_conventions`, `linear_api_key`, `linear_team_id`, `jira_base_url`,
+`jira_email`, `jira_token`, `jira_project`. Source of truth: `config.KnownScalarKeys()`.
+
 ### `credential_guard.mode` — `trackfw.yaml` field consumed by `scripts/trackfw-credential-guard.sh`
 
 <!-- trackfw-contract: gate=internal/generators/credential_guard_test.go partial=TestCredentialGuardScript_ParityAcrossStacks compara byte a byte o script GERADO entre Go, Node e Python (que embute a leitura de mode via grep/sed), mas nenhum gate cross-CLI testa o fallback silencioso de um valor mode não reconhecido para "warn" nem a divergência real de comportamento warn vs block em runtime -->

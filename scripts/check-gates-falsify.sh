@@ -3869,7 +3869,7 @@ else
   falsify_fail_point
 fi
 
-GO_S39_OLD=$'func loadUpdateConfig() Config {\n\tu := config.Load().Update\n\treturn Config{\n\t\tHooks:      u.Hooks,\n\t\tCI:         u.CI,\n\t\tBackend:    u.Backend,\n\t\tFrontend:   u.Frontend,\n\t\tPkgManager: u.PkgManager,\n\t}\n}'
+GO_S39_OLD=$'func loadUpdateConfig() Config {\n\tu := config.Load().Update\n\treturn Config{\n\t\tHooks:             u.Hooks,\n\t\tCI:                u.CI,\n\t\tBackend:           u.Backend,\n\t\tFrontend:          u.Frontend,\n\t\tPkgManager:        u.PkgManager,\n\t\tCITrigger:         u.CITrigger,\n\t\tCITriggerInvalid:  u.CITriggerInvalid,\n\t\tCITriggerRawValue: u.CITriggerRawValue,\n\t}\n}'
 GO_S39_NEW=$'func loadUpdateConfig() Config {\n\t// [falsified] artisanal line-by-line scanner reintroduced — matches the "hooks:" prefix at\n\t// ANY indentation and keeps overwriting, so the LAST matching line wins regardless of nesting.\n\t// config.Load() is still invoked (kept referenced) but its Update namespace is discarded.\n\t_ = config.Load()\n\tdata, err := os.ReadFile("trackfw.yaml")\n\tif err != nil {\n\t\treturn Config{}\n\t}\n\tcfg := Config{}\n\tfor _, line := range strings.Split(string(data), "\\n") {\n\t\tline = strings.TrimSpace(line)\n\t\tif strings.HasPrefix(line, "#") {\n\t\t\tcontinue\n\t\t}\n\t\tidx := strings.Index(line, ":")\n\t\tif idx < 0 {\n\t\t\tcontinue\n\t\t}\n\t\tkey := strings.TrimSpace(line[:idx])\n\t\tval := strings.TrimSpace(line[idx+1:])\n\t\tswitch key {\n\t\tcase "hooks":\n\t\t\tcfg.Hooks = val\n\t\tcase "ci":\n\t\t\tcfg.CI = val\n\t\tcase "backend":\n\t\t\tcfg.Backend = val\n\t\tcase "frontend":\n\t\t\tcfg.Frontend = val\n\t\tcase "pkg_manager":\n\t\t\tcfg.PkgManager = val\n\t\t}\n\t}\n\treturn cfg\n}'
 
 T39C_GO_MOD="$WORK/s39-corrupt-go"

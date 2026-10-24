@@ -107,3 +107,8 @@ npm/bin/trackfw   text=auto eol=lf
 # TestCorpusIsPinnedAgainstEOLConversion — reprova se estas duas linhas sumirem.
 internal/pathguard/testdata/corpus-pre-fix/** -text
 internal/integrations/testdata/*.golden.*     -text
+# windows-full-suites do PR #609 reprovou nos 5 TestCITrigger_GoldenDefault_*
+# por CRLF — mesmo mecanismo dos goldens acima (checkout Windows converte).
+# Nota: estes arquivos são *.golden (sem segunda extensão), por isso precisam
+# de regra própria em vez de cair na *.golden.* acima.
+internal/generators/testdata/ci-trigger/*.golden -text
