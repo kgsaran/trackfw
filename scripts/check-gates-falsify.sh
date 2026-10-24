@@ -3023,9 +3023,10 @@ assert_output_contains "backtick-ref/go/adr_accepted_when_req_done-detects-regre
 # do mesmo bug (ex: todos omitindo analyzing), ou se todos imprimissem
 # vazio.
 #
-# Corrompe a IMPLEMENTAÇÃO (Go: a lista de estados enumerados em
-# inventoryBlock), nunca a asserção — mesmo padrão dos Cenários
-# 14/16/17/20/21/24/25/26/27/28/29.
+# Corrompe a IMPLEMENTAÇÃO (Go: troca config.RoadmapStates() por lista literal
+# sem "analyzing" no inventoryBlock — ML-6D substituiu a lista literal pela
+# chamada; âncora retargetada aqui em ML-7B), nunca a asserção — mesmo padrão
+# dos Cenários 14/16/17/20/21/24/25/26/27/28/29.
 # ---------------------------------------------------------------------------
 
 S30_PROJECT="$WORK/s30-status-project"
@@ -3060,7 +3061,7 @@ cp "$ROOT_DIR/go.mod" "$T30C_GO_MOD/go.mod"
 cp "$ROOT_DIR/go.sum" "$T30C_GO_MOD/go.sum"
 corrupt_literal \
   "$ROOT_DIR/internal/validator/validator.go" "$T30C_GO_MOD/internal/validator/validator.go" \
-  'states := []string{"backlog", "analyzing", "wip", "blocked", "done", "abandoned"}' \
+  'states := config.RoadmapStates()' \
   'states := []string{"backlog", "wip", "blocked", "done", "abandoned"}' \
   "s30-go"
 
@@ -5451,52 +5452,43 @@ ln -sf "$T65_BIN" "$T65_SHIM_DIR/trackfw"
 )
 
 # ---------------------------------------------------------------------------
-# Cenário 67 — dedup projeto+global para o `git-branch-guard`
-#              (ROADMAP-2026-08-17-guard-global-cabeado-com-no-op-fora-de-
-#              projeto-e-integridade-independente-de-fiacao.md, Wave 2/ML-2B):
-#              com a fiação global do git-branch-guard instalada para o
-#              Claude, `trackfw discover --init` NÃO deve escrever a entrada
-#              de projeto ($CLAUDE_PROJECT_DIR/scripts/trackfw-git-branch-
-#              guard.sh) — senão o guard roda duas vezes por chamada Bash e
-#              a mensagem de bloqueio dobra (o sintoma medido que abriu esta
-#              ML). globalGitBranchGuardInstalledClaude() (Go internal/
-#              generators/agentfiles.go) é o seam.
+# Cenário 67 — fiação de projeto do `git-branch-guard` em todo estado do
+#              $HOME (D15, ADR-2026-10-04 adendo 2026-10-24, issue #613):
+#              `trackfw discover --init` SEMPRE escreve a entrada do
+#              git-branch-guard no .claude/settings.json do PROJETO, com ou
+#              sem fiação global instalada. A D14 (dedup) caiu: a fiação de
+#              projeto não consulta o guard global (ML-5A eliminou as funções
+#              globalGitBranchGuardInstalledClaude / readClaudeSettingsJSON).
+#              O seam é a linha
+#                hooks["PreToolUse"] = mergeClaudeHookArray(…, claudeShellMatcher,
+#                  guardGitBranchCmdPSPOSIX)
+#              em InjectClaudeHooks (internal/generators/agentfiles.go).
 #
 # Por que Go sozinho: mesmo precedente dos Cenários 57 (Go)/59 (Python) —
-# sabotagem de um único stack quando a paridade estrutural entre os 3 já é
-# garantida em outro lugar (make quality roda `go test`/`node --test`/
-# `pytest` nos 3, cada um com seus próprios testes de dedup do
-# git-branch-guard criados por este ML — internal/generators/
-# git_branch_guard_dedup_test.go, npm/tests/git_branch_guard_dedup.test.js,
-# pypi/tests/test_git_branch_guard_dedup.py — que já provam a mesma
-# propriedade nos 3 stacks via unidade). Este cenário prova o mecanismo
-# fim-a-fim contra o BINÁRIO REAL (`discover --init`), o que nenhum teste de
-# unidade cobre (eles chamam os injetores diretamente, nunca o comando CLI).
+# sabotagem de um único stack; os testes de unidade chamam os injetores
+# diretamente. Este cenário prova o mecanismo fim-a-fim contra o BINÁRIO
+# REAL (`discover --init`), o que nenhum teste de unidade cobre.
 #
-# Quatro braços (o 4º entrou com o ML-2C; este cabeçalho dizia "três" e
-# estava defasado desde então — corrigido no ML-1C):
-#   1. Baseline — $HOME sintético com ~/.claude/settings.json apontando
-#      PreToolUse[Bash] para o caminho EXATO que
-#      globalGitBranchGuardScriptPath() resolveria
-#      ($HOME/.trackfw/scripts/trackfw-git-branch-guard.sh); roda
-#      `discover --init` de verdade contra um fixture de projeto (marcador
-#      CLAUDE.md) e prova que .claude/settings.json do PROJETO não contém a
-#      entrada de git-branch-guard, mas CONTÉM a de credential-guard — prova
-#      que o skip é específico do guard, não um apagão geral de PreToolUse.
-#   2. Reverse-vacuity — mesmo fixture de projeto, $HOME vazio (nenhuma
-#      fiação global) → a entrada de projeto do git-branch-guard aparece
-#      normalmente, provando que a ausência no braço 1 veio da fiação
-#      global, não de alguma quebra geral do injector.
-#   3. Detecção — corrompe o CORPO INTEIRO de globalGitBranchGuardInstalledClaude
-#      (não só um trecho — o texto `hookArrayHasCommand(hooks["PreToolUse"],
-#      "Bash", scriptPath)` também aparece, idêntico, dentro de
-#      globalCredentialGuardInstalledClaude, então corrupt_literal com esse
-#      recorte sozinho falharia a asserção de ocorrência única) para
-#      `return false` incondicional, numa cópia isolada de internal/+cmd/
-#      (mesmo padrão do Cenário 46); reconstrói e roda o MESMO fixture do
-#      braço 1 (mesmo $HOME sintético com a fiação global instalada) contra
-#      o binário corrompido — a entrada de projeto REAPARECE, reproduzindo o
-#      sintoma exato de mensagem duplicada que motivou esta ML.
+# Três braços (braço 4 — tolerância a "//" — removido em ML-7B porque o
+# comparador de dedup que o motivava não existe mais, e o $HOME sintético
+# com "//" embutido só era relevante para provar a normalização que a D15
+# eliminou por inteiro):
+#   1. Baseline — $HOME sintético com ~/.claude/settings.json de fiação
+#      global instalada; roda `discover --init` contra um fixture de projeto
+#      (marcador CLAUDE.md) e prova que .claude/settings.json do PROJETO
+#      CONTÉM a entrada de git-branch-guard (D15: sempre emitida) E a de
+#      credential-guard — prova que a entrada vem da fiação de projeto, não
+#      depende do estado do $HOME.
+#   2. Reverse — mesmo fixture de projeto, $HOME vazio (sem fiação global)
+#      → ambas as entradas também estão presentes, provando que a presença
+#      no braço 1 não dependia do global.
+#   3. Detecção — remove a linha mergeClaudeHookArray do git-branch-guard em
+#      InjectClaudeHooks (corrupt_literal, âncora única medida) numa cópia
+#      isolada de internal/+cmd/; reconstrói e roda o MESMO fixture do
+#      braço 1 (mesmo $HOME com global) contra o binário corrompido — a
+#      entrada de git-branch-guard SOME do projeto (credential-guard ainda
+#      presente, confirma que o arquivo foi escrito); prova que o braço 1
+#      não era vácuo: a entrada vem DESTA linha.
 # ---------------------------------------------------------------------------
 T67_PROJECT_DIR="$WORK/s67-project"
 mkdir -p "$T67_PROJECT_DIR"
@@ -5506,9 +5498,9 @@ mkdir -p "$T67_PROJECT_DIR"
 # not $WORK itself -- $TMPDIR ends in "/" on macOS, so $WORK carries an
 # embedded "//" that used to make this baseline arm's outcome depend on the
 # exact bug ML-2C fixes (ROADMAP-2026-08-17, "Diagnostico do arquiteto"). The
-# // tolerance itself is now exercised EXPLICITLY by braco 4 below with a
-# deliberately corrupted HOME, so this baseline stays deterministic across
-# platforms instead of accidentally depending on TMPDIR's shape.
+# // tolerance braço was removed in ML-7B (dedup comparator gone with D14/D15),
+# so this baseline stays deterministic across platforms instead of accidentally
+# depending on TMPDIR's shape.
 #
 # ML-1C (ROADMAP-2026-09-24-treze-rotulos..., grupo G4): no Windows este
 # cenário reprovava por ESPAÇO DE NOMES, não por separador. O MSYS converte
@@ -5550,49 +5542,48 @@ cat >"$T67_FAKE_HOME_POSIX/.claude/settings.json" <<EOF
 {"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"$T67_FAKE_HOME/.trackfw/scripts/trackfw-git-branch-guard.sh"}]}]}}
 EOF
 
-# ML-W4b (REQ-2026-09-03): os braços 1, 2, 3 e 4 passam USERPROFILE=<fake>
+# ML-W4b (REQ-2026-09-03): os braços 1, 2 e 3 passam USERPROFILE=<fake>
 # junto com HOME para que no Windows agentconfig.ClaudeConfigDir use
-# os.UserHomeDir() (=USERPROFILE) e encontre o settings.json da fiação global
-# no fake home. Antes deste fix o USERPROFILE ficava em $WORK/home (linha 119)
-# e readClaudeSettingsJSON() retornava ok=false → globalGitBranchGuardInstalledClaude()
-# retornava false → discover gravava a entrada no projeto → braços 1 e 4 falhavam.
+# os.UserHomeDir() (=USERPROFILE). Em D15 o braço 1 já não depende da
+# fiação global para emitir a entrada, mas o USERPROFILE ainda precisa
+# bater com o HOME para que a leitura do global não falhe por path mismatch
+# (braço 3 usa o mesmo $HOME sintético e o binário corrompido não consulta
+# o global, então o USERPROFILE é inócuo para ele — mas seguro manter).
 set +e
 (cd "$T67_PROJECT_DIR" && HOME="$T67_FAKE_HOME" USERPROFILE="$T67_FAKE_HOME" CLAUDE_CONFIG_DIR= "$ROOT_DIR/bin/trackfw" discover --init) >"$WORK/s67-baseline-discover.log" 2>&1
 s67b_status=$?
 set -e
 if [[ $s67b_status -ne 0 ]]; then
-  echo "FAIL [falsify/git-branch-guard-dedup/baseline-setup]: discover --init saiu com $s67b_status" >&2
+  echo "FAIL [falsify/git-branch-guard-project-wiring/baseline-setup]: discover --init saiu com $s67b_status" >&2
   cat "$WORK/s67-baseline-discover.log" >&2
   falsify_fail_point
 fi
 
 s67b_settings="$T67_PROJECT_DIR/.claude/settings.json"
-# ML-4C: marker atualizado para o formato inline emitido pelo ML-2A
-# ('trackfw guard git-branch; exit $LASTEXITCODE'); o antigo
-# 'trackfw-git-branch-guard.sh' nunca aparece em configs de projeto desde ML-2A,
-# tornando a asserção de ausência vacuamente verde.
-if grep -qF 'trackfw guard git-branch' "$s67b_settings"; then
-  echo "FAIL [falsify/git-branch-guard-dedup/baseline-skips-project-entry]: entrada de git-branch-guard presente em $s67b_settings com a fiação global instalada" >&2
+# D15: a entrada de projeto do git-branch-guard deve ESTAR PRESENTE com o
+# global instalado — antes (D14) estava ausente. Marker: 'trackfw guard
+# git-branch' é o prefixo estável da linha canônica emitida desde ML-2A.
+if ! grep -qF 'trackfw guard git-branch' "$s67b_settings"; then
+  echo "FAIL [falsify/git-branch-guard-project-wiring/baseline-emits-project-entry]: entrada de git-branch-guard AUSENTE em $s67b_settings com a fiação global instalada (D15: deve sempre estar presente)" >&2
   cat "$s67b_settings" >&2
   falsify_fail_point
 else
   falsify_count_success
-  echo "OK   [falsify/git-branch-guard-dedup/baseline-skips-project-entry]"
+  echo "OK   [falsify/git-branch-guard-project-wiring/baseline-emits-project-entry]"
 fi
 
-# ML-4C: marker atualizado; a entrada de projeto usa 'trackfw guard credential;'
-# (sem --global); usar '; exit' como âncora evita falso-positivo caso o formulário
-# '--global' fosse indevidamente escrito na config de projeto.
+# D15: a entrada de credential-guard também deve estar presente; usa '; exit'
+# como âncora para não casar o formulário --global.
 if ! grep -qF 'trackfw guard credential;' "$s67b_settings"; then
-  echo "FAIL [falsify/git-branch-guard-dedup/baseline-credential-guard-unaffected]: entrada de credential-guard ausente — o skip não deveria afetar o outro guard" >&2
+  echo "FAIL [falsify/git-branch-guard-project-wiring/baseline-credential-guard-present]: entrada de credential-guard ausente em $s67b_settings" >&2
   cat "$s67b_settings" >&2
   falsify_fail_point
 else
   falsify_count_success
-  echo "OK   [falsify/git-branch-guard-dedup/baseline-credential-guard-unaffected]"
+  echo "OK   [falsify/git-branch-guard-project-wiring/baseline-credential-guard-present]"
 fi
 
-# --- braço 2: reverse-vacuity, $HOME vazio -> entrada de projeto normal ---
+# --- braço 2: reverse — $HOME vazio → entrada de projeto também presente ---
 T67_PROJECT_DIR_RV="$WORK/s67-project-reverse-vacuity"
 mkdir -p "$T67_PROJECT_DIR_RV"
 : > "$T67_PROJECT_DIR_RV/CLAUDE.md"
@@ -5604,23 +5595,24 @@ set +e
 s67rv_status=$?
 set -e
 if [[ $s67rv_status -ne 0 ]]; then
-  echo "FAIL [falsify/git-branch-guard-dedup/reverse-vacuity-setup]: discover --init saiu com $s67rv_status" >&2
+  echo "FAIL [falsify/git-branch-guard-project-wiring/reverse-no-global-setup]: discover --init saiu com $s67rv_status" >&2
   cat "$WORK/s67-rv-discover.log" >&2
   falsify_fail_point
 fi
 
 s67rv_settings="$T67_PROJECT_DIR_RV/.claude/settings.json"
-# ML-4C: marker atualizado para formato inline ML-2A.
+# D15: sem fiação global, a entrada de projeto também deve estar presente —
+# prova que a emissão não dependia do braço 1 estar com global instalado.
 if ! grep -qF 'trackfw guard git-branch' "$s67rv_settings"; then
-  echo "FAIL [falsify/git-branch-guard-dedup/reverse-vacuity]: entrada de git-branch-guard ausente com \$HOME vazio (sem fiação global) — o skip não deveria acontecer aqui" >&2
+  echo "FAIL [falsify/git-branch-guard-project-wiring/reverse-no-global]: entrada de git-branch-guard ausente com \$HOME vazio — D15 exige emissão sempre" >&2
   cat "$s67rv_settings" >&2
   falsify_fail_point
 else
   falsify_count_success
-  echo "OK   [falsify/git-branch-guard-dedup/reverse-vacuity]"
+  echo "OK   [falsify/git-branch-guard-project-wiring/reverse-no-global]"
 fi
 
-# --- braço 3: detecção — dedup neutralizado, entrada de projeto reaparece ---
+# --- braço 3: detecção — fiação de projeto removida, entrada some ---
 T67_MOD="$WORK/s67-corrupt-go"
 mkdir -p "$T67_MOD/cmd" "$T67_MOD/internal"
 cp -r "$ROOT_DIR/cmd/." "$T67_MOD/cmd/"
@@ -5628,37 +5620,30 @@ cp -r "$ROOT_DIR/internal/." "$T67_MOD/internal/"
 cp "$ROOT_DIR/go.mod" "$T67_MOD/go.mod"
 cp "$ROOT_DIR/go.sum" "$T67_MOD/go.sum"
 
-# Corrompe globalGitBranchGuardInstalledClaude() por âncora estável (assinatura
-# da função), não por literal do corpo — robusto a adições futuras de legacyD*
-# (ML-5A→ML-6B→ML-6C cada uma alterou o corpo e quebrou o corrupt_literal
-# anterior). Garante: exatamente 1 ocorrência da assinatura; span não invade a
-# próxima função; arquivo resultante difere do original.
+# Corrompe InjectClaudeHooks removendo a linha que adiciona o git-branch-guard
+# ao PreToolUse do projeto. Âncora: a chamada mergeClaudeHookArray com
+# claudeShellMatcher e guardGitBranchCmdPSPOSIX — única no arquivo (medida:
+# grep -c retorna 1). Substituição mantém Go válido (a linha é substituída
+# por _ = guardGitBranchCmdPSPOSIX, que compila e não altera os outros usos
+# da variável via migrate*).
 "$PY_BIN" - \
   "$ROOT_DIR/internal/generators/agentfiles.go" \
   "$T67_MOD/internal/generators/agentfiles.go" <<'PY'
 import pathlib, sys
 
-sig = "func globalGitBranchGuardInstalledClaude() bool {"
+anchor = 'hooks["PreToolUse"] = mergeClaudeHookArray(hooks["PreToolUse"], claudeShellMatcher, guardGitBranchCmdPSPOSIX)'
+label = "s67-go-agentfiles-git-branch-project-wiring-removed"
 src, dest = sys.argv[1], sys.argv[2]
 source = pathlib.Path(src).read_text(encoding="utf-8")
-count = source.count(sig)
+count = source.count(anchor)
 if count != 1:
-    raise SystemExit(f"[s67-go-claude-git-branch-guard-dedup-always-false] expected exactly 1 occurrence of pattern, got {count}")
-start = source.index(sig)
-# gofmt: top-level func closes with \n}\n (column-0 brace); inner braces are
-# always indented, so the first \n}\n after the opening line is the closer.
-try:
-    close = source.index("\n}\n", start + len(sig))
-except ValueError:
-    raise SystemExit("[s67-go-claude-git-branch-guard-dedup-always-false] closing brace marker not found after signature")
-end = close + 3  # consume the \n after }
-body_span = source[start:end]
-if "\nfunc " in body_span:
-    raise SystemExit("[s67-go-claude-git-branch-guard-dedup-always-false] span contains 'func ' — overshot into next function")
-replacement = sig + "\n\treturn false\n}\n"
-result = source[:start] + replacement + source[end:]
+    raise SystemExit(f"[{label}] expected exactly 1 occurrence of pattern, got {count}")
+# Replace the assignment with a no-op that still compiles.
+# guardGitBranchCmdPSPOSIX is a package-level const; _ = const is valid Go.
+replacement = '_ = guardGitBranchCmdPSPOSIX // D15 detection: git-branch project wiring removed'
+result = source.replace(anchor, replacement, 1)
 if result == source:
-    raise SystemExit("[s67-go-claude-git-branch-guard-dedup-always-false] output unchanged — corruption had no effect")
+    raise SystemExit(f"[{label}] output unchanged — corruption had no effect")
 pathlib.Path(dest).write_text(result, encoding="utf-8")
 PY
 
@@ -5675,89 +5660,32 @@ set +e
 s67d_status=$?
 set -e
 if [[ $s67d_status -ne 0 ]]; then
-  echo "FAIL [falsify/git-branch-guard-dedup/detection-setup]: discover --init (binário corrompido) saiu com $s67d_status" >&2
+  echo "FAIL [falsify/git-branch-guard-project-wiring/detection-setup]: discover --init (binário corrompido) saiu com $s67d_status" >&2
   cat "$WORK/s67-detection-discover.log" >&2
   falsify_fail_point
 fi
 
 s67d_settings="$T67_PROJECT_DIR_DET/.claude/settings.json"
-# ML-4C: marker atualizado para formato inline ML-2A.
-if ! grep -qF 'trackfw guard git-branch' "$s67d_settings"; then
-  echo "FAIL [falsify/git-branch-guard-dedup/detection-catches-regression]: com o dedup neutralizado (sempre 'não instalado'), a entrada de projeto deveria REAPARECER mesmo com a fiação global instalada — não reapareceu" >&2
+# D15 detecção: com a fiação de projeto removida, a entrada de git-branch-guard
+# deve ESTAR AUSENTE — prova que o braço 1 não era vácuo.
+# Guarda de não-vacuidade: o arquivo deve existir (credential-guard ainda
+# presente) — se o discover falhou silenciosamente o arquivo não existiria.
+if [[ ! -f "$s67d_settings" ]]; then
+  echo "FAIL [falsify/git-branch-guard-project-wiring/detection-settings-exists]: $s67d_settings não foi criado pelo binário corrompido — credential-guard também está ausente, discover pode ter falhado silenciosamente" >&2
+  falsify_fail_point
+fi
+if ! grep -qF 'trackfw guard credential;' "$s67d_settings"; then
+  echo "FAIL [falsify/git-branch-guard-project-wiring/detection-credential-still-present]: credential-guard ausente no binário corrompido — a corrupção afetou mais do que o git-branch-guard" >&2
+  cat "$s67d_settings" >&2
+  falsify_fail_point
+fi
+if grep -qF 'trackfw guard git-branch' "$s67d_settings"; then
+  echo "FAIL [falsify/git-branch-guard-project-wiring/detection-catches-regression]: entrada de git-branch-guard PRESENTE em $s67d_settings mesmo com a fiação de projeto removida — o braço 1 era vácuo (a entrada viria de outro caminho)" >&2
   cat "$s67d_settings" >&2
   falsify_fail_point
 else
   falsify_count_success
-  echo "OK   [falsify/git-branch-guard-dedup/detection-catches-regression]"
-fi
-
-# --- braço 4 (ML-2C) — tolerância a "//" no comando gravado no config global ---
-# Constrói um HOME sintético com barra dupla EMBUTIDA no meio do caminho
-# (reproduzindo exatamente a forma que $TMPDIR/$WORK assume no macOS) e grava
-# o comando do PreToolUse[Bash] usando essa forma crua, sem passar por
-# filepath.Join — como um config editado à mão, ou capturado quando $HOME
-# tinha barra dupla, produziria. globalGitBranchGuardScriptPath() computa o
-# caminho já normalizado a partir do MESMO HOME; antes do ML-2C a comparação
-# de string crua entre os dois falhava e o dedup não disparava (refs=1); a
-# correção normaliza os dois lados antes de comparar (refs=0 esperado).
-#
-# ML-1C: mesma correção de grafia do braço 1, com um cuidado a mais. O "//"
-# é O QUE ESTE BRAÇO MEDE, e `cygpath` COLAPSA "//" embutido — converter o
-# caminho já malformado apagaria o caso e o rótulo passaria sem provar nada.
-# Então converte-se a BASE ($WORK67_CLEAN) e injeta-se o "//" DEPOIS, sobre a
-# grafia nativa. A sobrevivência do "//" no arquivo gravado é ASSERTADA
-# abaixo (guarda de vacuidade), não presumida.
-#
-# ML-W4b (REQ-2026-09-03): passa USERPROFILE="$T67_FAKE_HOME_SLASH" junto com
-# HOME para que no Windows readClaudeSettingsJSON() leia de USERPROFILE (que
-# usa os.UserHomeDir() via agentconfig.ClaudeConfigDir) e encontre o
-# settings.json com "//". O USERPROFILE mantém o "//" — a guarda de vacuidade
-# do arquivo gravado (heredoc) não é afetada, pois aquela assertiva lê o
-# arquivo escrito diretamente pelo bash, não pelo binário.
-T67_WORK67_CLEAN_NATIVE=$(to_native_path "$WORK67_CLEAN")
-T67_FAKE_HOME_SLASH="${T67_WORK67_CLEAN_NATIVE}//s67-fake-home-installed-slash"
-T67_FAKE_HOME_SLASH_POSIX="${WORK67_CLEAN}//s67-fake-home-installed-slash"
-mkdir -p "$T67_FAKE_HOME_SLASH_POSIX/.claude"
-cat >"$T67_FAKE_HOME_SLASH_POSIX/.claude/settings.json" <<EOF
-{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"$T67_FAKE_HOME_SLASH/.trackfw/scripts/trackfw-git-branch-guard.sh"}]}]}}
-EOF
-
-# Guarda de vacuidade do braço 4: se o "//" não sobreviveu até o arquivo, o
-# cenário abaixo compara duas grafias JÁ normalizadas e o OK não prova a
-# tolerância a barra dupla. Âncora no SEGMENTO ("//s67-fake-home-installed-
-# slash"), nunca em "//" solto — um prefixo nativo "C:/" jamais satisfaz esta
-# checagem por acidente.
-if ! grep -qF '//s67-fake-home-installed-slash' "$T67_FAKE_HOME_SLASH_POSIX/.claude/settings.json"; then
-  echo "FAIL [falsify/git-branch-guard-dedup/double-slash-tolerance-vacuity]: o \"//\" nao sobreviveu ao comando gravado em $T67_FAKE_HOME_SLASH_POSIX/.claude/settings.json — o braco 4 nao estaria medindo tolerancia a barra dupla" >&2
-  cat "$T67_FAKE_HOME_SLASH_POSIX/.claude/settings.json" >&2
-  falsify_fail_point
-else
-  echo "PROOF [falsify/git-branch-guard-dedup/double-slash-tolerance/non-vacuity]: o \"//\" esta presente no command gravado — o braco 4 mede o que diz medir"
-fi
-
-T67_PROJECT_DIR_SLASH="$WORK67_CLEAN/s67-project-double-slash"
-mkdir -p "$T67_PROJECT_DIR_SLASH"
-: > "$T67_PROJECT_DIR_SLASH/CLAUDE.md"
-
-set +e
-(cd "$T67_PROJECT_DIR_SLASH" && HOME="$T67_FAKE_HOME_SLASH" USERPROFILE="$T67_FAKE_HOME_SLASH" CLAUDE_CONFIG_DIR= "$ROOT_DIR/bin/trackfw" discover --init) >"$WORK/s67-slash-discover.log" 2>&1
-s67s_status=$?
-set -e
-if [[ $s67s_status -ne 0 ]]; then
-  echo "FAIL [falsify/git-branch-guard-dedup/double-slash-tolerance-setup]: discover --init saiu com $s67s_status" >&2
-  cat "$WORK/s67-slash-discover.log" >&2
-  falsify_fail_point
-fi
-
-s67s_settings="$T67_PROJECT_DIR_SLASH/.claude/settings.json"
-# ML-4C: marker atualizado para formato inline ML-2A.
-if grep -qF 'trackfw guard git-branch' "$s67s_settings"; then
-  echo "FAIL [falsify/git-branch-guard-dedup/double-slash-tolerance]: entrada de git-branch-guard presente em $s67s_settings mesmo com // no comando gravado do HOME global — a comparação deveria normalizar antes de comparar" >&2
-  cat "$s67s_settings" >&2
-  falsify_fail_point
-else
-  falsify_count_success
-  echo "OK   [falsify/git-branch-guard-dedup/double-slash-tolerance]"
+  echo "OK   [falsify/git-branch-guard-project-wiring/detection-catches-regression]"
 fi
 
 # ---------------------------------------------------------------------------

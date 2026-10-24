@@ -490,7 +490,7 @@ uma lista sem fonte única.
 > Dependencies: Wave 6 aprovada.
 
 ### ML-7B — Os cenários de falsificação que afirmavam o contrato antigo
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** apolo-tf
 **Files affected:** `scripts/check-gates-falsify.sh`, `scripts/gen-falsify-chunks.py`
 **Por que existe:** o primeiro `make quality` da Wave 7 saiu com rc=2 (`parity-falsify`), por duas causas:
@@ -503,15 +503,22 @@ uma lista sem fonte única.
 A Wave 4 enumerou os sítios só em Go e não incluiu `scripts/`, que é a mesma falha de enumeração registrada na
 Reabertura. A lição foi registrada no roadmap.
 **Acceptance criteria:**
-- [ ] Cenário 67 reescrito para a D15:
+- [x] Cenário 67 reescrito para a D15:
   - baseline: com o global instalado, a entrada de projeto do git-branch-guard **está presente**, e a do credential também;
   - reverse: sem global, também presente;
   - detecção: a cópia corrompida tira a emissão do git-branch-guard em `InjectClaudeHooks`, e o braço reprova;
   - o braço 4 (tolerância a `//` no comparador do dedup) sai, porque o comparador não existe mais.
-- [ ] Cenário 30: a corrupção ancora em `config.RoadmapStates()` ou no `inventoryBlock` atual, e o braço de detecção
+- [x] Cenário 30: a corrupção ancora em `config.RoadmapStates()` ou no `inventoryBlock` atual, e o braço de detecção
   continua reprovando a omissão de `analyzing`
-- [ ] `make parity-falsify` com o HOME isolado: 0 FAIL e a guarda de conjunto OK
-- [ ] `make parity-rest` rc=0
+- [x] `make parity-falsify` com o HOME isolado: 0 FAIL e a guarda de conjunto OK
+- [x] `make parity-rest` rc=0
+**Auditoria do arquiteto (2026-10-24):** aprovado.
+- **Log do `make parity-falsify` com HOME isolado:** "8 chunks, 367 OK, 0 FAIL, guarda de conjunto OK", e os 4 rótulos
+  `git-branch-guard-project-wiring/*` aparecem como OK. Antes eram 368 OK; o braço 4 do cenário 67 saiu, porque o
+  comparador do dedup não existe mais.
+- **`make parity-rest`:** rc=0.
+- **`gen-falsify-chunks.py`:** não precisou de mudança, porque os rótulos são derivados do script.
+- **Outras âncoras ativas para símbolos removidos:** nenhuma. Os restos estão só em comentários históricos.
 
 ### ML-7A — make quality, CI e PR
 **Status:** ⬜ Pendente
