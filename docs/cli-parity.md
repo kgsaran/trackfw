@@ -3490,20 +3490,33 @@ a `scaffold-divergent` finding is reported. Run `trackfw update` to regenerate.
 (isProducer, ciTrigger) combination, all in `internal/generators/scaffold.go` and
 `internal/generators/scaffold_doctor.go`.
 
-### `config_scalar_type` — validate rule for non-scalar value on a scalar key (ML-1B, REQ-2026-10-24)
+### `config_value_type` — validate rule for wrong YAML type on a trackfw.yaml key (ML-1B/ML-1C, REQ-2026-10-24)
 
-<!-- trackfw-contract: gate=internal/config/config_scalar_type_test.go partial=TestScalarType_* tests that all known scalar keys record a ScalarTypeError when given a sequence or mapping; gate=internal/validator/validator_config_scalar_test.go partial=TestConfigScalarType_* tests the config_scalar_type rule in both ValidateUnfiltered and Validate (tagged path) -->
+<!-- trackfw-contract: gate=internal/config/config_scalar_type_test.go partial=TestScalarType_* tests that all known scalar keys, list keys, container keys and nested scalars record a ScalarTypeError when given a wrong YAML type; gate=internal/validator/validator_config_scalar_test.go partial=TestConfigValueType_* tests the config_value_type rule in both ValidateUnfiltered and Validate (tagged path) -->
 
-When a top-level scalar key in `trackfw.yaml` receives a YAML sequence or mapping instead of a
-string, the parser silently treats the key as absent (backward-compatible behaviour). Since
-`REQ-2026-10-24` (ML-1B), this silent drop is recorded in `cfg.ScalarTypeErrors` via the
-`stringValRec` helper — the single recording point for all known top-level scalar keys.
+When any key in `trackfw.yaml` receives a YAML value of the wrong type, the parser records a
+`ScalarTypeError` in `cfg.ScalarTypeErrors`. The recording layer covers four key categories:
 
-**Validate rule:** `config_scalar_type` (default severity: `"error"`) emits one violation per
-affected key with the key name and the received type (`sequence` or `mapping`).
+| Category | Examples | Expected type | Wrong types caught |
+|---|---|---|---|
+| **Scalar keys** | `req_dir`, `roadmap_dir`, `ci`, `forge`, … (24 total) | `scalar string` | `sequence`, `mapping` |
+| **List keys** | `adr_dirs`, `agents`, `acceptance_markers` | `sequence` | `scalar`, `mapping` |
+| **Container keys** | `rules`, `agent_models`, `link_fields`, `credential_guard`, `write_scope` | `mapping` | `scalar`, `sequence` |
+| **Map values** | `rules.<key>`, `agent_models.<key>` | `scalar string` | `sequence`, `mapping` |
+| **Nested scalars** | `credential_guard.mode` | `scalar string` | `sequence`, `mapping` |
+
+Since ML-1B, scalar keys go through `stringValRec` (via `scalarKeyTable`). Since ML-1C, list keys
+use `stringListRec`, container keys use `recordContainerType`, and nested scalars use
+`stringValNested`. `KnownScalarKeys()` derives the scalar list from `scalarKeyTable` by
+construction — adding a new scalar key to the table automatically includes it in detection.
+
+**Validate rule:** `config_value_type` (default severity: `"error"`) emits one violation per
+affected key with the key name, received type, and expected type.
 
 ```
-config_scalar_type: trackfw.yaml: key "ci" received a non-scalar value (sequence); expected a scalar string
+config_value_type: trackfw.yaml: key "agents" received a scalar value; expected a sequence
+config_value_type: trackfw.yaml: key "rules.wip_limit" received a sequence value; expected a scalar string
+config_value_type: trackfw.yaml: key "credential_guard.mode" received a sequence value; expected a scalar string
 ```
 
 **Excluded key:** `ci_trigger` is NOT covered by this rule. A non-scalar `ci_trigger` is handled

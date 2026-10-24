@@ -1,16 +1,23 @@
 package validator
 
-// Tests for the config_scalar_type rule (ML-1B, REQ-2026-10-24).
+// Tests for the config_value_type rule (ML-1B/ML-1C, REQ-2026-10-24).
+// Renamed from config_scalar_type to config_value_type (ML-1C).
 //
 // AC contract assertions per test:
 //
-//	TestConfigScalarType_Positive               — scalar values → no config_scalar_type violation
+//	TestConfigScalarType_Positive               — scalar values → no config_value_type violation
 //	TestConfigScalarType_SequenceOnCI           — ci: [github-actions] → one violation naming "ci"
 //	TestConfigScalarType_MappingOnHooks         — hooks: {a: b} → one violation naming "hooks"
 //	TestConfigScalarType_ThreeKeys              — req_dir, ci, forge as sequences → three violations
 //	TestConfigScalarType_Via_ValidateUnfiltered — sequence on ci → violation in ValidateUnfiltered
 //	TestConfigScalarType_Via_Validate           — sequence on ci → violation in Validate (tagged path)
-//	TestConfigScalarType_CITrigger_NoDouble     — ci_trigger: [manual] → ci_trigger_invalid only, not config_scalar_type
+//	TestConfigScalarType_CITrigger_NoDouble     — ci_trigger: [manual] → ci_trigger_invalid only, not config_value_type
+//
+// ML-1C new sites:
+//
+//	TestConfigValueType_ListKey_Scalar     — agents: x → config_value_type violation with "agents"
+//	TestConfigValueType_RulesValue_Seq     — rules.wip_limit: [error] → violation with "rules.wip_limit"
+//	TestConfigValueType_CredGuardMode_Seq  — credential_guard.mode: [block] → violation with "credential_guard.mode"
 
 import (
 	"os"
@@ -22,7 +29,7 @@ import (
 )
 
 func TestConfigScalarType_Positive(t *testing.T) {
-	// Assert: all scalar values → validateConfigScalarType returns no messages.
+	// Assert: all scalar values → validateConfigValueType returns no messages.
 	config.Reset()
 	t.Cleanup(config.Reset)
 
@@ -37,14 +44,14 @@ func TestConfigScalarType_Positive(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	msgs := validateConfigScalarType()
+	msgs := validateConfigValueType()
 	if len(msgs) != 0 {
 		t.Errorf("want 0 messages for all-scalar config, got %d: %v", len(msgs), msgs)
 	}
 }
 
 func TestConfigScalarType_SequenceOnCI(t *testing.T) {
-	// Assert: ci: [github-actions] → one config_scalar_type violation mentioning "ci" and "sequence".
+	// Assert: ci: [github-actions] → one config_value_type violation mentioning "ci" and "sequence".
 	config.Reset()
 	t.Cleanup(config.Reset)
 
@@ -58,9 +65,9 @@ func TestConfigScalarType_SequenceOnCI(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	msgs := validateConfigScalarType()
+	msgs := validateConfigValueType()
 	if len(msgs) != 1 {
-		t.Fatalf("want 1 config_scalar_type message, got %d: %v", len(msgs), msgs)
+		t.Fatalf("want 1 config_value_type message, got %d: %v", len(msgs), msgs)
 	}
 	if !strings.Contains(msgs[0], `"ci"`) {
 		t.Errorf("message should name the key %q, got: %s", "ci", msgs[0])
@@ -71,7 +78,7 @@ func TestConfigScalarType_SequenceOnCI(t *testing.T) {
 }
 
 func TestConfigScalarType_MappingOnHooks(t *testing.T) {
-	// Assert: hooks: {a: b} → one config_scalar_type violation mentioning "hooks" and "mapping".
+	// Assert: hooks: {a: b} → one config_value_type violation mentioning "hooks" and "mapping".
 	config.Reset()
 	t.Cleanup(config.Reset)
 
@@ -85,9 +92,9 @@ func TestConfigScalarType_MappingOnHooks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	msgs := validateConfigScalarType()
+	msgs := validateConfigValueType()
 	if len(msgs) != 1 {
-		t.Fatalf("want 1 config_scalar_type message, got %d: %v", len(msgs), msgs)
+		t.Fatalf("want 1 config_value_type message, got %d: %v", len(msgs), msgs)
 	}
 	if !strings.Contains(msgs[0], `"hooks"`) {
 		t.Errorf("message should name the key %q, got: %s", "hooks", msgs[0])
@@ -98,7 +105,7 @@ func TestConfigScalarType_MappingOnHooks(t *testing.T) {
 }
 
 func TestConfigScalarType_ThreeKeys(t *testing.T) {
-	// Assert: req_dir, ci, and forge as sequences → exactly three config_scalar_type violations.
+	// Assert: req_dir, ci, and forge as sequences → exactly three config_value_type violations.
 	config.Reset()
 	t.Cleanup(config.Reset)
 
@@ -113,9 +120,9 @@ func TestConfigScalarType_ThreeKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	msgs := validateConfigScalarType()
+	msgs := validateConfigValueType()
 	if len(msgs) != 3 {
-		t.Fatalf("want 3 config_scalar_type messages, got %d: %v", len(msgs), msgs)
+		t.Fatalf("want 3 config_value_type messages, got %d: %v", len(msgs), msgs)
 	}
 	for _, want := range []string{`"req_dir"`, `"ci"`, `"forge"`} {
 		found := false
@@ -132,7 +139,7 @@ func TestConfigScalarType_ThreeKeys(t *testing.T) {
 }
 
 func TestConfigScalarType_Via_ValidateUnfiltered(t *testing.T) {
-	// Assert: ci: [github-actions] → config_scalar_type violation appears in ValidateUnfiltered.
+	// Assert: ci: [github-actions] → config_value_type violation appears in ValidateUnfiltered.
 	dir := t.TempDir()
 	mkdirs(t, dir,
 		"docs/roadmaps/wip",
@@ -156,17 +163,17 @@ func TestConfigScalarType_Via_ValidateUnfiltered(t *testing.T) {
 	}
 	var found bool
 	for _, v := range violations {
-		if strings.Contains(v, "config_scalar_type") {
+		if strings.Contains(v, "config_value_type") {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("expected config_scalar_type violation in ValidateUnfiltered output; violations: %v", violations)
+		t.Errorf("expected config_value_type violation in ValidateUnfiltered output; violations: %v", violations)
 	}
 }
 
 func TestConfigScalarType_Via_Validate(t *testing.T) {
-	// Assert: ci: [github-actions] → config_scalar_type violation appears in Validate (tagged path).
+	// Assert: ci: [github-actions] → config_value_type violation appears in Validate (tagged path).
 	// This test catches a forgotten mirror in validateUnfilteredTagged.
 	dir := t.TempDir()
 	mkdirs(t, dir,
@@ -191,19 +198,19 @@ func TestConfigScalarType_Via_Validate(t *testing.T) {
 	}
 	var found bool
 	for _, v := range violations {
-		if strings.Contains(v, "config_scalar_type") {
+		if strings.Contains(v, "config_value_type") {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("expected config_scalar_type violation in Validate output; violations: %v", violations)
+		t.Errorf("expected config_value_type violation in Validate output; violations: %v", violations)
 	}
 }
 
 func TestConfigScalarType_CITrigger_NoDouble(t *testing.T) {
-	// Assert: ci_trigger: [manual] → ci_trigger_invalid fires, config_scalar_type does NOT.
+	// Assert: ci_trigger: [manual] → ci_trigger_invalid fires, config_value_type does NOT.
 	// Rationale: ci_trigger_invalid already owns the non-scalar case for ci_trigger; emitting
-	// config_scalar_type would create a duplicate violation for the same root cause.
+	// config_value_type would create a duplicate violation for the same root cause.
 	config.Reset()
 	t.Cleanup(config.Reset)
 
@@ -217,15 +224,98 @@ func TestConfigScalarType_CITrigger_NoDouble(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	scalarMsgs := validateConfigScalarType()
+	scalarMsgs := validateConfigValueType()
 	for _, m := range scalarMsgs {
 		if strings.Contains(m, "ci_trigger") {
-			t.Errorf("config_scalar_type must not fire for ci_trigger; got: %s", m)
+			t.Errorf("config_value_type must not fire for ci_trigger; got: %s", m)
 		}
 	}
 
 	invalidMsgs, _ := validateCITrigger()
 	if len(invalidMsgs) == 0 {
 		t.Error("ci_trigger_invalid: expected at least one violation for ci_trigger: [manual]")
+	}
+}
+
+// --- ML-1C new sites ---
+
+func TestConfigValueType_ListKey_Scalar(t *testing.T) {
+	// Assert: agents: x → config_value_type violation mentioning "agents" and "scalar".
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	defer func() { _ = os.Chdir(orig) }()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte("agents: apolo-tf\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	msgs := validateConfigValueType()
+	if len(msgs) != 1 {
+		t.Fatalf("want 1 config_value_type message for agents scalar, got %d: %v", len(msgs), msgs)
+	}
+	if !strings.Contains(msgs[0], `"agents"`) {
+		t.Errorf("message should name key %q, got: %s", "agents", msgs[0])
+	}
+	if !strings.Contains(msgs[0], "scalar") {
+		t.Errorf("message should mention received type %q, got: %s", "scalar", msgs[0])
+	}
+}
+
+func TestConfigValueType_RulesValue_Seq(t *testing.T) {
+	// Assert: rules.wip_limit: [error] → config_value_type violation naming "rules.wip_limit" and "sequence".
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	defer func() { _ = os.Chdir(orig) }()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte("rules:\n  wip_limit: [error]\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	msgs := validateConfigValueType()
+	if len(msgs) != 1 {
+		t.Fatalf("want 1 config_value_type message for rules.wip_limit sequence, got %d: %v", len(msgs), msgs)
+	}
+	if !strings.Contains(msgs[0], `"rules.wip_limit"`) {
+		t.Errorf("message should name qualified key %q, got: %s", "rules.wip_limit", msgs[0])
+	}
+	if !strings.Contains(msgs[0], "sequence") {
+		t.Errorf("message should mention received type %q, got: %s", "sequence", msgs[0])
+	}
+}
+
+func TestConfigValueType_CredGuardMode_Seq(t *testing.T) {
+	// Assert: credential_guard.mode: [block] → config_value_type violation naming "credential_guard.mode" and "sequence".
+	config.Reset()
+	t.Cleanup(config.Reset)
+
+	dir := t.TempDir()
+	orig, _ := os.Getwd()
+	defer func() { _ = os.Chdir(orig) }()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "trackfw.yaml"), []byte("credential_guard:\n  mode: [block]\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	msgs := validateConfigValueType()
+	if len(msgs) != 1 {
+		t.Fatalf("want 1 config_value_type message for credential_guard.mode sequence, got %d: %v", len(msgs), msgs)
+	}
+	if !strings.Contains(msgs[0], `"credential_guard.mode"`) {
+		t.Errorf("message should name qualified key %q, got: %s", "credential_guard.mode", msgs[0])
+	}
+	if !strings.Contains(msgs[0], "sequence") {
+		t.Errorf("message should mention received type %q, got: %s", "sequence", msgs[0])
 	}
 }

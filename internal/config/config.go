@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
 
@@ -30,13 +31,17 @@ const (
 	LenientHorizonDays = 730
 )
 
-// ScalarTypeError records a top-level trackfw.yaml key that was present as a non-scalar
-// type (sequence or mapping) when the parser expected a scalar string. The parse continues
-// with the key treated as absent (backward-compatible). The validator emits a
-// config_scalar_type violation for each entry. ML-1B, REQ-2026-10-24.
+// ScalarTypeError records a trackfw.yaml key that received an unexpected type. The parse
+// continues with the key treated as absent (backward-compatible). The validator emits a
+// config_value_type violation for each entry. ML-1B/ML-1C, REQ-2026-10-24.
+//
+// Key uses the qualified form for nested keys (e.g. "credential_guard.mode", "rules.wip_limit").
+// Got is the type received: "scalar", "sequence", or "mapping".
+// Expected is the type the key requires: "scalar string", "sequence", or "mapping".
 type ScalarTypeError struct {
-	Key string // field name in trackfw.yaml
-	Got string // type description — "sequence" or "mapping"
+	Key      string // field name in trackfw.yaml (qualified for nested)
+	Got      string // type received: "scalar", "sequence", or "mapping"
+	Expected string // type required: "scalar string", "sequence", or "mapping"
 }
 
 // ProjectConfig holds all configurable paths and governance settings read from trackfw.yaml.
@@ -88,9 +93,10 @@ type ProjectConfig struct {
 	// Absent or empty map → behavior identical to today (tier alias used verbatim).
 	AgentModels map[string]string
 
-	// ScalarTypeErrors records all top-level scalar keys in trackfw.yaml that received
-	// a non-scalar (sequence or mapping) value. Populated by stringValRec in parse().
-	// ML-1B, REQ-2026-10-24.
+	// ScalarTypeErrors records all trackfw.yaml keys that received an unexpected type.
+	// Scalar keys use stringValRec (table loop). List keys use stringListRec. Nested scalar
+	// keys use stringValNested. Container keys and map values recorded inline in parse().
+	// ML-1B/ML-1C, REQ-2026-10-24.
 	ScalarTypeErrors []ScalarTypeError
 }
 
@@ -482,106 +488,89 @@ func parse(content string, cfg *ProjectConfig) {
 
 	m := normalizeMapping(top)
 
+	// --- Scalar keys — driven by scalarKeyTable; no literal-keyed reads here.
+	// The table is the only place to add a new scalar key. ML-1C, REQ-2026-10-24.
+	for _, spec := range scalarKeyTable {
+		if v, ok := stringValRec(m, spec.key, &cfg.ScalarTypeErrors); ok {
+			spec.setter(cfg, v)
+		}
+	}
+
+	// --- adr_dirs: list of paths (with tilde expansion). Recorded via stringListRec.
 	if v, ok := m["adr_dirs"]; ok {
-		if items, ok := stringList(v); ok {
+		if items, ok := stringListRec(v, "adr_dirs", &cfg.ScalarTypeErrors); ok {
 			for i, s := range items {
 				items[i] = ExpandPath(s)
 			}
 			cfg.ADRDirs = items
 		}
 	}
-	if v, ok := stringValRec(m, "req_dir", &cfg.ScalarTypeErrors); ok {
-		cfg.REQDir = v
-	}
-	if v, ok := stringValRec(m, "roadmap_dir", &cfg.ScalarTypeErrors); ok {
-		cfg.RoadmapDir = v
-	}
-	if v, ok := stringValRec(m, "roadmap_namespacing", &cfg.ScalarTypeErrors); ok {
-		cfg.RoadmapNamespacing = v
-	}
+
+	// --- agents: list of agent names. Recorded via stringListRec.
 	if v, ok := m["agents"]; ok {
-		if items, ok := stringList(v); ok {
+		if items, ok := stringListRec(v, "agents", &cfg.ScalarTypeErrors); ok {
 			cfg.Agents = items
 		}
 	}
-	if v, ok := stringValRec(m, "governance_mode", &cfg.ScalarTypeErrors); ok {
-		cfg.GovernanceMode = v
-	}
-	if v, ok := stringValRec(m, "lenient_until", &cfg.ScalarTypeErrors); ok {
-		cfg.LenientUntil = v
-	}
-	if v, ok := stringValRec(m, "wip_limit", &cfg.ScalarTypeErrors); ok {
-		cfg.WipLimit = parseInt(v, cfg.WipLimit)
-	}
-	if v, ok := stringValRec(m, "wip_by_squad", &cfg.ScalarTypeErrors); ok {
-		cfg.WipBySquad = v == "true"
-	}
-	if v, ok := stringValRec(m, "stale_wip_days", &cfg.ScalarTypeErrors); ok {
-		cfg.StaleWIPDays = parseInt(v, cfg.StaleWIPDays)
-	}
-	if v, ok := stringValRec(m, "require_req_in_commit", &cfg.ScalarTypeErrors); ok {
-		cfg.RequireReqInCommit = v == "true"
-	}
+
+	// --- acceptance_markers: list of heading strings. Recorded via stringListRec.
 	if v, ok := m["acceptance_markers"]; ok {
-		if items, ok := stringList(v); ok {
+		if items, ok := stringListRec(v, "acceptance_markers", &cfg.ScalarTypeErrors); ok {
 			cfg.AcceptanceMarkers = items
 		}
 	}
-	if v, ok := stringValRec(m, "trace_id_field", &cfg.ScalarTypeErrors); ok {
-		cfg.TraceIdField = v
-	}
-	if v, ok := stringValRec(m, "strict_ci_paths", &cfg.ScalarTypeErrors); ok {
-		cfg.StrictCIPaths = v == "true"
-	}
-	if v, ok := stringValRec(m, "forge", &cfg.ScalarTypeErrors); ok {
-		cfg.Forge = v
-	}
+
+	// --- link_fields: nested mapping of lists. Container-type recorded; each sub-list recorded.
 	if v, ok := m["link_fields"]; ok {
+		recordContainerType(v, "link_fields", &cfg.ScalarTypeErrors)
 		if lf, ok := v.(map[string]interface{}); ok {
-			if items, ok := stringList(lf["req"]); ok {
+			if items, ok := stringListRec(lf["req"], "link_fields.req", &cfg.ScalarTypeErrors); ok {
 				cfg.LinkFieldsReq = items
 			}
-			if items, ok := stringList(lf["adr"]); ok {
+			if items, ok := stringListRec(lf["adr"], "link_fields.adr", &cfg.ScalarTypeErrors); ok {
 				cfg.LinkFieldsADR = items
 			}
-			if items, ok := stringList(lf["roadmap"]); ok {
+			if items, ok := stringListRec(lf["roadmap"], "link_fields.roadmap", &cfg.ScalarTypeErrors); ok {
 				cfg.LinkFieldsRoadmap = items
 			}
 		}
 	}
+
+	// --- rules: mapping of rule name → severity string.
+	// Container-type recorded. Values are iterated in sorted order for deterministic output.
+	// A non-string value (e.g. rules.wip_limit: [error]) is recorded with the qualified name.
+	// ML-1C, REQ-2026-10-24.
 	if v, ok := m["rules"]; ok {
+		recordContainerType(v, "rules", &cfg.ScalarTypeErrors)
 		if rm, ok := v.(map[string]interface{}); ok {
-			for k, rv := range rm {
+			keys := make([]string, 0, len(rm))
+			for k := range rm {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				rv := rm[k]
 				if s, ok := rv.(string); ok {
 					cfg.Rules[k] = s
+				} else if rv != nil {
+					var got string
+					switch rv.(type) {
+					case []interface{}:
+						got = "sequence"
+					default:
+						got = "mapping"
+					}
+					cfg.ScalarTypeErrors = append(cfg.ScalarTypeErrors,
+						ScalarTypeError{Key: "rules." + k, Got: got, Expected: "scalar string"})
 				}
 			}
 		}
 	}
 
-	// ML-1A — Update and Sync namespaces. Same normalizeMapping result as above, no second read.
-	if v, ok := stringValRec(m, "hooks", &cfg.ScalarTypeErrors); ok {
-		cfg.Update.Hooks = v
-	}
-	if v, ok := stringValRec(m, "ci", &cfg.ScalarTypeErrors); ok {
-		cfg.Update.CI = v
-	}
-	if v, ok := stringValRec(m, "backend", &cfg.ScalarTypeErrors); ok {
-		cfg.Update.Backend = v
-	}
-	if v, ok := stringValRec(m, "frontend", &cfg.ScalarTypeErrors); ok {
-		cfg.Update.Frontend = v
-	}
-	if v, ok := stringValRec(m, "pkg_manager", &cfg.ScalarTypeErrors); ok {
-		cfg.Update.PkgManager = v
-	}
-	if v, ok := stringValRec(m, "agent_conventions", &cfg.ScalarTypeErrors); ok {
-		cfg.Update.AgentConventions = v
-	}
-	// ci_trigger — REQ-2026-10-24, ADR-2026-08-28 adendo 2026-10-24.
-	// Direct presence check (not stringVal) to distinguish absent (no violation) from
-	// present-but-non-scalar (T1: stringVal would silently return ok=false → treated
-	// as absent, which would hide the invalid value from the validator).
+	// --- ci_trigger — REQ-2026-10-24, ADR-2026-08-28 adendo 2026-10-24.
+	// Direct presence check (not stringValRec) to distinguish absent (no violation) from
+	// present-but-non-scalar. ci_trigger_invalid owns the non-scalar case for this key;
+	// config_value_type does not fire for ci_trigger (no double violation). ML-1C.
 	if raw, present := m["ci_trigger"]; present {
 		if s, ok := raw.(string); ok {
 			cfg.Update.CITriggerRawValue = s
@@ -591,67 +580,67 @@ func parse(content string, cfg *ProjectConfig) {
 				cfg.Update.CITriggerInvalid = true
 			}
 		} else {
-			// Non-scalar: sequence or mapping — same T1 hole that led to ML-1B.
+			// Non-scalar: sequence or mapping — ci_trigger_invalid owns this path.
 			cfg.Update.CITriggerInvalid = true
 			cfg.Update.CITriggerRawValue = fmt.Sprintf("non-scalar (%T)", raw)
 		}
 	}
-	if v, ok := stringValRec(m, "linear_api_key", &cfg.ScalarTypeErrors); ok {
-		cfg.Sync.LinearAPIKey = v
-	}
-	if v, ok := stringValRec(m, "linear_team_id", &cfg.ScalarTypeErrors); ok {
-		cfg.Sync.LinearTeamID = v
-	}
-	if v, ok := stringValRec(m, "jira_base_url", &cfg.ScalarTypeErrors); ok {
-		cfg.Sync.JiraBaseURL = v
-	}
-	if v, ok := stringValRec(m, "jira_email", &cfg.ScalarTypeErrors); ok {
-		cfg.Sync.JiraEmail = v
-	}
-	if v, ok := stringValRec(m, "jira_token", &cfg.ScalarTypeErrors); ok {
-		cfg.Sync.JiraToken = v
-	}
-	if v, ok := stringValRec(m, "jira_project", &cfg.ScalarTypeErrors); ok {
-		cfg.Sync.JiraProject = v
-	}
 
-	// credential_guard field — nested mapping, same shape as link_fields above. An unrecognized
-	// mode value (or an absent/malformed credential_guard block) falls back to the safe default
-	// ("warn") silently, matching how every other unrecognized-shape field in this parser behaves
-	// (e.g. roadmap_namespacing, forge) — no fatal path, no stderr message, for one enum key.
+	// --- credential_guard: nested mapping. Container-type recorded.
+	// credential_guard.mode is read via stringValNested so a non-string mode is recorded.
+	// A valid mode that is not in {"warn","block"} falls back to the default ("warn") silently —
+	// this preserves the enum-guard behavior from ML-1A; the recording is purely for type errors.
 	if v, ok := m["credential_guard"]; ok {
+		recordContainerType(v, "credential_guard", &cfg.ScalarTypeErrors)
 		if cg, ok := v.(map[string]interface{}); ok {
-			if mode, ok := stringVal(cg, "mode"); ok && (mode == "warn" || mode == "block") {
-				cfg.CredentialGuard.Mode = mode
+			if mode, ok := stringValNested(cg, "mode", "credential_guard.mode", &cfg.ScalarTypeErrors); ok {
+				if mode == "warn" || mode == "block" {
+					cfg.CredentialGuard.Mode = mode
+				}
 			}
 		}
 	}
 
-	// write_scope field — nested mapping with two list keys.
-	// Absent, malformed, or empty blocks leave WriteScopeConfig as zero value (nil slices).
-	// An invalid list item (non-string) is silently skipped.
+	// --- write_scope: nested mapping with two list keys. Container-type and list-types recorded.
 	// ADR-2026-10-23 D3, ML-3A contract item 6.
 	if v, ok := m["write_scope"]; ok {
+		recordContainerType(v, "write_scope", &cfg.ScalarTypeErrors)
 		if ws, ok := v.(map[string]interface{}); ok {
-			if items, ok := stringList(ws["frozen_paths"]); ok {
+			if items, ok := stringListRec(ws["frozen_paths"], "write_scope.frozen_paths", &cfg.ScalarTypeErrors); ok {
 				cfg.WriteScope.FrozenPaths = items
 			}
-			if items, ok := stringList(ws["frozen_paths_subagent"]); ok {
+			if items, ok := stringListRec(ws["frozen_paths_subagent"], "write_scope.frozen_paths_subagent", &cfg.ScalarTypeErrors); ok {
 				cfg.WriteScope.FrozenPathsSubagent = items
 			}
 		}
 	}
 
-	// agent_models field — flat mapping from tier name to version string.
+	// --- agent_models: flat mapping from tier name to version string.
+	// Container-type recorded. Values are iterated in sorted order for deterministic output.
+	// A non-string value is recorded with the qualified name. ML-1C, REQ-2026-10-24.
 	// See ADR-2026-08-21-versao-do-modelo-por-tier-com-composicao-por-alvo.md.
-	// An absent, malformed, or empty block leaves AgentModels as the empty map from defaults(),
-	// preserving identical behavior to today. A key with an empty string value is stored as-is
-	// (the render layer treats empty string as "no pin" — fall back to tier alias).
 	if v, ok := m["agent_models"]; ok {
+		recordContainerType(v, "agent_models", &cfg.ScalarTypeErrors)
 		if am, ok := v.(map[string]interface{}); ok {
-			for k, rv := range am {
+			keys := make([]string, 0, len(am))
+			for k := range am {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				rv := am[k]
 				if s, ok := rv.(string); ok {
 					cfg.AgentModels[k] = s
+				} else if rv != nil {
+					var got string
+					switch rv.(type) {
+					case []interface{}:
+						got = "sequence"
+					default:
+						got = "mapping"
+					}
+					cfg.ScalarTypeErrors = append(cfg.ScalarTypeErrors,
+						ScalarTypeError{Key: "agent_models." + k, Got: got, Expected: "scalar string"})
 				}
 			}
 		}
@@ -712,52 +701,61 @@ func stringVal(m map[string]interface{}, key string) (string, bool) {
 	return s, ok
 }
 
-// knownScalarKeys is the canonical list of top-level trackfw.yaml keys read as scalar strings
-// via stringValRec. Adding a new key to parse() must be accompanied by an entry here, so the
-// exhaustive test in config_scalar_type_test.go continues to cover it. ML-1B, REQ-2026-10-24.
+// scalarKeySpec maps a top-level trackfw.yaml scalar key to its setter function.
+// KnownScalarKeys() ranges over this table — so the exported list is derived by
+// construction from the reads, with no manual copy. Adding a key here is the only
+// required edit; parse() picks it up via the table loop. ML-1C, REQ-2026-10-24.
 //
-// ci_trigger is intentionally absent: it uses a direct presence check (not stringValRec)
-// because it needs to distinguish absent from present-but-non-scalar, and the validator
-// emits ci_trigger_invalid (not config_scalar_type) for that key.
-// credential_guard.mode is absent because it is read from a nested map, not the top-level.
-var knownScalarKeys = []string{
-	"req_dir",
-	"roadmap_dir",
-	"roadmap_namespacing",
-	"governance_mode",
-	"lenient_until",
-	"wip_limit",
-	"wip_by_squad",
-	"stale_wip_days",
-	"require_req_in_commit",
-	"trace_id_field",
-	"strict_ci_paths",
-	"forge",
-	"hooks",
-	"ci",
-	"backend",
-	"frontend",
-	"pkg_manager",
-	"agent_conventions",
-	"linear_api_key",
-	"linear_team_id",
-	"jira_base_url",
-	"jira_email",
-	"jira_token",
-	"jira_project",
+// Excluded: ci_trigger (direct presence check, owned by ci_trigger_invalid).
+// Excluded: credential_guard.mode (nested scalar, read by stringValNested).
+type scalarKeySpec struct {
+	key    string
+	setter func(cfg *ProjectConfig, v string)
 }
 
-// KnownScalarKeys returns a copy of the canonical list of top-level trackfw.yaml scalar keys.
-// Used by the exhaustive test in config_scalar_type_test.go. ML-1B, REQ-2026-10-24.
+var scalarKeyTable = []scalarKeySpec{
+	{"req_dir", func(c *ProjectConfig, v string) { c.REQDir = v }},
+	{"roadmap_dir", func(c *ProjectConfig, v string) { c.RoadmapDir = v }},
+	{"roadmap_namespacing", func(c *ProjectConfig, v string) { c.RoadmapNamespacing = v }},
+	{"governance_mode", func(c *ProjectConfig, v string) { c.GovernanceMode = v }},
+	{"lenient_until", func(c *ProjectConfig, v string) { c.LenientUntil = v }},
+	{"wip_limit", func(c *ProjectConfig, v string) { c.WipLimit = parseInt(v, c.WipLimit) }},
+	{"wip_by_squad", func(c *ProjectConfig, v string) { c.WipBySquad = v == "true" }},
+	{"stale_wip_days", func(c *ProjectConfig, v string) { c.StaleWIPDays = parseInt(v, c.StaleWIPDays) }},
+	{"require_req_in_commit", func(c *ProjectConfig, v string) { c.RequireReqInCommit = v == "true" }},
+	{"trace_id_field", func(c *ProjectConfig, v string) { c.TraceIdField = v }},
+	{"strict_ci_paths", func(c *ProjectConfig, v string) { c.StrictCIPaths = v == "true" }},
+	{"forge", func(c *ProjectConfig, v string) { c.Forge = v }},
+	{"hooks", func(c *ProjectConfig, v string) { c.Update.Hooks = v }},
+	{"ci", func(c *ProjectConfig, v string) { c.Update.CI = v }},
+	{"backend", func(c *ProjectConfig, v string) { c.Update.Backend = v }},
+	{"frontend", func(c *ProjectConfig, v string) { c.Update.Frontend = v }},
+	{"pkg_manager", func(c *ProjectConfig, v string) { c.Update.PkgManager = v }},
+	{"agent_conventions", func(c *ProjectConfig, v string) { c.Update.AgentConventions = v }},
+	{"linear_api_key", func(c *ProjectConfig, v string) { c.Sync.LinearAPIKey = v }},
+	{"linear_team_id", func(c *ProjectConfig, v string) { c.Sync.LinearTeamID = v }},
+	{"jira_base_url", func(c *ProjectConfig, v string) { c.Sync.JiraBaseURL = v }},
+	{"jira_email", func(c *ProjectConfig, v string) { c.Sync.JiraEmail = v }},
+	{"jira_token", func(c *ProjectConfig, v string) { c.Sync.JiraToken = v }},
+	{"jira_project", func(c *ProjectConfig, v string) { c.Sync.JiraProject = v }},
+}
+
+// KnownScalarKeys returns the top-level trackfw.yaml scalar keys registered in scalarKeyTable.
+// Derived by construction — adding a key to scalarKeyTable automatically appears here.
+// Used by the exhaustive tests in config_scalar_type_test.go and config_ast_coverage_test.go.
+// ML-1B/ML-1C, REQ-2026-10-24.
 func KnownScalarKeys() []string {
-	return append([]string(nil), knownScalarKeys...)
+	out := make([]string, len(scalarKeyTable))
+	for i, s := range scalarKeyTable {
+		out[i] = s.key
+	}
+	return out
 }
 
-// stringValRec reads a scalar string field from a normalized map, like stringVal.
+// stringValRec reads a scalar string field from a normalized map.
 // When the key is present but not a string (sequence or mapping), it appends a
-// ScalarTypeError to *errs — the single recording point for all known top-level scalar keys.
-// A new key added to parse() via stringValRec automatically inherits the recording behaviour.
-// ML-1B, REQ-2026-10-24.
+// ScalarTypeError to *errs. Called only from the scalarKeyTable loop in parse(),
+// not directly with a string literal. ML-1B/ML-1C, REQ-2026-10-24.
 func stringValRec(m map[string]interface{}, key string, errs *[]ScalarTypeError) (string, bool) {
 	v, ok := m[key]
 	if !ok {
@@ -772,9 +770,88 @@ func stringValRec(m map[string]interface{}, key string, errs *[]ScalarTypeError)
 		default:
 			got = "mapping"
 		}
-		*errs = append(*errs, ScalarTypeError{Key: key, Got: got})
+		*errs = append(*errs, ScalarTypeError{Key: key, Got: got, Expected: "scalar string"})
 	}
 	return s, ok
+}
+
+// stringValNested reads a scalar string field from a nested (non-top-level) normalized map,
+// recording an error under the qualified key name (e.g. "credential_guard.mode").
+// When the key is present but not a string, it appends a ScalarTypeError with the
+// qualified name to *errs. ML-1C, REQ-2026-10-24.
+func stringValNested(m map[string]interface{}, key, qualifiedKey string, errs *[]ScalarTypeError) (string, bool) {
+	v, ok := m[key]
+	if !ok {
+		return "", false
+	}
+	s, ok := v.(string)
+	if !ok {
+		var got string
+		switch v.(type) {
+		case []interface{}:
+			got = "sequence"
+		default:
+			got = "mapping"
+		}
+		*errs = append(*errs, ScalarTypeError{Key: qualifiedKey, Got: got, Expected: "scalar string"})
+	}
+	return s, ok
+}
+
+// stringListRec reads a sequence from an arbitrary value (already extracted from the
+// normalized map), recording a ScalarTypeError when the value is a non-null scalar or
+// a mapping instead of the expected sequence. A nil or empty-string value (YAML
+// null / bare key) is treated as absent — no error recorded. ML-1C, REQ-2026-10-24.
+func stringListRec(v interface{}, key string, errs *[]ScalarTypeError) ([]string, bool) {
+	if v == nil {
+		return nil, false // absent
+	}
+	// normalizeNode maps YAML !!null scalars (bare key / ~) to "" — treat as absent.
+	if s, ok := v.(string); ok && s == "" {
+		return nil, false
+	}
+	items, ok := v.([]interface{})
+	if !ok {
+		var got string
+		switch v.(type) {
+		case string:
+			got = "scalar"
+		default:
+			got = "mapping"
+		}
+		*errs = append(*errs, ScalarTypeError{Key: key, Got: got, Expected: "sequence"})
+		return nil, false
+	}
+	result := make([]string, 0, len(items))
+	for _, it := range items {
+		if s, ok := it.(string); ok {
+			result = append(result, s)
+		}
+	}
+	return result, true
+}
+
+// recordContainerType records a ScalarTypeError when a key that must hold a mapping
+// receives a scalar or a sequence instead. nil and "" (YAML null) are treated as
+// absent (no error). ML-1C, REQ-2026-10-24.
+func recordContainerType(v interface{}, key string, errs *[]ScalarTypeError) {
+	if v == nil {
+		return
+	}
+	if s, ok := v.(string); ok && s == "" {
+		return // YAML null / bare key — treat as absent
+	}
+	if _, ok := v.(map[string]interface{}); ok {
+		return // correct type
+	}
+	var got string
+	switch v.(type) {
+	case []interface{}:
+		got = "sequence"
+	default:
+		got = "scalar"
+	}
+	*errs = append(*errs, ScalarTypeError{Key: key, Got: got, Expected: "mapping"})
 }
 
 // stringList converts a normalized sequence ([]interface{} of strings) into []string.

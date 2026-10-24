@@ -128,18 +128,36 @@ go test ./internal/config/ ./internal/validator/ -count=1
   `agent_models`; `credential_guard.mode`). Pela Regra Dura e por "defeito conhecido se corrige agora", entram no ML-1C.
 
 ### ML-1C — Ponto único de verdade para o tipo das chaves do `trackfw.yaml`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** apolo-tf
 **Files affected:** `internal/config/`, `internal/validator/validator.go`, `internal/validator/validator_config_scalar_test.go`, `docs/cli-parity.md`
 **Acceptance criteria:**
-- [ ] Não sobra leitura de chave do `trackfw.yaml` que descarte tipo errado em silêncio. O `stringVal` sem registro deixa
+- [x] Não sobra leitura de chave do `trackfw.yaml` que descarte tipo errado em silêncio. O `stringVal` sem registro deixa
   de existir ou passa a registrar, e um teste por AST ou grep em `internal/config/config.go` afirma que toda leitura
   passa pelo leitor que registra
-- [ ] A lista de chaves vem das próprias leituras, sem cópia à mão. Um teste falha se uma leitura nova não estiver coberta
-- [ ] Os três sítios declarados registram o erro (lista recebendo escalar ou mapa; valor não string em `rules:` e em
+- [x] A lista de chaves vem das próprias leituras, sem cópia à mão. Um teste falha se uma leitura nova não estiver coberta
+- [x] Os três sítios declarados registram o erro (lista recebendo escalar ou mapa; valor não string em `rules:` e em
   `agent_models`; `credential_guard.mode` não escalar, com o nome qualificado `credential_guard.mode`)
-- [ ] Cada um tem violation no `validate` com o nome qualificado, e o braço negativo testado
-- [ ] Contra-braço no HEAD; gates do ML-1B verdes; `make parity-rest` rc=0
+- [x] Cada um tem violation no `validate` com o nome qualificado, e o braço negativo testado
+- [x] Contra-braço no HEAD; gates do ML-1B verdes; `make parity-rest` rc=0
+
+**Auditoria do arquiteto (2026-10-24):** aprovado.
+- **Tabela de leitura:** `scalarKeyTable` substitui a lista mantida à mão.
+- **Teste por AST:** `TestASTCoverage_NoSilentReads` tem dois braços, e os dois foram falsificados com saída colada.
+- **Contra-braço por binário:** `agents: x` e `rules.wip_limit: [error]` passavam em silêncio no HEAD e agora emitem violation.
+- **Renomeação:** a regra passou de `config_scalar_type` para `config_value_type`. Só sobraram comentários e nomes de
+  arquivo com o nome antigo.
+- **Gate:** o arquiteto rodou o `make parity-rest`, que o agente não tinha rodado. Deu rc=0.
+
+### ML-1D — Revisão de qualidade da reescrita do parser
+**Status:** ⬜ Pendente
+**Agente:** hefesto-tf
+**Files affected:** `docs/qualidade/2026-10-24-revisao-parser-config.md`
+**Por que existe:** o ML-1C reescreveu o `parse()` de `internal/config/config.go` em formato de tabela. Mudança desse tamanho
+no leitor de toda configuração pede uma revisão independente de preservação de comportamento.
+**Acceptance criteria:**
+- [ ] Parecer B/R sobre a preservação de comportamento para toda chave existente (valor, padrão, ausência, chave aninhada)
+
 
 ## Wave 2 — Fechamento
 > Dependencies: Wave 1 auditada.

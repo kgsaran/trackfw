@@ -820,17 +820,23 @@ func validateCITrigger() (invalidMsgs []string, manualMsgs []string) {
 	return invalidMsgs, manualMsgs
 }
 
-// validateConfigScalarType emits one config_scalar_type violation (default "error") for each
-// top-level scalar key in trackfw.yaml that received a non-scalar value (sequence or mapping).
-// The parser records these in cfg.ScalarTypeErrors via stringValRec. ML-1B, REQ-2026-10-24.
+// validateConfigValueType emits one config_value_type violation (default "error") for each
+// trackfw.yaml key that received an unexpected type (scalar key got sequence/mapping; list key
+// got scalar/mapping; container key got scalar/sequence; nested scalar got sequence/mapping;
+// map value got non-string). The parser records these in cfg.ScalarTypeErrors. ML-1C, REQ-2026-10-24.
 //
 // Note: ci_trigger is excluded — a non-scalar ci_trigger triggers ci_trigger_invalid instead.
-func validateConfigScalarType() []string {
+// Renamed from validateConfigScalarType (ML-1B) to reflect the expanded coverage.
+func validateConfigValueType() []string {
 	cfg := config.Load()
 	var msgs []string
 	for _, e := range cfg.ScalarTypeErrors {
+		expected := e.Expected
+		if expected == "" {
+			expected = "scalar string" // backward compat for entries without Expected set
+		}
 		msgs = append(msgs,
-			fmt.Sprintf("config_scalar_type: trackfw.yaml: key %q received a non-scalar value (%s); expected a scalar string", e.Key, e.Got),
+			fmt.Sprintf("config_value_type: trackfw.yaml: key %q received a %s value; expected a %s", e.Key, e.Got, expected),
 		)
 	}
 	return msgs
@@ -1255,9 +1261,10 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	applyRule("ci_trigger_invalid", ciTriggerInvalidMsgs, &violations, &warnings)
 	applyRule("ci_trigger_manual", ciTriggerManualMsgs, &violations, &warnings)
 
-	// ML-1B (REQ-2026-10-24): config_scalar_type — scalar key received a non-scalar value.
+	// ML-1C (REQ-2026-10-24): config_value_type — any key received a wrong type.
+	// Renamed from config_scalar_type (ML-1B) to reflect expanded coverage.
 	// 🔴 Mirror site in validateUnfilteredTagged below — forgetting it silences this rule from --json.
-	applyRule("config_scalar_type", validateConfigScalarType(), &violations, &warnings)
+	applyRule("config_value_type", validateConfigValueType(), &violations, &warnings)
 
 	return violations, warnings, nil
 }
@@ -1769,9 +1776,9 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 	applyRuleTagged("ci_trigger_invalid", ciTriggerInvalidMsgsT, &violations, &warnings)
 	applyRuleTagged("ci_trigger_manual", ciTriggerManualMsgsT, &violations, &warnings)
 
-	// ML-1B (REQ-2026-10-24): mirror of ValidateUnfiltered config_scalar_type block.
-	// 🔴 Missing this site silences config_scalar_type from --json output.
-	applyRuleTagged("config_scalar_type", validateConfigScalarType(), &violations, &warnings)
+	// ML-1C (REQ-2026-10-24): mirror of ValidateUnfiltered config_value_type block.
+	// 🔴 Missing this site silences config_value_type from --json output.
+	applyRuleTagged("config_value_type", validateConfigValueType(), &violations, &warnings)
 
 	return violations, warnings, nil
 }
