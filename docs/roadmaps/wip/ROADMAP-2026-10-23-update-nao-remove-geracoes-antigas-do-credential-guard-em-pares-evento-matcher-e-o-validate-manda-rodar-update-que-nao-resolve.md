@@ -521,7 +521,7 @@ Reabertura. A lição foi registrada no roadmap.
 - **Outras âncoras ativas para símbolos removidos:** nenhuma. Os restos estão só em comentários históricos.
 
 ### ML-7C — Teste do log de transição intermitente sob carga
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** apolo-tf
 **Files affected:** `internal/generators/transition_log_entry_test.go`
 **Por que existe:** o segundo `make quality` da Wave 7 saiu com rc=2 por uma única falha:
@@ -532,9 +532,29 @@ directory not empty`. A falha está na limpeza, e não numa asserção. Rodado s
   `RemoveAll`.
 - **Origem:** o teste é do #602 e não foi tocado aqui. Entra por ser defeito conhecido que reprova o gate.
 **Acceptance criteria:**
-- [ ] Os dois helpers de git do arquivo (~L43 e ~L172) passam `gc.auto=0` e `maintenance.auto=false` via `GIT_CONFIG_*`
-- [ ] A hipótese está medida, e não presumida: diga se `git` nesta máquina dispara gc ou maintenance automático nesse fluxo (por exemplo, `GIT_TRACE=1` numa reprodução em `mktemp -d`)
-- [ ] `go test ./internal/generators/ -run 'TestTransitionLog' -count=20` rc=0
+- [x] Os dois helpers de git do arquivo (~L43 e ~L172) passam `gc.auto=0` e `maintenance.auto=false` via `GIT_CONFIG_*`
+- [x] A hipótese está medida, e não presumida: diga se `git` nesta máquina dispara gc ou maintenance automático nesse fluxo (por exemplo, `GIT_TRACE=1` numa reprodução em `mktemp -d`)
+- [x] `go test ./internal/generators/ -run 'TestTransitionLog' -count=20` rc=0
+**Auditoria do arquiteto (2026-10-24):** aprovado.
+- **Causa medida pelo executor:** o `GIT_TRACE2_EVENT` registra `git maintenance run --auto --no-quiet --detach` nos
+  dois commits do fluxo. O processo se desanexa e disputa `.git/objects` com o `RemoveAll`.
+- **Correção:** `gc.auto=0` e `maintenance.auto=false` nos dois helpers.
+- **Gate:** `-count=20` com rc=0.
+
+### ML-7D — Mesma causa nos outros testes que commitam em `t.TempDir()`
+**Status:** ⬜ Pendente
+**Agente:** apolo-tf
+**Files affected:** `internal/commands/netexec_test.go`, `internal/validator/main_test.go`, `internal/generators/guard_parity_helper_test.go`, `internal/auditsurface/main_test.go` (novo), `internal/pathguard/main_test.go` (novo), `internal/translog/main_test.go` (novo)
+**Por que existe:** 24 arquivos de teste em 6 pacotes (`auditsurface`, `commands`, `generators`, `pathguard`,
+`translog`, `validator`) rodam `git commit`/`merge` num diretório temporário sem desligar o maintenance automático. É a
+mesma causa do ML-7C (Regra Dura). Em vez de 24 edições, a correção usa um ponto único por pacote.
+**Acceptance criteria:**
+- [ ] Cada um dos 6 pacotes tem um `TestMain` que desliga o `gc.auto` e o `maintenance.auto` para todo `git` filho do
+  processo de teste, usando um mecanismo que se soma ao `GIT_CONFIG_COUNT` dos helpers e não o sobrescreve (medido)
+- [ ] Medição: um trace em `mktemp -d` mostra que, com o ponto único ativo e um helper que define `GIT_CONFIG_COUNT`
+  próprio, o `maintenance run --auto` não é disparado
+- [ ] Os testes dos 6 pacotes ficam verdes, inclusive os que manipulam `GIT_CONFIG_*` de propósito
+  (`validator_git_exec_test.go`)
 
 ### ML-7A — make quality, CI e PR
 **Status:** ⬜ Pendente
