@@ -174,7 +174,7 @@ escalares) e R-3 (o teste por AST pega também `stringValRec(m, "literal", …)`
 - [x] `go test ./internal/config/ ./internal/validator/ ./internal/generators/ -count=1` verde; `make quality` rc=0 pendente (arquiteto)
 
 ### ML-1F — Goldens do ci_trigger protegidos contra CRLF no Windows (CI do #609)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** apolo-tf
 **Files affected:** `.gitattributes`, `internal/generators/gitattributes_test.go`, `internal/generators/testdata/ci-trigger/`
 **Por que existe:** o `windows-full-suites` do #609 reprovou nos 5 `TestCITrigger_GoldenDefault_*`, com "content mismatch".
@@ -182,9 +182,9 @@ O checkout do Windows converte os `.golden` para CRLF. Os goldens de `internal/i
 bloco "EVIDÊNCIA CONGELADA BYTE-EXATA" do `.gitattributes`, com `-text`, e os novos de
 `internal/generators/testdata/ci-trigger/` ficaram fora.
 **Acceptance criteria:**
-- [ ] `internal/generators/testdata/ci-trigger/*.golden -text` no bloco byte-exato do `.gitattributes`, com o comentário do motivo
-- [ ] Os testes que fixam o `.gitattributes` (`internal/generators/gitattributes_test.go` e os gates de `scripts/` que o leem) atualizados, se necessário, e verdes
-- [ ] `git check-attr text internal/generators/testdata/ci-trigger/gate-consumer.golden` devolve `unset`
+- [x] `internal/generators/testdata/ci-trigger/*.golden -text` no bloco byte-exato do `.gitattributes`, com o comentário do motivo
+- [x] Os testes que fixam o `.gitattributes` (`internal/generators/gitattributes_test.go` e os gates de `scripts/` que o leem) atualizados, se necessário, e verdes
+- [x] `git check-attr text internal/generators/testdata/ci-trigger/gate-consumer.golden` devolve `unset`
 - [ ] CI `windows-full-suites` verde
 
 ## Wave 2 — Fechamento
