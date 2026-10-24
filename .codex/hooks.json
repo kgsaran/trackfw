@@ -28,10 +28,32 @@
             "type": "command"
           }
         ],
+        "matcher": "Bash"
+      },
+      {
+        "hooks": [
+          {
+            "command": "emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
+            "type": "command"
+          }
+        ],
         "matcher": "apply_patch"
       }
     ],
     "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard git-branch; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
+            "type": "command"
+          },
+          {
+            "command": "emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE",
+            "type": "command"
+          }
+        ],
+        "matcher": "Bash"
+      },
       {
         "hooks": [
           {
