@@ -1,5 +1,6 @@
 # Memory Index — Hades (Security, trackfw)
 
+- [Hardlink não converge por EvalSymlinks](project_write_scope_hardlink_bypass.md) — comparar caminho exige os.SameFile quando os dois existem; caso do write-scope corrigido no #606
 - [branch new --from "-f" injection discards uncommitted work](project_branch_new_from_flag_injection.md) — 2026-10-18 REQ-2026-09-12 Wave 1; BLOQUEANTE; fromRef not validated; fix: reject prefix "-"; guard bypassed by trackfw itself
 - [git add -An --no-dry-run bypasses guard; last-flag-wins not modeled](project_guard_add_no_dry_run_bypass.md) — 2026-10-17 Rodada 2 REQ-2026-09-05; B-3 BLOQUEANTE; --no-dry-run/--no-dry cancels dryRun set by B-1 fix; whole-tree staging confirmed
 

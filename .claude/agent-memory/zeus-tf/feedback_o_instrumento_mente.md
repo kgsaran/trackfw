@@ -87,3 +87,5 @@ levei isso ao KG como achado de pré-release. Era o `gh run list --branch main -
 `--event push --limit 8`) **sem `--workflow`**: a janela curta e misturada devolveu só runs antigas.
 Com `gh run list --workflow quality.yml --limit 200` filtrando `event=="push" and headBranch=="main"`,
 os três merges tinham run verde. 🔴 Para afirmar "não roda", filtre pelo workflow e alargue a janela.
+
+**Mais duas, 2026-10-21 (matriz do guard zsh):** (1) ao restringir o PATH do subprocesso (`PATH=$D:/usr/bin:/bin`), o `timeout` do Homebrew some e tudo sai **127**. Use `/usr/bin/perl -e 'alarm N; exec @ARGV'`. (2) Em seguida, tudo saiu **0**: `$3="zsh -o errexit"` sem word-splitting no zsh da ferramenta. Matriz de shell só vale em script `bash` gravado em arquivo. As duas rodadas eram unânimes, e unanimidade é sinal de instrumento quebrado.
