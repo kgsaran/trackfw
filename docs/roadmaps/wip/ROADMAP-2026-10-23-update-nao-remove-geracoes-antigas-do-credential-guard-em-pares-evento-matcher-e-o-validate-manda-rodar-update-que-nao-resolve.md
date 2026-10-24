@@ -295,11 +295,11 @@ só a dimensão do defeito original.
 > Dependencies: nenhuma. Gate: `trackfw barrier <roadmap> --wave 4` e auditoria do arquiteto antes da Wave 5.
 
 ### ML-4A — Threat model da D15 e matriz de sítios
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** hades-tf
 **Files affected:** `docs/seguranca/2026-10-24-wave0-guard-global-versionado.md` (novo; o único arquivo que o ML escreve)
 **Acceptance criteria:**
-- [ ] **Matriz por mecanismo.** Lista todo sítio que lê estado global para decidir sobre a fiação de **projeto**, com
+- [x] **Matriz por mecanismo.** Lista todo sítio que lê estado global para decidir sobre a fiação de **projeto**, com
   arquivo:linha:
   - os `globalCredentialGuardInstalled*` e `globalGitBranchGuardInstalled*` de `internal/generators/agentfiles.go`, e
     quem os chama (`Inject*Hooks`, `update.go`, `internal/guardforms`);
@@ -307,15 +307,25 @@ só a dimensão do defeito original.
     (`internal/validator/validator_credential_guard.go`, `validator_git_branch_guard.go`, `validator_guard_wiring.go`).
   Para cada sítio, diz se ele **pula**, **remove** ou **aceita ausência**. Separa os que só tratam o escopo **global**
   (`update harness`, `validateGuardGlobalHookResolvable`), que ficam como estão.
-- [ ] **Testes que afirmam o contrato antigo,** com nome e arquivo. Eles vão inverter por contrato e não são
+- [x] **Testes que afirmam o contrato antigo,** com nome e arquivo. Eles vão inverter por contrato e não são
   pré-existentes. Inclui no mínimo os braços D14 do #604, `copilot_kiro_d14_ml2c_test.go`, `credential_guard_dedup_test.go`,
   `git_branch_guard_dedup_test.go`, `guard_harness_dedup_test.go` e o ML-1D da REQ-2026-10-06 (Windsurf).
-- [ ] **Idempotência do segundo disparo,** com o global e o projeto rodando no mesmo evento. Mede o efeito colateral de
+- [x] **Idempotência do segundo disparo,** com o global e o projeto rodando no mesmo evento. Mede o efeito colateral de
   `credential` em `PreToolUse` e `PostToolUse` no modo `warn` (arquivo de atenção, log) e no modo `block`, e o de
   `git-branch`. Diz se a ordem e o paralelismo dos hooks do Claude Code mudam o veredito.
-- [ ] **Ameaças:** fail-open em algum caminho novo, um repositório limpo que passa a ter violation (aperto do validador →
+- [x] **Ameaças:** fail-open em algum caminho novo, um repositório limpo que passa a ter violation (aperto do validador →
   efeito em consumidores e na decisão de versão), e o `init` em máquina sem global.
-- [ ] Recomendação de `Files affected` exatos para o ML-5A.
+- [x] Recomendação de `Files affected` exatos para o ML-5A.
+**Auditoria do arquiteto (2026-10-24):** aprovado. Parecer em `docs/seguranca/2026-10-24-wave0-guard-global-versionado.md`.
+- **Matriz:** 15 sítios de projeto (G1–G15) em `agentfiles.go` e 1 sítio do validador que aceita ausência (Windsurf,
+  `validator_credential_guard.go:748`). Conferi por grep:
+  - os 4 helpers só têm chamadores dentro dos `global*Installed*`;
+  - as demais leituras de HOME no validador são de escopo global e só emitem aviso.
+- **Idempotência:** a do segundo disparo foi derivada do código (`os.WriteFile` sobrescreve), e não executada. Aceito,
+  porque o veredito vem do rc e não existe emissão de `allow`.
+- **Versão:** o aperto do validador só muda o veredito **local** do Windsurf numa máquina com o global. O CI já reprovava
+  esse estado, então nenhum repositório verde no CI fica vermelho. Recomendação: patch (11.0.1). A decisão é do KG na tag.
+- **Divisão:** um ML só (5A), porque o AC9 cruza o gerador e o validador.
 
 ## Wave 5 — Implementação da D15
 > Dependencies: Wave 4 auditada.
@@ -323,9 +333,7 @@ só a dimensão do defeito original.
 ### ML-5A — Geradores e validador sem consulta ao global para a fiação de projeto
 **Status:** ⬜ Pendente
 **Agente:** apolo-tf
-**Files affected:** a definir pela Wave 4. No mínimo `internal/generators/agentfiles.go`, `internal/generators/update.go`,
-`internal/validator/validator_credential_guard.go`, os testes listados pela Wave 4, um teste novo
-`internal/commands/update_validate_global_guard_test.go`, `docs/cli-parity.md` e `CHANGELOG.md`.
+**Files affected:** `internal/generators/agentfiles.go`, `internal/validator/validator_credential_guard.go`, `internal/generators/credential_guard_dedup_test.go`, `internal/generators/git_branch_guard_dedup_test.go`, `internal/generators/copilot_kiro_d14_ml2c_test.go`, `internal/generators/guard_harness_dedup_test.go`, `internal/generators/credential_guard_windsurf_amazonq_ml1b_test.go`, `internal/validator/validator_credential_guard_test.go`, `internal/commands/update_validate_global_guard_test.go` (novo), `docs/cli-parity.md`
 **Acceptance criteria:**
 - [ ] AC6 revisto: todo sítio da matriz da Wave 4 que pula ou remove deixa de fazê-lo. Com e sem global, a fiação de
   projeto é emitida e migrada por par.
