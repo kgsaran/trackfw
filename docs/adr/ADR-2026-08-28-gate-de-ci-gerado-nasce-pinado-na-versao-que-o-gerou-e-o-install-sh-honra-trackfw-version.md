@@ -140,3 +140,8 @@ valor desconhecido é erro de configuração, nunca uma volta silenciosa ao padr
 
 **Rejeitada:** preservar o bloco `on:` existente quando diverge do template. É implícito, e um `on:` editado à mão para
 pior (sem gatilho nenhum, por exemplo) passaria sem aviso.
+
+- **Wave 0 (2026-10-24, `docs/seguranca/2026-10-24-wave0-ci-trigger.md` §Z):** os templates nunca interpolam o valor. São
+  dois templates pré-escritos por `switch`, para fechar a injeção de YAML. No GitLab, `manual` é
+  `rules: - if: '$CI_PIPELINE_SOURCE == "web"'`. Com `manual`, o `validate` avisa que o gate de PR não roda sozinho. Valor
+  não escalar em chave escalar passa a ser violation para toda chave, por ser a mesma causa.

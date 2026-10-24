@@ -24,7 +24,7 @@ Issue: #607. ADR-2026-08-28, adendo de 2026-10-24.
 > Dependencies: none. Blocks all implementation.
 
 ### ML-0A — Threat model do gatilho configurável
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** hades-tf
 **Files affected:** `docs/seguranca/2026-10-24-wave0-ci-trigger.md`
 **Actions:**
@@ -42,9 +42,9 @@ Issue: #607. ADR-2026-08-28, adendo de 2026-10-24.
    - `required_status_checks` apontando para um job que nunca roda.
 3. **Alvos de falsificação** nos dois sentidos e **resíduo declarado**.
 **Acceptance criteria:**
-- [ ] A matriz com as fontes (arquivo:linha)
-- [ ] As ameaças respondidas com evidência
-- [ ] Nenhuma linha de produto
+- [x] A matriz com as fontes (arquivo:linha)
+- [x] As ameaças respondidas com evidência
+- [x] Nenhuma linha de produto
 **Gates da wave:**
 ```bash
 test -s docs/seguranca/2026-10-24-wave0-ci-trigger.md
@@ -54,12 +54,60 @@ git diff --quiet origin/main -- internal/
 ## Wave 1 — Implementação
 > Dependencies: Wave 0 auditada. Detalhada depois da Wave 0.
 
-### ML-1A — `ci_trigger` nos templates, no doctor e no validate
+### ML-1A — `ci_trigger` nos três templates, no doctor e no validate
 **Status:** ⬜ Pendente
 **Agente:** apolo-tf
-**Files affected:** a definir pela Wave 0
+**Files affected:** `internal/config/config.go`, `internal/config/config_ci_trigger_test.go`, `internal/generators/scaffold.go`, `internal/generators/scaffold_doctor.go`, `internal/generators/update.go`, `internal/generators/claudemd.go`, `internal/generators/ci_workflow_version_pin_test.go`, `internal/generators/discover_workflow_trigger_test.go`, `internal/generators/ci_trigger_test.go`, `internal/generators/testdata/ci-trigger/`, `internal/discover/discover.go`, `internal/discover/discover_test.go`, `internal/commands/init.go`, `internal/validator/validator.go`, `internal/validator/validator_ci_trigger_test.go`, `docs/cli-parity.md`
+**Contrato (arquiteto, a partir da Wave 0, `docs/seguranca/2026-10-24-wave0-ci-trigger.md` §Z):**
+1. **Chave:** a `ci_trigger` fica no mesmo bloco de `ci`, como `cfg.Update.CITrigger`. Os valores aceitos são `pull_request`,
+   que é o padrão quando a chave está ausente, e `manual`.
+2. **Templates sem interpolação (T2):** cada função faz um `switch` sobre o valor e devolve templates completos,
+   pré-escritos. O valor nunca é concatenado no YAML.
+   - **GitHub** (gate e discover): `manual` vira `on:\n  workflow_dispatch:`, sem inputs.
+   - **GitLab:** `manual` troca `only: - merge_requests` por `rules:\n    - if: '$CI_PIPELINE_SOURCE == "web"'`, que é o
+     equivalente do `workflow_dispatch`: pipeline disparado à mão pela interface.
+   - Fora o gatilho, todo o resto do workflow fica byte a byte igual: job id, passos, pin e fetch do produtor.
+3. **Os três builders** recebem o gatilho. `BuildDiscoverGitHubActionsWorkflowContent` (T4) também, e os chamadores dele
+   passam a ler a config: `discover.go`, o refresh em `update.go` e o doctor.
+4. **Doctor (AC3):** a comparação continua byte a byte contra **o** template do gatilho configurado, com
+   `checkScaffoldArtifact`. Não pode haver comparação por pertença a um conjunto, porque isso aceitaria um gatilho
+   divergente do configurado.
+5. **Valor inválido (AC4):** o `validate` emite violation com o valor e os aceitos. O `update` e o `init` recusam gerar o
+   workflow com rc≠0 e deixam o arquivo existente intocado.
+6. **Aviso (T3):** com `manual`, o `validate` emite um aviso informativo dizendo que o gate de PR não roda automaticamente
+   e que `required_status_checks` que dependem dele bloqueiam o PR (T5).
+7. **`init`:** honra o `ci_trigger` de um `trackfw.yaml` já existente. Não ganha flag nem pergunta nova no wizard, e o
+   template do `init` não emite a chave.
+8. **AC2:** antes de mudar os templates, capture em `internal/generators/testdata/ci-trigger/` a saída atual das três
+   funções, nas variantes de produtor e de consumidor, a partir de `origin/main`. Um teste afirma igualdade byte a byte com
+   o padrão. Não basta comparar a função contra ela mesma.
 **Acceptance criteria:**
-- [ ] AC1–AC4 da REQ
+- [ ] AC1–AC4 da REQ, cada um com teste e contra-braço
+- [ ] Injeção: `ci_trigger: "manual\non: push"` é inválido e nada é gerado
+- [ ] Os goldens do padrão foram capturados de `origin/main` e batem
+**Gates da wave:**
+```bash
+go build ./...
+go test ./internal/config/ ./internal/generators/ ./internal/discover/ ./internal/validator/ ./internal/commands/ ./internal/pathguard/ -count=1
+```
+
+### ML-1B — Valor não escalar em chave escalar some em silêncio (mesma causa do T1)
+**Status:** ⬜ Pendente
+**Agente:** apolo-tf
+**Dependencies:** ML-1A, porque os dois mexem em `internal/config/config.go`.
+**Files affected:** `internal/config/config.go`, `internal/config/config_scalar_type_test.go`, `internal/validator/validator.go`, `internal/validator/validator_config_scalar_test.go`, `docs/cli-parity.md`
+**Por que existe:** a Wave 0 mediu que `stringVal` (`config.go`) descarta sequência e mapa (`ci: [github-actions]` vira
+"ausente"). Isso vale para toda chave escalar, e não só para a `ci_trigger`. Corrigir só a `ci_trigger` deixaria a mesma
+causa viva nas outras chaves.
+**Acceptance criteria:**
+- [ ] O parser registra, num ponto único, toda chave escalar conhecida que recebeu sequência ou mapa, com o nome e o tipo
+- [ ] O `validate` emite violation `config_scalar_type` para cada uma; braços positivo (escalar) e negativo (sequência e mapa) testados
+- [ ] Contra-braço no HEAD
+**Gates da wave:**
+```bash
+go build ./...
+go test ./internal/config/ ./internal/validator/ -count=1
+```
 
 ## Wave 2 — Fechamento
 > Dependencies: Wave 1 auditada.
