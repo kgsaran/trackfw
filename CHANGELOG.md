@@ -7,6 +7,65 @@ e este projeto adere a [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [11.0.0] - 2026-10-24
+
+### Breaking Changes
+
+- **`trackfw barrier` ganha a checagem `ml_scope`.** O barrier reprova a wave quando ela toca um arquivo que não está no
+  `**Files affected:**` de nenhum ML das waves 0..N, nem no conjunto de orquestração (roadmap, REQ, ADR,
+  `docs/agents-working-context/`, `vault/notes/`, `.claude/agent-memory/` e os logs). Os `Files affected` são lidos do
+  roadmap commitado (`HEAD`), e não do disco, e arquivos untracked também contam. Um roadmap em `wip` com data a partir de
+  2026-07-18 em que algum ML não declara `Files affected` passa a sair `blocked`. Sem `origin/main`, a checagem também sai
+  `blocked`.
+  **Migração:** declare `**Files affected:**`, com os caminhos entre crases, nos MLs dos roadmaps em `wip`. Roadmaps com
+  data anterior a 2026-07-18 ficam isentos, com o motivo na evidência. (#606, REQ-2026-10-23)
+- **`trackfw validate` acusa valor de tipo errado no `trackfw.yaml` (`config_value_type`, severidade `error`).** Antes,
+  `ci: [github-actions]`, `agents: x`, `rules.<regra>: [x]` ou `credential_guard.mode: [x]` eram ignorados em silêncio, e a
+  chave valia como ausente. Agora cada caso é uma violation com o nome qualificado da chave e o tipo esperado. A leitura do
+  arquivo passa por uma tabela única, e um teste por AST impede leitura fora dela.
+  **Migração:** corrija o tipo do valor apontado na mensagem. (#609, REQ-2026-10-24)
+
+### Added
+
+- **`trackfw guard write-scope`:** um hook `PreToolUse` para `Write|Edit|NotebookEdit` no Claude Code que nega escrita em
+  caminhos congelados, julgando pela raiz do projeto do **arquivo alvo**, e não pelo cwd.
+  - **Toda sessão:** fica congelado o `docs/agents-working-context.md`, quando traz o marcador `<!-- trackfw:frozen -->`.
+  - **Só subagentes:** ficam congelados também o `trackfw.yaml`, os settings e hooks de todo CLI cabeado,
+    `.trackfw/leases/` e `docs/agents-working-context/`.
+
+  O `trackfw.yaml` pode acrescentar caminhos (`write_scope.frozen_paths` e `write_scope.frozen_paths_subagent`). Hardlink
+  para o arquivo congelado é detectado. Todo erro sai com 2. O `trackfw init` e o `trackfw update` cabeiam o hook no
+  `.claude/settings.json`, e o `validate` avisa quando a fiação falta (`write_scope_not_wired`). (#606, REQ-2026-10-23)
+- **Permissão de escrita por despacho:** `.trackfw/leases/<agent_type>.json`, no formato v1, tem `allow` com caminhos
+  absolutos e `expires` obrigatório. O guard lê o `agent_type` do payload do subagente e nega a escrita fora do `allow`.
+  Toda permissão encontrada, na raiz da sessão e na do alvo, precisa liberar. Permissão expirada, inválida ou com o
+  `agent_type` divergente nega. O `.trackfw/leases/` entra no `.gitignore`. (#606)
+- **`ci_trigger: pull_request | manual`** no `trackfw.yaml`. Com `manual`, o `trackfw-gate.yml` e o `trackfw-validate.yml`
+  usam `workflow_dispatch`, e o `.gitlab-ci-trackfw.yml` usa `rules: - if: '$CI_PIPELINE_SOURCE == "web"'`. O padrão
+  continua byte a byte igual. O doctor compara contra o template do gatilho configurado. Valor inválido é violation, e o
+  `update` recusa sem tocar no arquivo. Com `manual`, o `validate` avisa que o gate não roda em PR (`ci_trigger_manual`).
+  (#609, #607)
+
+### Changed
+
+- **Os subagentes gerados deixam de escrever no working context.** Os 11 papéis que não são o arquiteto reportam início,
+  fim e pendências no relatório final. O bloco de regras do `CLAUDE.md`, do `AGENTS.md` e do `GEMINI.md` diz que quem
+  registra é a sessão que orquestra. Rode `trackfw agents update` para receber os arquivos novos. (#606)
+- **`.trackfw-log` e o working context passam a ser um arquivo por entrada** (`<dir>/.trackfw-log-entries/*.entry` e
+  `docs/agents-working-context/*.md`). Assim, duas branches nunca escrevem no mesmo arquivo e o conflito some em qualquer
+  forge, inclusive no merge pela web do GitHub, que ignora `merge=union`. O `.trackfw-log` legado continua sendo lido,
+  congelado. (#602, REQ-2026-09-02)
+
+### Fixed
+
+- **O `trackfw update` não removia gerações antigas do guard.** No Cursor, os pares `preToolUse`/`postToolUse` ×
+  `Read`/`Write` acumulavam 4 formas legadas mais a atual, e o guard rodava 5 vezes. Nos demais CLIs, N formas legadas
+  viravam N cópias da atual. As gerações agora vivem num registro único (`internal/guardforms`), e a migração termina com
+  exatamente uma entrada por (evento, matcher). Com o guard global instalado, só os pares que ele cobre deixam de ter
+  entrada de projeto. Antes, Read/Write ficavam sem guard. (#604, #599)
+- **O arquiteto gerado não sobrepõe o `model` do subagente**, e o TOML do Codex escapa como TOML 1.0. Referências de
+  terceiros não corrompem TOML nem JSON. (#598, #600, REQ-2026-09-26)
+
 ## [10.1.0] - 2026-10-22
 
 Sem breaking changes.
