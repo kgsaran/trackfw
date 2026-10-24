@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-10-24
 req: "docs/req/REQ-2026-10-24-update-regenera-o-trackfw-gate-com-gatilho-pull-request-e-nao-ha-como-escolher-gatilho-manual.md"
 squad: "hades-tf, apolo-tf"
@@ -7,15 +7,15 @@ squad: "hades-tf, apolo-tf"
 
 # Roadmap: gatilho configurável dos workflows gerados (ci_trigger)
 
-> Created: 2026-10-24 | Status: wip
+> Created: 2026-10-24 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-10-24-update-regenera-o-trackfw-gate-com-gatilho-pull-request-e-nao-ha-como-escolher-gatilho-manual.md
 Issue: #607. ADR-2026-08-28, adendo de 2026-10-24.
 
 ## Acceptance Criteria
-- [ ] AC1–AC5 da REQ
-- [ ] `make quality` e o CI verdes
+- [x] AC1–AC5 da REQ
+- [x] `make quality` e o CI verdes (CI 20/20 no cb851fbe; mergeado no #609, f938d417)
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -185,15 +185,15 @@ bloco "EVIDÊNCIA CONGELADA BYTE-EXATA" do `.gitattributes`, com `-text`, e os n
 - [x] `internal/generators/testdata/ci-trigger/*.golden -text` no bloco byte-exato do `.gitattributes`, com o comentário do motivo
 - [x] Os testes que fixam o `.gitattributes` (`internal/generators/gitattributes_test.go` e os gates de `scripts/` que o leem) atualizados, se necessário, e verdes
 - [x] `git check-attr text internal/generators/testdata/ci-trigger/gate-consumer.golden` devolve `unset`
-- [ ] CI `windows-full-suites` verde
+- [x] CI `windows-full-suites` verde
 
 ## Wave 2 — Fechamento
 > Dependencies: Wave 1 auditada.
 
 ### ML-2A — make quality e CI
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** zeus-tf
 **Files affected:** `docs/cli-parity.md`
 **Acceptance criteria:**
 - [x] `make quality` rc=0 (falsificação 368 OK / 0 FAIL, guarda de conjunto OK; a 1ª rodada reprovou no cenário 39, corrigido no ML-1E)
-- [ ] CI do PR verde, com `Closes #607`
+- [x] CI do PR verde, com `Closes #607`
