@@ -151,13 +151,21 @@ func generateClaudeMD(cfg Config) error {
 		sb.WriteString("No git hook configured. Run `trackfw validate` manually before every commit.\n\n")
 	}
 
-	// CI gate section
+	// CI gate section — text depends on both cfg.CI and cfg.CITrigger (ADR-2026-08-28 adendo 2026-10-24).
 	sb.WriteString("## CI gate\n\n")
 	switch cfg.CI {
 	case "github-actions":
-		sb.WriteString("`.github/workflows/trackfw-gate.yml` runs `trackfw validate` on every pull request to main.\n")
+		if cfg.CITrigger == "manual" {
+			sb.WriteString("`.github/workflows/trackfw-gate.yml` runs `trackfw validate` manually via workflow_dispatch — it does NOT run automatically on pull requests.\n")
+		} else {
+			sb.WriteString("`.github/workflows/trackfw-gate.yml` runs `trackfw validate` on every pull request to main.\n")
+		}
 	case "gitlab-ci":
-		sb.WriteString("`.gitlab-ci-trackfw.yml` runs `trackfw validate` on every merge request.\n")
+		if cfg.CITrigger == "manual" {
+			sb.WriteString("`.gitlab-ci-trackfw.yml` runs `trackfw validate` manually via pipeline web trigger — it does NOT run automatically on merge requests.\n")
+		} else {
+			sb.WriteString("`.gitlab-ci-trackfw.yml` runs `trackfw validate` on every merge request.\n")
+		}
 	default:
 		sb.WriteString("No CI gate configured.\n")
 	}

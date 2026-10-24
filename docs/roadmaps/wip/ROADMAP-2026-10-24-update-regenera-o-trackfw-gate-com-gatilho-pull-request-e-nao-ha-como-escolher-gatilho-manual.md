@@ -55,7 +55,7 @@ git diff --quiet origin/main -- internal/
 > Dependencies: Wave 0 auditada. Detalhada depois da Wave 0.
 
 ### ML-1A — `ci_trigger` nos três templates, no doctor e no validate
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** apolo-tf
 **Files affected:** `internal/config/config.go`, `internal/config/config_ci_trigger_test.go`, `internal/generators/scaffold.go`, `internal/generators/scaffold_doctor.go`, `internal/generators/update.go`, `internal/generators/claudemd.go`, `internal/generators/ci_workflow_version_pin_test.go`, `internal/generators/discover_workflow_trigger_test.go`, `internal/generators/ci_trigger_test.go`, `internal/generators/testdata/ci-trigger/`, `internal/discover/discover.go`, `internal/discover/discover_test.go`, `internal/commands/init.go`, `internal/validator/validator.go`, `internal/validator/validator_ci_trigger_test.go`, `docs/cli-parity.md`
 **Contrato (arquiteto, a partir da Wave 0, `docs/seguranca/2026-10-24-wave0-ci-trigger.md` §Z):**
@@ -82,14 +82,23 @@ git diff --quiet origin/main -- internal/
    funções, nas variantes de produtor e de consumidor, a partir de `origin/main`. Um teste afirma igualdade byte a byte com
    o padrão. Não basta comparar a função contra ela mesma.
 **Acceptance criteria:**
-- [ ] AC1–AC4 da REQ, cada um com teste e contra-braço
-- [ ] Injeção: `ci_trigger: "manual\non: push"` é inválido e nada é gerado
-- [ ] Os goldens do padrão foram capturados de `origin/main` e batem
+- [x] AC1–AC4 da REQ, cada um com teste e contra-braço
+- [x] Injeção: `ci_trigger: "manual\non: push"` é inválido e nada é gerado
+- [x] Os goldens do padrão foram capturados de `origin/main` e batem
 **Gates da wave:**
 ```bash
 go build ./...
 go test ./internal/config/ ./internal/generators/ ./internal/discover/ ./internal/validator/ ./internal/commands/ ./internal/pathguard/ -count=1
 ```
+
+**Auditoria do arquiteto (2026-10-24):** aprovado. Os gates estão verdes e o `parity-rest` deu rc=0. Os goldens do padrão
+foram capturados de `origin/main`. Medição de ponta a ponta com o binário do worktree num projeto temporário:
+- `ci_trigger: manual` → `trackfw update` gera `on:\n  workflow_dispatch:` e o `validate` avisa `ci_trigger_manual`;
+- `ci_trigger: [manual]` → o `update` sai com rc=1 e o `trackfw-gate.yml` fica byte a byte intocado (`cmp`); o `validate`
+  sai com rc=1 com `ci_trigger_invalid`.
+
+Falta um ponto, que passa para o ML-1B: o aviso `ci_trigger_manual` não menciona `required_status_checks` (item 6 do
+contrato e T5).
 
 ### ML-1B — Valor não escalar em chave escalar some em silêncio (mesma causa do T1)
 **Status:** ⬜ Pendente
@@ -103,6 +112,7 @@ causa viva nas outras chaves.
 - [ ] O parser registra, num ponto único, toda chave escalar conhecida que recebeu sequência ou mapa, com o nome e o tipo
 - [ ] O `validate` emite violation `config_scalar_type` para cada uma; braços positivo (escalar) e negativo (sequência e mapa) testados
 - [ ] Contra-braço no HEAD
+- [ ] O aviso `ci_trigger_manual` também diz que `required_status_checks` que dependem do job do gate bloqueiam o PR, porque ele não roda (herdado do ML-1A)
 **Gates da wave:**
 ```bash
 go build ./...

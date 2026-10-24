@@ -20,6 +20,26 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// applyCITriggerFromExisting reads ci_trigger from an already-existing trackfw.yaml (if any)
+// and applies it to cfg. Option (c) from §Z of ML-1A (REQ-2026-10-24):
+//   - absent → no change to cfg (CI template will use default "pull_request" behaviour)
+//   - "pull_request" or "manual" → set cfg.CITrigger
+//   - any other value → return error with accepted values; init must not overwrite the file
+//
+// No new flag or wizard question. The template does NOT emit the key; it is preserved only if it
+// was already present. config.Load() is safe here because runInit is always called from the CWD
+// that is (or will become) the project root.
+func applyCITriggerFromExisting(cfg *generators.Config) error {
+	existing := config.Load()
+	if existing.Update.CITriggerInvalid {
+		return fmt.Errorf("init: trackfw.yaml: ci_trigger value %q is not accepted (accepted: \"pull_request\", \"manual\") — correct the file before running init", existing.Update.CITriggerRawValue)
+	}
+	if existing.Update.CITrigger != "" {
+		cfg.CITrigger = existing.Update.CITrigger
+	}
+	return nil
+}
+
 func newInitCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init",
@@ -113,6 +133,9 @@ func runInit(cmd *cobra.Command, args []string) error {
 		}
 		if forgeChanged {
 			cfg.Forge = forgeValue
+		}
+		if err := applyCITriggerFromExisting(&cfg); err != nil {
+			return err
 		}
 		if err := generators.Scaffold(cfg); err != nil {
 			return err
@@ -365,6 +388,10 @@ func runInit(cmd *cobra.Command, args []string) error {
 	if brownfield {
 		cfg.BrownfieldMode = true
 		cfg.LenientUntil = time.Now().AddDate(0, 0, config.LenientDefaultDays)
+	}
+
+	if err := applyCITriggerFromExisting(&cfg); err != nil {
+		return err
 	}
 
 	if err := generators.Scaffold(cfg); err != nil {

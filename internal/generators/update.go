@@ -31,11 +31,14 @@ import (
 func loadUpdateConfig() Config {
 	u := config.Load().Update
 	return Config{
-		Hooks:      u.Hooks,
-		CI:         u.CI,
-		Backend:    u.Backend,
-		Frontend:   u.Frontend,
-		PkgManager: u.PkgManager,
+		Hooks:             u.Hooks,
+		CI:                u.CI,
+		Backend:           u.Backend,
+		Frontend:          u.Frontend,
+		PkgManager:        u.PkgManager,
+		CITrigger:         u.CITrigger,
+		CITriggerInvalid:  u.CITriggerInvalid,
+		CITriggerRawValue: u.CITriggerRawValue,
 	}
 }
 
@@ -56,6 +59,12 @@ func Update(cwd string) error {
 	defer os.Chdir(orig) //nolint:errcheck
 
 	cfg := loadUpdateConfig()
+
+	// AC4 (REQ-2026-10-24): refuse early when ci_trigger is invalid so no write happens
+	// and the existing file is left untouched. rc≠0 propagated by cobra.
+	if cfg.CITriggerInvalid {
+		return fmt.Errorf("ci_trigger: %q é inválido — valores aceitos: pull_request, manual", cfg.CITriggerRawValue)
+	}
 
 	fmt.Println("trackfw update — re-aplicando templates atuais...")
 	fmt.Println()
@@ -2848,8 +2857,13 @@ func refreshDiscoverGitHubActionsWorkflowIfPresent(rootDir string) error {
 	if guardErr := pathguard.RejectAndReport(guardRoot, path); guardErr != nil {
 		return nil
 	}
+	// Read the configured trigger from trackfw.yaml via config.Load().
+	// This is safe because every caller (Update, UpdateProject) chdirs to the project root
+	// before invoking this function, so config.Load() reads the correct trackfw.yaml.
+	// The test path (no trackfw.yaml) returns CITrigger="" → pull_request template (AC2).
+	ciTrigger := config.Load().Update.CITrigger
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
-	return os.WriteFile(path, []byte(BuildDiscoverGitHubActionsWorkflowContent(IsProducerGoMod(guardRoot))), 0o644)
+	return os.WriteFile(path, []byte(BuildDiscoverGitHubActionsWorkflowContentWithTrigger(IsProducerGoMod(guardRoot), ciTrigger)), 0o644)
 }
 
 // UpdateProject evaluates (and, unless DryRun, applies) every declared
@@ -2864,6 +2878,11 @@ func UpdateProject(cwd string, opts UpdateOptions) (UpdateReport, error) {
 	var cfg Config
 	if err := withChdir(cwd, func() error { cfg = loadUpdateConfig(); return nil }); err != nil {
 		return UpdateReport{}, fmt.Errorf("loading trackfw.yaml: %w", err)
+	}
+
+	// AC4 (REQ-2026-10-24): refuse early when ci_trigger is invalid.
+	if cfg.CITriggerInvalid {
+		return UpdateReport{}, fmt.Errorf("ci_trigger: %q é inválido — valores aceitos: pull_request, manual", cfg.CITriggerRawValue)
 	}
 
 	declared := ProjectTargetIDs(cfg, discoverWorkflowPresent(cwd))

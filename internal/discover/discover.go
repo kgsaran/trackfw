@@ -389,7 +389,11 @@ func writeCIWorkflow(rootDir string, w io.Writer) error {
 	if _, err := os.Lstat(dest); err == nil {
 		return nil
 	}
-	content := generators.BuildDiscoverGitHubActionsWorkflowContent(generators.IsProducerGoMod(rootDir))
+	// ML-1A (REQ-2026-10-24): honor ci_trigger from trackfw.yaml (option c, §Z).
+	// config.Load() is safe here: all callers (discoverProject, RunDiscover) chdir to the
+	// project root before reaching this function.
+	ciTrigger := config.Load().Update.CITrigger
+	content := generators.BuildDiscoverGitHubActionsWorkflowContentWithTrigger(generators.IsProducerGoMod(rootDir), ciTrigger)
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.WriteFile(dest, []byte(content), 0644); err != nil {
 		return fmt.Errorf("writing CI workflow: %w", err)

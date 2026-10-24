@@ -106,6 +106,16 @@ type UpdateConfig struct {
 
 	// ML-1A (agentes especialistas aceitam contexto de convenções) field
 	AgentConventions string // agent_conventions: free-text, multi-line (default: "")
+
+	// ci_trigger field — ADR-2026-08-28 adendo 2026-10-24, REQ-2026-10-24.
+	// Accepted values: "pull_request" (default, absent = pull_request) and "manual".
+	// CITriggerInvalid is true when the key is present with a value outside the enum
+	// or with a non-scalar type (sequence/mapping). CITrigger is "" in that case.
+	// CITriggerRawValue holds the raw string for error messages; for non-scalars it holds
+	// a human-readable type description.
+	CITrigger        string // ci_trigger: pull_request|manual (default: "" = pull_request)
+	CITriggerInvalid bool   // true when ci_trigger has an unrecognised or non-scalar value
+	CITriggerRawValue string // raw value for violation messages
 }
 
 // SyncConfig holds the fields `trackfw sync` reads for Linear/Jira integration. linear_api_key
@@ -553,6 +563,24 @@ func parse(content string, cfg *ProjectConfig) {
 	}
 	if v, ok := stringVal(m, "agent_conventions"); ok {
 		cfg.Update.AgentConventions = v
+	}
+	// ci_trigger — REQ-2026-10-24, ADR-2026-08-28 adendo 2026-10-24.
+	// Direct presence check (not stringVal) to distinguish absent (no violation) from
+	// present-but-non-scalar (T1: stringVal would silently return ok=false → treated
+	// as absent, which would hide the invalid value from the validator).
+	if raw, present := m["ci_trigger"]; present {
+		if s, ok := raw.(string); ok {
+			cfg.Update.CITriggerRawValue = s
+			if s == "pull_request" || s == "manual" {
+				cfg.Update.CITrigger = s
+			} else {
+				cfg.Update.CITriggerInvalid = true
+			}
+		} else {
+			// Non-scalar: sequence or mapping — same T1 hole that led to ML-1B.
+			cfg.Update.CITriggerInvalid = true
+			cfg.Update.CITriggerRawValue = fmt.Sprintf("non-scalar (%T)", raw)
+		}
 	}
 	if v, ok := stringVal(m, "linear_api_key"); ok {
 		cfg.Sync.LinearAPIKey = v

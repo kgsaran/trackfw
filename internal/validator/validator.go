@@ -239,6 +239,10 @@ var ruleDefaults = map[string]string{
 	// docs/agents-working-context/ means transition history is silently lost on clone.
 	// Default "warning" — the pattern may be intentional in some projects.
 	"log_entries_dir_gitignored": "warning",
+	// ML-1A (REQ-2026-10-24): ci_trigger: manual — gate will not run automatically on PR.
+	// Default "warning": the project may have deliberately chosen manual dispatch.
+	// ci_trigger_invalid is absent (defaults to "error" via the fallthrough).
+	"ci_trigger_manual": "warning",
 }
 
 // ruleSeverity retorna a severidade configurada para a regra.
@@ -796,6 +800,26 @@ func LenientUntilDate() string {
 	return gm.LenientUntil.Format("2006-01-02")
 }
 
+// validateCITrigger emits violations/warnings for the ci_trigger key in trackfw.yaml.
+// Two rules (ML-1A, REQ-2026-10-24):
+//
+//   - ci_trigger_invalid (default "error"): ci_trigger is present but not "pull_request" or "manual".
+//   - ci_trigger_manual (default "warning"): ci_trigger is "manual" — gate will not run on PRs.
+func validateCITrigger() (invalidMsgs []string, manualMsgs []string) {
+	cfg := config.Load()
+	if cfg.Update.CITriggerInvalid {
+		invalidMsgs = append(invalidMsgs,
+			fmt.Sprintf("ci_trigger_invalid: trackfw.yaml: ci_trigger value %q is not accepted (accepted: \"pull_request\", \"manual\")", cfg.Update.CITriggerRawValue),
+		)
+	}
+	if cfg.Update.CITrigger == "manual" {
+		manualMsgs = append(manualMsgs,
+			"ci_trigger_manual: trackfw.yaml: ci_trigger is \"manual\" — the gate workflow will not run automatically on pull requests / merge requests",
+		)
+	}
+	return invalidMsgs, manualMsgs
+}
+
 // ValidateUnfiltered executa todas as validações sem filtro de baseline nem modo lenient.
 // Use para criar snapshots de baseline ou quando você quer o quadro completo.
 func ValidateUnfiltered() (violations []string, warnings []string, err error) {
@@ -1208,6 +1232,12 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	// or .trackfw\ grants write to a foreign SID on Windows — always-warning, never blockable.
 	// 🔴 Mirror site in validateUnfilteredTagged below — forgetting it silences the rule from --json.
 	applyRuleWarnOnly("project_foreign_write_windows", validateProjectForeignWriteWindows(), &warnings)
+
+	// ML-1A (REQ-2026-10-24): ci_trigger key validation.
+	// 🔴 Mirror site in validateUnfilteredTagged below — forgetting it silences these rules from --json.
+	ciTriggerInvalidMsgs, ciTriggerManualMsgs := validateCITrigger()
+	applyRule("ci_trigger_invalid", ciTriggerInvalidMsgs, &violations, &warnings)
+	applyRule("ci_trigger_manual", ciTriggerManualMsgs, &violations, &warnings)
 
 	return violations, warnings, nil
 }
@@ -1712,6 +1742,12 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 	// ML-W2b' (REQ-2026-09-03, ADR-2026-10-16-no-windows-o-validate-avisa-... D2/D3): mirror of ValidateUnfiltered.
 	// 🔴 Missing this site silences project_foreign_write_windows from --json output.
 	applyRuleWarnOnlyTagged("project_foreign_write_windows", validateProjectForeignWriteWindows(), &warnings)
+
+	// ML-1A (REQ-2026-10-24): mirror of ValidateUnfiltered ci_trigger block.
+	// 🔴 Missing this site silences ci_trigger_invalid / ci_trigger_manual from --json output.
+	ciTriggerInvalidMsgsT, ciTriggerManualMsgsT := validateCITrigger()
+	applyRuleTagged("ci_trigger_invalid", ciTriggerInvalidMsgsT, &violations, &warnings)
+	applyRuleTagged("ci_trigger_manual", ciTriggerManualMsgsT, &violations, &warnings)
 
 	return violations, warnings, nil
 }

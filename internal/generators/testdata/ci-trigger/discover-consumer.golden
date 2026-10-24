@@ -1,0 +1,18 @@
+name: trackfw validate
+on:
+  # push so na main. Com o gatilho de lista (push e pull_request juntos), uma
+  # branch do proprio repositorio dispara os DOIS eventos no mesmo commit e o
+  # gate roda em dobro — medido num PR real: 2 execucoes do mesmo job, mesmo SHA.
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  governance-go-install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: "1.25"
+      - run: go install github.com/kgsaran/trackfw/cmd/trackfw@vTRACKFW_VERSION_PLACEHOLDER
+      - run: trackfw validate
