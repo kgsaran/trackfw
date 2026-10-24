@@ -477,13 +477,14 @@ uma lista sem fonte única.
   direção var→canônica. Uma lista com um estado duplicado e outro ausente passa.
 
 ### ML-6D3 — Testes de conjunto bidirecionais
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** apolo-tf
 **Files affected:** `internal/serve/api_board_test.go`, `internal/validator/roadmap_order_states_test.go`
 **Acceptance criteria:**
-- [ ] `TestBoardStates_SetEqualsCanonical`, `TestRoadmapFolderStates_SetEqualsCanonical` e
+- [x] `TestBoardStates_SetEqualsCanonical`, `TestRoadmapFolderStates_SetEqualsCanonical` e
   `TestTraceIdStateDirs_SetEqualsCanonical` checam as duas direções e rejeitam duplicata
-- [ ] Falsificação: numa cópia, uma lista com `wip` duplicado e sem `analyzing` faz cada um reprovar
+- [x] Falsificação: numa cópia, uma lista com `wip` duplicado e sem `analyzing` faz cada um reprovar
+**Auditoria do arquiteto (2026-10-24):** aprovado. Na falsificação do executor, as listas com `wip` duplicado e sem `analyzing` fazem os 3 testes reprovarem. Como os testes exigem tamanho igual e as duas direções, a duplicata fica excluída por contagem. Testes verdes no HEAD (rc=0).
 
 ## Wave 7 — Fechamento
 > Dependencies: Wave 6 aprovada.
