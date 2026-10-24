@@ -181,5 +181,5 @@ escalares) e R-3 (o teste por AST pega também `stringValRec(m, "literal", …)`
 **Agente:** zeus-tf
 **Files affected:** `docs/cli-parity.md`
 **Acceptance criteria:**
-- [ ] `make quality` rc=0
+- [x] `make quality` rc=0 (falsificação 368 OK / 0 FAIL, guarda de conjunto OK; a 1ª rodada reprovou no cenário 39, corrigido no ML-1E)
 - [ ] CI do PR verde, com `Closes #607`
