@@ -327,6 +327,19 @@ só a dimensão do defeito original.
   esse estado, então nenhum repositório verde no CI fica vermelho. Recomendação: patch (11.0.1). A decisão é do KG na tag.
 - **Divisão:** um ML só (5A), porque o AC9 cruza o gerador e o validador.
 
+### ML-4B — Governança da reabertura (arquiteto)
+**Status:** ✅ Concluído
+**Agente:** zeus-tf
+**Files affected:** `docs/adr/ADR-2026-08-06-hooks-de-credential-guard-em-escopo-global-via-trackfw-update-harness.md`, `docs/roadmaps/done/ROADMAP-2026-10-23-update-nao-remove-geracoes-antigas-do-credential-guard-em-pares-evento-matcher-e-o-validate-manda-rodar-update-que-nao-resolve.md`
+**Por que existe:** o primeiro `trackfw barrier --wave 4` saiu `blocked` no `ml_scope` com estes dois arquivos.
+- O ADR-2026-08-06 recebeu a marca de "substituída pela D15" na decisão 4, e o conjunto de orquestração só cobre o ADR
+  ligado à REQ. A declaração aqui está correta.
+- O caminho antigo do roadmap em `done/` aparece porque o `trackfw roadmap move` o apagou, e o conjunto de orquestração só
+  conhece o caminho atual. Isso é defeito do produto, e o ML-5B corrige. A declaração aqui é o contorno até lá.
+**Acceptance criteria:**
+- [x] ADR-2026-08-06, decisão 4, marcada como substituída pela D15
+- [x] Roadmap reaberto em `wip/`, com a REQ sincronizada pelo `trackfw roadmap move`
+
 ## Wave 5 — Implementação da D15
 > Dependencies: Wave 4 auditada.
 
@@ -342,6 +355,28 @@ só a dimensão do defeito original.
   rc=0), com contra-braço que reprova em `origin/main`.
 - [ ] Os testes do contrato antigo passam a afirmar a D15. Cada teste novo ou invertido declara a conclusão que afirma
   (Regra de Reconciliação).
+
+### ML-5B — `ml_scope` aceita o roadmap em qualquer estado do `roadmap_dir`
+**Status:** ⬜ Pendente
+**Agente:** apolo-tf
+**Dependencies:** ML-5A, porque os dois compilam e testam o pacote `internal/commands`.
+**Files affected:** `internal/commands/barrier.go`, `internal/commands/barrier_ml_scope_test.go`, `docs/cli-parity.md`
+**Por que existe:** `buildMLScopeOrchestrationSet` (`internal/commands/barrier.go:899`) só inclui `roadmapRelPath`, que é o
+caminho atual. Um roadmap reaberto (`done/` para `wip/`, procedimento da Regra Dura de Causa Raiz) ou movido de estado na
+branch faz o `git diff` contra `origin/main` listar a remoção do caminho antigo, e o `ml_scope` sai `blocked`. Medido no
+ML-4B. É outra causa, do `ml_scope` (REQ-2026-10-23 das regras de escrita, #606), e entra neste PR porque bloqueia o
+barrier desta REQ e é defeito conhecido.
+**Acceptance criteria:**
+- [ ] O conjunto de orquestração inclui o mesmo basename do roadmap em todo estado (`backlog`, `analyzing`, `wip`,
+  `blocked`, `done`, `abandoned`) do `roadmap_dir`, nos dois modos de namespacing (`flat` e `by_agent`)
+- [ ] Um roadmap **diferente** com nome parecido continua fora do escopo (contra-braço por basename exato)
+- [ ] Teste com repositório git real em `t.TempDir()`: roadmap em `done/` no `origin/main`, movido para `wip/` na branch,
+  barrier sem `out of scope` para o caminho antigo. O teste reprova no HEAD anterior a este ML.
+**Gates da wave:**
+```bash
+go build ./...
+go test ./internal/commands/ -run 'MLScope' -count=1 -v
+```
 
 ## Wave 6 — Revisões independentes
 > Dependencies: Wave 5 auditada.
