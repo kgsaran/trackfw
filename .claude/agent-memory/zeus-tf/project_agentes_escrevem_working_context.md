@@ -16,3 +16,5 @@ ruído no diff e commit de arquivo inesperado.
 **How to apply:** não trate como insubordinação na auditoria; confira o conteúdo e commite. A
 correção de origem é no gerador do agente (trocar "atualize o working context" por "o arquiteto
 atualiza; você reporta") — candidata a REQ, mesma família de [[fronteira-de-escrita-dos-auditores]].
+
+**Recorrência 2026-10-21 (REQs de Windows e zsh):** o apolo-tf e o hades-tf gravaram entradas no `docs/agents-working-context.md` do **checkout principal (main)**, e não no worktree designado, mesmo com o handoff proibindo explicitamente. Nos arquivos de produto eles respeitaram o diretório; no context, não. O auto mode chegou a sinalizar como "Modify Shared Resources". Mitigação usada: copiar as entradas para o contexto da branch. O resíduo no main não pode ser descartado por `git restore` nem `git stash`, porque o guard bloqueia; ou o KG descarta, ou faz-se um commit inerte numa branch.

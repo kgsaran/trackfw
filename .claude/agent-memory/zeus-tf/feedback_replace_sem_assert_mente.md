@@ -32,3 +32,5 @@ awk '/^### ML-/{ml=$0} /^\*\*Status:\*\*/{d=($0~/✅/)} /^- \[ \]/{if(d)print ml
 afirmações é falsa — e o `barrier` **vai** pegar, mas só na hora em que você queria fechar.
 
 Relacionado: [[medir-com-a-regra-nao-com-grep]], [[o-instrumento-mente]].
+
+**Recorrência 2026-10-23 (corte por posição):** para tirar um bloco que um agente anexou ao `docs/agents-working-context.md` do checkout principal, cortei o arquivo em `s[:index(marcador)]`, supondo que o bloco estava no fim. Ele estava logo depois do título. Resultado: 47.329 linhas apagadas, recuperadas com `git show HEAD:<arquivo> > <arquivo>` só porque o diff anterior tinha 0 linhas removidas. Para remover um bloco, apague **o próprio bloco** (do marcador ao fim dele) e confira `git diff --numstat` antes e depois. Se o arquivo não tinha mudança local antes do agente, a restauração certa é o conteúdo do HEAD, não um corte.

@@ -21,3 +21,7 @@ do `tail`). Confirmação independente: `grep -cE "Error [0-9]" quality.log` →
 o precedente do repo é re-executar apenas os gates que leem docs
 (`scripts/check-referential-integrity.sh`, `scripts/check-parity-contract-coverage.sh`) e o
 `./bin/trackfw validate`, em vez de repetir os 13 minutos.
+
+**`make parity-rest` requer o módulo Python `packaging`:** o gate `scripts/check-wheel-filename.sh`
+falha com `FAIL [build_wheel]` se o módulo não estiver instalado. Em macOS com Python gerenciado pelo
+Homebrew: `pip3 install packaging --user --break-system-packages`.

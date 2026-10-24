@@ -1,6 +1,6 @@
 ---
 name: medir-com-a-regra-nao-com-grep
-description: Contagem de defeito só vale se vier da regra/gate real; grep, tail e testes de string dão número plausível e errado — já aconteceu 4 vezes neste projeto
+description: Contagem de defeito só vale se vier da regra/gate real; grep, tail e testes de string dão número plausível e errado — já aconteceu 5 vezes neste projeto
 metadata:
   type: feedback
 ---
@@ -18,6 +18,7 @@ ninguém questiona. Quatro ocorrências medidas neste projeto:
 | roadmaps de `done/` que falhariam em `wip/` | `grep` de marcador decorado | 13 | **~43** |
 | FAIL no `make quality` | `make quality \| tail -40` | 0 | indeterminado — só vi 40 de 3816 linhas |
 | `: FALHA` no `make quality` | `grep -c '": FALHA"'` — **aspas duplas dentro do padrão** | 0 | 0 por acaso; o padrão retorna 0 **sempre** |
+| validate depois do `trackfw update` (2026-10-24, #612) | `trackfw validate \| grep -E 'guard\|violation' \| head` | "consistente com a D14" | **rc=1, 9 `guard_wiring_removed`**: o `head` cortou antes, e o CI ficou vermelho |
 
 🔴 **Padrão que retorna 0 incondicionalmente é o pior caso**, porque coincide com a resposta desejada.
 Em 2026-09-21 um executor reportou `0 ": FALHA"` medindo com o literal **entre aspas duplas**; a
@@ -27,6 +28,7 @@ vez?** Se nunca, prove com um caso conhecido de falha.
 
 **How to apply:**
 
+- 🔴 Antes de commitar saída de gerador: `trackfw validate; echo rc=$?` **sem pipe**. O rc é o veredito, e a saída filtrada não substitui.
 - Contagem de violação ⇒ rode o próprio `trackfw validate` / o gate, e conte a saída **inteira**
   redirecionada para arquivo. `grep -c '^FAIL' arquivo.log`, nunca `| tail`.
 - Para saber o que uma regra faria num corpus que ela não varre hoje (ex.: `done/` vs `wip/`),
