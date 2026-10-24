@@ -89,3 +89,19 @@ Com `gh run list --workflow quality.yml --limit 200` filtrando `event=="push" an
 os três merges tinham run verde. 🔴 Para afirmar "não roda", filtre pelo workflow e alargue a janela.
 
 **Mais duas, 2026-10-21 (matriz do guard zsh):** (1) ao restringir o PATH do subprocesso (`PATH=$D:/usr/bin:/bin`), o `timeout` do Homebrew some e tudo sai **127**. Use `/usr/bin/perl -e 'alarm N; exec @ARGV'`. (2) Em seguida, tudo saiu **0**: `$3="zsh -o errexit"` sem word-splitting no zsh da ferramenta. Matriz de shell só vale em script `bash` gravado em arquivo. As duas rodadas eram unânimes, e unanimidade é sinal de instrumento quebrado.
+
+## `ls` com ícone num subagente escreveu dentro do repo — 2026-10-24 (#613, ML-6B)
+
+O hades-tf montou o caminho com `PROJ_A=$(ls -d "$SCRATCHPAD"/proj_A_* | head -1)`. O ícone mais o espaço viraram prefixo,
+e o caminho ficou **relativo**: `"<ícone> /private/tmp/..."`. Com isso:
+- o `trackfw init`/`update` rodou com o cwd no repositório e acrescentou 12 linhas ao `trackfw.yaml`;
+- dois `settings.json` foram criados dentro de um diretório chamado `<ícone> `.
+
+O relatório dele não mencionou nada, e o parecer ficou de pé porque a medição quebrada foi descartada. Quem pegou foi o
+`git status --untracked-files=all` antes do commit.
+
+**How to apply:**
+- Todo handoff com medição em diretório temporário diz: "capture o caminho só pela saída do `mktemp -d`, nunca por `ls`; se
+  precisar listar, use `command ls` ou um glob".
+- Antes de commitar um parecer de auditor, rode `git status --untracked-files=all` e explique cada arquivo que não é o
+  parecer.

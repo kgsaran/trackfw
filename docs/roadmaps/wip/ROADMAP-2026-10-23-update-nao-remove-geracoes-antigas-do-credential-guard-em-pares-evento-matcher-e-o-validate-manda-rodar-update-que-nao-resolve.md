@@ -405,14 +405,58 @@ go test ./internal/commands/ -run 'MLScope' -count=1 -v
 > Dependencies: Wave 5 auditada.
 
 ### ML-6A — Revisão de qualidade
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** hefesto-tf
 **Files affected:** `docs/qualidade/2026-10-24-revisao-guard-global-versionado.md`
+**Acceptance criteria:**
+- [x] Parecer REPROVADO: B1–B6 (nomes e comentários de teste afirmam a D14, enquanto o corpo afirma a D15) e R1–R9.
+  Corretivo no ML-6C; o R4 vira o ML-6D.
 
 ### ML-6B — Red-team da D15
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** hades-tf
-**Files affected:** `docs/seguranca/2026-10-24-redteam-guard-global-versionado.md`
+**Files affected:** `docs/seguranca/2026-10-24-redteam-guard-global-versionado.md`, `.claude/agent-memory/hades-tf/feedback_measure_the_real_code_path_not_an_isolated_proxy.md`
+**Acceptance criteria:**
+- [x] Parecer APROVADO, sem bloqueantes. Resíduos: R-1 (lista de estados sem constante, que vira o ML-6D) e R-2/R-3
+  (expansão por basename do ML-5B, aceitos).
+- [x] A sabotagem fiel (`git diff origin/main..HEAD -- internal/generators/agentfiles.go | patch -R`) faz o AC9 reprovar
+  nos 7 CLIs.
+
+**Auditoria do arquiteto (2026-10-24):** parecer aceito, com um incidente.
+- **O incidente:** o hades-tf montou o caminho de um diretório temporário com `ls -d`, que tem alias com ícone. O caminho
+  virou relativo, e o `trackfw init`/`update` rodou dentro do repositório. O resultado foram 12 linhas acrescentadas ao
+  `trackfw.yaml` e um diretório `<ícone> /private/...` com dois `settings.json`. Isso não estava no relatório.
+- **A correção:** o arquiteto removeu as 12 linhas e o diretório antes do commit.
+- **Efeito no parecer:** a medição de idempotência que usava esse caminho não entrou nele. O Ataque 3 se apoia nos
+  testes de idempotência existentes, que cobrem o caminho "sem global", hoje o único caminho.
+
+### ML-6C — Corretivo do ML-6A (nomes, comentários e documentação)
+**Status:** ⬜ Pendente
+**Agente:** apolo-tf
+**Files affected:** `internal/generators/nested_guard_migrate_dedup_test.go`, `internal/generators/git_branch_guard_dedup_test.go`, `internal/generators/copilot_kiro_d14_ml2c_test.go`, `internal/generators/cursor_guard_migrate_dedup_test.go`, `internal/generators/credential_guard_dedup_test.go`, `internal/generators/agentfiles.go`, `internal/validator/validator_git_branch_guard.go`, `internal/commands/update_validate_global_guard_test.go`, `docs/cli-parity.md`
+**Acceptance criteria:**
+- [ ] B1–B6: nome e comentário de cada teste dizem o que o corpo afirma (D15)
+- [ ] R1, R2, R3, R5, R7, R8 e R9 do parecer `docs/qualidade/2026-10-24-revisao-guard-global-versionado.md` corrigidos
+- [ ] R6: o braço do validador do AC9 exige a violation específica de presença do credential guard, e não só rc≠0
+- [ ] Nenhuma mudança de lógica de produto. `git diff` em `agentfiles.go` e `validator_git_branch_guard.go` toca só comentários
+
+### ML-6D — Uma lista canônica de estados de roadmap (R4 do ML-6A, R-1 do ML-6B)
+**Status:** ⬜ Pendente
+**Agente:** apolo-tf
+**Dependencies:** ML-6C, pelo pacote `internal/generators`.
+**Files affected:** `internal/config/config.go`, `internal/config/roadmap_states_test.go` (novo), `internal/commands/barrier.go`, `internal/discover/discover.go`, `internal/discover/discover_test.go`, `internal/generators/context.go`, `internal/generators/roadmap.go`, `internal/serve/api_board.go`, `internal/validator/validator.go`, `internal/validator/validator_roadmap_gates.go`, `internal/validator/validator_traceid.go`
+**Por que existe:** a lista literal dos 6 estados está copiada à mão em 16 sítios de 6 pacotes, e o ML-5B criou mais uma.
+As cópias já divergem: `internal/discover/discover.go` (~L520–L543) não tem `analyzing`, e por isso o `discover` deixa de
+contar os roadmaps em `analyzing/` e de detectar o modo `by_agent` por essa pasta. É a mesma causa da cópia do ML-5B:
+uma lista sem fonte única.
+**Acceptance criteria:**
+- [ ] Uma lista exportada única (proposta: `config.RoadmapStates`, se não criar ciclo de import) é consumida por todo
+  sítio que precisa do **conjunto**
+- [ ] Sítios em que a **ordem** tem semântica (prioridade de busca, como `roadmapStateOrder` em `generators/roadmap.go`)
+  mantêm a ordem própria, mas um teste afirma que o conjunto é igual ao da lista canônica
+- [ ] O `discover` conta `analyzing/` e detecta `by_agent` por ela. O teste reprova no HEAD anterior
+- [ ] O grep pela lista literal fora de `config` e de testes devolve só os sítios de ordem semântica, cada um com o teste
+  de conjunto
 
 ## Wave 7 — Fechamento
 > Dependencies: Wave 6 aprovada.
