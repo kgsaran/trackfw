@@ -59,7 +59,7 @@ func TestBranchPrune_MasterRepo_EndToEnd(t *testing.T) {
 	cloneDir := filepath.Join(work, "clone")
 
 	cfgPath := filepath.Join(work, "empty-gitconfig")
-	if err := os.WriteFile(cfgPath, []byte(""), 0o644); err != nil {
+	if err := os.WriteFile(cfgPath, []byte("[gc]\n\tauto = 0\n[maintenance]\n\tauto = false\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 

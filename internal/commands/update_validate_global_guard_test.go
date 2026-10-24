@@ -156,6 +156,15 @@ func d15SetupRepo(t *testing.T) (workDir, bareDir, fakeHome string) {
 	bareDir = t.TempDir()
 	workDir = t.TempDir()
 
+	// Create the global gitconfig that e2eCleanEnv points GIT_CONFIG_GLOBAL at.
+	// Includes gc.auto=0 and maintenance.auto=false so that receive-pack's detached
+	// git maintenance --auto does not race with t.TempDir's RemoveAll.
+	_ = os.WriteFile(
+		filepath.Join(fakeHome, ".gitconfig"),
+		[]byte("[gc]\n\tauto = 0\n[maintenance]\n\tauto = false\n"),
+		0600,
+	)
+
 	d15Git(t, bareDir, fakeHome, "init", "-q", "--bare", "-b", "main", ".")
 	d15Git(t, workDir, fakeHome, "init", "-q", "-b", "main", ".")
 	d15Git(t, workDir, fakeHome, "config", "user.email", "d15@localhost")

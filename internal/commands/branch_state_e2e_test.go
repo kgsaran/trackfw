@@ -140,6 +140,21 @@ func makeE2ERepo(t *testing.T) (repoDir, homeDir string) {
 	homeDir = t.TempDir()
 	repoDir = t.TempDir()
 
+	// Create the global gitconfig that e2eCleanEnv points GIT_CONFIG_GLOBAL at.
+	// Includes gc.auto=0 and maintenance.auto=false so that git maintenance run
+	// --auto --detach (triggered by receive-pack on local pushes) does not race
+	// with t.TempDir's RemoveAll. GIT_CONFIG_PARAMETERS in the process env
+	// suppresses commit-time maintenance; the gitconfig file suppresses
+	// receive-pack-time maintenance (GIT_CONFIG_PARAMETERS is not forwarded by
+	// receive-pack when it spawns the detached maintenance process).
+	if err := os.WriteFile(
+		filepath.Join(homeDir, ".gitconfig"),
+		[]byte("[gc]\n\tauto = 0\n[maintenance]\n\tauto = false\n"),
+		0600,
+	); err != nil {
+		t.Fatalf("write .gitconfig: %v", err)
+	}
+
 	// Initialize git
 	gitE2E(t, repoDir, homeDir, "init", "-q", "-b", "main", ".")
 	// On Windows, git add -A of the 211 real roadmaps can exceed MAX_PATH; longpaths prevents it.

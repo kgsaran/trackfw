@@ -44,7 +44,9 @@ func mlScopeGitEnv(base string) []string {
 	_ = os.WriteFile(cfgPath, []byte(
 		"[user]\n\temail = test@trackfw\n\tname = trackfw test\n"+
 			"[commit]\n\tgpgsign = false\n"+
-			"[core]\n\thooksPath = /dev/null\n\tautocrlf = false\n"), 0600)
+			"[core]\n\thooksPath = /dev/null\n\tautocrlf = false\n"+
+			"[gc]\n\tauto = 0\n"+
+			"[maintenance]\n\tauto = false\n"), 0600)
 	return append(os.Environ(),
 		"HOME="+base,
 		"GIT_CONFIG_GLOBAL="+cfgPath,

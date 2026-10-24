@@ -542,19 +542,27 @@ directory not empty`. A falha está na limpeza, e não numa asserção. Rodado s
 - **Gate:** `-count=20` com rc=0.
 
 ### ML-7D — Mesma causa nos outros testes que commitam em `t.TempDir()`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** apolo-tf
-**Files affected:** `internal/commands/netexec_test.go`, `internal/validator/main_test.go`, `internal/generators/guard_parity_helper_test.go`, `internal/auditsurface/main_test.go` (novo), `internal/pathguard/main_test.go` (novo), `internal/translog/main_test.go` (novo)
+**Files affected:** `internal/commands/netexec_test.go`, `internal/validator/main_test.go`, `internal/generators/guard_parity_helper_test.go`, `internal/auditsurface/main_test.go` (novo), `internal/pathguard/main_test.go` (novo), `internal/translog/main_test.go` (novo), `internal/commands/barrier_test.go`, `internal/commands/barrier_ml_scope_test.go`, `internal/commands/ship_test.go`, `internal/commands/branch_prune_test.go`, `internal/commands/branch_prune_remote_test.go`, `internal/commands/branch_prune_default_branch_test.go`, `internal/commands/branch_state_e2e_test.go`, `internal/commands/update_validate_global_guard_test.go` (helpers de push, acrescentados na auditoria)
 **Por que existe:** 24 arquivos de teste em 6 pacotes (`auditsurface`, `commands`, `generators`, `pathguard`,
 `translog`, `validator`) rodam `git commit`/`merge` num diretório temporário sem desligar o maintenance automático. É a
 mesma causa do ML-7C (Regra Dura). Em vez de 24 edições, a correção usa um ponto único por pacote.
 **Acceptance criteria:**
-- [ ] Cada um dos 6 pacotes tem um `TestMain` que desliga o `gc.auto` e o `maintenance.auto` para todo `git` filho do
+- [x] Cada um dos 6 pacotes tem um `TestMain` que desliga o `gc.auto` e o `maintenance.auto` para todo `git` filho do
   processo de teste, usando um mecanismo que se soma ao `GIT_CONFIG_COUNT` dos helpers e não o sobrescreve (medido)
-- [ ] Medição: um trace em `mktemp -d` mostra que, com o ponto único ativo e um helper que define `GIT_CONFIG_COUNT`
+- [x] Medição: um trace em `mktemp -d` mostra que, com o ponto único ativo e um helper que define `GIT_CONFIG_COUNT`
   próprio, o `maintenance run --auto` não é disparado
-- [ ] Os testes dos 6 pacotes ficam verdes, inclusive os que manipulam `GIT_CONFIG_*` de propósito
+- [x] Os testes dos 6 pacotes ficam verdes, inclusive os que manipulam `GIT_CONFIG_*` de propósito
   (`validator_git_exec_test.go`)
+**Auditoria do arquiteto (2026-10-24):** aprovado.
+- **Mecanismo:** `GIT_CONFIG_PARAMETERS` no `TestMain` dos 6 pacotes. Ele se soma ao `GIT_CONFIG_COUNT` dos helpers.
+  Medido pelo executor em `mktemp -d`: 15 eventos de maintenance sem o mecanismo e 0 com ele.
+- **Lacuna medida:** o `maintenance run --auto` disparado pelo `receive-pack` num `git push` para um bare local ignora o
+  `GIT_CONFIG_PARAMETERS`, e só `[maintenance] auto=false` no gitconfig o suprime. Por isso os 8 arquivos de helper de
+  push ganharam a seção no gitconfig que já escreviam.
+- **Diff:** conferido pelo arquiteto, só toca gitconfig e env.
+- **Gates:** 6 pacotes `ok` e `TestTransitionLog` com `-count=20` rc=0.
 
 ### ML-7A — make quality, CI e PR
 **Status:** ⬜ Pendente

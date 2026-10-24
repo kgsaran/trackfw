@@ -1074,7 +1074,7 @@ func makeTrustGitFixture(t *testing.T, roadmapContent string, commitToOrigin boo
 
 	// Write a minimal git config to suppress signing and identity prompts.
 	gitcfg := filepath.Join(base, "gitconfig")
-	_ = os.WriteFile(gitcfg, []byte("[user]\n\temail = test@trackfw\n\tname = trackfw test\n[commit]\n\tgpgsign = false\n[core]\n\thooksPath = /dev/null\n\tautocrlf = false\n"), 0600)
+	_ = os.WriteFile(gitcfg, []byte("[user]\n\temail = test@trackfw\n\tname = trackfw test\n[commit]\n\tgpgsign = false\n[core]\n\thooksPath = /dev/null\n\tautocrlf = false\n[gc]\n\tauto = 0\n[maintenance]\n\tauto = false\n"), 0600)
 
 	run("", "init", "--bare", "-b", "main", bareDir)
 	run("", "clone", "-q", bareDir, cloneDir)
@@ -1147,7 +1147,7 @@ func TestRoadmapTrustForGates_NoRemoteOrigin(t *testing.T) {
 			t.Fatalf("git %v: %v\n%s", args, err, out)
 		}
 	}
-	_ = os.WriteFile(filepath.Join(base, "gitconfig"), []byte("[user]\n\temail = test@trackfw\n\tname = trackfw test\n[commit]\n\tgpgsign = false\n[core]\n\thooksPath = /dev/null\n"), 0600)
+	_ = os.WriteFile(filepath.Join(base, "gitconfig"), []byte("[user]\n\temail = test@trackfw\n\tname = trackfw test\n[commit]\n\tgpgsign = false\n[core]\n\thooksPath = /dev/null\n[gc]\n\tauto = 0\n[maintenance]\n\tauto = false\n"), 0600)
 	run("init", "-b", "main", base)
 	run("commit", "--allow-empty", "-m", "init")
 
