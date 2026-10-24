@@ -1,5 +1,5 @@
 ---
-status: wip
+status: done
 date: 2026-10-23
 req: "docs/req/REQ-2026-10-23-regras-de-escrita-dos-agentes-viram-mecanismo-no-harness-working-context-arquivos-congelados-e-escopo-por-despacho.md"
 squad: "hades-tf, prometeu-tf, apolo-tf, hefesto-tf"
@@ -7,7 +7,7 @@ squad: "hades-tf, prometeu-tf, apolo-tf, hefesto-tf"
 
 # Roadmap: as regras de escrita dos agentes viram mecanismo no harness
 
-> Created: 2026-10-23 | Status: wip
+> Created: 2026-10-23 | Status: done
 
 ## Context
 REQ: docs/req/REQ-2026-10-23-regras-de-escrita-dos-agentes-viram-mecanismo-no-harness-working-context-arquivos-congelados-e-escopo-por-despacho.md
@@ -16,8 +16,8 @@ ADR: docs/adr/ADR-2026-10-23-regras-de-escrita-dos-agentes-sao-aplicadas-pelo-ha
 Ordem decidida pelo KG: D1 (a instrução) → D2 (o barrier) → D3 (os congelados) → D4 (o escopo por despacho).
 
 ## Acceptance Criteria
-- [ ] AC1–AC6 da REQ, cada um com a evidência no ML que o fecha
-- [ ] `make quality` e o CI verdes
+- [x] AC1–AC6 da REQ, cada um com a evidência no ML que o fecha
+- [x] `make quality` e o CI verdes (CI 20/20 no 72ba29f5; mergeado no #606, 7bddcd34)
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -387,15 +387,15 @@ Os testes afetados são `TestGuardWriteScope_OutsideTrackfwProject_Allow`, `Test
 - [x] Todo payload de teste do write-scope montado com `encoding/json` (`json.Marshal`), nunca por concatenação nem por `%q` dentro de JSON
 - [x] O alvo "fora do projeto" é um arquivo em `t.TempDir()` sem `trackfw.yaml` ancestral, nunca `/dev/null`
 - [x] Nenhuma entrada nova em `.github/windows-known-failures.json` (o arquivo só entra nos Files affected para provar que não mudou)
-- [ ] CI `windows-full-suites` verde
+- [x] CI `windows-full-suites` verde (72ba29f5)
 
 ## Wave 5 — Fechamento
 > Dependencies: Wave 4 aprovada.
 
 ### ML-5A — make quality e CI
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** zeus-tf
 **Files affected:** artefatos de orquestração (roadmap, REQ — sem novo arquivo de produto)
 **Acceptance criteria:**
 - [x] `make quality` rc=0, com a máquina ociosa e o HOME isolado (os FAIL do log são só braços de autoteste)
-- [ ] CI do PR verde
+- [x] CI do PR verde (#606, 20/20 no 72ba29f5)
