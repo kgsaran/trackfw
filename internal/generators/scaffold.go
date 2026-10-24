@@ -2150,6 +2150,41 @@ func generateGitAttributes() error {
 // reconhecimento fosse por string exata. Mesma lição do hasGitAttributesRule.
 const gitIgnoreRuleTarget = validator.BranchLinkFileName
 
+// gitIgnoreLeasesEntry é o padrão exato emitido para ignorar o diretório de leases.
+// Caminhos absolutos da máquina do arquiteto não devem ser versionados.
+// ML-3C (ADR-2026-10-23): o diretório .trackfw/leases/ é state-per-checkout, como o branch-links.
+const gitIgnoreLeasesEntry = ".trackfw/leases/"
+
+// gitIgnoreLeasesBlock é o bloco emitido para garantir que .trackfw/leases/ seja ignorado.
+func gitIgnoreLeasesBlock() string {
+	return `# trackfw: per-agent write-scope leases (D4, ADR-2026-10-23) — contain absolute paths
+# of the dispatching machine; committing them would govern writes on a different checkout.
+.trackfw/leases/
+`
+}
+
+// hasGitIgnoreLeasesRule decide idempotência para o diretório de leases: verdadeiro quando
+// ALGUMA linha não-comentário já cobre .trackfw/leases/ (inclusive .trackfw/).
+func hasGitIgnoreLeasesRule(content string) bool {
+	for _, line := range strings.Split(content, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		// Strip negation prefix and trailing slash for comparison.
+		pattern := strings.TrimSuffix(strings.TrimPrefix(trimmed, "!"), "/")
+		// Exact match: .trackfw/leases
+		if pattern == ".trackfw/leases" {
+			return true
+		}
+		// Parent directory: .trackfw (covers all of .trackfw/, including leases/).
+		if pattern == ".trackfw" {
+			return true
+		}
+	}
+	return false
+}
+
 // effectiveRoadmapDir devolve o `roadmap_dir` do trackfw.yaml do diretório
 // corrente, ou o default quando o arquivo está ausente/ilegível.
 //
@@ -2198,12 +2233,14 @@ func hasGitIgnoreRule(content string) bool {
 	return false
 }
 
-// generateGitIgnore garante que `<roadmap_dir>/.trackfw-branch-links.json` esteja
-// ignorado no `.gitignore` da raiz do projeto. Três ramos, todos idempotentes —
-// mesmo desenho de generateGitAttributes:
-//   - arquivo ausente  → cria com o bloco
-//   - existe sem regra → APPEND do bloco (nunca sobrescreve o arquivo do projeto)
-//   - existe com regra → no-op
+// generateGitIgnore garante que `<roadmap_dir>/.trackfw-branch-links.json` e `.trackfw/leases/`
+// estejam ignorados no `.gitignore` da raiz do projeto. Cada regra é gerenciada independentemente
+// para que projetos que já têm a regra do branch-links recebam a do leases sem duplicação.
+//
+// Três ramos por regra, todos idempotentes — mesmo desenho de generateGitAttributes:
+//   - arquivo ausente  → cria com o bloco completo (branch-links + leases)
+//   - existe sem regra → APPEND do bloco correspondente (nunca sobrescreve o arquivo do projeto)
+//   - existe com regra → no-op para aquela regra específica
 func generateGitIgnore() error {
 	giRoot, giErr := projectRoot()
 	if giErr != nil {
@@ -2214,32 +2251,45 @@ func generateGitIgnore() error {
 		return err
 	}
 	const gitIgnorePath = ".gitignore"
-	block := gitIgnoreBlock(effectiveRoadmapDir())
+	branchLinksBlock := gitIgnoreBlock(effectiveRoadmapDir())
+	leasesBlock := gitIgnoreLeasesBlock()
+
 	existing, err := os.ReadFile(gitIgnorePath)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			return fmt.Errorf("reading .gitignore: %w", err)
 		}
+		// File absent: create with both blocks.
 		// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
-		if err := os.WriteFile(gitIgnorePath, []byte(block), 0644); err != nil {
+		if err := os.WriteFile(gitIgnorePath, []byte(branchLinksBlock+leasesBlock), 0644); err != nil {
 			return fmt.Errorf("writing .gitignore: %w", err)
 		}
 		fmt.Println("  ✓ .gitignore")
 		return nil
 	}
 
-	if hasGitIgnoreRule(string(existing)) {
+	// File exists: append only the missing rules.
+	content := string(existing)
+	needsBranchLinks := !hasGitIgnoreRule(content)
+	needsLeases := !hasGitIgnoreLeasesRule(content)
+
+	if !needsBranchLinks && !needsLeases {
 		return nil
 	}
 
 	// Arquivo preexistente sem newline final: emendar o bloco direto grudaria a
 	// primeira linha do bloco no último padrão do projeto, transformando os dois
 	// numa linha só e corrompendo o .gitignore dele em silêncio.
-	out := string(existing)
+	out := content
 	if out != "" && !strings.HasSuffix(out, "\n") {
 		out += "\n"
 	}
-	out += block
+	if needsBranchLinks {
+		out += branchLinksBlock
+	}
+	if needsLeases {
+		out += leasesBlock
+	}
 	// write-containment-allowed: guarded by pathguard.RejectSymlinks at the enclosing write site
 	if err := os.WriteFile(gitIgnorePath, []byte(out), 0644); err != nil {
 		return fmt.Errorf("appending to .gitignore: %w", err)

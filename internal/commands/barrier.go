@@ -11,7 +11,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -597,6 +599,519 @@ func buildChildEnv(stack []barrierStackEntry) []string {
 	return childEnv
 }
 
+// ────────────────────────────────────────────────────────────────────────────
+// ml_scope check — D2 (ML-2A, REQ-2026-10-23)
+//
+// The ml_scope check verifies that every file touched since origin/main is within
+// the scope declared by **Files affected:** in all MLs of waves 0..N, plus a fixed
+// orchestration set (roadmap, REQ, ADR, vault notes, agent memory, trackfw-log).
+//
+// Roadmap content is read from git HEAD (not from disk) so that a disk edit to
+// **Files affected:** by an agent cannot expand the scope it is being checked against.
+// ────────────────────────────────────────────────────────────────────────────
+
+// mlScopeCutoffDate is the earliest roadmap creation date subject to the ml_scope
+// check. Roadmaps created before this date never declared **Files affected:** and
+// are skipped with an explicit reason (Wave 0 §1.4 measurement: label appeared
+// first on 2026-07-18).
+const mlScopeCutoffDate = "2026-07-18"
+
+// barrierFrontmatterField extracts the value of a YAML frontmatter field from
+// markdown content. Local copy so that ml_scope does not import validator —
+// both files are in separate declared scopes (the validator is not in ML-2A's
+// Files affected). Same algorithm as validator.extractFrontmatterField.
+func barrierFrontmatterField(content, field string) string {
+	if !strings.HasPrefix(content, "---") {
+		return ""
+	}
+	rest := content[3:]
+	end := strings.Index(rest, "\n---")
+	if end < 0 {
+		return ""
+	}
+	block := rest[:end]
+	for _, line := range strings.Split(block, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, field+":") {
+			val := strings.TrimSpace(strings.TrimPrefix(line, field+":"))
+			val = strings.Trim(val, `"'`)
+			return val
+		}
+	}
+	return ""
+}
+
+// isPreMLScopeCutoff reports whether a roadmap date string (YYYY-MM-DD from
+// frontmatter) predates the ml_scope cutoff. Unknown / unparseable dates are
+// treated as post-cutoff (fail-closed: the check runs and may block).
+func isPreMLScopeCutoff(date string) bool {
+	cutoff, _ := time.Parse("2006-01-02", mlScopeCutoffDate)
+	d, err := time.Parse("2006-01-02", date)
+	if err != nil {
+		return false
+	}
+	return d.Before(cutoff)
+}
+
+// barrierGitTopLevel resolves the git repository root for dir.
+// Returns ("", false) when dir is not inside a git repo or git is unavailable.
+// macOS symlink divergence (/var → /private/var) is resolved via EvalSymlinks.
+func barrierGitTopLevel(dir string) (string, bool) {
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return "", false
+	}
+	top := strings.TrimSpace(string(out))
+	if phys, err := filepath.EvalSymlinks(top); err == nil {
+		top = phys
+	}
+	return top, true
+}
+
+// barrierGitMergeBase returns the SHA of the merge base between origin/main and
+// HEAD. Returns ("", false) when origin/main is not available or the merge-base
+// computation fails (e.g. no origin configured, no common ancestor).
+func barrierGitMergeBase(topLevel string) (string, bool) {
+	cmd := exec.Command("git", "merge-base", "origin/main", "HEAD")
+	cmd.Dir = topLevel
+	out, err := cmd.Output()
+	if err != nil {
+		return "", false
+	}
+	return strings.TrimSpace(string(out)), true
+}
+
+// barrierGitDiffFiles returns the repo-relative paths of files changed between
+// mergeBase and HEAD. Uses -z (NUL-delimited) to handle non-ASCII paths correctly
+// and --no-renames to list both sides of a rename as separate entries.
+func barrierGitDiffFiles(topLevel, mergeBase string) []string {
+	cmd := exec.Command("git", "diff", "--name-only", "-z", "--no-renames", mergeBase, "HEAD")
+	cmd.Dir = topLevel
+	out, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+	var files []string
+	for _, f := range strings.Split(string(out), "\x00") {
+		f = filepath.ToSlash(strings.TrimSpace(f))
+		if f != "" {
+			files = append(files, f)
+		}
+	}
+	return files
+}
+
+// barrierGitStatusFiles returns the repo-relative paths of all modified, staged
+// and untracked (non-ignored) files from the working tree. Uses porcelain=v1 with
+// -z (NUL-delimited) and --untracked-files=all so that individual untracked files
+// inside new directories are listed rather than the directory as a whole.
+//
+// Performance note (R5, ML-4C): --untracked-files=all is required by the cli-parity.md
+// contract (line 3217) and lists every untracked file individually, not the containing
+// directory. In a monorepo with O(100k) untracked files this is O(N). If latency becomes
+// a concern, the architect must evaluate --untracked-files=normal (reports directories)
+// and update the parity contract accordingly — do not change this flag without updating
+// the contract and the gate scenarios.
+func barrierGitStatusFiles(topLevel string) []string {
+	cmd := exec.Command("git", "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames")
+	cmd.Dir = topLevel
+	out, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+	var files []string
+	// Porcelain v1 with -z: entries are separated by NUL. Each entry is "XY path"
+	// where X is the index status and Y is the work-tree status. With --no-renames
+	// there is no orig-path second field.
+	for _, entry := range strings.Split(string(out), "\x00") {
+		if len(entry) < 4 {
+			continue
+		}
+		// First two bytes: XY status. Third byte: space. Rest: path.
+		p := filepath.ToSlash(entry[3:])
+		if p != "" {
+			files = append(files, p)
+		}
+	}
+	return files
+}
+
+// barrierGitShowHEAD retrieves the content of relPath (repo-relative, forward
+// slashes) at the HEAD commit. Returns (nil, false) when the file does not exist
+// in HEAD or the git call fails.
+func barrierGitShowHEAD(topLevel, relPath string) ([]byte, bool) {
+	ref := "HEAD:" + filepath.ToSlash(relPath)
+	cmd := exec.Command("git", "show", ref)
+	cmd.Dir = topLevel
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, false
+	}
+	return out, true
+}
+
+// parseMLScopeFilesAffected scans lines[start:end] (respecting fenced[]) for a
+// **Files affected:** or **Arquivos afetados:** line and extracts all backtick-quoted
+// values from it, including continuation lines.
+//
+// Continuation lines: after the label line, any non-blank, non-fenced line that does
+// NOT start with "**", "#", or "- " is treated as a continuation and its backtick
+// tokens are also collected. This handles declarations that wrap across multiple
+// physical lines (e.g., long file lists).
+//
+// Returns (patterns, true) when the label line is present.
+// Returns (nil, false) when no label line is found — the ML has no declaration.
+// A label line present but with no backticks (and no continuation tokens) returns
+// ([]string{}, true): the ML declared zero files.
+func parseMLScopeFilesAffected(lines []string, fenced []bool, start, end int) ([]string, bool) {
+	// extractTokens pulls all backtick-quoted tokens from a single line.
+	extractTokens := func(line string) []string {
+		var toks []string
+		rest := line
+		for {
+			idx := strings.Index(rest, "`")
+			if idx < 0 {
+				break
+			}
+			rest = rest[idx+1:]
+			end2 := strings.Index(rest, "`")
+			if end2 < 0 {
+				break
+			}
+			tok := strings.TrimSpace(rest[:end2])
+			rest = rest[end2+1:]
+			if tok != "" {
+				toks = append(toks, tok)
+			}
+		}
+		return toks
+	}
+
+	for i := start; i < end && i < len(lines); i++ {
+		if i < len(fenced) && fenced[i] {
+			continue
+		}
+		line := lines[i]
+		if !strings.HasPrefix(line, "**Files affected:**") &&
+			!strings.HasPrefix(line, "**Arquivos afetados:**") {
+			continue
+		}
+		// Found the label line — collect its tokens.
+		patterns := extractTokens(line)
+
+		// Collect continuation lines: non-blank, non-fenced, not a new bold field,
+		// not a heading, not a list criterion.
+		for j := i + 1; j < end && j < len(lines); j++ {
+			if j < len(fenced) && fenced[j] {
+				break
+			}
+			cont := lines[j]
+			trimmed := strings.TrimSpace(cont)
+			if trimmed == "" {
+				break // blank line ends the declaration
+			}
+			if strings.HasPrefix(trimmed, "**") {
+				break // new bold field (e.g., **Acceptance criteria:**)
+			}
+			if strings.HasPrefix(trimmed, "#") {
+				break // heading
+			}
+			if strings.HasPrefix(trimmed, "- ") || strings.HasPrefix(trimmed, "* ") {
+				break // list item
+			}
+			// Continuation line — collect its backtick tokens.
+			patterns = append(patterns, extractTokens(cont)...)
+		}
+
+		return patterns, true
+	}
+	return nil, false
+}
+
+// mlScopeMatchPath reports whether filePath (repo-relative, forward slashes)
+// matches the given scope pattern, which may be:
+//   - a directory prefix ending in "/" (e.g. "internal/commands/")
+//   - a glob with "**" spanning zero or more path segments
+//   - a single-segment glob using path.Match semantics (e.g. "*.go")
+//   - an exact path (no wildcards, no trailing slash)
+func mlScopeMatchPath(pattern, filePath string) bool {
+	if pattern == "" || filePath == "" {
+		return false
+	}
+	// Directory prefix: pattern ends with "/".
+	// Matches any file whose path begins with the prefix, and also the directory
+	// itself if referenced without a trailing slash.
+	if strings.HasSuffix(pattern, "/") {
+		return strings.HasPrefix(filePath, pattern)
+	}
+	// No wildcard: exact match only.
+	if !strings.ContainsAny(pattern, "*?[") {
+		return pattern == filePath
+	}
+	// Glob with "**": expand with a recursive segment matcher.
+	if strings.Contains(pattern, "**") {
+		return mlScopeMatchDoublestar(pattern, filePath)
+	}
+	// path.Match: handles *, ?, [ranges] within a single segment.
+	matched, err := path.Match(pattern, filePath)
+	return err == nil && matched
+}
+
+// mlScopeMatchDoublestar matches filePath against a glob that may contain "**"
+// to span zero or more path segments.
+func mlScopeMatchDoublestar(pattern, filePath string) bool {
+	patSegs := strings.Split(pattern, "/")
+	fileSegs := strings.Split(filePath, "/")
+	return mlScopeMatchSegs(patSegs, fileSegs)
+}
+
+func mlScopeMatchSegs(pat, file []string) bool {
+	for len(pat) > 0 && len(file) > 0 {
+		if pat[0] == "**" {
+			// "**" matches zero or more segments: try each prefix length.
+			for skip := 0; skip <= len(file); skip++ {
+				if mlScopeMatchSegs(pat[1:], file[skip:]) {
+					return true
+				}
+			}
+			return false
+		}
+		ok, err := path.Match(pat[0], file[0])
+		if err != nil || !ok {
+			return false
+		}
+		pat = pat[1:]
+		file = file[1:]
+	}
+	// Consume any trailing "**" in the pattern (matches the empty remainder).
+	for len(pat) > 0 && pat[0] == "**" {
+		pat = pat[1:]
+	}
+	return len(pat) == 0 && len(file) == 0
+}
+
+// buildMLScopeOrchestrationSet returns the list of always-permitted scope
+// patterns (roadmap, REQ, ADR, well-known directories). Patterns that end with
+// "/" are directory prefixes; others are exact paths. All values use forward
+// slashes and are relative to the git repository root.
+func buildMLScopeOrchestrationSet(topLevel, roadmapRelPath, headContent string, cfg config.ProjectConfig) []string {
+	rdDir := filepath.ToSlash(cfg.RoadmapDir)
+	reqDir := filepath.ToSlash(cfg.REQDir)
+
+	set := []string{
+		roadmapRelPath, // the roadmap itself
+		// well-known working-context and memory directories
+		"docs/agents-working-context/",
+		"vault/notes/",
+		".claude/agent-memory/",
+		// trackfw internal log files in roadmap_dir and req_dir
+		rdDir + "/.trackfw-log",
+		rdDir + "/.trackfw-log-entries/",
+		reqDir + "/.trackfw-log",
+		reqDir + "/.trackfw-log-entries/",
+	}
+
+	// REQ from frontmatter `req:`.
+	reqPath := strings.TrimSpace(barrierFrontmatterField(headContent, "req"))
+	if reqPath != "" {
+		set = append(set, filepath.ToSlash(reqPath))
+
+		// ADR from the REQ file's frontmatter `adr:` (read from HEAD if available).
+		if reqContent, ok := barrierGitShowHEAD(topLevel, filepath.ToSlash(reqPath)); ok {
+			adrPath := strings.TrimSpace(barrierFrontmatterField(string(reqContent), "adr"))
+			if adrPath != "" {
+				set = append(set, filepath.ToSlash(adrPath))
+			}
+		}
+	}
+
+	return set
+}
+
+// checkMLScope is the D2 barrier check (ML-2A, REQ-2026-10-23). It reads the
+// roadmap from HEAD (not disk), collects all touched files since origin/main, and
+// verifies that each is within the scope declared by **Files affected:** in all
+// MLs of waves 0..currentWaveInt, plus the fixed orchestration set.
+//
+// Returned status values:
+//
+//	"passed"  — all touched files are in declared scope
+//	"blocked" — at least one touched file is out of scope (each named in Failures);
+//	            also returned when origin/main is unavailable — the diff cannot be
+//	            computed, which is treated as a hard failure, not a skip, to prevent
+//	            silent pass in shallow clones or repos without a configured remote
+//	            (Decision 1, ML-4C; "never pass in silence" — Wave 0 contract).
+//	"skipped" — the check is not applicable: not a git repo, roadmap not in HEAD,
+//	            or pre-cutoff roadmap date. The skip reason is recorded in Evidence.
+//	            A skipped check does NOT block the overall barrier verdict.
+func checkMLScope(roadmapPath string, currentWaveInt int) barrierCheck {
+	check := barrierCheck{Name: "ml_scope", Evidence: []string{}, Failures: []string{}}
+
+	dir := filepath.Dir(roadmapPath)
+
+	// Step 1: find the git repository root.
+	topLevel, ok := barrierGitTopLevel(dir)
+	if !ok {
+		check.Status = "skipped"
+		check.Evidence = append(check.Evidence,
+			"skipped: not a git repository — ml_scope requires git")
+		return check
+	}
+
+	// Step 2: compute repo-relative path to the roadmap.
+	absPath, err := filepath.Abs(roadmapPath)
+	if err != nil {
+		check.Status = "skipped"
+		check.Evidence = append(check.Evidence,
+			"skipped: cannot compute absolute path to roadmap")
+		return check
+	}
+	// macOS: EvalSymlinks so that the relative path uses the physical toplevel.
+	if phys, err2 := filepath.EvalSymlinks(absPath); err2 == nil {
+		absPath = phys
+	}
+	relPath, err := filepath.Rel(topLevel, absPath)
+	if err != nil {
+		check.Status = "skipped"
+		check.Evidence = append(check.Evidence,
+			"skipped: cannot compute relative path to roadmap")
+		return check
+	}
+	relPath = filepath.ToSlash(relPath)
+
+	// Step 3: read the roadmap from the HEAD commit (not from disk).
+	headContent, ok := barrierGitShowHEAD(topLevel, relPath)
+	if !ok {
+		check.Status = "skipped"
+		check.Evidence = append(check.Evidence,
+			"skipped: roadmap not found in HEAD commit — commit the roadmap for ml_scope to run")
+		return check
+	}
+
+	// Step 4: check date cutoff. Pre-cutoff roadmaps never had **Files affected:**
+	// and are exempt. A missing or unparseable date is treated as post-cutoff
+	// (fail-closed).
+	date := barrierFrontmatterField(string(headContent), "date")
+	if date != "" && isPreMLScopeCutoff(date) {
+		check.Status = "skipped"
+		check.Evidence = append(check.Evidence,
+			fmt.Sprintf("skipped: roadmap date %s predates the ml_scope cutoff %s — Files affected was not required before that date",
+				date, mlScopeCutoffDate))
+		return check
+	}
+
+	// Step 5: resolve the merge base with origin/main.
+	mergeBase, ok := barrierGitMergeBase(topLevel)
+	if !ok {
+		check.Status = "blocked"
+		check.Failures = append(check.Failures,
+			"origin/main not available — cannot compute scope diff (configure a remote or run with a fetched origin/main)")
+		return check
+	}
+
+	// Step 6: collect all files touched since merge-base (committed + working tree).
+	diffFiles := barrierGitDiffFiles(topLevel, mergeBase)
+	statusFiles := barrierGitStatusFiles(topLevel)
+
+	touchedSet := make(map[string]bool)
+	for _, f := range diffFiles {
+		touchedSet[f] = true
+	}
+	for _, f := range statusFiles {
+		touchedSet[f] = true
+	}
+
+	// Step 7: load the HEAD roadmap content for scope parsing.
+	headLines := splitRoadmapLines(string(headContent))
+	headFenced := fenceMask(headLines)
+	headWaves, _ := parseWaves(headLines, headFenced)
+
+	cfg := config.Load()
+
+	// Step 8: build the fixed orchestration set.
+	orchestration := buildMLScopeOrchestrationSet(topLevel, relPath, string(headContent), cfg)
+
+	// Step 9: collect scope patterns from all MLs in waves 0..currentWaveInt,
+	// and record any ML that is missing a declaration (post-cutoff, in-wave failure).
+	var scopePatterns []string
+	var declFailures []string
+	for _, wave := range headWaves {
+		waveInt, _ := splitWaveLabel(wave.Label)
+		if waveInt > currentWaveInt {
+			continue
+		}
+		mls := parseMLs(headLines, headFenced, wave.Start, wave.End)
+		for _, ml := range mls {
+			patterns, hasDecl := parseMLScopeFilesAffected(headLines, headFenced, ml.Start, ml.End)
+			if !hasDecl {
+				declFailures = append(declFailures,
+					fmt.Sprintf("%s: no **Files affected:** declaration (post-cutoff roadmap requires declaration for all MLs in the wave)", ml.ID))
+				continue
+			}
+			scopePatterns = append(scopePatterns, patterns...)
+		}
+	}
+
+	// Step 10: check each touched file against allowed set.
+	var outOfScope []string
+	var inScope []string
+	for file := range touchedSet {
+		allowed := false
+		for _, o := range orchestration {
+			if mlScopeMatchPath(o, file) {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			for _, p := range scopePatterns {
+				if mlScopeMatchPath(p, file) {
+					allowed = true
+					break
+				}
+			}
+		}
+		if allowed {
+			inScope = append(inScope, file)
+		} else {
+			outOfScope = append(outOfScope, file)
+		}
+	}
+
+	// Sort for deterministic output.
+	sort.Strings(inScope)
+	sort.Strings(outOfScope)
+	sort.Strings(declFailures)
+
+	if len(declFailures) == 0 && len(outOfScope) == 0 {
+		check.Status = "passed"
+		if len(touchedSet) == 0 {
+			check.Evidence = append(check.Evidence, "no files touched since merge-base")
+		} else {
+			check.Evidence = append(check.Evidence,
+				fmt.Sprintf("all %d touched file(s) are within scope", len(inScope)))
+			for _, f := range inScope {
+				check.Evidence = append(check.Evidence, fmt.Sprintf("in scope: %s", f))
+			}
+		}
+		return check
+	}
+
+	check.Status = "blocked"
+	for _, f := range declFailures {
+		check.Failures = append(check.Failures, f)
+	}
+	for _, f := range outOfScope {
+		check.Failures = append(check.Failures, fmt.Sprintf("out of scope: %s", f))
+	}
+	for _, f := range inScope {
+		check.Evidence = append(check.Evidence, fmt.Sprintf("in scope: %s", f))
+	}
+	return check
+}
+
 // runGateCommand executes one gate command from the repository root (the process's
 // current working directory) via `sh -c`. `sh` is resolved through $PATH
 // (exec.LookPath, the same as Go has always done) — NOT a fixed /bin/sh path.
@@ -939,11 +1454,20 @@ func runBarrier(cmd *cobra.Command, roadmapArg string, waveLabel string, jsonOut
 		}
 	}
 
-	checks := []barrierCheck{whCheck, mlsCheck, accCheck, gatesCheck, validateCheck}
+	// ── check: ml_scope ──────────────────────────────────────────────────────
+	// D2 (ML-2A, REQ-2026-10-23): verify that files touched since origin/main
+	// are within the scope declared by **Files affected:** for waves 0..N.
+	// currentWaveInt is the integer part of target.Label (the as-parsed label).
+	currentWaveInt, _ := splitWaveLabel(target.Label)
+	scopeCheck := checkMLScope(roadmapPath, currentWaveInt)
+
+	checks := []barrierCheck{whCheck, mlsCheck, accCheck, gatesCheck, validateCheck, scopeCheck}
 	overallStatus := "passed"
 	failures := []string{}
 	for _, c := range checks {
-		if c.Status != "passed" {
+		// "skipped" is non-blocking: the check was not applicable (no git repo,
+		// pre-cutoff roadmap, etc.) and must not influence the overall verdict.
+		if c.Status != "passed" && c.Status != "skipped" {
 			overallStatus = "blocked"
 		}
 		for _, f := range c.Failures {
@@ -980,12 +1504,24 @@ func printBarrierText(cmd *cobra.Command, result barrierResult) {
 	fmt.Fprintf(out, "trackfw barrier — %s — wave %s\n", result.Roadmap, result.Wave)
 	for _, c := range result.Checks {
 		symbol := "✓"
-		if c.Status != "passed" {
+		switch c.Status {
+		case "passed":
+			symbol = "✓"
+		case "skipped":
+			symbol = "~"
+		default:
 			symbol = "✗"
 		}
 		fmt.Fprintf(out, "%s %s: %s\n", symbol, c.Name, c.Status)
 		for _, f := range c.Failures {
 			fmt.Fprintf(out, "    - %s\n", f)
+		}
+		// For skipped checks, print the reason from evidence so users are not left
+		// with "~ ml_scope: skipped" and no explanation.
+		if c.Status == "skipped" {
+			for _, e := range c.Evidence {
+				fmt.Fprintf(out, "    ~ %s\n", e)
+			}
 		}
 		// Lapsed criteria are informational ("~" prefix, distinct from "- " failures).
 		for _, l := range c.Lapsed {

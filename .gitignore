@@ -29,3 +29,7 @@ docs/roadmaps/.trackfw-branch-links.json
 
 # sinal de atenção do credential guard (efêmero, gravado pelo hook)
 docs/roadmaps/.trackfw-credential-guard.json
+
+# trackfw: per-agent write-scope leases (D4, ADR-2026-10-23) — contain absolute paths
+# of the dispatching machine; committing them would govern writes on a different checkout.
+.trackfw/leases/

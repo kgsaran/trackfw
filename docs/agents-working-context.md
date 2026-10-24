@@ -1,5 +1,7 @@
 # agents-working-context.md
 
+<!-- trackfw:frozen -->
+
 > **CONGELADO em 2026-10-22 (ADR-2026-10-22).** Este arquivo é histórico somente-leitura.
 > Novas entradas vão em `docs/agents-working-context/<AAAAMMDDTHHMMSSZ>-<agente>-<assunto>.md`.
 > Leitura: `trackfw context` ou as 10 entradas mais recentes de `docs/agents-working-context/`.

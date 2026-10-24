@@ -71,6 +71,7 @@ func TestGenerateGitIgnore_UsaRoadmapDirEfetivoNaoODoMantenedor(t *testing.T) {
 // Reconciliação: afirma o contra-braço 1 — o .gitignore preexistente do projeto
 // não é sobrescrito, e o append não gruda o bloco na última linha quando o arquivo
 // não termina em newline (que corromperia o padrão do projeto em silêncio).
+// ML-3C: o append agora inclui os dois blocos (branch-links e leases).
 func TestGenerateGitIgnore_AppendPreservaArquivoPreexistenteSemNewlineFinal(t *testing.T) {
 	dir := chdirTemp(t)
 	path := filepath.Join(dir, ".gitignore")
@@ -81,7 +82,7 @@ func TestGenerateGitIgnore_AppendPreservaArquivoPreexistenteSemNewlineFinal(t *t
 		t.Fatalf("generateGitIgnore: %v", err)
 	}
 	got, _ := os.ReadFile(path)
-	want := "/node_modules\n*.log\n" + gitIgnoreBlock("docs/roadmaps")
+	want := "/node_modules\n*.log\n" + gitIgnoreBlock("docs/roadmaps") + gitIgnoreLeasesBlock()
 	if string(got) != want {
 		t.Fatalf("append incorreto:\ngot:  %q\nwant: %q", string(got), want)
 	}
@@ -97,6 +98,8 @@ func TestGenerateGitIgnore_AppendPreservaArquivoPreexistenteSemNewlineFinal(t *t
 // Reconciliação: afirma que o reconhecimento é por BASENAME, não pelo caminho
 // literal emitido — um projeto que já ignora o arquivo em outro caminho (ou que
 // mudou de roadmap_dir depois) não recebe uma segunda linha para o mesmo arquivo.
+// ML-3C: o .gitignore agora gerencia duas regras independentes. Um projeto que já
+// tem a regra do branch-links recebe apenas a do leases (se ausente).
 func TestGenerateGitIgnore_NaoDuplicaQuandoOutroCaminhoJaNomeiaOArquivo(t *testing.T) {
 	dir := chdirTemp(t)
 	path := filepath.Join(dir, ".gitignore")
@@ -108,7 +111,46 @@ func TestGenerateGitIgnore_NaoDuplicaQuandoOutroCaminhoJaNomeiaOArquivo(t *testi
 		t.Fatalf("generateGitIgnore: %v", err)
 	}
 	got, _ := os.ReadFile(path)
-	if string(got) != existing {
-		t.Fatalf("regra preexistente foi alterada ou duplicada:\ngot:  %q\nwant: %q", string(got), existing)
+	// Branch-links rule already present → not duplicated.
+	if count := strings.Count(string(got), ".trackfw-branch-links.json"); count != 1 {
+		t.Fatalf("branch-links foi duplicado: %d ocorrências em:\n%q", count, string(got))
+	}
+	// Leases rule was not present → appended.
+	if !strings.Contains(string(got), ".trackfw/leases/") {
+		t.Fatalf("regra de leases não foi adicionada:\n%q", string(got))
+	}
+	// Second run: no-op (both rules now present).
+	if err := generateGitIgnore(); err != nil {
+		t.Fatalf("generateGitIgnore (2ª): %v", err)
+	}
+	again, _ := os.ReadFile(path)
+	if string(again) != string(got) {
+		t.Fatalf("segunda execução alterou o arquivo:\n%q", string(again))
+	}
+}
+
+// TestGenerateGitIgnore_LeasesEntryPresent asserts that trackfw init ensures .trackfw/leases/
+// is in the .gitignore, preventing accidental commit of machine-specific lease files.
+// Asserts: ML-3C AC — git check-ignore -v .trackfw/leases/x.json → rc=0 after scaffold.
+// Contra-braço: FAILS on HEAD (leases entry not present in gitIgnoreBlock).
+func TestGenerateGitIgnore_LeasesEntryPresent(t *testing.T) {
+	dir := chdirTemp(t)
+	if err := generateGitIgnore(); err != nil {
+		t.Fatalf("generateGitIgnore: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if err != nil {
+		t.Fatalf("ler .gitignore: %v", err)
+	}
+	if !strings.Contains(string(got), ".trackfw/leases/") {
+		t.Fatalf(".gitignore não contém a entrada de leases:\n%q", string(got))
+	}
+	// Second run: idempotent.
+	if err := generateGitIgnore(); err != nil {
+		t.Fatalf("generateGitIgnore (2ª): %v", err)
+	}
+	again, _ := os.ReadFile(filepath.Join(dir, ".gitignore"))
+	if n := strings.Count(string(again), ".trackfw/leases/"); n != 1 {
+		t.Fatalf("esperava 1 entrada de leases, achei %d:\n%q", n, string(again))
 	}
 }

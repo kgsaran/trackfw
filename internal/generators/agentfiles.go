@@ -91,7 +91,7 @@ Chain: ` + "`ADR → REQ → ROADMAP`" + ` · States: ` + "`backlog / analyzing 
    ❌ Never defer REQ/ROADMAP creation to a future task — they are prerequisites, not deliverables
    ✓ ` + "`trackfw validate`" + ` enforces this via ` + "`branch_has_wip_roadmap`" + ` rule (v2.7.0+)
 2. **Before starting:** run ` + "`trackfw context`" + ` · read the 10 most recent entries in ` + "`docs/agents-working-context/`" + `
-3. **After finishing:** write a new file in ` + "`docs/agents-working-context/<YYYYMMDDTHHMMSSZ>-<your-slug>-<topic>.md`" + ` with what changed
+3. **After finishing:** the orchestrating session (` + "`trackfw_architect`" + `) writes a new file in ` + "`docs/agents-working-context/<YYYYMMDDTHHMMSSZ>-<your-slug>-<topic>.md`" + ` with what changed. Subagents never write there; they state what started, what changed and what is pending in their final report.
 4. **Before PR:** ` + "`trackfw validate`" + ` must pass
 5. **ML lifecycle — mandatory:**
    - Starting a ML: edit roadmap ` + "`**Status:** ⬜ Pendente`" + ` → ` + "`**Status:** 🔄 Em andamento`" + ` + commit.
@@ -421,6 +421,11 @@ func InjectClaudeHooks(rootDir string) error {
 	hooks["PostToolUse"] = mergeClaudeHookArray(hooks["PostToolUse"], "Read", guardCredentialCmdPSPOSIX)
 	hooks["PostToolUse"] = mergeClaudeHookArray(hooks["PostToolUse"], "Write|Edit", guardCredentialCmdPSPOSIX)
 
+	// Write-scope guard (ADR-2026-10-23 D3, ML-3A): PreToolUse only, matcher
+	// Write|Edit|NotebookEdit (list exact — §Z Wave 0; do NOT use Edit.* which is a regex).
+	// No PostToolUse, no cmd.exe form, no Read coverage.
+	hooks["PreToolUse"] = mergeClaudeHookArray(hooks["PreToolUse"], writeScopeMatcher, guardWriteScopeCmdPSPOSIX)
+
 	root["hooks"] = hooks
 
 	// ML-6B: use marshalJSONNoEscape so that '>' in the D11 hook line
@@ -502,10 +507,16 @@ const (
 	guardGitBranchCmdPSPOSIX        = guardforms.GitBranchCurrentPSPOSIX
 	guardCredentialCmdPSPOSIX       = guardforms.CredentialCurrentPSPOSIX
 	guardCredentialGlobalCmdPSPOSIX = guardforms.CredentialGlobalCurrentPSPOSIX
+	guardWriteScopeCmdPSPOSIX       = guardforms.WriteScopeCurrentPSPOSIX
 
 	guardGitBranchCmdCmdExe        = guardforms.GitBranchCurrentCmdExe
 	guardCredentialCmdCmdExe       = guardforms.CredentialCurrentCmdExe
 	guardCredentialGlobalCmdCmdExe = guardforms.CredentialGlobalCurrentCmdExe
+
+	// writeScopeMatcher is the exact list matcher for write-scope guard hooks.
+	// Must match Write, Edit and NotebookEdit — list-exact, not regex (§Z Wave 0).
+	// NEVER use "Edit.*": that is a JavaScript regex catching everything starting with "Edit".
+	writeScopeMatcher = "Write|Edit|NotebookEdit"
 
 	// claudeShellMatcher is the single canonical matcher for Claude Code shell-tool
 	// guard hooks (git-branch and credential). Claude Code names its primary shell tool

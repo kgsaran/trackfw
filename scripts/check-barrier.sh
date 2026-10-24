@@ -219,9 +219,14 @@ print('MISSING')
 }
 
 # assert_only_this_check_blocked DOC NAME LABEL — proves the failure is
-# isolated: the named check is blocked and every other check is passed.
+# isolated: the named check is blocked and every other check is passed or skipped.
 # Without this, a scenario proves "something is red", not "this check is red"
 # (the exact defect class the Wave 2 barrier run found in ML-2D).
+# "skipped" is treated as non-blocking, mirroring the Go contract
+# (barrier.go: `if c.Status != "passed" && c.Status != "skipped"`). The
+# ml_scope check exits "skipped" when the fixture is not a git repository,
+# so existing isolation scenarios would fail spuriously without this treatment.
+# "blocked" in a non-target check, and "not_evaluated", still fail the assertion.
 assert_only_this_check_blocked() {
   local doc=$1 name=$2 label=$3
   python3 -c "
@@ -235,7 +240,7 @@ for c in d['checks']:
         if c['status'] != 'blocked':
             print('target check %r is %r, want blocked' % (target, c['status']))
             raise SystemExit(1)
-    elif c['status'] != 'passed':
+    elif c['status'] not in ('passed', 'skipped'):
         print('check %r is %r, want passed (isolation broken)' % (c['name'], c['status']))
         raise SystemExit(1)
 if not found:
@@ -1366,6 +1371,118 @@ done
 # Cross-CLI JSON parity for content-differs path
 run_barrier go   "$S17" ROADMAP-trust-fixture --wave 1 --json; GO_S17=$(python3 -c "$STRIP_TS_TRUST" "$BARRIER_STDOUT" | strip_cr)
 ok "barrier/trust/content-differs/parity/go-behavioral-pin"
+
+# ---------------------------------------------------------------------------
+# Scenario 18 — ml_scope: file outside Files affected blocks (negative arm);
+# declared file passes (positive arm). Uses a real git repo with origin/main
+# so that the git diff merge-base..HEAD path in checkMLScope is exercised
+# (not only git status --porcelain). Two independent clones share the same
+# bare origin so the arms cannot contaminate each other.
+#
+# Falsification (ML-2B): with the origin/main binary (which lacks the
+# ml_scope check), check_field_json returns MISSING for ml_scope status and
+# the negative arm fails with "expected ml_scope=blocked, got MISSING".
+# ---------------------------------------------------------------------------
+S18_ORIGIN="$WORK_PHYS/s18-ml-scope.origin.git"
+S18_NEG="$WORK_PHYS/s18-ml-scope-neg"
+S18_POS="$WORK_PHYS/s18-ml-scope-pos"
+_GE18=(
+  "GIT_CONFIG_GLOBAL=$_GITCFG"
+  "GIT_CONFIG_SYSTEM=/dev/null"
+  "GIT_TERMINAL_PROMPT=0"
+  "HOME=$WORK_PHYS/home"
+  "LC_ALL=C"
+)
+
+env "${_GE18[@]}" git init -q --bare -b main "$S18_ORIGIN"
+
+# Seed origin with one base commit (trackfw.yaml + roadmap) via a throwaway clone.
+# Both arms (NEG and POS) then clone from the same origin and extend independently.
+_S18_SEED="$WORK_PHYS/s18-ml-scope-seed"
+env "${_GE18[@]}" git clone -q "$S18_ORIGIN" "$_S18_SEED"
+mkdir -p "$_S18_SEED/docs/roadmaps/wip" "$_S18_SEED/docs/roadmaps/backlog" \
+          "$_S18_SEED/docs/roadmaps/done" "$_S18_SEED/docs/req"
+cat >"$_S18_SEED/trackfw.yaml" <<'YAML'
+req_dir: docs/req
+roadmap_dir: docs/roadmaps
+adr_dirs: []
+YAML
+# Roadmap: post-cutoff date (2026-10-23 > 2026-07-18), Files affected declares
+# only `internal/commands/barrier.go`. Wave 1 ML is complete so mls_complete
+# does not block — isolating the ml_scope check in the negative arm.
+cat >"$_S18_SEED/docs/roadmaps/wip/ROADMAP-mlscope-fixture.md" <<'EOF'
+---
+status: wip
+date: 2026-10-23
+---
+
+# Roadmap: ML-Scope Fixture
+
+## Wave 0 — Threat Model
+
+### ML-0A — Threat model for this fixture
+**Status:** ✅
+**Files affected:** `internal/commands/barrier.go`
+**Critérios de aceite:**
+- [x] done
+
+## Wave 1 — Scope Test Wave
+
+### ML-1A — Scope Test ML
+**Status:** ✅
+**Files affected:** `internal/commands/barrier.go`
+**Critérios de aceite:**
+- [x] build passes
+EOF
+(
+  cd "$_S18_SEED"
+  env "${_GE18[@]}" git add .
+  env "${_GE18[@]}" git commit -q -m "base: roadmap and project structure"
+  env "${_GE18[@]}" git push -q origin main
+)
+
+# Clone the seeded origin into independent arm directories.
+env "${_GE18[@]}" git clone -q "$S18_ORIGIN" "$S18_NEG"
+env "${_GE18[@]}" git clone -q "$S18_ORIGIN" "$S18_POS"
+
+# Negative arm: local commit (not pushed) with a file outside declared scope.
+# git diff --name-only $(git merge-base origin/main HEAD) HEAD lists
+# internal/other/outscope.go, which is not in Files affected → ml_scope blocked.
+mkdir -p "$S18_NEG/internal/other"
+echo "out of scope" >"$S18_NEG/internal/other/outscope.go"
+(
+  cd "$S18_NEG"
+  env "${_GE18[@]}" git add internal/other/outscope.go
+  env "${_GE18[@]}" git commit -q -m "add out-of-scope file (should block ml_scope)"
+)
+
+run_barrier go "$S18_NEG" ROADMAP-mlscope-fixture --wave 1 --json --trust-local-gates
+ML_SCOPE_NEG=$(check_field_json "$BARRIER_STDOUT" "ml_scope" "status")
+ML_SCOPE_NEG_FAILS=$(check_field_json "$BARRIER_STDOUT" "ml_scope" "failures")
+[[ "$ML_SCOPE_NEG" == '"blocked"' ]] || \
+  fail "barrier/ml-scope/blocked-out-of-scope/go" \
+    "expected ml_scope=blocked, got $ML_SCOPE_NEG; stdout: $BARRIER_STDOUT"
+[[ "$ML_SCOPE_NEG_FAILS" == *"internal/other/outscope.go"* ]] || \
+  fail "barrier/ml-scope/blocked-out-of-scope/go" \
+    "out-of-scope path not in ml_scope failures [$ML_SCOPE_NEG_FAILS]; stdout: $BARRIER_STDOUT"
+ok "barrier/ml-scope/blocked-out-of-scope/go"
+
+# Positive arm: local commit (not pushed) with only the declared file.
+# git diff merge-base..HEAD lists internal/commands/barrier.go — in scope → ml_scope passed.
+mkdir -p "$S18_POS/internal/commands"
+echo "in scope" >"$S18_POS/internal/commands/barrier.go"
+(
+  cd "$S18_POS"
+  env "${_GE18[@]}" git add internal/commands/barrier.go
+  env "${_GE18[@]}" git commit -q -m "add declared in-scope file (should pass ml_scope)"
+)
+
+run_barrier go "$S18_POS" ROADMAP-mlscope-fixture --wave 1 --json --trust-local-gates
+ML_SCOPE_POS=$(check_field_json "$BARRIER_STDOUT" "ml_scope" "status")
+[[ "$ML_SCOPE_POS" == '"passed"' ]] || \
+  fail "barrier/ml-scope/pass-declared-file/go" \
+    "expected ml_scope=passed, got $ML_SCOPE_POS; stdout: $BARRIER_STDOUT"
+ok "barrier/ml-scope/pass-declared-file/go"
 
 echo
 echo "All check-barrier.sh scenarios passed."

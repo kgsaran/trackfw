@@ -225,6 +225,9 @@ var ruleDefaults = map[string]string{
 	// D4 (ADR-2026-10-04, REQ #514 ML-1B): new rule, born as warning — endure in "error" is a
 	// future decision. Corte retroativo proibido (113 REQs Done com caixa aberta, pré-corte).
 	"req_done_open_criteria": "warning",
+	// ML-3A (ADR-2026-10-23 D3): warning (not error) until next major version per contract item 7.
+	// Detects absence of PreToolUse[Write|Edit|NotebookEdit] with write-scope guard in .claude/settings.json.
+	"write_scope_not_wired": "warning",
 	// D4 (ADR-2026-10-14, REQ-2026-09-01 ML-1B): HOME ≠ USERPROFILE on Windows —
 	// informative-only diagnostic, never blockable. Routed via applyRuleWarnOnly.
 	"home_divergence_windows": "warning",
@@ -1147,6 +1150,11 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	}
 	applyRule("guard_wiring_removed", guardWiringMsgs, &violations, &warnings)
 
+	// ML-3A (ADR-2026-10-23 D3): warns when .claude/settings.json lacks PreToolUse write-scope hook.
+	// Mirror site in validateUnfilteredTagged below.
+	// 🔴 Forgetting the mirror site silences this rule from --json output.
+	applyRule("write_scope_not_wired", validateWriteScopeWiring(), &violations, &warnings)
+
 	// ML-2B: detecta trackfw.exe/.cmd/.bat na raiz do projeto (cmd.exe busca no cwd antes do PATH).
 	binaryInRootMsgs, e := validateTrackfwBinaryInProjectRoot()
 	if e != nil {
@@ -1655,6 +1663,10 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 		return nil, nil, e
 	}
 	applyRuleTagged("guard_wiring_removed", guardWiringMsgsT, &violations, &warnings)
+
+	// ML-3A (ADR-2026-10-23 D3): mirror of ValidateUnfiltered write_scope_not_wired block.
+	// 🔴 Missing this site silences write_scope_not_wired from --json output (Validate() path).
+	applyRuleTagged("write_scope_not_wired", validateWriteScopeWiring(), &violations, &warnings)
 
 	// ML-2B: mirror of ValidateUnfiltered binary-in-root block.
 	// 🔴 Missing this site silences trackfw_binary_in_project_root from --json output.

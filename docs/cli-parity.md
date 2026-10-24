@@ -3166,6 +3166,7 @@ Evaluated in this fixed order; the run continues through all checks so the repor
 | `acceptance_evidence` | Every ML in the wave satisfies rule 4 |
 | `gates` | Every command from rule 5 exits 0 |
 | `validate` | `trackfw validate --json` reports `violations: 0` |
+| `ml_scope` | Every file touched since `merge-base(origin/main, HEAD)` (diff + status) is covered by a `**Files affected:**` declaration in waves 0..N or by the orchestration set; `skipped` when outside a git repo, when the roadmap date predates 2026-07-18, or when the roadmap has not been committed yet; `blocked` when any file is undeclared or when `origin/main` is unavailable (the diff cannot be computed — fail-closed per Wave 0 contract) |
 
 `trackfw validate` is invoked in-process (Go/Node/Python each call their own validator), not by
 shelling out to a `trackfw` binary that may not be on `PATH`.
@@ -3200,6 +3201,55 @@ between `2026-09-08` and `2026-09-12` — all exempt. The `move → done` gate p
 and skips the Wave 0 blocker for those files.
 
 <!-- trackfw-contract: gate=internal/validator/validator_roadmap_wave0_cutoff_test.go,internal/generators/roadmap_move_test.go partial=o validator_roadmap_wave0_cutoff_test.go cobre o corte nos dois braços (pré, on-cutoff, pós, fail-closed, frontmatter-first); o gate de generators cobre o move→done; nenhum gate de shell exerce o corte pela superfície do CLI -->
+
+### `ml_scope` check (D2, ADR-2026-10-23)
+
+<!-- trackfw-contract: gate=internal/commands/barrier_ml_scope_test.go -->
+
+The `ml_scope` check verifies that every file touched by the current branch is covered by a
+`**Files affected:**` declaration or belongs to the fixed orchestration set.
+
+#### Inputs
+
+<!-- trackfw-contract: gate=internal/commands/barrier_ml_scope_test.go,scripts/check-barrier.sh -->
+
+- **Roadmap from HEAD, not disk.** `git show HEAD:<roadmap>` is used to read the `**Files affected:**` lines. An uncommitted disk edit cannot expand scope. A roadmap not yet committed results in `skipped`.
+- **Touched files.** `git diff --name-only -z $(git merge-base origin/main HEAD) HEAD` (committed changes) plus `git status --porcelain=v1 -z --untracked-files=all` (modified, staged, untracked), excluding gitignored files.
+- **Wave N scope.** The union of `**Files affected:**` from every ML in waves 0..N.
+- **Orchestration set (always permitted).** The roadmap file itself; the REQ from frontmatter `req:`; the ADR from the REQ's frontmatter `adr:`; `docs/agents-working-context/`; `vault/notes/`; `.claude/agent-memory/`; `<roadmap_dir>/.trackfw-log`; `<roadmap_dir>/.trackfw-log-entries/`; `<req_dir>/.trackfw-log`; `<req_dir>/.trackfw-log-entries/`.
+
+#### `**Files affected:**` grammar
+
+<!-- trackfw-contract: gate=internal/commands/barrier_ml_scope_test.go,scripts/check-barrier.sh -->
+
+Each backtick-quoted token on the `**Files affected:**` line (including continuation lines) is a path pattern. A continuation line is any non-blank line after the label line that does not start with `**`, `#`, or a list marker (`- `, `* `).
+
+| Form | Example | Matches |
+|---|---|---|
+| Exact path | `` `internal/commands/barrier.go` `` | Only that file |
+| Directory prefix (ends in `/`) | `` `internal/commands/` `` | Any file under the directory |
+| Glob (contains `*`, `?`, or `[`) | `` `scripts/*.sh` `` | `path.Match`-style; `**` spans multiple segments |
+| Double-star glob | `` `internal/**/*.go` `` | Any `.go` under `internal/` at any depth |
+
+Text outside backticks (including `"a definir"`) is ignored. A label line with no backticks declares zero files (valid declaration; no files are permitted beyond the orchestration set).
+
+#### Date cutoff
+
+<!-- trackfw-contract: gate=internal/commands/barrier_ml_scope_test.go,scripts/check-barrier.sh -->
+
+Roadmaps with a `date:` frontmatter value strictly before `2026-07-18` exit `skipped` with the reason in `evidence`. Roadmaps in `wip` with a post-cutoff date that have an ML in wave N without a `**Files affected:**` line → `blocked`, naming the ML.
+
+#### Status values
+
+<!-- trackfw-contract: gate=internal/commands/barrier_ml_scope_test.go,scripts/check-barrier.sh -->
+
+| Status | Condition |
+|---|---|
+| `passed` | Every touched file is in scope |
+| `blocked` | At least one file is out of scope, or an ML has no declaration; also when `origin/main` is unavailable — fail-closed (never pass in silence) |
+| `skipped` | Not a git repo; roadmap not in HEAD; date before 2026-07-18 |
+
+`skipped` is **non-blocking** — the overall barrier status is not `blocked` by a `skipped` `ml_scope`.
 
 ### JSON document
 
@@ -3244,6 +3294,12 @@ and skips the Wave 0 blocker for those files.
       "status": "passed",
       "evidence": ["0 violations, 0 warnings"],
       "failures": []
+    },
+    {
+      "name": "ml_scope",
+      "status": "passed",
+      "evidence": ["scope: 3 file(s) checked, 0 out of scope"],
+      "failures": []
     }
   ],
   "failures": ["acceptance_evidence: ML-2C: 2 unmet acceptance criteria"]
@@ -3260,6 +3316,7 @@ so that a diff of two runtimes' JSON output for the same fixture is empty:
 | `acceptance_evidence` | `<ML-id>: <n> criteria met` | `<ML-id>: <n> unmet acceptance criteria` or `<ML-id>: no acceptance block` |
 | `gates` | `<command>: exit 0` | `<command>: exit <code>` · `line <n>: incomplete command — each line of the gates block runs as a separate sh -c (rule 5): <cmd>` (fragment detected by `sh -n` or odd-`\` rule before any gate executes; see rule 5) |
 | `validate` | `<v> violations, <w> warnings` | `<v> violations, <w> warnings` |
+| `ml_scope` | `scope: <n> file(s) checked, <m> out of scope` (when run) · `skipped: <reason>` (when skipped) | `out of scope: <path>` (for each undeclared file) · `undeclared ML: <ML-id> has no Files affected declaration` (for each ML without a declaration in a post-cutoff wip roadmap) |
 
 Determinism contract:
 
@@ -9051,3 +9108,90 @@ When a pattern such as `*.entry`, `.*`, or `*-entries` covers these paths, entri
 **Detection mechanism:** `git check-ignore -q --no-index <hypothetical-path>` (exit 0 = ignored). The culprit pattern is fetched via `git check-ignore -v --no-index` and included in the warning message. Both invocations use a 3-second timeout and a clean GIT_* environment (see `validator_git_exec.go`).
 
 **Silent conditions:** the rule is a no-op when git is absent or the CWD is not inside a git work-tree. Projects without a `.gitignore` never trigger this rule.
+
+## `trackfw guard write-scope` — proteção de caminhos congelados e escopo por despacho (ADR-2026-10-23, ML-3A, ML-3B)
+
+<!-- trackfw-contract: gate=internal/commands/guard_write_scope_test.go,internal/guard/writescope.go partial=guard_write_scope_test.go cobre os itens do contrato ML-3A (D3, subprocess) e ML-3B (D4, unit + subprocess) via binário real; writescope.go implementa o guard; NÃO há gate cross-runtime (v8: implementação única em Go) -->
+
+> REQ: `docs/req/REQ-2026-10-23-regras-de-escrita-dos-agentes-sao-aplicadas-pelo-harness-e-nao-pelo-texto-do-handoff.md`
+> ADR: `docs/adr/ADR-2026-10-23-regras-de-escrita-dos-agentes-sao-aplicadas-pelo-harness-e-nao-pelo-texto-do-handoff.md`
+
+`trackfw guard write-scope` é um PreToolUse hook que lê o payload de ferramentas `Write`, `Edit` e `NotebookEdit` do Claude Code e nega escrita em caminhos congelados. O projeto raiz é determinado pelo caminho do ALVO (não pelo cwd) para cobrir cenários de worktree.
+
+**Linha de hook emitida pelo gerador (PS/POSIX — Claude Code only, §Z, sem forma cmd.exe):**
+
+```
+emulate -R sh 2>${null-/dev/null}; $LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard write-scope; LASTEXITCODE=$((2*!!$?)); $LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null}; exit $LASTEXITCODE
+```
+
+**Matcher:** `Write|Edit|NotebookEdit` — lista exata, `|` é separador, NÃO uma regex. NUNCA usar `Edit.*` (vira regex JavaScript que casa tudo começando com "Edit").
+
+**Exit codes:** 0 = allow; 2 = deny (bloqueio). Exit 1 = error (fail-open no Claude Code PreToolUse) — todos os erros internos do guard saem com 2 (fail-closed, D3-F).
+
+**Caminhos congelados para todos os contextos** (quando o marker está presente):
+- `docs/agents-working-context.md` — quando as primeiras 10 linhas contêm `<!-- trackfw:frozen -->`
+
+**Caminhos congelados apenas para subagentes** (`agent_id` presente no payload — sempre mais restritivo):
+- `docs/agents-working-context.md` — sempre, sem depender do marker
+- `docs/agents-working-context/` — diretório de entradas por sessão; subagentes não podem escrever entradas de working-context (D1 independente de obediência — Decision 4, ML-4C)
+- `trackfw.yaml` — impede extensão de caminhos congelados pelo subagente
+- `.claude/settings.json`, `.claude/settings.local.json` — impede remoção do hook
+- `.codex/hooks.json`, `.gemini/settings.json`, `.cursor/hooks.json`, `.windsurf/hooks.json`
+- `.github/hooks/`, `.kiro/hooks/`, `.amazonq/cli-agents/`, `.trackfw/leases/`
+
+**Extensão via `trackfw.yaml`** (item 6 do contrato):
+```yaml
+write_scope:
+  frozen_paths:           # congelados para todos os contextos
+    - docs/secret.md
+  frozen_paths_subagent:  # congelados adicionalmente para subagentes
+    - docs/internal/
+```
+YAML inválido → deny (fail-closed). Extensão adiciona entradas, nunca remove os defaults.
+
+**Regra `write_scope_not_wired`** (`validate`):
+Aviso (severidade default `warning`, nunca `error` até a próxima versão major) quando `.claude/settings.json` não tem o PreToolUse `Write|Edit|NotebookEdit` com o comando canônico do write-scope. `trackfw init`/`trackfw update` instalam o hook automaticamente.
+
+**Ordering constraint:** o hook em `.claude/settings.json` deve ser instalado APENAS quando o binário já tem `write-scope` disponível. Instalar o hook contra a versão anterior (que trata `write-scope` como subcomando desconhecido → exit 2 via guardError) nega todas as operações Write/Edit/NotebookEdit na sessão.
+
+**D4 — Escopo por despacho (ML-3B/ML-3C, subagentes com `agent_id` presente):**
+
+Quando `agent_id` está presente no payload (subagente) e `agent_type` é um slug válido (`^[A-Za-z0-9_-]{1,64}$`), o guard consulta o arquivo de lease em duas raízes (sem repetição): a raiz do projeto do **alvo** e a raiz do projeto do **cwd** do payload. Se `cwd` estiver ausente, for relativo ou não pertencer a nenhum projeto trackfw, só a raiz do alvo é usada. A D3 (caminhos congelados) sempre é aplicada antes; um caminho congelado é negado mesmo que apareça no `allow`.
+
+**Formato do lease (v1):**
+```json
+{
+  "version": 1,
+  "agent_type": "apolo-tf",
+  "allow": ["/abs/path/worktree/", "/abs/path/arquivo.go"],
+  "expires": "2026-10-24T12:00:00Z"
+}
+```
+
+- `version` — deve ser `1`; valor diferente → deny.
+- `agent_type` — deve coincidir com o `agent_type` do payload; divergência → deny.
+- `allow` — lista de caminhos absolutos. Terminado em `/` é prefixo de diretório estrito (o separador impede que `/a/b/` case `/a/bc`; a entrada `/x/` NÃO casa o arquivo `/x` — só o que está abaixo do diretório); os demais são arquivo exato. Qualquer caminho relativo na lista → deny. Decision 5 (ML-4C).
+- `expires` — RFC 3339, obrigatório. Lease expirado → deny. Impede que uma permissão esquecida permaneça ativa indefinidamente.
+
+**Comportamento por caso:**
+
+| Situação | Resultado |
+|---|---|
+| Lease ausente em ambas as raízes | D3 apenas (sem D4) |
+| `agent_type` fora do padrão de slug | D3 apenas |
+| Sessão principal (`agent_id` ausente) | D3 apenas; lease ignorado |
+| **Todo** lease encontrado autoriza o alvo | 0 (allow) — Decision 3 (ML-4C): todas as raízes devem concordar |
+| Qualquer lease encontrado não autoriza o alvo | 2 (deny), com motivo nomeando o lease que negou |
+| Lease inválido em qualquer raiz (expirado, versão errada, allow relativo) | 2 (deny) — validate-all-before-match |
+| Lease ilegível, diretório ou JSON inválido | 2 (deny) — fail-closed (D4-C) |
+
+**Ciclo de vida:** o arquiteto grava o lease antes do despacho e o apaga após o retorno do subagente. O arquivo `.trackfw/leases/` está na lista de congelados da D3 para subagentes (impede que o agente edite a própria permissão — D4-D).
+
+**Busca em duas raízes (ML-3C / Decision 3 ML-4C):** o guard procura o lease em ambas as raízes (cwd e alvo). Se qualquer lease for inválido (expirado, versão errada, allow relativo etc.), a escrita é negada. Se nenhuma raiz tiver lease para o `agent_type`, só a D3 se aplica. O alvo precisa estar no `allow` de **todos** os leases válidos encontrados — não basta um. Isso impede que um projeto falso (cwd) com um lease permissivo (`allow: ["/private/"]`) sobreponha a permissão restrita do projeto do alvo (ataque 2E, Decision 3, ML-4C).
+
+**`.gitignore`:** o `trackfw init` garante que `.trackfw/leases/` esteja ignorado no `.gitignore` do projeto. Os leases contêm caminhos absolutos da máquina do arquiteto e não devem ser versionados.
+
+**Resíduos declarados:**
+- R6 (Wave 0): dois subagentes do mesmo `agent_type` em worktrees paralelos compartilham o mesmo lease — a instância menos privilegiada herda a permissão da mais privilegiada.
+- Escrita fora de qualquer projeto trackfw (sem `trackfw.yaml` ancestral) não é bloqueada pela D4.
+- Escrita por Bash (`echo >>`, `sed -i`, `cp`) escapa da D3 e da D4; só a D2 (`trackfw barrier ml_scope`) a detecta na auditoria de commit.
