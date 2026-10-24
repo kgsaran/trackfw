@@ -150,14 +150,28 @@ go test ./internal/config/ ./internal/validator/ -count=1
 - **Gate:** o arquiteto rodou o `make parity-rest`, que o agente não tinha rodado. Deu rc=0.
 
 ### ML-1D — Revisão de qualidade da reescrita do parser
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** hefesto-tf
 **Files affected:** `docs/qualidade/2026-10-24-revisao-parser-config.md`
 **Por que existe:** o ML-1C reescreveu o `parse()` de `internal/config/config.go` em formato de tabela. Mudança desse tamanho
 no leitor de toda configuração pede uma revisão independente de preservação de comportamento.
 **Acceptance criteria:**
-- [ ] Parecer B/R sobre a preservação de comportamento para toda chave existente (valor, padrão, ausência, chave aninhada)
+- [x] Parecer B/R sobre a preservação de comportamento para toda chave existente (valor, padrão, ausência, chave aninhada) — veredito APROVADO, 0 B e 3 R, em `docs/qualidade/2026-10-24-revisao-parser-config.md`.
 
+### ML-1E — Corretivo: pin do cenário 39 e as R do Hefesto
+**Status:** ⬜ Pendente
+**Agente:** apolo-tf
+**Files affected:** `scripts/check-gates-falsify.sh`, `internal/config/`
+**Por que existe:** o `make quality` deu rc=2. O chunk 4 da falsificação morreu em `[s39-go] expected exactly 1 occurrence
+of pattern, got 0`. O `GO_S39_OLD` (`scripts/check-gates-falsify.sh:3872`) fixa o corpo de `loadUpdateConfig`, que ganhou os
+campos `CITrigger*` no ML-1A. É o sintoma documentado em
+`vault/notes/cenarios-de-falsificacao-quebram-em-refactor-do-alvo-2026-08-02.md`. Revisões do Hefesto que entram junto:
+R-1 (o `stringVal` vira obsoleto ou sai), R-2 (`ci_trigger:` vazio ou null vale como ausente, igual às outras chaves
+escalares) e R-3 (o teste por AST pega também `stringValRec(m, "literal", …)` fora da tabela).
+**Acceptance criteria:**
+- [ ] `GO_S39_OLD` casando com o corpo atual. O `GO_S39_NEW` continua sabotando o mesmo comportamento (scanner artesanal)
+- [ ] R-1, R-2 (com teste) e R-3 (terceiro braço do AST, falsificado)
+- [ ] `go test ./internal/config/ ./internal/validator/ ./internal/generators/ -count=1` verde e `make quality` rc=0 (rodado pelo arquiteto)
 
 ## Wave 2 — Fechamento
 > Dependencies: Wave 1 auditada.
