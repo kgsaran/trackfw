@@ -520,6 +520,22 @@ Reabertura. A lição foi registrada no roadmap.
 - **`gen-falsify-chunks.py`:** não precisou de mudança, porque os rótulos são derivados do script.
 - **Outras âncoras ativas para símbolos removidos:** nenhuma. Os restos estão só em comentários históricos.
 
+### ML-7C — Teste do log de transição intermitente sob carga
+**Status:** ⬜ Pendente
+**Agente:** apolo-tf
+**Files affected:** `internal/generators/transition_log_entry_test.go`
+**Por que existe:** o segundo `make quality` da Wave 7 saiu com rc=2 por uma única falha:
+`TestTransitionLog_ParallelBranchesMergeWithoutConflict`, com `TempDir RemoveAll cleanup: unlinkat .../.git/objects:
+directory not empty`. A falha está na limpeza, e não numa asserção. Rodado sozinho, o teste passou 20 de 20 vezes
+(`-count=20`, rc=0).
+- **Hipótese:** o `git gc --auto`/`maintenance --auto` se desanexa depois do merge e escreve em `.git/objects` durante o
+  `RemoveAll`.
+- **Origem:** o teste é do #602 e não foi tocado aqui. Entra por ser defeito conhecido que reprova o gate.
+**Acceptance criteria:**
+- [ ] Os dois helpers de git do arquivo (~L43 e ~L172) passam `gc.auto=0` e `maintenance.auto=false` via `GIT_CONFIG_*`
+- [ ] A hipótese está medida, e não presumida: diga se `git` nesta máquina dispara gc ou maintenance automático nesse fluxo (por exemplo, `GIT_TRACE=1` numa reprodução em `mktemp -d`)
+- [ ] `go test ./internal/generators/ -run 'TestTransitionLog' -count=20` rc=0
+
 ### ML-7A — make quality, CI e PR
 **Status:** ⬜ Pendente
 **Agente:** zeus-tf
