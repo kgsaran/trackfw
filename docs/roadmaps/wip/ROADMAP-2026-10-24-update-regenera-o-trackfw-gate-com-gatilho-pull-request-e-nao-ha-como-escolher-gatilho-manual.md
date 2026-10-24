@@ -101,7 +101,7 @@ Falta um ponto, que passa para o ML-1B: o aviso `ci_trigger_manual` não mencion
 contrato e T5).
 
 ### ML-1B — Valor não escalar em chave escalar some em silêncio (mesma causa do T1)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** apolo-tf
 **Dependencies:** ML-1A, porque os dois mexem em `internal/config/config.go`.
 **Files affected:** `internal/config/config.go`, `internal/config/config_scalar_type_test.go`, `internal/validator/validator.go`, `internal/validator/validator_config_scalar_test.go`, `docs/cli-parity.md`
@@ -109,15 +109,37 @@ contrato e T5).
 "ausente"). Isso vale para toda chave escalar, e não só para a `ci_trigger`. Corrigir só a `ci_trigger` deixaria a mesma
 causa viva nas outras chaves.
 **Acceptance criteria:**
-- [ ] O parser registra, num ponto único, toda chave escalar conhecida que recebeu sequência ou mapa, com o nome e o tipo
-- [ ] O `validate` emite violation `config_scalar_type` para cada uma; braços positivo (escalar) e negativo (sequência e mapa) testados
-- [ ] Contra-braço no HEAD
-- [ ] O aviso `ci_trigger_manual` também diz que `required_status_checks` que dependem do job do gate bloqueiam o PR, porque ele não roda (herdado do ML-1A)
+- [x] O parser registra, num ponto único, toda chave escalar conhecida que recebeu sequência ou mapa, com o nome e o tipo
+- [x] O `validate` emite violation `config_scalar_type` para cada uma; braços positivo (escalar) e negativo (sequência e mapa) testados
+- [x] Contra-braço no HEAD
+- [x] O aviso `ci_trigger_manual` também diz que `required_status_checks` que dependem do job do gate bloqueiam o PR, porque ele não roda (herdado do ML-1A)
 **Gates da wave:**
 ```bash
 go build ./...
 go test ./internal/config/ ./internal/validator/ -count=1
 ```
+
+**Auditoria do arquiteto (2026-10-24):** aprovado como entrega, mas incompleto como causa raiz. Corretivo no ML-1C.
+- **Contra-braço medido:** o binário do HEAD sai com rc=0 e não diz nada sobre `ci: [x]` nem sobre `hooks: {a: b}`. O do
+  worktree sai com rc=1 e emite duas violations.
+- **O ponto não é único:** o `stringVal` sem registro continua existindo, e a `knownScalarKeys` é uma lista à parte. Uma
+  chave nova, lida pelo `stringVal` antigo ou deixada fora da lista, escapa sem que nenhum teste perceba.
+- **Mesma causa em outros sítios:** o agente declarou três (lista recebendo escalar; valores de `rules:` e
+  `agent_models`; `credential_guard.mode`). Pela Regra Dura e por "defeito conhecido se corrige agora", entram no ML-1C.
+
+### ML-1C — Ponto único de verdade para o tipo das chaves do `trackfw.yaml`
+**Status:** ⬜ Pendente
+**Agente:** apolo-tf
+**Files affected:** `internal/config/`, `internal/validator/validator.go`, `internal/validator/validator_config_scalar_test.go`, `docs/cli-parity.md`
+**Acceptance criteria:**
+- [ ] Não sobra leitura de chave do `trackfw.yaml` que descarte tipo errado em silêncio. O `stringVal` sem registro deixa
+  de existir ou passa a registrar, e um teste por AST ou grep em `internal/config/config.go` afirma que toda leitura
+  passa pelo leitor que registra
+- [ ] A lista de chaves vem das próprias leituras, sem cópia à mão. Um teste falha se uma leitura nova não estiver coberta
+- [ ] Os três sítios declarados registram o erro (lista recebendo escalar ou mapa; valor não string em `rules:` e em
+  `agent_models`; `credential_guard.mode` não escalar, com o nome qualificado `credential_guard.mode`)
+- [ ] Cada um tem violation no `validate` com o nome qualificado, e o braço negativo testado
+- [ ] Contra-braço no HEAD; gates do ML-1B verdes; `make parity-rest` rc=0
 
 ## Wave 2 — Fechamento
 > Dependencies: Wave 1 auditada.

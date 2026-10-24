@@ -814,10 +814,26 @@ func validateCITrigger() (invalidMsgs []string, manualMsgs []string) {
 	}
 	if cfg.Update.CITrigger == "manual" {
 		manualMsgs = append(manualMsgs,
-			"ci_trigger_manual: trackfw.yaml: ci_trigger is \"manual\" — the gate workflow will not run automatically on pull requests / merge requests",
+			"ci_trigger_manual: trackfw.yaml: ci_trigger is \"manual\" — the gate workflow will not run automatically on pull requests / merge requests; if required_status_checks in branch protection require the gate job, pull requests will be blocked",
 		)
 	}
 	return invalidMsgs, manualMsgs
+}
+
+// validateConfigScalarType emits one config_scalar_type violation (default "error") for each
+// top-level scalar key in trackfw.yaml that received a non-scalar value (sequence or mapping).
+// The parser records these in cfg.ScalarTypeErrors via stringValRec. ML-1B, REQ-2026-10-24.
+//
+// Note: ci_trigger is excluded — a non-scalar ci_trigger triggers ci_trigger_invalid instead.
+func validateConfigScalarType() []string {
+	cfg := config.Load()
+	var msgs []string
+	for _, e := range cfg.ScalarTypeErrors {
+		msgs = append(msgs,
+			fmt.Sprintf("config_scalar_type: trackfw.yaml: key %q received a non-scalar value (%s); expected a scalar string", e.Key, e.Got),
+		)
+	}
+	return msgs
 }
 
 // ValidateUnfiltered executa todas as validações sem filtro de baseline nem modo lenient.
@@ -1238,6 +1254,10 @@ func ValidateUnfiltered() (violations []string, warnings []string, err error) {
 	ciTriggerInvalidMsgs, ciTriggerManualMsgs := validateCITrigger()
 	applyRule("ci_trigger_invalid", ciTriggerInvalidMsgs, &violations, &warnings)
 	applyRule("ci_trigger_manual", ciTriggerManualMsgs, &violations, &warnings)
+
+	// ML-1B (REQ-2026-10-24): config_scalar_type — scalar key received a non-scalar value.
+	// 🔴 Mirror site in validateUnfilteredTagged below — forgetting it silences this rule from --json.
+	applyRule("config_scalar_type", validateConfigScalarType(), &violations, &warnings)
 
 	return violations, warnings, nil
 }
@@ -1748,6 +1768,10 @@ func validateUnfilteredTagged() (violations []TaggedMsg, warnings []TaggedMsg, e
 	ciTriggerInvalidMsgsT, ciTriggerManualMsgsT := validateCITrigger()
 	applyRuleTagged("ci_trigger_invalid", ciTriggerInvalidMsgsT, &violations, &warnings)
 	applyRuleTagged("ci_trigger_manual", ciTriggerManualMsgsT, &violations, &warnings)
+
+	// ML-1B (REQ-2026-10-24): mirror of ValidateUnfiltered config_scalar_type block.
+	// 🔴 Missing this site silences config_scalar_type from --json output.
+	applyRuleTagged("config_scalar_type", validateConfigScalarType(), &violations, &warnings)
 
 	return violations, warnings, nil
 }

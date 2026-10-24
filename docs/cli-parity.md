@@ -3490,6 +3490,31 @@ a `scaffold-divergent` finding is reported. Run `trackfw update` to regenerate.
 (isProducer, ciTrigger) combination, all in `internal/generators/scaffold.go` and
 `internal/generators/scaffold_doctor.go`.
 
+### `config_scalar_type` — validate rule for non-scalar value on a scalar key (ML-1B, REQ-2026-10-24)
+
+<!-- trackfw-contract: gate=internal/config/config_scalar_type_test.go partial=TestScalarType_* tests that all known scalar keys record a ScalarTypeError when given a sequence or mapping; gate=internal/validator/validator_config_scalar_test.go partial=TestConfigScalarType_* tests the config_scalar_type rule in both ValidateUnfiltered and Validate (tagged path) -->
+
+When a top-level scalar key in `trackfw.yaml` receives a YAML sequence or mapping instead of a
+string, the parser silently treats the key as absent (backward-compatible behaviour). Since
+`REQ-2026-10-24` (ML-1B), this silent drop is recorded in `cfg.ScalarTypeErrors` via the
+`stringValRec` helper — the single recording point for all known top-level scalar keys.
+
+**Validate rule:** `config_scalar_type` (default severity: `"error"`) emits one violation per
+affected key with the key name and the received type (`sequence` or `mapping`).
+
+```
+config_scalar_type: trackfw.yaml: key "ci" received a non-scalar value (sequence); expected a scalar string
+```
+
+**Excluded key:** `ci_trigger` is NOT covered by this rule. A non-scalar `ci_trigger` is handled
+exclusively by `ci_trigger_invalid` (ML-1A) to avoid a double violation on the same root cause.
+
+**Known scalar keys:** `req_dir`, `roadmap_dir`, `roadmap_namespacing`, `governance_mode`,
+`lenient_until`, `wip_limit`, `wip_by_squad`, `stale_wip_days`, `require_req_in_commit`,
+`trace_id_field`, `strict_ci_paths`, `forge`, `hooks`, `ci`, `backend`, `frontend`,
+`pkg_manager`, `agent_conventions`, `linear_api_key`, `linear_team_id`, `jira_base_url`,
+`jira_email`, `jira_token`, `jira_project`. Source of truth: `config.KnownScalarKeys()`.
+
 ### `credential_guard.mode` — `trackfw.yaml` field consumed by `scripts/trackfw-credential-guard.sh`
 
 <!-- trackfw-contract: gate=internal/generators/credential_guard_test.go partial=TestCredentialGuardScript_ParityAcrossStacks compara byte a byte o script GERADO entre Go, Node e Python (que embute a leitura de mode via grep/sed), mas nenhum gate cross-CLI testa o fallback silencioso de um valor mode não reconhecido para "warn" nem a divergência real de comportamento warn vs block em runtime -->
