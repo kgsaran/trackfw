@@ -370,7 +370,7 @@ só a dimensão do defeito original.
 - **Gates do executor:** `go build ./...` rc=0 e os 5 pacotes `ok`. O `trackfw validate` no repositório deu rc=0.
 
 ### ML-5B — `ml_scope` aceita o roadmap em qualquer estado do `roadmap_dir`
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** apolo-tf
 **Dependencies:** ML-5A, porque os dois compilam e testam o pacote `internal/commands`.
 **Files affected:** `internal/commands/barrier.go`, `internal/commands/barrier_ml_scope_test.go`, `docs/cli-parity.md`
@@ -380,16 +380,26 @@ branch faz o `git diff` contra `origin/main` listar a remoção do caminho antig
 ML-4B. É outra causa, do `ml_scope` (REQ-2026-10-23 das regras de escrita, #606), e entra neste PR porque bloqueia o
 barrier desta REQ e é defeito conhecido.
 **Acceptance criteria:**
-- [ ] O conjunto de orquestração inclui o mesmo basename do roadmap em todo estado (`backlog`, `analyzing`, `wip`,
+- [x] O conjunto de orquestração inclui o mesmo basename do roadmap em todo estado (`backlog`, `analyzing`, `wip`,
   `blocked`, `done`, `abandoned`) do `roadmap_dir`, nos dois modos de namespacing (`flat` e `by_agent`)
-- [ ] Um roadmap **diferente** com nome parecido continua fora do escopo (contra-braço por basename exato)
-- [ ] Teste com repositório git real em `t.TempDir()`: roadmap em `done/` no `origin/main`, movido para `wip/` na branch,
+- [x] Um roadmap **diferente** com nome parecido continua fora do escopo (contra-braço por basename exato)
+- [x] Teste com repositório git real em `t.TempDir()`: roadmap em `done/` no `origin/main`, movido para `wip/` na branch,
   barrier sem `out of scope` para o caminho antigo. O teste reprova no HEAD anterior a este ML.
 **Gates da wave:**
 ```bash
 go build ./...
 go test ./internal/commands/ -run 'MLScope' -count=1 -v
 ```
+**Auditoria do arquiteto (2026-10-24):** aprovado.
+- **Correção:** `buildMLScopeOrchestrationSet` acrescenta `<pai>/<estado>/<basename>` para os outros 5 estados, e só
+  quando o diretório atual é um estado conhecido. No `by_agent`, o pai é a pasta do agente.
+- **Testes novos:**
+  - `TestMLScope_RoadmapMovedStatePasses_Flat`, com contra-braço por basename diferente;
+  - `TestMLScope_RoadmapMovedStatePasses_ByAgent`, com contra-braço pelo mesmo basename em outro agente.
+- **Medido pelo arquiteto:** no HEAD, os 13 testes `MLScope` passam (rc=0). No commit anterior (6b92eaeb, via
+  `git archive`), os 2 testes novos reprovam (rc=1).
+- **Ressalva para o ML-6A:** o executor criou a lista `roadmapAllStates`, em vez de reaproveitar uma existente. A mesma
+  lista literal já existe em 9 sítios de 4 pacotes, sem constante compartilhada.
 
 ## Wave 6 — Revisões independentes
 > Dependencies: Wave 5 auditada.
