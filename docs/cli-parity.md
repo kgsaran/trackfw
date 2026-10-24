@@ -4505,14 +4505,16 @@ de um roadmap anterior e não relacionado
    nunca invoca o Kiro diretamente). Decisão: documentar o pré-requisito nos doc comments dos 3 stacks
    e em `docs/cli-parity.md`, sem tentar sondagem de subprocesso e sem usar `TargetResult.Message`
    (reservado a `state: failed`).
-6. **Dedup por leitura (ML-3A) funcionando nos 6 CLIs, fail-open confirmado.** Cada um dos 6
-   `InjectXHooks`/`injectXHooks`/`inject_x_hooks` de projeto lê (nunca escreve) o arquivo de hooks
-   global correspondente antes de adicionar a entrada de credential-guard por-projeto; se a entrada
-   global já existe, a entrada por-projeto é pulada (attention-signal/cleanup continuam normais).
-   Qualquer falha ao resolver `$HOME`, ler ou parsear o arquivo global é tratada como "não instalado
-   globalmente" — fail-open, nunca fail-closed silenciando o credential-guard por-projeto por erro de
-   leitura. Coberto por `internal/generators/credential_guard_dedup_test.go` (Go, 9 testes) e
-   equivalentes Node/Python.
+6. **D15 (ADR-2026-10-04 adendo 2026-10-24): wiring por-projeto sempre emitido.** Os 6
+   `InjectXHooks` de projeto emitem a entrada de credential-guard incondicionalmente — a leitura
+   prévia do arquivo global (que existia no ML-3A para pular a entrada de projeto quando o guard
+   global já estava instalado) foi removida. Em máquinas com o guard global instalado, o guard
+   executa duas vezes por evento (~12 ms para credential, ~11 ms para git-branch): uma via escopo
+   global, uma via escopo de projeto. Custo aceito em troca de eliminar a dependência de estado
+   externo no gerador de projeto. O validator também foi atualizado: a ausência de wiring
+   por-projeto é violação mesmo quando o guard global está instalado (ver `credential_guard_presence_required`
+   abaixo). Coberto por `internal/generators/credential_guard_dedup_test.go` (Go) e
+   `internal/commands/update_validate_global_guard_test.go` (AC9).
 7. **Gate de paridade estrutural novo (ML-4A) cobrindo os 6 arquivos globais.**
    `scripts/check-harness-hooks-parity.sh` — gate dedicado (não extensão de
    `check-agent-hooks-parity.sh`, entry points/fixtures diferentes) — roda `trackfw update harness
@@ -5762,9 +5764,12 @@ como as demais regras do validador — `applyRule`/`applyRuleTagged`, `internal/
 - Comando que não casa nenhuma das 4 formas de prefixo é **ignorado de propósito** —
   `resolveCredentialGuardHookPath` retorna `ok=false` e o chamador não trata isso como violação.
   Não é função desta regra adivinhar wiring próprio do usuário fora dos formatos que o trackfw gera.
-- **Ausência de entrada de guard não é violação** — é o estado legítimo de quem usa só o guard
-  **global** (`~/.trackfw/`, fora do escopo desta regra; o dedup `globalCredentialGuardInstalled*()`
-  pula as entradas de projeto de propósito).
+- **Ausência de entrada de guard em arquivo que não existe não é violação** — se o arquivo de hook
+  não existe no projeto (CLI não instalado), a regra ignora-o em silêncio.
+  **D15 (ADR-2026-10-04 adendo 2026-10-24): a ausência em arquivo que EXISTE é sempre violação**,
+  mesmo que o guard global (`~/.trackfw/` ou `~/.codeium/`) esteja instalado na máquina. O dedup
+  `globalCredentialGuardInstalled*()` foi removido do gerador e o short-circuit do validator foi
+  removido; usar só o guard global não satisfaz o requisito de projeto.
 - Provada não-vácua pelo Cenário 47 de `scripts/check-gates-falsify.sh` (ML-2A): desabilitar a regra
   faz o cenário falhar.
 
@@ -5966,9 +5971,10 @@ materializando-o com a ferramenta de escrita/edição nativa (`Write`/`Edit`, `w
 `create`/`edit`, `apply_patch`, ...). A ADR-2026-08-06 emenda 7 fecha essa lacuna: cada
 `InjectXHooks`/`injectXHooks`/`inject_x_hooks` agora também registra o matcher nativo de
 leitura e de escrita/edição de cada CLI apontando para o mesmo
-`scripts/trackfw-credential-guard.sh`, sujeito ao mesmo dedup contra o wiring global
-(`globalCredentialGuardInstalled<CLI>()`, seção "Agent hooks por CLI" acima) que já existia para o
-shell tool.
+`scripts/trackfw-credential-guard.sh` (forma legada) ou o subcomando inline `trackfw guard
+credential` (forma D11 revista, ADR-2026-10-04). **D15 (adendo 2026-10-24):** o dedup contra o
+wiring global (`globalCredentialGuardInstalled<CLI>()`) foi removido do gerador — o wiring de
+leitura/escrita é sempre emitido independentemente do estado do guard global.
 
 | CLI | Matcher de leitura | Matcher de escrita/edição | Observação |
 |---|---|---|---|

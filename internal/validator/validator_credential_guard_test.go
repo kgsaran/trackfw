@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/kgsaran/trackfw/internal/config"
+	"github.com/kgsaran/trackfw/internal/guardforms"
 )
 
 // guardEntryClaudeSettings monta um .claude/settings.json mínimo com uma entrada de
@@ -1101,8 +1102,8 @@ func TestClaudeGuardHookMatcherWarning_NonGuardHookNoWarning(t *testing.T) {
 // ("trackfw guard credential --global; exit $LASTEXITCODE") is no longer accepted
 // as "fully installed global".
 func windsurfGlobalHooksJSON(preRun, preWrite bool) []byte {
-	// D11 revised (current form): exact match required by credentialGuardGlobalInstalledWindsurf.
-	globalCmd := credentialGuardGlobalExpectedCmdWindsurf()
+	// D11 revised (current form) — the canonical global credential guard command.
+	globalCmd := guardforms.CredentialGlobalCurrentPSPOSIX
 	hookEntry := map[string]interface{}{
 		"command":     globalCmd,
 		"show_output": true,
@@ -1142,15 +1143,13 @@ func isolateHome(t *testing.T) string {
 	return home
 }
 
-// Reconciliação: afirma que validateCredentialGuardPresenceRequired NÃO emite
-// violation para .windsurf/hooks.json sem credential guard quando o global harness
-// está completamente instalado (pre_run_command + pre_write_code no global) —
-// InjectWindsurfHooks desduplicou intencionalmente, portanto a ausência no projeto
-// não é um defeito.
-// ML-1D: antes desta correção, a presença do global era ignorada e a violation era emitida.
-// Falsificação RC: comentar `entry.globalInstalled != nil && entry.globalInstalled()` no
-// loop de validateCredentialGuardPresenceRequired → este teste falha (violation emitida).
-func TestCredentialGuardPresenceRequired_Windsurf_GlobalCompleto_SemViolation(t *testing.T) {
+// Reconciliação (D15): afirma que validateCredentialGuardPresenceRequired EMITE
+// violation para .windsurf/hooks.json sem credential guard — mesmo que o global harness
+// esteja completamente instalado. Sob D15, o validador não aceita mais a ausência de
+// fiação de projeto por causa do global.
+// Falsificação RC: reinserir `entry.globalInstalled != nil && entry.globalInstalled()`
+// no loop → violation suprimida → este teste falha.
+func TestCredentialGuardPresenceRequired_Windsurf_GlobalCompleto_EmitsViolation(t *testing.T) {
 	home := isolateHome(t)
 	writeWindsurfGlobalHooks(t, home, true, true) // both events installed globally
 
@@ -1166,10 +1165,8 @@ func TestCredentialGuardPresenceRequired_Windsurf_GlobalCompleto_SemViolation(t 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	for _, m := range msgs {
-		if hasViolation([]string{m}, ".windsurf/hooks.json") {
-			t.Errorf("unexpected violation for .windsurf/hooks.json with global harness fully installed: %v", m)
-		}
+	if !hasViolation(msgs, ".windsurf/hooks.json") {
+		t.Errorf("D15: expected violation for .windsurf/hooks.json with no project credential guard, even with global fully installed, got: %v", msgs)
 	}
 }
 
@@ -1256,57 +1253,15 @@ func writeWindsurfGlobalHooksWithCmd(t *testing.T, home, cmd string) {
 	}
 }
 
-// Reconciliação: afirma que credentialGuardGlobalInstalledWindsurf retorna false
-// quando o global hooks.json contém a forma D2 legada ("trackfw guard credential
-// --global; exit $LASTEXITCODE") — apenas a forma D11 revised é aceita (F1/ML-2C).
-// Falsificação RC: trocar credentialGuardGlobalMatchesExpected por substring match
-// → este teste falha (D2 passa a ser aceita; violation suprimida).
-func TestCredentialGuardGlobalInstalled_D2Legacy_NotAccepted(t *testing.T) {
-	home := isolateHome(t)
-	d2Cmd := "trackfw guard credential " + "--global" + "; exit $LASTEXITCODE"
-	writeWindsurfGlobalHooksWithCmd(t, home, d2Cmd)
+// D15: TestCredentialGuardGlobalInstalled_D2Legacy_NotAccepted,
+// TestCredentialGuardGlobalInstalled_D11Legacy_NotAccepted, and
+// TestCredentialGuardGlobalInstalled_D11Revised_Accepted have been removed.
+// They tested credentialGuardGlobalInstalledWindsurf / credentialGuardGlobalExpectedCmdWindsurf,
+// both of which were removed from validator_credential_guard.go in ML-5A (D15).
 
-	if credentialGuardGlobalInstalledWindsurf() {
-		t.Errorf("credentialGuardGlobalInstalledWindsurf must return false for D2 legacy form %q"+
-			" — only the D11 revised form is accepted", d2Cmd)
-	}
-}
-
-// Reconciliação: afirma que credentialGuardGlobalInstalledWindsurf retorna false
-// quando o global hooks.json contém a forma D11 pré-ML-6C (sem o 4º trecho de
-// normalização PowerShell) — apenas a forma D11 revised (com o 4º trecho) é aceita.
-// Falsificação RC: aceitar strings.HasPrefix → este teste falha.
-func TestCredentialGuardGlobalInstalled_D11Legacy_NotAccepted(t *testing.T) {
-	home := isolateHome(t)
-	// D11 legacy: sem o 4º trecho "$LASTEXITCODE=2*!!$LASTEXITCODE 2>${null-/dev/null};"
-	d11Legacy := `$LASTEXITCODE=2 2>${null-/dev/null}; trackfw guard credential ` + `--global; LASTEXITCODE=$((2*!!$?)); exit $LASTEXITCODE`
-	writeWindsurfGlobalHooksWithCmd(t, home, d11Legacy)
-
-	if credentialGuardGlobalInstalledWindsurf() {
-		t.Errorf("credentialGuardGlobalInstalledWindsurf must return false for D11 legacy form"+
-			" — only the D11 revised form is accepted")
-	}
-}
-
-// Reconciliação: afirma que credentialGuardGlobalInstalledWindsurf retorna true
-// quando o global hooks.json contém a forma D11 revised exata em ambos os eventos —
-// base da correção F1/ML-2C.
-// Falsificação RC: remover a verificação de pre_write_code → este teste ainda passa
-// (só pre_run é verificado); o teste TestCredentialGuardPresenceRequired_Windsurf_GlobalSoPre_RunCommand_Violation
-// detecta a regressão nesse caso.
-func TestCredentialGuardGlobalInstalled_D11Revised_Accepted(t *testing.T) {
-	home := isolateHome(t)
-	d11Revised := credentialGuardGlobalExpectedCmdWindsurf()
-	writeWindsurfGlobalHooksWithCmd(t, home, d11Revised)
-
-	if !credentialGuardGlobalInstalledWindsurf() {
-		t.Errorf("credentialGuardGlobalInstalledWindsurf must return true for D11 revised form %q", d11Revised)
-	}
-}
-
-// Reconciliação: afirma que validateCredentialGuardPresenceRequired emite violation
-// para .windsurf/hooks.json quando o global harness usa a forma D2 legada — o projeto
-// deve instalar a cobertura local pois o global é insuficiente.
+// Reconciliação (D15): validateCredentialGuardPresenceRequired emite violation para
+// .windsurf/hooks.json mesmo quando o global usa a forma D2 legada — o validador não
+// consulta mais o global; project wiring é sempre exigido.
 func TestCredentialGuardPresenceRequired_Windsurf_GlobalD2Legacy_Violation(t *testing.T) {
 	home := isolateHome(t)
 	d2Cmd := "trackfw guard credential " + "--global" + "; exit $LASTEXITCODE"

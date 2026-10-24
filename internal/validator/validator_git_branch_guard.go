@@ -83,10 +83,9 @@ type globalGuardConfigFile struct {
 
 // globalGuardConfigFiles is the closed list of GLOBAL hook/settings files `trackfw update harness`
 // can write a guard entry into — the global-scope counterpart of credentialGuardHookFiles
-// (validator_credential_guard.go). Paths and CLI labels taken from
-// globalCredentialGuardInstalled{Claude,Codex,Gemini,Cursor,Copilot,Kiro} in
-// internal/generators/agentfiles.go (validator cannot import that package — see the import-cycle
-// note on credentialGuardScriptReference — so this list is validator's own, independently
+// (validator_credential_guard.go). Paths and CLI labels correspond to the 6 global harness targets
+// in internal/generators/update.go (the globalCredentialGuardInstalled{…} functions were removed
+// in D15, ADR-2026-10-04 adendo 2026-10-24; this list is the validator's own, independently
 // maintained copy of the same 6 paths).
 var globalGuardConfigFiles = []globalGuardConfigFile{
 	// ML-2B: `family` campo normativo — ADR-2026-10-04 D2 revista.

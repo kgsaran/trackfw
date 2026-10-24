@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/kgsaran/trackfw/internal/config"
+	"github.com/kgsaran/trackfw/internal/guardforms"
 )
 
 // IsLenientForTest exposes the unexported isLenientFor function to the external test package
@@ -108,12 +109,12 @@ func StubProbeOKForTest(t testing.TB) {
 	})
 }
 
-// CredentialGuardGlobalExpectedCmdWindsurfForTest exposes the exact D11 revised global
-// credential guard command for Windsurf to the external test package (package validator_test).
-// Used by the ML-2C concordance test to verify that the validator and generator agree on the
-// same command string without importing generators (which would create an import cycle).
+// CredentialGuardGlobalExpectedCmdWindsurfForTest returns the canonical D11 revised global
+// credential guard command for Windsurf (guardforms.CredentialGlobalCurrentPSPOSIX). Under D15
+// the validator no longer owns this constant; it lives in guardforms and both sides use it.
+// Kept for backwards compatibility with the ML-2C concordance test.
 func CredentialGuardGlobalExpectedCmdWindsurfForTest() string {
-	return credentialGuardGlobalExpectedCmdWindsurf()
+	return guardforms.CredentialGlobalCurrentPSPOSIX
 }
 
 // GuardWiringTypeFromCmdPSPosixForTest exposes guardWiringTypeFromCmd for the PS/POSIX shell family

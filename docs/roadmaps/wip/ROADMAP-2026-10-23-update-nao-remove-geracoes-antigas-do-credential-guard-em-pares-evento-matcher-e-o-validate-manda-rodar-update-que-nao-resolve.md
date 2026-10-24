@@ -344,17 +344,30 @@ só a dimensão do defeito original.
 > Dependencies: Wave 4 auditada.
 
 ### ML-5A — Geradores e validador sem consulta ao global para a fiação de projeto
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** apolo-tf
-**Files affected:** `internal/generators/agentfiles.go`, `internal/validator/validator_credential_guard.go`, `internal/generators/credential_guard_dedup_test.go`, `internal/generators/git_branch_guard_dedup_test.go`, `internal/generators/copilot_kiro_d14_ml2c_test.go`, `internal/generators/guard_harness_dedup_test.go`, `internal/generators/credential_guard_windsurf_amazonq_ml1b_test.go`, `internal/validator/validator_credential_guard_test.go`, `internal/commands/update_validate_global_guard_test.go` (novo), `docs/cli-parity.md`
+**Files affected:** `internal/generators/agentfiles.go`, `internal/validator/validator_credential_guard.go`, `internal/generators/credential_guard_dedup_test.go`, `internal/generators/git_branch_guard_dedup_test.go`, `internal/generators/copilot_kiro_d14_ml2c_test.go`, `internal/generators/guard_harness_dedup_test.go`, `internal/generators/credential_guard_windsurf_amazonq_ml1b_test.go`, `internal/validator/validator_credential_guard_test.go`, `internal/commands/update_validate_global_guard_test.go` (novo), `docs/cli-parity.md`, `internal/generators/nested_guard_migrate_dedup_test.go`, `internal/generators/cursor_guard_migrate_dedup_test.go`, `internal/validator/export_test.go`, `internal/validator/validator_git_branch_guard.go` (os quatro últimos foram acrescentados na auditoria: testes que quebraram por contrato, o export de teste do validador e um comentário desatualizado)
 **Acceptance criteria:**
-- [ ] AC6 revisto: todo sítio da matriz da Wave 4 que pula ou remove deixa de fazê-lo. Com e sem global, a fiação de
+- [x] AC6 revisto: todo sítio da matriz da Wave 4 que pula ou remove deixa de fazê-lo. Com e sem global, a fiação de
   projeto é emitida e migrada por par.
-- [ ] O validador não aceita mais ausência de fiação de projeto por causa do global.
-- [ ] AC9: teste de cruzamento por CLI (HOME falso com global, fixture git com `origin/main`, `init`/`update` → `validate`
+- [x] O validador não aceita mais ausência de fiação de projeto por causa do global.
+- [x] AC9: teste de cruzamento por CLI (HOME falso com global, fixture git com `origin/main`, `init`/`update` → `validate`
   rc=0), com contra-braço que reprova em `origin/main`.
-- [ ] Os testes do contrato antigo passam a afirmar a D15. Cada teste novo ou invertido declara a conclusão que afirma
+- [x] Os testes do contrato antigo passam a afirmar a D15. Cada teste novo ou invertido declara a conclusão que afirma
   (Regra de Reconciliação).
+**Auditoria do arquiteto (2026-10-24):** aprovado depois do corretivo ML-5A2.
+- **Primeira entrega, reprovada:** o AC9 cobria só o Windsurf, lia o arquivo em vez de rodar o `validate` e não tinha
+  `origin/main`, então não exercitava o `guard_wiring_removed`.
+- **ML-5A2:** `TestD15_UpdatePreservesProjectGuardWithGlobalInstalled` roda o binário compilado sobre os 7 CLIs
+  (`init`, depois push para um `origin` bare, `update harness`, `update` e `validate --json`).
+  `TestD15_GlobalOnlyDoesNotSatisfyProjectScope` cobre o lado do validador.
+- **Medido pelo arquiteto:**
+  - no HEAD, os dois testes passam (rc=0);
+  - em `origin/main` (ec8f6c8d, via `git archive`), os 7 subtestes e o braço do validador reprovam (rc=1), com 33 linhas
+    de `guard_wiring_removed` nos 7 arquivos de hook. É o defeito da #613.
+- **Gerador:** os G1–G15 foram removidos, e o grep pelas funções mortas fora de comentários está vazio.
+- **Validador:** o short-circuit do Windsurf foi removido.
+- **Gates do executor:** `go build ./...` rc=0 e os 5 pacotes `ok`. O `trackfw validate` no repositório deu rc=0.
 
 ### ML-5B — `ml_scope` aceita o roadmap em qualquer estado do `roadmap_dir`
 **Status:** ⬜ Pendente

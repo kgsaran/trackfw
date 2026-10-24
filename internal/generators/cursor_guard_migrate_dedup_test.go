@@ -319,7 +319,7 @@ func TestCursorGuardMigrateDedup_D14Arms(t *testing.T) {
 
 	t.Run("ArmB_GlobalCredInstalled", func(t *testing.T) {
 		home := dedupFixtureHome(t)
-		writeGlobalCursorCred(t, home)
+		writeGlobalCursorCred(t, home) // D15: seed proves code no longer reads this
 
 		dir := t.TempDir()
 		// Seed: two legacy cred forms + user hook + legacy git guard in beforeShellExecution;
@@ -354,53 +354,51 @@ func TestCursorGuardMigrateDedup_D14Arms(t *testing.T) {
 
 		before, _ := hooks["beforeShellExecution"].([]interface{})
 
-		// Shell events: NO cred guard (global covers it — all legacy cred removed, no canonical added).
-		if n := countFlatEntries(before, guardCredentialCmdPSPOSIX, ""); n != 0 {
-			t.Errorf("ArmB: beforeShellExecution canonical cred must be absent when global installed, got %d", n)
+		// D15: cred guard PRESENT in beforeShellExecution (always emitted).
+		if n := countFlatEntries(before, guardCredentialCmdPSPOSIX, ""); n != 1 {
+			t.Errorf("ArmB(D15): beforeShellExecution cred guard count want 1, got %d", n)
 		}
-		// All legacy cred forms must be gone.
+		// All legacy cred forms must be gone (migrated to canonical).
 		for _, legacyCmd := range []string{legacyD2CredentialCmdPSPOSIX, legacyD11CredentialCmdPSPOSIX, legacyBareCredGuardCmd} {
 			if n := countFlatEntries(before, legacyCmd, ""); n != 0 {
-				t.Errorf("ArmB: legacy cred %q must be removed from beforeShellExecution, got %d", legacyCmd, n)
+				t.Errorf("ArmB(D15): legacy cred %q must be removed from beforeShellExecution, got %d", legacyCmd, n)
 			}
 		}
-		// git-branch guard must still be present (only cred guard is global here).
+		// git-branch guard present.
 		if n := countFlatEntries(before, guardGitBranchCmdPSPOSIX, ""); n != 1 {
-			t.Errorf("ArmB: beforeShellExecution git guard must still be present, got %d", n)
+			t.Errorf("ArmB(D15): beforeShellExecution git guard must be present, got %d", n)
 		}
 		// User hook must survive.
 		if n := countFlatEntries(before, userShellHook, ""); n != 1 {
-			t.Errorf("ArmB: user hook must survive in beforeShellExecution, got %d", n)
+			t.Errorf("ArmB(D15): user hook must survive in beforeShellExecution, got %d", n)
 		}
-		// afterShellExecution: no cred guard entries (legacy removed, no canonical added).
-		if after, ok := hooks["afterShellExecution"]; ok {
-			afterArr, _ := after.([]interface{})
-			if n := countFlatEntries(afterArr, guardCredentialCmdPSPOSIX, ""); n != 0 {
-				t.Errorf("ArmB: afterShellExecution cred guard must be absent when global installed, got %d", n)
-			}
-			for _, legacyCmd := range []string{legacyBareCredGuardCmd, legacyD11RevCredentialCmdPSPOSIX} {
-				if n := countFlatEntries(afterArr, legacyCmd, ""); n != 0 {
-					t.Errorf("ArmB: legacy cred %q must be removed from afterShellExecution, got %d", legacyCmd, n)
-				}
+		// afterShellExecution: D15 cred guard PRESENT (always emitted).
+		afterArr, _ := hooks["afterShellExecution"].([]interface{})
+		if n := countFlatEntries(afterArr, guardCredentialCmdPSPOSIX, ""); n != 1 {
+			t.Errorf("ArmB(D15): afterShellExecution cred guard count want 1, got %d", n)
+		}
+		for _, legacyCmd := range []string{legacyBareCredGuardCmd, legacyD11RevCredentialCmdPSPOSIX} {
+			if n := countFlatEntries(afterArr, legacyCmd, ""); n != 0 {
+				t.Errorf("ArmB(D15): legacy cred %q must be removed from afterShellExecution, got %d", legacyCmd, n)
 			}
 		}
 
-		// Read/Write pairs: ALWAYS present and de-duped (D14 revised).
+		// Read/Write pairs: present (unchanged by D15).
 		pre, _ := hooks["preToolUse"].([]interface{})
 		post, _ := hooks["postToolUse"].([]interface{})
 		for _, matcher := range []string{"Read", "Write"} {
 			if n := countFlatEntries(pre, guardCredentialCmdPSPOSIX, matcher); n != 1 {
-				t.Errorf("ArmB: preToolUse/%s cred guard must be present exactly once (D14 revised), got %d", matcher, n)
+				t.Errorf("ArmB(D15): preToolUse/%s cred guard must be present, got %d", matcher, n)
 			}
 			if n := countFlatEntries(post, guardCredentialCmdPSPOSIX, matcher); n != 1 {
-				t.Errorf("ArmB: postToolUse/%s cred guard must be present exactly once (D14 revised), got %d", matcher, n)
+				t.Errorf("ArmB(D15): postToolUse/%s cred guard must be present, got %d", matcher, n)
 			}
 		}
 	})
 
 	t.Run("ArmC_GlobalGitBranchInstalled", func(t *testing.T) {
 		home := dedupFixtureHome(t)
-		writeGlobalCursorGitBranch(t, home)
+		writeGlobalCursorGitBranch(t, home) // D15: seed proves code no longer reads this
 
 		dir := t.TempDir()
 		// Seed: legacy git guard + legacy cred guard in beforeShellExecution.
@@ -425,28 +423,28 @@ func TestCursorGuardMigrateDedup_D14Arms(t *testing.T) {
 
 		before, _ := hooks["beforeShellExecution"].([]interface{})
 
-		// Shell events: NO git-branch guard (global + legacy removed); cred guard present once.
-		if n := countFlatEntries(before, guardGitBranchCmdPSPOSIX, ""); n != 0 {
-			t.Errorf("ArmC: beforeShellExecution canonical git guard must be absent, got %d", n)
+		// D15: git-branch guard PRESENT (always emitted); cred guard also present.
+		if n := countFlatEntries(before, guardGitBranchCmdPSPOSIX, ""); n != 1 {
+			t.Errorf("ArmC(D15): beforeShellExecution git guard count want 1, got %d", n)
 		}
 		for _, legacyGit := range []string{legacyD2GitBranchCmdPSPOSIX, legacyD11RevGitBranchCmdPSPOSIX} {
 			if n := countFlatEntries(before, legacyGit, ""); n != 0 {
-				t.Errorf("ArmC: legacy git %q must be removed, got %d", legacyGit, n)
+				t.Errorf("ArmC(D15): legacy git %q must be removed (migrated to canonical), got %d", legacyGit, n)
 			}
 		}
 		if n := countFlatEntries(before, guardCredentialCmdPSPOSIX, ""); n != 1 {
-			t.Errorf("ArmC: beforeShellExecution cred guard count want 1, got %d", n)
+			t.Errorf("ArmC(D15): beforeShellExecution cred guard count want 1, got %d", n)
 		}
 
-		// Read/Write pairs: credential still present (no change for git-branch guard).
+		// Read/Write pairs: present.
 		pre, _ := hooks["preToolUse"].([]interface{})
 		post, _ := hooks["postToolUse"].([]interface{})
 		for _, matcher := range []string{"Read", "Write"} {
 			if n := countFlatEntries(pre, guardCredentialCmdPSPOSIX, matcher); n != 1 {
-				t.Errorf("ArmC: preToolUse/%s cred guard must be present, got %d", matcher, n)
+				t.Errorf("ArmC(D15): preToolUse/%s cred guard must be present, got %d", matcher, n)
 			}
 			if n := countFlatEntries(post, guardCredentialCmdPSPOSIX, matcher); n != 1 {
-				t.Errorf("ArmC: postToolUse/%s cred guard must be present, got %d", matcher, n)
+				t.Errorf("ArmC(D15): postToolUse/%s cred guard must be present, got %d", matcher, n)
 			}
 		}
 	})
