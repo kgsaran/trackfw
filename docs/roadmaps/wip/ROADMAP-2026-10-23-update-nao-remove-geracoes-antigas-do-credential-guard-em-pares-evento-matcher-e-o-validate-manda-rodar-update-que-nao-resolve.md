@@ -1,5 +1,5 @@
 ---
-status: done
+status: wip
 date: 2026-10-23
 req: "docs/req/REQ-2026-10-23-update-nao-remove-geracoes-antigas-do-credential-guard-em-pares-evento-matcher-e-o-validate-manda-rodar-update-que-nao-resolve.md"
 squad: "hades-tf, apolo-tf, hefesto-tf"
@@ -7,11 +7,11 @@ squad: "hades-tf, apolo-tf, hefesto-tf"
 
 # Roadmap: update não remove gerações antigas do credential guard em pares evento×matcher
 
-> Created: 2026-10-23 | Status: done
+> Created: 2026-10-23 | Status: wip (reaberto em 2026-10-24 pela #613)
 
 ## Context
 REQ: docs/req/REQ-2026-10-23-update-nao-remove-geracoes-antigas-do-credential-guard-em-pares-evento-matcher-e-o-validate-manda-rodar-update-que-nao-resolve.md
-ADR: ADR-2026-10-04, adendo de 2026-10-23 (D12–D14). Issue: #599.
+ADR: ADR-2026-10-04, adendo de 2026-10-23 (D12–D14) e D15 de 2026-10-24, que substitui a D14. Issues: #599, #613.
 
 Causa (lida no código pelo arquiteto): `InjectCursorHooks` migra as formas legadas só em `beforeShellExecution` e
 `afterShellExecution`. Os pares `preToolUse`/`postToolUse` × `Read`/`Write` recebem apenas `mergeCursorGuardMatcherEntry`,
@@ -21,6 +21,7 @@ divergem entre os CLIs.
 ## Acceptance Criteria
 - [x] AC1–AC7 da REQ, cada um com a evidência registrada no ML que o fecha (AC8 = fechamento, abaixo).
 - [x] `make quality` e o CI ficam verdes. (`make quality` rc=0; CI 20/20 no 39d0ac26; mergeado no #604, f2c7c7fd)
+- [ ] Reabertura (#613): AC6 revisto, AC9 e AC10 da REQ, nas Waves 4–7.
 
 ## Status Legend
 ⬜ Pendente · 🔄 Em andamento · ✅ Concluído · ❌ Bloqueado
@@ -162,6 +163,7 @@ ok; 27 `--- PASS` em `-run 'TestNested|TestDedup_'`). Faltam:
 ### ML-1C — Corretivo do ML-1B
 **Status:** ✅ Concluído
 **Agente:** apolo-tf
+**Files affected:** `internal/generators/agentfiles.go`, `internal/generators/update.go`, `internal/guardforms/guard_generations.go`, `internal/generators/nested_guard_migrate_dedup_test.go`, `internal/validator/guard_ac2_lines_ml1c_test.go` (fechado no #604)
 **Acceptance criteria:**
 - [x] Contra-braço medido em `origin/main` (via comentários de reconciliação em cada teste): 14 testes ML-1C e 13 testes AC2 reprovam em origin/main; 5 testes AC5/D14 passam nos dois lados.
 - [x] Windsurf: credential e git-branch, N legadas → 1 por par; AC5; D14 com o global de credential — `TestWindsurf_ML1C_*` (5 testes verdes)
@@ -188,6 +190,7 @@ O AC2 está fechado por teste de igualdade (`TestAC2_*`, 13 subtestes). O AC4 or
 ### ML-1D — Corretivo do ML-1C
 **Status:** ✅ Concluído
 **Agente:** apolo-tf
+**Files affected:** `internal/generators/guard_registry_sites_ac4_test.go`, `internal/generators/nested_guard_migrate_dedup_test.go` (fechado no #604)
 **Acceptance criteria:**
 - [x] `TestNestedMigrate_AmazonQ_NLegacies_Deduplicates` também exige zero legadas no par, e reprova em `origin/main`
 - [x] AC4: um teste orientado por tabela sobre (sítio, evento, matcher, guard) para todo sítio de projeto e global, iterando
@@ -203,6 +206,7 @@ agora: o credential guard do Amazon Q não migra `CredentialLegacyPSPOSIX`, enqu
 ### ML-1E — Amazon Q: credential com as formas PS/POSIX
 **Status:** ✅ Concluído
 **Agente:** apolo-tf
+**Files affected:** `internal/generators/agentfiles.go`, `internal/generators/guard_registry_sites_ac4_test.go` (fechado no #604)
 **Acceptance criteria:**
 - [x] `InjectAmazonQHooks` migra também `guardforms.CredentialLegacyPSPOSIX` para a forma atual de cmd.exe, nos pares de credential que ele emite
 - [x] A linha do Amazon Q de credential no `TestAC4_RegistrySites` passa a iterar `CredentialLegacyPSPOSIX`, e o comentário de lacuna sai
@@ -215,18 +219,21 @@ agora: o credential guard do Amazon Q não migra `CredentialLegacyPSPOSIX`, enqu
 ### ML-2A — Revisão de qualidade
 **Status:** ✅ Concluído
 **Agente:** hefesto-tf
+**Files affected:** `docs/qualidade/2026-10-23-revisao-geracoes-do-guard.md` (fechado no #604)
 **Acceptance criteria:**
 - [x] Parecer: REPROVADO com B1 (literal do Gemini) e R1–R5 — `docs/qualidade/2026-10-23-revisao-geracoes-do-guard.md`; corretivo no ML-2C
 
 ### ML-2B — Red-team da remoção
 **Status:** ✅ Concluído
 **Agente:** hades-tf
+**Files affected:** `docs/seguranca/2026-10-23-redteam-geracoes-do-guard.md` (fechado no #604)
 **Acceptance criteria:**
 - [x] Parecer: 15 ataques, 14 PASS; B1 (Copilot: `view` e `create|edit` somem com o global instalado) — `docs/seguranca/2026-10-23-redteam-geracoes-do-guard.md`; corretivo no ML-2C. Nenhum hook do usuário removido
 
 ### ML-2C — Corretivo das revisões
 **Status:** ✅ Concluído
 **Agente:** apolo-tf
+**Files affected:** `internal/generators/agentfiles.go`, `internal/generators/copilot_kiro_d14_ml2c_test.go`, `internal/generators/credential_guard_dedup_test.go`, `internal/generators/cursor_guard_migrate_dedup_test.go`, `internal/generators/guard_harness_dedup_test.go` (fechado no #604)
 **Por que existe:** o Hefesto achou o B1, em que o `InjectGeminiHooks` passa o literal `"scripts/trackfw-credential-guard.sh"`
 em 6 chamadas. O Hades achou o B1 do Copilot, e o arquiteto mediu o mesmo defeito no Kiro: o `InjectKiroHooks` deixa de
 emitir `read` e `write` com o global instalado, e o global do Kiro só cobre `shell`. Copilot e Kiro ficaram fora da matriz
@@ -262,6 +269,93 @@ confirmando que os novos testes reprovam a condição correta.
 ### ML-3A — make quality e CI
 **Status:** ✅ Concluído
 **Agente:** zeus-tf
+**Files affected:** nenhum arquivo de produto; só medição (fechado no #604)
 **Acceptance criteria:**
 - [x] `make quality` rc=0 com a máquina ociosa e o HOME isolado (falsificação 368 OK / 0 FAIL; FAIL do log são só braços de autoteste)
 - [x] CI do PR verde; PR com `Closes #599` — #604, 20/20 no 39d0ac26; #599 fechada
+
+
+---
+
+## Reabertura (2026-10-24, issue #613): a fiação de projeto não depende do guard global
+
+**Por que o escopo original não previa:** o AC6 deste roadmap pedia a remoção, e ela foi entregue e testada. O defeito
+está na própria decisão (D14 e decisão 4 do ADR-2026-08-06): ela grava estado da máquina num arquivo versionado. Nenhum
+teste cruzou `update` com global e depois `validate`, e é a mesma falha de enumeração da Wave 1, porque a matriz cruzou
+só a dimensão do defeito original.
+
+**Medido:**
+- ea-cmdb: 4 `guard_wiring_removed` (#613).
+- Este repositório, PR #612: 9 `guard_wiring_removed`, `trackfw validate` rc=1 e CI vermelho em `governance-go-install` e
+  `governance-install-script`.
+
+**Decisão:** a D15 do ADR-2026-10-04.
+
+## Wave 4 — Threat model e enumeração de sítios da D15
+> Dependencies: nenhuma. Gate: `trackfw barrier <roadmap> --wave 4` e auditoria do arquiteto antes da Wave 5.
+
+### ML-4A — Threat model da D15 e matriz de sítios
+**Status:** ⬜ Pendente
+**Agente:** hades-tf
+**Files affected:** `docs/seguranca/2026-10-24-wave0-guard-global-versionado.md` (novo; o único arquivo que o ML escreve)
+**Acceptance criteria:**
+- [ ] **Matriz por mecanismo.** Lista todo sítio que lê estado global para decidir sobre a fiação de **projeto**, com
+  arquivo:linha:
+  - os `globalCredentialGuardInstalled*` e `globalGitBranchGuardInstalled*` de `internal/generators/agentfiles.go`, e
+    quem os chama (`Inject*Hooks`, `update.go`, `internal/guardforms`);
+  - no validador, todo `globalInstalled:` e toda leitura de `$HOME` que aceite ausência de fiação de projeto
+    (`internal/validator/validator_credential_guard.go`, `validator_git_branch_guard.go`, `validator_guard_wiring.go`).
+  Para cada sítio, diz se ele **pula**, **remove** ou **aceita ausência**. Separa os que só tratam o escopo **global**
+  (`update harness`, `validateGuardGlobalHookResolvable`), que ficam como estão.
+- [ ] **Testes que afirmam o contrato antigo,** com nome e arquivo. Eles vão inverter por contrato e não são
+  pré-existentes. Inclui no mínimo os braços D14 do #604, `copilot_kiro_d14_ml2c_test.go`, `credential_guard_dedup_test.go`,
+  `git_branch_guard_dedup_test.go`, `guard_harness_dedup_test.go` e o ML-1D da REQ-2026-10-06 (Windsurf).
+- [ ] **Idempotência do segundo disparo,** com o global e o projeto rodando no mesmo evento. Mede o efeito colateral de
+  `credential` em `PreToolUse` e `PostToolUse` no modo `warn` (arquivo de atenção, log) e no modo `block`, e o de
+  `git-branch`. Diz se a ordem e o paralelismo dos hooks do Claude Code mudam o veredito.
+- [ ] **Ameaças:** fail-open em algum caminho novo, um repositório limpo que passa a ter violation (aperto do validador →
+  efeito em consumidores e na decisão de versão), e o `init` em máquina sem global.
+- [ ] Recomendação de `Files affected` exatos para o ML-5A.
+
+## Wave 5 — Implementação da D15
+> Dependencies: Wave 4 auditada.
+
+### ML-5A — Geradores e validador sem consulta ao global para a fiação de projeto
+**Status:** ⬜ Pendente
+**Agente:** apolo-tf
+**Files affected:** a definir pela Wave 4. No mínimo `internal/generators/agentfiles.go`, `internal/generators/update.go`,
+`internal/validator/validator_credential_guard.go`, os testes listados pela Wave 4, um teste novo
+`internal/commands/update_validate_global_guard_test.go`, `docs/cli-parity.md` e `CHANGELOG.md`.
+**Acceptance criteria:**
+- [ ] AC6 revisto: todo sítio da matriz da Wave 4 que pula ou remove deixa de fazê-lo. Com e sem global, a fiação de
+  projeto é emitida e migrada por par.
+- [ ] O validador não aceita mais ausência de fiação de projeto por causa do global.
+- [ ] AC9: teste de cruzamento por CLI (HOME falso com global, fixture git com `origin/main`, `init`/`update` → `validate`
+  rc=0), com contra-braço que reprova em `origin/main`.
+- [ ] Os testes do contrato antigo passam a afirmar a D15. Cada teste novo ou invertido declara a conclusão que afirma
+  (Regra de Reconciliação).
+
+## Wave 6 — Revisões independentes
+> Dependencies: Wave 5 auditada.
+
+### ML-6A — Revisão de qualidade
+**Status:** ⬜ Pendente
+**Agente:** hefesto-tf
+**Files affected:** `docs/qualidade/2026-10-24-revisao-guard-global-versionado.md`
+
+### ML-6B — Red-team da D15
+**Status:** ⬜ Pendente
+**Agente:** hades-tf
+**Files affected:** `docs/seguranca/2026-10-24-redteam-guard-global-versionado.md`
+
+## Wave 7 — Fechamento
+> Dependencies: Wave 6 aprovada.
+
+### ML-7A — make quality, CI e PR
+**Status:** ⬜ Pendente
+**Agente:** zeus-tf
+**Files affected:** nenhum arquivo de produto; só medição
+**Acceptance criteria:**
+- [ ] `make quality` rc=0 com a máquina ociosa e o HOME isolado
+- [ ] `trackfw update` neste repositório, numa máquina com global, seguido de `trackfw validate; echo rc=$?` sem pipe: rc=0
+- [ ] CI do PR verde; PR com `Closes #613`

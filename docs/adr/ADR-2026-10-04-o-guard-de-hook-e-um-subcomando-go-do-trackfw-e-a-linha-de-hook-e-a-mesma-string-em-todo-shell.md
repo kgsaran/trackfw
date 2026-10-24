@@ -363,6 +363,8 @@ não estão no registro (hooks do usuário) nunca são removidas nem reescritas.
 
 ### D14 — Com o guard global instalado, a forma legada de projeto é removida
 
+> **Substituída pela D15 (2026-10-24, #613).**
+
 Quando o guard global do CLI está instalado, a entrada de projeto não é emitida (ADR-2026-08-06, decisão 4). Hoje, porém,
 uma forma legada de projeto é **migrada** para a forma atual mesmo com o global presente, e isso duplica o guard. Passa a
 ser assim: com o global instalado, uma entrada de projeto reconhecida pelo registro é **removida**; sem o global, ela é
@@ -373,6 +375,8 @@ REQ: `docs/req/REQ-2026-10-23-update-nao-remove-geracoes-antigas-do-credential-g
 
 ### D14 revista (2026-10-23, auditoria da Wave 0): a remoção é por par, e só onde o global cobre
 
+> **Substituída pela D15 (2026-10-24, #613).**
+
 A Wave 0 (`docs/seguranca/2026-10-23-wave0-geracoes-do-guard.md`, T4 e R2) mediu que o guard global do Cursor só cobre
 `beforeShellExecution`/`afterShellExecution`. Os pares `preToolUse`/`postToolUse` × `Read`/`Write` não têm guard global.
 Com a D14 original, uma remoção "com o global instalado" tiraria o único guard que esses pares têm.
@@ -382,3 +386,36 @@ Num par que o guard global daquele CLI cobre, a entrada de projeto reconhecida p
 global não cobre, ela é migrada para a forma atual e continua sendo emitida, haja ou não global instalado. Isso não roda o
 guard duas vezes: o global não está naquele par. O efeito colateral é intencional e corrige uma lacuna de hoje, em que o
 `InjectCursorHooks` com o global instalado deixa de emitir Read/Write e esses pares ficam sem guard.
+
+### D15 (2026-10-24, issue #613): a fiação de projeto não depende do guard global — substitui a D14 e a decisão 4 do ADR-2026-08-06
+
+**Status: substitui a D14 (original e revista) deste ADR e a decisão 4 do ADR-2026-08-06.** O dedup do git-branch-guard
+global do ROADMAP-2026-08-17 também cai.
+
+**Defeito medido.** Com o guard global instalado, o `trackfw update` 11.0.0 remove do projeto as entradas que o global
+cobre (D14), e o `trackfw init` deixa de emiti-las (decisão 4 do ADR-2026-08-06). Só que `.claude/settings.json`,
+`.codex/hooks.json`, `.gemini/settings.json` e equivalentes são **versionados**, e o guard global existe apenas na máquina
+de quem rodou o comando. O resultado:
+- o repositório fica sem guard no CI e em todo clone sem global;
+- o `validate` da mesma versão reprova (`guard_wiring_removed`);
+- medido no consumidor ea-cmdb, 4 violations (#613), e neste repositório, 9 violations (rc=1, CI vermelho no #612).
+
+As duas decisões leram estado da máquina e gravaram o resultado num artefato compartilhado.
+
+**Decisão.** Nenhum gerador de **projeto** consulta o guard global, nem para pular, nem para remover. A fiação de projeto é
+sempre emitida e migrada para a forma atual, por par (D13), com ou sem global. O validador também deixa de usar o estado
+global para aceitar ausência de fiação de projeto, porque o veredito do `validate` precisa ser o mesmo na máquina do
+mantenedor e no CI. O `update harness` (escopo global) não muda.
+
+**Custo aceito.** Numa máquina com o global, o guard roda duas vezes por evento coberto. Mediana medida, 20 execuções:
+`credential` 12,5 ms e `git-branch` 10,6 ms por chamada. A idempotência do segundo disparo (por exemplo, o arquivo de
+atenção no modo `warn`) fica medida na Wave 0 da REQ.
+
+**Alternativas rejeitadas (#613):**
+- **Dedup em tempo de execução**, em que o guard de projeto vira no-op quando o global já rodou. Rejeitada porque cada
+  chamada passaria a ler o arquivo global, o que custa o mesmo que rodar o guard, e porque abre uma rota de fail-open se a
+  detecção errar. O ganho, que é evitar ~11 ms, não paga o risco num controle de negação.
+- **Opt-in auditável no `trackfw.yaml` para aceitar a remoção.** Rejeitada porque mantém o artefato versionado dependente
+  da máquina de quem o gerou. O CI continuaria sem guard.
+
+REQ: `docs/req/REQ-2026-10-23-update-nao-remove-geracoes-antigas-do-credential-guard-em-pares-evento-matcher-e-o-validate-manda-rodar-update-que-nao-resolve.md` (AC6 revisto, AC9).
