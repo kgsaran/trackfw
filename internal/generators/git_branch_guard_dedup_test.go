@@ -24,7 +24,7 @@ func gbgDedupScriptPath(home string) string {
 // Reconciliação (D15): afirma que InjectClaudeHooks SEMPRE emite git-branch-guard
 // mesmo com o harness global instalado. A semente existe para provar que o código
 // não a lê para pular a fiação de projeto.
-func TestGBGDedup_Claude_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
+func TestProjectGitBranchGuard_Claude_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
 	home := dedupFixtureHome(t)
 	scriptPath := gbgDedupScriptPath(home)
 	helperWriteJSON(t, filepath.Join(home, ".claude", "settings.json"), map[string]interface{}{
@@ -56,7 +56,7 @@ func TestGBGDedup_Claude_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) 
 }
 
 // Reconciliação (D15): Codex — idem Claude.
-func TestGBGDedup_Codex_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
+func TestProjectGitBranchGuard_Codex_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
 	home := dedupFixtureHome(t)
 	scriptPath := gbgDedupScriptPath(home)
 	helperWriteJSON(t, filepath.Join(home, ".codex", "hooks.json"), map[string]interface{}{
@@ -85,7 +85,7 @@ func TestGBGDedup_Codex_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
 }
 
 // Reconciliação (D15): Gemini — idem Claude.
-func TestGBGDedup_Gemini_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
+func TestProjectGitBranchGuard_Gemini_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
 	home := dedupFixtureHome(t)
 	scriptPath := gbgDedupScriptPath(home)
 	helperWriteJSON(t, filepath.Join(home, ".gemini", "settings.json"), map[string]interface{}{
@@ -114,7 +114,7 @@ func TestGBGDedup_Gemini_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) 
 }
 
 // Reconciliação (D15): Cursor — both beforeShellExecution entries must be present.
-func TestGBGDedup_Cursor_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
+func TestProjectGitBranchGuard_Cursor_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
 	home := dedupFixtureHome(t)
 	scriptPath := gbgDedupScriptPath(home)
 	helperWriteJSON(t, filepath.Join(home, ".cursor", "hooks.json"), map[string]interface{}{
@@ -153,9 +153,9 @@ func TestGBGDedup_Cursor_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) 
 	}
 }
 
-// Reconciliação (D15): Cursor both-globally-installed — D15 always emits, so
-// beforeShellExecution must have both entries (credential + git-branch) present.
-func TestGBGDedup_Cursor_BothGloballyInstalled_KeyAbsentNotEmpty(t *testing.T) {
+// Reconciliação (D15): afirma que, com ambos os guards globais instalados para Cursor,
+// beforeShellExecution contém tanto credential-guard quanto git-branch-guard (D15: sempre emitidos).
+func TestProjectGitBranchGuard_Cursor_BothGloballyInstalled_BothKeysPresent(t *testing.T) {
 	home := dedupFixtureHome(t)
 	credScriptPath := dedupScriptPath(home)
 	gbgScriptPath := gbgDedupScriptPath(home)
@@ -200,7 +200,7 @@ func TestGBGDedup_Cursor_BothGloballyInstalled_KeyAbsentNotEmpty(t *testing.T) {
 }
 
 // Reconciliação (D15): Copilot — git-branch-guard must be present even with global.
-func TestGBGDedup_Copilot_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
+func TestProjectGitBranchGuard_Copilot_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
 	home := dedupFixtureHome(t)
 	scriptPath := gbgDedupScriptPath(home)
 	helperWriteJSON(t, filepath.Join(home, ".copilot", "settings.json"), map[string]interface{}{
@@ -243,7 +243,7 @@ func TestGBGDedup_Copilot_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T)
 // the global command with // in the path is a seed that proves the code no
 // longer reads the global file to skip project wiring. The guard must be
 // present in the project file regardless.
-func TestGBGDedup_Claude_EmitsProjectEntry_WithDoubleSlashInGlobalCommand(t *testing.T) {
+func TestProjectGitBranchGuard_Claude_EmitsProjectEntry_WithDoubleSlashInGlobalCommand(t *testing.T) {
 	home := dedupFixtureHome(t)
 	rawStoredCommand := home + "//" + ".trackfw/scripts/trackfw-git-branch-guard.sh"
 	helperWriteJSON(t, filepath.Join(home, ".claude", "settings.json"), map[string]interface{}{
@@ -332,7 +332,7 @@ func runGitBranchGuardEntries(t *testing.T, projectDir string, scriptPaths []str
 	return count
 }
 
-// TestGBGDedup_MessageAppearsOnceWhenBothScopesInstalled (D15): under D15,
+// TestProjectGitBranchGuard_BothScopesFireIndependently_TwoMessages (D15): under D15,
 // InjectClaudeHooks ALWAYS emits the project-scope entry even when a global
 // entry exists. Claude Code merges both project and global scope hooks for a
 // single Bash tool call, so the combined set has TWO git-branch-guard entries
@@ -341,9 +341,9 @@ func runGitBranchGuardEntries(t *testing.T, projectDir string, scriptPaths []str
 // (ADR §D15: ~10.6 ms on a dual-scope machine). The NonVacuous test below
 // confirms 2 blocks is achievable.
 //
-// Reconciliação (D15): afirma que a combinação de fiação de projeto e global
-// resulta em exatamente 2 entradas de git-branch-guard e 2 bloqueios.
-func TestGBGDedup_MessageAppearsOnceWhenBothScopesInstalled(t *testing.T) {
+// Reconciliação (D15): afirma que projeto + global emitem 2 entradas independentes de
+// git-branch-guard, resultando em 2 bloqueios (custo aceito por D15).
+func TestProjectGitBranchGuard_BothScopesFireIndependently_TwoMessages(t *testing.T) {
 	home := dedupFixtureHome(t)
 
 	// Seed global scope exactly the way harnessGitBranchGuardTargetClaude would.
@@ -406,13 +406,13 @@ func TestGBGDedup_MessageAppearsOnceWhenBothScopesInstalled(t *testing.T) {
 	}
 }
 
-// TestGBGDedup_MessageAppearsOnceWhenBothScopesInstalled_NonVacuous proves
+// TestProjectGitBranchGuard_BothScopesFireIndependently_TwoMessages_NonVacuous proves
 // the test above is not vacuous: with the SAME fixture but the dedup
 // deliberately bypassed (both the project-scope AND a second, synthetic
 // global-scope entry executed, simulating the pre-ML-2B double-wiring bug),
 // the block message appears twice — the exact production symptom
 // (`docs/roadmaps/wip/ROADMAP-2026-08-17-...md` ML-2B "Impacto medido").
-func TestGBGDedup_MessageAppearsOnceWhenBothScopesInstalled_NonVacuous(t *testing.T) {
+func TestProjectGitBranchGuard_BothScopesFireIndependently_TwoMessages_NonVacuous(t *testing.T) {
 	home := dedupFixtureHome(t)
 	if err := GenerateGlobalGitBranchGuardScript(home); err != nil {
 		t.Fatalf("GenerateGlobalGitBranchGuardScript failed: %v", err)

@@ -2,23 +2,23 @@ package generators
 
 // cursor_guard_migrate_dedup_test.go — AC5, AC6, AC7 (REQ-2026-10-23, ML-1A)
 //
-// These tests verify the D13/D14-revised fix for issue #599:
+// These tests verify the D15 behavior for issue #599 (updated from D13/D14-revised):
 //
 //   AC5 — user hooks survive:  an entry whose command is NOT in the registry
 //          is left untouched byte-for-byte by InjectCursorHooks.
 //
-//   AC6 — three D14-revised arms:
+//   AC6 — three D15 arms (global guard detection removed; all entries always emitted):
 //          A) no global guards → shell events + Read/Write pairs all present, once each.
-//          B) global credential guard installed → shell events for cred removed,
-//             Read/Write pairs still present; git-branch still in shell events.
-//          C) global git-branch guard installed → git-branch removed from shell
-//             events; credential in shell events + Read/Write pairs still present.
+//          B) global credential guard installed → cred guard PRESENT in shell events
+//             (D15: always emitted); Read/Write pairs also present; git-branch present.
+//          C) global git-branch guard installed → git-branch PRESENT (D15: always
+//             emitted); credential in shell events + Read/Write pairs also present.
 //
 //   AC7 — idempotency: two consecutive InjectCursorHooks calls produce identical JSON.
 //
 // Reconciliação (CLAUDE.md Regra Dura de Reconciliação):
 //   AC5 asserts: exact equality comparison leaves non-registry entries untouched.
-//   AC6 asserts: global guard detection gates the three D14-revised code paths.
+//   AC6 asserts: InjectCursorHooks always emits all entries regardless of global guard state (D15 — global detection removed).
 //   AC7 asserts: migrateDedupGuardInFlatArray is idempotent when the result is canonical.
 
 import (
@@ -215,8 +215,9 @@ func TestCursorGuardMigrateDedup_UserHookSurvives(t *testing.T) {
 // AC6 — three D14-revised arms
 // ---------------------------------------------------------------------------
 
-// TestCursorGuardMigrateDedup_D14Arms runs three sub-tests for the three arms
-// of D14 revised (ADR-2026-10-04 adendo 2026-10-23).
+// TestCursorGuardMigrateDedup_D14Arms runs three sub-tests for the three D15 arms
+// (ADR-2026-10-04 adendo 2026-10-24): global guard detection was removed; all entries
+// are always emitted regardless of global guard state.
 //
 // Each arm SEEDS the directory with legacy entries so that removeGuardFromFlatArrayInHooks
 // is actually exercised on pre-existing data — not just on a fresh empty dir.
@@ -230,18 +231,16 @@ func TestCursorGuardMigrateDedup_UserHookSurvives(t *testing.T) {
 // Arm B: global credential guard installed.
 //   - Seed: two legacy cred forms + user hook in beforeShellExecution;
 //           legacy cred forms in preToolUse/Read and postToolUse/Read.
-//   - After inject: NO cred guard in beforeShellExecution (removed, D14); user hook survives;
-//                   git-branch guard present; cred guards in Read/Write pairs (D14 revised).
+//   - After inject: cred guard PRESENT in beforeShellExecution (D15: always emitted);
+//                   user hook survives; git-branch guard present; cred guards in Read/Write pairs.
 //
 // Arm C: global git-branch guard installed.
 //   - Seed: legacy git guard + legacy cred guard in beforeShellExecution.
-//   - After inject: NO git guard in shell events (removed); cred present once;
+//   - After inject: git-branch guard PRESENT (D15: always emitted); cred present once;
 //                   Read/Write pairs still have cred guard.
 //
-// Reconciliação: afirma que a detecção do guard global aciona os três ramos do D14
-// revisado com dados pré-existentes — se removeGuardFromFlatArrayInHooks não removesse
-// a entrada legada no braço B, haveria entradas de cred em beforeShellExecution e o
-// teste falharia.
+// Reconciliação: afirma que InjectCursorHooks emite incondicionalmente todas as entradas
+// nos três braços — a presença do guard global não suprime o wiring de projeto (D15).
 func TestCursorGuardMigrateDedup_D14Arms(t *testing.T) {
 	const userShellHook = "my-custom-shell-hook --flag" // not in any registry
 

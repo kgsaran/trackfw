@@ -34,7 +34,7 @@ func dedupScriptPath(home string) string {
 // Reconciliação (D15): afirma que InjectClaudeHooks SEMPRE emite as entradas de
 // credential guard mesmo com o harness global instalado. A semente global existe para
 // provar que o código não a lê para pular a fiação de projeto.
-func TestDedup_Claude_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
+func TestProjectCredentialGuard_Claude_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
 	home := dedupFixtureHome(t)
 	scriptPath := dedupScriptPath(home)
 	helperWriteJSON(t, filepath.Join(home, ".claude", "settings.json"), map[string]interface{}{
@@ -69,7 +69,7 @@ func TestDedup_Claude_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
 }
 
 // Reconciliação (D15): Codex — idem Claude.
-func TestDedup_Codex_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
+func TestProjectCredentialGuard_Codex_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
 	home := dedupFixtureHome(t)
 	scriptPath := dedupScriptPath(home)
 	helperWriteJSON(t, filepath.Join(home, ".codex", "hooks.json"), map[string]interface{}{
@@ -104,7 +104,7 @@ func TestDedup_Codex_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
 }
 
 // Reconciliação (D15): Gemini — idem Claude.
-func TestDedup_Gemini_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
+func TestProjectCredentialGuard_Gemini_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
 	home := dedupFixtureHome(t)
 	scriptPath := dedupScriptPath(home)
 	helperWriteJSON(t, filepath.Join(home, ".gemini", "settings.json"), map[string]interface{}{
@@ -140,7 +140,7 @@ func TestDedup_Gemini_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
 
 // Reconciliação (D15): Cursor — both beforeShellExecution entries (credential + git-branch)
 // must be present when global is installed.
-func TestDedup_Cursor_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
+func TestProjectCredentialGuard_Cursor_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
 	home := dedupFixtureHome(t)
 	scriptPath := dedupScriptPath(home)
 	helperWriteJSON(t, filepath.Join(home, ".cursor", "hooks.json"), map[string]interface{}{
@@ -203,7 +203,7 @@ func TestDedup_Cursor_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
 }
 
 // Reconciliação (D15): Copilot — bash credential guard must be present even with global.
-func TestDedup_Copilot_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
+func TestProjectCredentialGuard_Copilot_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
 	// D15: global seed present to prove the code no longer reads it to skip.
 	home := dedupFixtureHome(t)
 	scriptPath := dedupScriptPath(home)
@@ -277,7 +277,7 @@ func TestDedup_Copilot_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
 }
 
 // Reconciliação (D15): Kiro — shell credential guard must be present even with global.
-func TestDedup_Kiro_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
+func TestProjectCredentialGuard_Kiro_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
 	// D15: global kiro seed present.
 	home := dedupFixtureHome(t)
 	globalKiroPath := filepath.Join(home, ".kiro", "hooks", "trackfw-credential-guard.json")
@@ -331,7 +331,7 @@ func TestDedup_Kiro_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
 // credential guard em pre_run_command e pre_write_code mesmo com a instalação global
 // (~/.codeium/windsurf/hooks.json) presente. A semente existe para provar que o código
 // não a lê para pular a fiação de projeto.
-func TestDedup_Windsurf_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
+func TestProjectCredentialGuard_Windsurf_EmitsProjectEntryEvenWhenGlobalInstalled(t *testing.T) {
 	home := dedupFixtureHome(t)
 	helperWriteJSON(t, filepath.Join(home, ".codeium", "windsurf", "hooks.json"), map[string]interface{}{
 		"hooks": map[string]interface{}{

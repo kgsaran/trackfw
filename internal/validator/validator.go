@@ -1861,7 +1861,7 @@ func inventoryBlock(cfg config.ProjectConfig) string {
 		}
 	}
 
-	states := []string{"backlog", "analyzing", "wip", "blocked", "done", "abandoned"}
+	states := config.RoadmapStates()
 	roadmapCounts := make(map[string]int, len(states))
 	roadmapTotal := 0
 	for _, state := range states {
@@ -2095,9 +2095,13 @@ func isDotPrefixedName(name string) bool {
 // recomendação adotada sem alteração). Esta exclusão vive só aqui, não no resolvedor — a colisão de
 // nome não é "comprovadamente infraestrutura" como isInfraDirName, é uma inferência sobre o
 // significado do nome, então só afeta a violação, nunca a união/enumeração.
-var agentNamespaceStateNames = map[string]bool{
-	"backlog": true, "analyzing": true, "wip": true, "blocked": true, "done": true, "abandoned": true,
-}
+var agentNamespaceStateNames = func() map[string]bool {
+	m := make(map[string]bool, len(config.RoadmapStates()))
+	for _, s := range config.RoadmapStates() {
+		m[s] = true
+	}
+	return m
+}()
 
 // undeclaredNamespacesOnDisk devolve, a partir do resolvedor canônico (que já filtra infra e não
 // segue symlink), os nomes de namespace presentes em dir e ausentes de agents:, excluindo colisões
@@ -2362,7 +2366,7 @@ func ResolveAgentNamespaces(cfg config.ProjectConfig, dir string) []string {
 // REQ. Ela existe apenas para o leitor tolerar árvores antigas: pelo invariante D1 da
 // ADR-2026-09-03, REQ NÃO tem dimensão de estado — backlog/analyzing/wip/blocked/done/abandoned são
 // conceito de roadmap. Nada aqui deve ser usado para ESCREVER REQ.
-var reqLayoutStates = []string{"backlog", "analyzing", "wip", "blocked", "done", "abandoned"}
+var reqLayoutStates = config.RoadmapStates()
 
 // ResolveWriteAgent resolve o namespace de agente para escrita em modo by_agent.
 //
@@ -4138,6 +4142,12 @@ func reqStatusValue(content string) string {
 	return ""
 }
 
+// roadmapFolderStates is the scan order for validateFolderStatusCoherence and
+// validateFilenameUniqueness. "wip" appears first so active roadmaps are found
+// quickly. Order IS semantic; the set must equal config.RoadmapStates() —
+// see TestRoadmapFolderStates_SetEqualsCanonical in roadmap_order_states_test.go.
+var roadmapFolderStates = []string{"wip", "backlog", "analyzing", "blocked", "done", "abandoned"}
+
 // folderToExpectedStatus mapeia o nome da pasta para os valores de status aceitos.
 var folderToExpectedStatus = map[string][]string{
 	"wip":       {"WIP", "wip", "In Progress"},
@@ -4152,7 +4162,7 @@ var folderToExpectedStatus = map[string][]string{
 func validateFolderStatusCoherence() ([]string, error) {
 	cfg := config.Load()
 	var warnings []string
-	states := []string{"wip", "backlog", "analyzing", "blocked", "done", "abandoned"}
+	states := roadmapFolderStates
 
 	type dirState struct{ path, state string }
 	var dirs []dirState
@@ -4221,7 +4231,7 @@ func validateFolderStatusCoherence() ([]string, error) {
 // validateFilenameUniqueness detecta o mesmo filename em múltiplos estados.
 func validateFilenameUniqueness() ([]string, error) {
 	cfg := config.Load()
-	states := []string{"wip", "backlog", "analyzing", "blocked", "done", "abandoned"}
+	states := roadmapFolderStates
 
 	seen := map[string][]string{}
 

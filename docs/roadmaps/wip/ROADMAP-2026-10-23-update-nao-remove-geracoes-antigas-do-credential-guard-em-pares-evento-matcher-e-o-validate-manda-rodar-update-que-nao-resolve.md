@@ -431,32 +431,59 @@ go test ./internal/commands/ -run 'MLScope' -count=1 -v
   testes de idempotência existentes, que cobrem o caminho "sem global", hoje o único caminho.
 
 ### ML-6C — Corretivo do ML-6A (nomes, comentários e documentação)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** apolo-tf
-**Files affected:** `internal/generators/nested_guard_migrate_dedup_test.go`, `internal/generators/git_branch_guard_dedup_test.go`, `internal/generators/copilot_kiro_d14_ml2c_test.go`, `internal/generators/cursor_guard_migrate_dedup_test.go`, `internal/generators/credential_guard_dedup_test.go`, `internal/generators/agentfiles.go`, `internal/validator/validator_git_branch_guard.go`, `internal/commands/update_validate_global_guard_test.go`, `docs/cli-parity.md`
+**Files affected:** `internal/generators/nested_guard_migrate_dedup_test.go`, `internal/generators/git_branch_guard_dedup_test.go`, `internal/generators/copilot_kiro_d14_ml2c_test.go`, `internal/generators/cursor_guard_migrate_dedup_test.go`, `internal/generators/credential_guard_dedup_test.go`, `internal/generators/agentfiles.go`, `internal/validator/validator_git_branch_guard.go`, `internal/commands/update_validate_global_guard_test.go`, `docs/cli-parity.md`, `internal/generators/guard_generations.go` (só comentário, com o nome de teste renomeado)
 **Acceptance criteria:**
-- [ ] B1–B6: nome e comentário de cada teste dizem o que o corpo afirma (D15)
-- [ ] R1, R2, R3, R5, R7, R8 e R9 do parecer `docs/qualidade/2026-10-24-revisao-guard-global-versionado.md` corrigidos
-- [ ] R6: o braço do validador do AC9 exige a violation específica de presença do credential guard, e não só rc≠0
-- [ ] Nenhuma mudança de lógica de produto. `git diff` em `agentfiles.go` e `validator_git_branch_guard.go` toca só comentários
+- [x] B1–B6: nome e comentário de cada teste dizem o que o corpo afirma (D15)
+- [x] R1, R2, R3, R5, R7, R8 e R9 do parecer `docs/qualidade/2026-10-24-revisao-guard-global-versionado.md` corrigidos
+- [x] R6: o braço do validador do AC9 exige a violation específica de presença do credential guard, e não só rc≠0
+- [x] Nenhuma mudança de lógica de produto. `git diff` em `agentfiles.go` e `validator_git_branch_guard.go` toca só comentários
+**Auditoria do arquiteto (2026-10-24):** aprovado. Em `agentfiles.go`, `validator_git_branch_guard.go` e
+`guard_generations.go`, o diff toca só comentários: medido por grep das linhas `[-+]` que não são comentário, com resultado
+vazio nos três.
 
 ### ML-6D — Uma lista canônica de estados de roadmap (R4 do ML-6A, R-1 do ML-6B)
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** apolo-tf
 **Dependencies:** ML-6C, pelo pacote `internal/generators`.
-**Files affected:** `internal/config/config.go`, `internal/config/roadmap_states_test.go` (novo), `internal/commands/barrier.go`, `internal/discover/discover.go`, `internal/discover/discover_test.go`, `internal/generators/context.go`, `internal/generators/roadmap.go`, `internal/serve/api_board.go`, `internal/validator/validator.go`, `internal/validator/validator_roadmap_gates.go`, `internal/validator/validator_traceid.go`
+**Files affected:** `internal/config/config.go`, `internal/config/roadmap_states_test.go` (novo), `internal/commands/barrier.go`, `internal/discover/discover.go`, `internal/discover/discover_test.go`, `internal/generators/context.go`, `internal/generators/roadmap.go`, `internal/serve/api_board.go`, `internal/validator/validator.go`, `internal/validator/validator_roadmap_gates.go`, `internal/validator/validator_traceid.go`, `internal/generators/context_test.go`, `internal/generators/roadmap_order_states_test.go` (novo), `internal/validator/roadmap_order_states_test.go` (novo), `internal/serve/api_board_test.go`
 **Por que existe:** a lista literal dos 6 estados está copiada à mão em 16 sítios de 6 pacotes, e o ML-5B criou mais uma.
 As cópias já divergem: `internal/discover/discover.go` (~L520–L543) não tem `analyzing`, e por isso o `discover` deixa de
 contar os roadmaps em `analyzing/` e de detectar o modo `by_agent` por essa pasta. É a mesma causa da cópia do ML-5B:
 uma lista sem fonte única.
 **Acceptance criteria:**
-- [ ] Uma lista exportada única (proposta: `config.RoadmapStates`, se não criar ciclo de import) é consumida por todo
+- [x] Uma lista exportada única (proposta: `config.RoadmapStates`, se não criar ciclo de import) é consumida por todo
   sítio que precisa do **conjunto**
-- [ ] Sítios em que a **ordem** tem semântica (prioridade de busca, como `roadmapStateOrder` em `generators/roadmap.go`)
+- [x] Sítios em que a **ordem** tem semântica (prioridade de busca, como `roadmapStateOrder` em `generators/roadmap.go`)
   mantêm a ordem própria, mas um teste afirma que o conjunto é igual ao da lista canônica
-- [ ] O `discover` conta `analyzing/` e detecta `by_agent` por ela. O teste reprova no HEAD anterior
-- [ ] O grep pela lista literal fora de `config` e de testes devolve só os sítios de ordem semântica, cada um com o teste
+- [x] O `discover` conta `analyzing/` e detecta `by_agent` por ela. O teste reprova no HEAD anterior
+- [x] O grep pela lista literal fora de `config` e de testes devolve só os sítios de ordem semântica, cada um com o teste
   de conjunto
+**Auditoria do arquiteto (2026-10-24):** aprovado depois do corretivo ML-6D2.
+- **Primeira entrega, reprovada em dois pontos:**
+  - `config.RoadmapStates()` devolvia a ordem **alfabética**. Os 5 sítios de conjunto mudaram de ordem de iteração, e
+    um deles é a ordem que o `inventoryBlock` mostra na saída.
+  - `context.go` ganhou `analyzing` sem nenhum teste.
+- **ML-6D2:**
+  - a ordem canônica é a do ciclo de vida, e `TestRoadmapStates_ExactLifecycleOrder` a fixa;
+  - `contextRoadmapStateOrder` tem teste de conjunto;
+  - `TestGetContext_AnalyzingRoadmapAppearsInOutput` cobre o `trackfw context` (outro sítio da mesma causa: omitia
+    `analyzing/`).
+- **Medido pelo arquiteto, no commit anterior (via `git archive`):**
+  - os testes `TestScan_Analyzing*` do discover reprovam (rc=1), e passam no HEAD;
+  - `TestGetContext_AnalyzingRoadmapAppearsInOutput` reprova (rc=1).
+- **Defeito conhecido, que vira o ML-6D3:** os testes de conjunto de `serve` e `validator` comparam o tamanho e só a
+  direção var→canônica. Uma lista com um estado duplicado e outro ausente passa.
+
+### ML-6D3 — Testes de conjunto bidirecionais
+**Status:** ⬜ Pendente
+**Agente:** apolo-tf
+**Files affected:** `internal/serve/api_board_test.go`, `internal/validator/roadmap_order_states_test.go`
+**Acceptance criteria:**
+- [ ] `TestBoardStates_SetEqualsCanonical`, `TestRoadmapFolderStates_SetEqualsCanonical` e
+  `TestTraceIdStateDirs_SetEqualsCanonical` checam as duas direções e rejeitam duplicata
+- [ ] Falsificação: numa cópia, uma lista com `wip` duplicado e sem `analyzing` faz cada um reprovar
 
 ## Wave 7 — Fechamento
 > Dependencies: Wave 6 aprovada.

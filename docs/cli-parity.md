@@ -4505,7 +4505,7 @@ de um roadmap anterior e não relacionado
    nunca invoca o Kiro diretamente). Decisão: documentar o pré-requisito nos doc comments dos 3 stacks
    e em `docs/cli-parity.md`, sem tentar sondagem de subprocesso e sem usar `TargetResult.Message`
    (reservado a `state: failed`).
-6. **D15 (ADR-2026-10-04 adendo 2026-10-24): wiring por-projeto sempre emitido.** Os 6
+6. **D15 (ADR-2026-10-04 adendo 2026-10-24): wiring por-projeto sempre emitido.** Os 7
    `InjectXHooks` de projeto emitem a entrada de credential-guard incondicionalmente — a leitura
    prévia do arquivo global (que existia no ML-3A para pular a entrada de projeto quando o guard
    global já estava instalado) foi removida. Em máquinas com o guard global instalado, o guard

@@ -353,16 +353,16 @@ func TestNestedMigrate_Gemini_AC5_UserHookSurvives(t *testing.T) {
 // AC6 — D14-revised arms for Claude, Codex, Gemini (seeded with legacy forms)
 // ---------------------------------------------------------------------------
 
-// TestNestedD14Arms_Claude runs the three D14-revised arms for Claude:
+// TestNestedD14Arms_Claude runs the three D15 arms for Claude:
 //   ArmA: no global → shell+Read+Write present, each exactly once.
-//   ArmB: global CG installed → shell absent; Read+Write still present (D14 revised).
-//   ArmC: global GBG installed → git-branch shell absent; cred unaffected.
+//   ArmB: global CG installed → shell PRESENT (D15); Read+Write also present.
+//   ArmC: global GBG installed → git-branch shell PRESENT (D15); cred unaffected.
 //
 // Each arm is seeded with legacy forms to confirm removal/migration works from
 // non-empty starting state.
 //
-// Reconciliação: afirma que a detecção do guard global aciona os três ramos de D14
-// revisado e que os pares não cobertos pelo global permanecem presentes.
+// Reconciliação: afirma que todos os pares (shell+Read+Write) estão presentes
+// independentemente do guard global (D15 — wiring de projeto não depende do guard global).
 func TestNestedD14Arms_Claude(t *testing.T) {
 	t.Run("ArmA_NoGlobal_AllPairsPresent", func(t *testing.T) {
 		nestedFixtureHome(t) // no global file → fail-open
@@ -502,7 +502,8 @@ func TestNestedD14Arms_Claude(t *testing.T) {
 
 // TestNestedD14Arms_Codex mirrors TestNestedD14Arms_Claude for Codex.
 //
-// Reconciliação: afirma que apply_patch está sempre presente, Bash ausente quando global.
+// Reconciliação: afirma que Bash e apply_patch estão sempre presentes (D15 — wiring
+// de projeto não depende do guard global).
 func TestNestedD14Arms_Codex(t *testing.T) {
 	t.Run("ArmB_GlobalCGInstalled_BashPresent_ApplyPatchPresent", func(t *testing.T) {
 		home := nestedFixtureHome(t)
@@ -553,8 +554,8 @@ func TestNestedD14Arms_Codex(t *testing.T) {
 
 // TestNestedD14Arms_Gemini mirrors TestNestedD14Arms_Claude for Gemini.
 //
-// Reconciliação: afirma que read/write pairs estão sempre presentes,
-// run_shell_command ausente quando global.
+// Reconciliação: afirma que run_shell_command, read e write pairs estão sempre
+// presentes (D15 — wiring de projeto não depende do guard global).
 func TestNestedD14Arms_Gemini(t *testing.T) {
 	t.Run("ArmB_GlobalCGInstalled_ShellPresent_ReadWritePresent", func(t *testing.T) {
 		home := nestedFixtureHome(t)

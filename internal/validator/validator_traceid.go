@@ -9,6 +9,13 @@ import (
 	"github.com/kgsaran/trackfw/internal/config"
 )
 
+// traceIdStateDirs is the scan order for collectTraceIdEntries,
+// collectTraceIdEntriesByAgent and buildRoadmapReqLinks. "wip" and "done"
+// appear first so the most active states are found first. Order IS semantic;
+// the set must equal config.RoadmapStates() —
+// see TestTraceIdStateDirs_SetEqualsCanonical in roadmap_order_states_test.go.
+var traceIdStateDirs = []string{"wip", "done", "backlog", "analyzing", "blocked", "abandoned"}
+
 // traceIdEntry representa um artefato indexado por req_id.
 type traceIdEntry struct {
 	reqID string // valor do campo trace_id_field
@@ -20,7 +27,7 @@ type traceIdEntry struct {
 // Se o diretório tiver subpastas de estado (wip/, done/, etc.), usa a pasta como estado.
 // Se não tiver subpastas, trata como flat com estado vazio.
 func collectTraceIdEntries(rootDir, traceField string, msgs *[]string) ([]traceIdEntry, error) {
-	stateDirs := []string{"wip", "done", "backlog", "analyzing", "blocked", "abandoned"}
+	stateDirs := traceIdStateDirs
 
 	var entries []traceIdEntry
 
@@ -87,7 +94,7 @@ func collectTraceIdEntries(rootDir, traceField string, msgs *[]string) ([]traceI
 // e retorna entradas indexadas pelo campo traceField.
 // Estrutura esperada: rootDir/<agente>/<estado>/*.md
 func collectTraceIdEntriesByAgent(roadmapDir, traceField string, cfg config.ProjectConfig, msgs *[]string) ([]traceIdEntry, error) {
-	stateDirs := []string{"wip", "done", "backlog", "analyzing", "blocked", "abandoned"}
+	stateDirs := traceIdStateDirs
 	agents := resolveAgentNamespaces(cfg, roadmapDir)
 	var all []traceIdEntry
 	for _, agent := range agents {
@@ -120,7 +127,13 @@ func collectTraceIdEntriesByAgent(roadmapDir, traceField string, cfg config.Proj
 // e é coerente com o invariante D1 (REQ em req_dir/<agente>/*.md não tem estado). Estado vazio
 // nunca participa de traceid_state_mismatch, que só compara quando os dois lados têm estado.
 func collectTraceIdEntriesFromFiles(files []string, traceField string, msgs *[]string) []traceIdEntry {
-	stateSet := map[string]bool{"wip": true, "done": true, "backlog": true, "analyzing": true, "blocked": true, "abandoned": true}
+	stateSet := func() map[string]bool {
+		m := make(map[string]bool, len(config.RoadmapStates()))
+		for _, s := range config.RoadmapStates() {
+			m[s] = true
+		}
+		return m
+	}()
 	var entries []traceIdEntry
 	for _, f := range files {
 		content, ok := readFileForRule("traceid_read", f, msgs)
@@ -328,7 +341,7 @@ func validateTraceId(cfg config.ProjectConfig) (violations []string, warnings []
 // 🔴 A decisão é pelo conteúdo do arquivo, nunca pelo diretório — igual ao C1.
 func buildRoadmapReqLinks(cfg config.ProjectConfig, msgs *[]string) map[string]bool {
 	result := map[string]bool{}
-	stateDirs := []string{"wip", "done", "backlog", "analyzing", "blocked", "abandoned"}
+	stateDirs := traceIdStateDirs
 
 	var allFiles []string
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {

@@ -1223,3 +1223,58 @@ func TestInstallGates_SymlinkScriptsDirRefused(t *testing.T) {
 		t.Error("containment violated: trackfw-validate.sh was written outside the project")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// ML-6D: analyzing/ counted in flat and by_agent modes
+// ---------------------------------------------------------------------------
+
+// TestScan_AnalyzingCountedInFlat verifies that roadmaps in the `analyzing/`
+// state directory are counted in flat mode. This test FAILS on the HEAD prior
+// to ML-6D because discover.go used a hard-coded 5-state list that omitted
+// "analyzing".
+//
+// Reconciliação: afirma que `analyzing/` é contabilizado no RoadmapCount em
+// modo flat (equivalente ao comportamento dos outros 5 estados).
+func TestScan_AnalyzingCountedInFlat(t *testing.T) {
+	dir := t.TempDir()
+	mustMkdir(t, dir, "docs/roadmaps/analyzing")
+	mustWriteFile(t, filepath.Join(dir, "docs/roadmaps/analyzing/ROADMAP-001.md"), "# R")
+	mustWriteFile(t, filepath.Join(dir, "trackfw.yaml"), "roadmap_dir: docs/roadmaps\n")
+
+	r, err := Scan(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.RoadmapNamespacing != "flat" {
+		t.Errorf("expected flat, got %s", r.RoadmapNamespacing)
+	}
+	if r.RoadmapCount != 1 {
+		t.Errorf("analyzing/ not counted: RoadmapCount = %d, want 1", r.RoadmapCount)
+	}
+}
+
+// TestScan_AnalyzingOnlyDetectedAsByAgent verifies that a by_agent layout where
+// the only state directory present for an agent is `analyzing/` is correctly
+// detected as by_agent mode and the roadmap inside is counted. This test FAILS
+// on the HEAD prior to ML-6D because the by_agent detection loop did not check
+// for `analyzing/`.
+//
+// Reconciliação: afirma que a presença de `analyzing/` sozinha sob um agente é
+// suficiente para detectar o modo by_agent e contar o roadmap (D ML-6D).
+func TestScan_AnalyzingOnlyDetectedAsByAgent(t *testing.T) {
+	dir := t.TempDir()
+	mustMkdir(t, dir, "docs/roadmaps/apolo/analyzing")
+	mustWriteFile(t, filepath.Join(dir, "docs/roadmaps/apolo/analyzing/ROADMAP-001.md"), "# R")
+	mustWriteFile(t, filepath.Join(dir, "trackfw.yaml"), "roadmap_dir: docs/roadmaps\nroadmap_namespacing: by_agent\nagents: [apolo]\n")
+
+	r, err := Scan(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.RoadmapNamespacing != "by_agent" {
+		t.Errorf("expected by_agent, got %s", r.RoadmapNamespacing)
+	}
+	if r.RoadmapCount != 1 {
+		t.Errorf("analyzing/ under agent not counted: RoadmapCount = %d, want 1", r.RoadmapCount)
+	}
+}

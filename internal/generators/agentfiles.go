@@ -1156,7 +1156,7 @@ func InjectCopilotHooks(rootDir string) error {
 	// divergence from the roadmap's literal wording in docs/cli-parity.md.
 	// This file is overwritten wholesale every run (doc comment above), but
 	// that only means there is no MIGRATION concern (nothing stale to leave
-	// behind) — it does not exempt this entry from the dedup-against-global
+	// behind) — it does not exempt this entry from unconditional wiring under
 	// D15 (ADR-2026-10-04 adendo 2026-10-24): project-scope git-branch guard
 	// always emitted regardless of global guard state.
 	preToolUse = append(preToolUse, map[string]interface{}{
@@ -1323,7 +1323,7 @@ func InjectCursorHooks(rootDir string) error {
 	hooks["afterShellExecution"] = migrateDedupGuardInFlatArray(
 		hooks["afterShellExecution"], "", guardCredentialCmdPSPOSIX, credLegacyForms, getCmd)
 
-	// Credential guard — Read/Write pairs (D14 revised: ALWAYS present).
+	// Credential guard — Read/Write pairs (D15: ALWAYS present).
 	// The global harness is wired to shell events only and does NOT fire for
 	// Read/Write tool calls. These entries cover file-access operations regardless
 	// of global installation status. Uses migrateDedupGuardInFlatArray so that

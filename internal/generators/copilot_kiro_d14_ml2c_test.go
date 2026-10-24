@@ -191,10 +191,13 @@ func TestKiroD14_ReadWriteAlwaysPresent(t *testing.T) {
 // AC6 seed: verify removeGuardFromFlatArrayInHooks is exercised on "shell" arm
 // ---------------------------------------------------------------------------
 
-// TestKiroD14_ShellRemovalRequiresLegacySeed (D15): with global installed,
-// InjectKiroHooks ALWAYS emits all matchers including "shell" (D15 semantics).
-// The pre-seeded legacy entry does not suppress the overwrite.
-func TestKiroD14_ShellRemovalRequiresLegacySeed(t *testing.T) {
+// TestKiroD15_ShellAlwaysPresent (D15): InjectKiroHooks always emits the "shell"
+// matcher regardless of global guard state — the pre-seeded legacy entry is
+// migrated and the canonical form is emitted unconditionally.
+//
+// Reconciliação: afirma que shell, read e write estão sempre presentes no wiring
+// de projeto Kiro independentemente do guard global (D15).
+func TestKiroD15_ShellAlwaysPresent(t *testing.T) {
 	home := harnessHome(t)
 	installKiroGlobal(t)
 

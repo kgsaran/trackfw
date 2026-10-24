@@ -97,9 +97,13 @@ const wave0Block = statusLegendBlock +
 	"\n"
 
 var roadmapStateOrder = []string{"analyzing", "wip", "backlog", "blocked", "done", "abandoned"}
-var roadmapValidStateNames = map[string]bool{
-	"backlog": true, "analyzing": true, "wip": true, "blocked": true, "done": true, "abandoned": true,
-}
+var roadmapValidStateNames = func() map[string]bool {
+	m := make(map[string]bool, len(config.RoadmapStates()))
+	for _, s := range config.RoadmapStates() {
+		m[s] = true
+	}
+	return m
+}()
 
 const roadmapValidStatesMessage = "backlog, analyzing, wip, blocked, done, abandoned"
 
@@ -143,7 +147,7 @@ func agentStateDir(agent, state string) (string, bool) {
 // geram o mesmo nome-base no mesmo dia — `req new` cria o roadmap e `roadmap new` precisa
 // detectar a colisão antes de escrever.
 func findRoadmapByBasename(basename, agent string, cfg config.ProjectConfig) string {
-	for _, state := range []string{"backlog", "analyzing", "wip", "blocked", "done", "abandoned"} {
+	for _, state := range config.RoadmapStates() {
 		var dir string
 		if cfg.RoadmapNamespacing == config.NamespacingByAgent {
 			dir = cfg.RoadmapDir + "/" + agent + "/" + state
@@ -175,7 +179,7 @@ func findRoadmapByBasenameOtherAgents(basename, resolvedAgent string, cfg config
 	if cfg.RoadmapNamespacing != config.NamespacingByAgent {
 		return nil
 	}
-	states := []string{"backlog", "analyzing", "wip", "blocked", "done", "abandoned"}
+	states := config.RoadmapStates()
 	var results []roadmapCrossMatch
 
 	// Namespaces de agente (config + disco) exceto o agente resolvido.

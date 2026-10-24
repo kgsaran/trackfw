@@ -99,6 +99,14 @@ type GovernanceContext struct {
 	Roadmaps   []ContextEntry `json:"roadmaps"`
 }
 
+// contextRoadmapStateOrder é a ordem de varredura dos estados de roadmap para o
+// `trackfw context`. A ordem é semântica: wip aparece primeiro para que o trabalho
+// mais recentemente ativo apareça antes na saída.
+// O conjunto deve ser idêntico a config.RoadmapStates() — veja
+// TestContextRoadmapStateOrder_SetEqualsCanonical em roadmap_order_states_test.go.
+// "analyzing" foi acrescentado em ML-6D; antes, roadmaps em analyzing/ eram omitidos silenciosamente.
+var contextRoadmapStateOrder = []string{"wip", "analyzing", "backlog", "blocked", "done", "abandoned"}
+
 // GetContext coleta ADRs, REQs e ROADMAPs do projeto, executa validate e imprime o contexto.
 // format: "md" (default) ou "json".
 func GetContext(format string) error {
@@ -136,7 +144,7 @@ func GetContext(format string) error {
 	}
 
 	var roadmaps []ContextEntry
-	states := []string{"wip", "backlog", "blocked", "done", "abandoned"}
+	states := contextRoadmapStateOrder
 	if cfg.RoadmapNamespacing == config.NamespacingByAgent {
 		agents := validator.ResolveAgentNamespaces(cfg, cfg.RoadmapDir)
 		for _, agent := range agents {

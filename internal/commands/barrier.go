@@ -892,11 +892,11 @@ func mlScopeMatchSegs(pat, file []string) bool {
 	return len(pat) == 0 && len(file) == 0
 }
 
-// roadmapAllStates is the ordered list of valid roadmap state directory names
-// used by `trackfw roadmap move`. Keep in sync with the states accepted by that
-// command. Used by buildMLScopeOrchestrationSet to include sibling state paths
-// for the same roadmap basename.
-var roadmapAllStates = []string{"backlog", "analyzing", "wip", "blocked", "done", "abandoned"}
+// roadmapAllStates is the canonical list of valid roadmap state directory names
+// used by `trackfw roadmap move`, sourced from config.RoadmapStates() so there
+// is a single authoritative definition. Used by buildMLScopeOrchestrationSet to
+// include sibling state paths for the same roadmap basename.
+var roadmapAllStates = config.RoadmapStates()
 
 // buildMLScopeOrchestrationSet returns the list of always-permitted scope
 // patterns (roadmap, REQ, ADR, well-known directories). Patterns that end with

@@ -512,33 +512,33 @@ func Scan(rootDir string) (DiscoveryResult, error) {
 	if dirExists(roadmapRoot) {
 		r.RoadmapDir = roadmapRel
 
-		// detecta by_agent: existe docs/roadmaps/*/wip/ ?
+		// detecta by_agent: se alguma subdir contém pelo menos um estado válido → by_agent.
+		// Usa config.RoadmapStates() para não omitir nenhum estado (bug pré-ML-6D:
+		// "analyzing/" estava ausente da lista, causando subcontagem e falso negativo
+		// na detecção do modo by_agent quando só existia docs/roadmaps/<agent>/analyzing/).
 		agentDirs, _ := listSubDirs(roadmapRoot)
 		byAgent := false
 		for _, sub := range agentDirs {
-			// se a subdir contém pelo menos um estado válido → by_agent
-			wipDir := filepath.Join(roadmapRoot, sub, "wip")
-			backlogDir := filepath.Join(roadmapRoot, sub, "backlog")
-			doneDir := filepath.Join(roadmapRoot, sub, "done")
-			abandonedDir := filepath.Join(roadmapRoot, sub, "abandoned")
-			blockedDir := filepath.Join(roadmapRoot, sub, "blocked")
-			if dirExists(wipDir) || dirExists(backlogDir) || dirExists(doneDir) || dirExists(abandonedDir) || dirExists(blockedDir) {
-				byAgent = true
-				r.Agents = append(r.Agents, sub)
+			for _, state := range config.RoadmapStates() {
+				if dirExists(filepath.Join(roadmapRoot, sub, state)) {
+					byAgent = true
+					r.Agents = append(r.Agents, sub)
+					break
+				}
 			}
 		}
 
 		if byAgent {
 			r.RoadmapNamespacing = "by_agent"
 			for _, agent := range r.Agents {
-				for _, state := range []string{"backlog", "wip", "blocked", "done", "abandoned"} {
+				for _, state := range config.RoadmapStates() {
 					dir := filepath.Join(roadmapRoot, agent, state)
 					r.RoadmapCount += countMDFiles(dir)
 				}
 			}
 		} else {
 			r.RoadmapNamespacing = "flat"
-			for _, state := range []string{"backlog", "wip", "blocked", "done", "abandoned"} {
+			for _, state := range config.RoadmapStates() {
 				dir := filepath.Join(roadmapRoot, state)
 				r.RoadmapCount += countMDFiles(dir)
 			}

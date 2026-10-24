@@ -602,3 +602,26 @@ func TestBoardHandler_EmptyBoard(t *testing.T) {
 		}
 	}
 }
+
+// TestBoardStates_SetEqualsCanonical verifies that boardStates contains exactly
+// the same elements as config.RoadmapStates(), regardless of order.
+//
+// Reconciliação: afirma que boardStates tem os mesmos 6 estados que a lista
+// canônica — o ordering de exibição no board é semântico (backlog→analyzing→wip→...),
+// mas o conjunto deve permanecer igual à lista canônica.
+func TestBoardStates_SetEqualsCanonical(t *testing.T) {
+	canonical := config.RoadmapStates()
+	if len(boardStates) != len(canonical) {
+		t.Fatalf("boardStates has %d elements, canonical has %d: boardStates=%v canonical=%v",
+			len(boardStates), len(canonical), boardStates, canonical)
+	}
+	cset := make(map[string]bool, len(canonical))
+	for _, s := range canonical {
+		cset[s] = true
+	}
+	for _, s := range boardStates {
+		if !cset[s] {
+			t.Errorf("boardStates contains %q which is not in config.RoadmapStates()", s)
+		}
+	}
+}
