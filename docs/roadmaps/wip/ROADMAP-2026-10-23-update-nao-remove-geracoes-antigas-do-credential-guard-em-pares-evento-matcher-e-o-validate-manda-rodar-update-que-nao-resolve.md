@@ -489,6 +489,30 @@ uma lista sem fonte única.
 ## Wave 7 — Fechamento
 > Dependencies: Wave 6 aprovada.
 
+### ML-7B — Os cenários de falsificação que afirmavam o contrato antigo
+**Status:** ⬜ Pendente
+**Agente:** apolo-tf
+**Files affected:** `scripts/check-gates-falsify.sh`, `scripts/gen-falsify-chunks.py`
+**Por que existe:** o primeiro `make quality` da Wave 7 saiu com rc=2 (`parity-falsify`), por duas causas:
+- **Cenário 67:** afirma a D14. Com o global instalado, o `discover --init` não escreveria a entrada de projeto do
+  git-branch-guard, e o braço de detecção corrompe a função `globalGitBranchGuardInstalledClaude`, que o ML-5A removeu.
+- **Cenário 30:** corrompe a lista literal de estados do `inventoryBlock`, que o ML-6D trocou por
+  `config.RoadmapStates()`. A âncora sumiu (`[s30-go] expected exactly 1 occurrence of pattern, got 0`), e o chunk 4
+  morre.
+
+A Wave 4 enumerou os sítios só em Go e não incluiu `scripts/`, que é a mesma falha de enumeração registrada na
+Reabertura. A lição foi registrada no roadmap.
+**Acceptance criteria:**
+- [ ] Cenário 67 reescrito para a D15:
+  - baseline: com o global instalado, a entrada de projeto do git-branch-guard **está presente**, e a do credential também;
+  - reverse: sem global, também presente;
+  - detecção: a cópia corrompida tira a emissão do git-branch-guard em `InjectClaudeHooks`, e o braço reprova;
+  - o braço 4 (tolerância a `//` no comparador do dedup) sai, porque o comparador não existe mais.
+- [ ] Cenário 30: a corrupção ancora em `config.RoadmapStates()` ou no `inventoryBlock` atual, e o braço de detecção
+  continua reprovando a omissão de `analyzing`
+- [ ] `make parity-falsify` com o HOME isolado: 0 FAIL e a guarda de conjunto OK
+- [ ] `make parity-rest` rc=0
+
 ### ML-7A — make quality, CI e PR
 **Status:** ⬜ Pendente
 **Agente:** zeus-tf
