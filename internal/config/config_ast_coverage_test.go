@@ -1,14 +1,14 @@
 package config
 
 // TestASTCoverage_NoSilentReads is a structural test for internal/config/config.go.
-// It parses the source file with go/ast and verifies two properties inside the
+// It parses the source file with go/ast and verifies three properties inside the
 // parse() function body:
 //
 //	(a) No call to stringVal( — the unrecorded reader — exists inside parse().
-//	    stringVal() is kept in config.go to ensure any re-introduction compiles,
-//	    but parse() must never call it directly. All key reads go through
-//	    stringValRec (via scalarKeyTable), stringListRec, stringValNested or
-//	    recordContainerType, which all record type errors.
+//	    stringVal() was removed in ML-1E R-1; if someone re-adds it and calls it
+//	    from parse(), this arm flags it. All key reads must go through stringValRec
+//	    (via scalarKeyTable), stringListRec, stringValNested or recordContainerType,
+//	    which all record type errors.
 //
 //	(b) No direct literal-keyed map index expression (m["literal"]) exists inside
 //	    parse(). Literal-keyed reads bypass the table and the recording layer;
@@ -17,13 +17,23 @@ package config
 //	    The allowlist below exempts the ci_trigger block, which uses a direct
 //	    presence check for reasons documented in parse() itself.
 //
+//	(c) No call to stringValRec(m, "literal", …) with a literal second argument
+//	    exists inside parse() outside the scalarKeyTable loop. Inside the loop,
+//	    the key is spec.key (a SelectorExpr), never a literal. A direct call with
+//	    a literal bypasses the table, so KnownScalarKeys() would not list it and
+//	    TestScalarType_AllKnownKeys would not cover it — the single-source-of-truth
+//	    guarantee would be silently broken. ML-1E R-3.
+//
 // Falsification proof (manual, not automated):
-//   - arm (a): add _ = stringVal(m, "foo") inside parse() → this test fails with
-//     "stringVal( called from parse(): found at config.go:<line>"
+//   - arm (a): re-add stringVal to config.go and call it inside parse() — this arm
+//     fails with "stringVal( called from parse(): found at config.go:<line>".
+//     (Before ML-1E R-1 this example used the kept stringVal body. After removal
+//     the falsification requires re-adding the function first.)
 //   - arm (b): add _ = m["new_key_literal"] inside parse() → this test fails with
 //     "literal map index inside parse(): m[\"new_key_literal\"] at config.go:<line>"
+//   - arm (c): see in-file comment below for the injected falsification and output.
 //
-// ML-1C, REQ-2026-10-24.
+// ML-1C, ML-1E, REQ-2026-10-24.
 
 import (
 	"go/ast"
@@ -124,10 +134,50 @@ func TestASTCoverage_NoSilentReads(t *testing.T) {
 		return true
 	})
 
+	// arm (c): catch stringValRec(m, "literal", …) with a literal second argument.
+	// Inside the scalarKeyTable loop the key is spec.key (a SelectorExpr), never a
+	// BasicLit, so any call matching this pattern is outside the loop and bypasses
+	// the single-source-of-truth guarantee. stringListRec is excluded: its second
+	// argument is a recording-key, not a map access key, and all current calls have
+	// intentional literal recording-keys that are not bypass patterns.
+	//
+	// Falsification (injected + reverted, ML-1E R-3):
+	//   Added inside parse(), after the scalarKeyTable range loop:
+	//     _, _ = stringValRec(m, "injected_key", &cfg.ScalarTypeErrors)
+	//   Result:
+	//     --- FAIL: TestASTCoverage_NoSilentReads (0.00s)
+	//         config_ast_coverage_test.go:181:
+	//             stringValRec( called with literal key outside scalarKeyTable:
+	//             found at /private/tmp/trackfw-toml-escape/internal/config/config.go:499:9
+	//   The injection was reverted (Edit tool, not sed) and the test passes again.
+	var armCViolations []string
+	ast.Inspect(parseFunc.Body, func(n ast.Node) bool {
+		callExpr, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		ident, ok := callExpr.Fun.(*ast.Ident)
+		if !ok || ident.Name != "stringValRec" {
+			return true
+		}
+		if len(callExpr.Args) < 2 {
+			return true
+		}
+		if _, ok := callExpr.Args[1].(*ast.BasicLit); ok {
+			pos := fset.Position(callExpr.Pos())
+			armCViolations = append(armCViolations,
+				"stringValRec( called with literal key outside scalarKeyTable: found at "+pos.String())
+		}
+		return true
+	})
+
 	for _, v := range armAViolations {
 		t.Error(v)
 	}
 	for _, v := range armBViolations {
+		t.Error(v)
+	}
+	for _, v := range armCViolations {
 		t.Error(v)
 	}
 }

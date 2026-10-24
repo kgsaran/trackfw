@@ -573,11 +573,17 @@ func parse(content string, cfg *ProjectConfig) {
 	// config_value_type does not fire for ci_trigger (no double violation). ML-1C.
 	if raw, present := m["ci_trigger"]; present {
 		if s, ok := raw.(string); ok {
-			cfg.Update.CITriggerRawValue = s
-			if s == "pull_request" || s == "manual" {
-				cfg.Update.CITrigger = s
+			if s == "" || s == "~" {
+				// Empty string (bare key / ci_trigger: "") or "~" (YAML explicit
+				// null — yaml.v3 ScalarNode.Value == "~" for ci_trigger: ~).
+				// Treat as absent: default pull_request applies, no violation. ML-1E R-2.
 			} else {
-				cfg.Update.CITriggerInvalid = true
+				cfg.Update.CITriggerRawValue = s
+				if s == "pull_request" || s == "manual" {
+					cfg.Update.CITrigger = s
+				} else {
+					cfg.Update.CITriggerInvalid = true
+				}
 			}
 		} else {
 			// Non-scalar: sequence or mapping — ci_trigger_invalid owns this path.
@@ -688,17 +694,6 @@ func normalizeNode(n *yaml.Node) interface{} {
 	default:
 		return nil
 	}
-}
-
-// stringVal reads a scalar string field from a normalized map, tolerating callers that pass
-// a non-string (e.g. a mapping under the same key by mistake) by reporting !ok.
-func stringVal(m map[string]interface{}, key string) (string, bool) {
-	v, ok := m[key]
-	if !ok {
-		return "", false
-	}
-	s, ok := v.(string)
-	return s, ok
 }
 
 // scalarKeySpec maps a top-level trackfw.yaml scalar key to its setter function.

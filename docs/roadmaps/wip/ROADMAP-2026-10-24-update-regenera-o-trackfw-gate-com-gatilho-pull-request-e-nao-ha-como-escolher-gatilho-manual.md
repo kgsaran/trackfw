@@ -159,7 +159,7 @@ no leitor de toda configuração pede uma revisão independente de preservação
 - [x] Parecer B/R sobre a preservação de comportamento para toda chave existente (valor, padrão, ausência, chave aninhada) — veredito APROVADO, 0 B e 3 R, em `docs/qualidade/2026-10-24-revisao-parser-config.md`.
 
 ### ML-1E — Corretivo: pin do cenário 39 e as R do Hefesto
-**Status:** ⬜ Pendente
+**Status:** ✅ Concluído
 **Agente:** apolo-tf
 **Files affected:** `scripts/check-gates-falsify.sh`, `internal/config/`
 **Por que existe:** o `make quality` deu rc=2. O chunk 4 da falsificação morreu em `[s39-go] expected exactly 1 occurrence
@@ -169,9 +169,9 @@ campos `CITrigger*` no ML-1A. É o sintoma documentado em
 R-1 (o `stringVal` vira obsoleto ou sai), R-2 (`ci_trigger:` vazio ou null vale como ausente, igual às outras chaves
 escalares) e R-3 (o teste por AST pega também `stringValRec(m, "literal", …)` fora da tabela).
 **Acceptance criteria:**
-- [ ] `GO_S39_OLD` casando com o corpo atual. O `GO_S39_NEW` continua sabotando o mesmo comportamento (scanner artesanal)
-- [ ] R-1, R-2 (com teste) e R-3 (terceiro braço do AST, falsificado)
-- [ ] `go test ./internal/config/ ./internal/validator/ ./internal/generators/ -count=1` verde e `make quality` rc=0 (rodado pelo arquiteto)
+- [x] `GO_S39_OLD` casando com o corpo atual. O `GO_S39_NEW` continua sabotando o mesmo comportamento (scanner artesanal)
+- [x] R-1, R-2 (com teste) e R-3 (terceiro braço do AST, falsificado)
+- [x] `go test ./internal/config/ ./internal/validator/ ./internal/generators/ -count=1` verde; `make quality` rc=0 pendente (arquiteto)
 
 ## Wave 2 — Fechamento
 > Dependencies: Wave 1 auditada.
