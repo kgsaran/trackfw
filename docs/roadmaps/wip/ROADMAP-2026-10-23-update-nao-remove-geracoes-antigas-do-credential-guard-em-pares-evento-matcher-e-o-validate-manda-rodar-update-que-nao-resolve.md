@@ -569,6 +569,6 @@ mesma causa do ML-7C (Regra Dura). Em vez de 24 edições, a correção usa um p
 **Agente:** zeus-tf
 **Files affected:** nenhum arquivo de produto; só medição
 **Acceptance criteria:**
-- [ ] `make quality` rc=0 com a máquina ociosa e o HOME isolado
-- [ ] `trackfw update` neste repositório, numa máquina com global, seguido de `trackfw validate; echo rc=$?` sem pipe: rc=0
+- [x] `make quality` rc=0 com a máquina ociosa e o HOME isolado (terceira rodada; falsificação 367 OK / 0 FAIL / guarda OK; as 14 linhas FAIL são braços de autoteste. A 1ª reprovou → ML-7B; a 2ª reprovou → ML-7C/7D)
+- [x] `trackfw update` neste repositório, numa máquina com global, seguido de `trackfw validate; echo rc=$?` sem pipe: rc=0 (binário `bin/trackfw` desta branch: o update não alterou nenhum arquivo, e o validate deu rc=0 com 0 `guard_wiring_removed`)
 - [ ] CI do PR verde; PR com `Closes #613`

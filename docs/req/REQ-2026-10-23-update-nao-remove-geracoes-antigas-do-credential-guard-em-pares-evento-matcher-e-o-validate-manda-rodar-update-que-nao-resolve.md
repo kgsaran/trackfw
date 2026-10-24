@@ -49,13 +49,13 @@ da legada de projeto com o guard global instalado).
   receba, e isso é verificado por falsificação.
 - [x] **AC5 — Hooks do usuário intactos.** Uma entrada que não está no registro (comando personalizado, inclusive um que
   só *contém* `trackfw guard credential`), no mesmo par evento×matcher, sobrevive à migração byte a byte.
-- [ ] **AC6 — Guard global (D15, revisto em 2026-10-24 pela #613).** O texto anterior ("num par que o global cobre, a
+- [x] **AC6 — Guard global (D15, revisto em 2026-10-24 pela #613).** O texto anterior ("num par que o global cobre, a
   entrada de projeto é removida", D14) foi entregue no #604 e estava **errado**: ele grava estado da máquina num arquivo
   versionado. Passa a valer: em todo CLI e em todo par (evento, matcher), a fiação de projeto é emitida e migrada para a
   forma atual **com e sem** guard global instalado, no `init` e no `update`. Nenhum gerador de projeto nem o validador
   consulta o global para pular, remover ou aceitar ausência. Os testes que afirmavam a D14 (#604) e a decisão 4 do
   ADR-2026-08-06 passam a afirmar a D15.
-- [ ] **AC9 — Cruzamento update × validate (#613).** Com HOME falso contendo o guard global de cada CLI e um fixture git
+- [x] **AC9 — Cruzamento update × validate (#613).** Com HOME falso contendo o guard global de cada CLI e um fixture git
   cujo `origin/main` tem a fiação de projeto, `trackfw init` e `trackfw update` seguidos de `trackfw validate` no mesmo
   diretório dão rc=0 e zero `guard_wiring_removed`, para cada CLI. Contra-braço: o mesmo teste reprova no código de
   `origin/main` (11.0.0).
